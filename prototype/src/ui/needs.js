@@ -20,14 +20,14 @@ const bar = (v, color) => `<div class="bar"><i style="width:${Math.max(0, Math.m
 const tone = (v) => (v < NEEDS.starving ? "var(--danger)" : v < NEEDS.lean ? "var(--accent)" : "var(--good)");
 
 const HUNGER_TIP = `Hunger (how full they are): falls ${NEEDS.food} a day (more on the move under a load and in the cold without a fire; slower below ${NEEDS.lean}: the body gets by on less). A ration fills ${NEEDS.food}. They eat at the mealtimes and when hungry until they are ${EAT.band[0]}–${EAT.band[1]}% full (each their own target: the mark on the bar; the shaded band is ${EAT.band[0]}–${EAT.band[1]}); at a base from the stores, away from them from the pack they carry, on a team from its food when they drop below 70 (its ration setting). Below ${NEEDS.lean} work and aim suffer; empty away from a base it costs health.`;
-const THIRST_TIP = `Thirst: falls ${NEEDS.water} a day (more in summer and a heat wave, on the move under a load). A water fills ${NEEDS.water}. Thirst runs out faster than hunger and hurts more: empty away from a base it costs a point of health an hour.`;
+const THIRST_TIP = `Thirst: falls ${NEEDS.water} a day, 1.5× as fast as hunger (more in summer and a heat wave, less in winter; more on the move under a load). A water fills ${NEEDS.water}. They drink when they drop below ${NEEDS.drink[0]} until they are full (the shaded band is ${NEEDS.drink[0]}–${NEEDS.drink[1]}): at a base from the stores (a base out of water: nobody drinks), away from them from the pack they carry, on a team from its water. Thirst runs out faster than hunger and hurts more: empty away from a base it costs a point of health an hour.`;
 
 // One person's three gauges as rows (People tab, team panel, survivor screen).
 export function gaugeRows(s, { mood = true, label = "3.5rem" } = {}) {
   const h = hungerOf(s), t = thirstOf(s);
   const row = (name, v, color, t2, b = bar(v, color), shown = n0(v)) => `<div class="row small"${tip(t2)}><span style="width:${label}" class="muted">${name}</span><div style="flex:1">${b}</div><span style="width:2.2rem;text-align:right">${shown}</span></div>`;
   const tg = eatTarget(s);
-  return row("Hunger", h, tone(h), `${hungerWord(h)} (${n0(h)}; eats to ${tg}). ${HUNGER_TIP}`, bandBar(h, tone(h), EAT.band[0], EAT.band[1], tg)) + row("Thirst", t, tone(t), `${thirstWord(t)} (${n0(t)}). ${THIRST_TIP}`) +
+  return row("Hunger", h, tone(h), `${hungerWord(h)} (${n0(h)}; eats to ${tg}). ${HUNGER_TIP}`, bandBar(h, tone(h), EAT.band[0], EAT.band[1], tg)) + row("Thirst", t, tone(t), `${thirstWord(t)} (${n0(t)}; drinks below ${NEEDS.drink[0]}). ${THIRST_TIP}`, bandBar(t, tone(t), NEEDS.drink[0], NEEDS.drink[1], NEEDS.drink[1])) +
     sleepRow(s, row) + (mood ? row("Mood", s.mood, "var(--info)", "Mood: rest, a bed, food, a good leader, comforts and treats lift it; crowding, short rations, hunger, thirst and the cold lower it.") : "") + tiredRow(s);
 }
 // Sleep (sim/sleep.js s.tired, the hours of sleep owed, updated every hour): a bar full when rested, empty at

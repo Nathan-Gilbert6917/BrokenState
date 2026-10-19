@@ -15,16 +15,30 @@
 //           than hunger: a full gauge lasts under two days.
 // So one ration and one water a day keep a person level, the same daily totals as before (parties.js packing, the
 // planners' estimates, upkeep.js at a base).
+// The ratio (2026-10-19, user request: thirst at a base never moved while hunger did; "make thirst go down in ratio
+// to hunger based on how it typically is on average depending on season to the average American"): a ration is a
+// day's food (DAY_KCAL, 2000 kcal: about the US adult mean intake) and a water a day's drink (about 3 L: the US adult
+// mean total water intake is near 3 L a day, the adequate intake 2.7 L for women and 3.7 L for men). Thirst falls
+// NEEDS.water / NEEDS.food = 1.5× as fast as hunger: a day's drinking is spread over more, smaller drinks than the
+// three meals, so the gauge moves between drinks where hunger moves between meals, and runs out in under two days
+// where hunger takes two and a half. The season scales it (weather.js THIRST: spring and autumn 1, summer 1.3,
+// winter 0.9, a hot day 1.6: people drink most in the summer heat and least in winter), so a summer gauge falls
+// about 2× hunger's and a winter one about 1.35×; hunger goes the other way in the cold (×1.1–1.2 below freezing).
 //
 // When they eat (a team's ration setting, p.ration): full: below 70 they eat up to 100; short: below 40 up to 48 (the
 // body's slow-down makes that about 60% of a ration a day: food lasts longer, people are Hungry: work −10%); none:
 // nobody eats (water is never rationed: thirst kills too fast). Who eats first when there is not enough (p.share):
 // "hurt" (default: the hurt first, then the hungriest) or "even" (everyone gets the same share of what there is).
 // At a base everyone eats by the hour, each to their own target (80–100% full) at the mealtimes (eating.js
-// baseEatHour: meal breaks, what they eat, the base's ration level; economy.js counts the day at midnight). Water is
-// still drunk from the store once a day (economy.js baseDaily): the thirst gauge follows the base's share: watered in
-// full, it holds and climbs NEEDS.recover an hour; with no water it falls. Under rationing the base's share
-// (base.share) decides who gets watered first (the hurt, then the workers, then those resting).
+// baseEatHour: meal breaks, what they eat, the base's ration level; economy.js counts the day at midnight). Thirst
+// falls by the hour at a base too (NEEDS.water a day × the day's thirst) and people drink from the stores when they
+// drop below NEEDS.drink[0] (70), up to full (NEEDS.drink[1]): the same rhythm as on a team, a drink about every half
+// day in spring, oftener in summer. The stores still pay once a day (economy.js baseDaily: per head × the day's
+// thirst, upkeep.js), so the gauge is the day's water as it is drunk, not a second charge. The base's share decides
+// what the gauge gets: watered in full, they drink their fill; with no water nobody drinks and it falls; under
+// rationing (base.thirstDays with some water: base.waterFed) each person's share of a day's water trickles in by the
+// hour and the gauge drifts down by what is missing. Under rationing the base's share (base.share) decides who gets
+// watered first (the hurt, then the workers, then those resting).
 // Everyone also carries a pack (eating.js PACK: about a day and a half of food that keeps and of purified water):
 // away from the stores (a job trip, a field work, an errand) they eat from it; on a team, after the team's shared
 // supplies are gone.
@@ -74,7 +88,6 @@ import { mealOf } from "./meals.js"; // a team eats at breakfast, lunch and dinn
 export const NEEDS = {
   max: 100, food: 40, water: 60, lean: 50, leanRate: 0.6, ration: 0.6,
   eat: { full: [70, 100], short: [40, 48], none: null }, drink: [70, 100],
-  recover: 3,
   hurtFood: 0.6, hurtWater: 1.0,
   moodLow: 25, moodHunger: 0.08, moodThirst: 0.12, coldMood: 0.04,
   low: 25, starving: 15, warnBack: 40,
@@ -333,7 +346,12 @@ function baseHour(state, base, people) {
   for (const s of people) {
     ensureNeeds(s);
     const w = ws.get(s);
-    s.thirst = clamp(s.thirst - wr + w * wr + (fW >= 1 ? NEEDS.recover : 0));
+    // Thirst falls as hunger does (the season's rate), then they drink. Watered in full: a drink from the stores
+    // when they drop below the drink line, up to full (the stores paid for the day at midnight, economy.js). Short:
+    // their share of the day's water by the hour (the gauge drifts down by what is missing); none: it falls.
+    s.thirst = clamp(s.thirst - wr);
+    if (w >= 1) { if (s.thirst < NEEDS.drink[0]) s.thirst = clamp(NEEDS.drink[1]); }
+    else if (w > 0) s.thirst = clamp(s.thirst + w * wr);
     warnPerson(state, s);
   }
 }
