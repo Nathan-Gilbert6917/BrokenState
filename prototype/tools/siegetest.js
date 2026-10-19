@@ -548,7 +548,7 @@ section("Raiders from beyond the border: the ladders and the ram they set out wi
   const kit = V.bandKit(st, v, h);
   const have = gearOf(v);
   check(kit && kit.carried && kit.ladders === have.ladders.length && kit.ram === (have.ram ? 1 : 0), `at your walls: ${kitText(kit)} (their own: ${have.ladders.length} ladders, ${have.ram ? "a ram" : "no ram"})`);
-  const open = { ...h, id: -7, buildings: h.buildings.filter((x) => x.type !== "walls") };
+  const open = { ...h, id: -7, buildings: h.buildings.filter((x) => x.type !== "walls" && !isPiece(x.type)) }; // no wall: no pieces (buildings.js)
   check(V.bandKit(st, v, open) === null, "none against a base without walls");
   // The battle on the map hands out exactly those (siege.js siegeSetup).
   const b = wallBattle(st, { kind: "raiders", count: v.size, power: v.power, name: "Outsiders", siege: kit, band: { kind: "visitor", id: v.id } });
