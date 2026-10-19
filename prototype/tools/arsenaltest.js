@@ -13,6 +13,7 @@ import { serializeState, deserializeState } from "../src/sim/save.js";
 import { createVehicle, factionVehicles, upgradesOf, vehicleValue } from "../src/sim/vehicles.js";
 import { addBuilding } from "../src/sim/buildings.js";
 import { worksAt } from "../src/sim/groupworks.js";
+import { itemDurMax } from "../src/sim/crafting.js";
 import { newNeutralGroup, wanderersDaily } from "../src/sim/wanderers.js";
 import { Rng } from "../src/sim/rng.js";
 import * as A from "../src/sim/arsenal.js";
@@ -81,6 +82,9 @@ section("By the numbers: strength follows the arsenal, close to the old numbers 
   check(worst < 0.12, `day 0: every group within 12% of its old strength (worst ${Math.round(worst * 100)}%)`);
   const st = world();
   const f = typed(st, "raider");
+  // 20 of them with their starting kit dealt for 20: ten rifles arm half of them on every seed (the world's raiders
+  // run 20-27, and among 27 the same ten rifles make them only 18% stronger).
+  f.pop = 20; f.wounded = 0; A.seedArsenal(st, f);
   const s0 = strength(f);
   for (let i = 0; i < 10; i++) A.addToArsenal(st, f, lootItem("ar", "military", [i, "t"]), "test");
   const s1 = strength(f);
@@ -192,15 +196,18 @@ section("Losses, wear and the field");
 section("Healing: meds and medics");
 {
   const st = world();
-  const run = (type, meds, n = 10) => {
+  // The wounded who got well in n days (the dead do not count: without meds more of them die, which also empties the
+  // ward). The group's day count moves on each day as factions.js moves it (tickGroup): the day's rolls hash it.
+  const run = (type, meds, n = 5) => {
     const s2 = world(seed + 5);
     const f = typed(s2, type);
     f.pop = 30; setFood(f, 1000); f.stock.meds = meds; f.wounded = 12;
-    for (let i = 0; i < n; i++) { s2.hour += 24; C.groupCareDaily(s2, f); f.stock.meds = meds ? Math.max(f.stock.meds, meds) : 0; }
-    return f.wounded;
+    const dead0 = f.diedOfWounds || 0;
+    for (let i = 0; i < n; i++) { s2.hour += 24; C.tickGroup(f); C.groupCareDaily(s2, f); f.stock.meds = meds ? Math.max(f.stock.meds, meds) : 0; }
+    return 12 - f.wounded - ((f.diedOfWounds || 0) - dead0);
   };
   const withMeds = run("commune", 100), noMeds = run("commune", 0);
-  check(withMeds < noMeds, `the wounded heal faster with meds (${withMeds} left) than without (${noMeds} left) after 10 days`);
+  check(withMeds > noMeds, `the wounded heal faster with meds (${withMeds} of 12 well) than without (${noMeds}) in 5 days`);
   const f1 = typed(st, "commune"), f2 = typed(st, "raider", [f1]);
   for (const f of [f1, f2]) { f.pop = 30; f.wounded = 10; f.stock.meds = 0; }
   check(C.medicsOf(f1) > C.medicsOf(f2) && C.healRate(f1).rate > C.healRate(f2).rate, `a commune has more medics (${C.medicsOf(f1)} to ${C.medicsOf(f2)}) and heals faster`);
@@ -216,6 +223,9 @@ section("Repairs at a workshop, with parts");
   worksAt(f, f.bases[0]).bench = 1;
   f.stock.parts = 10; f.stock.scrap = 50;
   const gun = f.arsenal.items.find((x) => x.key === "ar" || x.key === "huntrifle" || x.key === "carbine");
+  // Everything else mended first: they mend the most valuable pieces first, and 10 parts on a fortress's other worn
+  // guns would leave none for this one.
+  for (const it of f.arsenal.items) if (itemDurMax(it) != null) it.dur = itemDurMax(it);
   gun.dur = Math.round(GEAR[gun.key].dur * 0.3);
   const max0 = gun.durMax || GEAR[gun.key].dur;
   // Four days in a row (a group mends every CARE.REPAIR.every days, on a day of its own: day(st) + i stepped by two and,
