@@ -47,6 +47,7 @@ import { poweredType } from "./power.js";
 import { isNight } from "./world.js";
 import { dimsAt, baseScale, baseSide, densify } from "./battlesize.js";
 import { siegeWallCut } from "./siege.js";
+import { layMines } from "./mines.js"; // the main base's minefield across the approach
 import { lateOut } from "./defenceplan.js"; // those not on watch when the attack hit come out
 import { rollWin, winMixOf } from "./windows.js"; // the windows' states
 
@@ -335,6 +336,13 @@ function layInterior(base, opts, W, H, tight = false, wide = false) {
   densify(cells, W, H, rng, { target: I.YARD_COVER, keep: (x, y) => !!used[y * W + x], props: (f) => YARD_PROPS[f] || null });
   // Every door, ladder and the far edge reachable from the back gate: clear whatever clutter is in the way.
   connect(cells, W, H, out);
+  // Land mines (mines.js) without a wall: buried across the approach, short of where the attackers start (after the
+  // clutter, so nothing stands on one). The fort map lays its own in the margin (fort.js).
+  if (base && !walled && !opts.fort && count(base, "minefield")) {
+    const cand = [];
+    for (let y = 0; y < H; y++) for (let x = I.WALL_X - 7; x <= I.WALL_X - 2; x++) if (at(x, y) && at(x, y).k === "open" && !used[y * W + x]) cand.push([x, y]);
+    out.minesLaid = layMines(null, base, cells, cand, rng, W);
+  }
   out.doors = out.doors.filter(([x, y]) => at(x, y).k === "bdoor");
   out.windows = out.windows.filter(([x, y]) => at(x, y).k === "window");
   return out;
@@ -433,6 +441,7 @@ export function interiorMap(b, ctx, base, c) {
   const lay = buildInterior(base, { walled: false, c });
   resizeBattle(b, lay.W, lay.H, lay.cells, 0, Math.floor(lay.H / 2));
   b.deployPlan = { walled: false, interior: true, gate: [], breaches: [], towers: lay.towers, lay };
+  if (lay.minesLaid) b.mines = { baseId: base.id, laid: lay.minesLaid }; // mines.js settleMines
 }
 
 export function interiorUnits(b, ctx, base, c) {

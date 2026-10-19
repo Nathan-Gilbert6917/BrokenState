@@ -7,7 +7,8 @@ import { atBase, baseById, hourOfDay, skill } from "../sim/world.js";
 import { ROLES } from "../sim/economy.js";
 import { isManaged } from "../sim/work.js";
 import { holdSummary } from "../sim/defences.js";
-import { BUILDINGS, count, wallOf, wallName } from "../sim/buildings.js"; // the defenses built here (Construction, Defenses)
+import { BUILDINGS, count, wallOf, wallName } from "../sim/buildings.js";
+import { minesLeft } from "../sim/mines.js"; // a minefield's mines still in the ground // the defenses built here (Construction, Defenses)
 import {
   WATCH_PRESETS, SHIFT_MAX, shiftText, shiftHours, watchCoverage, watchLine, watchWhy, setWatchPreset, addShift, removeShift,
   setShiftHours, renameShift, toggleWatch, fillWatch, pruneWatch,
@@ -51,7 +52,7 @@ export function defenceTab(state, b, ui) {
 // What stands of the Defenses tab's list here (sim/buildings.js tab "defenses"), for the hold card.
 function builtDefenses(b) {
   const w = wallOf(b);
-  const rest = Object.entries(BUILDINGS).filter(([k, d]) => d.tab === "defenses" && k !== "walls" && count(b, k)).map(([k, d]) => `${count(b, k) > 1 ? `${count(b, k)} × ` : ""}${d.name.toLowerCase()}`);
+  const rest = Object.entries(BUILDINGS).filter(([k, d]) => d.tab === "defenses" && k !== "walls" && count(b, k)).map(([k, d]) => `${count(b, k) > 1 ? `${count(b, k)} × ` : ""}${d.name.toLowerCase()}${k === "minefield" ? ` (${minesLeft(b)} mines)` : ""}`);
   return [w ? wallName(w) : "no wall", ...rest].join(", ");
 }
 

@@ -5,7 +5,8 @@
 // wall, 51 / 87 / 159 / 231 for a stake fence, a timber palisade, a scrap-metal wall, a concrete wall), plus 2 for every
 // point of combat power on guard duty (everyone counts at 0.8 while the defences are manned after a warning), times
 // the defence buildings' bonuses (barricades +12% each, trench +25% (a second line +12%), reinforced gate +20%, floodlights +10% with 2 fuel
-// to burn, a barbed wire fence +6% a line, concertina wire +10%, sandbag positions +5% each, guard towers +8%; from the
+// to burn, a barbed wire fence +6% a line, concertina wire +10%, sandbag positions +5% each, guard towers +8%; a
+// minefield's mines take 2 of the dead each before the walls, mines.js; from the
 // armory, barbed wire +5% a roll and sandbags +4% a bundle, armoryDefence). Spike pits thin the horde first (7% + 4 per pit, used up),
 // then bear traps from the armory (3 each); a tripwire alarm there has everyone count half on the walls unwarned. A Wallbreaker (hives.js) cuts the limit to 60% (two: 35%) and smashes a
 // defence every time it attacks (a barricade, the reinforced gate, else a wall section 40% of the time).
@@ -21,6 +22,7 @@
 import { scaleFood } from "./foods.js"; // the dead spoil every kind of food
 import { log, addCard, atBase, homeAt, hurt, combatPower, removeBase, isNight, baseVision, armedFactor, spendShots, arrowsBack } from "./world.js";
 import { GEAR } from "./data.js";
+import { minesLeft, minesKill, spendMines, MINES } from "./mines.js"; // land mines (the main base's Minefield)
 import { count, baseWalls, wallTier as wallTierBuilt, wallOf, wallTierOf, WALL_TIERS } from "./buildings.js";
 import { poweredType } from "./power.js";
 import {
@@ -136,7 +138,7 @@ export const spikeKill = (base, n) => {
 // the wall when the defenders are worth HELD_AT_WALL × the attackers there, else in the yard when they match them
 // with the yard counted, else in the buildings (the last stand), else lost.
 export const TIERS = {
-  WALL: { per: 0.04, max: 4, tower: 0.05, gate: 0.05, trench: 0.03, flood: 0.03, fence: 0.03, razor: 0.05, towers: 0.04 },
+  WALL: { per: 0.04, max: 4, tower: 0.05, gate: 0.05, trench: 0.03, flood: 0.03, fence: 0.03, razor: 0.05, towers: 0.04, mines: 0.04 },
   YARD: { barricade: 0.03, bags: 0.015, wire: 0.015, pits: 0.02, positions: 0.03 },
   BUILDINGS: { per: 0.02, max: 5 },
   HELD_AT_WALL: 1.15,
@@ -148,10 +150,11 @@ export function tierMults(state, base, night = false) {
   const wireOut = T.WALL.fence * count(base, "barbed_wire") + T.WALL.razor * count(base, "razor_wire"); // the wire lines: at the wall, or in front of the yard without one
   const wall = walls ? 1 + T.WALL.per * Math.min(T.WALL.max, wallTier(base) || walls) + (count(base, "watchtower") ? T.WALL.tower : 0) + (count(base, "gate") ? T.WALL.gate : 0)
     + T.WALL.trench * Math.min(2, count(base, "trench")) + (flood && night ? T.WALL.flood : 0) + wireOut + T.WALL.towers * count(base, "guard_towers") : 1;
+  const mined = minesLeft(base) > 0 ? T.WALL.mines * count(base, "minefield") : 0; // mines.js: a field with mines left, at the wall or in front of the yard
   const yard = 1 + T.YARD.barricade * count(base, "barricades") + T.YARD.bags * kit.bags + T.YARD.wire * kit.wire + T.YARD.pits * count(base, "spike_pits") + T.YARD.positions * count(base, "sandbag_wall") + (walls ? 0 : wireOut);
   const held = defensibleCount(base);
   const buildings = 1 + T.BUILDINGS.per * Math.min(T.BUILDINGS.max, held);
-  return { wall, yard, buildings, walled: walls > 0, held };
+  return { wall: wall + (walls ? mined : 0), yard: yard + (walls ? 0 : mined), buildings, walled: walls > 0, held };
 }
 // The strength of the best 8 at a base (who would fight a break-in), with too little ammo counting 60% (the bows by
 // the base's arrows: world.js armedFactor).
@@ -198,7 +201,7 @@ export function raidTier(state, base, def, att, hold, brk, kit = null, surprise 
 // in (through) and whether the yard or a last stand in the buildings is expected to stop them (tier: "wall" | "yard" |
 // "buildings" | "overrun").
 export function holdCheck(state, base, size, bosses = 0, mix = null) {
-  const after = Math.max(0, size - spikeKill(base, size) - trapKill(base, size));
+  const after = Math.max(0, size - spikeKill(base, size) - trapKill(base, size) - minesKill(base, size));
   const limit = holdLimit(state, base, bosses);
   // mix: the horde's special dead (h.mix): they press the walls by their weight (wallWeight).
   const wm = mixWeight(mix, "wall");
@@ -236,6 +239,13 @@ export function hordeAttackBase(state, h, base) {
     base.buildings = base.buildings.filter((b) => b.type !== "spike_pits");
     notes.push(`The spike pits took about ${k}.`);
     if (reduceHorde(state, h, k)) { log(state, `A horde ran onto the spike pits at ${base.name} and was torn apart. ${notes.join(" ")}`, "good"); return; }
+  }
+  // Land mines (mines.js): the dead set them off on the way in, MINES.KILL each; the rest stay buried (the battle map).
+  const boom = minesKill(base, h.size);
+  if (boom) {
+    spendMines(base, Math.ceil(boom / MINES.KILL));
+    notes.push(`The minefield took about ${boom}${minesLeft(base) ? ` (${minesLeft(base)} mines left)` : " (every mine gone off)"}.`);
+    if (reduceHorde(state, h, boom)) { log(state, `A horde walked into the minefield at ${base.name} and was blown apart. ${notes.join(" ")}`, "good"); return; }
   }
   // The defence kit in the armory: bear traps catch a few; the wire and traps count for this attack (and the map),
   // then wear (a roll of wire torn up, some traps broken).
@@ -691,5 +701,6 @@ export function defenceWishes(state, base, threat) {
   if (!count(base, "floodlights") && base.type === "hub") add("floodlights", "floodlights for night attacks");
   if (!count(base, "razor_wire") && count(base, "barbed_wire")) add("razor_wire", "concertina wire beyond the barbed wire");
   if (!count(base, "guard_towers") && base.type === "hub" && count(base, "walls")) add("guard_towers", "guard towers on the wall");
+  if (count(base, "minefield") < 2 && base.type === "hub") add("minefield", "a minefield on the approach");
   return out;
 }

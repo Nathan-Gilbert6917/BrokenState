@@ -46,6 +46,7 @@ import {
   factionById, baseById, survivorById, makeSurvivor, RADIO_RANGE, supplyValue, armedFactor, spendShots, arrowsBack,
 } from "./world.js";
 import { spawnAiParty, sendHelpSquad, removeParty, awaitOrders, tileLabel } from "./parties.js";
+import { raidMines } from "./mines.js"; // a minefield on a raid's way in
 import { baseWalls, count, isCamp } from "./buildings.js"; // a camp (staging.js): only its own tile, a light raid target
 import { radioBasesInRange, removeBase, localId } from "./world.js";
 import { goodwillMult } from "./traits.js"; // Diplomatic: goodwill gains and losses
@@ -776,6 +777,9 @@ function resolveRaidOnPlayerNow(state, party, opts = {}) {
   const def = baseDefense(state, base, caught) + allies.power;
   const att = party.strength + raidTurretPower(state, party) + (baseWalls(base) ? wallPower(state, f, raidCount(f, party.strength)) : 0); // vehicles.js: the Humvee and its M2 if the raid brought it; arsenal.js: launchers against walls
   if (allies.names.length) log(state, `Fighters from ${allies.names.join(" and ")} came to help defend ${base.name}.`, "good");
+  // mines.js: the minefield on their way in (fought on the map, the mines are settled there instead).
+  const mined = beaten ? { used: 0, dead: 0 } : raidMines(state, base);
+  if (mined.used) { f.pop = Math.max(0, f.pop - mined.dead); log(state, `${f.name} raiders ran into the minefield at ${base.name}: ${mined.used} mine${mined.used === 1 ? "" : "s"} went off${mined.dead ? `, ${mined.dead} of them killed` : ""}.`, "good"); }
   const shot = beaten ? { ammo: 0, arrows: 0 } : spendShots(base.stock, people, 3); // 3 a head: the bows' in arrows, the rest's in ammo
   // The walls, the yard and the buildings (defences.js raidTier): held at the wall, a break-in pushed back from the
   // yard or the buildings, or overrun.

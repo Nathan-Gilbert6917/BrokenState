@@ -1674,6 +1674,17 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
       ctx.beginPath(); ctx.ellipse(X, Y - t * 2 * S, (1 + t * 2.5) * S, (0.6 + t * 1.5) * S, 0, 0, Math.PI * 2); ctx.stroke();
     }
   }
+  // Your base's land mines (sim/mines.js): a small dark plate with a red pin on each one still in the ground. Only your
+  // people know where they are; the attackers see nothing.
+  if (b.mines) for (let i = 0; i < b.cells.length; i++) {
+    if (!b.cells[i].mine) continue;
+    const x = i % b.w, y = (i - x) / b.w;
+    const [X, Y] = project(x + 0.5, y + 0.5, tileTop(b, x, y));
+    ctx.fillStyle = "rgba(40,36,30,0.85)";
+    ctx.beginPath(); ctx.ellipse(X, Y, 3.2 * S, 1.8 * S, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "rgba(230,60,50,0.95)";
+    ctx.beginPath(); ctx.ellipse(X, Y - 0.6 * S, 0.9 * S, 0.6 * S, 0, 0, Math.PI * 2); ctx.fill();
+  }
   // A Shepherd's aura (sim/decoys.js): the dead inside ignore decoys and fire.
   for (const a of OV.auras) {
     if (!vis[a.y * b.w + a.x]) continue;
