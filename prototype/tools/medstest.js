@@ -96,7 +96,10 @@ function raidRate(type, n) {
     st.combat = null;
     if (!b.over) continue;
     const m = b.result.loot.supplies.meds || 0;
-    o.raids++; o.meds += m; o.biggest = Math.max(o.biggest, m); o.searched += (b.result.raid && b.result.raid.searched) || 0;
+    // Containers the bot opened (looked into at least once): the raid's own count (b.result.raid.searched) is the places
+    // searched out, and a shop's shelves are seldom that since food by type (a shelf's cans outweigh what the packs
+    // will take: "No room for the rest (left inside)"), so it would count a container as searched only once emptied.
+    o.raids++; o.meds += m; o.biggest = Math.max(o.biggest, m); o.searched += b.raid ? b.raid.containers.filter((c) => c.kind !== "body" && c.kind !== "ground" && (c.searched || c.contents)).length : 0;
   }
   return o;
 }

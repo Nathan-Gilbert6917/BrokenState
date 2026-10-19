@@ -198,6 +198,12 @@ export function hordesHour(state) {
   towerWatch(state); // defences.js: a watchtower sees a horde near: its alarm (work.js moves backup guards up)
 }
 
+// After a horde's attack on an AI group's base (onHordeEnter): fn(state, f, h, { att, def, held, through, role }), through
+// the dead that broke in (0 when the walls held), role the horde's before the attack ("attack": sent against the base).
+// hardcore-groups.js: the besieged military loses soldiers to the dead inside its wire.
+const groupBaseHitHooks = [];
+export const onGroupBaseHit = (fn) => { groupBaseHitHooks.push(fn); };
+
 function onHordeEnter(state, h) {
   if (!state.hordes.includes(h)) return;
   hordeMilitaryPickup(state, h); // deadsoldiers.js: crossing a military site, some of its dead soldiers fall in
@@ -211,20 +217,21 @@ function onHordeEnter(state, h) {
     // Your base's way (defences.js hordeAttackBase; docs/adr/0001-ai-parity.md): the walls hold back the dead up to
     // their limit (the base's defence against the horde's weight on them); the rest break in and are fought inside,
     // a break-in force of yours (breakInForce), by the numbers on both sides' people (factions.js, groupfight.js).
-    const att = hordeWallPower(h), def = baseHold(state, f, h.tile);
-    let held;
+    const att = hordeWallPower(h), def = baseHold(state, f, h.tile), role = h.role; // role: sent against it ("attack") or wandering onto it
+    let held, through = 0;
     if (att <= def) {
       held = true; // the walls held
       f.hitDay = f.hordeHitDay = day(state);
     } else {
       const lim = (h.size * def) / Math.max(0.01, att); // the dead the walls stop
-      const through = Math.min(h.size, Math.max(Math.round(h.size * 0.3), Math.round(h.size - lim * DEFENCE.HELD_BACK)));
+      through = Math.min(h.size, Math.max(Math.round(h.size * 0.3), Math.round(h.size - lim * DEFENCE.HELD_BACK)));
       const force = breakInForce(state, { tile: h.tile }, through, Math.min(2, h.bosses || 0), h);
       held = !!resolveRaidOnFaction(state, { strength: att, owner: null, horde: { count: force.count, power: force.count * force.power }, target: { factionId: f.id, tile: h.tile } }, []);
     }
     if (h.role === "attack") { h.role = "roam"; h.goal = null; }
     h.target = null;
     reduceHorde(state, h, h.size - h.size * (held ? 0.45 : 0.7));
+    for (const fn of groupBaseHitHooks) fn(state, f, h, { att, def, held: !!held, through, role });
     hordeOverrun(state, f, h.tile, att, def, !!held); // groupflight.js: overrun and no hope of holding it, they leave
     return;
   }

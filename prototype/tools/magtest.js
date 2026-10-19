@@ -155,6 +155,7 @@ const rounds = (s, key) => carriedSpots(s).filter((x) => x.item.key === key).red
   check(magShown(b, p) === 14 && magLabel(b, p) === "14/15", "14 in the gun with 3 left in the stock: it shows 14/15 (the rounds in the gun are physical, not a counter against the stock)");
   check(reloadRefusal(b, p) === "" && reloadPlan(b, p).mode === "swap" && reloadPlan(b, p).n === 15, "a loaded spare left in a pocket: a Reload would swap it in (the 14 would go to the pocket with the magazine)");
   for (const m of p.mags) if (m.where !== "gun") m.item.stack = []; // (the test empties both spares)
+  for (const it of boxesOf(a)) it.dur = 0; sweepBoxes(a); // (and the magazine's worth at hand the defence took from the stock as the fight began: combat.js, carrykit.js looseWant)
   refitKit(b, p, a);
   const why = reloadRefusal(b, p);
   check(/^No ammo to load: no loaded spare magazine, and no rounds for the 9mm pistol/.test(why) && /none in their pockets, rig or pack/.test(why) && /The base's 3 are in its stock, not to hand in a fight/.test(why), `no loaded spare and nothing loose on them: refused, the base's 3 named as out of reach ("${why}")`);
@@ -382,6 +383,7 @@ const rounds = (s, key) => carriedSpots(s).filter((x) => x.item.key === key).red
   check(logHas(b, /loads the assault rifle[^:]*with 5\.56 NATO armour-piercing \(30\/30\): a magazine from the pack; the other goes there empty\./) && a.gear.backpack.contents[0].key === "mag_stanag_20" && stackN(a.gear.backpack.contents[0].stack) === 0, `the log names the switch; the emptied 20-round magazine lies in the pack ("${lastLog(b)}")`);
   // No loaded spare left and nothing loose on them: refused (the base's 60 AP in its stock are not a source).
   b.phase = "player"; loadMag(p, 3); p.ap = 1;
+  for (const it of boxesOf(a)) it.dur = 0; sweepBoxes(a); refitKit(b, p, a); // (the magazine's worth at hand the defence took from the stock as the fight began is spent: combat.js, carrykit.js looseWant)
   const none = reloadRefusal(b, p);
   check(/^No ammo to load: no loaded spare magazine, and no rounds for the assault rifle/.test(none) && /The base's 60 are in its stock, not to hand in a fight/.test(none) && combatAct(st, { type: "reload", unit: p.id }) !== "" && p.ap === 1 && p.mag === 3, `no loaded spare and nothing loose on them: refused, nothing spent ("${none}")`);
   // Loose rounds in the pack: a top-up by hand, 6 a Reload, both actions.
@@ -507,6 +509,7 @@ const rounds = (s, key) => carriedSpots(s).filter((x) => x.item.key === key).red
     const b2 = openBattle(st2, [a2], { kind: "raiders", count: 1, power: 3 });
     const p2 = mine(b2), e2 = foes(b2)[0];
     place(p2, 5, 5); place(e2, 10, 5); toughen(e2);
+    for (const it of boxesOf(a2)) it.dur = 0; sweepBoxes(a2); refitKit(b2, p2, a2); // (nor the magazine's worth at hand the defence took from the stock as the fight began: combat.js, carrykit.js looseWant)
     UI.cui.sel = p2.id;
     loadMag(p2, 0);
     html = UI.renderCombatScreen(st2);

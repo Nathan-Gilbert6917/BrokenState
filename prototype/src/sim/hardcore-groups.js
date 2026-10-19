@@ -76,7 +76,7 @@ import { hash01 } from "./skills.js";
 import { haulFor, AISCAV, groupNeeds } from "./aiscav.js";
 import { poisOf, poiPool, permanentSite } from "./pois.js"; // points of interest: the camp's, one a day
 import { bestGroupPoi, groupWouldSurvey, groupSurveyTile, raidPoiAsGroup } from "./grouppois.js"; // the groups' picker, survey and raid
-import { reduceHorde, makeHorde } from "./hordes.js";
+import { reduceHorde, makeHorde, onGroupBaseHit } from "./hordes.js";
 import { mergeMix } from "./zombietypes.js";
 import { worldScale } from "./worldsize.js";
 import { chronicleNote } from "./chronicle.js";
@@ -121,6 +121,7 @@ export const HC_MILITARY = {
   // The garrison that stayed.
   GARRISON_BREAK: 0.65, BREAK_MIN: 8,
   SORTIE_RANGE: 6, SORTIE_CHANCE: 0.3, SORTIE_KILL: [0.6, 1.2], SORTIE_LOSS: 0.25,
+  BREACH_LOSS: 0.01,  // soldiers lost to the dead that break through the wire, a share of them (at least one)
   CULL_GAP: [10, 16], CULL_RANGE: 12, CULL_RES: [2, 5], CULL_GUARD: [0.1, 0.2], CULL_MASS: [0.08, 0.16], CULL_LOSS: 0.4,
   HELP_AT: 0.85, EVAC_AT: 0.7, SUPPLY_DAYS: 14, MEDS_POP: 2,
   // The fall, and the groups it leaves.
@@ -413,6 +414,7 @@ function arriveAt(state, b) {
 
 // ---------- the hour (hardcore.js) ----------
 export function hardcoreGroupsHour(state) {
+  hookHordes(); // hordes.js: the military's losses to the dead inside its wire
   if (!isHardcore(state) || !state.hardcore || !state.hardcore.groups) return;
   const live = state.live || new Set();
   for (const b of [...bandsOf(state)]) {
@@ -759,6 +761,27 @@ function militaryDaily(state) {
   // Too few left to hold the walls: the base is overrun.
   if (f.pop <= breakPop) militaryFalls(state, f, "overrun");
 }
+
+// The dead inside the wire (hordes.js onGroupBaseHit): a horde the hive by the base sends that breaks through the walls
+// costs the garrison BREACH_LOSS of the dead that got in (at least a soldier) even when it is cut down. The fight by
+// the numbers alone (groupfight.js) seldom costs riflemen behind walls a life, and that hive's hordes are what wear the
+// garrison down (hardcore-outbreak.js: bigger each time, so the base gives way about the overrun day). A fight lost
+// already took its toll; a horde that wandered onto the base, or another hive's, costs nothing more.
+function militaryBreach(state, f, h, { held, through, role }) {
+  const m = hcMilitary(state);
+  if (!m || m.fell || !f || f.id !== m.id || !f.alive || !held || !(through > 0) || role !== "attack") return;
+  const O = hcOutbreak(state), mil = O && O.mil, hv = h.hive != null ? hiveById(state, h.hive) : null;
+  if (!mil || mil.stood == null || !hv || hv.tile !== mil.tile) return;
+  const dead = Math.min(Math.max(0, f.pop), Math.max(1, Math.round(through * M.BREACH_LOSS)));
+  if (!dead) return;
+  f.pop -= dead; m.lost += dead;
+  f.lossAt = m.tile; // members.js: the dead were the people there
+  if (f.known) log(state, `The dead broke through the wire at ${tileLabel(state, m.tile)}: ${f.name} cut down about ${through} inside, losing ${dead === 1 ? "a soldier" : `${dead} soldiers`}.`, "danger");
+}
+// Registered once a hardcore world ticks (hardcoreGroupsHour), not at load: hordes.js is still loading when this
+// module is (the import chain comes round), so a call at the top level would find its binding not yet made.
+let hooked = false;
+function hookHordes() { if (hooked) return; hooked = true; onGroupBaseHit(militaryBreach); }
 
 // ---------- the strike on the city hive ----------
 const STRIKE_OUT = ["travel", "fight", "retreat", "holed", "home"]; // phases while the strike force is out (not back, not gone)

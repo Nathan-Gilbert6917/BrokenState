@@ -16,9 +16,11 @@ let fail = 0;
 const check = (ok, msg) => { console.log(`${ok ? "ok  " : "FAIL"} ${msg}`); if (!ok) fail++; };
 const t0 = Date.now();
 
-// Keeps your side alive and fed (this test is about the other groups, not your start): health and food topped up.
+// Keeps your side alive and fed (this test is about the other groups, not your start): health, mood and food topped
+// up (a refugee team left standing on the road for a hundred days sinks to rock bottom and takes its own life:
+// mentalbreaks.js, morale.js).
 function keepAlive(s) {
-  for (const x of s.survivors) if (x.alive) x.health = Math.max(x.health, 80);
+  for (const x of s.survivors) if (x.alive) { x.health = Math.max(x.health, 80); if (Number.isFinite(x.mood)) x.mood = Math.max(x.mood, 60); x.lowDays = 0; }
   for (const b of s.bases) { setFood(b, Math.max(food(b) || 0, 60)); b.stock.water = Math.max(b.stock.water || 0, 60); }
   for (const p of s.parties) if (p.owner === "player" && p.supplies) { setFood(p, Math.max(food(p) || 0, 10)); p.supplies.water = Math.max(p.supplies.water || 0, 10); }
 }
@@ -251,6 +253,10 @@ for (const seed of MSEEDS) {
   s.hordes.length = 0;
   s.hiveInfo.nextBorderDay = 9999;
   if (s.hardcore.outbreak) s.hardcore.outbreak.mil = null; // no hive by the base either (hardcore-outbreak.js)
+  // ... and none rising over the 90 days: the outbreak's hives to come (its pending sites and the masses already
+  // gathering) are off too, else a hive stands near the base within weeks, the Guard shells it and bleeds for it.
+  if (s.hardcore.outbreak) s.hardcore.outbreak.pending.length = 0;
+  s.hiveSites.length = 0;
   const mil = s.factions.find((f) => f.type === "military");
   const pop0 = mil.pop;
   runDays(s, 90);
