@@ -49,7 +49,7 @@ import { RAW, keyWord } from "./water.js";
 import { isRoundKey, totalRounds, ROUND_KEYS, roundOf, spendAmmo, baseKey } from "./rounds.js"; // rounds by calibre
 import { kindShare, kindTheme, kindMix, expandAmmo, partyCals, baseCals, wantedKey, dealRounds, holderCals } from "./ammo.js";
 import { radioTradeContext, radioTradeProblem, bookRadioTrade, matchGear, sameGear } from "./radiotrade.js"; // the trade window over the radio
-import { intoArsenalFromShelf, shelfSurplus } from "./arsenal.js"; // group arsenals: the guns you sell them they use; their surplus is for sale
+import { intoArsenalFromShelf, shelfSurplus, kitClass } from "./arsenal.js"; // group arsenals: the guns you sell them they use; their surplus is for sale
 import { swapGun } from "./gundist.js";
 import { groupMachineCount, groupMachParts } from "./groupworks.js"; // freezer-parts: their machines want spare parts // the gun distribution: which gun a group's shelf holds
 import { note, goodsRounds } from "./ledger.js"; // the conservation test's ledger (off in play)
@@ -215,12 +215,15 @@ export function buyPrice(state, f, key, speech, qty = 1) {
 }
 // Gear: worth × kind and state × what they hold like it (valuation.js gearNeed; pool = their shelf: their wares
 // unless given, e.g. a caravan's goods; nth = how many like it come before it in the same deal) × spread.
-const gearPool = (f, pool) => pool || f.wares || [];
+// Job kit (arsenal.js isJobKitKey: decoys and flares, packs, a scavenger's tools) is wanted for their parties, not
+// for the shelf: what they hold of its kind on their books counts too, so a group short of decoys pays more for one
+// and one with plenty pays less (arsenal.js jobKitShort: what its jobs need, as you stock up before a trip).
+const gearPool = (f, pool, item = null) => pool || (item && f.arsenal && kitClass(item.key) ? [...(f.wares || []), ...f.arsenal.items.filter((it) => it && kitClass(it.key) === kitClass(item.key))] : f.wares || []);
 export function gearSellPrice(state, f, item, speech, { pool = null, nth = 0 } = {}) {
-  return itemValue(item) * gearInfo(state, f, item).mult * gearNeed(f, itemCat(item.key), heldLike(item, gearPool(f, pool)) + 0.5 + nth) * spread(f, speech).sell;
+  return itemValue(item) * gearInfo(state, f, item).mult * gearNeed(f, itemCat(item.key), heldLike(item, gearPool(f, pool, item)) + 0.5 + nth) * spread(f, speech).sell;
 }
 export function gearBuyPrice(state, f, item, speech, { pool = null, nth = 0 } = {}) {
-  const p = gearPool(f, pool);
+  const p = gearPool(f, pool, item);
   const held = heldLike(item, p) + (p.includes(item) ? 0 : 1); // it is theirs: it counts in what they hold
   return itemValue(item) * gearInfo(state, f, item).mult * gearNeed(f, itemCat(item.key), held - 0.5 - nth) * margin(f) * spread(f, speech).buy;
 }
@@ -260,7 +263,7 @@ export function priceWhy(state, f, what, { pool = null, max = 2 } = {}) {
   const name = catName(catOf(key));
   if (!info.refused) {
     if (gear) {
-      const p = gearPool(f, pool);
+      const p = gearPool(f, pool, what);
       const g = gearNeed(f, itemCat(key), heldLike(what, p) - (p.includes(what) ? 1 : 0) + 0.5); // the others like it
       if (g <= 0.85) out.push({ text: `They already have spare ${name}`, dir: "down", w: Math.abs(Math.log(g)) });
     } else {

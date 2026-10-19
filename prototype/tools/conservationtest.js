@@ -5,6 +5,7 @@
 // or band created with its holdings). Transfers between AI groups cancel out. Also: no item is in two places at once
 // (a group's books hold an item only where one of its people carries it, out with its raid, or as its spare), and no
 // person either (a group's list, a jail, a loan, a band: people move as themselves), each group's head count being its list.
+// And the groups' parties pack for their jobs (loadouts.js packForJob: decoys, flares, packs, tools) under these checks.
 // Usage: node tools/conservationtest.js [seed] [days]
 import { createWorld, tickHour, day } from "../src/sim/world.js";
 import { setAutopilot } from "../src/sim/autopilot.js";
@@ -13,6 +14,7 @@ import { carriedRounds } from "../src/sim/loadouts.js";
 import { isRoundItem } from "../src/sim/itemstack.js";
 import { nomadsOf } from "../src/sim/nomads.js";
 import { roundsIn } from "../src/sim/ledger.js";
+import { isJobKitKey } from "../src/sim/arsenal.js";
 
 const seed = Number(process.argv[2] || 7);
 const DAYS = Number(process.argv[3] || 60);
@@ -126,6 +128,8 @@ st.ledger = { total: 0, by: {} };
 let prev = holdings(st), prevLedger = 0, worst = 0, worstDay = null, bad = 0;
 const lines = [];
 let dupFirst = null, twiceFirst = null, lentSeen = 0;
+const packedSeen = new Set(), packedKit = {};
+let packedParties = 0;
 // TRACE=day1,day2: the writers of rounds into the AI side's stores on those days (a debugging aid).
 const TRACE = new Set(String(process.env.TRACE || "").split(",").filter(Boolean).map(Number));
 const INTERNAL = /collectRounds|armRounds|gatherStores|spreadStores|settleRec|settleGroup/;
@@ -182,11 +186,21 @@ for (let d = 0; d < DAYS; d++) {
   if (!dupFirst) { const dups = duplicates(st); if (dups.length) dupFirst = `day ${day(st)}: ${dups.slice(0, 3).join("; ")}`; }
   if (!twiceFirst) { const tw = peopleTwice(st); if (tw.length) twiceFirst = `day ${day(st)}: ${tw.slice(0, 3).join("; ")}`; }
   lentSeen += ((st.vols && st.vols.aiLoans) || []).reduce((a, L) => a + (L.people || []).length, 0);
+  // The groups' parties packed for their jobs (loadouts.js packForJob): decoys, flares, packs and tools out of their
+  // stores onto the people going, under the same checks (no item in two places, no round from nowhere).
+  for (const p of st.parties) {
+    if (p.owner === "player" || !p.jobs || packedSeen.has(p.id)) continue;
+    packedSeen.add(p.id);
+    const f = st.factions.find((x) => x.id === p.owner);
+    const kit = ((f && f.people) || []).filter((s) => s.alive !== false && s.location && s.location.partyId === p.id).flatMap((s) => allCarried(s)).filter((it) => it && isJobKitKey(it.key));
+    if (kit.length) { packedParties++; for (const it of kit) packedKit[it.key] = (packedKit[it.key] || 0) + 1; }
+  }
 }
 for (const l of lines) console.log(`    ${l}`);
 console.log(`    noted sources: ${Object.entries(st.ledger.by).map(([k, n]) => `${k} ${Math.round(n)}`).join(", ") || "none"}`);
 check(bad === 0, `the AI side never holds more rounds than came in (${bad} day${bad === 1 ? "" : "s"} over${worstDay != null ? `, the worst +${Math.round(worst)} on day ${worstDay}` : ""})`);
 check(!dupFirst, `no item in two places at once${dupFirst ? ` (${dupFirst})` : ""}`);
 check(!twiceFirst, `no person in two places at once, every group's head count its list (${twiceFirst || `${lentSeen} lent-person-days on loans seen`})`);
+check(packedParties > 0, `the groups' parties packed job kit out of their own stores (${packedParties} parties: ${Object.entries(packedKit).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([k, n]) => `${n} ${k}`).join(", ") || "none"}), under the checks above`);
 console.log(`\n${passes} passed, ${fails} failed`);
 process.exit(fails ? 1 : 0);

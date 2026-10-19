@@ -3,7 +3,7 @@
 // Usage: node tools/arsenaltest.js [seed]
 import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, tickHour, day, hub, atBase, killSurvivor, makeSurvivor } from "../src/sim/world.js";
-import { FACTION_TYPES, GEAR } from "../src/sim/data.js";
+import { FACTION_TYPES, GEAR, LOCATIONS } from "../src/sim/data.js";
 import { strength, peopleUp, factionsDaily, resolveRaidOnPlayer, collapseFaction, resolveRaidOnFaction, RAIDS } from "../src/sim/factions.js";
 import { collectRounds } from "../src/sim/loadouts.js";
 import { spawnAiParty } from "../src/sim/parties.js";
@@ -141,7 +141,20 @@ section("Inflows: scavenging finds gear by the site");
   let got = [];
   for (let i = 0; i < 6 && !got.length; i++) { st.hour += 5; got = A.scavFinds(st, f, { scav: { site: site.id, taken: 0.6 } }); }
   check(got.length > 0 && f.arsenal.items.length === n0 + got.length, `a party home from ${site.loc.name} adds ${got.map((x) => x.name).join(", ")}`);
-  check(got.every((it) => (A.isWeaponKey(it.key) || A.isArmourKey(it.key) || A.isThrowKey(it.key)) && it.quality <= 1), "only fighting gear, with its condition by the site");
+  // Fighting gear, and the job kit on the site's list (packs, a crowbar, flares: arsenal.js SCAV_KIT, on its own draw).
+  check(got.every((it) => (A.isWeaponKey(it.key) || A.isArmourKey(it.key) || A.isThrowKey(it.key) || A.isJobKitKey(it.key)) && it.quality <= 1), "only fighting gear and job kit, with its condition by the site");
+  // The job kit is on the books like a gun (A.arsenalWorthy): kept, never put on the shelf; the fighting finds are
+  // drawn as before, the job kit on a draw of its own.
+  const g = typed(st, "commune", [f]);
+  const kit = ["noisemaker", "flare", "crowbar", "hikingpack", "makeshiftpick"].map((k) => newItem(k));
+  for (const it of kit) A.keepItem(st, g, it, "test");
+  check(kit.every((it) => g.arsenal.items.includes(it) && !(g.wares || []).includes(it)), `decoys, a flare, a crowbar, a pack and picks go on the books, not the shelf (${kit.map((x) => x.key).join(", ")})`);
+  const shop = st.tiles.find((t) => t.loc && t.loc.type === "hardware") || st.tiles.find((t) => t.loc && t.loc.type === "garage");
+  if (shop) {
+    let found = [];
+    for (let i = 0; i < 12; i++) { st.hour += 5; found = found.concat(A.scavFinds(st, g, { scav: { site: shop.id, taken: 0.5 } }).filter((it) => A.isJobKitKey(it.key))); }
+    check(found.length > 0 && found.every((it) => (LOCATIONS[shop.loc.type].gear || []).includes(it.key) && g.arsenal.items.includes(it)), `scavengers home from a ${shop.loc.type} bring its job kit onto the books (${[...new Set(found.map((x) => x.key))].join(", ") || "none"})`);
+  }
 }
 
 // ======================================================================================
