@@ -993,12 +993,12 @@ export function launchExpedition(state, opts) {
   state.parties.push(p);
   moveFood(home, p, foodReq, { state }); // foods.js: the lots go with it (what they have left of their shelf)
   packMags(home.armory, members); // carrykit.js: spare magazines for their guns from the armory (rig pouches, pockets, then the pack)
-  // Their guns and spare magazines leave loaded (gunrounds.js loadoutRounds, out of the stores after what was packed),
+  if (opts.shells !== false) packShells(p.supplies, members); // carrykit.js: each shotgunner's shells at hand (a pocket or a rig pouch) out of the packed rounds, so the shotgun reloads without digging in the pack
+  // Their guns and spare magazines leave loaded (gunrounds.js loadoutRounds, out of the stores after what was packed, less the shells packShells just put at hand),
   // as the team-forming window does (teamform.js: it adds them itself, loadout false). With physical rounds (mags.js,
   // 2026-10-18) the guns are filled from the team's bags as a fight starts: without these the "ammo" line would have to
   // fill every gun and magazine before any of it was a reserve, where a gun used to start a fight loaded for nothing.
   if (opts.loadout !== false) for (const [k, q] of Object.entries(loadoutRounds(members, [home.stock]))) { home.stock[k] = (home.stock[k] || 0) - q; p.supplies[k] = (p.supplies[k] || 0) + q; }
-  if (opts.shells !== false) packShells(p.supplies, members); // carrykit.js: each shotgunner's shells at hand (a pocket or a rig pouch) out of the packed rounds, so the shotgun reloads without digging in the pack
   packWater(state, p, home); // worm.js: the un-purified water packed carries the eggs of the base's
   if (opts.tabs) packTablets(state, home, p); // worm.js: a tube of purification tablets for the road (when the armory has one)
   // An assault takes the hub's siege kit along (kit.js packSiegeKit: the ram, ladders, grenades into the cargo, as

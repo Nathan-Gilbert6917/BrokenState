@@ -103,6 +103,7 @@ for (let i = 0; i < Math.max(4, Math.ceil(per / 2)); i++) {
   const res = launchExpedition(state, { memberIds: crew.map((s) => s.id), dest: tile.id, mission: "scavenge", stance: "normal", supplies: { food: 6, water: 6, ammo: 20, arrows: 30, meds: 2 } });
   if (res.error) continue;
   const p = res.party;
+  const rounds0 = totalRounds(p.supplies); // the 20 packed, and any rounds taken for a gun they carry besides the bow (a launch's loadout)
   p.path = [tile.id]; p.idx = 0; p.phase = "engaged";
   const setup = { mode: "raid", tile: tile.id, partyId: p.id, canRetreat: true, ambush: null, handler: "test", enemy: { kind: "mixed", count: 1, power: 3, groups: raidEnemies(state, tile.id) }, raid: { heat0: 5 }, context: {} };
   state.combat = createBattle(state, setup);
@@ -113,7 +114,7 @@ for (let i = 0; i < Math.max(4, Math.ceil(per / 2)); i++) {
   arrowRaids++;
   const r = b.result;
   arrowsShot += r.arrowsUsed; arrowsBack += r.arrowsBack;
-  arrowCheck(r.ammoUsed === 0 && totalRounds(p.supplies) === 20, `bows shoot no ammo in a raid (${r.ammoUsed})`);
+  arrowCheck(r.ammoUsed === 0 && totalRounds(p.supplies) === rounds0, `bows shoot no ammo in a raid (${r.ammoUsed}; ${rounds0} → ${totalRounds(p.supplies)} rounds)`);
   arrowCheck(p.supplies.arrows === 30 - r.arrowsUsed + r.arrowsBack, `the arrows come from the packed supplies (30 - ${r.arrowsUsed} + ${r.arrowsBack} = ${p.supplies.arrows})`);
   arrowCheck(r.arrowsBack === 0 || (r.outcome === "extracted" && r.arrowsBack === Math.round(r.arrowsUsed / 2)), `arrows are picked up only on the way out of a cleared site (${r.outcome}, ${r.arrowsBack} of ${r.arrowsUsed})`);
   arrowCheck(r.outcome === "extracted" || r.arrowsBack === 0, "none after a wipe");
