@@ -63,7 +63,7 @@ import { raidDamage, raidReportCard, RAID_DAMAGE } from "./breakdowns.js";
 import { occupyPlayerBase, razePlayerBase, retreatFrom, nearestOtherBase, CONQUEST, ensureConquest } from "./conquest.js";
 import { controlledLand, ALLIANCE, coalitionMask, isMember as isMemberOf } from "./alliance.js";
 import { gangArms, recruitBonus, gangPopBonus, isLate, ERAS, raidPaceOpen, noteRaid, raidPrep, raidSizeRange } from "./eras.js";
-import { raidTier } from "./defences.js";
+import { raidTier, pitsOnRaid } from "./defences.js";
 import { SURPRISE } from "./watch.js"; // an unwatched night: the raiders get the first move
 import { hcNoRaiders, hcGroupRaidsQuiet } from "./hardcore-groups.js";
 import { raidSiegeKit, kitText } from "./siege.js";
@@ -779,6 +779,9 @@ function resolveRaidOnPlayerNow(state, party, opts = {}) {
   if (allies.names.length) log(state, `Fighters from ${allies.names.join(" and ")} came to help defend ${base.name}.`, "good");
   // mines.js: the minefield on their way in (fought on the map, the mines are settled there instead).
   const mined = beaten ? { used: 0, dead: 0 } : raidMines(state, base);
+  // defences.js: raiders who fall into the spike pits on the way in.
+  const pitDead = beaten || !count(base, "spike_pits") ? 0 : pitsOnRaid(state, base);
+  if (!beaten && count(base, "spike_pits")) { f.pop = Math.max(0, f.pop - pitDead); log(state, `${f.name} raiders blundered into the spike pits at ${base.name}${pitDead ? `: ${pitDead} of them killed on the stakes` : ", hurt but alive"}.`, "good"); }
   if (mined.used) { f.pop = Math.max(0, f.pop - mined.dead); log(state, `${f.name} raiders ran into the minefield at ${base.name}: ${mined.used} mine${mined.used === 1 ? "" : "s"} went off${mined.dead ? `, ${mined.dead} of them killed` : ""}.`, "good"); }
   const shot = beaten ? { ammo: 0, arrows: 0 } : spendShots(base.stock, people, 3); // 3 a head: the bows' in arrows, the rest's in ammo
   // The walls, the yard and the buildings (defences.js raidTier): held at the wall, a break-in pushed back from the

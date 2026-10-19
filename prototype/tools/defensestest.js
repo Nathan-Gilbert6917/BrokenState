@@ -19,7 +19,8 @@ import { newItem, ensureInv } from "../src/sim/inventory.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
 import { renderModal } from "../src/ui/ui.js";
 import { MINES, minesLeft, minesKill, spendMines, settleMines, raidMines } from "../src/sim/mines.js";
-import { hordeAttackBase, holdCheck } from "../src/sim/defences.js";
+import { hordeAttackBase, holdCheck, pitsOnRaid } from "../src/sim/defences.js";
+import { SPIKES } from "../src/sim/combat.js";
 import { makeHorde } from "../src/sim/hordes.js";
 
 const seed = Number(process.argv[2] || 7);
@@ -247,6 +248,41 @@ console.log("Trenches slow the dead more than the living");
   moveAlong(b, z, [[6, 9], [7, 9], [8, 9]]);
   check(z.x === 7 && z.ap === 0, "the dead: the rest of their turn lost");
   check(CELL.trench.trap === "trench" && BUILDINGS.trench.size === "camp" && BUILDINGS.trench.max === 2, "any base digs a trench, two lines at most");
+}
+
+console.log("Spike pits hurt raiders too");
+{
+  const st = world();
+  const b = field(st);
+  const u = b.units.find((x) => x.side === "player"), e = b.units.find((x) => x.side === "enemy");
+  e.x = 5; e.y = 5; e.ap = 2; at(b, 7, 5).k = "spikes";
+  const hp0 = e.hp;
+  moveAlong(b, e, [[6, 5], [7, 5], [8, 5]]);
+  check(e.x === 7 && e.hp < hp0 && e.ap > 0, `a raider falls in: hurt (−${Math.round(hp0 - e.hp)}), the move ends in the pit, the next action kept to climb out`);
+  u.x = 5; u.y = 8; u.ap = 2; at(b, 7, 8).k = "spikes";
+  const hp1 = u.hp;
+  moveAlong(b, u, [[6, 8], [7, 8], [8, 8]]);
+  check(u.x === 8 && u.hp === hp1, "one of yours walks over the pit: they know where it is");
+  const z = { ...e, id: 997, kind: "zombie", name: "Walker", hp: 60, maxHp: 60, x: 5, y: 11, ap: 2, dead: false, down: false };
+  b.units.push(z);
+  at(b, 7, 11).k = "spikes";
+  moveAlong(b, z, [[6, 11], [7, 11], [8, 11]]);
+  check(z.hp < 60 && z.hp >= 60 - SPIKES.DEAD[1], "one of the dead is impaled as before");
+  // The raid's battle map has the pits standing (a horde's had them used up on the way: defences.js).
+  st.combat = null;
+  const st2 = world();
+  const h2 = hub(st2);
+  addBuilding(h2, "walls"); addBuilding(h2, "spike_pits"); addBuilding(h2, "spike_pits");
+  const b2 = raid(st2, h2);
+  check(cells(b2, "spikes") >= 5, `a raid on a walled base meets the pits (${cells(b2, "spikes")} cells)`);
+  st2.combat = null;
+  const st3 = world();
+  const h3 = hub(st3);
+  addBuilding(h3, "spike_pits");
+  check(cells(raid(st3, h3), "spikes") >= 3, "and without a wall, across the yard's approach");
+  let dead = 0;
+  for (let i = 0; i < 200; i++) dead += pitsOnRaid(st3, h3);
+  check(dead > 60 && dead < 140 && count(h3, "spike_pits") === 1, `a raid by the numbers loses a raider half the time a pit (${dead} in 200), the pits stay`);
 }
 
 console.log("Cancelling a wall upgrade");
