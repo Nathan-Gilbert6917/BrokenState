@@ -4388,11 +4388,17 @@ export function combatAct(state, act) {
       const pick = Array.isArray(act.rounds) ? { rounds: act.rounds } : act.mag != null ? { mag: act.mag } : act.clip != null ? { clip: act.clip, load: act.ammo || null } : act.ammo || null;
       if (u.gunner && u.ap < TURRET.RELOAD_AP) return "A new belt takes both actions."; // (before a double feed is cleared by it)
       if (u.ap < reloadCost(b, u, pick) && !u.jam) return reloadRefusal(b, u, pick) || "Not enough actions left to reload."; // mags.js: from the pack: 2 actions
+      const dbl = u.jam && u.jam.kind === "double" ? u.jam : null;
       jamReload(b, u); // gunfire.js: a double feed is cleared by dropping the magazine (then this reload fills a fresh one)
+      // Physical rounds (mags.js): the plan must still see the double feed (a fresh magazine goes in over the jammed
+      // one, full or not), so the jam is cleared once the reload is made, not before it is planned.
+      const held = dbl && !u.jam && isStacked(u);
+      if (held) u.jam = dbl;
       const why = reloadRefusal(b, u, pick);
       if (why) return why;
       if (u.ap < reloadCost(b, u, pick)) return "Not enough actions left to reload.";
       reload(b, u, pick);
+      if (held) u.jam = null;
       if (u.gunner) { u.ap = 0; afterTurretReload(b, u); }
       if (isStacked(u) && u.sid != null) { const s = survivorById(state, u.sid); if (s) tidyRounds(b, u, s); } // the rounds left their stacks (mags.js): emptied ones thrown away, the caches refit
       break;
