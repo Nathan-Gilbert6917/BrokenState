@@ -343,12 +343,14 @@ console.log("Blueprints: locks, finding, studying");
 console.log("Crash events");
 {
   // Timing over a long quiet run. The hub starts bare (barestart) and a hub left to itself with nothing built falls
-  // to crowding within weeks, so it gets what the old start had standing and lasts the 120 days.
+  // to crowding within weeks, so it gets what the old start had standing and lasts the 120 days. Its cards go
+  // unanswered, so its people are kept from losing hope (morale.js): a colony that walks away stops the crashes too.
   const st = createWorld({ seed, factionCount: 6 });
   st.started = true;
   for (const t of ["farm_plot", "farm_plot", "craftbench", "bunkhouse", "walls"]) addBuilding(hub(st), t);
   const seen = [];
   for (let k = 0; k < 24 * 120; k++) {
+    if (k % 24 === 0) for (const s of st.survivors) if (s.alive) s.mood = Math.max(s.mood, 50);
     tickHour(st);
     st.cards.length = 0;
     if ((st.crashSeq || 0) > seen.length) seen.push(day(st));
