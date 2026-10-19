@@ -37,7 +37,7 @@ A map of the game's major features, for agents getting oriented. Built from the 
 - **Cooking**: Rimworld-style recipes from ingredients, food poisoning and the kitchen [cooking, kitchen].
 - **Farming** with crops, plots, seasons and greenhouses [farming].
 - **Hunting, snares, fishing and foraging** [hunting, foraging].
-- **Woodcutting and heating**: firewood first, then fuel [woodcutting].
+- **Woodcutting and heating**: firewood first, then fuel; every fire burns it (a camp's or shelter's fire by the hour for its people's warmth, boiling and the pot; the night's fire at every base on a cool night, the whole day's heating in the frost; the boiler and the Kitchen's stove) [woodcutting, upkeep, needs].
 - **Job trips**: outdoor workers walk out to the base's land, with events for a lone worker and gear handed out for those trips [jobtrips, tripland, tripevents, tripgear].
 - **Crafting**: hand crafting plus standing production orders/bills [crafting, production]. A recipe can make a stack (`CRAFTS[k].n`, makeshift picks: three a craft) that joins one of the same thing in the armory or on the team [crafting `craftItem`, `craftingHour`, `fieldCraft`; production `craftOrderHave` counts the stack; itemstack `mergeInto`].
 - **Power**: generators and an ethanol still [power].

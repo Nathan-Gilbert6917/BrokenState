@@ -25,7 +25,7 @@ import { statusesOf } from "../src/sim/status.js";
 import { moodWork } from "../src/sim/morale.js";
 import { hubUpkeepDaily } from "../src/sim/hubevents.js";
 import { newItem } from "../src/sim/inventory.js";
-import { dayMeanTemp, foodNeedFactor, thirstAt } from "../src/sim/weather.js";
+import { dayMeanTemp, dayLowTemp, foodNeedFactor, thirstAt } from "../src/sim/weather.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
 import { upkeepLine } from "../src/ui/farming.js";
 
@@ -318,16 +318,20 @@ function team(st, n, supplies) {
   console.log("Heating fuel per head");
   const st = W();
   const h = quietHub(st);
-  let cold = null, bitter = null, warm = null;
-  for (let d = 0; d < 112 * 2 && (cold == null || bitter == null || warm == null); d++) {
-    const t = dayMeanTemp(st, d);
+  let cold = null, bitter = null, warm = null, chill = null;
+  for (let d = 0; d < 112 * 2 && (cold == null || bitter == null || warm == null || chill == null); d++) {
+    const t = dayMeanTemp(st, d), lo = dayLowTemp(st, d);
     if (cold == null && t < 0 && t >= -8) cold = d;
     if (bitter == null && t < -8) bitter = d;
-    if (warm == null && t > 2 && d > 3) warm = d;
+    if (warm == null && t > 2 && lo >= HEAT.chillAt && d > 3) warm = d;
+    if (chill == null && t > 2 && lo < HEAT.chillAt && d > 3) chill = d;
   }
   const n = residents(st, h.id).length;
   st.hour = warm * 24 + 1;
-  check(heatRate(st) === 0 && heatUse(st, h).total === 0, "above 0°C: no heating");
+  check(heatRate(st) === 0 && heatUse(st, h).total === 0, "a warm day and night: no heating");
+  // fire-nights: a cool night (under HEAT.chillAt) above freezing burns the night's share of a freezing day's heating.
+  st.hour = chill * 24 + 1;
+  check(near(heatRate(st), HEAT.fuel * HEAT.night) && near(heatUse(st, h).total, n * HEAT.fuel * HEAT.night) && heatUse(st, h).night, `a cool night (low ${dayLowTemp(st, chill)}°C): the night's fire, ${HEAT.night} of a freezing day's (${heatUse(st, h).total} fuel's worth for ${n})`);
   st.hour = cold * 24 + 1;
   const u = heatUse(st, h);
   check(near(u.each, HEAT.fuel) && near(u.total, n * HEAT.fuel), `below 0°C: ${u.text}`);

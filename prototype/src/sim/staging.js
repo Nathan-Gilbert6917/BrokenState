@@ -38,6 +38,7 @@ import { markDeathSite, markAbandonedVehicle } from "./markers.js";
 import { startTask } from "./orders.js";
 import { BUILDINGS, SHELTER, CAMP, isShelter, isCamp, tierUpJob, tierUpJobFor, retypeCampJob, tierUpType, gatherRows, gatherShort, underAttack } from "./buildings.js";
 import { fireLit, FIRE, shelterHeat } from "./fieldheat.js";
+import { fireDayBurn } from "./woodcutting.js"; // the fire's burn a day (fire-nights): the base window's Fire row
 import * as Weather from "./weather.js";
 import { partyMembers, partyTile, tileLabel, teamName, awaitOrders, outpostName, settleInto, carryCapacity } from "./parties.js";
 import { firstHubPending, hubFounded } from "./hardcore-start.js";
@@ -416,7 +417,7 @@ export function stagingView(state) {
 export function shelterView(state, base) {
   if (!isShelter(base)) return null;
   const h = shelterHeat(state, base);
-  const v = { fire: fireLit(base), heat: h, water: waterText(state, base.tile), riverside: besideWaterSource(state, base.tile), tier: tierInfo(state, base), camp: isCamp(base) };
+  const v = { fire: fireLit(base), burn: fireDayBurn(state, base), heat: h, water: waterText(state, base.tile), riverside: besideWaterSource(state, base.tile), tier: tierInfo(state, base), camp: isCamp(base) };
   if (v.camp) {
     v.people = atBase(state, base.id);
     v.teams = state.parties.filter((p) => p.owner === "player" && partyTile(p) === base.tile && partyMembers(state, p).length);
