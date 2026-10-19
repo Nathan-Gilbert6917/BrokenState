@@ -73,7 +73,7 @@ import { fortAssault, fortSize, assaultBase } from "./fort.js"; // their walled 
 import { assaultDims, CONTACT } from "./battlesize.js";
 import { captivesOf, takeCaptive } from "./conflicts.js";
 import { makeCandidate, offerRecruits } from "./recruits.js";
-import { surrenderPrisoners, prisonersOf } from "./prisoners.js";
+import { surrenderPrisoners, prisonersOf, handOver } from "./prisoners.js";
 import { addBuilding, baseWalls, assignStations, isCamp, retypeCampJob, count as countBuilt } from "./buildings.js"; // countBuilt: assaultForce has its own count
 import { pactsOf, relation } from "./diplomacy.js";
 import { isMember, allianceMembers, ensureAlliance, assaultAllies } from "./alliance.js";
@@ -607,7 +607,7 @@ export function occupyPlayerBase(state, base, f, opts = {}) {
   // Anyone left there (nobody, normally) is gone with it; prisoners of that group walk free; others are left to
   // prisoners.js (a base that is gone).
   for (const s of atBase(state, base.id)) s.location = { kind: "captive", factionId: f.id, tile: base.tile, since: state.hour };
-  for (const pr of [...prisonersOf(state)]) if (pr.at && pr.at.kind === "base" && pr.at.baseId === base.id && pr.factionId === f.id) { state.prisoners.splice(state.prisoners.indexOf(pr), 1); f.pop += 1; }
+  for (const pr of [...prisonersOf(state)]) if (pr.at && pr.at.kind === "base" && pr.at.baseId === base.id && pr.factionId === f.id) handOver(state, pr.id); // prisoners.js: the very person back in their group's list
   // Vehicles left behind, supply runs paused, teams based there go to the hub.
   for (const v of state.vehicles) {
     if (v.loc.kind !== "base" || v.loc.baseId !== base.id) continue;
@@ -679,7 +679,7 @@ export function razePlayerBase(state, base, f) {
   noteBaseLoss(state, base, "razed", f); // causes.js: why it was lost (before the people leave)
   evacuate(state, base, f, f ? `${f.name} burned it` : "it burned");
   for (const s of atBase(state, base.id)) s.location = { kind: "captive", factionId: f ? f.id : null, tile: base.tile, since: state.hour };
-  for (const pr of [...prisonersOf(state)]) if (pr.at && pr.at.kind === "base" && pr.at.baseId === base.id && f && pr.factionId === f.id) { state.prisoners.splice(state.prisoners.indexOf(pr), 1); f.pop += 1; }
+  for (const pr of [...prisonersOf(state)]) if (pr.at && pr.at.kind === "base" && pr.at.baseId === base.id && f && pr.factionId === f.id) handOver(state, pr.id); // prisoners.js: the very person back in their group's list
   const burned = state.vehicles.filter((v) => v.loc.kind === "base" && v.loc.baseId === base.id);
   for (const v of burned) state.vehicles.splice(state.vehicles.indexOf(v), 1);
   for (const job of state.supplyRuns || []) if ((job.originId === base.id || job.destId === base.id) && job.status !== "done" && job.status !== "disbanded") { job.paused = true; job.lastResult = `Day ${day(state)}: ${base.name} was burned down`; }

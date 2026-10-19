@@ -783,14 +783,13 @@ export function prisonersHome(state, party, home) {
   overflow(state, extra);
 }
 
-// A prisoner leaves your hands: back to their group (pop +1), with goodwill if given.
+// A prisoner leaves your hands: back to their group as themselves (their record into its list), with goodwill if given.
 function goHome(state, p, goodwill = 0, why = "") {
   const i = (state.prisoners || []).indexOf(p);
   if (i >= 0) state.prisoners.splice(i, 1);
   const f = factionById(state, p.factionId);
   if (f && f.alive) {
-    if (p.s && p.s.alive !== false) { delete p.s.pending; p.s.role = "member"; addMember(state, f, p.s); } // members.js: the very person back in their group's list
-    else f.pop += 1;
+    if (p.s && p.s.alive !== false) { delete p.s.pending; p.s.role = "member"; addMember(state, f, p.s); } // members.js: the very person back in their group's list (never a head by a number)
     if (goodwill) changeGoodwill(state, f, goodwill, why);
   }
   refreshTeam(state, p);

@@ -111,7 +111,7 @@ const { controlledLand, inviteProblem, allianceMembers } = await import("../src/
 const { KITS } = await import("../src/sim/combat.js");
 const { KIT_OF, starterKit } = await import("../src/sim/arsenal.js");
 const { ARMOUR } = await import("../src/sim/armour.js");
-const { GEAR } = await import("../src/sim/data.js");
+const { GEAR, supWeight } = await import("../src/sim/data.js");
 const { CRAFTS } = await import("../src/sim/crafting.js");
 const { newNeutralGroup, wanderers } = await import("../src/sim/wanderers.js");
 const V = await import("../src/sim/visitors.js");
@@ -319,6 +319,30 @@ section("Surveys and raids through the groups' picker and the container ledger")
     const cont = poisOf(target)[i].cont;
     check(!!cont && cont.last && String(cont.last.by) === String(b.id), "the container ledger names the band (cont.last)");
     check(b.wares.some((w) => w.key === "crowbar") && !cont.mine[key].contents.gear.length && N.nomads(st).stats.leftTaken >= 1, "what your people left in a container went into the band's wares and stock");
+    // The shelf is what they carry (docs/adr/0001-ai-parity.md): nothing is cut off it to fit a size, and what they
+    // cannot carry (their people's loads by your teams' rule: nomads.js bandRoom) stays where it was.
+    const raidAgain = (k2, items) => {
+      cont.mine[k2] = { contents: { sup: {}, gear: items }, hidden: null, quick: false, lock: null, searched: true, partial: false };
+      poisOf(target)[i].pool = 0.06;
+      const r0 = N.nomads(st).stats.raids;
+      for (let k = 0; k < 6 && N.nomads(st).stats.raids === r0; k++) N.campWork(st, b);
+      return N.nomads(st).stats.raids > r0;
+    };
+    b.wares.push(...Array.from({ length: 16 }, () => newItem("cards", 1))); // a shelf well past the old 12
+    const shelf0 = [...b.wares];
+    const room0 = N.bandRoom(st, b);
+    const two = [newItem("flashlight", 1), newItem("bandagekit", 1)];
+    const raided = raidAgain(contKey("street", 2), two);
+    check(raided && shelf0.every((it) => b.wares.includes(it)) && two.every((it) => b.wares.includes(it)) && b.wares.length === shelf0.length + 2,
+      `a shelf of ${b.wares.length} pieces: every piece kept, the new ones added (room ${Math.round(room0)} kg by their people's loads)`);
+    const heavy = newItem("sledge", 1);
+    const keepStock = { ...b.stock };
+    b.stock.scrap = (b.stock.scrap || 0) + Math.ceil(Math.max(0, N.bandRoom(st, b)) / supWeight("scrap")) + 1; // loaded down to what they can carry
+    const k3 = contKey("street", 3);
+    const raided2 = raidAgain(k3, [heavy]);
+    check(raided2 && N.bandRoom(st, b) <= 0 && !b.wares.includes(heavy) && cont.mine[k3].contents.gear.includes(heavy),
+      "loaded to their limit, the sledgehammer stays in the container (as a team of yours leaves what it cannot carry)");
+    b.stock = keepStock;
   }
 }
 
@@ -374,6 +398,26 @@ section("Meeting your teams, trade, fights, camps");
     const v = tradeVerdict(st2);
     const res = v.ok ? executeTrade(st2) : v.reason;
     check(v.ok ? /Traded with/.test(res) : /Not enough|cannot carry|only have/.test(res), `a deal goes through trade.js (${res})`);
+    // Their shelf by trade: what you sell them stays on it, every piece, past any size; more than their people can
+    // carry they turn down (nomads.js bandRoom: your teams' rule), and nothing is thrown away.
+    sv.wares.push(...Array.from({ length: 14 }, () => newItem("cards", 1)));
+    const shelf0 = [...sv.wares];
+    const sell = [newItem("flashlight", 1), newItem("binoculars", 1)];
+    p2.cargo.gear.push(...sell);
+    st2.trade.offerGear = [...sell]; st2.trade.askGear = []; st2.trade.offer = {}; st2.trade.ask = {};
+    const v2 = tradeVerdict(st2);
+    const r2 = v2.ok ? executeTrade(st2) : v2.reason;
+    check(v2.ok && shelf0.every((it) => sv.wares.includes(it)) && sell.every((it) => sv.wares.includes(it) && !p2.cargo.gear.includes(it)) && sv.wares.length === shelf0.length + 2,
+      `sold to them: on their shelf with all ${shelf0.length} pieces it had, nothing cut off (${sv.wares.length} now; ${r2})`);
+    const load = sv.stock.scrap || 0;
+    sv.stock.scrap = load + Math.ceil(Math.max(0, N.bandRoom(st2, sv)) / supWeight("scrap")) + 1;
+    const anvil = newItem("sledge", 1);
+    p2.cargo.gear.push(anvil);
+    st2.trade.offerGear = [anvil];
+    const v3 = tradeVerdict(st2);
+    check(!v3.ok && /They cannot carry/.test(v3.reason || "") && p2.cargo.gear.includes(anvil) && !sv.wares.includes(anvil), `loaded to their limit they turn it down: ${v3.reason}`);
+    sv.stock.scrap = load;
+    st2.trade.offerGear = [];
     endTrade(st2);
     check(!st2.trade && p2.phase === "waiting", "leaving the window: the team waits for orders");
   }

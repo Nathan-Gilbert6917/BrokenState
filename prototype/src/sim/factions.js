@@ -1097,10 +1097,10 @@ function takeOver(state, f, ruins, by) {
     taken.push(r);
   }
   const joiners = state.rng.int(2, 4);
-  // members.js: that many of the broken group's own people go over, with what they carry (the rest scatter).
+  // members.js: that many of the broken group's own people go over, with what they carry (the rest scatter); a
+  // group with nobody left sends nobody (never a head count from nowhere).
   const people = Array.isArray(f.people) ? f.people.filter((s) => s.alive).sort((a, b) => hash01(state.seed, "heir", f.name, personKey(state, a.id)) - hash01(state.seed, "heir", f.name, personKey(state, b.id))).slice(0, joiners) : [];
   if (people.length) { if (!Array.isArray(heir.people)) ensureMembers(state, heir); for (const s of people) moveMember(state, f, heir, s, null, { give: (it) => removeFromArsenal(f, it, "taken", { keepOn: true }), take: (it) => addToArsenal(state, heir, it, "taken") }); }
-  else heir.pop += joiners;
   gatherStores(state, f); // groupbases.js: every base's stores
   for (const k of Object.keys(f.stock)) { const q = Math.floor((f.stock[k] || 0) / 2); if (!(q > 0)) continue; heir.stock[k] = (heir.stock[k] || 0) + q; f.stock[k] -= q; } // half of it moves (the rest is left in the ruins)
   scatterRest(state, f); // members.js: the rest of them leave with what they carry (it is never dealt out twice)

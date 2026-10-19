@@ -44,7 +44,7 @@ import { caravanCard } from "./caravans.js";
 import { tradeSpeech, bookWares, gainXp, USE, hash01 } from "./skills.js";
 import { armsSold } from "./diplomacy.js";
 import { visitorTradeContext, resumeVisitorTrade, tradeBack } from "./visitors.js";
-import { nomadTradeContext, resumeNomadTrade } from "./nomads.js"; // nomad bands, met on the road or at their camp
+import { nomadTradeContext, resumeNomadTrade, bandRoom } from "./nomads.js"; // nomad bands, met on the road or at their camp; what they can carry
 import { RAW, keyWord } from "./water.js";
 import { isRoundKey, totalRounds, ROUND_KEYS, roundOf, spendAmmo, baseKey } from "./rounds.js"; // rounds by calibre
 import { kindShare, kindTheme, kindMix, expandAmmo, partyCals, baseCals, wantedKey, dealRounds, holderCals } from "./ammo.js";
@@ -450,26 +450,30 @@ export const WARES = {
 export const WARE_EXTRAS = {
   commune: { p: 0.7, items: { fishrod: 2, fishnet: 1.5, snarewire: 2, lantern: 1.5, fireaxe: 1, sledge: 0.7, honey: 1.5, tobacco: 1, dewormer: 1 } },
 };
-export const WARES_MAX = 12;
 // Fills a group's gear for sale (sim-side only: uses the world's random numbers). refresh: new stock for the week.
 // The kinds come from the group's list (WARES); the condition from what kind of group it is (itemcond.js: the
 // military's kit kept up, raiders' knocked about), priced by it (valuation.js itemValue).
 export function ensureWares(state, f, refresh = false) {
+  // Outsiders (docs/adr/0001-ai-parity.md): a visitor's goods are what it brought (visitors.js), a nomad band's shelf
+  // is what it carries (nomads.js: what it started with, found, took or bought, weighed by your teams' carry rule:
+  // bandRoom). Nothing is added from nowhere and nothing is cut off the end to fit a size: goods leave a shelf only
+  // by trade, theft or a fight.
+  if (f.outsider) return f.wares || (f.wares = []);
   if (f.wares && !refresh) return f.wares;
-  // A group that lives here (docs/adr/0001-ai-parity.md): its shelf is stocked once, as it is made (a creation seed);
-  // after that it holds only what the group owns and would trade (arsenal.js keepItem, shelfSurplus): nothing new
-  // from nowhere, nothing dropped off the end. Visitors and nomads (outsiders) bring a fresh stock as they come.
-  if (!f.outsider && f.waresSeeded) {
+  // A group that lives here: its shelf is stocked once, as it is made (a creation seed); after that it holds only
+  // what the group owns and would trade (arsenal.js keepItem, shelfSurplus): nothing new from nowhere, nothing
+  // dropped off the end.
+  if (f.waresSeeded) {
     f.wares = f.wares || [];
     for (const it of shelfSurplus(state, f)) if (!f.wares.includes(it)) f.wares.push(it);
     f.waresDay = day(state);
     return f.wares;
   }
-  if (!f.outsider) f.waresSeeded = true;
+  f.waresSeeded = true;
   const rng = state.rng;
   const pool = WARES[f.type] || WARES.traders;
   const n = f.type === "traders" ? rng.int(4, 6) : rng.int(1, 3);
-  const keep = f.outsider ? (f.wares || []).slice(-Math.max(0, WARES_MAX - n)) : [...(f.wares || [])]; // a group that lives here loses nothing off its shelf
+  const keep = [...(f.wares || [])]; // a group that lives here loses nothing off its shelf
   const src = traderSource(f.type);
   for (let i = 0; i < n; i++) {
     const listed = rng.pick(pool);
@@ -486,7 +490,7 @@ export function ensureWares(state, f, refresh = false) {
   keep.push(...gunWares(state, f.type, f.name, day(state))); // gunfinds.js: an over-under, a carbine, a battle rifle now and then (its own dice)
   keep.push(...bookWares(state, f)); // skills.js: now and then a book (its own dice: the rest of the stock is unchanged)
   keep.push(...shelfSurplus(state, f)); // arsenal.js: weapons beyond what their people need (no dice)
-  f.wares = f.outsider ? keep.slice(-WARES_MAX) : keep;
+  f.wares = keep;
   f.waresDay = day(state);
   return f.wares;
 }
@@ -710,6 +714,9 @@ export function tradeTotals(state) {
 
 const weigh = (sup) => Object.entries(sup || {}).reduce((s, [k, q]) => s + Math.max(0, q) * supWeight(k), 0);
 const gearWeight = (list) => list.reduce((s, g) => s + itemLoad(g), 0);
+// Kg an outsider met on the road can still take on: a nomad band by your teams' carry rule (nomads.js bandRoom), a
+// visitor by its capacity less its stores and goods (the same sum as its caravan at your gates, below).
+const outsiderRoom = (state, f) => (f.nomad ? bandRoom(state, f) : (f.capacity || 0) - weigh(f.stock) - gearWeight(f.wares || []));
 const sameMap = (a, b) => {
   const keys = new Set([...Object.keys(a || {}), ...Object.keys(b || {})]);
   for (const k of keys) if ((a[k] || 0) !== (b[k] || 0)) return false;
@@ -744,6 +751,15 @@ export function tradeVerdict(state) {
     const need = weigh(t.ask) + gearWeight(askGear);
     // Only a deal that adds weight is held to it (a team that is already loaded can still hand goods over).
     if (need > room + 1e-9 && need > freed + 1e-9) return out(false, `The team cannot carry that much: what you ask for weighs ${Math.ceil(need)}, and there is room for ${Math.max(0, Math.floor(room))}.`);
+    // Met on the road, outsiders carry what they get the same way (docs/adr/0001-ai-parity.md): a nomad band by your
+    // teams' rule (nomads.js bandRoom: its people's loads, its vehicle), a visitor by its pack animals and wagons
+    // (its capacity, as its caravan at your gates). Nothing they cannot carry is taken and then thrown away.
+    if (f.outsider) {
+      const theirFreed = weigh(t.ask) + gearWeight(askGear);
+      const theirRoom = outsiderRoom(state, f) + theirFreed;
+      const theirNeed = weigh(t.offer) + gearWeight(offerGear);
+      if (theirNeed > theirRoom + 1e-9 && theirNeed > theirFreed + 1e-9) return out(false, `They cannot carry that much: your goods weigh ${Math.ceil(theirNeed)}, and they have room for ${Math.max(0, Math.floor(theirRoom))}.`);
+    }
   } else {
     const c = ctx.caravan;
     const room = c.capacity - weigh(c.goods.supplies) - gearWeight(c.goods.gear) + weigh(t.ask) + gearWeight(askGear);
@@ -868,7 +884,6 @@ export function executeTrade(state) {
   for (const g of offerGear) { moveItem(ctx.myGear, theirGear, g); gave.push(g.name); }
   for (const g of askGear) { moveItem(theirGear, ctx.myGear, g); got.push(g.name); }
   if (ctx.kind !== "caravan") intoArsenalFromShelf(state, f, offerGear); // arsenal.js: the guns and armour they bought go to their fighters
-  if (ctx.kind === "visit" && f.outsider && f.wares.length > WARES_MAX) f.wares.splice(0, f.wares.length - WARES_MAX); // a group that lives here keeps all it bought
   // Intel: the tiles paid for are reported (a team carries the report home, or radios it in when in contact).
   const tiles = intelTiles(state, ctx.center, t.intel);
   if (tiles.length) {
