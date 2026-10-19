@@ -979,6 +979,14 @@ function pickChoice(state, card, opts, p) {
   if (/ patrol$/.test(t)) return find(/^Share news/);
   if (/^Abandoned supply truck/.test(t)) return careful(P) ? find(/^Leave it/) : find(/^Search it/);
   if (/^Crashed military vehicle/.test(t)) return (chance(/^Search it/) >= P.risk ? find(/^Search it/) : null) || find(/^Leave it/);
+  if (/^A swollen creek/.test(t)) return (chance(/^Wade/) >= P.risk ? find(/^Wade/) : null) || find(/^Walk upstream/);
+  if (/^(Wolves|Feral dogs)$/.test(t)) return (chance(/^Back away/) >= P.risk ? find(/^Back away/) : null) || find(/^Throw them/) || find(/^Drive them off/) || find(/^Back away/);
+  if (/^A warning on the road/.test(t)) return (!careful(P) && chance(/^Scout ahead/) >= 0.7 ? find(/^Scout ahead/) : null) || find(/^Mark it/);
+  if (/^A lonely farmhouse/.test(t)) return careful(P) ? find(/^Leave it/) : find(/^Search it/);
+  if (/^(A gone-wild orchard|Brambles in fruit)/.test(t)) return find(/^Pick/);
+  if (/^A roadside gas station/.test(t)) return (p && p.vehicle && !careful(P) ? find(/^Hand-pump/) : null) || find(/^Pick through/);
+  if (/^An overrun camp/.test(t)) return careful(P) ? find(/^Bury/) : find(/^Search the camp/);
+  if (/^A stranger with the worm/.test(t)) return find(/^Leave them food/) || find(/^Move on/);
   if (/^Tempers flare/.test(t)) return (chance(/^Step in/) >= 0.5 ? find(/^Step in/) : null) || find(/^Let them/);
   if (/^Cold feet/.test(t)) return find(/^Convince/);
   if (/^Horde of /.test(t)) return (p && p.vehicle && partyFuelOf(state, p) >= 8 ? find(/^Outrun/) : null) || find(/^Hide/);

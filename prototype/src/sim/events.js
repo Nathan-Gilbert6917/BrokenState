@@ -16,7 +16,7 @@ import { growthsOf } from "./hivetech.js";
 import { GROWTHS } from "./hiveconst.js";
 import { mixWeight, mixText } from "./zombietypes.js";
 import { hordeScore, reduceHorde } from "./hordes.js";
-import { travelEffects, weatherAt } from "./weather.js";
+import { travelEffects, weatherAt, season } from "./weather.js";
 import { makeCandidate, recruitCard } from "./recruits.js";
 import { argumentWeight, argumentPair, relEvent, hasFriendsOnTeam, campfireCard } from "./relations.js";
 import { lootItem } from "./inventory.js";
@@ -62,7 +62,8 @@ function repairDelay(state, p, v, hours) {
   delay(p, hours);
   markRepair(state, p, v, hours, before);
 }
-function addCargo(state, p, key, qty) {
+// mix: the kind of food found (a foods.js MIXES key, or a { key: weight } table of what grows there), "travel" by default.
+function addCargo(state, p, key, qty, mix = null) {
   if (key === "ammo") { // rounds: the common rounds of the team's guns, named by calibre (ammo.js)
     /** @type {Record<string, number>} */
     const got = {};
@@ -72,13 +73,21 @@ function addCargo(state, p, key, qty) {
   }
   if (key === "food" || key === "preserved") { // foods.js: days of food as what is in a crate or a truck (light, keeps), as far as it fits
     let got = 0, short = false;
-    for (const [k, q] of Object.entries(typedFood(state, key === "preserved" ? "keeps" : "travel", qty))) { const t = Math.min(unitsThatFit(cargoRoom(state, p), k), q); if (t < q) short = true; if (t > 0) { addFood(p.cargo, k, t, { state }); got += unitsOf(k, t); } }
+    const items = mix && typeof mix === "object" ? growing(mix, qty) : typedFood(state, mix || (key === "preserved" ? "keeps" : "travel"), qty);
+    for (const [k, q] of Object.entries(items)) { const t = Math.min(unitsThatFit(cargoRoom(state, p), k), q); if (t < q) short = true; if (t > 0) { addFood(p.cargo, k, t, { state }); got += unitsOf(k, t); } }
     return `${Math.round(got * 10) / 10} days of food${short ? " (no room for the rest)" : ""}`;
   }
   const room = cargoRoom(state, p);
   const take = Math.min(unitsThatFit(room, key), qty);
   p.cargo.supplies[key] = (p.cargo.supplies[key] || 0) + take;
-  return take < qty ? `${take} ${key} (no room for the rest)` : `${take} ${key}`;
+  const word = key === "wood" ? "firewood" : key;
+  return take < qty ? `${take} ${word} (no room for the rest)` : `${take} ${word}`;
+}
+// What grows wild (an orchard's apples, brambles' berries): `units` days of food split by the table's weights, in
+// whole items. Not typedFood: it leaves out the kinds only the shops had once the shops are bare, and a tree is no shop.
+function growing(table, units) {
+  const w = Object.values(table).reduce((a, x) => a + x, 0);
+  return Object.fromEntries(Object.entries(table).map(([k, x]) => [k, Math.max(1, Math.round((units * x) / w / unitsOf(k, 1)))]));
 }
 // A choice that costs carried supplies (packed or found). `disabled` is read from what the team carries each
 // time the card is shown, and the cost is checked again and paid when the choice is made: an old card can
@@ -153,6 +162,55 @@ const EVENTS = [
       ],
     }),
   },
+  {
+    // A creek too small for any map, running high after rain or with the spring melt (weather.js). On foot only:
+    // a vehicle keeps to the bridges and culverts.
+    id: "creek", weight: (st, p) => (["rain", "storm"].includes(weatherAt(st, partyTile(p)).key) ? 2.5 : 1),
+    when: (st, p, t) => !p.vehicle && ["plains", "forest", "hills"].includes(t.terrain) && (season(st).key === "spring" || ["rain", "storm"].includes(weatherAt(st, t.id).key)),
+    card: (st, p) => ({
+      title: "A swollen creek",
+      text: "A creek that would be ankle-deep in summer is running brown and fast across the way, carrying branches.",
+      choices: [
+        { label: "Wait for the water to drop (5 hours)", resolve: () => { delay(p, 5); return "By the time it drops the team has eaten, rested and wrung out its socks."; } },
+        { label: "Wade across", hint: `${hint(st, p, "scouting", 8)} to find the shallows; otherwise someone is swept off their feet`, resolve: (s) => check(s, p, "scouting", 8).ok ? "Arm in arm, the team finds a gravel bar and crosses." : (delay(p, 1), `The current takes someone's legs. ${injureRandom(s, p, 5, 16, "swept away in a flooded creek")}`) },
+        { label: "Walk upstream to a narrower place (3 hours)", resolve: () => { delay(p, 3); return "A fallen tree makes a bridge a few miles up."; } },
+      ],
+    }),
+  },
+  {
+    // Wolves in the woods and hills (bolder in winter), feral dogs where the towns and farms were: the same beasts
+    // that trouble the job trips (tripevents.js TRIP_ANIMALS). Not a team in a vehicle: it drives on past them.
+    id: "animals", weight: (st) => (season(st).key === "winter" ? 1.6 : 0.8),
+    when: (st, p, t) => p.vehicle !== true && ["forest", "hills", "mountain", "suburb", "plains"].includes(t.terrain),
+    card: (st, p, t) => {
+      const wolves = ["forest", "hills", "mountain"].includes(t.terrain);
+      const n = wolves ? st.rng.int(3, 6) : st.rng.int(4, 8);
+      const what = wolves ? "wolves" : "feral dogs";
+      const bit = wolves ? "bitten by wolves" : "bitten by feral dogs";
+      return {
+        title: wolves ? "Wolves" : "Feral dogs",
+        text: wolves
+          ? `${n} wolves have been pacing the team for an hour, closer each time they show. With so many dead to scavenge they have lost their fear of people.`
+          : `A pack of ${n} feral dogs, somebody's pets once, spreads out across the way with their hackles up.`,
+        choices: [
+          { label: "Back away", hint: `${hint(st, p, "scouting", wolves ? 8 : 6)}; otherwise they rush in and someone is bitten`, resolve: (s) => check(s, p, "scouting", wolves ? 8 : 6).ok ? (delay(p, 1), `Slowly, facing them, the team backs off until the ${what} lose interest.`) : `They rush in. ${injureRandom(s, p, 5, wolves ? 18 : 12, bit)}` },
+          paid(p, { food: 2 }, { label: "Throw them some food (2 food)", resolve: () => `The ${what} fall on it, snarling at each other, and the team slips away.` }),
+          {
+            label: "Drive them off (uses ammo)", hint: "Loud; safe with shooters and rounds (bows use arrows)", resolve: (s) => {
+              // A shot or two a beast, the bows' in arrows (takeShots); an animal is worth about two of the dead.
+              const members = partyMembers(s, p);
+              const shot = takeShots(p, members, n * 2);
+              const power = members.reduce((a, m) => a + combatPower(m), 0) * armedFactor(members, shot.used, shot.arrows, { need: (k) => (n * k) / Math.max(1, members.length), short: 0.5 });
+              if (power <= n * (wolves ? 1.2 : 0.8)) return `They do not scatter fast enough. ${injureRandom(s, p, 6, wolves ? 20 : 14, bit)}`;
+              const back = arrowsBack(shot.arrows);
+              if (back) p.supplies.arrows = (p.supplies.arrows || 0) + back;
+              return `The ${what} scatter, using ${shot.arrows ? `${roundsText(shot.used)} and ${shot.arrows} arrows (${back} picked up again)` : roundsText(shot.used)}.`;
+            },
+          },
+        ],
+      };
+    },
+  },
   // Zombies
   {
     id: "pack", weight: 5, when: (st, p, t) => t.infection > 0.2,
@@ -202,6 +260,32 @@ const EVENTS = [
       };
     },
   },
+  {
+    // Somebody who got away left a warning: a horde a few tiles off (a horde on the team's own tile is its own card).
+    id: "warning", weight: 1.2, when: (st, p, t) => st.hordes.some((h) => h.tile !== t.id && st.grid.distance(h.tile, t.id) <= 4),
+    card: (st, p, t) => {
+      const near = st.hordes.filter((h) => h.tile !== t.id && st.grid.distance(h.tile, t.id) <= 4).sort((a, b) => st.grid.distance(a.tile, t.id) - st.grid.distance(b.tile, t.id))[0];
+      const mark = (s, list) => { for (const h of list) p.seen.set(h.tile, snapshot(s, h.tile)); }; // on the map when the team reports
+      return {
+        title: "A warning on the road",
+        text: `Someone has painted DEAD AHEAD, TURN BACK across a barn wall in letters a yard high, with an arrow pointing ${compass(st, t.id, near.tile)}. The paint is fresh.`,
+        choices: [
+          { label: "Mark it on the map", hint: "Where the arrow points goes on the map when the team reports", resolve: (s) => { mark(s, [near]); return `The team marks the dead ${compass(s, t.id, near.tile)} of here.`; } },
+          {
+            label: "Scout ahead to see for yourselves (2 hours)", hint: `${hint(st, p, "scouting", 7)}: every horde within 5 tiles goes on the map, with its size; otherwise the dead see you`,
+            resolve: (s) => {
+              delay(p, 2);
+              if (!check(s, p, "scouting", 7).ok) { mark(s, [near]); return `The dead were closer than the paint said. ${injureRandom(s, p, 10, 25, "scouting a horde")}`; }
+              const all = s.hordes.filter((h) => s.grid.distance(h.tile, t.id) <= 5);
+              mark(s, all);
+              if (!all.length) return "From a water tower the team sees only empty fields: whatever was there has moved on.";
+              return `From a water tower the team counts ${all.map((h) => `about ${h.size} ${compass(s, t.id, h.tile)}`).join(", ")}. It all goes on the map.`;
+            },
+          },
+        ],
+      };
+    },
+  },
   // Humans
   {
     id: "traders", weight: 2, when: () => true,
@@ -224,6 +308,29 @@ const EVENTS = [
       const s0 = makeCandidate(st, { quality: 0.85, minHealth: 50 });
       return recruitCard(st, [s0], { source: "loner", partyId: p.id, title: "A survivor alone", intro: `${s0.name} has been living in a hunting stand and asks to come with you.` });
     },
+  },
+  {
+    // A stranger in the worm's last days (worm.js): nobody turns from a bite, but in a day or two the larvae reach the
+    // brain and they will get up. They ask for someone to see it through.
+    id: "wormdying", weight: 1, when: (st, p, t) => t.infection > 0.25,
+    card: (st, p) => ({
+      title: "A stranger with the worm",
+      text: `A stranger sits against a fence post, grey and shaking, eating dry oats by the handful as fast as they can swallow. "It's the worm," they say. "A day or two and it reaches my head. Don't let me get up after. Please."`,
+      choices: [
+        {
+          label: "Stay with them until it is over (5 hours)", hint: "Everyone on the team mood -3; the stranger leaves the team what they carry",
+          resolve: (s) => {
+            delay(p, 5);
+            cheer(partyMembers(s, p), -3);
+            const it = lootItem(s.rng.pick(HIKER_STUFF), "survivor", spend(s.rng));
+            const kept = addGearToCargo(s, p, it) ? it.name.toLowerCase() : "";
+            return `It is over by dusk, and the team makes sure they will not rise. They left the team ${[kept, addCargo(s, p, "ammo", s.rng.int(6, 16))].filter(Boolean).join(" and ")}.`;
+          },
+        },
+        paid(p, { food: 2 }, { label: "Leave them food (2 food)", hint: "Everyone on the team mood +2", resolve: (s) => { cheer(partyMembers(s, p), 2); return "They thank you through chattering teeth."; } }),
+        { label: "Move on", hint: "Everyone on the team mood -2", resolve: (s) => { cheer(partyMembers(s, p), -2); return "Nobody speaks for an hour."; } },
+      ],
+    }),
   },
   {
     id: "patrol", weight: 3, when: (st, p, t) => typeof t.owner === "number" && attitude(factionById(st, t.owner)) !== "Hostile",
@@ -312,6 +419,97 @@ const EVENTS = [
       choices: [{ label: "Open it", resolve: (s) => `Inside: ${addCargo(s, p, "food", 8)}, ${addCargo(s, p, "meds", 2)}, ${addCargo(s, p, "ammo", 20)}.` }],
     }),
   },
+  {
+    // A farmhouse off on its own: a farm's larder and a woodpile, and on infected land whoever lived there may still be in.
+    id: "farmhouse", weight: 1.2, when: (st, p, t) => !t.loc && ["plains", "hills", "forest"].includes(t.terrain),
+    card: (st, p, t) => {
+      const risk = Math.min(0.5, 0.1 + t.infection * 0.4);
+      return {
+        title: "A lonely farmhouse",
+        text: "A farmhouse stands back from the lane, curtains drawn, a tractor rusting in the yard. The door is shut, and nobody answers a knock.",
+        choices: [
+          {
+            label: "Search it (3 hours)", hint: `${hint(st, p, "scavenging", 8)} for the cellar and the woodpile; ${pct(risk)} someone is still home`,
+            resolve: (s) => {
+              delay(p, 3);
+              const hurtTxt = s.rng.chance(risk) ? ` Someone was still home. ${injureRandom(s, p, 8, 25, "searching a farmhouse")}` : "";
+              if (!s.parties.includes(p)) return hurtTxt.trim();
+              const got = check(s, p, "scavenging", 8).ok ? [addCargo(s, p, "food", s.rng.int(4, 7), "farm"), addCargo(s, p, "wood", 60), ...(s.rng.chance(0.4) ? [addCargo(s, p, "meds", 1)] : [])] : [addCargo(s, p, "food", 2, "farm")];
+              return `Found ${got.join(", ")}.${hurtTxt}`;
+            },
+          },
+          { label: "Leave it", resolve: () => "The team leaves the house to whatever is inside it." },
+        ],
+      };
+    },
+  },
+  {
+    // An orchard gone wild in autumn, brambles heavy with berries in summer: fresh food that will not keep long.
+    id: "orchard", weight: 1.5, when: (st, p, t) => !t.loc && ["plains", "hills"].includes(t.terrain) && ["summer", "autumn"].includes(season(st).key),
+    card: (st, p) => {
+      const autumn = season(st).key === "autumn";
+      const grows = autumn ? { f_apples: 10, f_berries: 2 } : { f_berries: 10, f_wildgreens: 3 };
+      return {
+        title: autumn ? "A gone-wild orchard" : "Brambles in fruit",
+        text: autumn ? "Rows of apple trees run down to a broken fence, branches bent with fruit nobody has picked in years. Wasps drone over the windfalls." : "Brambles have swallowed a fence line along the field, black with ripe berries.",
+        choices: [
+          { label: "Pick what you can (2 hours)", hint: "Fresh food: it spoils in days (berries) or weeks (apples)", resolve: (s) => { delay(p, 2); return `The team fills every spare bag: ${addCargo(s, p, "food", s.rng.int(3, 6), grows)}.`; } },
+          { label: "Move on", resolve: () => "The team eats a handful each and walks on." },
+        ],
+      };
+    },
+  },
+  {
+    // A gas station nobody has bothered with: the pumps are dead but the tank under the forecourt may not be.
+    id: "station", weight: 1.5, when: (st, p, t) => t.road && !t.loc && ["plains", "suburb", "hills", "forest"].includes(t.terrain),
+    card: (st, p, t) => {
+      const noise = Math.min(0.6, 0.15 + t.infection * 0.4);
+      return {
+        title: "A roadside gas station",
+        text: "The pumps at a little gas station are dry and the windows long smashed, but the tank under the forecourt may still hold something.",
+        choices: [
+          {
+            label: "Hand-pump the underground tank (3 hours)", hint: `${hint(st, p, "mechanics", 9)}: 4 to 8 fuel; noisy, ${pct(noise)} it draws the dead`,
+            resolve: (s) => {
+              delay(p, 3);
+              const hurtTxt = s.rng.chance(noise) ? ` The clanking drew the dead. ${injureRandom(s, p, 8, 22, "at a gas station")}` : "";
+              if (!s.parties.includes(p)) return hurtTxt.trim();
+              return check(s, p, "mechanics", 9).ok ? `The pump coughs up ${addCargo(s, p, "fuel", s.rng.int(4, 8))}.${hurtTxt}` : `The pump only brings up water and sludge.${hurtTxt}`;
+            },
+          },
+          { label: "Pick through the shop (1 hour)", hint: "Whatever the looters missed", resolve: (s) => { delay(p, 1); return `Under the shelves: ${addCargo(s, p, "food", 2, "roadside")}${s.rng.chance(0.3) ? `, ${addCargo(s, p, "scrap", 4)}` : ""}.`; } },
+          { label: "Move on", resolve: () => "The team leaves it." },
+        ],
+      };
+    },
+  },
+  {
+    // A camp the dead overran: what the campers had, a chance one of them got up again (worm.js), and the dead to bury.
+    id: "camp", weight: 1.2, when: (st, p, t) => !t.loc && t.infection > 0.15,
+    card: (st, p, t) => {
+      const risk = Math.min(0.5, 0.15 + t.infection * 0.3);
+      return {
+        title: "An overrun camp",
+        text: "Tents slashed and trampled, a cold fire pit, a camper van with its door hanging open. Whoever lived here did not leave on their own feet, and some of them are still lying where they fell.",
+        choices: [
+          {
+            label: "Search the camp (2 hours)", hint: `What the campers had; ${pct(risk)} one of them gets up`,
+            resolve: (s) => {
+              delay(p, 2);
+              const hurtTxt = s.rng.chance(risk) ? ` One of the bodies was not finished. ${injureRandom(s, p, 8, 20, "searching an overrun camp")}` : "";
+              if (!s.parties.includes(p)) return hurtTxt.trim();
+              const [a, b] = s.rng.shuffle([["food", 4], ["ammo", 20], ["meds", 2], ["wood", 60], ["parts", 1]]);
+              const got = [addCargo(s, p, a[0], a[1]), addCargo(s, p, b[0], b[1])];
+              if (s.rng.chance(0.4)) { const it = lootItem(s.rng.pick(HIKER_STUFF), "survivor", spend(s.rng)); if (addGearToCargo(s, p, it)) got.push(it.name.toLowerCase()); }
+              return `Found ${got.join(", ")}.${hurtTxt}`;
+            },
+          },
+          { label: "Bury the dead (3 hours)", hint: "Everyone on the team mood +6", resolve: (s) => { delay(p, 3); cheer(partyMembers(s, p), 6); return "Shallow graves and a few words. The team feels better for it (mood +6)."; } },
+          { label: "Move on", resolve: () => "The team gives it a wide berth." },
+        ],
+      };
+    },
+  },
   // Crew
   {
     // Rivals on a team argue far more often (weight 5), a team of friends rarely (1); relations.js.
@@ -371,6 +569,25 @@ const EVENTS = [
 // Mood never drops below zero.
 function sulk(s, by) {
   s.mood = Math.max(0, (s.mood || 0) - by);
+}
+// Everyone on a team's mood up (or down), between 0 and 100.
+function cheer(list, by) {
+  for (const m of list) m.mood = Math.max(0, Math.min(100, (m.mood || 0) + by));
+}
+// The rough way from one tile to another ("north-east"); y grows to the south.
+function compass(state, from, to) {
+  if (from === to) return "right here";
+  const a = state.tiles[from], b = state.tiles[to];
+  const i = ((Math.round(Math.atan2(a.y - b.y, b.x - a.x) / (Math.PI / 4)) % 8) + 8) % 8;
+  return ["east", "north-east", "north", "north-west", "west", "south-west", "south", "south-east"][i];
+}
+
+export const TRAVEL_EVENT_IDS = EVENTS.map((e) => e.id);
+// Whether an event can come on a tile, and its card (tools/roadeventstest.js forces an event).
+export const travelEventFits = (state, p, id, tileId) => !!EVENTS.find((e) => e.id === id)?.when(state, p, state.tiles[tileId]);
+export function travelEventCard(state, p, id, tileId) {
+  const ev = EVENTS.find((e) => e.id === id);
+  return guarded(state, p, ev.card(state, p, state.tiles[tileId]), tileId);
 }
 
 export function rollTravelEvent(state, p, tileId) {

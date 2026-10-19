@@ -6,8 +6,10 @@
 //
 // Events: a fire in a building, a quarrel between two survivors, a peddler at the gate, a lost teenager (a recruit
 // card, recruits.js), a wandering preacher, food stolen from the stores, a stray dog, storm damage (a leaking roof
-// over the stores, a broken well pump), a request for a feast, someone asking to leave on a personal errand, and two
-// survivors who have grown close (partners, relations.js), and remembering the dead (a memorial service).
+// over the stores, a broken well pump), a request for a feast, someone asking to leave on a personal errand, two
+// survivors who have grown close (partners, relations.js), remembering the dead (a memorial service), rats in the food
+// stores, the dead at the fence, a sick traveller at the gate, a cold snap in winter, music by the fire at night and a
+// wreck below the walls to strip.
 import { foodIn, payFood, takeFood, addFood, addFoodUnits, gainGoods, foodText } from "./foods.js"; // the cards' food in days (a feast, scraps, a theft)
 import { BUILDINGS, BEDS, count, assignStations } from "./buildings.js";
 import { SUPPLIES, supValue } from "./data.js";
@@ -38,6 +40,11 @@ export const WELL_DOWN = { days: 5, water: 6 };
 // needs to set off) and eats it on the way (their hunger and thirst gauges); what is left comes back with them.
 export const ERRAND = { food: 3, water: 3, minDays: 3, maxDays: 5, lost: 0.08, find: 0.5, mood: 25, refuse: -12 };
 export const THEFT = { share: 0.06, min: 4, max: 25, lockScrap: 4, lockDays: 30, easyDays: 20 };
+export const RATS = { share: 0.05, min: 3, max: 20, scrap: 2 };
+export const FENCE = { shots: 3 }; // rounds a head of the dead, shooting from the wall
+// A cold snap: three days' extra heating (upkeep.js HEAT: about 15 firewood or 0.1 fuel a head a day below freezing).
+export const COLD = { wood: 45, fuel: 0.3, frostbite: 0.3 };
+export const SALVAGE = { scrap: [6, 12], risk: 0.2 };
 
 // ---------- the context an event is weighed and written from ----------
 function context(state, base) {
@@ -414,6 +421,177 @@ export const HUB_EVENTS = {
           { label: "Clear them a corner of their own (3 scrap)", hint: "Both mood +15; they are partners now", disabled: () => (c.base.stock.scrap || 0) < 3, ai: () => ((c.base.stock.scrap || 0) >= 20 ? 6 : 1), resolve: () => { if (!both()) return "Too late."; c.base.stock.scrap -= 3; moodAll([a, b], 15); pair(st); return "A blanket on a line and a door that shuts. They are delighted."; } },
           { label: "A small party for them (4 food)", hint: "Both mood +10, everyone else here +3; they are partners now", disabled: () => foodIn(c.base.stock) < 4, ai: () => (foodIn(c.base.stock) >= 40 ? 5 : 1), resolve: (s2) => { if (!both()) return "Too late."; payFood(c.base, 4, s2); moodAll([a, b], 10); moodAll(atBase(s2, c.base.id).filter((s) => s !== a && s !== b), 3); pair(s2); return "Toasts in tin cups."; } },
           { label: "Leave them to it", hint: "Both mood +5; they are partners now", ai: () => 3, resolve: () => { if (!both()) return "Too late."; moodAll([a, b], 5); pair(st); return "Life goes on."; } },
+        ],
+      };
+    },
+  },
+
+  rats: {
+    name: "Rats in the stores",
+    weight: (st, c) => (foodIn(c.base.stock) >= 20 ? 0.5 * ({ autumn: 1.4, winter: 0.4 }[c.season] || 1) * (c.base.dog ? 0.4 : 1) * (1 + 0.5 * Math.min(1, c.over)) : 0), // a dog keeps them down
+    card: (st, c) => {
+      const lose = clamp(Math.round(foodIn(c.base.stock) * RATS.share), RATS.min, RATS.max);
+      const some = Math.max(1, Math.round(lose / 4));
+      const gnaw = (s2, n) => Math.round(payFood(c.base, Math.min(n, foodIn(c.base.stock)), s2));
+      const dog = c.base.dog;
+      return {
+        title: `Rats at ${c.base.name}`,
+        text: `Droppings in the flour and gnawed sacks: rats have found the food stores at ${c.base.name}. Left alone they will spoil about ${lose} food.`,
+        choices: [
+          { label: `Set traps and block the holes (${RATS.scrap} scrap)`, hint: `Only about ${some} food is lost`, disabled: () => (c.base.stock.scrap || 0) < RATS.scrap, ai: () => ((c.base.stock.scrap || 0) >= 20 ? 6 : 3), resolve: (s2) => { c.base.stock.scrap -= RATS.scrap; return `Wire, tin and a few snap traps. ${gnaw(s2, some)} food was lost before it worked.`; } },
+          ...(dog ? [{ label: `Let ${dog.name} at them`, hint: `Only about ${some} food is lost; everyone here mood +2`, ai: () => 7, resolve: (s2) => { if (!c.base.dog) return "The dog is gone. The rats stay."; moodAll(atBase(s2, c.base.id), 2); return `${dog.name} has the time of their life (everyone mood +2). ${gnaw(s2, some)} food was lost.`; } }] : []),
+          { label: "Leave it", hint: `About ${lose} food is lost`, ai: () => 0, resolve: (s2) => `${gnaw(s2, lose)} food was spoiled by the rats.` },
+        ],
+      };
+    },
+  },
+
+  fence: {
+    name: "The dead at the fence",
+    weight: (st, c) => { const inf = st.tiles[c.base.tile].infection || 0; return c.n >= 3 && inf > 0.05 ? 0.4 + inf * 1.2 : 0; }, // more of them on infected land
+    card: (st, c) => {
+      const inf = st.tiles[c.base.tile].infection || 0;
+      const n = 3 + Math.round(inf * 8);
+      const pool = adults(c).length ? adults(c) : c.people;
+      const best = [...pool].sort((a, b) => skill(b, "melee") - skill(a, "melee"))[0];
+      const m = skill(best, "melee");
+      const risk = clamp(0.45 - 0.04 * m, 0.08, 0.45);
+      const shots = n * FENCE.shots;
+      return {
+        title: `The dead at the fence`,
+        text: `${n} of the dead have drifted up against the fence at ${c.base.name} in the night and are pressing at it, moaning. More may follow the noise.`,
+        choices: [
+          {
+            label: `Put them down with blades through the fence (${firstName(best)}, Melee ${m})`, hint: `Quiet; everyone here mood +2; ${pct(risk)} ${firstName(best)} is hurt (5–15 health)`,
+            ai: () => 4 - risk * 10,
+            resolve: (s2) => {
+              moodAll(atBase(s2, c.base.id), 2);
+              if (!here(best, c.base) || !s2.rng.chance(risk)) return "One by one, through the wire. People sleep easier (mood +2).";
+              hurt(s2, best, s2.rng.int(5, 15), c.base.tile, `putting down the dead at the fence of ${c.base.name}`);
+              return best.alive ? `It is done, but ${firstName(best)} got a hand through the wire and came away hurt.` : `It is done, but ${best.name} was dragged against the wire and did not survive.`;
+            },
+          },
+          { label: `Shoot them from the wall (${shots} rounds)`, hint: "Safe; everyone here mood +2", disabled: () => supplyAmt(c.base.stock, "ammo") < shots, ai: () => (supplyAmt(c.base.stock, "ammo") >= 150 ? 5 : 1), resolve: (s2) => { useSupply(c.base.stock, "ammo", shots); moodAll(atBase(s2, c.base.id), 2); return `A few minutes of shooting and it is quiet again (mood +2).`; } },
+          { label: "Let them be", hint: "They drift off in a day or two; everyone here mood -3 (nobody sleeps)", ai: () => -3, resolve: (s2) => { moodAll(atBase(s2, c.base.id), -3); return "Two nights of moaning at the wire before they wander off (mood -3)."; } },
+        ],
+      };
+    },
+  },
+
+  sick: {
+    name: "A sick traveller",
+    weight: (st, c) => 0.45 * (c.season === "winter" ? 1.6 : 1) * (stormy(c) ? 0.3 : 1),
+    card: (st, c) => {
+      const can = () => foodIn(c.base.stock) >= 2 && waterIn(c.base.stock) >= 2;
+      return {
+        title: "A sick traveller at the gate",
+        text: `A traveller sways at the gate of ${c.base.name}, burning with fever and coughing into a rag. Not the worm, they swear: a chest fever, caught sleeping rough. They ask for medicine.`,
+        choices: [
+          {
+            label: "Treat them (2 meds)", hint: "Everyone here mood +3; 50% they leave something in thanks", disabled: () => (c.base.stock.meds || 0) < 2, ai: () => ((c.base.stock.meds || 0) >= 8 ? 4 : -1),
+            resolve: (s2) => {
+              c.base.stock.meds -= 2;
+              moodAll(atBase(s2, c.base.id), 3);
+              if (!s2.rng.chance(0.5)) return "In two days the fever breaks and they walk on, thanking everyone (mood +3).";
+              const [k, lo, hi, word] = s2.rng.pick([["scrap", 4, 8, "scrap"], ["parts", 1, 1, "machine part"], ["electronics", 1, 1, "electronics"], ["wood", 30, 60, "firewood"]]);
+              const q = s2.rng.int(lo, hi);
+              c.base.stock[k] = (c.base.stock[k] || 0) + q;
+              return `In two days the fever breaks. They leave ${q} ${word} in thanks (mood +3).`;
+            },
+          },
+          { label: "Give them food and water for the road (2 food, 2 water)", hint: "Everyone here mood +1", disabled: () => !can(), ai: () => (c.foodDays > 20 ? 2 : 0), resolve: (s2) => { if (!can()) return "There is nothing to spare now."; payFood(c.base, 2, s2); drawWater(c.base.stock, 2, { rawFirst: true }); moodAll(atBase(s2, c.base.id), 1); return "They take it with shaking hands and go."; } },
+          { label: "Turn them away", hint: "Everyone here mood -2", ai: () => -1, resolve: (s2) => { moodAll(atBase(s2, c.base.id), -2); return "They stumble off down the road, still coughing (mood -2)."; } },
+        ],
+      };
+    },
+  },
+
+  cold: {
+    name: "A cold snap",
+    weight: (st, c) => (c.season === "winter" && c.n >= 2 ? (["snow", "blizzard"].includes(c.wx) ? 1.2 : 0.5) : 0),
+    card: (st, c) => {
+      const n = () => atBase(st, c.base.id).length;
+      const wood = COLD.wood * c.n, fuel = Math.ceil(COLD.fuel * c.n);
+      return {
+        title: `A cold snap at ${c.base.name}`,
+        text: `A hard frost has settled over ${c.base.name} and will not lift. Water freezes in the buckets and people sleep in their coats.`,
+        choices: [
+          { label: `Keep the fires going day and night (${wood} firewood)`, hint: "Nobody suffers", disabled: () => (c.base.stock.wood || 0) < COLD.wood * n(), ai: () => ((c.base.stock.wood || 0) >= 3 * wood ? 6 : 2), resolve: () => { c.base.stock.wood -= Math.min(c.base.stock.wood || 0, COLD.wood * n()); return "The stoves roar for three days and the cold stays outside."; } },
+          { label: `Burn fuel in the stoves (${fuel} fuel)`, hint: "Nobody suffers; fuel is dear", disabled: () => (c.base.stock.fuel || 0) < Math.ceil(COLD.fuel * n()), ai: () => ((c.base.stock.fuel || 0) >= 40 ? 3 : -2), resolve: () => { c.base.stock.fuel -= Math.min(c.base.stock.fuel || 0, Math.ceil(COLD.fuel * n())); return "The fuel goes up the chimney, and everyone stays warm."; } },
+          {
+            label: "Bundle up and bear it", hint: `Everyone here mood -4; ${pct(COLD.frostbite)} someone is frostbitten (4–10 health)`, ai: () => -4,
+            resolve: (s2) => {
+              const ppl = atBase(s2, c.base.id);
+              moodAll(ppl, -4);
+              if (!ppl.length || !s2.rng.chance(COLD.frostbite)) return "Three miserable days under every blanket there is (mood -4).";
+              const v = s2.rng.pick(ppl);
+              hurt(s2, v, s2.rng.int(4, 10), c.base.tile, `of the cold at ${c.base.name}`, { raw: true });
+              return `Three miserable days (mood -4). ${firstName(v)} ${v.alive ? "has lost the feeling in two toes" : "did not wake up one morning"}.`;
+            },
+          },
+        ],
+      };
+    },
+  },
+
+  music: {
+    name: "Music at night",
+    weight: (st, c) => (c.n >= 4 ? 0.4 * (c.avgMood < 50 ? 1.5 : 1) : 0),
+    card: (st, c) => {
+      const pool = adults(c).length ? adults(c) : c.people;
+      const s = st.rng.pick(pool);
+      const what = st.rng.pick(["an old guitar with four strings left", "a fiddle found in an attic", "a harmonica", "a battered accordion"]);
+      const risk = clamp(0.1 + (st.tiles[c.base.tile].infection || 0) * 0.5, 0.1, 0.4);
+      return {
+        title: `Music at ${c.base.name}`,
+        text: `${s.name} has turned up ${what} and wants to play by the fire tonight. People are already gathering. Sound carries a long way these days.`,
+        choices: [
+          {
+            label: `Let ${firstName(s)} play`, hint: `Everyone here mood +5; ${pct(risk)} the music draws a few of the dead to the walls (someone hurt putting them down, 4–12 health)`,
+            ai: () => 5 - risk * 10,
+            resolve: (s2) => {
+              const ppl = atBase(s2, c.base.id);
+              moodAll(ppl, 5);
+              if (!ppl.length || !s2.rng.chance(risk)) return "Old songs everyone half remembers, late into the night (mood +5).";
+              const v = s2.rng.pick(ppl);
+              hurt(s2, v, s2.rng.int(4, 12), c.base.tile, `putting down the dead drawn by music at ${c.base.name}`);
+              return `A night to remember (mood +5), until the dead came to listen. ${firstName(v)} ${v.alive ? "was hurt putting them down" : "did not survive putting them down"}.`;
+            },
+          },
+          { label: "Ask them to keep it down", hint: `${firstName(s)} mood -4`, ai: () => 0, resolve: () => { moodAll([s], -4); return `${firstName(s)} puts it away without a word.`; } },
+        ],
+      };
+    },
+  },
+
+  salvage: {
+    name: "A wreck near the walls",
+    weight: (st, c) => (c.n >= 3 ? 0.4 : 0),
+    card: (st, c) => {
+      const ppl = () => atBase(st, c.base.id).filter((s) => s.health >= 40);
+      return {
+        title: `A wreck near ${c.base.name}`,
+        text: `A pickup truck came off the road in the night and lies on its roof in the ditch below ${c.base.name}. Nobody climbed out of it.`,
+        choices: [
+          {
+            label: "Strip it", hint: `${SALVAGE.scrap[0]}–${SALVAGE.scrap[1]} scrap and a car part, 50% some fuel left in the tank; ${pct(SALVAGE.risk)} the driver had the worm and gets up (4–14 health)`,
+            disabled: () => !ppl().length, ai: () => 4,
+            resolve: (s2) => {
+              const scrap = s2.rng.int(...SALVAGE.scrap), fuel = s2.rng.chance(0.5) ? s2.rng.int(2, 5) : 0;
+              c.base.stock.scrap = (c.base.stock.scrap || 0) + scrap;
+              c.base.stock.carparts = (c.base.stock.carparts || 0) + 1;
+              if (fuel) c.base.stock.fuel = (c.base.stock.fuel || 0) + fuel;
+              let txt = `Stripped to the frame: ${scrap} scrap, a car part${fuel ? ` and ${fuel} fuel` : ""}.`;
+              const hands = ppl();
+              if (hands.length && s2.rng.chance(SALVAGE.risk)) {
+                const v = s2.rng.pick(hands);
+                hurt(s2, v, s2.rng.int(4, 14), c.base.tile, `stripping a wreck at ${c.base.name}`);
+                txt += ` The driver was not finished: ${firstName(v)} ${v.alive ? "was hurt" : "was killed"} before they put it down.`;
+              }
+              return txt;
+            },
+          },
+          { label: "Leave the wreck", hint: "Nothing happens", ai: () => 0, resolve: () => "The wreck rusts in the ditch." },
         ],
       };
     },

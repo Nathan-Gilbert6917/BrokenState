@@ -76,7 +76,7 @@ function repairCaller(fr) {
 // What a stock's parts went on (d < 0) or came from (d > 0).
 function partsCause(fr, d) {
   if (has(fr, "vehicles.js", "repair")) return `vehicle repair (${repairCaller(fr)})`;
-  if (has(fr, "events.js") && fr.some((f) => f.file === "events.js" && f.line >= 412 && f.line <= 470)) return "vehicle: breakdown spare part";
+  if (has(fr, "events.js") && fr.some((f) => f.file === "events.js" && f.line >= 629 && f.line <= 687)) return "vehicle: breakdown spare part";
   if (has(fr, "autopilot.js", "launchTrip") && d > 0) return "trip called off: refund";
   if (has(fr, "vehicles.js", "stripVehicle")) return "car stripped for parts";
   if (has(fr, "foundcars.js")) return "vehicle: found car restored";
@@ -188,7 +188,7 @@ function runOne(seed, style, days) {
           const fr = frames();
           const i = fr.findIndex((f) => f.fn === "leaveVehicle" || f.fn === "abandonVehicle" || f.fn === "markLeft");
           const by = fr.slice(i + 1).find((f) => !["leaveVehicle", "abandonVehicle", "markLeft", "resolve", "?"].includes(f.fn)) || fr[i + 1];
-          add(R.carsLost, `left on the road by ${by ? `${by.fn}@${by.file}` : "?"}${fr.some((f) => f.file === "events.js" && f.line >= 412 && f.line <= 470) ? " (breakdown card)" : ""}`, 1);
+          add(R.carsLost, `left on the road by ${by ? `${by.fn}@${by.file}` : "?"}${fr.some((f) => f.file === "events.js" && f.line >= 629 && f.line <= 687) ? " (breakdown card)" : ""}`, 1);
         }
         loc = x;
       },
