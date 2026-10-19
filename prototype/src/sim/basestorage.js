@@ -14,7 +14,9 @@
 // THE CONTAINERS (storageOf containers, in this order):
 //   1. the base's own core by tier (CORE_KG, as basemap.js tierKey reads the tier): a camp nothing ("camps start with
 //      no storage"), a shelter's or an outpost camp's bunk shack 150, an outpost 500, the main hub's house and cellar 1200.
-//      The AI groups' bases (groupbases.js) are measured the same way.
+//      The AI groups' bases (groupbases.js) are measured the same way: their main base a hub, an outpost of theirs an
+//      outpost, one still an outpost camp (groupworks.js isCamp) a camp. They build the storage below as you do
+//      (groupworks.js storageWork).
 //   2. storage buildings (buildings.js STORE_KG / BUILDINGS storeKg, re-exported here): storage box 60, storage crates
 //      150, root cellar 400, cold store 300, walk-in freezer 300, storage shed 600, storehouse 2000, warehouse 6000.
 //      Standing ones only (broken ones too: a broken roof still keeps the goods in); a job in the queue holds nothing.
@@ -70,8 +72,11 @@ const WET = new Set(["rain", "storm", "snow", "blizzard"]);
 const r1 = (v) => Math.round(v * 10) / 10;
 const EPS = 1e-9;
 
-// The tier as the base map reads it (basemap.js tierKey; a group's base has no tier: an outpost or the hub).
-const tierOf = (base) => (isCamp(base) ? "camp" : isShelter(base) ? "shelter" : base.type === "hub" ? "hub" : "outpost");
+// The tier as the base map reads it (basemap.js tierKey). A group's own base (groupbases.js: no tier field) is the hub or
+// an outpost, or a camp while its outpost camp is not yet established (camp: groupworks.js isCamp; as your outpost camp,
+// a tier-0 base with camp: true); a base of yours they took keeps its tier.
+const groupCamp = (base) => !!base.group && base.tier == null && !!base.camp;
+const tierOf = (base) => (isCamp(base) || groupCamp(base) ? "camp" : isShelter(base) ? "shelter" : base.type === "hub" ? "hub" : "outpost");
 /** The room in kg of a base's own core (camp 0, shelter 150, outpost 500, hub 1200). @param {any} base */
 export const coreStoreKg = (base) => (base ? CORE_KG[tierOf(base)] || 0 : 0);
 /** Whether a building type holds goods (STORE_KG). @param {string} type */

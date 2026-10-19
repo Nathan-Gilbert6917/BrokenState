@@ -129,6 +129,7 @@ import { cartAct, cartKnocked, oneHandOk, CART_FIGHT, cartMoved, enemyCartsLetGo
 import { fitHands, handsRefusal, handsWord, handsBusy, armsText, handsCount, HANDS_MAX, carriedAct, pickCarried, setOverCover, botDropToFight, autoDrop, settleCarried, armsDropsEnd, stageAtStart } from "./carry.js"; // supplies, a bag or finds carried in the hands: no weapon, no doors, no windows until set down (Drop carried: free; Set over cover)
 import { kitHeadgear, visorAim, toggleVisor } from "./helmets.js"; // helmets: the face shield, an enemy's helmet and ear protection by kit
 import { groundAct, groundEnd, groundLeftovers, fieldFinds, searchedInBattle, aiGrabGun } from "./ground.js";
+import { assaultStoresEnd, forceStoreAct } from "./assaultstores.js"; // a group's stores on the map of an assault: what you took leaves them
 import { gunOut, gunIn, enemyGunLoaded, carriedWithBag } from "./gunload.js";
 import { aiLights, aiFlashlight, aiRoomLights, wakeLights } from "./ailights.js"; // the AI's flashlights and room lights (the user's request 2026-10-12)
 import { indoorSetup, lightAt, indoorSees, lightsAct } from "./indoorlight.js"; // light inside a raid's buildings: dark rooms, lit rooms, switches (the user's request 2026-10-12)
@@ -4777,6 +4778,11 @@ export function combatAct(state, act) {
       if (err) return err;
       break;
     }
+    case "forceStore": { // assaultstores.js: batter the lock of one of their locked containers (the rest of the turn, loud)
+      const err = forceStoreAct(state, b, u, act);
+      if (err) return err;
+      break;
+    }
     case "keylock": case "keyunlock": { // basemap.js: the defenders' keys: a door, the gate or the armory's containers locked or unlocked (1 action, quiet)
       const err = keyAct(state, b, u, act, { say });
       if (err) return err;
@@ -6213,6 +6219,7 @@ function endBattle(state, b, outcome) {
   if (b.retreatOrder) lines.unshift(...b.retreatOrder.lines);
   wearFielded(state, b, !b.calledOff); // called off before anyone went in (raidplan.js callOff): nothing fought with, nothing worn
   armsDropsEnd(state, b, outcome); // carry.js: won, the loads set down from the arms are picked up again (before the piles become loot)
+  lines.push(...assaultStoresEnd(state, b, outcome)); // assaultstores.js: what you took from their stores leaves them (what stays with them first out of your hands)
   groundEnd(state, b, outcome); // ground.js: what your people carry loose comes home; a body searched in the battle keeps what is left on it
   // carriers.js: the risen still walking take their things into the walking loot; bodies in the car come home (the
   // team keeps its car unless it was beaten); the burnt leave nothing; the swarm's bites leave the worm in the living.

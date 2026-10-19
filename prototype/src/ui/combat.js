@@ -530,8 +530,16 @@ export function combatClick(state, px, py) {
   }
   // Lock or Unlock picked with several locks in reach (sim/basemap.js keyAct): the door, the gate or the container clicked.
   if (u && active(u) && (cui.mode === "keylock" || cui.mode === "keyunlock")) return void act(state, { type: cui.mode, unit: u.id, x: c.x, y: c.y });
-  // A store on a base map (sim/basemap.js): a click on the building (its walls, roof or crates) shows what is in it.
-  if (b.stores && !who) { const sc = storeAt(b, c.x, c.y); if (sc && !CDEF(b.cells[c.y * W + c.x]).walk) { cui.storeView = cui.storeView === sc.id ? null : sc.id; cui.msg = ""; return; } }
+  // A store on a base map (sim/basemap.js): a click on the building (its walls, roof or crates) shows what is in it; a
+  // store of theirs on an assault (sim/assaultstores.js) with the selected one of yours next to it, its lock open: the
+  // search window on it (taking costs hauling time, as a raid's search).
+  if (b.stores && !who) {
+    const sc = storeAt(b, c.x, c.y);
+    if (sc && !CDEF(b.cells[c.y * W + c.x]).walk) {
+      if (sc.contents && u && active(u) && nearBox(u, sc) && !(sc.lock && !sc.lock.open)) { cui.storeView = sc.id; cui.lootReq = { uid: u.id, box: sc.id }; cui.msg = ""; return; }
+      cui.storeView = cui.storeView === sc.id ? null : sc.id; cui.msg = ""; return;
+    }
+  }
   // A field battle the team's vehicle came along to (sim/raidloot.js trunkVehicle): a click on it opens its trunk, the
   // same window as a raid's (no action; hauling in and out costs the usual time).
   if (!b.raid && b.vehicle && u && active(u) && inTeamVehicle(b, c.x, c.y) && (trunkVehicle(state, b) || b.vehicle.blownUp)) {
@@ -1484,6 +1492,9 @@ export function combatAction(state, key, d, ui = null) { // ui: main.js's screen
   if (key === "cb-redeploy") return void setAutoRedeploy(!cui.autoRedeploy);
   // Deploy step (sim/deploy.js): start, default positions, the selected defender to the gate, floodlight aim.
   if (key === "cb-store") { cui.storeView = d.id ? Number(d.id) : null; cui.msg = ""; return; } // a store on the base map (sim/basemap.js)
+  // A store of theirs on an assault's map (sim/assaultstores.js): the search window on it, or a blow at its lock.
+  if (key === "cb-store-take") { if (!u) { cui.msg = "Pick one of your people next to it."; return; } cui.lootReq = { uid: u.id, box: Number(d.id) }; cui.msg = ""; return; }
+  if (key === "cb-store-force") { if (!u) { cui.msg = "Pick one of your people next to it."; return; } return void act(state, { type: "forceStore", unit: u.id, store: Number(d.id) }); }
   if (key === "cb-deploy") {
     if (b.layout) { // the base map's layout mode (sim/basemap.js layoutAct)
       if (d.v === "pick") return void act(state, { type: "pick", key: d.k || null });
@@ -1825,7 +1836,7 @@ export function renderCombatPanel(state) {
   if (b.raid && b.raid.choose) html += chooseHtml(b);
   if (kitWarnDue(state, b)) html += kitWarnHtml(state, b); // sim/kitcheck.js: empty guns, no healing, the hurt, before the first move
   if (b.night && !b.raid && b.phase !== "deploy") html += nightHtml(b); // sim/vision.js: the dark, by the hour
-  if (b.stores) html += storesHtml(b, cui); // the stores on the base map (sim/basemap.js)
+  if (b.stores) html += storesHtml(b, cui, u); // the stores on the base map (sim/basemap.js); an assault's: Take, Force lock (sim/assaultstores.js)
   // Looking at another floor than the selected unit's (PageUp / PageDown, the Floor control): say so, with the way back.
   if (u && alive(u) && floorsOf(b) && u.f != null && u.f !== floorNo(b)) {
     html += `<div class="small muted cbmsg">Showing ${floorLabel(b, floorNo(b)).toLowerCase()}; ${esc(u.name.split(" ")[0])} is on ${floorLabel(b, u.f).toLowerCase()}. <button class="mini" data-action="cb-view" data-v="fgo" data-tip="Back to the selected unit's floor (V also centers on them).">Go to ${esc(u.name.split(" ")[0])}</button></div>`;

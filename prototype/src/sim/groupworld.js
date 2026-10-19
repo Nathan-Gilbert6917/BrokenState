@@ -443,7 +443,8 @@ export const abandonedAt = (state, tile) => (state.abandoned || []).find((a) => 
 // "farm", "raincatcher", "bench", so a lost outpost's fields, catchers and benches were never counted).
 // ai-locks (2026-10-11): a machine shop is a workshop and their machine shop, a reloading bench a workshop and their
 // reloading bench; a radio station, a garage and a reinforced gate are those works of theirs (groupworks.js LOCKS).
-const PLAYER_WORKS = { walls: "walls", farm_plot: "farms", greenhouse: "farms", animal_pen: "pens", well: "water", rain_catcher: "water", cistern: "water", bunkhouse: "beds", barracks: "beds", craftbench: "bench", workbench: "bench", toolbench: "bench", machine_shop: ["bench", "shop"], ammo_bench: "bench", reload_bench: ["bench", "reload"], storehouse: "store", cellar: "store", radio: "radio", garage: "garage", gate: "gate" };
+// Storage (2026-10-19): a storage box, crates, a shed and a warehouse are their storage works (groupworks.js storageWork).
+const PLAYER_WORKS = { walls: "walls", farm_plot: "farms", greenhouse: "farms", animal_pen: "pens", well: "water", rain_catcher: "water", cistern: "water", bunkhouse: "beds", barracks: "beds", craftbench: "bench", workbench: "bench", toolbench: "bench", machine_shop: ["bench", "shop"], ammo_bench: "bench", reload_bench: ["bench", "reload"], storehouse: "store", cellar: "store", storebox: "storebox", crates: "crates", shed: "shed", warehouse: "warehouse", radio: "radio", garage: "garage", gate: "gate" };
 // A lost outpost's buildings as works (standing ones only).
 function worksOfBuildings(list) {
   const works = {};
