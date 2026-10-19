@@ -37,10 +37,11 @@ const check = (ok, msg) => { if (ok) passed++; else { failed++; console.log(`  F
 const section = (t) => console.log(`\n== ${t}`);
 const world = (s = seed) => { const st = createWorld({ seed: s, factionCount: 8 }); st.started = true; return st; };
 const groupOf = (st, type) => st.factions.find((f) => f.alive && f.type === type) || null;
-// A group of this type (one of the world's, retyped and reseeded if the world has none).
+// A group of this type (one of the world's, retyped and reseeded if the world has none). Its vehicles go too: the
+// new type's are dealt when next read (vehicles.js factionVehicles: a military group's motor pool, its M2 Humvee).
 function typed(st, type, not = []) {
   let f = groupOf(st, type);
-  if (!f || not.includes(f)) { f = st.factions.find((x) => x.alive && !not.includes(x)); f.type = type; A.seedArsenal(st, f); }
+  if (!f || not.includes(f)) { f = st.factions.find((x) => x.alive && !not.includes(x)); f.type = type; delete f.vehicles; A.seedArsenal(st, f); }
   return f;
 }
 const nextDay = (st) => { st.hour += 24; };
@@ -426,7 +427,9 @@ section("Abandoned bases");
   check(G.abandonedPull(heir, { works: { walls: 2 } }) > G.abandonedPull(heir, { works: { farms: 2 } }), "raiders like an abandoned fort better than a farm");
   // Your outpost lost: a group moves in and you get a card.
   const st2 = world(seed + 4), h2 = hub(st2);
-  const tileO = st2.tiles.find((t) => t.loc && st2.grid.distance(t.id, h2.tile) === 3 && !st2.factions.some((f) => f.bases.includes(t.id))).id;
+  // A free tile of land 3 from the hub, a site's first (some maps have no site in that ring; the outpost needs none).
+  const tileO = st2.tiles.filter((t) => t.terrain !== "water" && !t.hive && st2.grid.distance(t.id, h2.tile) === 3 && !st2.factions.some((f) => f.bases.includes(t.id)))
+    .sort((a, b) => (b.loc ? 1 : 0) - (a.loc ? 1 : 0))[0].id;
   const base = { ...JSON.parse(JSON.stringify(h2)), id: 765432, type: "outpost", name: "Old outpost", tile: tileO, buildings: [], stock: {}, armory: [] };
   addBuilding(base, "walls");
   st2.bases.push(base);
@@ -602,24 +605,31 @@ section("Gear's weight in strength: it matters, but numbers still win");
   const old = (r) => 0.6 + 0.4 * r;
   const st = world();
   const rows = [];
-  const sample = (label, type, pop, fill) => {
+  // A starting kit is one draw (hashed): its ratio runs a few percent either side of 1, so "their kit" is the mean of
+  // DRAWS of them (one draw of 0.94 had 15 raiders lose to the 10 best kitted on seed 5).
+  const DRAWS = 8;
+  const sample = (label, type, pop, fill, draws = 1) => {
     const f = st.factions[0];
-    f.type = type; f.pop = pop; f.wounded = 0; f.gear = 1; f.stock.ammo = 999;
-    f.arsenal.items.length = 0; f.arsenal.rev++;
-    for (const it of fill(f)) A.addToArsenal(st, f, it, "test");
-    f.arsenal.gear = 1;
-    rows.push({ label, now: strength(f), base: pop * FACTION_TYPES[type].arms, k: A.kitFactor(f) });
+    let now = 0, k = 0;
+    for (let d = 0; d < draws; d++) {
+      f.type = type; f.pop = pop; f.wounded = 0; f.gear = 1; f.stock.ammo = 999;
+      f.arsenal.items.length = 0; f.arsenal.rev++;
+      for (const it of fill(f, d)) A.addToArsenal(st, f, it, "test");
+      f.arsenal.gear = 1;
+      now += strength(f); k += A.kitFactor(f);
+    }
+    rows.push({ label, now: now / draws, base: pop * FACTION_TYPES[type].arms, k: k / draws });
   };
-  const kit = (f, n) => A.starterKit(st.seed, `${f.name}${n}`, f.type, n);
+  const kit = (f, n, d = 0) => A.starterKit(st.seed, `${f.name}${n}${d ? `#${d}` : ""}`, f.type, n);
   const best = (n) => Array.from({ length: n }, (_, i) => [lootItem("lmg", "military", [i, "b"]), lootItem("plate", "military", [i, "bp"]), lootItem("milhelmet", "military", [i, "bh"]), lootItem("riotarms", "military", [i, "ba"]), lootItem("riotlegs", "military", [i, "bl"])]).flat();
-  sample("raiders, 20, their kit", "raider", 20, (f) => kit(f, 20));
+  sample("raiders, 20, their kit", "raider", 20, (f, d) => kit(f, 20, d), DRAWS);
   sample("raiders, 20, bare hands", "raider", 20, () => []);
   sample("raiders, 10, the best kit there is", "raider", 10, () => best(10));
-  sample("raiders, 15, their kit", "raider", 15, (f) => kit(f, 15));
-  sample("military, 12, their kit", "military", 12, (f) => kit(f, 12));
+  sample("raiders, 15, their kit", "raider", 15, (f, d) => kit(f, 15, d), DRAWS);
+  sample("military, 12, their kit", "military", 12, (f, d) => kit(f, 12, d), DRAWS);
   sample("military, 8, the best kit there is", "military", 8, () => best(8));
-  sample("commune, 30, their kit", "commune", 30, (f) => kit(f, 30));
-  sample("commune, 30, half of them armed", "commune", 30, (f) => kit(f, 15));
+  sample("commune, 30, their kit", "commune", 30, (f, d) => kit(f, 30, d), DRAWS);
+  sample("commune, 30, half of them armed", "commune", 30, (f, d) => kit(f, 15, d), DRAWS);
   sample("commune, 15, the best kit there is", "commune", 15, () => best(15));
   for (const x of rows) {
     const k = x.k, r = k <= 1 ? 1 - (1 - k) / A.ARSENAL.KIT_DOWN : Math.exp((k - 1) / A.ARSENAL.KIT_UP); // the ratio back from the curve
