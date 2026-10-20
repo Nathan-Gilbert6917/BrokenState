@@ -22,7 +22,8 @@
 //   (by the job, not the hour: asleep woodcutters on bare land still say why). stalledDays: since when (stallDaily).
 //
 // workingActivity(state, s): the job's state by the job, not the clock (at its working hour): what the Idle list,
-//   the Bases badge and the stalled-job alert read. idlePeople(state, base?) → [{ s, base, act, why }]: people at a
+//   the Bases badge and the stalled-job alert read. Someone helping elsewhere this hour (noidle.js) is read at their
+//   own job (dayJob): a job with no work stays on the Idle list so the player can give them another. idlePeople(state, base?) → [{ s, base, act, why }]: people at a
 //   base with nothing to do (a work role with no work, or a job that cannot be done here), not counting anyone
 //   resting (the Rest job, free time), in bed, ill or hurt, on watch or away. workCount(state, base) → { total,
 //   working, idle, hurt, resting }.
@@ -39,7 +40,7 @@ import { SUPPLIES, GEAR, SKILL_NAMES } from "./data.js";
 import { RAW } from "./water.js";
 import { ROLES, scavLeft, SCAV_FLOOR, scavengeOutput } from "./economy.js";
 import { WORK_TYPES, isManaged, healthRest } from "./work.js";
-import { BUILDINGS, stations, stationStatus, buildRate, gatherStalled, underAttack, onUpkeep } from "./buildings.js";
+import { BUILDINGS, stations, stationStatus, buildRate, gatherStalled, underAttack, onUpkeep, campMaterialsWork } from "./buildings.js";
 import { CRAFTS, craftQueue, craftJobStatus, craftName, craftRate } from "./crafting.js";
 import { CROPS, farmOf, farmersWanted, nextHarvests } from "./farming.js";
 import { WOOD, woodWorkWhy, woodTime, chopCrew, isChopTool, woodTripTile, seasonWood, woodCrowd, woodNeed } from "./woodcutting.js";
@@ -47,8 +48,8 @@ import { forageWorkWhy, forageTime, baseForageDay } from "./foraging.js";
 import { huntWorkWhy, fishWorkWhy, baseHuntDay, baseFishDay } from "./hunting.js";
 import { hospitalDef, isHurt, patients } from "./medical.js";
 import { workFactor, isSick } from "./health.js";
-import { lessonOf, bookDef, skillProgress, bookHours } from "./skills.js";
-import { BLUEPRINTS, studyHours } from "./blueprints.js";
+import { lessonOf, bookDef, skillProgress, bookHours, bestBook, armoryBooks } from "./skills.js";
+import { BLUEPRINTS, studyHours, studyable, canStudy } from "./blueprints.js";
 import { edibleFood } from "./storage.js";
 import { sleepHour, sleepingIn } from "./sleep.js";
 import { onWatchNow } from "./watch.js";
@@ -62,7 +63,8 @@ import { hasChopWork, chopNow } from "./woodwork.js"; // woodwork: felling the t
 import { fetchWaterWhy, fetchWaterDay } from "./economy.js"; // Fetch water
 
 import { MEALS, MEAL_WORK_SHARE, mealOf, lunchHour } from "./meals.js";
-import { hasKitchen, kitchenService, eatsAtKitchen, cookActivity, cookPlusOf, cookShiftRole } from "./kitchen.js"; // the Kitchen's cooks and its hot meals
+import { hasKitchen, kitchenService, eatsAtKitchen, cookActivity, cookPlusOf, cookShiftRole, kitchenCanLight } from "./kitchen.js"; // the Kitchen's cooks and its hot meals
+import { helpingAs, helpLine } from "./noidle.js"; // noidle: a Manual person whose job has no work this hour helps elsewhere (call-time only)
 
 // Icons by job, and by kind for everything that is not a job.
 export const JOB_ICONS = { water: "🪣", wood: "🪓", farm: "🌱", forage: "🍄", hunt: "🏹", fish: "🎣", build: "🔨", craft: "🧰", operate: "⚙️", medic: "✚", trainee: "✚", teach: "🎓", read: "📚", scavenge: "🔍", guard: "🛡️", rest: "☕", cook: "🍳" };
@@ -133,6 +135,8 @@ export function describeActivity(state, s, h = hourOfDay(state), opts = {}) {
   }
   const a = jobActivity(state, base, s, job, h, opts);
   if (t && t.why && !a.why.includes(t.why)) a.why = a.why ? `${a.why} ${t.why}.` : t.why;
+  // noidle.js: their own job has no work this hour, so they help with this one ("No building to do: helping chop wood").
+  if (helpingAs(s) === job && h === hourOfDay(state) && a.kind === "work") return helpLine(s, a);
   return a;
 }
 
@@ -221,8 +225,9 @@ function fixedJobActivity(state, base, s, job, h) {
       if (!base.construction.length) return act("stalled", "Builder – nothing to build", "The construction queue is empty and nothing is worn: queue a building (Construction tab) or give them another job.", job);
       if (underAttack(state, base)) return act("stalled", "Building stopped – on alert", "Nobody builds while the base is on alert or under siege.", job);
       const j = base.construction.find((c) => !gatherStalled(c));
+      if (!j && campMaterialsWork(base)) return act("work", "Making building materials for the step up", "The camp's step up waits for building materials: the builders make them from the scrap here.", job);
       if (!j) return act("stalled", "Builder – waiting for materials", "The queued builds wait for their materials to be gathered or brought in.", job);
-      return act("work", `Building ${buildName(j)} (${pct(j.progress / Math.max(1, j.hours))})`, "", job);
+      return act("work", `${j.type === "clear" && j.label ? j.label : `Building ${buildName(j)}`} (${pct(j.progress / Math.max(1, j.hours))})`, "", job); // a clearing job by its label ("Fell a tree for wood (40%)")
     }
     case "craft": {
       const q = craftQueue(base);
@@ -242,13 +247,19 @@ function fixedJobActivity(state, base, s, job, h) {
     case "medic": {
       const pts = patients(state, base).length;
       const hurt = atBase(state, base.id).filter((x) => x !== s && (isHurt(x) || isSick(x))).length;
+      // noidle: nobody to look after and no trainee to teach on the ward: a medic with no work (they help elsewhere).
+      if (!pts && !hurt && !atBase(state, base.id).some((x) => x !== s && x.role === "trainee")) return act("idle", "Medic – nobody to look after", "Nobody here is hurt or ill and nobody trains on the ward: no medic work until someone needs care.", job);
       return act("work", pts ? `On medic duty (${pts} in bed)` : hurt ? `On medic duty (${hurt} to look after)` : "On medic duty (quiet ward)", hospitalDef(base).tier ? "" : "No infirmary: only the badly hurt get much from a medic.", job);
     }
     case "trainee": return act("work", "Training on the ward", "", job);
     case "cook": {
       if (!hasKitchen(base)) return act("stalled", "Cook – no kitchen", `Nothing to cook on: build a Kitchen at ${base.name} (Construction, a building plot) or give them another job.`, job);
       const ck = cookActivity(h, lunchHour(state));
-      return ck ? act("work", ck.text, ck.why, job) : act("off", "Cook – off until 05:00", "The cooks are up before the others for breakfast.", job);
+      if (!ck) return act("off", "Cook – off until 05:00", "The cooks are up before the others for breakfast.", job);
+      // noidle: a cold stove (no wood to light it) or no food in store: nothing to cook.
+      if (!kitchenCanLight(state, base)) return act("idle", "Cook – the stove is cold", `No wood to light ${base.name}'s kitchen stove: nothing to cook until wood comes in.`, job);
+      if (!(edibleFood(base) > 0 || (base.stock.food || 0) > 0)) return act("idle", "Cook – nothing to cook", `${base.name} has no food in store to cook.`, job);
+      return act("work", ck.text, ck.why, job);
     }
     case "guard": return act("guard", "On guard", "A lookout on the walls (counts 1.5× in a fight).", job);
     case "rest": return act("free", "Resting", "Their job is Rest: recovers mood.", job);
@@ -260,6 +271,8 @@ function fixedJobActivity(state, base, s, job, h) {
     case "read": {
       if (s.studying && BLUEPRINTS[s.studying]) return act("work", `Studying the ${BLUEPRINTS[s.studying].name}`, "", job);
       if (s.reading && bookDef(s.reading)) return act("work", `Reading ${GEAR[s.reading] ? GEAR[s.reading].name : "a book"}`, "", job);
+      // A book or blueprint here they could take up (skills.js readingDaily hands out the copies at midnight): work, not idle.
+      if (bestBook(s, armoryBooks(base), state) || studyable(state, base).some((id) => canStudy(s, id))) return act("work", "Picking a book to read", "A book or blueprint here they can learn from: they take a copy up for the day.", job);
       return act("stalled", "Reader – nothing to read", "No book or blueprint here they can learn from.", job);
     }
     default: return act("work", ROLES[job] ? ROLES[job].name : "Working", "", job);
@@ -347,7 +360,7 @@ export function outputSeries(state, base, job, days = 7) {
 export function dayJob(state, s) {
   const t = isManaged(state, s) ? s.task : null;
   if (t && (t.kind === "sched" || t.kind === "emerg") && t.last && state.hour - t.last.hour <= 72) return t.last.role;
-  return s.role;
+  return helpingAs(s) ? s.helpWas.role : s.role; // noidle.js: helping elsewhere this hour, their own job is still theirs
 }
 const JOB_ORDER = () => Object.keys(ROLES).filter((k) => k !== "rest");
 
@@ -497,6 +510,7 @@ export function workingActivity(state, s) {
   const job = dayJob(state, s);
   if (job === "rest") return act("free", "Resting", "Their job is Rest: recovers mood.", job);
   if (job === "guard") return act("guard", "On guard", "", job);
+  if (helpingAs(s) && job === s.helpWas.role) return jobCheck(state, base, s, job, s.helpWas.station); // noidle.js: their own job, by the job (they help elsewhere meanwhile)
   return jobActivity(state, base, s, job, WORK_HOUR[job] ?? 12);
 }
 const IDLE_KINDS = new Set(["idle", "stalled"]);
@@ -549,6 +563,13 @@ export function stalledJobs(state) {
 }
 // Could this person do this job here (at its working hour)? The job's activity: kind "stalled" when it cannot run.
 // station: for "operate", the station to try. Nothing is changed (the role is put back).
+// The same at hour h (noidle.js: may they help with this job this hour?), without the trip's own line.
+export function jobCheckAt(state, base, s, job, h, station = null) {
+  const was = [s.role, s.station];
+  s.role = job;
+  if (job === "operate") s.station = station;
+  try { return jobActivity(state, base, s, job, h, { trips: false }); } finally { [s.role, s.station] = was; }
+}
 export function jobCheck(state, base, s, job, station = null) {
   const was = [s.role, s.station];
   s.role = job;
