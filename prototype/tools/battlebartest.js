@@ -13,6 +13,7 @@
 // Usage: node tools/battlebartest.js
 import { battles } from "./isobattles.js";
 import * as C from "../src/sim/combat.js";
+import { isStacked, reloadOptions } from "../src/sim/mags.js";
 import { faceToward } from "../src/sim/vision.js";
 import { bodiesNear } from "../src/sim/ground.js";
 
@@ -125,8 +126,10 @@ console.log("Greyed with the reason, from the sim's own refusals");
   if (gunner) {
     cui.sel = gunner.id;
     const why = C.reloadRefusal(b, gunner), kinds = UI.ammoToHand(st, b, gunner).length; // more than one kind to hand: Reload can swap the kind
+    // (physical rounds, mags.js: Reload opens the picker while there is anything on them to pick, ui/combat.js unitOrders)
+    const opts = isStacked(gunner) && !gunner.gunner ? reloadOptions(b, gunner) : null, pick = opts ? opts.mags.length + opts.clips.length + opts.rounds.length > 0 : kinds > 1;
     const r = order(st, "reload");
-    check(r && (why && kinds < 2 ? r.disabled && r.tip.includes(why) : !r.disabled), `Reload with ${C.magLabel(b, gunner)}: ${why && kinds < 2 ? `greyed, "${why}"` : `ready${why ? ` (${kinds} kinds of round to hand)` : ""}`}`);
+    check(r && (why && !pick ? r.disabled && r.tip.includes(why) : !r.disabled), `Reload with ${C.magLabel(b, gunner)}: ${why && !pick ? `greyed, "${why}"` : `ready${why ? ` (${opts ? "the picker: rounds or magazines on them" : `${kinds} kinds of round to hand`})` : ""}`}`);
     // An empty gun with no rounds left: Shoot and Overwatch say what the sim says (fireRefusal).
     gunner.mag = 0;
     for (const p of b.pools || []) for (const k of Object.keys(p)) if (typeof p[k] === "number" && !/meds|arrows/.test(k)) p[k] = 0;

@@ -34,8 +34,11 @@ export function gunRoundsLabel(item, loc = null, state = null) {
   if (!r) return null;
   const cls = r.n <= 0 ? "empty" : r.n >= r.cap ? "full" : "part";
   const what = isRoundGun(item) ? "in the gun" : "in the magazine";
-  const how = r.src === "ready" ? ` (loaded from the rounds to hand before a fight: ${r.roundName})` : r.src === "fight" ? ` (${r.roundName}, now)` : r.src === "in it" ? ` (${r.roundName})` : "";
-  const tip = r.n > 0 ? `${r.n} of ${r.cap} rounds ${what}${how}` : r.src === "unloaded" ? `Unloaded: kept empty until it is loaded again (right-click it: Load)` : r.src === "ready" ? `Empty: no ${r.roundName} to hand to load it with` : `Empty (${r.cap} rounds when loaded)`;
+  const how = r.src === "fight" ? ` (${r.roundName}, now)` : ` (${r.roundName})`;
+  const verb = isRoundGun(item) ? "Reload" : "Load rounds";
+  const out = isRoundGun(item) && item.magOut ? " Its magazine is out: right-click it, Insert magazine." : "";
+  // (out of a fight the count is the rounds really in it, 2026-10-20: sim/gunrounds.js physOf)
+  const tip = r.n > 0 ? `${r.n} of ${r.cap} rounds ${what}${how}.${out}` : r.src === "unloaded" ? `Unloaded: kept empty, also when a fight starts, until it is loaded again (right-click it: ${verb}).` : r.src === "fight" ? `Empty (${r.cap} rounds when loaded).` : `Empty (${r.cap} rounds when loaded). Right-click it: ${verb}, from the rounds they carry or the stores here; a fight's start tops it up from what its holder carries.${out}`;
   return { text: `${r.n}/${r.cap}`, cls, tip, n: r.n, cap: r.cap, load: r.load, roundName: r.roundName };
 }
 // The badge's markup (styles.css .irounds), or "".

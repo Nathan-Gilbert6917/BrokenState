@@ -61,6 +61,7 @@ import { WC_ACTIONS, WC_CHANGE, uiCfg, wcChanged } from "./ui/worldcfg.js"; // W
 import { cleanCfg, isDefaultCfg, cfgSummary } from "./sim/worldcfg.js";
 import { SG_ACTIONS, SG_CHANGE, loadDice } from "./ui/startgear.js"; // starting gear picked under Customize (sim/startgear.js)
 import { clearStartGear } from "./sim/startgear.js";
+import { loadUpAll } from "./sim/itemacts.js"; // physical rounds out of a fight: loaded at Start
 import { DEFAULT_SIZE, sizeDef, clampGroups, clampHives, customDef, clampCustomW, clampCustomH, BASE_W, BASE_H } from "./sim/worldsize.js";
 import { INV_ACTIONS, INV_CHANGE, invDrop } from "./ui/inventory.js";
 import { ITEMMENU_ACTIONS, itemMenuHtml, openItemMenu, closeItemMenu } from "./ui/itemmenu.js"; // right-click on an item in an inventory view
@@ -1300,6 +1301,7 @@ const actions = {
     if (JSON.stringify(options.worldCfg || null) !== JSON.stringify(isDefaultCfg(uiCfg(ui)) ? null : uiCfg(ui))) { options.worldCfg = isDefaultCfg(uiCfg(ui)) ? null : { ...uiCfg(ui) }; saveOptions(options); }
     if (crewCustomized(state)) state.customStart = true; // customized on the new-run screen (Customize, custom backgrounds)
     clearStartGear(state); // sim/startgear.js: picked gear is ordinary gear from here on
+    loadUpAll(state); // sim/itemacts.js: every gun and magazine your people carry loaded with real rounds (what each carries, then the hub's stores): the badges count only rounds that are in them (2026-10-20)
     ui.gearEdit = null;
     assignStartingRoles(state); // jobs by skill, after any edits made on this screen (world.js)
     centerOn(state, playerTile(state));
