@@ -57,6 +57,32 @@ export const TENT_GEAR = {
     desc: `A big four-person family tent in a long duffle: it takes both arms (In arms), a cart or the cargo (a vehicle's trunk). At a camp it sleeps 4 under cover and keeps ${4 * TENT_S} kg out of the weather. A team whose bags sleep everyone sets up camp in half an hour instead of an hour. Struck, it is a bag again.` },
 };
 
+// What a wrecked tent leaves when it is taken down in a fight (tentfight.js): the canvas cut off its poles, good for
+// patching and padding, broken down for nothing much. Never found in a container.
+TENT_GEAR.canvas = { name: "Tent canvas", slot: "pack", skill: null, power: 0, req: 0, value: 2, noise: 0, weight: 1, cat: "camp",
+  desc: "Torn tent canvas cut off its poles: what is left of a tent slashed or burned to rags and taken down in a fight. Not a tent any more." };
+
+// Taking a tent down in a fight (tentfight.js; the user's request 2026-10-20: "take tents down in raids and steal
+// them"). A person next to a standing tent works at it with both actions (AP) a go; it is down after GOES goes by its
+// kind (a couple of turns; two people share the work). Then its cells are open ground and it is a bag again: in the
+// arms of whoever finished it (on the ground when their hands are full), what was stored in it on the ground there.
+//   WRECKED   at or under this share of its hit points (or any of it burned) it is rags: SCRAP and CANVAS by its kind,
+//             no bag. Torn but above it: the bag, damaged (the bag's tentHp, its share: pitched again, it stands worn
+//             and the campers mend it, softcover.js mendTents).
+//   MAKESHIFT a makeshift tent's poles and tarp: a little wood and scrap, never a bag.
+//   NOISE / RADIUS / HEAT  the poles and the pegs: a little noise on the raid, the unaware within RADIUS turn toward it,
+//             a raid's Heat.
+//   AI_TAKE   an attacker on a camp with nobody of the defenders in sight, right next to a tent of theirs, takes it
+//             down this share of the time (else softcover.js tentAI slashes or burns as before); once begun it goes on.
+//   SLASH_AP  the player's Slash at a tent next to them: one action, softcover.js TENT_FIGHT.SLASH a cell.
+export const TENT_TAKE = {
+  AP: 2, GOES: { makeshift: 1, tent1: 2, tent2: 2, tent4: 3 },
+  WRECKED: 0.2, SCRAP: { tent1: 1, tent2: 1, tent4: 2 }, CANVAS: { tent1: 1, tent2: 2, tent4: 3 },
+  MAKESHIFT: { wood: 20, scrap: 1 },
+  NOISE: 1, RADIUS: 4, HEAT: 2,
+  AI_TAKE: 0.3, SLASH_AP: 1, SLASH_RADIUS: 2,
+};
+
 // Where they are kept (loot.js ITEM_TAGS): camping and outdoors places, the sporting goods aisle, a house's garage,
 // army stores.
 const TAGS = ["camp", "outdoor", "sport", "garage", "home", "military"];

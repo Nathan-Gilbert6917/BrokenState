@@ -75,7 +75,8 @@ import { fortAssault, fortSize, assaultBase } from "./fort.js"; // their walled 
 import { layAssaultStores, stockAssaultStores } from "./assaultstores.js"; // their real stores on the map (the wall-line map too)
 import { assaultDims, CONTACT } from "./battlesize.js";
 import { tentCount } from "./basemap.js"; // their camp's tents (basemap.js AI_CAMP_TENTS)
-import { groupCampTents } from "./tents.js"; // their real tents (the bags on their shelf) where they have them
+import { groupCampTentItems } from "./tents.js"; // their real tents (the bags on their shelf) where they have them
+import { addTent } from "./tentfight.js"; // their tents on the battle's list: whose they are, the bag each one is
 import { TENTS } from "./buildings.js";
 import { captivesOf, takeCaptive } from "./conflicts.js";
 import { makeCandidate, offerRecruits } from "./recruits.js";
@@ -352,12 +353,17 @@ registerBattleLayout("baseAssault", (b, ctx) => {
     // their sizes), else a camp's makeshift tents (basemap.js tentCount: AI_CAMP_TENTS, as yours are built).
     const fac = e.factionId != null ? factionById(ctx.state, e.factionId) : null, home = fac ? homeAt(ctx.state, fac, b.tileId) : null;
     if (home && walls < 1 && tentCount(home) > 0) {
-      for (const kind of groupCampTents(fac, groupPeopleAt(fac, b.tileId))) {
+      for (const { kind, item } of groupCampTentItems(fac, groupPeopleAt(fac, b.tileId))) {
         const TW = TENTS[kind].w, TH = TENTS[kind].h;
         const clear = (x, y) => { for (let yy = y - 1; yy <= y + TH; yy++) for (let xx = x - 1; xx <= x + TW; xx++) if (!ctx.free(xx, yy)) return false; return true; };
         for (let t = 0; t < 40; t++) {
           const x = ctx.rng.int(X + 3, ctx.W - 2 - TW), y = ctx.rng.int(2, ctx.H - 3 - TH);
-          if (clear(x, y)) { for (let dy = 0; dy < TH; dy++) for (let dx = 0; dx < TW; dx++) ctx.put(x + dx, y + dy, "tent"); break; }
+          if (clear(x, y)) {
+            const cells = [];
+            for (let dy = 0; dy < TH; dy++) for (let dx = 0; dx < TW; dx++) { ctx.put(x + dx, y + dy, "tent"); cells.push([x + dx, y + dy]); }
+            addTent(b, { kind, cells, side: "enemy", owner: { fid: fac.id }, item }); // tentfight.js: theirs; taken down, its bag is off their shelf
+            break;
+          }
         }
       }
     }

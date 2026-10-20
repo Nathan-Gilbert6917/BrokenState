@@ -63,6 +63,7 @@ import { addFind, roundsText } from "./ammo.js"; // rounds by calibre
 import { carriedRec } from "./ammo.js"; // the loose rounds people carry
 import { sumRecs } from "./rounds.js"; // a team's rounds: its bags and what its people carry
 import { cfgOf, lootQty } from "./worldcfg.js"; // the run's dials: Dead at sites, the loot by kind
+import { campRoster } from "./campsite.js"; // a campsite's own people or dead join the roster (its state)
 
 export const APPROACHES = {
   sneak:  { name: "Sneak",  loot: 0.7, heat: 7,  desc: "Slow and quiet. Stealth lowers Heat further." },
@@ -201,7 +202,7 @@ export function startScavenge(state, p) {
     // A city (citycrawl.js): block by block instead of one raid, while you drive the team (not the autopilot); the crawl
     // opens on the city's map for you to pick the block of its rim to go in at.
     if (crawlTile(t) && p.owner === "player" && poi == null) return startCrawl(state, p, { choose: true });
-    const groups = raidEnemies(state, p.dest);
+    const groups = poi != null ? campRoster(state, t, poi, raidEnemies(state, p.dest)) : raidEnemies(state, p.dest); // campsite.js: a campsite's raiders or its dead
     const foes = groups.filter((g) => !g.side); // a third side (wanderers.js) is not who you came to fight
     const total = foes.reduce((a, g) => a + g.count, 0);
     const names = foes.map((g) => g.name).join(" and ");

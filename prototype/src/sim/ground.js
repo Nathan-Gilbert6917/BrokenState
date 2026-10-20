@@ -377,7 +377,7 @@ export function groundLeftovers(state, b, outcome) {
   const out = [];
   let ground = null; // every pile on the ground is one "On the ground" entry
   for (const c of L.containers) {
-    if (!pileCount(c) || c.kind === "store") continue; // assaultstores.js: a group's store stays theirs (a won base: conquest.js captureBase shares out what is left)
+    if (!pileCount(c) || c.kind === "store" || c.bandStore) continue; // assaultstores.js: a group's store stays theirs (a won base: conquest.js captureBase shares out what is left); campsite.js: a band's tent goes back to the band (campAfter)
     let pile;
     if (isPile(c) && ground) {
       pile = ground;

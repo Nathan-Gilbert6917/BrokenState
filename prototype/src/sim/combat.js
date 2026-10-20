@@ -141,6 +141,8 @@ import { fightersOf } from "./groupfight.js"; // a group's people in a fight by 
 import { ammoFactor } from "./arsenal.js";
 import { cfgOf, lootQty, battleDials } from "./worldcfg.js";
 import { concealHidden, concealAim, concealScore, softOn, softCost, markShot, tentStep, tentAI, tearTent, softSetup, settleTents } from "./softcover.js"; // bushes and tents: they hide people, stop no bullets; tents slashed, burned and worn (the user's picks 2026-10-20) // the run's dials (World… on the new-run screen): the battle carries its own
+import { strikeAct, slashAct, settleTentsDown } from "./tentfight.js"; // tents taken down (and carried off) and slashed in a fight (the user's request 2026-10-20)
+import { campRaidMap, campRaidUnits, campSleeperTurn, tentBoxLoot, campAfter } from "./campsite.js"; // the campsite raid: its clearing, its tents and their loot, its campers (the user's request 2026-10-20)
 
 // Result handlers by key. Other modules register theirs while they load (conflicts.js, scavenge.js), which can be
 // before this module's own body has run (the imports are circular), so the map is made on first use: a `var`
@@ -421,6 +423,8 @@ export function finishCombat(state, setup, result) {
   if (battle) settleClaims(state, battle, result); // foundcars.js: the cars claimed on the map join the team or stay parked there
   if (battle) settleBaseBattle(state, battle); // basemap.js: a base map's fight: the loot the raiders got away with, the cars and buildings battered
   if (battle) settleTents(state, battle); // softcover.js: a camp's tents slashed or burned keep their wear
+  if (battle) campAfter(state, battle, result); // campsite.js: a campsite's tents' wear kept, the camp cleared; a band's camp gets back what is left in its tents
+  if (battle) settleTentsDown(state, battle, result); // tentfight.js: the tents taken down are gone from their owners (a base's record struck, a group's or a band's bag off its shelf, a campsite's tent)
   settleCarried(state, setup, result, battle); // carry.js: won, the loads set down are picked up again; else they stay on the ground
   settleArsenal(state, setup, result, battle); // arsenal.js: a group's dead lose their kit (or it is picked up), the rest wears, rounds spent
   settleThird(state, setup, result, battle); // arsenal.js: a group's soldiers on the third side (their dead, wounds, kit)
@@ -4020,6 +4024,7 @@ function scramble(b, u) {
 function detect(b, mover) {
   for (const e of b.units) {
     if (e.side !== "enemy" || e.aware || !active(e)) continue;
+    if (e.asleep && (mover.sneaking || dist(e.x, e.y, mover.x, mover.y) >= 1.5)) continue; // campsite.js: asleep in a tent, only someone blundering right up to them is noticed
     // Light Step and Ghost (skills.js), night and a flashlight (stealth.js).
     const r = detectRange(b, e, mover);
     if (dist(e.x, e.y, mover.x, mover.y) <= r && los(b, e.x, e.y, mover.x, mover.y)) {
@@ -4860,6 +4865,13 @@ export function combatAct(state, act) {
       if (err) return err;
       break;
     }
+    case "strike": case "slashtent": { // tentfight.js: a tent next to them taken down (both actions a go, a couple of turns), or slashed (1 action)
+      const err = act.type === "strike" ? strikeAct(state, b, u, act) : slashAct(state, b, u, act);
+      if (err) return err;
+      b.reach = flood(b.cells, u.x, u.y); // a tent gone: open ground
+      syncFloor(b);
+      break;
+    }
     case "shove": case "boardup": case "teardown": { // barricade.js: furniture shoved a tile (both actions), boards nailed over a door or window, the boards torn down again
       const err = act.type === "shove" ? shoveAct(state, b, u, act, { say, alertNear, fx }) : act.type === "boardup" ? boardAct(state, b, u, act, { say, alertNear, fx }) : tearAct(state, b, u, act, { say, alertNear, fx });
       if (err) return err;
@@ -5234,6 +5246,7 @@ function aiUnit(b, u) {
   if (!active(u)) return;
   if (u.gunner) return gunnerAI(b, u); // a turret's gunner (either side): stays on the gun
   if (u.dormant) { u.ap = 0; return; } // a Sleeper lies where it is (sleepers.js)
+  if (u.asleep && campSleeperTurn(b, u)) return; // campsite.js: a camper asleep in a tent sleeps on until the noise wakes them
   const own = bossAI(u);
   if (own && own.turn) { own.turn(b, u); u.ap = 0; return; } // registerBossAI: a boss that plays its own turn (hivecrawl.js's Hivemind)
   if (u.side === "third") { // thirdside.js: neutrals stay put, defend themselves or run; soldiers fight the dead
@@ -6750,12 +6763,14 @@ export function createRaid(state, setup) {
     // A point of interest's street map (pois.js) is built from dice of its own (poicont.js poiMapRng), so it is the
     // same map with the same containers every visit; Army trucks that come and go are laid last there.
     const mrng = poiI != null ? poiMapRng(state, tileId, poiI) : rng;
-    const types = setup.raid && setup.raid.areas ? setup.raid.areas.slice() : raidAreaTypes(mrng, raidAreasFor(tile, setup.raid && setup.raid.kind), W, H); // more rooms and areas on a bigger map (setup.raid.kind: a point of interest's, pois.js)
+    const campPoi = poiI != null && setup.raid && setup.raid.kind === "campsite"; // campsite.js: a campsite's map is its camp (campRaidMap), not the street areas
+    const types = setup.raid && setup.raid.areas ? setup.raid.areas.slice() : campPoi ? [] : raidAreaTypes(mrng, raidAreasFor(tile, setup.raid && setup.raid.kind), W, H); // more rooms and areas on a bigger map (setup.raid.kind: a point of interest's, pois.js)
     if (tile && tile.road && !types.includes("roadcars")) types.push("roadcars"); // a site on a road: the cars left on the road outside it too (AREAS.roadcars)
     const trucks = trucksAt(state, tileId); // miltrucks.js: Army trucks here (a road, a convoy, a base's motor pool, an army wreck)
     if (trucks.length && !types.includes("miltrucks")) { if (poiI != null) types.push("miltrucks"); else types.unshift("miltrucks"); } // first: they want the room (a POI's map: last)
     map = genRaidMap(mrng, tile, types, withVehicle, { trucks });
     if (entryFrom(map, entrySide, withVehicle)) { const z = map.zones[0]; map.reach = flood(map.cells, z.x0 + 1, z.y0 + 1); }
+    if (campPoi) { campRaidMap(state, tileId, poiI, map, W, H, mrng); map.reach = flood(map.cells, map.zones[0].x0 + 1, map.zones[0].y0 + 1); } // campsite.js: the clearing, the fire and the tents round it
   }
   const b = {
     setup, tileId: party ? partyTile(party) : tileId, w: W, h: H, cells: map.cells, reach: map.reach,
@@ -6782,6 +6797,7 @@ export function createRaid(state, setup) {
       doors: pick ? map.lockedDoors.map((d, i) => ({ id: i + 1, x: d.x, y: d.y, f: d.f || 0, area: d.area, exit: !!d.exit, botSkip: !!d.exit, lock: { kind: d.kind, open: false, tries: 0, ...(d.dk ? { dk: d.dk } : {}) } })) : undefined, // dk: the door's kind (locks.js openOdds)
       // Several buildings here and the raid started from the State Map: the choice is offered until anyone acts.
       choose: !pick && setup.raid && setup.raid.choose && !setup.raid.building ? buildingOptions(tile) : null,
+      camp: map.camp || null, // campsite.js: the camp (its fire, its tents, its state)
     },
   };
   // Storeys (buildingmaps.js): every floor its own grid of the same size, the ground floor active; the upper floors'
@@ -6843,6 +6859,7 @@ export function createRaid(state, setup) {
         const c = rng.pick(cells);
         if (!c) continue;
         u.x = c[0]; u.y = c[1]; u.aware = false; u.pod = pod++; u.home = [c[0], c[1]];
+        if (g.camp) u.camp = g.camp; // campsite.js: the dead among the tents (an overrun camp)
         b.units.push(u);
       }
     } else {
@@ -6858,6 +6875,7 @@ export function createRaid(state, setup) {
         if (g.factionId != null) u.factionId = g.factionId; // prisoners.js: whose people they are
         if (u.factionId != null) armFromArsenal(state, b, u, hn); // arsenal.js
         if (g.side === "neutral" || g.side === "military") thirdSideUnit(b, u, g, i); // thirdside.js: survivors hiding here, a squad clearing it
+        if (g.camp) u.camp = g.camp; // campsite.js: the campers (placed round their fire: campRaidUnits)
         b.units.push(u);
       }
       pod++;
@@ -6866,6 +6884,7 @@ export function createRaid(state, setup) {
   truckCrews(state, b); // miltrucks.js: the turned crews standing round the Army trucks
   placeBodies(b, state.seed); // sleepers.js: bodies lie about, Sleepers among them
   placeWalking(state, b); // carriers.js: the walking dead that drifted near this tile, among the ordinary dead
+  if (b.raid.camp) campRaidUnits(state, b, b.raid.camp); // campsite.js: its tents on the battle's list, the campers round the fire or asleep in the tents, the dead among them, the bodies, the fire's glow
   battlePerks(state, b); // skills.js: the guards' perks and XP tallies too (people, by your rule)
   stealthSetup(state, b); // stealth.js: night, flashlights, suppressors, which way the guards face
   indoorSetup(b); // indoorlight.js: which rooms are dark (a barn, a storeroom; every room at night), their light switches
@@ -7123,6 +7142,11 @@ export function searchBox(state, b, u, box, open = false, quick = false) {
         b.raid.heat = Math.min(100, b.raid.heat + CONVOY_GUARD.HEAT_OPEN);
         say(b, `The tailgate bangs down the line of trucks (Heat +${CONVOY_GUARD.HEAT_OPEN}).`, "danger");
       }
+    } else if (box.kind === "tent" && box.tentKind) {
+      // A campsite's tent (campsite.js tentBoxLoot): sized by its storage, food and water, camp gear, a gun or rounds now and then.
+      const got = tentBoxLoot(state, drng, box, rich, scav, (R.camp && R.camp.state) || "abandoned");
+      Object.assign(sup, got.sup);
+      gear.push(...got.gear);
     } else {
       const def = AREAS[R.areas[box.area].type];
       const site = poiKind || (state.tiles[b.tileId] && state.tiles[b.tileId].loc ? state.tiles[b.tileId].loc.type : null);
