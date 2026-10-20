@@ -33,8 +33,8 @@ const check = (ok, what) => { if (ok) pass++; else fail++; console.log(`  ${ok ?
 const section = (t) => console.log(`\n${t}`);
 const t0 = Date.now();
 registerCombatHandler("bbt", () => {});
-const world = (s = seed) => { const st = createWorld({ seed: s, factionCount: 6 }); st.started = true; st.hour = 24 * 3 + 12; return st; };
-const rich = (base) => Object.assign(base.stock, { scrap: 999, parts: 99, buildmat: 99, electronics: 9, meds: 20 });
+const world = (s = seed) => { const st = createWorld({ seed: s, factionCount: 6 }); st.started = true; st.hour = 24 * 3 + 12; st.landOff = true; return st; }; // landOff: the land (basescatter.js) is tools/baseviewtest.js's
+const rich = (base) => Object.assign(base.stock, { scrap: 999, parts: 99, buildmat: 99, electronics: 9, meds: 20, wood: 99999 });
 const asCamp = (base) => { base.tier = 0; base.camp = true; base.buildings = []; base.construction = []; delete base.plan; return base; };
 // Finishes every job in the queue (as the builders would).
 const finishAll = (st, base) => { for (let i = 0; i < 40 && base.construction.length; i++) { for (const j of base.construction) j.progress = j.hours; constructionHour(st); } };
@@ -157,7 +157,7 @@ section("General buildings and fittings");
   const scrap0 = h.stock.scrap, nBunks = countAll(h, "bunks");
   const text = demolish(st, h, hut.id);
   check(!h.buildings.includes(hut) && countAll(h, "bunks") === nBunks - 1 && !h.buildings.includes(stove), `the hut pulled down with the bunks and the stove in it (${text})`);
-  check(h.stock.scrap === scrap0 + 5 + 2 + 4 && /bunk beds/.test(text) && /wood stove/.test(text) && !/plot is free/.test(text), `their halves salvaged too (${h.stock.scrap - scrap0} scrap), no plot to free`);
+  check(h.stock.scrap === scrap0 + [BUILDINGS.gen_hut, BUILDINGS.bunks, BUILDINGS.stove].reduce((a, d) => a + Math.floor(d.cost.scrap / 2), 0) && /bunk beds/.test(text) && /wood stove/.test(text) && !/plot is free/.test(text), `their halves salvaged too (${h.stock.scrap - scrap0} scrap), no plot to free`);
   const textC = demolish(st, h, cabin.id);
   check(h.buildings.includes(bench) && !bench.at && bench.host == null && !h.buildings.includes(shelves) && /shelves/.test(textC), "the cabin down: the bench stays (back to the yard), the shelves went with it");
   check(placeProblem(h, "bunks") !== "" && BM.layoutOf(st, h).filter((q) => q.it.fit).every((q) => !q.at), "with no building left to stand in, the fittings are off the map and no more can be queued");
@@ -220,9 +220,9 @@ section("The view: nobody on it, Build, the menu");
   check(b.units.length === 0 && L.sel === null && L.pickType === null && L.pick === null, "nobody on the map; sel and pickType empty");
   const menu = BM.buildMenu(st, h);
   const groups = [...new Set(menu.map((m) => m.group))];
-  check(groups.join("|") === "General buildings|Fittings|Buildings|Yard things|Defences", `the menu's groups in order: ${groups.join(", ")}`);
+  check(groups.join("|") === "Tents|General buildings|Fittings|Furniture|Buildings|Yard things|Defences", `the menu's groups in order: ${groups.join(", ")}`);
   const hutM = menu.find((m) => m.type === "gen_hut"), bunksM = menu.find((m) => m.type === "bunks"), bunkM = menu.find((m) => m.type === "bunkhouse"), pitsM = menu.find((m) => m.type === "spike_pits");
-  check(hutM && hutM.group === "General buildings" && hutM.ok && hutM.w === 4 && hutM.h === 4 && hutM.cost.scrap === 10 && hutM.hours === 14 && hutM.desc.length > 20, `the hut: ${hutM.w} × ${hutM.h}, ${hutM.cost.scrap} scrap, ${hutM.hours} h, ok`);
+  check(hutM && hutM.group === "General buildings" && hutM.ok && hutM.w === 4 && hutM.h === 4 && hutM.cost.scrap === BUILDINGS.gen_hut.cost.scrap && hutM.cost.wood === BUILDINGS.gen_hut.cost.wood && hutM.hours === 14 && hutM.desc.length > 20, `the hut: ${hutM.w} × ${hutM.h}, ${hutM.cost.scrap} scrap + ${hutM.cost.wood} wood, ${hutM.hours} h, ok`);
   check(bunksM && bunksM.group === "Fittings" && !bunksM.ok && /Needs a building to stand in/.test(bunksM.why), `the bunks: ${bunksM.why}`);
   check(bunkM && bunkM.group === "Buildings" && pitsM && pitsM.group === "Defences" && menu.find((m) => m.type === "craftbench").group === "Yard things" && !menu.some((m) => m.type === "walls" || m.type === "reload_bench"), "a bunkhouse under Buildings, pits under Defences, the bench under Yard things; no wall, no upgrade in place");
   // pickType + build: queues a hut and places its outline at the ghost. (The view is made again after every change
@@ -232,13 +232,13 @@ section("The view: nobody on it, Build, the menu");
   const g = BM.ghostAt(st, b, mapX(14), mapY(14));
   check(g && g.ok && g.cells.length === 16 && g.type === "gen_hut" && g.at.join() === "12,12,0", `the ghost at 14, 14: ${g.cells.length} cells, ${g.ok ? "fits" : g.why}`);
   const scrap0 = h.stock.scrap, n0 = h.construction.length;
-  check(BM.layoutAct(st, b, { type: "build", x: mapX(14), y: mapY(14) }) === "" && h.construction.length === n0 + 1 && h.stock.scrap === scrap0 - 10, "a click builds: the hut queued and paid for");
+  check(BM.layoutAct(st, b, { type: "build", x: mapX(14), y: mapY(14) }) === "" && h.construction.length === n0 + 1 && h.stock.scrap === scrap0 - BUILDINGS.gen_hut.cost.scrap, "a click builds: the hut queued and paid for");
   const job = h.construction[h.construction.length - 1];
   check(job.type === "gen_hut" && job.at && job.at.join() === "12,12,0" && st.combat !== b && st.combat.layout === L && L.sel === `c:${job.id}` && /queued and placed/.test(L.msg), `the job placed at the ghost (${job.at}), selected, the view made again`);
   b = st.combat;
   // A refused spot: nothing is queued or paid.
   const bad = BM.layoutAct(st, b, { type: "build", x: mapX(12), y: mapY(12) });
-  check(/^On top of/.test(bad) && h.construction.length === n0 + 1 && h.stock.scrap === scrap0 - 10, `on top of the outline: refused (${bad}), nothing queued or paid`);
+  check(/^On top of/.test(bad) && h.construction.length === n0 + 1 && h.stock.scrap === scrap0 - BUILDINGS.gen_hut.cost.scrap, `on top of the outline: refused (${bad}), nothing queued or paid`);
   const G = BM.gridHalf(h);
   const far = BM.layoutAct(st, b, { type: "build", x: mapX(G - 2), y: mapY(0) });
   check(/edge|Off the map/.test(far) && h.construction.length === n0 + 1, `in the margin: refused (${far})`);
@@ -261,7 +261,7 @@ section("The view: nobody on it, Build, the menu");
   b = st.combat;
   check(BM.layoutAct(st, b, { type: "select", key: keyOf(hut) }) === "" && b.layout.sel === keyOf(hut), "select");
   const scrap1 = h.stock.scrap;
-  check(BM.layoutAct(st, b, { type: "demolish", key: `c:${jb.id}` }) === "" && !h.construction.includes(jb) && h.stock.scrap === scrap1 + 5 && /Cancelled/.test(st.combat.layout.msg), "demolish on a queued job cancels it and refunds");
+  check(BM.layoutAct(st, b, { type: "demolish", key: `c:${jb.id}` }) === "" && !h.construction.includes(jb) && h.stock.scrap === scrap1 + BUILDINGS.bunks.cost.scrap && /Cancelled/.test(st.combat.layout.msg), "demolish on a queued job cancels it and refunds");
   b = st.combat;
   check(BM.layoutAct(st, b, { type: "demolish", key: keyOf(hut) }) === "" && !h.buildings.includes(hut) && /pulled down/.test(st.combat.layout.msg) && st.combat.layout.sel === null, "demolish on a standing building pulls it down and clears the selection");
   check(BM.layoutAct(st, st.combat, { type: "endLayout" }) === "" && !st.combat, "the map closed");

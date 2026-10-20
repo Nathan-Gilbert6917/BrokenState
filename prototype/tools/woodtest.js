@@ -1,17 +1,17 @@
-// Woodcutting and firewood (src/sim/woodcutting.js, upkeep.js heatUse, needs.js heatDaily, orders.js, plans.js,
+// Woodcutting and wood (src/sim/woodcutting.js, upkeep.js heatUse, needs.js heatDaily, orders.js, plans.js,
 // work.js, economy.js, health.js, autopilot.js planWood / woodTripCands / heatFuelWant, crews.js, trade.js, save.js,
 // ui/farming.js, ui/alerts.js, ui/expedition.js, ui/ui.js, main.js).
 // Usage: node tools/woodtest.js [seed] (default 42).
-// - The land: firewood by terrain (forest > hills > mountains > farmland > suburbs > city, water none), sites, hive
+// - The land: wood by terrain (forest > hills > mountains > farmland > suburbs > city, water none), sites, hive
 //   land; season and time of day; the yields per woodcutter-hour by terrain (a table).
 // - Woodcutters: tools (fire axe > sledgehammer > machete > bare hands; a team's and a base's spare tools are lent),
 //   skill, the hurt; diminishing hands on one tile.
 // - Depletion and regrowth (slow: a season or more).
 // - The Cut wood order (and its plan step, the queue, the Heat it makes, the injuries), the base job (work type,
 //   role, the daily cutting, the armory's axes, the noise at the base).
-// - Heating: firewood first (the fuel figure / HEAT.wood), then fuel; the outpost's share from the hub; a shelter's fire on
-//   bare ground burns firewood; a team's camp fire on bare ground goes out without any.
-// - The autopilot: woodcutters from late summer until the winter's firewood is in, none with gov.noWood; the
+// - Heating: wood first (the fuel figure / HEAT.wood), then fuel; the outpost's share from the hub; a shelter's fire on
+//   bare ground burns wood; a team's camp fire on bare ground goes out without any.
+// - The autopilot: woodcutters from late summer until the winter's wood is in, none with gov.noWood; the
 //   heating fuel plan counts the wood; wood trips and the crews' field job.
 // - Trade: priced by season and group; the panels and alerts; save / load (old saves start with none) and
 //   determinism.
@@ -103,7 +103,7 @@ function simWood(state, p, hours, startHour, { reset = true } = {}) {
 const avgCutter = () => ({ skills: { farming: 3, mechanics: 3 }, perks: [], health: 100, conditions: [], mood: 60, traits: [], gear: {}, id: 1 });
 
 // ======================================================================
-section("The land: firewood by terrain, sites, hive land, season and time of day");
+section("The land: wood by terrain, sites, hive land, season and time of day");
 const yieldTable = [];
 {
   const state = mk();
@@ -130,10 +130,10 @@ const yieldTable = [];
     const h = sd * 24 + 12;
     yieldTable.push({ terrain: k, bare: Wd.woodRate(state, ab[k].id, h, bare), axe: Wd.woodRate(state, ab[k].id, h, axe) });
   }
-  note("firewood per woodcutter-hour (Farming 3, Mechanics 3; untouched; summer daylight) · a base-job day (6h):");
+  note("wood per woodcutter-hour (Farming 3, Mechanics 3; untouched; summer daylight) · a base-job day (6h):");
   for (const y of yieldTable) note(`  ${y.terrain.padEnd(9)} bare hands ${r2(y.bare)}/h (${r1(y.bare * 6)}/day) · fire axe ${r2(y.axe)}/h (${r1(y.axe * 6)}/day)`);
   const fy = yieldTable.find((y) => y.terrain === "forest"), py = yieldTable.find((y) => y.terrain === "plains");
-  check(fy.axe * 6 >= 120 && fy.axe * 6 <= 195, `a woodcutter with an axe in forest: about 140 a day, 14 kg (${r1(fy.axe * 6)})`); // firewood is 0.1 kg (it was 4–6.5 of 3 kg)
+  check(fy.axe * 6 >= 120 && fy.axe * 6 <= 195, `a woodcutter with an axe in forest: about 140 a day, 14 kg (${r1(fy.axe * 6)})`); // wood is 0.1 kg (it was 4–6.5 of 3 kg)
   check(py && py.axe < fy.axe * 0.35, `farmland gives far less than forest (${r2(py.axe)} vs ${r2(fy.axe)} an hour)`);
 }
 
@@ -171,8 +171,8 @@ section("Depletion and regrowth: trees are slow");
   Wd.takeWood(state, forest.id, Wd.WOOD.deplete * Wd.woodAbundance(state, forest.id) / 2);
   const l0 = Wd.woodLevel(state, forest.id);
   const l28 = Wd.woodLevel(state, forest.id, state.hour + 28 * 24), l112 = Wd.woodLevel(state, forest.id, state.hour + 112 * 24);
-  note(`a forest tile cut to half (${Math.round(Wd.WOOD.deplete * Wd.woodAbundance(state, forest.id) / 2)} firewood): ${Math.round(l0 * 100)}% → ${Math.round(l28 * 100)}% after a season → ${Math.round(l112 * 100)}% after a year`);
-  check(near(l0, 0.5, 0.01), "about half the tile's firewood takes it to half");
+  note(`a forest tile cut to half (${Math.round(Wd.WOOD.deplete * Wd.woodAbundance(state, forest.id) / 2)} wood): ${Math.round(l0 * 100)}% → ${Math.round(l28 * 100)}% after a season → ${Math.round(l112 * 100)}% after a year`);
+  check(near(l0, 0.5, 0.01), "about half the tile's wood takes it to half");
   check(l28 < 0.7 && l28 > 0.55, "a season brings back about a quarter of what was cut");
   check(l112 > 0.8 && l112 < 0.95, "a year brings back most of it");
   // Expected haul against the rolls: 200 eight-hour days in summer forest, three woodcutters, one fire axe.
@@ -199,17 +199,17 @@ section("The Cut wood order: start, hours, the haul, the card, Heat, injuries, t
   check(stationaryActivity(p) === "wood" && heatGain(state, p).gain > 0 && /cutting wood/.test(heatGain(state, p).parts.join(" ")), `chopping builds Heat (${r1(heatGain(state, p).gain)} an hour: ${heatGain(state, p).parts[0]})`);
   for (let i = 0; i < 8; i++) { state.hour++; taskHour(state, p); }
   const got = carried(p, "wood");
-  check(p.phase === "waiting" && got > 150, `done: the team carries ${r1(got)} firewood`);
+  check(p.phase === "waiting" && got > 150, `done: the team carries ${r1(got)} wood`);
   check(p.lastHaul && p.lastHaul.kind === "wood", "the trip report knows it cut wood");
   const card = state.cards.find((c) => c.partyId === p.id);
-  check(!!card && /Cut wood 8h/.test(card.text || "") && /firewood/.test(card.text || ""), "the orders card says what was cut");
+  check(!!card && /Cut wood 8h/.test(card.text || "") && /wood/.test(card.text || ""), "the orders card says what was cut");
   state.cards.length = 0;
   // A full cargo: the rest is left.
   const q = placeTeam(state, cleanTile(state, "forest", (t) => t.id !== forest.id).id, { tools: ["fireaxe", "fireaxe", "fireaxe"] });
   q.supplies.food = 40; q.supplies.water = 40;
   const room = cargoRoom(state, q);
   const g = simWood(state, q, 24, dayIn(state, "summer", 3) * 24 + 6, { reset: false });
-  check(g.wood * SUPPLIES.wood.weight <= room + 0.01 && g.left > 0,`the haul stops at what the team can carry (${r1(g.wood)} firewood, ${r1(room)} kg of room, ${r1(g.left)} left)`);
+  check(g.wood * SUPPLIES.wood.weight <= room + 0.01 && g.left > 0,`the haul stops at what the team can carry (${r1(g.wood)} wood, ${r1(room)} kg of room, ${r1(g.left)} left)`);
   // Where not: open water, bare city ground.
   const water = state.tiles.find((t) => t.terrain === "water" && !t.bridge);
   check(/water/.test(Wd.woodProblem(state, p, water.id)), "no woodcutting on open water");
@@ -228,7 +228,7 @@ section("The Cut wood order: start, hours, the haul, the card, Heat, injuries, t
   check(stepsToOrders(state, [{ kind: "wood", hours: 8 }], forest.id)[0].type === "wood", "the plan step becomes a Cut wood order on the target");
   const crew = atBase(state, hub(state).id).slice(0, 2);
   const est = estimatePlan(state, { memberIds: crew.map((s) => s.id), dest: forest.id, mission: "move", steps: [{ kind: "wood", hours: 8 }, { kind: "home" }], supplies: { food: 6, water: 6 }, startHour: dayIn(state, "summer", 10) * 24 + 5 });
-  check(est && est.wood > 0 && est.legs.some((l) => l.wood > 0), `the planner counts the expected firewood (${est && est.wood})`);
+  check(est && est.wood > 0 && est.legs.some((l) => l.wood > 0), `the planner counts the expected wood (${est && est.wood})`);
 }
 
 // ======================================================================
@@ -246,7 +246,7 @@ section("The Cut wood job at a base: work type, role, the daily cutting, the arm
   if (!why) {
     base.stock.wood = 0;
     const o = WORK_TYPES.wood.open(ctx());
-    check(o.cap >= 2 && o.urg >= 3, `autumn, no firewood: Cut wood open for ${o.cap} (urgency ${o.urg})`);
+    check(o.cap >= 2 && o.urg >= 3, `autumn, no wood: Cut wood open for ${o.cap} (urgency ${o.urg})`);
     base.stock.wood = 9999;
     check(WORK_TYPES.wood.open(ctx()).cap === 0, "a full woodpile: no Cut wood work");
     base.stock.wood = 0;
@@ -267,19 +267,19 @@ section("The Cut wood job at a base: work type, role, the daily cutting, the arm
   const axe = Wd.woodDaily(state, base);
   note(`three on Cut wood at the hub, one summer day: ${r1(bare.wood)} bare-handed, ${r1(axe.wood)} with the armory's fire axe; base Heat from the axes ${base.woodNoise}`);
   check(axe.wood > bare.wood && axe.tools === 1, "the armory's axe is used and cuts more");
-  check(near(base.stock.wood - w0, axe.wood, 0.01) && state.econStats.woodCut > 0, "the firewood goes into the base's store and the stats");
+  check(near(base.stock.wood - w0, axe.wood, 0.01) && state.econStats.woodCut > 0, "the wood goes into the base's store and the stats");
   check(base.woodNoise > 0 && baseHeat(state, base) >= base.woodNoise, `chopping adds to the base's Heat (+${base.woodNoise})`);
   // A month of it thins the land around.
   state.wood = {};
   let month = 0;
   for (let d = 0; d < 28; d++) { state.hour = (d0 + d + 1) * 24; tripDay(state, base); month += Wd.woodDaily(state, base).wood; }
   const lvl = Wd.baseWoodTiles(state, base)[0];
-  note(`a month of three woodcutters: ${Math.round(month)} firewood; the best land left ${Math.round(Wd.woodLevel(state, lvl.id) * 100)}%`);
+  note(`a month of three woodcutters: ${Math.round(month)} wood; the best land left ${Math.round(Wd.woodLevel(state, lvl.id) * 100)}%`);
   check(Object.values(state.wood).some((r) => r[0] < 0.9), "the land around the base is cut down");
 }
 
 // ======================================================================
-section("Heating burns firewood first, then fuel; the outposts; the shelter's and the camp's fire");
+section("Heating burns wood first, then fuel; the outposts; the shelter's and the camp's fire");
 {
   const st = mk();
   const h = hub(st);
@@ -289,19 +289,19 @@ section("Heating burns firewood first, then fuel; the outposts; the shelter's an
   const n = residents(st, h.id).length;
   const u = heatUse(st, h);
   check(near(u.total, n * HEAT.fuel) && near(u.wood, n * HEAT.fuel / HEAT.wood), `below 0°C: ${u.text}`);
-  check(/firewood a day/.test(upkeepLine(st, h).heating) && upkeepLine(st, h).heating === `Heating: ${n} people × 0.1 = ${r1(n * 0.1).toFixed(1)} → ${Math.round(n * 0.1 / HEAT.wood)} firewood a day (or ${r1(n * 0.1).toFixed(1)} fuel)`, `the Upkeep line: "${upkeepLine(st, h).heating}"`);
-  // Enough firewood: no fuel burned.
+  check(/wood a day/.test(upkeepLine(st, h).heating) && upkeepLine(st, h).heating === `Heating: ${n} people × 0.1 = ${r1(n * 0.1).toFixed(1)} → ${Math.round(n * 0.1 / HEAT.wood)} wood a day (or ${r1(n * 0.1).toFixed(1)} fuel)`, `the Upkeep line: "${upkeepLine(st, h).heating}"`);
+  // Enough wood: no fuel burned.
   h.stock.wood = 1500; h.stock.fuel = 10;
   heatDaily(st, h);
-  check(near(h.stock.wood, 1500 - n * 0.1 / HEAT.wood, 1e-6) && h.stock.fuel === 10 && !h.cold, `firewood first: ${r1(n * 0.1 / HEAT.wood)} firewood, no fuel (${h.heat.wood} wood, ${h.heat.burned} fuel)`);
+  check(near(h.stock.wood, 1500 - n * 0.1 / HEAT.wood, 1e-6) && h.stock.fuel === 10 && !h.cold, `wood first: ${r1(n * 0.1 / HEAT.wood)} wood, no fuel (${h.heat.wood} wood, ${h.heat.burned} fuel)`);
   // Half the wood it needs: the fuel covers the rest.
   h.stock.wood = n * 0.05 / HEAT.wood; h.stock.fuel = 10;
   heatDaily(st, h);
-  check(h.stock.wood === 0 && near(h.stock.fuel, 10 - n * 0.05, 0.051) && !h.cold, `half the firewood: fuel for the rest (${r1(10 - h.stock.fuel)} fuel)`);
+  check(h.stock.wood === 0 && near(h.stock.fuel, 10 - n * 0.05, 0.051) && !h.cold, `half the wood: fuel for the rest (${r1(10 - h.stock.fuel)} fuel)`);
   // Neither: cold.
   h.stock.wood = 0; h.stock.fuel = 0;
   heatDaily(st, h);
-  check(h.cold === 1, "no firewood or fuel: cold");
+  check(h.cold === 1, "no wood or fuel: cold");
   // The heating fuel plan counts the wood in store (the governor's fuel runs).
   setAutopilot(st, true, "balanced");
   h.stock.fuel = 0; h.stock.wood = 0;
@@ -309,13 +309,13 @@ section("Heating burns firewood first, then fuel; the outposts; the shelter's an
   h.stock.wood = 15000;
   check(need0 > 0 && heatFuelWant(st, h).need === 0, `the governor's heating fuel plan: ${need0} fuel without wood, none with the winter's wood in store`);
   setAutopilot(st, false);
-  // An outpost short of heating gets the hub's spare firewood over its supply line.
-  // A shelter (tier 0): its lit fire burns firewood by the hour (deadfall about stretches it), else it goes out.
+  // An outpost short of heating gets the hub's spare wood over its supply line.
+  // A shelter (tier 0): its lit fire burns wood by the hour (deadfall about stretches it), else it goes out.
   h.tier = 0; h.fire = true; h.stock.wood = 1500; // fire-nights: the fire burns its people's warmth, boiling and pot too (fireDayBurn)
   const forestish = Wd.fireLandOk(st, h.tile);
   for (let i = 0; i < 24; i++) Wd.shelterFire(st, h);
   const fdb = Wd.fireDayBurn(st, h);
-  if (forestish) check(heatUse(st, h).fire && h.fireFed === true && fdb.land === Wd.WOOD.fire.deadfall && fdb.total < Wd.WOOD.fire.shelter + fdb.heads * (Wd.WOOD.fire.boilHead + Wd.WOOD.fire.cookHead) + fdb.heat && near(h.stock.wood, 1500 - fdb.total, 0.01), `a shelter in wooded land: its fire burns ${fdb.total} firewood a day (the fire ${fdb.fire}, warmth ${fdb.heat}, boiling ${fdb.boil}, the pot ${fdb.cook} for ${fdb.heads}; deadfall stretches it ×${fdb.land})`);
+  if (forestish) check(heatUse(st, h).fire && h.fireFed === true && fdb.land === Wd.WOOD.fire.deadfall && fdb.total < Wd.WOOD.fire.shelter + fdb.heads * (Wd.WOOD.fire.boilHead + Wd.WOOD.fire.cookHead) + fdb.heat && near(h.stock.wood, 1500 - fdb.total, 0.01), `a shelter in wooded land: its fire burns ${fdb.total} wood a day (the fire ${fdb.fire}, warmth ${fdb.heat}, boiling ${fdb.boil}, the pot ${fdb.cook} for ${fdb.heads}; deadfall stretches it ×${fdb.land})`);
   const bare = st.tiles.find((t) => t.terrain === "city" && !Wd.fireLandOk(st, t.id));
   if (bare) {
     const keep = h.tile;
@@ -323,39 +323,39 @@ section("Heating burns firewood first, then fuel; the outposts; the shelter's an
     h.stock.wood = 1500;
     for (let i = 0; i < 24; i++) Wd.shelterFire(st, h);
     const fdb2 = Wd.fireDayBurn(st, h);
-    check(h.fireFed === true && fdb2.land === 1 && near(fdb2.total, Wd.WOOD.fire.shelter + fdb2.heat + fdb2.boil + fdb2.cook, 0.01) && fdb2.cook === fdb2.heads * Wd.WOOD.fire.cookHead && near(h.stock.wood, 1500 - fdb2.total, 0.01) && heatUse(st, h).fire, `a shelter on bare ground: its fire burns ${fdb2.total} firewood a day (${Wd.WOOD.fire.shelter} the fire + ${fdb2.heat} warmth + ${fdb2.boil} boiling + ${fdb2.cook} the pot for ${fdb2.heads})`);
+    check(h.fireFed === true && fdb2.land === 1 && near(fdb2.total, Wd.WOOD.fire.shelter + fdb2.heat + fdb2.boil + fdb2.cook, 0.01) && fdb2.cook === fdb2.heads * Wd.WOOD.fire.cookHead && near(h.stock.wood, 1500 - fdb2.total, 0.01) && heatUse(st, h).fire, `a shelter on bare ground: its fire burns ${fdb2.total} wood a day (${Wd.WOOD.fire.shelter} the fire + ${fdb2.heat} warmth + ${fdb2.boil} boiling + ${fdb2.cook} the pot for ${fdb2.heads})`);
     h.stock.wood = 0.2;
     Wd.shelterFire(st, h);
-    check(h.fire === false && h.stock.wood === 0 && !heatUse(st, h).fire && heatUse(st, h).total > 0, "no firewood left: the fire goes out and does not warm it");
-    check(!Wd.canLight(st, h) && /cannot be lit/.test(setFire(st, h, true)) && h.fire === false, "with no firewood in store it cannot be lit again");
+    check(h.fire === false && h.stock.wood === 0 && !heatUse(st, h).fire && heatUse(st, h).total > 0, "no wood left: the fire goes out and does not warm it");
+    check(!Wd.canLight(st, h) && /cannot be lit/.test(setFire(st, h, true)) && h.fire === false, "with no wood in store it cannot be lit again");
     h.stock.wood = 10;
-    check(Wd.canLight(st, h) && !/cannot/.test(setFire(st, h, true)) && h.fire === true, "firewood in: it is lit again");
+    check(Wd.canLight(st, h) && !/cannot/.test(setFire(st, h, true)) && h.fire === true, "wood in: it is lit again");
     h.tile = keep;
   } else note("(no bare city ground on this map: skipped)");
   delete h.tier; delete h.fire; delete h.fireFed;
-  // A team's camp fire on bare ground burns carried firewood, or goes out.
+  // A team's camp fire on bare ground burns carried wood, or goes out.
   if (bare) {
     const p = placeTeam(st, bare.id);
     p.cargo.supplies.wood = 300; let burnt = 0;
     startOrder(st, p, { type: "camp", hours: 30 });
     for (let i = 0; i < 24; i++) { st.hour++; burnt += Wd.campDayBurn(st, p).total / 24; taskHour(st, p); }
-    check(p.campFire !== false && burnt > Wd.WOOD.fire.camp + partyMembers(st, p).length * Wd.WOOD.fire.campHead - 1e-9 && near(300 - carried(p, "wood"), burnt, 0.05), `a camp on bare ground burns its firewood: the fire, its people's warmth and the pot (${r2(300 - carried(p, "wood"))} a day for ${partyMembers(st, p).length})`);
+    check(p.campFire !== false && burnt > Wd.WOOD.fire.camp + partyMembers(st, p).length * Wd.WOOD.fire.campHead - 1e-9 && near(300 - carried(p, "wood"), burnt, 0.05), `a camp on bare ground burns its wood: the fire, its people's warmth and the pot (${r2(300 - carried(p, "wood"))} a day for ${partyMembers(st, p).length})`);
     p.cargo.supplies.wood = 0;
     for (let i = 0; i < 2; i++) { st.hour++; taskHour(st, p); }
-    check(p.campFire === false, "out of firewood there: the fire goes out");
+    check(p.campFire === false, "out of wood there: the fire goes out");
   }
   const fp = placeTeam(st, cleanTile(st, "forest").id);
   fp.cargo.supplies.wood = 300; let burntF = 0;
   startOrder(st, fp, { type: "camp", hours: 30 });
   for (let i = 0; i < 24; i++) { st.hour++; burntF += Wd.campDayBurn(st, fp).total / 24; taskHour(st, fp); }
-  check(fp.campFire !== false && Wd.campDayBurn(st, fp).land === Wd.WOOD.fire.deadfall && near(300 - carried(fp, "wood"), burntF, 0.05), `a camp in the woods burns firewood, stretched by deadfall (${r2(300 - carried(fp, "wood"))} a day)`);
+  check(fp.campFire !== false && Wd.campDayBurn(st, fp).land === Wd.WOOD.fire.deadfall && near(300 - carried(fp, "wood"), burntF, 0.05), `a camp in the woods burns wood, stretched by deadfall (${r2(300 - carried(fp, "wood"))} a day)`);
   fp.cargo.supplies.wood = 0;
   for (let i = 0; i < 2; i++) { st.hour++; taskHour(st, fp); }
-  check(fp.campFire === false, "out of firewood in the woods too: the fire goes out");
+  check(fp.campFire === false, "out of wood in the woods too: the fire goes out");
 }
 
 // ======================================================================
-section("The autopilot: the winter's firewood from late summer, none with the switch off");
+section("The autopilot: the winter's wood from late summer, none with the switch off");
 {
   const run = (seed, off) => {
     const st = createWorld({ seed, factionCount: 6 });
@@ -370,7 +370,7 @@ section("The autopilot: the winter's firewood from late summer, none with the sw
         const n = atBase(st, hub(st).id).filter((s) => s.role === "wood").length;
         woodDays += n;
         if (n && earliest == null) earliest = Weather.season(st);
-        if (boilerUse(st, hub(st)).active) boiled = true; // the water boiler (worm.js) burns firewood in every season
+        if (boilerUse(st, hub(st)).active) boiled = true; // the water boiler (worm.js) burns wood in every season
         // Woodcutters before the summer only while the pile is pressing (woodcutting.js woodNeed): the boiler, or the
         // Kitchen's stove with the pile under its KITCHEN.wood.keepDays (autopilot.js kitchenOnly: a day's worth of hands).
         if (n && Weather.season(st).key === "spring") {
@@ -386,9 +386,9 @@ section("The autopilot: the winter's firewood from late summer, none with the sw
   const shares = [];
   for (const seed of [SEED, SEED + 1]) {
     const on = run(seed, false), off = run(seed, true);
-    note(`seed ${seed}: at the start of winter the hub has ${on.wood} firewood (the cold ahead needs ${on.need}); ${on.woodDays} woodcutter-days from ${on.earliest ? `${on.earliest.name} day ${on.earliest.dayOfSeason}` : "never"}, ${on.trips} wood trips; fuel ${on.fuel} · switch off: ${off.wood} firewood, fuel ${off.fuel}`);
-    check(on.woodDays > 0 && on.earliest && (on.earliest.key === "summer" || on.earliest.key === "autumn" || on.boiled || (on.kitchen && on.early === 0)), `woodcutters go out from late summer or autumn${on.boiled ? " (earlier here: the water boiler burns firewood all year, worm.js)" : on.kitchen ? " (earlier here only while the Kitchen's stove was short of its days of firewood, kitchen.js)" : ""}`);
-    // At HEAT.wood 0.2 (tune-winter) a winter takes 0.5 firewood a head a freezing day: about half the plan (the
+    note(`seed ${seed}: at the start of winter the hub has ${on.wood} wood (the cold ahead needs ${on.need}); ${on.woodDays} woodcutter-days from ${on.earliest ? `${on.earliest.name} day ${on.earliest.dayOfSeason}` : "never"}, ${on.trips} wood trips; fuel ${on.fuel} · switch off: ${off.wood} wood, fuel ${off.fuel}`);
+    check(on.woodDays > 0 && on.earliest && (on.earliest.key === "summer" || on.earliest.key === "autumn" || on.earliest.key === "spring" /* wood is a building material too (2026-10-20): the builds take from the pile in spring */ || on.boiled || (on.kitchen && on.early === 0)), `woodcutters go out from spring (the builds take wood too), late summer or autumn${on.boiled ? " (earlier here: the water boiler burns wood all year, worm.js)" : on.kitchen ? " (earlier here only while the Kitchen's stove was short of its days of wood, kitchen.js)" : ""}`);
+    // At HEAT.wood 0.2 (tune-winter) a winter takes 0.5 wood a head a freezing day: about half the plan (the
     // whole cold with WOOD.bitter and a fifth to spare) is in by its first day, and the fuel and the woodcutters
     // must carry the rest (a hub that falls short goes cold for a day or two late in the winter: winter bites).
     // Job trips (jobtrips.js, 2026-10-10): a woodcutter now brings in only the hours they are out on the land (not a
@@ -400,8 +400,8 @@ section("The autopilot: the winter's firewood from late summer, none with the sw
   }
   // Every seed of six (ui-int2, after job trips, field works and the kitchen): the governor puts the winter's
   // woodcutters ahead of the hunters and the winter's extra farm hands while the food holds (autopilot.js WOOD_AP
-  // foodFirst) and keeps half the cold's firewood back from field works (fieldworks.js GOV.woodKeep). Before that fix
-  // seed 43 met the winter with no firewood and 48 with a quarter (85 0 52 69 55 96 24 110% over seeds 42–49).
+  // foodFirst) and keeps half the cold's wood back from field works (fieldworks.js GOV.woodKeep). Before that fix
+  // seed 43 met the winter with no wood and 48 with a quarter (85 0 52 69 55 96 24 110% over seeds 42–49).
   for (const seed of [SEED + 2, SEED + 3, SEED + 4, SEED + 5]) { const on = run(seed, false); shares.push(on.wood / Math.max(1, on.need)); }
   const avg = shares.reduce((a, v) => a + v, 0) / shares.length;
   note(`the woodpile at the start of winter, seeds ${SEED}–${SEED + 5}: ${shares.map((v) => `${Math.round(v * 100)}%`).join(" ")} of the cold's need (average ${Math.round(avg * 100)}%)`);
@@ -412,20 +412,20 @@ section("The autopilot: the winter's firewood from late summer, none with the sw
 }
 
 // ======================================================================
-section("Trade: firewood priced by the season and the group");
+section("Trade: wood priced by the season and the group");
 {
   const state = mk();
   const f = state.factions.find((x) => x.alive && x.type === "commune") || state.factions.find((x) => x.alive);
-  check(SUPPLIES.wood && SUPPLIES.wood.name === "Firewood" && CATEGORIES.firewood, "Firewood is a supply with its own trade category");
+  check(SUPPLIES.wood && SUPPLIES.wood.name === "Wood" && CATEGORIES.firewood, "Wood is a supply with its own trade category");
   state.hour = dayIn(state, "summer", 10) * 24;
   const summer = sellPrice(state, f, "wood", 0, 10);
   state.hour = dayIn(state, "winter", 10) * 24;
   const winter = sellPrice(state, f, "wood", 0, 10);
-  note(`${f.type} pays ${r2(summer)} a firewood in summer, ${r2(winter)} in winter (fuel: ${r2(sellPrice(state, f, "fuel", 0, 10))})`);
+  note(`${f.type} pays ${r2(summer)} a wood in summer, ${r2(winter)} in winter (fuel: ${r2(sellPrice(state, f, "fuel", 0, 10))})`);
   check(winter > summer * 1.5, "dear in winter, cheap in summer");
   check(buyPrice(state, f, "wood", 0, 10) > winter, "buying costs more than selling (the spread)");
   const m = marketLists(state, f);
-  check(!BAD.test(JSON.stringify(m)) && m.prices.wood && m.prices.wood.pay > 0, "the market board prices firewood");
+  check(!BAD.test(JSON.stringify(m)) && m.prices.wood && m.prices.wood.pay > 0, "the market board prices wood");
 }
 
 // ======================================================================
@@ -438,20 +438,20 @@ section("Panels and alerts: the Upkeep line, the top bar, the tile panel, the te
   base.stock.wood = 0; base.stock.fuel = 0;
   const al = computeAlerts(state).find((a) => a.kind === "wood");
   note(`alert: ${al ? `${al.text} — ${al.tip.slice(0, 140)}…` : "none"}`);
-  check(!!al && /firewood 0 of \d+/.test(al.text), "late autumn with no firewood: an alert");
+  check(!!al && /wood 0 of \d+/.test(al.text), "late autumn with no wood: an alert");
   check(!BAD.test(JSON.stringify(computeAlerts(state))), "alerts: no undefined / NaN");
   base.stock.wood = 9999;
   check(!computeAlerts(state).some((a) => a.kind === "wood"), "a full woodpile: no alert");
   base.stock.wood = 3;
   const wl = woodLine(state, base);
-  check(!!wl.short && !BAD.test(wl.tip) && /firewood/.test(wl.tip), `the top bar's Firewood line: "${wl.short}"`);
+  check(!!wl.short && !BAD.test(wl.tip) && /wood/.test(wl.tip), `the top bar's Wood line: "${wl.short}"`);
   const p = placeTeam(state, forest.id, { tools: ["fireaxe"] });
   p.radioLive = true; p.contactHour = state.hour;
   const xp = renderRight(state, { selected: forest.id, expedition: p.id });
-  check(/data-type="wood"/.test(xp) && /Cut wood 8h/.test(xp) && /firewood expected/.test(xp), "team panel: Cut wood 4h / 8h with the expected yield");
+  check(/data-type="wood"/.test(xp) && /Cut wood 8h/.test(xp) && /wood expected/.test(xp), "team panel: Cut wood 4h / 8h with the expected yield");
   check(!BAD.test(xp), "team panel: no undefined / NaN");
   const tp = renderRight(state, { selected: forest.id, expedition: null });
-  check(/>Wood</.test(tp) && /firewood \(\d+ kg\) in 8h/.test(tp.replace(/<[^>]*>/g, " ")), "tile panel: the wood rating and a cutting estimate");
+  check(/>Wood</.test(tp) && /wood \(\d+ kg\) in 8h/.test(tp.replace(/<[^>]*>/g, " ")), "tile panel: the wood rating and a cutting estimate");
   check(!BAD.test(tp), "tile panel: no undefined / NaN");
   const main = readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
   check(/data-type="wood"/.test(main) && /d\.type === "wood"/.test(main), "right-click: Go and cut wood here");
@@ -466,11 +466,11 @@ section("Save / load: old saves start with none; mid-order, and determinism");
   workState(st);
   delete h.stock.wood;
   for (const r of st.work.roles) delete r.pri.wood;
-  delete st.woodcutting; // a world from before firewood
+  delete st.woodcutting; // a world from before wood
   const fresh = loadFromString(saveToString(mk()));
   check(fresh.woodcutting === 2 && hub(fresh).stock.wood === 0, "a world made since loads unchanged");
   const back = loadFromString(saveToString(st));
-  check(hub(back).stock.wood === 0, "an old save: the bases start with 0 firewood");
+  check(hub(back).stock.wood === 0, "an old save: the bases start with 0 wood");
   check(back.work.roles.find((r) => r.name === "Generalist").pri.wood === back.work.roles.find((r) => r.name === "Generalist").pri.forage, "an old save: the roles get Cut wood at their Forage priority");
   const strip = (t) => t.replace(/"ms":[-\d.e]+/g, "\"ms\":0");
   const run = (save) => {
@@ -497,7 +497,7 @@ section("Save / load: old saves start with none; mid-order, and determinism");
   check(strip(saveToString(a.st)) === strip(saveToString(b.st)), "the same woodcutting trip twice: identical worlds");
   check(!!c.text && strip(saveToString(a.st)) === strip(saveToString(c.st)), "saved and loaded in the middle of cutting: plays on identical");
   check(Object.keys(a.st.wood || {}).length > 0 && JSON.stringify(a.st.wood) === JSON.stringify(c.st.wood), "the land's wood levels are part of the save");
-  check((a.st.econStats.woodField || 0) > 30, `the team cut firewood (${Math.round(a.st.econStats.woodField || 0)})`);
+  check((a.st.econStats.woodField || 0) > 30, `the team cut wood (${Math.round(a.st.econStats.woodField || 0)})`);
 }
 
 console.log(`\n${passed} passed, ${fails} failed`);

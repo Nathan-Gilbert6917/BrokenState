@@ -10,8 +10,8 @@
 //   - a magazine holds an assortment (loaded by hand in the Inventory window, 6 a time); a swap is physical (the fresh
 //     one is the gun's fitted magazine, the other goes where it lay with what it had); unloading one by hand puts
 //     every round in it back loose, each kind its own stack;
-//   - the fight's start fills the gun and the spares out of the person's own rounds, then the team's bags; the fight's
-//     end puts what is left back onto the person; the side's total is the same throughout; a save in the middle keeps
+//   - the fight's start fills the gun and the spares out of the person's own rounds, then the team's bags; at the
+//     fight's end what is left stays in the gun and the magazines (2026-10-20); the side's total is the same throughout; a save in the middle keeps
 //     the stacks; the AI reloads from its own rounds only;
 //   - an empty spare magazine is a throwable lure (emptymag), picked up again after a win;
 //   - the kit check before the first move: an empty gun (with the rounds for it on them or not), no healing, the hurt.
@@ -265,14 +265,17 @@ const turn = (b, u) => { b.phase = "player"; u.ap = 2; };
   st.autoRetreat = false; // (the AI would sound the retreat against an unkillable foe: retreattest.js)
   autoPlayerTurn(st);
   check(b.log.some((l) => new RegExp(`${c.name} reloads the lever-action rifle: 6 `).test(l.text)) && magIn(v) >= 4 && loose(c, ammoKey("3030", "fmj")) === 6, `the AI: 6 in from the pocket (${magIn(v)}/6, ${loose(c, ammoKey("3030", "fmj"))} left)`);
-  // The end: what is left goes back onto the person.
+  // The end (2026-10-20): what is left stays in the gun (its record) and in each magazine (its stack), and the badge
+  // out of the fight counts exactly those (nothing goes loose, nothing is counted out of the stores).
   const boxes0 = loose(a, ammoKey("9mm", "fmj"));
-  const inGuns = stackN(u.stack) + u.mags.filter((m) => m.where !== "gun").reduce((s, m) => s + m.n, 0);
+  const gunN = stackN(u.stack), spareN = u.mags.filter((m) => m.where !== "gun").map((m) => m.n);
+  const inGuns = gunN + spareN.reduce((x, y) => x + y, 0);
   const n = returnStacks(b, [a], hub(st).stock);
-  check(n === inGuns && loose(a, ammoKey("9mm", "fmj")) === boxes0 + inGuns && u.mags.filter((m) => m.where !== "gun").every((m) => !Array.isArray(m.item.stack)), `the fight over: the ${inGuns} rounds in the gun and the magazines are loose on them again (${loose(a, ammoKey("9mm", "fmj"))}), the magazines' stacks gone`);
+  const spareItems = u.mags.filter((m) => m.where !== "gun").map((m) => m.item);
+  check(n === inGuns && loose(a, ammoKey("9mm", "fmj")) === boxes0 && a.gear.weapon.loaded && a.gear.weapon.loaded.n === gunN && spareItems.every((it, i) => stackN(it.stack) === spareN[i]), `the fight over: the ${inGuns} rounds stay where they are, ${gunN} in the gun and ${spareN.join(" + ")} in the magazines (none loose)`);
   b.over = true; // (as groundEnd leaves it)
   const g = gunRounds(st, a.gear.weapon, `s:${a.id}:weapon`);
-  check(g && g.n === 15 && g.src === "ready", `out of the fight the badge fills the gun from the rounds to hand as before (${g && g.n}/${g && g.cap})`);
+  check(g && g.n === gunN && g.src === (gunN ? "in it" : "empty"), `out of the fight the badge counts the rounds in the gun (${g && g.n}/${g && g.cap})`);
 }
 
 // 6. The kit check before the first move.

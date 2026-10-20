@@ -203,12 +203,12 @@ section("Ingredients, the filter, purified water");
   check((w4.h.stock.f_venison || 0) < 2 - 1e-6 && near(w4.h.stock.f_potatoes, 4), "what spoils first: the venison before the potatoes");
   // human meat: no source; a test item through the filter
   check(!CLASSES.meat.test("x", { ingredient: true, diet: "human" }, { fresh: true, human: false }) && CLASSES.meat.test("x", { ingredient: true, diet: "human" }, { fresh: true, human: true }), "human meat only with the filter's tick");
-  // water: no purified, un-purified boiled with firewood; none at all: waits
+  // water: no purified, un-purified boiled with wood; none at all: waits
   const w5 = kitchen(12, 5);
   addDays(w5.h, 10, "f_venison");
   Object.assign(w5.h.stock, { water: 0, rawwater: 50, wood: 100 });
   cookDaily(w5.st, w5.h, 0);
-  check(made(w5.h, "f_simplemeal") > 0 && w5.h.stock.rawwater < 50 && w5.h.stock.wood < 100 && w5.h.stock.water === 0, `no purified water: un-purified boiled for the pot at ${COOK.boilWood} firewood a water`);
+  check(made(w5.h, "f_simplemeal") > 0 && w5.h.stock.rawwater < 50 && w5.h.stock.wood < 100 && w5.h.stock.water === 0, `no purified water: un-purified boiled for the pot at ${COOK.boilWood} wood a water`);
   const w6 = kitchen(12, 5);
   addDays(w6.h, 10, "f_venison");
   Object.assign(w6.h.stock, { water: 0, rawwater: 0 });
@@ -343,7 +343,7 @@ section("Machines: the vacuum sealer, the grain mill, the meat grinder");
   addBuilding(h, "meatgrinder");
   const wood0 = h.stock.wood;
   cookDaily(st, h, 0);
-  check(made(h, "f_sausage") === 2 && wood0 - h.stock.wood >= COOK_RECIPES.sausage.wood - 1e-6, `the grinder: ground meat, then smoked sausage (${made(h, "f_sausage")}; ${wood0 - h.stock.wood} firewood)`);
+  check(made(h, "f_sausage") === 2 && wood0 - h.stock.wood >= COOK_RECIPES.sausage.wood - 1e-6, `the grinder: ground meat, then smoked sausage (${made(h, "f_sausage")}; ${wood0 - h.stock.wood} wood)`);
 }
 
 // ======================================================================
@@ -360,15 +360,15 @@ section("The camp fire: a cook fire, a shelter's fire, a team's");
   check(crew.length === 1 && crew[0].s === ppl[2] && near(crew[0].hours, COOK.fireHours), "tended by the best cook at home, 4 hours");
   const wood0 = h.stock.wood;
   cookDaily(st, h, 0);
-  check(made(h, "f_simplemeal") > 0 && wood0 - h.stock.wood > 0 && wood0 - h.stock.wood <= COOK.fireHours * COOK.fireWood + 2, `simple meals at the cook fire, ${wood0 - h.stock.wood} firewood`);
+  check(made(h, "f_simplemeal") > 0 && wood0 - h.stock.wood > 0 && wood0 - h.stock.wood <= COOK.fireHours * COOK.fireWood + 2, `simple meals at the cook fire, ${wood0 - h.stock.wood} wood`);
   const ok = addBill(st, h, "cookhouse", "fine");
   check(/not made here/.test(ok), "fine meals need the Kitchen");
   h.stock.wood = 0;
   const m0 = made(h, "f_simplemeal");
   stationState(h, "cookhouse").bills[0].mode = "forever";
   cookDaily(st, h, 0);
-  check(made(h, "f_simplemeal") === m0 && /firewood/.test(stationState(h, "cookhouse").bills[0].why), "no firewood: the cook fire waits");
-  // a shelter's own fire: it burns its firewood by the hour (woodcutting.js shelterFire); the pot costs nothing more
+  check(made(h, "f_simplemeal") === m0 && /wood/.test(stationState(h, "cookhouse").bills[0].why), "no wood: the cook fire waits");
+  // a shelter's own fire: it burns its wood by the hour (woodcutting.js shelterFire); the pot costs nothing more
   const sh = mk(3);
   sh.h.tier = 0;
   sh.h.fire = true;
@@ -377,7 +377,7 @@ section("The camp fire: a cook fire, a shelter's fire, a team's");
   addBill(sh.st, sh.h, "cookhouse", "roast") ;
   addBill(sh.st, sh.h, "cookhouse", "simple");
   cookDaily(sh.st, sh.h, 0);
-  check(stationsAt(sh.h).includes("cookhouse") && made(sh.h, "f_simplemeal") > 0 && sh.h.stock.wood === 10, "a shelter's lit, fed fire cooks its bills (its own firewood is the fire's)");
+  check(stationsAt(sh.h).includes("cookhouse") && made(sh.h, "f_simplemeal") > 0 && sh.h.stock.wood === 10, "a shelter's lit, fed fire cooks its bills (its own wood is the fire's)");
   sh.h.fire = false;
   sh.h.fireAt = sh.st.hour - 6; // put out for the night after burning through the evening
   addDays(sh.h, 3, "f_fish");
@@ -388,7 +388,7 @@ section("The camp fire: a cook fire, a shelter's fire, a team's");
   delete sh.h.fireAt;
   check(/fire is out/.test((() => { cookDaily(sh.st, sh.h, 0); return stationState(sh.h, "cookhouse").bills[0].why; })()), "its fire out all day: nothing");
   sh.h.fire = true; sh.h.stock.wood = 0;
-  check(/fire is out/.test((() => { cookDaily(sh.st, sh.h, 0); return stationState(sh.h, "cookhouse").bills[0].why; })()), "lit with no firewood to burn: nothing");
+  check(/fire is out/.test((() => { cookDaily(sh.st, sh.h, 0); return stationState(sh.h, "cookhouse").bills[0].why; })()), "lit with no wood to burn: nothing");
   // a team at a lit, fed camp fire
   const tm = mk(3);
   const p = { id: newId(), owner: "player", kind: "expedition", members: tm.ppl.map((s) => s.id), supplies: { water: 10 }, cargo: { supplies: {}, gear: [] }, path: [tm.h.tile], idx: 0 };
@@ -417,7 +417,7 @@ section("The camp cook pot: a craft for small meals at any base, and on a team's
   ppl[1].skills.cooking = 4;
   const wood0 = h.stock.wood;
   cookDaily(st, h, 0);
-  check(made(h, "f_simplemeal") > 0 && wood0 - h.stock.wood > 0 && wood0 - h.stock.wood <= COOK.fireHours * COOK.fireWood + 2, `simple meals over the pot, ${r2(wood0 - h.stock.wood)} firewood burned`);
+  check(made(h, "f_simplemeal") > 0 && wood0 - h.stock.wood > 0 && wood0 - h.stock.wood <= COOK.fireHours * COOK.fireWood + 2, `simple meals over the pot, ${r2(wood0 - h.stock.wood)} wood burned`);
   const card = cookingCard(st, h);
   check(/Camp fire/.test(card) && /Simple meal/.test(card) && !/Pemmican/.test(card) && !BAD.test(card), "the Cooking card: a Camp fire offering the small meals");
   h.armory = h.armory.filter((it) => it.key !== "cookpot");

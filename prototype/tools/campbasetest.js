@@ -34,7 +34,7 @@ let pass = 0, fail = 0;
 const check = (ok, what) => { if (ok) pass++; else { fail++; console.log(`  FAIL: ${what}`); } return !!ok; };
 const section = (t) => console.log(t);
 const W = () => { const st = createWorld({ seed: SEED, factionCount: 6 }); st.visitorsOff = true; return st; };
-const rich = (b) => Object.assign(b.stock, { scrap: 999, parts: 99, meds: 99, electronics: 9, gunparts: 9 });
+const rich = (b) => Object.assign(b.stock, { scrap: 999, parts: 99, meds: 99, electronics: 9, gunparts: 9, wood: 99999 });
 const skilled = (st, b) => { for (const s of atBase(st, b.id)) Object.assign(s.skills, { medicine: 10, mechanics: 10, farming: 5 }); };
 const ui = (baseView) => ({ started: true, speed: 0, tab: "bases", selected: -1, survivor: null, baseView, expedition: null, diary: null, roster: null, help: false });
 const modal = (st, b, tab) => { st.cards.length = 0; return renderModal(st, ui({ id: b.id, tab })) || ""; };
@@ -120,17 +120,16 @@ section("Plots and crop plots by stage (user numbers 2026-10-12)");
   for (const [t, k] of ring) if (k === "suburb") t.terrain = "forest";
   check(["bunkhouse", "cellar", "infirmary", "huntcabin"].every((k) => canBuild(st, h, k).ok), "the shelter's building plot takes a bunkhouse, root cellar, infirmary or hunting cabin");
   for (const [t, k] of ring) t.terrain = k;
-  // Makeshift cots (user request 2026-10-12): +2 beds each at a shelter, no plot, up to 2.
-  const beds0 = baseBeds(h), u0 = plotsUsed(h, "utility"), b0 = plotsUsed(h, "building");
-  check(canBuild(st, h, "cots").ok && !BUILDINGS.cots.plot, "a shelter builds makeshift cots (no plot)");
-  queueBuild(st, h, "cots");
-  check(queuedBeds(h) === 2 && plotsUsed(h, "utility") === u0 && plotsUsed(h, "building") === b0, "queued: 2 beds to come, no plot taken");
-  addBuilding(h, "cots"); h.construction = [];
-  check(baseBeds(h) === beds0 + 2, `built: +2 beds (${beds0} → ${baseBeds(h)})`);
+  // Makeshift cots (user request 2026-10-12) are superseded by the Cot (beds.js, 2026-10-20): never built again; one
+  // built in an old save sleeps 2 until the save is loaded (beds.js migrateCots sets two Cots in its place: bedstest.js).
+  const beds0 = baseBeds(h);
+  const cc = canBuild(st, h, "cots");
+  check(!cc.ok && cc.locked && /Superseded/.test(cc.reason || ""), `the makeshift cots are superseded by the Cot (${cc.reason})`);
   addBuilding(h, "cots");
-  check(baseBeds(h) === beds0 + 4 && !canBuild(st, h, "cots").ok, "two at most: +4 beds");
+  check(baseBeds(h) === beds0 + 2, `an old save's built cots still sleep 2 until it is loaded (${beds0} → ${baseBeds(h)})`);
+  h.buildings = h.buildings.filter((b) => b.type !== "cots");
   delete h.tier; delete h.camp;
-  check(placeProblem(h, "cots") !== "" && baseBeds(h) >= 4 + 4, "not at a base (Shelters only), and those built still sleep 2 each there");
+  check(placeProblem(h, "cots") !== "", "not at a base (Shelters only)");
   asCamp(h);
   check(placeProblem(h, "cots") !== "", "not at a camp either (the shelter's)");
 }

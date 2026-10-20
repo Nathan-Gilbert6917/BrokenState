@@ -2,7 +2,7 @@
 // src/ui/activity.js, the People tab and the base's Overview in src/ui/ui.js).
 // Usage: node tools/activitytest.js [seed] (default 42).
 // - Someone put on Cut wood (Manual) at the hub: "Chopping wood" by day, "Done chopping" after dark, "Asleep" at
-//   night; a day ticks and the job's output counter shows the firewood that came in (and matches the store).
+//   night; a day ticks and the job's output counter shows the wood that came in (and matches the store).
 // - The Work now panel: the row, its progress bar toward midnight, the winter target, the last output line.
 // - Why a job brings in nothing: the land cut bare, nothing to build (hunting needs no cabin: the tiles next to the base).
 // - Health, the walls, away on a team; people on work priorities (sleep, idle).
@@ -66,7 +66,7 @@ const tickTo = (state, h) => { let n = 0; while (hourOfDay(state) !== h && n++ <
 const freshUi = (extra = {}) => ({ started: true, speed: 0, tab: "people", selected: -1, survivor: null, baseView: null, expedition: null, diary: null, roster: null, help: false, ...extra });
 
 // ======================================================================
-section("Cut wood: the activity by the hour, and a day's firewood in the output counter");
+section("Cut wood: the activity by the hour, and a day's wood in the output counter");
 const state = woodWorld();
 const base = hub(state);
 const people = atBase(state, base.id);
@@ -82,12 +82,12 @@ check(/fire axe/.test(a.why), `with the armory's fire axe (${a.why})`);
 let rows = baseWork(state, base);
 let row = rows.find((r) => r.job === "wood");
 check(row && row.people.some((x) => x.s === cutter) && row.now >= 1, "the Work now panel has a Cut wood row with them working now");
-check(row && row.progress && row.progress.frac >= 0 && row.progress.frac < 1 && /firewood/.test(row.progress.text), `the day's progress: ${row && row.progress && Math.round(row.progress.frac * 100)}% (${row && row.progress && row.progress.text})`);
+check(row && row.progress && row.progress.frac >= 0 && row.progress.frac < 1 && /wood/.test(row.progress.text), `the day's progress: ${row && row.progress && Math.round(row.progress.frac * 100)}% (${row && row.progress && row.progress.text})`);
 check(row && row.goal && /Winter store/.test(row.goal.text), `the winter target (${row && row.goal ? row.goal.text : "none"})`);
 check(row && row.last.length === 0, "nothing recorded yet before the first load comes home");
 tickTo(state, 15); // the morning's trip is home (jobtrips.js): its load is in
 row = baseWork(state, base).find((r) => r.job === "wood");
-check(row && row.progress && row.progress.frac > 0 && /firewood \(.*in today/.test(row.progress.text), `after the morning trip: ${row && row.progress && Math.round(row.progress.frac * 100)}% (${row && row.progress && row.progress.text})`);
+check(row && row.progress && row.progress.frac > 0 && /wood \(.*in today/.test(row.progress.text), `after the morning trip: ${row && row.progress && Math.round(row.progress.frac * 100)}% (${row && row.progress && row.progress.text})`);
 tickTo(state, 20);
 a = describeActivity(state, cutter);
 check(a.kind === "eat" && /^Eating dinner \(\d+ min\)$/.test(a.text), `20:00: dinner (${a.text})`);
@@ -102,11 +102,11 @@ const dayWorked = day(state);
 tickTo(state, 1); // through midnight: woodDaily
 const got = (base.stock.wood || 0) - w0;
 const days = outputDays(base, "wood");
-note(`midnight: the store went up by ${Math.round(got)} firewood (heating may burn some); output counter ${JSON.stringify(days)}`);
-check(days.length === 1 && days[0].day === dayWorked && days[0].by.wood > 0, `the counter has day ${dayWorked}'s firewood (${days[0] && days[0].by.wood})`);
+note(`midnight: the store went up by ${Math.round(got)} wood (heating may burn some); output counter ${JSON.stringify(days)}`);
+check(days.length === 1 && days[0].day === dayWorked && days[0].by.wood > 0, `the counter has day ${dayWorked}'s wood (${days[0] && days[0].by.wood})`);
 check(Math.abs(days[0].by.wood - base.woodToday) < 0.06, `the counter matches the day's cutting (${base.woodToday})`);
 const last = lastOutput(state, base, "wood");
-check(last[0] && last[0].when === "yesterday" && /\+\d+ firewood \([\d.]+ kg\)/.test(last[0].text), `last output: "${last[0] && last[0].text} ${last[0] && last[0].when}"`);
+check(last[0] && last[0].when === "yesterday" && /\+\d+ wood \([\d.]+ kg\)/.test(last[0].text), `last output: "${last[0] && last[0].text} ${last[0] && last[0].when}"`);
 check(workDay(24) === 1 && workDay(25) === 2 && workDay(23) === 1, "the midnight tick counts for the day before it");
 tickTo(state, 6);
 check(/^Eating breakfast \(\d+ min\)$/.test(describeActivity(state, cutter).text), `06:00: breakfast (${describeActivity(state, cutter).text})`);
@@ -186,16 +186,16 @@ section("The People tab and the base Overview");
   const chip = activityChip(state, cutter, { short: true });
   check(/act-short/.test(chip) && /data-tip=/.test(chip), "the compact chip has its tooltip");
   const ov = renderModal(state, freshUi({ baseView: { id: base.id, tab: "overview" } }));
-  check(/Work now/.test(ov) && /wn-wood/.test(ov) && /firewood/.test(ov), "the base Overview shows the Work now panel with Cut wood");
+  check(/Work now/.test(ov) && /wn-wood/.test(ov) && /wood/.test(ov), "the base Overview shows the Work now panel with Cut wood");
   check(!BAD.test(ov), "Overview: no undefined/NaN");
-  check(/yesterday/.test(workNowPanel(state, base)), "the panel shows yesterday's firewood");
+  check(/yesterday/.test(workNowPanel(state, base)), "the panel shows yesterday's wood");
   note(workNowPanel(state, base).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").slice(0, 400));
 }
 
 // ======================================================================
 section("Saves: the output counter survives; an old save has none");
 {
-  const text = saveToString(state);
+  const text = saveToString(state, { dropCards: true }); // a card the world rolled meanwhile (a stranger at the gate: noidle 2026-10-20 moved the dice) is not what this saves
   const back = loadFromString(text);
   const bb = back.bases.find((b) => b.id === base.id);
   check(JSON.stringify(outputDays(bb, "wood")) === JSON.stringify(outputDays(base, "wood")), "base.output saved and loaded");
@@ -203,7 +203,7 @@ section("Saves: the output counter survives; an old save has none");
   check(outputDays(bb, "wood").length === 0 && baseWork(back, bb).every((r) => Array.isArray(r.last)), "an older save without it: nothing recorded, no errors");
   noteOutput(back, bb, "wood", 5, "wood");
   noteOutput(back, bb, "wood", 2.5, "wood");
-  check(outputDays(bb, "wood")[0].by.wood === 7.5 && amountText("wood", 140) === "140 firewood (14 kg)", "notes add up by day; firewood reads in kg");
+  check(outputDays(bb, "wood")[0].by.wood === 7.5 && amountText("wood", 140) === "140 wood (14 kg)", "notes add up by day; wood reads in kg");
   for (let d = 0; d < 10; d++) { back.hour += 24; noteOutput(back, bb, "farm", 1, "food"); }
   check(outputDays(bb, "farm").length === 7, "the last 7 days are kept a job");
   const ser = outputSeries(back, bb, "farm");

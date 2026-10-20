@@ -161,7 +161,7 @@ section("The game tidying up (autoStore)");
   const inFood = foodKeys.every((k) => Object.entries(h.bins).filter(([, bin]) => bin[k] > 0).every(([key]) => CT.containersOf(st, h).find((c) => c.key === key).foodOk));
   check(foodKeys.length > 0 && inFood && foodKeys.every((k) => h.bins[cellar] && h.bins[cellar][k] === Math.floor(h.stock[k])), `the food (${foodKeys.length} kinds) in the cellar (food containers only)`);
   check(h.bins.core && h.bins.core.meds === 30 && h.bins.core.parts === 12, "dear things (meds, parts) in the core");
-  check(h.bins[store] && h.bins[store].scrap === 90 && h.bins[store].wood === Math.floor(h.stock.wood), "the scrap and the firewood in the storehouse");
+  check(h.bins[store] && h.bins[store].scrap === 90 && !h.bins[store].wood && !Object.values(h.bins).some((bin) => bin.wood), "the scrap in the storehouse; the woodpile in no container (it takes no room: basestorage.js woodpileOf)");
   check(JSON.stringify(h.bins[vk]) === JSON.stringify({ scrap: 10 }) && !h.armory.some((it) => it.store === vk), "nothing in the car but what the player put there");
   const dear = h.armory.filter((it) => CT.isDearItem(it)), plain = h.armory.filter((it) => !CT.isDearItem(it));
   check(dear.length === 2 && dear.every((it) => it.store === "core" || it.store === store) && plain.every((it) => it.store && it.store !== vk), `the pistol and the vest in the core or the storehouse, the knife and the machete in ${[...new Set(plain.map((it) => CT.containersOf(st, h).find((c) => c.key === it.store).label))].join(" / ")}`);

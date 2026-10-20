@@ -913,7 +913,7 @@ function campScene() {
 
   // The camp's things, in their own full-height layer drawn after the dead at the far edge: the pickup and the tent
   // at the edges of the light first (they stand behind the rest), then the log and the crate the people sit on,
-  // packs, firewood, the ring of stones and the tripod with its pot.
+  // packs, wood, the ring of stones and the tripod with its pot.
   function propsLayer() {
     const L = layer(W, H, res), R = rng(607), g = L.g;
     g.lineCap = "round";
@@ -974,7 +974,7 @@ function campScene() {
     g.strokeStyle = "rgba(0,0,0,0.5)"; g.lineWidth = 1.5;
     g.strokeRect(cx - cs / 2 + 2, cy - cs * 1.5 + 2, cs - 4, cs * 0.75 - 4);
     g.strokeRect(cx - cs / 2 + 2, cy - cs * 0.75 + 2, cs - 4, cs * 0.75 - 4);
-    // Packs and a jerrycan by the log; firewood stacked.
+    // Packs and a jerrycan by the log; wood stacked.
     g.fillStyle = "#3a2e22";
     g.beginPath(); g.roundRect(lx - lw * 0.75, ly - H * 0.04, H * 0.035, H * 0.045, 4); g.fill();
     g.fillStyle = "#2a3a22";

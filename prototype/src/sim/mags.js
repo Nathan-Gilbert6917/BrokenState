@@ -68,6 +68,12 @@ export const magTakes = (magKey, cal) => !!cal && magCalsOf(magKey).includes(cal
 export const internalOf = (gunKey) => INTERNAL[gunKey] || 0;
 export const fittedMag = (gun) => (gun && gun.mods && gun.mods.mag && MAGAZINES[gun.mods.mag.key] ? gun.mods.mag : null);
 export const usesInternal = (gunKey, gun = null) => !!INTERNAL[gunKey] && !fittedMag(gun);
+// A gun whose magazine has been taken out (Remove magazine: itemacts.js out of a fight, removeMagUnit in one): it holds
+// the round in the chamber and nothing more until a magazine goes in (insertMag, a swap).
+export const magOut = (gun) => !!(gun && gun.magOut);
+// A gun with a detachable magazine (a box magazine that comes out: a pistol, a rifle on its STANAG, an Uzi), not a
+// fixed box, a tube, a cylinder or a stripper-clip gun (data-kit.js INTERNAL with nothing fitted).
+export const detachable = (gun) => !!(gun && WEAPONS[gun.key] && calOf(gun.key) && !WEAPONS[gun.key].launcher && takesMagItems(gun.key) && !usesInternal(gun.key, gun));
 // A gun that takes magazine items at all (some magazine fits its platform).
 const MAG_GUN = new Map();
 export function takesMagItems(gunKey) {
@@ -183,7 +189,7 @@ export function fitMags(b, u, spots, staticCap, s = null) {
   u.magMode = "box";
   const fit = fittedMag(u.item);
   const gunLoad = typeFor(cal, u.load);
-  u.mags = [{ key: fit ? fit.key : standardMag(key), cap: staticCap, load: gunLoad, n: staticCap, where: "gun" }];
+  u.mags = [{ key: fit ? fit.key : standardMag(key), cap: staticCap, load: gunLoad, n: staticCap, where: "gun", ...(magOut(u.item) ? { out: true } : {}) }]; // out: its magazine taken out (removeMag): the chamber only
   for (const x of spots) { const m = spareFor(key, cal, u.load, x, s); if (m) u.mags.push(m); }
   if (physical(u)) syncMags(u);
 }
@@ -323,15 +329,22 @@ function fillTo(b, u, st, cap, load, magKey = null, pools = true) {
 // only, a number at most that many spares not loaded yet (combat.js fillBattleUnit: every gun on the team first, then
 // a spare each in turn, so the bags never fill one person's spares while a teammate's gun starts empty). Returns how
 // many spares it loaded (or left empty). Anyone of another side (a person: fighters.js) loads from what they carry only.
+// top (the fight's start, combat.js fillBattleUnit; 2026-10-20): out of a fight a gun and its magazines keep the
+// rounds left in them (gunload.js returnStacks), so as the next fight starts a gun with rounds of its own and a magazine
+// with a stack are topped up too (the record first, then the same sources), each magazine once a fight (TOPPED). A gun
+// or a magazine Unloaded by hand (item.unloaded) stays empty.
+const TOPPED = new WeakMap(); // battle → the magazine items topped up at its start
+const topped = (b) => { const k = b || TOPPED; let w = TOPPED.get(k); if (!w) TOPPED.set(k, (w = new WeakSet())); return w; };
 /** @returns {number} */
-export function fillUnit(b, u, { gun = true, pools = true, spares: withSpares = /** @type {boolean | number} */ (true) } = {}) {
+export function fillUnit(b, u, { gun = true, pools = true, spares: withSpares = /** @type {boolean | number} */ (true), top = false } = {}) {
   if (!tracksMags(u) || !physical(u)) return 0;
   if (u.side !== "player") pools = false; // the team's bags are yours: anyone else has only what they carry
   if (!Array.isArray(u.stack)) u.stack = [];
   const cal = calOf(u.weapon);
   const it = u.item;
+  const pref = typeFor(cal, u.load); // the load it takes the field with (ammo.js chooseLoad: item.load), before the record's chamber speaks
   let rec = false;
-  if (it && it.loaded) { // a gun with its own rounds on it (put down earlier, found, handed over): exactly those, nothing more
+  if (it && it.loaded) { // a gun with its own rounds on it (put down earlier, found, handed over, left from the last fight): those first (topped up only at a fight's start: top)
     const r = it.loaded;
     delete it.loaded;
     u.stack = Array.isArray(r.stack) ? copyStack(r.stack) : num(r.n) > 0 && r.key ? [{ k: r.key, n: Math.floor(r.n) }] : [];
@@ -339,14 +352,16 @@ export function fillUnit(b, u, { gun = true, pools = true, spares: withSpares = 
     if (l) u.load = l;
     rec = true;
   }
-  if (gun && !rec) { const got = fillTo(b, u, u.stack, Math.max(0, num(u.magMax)), typeFor(cal, u.load), null, pools); if (got.load) u.load = got.load; }
+  if (gun && !(it && it.unloaded) && (!rec || top)) { const got = fillTo(b, u, u.stack, Math.max(0, num(u.magMax)), rec ? pref : typeFor(cal, u.load), null, pools); if (got.load && !rec) u.load = got.load; }
   syncGun(u, cal);
   let left = withSpares === true ? Infinity : Math.max(0, Number(withSpares) || 0), done = 0;
+  const seen = topped(b);
   for (const m of spares(u)) {
     if (!(left > 0)) break;
     if (!m.item) continue;
-    if (Array.isArray(m.item.stack)) continue; // loaded already (by hand, or when the gun was taken up)
-    m.item.stack = [];
+    if (Array.isArray(m.item.stack) && (!top || seen.has(m.item))) continue; // loaded already (by hand, or when the gun was taken up; topped up at this fight's start)
+    seen.add(m.item);
+    if (!Array.isArray(m.item.stack)) m.item.stack = [];
     left--; done++;
     if (m.item.unloaded) continue; // itemacts.js: kept empty on purpose
     fillTo(b, u, m.item.stack, m.cap, m.load, m.key, pools);
@@ -656,9 +671,10 @@ function planPlayer(b, u, pick) {
     if (!g || g.where === "gun") return no("No such spare magazine.");
     const n = loaded(b, u, g);
     const plan = { ...base, mode: "swap", kind: "swap", from: g.where, cost: MAGS.AP[g.where] || 1, i: j, load: entryLoad(cal, g) || cur, n };
+    const out = magOut(u.item); // no magazine in the gun: any one goes in (empty too), over the round in the chamber
     if (!g.item || !g.list) plan.why = `The ${magWord(g)} cannot be reached from here.`;
-    else if (n < 1) plan.why = `The ${magWord(g)} in ${placeWord(g.where)} is empty.`;
-    else if (room < 1 && !jammed) plan.why = full;
+    else if (n < 1 && !out) plan.why = `The ${magWord(g)} in ${placeWord(g.where)} is empty.`;
+    else if (room < 1 && !jammed && !out) plan.why = full;
     return plan;
   }
   if (P && P.clip != null) {
@@ -688,7 +704,7 @@ function planPlayer(b, u, pick) {
     if (j >= 0) {
       const g = u.mags[j];
       const plan = { ...base, mode: "swap", kind: "swap", from: g.where, cost: MAGS.AP[g.where] || 1, i: j, load: entryLoad(cal, g) || cur, n: loaded(b, u, g) };
-      if (room < 1 && !jammed) plan.why = full;
+      if (room < 1 && !jammed && !magOut(u.item)) plan.why = full;
       return plan;
     }
   }
@@ -817,22 +833,30 @@ function swapMag(b, u, plan) {
   const gun = u.item;
   const stdKey = standardMag(u.weapon);
   const fitted = fittedMag(gun);
-  const old = fitted || newItem(stdKey || g.key);
+  const out = magOut(gun); // no magazine in it (removeMagUnit): nothing comes out, the round in the chamber stays
+  const old = out ? null : fitted || newItem(stdKey || g.key);
   if (!Array.isArray(X.stack)) X.stack = [];
-  old.stack = copyStack(u.stack);
+  const chamber = out ? copyStack(u.stack) : [];
+  if (old) old.stack = copyStack(u.stack);
   u.stack = copyStack(X.stack);
   X.stack = [];
   delete X.unloaded;
-  if (!stackN(old.stack)) old.unloaded = true; else delete old.unloaded; // itemacts.js: an empty one stays empty out of the fight until Loaded
-  if (gun) gun.mods = { ...(gun.mods || {}), mag: X };
-  g.list[g.i] = old;
-  // The entries: the gun's is the fresh one, the slot's the other.
+  if (old) { if (!stackN(old.stack)) old.unloaded = true; else delete old.unloaded; } // itemacts.js: an empty one stays empty out of the fight until Loaded
+  if (gun) { gun.mods = { ...(gun.mods || {}), mag: X }; delete gun.magOut; }
   const cap = magCapacity(X.key) || u.magMax;
+  let ejected = 0;
+  if (out) { // the round in the chamber over the fresh magazine's, while there is room; one over that is ejected into the slot the magazine came from
+    for (let i = chamber.length - 1; i >= 0; i--) { const q = Math.min(chamber[i].n, Math.max(0, cap - stackN(u.stack))); if (q > 0) pushTop(u.stack, chamber[i].k, q); chamber[i].n -= q; }
+    const left = chamber.filter((r) => r.n > 0);
+    ejected = stackN(left);
+    g.list[g.i] = left.length ? roundItems(left[0].k, left[0].n, true)[0] || null : null;
+  } else g.list[g.i] = old;
+  // The entries: the gun's is the fresh one, the slot's the other (none when the gun had no magazine).
   const gi = u.mags.findIndex((m) => m.where === "gun");
   const gunEntryNew = { key: X.key, cap, load: entryLoad(cal, g) || was, n: stackN(u.stack), where: "gun" };
-  const slotEntry = { key: old.key, cap: magCapacity(old.key) || (gi >= 0 ? u.mags[gi].cap : cap), load: loadOfKey(cal, topKey(old.stack)) || was, n: stackN(old.stack), where: g.where, item: old, list: g.list, i: g.i };
+  const slotEntry = old ? { key: old.key, cap: magCapacity(old.key) || (gi >= 0 ? u.mags[gi].cap : cap), load: loadOfKey(cal, topKey(old.stack)) || was, n: stackN(old.stack), where: g.where, item: old, list: g.list, i: g.i } : null;
   if (gi >= 0) u.mags[gi] = gunEntryNew; else u.mags.unshift(gunEntryNew);
-  u.mags[u.mags.indexOf(g)] = slotEntry;
+  if (slotEntry) u.mags[u.mags.indexOf(g)] = slotEntry; else u.mags.splice(u.mags.indexOf(g), 1);
   u.magW = u.weapon;
   u.magMax = cap;
   if (gun) { u.gm = gunMods(gun); u.gmWeapon = u.weapon; u.weaponName = modLabel(gun); }
@@ -840,6 +864,7 @@ function swapMag(b, u, plan) {
   syncMags(u);
   const from = placeWord(g.where);
   const mixed = u.stack.length > 1 ? ` (${stackText(cal, u.stack)})` : "";
+  if (out) return `${u.name} puts a magazine from ${from} into the ${gunWord(u)} (${shown(b, u)}/${u.magMax})${mixed}${ejected ? `: the round in the chamber is ejected into ${from}` : ""}.`;
   const kept = stackN(old.stack) ? ` with its ${stackN(old.stack)}` : " empty";
   return u.load !== was
     ? `${u.name} loads the ${gunWord(u)} with ${roundName(cal, u.load)} (${shown(b, u)}/${u.magMax})${mixed}: a magazine from ${from}; the other goes there${kept}.`
@@ -985,6 +1010,62 @@ export function unloadMagFrom(b, u, m, s) {
   if (stackN(m.item.stack)) delete m.item.unloaded;
   syncMags(u);
   return `${u.name} unloads the ${magWord(m)} in ${placeWord(m.where)}: ${stackText(cal, runs)} into their pockets and pack.`;
+}
+
+// ---------- the magazine taken out of the gun in the hands (2026-10-20 user request: "When I right-click a gun I
+// should have an option to remove magazine") ----------
+// combat.js invAct op "magout" (the item menu on the gun in the hands): the magazine (the fitted one, or the gun's own
+// standard magazine made a thing of) comes out with every round in it but the one in the chamber, which stays in the
+// gun (gun.magOut: it holds that round and nothing more, magCap 1, until a magazine goes in: a swap, swapMag above).
+// It goes where it fits on them (a rig pouch for magazines, a pocket, the pack: stow), for the place's cost (a pouch or
+// a pocket 1 action, the pack both: MAGS.AP, the swap's). Out of a fight: itemacts.js removeMagAt.
+export function removeMagPlan(b, u) {
+  const no = (why) => ({ cost: 1, why });
+  if (!stacked(u) || u.magMode !== "box") return no(`The ${gunWord(u)} has no magazine that comes out.`);
+  const gun = u.item;
+  if (!gun || gun.key !== u.weapon || !detachable(gun)) return no(`The ${gunWord(u)}'s magazine does not come out.`);
+  if (magOut(gun)) return no(`There is no magazine in the ${gunWord(u)}.`);
+  return { cost: 1, why: "" };
+}
+// Carries it out on the unit and its survivor s. Returns { line, cost } or { why } (nothing changed).
+export function removeMagUnit(b, u, s) {
+  const p = removeMagPlan(b, u);
+  if (p.why) return { why: p.why };
+  if (!s) return { why: "Only one of yours." };
+  const cal = calOf(u.weapon);
+  const gun = u.item;
+  const fitted = fittedMag(gun);
+  const mag = fitted || newItem(standardMag(u.weapon));
+  const rest = copyStack(u.stack);
+  const chamber = takeTop(rest, 1);
+  mag.stack = rest;
+  delete mag.unloaded;
+  const at = stow(s, mag);
+  if (!at) { delete mag.stack; return { why: "No room for the magazine: a free rig pouch, pocket or pack slot is needed." }; }
+  const slot = String(at).split(":")[2];
+  const where = slot === "rig" ? "rig" : slot === "pack" ? "pack" : "pocket";
+  const cost = MAGS.AP[where] || 1;
+  if (num(u.ap) < cost) { const x = carriedSpots(s).find((y) => y.item === mag); if (x) x.take(); delete mag.stack; return { why: `The magazine would go in the pack: both actions (${num(u.ap)} left).` }; }
+  if (fitted) { const mods = { ...(gun.mods || {}) }; delete mods.mag; gun.mods = mods; }
+  gun.magOut = true;
+  u.stack = chamber.map((r) => ({ k: r.k, n: r.n }));
+  const gi = u.mags.findIndex((m) => m.where === "gun");
+  if (gi >= 0) u.mags[gi] = { ...u.mags[gi], key: standardMag(u.weapon), cap: 1, n: stackN(u.stack), out: true };
+  u.magW = u.weapon;
+  u.magMax = 1;
+  u.gm = gunMods(gun); u.gmWeapon = u.weapon; u.weaponName = modLabel(gun);
+  syncGun(u, cal);
+  syncMags(u);
+  const n = stackN(rest);
+  return { cost, line: `${u.name} takes the magazine out of the ${gunWord(u)} (${n ? `${n} in it${rest.length > 1 ? `: ${stackText(cal, rest)}` : ""}` : "empty"}) into ${placeWord(where)}; ${stackN(u.stack) ? `a round stays in the chamber (${roundName(cal, u.load)})` : "the chamber is empty"}.` };
+}
+// The spares of the unit that can go into the gun now: [{ j (index in u.mags), item, where, n, cap, why }] (Insert
+// magazine: a swap, reloadPlan { mag: j }).
+export function insertChoices(b, u) {
+  if (!stacked(u) || u.magMode !== "box") return [];
+  const out = [];
+  u.mags.forEach((g, j) => { if (g.where !== "gun" && g.item) { const p = planPlayer(b, u, { mag: j }); out.push({ j, item: g.item, where: g.where, n: loaded(b, u, g), cap: g.cap, cost: p.cost, why: p.why }); } });
+  return out;
 }
 
 // ---------- the Reload picker (ui/combat.js reloadPicker; tools/reloadpicktest.js) ----------

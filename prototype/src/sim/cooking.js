@@ -35,13 +35,13 @@
 // The day (cookBills, storage.js cookDaily at midnight before the eating): each station's crew has the day's work-hours
 //   - Kitchen: its cooks (kitchen.js cooksAt): a fixed all-day Cook COOK.fullDay hours, a part-time cook (Cook + a
 //     second job, work priorities) their cooking hours that day (kitchen.js cookLog, 7 at most), × their work factor;
-//     a cold stove (no firewood) cooks nothing;
+//     a cold stove (no wood) cooks nothing;
 //   - Cook fire / camp fire: whoever is home with the best Cooking tends the pot COOK.fireHours a day; a cook fire burns
-//     COOK.fireWood firewood a work-hour (a shelter's lit fire burns what lies about: free);
+//     COOK.fireWood wood a work-hour (a shelter's lit fire burns what lies about: free);
 //   × the cook's speed (speedOf: 0.6 + 0.04 a Cooking point, 60% at 0, 100% at 10, 140% at 20). First the cleaning
 //   (below), then the bills in order: a batch takes its recipe's hours (÷ 1.1 with a cookbook that covers it; work
 //   carries over to the next day), its ingredients (by kcal: the output's kcal ÷ the recipe's gain), its purified water
-//   (un-purified boiled for the pot at COOK.boilWood firewood a water when the purified is gone) and any firewood or
+//   (un-purified boiled for the pot at COOK.boilWood wood a water when the purified is gone) and any wood or
 //   machine it needs. Done batches go to the base's stores as lots with pz and by (above). Meals spoil in days (foods.js:
 //   3–4, longer in a cold room or a freezer).
 // The gain (satiety): every meal holds more calories than its raw makings (RimWorld's simple meal), the recipe's gain:
@@ -72,8 +72,8 @@
 // Camp fires and the cook pot (2026-10-12, user request: "Lit camp fires use fire wood it goes out. Cooking uses camp
 //   fires. Eatting non-cooked food for days is a mood negative so it pushes for getting cooking. Add a craft to allow
 //   cooking small meal types at a camp or any base level"). A camp's or shelter's fire cooks only while it is lit and fed
-//   (woodcutting.js shelterFire burns its firewood by the hour and puts it out when the store runs dry); a team's camp
-//   pot only while its fire burns carried firewood (campFireHour). The camp cook pot (data.js GEAR cookpot, crafting.js
+//   (woodcutting.js shelterFire burns its wood by the hour and puts it out when the store runs dry); a team's camp
+//   pot only while its fire burns carried wood (campFireHour). The camp cook pot (data.js GEAR cookpot, crafting.js
 //   CRAFTS cookpot: 3 scrap, Cooking 0, anywhere): at any base with no Kitchen and no cook fire (an outpost or the hub
 //   too), kept in its armory or carried by someone there, it makes a "Camp fire" station (the cookhouse key) for the
 //   small meals (COOK_RECIPES small: simple meal and stew), tended and fuelled as a cook fire (COOK.fireHours,
@@ -156,7 +156,7 @@ export const CLASSES = {
 // The recipes. out: the item and n made a batch; gain: kcal out per kcal in (the satiety); in: [{ cls, share }] of the
 // batch's input kcal; water: purified water a batch (stews and boiling more, frying and roasting less); hours: work-hours a
 // batch at speed 1; skill: Cooking needed (a cookbook may lower it); at: the stations; needs: a machine at the base
-// ("sealer", "grainmill", "meatgrinder"); wood: firewood a batch (smoking). team: the team's camp pot (teamCookHour).
+// ("sealer", "grainmill", "meatgrinder"); wood: wood a batch (smoking). team: the team's camp pot (teamCookHour).
 export const COOK_RECIPES = {
   simple:   { name: "Simple meal",     out: "f_simplemeal",   n: 4, gain: 1.25, in: [{ cls: "any", share: 1 }],  water: 1,   hours: 0.75, skill: 0, at: ["canteen", "cookhouse"], small: true, desc: "Whatever is to hand in one pot: any meat, fish, eggs, vegetables or forage." },
   stew:     { name: "Stew",            out: "f_stew",         n: 4, gain: 1.35, in: [{ cls: "any", share: 1 }],  water: 4,   hours: 1.5,  skill: 2, at: ["canteen", "cookhouse"], small: true, desc: "Meat, roots and plenty of water simmered for hours: stretches the food furthest of the everyday meals." },
@@ -167,7 +167,7 @@ export const COOK_RECIPES = {
   flour:    { name: "Flour",           out: "f_flour",        n: 4, gain: 0.98, in: [{ cls: "grain", share: 1 }], water: 0, hours: 1.5, skill: 0, at: ["canteen", "cookhouse"], needs: "grainmill", desc: "Grain ground on the hand-cranked mill. Needs a grain mill here." },
   bread:    { name: "Bread",           out: "f_bread",        n: 4, gain: 1.1,  in: [{ cls: "flour", share: 1 }], water: 2, hours: 2, skill: 2, at: ["canteen"], desc: "Loaves from flour and water in the Kitchen's oven. Stale in days." },
   ground:   { name: "Ground meat",     out: "f_groundmeat",   n: 4, gain: 1,    in: [{ cls: "game", share: 1 }],  water: 0.5, hours: 1, skill: 0, at: ["canteen", "cookhouse"], needs: "meatgrinder", desc: "Tough cuts of game run through the grinder. Needs a meat grinder here." },
-  sausage:  { name: "Smoked sausage",  out: "f_sausage",      n: 2, gain: 1,    in: [{ cls: "ground", share: 1 }], water: 1, hours: 2, skill: 3, at: ["canteen", "cookhouse"], needs: "meatgrinder", wood: 4, desc: "Ground meat salted, stuffed and smoked: keeps months. Needs a meat grinder here and 4 firewood a batch for the smoke." },
+  sausage:  { name: "Smoked sausage",  out: "f_sausage",      n: 2, gain: 1,    in: [{ cls: "ground", share: 1 }], water: 1, hours: 2, skill: 3, at: ["canteen", "cookhouse"], needs: "meatgrinder", wood: 4, desc: "Ground meat salted, stuffed and smoked: keeps months. Needs a meat grinder here and 4 wood a batch for the smoke." },
   roast:    { name: "Camp roast",      out: "f_simplemeal",   n: 2, gain: 1.1,  in: [{ cls: "raw", share: 1 }],  water: 0.25, hours: 0.5, skill: 0, at: ["cookhouse"], team: true, desc: "Raw meat or fish roasted over the fire: little water, a little more filling than raw, and safe." },
 };
 for (const [k, R] of Object.entries(COOK_RECIPES)) { R.key = k; R.kcalOut = R.n * FOODS[R.out].kcal; R.units = R.kcalOut / R.gain / DAY_KCAL; } // units: days of food in a batch
@@ -218,14 +218,14 @@ export const stationsAt = (base, state = null) => Object.keys(STATIONS).filter((
 // Can it cook today? "" when it can, else why not.
 export function stationWhy(state, base, key) {
   if (!hasStation(base, key, state)) return key === "canteen" ? "no Kitchen" : "no cook fire (build one, or craft a camp cook pot)";
-  if (key === "canteen" && kitchenCold(base)) return "the stove is cold (no firewood)";
-  if (key === "cookhouse" && isShelter(base) && !count(base, "cookhouse") && !fireBurned(state, base)) return "the fire is out (it burns firewood: light it again once some comes in)";
+  if (key === "canteen" && kitchenCold(base)) return "the stove is cold (no wood)";
+  if (key === "cookhouse" && isShelter(base) && !count(base, "cookhouse") && !fireBurned(state, base)) return "the fire is out (it burns wood: light it again once some comes in)";
   return "";
 }
 // A camp's or shelter's fire that burned in the last day (woodcutting.js shelterFire: base.fireAt, the last hour it was
 // fed) or is lit now: the day's cooking is done on it (the bills run at midnight, when the governor keeps it out).
 const fireBurned = (state, base) => (fireLit(base) && (base.stock.wood || 0) > 0) || (base.fireAt != null && state.hour - base.fireAt < 24);
-const freeFire = (state, base) => isShelter(base) && !count(base, "cookhouse") && fireBurned(state, base); // a camp's or shelter's own fire: its firewood is paid by the hour (woodcutting.js shelterFire)
+const freeFire = (state, base) => isShelter(base) && !count(base, "cookhouse") && fireBurned(state, base); // a camp's or shelter's own fire: its wood is paid by the hour (woodcutting.js shelterFire)
 export const machineAt = (state, base, need) => (need === "sealer" ? hasSealer(state, base) : count(base, need) > 0);
 
 // The defaults: a new Kitchen gets "Simple meal, until you have 2 days of eating" (the old automatic meals, now a bill
@@ -259,7 +259,7 @@ export const billDone = (b) => b.mode === "count" && (b.done || 0) >= (b.n || 0)
 
 // The ingredient test for one input of a bill.
 export const inputTest = (inp, flt) => (k, f) => !!f && !(flt.no || []).includes(k) && CLASSES[inp.cls].test(k, f, flt);
-// What a bill lacks for one batch here now ("" when it can go): the station, a machine, ingredients, water, firewood.
+// What a bill lacks for one batch here now ("" when it can go): the station, a machine, ingredients, water, wood.
 export function batchWhy(state, base, key, b, wood = Infinity) {
   const R = COOK_RECIPES[b.recipe];
   if (!R) return "an unknown recipe";
@@ -270,8 +270,8 @@ export function batchWhy(state, base, key, b, wood = Infinity) {
     if (have + 1e-9 < need) return `short of ${CLASSES[inp.cls].name} (${r1(have)} of ${r1(need)} days of food)`;
   }
   const w = waterPlan(base, R.water, freeFire(state, base));
-  if (!w.ok) return `short of purified water (${r1(w.pure)} of ${R.water}; un-purified water needs firewood to boil)`;
-  if ((R.wood || 0) + w.wood > Math.max(0, Math.min(wood, base.stock.wood || 0)) + 1e-9) return `short of firewood (${R.wood || 0} a batch${w.wood ? ` + ${r1(w.wood)} to boil water` : ""})`;
+  if (!w.ok) return `short of purified water (${r1(w.pure)} of ${R.water}; un-purified water needs wood to boil)`;
+  if ((R.wood || 0) + w.wood > Math.max(0, Math.min(wood, base.stock.wood || 0)) + 1e-9) return `short of wood (${R.wood || 0} a batch${w.wood ? ` + ${r1(w.wood)} to boil water` : ""})`;
   return "";
 }
 // A batch's water: purified first, then un-purified boiled for the pot (COOK.boilWood a water; free on a shelter's fire).
@@ -326,13 +326,13 @@ function runStation(state, base, key, rec) {
   const why = stationWhy(state, base, key);
   const crew = why ? [] : crewOf(state, base, key);
   if (!crew.length) { sr.why = why || (key === "canteen" ? "no cook on duty" : "nobody home to tend it"); for (const b of live) b.why = sr.why; return; }
-  // A cook fire burns firewood a work-hour (not a shelter's own fire): the crew's day is cut to what the woodpile pays.
+  // A cook fire burns wood a work-hour (not a shelter's own fire): the crew's day is cut to what the woodpile pays.
   const perHour = key === "cookhouse" && !freeFire(state, base) ? COOK.fireWood : 0;
   if (perHour > 0) {
     const cap = Math.max(0, base.stock.wood || 0) / perHour;
     const tot = crew.reduce((a, c) => a + c.hours, 0);
     if (tot > cap) for (const c of crew) { const k = tot > 0 ? cap / tot : 0; c.left *= k; c.hours *= k; }
-    if (cap < 1e-6) { sr.why = "no firewood for the cook fire"; for (const b of live) b.why = sr.why; return; }
+    if (cap < 1e-6) { sr.why = "no wood for the cook fire"; for (const b of live) b.why = sr.why; return; }
   }
   const spend = (h) => { let need = h; for (const c of [...crew].reverse()) { const t = Math.min(c.left, need); c.left -= t; need -= t; if (need <= 1e-9) break; } return h - need; };
   const leftAll = () => crew.reduce((a, c) => a + c.left, 0);
@@ -366,7 +366,7 @@ function runStation(state, base, key, rec) {
     }
   }
 }
-// One batch: ingredients, water, firewood, the machine's day; the output as a lot with its pz and cook.
+// One batch: ingredients, water, wood, the machine's day; the output as a lot with its pz and cook.
 function makeBatch(state, base, key, b, cook, below, rec) {
   const R = COOK_RECIPES[b.recipe];
   const S = stationState(base, key);
@@ -682,7 +682,7 @@ export const groupWantsGrinder = (f) => foodUnits(f.stock, (k, x) => CLASSES.gam
 export function recipeText(R) {
   const one = { grain: "f_grain", flour: "f_flour", ground: "f_groundmeat" }; // a single item: its own count ("4.5 kg of grain")
   const ins = R.in.map((i) => (one[i.cls] ? foodWord(one[i.cls], qtyOf(one[i.cls], R.units * i.share)) : `${r1(R.units * i.share)} days of ${CLASSES[i.cls].name}`)).join(" + ");
-  return `${ins}${R.water ? ` + ${R.water} purified water` : ""}${R.wood ? ` + ${R.wood} firewood` : ""} → ${foodWord(R.out, R.n)} (${Math.round((R.gain - 1) * 100) >= 0 ? "+" : ""}${Math.round((R.gain - 1) * 100)}% food)`;
+  return `${ins}${R.water ? ` + ${R.water} purified water` : ""}${R.wood ? ` + ${R.wood} wood` : ""} → ${foodWord(R.out, R.n)} (${Math.round((R.gain - 1) * 100) >= 0 ? "+" : ""}${Math.round((R.gain - 1) * 100)}% food)`;
 }
 export function cookingHelp() {
   const rows = RECIPE_KEYS.filter((k) => !COOK_RECIPES[k].team).map((k) => {
@@ -690,13 +690,13 @@ export function cookingHelp() {
     const books = booksFor(k).map((b) => `${GEAR[b.id] ? GEAR[b.id].name : b.id}: Cooking ${b.min}`).join(", ");
     return `<b>${R.name}</b>: ${recipeText(R)}; ${r2(R.hours)} work-hours, Cooking ${R.skill}${books ? ` (${books})` : ""}${R.needs ? `, ${NEEDS_NAME[R.needs]}` : ""}; ${R.at.map((a) => STATIONS[a].name).join(" or ")}. ${R.desc}`;
   });
-  return `<b>Bills.</b> The Kitchen and a cook fire (at a shelter or camp, its own fire) take bills, as in RimWorld: pick a recipe, then <i>Do N times</i>, <i>Do until you have N</i> or <i>Do forever</i>, an ingredient filter (fresh only or also dry and preserved food, no human meat, what spoils first or the cheapest first, any item left out) and pause. The list is the order of work: the cooks take the first bill that can go. A new Kitchen starts with <i>Simple meal, until you have ${COOK.autoDays} days of eating</i>. The Kitchen's cooks work its bills (a fixed Cook ${COOK.fullDay} hours a day, a part-time cook their cooking hours); a cook fire is tended ${COOK.fireHours} hours a day by whoever cooks best at home, burning ${COOK.fireWood} firewood an hour (a shelter's lit fire is free). Work goes at ${Math.round(COOK.speed.base * 100)}% at Cooking 0 up to ${Math.round(COOK.speed.max * 100)}% at 20.<br><br>
-<b>Recipes.</b> Meals are more filling than their makings and spoil in days (a cold room or a freezer keeps them longer). Every recipe takes purified water (un-purified is boiled for the pot at ${COOK.boilWood} firewood a water when the purified runs out).<br>${rows.join("<br>")}<br><br>
+  return `<b>Bills.</b> The Kitchen and a cook fire (at a shelter or camp, its own fire) take bills, as in RimWorld: pick a recipe, then <i>Do N times</i>, <i>Do until you have N</i> or <i>Do forever</i>, an ingredient filter (fresh only or also dry and preserved food, no human meat, what spoils first or the cheapest first, any item left out) and pause. The list is the order of work: the cooks take the first bill that can go. A new Kitchen starts with <i>Simple meal, until you have ${COOK.autoDays} days of eating</i>. The Kitchen's cooks work its bills (a fixed Cook ${COOK.fullDay} hours a day, a part-time cook their cooking hours); a cook fire is tended ${COOK.fireHours} hours a day by whoever cooks best at home, burning ${COOK.fireWood} wood an hour (a shelter's lit fire is free). Work goes at ${Math.round(COOK.speed.base * 100)}% at Cooking 0 up to ${Math.round(COOK.speed.max * 100)}% at 20.<br><br>
+<b>Recipes.</b> Meals are more filling than their makings and spoil in days (a cold room or a freezer keeps them longer). Every recipe takes purified water (un-purified is boiled for the pot at ${COOK.boilWood} wood a water when the purified runs out).<br>${rows.join("<br>")}<br><br>
 <b>Cookbooks.</b> Found in houses, schools, colleges, malls, diners and restaurants, lodges and cabins, and sold by traders. Read one to the end (the Read role) and the cooks may make its meals below the usual Cooking (a little slower and more often bad), and its meals go ${Math.round(COOK.bookSpeed * 100)}% faster. They also teach Cooking.<br><br>
 <b>A clean kitchen.</b> Every hour of cooking dirties a station (+${COOK.dirt.perHour}); with <i>Clean first</i> on the cooks spend up to ${Math.round(COOK.dirt.share * 100)}% of their day scrubbing before they cook. Dirt makes food poisoning up to ${1 + POISON.dirt} times as likely.<br><br>
 <b>Food poisoning.</b> Vomiting and cramps: off work about a day (an illness: the sick rest), a low mood, now and then a bad case for a few days. A day of a meal's food gives it at ${Math.round(skillPz(0) * 1000) / 10}% from a Cooking 0 cook, ${Math.round(skillPz(5) * 1000) / 10}% at 5, ${Math.round(skillPz(10) * 1000) / 10}% at 10, × the dirt, more below a recipe's level with a cookbook; raw meat or fish eaten uncooked ${Math.round(POISON.raw * 100)}% a day of it, and game or greens with the worm's eggs eaten raw too. Iron Stomach halves it. 1 meds ends it at once; automatic care lets it pass.<br><br>
 <b>Machines.</b> The grain mill (flour from grain) and the meat grinder (ground meat and sausage) are hand-cranked machines on a utility plot: no power, a machine part to build, and they wear on the days they turn. The vacuum sealer packs survival meals while it has power.<br><br>
-<b>Camp fires.</b> Every lit fire burns firewood (a camp's or shelter's ${WOOD.fire.shelter} a day from its store, a team's ${WOOD.fire.camp} a day from what it carries; deadfall about × ${WOOD.fire.deadfall}) and goes out when there is none left; a camp or shelter cooks on its own fire only on days it burned. Days with no hot food sour the mood.<br><br>
-<b>Camp cook pot.</b> Crafted from 3 scrap by anyone (Cooking 0, anywhere, a team too). Kept at a base with no Kitchen and no cook fire (in its armory or carried by someone there) it is a Camp fire station for the small meals (simple meal, stew), tended ${COOK.fireHours} hours a day and burning ${COOK.fireWood} firewood an hour.<br><br>
+<b>Camp fires.</b> Every lit fire burns wood (a camp's or shelter's ${WOOD.fire.shelter} a day from its store, a team's ${WOOD.fire.camp} a day from what it carries; deadfall about × ${WOOD.fire.deadfall}) and goes out when there is none left; a camp or shelter cooks on its own fire only on days it burned. Days with no hot food sour the mood.<br><br>
+<b>Camp cook pot.</b> Crafted from 3 scrap by anyone (Cooking 0, anywhere, a team too). Kept at a base with no Kitchen and no cook fire (in its armory or carried by someone there) it is a Camp fire station for the small meals (simple meal, stew), tended ${COOK.fireHours} hours a day and burning ${COOK.fireWood} wood an hour.<br><br>
 <b>On the road.</b> A team at a lit, fed camp fire roasts its raw meat and fish into simple meals (a little purified water each); with a camp cook pot it cooks any fresh food it carries (forage, vegetables, eggs, meat, fish) into simple meals. <b>Other groups</b> cook in their kitchens by the same recipes, coarsely: simple and fine meals, survival meals with a sealer, bread with a mill, sausage with a grinder; their cooks' poisonings make people ill.`;
 }

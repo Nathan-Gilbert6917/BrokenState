@@ -70,10 +70,10 @@ const setSkill = (people, k, v) => people.forEach((s) => (s.skills[k] = v, s.tra
   setSkill(ppl, "medicine", 0);
   setSkill(ppl, "crafting", 0); // Crafting sets the speed (craft-books)
   ppl.forEach((s) => (s.role = "farm"));
-  Object.assign(h.stock, { scrap: 100, parts: 10, meds: 10, water: 40 });
+  Object.assign(h.stock, { scrap: 100, parts: 10, meds: 10, water: 40, wood: 500 });
   const armory0 = h.armory.length;
   queueCraft(st, h, "spikedbat");
-  check(h.stock.scrap === 96, `bat costs 4 scrap up front (scrap ${h.stock.scrap})`);
+  check(h.stock.scrap === 97 && h.stock.wood === 485, `bat costs 3 scrap and 15 wood up front (scrap ${h.stock.scrap}, wood ${h.stock.wood})`);
   check(/No crafters/.test(craftJobStatus(st, h, craftQueue(h)[0])), "no crafter: job waits");
   craftingHour(st);
   check(craftQueue(h)[0].progress === 0, "no progress without crafters");

@@ -13,7 +13,7 @@
 // goods. Gates: guns Mechanics 3, armour of AC 4+ Mechanics 5. What it takes (REPAIR_KINDS): a gun 1 gun part per 20%
 // of its full durability restored and 1 scrap; soft armour a Kevlar repair kit and 2 scrap; makeshift padding 3
 // scrap; helmets and hard pieces 1 machine part and 2 scrap; steel plates 4 scrap and 1 fuel (welding); ceramic plates
-// cannot be repaired; makeshift weapons and tools 1–3 scrap, and 30 firewood for wooden ones.
+// cannot be repaired; makeshift weapons and tools 1–3 scrap, and 30 wood for wooden ones.
 //
 // The lost maximum: a repair restores the item to its current maximum, and the maximum drops by
 //   restored × max(0.08, 0.25 − 0.01 × skill)            (× 2 with a field kit, × 0.7 at a master workbench)
@@ -36,7 +36,7 @@ export const REPAIR = {
   LOSS_BASE: 0.25, LOSS_PER_SKILL: 0.01, LOSS_MIN: 0.08, KIT_LOSS: 2, KIT_RESTORE: 0.5, MASTER_LOSS: 0.7,
   WORN_OUT: 0.2,     // a maximum under 20% of full durability: worn out
   GUN_STEP: 0.2,     // a gun part per 20% of full durability restored
-  WOOD: 30,          // firewood for a wooden handle or stock (3 kg)
+  WOOD: 30,          // wood for a wooden handle or stock (3 kg)
   AUTO_BELOW: 0.6,   // the autopilot repairs gear below 60% of its maximum
 };
 // Materials of the armour pieces (section 17), where GEAR has none of its own (armour.js may add GEAR material / ac).
@@ -182,7 +182,7 @@ export function repairInfo(state, base, item, { by = null, kit = false } = {}) {
 // The preview line: "Max durability 45 → 41; restores 12; 1 gun part, 1 scrap; 2 h; Ana (Mechanics 6)".
 export function repairPreview(info) {
   if (!info.kind) return info.reason;
-  const ins = [...Object.entries(info.inputs.supplies).map(([k, v]) => `${v} ${k === "gunparts" ? "gun part" + (v === 1 ? "" : "s") : k === "parts" ? "machine part" + (v === 1 ? "" : "s") : k === "wood" ? "firewood" : k}`),
+  const ins = [...Object.entries(info.inputs.supplies).map(([k, v]) => `${v} ${k === "gunparts" ? "gun part" + (v === 1 ? "" : "s") : k === "parts" ? "machine part" + (v === 1 ? "" : "s") : k === "wood" ? "wood" : k}`),
     ...Object.entries(info.inputs.gear).map(([k]) => GEAR[k].name.toLowerCase())];
   const who = info.who ? `${info.who.name.split(" ")[0]} (${SKILL_NAMES[info.skill]} ${skill(info.who, info.skill)})` : `someone with ${SKILL_NAMES[info.skill]} ${info.min}+`;
   return `Max durability ${Math.round(info.oldMax)} → ${Math.round(info.newMax)}, restores ${Math.round(info.restore)}; ${info.kit ? "1 use of a field repair kit" : ins.join(", ") || "nothing"}; ${info.kit ? "on the spot" : `${info.hours} h at the ${benchName(info.tier)}`}; ${who}.${info.reason ? ` ${info.reason}` : ""}`;

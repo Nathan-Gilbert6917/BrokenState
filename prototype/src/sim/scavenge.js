@@ -44,7 +44,9 @@ import { siteSource } from "./itemcond.js";
 import { foundFill } from "./gunrounds.js";
 import { rollSiteGuns } from "./gunfinds.js"; // the arsenal of 2026-10-10 (its own dice)
 import { swapGun } from "./gundist.js"; // the gun distribution: which gun a site's gear list yields
+import { rollTentFind } from "./tents.js"; // tent bags (their own dice)
 import { rollFind, rollHuntFind, rollLightFind, rollCartFind, rollSiteWood, rollBuildmat, rollSiteArrows, rollGunmodFind, rollAnyModFind, sortParts, rollSiteGrenades, rollSiteLaunchers, rollSiteReload } from "./loot.js";
+import { rollBedFind } from "./beds.js"; // beds as furniture: a loose cot or bed found (its own dice)
 import { searchHeatMult, noteGunfire } from "./fieldheat.js";
 import { lockedSearchHour } from "./locks.js";
 import { truckSearchHour, convoyHeat0, convoyThreat } from "./miltrucks.js"; // an Army convoy's guard: Heat from the start, a harder fight
@@ -61,6 +63,7 @@ import { addFind, roundsText } from "./ammo.js"; // rounds by calibre
 import { carriedRec } from "./ammo.js"; // the loose rounds people carry
 import { sumRecs } from "./rounds.js"; // a team's rounds: its bags and what its people carry
 import { cfgOf, lootQty } from "./worldcfg.js"; // the run's dials: Dead at sites, the loot by kind
+import { campRoster } from "./campsite.js"; // a campsite's own people or dead join the roster (its state)
 
 export const APPROACHES = {
   sneak:  { name: "Sneak",  loot: 0.7, heat: 7,  desc: "Slow and quiet. Stealth lowers Heat further." },
@@ -199,7 +202,7 @@ export function startScavenge(state, p) {
     // A city (citycrawl.js): block by block instead of one raid, while you drive the team (not the autopilot); the crawl
     // opens on the city's map for you to pick the block of its rim to go in at.
     if (crawlTile(t) && p.owner === "player" && poi == null) return startCrawl(state, p, { choose: true });
-    const groups = raidEnemies(state, p.dest);
+    const groups = poi != null ? campRoster(state, t, poi, raidEnemies(state, p.dest)) : raidEnemies(state, p.dest); // campsite.js: a campsite's raiders or its dead
     const foes = groups.filter((g) => !g.side); // a third side (wanderers.js) is not who you came to fight
     const total = foes.reduce((a, g) => a + g.count, 0);
     const names = foes.map((g) => g.name).join(" and ");
@@ -354,6 +357,10 @@ export function searchHour(state) {
   if (lamp) { e.found.gear.push(lamp); finds.push(lamp.name); }
   const cart = rollCartFind(state, e.tile, (perk("treasure") ? 2 : 1) * ap.loot, `h${e.hours}`); // a wheelbarrow, a hand cart (loot.js CART_FINDS; its own dice)
   if (cart) { e.found.gear.push(cart); finds.push(cart.name); }
+  const bedFind = rollBedFind(state, e.tile, kind, (perk("treasure") ? 2 : 1) * ap.loot, `h${e.hours}`); // a loose cot or bed where people slept (beds.js, data-beds.js BED_FINDS; its own dice)
+  if (bedFind) { e.found.gear.push(bedFind); finds.push(bedFind.name); }
+  const tent = rollTentFind(state, e.tile, kind, left, (perk("treasure") ? 2 : 1) * ap.loot, `h${e.hours}`); // a tent bag (tents.js, data-tents.js TENT_FINDS by the site or POI; its own dice)
+  if (tent) { e.found.gear.push(tent); finds.push(tent.name); }
   const part = rollAnyModFind(state, e.tile, (perk("treasure") ? 2 : 1) * ap.loot, `h${e.hours}`); // a sight, a suppressor (loot.js GUNMOD_FINDS, then SITE_MODS; their own dice)
   if (part) { e.found.gear.push(part); finds.push(part.name); }
   const rel = rollSiteReload(state, e.tile, (perk("treasure") ? 2 : 1) * ap.loot, `h${e.hours}`); // a bag of brass, a can of powder, a box of primers (loot.js SITE_RELOAD; its own dice)

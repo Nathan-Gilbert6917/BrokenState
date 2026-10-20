@@ -31,7 +31,7 @@ const nearFree = (st, from, lo, hi) => st.grid.within(from, hi).find((t) => st.g
 function pitch(st, n, supplies) {
   const h = hub(st);
   const tile = nearFree(st, h.tile, 3, 6);
-  Object.assign(h.stock, { scrap: 80, parts: 6, buildmat: 20, food: 200, water: 200 });
+  Object.assign(h.stock, { scrap: 80, parts: 6, buildmat: 20, food: 200, water: 200, wood: 2000 });
   const crew = atBase(st, h.id).slice(0, n).map((s) => s.id);
   const res = launchExpedition(st, { memberIds: crew, dest: tile, mission: "outpost", stance: "normal", supplies: { food: 6, water: 6, ...supplies } });
   if (!check(!res.error, `the team leaves (${res.error || "ok"})`)) return null;
@@ -52,11 +52,11 @@ section("Build outpost pitches a camp");
   // The user's numbers (2026-10-09); since camps are the barest base tier (staging.js), setting one up takes an hour and
   // nothing carried: the materials come with the step up.
   check(outpostScrap(st, 0) === 0, "setting up the camp takes no scrap");
-  check(outpostKit(st, 0).scrap === (st.tiles[0].ruin ? 10 : 20) && !outpostKit(st, 0).parts && outpostKit(st, 0).buildmat === 2, `the kit to set up and establish in one trip: 20 scrap, 2 building materials (${JSON.stringify(outpostKit(st, 0))})`);
+  check(outpostKit(st, 0).scrap === (st.tiles[0].ruin ? 10 : 20) && !outpostKit(st, 0).parts && outpostKit(st, 0).buildmat === 2 && outpostKit(st, 0).wood === 200, `the kit to set up and establish in one trip: 20 scrap, 2 building materials, 200 wood (${JSON.stringify(outpostKit(st, 0))})`);
   check(PITCH_HOURS === 1, "setting up takes an hour of work");
-  check(JSON.stringify(BUILDINGS.outpost_up.cost) === JSON.stringify({ scrap: 20, buildmat: 2 }) && BUILDINGS.outpost_up.hours === 20, "establishing: 20 scrap, 2 building materials, 20 work-hours");
-  check(JSON.stringify(BUILDINGS.hub_up.cost) === JSON.stringify({ scrap: 100, buildmat: 5 }) && BUILDINGS.hub_up.hours === 60 && BUILDINGS.hub_up.gather, "shelter to base: 100 scrap, 5 building materials, 60 work-hours, gathered as they come in");
-  check(JSON.stringify(STAGING.HARDCORE.needs) === JSON.stringify({ scrap: 20, buildmat: 2 }) && STAGING.HARDCORE.work === 20 && STAGING.PITCH.scrap === 0 && STAGING.PITCH.hours === 1 && BUILDINGS.camp_up.hours === 20, "a camp: an hour and nothing carried to set up; to a shelter (camp_up) 20 scrap, 2 building materials, 20 work-hours");
+  check(JSON.stringify(BUILDINGS.outpost_up.cost) === JSON.stringify({ scrap: 20, buildmat: 2, wood: 200 }) && BUILDINGS.outpost_up.hours === 20, "establishing: 20 scrap, 2 building materials, 200 wood (the user's pick 2026-10-20), 20 work-hours");
+  check(JSON.stringify(BUILDINGS.hub_up.cost) === JSON.stringify({ scrap: 100, buildmat: 5, wood: 800 }) && BUILDINGS.hub_up.hours === 60 && BUILDINGS.hub_up.gather, "shelter to base: 100 scrap, 5 building materials, 800 wood, 60 work-hours, gathered as they come in");
+  check(JSON.stringify(STAGING.HARDCORE.needs) === JSON.stringify({ scrap: 20, buildmat: 2, wood: 200 }) && STAGING.HARDCORE.work === 20 && STAGING.PITCH.scrap === 0 && STAGING.PITCH.hours === 1 && BUILDINGS.camp_up.hours === 20, "a camp: an hour and nothing carried to set up; to a shelter (camp_up) 20 scrap, 2 building materials, 200 wood, 20 work-hours");
   check(CRAFTS.buildmat && CRAFTS.buildmat.in.scrap === 3 && CRAFTS.buildmat.supplies.buildmat === 1 && CRAFTS.buildmat.field, "building materials are crafted from scrap (3 for 1, anywhere)");
   const at = { path: [nearFree(st, hub(st).tile, 3, 6)], idx: 0, supplies: { scrap: 11 }, cargo: { supplies: {}, gear: [] } };
   const opt = orderOptions(st, at).find((x) => x.mission === "outpost");
@@ -68,6 +68,7 @@ section("Build outpost pitches a camp");
     check(tierName(b) === "Outpost camp", `called an outpost camp (${tierName(b)})`);
     check(baseWalls(b) === 0 && plotCap(b, "building") === 0 && plotCap(b, "utility") === 2, "a camp's rules: no walls, no building plots, 2 utility plots");
     const job = tierUpJob(b);
+    b.stock.wood = (b.stock.wood || 0) + 600; // its 200 wood (the user's pick 2026-10-20), the fire's days kept back, its burn meanwhile: here, so only the building materials hold it up below
     check(job && job.type === "outpost_up" && job.paid, "its step up is queued at once, gathering its materials");
     check(atBase(st, b.id).length === 2 && atBase(st, b.id).every((s) => s.role === "build"), "the team is its staff, on Build");
     check(st.log.some((l) => /set up camp/.test(l.text)), "the log says so");
@@ -107,7 +108,7 @@ section("Build outpost pitches a camp");
 section("Brought in one trip; cancel; save");
 {
   const st = world(seed + 1);
-  const P = pitch(st, 3, { scrap: 32, buildmat: 2 });
+  const P = pitch(st, 3, { scrap: 24, buildmat: 2, wood: 300 }); // its 200 wood and the fire's (the user's pick 2026-10-20)
   const b = P && P.base;
   if (check(!!b, "the camp stands")) {
     const job = tierUpJob(b);

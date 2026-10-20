@@ -105,10 +105,14 @@ function makeOld(state, amounts) {
       ...state.parties.filter((p) => p.owner === "player" && p.kind !== "convoy" && p.kind !== "caravan").flatMap((p) => [[`team ${p.id}`, p.supplies], [`cargo ${p.id}`, p.cargo && p.cargo.supplies]]),
     ];
     const was = new Map(mine(raw).map(([k, r]) => [k, r ? Math.floor((r.ammo || 0)) + ROUND_KEYS.reduce((a, x) => a + Math.floor(r[x] || 0), 0) : 0]));
+    // (2026-10-20: an old save's guns and magazines are loaded once with real rounds out of the stores of their place,
+    // itemacts.js loadUpAll: what went into them is counted with the stock it came out of)
+    const inItems = (it, seen = new Set()) => { if (!it || typeof it !== "object" || seen.has(it)) return 0; seen.add(it); let n = 0; if (it.loaded) n += Array.isArray(it.loaded.stack) ? it.loaded.stack.reduce((a, x) => a + (x.n || 0), 0) : it.loaded.n || 0; if (Array.isArray(it.stack)) n += it.stack.reduce((a, x) => a + (x.n || 0), 0); for (const c of Array.isArray(it.contents) ? it.contents : []) n += inItems(c, seen); if (it.mods) for (const m of Object.values(it.mods)) n += inItems(m, seen); return n; };
+    const heldAt = (state, key) => (state.survivors || []).filter((x) => x && x.alive && x.location && ((x.location.kind === "base" && `base ${x.location.baseId}` === key) || (x.location.kind === "party" && `team ${x.location.partyId}` === key))).reduce((a, x) => a + [...Object.values(x.gear || {}), ...(x.pockets || [])].reduce((b, it) => b + inItems(it), 0), 0);
     let same = true, left = false, bad = "";
     for (const [k, r] of mine(st)) {
       if (!was.has(k) || !r) continue;
-      const before = Math.max(0, was.get(k)), after = totalRounds(r);
+      const before = Math.max(0, was.get(k)), after = totalRounds(r) + (st.physOutV && !raw.physOutV ? heldAt(st, k) - heldAt(raw, k) : 0);
       if (before !== after && !bad) { same = false; bad = `${k}: ${before} → ${after}`; }
       if (generic(r) !== 0) left = true;
     }

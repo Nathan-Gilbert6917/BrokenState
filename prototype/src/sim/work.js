@@ -64,6 +64,7 @@ import { huntWorkWhy, fishWorkWhy, fishWorkHands, huntWorkCap, hunterMult, bestH
 import { forageWorkWhy, forageWorkCap, foragerMult, FORAGE_SHORT } from "./foraging.js";
 import { foodUse, HEAT, woodFor } from "./upkeep.js";
 import { woodWorkWhy, woodHandsWanted, woodNeed, woodcutterMult, bestChop } from "./woodcutting.js";
+import { chopJobs } from "./woodwork.js"; // woodwork: the felling marked on the base map
 import { waterIn, stockHas } from "./water.js"; // purified and un-purified water count together
 import { watchShift, shiftText } from "./watch.js"; // the base's watch roster (Defence tab)
 import { sleepingIn } from "./sleep.js"; // off a watch: sleep until rested
@@ -190,14 +191,14 @@ export const WORK_TYPES = {
   // The Kitchen's cooks (kitchen.js): one per KITCHEN.perCook people living here, while a kitchen stands, part-time: only
   // in the cooking hours (KITCHEN.cookHours: 05:00, 06:00, 16–20), the rest of the day goes to their other priorities
   // (s.cookHour counts them as the day's cooks). (The key "cook" above is the Preserving room's operator, kept for saved
-  // roles.) Urgency 6 in those hours: the meal will not wait. Nobody cooks on a stove with no firewood to light it
+  // roles.) Urgency 6 in those hours: the meal will not wait. Nobody cooks on a stove with no wood to light it
   // (kitchen.js kitchenCanLight: after the boiler's and the heating's day).
   meals: {
     name: "Cook", ing: "Cooking", short: "Cook", role: "cook", skill: "cooking",
-    get desc() { return `Cooks the base's meals in the Kitchen: one cook for every ${KITCHEN.perCook} people living here, in the cooking hours only (05:00–06:00 breakfast, 16:00–20:00 dinner); the rest of the day they work their other priorities. Hot meals stretch the food (−10% eaten a day, a little more with a Cooking 5+ cook), lift spirits and boil a quarter of the day's drinking water; the stove burns firewood. No kitchen (or no firewood), no cooking. Trains Cooking.`; }, // a getter: kitchen.js may load after this module (import cycle)
+    get desc() { return `Cooks the base's meals in the Kitchen: one cook for every ${KITCHEN.perCook} people living here, in the cooking hours only (05:00–06:00 breakfast, 16:00–20:00 dinner); the rest of the day they work their other priorities. Hot meals stretch the food (−10% eaten a day, a little more with a Cooking 5+ cook), lift spirits and boil a quarter of the day's drinking water; the stove burns wood. No kitchen (or no wood), no cooking. Trains Cooking.`; }, // a getter: kitchen.js may load after this module (import cycle)
     open(ctx) {
       if (!hasKitchen(ctx.base)) return { cap: 0, why: "no kitchen (Construction: a building plot)" };
-      if (!kitchenCanLight(ctx.state, ctx.base)) return { cap: 0, why: "no firewood for the kitchen's stove" };
+      if (!kitchenCanLight(ctx.state, ctx.base)) return { cap: 0, why: "no wood for the kitchen's stove" };
       if (!isCookHour(hourOfDay(ctx.state))) return { cap: 0, why: "not a cooking hour (05:00–06:00, 16:00–20:00)" };
       return { cap: cooksWanted(ctx.state, ctx.base), urg: 6 }; // the meals are at set hours: the cooks first at their priority
     },
@@ -369,18 +370,20 @@ export const WORK_TYPES = {
     },
     rank: (s) => foragerMult(s) * 10,
   },
-  // Firewood for the winter's heating (woodcutting.js): felled trees, deadfall, fence rails, by the land around.
+  // Wood for the winter's heating (woodcutting.js): felled trees, deadfall, fence rails, by the land around.
   wood: {
     name: "Cut wood", ing: "Cutting wood", short: "Wood", role: "wood", skill: "farming",
-    desc: "Cuts firewood within 2 tiles of the base 6 hours a day while the store is short of what the fires need (heating 15, 1.5 kg, a head a day below freezing and 4.5 for the night's fire on a cool night under 8°C; the water boiler 6 a head a day; a camp's fire its people's warmth, 3 a head to boil the water and 1 for the pot, on top of its own 18): forest best (about 140 a day each with an axe), hills fair, farmland and suburbs little, a city next to nothing. As many as it takes to have the pile in within three weeks (no fixed cap; each one past the first brings in 5% less, at least half). Their own axe, machete or sledgehammer, or one from the armory, cuts much faster than bare hands. Loud (base Heat), and axes slip; the land cut hard grows back over seasons.",
+    desc: "Cuts wood within 2 tiles of the base 6 hours a day while the store is short of what the fires need (heating 15, 1.5 kg, a head a day below freezing and 4.5 for the night's fire on a cool night under 8°C; the water boiler 6 a head a day; a camp's fire its people's warmth, 3 a head to boil the water and 1 for the pot, on top of its own 18): forest best (about 140 a day each with an axe), hills fair, farmland and suburbs little, a city next to nothing. As many as it takes to have the pile in within three weeks (no fixed cap; each one past the first brings in 5% less, at least half). Their own axe, machete or sledgehammer, or one from the armory, cuts much faster than bare hands. Loud (base Heat), and axes slip; the land cut hard grows back over seasons.",
     open(ctx) {
+      // woodwork: the trees marked for felling on the base map (woodwork.js) open the job by themselves, a hand a job (up to 3).
+      const chop = Math.min(3, chopJobs(ctx.base).length);
       const why = woodWorkWhy(ctx.state, ctx.base);
-      if (why) return { cap: 0, why };
+      if (why) return chop ? { cap: chop, urg: 3 } : { cap: 0, why };
       const w = woodNeed(ctx.state, ctx.base);
-      if (!w.short) return { cap: 0, why: w.need > 0 ? `enough firewood for the cold ahead (${Math.floor(w.have)} of ${w.need})` : "no heating needed here" };
+      if (!w.short) return chop ? { cap: chop, urg: 3 } : { cap: 0, why: w.need > 0 ? `enough wood for the cold ahead (${Math.floor(w.have)} of ${w.need})` : "no heating needed here" };
       const burn = Math.max(0.1, w.heads * woodFor(HEAT.fuel) + (w.daily || 0)); // a day's heating, boiling and the kitchen's stove
       const urg = w.cold ? (w.have < burn * 5 ? 7 : 4.5) : w.toCold <= 14 ? 5 : w.soon ? 3 : 1;
-      return { cap: Math.max(1, woodHandsWanted(ctx.state, ctx.base, { w })), urg }; // sized to the need (the pile in within 3 weeks), no fixed cap
+      return { cap: Math.max(1, chop, woodHandsWanted(ctx.state, ctx.base, { w })), urg }; // sized to the need (the pile in within 3 weeks), no fixed cap
     },
     // The governor's rule (autopilot.js planRoles 4a, planWood): from autumn (the cold within WOOD_AP.autumn days, or
     // here, or a water boiler burning wood) the woodcutters it takes to have the pile in by the cold go before the
@@ -394,7 +397,7 @@ export const WORK_TYPES = {
       if (!w.short || !w.soon || w.need <= 0) return null;
       const critical = woodCritical(ctx.state, ctx.base, w, ctx.people.length); // the governor's rule (autopilot.js): by the cold (and the boiler's), no fixed cap
       const slots = critical - ctx.used.wood;
-      return slots > 0 ? { slots, why: `the winter's firewood (${Math.floor(w.have)} of ${w.need}, ${w.toCold} days to the cold)` } : null;
+      return slots > 0 ? { slots, why: `the winter's wood (${Math.floor(w.have)} of ${w.need}, ${w.toCold} days to the cold)` } : null;
     },
     emergencyCan: (ctx, s) => (s.health ?? 100) >= 50 && !s.woundInfected && (ctx.people.length <= 3 || !s.leader),
     rank: (s) => woodcutterMult(s) * 10 * bestChop(s).mult,

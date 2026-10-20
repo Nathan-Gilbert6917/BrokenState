@@ -12,6 +12,8 @@
 // It only uses the same calls as the UI (canBuild / queueBuild, queueCraft, treatAtBase, launchExpedition,
 // startOrder, saveSupplyRun ...), plays by what the player knows of the map (knowledge snapshots, markers,
 // known groups), and never draws from state.rng. Turning it off hands everything back as it is.
+import { isChopJob } from "./woodwork.js"; // noidle: the felling in the queue
+import { fellCrew, fellUrgent, fellScore, fellFit, noWorkFor, planNoIdle } from "./noidle.js"; // noidle: a woodcutter on the felling, nobody in a role with no work (call-time only)
 import { FOODS, FOOD_KEYS, foodIn, foodSplit, unitsOf, qtyOf, sellPick, foodNeeds, foodUnits } from "./foods.js"; // food by type (foods.js)
 import { gearOutdoorWorkers, outReady, tripKit } from "./tripgear.js"; // the outdoor workers' kit for their trips (trips-plus #2)
 import { govFieldWorks, fieldJobs, govSnares, snareLinesWanted, playerWorks, gatheredScrap } from "./fieldworks.js"; // field works: the governor's and a base leader's share
@@ -52,8 +54,10 @@ import { KITCHEN, hasKitchen, cooksWanted, kitchenCold, kitchenCanLight, kitchen
 import { conditionsOf, CONDITIONS, treatCondition, treatConditionInfo, medsToTreatAll, autoWantsCondition } from "./health.js";
 import { govCookBills } from "./cooking.js"; // wave 2 cooking: the governor's and the stewards' bills
 import { canUpgradeKitchen, queueCannerUpgrade, canUpgradeGenerator, queueGenUpgrade, stationOperator, hasWall } from "./buildings.js"; // machines-2: the pressure canner; gen-tiers: a generator upgraded
-import { nextWallTier, wallTier } from "./buildings.js"; // WALL_TIERS: one wall, built up a tier at a time
+import { nextWallTier, wallTier, underAttack, campMaterialsWork } from "./buildings.js"; // WALL_TIERS: one wall, built up a tier at a time
+import { WOODWORK, queueChop, queuedChopWood, clearAhead } from "./woodwork.js"; // woodwork: felling for wood, clearing the next sites ahead (govWoodwork)
 import { fittingRoom } from "./basemap.js"; // base building: a general building with floor for a fitting (bedWishes, storageWish, stoveWish)
+import { governBeds } from "./beds.js"; // beds as furniture: set from the stores, crafted when beds are short (call-time only)
 import { autoStore } from "./containers.js"; // the stores tidied daily (tidyStores)
 import { BUILDINGS, RECIPES, canDemolish, demolish, canBuild, queueBuild, count, countAll, stations, baseBeds, baseWalls, farmSlots, assignStations, isShelter, plotsFree, plotCap, BEDS, queuedBeds, BARRACKS_UP, canExpandBunkhouse, queueBunkhouseExpand, benchTier, tierUpType, tierUpJob, gatherRows, gatherStalled, isCamp, CAMP as CAMP_TIER, WATER_BARREL, canUpgradeBarrel, queueBarrelUpgrade, barrelTier, barrels, barrelName } from "./buildings.js";
 import { fireWanted } from "./fieldheat.js";
@@ -344,7 +348,7 @@ export function autopilotHour(state) {
 // and put out at night unless it is cold or someone there is badly hurt (the light carries).
 function autoFires(state) {
   const hurt = (people) => people.some((s) => s.health < ROAD.heal);
-  // A fire burns firewood (woodcutting.js shelterFire / campFireHour): with none to burn it is not lit.
+  // A fire burns wood (woodcutting.js shelterFire / campFireHour): with none to burn it is not lit.
   for (const b of state.bases) if (isShelter(b)) b.fire = fireWanted(state, { hurt: hurt(atBase(state, b.id)) }) && canLight(state, b);
   for (const p of state.parties) if (p.owner === "player" && p.phase === "task" && p.task && p.task.type === "camp") p.campFire = fireWanted(state, { hurt: hurt(partyMembers(state, p)) }) && canLight(state, p);
 }
@@ -362,9 +366,11 @@ export function governBase(state, base, areas = ALL_AREAS) {
   if (areas.medical && hourOfDay(state) === TREAT_HOUR) for (const line of autoTreats(state, base)) say(state, line); // comforts.js: chocolate, coffee, smokes for the glum
   if (areas.building && hourOfDay(state) === WATER_WAIT.hour) waterSalvage(state, base);
   if (areas.building && hourOfDay(state) === PLAN_HOUR) tidyStores(state, base); // containers.js: the goods into the containers, before the day's builds
+  if (areas.building && hourOfDay(state) === PLAN_HOUR) for (const line of governBeds(state, base)) say(state, line); // beds.js: furniture set from the stores, a bunk bed or a cot crafted when beds are short
   if (areas.building) planBuilds(state, base, areas);
+  if (areas.building && state.hour % WOODWORK.govEvery === 0) govWoodwork(state, base, areas); // woodwork: felling for wood when short, the next sites cleared ahead
   if (areas.building && hourOfDay(state) === PLAN_HOUR + 2) { const msg = cookFireDown(state, base); if (msg) say(state, msg); } // kitchen.js: a lit kitchen does the cook fire's job
-  if (areas.production && hourOfDay(state) === 23) stoveSave(state, base); // kitchen.js: the winter's firewood before the stove
+  if (areas.production && hourOfDay(state) === 23) stoveSave(state, base); // kitchen.js: the winter's wood before the stove
   if (areas.production && hourOfDay(state) === PLAN_HOUR) govCookBills(state, base); // cooking.js (wave 2 cooking): their bills at the Kitchen and the cook fire (the player's bills left alone)
   if (areas.building && hourOfDay(state) === PLAN_HOUR + 1) for (const line of govFieldWorks(state, base, { threatened: fieldThreat(state, base), waterShort: waterRunningShort(state, base), foodShort: snareFoodLevel(state, base) })) say(state, line); // fieldworks.js: snare lines, a well, a tower and its lookouts, repairs
   // Hardcore: a snare line wanted and not set at the morning's look (a camp's scrap comes in with a delivery and goes
@@ -378,12 +384,12 @@ export function governBase(state, base, areas = ALL_AREAS) {
   if (areas.production && hourOfDay(state) === PLAN_HOUR) stripDeadCars(state, base); // a car worth less than its parts
 }
 // The cook fire comes down once the Kitchen does its job (kitchen-plus pick 5): a kitchen here with its stove lit (it
-// cooks the worm's game and greens through, worm.js baseCooks), and the firewood to keep it lit: KITCHEN.wood.keepDays
+// cooks the worm's game and greens through, worm.js baseCooks), and the wood to keep it lit: KITCHEN.wood.keepDays
 // of the stove beyond the day's boiler and heating in store, and wood land around the base (woodcutting.js
-// woodWorkWhy) or no shortfall for the cold ahead (woodNeed). Short of firewood the cook fire stays (it burns
+// woodWorkWhy) or no shortfall for the cold ahead (woodNeed). Short of wood the cook fire stays (it burns
 // nothing: it is the fallback for a cold stove). Its utility plot is free again; half its scrap comes back.
 // Never while the stove is let go cold for the winter's wood (stoveSave) or has been cold in the last
-// KITCHEN.coldKeep days (ap-food, 2026-10-11: a stove cold for want of firewood left the game and greens from infected
+// KITCHEN.coldKeep days (ap-food, 2026-10-11: a stove cold for want of wood left the game and greens from infected
 // land raw at a base whose cook fire had come down, until a new one was saved for and built).
 export function cookFireRedundant(state, base) {
   if (!count(base, "cookhouse") || !hasKitchen(base) || kitchenCold(base) || !kitchenCanLight(state, base)) return false;
@@ -393,7 +399,7 @@ export function cookFireRedundant(state, base) {
   return !woodWorkWhy(state, base) || !woodNeed(state, base).short;
 }
 // The stove kept cold for the winter's wood (kitchen.js kitchenFireDaily reads base.stoveSave): in the run-up to the cold
-// (WOOD_AP.autumn days) while the woodpile is under WOOD_AP.behind of what the cold needs, the Kitchen's daily firewood
+// (WOOD_AP.autumn days) while the woodpile is under WOOD_AP.behind of what the cold needs, the Kitchen's daily wood
 // (20-40 a day) goes to the winter instead (woodtest seed 42: 28% of the cold's need with the stove lit all autumn).
 // In the cold itself (ap-food) the stove goes cold while the woodpile is under what the heating alone needs for the rest
 // of it (woodNeed heat, without its fifth to spare): it burned the heating's wood until the pile was down to a day of
@@ -556,9 +562,9 @@ export function stewardOutposts(state, base, style = "balanced", keep = new Set(
     return lines.join("; ");
   });
 }
-// Hunting, fishing and firewood (steward.js): once a morning, one team at most out on them from this base at a time,
+// Hunting, fishing and wood (steward.js): once a morning, one team at most out on them from this base at a time,
 // the governor's hunting or fishing trip when food runs short (foodTripCands: need 1.4+, the winter stores short, or
-// stocking up in autumn) or its wood trip when the land around gives too little firewood (woodTripCands). Not in
+// stocking up in autumn) or its wood trip when the land around gives too little wood (woodTripCands). Not in
 // severe weather nor with raiders or a horde on the way; the style's share of the base stays home.
 export function stewardLand(state, base, style = "balanced", keep = new Set()) {
   if (hourOfDay(state) !== PLAN_HOUR) return "";
@@ -575,7 +581,7 @@ export function stewardLand(state, base, style = "balanced", keep = new Set()) {
       const party = launchTrip(state, { ...c, from: base }, pool, spare);
       if (!party) continue;
       party.leaderTrip = true;
-      const what = c.food === "huntTrips" ? "hunting" : c.food === "fishTrips" ? "fishing" : "cutting firewood";
+      const what = c.food === "huntTrips" ? "hunting" : c.food === "fishTrips" ? "fishing" : "cutting wood";
       return `${names(partyMembers(state, party))} went ${what} at ${tileLabel(state, c.tile)}: ${c.why}`;
     }
     return "";
@@ -1137,6 +1143,19 @@ function nextHousing(state, base) {
 // A wish's check and cost: a new building (canBuild) or a bunkhouse expanded (canExpandBunkhouse).
 // A water barrel upgraded (w.barrel: its id; buildings.js WATER_BARREL tiers): the summer store's room (waterPlan).
 const wishCheck = (state, base, w) => { const c = w.barrel != null ? canUpgradeBarrel(state, base, w.barrel) : w.upgrade != null ? canExpandBunkhouse(state, base, w.upgrade) : canBuild(state, base, w.type); if (w.type === "walls") w.wallCost = c.cost || {}; return c; }; // the Ring wall: what its pieces cost (buildings.js canBuildWall)
+// What a build leaves of the coming cold's wood out of the stocking season: none WOOD_BUILD_KEEP days or more before
+// the cold, rising to all of it at the cold (woodtest: the pile two-fifths in by the winter with the builds taking wood;
+// barestarttest: the first bunkhouse on day one, 2026-10-20).
+const WOOD_BUILD_KEEP = 150, WOOD_BUILD_SMALL = 150; // KEEP: days before the cold over which the share kept rises from none to all; SMALL: a tent, a box, crates, shelves (150 since the fittings took more wood, the user's pick 2026-10-20)
+// The wood a big build leaves in store (planBuilds): the fires' days, and the coming cold's need by the share above
+// (once the stocking for the cold is on, all of it). woodNeed result in. govWoodwork fells toward it.
+const buildWoodKeep = (wn) => (wn.soon ? wn.need : Math.max(wn.dailyKeep, wn.need * Math.max(0, Math.min(1, 1 - wn.toCold / WOOD_BUILD_KEEP))));
+// Does a build of this wood keep the woodpile's reserve back (a small one, beds and the general buildings go ahead)?
+// The food builds (the Kitchen, the animal pen: pt-int round 2, kitchentest) keep only the fires' days (woodNeed dailyKeep),
+// not the coming cold's share: a hub of 8 needs its Kitchen before its first winter's woodpile is in, and the governor
+// fells for them (govWoodwork: their wood with the fires' days as the reserve). Their wood cost stays.
+const WOOD_FOOD = new Set(["canteen", "animal_pen"]);
+const keepsWood = (type, wood) => wood > WOOD_BUILD_SMALL && !BEDS[type] && !GENERAL.includes(type) && !WOOD_FOOD.has(type);
 const wishCost = (w) => (w.barrel != null ? w.cost : w.upgrade != null ? BARRACKS_UP.cost : w.wallCost || BUILDINGS[w.type].cost);
 const wishQueue = (state, base, w) => (w.barrel != null ? queueBarrelUpgrade(state, base, w.barrel) : w.upgrade != null ? queueBunkhouseExpand(state, base, w.upgrade) : queueBuild(state, base, w.type));
 // The housing wish (nextHousing) for buildWishes, and a bunkhouse after a barracks while a plot is free and the
@@ -1269,7 +1288,7 @@ export function waterPlan(state, base) {
   const crafter = atBase(state, base.id).some((x) => skill(x, CRAFTS.waterfilter.skill) >= CRAFTS.waterfilter.min);
   // Scrap for filters is held only while it matters: summer near and short, or the water running low now.
   const urgent = (near && (sw.net < 0 || sw.reserve > sw.cap)) || dryGap > 0;
-  // The water boiler (worm.js) burns firewood, not scrap: its wood is planned with the heating (woodcutting.js woodNeed).
+  // The water boiler (worm.js) burns wood, not scrap: its wood is planned with the heating (woodcutting.js woodNeed).
   const hold = { scrap: brokenWater * 3 + (crafter && urgent ? Math.min(2, Math.max(0, filters - have)) * CRAFTS.waterfilter.in.scrap : 0), parts: brokenWater };
   // The wells the summer wants with the filters left out (summerWater's fix: wells first, steady; the filters are the
   // stopgap that clogs in about 20 days and costs scrap): sw.fix counts the filters made, and the filters crafted in
@@ -1720,7 +1739,7 @@ function handleTrade(state) {
   // priced as a whole, the way the trade window totals it; asking at single-unit prices got deals refused.
   let budget = Object.entries(spare).reduce((a, [k, q]) => a + (q > 0 ? q * sellPrice(state, f, k, speech, q) : 0), 0);
   const ask = {};
-  const caps = { meds: 10, parts: 6, food: 40, fuel: 20, ammo: 120, scrap: 40, water: 20, wood: 600 }; // wood: 60 kg of firewood
+  const caps = { meds: 10, parts: 6, food: 40, fuel: 20, ammo: 120, scrap: 40, water: 20, wood: 600 }; // wood: 60 kg of wood
   for (const k of ["gunparts", "carparts", "electronics"]) caps[k] = Math.max(1, Math.min(6, partDeficit(state, home, k))); // repair.js: up to the reorder level
   for (const [k, v] of Object.entries(reloadCaps(state, home))) caps[k] = Math.max(1, v); // reloading.js: powder and primers up to the bench's stock
   let askValue = 0;
@@ -1822,7 +1841,7 @@ export function heatFuelWant(state, base) {
     days += f;
   }
   const heads = mouthsAt(state, base).heads + returning(state, base); // teams out come home to it
-  // woodcutting.js: the firewood in store covers its share first (HEAT.wood fuel a unit), so the fuel is wanted only
+  // woodcutting.js: the wood in store covers its share first (HEAT.wood fuel a unit), so the fuel is wanted only
   // for what the wood will not cover; a base that can still cut the rest of its wood before the winter (within the
   // job's cap of woodcutters) makes no fuel runs for heating (the want stays under heatFuelCands' 1.5) until the
   // winter is here.
@@ -1920,7 +1939,7 @@ function needs(state, h = hub(state)) { // h: a base leader's own base (stewardS
     // Building materials (data.js buildmat): wanted hard while a camp or shelter waits for them, else hardly (picked up
     // along the way; a standing want took teams off the winter's wood trips: woodtest).
     buildmat: matShort(state, h, "buildmat") > (st.buildmat || 0) ? 2.2 : 0.1,
-    // Firewood (woodcutting.js): bought only when the cold is near or here and the store is low; never sold (0.9).
+    // Wood (woodcutting.js): bought only when the cold is near or here and the store is low; never sold (0.9).
     wood: (() => { const w = woodNeed(state, h, returning(state, h)); return w.short && (w.cold || w.toCold <= 14 || w.pressing) && w.have < w.need * 0.3 ? 1.6 : 0.9; })(), // the boiler (worm.js) burns it in every season
   };
   // A broken well or pump here (or, at the hub, at an outpost it supplies) waiting for scrap (waterWaitsScrap): scrap
@@ -2198,7 +2217,7 @@ function planRoles(state, base, areas = ALL_AREAS) {
   // Part-time (kitchen-plus pick 2): on Cook only in the cooking hours (it plans
   // every hour; the rest of the day they are planned like anyone else, and the kitchen counts them by s.cookHour), the
   // same people each day (whoever cooked last comes first; hunters and fishers last: dusk is their hour), and nobody while
-  // the stove has no firewood to light it. Cheap: the farms and the other daily jobs count people at their midnight job,
+  // the stove has no wood to light it. Cheap: the farms and the other daily jobs count people at their midnight job,
   // so the cooking hours cost only the hourly work (building, crafting, a trip cut short).
   if (areas.food && hasKitchen(base) && isCookHour(hourOfDay(state)) && kitchenCanLight(state, base)) {
     const have = people.filter((s) => (want.get(s.id) || {}).role === "cook").length;
@@ -2244,10 +2263,10 @@ function planRoles(state, base, areas = ALL_AREAS) {
   // else one, and as many fishers): as many as close the food the land must bring in (huntWorkCap / fishWorkHands:
   // the day's eating and the stores refilled, less the plots), up to a fifth of the people ahead of the farm
   // (LAND_AP.share: the governor's order of work, not the job's room; one at a base under 5).
-  // 2a''. Firewood before the food from the land and the winter's extra farm hands while the food holds (WOOD_AP.foodFirst
+  // 2a''. Wood before the food from the land and the winter's extra farm hands while the food holds (WOOD_AP.foodFirst
   // days a head) in the two months before the cold: the crew it takes to have the woodpile in by the cold (planWood's critical). Job trips (2026-10-10)
   // let any base hunt, and the hunters and a short winter outlook's farm crew took every hand of a small hub ahead of
-  // step 4a: woodtest seed 43 met the winter with no firewood at all (30 woodcutter-days from late summer).
+  // step 4a: woodtest seed 43 met the winter with no wood at all (30 woodcutter-days from late summer).
   const wood = planWood(state, base, people, areas, foodDays);
   const woodFirst = !!wood && foodDays >= WOOD_AP.foodFirst && wood.w.toCold > 0 && wood.w.toCold <= WOOD_AP.autumn * 2; // the run-up to the coming cold (not the tail of the last one: a spring start builds first)
   if (woodFirst) for (const s of ranked("wood", wood.score, wood.fit).slice(0, wood.critical)) give(s, "wood");
@@ -2360,9 +2379,24 @@ function planRoles(state, base, areas = ALL_AREAS) {
     for (const s of ranked("medic", (x) => skill(x, "medicine") - (isHurt(x) ? 6 : 0)).slice(0, hosp.staff)) give(s, "medic");
   }
 
-  // 4a. Firewood (woodcutting.js, planWood): with the cold near and the woodpile under half of what it needs, a
+  // 4a. Wood (woodcutting.js, planWood): with the cold near and the woodpile under half of what it needs, a
   // woodcutter or two go before the builders and the stations.
   if (wood && !woodFirst) for (const s of ranked("wood", wood.score, wood.fit).slice(0, wood.critical)) give(s, "wood");
+
+  // 4a'. The felling (noidle.js fellCrew, the user's request 2026-10-20: "put a woodcutter on its own felling, not just
+  // idle builders"): while felling or wood-giving clearing is queued here (its own for wood, the sites, the player's
+  // marks), woodcutters work it before their trips: one, more while the woodpile is low, the best first (fellScore:
+  // skill, the tool they carry, traits, health). Off again once the felling is done and the woodpile needs nobody (4a).
+  // Here, ahead of the builders, while the woodpile is under the fires' days and three days' burn (heat first, as
+  // govWoodwork puts that felling at the front of the queue) or the felling is all there is to build; otherwise after
+  // the builders (5'), from the hands left.
+  const fellNow = (urgentOnly) => {
+    const fc = areas.production ? fellCrew(state, base, people.length) : 0;
+    if (!fc || (urgentOnly && !fellUrgent(state, base) && base.construction.some((c) => !isChopJob(c)))) return;
+    const have = [...want.values()].filter((w) => w.role === "wood").length;
+    for (const s of ranked("wood", fellScore, fellFit(people.length <= 3)).slice(0, Math.max(0, fc - have))) give(s, "wood");
+  };
+  fellNow(true);
 
   // 4b. Cautious (reserves): while food is not short, the stations that refill a short supply (the ammo bench,
   // the med station: stationWorth) get their operator before the plots take every hand, and standing guards
@@ -2382,12 +2416,18 @@ function planRoles(state, base, areas = ALL_AREAS) {
 
   // 5. Builders while something is queued: more for big jobs. The field works planned from here (fieldworks.js: a
   // tower, a well …) are built by the same builders (buildings.js constructionHour → fieldBuildHour), so they count.
+  // Only work builders can do now (noidle.js): a build waiting for its materials (gatherStalled; a camp's step up while
+  // its builders can make the building materials) or the base on alert has nothing for them. Its felling for wood is
+  // builder work too (a builder clears all day, a woodcutter by daylight): the woodcutters on it (4a', 5') come on top.
   const fieldLeft = fieldJobs(state, base).reduce((a, j) => a + Math.max(0, j.hours - j.progress), 0);
-  if (areas.building && (base.construction.length || fieldLeft > 0)) {
-    const left = base.construction.reduce((a, j) => a + j.hours - j.progress, 0) + fieldLeft;
+  const buildable = underAttack(state, base) ? [] : base.construction.filter((j) => !gatherStalled(j) || j === campMaterialsWork(base)); // a camp's builders make the step up's building materials
+  if (areas.building && (buildable.length || fieldLeft > 0)) {
+    const left = buildable.reduce((a, j) => a + j.hours - j.progress, 0) + fieldLeft;
     const n = Math.min(3, Math.max(1, Math.ceil(left / 40)), Math.max(1, Math.floor(free.size / 2)));
     for (const s of ranked("build", (x) => skill(x, "mechanics"), (x) => !x.inBed).slice(0, n)) give(s, "build");
   }
+  // 5'. The felling's woodcutters when the woodpile is not short (4a').
+  fellNow(false);
   // 5a. Upkeep at a big hub (UPKEEP_CREW): one or two builders kept on upkeep, build queue or not, while anything is
   // worn, so the wells and pumps are mended before they break (breakdowns.js: only builders with nothing to build did
   // upkeep, and a big hub always has something queued: its wells broke over and over).
@@ -2453,7 +2493,7 @@ function planRoles(state, base, areas = ALL_AREAS) {
   // 10. Everyone else: more hands on the plots while food is not plentiful (bigger harvests), rest when spirits
   // are low; base scavenging rarely finds anything, so only the last few go out to pick around.
   // With food plentiful the teachers and readers have no head cap (skills.js planStudy: the learners and the copies
-  // are the limit) and take the hands the firewood leaves (below); before that one or two and a reader per 6, here.
+  // are the limit) and take the hands the wood leaves (below); before that one or two and a reader per 6, here.
   const plenty = foodDays >= Math.max(40, foodTarget(state) * 1.5);
   if (!plenty) planStudy(state, base, free, give, { foodDays, urgent: !!threat.urgent }); // skills.js: a teacher and readers when food is comfortable
   // The extra hands on the plots (FARM_AP.extra × the ideal crew) only while the food is below its target or the
@@ -2480,13 +2520,22 @@ function planRoles(state, base, areas = ALL_AREAS) {
     const have = [...want.values()].filter((w) => w.role === "forage").length;
     for (const s of ranked("forage", foragerMult, (x) => foraging.fit(x) && x.mood >= 40).slice(0, Math.max(0, foraging.cap - have))) give(s, "forage");
   }
-  // ...and from late summer the hands left over cut the winter's firewood until the woodpile holds it (planWood).
+  // ...and from late summer the hands left over cut the winter's wood until the woodpile holds it (planWood).
   if (wood && wood.stock) {
     const have = [...want.values()].filter((w) => w.role === "wood").length;
     for (const s of ranked("wood", wood.score, (x) => wood.fit(x) && x.mood >= 40).slice(0, Math.max(0, wood.cap - have))) give(s, "wood");
   }
   if (plenty) planStudy(state, base, free, give, { foodDays, urgent: !!threat.urgent, plenty });
   for (const s of [...free]) give(s, s.mood < 40 ? "rest" : "scavenge");
+
+  // 11. Nobody left in a role with no work (noidle.js, the user's request 2026-10-20: "There should never be idle
+  // workers for any profession"): whoever the steps above gave a job that has no work (by the job: activity.js
+  // jobCheck: nothing to build, no crops, a cold kitchen, a quiet ward, the ruins picked clean …) goes to the most
+  // useful job that has work (planNoIdle: the base's needs, wood, a lookout). Not the people kept above (pinned, on
+  // priorities, an area not handed over) or held by this morning's move (s.govIdle).
+  const planned = (x) => (want.get(x.id) || { role: "scavenge" }).role;
+  const noWork = people.filter((s) => !kept.has(s.id) && !(s.govIdle && state.hour < s.govIdle.until) && noWorkFor(state, base, s, planned(s), (want.get(s.id) || {}).station ?? null));
+  if (noWork.length) for (const p of planNoIdle(state, base, noWork, planned, areas)) want.set(p.s.id, { role: p.job, station: p.station ?? null, upkeep: false });
 
   let changed = 0;
   for (const s of people) {
@@ -2683,7 +2732,7 @@ const BUILD_AREA = {
 function planBuilds(state, base, areas = ALL_AREAS) {
   const slots = base.type === "hub" ? 2 : 1;
   // A camp's or a shelter's step up waiting for its materials (gatherStalled) holds no builder: it does not fill the queue.
-  const jobs = base.construction.filter((c) => !(BUILDINGS[c.type] && BUILDINGS[c.type].tierUp && gatherStalled(c))).length;
+  const jobs = base.construction.filter((c) => c.type !== "clear" && !(BUILDINGS[c.type] && BUILDINGS[c.type].tierUp && gatherStalled(c))).length; // woodwork: the clearing jobs (felling, sites) take no build slot
   if (jobs >= slots + 1) return;
   const full = jobs >= slots;
   const g = gov(state);
@@ -2710,9 +2759,17 @@ function planBuilds(state, base, areas = ALL_AREAS) {
     if (rs && ["meds", "parts", "fuel"].some((k) => cost[k] && (base.stock[k] || 0) - cost[k] < rs[k].target)) continue;
     if (!w.save && cost.meds && (base.stock.meds || 0) - cost.meds < 2) continue;
     if (!w.save && cost.parts && (base.stock.parts || 0) - cost.parts < 1) continue;
+    // Wood is fuel and a building material (2026-10-20): a build leaves the fires their days in store (woodcutting.js
+    // woodNeed dailyKeep, and a share of the coming cold's need rising as it nears: WOOD_BUILD_KEEP) and, once the stocking for the
+    // cold is on (soon), the cold's whole need; a small one (WOOD_BUILD_SMALL wood or less: a tent, a box, crates,
+    // shelves, bunks) goes ahead, and so do beds (a bunkhouse, a hut for bunks); the woodcutters make up the rest (planWood).
+    // Short of it the governor fells trees for it (govWoodwork).
+    if (keepsWood(w.type, cost.wood || 0)) { const wn = woodNeed(state, base); if ((base.stock.wood || 0) - cost.wood < buildWoodKeep(wn)) continue; }
+    else if (WOOD_FOOD.has(w.type) && cost.wood) { const wn = woodNeed(state, base); if ((base.stock.wood || 0) - cost.wood < wn.dailyKeep) continue; } // the fires' days stay
     const n0 = base.construction.length;
     const msg = wishQueue(state, base, w);
     if (w.room && full && base.construction.length > n0) base.construction.unshift(base.construction.pop()); // ahead of the queue
+    else if (base.construction.length > n0) { const i = base.construction.findIndex((c) => c.gov === "wood"); if (i >= 0 && i < base.construction.length - 1) base.construction.splice(i, 0, base.construction.pop()); } // woodwork: ahead of its own felling for wood (the builders fell when there is nothing else)
     g.stats.builds++;
     say(state, `${msg.replace(/\.$/, "")}: ${w.why}.`);
     return;
@@ -2734,6 +2791,47 @@ function nextBuildScrap(state, base, areas = ALL_AREAS) {
     if (w.save || (base.stock.scrap || 0) >= need) return need;
   }
   return 0;
+}
+
+// ---------- woodwork: felling for wood, the next sites cleared ahead (woodwork.js) ----------
+// The next build's wood (the first wish planBuilds would queue, or is short of only wood, or saves up for) and the
+// wood the queued gather jobs (the Ring wall) still wait for: { wood, type (that wish's), keep (it keeps the woodpile's
+// reserve back: keepsWood) }.
+function nextBuildWood(state, base, areas = ALL_AREAS) {
+  let wood = 0;
+  for (const c of base.construction) if (c.paid) { const r = gatherRows(c).find((x) => x.key === "wood"); if (r && !r.ok) wood += r.need - r.have; } // the Ring wall, and a step up's wood (its cost is the building's: gatherRows)
+  for (const w of buildWishes(state, base)) {
+    const def = BUILDINGS[w.type];
+    if (!def || def.gather || !areas[BUILD_AREA[w.type] || "building"]) continue;
+    const chk = wishCheck(state, base, w);
+    if (!chk.ok && !/^Needs \d+ wood/.test(chk.reason || "") && !(w.save && /^Needs \d+ scrap/.test(chk.reason || ""))) continue;
+    const cw = wishCost(w).wood || 0;
+    return { wood: wood + cw, type: w.type, keep: keepsWood(w.type, cw) };
+  }
+  return { wood, type: null, keep: false };
+}
+// Every WOODWORK.govEvery hours at a base of yours with land on its map (basemap.js landFor): when the woodpile and
+// the felling already queued come to less than the fires' reserve (woodNeed dailyKeep: the fires' days in store, or the
+// share of the coming cold's need the next build leaves back, buildWoodKeep: all of it in the stocking season) plus the next
+// builds' wood (nextBuildWood), the nearest trees beyond the walls are felled for it, a job a tree, at most
+// WOODWORK.govMax of them waiting (woodwork.js queueChop; the builders fell when they have nothing else to build, the
+// woodcutters before their trips). And the sites of the builds queued and of the next one are cleared ahead
+// (woodwork.js clearAhead), only where the auto layout found no open ground for them.
+function govWoodwork(state, base, areas = ALL_AREAS) {
+  if (gov(state).noWood || base.group || (base.owner != null && base.owner !== "player")) return;
+  const next = nextBuildWood(state, base, areas);
+  const wn = woodNeed(state, base);
+  const reserve = Math.max(wn.dailyKeep, next.keep ? buildWoodKeep(wn) : 0); // the fires' days; the cold's share a big wooden build leaves (the winter's own pile is the woodcutters': planWood)
+  const want = Math.ceil(reserve + next.wood - Math.max(0, base.stock.wood || 0) - queuedChopWood(base));
+  if (want > 0) { const jobs = queueChop(state, base, want); if (jobs.length) gov(state).stats.chops = (gov(state).stats.chops || 0) + jobs.length; }
+  // Under the fires' own days and three more (the opening, after a bunkhouse took the pile): its felling goes to the front of the queue,
+  // ahead of the builds (the builders work the first job they can).
+  if ((base.stock.wood || 0) < wn.dailyKeep + 3 * (wn.daily || 0)) { // and three days more of the daily burn
+    const mine = base.construction.filter((c) => c.gov === "wood");
+    if (mine.length && base.construction[0] !== mine[0]) { const rest = base.construction.filter((c) => c.gov !== "wood"); base.construction.splice(0, base.construction.length, ...mine, ...rest); }
+  }
+  const ahead = clearAhead(state, base, next.type);
+  if (ahead.length) gov(state).stats.clearAhead = (gov(state).stats.clearAhead || 0) + ahead.length;
 }
 
 // Jails (prisoners.js JAIL, buildings.js family "jail"): makeshift cells at the hub once anyone has been taken
@@ -2842,6 +2940,9 @@ function buildWishes(state, base) {
   // Water first when it is about to run out (economy.js).
   const wo0 = waterOutlook(state, base);
   if (wo0.net < 0 && wo0.daysLeft < 8 && count(base, "rain_catcher") + base.construction.filter((c) => c.type === "rain_catcher").length < BUILDINGS.rain_catcher.max) add("rain_catcher", "water is about to run out", true);
+  // A camp or a shelter short of beds (a new camp has none: 2026-10-20) puts up makeshift tents first, one a sleeper
+  // (buildings.js TENTS): cheap, quick, a poor bed but a bed.
+  if (isShelter(base) && people > beds && countAll(base, "tent") + queued("tent") < BUILDINGS.tent.max) add("tent", `${people} people for ${beds} beds: a makeshift tent`, true);
   const yard = campYard(state, base, here, queued); // a camp's or a shelter's yard, ahead of its step up
   for (const w of yard.wishes) out.push(w);
   // A shelter (buildings.js, tier 0): build it up into a base as soon as the materials are in (a well, walls, every
@@ -3051,7 +3152,7 @@ function buildWishes(state, base) {
 }
 
 // The worm (worm.js): a water boiler as soon as the base drinks un-purified water (any of it can carry the worm; saved for unless a water filter
-// covers it for now, or the land around gives too little firewood to keep it burning: then filters are the plan,
+// covers it for now, or the land around gives too little wood to keep it burning: then filters are the plan,
 // planCrafts, and the boiler waits its turn), and a cook fire once game, crops or forage with eggs come in, or
 // hunters, fishers, farmers and foragers work infected land.
 function wormWishes(state, base, queued) {
@@ -3062,7 +3163,7 @@ function wormWishes(state, base, queued) {
     const filter = baseFilter(state, base) && w.safe; // the filters purify the day's drinking (worm.js PURIFY_FILTER each)
     const woodShort = boilerWoodShort(state, base);
     const sick = residents(state, base.id).some(wormSeen);
-    // Little firewood around: the boiler would burn the winter's wood for nothing, so filters are the plan (planCrafts)
+    // Little wood around: the boiler would burn the winter's wood for nothing, so filters are the plan (planCrafts)
     // until someone here has caught it.
     if (!woodShort || sick) out.push({ type: "boiler", why: `un-purified water can carry the worm${w.raw > 0 ? " (and the ground here is infected)" : ""}${filter ? " (the filters cover it while they last)" : ""}`, save: !filter || sick });
   }
@@ -3095,7 +3196,7 @@ export function wormFilterUrgent(state, base) {
   const ww = baseWater(state, base);
   return ww.drawn && (!ww.safe || boilerWoodShort(state, base));
 }
-// The land around a base gives less firewood a day (one woodcutter, woodcutting.js) than its boiler would burn, and the
+// The land around a base gives less wood a day (one woodcutter, woodcutting.js) than its boiler would burn, and the
 // pile is short of what the base wants (the winter's wood and the boiler's days, woodNeed): the boiler would eat the
 // winter's heating, so a water filter (4 scrap, 3 water a day, safe water while it lasts) is the better buy.
 function boilerWoodShort(state, base) {
@@ -3266,8 +3367,8 @@ export function planCrafts(state, base) {
   const filters = [...base.armory, ...people.map((s) => s.gear.tool)].filter((it) => it && it.key === "waterfilter").length + q.filter(isFilterJob).length;
   if (rs && rs.water.short && filters < (base.type === "hub" ? 2 : 1) && tryCraft([filterRecipe(base)], "water is below the reserve", 4)) return;
   // The worm (worm.js): water with eggs and no boiler burning (none built, or nothing to burn, or the land gives too
-  // little firewood for one): a filter makes it safe while it lasts, and a second is kept against the first clogging.
-  if (wormFilterUrgent(state, base) && filters < 2 && tryCraft([filterRecipe(base)], baseWater(state, base).safe ? "un-purified water can carry the worm and the boiler's firewood is short" : "un-purified water can carry the worm and nothing boils it", 4)) { q.unshift(q.pop()); return; } // to the front of the queue
+  // little wood for one): a filter makes it safe while it lasts, and a second is kept against the first clogging.
+  if (wormFilterUrgent(state, base) && filters < 2 && tryCraft([filterRecipe(base)], baseWater(state, base).safe ? "un-purified water can carry the worm and the boiler's wood is short" : "un-purified water can carry the worm and nothing boils it", 4)) { q.unshift(q.pop()); return; } // to the front of the queue
   // Dewormers (worm.js): the sure cure in the worm's first days, kept on hand (two at a hub, one at an outpost).
   const dewormers = baseDewormers(state, base) + q.filter((j) => j.recipe === "dewormer").length;
   if (dewormers < (base.type === "hub" ? 2 : 1) && (st.meds || 0) >= 8 && tryCraft(["dewormer"], "a dewormer on hand: the worm kills within a week", 4)) return;
@@ -3291,7 +3392,7 @@ export function planCrafts(state, base) {
   if (scav.length >= 2 && !scav.some((s) => s.gear.tool) && !base.armory.some((it) => it.key === "crowbar") && tryCraft(["crowbar"], "better base scavenging", 45)) return;
   if (lacking("backpack") > n - 2 && tryCraft(["backpack"], "packs: more to carry on trips", 55)) return;
   // Arrows for the bows' fights and hunting (hunting.js: about half the arrows shot at game are lost): a dozen a bow
-  // to pack (world.js ARROWS.PACK), a dozen more for the walls, from firewood the winter can spare.
+  // to pack (world.js ARROWS.PACK), a dozen more for the walls, from wood the winter can spare.
   if (bows && (st.arrows || 0) + arrowsQueued < ARROWS.PACK * (bows + 1) && (st.wood || 0) >= 150 && tryCraft(["arrows"], "arrows: the bows shoot them in fights and on hunts", 30)) return;
   // Field kit (kit.js packs it for trips): quiet boots and a ghillie wrap against Heat, Molotovs for the walls.
   const have = (k) => base.armory.filter((it) => it.key === k).length + q.filter((j) => CRAFTS[j.recipe].gear === k).length;
@@ -3604,7 +3705,7 @@ function planTrip(state) {
   cands.push(...foodTripCands(state, h, pool, need, P)); // hunting and fishing trips when food runs short (hunting.js)
   cands.push(...waterTripCands(state, h, pool, need, P)); // hauling water from a shore when the base cannot make enough (orders.js fetchWater)
   cands.push(...heatFuelCands(state, h, need, P)); // needs-gauges: fuel for the winter's heating
-  cands.push(...woodTripCands(state, h, pool, P)); // woodcutting.js: firewood when the land around the hub gives little
+  cands.push(...woodTripCands(state, h, pool, P)); // woodcutting.js: wood when the land around the hub gives little
   cands.push(...jobTripCands(state)); // jobs.js: scouting, fetching a package, a horde to cull (Aggressive)
   cands.push(...gatheringCands(state, h, pool, P, stormValue)); // hivebirth.js: break up the dead massing for a new hive
   cands.sort((a, b) => b.score - a.score);
@@ -4487,7 +4588,7 @@ function outpostSite(state) {
     if (theirs.some((b) => g.distance(b, id) <= 6)) continue;
     if (!planPath(state, h.tile, id, false)) continue;
     const farm = t.loc && t.loc.type === "farm" ? 1.3 : t.terrain === "plains" ? 1.3 : t.terrain === "forest" ? 0.8 : t.terrain === "hills" ? 0.7 : 1;
-    // Wood land within reach (woodcutting.js): the winter's firewood cut at the door, not hauled from afar.
+    // Wood land within reach (woodcutting.js): the winter's wood cut at the door, not hauled from afar.
     const woodLand = g.within(id, WOOD.base.radius).reduce((a, x) => a + woodAbundance(state, x), 0);
     const score = farm + (t.loc ? 0.5 : 0) + (t.road ? 0.4 : 0) + Math.min(0.4, woodLand * 0.08) - d * 0.05 - k.infection;
     if (!best || score > best.score) best = { id, score };
@@ -4687,7 +4788,7 @@ function launchTrip(state, c, pool, spareHands) {
   if (est.hours > 24 && severeSoon(state, 2)) return off(); // a long trip with a storm or blizzard forecast: wait it out
   // A wood trip cuts by daylight only (woodcutting.js woodTime): its Cut wood step runs from the arrival until it has had
   // WOOD.defHours of daylight (overnight on the spot when it gets there late). An 8-hour step begun at dusk cut in the dark
-  // and brought home half the haul it was sent for (fix-wood-diplo: 3–7 firewood from trips planned at ~12–14).
+  // and brought home half the haul it was sent for (fix-wood-diplo: 3–7 wood from trips planned at ~12–14).
   if (c.wood && steps) {
     const arrive = state.hour + Math.max(0, est.hoursOut || 0);
     let hours = 0, light = 0;
@@ -5212,7 +5313,7 @@ function planForage(state, base, people, foodDays, areas) {
     fit: (x) => !x.inBed && (small || !x.leader) && (x.health ?? 100) >= 40 && !x.woundInfected,
   };
 }
-// ---------- firewood for the winter (woodcutting.js) ----------
+// ---------- wood for the winter (woodcutting.js) ----------
 // From late summer (woodSeason) a base whose woodpile is short of what the coming cold needs (woodNeed: everyone fed
 // there and the teams coming home, woodFor(HEAT.fuel) a head a freezing day, a fifth to spare, and the boiler's days) works out how many woodcutters it
 // takes to have it in by the winter (the shortfall over what one brings in a day here × the days left, at least
@@ -5225,12 +5326,12 @@ export const WOOD_AP = { autumn: 28, minDays: 5, behind: 0.5, foodFirst: 10 };
 // tune-jobcaps: the Cut wood job has no fixed cap (it was 2, 3 at 10+ people). The woodcutters it takes to have the pile
 // in by the cold (and keep up with the boiler) go ahead of the builders and stations up to a quarter of the people
 // (woodCrewMax: the governor's order of work; a third while the pile is under WOOD_AP.behind of what the cold needs:
-// the quarter was set when a freezing day took 0.6 kg of firewood a head, before tune-winter (HEAT.wood) made it
-// 2.5 times that and the boiler burned firewood daily, and a big hub on farmland then met the winter with its pile a
+// the quarter was set when a freezing day took 0.6 kg of wood a head, before tune-winter (HEAT.wood) made it
+// 2.5 times that and the boiler burned wood daily, and a big hub on farmland then met the winter with its pile a
 // third in: woodtest seed 42, 400 kg of 1,060); the spare hands cut toward having it in within three weeks
 // (woodcutting.js woodHandsWanted), each one past the first a little less (woodCrowd).
 const woodCuttersFor = (state, base, w) => woodHandsWanted(state, base, { w, days: Math.max(WOOD_AP.minDays, w.toCold) });
-// A Kitchen's stove (kitchen.js) burns firewood every day of the stocking season too: one woodcutter more may go ahead
+// A Kitchen's stove (kitchen.js) burns wood every day of the stocking season too: one woodcutter more may go ahead
 // (kitchen-plus; woodtest seed 42 met the winter at 28% of the cold's need with a kitchen burning 20 a day, 43% without).
 const woodCrewMax = (n, w = null) => (n <= 3 ? 1 : Math.ceil(n / (w && w.have < w.need * WOOD_AP.behind ? 3 : 4)) + (w && w.kitchen > 0 ? 1 : 0));
 const crewDays = (k) => Array.from({ length: Math.max(0, k) }, (_, i) => woodCrowd(i)).reduce((a, v) => a + v, 0); // k woodcutters' day in woodcutters (woodCrowd)
@@ -5238,7 +5339,7 @@ const crewDays = (k) => Array.from({ length: Math.max(0, k) }, (_, i) => woodCro
 // (the cold within WOOD_AP.autumn days, or here, or the boiler burning wood) the crew it takes to have the pile in by
 // the cold, at most woodCrewMax; in late summer what the summer must cut so that the autumn's full crew can finish it
 // (at least one, at most that crew; it was one, whatever the need). n: the people here.
-// Out of the stocking season with no boiler, the daily draws (a kitchen under its days of firewood, kitchen.js
+// Out of the stocking season with no boiler, the daily draws (a kitchen under its days of wood, kitchen.js
 // KITCHEN.wood.keepDays; a camp's fire and the nights' fires under theirs, woodcutting.js woodNeed: fire-nights) want
 // only the hands to keep them going and fill those days within a week (dailyWoodHands), not the winter's.
 // A medium priority, behind the food and the water (fire-nights, the user's rule): out of season the crew is at most
@@ -5267,7 +5368,7 @@ export function woodCritical(state, base, w, n, foodDays = null) {
   return Math.min(full, Math.max(1, handsForDay(left / Math.max(1, w.toCold - WOOD_AP.autumn), each, woodCrowd)));
 }
 function planWood(state, base, people, areas, foodDays = Infinity) {
-  // A shelter (tier 0) too (ap-food 2026-10-12): its fire is its only cooking (worm.js baseCooks) and burns firewood
+  // A shelter (tier 0) too (ap-food 2026-10-12): its fire is its only cooking (worm.js baseCooks) and burns wood
   // from its store (woodcutting.js shelterFire, woodNeed's fire days); with none cut it was out most days, the raw game
   // and fish were eaten last (eating.js) and rotted (seed 6011, hardcore Turtle: 133 days of food thrown out against 337
   // eaten before it starved on day 139, most of it snared fowl and venison, while the shelter was on short rations).
@@ -5275,7 +5376,7 @@ function planWood(state, base, people, areas, foodDays = Infinity) {
   const w = woodNeed(state, base, base.type === "hub" ? returning(state, base) : 0);
   if (!w.short || !w.soon || w.need <= 0) return null;
   const cap = dailyOnly(w) ? woodCritical(state, base, w, people.length) : woodHandsWanted(state, base, { w }); // the spare hands' crew: the pile in within three weeks (only the daily draws' days out of season)
-  // The water boiler (worm.js) burns its firewood every day: enough woodcutters to keep up with it, on top of the winter's.
+  // The water boiler (worm.js) burns its wood every day: enough woodcutters to keep up with it, on top of the winter's.
   const want = woodCuttersFor(state, base, w);
   const small = people.length <= 3; // a tiny hub (hardcore's first): the leader cuts wood too
   // Food under its target out of season (fire-nights, woodCritical): the hands feed the base; one woodcutter at most.
@@ -5291,7 +5392,7 @@ function planWood(state, base, people, areas, foodDays = Infinity) {
 }
 // Woodcutting trips (planTrip) when the hub's woodpile is short and the cold is within a month (or here) and the
 // land around the hub gives little (a woodcutter there under 75 a day): the best wood land within range that a team
-// of 2–3 with the hub's axes would bring the most from in 8 hours (by a car when there is one: firewood is bulky),
+// of 2–3 with the hub's axes would bring the most from in 8 hours (by a car when there is one: wood is bulky),
 // scored by the share of the shortfall it covers. The trip takes the armory's cutting tools along.
 // When the Cut wood job's crew (woodCrewMax × a woodcutter's day here × the days to the cold) cannot have the
 // pile in by the winter (a big hub on farmland: three cutters bring in 60 a day against 3,000+ wanted), the trips are
@@ -5337,7 +5438,7 @@ function woodTripCands(state, h, pool, P) {
       steps: [{ kind: "wood", hours: WOOD.defHours }, { kind: "home" }],
       score: Math.max(Math.max((1.2 + (w.cold ? 0.6 : 0)) * Math.min(1.5, e.all / shortfall * 2), gap > 0 ? WOOD_TRIP.gapFloor + (WOOD_TRIP.gapScore - WOOD_TRIP.gapFloor) * gap + (w.cold ? 0.6 : 0) : 0) / (1 + dist / 6),
         w.toCold <= WOOD_AP.autumn && gap >= WOOD_TRIP.crunchGap ? WOOD_TRIP.crunch * gap - dist * 0.01 : 0), // the crunch (the nearest first among equals)
-      why: `firewood for the winter (${Math.floor(w.have)} of ${w.need}${gap > 0 ? ", more than the woodcutters here can cut by the cold" : ""}): ~${Math.round(e.all)} to cut` });
+      why: `wood for the winter (${Math.floor(w.have)} of ${w.need}${gap > 0 ? ", more than the woodcutters here can cut by the cold" : ""}): ~${Math.round(e.all)} to cut` });
   }
   return out.sort((a, b) => b.score - a.score).slice(0, 2);
 }

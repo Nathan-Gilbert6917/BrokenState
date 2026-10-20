@@ -8,6 +8,7 @@
 import { LOCATIONS, DANGER_NAMES, siteDanger } from "../sim/data.js";
 import { poisOf, poiAt, isSitePoi, poiName, knownPois, morePoisHidden, poiEligible, inKnownZone, poiLootBand, poiKnowledge, permanentSite, tileHeatEstimate } from "../sim/pois.js";
 import { LOOT_BANDS } from "../sim/aiscav.js";
+import { campSeen } from "../sim/campsite.js"; // a campsite's state as last seen
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
@@ -63,7 +64,8 @@ export function poiPanelRows(state, id, isLive, snap = null) {
   for (const r of v.rows) {
     if (r.site) continue;
     const def = LOCATIONS[r.kind];
-    out.push(`<div title="${esc(`${def.name}: danger ${DANGER_NAMES[siteDanger({ type: r.kind, zone: def.cat })].toLowerCase()}. Loot left here against what it held: rich, some, little, picked clean.`)}">${esc(r.name)}</div><div>${bandText(r)}</div>`);
+    const camp = r.kind === "campsite" ? campSeen(state, id, r.i) : null; // sim/campsite.js: abandoned, overrun, raiders (as seen)
+    out.push(`<div title="${esc(`${def.name}: danger ${DANGER_NAMES[siteDanger({ type: r.kind, zone: def.cat })].toLowerCase()}. Loot left here against what it held: rich, some, little, picked clean.${r.kind === "campsite" ? " A campsite: who is there (abandoned, overrun by the dead, raiders) as a survey or a visit last saw it." : ""}`)}">${esc(r.name)}</div><div>${bandText(r)}${r.kind === "campsite" ? ` <span class="muted">· ${camp ? esc(camp.text) : "who is there unknown"}</span>` : ""}</div>`);
   }
   if (v.unknown) out.push(`<div>Places</div><div class="muted">POIs unknown. Survey the tile to find what stands here.</div>`);
   else if (v.empty) out.push(`<div>Places</div><div class="muted">Nothing of note here as far as you know.</div>`);

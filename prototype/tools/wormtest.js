@@ -4,8 +4,8 @@
 // camping on infested land only above the threshold; the stages, spotting (a medic sooner, a team later), the cures
 // (dewormer, purge, surgery, the night's care), turning at a base and on the road, the cards; the autopilot's boiler;
 // half healing while infected and the death day; prisoners and guests spotted and treated (goodwill, opinion, the
-// night's-care toggle); the boiler burning any burnable (firewood, junk, fuel), breaking things down for firewood and
-// firewood in the loot; save/load of the new state. The dice are pinned where the rule is under test (WORM numbers set to 0 or 1 for a check).
+// night's-care toggle); the boiler burning any burnable (wood, junk, fuel), breaking things down for wood and
+// wood in the loot; save/load of the new state. The dice are pinned where the rule is under test (WORM numbers set to 0 or 1 for a check).
 // Usage: node tools/wormtest.js [seed]
 import { food, setFood, addDays, clearFood, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { tripDay } from "../src/sim/jobtrips.js"; // the outdoor jobs in trips: a day of them before the midnight tally
@@ -108,33 +108,33 @@ function drinkDay(st, b) {
   check(n > people.length * 0.5, `drinking it, ${n} of ${people.length} catch the worm in a day (WATER pinned to 100% at egg level 1)`);
   clearAll(people);
   addBuilding(h, "boiler");
-  // The boiler burns like heating: BOILER_WOOD_HEAD firewood a head a day, firewood first, then fuel for the rest.
+  // The boiler burns like heating: BOILER_WOOD_HEAD wood a head a day, wood first, then fuel for the rest.
   const heads = mouthsAt(st, h).heads;
   const need = heads * WORM.BOILER_WOOD_HEAD;
   h.stock.wood = 50; h.stock.fuel = 20;
   const raw0 = h.stock.rawwater;
   n = withNums(WORM, { WATER: 1 }, () => { drinkDay(st, h); wormDaily(st); return caught(people); });
   const bu = boilerUse(st, h);
-  check(n === 0 && baseWater(st, h).safe && near(50 - h.stock.wood, need, 0.01) && near(h.stock.fuel, 20), `a water boiler makes it safe (nobody caught it): it burned ${heads} × ${WORM.BOILER_WOOD_HEAD} = ${(50 - h.stock.wood).toFixed(1)} firewood from the stores, no fuel`);
+  check(n === 0 && baseWater(st, h).safe && near(50 - h.stock.wood, need, 0.01) && near(h.stock.fuel, 20), `a water boiler makes it safe (nobody caught it): it burned ${heads} × ${WORM.BOILER_WOOD_HEAD} = ${(50 - h.stock.wood).toFixed(1)} wood from the stores, no fuel`);
   check(h.purified && near(h.purified.boiler, h.purified.drink, 0.01) && near(raw0 - h.stock.rawwater, h.purified.drink, 0.01) && h.drank.raw === 0, `it purified the day's drinking (${h.purified.q} un-purified → purified) and everyone drank purified water`);
-  check(bu.active && bu.lit && near(bu.wood, need, 0.01) && near(bu.fuel, need * HEAT.wood, 0.01) && /firewood a day \(or burnable junk, or [\d.]+ fuel\)/.test(bu.text) && new RegExp(`boiled in the water boiler \\(${heads} people`).test(baseWater(st, h).why), `the water row says what it burns: "${bu.text}"`);
+  check(bu.active && bu.lit && near(bu.wood, need, 0.01) && near(bu.fuel, need * HEAT.wood, 0.01) && /wood a day \(or burnable junk, or [\d.]+ fuel\)/.test(bu.text) && new RegExp(`boiled in the water boiler \\(${heads} people`).test(baseWater(st, h).why), `the water row says what it burns: "${bu.text}"`);
   h.stock.wood = need / 2; h.stock.fuel = 20;
   drinkDay(st, h);
-  check(baseWater(st, h).safe && near(h.stock.wood, 0, 0.01) && near(20 - h.stock.fuel, (need / 2) * HEAT.wood, 0.01), `short of firewood it burns what there is and fuel for the rest (${(20 - h.stock.fuel).toFixed(2)} fuel: 1 firewood = ${HEAT.wood} fuel)`);
+  check(baseWater(st, h).safe && near(h.stock.wood, 0, 0.01) && near(20 - h.stock.fuel, (need / 2) * HEAT.wood, 0.01), `short of wood it burns what there is and fuel for the rest (${(20 - h.stock.fuel).toFixed(2)} fuel: 1 wood = ${HEAT.wood} fuel)`);
   h.stock.wood = 0; h.stock.fuel = need * HEAT.wood - 0.05;
   const f1 = h.stock.fuel;
   drinkDay(st, h);
   check(!baseWater(st, h).safe && h.boiling === false && near(h.stock.fuel, f1) && h.drank.raw > 0 && /boiler is cold/.test(baseWater(st, h).why), "a base that cannot pay the whole day leaves it unlit, burns nothing, and drinks un-purified water (the row says the boiler is cold)");
   h.stock.wood = 20;
   drinkDay(st, h);
-  check(baseWater(st, h).safe && h.boiling === true, "with firewood again it burns again");
+  check(baseWater(st, h).safe && h.boiling === true, "with wood again it burns again");
   // Purified water in store covers the day: the boiler stands ready that day (nothing burned).
   h.stock.water = 100; h.stock.wood = 20;
   drinkDay(st, h);
   check(near(h.stock.wood, 20) && h.drank.raw === 0, "with purified water in store for the day it burns nothing");
   h.stock.water = 0;
   const wn = woodNeed(st, h);
-  check(wn.boiler > 0 && near(wn.boiler, need, 0.05) && wn.need >= Math.ceil(need * WORM.BOILER_DAYS) && wn.soon, `the firewood plan counts it (${wn.boiler} a day, ${WORM.BOILER_DAYS} days of it wanted: ${wn.need} in all) in every season`);
+  check(wn.boiler > 0 && near(wn.boiler, need, 0.05) && wn.need >= Math.ceil(need * WORM.BOILER_DAYS) && wn.soon, `the wood plan counts it (${wn.boiler} a day, ${WORM.BOILER_DAYS} days of it wanted: ${wn.need} in all) in every season`);
   h.armory.push(newItem("waterfilter"));
   const w1 = h.stock.wood;
   drinkDay(st, h);
@@ -148,9 +148,9 @@ function drinkDay(st, b) {
     addBuilding(o, "boiler");
     const mover = people[0];
     mover.location = { kind: "base", baseId: o.id };
-    h.stock.wood = 1200; // firewood of 0.1 kg
+    h.stock.wood = 1200; // wood of 0.1 kg
     purifyDaily(st, o);
-    check(baseWater(st, o).safe && h.stock.wood < 1200 && o.boiling === true && o.stock.water > 0, `an outpost with no firewood gets the boiler's from the hub (the hub's pile ${1200} → ${h.stock.wood.toFixed(1)})`);
+    check(baseWater(st, o).safe && h.stock.wood < 1200 && o.boiling === true && o.stock.water > 0, `an outpost with no wood gets the boiler's from the hub (the hub's pile ${1200} → ${h.stock.wood.toFixed(1)})`);
     mover.location = { kind: "base", baseId: h.id };
     st.bases.splice(st.bases.indexOf(o), 1);
   }
@@ -204,7 +204,7 @@ function drinkDay(st, b) {
   p.supplies.rawwater += 10; addWormWater(st, p, 10, 0.5);
   check(near(p.wormEggs, 0.5), "river water from infected land carries its eggs");
   // A camp fire boils it into purified water.
-  p.phase = "task"; p.task = { type: "camp" }; p.campFire = true; p.supplies.wood = 20; // a fire burns firewood (woodcutting.js campFireHour): none carried, nothing boils
+  p.phase = "task"; p.task = { type: "camp" }; p.campFire = true; p.supplies.wood = 20; // a fire burns wood (woodcutting.js campFireHour): none carried, nothing boils
   st.tiles[h.tile].infection = 0.2; // under the camping threshold: only the boiling is under test
   const pure0 = p.supplies.water;
   wormTeamHour(st, p, members);
@@ -227,17 +227,17 @@ function drinkDay(st, b) {
   tube();
   withNums(WORM, { WATER: 24, RAW_BASE: 0 }, () => drinkHour(st, p, members, 2, 2));
   check(teamTabCount(st, p) === GEAR.puritabs.dur - 1 && caught(members) === 0 && teamWaterHow(st, p) === "tabs", "on the move: a tablet is dropped in (nobody caught it)");
-  // At a camp with the fire lit and firewood carried: boiled, no tablet.
+  // At a camp with the fire lit and wood carried: boiled, no tablet.
   p.phase = "task"; p.task = { type: "camp" }; p.campFire = true; p.supplies.wood = 5;
   tube();
-  check(campFireFed(st, p) && teamWaterHow(st, p) === "fire", "at a camp with the fire lit and firewood: the fire boils it");
+  check(campFireFed(st, p) && teamWaterHow(st, p) === "fire", "at a camp with the fire lit and wood: the fire boils it");
   withNums(WORM, { WATER: 24, RAW_BASE: 0 }, () => drinkHour(st, p, members, 2, 2));
   check(teamTabCount(st, p) === GEAR.puritabs.dur && caught(members) === 0, "no tablet used at a lit, fed camp fire (nobody caught it)");
-  // At a camp whose fire has nothing to burn (bare ground, no firewood): tablets.
+  // At a camp whose fire has nothing to burn (bare ground, no wood): tablets.
   withNums(WOOD.fire, { land: 1e9 }, () => { // bare ground: no deadfall to feed it
     p.supplies.wood = 0;
     tube();
-    check(!campFireFed(st, p) && teamWaterHow(st, p) === "tabs", "a camp on bare ground with no firewood left: the fire cannot be kept going");
+    check(!campFireFed(st, p) && teamWaterHow(st, p) === "tabs", "a camp on bare ground with no wood left: the fire cannot be kept going");
     withNums(WORM, { WATER: 24, RAW_BASE: 0 }, () => drinkHour(st, p, members, 2, 2));
     check(teamTabCount(st, p) === GEAR.puritabs.dur - 1 && caught(members) === 0, "so the tablets are used there");
   });
@@ -254,7 +254,7 @@ function drinkDay(st, b) {
   check(caught(members) === members.length, "even from clean ground (no eggs) un-purified water carries RAW_BASE (pinned): no more 'drunk harmlessly'");
   clearAll(members);
 
-  // At a base: the boiler, the filters, a shelter's fire; tablets only when the boiler is cold for want of firewood and there is no filter.
+  // At a base: the boiler, the filters, a shelter's fire; tablets only when the boiler is cold for want of wood and there is no filter.
   const b = wormWorld(0.8, seed + 7);
   b.h.armory = b.h.armory.filter((it) => !(it && (it.key === "waterfilter" || it.key === "puritabs")));
   b.h.armory.push(newItem("puritabs"));
@@ -269,12 +269,12 @@ function drinkDay(st, b) {
   const log0 = b.st.log.length;
   drinkDay(b.st, b.h);
   const need = waterNeed(b.st, b.h).people;
-  check(b.h.boiling === false && tabsHere() === GEAR.puritabs.dur - Math.ceil(need / WORM.TABS_WATER - 1e-9) && b.h.drank.raw === 0 && b.st.log.slice(0, b.st.log.length - log0).some((l) => /Out of firewood at .*: purification tablets used for the water \(\d+ left\)/.test(l.text)), `out of firewood and fuel with no filter: the armory's tablets treat the day's drinking (${Math.ceil(need / WORM.TABS_WATER - 1e-9)} for ${need} water) and a log line says so`);
+  check(b.h.boiling === false && tabsHere() === GEAR.puritabs.dur - Math.ceil(need / WORM.TABS_WATER - 1e-9) && b.h.drank.raw === 0 && b.st.log.slice(0, b.st.log.length - log0).some((l) => /Out of wood at .*: purification tablets used for the water \(\d+ left\)/.test(l.text)), `out of wood and fuel with no filter: the armory's tablets treat the day's drinking (${Math.ceil(need / WORM.TABS_WATER - 1e-9)} for ${need} water) and a log line says so`);
   b.h.armory.push(newItem("waterfilter"));
   const t1 = tabsHere();
   b.h.stock.water = 0;
   drinkDay(b.st, b.h);
-  check(tabsHere() === t1, "with a water filter here they are not used (the emergency is no firewood and no filters)");
+  check(tabsHere() === t1, "with a water filter here they are not used (the emergency is no wood and no filters)");
   check(boilerUse(b.st, b.h).active === (WORM.PURIFY_FILTER < purifyCap(b.st, b.h).drink) && wormWorld(WORM.CLEAN - 0.05).h && (() => { const c = wormWorld(WORM.CLEAN - 0.05, seed + 8); addBuilding(c.h, "boiler"); return boilerUse(c.st, c.h).active && woodNeed(c.st, c.h).boiler > 0; })(), "the boiler works (and the wood plan counts it) on clean ground too: any un-purified water can carry the worm");
 }
 
@@ -312,7 +312,7 @@ function drinkDay(st, b) {
   const raw = withNums(WORM, { RAW: 1 }, () => eatRawCargo(st, p, members, 4));
   check(near(raw, 4) && caught(members) === members.length && near(wormMeatIn(p.cargo), 6), "then raw as the last resort, and catches it (pinned)");
   clearAll(members);
-  p.phase = "task"; p.task = { type: "camp" }; p.campFire = true; p.supplies.wood = 20; // a fed fire (it burns firewood)
+  p.phase = "task"; p.task = { type: "camp" }; p.campFire = true; p.supplies.wood = 20; // a fed fire (it burns wood)
   st.tiles[h.tile].infection = 0.2;
   wormTeamHour(st, p, members);
   check(wormMeatIn(p.cargo) === 0, "a camp fire cooks it");
@@ -932,7 +932,7 @@ const dying = (s) => { s.worm = course(WORM.BRAIN_FROM + 1, { seen: 1, carded: "
   // Camped with the fire lit that night: washed, SEARCH_WASH of the time.
   withNums(WORM, { SEARCH: 1 }, () => wormSearch(st, p, site, 1));
   p.wormHands.day -= 1;
-  p.phase = "task"; p.task = { type: "camp" }; p.campFire = true; p.supplies.wood = 20; // a fed fire (it burns firewood)
+  p.phase = "task"; p.task = { type: "camp" }; p.campFire = true; p.supplies.wood = 20; // a fed fire (it burns wood)
   st.tiles[site].infection = 0.3; // under the camping threshold: only the hands are under test
   withNums(WORM, { SEARCH_WASH: 1 }, () => wormTeamHour(st, p, members));
   check(caught(members) === 0 && !p.wormHands, "camped with the fire lit that night: washed, nobody caught it (SEARCH_WASH pinned to 1)");
@@ -1031,7 +1031,7 @@ const dying = (s) => { s.worm = course(WORM.BRAIN_FROM + 1, { seen: 1, carded: "
   const raw = withNums(WORM, { FORAGE: 1 }, () => eatRawForageCargo(st, p, members, 2));
   check(near(raw, 2) && caught(members) === members.length && near(wormForageIn(p.cargo), 2), "then the forage raw, and catches it (pinned)");
   clearAll(members);
-  p.phase = "task"; p.task = { type: "camp" }; p.campFire = true; p.supplies.wood = 20; // a fed fire (it burns firewood)
+  p.phase = "task"; p.task = { type: "camp" }; p.campFire = true; p.supplies.wood = 20; // a fed fire (it burns wood)
   st.tiles[h.tile].infection = 0.2;
   wormTeamHour(st, p, members);
   check(wormForageIn(p.cargo) === 0, "a camp fire boils it");
@@ -1246,28 +1246,28 @@ const dying = (s) => { s.worm = course(WORM.BRAIN_FROM + 1, { seen: 1, carded: "
   check(othersCareOn(b.h), "the autopilot turns \"Treat prisoners and guests too\" on at a base sheltering guests");
 }
 
-// ---------- 6g. the boiler burns any burnable; firewood from things and from the loot ----------
+// ---------- 6g. the boiler burns any burnable; wood from things and from the loot ----------
 {
-  console.log("The boiler's fuel, breaking things down, firewood in the loot");
+  console.log("The boiler's fuel, breaking things down, wood in the loot");
   const { st, h } = wormWorld(0.8, seed + 24);
   addBuilding(h, "boiler");
   h.armory = h.armory.filter((it) => it && !(burnOf(it) > 0) && !GEAR[it.key].tabs && !GEAR[it.key].water);
   const need = boilerUse(st, h).wood;
   const day0 = () => { h.stock.water = 0; h.stock.rawwater = 300; drinkDay(st, h); };
-  // Firewood first: the junk and the fuel are not touched.
+  // Wood first: the junk and the fuel are not touched.
   h.stock.wood = need + 5; h.stock.fuel = 10;
   h.armory.push(newItem("novel"), newItem("magazines"));
   day0();
-  check(h.boiling === true && near(h.stock.wood, 5) && near(h.stock.fuel, 10) && h.armory.some((it) => it.key === "novel"), `firewood first (${need} a day): the junk and the fuel untouched`);
-  // No firewood: the allowed junk (cheapest firewood first), then fuel for the rest; a log line.
+  check(h.boiling === true && near(h.stock.wood, 5) && near(h.stock.fuel, 10) && h.armory.some((it) => it.key === "novel"), `wood first (${need} a day): the junk and the fuel untouched`);
+  // No wood: the allowed junk (cheapest wood first), then fuel for the rest; a log line.
   h.stock.wood = 0;
   const junk = boilerBurnables(h);
   const junkWood = junk.reduce((x, it) => x + burnOf(it), 0);
   const log0 = st.log.length;
   day0();
   check(need > junkWood && h.boiling === true && !h.armory.some((it) => it.key === "novel" || it.key === "magazines") && near(10 - h.stock.fuel, (need - junkWood) * HEAT.wood, 0.01)
-    && st.log.slice(0, st.log.length - log0).some((l) => /burned (a paperback novel and a stack of magazines|a stack of magazines and a paperback novel) \(7 firewood's worth\) and [\d.]+ fuel/.test(l.text)),
-    `then the junk (${junkWood.toFixed(1)} firewood's worth), then fuel for the rest (${(10 - h.stock.fuel).toFixed(2)}): "The water boiler … burned a paperback novel and a stack of magazines"`);
+    && st.log.slice(0, st.log.length - log0).some((l) => /burned (a paperback novel and a stack of magazines|a stack of magazines and a paperback novel) \(7 wood's worth\) and [\d.]+ fuel/.test(l.text)),
+    `then the junk (${junkWood.toFixed(1)} wood's worth), then fuel for the rest (${(10 - h.stock.fuel).toFixed(2)}): "The water boiler … burned a paperback novel and a stack of magazines"`);
   // Marks and the toggle protect gear: a weapon only when marked; junk marked Keep never; the toggle off keeps junk.
   h.stock.fuel = 10;
   h.armory.push(newItem("nailbat"), newItem("comic"), newItem("puzzlebook"));
@@ -1280,14 +1280,14 @@ const dying = (s) => { s.worm = course(WORM.BRAIN_FROM + 1, { seen: 1, carded: "
   check(boilerBurnables(h).length === 1 && boilerBurnables(h)[0].key === "nailbat", "a weapon marked to burn is burned even then");
   h.stock.wood = 0;
   day0();
-  check(!h.armory.some((it) => it.key === "nailbat") && h.armory.some((it) => it.key === "comic") && h.armory.some((it) => it.key === "puzzlebook") && near(h.stock.wood, Math.max(0, burnOf(newItem("nailbat")) - need), 0.01), `it burns the marked bat (${burnOf(newItem("nailbat"))} firewood's worth: what the day does not need stays as firewood)`);
+  check(!h.armory.some((it) => it.key === "nailbat") && h.armory.some((it) => it.key === "comic") && h.armory.some((it) => it.key === "puzzlebook") && near(h.stock.wood, Math.max(0, burnOf(newItem("nailbat")) - need), 0.01), `it burns the marked bat (${burnOf(newItem("nailbat"))} wood's worth: what the day does not need stays as wood)`);
   // Nothing to burn: cold → the filter, else the tablets, else un-purified.
   h.boilerJunk = true;
   h.armory = h.armory.filter((it) => !(burnOf(it) > 0));
   h.stock.wood = 0; h.stock.fuel = 0;
   h.armory.push(newItem("puritabs"));
   day0();
-  check(h.boiling === false && h.drank.raw === 0 && h.armory.find((it) => it.key === "puritabs").dur < GEAR.puritabs.dur, "nothing to burn (no firewood, junk or fuel): cold, and the emergency tablets treat the water");
+  check(h.boiling === false && h.drank.raw === 0 && h.armory.find((it) => it.key === "puritabs").dur < GEAR.puritabs.dur, "nothing to burn (no wood, junk or fuel): cold, and the emergency tablets treat the water");
   h.armory.push(newItem("waterfilter"));
   const t1 = h.armory.find((it) => it.key === "puritabs").dur;
   day0();
@@ -1295,16 +1295,16 @@ const dying = (s) => { s.worm = course(WORM.BRAIN_FROM + 1, { seen: 1, carded: "
   h.armory = h.armory.filter((it) => !GEAR[it.key].tabs && !GEAR[it.key].water);
   day0();
   check(h.boiling === false && h.drank.raw > 0, "with neither, the water is drunk un-purified");
-  // The autopilot keeps firewood for the boiler: the wood plan counts its days, and woodcutters go after it.
+  // The autopilot keeps wood for the boiler: the wood plan counts its days, and woodcutters go after it.
   h.stock.wood = 0;
   const wn = woodNeed(st, h);
-  check(wn.boiler > 0 && wn.need >= Math.ceil(wn.boiler * WORM.BOILER_DAYS) && wn.soon && woodHandsWanted(st, h) > 0, `the wood plan keeps ${WORM.BOILER_DAYS} days of the boiler's firewood (${wn.need} wanted, in every season) and wants woodcutters for it`);
-  // Breaking down for firewood: an armory item, the bulk button (Keep stays), a pack, a worn weapon refused.
+  check(wn.boiler > 0 && wn.need >= Math.ceil(wn.boiler * WORM.BOILER_DAYS) && wn.soon && woodHandsWanted(st, h) > 0, `the wood plan keeps ${WORM.BOILER_DAYS} days of the boiler's wood (${wn.need} wanted, in every season) and wants woodcutters for it`);
+  // Breaking down for wood: an armory item, the bulk button (Keep stays), a pack, a worn weapon refused.
   h.armory.push(newItem("guitar"), newItem("novel"), newItem("magazines"), newItem("pistol"));
   setFireMark(st, loc("magazines"), "keep");
   const w0 = h.stock.wood;
   const bm = breakDownAt(st, loc("guitar"));
-  check(near(h.stock.wood - w0, 27) && burnOf(newItem("guitar")) === 27 && !h.armory.some((it) => it.key === "guitar") && /\+27 to/.test(bm) && !isJunk(newItem("guitar")) && isJunk(newItem("novel")), `"Break down for firewood": the guitar is gone, +27 firewood, 3 kg × 0.9 ÷ 0.1 kg ("${bm}"; worth more than junk: the button asks twice)`);
+  check(near(h.stock.wood - w0, 27) && burnOf(newItem("guitar")) === 27 && !h.armory.some((it) => it.key === "guitar") && /\+27 to/.test(bm) && !isJunk(newItem("guitar")) && isJunk(newItem("novel")), `"Break down for wood": the guitar is gone, +27 wood, 3 kg × 0.9 ÷ 0.1 kg ("${bm}"; worth more than junk: the button asks twice)`);
   check(!breakDownInfo(st, loc("pistol")).ok && /will not burn/.test(breakDownInfo(st, loc("pistol")).reason), "metal things will not burn");
   const w1 = h.stock.wood;
   const jm = breakDownJunk(st, h);
@@ -1312,7 +1312,7 @@ const dying = (s) => { s.worm = course(WORM.BRAIN_FROM + 1, { seen: 1, carded: "
   const holder = atBase(st, h.id)[0];
   holder.gear.weapon = newItem("nailbat");
   check(!breakDownInfo(st, `s:${holder.id}:weapon`).ok && /off first/.test(breakDownInfo(st, `s:${holder.id}:weapon`).reason), "what is held or worn: take it off first");
-  // A team on the road: a book from its cargo into firewood, and its camp fire on bare ground burns it.
+  // A team on the road: a book from its cargo into wood, and its camp fire on bare ground burns it.
   const { p, members } = team(st, h, h.tile, 2);
   p.cargo.gear.push(newItem("survivalbook"));
   p.supplies.wood = 0; p.cargo.supplies.wood = 0; p.campFire = true;
@@ -1321,16 +1321,16 @@ const dying = (s) => { s.worm = course(WORM.BRAIN_FROM + 1, { seen: 1, carded: "
   const tm = breakDownAt(st, `cargo:${p.id}:list:0`);
   const had = p.cargo.supplies.wood;
   const out = withNums(WOOD.fire, { land: 99 }, () => campFireHour(st, p));
-  check(went === true && out === false && near(had, burnOf(newItem("survivalbook"))) && !p.cargo.gear.length && /team's firewood/.test(tm) && p.cargo.supplies.wood < had, `on bare ground with no firewood the camp fire goes out; a team breaks a book down (+${burnOf(newItem("survivalbook"))}) and its fire burns it`);
+  check(went === true && out === false && near(had, burnOf(newItem("survivalbook"))) && !p.cargo.gear.length && /team's wood/.test(tm) && p.cargo.supplies.wood < had, `on bare ground with no wood the camp fire goes out; a team breaks a book down (+${burnOf(newItem("survivalbook"))}) and its fire burns it`);
   void out; void members;
-  // Firewood in the loot: sites with woodpiles and rooms with furniture; none in a hospital.
+  // Wood in the loot: sites with woodpiles and rooms with furniture; none in a hospital.
   const fake = { seed, hour: 0, tiles: [{ loc: { type: "cabin" }, loot: 1 }, { loc: { type: "hospital" }, loot: 1 }] };
   let found = 0, max = 0, hosp = 0;
   for (let hr = 0; hr < 400; hr++) { fake.hour = hr; const q = rollSiteWood(fake, 0); if (q > 0) { found++; max = Math.max(max, q); } hosp += rollSiteWood(fake, 1); }
   let area = 0;
   for (let i = 0; i < 400; i++) area += rollAreaWood(fake, 0, "barn", "shelf", `box${i}`) > 0 ? 1 : 0;
   check(found > 400 * SITE_WOOD.cabin[0] * 0.6 && found < 400 * SITE_WOOD.cabin[0] * 1.4 && max <= SITE_WOOD.cabin[2] && hosp === 0 && area > 400 * AREA_WOOD.barn[0] * 0.6 && area < 400 * AREA_WOOD.barn[0] * 1.4,
-    `firewood in the loot: a cabin's search hour ${found} of 400 (up to ${max} a find), a barn's shelves ${area} of 400, never in a hospital`);
+    `wood in the loot: a cabin's search hour ${found} of 400 (up to ${max} a find), a barn's shelves ${area} of 400, never in a hospital`);
   const src = (f) => readFileSync(new URL(`../src/sim/${f}`, import.meta.url), "utf8");
   check(/rollSiteWood\(/.test(src("scavenge.js")) && /rollAreaWood\(/.test(src("combat.js")), "searching a site (scavenge.js) and a raid or building container (combat.js) roll it");
 }
@@ -1344,7 +1344,7 @@ const dying = (s) => { s.worm = course(WORM.BRAIN_FROM + 1, { seen: 1, carded: "
   h.stock.scrap = 200; h.stock.wood = 9000; // a woodpile to feed it (900 kg: 300 of the old 3 kg units, data.js WOOD_UNITS)
   setAutopilot(st, true, "balanced");
   for (let i = 0; i < 24 * 6 && !count(h, "boiler"); i++) tickHour(st);
-  check(count(h, "boiler") > 0 || h.construction.some((c) => c.type === "boiler"), "the autopilot builds a water boiler at a base whose water carries the eggs (with firewood to feed it)");
+  check(count(h, "boiler") > 0 || h.construction.some((c) => c.type === "boiler"), "the autopilot builds a water boiler at a base whose water carries the eggs (with wood to feed it)");
   // Wood-poor land and an empty pile: filters instead (the boiler would burn the winter's heating for nothing).
   const w2 = wormWorld(0.7, seed + 3);
   for (const s of atBase(w2.st, w2.h.id)) if (s.gear.tool && s.gear.tool.key === "waterfilter") s.gear.tool = null;
@@ -1354,7 +1354,7 @@ const dying = (s) => { s.worm = course(WORM.BRAIN_FROM + 1, { seen: 1, carded: "
   setAutopilot(w2.st, true, "balanced");
   const filtersAt = () => [...w2.h.armory, ...atBase(w2.st, w2.h.id).map((x) => x.gear.tool)].filter((it) => it && it.key === "waterfilter").length + (w2.h.crafting || []).filter((j) => j.recipe === "waterfilter").length;
   for (let i = 0; i < 24 * 6 && !filtersAt(); i++) tickHour(w2.st);
-  check(filtersAt() > 0 && !count(w2.h, "boiler") && !w2.h.construction.some((c) => c.type === "boiler"), "on land that gives too little firewood for one, it makes water filters instead and leaves the boiler");
+  check(filtersAt() > 0 && !count(w2.h, "boiler") && !w2.h.construction.some((c) => c.type === "boiler"), "on land that gives too little wood for one, it makes water filters instead and leaves the boiler");
 }
 
 // ---------- 8. save and load ----------

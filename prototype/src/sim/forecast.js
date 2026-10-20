@@ -7,7 +7,7 @@
 // HOURS_PER_TILE, hordeSpeedFactor) against the defences (defences.js holdLimit), raids seen by the lookouts or heard
 // on a group's channel (parties.js warned, radiolisten.js arrivalDay) against the defence (factions.js baseDefense,
 // RAIDS), raiders from outside (visitors.js), the food and water outlooks (economy.js foodOutlook, waterOutlook), the
-// heating against the firewood and fuel in store (upkeep.js heatUse, woodcutting.js woodNeed), the generators' fuel
+// heating against the wood and fuel in store (upkeep.js heatUse, woodcutting.js woodNeed), the generators' fuel
 // (power.js powerStatus), crops and the frost (weather.js cropDamage), the worm's course (worm.js WORM.BRAIN_FROM),
 // illness, teams in the field (plans.js foodDays, needs.js teamWater, parties.js hoursLeft), a night march, the dead
 // massing for a new hive (hivebirth.js siteView) and wars with you (playerwars.js).
@@ -387,8 +387,8 @@ function stores(ctx) {
   }
 }
 
-// Heating: the days below freezing in the forecast against the firewood and fuel in store (upkeep.js heatUse: per head;
-// firewood first, then fuel, half of it kept for the vehicles as woodcutting.js counts it), the kitchen's stove and the
+// Heating: the days below freezing in the forecast against the wood and fuel in store (upkeep.js heatUse: per head;
+// wood first, then fuel, half of it kept for the vehicles as woodcutting.js counts it), the kitchen's stove and the
 // water boiler burning their share every day (woodNeed daily).
 function cold(ctx) {
   const { state } = ctx;
@@ -402,7 +402,7 @@ function cold(ctx) {
   for (const b of peopled(state)) {
     if (b.tier === 0) continue; // a shelter's fire keeps it (and its own fire alert)
     if (b.cold) {
-      ctx.add({ key: `cold:${b.id}`, day: ctx.today, kind: "cold", level: 3, icon: "🥶", text: `${b.name} is cold: no heating`, confidence: 1, source: "Stores", target: baseRef(b), why: "Below 0°C everyone needs heat a day: firewood first, then fuel. Without it they lose mood and health every day and fall ill.", go: { base: b.id, tab: "farming" } });
+      ctx.add({ key: `cold:${b.id}`, day: ctx.today, kind: "cold", level: 3, icon: "🥶", text: `${b.name} is cold: no heating`, confidence: 1, source: "Stores", target: baseRef(b), why: "Below 0°C everyone needs heat a day: wood first, then fuel. Without it they lose mood and health every day and fall ill.", go: { base: b.id, tab: "farming" } });
       continue;
     }
     const wn = woodNeed(state, b);
@@ -413,9 +413,9 @@ function cold(ctx) {
       heat -= use + daily;
       if (use > 0 && heat < 0) {
         ctx.add({
-          key: `cold:${b.id}`, day: ctx.today + i, kind: "cold", level: 2, icon: "🥶", text: `Out of firewood and fuel at ${b.name}: cold`,
+          key: `cold:${b.id}`, day: ctx.today + i, kind: "cold", level: 2, icon: "🥶", text: `Out of wood and fuel at ${b.name}: cold`,
           confidence: temps[i].conf * 0.9, source: "Stores + forecast", target: baseRef(b),
-          why: `${Math.floor(b.stock.wood || 0)} firewood and ${Math.floor(b.stock.fuel || 0)} fuel in store; the freezing days ahead need about ${r1(woodFor(use))} firewood a day for ${plural(heatUse(state, b).n, "person", "people")}${daily > 0 ? `, and the stove and boiler burn ${r1(wn.boiler + wn.kitchen)} a day` : ""}. Put people on Cut wood or bring fuel.`,
+          why: `${Math.floor(b.stock.wood || 0)} wood and ${Math.floor(b.stock.fuel || 0)} fuel in store; the freezing days ahead need about ${r1(woodFor(use))} wood a day for ${plural(heatUse(state, b).n, "person", "people")}${daily > 0 ? `, and the stove and boiler burn ${r1(wn.boiler + wn.kitchen)} a day` : ""}. Put people on Cut wood or bring fuel.`,
           go: { base: b.id, tab: "farming" },
         });
         break;

@@ -311,7 +311,7 @@ export function huntLoans(state, base, hunters = null) {
 export const hasBow = (people) => people.some((s) => !!bestHuntWeapon(s, 0, Infinity, "bow"));
 // Arrows before the bow (2026-10-12, user request "If a bow is in the inventory craft arrows before using"): someone
 // about to hunt with a bow or crossbow carried anywhere on them (hands, pockets, pack) and no arrows to hand makes a
-// dozen first from the firewood and scrap there (crafting.js CRAFTS.arrows: 30 firewood + 1 scrap, its hours). A team:
+// dozen first from the wood and scrap there (crafting.js CRAFTS.arrows: 30 wood + 1 scrap, its hours). A team:
 // orders.js runs a field craft before the hunt (its hours pass first). A base's Hunt job: the day's plan
 // (hunterDayPlan) has the best crafter among the bow hunters make them from the base's stores at home before the dawn
 // trip (the materials, not the hunting hours: a hunter's day on the ground is CABIN.hours).
@@ -327,7 +327,7 @@ function baseArrowsFirst(state, base, hunters) {
   for (const [k, v] of Object.entries(R.in)) base.stock[k] -= v;
   for (const [k, v] of Object.entries(R.supplies)) base.stock[k] = (base.stock[k] || 0) + v;
   gainXp(state, maker, CRAFT_SKILL, 0.3);
-  log(state, `${maker.name.split(" ")[0]} makes ${R.supplies.arrows} arrows at ${base.name} before the hunt (none in store for the bows): ${Object.entries(R.in).map(([k, v]) => `${v} ${k === "wood" ? "firewood" : k}`).join(" and ")}, made at home before the dawn trip.`, "info");
+  log(state, `${maker.name.split(" ")[0]} makes ${R.supplies.arrows} arrows at ${base.name} before the hunt (none in store for the bows): ${Object.entries(R.in).map(([k, v]) => `${v} ${k === "wood" ? "wood" : k}`).join(" and ")}, made at home before the dawn trip.`, "info");
   return maker;
 }
 

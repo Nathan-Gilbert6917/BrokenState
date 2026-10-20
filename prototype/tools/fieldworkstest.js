@@ -62,7 +62,7 @@ function mk(seed = SEED) {
   state.started = true;
   state.autoCombat = true;
   state.noWanderers = true;
-  Object.assign(hub(state).stock, { food: 300, water: 300, fuel: 100, meds: 20, ammo: 300, parts: 10, scrap: 200, wood: 2000 });
+  Object.assign(hub(state).stock, { food: 300, water: 300, fuel: 100, meds: 20, ammo: 300, parts: 10, scrap: 200, wood: 6000 }); // wood: a watch tower is 500 (woodwork), the governor keeps half the cold's need
   for (const f of state.factions) f.goodwill = Math.max(f.goodwill, 0); // nobody raids the tests by chance
   return state;
 }
@@ -118,7 +118,8 @@ section("Placing: the rules, the materials, the site");
   const at = spot(state, "tower");
   const scrap0 = h.stock.scrap, wood0 = h.stock.wood;
   const r = FW.planFieldWork(state, h, "tower", at.tile);
-  check(!r.error && h.stock.scrap === scrap0 - 15 && h.stock.wood === wood0 - 120, `tower planned: 15 scrap and 120 firewood taken (${r.text || r.error})`);
+  const tc = FW.FIELD.KINDS.tower.cost;
+  check(!r.error && h.stock.scrap === scrap0 - tc.scrap && h.stock.wood === wood0 - tc.wood, `tower planned: ${tc.scrap} scrap and ${tc.wood} wood taken (${r.text || r.error})`);
   check(r.fw && !r.fw.built && FW.fwAt(state, at.tile) === r.fw && /already/.test(FW.placeProblem(state, h, "well", at.tile)), "the site stands on the tile; the tile is taken");
   const job = FW.jobFor(state, r.fw);
   check(job && job.hours === 18 + FW.walkHours(state, h, at.tile, 18), `the job: 18 work-hours + the walk (${job && job.hours} h)`);
@@ -413,7 +414,8 @@ section("Repairs: materials by kind and damage, the walk, refused when short, Re
   fw.hp = fw.max * 0.2;
   check(FW.damageBand(fw) === "bad", "a fifth: badly damaged");
   const rc = FW.repairCost(state, fw);
-  check(rc.cost.scrap === Math.ceil(9 * 0.8) && rc.cost.wood === Math.ceil(72 * 0.8) && rc.hours > rc.work, `cost by the damage: ${JSON.stringify(rc.cost)}, ${rc.work} work-hours + walk = ${rc.hours}`);
+  const rb = FW.repairBase("tower");
+  check(rc.cost.scrap === Math.ceil(rb.scrap * 0.8) && rc.cost.wood === Math.ceil(rb.wood * 0.8) && rc.hours > rc.work, `cost by the damage: ${JSON.stringify(rc.cost)}, ${rc.work} work-hours + walk = ${rc.hours}`);
   const scrap = h.stock.scrap;
   h.stock.scrap = 2;
   check(/Needs \d+ scrap/.test(FW.repairProblem(state, fw)), `short of scrap: "${FW.repairProblem(state, fw)}"`);

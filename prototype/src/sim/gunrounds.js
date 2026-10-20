@@ -3,24 +3,18 @@
 // (2026-10-10, user: "Guns should show quickly how many rounds are in them when in the inventory view"; "the starting
 // gun magazines were empty").
 //
-// The rounds a team has are counted where rounds are counted (the stores: a base's stock, a team's supplies and
-// cargo; the boxes and loose rounds people carry), and a gun is loaded from them at the start of every fight (combat.js
-// playerUnit: "every gun carried starts the fight loaded"; mags.js: the spares the same, "out of a fight loading them
-// is free"). So out of a fight the magazine of a gun of yours holds what it will hold when the fight starts:
-//   - a gun (or a spare magazine) of your people (worn, carried, in a base's armory or a team's cargo): filled from the
-//     rounds of its load to hand there, in turn (the gun in the hands first, then the other guns, then the spares, so
-//     two pistols and 20 rounds show 15/15 and 5/15, not 15/15 twice), plus any rounds kept on the gun itself
-//     (gunload.js it.loaded: a picked start gun, one taken off a body);
-//   - a gun in a fight (the search window): the rounds in it now (the unit's magazine); a spare magazine of the gun
-//     in the hands, carried by one of yours in a fight: what the unit's entry holds now (mags.js magEntryAt: a swap
-//     emptied it, loose rounds dropped onto it loaded it);
-//   - anything else (on a body, on the ground, in a container, a trader's): what is in it (it.loaded), else empty.
+// Out of a fight the badge counts the rounds physically in the gun or the magazine and nothing else (2026-10-20, the
+// user's report: a gun showed "3" from three rounds lying in the base's stores, would not load them, and later showed
+// 0): a gun's record (gunload.js it.loaded: the stack in firing order, written as a fight ends, by Reload and Unload out
+// of a fight: itemacts.js), a magazine's stack (item.stack). Loading out of a fight is by hand and free (the item menu:
+// Reload, Load rounds, Remove / Insert magazine), from what the holder carries and the stores of the place; a fight's
+// start tops the gun in the hands and its spares up from what the holder carries and the team's bags (mags.js
+// fillUnit), so a gun is never emptier in a fight than its badge said. In a fight: the unit's count (the gun in the
+// hands), a magazine's stack.
 // A gun found in a building or a raid container (foundFill) comes with a believable few rounds in it, on dice of its
-// own (no draw from the world's random numbers): the found rounds are real (they join the team's like a body's gun's).
-// The badge is kept honest when people leave the stores behind (2026-10-18, user: the team window showed every gun and
-// magazine full, "but when I load into a raid some guns and magazines have 0/x"): a team forming at a base, or a person
-// joining one there, takes the rounds its guns and magazines show out of the base's stock as the team's own
-// (loadoutRounds; teamform.js formTeam / addMember), so the magazines in the fight hold what the badge said at home.
+// own (no draw from the world's random numbers): the found rounds are real.
+// loadoutRounds (the rounds a team forming at a base takes for its guns, teamform.js / parties.js) still works out what
+// the guns and the magazines would be topped up with out of the stock (fillAll): those go along in the team's bags.
 import { GEAR } from "./data.js";
 import { CALIBERS } from "./data-ammo.js";
 import { MAGAZINES } from "./data-kit.js";
@@ -33,6 +27,7 @@ import { parseLoc, carriedSpots, personPlace, battleBodies } from "./inventory.j
 import { survivorById, baseById } from "./world.js";
 import { hash01 } from "./skills.js";
 import { stackN, topKey, loadOfKey } from "./roundstack.js"; // physical rounds in a fight (mags.js, 2026-10-18)
+import { gunStackOf } from "./gunload.js"; // a gun's rounds out of a fight (2026-10-20: the badge counts only them)
 
 const num = (v) => (Number.isFinite(v) ? v : 0);
 
@@ -56,6 +51,7 @@ export const magCapacity = (item) => (isMag(item) ? magCapOf(item.key) || MAGAZI
 /** @param {any} gun */
 export function magazineText(gun) {
   if (!isRoundGun(gun)) return "";
+  if (gun.magOut) return "No magazine in it (taken out): only the chamber";
   const fit = fittedMag(gun);
   if (fit) return fit.name;
   const cap = gunCapacity(gun);
@@ -126,25 +122,36 @@ function magLoadAt(item, at, claimed, dflt = null) {
   for (const c of magCalsOf(item.key)) for (const t of typesOf(c)) { const id = loadId(cal, c, t); const q = countKey(at, keyFor(cal, id), claimed); if (q > most) { most = q; best = id; } }
   return best;
 }
-// What one gun or magazine holds (its record first, then from the stores to hand, claiming them).
+// What one gun or magazine holds (gunrounds.js physOf), plus, for the loadout a team takes (loadoutRounds), the rounds
+// to hand that would top it up as a fight starts (mags.js fillUnit top), claiming them.
 function fillOne(item, at, claimed, magDflt = null) {
   const gun = isRoundGun(item);
   const cap = gun ? gunCapacity(item) : magCapacity(item);
   const cal = gun ? calOf(item.key) : MAGAZINES[item.key].cal;
-  const rec = item.loaded && num(item.loaded.n) > 0 ? Math.floor(item.loaded.n) : Array.isArray(item.stack) ? stackN(item.stack) : 0; // rounds kept on it (a gun put down; a magazine with its stack)
-  if (!at.mine) {
-    const r = gun && item.loaded ? roundOf(item.loaded.key) : null;
-    const load = r ? loadId(cal, r.cal, r.type) : gun ? typeFor(cal, item.load && item.load !== "auto" ? item.load : null) : magLoad(item, cal, null);
-    return { n: Math.min(cap, rec), cap, cal, load, src: rec > 0 ? "in it" : "empty", key: keyFor(cal, load), got: 0 };
-  }
-  if (!gun && item.unloaded && !(rec > 0)) return { n: 0, cap, cal, load: magLoad(item, cal, magDflt), src: "unloaded" }; // itemacts.js: kept empty until loaded again
-  if (!gun && rec > 0) return { n: Math.min(cap, rec), cap, cal, load: loadOfKey(cal, topKey(item.stack)) || magLoad(item, cal, magDflt), src: "in it", key: keyFor(cal, magLoad(item, cal, magDflt)), got: 0 }; // a magazine with rounds of its own (a stack kept from a fight)
+  const own = physOf(item);
+  const rec = own.n;
+  if (!at.mine || item.unloaded) return { ...own, key: keyFor(cal, own.load), got: 0 }; // (Unloaded by hand: kept empty, nothing claimed)
   const load = gun ? gunLoadAt(item, at, claimed) : magLoadAt(item, at, claimed, magDflt);
   const key = keyFor(cal, load);
   const want = Math.max(0, cap - rec);
   const got = Math.min(want, countKey(at, key, claimed)); // got: claimed from the rounds to hand (the stores and the person's own boxes)
   claimed.set(key, (claimed.get(key) || 0) + got);
-  return { n: Math.min(cap, rec + got), cap, cal, load, src: "ready", key, got };
+  return { n: Math.min(cap, rec + got), cap, cal, load: rec > 0 ? own.load : load, src: "ready", key, got };
+}
+// What a gun or a magazine physically holds out of a fight (2026-10-20, the user's report: "the gun said it had 3
+// bullets in it but would not reload with the 3 that were in the base storage. Then ... it had 0"): a gun its record
+// (gunload.js it.loaded, the stack in firing order), a magazine its stack (item.stack). Nothing is counted in it that
+// is not in it: the rounds in the stores stay the stores' until someone loads them (itemacts.js reloadGunAt,
+// loadMagAt), and a fight's start tops a gun and its magazines up from what its holder carries (mags.js fillUnit).
+// { n, cap, cal, load, src: "in it" | "empty" | "unloaded" (emptied by hand: a fight's start leaves it so) }.
+function physOf(item) {
+  const gun = isRoundGun(item);
+  const cap = gun ? gunCapacity(item) : magCapacity(item);
+  const cal = gun ? calOf(item.key) : MAGAZINES[item.key].cal;
+  const st = gun ? gunStackOf(item) : Array.isArray(item.stack) ? item.stack : [];
+  const n = stackN(st);
+  const load = loadOfKey(cal, topKey(st)) || (gun ? typeFor(cal, item.load && item.load !== "auto" ? item.load : null) : magLoad(item, cal, null));
+  return { n, cap, cal, load, src: n > 0 ? "in it" : item.unloaded ? "unloaded" : "empty" };
 }
 // Fills every gun and magazine at a location in turn: Map(item → { n, cap, cal, load, src }).
 /** @param {any[]} items @param {ReturnType<typeof roundsAt>} at */
@@ -249,14 +256,8 @@ export function gunRounds(state, item, loc = null) {
     const m = u ? magEntryAt(u, carriedSpots(s), loc) : null;
     if (m) { const cal = calOf(u.weapon); return { n: Math.max(0, Math.floor(loadedIn(b, u, m))), cap: m.cap, cal, load: m.load, src: "fight", roundName: roundName(cal, m.load) }; }
   }
-  const at = roundsAt(state, loc);
-  let r;
-  if (at.mine) {
-    const list = sharers(at);
-    const all = fillAll(list.includes(item) ? list : [...list, item], at);
-    r = all.get(item);
-  } else r = fillOne(item, at, new Map());
-  return r ? { ...r, roundName: roundName(r.cal, r.load) } : null;
+  const r = physOf(item); // out of a fight (or a gun nobody holds in one): exactly what is in it
+  return { ...r, key: keyFor(r.cal, r.load), roundName: roundName(r.cal, r.load) };
 }
 // "4/5" (a gun or a magazine), or "" for anything else.
 /** @param {any} state @param {any} item @param {string | null} [loc] */

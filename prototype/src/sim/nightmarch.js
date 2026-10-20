@@ -17,6 +17,7 @@
 import { log, addCard, hourOfDay, baseById, hub } from "./world.js";
 import { MISSIONS, partyTile, tileLabel, teamName, onTheMove, hoursLeft } from "./parties.js";
 import { startOrder } from "./orders.js";
+import { roadTentLine } from "./tents.js"; // the team's tent bags go up for the night (call-time only)
 
 export const NIGHT_MARCH = { FROM: 22, TO: 6, EVENTS: 1.8, CONFLICT: 1.6, CONFLICT_CAP: 0.45, TIRED: 4, NEAR: 1.5, MIN_CAMP: 2 };
 
@@ -57,7 +58,7 @@ export function makeCamp(state, p) {
   delete p.nightMarch;
   p.orders = [...back, ...(p.orders || [])];
   startOrder(state, p, { type: "camp", hours });
-  return `The team makes camp at ${tileLabel(state, partyTile(p))} for ${hours} hours and moves on to ${to} at first light.`;
+  return `The team makes camp at ${tileLabel(state, partyTile(p))} for ${hours} hours and moves on to ${to} at first light.${roadTentLine(state, p)}`;
 }
 
 // Keep moving through the dark this night.

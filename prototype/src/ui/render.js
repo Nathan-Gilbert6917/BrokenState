@@ -39,6 +39,8 @@ import { countedMembers, baseRadius, controlRadius, ALLIANCE } from "../sim/alli
 import { claimText, wellText } from "../sim/claims.js"; // land claims: the Territory layer and the hover text
 import { drawFieldWorks, fwTooltipLine } from "./fieldworks.js"; // field works: sprites, the tile picker, hover lines
 import { OUTSIDER_COLORS, ruinSpriteCanvas, emptyBaseSpriteCanvas } from "./mapsprites.js";
+import { cartMarkerCanvas } from "./cartmodel.js"; // a cart left on a tile: its marker
+import { cartSpec, cartInKg } from "../sim/carts.js";
 // The moving pieces as low-poly figures with a heading and a cycle frame (people walking, wheels turning, oars pulling).
 import { mapPartyCanvas, mapGroupPartyCanvas, mapSoloCanvas, mapGroupSoloCanvas, mapOutsiderSoloCanvas, mapCyclistCanvas, mapOutsiderPartyCanvas, mapHordeCanvas, mapHerdCanvas, drawPiece, pieceBox, yawOf, dirOf, FRAMES, soloKind } from "./mapfigures.js";
 import { occupyPreview } from "../sim/occupy.js"; // empty bases: the tooltip
@@ -1448,12 +1450,12 @@ export function render(state) {
       continue;
     }
     // On a site or base: tucked into the tile's upper left; elsewhere centered, side by side when there are several.
-    const s = zoomBoost(), w = (MARKER_W[m.type] || 14) * s;
+    const look = markerLook(state, m);
+    const s = zoomBoost(), w = (MARKER_W[m.type] || 14) * s * (look.cart ? 1.3 : 1); // a cart a little wider than a grave
     const tucked = mapLoc(state, m.tile) || ownBase.has(m.tile);
     const x = tucked ? px + (-14 + n * 14) * s : px + (n - (perTile.get(m.tile) - 1) / 2) * 17 * s;
     const y = tucked ? py - 13 * s : py + 1 * s;
-    const look = markerLook(state, m);
-    const cv = markerSpriteCanvas(look.wreck ? "car" : m.type, PLAYER_COLOR, look); // a vehicle blown up: a wreck on the map
+    const cv = look.cart ? cartMarkerCanvas(look.cart, look.loaded) : markerSpriteCanvas(look.wreck ? "car" : m.type, PLAYER_COLOR, look); // a vehicle blown up: a wreck on the map; a cart left there: the cart (ui/cartmodel.js)
     const h = spriteH(cv, w);
     ctx.globalAlpha = alpha;
     ctx.beginPath();
@@ -1854,7 +1856,11 @@ function markerLook(state, m) {
     const bike = v && v.type === "bike";
     return { vehicle: bike ? "bike" : v && v.type === "sedan" ? "sedan" : v && v.type === "miltruck" ? "miltruck" : "truck", needsFuel: !bike && i.fuel != null && i.fuel < 3, damaged: i.condition != null && i.condition < 25, ups: v ? upsCode(v.upgrades) : "", wreck: !!(v && v.destroyed) }; // ups: plates, glass, a gun on the roof (mapsprites.js); wreck: blown up (drawn as a wreck)
   }
-  if (m.type === "death") return { empty: i.items === 0 };
+  if (m.type === "death") { // a cart left on the tile (sim/carts.js: abandoned on a road, or set down): drawn as the cart
+    const d = (state.deathSites || []).find((x) => x.tile === m.tile && !(x.names || []).length);
+    const it = d && (d.items || []).find((g) => g && g.item && cartSpec(g.item));
+    return it ? { empty: i.items === 0, cart: cartSpec(it.item).look || "barrow", loaded: (d.items.length > 1) || cartInKg(it.item) > 0.5 } : { empty: i.items === 0 };
+  }
   return { emptied: !!i.emptied };
 }
 

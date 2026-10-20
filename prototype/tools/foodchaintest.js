@@ -11,7 +11,7 @@
 // - the stores: days on hand = foodIn ÷ the heads; the rooms hold what storage.js placeFood puts in them; spoils
 //   within 7 days = every lot whose shelf left ÷ where it sits today is 7 days or less; won't be eaten in time =
 //   storage.js spoilForecast;
-// - the fires: hours left = firewood ÷ (each fire's burn a day ÷ 24): a shelter's fire goes out at that hour
+// - the fires: hours left = wood ÷ (each fire's burn a day ÷ 24): a shelter's fire goes out at that hour
 //   (woodcutting.js shelterFire, hour by hour); the hub's parts are the cook fire's, the stove's, the boiler's and the
 //   heating's own numbers;
 // - the kitchen: each station's bills and why they can or cannot go (cooking.js batchWhy), "nothing cooks" without one;
@@ -229,8 +229,8 @@ section("The fires");
   h.stock.wood = 7;
   const f = chainFires(st, h);
   const burn = fireDayBurn(st, h).total; // fire-nights: the fire, its people's warmth, boiling and the pot (woodcutting.js)
-  check(f.parts.length === 1 && f.parts[0].key === "fire" && near(f.parts[0].perDay, burn, 1e-9) && burn > fireBurn(st, h.tile, WOOD.fire.shelter), `a shelter's fire: ${burn} firewood a day (more than the bare fire's ${fireBurn(st, h.tile, WOOD.fire.shelter)})`);
-  check(near(f.hours, 7 / (burn / 24), 1e-9) && near(f.perHour, burn / 24, 1e-9), `hours left = firewood ÷ the burn an hour (${f.hours.toFixed(2)} h)`);
+  check(f.parts.length === 1 && f.parts[0].key === "fire" && near(f.parts[0].perDay, burn, 1e-9) && burn > fireBurn(st, h.tile, WOOD.fire.shelter), `a shelter's fire: ${burn} wood a day (more than the bare fire's ${fireBurn(st, h.tile, WOOD.fire.shelter)})`);
+  check(near(f.hours, 7 / (burn / 24), 1e-9) && near(f.perHour, burn / 24, 1e-9), `hours left = wood ÷ the burn an hour (${f.hours.toFixed(2)} h)`);
   let hrs = 0;
   while (h.fire !== false && hrs < 500) { shelterFire(st, h); if (h.fire !== false) hrs++; }
   check(Math.abs(hrs - Math.floor(f.hours)) <= 1, `and it went out after ${hrs} hours (shown ${Math.floor(f.hours)})`);
@@ -252,14 +252,14 @@ section("The fires");
   const ht = heatUse(w.st, w.h); if (ht.total > 0) want.heat = ht.wood;
   const got = Object.fromEntries(hf.parts.map((p) => [p.key, p.perDay]));
   check(Object.keys(want).every((k) => near(got[k], want[k], 1e-9)) && Object.keys(got).every((k) => k in want), `the hub's fires: ${hf.parts.map((p) => `${p.name} ${p.perDay.toFixed(1)}`).join(", ")}`);
-  check(near(hf.perDay, Object.values(want).reduce((a, v) => a + v, 0), 1e-9) && near(hf.hours, w.h.stock.wood / (hf.perDay / 24), 1e-9), `firewood ${w.h.stock.wood} lasts ${hf.hours.toFixed(1)} hours at ${hf.perDay.toFixed(1)} a day`);
+  check(near(hf.perDay, Object.values(want).reduce((a, v) => a + v, 0), 1e-9) && near(hf.hours, w.h.stock.wood / (hf.perDay / 24), 1e-9), `wood ${w.h.stock.wood} lasts ${hf.hours.toFixed(1)} hours at ${hf.perDay.toFixed(1)} a day`);
   const k = foodChain(w.st, w.h).kitchen;
   const cf = k.stations.find((s) => s.key === "cookhouse"), kc = k.stations.find((s) => s.key === "canteen");
   check(cf && cf.bills.length === 1 && cf.bills[0].can && cf.runs, `the cook fire's Simple meal bill can go (${cf && cf.bills[0].why})`);
   check(kc && kc.bills.length >= 1 && kc.crew.length === 1, "the Kitchen: its default bill and its cook");
   w.h.stock.wood = 0;
   const k2 = foodChain(w.st, w.h).kitchen.stations.find((s) => s.key === "cookhouse");
-  check(k2 && !k2.bills[0].can && /firewood/.test(k2.bills[0].why), `no firewood: the cook fire's bill cannot go (${k2 && k2.bills[0].why})`);
+  check(k2 && !k2.bills[0].can && /wood/.test(k2.bills[0].why), `no wood: the cook fire's bill cannot go (${k2 && k2.bills[0].why})`);
 }
 
 // ======================================================================
@@ -293,7 +293,7 @@ section("The Food tab on every kind of base; Help and Codex");
   if (G2) check(!BAD.test(foodChainTab(G.st, G2)), "an outpost");
   const help = helpTopics();
   const t = help.find((x) => x.id === "the-food-chain");
-  check(t && /spoil/i.test(t.html) && /lunch/i.test(t.html) && /No hot food/.test(t.html) && /firewood/.test(t.html), "Help: The food chain (spoilage, the lunch break, No hot food, fires)");
+  check(t && /spoil/i.test(t.html) && /lunch/i.test(t.html) && /No hot food/.test(t.html) && /wood/.test(t.html), "Help: The food chain (spoilage, the lunch break, No hot food, fires)");
   const cx = codexEntries();
   check(cx.some((e) => /food chain/i.test(e.title || e.name || "")), "Codex: the food chain");
 }

@@ -42,7 +42,7 @@ UIC.initCombatUI({ clientWidth: 1600, clientHeight: 900, width: 0, height: 0, ge
 let clock = 1e6;
 const draw = (st) => { try { clock += 50; UIC.drawCombat(st, clock); return ""; } catch (e) { return e.stack.split("\n").slice(0, 3).join(" "); } };
 
-const world = () => { const st = createWorld({ seed: SEED, factionCount: 6 }); st.started = true; st.visitorsOff = true; return st; };
+const world = () => { const st = createWorld({ seed: SEED, factionCount: 6 }); st.started = true; st.visitorsOff = true; st.landOff = true; return st; }; // landOff: the land (basescatter.js) is tools/baseviewtest.js's
 const asCamp = (b) => { b.tier = 0; b.camp = true; b.buildings = []; b.construction = []; };
 function raid(st, h, count = 8) {
   for (const s of atBase(st, h.id)) { s.health = 100; s.gear.weapon = newItem("knife"); }
@@ -250,12 +250,13 @@ section("Moving a parked car anywhere it fits");
   bv = st.combat; Fv = bv.deployPlan.fort;
   const vv = Fv.vehicles.find((x) => x.id === truck.id);
   check(vv && vv.x0 - Fv.ox === spot[0] && vv.y0 - Fv.oy === spot[1], "the view has it there");
-  check(!combatAct(st, { type: "lift", key }) && st.combat.layout.pick === key && !truck.at, "lifted again to move it");
+  const lv = st.combat;
+  check(!combatAct(st, { type: "lift", key }) && st.combat.layout.pick === key && truck.at && truck.at[0] === spot[0] && truck.at[1] === spot[1] && st.combat === lv, "Move picks it up again: it stays where it stands until put down, the map is not made again");
   bv = st.combat; Fv = bv.deployPlan.fort;
   const onBunk = [10 + 1 + Fv.ox, 10 + 1 + Fv.oy];
   const gb = BM.ghostAt(st, bv, ...onBunk);
   check(gb && !gb.ok && /On top of|doorway/.test(gb.why), `its outline is red over the bunkhouse (${gb && gb.why})`);
-  check(!!combatAct(st, { type: "put", x: onBunk[0], y: onBunk[1] }) && !truck.at, "and the put is refused there");
+  check(!!combatAct(st, { type: "put", x: onBunk[0], y: onBunk[1] }) && truck.at && truck.at[0] === spot[0], "and the put is refused there (it stays where it stood)");
   combatAct(st, { type: "endLayout" });
   check(!st.combat, "the map closed");
   // An Army truck: 5 cells long on the map, drawn as the Army's.

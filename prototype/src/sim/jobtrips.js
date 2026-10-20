@@ -40,6 +40,7 @@ import { RAW } from "./water.js";
 import { armTripEvent, fireTripEvent, holdTrip, creditBonus, holdText } from "./tripevents.js"; // trouble on the way (trips-plus #2)
 import { lunchOverlap, isLunchHour } from "./meals.js"; // the lunch break out at work
 import { PACK, packFood, topUpPack } from "./eating.js"; // the food they take out for lunch
+import { chopHour, hasChopWork } from "./woodwork.js"; // woodwork: the woodcutters fell the trees marked on the base map before going out
 
 const r2 = (v) => Math.round((v || 0) * 100) / 100;
 const POPS = 12; // deposits kept for the map
@@ -185,12 +186,12 @@ function rollLoad(state, base, s, t) {
   }
 }
 
-// What a load is, in a few words: "18 food (2 small game)", "140 firewood (14 kg)", "2 water" …
+// What a load is, in a few words: "18 food (2 small game)", "140 wood (14 kg)", "2 water" …
 export function loadText(t) {
   const c = t.carry;
   if (!c || c.empty) return "";
   switch (t.job) {
-    case "wood": return c.wood > 0 ? `${Math.round(c.wood)} firewood (${Math.round(c.wood * 0.1)} kg)` : "";
+    case "wood": return c.wood > 0 ? `${Math.round(c.wood)} wood (${Math.round(c.wood * 0.1)} kg)` : "";
     case "forage": return c.food > 0.05 || c.herbs || c.honey ? [c.food > 0.05 ? `${r1(c.food)} food` : "", c.herbs ? `${c.herbs} meds (herbs)` : "", c.honey ? "honey" : ""].filter(Boolean).join(", ") : "";
     case "hunt": case "fish": {
       const n = [c.deer ? `${c.deer} deer` : "", c.hog ? `${c.hog} hog${c.hog > 1 ? "s" : ""}` : "", c.small ? `${c.small} small game` : "", c.fish ? `${c.fish} fish` : ""].filter(Boolean).join(", ");
@@ -202,12 +203,12 @@ export function loadText(t) {
   }
 }
 const r1 = (v) => Math.round((v || 0) * 10) / 10;
-// The pop over the base when a load comes in: "+18 food", "+140 firewood" …
+// The pop over the base when a load comes in: "+18 food", "+140 wood" …
 function popText(t) {
   const c = t.carry;
   if (!c || c.empty) return "";
   switch (t.job) {
-    case "wood": return c.wood > 0.5 ? `+${Math.round(c.wood)} firewood` : "";
+    case "wood": return c.wood > 0.5 ? `+${Math.round(c.wood)} wood` : "";
     case "forage": return c.food > 0.05 ? `+${r1(c.food)} food${c.herbs ? ` +${c.herbs} meds` : ""}` : c.herbs ? `+${c.herbs} meds` : "";
     case "hunt": case "fish": return c.rations > 0.05 ? `+${Math.round(c.rations)} ${t.job === "fish" ? "fish" : "meat"}` : "";
     case "scavenge": return c.finds ? `+${loadText(t)}` : "";
@@ -350,6 +351,7 @@ function stepPerson(state, base, s, now) {
       const at = t.drop != null ? t.drop : null; // left the load at a stockpile: the next trip sets out from there
       if (from < end && dayOf(from) === dayOf(t.leave)) {
         const job = mayGo(state, base, s, Math.floor(from));
+        if (job === "wood" && hasChopWork(base)) return; // woodwork: home with the load, they go to the felling marked on the map (the next hour)
         const nt = job === t.job ? planTrip(state, base, s, job, from, at) : null;
         if (nt && checkOutTool(state, base, s, job)) { nt.n = n; s.trip = nt; packForTrip(state, base, s); continue; }
       } else if (t.next != null || dayOf(from) === dayOf(t.leave)) s.tripNext = { t: r2(from), n, day: dayOf(t.leave), ...(at != null ? { from: at } : {}) };
@@ -357,6 +359,9 @@ function stepPerson(state, base, s, now) {
     }
     const job = mayGo(state, base, s, now);
     if (!job) return;
+    // woodwork: a woodcutter at the base works the felling marked on the base map (woodwork.js chopJobs) before any
+    // trip out to the land: the hour goes on it.
+    if (job === "wood" && chopHour(state, base, s, now)) { delete s.tripNext; return; }
     const nx = s.tripNext && s.tripNext.day === dayOf(now) ? s.tripNext : null;
     const start = Math.max(now, nx ? nx.t : now);
     if (start >= end) return;

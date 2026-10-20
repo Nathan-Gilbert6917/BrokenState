@@ -45,11 +45,13 @@ function setup({ mech = 3 } = {}) {
 function setMech(f, mech) {
   for (const s of f.people || []) if (s.skills) { s.skills.mechanics = mech; s.skills.mechanics = mech - (skill(s, "mechanics") - mech); }
 }
-// Firewood (the cheapest a kg: it lies outside first) so that about `kg` lies outside the base tonight.
+// Empty jars (cheap a kg, no food: no still or kitchen wished for them) so that about `kg` lies outside the base
+// tonight. The woodpile is no longer goods in the room (basestorage.js woodpileOf, the user's pick 2026-10-20), but the
+// same wood still comes with it: the wooden storage builds are paid from it as before.
 function pileOutside(st, f, tile, kg) {
   const s = groupStorage(st, f, tile);
-  const wood = Math.ceil((kg + s.free) / 0.1);
-  f.stock.wood = (f.stock.wood || 0) + wood;
+  f.stock.jars = (f.stock.jars || 0) + Math.ceil((kg + s.free) / 0.4);
+  f.stock.wood = (f.stock.wood || 0) + Math.ceil((kg + s.free) / 0.1);
   return groupStorage(st, f, tile);
 }
 const isStore = (w) => !!w && STORE_KEYS.includes(w.type);
@@ -57,7 +59,7 @@ const isStore = (w) => !!w && STORE_KEYS.includes(w.type);
 // ======================================================================
 section("Your costs and hours, your rules");
 {
-  const want = { storebox: [2, 1], crates: [4, 1], shed: [12, 2], store: [18, 3], warehouse: [40, 6] };
+  const want = { storebox: [1, 1], crates: [1, 1], shed: [4, 2], store: [10, 3], warehouse: [40, 6] }; // scrap (wood besides: 2026-10-20; woodwork's costs)
   for (const [k, [scrap, work]] of Object.entries(want)) {
     const d = storeDef(k), B = BUILDINGS[STORE_BUILDING[k]];
     check(JSON.stringify(d.cost) === JSON.stringify(B.cost) && d.cost.scrap === scrap, `${d.name}: your cost (${JSON.stringify(d.cost)})`);
@@ -123,13 +125,13 @@ section("What they build, by size and need");
   // Short of the materials: nothing they cannot pay for (as your canBuild), the cheaper ones still.
   {
     const { st, f, main } = setup();
-    Object.assign(f.stock, { scrap: 10, buildmat: 0, parts: 0 });
+    Object.assign(f.stock, { scrap: 3, buildmat: 0, parts: 0 }); // woodwork: a storehouse is 10 scrap and 400 wood now, the wood piled outside pays for it
     pileOutside(st, f, main, 1500);
     const w = nextWork(st, f);
-    check(w && w.type === "crates", `1500 kg outside, 10 scrap: crates, what they can pay for (${w && w.type})`);
-    f.stock.scrap = 2;
+    check(w && w.type === "crates", `1500 kg outside, 3 scrap: crates, what they can pay for (${w && w.type})`);
+    f.stock.scrap = 0;
     const w2 = nextWork(st, f);
-    check(!isStore(w2), `2 scrap: no storage (${w2 && w2.type})`);
+    check(!isStore(w2), `no scrap: no storage (${w2 && w2.type})`);
   }
   // Everything inside: none.
   {
@@ -161,7 +163,8 @@ section("What they build, by size and need");
     const tn = stockTonight(st, f);
     const share = (tn[t1].scrap || 0) / Math.max(1, f.stock.scrap);
     if (check(share > 0, `the outpost has people and its share of the stores (${Math.round(share * 100)}%)`)) {
-      f.stock.wood = Math.ceil(3000 / 0.1 / share);
+      f.stock.wood = Math.ceil(3000 / 0.1 / share); // the woodpile for the shed's wood (it takes no room now)
+      f.stock.jars = Math.ceil(3000 / 0.4 / share); // and 3000 kg of goods at the outpost
       const s = groupStorage(st, f, t1);
       const w = nextWork(st, f);
       check(s.outsideKg > 600 && w && w.tile === t1 && w.type === "shed", `${Math.round(s.outsideKg)} kg outside the outpost: a shed (${w && w.tile === t1 ? w.type : JSON.stringify(w)})`);
@@ -182,7 +185,7 @@ section("What they build, by size and need");
     check(s.cap === 0 && s.outsideKg > 5 && w && w.tile === t1 && w.type === "storebox", `${Math.round(s.outsideKg)} kg on the ground at a camp: a storage box (${w && w.type})`);
     check(storeLock(st, f, t1, "warehouse") === "an outpost or the main base", "a warehouse: an outpost or the main base only");
     check(storeLock(st, f, t1, "shed") !== "", "no shed at a camp (your camp builds none)");
-    f.stock.scrap = W.CAMP.cost.scrap + 1;
+    f.stock.scrap = W.CAMP.cost.scrap;
     const w2 = nextWork(st, f);
     check(w2 && w2.type === "camp", `scrap for the step up only: the camp first (${w2 && w2.type})`);
     f.stock.scrap = 200; f.works[t1].storebox = 4;

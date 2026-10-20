@@ -42,7 +42,7 @@ import { isCar, travelMode } from "./sim/vehicles.js";
 import { startCombat, combatAct, runEnemyPhase } from "./sim/combat.js";
 import { queueOrder, startOrder, stopTask, resumeQueue, removeQueued, reorderQueued, cancelMove, contactable, queueEndTile } from "./sim/orders.js";
 import { setNightPlan } from "./sim/nightmarch.js"; // the team panel's night plan
-import { strikeCamp, STRIKE_LABEL } from "./sim/staging.js"; // camps: Strike camp (the base window, the tile panel)
+import { strikeCamp, STRIKE_LABEL, layoutDone } from "./sim/staging.js"; // camps: Strike camp (the base window, the tile panel)
 import { setFire } from "./sim/fieldheat.js";
 import { commandable, NO_RADIO } from "./sim/plans.js";
 import { PLAN_ACTIONS, PLAN_CHANGE, planAutofill, planLaunchOpts, applyPreset } from "./ui/plan.js";
@@ -61,6 +61,7 @@ import { WC_ACTIONS, WC_CHANGE, uiCfg, wcChanged } from "./ui/worldcfg.js"; // W
 import { cleanCfg, isDefaultCfg, cfgSummary } from "./sim/worldcfg.js";
 import { SG_ACTIONS, SG_CHANGE, loadDice } from "./ui/startgear.js"; // starting gear picked under Customize (sim/startgear.js)
 import { clearStartGear } from "./sim/startgear.js";
+import { loadUpAll } from "./sim/itemacts.js"; // physical rounds out of a fight: loaded at Start
 import { DEFAULT_SIZE, sizeDef, clampGroups, clampHives, customDef, clampCustomW, clampCustomH, BASE_W, BASE_H } from "./sim/worldsize.js";
 import { INV_ACTIONS, INV_CHANGE, invDrop } from "./ui/inventory.js";
 import { ITEMMENU_ACTIONS, itemMenuHtml, openItemMenu, closeItemMenu } from "./ui/itemmenu.js"; // right-click on an item in an inventory view
@@ -127,7 +128,8 @@ import { loadOptions, saveOptions } from "./ui/saves.js";
 import { initTitle, showTitle, syncTitle, titleFrame, titleKey, titleCovers, TITLE_ACTIONS } from "./ui/title.js"; // the title screen the game opens on
 import { WORK_ACTIONS, WORK_CHANGE, workKey, applyRoleChoice } from "./ui/work.js";
 import { DEFENCE_ACTIONS, DEFENCE_CHANGE } from "./ui/defence.js";
-import { BASEMAP_ACTIONS, openForJob } from "./ui/basemap.js"; // the base map tab; Build opens the map to place the new building
+import { BASEMAP_ACTIONS, openForJob, openBuildMap } from "./ui/basemap.js"; // the base map tab; Build opens the map to place the new building
+import { BUILDMAP_ACTIONS, buildMapKey } from "./ui/buildmap.js"; // Open the build map: the alert's click and the key (U)
 import { STORAGE_ACTIONS, STORAGE_CHANGE } from "./ui/storage.js"; // the base window's Storage tab: the containers (sim/containers.js)
 import { INTEL_ACTIONS, INTEL_CHANGE } from "./ui/intel.js"; // hidden bases (Run silent) and radio security (sim/hiding.js, sim/intel.js)
 import { toManual } from "./sim/work.js";
@@ -477,6 +479,7 @@ function tidyUi() {
   // A defence drill closed (ui/defence.js, sim/defenceplan.js): back to the base's Defence tab it was opened from.
   if (ui.drillFrom != null && !(state.combat && state.combat.drill)) { if (!state.combat && baseById(state, ui.drillFrom)) ui.baseView = { id: ui.drillFrom, tab: "defence" }; ui.drillFrom = null; }
   // The base map closed (ui/basemap.js, sim/basemap.js): back to the base's tab it was opened from.
+  if (state.combat && state.combat.layout) layoutDone(state, state.combat.layout.baseId); // Open the build map: its map is open, the ask is answered (sim/staging.js)
   if (ui.mapFrom && !(state.combat && state.combat.layout)) { if (!state.combat && baseById(state, ui.mapFrom.id)) ui.baseView = { id: ui.mapFrom.id, tab: ui.mapFrom.tab }; ui.mapFrom = null; }
 }
 
@@ -1004,7 +1007,7 @@ const actions = {
   "xp-order": (d) => {
     const p = partyById(d.id);
     if (!p || !(contactable(p) || commandable(state, p))) return; // the radio rule is checked for every team order below
-    if (askQty(state, ui, d)) return; // ui/carry.js: how much water, firewood, food or game (the box gives d.qty)
+    if (askQty(state, ui, d)) return; // ui/carry.js: how much water, wood, food or game (the box gives d.qty)
     const o = { type: d.type };
     if (d.qty != null && d.qty !== "") o.qty = Number(d.qty);
     if (d.mission) o.mission = d.mission;
@@ -1191,6 +1194,7 @@ const actions = {
     }
     if (c.uiAction && c.uiAction.type === "volpick") { openVolPick(ui, c.uiAction.askId); return; } // sim/volunteers.js: a group's ask, choose who goes
     if (c.uiAction && c.uiAction.type === "moveout") { openMoveOut(c.uiAction.baseId); return; } // the Overcrowded card (sim/moveout.js)
+    if (c.uiAction && c.uiAction.type === "basemap") { const why = openBuildMap(state, ui, c.uiAction.baseId); if (why) ui.cardResult = { title: card.title, text: why }; return; } // sim/staging.js: Open the build map (a camp set up, a base gone up a tier)
     if (c.uiAction && c.uiAction.type === "radioCaravan") { // a group asked you to bring your side (sim/radiotrade.js): the planner for that deal
       const deal = radioDeals(state).find((x) => x.factionId === c.uiAction.factionId);
       if (deal) TRADE_ACTIONS["rd-dealcaravan"](state, ui, { id: deal.id });
@@ -1300,6 +1304,7 @@ const actions = {
     if (JSON.stringify(options.worldCfg || null) !== JSON.stringify(isDefaultCfg(uiCfg(ui)) ? null : uiCfg(ui))) { options.worldCfg = isDefaultCfg(uiCfg(ui)) ? null : { ...uiCfg(ui) }; saveOptions(options); }
     if (crewCustomized(state)) state.customStart = true; // customized on the new-run screen (Customize, custom backgrounds)
     clearStartGear(state); // sim/startgear.js: picked gear is ordinary gear from here on
+    loadUpAll(state); // sim/itemacts.js: every gun and magazine your people carry loaded with real rounds (what each carries, then the hub's stores): the badges count only rounds that are in them (2026-10-20)
     ui.gearEdit = null;
     assignStartingRoles(state); // jobs by skill, after any edits made on this screen (world.js)
     centerOn(state, playerTile(state));
@@ -1395,6 +1400,7 @@ for (const [k, fn] of Object.entries(WORK_ACTIONS)) actions[k] = (d, ev) => fn(s
 // The Defence tab: the watch roster and the defence plan's drill (ui/defence.js).
 for (const [k, fn] of Object.entries(DEFENCE_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 for (const [k, fn] of Object.entries(BASEMAP_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // the base map (ui/basemap.js)
+for (const [k, fn] of Object.entries(BUILDMAP_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // Open the build map (ui/buildmap.js)
 for (const [k, fn] of Object.entries(STORAGE_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // the Storage tab (ui/storage.js): move goods between containers, tidy up
 
 // Inventory drag and drop: tiles carry data-drag (their location), slots and storage boxes data-drop.
@@ -2441,6 +2447,7 @@ window.addEventListener("keydown", (e) => {
   // M the minimap, ` the dev tools (when they are shown), Shift+P autopilot only with them (ui/display.js).
   if (displayKey(ui, e, modalKind(state, ui))) { e.preventDefault(); refresh(); return; }
   // Tabs, next waiting team, bases, camera spots, diary, roster and codex (ui/alerts.js); J, R and C also close their window.
+  if (buildMapKey(state, ui, e, modalKind(state, ui))) { e.preventDefault(); refresh(); return; } // U: the selected base's build map (ui/buildmap.js)
   if (mapHotkey(state, ui, e, actions, modalKind(state, ui))) { e.preventDefault(); refresh(); return; }
   // Map shortcuts do nothing behind a window (a card, the planner, a base, help) or on the new-run screen.
   if (modalKind(state, ui)) return;

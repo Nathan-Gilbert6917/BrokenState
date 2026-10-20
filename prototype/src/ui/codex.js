@@ -14,9 +14,9 @@
 import { FOODS, FOOD_GROUPS } from "../sim/foods.js"; // food by type in the codex
 import { STORE, FACTOR } from "../sim/storage.js"; // the food chain entries: food rooms and spoilage
 import { WOOD } from "../sim/woodcutting.js"; // a camp's fire a day
-import { COOK } from "../sim/cooking.js"; // a cook fire's firewood
+import { COOK } from "../sim/cooking.js"; // a cook fire's wood
 import { EAT } from "../sim/eating.js"; // "No hot food"
-import { KITCHEN } from "../sim/kitchen.js"; // the stove's firewood
+import { KITCHEN } from "../sim/kitchen.js"; // the stove's wood
 import { HELMETS, HELMET_ATTACH, MOUNT_NAMES as HELM_MOUNTS } from "../sim/helmets.js"; // helmet mounts (codex lines)
 import { ZTYPES, GROWTHS, TECH, HIVE, BOSS_NAMES } from "../sim/hiveconst.js";
 import { GEAR, SUPPLIES, CATEGORIES, FACTION_TYPES, FACTION_COLORS, SKILL_NAMES, LOCATIONS, SITE_ZONES, DANGER_NAMES, siteDanger } from "../sim/data.js";
@@ -222,10 +222,10 @@ function itemEntries() {
 const SUPPLY_HOW = {
   water: "Safe to drink. Everyone drinks about 1 a day (more in summer, a hot day 1.6+). Keep the tanks full before summer.",
   rawwater: "Purify it (the water boiler, water filters, a camp fire, tablets) before drinking: drunk as it is, it can carry the worm's eggs.",
-  fuel: "Vehicles burn it, generators and floodlights use it; it heats a base in winter after the firewood.",
+  fuel: "Vehicles burn it, generators and floodlights use it; it heats a base in winter after the wood.",
   meds: "Treat wounds and illnesses (a dose each). Rare: keep a reserve, and a med station makes more.",
   ammo: "Every gunshot costs it (an assault rifle two); Reload in battle fills a gun's magazine from it. An ammo bench makes more from scrap (it needs a workbench at the base to build).",
-  arrows: "What bows and crossbows shoot, in fights and on hunts (1 a shot). After a won fight about half are picked up again, after a loss or a retreat none; a hunt loses about half. Teams with a bow pack a dozen each. Made by hand from firewood and a little scrap; found at hunting lodges, gun stores, sports shops and campgrounds.",
+  arrows: "What bows and crossbows shoot, in fights and on hunts (1 a shot). After a won fight about half are picked up again, after a loss or a retreat none; a hunt loses about half. Teams with a bow pack a dozen each. Made by hand from wood and a little scrap; found at hunting lodges, gun stores, sports shops and campgrounds.",
   parts: "Buildings, vehicle repairs and gear need them. A machine shop makes them from scrap.",
   scrap: "What almost everything is built and crafted from. Scavenging brings it in.",
   jars: "The preserving room fills them; most come back when the food in them is eaten.",
@@ -238,7 +238,7 @@ const SUPPLY_HOW = {
   brass: "Fired cases and shotgun hulls: a reloading bench loads a round into each. About 60% of the rounds your side fires come back after a won fight (a revolver's all); gun stores, ranges and lodges have bags of it.",
   powder: "Smokeless powder, in charges (a 1 lb can holds 100 pistol, 40 rifle or 60 shotgun loads) for the reloading bench. Gun stores, lodges and ranches; arms dealers sell it.",
   primers: "A reloading bench needs one for every round. Rare: gun stores, the military; arms dealers and trading groups sell them.",
-  blackpowder: "Made at a reloading bench from firewood, scrap and food (crafting): used when the smokeless powder runs out. Its loads jam more (×1.5) and are louder.",
+  blackpowder: "Made at a reloading bench from wood, scrap and food (crafting): used when the smokeless powder runs out. Its loads jam more (×1.5) and are louder.",
   matchprimers: "Made at a reloading bench (crafting, Mechanics 8): used when the factory primers run out. They fail three times as often.",
 };
 function supplyEntries() {
@@ -254,7 +254,7 @@ function supplyEntries() {
   }));
 }
 function buildingEntries() {
-  return Object.entries(BUILDINGS).map(([k, b]) => {
+  return Object.entries(BUILDINGS).filter(([, b]) => !b.hidden && !b.furniture && !b.retired).map(([k, b]) => { // beds as furniture are items (their own entries); the retired makeshift cots
     const stats = [["Costs", Object.entries(b.cost).map(([s, n]) => `${n} ${(SUPPLIES[s] || { name: s }).name.toLowerCase()}`).join(", ")], ["Takes", `${b.hours} hours of building`], ["At most", `${b.max} a base`]];
     if (b.plot) stats.push(["Stands on", `a ${PLOT_NAMES[b.plot].toLowerCase()}`]);
     if (b.req) stats.push(["Needs", Object.entries(b.req).map(([s, n]) => `a ${SKILL_NAMES[s] || s} ${n}+ survivor there`).join(", ")]);
@@ -402,7 +402,7 @@ function placeEntries() {
   // Barricades (sim/barricade.js): furniture shoved in the way, boards and nails over a door or window, the dead crawling over half cover.
   out.push({
     key: "k:barricades", cat: "places", name: "🪵 Barricades", sub: "Shove furniture, board up doors and windows",
-    stats: [["Shove", `${SHOVE.AP} actions alone, ${SHOVE.HELP_AP} each with a teammate right next to the piece, from right next to it: a shelf, cabinet, counter, table, bed, crate, locker, tall shelving, barrel, hay or sandbags one tile, pushed onto a free cell beside it (open floor, or a broken or open door's frame to plug it) or pulled onto your own cell (you step back); lockers and tall shelving take two people, or a Strong back or Melee ${SHOVE.STRONG_MELEE}+; the scrape is heard ${SHOVE.RADIUS} tiles off`], ["Board up", `${BOARD.AP} actions and a bundle of boards and nails (crafted from 30 firewood and a scrap, anywhere): nailed across a closed door, a doorway or a window from either side; ${BOARD.HP} hit points a layer, up to ${BOARD.MAX} layers, on top of a closed door's own; loud (heard ${BOARD.RADIUS} tiles off, Heat +${BOARD.HEAT} in a raid)`], ["Tear down", `${BOARD.TEAR.ap} actions from either side: the door or window back, shut; about half the bundles come off whole, the rest are splintered`], ["The vehicle", "a bundle in the team's vehicle counts from next to it"], ["The dead", `crawl over half cover (a table, a shelf, crates, a fence) at +${CRAWL.COST} tiles, a walker's whole turn; never a closed window; batter boards and a shoved tall piece (${FURNITURE.locker.hp} hit points for lockers) or go round`], ["Raiders", `vault half cover as your people do; batter boards when there is no other way in; guards and militia holding a building shove a piece into a door frame or board an outer window while nothing is in sight to shoot`], ["Their bases", "a group's base you assault starts with the windows and doors on your side boarded, as far as its firewood and scrap go"]],
+    stats: [["Shove", `${SHOVE.AP} actions alone, ${SHOVE.HELP_AP} each with a teammate right next to the piece, from right next to it: a shelf, cabinet, counter, table, bed, crate, locker, tall shelving, barrel, hay or sandbags one tile, pushed onto a free cell beside it (open floor, or a broken or open door's frame to plug it) or pulled onto your own cell (you step back); lockers and tall shelving take two people, or a Strong back or Melee ${SHOVE.STRONG_MELEE}+; the scrape is heard ${SHOVE.RADIUS} tiles off`], ["Board up", `${BOARD.AP} actions and a bundle of boards and nails (crafted from 30 wood and a scrap, anywhere): nailed across a closed door, a doorway or a window from either side; ${BOARD.HP} hit points a layer, up to ${BOARD.MAX} layers, on top of a closed door's own; loud (heard ${BOARD.RADIUS} tiles off, Heat +${BOARD.HEAT} in a raid)`], ["Tear down", `${BOARD.TEAR.ap} actions from either side: the door or window back, shut; about half the bundles come off whole, the rest are splintered`], ["The vehicle", "a bundle in the team's vehicle counts from next to it"], ["The dead", `crawl over half cover (a table, a shelf, crates, a fence) at +${CRAWL.COST} tiles, a walker's whole turn; never a closed window; batter boards and a shoved tall piece (${FURNITURE.locker.hp} hit points for lockers) or go round`], ["Raiders", `vault half cover as your people do; batter boards when there is no other way in; guards and militia holding a building shove a piece into a door frame or board an outer window while nothing is in sight to shoot`], ["Their bases", "a group's base you assault starts with the windows and doors on your side boarded, as far as its wood and scrap go"]],
     text: "Furniture in a doorway or a corridor slows the dead and stops a crowd: they crawl over a table or a shelf one at a time, spending their turn on it, and a tall piece (lockers, tall shelving) they must batter down or go round. Boards nailed across a door or a window close it for good until someone batters through: no sight, no way, full cover. Everything you can do, the other side can undo: the dead claw boards down and tear through a shoved locker, raiders batter their way in.",
     how: "Before the dead arrive, shove a shelf across the doorway and board up the windows of the room you hold: each board-up is loud, so do it early. Keep boards in the pack (4 kg a bundle). Tear the boards down again when you leave, or vault out of a window.", sprite: null,
   });
@@ -445,7 +445,7 @@ function foodChainEntries() {
   return [{
     key: "k:foodchain", cat: "supplies", name: "🍽️ The food chain", sub: "How food works",
     stats: [["Where", "a base's window, Food tab"], ["Record", "the last 7 days, saved with the game"], ["A day of food", "2000 kcal (one person's day)"]],
-    text: "Food runs left to right: Sources (farms and harvests, hunting and snares, fishing, foraging, scavenging and teams home, trade and gifts, your other bases; and the crops ripening), Stores (days of food on hand for everyone fed there, each food room and the days until its next lot spoils), Kitchen (the cooking stations, their bills, purified water and the fire's firewood), Eating (heads, eaten a day, the ration level, what kind of food, hot food) and Losses (spoiled, eaten raw, sent out with teams, into packs). It ends with how long the food lasts at this rate and the biggest drain.",
+    text: "Food runs left to right: Sources (farms and harvests, hunting and snares, fishing, foraging, scavenging and teams home, trade and gifts, your other bases; and the crops ripening), Stores (days of food on hand for everyone fed there, each food room and the days until its next lot spoils), Kitchen (the cooking stations, their bills, purified water and the fire's wood), Eating (heads, eaten a day, the ration level, what kind of food, hot food) and Losses (spoiled, eaten raw, sent out with teams, into packs). It ends with how long the food lasts at this rate and the biggest drain.",
     how: "Open the Food tab when the food chip turns yellow: the verdict names the biggest drain and one or two things to do (a root cellar, cooking the meat before it turns, more people on Farm, Hunt, Fish or Forage, Lean rations).", sprite: null,
   }, {
     key: "k:spoilage", cat: "supplies", name: "🗑️ Spoilage", sub: "How food works",
@@ -453,10 +453,10 @@ function foodChainEntries() {
     text: "Every food keeps its own time at room temperature (bread days, raw meat two or three, potatoes a month, cans years). Fresh food fills the base's food rooms, the food that spoils fastest in the coldest room first; what does not fit sits outside and spoils fastest. Canned, dry and preserved food needs no room. A lot whose time runs out is thrown out (a line in the log). The soonest to spoil is eaten first.",
     how: "Build a root cellar (or a storehouse, a cold store, a freezer) before the harvest, dry the surplus on drying racks, cook raw meat into meals, and do not hunt more than the base eats in a few days.", sprite: null,
   }, {
-    key: "k:fires", cat: "supplies", name: "🔥 Fires and firewood", sub: "How food works",
-    stats: [["Camp or shelter fire", `${WOOD.fire.shelter} firewood a day (half where deadfall lies about)`], ["Cook fire", `${COOK.fireWood} firewood an hour it cooks (${COOK.fireHours} hours a day)`], ["Kitchen stove", `${KITCHEN.wood.stove} a day + ${KITCHEN.wood.meal} a meal served`], ["No hot food", `${EAT.coldV[0]} mood after ${EAT.cold[0]} days, ${EAT.coldV[1]} after ${EAT.cold[1]}`]],
-    text: "A camp's or shelter's fire burns its firewood by the hour and goes out when the woodpile runs dry: no warmth, boiled water or cooking on it until it is lit again. A cook fire burns firewood while it cooks; the Kitchen's stove every day. No fire, nothing cooks: raw meat is eaten raw (food poisoning, Ate raw food −7) and after a few days without a cooked meal everyone minds it (No hot food).",
-    how: "Keep a few days of firewood in store (the Food tab shows the hours left), put someone on Cut wood, and light the fire again once wood comes in.", sprite: null,
+    key: "k:fires", cat: "supplies", name: "🔥 Fires and wood", sub: "How food works",
+    stats: [["Camp or shelter fire", `${WOOD.fire.shelter} wood a day (half where deadfall lies about)`], ["Cook fire", `${COOK.fireWood} wood an hour it cooks (${COOK.fireHours} hours a day)`], ["Kitchen stove", `${KITCHEN.wood.stove} a day + ${KITCHEN.wood.meal} a meal served`], ["No hot food", `${EAT.coldV[0]} mood after ${EAT.cold[0]} days, ${EAT.coldV[1]} after ${EAT.cold[1]}`]],
+    text: "A camp's or shelter's fire burns its wood by the hour and goes out when the woodpile runs dry: no warmth, boiled water or cooking on it until it is lit again. A cook fire burns wood while it cooks; the Kitchen's stove every day. No fire, nothing cooks: raw meat is eaten raw (food poisoning, Ate raw food −7) and after a few days without a cooked meal everyone minds it (No hot food).",
+    how: "Keep a few days of wood in store (the Food tab shows the hours left), put someone on Cut wood, and light the fire again once wood comes in.", sprite: null,
   }];
 }
 export function codexEntries() {
@@ -547,7 +547,7 @@ function weatherEntries() {
   // The top bar's threat forecast (sim/forecast.js, ui/threatbar.js): opened the first time it shows more than calm.
   out.push({
     key: "w:threat", cat: "weather", name: "📊 Threat forecast", sub: "The top bar",
-    stats: [["Days", `${THREAT.DAYS}, today first`], ["Levels", THREAT.NAMES.join(", ")], ["The sky", "read 3 days ahead; 4 with a watchtower, 5 with a radio station"], ["Sources", "weather and fronts, hordes and their drift, raids seen or heard on the radio, food, water, firewood and generator fuel, crops and the frost, the worm and illness, teams in the field, a hive due near a base"]],
+    stats: [["Days", `${THREAT.DAYS}, today first`], ["Levels", THREAT.NAMES.join(", ")], ["The sky", "read 3 days ahead; 4 with a watchtower, 5 with a radio station"], ["Sources", "weather and fronts, hordes and their drift, raids seen or heard on the radio, food, water, wood and generator fuel, crops and the frost, the worm and illness, teams in the field, a hive due near a base"]],
     text: "The seven bars beside the Needs button: each as tall and as hot as the worst thing coming that day. Hover (or click) for the causes: what, on which day, how sure, whom it hits and where it was learned. It holds only what your people know: a horde never seen, a raid nobody saw or heard, is not on it.",
     how: "Read it each morning: a red bar days out is time to man the walls, bring food in, cut wood or call a team home. Click a cause to see it (the base, the team, the horde on the map). A watchtower, a radio station and Listen in on a group's channel see further.", sprite: null,
   });

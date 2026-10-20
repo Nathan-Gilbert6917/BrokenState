@@ -10,6 +10,7 @@
 // Usage: node tools/repairorderstest.js [seed]
 import { createWorld, hub, atBase } from "../src/sim/world.js";
 import { addBuilding, BUILDINGS } from "../src/sim/buildings.js";
+import { supValue } from "../src/sim/data.js";
 import { FOOT } from "../src/sim/basemap.js";
 import {
   FIXTURES, WEAR, RAID_DAMAGE, ORDERS, fixtures, fxDef, repairList, repairPlan, repairHands, repairShare, orderRepair, startRepair, cancelRepair,
@@ -57,8 +58,11 @@ const workHours = (st, n) => { for (let i = 0; i < n; i++) { breakdownsHour(st);
   const sane = Object.entries(FIXTURES).every(([, d]) => d.repair && d.repair.hours >= 1 && (d.repair.cost.scrap || 0) >= 1 && d.rig && d.rig.hours >= 1 && typeof d.what === "string" && d.what.length);
   check(sane, "every entry: repair hours and scrap at least 1, a rig, a what");
   const NEW = ["infirmary", "field_hosp", "clinic", "hospital", "greenhouse", "jailhouse", "lockup", "gen_hut", "gen_cabin", "gen_lodge", "gen_hall", "gen_barn", "bunks", "shelves", "lockers", "stove", "crates", "cookhouse", "boiler", "water_barrel", "craftbench", "workbench", "toolbench", "spike_pits", "trench", "sandbag_wall", "barbed_wire", "razor_wire", "guard_towers", "minefield"];
-  const off = NEW.filter((k) => { const d = FIXTURES[k].repair, b = BUILDINGS[k]; return !(d.cost.scrap <= Math.max(1, Math.ceil(b.cost.scrap / 2)) && d.cost.scrap >= Math.max(1, Math.floor(b.cost.scrap / 4)) && d.hours <= Math.max(1, Math.ceil(b.hours / 3)) && d.hours >= Math.max(1, Math.floor(b.hours / 6)) && (!b.cost.parts || d.cost.parts) && (d.cost.parts ? d.min >= 1 : d.min === 0)); });
-  check(!off.length, `the new entries' costs in proportion: a quarter to a half of the building's scrap, a sixth to a third of its hours, a part (and Mechanics 1) where it took parts, Mechanics 0 for plain structures (off: ${off.join(", ") || "none"})`);
+  // The building's materials in scrap (woodwork 2026-10-20 moved the wooden builds' cost from scrap to wood: wood counts
+  // at its worth, data.js supValue, so a hut of 3 scrap and 350 wood is worth 10 scrap of materials).
+  const matScrap = (b) => (b.cost.scrap || 0) + ((b.cost.wood || 0) * supValue("wood")) / supValue("scrap");
+  const off = NEW.filter((k) => { const d = FIXTURES[k].repair, b = BUILDINGS[k], m = matScrap(b); return !(d.cost.scrap <= Math.max(1, Math.ceil(m / 2)) && d.cost.scrap >= Math.max(1, Math.floor(m / 4)) && d.hours <= Math.max(1, Math.ceil(b.hours / 3)) && d.hours >= Math.max(1, Math.floor(b.hours / 6)) && (!b.cost.parts || d.cost.parts) && (d.cost.parts ? d.min >= 1 : d.min === 0)); });
+  check(!off.length, `the new entries' costs in proportion: a quarter to a half of the building's materials in scrap (wood at its worth), a sixth to a third of its hours, a part (and Mechanics 1) where it took parts, Mechanics 0 for plain structures (off: ${off.join(", ") || "none"})`);
 }
 
 // 2. The list, most damaged first; the partial plan.

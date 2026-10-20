@@ -140,10 +140,12 @@ const ALLOWED = {
   "blueprints.js": /bpItemKey/, "skills.js": /newItem\(key, 1\)|newItem\(list\[/, // paper
   "visitors.js": /bpItemKey|newItem\(k, 1\)\)/, // a merchant's blueprints and books (paper)
   "vehicles.js": /newItem\(t\.gun, 0\.8\)/, // a turret's own gun coming off a vehicle (not loot)
-  "mags.js": /newItem\(stdKey/, // a gun's own standard magazine made a thing of as a swap takes it out (mags.js swapMag: not loot, and a magazine has no condition)
+  "mags.js": /newItem\(stdKey|newItem\(standardMag\(/, // a gun's own standard magazine made a thing of as a swap or Remove magazine takes it out (mags.js swapMag, removeMagUnit: not loot, and a magazine has no condition)
+  "itemacts.js": /newItem\(standardMag\(/, // the same out of a fight (Remove magazine, a swap: itemacts.js takeMagOut, 2026-10-20)
   "startgear.js": /newItem\(key, 1\)/, "custompoints.js": /newItem\(key, 1\)/, // starting gear picked under Customize (new), and its price probe: not loot
   "hubevents.js": /newItem\("ar", Math\.round\(st\.rng\.range/, // the Guard deserter's own rifle, its condition rolled there (as recruit gear: not loot)
   "barricade.js": /newItem\("boards"\)/, // boards pried off a door or window come back as bundles (the team's own: not loot)
+  "tents.js": /newItem\(r\.kind\)|newItem\("tent1"\)/, // a pitched tent with no bag on its record struck into one (an old camp's tents: not loot); the hardcore start's own one-person tents (as starting gear)
   "volunteers.js": /newItem\("(knife|flashlight)"\)/, // a volunteer's own plain knife and light when their group lent no weapon (as recruit gear: not loot)
 };
 const strays = [];

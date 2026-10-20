@@ -4,6 +4,9 @@
 // leave"). The rules a camp lives by are in buildings.js (CAMP, isCamp: a tier-0 base with camp: true, so everything a
 // shelter is and a little less); this file is setting one up, striking it, neglect, the hub's place among your camps,
 // the panels' views, and the old staging camp's save migration.
+// - Tents (tents.js): the hour is half an hour when the team's tent bags sleep everyone (campPitchHours); every bag it
+//   brought is pitched (beds under cover, storage out of the weather); Strike camp packs them back into bags first, a
+//   camp removed any other way leaves them in its cache; bags in its armory go up daily while someone sleeps rough.
 // - Set up camp (team order, any land tile you could build on, any time): CAMP.setupHours of work, no materials. The
 //   camp is a base on that tile: the team's people live there (base healing and needs, beds round the fire), its
 //   vehicles are parked there, everything it carries (supplies and cargo) goes into the camp's stores and armory (the
@@ -47,6 +50,7 @@ import { keyWord, RAW } from "./water.js";
 import { formTeam, fleetPlan } from "./teamform.js";
 import { isBike, isCar, MAX_VEHICLES } from "./vehicles.js";
 import { itemLoad } from "./inventory.js";
+import { campPitchHours, hoursText, pitchArmoryBags, strikeTents, campTentsDaily, isTentBag, tentsText, tentBeds } from "./tents.js"; // tent bags: a quicker camp, beds under cover, struck back into bags
 
 export const STAGING = {
   // The step up of the camp that is your hub (buildings.js camp_up): hardcore's first and the exiles' (user numbers
@@ -130,7 +134,7 @@ export function campOption(state, p, tile = partyTile(p)) {
   const w = waterSource(state, tile);
   return {
     mission: "camp", label: SETUP_LABEL, disabled: campProblem(state, tile),
-    desc: `Stop and make camp here (${CAMP.setupHours} hour, no materials): a camp is the barest base, tarps, bedrolls and a fire. The team's people live there while it stands (the hurt heal twice as fast as at a base without a hospital, they eat and drink from the camp's stores), what the team carries goes into the stores and its vehicles park there. Manage it in its base window; ${STRIKE_LABEL} there packs everyone up again as a team. It can be built up with time and materials (Construction: into ${hub(state) ? "an outpost" : "a shelter, then a base"}). Water: ${w ? waterText(state, tile) : "no river or lake nearby, only what is carried in"}. Its fire, its people and vehicles parked there draw the dead and raiders.`,
+    desc: `Stop and make camp here (${hoursText(campPitchHours(state, p))}, no materials${campPitchHours(state, p) < CAMP.setupHours ? ": the team's tent bags go up quickly" : ""}): a camp is the barest base, tarps, bedrolls and a fire, and the tents the team carries (beds under cover, storage out of the weather). The team's people live there while it stands (the hurt heal twice as fast as at a base without a hospital, they eat and drink from the camp's stores), what the team carries goes into the stores and its vehicles park there. Manage it in its base window; ${STRIKE_LABEL} there packs everyone up again as a team. It can be built up with time and materials (Construction: into ${hub(state) ? "an outpost" : "a shelter, then a base"}). Water: ${w ? waterText(state, tile) : "no river or lake nearby, only what is carried in"}. Its fire, its people and vehicles parked there draw the dead and raiders.`,
   };
 }
 // Establish base (no base at all: hardcore's first home, the exiles): a camp with its step up queued.
@@ -154,8 +158,9 @@ export function pitchArrive(state, p, mission) {
   const label = mission === "outpost" ? "Build outpost" : mission === "establish" ? ESTABLISH_LABEL : SETUP_LABEL;
   if (why) { delete p.pitched; awaitOrders(state, p, `${label}: ${why}`, { failed: true }); return ""; }
   if (!p.pitched) {
-    startTask(state, p, { type: "pitch", hours: CAMP.setupHours, mission });
-    return `Setting up camp (${CAMP.setupHours} hour).`;
+    const hours = campPitchHours(state, p); // tents.js: the team's tent bags make it quicker (TENTS.PITCH_FULL when they sleep everyone)
+    startTask(state, p, { type: "pitch", hours, mission });
+    return `Setting up camp (${hoursText(hours)}${hours < CAMP.setupHours ? ", the tents go up quickly" : ""}).`;
   }
   delete p.pitched;
   const base = makeCamp(state, p, tile, { up: mission !== "camp" });
@@ -175,7 +180,7 @@ export function makeCamp(state, p, tile, { up = false } = {}) {
     id: newId(), tile, type: hubNow ? "outpost" : "hub", name: campName(state, tile),
     stock: { water: 0, fuel: 0, meds: 0, ammo: 0, arrows: 0, parts: 0, scrap: 0, jars: 0, wood: 0, buildmat: 0, [RAW]: 0 }, // arrows, wood: every base keeps the count (a camp read arrows = undefined: farmtest 43)
     radio: false, watchtower: false, buildings: [], construction: [], armory: [],
-    tier: 0, camp: true, fire: true, campDay: day(state), lastPresent: state.hour, first: firstHubPending(state) && !hubNow,
+    tier: 0, camp: true, fire: true, campDay: day(state), lastPresent: state.hour, first: firstHubPending(state) && !hubNow, tentsSet: true, // tentsSet: a new camp has no tents (no beds) until one is put up (buildings.js TENTS)
   };
   if (t.ruin) { base.ruinSalvage = true; log(state, `The camp went up on the ruins of ${t.ruin.name}.`, "info"); delete t.ruin; }
   if (up) base.construction.push(tierUpJobFor(base));
@@ -183,12 +188,14 @@ export function makeCamp(state, p, tile, { up = false } = {}) {
   if (up) askBaseName(state, base);
   const name = teamName(state, p);
   settleInto(state, p, base);
+  const tents = pitchArmoryBags(state, base); // tents.js: every tent bag the team brought goes up (beds under cover, storage out of the weather)
   for (const s of people) s.role = up ? "build" : "scavenge"; // a camp meant to grow: its first job is its own step up
   recomputeOwnership(state);
   if (p.owner === "player") state.campOpen = base.id; // main.js opens its base window (once)
   const w = waterSource(state, tile);
   const job = tierUpJob(base);
-  log(state, `${name} set up camp ${tileLabel(state, tile)}: ${base.name}, ${people.length} ${people.length === 1 ? "person" : "people"}.${job ? ` To build it up into ${base.type === "outpost" ? "an outpost" : "a shelter"}: ${gatherShort({ ...job, paid: {} })} brought in, then ${job.hours} work-hours by its builders (Construction).` : ""} Water: ${w ? waterText(state, tile) : "none nearby"}.`, "good");
+  log(state, `${name} set up camp ${tileLabel(state, tile)}: ${base.name}, ${people.length} ${people.length === 1 ? "person" : "people"}.${tents.length ? ` Up went ${tentsText(tents.map((t) => t.type))}: ${Math.min(people.length, tentBeds(base))} of ${people.length} sleep under cover.` : ""}${job ? ` To build it up into ${base.type === "outpost" ? "an outpost" : "a shelter"}: ${gatherShort({ ...job, paid: {} })} brought in, then ${job.hours} work-hours by its builders (Construction).` : ""} Water: ${w ? waterText(state, tile) : "none nearby"}.`, "good");
+  if (p.owner === "player") askLayout(state, base, "camp"); // Open the build map: the alert (ui/buildmap.js)
   return base;
 }
 // "Calder Woods Camp" (outpostName's place, a camp's word).
@@ -219,6 +226,7 @@ export function strikeCamp(state, base) {
   if (why) return { error: why };
   // What the step up has taken so far comes back into the stores (it is packed with the rest).
   for (const job of base.construction) for (const [k, q] of Object.entries(job.paid || {})) base.stock[k] = (base.stock[k] || 0) + q;
+  base.armory.push(...strikeTents(state, base)); // tents.js: the tents come down into their bags (packed first, below)
   base.construction = [];
   const people = atBase(state, base.id);
   let party = null;
@@ -247,7 +255,7 @@ export function strikeCamp(state, base) {
       room -= q * w;
     }
     const items = [];
-    for (const it of [...base.armory].sort((a, b) => ((GEAR[b.key] && GEAR[b.key].value) || 0) - ((GEAR[a.key] && GEAR[a.key].value) || 0))) {
+    for (const it of [...base.armory].sort((a, b) => (isTentBag(b) ? 1 : 0) - (isTentBag(a) ? 1 : 0) || ((GEAR[b.key] && GEAR[b.key].value) || 0) - ((GEAR[a.key] && GEAR[a.key].value) || 0))) { // the tent bags first
       const kg = itemLoad(it);
       if (kg > room + 1e-9) continue;
       items.push(it);
@@ -269,6 +277,7 @@ export function strikeCamp(state, base) {
 export function removeCamp(state, base, why) {
   const i = state.bases.indexOf(base);
   if (i < 0) return "";
+  base.armory.push(...strikeTents(state, base)); // tents.js: a tent left pitched stays at the camp site: in the cache, as its bag
   const items = [];
   for (const [k, v] of Object.entries(base.stock)) {
     const q = n0(v);
@@ -329,11 +338,12 @@ export const campPresent = (state, base) => atBase(state, base.id).length > 0 ||
 export function campsHour(state) {
   if (state.hour % 24 === 0) for (const b of state.bases) if (isShelter(b)) shelterDaily(state, b);
   settleHub(state);
+  for (const b of state.bases) if (b.layoutAsk && state.hour - b.layoutAsk.hour >= LAYOUT_ASK.HOURS) delete b.layoutAsk; // Open the build map: asked long enough
   for (const base of [...state.bases]) {
     if (!isCamp(base)) continue;
     if (campPresent(state, base)) base.lastPresent = state.hour;
     else if (base.lastPresent == null) base.lastPresent = state.hour;
-    if (state.hour % 24 === 0) campDaily(state, base);
+    if (state.hour % 24 === 0) { campTentsDaily(state, base); campDaily(state, base); } // tents.js: bags go up while someone sleeps rough; rough sleepers' mood
   }
 }
 // A camp left alone: looted after ABANDON days, gone after GONE days empty, bare and unworked.
@@ -375,13 +385,52 @@ function shelterDaily(state, base) {
 // buildings.js upgradeShelter calls this when the camp that is your hub becomes a shelter: hardcore's first home is
 // founded (hardcore-start.js hubFounded); anyone else's "A new home" card.
 export function campBecameShelter(state, base) {
+  askLayout(state, base, "shelter"); // Open the build map: the alert too (the card below carries the button)
   const days = day(state) - (base.campDay || day(state));
   const when = `${days} day${days === 1 ? "" : "s"} after the camp went up`;
   if (firstHubPending(state)) { hubFounded(state, base, when); return; }
   const people = atBase(state, base.id).length;
   const text = `Day ${day(state)}: ${base.name} is your new shelter, ${when}. ${people} ${people === 1 ? "person lives" : "people live"} there. ${shelterText()}`;
-  addCard(state, { title: "A new home", text, choices: [{ label: "OK", resolve: () => "" }] });
+  addCard(state, { title: "A new home", text, mapBase: base.id, choices: [{ label: "OK", default: true, resolve: () => "" }, buildMapChoice(base)] }); // a rename while it waits rewrites its text (basenames.js renameBase)
 }
+// buildings.js upgradeShelter: a shelter built up into a base, or an outpost camp into an established outpost.
+export function baseUpgraded(state, base) {
+  askLayout(state, base, base.type === "outpost" ? "outpost" : "base");
+}
+
+// ---------- Open the build map (the user's requests 2026-10-20) ----------
+// "When a camp/base is established add an option to open up the build map to set up things like tents etc.": a base
+// that is new to you, or has just gone up a tier, asks to be laid out (base.layoutAsk { why, hour }). Nothing here
+// stops the clock or blocks a save: ui/buildmap.js shows it as an alert ("<name>: camp set up. Open the build map",
+// its name read as it is drawn, so a rename shows), the camp's Camp tab has the button, and the key (keymap.js
+// base.buildmap) opens the selected base's map any time. The ask goes when the base's map is opened
+// (layoutDone: ui/basemap.js openBuildMap, main.js tidyUi) or after LAYOUT_ASK.HOURS (campsHour). The founding cards
+// that already were ("A new home", hardcore's "A place of your own") carry the button as an extra choice: OK is the
+// default, and a uiAction choice is never an auto-answer nor the governor's pick (cardrules.js usableChoices); a card
+// whose base is gone is dropped from the tray (cardrules.js trayStale: mapBase), and the button then opens nothing.
+// Not under the governor (it opens no windows either). UI only: the AI groups have no map to lay out by hand.
+export const BUILD_MAP_LABEL = "Open the build map";
+export const LAYOUT_ASK = { HOURS: 72 };
+// Why it asks, as said after the base's name.
+export const LAYOUT_WHY = {
+  camp: "camp set up", shelter: "a shelter now", outpost: "an established outpost now", base: "a real base now",
+  occupied: "yours: you moved in", conquered: "yours: taken", returned: "yours again", handed: "handed over to you",
+};
+export function askLayout(state, base, why) {
+  if (!base || state.autopilot || !LAYOUT_WHY[why]) return;
+  base.layoutAsk = { why, hour: state.hour };
+}
+export const layoutAsks = (state) => (state.bases || []).filter((b) => b.layoutAsk && state.hour - b.layoutAsk.hour < LAYOUT_ASK.HOURS);
+export function layoutDone(state, baseId) {
+  const b = (state.bases || []).find((x) => x.id === Number(baseId));
+  if (b) delete b.layoutAsk;
+}
+// "Sutter Camp: camp set up. Open the build map" (read as it is drawn: the base's name now).
+export const layoutAskLine = (base) => `${base.name}: ${LAYOUT_WHY[base.layoutAsk && base.layoutAsk.why] || "new"}. ${BUILD_MAP_LABEL}`;
+export const buildMapChoice = (base) => ({
+  label: BUILD_MAP_LABEL, hint: "This base's map: pick something from its Build list and click where it goes, or move what stands there.",
+  uiAction: { type: "basemap", baseId: base.id }, resolve: () => "",
+});
 
 // What a new shelter is (the founding cards).
 export const shelterText = () => `A shelter (tier 0): tarps and a shack behind a scrap barricade, the camp's stores, beds for ${SHELTER.beds}. No well: water from a river or lake beside it, rain catchers, or what you bring. Only a few buildings fit (a rain catcher, a drying rack, a barricade, a farm plot) until your builders build it up into a base (Construction: ${BUILDINGS.hub_up.name}, ${needText(BUILDINGS.hub_up.cost)} and ${BUILDINGS.hub_up.hours} work-hours) for a well, walls and everything else.`;
@@ -458,6 +507,7 @@ export function migrateStaging(state) {
   for (const [k, v] of Object.entries(old.stores || {})) if (Number.isFinite(v) && v > 0) base.stock[k] = (base.stock[k] || 0) + v;
   if (old.to === 0 || old.to == null) {
     const job = tierUpJobFor(base);
+    if (old.needs && typeof old.needs === "object") job.cost = { ...old.needs }; // the old staging camp's needs: what it was started at (no wood, from before the user's pick of 2026-10-20)
     const cost = job.cost || BUILDINGS[job.type].cost;
     for (const [k, need] of Object.entries(cost)) { const take = Math.min(need, n0(base.stock[k])); if (take > 0) { base.stock[k] -= take; job.paid[k] = take; } }
     if (old.work > 0) job.progress = Math.min(job.hours, (old.progress / old.work) * job.hours);

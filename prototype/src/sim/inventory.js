@@ -34,14 +34,15 @@ import { isCart, heldKg, cartFree } from "./carts.js"; // a wheelbarrow, a hand 
 import { survivorById, baseById, day, newId } from "./world.js";
 import { partyCapacity, poolLoad, cargoRoom, unitsThatFit } from "./parties.js";
 import { bodyLoot } from "./deadsoldiers.js";
-import { bodyRounds, findRounds, unbox } from "./ammo.js"; // rounds by calibre (call-time only: safe in the import cycle)
+import { bodyRounds, findRounds, unbox, calOf } from "./ammo.js"; // rounds by calibre (call-time only: safe in the import cycle)
+import { keyFor } from "./rounds.js"; // a body's pistol: its own round
 import { condition, kitSource, spend } from "./itemcond.js"; // the condition loot comes in (one roller for every source)
 import { armourCond, lootArmour } from "./armour.js"; // per-hit armour: condition, an enemy body's worn piece
 import { lootGun } from "./gunfire.js"; // an enemy's gun: the condition it fought in
 import { MEDS } from "./medfinds.js"; // how rare meds are
 import { CLIPS, ADMIN_KG, POUCH_NAMES, KIT_LOOT, SUPPLY_POUCHES } from "./data-kit.js"; // rigs, pouches, magazines and clips (sections 15-16)
 import { bodyKit } from "./carrykit.js"; // an enemy's rig and magazines onto its body (call-time only: safe in the import cycle)
-import { burnOf, burnShare } from "./woodcutting.js"; // the firewood an item makes (call-time only: safe in the import cycle)
+import { burnOf, burnShare } from "./woodcutting.js"; // the wood an item makes (call-time only: safe in the import cycle)
 import { enemyGunLoaded, unloadInto, stockFor } from "./gunload.js"; // the rounds left in a gun, kept on it (call-time only: safe in the import cycle)
 import { dropHeadgear, earsOnBody } from "./helmets.js"; // an enemy's helmet and ear protection on its body
 import { AMMO_STACK } from "./data-stacks.js";
@@ -114,8 +115,8 @@ export const packSize = (item) => (item && GEAR[item.key] && GEAR[item.key].slot
 export const carryOf = (item) => (item && GEAR[item.key] && GEAR[item.key].carry) || 0;
 export const isBulky = (key) => !!(GEAR[key] && GEAR[key].bulky);
 // A container that can be carried in the arms (EQUIP_SLOTS carry): a pack, a rig or a pouched vest, a gun case, a fire
-// safe (twoHands).
-export const isCarryable = (item) => { const d = item && GEAR[item.key]; return !!(d && (d.slot === "backpack" || d.slot === "rig" || d.slots || d.pouches || d.gunCase || d.twoHands)); };
+// safe (twoHands), a tent bag (arms: data-tents.js).
+export const isCarryable = (item) => { const d = item && GEAR[item.key]; return !!(d && (d.slot === "backpack" || d.slot === "rig" || d.slots || d.pouches || d.gunCase || d.twoHands || d.arms)); };
 // Carried in both arms only (GEAR twoHands: the fire safe, the rifle case; the user's request 2026-10-19, "small safes
 // (Carried only slot two hands)"): bulky (no pocket, pack slot or rig pouch), and it fills both hands (carry.js handsCount).
 export const isTwoHands = (item) => !!(item && GEAR[item.key] && GEAR[item.key].twoHands);
@@ -403,7 +404,7 @@ export function fitReason(item, slot, h = null, kind = null) {
   if (slot === "pouch") return kind ? pouchReason(item, kind) : "No pouch there.";
   if (slot === "insert") return isInsert(item) ? "" : `Only a plate goes in a plate carrier's plate pocket.`;
   if (slot === "bag") return packSize(item) ? "A pack does not fit inside a pack." : d.bulky ? `The ${item.name} is too big for a pack.` : "";
-  if (slot === "carry") return isCarryable(item) ? "" : `Only a bag, a rig or a case is carried in the arms (not the ${item.name}).`;
+  if (slot === "carry") return isCarryable(item) ? "" : `Only a bag, a rig, a case or a tent bag is carried in the arms (not the ${item.name}).`;
   // A supply in the hand (supitems.js: a bottle of water, a can of fuel, meds, a box of rounds), unless it is bulky.
   if (slot === "tool" && d.slot !== "tool" && (d.supKey || (d.count && SUPPLIES[item.key]))) return d.bulky || d.hand === false ? `The ${item.name} is too big to hold in one hand.` : "";
   if (EQUIP_SLOTS.includes(slot)) {
@@ -517,6 +518,16 @@ export const slotKind = (loc) => (loc.slot === "rig" && loc.i != null ? "pouch" 
 export function itemAt(state, str) {
   const r = ref(state, parseLoc(str));
   return r ? r.get() : null;
+}
+// Puts an item at an empty location (a person's slot, a pocket, a pouch, a pack slot; a storage list takes it at its
+// end). Returns true when it went there.
+export function putAt(state, str, item) {
+  const r = ref(state, parseLoc(str));
+  if (!r || !item) return false;
+  if (r.put) { r.put(item); return true; }
+  if (r.get()) return false;
+  r.set(item);
+  return true;
 }
 // Takes the item at a location away for good (a treat used up, comforts.js). Returns it, or null.
 export function removeAt(state, str) {
@@ -681,7 +692,7 @@ export function stripAt(state, gunLoc, slot, sid = null) {
   return unfitModAt(state, gunLoc, slot, sid);
 }
 
-// ---------- breaking things down for firewood (data.js GEAR burnShare; woodcutting.js burnOf: by its weight) ----------
+// ---------- breaking things down for wood (data.js GEAR burnShare; woodcutting.js burnOf: by its weight) ----------
 // What breaking down the item at a location would give: { ok, reason, item, wood, place }. Items in a base's armory, a
 // team's cargo, or a pocket or pack of someone at a base or on a team (not what is worn or held: take it off first;
 // not a body's).
@@ -692,14 +703,14 @@ export function breakDownInfo(state, str) {
   const place = placeOf(state, loc);
   let reason = "";
   if (!item) reason = "Nothing there.";
-  else if (!(wood > 0)) reason = burnShare(item.key) > 0 ? `Too little of the ${item.name} burns to make firewood.` : `The ${item.name} will not burn.`;
+  else if (!(wood > 0)) reason = burnShare(item.key) > 0 ? `Too little of the ${item.name} burns to make wood.` : `The ${item.name} will not burn.`;
   else if (loc.o === "body") reason = "Take it first.";
   else if (loc.o === "s" && EQUIP_SLOTS.includes(loc.slot)) reason = "Take it off first.";
   else if (!place) reason = "Out of reach.";
   return { ok: !reason, reason, item, wood, place };
 }
-// Breaks it down: the item is gone and its firewood goes into the base's stores or the team's cargo supplies (a team's
-// camp fire burns it like any firewood carried). No time: it is kindling. Returns the message.
+// Breaks it down: the item is gone and its wood goes into the base's stores or the team's cargo supplies (a team's
+// camp fire burns it like any wood carried). No time: it is kindling. Returns the message.
 export function breakDownAt(state, str) {
   const info = breakDownInfo(state, str);
   if (!info.ok) return info.reason;
@@ -710,22 +721,22 @@ export function breakDownAt(state, str) {
     const b = baseById(state, id);
     if (!b) return "Out of reach.";
     b.stock.wood = Math.max(0, b.stock.wood || 0) + info.wood;
-    where = `${b.name}'s firewood`;
+    where = `${b.name}'s wood`;
   } else {
     const p = state.parties.find((x) => x.id === id);
     if (!p) return "Out of reach.";
     p.cargo = p.cargo || { supplies: {}, gear: [] };
     p.cargo.supplies.wood = Math.max(0, p.cargo.supplies.wood || 0) + info.wood;
-    where = "the team's firewood";
+    where = "the team's wood";
   }
   removeAt(state, str);
   unlistFromSites(state, info.item);
-  return `Broke down the ${info.item.name} for firewood: +${info.wood} to ${where}.`;
+  return `Broke down the ${info.item.name} for wood: +${info.wood} to ${where}.`;
 }
 // ---------- salvage: taking things apart for parts (docs/weapons-overhaul-plan.md section 10) ----------
 // A gun: floor(value / 30) + 1 gun parts and a scrap (its attachments come off into storage first); an attachment
 // worth 25 or more: a gun part; gadgets: electronics (a phone, a camera, a console 1, a laptop 2, night vision 3, a
-// thermal 4...). Where breaking down for firewood works (storage, a pocket, the pack; not worn or held, not a body's).
+// thermal 4...). Where breaking down for wood works (storage, a pocket, the pack; not worn or held, not a body's).
 // The parts go to the base's stores or the team's cargo. No time: a screwdriver and a hammer.
 export const SALVAGE_ELECTRONICS = { phone: 1, camera: 1, console: 1, laptop: 2, nvg: 3, thermal: 4, milradio: 3, handradio: 1, pocketradio: 1, thermalscope: 3, peq: 1, weaponlight: 1 };
 const GUN_CATS = ["pistol", "shotgun", "rifle", "automatic"];
@@ -776,7 +787,7 @@ export function setFireMark(state, str, mark) {
   const item = itemAt(state, str);
   if (!item || loc.o !== "armory") return "";
   if (mark === "burn" || mark === "keep") item.fire = mark; else delete item.fire;
-  return item.fire === "burn" ? `The water boiler may burn the ${item.name} when the firewood runs short.` : item.fire === "keep" ? `The ${item.name} is kept from the fire.` : `The ${item.name}: no mark (junk burns while the base allows it).`;
+  return item.fire === "burn" ? `The water boiler may burn the ${item.name} when the wood runs short.` : item.fire === "keep" ? `The ${item.name} is kept from the fire.` : `The ${item.name}: no mark (junk burns while the base allows it).`;
 }
 
 // Can a team take on `gained` kg (an item from a body) while losing `lost` kg of max load (a pack taken off)?
@@ -796,8 +807,7 @@ function taken(state, loc, item) {
   if (b && b.result) b.result.loot.gear.push(item);
   const body = battleBodies(state)[loc.id];
   if (body && body.sid != null) unlistFromSites(state, item);
-  const st = storageFor(state, battlePlace(b));
-  unloadInto(st, [item, ...(Array.isArray(item.contents) ? item.contents : [])], stockFor(state, st)); // gunload.js: a gun's rounds into the stores
+  // (a gun keeps the rounds left in it: gunload.js, 2026-10-20; its badge counts them, Unload takes them out)
 }
 // (A site whose body got up and walked off, carriers.js, stays on the map with nothing on it: site.walked.)
 export function unlistFromSites(state, item) {
@@ -1052,7 +1062,8 @@ export function deadBodyFinds(rng, ztype, plateDur = null) {
   if (sup.food) { const n = sup.food; delete sup.food; Object.assign(sup, typedFood(null, "travel", n, { rng: foodDice(rng, 0x2b0d) })); } // foods.js: a candy bar, a can in a coat pocket (dice of its own)
   if (rng.chance(ZBODY.find)) { const k = rng.pick(ZBODY.FINDS); if (GEAR[k]) gear.push(lootItem(k, "survivor", GEAR[k].makeshift ? rng : spend(rng))); }
   if (rng.chance(ZBODY.pistol)) { gear.push(lootItem("pistol", "survivor", spend(rng))); sup.ammo = (sup.ammo || 0) + rng.int(3, 8); }
-  if (sup.ammo) { const n = sup.ammo; delete sup.ammo; Object.assign(sup, findRounds(gear.some((g) => g.key === "pistol") ? "police" : "home", n, "deadbody", rng && Number.isFinite(rng.state) ? rng.state : 0)); } // ammo.js: rounds by calibre
+  const pistol = gear.find((g) => g.key === "pistol" && calOf(g.key));
+  if (sup.ammo) { const n = sup.ammo; delete sup.ammo; Object.assign(sup, pistol ? { [keyFor(calOf(pistol.key), null)]: n } : findRounds("home", n, "deadbody", rng && Number.isFinite(rng.state) ? rng.state : 0)); } // ammo.js: rounds by calibre (a pistol on them: its own, 2026-10-20)
   if (rng.chance(ZBODY.bag)) gear.push(lootItem(rng.pick(ZOMBIE_PACKS), "survivor", spend(rng)));
   return { sup, gear };
 }

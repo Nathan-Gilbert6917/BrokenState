@@ -20,6 +20,7 @@ import { partyTile, tileLabel, awaitOrders, giveOrder, PICKED_OVER } from "./par
 import { crawlTile } from "./citycrawl.js";
 import { SITES, BUILDINGS } from "./buildingmaps.js"; // the building a POI's kind opens
 import { ledgerSummary } from "./poicont.js"; // what the containers there hold for you (the dialogue's note)
+import { campText } from "./campsite.js"; // a campsite's state as last seen (abandoned, overrun, raiders)
 import {
   poisOf, poiAt, knownPois, poiName, poiPool, poiBand, poiBandName, poiVisitText, poiThreatEstimate, poiThreatText, raidingNow,
   bestKnownPoi, poiScore, permanentSite, morePoisHidden, isSitePoi,
@@ -75,12 +76,12 @@ export function poiRows(state, p, tile = partyTile(p)) {
       i, kind: poi.kind, name: poiName(t, i), site: isSitePoi(t, i), desc: LOCATIONS[poi.kind] ? LOCATIONS[poi.kind].desc || "" : "",
       pool: poiPool(t, i), band: poiBand(t, i), bandName: poiBandName(t, i), stripped: poiBand(t, i) === 3,
       visits: poiVisitText(state, t, i), threat: est, threatText: poiThreatText(state, t, i),
-      cont: poiContainerNote(state, t, i), raiding: raidingNow(state, t, i), score: poiScore(state, t, i),
+      cont: poiContainerNote(state, t, i), raiding: raidingNow(state, t, i), score: poiScore(state, t, i), camp: campText(state, t, i),
     };
   });
 }
 // A row as one line (the card's hint).
-export const poiRowText = (r) => `${r.bandName.toLowerCase()}; ${r.visits}; ${r.threatText}${r.cont ? `; ${r.cont}` : ""}${r.raiding ? "; being raided now by another group" : ""}`;
+export const poiRowText = (r) => `${r.bandName.toLowerCase()}; ${r.visits}; ${r.threatText}${r.camp ? `; ${r.camp}` : ""}${r.cont ? `; ${r.cont}` : ""}${r.raiding ? "; being raided now by another group" : ""}`;
 
 // The dialogue: a card with a choice per known POI (the browser draws it with ui/poipick.js). Picking one sets p.poi
 // and gives the scavenge order again; "Not now" leaves the team waiting with its queue on hold.

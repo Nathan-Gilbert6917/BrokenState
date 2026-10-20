@@ -6,10 +6,10 @@
 //   first, each job only while it has room (a hand count from the base's own sizing: woodHandsWanted, farmersWanted,
 //   the build queue's builders, one crafter, a free station each, one medic …), and only a job this person can do
 //   here (activity.js jobCheck: not "stalled" for them: the land, the tools, the skill a craft needs …).
-//   Needs, highest first: a patient in danger with nobody on Medic; firewood short as the cold comes (by how near);
+//   Needs, highest first: a patient in danger with nobody on Medic; wood short as the cold comes (by how near);
 //   food under a week (the plots first, then wild food: forage, hunt, fish); water running short (Fetch water); a broken well, pump or wall to repair; the
-//   build queue (water builds first); food under 20 days; the Kitchen short of cooks (kitchen.js: one per 12 people);
-//   a free station with work; the craft queue; firewood for the
+//   felling marked on the base map (woodcutters, not the builders: noidle.js); the build queue (water builds first); food under 20 days; the Kitchen short of cooks (kitchen.js: one per 12 people);
+//   a free station with work; the craft queue; wood for the
 //   coming season; scavenging around the base while it is not picked clean (the last resort).
 // applyIdlePlan(state, base, plan, hold?) puts each on their job by hand (Manual, as the role drop-down does).
 // leaderIdleHour(state) (world.js, hourly; acts at IDLE_HOUR): at each base run by the governor (the dev autopilot) or
@@ -17,7 +17,7 @@
 //   day) are moved to what the base needs, by planIdle, and held there for a day (s.govIdle: autopilot.js planRoles
 //   keeps them, so the hourly plan does not move them back). Not pinned people, people on work priorities (they plan
 //   themselves), the leader, or roles in an area the leader was not handed. One log line each:
-//   "Leader Ana moved Sam from Build (nothing to build) to Cut wood (firewood 120 of 900 for the cold)."
+//   "Leader Ana moved Sam from Build (nothing to build) to Cut wood (wood 120 of 900 for the cold)."
 // The AI groups have no people with jobs of their own (factions.js: counts and stores), so nothing of theirs idles.
 import { gearOutdoorWorkers, gearText } from "./tripgear.js"; // Assign all idle: the outdoor workers geared for the land (trips-plus #2)
 import { atBase, hourOfDay, day, log, skill } from "./world.js";
@@ -36,26 +36,28 @@ import { actingLeader } from "./steward.js";
 import { ROLE_AREA } from "./autopilot.js";
 import { idlePeople, jobCheck, dayJob } from "./activity.js";
 import { hasKitchen, cooksWanted, isCook, kitchenCanLight } from "./kitchen.js"; // the Kitchen's cooks
+import { chopJobs } from "./woodwork.js"; // the felling marked on the base map (noidle)
 
 export const IDLE_HOUR = 7; // the leader's and the governor's daily look at the stalled jobs
 const first = (s) => s.name.split(" ")[0];
 const n0 = (v) => Math.round(v || 0);
 
 // What this base needs, as open jobs: [{ job, score, cap, why, station? }], best first.
-export function baseNeeds(state, base) {
+// roleOf: the job each person counts at (noidle.js: the governor's plan before it is applied).
+export function baseNeeds(state, base, roleOf = (s) => s.role) {
   const ppl = atBase(state, base.id);
-  const on = (job) => ppl.filter((s) => s.role === job).length;
+  const on = (job) => ppl.filter((s) => roleOf(s) === job).length;
   const foodDays = edibleFood(base) / Math.max(1, ppl.length);
   const out = [];
   const add = (job, score, cap, why, station = null) => { if (cap > 0 && score > 0) out.push({ job, score, cap, why, station }); };
   // Care: a patient in danger and nobody on Medic.
   const pts = ppl.filter((s) => isSevere(s) || s.woundInfected || (isSick(s) && isHurt(s)));
   if (pts.length && !on("medic")) add("medic", 9, 1, `${pts.length} badly hurt or ill here and no medic`);
-  // Firewood: by how near the cold is.
+  // Wood: by how near the cold is.
   const w = woodNeed(state, base);
   if (w.short && w.need > 0 && !woodWorkWhy(state, base) && !(state.governor && state.governor.noWood)) { // gov.noWood: the test switch (woodtest.js)
     const score = w.cold ? 8.5 : w.toCold <= 14 ? 7 : w.soon ? 5 : 1.5;
-    add("wood", score, Math.max(1, woodHandsWanted(state, base, { w })) - on("wood"), `firewood ${n0(w.have)} of ${n0(w.need)} for the cold${w.cold ? " (it is here)" : ` (in ${w.toCold} days)`}`);
+    add("wood", score, Math.max(1, woodHandsWanted(state, base, { w })) - on("wood"), `wood ${n0(w.have)} of ${n0(w.need)} for the cold${w.cold ? " (it is here)" : ` (in ${w.toCold} days)`}`);
   }
   // Food.
   const fw = farmersWanted(state, base);
@@ -75,8 +77,11 @@ export function baseNeeds(state, base) {
   // Repairs: a broken well, pump or wall with nobody on it.
   const open = (base.repairs || []).filter((j) => j.who == null).length;
   if (open) add("build", 6.5, open, `${open} repair${open === 1 ? "" : "s"} waiting`);
-  // The build queue.
-  const job = base.construction.find((c) => !gatherStalled(c));
+  // The felling marked on the base map (woodwork.js): woodcutters, one for each two trees (noidle.js: not left to builders).
+  const fell = chopJobs(base).filter((c) => (c.progress || 0) < c.hours - 1e-9).length;
+  if (fell && !underAttack(state, base)) add("wood", 4.2, Math.ceil(fell / 2) - on("wood"), `${fell} tree${fell === 1 ? "" : "s"} marked for felling`);
+  // The build queue (the governor's own felling for wood is the woodcutters', above).
+  const job = base.construction.find((c) => !gatherStalled(c) && c.gov !== "wood");
   if (job && !underAttack(state, base)) {
     const water = ["well", "rain_catcher", "cistern"].includes(job.type);
     add("build", water ? 7 : 4, (water ? 4 : 3) - on("build"), `${BUILDINGS[job.type] ? BUILDINGS[job.type].name : job.type} queued (${n0(job.hours - job.progress)} work-hours left)`);
@@ -84,7 +89,7 @@ export function baseNeeds(state, base) {
   // The Kitchen short of cooks (kitchen.js): hot meals stretch the food (−10%) for the people a cook feeds.
   if (hasKitchen(base) && kitchenCanLight(state, base)) add("cook", 3.5, cooksWanted(state, base) - ppl.filter((s) => isCook(state, s)).length, `the kitchen wants ${cooksWanted(state, base)} cook${cooksWanted(state, base) === 1 ? "" : "s"} for ${ppl.length} people: hot meals stretch the food`);
   // Stations with work and nobody on them.
-  const busy = new Set(ppl.filter((s) => s.role === "operate").map((s) => s.station));
+  const busy = new Set(ppl.filter((s) => roleOf(s) === "operate").map((s) => s.station));
   for (const st of stations(base)) if (!busy.has(st.id) && !st.broken && !stationWork(state, base, st)) add("operate", 3, 1, `the ${BUILDINGS[st.type].name.toLowerCase()} has work and no operator`, st.id);
   // The craft queue.
   if (!on("craft") && craftQueue(base).length) add("craft", 3, 1, `${craftQueue(base).length} in the craft queue`);
@@ -93,7 +98,7 @@ export function baseNeeds(state, base) {
   return out.sort((a, b) => b.score - a.score);
 }
 
-const JOB_SKILL = { water: "scouting", cook: "cooking", medic: "medicine", wood: "farming", farm: "farming", forage: "farming", hunt: "shooting", fish: "scouting", build: "mechanics", operate: "mechanics", craft: "crafting", scavenge: "scavenging" };
+export const JOB_SKILL = { water: "scouting", cook: "cooking", medic: "medicine", wood: "farming", farm: "farming", forage: "farming", hunt: "shooting", fish: "scouting", build: "mechanics", operate: "mechanics", craft: "crafting", scavenge: "scavenging" };
 
 // One job each for these people (default: the base's idle), by the base's needs. areas: a leader's areas (only jobs
 // in an area handed over).
@@ -122,6 +127,7 @@ export const planText = (plan) => plan.map((p) => `${first(p.s)} → ${ROLES[p.j
 export function applyIdlePlan(state, base, plan, hold = 0) {
   for (const p of plan) {
     toManual(state, p.s);
+    delete p.s.helpWas; // noidle.js: the job given now holds (not given back as an hour's help ends)
     p.s.role = p.job;
     p.s.station = p.job === "operate" ? p.station : null;
     if (hold > 0) p.s.govIdle = { role: p.job, station: p.station ?? null, until: state.hour + hold };

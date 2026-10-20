@@ -29,7 +29,7 @@
 //   Labour (TASKS; LABOUR): Idle in the cell, or out under guard 07–19: Farm (farm labour: the crops' care, farming.js
 //     careToday), Build (construction hours, buildings.js buildRate), Fetch water (+4 a day, economy.js
 //     waterProduction), Kitchen (dries and salts surplus fresh food by hand, 4 → 3 preserved, in this file), Clean
-//     and mend (wear off the buildings, breakdowns.js), Cut wood (firewood by hand from the best land within 2 tiles,
+//     and mend (wear off the buildings, breakdowns.js), Cut wood (wood by hand from the best land within 2 tiles,
 //     woodcutting.js rates, no axe), Haul and sort scrap (1.5 scrap a day). Each works at 50–70% of a survivor by the
 //     task's skill (2% a point), times their rations (Full 1, Short 0.9, Starvation 0.6, None 0.3), health (under 60
 //     less; under 25 they cannot) and mood (0.6 + 0.6 × mood / 100, 0.6–1.15: a broken prisoner works at 60%, a
@@ -208,7 +208,7 @@ export const TASKS = {
   water:   { name: "Fetch water", skill: null, out: `water: ${PRISON.LABOUR.water} a day at full output (up to the tanks' room)` },
   kitchen: { name: "Kitchen", skill: "farming", out: `dries and salts surplus fresh food by hand: ${PRISON.LABOUR.kitchen.food} → ${PRISON.LABOUR.kitchen.out} preserved a day at full output` },
   upkeep:  { name: "Clean and mend", skill: "mechanics", out: "keeps worn buildings in shape (wear off, as a builder's upkeep)" },
-  wood:    { name: "Cut wood", skill: "farming", out: "firewood by hand from the best land within 2 tiles (the Cut wood job's rates, no axe)" },
+  wood:    { name: "Cut wood", skill: "farming", out: "wood by hand from the best land within 2 tiles (the Cut wood job's rates, no axe)" },
   scrap:   { name: "Haul and sort scrap", skill: "mechanics", out: `scrap: ${PRISON.LABOUR.scrap} a day at full output, picked out of the junk around the base` },
 };
 const KIND_OF = { raider: "raiders", expansionist: "fighters", zealot: "zealots", military: "soldiers", fortress: "soldiers", traders: "guards", commune: "militia" };
@@ -1150,7 +1150,7 @@ export function prisonersDaily(state) {
   rescueRolls(state);
 }
 
-// A prisoner on Cut wood: firewood by hand (no axe for a prisoner) from the best land within 2 tiles, at the Cut wood
+// A prisoner on Cut wood: wood by hand (no axe for a prisoner) from the best land within 2 tiles, at the Cut wood
 // job's rates (woodcutting.js: RATE × the land × the season × its hours) × their work. Returns what they brought in.
 export function prisonWoodDay(state, base, work = 1) {
   const tiles = baseWoodTiles(state, base);
@@ -1174,7 +1174,7 @@ function sabotage(state, p, base) {
   else if (task === "farm" && foodIn(base.stock) > n) { payFood(base, n, state); what = `${n} days of food trampled`; }
   else if (task === "water" && (base.stock.rawwater || 0) > n) { base.stock.rawwater -= n; what = `${n} water spilled`; }
   else if (task === "kitchen" && preservedIn(base.stock) > n) { takeFood(base, n, { only: (k, f) => f.group === "preserved", state }); what = `${n} days of preserved food spoiled`; }
-  else if (task === "wood" && (base.stock.wood || 0) > n) { base.stock.wood -= n; what = `${n} firewood left to rot`; }
+  else if (task === "wood" && (base.stock.wood || 0) > n) { base.stock.wood -= n; what = `${n} wood left to rot`; }
   else if (task === "scrap" && (base.stock.scrap || 0) > n) { base.stock.scrap -= n; what = `${n} scrap gone missing`; }
   if (!what) return;
   state.stats.prisonSabotage = (state.stats.prisonSabotage || 0) + 1;

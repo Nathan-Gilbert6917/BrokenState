@@ -29,6 +29,7 @@ import { LISTEN, listenProblem, listenIn } from "./radiolisten.js"; // Listen in
 import { networkById } from "./radio.js";
 import { teamActProblem, teamActHours, teamActDone } from "./fieldworks.js"; // field works: load, unload, wreck, take
 import { capTask, holdName, COLLECT } from "./carry.js"; // a quantity to collect (o.qty: the team panel asks)
+import { roadTentsHour } from "./tents.js"; // the tents on a night's rest on the road (call-time only)
 
 export const REPAIR_HOURS = 3;   // a roadside repair
 export const FETCH_WATER_HOURS = 2; // Fetch water: filling containers at a river or lake
@@ -167,7 +168,7 @@ export function queueEstimate(state, p) {
     else if (o.type === "treat") hours = FIELD_TREAT_HOURS;
     else if (o.type === "mission" && o.mission === "survey") hours = SURVEY_HOURS;
     else if (o.type === "fullsurvey" || (o.type === "mission" && o.mission === "fullsurvey")) hours = LOOK.hours; // the POI survey (survey.js)
-    else if (o.type === "mission" && pitchHoursFor(state, o.mission)) hours = pitchHoursFor(state, o.mission); // pitching a camp (parties.js)
+    else if (o.type === "mission" && pitchHoursFor(state, o.mission)) hours = pitchHoursFor(state, o.mission, p); // pitching a camp (parties.js; quicker with tent bags: tents.js)
     else if (o.type === "sweep" || (o.type === "mission" && o.mission === "sweep")) {
       const sw = sweepEstimate(state, { ...sweepOpts(o.type === "sweep" ? o : p.sweepPlan || {}), center: tile, mode: vehicle, stance: p.stance, fuelMult: paceOpts(p).fuelMult });
       hours = sw.hours;
@@ -388,7 +389,7 @@ export function startOrder(state, p, o) {
       return `The team fills every container it has with water (${FETCH_WATER_HOURS}h).`;
     }
     case "hunt": {
-      // A bow or crossbow carried and no arrows (hunting.js arrowsWanted): a dozen made first from the firewood and scrap
+      // A bow or crossbow carried and no arrows (hunting.js arrowsWanted): a dozen made first from the wood and scrap
       // carried (a field craft), then the hunt.
       if (arrowsWanted(partyMembers(state, p), carried(p, "arrows"))) {
         const opt = fieldCraftOptions(state, p).find((x) => x.key === "arrows");
@@ -418,7 +419,7 @@ export function startOrder(state, p, o) {
       return `The team goes foraging (${huntHours(o)}h).`;
     }
     case "wood": {
-      // Firewood for the winter (woodcutting.js): by the land, the tools and the people.
+      // Wood for the winter (woodcutting.js): by the land, the tools and the people.
       const why = woodProblem(state, p);
       if (why) return fail(`Cut wood: ${why}`);
       startTask(state, p, { type: "wood", hours: huntHours(o), qty: o.qty });
@@ -546,7 +547,7 @@ export function tasksDue(state, frac) {
   let any = false;
   for (const p of [...state.parties]) {
     const t = p.phase === "task" ? p.task : null;
-    if (!t || !t.owed || t.hours == null || t.afloat || p.owner !== "player" || !state.parties.includes(p)) continue;
+    if (!t || (!t.owed && !(t.hours < 1)) || t.hours == null || t.afloat || p.owner !== "player" || !state.parties.includes(p)) continue; // a job under an hour (tents.js: a camp pitched with tent bags) ends at its minute too
     if (t.done - t.owed + frac < t.hours - 1e-9) continue;
     finishTask(state, p);
     any = true;
@@ -606,13 +607,14 @@ export const campHealPerHour = (state, p, s) => (isHurt(s) && !s.woundInfected &
 // The camp fire (fieldheat.js FIRE, a toggle in the team panel) lifts spirits more: +0.3 an hour lit, +0.1 out.
 function campHour(state, p) {
   campForageHour(state, p);
-  campFireHour(state, p); // woodcutting.js: a fire on bare ground burns carried firewood, or goes out
+  campFireHour(state, p); // woodcutting.js: a fire on bare ground burns carried wood, or goes out
   if (starving(p)) return;
   const mood = fireLit(p) ? FIRE.campMood : FIRE.campMoodOut;
   for (const s of partyMembers(state, p)) {
     s.health = Math.min(100, s.health + campHealPerHour(state, p, s));
     s.mood = Math.min(100, (s.mood || 0) + mood);
   }
+  roadTentsHour(state, p); // tents.js: the night's rest in the team's tents; whoever they do not sleep sleeps rough
 }
 
 // ---------- roadside repairs ----------

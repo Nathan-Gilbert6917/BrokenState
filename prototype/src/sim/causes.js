@@ -104,7 +104,7 @@ function weatherRun(state, today, keys, back = 6) {
 }
 
 // ---------- what a base was like ----------
-const STOCK_WORD = { water: "water", food: "food", scrap: "scrap", meds: "meds", ammo: "ammo", heat: "firewood or fuel" };
+const STOCK_WORD = { water: "water", food: "food", scrap: "scrap", meds: "meds", ammo: "ammo", heat: "wood or fuel" };
 const stockOf = (base, k) => {
   const st = base.stock || {};
   if (k === "water") return (st.water || 0) + (st.rawwater || 0);
@@ -258,10 +258,10 @@ const EXPLAIN = {
     const out = [];
     const low = lowFactor(base, "heat", today);
     if (low) out.push(low);
-    else out.push(F(`${base.name} had ${Math.floor(stockOf(base, "heat"))} firewood and fuel left.`));
+    else out.push(F(`${base.name} had ${Math.floor(stockOf(base, "heat"))} wood and fuel left.`));
     const cold = weatherRun(state, today, ["snow", "blizzard", "frost"]);
     if (cold) out.push(F(`${cold.name} since day ${cold.d}.`, cold.d));
-    out.push(...diaryLines(state, today - LOOK_BACK, today, (e) => e.text.includes(base.name) && /firewood|fuel|cut wood|woodcutter|cold/i.test(e.text) && !/\bdied\b|to keep warm/.test(e.text)).map(quote));
+    out.push(...diaryLines(state, today - LOOK_BACK, today, (e) => e.text.includes(base.name) && /wood|fuel|cut wood|woodcutter|cold/i.test(e.text) && !/\bdied\b|to keep warm/.test(e.text)).map(quote));
     return out;
   },
   illness(state, { s, base, p, today, cause }) {

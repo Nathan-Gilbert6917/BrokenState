@@ -148,7 +148,7 @@ section("2a. The animal pen: its food, the pasture, the station, the winter outl
   const h = hub(st);
   Object.assign(h.stock, { scrap: 200, parts: 10, water: 200 }); setFood(h, 100);
   const def = BUILDINGS.animal_pen;
-  check(def && def.plot === "building" && def.station === "livestock" && def.cost.scrap === 14 && !def.cost.parts && def.max === 2, "the animal pen: a building plot, 14 scrap, a livestock station, at most 2");
+  check(def && def.plot === "building" && def.station === "livestock" && def.cost.scrap === 4 && def.cost.wood === 500 && !def.cost.parts && def.max === 2, "the animal pen: a building plot, 4 scrap and 500 wood (woodwork), a livestock station, at most 2");
   const p0 = plotLimit(h), s0 = farmSlots(h);
   const pen = addBuilding(h, "animal_pen") || h.buildings.find((b) => b.type === "animal_pen");
   check(plotLimit(h) === p0 - PEN.pasture && farmSlots(h) === s0 - PEN.pasture, `it grazes ${PEN.pasture} of the outdoor crop plots (${p0} → ${plotLimit(h)})`);
@@ -206,7 +206,7 @@ section("2c. The Turtle governor builds its home food chain and staffs it");
   check(PERSONALITIES.turtle.homeFood === true, "the Turtle style lives on its own land (homeFood)");
   while (atBase(st, h.id).length < 10) person(st, h, { farming: 4, mechanics: 3 });
   for (const b of [...h.buildings]) if (b.type === "walls" || b.type === "animal_pen") h.buildings.splice(h.buildings.indexOf(b), 1);
-  Object.assign(h.stock, { scrap: 400, parts: 30, water: 300 }); setFood(h, 400);
+  Object.assign(h.stock, { scrap: 400, parts: 30, water: 300, wood: 20000 }); setFood(h, 400); // wood: the pen's (2026-10-20)
   const w1 = wishes(st, h);
   check(w1.includes("walls"), `no walls yet: it wants walls first (${w1.slice(0, 8).join(", ")})`);
   addBuilding(h, "walls");
@@ -259,7 +259,7 @@ section("3a. The chapel: spirits low with a common room, or grief");
   setAutopilot(st, true, "balanced");
   const h = hub(st);
   while (atBase(st, h.id).length < 10) person(st, h);
-  Object.assign(h.stock, { scrap: 120, parts: 10, water: 300 }); setFood(h, 400);
+  Object.assign(h.stock, { scrap: 120, parts: 10, water: 300, wood: 9000 }); setFood(h, 400); // wood: the chapel is 400 of it, and day 60 is the stocking for the cold (woodwork: a big wooden build leaves the winter's pile)
   h.buildings = h.buildings.filter((b) => b.type !== "chapel");
   for (const s of atBase(st, h.id)) s.mood = 80;
   check(!wishes(st, h).includes("chapel"), "spirits high, nobody grieving: no chapel");

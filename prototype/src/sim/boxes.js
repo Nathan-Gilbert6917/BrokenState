@@ -18,7 +18,8 @@ import { BOX_LOCKS, BOX_HOLDS, BOX_FINDS } from "./data-boxes.js";
 import { lootItem, itemAt, parseLoc, placeOfLoc, storageFor, carriedSpots, stow } from "./inventory.js";
 import { survivorById, baseById } from "./world.js";
 import { hash01 } from "./skills.js";
-import { countOf } from "./itemstack.js"; // makeshift picks: a stack
+import { countOf, amountOf } from "./itemstack.js"; // makeshift picks: a stack
+import { itemKeyOf, foundItems, stowItems } from "./supitems.js"; // a box carried: its rounds and supplies onto the one carrying it (2026-10-20)
 import { siteSource, areaSource } from "./itemcond.js";
 import { WEAPONS } from "./combat.js"; // a blade: a melee weapon that cuts or stabs (call-time only)
 import { rollGunStash, caseSource } from "./gunsafes.js"; // a gun case's gun (call-time only: gunsafes.js calls back here)
@@ -191,12 +192,23 @@ export function takeFromBox(state, loc, what) {
   const out = outlet(state, loc);
   if (!out) return "Out of reach.";
   if (what && what.sup) {
-    const k = what.sup, v = (box.sup || {})[k] || 0;
+    const k = what.sup, v = Math.floor((box.sup || {})[k] || 0);
     if (v <= 0) return "";
-    if (!out.sup) return "Nowhere to put it.";
-    out.sup[k] = (out.sup[k] || 0) + v;
+    const name = (SUPPLIES[k] && SUPPLIES[k].name) || k;
+    // A box someone carries: what has an item form (rounds as boxes, water, meds, a food) goes onto them like the gun
+    // beside it (the user's report 2026-10-20: a case's pistol came onto the survivor, its rounds only into the stores),
+    // as far as it fits; the rest into the stores.
+    let on = 0;
+    if (out.person && out.person.alive && itemKeyOf(k)) {
+      const items = foundItems(state, k, v);
+      const left = stowItems(out.person, items);
+      on = v - left.reduce((a, it) => a + amountOf(it), 0);
+    }
+    if (on < v && !out.sup) { if (on > 0) { box.sup[k] = v - on; return `${out.person.name.split(" ")[0]} takes ${on} ${name}: no room for the rest.`; } return "Nowhere to put it."; }
+    if (on < v) out.sup[k] = (out.sup[k] || 0) + (v - on);
     delete box.sup[k];
-    return `${v} ${(SUPPLIES[k] && SUPPLIES[k].name) || k} into ${out.st.name}.`;
+    if (on >= v) return `${out.person.name.split(" ")[0]} takes ${v} ${name}.`;
+    return on > 0 ? `${out.person.name.split(" ")[0]} takes ${on} ${name}; ${v - on} into ${out.st.name}.` : `${v} ${name} into ${out.st.name}.`;
   }
   const i = what ? what.i : -1;
   const it = box.contents && box.contents[i];

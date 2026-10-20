@@ -10,7 +10,7 @@
 // everything laid out afresh) and Put the rest away (only the unassigned). ui.storage = { from, to, qty }.
 import { baseById } from "../sim/world.js";
 import { containersOf, containerByKey, putItem, putSupply, autoStore, kgOf, LOOSE, OUTSIDE } from "../sim/containers.js";
-import { storageOf, storageSummary, itemRoomKg } from "../sim/basestorage.js";
+import { storageOf, storageSummary, itemRoomKg, woodpileOf } from "../sim/basestorage.js";
 import { rowName } from "../sim/itemnames.js";
 import { FOODS } from "../sim/foods.js";
 import { badge, hint, pbar, chip, supName, supIcon } from "./uikit.js";
@@ -22,12 +22,13 @@ const r0 = (v) => Math.round(Number(v) || 0);
 const r1 = (v) => Math.round((Number(v) || 0) * 10) / 10;
 const EPS = 1e-6;
 const supLabel = (k) => (FOODS[k] ? FOODS[k].name : supName(k));
-const KIND = { core: "the base itself", building: "a storage building", vehicle: "a parked car", box: "an opened box", loose: "inside, put away nowhere", outside: "outside, in the open" };
+const KIND = { core: "the base itself", building: "a storage building", vehicle: "a parked car", box: "an opened box", tent: "a pitched tent", loose: "inside, put away nowhere", outside: "outside, in the open" };
 const KIND_TIP = {
   core: "The base itself: the shack, the outpost's house, the main house and its cellar (a camp has none). Behind the best door; dear things (meds, parts) go here first.",
   building: "A storage building or fitting: a storage box, crates, a shed, the storehouse, a warehouse, a cellar, the cold store, the freezer, the armory, shelves or lockers. Food keeps only where it says so (never in lockers or the armory).",
   vehicle: "A car parked at the base: its load space is room while it is parked here. The game never loads a car on its own, but the goods put away nowhere may fill it; if it drives off, its room goes with it and what was in it is put away nowhere again.",
   box: "An opened lock box or case in the armory: room for the base's goods (what is still inside it fills it first). It is an item, so nothing is put in it by hand.",
+  tent: "A tent pitched here (sim/tents.js): room out of the weather (a one-person tent 15 kg, a two-person 30, a four-person 60). Food or gear can be kept in it (From here / To here); it keeps dry, and the goods put away nowhere fill what is left. Tidy up leaves it to you. Struck, what was kept in it is put away nowhere again.",
   loose: "Goods put away nowhere that still fit the base's room: kept inside wherever there is room left (the most valuable for their weight first). Put them away to say where.",
   outside: "What the base has no room for: it lies in the open, on piles of crates on the base map. Things wear a little every day there (twice as fast in rain or snow) and raiders go for the piles first and grab twice as much. Build storage, or park a vehicle here.",
 };
@@ -63,6 +64,7 @@ export function storageTab(state, b, ui) {
     ${pbar(pct, pct > 95 ? "bad" : pct > 80 ? "warn" : "info", `${r0(st.inside)} / ${r0(st.cap)} kg`, `${Math.round(pct)}% used`, null, `${r0(st.inside)} kg kept inside ${r0(st.cap)} kg of room`)}
     <div class="small muted">${rows.slice(1, 2).map(esc).join("")}</div>
     ${st.outsideKg > 0 ? `<div class="small warn"${tip(KIND_TIP.outside)}>⚠ <b>${r0(st.outsideKg)} kg lie outside: they weather, and raiders take them first.</b> ${over ? "The base's storage is too small for its goods: build a storage box, crates, a shed or a storehouse, shelves and lockers inside a general building, or park a vehicle here." : "Tidy up to make room."}</div>` : `<div class="small good">Nothing lies outside.</div>`}
+    <div class="small" style="margin-top:0.2rem"${tip("The woodpile (sim/basestorage.js woodpileOf): the base's wood, stacked in the yard. It takes no storage room and never counts as goods left outside; the fires and the builds take from it, and a raid can carry some off.")}>🪵 Woodpile: ${woodpileOf(b)} wood</div>
     ${byKey[LOOSE].kg > 0 ? `<div class="small muted" style="margin-top:0.2rem"${tip(KIND_TIP.loose)}>${r0(byKey[LOOSE].kg)} kg ${nowhere}, inside wherever there is room.</div>` : ""}
     ${cars.some((c) => c.kg > 0) ? `<div class="small muted" style="margin-top:0.2rem">Goods in a car stay on the base's books: if the car drives off they are ${nowhere} again (it does not take them); on the map a raid can loot the car where it stands.</div>` : ""}
     <div class="row" style="margin-top:0.4rem;flex-wrap:wrap"><button class="mini primary" data-action="st-tidy" data-base="${b.id}"${tip("Lay everything out afresh (what is in a car stays), the most valuable for their weight first: food where it keeps (cellar, cold store, freezer, storehouse, crates, shelves), rounds and guns in the armory, dear things (meds, parts) in the base itself and the storehouse, gear in the lockers, the rest in the warehouse or the storehouse first. The game does this daily on the autopilot.")}>Tidy up</button><button class="mini" data-action="st-rest" data-base="${b.id}" ${byKey[LOOSE].kg + byKey[OUTSIDE].kg > 0 ? "" : "disabled"}${tip(byKey[LOOSE].kg + byKey[OUTSIDE].kg > 0 ? `Put what is ${nowhere} into the containers with room; what is in a container stays where it is.` : `Nothing is ${nowhere}.`)}>Put the rest away</button></div>
@@ -86,7 +88,7 @@ export function storageTab(state, b, ui) {
     return `<div class="row small strow"><span style="flex:1;min-width:8rem"${tip(`${rowName(g.item)}: ${r1(kg)} kg`)}>${esc(rowName(g.item))} <span class="muted">${r1(kg)} kg</span></span><button class="mini" data-action="st-moveitem" data-base="${b.id}" data-ai="${g.ai}" ${why ? "disabled" : ""}${tip(why || `Move it to ${toWord}`)}>Move</button></div>`;
   }).join("");
   const foodOk = foods.length && (toNowhere || to.foodOk), gearOk = from.gear.length > 0;
-  const fromList = L.filter((c) => c.kind !== "box"), toList = [...real, byKey[LOOSE]];
+  const fromList = L.filter((c) => c.kind !== "box"), toList = [...real, byKey[LOOSE]]; // a tent is a container like any other (sim/tents.js)
   const mover = `<div class="card small"${tip(`Move goods between two containers: pick where from and where to, then so many of a supply, or an item. To "${byKey[LOOSE].label}": out of its container (put away nowhere: the room left takes it, or it lies outside). From outside or from what is put away nowhere: the goods in no container only.`)}>
     <div class="spread"><b>Move goods</b><button class="mini" data-action="st-swap" data-base="${b.id}"${tip("Swap from and to")}>⇄</button></div>
     <div class="kv" style="margin-top:0.3rem"><div>From</div><div>${sel("st-from", S.from, "Where the goods are now", fromList)}</div><div>To</div><div>${sel("st-to", S.to, "Where they go", toList)}</div></div>
@@ -103,7 +105,7 @@ export function storageTab(state, b, ui) {
     const p = c.cap === Infinity ? 0 : Math.min(100, (c.kg / Math.max(1, c.cap)) * 100);
     const body = `${list.length ? `<div class="stchips">${list.map(([k, q]) => chip({ icon: supIcon(k), name: `${r1(q)} ${supLabel(k)}`, t: `${r1(q)} ${supLabel(k)}: ${r1(q * kgOf(k))} kg` })).join("")}</div>` : ""}
       ${c.gear.length ? `<div class="small" style="margin-top:0.2rem">${c.gear.map((g) => `<span class="chip"${tip(`${rowName(g.item)}: ${r1(itemRoomKg(g.item))} kg`)}>${esc(rowName(g.item))}</span>`).join("")}</div>` : ""}
-      ${c.kind === "box" ? `<div class="small muted">${r1(c.kg)} kg of its own contents.</div>` : n ? "" : `<div class="small muted">Empty.</div>`}`;
+      ${c.kind === "box" ? `<div class="small muted">${r1(c.kg)} kg of its own contents.</div>` : n ? "" : `<div class="small muted">${c.kind === "tent" ? `Nothing kept in it: ${r0(c.cap)} kg of room out of the weather.` : "Empty."}</div>`}`;
     const pick = c.kind === "box" ? "" : `<div class="row small" style="margin-top:0.3rem"><button class="mini${c.key === S.from ? " active" : ""}" data-action="st-pick" data-base="${b.id}" data-w="from" data-k="${esc(c.key)}"${tip("The mover takes from here")}>From here</button>${c.key === OUTSIDE ? "" : `<button class="mini${c.key === S.to ? " active" : ""}" data-action="st-pick" data-base="${b.id}" data-w="to" data-k="${esc(c.key)}"${tip(c.key === LOOSE ? "The mover takes things out of their container" : "The mover puts things here")}>To here</button>`}</div>`;
     return `<div class="card small stcard${c.key === OUTSIDE && c.kg > 0 ? " attn" : ""}"${tip(KIND_TIP[c.kind] || "")}>
       <div class="spread"><b>${esc(c.label)}</b><span class="small muted">${KIND[c.kind] || c.kind}${c.assignable && !c.foodOk ? " · no food" : ""}${c.key === S.from ? ` ${badge("From", "info", "The mover takes from here")}` : ""}${c.key === S.to ? ` ${badge("To", "busy", "The mover puts things here")}` : ""}</span></div>

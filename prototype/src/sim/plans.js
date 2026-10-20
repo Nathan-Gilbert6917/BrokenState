@@ -62,7 +62,7 @@ export const STEP_KINDS = {
   move:     { label: "Move to a site", desc: "Travel on to another known site." },
   hunt:     { label: "Hunt", desc: "Hunt the land around the target for some hours (a rifle or a bow; firearms need ammo and their shots raise Heat and can draw the dead; bows need arrows, and the hub's go along). The hours follow the home base's hunting mix (traps, bows, guns: its Farming tab). Forest and hills are best, autumn the best season. Fresh game weighs twice what packed food does and spoils fast: the estimate counts the expected haul on the way home." },
   forage:   { label: "Forage", desc: "Gather wild food around the target for some hours (foraging.js): berries, nuts, mushrooms, greens, roots and apples. Anyone can; Farming and Scouting help. Forest is best, farmland good, towns little; summer and autumn plentiful, spring some, winter almost nothing. Quiet, but time on one spot builds Heat." },
-  wood:     { label: "Cut wood", desc: "Cut firewood around the target for some hours (woodcutting.js): the winter's heating. Forest is best, hills fair, farmland and suburbs little, a city next to nothing. An axe (or a machete or sledgehammer) cuts much faster; daylight only. Firewood is heavy in bulk (0.1 kg a piece: three in a forest for 8 hours cut about 40 kg): a vehicle carries far more home. Loud: time on one spot builds Heat faster than most work." },
+  wood:     { label: "Cut wood", desc: "Cut wood around the target for some hours (woodcutting.js): the winter's heating. Forest is best, hills fair, farmland and suburbs little, a city next to nothing. An axe (or a machete or sledgehammer) cuts much faster; daylight only. Wood is heavy in bulk (0.1 kg a piece: three in a forest for 8 hours cut about 40 kg): a vehicle carries far more home. Loud: time on one spot builds Heat faster than most work." },
   fish:     { label: "Fish", desc: "Fish a river or lake shore for some hours with a fishing rod or net (the hub's goes along if nobody carries one). Quiet. Ice fishing in a freeze needs a crowbar, machete or axe and catches half." },
   snare:    { label: "Snares (2h)", desc: "Set a line of 8 snares (snare wire, or 2 scrap of fence wire), or check a line of yours already there (1h): collect the catch and leave it set. Quiet; a rabbit a day or so in good country; come back within 2–3 days." },
   searcharea: { label: "Search the area", desc: "Find a downed aircraft or supply drop in its search circle: look around at the spots that clear the most unsearched ground (2h each, up to 8), then search the wreck when it turns up (crashes.js)." },
@@ -190,7 +190,7 @@ export function estimatePlan(state, { memberIds, dest, vehicle, stance, fuel, mi
   const pv0 = p ? partyFleet(state, p) : pv; // every vehicle of the team's (vehicles.js fleets)
   const pool0 = p ? poolLoad(p) : supplyLoad(packed);
   const worn = members.reduce((a, s) => a + wornLoad(s), 0);
-  let haul = 0, haulKg = 0, woodHaul = 0; // woodHaul: firewood (woodcutting.js), not food
+  let haul = 0, haulKg = 0, woodHaul = 0; // woodHaul: wood (woodcutting.js), not food
   const reweigh = (eaten) => {
     if (!members.length || haulKg <= 0) return;
     const cap = teamLoad(members, 0, pv0).capacity;
@@ -215,10 +215,10 @@ export function estimatePlan(state, { memberIds, dest, vehicle, stance, fuel, mi
   const drinkMove = (from, t) => eatDrink(from, members.length ? [[t.rideHours, pace.eatMove], [t.hours - t.rideHours, pace.eatFoot]] : [[t.hours, n]], members.length ? [[t.rideHours, pace.foodMove], [t.hours - t.rideHours, pace.foodFoot]] : [[t.hours, n]]);
   // Hours of a stay spent by a lit fire (needs.js teamCold, fieldheat.js teamFire): at a camp or shelter of yours any job
   // on the spot sits by its fire; a rest step by the team's own, lit unless the team keeps it out (p.campFire, or the step's
-  // fire), and on bare ground only while the firewood it carries lasts (woodcutting.js campFireHour: it pays an hour's
+  // fire), and on bare ground only while the wood it carries lasts (woodcutting.js campFireHour: it pays an hour's
   // after each hour, so the fire is there for one hour more than it can pay; out, it stays out).
   const campOn = (t) => state.bases.find((b) => b.tier === 0 && b.tile === t) || null; // a camp or shelter of yours: its fire (fieldheat.js teamFire)
-  let woodBurnt = 0; // firewood the camp fires burn on bare ground
+  let woodBurnt = 0; // wood the camp fires burn on bare ground
   let lit = p ? fireLit(p) : true; // the team's fire habit; a camp step's own fire setting carries on (orders.js)
   const campWarm = (kind, s, hours) => {
     const camp0 = campOn(tile);
@@ -226,7 +226,7 @@ export function estimatePlan(state, { memberIds, dest, vehicle, stance, fuel, mi
     if (kind !== "camp") return 0;
     if (s && s.fire != null) lit = !!s.fire;
     if (!lit) return 0;
-    const per = campDayBurn(state, p, tile, n).total / 24; // the fire, the team's warmth and its pot (fire-nights); deadfall stretches the firewood carried, never replaces it
+    const per = campDayBurn(state, p, tile, n).total / 24; // the fire, the team's warmth and its pot (fire-nights); deadfall stretches the wood carried, never replaces it
     const wood = Math.max(0, (p ? carried(p, "wood") : supplies.wood || 0) + woodHaul - woodBurnt);
     const paid = Math.min(hours, Math.floor(wood / per + 1e-9));
     woodBurnt += paid * per;
@@ -282,7 +282,7 @@ export function estimatePlan(state, { memberIds, dest, vehicle, stance, fuel, mi
     else if (s.kind === "wait") stay(stepLabel(state, s), s.hours || 6);
     else if (s.kind === "searcharea") stay("Search the area (estimate: about 3 looks, then the wreck)", SEARCH_AREA_HOURS);
     else if (s.kind === "wood") {
-      // Firewood (woodcutting.js): what fits on top of the load so far; it weighs the team down on the way home.
+      // Wood (woodcutting.js): what fits on top of the load so far; it weighs the team down on the way home.
       const start = at;
       const hours = huntHours(s);
       stay(stepLabel(state, s), hours);

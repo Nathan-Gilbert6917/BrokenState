@@ -63,6 +63,7 @@ import { askBaseName } from "./basenames.js"; // name an outpost handed to you
 import { supplyAmt, useSupply, spendAmmo } from "./rounds.js"; // "ammo": every round there, any calibre
 import { findRounds, kindTheme, suppliesText, baseCals } from "./ammo.js"; // rewards and hand-overs named by calibre
 import { swapGun } from "./gundist.js"; // the gun distribution: a job's pay in a gun
+import { askLayout } from "./staging.js"; // Open the build map: a base new to you asks to be laid out (ui/buildmap.js alert)
 
 export const JOBS = {
   RADIO_CHANCE: 0.06, FRIENDLY_CHANCE: 0.08, GATE_CHANCE: 0.6, OFFER_DAYS: 4, OFFER_GAP: 4, GATE_GAP: 3,
@@ -447,6 +448,7 @@ export function handOver(state, f, tile) {
   };
   state.bases.push(base);
   askBaseName(state, base);
+  askLayout(state, base, "handed");
   for (let i = 0; i < 2; i++) {
     const s = makeSurvivor(state, 0.9);
     s.location = { kind: "base", baseId: base.id };

@@ -13,6 +13,16 @@ import { TEAMINV_ACTIONS } from "./teaminv.js"; // the team inventory window (ev
 import { TEAMMEET_ACTIONS } from "./teammeet.js"; // Teams together (goods between your teams on one tile)
 import { skill, hourOfDay } from "../sim/world.js";
 import { STEALTH } from "../sim/stealth.js";
+import { campSeen, STATE_WORD } from "../sim/campsite.js"; // a campsite's state: as last seen, or as the scout saw it
+
+// The camp's line: what the scout saw now, else what a survey or a visit saw, else unknown.
+function campLine(state, b, scouted) {
+  const C = b.raid.camp;
+  const tents = C.tents.length;
+  if (scouted) return `The scout saw the camp: ${STATE_WORD[C.state] || C.state}, ${tents} tent${tents === 1 ? "" : "s"} round ${C.lit ? "a lit fire" : "a cold fire"}${C.slept ? `, ${C.slept} of them asleep in the tents` : ""}.`;
+  const s = campSeen(state, b.tileId, C.poi);
+  return s ? `The camp: ${s.text}. ${tents} tent${tents === 1 ? "" : "s"}.` : `The camp: who is there is unknown (no survey). ${b.night && C.lit ? "A fire burns in the clearing." : ""}`;
+}
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const pct = (v) => `${Math.round(v * 100)}%`;
@@ -127,6 +137,8 @@ export function planModalHtml(state) {
     <div class="small muted" style="margin-bottom:0.5rem">Nobody is on the map yet. Send a scout first, ${b.night ? "" : "wait for night, "}then pick the side to go in from${P.sides.length > 1 ? "" : " (one way in here)"}; or leave. You can go in with or without a scout: a scout only tells you more.</div>`;
   const url = previewUrl(b);
   if (url) html += `<img class="rplanmap" src="${url}" alt="The site" style="display:block;margin:0 auto;height:9.5rem;width:auto;max-width:100%;object-fit:contain;image-rendering:pixelated;border:1px solid var(--line);border-radius:4px" data-tip="${esc(`The site from above, under the fog of war. Green: the ways in and out${R ? " (north at the top)" : ""}. ${scouted ? "What the scout saw: the dead (red) and their people (orange) where they stood, the containers (yellow) and locked doors (dark orange) within the circle." : "Send a scout to see who is where."}`)}">`;
+  // A campsite (sim/campsite.js): who is at the camp as last seen; a scout come back unseen saw it as it is now.
+  if (R && R.camp && R.camp.poi != null) html += `<div style="margin-top:0.5rem" class="small" data-tip="${esc("A campsite: its tents round a fire. Abandoned: a few of the dead about, the best loot left. Overrun: a pack of the dead among the tents. An active raider camp: a band round a lit fire, some asleep in the tents at night (noise wakes them). Tents can be taken down (Take down, 2 actions a go) and carried off.")}">${esc(campLine(state, b, scouted))}</div>`;
   // The scout.
   if (P.scout) html += `<div style="margin-top:0.5rem" class="${P.scout.ok ? "good" : "danger"}">${esc(scoutText(P.scout))}</div>`;
   else {

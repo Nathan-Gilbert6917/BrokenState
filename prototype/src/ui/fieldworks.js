@@ -12,7 +12,7 @@ import { healthRest } from "../sim/work.js";
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
 const bar = (v, color) => `<div class="bar"><i style="width:${Math.max(0, Math.min(100, v))}%;background:${color}"></i></div>`;
-const matWord = (k, n) => (k === "parts" ? (n === 1 ? "part" : "parts") : k === "wood" ? "firewood" : SUPPLIES[k] ? SUPPLIES[k].name.toLowerCase() : k);
+const matWord = (k, n) => (k === "parts" ? (n === 1 ? "part" : "parts") : k === "wood" ? "wood" : SUPPLIES[k] ? SUPPLIES[k].name.toLowerCase() : k);
 // Cost chips: green when the base has it, red when short.
 export function costChips(base, cost) {
   return Object.entries(cost || {}).map(([k, v]) => {

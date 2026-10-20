@@ -50,7 +50,8 @@ import { FOLK, rollFolk, placeFolk, folkHint, noteFolk, folkAfterPlace } from ".
 import { noteSearch } from "./relations.js";
 import { factionById } from "./world.js";
 import { changeGoodwill } from "./factions.js";
-import { sortFind } from "./ammo.js"; // rounds by calibre
+import { sortFind, calOf } from "./ammo.js"; // rounds by calibre
+import { keyFor } from "./rounds.js"; // the sentry's gun: its own round
 import { swapGun, areaSourceName } from "./gundist.js"; // the gun distribution: which gun a room or a sentry yields
 import { crawlGuns } from "./gunfinds.js";
 import { deepShift, cacheChance, isFine, valuePerKg, wantOf, DEEP } from "./deeploot.js"; // deeper blocks hold what is dear by the kilo; a full team swaps
@@ -1449,7 +1450,8 @@ export function resolveEvent(state, p, eventId, choice, opts = {}) {
       if (choice === "sneak") return done("You slip past below his line of sight.", "good");
       for (const pl of blk.places) pl.raiders = false;
       const gear = [lootItem(swapGun("city:sentry", rng.pick(["huntrifle", "pistol", "shotgun"]), rng), "raider", spend(rng))]; // gundist.js: which gun
-      return done(`You take him down without a sound: ${give(state, p, c, sortFind({ ammo: rng.int(8, 20) }, "raider", "crawlguard", c.tile, state.hour), gear)}. The raiders on this block are blind now: nobody holed up in its places.`, "good");
+      const gcal = calOf(gear[0].key), took = rng.int(8, 20); // his ammunition is his gun's (2026-10-20: it was a raider's mix of calibres)
+      return done(`You take him down without a sound: ${give(state, p, c, gcal ? { [keyFor(gcal, null)]: took } : sortFind({ ammo: took }, "raider", "crawlguard", c.tile, state.hour), gear)}. The raiders on this block are blind now: nobody holed up in its places.`, "good");
     }
     case "truck": {
       if (choice === "siphon") {

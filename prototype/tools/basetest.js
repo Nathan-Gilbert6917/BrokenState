@@ -358,7 +358,7 @@ const leaders = (st) => st.survivors.filter((s) => s.alive && s.leader);
   const st = W();
   const h = hub(st);
   Object.assign(h.stock, { scrap: 100, parts: 10 });
-  queueBuild(st, h, "well"); // 15 scrap and 1 part (the ammo bench's cost; that needs a workbench now)
+  queueBuild(st, h, "well"); // 13 scrap, 1 part and 100 wood (woodwork: the windlass)
   let job = h.construction[h.construction.length - 1];
   let msg = cancelBuild(st, h, job.id);
   check(h.stock.scrap === 100 && h.stock.parts === 10, `an untouched job refunds everything (${h.stock.scrap} scrap, ${h.stock.parts} parts)`);
@@ -367,7 +367,7 @@ const leaders = (st) => st.survivors.filter((s) => s.alive && s.leader);
   job = h.construction[h.construction.length - 1];
   job.progress = 3;
   msg = cancelBuild(st, h, job.id);
-  check(h.stock.scrap === 100 - 15 + 8 && h.stock.parts === 10 - 1 + 1, `a started job refunds half, rounded up (${h.stock.scrap} scrap, ${h.stock.parts} parts)`);
+  check(h.stock.scrap === 100 - 13 + 7 && h.stock.parts === 10 - 1 + 1, `a started job refunds half, rounded up (${h.stock.scrap} scrap, ${h.stock.parts} parts)`);
   check(/Half the materials/.test(msg), `the message says so (${msg})`);
   const s0 = h.stock.scrap;
   msg = cancelBuild(st, h, 123456);
@@ -480,6 +480,7 @@ const leaders = (st) => st.survivors.filter((s) => s.alive && s.leader);
     else if (d.ears) check(!/power|armor/.test(text) && /off a bang's loudness/.test(text) && /a pair a fight/.test(text) && /fights/.test(text), `${key}: earplugs say what they take off a bang and how they wear (${text})`); // sim/hearing.js: the rag earplugs
     else if (r.gear === "makeshiftpick") check(!/power|armor/.test(text) && /picks locks/.test(text) && /3 a craft/.test(text), `${key}: makeshift picks say what they pick and how many a craft (${text})`); // sim/locks.js
     else if (r.gear === "boards") check(!/power|armor/.test(text) && /door/.test(text) && /window/.test(text) && /hit points/.test(text), `${key}: boards and nails say what they board up and how strong (${text})`); // sim/barricade.js
+    else if (d.furniture) check(!/power|armor/.test(text) && /bed/.test(text) && /set inside/.test(text), `${key}: furniture says how many beds it sets and the mood (${text})`); // sim/beds.js
     else check(/armor/.test(text) && !/power/.test(text), `${key}: armor lists its armor value (${text})`);
   }
   const h = hub(st);

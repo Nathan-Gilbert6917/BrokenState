@@ -1,6 +1,6 @@
 // What people are doing, in the UI (sim/activity.js): the People tab's activity chip and its Idle filter, the base's
 // "Work now" panel (the Idle list on top, then one row per job: who is on it and what each is doing this hour, a bar
-// toward the next output, the winter target for firewood, what it brought in on its last days with a 7-day sparkline,
+// toward the next output, the winter target for wood, what it brought in on its last days with a 7-day sparkline,
 // and why it brings in nothing when it cannot work), the Bases card's "N of M working" chip and the stalled-job alert.
 // Small functions with their own classes (act-*, wn-*, idle-*) so the base window's look can change around them.
 import { describeActivity, workingActivity, baseWork, idlePeople, workCount, stalledJobs, outputSeries, amountText, STALL_ALERT_DAYS } from "../sim/activity.js";
@@ -10,6 +10,7 @@ import { fold } from "./panelfold.js"; // the Bases tab's per-base Idle drop-dow
 import { TRIP_JOBS } from "../sim/tripland.js"; // the outdoor jobs: their loads come in as they get home (sim/jobtrips.js)
 import { kitWarnings, gearOutdoorWorkers } from "../sim/tripgear.js"; // the outdoor workers' kit: the chips, Gear outdoor workers (trips-plus #2)
 import { lunchHour } from "../sim/meals.js"; // the lunch hour (the Work tab)
+import { noWorkRoles, helpingText, helpingAs } from "../sim/noidle.js"; // roles with no work: the quiet alert
 const hh = (h) => `${String(h).padStart(2, "0")}:00`;
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -134,12 +135,27 @@ export function workNowPanel(state, base) {
 export function workChip(state, base) {
   const c = workCount(state, base);
   if (!c.total) return "";
-  const idle = idlePeople(state, base);
+  const idle = idlePeople(state, base).filter((x) => !helpingAs(x.s)); // a helper (sim/noidle.js) is working this hour
   const parts = [`${c.working} of ${c.total} working`, c.idle ? `${c.idle} idle${idle.length ? ` (${idle.map((x) => `${first(x.s)}: ${x.why.toLowerCase()}`).join("; ")})` : ""}` : "", c.hurt ? `${c.hurt} in bed or resting for their health` : "", c.resting ? `${c.resting} resting or on free time` : ""].filter(Boolean);
   return `<span class="bs-chip${c.idle ? " warn" : ""}"${tip(`${parts.join(" · ")}. By each one's job, whatever the hour (the base's Work now panel has who is at it now).`)}>⚒ ${c.working}/${c.total} working</span>`;
 }
 // alerts.js SECTIONS: a job at a base that has been unable to work for STALL_ALERT_DAYS or more (one per base and job;
 // gone when it can work again).
+// alerts.js SECTIONS (noidle, the user's request 2026-10-20): the roles with no work at each base (by the job), one quiet
+// alert a base, so the player can reassign them; meanwhile they help elsewhere (sim/noidle.js helpHour). A job stalled
+// STALL_ALERT_DAYS or more has the stalled-job alert (stallAlerts) instead.
+export function noWorkAlerts(state, out) {
+  const by = new Map();
+  const loud = new Set(stalledJobs(state).map((j) => `${j.base.id}:${j.job}`)); // stalled 2+ days: the stalled-job alert has it
+  for (const r of noWorkRoles(state)) { if (loud.has(`${r.base.id}:${r.job}`)) continue; if (!by.has(r.base.id)) by.set(r.base.id, []); by.get(r.base.id).push(r); }
+  for (const [id, rows] of by) {
+    const b = rows[0].base;
+    const n = rows.reduce((a, r) => a + r.people.length, 0);
+    const list = rows.map((r) => `${r.name} (${r.people.map(first).join(", ")})`).join(", ");
+    const helping = rows.map(helpingText).filter(Boolean).join(", ");
+    out.push({ key: `nowork:${id}:${rows.map((r) => r.job).join(",")}`, kind: "nowork", icon: "💤", tone: "info", text: `${b.name}: no work for ${list}`, tip: `${rows.map((r) => `${r.name}: ${r.why.replace(/^[^:–]*[:–]\s*/, "").toLowerCase() || "nothing to do"}`).join("; ")}. ${plural(n, "person has", "people have")} a job with no work; they help where there is work meanwhile${helping ? ` (${helping})` : ""} and go back to their own job when it has some. Give them another job to keep them on it. Click to open the base.`, go: { base: id, tab: "overview" } });
+  }
+}
 export function stallAlerts(state, out) {
   for (const j of stalledJobs(state)) {
     out.push({ key: `stall:${j.base.id}:${j.job}`, kind: "stalled", icon: "⏸", tone: "warn", text: `${j.base.name}: ${j.name} stalled ${plural(j.days, "day")}`, tip: `${j.people.map(first).join(", ")} ${j.people.length === 1 ? "is" : "are"} on ${j.name} and cannot work: ${j.why}. Give them another job or fix what it needs. Click to open the base.`, go: { base: j.base.id, tab: "overview" } });

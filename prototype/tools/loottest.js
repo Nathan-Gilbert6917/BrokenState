@@ -38,6 +38,7 @@ import { SURV_FINDS, AREA_SURV, WARE_SURV } from "../src/sim/survival.js"; // su
 import { BOX_FINDS } from "../src/sim/data-boxes.js"; // lock boxes and cases (boxes.js, its own dice)
 import { ARSENAL_FINDS } from "../src/sim/data-guns.js"; // the arsenal of 2026-10-10 (gunfinds.js: their own dice)
 import { gunsFrom } from "../src/sim/gundist.js";
+import { TENT_FINDS, AREA_TENTS } from "../src/sim/data-tents.js"; // tent bags (tents.js: their own dice)
 import { CANNER } from "../src/sim/buildings.js"; // the old crafted canner (an old save's)
 
 const quiet = process.argv.includes("--quiet");
@@ -59,6 +60,8 @@ for (const [t, f] of Object.entries(HUNT_FINDS)) addAll(Object.keys(f.items), `h
 for (const [t, f] of Object.entries(LIGHT_FINDS)) addAll(Object.keys(f.items), `lightfind:${t}`);
 for (const [t, f] of Object.entries(CART_FINDS)) addAll(Object.keys(f.items), `cartfind:${t}`); // carts (loot.js CART_FINDS; carts.js)
 for (const [t, f] of Object.entries(WARE_CARTS)) addAll(Object.keys(f.items), `sold:${t}`);
+for (const [t, f] of Object.entries(TENT_FINDS)) addAll(Object.keys(f.items), `tentfind:${t}`); // tent bags (data-tents.js; tents.js)
+for (const [a, f] of Object.entries(AREA_TENTS)) addAll(Object.keys(f.items), `raid:${a}`);
 for (const [t, f] of Object.entries(GUNMOD_FINDS)) addAll(Object.keys(f.items), `modfind:${t}`); // gun attachments (gunmods.js)
 for (const [a, f] of Object.entries(AREA_GUNMODS)) addAll(Object.keys(f.items), `raid:${a}`);
 for (const [t, f] of Object.entries(WARE_GUNMODS)) addAll(Object.keys(f.items), `sold:${t}`);
@@ -145,6 +148,8 @@ for (const [t, def] of Object.entries(LOCATIONS)) for (const k of [...def.gear, 
 for (const [a, def] of Object.entries(AREAS)) for (const k of [...def.gear.map(([x]) => x), ...Object.keys((AREA_FINDS[a] || {}).items || {}), ...Object.keys((AREA_GUNMODS[a] || {}).items || {}), ...Object.keys((AREA_MODS[a] || {}).items || {}), ...Object.keys((AREA_GRENADES[a] || {}).items || {}), ...Object.keys((AREA_HEAD[a] || {}).items || {})]) if (!fitsTags(k, AREA_TAGS[a] || [])) misfits.push(`${k} in raid area ${a}`);
 for (const [t, f] of Object.entries(SITE_GRENADES)) for (const k of Object.keys(f.items)) if (!LOCATIONS[t] || !fitsTags(k, SITE_TAGS[t] || [])) misfits.push(`${k} at ${t} (grenades)`);
 for (const [t, f] of Object.entries(CART_FINDS)) for (const k of Object.keys(f.items)) if (!LOCATIONS[t] || !fitsTags(k, SITE_TAGS[t] || [])) misfits.push(`${k} at ${t} (carts)`);
+for (const [t, f] of Object.entries(TENT_FINDS)) for (const k of Object.keys(f.items)) if (!LOCATIONS[t] || !fitsTags(k, SITE_TAGS[t] || [])) misfits.push(`${k} at ${t} (tents)`);
+for (const [a, f] of Object.entries(AREA_TENTS)) for (const k of Object.keys(f.items)) if (!AREAS[a] || !fitsTags(k, AREA_TAGS[a] || [])) misfits.push(`${k} in raid area ${a} (tents)`);
 for (const a of Object.keys(AREA_GRENADES)) if (!AREAS[a]) misfits.push(`grenades in unknown raid area ${a}`);
 for (const [t, f] of Object.entries(SITE_LAUNCHERS)) for (const k of Object.keys(f.items)) if (!LOCATIONS[t] || !fitsTags(k, SITE_TAGS[t] || [])) misfits.push(`${k} at ${t} (launchers)`);
 for (const [a, f] of Object.entries(AREA_LAUNCHERS)) for (const k of Object.keys(f.items)) if (!AREAS[a] || !fitsTags(k, AREA_TAGS[a] || [])) misfits.push(`${k} in raid area ${a} (launchers)`);

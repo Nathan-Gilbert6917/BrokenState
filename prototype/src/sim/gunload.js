@@ -15,9 +15,10 @@
 // Taken up again (gunIn): exactly those rounds are in the magazine (u.mag), your side's added to the team's rounds (the
 // fighter's haul pool), never a free full one. A gun with no record: one carried into the fight by your people is
 // loaded (u.startGuns, playerUnit); anything else (a gun found in a container) is empty: Reload.
-// Out of the fight (settleLoaded, the loot screen's taken): a gun that comes to your people is unloaded into their
-// stores (the team's cargo or the base), so the rounds are counted once, where rounds are counted. A gun left lying (a
-// death site) keeps its rounds on it.
+// Out of the fight (2026-10-20): every gun keeps its rounds on it (a gun taken off a body, one picked up, the one in the
+// hands when the fight ended: returnStacks), and the rounds badge counts exactly those (gunrounds.js). They come out
+// only by hand: Unload, Remove magazine (itemacts.js). (Until then a gun that came to your people was unloaded into the
+// stores, and the badge filled it again from them: a count no round stood behind.)
 import { SUPPLIES } from "./data.js";
 import { WEAPONS, magIn, magCap } from "./combat.js";
 import { calOf, roundsOf, takeBattleRounds, gunTakes, stacked } from "./ammo.js";
@@ -25,8 +26,9 @@ import { keyFor, roundOf, loadId } from "./rounds.js";
 import { allCarried, carriedSpots, stow } from "./inventory.js";
 import { baseById, survivorById } from "./world.js";
 import { roundItems, roomIn, isRoundItem } from "./itemstack.js";
-import { stackN, copyStack, topKey } from "./roundstack.js"; // physical rounds (mags.js, 2026-10-18): a gun put down keeps its stack on it.loaded.stack
+import { stackN, copyStack, topKey, tidyStack } from "./roundstack.js"; // physical rounds (mags.js, 2026-10-18): a gun put down keeps its stack on it.loaded.stack
 
+const num = (v) => (Number.isFinite(v) ? v : 0);
 const isGun = (it) => !!(it && WEAPONS[it.key] && calOf(it.key));
 // The load a round key is in a gun of calibre `cal` (rounds.js loads: another calibre it takes "223:fmj"; null: none).
 const typeOfKey = (key, cal, wkey = null) => { const r = key && cal ? roundOf(key) : null; return r && (!wkey || gunTakes(wkey, r.cal)) ? loadId(cal, r.cal, r.type) : null; };
@@ -128,25 +130,47 @@ export function unloadInto(st, items, stock) {
   }
   return n;
 }
-// The fight is over (ground.js groundEnd, raidloot.js): what is left in the guns and the magazines of these people
-// (physical rounds, mags.js) goes back onto them as loose rounds (onto a stack of the same kind first, else a free
-// pocket, rig pouch or pack slot), and what finds no room into `stock` (the team's bags or the base's). Out of a fight
-// the rounds are then counted where they always were (the badge fills the guns from them: gunrounds.js). Returns how
-// many went back.
+// The fight is over (ground.js groundEnd, raidloot.js): what is left in the gun in the hands of these people stays in
+// it (it.loaded with the stack, in its order) and what is left in each magazine stays in it (item.stack): out of a
+// fight the rounds are where they physically are, and the rounds badge counts exactly them (gunrounds.js; the user's
+// report 2026-10-20: "the 9mm pistol said 3 ... then it had 0"). Until then the leftovers went back loose onto the
+// person and the badge filled the guns again from the stores, a count no round stood behind. `stock` is kept for the
+// callers (nothing goes into it now). Returns how many rounds stayed in the guns and magazines.
 export function returnStacks(b, people, stock) {
   let n = 0;
   for (const s of people || []) {
     if (!s || !s.alive) continue;
     const u = b && b.units ? b.units.find((x) => x.side === "player" && x.sid === s.id) : null;
-    const runs = [];
-    if (u && Array.isArray(u.stack)) { runs.push(...copyStack(u.stack)); u.stack = []; u.mag = 0; }
-    for (const it of carriedWithBag(s)) if (it && Array.isArray(it.stack)) { runs.push(...copyStack(it.stack)); delete it.stack; }
-    for (const r of runs) n += giveBack(s, r.k, r.n, stock);
+    if (u && Array.isArray(u.stack)) {
+      const gun = u.item && isGun(u.item) && u.item.key === u.weapon ? u.item : null;
+      if (gun) { const st = copyStack(u.stack); n += stackN(st); setGunStack(gun, st); } // (the live stack is the truth: the record was read into it as the fight started)
+      u.stack = []; u.mag = 0;
+    }
+    for (const it of carriedWithBag(s)) if (it && Array.isArray(it.stack)) { tidyStack(it.stack); n += stackN(it.stack); }
   }
   return n;
 }
+
+// ---------- a gun's rounds out of a fight (2026-10-20, physical rounds everywhere) ----------
+// The rounds in a gun not in a fighter's hands are its record (it.loaded = { n, key, stack }: the stack in firing
+// order, the chamber first). These read and write it; an empty gun has no record.
+/** The gun's rounds as a stack (a copy; [] for none). */
+export function gunStackOf(item) {
+  const r = item && item.loaded;
+  if (!r) return [];
+  if (Array.isArray(r.stack)) return copyStack(r.stack);
+  return num(r.n) > 0 && r.key ? [{ k: r.key, n: Math.floor(num(r.n)) }] : [];
+}
+/** Writes the gun's rounds (the record goes when it is empty). */
+export function setGunStack(item, st) {
+  if (!item) return;
+  const s = tidyStack(copyStack(st));
+  const n = stackN(s);
+  if (!(n > 0)) { delete item.loaded; return; }
+  item.loaded = { n, key: topKey(s), stack: s };
+}
 // n loose rounds of a key onto a person (stacks of it first), the rest into the stock. Returns how many landed.
-function giveBack(s, key, n, stock) {
+export function giveBack(s, key, n, stock) {
   let left = Math.max(0, Math.floor(n)), put = 0;
   for (const x of carriedSpots(s)) {
     if (left <= 0) break;
@@ -156,7 +180,7 @@ function giveBack(s, key, n, stock) {
     if (q > 0) { it.dur = Math.floor(Number(it.dur) || 0) + q; left -= q; put += q; }
   }
   for (const it of roundItems(key, left, true)) {
-    if (left <= 0) break;
+    if (left <= 0 || !s) break;
     const q = Math.floor(Number(it.dur) || 0);
     if (stow(s, it)) { left -= q; put += q; } else break;
   }
