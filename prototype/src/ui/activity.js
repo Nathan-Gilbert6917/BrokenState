@@ -10,7 +10,7 @@ import { fold } from "./panelfold.js"; // the Bases tab's per-base Idle drop-dow
 import { TRIP_JOBS } from "../sim/tripland.js"; // the outdoor jobs: their loads come in as they get home (sim/jobtrips.js)
 import { kitWarnings, gearOutdoorWorkers } from "../sim/tripgear.js"; // the outdoor workers' kit: the chips, Gear outdoor workers (trips-plus #2)
 import { lunchHour } from "../sim/meals.js"; // the lunch hour (the Work tab)
-import { noWorkRoles, helpingText } from "../sim/noidle.js"; // roles with no work: the quiet alert
+import { noWorkRoles, helpingText, helpingAs } from "../sim/noidle.js"; // roles with no work: the quiet alert
 const hh = (h) => `${String(h).padStart(2, "0")}:00`;
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -135,7 +135,7 @@ export function workNowPanel(state, base) {
 export function workChip(state, base) {
   const c = workCount(state, base);
   if (!c.total) return "";
-  const idle = idlePeople(state, base);
+  const idle = idlePeople(state, base).filter((x) => !helpingAs(x.s)); // a helper (sim/noidle.js) is working this hour
   const parts = [`${c.working} of ${c.total} working`, c.idle ? `${c.idle} idle${idle.length ? ` (${idle.map((x) => `${first(x.s)}: ${x.why.toLowerCase()}`).join("; ")})` : ""}` : "", c.hurt ? `${c.hurt} in bed or resting for their health` : "", c.resting ? `${c.resting} resting or on free time` : ""].filter(Boolean);
   return `<span class="bs-chip${c.idle ? " warn" : ""}"${tip(`${parts.join(" · ")}. By each one's job, whatever the hour (the base's Work now panel has who is at it now).`)}>⚒ ${c.working}/${c.total} working</span>`;
 }

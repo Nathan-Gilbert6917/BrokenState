@@ -519,7 +519,7 @@ export function idlePeople(state, base = null) {
   const out = [];
   for (const b of base ? [base] : state.bases) {
     for (const s of atBase(state, b.id)) {
-      if (onWatchNow(state, b, s) || helpingAs(s)) continue; // helping elsewhere this hour (noidle.js): working, not idle
+      if (onWatchNow(state, b, s)) continue; // (a helper stays listed: their own job has no work, the Idle colonists' role picker reassigns them; the chip counts them working: workCount)
       const a = workingActivity(state, s);
       if (IDLE_KINDS.has(a.kind)) out.push({ s, base: b, act: a, why: a.kind === "idle" ? idleWhy(a) : a.text });
     }

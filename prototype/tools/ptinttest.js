@@ -39,6 +39,8 @@ import { raidSpoils } from "../src/sim/basestorage.js";
 import * as Work from "../src/sim/work.js";
 import * as ND from "../src/sim/noidle.js";
 import { undoable, undoStep } from "../src/ui/undo.js";
+import { computeAlerts, ALERT_ORDER } from "../src/ui/alerts.js";
+import { workChip } from "../src/ui/activity.js";
 import { workCount, idlePeople } from "../src/sim/activity.js";
 // Stand u on a free walkable cell next to tent t (as campsitetest does).
 function besideTent(b, u, t) {
@@ -557,7 +559,8 @@ section("Round 5: on work priorities with nothing to do, they help as a Manual p
   check(!!s.helpWas && s.helpWas.role === "rest" && s.role !== "rest", `a fallback task, not rest: helping as ${s.role}`);
   // The Bases chip and the idle list: a helper is working.
   const c = workCount(st, h);
-  check(!idlePeople(st, h).some((x) => x.s === s) && c.working >= 1, `counted as working (${c.working}/${c.total}, idle ${c.idle})`);
+  const chip = workChip(st, h);
+  check(c.working >= 1 && !new RegExp(`${s.name.split(" ")[0]}: `).test(chip) && workCount(st, h).idle === idlePeople(st, h).filter((x) => !ND.helpingAs(x.s)).length, `the Bases chip counts them working (${c.working}/${c.total}, idle ${c.idle}); the Idle list keeps them for a new job`);
   // Undo's snapshot is their own job, not the hour's help.
   const m = ppl[1];
   m.role = "craft"; delete m.work;
@@ -568,6 +571,24 @@ section("Round 5: on work priorities with nothing to do, they help as a Manual p
   undoable(st, ui, "work", () => { delete m.helpWas; m.role = "farm"; });
   undoStep(st, ui, "work");
   check(m.role === "craft" && !m.helpWas, `undone: back to their own job (${m.role}), not the hour's help`);
+}
+
+
+section("Round 5: the Open the build map and no-work alerts show, in their place");
+{
+  const st = world(seed + 51);
+  const camp = campWith(st, 2);
+  const h = hub(st);
+  st.hour = Math.floor(st.hour / 24) * 24 + 10;
+  const s = atBase(st, h.id).find((x) => !x.work) || atBase(st, h.id)[0];
+  delete s.work; s.pinned = false; s.role = "craft"; s.health = 100; delete s.restUntil;
+  (h.craftQueue || (h.craftQueue = [])).length = 0;
+  const all = computeAlerts(st, { all: true });
+  const kinds = all.map((a) => a.kind);
+  check(kinds.includes("layout"), `the camp's Open the build map alert shows (${camp.name})`);
+  check(kinds.includes("nowork"), "the no-work alert shows (a Manual crafter with nothing to craft)");
+  const iN = kinds.indexOf("nowork"), loud = all.findIndex((a) => a.tone === "danger" || a.tone === "warn");
+  check(iN >= 0 && (loud < 0 || loud < iN) && ALERT_ORDER.includes("nowork"), `in its place in the order, after the louder ones (at ${iN} of ${kinds.length}; first loud at ${loud})`);
 }
 
 console.log(`\n${pass} passed, ${fail} failed (${((Date.now() - t0) / 1000).toFixed(1)} s)`);

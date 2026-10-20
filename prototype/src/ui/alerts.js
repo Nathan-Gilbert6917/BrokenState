@@ -294,7 +294,7 @@ const SECTIONS = {
     if (n > 1) out.push({ key: `cards:${n}`, kind: "cards", icon: "🃏", tone: "info", text: `${n} cards waiting`, tip: "Cards are answered one at a time: these are still in the pile. Close the screens on top to see the next one.", go: { cards: true } });
   },
 };
-const ORDER = ["breakin", "starve", "thirst", "desert", "outsiders", "tower", "horde", "gathering", "ice", "front", "nomeds", "spread", "food", "teamfood", "water", "worm", "sick", "ill", "fixed", "wait", "plan", "broken", "idle", "stalled", "crash", "cards", "layout", "trip", "caravan", "built"];
+const ORDER = ["breakin", "starve", "thirst", "desert", "outsiders", "tower", "horde", "gathering", "ice", "front", "nomeds", "spread", "food", "teamfood", "water", "worm", "sick", "ill", "fixed", "wait", "plan", "broken", "idle", "stalled", "nowork", "crash", "cards", "layout", "trip", "caravan", "built"];
 
 // Good news (Options → "Good news alerts", options.goodNews, on by default): news that asks nothing of you. Off, these
 // kinds are left out of the stack, so no row, flash or chime (ui/soundcues.js hears only what is shown); the log and the
@@ -317,6 +317,7 @@ export function computeAlerts(state, { all = false } = {}) {
   if (!all && !goodNewsOn()) out = out.filter((a) => !isGoodNews(a));
   return out.sort((a, b) => ORDER.indexOf(a.kind) - ORDER.indexOf(b.kind));
 }
+export const ALERT_ORDER = ORDER; // the order the kinds are shown in (a kind missing from it would sort to the top)
 
 // Dismissed (until the alert clears) and snoozed (for a day) keys, kept per run.
 function mute(state, ui) {
