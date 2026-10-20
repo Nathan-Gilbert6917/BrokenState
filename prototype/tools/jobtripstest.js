@@ -312,7 +312,7 @@ section("Stockpiles as drop points: a trip that is not the window's last leaves 
 {
   // A hub whose woodcutters go 2 tiles out, with room for a stockpile on a tile next to both the hub and that ground.
   const pileSpot = (st, b, tg) => st.grid.neighbors(tg).find((id) => st.grid.distance(id, b.tile) === 1 && FW.placeProblem(st, b, "stockpile", id) === "");
-  const state = seedWith((st, b) => { b.stock.wood = 200; const t = Wd.woodTripTile(st, b); return !Wd.woodWorkWhy(st, b) && t && t.d === 2 && pileSpot(st, b, t.id) != null; }); // (the stockpile's 90 wood)
+  const state = seedWith((st, b) => { b.stock.wood = 400; const t = Wd.woodTripTile(st, b); return !Wd.woodWorkWhy(st, b) && t && t.d === 2 && pileSpot(st, b, t.id) != null; }); // (the stockpile's 250 wood: woodwork)
   const base = hub(state);
   const cutter = onJob(state, base, atBase(state, base.id)[0], "wood");
   base.armory.push(newItem("fireaxe"));
