@@ -1015,7 +1015,8 @@ function cardModal(state, card) {
   if (card.kind === "conflict" && card.conflict) return conflictModal(state, card);
   if (card.poiPick) return poiPickModal(state, card); // ui/poipick.js: which place on the tile to raid (sim/poiraid.js poiPickCard)
   if (card.recruit) return recruitModal(state, card); // who asks to join, with beds, food and water (people.js)
-  return `<div class="box">
+  // A talk over a fight with many answers (sim/parley.js): "many" puts them in two columns (styles.css).
+  return `<div class="box${card.battle && (card.choices || []).length >= 6 ? " many" : ""}">
     <h1>${esc(card.title)}</h1>
     ${card.where ? `<div class="where">Near ${esc(card.where)} · Day ${day(state)} ${clock(state)}</div>` : ""}
     <div class="text">${esc(card.text)}</div>

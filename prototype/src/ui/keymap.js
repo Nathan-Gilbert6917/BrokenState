@@ -135,7 +135,9 @@ export const KEYMAP = [
     // sim/barricade.js: furniture shoved a tile, boards nailed across a door or window, the boards torn down (Alt: every
     // Shift letter is taken; not Alt+D, E or F, which a browser takes for its own menus).
     ["shove", "Shove: a piece of furniture next to them one tile (2 actions)", "Alt+KeyS"], ["boardup", "Board up: boards and nails across the door or window next to them (2 actions)", "Alt+KeyB"],
-    ["teardown", "Tear down: the boards next to them (2 actions)", "Alt+KeyJ"]]
+    ["teardown", "Tear down: the boards next to them (2 actions)", "Alt+KeyJ"],
+    // sim/parley.js: shout to another group in sight (a raid's survivors, a hostile group's people) to talk (Alt+O: call Out).
+    ["callout", "Call out: talk to another group in sight (raids; 1 action)", "Alt+KeyO"]]
     .map(([v, label, code]) => ({ id: `battle.${v}`, label, group: "Battle orders", ctx: "battle", keys: [code], v })),
 
   // ---------- the timelapse (ui/timelapse.js tlKey) ----------
