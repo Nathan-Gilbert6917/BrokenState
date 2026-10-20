@@ -1,6 +1,6 @@
 // World configuration (2026-10-19, user request): the new-run screen's World… window. The dials of one run
 // (sim/worldcfg.js WORLD_CFG: hunger, thirst, spoilage, the dead, the worm, the groups, events, raids, the loot by
-// kind, the sizes of bases and crawls, wear, failures, fuel) in groups, each a slider and a number box (a toggle for
+// kind, the sizes of bases, raid maps and crawls, wear, failures, fuel) in groups, each a slider and a number box (a toggle for
 // the worm's cure), with a preset select on top: Gentle, Standard, Harsh, Nightmare, or Custom. Picking a preset sets
 // every dial; moving any dial off what a preset sets flips the select to Custom (sim/worldcfg.js presetOf). The
 // settings live on the screen (ui.worldCfg), go into the world when it is built (main.js newWorld → createWorld
@@ -26,7 +26,7 @@ export function worldLabel(ui) {
 // The new-run screen's button (ui/newgame.js).
 export function worldButton(ui) {
   const label = worldLabel(ui), n = cfgChanges(uiCfg(ui)).length;
-  const t = label ? `World configuration: ${label}${label === "Custom" ? ` (${n} dial${n === 1 ? "" : "s"} off standard)` : ""}. ${cfgSummary(uiCfg(ui))}` : "World configuration: the dials of this run (hunger, thirst, spoilage, the dead, the worm, the groups, events, raids, loot by kind, the sizes of bases and crawls, wear, failures, fuel), a preset or your own. Standard now: the game as it is";
+  const t = label ? `World configuration: ${label}${label === "Custom" ? ` (${n} dial${n === 1 ? "" : "s"} off standard)` : ""}. ${cfgSummary(uiCfg(ui))}` : "World configuration: the dials of this run (hunger, thirst, spoilage, the dead, the worm, the groups, events, raids, loot by kind, the sizes of bases, raid maps and crawls, wear, failures, fuel), a preset or your own. Standard now: the game as it is";
   return `<button data-action="wc-open"${tip(t)}>🌍 World${label ? `: ${esc(label)}` : ""}…</button>`;
 }
 
@@ -63,7 +63,7 @@ export function worldConfigModal(state, ui) {
 }
 
 // ---------- help ----------
-export const WORLDCFG_HELP = `The new-run screen's <b>World…</b> button opens the world configuration: the dials of one run, in groups. <b>Needs and health</b>: how fast people hunger and thirst, how fast food spoils, how often anyone falls ill. <b>The dead and the worm</b>: the size of every horde, the dead waiting at sites, how fast hives grow, how hard the dead hit, the worm from a bite and from the land, and whether the worm can be cured at all (off: no dewormer, purge or surgery works, and nobody passes it on their own). <b>People and events</b>: what the other groups start armed with, how often cards come at home, on the road and on work trips, and how often you are raided. <b>Loot by kind</b>: food, water, ammo, guns and gear, parts, scrap, meds and fuel, each on its own dial, for searching, raids, crawls and the base's scavengers. <b>Sizes</b>: the yard a base starts with and the most it grows to, the blocks across a city crawl, the rings down a hive crawl, smallest to largest. <b>Wear, failures and fuel</b>: how fast things wear out, how often guns jam, vehicles break down and machines fail, and what driving burns.<br><br>
+export const WORLDCFG_HELP = `The new-run screen's <b>World…</b> button opens the world configuration: the dials of one run, in groups. <b>Needs and health</b>: how fast people hunger and thirst, how fast food spoils, how often anyone falls ill. <b>The dead and the worm</b>: the size of every horde, the dead waiting at sites, how fast hives grow, how hard the dead hit, the worm from a bite and from the land, and whether the worm can be cured at all (off: no dewormer, purge or surgery works, and nobody passes it on their own). <b>People and events</b>: what the other groups start armed with, how often cards come at home, on the road and on work trips, and how often you are raided. <b>Loot by kind</b>: food, water, ammo, guns and gear, parts, scrap, meds and fuel, each on its own dial, for searching, raids, crawls and the base's scavengers. <b>Sizes</b>: the yard a base starts with and the most it grows to, the smallest and the largest raid map (cities and towns always the largest, every other site between the two by its kind), the blocks across a city crawl, the rings down a hive crawl, smallest to largest. <b>Wear, failures and fuel</b>: how fast things wear out, how often guns jam, vehicles break down and machines fail, and what driving burns.<br><br>
 A <b>preset</b> (Gentle, Standard, Harsh, Nightmare) sets every dial at once; move any dial and the select reads <b>Custom</b>. <b>Reset to standard</b> is the game as it is. The dials are saved with the game (the log's first lines say which were set) and remembered in this browser for the next run. Random run rolls the map and the crew, not these.`;
 
 // ---------- actions (main.js registers them; each gets (state, ui, data) or (state, ui, el)) ----------

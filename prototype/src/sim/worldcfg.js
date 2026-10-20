@@ -1,7 +1,7 @@
 // World configuration (2026-10-19, user request): the new-run screen's World… window (ui/worldcfg.js) sets the dials
 // of one run: how fast people hunger and thirst, how fast food spoils, how many of the dead and how hard they hit,
 // how often events and raids come, what the AI groups start armed with, the loot of each kind, the sizes of bases,
-// city crawls and hive crawls, wear, failures, fuel, sickness, and whether the worm can be cured. The settings live
+// raid maps, city crawls and hive crawls, wear, failures, fuel, sickness, and whether the worm can be cured. The settings live
 // on the world (state.worldCfg, saved with it; a world without one plays as before: every dial 1, the toggle on),
 // and the sim reads them through cfgOf(state, key) at the one place each rate is applied:
 //   hunger       eating.js baseEatHour, needs.js teamNeedsHour / errandHour
@@ -20,6 +20,7 @@
 //   sickness     health.js illnessRisk
 //   loot*        scavenge.js searchHour, combat.js searchBox (raids and city crawls), economy.js (the base job): lootMult
 //   baseMin/Max  basemap.js gridOf (the yard a base starts with and the most it grows to)
+//   raidMin/Max  battlesize.js raidDims / buildingTarget (raid maps: a site's place between the two; cities and towns the largest)
 //   cityMin/Max  citygrid.js gridOf (blocks across a city crawl; a town is scaled the same way)
 //   hiveMin/Max  hivecrawl.js denDepth (rings from a den's rim to its heart)
 //   wear         crafting.js wearSlot, vehicles.js wear, armour.js (b.wear)
@@ -59,6 +60,8 @@ export const WORLD_CFG = {
 
   baseMin: { group: "sizes", name: "Base yard to start", kind: "mult", min: 0.5, max: 2, step: 0.05, def: 1, pair: "baseMax", tip: "The yard a base starts with, as a share of the usual (a hub's 48 across, an outpost's 32, a camp's 20). Smaller yards leave less room to build before the walls move out." },
   baseMax: { group: "sizes", name: "Base yard at most", kind: "mult", min: 0.5, max: 2, step: 0.05, def: 1, pair: "baseMin", tip: "The most a base's yard grows to, as a share of the usual (a hub's 180 across, an outpost's 100; camps and shelters do not grow). Never less than the yard it starts with, and the map stays within its biggest grid." },
+  raidMin: { group: "sizes", name: "Raid map, smallest", kind: "int", min: 24, max: 80, step: 2, def: 32, pair: "raidMax", tip: "Tiles across the smallest raid map (a gas station's, a shed's, a building picked at a site with several); every map is three quarters as deep. The usual 32 × 24." },
+  raidMax: { group: "sizes", name: "Raid map, largest", kind: "int", min: 24, max: 80, step: 2, def: 56, pair: "raidMin", tip: "Tiles across the largest raid map (a hospital's, a prison's); a city's and a town's raid maps, their buildings and their streets, are always this size. Every other site sits between the two. The usual 56 × 42; big maps cost more every turn." },
   cityMin: { group: "sizes", name: "City crawl, smallest", kind: "int", min: 4, max: 40, step: 1, def: 15, pair: "cityMax", tip: "The fewest blocks across a city crawl is (the usual 15–30; a town's 9–12 is scaled the same way)." },
   cityMax: { group: "sizes", name: "City crawl, largest", kind: "int", min: 4, max: 40, step: 1, def: 30, pair: "cityMin", tip: "The most blocks across a city crawl is (the usual 15–30). The heart of a bigger crawl climbs to a higher level." },
   hiveMin: { group: "sizes", name: "Hive crawl, shallowest", kind: "int", min: 1, max: 12, step: 1, def: 2, pair: "hiveMax", tip: "The fewest rings from a den's mouths to its heart (the usual 2 for a young hive, 9 for the oldest tier; a screamer spire adds one)." },
@@ -74,7 +77,7 @@ export const CFG_GROUPS = [
   { key: "dead", name: "The dead and the worm", tip: "Hordes, the dead at sites, the hives, their bite, and the worm." },
   { key: "people", name: "People and events", tip: "The other groups, the cards and the raids." },
   { key: "loot", name: "Loot by kind", tip: "What searching, raids, crawls and the base's scavengers turn up, kind by kind." },
-  { key: "sizes", name: "Sizes", tip: "Bases, city crawls and hive crawls, smallest to largest." },
+  { key: "sizes", name: "Sizes", tip: "Bases, raid maps, city crawls and hive crawls, smallest to largest." },
   { key: "wear", name: "Wear, failures and fuel", tip: "What breaks, jams and burns." },
 ];
 

@@ -6386,8 +6386,9 @@ export function closeCombat(state, { take = true } = {}) {
 // zones. A vehicle you bring is parked in its own zone: extract there to keep it.
 // ======================================================================================
 
-// A raid map's size is the site's (battlesize.js raidDims: Small–Medium for a gas station up to Large for a hospital);
-// RAID_W × RAID_H is the Medium one (the terrain scattered over it scales with the area).
+// A raid map's size is the site's (battlesize.js raidDims: the run's smallest for a gas station up to its largest for
+// a hospital, a city or a town; worldcfg.js raidMin / raidMax); RAID_W × RAID_H is the Medium one (the terrain
+// scattered over it scales with the area).
 export const RAID_W = 32, RAID_H = 24;
 export const HEAT_NAMES = ["Quiet", "Stirring", "Swarming", "Overrun"];
 // Richness by storey (buildingmaps.js): × perFloor a floor up (the dead and earlier looters stayed low), at most × cap.
@@ -6777,7 +6778,7 @@ export function createRaid(state, setup) {
     map.reach = flood(map.cells, from[0], from[1]);
     map.areas = map.rooms;
   } else {
-    [W, H] = raidDims(tile); // the street map: by the site (battlesize.js: a city center Large, a campground Medium)
+    [W, H] = raidDims(tile, state); // the street map: by the site, between the run's smallest and largest (battlesize.js: a city or a town the largest)
     // setup.raid.areas: a street map with these areas (citycrawl.js street events: a crashed ambulance, a checkpoint).
     // A point of interest's street map (pois.js) is built from dice of its own (poicont.js poiMapRng), so it is the
     // same map with the same containers every visit; Army trucks that come and go are laid last there.
@@ -6865,8 +6866,9 @@ export function createRaid(state, setup) {
   // thirdside.js: the people on the move (wanderers.js groups with a side, or its armed survivors) come into a building through interiorOccupants instead.
   if (pick) placeInterior(state, b, map, groups.filter((g) => !g.side && !g.wanderer).map((g) => ({ ...g, count: Math.max(0, Math.min(MAX_ENEMIES, Math.round(g.count || 0))) }))); // buildingmaps.js: in the rooms
   for (const g of pick ? [] : groups) {
-    // The dead scale with the street map's size (battlesize.js raidDeadScale: more of them over a city center).
-    const count = Math.max(0, Math.min(MAX_ENEMIES, Math.round((g.count || 0) * (g.kind === "zombies" ? raidDeadScale(W, H) : 1))));
+    // The dead scale with the street map's size (battlesize.js raidDeadScale: more of them over a city center); a
+    // campsite's own dead (campsite.js campRoster, g.camp) are the camp's count whatever the map.
+    const count = Math.max(0, Math.min(MAX_ENEMIES, Math.round((g.count || 0) * (g.kind === "zombies" && !g.camp ? raidDeadScale(W, H) : 1))));
     if (!count) continue;
     if (g.kind === "zombies") {
       const zl = siteList(rng, g.mix, count); // the armoured dead of a military site or a police station (deadsoldiers.js); the bred kinds met exploring (hivetech.js siteSpecials)

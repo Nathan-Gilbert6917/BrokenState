@@ -778,10 +778,10 @@ export function buildingMap(state, tileId, option, withVehicle) {
   if (BUILDINGS[option.key] && BUILDINGS[option.key].street) return streetMap(state, tileId, option, withVehicle); // a street of houses (the neighbourhood)
   const rng = new Rng(specSeed(state, tileId, option));
   const spec = makeSpec(rng, option);
-  // battlesize.js: at least the site's size class (more outside around a single-building site's plan), the new ground
-  // topped up with cover. The floor plan itself is the archetype's.
+  // battlesize.js: at least the site's raid map (more outside around a single-building site's plan, a city's or a
+  // town's building the run's largest), the new ground topped up with cover. The floor plan itself is the archetype's.
   const tile = state.tiles[tileId], sb = siteBuildings(tile);
-  spec.margins = fitMargins(spec.bw, spec.bh, { ...BMAP.MARGIN, ...(spec.margins || {}) }, buildingTarget(tile, !!(sb && sb.single)));
+  spec.margins = fitMargins(spec.bw, spec.bh, { ...BMAP.MARGIN, ...(spec.margins || {}) }, buildingTarget(tile, !!(sb && sb.single), state));
   const map = assemble(rng, spec, { key: option.key, id: option.id, name: option.name, withVehicle });
   densifyOutside(map, rng, tile ? tile.terrain : "plains");
   return map;

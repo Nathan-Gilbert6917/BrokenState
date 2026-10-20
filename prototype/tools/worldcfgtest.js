@@ -3,7 +3,7 @@
 // world (a standard world carries no worldCfg and plays as before; a set one keeps it through save and load), and that
 // each dial reaches the sim: hunger, thirst, spoilage, horde size, the dead at sites, hive growth, zombie damage on the
 // battle, infection from bites, the worm's cure, the groups' starting rounds and kit, events, raids, the loot by kind,
-// the sizes of bases, city crawls and hive crawls, wear, failures and fuel. The window: every dial drawn, a preset
+// the sizes of bases, raid maps (cities and towns always the largest), city crawls and hive crawls, wear, failures and fuel. The window: every dial drawn, a preset
 // picked sets them, moving one flips the select to Custom, Done rebuilds only when something changed.
 // Usage: node tools/worldcfgtest.js [-v]
 import { createWorld, tickHour } from "../src/sim/world.js";
@@ -16,6 +16,8 @@ import { hubEventChance } from "../src/sim/hubevents.js";
 import { gridOf as cityGrid, crawlRange, GRID as CITY } from "../src/sim/citygrid.js";
 import { gridOf as baseGrid, GRID as BASE, stampGrid, yardHalf, GRID_MAX } from "../src/sim/basemap.js";
 import { denDepth, HCRAWL } from "../src/sim/hivecrawl.js";
+import { raidDims, buildingTarget } from "../src/sim/battlesize.js";
+import { buildingMap } from "../src/sim/buildingmaps.js";
 import { wearSlot } from "../src/sim/crafting.js";
 import { wear as vehWear, breakdownRoll } from "../src/sim/vehicles.js";
 import { jamChance } from "../src/sim/gunfire.js";
@@ -157,6 +159,15 @@ section("sizes");
   stampGrid(world({ baseMin: 0.5, baseMax: 0.5 }), tiny);
   const gt = baseGrid(tiny);
   check(gt.cap >= gt.yard && gt.yard >= gt.core + 2, "the cap is never under the yard, the yard never under the core");
+  // Raid maps (battlesize.js raidDims): the usual 32 to 56 across, the dials' 40 to 72; cities and towns the largest.
+  const r = world({ raidMin: 40, raidMax: 72 });
+  const site = (st, ty) => st.tiles.find((t) => t.loc && t.loc.type === ty);
+  const small = ["gas", "diner", "grocery", "pharmacy", "cabin", "barn"].map((ty) => site(a, ty)).find(Boolean);
+  check(raidDims(cityTile, a)[0] === 56 && raidDims(townTile, a)[0] === 56 && raidDims(cityTile, r)[0] === 72 && raidDims(townTile, r)[0] === 72, `a city's and a town's raid map the largest (${raidDims(townTile, a).join("×")}; ${raidDims(townTile, r).join("×")} under the dials)`);
+  if (small) check(raidDims(small, a)[0] === 32 && raidDims(small, r)[0] === 40, `a small site the smallest (${small.loc.type}: ${raidDims(small, a).join("×")}; ${raidDims(small, r).join("×")} under the dials)`);
+  check(cleanCfg({ raidMin: 70, raidMax: 30 }).raidMax === 70 && cleanValue("raidMax", 500) === 80, "the raid map pair keeps min ≤ max and its range");
+  const crawlB = buildingMap(r, townTile.id, { id: "b1", key: "house", name: "House" }, false), want = buildingTarget(townTile, false, r);
+  check(crawlB.w >= want[0] && crawlB.h >= want[1], `a town's building (a crawl's) on the largest raid map under the dials (${crawlB.w}×${crawlB.h})`);
 }
 
 section("wear, failures, fuel");
