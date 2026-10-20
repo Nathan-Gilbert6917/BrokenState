@@ -95,7 +95,7 @@ section("Storage buildings");
   check(Object.entries(want).every(([k, v]) => STORE_KG[k] === v && BUILDINGS[k].storeKg === v && isStoreBuilding(k)), "storeKg on every storage building, the ladder of sizes");
   check(!isStoreBuilding("bunkhouse") && !isStoreBuilding("nope"), "a bunkhouse holds no goods");
   check(BUILDINGS.storebox.cost.scrap === 1 && BUILDINGS.storebox.cost.wood === 50 && BUILDINGS.storebox.hours === 2 && BUILDINGS.storebox.max === 6, "a storage box: 1 scrap and 50 wood, 2 hours, up to 6");
-  check(BUILDINGS.shed.plot === "building" && BUILDINGS.shed.cost.scrap === 10 && BUILDINGS.shed.cost.wood === 100 && BUILDINGS.shed.cost.buildmat === 1 && BUILDINGS.shed.hours === 12 && BUILDINGS.shed.max === 4, "a shed: a building plot, 10 scrap, 100 wood and a building material, 12 hours, up to 4");
+  check(BUILDINGS.shed.plot === "building" && BUILDINGS.shed.cost.scrap === 4 && BUILDINGS.shed.cost.wood === 400 && BUILDINGS.shed.cost.buildmat === 1 && BUILDINGS.shed.hours === 12 && BUILDINGS.shed.max === 4, "a shed: a building plot, 4 scrap, 400 wood (woodwork) and a building material, 12 hours, up to 4");
   check(BUILDINGS.warehouse.plot === "building" && BUILDINGS.warehouse.cost.scrap === 40 && BUILDINGS.warehouse.cost.buildmat === 4 && BUILDINGS.warehouse.cost.parts === 1 && BUILDINGS.warehouse.hours === 48 && BUILDINGS.warehouse.max === 2 && BUILDINGS.warehouse.req.mechanics === 2, "a warehouse: 40 scrap, 4 building materials, a part, 48 hours, up to 2, Mechanics 2");
   check(CAMP.build.storebox === 4 && CAMP.build.crates >= 1 && SHELTER.build.storebox >= 1 && SHELTER.build.crates >= 1, "camps and shelters build storage boxes and crates");
 

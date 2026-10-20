@@ -1149,7 +1149,11 @@ const WOOD_BUILD_KEEP = 150, WOOD_BUILD_SMALL = 100; // KEEP: days before the co
 // (once the stocking for the cold is on, all of it). woodNeed result in. govWoodwork fells toward it.
 const buildWoodKeep = (wn) => (wn.soon ? wn.need : Math.max(wn.dailyKeep, wn.need * Math.max(0, Math.min(1, 1 - wn.toCold / WOOD_BUILD_KEEP))));
 // Does a build of this wood keep the woodpile's reserve back (a small one, beds and the general buildings go ahead)?
-const keepsWood = (type, wood) => wood > WOOD_BUILD_SMALL && !BEDS[type] && !GENERAL.includes(type);
+// The food builds (the Kitchen, the animal pen: pt-int round 2, kitchentest) keep only the fires' days (woodNeed dailyKeep),
+// not the coming cold's share: a hub of 8 needs its Kitchen before its first winter's woodpile is in, and the governor
+// fells for them (govWoodwork: their wood with the fires' days as the reserve). Their wood cost stays.
+const WOOD_FOOD = new Set(["canteen", "animal_pen"]);
+const keepsWood = (type, wood) => wood > WOOD_BUILD_SMALL && !BEDS[type] && !GENERAL.includes(type) && !WOOD_FOOD.has(type);
 const wishCost = (w) => (w.barrel != null ? w.cost : w.upgrade != null ? BARRACKS_UP.cost : w.wallCost || BUILDINGS[w.type].cost);
 const wishQueue = (state, base, w) => (w.barrel != null ? queueBarrelUpgrade(state, base, w.barrel) : w.upgrade != null ? queueBunkhouseExpand(state, base, w.upgrade) : queueBuild(state, base, w.type));
 // The housing wish (nextHousing) for buildWishes, and a bunkhouse after a barracks while a plot is free and the
@@ -2729,6 +2733,7 @@ function planBuilds(state, base, areas = ALL_AREAS) {
     // shelves, bunks) goes ahead, and so do beds (a bunkhouse, a hut for bunks); the woodcutters make up the rest (planWood).
     // Short of it the governor fells trees for it (govWoodwork).
     if (keepsWood(w.type, cost.wood || 0)) { const wn = woodNeed(state, base); if ((base.stock.wood || 0) - cost.wood < buildWoodKeep(wn)) continue; }
+    else if (WOOD_FOOD.has(w.type) && cost.wood) { const wn = woodNeed(state, base); if ((base.stock.wood || 0) - cost.wood < wn.dailyKeep) continue; } // the fires' days stay
     const n0 = base.construction.length;
     const msg = wishQueue(state, base, w);
     if (w.room && full && base.construction.length > n0) base.construction.unshift(base.construction.pop()); // ahead of the queue

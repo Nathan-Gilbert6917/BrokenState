@@ -57,7 +57,7 @@ const isStore = (w) => !!w && STORE_KEYS.includes(w.type);
 // ======================================================================
 section("Your costs and hours, your rules");
 {
-  const want = { storebox: [1, 1], crates: [3, 1], shed: [10, 2], store: [18, 3], warehouse: [40, 6] }; // scrap (wood besides: 2026-10-20)
+  const want = { storebox: [1, 1], crates: [3, 1], shed: [4, 2], store: [10, 3], warehouse: [40, 6] }; // scrap (wood besides: 2026-10-20; woodwork's costs)
   for (const [k, [scrap, work]] of Object.entries(want)) {
     const d = storeDef(k), B = BUILDINGS[STORE_BUILDING[k]];
     check(JSON.stringify(d.cost) === JSON.stringify(B.cost) && d.cost.scrap === scrap, `${d.name}: your cost (${JSON.stringify(d.cost)})`);
@@ -123,10 +123,10 @@ section("What they build, by size and need");
   // Short of the materials: nothing they cannot pay for (as your canBuild), the cheaper ones still.
   {
     const { st, f, main } = setup();
-    Object.assign(f.stock, { scrap: 10, buildmat: 0, parts: 0 });
+    Object.assign(f.stock, { scrap: 3, buildmat: 0, parts: 0 }); // woodwork: a storehouse is 10 scrap and 400 wood now, the wood piled outside pays for it
     pileOutside(st, f, main, 1500);
     const w = nextWork(st, f);
-    check(w && w.type === "crates", `1500 kg outside, 10 scrap: crates, what they can pay for (${w && w.type})`);
+    check(w && w.type === "crates", `1500 kg outside, 3 scrap: crates, what they can pay for (${w && w.type})`);
     f.stock.scrap = 0;
     const w2 = nextWork(st, f);
     check(!isStore(w2), `no scrap: no storage (${w2 && w2.type})`);

@@ -77,14 +77,14 @@ const cook = (s, cooking = 3) => { s.role = "cook"; s.skills.cooking = cooking; 
 section("The building");
 {
   const d = BUILDINGS.canteen;
-  check(d && d.name === "Kitchen" && d.plot === "building" && d.max === 1 && d.cost.scrap === 20 && d.cost.parts === 1 && d.hours === 24, `the Kitchen: building plot, 20 scrap + a part, 24 hours (${JSON.stringify(d && d.cost)} ${d && d.hours}h)`);
+  check(d && d.name === "Kitchen" && d.plot === "building" && d.max === 1 && d.cost.scrap === 14 && d.cost.parts === 1 && d.cost.wood === 300 && d.hours === 24, `the Kitchen: building plot, 14 scrap, a part and 300 wood (woodwork), 24 hours (${JSON.stringify(d && d.cost)} ${d && d.hours}h)`);
   check(BUILDINGS.kitchen.name === "Preserving room" && BUILDINGS.kitchen.station === "preserve", "the old key `kitchen` is the Preserving room and still jars food");
   check(BUILDINGS.cookhouse.name === "Cook fire" && BUILDINGS.cookhouse.plot === "utility", "the cook fire unchanged");
   const { st, h } = mk(10);
   check(canBuild(st, h, "canteen").ok, `can be built at the hub (${canBuild(st, h, "canteen").reason || "ok"})`);
   const before = h.stock.scrap;
   queueBuild(st, h, "canteen");
-  check(h.construction.some((c) => c.type === "canteen") && h.stock.scrap === before - 20, "queued and paid");
+  check(h.construction.some((c) => c.type === "canteen") && h.stock.scrap === before - BUILDINGS.canteen.cost.scrap, "queued and paid");
   check(!canBuild(st, h, "canteen").ok, "only one");
   const b = atBase(st, h.id).slice(0, 3);
   for (const s of b) { s.role = "build"; s.pinned = true; }
