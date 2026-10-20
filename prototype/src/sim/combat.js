@@ -126,7 +126,7 @@ import { poiRaidStart, poiMapRng, boxRng } from "./poicont.js"; // its container
 // Medics (a med kit makes one: Heal, Revive), dragging the downed, enemies going down and finishing the downed.
 import * as MED from "./medics.js";
 import { deafen, bangOf, tickEars, heardGhosts, dazedAim, linkAim, linkEscape, fitHeadgear, settleEars } from "./hearing.js"; // ears: bangs, deafness, what your people hear, the team headset
-import { PUSH, pushAct, getUpRound, aiPush, aiMeleePush, aiBreakOut } from "./shoving.js"; // people and the dead shoved back a tile or flat on their back (the user's request 2026-10-20)
+import { PUSH, GRIP, pushAct, getUpRound, aiPush, aiMeleePush, aiBreakOut, aiFree, gripOf, gripHit, gripRefusal } from "./shoving.js"; // people and the dead shoved back a tile or flat on their back; the dead getting hold of someone (the user's request 2026-10-20)
 import { cartAct, cartKnocked, oneHandOk, CART_FIGHT, cartMoved, enemyCartsLetGo, enemyCarts, placeMapCarts, cartHelpStart, holdsCart } from "./carts.js"; // a wheelbarrow, a hand cart: let go (free), take it back (1 action)
 import { fitHands, handsRefusal, handsWord, handsBusy, armsText, handsCount, HANDS_MAX, carriedAct, pickCarried, setOverCover, botDropToFight, autoDrop, settleCarried, armsDropsEnd, stageAtStart } from "./carry.js"; // supplies, a bag or finds carried in the hands: no weapon, no doors, no windows until set down (Drop carried: free; Set over cover)
 import { kitHeadgear, visorAim, toggleVisor } from "./helmets.js"; // helmets: the face shield, an enemy's helmet and ear protection by kit
@@ -2560,6 +2560,7 @@ export function reachable(b, u, maxCost, opts = {}) {
   d[start] = 0;
   real[start] = 0;
   const open = [start], reached = [start]; // reached: every cell the search got to (the others stay Infinity)
+  if (u.heldBy != null && gripOf(b, u)) return { dist: real, prev, reached }; // shoving.js: one of the dead has hold of them: nowhere to go
   while (open.length) {
     let bi = 0;
     for (let i = 1; i < open.length; i++) if (d[open[i]] < d[open[bi]]) bi = i;
@@ -2900,7 +2901,7 @@ export function meleeOdds(b, a, t, opts = {}) {
   // a.meleeSk: the Melee skill's part of a.meleeAim (world.js MELEE_SKILL, playerUnit), its own step; tactAura: a Tactical ally
   // near (traits.js); a stun (a flashbang, a taser: throwables.js) and pepper spray (nonlethal.js): half their aim penalty
   // up close; Parry (skills.js)
-  const steps = [["Base, nerve and traits", a.meleeAim - (a.meleeSk || 0)], ["Melee skill", a.meleeSk || 0], ["The weapon", w.meleeAim || 0], ["A Tactical ally near", tactAura(b, a)], ["Target hunkered down", -(t.hunker ? 10 : 0)], ["Striking up at higher ground", -up], ["Stunned", -(a.stun ? a.stun.aim / 2 : 0)], ["Tasered or pepper-sprayed", -nlAimPen(a) / 2], ["Target parries", -(t.parry || 0)], ["Target flat on the ground", t.floored ? PUSH.FLOOR_AIM : 0], ["The pack", packAim(b, a, t)]]; // deadbeasts.js: dead dogs on the same person
+  const steps = [["Base, nerve and traits", a.meleeAim - (a.meleeSk || 0)], ["Melee skill", a.meleeSk || 0], ["The weapon", w.meleeAim || 0], ["A Tactical ally near", tactAura(b, a)], ["Target hunkered down", -(t.hunker ? 10 : 0)], ["Striking up at higher ground", -up], ["Stunned", -(a.stun ? a.stun.aim / 2 : 0)], ["Tasered or pepper-sprayed", -nlAimPen(a) / 2], ["Target parries", -(t.parry || 0)], ["Target flat on the ground", t.floored ? PUSH.FLOOR_AIM : 0], ["Has hold of them", t.heldBy === a.id && gripOf(b, t) === a ? GRIP.AIM : 0], ["The pack", packAim(b, a, t)]]; // deadbeasts.js: dead dogs on the same person
   let aim = 0;
   for (const [, v] of steps) aim += v; // the same sum, left to right
   const chance = Math.max(10, Math.min(95, Math.round(aim)));
@@ -4069,6 +4070,7 @@ export const SPIKES = { DEAD: [18, 28], LIVING: [12, 20] };
 export function moveAlong(b, u, path) {
   bindDims(b);
   if (!path.length) return;
+  if (!u.shoved && u.heldBy != null && gripOf(b, u)) return; // shoving.js: held by one of the dead (a shove pulls them out of it)
   if (u.brace) delete u.brace; // stepping away lets go of a braced door (buildingmaps.js)
   u.movedT = b.turn; // moved this turn: a sniper rifle or the .50 on the move (gunfire.js braceAim), a sling's aim (gunmods.js situationalAim)
   const from = [u.x, u.y];
@@ -4171,7 +4173,7 @@ export function moveAlong(b, u, path) {
     if (u.side === "player") { b.noise = (b.noise || 0) + VAULT.NOISE * vaulted.length; say(b, `${u.name} vaults ${[...new Set(vaulted)].join(" and ")}${handsBusy(u) ? ` with ${armsText(u)} in hand (twice the movement)` : ""}.`, "info"); }
     else if (u.kind === "zombie" && playerSees(b, u)) say(b, `${u.name} crawls ${[...new Set(vaulted)].map((w) => (w.startsWith("through") ? w : `over ${w}`)).join(" and ")}.`, "info"); // barricade.js CRAWL: seen by one of yours
   }
-  if (walked.length) fx(b, { type: "move", unit: u.id, from, path: walked });
+  if (walked.length) fx(b, { type: "move", unit: u.id, from, path: walked, ...(u.shoved ? { shove: true } : {}) }); // shove: shoved back, a stumble (ui/combat.js animTile)
   if (walked.length && u.dragging != null) MED.dragFollow(b, u, from, walked); // medics.js: the downed ally comes along behind
   if (walked.length && u.ram != null) afterMove(b, u); // siege.js: the ram's crew keeps up with its lead
   if (walked.length) u.movedT = b.turn; // moved this turn: a heavy or big gun's brace (data-guns.js heavy / brace)
@@ -4406,7 +4408,7 @@ export function strike(b, a, t) {
     const eff = Math.round(damage(b, t, rng.int(o.dmg[0], o.dmg[1]) * (crit ? CRIT_MULT : 1) * (a.meleeMult || 1) * amb, a, false, h)); // meleeMult: Brawler
     if (gap && t.dead) say(b, `${a.name} drives the blade in under ${t.name}'s helmet.`, "good");
     if (a.xpT) { a.xpT.melee++; if (t.dead) a.xpT.mkills++; }
-    line.text = `${a.name} ${a.kind === "zombie" ? "tears into" : "strikes"} ${t.name} for ${eff}.${meleeAfter(b, a, t, w, crit)}`; // stagger, bleeding (the melee section above)
+    line.text = `${a.name} ${a.kind === "zombie" ? "tears into" : "strikes"} ${t.name} for ${eff}.${meleeAfter(b, a, t, w, crit)}${gripHit(b, a, t)}`; // stagger, bleeding (the melee section above); one of the dead getting hold (shoving.js)
     line.k = a.side === "player" ? "good" : "danger";
     fx(b, { type: "melee", from: [a.x, a.y], to: [t.x, t.y], hit: true, crit, dmg: eff, side: a.side, ...blowFx(h) });
   } else {
@@ -4505,6 +4507,7 @@ export function combatAct(state, act) {
     case "pickCarried": { const err = pickCarried(state, b, u); if (err) return err; u.ap -= 1; u.hunker = false; break; } // carry.js: a load set down within reach, back in the arms (1 action)
     case "move": {
       if (!inside(act.x, act.y)) return "Cannot move there.";
+      { const why = gripRefusal(b, u); if (why) return why; } // shoving.js: one of the dead has hold of them
       const r = reachable(b, u, dashRange(u), { manual: true, wary: !!act.wary }); // wary: the raid bot goes round acid (acid.js)
       const c = r.dist[idx(act.x, act.y)];
       if (!isFinite(c) || c === 0) return "Cannot move there.";
@@ -4582,7 +4585,7 @@ export function combatAct(state, act) {
       if (err) return err;
       break;
     }
-    case "board": { const err = boardVehicle(b, u); if (err) return err; break; } // in (1 action, SEATS)
+    case "board": { const err = gripRefusal(b, u) || boardVehicle(b, u); if (err) return err; break; } // in (1 action, SEATS); not with one of the dead holding on (shoving.js)
     case "gunner": { const err = manTurret(b, u); if (err) return err; break; } // up behind the turret, or back down (1 action)
     case "disembark": { const err = disembark(b, u); if (err) return err; break; } // out onto a free cell round it (1 action)
     case "turn": { // a quarter turn (1 action, from inside or next to it)
@@ -4799,6 +4802,7 @@ export function combatAct(state, act) {
         break;
       }
       if (u.f) return "Go down to the ground floor to extract.";
+      { const why = gripRefusal(b, u); if (why) return why; } // shoving.js
       const z = zoneAt(b, u.x, u.y);
       const byCar = vehicleExit(b, u); // any cell next to the vehicle is a way out in it, wherever it stands
       if (z < 0 && !byCar) return "Move into an extraction zone, or next to the vehicle, first.";
@@ -4809,6 +4813,7 @@ export function combatAct(state, act) {
     }
     case "retreat":
       if (!evacAt(b, u.x, u.y)) return "Move into the evacuation zone first.";
+      { const why = gripRefusal(b, u); if (why) return why; } // shoving.js
       u.left = true; u.ap = 0; u.ow = u.hunker = false;
       say(b, `${u.name} slips away from the fight.`, "info");
       break;
@@ -4897,6 +4902,8 @@ export function combatAct(state, act) {
     case "shoveFoe": { // shoving.js: a foe right next to them shoved back a tile or flat on their back (1 action)
       const err = pushAct(b, u, t);
       if (err) return err;
+      b.reach = flood(b.cells, u.x, u.y); // a window shoved through is open now
+      syncFloor(b);
       break;
     }
     case "shove": case "boardup": case "teardown": { // barricade.js: furniture shoved a tile (both actions), boards nailed over a door or window, the boards torn down again
@@ -5327,7 +5334,8 @@ function aiUnit(b, u) {
   if (u.ztype && zombieTurn(b, u)) return; // zombietypes.js: a screamer shrieks or hangs back, a brute smashes through
   if (!canFire(b, u) && aiGrabGun(b, u) && u.ap < 1) return; // ground.js: a gun lying right there, taken up
   if (softOn(b) && tentAI(b, u) && (u.ap < 1 || !active(u))) return; // softcover.js: an attacker on a camp with nobody in sight slashes or burns a tent
-  if (aiPush(b, u) && (u.ap < 1 || !active(u))) return; // shoving.js: a foe right next to them shoved off before the shot
+  if (aiFree(b, u) && (u.ap < 1 || !active(u))) return; // shoving.js: held by one of the dead: shoved off first
+  if (aiPush(b, u) && (u.ap < 1 || !active(u))) return; // shoving.js: a foe shoved into a hazard, a fall or a window
   if (!canFire(b, u) && aiMeleePush(b, u) && (u.ap < 1 || !active(u))) return; // shoving.js: a shove first, then the blow on whoever is flat
   if (!canFire(b, u)) return aiMelee(b, u);
   for (let step = 0; step < 3 && u.ap > 0 && active(u); step++) {
@@ -5542,7 +5550,7 @@ function aiMelee(b, u) {
     const foes = foesOf(b, u);
     if (!foes.length) return;
     // Someone holding a barred gate (or door) is behind it: an attacker has to batter it down first.
-    const adj = foes.filter((f) => inMelee(b, u, f) && !(u.side !== (b.holders || "player") && barredCell(b.cells[idx(f.x, f.y)]))).sort((a, c) => a.hp - c.hp); // inMelee: a spear reaches 2
+    const adj = foes.filter((f) => inMelee(b, u, f) && !(u.side !== (b.holders || "player") && barredCell(b.cells[idx(f.x, f.y)]))).sort((a, c) => (c.floored ? 1 : 0) - (a.floored ? 1 : 0) || a.hp - c.hp); // inMelee: a spear reaches 2; whoever is flat on their back first (shoving.js: +20 to hit)
     if (adj.length) { strike(b, u, adj[0]); u.ap = 0; return; }
     if (aiFetchSpear(b, u, foes) || aiThrowSpear(b, u, foes)) continue; // a thrown spear: back for it; a zealot's throw
     const r = reachable(b, u, dashRange(u));
@@ -5856,6 +5864,7 @@ export function escapeOdds(b, u, carrying = null, field = null) {
   const add = (label, v) => { if (Math.round(v)) parts.push([label, Math.round(v)]); };
   add(`${tiles} tile${tiles === 1 ? "" : "s"} to the strip`, -tiles * (carrying ? RETREAT.CARRY_TILE : RETREAT.PER_TILE));
   add(`${pinned} enem${pinned === 1 ? "y" : "ies"} next to them`, -pinned * RETREAT.PINNED);
+  { const g = gripOf(b, u); add(g ? `${g.name} has hold of them` : "", g ? -GRIP.ESCAPE : 0); } // shoving.js
   add([shooters ? `${shooters} shooter${shooters === 1 ? "" : "s"} in sight` : "", chasers ? `${chasers} close behind` : ""].filter(Boolean).join(", "), -threat);
   add("wounds", -RETREAT.WOUNDS * Math.max(0, 1 - u.hp / u.maxHp));
   add("load carried", -loadPenalty(u.armLoad));

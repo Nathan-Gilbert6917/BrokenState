@@ -1253,7 +1253,7 @@ export function unitOrders(state, b, u) {
   btn("melee", "Melee", "Strike an adjacent enemy. Silent: it does not alert others or draw zombies. Ends the turn.", ap > 0 && foesAdj, "E", { why: noAp || (foesAdj ? "" : "No enemy right next to them (not across a wall's corner).") });
   { // sim/shoving.js: a foe right next to them shoved back a tile or flat on their back
     const near = pushTargets(b, u), why = pushRefusal(b, u), po = near.length === 1 ? pushOdds(b, u, near[0]) : null, hz = near.length === 1 ? pushHazard(b, u, near[0]) : "";
-    btn("shoveFoe", po ? `Shove foe (${po.chance}%)` : "Shove foe", `${PUSH.AP} action: shove someone or one of the dead right next to ${u.name.split(" ")[0]} (arms free). It lands about ${PUSH.BASE}% of the time (better for a good hand-to-hand fighter, a Strong back, a Bulldozer, a target unaware or reeling; worse on the armoured dead, and on a target hunkered down or bracing a door): pushed back a tile, straight away, or knocked flat on their back, always when a wall or someone is behind them (the one behind may go down too), after a fall or through a window. Flat on their back: no overwatch, blows at them +${PUSH.FLOOR_AIM}, and getting up takes their next turn's first action. Shoved into the flames, acid, a trench, a pit or a mine they get what is there; off a walkway or ladder they fall (${PUSH.FALL[0]}–${PUSH.FALL[1]} a level); through a window the glass cuts them and the crash is heard. Brutes, wall-breakers and bosses do not budge. Enemy people shove too.${hz ? ` Behind them now: ${hz}.` : ""}${near.length > 1 ? " Several next to them: click the one." : ""}`, !why, "", { why, ap: PUSH.AP });
+    btn("shoveFoe", po ? `Shove foe (${po.chance}%)` : "Shove foe", `${PUSH.AP} action: shove someone or one of the dead right next to ${u.name.split(" ")[0]} (arms free). It lands about ${PUSH.BASE}% of the time (better for a good hand-to-hand fighter, a Strong back, a Bulldozer, a target unaware or reeling; worse on the armoured dead, and on a target hunkered down or bracing a door): pushed back a tile, straight away, or knocked flat on their back, always when a wall or someone is behind them (the one behind may go down too), after a fall or through a window. Flat on their back: no overwatch, blows at them +${PUSH.FLOOR_AIM}, and getting up takes their next turn's first action. Shoved into the flames, acid, a trench, a pit or a mine they get what is there; off a walkway or ladder they fall (${PUSH.FALL[0]}–${PUSH.FALL[1]} a level); through a window the glass cuts them and the crash is heard. Brutes, wall-breakers and bosses do not budge. One of the dead that has hold of someone lets go when shoved off or floored. Enemy people shove too.${hz ? ` Behind them now: ${hz}.` : ""}${u.heldBy != null ? " Something has hold of them: shove it off to move again." : ""}${near.length > 1 ? " Several next to them: click the one." : ""}`, !why, "", { why, ap: PUSH.AP });
   }
   btn("overwatch", "Overwatch", `${OVERWATCH_TIP} Click the way to watch: only what moves in its cone draws a reaction.`, ap > 0 && ammo, "O", { why: fireWhy });
   btn("hunker", "Hunker down", `Ends the turn. +${COVER_DEF[1]} defense on top of cover until your next turn. Only helps when in cover.`, ap > 0, "H", { why: noAp });
@@ -3201,10 +3201,10 @@ function animTile(b, t, now) {
     if (f.type !== "move" || f.unit !== t.id) continue;
     if (!cui.anim.has(f.seq)) cui.anim.set(f.seq, now);
     // el: never below 0 (sync stamps a new battle's fx with performance.now(), a little after the frame's own time)
-    const per = 70, el = Math.max(0, now - cui.anim.get(f.seq)), total = f.path.length * per;
+    const per = f.shove ? 110 : 70, el = Math.max(0, now - cui.anim.get(f.seq)), total = f.path.length * per;
     if (el >= total) break;
     const pts = [f.from, ...f.path];
-    const k = el / per, s = Math.floor(k), fr = k - s;
+    const k = el / per, s = Math.floor(k), lin = k - s, fr = f.shove ? 1 - (1 - lin) * (1 - lin) : lin; // shoved back (sim/shoving.js): a stumble, fast then slowing
     const a = pts[s], c = pts[Math.min(pts.length - 1, s + 1)];
     return [a[0] + (c[0] - a[0]) * fr, a[1] + (c[1] - a[1]) * fr];
   }

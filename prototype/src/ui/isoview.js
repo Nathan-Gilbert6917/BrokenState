@@ -1611,6 +1611,7 @@ export const SNEAK_LOOK = { squash: 0.8, alpha: 0.82, filter: "brightness(0.62) 
 
 // Draw the battle. H: what ui/combat.js knows (the cached view, the selected unit, the mode, the hover, helpers).
 export function drawIso(ctx, cw, ch, state, b, now, H) {
+  frameNow = now; // the frame's clock, for the bodies' own animations (toppleOf)
   const t0 = typeof performance !== "undefined" ? performance.now() : 0;
   if (iso.battle !== b || iso.mapKey !== mapKey(b)) newBattleCamera(b, cw, ch); // a new battle, or its map swapped (the fall back to the yard)
   iso.cw = cw; iso.ch = ch;
@@ -2424,13 +2425,44 @@ const ZRING = { runner: "#ffb43b", brute: "#c8c4b0", spitter: "#9ad63a", screame
 const ringOf = (t) => (t.side === "player" ? (t.vol != null ? "#c9a2ff" : "#8fc1ff") : t.side === "third" ? thirdRing(t) : t.kind === "zombie" ? (t.ztype ? ZRING[t.ztype] || "#b5d36a" : t.boss ? COL.bad : "#b5d36a") : "#ff8f85");
 function feet(s) { return project(s.wx, s.wy, s.z); }
 // The sprite, standing (or lying) at the unit's feet. silhouette: only the figure (for the see-through pass).
+// Shoved flat on their back (sim/shoving.js fx "topple": { unit, dir }): the newest topple of t and how far it has
+// gone, 0 (still on their feet, while the shove's stumble slides them back) to 1 (down), or null when it is over.
+const TOPPLE = { DELAY: 110, MS: 260 };
+let frameNow = 0; // drawIso's now: the clock every effect of the frame is timed by (H.fxAge) // DELAY: the stumble back (ui/combat.js animTile's shove step); MS: the fall
+function toppleOf(b, t, H) {
+  if (!H || !H.fxAge || !b.fx) return null;
+  for (let i = b.fx.length - 1; i >= 0; i--) {
+    const f = b.fx[i];
+    if (f.type !== "topple" || f.unit !== t.id) continue;
+    const el = H.fxAge(f, frameNow) - TOPPLE.DELAY;
+    return el >= TOPPLE.MS ? { f, p: 1, done: true } : { f, p: Math.max(0, el / TOPPLE.MS), done: false };
+  }
+  return null;
+}
 function drawBody(ctx, state, b, s, H, silhouette = false) {
   const t = s.t, S = FR.S, [X, Y] = feet(s);
+  const flat = t.floored && !t.dead && !t.down ? toppleOf(b, t, H) : null; // shoved flat on their back (sim/shoving.js)
+  if (flat && !flat.done) { // still going over: the standing figure tips toward the way they fall, about its feet
+    const d = flat.f.dir || [1, 0], [x1, y1] = project(s.wx + d[0], s.wy + d[1], s.z), dx = x1 - X, dy = y1 - Y, len = Math.hypot(dx, dy) || 1;
+    const e = flat.p * flat.p; // falling: slow at first, then fast
+    const fig = unitFigure(state, b, t, H.salt, unitYaw(b, t, FR.r));
+    frameFigs.push(["up", t]);
+    if (fig) {
+      ctx.save();
+      ctx.translate(X, Y);
+      ctx.rotate((dx >= 0 ? 1 : -1) * e * 1.4 * (Math.abs(dx) / len)); // sideways on screen: a turn about the feet
+      ctx.scale(1, 1 - e * 0.65 * (Math.abs(dy) / len)); // toward or away from the viewer: it shortens as it goes over
+      drawFigure(ctx, fig, 0, 0, S, 1);
+      ctx.restore();
+      return;
+    }
+  }
   if (t.dead || t.down || t.floored) { // floored: shoved flat on their back (sim/shoving.js) until they get up
     // Lying on the ground: the figure laid along the world's x (the head toward -x, or +x facing the other way), so it
-    // turns with the view; the flat picture (ui/downsprites.js) laid onto the floor's axes when there is none.
+    // turns with the view; the flat picture (ui/downsprites.js) laid onto the floor's axes when there is none. Shoved
+    // flat: the head the way they fell.
     const f = unitFacing(b, t);
-    const fig = unitFigureDown(state, b, t, H.salt, dirYaw(b, t, FR.r, [-f, 0]));
+    const fig = unitFigureDown(state, b, t, H.salt, dirYaw(b, t, FR.r, flat && flat.f.dir ? flat.f.dir : [-f, 0]));
     frameFigs.push(["down", t]);
     if (fig) { drawFigure(ctx, fig, X, Y, S, !silhouette && t.dead ? 0.92 : 1); return; }
     const [x1, y1] = project(s.wx + 1, s.wy, s.z), [x2, y2] = project(s.wx, s.wy + 1, s.z);
@@ -2694,6 +2726,7 @@ function drawLabels(ctx, b, s, H) {
   if (t.ow) tags.push(["OW", "#e0a84f"]);
   if (t.hunker) tags.push(["HD", "#4aa3ff"]);
   if (t.floored && !t.down && !t.dead) tags.push(["FLAT", "#ffd166"]); // shoved flat on their back (sim/shoving.js): an action to get up
+  if (t.heldBy != null && !t.down && !t.dead) tags.push(["HELD", "#ff8f85"]); // one of the dead has hold of them (sim/shoving.js gripOf)
   if (t.stun && !t.down && !t.dead) tags.push(t.stun.dazed ? ["DZ", "#cfd6e0"] : ["STN", "#ffffff"]); // a flashbang (sim/throwables.js)
   if (t.side === "enemy" && !t.aware && !t.ko) tags.push(t.investigate ? ["??", "#e0a84f"] : ["?", "#ffd166"]);
   if (t.side === "player" && t.post && b.phase === "deploy") tags.push([t.post === "gate" ? "G" : t.post === "wall" ? "W" : t.post === "tower" ? "T" : "P", "#e0a84f"]);
