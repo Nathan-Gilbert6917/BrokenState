@@ -30,6 +30,8 @@ import {
   poisOf, poiAt, knownPois, morePoisHidden, poiPool, poiKnowledge, poiThreat, poiThreatEstimate, poiThreatText, notePoiThreat, threatBand, THREAT,
   poiBand, poiBandName, POI_BANDS, poiFull, visitPoi, poiVisitText, bestKnownPoi, poiScore, isSitePoi, poiName, inKnownZone, raidingNow, poiEligible,
 } from "../src/sim/pois.js";
+import { buildingOptions } from "../src/sim/buildingmaps.js";
+import { createRaid } from "../src/sim/combat.js";
 import { poiTileRaid, scavengeProblem, pickedOverAt, poiPickWanted, poiPickFor, poiRows, poiPickCard, poiRaidSetup, poiPlace, poiRaidSummary, poiContainerNote } from "../src/sim/poiraid.js";
 import { LOOK, lookOdds, lookContext, lookPreview, fullSurveyDone, quickLook, surveying, lookStatus, poiSurveyTarget, poiSurveyCandidate } from "../src/sim/survey.js";
 
@@ -63,6 +65,7 @@ const bareAllKnown = (st, min = 2) => st.tiles.filter((t) => !t.loc && poisOf(t)
 const bareNoneKnown = (st) => st.tiles.filter((t) => !t.loc && poisOf(t).length >= 1 && knownPois(st, t).length === 0 && reachable(st, t.id)).sort((a, b) => st.grid.distance(a.id, hub(st).tile) - st.grid.distance(b.id, hub(st).tile));
 const hiddenSome = (st, terrain = null) => st.tiles.filter((t) => !t.loc && (!terrain || t.terrain === terrain) && poisOf(t).length >= 2 && morePoisHidden(st, t) && knownPois(st, t).length >= 1 && reachable(st, t.id)).sort((a, b) => st.grid.distance(a.id, hub(st).tile) - st.grid.distance(b.id, hub(st).tile));
 const siteWithExtras = (st) => st.tiles.filter((t) => t.loc && isPublicSite(st, t.id) && poisOf(t).length >= 2 && poisOf(t)[0].site && reachable(st, t.id) && !["city", "town"].includes(t.loc.type)).sort((a, b) => st.grid.distance(a.id, hub(st).tile) - st.grid.distance(b.id, hub(st).tile));
+const multiSite = (st) => st.tiles.filter((t) => t.loc && isPublicSite(st, t.id) && poisOf(t).length && isSitePoi(t, 0) && buildingOptions(t) && reachable(st, t.id)).sort((a, b) => st.grid.distance(a.id, hub(st).tile) - st.grid.distance(b.id, hub(st).tile))[0];
 
 // ---------- 1. the dialogue ----------
 section("The dialogue: which place to raid");
@@ -85,7 +88,7 @@ section("The dialogue: which place to raid");
   if (card) {
     const known = knownPois(st, t, p);
     const picks = card.choices.filter((c) => c.poi != null);
-    check(picks.length === known.length && picks.every((c) => known.includes(c.poi)), `one choice per known place (${picks.length})`);
+    check(new Set(picks.map((c) => c.poi)).size === known.length && picks.every((c) => known.includes(c.poi)), `a choice for every known place (${picks.length})`);
     check(card.choices.some((c) => c.cancel), "and Not now");
     check(!/\d+ hidden|\d+ unknown/.test(card.text + picks.map((c) => c.hint).join(" ")), "no count of what is hidden");
     const rows = poiRows(st, p, t.id);
@@ -175,7 +178,26 @@ section("The headless path: one place at a time");
       extract(st);
     }
     const rs = poiRaidSetup(st, s, 0), rx = poiRaidSetup(st, s, 1);
-    check(rs.choose === true && !rs.place && rx.choose === false && (rx.place === null || /^poi1:/.test(rx.place.id)), "the raid map: the site keeps its buildings' choice, an extra opens its own building (its id carries the index)");
+    check(rs.choose === true && !rs.place && rx.choose === false && (rx.place === null || /^poi1:/.test(rx.place.id)), "the raid map: the site picked for you keeps its buildings' choice, an extra opens its own building (its id carries the index)");
+  }
+  // A site with several buildings: the card offers each and the street under the site, and the pick goes straight in.
+  const m = multiSite(st);
+  check(!!m, "a site with several buildings exists");
+  if (m) {
+    const opts = buildingOptions(m);
+    const q = teamAt(st, m.id, 2);
+    const card = poiPickCard(st, q);
+    const site = card.choices.filter((c) => c.poi === 0);
+    check(site.length === opts.length && opts.every((o) => site.some((c) => c.building === o.id)) && site.some((c) => c.building === "street"), `the card: one choice per building of the site and the street (${site.map((c) => c.building).join(", ")})`);
+    const b0 = opts.find((o) => o.id !== "street");
+    const rb = poiRaidSetup(st, m, 0, b0.id), rst = poiRaidSetup(st, m, 0, "street"), rbad = poiRaidSetup(st, m, 0, "nosuch");
+    check(rb.choose === false && rb.building === b0.id && rst.choose === false && rst.building === "street" && rbad.choose === true, "the raid setup: the picked building (or the street) with no second choice; an unknown id falls back to the choice");
+    const raid = createRaid(st, { mode: "raid", tile: m.id, partyId: q.id, canRetreat: true, handler: "scavenge", enemy: { kind: "zombies", count: 0, power: 3, name: "nobody", groups: [] }, raid: { heat0: 0, choose: false, poi: 0, kind: rb.kind, place: null, building: b0.id } });
+    check(!!raid && raid.raid.interior && raid.raid.interior.id === b0.id && !raid.raid.choose, `the battle map opens inside ${b0.name}, no building question`);
+    site[0].resolve(st);
+    check(q.poi === undefined && q.poiBuilding === undefined, "the pick (place and building) is cleared once used");
+    if (st.engagement) { st.engagement.approach = "normal"; st.engagement = null; }
+    st.cards.length = 0;
   }
   // Every kind's building (or none: the street map with the kind's areas).
   const kinds = [...new Set(st.tiles.flatMap((x) => poisOf(x).map((y) => y.kind)))];
@@ -375,6 +397,15 @@ section("On screen: the right-click actions and the dialogue");
   try { html = PICK.poiPickModal(st, card); } catch (e) { err = e.stack.split("\n").slice(0, 2).join(" | "); }
   check(!err && knownPois(st, t, p).every((i) => html.includes(poiName(t, i))) && /threat unknown/.test(html) && /never visited/.test(html) && /data-action="choice"/.test(html) && !/undefined|NaN/.test(html), `the dialogue draws every known place with its band, visits and threat${err ? ` (${err})` : ""}`);
   check(!/\d+ hidden|\d+ unknown/.test(html.replace(/data-tip="[^"]*"/g, "")), "and never a count of the hidden");
+  const m = multiSite(st);
+  if (m) {
+    const q = teamAt(st, m.id, 2);
+    const mc = poiPickCard(st, q);
+    let mh = "", merr = "";
+    try { mh = PICK.poiPickModal(st, mc); } catch (e) { merr = e.stack.split("\n").slice(0, 2).join(" | "); }
+    const sub = mc.choices.map((c, i) => [c, i]).filter(([c]) => c.poi === 0 && c.building);
+    check(!merr && sub.every(([, i]) => mh.includes(`data-i="${i}"`)) && /The street/.test(mh) && !/undefined|NaN/.test(mh), `the dialogue draws a button per building of the site and the street${merr ? ` (${merr})` : ""}`);
+  }
 }
 
 console.log(`\n${passes} passed, ${fails} failed.`);

@@ -3,7 +3,8 @@
 // container ledger says (what you opened and left there, looted by others since), whether another group is in it
 // right now, and the threat you make of it (a word with skulls, the look's age, "stale" past two weeks; "threat
 // unknown" until a survey or a visit). Never a count of what is still hidden: "possibly more unknown" at most. The
-// buttons are the card's own choices (data-action="choice"), so main.js handles them as any card's.
+// buttons are the card's own choices (data-action="choice"), so main.js handles them as any card's. A site with
+// several buildings (a farm, a military base) is one row with a button per building and the street under it.
 import { partyMembers, tileLabel } from "../sim/parties.js";
 import { poiRows } from "../sim/poiraid.js";
 import { morePoisHidden, tileHeatEstimate } from "../sim/pois.js";
@@ -33,16 +34,26 @@ export function poiPickModal(state, card) {
   const p = state.parties.find((x) => x.id === card.partyId);
   const tile = card.poiPick.tile;
   const rows = p ? poiRows(state, p, tile) : [];
-  const byPoi = new Map(card.choices.map((c, i) => [c.poi, i]));
+  const byPoi = new Map(card.choices.map((c, i) => [c.poi, i]).filter(([poi, i]) => poi != null && card.choices[i].building == null));
+  const byBuilding = (poi) => card.choices.map((c, i) => ({ c, i })).filter(({ c }) => c.poi === poi && c.building != null);
   const more = p ? morePoisHidden(state, tile, p) : false;
   const who = p ? partyMembers(state, p).map((s) => s.name.split(" ")[0]).join(", ") : "";
   const rowHtml = (r) => {
-    const i = byPoi.get(r.i);
     const def = LOCATIONS[r.kind];
-    return `<button data-action="choice" data-i="${i}" class="poirow" style="display:block;width:100%;text-align:left"${tip(`${def ? def.name : r.kind}: likely ${Object.keys((def && def.loot) || {}).slice(0, 4).join(", ") || "little"}. ${r.site ? "The tile's site: its own buildings are offered next." : ""}`)}>
-      <div class="spread"><b>${esc(r.name)}</b><span style="color:${BAND_COLOR[r.band]}"${tip("What is left against what the place held untouched: rich (60%+), some (30%+), little (10%+), picked clean. Each place has its own loot, and nothing grows back.")}>${esc(r.bandName)}</span></div>
-      <div class="small"><span class="muted">${esc(r.visits)}</span> · ${threatHtml(r.threat)}${r.camp ? `<br><span${tip("A campsite: abandoned (a few of the dead about, the best loot left), overrun (a pack of the dead among the tents) or an active raider camp (a band round a lit fire; at night some asleep in the tents). As your people last saw it: a survey or a visit looks again. Tents can be taken down and carried off.")}>${esc(r.camp)}</span>` : ""}${r.cont ? `<br><span class="muted">${esc(r.cont)}</span>` : ""}${r.raiding ? `<br><span class="danger">Another group is raiding it right now.</span>` : ""}</div>
-    </button>`;
+    const likely = `${def ? def.name : r.kind}: likely ${Object.keys((def && def.loot) || {}).slice(0, 4).join(", ") || "little"}.`;
+    const body = `<div class="spread"><b>${esc(r.name)}</b><span style="color:${BAND_COLOR[r.band]}"${tip("What is left against what the place held untouched: rich (60%+), some (30%+), little (10%+), picked clean. Each place has its own loot, and nothing grows back.")}>${esc(r.bandName)}</span></div>
+      <div class="small"><span class="muted">${esc(r.visits)}</span> · ${threatHtml(r.threat)}${r.camp ? `<br><span${tip("A campsite: abandoned (a few of the dead about, the best loot left), overrun (a pack of the dead among the tents) or an active raider camp (a band round a lit fire; at night some asleep in the tents). As your people last saw it: a survey or a visit looks again. Tents can be taken down and carried off.")}>${esc(r.camp)}</span>` : ""}${r.cont ? `<br><span class="muted">${esc(r.cont)}</span>` : ""}${r.raiding ? `<br><span class="danger">Another group is raiding it right now.</span>` : ""}</div>`;
+    const subs = byBuilding(r.i);
+    if (!subs.length) return `<button data-action="choice" data-i="${byPoi.get(r.i)}" class="poirow" style="display:block;width:100%;text-align:left"${tip(likely)}>${body}</button>`;
+    // The site's buildings: the place's line once, a button per building (what it likely holds, its size) and the street.
+    const sub = ({ c, i }) => {
+      const o = (r.buildings || []).find((x) => x.id === c.building) || {};
+      const size = [o.size, o.rooms ? `${o.rooms} rooms` : ""].filter(Boolean).join(", ");
+      return `<button data-action="choice" data-i="${i}" class="small" style="text-align:left"${tip(o.hint)}>${esc(o.id === "street" ? "The street" : o.name || c.building)}${size ? ` <span class="muted">${esc(size)}</span>` : ""}</button>`;
+    };
+    return `<div class="poirow"${tip(`${likely} Several buildings stand here: pick the one to go into, or the street around them.`)}>${body}
+      <div class="poibldg" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px">${subs.map(sub).join("")}</div>
+    </div>`;
   };
   const rest = card.choices.map((c, i) => ({ c, i })).filter(({ c }) => c.poi == null);
   return `<div class="box">
