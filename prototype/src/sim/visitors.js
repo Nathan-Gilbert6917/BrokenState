@@ -1941,11 +1941,13 @@ function meetCard(state, v, p) {
 const enemyOf = (v) => (v.kind === "merchants" ? escortEnemy(v) : { kind: "raiders", count: clamp(v.size, 1, 14), power: v.power, name: cap1(v.name) });
 function teamFight(state, v, p, ambush, extra = {}) {
   if (!state.visitors.includes(v)) { resume(state, p); return "They are gone."; }
+  const camping = v.kind === "raiders" && (v.phase === "stop" || v.phase === "search"); // campsite.js: raiders camped where they stopped: the fight is at their camp
   v.phase = "battle";
   visitorInfo(state).stats.fights++;
   startCombat(state, {
     tile: partyTile(p), partyId: p.id, enemy: enemyOf(v), ambush, canRetreat: true, handler: "outsiderFight",
-    context: { visitorId: v.id, partyId: p.id, baseId: null, ...extra },
+    ...(camping ? { layout: "campsite" } : {}), // their clearing, their fire, their real tents and stores
+    context: { visitorId: v.id, partyId: p.id, baseId: null, ...extra, ...(camping ? { campBand: { band: "visitor", id: v.id } } : {}) },
   });
   return "";
 }

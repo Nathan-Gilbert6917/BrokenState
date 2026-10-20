@@ -130,6 +130,7 @@ export function pitchTentAtBase(state, base, type, item = null, at = null) {
   const r = pitchTent(state, base, type, at);
   if (!r || r.error || !r.tent) return null;
   if (item) { delete item.store; r.tent.item = item; } // containers.js: an assignment to a container goes with it out of the stores
+  if (item && item.tentHp != null) { if (item.tentHp < 100) r.tent.tentHp = Math.max(0, item.tentHp); delete item.tentHp; } // tentfight.js: a bag taken off a torn tent stands torn (softcover.js mendTents)
   r.tent.day = state ? Math.floor(state.hour / 24) + 1 : 0;
   return tentsOf(base).find((t) => t.id === r.tent.id) || null;
 }
@@ -147,7 +148,10 @@ export function strikeTentAtBase(state, base, id) {
   const r = strikeTent(state, base, id);
   if (!r || r.error) return null;
   const T = TENT_TYPES[r.kind];
-  return T && T.bag ? (rec.item && typeof rec.item === "object" ? rec.item : newItem(r.kind)) : null;
+  if (!(T && T.bag)) return null;
+  const bag = rec.item && typeof rec.item === "object" ? rec.item : newItem(r.kind);
+  if (rec.tentHp != null && rec.tentHp < 100) bag.tentHp = Math.max(0, rec.tentHp); else delete bag.tentHp; // its wear goes into the bag (tentfight.js: a damaged bag)
+  return bag;
 }
 /** Strikes every tent at a base; returns the bags. @param {any} state @param {any} base */
 export function strikeTents(state, base) {
@@ -438,12 +442,14 @@ export function bandSpoilMult(b, camping) {
  * (basemap.js). Returns the kinds (TENT_TYPES keys).
  * @param {any} f @param {number} people
  */
-export function groupCampTents(f, people) {
+export const groupCampTents = (f, people) => groupCampTentItems(f, people).map((x) => x.kind);
+/** The same as groupCampTents with the bag each one is ({ kind, item }; item null for a makeshift one): tentfight.js takes the very bag off their shelf. @param {any} f @param {number} people */
+export function groupCampTentItems(f, people) {
   const bags = ((f && f.wares) || []).filter((it) => it && it.withParty == null && isTentBag(it)).sort((a, b) => bagSleepers(b) - bagSleepers(a));
-  if (!bags.length) return Array(AI_CAMP_TENTS).fill("makeshift");
+  if (!bags.length) return Array(AI_CAMP_TENTS).fill(null).map(() => ({ kind: "makeshift", item: null }));
   const out = [];
   let left = Math.max(1, people || 0);
-  for (const it of bags) { if (left <= 0) break; out.push(bagType(it)); left -= bagSleepers(it); }
+  for (const it of bags) { if (left <= 0) break; out.push({ kind: bagType(it), item: it }); left -= bagSleepers(it); }
   return out;
 }
 /** People the tent bags on a group's shelf sleep (groupworks.js: quarters at its camps). @param {any} f */

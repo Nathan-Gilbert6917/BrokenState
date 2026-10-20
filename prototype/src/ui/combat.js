@@ -24,6 +24,7 @@ import { WINDOW, windowsBy, windowState, windowWord, openRefusal, isWindow, wind
 import { WIRE, cutTargets, cutRefusal, cutterOf } from "../sim/wire.js"; // Cut wire (the user's request 2026-10-19)
 import { SHOVE, BOARD, CRAWL, shoveTargets, shoveDests, shoveRefusal, shovePlan, tallPiece, canShove, shoveable, pieceName, boardTargets, boardRefusal, boardsOf, tearTargets, isBoarded, boardedName, boardedUnder, targetWord } from "../sim/barricade.js"; // furniture shoved in the way, doors and windows boarded up (the user's request 2026-10-18)
 import { INTERIOR } from "../sim/interior.js";
+import { TENT_TAKE, tentsNear, strikeRefusal, slashTargets, slashRefusal, goesLeft, tentWord, tentWear } from "../sim/tentfight.js"; // Take down and Slash at a tent (the user's request 2026-10-20)
 import { clearEnough } from "../sim/battlesize.js";
 import { SUPPLIES, GEAR } from "../sim/data.js";
 import { rescueOptions } from "../sim/rescueraid.js"; // a rescue raid on a group's base: captives, the cell, the armory
@@ -426,7 +427,7 @@ function act(state, a) {
   if (!err && a.type !== "end") {
     const u = unitById(b, a.unit);
     if (u && u.side === "player") followFloor(b, u); // Go up / Go down: the view goes with them
-    if (!u || !active(u) || u.ap < 1 || ["throw", "drag", "tie", "subdue", "taser", "pepper", "execute", "surrender", "peek", "close", "brace", "checkwindow", "openwindow", "closewindow", "breakwindow", "shove", "boardup", "teardown", "cutwire", "keylock", "keyunlock", "doubletap", "pickup", "crush", "goup", "godown", "drive", "loadRam", "unloadRam", "board", "disembark", "turn", "heal", "revive", "dragAlly", "dropAlly", "finish", "pullOut", "suppress", "throwspear", "unjam", "launch", "glreload", "face", "overwatch"].includes(a.type)) cui.mode = "move";
+    if (!u || !active(u) || u.ap < 1 || ["throw", "drag", "tie", "subdue", "taser", "pepper", "execute", "surrender", "peek", "close", "brace", "checkwindow", "openwindow", "closewindow", "breakwindow", "shove", "boardup", "teardown", "cutwire", "strike", "slashtent", "keylock", "keyunlock", "doubletap", "pickup", "crush", "goup", "godown", "drive", "loadRam", "unloadRam", "board", "disembark", "turn", "heal", "revive", "dragAlly", "dropAlly", "finish", "pullOut", "suppress", "throwspear", "unjam", "launch", "glreload", "face", "overwatch"].includes(a.type)) cui.mode = "move";
     cui.ammoAsk = null;
     cui.shoveAsk = null; // the Shove chooser (sim/barricade.js) closes once anything is done
     if (a.type !== "face") cui.handAsk = null; // the Hand over chooser stays open across the free Face toward the mate
@@ -564,7 +565,7 @@ export function combatClick(state, px, py) {
   }
   // Raids: click a container next to the selected unit to search it.
   // A door picked for Peek, Close door or Brace (sim/buildingmaps.js); a window picked for a window order (sim/windows.js).
-  if (u && active(u) && ["peek", "close", "brace", "checkwindow", "openwindow", "closewindow", "breakwindow", "boardup", "teardown", "cutwire"].includes(cui.mode)) return void act(state, { type: cui.mode, unit: u.id, x: c.x, y: c.y });
+  if (u && active(u) && ["peek", "close", "brace", "checkwindow", "openwindow", "closewindow", "breakwindow", "boardup", "teardown", "cutwire", "strike", "slashtent"].includes(cui.mode)) return void act(state, { type: cui.mode, unit: u.id, x: c.x, y: c.y });
   // Shove (sim/barricade.js): the piece clicked opens its destinations; with a piece picked, a destination clicked shoves it there.
   if (u && active(u) && (cui.mode === "shove" || (cui.shoveAsk && cui.shoveAsk.uid === u.id))) return void shoveClick(state, b, u, c);
   // A window right next to the selected unit (sim/windows.js): the next thing to do with it (check it, open it, climb through).
@@ -899,6 +900,25 @@ function barricadeButtons(state, b, u, btn) {
   const tears = tearTargets(b, u);
   if (tears.length) btn("teardown", "Tear down", `${BOARD.TEAR.ap} actions: ${first} pries the boards off the ${[...new Set(tears.map((t) => boardedName(t.c).toLowerCase()))].join(", ")} next to them, from either side: the door or window as it was, shut. About half the bundles come off whole (into the kit, or on the ground at their feet); the rest are splintered. Quieter than nailing them up (heard ${BOARD.TEAR.radius} tiles off).${tears.length > 1 ? " Several next to them: click the one." : ""}`,
     ap >= BOARD.TEAR.ap, "", { why: NO_AP, ap: BOARD.TEAR.ap, on: cui.mode === "teardown" });
+}
+// ---------- tents (sim/tentfight.js) ----------
+// Take down (both actions a go, a couple of turns: the bag into the arms) and Slash (one action), shown next to a tent.
+function tentButtons(state, b, u, btn) {
+  const near = tentsNear(b, u);
+  if (!near.length) return;
+  const first = u.name.split(" ")[0];
+  const t = near.find((n) => n.t.workBy === u.id)?.t || near[0].t;
+  const w = tentWear(b, t), left = goesLeft(t);
+  const sWhy = strikeRefusal(b, u);
+  const what = w.burned || w.share <= TENT_TAKE.WRECKED ? "slashed to rags: only scrap and canvas come of it" : t.kind === "makeshift" ? "a makeshift one: its poles and tarp give a little wood and scrap" : `its bag goes into ${first}'s arms (on the ground if the hands are full)${w.share < 0.999 ? `, torn (${Math.round(w.share * 100)}% left)` : ""}`;
+  btn("strike", "Take down", `${TENT_TAKE.AP} actions a go: ${first} takes down the ${tentWord(t)} next to them${near.length > 1 ? " (several here: click the one)" : ""}: ${left} go${left === 1 ? "" : "es"} left (two people share the work). ${what}; what was stored in it stays where it stood, to search. The rattle of the poles is heard ${TENT_TAKE.RADIUS} tiles off${b.raid ? ` (Heat +${TENT_TAKE.HEAT} a go)` : ""}. Taken off its owner for good.`,
+    !sWhy, "", { why: sWhy, ap: TENT_TAKE.AP, on: cui.mode === "strike" });
+  const cuts = slashTargets(b, u);
+  if (cuts.length) {
+    const cWhy = slashRefusal(b, u);
+    btn("slashtent", "Slash", `${TENT_TAKE.SLASH_AP} action: ${first} slashes the canvas next to them (10–16 a cut; a cell at 0 is torn open and hides nobody). A torn tent taken down gives a damaged bag; slashed to rags, only scrap and canvas.${cuts.length > 1 ? " Several cells: click the one." : ""}`,
+      !cWhy, "", { why: cWhy, ap: TENT_TAKE.SLASH_AP, on: cui.mode === "slashtent" });
+  }
 }
 // The chooser over the orders once a piece is picked: a button for each place it can go (the cell clicked on the map works too).
 function shoveChooser(state, b, u) {
@@ -1252,6 +1272,7 @@ export function unitOrders(state, b, u) {
   else { doorButtons(b, u, btn, true); windowButtons(b, u, btn); } // a field map's houses (sim/combat.js genMap): with a door or a window next to them
   keyButtons(b, u, btn); // sim/basemap.js: the defenders' keys on their base's map
   barricadeButtons(state, b, u, btn); // sim/barricade.js: Shove, Board up, Tear down
+  tentButtons(state, b, u, btn); // sim/tentfight.js: Take down, Slash
   if (b.rescue) rescueButtons(state, b, u, btn);
   out.extra = lockPanel(state, b, u) + carPanel(state, b, u) + reloadPicker(state, b, u) + handChooser(state, b, u) + shoveChooser(state, b, u) + nlAskHtml(b, cui); // Execute / Surrender: asked first (ui/nonlethal.js)
   return out;
@@ -1596,6 +1617,15 @@ export function combatAction(state, key, d, ui = null) { // ui: main.js's screen
     if (!list.length) { cui.msg = v === "boardup" ? "Stand right next to a closed door, a doorway or a window (not diagonally)." : "Stand right next to boards (not diagonally) to tear them down."; return; }
     cui.mode = cui.mode === v ? "move" : v;
     cui.msg = cui.mode === v ? (v === "boardup" ? "Click the door, doorway or window to board up." : "Click the boards to tear down.") : "";
+    return;
+  }
+  if (v === "strike" || v === "slashtent") { // sim/tentfight.js: the tent next to them (several: click the one)
+    const why = v === "strike" ? strikeRefusal(b, u) : slashRefusal(b, u);
+    if (why) { cui.msg = why; return; }
+    const many = v === "strike" ? tentsNear(b, u).length > 1 && !tentsNear(b, u).some((n) => n.t.workBy === u.id) : new Set(slashTargets(b, u).map((o) => (o.t ? o.t.id : -1))).size > 1;
+    if (!many) return void act(state, { type: v, unit: u.id });
+    cui.mode = cui.mode === v ? "move" : v;
+    cui.msg = cui.mode === v ? (v === "strike" ? "Click the tent to take down." : "Click the tent to slash.") : "";
     return;
   }
   if (v === "cutwire") { // sim/wire.js: the wire next to them (several: click the one)

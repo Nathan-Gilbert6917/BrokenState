@@ -1672,14 +1672,15 @@ function paintBlind() {
 
 function paintCampsite() {
   const p = painter(18, 15);
-  // A campsite: one tent by a cold fire ring, a picnic table and a cooler, a tree behind.
-  pine(p, 15, 12, 9);
-  tent(p, 4, 12, 5, "#3a78b0");
-  for (const dx of [-1, 0, 1, 2, 3]) p.set(10 + dx, 13, STONE);               // the fire ring
-  campfire(p, 10, 12, false);
-  p.rect(8, 7, 13, 7, WOOD_LIT); p.rect(9, 8, 12, 8, WOOD); p.set(9, 9, WOOD); p.set(12, 9, WOOD); p.rect(8, 10, 13, 10, WOOD_LIT); // the table
-  p.rect(15, 13, 17, 14, WHITE); p.rect(15, 13, 17, 13, "#3a78b0");           // the cooler
-  p.rect(0, 14, 14, 14, shade(DIRT, 0.15));
+  // A campsite (sim/campsite.js): a ring of tents of mixed sizes round a lit fire in a clearing, pines behind.
+  pine(p, 1, 9, 8); pine(p, 16, 8, 7);
+  p.rect(0, 14, 17, 14, shade(DIRT, 0.15)); p.rect(3, 13, 14, 13, shade(DIRT, 0.3));
+  tent(p, 4, 8, 4, "#3a78b0");                                                 // a big tent at the back
+  tent(p, 12, 8, 3, "#6f7452");                                                // an olive one beside it
+  tent(p, 14, 13, 3, ORANGE);                                                  // a small one in front
+  tent(p, 2, 13, 2, "#a03a2a", false);                                         // a pup tent
+  for (const dx of [-1, 0, 1, 2, 3, 4]) p.set(6 + dx, 14, STONE);             // the fire ring
+  campfire(p, 7, 13, true);
   return p;
 }
 

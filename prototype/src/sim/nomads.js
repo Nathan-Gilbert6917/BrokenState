@@ -896,10 +896,12 @@ function nomadFight(state, b, p, ambush, opts = {}) {
     resume(state, p);
     return `They scattered before you could close in${planText(got) ? `, dropping ${planText(got)}` : ""}.`;
   }
+  const camping = !!opts.camp || b.phase === "camp"; // campsite.js: met at their camp, the fight is at their camp
   b.phase = "battle";
   startCombat(state, {
     tile: partyTile(p), partyId: p.id, enemy: nomadEnemy(state, b), ambush, canRetreat: true, handler: "nomadFight",
-    context: { nomadId: b.id, partyId: p.id, camp: !!opts.camp },
+    ...(camping ? { layout: "campsite" } : {}), // campsite.js: their clearing, their fire, their real tents and stores
+    context: { nomadId: b.id, partyId: p.id, camp: !!opts.camp, ...(camping ? { campBand: { band: "nomad", id: b.id } } : {}) },
   });
   return "";
 }

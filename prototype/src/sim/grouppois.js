@@ -41,6 +41,7 @@ import { lootPoiAbstract, poiHouses } from "./poicont.js"; // poiHouses: a stree
 import { lookOdds, LOOK } from "./survey.js";
 import { haulFor, AISCAV } from "./aiscav.js";
 import { rollGroupTent } from "./tents.js"; // a tent bag among the finds (its own dice; call-time only)
+import { campGroupRaid } from "./campsite.js"; // a campsite raided: its tents carried off (call-time only)
 
 export const GPOI = {
   RANGE: 10,        // a group sees the known zone's POIs this far from its bases (aiscav.js AISCAV.range)
@@ -291,6 +292,7 @@ export function raidPoiAsGroup(state, who, tile, i, need, opts = {}) {
     const tent = rollGroupTent(state, who, t.id, i, isSitePoi(t, i) ? (t.loc ? t.loc.type : null) : p.kind, r.took, before);
     if (tent) gear.push(tent);
   }
+  if (opts.count !== false && p.kind === "campsite") gear.push(...campGroupRaid(state, who, t, i)); // campsite.js: its standing tents carried off, the camp cleared
   const S = stats(state);
   if (opts.count !== false) { S.raids++; S.took += r.took; } // count false: a group's own land, worn down by the day (aiscav.js)
   const strippedNow = r.stripped && !was;

@@ -41,7 +41,7 @@ export function poiPickModal(state, card) {
     const def = LOCATIONS[r.kind];
     return `<button data-action="choice" data-i="${i}" class="poirow" style="display:block;width:100%;text-align:left"${tip(`${def ? def.name : r.kind}: likely ${Object.keys((def && def.loot) || {}).slice(0, 4).join(", ") || "little"}. ${r.site ? "The tile's site: its own buildings are offered next." : ""}`)}>
       <div class="spread"><b>${esc(r.name)}</b><span style="color:${BAND_COLOR[r.band]}"${tip("What is left against what the place held untouched: rich (60%+), some (30%+), little (10%+), picked clean. Each place has its own loot, and nothing grows back.")}>${esc(r.bandName)}</span></div>
-      <div class="small"><span class="muted">${esc(r.visits)}</span> · ${threatHtml(r.threat)}${r.cont ? `<br><span class="muted">${esc(r.cont)}</span>` : ""}${r.raiding ? `<br><span class="danger">Another group is raiding it right now.</span>` : ""}</div>
+      <div class="small"><span class="muted">${esc(r.visits)}</span> · ${threatHtml(r.threat)}${r.camp ? `<br><span${tip("A campsite: abandoned (a few of the dead about, the best loot left), overrun (a pack of the dead among the tents) or an active raider camp (a band round a lit fire; at night some asleep in the tents). As your people last saw it: a survey or a visit looks again. Tents can be taken down and carried off.")}>${esc(r.camp)}</span>` : ""}${r.cont ? `<br><span class="muted">${esc(r.cont)}</span>` : ""}${r.raiding ? `<br><span class="danger">Another group is raiding it right now.</span>` : ""}</div>
     </button>`;
   };
   const rest = card.choices.map((c, i) => ({ c, i })).filter(({ c }) => c.poi == null);

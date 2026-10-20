@@ -34,6 +34,7 @@ import { throwAt, THROWABLES } from "./stealth.js"; // (call-time only)
 import { FIRE, fireAt } from "./throwables.js"; // (call-time only)
 import { layoutOf, rectOf, itemByKey } from "./basemap.js"; // (call-time only)
 import { log, atBase } from "./world.js";
+import { aiStrike, addTent } from "./tentfight.js"; // call-time only: a tent taken down and carried off; the base's tents on the battle's list
 
 export const SOFT = new Set(["bush", "tent"]);
 export const CONCEAL = {
@@ -167,22 +168,29 @@ export function tentStep(b, u, x, y) {
 }
 // An attacker on a camp's map with none of the defenders in sight (combat.js aiUnit, before its shooting): a Molotov onto
 // a tent, or a slash at one next to it. Returns true when it acted. Cheap: only with tents on the map and nobody seen.
-export function tentAI(b, u) {
+export function tentAI(b, u, state = null) {
   if (!softOn(b) || u.kind !== "human" || !active(u) || u.ap < 1 || u.side === (b.holders || "player") || u.side === "third" || u.slashT === b.turn) return false;
-  if (b.anyTent === undefined) b.anyTent = b.cells.some((c) => c.k === "tent"); // once a battle (a tent is never pitched mid-fight)
+  if (b.anyTent === undefined) b.anyTent = b.cells.some((c) => c.k === "tent" || c.k === "torn"); // once a battle (a tent is never pitched mid-fight; a take-down works it out again)
   if (!b.anyTent) return false;
+  // Never their own camp's (tentfight.js b.tents: whose camp a tent is): a campsite's raiders hold theirs.
+  const theirs = (x, y) => { const c = b.cells[y * b.w + x]; const t = c && c.tentId != null && b.tents ? b.tents.find((o) => o.id === c.tentId) : null; return !!t && t.side === u.side; };
   // The cheap tests first: a Molotov to throw, or a tent right there (underfoot or next to them); then nobody in sight.
-  let at = null;
-  for (let dy = -1; dy <= 1 && !at; dy++) for (let dx = -1; dx <= 1 && !at; dx++) if (kAt(b, u.x + dx, u.y + dy) === "tent") at = [u.x + dx, u.y + dy];
+  let at = null, near = false;
+  for (let dy = -1; dy <= 1 && !at; dy++) for (let dx = -1; dx <= 1 && !at; dx++) {
+    const k = kAt(b, u.x + dx, u.y + dy);
+    if ((k === "tent" || k === "torn") && !theirs(u.x + dx, u.y + dy)) { near = true; if (k === "tent") at = [u.x + dx, u.y + dy]; }
+  }
   const burn = !!(u.throwables && u.throwables.molotov > 0 && b.enemyThrowTurn !== b.turn);
-  if (!at && !burn) return false;
+  if (!near && !burn) return false;
   if (foesOf(b, u).some((f) => canSee(b, u, f))) return false;
+  // tentfight.js: taken down and carried off (TENT_TAKE.AI_TAKE of the time, on with one begun), the slash's priority.
+  if (near && aiStrike(state, b, u)) { u.slashT = b.turn; return true; }
   // A Molotov carried (u.throwables: the enemy's kit): the side's throw of the turn, the whole turn.
   if (burn && b.rng.chance(TENT_FIGHT.AI_BURN)) {
     const range = THROWABLES.molotov.range, mine = b.units.filter((o) => o.side === u.side && active(o));
     let best = null;
     for (let y = 0; y < b.h; y++) for (let x = 0; x < b.w; x++) {
-      if (b.cells[y * b.w + x].k !== "tent" || fireAt(b, x, y)) continue;
+      if (b.cells[y * b.w + x].k !== "tent" || fireAt(b, x, y) || theirs(x, y)) continue;
       const d = dist(u.x, u.y, x, y);
       if (d < 2 || d > range || mine.some((o) => dist(o.x, o.y, x, y) <= FIRE.r + 1)) continue;
       if (!best || d < best.d) best = { x, y, d };
@@ -229,12 +237,12 @@ export function softSetup(state, b) {
   const F = b.deployPlan.fort;
   for (const e of layoutOf(state, base)) {
     if (!e.at) continue;
-    const r = rectOf(e.it, e.at), cells = [];
+    const r = rectOf(e.it, e.at), cells = [], at = [];
     for (let y = r.y0; y < r.y0 + r.h; y++) for (let x = r.x0; x < r.x0 + r.w; x++) {
       const mx = x + F.ox, my = y + F.oy;
       if (mx < 0 || my < 0 || mx >= b.w || my >= b.h) continue;
       const c = b.cells[my * b.w + mx];
-      if (c.k === "tent") cells.push(c);
+      if (c.k === "tent") { cells.push(c); at.push([mx, my]); }
     }
     const st = cells.length ? tentStore(base, e.it.key, e.it) : null;
     if (!st) continue;
@@ -245,6 +253,8 @@ export function softSetup(state, b) {
       c.hp = Math.round((TENT_FIGHT.HP * pct) / 100);
       if (c.hp <= 0) tearTent(b, c);
     }
+    // tentfight.js: on the battle's list, yours (whoever takes it down takes it off this base: settleTentsDown).
+    if (!b.layout) addTent(b, { kind: e.it.tent || e.it.rec.tent || "makeshift", cells: at, side: "player", owner: { base: base.id, rec: e.it.rec.id }, item: e.it.rec.item || null });
   }
 }
 // After a fight on a base's map (combat.js finishCombat): each tent's share of hit points kept on its record; a word in

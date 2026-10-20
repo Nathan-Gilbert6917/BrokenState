@@ -50,6 +50,7 @@ import { hash01 } from "./skills.js";
 import { isPublicSite, siteKnown, nearRoad } from "./discovery.js";
 import { localId } from "./world.js";
 import { zombieToughness } from "./hives.js"; // hive land: the dead are more and tougher there (the threat's hive bonus)
+import { campsiteExtra, campDanger, noteCampSeen } from "./campsite.js"; // call-time only: the extra campsite a tile may hold, its state in the threat, a look at it
 
 export const POI = {
   MAX: 4,                 // POIs a tile can hold, the site among them
@@ -161,6 +162,10 @@ export function generatePois(state, t) {
     for (const p of rest) p.hidden = true;
     if (!site && out[0]) out[0].hidden = true;
   }
+  // campsite.js: now and then a campsite besides (the woods, the countryside, a roadside, a lake or a riverside), on its
+  // own dice after the list above, so the list before it (and a save's changes to it) stays as it was.
+  const camp = campsiteExtra(state, t, out, inKnownZone(state, t));
+  if (camp) out.push(camp);
   return out;
 }
 
@@ -384,7 +389,7 @@ export function tileHeatText(state, tile) {
 export function poiThreat(state, tile, i) {
   const t = tileOf(state, tile), p = poiAt(t, i);
   if (!p) return 0;
-  return (LOCATIONS[p.kind].danger || 0) + (t.infection || 0) + (tileHeat(state, t) / TILE_HEAT.MAX) * TILE_HEAT.THREAT + THREAT.HIVE * zombieToughness(state, t.id);
+  return (LOCATIONS[p.kind].danger || 0) + (t.infection || 0) + (tileHeat(state, t) / TILE_HEAT.MAX) * TILE_HEAT.THREAT + THREAT.HIVE * zombieToughness(state, t.id) + campDanger(state, t, i); // campsite.js: an active or overrun camp
 }
 /** The band of a threat value: { band: 0–3, word, skulls }. @param {number} v */
 export function threatBand(v) {
@@ -404,6 +409,7 @@ export function notePoiThreat(state, tile, i, src = "visit", err = null) {
   if (p.threatStamp && p.threatStamp.hour === state.hour && p.threatStamp.err <= e) return p.threatStamp;
   p.threatStamp = { hour: state.hour, v: poiThreat(state, t, i), err: e, src };
   noteTileHeat(state, t); // a look at a place is a look at how stirred up the tile is
+  noteCampSeen(state, t, i); // campsite.js: who is at the camp (abandoned, overrun, raiders), as seen now
   return p.threatStamp;
 }
 /**
