@@ -12,6 +12,7 @@
 import { baseById } from "../sim/world.js";
 import { openBaseMap, layoutOf, itemByKey, unplaceItem, baseMapSummary, storeContents, gridOfCell, buildMenu, fittingsIn, hostedItems, neighboursOf, canLink, FOOT, GRID, STEAL, NO_BUILD, landPieceAt, chopToolAt, landWords } from "../sim/basemap.js";
 import { clearOf, pieceWord, CLEAR } from "../sim/basescatter.js"; // the land: a piece's clearing
+import { chopHands } from "../sim/woodwork.js"; // woodwork: who is felling a clearing
 import { BUILDINGS, demolishRefund, pieceName, ringMat } from "../sim/buildings.js";
 import { nearRect, active } from "../sim/combat.js"; // who of yours stands next to a store of theirs (an assault)
 import { HAUL } from "../sim/raidloot.js";
@@ -84,7 +85,7 @@ export function layoutPanel(state, b, cui, preview = "") {
     <div class="cbactions" style="margin-top:0.3rem"><button data-action="cb-deploy" data-v="rotate" data-tip="Turn it a quarter (R)">Turn <span class="key">R</span></button><button data-action="cb-deploy" data-v="pick" data-k="" data-tip="Put the pick down without placing it (Esc)">Cancel <span class="key">Esc</span></button>${["wall", "gate", "stand"].includes(picked.kind) && picked.key.startsWith("b:") ? `<button data-action="demolish" data-base="${base.id}" data-id="${picked.rec.id}" data-ok="1" data-tip="Pull this piece down for good: half its scrap and parts come back. A gap it leaves in the wall is a way in.">Pull it down</button>` : ""}</div></div>`;
   html += selectionCard(state, base, L, lay);
   html += landCard(state, base, L);
-  html += clearingList(base);
+  html += clearingList(state, base);
   html += preview; // what is under the mouse (ui/combat.js previewHtml: the pick's fit, a placed thing, a store)
   const msg = cui.msg || L.msg; // the last order's refusal first (ui/combat.js act), else what the map said it did
   if (msg) html += `<div class="small ${cui.msg ? "warn" : "good"} cbmsg">${esc(msg)}</div>`;
@@ -272,10 +273,10 @@ function landCard(state, base, L) {
     <div class="cbactions" style="margin-top:0.3rem">${c1 ? btn(`${(CLEAR[p.k] || CLEAR.wreck).verb} it · ${c1.hours}h${getText(c1.get) ? ` · ${getText(c1.get)}` : ""}`, "clear", false, c1, "Queue its clearing: the builders do it from the construction queue, like a building") : ""}${cs ? btn(`Strip it · ${cs.hours}h · ${getText(cs.get)}`, "strip", false, cs, "Strip it of its scrap and a car part (once); it still has to be dragged off to build there") : ""}${cAll ? btn(`All ${all.length} · ${Math.round(cAll.hours * 10) / 10}h${getText(cAll.get) ? ` · ${getText(cAll.get)}` : ""}`, "clear", true, cAll, `Clear the whole ${p.k === "tree" ? "stand of trees" : p.k === "bush" ? "hedge" : p.k === "fence" ? "fence run" : "heap"} it is part of (${landWords(all)}) as one job`) : ""}</div></div>`;
 }
 // The clearing jobs in the queue (the construction queue's own), with how far each is and Cancel.
-function clearingList(base) {
+function clearingList(state, base) {
   const jobs = base.construction.filter((c) => c.type === "clear");
   if (!jobs.length) return "";
-  return `<h3 data-tip="${esc("The land being cleared: jobs in the construction queue like the buildings, worked by the builders from the top; the wood, the scrap and the parts come into the stores when each is done.")}">Clearing <span class="muted small">${jobs.length}</span></h3><div class="card small">${jobs.map((c) => { const pct = Math.round((100 * (c.progress || 0)) / Math.max(1e-9, c.hours)); return `<div class="spread" style="margin-top:0.15rem"><span>${esc(c.label)} <span class="muted">${pct}% of ${c.hours}h${getText(c.get) ? ` · ${getText(c.get)}` : ""}</span></span><button class="mini" data-action="cb-deploy" data-v="unclear" data-id="${c.id}"${tip("Cancel this clearing")}>Cancel</button></div>`; }).join("")}</div>`;
+  return `<h3 data-tip="${esc("The land being cleared: jobs in the construction queue like the buildings, worked by the builders from the top; the woodcutters (Cut wood) fell the trees, logs, stumps, bushes and fences first, ahead of their trips out for wood. The wood, the scrap and the parts come into the stores when each is done.")}">Clearing <span class="muted small">${jobs.length}</span></h3><div class="card small">${jobs.map((c) => { const pct = Math.round((100 * (c.progress || 0)) / Math.max(1e-9, c.hours)); const who = chopHands(state, base, c); return `<div class="spread" style="margin-top:0.15rem"><span>${esc(c.label)} <span class="muted">${pct}% of ${c.hours}h${getText(c.get) ? ` · ${getText(c.get)}` : ""}${who.length ? ` · ${esc(who.join(", "))} on it` : ""}</span></span><button class="mini" data-action="cb-deploy" data-v="unclear" data-id="${c.id}"${tip("Cancel this clearing")}>Cancel</button></div>`; }).join("")}</div>`;
 }
 
 // ---------- actions (main.js) ----------

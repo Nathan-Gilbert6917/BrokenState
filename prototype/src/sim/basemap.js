@@ -113,6 +113,7 @@ import { itemKg } from "./inventory.js";
 import { normalizeBins, OUTSIDE } from "./containers.js"; // the assignments (item.store, base.bins): a theft taken out of its bin; the piles' key
 import { FIXTURES, WEAR, breakFixture } from "./breakdowns.js";
 import { log, atBase, newId } from "./world.js";
+import { chopHands } from "./woodwork.js"; // who is felling a clearing (call-time only)
 import { isChopTool, bestChop } from "./woodcutting.js"; // felling a tree goes slower without a cutting tool at the base (call-time only)
 import { layMines } from "./mines.js"; // the main base's minefield, buried in the open ground round the yard (call-time only)
 import { FORT } from "./fort.js"; // the wire rings' and the mines' distances from the wall (call-time only: the modules load in a circle)
@@ -1588,8 +1589,9 @@ export function buildBaseMap(state, base, rng, opts = {}) {
   // nothing else does; a piece under something standing (an old save's, laid before the land) is hidden there.
   const land = landFor(state, base);
   F.scatter = land ? layLand({ cells, W, H, ox, oy, land, ok: (x, y) => cells[y * W + x].k === "open" && !used[y * W + x], floor: (x, y) => cells[y * W + x].k === "open" && !used[y * W + x] && !indoor[y * W + x] }).kinds : {};
-  // The clearing under way (the construction queue's clearing jobs: basescatter.js CLEAR), for the view: the cells, how far.
-  F.clearing = (base.construction || []).filter((c) => c.type === "clear" && c.pieces).map((c) => ({ id: c.id, label: c.label, pct: Math.round((100 * (c.progress || 0)) / Math.max(1e-9, c.hours)), cells: c.pieces.flatMap((p) => p.cells).map(([x, y]) => [x + ox, y + oy]).filter(([x, y]) => inside(x, y)) }));
+  // The clearing under way (the construction queue's clearing jobs: basescatter.js CLEAR), for the view: the cells, how far,
+  // and who is on it this hour (woodwork.js chopHands: the woodcutters felling it, the builders working it).
+  F.clearing = (base.construction || []).filter((c) => c.type === "clear" && c.pieces).map((c) => ({ id: c.id, label: c.label, pct: Math.round((100 * (c.progress || 0)) / Math.max(1e-9, c.hours)), who: chopHands(state, base, c), cells: c.pieces.flatMap((p) => p.cells).map(([x, y]) => [x + ox, y + oy]).filter(([x, y]) => inside(x, y)) }));
   // Land mines (mines.js, the main base's Minefield): buried in the open ground FORT.MINES cells out from the band, off
   // the lanes to the gates, after the cover (nothing stands on one); the attackers start beyond them.
   F.minesLaid = 0;

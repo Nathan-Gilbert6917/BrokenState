@@ -58,6 +58,7 @@ import { fixtures, fixtureName } from "./breakdowns.js";
 import { outputDays } from "./output.js";
 import { TRIP_JOBS, tripWindow, inTripHours } from "./tripland.js"; // the outdoor jobs' hours (jobtrips.js trips)
 import { tripState, tripTarget, hasJobTool } from "./jobtrips.js"; // where someone out on a trip is: "Heading to forest (3,7)", "Bringing 18 kg meat back"
+import { hasChopWork, chopNow } from "./woodwork.js"; // woodwork: felling the trees marked on the base map (ahead of the trips)
 import { fetchWaterWhy, fetchWaterDay } from "./economy.js"; // Fetch water
 
 import { MEALS, MEAL_WORK_SHARE, mealOf, lunchHour } from "./meals.js";
@@ -146,6 +147,14 @@ function jobActivity(state, base, s, job, h, opts = {}) {
 // The outdoor jobs (jobtrips.js): can it be done here, on hold while the base is attacked, out on a trip (where and
 // how far along, or bringing the load home), between trips, or done for the day.
 function tripJobActivity(state, base, s, job, h, opts) {
+  // woodwork: the felling marked on the base map (woodwork.js), ahead of the trips out to the land, in the job's hours.
+  if (job === "wood" && hasChopWork(base) && !underAttack(state, base) && inTripHours(job, h)) {
+    const nowH = h === hourOfDay(state);
+    const out = opts.trips !== false && nowH && s.trip && s.trip.leave <= state.hour && state.hour < s.trip.home; // out on a trip: they finish it first
+    const c = nowH ? chopNow(state, s) : null;
+    if (c) return act("work", `${c.job.label}: ${c.pct}%`, "Woodcutters fell the trees marked on the base map before they go out for wood (Base map: a tree's card, Fell it); the wood goes into the store when it is down.", job);
+    if (!out) return act("work", "Felling on the base map", "Woodcutters fell the trees marked on the base map before they go out for wood.", job);
+  }
   const why = tripWhy(state, base, job);
   if (why) return why;
   if (underAttack(state, base)) return { ...act("off", "On hold: base under siege", `${base.name} is on alert or under attack: nobody goes out to work until it is over (those out come home).`, job, "⛔"), hold: "siege" };

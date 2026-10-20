@@ -221,7 +221,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
     // player's (or the governor's) pick: a bunkhouse, a crafting bench, a farm plot and a rain catcher come to 45.
     // Food by type (foods.js): 80 days of a town's stores (cans, rice, pasta, oats, a few sacks of potatoes and onions)
     // and 10 of food that keeps (jars, jerky, peanut butter).
-    stock: { water: 50, rawwater: 0, fuel: 12, meds: 6, ammo: 80, arrows: 0, parts: HUB_START.parts, scrap: HUB_START.scrap, jars: 12, wood: 700, buildmat: 0, // wood: 300 for the fires and 400 more since it builds too (2026-10-20: a bunkhouse 300, a farm plot 150)
+    stock: { water: 50, rawwater: 0, fuel: 12, meds: 6, ammo: 80, arrows: 0, parts: HUB_START.parts, scrap: HUB_START.scrap, jars: 12, wood: 1000, buildmat: 0, // wood: 300 for the fires and 700 more since it builds too (woodwork 2026-10-20: a bunkhouse 600 and a bench 200 or a farm plot 300; the governor fells trees for the rest)
     ...addFoodsTo(typedFood(state, "stores", 80), typedFood(state, "keeps", 10)) },
     radio: false, watchtower: false, buildings: [], construction: [], armory: [],
   });

@@ -40,6 +40,7 @@ import { RAW } from "./water.js";
 import { armTripEvent, fireTripEvent, holdTrip, creditBonus, holdText } from "./tripevents.js"; // trouble on the way (trips-plus #2)
 import { lunchOverlap, isLunchHour } from "./meals.js"; // the lunch break out at work
 import { PACK, packFood, topUpPack } from "./eating.js"; // the food they take out for lunch
+import { chopHour, hasChopWork } from "./woodwork.js"; // woodwork: the woodcutters fell the trees marked on the base map before going out
 
 const r2 = (v) => Math.round((v || 0) * 100) / 100;
 const POPS = 12; // deposits kept for the map
@@ -350,6 +351,7 @@ function stepPerson(state, base, s, now) {
       const at = t.drop != null ? t.drop : null; // left the load at a stockpile: the next trip sets out from there
       if (from < end && dayOf(from) === dayOf(t.leave)) {
         const job = mayGo(state, base, s, Math.floor(from));
+        if (job === "wood" && hasChopWork(base)) return; // woodwork: home with the load, they go to the felling marked on the map (the next hour)
         const nt = job === t.job ? planTrip(state, base, s, job, from, at) : null;
         if (nt && checkOutTool(state, base, s, job)) { nt.n = n; s.trip = nt; packForTrip(state, base, s); continue; }
       } else if (t.next != null || dayOf(from) === dayOf(t.leave)) s.tripNext = { t: r2(from), n, day: dayOf(t.leave), ...(at != null ? { from: at } : {}) };
@@ -357,6 +359,9 @@ function stepPerson(state, base, s, now) {
     }
     const job = mayGo(state, base, s, now);
     if (!job) return;
+    // woodwork: a woodcutter at the base works the felling marked on the base map (woodwork.js chopJobs) before any
+    // trip out to the land: the hour goes on it.
+    if (job === "wood" && chopHour(state, base, s, now)) { delete s.tripNext; return; }
     const nx = s.tripNext && s.tripNext.day === dayOf(now) ? s.tripNext : null;
     const start = Math.max(now, nx ? nx.t : now);
     if (start >= end) return;

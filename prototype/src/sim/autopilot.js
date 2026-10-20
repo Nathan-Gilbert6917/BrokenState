@@ -53,6 +53,7 @@ import { conditionsOf, CONDITIONS, treatCondition, treatConditionInfo, medsToTre
 import { govCookBills } from "./cooking.js"; // wave 2 cooking: the governor's and the stewards' bills
 import { canUpgradeKitchen, queueCannerUpgrade, canUpgradeGenerator, queueGenUpgrade, stationOperator, hasWall } from "./buildings.js"; // machines-2: the pressure canner; gen-tiers: a generator upgraded
 import { nextWallTier, wallTier } from "./buildings.js"; // WALL_TIERS: one wall, built up a tier at a time
+import { WOODWORK, queueChop, queuedChopWood, clearAhead } from "./woodwork.js"; // woodwork: felling for wood, clearing the next sites ahead (govWoodwork)
 import { fittingRoom } from "./basemap.js"; // base building: a general building with floor for a fitting (bedWishes, storageWish, stoveWish)
 import { autoStore } from "./containers.js"; // the stores tidied daily (tidyStores)
 import { BUILDINGS, RECIPES, canDemolish, demolish, canBuild, queueBuild, count, countAll, stations, baseBeds, baseWalls, farmSlots, assignStations, isShelter, plotsFree, plotCap, BEDS, queuedBeds, BARRACKS_UP, canExpandBunkhouse, queueBunkhouseExpand, benchTier, tierUpType, tierUpJob, gatherRows, gatherStalled, isCamp, CAMP as CAMP_TIER, WATER_BARREL, canUpgradeBarrel, queueBarrelUpgrade, barrelTier, barrels, barrelName } from "./buildings.js";
@@ -363,6 +364,7 @@ export function governBase(state, base, areas = ALL_AREAS) {
   if (areas.building && hourOfDay(state) === WATER_WAIT.hour) waterSalvage(state, base);
   if (areas.building && hourOfDay(state) === PLAN_HOUR) tidyStores(state, base); // containers.js: the goods into the containers, before the day's builds
   if (areas.building) planBuilds(state, base, areas);
+  if (areas.building && state.hour % WOODWORK.govEvery === 0) govWoodwork(state, base, areas); // woodwork: felling for wood when short, the next sites cleared ahead
   if (areas.building && hourOfDay(state) === PLAN_HOUR + 2) { const msg = cookFireDown(state, base); if (msg) say(state, msg); } // kitchen.js: a lit kitchen does the cook fire's job
   if (areas.production && hourOfDay(state) === 23) stoveSave(state, base); // kitchen.js: the winter's wood before the stove
   if (areas.production && hourOfDay(state) === PLAN_HOUR) govCookBills(state, base); // cooking.js (wave 2 cooking): their bills at the Kitchen and the cook fire (the player's bills left alone)
@@ -1141,6 +1143,11 @@ const wishCheck = (state, base, w) => { const c = w.barrel != null ? canUpgradeB
 // the cold, rising to all of it at the cold (woodtest: the pile two-fifths in by the winter with the builds taking wood;
 // barestarttest: the first bunkhouse on day one, 2026-10-20).
 const WOOD_BUILD_KEEP = 150, WOOD_BUILD_SMALL = 100; // KEEP: days before the cold over which the share kept rises from none to all
+// The wood a big build leaves in store (planBuilds): the fires' days, and the coming cold's need by the share above
+// (once the stocking for the cold is on, all of it). woodNeed result in. govWoodwork fells toward it.
+const buildWoodKeep = (wn) => (wn.soon ? wn.need : Math.max(wn.dailyKeep, wn.need * Math.max(0, Math.min(1, 1 - wn.toCold / WOOD_BUILD_KEEP))));
+// Does a build of this wood keep the woodpile's reserve back (a small one, beds and the general buildings go ahead)?
+const keepsWood = (type, wood) => wood > WOOD_BUILD_SMALL && !BEDS[type] && !GENERAL.includes(type);
 const wishCost = (w) => (w.barrel != null ? w.cost : w.upgrade != null ? BARRACKS_UP.cost : w.wallCost || BUILDINGS[w.type].cost);
 const wishQueue = (state, base, w) => (w.barrel != null ? queueBarrelUpgrade(state, base, w.barrel) : w.upgrade != null ? queueBunkhouseExpand(state, base, w.upgrade) : queueBuild(state, base, w.type));
 // The housing wish (nextHousing) for buildWishes, and a bunkhouse after a barracks while a plot is free and the
@@ -2687,7 +2694,7 @@ const BUILD_AREA = {
 function planBuilds(state, base, areas = ALL_AREAS) {
   const slots = base.type === "hub" ? 2 : 1;
   // A camp's or a shelter's step up waiting for its materials (gatherStalled) holds no builder: it does not fill the queue.
-  const jobs = base.construction.filter((c) => !(BUILDINGS[c.type] && BUILDINGS[c.type].tierUp && gatherStalled(c))).length;
+  const jobs = base.construction.filter((c) => c.type !== "clear" && !(BUILDINGS[c.type] && BUILDINGS[c.type].tierUp && gatherStalled(c))).length; // woodwork: the clearing jobs (felling, sites) take no build slot
   if (jobs >= slots + 1) return;
   const full = jobs >= slots;
   const g = gov(state);
@@ -2718,10 +2725,12 @@ function planBuilds(state, base, areas = ALL_AREAS) {
     // woodNeed dailyKeep, and a share of the coming cold's need rising as it nears: WOOD_BUILD_KEEP) and, once the stocking for the
     // cold is on (soon), the cold's whole need; a small one (WOOD_BUILD_SMALL wood or less: a tent, a box, crates,
     // shelves, bunks) goes ahead, and so do beds (a bunkhouse, a hut for bunks); the woodcutters make up the rest (planWood).
-    if (cost.wood > WOOD_BUILD_SMALL && !BEDS[w.type] && !GENERAL.includes(w.type)) { const wn = woodNeed(state, base); if ((base.stock.wood || 0) - cost.wood < (wn.soon ? wn.need : Math.max(wn.dailyKeep, wn.need * Math.max(0, Math.min(1, 1 - wn.toCold / WOOD_BUILD_KEEP))))) continue; }
+    // Short of it the governor fells trees for it (govWoodwork).
+    if (keepsWood(w.type, cost.wood || 0)) { const wn = woodNeed(state, base); if ((base.stock.wood || 0) - cost.wood < buildWoodKeep(wn)) continue; }
     const n0 = base.construction.length;
     const msg = wishQueue(state, base, w);
     if (w.room && full && base.construction.length > n0) base.construction.unshift(base.construction.pop()); // ahead of the queue
+    else if (base.construction.length > n0) { const i = base.construction.findIndex((c) => c.gov === "wood"); if (i >= 0 && i < base.construction.length - 1) base.construction.splice(i, 0, base.construction.pop()); } // woodwork: ahead of its own felling for wood (the builders fell when there is nothing else)
     g.stats.builds++;
     say(state, `${msg.replace(/\.$/, "")}: ${w.why}.`);
     return;
@@ -2743,6 +2752,41 @@ function nextBuildScrap(state, base, areas = ALL_AREAS) {
     if (w.save || (base.stock.scrap || 0) >= need) return need;
   }
   return 0;
+}
+
+// ---------- woodwork: felling for wood, the next sites cleared ahead (woodwork.js) ----------
+// The next build's wood (the first wish planBuilds would queue, or is short of only wood, or saves up for) and the
+// wood the queued gather jobs (the Ring wall) still wait for: { wood, type (that wish's), keep (it keeps the woodpile's
+// reserve back: keepsWood) }.
+function nextBuildWood(state, base, areas = ALL_AREAS) {
+  let wood = 0;
+  for (const c of base.construction) if (c.paid && c.cost && c.cost.wood) wood += Math.max(0, c.cost.wood - (c.paid.wood || 0));
+  for (const w of buildWishes(state, base)) {
+    const def = BUILDINGS[w.type];
+    if (!def || def.gather || !areas[BUILD_AREA[w.type] || "building"]) continue;
+    const chk = wishCheck(state, base, w);
+    if (!chk.ok && !/^Needs \d+ wood/.test(chk.reason || "") && !(w.save && /^Needs \d+ scrap/.test(chk.reason || ""))) continue;
+    const cw = wishCost(w).wood || 0;
+    return { wood: wood + cw, type: w.type, keep: keepsWood(w.type, cw) };
+  }
+  return { wood, type: null, keep: false };
+}
+// Every WOODWORK.govEvery hours at a base of yours with land on its map (basemap.js landFor): when the woodpile and
+// the felling already queued come to less than the fires' reserve (in the stocking season the cold's whole need, as
+// buildWoodKeep; out of it the fires' days, woodNeed dailyKeep, or the share the next build keeps back) plus the next
+// builds' wood (nextBuildWood), the nearest trees beyond the walls are felled for it, a job a tree, at most
+// WOODWORK.govMax of them waiting (woodwork.js queueChop; the builders fell when they have nothing else to build, the
+// woodcutters before their trips). And the sites of the builds queued and of the next one are cleared ahead
+// (woodwork.js clearAhead), only where the auto layout found no open ground for them.
+function govWoodwork(state, base, areas = ALL_AREAS) {
+  if (gov(state).noWood || base.group || (base.owner != null && base.owner !== "player")) return;
+  const next = nextBuildWood(state, base, areas);
+  const wn = woodNeed(state, base);
+  const reserve = Math.max(wn.soon ? wn.need : wn.dailyKeep, next.keep ? buildWoodKeep(wn) : 0);
+  const want = Math.ceil(reserve + next.wood - Math.max(0, base.stock.wood || 0) - queuedChopWood(base));
+  if (want > 0) { const jobs = queueChop(state, base, want); if (jobs.length) gov(state).stats.chops = (gov(state).stats.chops || 0) + jobs.length; }
+  const ahead = clearAhead(state, base, next.type);
+  if (ahead.length) gov(state).stats.clearAhead = (gov(state).stats.clearAhead || 0) + ahead.length;
 }
 
 // Jails (prisoners.js JAIL, buildings.js family "jail"): makeshift cells at the hub once anyone has been taken
