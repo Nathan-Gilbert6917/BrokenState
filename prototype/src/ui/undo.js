@@ -13,6 +13,7 @@
 import { baseById, survivorById } from "../sim/world.js";
 import { BUILDINGS, assignStations } from "../sim/buildings.js";
 import { planBase } from "../sim/work.js";
+import { assignedRole } from "../sim/noidle.js"; // a person helping elsewhere this hour: their own job is what is kept
 import { keyAction } from "./keymap.js"; // the key table (Menu → Controls)
 
 export const UNDO_MAX = 20;
@@ -86,7 +87,7 @@ function snapWork(state) {
     has: !!w, next: w ? w.next : 1, newcomers: w ? w.newcomers ?? null : null, roles: w ? w.roles.map(roleSettings) : [],
     sickRest: state.sickRest ?? null, // the Work tab's "Sick people rest" (sim/sickrest.js)
     lunchHour: state.lunchHour ?? null, // the Work tab's lunch hour (sim/meals.js)
-    people: state.survivors.filter((s) => s.alive).map((s) => [s.id, s.work ? clone(s.work) : null, s.role, s.cookPlus || null]), // cookPlus: a Cook + second job (sim/kitchen.js)
+    people: state.survivors.filter((s) => s.alive).map((s) => [s.id, s.work ? clone(s.work) : null, assignedRole(s), s.cookPlus || null]), // cookPlus: a Cook + second job (sim/kitchen.js); assignedRole: their own job, not the one they help with this hour (sim/noidle.js)
   };
 }
 
@@ -154,9 +155,10 @@ function undoWork(state, snap) {
   }
   for (const [id, work, role, plus] of snap.people) {
     const s = survivorById(state, id);
-    if (!s || !s.alive || (same(s.work || null, work) && s.role === role && (s.cookPlus || null) === (plus || null))) continue;
+    if (!s || !s.alive || (same(s.work || null, work) && assignedRole(s) === role && (s.cookPlus || null) === (plus || null))) continue;
     if (work) s.work = clone(work); else delete s.work;
     if (plus) s.cookPlus = plus; else delete s.cookPlus;
+    delete s.helpWas; // their own job back, not an hour's help (sim/noidle.js: the next hour finds them help again if it has none)
     s.role = role;
     s.task = null;
   }

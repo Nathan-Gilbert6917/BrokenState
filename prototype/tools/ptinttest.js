@@ -36,6 +36,10 @@ import { createBattle, finishCombat, active, CELL, unitAt } from "../src/sim/com
 import { tentAI } from "../src/sim/softcover.js";
 import { TENT_TAKE } from "../src/sim/data-tents.js";
 import { raidSpoils } from "../src/sim/basestorage.js";
+import * as Work from "../src/sim/work.js";
+import * as ND from "../src/sim/noidle.js";
+import { undoable, undoStep } from "../src/ui/undo.js";
+import { workCount, idlePeople } from "../src/sim/activity.js";
 // Stand u on a free walkable cell next to tent t (as campsitetest does).
 function besideTent(b, u, t) {
   for (const [x, y] of t.cells) for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]]) {
@@ -527,6 +531,43 @@ section("Round 4: a group's raid on a group's base takes the goods before the wo
   check(few.scrap > 0 && few.meds > 0 && !few.wood && !few.water, `three raiders, a full store: goods only (${JSON.stringify(few)})`);
   const lean = raidSpoils({ scrap: 2, wood: 6000 }, 0.4, 3 * 22 * 2);
   check(lean.scrap > 0 && lean.wood > 0 && lean.wood * 0.1 + lean.scrap * 2 <= 3 * 22 * 2 + 1e-6, `little else to take: wood to fill their carry (${JSON.stringify(lean)})`);
+}
+
+
+// ---------- round 5: noidle merged ----------
+section("Round 5: on work priorities with nothing to do, they help as a Manual person does; undo keeps the real role; helpers count as working");
+{
+  const st = world(seed + 50);
+  const h = hub(st);
+  st.hour = Math.floor(st.hour / 24) * 24 + 10; // mid-morning: everyone's working hours
+  const ppl = atBase(st, h.id);
+  for (const s of ppl) { s.health = 100; s.mood = 70; delete s.restUntil; }
+  const s = ppl[0];
+  const r = Work.createRole(st, "Crafter only");
+  r.pri = { craft: 1 }; // the craft queue is empty: nothing to do on their priorities
+  Work.assignRole(st, s, r.id);
+  (h.craftQueue || (h.craftQueue = [])).length = 0;
+  if (Array.isArray(h.crafting)) h.crafting.length = 0;
+  h.stock.scrap = 200; h.stock.wood = 2000;
+  h.construction.push({ id: 995000, type: "storebox", progress: 0, hours: 2 }); // something to build: the help there is
+  Work.workHour(st);
+  const planned = s.role, idleTask = s.task && s.task.kind;
+  ND.helpHour(st);
+  check(planned === "rest" && idleTask === "idle", `their priorities found nothing: planned to rest (${planned}, ${idleTask})`);
+  check(!!s.helpWas && s.helpWas.role === "rest" && s.role !== "rest", `a fallback task, not rest: helping as ${s.role}`);
+  // The Bases chip and the idle list: a helper is working.
+  const c = workCount(st, h);
+  check(!idlePeople(st, h).some((x) => x.s === s) && c.working >= 1, `counted as working (${c.working}/${c.total}, idle ${c.idle})`);
+  // Undo's snapshot is their own job, not the hour's help.
+  const m = ppl[1];
+  m.role = "craft"; delete m.work;
+  m.helpWas = { role: "craft", station: null, base: h.id, as: "build", hour: st.hour, why: "test" };
+  m.role = "build";
+  check(ND.assignedRole(m) === "craft", "a Manual helper's own job is craft while they build for the hour");
+  const ui = {};
+  undoable(st, ui, "work", () => { delete m.helpWas; m.role = "farm"; });
+  undoStep(st, ui, "work");
+  check(m.role === "craft" && !m.helpWas, `undone: back to their own job (${m.role}), not the hour's help`);
 }
 
 console.log(`\n${pass} passed, ${fail} failed (${((Date.now() - t0) / 1000).toFixed(1)} s)`);

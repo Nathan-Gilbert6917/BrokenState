@@ -84,7 +84,7 @@ export const NOIDLE = {
 };
 const NO_WORK = new Set(["idle", "stalled"]);
 export const HELP_ORDER = ["build", "wood", "water", "farm", "guard"];
-const NO_WORK_TEXT = { build: "No building to do", wood: "No wood to cut", farm: "No field work", cook: "Nothing to cook", medic: "Nobody to look after", craft: "Nothing to craft", operate: "The station is idle", scavenge: "Nothing left to scavenge", forage: "Nothing to forage", hunt: "No hunting here", fish: "No fishing here", water: "No water to fetch", teach: "Nobody to teach", read: "Nothing to read", trainee: "No training" };
+const NO_WORK_TEXT = { rest: "Nothing to do on their priorities", build: "No building to do", wood: "No wood to cut", farm: "No field work", cook: "Nothing to cook", medic: "Nobody to look after", craft: "Nothing to craft", operate: "The station is idle", scavenge: "Nothing left to scavenge", forage: "Nothing to forage", hunt: "No hunting here", fish: "No fishing here", water: "No water to fetch", teach: "Nobody to teach", read: "Nothing to read", trainee: "No training" };
 const HELP_TEXT = { build: "helping the builders", wood: "helping chop wood", water: "helping fetch water", farm: "helping tend the fields", guard: "standing guard", scavenge: "helping scavenge", forage: "helping forage" };
 const roleName = (k) => (ROLES[k] ? ROLES[k].name : k);
 const first = (s) => s.name.split(" ")[0];
@@ -102,14 +102,19 @@ export function helpLine(s, a) {
 }
 
 // ---------- has work ----------
+// Someone on work priorities whose plan this hour found nothing (work.js planBase: "Nothing to do, resting", task kind
+// idle): resting for want of work, not for their health, sleep or mood. They get the hour's help as a Manual person
+// does (pt-int round 5: they rested instead).
+export const prioIdle = (state, s) => isManaged(state, s) && !!s.task && s.task.kind === "idle" && s.task.hour === state.hour;
 // At a base, able to work and not resting, asleep, eating or away: may their job be judged idle at all?
-function canHelp(state, base, s, role = s.role) {
+function canHelp(state, base, s, role = s.role, idleRest = false) {
   if (!s.alive || !s.location || s.location.kind !== "base" || s.location.baseId !== base.id) return false;
   if (s.inBed || s.restUntil != null || s.sickWas || healthRest(s, state) || workFactor(s) < NOIDLE.minWork) return false;
-  return role !== "rest" && role !== "guard";
+  return (role !== "rest" || idleRest) && role !== "guard";
 }
-/** No work for their job this hour (the activity line idle or stalled). @param {any} state @param {any} base @param {any} s */
+/** No work for their job this hour (the activity line idle or stalled; on work priorities, a plan that found nothing). @param {any} state @param {any} base @param {any} s */
 export function noWorkNow(state, base, s) {
+  if (prioIdle(state, s)) return canHelp(state, base, s, s.role, true);
   return canHelp(state, base, s) && !isManaged(state, s) && NO_WORK.has(describeActivity(state, s).kind);
 }
 /** No work for this role by the job (at its working hour): the governor and the alert. */

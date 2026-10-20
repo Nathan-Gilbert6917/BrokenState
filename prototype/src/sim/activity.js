@@ -519,7 +519,7 @@ export function idlePeople(state, base = null) {
   const out = [];
   for (const b of base ? [base] : state.bases) {
     for (const s of atBase(state, b.id)) {
-      if (onWatchNow(state, b, s)) continue;
+      if (onWatchNow(state, b, s) || helpingAs(s)) continue; // helping elsewhere this hour (noidle.js): working, not idle
       const a = workingActivity(state, s);
       if (IDLE_KINDS.has(a.kind)) out.push({ s, base: b, act: a, why: a.kind === "idle" ? idleWhy(a) : a.text });
     }
@@ -536,7 +536,7 @@ export function workCount(state, base) {
   const ppl = atBase(state, base.id);
   const c = { total: ppl.length, working: 0, idle: 0, hurt: 0, resting: 0 };
   for (const s of ppl) {
-    const k = workingActivity(state, s).kind;
+    const k = helpingAs(s) ? "work" : workingActivity(state, s).kind; // a helper (noidle.js) is working this hour (the Bases chip)
     if (IDLE_KINDS.has(k)) c.idle++;
     else if (k === "hurt") c.hurt++;
     else if (k === "free") c.resting++;
