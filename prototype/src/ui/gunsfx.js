@@ -175,6 +175,12 @@ export const VOICE_OF = {
   revolver44: { v: "r357", rel: "revolver", pitch: 0.86 },
   lever44:    { v: "r357", cycle: "lever", brass: "brassP", rel: "lever", pitch: 0.88 },
   single44:   { v: "r357", rel: "single", pitch: 0.88 },
+  // the survival guns of 2026-10-19 (sim/data-guns.js SURV_GEAR): the nearest voice, nudged
+  sks:        { v: "r762", act: "clank", brass: "brassR", rel: "bolt", pitch: 1.02 }, // (its fixed box: the bolt held open, rounds pushed down, the bolt let go)
+  uzi:        { v: "smg9", act: "openBolt", brass: "brassP", rel: "smg", pitch: 0.95 },
+  pcc9:       { v: "p9", act: "slide", brass: "brassP", rel: "smg", pitch: 0.94 },
+  ksg:        { v: "sg12", cycle: "pump", brass: "hull", rel: "pump", pitch: 1.03 },
+  survival22: { v: "p22", act: "slide", brass: "brassP", rel: "rifle", pitch: 1.04 },
 };
 // Weapons that keep a sound of their own on purpose (ui/audio.js VOICES): bows and crossbows twang, a spitter spits.
 export const OWN_VOICE = { crossbow: "bow", compbow: "bow", xbow: "bow", pulleybow: "bow", acid: "acid" };
@@ -194,7 +200,7 @@ const SUPERSONIC = { "22lr": 1, "9mm": 1, "45acp": 0, "357": 1, "38spl": 0, "223
 export const supersonic = (cal, type) => !!SUPERSONIC[cal] && type !== "subsonic";
 
 // The cyclic rate of a gun firing more than one round a pull (rounds a minute), and the gap between rounds.
-export const RPM = { smg: 1000, ar: 800, carbine: 800, ak: 650, lmg: 650, turret_lmg: 650, turret_m2: 500, m2hb: 500, p90: 900, vector: 1200, famas: 1000, g3: 600 };
+export const RPM = { smg: 1000, ar: 800, carbine: 800, ak: 650, lmg: 650, turret_lmg: 650, turret_m2: 500, m2hb: 500, p90: 900, vector: 1200, famas: 1000, g3: 600, uzi: 600 };
 export const roundGap = (key) => 60 / (RPM[key] || GUN_VOICES[gunVoice(key).v].rpm || 400);
 
 // The plan of one shot effect (b.fx type "shot") by unit a: what the sound layer needs, read from the unit and its gun

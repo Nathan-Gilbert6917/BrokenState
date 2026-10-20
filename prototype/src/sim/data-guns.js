@@ -436,6 +436,11 @@ export const GUN_RARITY = {
 /** @type {Record<string, string>} */
 export const CALIBRE_RARITY = { fiveseven: "scarce", p90: "rare", vector: "rare", g3: "rare", famas: "rare", revolver44: "uncommon", lever44: "uncommon", single44: "uncommon" };
 Object.assign(GUN_RARITY, CALIBRE_RARITY);
+// The survival guns of 2026-10-19 (SURV_GEAR below): the SKS and the folding carbine about as common as a lever gun; the
+// takedown .22, the Uzi and the bullpup pump scarce (tools/gunloottest.js: a common gun still 10× a very rare one).
+/** @type {Record<string, string>} */
+export const SURV_RARITY = { sks: "uncommon", uzi: "scarce", pcc9: "uncommon", ksg: "scarce", survival22: "scarce" };
+Object.assign(GUN_RARITY, SURV_RARITY);
 // The extra-gun rolls (gunfinds.js, every roll on its own dice: nothing else found changes): which gun, the source's
 // draws in the gun distribution (gundist.js, GUN_SOURCES below: site:<type>, area:<type>, trader:<type>,
 // stash:<table>), weighted by FIND_W of its rarity (every gun source's rarity weight). site: the chance a search hour by
@@ -460,6 +465,7 @@ export const GUN_SPRITE = {
   single556: "huntrifle", single223: "huntrifle", single300: "huntrifle", varmint223: "huntrifle", ranch223: "huntrifle", snub38: "revolver", service38: "revolver",
 };
 Object.assign(GUN_SPRITE, { fiveseven: "pistol", p90: "smg", vector: "smg", g3: "dmr", famas: "carbine", revolver44: "revolver", lever44: "leverrifle", single44: "huntrifle" });
+Object.assign(GUN_SPRITE, { sks: "huntrifle", uzi: "smg", pcc9: "carbine", ksg: "semishotgun", survival22: "rifle22" }); // the survival guns (2026-10-19)
 
 // ---------- the gun distribution (gundist.js; user, 2026-10-10: "put the new guns in escort and contractor kits and in
 // hive-crawl rewards", "add guns to all loot pools that make sense ... and items that AI groups can have") ----------
@@ -503,6 +509,9 @@ export const GUN_CLASS = {
   fiveseven: ["police", "special", "modern"], p90: ["special", "police", "modern"], vector: ["special", "police", "modern"],
   g3: ["surplus", "military", "coldwar"], famas: ["surplus", "military", "coldwar"],
   revolver44: ["civilian", "hunting", "coldwar"], lever44: ["hunting", "civilian", "old"], single44: ["hunting", "civilian", "old"],
+  // the survival guns (2026-10-19)
+  sks: ["surplus", "civilian", "hunting", "coldwar"], uzi: ["police", "surplus", "military", "coldwar"], pcc9: ["civilian", "modern"],
+  ksg: ["civilian", "police", "modern"], survival22: ["civilian", "hunting", "coldwar"],
 };
 // What each source draws: draws { use: weight } or the name of a GUN_DRAWS profile (a gun counts its best use), and optionally theme (only guns whose
 // loot.js ITEM_TAGS meet these: places keep the loot audit), band (a kit's gun: only guns within ± this much power of
@@ -561,6 +570,7 @@ export const GUN_SOURCES = {
   "kit:escorts": { draws: "escorts", band: 0.6 }, "kit:contractors": { draws: "contractors", band: 0.6, era: { modern: 1, coldwar: 0.5, old: 0.2 } },
   "kit:survivors": { draws: "survivors", band: 0.6 },
   "kit:looters": { draws: "raiders", band: 0.6 }, "kit:survivalists": { draws: "militia", band: 0.6 }, "kit:preppers": { draws: "fighters", band: 0.6 }, // nomads.js tiers
+  "kit:drifters": { draws: {} }, "body:drifters": { draws: {} }, // nomads.js T0: no swap, their pipe shotgun stays one (only what they made)
   // ---- the spare gear on their bodies (KITS loot): any gun they would keep ----
   "body:raiders": { draws: "raiders" }, "body:soldiers": { draws: "soldiers" }, "body:zealots": { draws: "zealots" },
   "body:fighters": { draws: "fighters" }, "body:guards": { draws: "guards" }, "body:militia": { draws: "militia" },
@@ -619,6 +629,8 @@ export const GUN_ADDED = {
   single223: "2026-10-10", single300: "2026-10-10", varmint223: "2026-10-10", ranch223: "2026-10-10", snub38: "2026-10-10", service38: "2026-10-10",
   // more calibres (2026-10-10)
   fiveseven: "2026-10-10", p90: "2026-10-10", vector: "2026-10-10", g3: "2026-10-10", famas: "2026-10-10", revolver44: "2026-10-10", lever44: "2026-10-10", single44: "2026-10-10",
+  // the survival guns (2026-10-19)
+  sks: "2026-10-19", uzi: "2026-10-19", pcc9: "2026-10-19", ksg: "2026-10-19", survival22: "2026-10-19",
 };
 export const GUN_NEWNESS = { mult: 1.5, from: "2026-10-10" };
 export const HIVE_GUNS = { from: 3, p: 0.06, perLayer: 0.05, max: 0.35, hoard: 0.1, hoardTier: 0.08 };
@@ -712,6 +724,67 @@ for (const [kind, add] of Object.entries(AR_KITS)) {
 TRUCK_GEAR.cargo.push(["sbr300", 0.01]);
 TRUCK_GEAR.humvee.push(["sbr300", 0.008]);
 Object.assign(FACTORY_FIT, { sbr300: [[1, ["can308"]]], ardmr: [[0.6, ["acog", "lpvo"]], [0.3, ["bipod"]]], varmint223: [[0.5, ["tacscope"]], [0.3, ["bipod"]]] });
+
+// ---------- the survival guns of 2026-10-19 (user: "more items a zombie survival game should have such as utility,
+// tools, guns, attachments") ----------
+// Five common, cheap or handy guns the shelves and closets of a fallen state would really hold, each in a calibre the
+// game already has: the SKS (the surplus carbine in every pickup truck: 7.62×39 like the AK, a fixed ten-round box fed
+// from stripper clips), the Uzi (an old open-bolt 9mm SMG: heavy, slow-firing, easy to hold on bursts and full auto), a
+// folding 9mm carbine (a Kel-Tec Sub-2000: it takes the polymer pistols' magazines), a bullpup pump shotgun (a KSG: twin
+// tubes, fourteen shells, short through a door) and a takedown .22 survival rifle (an AR-7: light, eight-round
+// magazines, jams). Platforms: data-gunmods.js (sks, uzi, pcc, ksg, takedown); magazines, the SKS's box and clip:
+// data-kit.js SURV_MAGS / SURV_INTERNAL / SURV_CLIPS; drawings: ui/gunspecs.js. Merged into the arsenal's tables like the
+// AR platform's, so the finds (gunfinds.js), the gun distribution (GUN_CLASS), the balance sheet and the tests take them.
+/** @type {Record<string, any>} */
+export const SURV_GEAR = {
+  sks:        { name: "SKS carbine",            slot: W, skill: SH, power: 6.0, req: 5,  value: 55,  noise: 3, weight: 3.9, cat: "rifle", hunt: { big: 0.9, small: 0.4 },
+                desc: "A Soviet-pattern semi-automatic carbine in 7.62×39 (an SKS, the cheapest centrefire rifle on any gun store rack): AK hits one round a pull from a fixed ten-round magazine, thumbed in three at a time or filled at once from a stripper clip. Wood stock, folding bayonet, all but never fails. Takes a side scope mount and an AK's stocks. Needs Shooting 5." },
+  uzi:        { name: "Open-bolt 9mm SMG",      slot: W, skill: SH, power: 5.6, req: 6,  value: 75,  noise: 2, weight: 3.6, cat: "automatic", hunt: { big: 0.5, small: 0.6 },
+                desc: "A stamped-steel Uzi from a police armoury, a gang's stash or an old collection: heavy for a submachine gun, and its slow rate of fire keeps a trigger-touch pair or a long stream on target better than the newer SMGs. Its own 20- and 32-round magazines. Needs Shooting 6." },
+  pcc9:       { name: "Folding 9mm carbine",    slot: W, skill: SH, power: 4.4, req: 3,  value: 50,  noise: 2, weight: 1.9, cat: "rifle", hunt: { big: 0.3, small: 0.7 },
+                desc: "A light pistol-calibre carbine that folds in half (a Kel-Tec Sub-2000): a 9mm with a rifle's reach and a pistol's quiet, fed from the polymer 9mm pistols' magazines (8 to 33 rounds), so one box of rounds and one pouch of magazines serve both. Needs Shooting 3." },
+  ksg:        { name: "Bullpup pump shotgun",   slot: W, skill: SH, power: 5.7, req: 6,  value: 105, noise: 3, weight: 3.6, cat: "shotgun",
+                desc: "A bullpup 12 gauge pump with two magazine tubes under the barrel (a Kel-Tec KSG): fourteen shells and the length of a carbine, quick through a doorway. Rails on top and under; fussy about short-stroking (jams more than a plain pump). Needs Shooting 6." },
+  survival22: { name: "Takedown .22 survival rifle", slot: W, skill: SH, power: 2.2, req: 0, value: 26, noise: 1, weight: 1.6, cat: "rifle", hunt: { big: 0.2, small: 1.0 },
+                desc: "A bush pilot's survival rifle (an AR-7) that breaks down into its own floating stock: the lightest rifle there is, eight-round .22 magazines, quiet. Rabbits and crows, and the dead's eye sockets at a pinch; jams more than any other gun. Anyone can shoot it." },
+};
+const SURV_DUR = { sks: 90, uzi: 85, pcc9: 70, ksg: 70, survival22: 55 };
+for (const [k, v] of Object.entries(SURV_DUR)) SURV_GEAR[k].dur = v;
+/** @type {Record<string, any>} */
+export const SURV_WEAPONS = {
+  sks:        { name: "SKS carbine",            dmg: [24, 34], opt: 9,  fall: 3,   aim: 6,  ammo: 1, noise: 3, close: 1,  cap: 10, cal: "762x39", rel: 0.15 },
+  uzi:        { name: "Open-bolt 9mm SMG",      dmg: [15, 22], opt: 6,  fall: 3.8, aim: 5,  ammo: 2, noise: 2, close: 5,  cap: 32, cal: "9mm",    rel: 0.25,
+                modes: { single: { rounds: 1, aim: 0 }, burst: { rounds: 2, aim: -5 }, auto: { rounds: 10, aim: -14 } } }, // its slow rate: a quick pair or a long stream that climbs less than the MP5's (−6, −18)
+  pcc9:       { name: "Folding 9mm carbine",    dmg: [16, 23], opt: 8,  fall: 3.2, aim: 7,  ammo: 1, noise: 2, close: 3,  cap: 17, cal: "9mm",    rel: 0.4 },
+  ksg:        { name: "Bullpup pump shotgun",   dmg: [24, 36], opt: 4,  fall: 7,   aim: 9,  ammo: 1, noise: 3, close: 12, cap: 14, cal: "12ga",   rel: 0.45 },
+  survival22: { name: "Takedown .22 survival rifle", dmg: [11, 17], opt: 8, fall: 2.8, aim: 6, ammo: 1, noise: 1, cap: 8, cal: "22lr", rel: 1.2 },
+};
+// Where each is normally kept (loot.js ITEM_TAGS).
+/** @type {Record<string, string[]>} */
+export const SURV_TAGS = {
+  sks: ["guns", "home", "farm", "hunt", "crime"], uzi: ["crime", "guns", "police", "military"], pcc9: ["guns", "home", "crime", "travel"],
+  ksg: ["guns", "police", "home"], survival22: ["hunt", "outdoor", "camp", "home", "travel", "guns"],
+};
+// The AI's people carry them too (AI parity: appended to KIT_PATCH, then to combat.js KITS): raiders the Uzi and the SKS,
+// militia and zealots the SKS, survivors the carbine and the .22, fighters and guards the bullpup pump among their picks.
+/** @type {Record<string, Record<string, string[]>>} */
+export const SURV_KITS = {
+  raiders:   { weapons: ["uzi", "sks"], loot: ["sks", "uzi"] },
+  militia:   { weapons: ["sks"], loot: ["sks", "survival22"] },
+  survivors: { weapons: ["pcc9", "survival22"], loot: ["survival22", "pcc9"] },
+  fighters:  { weapons: ["sks", "pcc9"], strong: ["ksg"], loot: ["sks"] },
+  guards:    { strong: ["ksg"], loot: ["pcc9"] },
+  zealots:   { weapons: ["sks"], loot: ["sks"] },
+};
+Object.assign(ARSENAL_GEAR, SURV_GEAR); // (the arsenal's finds, gunfinds.js, roll them too)
+Object.assign(ARSENAL_TAGS, SURV_TAGS);
+Object.assign(GUN_GEAR, SURV_GEAR);
+Object.assign(GUN_WEAPONS, SURV_WEAPONS);
+Object.assign(ROSTER_TAGS, SURV_TAGS);
+for (const [kind, add] of Object.entries(SURV_KITS)) {
+  const k = (KIT_PATCH[kind] = KIT_PATCH[kind] || {});
+  for (const [f, list] of Object.entries(add)) k[f] = [...(k[f] || []), ...list];
+}
 
 // The Help topic (ui/help.js, after "Gun attachments").
 export const ROSTER_HELP = `<b>Guns.</b> Pistols: the .22 target pistol (quiet, weak, easy to hit with), the compact 9mm (8 rounds), the 9mm

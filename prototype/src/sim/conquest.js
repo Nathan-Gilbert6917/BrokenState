@@ -14,7 +14,9 @@
 //   goodwill with them at once and ends any pact; a coalition member you attack leaves the coalition.
 // - Win: the base is yours, an outpost on its tile (a group's base: their palisade, battered, two sections behind
 //   strong walls, and their bunkhouse; one of yours they held: its buildings as they stand, damage and all, and
-//   what is left of its stock). Its stores: half of that base's share of the group's stock. It holds land like your
+//   what is left of its stock). Its stores: half of that base's share of the group's stock, of what is left after
+//   what your people carried off the battle map (assaultstores.js: their real goods are in their storage on the map,
+//   yours to take; what you took is gone from that base before this half is counted). It holds land like your
 //   hub (alliance.js controlRadius "stronghold"). The team leaves one person (the weakest fighter, if the team has
 //   3+; everyone if you have no hub) as the first staff and waits for orders. Of the defenders who live, 40% get away to their
 //   group's other bases (none if it was the last); of those who give up a quarter ask to join you (a recruit card,
@@ -54,6 +56,8 @@
 // - Razing (factions.js baseFate / razeChance, aggressive gangs): razePlayerBase burns a base of yours to the ground
 //   instead: everything goes, its people walk to your nearest base, the tile is a ruin (tile.ruin: a little loot, an
 //   outpost there needs 5 scrap). The hub razed is the hub lost.
+import { peopleHere, syncMembers } from "./members.js"; // the people who live at a base
+import { loseBase, gainBase } from "./groupbases.js"; // their bases as base objects (what is there)
 import { foodIn, packPick, takeItem } from "./foods.js"; // food packed by the days
 import { sumRecs } from "./rounds.js"; // rounds by calibre
 import { packRounds } from "./ammo.js";
@@ -64,18 +68,19 @@ import { attitude, changeGoodwill, isAggressiveType, collapseFaction, recomputeO
 import {
   partyMembers, partyTile, tileLabel, awaitOrders, wipeIfEmpty, outpostName, removeParty, startReturn, orderMove, carryCapacity, planPath, settleInto,
 } from "./parties.js";
-import { startCombat, registerCombatHandler, registerBattleLayout, registerBattleSize, winOdds } from "./combat.js";
+import { startCombat, registerCombatHandler, registerBattleLayout, registerBattleSize, winOdds, enemyPower } from "./combat.js";
 import { groupTurret, TURRET_ODDS, seizeGroupVehicles, upgradeText } from "./vehicles.js"; // a military group's Humvee (M2 turret) defends its home base
 import { unitPower, arsenalShareTo, addToArsenal, arsenalWorthy } from "./arsenal.js"; // group arsenals: the defenders' kit; their stores of it
 import { fortAssault, fortSize, assaultBase } from "./fort.js"; // their walled base on one fort map
+import { layAssaultStores, stockAssaultStores } from "./assaultstores.js"; // their real stores on the map (the wall-line map too)
 import { assaultDims, CONTACT } from "./battlesize.js";
 import { captivesOf, takeCaptive } from "./conflicts.js";
 import { makeCandidate, offerRecruits } from "./recruits.js";
-import { surrenderPrisoners, prisonersOf } from "./prisoners.js";
-import { addBuilding, baseWalls, assignStations, isCamp, retypeCampJob, count as countBuilt } from "./buildings.js"; // countBuilt: assaultForce has its own count
+import { surrenderPrisoners, prisonersOf, handOver } from "./prisoners.js";
+import { addBuilding, baseWalls, assignStations, isCamp, retypeCampJob, count as countBuilt, addRing, isPiece } from "./buildings.js"; // countBuilt: assaultForce has its own count
 import { pactsOf, relation } from "./diplomacy.js";
 import { isMember, allianceMembers, ensureAlliance, assaultAllies } from "./alliance.js";
-import { fixtures, fixtureName } from "./breakdowns.js";
+import { fixtures, fixtureName, WALL_REPAIR, wallToMend, wallSegHours } from "./breakdowns.js";
 import { markAbandonedVehicle } from "./markers.js";
 import { thirstAhead } from "./weather.js";
 import { keyWord } from "./water.js"; // "un-purified water" in texts
@@ -84,6 +89,7 @@ import { groupWalls, groupsBuild, worksAt } from "./groupworks.js"; // barestart
 import { blocAssaultHelp } from "./blocs.js"; // AI blocs: members' fighters at an ally's walls
 import { askBaseName } from "./basenames.js"; // name a base you take
 import { pwarBaseTaken } from "./playerwars.js"; // wars with you: a base taken counts
+import { carriedRec } from "./ammo.js"; // the loose rounds people carry
 
 export const CONQUEST = {
   FIGHT_SHARE: 0.6, MIN_DEF: 3, MAX_DEF: 16, HOME_WEIGHT: 2,
@@ -115,6 +121,9 @@ const history = (state, text) => { const C = ensureConquest(state); C.history.un
 export function peopleAt(state, f, tile) {
   const i = f.bases.indexOf(tile);
   if (i < 0) return 0;
+  if (Array.isArray(f.people) && f.popSeen !== f.pop) syncMembers(state, f); // members.js: a head count changed this hour: the people first
+  const here = peopleHere(f, tile); // members.js: the people who live there
+  if (here != null) return here;
   const w = f.bases.length - 1 + CONQUEST.HOME_WEIGHT;
   return Math.max(1, Math.round((f.pop * (i === 0 ? CONQUEST.HOME_WEIGHT : 1)) / w));
 }
@@ -155,7 +164,7 @@ export function assaultForce(state, f, tile, p = null) {
   const bloc = occ && occ.factionId === f.id ? { fighters: 0, names: [] } : blocAssaultHelp(state, f, tile);
   count += bloc.fighters;
   return {
-    kind: KIND_OF[f.type], count, power: Math.round(unitPower(f, 2.6) * 10) / 10, factionId: f.id, name: `${f.name} defenders`, arsTask: "home", // arsenal.js: by their kit, all of it at home
+    kind: KIND_OF[f.type], count, power: Math.round(unitPower(f, 2.6) * 10) / 10, factionId: f.id, tile, name: `${f.name} defenders`, arsTask: "home", // arsenal.js: by their kit, all of it at home
     fortified: Math.round((1 + CONQUEST.WALL_FACTOR * walls * (1 - (walls >= 1 ? assaultCut(kit) : 0))) * 100) / 100, walls, people, occupied: !!(occ && occ.factionId === f.id),
     gate: occ && occ.factionId === f.id ? countBuilt(occ.base, "gate") > 0 : nativeGate(state, f, tile, walls), // fort.js assaultBase: their reinforced gate
     siegeKit: kit && (kit.ladders || kit.ram || kit.grenades) ? kit : null,
@@ -165,13 +174,14 @@ export function assaultForce(state, f, tile, p = null) {
   };
 }
 // The odds the card shows (the same sum the statistical resolver uses: combat.js autoResolveCombat).
-export function assaultOdds(power, force, ammoOk = true, people = 0) {
+// state: the world, so their very people are counted as the fight counts them (combat.js enemyPower).
+export function assaultOdds(power, force, ammoOk = true, people = 0, state = null) {
   const mine = power * (ammoOk ? 1 : 0.6);
-  const theirs = force.count * force.power * force.fortified + (force.turret ? TURRET_ODDS[force.turret] || 0 : 0); // combat.js byNumbersOdds: their turret
+  const theirs = (state ? enemyPower(state, { tile: force.tile, enemy: force }) : force.count * force.power * force.fortified) + (force.turret ? TURRET_ODDS[force.turret] || 0 : 0); // combat.js byNumbersOdds: their turret
   return winOdds(mine / Math.max(0.1, theirs), { kind: force.kind, count: force.count, people }); // combat.js: calibrated on the battle map
 }
 const carriedOf = (p, k) => Math.max(0, Math.floor(p.supplies[k] || 0)) + Math.max(0, Math.floor((p.cargo && p.cargo.supplies[k]) || 0));
-const carriedAmmo = (p) => sumRecs(p.supplies, p.cargo && p.cargo.supplies); // rounds by key: each gun judged by its own calibre (world.js armedFactor)
+const carriedAmmo = (p, people = []) => sumRecs(p.supplies, p.cargo && p.cargo.supplies, carriedRec(people)); // rounds by key: each gun judged by its own calibre (world.js armedFactor); and those they carry at hand
 // "2 ladders, a battering ram and 3 grenades" (the assault card).
 function kitWords(k) {
   const parts = [];
@@ -183,7 +193,7 @@ function kitWords(k) {
 export function teamAssaultOdds(state, p, force) {
   const m = partyMembers(state, p);
   // Short of ammo the guns count 60%, short of arrows the bows (world.js armedFactor; with no bow: the old ammo check).
-  return assaultOdds(m.reduce((a, s) => a + combatPower(s), 0) * armedFactor(m, carriedAmmo(p), carriedOf(p, "arrows")), force, true, m.length);
+  return assaultOdds(m.reduce((a, s) => a + combatPower(s), 0) * armedFactor(m, carriedAmmo(p, m), carriedOf(p, "arrows")), force, true, m.length, state);
 }
 
 // Why attacking this group is a bad idea (the planner and the card): "" for a hostile group.
@@ -333,8 +343,12 @@ registerBattleLayout("baseAssault", (b, ctx) => {
     for (let i = 0; i < 2 + Math.min(6, walls); i++) {
       for (let t = 0; t < 8; t++) { const x = ctx.rng.int(X + 2, X + 5), y = ctx.rng.int(1, ctx.H - 2); if (ctx.free(x, y)) { ctx.put(x, y, i % 2 ? "sandbag" : "barricade"); break; } }
     }
+    // assaultstores.js: their stores on their side of the map (behind the wall line, or where it would be), as crates.
+    const yard = { W: ctx.W, H: ctx.H, cells: b.cells, x0: X + 2, y0: 1, yw: Math.max(0, ctx.W - X - 3), yh: ctx.H - 2, indoor: null, doors: [], buildings: [], stores: [] };
+    if (layAssaultStores(ctx.state, b.setup, yard)) b.assaultYard = { stores: yard.stores, assaultStores: true };
     return;
   }
+  stockAssaultStores(ctx.state, b, b.assaultYard, ctx.rng); // assaultstores.js: their goods in those crates (makeStores), yours to take
   // Units: half the defenders at the wall (right behind it), the rest where the battle put them (behind it too).
   if (walls < 1) return;
   const foes = b.units.filter((u) => u.side === "enemy");
@@ -387,24 +401,25 @@ export function captureBase(state, f, tile, p, info = {}) {
     // What they built there: their palisade (battered: two sections behind strong walls, one behind any, none where they
     // had put up none yet) and their quarters (a bunkhouse, 6 beds, where they had built some: groupworks.js).
     const nw = nativeWalls(f, tile, state);
-    for (let i = 0; i < (nw > 1 ? 2 : nw > 0 ? 1 : 0); i++) { const wb = addBuilding(base, "walls"); wb.wear = 70; }
+    if (nw > 0) addRing(base, nw > 1 ? 2 : 1, 70); // buildings.js: their wall as a ring of pieces of yours, battered
     if (!groupsBuild(state, f) || ((f.works && f.works[tile] && f.works[tile].beds) || 0) > 0) addBuilding(base, "bunkhouse").wear = 30;
   }
   base.type = noHub ? "hub" : "outpost";
   base.alert = false;
-  // Their stores at this base: half of it is yours, the rest is spoiled, burned or carried off.
+  // Their stores at this base (groupbases.js: what is there, never another base's): half of it is yours, the rest is
+  // spoiled, burned or carried off. A base of yours they held (occ) keeps its own stores: they are in it.
   const got = [];
-  for (const k of Object.keys(f.stock)) {
-    const here = Math.max(0, (f.stock[k] || 0) * share);
-    f.stock[k] = Math.max(0, (f.stock[k] || 0) - here);
+  const lostHome = loseBase(state, f, tile);
+  if (!occ && lostHome) for (const k of Object.keys(lostHome.stock)) {
+    const here = Math.max(0, Number(lostHome.stock[k]) || 0);
     if (!SUPPLIES[k]) continue;
     const q = Math.floor(here * CONQUEST.STOCK_SHARE);
     if (q > 0) { base.stock[k] = (base.stock[k] || 0) + q; got.push(`${q} ${keyWord(k)}`); }
   }
-  // Their spare weapons and armour kept there (arsenal.js): the same share as the stores.
-  const kit = arsenalShareTo(state, f, share * CONQUEST.STOCK_SHARE, base.armory);
+  void share;
+  // Their spare weapons and armour (arsenal.js: kept at their main base; what their people carry fought on them).
+  const kit = home ? arsenalShareTo(state, f, CONQUEST.STOCK_SHARE, base.armory) : [];
   if (kit.length) got.push(kit.length === 1 ? kit[0].name : `${kit.length} pieces of their kit`);
-  f.bases = f.bases.filter((t) => t !== tile);
   state.bases.push(base);
   askBaseName(state, base);
   const seized = home && f.vehicles && f.vehicles.length ? seizeGroupVehicles(state, f, base) : []; // vehicles.js: their Army truck and Humvee are yours
@@ -599,7 +614,7 @@ export function occupyPlayerBase(state, base, f, opts = {}) {
   // Anyone left there (nobody, normally) is gone with it; prisoners of that group walk free; others are left to
   // prisoners.js (a base that is gone).
   for (const s of atBase(state, base.id)) s.location = { kind: "captive", factionId: f.id, tile: base.tile, since: state.hour };
-  for (const pr of [...prisonersOf(state)]) if (pr.at && pr.at.kind === "base" && pr.at.baseId === base.id && pr.factionId === f.id) { state.prisoners.splice(state.prisoners.indexOf(pr), 1); f.pop += 1; }
+  for (const pr of [...prisonersOf(state)]) if (pr.at && pr.at.kind === "base" && pr.at.baseId === base.id && pr.factionId === f.id) handOver(state, pr.id); // prisoners.js: the very person back in their group's list
   // Vehicles left behind, supply runs paused, teams based there go to the hub.
   for (const v of state.vehicles) {
     if (v.loc.kind !== "base" || v.loc.baseId !== base.id) continue;
@@ -624,7 +639,7 @@ export function occupyPlayerBase(state, base, f, opts = {}) {
   base.repairs = [];
   base.construction = [];
   base.type = "outpost";
-  f.bases.push(base.tile);
+  gainBase(state, f, base.tile, null, base); // groupbases.js: your base object is theirs now, with what is left in it
   const garrison = Math.max(CONQUEST.GARRISON_MIN, Math.round((opts.garrison || 3) * CONQUEST.GARRISON));
   C.occupied.push({ tile: base.tile, base, name: base.name, factionId: f.id, day: day(state), garrison, garrisonMax: garrison, wasHub, how: opts.retreated ? "retreat" : opts.outcome || "overrun" });
   C.stats.basesLost++;
@@ -671,7 +686,7 @@ export function razePlayerBase(state, base, f) {
   noteBaseLoss(state, base, "razed", f); // causes.js: why it was lost (before the people leave)
   evacuate(state, base, f, f ? `${f.name} burned it` : "it burned");
   for (const s of atBase(state, base.id)) s.location = { kind: "captive", factionId: f ? f.id : null, tile: base.tile, since: state.hour };
-  for (const pr of [...prisonersOf(state)]) if (pr.at && pr.at.kind === "base" && pr.at.baseId === base.id && f && pr.factionId === f.id) { state.prisoners.splice(state.prisoners.indexOf(pr), 1); f.pop += 1; }
+  for (const pr of [...prisonersOf(state)]) if (pr.at && pr.at.kind === "base" && pr.at.baseId === base.id && f && pr.factionId === f.id) handOver(state, pr.id); // prisoners.js: the very person back in their group's list
   const burned = state.vehicles.filter((v) => v.loc.kind === "base" && v.loc.baseId === base.id);
   for (const v of burned) state.vehicles.splice(state.vehicles.indexOf(v), 1);
   for (const job of state.supplyRuns || []) if ((job.originId === base.id || job.destId === base.id) && job.status !== "done" && job.status !== "disbanded") { job.paused = true; job.lastResult = `Day ${day(state)}: ${base.name} was burned down`; }
@@ -735,9 +750,18 @@ export function conquestDaily(state) {
     if (holder.id !== o.factionId) { o.factionId = holder.id; o.garrison = Math.max(CONQUEST.GARRISON_MIN, o.garrison * 0.6); }
     o.garrison = Math.min(o.garrisonMax, o.garrison + CONQUEST.GARRISON_GROW);
     for (const fx of fixtures(o.base)) {
+      if (isPiece(fx.type)) continue; // the wall: by the hour, below
       if (fx.broken) { if (state.rng.chance(CONQUEST.REPAIR)) { fx.broken = null; fx.wear = CONQUEST.REPAIR_WEAR; } }
       else if (fx.wear > 0) fx.wear = Math.max(0, fx.wear - CONQUEST.WEAR_FALL);
     }
+    // The wall's pieces (buildings.js piece) are mended as yours are (breakdowns.js WALL_REPAIR: the same work-hours a
+    // segment, broken first, then the most worn): each of the holders puts WALL_REPAIR.HOLDER work-hours a day into it.
+    o.wallHours = (o.wallHours || 0) + Math.max(1, Math.round(o.garrison)) * WALL_REPAIR.HOLDER;
+    for (let b = wallToMend(o.base)[0]; b && o.wallHours >= wallSegHours(b); b = wallToMend(o.base)[0]) {
+      o.wallHours -= wallSegHours(b);
+      b.broken = null; b.wear = CONQUEST.REPAIR_WEAR;
+    }
+    if (!wallToMend(o.base).length) o.wallHours = 0; // nothing left to mend: the hours are not banked
   }
   // Base abandoned before a raid that never came: nothing to do; the flag clears once that raid is gone.
   for (const b of state.bases) if (b.abandoned != null && !state.parties.some((q) => q.id === b.abandoned)) delete b.abandoned;

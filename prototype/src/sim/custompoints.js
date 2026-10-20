@@ -179,18 +179,18 @@ function ownBill(state, s, max) {
 }
 // What is theirs alone, as a number (the dice under Customize: randomkit.js).
 /** @param {any} state @param {any} s @param {number} [max] */
-export const ownPoints = (state, s, max = pointsMax(state)) => ownBill(state, s, max).own;
+export const ownPoints = (state, s, max = maxFor(state, s)) => ownBill(state, s, max).own;
 
 // Everything they are priced on: their own bill, plus { vehicle (what they pay for the vehicle's back, after the car
 // pool), vehicleCost (the whole back, on its payer), poolPaid (what the car pool pays of it), offer (what they give the
 // car pool: their points left), pool (what the back takes of their offer), total, max, left, over, lines (for the
-// tooltip) }. state: the world (the crew, for the car pool; a custom background's car; the max: state.pointsMax or the
-// default).
+// tooltip) }. state: the world (the crew, for the car pool; a custom background's car). max: theirs (maxFor: their own
+// points when set on their card, else the crew's Points each).
 /** @param {any} state @param {any} s @param {number} [max] */
-export function pricePerson(state, s, max = pointsMax(state)) {
+export function pricePerson(state, s, max = maxFor(state, s)) {
   const O = ownBill(state, s, max);
   const lines = O.lines;
-  const K = carPool(state, max, s);
+  const K = carPool(state, null, s);
   const mine = K.owner === s;
   const vehicleCost = mine ? K.cost : s.startVehicle && !K.crew.includes(s) ? vehiclePoints(s.startVehicle) : 0; // (someone off the crew: their own back)
   const poolPaid = mine ? K.used : 0;
@@ -215,9 +215,9 @@ export function pricePerson(state, s, max = pointsMax(state)) {
 // Under Customize only; startgear.js clearStartGear takes s.carPool off at Start.
 // { crew, owner (the payer, or null), cost (the back), offers: [{ s, n (offered), share (taken) }], total (offered),
 // used (taken: at most the cost), ownerPays }. sub: a stand-in for one colonist (the same id: what they would be
-// without their kit, say).
-/** @param {any} state @param {number} [max] @param {any} [sub] */
-export function carPool(state, max = pointsMax(state), sub = null) {
+// without their kit, say). max: one max for every giver (null: each their own, maxFor).
+/** @param {any} state @param {number | null} [max] @param {any} [sub] */
+export function carPool(state, max = null, sub = null) {
   const crew = ((state && state.survivors) || []).map((x) => (sub && x.id === sub.id ? sub : x));
   // A normal start's custom backgrounds' car backs (to the hub with their cars) are on the vehicle's back's bill too:
   // with nothing picked for the back, its payer is whoever would pay for it (ui/startgear.js editTrunk: the leader).
@@ -225,7 +225,7 @@ export function carPool(state, max = pointsMax(state), sub = null) {
   const extra = backs.reduce((a, b) => a + b.n, 0);
   const owner = crew.find((x) => x.startVehicle) || (extra > 0 ? backPayer(state, crew) : null);
   const cost = (owner && owner.startVehicle ? vehiclePoints(owner.startVehicle) : 0) + (owner ? extra : 0);
-  const offers = crew.filter((x) => x.carPool && x.startPoints && x !== owner).map((x) => ({ s: x, n: Math.max(0, max - ownBill(state, x, max).own), share: 0 }));
+  const offers = crew.filter((x) => x.carPool && x.startPoints && x !== owner).map((x) => { const m = max ?? maxFor(state, x); return { s: x, n: Math.max(0, m - ownBill(state, x, m).own), share: 0 }; });
   const total = offers.reduce((a, o) => a + o.n, 0);
   const used = Math.min(total, cost);
   if (used > 0) {
@@ -312,11 +312,15 @@ export function backgroundPoints(A, mode) {
 // The crew's max (the new-run screen's box: main.js keeps it in ui.pointsMax and the world as state.pointsMax).
 /** @param {any} state */
 export const pointsMax = (state) => (state && Number.isFinite(state.pointsMax) ? state.pointsMax : C.DEF);
+// One colonist's max (2026-10-19, user request: "allow the user to change an individual survivor's points and not
+// affect the other survivors"): their own (s.ownMax, set on their crew card: ui/newgame.js) when set, else the crew's.
+// Setting Points each again puts everyone back on it (main.js nr-points clears s.ownMax).
+/** @param {any} state @param {any} s */
+export const maxFor = (state, s) => (s && Number.isFinite(s.ownMax) ? s.ownMax : pointsMax(state));
 // Who is over their max, and by how much: [{ s, over }].
 /** @param {any} state */
 export function overBudget(state) {
-  const max = pointsMax(state);
-  return (state.survivors || []).filter((s) => s.startPoints).map((s) => ({ s, over: pricePerson(state, s, max).over })).filter((x) => x.over > 0);
+  return (state.survivors || []).filter((s) => s.startPoints).map((s) => ({ s, over: pricePerson(state, s).over })).filter((x) => x.over > 0);
 }
 // Start's refusal, or "". When the payer of the vehicle's back is over, it says what the back costs against the car
 // pool and what they have to spare.
@@ -324,11 +328,10 @@ export function overBudget(state) {
 export function overText(state) {
   const list = overBudget(state);
   if (!list.length) return "";
-  const max = pointsMax(state);
-  const K = carPool(state, max);
+  const K = carPool(state);
   let back = "";
   if (K.owner && K.cost > 0 && list.some((x) => x.s === K.owner)) {
-    const spare = Math.max(0, max - ownPoints(state, K.owner, max));
+    const spare = Math.max(0, maxFor(state, K.owner) - ownPoints(state, K.owner));
     back = ` The vehicle's back${K.extra ? ` (with the background cars' backs, ${K.extra})` : ""} costs ${K.cost}: ${K.offers.length ? `the car pool (${K.total}) and ` : ""}${firstName(K.owner)} (${spare} to spare) cannot pay it.`;
   }
   return `Over the points: ${list.map(({ s, over }) => `${firstName(s)} by ${over}`).join(", ")}.${back} Take something off (or raise Points each) to start.`;

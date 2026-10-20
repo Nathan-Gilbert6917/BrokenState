@@ -19,6 +19,12 @@
 // Handing over: teammates standing next to each other (a downed one too) pass things between them for free; each
 // one's own max load still holds.
 //
+// The hands (carry.js, the user's ask 2026-10-19): whatever a survivor carries loose fills their hands (no shooting,
+// reloading, doors, windows until it is put down or stowed), and with two different things carried (carry.js
+// handsCount) nothing more is taken from a container, a body, the ground, the vehicle or a teammate (handsTakeRefusal,
+// checked here in raidMove for the one who would hold it). Moving things between a survivor's own places (carried
+// into the pack or the pockets, out of the pack) is free of it, and so is putting things down or into the vehicle.
+//
 // Hauling takes time (HAUL): each turn a survivor moves the first HAUL.free kg out of a container or the vehicle (or
 // into the vehicle) for free, then every HAUL.per kg more costs one of their actions. With none left they wait for
 // the next turn. One heavy thing can always be lifted with all the actions they have left.
@@ -52,9 +58,10 @@ import { keyWord } from "./water.js"; // supplies as words: "9mm FMJ", "rounds"
 import { partyMembers, cargoRoom, poolLoad, unitsThatFit } from "./parties.js";
 import { partyVehicle, isBike, VEHICLE_TYPES } from "./vehicles.js";
 import { teamLoad, wornLoad, maxLoad } from "./load.js";
-import { ensureInv, packOf, ensurePack, itemLoad, carryOf, fitReason, isBulky, isSmall, packSize, EQUIP_SLOTS, SLOT_NAMES, allCarried } from "./inventory.js";
+import { ensureInv, packOf, ensurePack, itemLoad, itemKg, carryOf, fitReason, isBulky, isSmall, packSize, EQUIP_SLOTS, SLOT_NAMES, allCarried, isTwoHands } from "./inventory.js";
 import { gunLeavesTeam, unloadInto, teamGuns, returnStacks } from "./gunload.js";
-import { pileToArms } from "./carry.js"; // the team's loads off the ground: into the arms (call-time only: safe in the import cycle) // the rounds in a gun go with it (call-time only: safe in the import cycle)
+import { pileToArms, handsTakeRefusal } from "./carry.js"; // the team's loads off the ground: into the arms; two different things carried: nothing more taken (call-time only: safe in the import cycle)
+import { groundPile, settlePile } from "./ground.js"; // the pile a load is set down on (call-time only: safe in the import cycle)
 import { canStack, mergeInto, isSpent, stackLabel, isSupItem, roomIn, roundCap, amountOf, roundItems, isRoundItem } from "./itemstack.js"; // stacks merge in a slot (2026-10-10)
 import { isMag } from "./mags.js"; // rounds onto a spare magazine in the search window load it (call-time only: the import cycle)
 import { combatAct } from "./combat.js"; // (call-time only)
@@ -126,6 +133,26 @@ export function raidShares(state, b) {
 
 // ---------- weights ----------
 export const haulOf = (u) => u.haul || (u.haul = { sup: {}, gear: [] });
+// What a survivor carries loose, in words ("3 9mm FMJ, a crowbar and a flashlight"); "" with nothing.
+export function haulText(u) {
+  const h = u && u.haul;
+  if (!h) return "";
+  const parts = Object.entries(h.sup).filter(([, v]) => v > 0).map(([k, v]) => `${Math.floor(v) || Math.round(v * 10) / 10} ${keyWord(k)}`);
+  for (const it of h.gear) parts.push(stackLabel(it));
+  return parts.join(", ");
+}
+// Everything a survivor carries loose onto a ground pile (carry.js dropCarried: free; at: another cell than theirs,
+// Set over cover). A pile holds things already found (drop: true), so the raid's tally keeps them; a gun among them
+// leaves the team loaded (gunload.js). Returns the pile (null: nothing carried).
+export function dropHaulInto(b, u, at = null) {
+  const h = u.haul;
+  if (!h || !(h.gear.length || Object.values(h.sup).some((v) => v > 0))) return null;
+  const pile = groundPile(b, at ? at.x : u.x, at ? at.y : u.y, at ? at.f || 0 : u.f || 0);
+  for (const [k, v] of Object.entries(h.sup)) if (v > 0) { pile.contents.sup[k] = (pile.contents.sup[k] || 0) + v; delete h.sup[k]; }
+  for (const it of h.gear.splice(0)) { pile.contents.gear.push(it); gunLeavesTeam(b, it); }
+  settlePile(pile);
+  return pile;
+}
 export const haulLoad = (u) => {
   const h = u.haul;
   if (!h) return 0;
@@ -248,11 +275,30 @@ function reach(state, b, u, loc) {
     const L = lootLayer(b);
     const box = L && L.containers.find((c) => c.id === loc.id);
     if (!box) return "That is not there any more.";
+    if (box.kind === "store") return storeReach(b, u, box); // assaultstores.js: a group's store on the map of an assault
     if (box.kind === "ground" || (box.kind === "body" && L.field)) return (box.f || 0) === (u.f || 0) && Math.max(Math.abs(u.x - box.x), Math.abs(u.y - box.y)) <= 1 ? "" : `${u.name.split(" ")[0]} has to be on it or next to it.`; // ground.js: a pile, a body searched where it fell
     return Math.max(Math.abs(u.x - box.x), Math.abs(u.y - box.y)) <= 1 ? "" : `${u.name.split(" ")[0]} has to be next to it.`;
   }
   if (loc.o === "trunk") return !trunkVehicle(state, b) ? "There is no vehicle here." : atVehicle(b, u) ? "" : `${u.name.split(" ")[0]} has to be at the vehicle.`;
   return "Not here.";
+}
+
+// A store of theirs on an assault's map (assaultstores.js, several cells): next to any of its cells, its lock open, the
+// fight begun.
+function storeReach(b, u, box) {
+  if (b.phase === "deploy") return "Not before the assault starts.";
+  const gap = Math.max(box.x - u.x, u.x - (box.x + (box.w || 1) - 1), box.y - u.y, u.y - (box.y + (box.h || 1) - 1), 0);
+  if ((box.f || 0) !== (u.f || 0) || gap > 1) return `${u.name.split(" ")[0]} has to be next to the ${String(box.label).toLowerCase()}.`;
+  if (box.lock && !box.lock.open) return `The ${String(box.label).toLowerCase()} is locked: force the lock first (Force lock, next to it).`;
+  return "";
+}
+// How much quicker hauling out of this location is (assaultstores.js c.haulRate: a pile left outside, no lid, no lock:
+// its kg count STEAL.PILE times lighter against HAUL).
+function haulRate(b, loc) {
+  if (loc.o !== "rbox") return 1;
+  const L = lootLayer(b);
+  const c = L && L.containers.find((x) => x.id === loc.id);
+  return (c && c.haulRate > 0 && c.haulRate) || 1;
 }
 
 // The limits a move must not break: each person's room and the trunk's, each only if the move used some of it.
@@ -300,6 +346,14 @@ const noTime = (u, what) => `No time: ${u.name.split(" ")[0]} has no actions lef
 // Moves the item (or the supply stack, as much of it as fits; qty: at most that many) at `from` to `to`, for the
 // survivor in unit `uid`. Returns a message ("" when nothing happened).
 export function raidMove(state, uid, fromStr, toStr, qty = Infinity) {
+  const r = raidMoveAt(state, uid, fromStr, toStr, qty);
+  // The vehicle loaded or unloaded: the pool the team shares out (on foot, or past the bikes' racks) changed, so each
+  // one's share of it with it (raidShares; a car's riders carry none): the window's weights are right at once.
+  const b = state.combat;
+  if (b && b.raid && lootLayer(b) && (parseRaidLoc(fromStr).o === "trunk" || parseRaidLoc(toStr).o === "trunk")) raidShares(state, b);
+  return r;
+}
+function raidMoveAt(state, uid, fromStr, toStr, qty = Infinity) {
   const b = state.combat;
   if (!b || !lootLayer(b) || b.over) return "";
   const u = b.units.find((x) => x.id === uid && x.side === "player");
@@ -317,9 +371,24 @@ export function raidMove(state, uid, fromStr, toStr, qty = Infinity) {
     const item = A ? getAt(A, from) : null, cur = B ? getAt(B, to) : null;
     if (item && cur && isRoundItem(item) && isMag(cur)) return combatAct(state, { type: "inv", unit: u.id, from: fromStr, to: toStr, op: "load" });
   }
+  { const why = takeRule(state, b, from, to, fromStr); if (why) return why; } // carry.js: two different things carried: nothing more taken
   if (from.slot === "sup") return to.o === "stow" ? stowSupply(state, b, u, from, to, qty) : isList(to) ? moveSupply(state, b, u, from, to, qty) : slotSupply(state, b, u, from, to, qty);
   if (to.o === "stow") return "Drop it on a pocket or a pack cell.";
   return moveGear(state, b, u, from, to);
+}
+// The hands rule of a move: the one who would hold what moves (the owner of `to`), taking it from anywhere but their
+// own places, must have a hand free (carry.js handsTakeRefusal). "" when the move is allowed.
+function takeRule(state, b, from, to, fromStr) {
+  const taker = ownerOf(b, to);
+  if (!taker) return "";
+  const giver = ownerOf(b, from);
+  if (giver === taker) return ""; // their own places: carried into the pack, out of the pack...
+  // More of a kind already in hand (scrap onto their scrap, a second box of the same rounds) joins that armful.
+  const h = taker.haul;
+  if (from.slot === "sup") { if (h && (h.sup[String(from.i)] || 0) > EPS) return ""; return handsTakeRefusal(taker, `the ${keyWord(String(from.i))}`); }
+  const item = raidItemAt(state, b, fromStr);
+  if (item && h && to.o === "haul" && !isTwoHands(item) && h.gear.some((g) => g.key === item.key)) return ""; // a second fire safe is not one armful: each takes both hands
+  return handsTakeRefusal(taker, `the ${item ? item.name : "that"}`, item);
 }
 
 // How many of a supply stack a move would take (splitting stacks, search window): { have, n (what fits, ≤ qty),
@@ -378,12 +447,13 @@ function planSupply(state, b, u, from, to, qty) {
     if (n < 1) return { err: boxRefusal(B.box, w), have };
   }
   const timed = hauling(from, to);
+  const hw = w / haulRate(b, from); // the kg a unit counts against HAUL
   if (timed) {
-    const fit = Math.floor((haulBudget(b, u) + 1e-6) / w);
+    const fit = Math.floor((haulBudget(b, u) + 1e-6) / hw);
     if (fit < 1) return { err: noTime(u, name), have };
     n = Math.min(n, fit);
   }
-  return { A, B, k, n, have, name, timed, w, shift };
+  return { A, B, k, n, have, name, timed, w: hw, shift };
 }
 
 // ---------- found supplies into a slot (supitems.js) ----------
@@ -450,7 +520,7 @@ function planSlot(state, b, u, from, to, qty) {
     if (fit < n) { n = fit; limit = key; }
   }
   if (n < 1) return { err: tooHeavy(state, b, limit || u.id, name), have };
-  const w = supWeight(k);
+  const w = supWeight(k) / haulRate(b, from); // the kg a unit counts against HAUL
   const timed = hauling(from, to);
   if (timed) {
     const fit = Math.floor((haulBudget(b, u) + 1e-6) / w);
@@ -514,7 +584,7 @@ function planStow(state, b, u, from, to, qty) {
     n = Math.min(n, fit);
   }
   if (hauling(from, { o: "s" }) && w > EPS) {
-    const fit = Math.floor((haulBudget(b, u) + 1e-6) / w);
+    const fit = Math.floor((haulBudget(b, u) + 1e-6) / (w / haulRate(b, from)));
     if (fit < 1) return { err: noTime(u, name), have };
     n = Math.min(n, fit);
   }
@@ -573,7 +643,7 @@ function moveGear(state, b, u, from, to) {
   }
   // Hauling time: the actions it takes, or one heavy thing with all they have left.
   const timed = hauling(from, to);
-  const kgMoved = itemLoad(item);
+  const kgMoved = itemLoad(item) / haulRate(b, from); // the kg counted against HAUL
   if (timed && haulCost(b, u, kgMoved) > (u.ap || 0) && !((u.ap || 0) >= 1 && kgMoved > haulBudget(b, u))) return noTime(u, item.name);
   const people = [...new Set([u, ownerOf(b, from), ownerOf(b, to)].filter(Boolean))];
   const before = rooms(state, b, people);
@@ -646,7 +716,7 @@ function itemToStack(state, b, u, A, B, from, to, item) {
   const k = stockKeyOf(item), q = amountOf(item);
   if (!k || !(q >= 1)) return "Nothing there.";
   const timed = hauling(from, to);
-  const kgMoved = itemLoad(item);
+  const kgMoved = itemLoad(item) / haulRate(b, from);
   if (timed && haulCost(b, u, kgMoved) > (u.ap || 0) && !((u.ap || 0) >= 1 && kgMoved > haulBudget(b, u))) return noTime(u, item.name);
   const people = [...new Set([u, ownerOf(b, from), ownerOf(b, to)].filter(Boolean))];
   const before = rooms(state, b, people);
@@ -696,6 +766,7 @@ function afterBox(b, box) {
   const left = box.contents.gear.length + Object.values(box.contents.sup).filter((v) => v >= 1).length;
   box.searched = !left && !box.quick;
   box.partial = !!left;
+  if (box.kind === "store") box.kg = Object.entries(box.contents.sup).reduce((a, [k, v]) => a + (v > 0 ? v * supWeight(k) : 0), 0) + box.contents.gear.reduce((a, g) => a + itemKg(g), 0); // the store's weight on the map and its card (basemap.js)
 }
 
 // A weapon or armor put on (or taken off) in the middle of a raid counts at once (combat.js refitUnit).

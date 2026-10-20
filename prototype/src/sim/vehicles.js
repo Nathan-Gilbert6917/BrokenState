@@ -17,6 +17,8 @@ import { newId, log, day, atBase, skill, localId } from "./world.js";
 import { count, benchTier } from "./buildings.js";
 import { hasPerk, gainXp, USE, hash01 } from "./skills.js";
 import { newItem } from "./inventory.js";
+import { cfgOf } from "./worldcfg.js"; // the run's dials: Failures
+import { unloadVehicle } from "./arsenal.js"; // a group's vehicle unloaded into its stores (call-time only)
 
 // The hardcore start's cars (hardcore-start.js ARCHETYPES) added the SUV, the Hummer and the work van; anything that
 // draws or prices a car by type takes them as a truck unless it says otherwise (mapsprites.js, crossing.js, fieldheat.js).
@@ -261,8 +263,9 @@ export function breakdownChance(v, fill = 0) {
 // always. Several: one roll for any of them (1 − every one holding up), then which one, each by its own chance.
 export function breakdownRoll(state, p, fill = 0) {
   const vs = partyVehicles(state, p);
-  if (vs.length <= 1) { const v = partyVehicle(state, p); return v && state.rng.chance(breakdownChance(v, fill)) ? v : null; }
-  const cs = vs.map((v) => breakdownChance(v, fill));
+  const fm = cfgOf(state, "failures"); // worldcfg.js: the run's Failures dial
+  if (vs.length <= 1) { const v = partyVehicle(state, p); return v && state.rng.chance(Math.min(1, breakdownChance(v, fill) * fm)) ? v : null; }
+  const cs = vs.map((v) => Math.min(1, breakdownChance(v, fill) * fm));
   const any = 1 - cs.reduce((a, c) => a * (1 - c), 1);
   if (!state.rng.chance(any)) return null;
   let r = state.rng.next() * cs.reduce((a, c) => a + c, 0);
@@ -270,8 +273,8 @@ export function breakdownRoll(state, p, fill = 0) {
   return vs[vs.length - 1];
 }
 
-export function wear(v, onRoad, fill = 0) {
-  const w = isBike(v) ? (onRoad ? 0.1 : 0.4) : (onRoad ? 0.25 : 0.9) * (fill > 1 ? OVERLOAD_WEAR : 1);
+export function wear(v, onRoad, fill = 0, mult = 1) { // mult: the run's Durability loss dial (worldcfg.js; parties.js, survey.js pass it)
+  const w = (isBike(v) ? (onRoad ? 0.1 : 0.4) : (onRoad ? 0.25 : 0.9) * (fill > 1 ? OVERLOAD_WEAR : 1)) * mult;
   v.condition = Math.max(0, v.condition - w);
 }
 
@@ -567,6 +570,41 @@ export function fitTechnical(state, v, factionId, salt) {
   return true;
 }
 
+// ---------- what is in a vehicle (docs/adr/0001-ai-parity.md: your vehicles' model for a group's too) ----------
+// While people drive a vehicle, what it carries is their party's cargo (yours: p.cargo; a group's caravan or convoy:
+// its goods). When it parts from them it keeps what is in it (v.cargo: { supplies, gear }): a car of yours left on a
+// tile (parties.js leaveVehicle), and a group's record (f.vehicles) alike. Every move of a vehicle between your
+// vehicles and a group's records (taken off the map, stolen, bought, sold, seized with a base, lost on a raid, an
+// escort's truck taken with the caravan) takes what is in it along (carryCargo), and whoever ends up with it at home
+// unloads it into their stores (a group: arsenal.js unloadVehicle; your base: cargoToBase), as a team does coming home.
+// Nothing in it is lost on the way.
+export const cargoIn = (v) => (v && v.cargo && (((v.cargo.gear || []).some(Boolean)) || Object.values(v.cargo.supplies || {}).some((q) => q > 0)) ? v.cargo : null);
+// What is in `from` moves into `to` (a vehicle or a record; added to what is in it already). Returns to.
+export function carryCargo(from, to) {
+  if (!from || !to || from === to) return to;
+  const c = cargoIn(from);
+  delete from.cargo;
+  if (!c) return to;
+  const into = to.cargo || (to.cargo = { supplies: {}, gear: [] });
+  if (!into.supplies) into.supplies = {};
+  if (!into.gear) into.gear = [];
+  for (const [k, q] of Object.entries(c.supplies || {})) if (q > 0) into.supplies[k] = (into.supplies[k] || 0) + q;
+  for (const it of c.gear || []) if (it) into.gear.push(it);
+  return to;
+}
+// A vehicle that comes to a base of yours with something in it: into the base's stores and armory (as parties.js
+// unloads a team's cargo coming home). Returns the items moved.
+export function cargoToBase(base, v) {
+  if (!base || !v) return [];
+  const c = cargoIn(v);
+  delete v.cargo;
+  if (!c) return [];
+  for (const [k, q] of Object.entries(c.supplies || {})) if (q > 0) base.stock[k] = (base.stock[k] || 0) + q;
+  const items = (c.gear || []).filter(Boolean);
+  base.armory.push(...items);
+  return items;
+}
+
 // ---------- a military group's motor pool (factions.js) ----------
 // A "Military remnant" group starts with an Army cargo truck and a Humvee with an M2 on the roof at its home base, both
 // plated and glassed: f.vehicles (their own records, never in state.vehicles, so nothing takes them for yours). Old
@@ -657,11 +695,13 @@ function loseOneRaidCar(state, f, v, to) {
     const nv = createVehicle(state, v.type, { kind: "base", baseId: to.base.id }, { name: v.name, condition: Math.round(c0 + roll("c") * (c1 - c0)), fuel: Math.round(f0 + roll("f") * (f1 - f0)) });
     nv.upgrades = ups;
     nv.taken = { from: f.id, hour: state.hour };
+    cargoToBase(to.base, v); // anything in it is the base's now
     return nv;
   }
   if (to && to.faction) {
     const g = to.faction;
     g.vehicles = factionVehicles(g);
+    unloadVehicle(state, g, v, "taken", true); // what is in it into the defenders' stores (a transfer between groups)
     g.vehSeq = (g.vehSeq || 0) + 1; // a new id each (two taken in one hour were one id: f<group>-<type>-<hour>)
     const nv = { ...v, id: `f${g.id}-t${g.vehSeq}`, owner: g.id, condition: Math.max(20, Math.round(v.condition * 0.7)), upgrades: ups };
     g.vehicles.push(nv);
@@ -697,6 +737,7 @@ export function factionVehiclesDaily(state) {
 export function seizeGroupVehicles(state, f, base) {
   const out = [];
   for (const v of factionVehicles(f)) {
+    cargoToBase(base, v); // what is in any of them (a wreck's too) is the base's now
     if (v.condition <= 0) continue;
     const nv = createVehicle(state, v.type, { kind: "base", baseId: base.id }, { name: v.name, condition: Math.round(v.condition), fuel: Math.round(v.fuel || 0) });
     nv.upgrades = JSON.parse(JSON.stringify(upgradesOf(v)));

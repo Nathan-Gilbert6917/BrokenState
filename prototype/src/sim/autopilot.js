@@ -3,7 +3,7 @@
 //   - resolves cards (travel events, conflicts, orders / "Done" cards, strangers, raid warnings), scavenging
 //     searches (one search hour per tick), trade visits and battles (state.autoCombat is on while it runs);
 //   - sets every role by need (food, threats, the injured, construction, stations, crafting), queues buildings
-//     and crafts, hands out gear from the armory and treats the injured with base meds;
+//     (storage among them when a base's goods lie outside: storageWish, basestorage.js) and crafts, hands out gear from the armory and treats the injured with base meds;
 //   - once a day (07:00) plans a trip: scavenging the best known site for what the hub needs, checking finds,
 //     recovering the dead or a vehicle, a trade visit, a rescue, or founding an outpost; and sends supply runs
 //     to outposts that need materials or hands;
@@ -18,6 +18,7 @@ import { govFieldWorks, fieldJobs, govSnares, snareLinesWanted, playerWorks, gat
 import { BUILDMAT_FINDS } from "./loot.js"; // building materials: where they are found
 import { traitAim } from "./traits.js"; // Brave, Coward: to hit
 import { fitFromPool } from "./gunmods.js";
+import { itemScore, equipPeople, equipTools } from "./equip.js"; // the one hand-out rule (the AI groups use it too: loadouts.js)
 import { planRepairs, benchWanted, repairCrafterWanted, repairHold, autoFieldRepairs, partNeeds, partDeficit, partPlan, kitWants, spareGun, queueRepair } from "./repair.js"; // the autopilot's repairs of worn gear // the autopilot fits loose gun attachments
 import { equipKit, governPlates } from "./carrykit.js"; // carry kit: rigs, plates in the carriers, spare magazines; spare plates kept // the autopilot's repairs of worn gear // the autopilot fits loose gun attachments
 import { GEAR, LOCATIONS, SUPPLIES, FACTION_TYPES, supValue, supWeight } from "./data.js";
@@ -50,9 +51,13 @@ import { edibleFood, foodStore, storeCapacity } from "./storage.js";
 import { KITCHEN, hasKitchen, cooksWanted, kitchenCold, kitchenCanLight, kitchenWood, isCookHour, cookedLately } from "./kitchen.js"; // the Kitchen: built at 8+ people, its cooks staffed (planRoles 5c)
 import { conditionsOf, CONDITIONS, treatCondition, treatConditionInfo, medsToTreatAll, autoWantsCondition } from "./health.js";
 import { govCookBills } from "./cooking.js"; // wave 2 cooking: the governor's and the stewards' bills
-import { canUpgradeKitchen, queueCannerUpgrade, canUpgradeGenerator, queueGenUpgrade, stationOperator } from "./buildings.js"; // machines-2: the pressure canner; gen-tiers: a generator upgraded
+import { canUpgradeKitchen, queueCannerUpgrade, canUpgradeGenerator, queueGenUpgrade, stationOperator, hasWall } from "./buildings.js"; // machines-2: the pressure canner; gen-tiers: a generator upgraded
+import { nextWallTier, wallTier } from "./buildings.js"; // WALL_TIERS: one wall, built up a tier at a time
+import { fittingRoom } from "./basemap.js"; // base building: a general building with floor for a fitting (bedWishes, storageWish, stoveWish)
+import { autoStore } from "./containers.js"; // the stores tidied daily (tidyStores)
 import { BUILDINGS, RECIPES, canDemolish, demolish, canBuild, queueBuild, count, countAll, stations, baseBeds, baseWalls, farmSlots, assignStations, isShelter, plotsFree, plotCap, BEDS, queuedBeds, BARRACKS_UP, canExpandBunkhouse, queueBunkhouseExpand, benchTier, tierUpType, tierUpJob, gatherRows, gatherStalled, isCamp, CAMP as CAMP_TIER, WATER_BARREL, canUpgradeBarrel, queueBarrelUpgrade, barrelTier, barrels, barrelName } from "./buildings.js";
 import { fireWanted } from "./fieldheat.js";
+import { storageOf, isStoreBuilding } from "./basestorage.js"; // base storage limits: storage when goods lie outside (storageWish)
 import { isHurt, hospitalDef, nextHospitalType, treatAtBase, treatAtBaseInfo, fieldTreatInfo, careNeed, treaters } from "./medical.js";
 import { planTrainees, planDoctor } from "./training.js"; // a Medic trainee for a base short of skilled medics, the doctor on duty
 import { CRAFTS, canCraft, queueCraft, craftQueue, isFilterJob, filterRecipe, canAttempt, craftSkill, fieldCraftOptions } from "./crafting.js";
@@ -118,6 +123,8 @@ import { stagingNeeds, establishProblem, STAGING, besideWaterSource } from "./st
 import { isHardcore } from "./hardcore.js";
 import { WORM, baseWater, baseFilter, baseTabCount, baseCooks, armoryTabs, TABS_TRIP_DAYS, wormMeatAt, wormVegAt, wormSeen, boilerUse, cropLandBad, baseDewormers, wormOf } from "./worm.js";
 import { gunWant, pickGunToBuy, noteGunBought, radioGunDeal } from "./govguns.js"; // the governor buys guns for the unarmed
+import { carriedRec } from "./ammo.js"; // the loose rounds people carry
+import { sumRecs } from "./rounds.js"; // a team's rounds: its bags and what its people carry
 
 // Play styles. range = max tiles from the hub for a trip, maxHoursOut = longest way out, cooldown = days between
 // launches, homeFrac = share of the hub that stays home, risk = lowest success chance worth a gamble,
@@ -354,6 +361,7 @@ export function governBase(state, base, areas = ALL_AREAS) {
   if (areas.medical) planTreatment(state, base);
   if (areas.medical && hourOfDay(state) === TREAT_HOUR) for (const line of autoTreats(state, base)) say(state, line); // comforts.js: chocolate, coffee, smokes for the glum
   if (areas.building && hourOfDay(state) === WATER_WAIT.hour) waterSalvage(state, base);
+  if (areas.building && hourOfDay(state) === PLAN_HOUR) tidyStores(state, base); // containers.js: the goods into the containers, before the day's builds
   if (areas.building) planBuilds(state, base, areas);
   if (areas.building && hourOfDay(state) === PLAN_HOUR + 2) { const msg = cookFireDown(state, base); if (msg) say(state, msg); } // kitchen.js: a lit kitchen does the cook fire's job
   if (areas.production && hourOfDay(state) === 23) stoveSave(state, base); // kitchen.js: the winter's firewood before the stove
@@ -952,7 +960,7 @@ function pickChoice(state, card, opts, p) {
   if (/^The dead ahead/.test(t)) {
     const n = Number((/About (\d+)/.exec(card.text || "") || [0, 8])[1]);
     const ms = p ? partyMembers(state, p) : [];
-    const power = p ? ms.reduce((a, s) => a + combatPower(s), 0) * armedFactor(ms, p.supplies, p.supplies.arrows || 0, { need: (k) => (n * k) / Math.max(1, ms.length), short: 0.5 }) : 0; // events.js: the bows shoot arrows
+    const power = p ? ms.reduce((a, s) => a + combatPower(s), 0) * armedFactor(ms, sumRecs(p.supplies, carriedRec(ms)), p.supplies.arrows || 0, { need: (k) => (n * k) / Math.max(1, ms.length), short: 0.5 }) : 0; // events.js: the bows shoot arrows
     if (P.raid && power > n * 0.9) return find(/^Fight/);
     return (chance(/^Sneak around/) >= P.risk ? find(/^Sneak around/) : null) || find(/long way/);
   }
@@ -979,6 +987,22 @@ function pickChoice(state, card, opts, p) {
   if (/ patrol$/.test(t)) return find(/^Share news/);
   if (/^Abandoned supply truck/.test(t)) return careful(P) ? find(/^Leave it/) : find(/^Search it/);
   if (/^Crashed military vehicle/.test(t)) return (chance(/^Search it/) >= P.risk ? find(/^Search it/) : null) || find(/^Leave it/);
+  if (/^A swollen creek/.test(t)) return (chance(/^Wade/) >= P.risk ? find(/^Wade/) : null) || find(/^Walk upstream/);
+  if (/^(Wolves|Feral dogs)$/.test(t)) return (chance(/^Back away/) >= P.risk ? find(/^Back away/) : null) || find(/^Throw them/) || find(/^Drive them off/) || find(/^Back away/);
+  if (/^A warning on the road/.test(t)) return (!careful(P) && chance(/^Scout ahead/) >= 0.7 ? find(/^Scout ahead/) : null) || find(/^Mark it/);
+  if (/^A lonely farmhouse/.test(t)) return careful(P) ? find(/^Leave it/) : find(/^Search it/);
+  if (/^(A gone-wild orchard|Brambles in fruit)/.test(t)) return find(/^Pick/);
+  if (/^A roadside gas station/.test(t)) return (p && p.vehicle && !careful(P) ? find(/^Hand-pump/) : null) || find(/^Pick through/);
+  if (/^An overrun camp/.test(t)) return careful(P) ? find(/^Bury/) : find(/^Search the camp/);
+  if (/^A stranger with the worm/.test(t)) return find(/^Leave them food/) || find(/^Move on/);
+  // Hardcore's year Calder falls (events.js HC_EVENTS).
+  if (/^Gridlock$/.test(t)) return (p && p.vehicle ? find(/^Siphon/) : null) || find(/^Go through the luggage/);
+  if (/^An abandoned checkpoint/.test(t)) return careful(P) ? find(/^Leave it/) : find(/^Search the crates/);
+  if (/^The emergency broadcast/.test(t)) return find(/^Listen/) || find(/^Note it/);
+  if (/^They would not leave/.test(t)) return (chance(/^Tell them/) >= 0.4 ? find(/^Tell them/) : null) || find(/^Move on/);
+  if (/^An? .+ being looted$/.test(t)) return (!careful(P) && chance(/^Slip in/) >= 0.75 ? find(/^Slip in/) : null) || find(/^Wait for them/);
+  if (/^Still in uniform/.test(t)) return find(/^Put them down/);
+  if (/^A relief drop/.test(t)) return careful(P) ? find(/^Grab/) : find(/^Take it all/);
   if (/^Tempers flare/.test(t)) return (chance(/^Step in/) >= 0.5 ? find(/^Step in/) : null) || find(/^Let them/);
   if (/^Cold feet/.test(t)) return find(/^Convince/);
   if (/^Horde of /.test(t)) return (p && p.vehicle && partyFuelOf(state, p) >= 8 ? find(/^Outrun/) : null) || find(/^Hide/);
@@ -1112,8 +1136,8 @@ function nextHousing(state, base) {
 }
 // A wish's check and cost: a new building (canBuild) or a bunkhouse expanded (canExpandBunkhouse).
 // A water barrel upgraded (w.barrel: its id; buildings.js WATER_BARREL tiers): the summer store's room (waterPlan).
-const wishCheck = (state, base, w) => (w.barrel != null ? canUpgradeBarrel(state, base, w.barrel) : w.upgrade != null ? canExpandBunkhouse(state, base, w.upgrade) : canBuild(state, base, w.type));
-const wishCost = (w) => (w.barrel != null ? w.cost : w.upgrade != null ? BARRACKS_UP.cost : BUILDINGS[w.type].cost);
+const wishCheck = (state, base, w) => { const c = w.barrel != null ? canUpgradeBarrel(state, base, w.barrel) : w.upgrade != null ? canExpandBunkhouse(state, base, w.upgrade) : canBuild(state, base, w.type); if (w.type === "walls") w.wallCost = c.cost || {}; return c; }; // the Ring wall: what its pieces cost (buildings.js canBuildWall)
+const wishCost = (w) => (w.barrel != null ? w.cost : w.upgrade != null ? BARRACKS_UP.cost : w.wallCost || BUILDINGS[w.type].cost);
 const wishQueue = (state, base, w) => (w.barrel != null ? queueBarrelUpgrade(state, base, w.barrel) : w.upgrade != null ? queueBunkhouseExpand(state, base, w.upgrade) : queueBuild(state, base, w.type));
 // The housing wish (nextHousing) for buildWishes, and a bunkhouse after a barracks while a plot is free and the
 // barracks waits on scrap or parts (planBuilds takes the first it can build). Empty when nothing more fits.
@@ -1125,6 +1149,33 @@ function housingWishes(state, base, why, save) {
   if (next.type === "barracks" && next.upgrade == null && countAll(base, "bunkhouse") + base.construction.filter((c) => c.type === "bunkhouse").length < BUILDINGS.bunkhouse.max) out.push({ type: "bunkhouse", why, save: false });
   return out;
 }
+// Base building (docs/base-building/plan.md Part D; buildings.js BUILDINGS general / fit, basemap.js fittingRoom): the
+// general buildings, biggest first (a barn at the hub, a hall or a lodge at an outpost, a cabin at a shelter, a hut at
+// a camp: their `size`), and what the governor puts inside them.
+const GENERAL = ["gen_barn", "gen_hall", "gen_lodge", "gen_cabin", "gen_hut"];
+// The biggest general building this base can put up now (canBuild ok), or is only short of scrap for (saved for, like
+// the bunkhouse or barracks it stands in for), or null. A building this kind of base never takes, one at its limit,
+// one short of parts: the next size down.
+function generalWish(state, base) {
+  for (const t of GENERAL) {
+    const c = canBuild(state, base, t);
+    if (c.ok || /^Needs \d+ scrap/.test(c.reason || "")) return t;
+  }
+  return null;
+}
+// Beds when no bunkhouse or barracks can be queued (nextHousing: no building plot free, their limits reached, a camp
+// with no building plot, a shelter whose one plot is taken): bunk beds (BEDS.bunks each) while a standing hut, cabin,
+// lodge, hall or barn has floor for a pair (fittingRoom), else the biggest general building the base can put up, with
+// the bunks to follow once it stands. Saved for, as the beds always are. One general building going up at a time.
+function bedWishes(state, base, why, queued) {
+  if (GENERAL.some((t) => queued(t))) return [];
+  if (countAll(base, "bunks") + queued("bunks") < BUILDINGS.bunks.max && fittingRoom(state, base, "bunks")) return [{ type: "bunks", why: `${why}: bunk beds inside a building`, save: true }];
+  const gb = generalWish(state, base);
+  return gb ? [{ type: gb, why: `${why}: a ${BUILDINGS[gb].name.toLowerCase()} with bunks inside`, save: true }] : [];
+}
+// The housing wish can be queued, or is only short of scrap (it is saved for): the beds come from it, not from a
+// general building.
+const housingOpen = (state, base, hw) => hw.some((w) => { const c = wishCheck(state, base, w); return c.ok || /^Needs \d+ scrap/.test(c.reason || ""); });
 
 // The hub has outgrown its plots: no building plot free, nothing more it can build or expand for beds (nextHousing),
 // and its people (and the teams coming home) fill the beds it has and has queued to within two. Then the
@@ -2197,7 +2248,7 @@ function planRoles(state, base, areas = ALL_AREAS) {
   // days a head) in the two months before the cold: the crew it takes to have the woodpile in by the cold (planWood's critical). Job trips (2026-10-10)
   // let any base hunt, and the hunters and a short winter outlook's farm crew took every hand of a small hub ahead of
   // step 4a: woodtest seed 43 met the winter with no firewood at all (30 woodcutter-days from late summer).
-  const wood = planWood(state, base, people, areas);
+  const wood = planWood(state, base, people, areas, foodDays);
   const woodFirst = !!wood && foodDays >= WOOD_AP.foodFirst && wood.w.toCold > 0 && wood.w.toCold <= WOOD_AP.autumn * 2; // the run-up to the coming cold (not the tail of the last one: a spring start builds first)
   if (woodFirst) for (const s of ranked("wood", wood.score, wood.fit).slice(0, wood.critical)) give(s, "wood");
   const landGoal = Math.max(40, foodTarget(state, base) * 1.5);
@@ -2618,10 +2669,10 @@ function roleSummaries(state) {
 // ---------- construction ----------
 // The steward area each kind of building belongs to (anything else is plain Building).
 const BUILD_AREA = {
-  walls: "defence", barricades: "defence", spike_pits: "defence", trench: "defence", gate: "defence", floodlights: "defence", watchtower: "defence",
+  walls: "defence", wall1: "defence", wall2: "defence", wall4: "defence", gate4: "defence", stand1: "defence", stand2: "defence", stand4: "defence", barricades: "defence", spike_pits: "defence", trench: "defence", gate: "defence", floodlights: "defence", watchtower: "defence", armory: "defence",
   infirmary: "medical", field_hosp: "medical", clinic: "medical", hospital: "medical", med_station: "medical",
   huntcabin: "food", farm_plot: "food", greenhouse: "food", animal_pen: "food", cellar: "food", coldstore: "food", freezer: "food", storehouse: "food", smoker: "food", kitchen: "food", rain_catcher: "food", well: "food", cistern: "food", water_barrel: "food", crates: "food",
-  boiler: "food", cookhouse: "food", canteen: "food", grainmill: "food", meatgrinder: "food",
+  boiler: "food", cookhouse: "food", canteen: "food", grainmill: "food", meatgrinder: "food", stove: "food", // base building: a wood stove indoors is a cook fire (the general buildings, bunks, shelves and lockers are "building")
   ammo_bench: "production", machine_shop: "production", still: "production", generator: "production", sealer: "production",
   craftbench: "production", workbench: "production", toolbench: "production",
 };
@@ -2741,7 +2792,38 @@ function campYard(state, base, here, queued) {
   const crowded = () => living + returning(state, base) > baseBeds(base) + queuedBeds(base) + (pending.includes("cots") ? BEDS.cots : 0);
   if (!isCamp(base) && crowded()) add("cots", `${living} people for ${baseBeds(base)} beds`);
   if (!isCamp(base) && crowded()) add("bunkhouse", `${living} people for ${baseBeds(base)} beds`);
+  // Storage for the goods lying outside (storageWish): last in the yard, from the scrap the step up does not need; never
+  // in `pending` (a shelter's step up does not wait for it).
+  const sw = storageWish(state, base);
+  if (sw && (BUILDINGS[sw.type].cost.scrap || 0) <= spare && !BUILDINGS[sw.type].cost.parts) wishes.push(sw);
   return { wishes, pending };
+}
+// Base storage limits (basestorage.js, 2026-10-19): when a base's goods lie outside (STORE_WISH.minKg or more, or an
+// item that wears out there), one storage building at a time, from the ladder for its size, cheapest first: a storage
+// box at a camp, a box or storage crates at a shelter, crates or a storage shed at an outpost, crates, a shed, the
+// storehouse or a warehouse at the main base. The smallest it can build now that takes what lies outside, else the
+// biggest it can build now (canBuild: the materials, a plot, the skills). Never saved up for: the wishes ahead of it
+// (water, beds, food, defence, benches) keep their scrap, and planBuilds' reserves still apply.
+// Base building (merged with it, 2026-10-19): while a standing general building has floor for them (basemap.js
+// fittingRoom), storage shelves (150 kg, 4 scrap) and then lockers (100 kg) on its floor come first: cheap, no plot;
+// and when nothing on the ladder can go up (no plot free), the biggest general building the base can put up, to hold
+// shelves and lockers (generalWish). One at a time: a storage building, a fitting or a general building going up.
+export const STORE_WISH = { minKg: 5, ladder: { camp: ["storebox"], shelter: ["storebox", "crates"], outpost: ["crates", "shed"], hub: ["crates", "shed", "storehouse", "warehouse"] }, fittings: ["shelves", "lockers"] };
+export function storageWish(state, base) {
+  if (base.construction.some((c) => (isStoreBuilding(c.type) || GENERAL.includes(c.type)) && !c.target)) return null; // one at a time
+  const st = storageOf(state, base);
+  if (st.outsideKg < STORE_WISH.minKg && !st.outside.gear.length) return null;
+  const why = (t) => `${Math.round(st.outsideKg)} kg of the base's goods lie outside, weathering (room for ${BUILDINGS[t].storeKg} kg)`;
+  for (const t of STORE_WISH.fittings) if (BUILDINGS[t] && countAll(base, t) < BUILDINGS[t].max && fittingRoom(state, base, t) && canBuild(state, base, t).ok) return { type: t, why: `${why(t)}: ${BUILDINGS[t].name.toLowerCase()} inside a general building`, save: false };
+  const size = isCamp(base) ? "camp" : isShelter(base) ? "shelter" : base.type === "hub" ? "hub" : "outpost";
+  const ok = STORE_WISH.ladder[size].filter((t) => BUILDINGS[t] && canBuild(state, base, t).ok);
+  if (ok.length) {
+    const type = ok.find((t) => BUILDINGS[t].storeKg >= st.outsideKg) || ok[ok.length - 1];
+    return { type, why: why(type), save: false };
+  }
+  const gb = generalWish(state, base);
+  if (gb && canBuild(state, base, gb).ok) return { type: gb, why: `${Math.round(st.outsideKg)} kg of the base's goods lie outside, weathering: a ${BUILDINGS[gb].name.toLowerCase()} for shelves and lockers`, save: false };
+  return null;
 }
 function buildWishes(state, base) {
   const g = gov(state);
@@ -2767,8 +2849,15 @@ function buildWishes(state, base) {
   // queued again if it was called off.
   if (isShelter(base) && !queued(tierUpType(base)) && (isCamp(base) || !yard.pending.length)) add(tierUpType(base), base.type === "outpost" ? "establish the outpost camp (a spring, a fence, room to build)" : isCamp(base) ? "build the camp up into a shelter (a roof, beds, more plots)" : "build the shelter up into a base (a well, walls, room for everything)", true);
   for (const w of wormWishes(state, base, queued)) out.push(w); // worm.js: a water boiler, a cook fire
-  // Beds (nextHousing): a bunkhouse, or a barracks once the building plots run short, or a bunkhouse expanded.
-  if (people + (isHub ? 1 : 0) > beds) out.push(...housingWishes(state, base, `${people} people for ${beds} beds`, true));
+  const stove = stoveWish(state, base, out, queued); // base building: a wood stove indoors where no cook fire can go up in the yard
+  if (stove) out.push(stove);
+  // Beds (nextHousing): a bunkhouse, or a barracks once the building plots run short, or a bunkhouse expanded; with
+  // none of those left (the plots used up), bunk beds inside a general building, or the building first (bedWishes).
+  if (people + (isHub ? 1 : 0) > beds) {
+    const why = `${people} people for ${beds} beds`;
+    const hw = housingWishes(state, base, why, true);
+    out.push(...(hw.length && housingOpen(state, base, hw) ? hw : bedWishes(state, base, why, queued)));
+  }
   // An outpost of a hub that has outgrown its plots gets its beds ahead of the people sent to it (planSupplyRuns).
   else if (!isHub && cramped && !isShelter(base) && people + HOUSING.ahead > beds) out.push(...housingWishes(state, base, "room for people from the crowded hub", true));
   // A hub with no river near (GROWTH_WATER): its wells are what it can grow to, so both go up right after the first
@@ -2829,8 +2918,8 @@ function buildWishes(state, base) {
   // a building plot to spare after it (the next beds) and two outdoor crop plots given to pasture. homeFood: the
   // first from 5 people (saved for), the second from 9; the other styles one from 8 people while the winter stores
   // fall short or the farmers are short of plots.
-  if (homeFood && isHub && pop >= 5 && count(base, "walls") + queued("walls") < 1) add("walls", "a fortress lives behind its walls (and its animals too)", true);
-  if (isHub && BUILDINGS.animal_pen && count(base, "walls") > 0 && plotsFree(base, "building") >= 2) {
+  if (homeFood && isHub && pop >= 5 && (hasWall(base) ? 1 : 0) + queued("walls") < 1) add("walls", "a fortress lives behind its walls (and its animals too)", true);
+  if (isHub && BUILDINGS.animal_pen && hasWall(base) && plotsFree(base, "building") >= 2) {
     const pens = countAll(base, "animal_pen") + queued("animal_pen");
     const wantPens = homeFood ? (pop >= 9 ? 2 : pop >= 5 ? 1 : 0) : here.length >= 8 && (winterShort(state, base) > 0 || g.farmShort[base.id]) ? 1 : 0;
     if (pens < wantPens) add("animal_pen", homeFood ? "food from its own land, winter too (eggs and milk)" : "food every day through the winter (eggs and milk)", homeFood);
@@ -2841,7 +2930,7 @@ function buildWishes(state, base) {
   if (Math.max(threat.urgent, threat.standing) > baseDefense(state, base) * 0.9) add("walls", "raiders or hordes nearby", true);
   // Hordes (defences.js): walls when a horde in sight would break in, then barricades, spike pits and the rest.
   const hz = hordeThreat(state, base);
-  if (hz.size && !holdCheck(state, base, hz.size, hz.bosses, hz.mix).holds && count(base, "walls") + queued("walls") < BUILDINGS.walls.max) add("walls", `a horde of ${hz.size} would break in`, true);
+  if (hz.size && !holdCheck(state, base, hz.size, hz.bosses, hz.mix).holds && !queued("walls") && nextWallTier(base)) add("walls", `a horde of ${hz.size} would break in`, true);
   if (hz.any) for (const w of defenceWishes(state, base, true)) if (!queued(w.type)) out.push(w);
   // A radio relay (radio.js) at any base (the hub too) where one would link to the network and bring a group you
   // know (not hostile) into radio reach: greetings, pacts and the coalition's invitation need it (alliance.js
@@ -2871,6 +2960,7 @@ function buildWishes(state, base) {
   if (bw && !benchTier(base, true)) add("craftbench", "a bench to mend the fighters' worn gear", true);
   else if (bw >= 2 && benchTier(base, true) === 1 && best("mechanics") >= BUILDINGS.workbench.req.mechanics) add("workbench", "a workbench to mend the fighters' guns and armour", true);
   if (!benchTier(base, true) && !benchQueued && (here.some((s) => s.role === "craft") || craftQueue(base).length > 0)) add("craftbench", "a bench for the crafters (faster, better gear; most recipes need one)");
+  if (!isShelter(base)) { const sw = storageWish(state, base); if (sw) out.push(sw); } // goods outside: storage (a camp's and a shelter's: campYard)
   for (const w of jailWishes(state, base, best)) out.push(w);
   if (!isHub) return out;
   const hostileNear = state.factions.some((f) => f.alive && f.known && attitude(f) === "Hostile" && f.bases.some((b) => state.grid.distance(b, base.tile) <= 20));
@@ -2898,6 +2988,7 @@ function buildWishes(state, base) {
       (here.some((s) => s.role === "craft") || craftQueue(base).length > 0 || countAll(base, "ammo_bench") + countAll(base, "reload_bench") > 0)) add("toolbench", "a master workbench: the crafters work faster and better");
   if (!count(base, "med_station") && pop >= 6 && best("medicine") >= 3 && (st.meds || 0) < pop) add("med_station", "meds are short");
   if (!count(base, "storehouse") && (hostileNear || state.stats.raidsRepelled > 0)) add("storehouse", "raiders steal less");
+  if (!count(base, "armory") && count(base, "storehouse") && (base.armory || []).length >= 8 && (hostileNear || state.stats.raidsRepelled > 0)) add("armory", "the guns and rounds under lock from raiders");
   if (!count(base, "machine_shop") && pop >= 7 && (st.parts || 0) < 6 && best("mechanics") >= 4) add("machine_shop", "spare parts");
   // Mood (relations.js): a common room once the hub is a real community and spirits are not sky high (saved up for
   // when they sag below 75), or as planned comfort for a big hub: at 12+ people once there is scrap for it, saved up
@@ -2945,7 +3036,7 @@ function buildWishes(state, base) {
   if (!count(base, "garage") && carsAtBase(state, base.id).length && (st.parts || 0) >= 5) add("garage", "cheaper vehicle repairs");
   // Room for newcomers once the scrap is there (the housing's cost and HOUSING.scrapAhead more: 45 for a bunkhouse).
   if (people + (homeFood ? 6 : 2) > beds) for (const w of housingWishes(state, base, homeFood ? "spare beds (a fire in the bunkhouse must not crowd the fortress)" : "room for newcomers", false)) if ((st.scrap || 0) >= (wishCost(w).scrap || 0) + HOUSING.scrapAhead) { out.push(w); break; }
-  if (count(base, "walls") < 2 && (st.scrap || 0) >= 70) add("walls", "stronger defense");
+  if (wallTier(base) < 3 && !queued("walls") && (st.scrap || 0) >= 70) add("walls", "stronger defense"); // buildings.js WALL_TIERS: up to a scrap-metal wall when rich
   // Cautious (reserves): a med station as soon as meds run short (the surest source), and a radio station once
   // there are parts for it: scanning finds the groups in reach, and radio deals bring what runs short without a
   // trip (reserveRadio).
@@ -2954,7 +3045,7 @@ function buildWishes(state, base) {
     if (!count(base, "med_station") && pop >= 5 && rs.meds.short) add("med_station", "meds are below the reserve", true);
     if (!base.radio && (st.parts || 0) >= 6 + rs.parts.target && best("mechanics") >= 4) add("radio", "radio deals for what runs short", true);
     // Hordes are a known danger here: a second wall tier (each holds back 54 more of a horde, a Wallbreaker's 60%).
-    if (rs.threat >= 1 && count(base, "walls") + queued("walls") < 2) add("walls", "hordes are near: a stronger wall", true);
+    if (rs.threat >= 1 && wallTier(base) + queued("walls") < 3) add("walls", "hordes are near: a stronger wall", true);
   }
   return out;
 }
@@ -3059,6 +3150,32 @@ function foodStoreWishes(state, base, people, queued) {
     else if (can("meatgrinder") && !countAll(base, "meatgrinder") && (count(base, "huntcabin") || atBase(state, base.id).some((x) => x.role === "hunt")) && foodUnits(base, (k, f) => !!f.raw) >= people) add("meatgrinder", "a meat grinder: surplus game into sausage that keeps");
   }
   return out;
+}
+
+// ---------- the stores (base building, containers.js) ----------
+// The stores tidied once a day, at the morning's plan before the day's builds (governBase; the AI groups' bases the
+// same way, factions.js): the unassigned goods (what came in since yesterday) put in the containers with room, by
+// autoStore's rules (the most valuable for their weight first, as basestorage.js fills the room; food where it keeps,
+// rounds and guns in the armory, the dear things behind the best door, gear to the lockers). It only writes the
+// assignments: what is inside and what lies outside is basestorage.js's to say, and the storage wish (storageWish)
+// builds room when goods lie outside. What is assigned by hand stays where the player put it (a car is never loaded by
+// the game). g.stats.stored: the kg put away all told.
+function tidyStores(state, base) {
+  const put = autoStore(state, base);
+  const g = gov(state);
+  g.stats.stored = Math.round(((g.stats.stored || 0) + put.kg) * 10) / 10;
+}
+// A wood stove (buildings.js stove, as: "cookhouse": it counts as the cook fire wherever one is read) on a general
+// building's floor when the base wants a cook fire (wormWishes) and none can go up in the yard (no utility plot left,
+// a camp's or a shelter's count used up): the cook fire's own why and urgency, right behind its wish (planBuilds
+// takes the first it can queue; the cook fire's wish is passed over for want of a plot, not of scrap).
+function stoveWish(state, base, out, queued) {
+  const cf = out.find((w) => w.type === "cookhouse");
+  if (!cf || count(base, "cookhouse") || queued("stove") || countAll(base, "stove") >= BUILDINGS.stove.max) return null;
+  const c = canBuild(state, base, "cookhouse");
+  if (c.ok || /^Needs \d+ scrap/.test(c.reason || "")) return null; // the cook fire itself goes up (or is saved for)
+  if (!fittingRoom(state, base, "stove")) return null;
+  return { type: "stove", why: `${cf.why} (a wood stove indoors: no plot for a cook fire)`, save: cf.save };
 }
 
 // ---------- crafting ----------
@@ -3188,17 +3305,7 @@ export function planCrafts(state, base) {
 }
 
 // ---------- gear from the armory ----------
-export function itemScore(s, item) { // also the roster's Equip best available (sim/bulk.js)
-  if (!item || !GEAR[item.key]) return 0;
-  const d = GEAR[item.key];
-  if (d.slot === "weapon") {
-    const eff = gearEffect(s, item);
-    if (d.launcher) return eff.usable ? 0.5 + 1.5 * eff.mult : -1; // a launcher (launchers.js) is a second weapon: better than empty hands, never instead of a gun
-    return eff.usable ? 0.5 + d.power * eff.mult * (item.quality || 1) * (d.cat === "melee" ? meleeDmgMult(s) : 1) : -1; // a melee weapon by their Melee (world.js MELEE_SKILL): a strong hand keeps a fire axe over a weak gun
-  }
-  if (d.slot === "backpack") return d.carry || 0;
-  return d.power || 0;
-}
+export { itemScore }; // equip.js (the governor's and the AI groups' one rule; sim/bulk.js reads it here)
 
 function equipFromArmory(state, base) {
   if (!base.armory.length) return;
@@ -3206,41 +3313,13 @@ function equipFromArmory(state, base) {
   const people = atBase(state, base.id).filter((s) => !s.pinned).sort((a, b) => combatPower(b) - combatPower(a)); // pinned people keep their kit too
   if (!people.length) return;
   const handed = [];
-  for (const slot of ["weapon", "armor", "head", "arms", "legs", "backpack"]) {
-    for (const s of people) {
-      ensureInv(s);
-      const items = base.armory.filter((it) => slotOf(it.key) === slot);
-      if (!items.length) break;
-      const best = items.sort((a, b) => itemScore(s, b) - itemScore(s, a))[0];
-      if (itemScore(s, best) < itemScore(s, s.gear[slot]) + (s.gear[slot] ? 0.3 : 0.05)) continue; // only real upgrades
-      // Someone with a weapon that works keeps it over a gun with nothing to shoot here (tripgear.js outReady: the outdoor kit
-      // swapped it back for the knife within the hour and the two hand-outs took turns, every hour).
-      if (slot === "weapon" && !outReady(base, s, best) && tripKit(state, base, s).ready) continue;
-      base.armory.splice(base.armory.indexOf(best), 1);
-      if (s.gear[slot]) base.armory.push(s.gear[slot]);
-      s.gear[slot] = best;
-      handed.push(`${first(s)} ${best.name}`);
-    }
-  }
-  // Loose gun attachments to the guns in hand, the best fighters first (gunmods.js: one a mount, only what helps).
-  for (const x of fitFromPool(base.armory, people.map((s) => s.gear.weapon))) handed.push(`${x.mod.name} on ${x.gun.name}`);
-  // carrykit.js: the best rig, plates into the carriers, spare magazines into pouches; worn plates swapped, steel ones mended.
-  for (const x of equipKit(base.armory, people)) handed.push(x.s ? `${first(x.s)} ${x.item.name}` : x.item.name);
+  // equip.js: the slots best fighters first (only real upgrades; a gun with nothing to shoot here is not handed to
+  // someone whose working weapon suits their trips: tripgear.js outReady), loose gun parts, the carry kit.
+  for (const x of equipPeople(base.armory, people, { weaponOk: (s, best) => outReady(base, s, best) || !tripKit(state, base, s).ready })) handed.push(x.gun ? `${x.item.name} on ${x.gun.name}` : x.s ? `${first(x.s)} ${x.item.name}` : x.item.name);
   for (const m of governPlates(state, base, people, { queue: queueRepair, craft: queueCraft })) handed.push(m);
   // Tools for the off hand: a crowbar to a scavenger, a med kit to a medic (else the best Medicine), anything
   // else to whoever has the skill for it. Water filters work from the armory and stay there.
-  for (const item of [...base.armory]) {
-    const d = GEAR[item.key];
-    if (!d || d.slot !== "tool" || d.water) continue;
-    const forScav = !!(d.bonus && d.bonus.scavenging);
-    const free = people.filter((s) => !s.gear.tool && (!d.skill || gearEffect(s, item).usable) && (!forScav || s.role === "scavenge"));
-    if (!free.length) continue;
-    const want = forScav ? (s) => skill(s, "scavenging") : d.medKit ? (s) => (s.role === "medic" ? 20 : 0) + skill(s, "medicine") : (s) => (d.skill ? skill(s, d.skill) : 0);
-    const s = free.sort((a, b) => want(b) - want(a))[0];
-    base.armory.splice(base.armory.indexOf(item), 1);
-    s.gear.tool = item;
-    handed.push(`${first(s)} ${item.name}`);
-  }
+  for (const x of equipTools(base.armory, people, { medic: (s) => s.role === "medic", scavenger: (s) => s.role === "scavenge" })) handed.push(`${first(x.s)} ${x.item.name}`);
   // tripgear.js (trips-plus #2): the outdoor workers out on the land alone get what the fighters left: a weapon for the
   // job, a light for the dusk hunt, light armour, a tourniquet or a kit.
   for (const x of gearOutdoorWorkers(state, base)) handed.push(`${first(x.s)} ${x.item.name}`);
@@ -3383,7 +3462,7 @@ function planTrip(state) {
   // least minOut may go while three stay home.
   const keepFrac = Math.ceil(home.length * (small ? 0.25 : P.homeFrac));
   const keep = Math.max(small ? 1 : 2, P.minOut && !small ? Math.min(keepFrac, Math.max(3, home.length - P.minOut)) : keepFrac, hordeNear ? Math.min(home.length, P.homeHorde) : 0);
-  const pool = home.filter((s) => s.health >= P.minHealth - (short.length || small ? 10 : 0) && !s.woundInfected && !s.inBed && s.mood >= 20 && (!s.leader || home.length >= 9 || small) && tripFit(state, s));
+  const pool = home.filter((s) => s.health >= P.minHealth - (short.length || small ? 10 : 0) && !s.woundInfected && !s.inBed && !s.pinned && s.mood >= 20 && (!s.leader || home.length >= 9 || small) && tripFit(state, s)); // pinned people stay (never moved: the steward's rule)
   const spareHands = Math.min(pool.length, home.length - keep);
   if (spareHands < 1) return;
   const need = needs(state);
@@ -4019,7 +4098,7 @@ function conquestCandidate(state, home, pool) {
     const d = state.grid.distance(tile, h.tile);
     if (d > Math.max(20, P.range * 2.5)) continue;
     const force = assaultForce(state, f, tile);
-    const odds = assaultOdds(power, force, true, squad.length);
+    const odds = assaultOdds(power, force, true, squad.length, state);
     if (odds < (late ? Math.min(P.conquerOdds, P.lateConquer) : P.conquerOdds) - (retake ? 0.1 : 0)) continue;
     // One group at a time until it breaks: its main base (the leaders fall with it), the group it went for last, the
     // group with the fewest bases.
@@ -4030,7 +4109,7 @@ function conquestCandidate(state, home, pool) {
     // A base of yours they hold is always known to you.
     const f = factionById(state, o.factionId);
     const force = assaultForce(state, f, o.tile);
-    const odds = assaultOdds(power, force, true, squad.length);
+    const odds = assaultOdds(power, force, true, squad.length, state);
     const d = state.grid.distance(o.tile, h.tile);
     if (odds < P.conquerOdds - 0.1 || d > Math.max(20, P.range * 2.5)) continue;
     const score = odds * 4 + 3 - d / 10;
@@ -4049,7 +4128,7 @@ function hubRetake(state, home, pool) {
   const f = factionById(state, occ.factionId);
   const squad = [...pool].filter((s) => s.health >= 50 && !s.woundInfected).sort((a, b) => combatPower(b) - combatPower(a) || a.id - b.id).slice(0, Math.min(HIVE_SQUAD, Math.max(0, home.length - 2)));
   if (!f || squad.length < 3) return null;
-  const odds = assaultOdds(squadValue(squad), assaultForce(state, f, occ.tile), true, squad.length);
+  const odds = assaultOdds(squadValue(squad), assaultForce(state, f, occ.tile), true, squad.length, state);
   if (odds < 0.35) return null;
   return { mission: "assault", tile: occ.tile, score: 9, crew: squad.length, assault: true, squadMin: 3, minHealth: 50,
     why: `take back ${occ.name}, the old hub (${Math.round(odds * 100)}% against ${assaultForce(state, f, occ.tile).count} defenders)`, supplies: { ammo: 40, meds: 2 } };
@@ -5159,22 +5238,35 @@ const crewDays = (k) => Array.from({ length: Math.max(0, k) }, (_, i) => woodCro
 // (the cold within WOOD_AP.autumn days, or here, or the boiler burning wood) the crew it takes to have the pile in by
 // the cold, at most woodCrewMax; in late summer what the summer must cut so that the autumn's full crew can finish it
 // (at least one, at most that crew; it was one, whatever the need). n: the people here.
-// Out of the stocking season with no boiler, a kitchen under its days of firewood (kitchen.js KITCHEN.wood.keepDays)
-// wants only the hands to keep its stove going and fill those days within a week (kitchenWoodHands), not the winter's.
-const kitchenOnly = (w) => !w.season && !(w.boiler > 0) && w.pressing && w.kitchen > 0;
-const kitchenWoodHands = (state, base, w) => Math.max(1, handsForDay(w.kitchen + Math.max(0, w.kitchen * KITCHEN.wood.keepDays - w.have) / 7, baseWoodDay(state, base), woodCrowd));
-export function woodCritical(state, base, w, n) {
-  if (kitchenOnly(w)) return Math.min(n <= 3 ? 1 : woodCrewMax(n, w), kitchenWoodHands(state, base, w));
+// Out of the stocking season with no boiler, the daily draws (a kitchen under its days of firewood, kitchen.js
+// KITCHEN.wood.keepDays; a camp's fire and the nights' fires under theirs, woodcutting.js woodNeed: fire-nights) want
+// only the hands to keep them going and fill those days within a week (dailyWoodHands), not the winter's.
+// A medium priority, behind the food and the water (fire-nights, the user's rule): out of season the crew is at most
+// half the stocking season's (dailyCrewMax: one at a base of 3 or fewer, 3 of 20), fills the days over WOOD.nightDays,
+// and is one woodcutter while food is short (planWood lean: under WOOD_AP.foodFirst days a head), the fires taking what
+// the pile holds (a cool night without it costs HEAT.night of a freezing day's: needs.js heatDaily).
+const dailyOnly = (w) => !w.season && !(w.boiler > 0) && w.pressing && w.daily > 0;
+const dailyCrewMax = (n, w) => (n <= 3 ? 1 : Math.max(1, Math.ceil(woodCrewMax(n, w) / 2)));
+const dailyWoodHands = (state, base, w) => Math.max(1, handsForDay(w.daily + Math.max(0, w.dailyKeep - w.have) / WOOD.nightDays, baseWoodDay(state, base), woodCrowd));
+export function woodCritical(state, base, w, n, foodDays = null) {
+  if (dailyOnly(w)) {
+    // Food first: with the food under its target (farmCrewLimits hungry, the farm's own rule) a woodcutter goes ahead of
+    // the farm only with under two days of the fires in the pile (worktest 2b: the farm's extra hands were pulled to
+    // the nights' wood; foragetest: a hardcore camp of three sent one to the woods while its forager was its food).
+    const fd = foodDays ?? edibleFood(base) / Math.max(1, mouthsAt(state, base).heads);
+    if (farmCrewLimits(state, base, fd, n).hungry) return w.have < w.daily * 2 ? 1 : 0;
+    return Math.min(dailyCrewMax(n, w), dailyWoodHands(state, base, w));
+  }
   const want = woodCuttersFor(state, base, w);
   if (n <= 3) return Math.min(1, want);
   const full = Math.min(want, woodCrewMax(n, w));
-  if (w.cold || w.toCold <= WOOD_AP.autumn || w.boiler > 0) return full; // the boiler burns wood every day
+  if (w.cold || w.toCold <= WOOD_AP.autumn || w.boiler > 0 || w.fire > 0 || w.night > 0) return full; // the boiler, a camp's fire and the nights' fires burn wood every day
   const each = baseWoodDay(state, base);
   // What the autumn's crew will not cut, and what the Kitchen's stove (kitchen.js) burns every day until the cold.
   const left = Math.max(0, w.need - w.have + (w.kitchen || 0) * w.toCold - each * crewDays(full) * WOOD_AP.autumn);
   return Math.min(full, Math.max(1, handsForDay(left / Math.max(1, w.toCold - WOOD_AP.autumn), each, woodCrowd)));
 }
-function planWood(state, base, people, areas) {
+function planWood(state, base, people, areas, foodDays = Infinity) {
   // A shelter (tier 0) too (ap-food 2026-10-12): its fire is its only cooking (worm.js baseCooks) and burns firewood
   // from its store (woodcutting.js shelterFire, woodNeed's fire days); with none cut it was out most days, the raw game
   // and fish were eaten last (eating.js) and rotted (seed 6011, hardcore Turtle: 133 days of food thrown out against 337
@@ -5182,14 +5274,16 @@ function planWood(state, base, people, areas) {
   if (!areas.production || gov(state).noWood || woodWorkWhy(state, base)) return null;
   const w = woodNeed(state, base, base.type === "hub" ? returning(state, base) : 0);
   if (!w.short || !w.soon || w.need <= 0) return null;
-  const cap = kitchenOnly(w) ? woodCritical(state, base, w, people.length) : woodHandsWanted(state, base, { w }); // the spare hands' crew: the pile in within three weeks (only the kitchen's days out of season)
+  const cap = dailyOnly(w) ? woodCritical(state, base, w, people.length) : woodHandsWanted(state, base, { w }); // the spare hands' crew: the pile in within three weeks (only the daily draws' days out of season)
   // The water boiler (worm.js) burns its firewood every day: enough woodcutters to keep up with it, on top of the winter's.
   const want = woodCuttersFor(state, base, w);
   const small = people.length <= 3; // a tiny hub (hardcore's first): the leader cuts wood too
+  // Food under its target out of season (fire-nights, woodCritical): the hands feed the base; one woodcutter at most.
+  const lean = dailyOnly(w) && farmCrewLimits(state, base, foodDays, people.length).hungry;
   return {
-    cap,
+    cap: lean ? Math.min(1, cap) : cap,
     w,
-    critical: Math.min(want, woodCritical(state, base, w, people.length)),
+    critical: Math.min(want, woodCritical(state, base, w, people.length, foodDays)),
     stock: true,
     fit: (x) => !x.inBed && (small || !x.leader) && (x.health ?? 100) >= 50 && !x.woundInfected,
     score: (x) => woodcutterMult(x) * bestChop(x).mult,

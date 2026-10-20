@@ -20,8 +20,9 @@ import {
 import { THROWABLES, throwAt, throwablesOf, DECOY_KEYS, stealthAct, botFlash } from "../src/sim/stealth.js";
 import { FLASH, FLASH_KIT, flashReach, flashCells, stunUnit, landEffect, flashSpot, doorToss, throwBlind, kitFlashbangs } from "../src/sim/throwables.js";
 import { enemyThrow } from "../src/sim/siege.js";
+import { fitThrowables } from "../src/sim/fighters.js";
 import { stimuli, pullOf } from "../src/sim/decoys.js";
-import { newItem, stow, enemyBody, allItems, allCarried, carriedThrowables } from "../src/sim/inventory.js";
+import { newItem, stow, enemyBody, allItems, allCarried, carriedThrowables, lootItem } from "../src/sim/inventory.js";
 import { condRolled } from "../src/sim/itemcond.js";
 import { SITE_GRENADES, AREA_GRENADES, ITEM_TAGS, rollSiteGrenades, rollAreaGrenades } from "../src/sim/loot.js";
 import { rollGunStash } from "../src/sim/gunsafes.js";
@@ -369,11 +370,13 @@ section("5. Loot: every source exists and goes through itemcond.js");
   check(Math.abs(df / 4000 - MILDEAD.BODY_EXTRA.soldier[0][1]) < 0.015 && rs > 0, `the armoured dead: a dead soldier's flashbang ${(100 * df / 4000).toFixed(1)}%, a riot cop's smoke or flashbang now and then (${rs})`);
   const b = openBattle(st, { kind: "guards", count: 2, power: 3 });
   const g0 = E(b)[0];
-  g0.throwables = { flashbang: 1, smokegren: 1 };
+  const given = g0.who ? ["flashbang", "smokegren"].map((k) => lootItem(k, "guard", [3, "flashtest", k])) : [];
+  if (g0.who) { for (const it of given) stow(g0.who, it); fitThrowables(g0, g0.who); } // a person (fighters.js): the very items, carried
+  else g0.throwables = { flashbang: 1, smokegren: 1 };
   const body = enemyBody(new Rng(3), g0, null);
   const carried = allCarried(body).filter((it) => it && (it.key === "flashbang" || it.key === "smokegren")); // inventory.js: a rig's grenade pouch too
   rolled.push(...carried, ...carriedThrowables(g0, "guard"));
-  check(carried.length === 2, "a guard's unthrown flashbang and smoke grenade are on the body");
+  check(g0.who ? given.every((it) => carried.includes(it)) : carried.length === 2, "a guard's unthrown flashbang and smoke grenade are on the body");
   check(rolled.length > 100 && rolled.every((it) => condRolled(it) && GEAR[it.key]), `every one of them (${rolled.length}) through itemcond.js`);
   check(GEAR.flashbang && GEAR.flashbang.throw === "flashbang" && GEAR.flashbang.cat === "explosive" && GEAR.flashbang.weight === 0.4 && GEAR.flashbang.value === 20 && ITEM_TAGS.flashbang.includes("police") && ITEM_TAGS.flashbang.includes("military"), "the item: 0.4 kg, value 20, an explosive, police and military tags");
   check(Object.keys(TRUCK_FLASH).length === 3, "trucks: the cargo truck, the Humvee, the MRAP");

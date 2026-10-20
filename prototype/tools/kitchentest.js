@@ -317,7 +317,7 @@ section("Firewood: the stove (kitchen-plus pick 1)");
   check(w.kitchen === 28 && w.daily >= 28 && w.need >= 28 * KITCHEN.wood.keepDays, `the firewood forecast counts it (kitchen ${w.kitchen}, need ${w.need})`);
   st.hour = 24 * 3; h.stock.wood = 2000; setFood(h, 150); setJarred(h, 0);
   basesDaily(st);
-  check(!kitchenCold(h) && h.kitchenDay && h.kitchenDay.wood === 28 && near(h.stock.wood, 2000 - 28, 0.01), `midnight: the stove burned 28 (${h.kitchenDay && h.kitchenDay.wood}, ${h.stock.wood} left)`);
+  check(!kitchenCold(h) && h.kitchenDay && h.kitchenDay.wood === 28 && near(h.stock.wood, 2000 - 28 - (h.heat ? h.heat.wood : 0), 0.01), `midnight: the stove burned 28 (${h.kitchenDay && h.kitchenDay.wood}, ${h.stock.wood} left after the heating's ${h.heat ? h.heat.wood : 0})`);
   check(kitchenCanLight(st, h), "can light with firewood in store");
   h.stock.wood = 27;
   check(!kitchenCanLight(st, h), "27 firewood will not light a 28 stove");
@@ -326,7 +326,7 @@ section("Firewood: the stove (kitchen-plus pick 1)");
   basesDaily(st);
   plain(ppl[0]); // the day's mood, back where it was
   const ks = kitchenService(st, h);
-  check(kitchenCold(h) && ks.cold && ks.save === 0 && ks.mood === 0 && ks.boil === 0 && near(h.stock.wood, 10), `no firewood: cold meals, nothing saved, nothing burned (${h.stock.wood})`);
+  check(kitchenCold(h) && ks.cold && ks.save === 0 && ks.mood === 0 && ks.boil === 0 && near(h.stock.wood, Math.max(0, 10 - (h.heat ? h.heat.wood : 0)), 0.01), `no firewood: cold meals, nothing saved, nothing burned by the stove (${h.stock.wood} after the heating's ${h.heat ? h.heat.wood : 0})`);
   check(kitchenEatMult(st, h) === 1, "the food is eaten as without a kitchen");
   check(!moodFactors(st, ppl[3]).list.some((f) => /Hot meals/.test(f.label)), "no hot-meal mood");
   check(!baseCooks(h), "a cold stove cooks nothing (the worm)");

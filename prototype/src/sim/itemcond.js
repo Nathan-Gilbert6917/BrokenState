@@ -120,7 +120,7 @@ export const LOCK_SOURCE = {
   crash: "military", miltruck: "military", car: "home",
 };
 // A body by its kit (combat.js KITS).
-export const KIT_SOURCE = { soldiers: "soldier", contractors: "soldier", guards: "guard", escorts: "guard", fighters: "fighter", militia: "militia", raiders: "raider", zealots: "raider", survivors: "survivor", looters: "raider", survivalists: "militia", preppers: "fighter" };
+export const KIT_SOURCE = { soldiers: "soldier", contractors: "soldier", guards: "guard", escorts: "guard", fighters: "fighter", militia: "militia", raiders: "raider", zealots: "raider", survivors: "survivor", looters: "raider", survivalists: "militia", preppers: "fighter", drifters: "survivor" };
 // A group's trader by its type (data.js FACTION_TYPES).
 export const TRADER_SOURCE = { military: "traderMil", raider: "traderRaider", zealot: "traderRaider" };
 
@@ -186,6 +186,8 @@ export function condition(item, source, roll, opts = {}) {
   return item;
 }
 export const condRolled = (item) => !!item && ROLLED.has(item);
+// A crafted item's condition came from its maker's quality roll (crafting.js craftRoll), yours or a group's.
+export const craftedCond = (item) => { if (item && typeof item === "object") ROLLED.add(item); return item; };
 
 // A draw a creation point used to make for the quality, still taken so the rest of the world's dice stay put.
 /** @param {{ next: () => number }} rng */

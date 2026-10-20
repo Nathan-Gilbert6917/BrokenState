@@ -527,8 +527,17 @@ function prims(k, o) {
       return o.part === "front" ? front : back;
     }
     case "palisade": {
-      // The base's wall line: upright logs with pointed tops and a sheet-metal brace; battered ones are shorter.
+      // The base's wall line: upright logs with pointed tops and a sheet-metal brace; battered ones are shorter. A wall
+      // piece (sim/basemap.js) by its material (o.mat, sim/buildings.js WALL_TIERS): planks, logs, scrap metal, sheets.
       const ax = along(o), top = o.stub ? STUB : PALISADE;
+      if (o.mat === 1 || o.mat === 3 || o.mat === 4) {
+        const dmgTop = top - (o.dmg ? Math.floor(o.dmg * 10) : 0);
+        const face = o.mat === 1 ? (f, s, t, X, Y) => (f === "top" ? PAL.woodLt : Math.floor(s) % 5 < 1 ? PAL.woodDk : mul(PAL.wood, 0.85 + n2(Math.floor(s / 5), 0, 7 + v) * 0.25))
+          : o.mat === 3 ? (f, s, t, X, Y) => { const q = n2(Math.floor(s / 6), Math.floor(t / 5), 13 + v); return q > 0.72 ? mul(PAL.rust, 0.85 + n2(X, Y, 5) * 0.25) : q < 0.22 ? PAL.metalDk : mul(PAL.metal, 0.82 + n2(X, Y, 4) * 0.22); }
+          : (f, s, t, X, Y) => (Math.floor(s) % 8 < 1 || Math.floor(t) % 10 < 1 ? PAL.metalDk : mul(PAL.metal, 0.95 + n2(X, Y, 3) * 0.08));
+        const post = o.mat === 1 ? tex(PAL.woodDk, 0.1) : tex(PAL.metalDk, 0.08);
+        return [run(ax, 0.4, 0.6, 0, dmgTop, face), run(ax, 0.36, 0.64, 0, dmgTop + 2, post, 0, 0.1), run(ax, 0.36, 0.64, 0, dmgTop + 2, post, 0.9, 1)];
+      }
       const logs = [];
       for (let i = 0; i < 4; i++) {
         const a = 0.125 + i * 0.25, hgt = top - (o.dmg ? Math.floor(hash3(i, v, 11) * o.dmg * 14) : 0) - (i % 2) * 2;
@@ -565,6 +574,17 @@ function prims(k, o) {
         { u0: 0.84, u1: 0.96, v0: 0.84, v1: 0.96, z0: 0, z1: z, m: dk },
         { u0: 0, u1: 1, v0: 0, v1: 1, z0: z - 3, z1: z, m: (f, s, t) => (f === "top" ? mul(PAL.woodLt, (s | 0) % 4 < 1 ? 0.75 : 0.95 + n2(s, t, 8) * 0.1) : PAL.woodDk) },
         { u0: 0, u1: 1, v0: 0, v1: 0.08, z0: z, z1: z + 7, m: wood }, { u0: 0, u1: 0.08, v0: 0.08, v1: 1, z0: z, z1: z + 7, m: wood },
+      ];
+    }
+    case "stand": {
+      // A wall stand (sim/basemap.js): a plank platform a level up on four posts, a ladder up its back.
+      const z = LV, dk = tex(PAL.woodDk, 0.1);
+      return [
+        { u0: 0.04, u1: 0.16, v0: 0.04, v1: 0.16, z0: 0, z1: z, m: dk }, { u0: 0.84, u1: 0.96, v0: 0.04, v1: 0.16, z0: 0, z1: z, m: dk },
+        { u0: 0.04, u1: 0.16, v0: 0.84, v1: 0.96, z0: 0, z1: z, m: dk },
+        { u0: 0.42, u1: 0.58, v0: 0.92, v1: 0.98, z0: 0, z1: z, m: (f, s, t) => (Math.floor(t) % 5 < 1 ? PAL.woodLt : PAL.woodDk) }, // the ladder
+        { u0: 0.84, u1: 0.96, v0: 0.84, v1: 0.96, z0: 0, z1: z, m: dk },
+        { u0: 0, u1: 1, v0: 0, v1: 1, z0: z - 3, z1: z, m: (f, s, t) => (f === "top" ? mul(PAL.woodLt, (s | 0) % 4 < 1 ? 0.75 : 0.95 + n2(s, t, 8) * 0.1) : PAL.woodDk) },
       ];
     }
     case "walkway": case "loft": case "roof": {
@@ -744,11 +764,35 @@ function prims(k, o) {
     }
     case "trench": return [run(along(o) === "u" ? "u" : "v", 0.16, 0.22, 0, 7, flatM(PAL.woodDk), 0.2, 0.26), run(along(o) === "u" ? "u" : "v", 0.16, 0.22, 0, 7, flatM(PAL.woodDk), 0.7, 0.76)];
     case "beartrap": return [{ cyl: [0.5, 0.5, 0.2], z0: 0, z1: 2, m: (f, s, t) => (f === "top" && Math.hypot(s, t * 2) < 3 ? PAL.tire : PAL.metal) }];
+    // The base map (sim/basemap.js): a building's outline while it goes up (a stake at the corner with string along
+    // the sides toward the neighbours in the outline), a camp's tent, its fire pit, a floodlight on its pole.
+    case "outline": {
+      const j = o.j & 15, str = flatM(hex("#d8d2b8")), post = tex(PAL.woodDk, 0.1);
+      const out = [{ u0: 0.06, u1: 0.14, v0: 0.06, v1: 0.14, z0: 0, z1: 9, m: post }];
+      for (const d of [0, 1, 2, 3]) if (j & (1 << d)) { const [du, dv] = VD[d]; out.push({ u0: du ? Math.min(0.1, 0.1 + du * 0.5) : 0.09, u1: du ? Math.max(0.1, 0.1 + du * 0.5) : 0.11, v0: dv ? Math.min(0.1, 0.1 + dv * 0.5) : 0.09, v1: dv ? Math.max(0.1, 0.1 + dv * 0.5) : 0.11, z0: 6, z1: 7, m: str }); }
+      return out;
+    }
+    case "tent": {
+      const cloth = tex(hex("#6f7452"), 0.1, 3), dk = tex(hex("#4e5238"), 0.1, 4);
+      return [
+        { u0: 0.1, u1: 0.9, v0: 0.12, v1: 0.5, z0: 0, z1: 6, m: dk }, { u0: 0.1, u1: 0.9, v0: 0.5, v1: 0.88, z0: 0, z1: 6, m: cloth },
+        { u0: 0.18, u1: 0.82, v0: 0.3, v1: 0.7, z0: 6, z1: 11, m: cloth }, { u0: 0.3, u1: 0.7, v0: 0.42, v1: 0.58, z0: 11, z1: 15, m: dk },
+      ];
+    }
+    case "firepit": return [
+      { cyl: [0.5, 0.5, 0.36], z0: 0, z1: 4, m: (f, s, t, X, Y) => (f === "top" && Math.hypot(s, t * 2) < 5 ? mul(hex("#3a2a1c"), 0.9 + n2(X, Y, 2) * 0.2) : mul(PAL.stone, 0.85 + n2(X, Y, 3) * 0.2)) },
+      { blob: [0.5, 0.5, 2], ru: 0.1, rz: 5, m: flatM(hex("#e07a2a")) }, { blob: [0.44, 0.56, 2], ru: 0.08, rz: 7, m: flatM(hex("#f5b640")) },
+    ];
+    case "lamp": return [
+      { u0: 0.38, u1: 0.62, v0: 0.38, v1: 0.62, z0: 0, z1: 3, m: flatM(PAL.conc) }, { u0: 0.46, u1: 0.54, v0: 0.46, v1: 0.54, z0: 3, z1: 34, m: tex(PAL.metalDk, 0.1) },
+      { u0: 0.3, u1: 0.7, v0: 0.42, v1: 0.58, z0: 32, z1: 38, m: (f) => (f === "top" ? PAL.metal : hex("#f3e4a0")) },
+    ];
     default: return [];
   }
 }
 const OUTLINED = new Set(["tree", "boulder", "rock", "car", "truck", "vehicle", "crate", "hay", "pump", "barrel", "well", "barricade", "sandbag", "hivewall",
-  "table", "bed", "rack", "locker", "shelf", "cabinet", "counter", "gunsafe", "tanktrap", "spikes", "beartrap", "stairs", "ladder", "tower", "bars", "gate", "palisade"]); // props stand out with a rim, as the figures do; runs (walls, fences, rails) would seam
+  "table", "bed", "rack", "locker", "shelf", "cabinet", "counter", "gunsafe", "tanktrap", "spikes", "beartrap", "stairs", "ladder", "tower", "bars", "gate", "palisade",
+  "tent", "lamp", "firepit"]); // props stand out with an outline (the base map's tent, floodlight and fire pit too: sim/basemap.js)
 
 // The cells' block sprites by look (sprite, roofSprite, massSprite; null: nothing to draw): a key holds all the picture
 // depends on, so one never goes stale. Each entry keeps the frame it was last drawn in (iso.frames); past SPRITES
@@ -1022,7 +1066,8 @@ const JOINS = {
   rack: new Set(["rack", "shelf"]), bed: new Set(["bed"]), bars: new Set(["bars", "wall", "idoor", "odoor"]), table: new Set(["table"]),
   palisade: new Set(["palisade", "gate", "breach", "siegeladder"]), gate: new Set(["palisade", "gate", "breach", "siegeladder"]),
   fence: new Set(["fence"]), wire: new Set(["wire"]), rail: new Set(["rail"]), sandbag: new Set(["sandbag", "barricade"]), barricade: new Set(["barricade", "sandbag"]),
-  walkway: new Set(["walkway", "tower"]), trench: new Set(["trench"]), shelf: WALLISH, locker: WALLISH, cabinet: WALLISH, counter: WALLISH,
+  walkway: new Set(["walkway", "tower", "stand"]), stand: new Set(["stand", "walkway", "tower"]), trench: new Set(["trench"]), shelf: WALLISH, locker: WALLISH, cabinet: WALLISH, counter: WALLISH,
+  outline: new Set(["outline"]), // the base map: a building's outline joins along its sides (sim/basemap.js)
 };
 // What a cell looks like in this view: its kind and options (see prims), or null for open ground. focus: on a building's
 // own map (sim/buildingmaps.js) the cutaway lowers only the walls within CUT_R tiles of these points (your people, the
@@ -1067,6 +1112,7 @@ function lookOf(b, scene, x, y, cut, focus = null) {
   if (c.mhp) o.dmg = Math.round(clamp01(1 - c.hp / c.mhp) * 3) / 3;
   if (k === "gate") o.barred = barredCell(c);
   if (k === "palisade" && c.t === 1) o.top = PALISADE;
+  if ((k === "palisade" || k === "gate") && c.wm) o.mat = c.wm; // a wall piece's material (sim/basemap.js)
   if (k === "door") { const d = ((b.raid ? b.raid.doors : b.doors) || []).find((q) => q.x === x && q.y === y); o.vault = !!(d && d.lock && d.lock.kind === "vault"); } // a raid's, a field map's houses' (sim/combat.js b.doors)
   if (c.roll) o.roll = true; // a roller door (sim/buildingmaps.js)
   if (c.h > 0 && FURNITURE.has(k)) o.raise = c.h * LV; // furniture on an upper floor
@@ -1101,7 +1147,7 @@ function blockTop0(k, o) {
     case "rack": return 31; case "table": return 11; case "bed": return 8; case "bars": return o.stub ? STUB : 28;
     case "palisade": case "gate": return PALISADE;
     case "tower": return 2 * LV + 7;
-    case "walkway": case "loft": case "roof": return LV;
+    case "walkway": case "loft": case "roof": case "stand": return LV;
     case "stairs": return LV / 2;
     case "ladder": return LV;
     case "tree": return o.v === 3 && o.alt ? 30 : 40;
@@ -1114,6 +1160,7 @@ function blockTop0(k, o) {
     case "boulder": return 20; case "crate": return o.v >= 2 ? 22 : 13;
     case "fence": return 14; case "barricade": return 16; case "sandbag": return 13; case "hay": return 13; case "cabinet": return 14; case "counter": return 12; case "well": return 12; case "barrel": return 13;
     case "rock": return 10; case "wire": return 10; case "rail": return 13; case "tanktrap": return 12;
+    case "outline": return 9; case "tent": return 15; case "firepit": return 7; case "lamp": return 38; // the base map (sim/basemap.js)
     default: return 0;
   }
 }
@@ -1149,6 +1196,8 @@ function newBattleCamera(b, cw, ch) {
   // The same raid made again before going in (sim/raidplan.js: another side, a scout's hour, the night): the same map,
   // the view as it was, moved to the team.
   const prev = iso.battle;
+  // The base map laid out again after a change (sim/basemap.js refreshBaseMap): the same view, nothing moves.
+  if (prev && b.keepCam && b.layout && prev.layout === b.layout && prev.w === b.w && prev.h === b.h) { iso.battle = b; iso.mapKey = mapKey(b); return; }
   if (prev && prev !== b && prev.setup === b.setup && b.setup && b.setup.plan && prev.w === b.w && prev.h === b.h) {
     iso.battle = b;
     iso.mapKey = mapKey(b);
@@ -1347,7 +1396,7 @@ export function isoPick(b, px, py, opts = {}) {
   }
   return best;
 }
-const SOLIDWALK = new Set(["walkway", "tower", "loft", "roof", "stairs"]);
+const SOLIDWALK = new Set(["walkway", "tower", "loft", "roof", "stairs", "stand"]);
 const NOCUT = new Set();
 
 // ---------- what hides a cell ----------
@@ -1630,10 +1679,27 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     ctx.setLineDash([]);
   }
   const deploying = b.deploy && b.phase === "deploy";
-  const ok = deploying ? deployMask(b) : null;
-  if (deploying) {
+  const ok = deploying && !b.layout ? deployMask(b) : null;
+  if (deploying && !b.layout) {
     fillCells(ctx, b, (i) => ok[i], `rgba(${COL.goodRgb},0.16)`);
     outlineCells(ctx, b, (i) => ok[i], `rgba(${COL.goodRgb},0.8)`, 1.5);
+  }
+  // The base map's layout mode (sim/basemap.js): the no-build margin (c.nb: the cells within NO_BUILD of the grid's
+  // edge, a dark red wash under everything else), the yard's edge, and the pick's footprint under the mouse (green
+  // where it fits, red where not), with the cells outside its doors.
+  if (b.layout && b.deployPlan && b.deployPlan.fort) {
+    const Fm = b.deployPlan.fort, w = Fm.wall;
+    fillCells(ctx, b, (i) => !!b.cells[i].nb, "rgba(150,40,40,0.22)", false);
+    const yard = (i) => { const x = i % b.w, y = (i / b.w) | 0; return x >= w.x0 && x <= w.x1 && y >= w.y0 && y <= w.y1 && (x === w.x0 || x === w.x1 || y === w.y0 || y === w.y1); };
+    ctx.setLineDash([5, 4]);
+    outlineCells(ctx, b, yard, Fm.walled ? "rgba(200,170,110,0.55)" : "rgba(230,216,184,0.5)", 1.5);
+    ctx.setLineDash([]);
+  }
+  if (H.ghost) {
+    const inG = new Set(H.ghost.cells.map(([x, y]) => y * b.w + x)), inD = new Set(H.ghost.doors.map(([x, y]) => y * b.w + x));
+    fillCells(ctx, b, (i) => inG.has(i), H.ghost.ok ? `rgba(${COL.goodRgb},0.35)` : "rgba(220,70,60,0.35)");
+    outlineCells(ctx, b, (i) => inG.has(i), H.ghost.ok ? `rgba(${COL.goodRgb},0.95)` : "rgba(240,90,80,0.95)", 2);
+    if (inD.size) { fillCells(ctx, b, (i) => inD.has(i), "rgba(224,168,79,0.3)"); outlineCells(ctx, b, (i) => inD.has(i), "#e0a84f", 1.5); }
   }
   let bands = null;
   if (v.reach && H.mode === "move" && u) {
@@ -1673,6 +1739,17 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
       ctx.strokeStyle = `rgba(215,255,130,${(1 - t) * 0.85 * a})`; ctx.lineWidth = 1.2;
       ctx.beginPath(); ctx.ellipse(X, Y - t * 2 * S, (1 + t * 2.5) * S, (0.6 + t * 1.5) * S, 0, 0, Math.PI * 2); ctx.stroke();
     }
+  }
+  // Your base's land mines (sim/mines.js): a small dark plate with a red pin on each one still in the ground. Only your
+  // people know where they are; the attackers see nothing.
+  if (b.mines) for (let i = 0; i < b.cells.length; i++) {
+    if (!b.cells[i].mine) continue;
+    const x = i % b.w, y = (i - x) / b.w;
+    const [X, Y] = project(x + 0.5, y + 0.5, tileTop(b, x, y));
+    ctx.fillStyle = "rgba(40,36,30,0.85)";
+    ctx.beginPath(); ctx.ellipse(X, Y, 3.2 * S, 1.8 * S, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "rgba(230,60,50,0.95)";
+    ctx.beginPath(); ctx.ellipse(X, Y - 0.6 * S, 0.9 * S, 0.6 * S, 0, 0, Math.PI * 2); ctx.fill();
   }
   // A Shepherd's aura (sim/decoys.js): the dead inside ignore decoys and fire.
   for (const a of OV.auras) {
@@ -1809,7 +1886,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
       const zt = tileTop(b, x, y);
       if (zt) {
         if (bands && bands[i]) { ctx.fillStyle = bands[i] === 1 ? "rgba(80,150,255,0.32)" : "rgba(255,200,60,0.22)"; ctx.beginPath(); diamond(ctx, x, y, zt); ctx.fill(); }
-        if (deploying && ok[i]) { ctx.fillStyle = `rgba(${COL.goodRgb},0.28)`; ctx.beginPath(); diamond(ctx, x, y, zt); ctx.fill(); }
+        if (ok && ok[i]) { ctx.fillStyle = `rgba(${COL.goodRgb},0.28)`; ctx.beginPath(); diamond(ctx, x, y, zt); ctx.fill(); }
       }
     }
     for (const c of bodies.get(d) || []) drawCorpseIso(ctx, b, c, !vis[c.y * b.w + c.x]);
@@ -2008,6 +2085,21 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     const [X, Y] = project((Math.min(...xs) + Math.max(...xs) + 1) / 2, (Math.min(...ys) + Math.max(...ys) + 1) / 2, s.roof ? LV + 10 : (s.storeys === 2 ? WALL2 : WALL1) + 12);
     tag(ctx, s.name, X, Y, "#e6d8b8", Math.max(10, 3.8 * S));
   }
+  // The stores on a base map (sim/basemap.js): a crate marker over each building that holds goods, with its weight.
+  if (b.stores) for (const c0 of b.stores.containers) {
+    const ci = c0.y * b.w + c0.x;
+    let seen = !!b.deploy || !!b.layout;
+    for (let yy = c0.y; yy < c0.y + c0.h && !seen; yy++) for (let xx = c0.x; xx < c0.x + c0.w; xx++) if (vis[yy * b.w + xx]) { seen = true; break; }
+    if (!seen) continue;
+    const L = looks[ci], top = Math.max(L ? L.top : 4, WALL1) + liftAt(b, ci);
+    const [X, Y] = project(c0.x + c0.w / 2, c0.y + c0.h / 2, top + 6);
+    const s = Math.max(7, 3.2 * S);
+    ctx.fillStyle = c0.kg > 0.5 ? "#b08a4a" : "rgba(60,64,70,0.9)"; ctx.strokeStyle = "#1a1a1a"; ctx.lineWidth = 1;
+    rr(ctx, X - s, Y - s * 2, s * 2, s * 2, 3); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = "#1a1a1a"; ctx.font = `700 ${Math.round(s * 1.4)}px Segoe UI, sans-serif`; ctx.textAlign = "center";
+    ctx.fillText("▣", X, Y - s * 0.45);
+    tag(ctx, `${Math.round(c0.kg)} kg`, X, Y + s * 0.4, c0.kg > 0.5 ? "#e6d8b8" : "#9aa0a8", Math.max(9, 3.2 * S));
+  }
   for (let i = 0; i < N; i++) {
     const c = b.cells[i];
     if (!c.mhp || !(c.hp < c.mhp || c.k === "gate") || !vis[i] && !(b.deploy)) continue;
@@ -2016,8 +2108,8 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     ctx.fillStyle = "rgba(15,17,20,0.85)"; ctx.fillRect(X - w / 2, Y - 3, w, 4);
     ctx.fillStyle = f > 0.6 ? COL.good : f > 0.3 ? COL.mid : COL.bad; ctx.fillRect(X - w / 2, Y - 3, w * f, 4);
   }
-  // The deploy step: the gate and breaches, the side the attack comes from.
-  if (deploying) {
+  // The deploy step: the gate and breaches, the side the attack comes from (not on the base map: nothing attacks).
+  if (deploying && !b.layout) {
     const D = b.deploy;
     ctx.strokeStyle = "#e0a84f"; ctx.lineWidth = 2.5;
     ctx.beginPath();
@@ -2245,7 +2337,7 @@ function shieldsIso(ctx, b, x, y, alpha) {
 }
 
 // ---------- units ----------
-const ZRING = { runner: "#ffb43b", brute: "#c8c4b0", spitter: "#9ad63a", screamer: "#c99ae0", crawler: "#6ab0c8", shepherd: "#e8e2ff", soldier: "#a8b878", riot: "#8aa0c8", carrier: "#e6d8a8", swarm: "#f0e4c0", boneback: "#d8b48a", climber: "#8fd0a0", flinger: "#e8a0c8", sower: "#e8e070", nightmare: "#e0506e", sleeper: "#b0d8ff" };
+const ZRING = { runner: "#ffb43b", brute: "#c8c4b0", spitter: "#9ad63a", screamer: "#c99ae0", crawler: "#6ab0c8", shepherd: "#e8e2ff", soldier: "#a8b878", riot: "#8aa0c8", carrier: "#e6d8a8", swarm: "#f0e4c0", boneback: "#d8b48a", climber: "#8fd0a0", flinger: "#e8a0c8", sower: "#e8e070", nightmare: "#e0506e", sleeper: "#b0d8ff", deadstag: "#d2a86a", deadhog: "#8c7a66", deadhound: "#c0b8a8", deadcow: "#e8dcc0", deadcat: "#b8a8c8" }; // the dead beasts (sim/deadbeasts.js)
 const ringOf = (t) => (t.side === "player" ? (t.vol != null ? "#c9a2ff" : "#8fc1ff") : t.side === "third" ? thirdRing(t) : t.kind === "zombie" ? (t.ztype ? ZRING[t.ztype] || "#b5d36a" : t.boss ? COL.bad : "#b5d36a") : "#ff8f85");
 function feet(s) { return project(s.wx, s.wy, s.z); }
 // The sprite, standing (or lying) at the unit's feet. silhouette: only the figure (for the see-through pass).
@@ -2364,7 +2456,7 @@ function drawFigure(ctx, cv, X, Y, S, alpha = 1) {
   ctx.drawImage(cv, X - g.ox * S, Y - g.oy * S, g.w * S, g.h * S);
   ctx.restore();
 }
-const unitBig = (t) => (t.boss === "hivemind" ? 1.8 : t.boss ? 1.35 : t.ztype === "brute" || t.ztype === "shepherd" || t.ztype === "carrier" || t.ztype === "boneback" || t.ztype === "sower" ? 1.15 : t.ztype === "crawler" || t.ztype === "swarm" ? 0.8 : 1);
+const unitBig = (t) => (t.boss === "hivemind" ? 1.8 : t.boss ? 1.35 : t.ztype === "brute" || t.ztype === "shepherd" || t.ztype === "carrier" || t.ztype === "boneback" || t.ztype === "sower" || t.ztype === "deadcow" ? 1.15 : t.ztype === "crawler" || t.ztype === "swarm" || t.ztype === "deadhound" ? 0.8 : t.ztype === "deadcat" ? 0.6 : 1);
 // Where a unit's gun muzzle is on screen, from its feet, in view rotation r at zoom S: the muzzle pixel of the gun
 // in its sprite's hand (ui/sprites.js muzzleOf; ui/gunpaint.js paintMini: past a fitted suppressor), the sprite drawn
 // as drawBody draws it (mirrored when it faces left). null: no gun drawn (a zombie, bare hands).

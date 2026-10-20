@@ -606,8 +606,10 @@ section("The betrayal ambush at the handover: about 15% with an even team, less 
     Object.assign(hub(s4).stock, { ammo: 3000, meds: 80, food: 500, fuel: 100 });
     pick(RS.negotiationCard(s4, g4, [c4.id], { channel: "radio" }), /^Agree/).resolve(s4);
     const d4 = RS.dealsOf(s4)[0];
-    fighters(s4, 4);
-    const q4 = RS.sendHandover(s4, d4, { crew: 4 }).party;
+    // Their handover party is five of their very people (docs/adr/0001-ai-parity.md: about raiders of power 7 with what
+    // they carry), who have the drop on you: a team that can win sometimes is six good shots with rifles.
+    fighters(s4, 6, { shooting: 14, weapon: "ar" });
+    const q4 = RS.sendHandover(s4, d4, { crew: 6 }).party;
     q4.path = [d4.tile]; q4.idx = 0;
     RS.RANSOM.BETRAY_FORCE = true;
     RS.handoverArrive(s4, q4);

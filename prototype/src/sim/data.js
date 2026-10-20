@@ -13,6 +13,8 @@ import { CART_GEAR } from "./data-carts.js"; // a wheelbarrow and a hand cart, p
 import { HELMET_GEAR } from "./data-helmets.js"; // helmets, visors, helmet mounts, ear protection (helmets.js, hearing.js)
 import { BLADE_GEAR } from "./data-blades.js"; // knives and swords (blades.js: where they turn up)
 import { NL_GEAR } from "./data-nonlethal.js"; // tasers, cartridges, pepper spray, the stun baton (nonlethal.js)
+import { SURV_ITEMS } from "./data-survival.js"; // survival gear: tools, armour against teeth, lights, a rig, a jump bag, a rangefinder (survival.js: where they turn up)
+import { BOX_GEAR, BOX_PATCH } from "./data-boxes.js"; // cash boxes, fire safes, toolboxes, equipment cases; the gun cases as boxes (boxes.js)
 
 // Travel time a tile, in hours (parties.js moveCost): on foot an hour a tile whatever the ground; a car half an hour
 // off-road and a quarter of an hour on a road or a bridge (ROAD_COST); mountains are closed to cars.
@@ -707,7 +709,7 @@ Object.assign(GEAR, {
 Object.assign(GEAR, {
   powerdrill:   { name: "Cordless power drill", slot: "pack", skill: null, power: 0, req: 0, value: 25, noise: 0, dur: 3, drill: true, weight: 2.2, cat: "tools", desc: "A drill with a box of cobalt bits and two charged batteries. Drills the lock out of a gun safe in a raid: 1 + 0.05 a Mechanics point of progress an action (a gun cabinet takes 2, a gun safe 6, an armoury safe 12), loud (Heat about +2 an action, wakes everything within 8 tiles each turn). The bits are good for 3 safes." },
   anglegrinder: { name: "Angle grinder",        slot: "pack", skill: null, power: 0, req: 0, value: 35, noise: 0, dur: 4, grind: true, weight: 3, cat: "tools", desc: "A cordless grinder and a stack of cutting discs: cuts a gun safe open twice as fast as a drill, louder still (Heat about +3 an action, wakes everything within 11 tiles each turn), and at night the sparks give the user away. The discs are good for 4 safes." },
-  riflecase:    { name: "Hard rifle case",      slot: "pack", skill: null, power: 0, req: 0, value: 12, noise: 0, bulky: true, gunCase: { long: 1, hand: 0, small: 2 }, weight: 3.5, cat: "containers", desc: "A foam-lined hard case for one long gun and a couple of small things, some with a cheap lock. A gun inside is not to hand: it does not wear and cannot be fired. Opening a locked one takes a blade or a crowbar (1 action and Heat +1 in a raid; free at a base or a camp)." },
+  riflecase:    { name: "Hard rifle case",      slot: "pack", skill: null, power: 0, req: 0, value: 12, noise: 0, bulky: true, gunCase: { long: 1, hand: 0, small: 2 }, weight: 3.5, cat: "containers", desc: "A foam-lined hard case for one long gun and a couple of small things, some with a cheap lock. A gun inside is not to hand: it does not wear and cannot be fired. Opening a locked one takes a blade or a crowbar (1 action and Heat +1 in a raid; free at a base or a camp). Carried in both arms only (no pocket, pack or pouch takes it): it fills both hands." },
   pistolcase:   { name: "Pistol case",          slot: "pack", skill: null, power: 0, req: 0, value: 6,  noise: 0, small: true, gunCase: { long: 0, hand: 1, small: 2 }, weight: 1, cat: "containers", desc: "A small lockable case for a handgun and a box of rounds. A gun inside is not to hand: it does not wear and cannot be fired. Opening a locked one takes a blade or a crowbar (1 action and Heat +1 in a raid; free at a base or a camp)." },
 });
 
@@ -718,6 +720,9 @@ for (const [k, p] of Object.entries(GEAR_PATCH)) if (GEAR[k]) Object.assign(GEAR
 Object.assign(GEAR, NL_GEAR); // non-lethal weapons (data-nonlethal.js)
 Object.assign(GEAR, HELMET_GEAR); // helmets, visors, helmet mounts, ear protection (data-helmets.js)
 Object.assign(GEAR, BLADE_GEAR); // knives and swords (data-blades.js)
+Object.assign(GEAR, SURV_ITEMS); // survival gear (data-survival.js)
+Object.assign(GEAR, BOX_GEAR); // lockable boxes (data-boxes.js)
+for (const [k, p] of Object.entries(BOX_PATCH)) if (GEAR[k]) Object.assign(GEAR[k], p); // the gun cases are boxes too
 Object.assign(GEAR, CART_GEAR); // carts (data-carts.js, carts.js)
 Object.assign(GEAR, supItemGear(SUPPLIES, GEAR)); // supplies as items: s_<key> (data-supitems.js; rounds keep their boxes)
 // The Melee skill (world.js MELEE_SKILL): every melee weapon goes by Melee, not Shooting (its req, the skill-gap rule).

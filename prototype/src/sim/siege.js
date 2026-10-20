@@ -21,8 +21,10 @@
 // Who brings it: raiders and outsider bands coming for a walled base of yours, by how prepared they are (raidSiegeKit:
 //   eras.js raid preparedness, rising with the years; the State Map's raid warning card says what they carry), and
 //   your teams on an Assault (kit.js packSiegeKit: ladders, the ram, grenades from the hub's armory into the cargo,
-//   weighed by load.js). The battle hands it out (siegeSetup): the ram to the three strongest, the ladders to the
-//   next, the grenades to the shooters.
+//   weighed by load.js). A group's raid brings only what its stores hold (arsenal.js packRaidKit: its own ladders and
+//   ram, made by your recipe when it has none; grenades as throwables on the raiders), a band only what its people
+//   carry (visitors.js bandKit). The battle hands out the ram to the three strongest and the ladders to the next
+//   (siegeSetup); the grenades are already on whoever carries them (fighters.js fitThrowables).
 // By the numbers: the walls count less against a raid with kit (siegeWallCut: −6% a ladder, −10% a ram, −2% a
 //   grenade off the wall tier's bonus, at most −25%: defences.js raidTier, interior.js baseTiers) and an assault
 //   with kit faces less of its walls (assaultCut: −15% a ladder, −20% the ram, −4% a grenade of the walls' share of
@@ -30,11 +32,11 @@
 // Everything that is on the map is data any renderer can draw: battleOverlays.
 import { atVehicle } from "./raidloot.js"; // the team's vehicle on the map (loadRam / unloadRam)
 import { CELL, active, unitAt, unitById, say, fx, reachable, pathTo, distField, moveAlong, damage, heightAt, barredCell, breakCell, structureName, alertNear } from "./combat.js";
-import { throwAt, THROWABLES, throwablesOf } from "./stealth.js";
+import { throwAt, THROWABLES, throwablesOf, botAttackThrow } from "./stealth.js";
 import { blastSpot, flashSpot, throwBlind as throwBlindOf, FRAG, BLAST, FIRE } from "./throwables.js";
 import { shepherdsOf } from "./decoys.js";
 import { ACID } from "./acid.js";
-import { count } from "./buildings.js";
+import { count, hasWall } from "./buildings.js";
 import { ZTYPES, SHEPHERD } from "./hiveconst.js";
 import { raidPrep, outsiderPrep } from "./eras.js";
 import { aiLaunch } from "./launchers.js"; // a grenade launcher or a rocket (section 13): rockets at your gate, your ram, your vehicle first
@@ -52,6 +54,7 @@ export const RAID_KIT = { LADDERS: 0.9, RAM_FROM: 0.25, RAM_PER: 1.0, RAM_GATE: 
 export const CUT = { ladder: 0.06, ram: 0.1, grenade: 0.02, max: 0.25 };
 export const ASSAULT_CUT = { ladder: 0.15, ram: 0.2, grenade: 0.04, max: 0.6 };
 export const GRENADES = ["frag", "pipebomb"];
+const AI_THROWS = [...GRENADES, "molotov"]; // what anyone carrying them throws on a bunch of their foes (docs/adr/0001-ai-parity.md: a Molotov too)
 
 const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
 const cheb = (ax, ay, bx, by) => Math.max(Math.abs(ax - bx), Math.abs(ay - by));
@@ -66,7 +69,7 @@ const roll = (...keys) => keys.reduce((h, k) => hash(h ^ Math.imul((k | 0) + 0x6
 // { ladders, ram, grenades, kind } or null. Deterministic: its own dice from the seed and the raid (no world dice).
 // opts: { count: fighters, key: the raid's id, outsider, prepared: escalated / a well-armed group, kind: "frag" | "pipebomb" }.
 export function raidSiegeKit(state, base, opts = {}) {
-  if (!base || !count(base, "walls")) return null;
+  if (!base || !hasWall(base)) return null;
   const n = opts.count || 0;
   if (n < RAID_KIT.MIN_FIGHTERS) return null;
   let level = opts.outsider ? (outsiderPrep(state) - 0.6) / 0.45 : (raidPrep(state) - 0.8) / 0.45;
@@ -80,6 +83,21 @@ export function raidSiegeKit(state, base, opts = {}) {
   const grenades = r(3) < (level - RAID_KIT.GREN_FROM) * RAID_KIT.GREN_PER * mult ? Math.min(3, 1 + Math.floor(n / 5)) : 0;
   if (!ladders && !ram && !grenades) return null;
   return { ladders, ram, grenades, kind: opts.kind || "pipebomb" };
+}
+// The ladders and the ram a band of raiders sets out with from beyond the border (visitors.js makeVisitor): the dice
+// raidSiegeKit throws for an outsider band against a walled base with a gate (the year's preparedness × OUTSIDER;
+// ladders 2 with 8+ of them, a ram with 4+), thrown once when it crosses the border, with no base in view yet. From
+// then on they are real items in the band's gear, carried by its people (nomads.js bandRoom), brought to a raid and
+// home from it (visitors.js bandKit, siegeGearBack): no ladder or ram is handed to it again. key: the band's serial.
+// { ladders, ram } or null.
+export function bandSetOutKit(state, n, key) {
+  if ((n || 0) < RAID_KIT.MIN_FIGHTERS) return null;
+  const level = clamp((outsiderPrep(state) - 0.6) / 0.45, 0, 1);
+  if (level <= 0) return null;
+  const r = (k) => roll(state.seed || 1, (key | 0) + 13, k, 0);
+  const ladders = r(1) < level * RAID_KIT.LADDERS * RAID_KIT.OUTSIDER ? (n >= 8 ? 2 : 1) : 0;
+  const ram = n >= 4 && r(2) < ((level - RAID_KIT.RAM_FROM) * RAID_KIT.RAM_PER + RAID_KIT.RAM_GATE) * RAID_KIT.OUTSIDER ? 1 : 0;
+  return ladders || ram ? { ladders, ram } : null;
 }
 // "they carry two ladders and a ram, and grenades" ("" without kit).
 export function kitText(kit) {
@@ -172,14 +190,8 @@ function hand(b, people, kit, walls, enemy) {
       u.mob = Math.max(2, u.mob0 - LADDER.SLOW);
     }
   }
-  if (enemy && kit.grenades) {
-    const shooters = left.filter((u) => !u.ladder).sort((a, c) => (c.aim || 0) - (a.aim || 0));
-    for (let i = 0; i < kit.grenades && shooters.length; i++) {
-      const u = shooters[i % shooters.length];
-      const k = kit.kind || "pipebomb";
-      (u.throwables || (u.throwables = {}))[k] = ((u.throwables || {})[k] || 0) + 1;
-    }
-  }
+  // The grenades are not handed out here: they are real throwables the raiders carry (arsenal.js packRaidKit; a band's
+  // own, visitors.js bandKit), counted on each from the items (fighters.js fitThrowables) and spent from them.
 }
 
 // ---------- ladders ----------
@@ -594,10 +606,10 @@ function stormTurn(b, u) {
 // A grenade (the enemy's kit: u.throwables) on two or more of the defenders bunched up, once a turn for the side.
 export function enemyThrow(b, u) {
   if (!u.throwables || b.enemyThrowTurn === b.turn || u.ap < 1) return false;
-  for (const key of GRENADES) {
+  for (const key of AI_THROWS) {
     if (!(u.throwables[key] > 0)) continue;
     const T = THROWABLES[key];
-    const spot = blastSpot(b, u, T.range, key === "frag" ? FRAG.r : BLAST.r, { need: 2 });
+    const spot = blastSpot(b, u, T.range, key === "frag" ? FRAG.r : key === "molotov" ? FIRE.r : BLAST.r, { need: 2 });
     if (!spot) continue;
     const blind = throwBlindOf(b, u, spot.x, spot.y);
     u.throwables[key] -= 1;
@@ -671,6 +683,7 @@ export function siegeAI(b, u) {
   const dropped = (b.rams || []).find((x) => x.dropped && x.side === u.side && cheb(x.x, x.y, u.x, u.y) <= 1 && ramGoalsExist(b, u));
   if (dropped && !takeRam(b, u)) return true;
   if (u.gl && aiLaunch(b, u)) return true; // launchers.js: the turn's attack
+  if (u.who) { botAttackThrow(null, b, u); return u.ap < 1 || !active(u); } // a person throws as yours do (stealth.js: what they carry, 1 action, once a turn for the side)
   return enemyThrow(b, u);
 }
 const ramGoalsExist = (b, u) => b.cells.some((c) => ramable(c));

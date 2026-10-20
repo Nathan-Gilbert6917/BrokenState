@@ -49,6 +49,8 @@
 // search for a pin and pick the lock, go for the jailer's keys when he is alone, grab weapons, never stay cornered
 // alone (they make for a teammate), then make for the way out; the team goes for the cell, opens it (keys, picks,
 // force), cuts the ropes, then everyone evacuates.
+import { totalRounds, spendAmmo } from "./rounds.js"; // a group's rounds by calibre
+import { spareKit } from "./loadouts.js"; // the kit nobody carries
 import { CELL, WEAPONS, KITS, active, isTied, cornerBlocked, meleeReach, unitAt, moveAlong, say, fx, playerUnit, refitUnit, reachable, pathTo, distField, canSee, adjacent, unitById, evacAt, combatAct, registerBattleLayout, registerBattleSize, registerCombatHandler, startCombat, enemyUnit, isRanged, loadMag } from "./combat.js";
 import { fillUnit } from "./mags.js";
 import { survivorById, skill, factionById, log, isNight, hub, addCard, localId } from "./world.js";
@@ -64,7 +66,7 @@ import { partyMembers, partyTile, tileLabel, awaitOrders, wipeIfEmpty, addGearTo
 import { itemValue } from "./valuation.js";
 import { hasPerk, gainXp } from "./skills.js";
 import { Rng } from "./rng.js";
-import { removeFromArsenal } from "./arsenal.js";
+import { removeFromArsenal, armFromArsenal } from "./arsenal.js";
 import * as Groupworks from "./groupworks.js"; // groupJailTier (the jailhouse work), when it is there
 import { groupJailTier, groupJailGuards } from "./groupjails.js"; // jailhouse: the group's jail tier (0 none, 1 makeshift, 2 holding cells, 3 jailhouse)
 import { JAIL as JAIL_TIER } from "./prisoners.js"; // the tiers' names and cell blocks, shared with your own jails
@@ -107,7 +109,7 @@ const KIND_OF = { raider: "raiders", expansionist: "fighters", zealot: "zealots"
 export const kindOf = (f) => KIND_OF[f && f.type] || "raiders";
 const armouryItem = (it) => !!(it && GEAR[it.key] && (GEAR[it.key].slot === "weapon" ? !!WEAPONS[it.key] && it.key !== "fists" : ARMOR_SLOTS.includes(GEAR[it.key].slot)));
 export function groupArmory(state, f) {
-  if (f.arsenal && Array.isArray(f.arsenal.items)) return f.arsenal.items;
+  if (f.arsenal && Array.isArray(f.arsenal.items)) return Array.isArray(f.people) ? spareKit(f) : f.arsenal.items; // loadouts.js: what their people carry is on them, not on the rack
   if (!f.armory) {
     const kit = KITS[kindOf(f)] || KITS.raiders;
     const rng = new Rng(((state.seed || 1) * 7919 + localId(state, f.id) * 104729) >>> 0); // localId: ids are process-wide
@@ -215,7 +217,7 @@ function rescueMap(b, ctx, c) {
     }
     const f = factionById(ctx.state, c.factionId);
     const items = f ? groupArmory(ctx.state, f).filter(armouryItem) : [];
-    R.armory = { x: far[0], y: far[1], building: arm.s.name, locked, items: [...items], ammo: f ? Math.min(Math.floor((f.stock && f.stock.ammo) || 0), 60) : 20 };
+    R.armory = { x: far[0], y: far[1], building: arm.s.name, locked, items: [...items], ammo: f ? Math.min(Math.floor(f.stock ? totalRounds(f.stock) : 0), 60) : 20 };
   }
 }
 // The walkable indoor cells of a building.
@@ -499,8 +501,8 @@ export function rescueAct(state, b, u, act) {
       const rounds = Math.min(A.ammo, RESCUE_RAID.ARMORY_AMMO);
       if (rounds > 0) {
         A.ammo -= rounds;
-        if (f && f.stock) f.stock.ammo = Math.max(0, (f.stock.ammo || 0) - rounds);
-        if (b.pools && b.pools.length) { const pool = b.pools[b.pools.length - 1]; pool.ammo = (pool.ammo || 0) + rounds; }
+        const keys = f && f.stock ? spendAmmo(f.stock, rounds).keys : { ammo: rounds }; // their rounds by key (docs/adr/0001-ai-parity.md)
+        if (b.pools && b.pools.length) { const pool = b.pools[b.pools.length - 1]; for (const [k, q] of Object.entries(keys)) pool[k] = (pool[k] || 0) + q; }
         got.push(`${rounds} rounds`);
       }
       say(b, got.length ? `${u.name} raids the armory: ${got.join(", ")}.` : `${u.name} finds nothing here that fits.`, got.length ? "good" : "info");
@@ -541,7 +543,7 @@ function raiseAlarm(state, b, why) {
     for (let i = 0; i < R.asleep; i++) {
       const u = enemyUnit(b, b.rng, e.kind || "raiders", e.power || 3, 50 + i);
       u.aware = true;
-      if (e.factionId != null) u.factionId = e.factionId;
+      if (e.factionId != null) { u.factionId = e.factionId; armFromArsenal(state, b, u, 50 + i); } // arsenal.js / fighters.js: one of the group's people (asleep in the bunkhouse)
       const spot = doorSpot(b, doors[i % Math.max(1, doors.length)]);
       if (!spot) continue;
       u.x = spot[0]; u.y = spot[1];

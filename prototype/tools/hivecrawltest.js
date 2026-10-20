@@ -434,7 +434,8 @@ console.log("The core");
   check(num.enemy.power > map.enemy.power, `by the numbers the bosses add to the brood's power (${map.enemy.power} → ${num.enemy.power})`);
   // Fitted to the map (progression census 2026-10-09: the numbers said 80% where the map won 25%): the bosses count
   // HIVEMIND.numbersK times their flat power by the numbers (refitted 2026-10-10 beside the team's fire at the core,
-  // hivecrawl.js coreFire: numbersK 0.6 with powerTier 20, the bosses growing faster with the tier).
+  // hivecrawl.js coreFire: numbersK 0.6 with powerTier 20, the bosses growing faster with the tier; again 2026-10-19
+  // after physical rounds: 0.4 with powerTier 23).
   const cf = HC.coreForce(s2, h2), H = HC.HIVEMIND;
   check(H.numbersK > 0 && Math.abs(cf.bossPower - (H.power + H.powerTier * cf.tier + H.broodPower) * H.numbersK) < 1e-9, `the core's bosses by the numbers: ${cf.bossPower.toFixed(1)} (× ${H.numbersK}, fitted to the map)`);
 }
@@ -498,7 +499,10 @@ console.log("The autopilot");
   for (const hd of w.hordes) if (hd.hive === last.id && hd.role === "guard") hd.size = Math.min(hd.size, 40);
   const crew = [];
   for (let i = 0; i < 6; i++) { const s = makeSurvivor(w, 1); s.traits = []; s.skills.shooting = 10; s.health = 100; s.gear.weapon = { key: "shotgun", name: GEAR.shotgun.name, quality: 1 }; s.gear.armor = { key: "vest", name: GEAR.vest.name, quality: 1 }; s.location = { kind: "base", baseId: h.id }; w.survivors.push(s); crew.push(s); }
-  h.stock.ammo = Math.max(h.stock.ammo || 0, 200); h.stock.food = Math.max(h.stock.food || 0, 100); h.stock.water = Math.max(h.stock.water || 0, 80);
+  // The hub's shells as 12 gauge, not generic ammo: generic ammo set just before the launch goes along unsettled
+  // (ammo.js packRounds), so packShells puts none of it at hand, and with physical rounds (mags.js, 2026-10-18) a
+  // shotgun reloads only from the shells its holder carries (no Get shells from the team's bags).
+  h.stock.a_12ga_buck = (h.stock.a_12ga_buck || 0) + 200; h.stock.food = Math.max(h.stock.food || 0, 100); h.stock.water = Math.max(h.stock.water || 0, 80);
   const res = launchExpedition(w, { memberIds: crew.map((s) => s.id), dest: last.tile, mission: "hive", stance: "normal", supplies: { food: 30, water: 30, ammo: 150, meds: 6 } });
   let crawled = false;
   for (let i = 0; i < 24 * 30 && w.hives.includes(last); i++) { tickHour(w); if (res.party && res.party.hiveCrawl) crawled = true; }

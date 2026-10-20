@@ -15,7 +15,7 @@ import { WEAPONS } from "../sim/combat.js";
 import { calOf } from "../sim/ammo.js";
 import { gunStats } from "../sim/gunstats.js";
 import { itemDur, itemDurMax } from "../sim/crafting.js";
-import { itemLoad, packSize, SLOT_NAMES } from "../sim/inventory.js";
+import { itemLoad, packSize, SLOT_NAMES, isTwoHands } from "../sim/inventory.js";
 import { gearEffect } from "../sim/world.js";
 import { gunRounds, holderName, isRoundGun } from "../sim/gunrounds.js";
 import { rowName, rowCount, magName } from "../sim/itemnames.js";
@@ -99,6 +99,7 @@ export function itemShortTip(item, loc = null, s = null, state = null) {
   lines.push(facts.join(" · "));
   const stats = statLine(item);
   if (stats) lines.push(stats);
+  if (isTwoHands(item)) lines.push("Both hands: carried only (never a pocket, a pack or a rig)"); // the fire safe, the rifle case
   const who = holderName(st, loc);
   if (who) lines.push(loc && /^s:/.test(loc) ? `Carried by ${who}` : `In ${who}`);
   if (s && d.skill && d.req) {

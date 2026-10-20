@@ -22,7 +22,7 @@ import {
 import {
   ROUND_KEYS, isRoundKey, calOf, totalRounds, roundsIn, roundsOf, settleRec, spendAmmo, addAmmo, giveRounds, setRounds, newBox, boxesOf,
   starterLoad, enemyLoad, findRounds, themeOf, mixForCals, gunCals, packRounds, drawShots, ammoEdge, benchRounds, baseAmmo, settleAll,
-  kindShare, softMult, typeFor, loadOf, pickLoad, huntLoad, foldRounds, migrateAmmo,
+  kindShare, softMult, typeFor, loadOf, pickLoad, huntLoad, foldRounds, migrateAmmo, carriedRec, sweepBoxes,
 } from "../src/sim/ammo.js";
 import { newItem, enemyBody, itemKg } from "../src/sim/inventory.js";
 import { roundItem, amountOf } from "../src/sim/itemstack.js";
@@ -249,10 +249,12 @@ const place = (u, x, y) => { u.x = x; u.y = y; u.dead = false; u.down = false; }
   check(ok, "every enemy's load is a type of its gun's calibre");
   check(rifles > 50 && Math.abs(ap / rifles - KIT_AMMO.soldiers.rifle.ap) < 0.1, `soldiers' rifles: about ${Math.round(KIT_AMMO.soldiers.rifle.ap * 100)}% armour-piercing (${ap} of ${rifles})`);
   check(enemyLoad("raiders", "pistol", 1, 2) === enemyLoad("raiders", "pistol", 1, 2), "an enemy's load comes from dice of its own (the same every time)");
-  const u = enemyUnit(b, rng, "guards", 4, 1);
-  u.weapon = "pistol"; u.load = "hp";
+  // fighters.js: a person's body is what they carried, the rounds for their own gun among it (their kit's load).
+  let u = enemyUnit(b, rng, "guards", 4, 1);
+  for (let i = 2; i < 40 && !(calOf(u.weapon) && u.load); i++) u = enemyUnit(b, rng, "guards", 4, i);
   const body = enemyBody(new Rng(3), u, null);
-  check(body.supplies.a_9mm_hp > 0 && !body.supplies.ammo, `their body: rounds of their calibre and load (${JSON.stringify(body.supplies)})`);
+  const want = `a_${calOf(u.weapon)}_${u.load}`;
+  check(Object.keys(body.supplies).some((k) => k.startsWith(`a_${calOf(u.weapon)}_`) && body.supplies[k] > 0) && !body.supplies.ammo, `their body: rounds of their calibre and load (${want}: ${JSON.stringify(body.supplies)})`);
   const z = { kind: "zombie", weapon: "claws", id: 5, name: "Zombie 5" };
   let zb = null;
   for (let i = 0; i < 80 && !zb; i++) { const bb = enemyBody(new Rng(i), z, null); if (Object.keys(bb.supplies).some(isRoundKey)) zb = bb; }
@@ -311,8 +313,24 @@ const place = (u, x, y) => { u.x = x; u.y = y; u.dead = false; u.down = false; }
   const h = hub(st);
   setRounds(h.stock, 0);
   Object.assign(h.stock, { a_9mm_fmj: 100, a_308_fmj: 100, a_12ga_buck: 100, food: 100, water: 100 });
-  const res = launchExpedition(st, { memberIds: [a.id, c.id], dest: h.tile, mission: "move", stance: "normal", supplies: { food: 4, water: 4, ammo: 40 } });
-  check(!res.error && res.party.supplies.a_9mm_fmj === 20 && res.party.supplies.a_308_fmj === 20 && !res.party.supplies.a_12ga_buck && h.stock.a_12ga_buck === 100, `a plan's 40 ammo packed as the rounds that fit (${res.error || JSON.stringify(Object.fromEntries(ROUND_KEYS.filter((k) => res.party.supplies[k] > 0).map((k) => [k, res.party.supplies[k]])))})`);
+  // (loadout false: the plan's line alone; a launch also takes its guns' and spares' loads, checked below)
+  const res = launchExpedition(st, { memberIds: [a.id, c.id], dest: h.tile, mission: "move", stance: "normal", supplies: { food: 4, water: 4, ammo: 40 }, loadout: false });
+  // Some of each gun's share rides at hand (carrykit.js looseWant), out of the same 40.
+  const packed = res.error ? {} : { ...carriedRec([a, c]) };
+  if (!res.error) for (const k of ROUND_KEYS) if (res.party.supplies[k] > 0) packed[k] = (packed[k] || 0) + res.party.supplies[k];
+  check(!res.error && packed.a_9mm_fmj === 20 && packed.a_308_fmj === 20 && !packed.a_12ga_buck && h.stock.a_12ga_buck === 100, `a plan's 40 ammo packed as the rounds that fit, in the pack and at hand (${res.error || JSON.stringify(packed)})`);
+  // Physical rounds (mags.js, 2026-10-18): a launch also takes the rounds its guns leave loaded with (gunrounds.js
+  // loadoutRounds) out of the stores, on top of the plan's line, which stays a reserve.
+  for (const m of res.party.members) { const s0 = st.survivors.find((x) => x.id === m); if (s0) s0.location = { kind: "base", baseId: h.id }; }
+  st.parties = st.parties.filter((x) => x !== res.party);
+  for (const s of [a, c]) { for (const it of boxesOf(s)) it.dur = 0; sweepBoxes(s); } // (the first launch's rounds at hand put away)
+  setRounds(h.stock, 0);
+  Object.assign(h.stock, { a_9mm_fmj: 100, a_308_fmj: 100, a_12ga_buck: 100 });
+  const caps = [a, c].reduce((n, x) => n + ((WEAPONS[x.gear.weapon.key] || {}).cap || 0), 0);
+  const res2 = launchExpedition(st, { memberIds: [a.id, c.id], dest: h.tile, mission: "move", stance: "normal", supplies: { food: 4, water: 4, ammo: 40 } });
+  const onThem = carriedRec([a, c]);
+  const took = res2.error ? 0 : ROUND_KEYS.reduce((n, k) => n + (res2.party.supplies[k] || 0) + (onThem[k] || 0), 0);
+  check(!res2.error && took >= 40 + caps && h.stock.a_12ga_buck === 100, `...and the guns' loads on top (${took} rounds: the 40 and ${took - 40} for their guns and spares, at least the guns' ${caps})`);
   // The bench makes the calibres of the guns there, the shortest first.
   const st2 = createWorld({ seed: seed + 10, factionCount: 4 });
   const h2 = hub(st2);

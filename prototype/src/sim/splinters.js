@@ -25,6 +25,7 @@
 // Expected (tools/splintertest.js rate measures it; 2026-10-08, six Normal worlds of 8 groups, a year each on the Balanced
 // autopilot): 7 splits, about one a world-year (0 to 3 a world), five of them raider gangs and expansionists going
 // raiding, one zealot sect; the triggers were a fallen leader (3), a lost war (2) and heavy losses (2).
+import { homeMembers, fighterScore, moveMember } from "./members.js"; // the people who walk out (docs/adr/0001-ai-parity.md)
 import { foodIn } from "./foods.js"; // days of food (every kind)
 import { day, log } from "./world.js";
 import { Rng } from "./rng.js";
@@ -120,9 +121,16 @@ export function splitGroup(state, f, d = day(state)) {
   const used = new Set(state.factions.map((x) => x.name));
   const names = (S.NAMES[type] || []).filter((x) => !used.has(x));
   const name = names.length ? names[Math.floor(h(state, f.name, tickOf(f), "name") * names.length) % names.length] : null;
-  // Their own kit: n loadouts spread over the old group's best to worst, and a share of the spare kit.
+  // members.js (docs/adr/0001-ai-parity.md): n of the group's own people walk out, spread over its best to worst, with
+  // what they carry, and a share of the spare kit.
+  const walkers = [];
+  if (Array.isArray(f.people)) {
+    const ranked = homeMembers(f).sort((a, b) => fighterScore(b) - fighterScore(a) || a.id - b.id);
+    for (let j = 0; j < n && ranked.length; j++) { const s = ranked[Math.min(ranked.length - 1, Math.floor(((j + 0.5) * ranked.length) / n))]; if (!walkers.includes(s)) walkers.push(s); }
+  }
   const kit = [];
-  if (f.arsenal) {
+  if (f.arsenal && walkers.length) arsenalShareTo(state, f, (S.SPARE * n) / pop0, kit);
+  else if (f.arsenal) {
     const issue = issueKit(state, f, pop0, "home");
     for (let j = 0; j < n; j++) {
       const lo = issue[Math.min(issue.length - 1, Math.floor(((j + 0.5) * issue.length) / n))];
@@ -137,7 +145,7 @@ export function splitGroup(state, f, d = day(state)) {
     const take = Math.floor(q * Math.min(1, (S.STOCK * n) / pop0));
     if (take > 0) { stock[k] = take; f.stock[k] -= take; }
   }
-  f.pop -= n;
+  if (!walkers.length) f.pop -= n;
   if ((f.wounded || 0) > f.pop) f.wounded = f.pop;
   if (f.arsenal) f.arsenal.pop0 = f.pop;
   const why = whyOf(state, f);
@@ -152,6 +160,14 @@ export function splitGroup(state, f, d = day(state)) {
     for (const it of kit) addToArsenal(state, ng, it, "deserter");
     ng.arsenal.pop0 = ng.pop;
   }
+  if (walkers.length) {
+    // The walkers are the band: their people list is them, what they carry the band's.
+    ng.people = [];
+    ng.popSeen = 0; ng.pop = 0;
+    for (const s of walkers) moveMember(state, f, ng, s, tile, { give: (it) => removeFromArsenal(f, it, "deserted", { keepOn: true }), take: (it) => addToArsenal(state, ng, it, "deserter") });
+    if (ng.arsenal) ng.arsenal.pop0 = ng.pop;
+  }
+  ng.roundsSeeded = true; // loadouts.js: no starting rounds: only what the walkers carry and the stores they took
   ng.splitFrom = f.id;
   ng.splitDay = d;
   ng.strife = 0;

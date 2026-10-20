@@ -1,5 +1,6 @@
 // Item icons, the wear family (ui/itemart.js; the kit and the rules: ui/itemart/kit.js): melee weapons, bows and
-// crossbows, body armour, helmets and visors, plates, guards, packs, rigs, gun cases and the bicycle. Long things lie
+// crossbows, body armour, helmets and visors, plates, guards, packs, rigs, gun cases, the bicycle and the carts (a
+// wheelbarrow, a hand cart). Long things lie
 // on the diagonal, the handle bottom left and the head top right; armour, packs and guards face the viewer; helmets are
 // seen from the side, facing right. The blade and armour colours follow the battle sprites (ui/sprites.js drawWeapon,
 // drawArmor; sim/data-blades.js BLADE_LOOK).
@@ -745,13 +746,58 @@ function riflecase(p) { // a long black hard case: a handle, latches, a lock
   R(p, 7, 9, 8, 10, K.brass);
   dots(p, 2, 14, 7, "#4a4f57", 2);
 }
-function pistolcase(p) { // open: the lid's egg-crate foam, a handgun in its cut-out
-  R(p, 2, 1, 13, 5, "#3a3e45"); R(p, 3, 2, 12, 4, "#5d636b"); dots(p, 3, 12, 3, "#4a4f57", 2);
-  R(p, 1, 6, 14, 14, "#3a3e45"); lit(p, "#3a3e45");
-  R(p, 2, 7, 13, 13, "#5d636b");
-  R(p, 4, 8, 11, 9, "#1f2226"); R(p, 4, 10, 6, 12, "#1f2226"); p.set(7, 10, "#1f2226"); H(p, 5, 10, 8, "#3a3e45");
-  R(p, 13, 7, 13, 13, "#4a4f57");
-  p.set(7, 6, "#c9ced3"); p.set(8, 6, "#c9ced3");
+function pistolcase(p) { // closed (what is inside is unknown until it is opened): a small black case, its handle, two latches
+  R(p, 6, 3, 9, 3, "#2a2d33"); V(p, 6, 3, 5, "#2a2d33"); V(p, 9, 3, 5, "#2a2d33");
+  rows(p, 6, [[2, 13], [1, 14], [1, 14], [1, 14], [1, 14], [1, 14], [1, 14], [2, 13]], "#3a3e45");
+  lit(p, "#3a3e45");
+  H(p, 1, 14, 9, "#26292e"); dots(p, 3, 12, 12, "#4a4f57", 3);
+  for (const x of [3, 12]) R(p, x, 8, x, 10, "#c9ced3");
+  p.set(7, 10, K.brass); p.set(8, 10, K.brass);
+}
+
+// ---------- lock boxes and equipment cases (2026-10-19, sim/data-boxes.js) ----------
+function cashbox(p) { // a grey steel petty-cash box: the fold-down handle, a round wafer lock on the front
+  R(p, 5, 2, 10, 2, "#55595e"); V(p, 5, 2, 4, "#55595e"); V(p, 10, 2, 4, "#55595e");
+  rows(p, 5, [[1, 14], [1, 14], [1, 14], [1, 14], [1, 14], [1, 14], [1, 14], [1, 14], [1, 14]], "#8d959c");
+  lit(p, "#8d959c");
+  H(p, 1, 14, 7, "#6d7378");
+  disc(p, 7, 10, 1, "#b89a4a"); p.set(7, 10, "#3a3e45"); p.set(7, 11, "#3a3e45");
+}
+function firebox(p) { // a black fire safe: a thick door seam, a keyed handle, the carry bar on top
+  R(p, 4, 0, 11, 1, "#3a3e45"); V(p, 4, 0, 2, "#3a3e45"); V(p, 11, 0, 2, "#3a3e45");
+  rows(p, 3, [[0, 15], [0, 15], [0, 15], [0, 15], [0, 15], [0, 15], [0, 15], [0, 15], [0, 15], [0, 15], [0, 15], [0, 15], [1, 14]], "#2a2d33");
+  lit(p, "#2a2d33");
+  H(p, 1, 14, 6, "#4a4f57"); R(p, 6, 9, 9, 11, "#6d7378"); p.set(7, 10, "#c9ced3"); p.set(8, 10, "#1a1c20");
+  R(p, 11, 9, 13, 10, "#b4bcc3"); H(p, 2, 4, 13, "#c8362e");
+}
+function toolbox(p) { // a red cantilever toolbox: the handle across the lid, two latches, the trays' seams
+  R(p, 4, 1, 11, 2, "#2e3238"); V(p, 4, 1, 4, "#2e3238"); V(p, 11, 1, 4, "#2e3238");
+  rows(p, 4, [[1, 14], [1, 14], [0, 15], [0, 15], [0, 15], [0, 15], [0, 15], [0, 15], [0, 15], [0, 15], [1, 14]], "#c8362e");
+  lit(p, "#c8362e");
+  H(p, 0, 15, 7, "#8e2a20"); H(p, 0, 15, 10, "#8e2a20");
+  for (const x of [3, 12]) R(p, x, 6, x, 8, "#c9ced3");
+}
+function gearcase(p) { // a yellow-tan waterproof case: ribbed sides, two big latches, a pressure valve
+  R(p, 5, 2, 10, 3, "#2a2d33");
+  rows(p, 4, [[1, 14], [0, 15], [0, 15], [0, 15], [0, 15], [0, 15], [0, 15], [0, 15], [0, 15], [0, 15], [1, 14]], "#b89a4a");
+  lit(p, "#b89a4a");
+  H(p, 0, 15, 8, "#8a7236"); for (const x of [2, 13]) V(p, x, 5, 13, "#9a8040");
+  for (const x of [4, 10]) R(p, x, 7, x + 1, 9, "#2a2d33");
+  disc(p, 7, 12, 1, "#55595e");
+}
+
+// ---------- carts (sim/carts.js) ----------
+function wheelbarrow(p) { // a green steel tray on one wheel, two wooden handles running back to the left
+  rows(p, 3, [[2, 14], [3, 14], [4, 13], [5, 12], [6, 11]], "#4f8a3a"); lit(p, "#4f8a3a");
+  line(p, 0, 4, 6, 9, "#94683e"); line(p, 0, 5, 6, 10, "#5e3e22");
+  disc(p, 11, 12, 3, "#2a2c30"); disc(p, 11, 12, 1, "#9aa1a8");
+  line(p, 6, 8, 5, 14, "#55595e"); H(p, 4, 6, 15, "#55595e");
+}
+function handcart(p) { // a wooden two-wheeled cart: slatted bed, a long pull handle, big spoked wheels
+  R(p, 1, 4, 12, 8, "#9a6d44"); for (const x of [4, 8]) V(p, x, 4, 8, "#7a5230"); H(p, 1, 12, 4, "#b98a5a"); H(p, 1, 12, 8, "#563820");
+  line(p, 12, 6, 15, 2, "#7a5230");
+  ring(p, 4, 11, 4, "#3a2a1c"); ring(p, 11, 11, 4, "#3a2a1c");
+  for (const [cx] of [[4], [11]]) { V(p, cx, 8, 14, "#7a5230"); H(p, cx - 3, cx + 3, 11, "#7a5230"); p.set(cx, 11, "#c9ced3"); }
 }
 
 // ---------- the bicycle ----------
@@ -767,7 +813,82 @@ function bicycle(p) { // a red mountain bike: knobby wheels, a diamond frame, fl
   R(p, 7, 12, 8, 12, "#c9ced3");
 }
 
+// ---------- survival gear (2026-10-19, sim/data-survival.js) ----------
+function halligan(p) { // a forged steel bar: a fork at the foot, an adze and a pick at the head
+  stamp(p, 0, 0, [
+    "...........kkkk.",
+    "..........klllkk",
+    "...........kld.d",
+    "...........ld...",
+    "..........ld....",
+    ".........ld.....",
+    "........ld......",
+    ".......ld.......",
+    "......ld........",
+    ".....ld.........",
+    "....ld..........",
+    "...ld...........",
+    "..ld............",
+    ".ld.............",
+    "kd.k............",
+    "k...............",
+  ], { k: "#8d959c", l: "#b4bcc3", d: "#6d7378" });
+  for (const [x, y] of [[6, 9], [8, 7], [10, 5]]) p.set(x, y, "#c8362e"); // the red rings of its knurled grip
+}
+function pipewrench(p) { // a red cast-iron handle, the hook jaw and its knurled nut at the top
+  stamp(p, 0, 0, [
+    "........ssss....",
+    ".......sggggs...",
+    "........ssssgs..",
+    "............gs..",
+    "..........nnn...",
+    ".........nnnn...",
+    "........rrn.....",
+    ".......rrr......",
+    "......rrr.......",
+    ".....rrr........",
+    "....rrr.........",
+    "...rrr..........",
+    "..rrr...........",
+    ".rrr............",
+    "rrr.............",
+    "rr..............",
+  ], { s: "#8d959c", g: "#b4bcc3", n: "#6d7378", r: "#c8362e" });
+  lit(p, "#c8362e");
+}
+function leatherjacket(p) { // a black biker's jacket: the asymmetric zip, wide lapels, silver snaps
+  rows(p, 1, [[4, 6, 9, 11], [2, 13], [1, 14], [1, 14], [0, 15], [0, 15], [0, 2, 3, 12, 13, 15], [0, 2, 3, 12, 13, 15], [0, 2, 3, 12, 13, 15], [0, 2, 3, 12, 13, 15], [0, 1, 3, 12, 14, 15], [3, 12], [3, 12], [3, 12]], "#2a2622");
+  lit(p, "#2a2622");
+  line(p, 9, 3, 6, 14, "#c9ced3"); // the slanted zip
+  for (const [x, y] of [[4, 3], [11, 3], [3, 6], [12, 6]]) p.set(x, y, "#c9ced3");
+  line(p, 5, 2, 7, 6, "#4a443d"); line(p, 10, 2, 9, 5, "#4a443d"); // the lapels
+}
+function chainsleeves(p) { // a pair of butcher's chainmail gauntlets: a mesh of steel rings, a strap at the wrist
+  twin((x) => {
+    rows(p, 0, [[x + 1, x + 5], [x, x + 6], [x, x + 6], [x, x + 6], [x, x + 6], [x, x + 6], [x, x + 6], [x, x + 6], [x, x + 6], [x + 1, x + 5], [x + 1, x + 5], [x + 1, x + 5], [x + 1, x + 5], [x + 2, x + 4]], K.steel);
+    for (let y = 0; y < 14; y++) for (let i = x; i <= x + 6; i++) if ((i + y) % 2 && p.get(i, y)) p.set(i, y, K.steelD);
+    H(p, x, x + 6, 9, "#3a6fb0"); // the blue strap
+    p.set(x + 1, 1, K.glint);
+  });
+}
+function motopants(p) { // black riding trousers, grey knee and shin armour
+  rows(p, 0, [[2, 13], [2, 13], [2, 13], [2, 7, 8, 13], [2, 7, 8, 13], [2, 6, 9, 13], [2, 6, 9, 13], [2, 6, 9, 13], [2, 6, 9, 13], [2, 6, 9, 13], [2, 6, 9, 13], [2, 6, 9, 13], [2, 6, 9, 13], [2, 6, 9, 13], [2, 6, 9, 13], [1, 6, 9, 14]], "#2e3238");
+  lit(p, "#2e3238");
+  for (const x of [3, 10]) { R(p, x, 7, x + 2, 9, "#6d7378"); R(p, x, 11, x + 2, 14, "#55595e"); H(p, x, x + 2, 7, "#8d959c"); }
+  H(p, 2, 13, 1, "#c8362e");
+}
+function legrig(p) { // a thigh platform: two pistol mag pouches, an admin flap, the leg straps
+  for (const x of [5, 10]) V(p, x, 0, 3, "#2e3238");
+  rows(p, 3, [[3, 12], [2, 13], [2, 13], [2, 13], [2, 13], [2, 13], [2, 13], [2, 13], [3, 12], [4, 11]], "#9c8862"); lit(p, "#9c8862");
+  for (const x of [3, 6]) { R(p, x, 5, x + 1, 10, "#8a7856"); H(p, x, x + 1, 4, "#2a2d33"); H(p, x, x + 1, 5, "#b29e78"); }
+  R(p, 9, 6, 12, 10, "#8a7856"); H(p, 9, 12, 6, "#b29e78"); p.set(10, 8, "#c8402f");
+  for (const y of [8, 12]) { H(p, 0, 1, y, "#2e3238"); H(p, 14, 15, y, "#2e3238"); }
+}
+
 export const GEAR_ART = {
+  halligan, pipewrench, leatherjacket, chainsleeves, motopants, legrig, // survival gear
+  cashbox, firebox, toolbox, gearcase, // lock boxes and equipment cases
+  wheelbarrow, handcart, // carts (sim/carts.js)
   knife: chef, steakknife: steak, filletknife: fillet, cleaver, huntknife: hunter, survivalknife: survival, bowie, bayonet,
   combatknife: combat, shiv, pocketknife: pocket, flipknife: flick, lockback, multitool, boxcutter, balisong,
   machete, sawmachete, springmachete, kukri, katana, cutlass, sabre, broadsword,

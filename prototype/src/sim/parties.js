@@ -9,6 +9,8 @@
  * @typedef {{ vehicle?: boolean | "bike", speed?: number, footSpeed?: number | null, fuelMult?: number, progress?: number,
  *   idx?: number, fuel?: number, offroad?: number, onroad?: number, walkers?: number, cartTer?: any, maxHours?: number, startHour?: number, weather?: boolean, known?: number, used?: number }} TravelOpts
  */
+import { sendMembers } from "./members.js"; // an AI party is its people (docs/adr/0001-ai-parity.md)
+import { kitParty, packForJob } from "./loadouts.js"; // the launchers go with a raid; the rest of the job's kit
 import { teamTraitFx, appetite } from "./traits.js"; // Keen Eye: the team's sight; Glutton: the food a trip takes
 import { repairPaid, repairWaitHour } from "./repairwait.js"; // a breakdown repaired on the road: told when it is over
 import { CARRIER } from "./hiveconst.js"; // a body's weight in the car (bodyLoad)
@@ -56,6 +58,7 @@ import { nightFalls } from "./nightmarch.js"; // night on the road: make camp or
 import { taskHour, startTask, startOrder, continueQueue, resumeQueue, orderLabel, queueText, tasksDue } from "./orders.js";
 import { applyPlan, fieldHour } from "./plans.js";
 import { packSiegeKit } from "./kit.js";
+import { siegeGearHome } from "./arsenal.js"; // a group's raid brings its ladders and ram home
 import { packLights, unpackLights } from "./lights.js"; // a light each from the armory on the way out
 import { crossingsFrom } from "./crossing.js";
 import { carryBonus, itemLoad } from "./inventory.js";
@@ -72,9 +75,11 @@ import { thinIceStep } from "./rivers.js"; // frozen rivers: thin ice early and 
 import { hasPerk, checkBonus, gainXpAll, USE, hash01 } from "./skills.js";
 import { tripDone } from "./relations.js";
 import { totalRounds, spendAmmo, ROUND_KEYS, GENERIC_KEYS } from "./rounds.js"; // rounds by calibre ("ammo": any of them)
-import { packRounds, addRecord, drawTeamShots, sortFind, suppliesText, findRounds, kindTheme, roundsText } from "./ammo.js"; // a plan's "N ammo" packed as the rounds that fit
+import { packRounds, addRecord, drawTeamShots, sortFind, suppliesText, findRounds, kindTheme, roundsText, settleParty } from "./ammo.js"; // a plan's "N ammo" packed as the rounds that fit
 import { packLauncherRounds } from "./launchers.js"; // the rounds for the launchers the crew carries (section 13)
-import { packMags, packShells } from "./carrykit.js"; // magazines as items (section 15): the spares go along; a shotgun's shells at hand
+import { loadoutRounds } from "./gunrounds.js"; // the rounds their guns and spare magazines leave loaded with (physical rounds)
+import { packMags, packShells } from "./carrykit.js"; // magazines as items (section 15): the spares go along; each gun's rounds at hand
+import { SHELLS, usesInternal } from "./mags.js"; // a shotgun's shells at hand are its tube's load too
 import { noteTripHome } from "./trips.js"; // order templates and repeat trips
 import { prisonersHome } from "./prisoners.js";
 import { scavArrived, scavSearchHour, ambushHaul, lose as loseScav } from "./aiscav.js";
@@ -101,6 +106,9 @@ import { withLook, surveyErr, noteLook } from "./intelnotes.js"; // what a team 
 import { KEY_KINDS, keyKg } from "./carry.js"; // a capped water or firewood task counts its own haul (call-time only: safe in the import cycle)
 import { nomadCampAt, nomadCampArrive } from "./nomads.js"; // a nomad camp you spotted: attack it (call-time only)
 import { unpackPerson } from "./supitems.js"; // supplies carried as items, unpacked at home (call-time only: safe in the import cycle)
+import { fightSides, fightersOf, applySide } from "./groupfight.js"; // fights nobody watches: your rules
+import { cfgOf } from "./worldcfg.js"; // the run's dials: Durability loss, Fuel use
+const AI_KIND = { raider: "raiders", expansionist: "fighters", zealot: "zealots", military: "soldiers", fortress: "soldiers", traders: "guards", commune: "militia" };
 
 export const STANCES = {
   stealthy: { name: "Stealthy", speed: 0.75, events: 0.6, desc: "25% slower, 40% fewer events. Good for scouting dangerous ground." },
@@ -120,7 +128,7 @@ export const MISSIONS = {
   cull:        { name: "Cull horde",       desc: "Thin out or lure away a horde on or next to this tile." },
   hive:        { name: "Destroy hive",     desc: "Storm an infestation hive: a hard tactical battle against its brood and the Broodmother inside. Win and the hive is destroyed. Bring five or six well-armed fighters." },
   growth:      { name: "Burn the growth",  desc: "Attack a structure a hive has grown beside it (a pit, a brood chamber, a warren...): fight its guard in a small battle, or burn it with 4 fuel or 2 Molotovs (it may take two fires). Gone, the hive loses what it gave: income, a bigger guard, a kind of special dead, its Wallbreakers. Bring three or four fighters." },
-  nomads:      { name: "Attack the nomad camp", desc: "Go to a nomad camp your people spotted (nomads.js) and attack it: a battle against the band with its tier's kit (looters: clubs and pistols; survivalists: hunting rifles and bows; preppers: rifles and plate armour). Win and what they carry is yours. They move on every few days: the camp may be gone when you get there." },
+  nomads:      { name: "Attack the nomad camp", desc: "Go to a nomad camp your people spotted (nomads.js) and attack it: a battle against the band with its tier's kit (drifters: pipe spears and scrap weapons; looters: clubs and pistols; survivalists: hunting rifles and bows; preppers: rifles and plate armour). Win and what they carry is yours. They move on every few days: the camp may be gone when you get there." },
   investigate: { name: "Investigate find", desc: "Check a cache, wrecked car or abandoned camp your teams spotted." },
   getvehicle:  { name: "Recover vehicle",  desc: "Bring fuel (and a part if it is badly damaged) to get an abandoned vehicle running. A vehicle found on a map that needs work is repaired on the spot (foundcars.js)." },
   drivehome:   { name: "Drive it home",    desc: "One of the team drives a found vehicle home on their own (foundcars.js).", hidden: true },
@@ -203,7 +211,7 @@ export function planPath(state, from, to, vehicle, who = "player") {
 /** @param {State} state @param {number[]} path @param {number} [mult] */
 export function fuelForPath(state, path, mult = 1) {
   let fuel = 0;
-  for (let i = 1; i < path.length; i++) fuel += tileFuel(true, state.tiles[path[i - 1]].roadLinks.includes(path[i]), mult);
+  for (let i = 1; i < path.length; i++) fuel += tileFuel(true, state.tiles[path[i - 1]].roadLinks.includes(path[i]), mult * cfgOf(state, "fuel")); // worldcfg.js: the run's Fuel use dial
   return fuel;
 }
 
@@ -513,7 +521,7 @@ export function travelHours(state, path, { vehicle = false, speed = 1, footSpeed
     for (const tileId of stepAlong(state, sim, sp * (hours === 1 ? 1 - used : 1), weather ? startHour + hours : null, known)) {
       if (sim.vehicle !== true) continue;
       const prev = sim.path[sim.path.lastIndexOf(tileId, sim.idx) - 1];
-      const use = tileFuel(true, state.tiles[prev].roadLinks.includes(tileId), fuelMult);
+      const use = tileFuel(true, state.tiles[prev].roadLinks.includes(tileId), fuelMult * cfgOf(state, "fuel")); // worldcfg.js: the Fuel use dial
       if (f < use - 1e-9) { f = 0; sim.vehicle = false; dryAt = tileId; } // same rule as useFuel
       else f -= use;
     }
@@ -992,7 +1000,21 @@ export function launchExpedition(state, opts) {
   state.parties.push(p);
   moveFood(home, p, foodReq, { state }); // foods.js: the lots go with it (what they have left of their shelf)
   packMags(home.armory, members); // carrykit.js: spare magazines for their guns from the armory (rig pouches, pockets, then the pack)
-  if (opts.shells !== false) packShells(p.supplies, members); // carrykit.js: each shotgunner's shells at hand (a pocket or a rig pouch) out of the packed rounds, so the shotgun reloads without digging in the pack
+  // Generic rounds packed from a stock not yet settled (packRounds takes them along as they are) settle in the team
+  // first (ammo.js settleParty, as the hour's settleAll would): packShells reads the shells by their keys, so before
+  // this a team packed from generic ammo left with every shell in its bags and none at hand.
+  settleParty(state, p);
+  // Their guns and spare magazines leave loaded (gunrounds.js loadoutRounds, out of the stores after what was packed),
+  // as the team-forming window does (teamform.js: it adds them itself, loadout false). With physical rounds (mags.js,
+  // 2026-10-18) the guns are filled from the team's bags as a fight starts: without these the "ammo" line would have to
+  // fill every gun and magazine before any of it was a reserve, where a gun used to start a fight loaded for nothing.
+  // Every gun but a shotgun's first: packShells then puts those loads at hand with the loose rounds besides (carrykit.js
+  // handWant). A shotgun's after, less the shells packShells put at hand (SHELLS.CARRY: the tube's load and the rest).
+  const shellGun = (s) => { const g = s.gear && s.gear.weapon; return !!(g && SHELLS.on && SHELLS.GUNS[g.key] && usesInternal(g.key, g)); };
+  const takeLoadout = (who) => { for (const [k, q] of Object.entries(loadoutRounds(who, [home.stock]))) { home.stock[k] = (home.stock[k] || 0) - q; p.supplies[k] = (p.supplies[k] || 0) + q; } };
+  if (opts.loadout !== false) takeLoadout(members.filter((s) => !shellGun(s)));
+  if (opts.shells !== false) packShells(p.supplies, members); // carrykit.js: each gun's rounds at hand (handWant: a pocket or a rig pouch) out of the packed rounds, so it reloads without digging in the pack
+  if (opts.loadout !== false) takeLoadout(members.filter(shellGun));
   packWater(state, p, home); // worm.js: the un-purified water packed carries the eggs of the base's
   if (opts.tabs) packTablets(state, home, p); // worm.js: a tube of purification tablets for the road (when the armory has one)
   // An assault takes the hub's siege kit along (kit.js packSiegeKit: the ram, ladders, grenades into the cargo, as
@@ -1037,6 +1059,7 @@ export function sendHelpSquad(state, raidParty, target) {
 
 // ---------- AI parties ----------
 /** @param {State} state @param {Faction} f @param {string} kind @param {number} fromTile @param {number} toTile */
+export const AI_PARTY_MEDS = { SHARE: 0.5, PER: 0.5 };
 export function spawnAiParty(state, f, kind, fromTile, toTile, opts) {
   const vehicle = kind === "convoy" || !!opts.vehicle; // opts.vehicle: a scavenging party that drives out (aiscav.js)
   let res = planPath(state, fromTile, toTile, vehicle, f.id); // a bridge barricaded by someone else is closed to them (bridgeClosedTo)
@@ -1055,7 +1078,19 @@ export function spawnAiParty(state, f, kind, fromTile, toTile, opts) {
     const got = takeFood(f.stock, Math.min(foodIn(f.stock), heads * PACK.food), { eggs: false, state });
     if (got.units > 0) { p.rations = got.items; p.heads = heads; }
   }
+  // Meds for the road, as your team packs them (docs/adr/0001-ai-parity.md): up to one for every other head, at most
+  // AI_PARTY_MEDS.SHARE of the stores (what is left comes home, removeParty). Spent in a fight by their AI (combat.js aiMeds).
+  if (f.stock && (f.stock.meds || 0) >= 1 && kind !== "convoy") {
+    const heads = p.heads || aiPartyHeads(f, opts.strength, ((FACTION_TYPES[f.type] && FACTION_TYPES[f.type].arms) || 1) * (f.gear || 1));
+    const m = Math.min(Math.floor(f.stock.meds * AI_PARTY_MEDS.SHARE), Math.ceil(heads * AI_PARTY_MEDS.PER));
+    if (m >= 1) { f.stock.meds -= m; p.meds = m; }
+  }
   state.parties.push(p);
+  if (!f.outsider) {
+    const go = sendMembers(state, f, p, p.heads || aiPartyHeads(f, opts.strength, ((FACTION_TYPES[f.type] && FACTION_TYPES[f.type].arms) || 1) * (f.gear || 1))); // members.js: the people who go, with what they carry
+    kitParty(state, f, go, kind, p);
+    packForJob(state, f, go, kind, p); // loadouts.js: packed for the job (a raid's grenades, the dead's decoys and flares, scavengers' packs and tools)
+  }
   if (kind === "raid" && f.vehicles) assignRaidHumvee(state, f, p); // vehicles.js: a group's turreted Humvee comes along (lost if the raid fails)
   return p;
 }
@@ -1495,9 +1530,9 @@ function onEnterTile(state, p, tileId, hour = state.hour) {
     // The tile before this one (a fast vehicle can enter several tiles in one hour, so not always idx - 1).
     const prev = p.path[p.path.lastIndexOf(tileId, p.idx) - 1];
     const onRoad = state.tiles[prev].roadLinks.includes(tileId);
-    for (const x of partyVehicles(state, p)) wear(x, onRoad, p.burden ? p.burden.fill : 0); // every vehicle drives the tile (vehicles.js fleets)
-    // Fuel by the tile, times the car's load multiplier when it set off (load.js); bikes burn none.
-    if (!useFuel(state, p, tileFuel(p.vehicle, onRoad, fuelMultOf(p)))) {
+    for (const x of partyVehicles(state, p)) wear(x, onRoad, p.burden ? p.burden.fill : 0, cfgOf(state, "wear")); // every vehicle drives the tile (vehicles.js fleets); worldcfg.js: the Durability loss dial
+    // Fuel by the tile, times the car's load multiplier when it set off (load.js); bikes burn none. worldcfg.js: the run's Fuel use dial.
+    if (!useFuel(state, p, tileFuel(p.vehicle, onRoad, fuelMultOf(p) * cfgOf(state, "fuel")))) {
       const cars = partyVehicles(state, p).filter(isCar);
       const name = cars.length > 1 ? cars.map((x) => x.name).join(" and ") : v ? v.name : "vehicle";
       const bikesLeft = partyVehicles(state, p).filter(isBike);
@@ -2480,6 +2515,12 @@ export function removeParty(state, p) {
     if (f && f.alive && f.stock && (f.bases || []).includes(partyTile(p))) for (const [k, q] of Object.entries(p.rations)) if (q > 0) f.stock[k] = (f.stock[k] || 0) + q;
     delete p.rations;
   }
+  if (p.owner !== "player" && p.siegeGear) siegeGearHome(state, p, partyTile(p)); // arsenal.js: a raid's ladders and ram home with whoever is left, else where it ended
+  if (p.owner !== "player" && p.meds > 0) { // its meds too
+    const f = state.factions.find((x) => x.id === p.owner);
+    if (f && f.alive && f.stock && (f.bases || []).includes(partyTile(p))) f.stock.meds = (f.stock.meds || 0) + p.meds;
+    p.meds = 0;
+  }
   // Nothing may outlive the team: its cards (events, orders, conflicts) and an open trade go with it.
   for (let j = state.cards.length - 1; j >= 0; j--) if (state.cards[j].partyId === p.id) state.cards.splice(j, 1);
   if (state.trade && state.trade.partyId === p.id) state.trade = null;
@@ -2625,9 +2666,24 @@ function aiPartyHour(state, p) {
     // Hordes chew up whoever walks into them.
     const horde = state.hordes.find((h) => h.tile === tileId);
     if (horde) {
-      p.strength *= 0.75;
-      if (p.kind === "scav") for (const k of Object.keys(p.scav.got)) p.scav.got[k] *= 0.75; // and drops a share of the haul
-      horde.size = Math.max(0, horde.size - Math.round(p.strength * 0.6));
+      // groupfight.js: its people against the dead that fall on them (as on your team: a surge of the horde, its
+      // count by the land's infection, its power by the hive's toughness), by your by-the-numbers rules.
+      const pf = factionById(state, p.owner);
+      const A = pf && !pf.outsider ? fightersOf(state, pf, { party: p }) : [];
+      if (A.length) {
+        const t = state.tiles[tileId];
+        const n = Math.min(horde.size, Math.max(4, Math.round(5 + (t.infection || 0) * 14)));
+        const fight = fightSides(state, { f: pf, people: A, kind: AI_KIND[pf.type] || "raiders" }, { f: null, people: [], kind: "zombies", count: n, power: n * (1 + zombieToughness(state, tileId)) });
+        const lost = applySide(state, pf, fight.rA, A, { holder: fight.attWon ? pf : null });
+        const killed = fight.rA ? Math.min(n, Math.floor(n * fight.rA.killShare + 1e-9)) : 0;
+        horde.size = Math.max(0, horde.size - killed);
+        p.strength *= Math.max(0, A.length - lost.dead.length) / A.length;
+        if (!fight.attWon && p.kind === "scav") for (const k of Object.keys(p.scav.got)) p.scav.got[k] *= 0.75; // they ran: a share of the haul dropped
+      } else {
+        p.strength *= 0.75;
+        if (p.kind === "scav") for (const k of Object.keys(p.scav.got)) p.scav.got[k] *= 0.75; // and drops a share of the haul
+        horde.size = Math.max(0, horde.size - Math.round(p.strength * 0.6));
+      }
       if (horde.size < 5) state.hordes.splice(state.hordes.indexOf(horde), 1); // too few left to be a horde
     }
     if ((p.kind === "convoy" || p.kind === "caravan") && !caravanGuarded(state, p)) { // jobs.js: raiders leave a caravan you escort alone

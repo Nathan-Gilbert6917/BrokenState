@@ -23,7 +23,7 @@ import { fittedKg, gunMods } from "./gunmods.js";
 import { calOf, roundsOf } from "./ammo.js";
 import { CALIBERS } from "./data-ammo.js";
 import { typeFor, keyFor, withHand } from "./rounds.js";
-import { standardMag, magFitsGun, isMag, enemyMags, enemyMagCount, magLoad, takesMagItems, usesInternal, magItemLoad, SHELLS } from "./mags.js";
+import { standardMag, magFitsGun, isMag, enemyMags, enemyMagCount, magLoad, takesMagItems, usesInternal, magItemLoad, SHELLS, fittedMag } from "./mags.js";
 import { roundItem, mergeInto, canStack } from "./itemstack.js";
 import { feelFactor, bandIndex, LOAD_BANDS } from "./load.js";
 import { itemOnKg, cartOf, CART_FIGHT } from "./carts.js"; // a cart pushed in a fight: its share of the weight, a tile less a move
@@ -39,14 +39,18 @@ export const CARRY = {
   // Soldiers 18.5 (user decision 2026-10-08, "soldiers in full kit move 4, not 5"): a soldier in a plate carrier,
   // or in a rig with a helmet and a rifle, lands in the Heavy band (over 28 kg: 4 tiles); one in a plain vest with
   // a light gun can still be Medium.
-  BASE_KG: { soldiers: 18.5, escorts: 6, contractors: 8, guards: 4, raiders: 3, fighters: 4, militia: 4, zealots: 2, survivors: 3 },
+  BASE_KG: { soldiers: 18.5, escorts: 6, contractors: 8, guards: 4, raiders: 3, fighters: 4, militia: 4, zealots: 2, survivors: 3, drifters: 2 },
   THROW_KG: 0.45, MEDKIT_KG: 0.5,
   // Enemy rigs by kit: [chance, rig key] (a carrier or a tactical vest already has pouches).
-  RIG: { soldiers: [0.85, "chestrig"], escorts: [0.25, "chestrig"], contractors: [0.5, "chestrig"], raiders: [0.3, "makeshiftrig"], fighters: [0.15, "makeshiftrig"], militia: [0.15, "makeshiftrig"] },
+  RIG: { soldiers: [0.85, "chestrig"], escorts: [0.25, "chestrig"], contractors: [0.5, "chestrig"], raiders: [0.3, "makeshiftrig"], fighters: [0.15, "makeshiftrig"], militia: [0.15, "makeshiftrig"], drifters: [0.25, "makeshiftrig"] },
   TACVEST: { guards: 0.5, contractors: 0.3 }, // police and SWAT: a tactical vest instead of a plain vest
   // Packing magazines for a trip (packMags): spares a gun.
   PACK: { rifle: 4, pistol: 3 },
   START: 2, // a colonist's starting gun comes with this many spare magazines
+  // Loose rounds at hand for any gun (packShells, every trip and a base's defenders; the AI's people by the same rule,
+  // loadouts.js armRounds): a magazine's worth for a gun with a box magazine (to reload a spare by hand), twice an
+  // internal magazine for a rifle, a lever gun or a revolver (loaded by hand); a shotgun SHELLS.CARRY (mags.js).
+  LOOSE: { box: 1, internal: 2 },
   GUN_MAGS: [0.35, 0.45, 0.2], // a found gun: 0, 1 or 2 spare magazines (its standard one)
   SPARE_PLATES: 2, // the governor keeps this many spare plates at a base with a carrier in use
 };
@@ -78,9 +82,10 @@ export function bandFor(kg) {
   const i = bandIndex(kg);
   return { band: i, name: LOAD_BANDS[i].name, ...CARRY.BANDS[i] };
 }
-// combat.js playerUnit: the unit's kg (u.armLoad), mob and dash by its felt load.
+// combat.js playerUnit: the unit's kg (u.armLoad), mob and dash by its felt load. u.fieldKg: an AI person's field
+// load by kit (BASE_KG: water, food, a ruck, odds and ends; fighters.js build), weight they carry that is no item to loot.
 export function weighPlayer(u, s) {
-  const kg = battleKg(s);
+  const kg = battleKg(s) + num(u.fieldKg);
   const B = bandFor(kg * feelFactor(s));
   u.armLoad = r2(kg);
   u.mob = B.mob + fleetMob(s); // Fleet-Footed (traits.js): a tile more a move at any load
@@ -233,45 +238,80 @@ export function packMags(list, crew) {
   }
   return out;
 }
-// Shells at hand for a trip (parties.js launchExpedition, every trip of yours: the planner's and the autopilot's) and
-// for a base's defenders as a fight at its walls starts (combat.js createBattle, out of the base's stock): a shotgun
-// (mags.js SHELLS) loads only from the shells on the person, so each shotgunner takes up to SHELLS.CARRY of the shells
-// of its load out of the team's packed rounds (supplies: the factory round, then the bench's) into a pocket or a rig
-// pouch: onto a stack of them there first, else a free pocket, else a free admin pouch. What does not fit stays where
-// it was (the pack, the stock). Returns the lines for the log ("24 shells at hand (Ann)").
+// How many loose rounds of its load a gun's carrier keeps at hand (CARRY.LOOSE; a shotgun: SHELLS.CARRY).
+export function looseWant(gun) {
+  const w = gun && WEAPONS[gun.key];
+  if (!w || !calOf(gun.key)) return 0;
+  if (SHELLS.on && SHELLS.GUNS[gun.key] && usesInternal(gun.key, gun)) return SHELLS.CARRY;
+  const fit = fittedMag(gun), m = gunMods(gun);
+  const cap = Math.max(1, Math.round(((fit ? MAGAZINES[fit.key].cap : w.cap) || 1) * (m.capMult ?? 1)) + (m.cap || 0));
+  return (usesInternal(gun.key, gun) ? CARRY.LOOSE.internal : CARRY.LOOSE.box) * cap;
+}
+// The rounds at hand a trip packs for a person's gun: as a fight starts the gun and its empty spare magazines fill out
+// of their holder's pockets, rig and pack first (mags.js fillUnit), so what they will draw is packed at hand besides the
+// loose rounds (looseWant), which are what stays there to reload with. A gun with its own rounds on it, or a spare
+// already loaded, draws nothing. A shotgun's SHELLS.CARRY is the tube's load and the rest at hand already.
+export function handWant(s, gun) {
+  const loose = looseWant(gun);
+  if (!(loose > 0) || (SHELLS.on && SHELLS.GUNS[gun.key] && usesInternal(gun.key, gun))) return loose;
+  const w = WEAPONS[gun.key], fit = fittedMag(gun), m = gunMods(gun);
+  let n = gun.loaded ? 0 : Math.max(1, Math.round(((fit ? MAGAZINES[fit.key].cap : w.cap) || 1) * (m.capMult ?? 1)) + (m.cap || 0));
+  const cal = calOf(gun.key), key = keyFor(cal, typeFor(cal, gun.load)); // a spare set to a round of its own (mags.js magItemLoad) loads that, not these
+  for (const x of carriedSpots(s)) if (x.item && x.item !== fit && isMag(x.item) && !Array.isArray(x.item.stack) && !x.item.unloaded && magFitsGun(gun.key, x.item.key) && keyFor(cal, typeFor(cal, x.item.load || gun.load)) === key) n += MAGAZINES[x.item.key].cap;
+  return loose + n;
+}
+// Rounds at hand for a trip (parties.js launchExpedition, every trip of yours: the planner's and the autopilot's) and
+// for a base's defenders as a fight at its walls starts (combat.js createBattle, out of the base's stock): a Reload
+// draws only on what is on the person (mags.js, physical rounds), so each one with a gun takes its rounds at hand
+// (handWant: what the gun and its empty spares fill with as the fight starts, and the loose rounds besides, looseWant:
+// a shotgun's shells, a rifle's or a revolver's handfuls, a magazine's worth for a box-magazine gun) of its load out of
+// the team's packed rounds (supplies: the factory round, then the bench's) into a pocket or a rig pouch: onto a stack
+// of them there first, else a free pocket, else a free pouch. In two rounds over the crew, every gun's load first, then
+// the loose rounds, so a short stock loads each gun before anyone's spares, as the fight's fill does. What does not fit
+// stays where it was (the pack, the stock). Returns the lines for the log ("24 shells at hand (Ann)", "10 rounds at
+// hand (Bo)").
 /** @param {Record<string, number>} supplies @param {any[]} crew */
 export function packShells(supplies, crew) {
   const out = [];
   if (!supplies) return out;
+  const plan = [];
   for (const s of crew) {
     const gun = s && s.gear && s.gear.weapon;
-    if (!gun || !SHELLS.on || !SHELLS.GUNS[gun.key] || !usesInternal(gun.key, gun)) continue;
-    const cal = calOf(gun.key);
-    if (!cal) continue;
+    const cal = gun ? calOf(gun.key) : null;
+    if (!cal || !WEAPONS[gun.key]) continue;
+    const full = handWant(s, gun);
+    if (!(full > 0)) continue;
     ensureInv(s);
-    const keys = withHand(keyFor(cal, typeFor(cal, gun.load)));
-    const atHand = () => carriedSpots(s).filter((x) => (x.where === "pocket" || x.where === "rig") && x.item && keys.includes(x.item.key)).reduce((a, x) => a + Math.max(0, Math.floor(num(x.item.dur))), 0);
-    let want = SHELLS.CARRY - atHand(), moved = 0;
-    for (const key of keys) {
-      const q = Math.min(want, Math.max(0, Math.floor(num(supplies[key]))));
-      if (!(q > 0)) continue;
-      const it = roundItem(key, q);
-      if (!it) continue;
-      for (const x of carriedSpots(s)) if ((x.where === "pocket" || x.where === "rig") && canStack(x.item, it)) mergeInto(x.item, it);
-      let put = q - Math.max(0, Math.floor(num(it.dur))); // onto the stacks already at hand
-      if (num(it.dur) >= 1) {
-        const pi = s.pockets.indexOf(null);
-        const rp = rigPouches(s), kinds = rp ? pouchesOf(rigOf(s)) : [];
-        const ri = rp ? kinds.findIndex((k, j) => !rp[j] && !pouchReason(it, k)) : -1;
-        if (pi >= 0) s.pockets[pi] = it;
-        else if (ri >= 0) rp[ri] = it;
-        if (pi >= 0 || ri >= 0) put += Math.floor(num(it.dur)); // else nowhere at hand: they stay in the pack
-      }
-      supplies[key] -= put; moved += put; want -= put;
-      if (want <= 0) break;
-    }
-    if (moved > 0) out.push(`${moved} shells at hand (${String(s.name).split(" ")[0]})`);
+    const shells = !!(SHELLS.on && SHELLS.GUNS[gun.key] && usesInternal(gun.key, gun));
+    const first = shells ? Math.min(full, WEAPONS[gun.key].cap || 0) : full - looseWant(gun); // the gun's (and spares') load
+    plan.push({ s, gun, full, first, keys: withHand(keyFor(cal, typeFor(cal, gun.load))), moved: 0 });
   }
+  for (const pass of ["first", "full"]) {
+    for (const e of plan) {
+      const { s, keys } = e;
+      const atHand = carriedSpots(s).filter((x) => (x.where === "pocket" || x.where === "rig") && x.item && keys.includes(x.item.key)).reduce((a, x) => a + Math.max(0, Math.floor(num(x.item.dur))), 0);
+      let want = e[pass] - atHand;
+      for (const key of keys) {
+        if (want <= 0) break;
+        const q = Math.min(want, Math.max(0, Math.floor(num(supplies[key]))));
+        if (!(q > 0)) continue;
+        const it = roundItem(key, q);
+        if (!it) continue;
+        for (const x of carriedSpots(s)) if ((x.where === "pocket" || x.where === "rig") && canStack(x.item, it)) mergeInto(x.item, it);
+        let put = q - Math.max(0, Math.floor(num(it.dur))); // onto the stacks already at hand
+        if (num(it.dur) >= 1) {
+          const pi = s.pockets.indexOf(null);
+          const rp = rigPouches(s), kinds = rp ? pouchesOf(rigOf(s)) : [];
+          const ri = rp ? kinds.findIndex((k, j) => !rp[j] && !pouchReason(it, k)) : -1;
+          if (pi >= 0) s.pockets[pi] = it;
+          else if (ri >= 0) rp[ri] = it;
+          if (pi >= 0 || ri >= 0) put += Math.floor(num(it.dur)); // else nowhere at hand: they stay in the pack
+        }
+        supplies[key] -= put; e.moved += put; want -= put;
+      }
+    }
+  }
+  for (const e of plan) if (e.moved > 0) out.push(`${e.moved} ${SHELLS.GUNS[e.gun.key] ? "shells" : "rounds"} at hand (${String(e.s.name).split(" ")[0]})`);
   return out;
 }
 // A starting colonist's gun: CARRY.START spare standard magazines (a rig pouch, the pack, a pocket while two stay free
@@ -358,6 +398,18 @@ const CALIBRE_KIT = [
   [AREA_KIT.gunshop, { speedloader44: 0.6 }],
 ];
 for (const [row, add] of CALIBRE_KIT) Object.assign(row.items, add);
+// The survival guns of 2026-10-19 (data-kit.js SURV_MAGS, SURV_CLIPS): the Uzi's magazines at gun stores, police
+// armouries and on raiders' tables, the takedown .22's and the SKS's stripper clips at gun stores, gun counters and traders.
+const SURV_KIT = [
+  [SITE_KIT.gunstore, { mag_uzi_32: 0.3, mag_uzi_20: 0.2, mag_ar7_8: 0.6, stripper762: 1 }],
+  [SITE_KIT.police, { mag_uzi_32: 0.2 }],
+  [AREA_KIT.armory, { mag_uzi_32: 0.15 }],
+  [AREA_KIT.gunshop, { mag_ar7_8: 0.4, stripper762: 0.8, mag_uzi_20: 0.15 }],
+  [WARE_KIT.raider, { mag_uzi_32: 0.4, stripper762: 0.6 }],
+  [WARE_KIT.traders, { stripper762: 0.5, mag_ar7_8: 0.3 }],
+  [WARE_KIT.merchants, { mag_uzi_32: 0.2, stripper762: 0.4 }],
+];
+for (const [row, add] of SURV_KIT) Object.assign(row.items, add);
 function pickW(items, r) {
   const keys = Object.keys(items).filter((k) => GEAR[k]).sort();
   const tot = keys.reduce((a, k) => a + items[k], 0);

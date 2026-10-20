@@ -23,7 +23,9 @@ import { CUSTOM_POINTS, skillCost, nextLevelCost, itemPoints, loosePoints, slotP
 import { TRAIT_TIERS, traitPoints, traitTier, tierCount } from "../src/sim/traits.js";
 import { START_GEAR, carryList, clearStartGear, sanitizeStartGear, trunkKg } from "../src/sim/startgear.js";
 import { allCarried, packOf, rigPouches } from "../src/sim/inventory.js";
-import { newRunScreen, crewSnapshot, ironmanCrew, crewCustomized, crewWithBackground, blankCrew, LOOK_ACTIONS } from "../src/ui/newgame.js";
+import { newRunScreen, crewSnapshot, ironmanCrew, crewCustomized, crewWithBackground, blankCrew, LOOK_ACTIONS, LOOK_CHANGE_ACTIONS } from "../src/ui/newgame.js";
+import { maxFor } from "../src/sim/custompoints.js";
+import { assignStartingRoles } from "../src/sim/world.js";
 import { startGearEditor, SG_ACTIONS, SG_CHANGE, loadDice, startVehicleInfo } from "../src/ui/startgear.js";
 import { traitPickerHtml, traitChips } from "../src/ui/traitpick.js";
 import { setCustomLibrary, presetToCustom, backgroundEditor, BG_ACTIONS } from "../src/ui/backgrounds.js";
@@ -351,7 +353,7 @@ section("Ironman, the seed's world, the screen");
   const html = newRunScreen(st, UI());
   check(new RegExp(`data-action="nr-points"[^>]*value="${CUSTOM_POINTS.DEF}"`).test(html) && (html.match(/class="ptsbar/g) || []).length === 6 && (html.match(/data-action="sg-dice"/g) || []).length === 6 && (html.match(/data-action="sg-blank"/g) || []).length === 6, "Customize: Points each, a points bar, Start from the dice and Clear on every card");
   const off = newRunScreen(createWorld({ seed: 42, factionCount: 5 }), { ...UI(), freeEdit: false });
-  check(/data-action="nr-points"[^>]*disabled/.test(off) && !/class="ptsbar/.test(off) && /data-action="nr-skills"/.test(off), "Customize off: the old screen (the box greyed, the skill-point pool, Randomize skills)");
+  check(!/data-action="nr-points"/.test(off) && !/data-action="nr-ownpoints"/.test(off) && !/data-action="bg-open"/.test(off) && !/class="ptsbar/.test(off) && /data-action="nr-skills"/.test(off), "Customize off: the old screen (Points each, their own points and Backgrounds… hidden, the skill-point pool, Randomize skills)");
   check(/class="chip trait t-(good|bad|neutral)"/.test(off), "the cards' trait chips coloured by kind");
   const css = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
   check(/--t-good:/.test(css) && /--t-bad:/.test(css) && /--t-neutral:/.test(css) && /:root\.cb \{ --t-good:/.test(css) && /\.chip\.trait\.t-bad/.test(css), "the colours are palette tokens, with the colour-blind palette's own");
@@ -386,6 +388,49 @@ section("Start, save and load, the first days");
     try { while (day(ld) <= 4 && !ld.gameOver) { autopilotResolve(ld); tickHour(ld); } } catch (e) { err = e; }
     check(!err, `${mode}: four days under the autopilot${err ? `: ${err.stack.split("\n").slice(0, 3).join(" | ")}` : ""}`);
   }
+}
+
+section("One colonist's own points (2026-10-19): theirs alone; Points each again puts everyone back on it");
+for (const mode of ["normal", "hardcore"]) {
+  const st = world(42, { mode, crew: blankCrew(world(42, { mode })) });
+  const ui = { started: false, freeEdit: true, ironman: false, worldSize: "normal", factionCount: 5, nrMsg: "" };
+  const [a, b] = st.survivors;
+  check(maxFor(st, a) === CUSTOM_POINTS.DEF && maxFor(st, b) === CUSTOM_POINTS.DEF, `${mode}: everyone on Points each to begin with`);
+  LOOK_CHANGE_ACTIONS["nr-ownpoints"](st, ui, { value: "140", dataset: { id: String(a.id) } });
+  check(a.ownMax === 140 && maxFor(st, a) === 140 && pricePerson(st, a).max === 140 && pricePerson(st, b).max === CUSTOM_POINTS.DEF && b.ownMax === undefined, `${mode}: their own max is theirs; the others keep the crew's`);
+  a.skills.shooting = 20; a.skills.medicine = 20; a.skills.scouting = 20; a.skills.stealth = 15; // 125 points of skills
+  b.skills = { ...a.skills };
+  check(!overBudget(st).some((x) => x.s === a) && overBudget(st).some((x) => x.s === b), `${mode}: priced against each one's own max (${pricePerson(st, a).total}/${pricePerson(st, a).max}, ${pricePerson(st, b).total}/${pricePerson(st, b).max})`);
+  const html = newRunScreen(st, ui);
+  check(new RegExp(`data-action="nr-ownpoints" data-id="${a.id}" value="140"`).test(html) && new RegExp(`data-action="nr-ownpoints" data-id="${b.id}" value="${CUSTOM_POINTS.DEF}"`).test(html) && /own; crew/.test(html), `${mode}: each card shows its own max`);
+  const re = createWorld({ seed: 42, factionCount: 5, crewRoll: ROLL, mode, crew: crewSnapshot(st) });
+  re.pointsMax = st.pointsMax;
+  check(re.survivors[0].ownMax === 140 && re.survivors[1].ownMax === undefined, `${mode}: kept through a rebuild`);
+  LOOK_CHANGE_ACTIONS["nr-ownpoints"](st, { ...ui, freeEdit: false }, { value: "10", dataset: { id: String(b.id) } });
+  check(b.ownMax === undefined, `${mode}: not outside Customize`);
+  // main.js nr-points: Points each set again, every colonist back on it.
+  const main = readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
+  check(/"nr-points":[\s\S]{0,240}delete s\.ownMax/.test(main), "main.js: Points each clears everyone's own max");
+  for (const s of st.survivors) delete s.ownMax;
+  check(st.survivors.every((s) => maxFor(st, s) === st.pointsMax), `${mode}: then everyone is on Points each again`);
+  clearStartGear(st);
+  check(st.survivors.every((s) => !("ownMax" in s)), `${mode}: Start takes it off`);
+}
+
+section("A normal start's crew: 1–8 at the hub (six by default)");
+{
+  const six = createWorld({ seed: 42, factionCount: 5 }), dflt = createWorld({ seed: 42, factionCount: 5, startPeople: 6 });
+  check(six.survivors.length === 6 && JSON.stringify(six.survivors.map((s) => [s.name, s.skills, s.gear.weapon && s.gear.weapon.key])) === JSON.stringify(dflt.survivors.map((s) => [s.name, s.skills, s.gear.weapon && s.gear.weapon.key])), "six when left out, the same world as 6");
+  for (const n of [1, 4, 7, 8]) {
+    const w = createWorld({ seed: 42, factionCount: 5, startPeople: n });
+    check(w.survivors.length === n && w.startPeople === n && w.survivors.every((s) => s.gear.weapon && s.location && s.location.kind === "base") && w.survivors.filter((s) => s.leader).length === 1, `${n} at the hub, each armed, one leader`);
+    check(n > 4 ? w.bases[0].crowdNote && w.bases[0].crowdNote.over === n - 4 : !w.bases[0].crowdNote, `${n}: the town hall's four beds (${n > 4 ? `${n - 4} over` : "room for all"})`);
+    assignStartingRoles(w);
+    let err = null;
+    try { for (let h = 0; h < 48; h++) tickHour(w); } catch (e) { err = e; }
+    check(!err, `${n}: two days run${err ? `: ${err.message}` : ""}`);
+  }
+  check(createWorld({ seed: 42, factionCount: 5, startPeople: 12 }).survivors.length === 8 && createWorld({ seed: 42, factionCount: 5, startPeople: 0 }).survivors.length === 1, "out of range: clamped to 1–8");
 }
 
 console.log(`\n${pass} passed, ${fail} failed (${((Date.now() - t0) / 1000).toFixed(1)} s)`);

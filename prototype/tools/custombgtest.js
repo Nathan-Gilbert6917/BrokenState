@@ -166,7 +166,7 @@ section("The new-run screen: Customize, and Ironman locks it");
   const st = hc(42, { crewRoll: 777, customBackgrounds: customLibrary() });
   const ui = { started: false, worldSize: "normal", factionCount: 5, startPeople: 3, ironman: false, freeEdit: false };
   let html = newRunScreen(st, ui);
-  check(/data-action="nr-free"/.test(html) && !/data-action="nr-bg"/.test(html) && !/data-action="nr-trait"/.test(html) && /data-action="bg-open"(?![^>]*disabled)/.test(html), "Customize off: the box and Backgrounds…, no pickers");
+  check(/data-action="nr-free"/.test(html) && !/data-action="nr-bg"/.test(html) && !/data-action="nr-trait"/.test(html) && !/data-action="bg-open"/.test(html), "Customize off: the box, Backgrounds… hidden, no pickers");
   ui.freeEdit = true;
   html = newRunScreen(st, ui);
   check((html.match(/data-action="nr-bg"/g) || []).length === 3 && /<optgroup label="Custom"><option value="c_1"/.test(html) && /Dice \(/.test(html), "Customize on: a background select each (the dice, the presets, the custom ones)");
@@ -199,7 +199,7 @@ section("The new-run screen: Customize, and Ironman locks it");
   // Ironman: everything locked.
   ui.ironman = true;
   html = newRunScreen(re2, ui);
-  check(/data-action="nr-free" disabled/.test(html) && /data-action="bg-open" disabled/.test(html) && !/data-action="nr-bg"/.test(html) && !/data-action="nr-trait"/.test(html), "Ironman: Customize and Backgrounds… greyed out, no pickers");
+  check(/data-action="nr-free" disabled/.test(html) && !/data-action="bg-open"/.test(html) && !/data-action="nr-bg"/.test(html) && !/data-action="nr-trait"/.test(html), "Ironman: Customize greyed out, Backgrounds… hidden, no pickers");
   check(!/data-action="nr-skill"[^>]*data-d="1" (?!disabled)/.test(html) && /Ironman: as rolled/.test(html), "Ironman: every skill button greyed out");
   const r0 = re2.survivors[2], sk0 = JSON.stringify(r0.skills);
   LOOK_ACTIONS["nr-skill"](re2, ui, { id: r0.id, k: "shooting", d: 1 });

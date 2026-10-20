@@ -96,6 +96,19 @@ section("A forest away from water: hunt, forage, wood, camp; no fishing, no wate
     // No weapon: the hunt is there but disabled with the reason.
     check(!!hunt.disabled, `hunt disabled without a weapon (${hunt.disabled})`);
     check(!item(m, "forage").disabled, "forage needs nothing");
+    // Scavenge / raid is always offered on land (2026-10-19), greyed out with the reason when nothing is known to raid.
+    const sc = item(m, "mission:scavenge");
+    check(!!sc && /Scavenge \/ raid/.test(sc.label) && (!!sc.disabled || !!sc.seq.length), `forest: Scavenge / raid offered (${sc && sc.disabled})`);
+    // All orders (folded): every order the team can take for the tile not shown above, and the team panel.
+    check(!m.items.some((it) => it.group === "All orders"), "All orders folded by default");
+    const ma = teamTileMenu(state, { ctxAll: true }, p, forest);
+    const all = ma.items.filter((it) => it.group === "All orders");
+    check(all.some((it) => it.key === "panel" && it.special === "panel"), "All orders: the team panel");
+    check(new Set(ma.items.map((it) => it.key)).size === ma.items.length, `All orders: no item twice (${ma.items.map((it) => it.key).join(",")})`);
+    const html = teamCtxHtml(state, { ctxAll: true }, ma);
+    check(/data-action="tc-all"/.test(html) && /▾ All orders/.test(html) && /data-key="panel"/.test(html) && /▸ All orders/.test(teamCtxHtml(state, {}, m)), "the All orders fold renders, open and shut");
+    let opened = null;
+    check(runTeamAction(state, { ctxAll: true }, { id: p.id, tile: forest, key: "panel", mode: "replace" }, { "xp-open": (d) => { opened = d.id; } }) === "" && opened === p.id, "the team panel item opens the team's panel");
   }
 }
 

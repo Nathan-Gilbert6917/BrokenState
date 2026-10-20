@@ -397,7 +397,7 @@ function cold(ctx) {
   for (let i = 0; i < ctx.days; i++) {
     if (i === 0) { temps.push({ t: null, conf: 1 }); continue; } // today: the day's own (heatUse(state, base))
     const f = fc[i - 1] || fc[fc.length - 1];
-    temps.push(f ? { t: (f.hi + f.lo) / 2, conf: i <= ctx.range ? f.confidence : 0.4 } : { t: 10, conf: 0.3 });
+    temps.push(f ? { t: (f.hi + f.lo) / 2, lo: f.lo, conf: i <= ctx.range ? f.confidence : 0.4 } : { t: 10, lo: 10, conf: 0.3 });
   }
   for (const b of peopled(state)) {
     if (b.tier === 0) continue; // a shelter's fire keeps it (and its own fire alert)
@@ -407,9 +407,9 @@ function cold(ctx) {
     }
     const wn = woodNeed(state, b);
     let heat = Math.max(0, b.stock.wood || 0) * HEAT.wood + Math.max(0, b.stock.fuel || 0) * 0.5;
-    const daily = (wn.boiler + wn.kitchen) * HEAT.wood;
+    const daily = (wn.boiler + wn.kitchen + wn.fire) * HEAT.wood;
     for (let i = 0; i < ctx.days; i++) {
-      const use = i === 0 ? heatUse(state, b).total : heatRateAt(temps[i].t) * heatUse(state, b).n;
+      const use = i === 0 ? heatUse(state, b).total : heatRateAt(temps[i].t, temps[i].lo) * heatUse(state, b).n; // the nights' fires too (fire-nights)
       heat -= use + daily;
       if (use > 0 && heat < 0) {
         ctx.add({

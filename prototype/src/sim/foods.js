@@ -32,6 +32,7 @@
 // ingredient (a cooking bill takes it: cooking.js CLASSES), until (an early-only shop item: days after the
 // outbreak it can still be found), shopOnly (only shops have it: a new lot is as old as the outbreak), moodLift (a meal: wave 2's mood ladder), desc.
 import { Rng } from "./rng.js";
+import { cfgOf } from "./worldcfg.js"; // the run's dials: Food spoilage
 
 export const DAY_KCAL = 2000;
 // Stable food (shelf ≥ STABLE_DAYS) needs no cold room: it sits in any dry corner (storage.js). The rest fills the
@@ -450,11 +451,12 @@ export function ageLots(h, days, factor, state = null) {
   const L = lotsOf(h) ? syncLots(h, state) : null;
   const out = {};
   if (!L) return out;
+  const spoilMult = cfgOf(state, "spoil");
   for (const k of Object.keys(L)) {
     const f = FOODS[k];
     const arr = L[k];
     for (const l of arr) {
-      l.left -= Math.max(0, factor(k, f, l)) * days;
+      l.left -= Math.max(0, factor(k, f, l)) * days * spoilMult; // worldcfg.js: the run's Food spoilage dial
       if (l.left <= 0) { out[k] = (out[k] || 0) + l.q; st[k] = Math.max(0, (st[k] || 0) - l.q); l.q = 0; }
     }
     const a = arr.filter((l) => l.q > EPS);

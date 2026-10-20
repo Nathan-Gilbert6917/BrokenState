@@ -8,7 +8,7 @@
 import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, tickHour, hub, atBase, day, makeSurvivor, newId, removeBase, snapshot } from "../src/sim/world.js";
 import { GEAR } from "../src/sim/data.js";
-import { addBuilding, plotsUsed, plotCap, count, underAttack } from "../src/sim/buildings.js";
+import { addBuilding, addRing, piecesOf, isPiece, wallTier, plotsUsed, plotCap, count, underAttack } from "../src/sim/buildings.js";
 import { launchExpedition, partyMembers, outpostName, orderOptions, planPath, giveOrder, missionProblem, MISSIONS } from "../src/sim/parties.js";
 import { recomputeOwnership, attitude } from "../src/sim/factions.js";
 import { setAutopilot, occupyCandidate, doomedOutpost, autopilotDaily } from "../src/sim/autopilot.js";
@@ -57,21 +57,22 @@ const roundTrip = (st) => deserializeState(JSON.parse(JSON.stringify(serializeSt
 
 // ======================================================================================
 section("Your lost outpost stands empty with its buildings and stores");
-let lost; // { st, tile, name } for the next section
+let lost, ring, nB; // { st, tile, name } for the next section; the wall's pieces and the buildings in all
 {
   const st = world();
   const h = hub(st);
   const tile = nearFree(st, h.tile, 3, 6);
   st.tiles[tile].infection = 0;
   const b = outpost(st, tile);
-  const w = addBuilding(b, "walls"); w.wear = 20;
+  ring = addRing(b, 1, 20); // the wall: a ring of wooden pieces (buildings.js), worn
+  nB = ring.length + 3;
   addBuilding(b, "well");
   const bunk = addBuilding(b, "bunkhouse"); bunk.broken = { day: 1, cause: "raid" }; bunk.wear = 100;
   addBuilding(b, "craftbench");
   const name = b.name;
   removeBase(st, b, "was abandoned");
   const rec = G.abandonedAt(st, tile);
-  check(rec && rec.from === "player" && rec.buildings.length === 4, `the record keeps its 4 buildings (${rec && rec.buildings.length})`);
+  check(rec && rec.from === "player" && rec.buildings.length === nB, `the record keeps its ${nB} buildings: the wall's pieces and 3 more (${rec && rec.buildings.length})`);
   check(rec && rec.works.walls === 1 && rec.works.water === 1 && rec.works.bench === 1 && !rec.works.beds, `its works for the groups: ${JSON.stringify(rec && rec.works)} (the broken bunkhouse counts for nothing)`);
   check(rec && Math.abs(food(rec) - 30) < 1e-6 && rec.stock.scrap === 15 && !rec.stock.water, `half its stores stay, no water (${JSON.stringify(rec && rec.stock)})`);
   check(st.log.some((l) => /Occupy it/.test(l.text || l)), "the log says it can be occupied");
@@ -125,11 +126,11 @@ section("Reoccupying it: the mission, the card, the fight, the buildings and sto
   check(!!b, "the base is yours again");
   if (b) {
     check(b.name === name && b.type === "outpost", `under its old name, an outpost (${b.name})`);
-    check(b.buildings.length === 4, `its 4 buildings stand (${b.buildings.map((x) => x.type).join(", ")})`);
+    check(b.buildings.length === nB, `its buildings stand (${b.buildings.length}: the wall's ${ring.length} pieces, ${b.buildings.filter((x) => !isPiece(x.type)).map((x) => x.type).join(", ")})`);
     const bk = b.buildings.find((x) => x.type === "bunkhouse");
     check(bk && bk.broken, "the broken bunkhouse is still broken (repair it)");
-    const wl = b.buildings.find((x) => x.type === "walls");
-    check(wl && wl.wear === 20, `the walls kept their wear (${wl && wl.wear})`);
+    const wl = piecesOf(b);
+    check(wl.length === ring.length && wl.every((x) => x.wear === 20) && wallTier(b) === 1, `the wall kept its pieces and their wear (${wl.length}, ${wl[0] && wl[0].wear})`);
     check(food(b) >= food(rec) && b.stock.scrap >= rec.stock.scrap, `the stores left there are its stock (food ${food(b)}, scrap ${b.stock.scrap})`);
     check(atBase(st, b.id).length === squad.filter((s) => s.alive).length, `the team lives there (${atBase(st, b.id).length})`);
     check(!G.abandonedAt(st, tile) && !st.parties.includes(p), "the record and the team are gone");
@@ -138,7 +139,7 @@ section("Reoccupying it: the mission, the card, the fight, the buildings and sto
     // Save and load the base moved into.
     const l = roundTrip(st);
     const lb = l.bases.find((x) => x.tile === tile);
-    check(lb && lb.buildings.length === 4 && lb.occupiedFrom && lb.buildings.find((x) => x.type === "bunkhouse").broken, "save/load: the base, its buildings and damage");
+    check(lb && lb.buildings.length === nB && lb.occupiedFrom && lb.buildings.find((x) => x.type === "bunkhouse").broken, "save/load: the base, its buildings and damage");
   }
 }
 
@@ -156,7 +157,7 @@ section("A group's base: its works as buildings, within the plots");
   const b = st.bases.find((x) => x.tile === tile);
   check(b && st.bases.length === before + 1 && b.type === "outpost", "the empty base is your outpost");
   if (b) {
-    check(count(b, "walls") === 3, `7 wall points: 3 wall sections (${count(b, "walls")})`);
+    check(!count(b, "walls") && wallTier(b) === 4 && piecesOf(b, ["gate"]).length === 4, `7 wall points: 3 sections, a ring of tier-4 pieces (buildings.js WALL_TIERS, addRing; tier ${wallTier(b)})`);
     check(b.buildings.filter((x) => x.type === "farm_plot").length === 2 && count(b, "well") === 1 && count(b, "workbench") === 1, "fields as farm plots, a well, the workshop as a workbench");
     check(plotsUsed(b, "building") <= plotCap(b, "building"), `building plots ${plotsUsed(b, "building")}/${plotCap(b, "building")}: what does not fit is rubble`);
     check(/beyond saving/.test(text), `the log says what was lost (${text.slice(0, 120)}…)`);
@@ -264,9 +265,10 @@ section("The groups' side: moving in costs people; the former owner minds; an em
   const wear0 = rec.buildings.reduce((a, x) => a + (x.wear || 0), 0);
   for (let i = 0; i < G.ABANDON.DECAY; i++) { daysOn(st2, 1); G.groupWorldWorld(st2); }
   const wear1 = rec.buildings.reduce((a, x) => a + (x.wear || 0), 0);
-  check(wear1 === wear0 + G.ABANDON.ROT, `a month on, one building took ${G.ABANDON.ROT} wear (${wear0} → ${wear1})`);
+  const well = rec.buildings.find((x) => x.type === "well"), wall = rec.buildings.filter((x) => isPiece(x.type));
+  check(wear1 > wear0 && ((well.wear || 0) === G.ABANDON.ROT ? wall.every((x) => !x.wear) : wall.every((x) => x.wear === G.ABANDON.ROT)), `a month on, one building (or the whole wall, its pieces together) took ${G.ABANDON.ROT} wear (${wear0} → ${wear1})`);
   for (let i = 0; i < G.ABANDON.DECAY * 6; i++) { daysOn(st2, 1); G.groupWorldWorld(st2); }
-  check(!G.abandonedAt(st2, tile2) || rec.buildings.length < 2, `seven months on it has fallen in (${G.abandonedAt(st2, tile2) ? rec.buildings.length + " left" : "gone"})`);
+  check(!G.abandonedAt(st2, tile2) || !rec.buildings.some((x) => x.type === "well") || !rec.buildings.some((x) => isPiece(x.type)), `seven months on it has fallen in (${G.abandonedAt(st2, tile2) ? rec.buildings.length + " left" : "gone"})`);
 }
 
 // ======================================================================================
@@ -275,12 +277,12 @@ section("Save and load an empty base");
   const st = world(seed + 6);
   const tile = nearFree(st, hub(st).tile, 3, 6);
   const b = outpost(st, tile);
-  addBuilding(b, "walls").wear = 33;
+  const ring6 = addRing(b, 1, 33);
   removeBase(st, b, "was abandoned");
   G.abandonedAt(st, tile).thinned = { day: day(st), n: 1 };
   const l = roundTrip(st);
   const r = G.abandonedAt(l, tile);
-  check(r && r.buildings.length === 1 && r.buildings[0].wear === 33 && Math.abs(food(r) - 30) < 1e-6 && r.thinned.n === 1, "save/load: its buildings, wear, stores and the thinned count");
+  check(r && r.buildings.length === ring6.length && r.buildings.every((x) => x.wear === 33) && Math.abs(food(r) - 30) < 1e-6 && r.thinned.n === 1, "save/load: its buildings, wear, stores and the thinned count");
   check(JSON.stringify(G.abandonedThreat(l, tile)) === JSON.stringify(G.abandonedThreat(st, tile)), "save/load: the same inside");
   check(l.knowledge[tile] && l.knowledge[tile].abandoned, "save/load: the map remembers it");
 }
@@ -381,7 +383,7 @@ section("Abandon outpost: the card, the walk home, the empty base, Reoccupy");
   const team = st.parties.find((p) => p.owner === "player" && partyMembers(st, p).length === 2);
   check(team && team.homeBaseId === h.id && (food(team) || 0) > 0, `its people walk home with ${team ? Math.floor(food(team) || 0) : 0} food of the ${food0}`);
   const rec = G.abandonedAt(st, tile);
-  check(rec && rec.from === "player" && rec.left && rec.buildings.length === 2, "it stands empty with its buildings: your old ownership record");
+  check(rec && rec.from === "player" && rec.left && rec.buildings.filter((x) => !isPiece(x.type)).length === 1 && rec.buildings.some((x) => isPiece(x.type)), "it stands empty with its buildings (the well and the wall's pieces): your old ownership record");
   check(!(st.losses || []).some((l) => l.id === b.id), "no 'why was it lost' for a base you gave up");
   check(st.knowledge[tile] && st.knowledge[tile].abandoned, "your map shows it empty");
   const UI = await import("../src/ui/ui.js");

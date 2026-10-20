@@ -27,7 +27,8 @@ const carriedRounds = (p) => totalRounds(p.supplies) + totalRounds(p.cargo && p.
 import { WORM, rawWaterEggs, purifyCap } from "./worm.js"; // TABS_WATER: what one purification tablet treats (the recipe text); the filters in use
 import { WATER, waterCapacity, waterProduction } from "./economy.js"; // the filters in use: the tanks' room after the day's water (filtersInUse)
 import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
-import { BOARD } from "./barricade.js"; // boards and nails: the recipe text (call time only)
+import { craftedCond } from "./itemcond.js"; // a crafted item's condition is the craft's own roll
+import { cfgOf } from "./worldcfg.js"; // the run's dials: Durability loss
 
 // in = materials (base stock), hours = work-hours, skill + min = who can make it, out = gear key or supplies.
 // needs: "workshop" (an ammo bench or machine shop at this base) or a building key. field: can be made by a team.
@@ -224,8 +225,7 @@ export function craftOutputText(key) {
     // Wave 2 cooking (cooking.js): the camp cook pot was a bare "tool" here; it says what it cooks and where.
     if (r.gear === "cookpot") fx.push("cooks over a fire: a Camp fire station for simple meals and stew at a base without a Kitchen or a cook fire (1 firewood an hour), and a camping team's fresh food into simple meals at a lit fire");
     if (d.ears) fx.push(`ear protection carried in a pocket or the pack, under any helmet (hearing.js): takes ${d.ears.cut} off a bang's loudness (foam earplugs ${GEAR.earplugs.ears.cut}), hearing ${d.ears.hear} tiles; a pair a fight`);
-    // Boards and nails (barricade.js): a bare "tool" here before; it says what a bundle does in a fight.
-    if (r.gear === "boards") fx.push(`nailed across a closed door, a doorway or a window in a fight (Board up: both actions, from next to it, loud): ${BOARD.HP} hit points the dead and raiders must batter through, up to ${BOARD.MAX} layers; one bundle a board-up`);
+    if (r.gear === "boards") fx.push("nailed across a closed door, a doorway or a window in a fight (barricade.js Board up, both actions): 40 hit points a layer, up to 3, that the dead and raiders batter through; a bundle in the team's vehicle counts from next to it"); // it said only "tool"
     if (r.gear === "makeshiftpick") fx.push("picks locks in a raid without the crowbar and lockpicks (locks.js): 30% + 4% a Stealth point − 15% a difficulty step, as quiet, but one snaps in two every attempt; not a safe, a steel security door or a gun safe");
     bits.push(`${d.throw || d.suppressor || d.siege || d.cat === "gunmod" || (d.selfStab && !d.medKit) ? "kit" : d.heat ? "camp kit" : "tool"}${fx.length ? `, ${fx.join(", ")}` : ""}`);
   }
@@ -445,7 +445,7 @@ export function makeItem(key, quality = 1) {
 }
 // What a gear recipe makes: a stack of r.n at full quality (stacks merge only at one quality: itemstack.js canStack;
 // the roll still sets the XP), else one item at the rolled quality.
-export const craftItem = (r, quality = 1) => (r.n > 1 ? withCount(makeItem(r.gear, 1), r.n) : makeItem(r.gear, quality));
+export const craftItem = (r, quality = 1) => craftedCond(r.n > 1 ? withCount(makeItem(r.gear, 1), r.n) : makeItem(r.gear, quality)); // itemcond.js: its condition is the craft's roll
 // A person carries a stack of this thing with room for more (a stack recipe needs no free slot then: inventory.js stow merges).
 const stackRoomOn = (s, key) => [...(s.pockets || []), ...(rigPouches(s) || []), ...(packOf(s) || [])].some((it) => it && it.key === key && roomIn(it) > 0);
 
@@ -477,7 +477,8 @@ const used = (state, item) => { if (item && state && Number.isFinite(state.hour)
 export function wearSlot(state, s, slot, n = 1) {
   const item = s.gear[slot];
   used(state, item);
-  if (!item || !wear(item, n)) return false;
+  n *= cfgOf(state, "wear"); // worldcfg.js: the run's Durability loss dial (0: nothing wears)
+  if (!item || !(n > 0) || !wear(item, n)) return false;
   s.gear[slot] = null;
   log(state, `${s.name.split(" ")[0]}'s ${item.name} broke.`, "danger");
   return true;

@@ -35,7 +35,7 @@ import {
 } from "./hunting.js";
 import { teamLoad, burdenRecord, wornLoad } from "./load.js";
 import { expectForage } from "./foraging.js";
-import { expectWood, chopCrew, chopPower, fireBurn, WOOD } from "./woodcutting.js";
+import { expectWood, chopCrew, chopPower, campDayBurn } from "./woodcutting.js";
 import { partyFleet } from "./vehicles.js";
 import { supplyLoad, poolLoad, packedSupplies } from "./parties.js";
 import { sumRecs } from "./rounds.js"; // rounds by calibre
@@ -226,7 +226,7 @@ export function estimatePlan(state, { memberIds, dest, vehicle, stance, fuel, mi
     if (kind !== "camp") return 0;
     if (s && s.fire != null) lit = !!s.fire;
     if (!lit) return 0;
-    const per = fireBurn(state, tile, WOOD.fire.camp) / 24; // deadfall stretches the firewood carried, never replaces it
+    const per = campDayBurn(state, p, tile, n).total / 24; // the fire, the team's warmth and its pot (fire-nights); deadfall stretches the firewood carried, never replaces it
     const wood = Math.max(0, (p ? carried(p, "wood") : supplies.wood || 0) + woodHaul - woodBurnt);
     const paid = Math.min(hours, Math.floor(wood / per + 1e-9));
     woodBurnt += paid * per;

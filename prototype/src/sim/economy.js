@@ -32,7 +32,7 @@ import { foodUse, mouthsAt, prisonersAt, guestsAt, crewAt } from "./upkeep.js";
 import { takeEatAcc } from "./eating.js"; // people eat by the hour (meal breaks): the day's eating counted here
 import { rationKey, RATION_LEVELS } from "./meals.js"; // the ration levels (lean, a feast day)
 import { heatDaily, starvingDaily } from "./needs.js";
-import { woodDaily, fireBurn, WOOD } from "./woodcutting.js"; // fireBurn, WOOD: a camp's fire's pile kept (shipFromOutposts)
+import { woodDaily, fireDayBurn, WOOD } from "./woodcutting.js"; // fireDayBurn, WOOD: a camp's fire's pile kept (shipFromOutposts)
 import { prisonWater } from "./prisoners.js"; // prisoners-tab: water hauled by prisoners (waterProduction)
 import { fieldWellWater, drawFieldWells } from "./fieldworks.js"; // field wells on the base's land (waterProduction field)
 import { hauledWells, drawWells } from "./claims.js"; // wells dug on claims next to the base (waterProduction hauled)
@@ -46,6 +46,9 @@ import { noteOutput } from "./output.js"; // the base's Work now panel: what eac
 import { workLand, distFactor, waterSources, walkHours, TRIP_JOBS, NO_WATER, waterTripsADay, walkMult, tileFactor, onTileHours } from "./tripland.js"; // the Scavenge and Fetch water jobs in trips (jobtrips.js)
 import { tripEventsDaily } from "./tripevents.js"; // trouble on job trips: the day's shots (trips-plus #2)
 import { kitchenDaily, kitchenFireDaily } from "./kitchen.js"; // the Kitchen's day: meals served, food saved
+import { keepItem } from "./arsenal.js"; // a group that loots a death site keeps the very item
+import { lootQty } from "./worldcfg.js"; // the run's dials: the loot by kind (the base's scavengers)
+import { note, goodsRounds } from "./ledger.js"; // the conservation test's ledger (off in play): rounds off the ground
 
 export const ROLES = {
   farm:     { name: "Farm",     desc: "Tends, plants and harvests the crop plots (Farming tab). Crops take days to ripen; more farmers per plot and better Farming give a bigger harvest from the same days. Ripe crops left unharvested rot." },
@@ -61,7 +64,7 @@ export const ROLES = {
   hunt:     { name: "Hunt",     desc: "Hunts the base's hunting grounds at dawn and dusk (its own tile and the tiles next to it; with a Hunting cabin the land within 2 tiles), walking out to the best ground and home with the catch, by the base's hunting mix (Farming tab): traps (silent, small game), bows (silent, the base's arrows) or guns (the base's ammo; shots add Heat and can draw the dead); no weapon: snares. Brings in fresh game, which spoils fast unless it is eaten, dried or smoked. Hunted hard, the land runs out of game for weeks." },
   fish:     { name: "Fish",     desc: "Fishes the river or lake by a base 3 hours a day, with a fishing rod, a net or a spear (carried, or in the armory: one each, a net for two). Brings in fresh fish, which spoils fast. The tools wear a use a day." },
   forage:   { name: "Forage",   desc: "Gathers wild food within 2 tiles of the base 6 hours a day (foraging.js): berries, nuts, mushrooms, greens, roots, apples, now and then herbs (meds) or honey. About a ration a day each in summer, more in autumn, little in spring, next to nothing in winter; Farming and Scouting help. The land picked hard grows back over weeks." },
-  wood:     { name: "Cut wood", desc: "Cuts firewood within 2 tiles of the base 6 hours a day (woodcutting.js): the winter's heating (a base burns firewood before fuel: 15, 1.5 kg, a head a day below freezing). Forest gives most (about 140 a day each with an axe), hills fair, farmland and suburbs little, a city next to nothing. An axe (their own or one from the armory), a machete or a sledgehammer cuts much faster than bare hands; Farming and Mechanics help. Loud (base Heat), and axes slip. The land cut hard grows back over seasons." },
+  wood:     { name: "Cut wood", desc: "Cuts firewood within 2 tiles of the base 6 hours a day (woodcutting.js): the heating (a base burns firewood before fuel: 15, 1.5 kg, a head a day below freezing, 4.5 for the night's fire on a cool night under 8°C) and a camp's fire (its people's warmth, the water boiled and the pot). Forest gives most (about 140 a day each with an axe), hills fair, farmland and suburbs little, a city next to nothing. An axe (their own or one from the armory), a machete or a sledgehammer cuts much faster than bare hands; Farming and Mechanics help. Loud (base Heat), and axes slip. The land cut hard grows back over seasons." },
   water:    { name: "Fetch water", desc: "Carries water from the nearest water in the base's own land (a river or lake tile the base holds, or one right next to it that nobody holds: a camp's river bank) in two buckets: out, filling them, back, a few trips a day (fewer the further the water). River and lake water is un-purified: it goes into the base's un-purified water (the worm's eggs; a water boiler or filters make it safe), up to the barrels' room. Needs a water tile in the base's land." },
   // kitchen.js: the Kitchen's cooks (one per 12 people living here).
   cook:     { name: "Cook",     desc: "Cooks the base's meals in the Kitchen (Construction: a building plot), one cook for every 12 people living here: cooks only in the cooking hours (05:00–06:00, 16:00–20:00) with a second job the rest of the day (Cook + Farm …), or the kitchen all day (plain Cook). Hot meals stretch the food (everyone fed at the kitchen eats 10% less a day, up to 13% with a good cook: Cooking 5+), lift spirits (+1 mood a day, +1.5 with Cooking 6+) and boil a quarter of the day's drinking water; the stove burns firewood (28 a day for 12 people). Trains Cooking. Without a kitchen there is nothing to cook." },
@@ -187,7 +190,8 @@ export function scavTrip(state, base, s, tile, share, k = 0) {
   const got = {};
   for (let i = 0; i < n; i++) {
     const key0 = rng.weighted(keys, (x) => table[x]);
-    const q = rng.int(SCAV_FIND[key0][0], SCAV_FIND[key0][1]);
+    const q = lootQty(state, key0, rng.int(SCAV_FIND[key0][0], SCAV_FIND[key0][1])); // worldcfg.js: the run's loot dial for this kind
+    if (!(q > 0)) continue;
     const tag = `scav${localId(state, s.id)}${k ? `:${k}` : ""}${i ? `/${i}` : ""}`; // (a world-local id: tools/sameseedtest.js)
     if (key0 === "ammo") out.ammo = { type, q: (out.ammo ? out.ammo.q : 0) + q, tile };
     else if (key0 === "food" || key0 === "preserved") addFoodFind(state, got, type, q, { tile, preserved: key0 === "preserved" }); // foods.js: the food a place like this holds, as its shelves have it left
@@ -725,7 +729,7 @@ function shipFromOutposts(state) {
       // A camp's fire (tier 0, woodcutting.js shelterFire, 8f76998) burns from its own pile and nothing sends it back:
       // its WOOD.fire.keepDays stay (woodNeed's fire). Shipped every midnight, the pile its woodcutter had cut was gone,
       // the governor kept the cutter on it for good (planWood) and a two-person outpost camp had nobody to establish it.
-      const fireKeep = base.tier === 0 ? Math.ceil(fireBurn(state, base.tile, WOOD.fire.shelter) * WOOD.fire.keepDays) : 0;
+      const fireKeep = base.tier === 0 ? Math.ceil(fireDayBurn(state, base).total * WOOD.fire.keepDays) : 0; // its people's warmth and pot too (fire-nights)
       const keep = { food: Math.ceil(foodUse(state, base).total * lineDays) + 6, water: fed * 7 + 5, ammo: staff.length * 6, scrap: 30, parts: base.construction.length ? 3 : 0, fuel: 10, meds: 2, wood: (boil.active ? Math.ceil(boil.wood * 3) : 0) + fireKeep };
       // Supply runs: keep what a run from here will send, and what a run to here will pick up.
       for (const [k, v] of Object.entries(supplyReserve(state, base))) keep[k] = (keep[k] || 0) + v;
@@ -825,7 +829,7 @@ export function deathSitesDaily(state) {
     if (taken.kind === "gear") {
       const f = state.factions.filter((f) => f.alive).sort((a, b) =>
         Math.min(...a.bases.map((x) => state.grid.distance(x, site.tile))) - Math.min(...b.bases.map((x) => state.grid.distance(x, site.tile))))[0];
-      if (f) f.lootedGear.push(taken.name);
+      if (f) { f.lootedGear.push(taken.name); if (taken.item && !isCart(taken.item)) { note(state, "found", goodsRounds([taken.item])); keepItem(state, f, taken.item, "found"); } } // arsenal.js: the very item (docs/adr/0001-ai-parity.md), the rounds loaded in it from outside the AI side (ledger.js)
       if (f && isCart(taken.item)) f.carts = (f.carts || 0) + 1; // carts.js: a group's carts (AI parity, coarse)
     }
     if (state.live.has(site.tile)) log(state, `Someone looted ${taken.name} from the bodies at ${t.loc ? t.loc.name : "the death site"}.`, "danger");

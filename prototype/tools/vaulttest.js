@@ -49,7 +49,8 @@ console.log("The vaultable cells");
   const [u] = b.units.filter((x) => x.side === "player");
   const e = b.units.find((x) => x.side === "enemy");
   check(canVault(u) && canVault(e), "a survivor and a human enemy can vault");
-  check(!canVault({ ...u, bag: newItem("duffle") }) && !canVault({ ...u, hands: { food: 2 } }) && !canVault({ ...u, carrying: 3 }) && !canVault({ ...u, dragging: 3 }) && !canVault({ ...u, down: true }), "not with a bag or supplies in the arms, carrying or dragging someone, or down");
+  check(canVault({ ...u, bag: newItem("duffle") }) && canVault({ ...u, hands: { food: 2 } }) && canVault({ ...u, haul: { sup: { scrap: 3 }, gear: [] } }), "with a bag, supplies or finds in the hands they still vault (at double the movement: see below)");
+  check(!canVault({ ...u, carrying: 3 }) && !canVault({ ...u, dragging: 3 }) && !canVault({ ...u, cartHelp: 1 }) && !canVault({ ...u, down: true }), "not carrying or dragging someone, helping pull a cart, or down");
   check(!canVault({ ...e, kind: "zombie" }), "never the dead");
 }
 
@@ -73,13 +74,21 @@ console.log("A fence line between two open cells");
   place(e, 12, 10);
   const re = reachable(b, e, 20);
   check(isFinite(re.dist[idx(b, 9, 10)]) && re.dist[idx(b, 9, 10)] === 2 + 1 + VAULT.COST && !isFinite(re.dist[idx(b, 10, 10)]), "a human enemy vaults it the same way, never stopping on it");
-  // A bag in the arms: no vault.
+  // A load in the hands (a bag, supplies, finds carried loose): over it all the same, the whole crossing at double
+  // (the two steps and the vault: VAULT.COST becomes 2 + 2 x VAULT.COST).
+  const dub = open + 2 + 2 * VAULT.COST;
   u.bag = newItem("duffle");
-  check(!isFinite(reachable(b, u, 20).dist[idx(b, 11, 10)]), "with a bag in the arms the fence is a wall");
+  check(reachable(b, u, 20).dist[idx(b, 11, 10)] === dub, `with a bag in the arms the fence is vaulted at double (${reachable(b, u, 20).dist[idx(b, 11, 10)]} = ${dub})`);
   delete u.bag;
   u.hands = { food: 2 };
-  check(!isFinite(reachable(b, u, 20).dist[idx(b, 11, 10)]), "with supplies in the arms too");
+  check(reachable(b, u, 20).dist[idx(b, 11, 10)] === dub, "with supplies in the arms too");
   delete u.hands;
+  u.haul = { sup: { scrap: 3 }, gear: [] };
+  check(reachable(b, u, 20).dist[idx(b, 11, 10)] === dub, "and finds carried loose");
+  delete u.haul;
+  u.cartHelp = 1;
+  check(!isFinite(reachable(b, u, 20).dist[idx(b, 11, 10)]), "but helping pull a cart: the fence is a wall");
+  delete u.cartHelp;
   check(isFinite(reachable(b, u, 20).dist[idx(b, 11, 10)]), "arms free again: over it");
   // The field the human AI steers by goes over it; a walker's does not.
   const fe = distField(b, [[u.x, u.y]], e);

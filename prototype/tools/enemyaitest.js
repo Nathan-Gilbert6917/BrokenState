@@ -11,7 +11,7 @@
 //   5. three-way fights (thirdside.js): a beaten third-side group gives up to the enemy's people, an enemy gives up to
 //      the soldiers fighting it, and who keeps them at the end (thirdResult, wanderers.js thirdPrisoners);
 //   6. smoke helps them get away (battlesize.js fledFarEnough, throwables.js smokeScreens);
-//   7. smoke between groups: a daily restock while short (arsenal.js SMOKE_RESTOCK), and a beaten side by the numbers
+//   7. smoke between groups: none from nowhere (only finds, trade and loot bring it), and a beaten side by the numbers
 //      spares a few under its smoke (smokeCover: factions.js AI raids, diplomacy.js war raids).
 // Usage: node tools/enemyaitest.js [battles per setup=20] [seed=7]
 import { createWorld, makeSurvivor, hub, atBase, combatPower } from "../src/sim/world.js";
@@ -166,7 +166,9 @@ const clouds = (b) => (b.smoke || []).filter((c) => !c.thick);
     got[kind] = n / M;
   }
   const want = (k) => (FLASH_KIT[k] && FLASH_KIT[k].smokegren ? FLASH_KIT[k].smokegren[0] : 0);
-  check(Object.keys(got).every((k) => Math.abs(got[k] - want(k)) < 0.03), `carried: ${Object.entries(got).map(([k, v]) => `${k} ${Math.round(v * 100)}%`).join(", ")}`);
+  // fighters.js: a person carries what their body would yield, a pocket find among it (now and then a smoke grenade
+  // too): the kit's share at least, a little over.
+  check(Object.keys(got).every((k) => got[k] > want(k) - 0.03 && got[k] - want(k) < 0.06), `carried: ${Object.entries(got).map(([k, v]) => `${k} ${Math.round(v * 100)}%`).join(", ")}`);
   check(got.soldiers > got.militia && got.militia > got.raiders && got.raiders > 0 && got.zealots === 0, "soldiers usually, militia sometimes, raiders rarely, zealots never");
   const count = (type) => starterKit(seed, "eai", type, 20).filter((it) => it.key === "smokegren").length;
   check(count("military") === Math.round(20 * ARSENAL.NONLETHAL.soldiers.smokegren) && count("commune") === Math.round(20 * ARSENAL.NONLETHAL.militia.smokegren) && count("raider") === Math.round(20 * ARSENAL.NONLETHAL.raiders.smokegren),
@@ -350,7 +352,7 @@ function threeWay(st, kind, team, { enemies = 4, thirdN = 4, armed = "pistol" } 
 
 // ---------- 7. smoke between groups ----------
 {
-  console.log("7. Smoke between groups: restocked while short, thrown over a retreat by the numbers");
+  console.log("7. Smoke between groups: never from nowhere, thrown over a retreat by the numbers");
   const st = world(seed + 40);
   const days = (f, n) => { for (let d = 0; d < n; d++) { f.careTick = (f.careTick || 0) + 1; st.hour += 24; arsenalDaily(st, f); } return ensureArsenal(st, f).items.filter((it) => it.key === "smokegren").length; };
   const mil = st.factions.find((f) => f.alive && kitOf(f) === "soldiers" && f.pop >= 3);
@@ -358,8 +360,8 @@ function threeWay(st, kind, team, { enemies = 4, thirdN = 4, armed = "pistol" } 
     const want = Math.round(mil.pop * ARSENAL.NONLETHAL.soldiers.smokegren);
     const A = ensureArsenal(st, mil);
     A.items = A.items.filter((it) => it.key !== "smokegren"); A.rev++;
-    const n30 = days(mil, 60), n300 = days(mil, 270);
-    check(n30 > 0 && n300 <= Math.round(mil.pop * ARSENAL.NONLETHAL.soldiers.smokegren) + 1, `${mil.type} (${mil.pop} people) restocks smoke while short: ${n30} after 60 days, ${n300} after 330 (keeps about ${want})`);
+    const n30 = days(mil, 60);
+    check(n30 === 0, `${mil.type} (${mil.pop} people, ${want} smoke their kit's share): none from nowhere in 60 days with none found or bought (${n30}; docs/adr/0001-ai-parity.md)`);
   }
   const f = st.factions.find((x) => x.alive && !x.outsider);
   const A = ensureArsenal(st, f);

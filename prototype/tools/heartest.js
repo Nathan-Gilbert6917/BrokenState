@@ -519,15 +519,17 @@ section("11. Enemies wear headgear by kit; their bodies drop it; group arsenals 
     st3.combat = createBattle(st3, { tile: h.tile, baseId: h.id, fighterIds: atBase(st3, h.id).slice(0, 2).map((s) => s.id), enemy: { kind: "soldiers", count: 4, power: 4, factionId: f.id }, ambush: null, canRetreat: false, handler: "ht", context: {} });
     const eu = st3.combat.units.filter((u) => u.side === "enemy");
     const issuedHelm = eu.filter((u) => u.pieces && u.pieces.head && f.arsenal.items.includes(u.pieces.head)).length;
-    const issuedEar = eu.filter((u) => u.earKey && (u.arsArmour || []).some((it) => it.key === u.earKey && f.arsenal.items.includes(it))).length;
+    const earItem = (u) => (u.who ? (earGearOf(u.who) || {}).item : (u.arsArmour || []).find((it) => it.key === u.earKey)); // a person (fighters.js): the ear gear they carry
+    const issuedEar = eu.filter((u) => u.earKey && earItem(u) && earItem(u).key === u.earKey && f.arsenal.items.includes(earItem(u))).length;
     check(eu.every((u) => u.arsFid === f.id), "the battle's soldiers are armed from the arsenal");
     check(issuedHelm > 0, `they wear the arsenal's own helmets (${issuedHelm} of ${eu.length})`);
     check(issuedEar > 0, `and its headsets (${issuedEar})`);
     const one = eu.find((u) => u.earKey);
     if (one) {
+      const worn = earItem(one); // before the body takes it off them
       const body = enemyBody(new Rng(1), one, KITS.soldiers);
       const onBody = allItems(body).flatMap((it) => [it, ...Object.values(it.mods || {})]); // a headset may sit on the helmet's ear mount
-      check(onBody.some((it) => (one.arsArmour || []).includes(it) && it.key === one.earKey), "a group fighter's body holds its very headset");
+      check(onBody.some((it) => it === worn && it.key === one.earKey), "a group fighter's body holds its very headset");
     }
     // An old save's arsenal (no headgear yet): dealt once, never twice.
     const n0 = f.arsenal.items.length;

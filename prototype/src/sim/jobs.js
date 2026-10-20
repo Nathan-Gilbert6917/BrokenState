@@ -23,7 +23,8 @@
 //   base and takes what the base has (10 days).
 // - rescue: their people held by a group at war with them (or taken by raiders). A team of yours at the holders'
 //   base gets a card: storm it (a battle against 60% of their guards), talk them out (Speech, not with a hostile
-//   group) or pay (40 a head in the team's ammo, food or meds) (14 days).
+//   group) or pay (40 a head in the team's ammo, food or meds) (14 days). The captives are the very people in the
+//   holders' jail (groupjails.js; data.ids), and got out they walk home as themselves (rescueFree).
 // - hive: storm a hive within 8 tiles of them; their fighters join the assault (fewer of the brood reach your
 //   squad: alliance.js hiveAllies). Done when the hive falls with a team of yours within 1 tile of it (20 days).
 // - scout: a region 5–10 tiles out from their main base (radius 2). Done when 70% of its tiles are on your map from
@@ -53,6 +54,8 @@ import { CRAFTS } from "./crafting.js";
 import { hordeScore } from "./hordes.js";
 import { startCombat, registerCombatHandler } from "./combat.js";
 import { guardsFor } from "./conflicts.js";
+import { heldFrom, freeHeld, capturePeople, groupRoom } from "./groupjails.js"; // a rescue job's captives: people in the holders' jail
+import { captivesFrom } from "./members.js";
 import { gainXp, USE } from "./skills.js";
 import { diploRng, ensureDiplo, warsOf, enemyIn, warById, relation } from "./diplomacy.js";
 import { blueprintReward } from "./blueprints.js";
@@ -135,25 +138,48 @@ function deliverJob(state, f) {
   return { type: "deliver", target: f.bases[0], size: value < 60 ? 1 : value < 150 ? 2 : 3, data: { key: w.key, qty, left: qty, value },
     desc: `${why}: they need ${w.key === "ammo" ? `${qty} rounds (any calibre: their stores keep one count; the ones your guns need least go)` : w.key === "food" ? `${qty} days of food (any kind)` : `${qty} ${w.key}`}. Hand it over at their base with a team, or have it ready at your trade base and ask them to fetch it.` };
 }
+// The captives a rescue job is about are people (docs/adr/0001-ai-parity.md): records in the holders' jail
+// (groupjails.js f.prisoners, rec.s), named by id in the job (data.ids). They stay in that jail until they are got
+// out (freed: back in their own group's list as themselves, groupjails.js freeHeld), sold on, escape or die there;
+// the job counts whoever of them is still held (rescueHeld). Nothing comes off or onto a head count by a number.
+const inRescueJobs = (state) => new Set(ensureJobs(state).list.filter((j) => j.type === "rescue" && (j.status === "active" || j.status === "offered")).flatMap((j) => j.data.ids || []));
+export const rescueHeld = (state, j) => {
+  const holder = factionById(state, j.data.holder);
+  const ids = j.data.ids || [];
+  return holder ? heldFrom(holder, j.fid).filter((r) => ids.includes(r.s.id)).map((r) => r.s) : [];
+};
+// Got out: whoever of the job's captives is still held walks home to their group as themselves. Returns how many.
+function rescueFree(state, j) {
+  const f = factionById(state, j.fid), holder = factionById(state, j.data.holder);
+  j.data.freed = true;
+  return freeHeld(state, holder, f, j.data.ids || []).length;
+}
 function rescueJob(state, f) {
   const rng = diploRng(state);
+  const taken = inRescueJobs(state);
   for (const w of warsOf(state, f)) {
-    const n = w.captives[f.id] || 0;
     const holder = factionById(state, enemyIn(w, f));
-    if (n < 1 || !holder || !holder.alive || !holder.bases.length) continue;
+    if (!holder || !holder.alive || !holder.bases.length) continue;
     if (activeJobs(state).some((j) => j.type === "rescue" && j.data.warId === w.id)) continue;
-    w.captives[f.id] -= n;
-    return { type: "rescue", target: holder.bases[0], size: 3, data: { holder: holder.id, count: n, warId: w.id },
+    // Their people the enemy took in the war's raids (groupfight.js applySide: into its jail), not already in a job.
+    const held = heldFrom(holder, f.id).map((r) => r.s).filter((s) => !taken.has(s.id));
+    if (!held.length) continue;
+    const n = held.length;
+    return { type: "rescue", target: holder.bases[0], size: 3, data: { holder: holder.id, ids: held.map((s) => s.id), warId: w.id },
       desc: `${holder.known ? holder.name : "Their enemies"} took ${plural(n, "of their people")} in the war and hold them at ${tileLabel(state, holder.bases[0])}. Get them out.` };
   }
-  // Raiders took some of them.
+  // Raiders took some of them: the very people, off the road into the raiders' jail (as many as it has room for).
   if (!rng.chance(0.3) || f.pop < 12) return null;
   const holder = state.factions.filter((o) => o.alive && o !== f && o.type === "raider" && o.bases.length && minDist(state, o.bases[0], f) <= 20)[0];
   if (!holder) return null;
-  const n = rng.int(1, 3);
-  f.pop -= n;
-  return { type: "rescue", target: holder.bases[0], size: 3, data: { holder: holder.id, count: n, warId: null },
-    desc: `${holder.known ? holder.name : "Raiders"} grabbed ${plural(n, "of their people")} on the road and hold them at ${tileLabel(state, holder.bases[0])}. Get them out.` };
+  const n = Math.min(rng.int(1, 3), groupRoom(state, holder));
+  if (n < 1) return null;
+  const people = captivesFrom(state, f, n);
+  capturePeople(state, holder, f, people); // groupjails.js: out of their list, stripped, into the jail
+  const held = heldFrom(holder, f.id).map((r) => r.s).filter((s) => people.includes(s));
+  if (!held.length) return null;
+  return { type: "rescue", target: holder.bases[0], size: 3, data: { holder: holder.id, ids: held.map((s) => s.id), warId: null },
+    desc: `${holder.known ? holder.name : "Raiders"} grabbed ${plural(held.length, "of their people")} on the road and hold them at ${tileLabel(state, holder.bases[0])}. Get them out.` };
 }
 function hiveJob(state, f) {
   const hv = (state.hives || []).filter((h) => minDist(state, h.tile, f) <= 8).sort((a, b) => minDist(state, a.tile, f) - minDist(state, b.tile, f))[0];
@@ -339,9 +365,8 @@ function failJob(state, job, why) {
   job.endDay = day(state);
   job.why = why;
   ensureJobs(state).stats.failed++;
-  if (job.type === "rescue" && job.data.count && !job.data.freed) {
-    // Lost for good (their war captives do not come home with the peace any more).
-  }
+  // A rescue not done: the captives are still in the holders' jail, as they were (groupjails.js: ransom, exchange,
+  // escape and a peace may still bring them home).
   if (f && f.alive) changeGoodwill(state, f, -(job.size <= 1 ? JOBS.FAIL_GW_SMALL : JOBS.FAIL_GW), "a job not done");
   log(state, `Job failed for ${f ? f.name : "a group"}: ${JOB_TYPES[job.type].name.toLowerCase()} (${why}).`, "danger");
 }
@@ -351,7 +376,7 @@ function voidJob(state, job, why) {
   job.why = why;
   ensureJobs(state).stats.void++;
   const f = factionById(state, job.fid);
-  if (job.type === "rescue" && job.data.count && !job.data.freed && f && f.alive && why !== "the war is over") f.pop += job.data.count;
+  // (A rescue called off moves nobody: its captives stay where they are, in the jail or home again with the peace.)
   log(state, `Job called off${f ? ` for ${f.name}` : ""}: ${why}.`, "info");
 }
 
@@ -667,8 +692,9 @@ export function pickupArrived(state, p, base) {
 function rescueHour(state, j, f, teams) {
   const d = j.data;
   const holder = factionById(state, d.holder);
-  if (d.warId != null && !warById(state, d.warId)) return voidJob(state, j, "the war is over and their people came home");
-  if (!holder || !holder.alive) { f.pop += d.count; d.freed = true; return completeJob(state, j, "their captors are gone"); }
+  if (d.warId != null && !warById(state, d.warId)) return voidJob(state, j, "the war is over and their people came home"); // diplomacy.js endWar: the peace sends them home
+  if (!holder || !holder.alive) { d.freed = true; return completeJob(state, j, "their captors are gone"); } // groupjails.js freeOnCollapse walked them home
+  if (!rescueHeld(state, j).length) return voidJob(state, j, "none of their people are held there any more"); // sold on, escaped, ransomed or dead
   for (const p of teams) {
     if (p.phase !== "waiting" || !holder.bases.includes(partyTile(p))) continue;
     if (state.cards.some((c) => c.rescueJob === j.id)) continue;
@@ -684,16 +710,17 @@ function rescueCard(state, j, p, f, holder) {
   const guards = { ...g, count: Math.max(2, Math.round(g.count * 0.6)) };
   const speech = Math.max(0, ...members.map((s) => skill(s, "speech")));
   const talk = clamp(0.25 + speech * 0.04 + holder.goodwill / 200, 0.05, 0.85);
-  const price = 40 * j.data.count;
+  const n = rescueHeld(state, j).length; // whoever of them is still held here
+  const price = 40 * n;
   const unitValue = (k) => (k === "food" ? DAY_VALUE : supValue(k)); // food: days of it (foods.js)
   const payKey = ["ammo", "food", "meds"].find((k) => carried(p, k) * unitValue(k) >= price);
   const payQty = payKey ? Math.ceil(price / unitValue(payKey)) : 0;
   const hostile = attitude(holder) === "Hostile";
   const gone = (st) => j.status !== "active" || !st.parties.includes(p);
-  const free = (st, how) => { f.pop += j.data.count; j.data.freed = true; completeJob(st, j, how); awaitOrders(st, p, `${plural(j.data.count, "of their people")} freed for ${f.name}.`); return `${plural(j.data.count, "of their people")} are free and on their way home to ${f.name}.`; };
+  const free = (st, how) => { const k = rescueFree(st, j); completeJob(st, j, how); awaitOrders(st, p, `${plural(k, "of their people")} freed for ${f.name}.`); return `${plural(k, "of their people")} are free and on their way home to ${f.name}.`; };
   return {
     title: `Held at ${holder.known ? holder.name : tileLabel(state, partyTile(p))}`, partyId: p.id, rescueJob: j.id, where: tileLabel(state, partyTile(p)),
-    text: `${plural(j.data.count, "of " + f.name + "'s people")} are held here. ${guards.count} guards stand between your team and them.`,
+    text: `${plural(n, "of " + f.name + "'s people")} are held here. ${guards.count} guards stand between your team and them.`,
     choices: [
       { label: "Storm the place (battle)", fight: { enemy: guards, ambush: "player" }, hint: `About ${guards.count} guards (power ${guards.power}). ${holder.name} turns against you (−15 goodwill)`,
         ai: (st) => (members.reduce((a, s) => a + combatPower(s), 0) >= guards.count * guards.power * 1.3 ? 3 : -2),
@@ -733,11 +760,9 @@ registerCombatHandler("jobRescue", (state, result, setup) => {
   }
   let text;
   if (result.outcome === "victory" && j && j.status === "active") {
-    const f = factionById(state, j.fid);
-    if (f && f.alive) f.pop += j.data.count;
-    j.data.freed = true;
+    const k = rescueFree(state, j);
     completeJob(state, j, "stormed and freed");
-    text = `The guards are beaten: ${plural(j.data.count, "captive")} freed.`;
+    text = `The guards are beaten: ${plural(k, "captive")} freed.`;
   } else text = "The guards held. The captives are still there.";
   if (p && state.parties.includes(p) && partyMembers(state, p).length) awaitOrders(state, p, text);
 });

@@ -859,23 +859,27 @@ export function modScore(key) {
 // pool. Returns [{ gun, mod }].
 export function fitFromPool(pool, guns) {
   const out = [];
-  const take = (gun, it) => { pool.splice(pool.indexOf(it), 1); fitMod(gun, it); out.push({ gun, mod: it }); };
+  // The attachments in the pool, in its order and kept in step with it: an armory is mostly other things, and this
+  // looks at every slot of every gun.
+  const att = pool.filter((it) => it && ATTACH[it.key]);
+  const take = (gun, it) => { pool.splice(pool.indexOf(it), 1); att.splice(att.indexOf(it), 1); fitMod(gun, it); out.push({ gun, mod: it }); };
+  if (!att.length) return out;
   for (const gun of guns) {
     if (!gun || !takesMods(gun.key)) continue;
     for (const slot of SLOTS) {
       if (gun.mods && gun.mods[slot]) continue;
       let best = null;
-      for (const it of pool) {
+      for (const it of att) {
         const a = it && ATTACH[it.key];
         if (!a || a.slot !== slot || isOpener(a) || modScore(it.key) <= 0 || fitsSlot(gun, it)) continue;
         if (!best || modScore(it.key) > modScore(best.key)) best = it;
       }
       if (best) { take(gun, best); continue; }
       // A sight or a grip for which the gun needs a mount or a rail first, both in the pool.
-      for (const it of pool) {
+      for (const it of att) {
         const a = it && ATTACH[it.key];
         if (!a || a.slot !== slot || isOpener(a) || modScore(it.key) <= 0 || !modFits(gun.key, it.key)) continue;
-        const opener = pool.find((o) => o && ATTACH[o.key] && ATTACH[o.key].adds && ATTACH[o.key].adds.includes(slot) && !(gun.mods && gun.mods[ATTACH[o.key].slot]) && !fitsSlot(gun, o));
+        const opener = att.find((o) => o && ATTACH[o.key] && ATTACH[o.key].adds && ATTACH[o.key].adds.includes(slot) && !(gun.mods && gun.mods[ATTACH[o.key].slot]) && !fitsSlot(gun, o));
         if (!opener) continue;
         take(gun, opener);
         if (!fitsSlot(gun, it)) take(gun, it);

@@ -12,6 +12,7 @@ import {
 import { subdueOdds } from "../src/sim/stealth.js";
 import { newItem } from "../src/sim/inventory.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
+import { refitPerson } from "../src/sim/fighters.js";
 
 const seed = Number(process.argv[2] || 11);
 let fails = 0, passes = 0;
@@ -235,11 +236,13 @@ console.log("Zealots");
     const b = openBattle(st, [p], { kind: "zealots", count: 1, power: 3 });
     const up = by(b, p), [z] = foes(b);
     place(up, 5, 5); place(z, 9, 5); toughen(up);
-    z.weapon = "spear"; z.weaponName = "Steel spear"; z.kit = "zealots"; z.mag = 0;
+    if (z.who) { z.who.gear.weapon = newItem("spear"); refitPerson(b, z); z.kit = "zealots"; place(z, 9, 5); } // a person (fighters.js): the very spear in their hands
+    else { z.weapon = "spear"; z.weaponName = "Steel spear"; z.kit = "zealots"; z.mag = 0; }
     b.phase = "player"; up.ap = 0; endPlayerTurn(st);
-    b.queue = [z.id]; enemyStep(st);
+    b.queue = [z.id]; const L0 = b.log.length; enemyStep(st);
+    if (!b.log.slice(L0).some((l) => /throws the .*spear/.test(l.text))) continue;
+    threw++; // (a wide miss next to it: picked up again with the turn's other action)
     if (!b.spears || !b.spears.length) continue;
-    threw++;
     check(z.weapon === "fists" && z.spearOut, "the zealot's spear left its hands");
     // Next enemy turn, with the spear in reach and nobody next to it: back for it.
     const sp = b.spears[0];
@@ -249,7 +252,7 @@ console.log("Zealots");
     b.queue = [z.id]; enemyStep(st);
     if (z.weapon === "spear") fetched++;
     // Killed with its spear on the ground: the spear is on its body after the win.
-    if (z.weapon === "fists" || threw === 1) {
+    if (z.weapon === "fists" || body === 0) {
       // Fetched: set up the throw again until it throws (the AI throws 60% of turns, on the battle's dice).
       for (let t = 0; t < 8 && z.weapon === "spear" && !z.spearOut; t++) { b.phase = "player"; place(up, 5, 5); place(z, 9, 5); up.ap = 0; endPlayerTurn(st); b.queue = [z.id]; enemyStep(st); }
       if (z.spearOut) {

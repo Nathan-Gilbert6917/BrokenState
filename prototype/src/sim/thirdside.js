@@ -11,6 +11,9 @@
 // your people (damage), overwatch, placing them (createBattle setup.third, createRaid groups with a side) and the
 // result (result.third). A battle with no third side takes exactly the old paths.
 import { enemyUnit, active, los, WEAPONS, say, registerOccupantSide } from "./combat.js";
+import { GEAR } from "./data.js";
+import { lootItem } from "./inventory.js";
+import { refitPerson, fromPerson, memberize } from "./fighters.js"; // a person: rebuilt with their own weapon and health
 
 export const THIRD = {
   THREAT_DEAD: 7,      // the dead this close (tiles) are a threat to neutrals
@@ -42,7 +45,7 @@ function groupIndex(b, g) {
 
 // Turns a unit made by combat.js enemyUnit into a member of group g (the k-th). Used by createRaid and createBattle,
 // and by building interiors (buildingmaps.js) for the neutral and military occupants interiorOccupants returns.
-export function thirdSideUnit(b, u, g, k = 0) {
+export function thirdSideUnit(b, u, g, k = 0, state = null) {
   const gi = groupIndex(b, g);
   const rec = b.third[gi];
   u.side = "third";
@@ -54,9 +57,25 @@ export function thirdSideUnit(b, u, g, k = 0) {
   if (who) {
     if (who.name) { u.name = who.name; u.short = who.name.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase(); }
     const w = who.weapon && WEAPONS[who.weapon] ? who.weapon : rec.team === "neutral" ? "fists" : null;
-    if (w) { u.weapon = w; u.weaponName = WEAPONS[w].name; }
-    if (who.hp) { u.hp = Math.min(u.maxHp, who.hp); }
+    if (u.who && who.s && who.s.gear) { // fighters.js: the wanderer themselves, with what they carry and their health
+      const keepName = u.name, keepShort = u.short;
+      fromPerson(null, b, u, who.s);
+      u.name = keepName; u.short = keepShort;
+    } else if (u.who) { // fighters.js: a person: the weapon in their hands, their health as it is (the unit built again from them)
+      const s = u.who;
+      if (w && w !== u.weapon) s.gear.weapon = w === "fists" || !GEAR[w] ? null : lootItem(w, rec.team === "military" ? "military" : "survivor", [b.tileId ?? 0, "third", gi, k]);
+      if (who.hp) s.health = Math.max(1, Math.min(100, who.hp));
+      const keepName = u.name, keepShort = u.short;
+      refitPerson(b, u);
+      u.name = keepName; u.short = keepShort;
+    } else {
+      if (w) { u.weapon = w; u.weaponName = WEAPONS[w].name; }
+      if (who.hp) { u.hp = Math.min(u.maxHp, who.hp); }
+    }
   }
+  // A group's soldiers (wanderers.js: a military squad of theirs) are its own people (fighters.js memberize: drawn
+  // from its members, with what they carry; arsenal.js settleThird after the fight).
+  if (state && rec.team === "military" && g.factionId != null && !(who && who.s)) { const keep = { team: u.team, tgroup: u.tgroup, aware: u.aware }; if (memberize(state, b, u, g.factionId)) Object.assign(u, keep, { side: "third" }); }
   rec.start += 1;
   // A neutral's body is its own (wanderers.js people), not a raider's kit.
   if (rec.team === "neutral") u.kit = "survivors";
@@ -66,12 +85,12 @@ export function thirdSideUnit(b, u, g, k = 0) {
 // A field battle's third side (createBattle, setup.third: [{ side, kind, count, power, name, factionId, people }]):
 // placed in the middle of the map, between your people and the enemy's line, in cover. pick(n, test, score) is
 // createBattle's own cell picker; W is the map width.
-export function placeThird(b, groups, rng, pick, W) {
+export function placeThird(b, groups, rng, pick, W, state = null) {
   for (const g of groups || []) {
     const n = Math.max(0, Math.min(8, Math.round(g.count || 0)));
     for (let k = 0; k < n; k++) {
       const u = enemyUnit(b, rng, g.kind || "survivors", g.power || 3, k + 1);
-      thirdSideUnit(b, u, g, k);
+      thirdSideUnit(b, u, g, k, state);
       const c = pick(1, (x) => x >= Math.round(W * 0.35) && x <= Math.round(W * 0.62), (x, y) => (g.side === "military" ? 0 : 1) * rng.next())[0]
         || pick(1, (x) => x >= Math.round(W * 0.25), () => rng.next())[0];
       if (!c) continue;
@@ -92,7 +111,7 @@ function placeOccupants(state, b, grp, place) {
   const home = place.room ? [place.room.x0 + Math.floor(place.room.w / 2), place.room.y0 + Math.floor(place.room.h / 2)] : null;
   (grp.people || []).slice(0, 12).forEach((p, k) => {
     const u = enemyUnit(b, rng, p.kit || (grp.side === "military" ? "soldiers" : "survivors"), p.power || grp.power || 3, k + 1);
-    thirdSideUnit(b, u, grp, k);
+    thirdSideUnit(b, u, grp, k, state);
     u.pod = pod;
     const c = rng.pick(place.cells());
     if (!c) return;
@@ -188,6 +207,8 @@ export function thirdResult(b) {
       team: g.team, name: g.name, factionId: g.factionId, wid: g.wid, start: g.start, hostile: g.hostile,
       met: g.met || mine.some((u) => !u.dead && b.units.some((p) => p.side === "player" && !p.dead && dist(p, u) <= THIRD.SEE)),
       alive: mine.filter((u) => !u.dead).length, dead: mine.filter((u) => u.dead).length, fled: mine.filter((u) => u.fled).length,
+      deadPeople: mine.filter((u) => u.dead && u.who && !u.who.transient).map((u) => u.who), // fighters.js: the very people who fell
+      hurt: mine.filter((u) => !u.dead && u.who && !u.who.transient).map((u) => [u.who, u.hp]),
       gaveUp, taken: enemyStands ? gaveUp : 0, freed: enemyStands ? 0 : gaveUp, held,
     };
   });

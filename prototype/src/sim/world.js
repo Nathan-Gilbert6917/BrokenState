@@ -2,6 +2,7 @@
 // World state, shared helpers and the hourly/daily tick.
 // Pure simulation: no DOM or canvas code lives here.
 /** @import { State, Survivor, Base, Item, Card, Stock, TileSnapshot, Marker } from "./types" */
+import { syncAllMembers } from "./members.js"; // the AI groups' people (docs/adr/0001-ai-parity.md)
 import { typedFood, addFoodsTo, FOODS, foodIn } from "./foods.js"; // the hub's first food, by type
 import { keyWord } from "./water.js"; // supply names in log lines (call-time only: safe in the import cycle)
 import { Rng } from "./rng.js";
@@ -28,6 +29,7 @@ import { ensureHives, hivesSecured } from "./hives.js";
 import { growthAt, growthInfo } from "./hivetech.js";
 import { mergeMix } from "./zombietypes.js";
 import { basesDaily, routesDaily, deathSitesDaily } from "./economy.js";
+import { storageDaily } from "./basestorage.js"; // base storage: the things left outside weather (call-time only)
 import { groundDaily } from "./carry.js"; // food left on the ground spoils
 import { addBuilding, constructionHour, assignStations } from "./buildings.js";
 import { createVehicle, vehiclesDaily, garageHour, factionVehiclesDaily } from "./vehicles.js";
@@ -39,7 +41,7 @@ import { craftingHour, craftingDaily } from "./crafting.js";
 import { repairHour, rezeroHour } from "./repair.js"; // gear repairs at the bench; budget sights re-zeroed
 import { armorPower, armorMult, allItems, stripAll, newItem, START_DUR } from "./inventory.js";
 import { randomStarterMods } from "./gunmods.js"; // starting guns may carry a cheap attachment
-import { settleAll, starterLoad, pocketBox, gunsArmed, drawShots } from "./ammo.js"; // rounds by calibre
+import { settleAll, starterLoad, pocketBox, gunsArmed, drawShots, carriedRec, spendCarried } from "./ammo.js"; // rounds by calibre
 import { startChronicle, recordChronicle } from "./chronicle.js";
 import { historyHour } from "./history.js"; // the Ledger's daily rows (ui/ledger.js)
 import { foodMarkAll } from "./foodlog.js"; // the bases' food ledger (the Food tab): marks between the hour's steps
@@ -84,7 +86,7 @@ import { surveyDaily } from "./survey.js";
 import { riseOnMap, walkingDaily } from "./carriers.js"; // the worm: someone who has it gets up when they die; the walking dead drift
 import { erasVictoryDaily, accordReady, containReady } from "./eras.js";
 import { outbreakDaily } from "./outbreak.js";
-import { hardcoreCreate, hardcoreAfterHives, hardcoreDaily, hardcoreHour } from "./hardcore.js";
+import { hardcoreCreate, hardcoreAfterHives, hardcoreDaily, hardcoreHour, clampStartPeople, NORMAL_PEOPLE } from "./hardcore.js";
 import { countWord, normalStartBackgrounds, normalStartKit } from "./hardcore-start.js";
 import { campsHour } from "./staging.js";
 import { needsHour } from "./needs.js";
@@ -98,6 +100,7 @@ import { volunteersHour, volunteerFell } from "./volunteers.js"; // people lent 
 import { noteLook, keepLook } from "./intelnotes.js"; // what your people learned of the groups' bases (the State Map's estimates, intelest.js)
 import { jobTripsHour } from "./jobtrips.js"; // the outdoor jobs in trips: out to the base's land and home with the load
 import { seedRoadCarts } from "./carts.js"; // abandoned carts on the roads near towns (a new world)
+import { setWorldCfg } from "./worldcfg.js"; // the run's dials (World… on the new-run screen)
 
 export const HUB_VISION = 3;
 // A normal start's hub is bare (barestart): no buildings, every construction plot free. Its stores carry the first
@@ -132,17 +135,17 @@ export const localId = (state, id) => (typeof id === "number" ? id - (state.idBa
 // mode: "normal" (6–12 months after the outbreak, with a hub) or "hardcore" (the day Calder falls: hardcore.js).
 // crewRoll (optional, Hardcore): a seed of its own for the three's backgrounds, what they grabbed and the car (the
 // new-run screen's Randomize all); left out, the world's seed decides them.
-// startPeople (optional, Hardcore): how many flee together on day 1, 1–4 (hardcore.js START_PEOPLE; 3 when left out),
-// kept as state.startPeople. A normal start is a full hub of six and ignores it.
+// startPeople (optional): Hardcore, how many flee together on day 1, 1–4 (hardcore.js START_PEOPLE; 3 when left out); a
+// normal start, how many hold the hub, 1–8 (NORMAL_PEOPLE; 6 when left out). Kept as state.startPeople.
 // start (optional): { roll, not } where you start drawn with dice of their own on the same map (the new-run screen's
 // New start position; startpick.js): the hub's town, or the Hardcore roadside tile. Kept as state.startRoll.
 /**
  * @param {{ seed: number, factionCount: number, crew?: any[] | null, size?: string, mode?: string, customW?: number | null,
  *   customH?: number | null, hives?: number | null, crewRoll?: number | null, startPeople?: number | null, customBackgrounds?: any,
- *   start?: { roll: number, not?: number | null } | null }} opts
+ *   start?: { roll: number, not?: number | null } | null, worldCfg?: any }} opts
  * @returns {State}
  */
-export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SIZE, mode = "normal", customW = null, customH = null, hives = null, crewRoll = null, startPeople = null, customBackgrounds = null, start = null }) {
+export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SIZE, mode = "normal", customW = null, customH = null, hives = null, crewRoll = null, startPeople = null, customBackgrounds = null, start = null, worldCfg = null }) {
   const rng = new Rng(seed);
   const sdef = isCustom(size) ? customDef(customW, customH) : sizeDef(size);
   const worldSize = sdef.key;
@@ -178,6 +181,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
   const bgs = customBackgrounds ? sanitizeLibrary(customBackgrounds) : {};
   if (Object.keys(bgs).length) state.customBackgrounds = bgs;
   if (start && start.roll != null) state.startRoll = start.roll; // startpick.js: a start of its own on this map
+  setWorldCfg(state, worldCfg); // worldcfg.js: the run's dials (the new-run screen's World… window), before the groups and hives are made
   noteLootAge(state); // itemcond.js: the loot rolled from here on is as old as this world (a new world: year 1)
   ensurePois(state); // pois.js: every tile's points of interest (hash dice from the seed: the map's dice are untouched)
   if (state.mode === "hardcore") {
@@ -213,7 +217,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
     // town hall's cellar (storage.js); water for the first dry days while the sown fields get going; a woodpile
     // (woodcutting.js: the winter's heating is cut later).
     // Bare start (HUB_START): no buildings and every plot free; what the town hall gives (4 beds, 6 crop plots, the well,
-    // the cellar, 3 wall strength: buildings.js) is all there is. The scrap and parts are for the first builds, the
+    // the cellar: buildings.js; no wall, which is built on the Defenses tab) is all there is. The scrap and parts are for the first builds, the
     // player's (or the governor's) pick: a bunkhouse, a crafting bench, a farm plot and a rain catcher come to 45.
     // Food by type (foods.js): 80 days of a town's stores (cans, rice, pasta, oats, a few sacks of potatoes and onions)
     // and 10 of food that keeps (jars, jerky, peanut butter).
@@ -221,17 +225,19 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
     radio: false, watchtower: false, buildings: [], construction: [], armory: [],
   });
   const hubBase = state.bases[0];
-  // Six people in the town hall's four beds from the first hour: the new-run screen and the first-week guide say so,
-  // so the Overcrowded card (moveout.js) waits its usual days before it asks (and is not shown at all once beds are up).
-  hubBase.crowdNote = { hour: state.hour, over: 2 };
+  // Six people (by default) in the town hall's four beds from the first hour: the new-run screen and the first-week guide
+  // say so, so the Overcrowded card (moveout.js) waits its usual days before it asks (and is not shown at all once beds are up).
+  const people = clampStartPeople(startPeople ?? NORMAL_PEOPLE.DEF, "normal");
+  state.startPeople = people;
+  if (people > 4) hubBase.crowdNote = { hour: state.hour, over: people - 4 };
   createVehicle(state, "truck", { kind: "base", baseId: hubBase.id }, { fuel: 20, condition: 75 });
 
   createFactions(state, factionCount);
   recomputeOwnership(state);
 
-  for (let i = 0; i < 6; i++) state.survivors.push(makeSurvivor(state, i === 0 ? 1.3 : 1));
-  // Starting gear: a few basics spread among the colonists.
-  const starts = ["pistol", "machete", "huntrifle", "knife", "knife", "pistol"];
+  for (let i = 0; i < people; i++) state.survivors.push(makeSurvivor(state, i === 0 ? 1.3 : 1));
+  // Starting gear: a few basics spread among the colonists (a seventh and eighth start with a knife and a machete).
+  const starts = ["pistol", "machete", "huntrifle", "knife", "knife", "pistol", "knife", "machete"];
   state.survivors.forEach((s, i) => (s.gear.weapon = newItem(starts[i], 1, hash01(state.seed, "startdur", i), START_DUR))); // part-worn (inventory.js START_DUR)
   state.survivors.forEach((s, i) => randomStarterMods(state.rng, s.gear.weapon, i)); // gunmods.js: a cheap part or two on some guns
   // Built on Customize's points (crew[i].points): what the dice hand them is theirs only as picks, so none of it
@@ -386,6 +392,8 @@ export function applyCrew(state, crew) {
     if (sv) s.startVehicle = sv; else delete s.startVehicle;
     // Their points left go to the car pool for the vehicle's back (custompoints.js carPool).
     if (c.carPool) s.carPool = true; else delete s.carPool;
+    // Their own points max, set on their card (custompoints.js maxFor; else the crew's Points each).
+    if (Number.isFinite(c.ownMax)) s.ownMax = c.ownMax; else delete s.ownMax;
   });
 }
 
@@ -585,7 +593,21 @@ export function armedFactor(people, ammo, arrows, { need = (n) => n * 3, short =
 /** @param {Record<string, number>} stock @param {Survivor[]} people @param {number} perHead @returns {{ ammo: number, used: Record<string, number>, arrows: number }} */
 export function spendShots(stock, people, perHead) {
   const nb = archerCount(people);
-  const d = drawShots(stock, people.filter((s) => !usesArrows(s)), perHead);
+  // The stores (a team's bags, a base's stock) first, then the loose rounds the shooters carry (ammo.js carriedRec:
+  // their rounds at hand, carrykit.js packShells), as a fight's Reload draws on them.
+  const gunners = people.filter((s) => !usesArrows(s));
+  const onThem = carriedRec(gunners);
+  const both = { ...stock };
+  for (const [k, q] of Object.entries(onThem)) both[k] = (Number.isFinite(both[k]) ? both[k] : 0) + q;
+  const before = { ...both };
+  const d = drawShots(both, gunners, perHead);
+  for (const [k, q0] of Object.entries(before)) {
+    const used = q0 - (Number.isFinite(both[k]) ? both[k] : 0);
+    if (!(used > 0)) continue;
+    const fromStock = Math.min(used, Math.max(0, Number.isFinite(stock[k]) ? stock[k] : 0));
+    if (fromStock > 0) stock[k] -= fromStock;
+    if (used - fromStock > 0) spendCarried(gunners, k, used - fromStock);
+  }
   let arrows = 0;
   if (nb) {
     const b0 = stock.arrows || 0;
@@ -945,6 +967,7 @@ function hourOfWorld(state) {
   if (state.gameOver) return;
   state.hour += 1;
   noteLootAge(state); // itemcond.js: the years since the fall, for every piece of loot rolled this hour
+  syncAllMembers(state); // members.js: the groups' head counts and their people made to agree (cheap when nothing changed)
   weatherHour(state); // weather.js: seasons and the day's weather (fixed ahead, so ETAs hold)
   riversHour(state); // rivers.js: rivers freezing over or thawing (before anyone moves this hour)
   skillsHour(state); // skills.js: travel XP, Pathfinder's pace
@@ -981,6 +1004,7 @@ function hourOfWorld(state) {
     watchDayRoles(state); // watch.js: Manual people on watch likewise
     weatherDaily(state); // first, so the day's farming, water and sickness read today's weather
     basesDaily(state);
+    storageDaily(state); // basestorage.js: items left outside past a base's storage wear (rain and snow double it)
     craftingDaily(state);
     stallDaily(state); // activity.js: read-only but for base.stall (no dice)
     vehiclesDaily(state);

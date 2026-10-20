@@ -20,6 +20,7 @@ import { serializeState, deserializeState } from "../src/sim/save.js";
 import { atBase } from "../src/sim/world.js";
 import { launchExpedition } from "../src/sim/parties.js";
 import { createVehicle, fitMilitary, loseRaidHumvee } from "../src/sim/vehicles.js";
+import { newItem } from "../src/sim/inventory.js";
 import { createBattle, registerCombatHandler, fire, fireCab, cabTarget, hullWear, fleeToCar, ramGate, breachOk, BREACH, BREACH_THROUGH, carSteps, syncGunner, driveTo } from "../src/sim/combat.js";
 
 const SEED = Number(process.argv[2] || 7);
@@ -486,6 +487,18 @@ section("A raid's several vehicles lost at once (vehicles.js loseRaidHumvee)");
   const taken = (g.vehicles || []).filter((x) => x.owner === g.id && x.type === "hummer");
   check(!err && !!got && !f.vehicles.length && p.humvee == null, `both lost, no loop (${err || "no error"})`);
   check(taken.length >= 2 && new Set(taken.map((x) => x.id)).size === taken.length, `the group that took them has ${taken.length} with ids of their own (${taken.map((x) => x.id).join(", ")})`);
+  // What is in them goes with them (vehicles.js carryCargo, docs/adr/0001-ai-parity.md 5.15): into the defenders'
+  // stores, or into your base's when one is left at yours.
+  const h = hub(st);
+  const withLoad = (id) => fitMilitary({ id, type: "hummer", name: "Humvee", fuel: 10, condition: 80, owner: f.id, cargo: { supplies: { fuel: 6 }, gear: [newItem("machete")] } }, "m2hb");
+  f.vehicles = [withLoad(`f${f.id}-load1`)];
+  const blade = f.vehicles[0].cargo.gear[0], gf0 = g.stock.fuel || 0;
+  loseRaidHumvee(st, { owner: f.id, humvee: `f${f.id}-load1` }, { faction: g });
+  check((g.stock.fuel || 0) === gf0 + 6 && ((g.arsenal && g.arsenal.items.includes(blade)) || (g.wares || []).includes(blade)) && !(g.vehicles || []).some((x) => x.cargo), `taken by the defenders: its fuel and the machete into their stores (fuel ${gf0} → ${g.stock.fuel})`);
+  f.vehicles = [withLoad(`f${f.id}-load2`)];
+  const blade2 = f.vehicles[0].cargo.gear[0], hf0 = h.stock.fuel || 0;
+  const left = loseRaidHumvee(st, { owner: f.id, humvee: `f${f.id}-load2` }, { base: h });
+  check(!!left && !left.cargo && (h.stock.fuel || 0) === hf0 + 6 && h.armory.includes(blade2), `left at your base: what was in it is the base's (fuel ${hf0} → ${h.stock.fuel}, the machete in the armory)`);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

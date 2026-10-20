@@ -30,6 +30,8 @@ import { armorMult, ARMOR_SLOTS, isCarrier, insertsOf, migrateCarrier, stow, sto
 import { wearSlot, itemDurMax } from "./crafting.js";
 import { log } from "./world.js";
 import { faceOf, FACE } from "./helmets.js"; // the face zone of a head hit: the visor, the face cover
+import { SURV_ARMOUR } from "./data-survival.js"; // a leather jacket, chainmail sleeves, motorcycle trousers
+import { cfgOf } from "./worldcfg.js"; // the run's dials: Durability loss
 export { armorMult };
 
 // The pieces (section 17 table: AC, material; dmax is the GEAR dur, checked by tools/armortest.js). The plate carrier
@@ -57,6 +59,7 @@ export const ARMOUR = {
   milhelmet:      { ac: 3, dmax: 30, mat: "hard" },
   rivethelmet:    { ac: 2, dmax: 16, mat: "steel" }, // a crafted riveted-plate helmet (craft books)
 };
+Object.assign(ARMOUR, SURV_ARMOUR); // survival gear (data-survival.js)
 
 export const AR = {
   BLUNT: [1, 0.6, 0.45, 0.35, 0.3, 0.25, 0.2], // × a stopped hit by AC
@@ -214,7 +217,7 @@ export function armourHit(b, t, raw, by, hit) {
     msgs.push([`Steel spall off ${t.name}'s ${pieceName(g.piece)} (+${extra}).`, "info"]);
   }
   if (!through && loc === "head") msgs.push([`${t.name}'s ${pieceName(g.piece)} stops it.`, "info"]);
-  if (!g.backer) wearPiece(g.piece, raw, r, through, t, msgs, g.label);
+  if (!g.backer) wearPiece(g.piece, raw, r, through, t, msgs, g.label, b.wear ?? 1); // b.wear: the run's Durability loss dial (worldcfg.js battleDials)
   return { mult: mult * tough, extra: extra * tough, loc, through, piece: g.piece, msgs };
 }
 
@@ -228,8 +231,8 @@ function faceHit(b, t, raw, r, hit, msgs, tough) {
   if (!f || f.cracked) return bare;
   const cover = f.item || t.pieces.head;
   if (hit.how !== "shot") {
-    if (r.ad === "bite") takeDur(cover, FACE.BITE_WEAR);
-    else wearPiece(cover, raw, r, false, t, msgs);
+    if (r.ad === "bite") takeDur(cover, FACE.BITE_WEAR * (b.wear ?? 1));
+    else wearPiece(cover, raw, r, false, t, msgs, null, b.wear ?? 1);
     return { mult: tough * (FACE.SOFT[f.kind] ?? 0.4), extra: 0, loc: "head", face: true, through: false, piece: cover, msgs };
   }
   const ac = f.kind === "ballistic" && f.item ? armourSpec(f.item.key).ac : f.kind === "riot" ? FACE.RIOT_AC : 0;
@@ -237,7 +240,7 @@ function faceHit(b, t, raw, r, hit, msgs, tough) {
   const cond = f.item ? armourCond(f.item) ?? 1 : 1;
   const through = battleDice(b, "facepen") < penChance(r.pen, ac, cond);
   if (f.item) {
-    wearPiece(f.item, raw, r, through, t, msgs);
+    wearPiece(f.item, raw, r, through, t, msgs, null, b.wear ?? 1);
     if (f.kind === "ballistic" && armourBroken(f.item)) msgs.push([`Visor cracked! ${t.name} can barely see through it.`, "danger"]);
   }
   if (!through) msgs.push([`${t.name}'s visor stops it.`, "info"]);
@@ -254,10 +257,10 @@ function takeDur(piece, loss) {
   if (piece.dur <= 0) piece.chip = 0;
 }
 // Durability lost by one hit (wear), ceramic shattering, broken pieces. Returns the points lost.
-export function wearPiece(piece, raw, r, through, t = null, msgs = null, label = null) {
+export function wearPiece(piece, raw, r, through, t = null, msgs = null, label = null, mult = 1) { // mult: the run's Durability loss dial (worldcfg.js)
   const s = armourSpec(piece.key);
   if (!s || armourBroken(piece)) return 0;
-  const loss = (raw * roundAd(r, s.mat) * (AR.WEAR[s.mat] ?? 1)) / 10 * (through ? 0.5 : 1);
+  const loss = (raw * roundAd(r, s.mat) * (AR.WEAR[s.mat] ?? 1)) / 10 * (through ? 0.5 : 1) * mult;
   takeDur(piece, loss);
   const who = t ? `${t.name}'s ` : "";
   if (s.mat === "ceramic" && r.pen >= AR.SHATTER.pen && piece.dur > 0) {
@@ -390,7 +393,7 @@ export function absorbOffscreen(s, dmg, enemyKind, state = null) {
     const spec = it && armourSpec(it.key);
     if (!spec || armourBroken(it)) continue;
     const ad = bite ? AR.BITE_AD[spec.mat] ?? 0.5 : AR.KIND_AD[enemyKind] ?? 0.5;
-    const loss = dmg * AR.OFFSCREEN * ad * (W[loc] / tot);
+    const loss = dmg * AR.OFFSCREEN * ad * (W[loc] / tot) * cfgOf(state, "wear"); // worldcfg.js: the run's Durability loss dial
     takeDur(it, loss);
     if (spec.mat === "ceramic" && !bite && ad >= 0.8 && it.dur > 0 && curDur(it) < AR.SHATTER.share * spec.dmax) { it.shattered = true; it.dur = 0; }
     lost += loss;

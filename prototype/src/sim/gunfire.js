@@ -190,7 +190,7 @@ export function jamChance(b, u) {
   const w = WEAPONS[u.weapon];
   if (!w || w.melee || !w.rel) return 0;
   const fq = 1 + 2 * (1 - gunQ(u)), fc = 1 + JAM.COND * (1 - gunCond(u));
-  return Math.min(JAM.CAP, (w.rel / 100) * fq * fc * ammoJam(u) * modJam(u) * weatherJam(b, u) * foulJam(u));
+  return Math.min(JAM.CAP, (w.rel / 100) * fq * fc * ammoJam(u) * modJam(u) * weatherJam(b, u) * foulJam(u)) * (b && b.failures != null ? b.failures : 1); // worldcfg.js: the run's Failures dial (on the battle)
 }
 // One trigger pull of n rounds: { fired, spent, jam: kind | null, misfire }.
 export function rollTrigger(b, u, n) {
@@ -242,7 +242,7 @@ export function unjam(b, u) {
 export function jamReload(b, u) {
   if (!u.jam || u.jam.kind !== "double") return false;
   const keep = magIn(u);
-  const phys = u.side === "player" && Array.isArray(u.stack); // physical rounds (mags.js): the magazine comes out with what is in it; reloadPlan lets a swap through on a double feed
+  const phys = (u.side === "player" || !!u.who) && Array.isArray(u.stack); // physical rounds (mags.js): the magazine comes out with what is in it; reloadPlan lets a swap through on a double feed
   if (!phys) loadMag(u, 0);
   if (reloadRefusal(b, u)) { if (!phys) loadMag(u, keep); return false; }
   u.jam = null;
