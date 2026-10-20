@@ -41,7 +41,7 @@ import { migrateStaging } from "./staging.js"; // the old staging camp becomes a
 import { migrateStacks } from "./itemstack.js"; // stacks in a slot (2026-10-10)
 import { SICK_REST_MODES } from "./sickrest.js"; // the Work tab's "Sick people rest" (old saves: on)
 import { migrateGenerators, migrateGenTiers } from "./power.js"; // machines-2: generators without operators; gen-tiers: every old generator a tier-1 set
-import { migrateCanners, migrateWalls, legacyCampTents } from "./buildings.js"; // machines-2: the pressure canner fitted to a preserving room
+import { migrateCanners, migrateWalls, legacyCampTents, BUILDINGS } from "./buildings.js"; // machines-2: the pressure canner fitted to a preserving room
 import { migrateTentList } from "./tents.js"; // the tentkit branch's base.tents list: map pieces now
 import { migrateCots } from "./beds.js"; // beds as furniture: the retired makeshift cots become Cots set at the base
 import { ensurePois, packPois } from "./pois.js"; // points of interest: saved as the changes from the seed's lists; a save from before gets its lists on load
@@ -146,6 +146,8 @@ export function deserializeState(save) {
   if (!state || !Array.isArray(state.tiles) || !state.grid || !Array.isArray(state.bases)) throw new SaveError("The save is damaged and cannot be loaded (no map or bases).", "damaged");
   setNextId(Number(s.nextId));
   migrateTentList(state); // tents.js: a save of the tentkit branch's own list (base.tents): map pieces now, their bags kept
+  // A step up queued before the step ups took wood (the user's pick 2026-10-20) keeps the cost it was queued at.
+  for (const b of state.bases) for (const job of b.construction || []) if (!job.cost && BUILDINGS[job.type] && BUILDINGS[job.type].tierUp) { const { wood, ...rest } = BUILDINGS[job.type].cost; job.cost = rest; }
   for (const b of state.bases) { legacyCampTents(b); if (b.plan && b.plan.tentHp) delete b.plan.tentHp; } // a camp from before tents (it slept six round the fire): three two-person tents (buildings.js); softcover.js keeps a tent's wear on its record (rec.tentHp), not the plan's old t:<i> list
   // The world size (worldsize.js): a save from before sizes is a Normal 64 × 42 map (worked out from its grid).
   if (!WORLD_SIZES[state.worldSize]) state.worldSize = worldSizeOf(state); // a custom size stays "custom" (its grid says how big)

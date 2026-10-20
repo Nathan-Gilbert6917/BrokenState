@@ -63,7 +63,7 @@ check(tierInfo(st, camp).stage === 0 && tierInfo(st, camp).next === "Shelter", "
 console.log("A shelter building up into a base: a bar in the base panel's rows");
 const st2 = createWorld({ seed: 11, factionCount: 7, mode: "hardcore" });
 const q = roadTeam(st2);
-q.supplies.scrap = 30; q.supplies.parts = 4; q.supplies.food = 30; q.supplies.water = 30; q.supplies.buildmat = 2;
+q.supplies.scrap = 30; q.supplies.parts = 4; q.supplies.food = 30; q.supplies.water = 30; q.supplies.buildmat = 2; q.supplies.wood = 600; // the step up's 200 wood, the fire's (the user's pick 2026-10-20)
 establishArriveNow(st2, q);
 const base = st2.bases[0];
 for (let i = 0; i < 24 * 6 && base.camp; i++) { tickHour(st2); st2.cards.length = 0; }

@@ -154,6 +154,7 @@ check(bc && JSON.stringify(tierUpJob(bc)) === JSON.stringify(tierUpJob(camp)) &&
 const armN = camp.armory.length, ppl = atBase(st, camp.id).length;
 for (const s of atBase(st, camp.id)) s.role = "build";
 camp.stock.buildmat = (camp.stock.buildmat || 0) + 2;
+camp.stock.wood = (camp.stock.wood || 0) + 600; // the step up's 200 wood (the user's pick 2026-10-20), the fire's days kept back
 run(st, 24 * 8, () => !isCamp(camp));
 check(!isCamp(camp) && isShelter(camp) && tierName(camp) === "Shelter" && st.bases.includes(camp), `the camp is built up into the shelter (day ${day(st)})`);
 check(camp.armory.length >= armN && atBase(st, camp.id).length >= ppl && car.loc.kind === "base" && car.loc.baseId === camp.id, "the same base: its people, armory and vehicles kept");

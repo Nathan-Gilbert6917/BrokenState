@@ -58,10 +58,10 @@ export const BED_GEAR = {
 // benchNeeded), as most of the hand recipes.
 /** @type {Record<string, any>} */
 export const BED_CRAFTS = {
-  cot:     { gear: "cot",     in: { wood: 30, scrap: 3 },             hours: 3,  skill: "mechanics", min: 0 },
-  bed:     { gear: "bed",     in: { wood: 90, scrap: 4 },             hours: 6,  skill: "mechanics", min: 1 },
-  bunkbed: { gear: "bunkbed", in: { wood: 140, scrap: 6 },            hours: 9,  skill: "mechanics", min: 2 },
-  bigbed:  { gear: "bigbed",  in: { wood: 160, scrap: 6, parts: 1 },  hours: 12, skill: "mechanics", min: 3 },
+  cot:     { gear: "cot",     in: { wood: 60, scrap: 2 },             hours: 3,  skill: "mechanics", min: 0 },
+  bed:     { gear: "bed",     in: { wood: 150, scrap: 2 },             hours: 6,  skill: "mechanics", min: 1 },
+  bunkbed: { gear: "bunkbed", in: { wood: 250, scrap: 3 },            hours: 9,  skill: "mechanics", min: 2 },
+  bigbed:  { gear: "bigbed",  in: { wood: 300, scrap: 3, parts: 1 },  hours: 12, skill: "mechanics", min: 3 },
 };
 
 // The placed pieces (buildings.js Object.assign(BUILDINGS, BED_BUILDINGS)): fit (only on a general building's floor,

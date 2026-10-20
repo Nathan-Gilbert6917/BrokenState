@@ -59,8 +59,9 @@ const BEFORE = {
 // The user's list to raise (pick 1), and the wooden things given wood (pick 2).
 const RAISE = ["wall4", "gate4", "stand4", "barricades", "spike_pits", "trench", "watchtower", "shed", "gen_hut", "gen_cabin", "gen_lodge", "gen_hall", "gen_barn", "animal_pen", "farm_plot", "smoker", "huntcabin", "bunkhouse"];
 const ADDED = ["craftbench", "workbench", "ammo_bench", "barracks", "barbed_wire", "garage", "storehouse", "well", "cellar", "coldstore", "kitchen", "canteen", "common_room", "chapel", "infirmary"];
-// Metal, electrical, masonry, medical-grade or furniture/storage left to its own branch: no wood.
-const NO_WOOD = ["toolbench", "reload_bench", "machine_shop", "radio", "relay", "generator", "freezer", "sealer", "grainmill", "meatgrinder", "still", "greenhouse", "warehouse", "armory", "cistern", "rain_catcher", "boiler", "water_barrel", "floodlights", "razor_wire", "minefield", "guard_towers", "gate", "camo", "lockers", "stove", "canner", "med_station", "field_hosp", "clinic", "hospital", "lockup", "cells", "jailhouse", "sandbag_wall", "cookhouse"];
+// Metal, electrical, masonry, medical-grade: no wood. (The lockers took a plank plinth with the furniture and storage
+// fittings, the user's pick 2026-10-20: ptinttest.)
+const NO_WOOD = ["toolbench", "reload_bench", "machine_shop", "radio", "relay", "generator", "freezer", "sealer", "grainmill", "meatgrinder", "still", "greenhouse", "warehouse", "armory", "cistern", "rain_catcher", "boiler", "water_barrel", "floodlights", "razor_wire", "minefield", "guard_towers", "gate", "camo", "stove", "canner", "med_station", "field_hosp", "clinic", "hospital", "lockup", "cells", "jailhouse", "sandbag_wall", "cookhouse"];
 const costOf = (k) => (BUILDINGS[k].piece ? pieceCost(k, 1) : BUILDINGS[k].cost);
 const txt = (c) => Object.entries(c || {}).map(([k, v]) => `${v} ${k}`).join(" + ") || "-";
 section("1. The costs: raised for the wooden builds, wood added where it makes sense, none on metal or electrical");

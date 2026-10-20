@@ -35,7 +35,10 @@ import { moodFactors } from "../src/sim/relations.js";
 import { createBattle, finishCombat } from "../src/sim/combat.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
 import { craftQueue } from "../src/sim/crafting.js";
-import { constructionHour, canBuild, addBuilding } from "../src/sim/buildings.js";
+import { constructionHour, canBuild, addBuilding, gatherRows, tierUpJobFor } from "../src/sim/buildings.js";
+import { CRAFTS } from "../src/sim/crafting.js";
+import { woodNeed } from "../src/sim/woodcutting.js";
+import { woodpileOf, storageSummary } from "../src/sim/basestorage.js";
 import * as TE from "../src/sim/tripevents.js";
 import { packLights, hasLight } from "../src/sim/lights.js";
 import { allItems, rigPouches } from "../src/sim/inventory.js";
@@ -410,6 +413,36 @@ section("Round 2: a light handed out is in one place");
   check(!onHer || hasLight(s), "on them, it is their light (a headlamp works from a rig's pouch)");
 }
 
+
+
+// ---------- the user's picks of 2026-10-20, after round 2 ----------
+section("Picks: wood in the tents, beds and furniture; wood in the step ups; the woodpile apart");
+{
+  const want = { tent: { wood: 80, scrap: 1 }, bunks: { scrap: 2, wood: 200 }, shelves: { scrap: 2, wood: 150 }, lockers: { scrap: 5, wood: 40 }, crates: { scrap: 1, wood: 120 }, storebox: { scrap: 1, wood: 80 } };
+  check(Object.entries(want).every(([k, c]) => JSON.stringify(BUILDINGS[k].cost) === JSON.stringify(c)), `fittings and the Makeshift tent: ${Object.keys(want).map((k) => `${k} ${JSON.stringify(BUILDINGS[k].cost)}`).join(", ")}`);
+  const beds = { cot: { wood: 60, scrap: 2 }, bed: { wood: 150, scrap: 2 }, bunkbed: { wood: 250, scrap: 3 }, bigbed: { wood: 300, scrap: 3, parts: 1 } };
+  check(Object.entries(beds).every(([k, c]) => JSON.stringify(CRAFTS[k].in) === JSON.stringify(c)), "the beds' recipes: cot 60 wood + 2 scrap, bed 150 + 2, bunk bed 250 + 3, large bed 300 + 3 + a part");
+  check(BUILDINGS.camp_up.cost.wood === 200 && BUILDINGS.outpost_up.cost.wood === 200 && BUILDINGS.hub_up.cost.wood === 800, "the step ups: camp to shelter 200 wood, the outpost 200, shelter to base 800 (with their scrap and building materials)");
+  // The step up keeps the fire's days back while it gathers.
+  const st = world(seed + 30);
+  const camp = campWith(st, 2);
+  camp.fire = true;
+  let job = camp.construction.find((c) => BUILDINGS[c.type] && BUILDINGS[c.type].tierUp);
+  if (!job) { job = tierUpJobFor(camp); camp.construction.push(job); }
+  const keep = woodNeed(st, camp).dailyKeep;
+  camp.stock.wood = keep + 50;
+  constructionHour(st);
+  const r = job ? gatherRows(job).find((x) => x.key === "wood") : null;
+  check(!!r && Math.floor(camp.stock.wood) >= keep && r.have <= 50, `the step up takes the wood above the fire's days (${keep} kept, ${r && r.have} taken)`);
+  // The woodpile.
+  const h = hub(st);
+  h.stock.wood = 5000;
+  const s = storageOf(st, h);
+  check(!s.containers.some((c) => c.sup.wood) && !s.outside.sup.wood && woodpileOf(h) === 5000, "5,000 wood: in no container, not lying outside, the woodpile");
+  check(storageSummary(st, h).includes("Woodpile: 5000 wood"), "the Storage tab's line: Woodpile: 5000 wood");
+  const out = BM.outsideOf(st, h);
+  check(out && out.sup.wood === 5000, "a raid's map lays it with the piles: stealable");
+}
 
 console.log(`\n${pass} passed, ${fail} failed (${((Date.now() - t0) / 1000).toFixed(1)} s)`);
 process.exit(fail ? 1 : 0);

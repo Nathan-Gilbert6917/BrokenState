@@ -281,9 +281,9 @@ export const BUILDINGS = {
   // Water barrels (WATER_BARREL below): up to 4, each upgraded on its own and set to hold purified or un-purified water.
   water_barrel: { name: "Water barrel",   plot: "utility", cost: { scrap: 4 },  hours: 6,  max: 4, barrel: true, desc: "A drum on a stand: 25 more water room, kept for the kind you choose. Un-purified: room for the well, rain and river water. Purified: room only safe water may use (water filters' surplus, bottled water brought home), so the well's water never crowds it out and teams always find safe water to pack. Upgrade each barrel on its own: a barrel rack (50), then a water tank (100)." },
   // Storage crates (storage.js storeSpaces): a little dry room for food, outdoors; and room for goods (basestorage.js).
-  crates:       { name: "Storage crates", plot: "utility", cost: { scrap: 3, wood: 50 },  hours: 5,  max: 4, storeKg: STORE_KG.crates, desc: "Stacked, lidded crates under a tarp: holds 150 kg of the base's goods, and +30 days of food room at room temperature." },
+  crates:       { name: "Storage crates", plot: "utility", cost: { scrap: 1, wood: 120 },  hours: 5,  max: 4, storeKg: STORE_KG.crates, desc: "Stacked, lidded crates under a tarp: holds 150 kg of the base's goods, and +30 days of food room at room temperature." },
   // The storage box (basestorage.js): the first storage a camp makes. No plot (it stands anywhere in the yard, like the cots).
-  storebox:     { name: "Storage box",    cost: { scrap: 1, wood: 50 }, hours: 2, max: 6, storeKg: STORE_KG.storebox, desc: "A lidded box knocked together from scrap, under a tarp: holds 60 kg of the base's goods. A camp starts with no storage (a parked vehicle's load space counts while it is here); goods past the room lie outside, where things wear and raiders help themselves. Needs no plot." },
+  storebox:     { name: "Storage box",    cost: { scrap: 1, wood: 80 }, hours: 2, max: 6, storeKg: STORE_KG.storebox, desc: "A lidded box knocked together from scrap, under a tarp: holds 60 kg of the base's goods. A camp starts with no storage (a parked vehicle's load space counts while it is here); goods past the room lie outside, where things wear and raiders help themselves. Needs no plot." },
   // General buildings (base building, the user's request 2026-10-19: "different sized general buildings that you can
   // build things inside such as workbenches, beds, storage, kitchen etc."; basemap.js FOOT general / plain): empty
   // shells of some size on the base map, no plot (the map is the limit), whose indoor cells take the fittings below and
@@ -305,22 +305,22 @@ export const BUILDINGS = {
   // scrap tarp lashed over them, 1 × 2 on the base map's open ground: one sleeper, no storage, and a poor night's sleep
   // (TENTS.makeshift.mood). Proper tents come from tent bags (pitchTent / strikeTent). Its record: { type: "tent",
   // tent: the kind } (addBuilding: a makeshift one).
-  tent:         { name: "Makeshift tent", size: "camp", cost: { wood: 40, scrap: 1 }, hours: 2, max: 16, desc: "Cut poles and a scrap tarp lashed over them, 1 × 2 on the base map's open ground (clear the land first): a place for one to sleep, but not a good one (mood −1 a day for whoever sleeps in it). Proper tents are pitched from tent bags." },
+  tent:         { name: "Makeshift tent", size: "camp", cost: { wood: 80, scrap: 1 }, hours: 2, max: 16, desc: "Cut poles and a scrap tarp lashed over them, 1 × 2 on the base map's open ground (clear the land first): a place for one to sleep, but not a good one (mood −1 a day for whoever sleeps in it). Proper tents are pitched from tent bags." },
   // Clearing the land (the user's requests 2026-10-20: "Trees in the base map can be chopped down for wood", "Tree
   // chopping takes time and works like a construction progress tile", "every scatter piece blocks building until
   // cleared"): one job in the construction queue a piece of the base map's land (basescatter.js CLEAR: its hours and
   // what it gives), worked by the builders like a building; the yield arrives when it is done (finishClear). Never built
   // from a list: queued from the base map (a piece's card, a red site clicked) or by the game for a site it placed.
   clear:        { name: "Clearing", cost: {}, hours: 1, max: 100000, hidden: true, clear: true, desc: "Clearing the land on the base map: felling a tree, digging out a stump, dragging off a wreck. Queued from the base map." },
-  bunks:        { name: "Bunk beds",      fit: true, cost: { scrap: 4, wood: 50 }, hours: 4, max: 24, desc: "A pair of bunks of scrap tubing and planks, 2 × 1 on the floor of a hut, cabin, lodge, hall or barn: +2 beds each. Overcrowding lowers mood every day." },
-  shelves:      { name: "Storage shelves", fit: true, cost: { scrap: 3, wood: 50 }, hours: 4, max: 24, storeKg: STORE_KG.shelves, desc: "Shelving of planks and angle iron, 2 × 1 on the floor of a general building: holds 150 kg of the base's goods (Storage tab), kept under a roof. In a raid it is a store on the map that raiders go for once they are past the wall." },
-  lockers:      { name: "Lockers",        fit: true, cost: { scrap: 6 }, hours: 5, max: 12, storeKg: STORE_KG.lockers, desc: "A steel locker, 1 × 1 on the floor of a general building: holds 100 kg of the base's goods, where the gear goes first (Storage tab). In a raid it is a store on the map." },
+  bunks:        { name: "Bunk beds",      fit: true, cost: { scrap: 2, wood: 200 }, hours: 4, max: 24, desc: "A pair of bunks of scrap tubing and planks, 2 × 1 on the floor of a hut, cabin, lodge, hall or barn: +2 beds each. Overcrowding lowers mood every day." },
+  shelves:      { name: "Storage shelves", fit: true, cost: { scrap: 2, wood: 150 }, hours: 4, max: 24, storeKg: STORE_KG.shelves, desc: "Shelving of planks and angle iron, 2 × 1 on the floor of a general building: holds 150 kg of the base's goods (Storage tab), kept under a roof. In a raid it is a store on the map that raiders go for once they are past the wall." },
+  lockers:      { name: "Lockers",        fit: true, cost: { scrap: 5, wood: 40 }, hours: 5, max: 12, storeKg: STORE_KG.lockers, desc: "A steel locker on a plank plinth, 1 × 1 on the floor of a general building: holds 100 kg of the base's goods, where the gear goes first (Storage tab). In a raid it is a store on the map." },
   stove:        { name: "Wood stove",     fit: true, as: "cookhouse", cost: { scrap: 8 }, hours: 8, max: 4, desc: "A drum stove with a flue, 1 × 1 on the floor of a general building: a cook fire indoors. It counts as a cook fire (all the game and fish eaten here cooked through, the infected land's greens and roots boiled), so a base with one needs no fire pit in the yard." },
   // Base tiers (staging.js): a shelter (tier 0) is built up into a base (the hub, tier 1) by its builders. Not a
   // building: when it is done the shelter becomes a full hub (upgradeShelter).
   // gather (2026-10-09, user pick): as the outpost camp's, its materials are taken from the stores as they come in.
   // User numbers 2026-10-09: "Upgrading to base 60 hours 100 scrap 5 building materials".
-  hub_up:       { name: "Build up into a base", cost: { scrap: 100, buildmat: 5 }, hours: 60, max: 1, shelterOnly: true, hubOnly: true, tierUp: true, gather: true,
+  hub_up:       { name: "Build up into a base", cost: { scrap: 100, buildmat: 5, wood: 800 }, hours: 60, max: 1, shelterOnly: true, hubOnly: true, tierUp: true, gather: true,
                   desc: "Turn the shelter into a real base: a main house, a dug well (12 water a day), a cellar, beds for four, 16 building plots and 14 utility plots. A wall it keeps as it stands (Construction, Defenses: upgrade it there). Shelters only. The materials are taken from the stores as they come in; the builders here do the work, never more of it than the materials delivered allow." },
   // An outpost camp (2026-10-09, user request: "When starting a base it should start as a camp with a progress bar with
   // needed items to upgrade to a more permanent base established"): Build outpost sets up a camp (tier 0, a shelter's
@@ -332,9 +332,9 @@ export const BUILDINGS = {
   // supplies but is the most barebones"; any team, anywhere: Set up camp, staging.js) built up into a shelter: the camp
   // that is your hub (your first home, the exiles' new one). The old staging camp's numbers (user numbers 2026-10-09,
   // "upgrading to shelter 20 hours 20 scrap 2 building materials"); 10 scrap less on ruins (job.cost, tierUpJobFor).
-  camp_up:      { name: "Build up into a shelter", cost: { scrap: 20, buildmat: 2 }, hours: 20, max: 1, campOnly: true, hubOnly: true, tierUp: true, gather: true,
+  camp_up:      { name: "Build up into a shelter", cost: { scrap: 20, buildmat: 2, wood: 200 }, hours: 20, max: 1, campOnly: true, hubOnly: true, tierUp: true, gather: true,
                   desc: "Turn the camp into a shelter: a shack with a roof behind a scrap barricade, beds for four, a building plot, three utility plots and two crop plots; later the shelter is built up into a base. The materials are taken from the camp's stores as they come in; the builders here do the work, never more of it than the materials delivered allow." },
-  outpost_up:   { name: "Establish the outpost", cost: { scrap: 20, buildmat: 2 }, hours: 20, max: 1, shelterOnly: true, outpostOnly: true, tierUp: true, gather: true,
+  outpost_up:   { name: "Establish the outpost", cost: { scrap: 20, buildmat: 2, wood: 200 }, hours: 20, max: 1, shelterOnly: true, outpostOnly: true, tierUp: true, gather: true,
                   desc: "Turn the outpost camp into a real outpost: a shack with a roof, a dug spring (3 water a day), 6 building plots and 6 utility plots (walls are built on the Defenses tab). The materials are taken from the camp's stores as they come in (bring them with a team or a supply run); the builders here do the work, never more of it than the materials delivered allow." },
 };
 Object.assign(BUILDINGS, BED_BUILDINGS); // beds as furniture (data-beds.js, beds.js): set from the stores inside a general building, never queued
@@ -1194,7 +1194,9 @@ export function buildRate(state, base) {
 
 // ---------- jobs that gather their materials (BUILDINGS gather: the outpost camp's step up) ----------
 // The job: nothing paid yet (paid: { key: n } taken from the stores so far).
-export const gatherJob = (type) => ({ id: newId(), type, progress: 0, hours: BUILDINGS[type].hours, paid: {} });
+// Its cost stamped on it (job.cost): a step up queued before its wood (the user's pick 2026-10-20) loads without one
+// and keeps the cost it was queued at (save.js).
+export const gatherJob = (type) => ({ id: newId(), type, progress: 0, hours: BUILDINGS[type].hours, paid: {}, cost: { ...BUILDINGS[type].cost } });
 // Each material: { key, need, have (taken), ok }.
 export const gatherRows = (job) => Object.entries(job.cost || BUILDINGS[job.type].cost).map(([key, need]) => { const have = Math.min(need, (job.paid && job.paid[key]) || 0); return { key, need, have, ok: have >= need - 1e-9 }; });
 // The share of the work the materials taken so far allow (the least delivered of them).
@@ -1213,8 +1215,11 @@ function gatherHour(state, base) {
   for (const job of base.construction) {
     if (!job.paid) continue;
     const share = Math.min(1, (job.progress + GATHER_AHEAD) / Math.max(1, job.hours));
-    // The Ring wall leaves the wood the base needs for its heating, its stove and its fire (woodcutting.js woodNeed).
-    const keep = job.type === "walls" && gatherRows(job).some((r) => r.key === "wood" && !r.ok) ? { wood: woodNeed(state, base).need } : {};
+    // The Ring wall leaves the wood the base needs for its heating, its stove and its fire (woodcutting.js woodNeed); a
+    // step up (camp, shelter, outpost: their wood, the user's pick 2026-10-20) the fires' days (dailyKeep), so a camp
+    // saving up never lets its fire go out.
+    const wantsWood = gatherRows(job).some((r) => r.key === "wood" && !r.ok);
+    const keep = !wantsWood ? {} : job.type === "walls" ? { wood: woodNeed(state, base).need } : BUILDINGS[job.type] && BUILDINGS[job.type].tierUp ? { wood: woodNeed(state, base).dailyKeep } : {};
     for (const r of gatherRows(job)) {
       const want = Math.min(r.need, Math.ceil(r.need * share - 1e-9)) - r.have;
       const take = Math.min(want, Math.floor(Math.max(0, (base.stock[r.key] || 0) - (keep[r.key] || 0))));

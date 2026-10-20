@@ -59,7 +59,7 @@ const isStore = (w) => !!w && STORE_KEYS.includes(w.type);
 // ======================================================================
 section("Your costs and hours, your rules");
 {
-  const want = { storebox: [1, 1], crates: [3, 1], shed: [4, 2], store: [10, 3], warehouse: [40, 6] }; // scrap (wood besides: 2026-10-20; woodwork's costs)
+  const want = { storebox: [1, 1], crates: [1, 1], shed: [4, 2], store: [10, 3], warehouse: [40, 6] }; // scrap (wood besides: 2026-10-20; woodwork's costs)
   for (const [k, [scrap, work]] of Object.entries(want)) {
     const d = storeDef(k), B = BUILDINGS[STORE_BUILDING[k]];
     check(JSON.stringify(d.cost) === JSON.stringify(B.cost) && d.cost.scrap === scrap, `${d.name}: your cost (${JSON.stringify(d.cost)})`);

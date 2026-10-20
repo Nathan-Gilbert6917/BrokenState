@@ -293,12 +293,12 @@ const campOf = (st) => st.bases.find((b) => b.camp === true) || null;
   check(!canBuild(st, camp, "hub_up").ok && !canBuild(st, camp, "watchtower").ok && /shelter/.test(canBuild(st, camp, "watchtower").reason) && /once it is a base/.test(canBuild(st, camp, "well").reason), "the rest waits for the shelter or the base (and says so)");
   check(establishOption(st, null, landNear(st, tile0, 2).id) === null, "with a base (the camp): no Establish base");
   // Half the materials: the work goes as far as they allow and waits.
-  Object.assign(camp.stock, { scrap: Math.ceil(needScrap / 2), buildmat: STAGING.HARDCORE.needs.buildmat / 2 });
+  Object.assign(camp.stock, { scrap: Math.ceil(needScrap / 2), buildmat: STAGING.HARDCORE.needs.buildmat / 2, wood: STAGING.HARDCORE.needs.wood / 2 + 300 }); // wood (the user's pick 2026-10-20): half the step up's and the fire's days
   const t1 = st.hour;
   run(st, 24 * 4, () => job.progress > 0 && gatherStalled(job));
   check(gatherStalled(job) && job.progress > 0 && job.progress < job.hours * 0.56, `half the materials: about half the work, then it waits (${Math.round((job.progress / job.hours) * 100)}% after ${st.hour - t1}h)`);
   // The rest comes in: the shelter stands.
-  Object.assign(camp.stock, { scrap: (camp.stock.scrap || 0) + needScrap, buildmat: (camp.stock.buildmat || 0) + STAGING.HARDCORE.needs.buildmat });
+  Object.assign(camp.stock, { scrap: (camp.stock.scrap || 0) + needScrap, buildmat: (camp.stock.buildmat || 0) + STAGING.HARDCORE.needs.buildmat, wood: (camp.stock.wood || 0) + STAGING.HARDCORE.needs.wood + 300 });
   const t2 = st.hour;
   run(st, 24 * 6, () => !campOf(st));
   const h = hub(st);
@@ -432,7 +432,7 @@ section("The camp's step up: days by builders, neglect, striking it, a team lost
   const st = hc(303);
   st.noWanderers = true;
   const p = roadTeam(st);
-  Object.assign(p.cargo.supplies, { scrap: 40, parts: 5, water: 45, buildmat: 4 }); setFood(p.cargo, 40);
+  Object.assign(p.cargo.supplies, { scrap: 40, parts: 5, water: 45, buildmat: 4, wood: 500 }); setFood(p.cargo, 40); // wood: the step up's 200 and the fire's
   st.cards.length = 0;
   establishNow(st, p);
   const t0 = st.hour;
@@ -836,7 +836,7 @@ section("Saves: hubless, mid-build and after founding; an old save's staging cam
   ld.noWanderers = true;
   if (p) {
     if (p.phase !== "waiting") { p.phase = "waiting"; p.task = null; p.path = [partyTile(p)]; p.idx = 0; }
-    Object.assign(p.cargo.supplies, { scrap: 40, parts: 5, water: 35, buildmat: 4 }); setFood(p.cargo, 30);
+    Object.assign(p.cargo.supplies, { scrap: 40, parts: 5, water: 35, buildmat: 4, wood: 500 }); setFood(p.cargo, 30); // wood: the step up's 200 and the fire's
     establishNow(ld, p);
   }
   const jobOf = (w) => { const c = campOf(w); return c ? tierUpJob(c) : null; };

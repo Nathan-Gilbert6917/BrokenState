@@ -2767,7 +2767,7 @@ function nextBuildScrap(state, base, areas = ALL_AREAS) {
 // reserve back: keepsWood) }.
 function nextBuildWood(state, base, areas = ALL_AREAS) {
   let wood = 0;
-  for (const c of base.construction) if (c.paid && c.cost && c.cost.wood) wood += Math.max(0, c.cost.wood - (c.paid.wood || 0));
+  for (const c of base.construction) if (c.paid) { const r = gatherRows(c).find((x) => x.key === "wood"); if (r && !r.ok) wood += r.need - r.have; } // the Ring wall, and a step up's wood (its cost is the building's: gatherRows)
   for (const w of buildWishes(state, base)) {
     const def = BUILDINGS[w.type];
     if (!def || def.gather || !areas[BUILD_AREA[w.type] || "building"]) continue;

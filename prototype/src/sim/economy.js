@@ -12,7 +12,7 @@ import {
 } from "./world.js";
 import { planPath, dispatchConvoy } from "./parties.js";
 import { attitude } from "./factions.js";
-import { count, countAll, baseBeds, runStations, assignStations, stations, stationStatus, RECIPES, BUILDINGS, isShelter, SHELTER, barrelRoom, isCamp, tierUpJob } from "./buildings.js";
+import { count, countAll, baseBeds, runStations, assignStations, stations, stationStatus, RECIPES, BUILDINGS, isShelter, SHELTER, barrelRoom, isCamp, tierUpJob, gatherRows } from "./buildings.js";
 import { supplyReserve } from "./supply.js";
 import { medicalDaily, fieldInfectionDaily } from "./medical.js";
 import { toolBonus } from "./crafting.js";
@@ -733,6 +733,10 @@ function shipFromOutposts(state) {
       const keep = { food: Math.ceil(foodUse(state, base).total * lineDays) + 6, water: fed * 7 + 5, ammo: staff.length * 6, scrap: 30, parts: base.construction.length ? 3 : 0, fuel: 10, meds: 2, wood: (boil.active ? Math.ceil(boil.wood * 3) : 0) + fireKeep };
       // Supply runs: keep what a run from here will send, and what a run to here will pick up.
       for (const [k, v] of Object.entries(supplyReserve(state, base))) keep[k] = (keep[k] || 0) + v;
+      // What its gathered jobs still wait for (the step up: its scrap, building materials and, since the user's pick of
+      // 2026-10-20, its wood) stays: shipped every midnight, an outpost camp's wood went to the hub before its step up
+      // took it, and it was never established (pt-int round 2, outpostcamptest).
+      for (const job of base.construction || []) if (job.paid) for (const r of gatherRows(job)) if (!r.ok) keep[r.key] = (keep[r.key] || 0) + Math.ceil(r.need - r.have);
       for (const [k, v] of Object.entries(chooseRounds(base.stock, keep.ammo, baseCals(state, base)))) keep[k] = (keep[k] || 0) + v; // ammo.js: the rounds kept are the ones its guns shoot
       keep[RAW] = (keep[RAW] || 0) + Math.max(0, keep.water - Math.max(0, base.stock.water || 0)); // the water kept counts both kinds (water.js): purified first
       // Food: days of food over the keep go to the hub, the food that keeps first (the outpost eats its fresh food).

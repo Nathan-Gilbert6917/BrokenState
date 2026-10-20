@@ -507,6 +507,7 @@ export function migrateStaging(state) {
   for (const [k, v] of Object.entries(old.stores || {})) if (Number.isFinite(v) && v > 0) base.stock[k] = (base.stock[k] || 0) + v;
   if (old.to === 0 || old.to == null) {
     const job = tierUpJobFor(base);
+    if (old.needs && typeof old.needs === "object") job.cost = { ...old.needs }; // the old staging camp's needs: what it was started at (no wood, from before the user's pick of 2026-10-20)
     const cost = job.cost || BUILDINGS[job.type].cost;
     for (const [k, need] of Object.entries(cost)) { const take = Math.min(need, n0(base.stock[k])); if (take > 0) { base.stock[k] -= take; job.paid[k] = take; } }
     if (old.work > 0) job.progress = Math.min(job.hours, (old.progress / old.work) * job.hours);
