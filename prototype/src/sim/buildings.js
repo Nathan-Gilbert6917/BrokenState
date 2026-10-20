@@ -1,7 +1,7 @@
 // @ts-check
 // Buildings, workshop stations and the construction queue for every base (hub and outposts).
 import { FOODS, addFood, qtyOf } from "./foods.js"; // a station's food out (the kitchen's jars, the pen's eggs and milk)
-import { campBecameShelter } from "./staging.js"; // a camp built up into a shelter (the founding)
+import { campBecameShelter, baseUpgraded } from "./staging.js"; // a camp built up into a shelter (the founding)
 import { log, atBase, skill, newId, day, localId } from "./world.js";
 import { SILENT } from "./hiding.js"; // a base running silent: its stations work in quiet spells
 import { SKILL_NAMES, SUPPLIES } from "./data.js";
@@ -607,6 +607,7 @@ export function upgradeShelter(state, base) {
   base.fire = undefined;
   base.upgradedDay = Math.floor(state.hour / 24) + 1;
   log(state, base.type === "outpost" ? `${base.name} is an established outpost now: a shack with a roof, a dug spring and a fence where the camp stood.` : `${base.name} is a real base now: a main house, a dug well, a cellar and a fence where the tarps stood.`, "good");
+  baseUpgraded(state, base); // staging.js: its card, with Open the build map
 }
 
 // Working buildings of a type: a broken one (breakdowns.js) does nothing until it is repaired, and a building that

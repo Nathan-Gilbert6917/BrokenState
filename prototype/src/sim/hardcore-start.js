@@ -62,7 +62,7 @@ import { isHardcore } from "./hardcore.js";
 import { isCustomBg } from "./custombg.js";
 import { grabStartGear, addPickedSupplies, trunkFromPicks, loadGun, pickOf } from "./startgear.js"; // gear picked on the new-run screen (Customize)
 import { hcOutbreakCity } from "./hardcore-outbreak.js";
-import { STAGING, ESTABLISH_LABEL, needText, shelterText, waterSource } from "./staging.js";
+import { STAGING, ESTABLISH_LABEL, needText, shelterText, waterSource, buildMapChoice } from "./staging.js";
 import { swapGun } from "./gundist.js"; // the gun distribution: which gun they grabbed
 
 export const HC_START = {
@@ -256,7 +256,7 @@ export function hubFounded(state, base, when = "") {
     ? `Day ${day(state)}: the camp is a shelter now. ${base.name} is founded, your first shelter${when ? `, ${when}` : ""}. ${shelterText()} Build it up before the cold.`
     : `Day ${day(state)}: the camp is built up. ${base.name} is founded, your first hub${when ? `, ${when}` : ""}. It is bare: no buildings yet, a barricade of scrap and the camp's stores. Build farm plots, a well and beds before the cold.`;
   log(state, text, "good");
-  addCard(state, { title: "A place of your own", text, choices: [{ label: "OK", resolve: () => "" }] });
+  addCard(state, { title: "A place of your own", text, mapBase: base.id, choices: [{ label: "OK", default: true, resolve: () => "" }, buildMapChoice(base)] }); // staging.js: Open the build map (a rename while it waits rewrites its text: basenames.js renameBase)
 }
 
 // ---------- the spawn ----------

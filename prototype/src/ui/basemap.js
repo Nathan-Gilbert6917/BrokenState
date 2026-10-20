@@ -12,6 +12,7 @@
 import { baseById } from "../sim/world.js";
 import { openBaseMap, layoutOf, itemByKey, unplaceItem, baseMapSummary, storeContents, gridOfCell, buildMenu, fittingsIn, hostedItems, neighboursOf, canLink, FOOT, GRID, STEAL, NO_BUILD, landPieceAt, chopToolAt, landWords } from "../sim/basemap.js";
 import { clearOf, pieceWord, CLEAR } from "../sim/basescatter.js"; // the land: a piece's clearing
+import { layoutDone } from "../sim/staging.js"; // Open the build map: the base's ask ends once its map is open
 import { BUILDINGS, demolishRefund, pieceName, ringMat } from "../sim/buildings.js";
 import { nearRect, active } from "../sim/combat.js"; // who of yours stands next to a store of theirs (an assault)
 import { HAUL } from "../sim/raidloot.js";
@@ -300,6 +301,20 @@ export const BASEMAP_ACTIONS = {
 export function moveCarButton(state, base, v) {
   if (!base || !v || !itemByKey(state, base, `v:${v.id}`)) return "";
   return `<button class="mini" data-action="bm-open" data-base="${base.id}" data-key="v:${v.id}" data-tab="vehicles"${tip("Move it on the base map: click any free cells it fits, in the yard or beyond the wall (R turns it)")}>Move</button>`;
+}
+// Open the build map (sim/staging.js; a card's button, uiAction "basemap", main.js choice; ui/buildmap.js's alert and
+// key): that base's map, nothing picked, its Build list ready; closing it comes back to the base window's tab (the
+// Base map tab unless told). The base's ask to be laid out ends (layoutDone). "" when it opened, else why not (the
+// base is gone, a battle on): nothing is changed then.
+export function openBuildMap(state, ui, baseId, tab = "basemap") {
+  const b = baseById(state, Number(baseId));
+  if (!b) return "That base is gone: there is no build map to open.";
+  const err = openBaseMap(state, b.id);
+  if (err) return err;
+  layoutDone(state, b.id);
+  ui.mapFrom = { id: b.id, tab };
+  ui.baseView = null; ui.baseMsg = "";
+  return "";
 }
 // After Build on the Construction tab (main.js queuebuild): the map opens with the new job picked.
 export function openForJob(state, ui, base, type) {

@@ -60,6 +60,7 @@ export const KEYMAP = [
   { id: "team.next", label: "Next team waiting for orders", group: "Teams", ctx: "map", keys: ["Tab", "KeyN"] },
   { id: "team.prev", label: "Previous team waiting for orders", group: "Teams", ctx: "map", keys: ["Shift+Tab", "Shift+KeyN"] },
   { id: "team.inventory", label: "The selected team's inventory", group: "Teams", ctx: "map", keys: ["Shift+KeyB"] },
+  { id: "base.buildmap", label: "Open the build map of the selected base (its window open, or its tile selected)", group: "Bases", ctx: "map", keys: ["KeyU"] }, // ui/buildmap.js (B is the Bases tab)
   ...range(9).map((n) => ({ id: `base.${n}`, label: n === 1 ? "Jump to the hub (base 1)" : `Jump to base ${n}`, group: "Bases", ctx: "map", keys: [`F${n}`] })),
   ...range(9).map((n) => ({ id: `cam.save${n}`, label: `Save camera spot ${n}`, group: "Camera spots", ctx: "map", keys: [`Ctrl+Digit${n}`, `Alt+Digit${n}`, `Ctrl+Numpad${n}`, `Alt+Numpad${n}`] })),
   ...range(9).map((n) => ({ id: `cam.go${n}`, label: `Go to camera spot ${n}`, group: "Camera spots", ctx: "map", keys: [`Shift+Digit${n}`, `Shift+Numpad${n}`] })),
