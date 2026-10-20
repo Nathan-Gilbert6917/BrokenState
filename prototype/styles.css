@@ -267,6 +267,12 @@ body.fold-left #gut-left .gut-shut, body.fold-right #gut-right .gut-shut, body.f
 /* A talk over a fight with many answers (sim/parley.js: hold fire, walk away, trade, join, news, attack, never mind):
    two columns on a wide screen so the whole card fits over the map without scrolling. */
 @media (min-width: 760px) { #modal .box.many .choices { display: grid; grid-template-columns: 1fr 1fr; } #modal .box.many .choices button:last-child:nth-child(odd) { grid-column: 1 / -1; } }
+/* The talk's speaker switch (ui/ui.js speakerRow: its "Let <name> speak" answers as small buttons), and a hint that
+   warns the speaker does not trust them (sim/parley.js "Risky:") in amber. */
+#modal .speakers { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem 0.4rem; margin: -0.5rem 0 0.8rem; }
+#modal .speakers .spk { padding: 0.15rem 0.55rem; font-size: 0.82rem; border-radius: 6px; }
+#modal .choices .hint.risky { color: #f0b44a; }
+:root.cb #modal .choices .hint.risky { color: #f0e442; }
 #modal .result { background: var(--panel-2); border-left: 3px solid var(--accent); padding: 0.6rem 0.8rem; margin: 0.6rem 0 0.9rem; line-height: 1.5; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
 .crew { display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; }
@@ -540,6 +546,12 @@ table.t.fc-rooms td, table.t.fc-rooms th { padding: 0.1rem 0.15rem; }
 #cbtop .ct-group b { color: var(--good); font-size: 0.7rem; letter-spacing: 0.05em; }
 #cbtop .ct-group.hostile { border-color: color-mix(in srgb, var(--danger) 65%, transparent); background: color-mix(in srgb, var(--danger) 15%, transparent); }
 #cbtop .ct-group.hostile b { color: var(--danger); }
+/* Allied (fights beside you) green, a walk-away's countdown amber, a tell (parleyStatus.tell) an amber "!" pill. */
+#cbtop .ct-group.allied { border-color: color-mix(in srgb, var(--good) 65%, transparent); background: color-mix(in srgb, var(--good) 14%, transparent); }
+#cbtop .ct-group.leaving b { color: #ffd166; }
+#cbtop .ct-group .tell { font-style: normal; font-weight: 800; font-size: 0.7rem; line-height: 1; padding: 0.1rem 0.3rem; border-radius: 4px; background: #f0b44a; color: #1a0f0e; }
+:root.cb #cbtop .ct-group.leaving b { color: #f0e442; }
+:root.cb #cbtop .ct-group .tell { background: #f0e442; }
 #cbcards { position: absolute; left: 50%; top: 0; transform: translateX(-50%); z-index: 4; width: min(34rem, calc(100% - 33rem)); max-height: calc(100% - var(--cbbar-h, 0px) - 1rem); overflow-y: auto; display: flex; flex-direction: column; gap: 0.4rem; pointer-events: none; padding-top: var(--cbtop-h, 3.4rem); scrollbar-width: thin; }
 #cbcards:empty { display: none; }
 #cbcards > * { pointer-events: auto; }

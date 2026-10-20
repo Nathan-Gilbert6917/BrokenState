@@ -1015,17 +1015,36 @@ function cardModal(state, card) {
   if (card.kind === "conflict" && card.conflict) return conflictModal(state, card);
   if (card.poiPick) return poiPickModal(state, card); // ui/poipick.js: which place on the tile to raid (sim/poiraid.js poiPickCard)
   if (card.recruit) return recruitModal(state, card); // who asks to join, with beds, food and water (people.js)
-  // A talk over a fight with many answers (sim/parley.js): "many" puts them in two columns (styles.css).
-  return `<div class="box${card.battle && (card.choices || []).length >= 6 ? " many" : ""}">
+  // A talk over a fight (sim/parley.js): its "Let <name> speak" answers are a row of small speaker buttons under the
+  // text, the rest the answers; with many answers "many" puts them in two columns (styles.css). The buttons are the
+  // card's own choices (data-action="choice", the same index), so main.js and the raid bot handle them as before.
+  const rows = (card.choices || []).map((c, i) => ({ c, i }));
+  const speak = card.battle && card.parley != null ? rows.filter(({ c }) => SPEAK_RE.test(c.label || "")) : [];
+  const answers = speak.length ? rows.filter((r) => !speak.includes(r)) : rows;
+  return `<div class="box${card.battle && answers.length >= 6 ? " many" : ""}">
     <h1>${esc(card.title)}</h1>
     ${card.where ? `<div class="where">Near ${esc(card.where)} · Day ${day(state)} ${clock(state)}</div>` : ""}
     <div class="text">${esc(card.text)}</div>
+    ${speakerRow(state, card, speak)}
     ${cardWhy(state, card)}
     ${retreatPolicyRow(state, card)}
-    <div class="choices">${card.choices.map((c, i) => {
+    <div class="choices">${answers.map(({ c, i }) => {
       const dis = typeof c.disabled === "function" ? c.disabled(state) : c.disabled;
-      return `<button data-action="choice" data-i="${i}" ${dis ? "disabled" : ""}${tip(c.hint)}>${esc(c.label)}${c.hint ? `<span class="hint">${esc(c.hint)}</span>` : ""}${fightForecastHtml(state, card, c)}</button>`;
+      return `<button data-action="choice" data-i="${i}" ${dis ? "disabled" : ""}${tip(c.hint)}>${esc(c.label)}${c.hint ? `<span class="hint${card.battle && RISKY_RE.test(c.hint) ? " risky" : ""}">${esc(c.hint)}</span>` : ""}${fightForecastHtml(state, card, c)}</button>`;
     }).join("")}</div></div>`;
+}
+// A talk's speaker switch (sim/parley.js: "Let <first name> speak", free; card.speakers names who could, with Speech).
+const SPEAK_RE = /^Let (.+) speak$/;
+// A hint that warns the speaker does not trust them (sim/parley.js: "Risky: …", after "You asked that already" or not).
+const RISKY_RE = /(^|\. )Risky:/;
+function speakerRow(state, card, speak) {
+  if (!speak.length) return "";
+  const who = (name) => (card.speakers || []).find((x) => x && x.name && x.name.split(" ")[0] === name) || null;
+  return `<div class="speakers small"><span class="muted"${tip("Someone else of yours who sees them talks instead (free): the card again, the odds as theirs (Speech).")}>Let another speak:</span>${speak.map(({ c, i }) => {
+    const name = SPEAK_RE.exec(c.label)[1], x = who(name);
+    const dis = typeof c.disabled === "function" ? c.disabled(state) : c.disabled;
+    return `<button class="spk" data-action="choice" data-i="${i}" ${dis ? "disabled" : ""}${tip(c.hint || c.label)}>${esc(name)}${x && x.speech != null ? ` <span class="muted">Speech ${esc(x.speech)}</span>` : ""}</button>`;
+  }).join("")}</div>`;
 }
 
 // A card with a fight on it (a choice with .fight: { odds?, enemy, ambush }): the team's "Retreat if it goes badly"

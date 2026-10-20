@@ -2593,9 +2593,11 @@ function drawLabels(ctx, b, s, H) {
   }
   const hh = hAt(b, t.x, t.y);
   const tags = [];
-  // Another group's people on a raid's map (sim/parley.js): ⚔ while actively hostile, else the word (Truce, Peaceful …).
+  // Another group's people on a raid's map (sim/parley.js): ⚔ while actively hostile, else the word (Truce, Allied …);
+  // an amber ! when the sim says one of yours sees through them (status.tell, nothing else).
   const g = b.raid && t.side !== "player" && !t.down ? parleyStatus(b, t) : null;
   if (g) tags.push(g.active ? ["⚔", g.color || COL.bad, true] : [String(g.label || "").toUpperCase(), g.color || "#e9d98f"]); // true: a filled pill
+  if (g && g.tell) tags.push(["!", "#f0b44a", true]); // a tell (parleyStatus.tell: one of yours saw through them, and they give themselves away now)
   if (t.down && !t.surr) tags.push([t.ko ? (t.tied ? "TIED" : "ZZ") : t.stab ? "+" : "!", t.ko ? "#9aa0a8" : t.stab ? COL.good : COL.bad]); // surr: its own tag (ui/nonlethal.js)
   else if (t.tied && !t.down) tags.push(["TIED", "#c9a74a"]); // a captive of yours tied up on a rescue raid (sim/rescueraid.js)
   if (t.ztype && !t.down) tags.push([`${t.short}${t.elite ? "★" : ""}`, ringOf(t)]);
