@@ -260,12 +260,15 @@ section("Late gangs: raider bands that settle, at any time; the coalition's cond
     const spot = st.tiles.find((t) => t.loc && t.loc.type !== "city" && t.loc.zone !== "urban" && t.terrain !== "water" && !t.hive && t.owner == null && st.bases.every((b) => g.distance(b.tile, t.id) >= 8) && st.factions.every((f) => !f.alive || f.bases.every((x) => g.distance(x, t.id) >= 10)));
     v.tile = spot.id; v.path = [spot.id]; v.idx = 0; v.phase = "travel";
     for (const k of Object.keys(v.stock)) v.stock[k] = 0;
-    setFood(v, 30); v.stock.ammo = 120; // too poor to settle (value below SETTLE.goods)
-    for (let d = 0; d < 30; d++) V.visitorsDaily(st);
+    // A band eats and drinks from its stores as a nomad band does (visitors.js raiderDay): kept fed and watered here,
+    // so the days test only whether it settles.
+    const fed = (days) => { setFood(v, days); v.stock.water = 8; }; // a day's water for nine, little worth
+    fed(30); v.stock.ammo = 120; // too poor to settle (value below SETTLE.goods)
+    for (let d = 0; d < 30; d++) { fed(30); V.visitorsDaily(st); }
     check(st.factions.length === n0, `a band without the goods to start a base does not settle`);
     if (!st.visitors.includes(v)) st.visitors.push(v);
-    setFood(v, 200); v.stock.scrap = 60; v.tile = spot.id; v.path = [spot.id]; v.idx = 0; v.phase = "travel";
-    for (let d = 0; d < 120 && st.factions.length === n0; d++) V.visitorsDaily(st);
+    fed(200); v.stock.scrap = 60; v.tile = spot.id; v.path = [spot.id]; v.idx = 0; v.phase = "travel";
+    for (let d = 0; d < 120 && st.factions.length === n0; d++) { if (st.visitors.includes(v)) fed(200); V.visitorsDaily(st); }
     const gang = st.factions[st.factions.length - 1];
     check(st.factions.length === n0 + 1 && gang.alive && gang.pop === 9 && attitude(gang) === "Hostile", `with people and loot it digs in: ${gang.name}, ${gang.pop} people, hostile`);
     check(!st.visitors.includes(v) && (food(gang) || 0) >= 200, "the band is gone from the outsiders, its loot is the gang's stores");

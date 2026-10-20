@@ -8,7 +8,7 @@
 // the link opens it and the card says so, Close the doorway comes back; the hover line over the margin; the Base map
 // tab's text and the Construction tab's buttons; the Storage tab for a hub with a storehouse, crates and a parked
 // car (every container, the mover moving 10 of a supply and an item, Move all food, Tidy up filling the containers,
-// the yard warning when the stock is more than the containers hold); the inventory window's picker putting a
+// the warning that goods lie outside when the stock is more than the base's storage holds); the inventory window's picker putting a
 // dropped item in the picked container (and the kept-in chip); and every data-action these screens render having a
 // handler (the modules' tables, main.js's, and the layout mode's cb-deploy values in ui/combat.js).
 // Usage: node tools/basebuilduitest.js [seed]
@@ -220,9 +220,9 @@ section("The Storage tab");
   const store = L.find((c) => c.type === "storehouse"), crate = L.find((c) => c.type === "crates"), carC = L.find((c) => c.key === `v:${car.id}`);
   check(!!store && !!crate && !!carC, `the containers: ${L.map((c) => c.label).join(", ")}`);
   for (const c of L) check(html.includes(`<b>${c.label}</b>`), `a card for ${c.label}`);
-  check(html.includes("kg lie in the yard: raiders take them first") && html.includes("Store what lies in the yard"), "the yard warning (nothing is assigned yet)");
+  check(html.includes("kg put away nowhere, inside wherever there is room") && html.includes("Put the rest away") && html.includes("Nothing lies outside"), "nothing assigned yet: the goods put away nowhere, inside the room (nothing outside)");
   check(html.includes("Move goods") && html.includes('data-action="st-from"') && html.includes('data-action="st-to"') && html.includes('data-action="st-tidy"'), "the mover and Tidy up");
-  check(ui.storage.from === "yard" && ui.storage.to === store.key, `the mover starts from the yard to the ${store.label}`);
+  check(ui.storage.from === CT.LOOSE && ui.storage.to === store.key, `the mover starts from what is put away nowhere to the ${store.label}`);
   // Move 10 scrap and a rifle.
   STORAGE_CHANGE["st-qty"](st, ui, { value: "10", dataset: { k: "scrap" } });
   STORAGE_ACTIONS["st-move"](st, ui, { base: String(h.id), k: "scrap" });
@@ -245,17 +245,17 @@ section("The Storage tab");
   check(html.includes("Goods in a car stay on the base's books") && html.includes("a raid can loot the car"), "with goods in a car, the note about cars");
   // Tidy up fills the containers.
   STORAGE_ACTIONS["st-tidy"](st, ui, { base: String(h.id) });
-  const sum = CT.storageSummary(st, h);
-  check(sum.yard === 0 && sum.used > 0 && /Tidied up/.test(ui.baseMsg), `Tidy up: nothing left in the yard, ${Math.round(sum.used)} kg in the containers (${ui.baseMsg})`);
+  const loose = CT.containerByKey(st, h, CT.LOOSE), sum = CT.storageKg(st, h);
+  check(loose.kg < 1 && sum.outside === 0 && sum.held > 0 && /Tidied up/.test(ui.baseMsg), `Tidy up: nothing left put away nowhere (${Math.round(loose.kg)} kg), ${Math.round(sum.held)} kg in the containers (${ui.baseMsg})`);
   check(h.bins[carC.key] && h.bins[carC.key].meds === 12, "what was put in the car stays there");
   html = storageTab(st, h, ui);
-  check(html.includes("Nothing lies in the yard") && !html.includes("raiders take them first"), "no yard warning any more");
+  check(html.includes("Nothing lies outside") && !html.includes("raiders take them first") && !html.includes("put away nowhere, inside"), "nothing outside, nothing put away nowhere");
   htmlOk(html, "Storage tab after tidying");
   // More stock than the containers hold: the warning says to build.
   h.stock.scrap = 20000;
   html = storageTab(st, h, ui);
-  const sum2 = CT.storageSummary(st, h);
-  check(sum2.yard > 0 && html.includes("raiders take them first") && html.includes("The containers are too small for the stock"), `with ${Math.round(sum2.yard)} kg in the yard: the warning and the advice to build`);
+  const sum2 = CT.storageKg(st, h);
+  check(sum2.outside > 0 && html.includes("lie outside: they weather, and raiders take them first") && html.includes("The base's storage is too small for its goods"), `with ${Math.round(sum2.outside)} kg outside: the warning and the advice to build`);
   htmlOk(html, "Storage tab over capacity");
   // A camp has the tab too.
   check(renderModal(st, { ...freshUi(), baseView: { id: h.id, tab: "storage" } }).includes("Move goods"), "the base window renders the Storage tab");

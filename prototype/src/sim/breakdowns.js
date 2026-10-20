@@ -113,7 +113,8 @@ export const FIXTURES = {
   barracks:    { raidOnly: true, repair: { hours: 12, cost: { scrap: 14 }, min: 0 }, rig: { hours: 4, cost: { scrap: 6 }, min: 0 }, what: "12 fewer beds" },
   cistern:     { raidOnly: true, repair: { hours: 8, cost: { scrap: 8 }, min: 0 }, rig: { hours: 3, cost: { scrap: 4 }, min: 0 }, what: "a holed tank: 150 less water room" },
   cellar:      { raidOnly: true, repair: { hours: 6, cost: { scrap: 5 }, min: 0 }, rig: { hours: 2, cost: { scrap: 2 }, min: 0 }, what: "a caved-in cellar: 200 less food room" },
-  coldstore:   { raidOnly: true, repair: { hours: 6, cost: { scrap: 6 }, min: 0 }, rig: { hours: 2, cost: { scrap: 3 }, min: 0 }, what: "a smashed ice house: 150 less food room" }, // an ice house again (machines-2: no power)
+  coldstore:   { raidOnly: true, repair: { hours: 6, cost: { scrap: 6 }, min: 0 }, rig: { hours: 2, cost: { scrap: 3 }, min: 0 }, what: "a smashed ice house: 150 less food room" },
+  armory:      { raidOnly: true, repair: { hours: 5, cost: { scrap: 4, parts: 1 }, min: 0 }, rig: { hours: 2, cost: { scrap: 2 }, min: 0 }, what: "a smashed door and locks: an ordinary door, the gun cage and the ammo lockers open to raiders" }, // basemap.js: the door (MAP_WEAR.door) or a lock (MAP_WEAR.lock) battered open in a raid // an ice house again (machines-2: no power)
   garage:      { age: 0.12, repair: { hours: 8, cost: { scrap: 6, parts: 1 }, min: 1 }, rig: { hours: 3, cost: { scrap: 3 }, min: 0 }, what: "vehicle repairs at the field rate" },
   cells:       { raidOnly: true, repair: { hours: 6, cost: { scrap: 5, parts: 1 }, min: 0 }, rig: { hours: 2, cost: { scrap: 3 }, min: 0 }, what: "broken bars: 3 fewer places for prisoners" },
   common_room: { raidOnly: true, repair: { hours: 6, cost: { scrap: 6 }, min: 0 }, rig: { hours: 2, cost: { scrap: 3 }, min: 0 }, what: "no mood from the common room" },
@@ -152,6 +153,10 @@ export const FIXTURES = {
   stove:       { raidOnly: true, repair: { hours: 2, cost: { scrap: 3 }, min: 0 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "no cook fire from the stove" },
   // The yard: stores, water, the cook fire, the benches.
   crates:      { raidOnly: true, repair: { hours: 1, cost: { scrap: 1 }, min: 0 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "smashed crates: 30 days less food room" },
+  // The storage ladder (base storage limits, basestorage.js): raid damage only, about a third of the building's scrap.
+  storebox:    { raidOnly: true, repair: { hours: 1, cost: { scrap: 1 }, min: 0 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "a smashed storage box: no room in it" },
+  shed:        { raidOnly: true, repair: { hours: 4, cost: { scrap: 4 }, min: 0 }, rig: { hours: 2, cost: { scrap: 2 }, min: 0 }, what: "a battered storage shed: its door hanging, the rain in" },
+  warehouse:   { raidOnly: true, repair: { hours: 12, cost: { scrap: 13, parts: 1 }, min: 0 }, rig: { hours: 4, cost: { scrap: 5 }, min: 0 }, what: "a warehouse with its roller door battered in" },
   cookhouse:   { raidOnly: true, repair: { hours: 2, cost: { scrap: 2 }, min: 0 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "no cook fire: the game and fish are eaten as they come" },
   boiler:      { raidOnly: true, repair: { hours: 3, cost: { scrap: 3 }, min: 0 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "no boiling: the ground water is drunk as it comes" },
   water_barrel:{ raidOnly: true, repair: { hours: 2, cost: { scrap: 1 }, min: 0 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "a holed barrel: 25 less water room" },

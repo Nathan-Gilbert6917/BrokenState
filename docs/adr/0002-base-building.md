@@ -31,22 +31,29 @@ the stores but the wall. Beds, benches and storage were buildings of their own, 
 3. **Doorways are links between items.** `base.plan.links = [{ a, b }]` by item key; the doorway is laid when the map
    is built (both wall cells barred doors facing each other), a stale link is dropped when read, and a queued building's
    key is rewritten when it finishes. No cell data is stored.
-4. **Goods stay on the base's books; containers are assignments.** `base.stock` and `base.armory` remain the truth.
-   A container (`sim/containers.js`: the core, a storage building or fitting, a parked car, the yard) only says where
-   goods are kept: `item.store` on an item, `base.bins[containerKey][supplyKey]` for a supply's split, both clamped to
-   the books whenever they are read. Nothing moves in or out of the books by being assigned.
-5. **One `autoStore` for every side.** The game tidies unassigned goods into containers with room by one deterministic
-   rule (food where it keeps, dear things behind the best door, gear to the lockers, never into a car): daily for the
-   autopilot's bases and for the AI groups' bases (ADR 0001: the same code), at fight time for a player base run by
-   hand. The yard holds what fits nowhere, and the yard is what a raider finds first.
+4. **Goods stay on the base's books; containers are assignments over basestorage's room.** `base.stock` and
+   `base.armory` remain the truth. How much room a base has and what lies outside is `sim/basestorage.js`'s (dev's
+   base storage limits, merged 2026-10-19): the core by tier (a camp none), every storage building and fitting by
+   STORE_KG (shelves 150, lockers 100), a parked car's payload, opened boxes. A container (`sim/containers.js`, keyed
+   as storageOf keys them: `core`, `b:<id>`, `v:<id>`) only says where goods are kept: `item.store` on an item,
+   `base.bins[containerKey][supplyKey]` for a supply's split, both clamped to the books whenever they are read.
+   storageOf fills each container with what is assigned to it first, up to its room; the unassigned goods fill the
+   room left by worth a kg; the rest lies outside (weathering, on the map's piles). Nothing moves in or out of the
+   books by being assigned. An opened box is room but not a container to assign to (its armory index moves).
+5. **One `autoStore` for every side.** The game assigns unassigned goods to containers with room by one deterministic
+   rule (the densest by worth a kg first, as the room is filled; food where it keeps, rounds and guns in the armory,
+   dear things behind the best door, gear to the lockers, never into a car or a box): daily for the autopilot's bases
+   and for the AI groups' bases (ADR 0001: the same code), Tidy up for the player. What fits nowhere lies outside, and
+   the piles outside are what a raider goes for first.
 6. **Raiders take from containers and cars.** The battle map's stores are the containers as they are (`makeStores`),
-   a parked car among them when goods were put in it; what a thief carries off the map leaves the books and the bin it
+   a parked car among them (its room is storage), what lies outside on piles, the armory's locked gun cage and ammo
+   lockers; what a thief carries off the map leaves the books and the bin it
    came from (`applyStolen`). Survivors never appear on the Base map view.
 7. **The autopilot builds by the same needs.** Beds short and no plot for a bunkhouse or barracks: bunk beds in a
-   general building, or the biggest general building the base can put up; goods past the containers' room: shelves,
-   lockers, the storehouse or a building for them; no plot for a cook fire: a wood stove indoors. The defence wishes
-   stay as they were; goods lying exposed in the yard are put under a roof before the horde's outer defences, a filling
-   store waits behind them.
+   general building, or the biggest general building the base can put up; goods lying outside: one storage wish
+   (basestorage's storageWish): shelves or lockers on a general building's floor, else the smallest storage building
+   that holds them, else a general building for them; no plot for a cook fire: a wood stove indoors. The defence
+   wishes stay as they were.
 8. **Repairs are orders by wear.** Every placed thing has a `FIXTURES` entry and wears from raid damage; a repair can
    be ordered on anything above `WEAR.repairWear` as a partial job priced by the wear to take off, builders first; the
    Repairs tab is that list, most damaged first, with time and cost on every row.
@@ -65,5 +72,9 @@ the stores but the wall. Beds, benches and storage were buildings of their own, 
   way in and out a wall piece blocks and a gate or a stand walks; a wall piece that would close a ring with no gate is
   refused ("Needs a gate in the wall first: …"), by hand and by the auto layout, which lays the gates first. The pieces
   have no Repairs rows of their own: one wall row, mended by the wall's repair order (breakdowns.js orderWallRepair).
+- Merged with dev's base storage limits (2026-10-19): containers.js's own capacity tables went; the "yard" became
+  dev's outside (the piles), the Yard pile part of the core went, a camp's core holds nothing, and `storageSummary`
+  is dev's (words); containers.js's numbers are `storageKg`. docs/base-building/plan.md "Merged with dev's base
+  storage limits" has the detail.
 - `tools/basebuildtest.js`, `tools/containerstest.js`, `tools/basebuilduitest.js`, `tools/repairorderstest.js` and
   `tools/basebuildautotest.js` guard the parts.

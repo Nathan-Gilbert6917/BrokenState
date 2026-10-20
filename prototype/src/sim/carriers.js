@@ -18,7 +18,9 @@
 //         bury (its things to the armory) or burn it on the Armory tab; one with the worm left unburied gets up after
 //         CARRIER.BASE_RISE nights (walkingDaily).
 //     The battle AI and the raid bot crush a body next to them when it is endangered and no enemy is next to them
-//     (botCrush). Where a body lay something else now stands, it gets up on a free tile next to it.
+//     (botCrush), and so does every other side's AI on its own turn (combat.js aiUnit: a raider, a guard, the third
+//     side, a volunteer), by the same rule and for the same action (docs/adr/0001-ai-parity.md). Where a body lay
+//     something else now stands, it gets up on a free tile next to it.
 //   The risen (turn): an ordinary zombie (enemyUnit at the battle's power), named after the person ("Dana (turned)"
 //     for one of yours or the third side, "Raider 3 (turned)" for the others), up with CARRIER.RISE_AP actions (at
 //     once, in the enemy turn it rose in). It keeps what the person wore: armour still takes its share of every hit
@@ -56,7 +58,7 @@
 //     (carrierTurn); the rest of the time it claws like the others. Your people shoot it first (ZTYPES priority).
 // Battles without Carriers, swarms or walking loot nearby play exactly as before (no dice are drawn here otherwise).
 import { CARRIER } from "./hiveconst.js";
-import { CELL, KITS, say, fx, active, adjacent, enemyUnit, reachable, pathTo, moveAlong, unitAt, canSeeAt, isRanged, canFire, fireRefusal, inEvac } from "./combat.js";
+import { CELL, KITS, say, fx, active, adjacent, enemyUnit, reachable, pathTo, moveAlong, unitAt, canSeeAt, isRanged, canFire, fireRefusal, inEvac, foesOf } from "./combat.js";
 import { applyZType } from "./zombietypes.js";
 import { fireAt } from "./throwables.js";
 import { survivorById, log, day, hurt, atBase, newId, baseById } from "./world.js";
@@ -283,7 +285,7 @@ export function crush(b, u, c) {
   if (!c || !wormable(c) || cheb(u, c.x, c.y) > 1) return "Stand next to a body to crush its skull.";
   c.crushed = true;
   u.face = [Math.sign(c.x - u.x), Math.sign(c.y - u.y)];
-  say(b, c.side === "player" ? `${u.name} does what has to be done: ${first(c.name)} will not get up again.` : `${u.name} crushes the skull of ${c.name}'s body. It will not get up.`, "good");
+  say(b, c.side === "player" && u.side === "player" ? `${u.name} does what has to be done: ${first(c.name)} will not get up again.` : c.side === "player" ? `${u.name} crushes ${first(c.name)}'s skull before the worm can raise them.` : `${u.name} crushes the skull of ${c.name}'s body. It will not get up.`, u.side === "player" || c.side !== "player" ? "good" : "info");
   fx(b, { type: "melee", from: [u.x, u.y], to: [c.x, c.y], hit: true, crit: false, dmg: 0, side: u.side, text: "CRUSHED" });
   return "";
 }
@@ -308,11 +310,12 @@ export function tap(b, u, c) {
   fx(b, { type: "shot", from: [u.x, u.y], to: [c.x, c.y], hit: true, crit: false, dmg: 0, side: u.side });
   return "";
 }
-// The battle AI (combat.js autoPlayerTurn, the raid bot): a body in danger next to one of yours, with none of the
-// enemy next to them, is crushed (1 action). Returns the act or null.
+// The battle AI of every side (combat.js autoPlayerTurn and the raid bot for yours, aiUnit for everyone else's): a body
+// in danger next to the unit, with none of those it fights next to it (combat.js foesOf: for yours the enemy, for a
+// raider your people, and on a raid's map the dead in contact with them), is crushed (1 action). Returns the act or null.
 export function botCrush(b, u) {
-  if (!active(u) || u.ap < 1) return null;
-  if (b.units.some((f) => f.side === "enemy" && active(f) && adjacent(u, f))) return null;
+  if (!active(u) || u.ap < 1 || u.kind !== "human") return null;
+  if (foesOf(b, u).some((f) => adjacent(u, f))) return null;
   const c = b.units.find((o) => endangered(b, o) && cheb(u, o.x, o.y) <= 1);
   return c ? { type: "crush", unit: u.id, target: c.id } : null;
 }

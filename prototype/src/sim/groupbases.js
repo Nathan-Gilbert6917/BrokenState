@@ -23,9 +23,12 @@ import { membersAt, homeMembers, MEMBER } from "./members.js";
 import { weightOf } from "./groupcare.js";
 import { SUPPLIES } from "./data.js";
 
-// A works count of theirs as your building (groupworld.js PLAYER_WORKS the other way round).
-export const WORKS_BUILDING = { walls: "walls", farms: "farm_plot", pens: "animal_pen", water: "well", beds: "bunkhouse", bench: "workbench", shop: "machine_shop", reload: "reload_bench", store: "storehouse", radio: "radio", garage: "garage", gate: "gate", kitchen: "kitchen", still: "still", freezer: "freezer" };
-// What a base that is not built up by hand holds (the hardcore military: groupworks.js groupsBuild false).
+// A works count of theirs as your building (groupworld.js PLAYER_WORKS the other way round). The storage works
+// (groupworks.js storageWork: a storage box, crates, a shed, the storehouse, a warehouse) are your storage buildings, so
+// basestorage.js storageOf counts their room at that base.
+export const WORKS_BUILDING = { walls: "walls", farms: "farm_plot", pens: "animal_pen", water: "well", beds: "bunkhouse", bench: "workbench", shop: "machine_shop", reload: "reload_bench", store: "storehouse", storebox: "storebox", crates: "crates", shed: "shed", warehouse: "warehouse", radio: "radio", garage: "garage", gate: "gate", kitchen: "kitchen", still: "still", freezer: "freezer" };
+// What a base that is not built up by hand holds (the hardcore military: groupworks.js groupsBuild false); its storehouse
+// (2000 kg on top of the main house's 1200: basestorage.js) keeps an army base's stores in.
 export const BUILT_UP = { walls: 6, farms: 2, water: 1, beds: 2, bench: 1, store: 1, gate: 1 };
 
 const nextId = (state) => (state.memberSeq = Math.max(state.memberSeq || MEMBER.ID0, MEMBER.ID0) + 1);
@@ -40,7 +43,7 @@ export function homesOf(state, f) {
     let h = H[tile];
     if (!h) h = H[tile] = newHome(state, f, tile, i === 0);
     h.type = i === 0 ? "hub" : "outpost";
-    h.camp = !!(f.works && f.works[tile] && f.works[tile].camp);
+    if (!h.real) h.camp = !!(f.works && f.works[tile] && f.works[tile].camp); // a base of yours they took keeps its own (a camp of yours: buildings.js isCamp)
     if (i === 0 && h.stock !== f.stock) {
       // The main base changed (a flight, a base moved to the front): f.stock (always the same object) is its stores now,
       // with what was kept there added.
@@ -72,25 +75,59 @@ export function gatherStores(state, f) {
     for (const [k, q] of goods(h.stock)) { f.stock[k] = (f.stock[k] || 0) + q; h.stock[k] = 0; }
   }
 }
+// The supply run out (spreadStores): what each outpost takes from `stock` (the main base's), its people's share of every
+// supply and rounds key, from what is left at the main base as the run goes round. Pure: { [tile]: { key: n } }.
+function spreadPlan(state, f, stock) {
+  /** @type {Record<number, Record<string, number>>} */
+  const plan = {};
+  const H = homesOf(state, f);
+  if (f.bases.length < 2) return plan;
+  const all = Math.max(1, homeMembers(f).length);
+  const left = { ...stock };
+  for (const t of f.bases.slice(1)) {
+    if (!H[t]) continue;
+    const share = membersAt(f, t).length / all;
+    if (!(share > 0)) continue;
+    const take = (plan[t] = {});
+    for (const [k, q] of goods(left)) {
+      if (!SUPPLIES[k] && !k.includes(":")) continue; // supplies and rounds by key; a counter (jars) stays at home
+      const n = Math.floor(q * share);
+      if (n > 0) { left[k] -= n; take[k] = n; }
+    }
+  }
+  return plan;
+}
 export function spreadStores(state, f) {
   const H = homesOf(state, f);
   if (f.bases.length < 2) return;
-  const all = Math.max(1, homeMembers(f).length);
+  const plan = spreadPlan(state, f, f.stock);
   for (const t of f.bases.slice(1)) {
-    const h = H[t];
-    if (!h) continue;
-    const share = membersAt(f, t).length / all;
-    if (!(share > 0)) continue;
-    for (const [k, q] of goods(f.stock)) {
-      if (!SUPPLIES[k] && !k.includes(":")) continue; // supplies and rounds by key; a counter (jars) stays at home
-      const n = Math.floor(q * share);
-      if (n > 0) { f.stock[k] -= n; h.stock[k] = (h.stock[k] || 0) + n; }
-    }
+    const take = plan[t];
+    if (!take) continue;
+    for (const [k, n] of Object.entries(take)) { f.stock[k] -= n; H[t].stock[k] = (H[t].stock[k] || 0) + n; }
   }
+}
+// What each base will hold tonight, after the supply run out (spreadStores), read while the stores are gathered at the
+// main base for the day's work (groupworks.js nextWork: the storage a base wants). Pure: { [tile]: stock }.
+export function stockTonight(state, f) {
+  const H = homesOf(state, f);
+  /** @type {Record<number, Record<string, number>>} */
+  const out = {};
+  if (!f.bases.length) return out;
+  const plan = spreadPlan(state, f, f.stock);
+  const main = { ...f.stock };
+  for (const t of f.bases.slice(1)) {
+    const st = { ...((H[t] && H[t].stock) || {}) };
+    for (const [k, n] of Object.entries(plan[t] || {})) { main[k] -= n; st[k] = (st[k] || 0) + n; }
+    out[t] = st;
+  }
+  out[f.bases[0]] = main;
+  return out;
 }
 
 // ---------- buildings ----------
-function want(state, f, tile) {
+// The buildings the group's works at a base stand for ({ type: count }; a base that is not built up by hand: BUILT_UP).
+export function worksBuildings(state, f, tile) {
   const w = groupsBuild(state, f) ? (f.works && f.works[tile]) || {} : { ...BUILT_UP, sickbay: weightOf(f, "sickbayBuilt", 2) };
   const out = {};
   for (const [k, type] of Object.entries(WORKS_BUILDING)) if (BUILDINGS[type] && (w[k] || 0) > 0) out[type] = (out[type] || 0) + Math.round(w[k]);
@@ -104,7 +141,7 @@ export function syncBuildings(state, f) {
   for (const tile of f.bases) {
     const h = H[tile];
     if (h.real) continue; // a base of yours they hold: its buildings are what you built
-    const goal = want(state, f, tile);
+    const goal = worksBuildings(state, f, tile);
     const have = {};
     for (const b of h.buildings) have[b.type] = (have[b.type] || 0) + 1;
     for (const [type, n] of Object.entries(goal)) for (let i = have[type] || 0; i < n; i++) {

@@ -1,19 +1,23 @@
-// Base building: the autopilot (src/sim/autopilot.js tidyStores, bedWishes, storeWishes, stoveWish, generalWish;
-// docs/base-building/plan.md Part D). Checks: a hub whose building plots are all taken and whose people outnumber its
-// beds wishes for the biggest general building it can put up (a barn) with bunks inside and, with one standing, for
-// bunk beds (queued, laid out on the barn's floor, counted as beds once built; a camp wishes for a hut); a hub whose
-// goods outweigh its containers wishes for storage shelves (a general building standing), lockers once the shelves
-// are at their limit, the storehouse with no general building, and nothing with room to spare; the morning's tidy
-// (governBase at the plan hour) puts the unassigned goods away (storageSummary yard 0 where the room allows); a hub
-// with no cook fire and no utility plot left wishes for a wood stove right behind the cook fire; and a 60-day
-// autopilot run (seed 42, 8 groups) that ends with the yard under a tenth of the hub's goods, the general buildings
-// and fittings within their limits, and the holdout standing.
+// Base building: the autopilot (src/sim/autopilot.js tidyStores, bedWishes, storageWish, stoveWish, generalWish;
+// docs/base-building/plan.md Part D and "Merged with dev's base storage limits"). Checks: a hub whose building plots
+// are all taken and whose people outnumber its beds wishes for the biggest general building it can put up (a barn)
+// with bunks inside and, with one standing, for bunk beds (queued, laid out on the barn's floor, counted as beds once
+// built; a camp wishes for a hut); the one storage wish (storageWish, basestorage.js: goods lying outside) asks for
+// storage shelves while a general building has floor for them, lockers once the shelves are at their limit, a storage
+// building from the ladder with no floor (the smallest that holds what lies outside), a general building for shelves
+// and lockers when nothing on the ladder can go up, nothing with room to spare, one at a time and never saved for; the
+// morning's tidy (governBase at the plan hour) puts the unassigned goods away; a hub with no cook fire and no utility
+// plot left wishes for a wood stove right behind the cook fire; and a 60-day autopilot run (seed 42, 8 groups) that
+// ends with under a tenth of the hub's goods outside, the general buildings and fittings within their limits, and the
+// holdout standing.
 // Usage: node tools/basebuildautotest.js [seed] [days]
 import { createWorld, hub, atBase, makeSurvivor, tickHour, day, hourOfDay, alive } from "../src/sim/world.js";
 import { registerCombatHandler } from "../src/sim/combat.js";
 import { BUILDINGS, addBuilding, queueBuild, constructionHour, count, countAll, baseBeds, queuedBeds, plotsFree, CAMP } from "../src/sim/buildings.js";
 import { setAutopilot, autopilotStats, housingAI, governBase } from "../src/sim/autopilot.js";
-import { storageSummary, containersOf } from "../src/sim/containers.js";
+import { storageKg, containerByKey, LOOSE } from "../src/sim/containers.js";
+import { storageOf } from "../src/sim/basestorage.js";
+import { carsAtBase } from "../src/sim/vehicles.js";
 import { fittingsIn, layoutOf } from "../src/sim/basemap.js";
 
 const seed = Number(process.argv[2] || 42);
@@ -34,8 +38,7 @@ const fillPlots = (base, kind, list) => { let i = 0; while (plotsFree(base, kind
 // Finishes every job in the queue (as the builders would).
 const finishAll = (st, base) => { for (let i = 0; i < 40 && base.construction.length; i++) { for (const j of base.construction) j.progress = j.hours; constructionHour(st); } };
 const r1 = (v) => Math.round(v * 10) / 10;
-// The base's own room and goods in kg (autopilot.js storeRoom): the cars parked here left out (the game never loads one).
-const roomOf = (st, base) => { const out = { cap: 0, held: 0, yard: 0, used: 0 }; for (const c of containersOf(st, base)) { if (c.kind === "vehicle") continue; if (c.kind === "yard") out.yard = c.kg; else { out.cap += c.cap; out.used += c.kg; } out.held += c.kg; } return out; };
+const parkAway = (st, base) => { for (const v of carsAtBase(st, base.id)) v.loc = { kind: "base", baseId: -1 }; }; // no car's room (basestorage.js counts a parked car's payload)
 
 section("Beds when the building plots are used up");
 {
@@ -96,64 +99,66 @@ section("Beds when the building plots are used up");
   check(wishes(st, h).some((x) => x.type === "bunks"), "and with the hut standing, for bunk beds");
 }
 
-section("Storage when the containers fill");
+section("Storage when goods lie outside (storageWish)");
 {
   const st = world(), h = hub(st);
+  parkAway(st, h);
   const hall = addBuilding(h, "gen_hall");
   h.stock.scrap = 700; // 1400 kg of scrap alone, against the main house's 1200
-  const ss = roomOf(st, h);
-  check(ss.held > ss.cap, `the goods outweigh the containers (${Math.round(ss.held)} kg for ${ss.cap}; a car parked here is no room: ${storageSummary(st, h).cap} with it)`);
+  const so = storageOf(st, h);
+  check(so.outsideKg > 0 && so.cap === 1200, `goods lie outside (${Math.round(so.outsideKg)} kg; room ${so.cap} kg)`);
   const w = wishes(st, h);
   const sw = w.find((x) => x.type === "shelves");
-  check(sw && /overflow/.test(sw.why) && /kg lie in the yard/.test(sw.why) && sw.save, `shelves wished for, saved for (${sw ? sw.why : types(w)})`);
+  check(sw && /lie outside/.test(sw.why) && /inside a general building/.test(sw.why) && !sw.save, `shelves wished for on the hall's floor, not saved for (dev's rule) (${sw ? sw.why : types(w)})`);
+  check(w.filter((x) => BUILDINGS[x.type] && (BUILDINGS[x.type].storeKg || GENERAL.includes(x.type))).length === 1, "one storage wish, not two");
   const iw = w.findIndex((x) => x.type === "shelves"), ic = w.findIndex((x) => x.type === "common_room" || x.type === "chapel");
   check(ic < 0 || iw < ic, "ahead of the comfort buildings");
-  // Nearly full (80%): wished for, not saved for.
-  h.stock.scrap = 470;
-  const w1 = wishes(st, h), s1 = w1.find((x) => x.type === "shelves");
-  check(s1 && /nearly full/.test(s1.why) && !s1.save, `nearly full: wished for, not saved for (${s1 ? s1.why : types(w1)})`);
   // Room to spare: no wish.
   h.stock.scrap = 100;
-  check(!wishes(st, h).some((x) => ["shelves", "lockers", "storehouse"].includes(x.type) || GENERAL.includes(x.type)), "room to spare: no storage wish");
+  check(!wishes(st, h).some((x) => ["shelves", "lockers", "storehouse", "shed", "crates", "warehouse"].includes(x.type) || GENERAL.includes(x.type)), "room to spare: no storage wish");
   // The shelves at their limit (and floor left for lockers: two barns): lockers.
   const barns = [addBuilding(h, "gen_barn"), addBuilding(h, "gen_barn")];
   for (let i = 0; i < BUILDINGS.shelves.max; i++) addBuilding(h, "shelves");
-  h.stock.scrap = 3200; // 6400 kg against 1200 + 24 × 200
+  h.stock.scrap = 3200; // 6400 kg against 1200 + 24 × 150
   const w2 = wishes(st, h);
   check(w2.some((x) => x.type === "lockers") && !w2.some((x) => x.type === "shelves"), `the shelves at their limit (${BUILDINGS.shelves.max}): lockers (${types(w2.filter((x) => ["shelves", "lockers"].includes(x.type)))})`);
   h.buildings = h.buildings.filter((b) => b.type !== "shelves" && !barns.includes(b));
   h.stock.scrap = 700;
   // One wish at a time: shelves queued, nothing more.
   queueBuild(st, h, "shelves");
-  check(!wishes(st, h).some((x) => ["shelves", "lockers", "storehouse"].includes(x.type)), "shelves queued: no second storage wish");
+  check(!wishes(st, h).some((x) => ["shelves", "lockers", "storehouse", "shed", "crates", "warehouse"].includes(x.type)), "shelves queued: no second storage wish");
   h.construction = [];
-  // No general building: the storehouse on a building plot; the storehouse standing and no building: a general one.
+  // No general building: a storage building off the ladder, the smallest that holds what lies outside.
   h.buildings = h.buildings.filter((b) => b.id !== hall.id);
-  const w3 = wishes(st, h);
-  check(w3.some((x) => x.type === "storehouse"), `no general building: a storehouse (${types(w3.filter((x) => x.type === "storehouse" || GENERAL.includes(x.type)))})`);
-  addBuilding(h, "storehouse");
-  h.stock.scrap = 1500; // 3000 kg against 3200
+  const out3 = storageOf(st, h).outsideKg;
+  const w3 = wishes(st, h), s3 = w3.find((x) => ["crates", "shed", "storehouse", "warehouse"].includes(x.type));
+  check(s3 && BUILDINGS[s3.type].storeKg >= out3 && !w3.some((x) => GENERAL.includes(x.type)), `no general building: ${s3 ? BUILDINGS[s3.type].name : "nothing"} for ${Math.round(out3)} kg outside`);
+  // Nothing on the ladder can go up (every plot taken): a general building for shelves and lockers, not saved for.
   rich(h); h.stock.scrap = 1500;
-  const w4 = wishes(st, h), g4 = w4.find((x) => GENERAL.includes(x.type));
-  check(g4 && g4.type === "gen_barn" && /for shelves and lockers/.test(g4.why) && !g4.save, `the storehouse standing too: a barn for shelves and lockers, not saved for (${g4 ? g4.why : types(w4)})`);
+  fillPlots(h, "building", ["cistern", "greenhouse", "common_room"]);
+  fillPlots(h, "utility", ["rain_catcher", "water_barrel", "smoker"]);
+  const w4 = wishes(st, h), g4 = w4.find((x) => GENERAL.includes(x.type) && /shelves and lockers/.test(x.why));
+  check(g4 && g4.type === "gen_barn" && !g4.save, `no plot for storage: a barn for shelves and lockers, not saved for (${g4 ? g4.why : types(w4)})`);
 }
 
 section("The morning's tidy (tidyStores)");
 {
+  // Put away: nothing left in no container but a part of a unit (a bin holds whole units: 0.9 of a bag of rice stays).
+  const tidyNow = (c) => !c.gear.length && Object.values(c.sup).every((q) => q < 1);
   const st = world(), h = hub(st);
   h.stock.scrap = 100;
-  const before = storageSummary(st, h);
-  check(before.yard > 0 && before.used + before.yard < before.cap, `untidied goods lie in the yard (${r1(before.yard)} kg) and would fit (${before.cap} kg of room)`);
+  const before = containerByKey(st, h, LOOSE), sb = storageOf(st, h);
+  check(before.kg > 0 && sb.outsideKg === 0, `untidied goods are put away nowhere (${r1(before.kg)} kg), all inside the room (${sb.cap} kg)`);
   setAutopilot(st, true, "balanced");
   let tidied = -1;
   for (let i = 0; i < 48 && tidied < 0; i++) { tickHour(st); if (autopilotStats(st).stored > 0) tidied = hourOfDay(st); }
-  const after = storageSummary(st, h);
-  check(tidied >= 0 && after.yard === 0, `the governor's morning tidy put them away (at ${tidied}:00: yard ${r1(after.yard)} kg, ${autopilotStats(st).stored} kg stored, ${r1(after.used)} of ${after.cap} kg in the containers)`);
+  const after = containerByKey(st, h, LOOSE), ka = storageKg(st, h);
+  check(tidied >= 0 && tidyNow(after), `the governor's morning tidy put them away (at ${tidied}:00: ${r1(after.kg)} kg left put away nowhere, parts of a unit, ${autopilotStats(st).stored} kg stored, ${r1(ka.held)} of ${ka.cap} kg inside)`);
   // A day on, the goods that came in since are put away again.
   const s0 = autopilotStats(st).stored;
   for (let i = 0; i < 24; i++) tickHour(st);
-  const again = storageSummary(st, h);
-  check(autopilotStats(st).stored >= s0 && again.yard === 0, `and the next morning's too (yard ${r1(again.yard)} kg, ${autopilotStats(st).stored} kg stored all told)`);
+  const again = containerByKey(st, h, LOOSE);
+  check(autopilotStats(st).stored >= s0 && tidyNow(again), `and the next morning's too (${r1(again.kg)} kg put away nowhere, ${autopilotStats(st).stored} kg stored all told)`);
 }
 
 section("A wood stove where no cook fire can go up");
@@ -185,7 +190,7 @@ section(`A ${DAYS}-day autopilot run (seed ${seed})`);
   let crash = null;
   try {
     while (day(st) <= DAYS && !st.gameOver) tickHour(st);
-    // On to the morning's tidy (the goods that came in since lie in the yard until it).
+    // On to the morning's tidy (the goods that came in since are put away nowhere until it).
     const s0 = autopilotStats(st).stored;
     for (let i = 0; i < 30 && !st.gameOver && autopilotStats(st).stored === s0; i++) tickHour(st);
   } catch (e) { crash = e; }
@@ -193,11 +198,10 @@ section(`A ${DAYS}-day autopilot run (seed ${seed})`);
   const h = hub(st);
   check(h && !st.gameOver, `the holdout stands on day ${day(st)} (${alive(st).length} alive)`);
   if (h) {
-    const ss = roomOf(st, h), sum = storageSummary(st, h);
-    const held = ss.held;
+    const so = storageOf(st, h), sum = storageKg(st, h);
     const gen = GENERAL.map((t) => [t, countAll(h, t)]).filter(([, n]) => n);
     const fits = ["bunks", "shelves", "lockers", "stove"].map((t) => [t, countAll(h, t)]).filter(([, n]) => n);
-    check(held === 0 || ss.yard <= held * 0.1, `the yard holds under a tenth of the hub's goods (${r1(ss.yard)} of ${r1(held)} kg; containers ${r1(ss.used)} of ${ss.cap} kg: ${Object.entries(sum.byKey).filter(([k]) => k !== "yard").map(([k, v]) => `${k} ${Math.round(v.kg)}/${v.cap}`).join(", ")})`);
+    check(so.used === 0 || so.outsideKg <= so.used * 0.1, `under a tenth of the hub's goods lie outside (${r1(so.outsideKg)} of ${r1(so.used)} kg; room ${so.cap} kg: ${Object.entries(sum.byKey).map(([k, v]) => `${k} ${Math.round(v.kg)}/${v.cap}`).join(", ")})`);
     check(GENERAL.every((t) => countAll(h, t) <= BUILDINGS[t].max), `general buildings within their limits (${gen.map(([t, n]) => `${BUILDINGS[t].name} ${n}`).join(", ") || "none"})`);
     check(["bunks", "shelves", "lockers", "stove"].every((t) => countAll(h, t) <= BUILDINGS[t].max), `fittings within their limits (${fits.map(([t, n]) => `${BUILDINGS[t].name} ${n}`).join(", ") || "none"})`);
     const g = autopilotStats(st);

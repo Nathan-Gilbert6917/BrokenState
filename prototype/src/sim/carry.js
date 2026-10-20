@@ -19,8 +19,8 @@
 //           (raidloot.js u.haul: the search window's Carried column). With anything there (handsBusy) they cannot
 //           shoot, strike with a weapon, reload, throw, treat, open or close a door, work a lock, climb a window,
 //           hotwire a car or free a captive (HAND_ACTS, combatAct), and a closed door stops their move (reachable).
-//           Two different things carried (handsCount: a supply kind, an item, a bag each count one) are two hands
-//           full: nothing more can be taken from a container, a body, the ground, the vehicle or a teammate
+//           Two different things carried (handsCount: a supply kind, an item, a bag each count one; a twoHands thing,
+//           the fire safe or the rifle case, counts two: basestorage.js) are two hands full: nothing more can be taken from a container, a body, the ground, the vehicle or a teammate
 //           (handsTakeRefusal: raidloot.js raidMove, ground.js pickUpFromGround, carryBag, pickCarried) until something
 //           is put down (the ground: free) or moved into the pack, the pockets or the vehicle. Half cover (a fence,
 //           sandbags, crates, a counter: combat.js CELL vault) can still be vaulted, at twice the vault's cost
@@ -96,7 +96,7 @@
 // slider, the team's room and the weight a unit, defaulting to the most that fits); the governor, the autopilot
 // and the AI give no quantity: the most that fits, as before.
 import { SUPPLIES, GEAR, supValue } from "./data.js";
-import { packOf, ensureInv, itemAt, removeAt, parseLoc, placeOfLoc, itemLoad, isCarryable } from "./inventory.js";
+import { packOf, ensureInv, itemAt, removeAt, parseLoc, placeOfLoc, itemLoad, isCarryable, isTwoHands } from "./inventory.js";
 import { partyMembers, cargoRoom, partyTile, addGearToCargo, poolLoad } from "./parties.js";
 import { FOODS, foodUnits, takeFood, addFood, giveFood, unitsOf } from "./foods.js"; // food by type, held in days of food
 import { partyVehicle, partyVehicles, isCar, isBike, VEHICLE_TYPES } from "./vehicles.js";
@@ -400,7 +400,7 @@ export function bagRefusal(state, where, who, item) {
   ensureInv(s);
   if (s.gear.carry) return `${s.name.split(" ")[0]} already carries the ${s.gear.carry.name} in their arms: set it down first.`;
   if (u && (u.carrying != null || u.dragging != null)) return "Hands full: put the body down first.";
-  if (u) { const why = handsTakeRefusal(u, `the ${item.name}`); if (why) return why; } // two different things carried already
+  if (u) { const why = handsTakeRefusal(u, `the ${item.name}`, item); if (why) return why; } // two different things carried already (a fire safe: both hands)
   return "";
 }
 // Sets the bag down on the ground of the team's tile (one item, contents and all). Returns its name ("" if none).
@@ -577,7 +577,28 @@ function addGroundSupply(site, key, q, extra = {}) {
     cur.value = cur.qty * supValue(key);
   } else site.items.push({ kind: "supply", key, name: SUPPLIES[key].name, qty: q, value: q * supValue(key), ...(FOODS[key] ? { left: extra.left ?? FOODS[key].shelf } : {}), ...(extra.eggs != null ? { eggs: extra.eggs } : {}), ...(extra.worm > 0 ? { worm: extra.worm } : {}) });
 }
+// Supplies left on a tile's ground by those who cannot carry them on (nomads.js leaveOnGround: a band's goods where
+// nobody of it is left to carry them, or what will not fit).
+export function leaveSuppliesAt(state, tile, sup) {
+  const list = Object.entries(sup || {}).filter(([k, q]) => SUPPLIES[k] && q > 1e-9);
+  if (!list.length || tile == null) return;
+  const site = groundAt(state, tile, true);
+  for (const [k, q] of list) addGroundSupply(site, k, q);
+}
 const touched = (state, site) => { site.lastConfirmed = day(state); markDeathSite(state, site); };
+// Stores and kit left on a tile's ground by nobody's team (hardcore-groups.js militaryFalls: what nobody could carry
+// out of a fallen base stays in its ruin): every supply of `stock` as a stack, every item of `items` as itself.
+// Returns the site, or null with nothing to leave.
+export function leaveOnGround(state, tile, stock = {}, items = []) {
+  const sup = Object.entries(stock || {}).filter(([k, q]) => SUPPLIES[k] && Number.isFinite(q) && q > EPS);
+  const gear = (items || []).filter(Boolean);
+  if (!sup.length && !gear.length) return null;
+  const site = groundAt(state, tile, true);
+  for (const [k, q] of sup) addGroundSupply(site, k, q);
+  for (const it of gear) site.items.push(groundGear(it));
+  touched(state, site);
+  return site;
+}
 function dropSite(state, site) {
   if (site.items.length || (site.walked && site.walked.length) || site.names.length) return;
   const i = state.deathSites.indexOf(site);
@@ -787,7 +808,7 @@ export const keyKg = (p, k) => (((p.supplies && p.supplies[k]) || 0) + ((p.cargo
 // ---------- fights ----------
 // The acts that need free hands (combat.js combatAct). Carrying a body or dragging someone blocks the same.
 // Doors, locks, windows, a car's wires and a captive's ropes need the hands too (the user's ask, 2026-10-19).
-const HAND_ACTS = new Set(["shoot", "melee", "reload", "getshells", "throw", "throwspear", "launch", "glreload", "suppress", "overwatch", "doubletap", "finish", "taser", "reloadTaser", "pepper", "unjam", "subdue", "tie", "pickup", "dragAlly", "meds", "heal", "revive", "plate", "turret", "gunner", "open", "close", "brace", "climb", "checkwindow", "openwindow", "closewindow", "breakwindow", "car", "rescue"]);
+const HAND_ACTS = new Set(["shoot", "melee", "reload", "getshells", "throw", "throwspear", "launch", "glreload", "suppress", "overwatch", "doubletap", "finish", "taser", "reloadTaser", "pepper", "unjam", "subdue", "tie", "pickup", "dragAlly", "meds", "heal", "revive", "plate", "turret", "gunner", "open", "close", "brace", "keylock", "keyunlock", "forceStore", "climb", "checkwindow", "openwindow", "closewindow", "breakwindow", "car", "rescue"]);
 export const handsKg = (u) => kgOf(u && u.hands) + (u && u.bag ? itemLoad(u.bag) : 0) + (u ? haulLoad(u) : 0);
 // Arms full of supplies or a bag (the loads: autoDrop, fitHands, the end of a fight); a hand on a cart (carts.js).
 export const armsBusy = (u) => !!(u && (u.hands || u.bag || u.cartHelp != null)); // cartHelp: helping pull a hand cart (carts.js)
@@ -797,29 +818,40 @@ export const haulBusy = (u) => !!(u && u.haul && (u.haul.gear.length || Object.v
 export const handsBusy = (u) => armsBusy(u) || haulBusy(u);
 // How many different things fill the hands: each kind of supply in the arms, the bag, each item and each kind of
 // supply carried loose. Two or more: both hands full (handsTakeRefusal). A cart pushed takes both hands, helping to
-// pull one a hand (carts.js).
+// pull one a hand (carts.js); a twoHands thing (the fire safe, the rifle case: inventory.js isTwoHands) both hands,
+// each one of them.
 export function handsCount(u) {
   if (!u) return 0;
-  let n = Object.values(u.hands || {}).filter((q) => q > EPS).length + (u.bag ? (isCart(u.bag) ? 2 : 1) : 0) + (u.cartHelp != null ? 1 : 0);
+  let n = Object.values(u.hands || {}).filter((q) => q > EPS).length + (u.bag ? (isCart(u.bag) || isTwoHands(u.bag) ? 2 : 1) : 0) + (u.cartHelp != null ? 1 : 0);
   if (u.haul) {
-    const keys = new Set(u.haul.gear.map((it) => it.key));
-    n += keys.size + Object.values(u.haul.sup).filter((v) => v > EPS).length;
+    const keys = new Set(u.haul.gear.filter((it) => !isTwoHands(it)).map((it) => it.key));
+    n += keys.size + 2 * u.haul.gear.filter(isTwoHands).length + Object.values(u.haul.sup).filter((v) => v > EPS).length;
   }
   return n;
 }
 export const HANDS_MAX = 2; // two hands: two different things carried, and nothing more can be taken
 export const armsText = (u) => [recText(u.hands), u.bag ? `the ${u.bag.name}` : "", u.cartHelp != null ? "a hand on the cart (helping pull it)" : "", haulText(u)].filter(Boolean).join(" and ");
 export const handsWord = (u) => (u.cartHelp != null && !u.bag ? `Hands full: ${u.name.split(" ")[0]} helps pull the cart. Let go first (free); a pistol fires one-handed.` : isCart(u.bag) ? `Hands full: ${u.name.split(" ")[0]} pushes the ${u.bag.name.toLowerCase()} (${r1(handsKg(u))} kg). Let go first (free); a pistol fires one-handed.` : `Hands full: ${u.name.split(" ")[0]} carries ${armsText(u)} (${r1(handsKg(u))} kg). Set it down first (Drop carried: free${haulBusy(u) ? ", or put it in the pack, the pockets or the vehicle" : ""}).`);
-// Why this unit cannot take one more thing in hand ("" when it can): two different things carried already.
-export function handsTakeRefusal(u, what = "that") {
-  if (!u || handsCount(u) < HANDS_MAX) return "";
+// Why this unit cannot take one more thing in hand ("" when it can): two different things carried already; item: a
+// twoHands thing (the fire safe, the rifle case) wants both hands free.
+export function handsTakeRefusal(u, what = "that", item = null) {
+  if (!u) return "";
+  if (isTwoHands(item) && handsCount(u) > 0) return `Both hands needed: the ${item.name} is carried in both arms, and ${u.name.split(" ")[0]} carries ${armsText(u)}. Put it down (the ground: free), or into the pack, the pockets or the vehicle first.`;
+  if (handsCount(u) < HANDS_MAX) return "";
   return `Both hands full: ${u.name.split(" ")[0]} carries ${armsText(u)} and cannot take ${what} as well. Put something down (the ground: free), or into the pack, the pockets or the vehicle first.`;
 }
-// Why this act cannot be done with what the unit holds ("" when it can).
-export function handsRefusal(u, type) {
+// Why this act cannot be done with what the unit holds ("" when it can). act: the order itself, for the one act that
+// works on the thing in the hands: opening a case or a box carried loose (locks.js openCaseAct, target "kh<i>") sets
+// it down to work it, so that case does not count; anything else carried still does.
+export function handsRefusal(u, type, act = null) {
   if (!u || !HAND_ACTS.has(type)) return "";
   if (type === "shoot" && oneHandOk(u)) return ""; // carts.js: a pistol, one-handed (an aim penalty, shotOdds)
-  if (handsBusy(u)) return handsWord(u);
+  const own = type === "open" && act && act.method === "case" ? /^kh(\d+)$/.exec(String(act.target || "")) : null;
+  if (own && u.haul && u.haul.gear[Number(own[1])]) {
+    const i = Number(own[1]);
+    const other = armsBusy(u) || u.haul.gear.some((it, j) => j !== i && it) || Object.values(u.haul.sup).some((v) => v > EPS);
+    if (other) return handsWord(u);
+  } else if (handsBusy(u)) return handsWord(u);
   if ((u.carrying != null || u.dragging != null) && (type === "melee" || type === "throw" || type === "throwspear" || type === "launch" || type === "finish" || type === "subdue" || type === "taser" || type === "pepper")) return u.carrying != null ? "Hands full: put the body down first." : "Hands full: dragging someone (put them down first, Shift+D).";
   return "";
 }

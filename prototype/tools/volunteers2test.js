@@ -14,6 +14,7 @@ import { createBattle, combatAct, autoPlayerTurn, runEnemyPhase, closeCombat, un
 import { ensureAlliance } from "../src/sim/alliance.js";
 import { startWar, changeRelation } from "../src/sim/diplomacy.js";
 import * as V from "../src/sim/volunteers.js";
+import { syncMembers } from "../src/sim/members.js";
 
 const SEED = Number(process.argv[2] || 7);
 let passed = 0, failed = 0;
@@ -119,17 +120,33 @@ console.log("Old hands");
   V.welcomeVet(s2, f2, v2);
   check(s2.survivors.includes(w) && f2.goodwill === g2 + V.VOL.VET.cost && w.gear.weapon && w.gear.weapon.key === "knife", `without it: ${V.VOL.VET.cost} goodwill, and they come with a knife`);
   // Groups: one of the fighters lent may stay with the group they helped.
+  // The loan's fighters are the lender's very people (members.js): off its list while away, back as themselves.
   const { st: s3 } = world(SEED + 3);
-  let stays = 0;
+  let stays = 0, loans = 0, kept = true, away = true, gone = 0, stayer = null;
+  const [g3, l3] = s3.factions;
+  const live = (f) => f.people.filter((s) => s.alive !== false);
   for (let k = 0; k < 400 && !stays; k++) {
-    const [g, l] = s3.factions;
-    g.alive = l.alive = true; g.pop = 20; l.pop = 30;
-    V.ensureVols(s3).aiLoans.push({ from: l.id, to: g.id, n: 3, power: 10, until: 0, kind: "war" });
-    g.volAid = 10;
+    g3.alive = l3.alive = true;
+    syncMembers(s3, g3); syncMembers(s3, l3);
+    const before = new Set([...live(g3), ...live(l3)]);
+    const L = V.lendPeople(s3, l3, g3, 3, 0, "war");
+    if (!L) break;
+    loans++;
+    const lent = [...L.people];
+    away = away && lent.every((s) => !l3.people.includes(s) && !g3.people.includes(s) && s.location.kind === "lent") && l3.pop === live(l3).length;
+    V.ensureVols(s3).aiLoans.push(L);
     V.aiLendDaily(s3);
+    const after = [...live(g3), ...live(l3)];
+    const dead = [...before].filter((s) => !after.includes(s));
+    gone += dead.length;
+    // Nobody new, nobody twice, and the only ones missing are lent fighters who fell (dead, not lost).
+    kept = kept && after.every((s) => before.has(s)) && new Set(after).size === after.length && dead.every((s) => s.alive === false && lent.includes(s)) && g3.pop === live(g3).length && l3.pop === live(l3).length;
     stays = V.ensureVols(s3).stats.aiStayed || 0;
+    if (stays) stayer = lent.find((s) => g3.people.includes(s) && s.fid === g3.id) || null;
   }
-  check(stays > 0, "groups too: one of a friend's fighters now and then stays with the group they helped");
+  check(loans > 0 && away, `a loan moves the very people (${loans} loans): off the lender's list while away, held on the loan`);
+  check(kept, `home again as themselves: nobody made, nobody duplicated, the head counts are the lists (${gone} fell over the loans)`);
+  check(stays > 0 && !!stayer, "groups too: one of a friend's fighters now and then stays with the group they helped");
 }
 
 // ---------- 3. simple orders in battle ----------

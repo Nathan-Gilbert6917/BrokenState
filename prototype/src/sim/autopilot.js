@@ -3,7 +3,7 @@
 //   - resolves cards (travel events, conflicts, orders / "Done" cards, strangers, raid warnings), scavenging
 //     searches (one search hour per tick), trade visits and battles (state.autoCombat is on while it runs);
 //   - sets every role by need (food, threats, the injured, construction, stations, crafting), queues buildings
-//     and crafts, hands out gear from the armory and treats the injured with base meds;
+//     (storage among them when a base's goods lie outside: storageWish, basestorage.js) and crafts, hands out gear from the armory and treats the injured with base meds;
 //   - once a day (07:00) plans a trip: scavenging the best known site for what the hub needs, checking finds,
 //     recovering the dead or a vehicle, a trade visit, a rescue, or founding an outpost; and sends supply runs
 //     to outposts that need materials or hands;
@@ -53,10 +53,11 @@ import { conditionsOf, CONDITIONS, treatCondition, treatConditionInfo, medsToTre
 import { govCookBills } from "./cooking.js"; // wave 2 cooking: the governor's and the stewards' bills
 import { canUpgradeKitchen, queueCannerUpgrade, canUpgradeGenerator, queueGenUpgrade, stationOperator, hasWall } from "./buildings.js"; // machines-2: the pressure canner; gen-tiers: a generator upgraded
 import { nextWallTier, wallTier } from "./buildings.js"; // WALL_TIERS: one wall, built up a tier at a time
-import { fittingRoom } from "./basemap.js"; // base building: a general building with floor for a fitting (bedWishes, storeWishes, stoveWish)
-import { autoStore, containersOf } from "./containers.js"; // the stores tidied daily (tidyStores), the room left in them (storeWishes)
+import { fittingRoom } from "./basemap.js"; // base building: a general building with floor for a fitting (bedWishes, storageWish, stoveWish)
+import { autoStore } from "./containers.js"; // the stores tidied daily (tidyStores)
 import { BUILDINGS, RECIPES, canDemolish, demolish, canBuild, queueBuild, count, countAll, stations, baseBeds, baseWalls, farmSlots, assignStations, isShelter, plotsFree, plotCap, BEDS, queuedBeds, BARRACKS_UP, canExpandBunkhouse, queueBunkhouseExpand, benchTier, tierUpType, tierUpJob, gatherRows, gatherStalled, isCamp, CAMP as CAMP_TIER, WATER_BARREL, canUpgradeBarrel, queueBarrelUpgrade, barrelTier, barrels, barrelName } from "./buildings.js";
 import { fireWanted } from "./fieldheat.js";
+import { storageOf, isStoreBuilding } from "./basestorage.js"; // base storage limits: storage when goods lie outside (storageWish)
 import { isHurt, hospitalDef, nextHospitalType, treatAtBase, treatAtBaseInfo, fieldTreatInfo, careNeed, treaters } from "./medical.js";
 import { planTrainees, planDoctor } from "./training.js"; // a Medic trainee for a base short of skilled medics, the doctor on duty
 import { CRAFTS, canCraft, queueCraft, craftQueue, isFilterJob, filterRecipe, canAttempt, craftSkill, fieldCraftOptions } from "./crafting.js";
@@ -360,7 +361,7 @@ export function governBase(state, base, areas = ALL_AREAS) {
   if (areas.medical) planTreatment(state, base);
   if (areas.medical && hourOfDay(state) === TREAT_HOUR) for (const line of autoTreats(state, base)) say(state, line); // comforts.js: chocolate, coffee, smokes for the glum
   if (areas.building && hourOfDay(state) === WATER_WAIT.hour) waterSalvage(state, base);
-  if (areas.building && hourOfDay(state) === PLAN_HOUR) tidyStores(state, base); // containers.js: the goods into the containers, before the day's builds (storeWishes reads what is left in the yard)
+  if (areas.building && hourOfDay(state) === PLAN_HOUR) tidyStores(state, base); // containers.js: the goods into the containers, before the day's builds
   if (areas.building) planBuilds(state, base, areas);
   if (areas.building && hourOfDay(state) === PLAN_HOUR + 2) { const msg = cookFireDown(state, base); if (msg) say(state, msg); } // kitchen.js: a lit kitchen does the cook fire's job
   if (areas.production && hourOfDay(state) === 23) stoveSave(state, base); // kitchen.js: the winter's firewood before the stove
@@ -2668,7 +2669,7 @@ function roleSummaries(state) {
 // ---------- construction ----------
 // The steward area each kind of building belongs to (anything else is plain Building).
 const BUILD_AREA = {
-  walls: "defence", wall1: "defence", wall2: "defence", wall4: "defence", gate4: "defence", stand1: "defence", stand2: "defence", stand4: "defence", barricades: "defence", spike_pits: "defence", trench: "defence", gate: "defence", floodlights: "defence", watchtower: "defence",
+  walls: "defence", wall1: "defence", wall2: "defence", wall4: "defence", gate4: "defence", stand1: "defence", stand2: "defence", stand4: "defence", barricades: "defence", spike_pits: "defence", trench: "defence", gate: "defence", floodlights: "defence", watchtower: "defence", armory: "defence",
   infirmary: "medical", field_hosp: "medical", clinic: "medical", hospital: "medical", med_station: "medical",
   huntcabin: "food", farm_plot: "food", greenhouse: "food", animal_pen: "food", cellar: "food", coldstore: "food", freezer: "food", storehouse: "food", smoker: "food", kitchen: "food", rain_catcher: "food", well: "food", cistern: "food", water_barrel: "food", crates: "food",
   boiler: "food", cookhouse: "food", canteen: "food", grainmill: "food", meatgrinder: "food", stove: "food", // base building: a wood stove indoors is a cook fire (the general buildings, bunks, shelves and lockers are "building")
@@ -2791,7 +2792,38 @@ function campYard(state, base, here, queued) {
   const crowded = () => living + returning(state, base) > baseBeds(base) + queuedBeds(base) + (pending.includes("cots") ? BEDS.cots : 0);
   if (!isCamp(base) && crowded()) add("cots", `${living} people for ${baseBeds(base)} beds`);
   if (!isCamp(base) && crowded()) add("bunkhouse", `${living} people for ${baseBeds(base)} beds`);
+  // Storage for the goods lying outside (storageWish): last in the yard, from the scrap the step up does not need; never
+  // in `pending` (a shelter's step up does not wait for it).
+  const sw = storageWish(state, base);
+  if (sw && (BUILDINGS[sw.type].cost.scrap || 0) <= spare && !BUILDINGS[sw.type].cost.parts) wishes.push(sw);
   return { wishes, pending };
+}
+// Base storage limits (basestorage.js, 2026-10-19): when a base's goods lie outside (STORE_WISH.minKg or more, or an
+// item that wears out there), one storage building at a time, from the ladder for its size, cheapest first: a storage
+// box at a camp, a box or storage crates at a shelter, crates or a storage shed at an outpost, crates, a shed, the
+// storehouse or a warehouse at the main base. The smallest it can build now that takes what lies outside, else the
+// biggest it can build now (canBuild: the materials, a plot, the skills). Never saved up for: the wishes ahead of it
+// (water, beds, food, defence, benches) keep their scrap, and planBuilds' reserves still apply.
+// Base building (merged with it, 2026-10-19): while a standing general building has floor for them (basemap.js
+// fittingRoom), storage shelves (150 kg, 4 scrap) and then lockers (100 kg) on its floor come first: cheap, no plot;
+// and when nothing on the ladder can go up (no plot free), the biggest general building the base can put up, to hold
+// shelves and lockers (generalWish). One at a time: a storage building, a fitting or a general building going up.
+export const STORE_WISH = { minKg: 5, ladder: { camp: ["storebox"], shelter: ["storebox", "crates"], outpost: ["crates", "shed"], hub: ["crates", "shed", "storehouse", "warehouse"] }, fittings: ["shelves", "lockers"] };
+export function storageWish(state, base) {
+  if (base.construction.some((c) => (isStoreBuilding(c.type) || GENERAL.includes(c.type)) && !c.target)) return null; // one at a time
+  const st = storageOf(state, base);
+  if (st.outsideKg < STORE_WISH.minKg && !st.outside.gear.length) return null;
+  const why = (t) => `${Math.round(st.outsideKg)} kg of the base's goods lie outside, weathering (room for ${BUILDINGS[t].storeKg} kg)`;
+  for (const t of STORE_WISH.fittings) if (BUILDINGS[t] && countAll(base, t) < BUILDINGS[t].max && fittingRoom(state, base, t) && canBuild(state, base, t).ok) return { type: t, why: `${why(t)}: ${BUILDINGS[t].name.toLowerCase()} inside a general building`, save: false };
+  const size = isCamp(base) ? "camp" : isShelter(base) ? "shelter" : base.type === "hub" ? "hub" : "outpost";
+  const ok = STORE_WISH.ladder[size].filter((t) => BUILDINGS[t] && canBuild(state, base, t).ok);
+  if (ok.length) {
+    const type = ok.find((t) => BUILDINGS[t].storeKg >= st.outsideKg) || ok[ok.length - 1];
+    return { type, why: why(type), save: false };
+  }
+  const gb = generalWish(state, base);
+  if (gb && canBuild(state, base, gb).ok) return { type: gb, why: `${Math.round(st.outsideKg)} kg of the base's goods lie outside, weathering: a ${BUILDINGS[gb].name.toLowerCase()} for shelves and lockers`, save: false };
+  return null;
 }
 function buildWishes(state, base) {
   const g = gov(state);
@@ -2899,15 +2931,7 @@ function buildWishes(state, base) {
   // Hordes (defences.js): walls when a horde in sight would break in, then barricades, spike pits and the rest.
   const hz = hordeThreat(state, base);
   if (hz.size && !holdCheck(state, base, hz.size, hz.bosses, hz.mix).holds && !queued("walls") && nextWallTier(base)) add("walls", `a horde of ${hz.size} would break in`, true);
-  // Storage (containers.js storeWishes): shelves, lockers, a storehouse or a general building for them. Goods lying
-  // in the yard with nowhere to go (saved for: a raid takes them first, and the storehouse halves what it takes) come
-  // after the water, the beds, the food stores and the walls a threat calls for, before the horde's outer defences
-  // (one cheap building, then the defences have the scrap again); containers merely filling up (not saved for) wait
-  // behind the defences, before the comfort buildings.
-  const stores = storeWishes(state, base, queued);
-  if (stores.some((w) => w.save)) out.push(...stores);
   if (hz.any) for (const w of defenceWishes(state, base, true)) if (!queued(w.type)) out.push(w);
-  if (!stores.some((w) => w.save)) out.push(...stores);
   // A radio relay (radio.js) at any base (the hub too) where one would link to the network and bring a group you
   // know (not hostile) into radio reach: greetings, pacts and the coalition's invitation need it (alliance.js
   // reachVia). radio.js relayReach rules out a base with a station (it adds nothing there) and one the relay would
@@ -2936,6 +2960,7 @@ function buildWishes(state, base) {
   if (bw && !benchTier(base, true)) add("craftbench", "a bench to mend the fighters' worn gear", true);
   else if (bw >= 2 && benchTier(base, true) === 1 && best("mechanics") >= BUILDINGS.workbench.req.mechanics) add("workbench", "a workbench to mend the fighters' guns and armour", true);
   if (!benchTier(base, true) && !benchQueued && (here.some((s) => s.role === "craft") || craftQueue(base).length > 0)) add("craftbench", "a bench for the crafters (faster, better gear; most recipes need one)");
+  if (!isShelter(base)) { const sw = storageWish(state, base); if (sw) out.push(sw); } // goods outside: storage (a camp's and a shelter's: campYard)
   for (const w of jailWishes(state, base, best)) out.push(w);
   if (!isHub) return out;
   const hostileNear = state.factions.some((f) => f.alive && f.known && attitude(f) === "Hostile" && f.bases.some((b) => state.grid.distance(b, base.tile) <= 20));
@@ -2963,6 +2988,7 @@ function buildWishes(state, base) {
       (here.some((s) => s.role === "craft") || craftQueue(base).length > 0 || countAll(base, "ammo_bench") + countAll(base, "reload_bench") > 0)) add("toolbench", "a master workbench: the crafters work faster and better");
   if (!count(base, "med_station") && pop >= 6 && best("medicine") >= 3 && (st.meds || 0) < pop) add("med_station", "meds are short");
   if (!count(base, "storehouse") && (hostileNear || state.stats.raidsRepelled > 0)) add("storehouse", "raiders steal less");
+  if (!count(base, "armory") && count(base, "storehouse") && (base.armory || []).length >= 8 && (hostileNear || state.stats.raidsRepelled > 0)) add("armory", "the guns and rounds under lock from raiders");
   if (!count(base, "machine_shop") && pop >= 7 && (st.parts || 0) < 6 && best("mechanics") >= 4) add("machine_shop", "spare parts");
   // Mood (relations.js): a common room once the hub is a real community and spirits are not sky high (saved up for
   // when they sag below 75), or as planned comfort for a big hub: at 12+ people once there is scrap for it, saved up
@@ -3128,45 +3154,16 @@ function foodStoreWishes(state, base, people, queued) {
 
 // ---------- the stores (base building, containers.js) ----------
 // The stores tidied once a day, at the morning's plan before the day's builds (governBase; the AI groups' bases the
-// same way, factions.js): the unassigned goods (what came in since yesterday) into the containers with room, by
-// autoStore's rules (food where it keeps, the dear things behind the best door, gear to the lockers), so the base's
-// goods lie under a roof and not in the yard where a raider finds them first. What is assigned by hand stays where
-// the player put it (a car is never loaded by the game). g.stats.stored: the kg put away all told.
+// same way, factions.js): the unassigned goods (what came in since yesterday) put in the containers with room, by
+// autoStore's rules (the most valuable for their weight first, as basestorage.js fills the room; food where it keeps,
+// rounds and guns in the armory, the dear things behind the best door, gear to the lockers). It only writes the
+// assignments: what is inside and what lies outside is basestorage.js's to say, and the storage wish (storageWish)
+// builds room when goods lie outside. What is assigned by hand stays where the player put it (a car is never loaded by
+// the game). g.stats.stored: the kg put away all told.
 function tidyStores(state, base) {
   const put = autoStore(state, base);
   const g = gov(state);
   g.stats.stored = Math.round(((g.stats.stored || 0) + put.kg) * 10) / 10;
-}
-// Room for the goods (containersOf, in kg; the base's own containers: a car parked here is never loaded by the game,
-// so its payload is no room and what the player put in it is not counted) once what the base holds (the containers'
-// contents and the yard's) passes STORE_FULL of the room, urgent (saved for) once it passes the room itself: then
-// goods lie in the yard whatever the morning's tidy does. (The yard alone is no sign: it holds what came in since the
-// morning until the next tidy.) Storage shelves (200 kg, 4 scrap) on a general building's floor, else lockers
-// (120 kg), else the storehouse on a building plot, else the biggest general building the base can put up to hold them
-// (generalWish; not saved for: the shelves are, once it stands). One at a time.
-const STORE_FULL = 0.8;
-function storeRoom(state, base) {
-  const out = { cap: 0, held: 0, yard: 0 };
-  for (const c of containersOf(state, base)) {
-    if (c.kind === "vehicle") continue;
-    if (c.kind === "yard") out.yard = c.kg; else out.cap += c.cap;
-    out.held += c.kg;
-  }
-  return out;
-}
-function storeWishes(state, base, queued) {
-  if (queued("shelves") || queued("lockers") || queued("storehouse") || GENERAL.some((t) => queued(t))) return [];
-  const ss = storeRoom(state, base);
-  const held = ss.held;
-  if (!(held > ss.cap * STORE_FULL)) return [];
-  const over = held > ss.cap;
-  const why = over ? `the stores overflow: ${Math.round(ss.yard)} kg lie in the yard` : `the containers are nearly full (${Math.round(held)} kg of goods for ${Math.round(ss.cap)} kg of room)`;
-  const fit = (t) => countAll(base, t) < BUILDINGS[t].max && !!fittingRoom(state, base, t);
-  if (fit("shelves")) return [{ type: "shelves", why, save: over }];
-  if (fit("lockers")) return [{ type: "lockers", why, save: over }];
-  if (!countAll(base, "storehouse") && plotsFree(base, "building") > 0 && !canBuild(state, base, "storehouse").where) return [{ type: "storehouse", why, save: over }];
-  const gb = generalWish(state, base);
-  return gb ? [{ type: gb, why: `${why}: a ${BUILDINGS[gb].name.toLowerCase()} for shelves and lockers`, save: false }] : [];
 }
 // A wood stove (buildings.js stove, as: "cookhouse": it counts as the cook fire wherever one is read) on a general
 // building's floor when the base wants a cook fire (wormWishes) and none can go up in the yard (no utility plot left,
@@ -3465,7 +3462,7 @@ function planTrip(state) {
   // least minOut may go while three stay home.
   const keepFrac = Math.ceil(home.length * (small ? 0.25 : P.homeFrac));
   const keep = Math.max(small ? 1 : 2, P.minOut && !small ? Math.min(keepFrac, Math.max(3, home.length - P.minOut)) : keepFrac, hordeNear ? Math.min(home.length, P.homeHorde) : 0);
-  const pool = home.filter((s) => s.health >= P.minHealth - (short.length || small ? 10 : 0) && !s.woundInfected && !s.inBed && s.mood >= 20 && (!s.leader || home.length >= 9 || small) && tripFit(state, s));
+  const pool = home.filter((s) => s.health >= P.minHealth - (short.length || small ? 10 : 0) && !s.woundInfected && !s.inBed && !s.pinned && s.mood >= 20 && (!s.leader || home.length >= 9 || small) && tripFit(state, s)); // pinned people stay (never moved: the steward's rule)
   const spareHands = Math.min(pool.length, home.length - keep);
   if (spareHands < 1) return;
   const need = needs(state);

@@ -40,15 +40,20 @@
 //   raider gang's base are ambushed in parties.js aiPartyHour (the same goods taken, the same odds). A group at war with
 //   you (playerwars.js, peaceful types too) robs your convoys PW.CARAVAN × as often, PW.CARAVAN_RANGE tiles further out.
 // - Only when their war band (AI_RAID.BAND × the group's strength) is at least AI_RAID.EDGE × the caravan's; an hourly
-//   chance of AI_RAID.CHANCE, more for a rich cargo (up to ×3). Won by the numbers (0.5 + 0.6 × (ratio − 1), 5–95%):
-//   all the supplies go into the group's stock and the items onto its shelf (its wares), the caravan is gone (your
-//   convoy: someone hurt, the cargo gone, it goes on empty). Lost: the band loses people, the caravan a guard or two.
+//   chance of AI_RAID.CHANCE, more for a rich cargo (up to ×3). Fought by the numbers (groupfight.js fightSides: the
+//   band's very people against the caravan's guards by their strength, or against your convoy's very people, who are
+//   the side in your place): won, all the supplies go into the group's stock and the items onto its shelf (its wares),
+//   the caravan is gone (your convoy: the cargo gone, it goes on empty). Lost: the band loses people, the caravan a
+//   guard or two (your convoy takes what the band's dead carried). Either way the rounds land on the band's people and
+//   on your convoy's by the same roll (applySide, applyYours: wounds, deaths, the left behind taken).
 // - A group that overheard your convoy's route on the radio (intel.js g.lying) hunts it INTEL.AMBUSH.RANGE tiles further
 //   out and INTEL.AMBUSH.MULT × as often until it has passed.
 import { typeGoods, FOODS } from "./foods.js"; // a convoy's food as items
 import { SUPPLIES, SUPPLY_KEYS, FACTION_TYPES, supValue } from "./data.js";
 import { keyWord } from "./water.js"; // "9mm FMJ"
-import { log, addCard, day, factionById, hurt, newId, combatPower } from "./world.js";
+import { log, addCard, day, factionById, newId, combatPower, survivorById } from "./world.js";
+import { stripAll } from "./inventory.js"; // a robber's body: what they carried
+import { convoyPolicy } from "./breakoff.js"; // your convoy breaks off a fight by its policy
 import {
   partyTile, partyMembers, tileLabel, removeParty, planPath, cargoRoom, unitsThatFit, addGearToCargo, wipeParty, awaitOrders, orderMove,
 } from "./parties.js";
@@ -57,7 +62,7 @@ import { startCombat, registerCombatHandler } from "./combat.js";
 import { fightOdds, halt, resume, afterFight, COOLDOWN_HOURS, rob } from "./conflicts.js";
 import { turnHostile, guardPower } from "./caravans.js";
 import { visitorsOf, visitorById, vStrength, leaveMap, goodsText, blameYou, openVisitorTrade, attackMerchants, visitorInfo } from "./visitors.js";
-import { createVehicle, VEHICLE_TYPES, fitMilitary } from "./vehicles.js";
+import { createVehicle, VEHICLE_TYPES, fitMilitary, carryCargo, factionVehicles } from "./vehicles.js";
 import { markAbandonedVehicle, markDeathSite } from "./markers.js";
 import { joinTeam } from "./foundcars.js";
 import { hash01 } from "./skills.js";
@@ -67,12 +72,12 @@ import { caravanGuarded } from "./jobs.js";
 import { inCoverage } from "./radio.js";
 import { chronicleNote } from "./chronicle.js";
 import { escortWords, escortShort, guardGear, ESCORT_VEHICLES, cargoValue } from "./escorts.js";
-import { addToArsenal, keepItem, removeFromArsenal, partyLost, issueKit } from "./arsenal.js"; // group arsenals: loot to their fighters, guards' kit lost
+import { addToArsenal, keepItem, removeFromArsenal, partyLost, issueKit, unloadVehicle } from "./arsenal.js"; // group arsenals: loot to their fighters, guards' kit lost
 import { noteFight } from "./groupcare.js";
 import { teamName } from "./parties.js";
 import { lyingFor, ambushSprung, INTEL } from "./intel.js"; // a group that overheard your convoy's route waits for it
 import { note, roundsIn, goodsRounds } from "./ledger.js"; // the conservation test's ledger (off in play)
-import { fightSides, fightersOf, applySide } from "./groupfight.js"; // fights nobody watches: your rules
+import { fightSides, fightersOf, applySide, applyYours } from "./groupfight.js"; // fights nobody watches: your rules (your convoy's people too)
 import { isWounded } from "./members.js"; // the fit go out on a robbery
 const KIND_OF = { raider: "raiders", expansionist: "fighters", zealot: "zealots", military: "soldiers", fortress: "soldiers", traders: "guards", commune: "militia" };
 
@@ -116,11 +121,27 @@ function aiEnemy(state, q, f) {
     ...(V ? { vehicle: "truck", vehicleBody: V.body, vehicleName: V.name, escort: true, ...(V.turret ? { turret: V.turret } : {}) } : {}),
   };
 }
-// A group's vehicle that went with a caravan and was lost with it (taken by you, or by the raiders) leaves its pool.
-function loseGroupVehicle(state, q) {
+// The group's vehicle record that went with a caravan (escorts.js: q.escort.vehicleId), or null.
+function escortVehicle(state, q) {
   const id = q && q.escort && q.escort.vehicleId;
   const f = id != null ? factionById(state, q.owner) : null;
-  if (f && Array.isArray(f.vehicles)) f.vehicles = f.vehicles.filter((v) => v.id !== id);
+  return f && Array.isArray(f.vehicles) ? f.vehicles.find((v) => v.id === id) || null : null;
+}
+// A group's vehicle that went with a caravan and was lost with it leaves its pool (vehicles.js carryCargo: your
+// vehicles' model). Taken by you: lootCaravan made it one of yours (or stripped its wreck), and what was in it went
+// into the loot first (onRoadCaravan). Taken by a group (to): it joins that group's motor pool as it ran, and what
+// is in it goes into their stores (arsenal.js unloadVehicle; a transfer between groups). Returns the record it became.
+function loseGroupVehicle(state, q, to = null) {
+  const rec = escortVehicle(state, q);
+  if (!rec) return null;
+  const f = factionById(state, q.owner);
+  f.vehicles = f.vehicles.filter((v) => v !== rec);
+  if (!to || to.alive === false) return rec;
+  to.vehSeq = (to.vehSeq || 0) + 1;
+  const nv = { ...rec, id: `f${to.id}-c${to.vehSeq}`, owner: to.id };
+  factionVehicles(to).push(nv);
+  unloadVehicle(state, to, nv, "taken", true);
+  return nv;
 }
 // The fight a merchant caravan puts up (visitors.js enemyOf): its escort's kit, every guard, the scout and the turret
 // gunner, and its vehicle on the map.
@@ -227,6 +248,7 @@ function onRoadCaravan(state, result, setup) {
     st.won++;
     lines.push(`You took ${c.name}: ${result.enemiesKilled || "all"} of the guards are down.`);
     const goods = q ? goodsOf({ type: c.type, owner: c.factionId, ref: q }) : { supplies: {}, gear: [] };
+    if (q && !result.humveeOut) carryCargo(escortVehicle(state, q), { cargo: goods }); // vehicles.js: anything in their vehicle is loot too
     lines.push(...lootCaravan(state, p, goods, { tile: partyTile(p), name: c.name, kit: setup.enemy.kind, guards: result.enemiesKilled || setup.enemy.count, tactical: !!result.tactical, vehicle: result.humveeOut ? null : c.vehicle, key: c.key, result })); // humveeOut: their armoured escort drove off (combat.js carTurn)
     if (q) { if (!result.humveeOut) loseGroupVehicle(state, q); removeParty(state, q); }
   } else {
@@ -582,17 +604,35 @@ export function groupRobs(state, f, c, band = groupStrength(f) * AI_RAID.BAND, s
   const A = fightersOf(state, f, { tile: f.bases[0] }).filter((s) => !isWounded(s)); // the fit go out (members.js sendMembers: as a party is picked)
   const per = A.length ? A.reduce((a, s) => a + combatPower(s), 0) / A.length : 1;
   const crew = A.slice(0, Math.max(1, Math.round(band / Math.max(0.5, per))));
-  const fight = fightSides(state, { f, people: crew, kind: KIND_OF[f.type] || "raiders" }, { f: null, people: [], kind: c.type === "merchants" ? "guards" : "militia", count: Math.max(1, Math.round(strength / 3)), power: Math.max(1, strength) });
+  // Your convoy (docs/adr/0001-ai-parity.md): its very people are the side in your place (your rules for yours: their
+  // combat power, its retreat policy: breakoff.js convoyPolicy, its vehicle on the way out), and the fight's rounds land on them as they
+  // land on the band's (applyYours: wounds, the carried out, the left behind taken by the band or dead). Anyone else's
+  // caravan fights by its guards' strength.
+  const q = c.owner === "player" ? c.ref : null;
+  const yours = q ? partyMembers(state, q) : [];
+  const att = { f, people: crew, kind: KIND_OF[f.type] || "raiders" };
+  const def = yours.length ? { f: null, yours: true, people: yours, party: q, policy: convoyPolicy(state, q), kind: "militia" }
+    : { f: null, people: [], kind: c.type === "merchants" ? "guards" : "militia", count: Math.max(1, Math.round(strength / 3)), power: Math.max(1, strength) };
+  const fight = fightSides(state, att, def, yours.length ? { mine: "def" } : {});
   const win = fight.attWon;
   const seen = state.live.has(c.tile) || inCoverage(state, c.tile);
   const who = f.known ? f.name : "Raiders";
   const where = tileLabel(state, c.tile);
   c.ref.raidedAt = state.hour;
-  applySide(state, f, fight.rA, crew, { holder: win ? f : null, captor: null }); // beaten off, their dead's kit stays with the caravan's guards
+  const theirs = applySide(state, f, fight.rA, crew, { holder: win ? f : null, captor: null }); // beaten off, their dead's kit stays with the caravan's guards
+  const mine = yours.length ? applyYours(state, fight.rD, yours, { tile: c.tile, cause: `when ${who} robbed the convoy`, kind: att.kind, captor: f, party: q }) : null;
+  const hurtText = mine ? convoyPeopleText(state, mine) : "";
   if (!win) {
     if (c.type === "merchants") { c.ref.size = Math.max(1, c.ref.size - 1); c.ref.guards = Math.max(0, (c.ref.guards || 0) - 1); }
-    if (c.owner === "player") log(state, `Your convoy near ${where} beat off ${who}.`, "good");
-    else if (seen) log(state, `The guards of ${c.name} beat off ${who} near ${where}.`, "info");
+    if (q) {
+      // The field is your convoy's: what the band's dead carried goes into its cargo (left on the tile, marked, when
+      // there is no room), as their own band takes yours when it holds the field.
+      const kit = theirs.dead.flatMap((s) => stripAll(s));
+      const left = kit.filter((it) => !(state.parties.includes(q) && addGearToCargo(state, q, it)));
+      if (left.length) leaveCache(state, c.tile, {}, left);
+      log(state, `Your convoy near ${where} beat off ${who}${kit.length ? `, and took ${kit.map((it) => it.name).join(", ")} off their dead` : ""}.${hurtText}`, "good");
+      convoyEmpty(state, q);
+    } else if (seen) log(state, `The guards of ${c.name} beat off ${who} near ${where}.`, "info");
     return false;
   }
   st.groupsWon++;
@@ -607,15 +647,30 @@ export function groupRobs(state, f, c, band = groupStrength(f) * AI_RAID.BAND, s
     if (seen || v.known) log(state, `${who} fell on ${v.name} near ${where} and took everything they carried.`, "danger");
     chronicleNote(state, `${who} plundered ${v.name}, merchants from outside, near ${where}.`, "world", c.tile);
     leaveMap(state, v, "broken");
-  } else if (c.owner === "player") {
-    const q = c.ref;
+  } else if (q) {
     st.convoysLost++;
-    const crew = partyMembers(state, q);
-    if (crew.length) hurt(state, crew[Math.floor(hash01(state.seed, "cvhurt", state.hour, c.key) * crew.length) % crew.length], 15 + Math.floor(hash01(state.seed, "cvdmg", state.hour) * 30), c.tile, `when ${who} robbed the convoy`);
-    log(state, `${who} ambushed your convoy near ${where} and took the whole load${took ? `: ${took}` : ""}.`, "danger");
+    log(state, `${who} ambushed your convoy near ${where} and took the whole load${took ? `: ${took}` : ""}.${hurtText}`, "danger");
     chronicleNote(state, `${who} robbed your convoy near ${where}.`, "danger", c.tile);
+    convoyEmpty(state, q);
   }
   return true;
+}
+// What a robbery did to your convoy's people (groupfight.js applyYours), for the log: " Dana and Lee were hurt; Sam
+// died; Jo was taken." ("" when nobody was touched).
+export function convoyPeopleText(state, r) {
+  const nm = (id) => { const s = survivorById(state, id); return s ? s.name.split(" ")[0] : "someone"; };
+  const and = (ids) => (ids.length <= 1 ? ids.map(nm).join("") : `${ids.slice(0, -1).map(nm).join(", ")} and ${nm(ids[ids.length - 1])}`);
+  const hurtIds = [...r.hurtIds].filter((id) => !r.deadIds.includes(id) && !r.captured.includes(id));
+  const bits = [];
+  if (hurtIds.length) bits.push(`${and(hurtIds)} ${hurtIds.length === 1 ? "was" : "were"} hurt`);
+  if (r.deadIds.length) bits.push(`${and(r.deadIds)} died`);
+  if (r.captured.length) bits.push(`${and(r.captured)} ${r.captured.length === 1 ? "was" : "were"} taken`);
+  return bits.length ? ` ${bits.join("; ")}.` : "";
+}
+// A convoy of yours with nobody left after a robbery (killed, or taken): its vehicle and what is left in it stay on
+// the tile (parties.js wipeParty), as a team's do.
+function convoyEmpty(state, q) {
+  if (q && state.parties.includes(q) && !partyMembers(state, q).length) wipeParty(state, q);
 }
 // All of a caravan's goods into a group's stock (supplies) and onto its shelf (items). Returns what, in words.
 export function takeInto(f, goods, state = null) {
@@ -659,7 +714,7 @@ export function gangAmbush(state, r, q) {
   st.groupsWon++;
   takeInto(r, goodsOf(c), state);
   if (!D.length) escortLost(state, owner, q, r); // arsenal.js: a caravan not yet people: the guards' dead and their kit by the numbers
-  loseGroupVehicle(state, q);
+  loseGroupVehicle(state, q, r); // its vehicle is the gang's now, with anything in it (as you take a caravan's)
   return true;
 }
 

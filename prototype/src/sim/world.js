@@ -29,6 +29,7 @@ import { ensureHives, hivesSecured } from "./hives.js";
 import { growthAt, growthInfo } from "./hivetech.js";
 import { mergeMix } from "./zombietypes.js";
 import { basesDaily, routesDaily, deathSitesDaily } from "./economy.js";
+import { storageDaily } from "./basestorage.js"; // base storage: the things left outside weather (call-time only)
 import { groundDaily } from "./carry.js"; // food left on the ground spoils
 import { addBuilding, constructionHour, assignStations } from "./buildings.js";
 import { createVehicle, vehiclesDaily, garageHour, factionVehiclesDaily } from "./vehicles.js";
@@ -1003,6 +1004,7 @@ function hourOfWorld(state) {
     watchDayRoles(state); // watch.js: Manual people on watch likewise
     weatherDaily(state); // first, so the day's farming, water and sickness read today's weather
     basesDaily(state);
+    storageDaily(state); // basestorage.js: items left outside past a base's storage wear (rain and snow double it)
     craftingDaily(state);
     stallDaily(state); // activity.js: read-only but for base.stall (no dice)
     vehiclesDaily(state);

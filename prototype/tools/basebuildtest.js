@@ -145,9 +145,12 @@ section("General buildings and fittings");
   const b = st.combat, F = b.deployPlan.fort;
   check(cellAt(b, 11, 11).k === "bed" && cellAt(b, 12, 11).k === "bed" && F.indoor[(11 + F.oy) * b.w + 11 + F.ox] === 1 && cellAt(b, 23, 11).k === "shelf" && cellAt(b, 21, 11).k === "counter", "the bunks, the shelves and the bench stand on the floors of their buildings");
   const keys = F.stores.map((s) => s.key);
-  check(keys.includes("core") && keys.includes("yard") && keys.includes(keyOf(shelves)) && F.stores.every((s) => s.key), `every store carries a key: ${keys.join(", ")}`);
-  const yard = F.stores.find((s) => s.key === "yard");
-  check(yard && yard.weight === 0 && yard.label === "Yard pile" && yard.w === 1 && cellAt(b, 5, 2).k === "crate", "the yard pile: a 1 × 1 crate by the base itself, weight 0");
+  check(keys.includes("core") && keys.includes(keyOf(shelves)) && F.stores.every((s) => s.key), `every store carries a key: ${keys.join(", ")}`);
+  // Merged with dev's base storage limits: no Yard pile any more; what the base has no room for lies on dev's piles
+  // (basemap.js layPiles), keyed "outside" (containers.js OUTSIDE), crates on open ground with no room of their own.
+  const piles = F.stores.filter((s) => s.pile);
+  check(piles.length === 0 || piles.every((s) => s.key === "outside" && s.weight === 0 && s.label.startsWith(BM.PILE.LABEL) && cellAt(b, s.x - F.ox, s.y - F.oy).k === "crate"), `the piles of what lies outside: key "outside", crates, no room (${piles.length})`);
+  check(!F.stores.some((s) => s.key === "yard" || s.label === "Yard pile"), "no Yard pile");
   check(F.buildings.find((s) => s.bid === hut.id) && F.buildings.find((s) => s.bid === hut.id).storeys === 1, "the hut is one of the map's buildings");
   st.combat = null;
   // Demolishing the host pulls the fittings down with it, refunds too; the bench inside the cabin goes back to the yard.

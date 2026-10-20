@@ -53,7 +53,7 @@ import { isBox, isSealed, boxText, boxEmptyKg, openPlan, lockWords } from "../si
 import { openBoxWindow } from "./boxview.js"; // an opened box's window
 import { registerStackScreen, openStack, closeStack, stackPanel, chosenQty, supplyIcon, splitCount, STACK_ACTIONS, STACK_CHANGE } from "./stackmove.js"; // how many of a supply stack, and where
 import { lootFit } from "../sim/stacks.js";
-import { armoryView } from "./armoryview.js"; // the storage box's items grouped by type, cards or compact rows
+import { armoryView, storageTags } from "./armoryview.js"; // the storage box's items grouped by type, cards or compact rows
 import { itemShortTip, tipAttrs, roundsBadge } from "./itemlabels.js"; // the short hover tip (Shift: the full one), the rounds badge on a gun
 import { rowName, rowCount, supplyName, supplyCount } from "../sim/itemnames.js"; // row names: "magazine", rounds "— loose", the count on the right
 
@@ -83,7 +83,7 @@ function icon(key) {
 export function itemTip(item, s = null) {
   const d = GEAR[item.key];
   const kgTxt = isSealed(item) ? `${Math.round(itemLoad(item) * 10) / 10} kg; ${boxEmptyKg(item)} kg empty` : `${Math.round(itemLoad(item) * 10) / 10} kg${item.contents && item.contents.some(Boolean) ? " with what is inside" : ""}`; // a sealed box: only its weight tells
-  const bits = [`${d.name} (${SLOT_NAMES[d.slot] || d.slot}${d.small ? ", fits a pocket" : d.bulky ? ", cargo only" : ""}, ${kgTxt})`];
+  const bits = [`${d.name} (${SLOT_NAMES[d.slot] || d.slot}${d.small ? ", fits a pocket" : d.twoHands ? ", both hands: carried only" : d.bulky ? ", cargo only" : ""}, ${kgTxt})`];
   if (d.slot === "weapon") bits.push(`power ${d.power}${d.req ? `, needs ${SKILL_NAMES[d.skill]} ${d.req} for full use` : ""}`);
   if (d.slot === "weapon" && item.mods) bits.push(modsText(item)); // sim/gunmods.js: what is fitted and the net effect
   if (isHelmet(item.key)) bits.push(`${item.mods ? `fitted: ${helmetLabel(item).replace(/^[^(]*\(|\)$/g, "")}; ` : ""}mounts: ${helmetSlots(item).map((m) => HELM_MOUNTS[m].toLowerCase()).join(", ") || "none (a full shell)"}`); // sim/helmets.js
@@ -264,8 +264,8 @@ export function storageBox(state, ui, place, user) {
 const invStoreOf = (ui, baseId) => (ui && ui.invStore && ui.invStore[baseId]) || null;
 function storePicker(state, ui, b) {
   const key = invStoreOf(ui, b.id);
-  const L = containersOf(state, b).filter((c) => c.kind !== "yard");
-  return `<div class="row small invstorepick"><span class="muted"${tip("Where a thing put in the armory from here is kept (the Storage tab's containers): a container with room, or anywhere and the game places it. Raiders take what lies in the yard first.")}>Kept in</span><select data-action="inv-storepick" data-base="${b.id}"${tip("The container a thing taken off a survivor goes into")}><option value=""${key ? "" : " selected"}>Anywhere (the game places it)</option>${L.map((c) => `<option value="${esc(c.key)}"${c.key === key ? " selected" : ""}>${esc(c.label)} (${Math.round(c.free)} kg free)</option>`).join("")}</select></div>`;
+  const L = containersOf(state, b).filter((c) => c.assignable);
+  return `<div class="row small invstorepick"><span class="muted"${tip("Where a thing put in the armory from here is kept (the Storage tab's containers): a container with room, or anywhere and the game places it in the room left (the most valuable for its weight first). What the base has no room for lies outside: it weathers, and raiders take it first.")}>Kept in</span><select data-action="inv-storepick" data-base="${b.id}"${tip("The container a thing taken off a survivor goes into")}><option value=""${key ? "" : " selected"}>Anywhere (the game places it)</option>${L.map((c) => `<option value="${esc(c.key)}"${c.key === key ? " selected" : ""}>${esc(c.label)} (${Math.round(c.free)} kg free)</option>`).join("")}</select></div>`;
 }
 // Runs a move (fn gives the message) and puts whatever landed in the armory meanwhile into the picked container; a
 // container with no room keeps the move and says so after the message.
@@ -285,8 +285,10 @@ function keptWhere(state, ui, fn) {
 // tile's clicks and drags: data-action="inv-click" data-loc (the item), data-drop (the list), data-drag; the ⚙ on a gun;
 // with a container picked, a chip of where each is kept (item.store).
 function storageGroups(state, ui, st, loc, user) {
-  const entries = st.list.map((item, i) => ({ item, loc: `${loc}:${i}`, bad: !!(user && GEAR[item.key] && GEAR[item.key].skill && GEAR[item.key].req && !gearEffect(user, item).usable) }));
-  const labels = st.o === "armory" && invStoreOf(ui, st.id) && baseById(state, st.id) ? Object.fromEntries(containersOf(state, baseById(state, st.id)).map((c) => [c.key, c.label])) : null;
+  const base = st.o === "armory" ? baseById(state, st.id) : null;
+  const stored = base ? storageTags(state, base) : null; // base storage (sim/basestorage.js): "Outside: weathering", an opened box's "+N kg storage"
+  const entries = st.list.map((item, i) => ({ item, loc: `${loc}:${i}`, bad: !!(user && GEAR[item.key] && GEAR[item.key].skill && GEAR[item.key].req && !gearEffect(user, item).usable), tags: stored ? stored.tagsOf(i) : [], outside: !!(stored && stored.outside.has(i)) }));
+  const labels = base && invStoreOf(ui, st.id) ? Object.fromEntries(containersOf(state, base).map((c) => [c.key, c.label])) : null;
   const kept = (item) => (labels && item.store != null && labels[item.store] ? `<span class="chip ikept"${tip(`Kept in ${labels[item.store]}`)}>${esc(labels[item.store])}</span>` : "");
   const cell = (e, inner, cls) => `<div class="islot store ${cls}${ui.invSel === e.loc ? " sel" : ""}" data-action="inv-click" data-loc="${e.loc}" data-drop="${loc}"${tip(`Weighs ${Math.round(itemLoad(e.item) * 10) / 10} kg`)}><div class="ain" draggable="true" data-drag="${e.loc}"${tipAttrs(itemShortTip(e.item, e.loc, user, state), itemTip(e.item, user))}>${inner}</div>${gearCog(state, ui, e.item, e.loc)}${kept(e.item)}</div>`;
   const wrap = (inner) => `<div class="istore agroups" data-action="inv-click" data-loc="${loc}" data-drop="${loc}"${tip(`Drop or click here to put the selected item in ${st.name}`)}>${inner}</div>`;
@@ -723,7 +725,7 @@ function raidModal(state, ui) {
     const sups = Object.entries(box.contents.sup).filter(([, v]) => v >= 1);
     const n = box.contents.gear.length + sups.length;
     const w = sups.reduce((a, [k, v]) => a + supWeight(k) * v, 0) + box.contents.gear.reduce((a, g) => a + itemLoad(g), 0);
-    mid = `<div><div class="spread"><b${tip(box.cart ? `The ${box.cart.name.toLowerCase()} on the map: up to ${cartSpec(box.cart).cap} kg (${kg(boxFree(box))} kg more fits). Drag things in from bodies, piles and your people; taking things out is hauling time. Take cart (1 action, next to it) to push it on with all in it.` : box.kind === "ground" ? "Things on the ground here. Taking them is hauling (the first kg a turn free); putting things down is free." : box.drop ? "What a fallen teammate carried. Take it home for them." : "")}>${esc(box.label)}</b><span class="small muted">${n} thing${n === 1 ? "" : "s"} · ${kg(w)}${box.cart ? `/${cartSpec(box.cart).cap}` : ""} kg</span></div>
+    mid = `<div><div class="spread"><b${tip(box.cart ? `The ${box.cart.name.toLowerCase()} on the map: up to ${cartSpec(box.cart).cap} kg (${kg(boxFree(box))} kg more fits). Drag things in from bodies, piles and your people; taking things out is hauling time. Take cart (1 action, next to it) to push it on with all in it.` : box.kind === "ground" ? "Things on the ground here. Taking them is hauling (the first kg a turn free); putting things down is free." : box.kind === "store" ? `Their stores (sim/assaultstores.js): taking is hauling (the first ${HAUL.free} kg a turn free, then ${HAUL.per} kg an action${box.haulRate > 1 ? `; off a pile ${box.haulRate} times as fast` : ""}). What ${first} carries when the fight ends comes home and is gone from their stores; a loss leaves it with them.` : box.drop ? "What a fallen teammate carried. Take it home for them." : "")}>${esc(box.label)}</b><span class="small muted">${n} thing${n === 1 ? "" : "s"} · ${kg(w)}${box.cart ? `/${cartSpec(box.cart).cap}` : ""} kg</span></div>
       <div class="istore" data-action="inv-click" data-loc="${bl}:list" data-drop="${bl}:list"${tip(box.cart ? `Drop here to put it in the ${box.cart.name.toLowerCase()}` : "Drop here to leave it in the container")}>${sups.map(([k, v]) => supTile(ui, `${bl}:sup:${k}`, k, v)).join("")}${gearTiles(ui, box.contents.gear, bl, s) || (sups.length ? "" : `<span class="small muted">Empty.</span>`)}</div>
       ${box.quick ? `<div class="small warn" style="margin-top:0.3rem"${tip(`Rummaged through in a hurry (Quick search): only part of what is inside turned up. A full search turns up the rest, if there is more: ${SEARCH.ap} action, quiet.`)}>Rummaged in a hurry: a full search may turn up more.</div>` : ""}
       <div class="row" style="margin-top:0.4rem"><button class="mini" data-action="rl-takeall"${tip(`Everything that fits on ${first}: supplies carried, small things in pockets, the rest in the pack or carried.`)} ${n ? "" : "disabled"}>Take all</button>${box.quick ? `<button class="mini" data-action="rl-full"${tip(`${first} goes through it properly: ${SEARCH.ap} action, quiet. Whatever the rummage missed turns up here.`)} ${u.ap >= SEARCH.ap && !b.over && b.phase === "player" ? "" : "disabled"}>Search it in full (${SEARCH.ap} action)</button>` : ""}</div></div>`;

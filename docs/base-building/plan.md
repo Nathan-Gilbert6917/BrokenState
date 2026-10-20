@@ -203,3 +203,37 @@ Part F and the wall pieces (claude/kind-hawking-a4gby2, merged at integration): 
 stands walk. A wall piece that would close a ring with no gate in it is refused, by hand and by autoLayout, with
 "Needs a gate in the wall first: the wall would shut everything inside off from the outside" (the user's rule: a way in
 and out on foot always, gates counting).
+
+## Merged with dev's base storage limits (2026-10-19)
+
+Dev brought base storage limits (sim/basestorage.js), the Armory, the defenders' keys and storming a group's stores
+(sim/assaultstores.js). The user asked for both features; they are one system now:
+1. **basestorage.js is the authority for room and for what lies outside.** Its CORE_KG (a camp 0, a shelter 150, an
+   outpost 500, the hub 1200), BUILDINGS storeKg / STORE_KG (storage box 60, crates 150, shed 600, storehouse 2000,
+   warehouse 6000, cellar 400, cold store and freezer 300, the armory 400; our fittings: **shelves 150, lockers 100**),
+   a parked car's payload, opened boxes, the fill by worth a kg, the wear outside, the piles, outsideShare,
+   storageDaily, storageLine. containers.js's own STORAGE_KG / CORE_KG are gone. The storage box, shed and warehouse
+   have FOOT entries (dev's) and FIXTURES entries (raid only, about a third of their scrap, a part for the warehouse),
+   and obey the margin, fitting and way-in rules like everything placed.
+2. **containers.js is the per-container layer on top.** Keys are storageOf's: `core`, `b:<id>`, `v:<id>`; an opened
+   box (`a:<armory index>`) is room but cannot be assigned to (an item has no stable id: its index moves). storageOf
+   reads the assignments (item.store, base.bins, clamped as it reads): assigned goods fill their own container first,
+   up to its room, by the fill's order; the rest (unassigned, and what an assignment could not fit) fill the room left
+   by dev's fill; what is left lies **outside** (our old "yard" is dev's outside: containersOf ends with the
+   pseudo-containers `loose`, inside but put away nowhere, and `outside`). One answer for the Storage tab, the
+   storage lines, the map's piles and the wear outside. putItem / putSupply / normalizeBins stay; autoStore (Tidy up)
+   assigns in dev's order (densest first) by class preference, never into a car or a box. One `storageSummary`:
+   dev's (the words); ours is `storageKg` (numbers by key).
+3. **The base map's stores**: dev's makeStores, piles, armory locks and keys, plus ours: each map container carries
+   its key, assigned goods sit in their container's entry (the armory's ammo in its lockers, the rest in its gun
+   cage), the unassigned inside are spread by dev's share of the room left, what lies outside on the piles (key
+   `outside`); thieves take piles first and twice as fast, batter locks, and tally what they took from a container's
+   bin (u.loot.from → b.stolen.from → applyStolen). A parked car is a store whenever it has room (dev).
+4. **Autopilot**: one storage wish, dev's storageWish: when goods lie outside, storage shelves then lockers while a
+   general building has floor, else the smallest building off dev's ladder that holds what lies outside, else a
+   general building for shelves and lockers; one at a time, never saved for (our 80%-full and saved-for storage
+   wishes are dropped). tidyStores (autoStore daily) stays: it only writes assignments. AI groups: dev's storageWork
+   plus our daily autoStore (factions.js peopleUp); storming their base reads their bins too.
+5. **UI**: the Storage tab reads dev's numbers and words (outside, piles, wear), with "Put the rest away" in place of
+   "Store what lies in the yard"; dev's storage lines on Overview / camp / Construction / Vehicles / Armory and our
+   kept-in picker stay. The armory has one way in: no doorway link to it.

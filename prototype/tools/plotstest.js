@@ -42,7 +42,7 @@ const skilled = (st, b) => { const s = makeSurvivor(st, 1); s.location = { kind:
   check(plotCap(h, "building") === 1 && plotCap(h, "utility") === 3, "a shelter has 1 building plot and 3 utility plots");
   check(PLOTS.hub.building > PLOTS.outpost.building && PLOTS.outpost.building > PLOTS.shelter.building && PLOTS.hub.utility > PLOTS.outpost.utility && PLOTS.outpost.utility > PLOTS.shelter.utility, "plots grow with the base");
   for (const [k, d] of Object.entries(BUILDINGS)) {
-    if (d.piece || ["walls", "barricades", "spike_pits", "trench", "gate", "floodlights", "farm_plot", "hub_up", "outpost_up", "camp_up", "camo", "cots", "barbed_wire", "sandbag_wall", "razor_wire", "guard_towers", "minefield"].includes(k) || d.general || d.fit) check(!d.plot, `${k} needs no plot`); // base building (2026-10-19): the general buildings stand on the map, no plot; the fittings inside them; the wall pieces anywhere
+    if (d.piece || ["walls", "barricades", "spike_pits", "trench", "gate", "floodlights", "farm_plot", "hub_up", "outpost_up", "camp_up", "camo", "cots", "barbed_wire", "sandbag_wall", "razor_wire", "guard_towers", "minefield", "storebox"].includes(k) || d.general || d.fit) check(!d.plot, `${k} needs no plot`); // base building (2026-10-19): the general buildings stand on the map, no plot; the fittings inside them; the wall pieces anywhere; the storage box (base storage limits) anywhere
     else check(d.plot === "building" || d.plot === "utility", `${k} has a plot kind`);
   }
   for (const k of ["storehouse", "cellar", "bunkhouse", "infirmary", "cistern"]) check(BUILDINGS[k].plot === "building", `${k} is on a building plot`);

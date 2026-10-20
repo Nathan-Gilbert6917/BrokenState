@@ -1913,3 +1913,9 @@ button.ppl-idle.on { background: #45380f; color: #ffd166; }
 .wcval { font-size: 0.82rem; white-space: nowrap; }
 .wcval i { font-style: normal; }
 @media (max-width: 60rem) { .wcgroups, .wcgroup:has(.wcrow:nth-child(8)) .wcrows { grid-template-columns: 1fr; } }
+/* base storage (ui/armoryview.js storageTags, storageCard; sim/basestorage.js): an item's badges, an item lying outside */
+.atags { display: flex; flex-wrap: wrap; gap: 0.15rem; }
+.atags .bdg { font-size: 0.6rem; padding: 0 0.3rem; letter-spacing: 0.02em; }
+.arow .atags { flex: none; }
+.acard.outside, .arow.outside { border-color: color-mix(in srgb, var(--danger) 55%, transparent); }
+.storecard .kbar { margin-bottom: 0.3rem; }

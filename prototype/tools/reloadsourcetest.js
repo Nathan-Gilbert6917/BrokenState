@@ -229,7 +229,7 @@ const NO_SOURCE = /^No ammo to load: no .* on them \(none in their pockets, rig 
   const b = openBattle(st, [a], 400);
   const u = by(b, a);
   const K556 = "a_556_fmj";
-  check(u.mag === 30 && u.mags.filter((m) => m.where !== "gun").every((m) => m.item && stackN(m.item.stack) === m.cap) && b.pools[0][K556] === 400 - 110, `the gun and the three spares filled out of the base's stock at the start (${400 - b.pools[0][K556]} of 400)`);
+  check(u.mag === 30 && u.mags.filter((m) => m.where !== "gun").every((m) => m.item && stackN(m.item.stack) === m.cap) && b.pools[0][K556] === 400 - 140 && loose(a, K556) === 30, `the gun and the three spares filled out of the base's stock at the start, and a magazine's worth loose at hand (carrykit.js packShells: ${400 - b.pools[0][K556]} of 400, ${loose(a, K556)} loose)`);
   const costs = [];
   for (let i = 0; i < 3; i++) {
     again(b, u);
@@ -240,9 +240,12 @@ const NO_SOURCE = /^No ammo to load: no .* on them \(none in their pockets, rig 
     check(slot && slot.n === 0 && slot.item && stackN(slot.item.stack) === 0 && a.gear.weapon.mods.mag && a.gear.weapon.mods.mag !== slot.item, `the ${where}'s entry is the empty magazine now, the fresh one is the gun's fitted magazine`);
   }
   check(costs.join(" ") === "swap@rig:1 swap@pocket:1 swap@pack:2", `the rig's first, then the pocket's, then the pack's (${costs.join(" ")})`);
+  // The magazine's worth at hand is theirs to load: topped up by hand out of the pocket until none is left on them.
+  for (let i = 0; i < 12 && loose(a, K556) > 0; i++) { again(b, u); combatAct(st, { type: "reload", unit: u.id }); }
+  check(loose(a, K556) === 0, `the 30 loose at hand loaded out of their pocket (${loose(a, K556)} left)`);
   again(b, u, 3);
   const p3 = reloadPlan(b, u);
-  check(p3.mode === "rounds" && p3.kind === "topup" && p3.n === 0 && /^No ammo to load: no loaded spare magazine, and no rounds for the assault rifle on them \(none in their pockets, rig or pack\)\. The base's 290 are in its stock, not to hand in a fight/.test(p3.why) && reloadRefusal(b, u) === p3.why && b.pools[0][K556] === 290, `no loaded spare left and nothing on them: the stock's 290 are no source ("${p3.why}")`);
+  check(p3.mode === "rounds" && p3.kind === "topup" && p3.n === 0 && /^No ammo to load: no loaded spare magazine, and no rounds for the assault rifle on them \(none in their pockets, rig or pack\)\. The base's 260 are in its stock, not to hand in a fight/.test(p3.why) && reloadRefusal(b, u) === p3.why && b.pools[0][K556] === 260, `no loaded spare left and nothing on them: the stock's 260 are no source ("${p3.why}")`);
   // A speedloader: never the auto plan's; { clip: 0 } fills the cylinder out of their own rounds, 1 from a pocket, 2 from the pack, once a fight.
   const st2 = createWorld({ seed: seed + 5, factionCount: 4 });
   const c = fighter(st2, "revolver"), d = fighter(st2, "revolver");

@@ -14,7 +14,9 @@
 //   goodwill with them at once and ends any pact; a coalition member you attack leaves the coalition.
 // - Win: the base is yours, an outpost on its tile (a group's base: their palisade, battered, two sections behind
 //   strong walls, and their bunkhouse; one of yours they held: its buildings as they stand, damage and all, and
-//   what is left of its stock). Its stores: half of that base's share of the group's stock. It holds land like your
+//   what is left of its stock). Its stores: half of that base's share of the group's stock, of what is left after
+//   what your people carried off the battle map (assaultstores.js: their real goods are in their storage on the map,
+//   yours to take; what you took is gone from that base before this half is counted). It holds land like your
 //   hub (alliance.js controlRadius "stronghold"). The team leaves one person (the weakest fighter, if the team has
 //   3+; everyone if you have no hub) as the first staff and waits for orders. Of the defenders who live, 40% get away to their
 //   group's other bases (none if it was the last); of those who give up a quarter ask to join you (a recruit card,
@@ -70,10 +72,11 @@ import { startCombat, registerCombatHandler, registerBattleLayout, registerBattl
 import { groupTurret, TURRET_ODDS, seizeGroupVehicles, upgradeText } from "./vehicles.js"; // a military group's Humvee (M2 turret) defends its home base
 import { unitPower, arsenalShareTo, addToArsenal, arsenalWorthy } from "./arsenal.js"; // group arsenals: the defenders' kit; their stores of it
 import { fortAssault, fortSize, assaultBase } from "./fort.js"; // their walled base on one fort map
+import { layAssaultStores, stockAssaultStores } from "./assaultstores.js"; // their real stores on the map (the wall-line map too)
 import { assaultDims, CONTACT } from "./battlesize.js";
 import { captivesOf, takeCaptive } from "./conflicts.js";
 import { makeCandidate, offerRecruits } from "./recruits.js";
-import { surrenderPrisoners, prisonersOf } from "./prisoners.js";
+import { surrenderPrisoners, prisonersOf, handOver } from "./prisoners.js";
 import { addBuilding, baseWalls, assignStations, isCamp, retypeCampJob, count as countBuilt, addRing, isPiece } from "./buildings.js"; // countBuilt: assaultForce has its own count
 import { pactsOf, relation } from "./diplomacy.js";
 import { isMember, allianceMembers, ensureAlliance, assaultAllies } from "./alliance.js";
@@ -340,8 +343,12 @@ registerBattleLayout("baseAssault", (b, ctx) => {
     for (let i = 0; i < 2 + Math.min(6, walls); i++) {
       for (let t = 0; t < 8; t++) { const x = ctx.rng.int(X + 2, X + 5), y = ctx.rng.int(1, ctx.H - 2); if (ctx.free(x, y)) { ctx.put(x, y, i % 2 ? "sandbag" : "barricade"); break; } }
     }
+    // assaultstores.js: their stores on their side of the map (behind the wall line, or where it would be), as crates.
+    const yard = { W: ctx.W, H: ctx.H, cells: b.cells, x0: X + 2, y0: 1, yw: Math.max(0, ctx.W - X - 3), yh: ctx.H - 2, indoor: null, doors: [], buildings: [], stores: [] };
+    if (layAssaultStores(ctx.state, b.setup, yard)) b.assaultYard = { stores: yard.stores, assaultStores: true };
     return;
   }
+  stockAssaultStores(ctx.state, b, b.assaultYard, ctx.rng); // assaultstores.js: their goods in those crates (makeStores), yours to take
   // Units: half the defenders at the wall (right behind it), the rest where the battle put them (behind it too).
   if (walls < 1) return;
   const foes = b.units.filter((u) => u.side === "enemy");
@@ -607,7 +614,7 @@ export function occupyPlayerBase(state, base, f, opts = {}) {
   // Anyone left there (nobody, normally) is gone with it; prisoners of that group walk free; others are left to
   // prisoners.js (a base that is gone).
   for (const s of atBase(state, base.id)) s.location = { kind: "captive", factionId: f.id, tile: base.tile, since: state.hour };
-  for (const pr of [...prisonersOf(state)]) if (pr.at && pr.at.kind === "base" && pr.at.baseId === base.id && pr.factionId === f.id) { state.prisoners.splice(state.prisoners.indexOf(pr), 1); f.pop += 1; }
+  for (const pr of [...prisonersOf(state)]) if (pr.at && pr.at.kind === "base" && pr.at.baseId === base.id && pr.factionId === f.id) handOver(state, pr.id); // prisoners.js: the very person back in their group's list
   // Vehicles left behind, supply runs paused, teams based there go to the hub.
   for (const v of state.vehicles) {
     if (v.loc.kind !== "base" || v.loc.baseId !== base.id) continue;
@@ -679,7 +686,7 @@ export function razePlayerBase(state, base, f) {
   noteBaseLoss(state, base, "razed", f); // causes.js: why it was lost (before the people leave)
   evacuate(state, base, f, f ? `${f.name} burned it` : "it burned");
   for (const s of atBase(state, base.id)) s.location = { kind: "captive", factionId: f ? f.id : null, tile: base.tile, since: state.hour };
-  for (const pr of [...prisonersOf(state)]) if (pr.at && pr.at.kind === "base" && pr.at.baseId === base.id && f && pr.factionId === f.id) { state.prisoners.splice(state.prisoners.indexOf(pr), 1); f.pop += 1; }
+  for (const pr of [...prisonersOf(state)]) if (pr.at && pr.at.kind === "base" && pr.at.baseId === base.id && f && pr.factionId === f.id) handOver(state, pr.id); // prisoners.js: the very person back in their group's list
   const burned = state.vehicles.filter((v) => v.loc.kind === "base" && v.loc.baseId === base.id);
   for (const v of burned) state.vehicles.splice(state.vehicles.indexOf(v), 1);
   for (const job of state.supplyRuns || []) if ((job.originId === base.id || job.destId === base.id) && job.status !== "done" && job.status !== "disbanded") { job.paused = true; job.lastResult = `Day ${day(state)}: ${base.name} was burned down`; }

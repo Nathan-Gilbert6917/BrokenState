@@ -24,18 +24,21 @@ import { groupHospitalTier, tickOf } from "./groupcare.js";
 const med = (s) => (s && s.skills ? s.skills.medicine || 0 : 0);
 const hurtOne = (s) => s.alive && (s.health < 100 || s.woundInfected);
 // The sick bay as your hospital's numbers (medical.js activeHospital), staffed by the group's own medics.
-export function groupHosp(state, f, people) {
-  const tier = Math.max(0, groupHospitalTier(state, f) || 0);
+export function groupHosp(state, f, people, tier0 = null) {
+  const tier = Math.max(0, tier0 ?? groupHospitalTier(state, f) ?? 0);
   const types = hospitalTypes();
   const k = tier > 0 ? types[Math.min(tier, types.length) - 1] : null;
   const def = k ? { tier: BUILDINGS[k].tier, name: BUILDINGS[k].name, type: k, ...BUILDINGS[k].med } : NO_HOSPITAL;
   const medics = people.filter((s) => med(s) >= 3).sort((a, b) => med(b) - med(a) || a.id - b.id);
   return { ...def, staff: medics, staffSkill: medics.length ? med(medics[0]) : 0, baseSkill: Math.max(0, ...people.map(med)) };
 }
-export function groupMedicalDaily(state, f, { hungry = false } = {}) {
-  const people = homeMembers(f);
+// A band with no base (nomads.js bandCare: a nomad band, raiders from beyond the border) passes its own people, no
+// sick bay (tier 0: rest and the night's care only) and what happens to one who dies of their wounds (died); its meds
+// are its own stores' (f.stock), as a group's are.
+export function groupMedicalDaily(state, f, { hungry = false, people: list = null, tier = null, died = null } = {}) {
+  const people = list || homeMembers(f);
   if (!people.length) return { healed: 0, treated: 0, died: 0 };
-  const hosp = groupHosp(state, f, people);
+  const hosp = groupHosp(state, f, people, tier);
   const tag = [state.seed, "groupmed", f.name, tickOf(f), Math.floor((state.hour || 0) / 24)];
   const careNeed = (s) => (s.woundInfected ? 50 : 0) + (100 - s.health);
   const beds = new Set(people.filter((s) => s.health < SEVERE_BELOW || s.woundInfected || s.health < AUTO_BELOW).sort((a, b) => careNeed(b) - careNeed(a) || a.id - b.id).slice(0, hosp.beds || 0));
@@ -72,7 +75,7 @@ export function groupMedicalDaily(state, f, { hungry = false } = {}) {
     if (perDay > 0) perDay *= healMult(s);
     s.health = Math.min(100, s.health + perDay);
     if (perDay > 0) out.healed++;
-    if (s.health <= 0) { removeMember(state, f, s, "died", { keepKit: true }); f.diedOfWounds = (f.diedOfWounds || 0) + 1; out.died++; }
+    if (s.health <= 0) { if (died) died(s); else removeMember(state, f, s, "died", { keepKit: true }); f.diedOfWounds = (f.diedOfWounds || 0) + 1; out.died++; }
   }
   return out;
 }

@@ -6,10 +6,14 @@
 // a general building, the buildings it stands against and the doorways between them, Move, Auto, Demolish), a
 // second click lifts it to move it; every store's contents can be looked at). Base building (docs/base-building/plan.md
 // Part C, the user's request 2026-10-19). Also the contents card of a store container during a battle (ui/combat.js:
-// a click on a container, or its button).
+// a click on a container, or its button): a pile of what lies outside the base's storage (sim/basestorage.js) says so
+// plainly, and a parked car that is storage is a container too.
+// moveCarButton: the Move button for a parked car (the base window's Vehicles tab): the map opens with the car picked.
 import { baseById } from "../sim/world.js";
 import { openBaseMap, layoutOf, itemByKey, unplaceItem, baseMapSummary, storeContents, gridOfCell, buildMenu, fittingsIn, hostedItems, neighboursOf, canLink, FOOT, GRID, STEAL, NO_BUILD } from "../sim/basemap.js";
 import { BUILDINGS, demolishRefund, pieceName, ringMat } from "../sim/buildings.js";
+import { nearRect, active } from "../sim/combat.js"; // who of yours stands next to a store of theirs (an assault)
+import { HAUL } from "../sim/raidloot.js";
 import { badge, hint, costChips, chip } from "./uikit.js";
 import { fold } from "./panelfold.js"; // the Build list's groups fold, and remember it (the toggle listener)
 
@@ -30,6 +34,9 @@ const MENU_TIP = {
 };
 const NB_TEXT = `The no-build margin: nothing is built within ${NO_BUILD} cells of the map's edge`;
 const refundText = (rec) => { const r = demolishRefund(rec); const t = Object.entries(r).filter(([, q]) => q > 0).map(([k, q]) => `${q} ${k}`).join(", "); return t ? ` (${t})` : ""; };
+// A pile of what lies outside the base's storage (sim/basemap.js layPiles).
+const PILE_NOTE = "Left outside (weathering, easy to steal)";
+const PILE_TIP = "Goods the base has no room for (sim/basestorage.js): they lie in the open, things wear a little every day (more in rain and snow), and raiders go for the piles first and grab twice as much a turn. Build storage (a storage box, crates, a shed, a storehouse) or park a vehicle here.";
 
 // ---------- the base window's tab ----------
 export function baseMapTab(state, b, ui) {
@@ -49,7 +56,7 @@ export function baseMapTab(state, b, ui) {
       <div class="row" style="margin-top:0.5rem"><button class="primary" data-action="bm-open" data-base="${b.id}"${tip("Open the map: the base as a battle would find it, with the buildings going up as outlines. Build anything from its Build list where you click, or pick anything from the lists and click where it goes.")}>Open the base map</button></div>
     </div>
     ${hint(`<b>Build on the map.</b> Open it and pick a type from its Build list: its outline follows the mouse, a click where it fits queues it there (the cost paid now, the builders put it up). <b>General buildings</b> (a hut, cabin, lodge, hall or barn) are empty shells: once one stands, <b>fittings</b> go on its floor (bunk beds, storage shelves, lockers, a wood stove) and so do benches and crates. Two buildings standing wall to wall can share a <b>doorway</b> (select one: Open a doorway). Nothing is built within <b>${NO_BUILD} cells</b> of the map's edge (the tinted margin). Anything else goes anywhere, in the yard or out beyond the wall, right against anything else: only never on top of something else, on the ring where the game lays the wall (walls, gates and stands may go there) or in a doorway (the cell outside every door and either side of a gate stays open). <b>Always a way in and out</b>: everything must be reachable on foot from the map's edge (gates and doors count), so a wall piece that would close a ring with no gate in it is refused. Anything you do not place, the game places: wall pieces round the ring (gates in the middle of its sides first, stands just inside); a building you queue on the Construction tab opens the map to place its outline.`, "The rules of the map (sim/basemap.js)")}
-    ${hint(`The base's goods are kept in <b>containers</b> (the Storage tab): the base itself, the storehouse, cellars, the cold store, the freezer, crates, shelves and lockers, and the cars parked here; what fits in none lies in the yard. In a raid every container is on the map with what it holds, and you can look into any of them at any time. Raiders go for them once the wall is passed (about ${Math.round(STEAL.SHARE * 100)}% of a raid), the yard's goods first, carry off up to ${STEAL.KG} kg each and make for the edge of the map: what they get away with is gone; what they drop stays. The dead and raiders batter doors, windows, walls, barricades and parked cars in their way, and what was battered wears afterwards (Repairs tab).`, "Containers and raids on the map")}
+    ${hint(`In a raid the stores are on the map: every building that keeps goods (the base itself, storage boxes and crates, the shed, the storehouse, the warehouse, cellars, the cold store, the freezer, shelves and lockers inside a general building, the armory's locked gun cage and ammo lockers) and every parked car (its load space is storage while it is parked here) holds the real stock and armory as its containers: what you put in a container (the Storage tab) is in that container, the rest is shared out by the room left. What the base has no room for lies outside on piles of crates in the yard: it weathers, and raiders go for the piles first and grab twice as much a turn from them. You can look into any store at any time. Raiders go for the stores once the wall is passed (about ${Math.round(STEAL.SHARE * 100)}% of a raid), carry off up to ${STEAL.KG} kg each and make for the edge of the map: what they get away with is gone, from its container too; what they drop stays. The dead and raiders batter doors, windows, walls, barricades and parked cars in their way, and what was battered wears afterwards (Repairs tab).`, "Containers and raids on the map")}
   </div><div>`;
   for (const [name, list] of groups) html += `<h3>${esc(name)} <span class="muted small">${list.length}</span></h3><div class="card small">${list.map(row).join("")}</div>`;
   if (!lay.length) html += `<div class="muted small">Nothing to place yet: the base itself stands in the middle of the map.</div>`;
@@ -156,20 +163,59 @@ function selectionCard(state, base, L, lay) {
     <div class="cbactions" style="margin-top:0.3rem">${btns.join("")}</div></div>`;
 }
 // The stores on the map (any base battle): a button a container, and the contents of the one being looked at.
-export function storesHtml(b, cui) {
+// u: the selected unit. On an assault (sim/assaultstores.js: their stores, c.contents) the card offers Take (the search
+// window) or Force lock to one of yours standing next to it, once the fight has begun.
+export function storesHtml(b, cui, u = null) {
   if (!b.stores || !b.stores.containers.length) return "";
-  let html = `<h3 data-tip="${esc("The base's own stock and armory, spread over the buildings that hold goods. Click one here or on the map to see what is in it. In a raid, raiders go for them once the wall is passed; what they get away with is gone.")}">Stores on the map</h3><div class="cbactions">`;
-  for (const c of b.stores.containers) html += `<button class="${cui.storeView === c.id ? "active" : ""}" data-action="cb-store" data-id="${c.id}" data-tip="${esc(`${c.label}: about ${Math.round(c.kg)} kg of goods. Click to see what is in it.`)}">${esc(c.label)} <span class="key">${Math.round(c.kg)} kg</span></button>`;
+  if (b.stores.containers.some((c) => c.contents)) return theirStoresHtml(b, cui, u);
+  let html = `<h3 data-tip="${esc("The base's own stock and armory, spread over the buildings that hold goods and the parked cars; what there is no room for lies outside on piles. Click one here or on the map to see what is in it. In a raid, raiders go for them once the wall is passed (the piles first); what they get away with is gone. An armory's gun cage and ammo lockers are locked (🔒) behind its locked security door: a raider has to batter the door down and then the lock open.")}">Stores on the map</h3><div class="cbactions">`;
+  for (const c of b.stores.containers) html += `<button class="${cui.storeView === c.id ? "active" : ""}" data-action="cb-store" data-id="${c.id}" data-tip="${esc(`${c.label}: about ${Math.round(c.kg)} kg of goods.${c.lock ? (!(c.lock.hp > 0) ? " Its lock is smashed open." : c.lock.open ? " Unlocked with the key." : ` Locked (${c.lock.hp}/${c.lock.mhp}): a raider has to batter the lock open first.`) : ""} ${c.pile ? ` ${PILE_NOTE}.` : ""} Click to see what is in it.`)}">${esc(c.label)}${lockMark(c)} <span class="key">${Math.round(c.kg)} kg</span></button>`;
   html += `</div>`;
   const c = cui.storeView != null ? b.stores.containers.find((x) => x.id === cui.storeView) : null;
   if (c) {
     const s = storeContents(c);
     html += `<div class="card small" style="margin-top:0.4rem;flex-shrink:0"><div class="spread"><b>${esc(c.label)}</b><button class="mini" data-action="cb-store" data-id="" data-tip="Close">✕</button></div>
+      ${c.pile ? `<div class="small warn"${tip(PILE_TIP)}>${PILE_NOTE}</div>` : c.vid != null ? `<div class="small muted">A parked car: its load space is storage while it is parked here.</div>` : ""}
       ${s.sup.length || s.gear.length ? `<div class="small">${s.sup.map(([n, q]) => `${q} ${esc(n.toLowerCase())}`).join(", ")}${s.sup.length && s.gear.length ? "; " : ""}${s.gear.map(esc).join(", ")}</div>` : `<div class="small muted">Empty.</div>`}
-      <div class="small muted">About ${s.kg} kg in all.</div></div>`;
+      ${lockLine(s.lock)}<div class="small muted">About ${s.kg} kg in all.</div></div>`;
   }
   return html;
 }
+// Their stores on an assault's map (sim/assaultstores.js): the same buttons and card, their words.
+function theirStoresHtml(b, cui, u) {
+  let html = `<h3 data-tip="${esc("What this base of theirs really holds, in its storage: their main house, their storage buildings by their room, and what they have no room for on piles in the yard. One of yours next to one takes what they can carry (the search window: hauling takes time, quicker from a pile); a locked one is forced first. What your people carry off is gone from their stores; win and half of what is left is yours too. Lose, and what your people had taken stays with them.")}">Their stores</h3><div class="cbactions">`;
+  for (const c of b.stores.containers) html += `<button class="${cui.storeView === c.id ? "active" : ""}" data-action="cb-store" data-id="${c.id}" data-tip="${esc(`${c.label}: about ${Math.round(c.kg)} kg of goods.${c.lock && !c.lock.open ? ` Locked (${c.lock.hp}/${c.lock.mhp}).` : ""}${c.pile ? " Left outside: quicker to haul off." : ""} Click to see what is in it.`)}">${esc(c.label)}${lockMark(c)} <span class="key">${Math.round(c.kg)} kg</span></button>`;
+  html += `</div>`;
+  const c = cui.storeView != null ? b.stores.containers.find((x) => x.id === cui.storeView) : null;
+  if (c) {
+    const s = storeContents(c);
+    html += `<div class="card small" style="margin-top:0.4rem;flex-shrink:0"><div class="spread"><b>${esc(c.label)}</b><button class="mini" data-action="cb-store" data-id="" data-tip="Close">✕</button></div>
+      ${c.pile ? `<div class="small warn">Left outside: no lid, no lock, quicker to haul off.</div>` : ""}
+      ${s.sup.length || s.gear.length ? `<div class="small">${s.sup.map(([n, q]) => `${q} ${esc(n.toLowerCase())}`).join(", ")}${s.sup.length && s.gear.length ? "; " : ""}${s.gear.map(esc).join(", ")}</div>` : `<div class="small muted">Empty.</div>`}
+      ${theirLockLine(s.lock)}<div class="small muted">About ${s.kg} kg in all.</div>${takeButtons(b, c, u)}</div>`;
+  }
+  return html;
+}
+// A store of theirs (an assault): Take (the search window: into the hands, pockets and pack of the one next to it,
+// hauling time as a raid's search; a pile quicker) or Force lock (one blow, the rest of the turn).
+function takeButtons(b, c, u) {
+  if (b.phase === "deploy" || b.over) return `<div class="small muted">Once the assault has begun, one of yours standing next to it can take from it.</div>`;
+  const mine = u && u.side === "player" && active(u) ? u : null;
+  const near = !!mine && nearRect(c, mine.x, mine.y) && (c.f || 0) === (mine.f || 0);
+  const who = mine ? esc(mine.name.split(" ")[0]) : "";
+  const locked = !!(c.lock && !c.lock.open);
+  if (locked) {
+    const why = !mine ? "Pick one of your people next to it." : !near ? `${who} has to stand next to it.` : mine.ap < 1 ? "No actions left this turn." : "";
+    return `<div class="row" style="margin-top:0.3rem"><button class="mini" data-action="cb-store-force" data-id="${c.id}"${why ? " disabled" : ""}${tip(why || `${who} batters the lock with what they hold (a crowbar, a fire axe or a sledgehammer twice as hard): one blow, the rest of the turn, loud. At 0 it is open and they can take from it.`)}>Force lock</button></div>`;
+  }
+  const why = !mine ? "Pick one of your people next to it." : !near ? `${who} has to stand next to it.` : "";
+  const rate = c.haulRate > 1 ? ` From a pile it goes ${c.haulRate} times as fast.` : "";
+  return `<div class="row" style="margin-top:0.3rem"><button class="mini" data-action="cb-store-take" data-id="${c.id}"${why ? " disabled" : ""}${tip(why || `Open it for ${who}: take what they can carry into their hands, pockets and pack (their max load; two different things carried and their hands are full). Hauling takes time: the first ${HAUL.free} kg a turn are free, then ${HAUL.per} kg an action.${rate} What they carry when the fight ends comes home with them and is gone from their stores; a loss leaves it with them.`)}>Take</button></div>`;
+}
+const theirLockLine = (L) => (!L ? "" : L.smashed ? `<div class="small good">🔓 The lock is smashed open${L.by ? ` (${esc(L.by)})` : ""}.</div>` : L.open ? `<div class="small good">🔓 Open.</div>` : `<div class="small warn">🔒 Locked (${L.hp}/${L.mhp}): force the lock (next to it, a blow a turn) before anything can be taken.</div>`);
+// The armory's locks (sim/basemap.js ARMORY_LOCK): a mark after a locked container's name, and the lock's line in its card.
+const lockMark = (c) => (c.lock ? (c.lock.open ? " 🔓" : " 🔒") : "");
+const lockLine = (L) => (!L ? "" : L.smashed ? `<div class="small danger">🔓 The lock is smashed open${L.by ? ` (${esc(L.by)})` : ""}: raiders take from it freely.</div>` : L.open ? `<div class="small warn">🔓 Unlocked with the key: raiders take from it freely. Lock (1 action, next to it) locks it again.</div>` : `<div class="small good">🔒 Locked (${L.hp}/${L.mhp}): a raider has to batter the lock open, a blow a turn, before anything can be taken. Your people unlock it with the key (Unlock, 1 action, next to it).</div>`);
 // The hover line in layout mode: the pick's fit, the no-build margin, or what stands there.
 export function layoutHover(state, b, h, ghost) {
   const L = b.layout, base = baseById(state, L.baseId);
@@ -192,7 +238,8 @@ export function layoutHover(state, b, h, ghost) {
 // A store container under the mouse in any base battle.
 export function storeHover(c) {
   const s = storeContents(c);
-  return `<b>${esc(c.label)}</b> · stores<br><span class="muted">${s.sup.length || s.gear.length ? `${s.sup.slice(0, 4).map(([n, q]) => `${q} ${esc(n.toLowerCase())}`).join(", ")}${s.sup.length > 4 || s.gear.length ? ", …" : ""}` : "empty"} (about ${s.kg} kg). Click it, or its button in the panel, to see everything in it.</span>`;
+  const lock = s.lock ? (s.lock.smashed ? " · lock smashed open" : s.lock.open ? " · unlocked" : ` · locked (${s.lock.hp}/${s.lock.mhp})`) : "";
+  return `<b>${esc(c.label)}</b> · ${c.pile ? `<span class="warn">${PILE_NOTE}</span>` : "stores"}${lock}<br><span class="muted">${s.sup.length || s.gear.length ? `${s.sup.slice(0, 4).map(([n, q]) => `${q} ${esc(n.toLowerCase())}`).join(", ")}${s.sup.length > 4 || s.gear.length ? ", …" : ""}` : "empty"} (about ${s.kg} kg). Click it, or its button in the panel, to see everything in it.</span>`;
 }
 
 // ---------- actions (main.js) ----------
@@ -202,11 +249,22 @@ export const BASEMAP_ACTIONS = {
     if (!b) return;
     const err = openBaseMap(state, b.id, d.key || null);
     if (err) { ui.baseMsg = err; return; }
-    ui.mapFrom = { id: b.id, tab: d.tab || "basemap" }; // back to the tab it was opened from (the Construction tab's buttons)
+    ui.mapFrom = { id: b.id, tab: d.tab || "basemap" }; // data-tab: the base window's tab to come back to (the Vehicles tab's Move)
     ui.baseView = null; ui.baseMsg = "";
   },
   "bm-reset": (state, ui, d) => { const b = baseById(state, Number(d.base)); if (b) ui.baseMsg = unplaceItem(state, b, d.key) || "Placed by the game again."; },
 };
+/**
+ * The Move button for a parked car (the base window's Vehicles tab, ui/ui.js): opens the base map with the car picked,
+ * its outline under the mouse, to put it on any free cells it fits (in the yard or beyond the wall). "" for a car not
+ * parked at this base. Clicked: BASEMAP_ACTIONS["bm-open"] (main.js routes data-action="bm-open" here); closing the
+ * map comes back to the Vehicles tab (data-tab).
+ * @param {any} state @param {any} base @param {any} v
+ */
+export function moveCarButton(state, base, v) {
+  if (!base || !v || !itemByKey(state, base, `v:${v.id}`)) return "";
+  return `<button class="mini" data-action="bm-open" data-base="${base.id}" data-key="v:${v.id}" data-tab="vehicles"${tip("Move it on the base map: click any free cells it fits, in the yard or beyond the wall (R turns it)")}>Move</button>`;
+}
 // After Build on the Construction tab (main.js queuebuild): the map opens with the new job picked.
 export function openForJob(state, ui, base, type) {
   if (!base || !FOOT[type]) return false;
