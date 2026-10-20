@@ -37,7 +37,8 @@ import { addFood, qtyOf } from "./foods.js"; // food by type: the loads come hom
 import { noteOutput } from "./output.js";
 import { tileLabel } from "./parties.js";
 import { RAW } from "./water.js";
-import { armTripEvent, fireTripEvent, holdTrip, creditBonus, holdText } from "./tripevents.js"; // trouble on the way (trips-plus #2)
+import { armTripEvent, fireTripEvent, holdTrip, creditBonus, holdText, followHold, bankFinds } from "./tripevents.js"; // trouble on the way (trips-plus #2); a crew's (teamwork)
+import { noteMates, teamMult, matesText } from "./teamwork.js"; // teamwork: the same job on the same tile at the same time, a crew
 import { lunchOverlap, isLunchHour } from "./meals.js"; // the lunch break out at work
 import { PACK, packFood, topUpPack } from "./eating.js"; // the food they take out for lunch
 import { chopHour, hasChopWork } from "./woodwork.js"; // woodwork: the woodcutters fell the trees marked on the base map before going out
@@ -171,8 +172,12 @@ function sampleHour(t) {
 }
 
 // The load, rolled when the work ends: { job-specific fields } (the dice of the old daily jobs, for these hours).
+// teamwork.js: a crew's member works as many more hours' worth as the crew's bonus (teamMult: the land thins by it too).
 function rollLoad(state, base, s, t) {
-  const hrs = tripHours(state, t);
+  const n = noteMates(state, s, t);
+  const tm = teamMult(t.job, n);
+  if (n > 1) t.crewN = n;
+  const hrs = tripHours(state, t) * (TRIP_JOBS[t.job].fixed ? 1 : tm);
   if (!(hrs > 1e-6)) return { empty: true };
   const h = sampleHour(t);
   switch (t.job) {
@@ -281,7 +286,7 @@ function credit(state, base, s, t, now) {
       }
     }
   }
-  const bonus = creditBonus(state, base, t, st); // tripevents.js: a find, a boar's meat (with the load: a stockpile's room too)
+  const bonus = [creditBonus(state, base, t, st), bankFinds(state, base, s)].filter(Boolean).join(" "); // tripevents.js: a find, a boar's meat (with the load: a stockpile's room too); what a crew's dice gave them to carry (teamwork)
   let popTile = dp.tile;
   if (dp.put) {
     let left = 0, home = 0;
@@ -330,7 +335,8 @@ function stepPerson(state, base, s, now) {
   for (let guard = 0; guard < 6; guard++) {
     const t = s.trip;
     if (t) {
-      if (!t.evr) armTripEvent(state, base, s, t); // tripevents.js: the trip's trouble, if any (its own dice, once)
+      if (!t.evr) armTripEvent(state, base, s, t); // tripevents.js: the trip's trouble, if any (its own dice, once; a crew's one roll)
+      if (t.follow && followHold(state, base, s, t, now)) return; // teamwork: a mate's card or battle holds the crew
       if (t.ev && t.ev.pending && holdTrip(state, base, s, t, now)) return; // a card waits: they hold where they are
       if (!s.alive || s.trip !== t) return;
       if (t.workEnd > now) {
@@ -406,24 +412,26 @@ export function tripState(state, s, t = state.hour) {
   const tr = s && s.trip;
   if (!tr || t < tr.leave || t >= tr.home) return null;
   const c = TRIP_JOBS[tr.job];
-  const held = holdText(tr); // tripevents.js: a card waits ("Facing a bear")
-  if (held) return { phase: tr.ev.phase || "work", f: tr.ev.f ?? 0.5, progress: tr.ev.f ?? 0.5, text: `${held} near ${tileLabel(state, tr.tile)}`, stage: "", job: tr.job, held: true };
+  const mates = matesText(state, s, t); // teamwork.js: out with others of the crew ("with Mara")
+  const w = mates ? ` with ${mates}` : "";
+  const held = holdText(tr); // tripevents.js: a card waits ("Facing a bear"); a crew's mates hold with them
+  if (held) { const ev = tr.ev && tr.ev.pending ? tr.ev : tr.follow; return { phase: ev.phase || "work", f: ev.f ?? 0.5, progress: ev.f ?? 0.5, text: `${held}${w} near ${tileLabel(state, tr.tile)}`, stage: "", job: tr.job, held: true, ...(mates ? { mates } : {}) }; }
   const where = tileLabel(state, tr.tile);
   const wtext = tr.job === "fish" || tr.job === "water" ? (state.tiles[tr.tile] && state.tiles[tr.tile].river ? "the river" : "the water") : where;
   const span = Math.max(1e-6, tr.workEnd - tr.arrive);
   const progress = Math.max(0, Math.min(1, (t - tr.arrive) / span));
   // The lunch hour at the work: stopped there, eating from the pack (on a walk out or home it is eaten on the way: the
   // walk's line stays).
-  if (t >= tr.arrive && t < tr.workEnd && isLunchHour(Math.floor(t), state)) return { phase: "work", f: progress, progress, text: `Lunch break at ${wtext} (from their pack)`, stage: "Lunch", job: tr.job, lunch: true };
-  if (t < tr.arrive) return { phase: "out", f: (t - tr.leave) / Math.max(1e-6, tr.arrive - tr.leave), progress: 0, text: `Heading to ${wtext}`, stage: "", job: tr.job };
+  if (t >= tr.arrive && t < tr.workEnd && isLunchHour(Math.floor(t), state)) return { phase: "work", f: progress, progress, text: `Lunch break${w} at ${wtext} (from their pack)`, stage: "Lunch", job: tr.job, lunch: true, ...(mates ? { mates } : {}) };
+  if (t < tr.arrive) return { phase: "out", f: (t - tr.leave) / Math.max(1e-6, tr.arrive - tr.leave), progress: 0, text: `Heading to ${wtext}${w}`, stage: "", job: tr.job, ...(mates ? { mates } : {}) };
   if (t < tr.workEnd) {
     const stage = c.stage[Math.min(c.stage.length - 1, Math.floor(progress * c.stage.length))];
-    return { phase: "work", f: progress, progress, text: `${stage} at ${wtext} ${Math.floor(progress * 100)}%`, stage, job: tr.job };
+    return { phase: "work", f: progress, progress, text: `${stage}${w} at ${wtext} ${Math.floor(progress * 100)}%`, stage, job: tr.job, ...(mates ? { mates } : {}) };
   }
   const load = loadText(tr);
   const f = (t - tr.workEnd) / Math.max(1e-6, tr.home - tr.workEnd);
-  if (tr.drop != null) { const T = state.tiles[tr.drop]; const at = `stockpile (${T ? `${T.x},${T.y}` : tr.drop})`; return { phase: "back", f, progress: 1, text: load ? `Dropping ${load} at ${at}` : `Dropping at ${at}`, stage: "", job: tr.job, load, drop: tr.drop }; }
-  return { phase: "back", f, progress: 1, text: load ? `Bringing ${load} back` : tr.carry ? "Heading home empty-handed" : "Heading home", stage: "", job: tr.job, load };
+  if (tr.drop != null) { const T = state.tiles[tr.drop]; const at = `stockpile (${T ? `${T.x},${T.y}` : tr.drop})`; return { phase: "back", f, progress: 1, text: load ? `Dropping ${load} at ${at}${w}` : `Dropping at ${at}${w}`, stage: "", job: tr.job, load, drop: tr.drop, ...(mates ? { mates } : {}) }; }
+  return { phase: "back", f, progress: 1, text: `${load ? `Bringing ${load} back` : tr.carry ? "Heading home empty-handed" : "Heading home"}${w}`, stage: "", job: tr.job, load, ...(mates ? { mates } : {}) };
 }
 // The people of a base out on trips at time t: [{ s, st (tripState), trip }].
 export function outWorkers(state, base, t = state.hour) {

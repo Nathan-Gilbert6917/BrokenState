@@ -34,7 +34,8 @@ import { foodIn, payFood, giveFood, gainGoods } from "./foods.js"; // food by ty
 import { Rng } from "./rng.js";
 import { hash01, gainXp } from "./skills.js";
 import { GEAR } from "./data.js";
-import { log, hurt, skill, combatPower, addCard, localId } from "./world.js";
+import { log, hurt, skill, combatPower, addCard, localId, survivorById } from "./world.js";
+import { TEAM, crewAt, coveredBy, crewDead, namesText, shareLoot } from "./teamwork.js"; // a crew out on the same job and tile: one roll, the trouble shared
 import { personKey } from "./members.js"; // dice the same in every world on the seed (call-time only)
 import { woundMult, accidentMult } from "./traits.js";
 import { armorMult, carriedSpots, lootItem } from "./inventory.js"; // lootItem: a find or a trade rolls its condition (itemcond.js)
@@ -141,6 +142,9 @@ export function armTripEvent(state, base, s, t) {
   t.evr = 1;
   const st = evStats(state);
   st.trips++;
+  const by = coveredBy(state, s, t); // teamwork.js: a crew rolls once: a mate set out first and its roll covers this trip
+  if (by) { t.evBy = by.id; return null; }
+  t.evLead = 1;
   const rng = diceFor(state, s, t);
   const hours = Math.max(0, t.home - t.leave);
   const p = TRIP_EV.rate * hours * paceOf(state).ev * wxMult(state, t.at, t.leave) * cfgOf(state, "events"); // worldcfg.js: the run's Events dial
@@ -187,11 +191,12 @@ export function tripPower(state, base, s, t = null) {
   if (k.weapon && !k.ready) { const d = GEAR[k.weapon.key]; p = Math.max(0.5, p - (d.power || 0) * (k.weapon.quality || 1) + 0.8); }
   return { p, k };
 }
-// The chance of slipping away from trouble.
-function fleeChance(state, s, t, phase, extra = 0) {
+// The chance of slipping away from trouble. sk(key): a crew's best at a skill (teamwork.js), else s's own.
+function fleeChance(state, s, t, phase, extra = 0, sk = null) {
   const F = TRIP_EV.flee;
   const load = phase === "back" && t.carry && !t.carry.empty;
-  return clamp(F.base + F.scouting * skill(s, "scouting") + F.stealth * skill(s, "stealth") - (load ? F.load : 0) - ((s.health ?? 100) < 50 ? F.hurt : 0) + extra, F.min, F.max);
+  const sv = (key) => (sk ? sk(key) : skill(s, key));
+  return clamp(F.base + F.scouting * sv("scouting") + F.stealth * sv("stealth") - (load ? F.load : 0) - ((s.health ?? 100) < 50 ? F.hurt : 0) + extra, F.min, F.max);
 }
 // A fight by the numbers: { win, hits: [dmg …], shots }. my: their worth; foe: one foe's; n: how many.
 function fight(rng, my, foe, n, kit, hitDmg = TRIP_EV.hit) {
@@ -285,7 +290,8 @@ function shiftAfter(t, from, h) {
 
 // ---------- the events ----------
 // Builds the event (what it is) from its dice: { kind, … }.
-function buildEvent(state, base, s, t, rng, phase, h) {
+// sk(key): a crew's best at a skill (teamwork.js), else s's own.
+function buildEvent(state, base, s, t, rng, phase, h, sk = null) {
   const w = kindWeights(state, base, s, t, phase, h);
   const kinds = Object.keys(w).filter((k) => w[k] > 0);
   const kind = rng.weighted(kinds, (k) => w[k]);
@@ -312,7 +318,7 @@ function buildEvent(state, base, s, t, rng, phase, h) {
       const pool = phase === "work" ? TRIP_INJURY[t.job] || TRIP_INJURY.walk : TRIP_INJURY.walk;
       return { kind, inj: pool.indexOf(wpick(rng, pool)), pool: phase === "work" ? t.job : "walk" };
     }
-    case "lost": return { kind, hours: r1(clamp(1 + 2 * rng.next() - 0.06 * skill(s, "scouting"), 0.5, 3) * (h >= 19 || h < 6 ? 1.3 : 1)) };
+    case "lost": return { kind, hours: r1(clamp(1 + 2 * rng.next() - 0.06 * (sk ? sk("scouting") : skill(s, "scouting")), 0.5, 3) * (h >= 19 || h < 6 ? 1.3 : 1)) };
     case "stranger": {
       if (rng.next() < 0.35) return { kind, threat: true, power: r1(3 + rng.next() * 4), gun: rng.next() < 0.4 };
       const o = TRIP_OFFERS.indexOf(wpick(rng, TRIP_OFFERS));
@@ -331,8 +337,16 @@ export function fireTripEvent(state, base, s, t, now) {
   const rng = new Rng(ev.seed);
   const phase = phaseAt(t, ev.at);
   const h = hod(ev.at);
-  Object.assign(ev, ev.force ? { ...ev.force } : buildEvent(state, base, s, t, rng, phase, h), { phase }); // force: a test's or a dev tool's event
+  // teamwork.js: everyone of the crew out with them now is in it (not those held by trouble of their own).
+  const crew = crewAt(state, s, ev.at, ev.at + 1e-6, { free: true });
+  const sk = crew.length > 1 ? (key) => Math.max(...crew.map((x) => skill(x, key))) : null;
+  Object.assign(ev, ev.force ? { ...ev.force } : buildEvent(state, base, s, t, rng, phase, h, sk), { phase }); // force: a test's or a dev tool's event
   delete ev.force;
+  if (crew.length > 1) {
+    ev.crew = crew.map((x) => x.id);
+    if (ev.kind === "dead" || ev.kind === "deadbeast") { ev.n0 = ev.n; ev.n = crewDead(ev.n, crew.length); } // more of the dead come at a crew
+    for (const x of crew.slice(1)) x.trip.follow = { sid: s.id, at: ev.at, phase };
+  }
   const st = evStats(state);
   st.n++;
   st.kinds[ev.kind] = (st.kinds[ev.kind] || 0) + 1;
@@ -344,27 +358,63 @@ export function fireTripEvent(state, base, s, t, now) {
   return settle(state, base, s, t, null, now);
 }
 
+// ---------- a crew in trouble together (teamwork.js) ----------
+// The crew the trouble on s's trip involves: [{ s, t }], s (whose roll it was) first, then the mates out with them
+// when it fired (t.ev.crew; each mate's t.follow points at it). Alone: [{ s, t }].
+function crewOf(state, s, t) {
+  const out = [{ s, t }];
+  const ev = t && t.ev;
+  if (!ev || !ev.crew) return out;
+  for (const id of ev.crew) {
+    if (id === s.id) continue;
+    const x = survivorById(state, id);
+    const u = x && x.trip;
+    if (u && u.follow && u.follow.sid === s.id && u.follow.at === ev.at) out.push({ s: x, t: u });
+  }
+  return out;
+}
+// What the crew meets the trouble with: { crew, many, my (their worth together), k (the kit: a ready gun or bow if any
+// of them has one, any light, the first weapon), kits (each one's), shooter (the one whose gun or bow fires: an index
+// or −1), sk(key) (the crew's best at a skill), best(key) (who that is), who ("Mara Lin" / "Mara and Ben") }.
+function ctxOf(state, base, s, t) {
+  const crew = crewOf(state, s, t).filter((c, i) => i === 0 || c.s.alive);
+  const lead = tripPower(state, base, s, t);
+  if (crew.length === 1) return { crew, many: false, my: lead.p, k: lead.k, kits: [lead.k], shooter: lead.k.weapon && lead.k.ready && (lead.k.gun || lead.k.bow) ? 0 : -1, sk: (key) => skill(s, key), best: () => s, who: s.name, fw: first(s) };
+  const pw = crew.map((c, i) => (i === 0 ? lead : tripPower(state, base, c.s, c.t)));
+  const kits = pw.map((x) => x.k);
+  const my = pw.reduce((a, x) => a + x.p, 0);
+  const shooter = kits.findIndex((x) => x.weapon && x.ready && x.gun);
+  const sh = shooter >= 0 ? shooter : kits.findIndex((x) => x.weapon && x.ready && x.bow);
+  const kw = sh >= 0 ? kits[sh] : kits.find((x) => x.weapon && x.ready) || kits.find((x) => x.weapon) || lead.k;
+  const k = { ...lead.k, weapon: kw.weapon, gun: kw.gun && kw.ready, bow: kw.bow && kw.ready, melee: !!kw.melee, ready: !!kw.ready, light: kits.map((x) => x.light).find(Boolean) || lead.k.light };
+  const people = crew.map((c) => c.s);
+  const best = (key) => people.reduce((b, x) => (skill(x, key) > skill(b, key) ? x : b), people[0]);
+  return { crew, many: true, my, k, kits, shooter: sh, sk: (key) => skill(best(key), key), best, who: namesText(people, true), fw: namesText(people) };
+}
+// The mates hold no more: their trips go on (the outcome already written to them).
+function releaseCrew(C) { for (const c of C.crew.slice(1)) if (c.t && c.s.trip === c.t) delete c.t.follow; }
+
 // The choices of a big moment: [{ key, label, hint, def? }] (the default first-marked).
-function choicesFor(state, base, s, t) {
+function choicesFor(state, base, s, t, C = ctxOf(state, base, s, t)) {
   const ev = t.ev;
-  const { p: my, k } = tripPower(state, base, s, t);
+  const { my, k } = C;
   const phase = ev.phase;
   if (ev.kind === "animal") {
     const A = TRIP_ANIMALS[ev.animal];
-    const fl = fleeChance(state, s, t, phase, 0.1);
+    const fl = fleeChance(state, s, t, phase, 0.1, C.sk);
     const out = [{ key: "back", label: "Back away slowly", hint: `${Math.round(fl * 100)}% they get clear unhurt (the work stops; ${phase === "back" ? "the load is dropped" : "home empty-handed"})`, def: true }];
-    out.push({ key: "hide", label: "Keep still and let it pass", hint: `Lose an hour or two; ${Math.round(clamp(0.6 + 0.02 * skill(s, "stealth"), 0.5, 0.9) * 100)}% it wanders off, else it finds them` });
+    out.push({ key: "hide", label: "Keep still and let it pass", hint: `Lose an hour or two; ${Math.round(clamp(0.6 + 0.02 * C.sk("stealth"), 0.5, 0.9) * 100)}% it wanders off, else it finds them` });
     const r = my / (my + A.power * ev.n);
-    out.push({ key: "fight", label: k.gun && k.ready ? "Shoot it" : "Stand and fight", hint: `About ${Math.round(clamp(Math.pow(r, 1.5) * 1.6, 0.05, 0.97) * 100)}% to bring it down${A.meat ? ` (+${A.meat} kg meat)` : ""}${k.gun && k.ready ? "; the shots carry" : ""}; badly hurt if not` });
+    out.push({ key: "fight", label: k.gun && k.ready ? "Shoot it" : C.many ? "Stand and fight together" : "Stand and fight", hint: `About ${Math.round(clamp(Math.pow(r, 1.5) * 1.6, 0.05, 0.97) * 100)}% to bring it down${A.meat ? ` (+${A.meat} kg meat)` : ""}${k.gun && k.ready ? "; the shots carry" : ""}; badly hurt if not` });
     return out;
   }
   if (ev.kind === "stranger" && ev.threat) {
     const what = phase === "back" && t.carry && !t.carry.empty ? `the load (${loadText(t)})` : k.weapon ? `the ${k.weapon.name.toLowerCase()}` : "what they carry";
-    const pb = backOff(state, s, my, ev, k);
+    const pb = backOff(state, s, my, ev, k, C.sk);
     return [
       { key: "give", label: "Hand it over", hint: `Give up ${what}: nobody gets hurt`, def: true },
       { key: "refuse", label: "Stand firm", hint: `${Math.round(pb * 100)}% the stranger thinks better of it; else a fight (${ev.gun ? "they have a gun" : "a knife"})` },
-      { key: "run", label: "Run for it", hint: `${Math.round(fleeChance(state, s, t, phase) * 100)}% they get away${phase === "back" ? " (the load is dropped)" : ""}` },
+      { key: "run", label: "Run for it", hint: `${Math.round(fleeChance(state, s, t, phase, 0, C.sk) * 100)}% they get away${phase === "back" ? " (the load is dropped)" : ""}` },
     ];
   }
   const o = TRIP_OFFERS[ev.offer];
@@ -375,23 +425,23 @@ function choicesFor(state, base, s, t) {
     { key: "refuse", label: "Wave them on", hint: "No trade; they go on their way", def: true },
   ];
 }
-// What the worker (or the governor) picks by themselves.
-function autoChoice(state, base, s, t) {
+// What the worker (or the governor) picks by themselves (a crew: by their worth together).
+function autoChoice(state, base, s, t, C = ctxOf(state, base, s, t)) {
   const ev = t.ev;
-  const { p: my, k } = tripPower(state, base, s, t);
+  const { my, k } = C;
   if (ev.kind === "animal") {
     const A = TRIP_ANIMALS[ev.animal];
     const r = my / (my + A.power * ev.n);
-    return r >= TRIP_EV.fightAt + (A.big ? 0.1 : 0) || (!A.big && fleeChance(state, s, t, ev.phase) < 0.5 && r >= 0.35) ? "fight" : A.big ? "back" : "run";
+    return r >= TRIP_EV.fightAt + (A.big ? 0.1 : 0) || (!A.big && fleeChance(state, s, t, ev.phase, 0, C.sk) < 0.5 && r >= 0.35) ? "fight" : A.big ? "back" : "run";
   }
   if (ev.kind === "dead" || ev.kind === "deadbeast") return my / (my + foeWorth(ev) * ev.n) >= TRIP_EV.fightAt ? "fight" : "run";
-  if (ev.kind === "stranger" && ev.threat) return backOff(state, s, my, ev, k) >= 0.6 ? "refuse" : "give";
+  if (ev.kind === "stranger" && ev.threat) return backOff(state, s, my, ev, k, C.sk) >= 0.6 ? "refuse" : "give";
   if (ev.kind === "stranger") return sumStock(base.stock, TRIP_OFFERS[ev.offer].want) ? "trade" : "refuse";
   return "";
 }
-// A robber backs off: their worth against the stranger's, Speech, a gun in hand.
-function backOff(state, s, my, ev, k) {
-  return clamp(0.3 + 0.35 * (my / (ev.power + (ev.gun ? 2 : 0)) - 0.8) + 0.015 * skill(s, "speech") + (k.gun && k.ready ? 0.1 : 0), 0.1, 0.85);
+// A robber backs off: their worth against the stranger's, Speech (a crew's best), a gun in hand.
+function backOff(state, s, my, ev, k, sk = null) {
+  return clamp(0.3 + 0.35 * (my / (ev.power + (ev.gun ? 2 : 0)) - 0.8) + 0.015 * (sk ? sk("speech") : skill(s, "speech")) + (k.gun && k.ready ? 0.1 : 0), 0.1, 0.85);
 }
 
 // One of the dead on a trip is worth TRIP_EV.walker; a dead beast its kind's weight more (zombietypes.js).
@@ -404,22 +454,29 @@ function raiseCard(state, base, s, t, now) {
   ev.since = now;
   ev.f = r2(ev.phase === "out" ? (ev.at - t.leave) / Math.max(1e-6, t.arrive - t.leave) : ev.phase === "back" ? (ev.at - t.workEnd) / Math.max(1e-6, t.home - t.workEnd) : (ev.at - t.arrive) / Math.max(1e-6, t.workEnd - t.arrive)); // where they stand (the map)
   shiftAfter(t, ev.at, now + 1 - ev.at); // they stand where they are until the end of this hour
+  const C = ctxOf(state, base, s, t);
+  const people = C.crew.map((c) => c.s);
+  const holdCrew = () => { for (const c of C.crew.slice(1)) { shiftAfter(c.t, ev.at, now + 1 - ev.at); Object.assign(c.t.follow, { what: ev.what, phase: ev.phase, f: ev.f }); } }; // the mates stand with them
   const where = tileLabel(state, placeOf(t));
   const job = TRIP_JOBS[t.job] ? TRIP_JOBS[t.job].ing.toLowerCase() : "working";
   const A = ev.kind === "animal" ? TRIP_ANIMALS[ev.animal] : null;
   if (ev.kind === "dead" || ev.kind === "deadbeast") { // the attack card (loneattack.js): Save and fight, Fight, or their own good sense
     const who = foeWords(ev);
     ev.what = `Attacked by ${who}`;
+    holdCrew();
     const enemy = ev.kind === "deadbeast" && ev.beast
       ? { kind: "zombies", count: ev.n, power: Math.round((2 + (state.tiles[placeOf(t)].infection || 0) * 3) * 10) / 10, name: who, types: { [ev.beast]: ev.n }, mix: { [ev.beast]: 1 }, beast: ev.beast }
       : { kind: "zombies", count: ev.n, power: Math.round((2 + (state.tiles[placeOf(t)].infection || 0) * 3) * 10) / 10, name: who };
-    const text = `${s.name}, out ${job} near ${where}${ev.phase === "back" ? " with the load on their back" : ""}, ${ev.kind === "deadbeast" ? `is set upon by ${who}: thin, the hide split, the worm moving in the splits` : `is set upon by ${who}`}. Nobody else is near: it is ${first(s)} alone, with what they have on them.`;
-    const { p: my } = tripPower(state, base, s, t);
+    const how = ev.kind === "deadbeast" ? `set upon by ${who}: thin, the hide split, the worm moving in the splits` : `set upon by ${who}`;
+    const text = C.many
+      ? `${C.who}, out ${job} together near ${where}${ev.phase === "back" ? " with the load on their backs" : ""}, are ${how}. Nobody else is near: it is ${C.fw} together, each with what they have on them.`
+      : `${s.name}, out ${job} near ${where}${ev.phase === "back" ? " with the load on their back" : ""}, is ${how}. Nobody else is near: it is ${first(s)} alone, with what they have on them.`;
+    const { my } = C;
     const r = my / (my + foeWorth(ev) * ev.n);
-    const auto = autoChoice(state, base, s, t);
+    const auto = autoChoice(state, base, s, t, C);
     const card = attackCard(state, s, enemy, {
-      where, text, setup: tripAttackSetup(state, base, s, t, enemy), tags: { tripEv: s.id, tripEvAt: ev.at },
-      byNumbers: { label: auto === "fight" ? "Leave it to them (they stand and fight)" : "Leave it to them (they run for it)", hint: auto === "fight" ? `By the numbers: about ${Math.round(clamp(Math.pow(r, 1.5) * 1.6, 0.05, 0.97) * 100)}% to put ${ev.n === 1 ? "it" : "them"} down; shots from the base's rounds` : `By the numbers: ${Math.round(fleeChance(state, s, t, ev.phase) * 100)}% they get clear${ev.phase === "back" ? " (the load is dropped)" : ""}`, resolve: (st) => settle(st, base, s, t, null, st.hour) },
+      where, text, setup: tripAttackSetup(state, base, s, t, enemy, people), tags: { tripEv: s.id, tripEvAt: ev.at }, crew: people,
+      byNumbers: { label: auto === "fight" ? `Leave it to them (they stand and fight${C.many ? " together" : ""})` : "Leave it to them (they run for it)", hint: auto === "fight" ? `By the numbers: about ${Math.round(clamp(Math.pow(r, 1.5) * 1.6, 0.05, 0.97) * 100)}% to put ${ev.n === 1 ? "it" : "them"} down; shots from the base's rounds` : `By the numbers: ${Math.round(fleeChance(state, s, t, ev.phase, 0, C.sk) * 100)}% they get clear${ev.phase === "back" ? " (the load is dropped)" : ""}`, resolve: (st) => settle(st, base, s, t, null, st.hour) },
     });
     const open = card.choices[1].resolve; // loneattack.js: starts the fight
     const fightChoice = (st) => { ev.battle = true; return open(st); };
@@ -430,18 +487,22 @@ function raiseCard(state, base, s, t, now) {
     return true;
   }
   ev.what = A ? `Facing ${A.name}` : ev.threat ? "Held up by a stranger" : "Talking to a stranger";
-  const title = A ? `${first(s)} and ${A.name}` : ev.threat ? `${first(s)} is held up` : `A stranger meets ${first(s)}`;
+  holdCrew();
+  const title = C.many
+    ? A ? `${C.fw} face ${A.name}` : ev.threat ? `${C.fw} are held up` : `A stranger meets ${C.fw}`
+    : A ? `${first(s)} and ${A.name}` : ev.threat ? `${first(s)} is held up` : `A stranger meets ${first(s)}`;
+  const subj = C.many ? `${C.who}, out ${job} together near ${where},` : `${s.name}, out ${job} near ${where},`;
   const text = A
-    ? `${s.name}, out ${job} near ${where}, has come face to face with ${A.name}. ${ev.phase === "back" ? "They are carrying the load home." : ""}`.trim()
+    ? `${subj} ${C.many ? "have" : "has"} come face to face with ${A.name}. ${ev.phase === "back" ? `They are carrying the load${C.many ? "s" : ""} home.` : ""}`.trim()
     : ev.threat
-      ? `${s.name}, out ${job} near ${where}, is stopped by a lone stranger${ev.gun ? " with a gun" : " with a knife"} who wants what they carry.`
-      : `${s.name}, out ${job} near ${where}, meets a lone traveller who offers ${TRIP_OFFERS[ev.offer].text} in trade.`;
-  const choices = choicesFor(state, base, s, t).map((c) => ({
+      ? `${subj} ${C.many ? "are" : "is"} stopped by a lone stranger${ev.gun ? " with a gun" : " with a knife"} who wants what they carry.`
+      : `${subj} ${C.many ? "meet" : "meets"} a lone traveller who offers ${TRIP_OFFERS[ev.offer].text} in trade.`;
+  const choices = choicesFor(state, base, s, t, C).map((c) => ({
     label: c.label, hint: c.hint, ...(c.def ? { default: true } : {}), ...(c.off ? { disabled: c.off } : {}),
     ai: () => (c.key === autoChoice(state, base, s, t) ? 5 : 1),
     resolve: (st) => settle(st, base, s, t, c.key, st.hour),
   }));
-  addCard(state, { title, text, where, tripEv: s.id, tripEvAt: ev.at, choices });
+  addCard(state, { title, text, where, tripEv: s.id, tripEvAt: ev.at, ...(C.many ? { crew: people.map((x) => x.id) } : {}), choices });
   evStats(state).cards++;
   alertPop(state, base, s, t, ev.what);
   return true;
@@ -454,6 +515,7 @@ export function holdTrip(state, base, s, t, now) {
     const mine = (x) => !!(x && x.handler === "tripAttack" && x.context && x.context.sid === s.id && x.context.at === ev.at);
     if ((state.combat && mine(state.combat.setup)) || (state.combatQueue || []).some(mine)) { shiftAfter(t, now, 1); return true; }
     ev.battle = false; ev.pending = false; // over (settled by its handler) or never made: the trip goes on
+    releaseCrew({ crew: crewOf(state, s, t) });
     return false;
   }
   const i = (state.cards || []).findIndex((c) => c.tripEv === s.id && c.tripEvAt === ev.at);
@@ -462,12 +524,24 @@ export function holdTrip(state, base, s, t, now) {
   settle(state, base, s, t, null, now, i >= 0 ? "timeout" : "gone");
   return false;
 }
+// A mate of a crew while trouble on another's trip holds them all (teamwork.js: t.follow): they hold while its card or
+// its battle is open; then on (the outcome was written to their trip as it was settled).
+export function followHold(state, base, s, t, now) {
+  const f = t.follow;
+  const lead = survivorById(state, f.sid);
+  const lt = lead && lead.trip;
+  if (lt && lt.ev && lt.ev.at === f.at && (lt.ev.pending || lt.ev.battle)) { shiftAfter(t, now, 1); return true; }
+  delete t.follow;
+  return false;
+}
 
 // The fight on the battle map is over (loneattack.js onTripAttack: combat.js result): the trip goes on (a win), is cut
 // short (they ran: the load dropped on the way home or at the work) or ended with them (the battle killed them). The
-// battle wrote their wounds and death itself; this only steers the trip and tells the log.
+// battle wrote their wounds and death itself; this only steers the trip and tells the log. A crew's (teamwork.js): each
+// of them, one line.
 export function settleBattle(state, base, s, t, result, enemy) {
   const ev = t.ev;
+  const crew = crewOf(state, s, t);
   ev.battle = false;
   ev.pending = false;
   const now = state.hour;
@@ -478,6 +552,28 @@ export function settleBattle(state, base, s, t, result, enemy) {
   const st = evStats(state);
   const T = dayTally(state, base, now);
   const who = enemy && enemy.name ? enemy.name : foeWords(ev);
+  if (crew.length > 1) {
+    const dead = crew.filter((c) => !c.s.alive), live = crew.filter((c) => c.s.alive);
+    for (const c of dead) { st.killed++; T.killed++; alertPop(state, base, c.s, t, "", "✝"); }
+    for (const c of live) if (c !== crew[0]) delete c.t.follow;
+    if (dead.length) log(state, `${namesText(dead.map((c) => c.s), true)} ${dead.length > 1 ? "were" : "was"} killed by ${who} out ${job} near ${where}.`, "death");
+    for (const c of dead) delete c.s.trip;
+    if (!live.length) return;
+    const hurt = live.filter((c) => (result.survivorsHurt || []).includes(c.s.id));
+    const hurtNote = hurt.length ? ` (${hurt.map((c) => `${first(c.s)} health ${Math.round(c.s.health)}`).join(", ")})` : "";
+    const names = namesText(live.map((c) => c.s), true);
+    if (result.outcome === "victory") {
+      st.won++;
+      log(state, `${names} put down ${who} together, out ${job} near ${where}${hurtNote}${dead.length ? `; ${namesText(dead.map((c) => c.s))} did not make it` : ""}.`, hurtNote || dead.length ? "danger" : "good");
+      return;
+    }
+    const dropped = phase !== "out" ? live.map((c) => dropLoad(c.t)).filter(Boolean).join(" and ") : "";
+    for (const c of live) goHome(c.t, when, "fled");
+    st.fled++; T.fled++;
+    if (dropped) st.dropped++;
+    log(state, `${names} ${result.outcome === "retreat" ? "ran from" : "got away from"} ${who} near ${where} and ${live.length > 1 ? "are" : "is"} coming home${dropped ? `, leaving ${dropped}` : ""}${hurtNote}.`, "danger");
+    return;
+  }
   if (!s.alive) { st.killed++; T.killed++; alertPop(state, base, s, t, "", "✝"); delete s.trip; log(state, `${s.name} was killed by ${who} out ${job} near ${where}.`, "death"); return; }
   const hurtNote = (result.survivorsHurt || []).includes(s.id) ? ` (health ${Math.round(s.health)})` : "";
   if (result.outcome === "victory") {
@@ -492,10 +588,14 @@ export function settleBattle(state, base, s, t, result, enemy) {
   log(state, `${s.name} ${result.outcome === "retreat" ? "ran from" : "got away from"} ${who} near ${where} and is coming home${dropped ? `, leaving ${dropped}` : ""}${hurtNote}.`, "danger");
 }
 // The outcome: choice (a card's key, or null: their own good sense). Returns the text (a card's answer line).
+// A crew (teamwork.js): their worth together, the crew's best skill where one is checked, the hits shared out among
+// them by the dice, an accident on one of them, all of them running or holding; a find carried by one of them. Alone,
+// every roll is the one it always was.
 export function settle(state, base, s, t, choice, now, how = "") {
   const ev = t.ev;
   if (!ev || (choice && !ev.pending)) return "Too late: it is over.";
-  if (ev.pending && (!s.alive || s.trip !== t)) { ev.pending = false; return `${first(s)} is no longer out there.`; }
+  const C = ctxOf(state, base, s, t);
+  if (ev.pending && (!s.alive || s.trip !== t)) { ev.pending = false; releaseCrew(C); return `${first(s)} is no longer out there.`; }
   ev.pending = false;
   const rng = new Rng(ev.seed + 7919);
   const when = Math.max(ev.at, Math.min(now, t.home - 0.01));
@@ -503,169 +603,206 @@ export function settle(state, base, s, t, choice, now, how = "") {
   const tile = placeOf(t);
   const where = tileLabel(state, tile);
   const job = TRIP_JOBS[t.job] ? TRIP_JOBS[t.job].ing.toLowerCase() : "working";
-  const pick = choice || autoChoice(state, base, s, t);
+  const pick = choice || autoChoice(state, base, s, t, C);
   const st = evStats(state);
   const T = dayTally(state, base, now);
-  const { p: my, k } = tripPower(state, base, s, t);
-  const timeout = how === "timeout" ? ` (no word came: ${first(s)} did what seemed best)` : "";
+  const { crew, many, my, k } = C;
+  const who = C.who;
+  const timeout = how === "timeout" ? ` (no word came: ${C.fw} did what seemed best)` : "";
   let text = "", level = "info", pop = "!";
   const hurtText = (w) => (w.dead ? "" : w.dmg > 0 ? ` (−${w.dmg + w.bled} health${w.aid ? `, stopped the bleeding with a ${w.aid}` : w.bled ? ", bleeding" : ""})` : "");
-  const died = (w) => { if (w.dead) { st.killed++; T.killed++; alertPop(state, base, s, t, "", "✝"); delete s.trip; } return w.dead; };
-  // Running: caught, the first foe lands a blow (a bear's maul: two), each other one TRIP_EV.caught of the time.
-  const flee = (extra, hit, n, cause, maul = 1) => {
-    const ok = rng.next() < fleeChance(state, s, t, phase, extra);
-    const dropped = phase === "back" || phase === "work" ? dropLoad(t) : "";
+  const died = (w, c = crew[0]) => { if (w.dead) { st.killed++; T.killed++; alertPop(state, base, c.s, t, "", "✝"); delete c.s.trip; } return w.dead; };
+  const kitOf = (c) => C.kits[crew.indexOf(c)] || k;
+  const xpFight = (c, amt) => { const kc = kitOf(c); gainXp(state, c.s, kc.melee || !kc.weapon ? "melee" : "shooting", amt); };
+  // The shots: the one whose gun or bow fires (alone: theirs, as always).
+  const shoot = (shots) => (many ? (C.shooter >= 0 ? spendShots(state, base, crew[C.shooter].s, C.kits[C.shooter], shots, now, tile) : 0) : spendShots(state, base, s, k, shots, now, tile));
+  // The hits shared out among the crew by the dice: [{ c, w }].
+  const woundAll = (hits, cause) => {
+    if (!many) return [{ c: crew[0], w: wound(state, s, hits, rng, tile, cause) }];
+    const per = crew.map(() => []);
+    for (const h of hits) per[rng.int(0, crew.length - 1)].push(h);
+    return crew.map((c, i) => ({ c, w: per[i].length ? wound(state, c.s, per[i], rng, tile, cause) : { dmg: 0, bled: 0, dead: false, aid: "" } }));
+  };
+  // The dead among them counted; the living, their wounds in a few words. { all (none left), live [c], who, hurt, harm }.
+  const deaths = (rows) => {
+    for (const r of rows) died(r.w, r.c);
+    const live = rows.filter((r) => !r.w.dead);
+    if (!many) return { all: rows[0].w.dead, live: live.map((r) => r.c), who: s.name, hurt: hurtText(rows[0].w), harm: rows[0].w.dmg > 0 };
+    const dead = rows.filter((r) => r.w.dead).map((r) => r.c.s);
+    const hurt = live.filter((r) => r.w.dmg > 0).map((r) => `${first(r.c.s)} −${r.w.dmg + r.w.bled} health${r.w.aid ? `, the bleeding stopped with a ${r.w.aid}` : r.w.bled ? ", bleeding" : ""}`);
+    return { all: !live.length, live: live.map((r) => r.c), who: namesText(live.map((r) => r.c.s), true), hurt: `${hurt.length ? ` (${hurt.join("; ")})` : ""}${dead.length ? `; ${namesText(dead, true)} ${dead.length > 1 ? "were" : "was"} killed` : ""}`, harm: hurt.length > 0 || dead.length > 0 };
+  };
+  const dropAll = (list) => list.map((c) => dropLoad(c.t)).filter(Boolean).join(" and ");
+  const homeAll = (list, at, why) => { for (const c of list) goHome(c.t, at, why); };
+  const were = many ? "were" : "was";
+  // Running: caught, the first foe lands a blow (a bear's maul: two), each other one TRIP_EV.caught of the time. A crew
+  // runs each for themselves (the crew's best Scouting and Stealth showing the way), the foes spread over them.
+  const fleeOne = (c, extra, hit, n, cause, maul = 1) => {
+    const ok = rng.next() < fleeChance(state, c.s, c.t, phase, extra, C.sk);
+    const dropped = phase === "back" || phase === "work" ? dropLoad(c.t) : "";
     st.fled++; T.fled++;
     if (dropped) st.dropped++;
-    goHome(t, when, "fled");
-    gainXp(state, s, "scouting", 2);
-    if (ok) return { ok, dropped, w: { dmg: 0, bled: 0, dead: false, aid: "" } };
+    goHome(c.t, when, "fled");
+    gainXp(state, c.s, "scouting", 2);
+    if (ok) return { c, ok, dropped, w: { dmg: 0, bled: 0, dead: false, aid: "" } };
     const hits = [];
     for (let i = 0; i < maul; i++) hits.push(rng.int(hit[0], hit[1]));
     for (let i = 1; i < n; i++) if (rng.next() < TRIP_EV.caught) hits.push(rng.int(hit[0], hit[1]));
-    if (ev.kind === "dead" && n >= 2 && !k.weapon && rng.next() < TRIP_EV.dragged * (n - 1)) { // no weapon to fight free
-      hurt(state, s, (s.health || 0) + 1, tile, cause, { raw: true });
-      return { ok, dropped, w: { dmg: 0, bled: 0, dead: true, aid: "" } };
+    if (ev.kind === "dead" && n >= 2 && !kitOf(c).weapon && rng.next() < TRIP_EV.dragged * (n - 1)) { // no weapon to fight free
+      hurt(state, c.s, (c.s.health || 0) + 1, tile, cause, { raw: true });
+      return { c, ok, dropped, w: { dmg: 0, bled: 0, dead: true, aid: "" } };
     }
-    return { ok, dropped, w: wound(state, s, hits, rng, tile, cause) };
+    return { c, ok, dropped, w: wound(state, c.s, hits, rng, tile, cause) };
   };
+  const fleeAll = (extra, hit, n, cause, maul = 1) => crew.map((c) => fleeOne(c, extra, hit, many ? Math.max(1, Math.round(n / crew.length)) : n, cause, maul));
+  const fled = (rows) => ({ ok: rows.every((r) => r.ok), dropped: rows.map((r) => r.dropped).filter(Boolean).join(" and ") });
   switch (ev.kind) {
     case "dead": case "deadbeast": {
-      const n = ev.n, who = foeWords(ev);
+      const n = ev.n, foes = foeWords(ev);
       if (pick === "fight") {
         const f = fight(rng, my, foeWorth(ev), n, k);
-        spendShots(state, base, s, k, f.shots, now, tile);
-        const w = wound(state, s, f.hits, rng, tile, `fighting the dead out ${job} near ${where}`);
-        gainXp(state, s, k.melee || !k.weapon ? "melee" : "shooting", 3 * n);
-        if (died(w)) return `${s.name} was killed by ${who}.`;
-        if (f.win) { st.won++; text = `${s.name} put down ${who} near ${where}${k.weapon ? ` with the ${k.weapon.name.toLowerCase()}` : " with bare hands"}${f.shots ? " (shots fired)" : ""}${hurtText(w)}.`; level = w.dmg ? "danger" : "good"; }
-        else { const dropped = phase !== "out" ? dropLoad(t) : ""; goHome(t, when, "fled"); st.fled++; T.fled++; text = `${s.name} could not hold off ${who} near ${where} and ran${dropped ? `, leaving ${dropped}` : ""}${hurtText(w)}.`; level = "danger"; }
+        shoot(f.shots);
+        const rows = woundAll(f.hits, `fighting the dead out ${job} near ${where}`);
+        for (const r of rows) xpFight(r.c, 3 * n);
+        const D = deaths(rows);
+        if (D.all) return `${who} ${were} killed by ${foes}.`;
+        if (f.win) { st.won++; text = `${D.who} put down ${foes} near ${where}${many ? " together" : k.weapon ? ` with the ${k.weapon.name.toLowerCase()}` : " with bare hands"}${f.shots ? " (shots fired)" : ""}${D.hurt}.`; level = D.harm ? "danger" : "good"; }
+        else { const dropped = phase !== "out" ? dropAll(D.live) : ""; homeAll(D.live, when, "fled"); st.fled++; T.fled++; text = `${D.who} could not hold off ${foes} near ${where} and ran${dropped ? `, leaving ${dropped}` : ""}${D.hurt}.`; level = "danger"; }
       } else {
-        const r = flee(0, TRIP_EV.hit, n, `caught by the dead out ${job} near ${where}`);
-        if (died(r.w)) return `${s.name} was dragged down by ${who}.`;
-        text = `${s.name} met ${who} near ${where} and ${r.ok ? "slipped away" : "got away hurt"}${r.dropped ? `, leaving ${r.dropped}` : ""}${hurtText(r.w)}.`;
+        const rows = fleeAll(0, TRIP_EV.hit, n, `caught by the dead out ${job} near ${where}`);
+        const D = deaths(rows), r = fled(rows);
+        if (D.all) return `${who} ${were} dragged down by ${foes}.`;
+        text = `${D.who} met ${foes} near ${where} and ${r.ok ? "slipped away" : many ? "got away, not all of them unhurt" : "got away hurt"}${r.dropped ? `, leaving ${r.dropped}` : ""}${D.hurt}.`;
         level = r.ok ? "info" : "danger";
       }
       break;
     }
     case "animal": {
       const A = TRIP_ANIMALS[ev.animal];
-      const name = A.name;
-      if (!A.big && rng.next() < A.leave * (k.weapon ? 1.5 : 1)) { text = `${s.name} met ${name} near ${where}; it sized them up and went.`; pop = "?"; break; }
+      const name = A.name, Name = `${name[0].toUpperCase()}${name.slice(1)}`;
+      if (!A.big && rng.next() < A.leave * (k.weapon ? 1.5 : 1) * (many ? 1 + TEAM.beastLeave * (crew.length - 1) : 1)) { text = `${who} met ${name} near ${where}; it sized them up and went.`; pop = "?"; break; }
       if (pick === "hide") {
-        const ok = rng.next() < clamp(0.6 + 0.02 * skill(s, "stealth"), 0.5, 0.9);
+        const ok = rng.next() < clamp(0.6 + 0.02 * C.sk("stealth"), 0.5, 0.9);
         const L = r1(1 + rng.next());
-        delay(t, when, L, phase);
+        for (const c of crew) delay(c.t, when, L, phase);
         st.lostHours += L;
-        gainXp(state, s, "stealth", 2);
-        if (ok) { text = `${s.name} kept still while ${name} passed near ${where}, ${L} hours lost${timeout}.`; break; }
+        for (const c of crew) gainXp(state, c.s, "stealth", 2);
+        if (ok) { text = `${who} kept still while ${name} passed near ${where}, ${L} hours lost${timeout}.`; break; }
         const f = fight(rng, my, A.power, ev.n, k, A.hit);
-        spendShots(state, base, s, k, f.shots, now, tile);
-        const w = wound(state, s, f.hits, rng, tile, `after an attack by ${name} near ${where}`);
-        if (died(w)) return `${s.name} was killed by ${name}.`;
-        goHome(t, when + L, "hurt");
-        text = `${name[0].toUpperCase()}${name.slice(1)} found ${s.name} hiding near ${where}${f.win ? "; they drove it off" : ""}${hurtText(w)}${timeout}.`;
+        shoot(f.shots);
+        const D = deaths(woundAll(f.hits, `after an attack by ${name} near ${where}`));
+        if (D.all) return `${who} ${were} killed by ${name}.`;
+        homeAll(D.live, when + L, "hurt");
+        text = `${Name} found ${D.who} hiding near ${where}${f.win ? "; they drove it off" : ""}${D.hurt}${timeout}.`;
         level = "danger";
         break;
       }
       if (pick === "fight") {
         const f = fight(rng, my, A.power, ev.n, k, A.hit);
-        spendShots(state, base, s, k, f.shots, now, tile);
-        const w = wound(state, s, f.hits, rng, tile, `after an attack by ${name} near ${where}`);
-        gainXp(state, s, k.melee || !k.weapon ? "melee" : "shooting", A.big ? 8 : 4);
-        if (died(w)) return `${s.name} was killed by ${name}.`;
+        shoot(f.shots);
+        const rows = woundAll(f.hits, `after an attack by ${name} near ${where}`);
+        for (const r of rows) xpFight(r.c, A.big ? 8 : 4);
+        const D = deaths(rows);
+        if (D.all) return `${who} ${were} killed by ${name}.`;
         if (f.win) {
           st.won++;
           if (A.meat) { t.bonus = t.bonus || {}; t.bonus.meat = (t.bonus.meat || 0) + A.meat; st.meat += A.meat; }
-          text = `${s.name} killed ${name} near ${where}${A.meat ? ` (+${A.meat} kg meat to carry home)` : ""}${f.shots ? ", shots fired" : ""}${hurtText(w)}${timeout}.`;
-          level = w.dmg ? "danger" : "good";
-          if (w.dmg >= 20) goHome(t, when, "hurt");
+          text = `${D.who} killed ${name} near ${where}${A.meat ? ` (+${A.meat} kg meat to carry home)` : ""}${f.shots ? ", shots fired" : ""}${D.hurt}${timeout}.`;
+          level = D.harm ? "danger" : "good";
+          for (const r of rows) if (!r.w.dead && r.w.dmg >= 20) goHome(r.c.t, when, "hurt");
         } else {
-          const dropped = phase !== "out" ? dropLoad(t) : "";
-          goHome(t, when, "hurt");
-          text = `${name[0].toUpperCase()}${name.slice(1)} got the better of ${s.name} near ${where}${dropped ? `; ${dropped} left behind` : ""}${hurtText(w)}${timeout}.`;
+          const dropped = phase !== "out" ? dropAll(D.live) : "";
+          homeAll(D.live, when, "hurt");
+          text = `${Name} got the better of ${D.who} near ${where}${dropped ? `; ${dropped} left behind` : ""}${D.hurt}${timeout}.`;
           level = "danger";
         }
         break;
       }
-      const r = flee(pick === "back" ? 0.1 : 0, A.hit, ev.n, `after an attack by ${name} out ${job} near ${where}`, A.maul || 1);
-      if (died(r.w)) return `${s.name} was killed by ${name}.`;
-      text = `${s.name} ${pick === "back" ? "backed away from" : "ran from"} ${name} near ${where}${r.ok ? "" : ", but it caught them"}${r.dropped ? `, leaving ${r.dropped}` : ""}${hurtText(r.w)}${timeout}.`;
+      const rows = fleeAll(pick === "back" ? 0.1 : 0, A.hit, ev.n, `after an attack by ${name} out ${job} near ${where}`, A.maul || 1);
+      const D = deaths(rows), r = fled(rows);
+      if (D.all) return `${who} ${were} killed by ${name}.`;
+      text = `${D.who} ${pick === "back" ? "backed away from" : "ran from"} ${name} near ${where}${r.ok ? "" : `, but it caught ${many ? rows.filter((x) => !x.ok).map((x) => first(x.c.s)).join(" and ") : "them"}`}${r.dropped ? `, leaving ${r.dropped}` : ""}${D.hurt}${timeout}.`;
       level = r.ok ? "info" : "danger";
       break;
     }
     case "injury": {
       const I = TRIP_INJURY[ev.pool][ev.inj];
+      const V = many ? crew[rng.int(0, crew.length - 1)] : crew[0]; // a crew: the accident is one of theirs
+      const vs = V.s, vt = V.t;
+      const others = many ? namesText(crew.filter((c) => c !== V).map((c) => c.s)) : "";
       if (I.cold) {
         const temp = Weather.weatherAt(state, tile, when).temp;
-        const dropped = I.drop ? dropLoad(t) : "";
+        const dropped = I.drop ? dropLoad(vt) : "";
         if (temp < 8) {
-          addCondition(state, s, "chestcold", "from a fall into cold water", { quiet: true, cause: "trip", sev: Math.round(clamp(20 + (8 - temp) * 2, 20, 55)) });
-          if (temp < -5) hurt(state, s, 5, tile, `of the cold after a fall into the water near ${where}`, { raw: true });
-          goHome(t, when, "soaked");
-          text = `${s.name} ${I.text} near ${where} (${Math.round(temp)} °C) and came home soaked and shivering: a chest cold${dropped ? `; the buckets went in` : ""}.`;
+          addCondition(state, vs, "chestcold", "from a fall into cold water", { quiet: true, cause: "trip", sev: Math.round(clamp(20 + (8 - temp) * 2, 20, 55)) });
+          if (temp < -5) hurt(state, vs, 5, tile, `of the cold after a fall into the water near ${where}`, { raw: true });
+          goHome(vt, when, "soaked");
+          text = `${vs.name} ${I.text} near ${where} (${Math.round(temp)} °C) and came home soaked and shivering: a chest cold${dropped ? `; the buckets went in` : ""}${others ? `; ${others} pulled them out` : ""}.`;
           level = "danger";
         } else {
-          s.mood = Math.max(0, (s.mood ?? 50) - 3);
-          if (temp < 15) goHome(t, when, "soaked");
-          text = `${s.name} ${I.text} near ${where}: soaked${temp < 15 ? ", home to dry off" : ", no harm done"}${dropped ? ` (the buckets went in)` : ""}.`;
+          vs.mood = Math.max(0, (vs.mood ?? 50) - 3);
+          if (temp < 15) goHome(vt, when, "soaked");
+          text = `${vs.name} ${I.text} near ${where}: soaked${temp < 15 ? ", home to dry off" : ", no harm done"}${dropped ? ` (the buckets went in)` : ""}.`;
         }
         st.hurt++;
         break;
       }
-      const dmg = I.dmg ? Math.round(rng.int(I.dmg[0], I.dmg[1]) * woundMult(s)) : 0;
-      if (dmg > 0) hurt(state, s, dmg, tile, `after an accident out ${job} near ${where}`, { raw: true });
-      if (!s.alive) { st.killed++; T.killed++; delete s.trip; return `${s.name} died of an accident.`; }
+      const dmg = I.dmg ? Math.round(rng.int(I.dmg[0], I.dmg[1]) * woundMult(vs)) : 0;
+      if (dmg > 0) hurt(state, vs, dmg, tile, `after an accident out ${job} near ${where}`, { raw: true });
+      if (!vs.alive) { st.killed++; T.killed++; delete vs.trip; if (many) releaseCrew(C); return `${vs.name} died of an accident.`; }
       let what = "";
       if (I.cond && (I.p == null || rng.next() < I.p)) {
         const D = CONDITIONS[I.cond];
         let sev = rng.int(D.sev[0], D.sev[1]);
-        const aid = I.cond === "cut" ? useAid(s) : "";
+        let aid = I.cond === "cut" ? useAid(vs) : "", by = "";
+        if (I.cond === "cut" && !aid && many) for (const c of crew) { if (c === V) continue; aid = useAid(c.s); if (aid) { by = first(c.s); break; } } // a mate's kit
         if (aid) sev = Math.round(sev * 0.6);
-        addCondition(state, s, I.cond, `out ${job}`, { quiet: true, cause: "trip", sev });
-        what = I.cond === "cut" ? `a deep cut${aid ? `, dressed on the spot with a ${aid}` : ""}` : "a sprain";
-        if (I.cond === "sprain" || sev >= 35) { goHome(t, when, "hurt"); if (I.cond === "sprain") t.home = r2(t.home + 0.5); }
+        addCondition(state, vs, I.cond, `out ${job}`, { quiet: true, cause: "trip", sev });
+        what = I.cond === "cut" ? `a deep cut${aid ? `, dressed on the spot with ${by ? `${by}'s` : "a"} ${aid}` : ""}` : "a sprain";
+        if (I.cond === "sprain" || sev >= 35) { goHome(vt, when, "hurt"); if (I.cond === "sprain") vt.home = r2(vt.home + 0.5); }
       }
       st.hurt++;
-      text = `${s.name} ${I.text} ${phase === "work" ? `at ${where}` : `near ${where}`}${what ? `: ${what}` : ""}${dmg ? ` (−${dmg} health)` : ""}${t.cut === "hurt" ? "; limping home" : ""}.`;
+      text = `${vs.name} ${I.text} ${phase === "work" ? `at ${where}` : `near ${where}`}${what ? `: ${what}` : ""}${dmg ? ` (−${dmg} health)` : ""}${vt.cut === "hurt" ? `; limping home${others ? `, ${others} work${others.includes(" and ") ? "" : "s"} on` : ""}` : ""}.`;
       level = "danger";
       break;
     }
     case "lost": {
       const L = ev.hours * (k.light || hod(when) < 18 ? 1 : 1.25);
-      delay(t, when, r1(L), phase);
+      for (const c of crew) delay(c.t, when, r1(L), phase);
       st.lostHours += r1(L);
-      gainXp(state, s, "scouting", 2);
-      text = `${s.name} lost the way ${phase === "out" ? "out to" : "back from"} ${where}: ${r1(L)} hours gone.`;
+      for (const c of crew) gainXp(state, c.s, "scouting", 2);
+      text = `${who} lost the way ${phase === "out" ? "out to" : "back from"} ${where}: ${r1(L)} hours gone.`;
       pop = "?";
       break;
     }
     case "stranger": {
       if (ev.threat) {
+        const gunHit = ev.gun ? [12, 28] : [8, 20];
         if (pick === "give") {
-          const dropped = phase === "back" ? dropLoad(t) : "";
+          const dropped = phase === "back" ? dropAll(crew) : "";
           let lost = dropped;
-          if (!dropped && k.weapon) { const sp = carriedSpots(s).find((x) => x.item === k.weapon); if (sp) { sp.take(); lost = `the ${k.weapon.name.toLowerCase()}`; } }
-          if (!dropped && phase === "work") { t.noLoad = true; }
-          goHome(t, when, "robbed");
-          text = `A stranger held up ${s.name} near ${where}; ${first(s)} handed over ${lost || "what little they had"}${timeout}.`;
+          if (!dropped && k.weapon) { for (const c of crew) { const sp = carriedSpots(c.s).find((x) => x.item === k.weapon); if (sp) { sp.take(); lost = `the ${k.weapon.name.toLowerCase()}`; break; } } }
+          if (!dropped && phase === "work") for (const c of crew) c.t.noLoad = true;
+          homeAll(crew, when, "robbed");
+          text = `A stranger held up ${who} near ${where}; ${C.fw} handed over ${lost || "what little they had"}${timeout}.`;
           level = "danger";
           break;
         }
-        if (pick === "refuse" && rng.next() < backOff(state, s, my, ev, k)) { text = `A stranger tried to rob ${s.name} near ${where}; ${first(s)} stood firm and they backed off.`; gainXp(state, s, "speech", 2); break; }
+        if (pick === "refuse" && rng.next() < backOff(state, s, my, ev, k, C.sk)) { text = `A stranger tried to rob ${who} near ${where}; ${C.fw} stood firm and they backed off.`; gainXp(state, C.best("speech"), "speech", 2); break; }
         if (pick === "run") {
-          const r = flee(0, ev.gun ? [12, 28] : [8, 20], 1, `running from a robber near ${where}`);
-          if (died(r.w)) return `${s.name} was shot running from a robber.`;
-          text = `${s.name} ran from a robber near ${where}${r.ok ? "" : " and was hurt getting away"}${r.dropped ? `, leaving ${r.dropped}` : ""}${hurtText(r.w)}.`;
+          const rows = fleeAll(0, gunHit, 1, `running from a robber near ${where}`);
+          const D = deaths(rows), r = fled(rows);
+          if (D.all) return `${who} ${were} shot running from a robber.`;
+          text = `${D.who} ran from a robber near ${where}${r.ok ? "" : ` and ${many ? "not all got away unhurt" : "was hurt getting away"}`}${r.dropped ? `, leaving ${r.dropped}` : ""}${D.hurt}.`;
           level = r.ok ? "info" : "danger";
           break;
         }
-        const f = fight(rng, my, ev.power + (ev.gun ? 2 : 0), 1, k, ev.gun ? [12, 28] : [8, 20]);
-        spendShots(state, base, s, k, f.shots, now, tile);
-        const w = wound(state, s, f.hits, rng, tile, `after a fight with a robber near ${where}`);
-        if (died(w)) return `${s.name} was killed by a robber.`;
-        if (f.win) { st.won++; text = `A stranger tried to rob ${s.name} near ${where}; it came to a fight and ${first(s)} drove them off${hurtText(w)}.`; }
-        else { const dropped = phase === "back" ? dropLoad(t) : ""; goHome(t, when, "robbed"); text = `A stranger robbed ${s.name} near ${where} after a fight${dropped ? ` and took ${dropped}` : ""}${hurtText(w)}.`; }
+        const f = fight(rng, my, ev.power + (ev.gun ? 2 : 0), 1, k, gunHit);
+        shoot(f.shots);
+        const D = deaths(woundAll(f.hits, `after a fight with a robber near ${where}`));
+        if (D.all) return `${who} ${were} killed by a robber.`;
+        if (f.win) { st.won++; text = `A stranger tried to rob ${who} near ${where}; it came to a fight and ${many ? D.who : first(s)} drove them off${D.hurt}.`; }
+        else { const dropped = phase === "back" ? dropAll(D.live) : ""; homeAll(D.live, when, "robbed"); text = `A stranger robbed ${D.who} near ${where} after a fight${dropped ? ` and took ${dropped}` : ""}${D.hurt}.`; }
         level = "danger";
         break;
       }
@@ -674,31 +811,37 @@ export function settle(state, base, s, t, choice, now, how = "") {
         for (const [k2, q] of Object.entries(o.want)) { if (k2 === "food") payFood(base, q, state); else base.stock[k2] -= q; } // foods.js: days of food, the soonest to spoil first
         if (o.give) gainGoods(state, base, o.give, "keeps"); // foods.js: tins of food as cans
         if (o.item) base.armory.push(lootItem(o.item, "traveller", rng)); // a traveller's pack (itemcond.js)
-        delay(t, when, 0.5, phase);
-        gainXp(state, s, "speech", 2);
-        text = `${s.name} met a traveller near ${where} and traded ${Object.entries(o.want).map(([k2, q]) => `${q} ${k2}`).join(", ")} for ${o.text}.`;
+        for (const c of crew) delay(c.t, when, 0.5, phase);
+        gainXp(state, C.best("speech"), "speech", 2);
+        text = `${who} met a traveller near ${where} and traded ${Object.entries(o.want).map(([k2, q]) => `${q} ${k2}`).join(", ")} for ${o.text}.`;
         level = "good";
-      } else text = `${s.name} met a traveller near ${where}; no trade${timeout}.`;
+      } else text = `${who} met a traveller near ${where}; no trade${timeout}.`;
       pop = "?";
       break;
     }
     case "find": {
       const F = TRIP_FINDS[ev.find] || TRIP_FINDS[0];
       t.bonus = t.bonus || {};
-      let what = "";
-      if (F.item) { (t.bonus.items = t.bonus.items || []).push(lootItem(F.item, "site", rng)); what = `a ${GEAR[F.item].name.toLowerCase()}`; }
-      else for (const [k2, [a, b]] of Object.entries(F.give)) { const q = rng.int(a, b) + (t.job === "scavenge" && rng.next() < skill(s, "scavenging") / 20 ? 1 : 0); t.bonus[k2] = (t.bonus[k2] || 0) + q; what = F.text(q); }
+      let what = "", carrier = null;
+      if (F.item) {
+        const it = lootItem(F.item, "site", rng);
+        carrier = many ? shareLoot(state, crew.map((c) => c.s), it, ev.seed) : null; // teamwork.js: one of them by the dice, room permitting
+        if (!carrier) (t.bonus.items = t.bonus.items || []).push(it);
+        what = `a ${GEAR[F.item].name.toLowerCase()}`;
+      } else for (const [k2, [a, b]] of Object.entries(F.give)) { const q = rng.int(a, b) + (t.job === "scavenge" && rng.next() < C.sk("scavenging") / 20 ? 1 : 0); t.bonus[k2] = (t.bonus[k2] || 0) + q; what = F.text(q); }
       st.found++;
-      text = `${s.name} found ${what} near ${where}.`;
+      text = `${who} found ${what} near ${where}${carrier ? `; ${first(carrier)} carries it` : ""}.`;
       level = "good";
       pop = "+";
       break;
     }
   }
-  if (!s.alive) return text;
+  const alive = crew.filter((c) => c.s.alive);
+  if (!alive.length) return text;
   log(state, text, level);
-  alertPop(state, base, s, t, text, pop);
+  alertPop(state, base, alive[0].s, t, text, pop);
   ev.text = text;
+  releaseCrew(C);
   return text;
 }
 // The map's "!" over the walker (ui/workermap.js): base.tripAlerts [{ t, sid, tile, mark, text }].
@@ -723,6 +866,20 @@ export function creditBonus(state, base, t, st) {
   delete t.bonus;
   return out.join(" ");
 }
+// A crew's finds carried home by the one the dice gave them to (teamwork.js shareLoot: item.tripFind) go into the
+// armory as they get home (jobtrips.js credit), as a lone worker's find does. Returns "+knife" for the map's pop, or "".
+export function bankFinds(state, base, s) {
+  const out = [];
+  for (const x of carriedSpots(s)) {
+    if (!x.item || !x.item.tripFind) continue;
+    const it = x.item;
+    x.take();
+    delete it.tripFind;
+    base.armory.push(it);
+    out.push(`+${it.name.toLowerCase()}`);
+  }
+  return out.join(" ");
+}
 
 // Midnight (economy.js baseDaily): the day's gunshots on the land: the base's Heat (base.tripNoise, hordes.js baseHeat),
 // and each roaming horde within HUNT.drawRange of a tile with shots may turn toward it (HUNT.drawChance × the quiet of
@@ -742,4 +899,5 @@ export function tripEventsDaily(state, base) {
   return drawn;
 }
 // The activity line while a card holds them: "Facing a bear", else "".
-export const holdText = (t) => (t && t.ev && t.ev.pending ? t.ev.what || "Holding still" : "");
+// A crew's mate held with them (teamwork.js t.follow): the same words.
+export const holdText = (t) => (t && t.ev && t.ev.pending ? t.ev.what || "Holding still" : t && t.follow && t.follow.what ? t.follow.what : "");

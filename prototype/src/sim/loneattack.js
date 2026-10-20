@@ -24,6 +24,7 @@ import { survivorById, log, hub } from "./world.js";
 import { partyMembers, partyTile, tileLabel } from "./parties.js";
 import { zombieToughness } from "./hives.js";
 import { settleBattle } from "./tripevents.js";
+import { namesText } from "./teamwork.js"; // a job trip's crew attacked together
 
 export const LONE = {
   ROAD: 0.9,          // the straggler card's weight among a team's travel cards (× 1 + 2 × Infection)
@@ -60,26 +61,32 @@ export const beastWords = (kind, n) => { const w = ZTYPES[kind].name.toLowerCase
 
 // ---------- the card ----------
 // o: { where, title?, text, byNumbers: { label, hint, resolve }, setup (combat.js: the lone fight's setup; its handler
-// writes the outcome back), tags (fields on the card: a trip's tripEv / tripEvAt, a team's partyId) }.
+// writes the outcome back), tags (fields on the card: a trip's tripEv / tripEvAt, a team's partyId), crew? (a job trip's
+// crew, teamwork.js: everyone attacked together, named on the card) }.
 export function attackCard(state, s, enemy, o) {
-  const name = first(s);
+  const many = Array.isArray(o.crew) && o.crew.length > 1;
+  const name = many ? namesText(o.crew) : first(s);
   const fight = (st) => { startCombat(st, o.setup); return ""; };
-  const what = `${name}, alone, with what they carry`;
+  const what = many ? `${name}, together, each with what they carry` : `${name}, alone, with what they carry`;
   const choices = [
     { label: "Save and fight", hint: `The game is saved as the fight opens, then the battle map: ${what}.`, uiAction: { type: "saveFight", name: `Attacked: ${name}, ${o.where}` }, ai: () => 1, resolve: fight },
     { label: "Fight", hint: `The battle map: ${what}.`, ai: () => 1, resolve: fight },
     { label: o.byNumbers.label, hint: o.byNumbers.hint, default: true, ai: () => 5, resolve: o.byNumbers.resolve },
   ];
-  return { title: o.title || `${name} was attacked by ${enemy.name}`, text: o.text, where: o.where, attack: { sid: s.id, enemy: enemy.name }, ...(o.tags || {}), choices };
+  return { title: o.title || `${name} ${many ? "were" : "was"} attacked by ${enemy.name}`, text: o.text, where: o.where, attack: { sid: s.id, enemy: enemy.name, ...(many ? { sids: o.crew.map((x) => x.id) } : {}) }, ...(o.tags || {}), choices };
 }
 
 // ---------- a worker on a job trip (tripevents.js raiseCard) ----------
 // The setup of the worker's fight: at the trip's tile, the base's for the loot and the record, but afield: no stock
-// to draw on, only what is on them (combat.js combatants: named fighters take part wherever they stand).
-export function tripAttackSetup(state, base, s, t, enemy) {
+// to draw on, only what is on them (combat.js combatants: named fighters take part wherever they stand). crew (teamwork.js:
+// "attacked together"): everyone of the crew on the map, each with what they carry; the dead already scaled to them.
+export function tripAttackSetup(state, base, s, t, enemy, crew = [s]) {
+  const ids = crew.map((x) => x.id);
+  const many = ids.length > 1;
   return {
-    tile: t.at, baseId: base.id, fighterIds: [s.id], afield: true, enemy,
-    ambush: "enemy", canRetreat: true, handler: "tripAttack", context: { sid: s.id, baseId: base.id, at: t.ev.at, lone: true },
+    tile: t.at, baseId: base.id, fighterIds: ids, afield: true, enemy,
+    ambush: "enemy", canRetreat: true, handler: "tripAttack", context: { sid: s.id, baseId: base.id, at: t.ev.at, lone: !many, ...(many ? { sids: ids } : {}) },
+    ...(many ? { intro: `${namesText(crew, true)} fight together, out on the land with what they carry.` } : {}),
   };
 }
 function onTripAttack(state, result, setup) {
@@ -87,7 +94,7 @@ function onTripAttack(state, result, setup) {
   const s = survivorById(state, c.sid);
   const base = state.bases.find((b) => b.id === c.baseId);
   const t = s && s.trip;
-  if (!base || !t || !t.ev || t.ev.at !== c.at) { if (s && s.alive) log(state, `${s.name} fought off ${setup.enemy.name}.`, "info"); return; }
+  if (!base || !t || !t.ev || t.ev.at !== c.at) { const live = (c.sids || [c.sid]).map((id) => survivorById(state, id)).filter((x) => x && x.alive); if (live.length) log(state, `${namesText(live, true)} fought off ${setup.enemy.name}.`, "info"); return; }
   settleBattle(state, base, s, t, result, setup.enemy); // tripevents.js: the trip goes on, is cut short, or ended with them
 }
 registerCombatHandler("tripAttack", onTripAttack);

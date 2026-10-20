@@ -3887,6 +3887,7 @@ export function createBattle(state, setup) {
 
   const foeName = e.name || e.kind;
   say(b, `Battle at ${b.place} against ${foeName}.`, "info");
+  if (setup.intro) say(b, setup.intro, "info"); // a line of its own (loneattack.js: a job trip's crew attacked together)
   if (setup.ambush === "player") say(b, "You have the drop on them. They have not seen you yet. Gunfire will alert them; melee is silent.", "good");
   // A base battle has its own start for a surprise (defenceplan.js openStart: an unwatched night finds everyone in
   // the buildings and the attackers move first), so no volley on top of it.

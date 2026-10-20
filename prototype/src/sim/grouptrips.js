@@ -21,6 +21,7 @@ import { woundGroup } from "./groupcare.js";
 import { hash01 } from "./skills.js";
 import { localId } from "./world.js"; // ids are process-wide: the dice take the world-local one
 import { FACTION_TYPES } from "./data.js";
+import { TEAM, groupCrew } from "./teamwork.js"; // teamwork: their outdoor workers out in crews, as yours
 
 // foodRef / woodRef: a usual base's land score (measured over 60 worlds' group bases: the median), so the median base
 // keeps its food and wood as before.
@@ -97,7 +98,9 @@ export function groupWalkers(state, f, tile, t) {
 // arsenal.js kitFactor, at least gearMin): a usual group's 1, a commune's about 0.6 (2.8× the deaths), a military
 // group's about 2 (a quarter). Calibrated on yours: an ungeared worker of yours meets death about 2.7e-5 of their days
 // out (tools/tripeventstest.js), a commune's the same. The trip's own dice: a hash of the seed, the group and the day.
-// Returns { out, dead, wounded }.
+// Teamwork (teamwork.js, as yours: a crew meets trouble together): a base whose people out make crews of two or more a
+// job (groupCrew) loses TEAM.aiRisk as many and comes home with TEAM.aiWound the wounds.
+// Returns { out, dead, wounded, crew }.
 export const groupGear = (f) => Math.max(GROUP_TRIPS.gearMin, ((FACTION_TYPES[f.type] && FACTION_TYPES[f.type].arms) || 1) * kitFactor(f));
 export function groupTripLosses(state, f, d = Math.floor(state.hour / 24)) {
   const res = { out: 0, dead: 0, wounded: 0 };
@@ -106,9 +109,12 @@ export function groupTripLosses(state, f, d = Math.floor(state.hour / 24)) {
   const out = f.pop * GROUP_TRIPS.outShare * free;
   if (!(out > 0)) return res;
   const g = groupGear(f);
+  const crew = groupCrew(f, GROUP_TRIPS.outShare);
+  const together = crew >= 2;
   res.out = Math.round(out * 10) / 10;
-  if (hash01("grouptripdead", state.seed, localId(state, f.id), d) < out * GROUP_TRIPS.lossDay / (g * g) && f.pop > 1) { f.pop -= 1; res.dead = 1; }
-  const w = out * GROUP_TRIPS.woundDay / g;
+  res.crew = crew;
+  if (hash01("grouptripdead", state.seed, localId(state, f.id), d) < out * GROUP_TRIPS.lossDay / (g * g) * (together ? TEAM.aiRisk : 1) && f.pop > 1) { f.pop -= 1; res.dead = 1; }
+  const w = out * GROUP_TRIPS.woundDay / g * (together ? TEAM.aiWound : 1);
   res.wounded = Math.floor(w) + (hash01("grouptripwound", state.seed, localId(state, f.id), d) < w - Math.floor(w) ? 1 : 0);
   if (res.wounded) woundGroup(f, res.wounded);
   f.tripLoss = { dead: (f.tripLoss && f.tripLoss.dead || 0) + res.dead, wounded: (f.tripLoss && f.tripLoss.wounded || 0) + res.wounded };

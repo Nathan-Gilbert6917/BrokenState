@@ -10,6 +10,7 @@
 // (dotted, to where they drop it: the base, or a stockpile when sim/fieldworks takes the load there). Trouble on the
 // way (sim/tripevents.js base.tripAlerts): a "!" over them for a little while ("?" for a small thing, "+" a find).
 import { tripState, outWorkers } from "../sim/jobtrips.js";
+import { crewKey } from "../sim/teamwork.js"; // a crew out together: one figure
 import { tripRoute, TRIP_JOBS, shoreOf } from "../sim/tripland.js";
 import { TRIP_EV } from "../sim/tripevents.js";
 import { groupWalkers } from "../sim/grouptrips.js";
@@ -173,8 +174,11 @@ export function drawWorkers(ctx, state, H) {
     if (!H.near(bx, by)) continue;
     const list = outWorkers(state, base, H.t);
     if (list.length) {
-      // One figure each, or a few in groups (job and what they are at, then job alone) with a ×N tag.
-      let figs = list.map((x) => ({ key: x.s.id, members: [x] }));
+      // One figure each (a crew out together, sim/teamwork.js: one figure for them all), or a few in groups (job and what
+      // they are at, then job alone) with a ×N tag.
+      const crews = new Map();
+      for (const x of list) { const k = x.st.mates ? `crew:${crewKey(x.trip)}:${x.st.phase}` : `p:${x.s.id}`; if (!crews.has(k)) crews.set(k, { key: k, members: [] }); crews.get(k).members.push(x); }
+      let figs = [...crews.values()];
       for (const keyOf of [(x) => `${x.trip.job}:${x.st.phase}:${x.trip.tile}`, (x) => `${x.trip.job}:${x.st.phase}`, (x) => x.trip.job]) {
         if (figs.length <= MAX_FIGS) break;
         const m = new Map();
@@ -204,7 +208,8 @@ export function drawWorkers(ctx, state, H) {
         if (held || al) { alertMark(ctx, pl.x, pl.y - h * 0.5 - (pl.work != null ? 14 : 6) * s, held ? "!" : al.mark, s, !!held); moving = true; }
         const lines = fig.members.slice(0, 6).map((x) => `<b>${esc(x.s.name)}</b> <span class="muted">· ${esc(ROLES[x.trip.job] ? ROLES[x.trip.job].name : x.trip.job)}</span><br>${esc(x.st.text)}`);
         if (fig.members.length > 6) lines.push(`<span class="muted">and ${fig.members.length - 6} more</span>`);
-        hits.push({ x: pl.x, y: pl.y, r: Math.max(6, w * 0.6), html: `<span style="color:#cfe2f7">Out from ${esc(base.name)}</span><br>${lines.join("<br>")}`, baseId: base.id, sid: lead.s.id });
+        const together = fig.key.startsWith("crew:") ? `<br><span class="muted">🤝 Out together: ${esc(fig.members.map((x) => first(x.s)).join(", "))}</span>` : "";
+        hits.push({ x: pl.x, y: pl.y, r: Math.max(6, w * 0.6), html: `<span style="color:#cfe2f7">Out from ${esc(base.name)}</span>${together}<br>${lines.join("<br>")}`, baseId: base.id, sid: lead.s.id });
       }
     }
     // Trouble where nobody walks any more (a death out there): its mark on the tile for a while.

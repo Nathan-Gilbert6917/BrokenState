@@ -133,6 +133,7 @@
 // - Old saves (no state.groupWorks) and the hardcore military (an army base built before the fall) count as built
 //   up: none of this changes them. tools/barestarttest.js.
 import { foodIn, takeFood } from "./foods.js"; // days of food (every kind)
+import { teamMult } from "./teamwork.js"; // teamwork: a crew of two or more fells a build's wood faster
 import { groupFetchedWater, groupWoodLand } from "./grouptrips.js"; // groupWoodLand: the wood land their bases hold (woodwork: they cut a build's wood) // water carried in from the water a base holds (as your Fetch water)
 import { day, skill } from "./world.js";
 import { MEAL_WORK_SHARE } from "./meals.js"; // their crews stop for breakfast, lunch and dinner too (21 of 24 hours)
@@ -816,7 +817,8 @@ function startWork(state, f) {
     else if (k === "wood") { const pay = Math.max(0, Math.min(v, Math.floor((f.stock.wood || 0) - f.pop * W.WOOD.keepHead))); f.stock.wood = (f.stock.wood || 0) - pay; cut = v - pay; }
     else f.stock[k] -= v;
   }
-  const cutDays = cut > 0 ? cut / (W.WOOD.cutDay * Math.max(W.WOOD.landMin, groupWoodLand(state, f))) : 0;
+  // teamwork.js: the felling goes as fast as a crew's (teamMult on its crew-days: a crew of two or more a day, as yours).
+  const cutDays = cut > 0 ? cut / (W.WOOD.cutDay * Math.max(W.WOOD.landMin, groupWoodLand(state, f)) * teamMult("wood", Math.floor(Math.max(1, workingPeople(f) / W.CREW)))) : 0;
   f.job = { tile: next.tile, type: next.type, left: def.work * (can ? 1 : W.SALVAGE) + cutDays, paid: can, ...(cut > 0 ? { cut } : {}) };
   return true;
 }
