@@ -8,6 +8,7 @@
 // (asks, then calls the raid off). Buttons: data-action="cb-plan" (ui/combat.js combatAction → planAction).
 import { planOf, planOpen, scoutChoices, scoutText, nightTradeoff, sendScout, waitNight, enterFrom, callOff, unstage, refit, planParty, SCOUT, SIDES, NIGHT_FROM } from "../sim/raidplan.js";
 import { CELL } from "../sim/combat.js";
+import { mapSizeText, bigMapNote } from "../sim/battlesize.js"; // the map's size in the header, and what a big one brings
 import { teamsTogether } from "../sim/teammeet.js"; // your other teams on the site's tile: goods handed across before going in
 import { TEAMINV_ACTIONS } from "./teaminv.js"; // the team inventory window (every member and the cargo)
 import { TEAMMEET_ACTIONS } from "./teammeet.js"; // Teams together (goods between your teams on one tile)
@@ -25,6 +26,7 @@ function campLine(state, b, scouted) {
 }
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
 const pct = (v) => `${Math.round(v * 100)}%`;
 const first = (s) => String(s || "").split(" ")[0];
 const SIDE_LABEL = { north: "North", east: "East", south: "South", west: "West" };
@@ -133,7 +135,8 @@ export function planModalHtml(state) {
   const P = planOf(b);
   const R = b.raid;
   const scouted = !!(P.scout && P.scout.ok);
-  let html = `<div class="box rplanbox"><div class="spread"><h1>Before you go in</h1><span class="muted">${esc(b.place)} · ${hh(hourOfDay(state))}${b.night ? ", night" : ", day"}${P.hours ? ` · ${P.hours} h spent` : ""}</span></div>
+  let html = `<div class="box rplanbox"><div class="spread"><h1>Before you go in</h1><span class="muted"${tip(bigMapNote(b.w, b.h))}>${esc(b.place)} · ${esc(mapSizeText(b.w, b.h))} · ${hh(hourOfDay(state))}${b.night ? ", night" : ", day"}${P.hours ? ` · ${P.hours} h spent` : ""}</span></div>
+    ${bigMapNote(b.w, b.h) ? `<div class="small muted" style="margin-bottom:0.3rem">${esc(bigMapNote(b.w, b.h))}</div>` : ""}
     <div class="small muted" style="margin-bottom:0.5rem">Nobody is on the map yet. Send a scout first, ${b.night ? "" : "wait for night, "}then pick the side to go in from${P.sides.length > 1 ? "" : " (one way in here)"}; or leave. You can go in with or without a scout: a scout only tells you more.</div>`;
   const url = previewUrl(b);
   if (url) html += `<img class="rplanmap" src="${url}" alt="The site" style="display:block;margin:0 auto;height:9.5rem;width:auto;max-width:100%;object-fit:contain;image-rendering:pixelated;border:1px solid var(--line);border-radius:4px" data-tip="${esc(`The site from above, under the fog of war. Green: the ways in and out${R ? " (north at the top)" : ""}. ${scouted ? "What the scout saw: the dead (red) and their people (orange) where they stood, the containers (yellow) and locked doors (dark orange) within the circle." : "Send a scout to see who is where."}`)}">`;

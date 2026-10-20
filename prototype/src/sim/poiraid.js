@@ -79,7 +79,7 @@ export function poiRows(state, p, tile = partyTile(p)) {
       pool: poiPool(t, i), band: poiBand(t, i), bandName: poiBandName(t, i), stripped: poiBand(t, i) === 3,
       visits: poiVisitText(state, t, i), threat: est, threatText: poiThreatText(state, t, i),
       cont: poiContainerNote(state, t, i), raiding: raidingNow(state, t, i), score: poiScore(state, t, i), camp: campText(state, t, i),
-      buildings: isSitePoi(t, i) ? buildingOptions(t) : null, // the site's buildings and the street (null: one building, or none)
+      buildings: isSitePoi(t, i) ? buildingOptions(t, state) : null, // the site's buildings and the street (null: one building, or none)
     };
   });
 }

@@ -20,8 +20,9 @@ import { launchExpedition } from "../src/sim/parties.js";
 import { createBattle, autoPlayerTurn, runEnemyPhase, closeCombat, registerCombatHandler, active, combatAct, CELL, endPlayerTurn } from "../src/sim/combat.js";
 import {
   SIZE_CLASSES, CLASS_KEYS, SIZES, CONTACT, COVER, CLEAR, dimsAt, sizeClass, siteScale, raidDims, fieldScale, assaultDims, baseScale,
-  coverShare, coverTarget, clearEnough, raidAreaRange, raidDeadScale, baseSide, BASE_TIER, raidMinDims, raidMaxDims, buildingTarget } from "../src/sim/battlesize.js";
+  coverShare, coverTarget, clearEnough, raidAreaRange, raidDeadScale, baseSide, BASE_TIER, raidMinDims, raidMaxDims, buildingTarget, RAID } from "../src/sim/battlesize.js";
 import { yardDims, interiorSize, INTERIOR, structuresOf } from "../src/sim/interior.js";
+import { BIG, buildingDeadScale, streetDeadScale, raidHeatRate, raidLootShare, mapSizeText, bigMapNote } from "../src/sim/battlesize.js";
 import "../src/sim/hives.js";
 import "../src/sim/conquest.js";
 import { cpus } from "node:os";
@@ -283,7 +284,7 @@ section("Content scales with the map");
   const gas = per("gas"), mkt = per("supermarket"), hosp = per("hospital");
   check(gas.areas < mkt.areas && mkt.areas < hosp.areas && gas.boxes < hosp.boxes && gas.dead <= hosp.dead, // a building's dead are capped (buildingmaps.js BMAP.DEAD_SCALE)
     `raids: a gas station ${gas.w}×${gas.h} ${gas.areas} areas, ${gas.boxes} containers, ${gas.dead} dead; a supermarket ${mkt.w}×${mkt.h} ${mkt.areas}, ${mkt.boxes}, ${mkt.dead}; a hospital ${hosp.w}×${hosp.h} ${hosp.areas}, ${hosp.boxes}, ${hosp.dead} (6 of the dead asked for)`);
-  check(raidAreaRange(24, 18)[1] < raidAreaRange(48, 34)[0] && raidAreaRange(56, 42)[0] > raidAreaRange(48, 34)[0] && raidDeadScale(24, 18) < 1 && raidDeadScale(40, 30) > 1, `rooms by size ${CLASS_KEYS.map((k) => `${k} ${raidAreaRange(SIZE_CLASSES[k].w, SIZE_CLASSES[k].h).join("–")}`).join(", ")}, the largest raid map 56×42 ${raidAreaRange(56, 42).join("–")}; the dead ×${raidDeadScale(24, 18).toFixed(2)} on Small to ×${raidDeadScale(48, 34).toFixed(2)} on Extra-large`);
+  check(raidAreaRange(24, 18)[1] < raidAreaRange(48, 34)[0] && raidAreaRange(56, 42)[0] > raidAreaRange(48, 34)[0] && raidDeadScale(24, 18) < 1 && raidDeadScale(40, 30) > 1, `rooms by size ${CLASS_KEYS.map((k) => `${k} ${raidAreaRange(SIZE_CLASSES[k].w, SIZE_CLASSES[k].h).join("–")}`).join(", ")}, the largest raid map 56×42 ${raidAreaRange(56, 42).join("–")}; the dead ×${raidDeadScale(24, 18).toFixed(2)} on Small to ×${raidDeadScale(48, 34).toFixed(2)} on Extra-large, ×${raidDeadScale(56, 42).toFixed(2)} on the largest raid map`);
   // Field maps: cover on open plains on every size (the props that top them up).
   const shares = [];
   for (const players of [3, 6, 8]) {
@@ -293,6 +294,30 @@ section("Content scales with the map");
     if (coverShare(b.cells, b.w, b.h, COVER.R, b.reach).share < COVER.OPEN - 0.04) shares.push("LOW");
   }
   check(!shares.includes("LOW"), `open plains topped up with cover on every size (${shares.join(", ")}; target ${Math.round(COVER.OPEN * 100)}%)`);
+}
+
+// ---------- 3b. a map past the old Large ----------
+section("A map past the old Large (BIG): the dead, Heat, the loot and the ways out grow with the ground, less than it");
+{
+  check(raidHeatRate(40, 30) === 1 && raidLootShare(40, 30) === 1 && buildingDeadScale(0.85, 40, 30) === 0.85 && raidHeatRate(24, 18) === 1 && raidLootShare(32, 24) === 1,
+    "at or under the old Large 40×30 every factor is exactly 1 (nothing on the old sizes changes)");
+  const dead = raidDeadScale(56, 42), inside = buildingDeadScale(0.85, 56, 42), street = streetDeadScale(56, 42);
+  check(raidDeadScale(40, 30) < 1.4 && dead > raidDeadScale(40, 30) * 1.4 && dead <= RAID.DEAD_MAX && inside > 1.2 && inside <= BIG.DEAD_MAX && street > 1.2 && streetDeadScale(48, 34) === 1,
+    `more dead on the 56×42 map: a street map ×${dead.toFixed(2)} (×${raidDeadScale(40, 30).toFixed(2)} at 40×30), a building's ×${inside.toFixed(2)} (×0.85), a neighbourhood's ×${street.toFixed(2)}`);
+  check(raidHeatRate(56, 42) < 0.8 && raidHeatRate(56, 42) > raidHeatRate(80, 60) && raidHeatRate(200, 150) === BIG.HEAT_MIN && raidLootShare(56, 42) < 0.75 && raidLootShare(56, 42) > raidLootShare(80, 60) && raidLootShare(300, 200) === BIG.LOOT_MIN,
+    `Heat's base rise ×${raidHeatRate(56, 42).toFixed(2)} and a container's find ×${raidLootShare(56, 42).toFixed(2)} on 56×42 (×${raidHeatRate(80, 60).toFixed(2)} / ×${raidLootShare(80, 60).toFixed(2)} on 80×60), never under ×${BIG.HEAT_MIN} / ×${BIG.LOOT_MIN}`);
+  check(mapSizeText(56, 42) === "Extra-large, 56 × 42" && bigMapNote(56, 42) !== "" && bigMapNote(40, 30) === "", "the plan window's words: the size, and a note for a big map");
+  const st = world(SEED, 3), gas = raid(st, "farm", [{ kind: "zombies", count: 4, power: 2 }]), city = raid(world(SEED, 3), "city", [{ kind: "zombies", count: 8, power: 2 }]);
+  check(gas.raid.zones.length === 3 && city.raid.zones.length === 4 && city.raid.zones.some((z) => z.side === "north") && city.raid.zones.some((z) => z.side === "south"),
+    `a way out on each long side of a big street map (${city.raid.zones.map((z) => z.side).join(", ")}; a 40×30 farm's ${gas.raid.zones.length})`);
+  // The dead that come in at Heat come in near your people.
+  const st2 = world(SEED + 1, 3), b = raid(st2, "city", [{ kind: "zombies", count: 4, power: 2 }]);
+  st2.combat = b;
+  b.raid.heat = 24.9; b.raid.stage = 0;
+  const before = b.units.length;
+  inBrowser(() => { endPlayerTurn(st2); runEnemyPhase(st2); });
+  const arrivals = b.units.filter((u) => u.reinforcement), P = b.units.filter((u) => u.side === "player" && !u.dead);
+  check(b.units.length > before && arrivals.length > 0 && arrivals.every((u) => P.some((p) => Math.hypot(p.x - u.x, p.y - u.y) <= BIG.NEAR + 1)), `${arrivals.length} of the dead come in at Heat's first stage within ${BIG.NEAR} tiles of your people on a ${b.w}×${b.h} map`);
 }
 
 // ---------- 4. the anti-slog ends ----------

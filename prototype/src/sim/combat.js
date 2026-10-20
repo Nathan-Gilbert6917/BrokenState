@@ -78,7 +78,7 @@ import { bonebackMult, afterHit, onDeath, climbOver, sowerRound, terrorRuns } fr
 import { placeBodies, spotCheck, wakeNear, sleeperDies, burnBodies } from "./sleepers.js"; // bodies on the ground, the Sleepers among them
 import { stirBodies, carrierRound, burst, swarmHit, swarmBite, crush, tapRefusal, tap, pickUp, putDown, stowBody, botCrush, turnedBody, walkingBody, walkingBox, walksOn, turnedName, turnedLine, dropBodyBox, endBodies, placeWalking } from "./carriers.js"; // the Carrier raises the human dead; its worm swarm; bodies carried, shot, burnt; the walking loot
 import { hasWorm, WORM } from "./worm.js"; // the worm in a living person (half the healing while it is in them)
-import { fieldDims, raidDims, densify, coverTarget, spawnRules, clearEnough, fledFarEnough, raidAreaTypes, raidDeadScale, roomBoxes, RAID as RAID_SIZE, CONTACT } from "./battlesize.js"; // map sizes by context, cover, spawns, the anti-slog ends
+import { fieldDims, raidDims, densify, coverTarget, spawnRules, clearEnough, fledFarEnough, raidAreaTypes, raidDeadScale, roomBoxes, raidHeatRate, raidLootShare, BIG as BIG_RAID, RAID as RAID_SIZE, CONTACT } from "./battlesize.js"; // map sizes by context, cover, spawns, the anti-slog ends
 // The third side (neutral survivors, military squads: wanderers.js brings them, thirdside.js runs them). Every hook
 // below is marked "thirdside.js"; a battle without a third side takes exactly the old paths.
 import { volFought } from "./volunteers.js"; // volunteers: an allied group's people with your team, moved by their AI (volunteerTurn below)
@@ -697,7 +697,7 @@ export const CRIT_MULT = 2;
 // the Assassin perk makes a blow on the unaware always critical. Lowered from 40 / 15 / 5 / 10 (a crit is ×2).
 export const CRIT = { EXPOSED: 25, DEAD: 10, COVER: 5, MELEE: 8 };
 const BLEED_TURNS = 3;
-const MAX_PLAYERS = 8, MAX_ENEMIES = 20;
+const MAX_PLAYERS = 8, MAX_ENEMIES = 20, MAX_RAID_DEAD = 40; // MAX_RAID_DEAD: a group of the dead on a raid map (battlesize.js raidDeadScale: up to twice the usual on a big map)
 
 // walk: can stand there. cover: 0 none, 1 half, 2 full. los: blocks line of sight (up to tall, 1 by default: a
 // viewer high enough sees over it, verticality below). h: the height a unit standing there is raised to (a cell can
@@ -6531,7 +6531,8 @@ function genRaidMap(rng, tile, areaTypes, withVehicle, extra = {}) {
   const zoneSpots = rng.shuffle([
     { side: "west", x0: 0, y0: rng.int(2, H - 5) },
     { side: "east", x0: W - 3, y0: rng.int(2, H - 5) },
-    ...(t.bridge ? [] : [{ side: rng.chance(0.5) ? "north" : "south", x0: rng.int(8, W - 11), y0: 0 }]),
+    // On a map past the old Large (battlesize.js BIG) a way out on both long sides: a long walk to the one edge is a slog.
+    ...(t.bridge ? [] : W * H > BIG_RAID.FROM ? [{ side: "north", x0: rng.int(8, W - 11), y0: 0 }, { side: "south", x0: rng.int(8, W - 11), y0: 0 }] : [{ side: rng.chance(0.5) ? "north" : "south", x0: rng.int(8, W - 11), y0: 0 }]),
   ]);
   zoneSpots.sort((a, c) => (a.side === "west" ? -1 : c.side === "west" ? 1 : 0));
   for (const zs of zoneSpots) {
@@ -6816,7 +6817,7 @@ export function createRaid(state, setup) {
       interior: pick ? { id: pick.id, key: pick.key, name: pick.name } : null, plan: pick ? map.plan : null,
       doors: pick ? map.lockedDoors.map((d, i) => ({ id: i + 1, x: d.x, y: d.y, f: d.f || 0, area: d.area, exit: !!d.exit, botSkip: !!d.exit, lock: { kind: d.kind, open: false, tries: 0, ...(d.dk ? { dk: d.dk } : {}) } })) : undefined, // dk: the door's kind (locks.js openOdds)
       // Several buildings here and the raid started from the State Map: the choice is offered until anyone acts.
-      choose: !pick && setup.raid && setup.raid.choose && !setup.raid.building ? buildingOptions(tile) : null,
+      choose: !pick && setup.raid && setup.raid.choose && !setup.raid.building ? buildingOptions(tile, state) : null,
       camp: map.camp || null, // campsite.js: the camp (its fire, its tents, its state)
     },
   };
@@ -6868,7 +6869,7 @@ export function createRaid(state, setup) {
   for (const g of pick ? [] : groups) {
     // The dead scale with the street map's size (battlesize.js raidDeadScale: more of them over a city center); a
     // campsite's own dead (campsite.js campRoster, g.camp) are the camp's count whatever the map.
-    const count = Math.max(0, Math.min(MAX_ENEMIES, Math.round((g.count || 0) * (g.kind === "zombies" && !g.camp ? raidDeadScale(W, H) : 1))));
+    const count = Math.max(0, Math.min(g.kind === "zombies" ? MAX_RAID_DEAD : MAX_ENEMIES, Math.round((g.count || 0) * (g.kind === "zombies" && !g.camp ? raidDeadScale(W, H) : 1))));
     if (!count) continue;
     if (g.kind === "zombies") {
       const zl = siteList(rng, g.mix, count); // the armoured dead of a military site or a police station (deadsoldiers.js); the bred kinds met exploring (hivetech.js siteSpecials)
@@ -7017,7 +7018,7 @@ function raidTurn(b) {
   const rng = b.rng;
   const noise = b.noise;
   b.noise = 0;
-  R.heat = Math.min(100, R.heat + 1.2 + noise * 1.0 + b.infection * 0.6);
+  R.heat = Math.min(100, R.heat + 1.2 * raidHeatRate(b.w, b.h) + noise * 1.0 + b.infection * 0.6); // a map past the old Large: the clock runs slower (battlesize.js BIG)
   const stage = Math.min(3, Math.floor(R.heat / 25));
   if (stage > R.stage) {
     R.stage = stage;
@@ -7039,6 +7040,10 @@ function spawnWave(b, n) {
     if (players.some((p) => dist(p.x, p.y, x, y) < 9)) continue;
     cells.push([x, y]);
   }
+  // A map past the old Large: they come in where the fight is, not from the far side of it (battlesize.js BIG.NEAR),
+  // when enough edge cells are that near.
+  const near = W * H > BIG_RAID.FROM && players.length ? cells.filter(([x, y]) => players.some((p) => dist(p.x, p.y, x, y) <= BIG_RAID.NEAR)) : [];
+  if (near.length >= n) cells.splice(0, cells.length, ...near);
   rng.shuffle(cells);
   const made = Math.min(n, cells.length);
   for (let i = 0; i < made; i++) {
@@ -7121,7 +7126,7 @@ export function searchBox(state, b, u, box, open = false, quick = false) {
   const party = state.parties.find((x) => x.id === b.setup.partyId);
   if (u.xpT && !box.contents) u.xpT.boxes++; // skills.js: Scavenging XP for each container opened
   const rich = box.kind === "body" ? 1 : R.richness * Math.min(FLOOR_RICH.cap, Math.pow(FLOOR_RICH.perFloor, box.f || 0)) * (box.rich || 1); // upper storeys are less picked over (buildingmaps.js); a nest's floor richer still (floorfolk.js)
-  const reward = box.kind === "body" ? 1 : R.reward ?? 1; // buildingmaps.js rewardMult: city sites pay more, the countryside less
+  const reward = box.kind === "body" ? 1 : (R.reward ?? 1) * (box.truck ? 1 : raidLootShare(b.w, b.h)); // buildingmaps.js rewardMult: city sites pay more, the countryside less; a map past the old Large has more containers, each holds a little less (battlesize.js BIG)
   // Roll what is inside (once); anything that does not fit stays in the container.
   if (!box.contents) {
     const sup = {}, gear = [];

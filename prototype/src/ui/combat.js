@@ -2233,7 +2233,7 @@ function kitWarnHtml(state, b) {
 function chooseHtml(b) {
   const list = b.raid.choose || [];
   return `<div class="small cbmsg cbconfirm"><b class="good">Where do you go in?</b> Several buildings stand at ${esc(b.place)}. Each has its own map: rooms, doors, windows and its own ways out. Or search the street (this map). The choice is gone once anyone acts.
-    <div class="cbactions" style="margin-top:0.35rem">${list.map((o) => `<button data-action="cb-act" data-v="building" data-k="${esc(o.id)}" data-tip="${esc(`${o.name}${o.size ? ` (${o.size}, ${o.rooms} rooms)` : ""}. ${o.hint}`)}">${esc(o.name)}${o.size ? ` <span class="muted">${o.size}</span>` : ""}</button>`).join("")}</div></div>`;
+    <div class="cbactions" style="margin-top:0.35rem">${list.map((o) => `<button data-action="cb-act" data-v="building" data-k="${esc(o.id)}" data-tip="${esc(`${o.name}${o.size ? ` (${o.size}, ${o.rooms} rooms)` : ""}. ${o.hint}${o.map ? ` The map: ${o.map.replace(/\+$/, "")} tiles${/\+$/.test(o.map) ? " at least (the floor plan and the grounds round it)" : ""}.` : ""}`)}">${esc(o.name)}${o.size || o.map ? ` <span class="muted">${[o.size, o.map].filter(Boolean).join(", ")}</span>` : ""}</button>`).join("")}</div></div>`;
 }
 
 // ---------- the worm (sim/carriers.js) ----------

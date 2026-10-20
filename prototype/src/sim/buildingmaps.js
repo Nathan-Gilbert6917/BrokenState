@@ -45,7 +45,7 @@ import { armPerson } from "./fighters.js";
 import { armFromArsenal } from "./arsenal.js"; // a person given the weapon the occupants list names
 import { noiseAt, detectRange, isBehind, throwablesOf, THROWABLES } from "./stealth.js";
 import { applyZType, siteList } from "./zombietypes.js";
-import { fitMargins, buildingTarget, densifyOutside, densify, coverTarget, SIZE_CLASSES } from "./battlesize.js";
+import { fitMargins, buildingTarget, densifyOutside, densify, coverTarget, buildingDeadScale, streetDeadScale, raidMaxDims, raidDims } from "./battlesize.js";
 import { rollWin, winMixOf, windowOpen } from "./windows.js"; // the windows' states (open, locked, fixed), a throw through an open one
 
 export const BMAP = {
@@ -57,7 +57,7 @@ export const BMAP = {
   EXTRA_DOOR: 0.15,    // a second door between two rooms
   CLIMB: { ap: 1, heat: 3, radius: 6 },   // climbing through a window (combat.js "climb")
   ROLLER: { heat: 3, radius: 8 },         // hauling a roller door up
-  DEAD_SCALE: [0.35, 0.85],               // the dead at a site × the map's area over the street raid's, clamped (indoors they are closer together)
+  DEAD_SCALE: [0.35, 0.85],               // the dead at a site × the map's area over the street raid's, clamped (indoors they are closer together); past the old Large 40 × 30 more with the ground (battlesize.js BIG)
   OUTSIDE_DEAD: 0.25,  // share of the dead outside the building
   LOCKED_DEAD: 0.15,   // chance one of the dead is shut in a locked room (one a room)
   CUT_R: 6,            // the isometric cutaway: walls lowered within this many tiles of your people
@@ -738,11 +738,14 @@ export function raidBuilding(state, tile, setup) {
 
 // The choice offered before a raid at a site with several buildings: [{ id, key, name, hint, size, rooms }], the street
 // map last ({ id: "street" }); null when there is nothing to choose.
-export function buildingOptions(tile) {
+// state: the run's raid map dials (World… Raid map): each option's map in tiles, a building's at least that (its plan
+// and the outside round it), the street's exactly.
+export function buildingOptions(tile, state = null) {
   const sb = siteBuildings(tile);
   if (!sb || sb.single) return null;
-  const out = sb.options.map((o) => ({ ...o, ...buildingHint(o.key) }));
-  out.push({ id: "street", key: "street", name: "The street", hint: "Search the area around the buildings: small buildings, cars, the open ground (the usual raid map).", size: "", rooms: 0 });
+  const [bw, bh] = buildingTarget(tile, false, state), [sw, sh] = raidDims(tile, state);
+  const out = sb.options.map((o) => ({ ...o, ...buildingHint(o.key), map: `${bw} × ${bh}+` }));
+  out.push({ id: "street", key: "street", name: "The street", hint: "Search the area around the buildings: small buildings, cars, the open ground (the usual raid map).", size: "", rooms: 0, map: `${sw} × ${sh}` });
   return out;
 }
 
@@ -802,7 +805,8 @@ export function buildingMap(state, tileId, option, withVehicle) {
 // then the street's cars), so the POI's container ledger (poicont.js) keeps each house's containers under their own
 // ids: a house nobody went into stays unopened, what you left in one stays there, and the one pool of the POI falls
 // as the houses' containers are opened (poiRaidEnd: its share a container, across the whole street). The map fits
-// the Extra-large class (battlesize.js SIZE_CLASSES), at least Medium; the ways out are the two ends of the street
+// the run's largest raid map (World… Raid map, largest: 56 × 42 as it stands; never narrower or shallower than its houses
+// and the two rows of gardens need, 34 deep at least); the ways out are the two ends of the street
 // (the west first: the team comes in there with its vehicle, as on a street map) and the back gardens to the north
 // and the south. The dead are the site's roster at STREET.DEAD (one house's map has about 0.6 of it: BMAP.DEAD_SCALE
 // by its area), placed through the houses and the yards (placeInterior). Stealth, the lights and hearing work as in
@@ -826,7 +830,8 @@ export function streetHouses(state, tileId, option) {
   return lo + Math.min(hi - lo, Math.floor(hash01(state.seed, "streethouses", tileId, option.id) * (hi - lo + 1)));
 }
 export function streetMap(state, tileId, option, withVehicle) {
-  const S = STREET, XL = SIZE_CLASSES.XL, MID = SIZE_CLASSES.M;
+  const S = STREET;
+  const [MAXW, MAXH] = raidMaxDims(state); // the run's largest raid map (World… Raid map, largest): a neighbourhood's street fills it, as a city's or a town's map does
   const tile = state.tiles[tileId];
   const rng = new Rng(specSeed(state, tileId, option)); // the street's own dice: the layout of the yards, the cars, the trees
   const n = streetHouses(state, tileId, option);
@@ -839,7 +844,7 @@ export function streetMap(state, tileId, option, withVehicle) {
     const id = `${option.id}#${k + 1}`;
     const hr = new Rng(specSeed(state, tileId, { id }));
     const spec = BUILDINGS.house.make(hr);
-    spec.bw = Math.max(S.BW[0], Math.min(spec.bw, S.BW[1], Math.floor((XL.w - 2 * S.SIDE - (perRow[row] - 1) * S.GAP) / perRow[row])));
+    spec.bw = Math.max(S.BW[0], Math.min(spec.bw, S.BW[1], Math.floor((MAXW - 2 * S.SIDE - (perRow[row] - 1) * S.GAP) / perRow[row])));
     spec.bh = Math.min(spec.bh, S.BH);
     spec.margins = { front: 1, back: 1, left: 1, right: 1 };
     spec.ground = "none";
@@ -849,11 +854,11 @@ export function streetMap(state, tileId, option, withVehicle) {
   // The layout: the north row's fronts in line along the north sidewalk, the south row's along the south one.
   const inRow = (r) => houses.filter((h) => h.row === r);
   const rowW = (r) => inRow(r).reduce((a, h) => a + h.bw, 0) + (perRow[r] - 1) * S.GAP + 2 * S.SIDE;
-  const W = Math.max(MID.w, Math.min(XL.w, Math.max(rowW(0), rowW(1))));
+  const W = Math.max(MAXW, rowW(0), rowW(1)); // never narrower than its houses need (a small dial: the houses and their yards past it)
   const depth = [0, 1].map((r) => Math.max(...inRow(r).map((h) => h.bh)));
   let front = S.FRONT, road = S.ROAD;
   const tall = () => 2 * S.BACK + depth[0] + depth[1] + 2 + 2 * front + road;
-  if (tall() < MID.h) { const extra = MID.h - tall(), fe = Math.floor(extra / 3); front += fe; road += extra - 2 * fe; }
+  if (tall() < MAXH) { const extra = MAXH - tall(), fe = Math.floor(extra / 3); front += fe; road += extra - 2 * fe; }
   const H = tall();
   const walkN = S.BACK + depth[0] + front, r0 = walkN + 1, walkS = walkN + road + 1, topS = walkS + front + 1;
   for (const r of [0, 1]) {
@@ -1788,7 +1793,7 @@ export function placeInterior(state, b, map, groups) {
     }
     return out;
   };
-  const scale = map.street ? STREET.DEAD : Math.max(BMAP.DEAD_SCALE[0], Math.min(BMAP.DEAD_SCALE[1], (W * H) / (RAID_W * RAID_H))); // a street of houses: the whole roster
+  const scale = map.street ? STREET.DEAD * streetDeadScale(W, H) : buildingDeadScale(Math.max(BMAP.DEAD_SCALE[0], Math.min(BMAP.DEAD_SCALE[1], (W * H) / (RAID_W * RAID_H))), W, H); // a street of houses: the whole roster (more past the old Extra-large); battlesize.js buildingDeadScale: more on a map past the old Large
   let pod = 0, zn = 0, hn = 0;
   const lockedDead = new Set();
   const put = (u, c, home = null) => { u.x = c[0]; u.y = c[1]; u.home = home || [c[0], c[1]]; b.units.push(u); };

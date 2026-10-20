@@ -20,6 +20,11 @@
 //   A group's base you assault (conquest.js): Medium to Extra-large by how many people live there.
 //   Your own bases (interior.js, the yard and buildings map; its wall map is as long, less 3 rows: deploy.js): a hub
 //     Large to Extra-large, an outpost Medium to Large, by how many buildings stand there.
+// Past the old Large (BIG.FROM, 40 × 30; nothing at or under it changes) the run's raid map dials can make a map far
+// bigger, so what fills it grows with the ground but less than the ground: the dead (raidDeadScale, buildingDeadScale:
+// more of them, and more waves), a container's loot (raidLootShare: more containers, each a little less), Heat's rise
+// a turn (raidHeatRate: a longer walk, a slower clock) and a way out on each long side (combat.js genRaidMap); the
+// dead that come in at Heat come in near your people (BIG.NEAR).
 // Content scales with the area: more buildings, rooms, containers and scatter on a bigger map (combat.js genMap,
 // genRaidMap), and every map is topped up with props (densify) until most open ground has cover within COVER.R tiles.
 // The sides start CONTACT.HUMANS / CONTACT.DEAD tiles apart whatever the map's size, so the first shots come in a
@@ -85,7 +90,13 @@ export const RAID_RANGE = { LO: 0.5, HI: L, ASPECT: 0.75, LARGEST: ["city", "tow
 // Raids: rooms and outdoor areas by size class (AREAS[class] = [min, max], between classes in between), containers
 // a room by its floor area (one a BOX_AREA tiles, at least 2; a map past Extra-large on at the same rate), the dead scaled by the map's area over DEAD_AREA (the
 // old 34 × 22 raid map) to the power DEAD_EXP, between DEAD_MIN and DEAD_MAX; late waves (spawnCap) the same way.
-export const RAID = { AREAS: [[2, 3], [3, 5], [5, 7], [6, 9]], BOX_AREA: 7, DEAD_AREA: 748, DEAD_EXP: 0.6, DEAD_MIN: 0.8, DEAD_MAX: 1.4, SPAWN_CAP: 12 };
+export const RAID = { AREAS: [[2, 3], [3, 5], [5, 7], [6, 9]], BOX_AREA: 7, DEAD_AREA: 748, DEAD_EXP: 0.6, DEAD_MIN: 0.8, DEAD_MAX: 2.2, SPAWN_CAP: 12 };
+// Raid maps past FROM tiles (the old Large 40 × 30; at or under it every factor is exactly 1): the dead of a building's
+// map grow by (area / FROM) to the power DEAD_EXP (at most DEAD_MAX); Heat's base rise a turn falls by
+// (FROM / area) to the power HEAT_EXP (at least HEAT_MIN of it); a container's find falls by (FROM / area) to the
+// power LOOT_EXP (at least LOOT_MIN: there are more containers, each holds a little less); the dead that come in at
+// Heat come in within NEAR tiles of your people when enough edge cells are that near.
+export const BIG = { FROM: 1200, DEAD_EXP: 0.6, DEAD_MAX: 2, HEAT_EXP: 0.5, HEAT_MIN: 0.55, LOOT_EXP: 0.6, LOOT_MIN: 0.4, NEAR: 28 };
 // The end of a battle whose fight is over: at most MAX_LEFT enemies left (and no more than FRAC of those it began
 // with), none a boss, none outside a base's wall waiting to come in, every one of them unaware or running, FAR tiles
 // or more from all your people and out of their sight. The AI ends it there; the player gets the choice (combat.js
@@ -109,6 +120,9 @@ export function sizeClass(w, h) {
   return best;
 }
 export const sizeName = (w, h) => SIZE_CLASSES[sizeClass(w, h)].name;
+// A map in words for the panels: "Extra-large, 56 × 42", and what a map past the old Large (BIG.FROM) brings with it.
+export const mapSizeText = (w, h) => `${sizeName(w, h)}, ${w} × ${h}`;
+export const bigMapNote = (w, h) => (w * h > BIG.FROM ? "A big map: more rooms, containers and dead, a longer walk, and a way out on each long side of a street map. Heat climbs slower, and each container holds a little less." : "");
 
 // ---------- by context ----------
 const tileOf = (state, setup) => {
@@ -344,5 +358,16 @@ export function raidAreaTypes(rng, list, w, h) {
   return out;
 }
 export const raidDeadScale = (w, h) => clamp(Math.pow((w * h) / RAID.DEAD_AREA, RAID.DEAD_EXP), RAID.DEAD_MIN, RAID.DEAD_MAX);
+// How much a map past the old Large has grown (1 at or under it): the factor the other scales below go by.
+const bigGrowth = (w, h) => Math.max(1, (w * h) / BIG.FROM);
+// The dead in a building's map (buildingmaps.js BMAP.DEAD_SCALE: [min, max] by the map's area over a Medium raid map's,
+// "base" here): the base, and past the old Large more of them with the ground.
+export const buildingDeadScale = (base, w, h) => Math.min(BIG.DEAD_MAX, base * Math.pow(bigGrowth(w, h), BIG.DEAD_EXP));
+// The street map of a neighbourhood: its roster (STREET.DEAD) past the old Extra-large raid map (48 × 34) the same way.
+export const streetDeadScale = (w, h) => clamp(Math.pow((w * h) / (SIZE_CLASSES.XL.w * SIZE_CLASSES.XL.h), RAID.DEAD_EXP), 1, RAID.DEAD_MAX);
+// Heat's base rise a turn on a raid map w × h, as a share of the usual (the noise on top is not scaled).
+export const raidHeatRate = (w, h) => clamp(Math.pow(1 / bigGrowth(w, h), BIG.HEAT_EXP), BIG.HEAT_MIN, 1);
+// What a container holds on a raid map w × h, as a share of the usual (the loot dial and the site's reward on top).
+export const raidLootShare = (w, h) => clamp(Math.pow(1 / bigGrowth(w, h), BIG.LOOT_EXP), BIG.LOOT_MIN, 1);
 // The containers a room of w × h holds.
 export const roomBoxes = (rng, w, h) => Math.max(2, Math.round(((w - 2) * (h - 2)) / RAID.BOX_AREA) + rng.int(0, 1));

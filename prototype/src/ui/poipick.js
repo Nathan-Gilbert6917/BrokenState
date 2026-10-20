@@ -48,7 +48,7 @@ export function poiPickModal(state, card) {
     // The site's buildings: the place's line once, a button per building (what it likely holds, its size) and the street.
     const sub = ({ c, i }) => {
       const o = (r.buildings || []).find((x) => x.id === c.building) || {};
-      const size = [o.size, o.rooms ? `${o.rooms} rooms` : ""].filter(Boolean).join(", ");
+      const size = [o.size, o.rooms ? `${o.rooms} rooms` : "", o.map ? `map ${o.map}` : ""].filter(Boolean).join(", ");
       return `<button data-action="choice" data-i="${i}" class="small" style="text-align:left"${tip(o.hint)}>${esc(o.id === "street" ? "The street" : o.name || c.building)}${size ? ` <span class="muted">${esc(size)}</span>` : ""}</button>`;
     };
     return `<div class="poirow"${tip(`${likely} Several buildings stand here: pick the one to go into, or the street around them.`)}>${body}
