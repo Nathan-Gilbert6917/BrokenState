@@ -787,17 +787,43 @@ function gearcase(p) { // a yellow-tan waterproof case: ribbed sides, two big la
 }
 
 // ---------- carts (sim/carts.js) ----------
-function wheelbarrow(p) { // a green steel tray on one wheel, two wooden handles running back to the left
-  rows(p, 3, [[2, 14], [3, 14], [4, 13], [5, 12], [6, 11]], "#4f8a3a"); lit(p, "#4f8a3a");
-  line(p, 0, 4, 6, 9, "#94683e"); line(p, 0, 5, 6, 10, "#5e3e22");
-  disc(p, 11, 12, 3, "#2a2c30"); disc(p, 11, 12, 1, "#9aa1a8");
-  line(p, 6, 8, 5, 14, "#55595e"); H(p, 4, 6, 15, "#55595e");
+// Drawn after their battle models (ui/cartmodel.js) in the models' colours, seen three-quarters on from above: the
+// inside of the tray or the bed showing, the top lit, the right-hand faces in shade, the wheel in front.
+const CART = { rim: "#8cb87c", green: "#4a7f44", greenD: "#36603a", inner: "#2a4a2a", wood: "#9a7046", woodD: "#6b4a2c", grip: "#3a2e24", tire: "#1f1d1a", hub: "#a9a59c", steel: "#3c4147", plank: "#7a5532", plankL: "#a87c4e", iron: "#2e2c2a" };
+function wheelbarrow(p) { // a green steel tub on one wheel, two wooden handles back to the left, dark grips, a leg
+  const K = CART;
+  line(p, 0, 6, 11, 11, K.woodD); // the far handle
+  disc(p, 12, 12, 3, K.tire); disc(p, 12, 12, 1, K.steel); p.set(12, 12, K.hub); p.set(11, 10, "#3a3734"); // the wheel
+  stamp(p, 2, 2, [
+    "..rrrrrrrrrrr.",
+    ".riiiiiiiiiiir",
+    "rriiiiiiiiiir.",
+    "rrrrrrrrrrrrg.",
+    ".ggggggggggd..",
+    "..gggggggggd..",
+    "...ddddddd....",
+  ], { r: K.rim, i: K.inner, g: K.green, d: K.greenD });
+  line(p, 1, 8, 12, 12, K.wood); // the near handle, to the axle
+  H(p, 0, 2, 6, K.grip); H(p, 0, 2, 8, K.grip); p.set(0, 7, K.grip); // the grips
+  V(p, 6, 10, 13, K.steel); H(p, 5, 7, 14, K.steel); // a leg and its foot
 }
-function handcart(p) { // a wooden two-wheeled cart: slatted bed, a long pull handle, big spoked wheels
-  R(p, 1, 4, 12, 8, "#9a6d44"); for (const x of [4, 8]) V(p, x, 4, 8, "#7a5230"); H(p, 1, 12, 4, "#b98a5a"); H(p, 1, 12, 8, "#563820");
-  line(p, 12, 6, 15, 2, "#7a5230");
-  ring(p, 4, 11, 4, "#3a2a1c"); ring(p, 11, 11, 4, "#3a2a1c");
-  for (const [cx] of [[4], [11]]) { V(p, cx, 8, 14, "#7a5230"); H(p, cx - 3, cx + 3, 11, "#7a5230"); p.set(cx, 11, "#c9ced3"); }
+function handcart(p) { // a plank bed with side boards on a big spoked wheel, the pole and T handle forward to the right
+  const K = CART;
+  line(p, 11, 7, 14, 4, K.woodD); V(p, 15, 1, 5, K.grip); p.set(14, 3, K.grip); // the pole, the T handle's crossbar end on
+  stamp(p, 0, 2, [
+    "..llllllllll",
+    ".ppPpppPpppl",
+    "lllllllllllw",
+    "LLLLLLLLLLLw",
+    "wwwwwwwwwwww",
+    "LLLLLLLLLLLw",
+    "wwwwwwwwwwww",
+  ], { l: K.plankL, p: K.plank, P: K.woodD, L: K.wood, w: K.woodD });
+  V(p, 11, 9, 13, K.woodD); // the prop leg
+  ring(p, 5, 11, 4, K.iron); // the near wheel: iron tyre, wooden felloe, spokes, the hub
+  ring(p, 5, 11, 3, K.wood);
+  line(p, 3, 9, 7, 13, K.plankL); line(p, 7, 9, 3, 13, K.plankL); H(p, 3, 7, 11, K.plankL); V(p, 5, 9, 13, K.plankL);
+  p.set(5, 11, K.iron);
 }
 
 // ---------- the bicycle ----------
