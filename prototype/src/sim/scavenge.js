@@ -153,11 +153,12 @@ export function startScavenge(state, p) {
   // Not a town: towns lie near the hubs and are scavenged often, and crawling them kept teams away long enough to leave
   // the bases thin against hordes (a 12-game census: end population 41 → 33, horde deaths 90 → 131; cities only: 39).
   // A bare city block holds points of interest of its own (pois.js) too: the autopilot still crawls it (the crawl goes deeper).
-  if (state.autopilot && crawlTile(t) && p.owner === "player" && !(t.loc && t.loc.type === "town")) { delete p.poi; return startCrawl(state, p); }
+  if (state.autopilot && crawlTile(t) && p.owner === "player" && !(t.loc && t.loc.type === "town")) { delete p.poi; delete p.poiBuilding; return startCrawl(state, p); }
   // The point of interest the raid goes into (poiraid.js): the player's pick (p.poi, the dialogue card) or the best
   // known one (a crew, a headless tool); "crawl" on a bare city block: its crawl instead (so is none known there).
-  const pick = p.poi;
+  const pick = p.poi, building = p.poiBuilding || null; // building: the site's building picked on the card (poiraid.js)
   delete p.poi;
+  delete p.poiBuilding;
   const poiTile = poiTileRaid(t) && pick !== "crawl";
   let poi = null;
   if (poiTile) {
@@ -195,11 +196,11 @@ export function startScavenge(state, p) {
     const foes = groups.filter((g) => !g.side); // a third side (wanderers.js) is not who you came to fight
     const total = foes.reduce((a, g) => a + g.count, 0);
     const names = foes.map((g) => g.name).join(" and ");
-    const rs = poi != null ? poiRaidSetup(state, t, poi) : { choose: true }; // poiraid.js: the POI's building (the site POI: the site's buildings, chosen as before)
+    const rs = poi != null ? poiRaidSetup(state, t, poi, building) : { choose: true }; // poiraid.js: the POI's building (the site POI: the one picked on the card, else the site's buildings offered on the map)
     startCombat(state, {
       mode: "raid", tile: p.dest, partyId: p.id, canRetreat: true, ambush: null, handler: "scavenge",
       enemy: { kind: foes.length > 1 ? "mixed" : foes[0]?.kind || "zombies", count: total, power: 3, name: names || "nobody", groups },
-      raid: { heat0: isNight(state) ? 0 : 5, choose: rs.choose, poi: rs.poi ?? null, kind: rs.kind || null, place: rs.place || null }, // choose: a site with several buildings offers them first (buildingmaps.js)
+      raid: { heat0: isNight(state) ? 0 : 5, choose: rs.choose, poi: rs.poi ?? null, kind: rs.kind || null, place: rs.place || null, building: rs.building || null }, // choose: a site with several buildings offers them first (buildingmaps.js); building: the one picked on the POI card
       plan: true, // raidplan.js: before going in, the side to come in from, a scout first, or wait for night
       context: { factionIds: foes.filter((g) => g.factionId).map((g) => g.factionId) },
     });
