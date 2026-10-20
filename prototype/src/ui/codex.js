@@ -24,6 +24,7 @@ import { POI, allPoiKinds, poisOf, knownPois, TILE_HEAT } from "../sim/pois.js";
 import { poiSpriteCanvas } from "./mapsprites.js"; // their map sprites
 import { STREET, DOOR_KINDS } from "../sim/buildingmaps.js"; // the neighbourhood's street of houses; the kinds of door
 import { WINDOW } from "../sim/windows.js"; // the map's windows: open, locked, fixed or broken
+import { PUSH } from "../sim/shoving.js"; // people and the dead shoved back a tile or flat on their back
 import { SHOVE, BOARD, CRAWL, FURNITURE, shoveable, isBoarded } from "../sim/barricade.js"; // furniture shoved in the way, boards over doors and windows, the dead crawling over half cover
 import { NOMADS } from "../sim/nomads.js"; // nomad bands: one entry a tier
 import { BUILDINGS, RECIPES, PLOT_NAMES } from "../sim/buildings.js";
@@ -406,6 +407,13 @@ function placeEntries() {
     text: "Furniture in a doorway or a corridor slows the dead and stops a crowd: they crawl over a table or a shelf one at a time, spending their turn on it, and a tall piece (lockers, tall shelving) they must batter down or go round. Boards nailed across a door or a window close it for good until someone batters through: no sight, no way, full cover. Everything you can do, the other side can undo: the dead claw boards down and tear through a shoved locker, raiders batter their way in.",
     how: "Before the dead arrive, shove a shelf across the doorway and board up the windows of the room you hold: each board-up is loud, so do it early. Keep boards in the pack (4 kg a bundle). Tear the boards down again when you leave, or vault out of a window.", sprite: null,
   });
+  // Shoving people and the dead (sim/shoving.js).
+  out.push({
+    key: "k:shoving", cat: "places", name: "🫸 Shoving", sub: "Push a foe back, or flat on their back",
+    stats: [["Shove foe", `${PUSH.AP} action, from right next to them with free arms (Alt+V): about ${PUSH.BASE}% to land, better for a good hand-to-hand fighter, a Strong back, a Bulldozer and a target unaware or reeling, worse on the armoured dead and on a target hunkered down (−${PUSH.HUNKER}) or bracing a door (−${PUSH.BRACE})`], ["Lands", "pushed back a tile straight away, or flat on their back; always flat when there is no room behind them, after a fall or through a window; the one standing behind may go down too"], ["Flat on their back", `no overwatch, blows at them +${PUSH.FLOOR_AIM}; getting up costs the first action of their next turn`], ["Hazards", `into the flames, acid, a spike pit, a trench or a mine they get what is there; off a walkway, roof edge or ladder they fall (${PUSH.FALL[0]}–${PUSH.FALL[1]} a level); through a window they take the glass (${PUSH.GLASS[0]}–${PUSH.GLASS[1]}) and the crash is heard`], ["Not shoved", "brutes, wall-breakers, brood mothers, dead cows, bosses, anyone in a vehicle"]],
+    text: "A shove is the cheapest way to make room: a foe in your face is pushed back a tile or put flat on their back, where they cannot hold overwatch and are easy to hit. The target card shows what waits behind them. Enemy people shove too: a gunman shoves the dead or a fighter off before shooting, a fighter with a blade shoves and then strikes the floored, and anyone ringed by foes shoves one aside to run. Shoving is quiet, except through glass.",
+    how: "Stand with a hazard behind them: a trench, a fire, a mine field, the lip of the wall. A Bulldozer (a trait) shoves hardest. Keep your back to a wall and a friend behind you: the enemy's shove has the same rules.", sprite: null,
+  });
   // A kind with more to say than the rest: the neighbourhood is a whole street of houses on one raid map (sim/buildingmaps.js streetMap).
   const NOTES = {
     neighbourhood: {
@@ -576,6 +584,7 @@ function battleSeen(state, out) {
   if (!codexSeen(state, "k:windows") && b.cells && b.cells.some((c) => c.k === "window" || c.k === "smashed")) out.add("k:windows");
   if (!codexSeen(state, "k:doors") && b.cells && b.cells.some((c) => c.k === "idoor" || c.k === "odoor" || c.k === "door" || c.k === "bdoor")) out.add("k:doors");
   if (!codexSeen(state, "k:barricades") && b.cells && b.cells.some((c) => isBoarded(c) || (shoveable(c) && c.f === "floor"))) out.add("k:barricades"); // sim/barricade.js: the first map with furniture indoors, or boards
+  if (!codexSeen(state, "k:shoving") && b.units && b.units.some((u) => u.side === "player" && u.kind === "human" && u.sid != null)) out.add("k:shoving"); // sim/shoving.js: the first battle with one of yours in it
 }
 
 // main.js refresh: opens what the player sees. The full scan once an in-game hour (or force), the battle each time.

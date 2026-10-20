@@ -28,7 +28,7 @@ import { TENT_TAKE, tentsNear, strikeRefusal, slashTargets, slashRefusal, goesLe
 import { clearEnough } from "../sim/battlesize.js";
 import { SUPPLIES, GEAR } from "../sim/data.js";
 import { rescueOptions } from "../sim/rescueraid.js"; // a rescue raid on a group's base: captives, the cell, the armory
-import { PUSH, pushTargets, pushRefusal, pushOdds } from "../sim/shoving.js"; // a foe shoved back a tile or flat on their back (the user's request 2026-10-20)
+import { PUSH, pushTargets, pushRefusal, pushOdds, pushHazard } from "../sim/shoving.js"; // a foe shoved back a tile or flat on their back (the user's request 2026-10-20)
 import { subdueOdds, canSubdue, throwablesOf, THROWABLES, THROW_KEYS, dragable, heldDown, STEALTH } from "../sim/stealth.js";
 import { flashCells, flashReach, stunLabel, FRAG, BLAST, SMOKE } from "../sim/throwables.js"; // a flashbang's reach and stun; the throw preview
 import { glLabel, glName, glRange, glLoads, glRounds, roundLabel, launchRefusal, glReloadRefusal, backblastCells, enclosedAt, LAUNCH, GL_HE, ROCKET } from "../sim/launchers.js"; // grenade launchers and rockets (section 13)
@@ -1252,8 +1252,8 @@ export function unitOrders(state, b, u) {
   plateButton(state, b, u, btn);
   btn("melee", "Melee", "Strike an adjacent enemy. Silent: it does not alert others or draw zombies. Ends the turn.", ap > 0 && foesAdj, "E", { why: noAp || (foesAdj ? "" : "No enemy right next to them (not across a wall's corner).") });
   { // sim/shoving.js: a foe right next to them shoved back a tile or flat on their back
-    const near = pushTargets(b, u), why = pushRefusal(b, u), po = near.length === 1 ? pushOdds(b, u, near[0]) : null;
-    btn("shoveFoe", po ? `Shove foe (${po.chance}%)` : "Shove foe", `${PUSH.AP} action: shove someone or one of the dead right next to ${u.name.split(" ")[0]} (arms free). It lands about ${PUSH.BASE}% of the time (better for a good hand-to-hand fighter, a Strong back, a target unaware or reeling; worse on the armoured dead): pushed back a tile, straight away, or knocked flat on their back, always when a wall or someone is behind them. Flat on their back: no overwatch, blows at them +${PUSH.FLOOR_AIM}, and getting up takes their next turn's first action. Pushed into the flames, acid, a trench or a pit, they get what is there. Brutes, wall-breakers and bosses do not budge. Enemy people shove too.${near.length > 1 ? " Several next to them: click the one." : ""}`, !why, "", { why, ap: PUSH.AP });
+    const near = pushTargets(b, u), why = pushRefusal(b, u), po = near.length === 1 ? pushOdds(b, u, near[0]) : null, hz = near.length === 1 ? pushHazard(b, u, near[0]) : "";
+    btn("shoveFoe", po ? `Shove foe (${po.chance}%)` : "Shove foe", `${PUSH.AP} action: shove someone or one of the dead right next to ${u.name.split(" ")[0]} (arms free). It lands about ${PUSH.BASE}% of the time (better for a good hand-to-hand fighter, a Strong back, a Bulldozer, a target unaware or reeling; worse on the armoured dead, and on a target hunkered down or bracing a door): pushed back a tile, straight away, or knocked flat on their back, always when a wall or someone is behind them (the one behind may go down too), after a fall or through a window. Flat on their back: no overwatch, blows at them +${PUSH.FLOOR_AIM}, and getting up takes their next turn's first action. Shoved into the flames, acid, a trench, a pit or a mine they get what is there; off a walkway or ladder they fall (${PUSH.FALL[0]}–${PUSH.FALL[1]} a level); through a window the glass cuts them and the crash is heard. Brutes, wall-breakers and bosses do not budge. Enemy people shove too.${hz ? ` Behind them now: ${hz}.` : ""}${near.length > 1 ? " Several next to them: click the one." : ""}`, !why, "", { why, ap: PUSH.AP });
   }
   btn("overwatch", "Overwatch", `${OVERWATCH_TIP} Click the way to watch: only what moves in its cone draws a reaction.`, ap > 0 && ammo, "O", { why: fireWhy });
   btn("hunker", "Hunker down", `Ends the turn. +${COVER_DEF[1]} defense on top of cover until your next turn. Only helps when in cover.`, ap > 0, "H", { why: noAp });
@@ -2679,7 +2679,8 @@ function odds(b, u, t) {
     const why = pushRefusal(b, u, t);
     if (why) return { ok: false, label: why };
     const o = pushOdds(b, u, t);
-    return { ok: true, chance: o.chance, label: `Shove ${o.chance}%: pushed back a tile, or flat on their back (${Math.round(o.knock * 100)}%, sure with no room behind them)` };
+    const hz = pushHazard(b, u, t);
+    return { ok: true, chance: o.chance, label: `Shove ${o.chance}%: pushed back a tile, or flat on their back (${Math.round(o.knock * 100)}%, sure with no room behind them)${hz ? `. Behind them: ${hz}` : ""}` };
   }
   if (cui.mode === "subdue") {
     if (!canSubdue(u, t, b)) return { ok: false, label: t.kind === "zombie" ? "The dead cannot be subdued" : "Subdue needs them right next to you" };

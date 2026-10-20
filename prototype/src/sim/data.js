@@ -594,6 +594,7 @@ export const TRAITS = {
   ironstomach:  { name: "Iron Stomach",  desc: "Half the chance of an upset stomach from un-purified water or food poisoning (bad cooking, uncooked food), and shrugs off the worm's eggs 1 time in 3 (water, raw food, camping, searching)" },
   quickheal:    { name: "Quick Healer",  desc: "Wounds heal 30% faster while resting (at a base, in a hospital bed, in camp, as a prisoner)" },
   strongback:   { name: "Strong Back",   desc: "Max load 48 kg instead of 40, and loads feel 10% lighter (a better load band)" },
+  bulldozer:    { name: "Bulldozer",    desc: "A shove lands more often (+10%) and knocks the target flat more often (+15%) in battle" }, // pick-only (PICK_ONLY_TRAITS): never rolled at birth
   fleet:        { name: "Fleet-Footed",  desc: "+1 tile a move in battle, and +10% to break off and get away from a fight (a team on foot all Fleet-Footed: +1 to Run for it on the road)" },
   farmraised:   { name: "Farm-Raised",   desc: "+3 Farming, +1 Cooking" },
   persuasive:   { name: "Persuasive",    desc: "+3 Speech (better prices, talks, recruiting)" },
@@ -640,11 +641,14 @@ export const LATE_TRAITS = ["tactical", "strategic", "diplomatic"];
 // Picky Eater and Vegetarian; the Cannibal is never rolled). Never add to this list: a later wave gets its own.
 export const DIET_TRAITS = ["picky", "vegetarian", "cannibal"];
 export const DIET_ROLLED = ["picky", "vegetarian"];
-export const SWAP_TRAITS = NEW_TRAITS.filter((t) => !LATE_TRAITS.includes(t) && !DIET_TRAITS.includes(t));
+// Traits only picked, never rolled (2026-10-20: Bulldozer, the shove): out of the swap's pool and of the roll shares, so
+// no seed's people change. Never add to this list: a later wave gets its own.
+export const PICK_ONLY_TRAITS = ["bulldozer"];
+export const SWAP_TRAITS = NEW_TRAITS.filter((t) => !LATE_TRAITS.includes(t) && !DIET_TRAITS.includes(t) && !PICK_ONLY_TRAITS.includes(t));
 // Traits nobody has together (opposites). The one table: the birth roll, a child's traits, the new-run screen's
 // picker, custom backgrounds, the backgrounds of a start.
 export const TRAIT_CLASH = [["brave", "coward"], ["lucky", "unlucky"], ["tough", "frail"], ["strongback", "badback"], ["quickheal", "sickly"], ["ironwill", "hothead"],
-  ["fleet", "slow"], ["quicklearner", "slowlearner"], ["ironstomach", "weakstomach"], ["keeneye", "nearsighted"], ["strongback", "feeble"], ["medic", "squeamish"], ["ironwill", "pessimist"],
+  ["fleet", "slow"], ["quicklearner", "slowlearner"], ["ironstomach", "weakstomach"], ["keeneye", "nearsighted"], ["strongback", "feeble"], ["bulldozer", "feeble"], ["medic", "squeamish"], ["ironwill", "pessimist"],
   ["diplomatic", "hothead"], // 2026-10-09: a Hothead talks no one round
   ["vegetarian", "cannibal"]]; // 2026-10-11: one does not eat meat
 // Do traits a and b clash?

@@ -57,7 +57,7 @@ section("The table");
 {
   check(LATE_TRAITS.join() === "tactical,strategic,diplomatic" && LATE_TRAITS.every((t) => TRAITS[t] && traitKind(t) === "good"), "Tactical, Strategic, Diplomatic: three good traits");
   check(SWAP_TRAITS.length === 21 && SWAP_TRAITS[0] === "quicklearner" && SWAP_TRAITS[20] === "pessimist" && !SWAP_TRAITS.some((t) => LATE_TRAITS.includes(t)), "the swap's pool is still the 21 of 2026-10-08, in their order");
-  check(NEW_TRAITS.length === 27 && Object.keys(TRAITS).length === 37, "27 newer traits (the food three of 2026-10-11 too), 37 in all");
+  check(NEW_TRAITS.length === 28 && Object.keys(TRAITS).length === 38, "28 newer traits (the food three of 2026-10-11 too, Bulldozer of 2026-10-20), 38 in all");
   for (const t of LATE_TRAITS) {
     const p = TIERS.map((n) => traitPoints(t, n));
     check(TRAIT_TIERS[t].pts.length === 3 && p[0] > 0 && p[1] > p[0] && p[2] > p[1], `${TRAITS[t].name}: tiers I-III cost ${p.join(" / ")} points`);
