@@ -737,6 +737,10 @@ export const CELL = {
   // the Base map view only), the camp's tents and fire, a floodlight on its pole.
   outline:   { walk: true,  cover: 0, los: false, name: "Building outline" },
   tent:      { walk: false, cover: 1, los: false, name: "Tent" },
+  // The base map's scatter (basescatter.js, 2026-10-20): the land round a base and what lies about its yard.
+  bush:      { walk: false, cover: 1, los: false, name: "Bushes" },
+  stump:     { walk: false, cover: 1, los: false, name: "Tree stump" },
+  log:       { walk: false, cover: 1, los: false, name: "Fallen log" },
   firepit:   { walk: false, cover: 1, los: false, name: "Fire pit" },
   lamp:      { walk: false, cover: 1, los: false, name: "Floodlight" },
   hivewall:  { walk: false, cover: 2, los: true,  name: "Hive flesh", tall: 2 },
@@ -3270,8 +3274,8 @@ export function playerSees(b, t) {
 // asked again: the same cells seen, and the same lines of sight asked, as asking every eye of every cell.
 export function playerVision(b) {
   bindDims(b);
-  const vis = new Uint8Array(W * H).fill(b.over ? 1 : 0);
-  if (b.over) return vis;
+  const vis = new Uint8Array(W * H).fill(b.over || b.layout ? 1 : 0);
+  if (b.over || b.layout) return vis; // the Base map view (basemap.js): nobody on it, the whole base in plain view (it was all fog)
   const eyes = b.units.filter((u) => u.side === "player" && active(u));
   for (const e of eyes) {
     const r = Math.ceil(sightBound(b, e)) + 1, R = r >= 0 ? r : Infinity; // NaN: the whole map

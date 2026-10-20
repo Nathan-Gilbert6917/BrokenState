@@ -181,7 +181,8 @@ section("The selected thing's card and the doorways");
   const e = BM.itemAtCell(st, b, 13 + F.ox, -11 + F.oy);
   check(e && e.it.key === keyOf(A), "a click on the cabin's cells finds it (itemAtCell)");
   check(layoutHover(st, b, { x: 13 + F.ox, y: -11 + F.oy }, null).includes("Selected: click again to lift"), "the hover line over the selected thing says a second click lifts it");
-  check(!act(st, { type: "lift", key: keyOf(A) }) && st.combat.layout.pick === keyOf(A) && !A.at, "lifted (the second click)");
+  const wasA = A.at && A.at.slice();
+  check(!act(st, { type: "lift", key: keyOf(A) }) && st.combat.layout.pick === keyOf(A) && String(A.at) === String(wasA), "picked up to move (the second click): it stays where it stands until put down");
   check(layoutPanel(st, st.combat, cui()).includes("what stands inside moves with it"), "the pick card of a general building says what is inside moves with it");
   check(!act(st, { type: "pick", key: null }), "Esc puts it down");
   // Demolish from the map: a queued job is cancelled, a standing building pulled down (the question is ui/combat.js's).

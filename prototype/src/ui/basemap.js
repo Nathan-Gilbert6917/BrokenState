@@ -151,7 +151,7 @@ function selectionCard(state, base, L, lay) {
     }).join("")}</div>` : `<div class="small muted" style="margin-top:0.25rem">Stands against no other building: put one right against its wall to open a doorway between them.</div>`;
   }
   const btns = [];
-  if (e.at) btns.push(`<button data-action="cb-deploy" data-v="lift" data-k="${it.key}"${tip("Lift it off the map and click where it goes (R turns it); or click it on the map again")}>Move</button>`);
+  if (e.at) btns.push(`<button data-action="cb-deploy" data-v="lift" data-k="${it.key}"${tip("Pick it up: its outline follows the mouse, click where it goes (R turns it, Esc leaves it where it is); or click it on the map again. Nothing else on the map moves.")}>Move</button>`);
   if (e.at && !e.auto) btns.push(`<button data-action="cb-deploy" data-v="unplace" data-k="${it.key}"${tip("Let the game place it again")}>Auto</button>`);
   if (!e.at) btns.push(`<button data-action="cb-deploy" data-v="pick" data-k="${it.key}"${tip("Pick it and click where it goes")}>Place</button>`);
   if (isBld) btns.push(`<button class="danger" data-action="cb-deploy" data-v="demolish" data-k="${it.key}"${tip(`Pull it down (asks first): about half its scrap and parts come back${refundText(rec)}${it.general ? "; what stands inside comes down with it" : ""}`)}>Demolish</button>`);

@@ -773,11 +773,31 @@ function prims(k, o) {
       return out;
     }
     case "tent": {
+      // A ridge tent (sim/basemap.js TENT: 2 × 1, its cells joined along the ridge): the fly stepped up to the ridge
+      // pole, the ends closed where it stops, a dark door flap at the near end.
       const cloth = tex(hex("#6f7452"), 0.1, 3), dk = tex(hex("#4e5238"), 0.1, 4);
-      return [
-        { u0: 0.1, u1: 0.9, v0: 0.12, v1: 0.5, z0: 0, z1: 6, m: dk }, { u0: 0.1, u1: 0.9, v0: 0.5, v1: 0.88, z0: 0, z1: 6, m: cloth },
-        { u0: 0.18, u1: 0.82, v0: 0.3, v1: 0.7, z0: 6, z1: 11, m: cloth }, { u0: 0.3, u1: 0.7, v0: 0.42, v1: 0.58, z0: 11, z1: 15, m: dk },
-      ];
+      const ax = along(o), lo = ax === "u" ? (o.j & 2 ? 0 : 0.1) : (o.j & 8 ? 0 : 0.1), hi = ax === "u" ? (o.j & 1 ? 1 : 0.9) : (o.j & 4 ? 1 : 0.9);
+      const out = [run(ax, 0.1, 0.9, 0, 6, cloth, lo, hi), run(ax, 0.2, 0.8, 6, 11, cloth, lo, hi), run(ax, 0.36, 0.64, 11, 15, dk, lo, hi)];
+      if (hi < 1) out.push(run(ax, 0.38, 0.62, 0, 9, flatM(hex("#2e3022")), hi - 0.03, hi)); // the flap at the open end
+      return out;
+    }
+    // The base map's scatter (sim/basescatter.js): bushes, a tree stump, a fallen log (joined along its length).
+    case "bush": {
+      const lc = v === 1 ? PAL.leaf2 : mul(PAL.leaf, 0.9 + (v & 2) * 0.05);
+      const leaf = (f, s, t, X, Y) => { const q = n2(X, Y, 19); return q > 0.88 ? mul(lc, 1.35) : q < 0.18 ? mul(lc, 0.6) : mul(lc, 0.9 + q * 0.15); };
+      const a = (hash3(v, 5, 7) - 0.5) * 0.16;
+      return [{ blob: [0.38 + a, 0.42, 6], ru: 0.32, rz: 6, m: leaf }, { blob: [0.64, 0.56 - a, 5], ru: 0.27, rz: 5, m: leaf }, { blob: [0.46, 0.7, 4], ru: 0.22, rz: 4, m: leaf }].sort((p, q) => p.blob[0] + p.blob[1] - q.blob[0] - q.blob[1]);
+    }
+    case "stump": return [
+      { cyl: [0.5, 0.5, 0.2], z0: 0, z1: 6, m: (f, s, t, X, Y) => (f === "top" ? mul(PAL.woodLt, Math.round(Math.hypot(s, t * 2)) % 2 ? 0.82 : 1) : mul(PAL.bark, 0.9 + n2(X, Y, 6) * 0.2)) },
+      { u0: 0.62, u1: 0.8, v0: 0.46, v1: 0.54, z0: 0, z1: 2, m: tex(PAL.bark, 0.2) }, { u0: 0.46, u1: 0.54, v0: 0.18, v1: 0.36, z0: 0, z1: 2, m: tex(PAL.bark, 0.2) },
+    ];
+    case "log": {
+      const ax = along(o), lo = ax === "u" ? (o.j & 2 ? 0 : 0.08) : (o.j & 8 ? 0 : 0.08), hi = ax === "u" ? (o.j & 1 ? 1 : 0.92) : (o.j & 4 ? 1 : 0.92);
+      const bark = (f, s, t, X, Y) => mul(PAL.bark, (f === "top" ? 1.05 : 0.85) + n2(X, Y, 7) * 0.2);
+      const out = [run(ax, 0.32, 0.68, 0, 6, bark, lo, hi), run(ax, 0.38, 0.62, 6, 7, bark, lo + 0.04, hi - 0.04)];
+      for (const [e, end] of [[lo, !(ax === "u" ? o.j & 2 : o.j & 8)], [hi, !(ax === "u" ? o.j & 1 : o.j & 4)]]) if (end) out.push(run(ax, 0.34, 0.66, 0, 6, flatM(PAL.woodLt), e === lo ? lo : hi - 0.02, e === lo ? lo + 0.02 : hi)); // the cut ends
+      return out;
     }
     case "firepit": return [
       { cyl: [0.5, 0.5, 0.36], z0: 0, z1: 4, m: (f, s, t, X, Y) => (f === "top" && Math.hypot(s, t * 2) < 5 ? mul(hex("#3a2a1c"), 0.9 + n2(X, Y, 2) * 0.2) : mul(PAL.stone, 0.85 + n2(X, Y, 3) * 0.2)) },
@@ -792,7 +812,7 @@ function prims(k, o) {
 }
 const OUTLINED = new Set(["tree", "boulder", "rock", "car", "truck", "vehicle", "crate", "hay", "pump", "barrel", "well", "barricade", "sandbag", "hivewall",
   "table", "bed", "rack", "locker", "shelf", "cabinet", "counter", "gunsafe", "tanktrap", "spikes", "beartrap", "stairs", "ladder", "tower", "bars", "gate", "palisade",
-  "tent", "lamp", "firepit"]); // props stand out with an outline (the base map's tent, floodlight and fire pit too: sim/basemap.js)
+  "tent", "lamp", "firepit", "bush", "stump", "log"]); // props stand out with an outline (the base map's tent, floodlight and fire pit too: sim/basemap.js)
 
 // The cells' block sprites by look (sprite, roofSprite, massSprite; null: nothing to draw): a key holds all the picture
 // depends on, so one never goes stale. Each entry keeps the frame it was last drawn in (iso.frames); past SPRITES
@@ -1068,6 +1088,7 @@ const JOINS = {
   fence: new Set(["fence"]), wire: new Set(["wire"]), rail: new Set(["rail"]), sandbag: new Set(["sandbag", "barricade"]), barricade: new Set(["barricade", "sandbag"]),
   walkway: new Set(["walkway", "tower", "stand"]), stand: new Set(["stand", "walkway", "tower"]), trench: new Set(["trench"]), shelf: WALLISH, locker: WALLISH, cabinet: WALLISH, counter: WALLISH,
   outline: new Set(["outline"]), // the base map: a building's outline joins along its sides (sim/basemap.js)
+  tent: new Set(["tent"]), log: new Set(["log"]), // a camp's 2 × 1 ridge tent, a fallen log two cells long (sim/basemap.js, basescatter.js)
 };
 // What a cell looks like in this view: its kind and options (see prims), or null for open ground. focus: on a building's
 // own map (sim/buildingmaps.js) the cutaway lowers only the walls within CUT_R tiles of these points (your people, the
@@ -1161,6 +1182,7 @@ function blockTop0(k, o) {
     case "fence": return 14; case "barricade": return 16; case "sandbag": return 13; case "hay": return 13; case "cabinet": return 14; case "counter": return 12; case "well": return 12; case "barrel": return 13;
     case "rock": return 10; case "wire": return 10; case "rail": return 13; case "tanktrap": return 12;
     case "outline": return 9; case "tent": return 15; case "firepit": return 7; case "lamp": return 38; // the base map (sim/basemap.js)
+    case "bush": return 12; case "stump": return 6; case "log": return 7; // its scatter (sim/basescatter.js)
     default: return 0;
   }
 }
@@ -1197,7 +1219,20 @@ function newBattleCamera(b, cw, ch) {
   // the view as it was, moved to the team.
   const prev = iso.battle;
   // The base map laid out again after a change (sim/basemap.js refreshBaseMap): the same view, nothing moves.
-  if (prev && b.keepCam && b.layout && prev.layout === b.layout && prev.w === b.w && prev.h === b.h) { iso.battle = b; iso.mapKey = mapKey(b); return; }
+  // The map's crop may have grown or shrunk (something placed further out): the grid cell at the middle of the screen
+  // stays there (grid = map − the fort record's ox, oy).
+  if (prev && b.keepCam && b.layout && prev.layout === b.layout) {
+    const pF = prev.deployPlan && prev.deployPlan.fort, nF = b.deployPlan && b.deployPlan.fort;
+    const dx = pF && nF ? nF.ox - pF.ox : 0, dy = pF && nF ? nF.oy - pF.oy : 0;
+    if (dx || dy || prev.w !== b.w || prev.h !== b.h) {
+      const [u, v] = artUV(iso.cx, iso.cy, iso.straight);
+      const [wx, wy] = ptWorld(u, v, iso.rot, prev.w, prev.h);
+      centerAt(b, wx + dx, wy + dy, 0);
+      clampCam(b);
+    }
+    iso.battle = b; iso.mapKey = mapKey(b);
+    return;
+  }
   if (prev && prev !== b && prev.setup === b.setup && b.setup && b.setup.plan && prev.w === b.w && prev.h === b.h) {
     iso.battle = b;
     iso.mapKey = mapKey(b);

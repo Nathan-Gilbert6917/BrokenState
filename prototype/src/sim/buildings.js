@@ -584,6 +584,7 @@ export function retypeCampJob(base) {
 }
 // The shelter becomes a full hub (the hub_up job is done); a camp becomes a shelter (camp_up) or an outpost (outpost_up).
 export function upgradeShelter(state, base) {
+  if (base.plan && base.plan.tents) delete base.plan.tents; // the camp's tents are struck: the shack takes the sleepers (basemap.js TENT)
   if (isCamp(base) && base.type === "hub") {
     delete base.camp;
     base.shelterDay = Math.floor(state.hour / 24) + 1;

@@ -16,17 +16,18 @@
 // it, for your people to take and carry off.
 import { homeAt } from "./groupbases.js"; // their base as they built it
 import { factionById } from "./world.js";
-import { CELL, unitAt, say, resizeBattle, WEAPONS, coverAgainst, active, isRanged } from "./combat.js";
+import { CELL, unitAt, say, resizeBattle, WEAPONS, coverAgainst, active, isRanged, placeCar } from "./combat.js";
 import { buildInterior } from "./interior.js";
 import { DEPLOY, attackSide, fromTileOf, wallHp, gateHp } from "./deploy.js";
 import { count, hasWall } from "./buildings.js";
 import { densify, COVER } from "./battlesize.js"; // cover over the margin
+import { layScatter, scatterSeed } from "./basescatter.js"; // the land round their base, as round yours (ADR 0001)
 import { poweredType } from "./power.js";
 import { isNight } from "./world.js";
 import { armoryDefence, bossUnit } from "./defences.js";
 import { layMines } from "./mines.js"; // the main base's minefield in the margin
 import { preBoardBase } from "./barricade.js"; // their outer windows and doors boarded before your assault (the user's pick 2026-10-18)
-import { buildBaseMap, baseMapSize, makeStores, markThieves, FLOOD, faceOf } from "./basemap.js"; // the base map: every real base's own layout, walled or not
+import { buildBaseMap, baseMapSize, makeStores, markThieves, FLOOD, faceOf, landOf } from "./basemap.js"; // the base map: every real base's own layout, walled or not
 import { layAssaultStores, stockAssaultStores } from "./assaultstores.js"; // their real stores on the map of an assault
 
 // Which map a base fights on: its own base map (basemap.js: the player's layout, walled or not, the attack from any
@@ -38,7 +39,7 @@ export const FORT = {
   MARGIN: 8,          // open ground round the wall (where the attackers stage)
   GATE: 2,            // cells a gate is wide
   LADDER_EVERY: 7,    // a ladder up to the walkway about every this many cells of wall
-  COVER: 0.035,       // share of the margin's cells with a rock or a tree on them (not right by the wall)
+  // (The margin's scatter is basescatter.js's since 2026-10-20: the land by its terrain, as round your bases.)
   SPREAD: 0.25,       // share of the AI's attackers that come round onto the sides next to the one they came from
   HORDE_SIDES: [1, 6, 12, 18], // a horde of at least this many of the dead can come from 1, 2, 3, 4 sides (how many: its dice)
   GATE_HOLD: 7, GATE_HOLD_TWO: 9, // defenders needed before one, two hold the gate facing the attack (DEPLOY.GATE_ONE / TWO)
@@ -110,14 +111,17 @@ export function buildFort(base, c, rng, opts = {}) {
   const ladderAt = (x, y) => { const q = at(x, y); if (q && q.k === "open" && q.f !== "floor") { put(x, y, "ladder"); ladders.push([x, y]); } };
   for (let x = x0 + 2; x < x0 + yw - 2; x += FORT.LADDER_EVERY) { ladderAt(x, y0); ladderAt(x, y0 + yh - 1); }
   for (let y = y0 + 2; y < y0 + yh - 2; y += FORT.LADDER_EVERY) { ladderAt(x0, y); ladderAt(x0 + yw - 1, y); }
-  // The margin: open ground with a little cover, not right by the wall (the attackers' side of it is theirs).
-  const nCover = Math.round(FORT.COVER * (W * H - (yw + 4) * (yh + 4)));
-  for (let i = 0; i < nCover; i++) {
-    const x = rng.int(0, W - 1), y = rng.int(0, H - 1);
-    if (x >= wx0 - 2 && x <= wx1 + 2 && y >= wy0 - 2 && y <= wy1 + 2) continue;
-    const q = at(x, y);
-    if (q && q.k === "open") q.k = rng.chance(0.6) ? "rock" : rng.chance(0.5) ? "tree" : "boulder";
-  }
+  // The margin: the land round the base as round yours (basescatter.js: tree clumps, bushes, old fences, rocks, wrecks
+  // by the tile's terrain, fixed by the tile), not right by the wall (the attackers' side of it is theirs); the
+  // densify below tops it up.
+  const mx = x0 + Math.floor(yw / 2), my = y0 + Math.floor(yh / 2);
+  layScatter({
+    cells, W, H, ox: mx, oy: my, seed: scatterSeed(base ? base.tile : 0), terrain: opts.state && base ? landOf(opts.state, base) : "plains", G: Math.ceil(Math.max(W, H) / 2) + 1,
+    yard: () => false,
+    ok: (x, y) => x >= 0 && y >= 0 && x < W && y < H && cells[y * W + x].k === "open" && !(x >= wx0 - 2 && x <= wx1 + 2 && y >= wy0 - 2 && y <= wy1 + 2),
+    pass: (q) => !!(CELL[q.k] && CELL[q.k].walk),
+    car: (x, y, ax, len, body, ok) => placeCar(cells, W, H, x, y, ax ? "y" : "x", len, body === "truck" ? "truck" : "car", ok, Math.abs(x * 31 + y * 17) % 1000),
+  });
   // The wire (buildings.js barbed_wire, razor_wire; wire.js): rings round the wall in the margin, FORT.WIRE cells out
   // for each barbed wire fence and FORT.RAZOR for the concertina wire, with a gap in front of every gate (the way in
   // they funnel the attackers to). wireOut: the outermost ring (the attackers start beyond it: fortDefence).
@@ -443,7 +447,7 @@ export function fortAssault(b, ctx, c) {
   const state = ctx.state, rng = ctx.rng;
   const base = assaultBase(state, b.setup);
   if (ctx.phase === "map") {
-    const F = buildFort(base, {}, rng);
+    const F = buildFort(base, {}, rng, { state });
     // Weak spots in their wall (as the old assault map: more the weaker their walls), spread round the sides, so an
     // assault from any side has a way in besides the gate.
     const nBreach = (b.setup.enemy || {}).walls <= 2 ? 3 : (b.setup.enemy || {}).walls <= 5 ? 2 : 1;

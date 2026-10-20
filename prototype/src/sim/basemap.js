@@ -26,7 +26,7 @@
 // job.at on a queued one, vehicle.at on a car, base.plan.plots[i] for the i-th crop plot). The one rule (user request,
 // 2026-10-19: "the restriction now is the ability to build within the base"): anything goes anywhere on the base's map,
 // inside the yard or out beyond the wall, right against anything else, so long as it stands on the map and not on top
-// of something else: another footprint, the base itself in the middle (CORE: tents round a fire, a shack behind a
+// of something else: another footprint, the base itself in the middle (CORE: a camp fire and its cache, a shack behind a
 // barricade, the main house with its cellar and well), the band where the wall ring stands, or in a doorway (the cell
 // outside every door stays open, and a door never opens onto a footprint or the wall: the building could not be used).
 // Anything not placed by hand is placed by the game (autoLayout, deterministic for the same base and items): buildings
@@ -100,12 +100,12 @@
 // anything else (its length by type: carLen, an Army truck 5), in the yard or beyond the wall. Hordes and raiders batter what
 // stands in their way: doors, windows, walls, barricades and parked cars (combat.js bash); when the fight is over the
 // buildings battered on the map wear as fixtures (breakdowns.js) and the cars lose condition (settleBaseBattle).
-import { BUILDINGS, STORE_KG, count, isCamp, isShelter, farmSlots, tierName, canBuild, queueBuild, cancelBuild, canDemolish, demolish, pieceName, pieceHp, matOf, ringMat, WALL_TIERS, WALL_DAMAGED } from "./buildings.js"; // (call-time only: the modules load in a circle) canBuild…demolish: the view's Build, Demolish; pieceName…: the wall pieces
+import { BUILDINGS, STORE_KG, CAMP, count, isCamp, isShelter, farmSlots, tierName, canBuild, queueBuild, cancelBuild, canDemolish, demolish, pieceName, pieceHp, matOf, ringMat, WALL_TIERS, WALL_DAMAGED } from "./buildings.js"; // (call-time only: the modules load in a circle) canBuild…demolish: the view's Build, Demolish; pieceName…: the wall pieces
 import { CELL, placeCar, say, fx, unitAt, active, distField, reachable, pathTo, moveAlong, bash, siegeTarget, foesOf, nearRect, createBattle, barredCell, WEAPONS, structureName } from "./combat.js";
 import { carsAtBase } from "./vehicles.js";
 import { DEPLOY } from "./deploy.js"; // the reinforced gate's hit points (call-time only)
 import { INTERIOR, layoutSeed } from "./interior.js";
-import { densify, COVER } from "./battlesize.js";
+import { layScatter, scatterSeed } from "./basescatter.js"; // the land round the base: trees, bushes, fences, rocks, wrecks (fixed by the tile, the same in the view and in a fight)
 import { Rng } from "./rng.js";
 import { SUPPLIES } from "./data.js";
 import { FOODS } from "./foods.js";
@@ -226,8 +226,7 @@ export const hasFootprint = (type) => !!FOOT[type];
 // with its label. (What lies outside, past the base's room, is on the piles: layPiles.)
 const CORE = {
   camp: [
-    { kind: "prop", k: "firepit", w: 1, h: 1, x: 0, y: 0, name: "Camp fire" },
-    { kind: "prop", k: "tent", w: 1, h: 1, x: -3, y: -3 }, { kind: "prop", k: "tent", w: 1, h: 1, x: 2, y: -3 }, { kind: "prop", k: "tent", w: 1, h: 1, x: -3, y: 2 },
+    { kind: "prop", k: "firepit", w: 1, h: 1, x: 0, y: 0, name: "Camp fire" }, // the tents round it are items of their own (TENT: moved like anything else)
     { kind: "prop", k: "crate", v: 2, w: 1, h: 1, x: 2, y: 2, name: "Camp cache", store: 4 },
   ],
   shelter: [
@@ -250,7 +249,24 @@ const CORE = {
   ],
 };
 export const coreParts = (base) => CORE[tierKey(base)];
+// The land the base stands on, for its scatter (basescatter.js PROFILES): the tile's terrain, a farm's or a ranch's
+// fields as "farm".
+export function landOf(state, base) {
+  const t = state && state.tiles && base ? state.tiles[base.tile] : null;
+  if (!t) return "plains";
+  if (t.loc && ["farm", "ranch", "barn"].includes(t.loc.type)) return "farm";
+  return t.terrain || "plains";
+}
 export const coreName = (base) => tierName(base);
+// A camp's tents (the user's request 2026-10-20: "For camps also have tents that can be moved around"): one a
+// TENT.BEDS of the camp's own beds (CAMP.beds: 6, three tents), each a 2 × 1 ridge tent that is an item of the map
+// (t:<i>, kept in base.plan.tents[i] as a crop plot is in plots), placed by hand or by the game round the fire
+// (TENT.SPOTS first, then out from the middle) and moved like anything else. Only a camp has them: the step up to a
+// shelter strikes them (the bunk shack takes the sleepers: buildings.js tierUp clears base.plan.tents), and a camp
+// struck packs them with it. An AI group's camp pitches as many (conquest.js, the fight at their camp: ADR 0001).
+export const TENT = { BEDS: 2, W: 2, H: 1, SPOTS: [[-4, -3, 0], [2, -3, 0], [-4, 2, 0], [-1, 3, 0], [-5, -1, 1], [3, -1, 1]] };
+const campish = (base) => isCamp(base) || (!!base && base.camp === true && base.fid != null); // yours, or an AI group's (groupbases.js h.camp)
+export const tentCount = (base) => (campish(base) ? Math.ceil(CAMP.beds / TENT.BEDS) : 0);
 
 // ---------- sizes ----------
 // How many buildings with a footprint stand or are queued (the yard grows with them; not the fittings: they stand
@@ -325,6 +341,8 @@ export function itemsOf(state, base) {
   }
   const plots = planOf(base).plots;
   for (let i = 0; i < farmSlots(base); i++) out.push({ key: `p:${i}`, type: "plot", ...FIELD, label: `Crop plot ${i + 1}`, at: plots[i] || null, built: true });
+  const tents = planOf(base).tents || [];
+  for (let i = 0; i < tentCount(base); i++) out.push({ key: `t:${i}`, type: "tent", kind: "prop", k: "tent", w: TENT.W, h: TENT.H, label: `Tent ${i + 1}`, at: tents[i] || null, built: true });
   if (state) for (const v of carsAtBase(state, base.id)) {
     const L = carLen(v);
     out.push({ key: `v:${v.id}`, type: "vehicle", kind: "vehicle", w: L, h: 2, label: v.name, at: v.at || null, rec: v, built: true, veh: v });
@@ -341,6 +359,7 @@ function placedItems(base) {
   for (const b of base.buildings) if (FOOT[b.type] && b.at && !WALL_KINDS.has(FOOT[b.type].kind)) out.push({ ...FOOT[b.type], at: b.at });
   for (const c of base.construction) if (FOOT[c.type] && !c.target && c.at && !WALL_KINDS.has(FOOT[c.type].kind)) out.push({ ...FOOT[c.type], at: c.at });
   for (const p of planOf(base).plots) if (p) out.push({ ...FIELD, at: p });
+  for (const t of (tentCount(base) && planOf(base).tents) || []) if (t) out.push({ kind: "prop", w: TENT.W, h: TENT.H, at: t });
   return out;
 }
 export const itemByKey = (state, base, key) => itemsOf(state, base).find((it) => it.key === key) || null;
@@ -538,7 +557,7 @@ export function placeProblemAt(base, it, x, y, r, occ, dims = null) {
   }
   return "";
 }
-const nameOf = (occ, key) => (key === "core" ? "the base itself" : key.startsWith("p:") ? "a crop plot" : key.startsWith("v:") ? "a parked car" : key.startsWith("w:") ? "the wall" : occ && occ.names && occ.names.get(key) ? occ.names.get(key) : key.startsWith("c:") ? "a building going up" : "a building");
+const nameOf = (occ, key) => (key === "core" ? "the base itself" : key.startsWith("p:") ? "a crop plot" : key.startsWith("t:") ? "a tent" : key.startsWith("v:") ? "a parked car" : key.startsWith("w:") ? "the wall" : occ && occ.names && occ.names.get(key) ? occ.names.get(key) : key.startsWith("c:") ? "a building going up" : "a building");
 // The host (a general building's item key) under a cell of an occupancy, or null.
 export const floorHostAt = (occ, x, y) => (occ && occ.floor && occ.floor.get(K(x, y))) || null;
 // What stands inside a general building at its spot: the fittings and indoor props whose cells are all on its floor.
@@ -625,6 +644,7 @@ function carryInside(state, base, host, inside, was, at) {
 }
 function setAt(base, it, at) {
   if (it.key.startsWith("p:")) { const plots = planOf(base).plots, i = Number(it.key.slice(2)); while (plots.length <= i) plots.push(null); plots[i] = at; return; }
+  if (it.key.startsWith("t:")) { const P = planOf(base), tents = P.tents || (P.tents = []), i = Number(it.key.slice(2)); while (tents.length <= i) tents.push(null); tents[i] = at; return; } // a camp's tent (TENT)
   if (at) it.rec.at = at; else { delete it.rec.at; delete it.rec.host; }
 }
 // A finished job's building takes the job's spot and its host (buildings.js constructionHour); an upgrade in place
@@ -650,7 +670,8 @@ export function autoLayout(state, base, except = null) {
   const sig = items.map((it) => `${it.key}${it.at ? `@${it.at.join(",")}` : ""}`).join("|");
   // What reachProblem reads is in the key: the items and where they stand (the wall pieces among them), the core's
   // parts (the tier), the yard and the ring (the grid's size and the margin), the doorway links.
-  const key = `${base.id}|${tierKey(base)}|${layoutSeed(base)}|${yardHalf(base)}|${ringHalf(base)}|${except || ""}|${sig}|${linksArr(base).map((l) => `${l.a}>${l.b}`).join(",")}`;
+  const sticky = (base.plan && base.plan.autoAt) || null; // holdAuto: where the game had things before the player's last change on the map
+  const key = `${base.id}|${tierKey(base)}|${layoutSeed(base)}|${yardHalf(base)}|${ringHalf(base)}|${except || ""}|${sig}|${linksArr(base).map((l) => `${l.a}>${l.b}`).join(",")}|${sticky ? JSON.stringify(sticky) : ""}`;
   let out = autoCache.get(key);
   if (out) return out;
   out = new Map();
@@ -706,6 +727,13 @@ export function autoLayout(state, base, except = null) {
     for (const s of spots) if (s[0] >= -G && s[1] >= -G && fits(it, s[0], s[1], s[2] || 0) && reach(it, [s[0], s[1], s[2] || 0])) return [s[0], s[1], s[2] || 0];
     return spiral(it, [0, 1]);
   };
+  // A camp's tents (TENT): round the fire, the first of TENT.SPOTS that fits and leaves a way in and out, else out
+  // from the middle as anything else.
+  const tentSpot = (it) => {
+    const i = Number(it.key.slice(2)), own = TENT.SPOTS[i % TENT.SPOTS.length]; // its own spot first (one moved by hand leaves the others where they are)
+    for (const s of [own, ...TENT.SPOTS.filter((q) => q !== own)]) if (fits(it, s[0], s[1], s[2]) && reach(it, s)) return s.slice();
+    return spiral(it, [0, 1]);
+  };
   // The wall pieces the game places (no dice): the gates in the middle of the ring's sides, then the walls round it from
   // the north-west corner, longest first, each in the first run of the ring it fits (ringPlan counts the same way) and
   // leaves a way in and out (reachProblem: the gates go first, so a planned ring closes; a wall that would close a ring
@@ -725,9 +753,16 @@ export function autoLayout(state, base, except = null) {
     const order = standOrder[it.w] || (standOrder[it.w] = runOrder(inner).sort(([sa, ia], [sb, ib]) => Math.abs(ia + it.w / 2 - inner[sa].cells.length / 2) - Math.abs(ib + it.w / 2 - inner[sb].cells.length / 2) || sa - sb));
     const f = fitFirst(it, inner, order, resume[`s${it.w}`] || 0); resume[`s${it.w}`] = f ? f[1] : order.length; if (f) take(it, f[0]);
   }
+  // Where the game had each thing before the player's last change on the map (holdAuto): there again while it still
+  // fits and leaves a way in and out, so placing one thing never shuffles the rest; then the others as below.
+  if (sticky) for (const it of items) {
+    if (it.key === except || it.at || it.fit || WALL_KINDS.has(it.kind)) continue;
+    const s = sticky[it.key];
+    if (s && fits(it, s[0], s[1], s[2] || 0) && reach(it, [s[0], s[1], s[2] || 0])) take(it, [s[0], s[1], s[2] || 0]);
+  }
   for (const it of items) {
-    if (it.key === except || it.at || it.fit || WALL_KINDS.has(it.kind)) continue; // the wall pieces were laid round the ring above
-    const at = it.kind === "defence" ? defSpots(it) : spiral(yardOnly(it), it.kind === "field" || it.kind === "vehicle" ? [0, 1] : [0]);
+    if (it.key === except || it.at || it.fit || WALL_KINDS.has(it.kind) || out.has(it.key)) continue; // the wall pieces were laid round the ring above
+    const at = it.kind === "defence" ? defSpots(it) : it.type === "tent" ? tentSpot(it) : spiral(yardOnly(it), it.kind === "field" || it.kind === "vehicle" ? [0, 1] : [0]);
     if (at) take(it, at);
   }
   // The fittings: into the standing general buildings with room, those nearest the middle first, the first floor cell
@@ -901,6 +936,14 @@ export function layoutOf(state, base) {
   stampGrid(state, base);
   const auto = autoLayout(state, base);
   return itemsOf(state, base).map((it) => ({ it, at: it.at || auto.get(it.key) || null, auto: !it.at }));
+}
+// Before the player changes the map (the view's put, build, demolish, doorways, Auto): where the game has everything
+// it placed (not the wall pieces nor the fittings: they have their own order) is remembered (base.plan.autoAt), and
+// the auto layout keeps each there while it fits (the playtest 2026-10-20: moving one thing shuffled the rest).
+export function holdAuto(state, base) {
+  const hold = {};
+  for (const e of layoutOf(state, base)) if (e.auto && e.at && !e.it.fit && !WALL_KINDS.has(e.it.kind)) hold[e.it.key] = e.at.slice();
+  planOf(base).autoAt = hold;
 }
 
 // ---------- doorways between buildings ----------
@@ -1258,6 +1301,12 @@ export function buildBaseMap(state, base, rng, opts = {}) {
     lay1({ ...it, store, room: store ? STORE_KG[it.type] || 0 : 0, cellHp }, e.at, it.key, it.built, it.label);
   }
   if (opts.pitsAt) for (const atG of opts.pitsAt) if (atG) lay1({ ...FOOT.spike_pits, type: "spike_pits" }, atG, "pits", true, "Spike pits");
+  // A queued building's site in a fight (no outline drawn: open ground) is cleared ground all the same: no scatter on it.
+  if (!view) for (const e of layoutOf(state, base)) {
+    if (!e.at || e.it.built) continue;
+    const r = rectOf(e.it, e.at);
+    for (let y = r.y0 + oy - 1; y <= r.y0 + oy + r.h; y++) for (let x = r.x0 + ox - 1; x <= r.x0 + ox + r.w; x++) if (inside(x, y)) keep[y * W + x] = 1;
+  }
   // The doorways between linked buildings (linksOf): the two facing wall cells become barred doors, in F.doors and in
   // each building's doors (settleBaseBattle wears them), with no outside cell; only between two buildings standing.
   const byIkey = new Map(F.buildings.map((s) => [s.ikey, s]));
@@ -1358,19 +1407,21 @@ export function buildBaseMap(state, base, rng, opts = {}) {
   };
   for (let i = 0; i < Math.min(FORT.WIRE.length, count(base, "barbed_wire")); i++) ringAt(FORT.WIRE[i], false);
   if (count(base, "razor_wire")) ringAt(FORT.RAZOR, true);
-  // Cover: a little in the yard (crates, barrels, hay on the open dirt, never in a buffer or by the wall), rocks and
-  // trees over the open ground beyond (not within 2 cells of the band).
+  // The scatter (basescatter.js, the user's request 2026-10-20): the land round the base by its terrain (tree clumps,
+  // trees, bushes, old fence runs, rocks, stumps, logs, wrecked cars) and what lies about the cleared yard (stumps, a
+  // log, crates, barrels), one layer fixed by the tile in grid coordinates: the same in the Base map view and in a
+  // fight, and the same whatever is built or moved (what stands only hides the scatter under it and round it: the
+  // buffers, the doorways, the cells round the wall pieces, a queued building's site; never within 2 cells of the
+  // band). A piece that would shut off open ground is taken away again.
   const nearBand = (x, y) => x >= w.x0 - 2 && x <= w.x1 + 2 && y >= w.y0 - 2 && y <= w.y1 + 2 && !(x > w.x0 + 1 && x < w.x1 - 1 && y > w.y0 + 1 && y < w.y1 - 1);
   const keepOut = (x, y) => !!keep[y * W + x] || !!used[y * W + x] || nearBand(x, y);
-  densify(cells, W, H, rng, { target: 0.45, keep: (x, y) => keepOut(x, y) || !insideM[y * W + x], props: (f) => (f === "dirt" ? ["crate", "barrel", "hay", "crate"] : f === "field" ? ["hay"] : null) });
-  const nCover = Math.round(0.035 * Math.max(0, W * H - (w.x1 - w.x0 + 5) * (w.y1 - w.y0 + 5)));
-  for (let i = 0; i < nCover; i++) {
-    const x = rng.int(0, W - 1), y = rng.int(0, H - 1);
-    if (insideM[y * W + x] || keepOut(x, y)) continue;
-    const q = at(x, y);
-    if (q && q.k === "open") q.k = rng.chance(0.6) ? "rock" : rng.chance(0.5) ? "tree" : "boulder";
-  }
-  densify(cells, W, H, rng, { target: COVER.OPEN, keep: (x, y) => !!insideM[y * W + x] || keepOut(x, y) });
+  F.scatter = layScatter({
+    cells, W, H, ox, oy, seed: scatterSeed(base.tile), terrain: landOf(state, base), G,
+    yard: (gx, gy) => inYard(gx, gy, C),
+    ok: (x, y) => inside(x, y) && cells[y * W + x].k === "open" && !keepOut(x, y),
+    pass: (c) => !!(CELL[c.k] && CELL[c.k].walk),
+    car: (x, y, ax, len, body, ok) => placeCar(cells, W, H, x, y, ax ? "y" : "x", len, body === "truck" ? "truck" : "car", ok, Math.abs(x * 31 + y * 17) % 1000),
+  }).kinds;
   // Land mines (mines.js, the main base's Minefield): buried in the open ground FORT.MINES cells out from the band, off
   // the lanes to the gates, after the cover (nothing stands on one); the attackers start beyond them.
   F.minesLaid = 0;
@@ -1907,8 +1958,16 @@ function viewBattle(state, base, prev = null) {
     mode: "battle", layout: "baseDefence", deploy: true, drill: true, baseId: base.id, canRetreat: false, handler: null,
     enemy: { kind: "zombies", count: 1, power: 1, types: { runner: 1 }, name: "nobody (the base map)" }, context: { baseId: base.id, drill: true, view: true, noPlan: true },
   };
-  const b = createBattle(state, setup);
+  // The view's own dice (the base's, fixed): the same view every time it is made again (a building put down, a doorway
+  // opened), and the game's dice left where they were (looking at the map changes nothing to come).
+  const keepDice = state.rng.state;
+  state.rng.state = (scatterSeed(base.tile) ^ 0x51ed27) >>> 0;
+  let b;
+  try { b = createBattle(state, setup); } finally { state.rng.state = keepDice; }
   b.units = []; // nobody on the map: the survivors do not show in the building view
+  // A base with nobody at home (a camp whose people are all out) came out of createBattle lost, "over": the view took no
+  // clicks at all. Nothing is fought here.
+  b.over = false; b.result = null;
   b.log = [];
   b.drill = true;
   b.phase = "deploy";
@@ -1961,8 +2020,9 @@ export function itemAtCell(state, b, x, y) {
   }
   return null;
 }
-// Layout mode's commands (combat.js combatAct via deploy.js): pick an item, turn it, put it down at a map cell, lift
-// one off the map (back to the game's own spot), close the view; base building (2026-10-19): select a placed thing
+// Layout mode's commands (combat.js combatAct via deploy.js): pick an item, turn it, put it down at a map cell, Move
+// one (lift: picked, its ghost under the mouse, it and the map left as they are until it is put down), let the game
+// place one again (unplace), close the view; base building (2026-10-19): select a placed thing
 // (sel), pick a type to build (pickType), build it at a cell (queueBuild and the job placed at the ghost; a failed
 // placement cancels the job and returns why), open or close a doorway (link / unlink), pull a building down or cancel
 // a job (demolish). Returns an error, or "".
@@ -1989,6 +2049,7 @@ export function layoutAct(state, b, act) {
       const opts = pieceOpts(base, bt);
       const chk = canBuild(state, base, bt, opts);
       if (!chk.ok) return chk.reason || "It cannot be built here now.";
+      holdAuto(state, base); // what the game placed stays where it is (autoLayout)
       const text = queueBuild(state, base, bt, opts);
       const job = base.construction.filter((c) => c.type === bt && !c.target).pop();
       if (!job) return text;
@@ -2000,6 +2061,7 @@ export function layoutAct(state, b, act) {
       return "";
     }
     case "link": {
+      holdAuto(state, base);
       const err = linkBuildings(state, base, act.a, act.b);
       if (err) return err;
       L.msg = "A doorway opened between them.";
@@ -2007,6 +2069,7 @@ export function layoutAct(state, b, act) {
       return "";
     }
     case "unlink": {
+      holdAuto(state, base);
       const err = unlinkBuildings(state, base, act.a, act.b);
       if (err) return err;
       L.msg = "The doorway is walled up again.";
@@ -2017,6 +2080,7 @@ export function layoutAct(state, b, act) {
       const it = itemByKey(state, base, act.key);
       if (!it || !it.rec) return "That is gone.";
       let text;
+      holdAuto(state, base);
       if (it.key.startsWith("b:")) { const chk = canDemolish(state, base, it.rec.id); if (!chk.ok) return chk.reason; text = demolish(state, base, it.rec.id); }
       else if (it.key.startsWith("c:")) text = cancelBuild(state, base, it.rec.id);
       else return "Only a building or a job in the queue.";
@@ -2031,6 +2095,7 @@ export function layoutAct(state, b, act) {
       const g = ghostAt(state, b, Number(act.x), Number(act.y));
       if (!g) return "Nothing picked.";
       if (!g.ok) return g.why;
+      holdAuto(state, base); // the rest stays where the game had it (autoLayout)
       const err = placeItem(state, base, L.pick, g.at[0], g.at[1], g.at[2]);
       if (err) return err;
       const it = itemByKey(state, base, L.pick);
@@ -2039,20 +2104,20 @@ export function layoutAct(state, b, act) {
       refreshBaseMap(state);
       return "";
     }
-    case "lift": {
-      const it = itemByKey(state, base, act.key);
-      if (!it) return "That is gone.";
-      unplaceItem(state, base, act.key);
+    case "lift": { // Move (the playtest 2026-10-20: the map was made again on every Move): only the pick, its ghost under
+      // the mouse; it stays where it stands (and so does everything else, the map and the view) until it is put down.
+      const e = layoutOf(state, base).find((q) => q.it.key === act.key);
+      if (!e) return "That is gone.";
       L.pick = act.key;
       L.pickType = null;
-      L.rot = it.at ? it.at[2] || 0 : 0;
-      refreshBaseMap(state);
-      state.combat.layout.msg = `${it.label} lifted: click where it goes (R turns it).`;
+      L.rot = e.at ? e.at[2] || 0 : 0;
+      L.msg = `${e.it.label}: click where it goes (R turns it, Esc leaves it where it is).`;
       return "";
     }
     case "unplace": {
       const it = itemByKey(state, base, act.key);
       if (!it) return "That is gone.";
+      holdAuto(state, base);
       unplaceItem(state, base, act.key);
       if (L.pick === act.key) L.pick = null;
       refreshBaseMap(state);
