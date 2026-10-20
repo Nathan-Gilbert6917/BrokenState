@@ -30,7 +30,7 @@ import { partyFleet, vehicleLabel, isBike } from "../sim/vehicles.js";
 import { raidMove, raidItemAt, parseRaidLoc, raidTakeAll, stashAll, personalLoad, trunkInfo, atVehicle, raidParty, quickTarget, matesOf, hauled, haulBudget, HAUL, supplyFit } from "../sim/raidloot.js";
 import { combatAct, INV_AP, HANDOVER_AP, handoverRefusal, handoverTargets } from "../sim/combat.js"; // INV_AP: a move in the fight's inventory window (combatAct "inv"); HANDOVER_AP: one to the survivor next to you (combatAct "handover")
 import { lootLayer } from "../sim/raidloot.js";
-import { groundPile, fieldReady, pileCount } from "../sim/ground.js"; // bodies searched where they fell, things on the ground
+import { groundPile, fieldReady, pileCount, groundAt as pileAt, pilesNear } from "../sim/ground.js"; // bodies searched where they fell, things on the ground (the piles on and next to someone: the fight's Inventory window)
 import { isCart, cartSpec, cartFree, feltKg, boxFree, cartFrac, cartBroken } from "../sim/carts.js"; // a wheelbarrow, a hand cart: In arms with its own grid; on a battle map a container up to its kg
 import { SEARCH } from "../sim/search.js";
 import { ask } from "./confirm.js"; // breaking down anything above junk asks first (one confirmation style)
@@ -48,7 +48,9 @@ import { splitAt, openAt, boxAt } from "../sim/inventory.js";
 import { itemKeyOf, roomOn, stockToPerson, bodyToPerson, supRoom, suppliesOnto, SUP_PLACES, PLACE_WORDS } from "../sim/supitems.js"; // supplies out of the stores as items you hold (2026-10-16); onto a place of theirs (2026-10-18)
 import { isRoundKey } from "../sim/rounds.js"; // rounds out of the stores: boxed or loose
 import { holdSection } from "./carry.js"; // the team's supplies this person carries (pockets, pack, arms), the ground
-import { bagRefusal, handsBusy, handsCount, HANDS_MAX } from "../sim/carry.js"; // Carry in arms (the search window): a bag, a rig or a case into the arms
+import { bagRefusal, handsBusy, handsCount, handsKg, HANDS_MAX, HAUL_MIN, dropArmsSupply, holdName, unitKg, qtyText, stackText, groundAt as siteAt, groundItemText, groundToPerson, pickUpGround, dropItemToGround } from "../sim/carry.js"; // Carry in arms (the search window): a bag, a rig or a case into the arms; the Carried list and the ground (State Map) in every inventory window
+import { HOLD_ICON } from "./carry.js";
+import { partyTile } from "../sim/parties.js";
 import { isBox, isSealed, boxText, boxEmptyKg, openPlan, lockWords } from "../sim/boxes.js"; // lock boxes and cases (gun cases too): sealed until opened, then a window of what is inside (ui/boxview.js)
 import { openBoxWindow } from "./boxview.js"; // an opened box's window
 import { registerStackScreen, openStack, closeStack, stackPanel, chosenQty, supplyIcon, splitCount, STACK_ACTIONS, STACK_CHANGE } from "./stackmove.js"; // how many of a supply stack, and where
@@ -149,7 +151,7 @@ function gearCog(state, ui, item, loc) {
 // right, pockets and pack below. holder = survivor or body; prefix = "s:<id>" or "body:<i>".
 // "Food on them": the pack of food and water everyone carries (sim/eating.js), counted in their load.
 const foodLine = (s) => `<div class="small muted" data-imenu="ration:${s.id}"${tip(`Their pack of food and water (sim/eating.js: about ${PACK.food} days of each, topped up from the stores at a base each morning; eaten away from the stores). Counted in the load above. Right-click: eat or drink from it now.`)}>Food on them: ${Math.round(packFood(s) * 10) / 10} d · water ${Math.round(packWater(s) * 10) / 10} (${Math.round(packKg(s) * 10) / 10} kg)</div>`;
-export function doll(state, ui, holder, prefix, portrait, { readonly = false, user = null, weightLine = null } = {}) {
+export function doll(state, ui, holder, prefix, portrait, { readonly = false, user = null, weightLine = null, bagBoxes = true } = {}) { // bagBoxes false: the In arms grid is drawn in the Carried list instead (a fight's windows)
   ensureInv(holder);
   const box = (slot) => slotBox(state, ui, `${prefix}:${slot}`, SLOT_NAMES[slot], user, readonly);
   const pk = packOf(holder);
@@ -184,7 +186,7 @@ export function doll(state, ui, holder, prefix, portrait, { readonly = false, us
     <div class="invgrid">${Array.from({ length: POCKETS }, (_, i) => slotBox(state, ui, `${prefix}:pocket:${i}`, "", user, readonly)).join("")}</div>
     ${rigBoxes(state, ui, holder, prefix, user, readonly)}
     <div class="invlabel"${tip("A pack holds anything but another pack or something bulky. Wear a backpack to get pack slots and a higher max load. Everything in it still weighs what it weighs.")}>Pack${pk ? ` (${pk.filter(Boolean).length}/${pk.length})` : ""}</div>
-    ${pk ? `<div class="invgrid">${pk.map((_, i) => slotBox(state, ui, `${prefix}:pack:${i}`, "", user, readonly)).join("")}</div>` : `<div class="small muted">No backpack, no pack slots.</div>`}${carriedBagBoxes(state, ui, holder, prefix, user, readonly)}`;
+    ${pk ? `<div class="invgrid">${pk.map((_, i) => slotBox(state, ui, `${prefix}:pack:${i}`, "", user, readonly)).join("")}</div>` : `<div class="small muted">No backpack, no pack slots.</div>`}${bagBoxes ? carriedBagBoxes(state, ui, holder, prefix, user, readonly) : ""}`;
 }
 
 // A bag carried in the arms (In arms slot, sim/carry.js): its weight, the hands-full rule, and its contents to take
@@ -458,7 +460,7 @@ export function inventoryModal(state, ui) {
     ${readonly ? `<div class="small warn">${esc(s.name.split(" ")[0])} is out of reach: nothing can be changed.</div>` : ""}
     <div class="invcols">
       <div class="invcol">${whoTabs(state, ui, people, s.id)}${body}${readonly ? "" : holdSection(state, ui, s)}</div>
-      <div class="invcol">${readonly ? "" : storageBox(state, ui, place, s)}</div>
+      <div class="invcol">${readonly ? "" : storageBox(state, ui, place, s)}${readonly ? "" : groundBox(state, ui, s)}</div>
     </div>
     ${selBar(state, ui, place)}${stackPanel(state, ui, "inv")}
     <div class="small muted" style="margin-top:0.5rem">Click an item, then click where it should go (or drag it). Click a selected item again to send it across: onto ${esc(s.name.split(" ")[0])}, or into storage. A full slot swaps. Drag the figure (or roll the wheel over it) to turn it by hand; ↻ Spin lets it turn by itself again. Right-click an item for what can be done with it (equip, reload, unload, modify, repair, eat, drink, use...).</div>
@@ -566,6 +568,7 @@ function peekModal(state, ui) {
   const people = b.units.filter((u) => u.side === "player" && u.sid != null && u.vol == null).map((u) => survivorById(state, u.sid)).filter(Boolean);
   const c = peekCan(state, s.id);
   const u = c.u;
+  const g = groundCan(state, s.id); // the Carried list and the ground: their turn, up (putting down is free, picking up hauling time); look only with the kit (no action left), as the window says
   const where = u ? (u.dead ? "dead" : u.left ? "got away" : u.down ? "down" : `${Math.round(u.hp)} hp`) : "";
   const head = c.ok
     ? `<div class="small"${tip("Pockets, the pack's slots, the rig's pouches, the hands and the off hand: click an item, then where it goes (or drag it), 1 action a move. Split, Open box and Box on a stack of rounds cost the same. Loose rounds dropped onto a spare magazine of the gun load it: 1 action with the rounds in a pocket or the rig, both actions from the pack (a box: open it first). Armour, the helmet, the rig and the pack stay as worn (a plate: the Plate order). What moved counts at once: a gun in the hands, a magazine in a pocket (a 1-action reload), boxes of rounds.")}>${esc(s.name.split(" ")[0])}'s turn, <b>${u.ap} action${u.ap === 1 ? "" : "s"}</b> left: each move here costs ${INV_AP}. Drag the figure to turn it.</div>`
@@ -574,8 +577,8 @@ function peekModal(state, ui) {
     <div class="spread"><h1>Inventory: ${esc(s.name)}</h1><span class="muted">${esc(b.place)}${where ? ` · ${esc(where)}` : ""}</span></div>
     ${head}
     ${ui.invMsg ? `<div class="result small">${esc(ui.invMsg)}</div>` : ""}
-    <div class="invcols"><div class="invcol">${whoTabs(state, ui, people, s.id)}${doll(state, ui, s, `s:${s.id}`, figureSpinImg(state, s, 7), { readonly: !c.ok, user: s })}</div></div>
-    ${peekBar(state, ui, c.ok)}
+    <div class="invcols"><div class="invcol">${whoTabs(state, ui, people, s.id)}${doll(state, ui, s, `s:${s.id}`, figureSpinImg(state, s, 7), { readonly: !c.ok, user: s, bagBoxes: !u })}</div>${u ? `<div class="invcol">${carriedList(state, ui, b, u, s, { movable: c.ok && g.ok })}${fightGround(state, ui, b, u, s, c.ok && g.ok)}</div>` : ""}</div>
+    ${peekBar(state, ui, c.ok)}${fightSelLine(state, ui, b)}${armsSelLine(state, ui)}
     <div class="row" style="margin-top:0.8rem;justify-content:flex-end"><button class="primary" data-action="inv-close"${tip("Back to the battle (Esc)")}>Close</button></div>
   </div>`;
 }
@@ -648,12 +651,12 @@ export function takeLootReq(state, ui) {
   if (cui.invReq != null) { // 🎒 a survivor's kit, asked for from the battle panel (ui/combat.js cb-inv): read-only
     const sid = cui.invReq;
     cui.invReq = null;
-    if (state.combat && !state.combat.over && !(ui.inv && (ui.inv.loot || ui.inv.raid)) && survivorById(state, sid)) { ui.inv = { sid, peek: true }; ui.invSel = null; ui.invMsg = ""; }
+    if (state.combat && !state.combat.over && !(ui.inv && (ui.inv.loot || ui.inv.raid)) && survivorById(state, sid)) { ui.inv = { sid, peek: true }; ui.invSel = null; ui.invArms = null; ui.invMsg = ""; }
   }
   if (cui.handReq) { // 🤲 Hand over (ui/combat.js): the acting survivor's kit and the mate's side by side (handModal)
     const { sid, mate } = cui.handReq;
     cui.handReq = null;
-    if (state.combat && !state.combat.over && !(ui.inv && (ui.inv.loot || ui.inv.raid)) && survivorById(state, sid) && survivorById(state, mate)) { ui.inv = { sid, peek: true, mate }; ui.invSel = null; ui.invMsg = ""; }
+    if (state.combat && !state.combat.over && !(ui.inv && (ui.inv.loot || ui.inv.raid)) && survivorById(state, sid) && survivorById(state, mate)) { ui.inv = { sid, peek: true, mate }; ui.invSel = null; ui.invArms = null; ui.invMsg = ""; }
   }
   if (!cui.lootReq) return;
   const r = cui.lootReq;
@@ -769,23 +772,217 @@ function raidModal(state, ui) {
     <div class="result small"${ui.invMsg ? "" : ' style="visibility:hidden"'}>${ui.invMsg ? esc(ui.invMsg) : "&nbsp;"}</div>
     <div class="invcols${cols.length > 2 ? " three" : ""}">${cols.join("")}</div>
     ${SL && SL.slot === "sup" ? stackPanel(state, ui, "raid") || selLine(sel) : sel ? `<div class="invsel small">Selected: <b>${esc(sel)}</b>. Click where it should go: a slot, a pocket or pack cell, Carried${mates.length ? ", a teammate" : ""}${box ? ", the container" : ""}, the ground${trunk ? ", the vehicle" : ""}.${armsBtn} <button class="mini" data-action="inv-cancel">Cancel</button></div>` : ""}
+    ${armsSelLine(state, ui)}
     <div class="small muted" style="margin-top:0.5rem">Drag things where they should go (or click one, then where). Click a thing twice to send it across. The first ${HAUL.free} kg a turn are free to haul, then ${HAUL.per} kg an action; handing things to a teammate next to you is free.${found.length ? ` Found so far: ${esc(found.join(", "))}.` : ""}</div>
     <div class="row" style="margin-top:0.8rem;justify-content:flex-end"><button class="primary" data-action="inv-close">Done</button></div>
   </div>`;
 }
 
-// One person in the search window: their slots (paper doll), their weight against their max, what they carry loose.
+// One person in the search window: their slots (paper doll), their weight against their max, what they carry.
 function personCol(state, ui, b, u, s, isMe) {
-  const first = esc(s.name.split(" ")[0]);
   const me = personalLoad(state, u);
-  const p = raidParty(state, b);
   const weightLine = `<div class="small ${me.room < 0 ? "danger" : ""}"${tip(`Worn and held ${kg(me.worn)} kg${me.share ? `, their share of the team's packed supplies and cargo ${kg(me.share)} kg (on foot the team shares it out)` : ""}, carried loose ${kg(me.haul)} kg, of a ${me.max} kg max load (40, 28 with a Bad Back, 48 with a Strong Back, + the pack and Packrat). ${BANDS_HELP}`)}><b>${kg(me.load)}/${me.max} kg</b> · ${kg(Math.max(0, me.room))} kg free</div>${loadBar(me.load, me.max)}`;
-  const dollHtml = doll(state, ui, s, `s:${s.id}`, spriteImg(survivorURL(s, state.seed), isMe ? 6 : 5), { user: s, weightLine });
+  const dollHtml = doll(state, ui, s, `s:${s.id}`, spriteImg(survivorURL(s, state.seed), isMe ? 6 : 5), { user: s, weightLine, bagBoxes: false });
+  return `${dollHtml}${carriedList(state, ui, b, u, s)}`;
+}
+
+// ---------- what fills the hands, and the ground (the fight's windows; the State Map's) ----------
+// The Carried list: everything that fills the hands (sim/carry.js handsBusy) in one place, so "hands full" never shows
+// over an empty list (the user's report 2026-10-20), in the search window and the fight's Inventory window alike:
+//   the bag or the cart in the arms   its tile is the In arms slot's ("s:<sid>:carry"), its grid under it: dragged onto
+//                                     the ground it is set down there (a cart let go: free, sim/carts.js letGoCart);
+//   the team's supplies in the arms   "arms:<uid>:sup:<key>" (u.hands: carried from the road, or taken off a ground
+//                                     pile in a team's fight, carry.js pileToArms): dragged onto the ground (or picked,
+//                                     then the ground clicked, or Set down) they go down there, free (dropArmsSupply);
+//   a hand on a teammate's cart       a line (Let go, free, in the orders);
+//   the finds carried loose           u.haul ("haul:<uid>:…"), whole units (carry.js HAUL_MIN), as before.
+const EPSU = 1e-6;
+const armsLoc = (u, k) => `arms:${u.id}:sup:${k}`;
+const isArmsLoc = (x) => /^arms:\d+:sup:/.test(String(x || ""));
+function stackTileHtml(loc, icon, name, count, kgv, tipText, movable, sel) {
+  return `<div class="islot store stack${sel ? " sel" : ""}${movable ? "" : " still"}"${movable ? ` data-action="inv-click" data-loc="${loc}"` : ""}${tip(tipText)}>
+    <div class="itile"${movable ? ` draggable="true" data-drag="${loc}"` : ""}><span class="iico">${icon}</span><span class="iname">${esc(name)}</span><span class="icount">${esc(count)}</span><span class="ikg">${kg(kgv)}</span></div></div>`;
+}
+function carriedList(state, ui, b, u, s, { movable = true } = {}) {
+  const first = esc(s.name.split(" ")[0]);
   const hl = `haul:${u.id}`;
-  const hsup = Object.entries(u.haul ? u.haul.sup : {}).filter(([, v]) => v >= 1);
+  const hsup = Object.entries(u.haul ? u.haul.sup : {}).filter(([, v]) => v >= HAUL_MIN - EPSU);
+  const arms = Object.entries(u.hands || {}).filter(([, q]) => q > EPSU);
+  ensureInv(s);
+  const bag = s.gear.carry || u.bag || null;
+  const bagLoc = `s:${s.id}:carry`;
+  const pusher = u.cartHelp != null ? b.units.find((x) => x.id === u.cartHelp) : null;
   const hn = handsCount(u), handsOn = handsBusy(u);
-  return `${dollHtml}<div class="invlabel${handsOn ? " warn" : ""}"${tip(`Finds ${first} carries loose (bags, arms). They count against ${first}'s max load and come home with ${first}; if ${first} bleeds out they drop where ${first} falls.${p && lootLayer(b).vehicleZone >= 0 ? ` Put them in the vehicle to keep them safe and free ${first} up.` : ""} Hands: anything carried here fills them (no shooting, reloading, doors or windows until it is put down, on the ground for free, or stowed in the pack, the pockets or the vehicle); two different things carried are both hands full, and nothing more can be taken.`)}>Carried (${kg(me.haul)} kg)${handsOn ? ` · ${hn >= HANDS_MAX ? "✋✋ both hands full" : "✋ hands full"}` : ""}</div>
-    <div class="istore" data-action="inv-click" data-loc="${hl}:list" data-drop="${hl}:list"${tip(`Drop here: ${first} carries it`)}>${hsup.map(([k, v]) => supTile(ui, `${hl}:sup:${k}`, k, v)).join("")}${gearTiles(ui, u.haul ? u.haul.gear : [], hl, s) || (hsup.length ? "" : `<span class="small muted">Nothing. Drop finds here.</span>`)}</div>`;
+  const L = lootLayer(b);
+  const p = raidParty(state, b);
+  const bagTile = bag ? `<div class="islot store${ui.invSel === bagLoc ? " sel" : ""}"${movable ? ` data-action="inv-click" data-loc="${bagLoc}"` : ` data-loc="${bagLoc}"`}>${tile(bag, bagLoc, s, movable)}<span class="chip ikept"${tip(isCart(bag) ? "Pushed: drag it onto the ground to let go of it there (free; it stands with all in it). Take cart (1 action) to push it on." : "In the arms, not worn: drag it onto the ground to set it down (free), or to Backpack to wear it.")}>${isCart(bag) ? "pushed" : "in arms"}</span></div>` : "";
+  const armsTiles = arms.map(([k, q]) => stackTileHtml(armsLoc(u, k), HOLD_ICON[k] || (SUPPLIES[k] ? supplyIcon(k) : "▪"), holdName(k), qtyText(q), q * unitKg(k),
+    `${stackText(k, q)} of the team's supplies in ${s.name.split(" ")[0]}'s arms (${kg(q * unitKg(k))} kg): hands full. Drag it onto the ground (or click it, then the ground) to set it down: free.`, movable, ui.invArms === armsLoc(u, k))).join("");
+  const help = u.cartHelp != null ? `<div class="small warn" style="margin:0.2rem 0">A hand on ${pusher ? esc(pusher.name.split(" ")[0]) : "a teammate"}'s ${pusher && pusher.bag ? esc(pusher.bag.name.toLowerCase()) : "cart"} (helping pull it): Let go (free) for free hands.</div>` : "";
+  const haulGear = u.haul ? u.haul.gear : [];
+  const loose = `${hsup.map(([k, v]) => supTile(ui, `${hl}:sup:${k}`, k, v, "", movable)).join("")}${movable ? gearTiles(ui, haulGear, hl, s) : haulGear.map((it, i) => `<div class="islot store">${tile(it, `${hl}:gear:${i}`, s, false)}</div>`).join("")}`;
+  const any = bagTile || armsTiles || loose || help;
+  const grid = bag && packSize(bag) ? carriedBagBoxes(state, ui, s, `s:${s.id}`, s, !movable) : "";
+  return `<div class="invlabel${handsOn ? " warn" : ""}"${tip(`What ${first} carries in the arms and loose: a bag or a cart in the arms, the team's supplies carried by hand, finds carried loose. They count against ${first}'s max load and come home with ${first}; if ${first} bleeds out they drop where ${first} falls.${p && L && L.vehicleZone >= 0 ? ` Put finds in the vehicle to keep them safe and free ${first} up.` : ""} Hands: anything carried here fills them (no shooting, reloading, doors or windows until it is put down, on the ground for free, or stowed in the pack, the pockets or the vehicle); two different things carried are both hands full, and nothing more can be taken.`)}>Carried (${kg(handsKg(u))} kg)${handsOn ? ` · ${hn >= HANDS_MAX ? "✋✋ both hands full" : "✋ hands full"}` : ""}</div>
+    ${help}<div class="istore"${movable ? ` data-action="inv-click" data-loc="${hl}:list" data-drop="${hl}:list"` : ""}${tip(`Drop here: ${first} carries it`)}>${bagTile}${armsTiles}${loose}${bagTile || armsTiles || loose ? "" : `<span class="small muted">Nothing. Drop finds here.</span>`}</div>${grid}`;
+}
+// The ground in the fight's Inventory window (sim/ground.js): the pile under the survivor (a drop box, made when
+// something is put down) and the piles next to them, each with its things. Taking from them is the Ground window's
+// hauling (raidloot.js raidMove: the first HAUL.free kg a turn free, then HAUL.per kg an action); putting down is free.
+function fightGround(state, ui, b, u, s, movable) {
+  const L = lootLayer(b);
+  const own = L ? pileAt(b, u.x, u.y, u.f || 0) : null;
+  const near = L ? pilesNear(b, u).filter((c) => c !== own) : [];
+  const ownDrop = own ? `rbox:${own.id}:list` : `here:${u.id}:list`;
+  const pileHtml = (c, title, drop, mine) => {
+    const sups = c ? Object.entries(c.contents.sup).filter(([, v]) => v >= 1) : [];
+    const gear = c ? c.contents.gear : [];
+    const l = c ? `rbox:${c.id}` : null;
+    const tiles = `${sups.map(([k, v]) => supTile(ui, `${l}:sup:${k}`, k, v, "", movable)).join("")}${gear.map((it, i) => `<div class="islot store${ui.invSel === `${l}:gear:${i}` ? " sel" : ""}"${movable ? ` data-action="inv-click" data-loc="${l}:gear:${i}"` : ""}>${tile(it, `${l}:gear:${i}`, s, movable)}</div>`).join("")}`;
+    return `<div class="invlabel"${tip(mine ? `Where ${s.name.split(" ")[0]} stands: drop things here to put them down (free). Anyone can pick them up; after a won fight they are part of the loot.` : `Next to ${s.name.split(" ")[0]}: within reach to pick up (hauling time).`)}>${title}</div>
+      <div class="istore"${movable ? ` data-action="inv-click" data-loc="${drop}" data-drop="${drop}"` : ""}>${tiles || `<span class="small muted">${mine ? "Nothing. Drag things here to put them down." : "Nothing."}</span>`}</div>`;
+  };
+  const dirs = (c) => { const dx = c.x - u.x, dy = c.y - u.y; return `${dy < 0 ? "N" : dy > 0 ? "S" : ""}${dx < 0 ? "W" : dx > 0 ? "E" : ""}`; };
+  return `<div style="margin-top:0.6rem">${pileHtml(own, "On the ground here", ownDrop, true)}${near.map((c) => pileHtml(c, `On the ground next to them (${dirs(c)})`, `rbox:${c.id}:list`, false)).join("")}
+    <div class="small muted" style="margin-top:0.2rem">Taking from the ground is hauling: the first ${HAUL.free} kg a turn free, then ${HAUL.per} kg an action. Putting down is free.</div></div>`;
+}
+// Can this survivor's unit move things to and from the ground and its Carried list now ({ u, ok, why })? Their own
+// turn, up and about; no action needed (putting down is free, picking up pays its hauling time).
+function groundCan(state, sid) {
+  const b = state.combat;
+  const u = b && !b.over ? b.units.find((x) => x.sid === sid && x.side === "player") : null;
+  if (!u) return { u: null, ok: false, why: "They are not in the fight." };
+  if (b.phase !== "player") return { u, ok: false, why: "Wait for the enemy turn to finish: nothing moves until then." };
+  if (u.dead || u.down || u.left || u.fled || u.off || u.away) return { u, ok: false, why: `${u.name.split(" ")[0]} cannot do that now.` };
+  return { u, ok: true, why: "" };
+}
+const fightLoc = (x) => /^(rbox|haul|here|trunk):\d+:/.test(String(x || ""));
+// Is this location the ground (a pile, not a cart; "here:<uid>": the cell under them with no pile yet)?
+function isGroundLoc(b, loc) {
+  const T = parseRaidLoc(loc);
+  if (T.o === "here") return true;
+  if (T.o !== "rbox") return false;
+  const L = lootLayer(b);
+  const c = L && L.containers.find((x) => x.id === T.id);
+  return !!(c && c.kind === "ground" && !c.cart);
+}
+// A move in a fight that touches the ground, the Carried list or the arms (the search window and the fight's Inventory
+// window): the team's supplies in the arms set down (free), a cart in the arms let go onto the ground (free), else the
+// search window's move (raidloot.js raidMove). to null: wherever a double click sends it. Returns the message.
+function fightHandsMove(state, ui, uid, from, to, qty = Infinity) {
+  const b = state.combat;
+  const u = b && b.units.find((x) => x.id === uid);
+  if (!u) return "";
+  if (isArmsLoc(from)) {
+    if (to && !isGroundLoc(b, to)) return "The team's supplies in the arms go down on the ground (free): drag them onto it. Picked up again from there, they go back in the arms.";
+    const A = parseRaidLoc(from);
+    const who = b.units.find((x) => x.id === A.id);
+    if (!who) return "";
+    const n = b.log.length;
+    const err = dropArmsSupply(state, b, who, A.i, qty);
+    return err || (b.log.length > n ? b.log[b.log.length - 1].text : "Set down.");
+  }
+  fieldReady(b, state);
+  const F = parseRaidLoc(from);
+  const item = F.o === "s" ? itemAt(state, from) : null;
+  if (item && isCart(item) && F.slot === "carry" && to && isGroundLoc(b, to)) {
+    const who = b.units.find((x) => x.side === "player" && x.sid === F.id && !x.dead);
+    if (!who) return "";
+    const n = b.log.length;
+    return combatAct(state, { type: "letGoCart", unit: who.id }) || (b.log.length > n ? b.log[b.log.length - 1].text : "Let go.");
+  }
+  let dest = to;
+  if (!dest) { const own = pileAt(b, u.x, u.y, u.f || 0) || groundPile(b, u.x, u.y, u.f || 0); dest = quickTarget(state, b, uid, from, own.id); }
+  else if (parseRaidLoc(dest).o === "here") dest = `rbox:${groundPile(b, u.x, u.y, u.f || 0).id}:list`;
+  else if (parseRaidLoc(dest).o !== "s") { const T = parseRaidLoc(dest); dest = `${T.o}:${T.id}:list`; }
+  return raidMove(state, uid, from, dest, qty);
+}
+// A click on the team's supplies in the arms (both fight windows): picked (ui.invArms), then the ground clicked: set
+// down. Returns true when the click was this.
+function armsClick(state, ui, loc, uid) {
+  if (isArmsLoc(loc)) { ui.invArms = ui.invArms === loc ? null : loc; ui.invSel = null; return true; }
+  if (!ui.invArms) return false;
+  const from = ui.invArms;
+  ui.invArms = null;
+  ui.invMsg = fightHandsMove(state, ui, uid, from, loc);
+  return true;
+}
+// The line under a fight window for the team's supplies picked in the arms.
+function armsSelLine(state, ui) {
+  if (!ui.invArms || !state.combat) return "";
+  const A = parseRaidLoc(ui.invArms);
+  const u = state.combat.units.find((x) => x.id === A.id);
+  const q = u && u.hands ? u.hands[A.i] || 0 : 0;
+  if (!(q > EPSU)) { ui.invArms = null; return ""; }
+  return `<div class="invsel small">Selected: <b>${esc(stackText(A.i, q))}</b> in ${esc(u.name.split(" ")[0])}'s arms. Click the ground to set it down (free). <button class="mini" data-action="inv-armsdown"${tip("Set all of it down where they stand (free)")}>Set down</button> <button class="mini" data-action="inv-cancel">Cancel</button></div>`;
+}
+// The line under the fight's Inventory window for a thing picked on the ground or in the Carried list.
+function fightSelLine(state, ui, b) {
+  if (!fightLoc(ui.invSel)) return "";
+  const F = parseRaidLoc(ui.invSel);
+  const name = F.slot === "sup" ? (SUPPLIES[F.i] || { name: F.i }).name : (raidItemAt(state, b, ui.invSel) || {}).name;
+  if (!name) return "";
+  return `<div class="invsel small">Selected: <b>${esc(name)}</b> (${F.o === "haul" ? "carried" : "on the ground"}). Click a slot, a pocket or pack cell, Carried or the ground to move it there; click it again to send it across. <button class="mini" data-action="inv-cancel">Cancel</button></div>`;
+}
+
+// ---------- the ground in the State Map's inventory windows ----------
+// What lies on the tile's ground where a team stands (sim/carry.js groundAt: put down by a team, left after a fight),
+// in the inventory window of each of its people: "gnd:<partyId>:<i>" a thing, "gnd:<partyId>:list" the drop box. A
+// thing clicked (or dragged) onto someone's slot is picked up onto them (carry.js groundToPerson: a cart, or a bag onto
+// In arms, into the arms; another item onto that slot; a stack of supplies into the team's pool); clicked twice, onto
+// the person whose window it is; a thing of theirs or the cargo's dropped on the box goes down on the ground
+// (dropItemToGround). The Pick up… box (ui/carry.js) still takes part of a stack.
+const gndOf = (x) => { const m = /^gnd:(\d+):(list|\d+)$/.exec(String(x || "")); return m ? { pid: Number(m[1]), i: m[2] === "list" ? null : Number(m[2]) } : null; };
+export function groundBox(state, ui, s) {
+  const place = s ? personPlace(s) : null;
+  if (!place || !place.startsWith("party:")) return "";
+  const p = state.parties.find((x) => x.id === Number(place.slice(6)));
+  if (!p) return "";
+  const site = siteAt(state, partyTile(p));
+  const items = site ? site.items : [];
+  const drop = `gnd:${p.id}:list`;
+  const tiles = items.map((it, i) => {
+    const loc = `gnd:${p.id}:${i}`;
+    const sel = ui.invSel === loc;
+    if (it.kind === "gear") {
+      const item = it.item || (GEAR[it.key] ? { key: it.key, name: it.name, quality: 1 } : null);
+      if (!item) return "";
+      return `<div class="islot store${sel ? " sel" : ""}" data-action="inv-click" data-loc="${loc}" data-drop="${drop}">${tile(item, loc, s)}${it.cartKg != null ? `<span class="chip ikept"${tip(`A cart with what is in it (${it.cartKg} kg): click it twice (or drag it onto In arms) for ${s.name.split(" ")[0]} to push it`)}>cart</span>` : ""}</div>`;
+    }
+    const k = it.fresh ? "meat" : it.key;
+    return stackTileHtml(loc, HOLD_ICON[k] || (SUPPLIES[it.key] ? supplyIcon(it.key) : "▪"), groundItemText(it).replace(/^[\d.]+ /, ""), qtyText(it.qty), it.qty * unitKg(k), `${groundItemText(it)} on the ground (${kg(it.qty * unitKg(k))} kg). Click it twice to pick up all of it the team has room for (the team's supplies, shared out among it); Pick up… for part of it.`, true, sel);
+  }).join("");
+  const G = gndOf(ui.invSel);
+  const selIt = G && G.pid === p.id && G.i != null ? items[G.i] : null;
+  return `<div style="margin-top:0.8rem"><div class="spread"><b${tip("The ground of the tile the team stands on: put down by a team, or left after a fight. Any team here can pick it up; scavengers find what is left, food spoils.")}>On the ground here</b><span class="small muted">${items.length} thing${items.length === 1 ? "" : "s"}${items.length ? ` <button class="mini" data-action="carry-pick" data-pid="${p.id}"${tip("Pick up part of a stack, or everything that fits")}>Pick up…</button>` : ""}</span></div>
+    <div class="istore" data-action="inv-click" data-loc="${drop}" data-drop="${drop}"${tip("Drop here to put it on the ground of this tile")}>${tiles || `<span class="small muted">Nothing. Drag things here to put them down.</span>`}</div>
+    ${selIt ? `<div class="invsel small">Selected on the ground: <b>${esc(groundItemText(selIt))}</b>. Click ${esc(s.name.split(" ")[0])}'s slot, pocket or pack cell to pick it up there${selIt.kind === "gear" && selIt.item && isCarryable(selIt.item) ? " (In arms: carried whole)" : ""}, or click it again. <button class="mini" data-action="inv-cancel">Cancel</button></div>` : ""}</div>`;
+}
+// A click in a State Map inventory window that touches the ground box. Returns true when it was one.
+function mapGroundClick(state, ui, loc) {
+  const sel = ui.invSel;
+  const G = gndOf(loc), S = gndOf(sel);
+  if (!G && !S) return false;
+  const s = ui.inv && ui.inv.sid != null ? survivorById(state, ui.inv.sid) : null;
+  if (!sel) { if (G && G.i != null) ui.invSel = loc; return true; }
+  if (S && S.i != null) {
+    const p = state.parties.find((x) => x.id === S.pid);
+    if (!p) { ui.invSel = null; return true; }
+    if (sel === loc) { ui.invMsg = groundToPerson(state, p, S.i, s); ui.invSel = null; return true; }
+    if (G) { ui.invSel = G.i != null ? loc : null; return true; }
+    const T = parseLoc(loc);
+    const who = T.o === "s" ? survivorById(state, T.id) : null;
+    if (who) ui.invMsg = groundToPerson(state, p, S.i, who, loc);
+    else if (T.o === "cargo") ui.invMsg = pickUpGround(state, p, S.i);
+    else ui.invMsg = "Pick it up onto someone's slot, pocket or pack cell (or the team's cargo).";
+    ui.invSel = null;
+    return true;
+  }
+  // A thing of theirs (or the cargo's) picked, the ground clicked: put down there.
+  const F = parseLoc(sel);
+  ui.invMsg = F.slot === "sup" ? "Supplies go down from the Supplies carried box (pick a stack there, then Ground)." : dropItemToGround(state, sel);
+  ui.invSel = null;
+  return true;
 }
 
 // ---------- splitting a supply stack: the stack mover (ui/stackmove.js) ----------
@@ -969,15 +1166,37 @@ function supClick(state, ui, loc, ev) {
 
 // ---------- actions (wired in main.js) ----------
 // The fight's inventory window (peekModal): pick, unpick, or move the picked item there through combatAct "inv".
+// The ground and the Carried list (fightGround, carriedList) go the search window's way (fightHandsMove: putting down
+// free, picking up hauling time, no action needed for either); the person's own kit through combatAct "inv" (1 action).
 function peekClick(state, ui, loc) {
+  const b = state.combat;
+  const g = groundCan(state, ui.inv.sid);
+  if (isArmsLoc(loc) || ui.invArms) {
+    if (!g.ok) { ui.invMsg = g.why; ui.invArms = null; return; }
+    armsClick(state, ui, loc, g.u.id);
+    return;
+  }
   const sel = ui.invSel;
-  if (!sel) { if (itemAt(state, loc)) ui.invSel = loc; return; }
-  if (sel === loc) { ui.invSel = null; return; }
+  const has = (x) => (fightLoc(x) ? (parseRaidLoc(x).slot === "sup" || !!raidItemAt(state, b, x)) && parseRaidLoc(x).slot !== "list" : !!itemAt(state, x));
+  if (!sel) { if (has(loc)) ui.invSel = loc; return; }
+  if (sel === loc) {
+    if (fightLoc(loc)) { ui.invMsg = g.ok ? fightHandsMove(state, ui, g.u.id, loc, null) : g.why; }
+    ui.invSel = null;
+    return;
+  }
+  if (fightLoc(sel) && fightLoc(loc)) { const F = parseRaidLoc(sel), T = parseRaidLoc(loc); if (F.o === T.o && F.id === T.id) { ui.invSel = has(loc) ? loc : null; return; } }
+  if (fightLoc(sel) || fightLoc(loc) || (/^s:\d+:carry$/.test(sel) && isCart(itemAt(state, sel)))) { ui.invMsg = g.ok ? fightHandsMove(state, ui, g.u.id, sel, loc) || "Done." : g.why; ui.invSel = null; return; }
   fightMove(state, ui, sel, loc);
 }
 function clickLoc(state, ui, loc, ev = null) {
-  if (ui.inv && ui.inv.raid) return raidClick(state, ui, loc, ev);
+  if (ui.inv && ui.inv.raid) {
+    if (armsClick(state, ui, loc, ui.inv.uid)) return; // the team's supplies in the arms: onto the ground
+    const b = state.combat, sel = ui.invSel;
+    if (b && sel && sel !== loc && /^s:\d+:carry$/.test(sel) && isCart(itemAt(state, sel)) && isGroundLoc(b, loc)) { ui.invMsg = fightHandsMove(state, ui, ui.inv.uid, sel, loc); ui.invSel = null; return; } // a cart let go there
+    return raidClick(state, ui, loc, ev);
+  }
   if (ui.inv && ui.inv.peek) return peekClick(state, ui, loc);
+  if (mapGroundClick(state, ui, loc)) return; // the State Map: the tile's ground
   const sel = ui.invSel;
   const to = parseLoc(loc);
   if (to.slot === "sup") return supClick(state, ui, loc, ev); // a supply stack: the stack mover
@@ -1017,8 +1236,9 @@ export function invDrop(state, ui, from, to, half = false, one = false, at = nul
   if (!ui.inv) return;
   const pop = at || { x: 0, y: 0 };
   if (ui.inv.raid) {
-    if (!/^(s|rbox|haul|trunk):\d+:/.test(from)) return; // a drag of selected text, not of a thing
     const b = state.combat;
+    if (isArmsLoc(from) || (/^s:\d+:carry$/.test(from) && b && isCart(itemAt(state, from)) && isGroundLoc(b, to))) { ui.invMsg = fightHandsMove(state, ui, ui.inv.uid, from, to); ui.invSel = null; ui.invArms = null; closeStack(ui); return; } // the arms onto the ground: set down, a cart let go (free)
+    if (!/^(s|rbox|haul|trunk):\d+:/.test(from)) return; // a drag of selected text, not of a thing
     const T = parseRaidLoc(to), F = parseRaidLoc(from);
     // A stack dropped on a person's slot: held there as an item (that slot, else their pockets and pack), else into
     // their arms (a bulky one, or no room: sim/raidloot.js).
@@ -1037,7 +1257,18 @@ export function invDrop(state, ui, from, to, half = false, one = false, at = nul
     closeStack(ui);
     return;
   }
-  if (ui.inv.peek) { if (/^s:\d+:/.test(from)) fightMove(state, ui, from, to); return; } // the fight's window: through the sim, 1 action
+  if (ui.inv.peek) { // the fight's window: the kit through the sim (1 action); the ground and Carried the search window's way
+    if (isArmsLoc(from) || fightLoc(from) || fightLoc(to) || (/^s:\d+:carry$/.test(from) && state.combat && isCart(itemAt(state, from)))) {
+      if (!/^(s|rbox|haul|here|arms):\d+:/.test(from)) return;
+      const g = groundCan(state, ui.inv.sid);
+      ui.invMsg = g.ok ? fightHandsMove(state, ui, g.u.id, from, to, one ? 1 : Infinity) || "Done." : g.why;
+      ui.invSel = null; ui.invArms = null;
+      return;
+    }
+    if (/^s:\d+:/.test(from)) fightMove(state, ui, from, to);
+    return;
+  }
+  if (gndOf(from) || gndOf(to)) { const was = ui.invSel; ui.invSel = from; if (!mapGroundClick(state, ui, to)) ui.invSel = was; return; } // the State Map: the tile's ground
   const F = parseLoc(from);
   if (F.slot === "sup") {
     if (F.o !== "body") {
@@ -1064,12 +1295,13 @@ export function invDrop(state, ui, from, to, half = false, one = false, at = nul
 export const INV_ACTIONS = {
   ...STACK_ACTIONS, // the stack mover (ui/stackmove.js): sm-qty, sm-to, sm-go, sm-cancel
   "inv-open": (state, ui, d) => { ui.inv = { sid: Number(d.id), loot: false }; ui.invSel = null; ui.invMsg = ""; },
-  "inv-close": (state, ui) => { ui.inv = null; ui.invSel = null; ui.invMsg = ""; },
+  "inv-close": (state, ui) => { ui.inv = null; ui.invSel = null; ui.invArms = null; ui.invMsg = ""; },
+  "inv-armsdown": (state, ui) => { const from = ui.invArms; ui.invArms = null; const b = state.combat; if (!from || !b || !ui.inv) return; const A = parseRaidLoc(from); const u = b.units.find((x) => x.id === A.id); if (u) ui.invMsg = fightHandsMove(state, ui, u.id, from, `here:${u.id}:list`); }, // Set down: the team's supplies picked in the arms, where they stand (free)
   "inv-details": (state, ui) => { ui.invDetails = ui.invDetails === ui.invSel ? null : ui.invSel; }, // ⓘ Details on the selected item (itemlabels.js: the hover tip is short)
   "inv-who": (state, ui, d) => { ui.inv.sid = Number(d.id); ui.invSel = null; },
   "inv-mate": (state, ui, d) => { if (!ui.inv || !ui.inv.peek) return; if (d.id === "" || d.id == null) delete ui.inv.mate; else ui.inv.mate = Number(d.id); ui.invSel = null; ui.invMsg = ""; }, // the hand-over window: another mate in reach, or the acting one's own kit alone
   "inv-click": (state, ui, d, ev) => clickLoc(state, ui, d.loc, ev),
-  "inv-cancel": (state, ui) => { ui.invSel = null; closeStack(ui); },
+  "inv-cancel": (state, ui) => { ui.invSel = null; ui.invArms = null; closeStack(ui); },
   "inv-loose": (state, ui, d) => { ui.invLoose = d.v === "1"; if (ui.stack) ui.stack.qty = null; }, // rounds out of the stores onto a person: boxed or loose (the mover's chips)
   "inv-store": (state, ui) => { if (ui.invSel) ui.invMsg = keptWhere(state, ui, () => toStorage(state, ui.invSel)); ui.invSel = null; },
   // Gun attachments (sim/inventory.js fitModAt / unfitModAt; sim/gunmods.js).

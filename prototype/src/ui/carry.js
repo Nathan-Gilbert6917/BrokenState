@@ -21,7 +21,8 @@ const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
 const first = (s) => esc(String(s.name).split(" ")[0]);
 const kg = (x) => Math.round(x * 10) / 10;
-const ICON = { water: "💧", rawwater: "🪣", food: "🥫", meat: "🍖", fuel: "⛽", jars: "🫙", wood: "🪵", parts: "⚙", scrap: "🔩", carparts: "🛞" };
+export const HOLD_ICON = { water: "💧", rawwater: "🪣", food: "🥫", meat: "🍖", fuel: "⛽", jars: "🫙", wood: "🪵", parts: "⚙", scrap: "🔩", carparts: "🛞" };
+const ICON = HOLD_ICON; // the team's supplies in a chip (ui/inventory.js: the Carried list in a fight too)
 const partyOfSurvivor = (state, s) => (s && s.location && s.location.kind === "party" ? state.parties.find((x) => x.id === s.location.partyId && x.owner === "player") : null);
 
 // ---------- how much to collect ----------
@@ -108,6 +109,18 @@ const chip = (ui, pid, sid, place, k, q) => {
   return `<button class="mini${sel ? " active" : ""}" data-action="carry-sel" data-pid="${pid}" data-sid="${sid ?? ""}" data-place="${place}" data-key="${k}"${tip(`${stackText(k, q)}, ${kg(q * unitKg(k))} kg. Click to choose it, then where it goes.`)}>${ICON[k] || (SUPPLIES[k] && SUPPLIES[k].icon) || "▪"} ${esc(chipName(k))} <span class="icount">×${qtyText(q)}</span></button>`;
 };
 const placeRow = (ui, pid, sid, place, rec, extra = "") => `<div class="small" style="margin:0.15rem 0"><b>${PLACE_NAMES[place]}</b>${extra} ${Object.keys(rec).length ? Object.entries(rec).map(([k, q]) => chip(ui, pid, sid, place, k, q)).join(" ") : `<span class="muted">nothing</span>`}</div>`;
+// The Carried (hands) row: everything in the arms in one place (the user's report 2026-10-20: a cart taken shows in the
+// carried part of its pusher's inventory): the team's supplies held there, the bag or the cart in the arms (its grid is
+// the In arms boxes above), a hand on a teammate's cart. A cart's own supplies are its row below (Cart).
+function armsRow(state, ui, v, me, pid, s) {
+  const helping = s.cartHelp != null ? v.people.find((x) => x.s.id === s.cartHelp) : null;
+  const held = [me.bag ? (me.cartItem ? `pushes the ${esc(me.bag.name.toLowerCase())} (${kg(me.bagKg + me.cartKg)} kg in all)` : `the ${esc(me.bag.name)} (${kg(me.bagKg)} kg with what is in it)`) : "",
+    s.cartHelp != null ? `a hand on ${helping ? first(helping.s) : "someone"}'s ${helping && helping.cartItem ? esc(helping.cartItem.name.toLowerCase()) : "cart"} (helping pull it)` : ""].filter(Boolean);
+  const busy = me.handsKg > 0 || held.length > 0;
+  const chips = Object.entries(me.cartItem ? {} : me.hands).map(([k, q]) => chip(ui, pid, s.id, "hands", k, q)).join(" ");
+  const kgNote = me.cartItem ? "" : ` <span class="${me.handsKg > 0 ? "warn" : "muted"}">(${kg(me.handsKg)}/${HANDS_KG} kg of supplies${busy ? ": hands full, no weapon in a fight until it is set down" : ""})</span>`;
+  return `<div class="small${held.length ? " warn" : ""}" style="margin:0.15rem 0"${tip("Everything in the arms: the team's supplies carried by hand, a bag or a cart. Hands full: in a fight no weapon (a pistol one-handed with a cart) until it is set down or let go.")}><b>${PLACE_NAMES.hands}</b>${held.length ? ` ${held.join("; ")}` : ""}${kgNote} ${chips || (held.length ? "" : `<span class="muted">nothing</span>`)}</div>`;
+}
 // The "Supplies carried" box under a team member's paper doll (ui/inventory.js inventoryModal).
 export function holdSection(state, ui, s) {
   const p = partyOfSurvivor(state, s);
@@ -119,7 +132,7 @@ export function holdSection(state, ui, s) {
   let html = `<div class="card small" style="margin-top:0.5rem"><div class="spread"><b>Supplies ${first(s)} carries</b><span class="muted">${kg(me.kg)} kg</span></div>
     ${placeRow(ui, pid, s.id, "pocket", me.pocket, ` <span class="muted">(${me.pocketUsed} of ${me.freePockets} free pocket${me.freePockets === 1 ? "" : "s"} used)</span>`)}
     ${placeRow(ui, pid, s.id, "pack", me.pack, me.freePack || me.packUsed ? ` <span class="muted">(${me.packUsed} of ${me.freePack} free pack slot${me.freePack === 1 ? "" : "s"} used)</span>` : ` <span class="muted">(no pack, or it is full of items)</span>`)}
-    ${me.cartItem ? "" : placeRow(ui, pid, s.id, "hands", me.hands, ` <span class="${me.handsKg > 0 ? "warn" : "muted"}">(${kg(me.handsKg)}/${HANDS_KG} kg${me.handsKg > 0 ? ": hands full, no weapon in a fight until it is set down" : ""})</span>`)}
+    ${armsRow(state, ui, v, me, pid, s)}
     ${me.cartItem ? placeRow(ui, pid, s.id, "cart", me.cart, ` <span class="muted"${tip(`The team's supplies in the ${me.cartItem.name.toLowerCase()}: ${first(s)} feels ${Math.round(cartFrac(me.cartItem, s) * 100)}% of them. Its items are in its grid above; together up to ${cartSpec(me.cartItem).cap} kg.`)}>(${esc(me.cartItem.name)}: ${kg(me.cartKg)} kg, ${kg(me.cartRoom)} kg free)</span>`) : ""}
     ${v.hasCar || v.rack ? placeRow(ui, pid, null, "car", v.car, v.rack ? ` <span class="muted">(${kg(v.carKg)}/${v.rack} kg on the racks)</span>` : "") : ""}`;
   const sel = ui.carrySel && ui.carrySel.pid === pid ? ui.carrySel : null;

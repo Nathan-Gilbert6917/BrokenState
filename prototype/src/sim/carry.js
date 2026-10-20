@@ -96,7 +96,7 @@
 // slider, the team's room and the weight a unit, defaulting to the most that fits); the governor, the autopilot
 // and the AI give no quantity: the most that fits, as before.
 import { SUPPLIES, GEAR, supValue } from "./data.js";
-import { packOf, ensureInv, itemAt, removeAt, parseLoc, placeOfLoc, itemLoad, isCarryable, isTwoHands } from "./inventory.js";
+import { packOf, ensureInv, itemAt, removeAt, parseLoc, placeOfLoc, itemLoad, isCarryable, isTwoHands, moveItem, quickMove } from "./inventory.js";
 import { partyMembers, cargoRoom, partyTile, addGearToCargo, poolLoad } from "./parties.js";
 import { FOODS, foodUnits, takeFood, addFood, giveFood, unitsOf } from "./foods.js"; // food by type, held in days of food
 import { partyVehicle, partyVehicles, isCar, isBike, VEHICLE_TYPES } from "./vehicles.js";
@@ -709,6 +709,29 @@ export function pickUpGround(state, p, i, qty = Infinity, arms = null) {
   dropSite(state, site);
   return msg;
 }
+// One thing off the tile's ground onto a team member (ui/inventory.js the Ground box in their inventory window): a cart,
+// or a bag, a rig or a case dropped on their In arms slot (to "s:<sid>:carry"), into their arms whole (hands full); any
+// other item into the team's cargo and from there onto them: the slot it was dropped on (to), else wherever it goes on
+// them (inventory.js quickMove), staying in the cargo when it fits nowhere on them; a stack of supplies into the team's
+// pool (as much as fits: pickUpGround). Returns a message.
+export function groundToPerson(state, p, i, s, to = null, qty = Infinity) {
+  const site = groundAt(state, partyTile(p));
+  const it = site && site.items[i];
+  if (!it) return "Nothing there any more.";
+  if (!s || !partyMembers(state, p).includes(s)) return "Not on this team.";
+  if (it.kind !== "gear") return pickUpGround(state, p, i, qty);
+  const arms = to === `s:${s.id}:carry`;
+  if (it.item && (isCart(it.item) || (arms && isCarryable(it.item)))) return pickUpGround(state, p, i, 1, s.id);
+  p.cargo = p.cargo || { supplies: {}, gear: [] };
+  const n0 = p.cargo.gear.length;
+  const msg = pickUpGround(state, p, i, 1);
+  if (p.cargo.gear.length <= n0) return msg; // no room for it on the team: it stays on the ground
+  const item = p.cargo.gear[p.cargo.gear.length - 1];
+  const at = `cargo:${p.id}:list:${p.cargo.gear.length - 1}`;
+  const put = to && parseLoc(to).o === "s" && !arms ? moveItem(state, at, to) : quickMove(state, at, s.id);
+  if (!p.cargo.gear.includes(item)) return `${s.name.split(" ")[0]} picks up the ${item.name}: ${put}`;
+  return `Picked up the ${item.name} into the team's cargo${put ? ` (${put.replace(/\.$/, "")})` : ""}.`;
+}
 const cartToArmsName = (state, p, cart) => { const s = partyMembers(state, p).find((x) => x.gear && x.gear.carry === cart); return s ? s.name.split(" ")[0] : "someone"; };
 const cartWords = (cart) => { const n = (cart.contents || []).filter(Boolean).length + (cart.held || []).length; return n ? `with ${n} thing${n === 1 ? "" : "s"} in it` : "empty"; };
 // Opens a cart lying on the tile's ground (carts.js: what is in a cart is had through the cart, never as loose things
@@ -812,8 +835,12 @@ const HAND_ACTS = new Set(["shoot", "melee", "reload", "getshells", "throw", "th
 export const handsKg = (u) => kgOf(u && u.hands) + (u && u.bag ? itemLoad(u.bag) : 0) + (u ? haulLoad(u) : 0);
 // Arms full of supplies or a bag (the loads: autoDrop, fitHands, the end of a fight); a hand on a cart (carts.js).
 export const armsBusy = (u) => !!(u && (u.hands || u.bag || u.cartHelp != null)); // cartHelp: helping pull a hand cart (carts.js)
-// Finds carried loose (raidloot.js u.haul: the search window's Carried column).
-export const haulBusy = (u) => !!(u && u.haul && (u.haul.gear.length || Object.values(u.haul.sup).some((v) => v > EPS)));
+// Finds carried loose (raidloot.js u.haul: the search window's Carried column). A supply counts from one whole unit,
+// as the Carried list shows it and a move takes it (raidloot.js moves whole units): a crumb left of a part-unit (half a
+// kilo of meat from a food item put down) never fills the hands unseen (the user's report 2026-10-20: "Hands full" with
+// nothing under Carried). raidloot.js raidMove takes such a crumb along with the last whole unit moved.
+export const HAUL_MIN = 1;
+export const haulBusy = (u) => !!(u && u.haul && (u.haul.gear.length || Object.values(u.haul.sup).some((v) => v >= HAUL_MIN - EPS)));
 // Hands full: anything in the carried part of the inventory (combat.js canFire, fireRefusal, reloadRefusal, reachable).
 export const handsBusy = (u) => armsBusy(u) || haulBusy(u);
 // How many different things fill the hands: each kind of supply in the arms, the bag, each item and each kind of
@@ -825,7 +852,7 @@ export function handsCount(u) {
   let n = Object.values(u.hands || {}).filter((q) => q > EPS).length + (u.bag ? (isCart(u.bag) || isTwoHands(u.bag) ? 2 : 1) : 0) + (u.cartHelp != null ? 1 : 0);
   if (u.haul) {
     const keys = new Set(u.haul.gear.filter((it) => !isTwoHands(it)).map((it) => it.key));
-    n += keys.size + 2 * u.haul.gear.filter(isTwoHands).length + Object.values(u.haul.sup).filter((v) => v > EPS).length;
+    n += keys.size + 2 * u.haul.gear.filter(isTwoHands).length + Object.values(u.haul.sup).filter((v) => v >= HAUL_MIN - EPS).length;
   }
   return n;
 }
@@ -849,7 +876,7 @@ export function handsRefusal(u, type, act = null) {
   const own = type === "open" && act && act.method === "case" ? /^kh(\d+)$/.exec(String(act.target || "")) : null;
   if (own && u.haul && u.haul.gear[Number(own[1])]) {
     const i = Number(own[1]);
-    const other = armsBusy(u) || u.haul.gear.some((it, j) => j !== i && it) || Object.values(u.haul.sup).some((v) => v > EPS);
+    const other = armsBusy(u) || u.haul.gear.some((it, j) => j !== i && it) || Object.values(u.haul.sup).some((v) => v >= HAUL_MIN - EPS);
     if (other) return handsWord(u);
   } else if (handsBusy(u)) return handsWord(u);
   if ((u.carrying != null || u.dragging != null) && (type === "melee" || type === "throw" || type === "throwspear" || type === "launch" || type === "finish" || type === "subdue" || type === "taser" || type === "pepper")) return u.carrying != null ? "Hands full: put the body down first." : "Hands full: dragging someone (put them down first, Shift+D).";
@@ -978,6 +1005,24 @@ export function dropCarried(state, b, u, quiet = false, at = null) {
   if (!quiet) say(b, `${u.name} sets down ${what}${at ? " on the far side of the cover" : ""}.`, "info");
   u.hands = null;
   u.bag = null;
+  return "";
+}
+// One of the team's supplies in the arms (u.hands, a hold key: carried from the road, or taken off a ground pile in a
+// team's fight: pileToArms) set down on the unit's cell, all of it or qty: free, as Drop carried (the inventory
+// windows' Carried list dragged onto the ground). Returns "" or an error.
+export function dropArmsSupply(state, b, u, k, qty = Infinity) {
+  if (!b || !u || b.over) return "Not in a fight.";
+  if (b.phase !== "player") return "Wait for the enemy turn to finish.";
+  const have = u.hands ? u.hands[k] || 0 : 0;
+  if (!(have > EPS)) return "Not carrying that in the arms.";
+  const n = Math.min(have, Number.isFinite(qty) ? Math.max(0, qty) : have);
+  if (!(n > EPS)) return "Nothing to put down.";
+  const what = recText({ [k]: n });
+  groundDropCell(state, b, u, { [k]: n });
+  u.hands[k] = have - n;
+  if (u.hands[k] <= EPS) delete u.hands[k];
+  if (!Object.keys(u.hands).length) u.hands = null;
+  say(b, `${u.name} sets down ${what}.`, "info");
   return "";
 }
 // Set over cover (1 action): facing half cover that can be vaulted (combat.js vaultsNear), everything carried is set
