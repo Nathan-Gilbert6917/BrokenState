@@ -38,6 +38,7 @@ function fortHub(st, list = BUILT, extra = 2) {
   for (let i = 0; i < extra; i++) { const s = makeSurvivor(st); s.location = { kind: "base", baseId: h.id }; st.survivors.push(s); }
   for (const s of atBase(st, h.id)) { s.health = 100; if (!s.gear.weapon) s.gear.weapon = newItem("pistol"); }
   h.stock.ammo = 300; h.stock.meds = 10;
+  BM.clearAllLand(st, h); // the rules of placement here, not the land (tools/baseviewtest.js)
   return h;
 }
 function baseBattle(st, h, enemy = { kind: "raiders", count: 8, power: 3, name: "raiders" }, context = {}) {
@@ -402,7 +403,8 @@ section("The Base map view, saving, jobs and upgrades");
     if (!g2.ok) { for (let y = F.y0 + 2; y < F.y0 + F.yh - 6 && !job.at; y += 3) for (let x = F.x0 + 2; x < F.x0 + F.yw - 6 && !job.at; x += 3) { const gg = BM.ghostAt(st, st.combat, x, y); if (gg && gg.ok) combatAct(st, { type: "put", x, y }); } check(!!job.at, `put down at the first spot that fits (${job.at})`); }
     b = st.combat;
     check(b.layout && !b.layout.pick && b.keepCam && b.deployPlan.fort.outlines.length === 1, "the view laid out again, the pick down, the camera kept");
-    check(!combatAct(st, { type: "lift", key: `c:${job.id}` }) && st.combat.layout.pick === `c:${job.id}` && !job.at, "a placed thing lifted to move it");
+    const was = job.at.slice(), bv = st.combat;
+    check(!combatAct(st, { type: "lift", key: `c:${job.id}` }) && st.combat.layout.pick === `c:${job.id}` && String(job.at) === String(was) && st.combat === bv, "a placed thing picked up to move it (Move): it stays put until put down, the view is not made again");
     check(!combatAct(st, { type: "put", x: cx, y: cy }) || true, "put back");
     check(!combatAct(st, { type: "endLayout" }) && !st.combat, "Close the map leaves no battle");
   } finally { delete globalThis.window; }

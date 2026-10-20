@@ -1,7 +1,7 @@
 // The neighbourhood's street of houses (src/sim/buildingmaps.js streetMap; combat.js createRaid, poicont.js,
 // scavenge.js).
 // Usage: node tools/neighbourhoodtest.js [seed]
-// - generation: 3–5 houses (streetHouses), the map within Medium..Extra-large (battlesize.js), the same street every
+// - generation: 3–5 houses (streetHouses), the map the run's largest raid map (battlesize.js raidMaxDims; World… Raid map, largest), a small dial never narrower than its houses, the same street every
 //   time (and with a vehicle, from another side), houses apart and inside the map, rooms and containers numbered on
 //   (areas[id] is the room with that id, container ids 1..n), every house with rooms, a stairwell and containers
 // - every house reachable: from the west end every walkable cell of the ground floor (locked doors as ways through),
@@ -23,7 +23,7 @@ import { poisOf, poiAt, poiPool, poiFull, isSitePoi, knownPois } from "../src/si
 import { poiRaidSetup, poiPlace } from "../src/sim/poiraid.js";
 import { contKey, ledgerBox, lootPoiAbstract, poiHouses } from "../src/sim/poicont.js";
 import { buildingMap, streetHouses, STREET, BUILDINGS } from "../src/sim/buildingmaps.js";
-import { SIZE_CLASSES } from "../src/sim/battlesize.js";
+import { raidMaxDims, streetDeadScale } from "../src/sim/battlesize.js";
 import { searchHour, startScavenge, raidEnemies } from "../src/sim/scavenge.js";
 
 const seed = Number(process.argv[2] || 42);
@@ -98,7 +98,7 @@ const ring = (c) => { const w = c.w || 1, h = c.h || 1, out = []; for (let y = c
 section("Generation: the street, the same every time");
 let tried = 0;
 {
-  const XL = SIZE_CLASSES.XL, M = SIZE_CLASSES.M;
+  const [MW, MH] = raidMaxDims(null);
   const counts = {};
   for (const s of [seed, seed + 1, seed + 2]) {
     const st = W(s);
@@ -112,7 +112,7 @@ let tried = 0;
       const n = m.plan.houses.length;
       counts[n] = (counts[n] || 0) + 1;
       check(pl.key === "neighbourhood" && BUILDINGS.neighbourhood.street && n === streetHouses(st, t.id, pl) && n >= STREET.HOUSES[0] && n <= STREET.HOUSES[1] && poiHouses(st, t, i) === n, `${tag}: ${n} houses (streetHouses, poiHouses)`);
-      check(m.w >= M.w && m.h >= M.h && m.w <= XL.w && m.h <= XL.h, `${tag}: ${m.w} × ${m.h} within Medium..Extra-large`);
+      check(m.w === MW && m.h === MH, `${tag}: ${m.w} × ${m.h} the largest raid map (${MW} × ${MH})`);
       check(sigMap(m) === sigMap(m2), `${tag}: the same street twice`);
       check(m.containers.map((c) => `${c.id}:${c.kind}:${c.x},${c.y},${c.f || 0}:${c.area}`).join(" ") === mv.containers.map((c) => `${c.id}:${c.kind}:${c.x},${c.y},${c.f || 0}:${c.area}`).join(" "), `${tag}: the same containers with a vehicle`);
       check(m.rooms.every((a, k) => a.id === k) && m.containers.every((c, k) => c.id === k + 1 && m.rooms[c.area]), `${tag}: rooms numbered on (areas[id]), containers 1..${m.containers.length}, each in a room`);
@@ -166,7 +166,8 @@ let world = null;
   const inHouse = new Set(dead.map((u) => (bz.raid.plan.houses.find((h) => u.x >= h.x0 && u.x < h.x0 + h.w && u.y >= h.y0 && u.y < h.y0 + h.h) || { k: "out" }).k));
   const house = st.tiles.map((tt) => [tt, poisOf(tt).findIndex((q, j) => q.kind === "house" && !isSitePoi(tt, j))]).find(([, j]) => j >= 0);
   const hz = house ? raid(st, p, house[0], house[1], { groups }).units.filter((u) => u.side === "enemy").length : 0;
-  check(dead.length === 12 && dead.length > hz && inHouse.size >= 3, `the dead: ${dead.length} on the street, ${hz} in a lone house; spread over ${inHouse.size} houses and the yards`);
+  const want = Math.round(12 * streetDeadScale(bz.w, bz.h));
+  check(dead.length === want && want >= 12 && dead.length > hz && inHouse.size >= 3, `the dead: ${dead.length} on the street (12 × ${streetDeadScale(bz.w, bz.h).toFixed(2)} for the bigger map), ${hz} in a lone house; spread over ${inHouse.size} houses and the yards`);
   st.combat = null;
   world = { st, p, t, i };
 }

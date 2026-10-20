@@ -38,7 +38,7 @@ import { battleWeather, fogColour, fogCss, skirtFor, drawVignette, setEdgeCanvas
 import { paintLights, drawGlow, drawDarkness, drawShade, setLightsCanvas } from "./battlelights.js"; // night: flashlight beams, lantern pools, the darkness; by day a dark room's shade
 import { ingestMarks, revealMarks, drawMarks, knownBody, setMarksCanvas } from "./battlemarks.js"; // blood, brass, scorch, glass that stay
 import { drawGroundIso, drawPileIso, drawCartIso, drawCartBoxIso } from "./ground.js";
-import { isCart, parkCells } from "../sim/carts.js"; // a cart pushed (u.bag); Park cart's cells
+import { isCart, parkCells, cartSpec } from "../sim/carts.js"; // a cart pushed (u.bag), its look; Park cart's cells
 import { groundPiles, pileCount } from "../sim/ground.js"; // things on the ground (sim/ground.js)
 import { planOpen } from "../sim/raidplan.js"; // before a raid: while the plan is open the team is not on the map yet (not drawn)
 import { onForgetPictures } from "./pictures.js"; // the pictures kept here are dropped when the GPU context comes back (they would be blank)
@@ -774,16 +774,56 @@ function prims(k, o) {
       return out;
     }
     case "tent": {
-      const cloth = tex(hex("#6f7452"), 0.1, 3), dk = tex(hex("#4e5238"), 0.1, 4);
+      // A ridge tent (sim/buildings.js TENTS: 1 × 2, 2 × 2, 3 × 3): the ridge runs along the view's u axis between its rows;
+      // each cell is the slope of its half, stepped up to the ridge on the side it joins the other row (o.j: 4 +v, 8 −v),
+      // its ends closed where it stops along u (no join there), a dark flap at the open ends. A lone cell: a pup tent.
+      const cloth = tex(hex("#6f7452"), 0.1, 3), dk = tex(hex("#4e5238"), 0.1, 4), flap = flatM(hex("#2e3022"));
+      const lo = o.j & 2 ? 0 : 0.08, hi = o.j & 1 ? 1 : 0.92;
+      const side = o.j & 4 ? 1 : o.j & 8 ? -1 : 0;
+      if ((o.j & 12) === 12) return [{ u0: lo, u1: hi, v0: 0, v1: 1, z0: 0, z1: 15, m: cloth }, { u0: lo, u1: hi, v0: 0.2, v1: 0.8, z0: 15, z1: 20, m: dk }]; // the middle row of a big tent (3 × 3): the ridge over it
+      if (!side) return [run("u", 0.1, 0.9, 0, 6, cloth, lo, hi), run("u", 0.2, 0.8, 6, 11, cloth, lo, hi), run("u", 0.36, 0.64, 11, 15, dk, lo, hi)];
+      const band = (a0, a1) => (side > 0 ? [a0, a1] : [1 - a1, 1 - a0]); // a band of this cell's v, measured from the far edge toward the ridge
+      const out = [];
+      for (const [v0, z0, z1, m] of [[0.06, 0, 5, cloth], [0.32, 5, 10, cloth], [0.6, 10, 15, cloth], [0.84, 15, 18, dk]]) { const [c0, c1] = band(v0, 1); out.push({ u0: lo, u1: hi, v0: c0, v1: c1, z0, z1, m }); }
+      if (hi < 1) { const [c0, c1] = band(0.4, 1); out.push({ u0: hi - 0.03, u1: hi, v0: c0, v1: c1, z0: 0, z1: 10, m: flap }); }
+      return out;
+    }
+    // A tent slashed open or flattened (sim/softcover.js torn): the canvas in a heap on its poles, the cuts dark.
+    case "torn": {
+      const cloth = tex(hex("#6f7452"), 0.14, 3), cut = flatM(hex("#2e3022"));
+      const a = (hash3(v, 9, 3) - 0.5) * 0.2;
+      return [{ blob: [0.42 + a, 0.46, 2], ru: 0.36, rz: 3, m: cloth }, { blob: [0.62, 0.58 - a, 2], ru: 0.26, rz: 4, m: cloth }, { u0: 0.3, u1: 0.7, v0: 0.48, v1: 0.52, z0: 3, z1: 4, m: cut }, { u0: 0.18, u1: 0.24, v0: 0.2, v1: 0.26, z0: 0, z1: 6, m: flatM(PAL.woodDk) }];
+    }
+    // The base map's scatter (sim/basescatter.js): bushes, a tree stump, a fallen log (joined along its length).
+    case "bush": {
+      const lc = v === 1 ? PAL.leaf2 : mul(PAL.leaf, 0.9 + (v & 2) * 0.05);
+      const leaf = (f, s, t, X, Y) => { const q = n2(X, Y, 19); return q > 0.88 ? mul(lc, 1.35) : q < 0.18 ? mul(lc, 0.6) : mul(lc, 0.9 + q * 0.15); };
+      const a = (hash3(v, 5, 7) - 0.5) * 0.16;
+      return [{ blob: [0.38 + a, 0.42, 6], ru: 0.32, rz: 6, m: leaf }, { blob: [0.64, 0.56 - a, 5], ru: 0.27, rz: 5, m: leaf }, { blob: [0.46, 0.7, 4], ru: 0.22, rz: 4, m: leaf }].sort((p, q) => p.blob[0] + p.blob[1] - q.blob[0] - q.blob[1]);
+    }
+    case "stump": return [
+      { cyl: [0.5, 0.5, 0.2], z0: 0, z1: 6, m: (f, s, t, X, Y) => (f === "top" ? mul(PAL.woodLt, Math.round(Math.hypot(s, t * 2)) % 2 ? 0.82 : 1) : mul(PAL.bark, 0.9 + n2(X, Y, 6) * 0.2)) },
+      { u0: 0.62, u1: 0.8, v0: 0.46, v1: 0.54, z0: 0, z1: 2, m: tex(PAL.bark, 0.2) }, { u0: 0.46, u1: 0.54, v0: 0.18, v1: 0.36, z0: 0, z1: 2, m: tex(PAL.bark, 0.2) },
+    ];
+    case "log": {
+      const ax = along(o), lo = ax === "u" ? (o.j & 2 ? 0 : 0.08) : (o.j & 8 ? 0 : 0.08), hi = ax === "u" ? (o.j & 1 ? 1 : 0.92) : (o.j & 4 ? 1 : 0.92);
+      const bark = (f, s, t, X, Y) => mul(PAL.bark, (f === "top" ? 1.05 : 0.85) + n2(X, Y, 7) * 0.2);
+      const out = [run(ax, 0.32, 0.68, 0, 6, bark, lo, hi), run(ax, 0.38, 0.62, 6, 7, bark, lo + 0.04, hi - 0.04)];
+      for (const [e, end] of [[lo, !(ax === "u" ? o.j & 2 : o.j & 8)], [hi, !(ax === "u" ? o.j & 1 : o.j & 4)]]) if (end) out.push(run(ax, 0.34, 0.66, 0, 6, flatM(PAL.woodLt), e === lo ? lo : hi - 0.02, e === lo ? lo + 0.02 : hi)); // the cut ends
+      return out;
+    }
+    // A fire pit: a ring of stones; lit (o.lit: the cell's c.lit, sim/campsite.js and sim/basemap.js), flames over embers;
+    // cold, grey ash and two charred logs, no flame and no glow.
+    case "firepit": {
+      if (o.lit) return [
+        { cyl: [0.5, 0.5, 0.36], z0: 0, z1: 4, m: (f, s, t, X, Y) => (f === "top" && Math.hypot(s, t * 2) < 5 ? mul(hex("#3a2a1c"), 0.9 + n2(X, Y, 2) * 0.2) : mul(PAL.stone, 0.85 + n2(X, Y, 3) * 0.2)) },
+        { blob: [0.5, 0.5, 2], ru: 0.1, rz: 5, m: flatM(hex("#e07a2a")) }, { blob: [0.44, 0.56, 2], ru: 0.08, rz: 7, m: flatM(hex("#f5b640")) },
+      ];
       return [
-        { u0: 0.1, u1: 0.9, v0: 0.12, v1: 0.5, z0: 0, z1: 6, m: dk }, { u0: 0.1, u1: 0.9, v0: 0.5, v1: 0.88, z0: 0, z1: 6, m: cloth },
-        { u0: 0.18, u1: 0.82, v0: 0.3, v1: 0.7, z0: 6, z1: 11, m: cloth }, { u0: 0.3, u1: 0.7, v0: 0.42, v1: 0.58, z0: 11, z1: 15, m: dk },
+        { cyl: [0.5, 0.5, 0.36], z0: 0, z1: 4, m: (f, s, t, X, Y) => (f === "top" && Math.hypot(s, t * 2) < 5 ? mul(hex("#6b6862"), 0.85 + n2(X, Y, 2) * 0.3) : mul(PAL.stone, 0.85 + n2(X, Y, 3) * 0.2)) },
+        { u0: 0.36, u1: 0.62, v0: 0.46, v1: 0.53, z0: 4, z1: 5, m: flatM(hex("#2b2622")) }, { u0: 0.47, u1: 0.54, v0: 0.36, v1: 0.6, z0: 4, z1: 5, m: flatM(hex("#33302b")) },
       ];
     }
-    case "firepit": return [
-      { cyl: [0.5, 0.5, 0.36], z0: 0, z1: 4, m: (f, s, t, X, Y) => (f === "top" && Math.hypot(s, t * 2) < 5 ? mul(hex("#3a2a1c"), 0.9 + n2(X, Y, 2) * 0.2) : mul(PAL.stone, 0.85 + n2(X, Y, 3) * 0.2)) },
-      { blob: [0.5, 0.5, 2], ru: 0.1, rz: 5, m: flatM(hex("#e07a2a")) }, { blob: [0.44, 0.56, 2], ru: 0.08, rz: 7, m: flatM(hex("#f5b640")) },
-    ];
     case "lamp": return [
       { u0: 0.38, u1: 0.62, v0: 0.38, v1: 0.62, z0: 0, z1: 3, m: flatM(PAL.conc) }, { u0: 0.46, u1: 0.54, v0: 0.46, v1: 0.54, z0: 3, z1: 34, m: tex(PAL.metalDk, 0.1) },
       { u0: 0.3, u1: 0.7, v0: 0.42, v1: 0.58, z0: 32, z1: 38, m: (f) => (f === "top" ? PAL.metal : hex("#f3e4a0")) },
@@ -793,7 +833,7 @@ function prims(k, o) {
 }
 const OUTLINED = new Set(["tree", "boulder", "rock", "car", "truck", "vehicle", "crate", "hay", "pump", "barrel", "well", "barricade", "sandbag", "hivewall",
   "table", "bed", "rack", "locker", "shelf", "cabinet", "counter", "gunsafe", "tanktrap", "spikes", "beartrap", "stairs", "ladder", "tower", "bars", "gate", "palisade",
-  "tent", "lamp", "firepit"]); // props stand out with an outline (the base map's tent, floodlight and fire pit too: sim/basemap.js)
+  "tent", "torn", "lamp", "firepit", "bush", "stump", "log"]); // props stand out with an outline (the base map's tent, floodlight and fire pit too: sim/basemap.js)
 
 // The cells' block sprites by look (sprite, roofSprite, massSprite; null: nothing to draw): a key holds all the picture
 // depends on, so one never goes stale. Each entry keeps the frame it was last drawn in (iso.frames); past SPRITES
@@ -816,7 +856,7 @@ function spritePut(key, s) {
 }
 // A cached sprite for a cell's look.
 function sprite(k, o, fog) {
-  const key = `${iso.straight ? "s|" : ""}${k}|${o.v}|${o.alt}|${o.j}|${o.n}|${o.top}|${o.stub ? 1 : 0}|${o.mat}|${o.dmg}|${o.barred ? 1 : 0}|${o.dir}|${o.part || ""}|${o.vault ? 1 : 0}|${o.roll ? 1 : 0}|${fog ? 1 : 0}|${o.car ? `${o.car.i},${o.car.j},${o.car.L},${o.car.ax},${o.car.kind},${o.car.v},${o.car.body || ""},${o.car.mil ? o.car.mil.cond : ""},${upKey(o.car.up)},${iso.rot & 3}` : ""}`;
+  const key = `${iso.straight ? "s|" : ""}${k}|${o.v}|${o.alt}|${o.j}|${o.n}|${o.top}|${o.stub ? 1 : 0}|${o.mat}|${o.dmg}|${o.barred ? 1 : 0}|${o.dir}|${o.part || ""}|${o.vault ? 1 : 0}|${o.roll ? 1 : 0}|${o.lit ? 1 : 0}|${fog ? 1 : 0}|${o.car ? `${o.car.i},${o.car.j},${o.car.L},${o.car.ax},${o.car.kind},${o.car.v},${o.car.body || ""},${o.car.mil ? o.car.mil.cond : ""},${upKey(o.car.up)},${iso.rot & 3}` : ""}`;
   let s = spriteGet(key);
   if (s === undefined) {
     const p = prims(k, o);
@@ -1069,6 +1109,7 @@ const JOINS = {
   fence: new Set(["fence"]), wire: new Set(["wire"]), rail: new Set(["rail"]), sandbag: new Set(["sandbag", "barricade"]), barricade: new Set(["barricade", "sandbag"]),
   walkway: new Set(["walkway", "tower", "stand"]), stand: new Set(["stand", "walkway", "tower"]), trench: new Set(["trench"]), shelf: WALLISH, locker: WALLISH, cabinet: WALLISH, counter: WALLISH,
   outline: new Set(["outline"]), // the base map: a building's outline joins along its sides (sim/basemap.js)
+  tent: new Set(["tent"]), log: new Set(["log"]), // a camp's 2 × 1 ridge tent, a fallen log two cells long (sim/basemap.js, basescatter.js)
 };
 // What a cell looks like in this view: its kind and options (see prims), or null for open ground. focus: on a building's
 // own map (sim/buildingmaps.js) the cutaway lowers only the walls within CUT_R tiles of these points (your people, the
@@ -1116,6 +1157,7 @@ function lookOf(b, scene, x, y, cut, focus = null) {
   if ((k === "palisade" || k === "gate") && c.wm) o.mat = c.wm; // a wall piece's material (sim/basemap.js)
   if (k === "door") { const d = ((b.raid ? b.raid.doors : b.doors) || []).find((q) => q.x === x && q.y === y); o.vault = !!(d && d.lock && d.lock.kind === "vault"); } // a raid's, a field map's houses' (sim/combat.js b.doors)
   if (c.roll) o.roll = true; // a roller door (sim/buildingmaps.js)
+  if (k === "firepit" && c.lit) o.lit = true; // a fire pit burning (its flames: prims)
   if (c.h > 0 && FURNITURE.has(k)) o.raise = c.h * LV; // furniture on an upper floor
   if (k === "ladder" || k === "stairs") {
     // Towards the higher neighbour (the walkway, the loft, the roof).
@@ -1161,7 +1203,8 @@ function blockTop0(k, o) {
     case "boulder": return 20; case "crate": return o.v >= 2 ? 22 : 13;
     case "fence": return 14; case "barricade": return 16; case "sandbag": return 13; case "hay": return 13; case "cabinet": return 14; case "counter": return 12; case "well": return 12; case "barrel": return 13;
     case "rock": return 10; case "wire": return 10; case "rail": return 13; case "tanktrap": return 12;
-    case "outline": return 9; case "tent": return 15; case "firepit": return 7; case "lamp": return 38; // the base map (sim/basemap.js)
+    case "outline": return 9; case "tent": return 18; case "torn": return 5; case "firepit": return 7; case "lamp": return 38; // the base map (sim/basemap.js; torn: sim/softcover.js)
+    case "bush": return 12; case "stump": return 6; case "log": return 7; // its scatter (sim/basescatter.js)
     default: return 0;
   }
 }
@@ -1198,7 +1241,20 @@ function newBattleCamera(b, cw, ch) {
   // the view as it was, moved to the team.
   const prev = iso.battle;
   // The base map laid out again after a change (sim/basemap.js refreshBaseMap): the same view, nothing moves.
-  if (prev && b.keepCam && b.layout && prev.layout === b.layout && prev.w === b.w && prev.h === b.h) { iso.battle = b; iso.mapKey = mapKey(b); return; }
+  // The map's crop may have grown or shrunk (something placed further out): the grid cell at the middle of the screen
+  // stays there (grid = map − the fort record's ox, oy).
+  if (prev && b.keepCam && b.layout && prev.layout === b.layout) {
+    const pF = prev.deployPlan && prev.deployPlan.fort, nF = b.deployPlan && b.deployPlan.fort;
+    const dx = pF && nF ? nF.ox - pF.ox : 0, dy = pF && nF ? nF.oy - pF.oy : 0;
+    if (dx || dy || prev.w !== b.w || prev.h !== b.h) {
+      const [u, v] = artUV(iso.cx, iso.cy, iso.straight);
+      const [wx, wy] = ptWorld(u, v, iso.rot, prev.w, prev.h);
+      centerAt(b, wx + dx, wy + dy, 0);
+      clampCam(b);
+    }
+    iso.battle = b; iso.mapKey = mapKey(b);
+    return;
+  }
   if (prev && prev !== b && prev.setup === b.setup && b.setup && b.setup.plan && prev.w === b.w && prev.h === b.h) {
     iso.battle = b;
     iso.mapKey = mapKey(b);
@@ -1556,6 +1612,7 @@ export const SNEAK_LOOK = { squash: 0.8, alpha: 0.82, filter: "brightness(0.62) 
 
 // Draw the battle. H: what ui/combat.js knows (the cached view, the selected unit, the mode, the hover, helpers).
 export function drawIso(ctx, cw, ch, state, b, now, H) {
+  frameNow = now; // the frame's clock, for the bodies' own animations (toppleOf)
   const t0 = typeof performance !== "undefined" ? performance.now() : 0;
   if (iso.battle !== b || iso.mapKey !== mapKey(b)) newBattleCamera(b, cw, ch); // a new battle, or its map swapped (the fall back to the yard)
   iso.cw = cw; iso.ch = ch;
@@ -1694,6 +1751,24 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     const yard = (i) => { const x = i % b.w, y = (i / b.w) | 0; return x >= w.x0 && x <= w.x1 && y >= w.y0 && y <= w.y1 && (x === w.x0 || x === w.x1 || y === w.y0 || y === w.y1); };
     ctx.setLineDash([5, 4]);
     outlineCells(ctx, b, yard, Fm.walled ? "rgba(200,170,110,0.55)" : "rgba(230,216,184,0.5)", 1.5);
+    ctx.setLineDash([]);
+  }
+  // The land being cleared (sim/basemap.js F.clearing: the construction queue's clearing jobs): an amber wash over the
+  // pieces and a dashed edge; how far each is goes over it with the tags (below).
+  const FmL = b.layout && b.deployPlan && b.deployPlan.fort;
+  if (FmL && FmL.clearing && FmL.clearing.length) {
+    const inC = new Set(FmL.clearing.flatMap((c) => c.cells.map(([x, y]) => y * b.w + x)));
+    fillCells(ctx, b, (i) => inC.has(i), "rgba(230,170,60,0.28)");
+    ctx.setLineDash([4, 3]);
+    outlineCells(ctx, b, (i) => inC.has(i), "rgba(240,190,80,0.95)", 1.5);
+    ctx.setLineDash([]);
+  }
+  // A picked thing being moved: where it stands now dimmed under a dashed edge while its ghost follows the mouse.
+  if (H.ghost && H.ghost.from) {
+    const inF = new Set(H.ghost.from.map(([x, y]) => y * b.w + x));
+    fillCells(ctx, b, (i) => inF.has(i), "rgba(10,12,16,0.45)");
+    ctx.setLineDash([5, 4]);
+    outlineCells(ctx, b, (i) => inF.has(i), "rgba(230,216,184,0.7)", 1.5);
     ctx.setLineDash([]);
   }
   if (H.ghost) {
@@ -1891,12 +1966,11 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
       }
     }
     for (const c of bodies.get(d) || []) drawCorpseIso(ctx, b, c, !vis[c.y * b.w + c.x]);
-    for (const p of piles.get(d) || []) if (!unknownCell(p.y * b.w + p.x)) { if (p.cart) drawCartBoxIso(ctx, p, project, (x, y) => standZ(b, x, y), S); else drawPileIso(ctx, p, project, (x, y) => standZ(b, x, y), S); } // ui/ground.js (a cart: its own sprite)
+    for (const p of piles.get(d) || []) if (!unknownCell(p.y * b.w + p.x)) { if (p.cart) drawCartBoxIso(ctx, p, project, (x, y) => standZ(b, x, y), S, { yaw: parkedYaw(b, p), fog: !vis[p.y * b.w + p.x] }); else drawPileIso(ctx, p, project, (x, y) => standZ(b, x, y), S); } // ui/ground.js (a cart: its own model, ui/cartmodel.js)
     for (const q of gh.get(d) || []) drawGhost(ctx, state, b, q, H);
     for (const f of siegeAt.get(d) || []) f();
     for (const s of (sh.get(d) || []).filter((q) => !flatDead.has(q.t)).sort((a, c) => a.z - c.z || (active(a.t) ? 1 : 0) - (active(c.t) ? 1 : 0))) {
       drawUnitIso(ctx, state, b, s, H, now);
-      if (isCart(s.t.bag) && !s.t.dead) { const [X, Y] = project(s.wx + 0.5, s.wy - 0.05, s.z); drawCartIso(ctx, s.t.bag, X, Y, S, (s.t.bag.contents || []).filter(Boolean).length); } // sim/carts.js: the cart rolls with its pusher
     }
     for (const f of siegeOver.get(d) || []) f();
     for (const [L, , , sx, sy, fog, faded] of fronts) {
@@ -2086,6 +2160,16 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     const [X, Y] = project((Math.min(...xs) + Math.max(...xs) + 1) / 2, (Math.min(...ys) + Math.max(...ys) + 1) / 2, s.roof ? LV + 10 : (s.storeys === 2 ? WALL2 : WALL1) + 12);
     tag(ctx, s.name, X, Y, "#e6d8b8", Math.max(10, 3.8 * S));
   }
+  // The base map's land being cleared: how far each clearing is, over its pieces; the picked thing's old spot dimmed
+  // over its sprites (a dimmed copy while the ghost follows the mouse).
+  const FmT = b.layout && b.deployPlan && b.deployPlan.fort;
+  if (FmT && FmT.clearing) for (const c of FmT.clearing) {
+    if (!c.cells.length) continue;
+    const xs = c.cells.map((q) => q[0]), ys = c.cells.map((q) => q[1]);
+    const [X, Y] = project((Math.min(...xs) + Math.max(...xs) + 1) / 2, (Math.min(...ys) + Math.max(...ys) + 1) / 2, 34);
+    tag(ctx, `${c.who && c.who.length ? `${c.who.slice(0, 3).join(", ")}${c.who.length > 3 ? ` +${c.who.length - 3}` : ""}: ` : ""}Clearing ${c.pct}%`, X, Y, "#f0c060", Math.max(10, 3.6 * S)); // woodwork: who is felling it (sim/woodwork.js chopHands)
+  }
+  if (H.ghost && H.ghost.from) for (const [x, y] of H.ghost.from) { ctx.fillStyle = "rgba(12,14,18,0.42)"; ctx.beginPath(); diamond(ctx, x, y, 14); ctx.fill(); }
   // The stores on a base map (sim/basemap.js): a crate marker over each building that holds goods, with its weight.
   if (b.stores) for (const c0 of b.stores.containers) {
     const ci = c0.y * b.w + c0.x;
@@ -2347,23 +2431,60 @@ const ZRING = { runner: "#ffb43b", brute: "#c8c4b0", spitter: "#9ad63a", screame
 const ringOf = (t) => (t.side === "player" ? (t.vol != null ? "#c9a2ff" : "#8fc1ff") : t.side === "third" ? thirdRing(t) : t.kind === "zombie" ? (t.ztype ? ZRING[t.ztype] || "#b5d36a" : t.boss ? COL.bad : "#b5d36a") : "#ff8f85");
 function feet(s) { return project(s.wx, s.wy, s.z); }
 // The sprite, standing (or lying) at the unit's feet. silhouette: only the figure (for the see-through pass).
+// Shoved flat on their back (sim/shoving.js fx "topple": { unit, dir }): the newest topple of t and how far it has
+// gone, 0 (still on their feet, while the shove's stumble slides them back) to 1 (down), or null when it is over.
+const TOPPLE = { DELAY: 110, MS: 260 };
+let frameNow = 0; // drawIso's now: the clock every effect of the frame is timed by (H.fxAge) // DELAY: the stumble back (ui/combat.js animTile's shove step); MS: the fall
+function toppleOf(b, t, H) {
+  if (!H || !H.fxAge || !b.fx) return null;
+  for (let i = b.fx.length - 1; i >= 0; i--) {
+    const f = b.fx[i];
+    if (f.type !== "topple" || f.unit !== t.id) continue;
+    const el = H.fxAge(f, frameNow) - TOPPLE.DELAY;
+    return el >= TOPPLE.MS ? { f, p: 1, done: true } : { f, p: Math.max(0, el / TOPPLE.MS), done: false };
+  }
+  return null;
+}
 function drawBody(ctx, state, b, s, H, silhouette = false) {
   const t = s.t, S = FR.S, [X, Y] = feet(s);
-  if (t.dead || t.down) {
+  const flat = t.floored && !t.dead && !t.down ? toppleOf(b, t, H) : null; // shoved flat on their back (sim/shoving.js)
+  if (flat && !flat.done) { // still going over: the standing figure tips toward the way they fall, about its feet
+    const d = flat.f.dir || [1, 0], [x1, y1] = project(s.wx + d[0], s.wy + d[1], s.z), dx = x1 - X, dy = y1 - Y, len = Math.hypot(dx, dy) || 1;
+    const e = flat.p * flat.p; // falling: slow at first, then fast
+    const fig = unitFigure(state, b, t, H.salt, unitYaw(b, t, FR.r));
+    frameFigs.push(["up", t]);
+    if (fig) {
+      ctx.save();
+      ctx.translate(X, Y);
+      ctx.rotate((dx >= 0 ? 1 : -1) * e * 1.4 * (Math.abs(dx) / len)); // sideways on screen: a turn about the feet
+      ctx.scale(1, 1 - e * 0.65 * (Math.abs(dy) / len)); // toward or away from the viewer: it shortens as it goes over
+      drawFigure(ctx, fig, 0, 0, S, 1);
+      ctx.restore();
+      return;
+    }
+  }
+  if (t.dead || t.down || t.floored) { // floored: shoved flat on their back (sim/shoving.js) until they get up
     // Lying on the ground: the figure laid along the world's x (the head toward -x, or +x facing the other way), so it
-    // turns with the view; the flat picture (ui/downsprites.js) laid onto the floor's axes when there is none.
+    // turns with the view; the flat picture (ui/downsprites.js) laid onto the floor's axes when there is none. Shoved
+    // flat: the head the way they fell.
     const f = unitFacing(b, t);
-    const fig = unitFigureDown(state, b, t, H.salt, dirYaw(b, t, FR.r, [-f, 0]));
+    const fig = unitFigureDown(state, b, t, H.salt, dirYaw(b, t, FR.r, flat && flat.f.dir ? flat.f.dir : [-f, 0]));
     frameFigs.push(["down", t]);
     if (fig) { drawFigure(ctx, fig, X, Y, S, !silhouette && t.dead ? 0.92 : 1); return; }
     const [x1, y1] = project(s.wx + 1, s.wy, s.z), [x2, y2] = project(s.wx, s.wy + 1, s.z);
     drawDowned(ctx, unitDownCanvas(state, b, t, H.salt), X, Y, [x1 - X, y1 - Y], [x2 - X, y2 - Y], { facing: f, scale: downScale(t), alpha: !silhouette && t.dead ? 0.92 : 1 });
     return;
   }
-  const fig = unitFigure(state, b, t, H.salt, unitYaw(b, t, FR.r)); // a low-poly figure facing its way (ui/figures.js), else the flat sprite mirrored to its side
+  const yaw = unitYaw(b, t, FR.r);
+  const fig = unitFigure(state, b, t, H.salt, yaw); // a low-poly figure facing its way (ui/figures.js), else the flat sprite mirrored to its side
   frameFigs.push(["up", t]);
   const cv = fig || unitCanvas(state, b, t, H.salt);
   if (!cv) return;
+  // A cart in the arms (sim/carts.js) rolls with its pusher, facing their way (ui/ground.js, ui/cartmodel.js): the
+  // wheelbarrow pushed ahead, the hand cart pulled behind; whichever end is nearer the viewer drawn over the figure.
+  const cart = isCart(t.bag) ? t.bag : null;
+  const a = (yaw * Math.PI) / 180, ahead = Math.cos(a) + Math.sin(a) > 0, cartOver = cart && (cartLookOf(cart) === "cart" ? !ahead : ahead);
+  if (cart && !cartOver) drawCartIso(ctx, cart, X, Y, S, { yaw, held: true });
   const facing = sideFacing(b, t, FR.r);
   const hgt = UNIT_H * unitBig(t) * S, w = hgt * (22 / 26);
   ctx.save();
@@ -2381,6 +2502,13 @@ function drawBody(ctx, state, b, s, H, silhouette = false) {
   if (fig) { const g = cv.figure || FIG; ctx.drawImage(cv, -g.ox * S, -g.oy * S, g.w * S, g.h * S); } // 1 grid px = 1 art px, the feet at (ox, oy)
   else ctx.drawImage(cv, -w / 2, -hgt * 0.94, w, hgt);
   ctx.restore();
+  if (cartOver) drawCartIso(ctx, cart, X, Y, S, { yaw, held: true });
+}
+const cartLookOf = (item) => (cartSpec(item) || {}).look || "barrow";
+// A parked cart's heading: one of the world's four ways, by the container (it keeps it while it stands), as a yaw.
+function parkedYaw(b, c) {
+  const d = [[1, 0], [0, 1], [-1, 0], [0, -1]][(((c.id || 0) * 2654435761) >>> 0) % 4];
+  return dirYaw(b, c, FR.r, d);
 }
 // The sprite's facing on screen: the view turned a half (rotation 1 or 2) shows the world mirrored.
 const viewFacing = (facing, r) => (r === 1 || r === 2 ? -facing : facing);
@@ -2608,6 +2736,8 @@ function drawLabels(ctx, b, s, H) {
   if (t.boss && !t.down) tags.push([t.boss === "broodmother" ? "BROOD" : t.boss === "hivemind" ? "MIND" : "WALL", COL.bad]);
   if (t.ow) tags.push(["OW", "#e0a84f"]);
   if (t.hunker) tags.push(["HD", "#4aa3ff"]);
+  if (t.floored && !t.down && !t.dead) tags.push(["FLAT", "#ffd166"]); // shoved flat on their back (sim/shoving.js): an action to get up
+  if (t.heldBy != null && !t.down && !t.dead) tags.push(["HELD", "#ff8f85"]); // one of the dead has hold of them (sim/shoving.js gripOf)
   if (t.stun && !t.down && !t.dead) tags.push(t.stun.dazed ? ["DZ", "#cfd6e0"] : ["STN", "#ffffff"]); // a flashbang (sim/throwables.js)
   if (t.side === "enemy" && !t.aware && !t.ko && !(g && g.label === "Unaware" && !t.investigate)) tags.push(t.investigate ? ["??", "#e0a84f"] : ["?", "#ffd166"]);
   if (t.side === "player" && t.post && b.phase === "deploy") tags.push([t.post === "gate" ? "G" : t.post === "wall" ? "W" : t.post === "tower" ? "T" : "P", "#e0a84f"]);

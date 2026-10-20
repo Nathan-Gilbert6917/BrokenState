@@ -9,7 +9,7 @@
 // holds fills it: the supplies in base.stock (data.js SUPPLIES weight a unit, food by type included) and the items in
 // base.armory (inventory.js itemLoad). What does not fit lies OUTSIDE, in the open. Nothing is ever refused or blocked:
 // goods past the room are simply left out, with penalties. Water is not counted (its tanks, cisterns and barrels are
-// its own room: economy.js waterCapacity).
+// its own room: economy.js waterCapacity), nor is the woodpile (wood: stacked in the yard, woodpileOf).
 //
 // THE CONTAINERS (storageOf containers, in this order):
 //   1. the base's own core by tier (CORE_KG, as basemap.js tierKey reads the tier): a camp nothing ("camps start with
@@ -27,11 +27,13 @@
 //      (data-boxes.js) each, cash box 3, fire safe 15, toolbox 10, equipment case 12, rifle case 8, pistol case 3. Its
 //      own weight is not counted (it is the room); what is still inside it is, and fills it first. A sealed box is an
 //      item like any other until it is opened.
+//   5. the tents pitched there (base map pieces, tents.js; data-tents.js TENT_TYPES storeKg: a one-person tent 15, a
+//      two-person 30, a four-person 60, a makeshift one nothing): kept out of the weather, assignable (food or gear).
 //
 // THE FILL (deterministic, pure): every good is ranked by its worth a kg (supplies: data.js supValue / supWeight;
 // items: valuation.js itemValue / itemLoad), the densest first (supplies before items on a tie, then by key or armory
 // order), and goes in while there is room; a supply stack goes in as many whole units as fit and the rest lies outside.
-// So the valuables are kept in and the cheap, heavy things (scrap, firewood, building materials) are what lies outside.
+// So the valuables are kept in and the cheap, heavy things (scrap, wood, building materials) are what lies outside.
 // (The design said "supplies first, then the items"; one ranking for both keeps a gold ring inside before a pile of
 // scrap, which is what the user asked for.)
 //
@@ -46,7 +48,7 @@
 //   - raiders: outsideShare is the share of the goods lying outside, for the base map's piles (basemap.js: easier to
 //     steal).
 // The base window shows it all (storageSummary / storageLine).
-import { BUILDINGS, isCamp, isShelter } from "./buildings.js"; // call-time only (the import cycle)
+import { BUILDINGS, isCamp, isShelter, tentOf, tentKind } from "./buildings.js"; // call-time only (the import cycle)
 import { GEAR, SUPPLIES, supValue, supWeight } from "./data.js";
 import { BOX_STORE_KG } from "./data-boxes.js";
 import { itemLoad, itemKg } from "./inventory.js"; // call-time only
@@ -67,7 +69,30 @@ const CORE_NAME = { camp: "Camp cache", shelter: "Bunk shack", outpost: "Bunk sh
 export const OUTSIDE_WEAR = 0.02; // a share of an item's full uses lost a day outside (× WET_WEAR on a wet day)
 export const WET_WEAR = 2;
 export const WARN_DAYS = 3;       // the log line: at most once in this many days a base
-const NOT_STORED = new Set(["water", "rawwater"]); // their own tanks and barrels
+// Not goods in the room: water (its own tanks and barrels) and wood (the woodpile, stacked in the yard: the user's pick
+// 2026-10-20, "don't count the woodpile against storage room"; it reaches 6,000-9,000 by autumn). The woodpile is never
+// "outside" either (storageOf outsideKg); a raid still takes from it (basemap.js outsideOf lays it as piles on the map).
+const NOT_STORED = new Set(["water", "rawwater", "wood"]);
+/** The woodpile: the wood a base holds (whole units), kept apart from its storage room. @param {any} base */
+export const woodpileOf = (base) => Math.max(0, Math.floor((base && base.stock && base.stock.wood) || 0));
+/**
+ * What raiders carry off a store by the numbers (factions.js: a group's raid on another group's base): `frac` of every
+ * good, the woodpile last (the user's rule 2026-10-20: the stores and valuables first, wood only with the room their
+ * carry has left once the goods are in: carryKg). Water is never taken. Returns { key: amount } (the stock unchanged).
+ * @param {Record<string, any>} stock @param {number} frac @param {number} carryKg
+ */
+export function raidSpoils(stock, frac, carryKg) {
+  const out = {};
+  let kg = 0;
+  for (const [k, q] of Object.entries(stock || {})) {
+    if (typeof q !== "number" || !(q > 0) || k === "water" || k === "rawwater" || k === "wood") continue;
+    out[k] = q * frac;
+    kg += out[k] * (supWeight(k) || 0);
+  }
+  const w = Math.max(0, (stock && stock.wood) || 0);
+  if (w > 0) { const room = Math.max(0, carryKg - kg); const n = Math.min(w * frac, room / (supWeight("wood") || 0.1)); if (n > 0) out.wood = n; }
+  return out;
+}
 const WET = new Set(["rain", "storm", "snow", "blizzard"]);
 const r1 = (v) => Math.round(v * 10) / 10;
 const EPS = 1e-9;
@@ -106,9 +131,9 @@ export const itemRoomKg = (it) => (!it || !GEAR[it.key] ? 0 : isOpenBox(it) ? Ma
 /** A good of the fill: a supply stack ({ sup, q, unit }) or an armory item ({ i }), with its worth a kg. */
 export const supGood = (k, q) => ({ sup: k, kg: q * supWeight(k), unit: supWeight(k), q, dens: supDensity(k), rank: 0 });
 export const itemGood = (it, i) => { const kg = itemRoomKg(it); return { i, kg, unit: kg, q: 1, dens: itemDensity(it, kg), rank: 1 }; };
-// Containers the goods can be assigned to by containers.js (item.store, base.bins): the core, a building, a parked car.
+// Containers the goods can be assigned to by containers.js (item.store, base.bins): the core, a building, a parked car, a tent.
 // An opened box is room but no assignable container: it is an item of the armory, and its index moves.
-const ASSIGNABLE = new Set(["core", "building", "vehicle"]);
+const ASSIGNABLE = new Set(["core", "building", "vehicle", "tent"]); // a pitched tent too (the user's pick 2026-10-20: tents in the Storage tab)
 
 /**
  * The base's storage: its containers' room (cap, kg), all its goods' weight (used, kg: inside and outside), what lies
@@ -122,21 +147,25 @@ const ASSIGNABLE = new Set(["core", "building", "vehicle"]);
  * With nothing assigned this is THE FILL exactly.
  * @param {any} state @param {any} base
  * @returns {{ cap: number, used: number, inside: number, outsideKg: number, free: number,
- *   containers: { key: string, name: string, cap: number, kind: "core" | "building" | "vehicle" | "box", type: string, sup: Record<string, number>, gear: number[], kg: number }[],
+ *   containers: { key: string, name: string, cap: number, kind: "core" | "building" | "vehicle" | "box" | "tent", type: string, sup: Record<string, number>, gear: number[], kg: number }[],
  *   outside: { sup: Record<string, number>, gear: number[] }, loose: { sup: Record<string, number>, gear: number[], kg: number } }}
  */
 export function storageOf(state, base) {
-  /** @type {{ key: string, name: string, cap: number, kind: "core" | "building" | "vehicle" | "box", type: string, sup: Record<string, number>, gear: number[], kg: number }[]} */
+  /** @type {{ key: string, name: string, cap: number, kind: "core" | "building" | "vehicle" | "box" | "tent", type: string, sup: Record<string, number>, gear: number[], kg: number }[]} */
   const containers = [];
   const out = { cap: 0, used: 0, inside: 0, outsideKg: 0, free: 0, containers, outside: { sup: /** @type {Record<string, number>} */ ({}), gear: /** @type {number[]} */ ([]) }, loose: { sup: /** @type {Record<string, number>} */ ({}), gear: /** @type {number[]} */ ([]), kg: 0 } };
   if (!base) return out;
   const tier = tierOf(base);
   const box = (key, name, cap, kind, type) => ({ key, name, cap, kind, type, sup: {}, gear: [], kg: 0 });
   if (CORE_KG[tier] > 0) containers.push(box("core", CORE_NAME[tier], CORE_KG[tier], "core", tier));
-  for (const b of base.buildings || []) { const kg = buildingKg(b.type); if (kg > 0) containers.push(box(`b:${b.id}`, BUILDINGS[b.type].name, kg, "building", b.type)); }
+  for (const b of base.buildings || []) { if (b.type === "tent") continue; const kg = buildingKg(b.type); if (kg > 0) containers.push(box(`b:${b.id}`, BUILDINGS[b.type].name, kg, "building", b.type)); } // the tents: 5. below
   if (state && !base.group) for (const v of carsAtBase(state, base.id)) { const kg = vehicleStoreKg(v); if (kg > 0) containers.push(box(`v:${v.id}`, v.name, kg, "vehicle", v.type)); }
   const armory = base.armory || [];
   armory.forEach((it, i) => { if (it && isOpenBox(it) && boxKg(it) > 0) containers.push(box(`a:${i}`, it.name, boxKg(it), "box", it.key)); });
+  // 5. the tents standing there (base map pieces: buildings.js TENTS = data-tents.js TENT_TYPES storeKg; a broken one
+  //    none): their storage out of the weather, counted once, here. Assignable like a storage building (the Storage
+  //    tab: food or gear kept in a tent, dry), else the goods put away nowhere fill them; keyed by the record (b:<id>).
+  for (const b of base.buildings || []) { if (b.type !== "tent" || b.broken) continue; const T = tentOf(b); if (T.storeKg > 0) containers.push(box(`b:${b.id}`, T.name, T.storeKg, "tent", tentKind(b))); }
   out.cap = containers.reduce((a, c) => a + c.cap, 0);
 
   // The assigned goods into their containers (THE ASSIGNMENTS).
@@ -233,7 +262,7 @@ function containerWords(st) {
     return `${e.n > 1 ? `${e.n} ${plural(nm)}` : nm} ${kgText(e.cap)}`;
   });
 }
-// What lies outside in words: "12 scrap, 40 firewood, a fire axe" (the heaviest first, at most `max` of them).
+// What lies outside in words: "12 scrap, 40 wood, a fire axe" (the heaviest first, at most `max` of them).
 function outsideWords(base, st, max = 8) {
   const bits = [];
   for (const [k, q] of Object.entries(st.outside.sup)) bits.push({ kg: q * supWeight(k), t: `${Math.round(q * 10) / 10} ${keyWord(k) === k && SUPPLIES[k] ? SUPPLIES[k].name.toLowerCase() : keyWord(k)}` });
@@ -253,13 +282,14 @@ export function storageSummary(state, base) {
   const rows = [`Storage ${kgText(st.used)} / ${kgText(st.cap)} kg`];
   rows.push(st.containers.length ? `Room: ${containerWords(st).join(", ")}` : "No storage yet: park a vehicle here or build a storage box");
   if (st.outsideKg > 0) rows.push(`${kgText(st.outsideKg)} kg outside: ${outsideWords(base, st).join(", ")}`);
+  if (woodpileOf(base) > 0) rows.push(`Woodpile: ${woodpileOf(base)} wood`); // stacked in the yard, not in the room
   return rows;
 }
 /** The storage in one line ("Storage 420 / 650 kg: shed 600, …; 80 kg outside: 12 scrap, …"). @param {any} state @param {any} base */
 export function storageLine(state, base) {
   const st = storageOf(state, base);
   const room = st.containers.length ? containerWords(st).join(", ") : "no storage yet";
-  return `Storage ${kgText(st.used)} / ${kgText(st.cap)} kg: ${room}${st.outsideKg > 0 ? `; ${kgText(st.outsideKg)} kg outside: ${outsideWords(base, st).join(", ")}` : ""}`;
+  return `Storage ${kgText(st.used)} / ${kgText(st.cap)} kg: ${room}${st.outsideKg > 0 ? `; ${kgText(st.outsideKg)} kg outside: ${outsideWords(base, st).join(", ")}` : ""}${woodpileOf(base) > 0 ? `; woodpile ${woodpileOf(base)} wood` : ""}`;
 }
 
 // ---------- the daily wear outside ----------

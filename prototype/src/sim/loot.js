@@ -24,6 +24,8 @@ import { BOX_TAGS } from "./data-boxes.js"; // lockable boxes
 import { rollBoxFind, rollAreaBox } from "./boxes.js"; // their own dice, last of all
 import { KIT_TAGS } from "./data-kit.js"; // carry kit: magazines, rigs, plates (wave 2)
 import { CART_TAGS } from "./data-carts.js"; // a wheelbarrow and a hand cart (carts.js)
+import { BED_TAGS } from "./data-beds.js"; // beds as furniture (beds.js)
+import { TENT_TAGS } from "./data-tents.js"; // tent bags (tents.js: TENT_FINDS, AREA_TENTS, their own dice)
 import { rollSiteKit, rollAreaKit, kitWares } from "./carrykit.js"; // their own tables and dice, after the attachments
 import { rollPartFind, rollAreaPart, partWares } from "./partfinds.js"; // the parts catalogue (2026-10-10): by tags and rarity, its own dice, last
 import { PART_INFO } from "./data-gunmods.js"; // the catalogue's parts: where each is kept
@@ -175,6 +177,8 @@ Object.assign(ITEM_TAGS, BLADE_TAGS); // knives and swords (data-blades.js)
 Object.assign(ITEM_TAGS, SURV_TAGS); // survival gear (data-survival.js)
 Object.assign(ITEM_TAGS, BOX_TAGS); // lockable boxes (data-boxes.js)
 Object.assign(ITEM_TAGS, CART_TAGS); // carts (data-carts.js)
+Object.assign(ITEM_TAGS, BED_TAGS); // beds as furniture (data-beds.js)
+Object.assign(ITEM_TAGS, TENT_TAGS); // tent bags (data-tents.js)
 
 // ---------- small finds per site type (the hour-by-hour search) ----------
 // p = chance per search hour at full loot (× the approach's pace, Treasure Hunter ×2); items = weights.
@@ -599,9 +603,9 @@ export function rollAreaFind(rng, areaType, rich = 1, scav = 0, site = null) {
   return key ? lootItem(key, areaSource(areaType, site), rng) : null;
 }
 
-// ---------- firewood (data.js SUPPLIES.wood) ----------
-// A woodpile, a log basket by the fireplace, split kindling in a shed, broken furniture: firewood turns up where wood is
-// burned or stored. Its own dice (hash01), so the rest of a search or a raid is unchanged. [chance, min, max] firewood
+// ---------- wood (data.js SUPPLIES.wood) ----------
+// A woodpile, a log basket by the fireplace, split kindling in a shed, broken furniture: wood turns up where wood is
+// burned or stored. Its own dice (hash01), so the rest of a search or a raid is unchanged. [chance, min, max] wood
 // (0.1 kg each: a cabin's 60–180 is 6–18 kg).
 // Site searches (scavenge.js searchHour), a roll each search hour × the site's loot left:
 export const SITE_WOOD = {
@@ -615,7 +619,7 @@ export const AREA_WOOD = {
   garage: [0.1, 30, 90], workshop: [0.15, 30, 90], chapel: [0.08, 30, 60],
 };
 const FURNITURE = { cabinet: 1, shelf: 1, counter: 1 };
-// Firewood found this search hour at a site, or 0.
+// Wood found this search hour at a site, or 0.
 // Building materials (data.js buildmat: lumber, blocks, sheet metal; what a camp takes to become a base): a find of its
 // own each search hour, like SITE_WOOD (its own dice: nothing else a search finds changed). [chance, min, max].
 export const BUILDMAT_FINDS = {
@@ -640,7 +644,7 @@ export function rollSiteWood(state, tileId, mult = 1, salt = "") {
   if (hash01(state.seed, "wood", tileId, state.hour, salt) >= w[0] * loot * mult) return 0;
   return w[1] + Math.floor(hash01(state.seed, "woodqty", tileId, state.hour, salt) * (w[2] - w[1] + 1));
 }
-// Firewood in a raid container of this area type (boxKind: the container's kind), or 0.
+// Wood in a raid container of this area type (boxKind: the container's kind), or 0.
 export function rollAreaWood(state, tileId, areaType, boxKind, salt = "") {
   const w = AREA_WOOD[areaType];
   if (!w) return 0;

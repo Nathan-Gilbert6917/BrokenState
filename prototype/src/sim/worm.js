@@ -13,13 +13,13 @@
 //     convoy's crew by the share of their drinking the purified water left over does not cover. Each day before
 //     drinking (purifyDaily) a lit water boiler purifies the day's drinking for everyone fed there, each water filter
 //     PURIFY_FILTER a day, a shelter's lit and fed fire like the boiler; only in an emergency (the boiler cold for want
-//     of firewood, or a shelter's fire with nothing to burn, and no water filter) are the armory's
+//     of wood, or a shelter's fire with nothing to burn, and no water filter) are the armory's
 //     purification tablets used, one per TABS_WATER water. Your people held by a group drink its water: RISE.CAPTIVE of
 //     a base's chance there (× GROUPS.BOILER on the eggs once the group boils); a group's own people are GROUPS.
 //   - water on the road (drinkHour): RAW_BASE + WATER × the eggs of the un-purified water the team drinks (p.wormEggs:
 //     from where it was filled), × the share of the hour's drinking it was. A team drinks purified water first; the
 //     un-purified water is made safe by, in this order: a water filter carried; boiling at a camp fire that is lit and
-//     fed (firewood carried, stretched by deadfall on the land: woodcutting.js campFireHour), which also boils BOIL un-purified
+//     fed (wood carried, stretched by deadfall on the land: woodcutting.js campFireHour), which also boils BOIL un-purified
 //     water an hour into purified water (× STOVE with a smokeless stove); purification tablets (data.js puritabs: one
 //     per TABS_WATER water) on the move (travelling, exploring, searching) and at a camp whose fire is out or has
 //     nothing left to burn; otherwise it is drunk as it is.
@@ -45,11 +45,11 @@
 //     kitchen cooks them (boiling greens counts); a team's camp fire too.
 //   - Iron Stomach (traits.js): whoever has it shrugs off the eggs caught from water, raw food, camping and searching
 //     a third of the time (catchWorm: own dice, nothing drawn from the worm's), and an upset stomach is half as likely.
-// The water boiler burns BOILER_WOOD_HEAD firewood's worth a head at the base a day (everyone fed there), on every day
+// The water boiler burns BOILER_WOOD_HEAD wood's worth a head at the base a day (everyone fed there), on every day
 // un-purified water would be drunk (the purified water in store and the filters' share do not cover the day): any
-// burnable, firewood first, then the armory's burnable gear the base allows (woodcutting.js boilerBurnables: items
+// burnable, wood first, then the armory's burnable gear the base allows (woodcutting.js boilerBurnables: items
 // marked to burn, and cheap junk while "Boiler may burn spare wooden items and paper" is on), then fuel (HEAT.wood a
-// firewood). A base that cannot cover the day leaves it cold: the water filters and a shelter's fire purify what they
+// wood). A base that cannot cover the day leaves it cold: the water filters and a shelter's fire purify what they
 // can, then (only with no filter) the emergency tablets, else the water is drunk un-purified.
 // The other groups (GROUPS, groupsDaily): a group base on infected ground loses people to the worm at the rate a
 // player base of its size would catch it (water WATER + crops CROP at CROP_MIN+, × eggs, × UNCURED: the half they
@@ -196,10 +196,10 @@ export const WORM = {
   // base it may lose one of its own, and a visit costs goodwill; your people held by a group catch it at CAPTIVE of a
   // base's chance (they drink what they are given)
   RISE: { NOTICE: 0.2, NOTICE_SKILL: 0.06, NOTICE_MAX: 0.9, PUT_HURT: [8, 25], HURT_MIN: 0.06, HURT_MAX: 0.6, HOST_LOSS: 0.15, ENVOY_GOODWILL: -5, CAPTIVE: 0.5 },
-  // Clean water and cooked meat: a camp fire an hour; the base's water boiler a day (firewood a head, like heating;
-  // BOILER_DAYS: the days of its firewood a base keeps in store)
-  BOIL: 6, STOVE: 2, COOK: 12, BOILER_WOOD_HEAD: 6, BOILER_DAYS: 14, // BOILER_WOOD_HEAD: firewood of 0.1 kg (0.6 kg a head a day)
-  // Purification tablets (data.js puritabs): water one tablet makes safe (teams; a base only in the no-firewood
+  // Clean water and cooked meat: a camp fire an hour; the base's water boiler a day (wood a head, like heating;
+  // BOILER_DAYS: the days of its wood a base keeps in store)
+  BOIL: 6, STOVE: 2, COOK: 12, BOILER_WOOD_HEAD: 6, BOILER_DAYS: 14, // BOILER_WOOD_HEAD: wood of 0.1 kg (0.6 kg a head a day)
+  // Purification tablets (data.js puritabs): water one tablet makes safe (teams; a base only in the no-wood
   // emergency); a base's water filter purifies PURIFY_FILTER water a day
   TABS_WATER: 10, PURIFY_FILTER: 10,
   // The other groups (groupsDaily)
@@ -342,7 +342,7 @@ export function sourceEggs(state, tile) {
 // boiler. People drink purified water first, then un-purified water (economy.js baseDaily: base.drank), and the share
 // drunk un-purified is rolled (baseWormDaily): RAW_BASE + WATER × the eggs of the un-purified water here. Purification
 // tablets are kept for the teams on the road: a base uses the armory's only in an emergency, when its boiler is cold
-// with nothing to burn (no firewood, allowed junk or fuel; or a shelter's fire has nothing to burn) and it has no water filter.
+// with nothing to burn (no wood, allowed junk or fuel; or a shelter's fire has nothing to burn) and it has no water filter.
 export const hasBoiler = (base) => count(base, "boiler") > 0;
 const isFilter = (it) => !!(it && GEAR[it.key] && GEAR[it.key].water);
 // Water filters here: in the armory, or held by someone at the base.
@@ -410,13 +410,13 @@ export function baseWater(state, base) {
   return { eggs: e.eggs * share, risk, raw: e.raw, ground: e.ground, rawShare: share, drawn, safe: false, cap, why: `${cold}${from}, not boiled or filtered: ${part} (the worm ${Math.round(risk * 1000) / 10}% a person a day)` };
 }
 
-// The base's water boiler: what it burns a day: BOILER_WOOD_HEAD firewood a head (everyone fed here). It burns
-// anything burnable, in this order: firewood; then the armory's burnable gear the base allows (woodcutting.js
+// The base's water boiler: what it burns a day: BOILER_WOOD_HEAD wood a head (everyone fed here). It burns
+// anything burnable, in this order: wood; then the armory's burnable gear the base allows (woodcutting.js
 // boilerBurnables: items marked to burn, and cheap junk with "Boiler may burn spare wooden items and paper" on), each
-// worth its firewood by weight (woodcutting.js burnOf); then fuel for the rest (HEAT.wood fuel a firewood, as heating).
+// worth its wood by weight (woodcutting.js burnOf); then fuel for the rest (HEAT.wood fuel a wood, as heating).
 // { active (it has work here: the water filters do not purify the day's drinking: any un-purified water can carry the worm),
-// heads, wood (firewood on a day it burns), fuel (the same in fuel), share (the share of days it burns), lit (base.boiling),
-// text ("25 people × 6 = 150 firewood a day (or burnable junk, or 1.0 fuel)") }. On a given day it burns only when
+// heads, wood (on a day it burns), fuel (the same in fuel), share (the share of days it burns), lit (base.boiling),
+// text ("25 people × 6 = 150 wood a day (or burnable junk, or 1.0 fuel)") }. On a given day it burns only when
 // un-purified water would be drunk (boilerDaily).
 export function boilerUse(state, base) {
   const heads = mouthsAt(state, base).heads;
@@ -424,22 +424,22 @@ export function boilerUse(state, base) {
   const fuel = r2(wood * HEAT.wood);
   const cap = purifyCap(state, base);
   // A camp's or a shelter's own lit, fed fire boils the day's drinking already (cap.fire): the boiler stands ready
-  // beside it and burns nothing (BASE-05: it burned its firewood on top of the fire's, the wood twice for one pot).
+  // beside it and burns nothing (BASE-05: it burned its wood on top of the fire's, the wood twice for one pot).
   const covered = cap.filters + cap.fire;
   const active = hasBoiler(base) && heads > 0 && covered < cap.drink;
   // share: the days it burns, about (the share of the drinking the filters leave un-purified): each day it burns
   // purifies a whole day's drinking, so with filters covering part of it the purified water carries over.
   const share = active && cap.drink > 0 ? r2(Math.max(0, Math.min(1, 1 - covered / cap.drink))) : 0;
-  const text = heads ? `${perHeadText(heads, heads === 1 ? "person" : "people", WORM.BOILER_WOOD_HEAD)} firewood a day (or burnable junk, or ${fuel.toFixed(1)} fuel)` : "nobody here";
+  const text = heads ? `${perHeadText(heads, heads === 1 ? "person" : "people", WORM.BOILER_WOOD_HEAD)} wood a day (or burnable junk, or ${fuel.toFixed(1)} fuel)` : "nobody here";
   return { active, heads, wood, fuel, share, lit: base.boiling !== false, text };
 }
 // Daily, before drinking (purifyDaily): on a day the purified water in store and the filters' share do not cover the
-// day's drinking, the boiler burns the day's firewood from the stores; short of it, the armory's burnable items the
-// base allows (the cheapest firewood first, whole items: what they make beyond the day stays as firewood), then fuel
-// for the rest. An outpost short of firewood and fuel is covered from the hub over its supply line like its heating
+// day's drinking, the boiler burns the day's wood from the stores; short of it, the armory's burnable items the
+// base allows (the cheapest wood first, whole items: what they make beyond the day stays as wood), then fuel
+// for the rest. An outpost short of wood and fuel is covered from the hub over its supply line like its heating
 // (needs.js heatDaily). A base that cannot cover the whole day burns nothing and leaves it cold: the filters and a
 // shelter's fire purify what they can, then (no filter) the emergency tablets, else un-purified water. A log line says
-// what it burned when it was not firewood. Returns true when it burned.
+// what it burned when it was not wood. Returns true when it burned.
 function boilerDaily(state, base, people) {
   base.boilerBurn = { wood: 0, fuel: 0 };
   if (!hasBoiler(base) || !people.length) return false;
@@ -463,7 +463,7 @@ function boilerDaily(state, base, people) {
     const send = Math.min(spareFuel, Math.max(0, use.fuel - heatIn()) / strength);
     if (send > 0) { h.stock.fuel -= send; st.fuel = Math.max(0, st.fuel || 0) + send * strength; }
   }
-  // The plan: firewood, then whole items (the cheapest firewood first) while short, then fuel.
+  // The plan: wood, then whole items (the cheapest wood first) while short, then fuel.
   const wood = Math.min(woodIn(), use.wood);
   const items = [];
   let short = use.wood - wood;
@@ -472,12 +472,12 @@ function boilerDaily(state, base, people) {
   const fuelNeed = Math.max(0, (use.wood - wood - fromItems) * HEAT.wood);
   const lit = (st.fuel || 0) + 1e-9 >= fuelNeed;
   if (lit) {
-    st.wood = Math.max(0, woodIn() - wood + Math.max(0, fromItems - (use.wood - wood))); // what the items make beyond the day stays as firewood
+    st.wood = Math.max(0, woodIn() - wood + Math.max(0, fromItems - (use.wood - wood))); // what the items make beyond the day stays as wood
     for (const it of items) base.armory.splice(base.armory.indexOf(it), 1);
     st.fuel = Math.max(0, (st.fuel || 0) - fuelNeed);
     base.boilerBurn = { wood: r2(wood), fuel: r2(fuelNeed), items: items.length, itemWood: fromItems };
     if (base.boiling === false) log(state, `The water boiler at ${base.name} is burning again.`, "good");
-    if (items.length) log(state, `The water boiler at ${base.name} burned ${itemsText(items)} (${fromItems} firewood's worth)${fuelNeed > 0 ? ` and ${r2(fuelNeed)} fuel` : ""}: ${wood > 0 ? "the firewood ran short" : "no firewood left"}.`, "info");
+    if (items.length) log(state, `The water boiler at ${base.name} burned ${itemsText(items)} (${fromItems} wood's worth)${fuelNeed > 0 ? ` and ${r2(fuelNeed)} fuel` : ""}: ${wood > 0 ? "the wood ran short" : "no wood left"}.`, "info");
   } else if (base.boiling !== false) {
     const then = filterCount(state, base) > 0 ? "The water filters purify what they can; the rest is drunk un-purified"
       : isShelter(base) && fireLit(base) && base.fireFed !== false ? "The fire boils the water today"
@@ -488,7 +488,7 @@ function boilerDaily(state, base, people) {
   return lit;
 }
 // Daily (economy.js baseDaily, before drinking): the boiler burns if it has to, then the boiler, the water filters and
-// a shelter's lit fire turn un-purified water into purified water; then, only in the no-firewood emergency
+// a shelter's lit fire turn un-purified water into purified water; then, only in the no-wood emergency
 // (emergencyTabs), the armory's purification tablets. base.purified = { day, q, boiler, fire, filters, tabs, total,
 // drink }. Returns the water purified.
 export function purifyDaily(state, base) {
@@ -503,7 +503,7 @@ export function purifyDaily(state, base) {
   base.purified = { day: day(state), q: r2(q + tabs), boiler: cap.boiler, fire: cap.fire, filters: cap.filters, tabs, total: cap.total, drink: cap.drink };
   return q + tabs;
 }
-// The no-firewood emergency: a boiler cold with nothing to burn (or a shelter whose lit fire has nothing to burn) and
+// The no-wood emergency: a boiler cold with nothing to burn (or a shelter whose lit fire has nothing to burn) and
 // no water filter here.
 export function tabsEmergency(state, base, cap = purifyCap(state, base)) {
   const noFire = (hasBoiler(base) && base.boiling === false) || (isShelter(base) && fireLit(base) && base.fireFed === false);
@@ -524,7 +524,7 @@ function emergencyTabs(state, base, cap) {
   st[RAW] = r2(raw - q);
   st.water = r2(Math.max(0, st.water || 0) + q);
   const left = tabCount(tabStacks([], [base.armory]));
-  if (!base.tabsEmergency || !left) log(state, `Out of firewood at ${base.name}: purification tablets used for the water (${left ? `${left} left` : "the last of them"}).`, "danger");
+  if (!base.tabsEmergency || !left) log(state, `Out of wood at ${base.name}: purification tablets used for the water (${left ? `${left} left` : "the last of them"}).`, "danger");
   base.tabsEmergency = left > 0;
   return q;
 }
@@ -533,7 +533,7 @@ function emergencyTabs(state, base, cap) {
 export function purifyText(state, base) {
   const cap = purifyCap(state, base);
   const tabs = base.purified && base.purified.day === day(state) && base.purified.tabs > 0 ? base.purified.tabs : 0;
-  const bits = [cap.boiler > 0 ? `boiler ${Math.round(cap.boiler)}` : "", cap.fire > 0 ? `fire ${Math.round(cap.fire)}` : "", cap.kitchen > 0 ? `kitchen ${Math.round(cap.kitchen)}` : "", cap.filters > 0 ? `${cap.nFilters === 1 ? "filter" : `${cap.nFilters} filters`} ${cap.filters}` : "", tabs > 0 ? `tablets ${Math.round(tabs)} (out of firewood)` : ""].filter(Boolean);
+  const bits = [cap.boiler > 0 ? `boiler ${Math.round(cap.boiler)}` : "", cap.fire > 0 ? `fire ${Math.round(cap.fire)}` : "", cap.kitchen > 0 ? `kitchen ${Math.round(cap.kitchen)}` : "", cap.filters > 0 ? `${cap.nFilters === 1 ? "filter" : `${cap.nFilters} filters`} ${cap.filters}` : "", tabs > 0 ? `tablets ${Math.round(tabs)} (out of wood)` : ""].filter(Boolean);
   return { total: cap.total, text: bits.join(", "), cap };
 }
 
@@ -542,7 +542,7 @@ export function purifyText(state, base) {
 // from the clean food of the same item: eaten last and raw; cooking (the Kitchen's meals, storage.js cookDaily; a
 // team's camp fire), smoking and drying kill the eggs.
 // A base cooks what it eats: a cook fire, a preserving room, the Kitchen while its stove is lit (kitchen.js: cook or no
-// cook; a cold stove, out of firewood, cooks nothing), or a shelter with its fire lit.
+// cook; a cold stove, out of wood, cooks nothing), or a shelter with its fire lit.
 export const baseCooks = (base) => count(base, "cookhouse") > 0 || count(base, "kitchen") > 0 || (count(base, "canteen") > 0 && !kitchenCold(base)) || (isShelter(base) && fireLit(base));
 export const wormMeatAt = (base) => eggFood(base).meat;
 export const wormMeatIn = (cargo) => (cargo ? eggFood(cargo).meat : 0);
@@ -638,7 +638,7 @@ export function packWater(state, p, base) {
   delete p.wormWater; // the old single-water model (save.js)
   p.wormEggs = teamRawIn(p) > 0 ? r2(rawWaterEggs(state, base).eggs) : 0;
 }
-// A camp fire that boils the water: lit, and with firewood to keep it going this hour (carried: woodcutting.js
+// A camp fire that boils the water: lit, and with wood to keep it going this hour (carried: woodcutting.js
 // campFireHour; a camp's or shelter's fire burns its store, shelterFire, and is out once it runs dry). A camp whose fire
 // is out or has nothing left to burn does not boil: the team uses its tablets.
 export function campFireFed(state, p) {
@@ -784,7 +784,7 @@ const findIn = (people, lists, key) => people.some((s) => [...(s.pockets || []),
 // One tablet makes WORM.TABS_WATER water safe. They are for the road: a team drops them into the un-purified water it
 // drinks when it carries no water filter and sits at no lit camp fire that can be kept going (drinkHour: a tablet is
 // opened when the last one's water is used up, the rest kept as p.tabWater for the next drink). A base uses them only
-// in the no-firewood emergency (emergencyTabs: its boiler cold with nothing to burn, no water filter); else
+// in the no-wood emergency (emergencyTabs: its boiler cold with nothing to burn, no water filter); else
 // tubes in the armory wait for a team to pack them (autopilot.js launchTrip, the planner). Tubes are found in people's pockets and packs, the team's cargo and the
 // base armory; an emptied tube is gone.
 const isTabs = (it) => !!(it && GEAR[it.key] && GEAR[it.key].tabs);
@@ -1659,7 +1659,7 @@ export function teamWormText(state, p) {
   const how = teamWaterHow(state, p);
   if (ww >= 1 && how !== "filter" && how !== "fire") bits.push(`${Math.floor(ww)} un-purified water${(p.wormEggs || 0) > 0 ? " carries the worm's eggs" : " can carry the worm"} (${
     how === "tabs" ? `dropping a tablet in it: ${tabs} purification tablet${tabs === 1 ? "" : "s"} carried, one per ${WORM.TABS_WATER} water drunk` :
-    "drunk as it is: a lit camp fire with firewood boils it, a water filter or purification tablets make it safe"})`);
+    "drunk as it is: a lit camp fire with wood boils it, a water filter or purification tablets make it safe"})`);
   const e = eggFood(p.cargo), e2 = eggFood(p);
   const wm = e.meat + e2.meat, wf = e.forage + e.crop + e2.forage + e2.crop;
   if (wm >= 0.5) bits.push(`${Math.round(wm * 10) / 10} days of the raw meat carry the worm's eggs (cook it at a camp fire or a base's cook fire)`);

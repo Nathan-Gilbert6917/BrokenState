@@ -68,7 +68,7 @@ export function createVehicle(state, type, loc, opts = {}) {
 }
 
 export const vehicleById = (state, id) => state.vehicles.find((v) => v.id === id);
-export const vehiclesAtBase = (state, baseId) => state.vehicles.filter((v) => v.loc.kind === "base" && v.loc.baseId === baseId);
+export const vehiclesAtBase = (state, baseId) => state.vehicles.filter((v) => v.loc.kind === "base" && v.loc.baseId === baseId && !v.haulOut); // hauling.js: one out on a haul is not there
 // Cars only (supply runs, trade routes and caravans need an engine).
 export const carsAtBase = (state, baseId) => vehiclesAtBase(state, baseId).filter(isCar);
 export const bikesAtBase = (state, baseId) => vehiclesAtBase(state, baseId).filter(isBike).reduce((n, v) => n + (v.count || 1), 0);

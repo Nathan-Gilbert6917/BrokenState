@@ -60,9 +60,10 @@ import { meleeBump, cookingBump } from "./appearance.js"; // a background's Mele
 import { sightRadius, partyMembers, partyTile, weighTeam } from "./parties.js";
 import { isHardcore } from "./hardcore.js";
 import { isCustomBg } from "./custombg.js";
+import { hardcoreTents } from "./tents.js"; // a one-person tent bag each (tents.js TENTS.HARDCORE; call-time only)
 import { grabStartGear, addPickedSupplies, trunkFromPicks, loadGun, pickOf } from "./startgear.js"; // gear picked on the new-run screen (Customize)
 import { hcOutbreakCity } from "./hardcore-outbreak.js";
-import { STAGING, ESTABLISH_LABEL, needText, shelterText, waterSource } from "./staging.js";
+import { STAGING, ESTABLISH_LABEL, needText, shelterText, waterSource, buildMapChoice } from "./staging.js";
 import { swapGun } from "./gundist.js"; // the gun distribution: which gun they grabbed
 
 export const HC_START = {
@@ -256,7 +257,7 @@ export function hubFounded(state, base, when = "") {
     ? `Day ${day(state)}: the camp is a shelter now. ${base.name} is founded, your first shelter${when ? `, ${when}` : ""}. ${shelterText()} Build it up before the cold.`
     : `Day ${day(state)}: the camp is built up. ${base.name} is founded, your first hub${when ? `, ${when}` : ""}. It is bare: no buildings yet, a barricade of scrap and the camp's stores. Build farm plots, a well and beds before the cold.`;
   log(state, text, "good");
-  addCard(state, { title: "A place of your own", text, choices: [{ label: "OK", resolve: () => "" }] });
+  addCard(state, { title: "A place of your own", text, mapBase: base.id, choices: [{ label: "OK", default: true, resolve: () => "" }, buildMapChoice(base)] }); // staging.js: Open the build map (a rename while it waits rewrites its text: basenames.js renameBase)
 }
 
 // ---------- the spawn ----------
@@ -769,7 +770,10 @@ export function setupHardcoreStart(state, crew, crewRoll = null, n = HC_START.CR
   for (const s of people) s.carRoll = carRoll;
   settleParty(state, p); // ammo.js: the rounds they grabbed, by the calibres of their guns
   state.rng = worldRng;
-  lines.push(carLine(owner, car, trunk, people.length));
+  // Tent bags (tents.js): TENTS.HARDCORE one-person tents a survivor, in the car's trunk (no dice); the car's line says so.
+  const tents = hardcoreTents(state, p, people);
+  const tentLine = tents.length ? ` ${people.length === 1 ? (tents.length === 1 ? "A one-person tent" : `${tents.length} one-person tents`) : tents.length === people.length ? "A one-person tent each" : `${tents.length} one-person tents`} went ${p.vehicle ? "in the back too" : "along in your arms"}: a camp goes up in half an hour with them.` : "";
+  lines.push(carLine(owner, car, trunk, people.length) + tentLine);
   log(state, `${people.length === 1 ? "You set off alone" : `The ${countWord(people.length)} of you set off`} in ${firstName(owner)}'s ${car.name.toLowerCase()}: tank ${Math.round((car.fuel / VEHICLE_TYPES[car.type].tank) * 100)}% full${trunk.gear.length || Object.keys(trunk.supplies).length ? ", and what was in the back is the team's cargo" : ""}.`, "info");
   p.sightNow = state.grid.within(tile.id, sightRadius(state, p));
   state.hardcore.start = { people: people.length, tile: tile.id, lastTile: tile.id, foundedDay: null, grabbed: lines, prepper: prepper ? prepper.id : null, car: car.id, carOwner: owner.id, backgrounds: Object.fromEntries(people.map((s) => [s.id, s.background])) };

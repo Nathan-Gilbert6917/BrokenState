@@ -1,6 +1,7 @@
 // Battle map sizes by context (src/sim/battlesize.js) and the guardrails that keep big maps from being a slog.
 // Checks: the size table (Small 24×18, Medium 32×24, Large 40×30, Extra-large 48×34) and what maps to each class
-// (sites, fights in the open by crowd and terrain, a hive, a group's base by its people, your hub and outposts by
+// (raid maps between the run's smallest and largest by site, cities and towns the largest, the World… dials moving
+// both ends; fights in the open by crowd and terrain, a hive, a group's base by its people, your hub and outposts by
 // their buildings); every context's map built twice the same (deterministic), valid (everyone on a free walkable
 // cell your people can reach, both sides where they belong), the sides starting the set distance apart, cover over
 // most of the open ground, the first shot or blow within a few turns (the AI on both sides), a raid with more rooms,
@@ -19,8 +20,9 @@ import { launchExpedition } from "../src/sim/parties.js";
 import { createBattle, autoPlayerTurn, runEnemyPhase, closeCombat, registerCombatHandler, active, combatAct, CELL, endPlayerTurn } from "../src/sim/combat.js";
 import {
   SIZE_CLASSES, CLASS_KEYS, SIZES, CONTACT, COVER, CLEAR, dimsAt, sizeClass, siteScale, raidDims, fieldScale, assaultDims, baseScale,
-  coverShare, coverTarget, clearEnough, raidAreaRange, raidDeadScale, baseSide, BASE_TIER } from "../src/sim/battlesize.js";
+  coverShare, coverTarget, clearEnough, raidAreaRange, raidDeadScale, baseSide, BASE_TIER, raidMinDims, raidMaxDims, buildingTarget, RAID } from "../src/sim/battlesize.js";
 import { yardDims, interiorSize, INTERIOR, structuresOf } from "../src/sim/interior.js";
+import { BIG, buildingDeadScale, streetDeadScale, raidHeatRate, raidLootShare, mapSizeText, bigMapNote } from "../src/sim/battlesize.js";
 import "../src/sim/hives.js";
 import "../src/sim/conquest.js";
 import { cpus } from "node:os";
@@ -88,12 +90,12 @@ function baseFight(st, list, enemy, walls = true, type = "hub") {
 
 // Every context: name, the class it should be, and how to build it on a world.
 const CONTEXTS = [
-  { name: "raid: gas station (its building)", cls: "S", make: (st) => raid(st, "gas", [{ kind: "zombies", count: 5, power: 2 }]) },
-  { name: "raid: pharmacy (its building)", cls: "S|M", make: (st) => raid(st, "pharmacy", [{ kind: "zombies", count: 6, power: 2 }]) },
-  { name: "raid: supermarket (its building)", cls: "M|L", make: (st) => raid(st, "supermarket", [{ kind: "zombies", count: 7, power: 2 }]) },
-  { name: "raid: farm", cls: "M", make: (st) => raid(st, "farm", [{ kind: "zombies", count: 4, power: 2 }]) },
-  { name: "raid: hospital (its building)", cls: "L", make: (st) => raid(st, "hospital", [{ kind: "zombies", count: 9, power: 2.5 }]) },
-  { name: "raid: city center", cls: "L", make: (st) => raid(st, "city", [{ kind: "zombies", count: 8, power: 2.5 }, { kind: "raiders", count: 3, power: 4 }]) },
+  { name: "raid: gas station (its building)", cls: "M", make: (st) => raid(st, "gas", [{ kind: "zombies", count: 5, power: 2 }]) },
+  { name: "raid: pharmacy (its building)", cls: "M", make: (st) => raid(st, "pharmacy", [{ kind: "zombies", count: 6, power: 2 }]) },
+  { name: "raid: supermarket (its building)", cls: "L", make: (st) => raid(st, "supermarket", [{ kind: "zombies", count: 7, power: 2 }]) },
+  { name: "raid: farm", cls: "L", make: (st) => raid(st, "farm", [{ kind: "zombies", count: 4, power: 2 }]) },
+  { name: "raid: hospital (its building)", cls: "XL", make: (st) => raid(st, "hospital", [{ kind: "zombies", count: 9, power: 2.5 }]) },
+  { name: "raid: city center", cls: "XL", make: (st) => raid(st, "city", [{ kind: "zombies", count: 8, power: 2.5 }, { kind: "raiders", count: 3, power: 4 }]) },
   { name: "field: 3 vs 3 raiders, plains", cls: "M", players: 3, make: (st) => field(st, "plains", null, { kind: "raiders", count: 3, power: 4 }, { road: true }) },
   { name: "field: 3 vs 4 raiders, forest", cls: "M", players: 3, make: (st) => field(st, "forest", null, { kind: "raiders", count: 4, power: 5 }) },
   { name: "field: 3 vs 12 dead, hills", cls: "M", players: 3, make: (st) => field(st, "hills", null, { kind: "zombies", count: 12, power: 2 }) },
@@ -122,9 +124,9 @@ const pcOf = (b) => { const P = b.units.filter((u) => u.side === "player" && !u.
 
 // ---------- the measurement's matchups (section 5), each one a job for a worker ----------
 const MATCH = [
-  { cls: "S", name: "raid: gas station (3, 5 of the dead)", raid: "gas", groups: [{ kind: "zombies", count: 5, power: 2 }] },
-  { cls: "M", name: "raid: supermarket (3, 7 of the dead)", raid: "supermarket", groups: [{ kind: "zombies", count: 7, power: 2 }] },
-  { cls: "L", name: "raid: hospital (3, 9 of the dead)", raid: "hospital", groups: [{ kind: "zombies", count: 9, power: 2.5 }] },
+  { cls: "M", name: "raid: gas station (3, 5 of the dead)", raid: "gas", groups: [{ kind: "zombies", count: 5, power: 2 }] },
+  { cls: "L", name: "raid: supermarket (3, 7 of the dead)", raid: "supermarket", groups: [{ kind: "zombies", count: 7, power: 2 }] },
+  { cls: "XL", name: "raid: hospital (3, 9 of the dead)", raid: "hospital", groups: [{ kind: "zombies", count: 9, power: 2.5 }] },
   { cls: "M", name: "field: 3 vs 4 raiders", players: 3, terrain: "plains", enemy: { kind: "raiders", count: 4, power: 5 } },
   { cls: "M", name: "field: 3 vs 12 dead", players: 3, terrain: "forest", enemy: { kind: "zombies", count: 12, power: 2 } },
   { cls: "M", name: "field: you ambush 4 vs 12 dead", players: 4, terrain: "hills", enemy: { kind: "zombies", count: 12, power: 2 }, ambush: "player" },
@@ -174,9 +176,20 @@ check(dimStr(dimsAt(0)) === "24×18" && dimStr(dimsAt(1)) === "32×24" && dimStr
 check(CLASS_KEYS.every((k) => sizeClass(SIZE_CLASSES[k].w, SIZE_CLASSES[k].h) === k) && sizeClass(28, 20) === "S" && sizeClass(36, 26) === "M", "every map size reads back as its nearest class");
 const L_SITES = ["hospital", "univ", "prison", "military", "mall", "factory", "airport", "warehouse", "city"], M_SITES = ["supermarket", "school", "police", "firestation", "apartments", "office", "motel", "church", "farm", "ranch", "lodge", "campground"], SM_SITES = ["gas", "diner", "grocery", "pharmacy", "clinic", "cabin", "barn", "gunstore", "hardware", "autoshop", "feedstore"];
 const loc = (type) => ({ terrain: "city", loc: { type } });
-check(L_SITES.every((t) => dimStr(raidDims(loc(t))) === "40×30"), `Large sites: ${L_SITES.join(", ")} (40×30)`);
-check(M_SITES.every((t) => dimStr(raidDims(loc(t))) === "32×24"), `Medium sites: ${M_SITES.join(", ")} (32×24)`);
-check(SM_SITES.every((t) => siteScale(loc(t)) > 0 && siteScale(loc(t)) < 1), `Small–Medium sites: ${SM_SITES.join(", ")} (${dimStr(raidDims(loc("gas")))})`);
+check(dimStr(raidMinDims()) === "32×24" && dimStr(raidMaxDims()) === "56×42", `raid maps: the usual smallest ${dimStr(raidMinDims())}, largest ${dimStr(raidMaxDims())} (worldcfg.js raidMin / raidMax)`);
+check(L_SITES.every((t) => dimStr(raidDims(loc(t))) === "56×42"), `Large sites: ${L_SITES.join(", ")} (the largest, 56×42)`);
+check(M_SITES.every((t) => dimStr(raidDims(loc(t))) === "40×30"), `Medium sites: ${M_SITES.join(", ")} (a third of the way up, 40×30)`);
+check(SM_SITES.every((t) => siteScale(loc(t)) > 0 && siteScale(loc(t)) < 1 && dimStr(raidDims(loc(t))) === "32×24"), `Small–Medium sites: ${SM_SITES.join(", ")} (the smallest, ${dimStr(raidDims(loc("gas")))})`);
+{
+  // The World… dials (worldcfg.js raidMin / raidMax) move both ends; a city or a town (a crawl's buildings too) is always the largest.
+  const dial = { worldCfg: { raidMin: 26, raidMax: 70 } }, town = { terrain: "suburb", loc: { type: "town" } }, city = { terrain: "city", loc: { type: "city" } }, bare = { terrain: "city" };
+  check(dimStr(raidDims(loc("gas"), dial)) === "26×20" && dimStr(raidDims(loc("hospital"), dial)) === "70×52" && dimStr(raidDims(loc("farm"), dial)) === "40×30",
+    `the dials move the range: a gas station ${dimStr(raidDims(loc("gas"), dial))}, a farm ${dimStr(raidDims(loc("farm"), dial))}, a hospital ${dimStr(raidDims(loc("hospital"), dial))} (26 to 70 across)`);
+  check([town, city, bare].every((t) => dimStr(raidDims(t)) === "56×42" && dimStr(raidDims(t, dial)) === "70×52" && dimStr(buildingTarget(t, false, dial)) === "70×52"),
+    "cities and towns (their streets and a crawl's buildings, a site-less city tile too) always the largest raid map");
+  check(dimStr(buildingTarget(loc("hospital"), false, dial)) === "26×20" && dimStr(buildingTarget(loc("gas"), true, dial)) === "26×20", "a building at a site with several: at least the smallest raid map");
+  check(dimStr(raidDims({ terrain: "plains", bridge: true }, { worldCfg: { raidMin: 24, raidMax: 24 } })) === "40×30", "a bridge never under Large (its span)");
+}
 const f33 = fieldScale({ terrain: "plains" }, 3, { kind: "raiders", count: 3 }), f33f = fieldScale({ terrain: "forest" }, 3, { kind: "raiders", count: 3 });
 const fBig = fieldScale({ terrain: "plains" }, 6, { kind: "zombies", count: 20 }), fHuge = fieldScale({ terrain: "plains" }, 8, { kind: "raiders", count: 20 });
 check(f33 >= 1 && f33 < 1.5 && f33f < f33 && fBig > 1.5 && fHuge <= SIZES.FIELD.MAX, `fights in the open: 3 vs 3 on plains ${dimStr(dimsAt(f33))}, in a forest ${dimStr(dimsAt(f33f))}, 6 vs 20 of the dead ${dimStr(dimsAt(fBig))}, never over Large (8 vs 20 raiders ${dimStr(dimsAt(fHuge))})`);
@@ -269,9 +282,9 @@ section("Content scales with the map");
     return { areas: areas / 4, boxes: boxes / 4, dead: dead / 4, w, h };
   };
   const gas = per("gas"), mkt = per("supermarket"), hosp = per("hospital");
-  check(gas.areas < mkt.areas && mkt.areas < hosp.areas && gas.boxes < hosp.boxes && gas.dead < hosp.dead,
+  check(gas.areas < mkt.areas && mkt.areas < hosp.areas && gas.boxes < hosp.boxes && gas.dead <= hosp.dead, // a building's dead are capped (buildingmaps.js BMAP.DEAD_SCALE)
     `raids: a gas station ${gas.w}×${gas.h} ${gas.areas} areas, ${gas.boxes} containers, ${gas.dead} dead; a supermarket ${mkt.w}×${mkt.h} ${mkt.areas}, ${mkt.boxes}, ${mkt.dead}; a hospital ${hosp.w}×${hosp.h} ${hosp.areas}, ${hosp.boxes}, ${hosp.dead} (6 of the dead asked for)`);
-  check(raidAreaRange(24, 18)[1] < raidAreaRange(48, 34)[0] && raidDeadScale(24, 18) < 1 && raidDeadScale(40, 30) > 1, `rooms by size ${CLASS_KEYS.map((k) => `${k} ${raidAreaRange(SIZE_CLASSES[k].w, SIZE_CLASSES[k].h).join("–")}`).join(", ")}; the dead ×${raidDeadScale(24, 18).toFixed(2)} on Small to ×${raidDeadScale(48, 34).toFixed(2)} on Extra-large`);
+  check(raidAreaRange(24, 18)[1] < raidAreaRange(48, 34)[0] && raidAreaRange(56, 42)[0] > raidAreaRange(48, 34)[0] && raidDeadScale(24, 18) < 1 && raidDeadScale(40, 30) > 1, `rooms by size ${CLASS_KEYS.map((k) => `${k} ${raidAreaRange(SIZE_CLASSES[k].w, SIZE_CLASSES[k].h).join("–")}`).join(", ")}, the largest raid map 56×42 ${raidAreaRange(56, 42).join("–")}; the dead ×${raidDeadScale(24, 18).toFixed(2)} on Small to ×${raidDeadScale(48, 34).toFixed(2)} on Extra-large, ×${raidDeadScale(56, 42).toFixed(2)} on the largest raid map`);
   // Field maps: cover on open plains on every size (the props that top them up).
   const shares = [];
   for (const players of [3, 6, 8]) {
@@ -281,6 +294,51 @@ section("Content scales with the map");
     if (coverShare(b.cells, b.w, b.h, COVER.R, b.reach).share < COVER.OPEN - 0.04) shares.push("LOW");
   }
   check(!shares.includes("LOW"), `open plains topped up with cover on every size (${shares.join(", ")}; target ${Math.round(COVER.OPEN * 100)}%)`);
+}
+
+// ---------- 3b. a map past the old Large ----------
+section("A map past the old Large (BIG): the dead, Heat, the loot and the ways out grow with the ground, less than it");
+{
+  check(raidHeatRate(40, 30) === 1 && raidLootShare(40, 30) === 1 && buildingDeadScale(0.85, 40, 30) === 0.85 && raidHeatRate(24, 18) === 1 && raidLootShare(32, 24) === 1,
+    "at or under the old Large 40×30 every factor is exactly 1 (nothing on the old sizes changes)");
+  const dead = raidDeadScale(56, 42), inside = buildingDeadScale(0.85, 56, 42), street = streetDeadScale(56, 42);
+  check(raidDeadScale(40, 30) < 1.4 && dead > raidDeadScale(40, 30) * 1.4 && dead <= RAID.DEAD_MAX && inside > 1.2 && inside <= BIG.DEAD_MAX && street > 1.2 && streetDeadScale(48, 34) === 1,
+    `more dead on the 56×42 map: a street map ×${dead.toFixed(2)} (×${raidDeadScale(40, 30).toFixed(2)} at 40×30), a building's ×${inside.toFixed(2)} (×0.85), a neighbourhood's ×${street.toFixed(2)}`);
+  check(raidHeatRate(56, 42) < 0.8 && raidHeatRate(56, 42) > raidHeatRate(80, 60) && raidHeatRate(200, 150) === BIG.HEAT_MIN && raidLootShare(56, 42) < 0.75 && raidLootShare(56, 42) > raidLootShare(80, 60) && raidLootShare(300, 200) === BIG.LOOT_MIN,
+    `Heat's base rise ×${raidHeatRate(56, 42).toFixed(2)} and a container's find ×${raidLootShare(56, 42).toFixed(2)} on 56×42 (×${raidHeatRate(80, 60).toFixed(2)} / ×${raidLootShare(80, 60).toFixed(2)} on 80×60), never under ×${BIG.HEAT_MIN} / ×${BIG.LOOT_MIN}`);
+  check(mapSizeText(56, 42) === "Extra-large, 56 × 42" && bigMapNote(56, 42) !== "" && bigMapNote(40, 30) === "", "the plan window's words: the size, and a note for a big map");
+  const st = world(SEED, 3), gas = raid(st, "farm", [{ kind: "zombies", count: 4, power: 2 }]), city = raid(world(SEED, 3), "city", [{ kind: "zombies", count: 8, power: 2 }]);
+  check(gas.raid.zones.length === 3 && city.raid.zones.length === 4 && city.raid.zones.some((z) => z.side === "north") && city.raid.zones.some((z) => z.side === "south"),
+    `a way out on each long side of a big street map (${city.raid.zones.map((z) => z.side).join(", ")}; a 40×30 farm's ${gas.raid.zones.length})`);
+  // A big group of the dead (a crawl's horde): capped at 20 on a map at or under the old Large, as it always was; more past it.
+  const deadOn = (b) => b.units.filter((u) => u.side === "enemy" && u.kind === "zombie").length;
+  const horde = [{ kind: "zombies", count: 20, power: 2 }], farmH = raid(world(SEED, 3), "farm", horde), cityH = raid(world(SEED, 3), "city", horde);
+  check(farmH.w * farmH.h <= BIG.FROM && deadOn(farmH) <= 20 && cityH.w * cityH.h > BIG.FROM && deadOn(cityH) > 20,
+    `a group of 20 of the dead: ${deadOn(farmH)} on the ${farmH.w}×${farmH.h} farm (never over 20 there), ${deadOn(cityH)} on the ${cityH.w}×${cityH.h} city`);
+  // The dead that come in at Heat come in near your people.
+  const st2 = world(SEED + 1, 3), b = raid(st2, "city", [{ kind: "zombies", count: 4, power: 2 }]);
+  st2.combat = b;
+  b.raid.heat = 24.9; b.raid.stage = 0;
+  const before = b.units.length;
+  inBrowser(() => { endPlayerTurn(st2); runEnemyPhase(st2); });
+  const arrivals = b.units.filter((u) => u.reinforcement), P = b.units.filter((u) => u.side === "player" && !u.dead);
+  check(b.units.length > before && arrivals.length > 0 && arrivals.every((u) => P.some((p) => Math.hypot(p.x - u.x, p.y - u.y) <= BIG.NEAR + 1)), `${arrivals.length} of the dead come in at Heat's first stage within ${BIG.NEAR} tiles of your people on a ${b.w}×${b.h} map`);
+}
+
+// ---------- 3c. an older save, and a campsite's own dead ----------
+section("An older save keeps its old raid maps; a campsite's own dead never grow with the map");
+{
+  const old = world(SEED, 3);
+  old.raidLegacy = true; // save.js: a save from before the raid map dials
+  const farm = raid(old, "farm", [{ kind: "zombies", count: 4, power: 2 }]), city = raid(world(SEED, 3), "city", [{ kind: "zombies", count: 4, power: 2 }]);
+  const oldCity = (() => { const st = world(SEED, 3); st.raidLegacy = true; return raid(st, "city", [{ kind: "zombies", count: 4, power: 2 }]); })();
+  check(dimStr([farm.w, farm.h]) === "32×24" && dimStr([oldCity.w, oldCity.h]) === "40×30" && oldCity.raid.zones.length === 3 && !oldCity.raid.big && !farm.raid.big && city.raid.big,
+    `an older save's raids: a farm ${dimStr([farm.w, farm.h])}, a city ${dimStr([oldCity.w, oldCity.h])} with ${oldCity.raid.zones.length} ways out and no big-map scales (a new world's city ${dimStr([city.w, city.h])}, scaled)`);
+  // A campsite's own dead (campsite.js campRoster, g.camp): fewer on a small map, never more than the camp's count on a big one.
+  const camp = (st) => raid(st, "city", [{ kind: "zombies", count: 3, power: 2, camp: "abandoned" }]).units.filter((u) => u.side === "enemy").length;
+  const oldSt = world(SEED, 3); oldSt.raidLegacy = true;
+  const newCamp = camp(world(SEED, 3)), oldCamp = camp(oldSt);
+  check(newCamp === 3 && oldCamp === Math.round(3 * raidDeadScale(40, 30)), `a camp's 3 dead: ${newCamp} on a new world's 56×42 map (not more), ${oldCamp} on an older save's 40×30 map (scaled as it always was)`);
 }
 
 // ---------- 4. the anti-slog ends ----------

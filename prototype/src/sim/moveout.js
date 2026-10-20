@@ -25,7 +25,7 @@
 //     waited outside, ended another order there, or said No on the Enter card) moves in the same way, from the team
 //     panel, the orders card, the Teams tab or the tile panel's team card.
 import { log, addCard, baseById, residents } from "./world.js";
-import { baseBeds } from "./buildings.js";
+import { baseBeds, isCamp } from "./buildings.js";
 import { crowdInfo } from "./morale.js";
 import { launchExpedition, partyMembers, partyTile, awaitOrders, startReturn, teamName } from "./parties.js";
 import { partyFleet as partyVehicle, vehicleLabel } from "./vehicles.js"; // all the team's vehicles (vehicles.js fleets)
@@ -50,7 +50,7 @@ export function crowdCardsHour(state) {
   if (state.autopilot || state.gameOver || !state.bases.length) return;
   for (const b of state.bases) {
     const over = overBeds(state, b);
-    if (over <= 0) continue;
+    if (over <= 0 || isCamp(b)) continue; // a camp's people without a tent sleep rough round the fire (morale.js CROWD.rough): no card
     if (state.cards.some((c) => c.crowdFor === b.id)) continue; // one open at a time per base
     const last = b.crowdNote;
     if (last && state.hour < last.hour + CROWD_CARD.days * 24 && over < last.over + CROWD_CARD.worse) continue;

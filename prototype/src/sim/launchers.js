@@ -721,7 +721,7 @@ const boxCells = (c) => { const out = []; for (let y = c.y; y < c.y + (c.h || 1)
 // Fire on what lies on the ground (ground.js groundFire: a pile on a burning cell, each turn it burns): what burns
 // (woodcutting.js burnShare half or more: wood, cloth, paper, a pack and what is in it) is gone, the rest is worn by
 // the heat like a blast's wear on the cell (GROUND.impact), boxed rounds and loose rounds cook off (cookBox,
-// cookRecord); food, meds, firewood, fuel, arrows, powder and primers burn. Returns { gear (what is left), lost }.
+// cookRecord); food, meds, wood, fuel, arrows, powder and primers burn. Returns { gear (what is left), lost }.
 export const GROUND_FIRE = { BURN_AT: 0.5, SUPPLIES: ["food", "preserved", "meds", "wood", "fuel", "arrows", "powder", "blackpowder", "primers", "matchprimers"] };
 export function fireStuff(gear, sup, ...salt) {
   const keep = [];

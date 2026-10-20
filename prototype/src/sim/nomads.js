@@ -30,6 +30,11 @@
 //   (grouppois.js raidPoiAsGroup: the pool, the container ledger, the tile's heat, what your people left in a container
 //   they opened goes into its stock and wares). Tiles it does not know are surveyed before they are raided. A raid on
 //   a dangerous place can cost it someone (MISHAP, by the place's true threat, pois.js poiThreat, against the tier).
+// - Tents (tents.js): a band sets out with its kit's tent bags (data-tents.js BAND_TENTS; on its shelf, weighed by
+//   bandRoom) and finds more by the same loot; at camp they are pitched (bandTentCamp): the share it does not sleep
+//   sleeps rough and slows its recruiting (groupworks.js CROWDED_GROWTH × the share), its pitched tents keep its fresh
+//   food (bandFeeds: bandSpoilMult), and the time its bags save pitching is walked at the day's end (move:
+//   bandPitchSaved). Drifters build makeshift shelters (no bag).
 // - Then it breaks camp and walks (or drives) MOVE (4–8) tiles to the next one, by day: the best ground for places it
 //   knows or may find, away from your walls, the groups' bases, hives and hordes.
 // - Survival: it eats EAT a head a day and drinks DRINK; it forages and hunts FORAGE[tier] a head a day (× the ground,
@@ -65,7 +70,9 @@ import { fightOdds, spotFirstChance, payPlan, COOLDOWN_HOURS } from "./conflicts
 import { borderTiles } from "./hives.js";
 import { reduceHorde } from "./hordes.js";
 import { hash01, gainXp, USE, tradeSpeech } from "./skills.js";
-import { foodIn, takeFood, giveFood, ageCoarse, FOODS } from "./foods.js";
+import { foodIn, takeFood, giveFood, ageCoarse, FOODS, COARSE } from "./foods.js";
+import { bandTentKit, bandTentCamp, bandSpoilMult, bandPitchSaved, bandRoughShare } from "./tents.js"; // tent bags: set out with, pitched at camp (call-time only)
+import { GROUP_WORKS } from "./groupworks.js"; // sleeping rough slows growth (CROWDED_GROWTH; call-time only)
 import { yearOf } from "./eras.js";
 import { stateSizeDef } from "./worldsize.js";
 import { wanderDensity, WANDER } from "./wanderers.js";
@@ -296,6 +303,7 @@ export function spawnNomads(state, opts = {}) {
   for (let i = 0, n = rng.int(nw[0], nw[1]); i < n; i++) b.wares.push(lootItem(rng.pick(T.gear), "survivor", [state.seed, "nomadware", serial, i]));
   const spare = starterKit(state.seed, `nomads#${serial}`, `nomad${tier}`, 1).find((it) => it && it.key);
   if (spare) b.wares.push(spare);
+  b.wares.push(...bandTentKit(state, T.kit, `n${serial}`, pop)); // tents.js: the tent bags they carry (BAND_TENTS by the tier's kit; their own dice)
   S.bands.push(b);
   S.stats.spawned++;
   S.stats.tiers[tier] = (S.stats.tiers[tier] || 0) + 1; // a save from before the drifters has no tier 0 count
@@ -374,6 +382,7 @@ export function bandDay(state, b) {
   // The dead near them: a horde they cannot face sends them the other way.
   const flee = hordeThreat(state, b);
   if (flee) { b.fled = flee.tile; nomads(state).stats.fled++; breakCamp(state, b, flee.tile); return; }
+  bandTentCamp(b, bandCount(b), b.phase === "camp"); // tents.js: its bags pitched at camp, who sleeps rough (the recruits below)
   if (b.phase !== "camp") return;
   // Camp: one thing a day near the camp, a survey or a raid; then the recruits; then, when the days are up, on.
   campWork(state, b);
@@ -399,7 +408,7 @@ export function bandFeeds(state, b, life, rng, { camp = false, lose }) {
   if (camp && waterAt(state, b.tile)) b.stock.water = Math.max(b.stock.water, heads * 4);
   const eat = heads * N.EAT, drink = heads * N.DRINK;
   const short = eat - takeFood(b.stock, eat, { state }).units;
-  ageCoarse(b.stock);
+  ageCoarse(b.stock, 1, COARSE.factor * bandSpoilMult(b, camp)); // tents.js: the fresh food in its pitched tents keeps better
   const dry = Math.max(0, drink - (b.stock.water || 0));
   b.stock.water = Math.max(0, (b.stock.water || 0) - drink);
   if (short > eat * 0.25 || dry > drink * 0.25) {
@@ -497,7 +506,8 @@ export function recruit(state, b) {
   const T = tierOf(b), S = nomads(state).stats, rng = nrng(state), g = state.grid;
   const room = T.size[1] - b.pop;
   if (room <= 0 || foodIn(b.stock) < b.pop * N.RECRUIT_FOOD) return;
-  const small = Math.max(0.15, 1 - (b.pop - T.size[0]) / Math.max(1, T.size[1] - T.size[0]));
+  // Sleeping rough slows it as it slows a group's growth (groupworks.js CROWDED_GROWTH), by the share with no tent bed (tents.js).
+  const small = Math.max(0.15, 1 - (b.pop - T.size[0]) / Math.max(1, T.size[1] - T.size[0])) * (1 - (1 - GROUP_WORKS.CROWDED_GROWTH) * bandRoughShare(b));
   // The people into the band's list with the head count (bands.js: the list follows the count; its own people made
   // first, so the newcomers are never mistaken for the ones it had).
   const join = (people, n, src) => {
@@ -628,7 +638,7 @@ export function nomadsHour(state) {
 function move(state, b) {
   const h = hourOfDay(state);
   if (!b.driving && (h < N.DAY_FROM || h >= N.DAY_TO)) return;
-  b.progress += b.driving ? N.CAR_SPEED : N.SPEED;
+  b.progress += b.driving ? N.CAR_SPEED : N.SPEED * (h === N.DAY_TO - 1 ? 1 + bandPitchSaved(b, bandCount(b)) : 1); // tents.js: the time its bags save pitching camp is walked
   while (b.idx < b.path.length - 1) {
     const from = b.path[b.idx], to = b.path[b.idx + 1];
     const cost = moveCost(state, from, to, !!b.driving, "nomads");
@@ -886,10 +896,12 @@ function nomadFight(state, b, p, ambush, opts = {}) {
     resume(state, p);
     return `They scattered before you could close in${planText(got) ? `, dropping ${planText(got)}` : ""}.`;
   }
+  const camping = !!opts.camp || b.phase === "camp"; // campsite.js: met at their camp, the fight is at their camp
   b.phase = "battle";
   startCombat(state, {
     tile: partyTile(p), partyId: p.id, enemy: nomadEnemy(state, b), ambush, canRetreat: true, handler: "nomadFight",
-    context: { nomadId: b.id, partyId: p.id, camp: !!opts.camp },
+    ...(camping ? { layout: "campsite" } : {}), // campsite.js: their clearing, their fire, their real tents and stores
+    context: { nomadId: b.id, partyId: p.id, camp: !!opts.camp, ...(camping ? { campBand: { band: "nomad", id: b.id } } : {}) },
   });
   return "";
 }

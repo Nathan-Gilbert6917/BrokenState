@@ -40,6 +40,8 @@ import {
 import { lootPoiAbstract, poiHouses } from "./poicont.js"; // poiHouses: a street of houses (a neighbourhood) is gone through a house at a time
 import { lookOdds, LOOK } from "./survey.js";
 import { haulFor, AISCAV } from "./aiscav.js";
+import { rollGroupTent } from "./tents.js"; // a tent bag among the finds (its own dice; call-time only)
+import { campGroupRaid } from "./campsite.js"; // a campsite raided: its tents carried off (call-time only)
 
 export const GPOI = {
   RANGE: 10,        // a group sees the known zone's POIs this far from its bases (aiscav.js AISCAV.range)
@@ -270,7 +272,8 @@ const stats = (state) => { const st = /** @type {any} */ (state); return st.grou
  * shop's food and all). Logs a POI stripped now and things of yours taken (seen, or on the radio near your bases;
  * opts.news false: quiet; "left": only things of yours taken, the caller tells of the rest). Returns null without
  * the POI, else { took, goods (supplies, the player's left supplies among them; opts.haul false: those alone, the
- * caller turns `took` into goods its own way), left (the player's left supplies), gear (items the player left there),
+ * caller turns `took` into goods its own way), left (the player's left supplies), gear (items the player left there,
+ * and a tent bag found by the same loot as your search's: tents.js rollGroupTent; not with haul false or count false),
  * boxes (your containers gone through), stripped, strippedNow, pool }. opts.room: the kg the holder can carry off from
  * your containers (nomads.js bandRoom); what does not fit stays in them (poicont.js lootPoiAbstract).
  * @param {State} state @param {any} who @param {Tile | number} tile @param {number} i @param {number} need
@@ -284,6 +287,12 @@ export function raidPoiAsGroup(state, who, tile, i, need, opts = {}) {
   if (!r) return null;
   const goods = r.took > 0 && opts.haul !== false ? haulFor(t, r.took, before, opts.eff != null ? opts.eff : AISCAV.eff, state, isSitePoi(t, i) ? null : p.kind) : {};
   for (const [k, q] of Object.entries(r.left.sup)) goods[k] = (goods[k] || 0) + q;
+  const gear = [...r.left.gear];
+  if (r.took > 0 && opts.haul !== false && opts.count !== false) { // tents.js: a tent bag, by the POI's kind and the search hours it took
+    const tent = rollGroupTent(state, who, t.id, i, isSitePoi(t, i) ? (t.loc ? t.loc.type : null) : p.kind, r.took, before);
+    if (tent) gear.push(tent);
+  }
+  if (opts.count !== false && p.kind === "campsite") gear.push(...campGroupRaid(state, who, t, i)); // campsite.js: its standing tents carried off, the camp cleared
   const S = stats(state);
   if (opts.count !== false) { S.raids++; S.took += r.took; } // count false: a group's own land, worn down by the day (aiscav.js)
   const strippedNow = r.stripped && !was;
@@ -293,7 +302,7 @@ export function raidPoiAsGroup(state, who, tile, i, need, opts = {}) {
     if (r.boxes) poiNews(state, who, t, i, "left", opts.name);
     else if (opts.news !== "left" && (strippedNow || poiBand(t, i) > band0 + 1)) poiNews(state, who, t, i, "stripped", opts.name);
   }
-  return { took: r.took, goods, left: r.left.sup, gear: r.left.gear, boxes: r.boxes, stripped: r.stripped, strippedNow, pool: r.pool };
+  return { took: r.took, goods, left: r.left.sup, gear, boxes: r.boxes, stripped: r.stripped, strippedNow, pool: r.pool };
 }
 
 // Who they are in the log: a group you know by name, else nobody named ("Strangers", "someone").

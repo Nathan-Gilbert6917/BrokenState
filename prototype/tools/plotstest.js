@@ -18,7 +18,7 @@ const seed = Number(process.argv[2] || 42);
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
 const W = () => createWorld({ seed, factionCount: 6 });
-const rich = (b) => { Object.assign(b.stock, { scrap: 9999, parts: 999, meds: 999 }); setFood(b, 500); return b.stock; };
+const rich = (b) => { Object.assign(b.stock, { scrap: 9999, parts: 999, meds: 999, wood: 99999 }); setFood(b, 500); return b.stock; };
 const mkOutpost = (st, tile) => {
   const b = { id: newId(), tile, type: "outpost", name: "Test Outpost", stock: { food: 0, water: 0, fuel: 0, meds: 0, ammo: 0, parts: 0, scrap: 0 }, radio: false, watchtower: false, buildings: [], construction: [], armory: [] };
   st.bases.push(b);
@@ -42,7 +42,7 @@ const skilled = (st, b) => { const s = makeSurvivor(st, 1); s.location = { kind:
   check(plotCap(h, "building") === 1 && plotCap(h, "utility") === 3, "a shelter has 1 building plot and 3 utility plots");
   check(PLOTS.hub.building > PLOTS.outpost.building && PLOTS.outpost.building > PLOTS.shelter.building && PLOTS.hub.utility > PLOTS.outpost.utility && PLOTS.outpost.utility > PLOTS.shelter.utility, "plots grow with the base");
   for (const [k, d] of Object.entries(BUILDINGS)) {
-    if (d.piece || ["walls", "barricades", "spike_pits", "trench", "gate", "floodlights", "farm_plot", "hub_up", "outpost_up", "camp_up", "camo", "cots", "barbed_wire", "sandbag_wall", "razor_wire", "guard_towers", "minefield", "storebox"].includes(k) || d.general || d.fit) check(!d.plot, `${k} needs no plot`); // base building (2026-10-19): the general buildings stand on the map, no plot; the fittings inside them; the wall pieces anywhere; the storage box (base storage limits) anywhere
+    if (d.piece || d.hidden || k === "tent" || ["walls", "barricades", "spike_pits", "trench", "gate", "floodlights", "farm_plot", "hub_up", "outpost_up", "camp_up", "camo", "cots", "barbed_wire", "sandbag_wall", "razor_wire", "guard_towers", "minefield", "storebox"].includes(k) || d.general || d.fit) check(!d.plot, `${k} needs no plot`); // base building (2026-10-19): the general buildings stand on the map, no plot; the fittings inside them; the wall pieces anywhere; the storage box (base storage limits) anywhere
     else check(d.plot === "building" || d.plot === "utility", `${k} has a plot kind`);
   }
   for (const k of ["storehouse", "cellar", "bunkhouse", "infirmary", "cistern"]) check(BUILDINGS[k].plot === "building", `${k} is on a building plot`);

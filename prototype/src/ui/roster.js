@@ -186,6 +186,7 @@ export function setRole(state, s, role) {
   if (!ROLES[role]) return false;
   toManual(state, s); // a fixed job: off work priorities
   delete s.cookPlus; // sim/kitchen.js: no longer a Cook + second job
+  delete s.helpWas; // sim/noidle.js: the job picked now holds
   s.role = role;
   if (role !== "operate") s.station = null;
   const b = baseById(state, s.location.baseId);

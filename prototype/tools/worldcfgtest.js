@@ -3,7 +3,7 @@
 // world (a standard world carries no worldCfg and plays as before; a set one keeps it through save and load), and that
 // each dial reaches the sim: hunger, thirst, spoilage, horde size, the dead at sites, hive growth, zombie damage on the
 // battle, infection from bites, the worm's cure, the groups' starting rounds and kit, events, raids, the loot by kind,
-// the sizes of bases, city crawls and hive crawls, wear, failures and fuel. The window: every dial drawn, a preset
+// the sizes of bases, raid maps (cities and towns always the largest), city crawls and hive crawls, wear, failures and fuel. The window: every dial drawn, a preset
 // picked sets them, moving one flips the select to Custom, Done rebuilds only when something changed.
 // Usage: node tools/worldcfgtest.js [-v]
 import { createWorld, tickHour } from "../src/sim/world.js";
@@ -16,6 +16,9 @@ import { hubEventChance } from "../src/sim/hubevents.js";
 import { gridOf as cityGrid, crawlRange, GRID as CITY } from "../src/sim/citygrid.js";
 import { gridOf as baseGrid, GRID as BASE, stampGrid, yardHalf, GRID_MAX } from "../src/sim/basemap.js";
 import { denDepth, HCRAWL } from "../src/sim/hivecrawl.js";
+import { raidDims, buildingTarget, raidMinDims, raidMaxDims, raidBig } from "../src/sim/battlesize.js";
+import { raidRange, legacyRaids, RAID_MAPS } from "../src/sim/worldcfg.js";
+import { buildingMap } from "../src/sim/buildingmaps.js";
 import { wearSlot } from "../src/sim/crafting.js";
 import { wear as vehWear, breakdownRoll } from "../src/sim/vehicles.js";
 import { jamChance } from "../src/sim/gunfire.js";
@@ -40,7 +43,7 @@ section("the settings object");
   check(CFG_KEYS.length >= 30 && CFG_KEYS.every((k) => k in d), `every dial has a default (${CFG_KEYS.length} dials)`);
   check(isDefaultCfg(d) && isDefaultCfg(null) && isDefaultCfg({}), "the defaults, nothing and an empty object are standard");
   check(cleanValue("hunger", 99) === WORLD_CFG.hunger.max && cleanValue("hunger", -1) === WORLD_CFG.hunger.min && cleanValue("hunger", "abc") === 1, "a multiplier is clamped to its range; garbage is its default");
-  check(cleanValue("hunger", 1.234) === 1.25 && cleanValue("cityMin", 7.6) === 8, "values snap to the step (0.05; whole numbers)");
+  check(cleanValue("hunger", 1.234) === 1.25 && cleanValue("cityMin", 7.6) === 8 && cleanValue("raidMin", 33) === 34 && cleanValue("raidMax", "0x31") === 50, "values snap to the step (0.05; whole numbers; a raid map's width by 2, as the map is)");
   check(cleanValue("curable", "false") === false && cleanValue("curable", "on") === true && cleanValue("curable", undefined) === true, "the toggle reads strings and defaults on");
   const c = cleanCfg({ hunger: 2, bogus: 5, cityMin: 35, cityMax: 20 });
   check(c.hunger === 2 && !("bogus" in c) && c.thirst === 1, "cleanCfg keeps known dials, drops unknown ones, fills the rest");
@@ -70,6 +73,22 @@ section("the world");
   check(!("worldCfg" in st), "setWorldCfg with all-default values removes the object");
   const back = deserializeState(JSON.parse(JSON.stringify(serializeState(b))));
   check(back.worldCfg && back.worldCfg.hunger === 2 && back.worldCfg.hordes === 2, "the dials survive save and load");
+  // Raid maps in an older save (worldcfg.js RAID_MAPS, legacyRaids): a world made now carries the mark and loads as it
+  // is; a save from before (no mark) keeps the old raid map sizes and none of the big-map scales.
+  check(a.raidMaps === RAID_MAPS && !legacyRaids(a) && !legacyRaids(back), "a new world carries the raid map mark and loads as a new one");
+  const old = world();
+  delete old.raidMaps;
+  const oldBack = deserializeState(JSON.parse(JSON.stringify(serializeState(old))));
+  const at = (st, ty) => st.tiles.find((t) => t.loc && t.loc.type === ty);
+  const dimsOf = (st, ty) => (at(st, ty) ? raidDims(at(st, ty), st).join("×") : "");
+  check(legacyRaids(oldBack) && oldBack.raidMaps === RAID_MAPS && dimsOf(oldBack, "town") === "36×26" && dimsOf(oldBack, "city") === "40×30" && buildingTarget(at(oldBack, "city"), false, oldBack).join("×") === "24×18" && !raidBig(oldBack, 48, 34),
+    `an older save keeps its old raid maps (a town ${dimsOf(oldBack, "town")}, a city ${dimsOf(oldBack, "city")}, a building at a site with several 24×18 at least, no big-map scales)`);
+  const again = deserializeState(JSON.parse(JSON.stringify(serializeState(oldBack))));
+  check(legacyRaids(again) && dimsOf(again, "town") === "36×26", "and keeps them through another save and load");
+  // The dials in order whatever was stored: a hand-edited or older settings object with them the wrong way round, or out of range.
+  const inv = { worldCfg: { raidMin: 70, raidMax: 30 } }, wild = { worldCfg: { raidMin: 5, raidMax: 500 } };
+  check(raidRange(inv).join() === "30,70" && raidMinDims(inv)[0] === 30 && raidMaxDims(inv)[0] === 70 && raidDims(at(a, "town"), inv)[0] === 70 && raidRange(wild).join() === "24,80",
+    `inverted dials read in order (${raidRange(inv).join("–")}; a town's map ${raidDims(at(a, "town"), inv).join("×")}), out-of-range ones clamped (${raidRange(wild).join("–")})`);
   const bd = battleDials(b);
   check(bd.zDmg === 1 && bd.wear === 1 && bd.failures === 1 && bd.infectBite === 1 && battleDials({ worldCfg: { zDmg: 1.5 } }).zDmg === 1.5, "the battle's dials");
   // The same seed with the standard dials is the same world as one built with no worldCfg at all (a default run is unchanged).
@@ -157,6 +176,15 @@ section("sizes");
   stampGrid(world({ baseMin: 0.5, baseMax: 0.5 }), tiny);
   const gt = baseGrid(tiny);
   check(gt.cap >= gt.yard && gt.yard >= gt.core + 2, "the cap is never under the yard, the yard never under the core");
+  // Raid maps (battlesize.js raidDims): the usual 32 to 56 across, the dials' 40 to 72; cities and towns the largest.
+  const r = world({ raidMin: 40, raidMax: 72 });
+  const site = (st, ty) => st.tiles.find((t) => t.loc && t.loc.type === ty);
+  const small = ["gas", "diner", "grocery", "pharmacy", "cabin", "barn"].map((ty) => site(a, ty)).find(Boolean);
+  check(raidDims(cityTile, a)[0] === 56 && raidDims(townTile, a)[0] === 56 && raidDims(cityTile, r)[0] === 72 && raidDims(townTile, r)[0] === 72, `a city's and a town's raid map the largest (${raidDims(townTile, a).join("×")}; ${raidDims(townTile, r).join("×")} under the dials)`);
+  if (small) check(raidDims(small, a)[0] === 32 && raidDims(small, r)[0] === 40, `a small site the smallest (${small.loc.type}: ${raidDims(small, a).join("×")}; ${raidDims(small, r).join("×")} under the dials)`);
+  check(cleanCfg({ raidMin: 70, raidMax: 30 }).raidMax === 70 && cleanValue("raidMax", 500) === 80, "the raid map pair keeps min ≤ max and its range");
+  const crawlB = buildingMap(r, townTile.id, { id: "b1", key: "house", name: "House" }, false), want = buildingTarget(townTile, false, r);
+  check(crawlB.w >= want[0] && crawlB.h >= want[1], `a town's building (a crawl's) on the largest raid map under the dials (${crawlB.w}×${crawlB.h})`);
 }
 
 section("wear, failures, fuel");

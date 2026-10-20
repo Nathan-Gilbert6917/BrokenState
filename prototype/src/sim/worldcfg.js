@@ -1,7 +1,7 @@
 // World configuration (2026-10-19, user request): the new-run screen's World… window (ui/worldcfg.js) sets the dials
 // of one run: how fast people hunger and thirst, how fast food spoils, how many of the dead and how hard they hit,
 // how often events and raids come, what the AI groups start armed with, the loot of each kind, the sizes of bases,
-// city crawls and hive crawls, wear, failures, fuel, sickness, and whether the worm can be cured. The settings live
+// raid maps, city crawls and hive crawls, wear, failures, fuel, sickness, and whether the worm can be cured. The settings live
 // on the world (state.worldCfg, saved with it; a world without one plays as before: every dial 1, the toggle on),
 // and the sim reads them through cfgOf(state, key) at the one place each rate is applied:
 //   hunger       eating.js baseEatHour, needs.js teamNeedsHour / errandHour
@@ -20,6 +20,8 @@
 //   sickness     health.js illnessRisk
 //   loot*        scavenge.js searchHour, combat.js searchBox (raids and city crawls), economy.js (the base job): lootMult
 //   baseMin/Max  basemap.js gridOf (the yard a base starts with and the most it grows to)
+//   raidMin/Max  battlesize.js raidDims / buildingTarget (raid maps: a site's place between the two; cities and towns the largest), and past 40 × 30
+//                the BIG scales: more dead, slower Heat, a smaller find a container (combat.js raidTurn / searchBox / spawnWave)
 //   cityMin/Max  citygrid.js gridOf (blocks across a city crawl; a town is scaled the same way)
 //   hiveMin/Max  hivecrawl.js denDepth (rings from a den's rim to its heart)
 //   wear         crafting.js wearSlot, vehicles.js wear, armour.js (b.wear)
@@ -59,6 +61,8 @@ export const WORLD_CFG = {
 
   baseMin: { group: "sizes", name: "Base yard to start", kind: "mult", min: 0.5, max: 2, step: 0.05, def: 1, pair: "baseMax", tip: "The yard a base starts with, as a share of the usual (a hub's 48 across, an outpost's 32, a camp's 20). Smaller yards leave less room to build before the walls move out." },
   baseMax: { group: "sizes", name: "Base yard at most", kind: "mult", min: 0.5, max: 2, step: 0.05, def: 1, pair: "baseMin", tip: "The most a base's yard grows to, as a share of the usual (a hub's 180 across, an outpost's 100; camps and shelters do not grow). Never less than the yard it starts with, and the map stays within its biggest grid." },
+  raidMin: { group: "sizes", name: "Raid map, smallest", kind: "int", min: 24, max: 80, step: 2, def: 32, pair: "raidMax", tip: "Tiles across the smallest raid map (a gas station's, a shed's, a building picked at a site with several); every map is three quarters as deep. The usual 32 × 24." },
+  raidMax: { group: "sizes", name: "Raid map, largest", kind: "int", min: 24, max: 80, step: 2, def: 56, pair: "raidMin", tip: "Tiles across the largest raid map (a hospital's, a prison's); a city's and a town's raid maps, their buildings and their streets, are always this size. Every other site sits between the two. The usual 56 × 42. Past 40 × 30 a map has more rooms, containers and dead, but Heat rises slower and each container holds a little less, and a street map gets a way out on both long sides; big maps cost more every turn." },
   cityMin: { group: "sizes", name: "City crawl, smallest", kind: "int", min: 4, max: 40, step: 1, def: 15, pair: "cityMax", tip: "The fewest blocks across a city crawl is (the usual 15–30; a town's 9–12 is scaled the same way)." },
   cityMax: { group: "sizes", name: "City crawl, largest", kind: "int", min: 4, max: 40, step: 1, def: 30, pair: "cityMin", tip: "The most blocks across a city crawl is (the usual 15–30). The heart of a bigger crawl climbs to a higher level." },
   hiveMin: { group: "sizes", name: "Hive crawl, shallowest", kind: "int", min: 1, max: 12, step: 1, def: 2, pair: "hiveMax", tip: "The fewest rings from a den's mouths to its heart (the usual 2 for a young hive, 9 for the oldest tier; a screamer spire adds one)." },
@@ -74,17 +78,17 @@ export const CFG_GROUPS = [
   { key: "dead", name: "The dead and the worm", tip: "Hordes, the dead at sites, the hives, their bite, and the worm." },
   { key: "people", name: "People and events", tip: "The other groups, the cards and the raids." },
   { key: "loot", name: "Loot by kind", tip: "What searching, raids, crawls and the base's scavengers turn up, kind by kind." },
-  { key: "sizes", name: "Sizes", tip: "Bases, city crawls and hive crawls, smallest to largest." },
+  { key: "sizes", name: "Sizes", tip: "Bases, raid maps, city crawls and hive crawls, smallest to largest." },
   { key: "wear", name: "Wear, failures and fuel", tip: "What breaks, jams and burns." },
 ];
 
 // ---------- presets ----------
 // Each names the dials it moves; the rest stay at their defaults.
 export const CFG_PRESETS = {
-  gentle: { name: "Gentle", tip: "A slower, kinder state: people hunger and thirst at three quarters the rate, food keeps longer, fewer and weaker dead, fewer events and raids, more loot, less wear", set: { hunger: 0.75, thirst: 0.75, spoil: 0.75, sickness: 0.75, hordes: 0.7, siteDead: 0.75, hiveGrowth: 0.75, zDmg: 0.8, infectBite: 0.75, worm: 0.75, aiGear: 0.8, events: 0.8, raids: 0.6, lootFood: 1.3, lootWater: 1.3, lootAmmo: 1.3, lootGuns: 1.25, lootParts: 1.3, lootScrap: 1.3, lootMeds: 1.3, lootFuel: 1.3, wear: 0.75, failures: 0.75, fuel: 0.85 } },
+  gentle: { name: "Gentle", tip: "A slower, kinder state: people hunger and thirst at three quarters the rate, food keeps longer, fewer and weaker dead, fewer events and raids, more loot, less wear, smaller raid maps (28 to 48 across)", set: { raidMin: 28, raidMax: 48, hunger: 0.75, thirst: 0.75, spoil: 0.75, sickness: 0.75, hordes: 0.7, siteDead: 0.75, hiveGrowth: 0.75, zDmg: 0.8, infectBite: 0.75, worm: 0.75, aiGear: 0.8, events: 0.8, raids: 0.6, lootFood: 1.3, lootWater: 1.3, lootAmmo: 1.3, lootGuns: 1.25, lootParts: 1.3, lootScrap: 1.3, lootMeds: 1.3, lootFuel: 1.3, wear: 0.75, failures: 0.75, fuel: 0.85 } },
   standard: { name: "Standard", tip: "The game as it is: every dial at 1", set: {} },
-  harsh: { name: "Harsh", tip: "Hungrier, thirstier, more and harder dead, better-armed groups, more trouble, less loot, faster wear", set: { hunger: 1.25, thirst: 1.25, spoil: 1.25, sickness: 1.25, hordes: 1.4, siteDead: 1.3, hiveGrowth: 1.3, zDmg: 1.25, infectBite: 1.25, worm: 1.25, aiGear: 1.3, events: 1.2, raids: 1.5, lootFood: 0.75, lootWater: 0.8, lootAmmo: 0.7, lootGuns: 0.75, lootParts: 0.75, lootScrap: 0.85, lootMeds: 0.7, lootFuel: 0.75, wear: 1.3, failures: 1.3, fuel: 1.2 } },
-  nightmare: { name: "Nightmare", tip: "Twice the hordes and the hive growth, the dead hit half again as hard, the worm cannot be cured, half the loot, double raids and wear", set: { hunger: 1.5, thirst: 1.5, spoil: 1.5, sickness: 1.5, hordes: 2, siteDead: 1.75, hiveGrowth: 2, zDmg: 1.5, infectBite: 1.5, worm: 1.5, curable: false, aiGear: 1.6, events: 1.4, raids: 2, lootFood: 0.5, lootWater: 0.6, lootAmmo: 0.5, lootGuns: 0.5, lootParts: 0.5, lootScrap: 0.7, lootMeds: 0.5, lootFuel: 0.5, wear: 2, failures: 1.75, fuel: 1.4 } },
+  harsh: { name: "Harsh", tip: "Hungrier, thirstier, more and harder dead, better-armed groups, more trouble, less loot, faster wear, bigger raid maps (36 to 64 across)", set: { raidMin: 36, raidMax: 64, hunger: 1.25, thirst: 1.25, spoil: 1.25, sickness: 1.25, hordes: 1.4, siteDead: 1.3, hiveGrowth: 1.3, zDmg: 1.25, infectBite: 1.25, worm: 1.25, aiGear: 1.3, events: 1.2, raids: 1.5, lootFood: 0.75, lootWater: 0.8, lootAmmo: 0.7, lootGuns: 0.75, lootParts: 0.75, lootScrap: 0.85, lootMeds: 0.7, lootFuel: 0.75, wear: 1.3, failures: 1.3, fuel: 1.2 } },
+  nightmare: { name: "Nightmare", tip: "Twice the hordes and the hive growth, the dead hit half again as hard, the worm cannot be cured, half the loot, double raids and wear, the biggest raid maps (40 to 72 across)", set: { raidMin: 40, raidMax: 72, hunger: 1.5, thirst: 1.5, spoil: 1.5, sickness: 1.5, hordes: 2, siteDead: 1.75, hiveGrowth: 2, zDmg: 1.5, infectBite: 1.5, worm: 1.5, curable: false, aiGear: 1.6, events: 1.4, raids: 2, lootFood: 0.5, lootWater: 0.6, lootAmmo: 0.5, lootGuns: 0.5, lootParts: 0.5, lootScrap: 0.7, lootMeds: 0.5, lootFuel: 0.5, wear: 2, failures: 1.75, fuel: 1.4 } },
 };
 
 // ---------- the settings object ----------
@@ -99,7 +103,7 @@ export function cleanValue(key, v) {
   const n = Number(v);
   if (!Number.isFinite(n)) return d.def;
   const c = Math.max(d.min, Math.min(d.max, n));
-  const stepped = d.kind === "int" ? Math.round(c) : Math.round(c / d.step) * d.step;
+  const stepped = Math.round(c / d.step) * d.step; // an int dial by its step too (a raid map's 2: an odd 33 is 34, the width the map is)
   return Math.round(Math.max(d.min, Math.min(d.max, stepped)) * 1000) / 1000;
 }
 // A whole settings object made safe (unknown keys dropped, missing ones their default), min ≤ max in every pair
@@ -125,6 +129,22 @@ export function presetOf(cfg) {
   const c = cleanCfg(cfg);
   for (const k of Object.keys(CFG_PRESETS)) { const p = presetCfg(k); if (CFG_KEYS.every((x) => p[x] === c[x])) return k; }
   return null;
+}
+
+// ---------- raid maps in an older save ----------
+// Worlds made since the raid map dials (2026-10-20) carry state.raidMaps = RAID_MAPS (world.js createWorld); a save
+// from before has none, and save.js marks it raidLegacy on load: its raid maps keep the sizes it was made with (the old
+// table, 28 × 20 to 40 × 30, a town 36 × 26, a neighbourhood's street up to 48 × 34) and none of the big-map scales
+// (battlesize.js BIG), so its places, their containers and what was left in them stay where they were.
+export const RAID_MAPS = 1;
+/** @param {any} state */
+export const legacyRaids = (state) => !!(state && state.raidLegacy);
+// The run's raid map dials as [smallest, largest]: each clamped to its range, the two in order whatever was stored
+// (a hand-edited or older settings object can hold them the wrong way round: the range never runs backwards).
+/** @param {any} state */
+export function raidRange(state) {
+  const a = cleanValue("raidMin", cfgOf(state, "raidMin")), b = cleanValue("raidMax", cfgOf(state, "raidMax"));
+  return a <= b ? [a, b] : [b, a];
 }
 
 // ---------- reading them in the sim ----------

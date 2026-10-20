@@ -26,7 +26,7 @@ let pass = 0, fail = 0;
 const check = (ok, what) => { if (ok) pass++; else fail++; console.log(`  ${ok ? "ok  " : "FAIL"} ${what}`); return ok; };
 const section = (t) => console.log(`\n${t}`);
 registerCombatHandler("wptest", () => {});
-const world = () => { const st = createWorld({ seed, factionCount: 6 }); st.started = true; st.hour = 24 * 3 + 12; return st; };
+const world = () => { const st = createWorld({ seed, factionCount: 6 }); st.started = true; st.hour = 24 * 3 + 12; st.landOff = true; return st; }; // landOff: the land (basescatter.js) is tools/baseviewtest.js's
 const rich = (base) => Object.assign(base.stock, { scrap: 9999, parts: 99, buildmat: 999, wood: 99999 });
 const asCamp = (base) => { base.tier = 0; base.camp = true; return base; };
 const finishAll = (st, base) => { for (let i = 0; i < 400 && base.construction.length; i++) { for (const j of base.construction) j.progress = j.hours; constructionHour(st); } };
@@ -45,7 +45,7 @@ section("The pieces on the Defenses list, their costs by material and size");
   check(types.every((t) => BUILDINGS[t] && BUILDINGS[t].tab === "defenses" && BUILDINGS[t].piece), "walls 1×1, 1×2, 1×4, a 1×4 gate and stands 1×1, 1×2, 1×4 on the Defenses tab");
   check(WALL_TIERS.length === 5 && WALL_TIERS[1].mat === "Wood" && WALL_TIERS[4].mat === "Metal sheets", `four materials, wood to metal sheets (${WALL_TIERS.slice(1).map((t) => t.mat).join(", ")})`);
   check(WALL_TIERS.slice(2).every((t, i) => t.strength > WALL_TIERS[i + 1].strength && t.hp > WALL_TIERS[i + 1].hp && t.gateHp > WALL_TIERS[i + 1].gateHp), "each material holds more than the one below: strength, a cell's hit points, a gate's");
-  check(pieceCost("wall4", 1).wood === 8 && pieceCost("wall2", 1).wood === 4 && pieceCost("wall1", 1).wood === 2, "a wooden 1×4 costs 8 firewood, a 1×2 4, a 1×1 2");
+  check(pieceCost("wall4", 1).wood === 40 && pieceCost("wall2", 1).wood === 20 && pieceCost("wall1", 1).wood === 10, "a wooden 1×4 costs 40 wood, a 1×2 20, a 1×1 10 (woodwork: it was 8)");
   check(pieceCost("wall4", 3).scrap === 2 && pieceCost("wall1", 3).scrap === 1 && pieceCost("gate4", 3).parts === 1, "scrap metal: 2 scrap a 1×4, 1 a 1×1 (rounded up), a gate takes a part for its hinges");
   check(pieceCost("wall4", 4).buildmat === 1 && pieceHours("wall4", 4) > pieceHours("wall4", 1) && pieceHours("gate4", 1) > pieceHours("wall4", 1), "metal sheets take building materials; better materials and gates take longer");
   check(pieceCost("stand4", 3).wood === pieceCost("stand4", 1).wood && pieceName({ type: "stand2" }) === "Wall stand 1×2", "a stand has no material");
@@ -138,7 +138,7 @@ section("The Ring wall: closing the ring, raising it a material");
   check(canBuild(st, h, "walls").tier === 3, "else scrap metal at the main base (what it gathers anyway)");
   h.stock.buildmat = 999;
   const c = canBuild(st, h, "walls", { mat: 1 });
-  check(c.ok && c.kind === "ring" && c.tier === 1 && c.cost.wood > 300 && c.cost.wood < 600, `close it in wood: ${c.cost.wood} firewood, ${c.hours} work-hours`);
+  check(c.ok && c.kind === "ring" && c.tier === 1 && c.cost.wood > 1500 && c.cost.wood < 3000, `close it in wood: ${c.cost.wood} wood, ${c.hours} work-hours`);
   const wood0 = h.stock.wood;
   queueBuild(st, h, "walls", { mat: 1 });
   check(h.stock.wood === wood0 && h.construction[0].paid && Object.keys(h.construction[0].paid).length === 0, "queued without paying: its materials are gathered as the work goes");
@@ -251,7 +251,8 @@ section("The Wallbreaker, old saves, widening the ring, a group's wall");
   check(piecesOf(hb).length === piecesOf(hub(loadFromString(saveToString(back)))).length, "migrating again changes nothing");
   // Widening the ring.
   for (let i = 0; i < 6; i++) addBuilding(hb, "bunkhouse");
-  check(BM.yardHalf(hb) > BM.ringHalf(hb), `the yard grew past the ring (${2 * BM.yardHalf(hb)} > ${2 * BM.ringHalf(hb)})`);
+  // The yard stops at a pegged ring (pt-int round 2: nothing the game places lands on it); the yard the buildings want grows.
+  check(BM.yardHalf(hb, true) > BM.ringHalf(hb) && BM.yardHalf(hb) === BM.ringHalf(hb), `the yard the buildings want grew past the ring (${2 * BM.yardHalf(hb, true)} > ${2 * BM.ringHalf(hb)}), the yard held at it`);
   const msg = BM.widenRing(hb);
   check(BM.ringHalf(hb) === BM.yardHalf(hb) && /further out/.test(msg), "Widen the ring: pegged out at the yard's edge");
   check(!hasWall(hb) && BM.ringPlan(back, hb).pieces.length > 0, "the game's pieces moved out: gaps for the Ring wall to close");

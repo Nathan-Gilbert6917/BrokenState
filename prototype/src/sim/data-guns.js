@@ -69,7 +69,7 @@ export const GUN_GEAR = {
   combatknife: { name: "Combat knife",           slot: W, skill: SH, power: 1.7, req: 0,  value: 18,  noise: 0, small: true, weight: 0.35, cat: "melee",
                  desc: "A military fighting knife: quick (strike and still move), +5 to hit, and its point finds the gap in a dead soldier's armour. Good for takedowns (+15)." },
   hatchet:     { name: "Hatchet",                slot: W, skill: SH, power: 1.8, req: 0,  value: 10,  noise: 0, weight: 0.8, cat: "melee", chop: 1.4,
-                 desc: "A camp hatchet: quick (strike and still move), and it cuts firewood and an ice hole." },
+                 desc: "A camp hatchet: quick (strike and still move), and it cuts wood and an ice hole." },
   tomahawk:    { name: "Tomahawk",               slot: W, skill: SH, power: 2.1, req: 0,  value: 30,  noise: 0, pry: true, weight: 0.7, cat: "melee", chop: 1.3,
                  desc: "A steel tactical tomahawk with a spike: quick (strike and still move), cuts wood, and pries locks open in a raid." },
   kukri:       { name: "Kukri",                  slot: W, skill: SH, power: 2.1, req: 0,  value: 20,  noise: 0, weight: 0.6, cat: "melee", chop: 1.2,

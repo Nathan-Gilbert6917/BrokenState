@@ -60,6 +60,7 @@ export const KEYMAP = [
   { id: "team.next", label: "Next team waiting for orders", group: "Teams", ctx: "map", keys: ["Tab", "KeyN"] },
   { id: "team.prev", label: "Previous team waiting for orders", group: "Teams", ctx: "map", keys: ["Shift+Tab", "Shift+KeyN"] },
   { id: "team.inventory", label: "The selected team's inventory", group: "Teams", ctx: "map", keys: ["Shift+KeyB"] },
+  { id: "base.buildmap", label: "Open the build map of the selected base (its window open, or its tile selected)", group: "Bases", ctx: "map", keys: ["KeyU"] }, // ui/buildmap.js (B is the Bases tab)
   ...range(9).map((n) => ({ id: `base.${n}`, label: n === 1 ? "Jump to the hub (base 1)" : `Jump to base ${n}`, group: "Bases", ctx: "map", keys: [`F${n}`] })),
   ...range(9).map((n) => ({ id: `cam.save${n}`, label: `Save camera spot ${n}`, group: "Camera spots", ctx: "map", keys: [`Ctrl+Digit${n}`, `Alt+Digit${n}`, `Ctrl+Numpad${n}`, `Alt+Numpad${n}`] })),
   ...range(9).map((n) => ({ id: `cam.go${n}`, label: `Go to camera spot ${n}`, group: "Camera spots", ctx: "map", keys: [`Shift+Digit${n}`, `Shift+Numpad${n}`] })),
@@ -137,7 +138,11 @@ export const KEYMAP = [
     ["shove", "Shove: a piece of furniture next to them one tile (2 actions)", "Alt+KeyS"], ["boardup", "Board up: boards and nails across the door or window next to them (2 actions)", "Alt+KeyB"],
     ["teardown", "Tear down: the boards next to them (2 actions)", "Alt+KeyJ"],
     // sim/parley.js: shout to another group in sight (a raid's survivors, a hostile group's people) to talk (Alt+O: call Out).
-    ["callout", "Call out: talk to another group in sight (raids; 1 action)", "Alt+KeyO"]]
+    ["callout", "Call out: talk to another group in sight (raids; 1 action)", "Alt+KeyO"],
+    // sim/shoving.js: a foe right next to them shoved back a tile or flat on their back (1 action).
+    ["shoveFoe", "Shove foe: someone or one of the dead right next to them, back a tile or flat on their back (1 action)", "Alt+KeyV"],
+    // sim/tentfight.js: a tent next to them taken down (both actions a go, a couple of turns) or slashed (1 action).
+    ["strike", "Take down: the tent next to them (2 actions a go)", "Alt+KeyT"], ["slashtent", "Slash: the tent next to them (1 action)", "Alt+KeyX"]]
     .map(([v, label, code]) => ({ id: `battle.${v}`, label, group: "Battle orders", ctx: "battle", keys: [code], v })),
 
   // ---------- the timelapse (ui/timelapse.js tlKey) ----------

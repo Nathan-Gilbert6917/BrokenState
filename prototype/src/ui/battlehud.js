@@ -23,6 +23,7 @@ import { PAL, tier3 } from "./palette.js";
 import { statusIcons } from "./status.js";
 import { unitCanvas, canvasURL, spriteImg } from "./sprites.js";
 import { keyLabel } from "./keymap.js";
+import { concealChip } from "../sim/softcover.js"; // HIDDEN: in or beside a bush or a tent
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const first = (u) => String(u.name || "").split(" ")[0];
@@ -172,7 +173,7 @@ export function targetCardHtml(b, u, t, o) {
   if (!o.ok) return `<div class="bh-target"><div class="bh-thead"><b>${esc(t.name)}</b><span class="bh-big muted">—</span></div><div class="small muted">${esc(o.label)}</div></div>`;
   const bd = hitBreakdown(b, u, t, o);
   const what = o.kind === "melee" ? "melee" : o.kind === "shot" ? "to hit" : o.finish ? "finish" : "chance";
-  const cover = o.kind === "shot" ? (o.cover === 2 ? "full cover" : o.cover === 1 ? "half cover" : o.flanked ? "FLANKED" : "in the open") : "";
+  const cover = o.kind === "shot" ? `${o.cover === 2 ? "full cover" : o.cover === 1 ? "half cover" : o.flanked ? "FLANKED" : "in the open"}${o.conceal ? `, concealed ${o.conceal}` : ""}` : ""; // sim/softcover.js: a bush or a tent hides them, stops nothing
   const dmg = o.dmg ? `${o.dmg[0]}–${o.dmg[1]} dmg${o.crit != null ? ` · ${o.crit}% crit` : ""}` : "";
   return `<div class="bh-target"><div class="bh-thead"><span><b>${esc(t.name)}</b> <span class="muted small">${Math.round(t.hp)}/${t.maxHp} hp</span></span><span class="bh-big ${hitTone(o.chance)}">${o.chance}%<small> ${what}</small></span></div>
     <div class="small muted">${[dmg, cover, o.dist != null && o.kind === "shot" ? `${Math.round(o.dist)} tiles` : ""].filter(Boolean).join(" · ")}</div>${breakdownHtml(bd)}</div>`;
@@ -190,6 +191,8 @@ export function unitChips(state, b, p) {
   if (p.suppressed > 0) c.push(["SUPP", "warn", "Suppressed: −20 aim, no overwatch until their turn ends."]);
   if (p.ow) c.push(["OW", "info", "On overwatch: shoots at the first enemy that moves in range."]);
   if (p.hunker) c.push(["HUNK", "info", "Hunkered down: harder to hit in cover."]);
+  const hid = !p.down ? concealChip(b, p) : null; // sim/softcover.js: in or beside a bush or a tent
+  if (hid) c.push(hid);
   if (p.vaulted > 0 && !p.down) c.push(["WINDED", "info", `Winded from a vault: ${p.vaulted} tile${p.vaulted === 1 ? "" : "s"} less of movement for the rest of this turn.`]); // sim/combat.js VAULT
   if (p.shaken && !p.down) c.push(["SHAKEN", "warn", "Shaken from being revived: worse aim for the rest of the battle."]);
   if (p.stun && !p.down) c.push([p.stun.dazed ? "DAZED" : "STUN", "warn", "Dazed or stunned by a flash or a taser."]);

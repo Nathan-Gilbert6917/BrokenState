@@ -16,7 +16,7 @@ import { supplyAmt, useSupply } from "./rounds.js"; // food in days
 import { keyWord } from "./water.js";
 import { breakMult } from "./traits.js"; // Iron Will
 import { log, addCard, day, skill, atBase, residents, checkGameOver } from "./world.js";
-import { baseBeds } from "./buildings.js";
+import { baseBeds, isCamp } from "./buildings.js";
 import { allItems } from "./inventory.js";
 import { onLeave, noteMood } from "./relations.js";
 import { buzzWork } from "./comforts.js";
@@ -25,7 +25,7 @@ import { nearSnap } from "./mentalbreaks.js";
 import { totalRounds, spendAmmo } from "./rounds.js"; // rounds by calibre
 import { talkXp } from "./skills.js";
 
-export const CROWD = { base: 2, perOver: 8, cap: 16, leaderShare: 0.5, roomy: 1 };
+export const CROWD = { base: 2, perOver: 8, cap: 16, leaderShare: 0.5, roomy: 1 }; // a camp is never crowded: its people with no tent sleep rough round the fire (2026-10-20: a new camp has no beds until tents are up), each their own line (beds.js bedLine, the one rough-sleeping rule)
 export const LEADER_LIFT = 0.15; // mood a day per point of the leader's Leadership
 export const MOOD = { warn1: 30, warn2: 20, desert: 15, rearm: 40, chance: 0.08, perPoint: 0.006 };
 export const GIFT = { food: 4, meds: 1 }; // "a gift from the stores" on a warning card
@@ -38,7 +38,8 @@ const r1 = (v) => Math.round(v * 10) / 10;
 // How full a base is: people living there per bed (1 = every bed taken, 2 = twice as many people as beds).
 // health.js (illness spread) can read this.
 export function crowding(state, base) {
-  return residents(state, base.id).length / Math.max(1, baseBeds(base));
+  const r = residents(state, base.id).length / Math.max(1, baseBeds(base));
+  return isCamp(base) ? Math.min(1, r) : r; // a camp's people with no tent sleep rough in the open, not packed in (beds.js bedLine)
 }
 
 export function crowdLevel(ratio) {
@@ -54,15 +55,20 @@ export function crowdLevel(ratio) {
 export function crowdInfo(state, base, people = residents(state, base.id).length) {
   const beds = baseBeds(base);
   const over = Math.max(0, people - beds) / Math.max(1, beds);
-  const penalty = over > 0 ? Math.min(CROWD.cap, CROWD.base + CROWD.perOver * over) : 0;
+  // A camp is never crowded (the pt-int merge, 2026-10-20): whoever has no bed there sleeps rough in the open, which is
+  // beds.js's one rule (bedLine: their own line), never this one as well.
+  const penalty = over > 0 && !isCamp(base) ? Math.min(CROWD.cap, CROWD.base + CROWD.perOver * over) : 0;
   // The group's leader where they live; elsewhere the base's own leader while at the base (steward.js leaderId).
   const here = atBase(state, base.id);
   const leader = here.find((s) => s.leader && s.alive) || (base.steward && base.steward.leaderId != null ? here.find((s) => s.id === base.steward.leaderId && s.alive) : null) || null;
   const rawLift = leader ? skill(leader, "leadership") * LEADER_LIFT : 0;
   const lift = penalty > 0 ? Math.min(rawLift, penalty * CROWD.leaderShare) : rawLift;
-  const net = (penalty > 0 ? -penalty : CROWD.roomy) + lift;
+  // A bed for everyone: CROWD.roomy (a camp short of beds: nothing either way). The bed itself (a makeshift tent, a cot,
+  // a large bed) is each sleeper's own line: beds.js bedLine.
+  const roomy = over > 0 ? 0 : CROWD.roomy;
+  const net = (penalty > 0 ? -penalty : roomy) + lift;
   const ratio = people / Math.max(1, beds);
-  return { people, beds, over, ratio, penalty: r1(penalty), rawLift: r1(rawLift), lift: r1(lift), net: r1(net), leader, level: crowdLevel(ratio) };
+  return { people, beds, over, ratio, penalty: r1(penalty), rawLift: r1(rawLift), lift: r1(lift), net: r1(net), leader, level: isCamp(base) && over > 0 ? { key: "rough", name: "Some sleep rough", tone: "warn" } : crowdLevel(ratio), roomy };
 }
 
 // Mood and work (suggestions #4): how much of a normal day's work someone does at this mood, before illness

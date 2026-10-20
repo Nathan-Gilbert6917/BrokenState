@@ -186,7 +186,7 @@ export const PERK_TREE = {
     5: [P("hearty", "Hearty Portions", "While they cook at their base's kitchen, its hot meals give +0.5 mood a day more.", [2, 2, 2], "kitchen.js kitchenService"),
         P("thrifty", "Thrifty Cook", "While they cook at their base's kitchen, its meals stretch the food 2% further (−12% instead of −10%, more with skill).", [3, 2, 1], "kitchen.js kitchenService")],
     10: [P("bigpot", "Big Pot", "They feed 18 people at the kitchen instead of 12 (one cook covers a bigger base).", [2, 2, 2], "kitchen.js kitchenService"),
-         P("lowflame", "Low Flame", "While they cook at their base's kitchen, it burns a third less firewood.", [3, 2, 1], "kitchen.js kitchenWood")],
+         P("lowflame", "Low Flame", "While they cook at their base's kitchen, it burns a third less wood.", [3, 2, 1], "kitchen.js kitchenWood")],
     15: [P("nowaste", "Nothing Wasted", "While they cook at their base's kitchen, its meals stretch the food 3% further (adds to Thrifty Cook; past the usual −13% cap).", [3, 2, 1], "kitchen.js kitchenService"),
          P("campcook", "Camp Cook", "+2 food a day for their team while it is out on a trip (camp stews stretch the rations; adds to Forager and Hunter).", [2, 2, 2], "skills.js skillsDaily")],
   },
@@ -473,7 +473,7 @@ export function readReason(s, key, state = null) {
 }
 
 // Copies of each book in a base's armory, and who reads which there.
-const armoryBooks = (base) => {
+export const armoryBooks = (base) => {
   const n = {};
   for (const it of base.armory) if (it && bookDef(it.key)) n[it.key] = (n[it.key] || 0) + 1;
   return n;

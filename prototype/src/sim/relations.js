@@ -33,6 +33,7 @@ import { count, isPiece } from "./buildings.js";
 import { GEAR } from "./data.js";
 import { allItems } from "./inventory.js";
 import { season, weatherOnDay } from "./weather.js";
+import { bedLine, roughColdDaily } from "./beds.js"; // beds as furniture: where someone sleeps (call-time only)
 import { crowdInfo, talker } from "./morale.js";
 import { partyMembers, tileLabel } from "./parties.js";
 import { farmOf } from "./farming.js";
@@ -241,6 +242,7 @@ export function relationsDaily(state) {
     if (f.own) s.mood = clamp(s.mood + f.own, 0, 100);
     if (!Number.isFinite(s.mood)) s.mood = 50;
   }
+  for (const base of state.bases) roughColdDaily(state, base); // beds.js: a freezing night sleeping rough, now and then a chest cold
   for (const s of alive(state)) {
     buzzDaily(s); // comforts.js: a coffee buzz wears off, drink turns into a hangover
     const pl = placeOf(state, s);
@@ -326,11 +328,12 @@ export function moodFactors(state, s) {
     // Applied elsewhere (economy.js, morale.js, hubevents.js).
     const ci = crowdInfo(state, base);
     if (ci.penalty > 0) add(`Crowded: ${ci.people} people in ${ci.beds} beds`, -ci.penalty, false);
-    else add("A bed for everyone", 1, false);
+    else if (ci.roomy) add("A bed for everyone", ci.roomy, false); // a camp short of beds: nothing (the rough sleepers' own line below)
     if (ci.lift > 0) add(`${ci.leader.leader ? "Leader" : "Base leader"} ${first(ci.leader)} (Leadership ${skill(ci.leader, "leadership")})`, ci.lift, false);
     if (!(base.hungerDays > 0)) add("Fed", 1, false); // out of food or water: the starving and parched lines below
     if (base.rationing) add("Short rations", -3, false);
     else if (rationKey(state, base) === "lean") add("Lean rations (smaller portions)", RATION_LEVELS.lean.mood, false); // economy.js, eating.js
+    if (!pl.route) { const bl = bedLine(state, s, base); if (bl) add(bl.label, bl.v, true, bl.tip); } // beds.js: the bed they sleep in (a cot, a bunk, a large bed) or none
     if (!pl.route && s.role === "rest") add("Resting (Rest role)", 6, false);
     else if (!pl.route && s.inBed) add("In a hospital bed", 3, false);
     if (base.dog) add(`${base.dog.name} the dog`, 0.5, false);

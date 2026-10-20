@@ -10,7 +10,9 @@
 //   and town centres have no POIs and go to the crawl as before; a bare city block (POIs of its own, and a crawl)
 //   offers the crawl as one more choice.
 // - The pick: p.poi, read by scavenge.js startScavenge (the raid map of that POI's building, buildingmaps.js SITES;
-//   the site POI keeps its site's buildings and their choice; its pool, its visits) and cleared there. The autopilot,
+//   its pool, its visits) and cleared there. The site POI of a site with several buildings (a farm, a military base,
+//   a mall: buildingmaps.js buildingOptions) is offered on the card as one choice per building and the street around
+//   them, so one pick goes straight in: p.poiBuilding carries the building (an option id, or "street"). The autopilot,
 //   a crew and a headless tool never see the card: the best known POI by value × what is left / the perceived threat
 //   (pois.js bestKnownPoi) is picked for them, and a search that strips one moves on to the next (scavenge.js).
 // - A temporary site (a wreck, a drop, a convoy: pois.js permanentSite false) is searched as before: the raid goes
@@ -18,8 +20,9 @@
 import { LOCATIONS } from "./data.js";
 import { partyTile, tileLabel, awaitOrders, giveOrder, PICKED_OVER } from "./parties.js";
 import { crawlTile } from "./citycrawl.js";
-import { SITES, BUILDINGS } from "./buildingmaps.js"; // the building a POI's kind opens
+import { SITES, BUILDINGS, buildingOptions } from "./buildingmaps.js"; // the building a POI's kind opens; a site's choice of them
 import { ledgerSummary } from "./poicont.js"; // what the containers there hold for you (the dialogue's note)
+import { campText } from "./campsite.js"; // a campsite's state as last seen (abandoned, overrun, raiders)
 import {
   poisOf, poiAt, knownPois, poiName, poiPool, poiBand, poiBandName, poiVisitText, poiThreatEstimate, poiThreatText, raidingNow,
   bestKnownPoi, poiScore, permanentSite, morePoisHidden, isSitePoi,
@@ -75,12 +78,13 @@ export function poiRows(state, p, tile = partyTile(p)) {
       i, kind: poi.kind, name: poiName(t, i), site: isSitePoi(t, i), desc: LOCATIONS[poi.kind] ? LOCATIONS[poi.kind].desc || "" : "",
       pool: poiPool(t, i), band: poiBand(t, i), bandName: poiBandName(t, i), stripped: poiBand(t, i) === 3,
       visits: poiVisitText(state, t, i), threat: est, threatText: poiThreatText(state, t, i),
-      cont: poiContainerNote(state, t, i), raiding: raidingNow(state, t, i), score: poiScore(state, t, i),
+      cont: poiContainerNote(state, t, i), raiding: raidingNow(state, t, i), score: poiScore(state, t, i), camp: campText(state, t, i),
+      buildings: isSitePoi(t, i) ? buildingOptions(t, state) : null, // the site's buildings and the street (null: one building, or none)
     };
   });
 }
 // A row as one line (the card's hint).
-export const poiRowText = (r) => `${r.bandName.toLowerCase()}; ${r.visits}; ${r.threatText}${r.cont ? `; ${r.cont}` : ""}${r.raiding ? "; being raided now by another group" : ""}`;
+export const poiRowText = (r) => `${r.bandName.toLowerCase()}; ${r.visits}; ${r.threatText}${r.camp ? `; ${r.camp}` : ""}${r.cont ? `; ${r.cont}` : ""}${r.raiding ? "; being raided now by another group" : ""}`;
 
 // The dialogue: a card with a choice per known POI (the browser draws it with ui/poipick.js). Picking one sets p.poi
 // and gives the scavenge order again; "Not now" leaves the team waiting with its queue on hold.
@@ -89,9 +93,10 @@ export function poiPickCard(state, p) {
   const t = state.tiles[tile];
   const rows = poiRows(state, p, tile);
   const more = morePoisHidden(state, t, p);
-  const go = (st, pick) => {
+  const go = (st, pick, building = null) => {
     if (!st.parties.includes(p)) return "";
     p.poi = pick;
+    if (building) p.poiBuilding = building; else delete p.poiBuilding;
     const res = giveOrder(st, p, "scavenge");
     return st.combat || (st.engagement && st.engagement.partyId === p.id) || (st.cards || []).some((c) => c.partyId === p.id) ? "" : res; // its own screen or card: no result box on top
   };
@@ -102,11 +107,15 @@ export function poiPickCard(state, p) {
     isOrders: true, // one card per team: a newer orders card replaces it
     poiPick: { tile },
     choices: [
-      ...rows.map((r) => ({
-        label: `${r.name}: ${r.bandName}`, hint: poiRowText(r), poi: r.i, order: true,
-        ai: () => (r.stripped ? -1 : 1 + r.score * 3 - (r.raiding ? 2 : 0)),
-        resolve: (st) => go(st, r.i),
-      })),
+      ...rows.flatMap((r) => {
+        const ai = () => (r.stripped ? -1 : 1 + r.score * 3 - (r.raiding ? 2 : 0));
+        if (!r.buildings) return [{ label: `${r.name}: ${r.bandName}`, hint: poiRowText(r), poi: r.i, order: true, ai, resolve: (st) => go(st, r.i) }];
+        // A site with several buildings: one choice each (the street around them last), the place's line on each.
+        return r.buildings.map((o) => ({
+          label: `${r.name}: ${o.id === "street" ? "the street" : o.name} (${r.bandName})`, hint: `${o.hint} ${poiRowText(r)}`, poi: r.i, building: o.id, order: true,
+          ai: () => ai() - (o.id === "street" ? 0.1 : 0), resolve: (st) => go(st, r.i, o.id),
+        }));
+      }),
       ...(crawlTile(t) ? [{ label: "Go in block by block (city crawl)", hint: "The block's street of buildings instead of one place: noise raises the Alert, lying low lets it fade.", crawl: true, order: true, ai: () => 0.5, resolve: (st) => go(st, "crawl") }] : []),
       { label: "Not now", hint: "The team waits here for another order (its queue on hold).", cancel: true, ai: () => -2, resolve: (st) => { if (st.parties.includes(p)) awaitOrders(st, p, "The team waits.", { hold: true }); return ""; } },
     ],
@@ -115,11 +124,17 @@ export function poiPickCard(state, p) {
 
 // The raid's setup for POI i of a tile (scavenge.js startScavenge → combat.js createRaid): the building its kind
 // opens (buildingmaps.js SITES; its own layout per POI: the option id carries the index), the kind for the street
-// map's areas when it has no building, and the site's own choice of buildings for the site POI.
-export function poiRaidSetup(state, t, i) {
+// map's areas when it has no building, and for the site POI the building picked on the card (building: an option id
+// of buildingmaps.js buildingOptions, or "street"); without one (a pick made for you) the battle screen still offers
+// the site's buildings.
+export function poiRaidSetup(state, t, i, building = null) {
   const poi = poiAt(t, i);
   if (!poi) return { poi: null, choose: true };
-  if (isSitePoi(t, i)) return { poi: i, kind: poi.kind, choose: true }; // the site's buildings, chosen as before
+  if (isSitePoi(t, i)) {
+    const opts = building ? buildingOptions(t) : null;
+    if (opts && opts.some((o) => o.id === building)) return { poi: i, kind: poi.kind, choose: false, building };
+    return { poi: i, kind: poi.kind, choose: true }; // the site's buildings, chosen on the battle screen
+  }
   return { poi: i, kind: poi.kind, choose: false, place: poiPlace(t, i) };
 }
 // The building a POI opens: { id, key, name } for buildingmaps.js raidBuilding (setup.raid.place), or null (the

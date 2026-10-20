@@ -138,7 +138,7 @@ section("Forming: people, a car, supplies and cargo leave the base, nothing lost
   check(p.cargo.gear.includes(crowbar) && !h.armory.includes(crowbar), "the crowbar went into the cargo");
   check(teamHas(p, "food") >= 10 && teamHas(p, "food") < 11.21 && teamRounds(state, p, "a_556_fmj") === 30 + gunCapacity(rifle) && teamHas(p, "fuel") === 5, `the supplies were packed, and the rifle's magazine on top (${teamRounds(state, p, "a_556_fmj")} 5.56: 30 + ${gunCapacity(rifle)}; ${teamHas(p, "a_556_fmj")} packed, the rest at hand)`);
   check(pre.loadout.a_556_fmj === gunCapacity(rifle) && loadoutCount(pre.loadout) === gunCapacity(rifle) && near(pre.load, supplyLoad({ food: 10, water: 10, fuel: 5, a_556_fmj: 30 + gunCapacity(rifle) }) + itemLoad(crowbar)), `the preview counts the loadout (${JSON.stringify(pre.loadout)}, ${pre.load} kg)`);
-  check(roundsText(state, rifle, `s:${a.id}:weapon`) === `${gunCapacity(rifle)}/${gunCapacity(rifle)}`, `on the team the rifle's badge still reads full (${roundsText(state, rifle, `s:${a.id}:weapon`)})`);
+  check(roundsText(state, rifle, `s:${a.id}:weapon`) === `0/${gunCapacity(rifle)}`, `on the team the rifle's badge reads what is in it (2026-10-20: physical; its magazine's worth goes along in the bags and fills it as a fight starts): ${roundsText(state, rifle, `s:${a.id}:weapon`)}`);
   check(!!enterOption(state, p), "Enter base is offered on its own tile");
   check(editBase(state, p) === h && editProblem(state, p) === "" && editableTeams(state, h).includes(p), "it can be changed at the base");
   check(poolLoad(p) <= partyCapacity(state, p) + 1e-9, "within what it can carry");
@@ -161,7 +161,7 @@ section("Forming: the guns and magazines leave as loaded as the window showed, a
   h.stock.a_556_fmj = 120; h.stock.a_9mm_fmj = 25; // short of 9mm: 15 for b, 10 of d's 30 (c has its own)
   const at = (s, it) => roundsText(state, it, it === s.gear.weapon ? `s:${s.id}:weapon` : `s:${s.id}:pocket:0`);
   const shown = { a: [at(a, rifle), at(a, a.pockets[0])], b: at(b, b.gear.weapon), c: [at(c, c.gear.weapon)] };
-  check(shown.a[0] === "30/30" && shown.a[1] === "30/30" && shown.b === "15/15" && shown.c[0] === "15/15", `at the base the badges read full (${shown.a} ${shown.b} ${shown.c})`);
+  check(shown.a[0] === "0/30" && shown.a[1] === "0/30" && shown.b === "0/15" && shown.c[0] === "0/15", `at the base the badges read what is in them, never the stock (2026-10-20): ${shown.a} ${shown.b} ${shown.c}`);
   const lo = teamLoadout(crew, [h.stock]);
   check(lo.a_556_fmj === 60 && lo.a_9mm_fmj === 25 && loadoutCount(lo) === 85, `the loadout: 60 of 5.56, the 25 of 9mm there are (${JSON.stringify(lo)})`);
   check(loadoutRounds([c], [h.stock]).a_9mm_fmj === undefined, "a gun covered by its holder's own box takes nothing out of the stock");
@@ -174,7 +174,7 @@ section("Forming: the guns and magazines leave as loaded as the window showed, a
   const p = r.party;
   sameCensus(before, census(state), "forming with the loadout");
   check(teamHas(p, "a_556_fmj") === 60 && teamHas(p, "a_9mm_fmj") === 25 && h.stock.a_556_fmj === 60 && h.stock.a_9mm_fmj === 0, `the team carries 60 of 5.56 and 25 of 9mm, the stock is down by them (${teamHas(p, "a_556_fmj")}, ${teamHas(p, "a_9mm_fmj")}; ${h.stock.a_556_fmj}, ${h.stock.a_9mm_fmj})`);
-  check(at(a, rifle) === "30/30" && at(a, a.pockets[0]) === "30/30" && at(b, b.gear.weapon) === "15/15" && at(c, c.gear.weapon) === "15/15", `on the team the badges read as at the base (${at(a, rifle)} ${at(a, a.pockets[0])} ${at(b, b.gear.weapon)} ${at(c, c.gear.weapon)})`);
+  check(at(a, rifle) === shown.a[0] && at(a, a.pockets[0]) === shown.a[1] && at(b, b.gear.weapon) === shown.b && at(c, c.gear.weapon) === shown.c[0], `on the team the badges read as at the base (${at(a, rifle)} ${at(a, a.pockets[0])} ${at(b, b.gear.weapon)} ${at(c, c.gear.weapon)}); the loadout fills them as a fight starts`);
   // The fight: every magazine as full as the window said (b's and d's pistols share the 25: 15 and 10 of 30).
   const tile = state.tiles.find((t) => t.id !== h.tile && !t.loc && t.terrain !== "water" && state.grid.distance(t.id, h.tile) > 1);
   p.path = [tile.id]; p.idx = 0; p.phase = "engaged";

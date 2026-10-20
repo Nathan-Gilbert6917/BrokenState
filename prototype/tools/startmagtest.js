@@ -3,8 +3,10 @@
 // over the Hunting rifle"; "Add the word magazine to Gun Mags … '23 .308/7.62 NATO FMJ': is this loose rounds?";
 // "Guns should show quickly how many rounds are in them"). sim/gunrounds.js, sim/itemnames.js, ui/itemlabels.js.
 //   - a new run (normal, Hardcore, a picked start gun): every gun carried is loaded from the crew's starting rounds,
-//     its spare magazines too; the gun's tip never says "magazine (empty)";
-//   - the rounds to hand are shared out in turn (two pistols and 20 rounds: 15 and 5), a gun with none shows empty;
+//     its spare magazines too, as far as the rounds go (2026-10-20: physically, every gun first, then a spare each in
+//     turn; a spare short only when no round it takes is left); the gun's tip never says "magazine (empty)";
+//   - out of a fight the badge counts what is in it (2026-10-20): a gun in the armory with rounds in the stores is
+//     empty until it is reloaded (itemacts.js reloadGunAt: two pistols and 20 rounds, 15 and 5);
 //   - a found gun has a believable few rounds in it (own dice: some empty, most part-loaded, never over its capacity),
 //     a trader's has none; a gun on a body shows what is in it;
 //   - the names: magazines say "magazine", rounds say "— loose" / "— box" / "— 2 boxes", the count is not in the name;
@@ -18,13 +20,18 @@ import { rowName, rowCount, supplyName, magName, withMagWord, roundsForm } from 
 import { gunRoundsLabel, itemShortTip, tipAttrs } from "../src/ui/itemlabels.js";
 import { gunTipText } from "../src/ui/gunbuilder.js";
 import { isMag } from "../src/sim/mags.js";
-import { keyFor } from "../src/sim/rounds.js";
+import { keyFor, roundOf, baseType } from "../src/sim/rounds.js";
+import { reloadGunAt, loadUpAll } from "../src/sim/itemacts.js";
+import { stackN } from "../src/sim/roundstack.js";
+import { magTakes } from "../src/sim/mags.js";
 import { rollSiteGuns, gunWares } from "../src/sim/gunfinds.js";
 
 let pass = 0, fail = 0;
 const check = (ok, msg) => { if (ok) pass++; else { fail++; console.log(`FAIL ${msg}`); } return ok; };
 const section = (t) => console.log(`\n== ${t}`);
-const world = (seed, extra = {}) => createWorld({ seed, factionCount: 5, ...extra });
+// A new run as Start leaves it (main.js: itemacts.js loadUpAll out of what each carries, then the hub's stores or the
+// team's supplies; createWorld alone loads from what each carries only, so the world's stock stays whole until then).
+const world = (seed, extra = {}) => { const st = createWorld({ seed, factionCount: 5, ...extra }); loadUpAll(st); return st; };
 // Every gun and magazine the crew carries: [{ s, item, loc, where, r }].
 const crewKit = (st) => st.survivors.flatMap((s) => carriedSpots(s).filter((x) => isRoundGun(x.item) || isMag(x.item)).map((x) => ({ s, ...x, r: gunRounds(st, x.item, x.loc) })));
 
@@ -39,10 +46,15 @@ section("A new run: the guns are loaded from the starting rounds");
       const mags = kit.filter((k) => k.s === s && isMag(k.item));
       if (!mags.length) continue;
       spares += mags.length;
-      const typed = s.pockets.some((it) => it && /_hp$|_sp$|_subsonic$|_plusp$/.test(it.key)); // a typed starting box (ammo.js starterLoad): its spares are bounded by it, as in a fight
-      check(typed ? mags[0].r.n > 0 : mags[0].r.n === mags[0].r.cap, `seed ${seed}: ${s.name}'s first spare magazine is ${typed ? "loaded" : "full"} (${mags[0].r.n}/${mags[0].r.cap} ${mags[0].r.roundName})`);
-      check(mags.every((m) => m.r.n > 0), `seed ${seed}: every spare of ${s.name}'s has rounds (${mags.map((m) => `${m.r.n}/${m.r.cap}`).join(" ")})`);
+      // physical (2026-10-20): a spare short of full only when no round it takes is left on its holder or in the stores
+      const left = (m) => { const cals = new Set(); for (const r of Object.keys(st.bases[0].stock)) { const x = roundOf(r); if (x && st.bases[0].stock[r] >= 1 && magTakes(m.item.key, x.cal)) cals.add(r); } for (const y of carriedSpots(s)) { const x = y.item && roundOf(y.item.key); if (x && y.item.dur >= 1 && magTakes(m.item.key, x.cal)) cals.add(y.item.key); } return [...cals]; };
+      const typed = (m) => m.r.load !== baseType(m.r.cal); // a typed starting box (ammo.js starterLoad): a spare of its load is bounded by it (one kind a load, as in a fight)
+      for (const m of mags) check(m.r.n === m.r.cap || left(m).length === 0 || (typed(m) && m.r.n > 0), `seed ${seed}: ${s.name}'s spare is full or nothing it takes is left (${m.r.n}/${m.r.cap} ${m.r.roundName}; left: ${left(m).join(", ") || "none"})`);
+      check(mags.every((m) => m.r.n === stackN(m.item.stack)), `seed ${seed}: ${s.name}'s spares' badges are the rounds in them (${mags.map((m) => `${m.r.n}/${m.r.cap}`).join(" ")})`);
     }
+    // every gun first, then the spares a magazine each in turn: no second spare loaded while someone's first of that calibre is empty
+    const firsts = st.survivors.map((s) => kit.filter((k) => k.s === s && isMag(k.item))).filter((l) => l.length);
+    for (const l of firsts) for (const o of firsts) if (o !== l && l.length > 1 && l[1].r.n > 0) check(!(o[0].r.n === 0 && o[0].item.key === l[1].item.key), `seed ${seed}: ${l[0].s.name}'s second spare has rounds while ${o[0].s.name}'s first is empty`);
     for (const x of kit.filter((k) => isRoundGun(k.item))) {
       const t = gunTipText(x.item);
       check(!/magazine \(empty\)/.test(t), `seed ${seed}: the ${x.item.name}'s tip names its magazine (${(/magazine \([^)]*\)?[^,;]*/.exec(t) || [""])[0]})`);
@@ -58,7 +70,7 @@ section("Hardcore and a picked start gun");
     const st = world(seed, { mode: "hardcore", crewRoll: seed });
     // Hardcore grabs a gun with the rounds that came with it ("a 9mm pistol (9 rounds)"): loaded with all of them.
     const have = (key) => (st.parties || []).reduce((a, p) => a + Math.floor((p.supplies || {})[key] || 0) + Math.floor(((p.cargo && p.cargo.supplies) || {})[key] || 0), 0) + st.survivors.reduce((a, s) => a + carriedSpots(s).reduce((b, y) => b + (y.item.key === key ? Math.floor(y.item.dur || 0) : 0), 0), 0);
-    for (const x of crewKit(st).filter((k) => isRoundGun(k.item))) { n++; const h0 = have(keyFor(x.r.cal, x.r.load)); check(x.r.n === Math.min(x.r.cap, h0) && x.r.n > 0, `hardcore ${seed}: ${x.item.name} loaded with what was grabbed (${x.r.n}/${x.r.cap}, ${h0} rounds)`); }
+    for (const x of crewKit(st).filter((k) => isRoundGun(k.item))) { n++; const h0 = have(keyFor(x.r.cal, x.r.load)); check(x.r.n === Math.min(x.r.cap, x.r.n + h0) && x.r.n > 0, `hardcore ${seed}: ${x.item.name} loaded with what was grabbed (${x.r.n}/${x.r.cap}, ${h0} rounds left)`); } // (physical: the rounds went into it)
   }
   check(n >= 2, `Hardcore guns checked (${n})`);
   const a = world(42, { crew: [{ startGear: { slots: { weapon: "ar" }, carry: { pocket: ["mag_stanag_30", "mag_stanag_30"] } } }] });
@@ -77,13 +89,19 @@ section("Rounds to hand are shared out; none: empty");
   base.stock.a_9mm_fmj = 20;
   base.armory.push(newItem("pistol", 1), newItem("pistol", 1), newItem("ar", 1));
   const i0 = base.armory.length - 3;
-  const r = [0, 1, 2].map((d) => gunRounds(st, base.armory[i0 + d], `armory:${base.id}:list:${i0 + d}`));
-  check(r[0].n + r[1].n === 20 - Math.max(0, 20 - r[0].cap - r[1].cap) && r[0].n === Math.min(20, r[0].cap), `two pistols, 20 rounds: ${r[0].n}/${r[0].cap} and ${r[1].n}/${r[1].cap}`);
+  const at = (d) => `armory:${base.id}:list:${i0 + d}`;
+  const r0 = [0, 1, 2].map((d) => gunRounds(st, base.armory[i0 + d], at(d)));
+  check(r0.every((x) => x.n === 0), `out of a fight a stored gun counts what is in it, not the stores (${r0.map((x) => `${x.n}/${x.cap}`).join(" ")})`);
+  for (const d of [0, 1, 2]) reloadGunAt(st, at(d));
+  const r = [0, 1, 2].map((d) => gunRounds(st, base.armory[i0 + d], at(d)));
+  check(r[0].n + r[1].n === 20 - Math.max(0, 20 - r[0].cap - r[1].cap) && r[0].n === Math.min(20, r[0].cap) && !(base.stock.a_9mm_fmj >= 1), `two pistols reloaded from 20 rounds in the stores: ${r[0].n}/${r[0].cap} and ${r[1].n}/${r[1].cap}, the stores empty`);
   check(r[2].n === 0, `an assault rifle with no 5.56 in the stores is empty (${r[2].n}/${r[2].cap})`);
   const l = gunRoundsLabel(base.armory[i0 + 2], `armory:${base.id}:list:${i0 + 2}`, st);
   check(l && l.cls === "empty" && l.text === `0/${r[2].cap}` && /Empty/.test(l.tip), `its badge is red "0/${r[2].cap}" (${l && l.cls}: ${l && l.tip})`);
   base.stock.a_556_fmj = 100;
-  check(gunRounds(st, base.armory[i0 + 2], `armory:${base.id}:list:${i0 + 2}`).n === r[2].cap, "rounds in the stores: it is loaded");
+  check(gunRounds(st, base.armory[i0 + 2], at(2)).n === 0, "rounds in the stores: still empty until it is reloaded");
+  reloadGunAt(st, at(2));
+  check(gunRounds(st, base.armory[i0 + 2], at(2)).n === r[2].cap && base.stock.a_556_fmj === 100 - r[2].cap, `reloaded: full, out of the stores (${base.stock.a_556_fmj} left)`);
 }
 
 section("gunRoundsLabel(item): the item alone finds where it is");
@@ -94,9 +112,12 @@ section("gunRoundsLabel(item): the item alone finds where it is");
   const base = st.bases[0];
   base.armory.push(newItem("pistol", 1));
   const g = base.armory[base.armory.length - 1];
-  check(gunRoundsLabel(g, null, st).n > 0, `a pistol in the armory, 9mm in the stores: loaded (${gunRoundsLabel(g, null, st).text})`);
+  base.stock.a_9mm_fmj = 40;
+  check(gunRoundsLabel(g, null, st).n === 0, `a pistol in the armory, 9mm in the stores: empty until reloaded (${gunRoundsLabel(g, null, st).text})`);
+  reloadGunAt(st, `armory:${base.id}:list:${base.armory.length - 1}`);
+  check(gunRoundsLabel(g, null, st).n === 15, `reloaded from the stores: ${gunRoundsLabel(g, null, st).text}`);
   base.armory.pop();
-  check(gunRoundsLabel(g, null, st).n === 0, "taken out of the armory (nowhere): what is in it, empty");
+  check(gunRoundsLabel(g, null, st).n === 15, "taken out of the armory (nowhere): what is in it, still 15");
 }
 
 section("Found guns: a believable few rounds");

@@ -37,6 +37,7 @@ import { rosterModal, openRoster } from "../src/ui/roster.js";
 import { settingsModal, openSettings } from "../src/ui/settings.js";
 import { newRunScreen } from "../src/ui/newgame.js";
 import { loadOptions } from "../src/ui/saves.js";
+import { isTentBag, TENTS } from "../src/sim/tents.js"; // the hardcore start's tent bags
 
 // Setting up a camp takes an hour (staging.js STAGING.PITCH): skipped here, the camp (a base) stands at once.
 const establishNow = (st, p) => { p.pitched = true; return giveOrder(st, p, "establish"); };
@@ -204,7 +205,9 @@ section("Who they were: three backgrounds, no two alike; one car between them wi
     const cs = asGeneric(Object.fromEntries(Object.entries(p.cargo.supplies).filter(([k]) => !FOODS[k]))); // ammo.js: the rounds in the back, counted as the old "ammo"; food by type apart
     const fd = foodIn(p.cargo.supplies), flo = ((TR.food || [0])[0] || 0) + ((TR.preserved || [0])[0] || 0), fhi = ((TR.food || [0, 0])[1] || 0) + ((TR.preserved || [0, 0])[1] || 0);
     check(Object.entries(cs).every(([k, q]) => TR[k] && q >= TR[k][0] && q <= TR[k][1]) && Object.keys(TR).filter((k) => SUPPLIES[k] && TR[k][0] > 0).every((k) => cs[k] >= TR[k][0]) && fd >= flo - 1 && fd <= fhi + 1, `seed ${st.seed}: the supplies in the back are the owner's (${JSON.stringify(cs)}, ${fd.toFixed(1)} days of food)`);
-    check(p.cargo.gear.every((g) => TR.gear && TR.gear[g.key]) && p.cargo.gear.length >= TR.n[0] && p.cargo.gear.length <= TR.n[1], `seed ${st.seed}: the things in the back are the owner's (${p.cargo.gear.map((g) => g.key).join(", ")})`);
+    const back = p.cargo.gear.filter((g) => !isTentBag(g)); // tents.js: the tent bags each one got (TENTS.HARDCORE) ride in the back too
+    check(back.every((g) => TR.gear && TR.gear[g.key]) && back.length >= TR.n[0] && back.length <= TR.n[1], `seed ${st.seed}: the things in the back are the owner's (${back.map((g) => g.key).join(", ")})`);
+    check(p.cargo.gear.filter(isTentBag).length === m.length * TENTS.HARDCORE, `seed ${st.seed}: and a one-person tent bag for each of them`);
     const line = hc0.grabbed[hc0.grabbed.length - 1];
     check(new RegExp(`^${owner.name.split(" ")[0]} got everyone into their ${v.name.toLowerCase()}`).test(line) && /tank \d+% full/.test(line) && /in the back/.test(line) && st.cards[0].text.includes(line), `seed ${st.seed}: the opening blurb says whose car and what is in the back`);
     check(st.log.some((l) => /set off in .*: tank \d+% full/.test(l.text) && Math.floor(l.hour / 24) === 0), `seed ${st.seed}: day 1's log says they set off in it`);
@@ -290,12 +293,12 @@ const campOf = (st) => st.bases.find((b) => b.camp === true) || null;
   check(!canBuild(st, camp, "hub_up").ok && !canBuild(st, camp, "watchtower").ok && /shelter/.test(canBuild(st, camp, "watchtower").reason) && /once it is a base/.test(canBuild(st, camp, "well").reason), "the rest waits for the shelter or the base (and says so)");
   check(establishOption(st, null, landNear(st, tile0, 2).id) === null, "with a base (the camp): no Establish base");
   // Half the materials: the work goes as far as they allow and waits.
-  Object.assign(camp.stock, { scrap: Math.ceil(needScrap / 2), buildmat: STAGING.HARDCORE.needs.buildmat / 2 });
+  Object.assign(camp.stock, { scrap: Math.ceil(needScrap / 2), buildmat: STAGING.HARDCORE.needs.buildmat / 2, wood: STAGING.HARDCORE.needs.wood / 2 + 300 }); // wood (the user's pick 2026-10-20): half the step up's and the fire's days
   const t1 = st.hour;
   run(st, 24 * 4, () => job.progress > 0 && gatherStalled(job));
   check(gatherStalled(job) && job.progress > 0 && job.progress < job.hours * 0.56, `half the materials: about half the work, then it waits (${Math.round((job.progress / job.hours) * 100)}% after ${st.hour - t1}h)`);
   // The rest comes in: the shelter stands.
-  Object.assign(camp.stock, { scrap: (camp.stock.scrap || 0) + needScrap, buildmat: (camp.stock.buildmat || 0) + STAGING.HARDCORE.needs.buildmat });
+  Object.assign(camp.stock, { scrap: (camp.stock.scrap || 0) + needScrap, buildmat: (camp.stock.buildmat || 0) + STAGING.HARDCORE.needs.buildmat, wood: (camp.stock.wood || 0) + STAGING.HARDCORE.needs.wood + 300 });
   const t2 = st.hour;
   run(st, 24 * 6, () => !campOf(st));
   const h = hub(st);
@@ -316,7 +319,7 @@ const campOf = (st) => st.bases.find((b) => b.camp === true) || null;
   check(h && structuresOf(h).map((s) => s.key).join() === "shack" && baseWalls(h) === 0 && wallHold(h) === wallHold({ ...h, tier: undefined }), `base battles: only a shack, and no wall it did not build (${h && structuresOf(h).map((s) => s.key).join()}; buildings.js WALL_TIERS)`);
   if (h) {
     h.construction.length = 0;
-    Object.assign(h.stock, { scrap: 200, parts: 20, meds: 10, buildmat: 10 });
+    Object.assign(h.stock, { scrap: 200, parts: 20, meds: 10, buildmat: 10, wood: 2000 });
     const ok = (k) => canBuild(st, h, k).ok;
     check(ok("rain_catcher") && ok("smoker") && ok("barricades") && ok("farm_plot") && ok("hub_up"), "a shelter builds a rain catcher, a drying rack, a barricade, a farm plot, and the step up into a base");
     check(ok("walls") && !ok("well") && !ok("storehouse") && !ok("radio"), "a wall (the Defenses tab: up to a timber palisade) but no well, storehouse or the rest at a shelter");
@@ -429,7 +432,7 @@ section("The camp's step up: days by builders, neglect, striking it, a team lost
   const st = hc(303);
   st.noWanderers = true;
   const p = roadTeam(st);
-  Object.assign(p.cargo.supplies, { scrap: 40, parts: 5, water: 45, buildmat: 4 }); setFood(p.cargo, 40);
+  Object.assign(p.cargo.supplies, { scrap: 40, parts: 5, water: 45, buildmat: 4, wood: 500 }); setFood(p.cargo, 40); // wood: the step up's 200 and the fire's
   st.cards.length = 0;
   establishNow(st, p);
   const t0 = st.hour;
@@ -833,7 +836,7 @@ section("Saves: hubless, mid-build and after founding; an old save's staging cam
   ld.noWanderers = true;
   if (p) {
     if (p.phase !== "waiting") { p.phase = "waiting"; p.task = null; p.path = [partyTile(p)]; p.idx = 0; }
-    Object.assign(p.cargo.supplies, { scrap: 40, parts: 5, water: 35, buildmat: 4 }); setFood(p.cargo, 30);
+    Object.assign(p.cargo.supplies, { scrap: 40, parts: 5, water: 35, buildmat: 4, wood: 500 }); setFood(p.cargo, 30); // wood: the step up's 200 and the fire's
     establishNow(ld, p);
   }
   const jobOf = (w) => { const c = campOf(w); return c ? tierUpJob(c) : null; };

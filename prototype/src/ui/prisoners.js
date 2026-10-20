@@ -105,7 +105,7 @@ function summaryCard(state, base, list, s) {
   if (s.labour.water > 0) lab.push(`Fetch water +${n1(s.water_hauled)} a day`);
   if (s.labour.kitchen > 0) lab.push(`Kitchen dries ${n1(s.kitchen.take)} of up to ${n1(s.kitchen.cap)} fresh food → ${n1(s.kitchen.out)} preserved today${s.kitchen.take < 0.05 ? " (no surplus fresh food)" : ""}`);
   if (s.labour.upkeep > 0) lab.push(`Clean and mend −${n1(s.labour.upkeep * WEAR.upkeep)} wear a day`);
-  if (s.labour.wood > 0) lab.push(`Cut wood about ${Math.round(s.wood)} firewood a day`);
+  if (s.labour.wood > 0) lab.push(`Cut wood about ${Math.round(s.wood)} wood a day`);
   if (s.labour.scrap > 0) lab.push(`Haul and sort scrap +${n1(s.scrap)} a day`);
   const unwatched = w.workers.length - w.watched.size;
   const shelterNote = tasksAt(state, base).length < Object.keys(TASKS).length ? ` A shelter has less to do: ${Object.entries(TASKS).filter(([k]) => !tasksAt(state, base).includes(k)).map(([, t]) => t.name).join(", ")} not here.` : "";

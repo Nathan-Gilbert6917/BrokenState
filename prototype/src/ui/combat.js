@@ -26,9 +26,11 @@ import { SHOVE, BOARD, CRAWL, shoveTargets, shoveDests, shoveRefusal, shovePlan,
 import { INTERIOR } from "../sim/interior.js";
 import { PARLEY, parleyStatus, parleyGroupsSeen, callOutRefusal, callOutTargets } from "../sim/parley.js"; // other groups on a raid's map: Call out, hostile or not (the user's request 2026-10-20)
 import * as PARLEY_SIM from "../sim/parley.js"; // the exports that may not be there yet (shoutCost), looked up when present
+import { TENT_TAKE, tentsNear, strikeRefusal, slashTargets, slashRefusal, goesLeft, tentWord, tentWear } from "../sim/tentfight.js"; // Take down and Slash at a tent (the user's request 2026-10-20)
 import { clearEnough } from "../sim/battlesize.js";
 import { SUPPLIES, GEAR } from "../sim/data.js";
 import { rescueOptions } from "../sim/rescueraid.js"; // a rescue raid on a group's base: captives, the cell, the armory
+import { PUSH, pushTargets, pushRefusal, pushOdds, pushHazard } from "../sim/shoving.js"; // a foe shoved back a tile or flat on their back (the user's request 2026-10-20)
 import { subdueOdds, canSubdue, throwablesOf, THROWABLES, THROW_KEYS, dragable, heldDown, STEALTH } from "../sim/stealth.js";
 import { flashCells, flashReach, stunLabel, FRAG, BLAST, SMOKE } from "../sim/throwables.js"; // a flashbang's reach and stun; the throw preview
 import { glLabel, glName, glRange, glLoads, glRounds, roundLabel, launchRefusal, glReloadRefusal, backblastCells, enclosedAt, LAUNCH, GL_HE, ROCKET } from "../sim/launchers.js"; // grenade launchers and rockets (section 13)
@@ -41,8 +43,8 @@ import { earStatus, visorState } from "../sim/hearing.js"; // deaf and dazed chi
 import { noiseGhosts } from "../sim/crossfire.js"; // shots and blasts heard out of sight: markers in the fog with a guess of the sound
 import { canPlace, LIT_ZONES } from "../sim/deploy.js";
 import { layoutPanel, layoutHover, storeHover, storesHtml } from "./basemap.js"; // the base map's layout mode, the stores on the map
-import { ghostAt, itemAtCell, storeAt, FOOT, keyOptions, keyTargets, KEY_AP } from "../sim/basemap.js"; // keyOptions: the defenders' keys (Lock, Unlock)
-import { BUILDINGS, demolishRefund } from "../sim/buildings.js"; // layout mode's Demolish: the question names the building and the refund
+import { ghostAt, itemAtCell, storeAt, FOOT, keyOptions, keyTargets, KEY_AP, landPieceAt, gridOfCell } from "../sim/basemap.js"; // keyOptions: the defenders' keys (Lock, Unlock)
+import { BUILDINGS, demolishRefund, TENTS, tentKind } from "../sim/buildings.js"; // layout mode's Demolish: the question names the building and the refund
 import { ask } from "./confirm.js"; // one confirmation style (the base map's Demolish asks as the Construction tab's does)
 const refundWords = (rec) => { const t = Object.entries(demolishRefund(rec) || {}).filter(([, q]) => q > 0).map(([k, q]) => `${q} ${k}`).join(", "); return t ? ` (${t})` : ""; };
 import { planFor, planStale, planKey, PLAN_MAPS, plansOf, currentPlan, planTags, startText, roleOf, PLAN, PLAN_WHO, PLAN_WHEN, PLAN_ROLES } from "../sim/defenceplan.js"; // the base's defence plans (the deploy step, the drill)
@@ -77,6 +79,7 @@ import { planAsideHtml, planAction, planChip, planUI } from "./raidplan.js"; // 
 import { planOpen, botPlan } from "../sim/raidplan.js";
 import { hudPaint, hudSync, toggleHud, hitBreakdown, breakdownHtml, hitTone } from "./battlehud.js"; // the weapon panel, the squad strip, the big hit chances (user requests 2026-10-09)
 import { barHtml } from "./battlebar.js"; // the bottom bar: the selected one's card, the orders, the turn controls (user request 2026-10-12)
+import { softWord } from "../sim/softcover.js"; // bushes and tents: what they hide, that they stop no bullets
 import { watchCanvas } from "./pictures.js"; // the battle canvas reports a lost GPU context (the kept pictures would be blank)
 // Ground-ring colors of a hive's special dead (sim/zombietypes.js); ordinary dead keep the green ring.
 const ZRING = { runner: "#ffb43b", brute: "#c8c4b0", spitter: "#9ad63a", screamer: "#c99ae0", crawler: "#6ab0c8", shepherd: "#e8e2ff", soldier: "#a8b878", riot: "#8aa0c8", carrier: "#e6d8a8", swarm: "#f0e4c0", boneback: "#d8b48a", climber: "#8fd0a0", flinger: "#e8a0c8", sower: "#e8e070", nightmare: "#e0506e", sleeper: "#b0d8ff" };
@@ -427,7 +430,7 @@ function act(state, a) {
   if (!err && a.type !== "end") {
     const u = unitById(b, a.unit);
     if (u && u.side === "player") followFloor(b, u); // Go up / Go down: the view goes with them
-    if (!u || !active(u) || u.ap < 1 || ["throw", "drag", "tie", "subdue", "taser", "pepper", "execute", "surrender", "peek", "close", "brace", "checkwindow", "openwindow", "closewindow", "breakwindow", "shove", "boardup", "teardown", "cutwire", "keylock", "keyunlock", "doubletap", "pickup", "crush", "goup", "godown", "drive", "loadRam", "unloadRam", "board", "disembark", "turn", "heal", "revive", "dragAlly", "dropAlly", "finish", "pullOut", "suppress", "throwspear", "unjam", "launch", "glreload", "face", "overwatch", "callout"].includes(a.type)) cui.mode = "move";
+    if (!u || !active(u) || u.ap < 1 || ["throw", "drag", "tie", "subdue", "shoveFoe", "taser", "pepper", "execute", "surrender", "peek", "close", "brace", "checkwindow", "openwindow", "closewindow", "breakwindow", "shove", "boardup", "teardown", "cutwire", "strike", "slashtent", "keylock", "keyunlock", "doubletap", "pickup", "crush", "goup", "godown", "drive", "loadRam", "unloadRam", "board", "disembark", "turn", "heal", "revive", "dragAlly", "dropAlly", "finish", "pullOut", "suppress", "throwspear", "unjam", "launch", "glreload", "face", "overwatch", "callout"].includes(a.type)) cui.mode = "move";
     cui.ammoAsk = null;
     cui.shoveAsk = null; // the Shove chooser (sim/barricade.js) closes once anything is done
     if (a.type !== "face") cui.handAsk = null; // the Hand over chooser stays open across the free Face toward the mate
@@ -571,7 +574,7 @@ export function combatClick(state, px, py) {
   }
   // Raids: click a container next to the selected unit to search it.
   // A door picked for Peek, Close door or Brace (sim/buildingmaps.js); a window picked for a window order (sim/windows.js).
-  if (u && active(u) && ["peek", "close", "brace", "checkwindow", "openwindow", "closewindow", "breakwindow", "boardup", "teardown", "cutwire"].includes(cui.mode)) return void act(state, { type: cui.mode, unit: u.id, x: c.x, y: c.y });
+  if (u && active(u) && ["peek", "close", "brace", "checkwindow", "openwindow", "closewindow", "breakwindow", "boardup", "teardown", "cutwire", "strike", "slashtent"].includes(cui.mode)) return void act(state, { type: cui.mode, unit: u.id, x: c.x, y: c.y });
   // Shove (sim/barricade.js): the piece clicked opens its destinations; with a piece picked, a destination clicked shoves it there.
   if (u && active(u) && (cui.mode === "shove" || (cui.shoveAsk && cui.shoveAsk.uid === u.id))) return void shoveClick(state, b, u, c);
   // A window right next to the selected unit (sim/windows.js): the next thing to do with it (check it, open it, climb through).
@@ -662,6 +665,10 @@ function layoutClick(state, b, px, py) {
   }
   const sc = storeAt(b, c.x, c.y);
   if (sc) { cui.storeView = cui.storeView === sc.id ? null : sc.id; cui.msg = ""; return; }
+  // A piece of the land (sim/basescatter.js: a tree, a bush, a wreck…): its card, to queue its clearing.
+  const [gx, gy] = gridOfCell(b, c.x, c.y);
+  if (landPieceAt(state, state.bases.find((o) => o.id === b.layout.baseId), gx, gy).length) { cui.storeView = null; return void act(state, { type: "land", x: c.x, y: c.y }); }
+  if (b.layout.land) b.layout.land = null;
   if (b.layout.sel) return void act(state, { type: "select", key: null }); // open ground: deselect
   cui.msg = "Pick something to build from the Build list, or a placed thing from the lists, then click where it goes; click a placed thing to select it, again to move it.";
 }
@@ -697,6 +704,7 @@ function attack(state, u, t) {
     cui.msg = `${t.name} is down${t.ko ? " (out cold)" : t.stab ? " (stabilized)" : " and bleeding"}. Finish them (${keyLabel("battle.finish", 1) || "Shift+K"}) to kill them for good${t.ko || t.wounded ? ", tie them up (T) to take them prisoner" : ""}, or leave them.`;
     return;
   }
+  if (cui.mode === "shoveFoe") return void act(state, { type: "shoveFoe", unit: u.id, target: t.id }); // sim/shoving.js: the sim says why not
   if (cui.mode === "subdue") {
     if (!canSubdue(u, t, b)) { cui.msg = "Subdue needs them right next to you."; return; }
     return void act(state, { type: "subdue", unit: u.id, target: t.id });
@@ -903,6 +911,25 @@ function barricadeButtons(state, b, u, btn) {
   const tears = tearTargets(b, u);
   if (tears.length) btn("teardown", "Tear down", `${BOARD.TEAR.ap} actions: ${first} pries the boards off the ${[...new Set(tears.map((t) => boardedName(t.c).toLowerCase()))].join(", ")} next to them, from either side: the door or window as it was, shut. About half the bundles come off whole (into the kit, or on the ground at their feet); the rest are splintered. Quieter than nailing them up (heard ${BOARD.TEAR.radius} tiles off).${tears.length > 1 ? " Several next to them: click the one." : ""}`,
     ap >= BOARD.TEAR.ap, "", { why: NO_AP, ap: BOARD.TEAR.ap, on: cui.mode === "teardown" });
+}
+// ---------- tents (sim/tentfight.js) ----------
+// Take down (both actions a go, a couple of turns: the bag into the arms) and Slash (one action), shown next to a tent.
+function tentButtons(state, b, u, btn) {
+  const near = tentsNear(b, u);
+  if (!near.length) return;
+  const first = u.name.split(" ")[0];
+  const t = near.find((n) => n.t.workBy === u.id)?.t || near[0].t;
+  const w = tentWear(b, t), left = goesLeft(t);
+  const sWhy = strikeRefusal(b, u);
+  const what = w.burned || w.share <= TENT_TAKE.WRECKED ? "slashed to rags: only scrap and canvas come of it" : t.kind === "makeshift" ? "a makeshift one: its poles and tarp give a little wood and scrap" : `its bag goes into ${first}'s arms (on the ground if the hands are full)${w.share < 0.999 ? `, torn (${Math.round(w.share * 100)}% left)` : ""}`;
+  btn("strike", "Take down", `${TENT_TAKE.AP} actions a go: ${first} takes down the ${tentWord(t)} next to them${near.length > 1 ? " (several here: click the one)" : ""}: ${left} go${left === 1 ? "" : "es"} left (two people share the work). ${what}; what was stored in it stays where it stood, to search. The rattle of the poles is heard ${TENT_TAKE.RADIUS} tiles off${b.raid ? ` (Heat +${TENT_TAKE.HEAT} a go)` : ""}. Taken off its owner for good.`,
+    !sWhy, "", { why: sWhy, ap: TENT_TAKE.AP, on: cui.mode === "strike" });
+  const cuts = slashTargets(b, u);
+  if (cuts.length) {
+    const cWhy = slashRefusal(b, u);
+    btn("slashtent", "Slash", `${TENT_TAKE.SLASH_AP} action: ${first} slashes the canvas next to them (10–16 a cut; a cell at 0 is torn open and hides nobody). A torn tent taken down gives a damaged bag; slashed to rags, only scrap and canvas.${cuts.length > 1 ? " Several cells: click the one." : ""}`,
+      !cWhy, "", { why: cWhy, ap: TENT_TAKE.SLASH_AP, on: cui.mode === "slashtent" });
+  }
 }
 // The chooser over the orders once a piece is picked: a button for each place it can go (the cell clicked on the map works too).
 function shoveChooser(state, b, u) {
@@ -1233,6 +1260,10 @@ export function unitOrders(state, b, u) {
   gunButtons(state, b, u, btn);
   plateButton(state, b, u, btn);
   btn("melee", "Melee", "Strike an adjacent enemy. Silent: it does not alert others or draw zombies. Ends the turn.", ap > 0 && foesAdj, "E", { why: noAp || (foesAdj ? "" : "No enemy right next to them (not across a wall's corner).") });
+  { // sim/shoving.js: a foe right next to them shoved back a tile or flat on their back
+    const near = pushTargets(b, u), why = pushRefusal(b, u), po = near.length === 1 ? pushOdds(b, u, near[0]) : null, hz = near.length === 1 ? pushHazard(b, u, near[0]) : "";
+    btn("shoveFoe", po ? `Shove foe (${po.chance}%)` : "Shove foe", `${PUSH.AP} action: shove someone or one of the dead right next to ${u.name.split(" ")[0]} (arms free). It lands about ${PUSH.BASE}% of the time (better for a good hand-to-hand fighter, a Strong back, a Bulldozer, a target unaware or reeling; worse on the armoured dead, and on a target hunkered down or bracing a door): pushed back a tile, straight away, or knocked flat on their back, always when a wall or someone is behind them (the one behind may go down too), after a fall or through a window. Flat on their back: no overwatch, blows at them +${PUSH.FLOOR_AIM}, and getting up takes their next turn's first action. Shoved into the flames, acid, a trench, a pit or a mine they get what is there; off a walkway or ladder they fall (${PUSH.FALL[0]}–${PUSH.FALL[1]} a level); through a window the glass cuts them and the crash is heard. Brutes, wall-breakers and bosses do not budge. One of the dead that has hold of someone lets go when shoved off or floored. Enemy people shove too.${hz ? ` Behind them now: ${hz}.` : ""}${u.heldBy != null ? " Something has hold of them: shove it off to move again." : ""}${near.length > 1 ? " Several next to them: click the one." : ""}`, !why, "", { why, ap: PUSH.AP });
+  }
   btn("overwatch", "Overwatch", `${OVERWATCH_TIP} Click the way to watch: only what moves in its cone draws a reaction.`, ap > 0 && ammo, "O", { why: fireWhy });
   btn("hunker", "Hunker down", `Ends the turn. +${COVER_DEF[1]} defense on top of cover until your next turn. Only helps when in cover.`, ap > 0, "H", { why: noAp });
   if (b.vehicle) btn("drive", "Drive", `Both actions, from inside or next to the ${b.vehicle.kind === "truck" ? "truck" : "car"}: click where to drive it, up to ${DRIVE.RANGE} cells. It drives through people (anyone in the way is hit for ${RAMMING.HIT[0]}–${RAMMING.HIT[1]}, the dead ${RAMMING.ZOMBIE_HIT[0]}–${RAMMING.ZOMBIE_HIT[1]}, and shoved aside) and light obstacles (fences, crates, sandbags, barricades, tank traps: broken, at a cost to the vehicle's condition); walls, trees, other cars, water, railings and trenches stop it. Loud: the unaware within ${DRIVE.RADIUS} tiles hear the engine${b.raid ? `, Heat +${DRIVE.HEAT}` : ""}. Whoever is aboard rides along, the loot and the siege ram too; extract from a zone it stands at to keep it.`, ap >= DRIVE.AP && (u.aboard || atVehicle(b, u)), "", { why: ap < DRIVE.AP ? "Driving takes both actions." : "Stand next to the vehicle (or get in) to drive it.", ap: DRIVE.AP });
@@ -1256,6 +1287,7 @@ export function unitOrders(state, b, u) {
   else { doorButtons(b, u, btn, true); windowButtons(b, u, btn); } // a field map's houses (sim/combat.js genMap): with a door or a window next to them
   keyButtons(b, u, btn); // sim/basemap.js: the defenders' keys on their base's map
   barricadeButtons(state, b, u, btn); // sim/barricade.js: Shove, Board up, Tear down
+  tentButtons(state, b, u, btn); // sim/tentfight.js: Take down, Slash
   if (b.rescue) rescueButtons(state, b, u, btn);
   out.extra = lockPanel(state, b, u) + carPanel(state, b, u) + reloadPicker(state, b, u) + handChooser(state, b, u) + shoveChooser(state, b, u) + nlAskHtml(b, cui); // Execute / Surrender: asked first (ui/nonlethal.js)
   return out;
@@ -1522,9 +1554,12 @@ export function combatAction(state, key, d, ui = null) { // ui: main.js's screen
       if (d.v === "select") return void act(state, { type: "select", key: d.k || null }); // a placed thing's card
       if (d.v === "pickType") return void act(state, { type: "pickType", bt: d.bt || null }); // a type to build: the ghost is its footprint
       if (d.v === "link" || d.v === "unlink") return void act(state, { type: d.v, a: d.a, b: d.b }); // a doorway between two buildings
+      if (d.v === "clear") return void act(state, { type: "clear", clump: d.clump === "1", mode: d.mode || "clear" }); // the land's card (sim/basescatter.js)
+      if (d.v === "landClose") { b.layout.land = null; return; }
+      if (d.v === "unclear") return void act(state, { type: "unclear", id: d.id });
       if (d.v === "demolish") { // a standing building asks first (ui/confirm.js, as the Construction tab's Demolish); a queued job is only cancelled
         const base = state.bases.find((x) => x.id === b.layout.baseId), rec = base && d.k && d.k.startsWith("b:") ? base.buildings.find((x) => x.id === Number(d.k.slice(2))) : null;
-        if (rec && ui && ask(ui, d, "cb-deploy", { kind: "demolish", title: `Pull down ${BUILDINGS[rec.type] ? BUILDINGS[rec.type].name : "this building"} at ${base.name}?`, text: `It is gone for good${FOOT[rec.type] && FOOT[rec.type].general ? ", and whatever stands inside it with it" : ""}. About half its scrap and parts come back${refundWords(rec)}.`, yes: "Pull it down" })) return;
+        if (rec && ui && !(BUILDINGS[rec.type] && BUILDINGS[rec.type].furniture) && !(rec.type === "tent" && TENTS[tentKind(rec)].bag) && ask(ui, d, "cb-deploy", { kind: "demolish", title: `Pull down ${BUILDINGS[rec.type] ? BUILDINGS[rec.type].name : "this building"} at ${base.name}?`, text: `It is gone for good${FOOT[rec.type] && FOOT[rec.type].general ? ", and whatever stands inside it with it" : ""}. About half its scrap and parts come back${refundWords(rec)}.`, yes: "Pull it down" })) return;
         return void act(state, { type: "demolish", key: d.k });
       }
       return;
@@ -1599,6 +1634,15 @@ export function combatAction(state, key, d, ui = null) { // ui: main.js's screen
     cui.msg = cui.mode === v ? (v === "boardup" ? "Click the door, doorway or window to board up." : "Click the boards to tear down.") : "";
     return;
   }
+  if (v === "strike" || v === "slashtent") { // sim/tentfight.js: the tent next to them (several: click the one)
+    const why = v === "strike" ? strikeRefusal(b, u) : slashRefusal(b, u);
+    if (why) { cui.msg = why; return; }
+    const many = v === "strike" ? tentsNear(b, u).length > 1 && !tentsNear(b, u).some((n) => n.t.workBy === u.id) : new Set(slashTargets(b, u).map((o) => (o.t ? o.t.id : -1))).size > 1;
+    if (!many) return void act(state, { type: v, unit: u.id });
+    cui.mode = cui.mode === v ? "move" : v;
+    cui.msg = cui.mode === v ? (v === "strike" ? "Click the tent to take down." : "Click the tent to slash.") : "";
+    return;
+  }
   if (v === "cutwire") { // sim/wire.js: the wire next to them (several: click the one)
     const list = cutTargets(b, u), why = cutRefusal(state, b, u);
     if (why) { cui.msg = why; return; }
@@ -1625,6 +1669,14 @@ export function combatAction(state, key, d, ui = null) { // ui: main.js's screen
     if (!ts.length) { cui.mode = "move"; cui.msg = callWhy(state, b, u); return; }
     cui.mode = cui.mode === "callout" ? "move" : "callout";
     cui.msg = cui.mode === "callout" ? `Click someone of the group to call out to (${groupNames(b, ts)}). Esc: cancel.` : "";
+    return;
+  }
+  if (v === "shoveFoe") { // sim/shoving.js
+    const near = pushTargets(b, u);
+    if (near.length === 1) return void act(state, { type: "shoveFoe", unit: u.id, target: near[0].id });
+    if (!near.length) { cui.msg = pushRefusal(b, u); return; }
+    cui.mode = cui.mode === "shoveFoe" ? "move" : "shoveFoe";
+    cui.msg = "Click who to shove, right next to them.";
     return;
   }
   // The stealth kit (sim/stealth.js).
@@ -2300,7 +2352,7 @@ function kitWarnHtml(state, b) {
 function chooseHtml(b) {
   const list = b.raid.choose || [];
   return `<div class="small cbmsg cbconfirm"><b class="good">Where do you go in?</b> Several buildings stand at ${esc(b.place)}. Each has its own map: rooms, doors, windows and its own ways out. Or search the street (this map). The choice is gone once anyone acts.
-    <div class="cbactions" style="margin-top:0.35rem">${list.map((o) => `<button data-action="cb-act" data-v="building" data-k="${esc(o.id)}" data-tip="${esc(`${o.name}${o.size ? ` (${o.size}, ${o.rooms} rooms)` : ""}. ${o.hint}`)}">${esc(o.name)}${o.size ? ` <span class="muted">${o.size}</span>` : ""}</button>`).join("")}</div></div>`;
+    <div class="cbactions" style="margin-top:0.35rem">${list.map((o) => `<button data-action="cb-act" data-v="building" data-k="${esc(o.id)}" data-tip="${esc(`${o.name}${o.size ? ` (${o.size}, ${o.rooms} rooms)` : ""}. ${o.hint}${o.map ? ` The map: ${o.map.replace(/\+$/, "")} tiles${/\+$/.test(o.map) ? " at least (the floor plan and the grounds round it)" : ""}.` : ""}`)}">${esc(o.name)}${o.size || o.map ? ` <span class="muted">${esc([o.size, o.map].filter(Boolean).join(", "))}</span>` : ""}</button>`).join("")}</div></div>`;
 }
 
 // ---------- the worm (sim/carriers.js) ----------
@@ -2728,6 +2780,13 @@ function odds(b, u, t) {
     const p = finishOdds(u, t, b);
     return { ok: !why, chance: p, finish: true, label: why ? `Finish (downed): ${why}` : `Finish (downed): ${p}%, ${SIM.meleeReach(b, u, t) ? "a blow from next to them" : "one round"}: dead for good, no revive, no prisoner. Use Finish (${keyLabel("battle.finish", 1) || "Shift+K"}); a plain click does not` };
   }
+  if (cui.mode === "shoveFoe") { // sim/shoving.js
+    const why = pushRefusal(b, u, t);
+    if (why) return { ok: false, label: why };
+    const o = pushOdds(b, u, t);
+    const hz = pushHazard(b, u, t);
+    return { ok: true, chance: o.chance, label: `Shove ${o.chance}%: pushed back a tile, or flat on their back (${Math.round(o.knock * 100)}%, sure with no room behind them)${hz ? `. Behind them: ${hz}` : ""}` };
+  }
   if (cui.mode === "subdue") {
     if (!canSubdue(u, t, b)) return { ok: false, label: t.kind === "zombie" ? "The dead cannot be subdued" : "Subdue needs them right next to you" };
     const o = subdueOdds(b, u, t);
@@ -2911,6 +2970,8 @@ function previewHtml(b, state = null) {
   if (cobj.mhp) s += ` ${structureName(cobj)}:${struct}`;
   if (cobj.mine) s += ` <span class="warn">One of your mines</span><span class="muted">: your people step round it; a raider or one of the dead who steps here sets it off (a pipe bomb's blast).</span>`; // sim/mines.js
   if (cobj.k === "spikes") s += ` <b>Spike pit</b><span class="muted">: the dead are impaled and blunder on; raiders and anyone else not of yours fall in, hurt, and stop there. Your people know where the pits are.</span>`; // sim/combat.js SPIKES
+  const soft = softWord(cobj); // sim/softcover.js
+  if (soft) s += ` <span class="muted">${soft}</span>`;
   if (cobj.k === "wire") s += ` <b>${cobj.razor ? "Razor wire" : "Barbed wire"}</b><span class="muted">: the dead stop for the turn${cobj.razor ? " and are cut" : ""}; the living are snagged (the rest of the turn, a few cuts) unless they carry a cutter (Cut wire).</span>`; // sim/wire.js
   if (b.tier && b.tier.indoor && b.tier.indoor[h.y * W + h.x]) s += ` Inside ${esc((b.tier.buildings || []).find((x) => x.cells.some(([cx, cy]) => cx === h.x && cy === h.y))?.name || "a building")}.`;
   if (room) s += ` ${esc(room.name)}${room.type ? ` (${esc(areaHint(room.type).replace(/^Likely: /, "likely ").toLowerCase())})` : ""}.`;
@@ -3246,10 +3307,10 @@ function animTile(b, t, now) {
     if (f.type !== "move" || f.unit !== t.id) continue;
     if (!cui.anim.has(f.seq)) cui.anim.set(f.seq, now);
     // el: never below 0 (sync stamps a new battle's fx with performance.now(), a little after the frame's own time)
-    const per = 70, el = Math.max(0, now - cui.anim.get(f.seq)), total = f.path.length * per;
+    const per = f.shove ? 110 : 70, el = Math.max(0, now - cui.anim.get(f.seq)), total = f.path.length * per;
     if (el >= total) break;
     const pts = [f.from, ...f.path];
-    const k = el / per, s = Math.floor(k), fr = k - s;
+    const k = el / per, s = Math.floor(k), lin = k - s, fr = f.shove ? 1 - (1 - lin) * (1 - lin) : lin; // shoved back (sim/shoving.js): a stumble, fast then slowing
     const a = pts[s], c = pts[Math.min(pts.length - 1, s + 1)];
     return [a[0] + (c[0] - a[0]) * fr, a[1] + (c[1] - a[1]) * fr];
   }

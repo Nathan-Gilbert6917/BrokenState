@@ -5,11 +5,13 @@
 // Four size classes (W × H tiles, the iso view's diamonds): Small 24 × 18, Medium 32 × 24, Large 40 × 30,
 // Extra-large 48 × 34. A context gives a scale: 0 = Small, 1 = Medium, 2 = Large, 3 = Extra-large, with fractions
 // in between (dimsAt: 0.5 is 28 × 20, between Small and Medium).
-//   Raids (scavenging a site, combat.js createRaid): by the site's location type (SIZES.SITE), a site-less tile by its
-//     terrain (SIZES.TERRAIN). Hospitals, universities, prisons, military bases, malls, factories, airports, the
-//     warehouse district and city blocks Large; supermarkets, schools, police and fire stations, apartments, offices,
-//     motels, churches Medium; gas stations, diners, groceries, pharmacies, clinics, cabins, barns and small shops
-//     Small–Medium; farms, ranches, lodges and campgrounds Medium.
+//   Raids (scavenging a site, combat.js createRaid): between the run's smallest and largest raid map (worldcfg.js
+//     raidMin / raidMax, tiles across; the usual 32 × 24 to 56 × 42), the site's place between them by its location
+//     type (SIZES.SITE), a site-less tile by its terrain (SIZES.TERRAIN). Cities and towns (and a city crawl's
+//     buildings) always the largest (RAID_RANGE.LARGEST), as are hospitals, universities, prisons, military bases,
+//     malls, factories, airports and the warehouse district; supermarkets, schools, police and fire stations,
+//     apartments, offices, motels, churches, farms, ranches, lodges and campgrounds a third of the way up; gas
+//     stations, diners, groceries, pharmacies, clinics, cabins, barns and small shops the smallest.
 //   Fights in the open (road ambushes, hordes, outsiders: combat.js createBattle with no layout of its own): Medium,
 //     growing to Large with the number of people and the dead on the map (SIZES.FIELD); open plains a little bigger
 //     (room to flank), forest, hills and mountains a little smaller (the cover makes up for it); at a site at least
@@ -18,12 +20,18 @@
 //   A group's base you assault (conquest.js): Medium to Extra-large by how many people live there.
 //   Your own bases (interior.js, the yard and buildings map; its wall map is as long, less 3 rows: deploy.js): a hub
 //     Large to Extra-large, an outpost Medium to Large, by how many buildings stand there.
+// Past the old Large (BIG.FROM, 40 × 30; nothing at or under it changes) the run's raid map dials can make a map far
+// bigger, so what fills it grows with the ground but less than the ground: the dead (raidDeadScale, buildingDeadScale:
+// more of them, and more waves), a container's loot (raidLootShare: more containers, each a little less), Heat's rise
+// a turn (raidHeatRate: a longer walk, a slower clock) and a way out on each long side (combat.js genRaidMap); the
+// dead that come in at Heat come in near your people (BIG.NEAR).
 // Content scales with the area: more buildings, rooms, containers and scatter on a bigger map (combat.js genMap,
 // genRaidMap), and every map is topped up with props (densify) until most open ground has cover within COVER.R tiles.
 // The sides start CONTACT.HUMANS / CONTACT.DEAD tiles apart whatever the map's size, so the first shots come in a
 // turn or two and the dead reach your people in two or three: a bigger map is room to flank, not a walk.
 import { CELL, active, los, combatants } from "./combat.js";
 import { smokeScreens, SMOKE } from "./throwables.js"; // a smoke grenade's cloud screens someone running away
+import { raidRange, legacyRaids } from "./worldcfg.js"; // the run's dials: Raid map smallest / largest; an older save's old sizes
 
 export const SIZE_CLASSES = {
   S: { w: 24, h: 18, name: "Small" },
@@ -35,7 +43,8 @@ export const CLASS_KEYS = ["S", "M", "L", "XL"];
 const S = 0, M = 1, L = 2, XL = 3;
 
 export const SIZES = {
-  // Raids by the site's location type (data.js LOCATIONS), then by terrain.
+  // Raids by the site's location type (data.js LOCATIONS), then by terrain: a scale from RAID_RANGE.LO (the run's
+  // smallest raid map) to RAID_RANGE.HI (its largest), raidDims.
   SITE: {
     hospital: L, univ: L, prison: L, military: L, mall: L, factory: L, airport: L, warehouse: L, city: L, dam: L,
     town: 1.5, supermarket: M, school: M, police: M, firestation: M, apartments: M, office: M, motel: M, church: M, truckstop: M, quarry: M,
@@ -73,10 +82,22 @@ export const CONTACT = { PLAYER_X: 5, HUMANS: [15, 21], DEAD: [14, 20], CONE: 0.
 // Cover density: the share of open ground with something to hide behind within R tiles (Chebyshev) that densify tops
 // a map up to (TARGET; OPEN on plains and by water, which stay more open), never more than MAX_ADD props a 100 tiles.
 export const COVER = { R: 3, TARGET: 0.82, OPEN: 0.72, CITY: 0.86, MAX_ADD: 7 };
+// Raid maps (raidDims): a site's SIZES scale from LO to HI is its place between the run's smallest and largest raid
+// map (worldcfg.js raidMin / raidMax: tiles across, ASPECT of that deep); LARGEST always the largest (a city's or a
+// town's, a site-less city tile's too: the crawl's buildings and its street events), a bridge never under Large (its
+// span: combat.js bridgeSpan).
+export const RAID_RANGE = { LO: 0.5, HI: L, ASPECT: 0.75, LARGEST: ["city", "town"] };
 // Raids: rooms and outdoor areas by size class (AREAS[class] = [min, max], between classes in between), containers
-// a room by its floor area (one a BOX_AREA tiles, at least 2), the dead scaled by the map's area over DEAD_AREA (the
+// a room by its floor area (one a BOX_AREA tiles, at least 2; a map past Extra-large on at the same rate), the dead scaled by the map's area over DEAD_AREA (the
 // old 34 × 22 raid map) to the power DEAD_EXP, between DEAD_MIN and DEAD_MAX; late waves (spawnCap) the same way.
-export const RAID = { AREAS: [[2, 3], [3, 5], [5, 7], [6, 9]], BOX_AREA: 7, DEAD_AREA: 748, DEAD_EXP: 0.6, DEAD_MIN: 0.8, DEAD_MAX: 1.4, SPAWN_CAP: 12 };
+// DEAD_OLD: the cap on a map without the big-map scales (raidBig: an older save's neighbourhood street, 48 × 34).
+export const RAID = { AREAS: [[2, 3], [3, 5], [5, 7], [6, 9]], BOX_AREA: 7, DEAD_AREA: 748, DEAD_EXP: 0.6, DEAD_MIN: 0.8, DEAD_MAX: 2.2, DEAD_OLD: 1.4, SPAWN_CAP: 12 };
+// Raid maps past FROM tiles (the old Large 40 × 30; at or under it every factor is exactly 1): the dead of a building's
+// map grow by (area / FROM) to the power DEAD_EXP (at most DEAD_MAX); Heat's base rise a turn falls by
+// (FROM / area) to the power HEAT_EXP (at least HEAT_MIN of it); a container's find falls by (FROM / area) to the
+// power LOOT_EXP (at least LOOT_MIN: there are more containers, each holds a little less); the dead that come in at
+// Heat come in within NEAR tiles of your people when enough edge cells are that near.
+export const BIG = { FROM: 1200, DEAD_EXP: 0.6, DEAD_MAX: 2, HEAT_EXP: 0.5, HEAT_MIN: 0.55, LOOT_EXP: 0.6, LOOT_MIN: 0.4, NEAR: 28 };
 // The end of a battle whose fight is over: at most MAX_LEFT enemies left (and no more than FRAC of those it began
 // with), none a boss, none outside a base's wall waiting to come in, every one of them unaware or running, FAR tiles
 // or more from all your people and out of their sight. The AI ends it there; the player gets the choice (combat.js
@@ -100,6 +121,9 @@ export function sizeClass(w, h) {
   return best;
 }
 export const sizeName = (w, h) => SIZE_CLASSES[sizeClass(w, h)].name;
+// A map in words for the panels: "Extra-large, 56 × 42", and what a map past the old Large (BIG.FROM) brings with it.
+export const mapSizeText = (w, h) => `${sizeName(w, h)}, ${w} × ${h}`;
+export const bigMapNote = (w, h) => (w * h > BIG.FROM ? "A big map: more rooms, containers and dead, a longer walk, and a way out on each long side of a street map. Heat climbs slower, and each container holds a little less." : "");
 
 // ---------- by context ----------
 const tileOf = (state, setup) => {
@@ -112,7 +136,23 @@ export function siteScale(tile) {
   if (t.bridge) return L; // a bridge raid: room for a 12–24 cell span with a bank either side (combat.js bridgeSpan)
   return SIZES.TERRAIN[t.terrain] ?? M;
 }
-export const raidDims = (tile) => dimsAt(siteScale(tile));
+// A city's or a town's raid map (and a crawl's buildings there) is always the run's largest.
+export const largestRaid = (tile) => !!tile && ((tile.loc && RAID_RANGE.LARGEST.includes(tile.loc.type)) || (!tile.loc && tile.terrain === "city"));
+const raidSide = (w) => [w, even(w * RAID_RANGE.ASPECT)];
+// The run's smallest and largest raid maps, W × H (worldcfg.js raidRange: raidMin / raidMax in order; a world without
+// them the usual).
+export const raidMinDims = (state) => raidSide(even(raidRange(state)[0]));
+export const raidMaxDims = (state) => raidSide(even(raidRange(state)[1]));
+// A raid map's W × H: the site's place (SIZES.SITE / TERRAIN, LO to HI) between the run's smallest and largest. A save
+// from before the dials (worldcfg.js legacyRaids): the old size by the site's class (28 × 20 to 40 × 30, a town 36 × 26).
+export function raidDims(tile, state = null) {
+  if (legacyRaids(state)) return dimsAt(siteScale(tile));
+  const R = RAID_RANGE, [lo, hi] = raidRange(state);
+  const f = largestRaid(tile) ? 1 : clamp((siteScale(tile) - R.LO) / (R.HI - R.LO), 0, 1);
+  const [w, h] = raidSide(even(lo + (hi - lo) * f));
+  if (tile && tile.bridge) return [Math.max(w, SIZE_CLASSES.L.w), Math.max(h, SIZE_CLASSES.L.h)];
+  return [w, h];
+}
 
 // A fight in the open: by the people and the dead on the map, the terrain and the site.
 export function fieldScale(tile, players, enemy) {
@@ -275,9 +315,10 @@ export function fledFarEnough(b, u) {
 
 // ---------- building maps (buildingmaps.js) ----------
 // A raid into one building is the building's own floor plan (sized by its archetype) with the outside around it. A
-// single-building site keeps its plan but gets at least its site's size class (a hospital's map Large, a gas
-// station's Small–Medium): the outside margins grow (the parking lot and the street in front, the yard and the alley
-// round the back) and densify covers the new ground. At a site with several buildings each is at least Small.
+// single-building site keeps its plan but gets at least its site's raid map (raidDims: a hospital's the largest, a gas
+// station's the smallest): the outside margins grow (the parking lot and the street in front, the yard and the alley
+// round the back) and densify covers the new ground. At a site with several buildings each is at least the run's
+// smallest raid map; in a city or a town (a crawl's buildings) the largest.
 // margins: the archetype's own; returns the grown margins.
 export function fitMargins(bw, bh, margins, [tw, th]) {
   const m = { ...margins };
@@ -286,7 +327,10 @@ export function fitMargins(bw, bh, margins, [tw, th]) {
   m.front += Math.ceil(eh / 2); m.back += Math.floor(eh / 2);
   return m;
 }
-export const buildingTarget = (tile, single) => (single ? raidDims(tile) : dimsAt(S));
+export function buildingTarget(tile, single, state = null) {
+  if (legacyRaids(state)) return single ? raidDims(tile, state) : dimsAt(S); // an older save: the old targets
+  return single || largestRaid(tile) ? raidDims(tile, state) : raidMinDims(state);
+}
 // The outside of a building's map topped up with props (never inside the building or within a tile of it, nor in or
 // next to an extraction zone).
 export function densifyOutside(map, rng, terrain) {
@@ -298,15 +342,16 @@ export function densifyOutside(map, rng, terrain) {
 // ---------- raids ----------
 // How many rooms and outdoor areas a raid map of w × h gets (between its class's range).
 export function raidAreaRange(w, h) {
-  const s = areaScale(w, h), i = Math.min(2, Math.floor(s)), f = s - i, a = RAID.AREAS[i], b = RAID.AREAS[i + 1];
+  const s = areaScale(w, h, true), i = Math.min(2, Math.floor(s)), f = s - i, a = RAID.AREAS[i], b = RAID.AREAS[i + 1]; // past Extra-large: on at its rate
   return [Math.round(a[0] + (b[0] - a[0]) * f), Math.round(a[1] + (b[1] - a[1]) * f)];
 }
-// The scale (0–3, dimsAt) a map of w × h stands at, by its area between the classes'.
-export function areaScale(w, h) {
+// The scale (0–3, dimsAt) a map of w × h stands at, by its area between the classes'. beyond: a map past
+// Extra-large goes on past 3 at the Large–Extra-large step (a raid map up to the largest raid map dial).
+export function areaScale(w, h, beyond = false) {
   const A = CLASS_KEYS.map((k) => SIZE_CLASSES[k].w * SIZE_CLASSES[k].h), a = w * h;
   if (a <= A[0]) return 0;
   for (let i = 0; i < 3; i++) if (a <= A[i + 1]) return i + (a - A[i]) / (A[i + 1] - A[i]);
-  return 3;
+  return beyond ? 3 + (a - A[3]) / (A[3] - A[2]) : 3;
 }
 // The area types for a raid: the site's list (combat.js AREA_SETS) shuffled, repeated if the map has room for more.
 export function raidAreaTypes(rng, list, w, h) {
@@ -319,6 +364,21 @@ export function raidAreaTypes(rng, list, w, h) {
   }
   return out;
 }
-export const raidDeadScale = (w, h) => clamp(Math.pow((w * h) / RAID.DEAD_AREA, RAID.DEAD_EXP), RAID.DEAD_MIN, RAID.DEAD_MAX);
+export const raidDeadScale = (w, h, big = true) => clamp(Math.pow((w * h) / RAID.DEAD_AREA, RAID.DEAD_EXP), RAID.DEAD_MIN, big ? RAID.DEAD_MAX : RAID.DEAD_OLD);
+// Does a raid map get the big-map scales (more dead and a higher cap, slower Heat, a smaller find a container, the
+// waves near your people, a way out on each long side): past the old Large, in a world made since the dials (an older
+// save's maps play as they always did; combat.js keeps the answer on the raid, b.raid.big).
+export const raidBig = (state, w, h) => !legacyRaids(state) && w * h > BIG.FROM;
+// How much a map past the old Large has grown (1 at or under it): the factor the other scales below go by.
+const bigGrowth = (w, h) => Math.max(1, (w * h) / BIG.FROM);
+// The dead in a building's map (buildingmaps.js BMAP.DEAD_SCALE: [min, max] by the map's area over a Medium raid map's,
+// "base" here): the base, and past the old Large more of them with the ground.
+export const buildingDeadScale = (base, w, h) => Math.min(BIG.DEAD_MAX, base * Math.pow(bigGrowth(w, h), BIG.DEAD_EXP));
+// The street map of a neighbourhood: its roster (STREET.DEAD) past the old Extra-large raid map (48 × 34) the same way.
+export const streetDeadScale = (w, h) => clamp(Math.pow((w * h) / (SIZE_CLASSES.XL.w * SIZE_CLASSES.XL.h), RAID.DEAD_EXP), 1, RAID.DEAD_MAX);
+// Heat's base rise a turn on a raid map w × h, as a share of the usual (the noise on top is not scaled).
+export const raidHeatRate = (w, h) => clamp(Math.pow(1 / bigGrowth(w, h), BIG.HEAT_EXP), BIG.HEAT_MIN, 1);
+// What a container holds on a raid map w × h, as a share of the usual (the loot dial and the site's reward on top).
+export const raidLootShare = (w, h) => clamp(Math.pow(1 / bigGrowth(w, h), BIG.LOOT_EXP), BIG.LOOT_MIN, 1);
 // The containers a room of w × h holds.
 export const roomBoxes = (rng, w, h) => Math.max(2, Math.round(((w - 2) * (h - 2)) / RAID.BOX_AREA) + rng.int(0, 1));

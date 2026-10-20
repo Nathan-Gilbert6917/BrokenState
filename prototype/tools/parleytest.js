@@ -519,9 +519,26 @@ section("Fight with us: an allied group fights the dead and the hostile, never y
   const from = b.log.length;
   for (let i = 0; i < 5 && !b.over; i++) { for (const x of b.units) if (x.side === "player") x.ap = 0; mine[0].ow = true; endPlayerTurn(state); runEnemyPhase(state); }
   const vsDead = attacked(b, allyNames, deadNames, from), vsPod = attacked(b, allyNames, podNames, from), vsYou = attacked(b, allyNames, mineNames, from);
-  const podVsAlly = attacked(b, podNames, allyNames, from), youVsAlly = attacked(b, mineNames, allyNames, from);
+  let podVsAlly = attacked(b, podNames, allyNames, from); const youVsAlly = attacked(b, mineNames, allyNames, from);
   console.log(`  5 turns: the allies attacked the dead ${vsDead}×, the raiders ${vsPod}×, yours ${vsYou}×; the raiders attacked the allies ${podVsAlly}×; yours attacked the allies ${youVsAlly}×`);
   check(vsDead + vsPod > 0 && vsYou === 0, "the allies fight the dead and the hostile, never you");
+  if (!podVsAlly) { // the dead in their reach come first: the hostile and the allies alone, so the raiders' choice is theirs
+    const st2 = world(122);
+    const f2 = st2.factions.find((x) => x.alive && !x.outsider);
+    f2.goodwill = 50;
+    const r2 = raid(st2, [partyOf(f2, "friendly", 3), raiders(3)], { dead: true });
+    const party2 = r2.b.units.filter((x) => x.side === "third"), pod2 = r2.b.units.filter((x) => x.side === "enemy" && x.kind === "human");
+    inSight(r2.b, r2.mine[0], party2, 3, 5);
+    for (const x of r2.mine.slice(1)) { x.x = r2.mine[0].x; x.y = r2.mine[0].y; x.off = true; }
+    combatAct(st2, { type: "callout", unit: r2.mine[0].id, target: party2[0].id });
+    sure(1, () => choose(st2, card(st2, party2[0].pk), "Fight with us"));
+    for (const x of pod2) x.aware = true;
+    inSight(r2.b, party2[0], pod2, 3, 5);
+    const from2 = r2.b.log.length;
+    for (let i = 0; i < 5 && !r2.b.over; i++) { for (const x of r2.b.units) if (x.side === "player") x.ap = 0; endPlayerTurn(st2); runEnemyPhase(st2); }
+    podVsAlly = attacked(r2.b, pod2.map((x) => x.name), party2.map((x) => x.name), from2);
+    console.log(`  with none of the dead about: the raiders attacked the allies ${podVsAlly}×`);
+  }
   check(podVsAlly > 0, "a hostile group fights your allies");
   check(youVsAlly === 0, "your people (overwatch too) never fire on them");
   check(foughtBonus(state, rec) > 0 && parleyOdds(state, b, rec, "join", mine[0]) > join0, `fighting side by side: the join chance up (${pc(join0)} → ${pc(parleyOdds(state, b, rec, "join", mine[0]))})`);

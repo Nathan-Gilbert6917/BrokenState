@@ -162,7 +162,7 @@ export function paintLights(b, v, xf, cw, ch, now = 0, pos) {
   for (const f of day ? [] : b.flares || []) {
     const r = (f.r || FLARE.r) * (1 + 0.03 * Math.sin(now / 47 + f.x));
     c.setTransform(...base); c.translate(f.x + 0.5, f.y + 0.5); c.scale(r, r);
-    c.globalAlpha = 1; c.fillStyle = grad(c, "255,96,76", 0.8, true); c.beginPath(); c.arc(0, 0, 1, 0, Math.PI * 2); c.fill();
+    c.globalAlpha = f.camp ? 0.85 : 1; c.fillStyle = grad(c, f.camp ? "255,150,60" : "255,96,76", 0.8, true); c.beginPath(); c.arc(0, 0, 1, 0, Math.PI * 2); c.fill(); // f.camp: a campsite's fire (sim/campsite.js), warmer than a road flare
     n++;
   }
   if (!day && b.lit && b.floodAim) {

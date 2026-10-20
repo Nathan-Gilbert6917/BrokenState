@@ -31,7 +31,7 @@
 //   trade       a caravan at the gates traded with (never attacked) and a small radio deal for water, food or meds
 //               when short (autopilot.js stewardTrade);
 //   outposts    from a hub: water to an outpost running dry, scrap or parts for its next building (stewardOutposts);
-//   land        hunting, fishing or firewood trips, one team at a time (stewardLand).
+//   land        hunting, fishing or wood trips, one team at a time (stewardLand).
 // Raid and horde warnings about the base are answered under Defence (stewardWarnings: never by leaving the base).
 // Pinned survivors (s.pinned) are never moved, re-equipped or given a station by a steward (or the autopilot).
 // Taking over = switching it off: nothing is undone, everything stays as the steward left it. While the dev
@@ -53,7 +53,7 @@ export const STEWARD_AREAS = {
   supplies:   { name: "Emergency supplies", desc: "When the water would run out within a day or the food within two, a team from this base goes for it (the leader stays home)." },
   trade:      { name: "Trading", desc: "Trades with a caravan at the gates for what the base is short of, paid from its surplus (never attacks one), and with a radio network makes one small deal for water, food or meds every 6 days at most when short." },
   outposts:   { name: "Supply runs to outposts", desc: "From a hub: water to an outpost running dry, and the scrap or parts its next building waits on. Nobody is moved to live there." },
-  land:       { name: "Hunting, fishing & firewood", desc: "A hunting or fishing trip when food runs short (or to stock up in autumn), a wood-cutting trip when firewood is short. One team at a time, not in storms or with raiders or a horde coming." },
+  land:       { name: "Hunting, fishing & wood", desc: "A hunting or fishing trip when food runs short (or to stock up in autumn), a wood-cutting trip when wood is short. One team at a time, not in storms or with raiders or a horde coming." },
 };
 // Leadership: under `sharp` a leader is slow to act, running base + per x Leadership of the hours (0: half of them).
 export const LEADER = { sharp: 5, base: 0.5, per: 0.1 };

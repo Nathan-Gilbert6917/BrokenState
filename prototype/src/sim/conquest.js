@@ -57,7 +57,7 @@
 //   instead: everything goes, its people walk to your nearest base, the tile is a ruin (tile.ruin: a little loot, an
 //   outpost there needs 5 scrap). The hub razed is the hub lost.
 import { peopleHere, syncMembers } from "./members.js"; // the people who live at a base
-import { loseBase, gainBase } from "./groupbases.js"; // their bases as base objects (what is there)
+import { loseBase, gainBase, homeAt } from "./groupbases.js"; // their bases as base objects (what is there)
 import { foodIn, packPick, takeItem } from "./foods.js"; // food packed by the days
 import { sumRecs } from "./rounds.js"; // rounds by calibre
 import { packRounds } from "./ammo.js";
@@ -74,6 +74,10 @@ import { unitPower, arsenalShareTo, addToArsenal, arsenalWorthy } from "./arsena
 import { fortAssault, fortSize, assaultBase } from "./fort.js"; // their walled base on one fort map
 import { layAssaultStores, stockAssaultStores } from "./assaultstores.js"; // their real stores on the map (the wall-line map too)
 import { assaultDims, CONTACT } from "./battlesize.js";
+import { tentCount } from "./basemap.js"; // their camp's tents (basemap.js AI_CAMP_TENTS)
+import { groupCampTentItems } from "./tents.js"; // their real tents (the bags on their shelf) where they have them
+import { addTent } from "./tentfight.js"; // their tents on the battle's list: whose they are, the bag each one is
+import { TENTS } from "./buildings.js";
 import { captivesOf, takeCaptive } from "./conflicts.js";
 import { makeCandidate, offerRecruits } from "./recruits.js";
 import { surrenderPrisoners, prisonersOf, handOver } from "./prisoners.js";
@@ -85,11 +89,12 @@ import { markAbandonedVehicle } from "./markers.js";
 import { thirstAhead } from "./weather.js";
 import { keyWord } from "./water.js"; // "un-purified water" in texts
 import { noteBaseLoss } from "./causes.js"; // "Why?": the chain of causes of a lost base
-import { groupWalls, groupsBuild, worksAt } from "./groupworks.js"; // barestart: the walls a group has built at its base
+import { groupWalls, groupsBuild, worksAt, groupPeopleAt } from "./groupworks.js"; // barestart: the walls a group has built at its base
 import { blocAssaultHelp } from "./blocs.js"; // AI blocs: members' fighters at an ally's walls
 import { askBaseName } from "./basenames.js"; // name a base you take
 import { pwarBaseTaken } from "./playerwars.js"; // wars with you: a base taken counts
 import { carriedRec } from "./ammo.js"; // the loose rounds people carry
+import { askLayout } from "./staging.js"; // Open the build map: a base new to you asks to be laid out (ui/buildmap.js alert)
 
 export const CONQUEST = {
   FIGHT_SHARE: 0.6, MIN_DEF: 3, MAX_DEF: 16, HOME_WEIGHT: 2,
@@ -343,6 +348,25 @@ registerBattleLayout("baseAssault", (b, ctx) => {
     for (let i = 0; i < 2 + Math.min(6, walls); i++) {
       for (let t = 0; t < 8; t++) { const x = ctx.rng.int(X + 2, X + 5), y = ctx.rng.int(1, ctx.H - 2); if (ctx.free(x, y)) { ctx.put(x, y, i % 2 ? "sandbag" : "barricade"); break; } }
     }
+    // Their camp (groupbases.js h.camp; ADR 0001): its tents pitched in their grounds behind the line, each with open
+    // ground all round it: their real tents, the bags on their shelf, where they have them (tents.js groupCampTents,
+    // their sizes), else a camp's makeshift tents (basemap.js tentCount: AI_CAMP_TENTS, as yours are built).
+    const fac = e.factionId != null ? factionById(ctx.state, e.factionId) : null, home = fac ? homeAt(ctx.state, fac, b.tileId) : null;
+    if (home && walls < 1 && tentCount(home) > 0) {
+      for (const { kind, item } of groupCampTentItems(fac, groupPeopleAt(fac, b.tileId))) {
+        const TW = TENTS[kind].w, TH = TENTS[kind].h;
+        const clear = (x, y) => { for (let yy = y - 1; yy <= y + TH; yy++) for (let xx = x - 1; xx <= x + TW; xx++) if (!ctx.free(xx, yy)) return false; return true; };
+        for (let t = 0; t < 40; t++) {
+          const x = ctx.rng.int(X + 3, ctx.W - 2 - TW), y = ctx.rng.int(2, ctx.H - 3 - TH);
+          if (clear(x, y)) {
+            const cells = [];
+            for (let dy = 0; dy < TH; dy++) for (let dx = 0; dx < TW; dx++) { ctx.put(x + dx, y + dy, "tent"); cells.push([x + dx, y + dy]); }
+            addTent(b, { kind, cells, side: "enemy", owner: { fid: fac.id }, item }); // tentfight.js: theirs; taken down, its bag is off their shelf
+            break;
+          }
+        }
+      }
+    }
     // assaultstores.js: their stores on their side of the map (behind the wall line, or where it would be), as crates.
     const yard = { W: ctx.W, H: ctx.H, cells: b.cells, x0: X + 2, y0: 1, yw: Math.max(0, ctx.W - X - 3), yh: ctx.H - 2, indoor: null, doors: [], buildings: [], stores: [] };
     if (layAssaultStores(ctx.state, b.setup, yard)) b.assaultYard = { stores: yard.stores, assaultStores: true };
@@ -422,6 +446,7 @@ export function captureBase(state, f, tile, p, info = {}) {
   if (kit.length) got.push(kit.length === 1 ? kit[0].name : `${kit.length} pieces of their kit`);
   state.bases.push(base);
   askBaseName(state, base);
+  askLayout(state, base, occ ? "returned" : "conquered");
   const seized = home && f.vehicles && f.vehicles.length ? seizeGroupVehicles(state, f, base) : []; // vehicles.js: their Army truck and Humvee are yours
   // Who holds it: one or two of the team (the weakest fighters), everyone when you have no other base.
   const team = p && state.parties.includes(p) ? partyMembers(state, p) : [];
@@ -742,6 +767,7 @@ export function conquestDaily(state) {
       o.base.type = hub(state) ? "outpost" : "hub";
       o.base.alert = false;
       state.bases.push(o.base);
+      askLayout(state, o.base, "returned");
       recomputeOwnership(state);
       log(state, `${o.name} stands empty: its holders are gone. It is yours again (nobody is there yet).`, "good");
       history(state, `${o.name} came back to you empty.`);

@@ -2,11 +2,15 @@
 // inventory window, the team inventory, the loot screen, the search window and the kit seen from a battle, the base's
 // Armory tab, the team forming and meeting windows) for a small menu of what can be done with it there.
 //   - every item: Inspect (its whole description in the menu), Equip / Put away / Take, Split and Open on stacks,
-//     Repair, Salvage, Break down for firewood, the boiler's mark;
-//   - a gun: Reload (out of a fight the round it takes the field with; in a fight the Reload order, with the round to
-//     hand to pick), Unload (the rounds kept on it), Modify (the gun builder; in a fight the parts the fighter carries,
-//     an action a part), Repair; in a fight also Clear jam and the fire mode;
-//   - a magazine: Unload (kept empty), Load and Load with (the round), Fit to a gun; a gun part: Fit to a gun;
+//     Repair, Salvage, Break down for wood, the boiler's mark;
+//   - a gun: Reload and Reload with (out of a fight: filled now, free, from what its holder carries, then the storage
+//     and the stores here; in a fight the Reload order, with the round to hand to pick), Unload (its rounds out loose),
+//     Remove magazine / Insert magazine (a gun with a detachable magazine: the magazine with its rounds, the chambered
+//     round staying in the gun; in a fight for the place's actions), Modify (the gun builder; in a fight the parts the
+//     fighter carries, an action a part), Repair; in a fight also Clear jam and the fire mode;
+//   - a magazine: Load rounds / Load rounds with (the round), Unload rounds, Insert into a gun (out of a fight, free;
+//     in a fight Load rounds, Unload and Insert magazine / Reload with it for the gun in the hands' spares, in actions);
+//     a gun part: Fit to a gun;
 //   - things used up: treats (Eat, Drink, Smoke), food and water (stacks in the stores, carried as items, the pack of
 //     food and water: Eat, Drink),
 //     meds and med kits (Treat wounds; in a fight Use meds), the dewormer (Take it, at a base).
@@ -34,15 +38,18 @@ import { treatWorm, wormOf } from "../sim/worm.js";
 import { treatAnywhere, isHurt } from "../sim/medical.js";
 import { FOODS } from "../sim/foods.js";
 import { calOf } from "../sim/ammo.js";
-import { isMag, isStacked, magEntryAt, unloadMagPlan, reloadOptions } from "../sim/mags.js";
+import { isMag, isStacked, magEntryAt, unloadMagPlan, reloadOptions, magOut, detachable, magFitsGun, removeMagPlan, insertChoices, roundSources, loadMagPlan, LOAD_AP } from "../sim/mags.js";
 import { carriedSpots } from "../sim/inventory.js";
-import { stackText } from "../sim/roundstack.js";
+import { stackText, stackN } from "../sim/roundstack.js";
 import { reloadCost, reloadRefusal, medsLeft, active, WEAPONS } from "../sim/combat.js";
 import { raidMove, raidItemAt, parseRaidLoc, quickTarget, lootLayer } from "../sim/raidloot.js";
 import {
-  ITEM_AP, MOD_AP, magLoadChoices, gunLoadChoices, roundsToHand, unloadMagRefusal, unloadMagAt, loadMagRefusal, loadMagAt, setGunLoad,
+  ITEM_AP, MOD_AP, magLoadChoices, gunLoadChoices, roundsToHand, unloadMagRefusal, unloadMagAt, loadMagRefusal, loadMagAt,
   unloadGunRefusal, unloadGunAt, isFoodKey, isDrinkKey, stackUseRefusal, useStack, packUseRefusal, usePack, battleUsePlan, heldKeyOf,
-} from "../sim/itemacts.js";
+  reloadGunAt, reloadGunRefusal, removeMagAt, removeMagRefusal, insertMagAt, insertMagRefusal, magsForGun,
+} from "../sim/itemacts.js"; // out of a fight a gun's and a magazine's rounds are physical (2026-10-20): Reload, Unload, Remove / Insert magazine, Load / Unload rounds
+import { isRoundGun, gunCapacity } from "../sim/gunrounds.js";
+import { gunStackOf } from "../sim/gunload.js";
 import { INV_AP } from "../sim/combat.js"; // a move in a fighter's own kit (combatAct "inv")
 import { packFood, packWater } from "../sim/eating.js";
 import { cui, battleOrder, ammoToHand, unitModes, curMode, MODE_NAME } from "./combat.js";
@@ -178,29 +185,42 @@ function calmRows(state, ui, m, item, d, s, out) {
     if (isRoundItem(item) && !item.loose) out.push(row("openbox", "Open the box", () => openAt(state, loc), { tip: "Loose rounds out of the box (they are not packed back)" }));
     if (isBulk(item) && Object.keys(bulkRecord(item)).length) out.push(row("handful", "Take out a handful", () => openAt(state, loc), { tip: "A handful of loose rounds into a spot beside it" }));
   }
-  // A gun.
-  if (calOf(item.key) && WEAPONS[item.key] && !WEAPONS[item.key].melee) {
+  // A gun (2026-10-20: its rounds are physical out of a fight too; loading it is free, out of what its holder carries,
+  // then the storage and the stores here: sim/itemacts.js).
+  if (calOf(item.key) && WEAPONS[item.key] && !WEAPONS[item.key].melee && isRoundGun(item)) {
     const cal = calOf(item.key);
+    const inGun = stackN(gunStackOf(item)), cap = gunCapacity(item);
+    const src = here && s && L.o === "s" ? `what ${first(s)} carries, then the storage and the stores here` : "the storage and the stores here";
+    out.push(row("reload", "Reload", () => reloadGunAt(state, loc), { why: reloadGunRefusal(state, loc), tip: `${inGun}/${cap} in it now. Filled now, free, from ${src}${magOut(item) ? " (no magazine in it: only the chamber)" : ""}` }));
     const loads = gunLoadChoices(item);
-    if (loads.length) {
+    if (loads.length > 1) {
       const cur = item.load || "";
-      const sub = [...loads, { id: "auto", name: "Best to hand" }].map((x) => {
+      const sub = [...loads, { id: "auto", name: "Best to hand (when a fight starts)" }].map((x) => {
         const n = x.id === "auto" ? null : roundsToHand(state, loc, cal, x.id);
         const on = x.id === "auto" ? cur === "auto" : cur === x.id || (!cur && x.id === loads[0].id);
-        return row(`load:${x.id}`, `${on ? "✓ " : ""}${x.name}`, () => setGunLoad(state, loc, x.id), { note: n == null ? "" : `${n}`, tip: n == null ? "The best kind the team carries when the fight starts" : `${n} to hand${on ? " (loaded now)" : ""}: the gun takes the field with it` });
+        return row(`load:${x.id}`, `${on ? "✓ " : ""}${x.name}`, () => reloadGunAt(state, loc, x.id), { note: n == null ? "" : `${n}`, why: x.id === "auto" ? "" : reloadGunRefusal(state, loc, x.id), tip: n == null ? "Nothing loaded now: a fight's start tops it up with the best kind its holder has" : `${n} to hand: loaded now, and the round it takes the field with` });
       });
-      out.push(row("reload", "Reload with", null, { sub, why: body ? "Take it first." : "", tip: "Out of a fight the gun is loaded from the rounds to hand when a fight starts: pick the round it takes" }));
+      out.push(row("reloadwith", "Reload with", null, { sub, why: body ? "Take it first." : "", tip: "Load a kind of round now (and take the field with it)" }));
     }
-    if (item.loaded && item.loaded.n > 0) out.push(row("unload", "Unload", () => unloadGunAt(state, loc), { why: unloadGunRefusal(state, loc), tip: `Its ${item.loaded.n} rounds into the stores here` }));
+    out.push(row("unload", "Unload", () => unloadGunAt(state, loc), { why: unloadGunRefusal(state, loc), tip: `${inGun ? `Its ${inGun} rounds` : "Its rounds"} out as loose rounds onto ${s && L.o === "s" ? first(s) : "the stores here"}: it stays empty, also as a fight starts, until it is reloaded` }));
+    if (detachable(item) || magOut(item)) {
+      if (!magOut(item)) out.push(row("magout", "Remove magazine", () => removeMagAt(state, loc), { why: removeMagRefusal(state, loc), tip: `The magazine out with ${Math.max(0, inGun - 1)} round${inGun - 1 === 1 ? "" : "s"} in it${L.o === "s" ? `, onto ${s ? first(s) : "them"}` : ", into the storage"}; the round in the chamber stays in the gun` }));
+      const mags = magsForGun(state, loc);
+      if (mags.length) out.push(row("magin", magOut(item) ? "Insert magazine" : "Swap magazine", null, { tip: magOut(item) ? "A magazine into the gun, with the rounds in it" : "Another magazine in: the one in it comes out into its place", sub: mags.map((x) => row(`magin:${x.loc}`, `${x.item.name}`, () => insertMagAt(state, loc, x.loc), { note: `${stackN(x.item.stack)}/${MAGAZINES[x.item.key].cap}`, why: insertMagRefusal(state, loc, x.loc), tip: `${x.where}${x.item.stack && x.item.stack.length ? `: ${stackText(MAGAZINES[x.item.key].cal, x.item.stack)}` : ": empty"}` })) }));
+      else if (magOut(item)) out.push(row("magin", "Insert magazine", null, { why: `No magazine for the ${item.name} ${L.o === "s" ? "on them or " : ""}in the storage here.` }));
+    }
     if (isGunKey(item.key)) out.push(row("modify", "Modify", (st2, ui2) => { GB_ACTIONS["gb-open"](state, ui2, { loc, sid: s ? s.id : "" }); }, { why: body || looting ? "Take it first." : "", tip: "The gun builder: sights, muzzle, magazine, stock and the rest, with the parts within reach" }));
-  }
-  // A magazine: unload, load, the round; a gun part: fit it.
+  } else if (calOf(item.key) && WEAPONS[item.key] && !WEAPONS[item.key].melee && isGunKey(item.key)) out.push(row("modify", "Modify", (st2, ui2) => { GB_ACTIONS["gb-open"](state, ui2, { loc, sid: s ? s.id : "" }); }, { why: body || looting ? "Take it first." : "", tip: "The gun builder" }));
+  // A magazine: its rounds in and out (physical, free out of a fight), into a gun; a gun part: fit it.
   if (isMag(item) && !body) {
     const cal = MAGAZINES[item.key].cal;
-    if (item.unloaded) out.push(row("magload", "Load", () => loadMagAt(state, loc), { why: loadMagRefusal(state, loc), tip: "Filled from the rounds to hand when a fight starts" }));
-    else out.push(row("magunload", "Unload", () => unloadMagAt(state, loc), { why: unloadMagRefusal(state, loc), tip: "Kept empty: not filled for a fight until it is loaded again" }));
+    const n = stackN(item.stack), cap = MAGAZINES[item.key].cap;
+    out.push(row("magload", "Load rounds", () => loadMagAt(state, loc), { why: loadMagRefusal(state, loc), tip: `${n}/${cap} in it now. Filled now, free, from ${here && s && L.o === "s" ? `what ${first(s)} carries, then the storage and the stores here` : "the storage and the stores here"} (on top of what is in it)` }));
     const choices = magLoadChoices(item);
-    if (choices.length > 1) out.push(row("magwith", "Load with", null, { sub: choices.map((x) => { const on = !item.unloaded && (item.load || null) === x.id; const n = roundsToHand(state, loc, cal, x.id); return row(`mag:${x.id}`, `${on ? "✓ " : ""}${x.name}`, () => loadMagAt(state, loc, x.id), { note: `${n}`, why: on ? "" : loadMagRefusal(state, loc, x.id), tip: `${n} to hand` }); }) }));
+    if (choices.length > 1) out.push(row("magwith", "Load rounds with", null, { sub: choices.map((x) => { const on = (item.load || null) === x.id; const k = roundsToHand(state, loc, cal, x.id); return row(`mag:${x.id}`, `${on ? "✓ " : ""}${x.name}`, () => loadMagAt(state, loc, x.id), { note: `${k}`, why: loadMagRefusal(state, loc, x.id), tip: `${k} to hand` }); }) }));
+    out.push(row("magunload", "Unload rounds", () => unloadMagAt(state, loc), { why: unloadMagRefusal(state, loc), tip: `${n ? `Its ${n} rounds` : "Its rounds"} out as loose rounds onto ${L.o === "s" && s ? first(s) : "the stores here"}: it stays empty, also as a fight starts, until loaded again` }));
+    const guns = (s && here ? gunsOn(state, s) : []).filter(([, g]) => isRoundGun(g) && (detachable(g) || magOut(g)) && magFitsGun(g.key, item.key));
+    if (guns.length) out.push(row("magto", "Insert into", null, { sub: guns.map(([gl, g]) => row(`magto:${gl}`, `${g.name}${magOut(g) ? " (no magazine)" : ""}`, () => insertMagAt(state, gl, loc), { why: insertMagRefusal(state, gl, loc), tip: magOut(g) ? "Into the gun, with the rounds in it" : "Into the gun: the magazine in it comes out into this one's place" })) }));
   }
   const part = slotOfPart(item.key);
   if (part && s && !body && !looting) {
@@ -227,7 +247,7 @@ function calmRows(state, ui, m, item, d, s, out) {
     const label = !isSealed(item) ? "Look inside" : !item.locked ? "Open" : o.ok && o.tool && o.tool.kind === "picks" ? `Pick the lock (${o.tool.item.name})` : o.ok && o.tool ? `Force it open (${o.tool.item.name})` : "Force it open";
     out.push(row("opencase", label, (st2, ui2) => openBoxWindow(state, ui2, loc, s ? s.id : null), { why: o.ok ? "" : o.why, tip: isSealed(item) ? `${item.locked ? `Locked with ${lockWords(item)}` : "Not locked"}. Free out of a fight; a window shows what is inside.` : "What is inside, to take out" }));
   }
-  // Repair, salvage, firewood.
+  // Repair, salvage, wood.
   if (!body && !looting && repairKind(item)) {
     let r = null;
     try { r = repairInfoAt(state, loc); } catch { r = null; }
@@ -242,7 +262,7 @@ function calmRows(state, ui, m, item, d, s, out) {
   }
   const bd = breakDownInfo(state, loc);
   if (!body && bd.wood > 0) {
-    out.push(row("burn", `Break down for firewood (+${bd.wood})`, (st2, ui2) => { ui2.invSel = loc; INV_ACTIONS["inv-breakdown"](state, ui2, {}); }, { why: bd.ok ? "" : bd.reason, tip: isJunk(item) ? "Junk: kindling" : "Worth more than junk: asks first" }));
+    out.push(row("burn", `Break down for wood (+${bd.wood})`, (st2, ui2) => { ui2.invSel = loc; INV_ACTIONS["inv-breakdown"](state, ui2, {}); }, { why: bd.ok ? "" : bd.reason, tip: isJunk(item) ? "Junk: kindling" : "Worth more than junk: asks first" }));
     if (L.o === "armory") {
       const b = baseById(state, L.id);
       const mark = item.fire === "burn" ? "burn" : item.fire === "keep" ? "keep" : "";
@@ -305,6 +325,12 @@ function fightRows(state, ui, m, item, d, s, u, out) {
     if (u.jam) { const ap = u.jam.ap || 1; out.push(row("unjam", "Clear the jam", order(state, { type: "unjam", unit: u.id }), { ap, why: turnWhy(state, u, ap) })); }
     const modes = unitModes(u);
     if (modes.length > 1) { const cur = curMode(u), next = modes[(modes.indexOf(cur) + 1) % modes.length]; out.push(row("mode", `Fire mode: ${MODE_NAME[next] || next}`, order(state, { type: "firemode", unit: u.id, mode: next }), { ap: 0, why: turnWhy(state, u, 0), tip: `Now ${MODE_NAME[cur] || cur}` })); }
+    // The magazine out and in (2026-10-20 user request; sim/mags.js removeMagUnit, a swap into an empty gun).
+    if (isStacked(u) && u.magMode === "box" && detachable(item) && !magOut(item)) { const p = removeMagPlan(b, u); out.push(row("magout", "Remove magazine", order(state, { type: "inv", unit: u.id, from: loc, op: "magout" }), { ap: p.cost, why: turnWhy(state, u, p.cost) || p.why, tip: `The magazine out with its rounds (${Math.max(0, (u.mag || 0) - 1)}) into a rig pouch or a pocket (1 action), else the pack (both); the round in the chamber stays in the gun` })); }
+    if (isStacked(u) && magOut(item)) {
+      const c = insertChoices(b, u);
+      out.push(row("magin", "Insert magazine", null, { why: c.length ? "" : `No magazine for the ${u.weaponName || item.name} on them.`, tip: "A magazine they carry into the gun, with the rounds in it (a pouch or a pocket 1 action, the pack both)", sub: c.map((x) => row(`magin:${x.j}`, `${x.item.name} (${x.where === "pack" ? "pack" : x.where === "rig" ? "rig" : "pocket"})`, order(state, { type: "reload", unit: u.id, mag: x.j }), { ap: x.cost, note: `${x.n}/${x.cap}`, why: turnWhy(state, u, x.cost) || x.why || "" })) }));
+    }
   }
   if (isGunKey(item.key) && L.o === "s") out.push(row("modify", "Modify", (st2, ui2) => { GB_ACTIONS["gb-open"](state, ui2, { loc, sid: u.sid }); }, { ap: MOD_AP, apNote: "a part", why: turnWhy(state, u, MOD_AP), tip: `The gun builder: only the parts ${first(s)} carries, ${MOD_AP} action a part fitted or taken off` }));
   if (repairKind(item)) out.push(row("repair", "Repair", null, { why: "Not in the middle of a fight.", tip: "A field repair kit or the bench, after the fight" }));
@@ -313,8 +339,15 @@ function fightRows(state, ui, m, item, d, s, u, out) {
     const p = m ? unloadMagPlan(b, u, m) : { why: `Not one of the ${u.weaponName}'s magazines.` };
     const txt = Array.isArray(item.stack) && item.stack.length ? stackText(MAGAZINES[item.key].cal, item.stack) : "empty";
     out.push(row("magunload", "Unload", order(state, { type: "inv", unit: u.id, from: loc, op: "unload" }), { ap: INV_AP, why: turnWhy(state, u, INV_AP) || p.why || "", tip: `Every round in it (${txt}) out as loose rounds onto ${first(s)}, each kind its own stack. Loose rounds dropped onto it load it (up to 6 a time, any mix the gun takes).` }));
-    if (m && m.where !== "gun") out.push(row("magswap", "Reload with it", order(state, { type: "reload", unit: u.id, mag: u.mags.indexOf(m) }), { ap: reloadCost(b, u, { mag: u.mags.indexOf(m) }), why: turnWhy(state, u, reloadCost(b, u, { mag: u.mags.indexOf(m) })) || reloadRefusal(b, u, { mag: u.mags.indexOf(m) }) || "", tip: `Swap it into the ${u.weaponName} (${txt}); the magazine in the gun goes here with what is in it` }));
-  } else if (isMag(item)) out.push(row("magunload", item.unloaded ? "Load" : "Unload", null, { why: "Not in the middle of a fight: the spares are counted by the gun's Reload.", tip: `A spare magazine reloads in ${ITEM_AP[L.slot === "pack" ? "pack" : "pocket"]} action${L.slot === "pack" ? "s" : ""} from here` }));
+    if (m && m.where !== "gun") { // Load rounds: from the nearest stack of rounds it takes on them (a pocket or the rig 1 action, the pack both: mags.js LOAD_AP), up to 6
+      const srcs = roundSources(u, m.key);
+      const src = srcs.find((x) => x.where !== "pack") || srcs[0] || null;
+      const sl = src ? (carriedSpots(s).find((x) => x.item === src.item) || {}).loc || null : null;
+      const lp = src ? loadMagPlan(b, u, m, src.item, src.where) : { cost: LOAD_AP.hand, why: "No rounds for it on them." };
+      out.push(row("magloadf", "Load rounds", sl ? order(state, { type: "inv", unit: u.id, from: sl, to: loc, op: "load" }) : null, { ap: lp.cost, why: turnWhy(state, u, lp.cost) || lp.why || (sl ? "" : "No rounds for it on them."), tip: src ? `Up to ${lp.n || 6} from the ${src.n} in ${src.where === "pack" ? "the pack" : src.where === "rig" ? "the rig" : "a pocket"} (${src.where === "pack" ? "both actions" : "1 action"}); or drop rounds onto it in the Inventory window` : "" }));
+    }
+    if (m && m.where !== "gun") out.push(row("magswap", magOut(u.item) ? "Insert magazine" : "Reload with it", order(state, { type: "reload", unit: u.id, mag: u.mags.indexOf(m) }), { ap: reloadCost(b, u, { mag: u.mags.indexOf(m) }), why: turnWhy(state, u, reloadCost(b, u, { mag: u.mags.indexOf(m) })) || reloadRefusal(b, u, { mag: u.mags.indexOf(m) }) || "", tip: `Swap it into the ${u.weaponName} (${txt}); the magazine in the gun goes here with what is in it` }));
+  } else if (isMag(item)) out.push(row("magunload", "Load or unload rounds", null, { why: `In a fight only the magazines of the gun in ${first(s)}'s hands are loaded and unloaded (draw the gun it fits first).`, tip: `A spare magazine reloads in ${ITEM_AP[L.slot === "pack" ? "pack" : "pocket"]} action${L.slot === "pack" ? "s" : ""} from here` }));
   if (d.use) { const p = battleUsePlan(state, b, u, { what: "treat", loc }); out.push(row("use", `${verb(d)} it`, order(state, { type: "useItem", unit: u.id, what: "treat", loc }), { ap: p.ap, why: turnWhy(state, u, p.ap) || p.why, tip: `${useText(item.key)}. Used up.${p.ap > 1 ? " From the pack: 2 actions (1 from a pocket or the rig)." : ""}` })); }
   if (d.medKit || d.selfStab || d.cat === "medical" || d.supKey === "meds") out.push(battleMedRow(state, u));
 }

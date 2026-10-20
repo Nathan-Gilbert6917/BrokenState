@@ -412,6 +412,8 @@ export interface State {
   rawWater: number;
   groupWorks?: number; // barestart: the AI groups build their bases up (groupworks.js); absent in older saves
   gunSlots?: number; // gunmods.js: guns have attachment slots (save.js moves an older save's parts on load)
+  raidMaps?: number; // worldcfg.js RAID_MAPS: raid maps by the World… dials; absent in older saves
+  raidLegacy?: boolean; // save.js: a save from before the raid map dials (battlesize.js keeps its old raid map sizes)
   groupJails?: number; // jailhouse: the AI groups keep prisoners in jails, work and trade them (groupjails.js); absent in older saves
   machinesV?: number; // machines-2: generators with no operator, the pressure canner fitted to a kitchen (save.js migrateGenerators / migrateCanners for older saves)
   grid: HexGrid;

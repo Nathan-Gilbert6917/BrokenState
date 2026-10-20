@@ -12,6 +12,7 @@ import { DEFAULT_SIZE, sizeDef, customDef, isCustom, clampHives } from "./worlds
 import { FIRST_NAMES, LAST_NAMES, SKILLS, ROLLED_SKILLS, TRAITS, BIRTH_TRAITS, clashIn, GEAR, SUPPLIES, SUPPLY_KEYS, supValue } from "./data.js";
 import { traitDice, swapNewTraits, noteBornTraits, woundMult, traitSkill, traitPower, rollTiers, tidyTiers, cleanTier } from "./traits.js"; // the newer traits: own dice at birth, their rules
 import { sanitizeLibrary } from "./custombg.js";
+import { loadUpAll } from "./itemacts.js"; // physical rounds out of a fight (2026-10-20): the crew's guns loaded at the start
 import { sanitizeStartGear, hasPicks, normalStartGear, sanitizeStartVehicle } from "./startgear.js"; // gear picked on the new-run screen (Customize)
 import { appearanceFor, craftingStart, CRAFT_START, meleeStart, meleeOldSave, cookingStart, cookingOldSave } from "./appearance.js";
 export { radioBasesInRange };
@@ -48,6 +49,7 @@ import { foodMarkAll } from "./foodlog.js"; // the bases' food ledger (the Food 
 import { autopilotHour, autopilotResolve } from "./autopilot.js";
 import { productionHour } from "./production.js";
 import { stewardHour } from "./steward.js";
+import { helpRestore, helpHour, helpDayRoles } from "./noidle.js"; // no idle workers: help elsewhere for the hour
 import { cookShiftHour, cooksHour } from "./kitchen.js"; // part-time cooks: the cooking hours (kitchen-plus)
 import { workHour, workDayRoles } from "./work.js";
 import { stallDaily } from "./activity.js";
@@ -156,7 +158,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
     idBase: nextId - 1, // localId: this world's ids counted from its own start
     fleetV: 1, // several vehicles to a team (vehicles.js fleets: p.vehicleIds); save.js gives older saves the list
     kitV: 2, magFitV: 1, // carry kit (w2-kit): a new world in either mode is born with it (carrykit.js migrateKit is for older saves only; a hardcore world never set it and gained magazines on every load)
-    woodcutting: 2, // a world with firewood, 0.1 kg a unit (save.js: older saves are given it, or scaled to it, on load)
+    woodcutting: 2, // a world with wood, 0.1 kg a unit (save.js: older saves are given it, or scaled to it, on load)
     rawWater: 1, // a world with purified and un-purified water (water.js; save.js: older saves are given it on load)
     foodTypes: 1, // a world with food by type (foods.js; save.js migrateFood: older saves are typed on load)
     sickRest: "all", // sickrest.js: the Work tab's "Sick people rest" (all, serious, off; save.js: older saves get "all")
@@ -164,6 +166,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
     gunSlots: 1, attachV: 2, // (attachV: gunmods.js migrateParts, save.js) // a world with gun attachment slots (gunmods.js; save.js: older saves have their guns' parts moved on load)
     machinesV: 1, // machines-2: generators with no operator, the pressure canner fitted to a kitchen (save.js migrates older saves)
     genTiersV: 1, // gen-tiers: generators have tiers (power.js GEN_TIERS; save.js makes older saves' generators tier 1)
+    raidMaps: 1, // raid maps by the World… dials (worldcfg.js RAID_MAPS; save.js: an older save keeps its old raid map sizes)
     groupJails: 1, // jailhouse: the AI groups keep prisoners in jails they build, work them and trade them (groupjails.js); older saves: no limit
     grid: map.grid, tiles: map.tiles, cityId: map.cityId, originId: map.originId,
     cityIds: map.cityIds, militaryIds: map.militaryIds,
@@ -190,6 +193,8 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
     hardcoreAfterHives(state);
     state.ammoCal = 2; // rounds by calibre from the start (save.js migrates older saves)
     state.stacks = 1; // stacks in a slot from the start (itemstack.js; save.js tidies older saves)
+    state.physOutV = 1; // guns and magazines hold physical rounds out of a fight from the start (itemacts.js; save.js loads up older saves)
+    loadUpAll(state, { stores: false }); // itemacts.js: the guns and magazines they got out with loaded from the rounds they carry (the team's supplies too at Start: main.js)
     updateVision(state);
     log(state, `Day 1. Calder is falling. ${state.startPeople === 1 ? "You got out alone" : `${countWord(state.startPeople).replace(/^./, (c) => c.toUpperCase())} of you got out`} with what you could carry. ${state.factions.length + (state.hardcore?.groups?.bands?.length || 0)} other groups are out there somewhere.`, "info");
     startChronicle(state);
@@ -221,7 +226,8 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
     // player's (or the governor's) pick: a bunkhouse, a crafting bench, a farm plot and a rain catcher come to 45.
     // Food by type (foods.js): 80 days of a town's stores (cans, rice, pasta, oats, a few sacks of potatoes and onions)
     // and 10 of food that keeps (jars, jerky, peanut butter).
-    stock: { water: 50, rawwater: 0, fuel: 12, meds: 6, ammo: 80, arrows: 0, parts: HUB_START.parts, scrap: HUB_START.scrap, jars: 12, wood: 300, buildmat: 0, ...addFoodsTo(typedFood(state, "stores", 80), typedFood(state, "keeps", 10)) },
+    stock: { water: 50, rawwater: 0, fuel: 12, meds: 6, ammo: 80, arrows: 0, parts: HUB_START.parts, scrap: HUB_START.scrap, jars: 12, wood: 1000, buildmat: 0, // wood: 300 for the fires and 700 more since it builds too (woodwork 2026-10-20: a bunkhouse 600 and a bench 200 or a farm plot 300; the governor fells trees for the rest)
+    ...addFoodsTo(typedFood(state, "stores", 80), typedFood(state, "keeps", 10)) },
     radio: false, watchtower: false, buildings: [], construction: [], armory: [],
   });
   const hubBase = state.bases[0];
@@ -259,6 +265,8 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
   settleAll(state); // ammo.js: the hub's 80 rounds by the calibres of the guns it starts with
   state.ammoCal = 2; // rounds by calibre from the start (save.js migrates older saves)
   state.stacks = 1; // stacks in a slot from the start (itemstack.js; save.js tidies older saves)
+  state.physOutV = 1; // guns and magazines hold physical rounds out of a fight from the start (save.js loads up older saves)
+  loadUpAll(state, { stores: false }); // itemacts.js: every gun and magazine the crew carries loaded from the rounds each carries; at Start (main.js) out of the hub's stores too, after the new-run screen's edits (the world's stock stays whole until the run starts)
 
   seedRoadCarts(state); // carts.js: now and then a cart abandoned on a road near a town (its own dice)
   ensureHives(state); // the hives mapgen.js placed, with their starting resources (hives.js)
@@ -1002,6 +1010,7 @@ function hourOfWorld(state) {
   if (state.hour % 24 === 0) {
     workDayRoles(state); // work.js: people asleep or off at midnight count at their day's work (set again below)
     watchDayRoles(state); // watch.js: Manual people on watch likewise
+    helpDayRoles(state); // noidle.js: a Manual person whose job had no work counts at the job they helped with
     weatherDaily(state); // first, so the day's farming, water and sickness read today's weather
     basesDaily(state);
     storageDaily(state); // basestorage.js: items left outside past a base's storage wear (rain and snow double it)
@@ -1036,7 +1045,7 @@ function hourOfWorld(state) {
     fieldworksDaily(state); // fieldworks.js: relay masts' parts, raids on your field works, the groups' own, towers drawing the dead
     // eras.js: the Accord's and the containment's clocks (the victories need them to have run: checkGameOver).
     if (!state.gameOver) erasVictoryDaily(state, !state.allianceWon && accordHolds(state), hivesSecured(state));
-    causesDaily(state); // causes.js: the day each base's water, food, scrap, meds, ammo or firewood ran out
+    causesDaily(state); // causes.js: the day each base's water, food, scrap, meds, ammo or wood ran out
     ensureLeader(state);
     if (day(state) % 5 === 0) log(state, `Day ${day(state)}. ${alive(state).length} survivors.`, "info");
     foodMarkAll(state, "player"); // foodlog.js: supply runs and trade routes
@@ -1050,6 +1059,7 @@ function hourOfWorld(state) {
   hiveBirthHour(state); // hivebirth.js: a new hive site heard of, the dead seen massing, a hive you knew of risen
   festivalHour(state); // festival.js: the morning of the harvest festival
   crowdCardsHour(state); // moveout.js: a base of yours with more people than beds says so (once, then after a while or when worse)
+  helpRestore(state); // noidle.js: last hour's helpers back on their own job before anyone sets roles
   workHour(state); // work.js: people on work priorities get this hour's job (before stewards, which skip them)
   cookShiftHour(state); // kitchen.js: a Manual "Cook + second job" cooks in the cooking hours, the second job otherwise
   crewHour(state); // crews.js: crew roles run their own trips and answer their teams' small cards
@@ -1059,9 +1069,11 @@ function hourOfWorld(state) {
   watchHour(state); // watch.js: Manual people on the watch roster stand guard on their shift (after the stewards)
   jailGuardHour(state); // prisoners.js: Manual people on a jail's roster guard it while anyone is held there
   sickRestHour(state); // sickrest.js: the ill at a base rest (Manual and pinned: their job back when well); a log line each way
+  helpHour(state); // noidle.js: a Manual person whose job has no work this hour helps with one that has (their role kept)
   cooksHour(state); // kitchen.js: whoever is on Cook in a cooking hour counts as one of the day's cooks (s.cookHour)
   foodMarkAll(state, "player"); // the governor, the stewards and the crews: trades, teams packed
   jobTripsHour(state); // jobtrips.js: the outdoor jobs' trips (out to the base's land, the work, home with the load)
+  helpHour(state); // noidle.js: again, for anyone whose work the trips just finished (the last tree felled: the builders on it)
   foodMarkAll(state, "job"); // the hunters', fishers' and foragers' loads home
   tiredHour(state); // sleep.js: the hour's sleep owed or slept off (a watch in someone's sleep hours keeps them up)
   settleAll(state); // ammo.js: again, for what the work, the crews and the governor moved after the first settle (no generic ammo is left in a holder of yours between hours)

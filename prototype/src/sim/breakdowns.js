@@ -80,6 +80,8 @@ import { vehiclesAtBase, shelteredAt, frostWear } from "./vehicles.js";
 import { isManaged, prio } from "./work.js";
 import { prisonLabour } from "./prisoners.js"; // prisoners-tab: prisoners set to Clean and mend (breakdownsDaily upkeep)
 import { cfgOf } from "./worldcfg.js"; // the run's dials: Failures
+import { mendTents } from "./softcover.js"; // a camp's tents slashed or burned in a fight, mended a day at a time
+import { BED_FIXTURES } from "./data-beds.js"; // beds as furniture: their raid wear and repair
 
 export const WELL_WATER = 6; // the hub pump's share (hubevents.js WELL_DOWN.water)
 export const SCRAP_PER_PART = 4; // a repair short of scrap can use a part instead of this much
@@ -147,6 +149,7 @@ export const FIXTURES = {
   gen_lodge:   { raidOnly: true, repair: { hours: 8, cost: { scrap: 9, parts: 1 }, min: 1 }, rig: { hours: 3, cost: { scrap: 4 }, min: 0 }, what: "a wrecked lodge: no shelter in it" },
   gen_hall:    { raidOnly: true, repair: { hours: 11, cost: { scrap: 13, parts: 1 }, min: 1 }, rig: { hours: 4, cost: { scrap: 6 }, min: 0 }, what: "a wrecked hall: no shelter in it" },
   gen_barn:    { raidOnly: true, repair: { hours: 15, cost: { scrap: 20, parts: 1 }, min: 1 }, rig: { hours: 5, cost: { scrap: 8 }, min: 0 }, what: "a wrecked barn: no shelter in it" },
+  tent:        { raidOnly: true, repair: { hours: 1, cost: { scrap: 1, wood: 20 }, min: 0 }, rig: { hours: 1, cost: { scrap: 1, wood: 10 }, min: 0 }, what: "nobody sleeps in it" }, // a tent (buildings.js TENTS): mended like any building
   bunks:       { raidOnly: true, repair: { hours: 1, cost: { scrap: 2 }, min: 0 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "2 fewer beds" },
   shelves:     { raidOnly: true, repair: { hours: 1, cost: { scrap: 1 }, min: 0 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "collapsed shelves: no room on them" },
   lockers:     { raidOnly: true, repair: { hours: 1, cost: { scrap: 2 }, min: 0 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "a buckled locker: no room in it" },
@@ -172,6 +175,7 @@ export const FIXTURES = {
   guard_towers:{ raidOnly: true, outer: true, repair: { hours: 9, cost: { scrap: 10, parts: 1 }, min: 1 }, rig: { hours: 3, cost: { scrap: 4 }, min: 0 }, what: "a tower down: 8% less of a horde held back" },
   minefield:   { raidOnly: true, outer: true, repair: { hours: 6, cost: { scrap: 7, parts: 1 }, min: 1 }, rig: { hours: 2, cost: { scrap: 3 }, min: 0 }, what: "the mines dug up or set off: none left for the next attack" },
 };
+Object.assign(FIXTURES, BED_FIXTURES); // beds as furniture (data-beds.js): battered in a raid, a broken one sleeps nobody until it is repaired
 // The wall pieces (buildings.js piece, the user's request 2026-10-19): each wears and breaks on its own, a little with
 // age and every horde attack (a share of the old single wall's, by its length), and the raids' outer line. A broken
 // wall piece or gate is a gap in the ring: no wall strength by the numbers until it is repaired (basemap.js wallInfo).
@@ -693,6 +697,7 @@ export function breakdownsDaily(state) {
     // Parked vehicles in the frost; the garage keeps its cars out of it (vehicles.js frostWear).
     if (wx && wx.lo <= -3) { const inside = shelteredAt(state, base); for (const v of vehiclesAtBase(state, base.id)) v.condition = Math.max(1, v.condition - frostWear(state, base, v, wx.key === "blizzard" ? WEAR.vehicleBlizzard : WEAR.vehicleFrost, inside)); }
   }
+  mendTents(state); // softcover.js: the campers patch their tents (TENT_FIGHT.MEND a day)
 }
 
 // A machine (see the header): one that needs machine parts to repair or keeps spares.

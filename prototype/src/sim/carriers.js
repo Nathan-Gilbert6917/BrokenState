@@ -445,6 +445,7 @@ function claimFallen(state, s) {
 // with nothing left on it (markers.js clearEmptyDeathSites, economy.js, inventory.js), so the grave is on the map.
 function markWalked(state, tile, name) {
   if (tile == null) return;
+  if (state.bases.some((b) => b.tile === tile)) return; // no death site inside your own walls (world.js killSurvivor): the log says it walked off
   let site = state.deathSites.find((d) => d.tile === tile);
   if (!site) { site = { id: newId(), tile, items: [], day: day(state), names: [], lastConfirmed: day(state) }; state.deathSites.push(site); }
   if (!site.names.includes(name)) site.names.push(name);

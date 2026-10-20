@@ -10,9 +10,9 @@
 //            7 days (every lot's shelf left ÷ where it sits today) and how much of it will not be eaten in time
 //            (storage.js spoilForecast);
 //   kitchen  the cooking stations (cooking.js), their bills and whether each can go now (the cook, ingredients,
-//            purified water, firewood: cooking.js batchWhy), what went into the pots and came out over the window;
+//            purified water, wood: cooking.js batchWhy), what went into the pots and came out over the window;
 //   fires    the woodpile and what burns it a day (a camp's or shelter's fire, a cook fire, the Kitchen's stove, the
-//            water boiler, the heating), so the hours of firewood left;
+//            water boiler, the heating), so the hours of wood left;
 //   eating   the heads, eaten a day, the ration level, the quality mix of what was eaten, the days since hot food;
 //   losses   spoiled, eaten raw, sent out with teams, into the packs everyone carries (and what came back), shipped,
 //            used or taken;
@@ -127,7 +127,7 @@ export function chainStores(state, base) {
 }
 
 // The woodpile and what burns it: { wood, parts: [{ key, name, lit, perDay, note }], perDay, perHour, hours, days }.
-// hours: the firewood left at today's burn (Infinity with nothing burning).
+// hours: the wood left at today's burn (Infinity with nothing burning).
 export function chainFires(state, base) {
   const wood = Math.max(0, base.stock.wood || 0);
   const parts = [];
@@ -141,7 +141,7 @@ export function chainFires(state, base) {
     const live = S.bills.some((b) => !b.paused && !billDone(b));
     const crew = live ? fireCrew(state, base) : [];
     const hrs = crew.reduce((a, c) => a + c.hours, 0);
-    parts.push({ key: "cookfire", name: stationName(base, "cookhouse"), lit: live && hrs > 0, perDay: hrs * COOK.fireWood, note: `${COOK.fireWood} firewood an hour it cooks (${COOK.fireHours} hours a day)` });
+    parts.push({ key: "cookfire", name: stationName(base, "cookhouse"), lit: live && hrs > 0, perDay: hrs * COOK.fireWood, note: `${COOK.fireWood} wood an hour it cooks (${COOK.fireHours} hours a day)` });
   }
   if (hasKitchen(base)) {
     const lit = !kitchenCold(base) && !base.stoveSave && residents(state, base.id).length > 0;
@@ -151,7 +151,7 @@ export function chainFires(state, base) {
     const b = boilerUse(state, base);
     if (b.active) parts.push({ key: "boiler", name: "Water boiler", lit: b.lit, perDay: b.wood * (b.share ?? 1), note: "boils the drinking water the filters do not cover" });
     const h = heatUse(state, base);
-    if (h.total > 0) parts.push({ key: "heat", name: "Heating", lit: true, perDay: h.wood, note: "below 0°C (fuel when the firewood runs out)" });
+    if (h.total > 0) parts.push({ key: "heat", name: "Heating", lit: true, perDay: h.wood, note: "below 0°C (fuel when the wood runs out)" });
   }
   const perDay = parts.reduce((a, p) => a + p.perDay, 0);
   const perHour = perDay / 24;
@@ -165,11 +165,11 @@ export function chainKitchen(state, base, win = foodWindow(state, base)) {
     const S = stationState(base, key);
     const why = stationWhy(state, base, key);
     const crew = why ? [] : key === "canteen" ? kitchenCrew(state, base) : fireCrew(state, base);
-    const noWood = key === "cookhouse" && !(isShelter(base) && !count(base, "cookhouse")) && !((base.stock.wood || 0) > 1e-6); // a cook fire burns firewood by the hour (cooking.js runStation); a shelter's own fire is paid by the hour
+    const noWood = key === "cookhouse" && !(isShelter(base) && !count(base, "cookhouse")) && !((base.stock.wood || 0) > 1e-6); // a cook fire burns wood by the hour (cooking.js runStation); a shelter's own fire is paid by the hour
     const bills = S.bills.map((b) => {
       const R = COOK_RECIPES[b.recipe];
       if (!R) return null;
-      const block = b.paused ? "paused" : billDone(b) ? "done" : !billWants(state, base, b) ? "enough in store" : why || (!crew.length ? (key === "canteen" ? "no cook on duty" : "nobody home to tend it") : noWood ? "no firewood for the cook fire" : batchWhy(state, base, key, b));
+      const block = b.paused ? "paused" : billDone(b) ? "done" : !billWants(state, base, b) ? "enough in store" : why || (!crew.length ? (key === "canteen" ? "no cook on duty" : "nobody home to tend it") : noWood ? "no wood for the cook fire" : batchWhy(state, base, key, b));
       return { id: b.id, recipe: b.recipe, name: R.name, out: R.out, mode: modeText(state, base, b), can: !block, idle: block === "enough in store" || block === "done" || block === "paused", why: block, last: b.why || "" };
     }).filter(Boolean);
     return { key, name: stationName(base, key), why, crew: crew.map((c) => ({ id: c.s.id, name: c.s.name, lvl: c.lvl, hours: c.hours })), bills, runs: bills.some((b) => b.can) };
@@ -261,9 +261,9 @@ function chainTips(state, base, { stores, fires, kitchen, eating, losses, lasts,
   }
   if (!cooks && !tips.length) say(2, "Build a cook fire (or craft a camp cook pot: 3 scrap): nothing cooks here, so raw meat is eaten raw (food poisoning, −7 mood) and nobody gets hot food.");
   // The fire.
-  if (fires.parts.length && fires.perDay > EPS && fires.hours < 48) say(fires.hours < 12 ? 0 : 2, `Bring in firewood: ${Math.floor(fires.wood)} left burns ${r1(fires.perDay)} a day, about ${Math.floor(fires.hours)} hours. No fire, nothing cooks.`);
+  if (fires.parts.length && fires.perDay > EPS && fires.hours < 48) say(fires.hours < 12 ? 0 : 2, `Bring in wood: ${Math.floor(fires.wood)} left burns ${r1(fires.perDay)} a day, about ${Math.floor(fires.hours)} hours. No fire, nothing cooks.`);
   const out = fires.parts.find((p) => (p.key === "fire" || p.key === "stove") && !p.lit);
-  if (out) say(1, `The ${out.name.toLowerCase()} is out: light it (it needs firewood) so the food can be cooked.`);
+  if (out) say(1, `The ${out.name.toLowerCase()} is out: light it (it needs wood) so the food can be cooked.`);
   // Spoilage.
   const spoil = per(losses.spoiled), eat = eating.eaten;
   if (stores.outside >= 1) {

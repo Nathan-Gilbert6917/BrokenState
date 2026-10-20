@@ -48,7 +48,7 @@ const answerCards = (st) => { while (st.cards.length) { const c = st.cards.shift
 {
   console.log("The crafting bench");
   const b = BUILDINGS.craftbench, wb = BUILDINGS.workbench, tb = BUILDINGS.toolbench;
-  check(b.cost.scrap === 12 && b.cost.parts === 1 && Object.keys(b.cost).length === 2, `12 scrap and a part (${JSON.stringify(b.cost)})`);
+  check(b.cost.scrap === 10 && b.cost.parts === 1 && b.cost.wood === 100 && Object.keys(b.cost).length === 3, `10 scrap, a part and 100 wood for the table (woodwork) (${JSON.stringify(b.cost)})`);
   check(b.hours === 12 && !b.req, `12 work-hours, no skill (${b.hours})`);
   check(b.cost.scrap >= 10 && b.cost.scrap <= 12 && b.hours >= 8 && b.hours <= 12, "within the asked range (10–12 scrap, 8–12 hours)");
   check(b.cost.scrap / HUB_START.scrap <= 0.3 && b.cost.scrap > BUILDINGS.farm_plot.cost.scrap, `a modest share of the starting scrap, more than a farm plot (${Math.round((b.cost.scrap / HUB_START.scrap) * 100)}%)`);
@@ -72,7 +72,7 @@ const answerCards = (st) => { while (st.cards.length) { const c = st.cards.shift
   const q1 = queueBuild(st, h, "bunkhouse");
   const q2 = queueBuild(st, h, "craftbench");
   check(/queued/.test(q1) && /queued/.test(q2), `a bunkhouse and a crafting bench queued (${q1} ${q2})`);
-  check(h.stock.scrap === HUB_START.scrap - 32 && h.stock.parts === HUB_START.parts - 1, "paid from the starting stores");
+  check(h.stock.scrap === HUB_START.scrap - BUILDINGS.bunkhouse.cost.scrap - BUILDINGS.craftbench.cost.scrap && h.stock.parts === HUB_START.parts - 1, "paid from the starting stores");
   tickHour(st);
   check(!st.cards.some((c) => c.crowdFor === h.id), "no Overcrowded card on the first hour");
   let bunkDay = null, benchDay = null;

@@ -123,6 +123,7 @@ export function trayStale(state, card) {
   const bGone = (id) => !(state.bases || []).some((b) => b.id === id);
   if (card.outbreakBase != null && bGone(card.outbreakBase)) return "the base is gone";
   if (card.festivalBase != null && bGone(card.festivalBase)) return "the base is gone"; // festival.js
+  if (card.mapBase != null && bGone(card.mapBase)) return "the base is gone"; // staging.js: a card with Open the build map
   if (card.raidReport && card.raidReport.baseId != null && bGone(card.raidReport.baseId)) return "the base is gone";
   if (card.recruit && card.recruit.baseId != null && card.recruit.partyId == null && bGone(card.recruit.baseId)) return "the base is gone";
   if (card.jobId != null && state.jobs && Array.isArray(state.jobs.list) && !state.jobs.list.some((j) => j.id === card.jobId)) return "the job is gone";

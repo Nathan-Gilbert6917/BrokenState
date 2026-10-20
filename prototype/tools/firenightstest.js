@@ -1,6 +1,6 @@
-// Firewood: the fire does the work (fire-nights, 2026-10-19, user request "Firewood still does not seem to be a highly
-// needed and consuming item ... Having a camp uses firewood. Boiling water uses fire wood, cooking uses firewood. Bases
-// use firewood to heat up the survivors during the night ... make sure firewood is a medium priority behind food and
+// Wood: the fire does the work (fire-nights, 2026-10-19, user request "Wood still does not seem to be a highly
+// needed and consuming item ... Having a camp uses wood. Boiling water uses fire wood, cooking uses wood. Bases
+// use wood to heat up the survivors during the night ... make sure wood is a medium priority behind food and
 // water, especially early game"). src/sim/upkeep.js HEAT.night / chillAt, heatRateAt; needs.js heatDaily; woodcutting.js
 // fireDayBurn, campDayBurn, shelterFire, campFireHour, woodNeed (nights, dailyKeep, pressing), chillDaysAhead;
 // autopilot.js woodCritical / planWood; factions.js groupHeatShare; staging.js shelterView; ui/ui.js (the Fire row).
@@ -57,11 +57,11 @@ section("The heating rate: a freezing day, a cool night, a warm night");
   check(near(heatRateAt(5, 2), HEAT.fuel * HEAT.night) && near(heatRateAt(12, HEAT.chillAt - 0.1), HEAT.fuel * HEAT.night), `above freezing with a night under ${HEAT.chillAt}°C: the night's fire, ${HEAT.night} of a freezing day's`);
   check(heatRateAt(12, HEAT.chillAt) === 0 && heatRateAt(20, 14) === 0 && heatRateAt(10) === 0, "a warm night (or no low given): nothing");
   check(chillNightAt(5, 2) && !chillNightAt(-2, -6) && !chillNightAt(20, 14), "chillNightAt: a cool night above freezing only");
-  check(near(woodFor(HEAT.fuel * HEAT.night), 4.5) && near(woodFor(HEAT.fuel), 15), `firewood a head: ${woodFor(HEAT.fuel * HEAT.night)} a cool night, ${woodFor(HEAT.fuel)} a freezing day`);
+  check(near(woodFor(HEAT.fuel * HEAT.night), 4.5) && near(woodFor(HEAT.fuel), 15), `wood a head: ${woodFor(HEAT.fuel * HEAT.night)} a cool night, ${woodFor(HEAT.fuel)} a freezing day`);
 }
 
 // ======================================================================
-section("A base above a shelter: the night's fire burns firewood at midnight");
+section("A base above a shelter: the night's fire burns wood at midnight");
 {
   const st = W();
   const h = quietHub(st);
@@ -70,23 +70,23 @@ section("A base above a shelter: the night's fire burns firewood at midnight");
   check(warm != null && chill != null && cold != null, `the seasons give a warm day (${warm}), a cool night (${chill}) and a freezing day (${cold})`);
   st.hour = chill * 24 + 1;
   const u = heatUse(st, h);
-  check(u.night && near(u.each, HEAT.fuel * HEAT.night) && near(u.wood, n * 4.5), `a cool night (low ${Weather.dayLowTemp(st)}°C): ${u.wood} firewood for ${n} (4.5 a head)`);
-  check(/night's fire/.test(u.text) && /firewood a day/.test(u.text), `its text says so: "${u.text}"`);
+  check(u.night && near(u.each, HEAT.fuel * HEAT.night) && near(u.wood, n * 4.5), `a cool night (low ${Weather.dayLowTemp(st)}°C): ${u.wood} wood for ${n} (4.5 a head)`);
+  check(/night's fire/.test(u.text) && /wood a day/.test(u.text), `its text says so: "${u.text}"`);
   check(/night's fire/.test(upkeepLine(st, h).heating), `the Upkeep line too: "${upkeepLine(st, h).heating}"`);
   h.stock.wood = 300; h.stock.fuel = 10;
   heatDaily(st, h);
-  check(near(h.stock.wood, 300 - n * 4.5) && h.stock.fuel === 10 && !h.cold && near(h.heat.wood, r1(n * 4.5)), `midnight: ${r1(n * 4.5)} firewood burned, no fuel, nobody cold (${h.stock.wood} left)`);
+  check(near(h.stock.wood, 300 - n * 4.5) && h.stock.fuel === 10 && !h.cold && near(h.heat.wood, r1(n * 4.5)), `midnight: ${r1(n * 4.5)} wood burned, no fuel, nobody cold (${h.stock.wood} left)`);
   // A warm night: nothing.
   st.hour = warm * 24 + 1;
   heatDaily(st, h);
   check(heatUse(st, h).total === 0 && near(h.stock.wood, 300 - n * 4.5) && !h.cold, "a warm night: nothing burned");
-  // No firewood or fuel on a cool night: cold, at the night's share of a freezing day's cost.
+  // No wood or fuel on a cool night: cold, at the night's share of a freezing day's cost.
   st.hour = chill * 24 + 1;
   h.stock.wood = 0; h.stock.fuel = 0;
   const ppl = residents(st, h.id).map(plain);
   const m0 = ppl.map((s) => s.mood), hp0 = ppl.map((s) => s.health);
   heatDaily(st, h);
-  check(near(h.cold, HEAT.night, 0.011) && ppl.every((s, i) => near(s.mood, m0[i] - COLD.mood * HEAT.night, 0.05) && near(s.health, hp0[i] - COLD.hp * HEAT.night, 0.05)), `no firewood on a cool night: cold ${h.cold} (mood −${r1(COLD.mood * HEAT.night)}, health −${r1(COLD.hp * HEAT.night)} each: ${HEAT.night} of a freezing day's)`);
+  check(near(h.cold, HEAT.night, 0.011) && ppl.every((s, i) => near(s.mood, m0[i] - COLD.mood * HEAT.night, 0.05) && near(s.health, hp0[i] - COLD.hp * HEAT.night, 0.05)), `no wood on a cool night: cold ${h.cold} (mood −${r1(COLD.mood * HEAT.night)}, health −${r1(COLD.hp * HEAT.night)} each: ${HEAT.night} of a freezing day's)`);
   check(/cold through the night/.test(st.log[0].text), `and the log says it was the night ("${st.log[0].text.slice(0, 90)}…")`);
   // A freezing day: the whole of it, as before.
   st.hour = cold * 24 + 1;
@@ -97,7 +97,7 @@ section("A base above a shelter: the night's fire burns firewood at midnight");
   h.stock.wood = 0;
   const w = Wd.woodNeed(st, h);
   const chillDays = Wd.chillDaysAhead(st);
-  check(w.nights >= 0 && near(w.nights, r1(n * 4.5 * chillDays * Wd.WOOD.spare), 0.11) && w.dailyKeep >= w.nights, `the plan: ${w.nights} firewood for the nights' fires (${chillDays} cool nights in the next ${Wd.WOOD.nightDays} days, a fifth to spare), ${w.dailyKeep} of daily draws kept`);
+  check(w.nights >= 0 && near(w.nights, r1(n * 4.5 * chillDays * Wd.WOOD.spare), 0.11) && w.dailyKeep >= w.nights, `the plan: ${w.nights} wood for the nights' fires (${chillDays} cool nights in the next ${Wd.WOOD.nightDays} days, a fifth to spare), ${w.dailyKeep} of daily draws kept`);
   st.hour = chill * 24 + 1;
   const w2 = Wd.woodNeed(st, h);
   check(w2.night > 0 && near(w2.night, r1(n * 4.5)) && w2.daily >= w2.night && w2.pressing && w2.short, `on a cool night: tonight's ${w2.night} in the day's draw (${w2.daily}), pressing with an empty pile`);
@@ -126,7 +126,7 @@ section("A camp's or shelter's fire burns for its people: warmth, the water boil
   for (let i = 0; i < 24; i++) Wd.shelterFire(st, h);
   check(near(h.stock.wood, 1000 - f.total, 0.01) && h.fireFed === true && h.fireBurn && near(h.fireBurn.wood, f.total, 0.01), `24 hours of it: ${r1(1000 - h.stock.wood)} burned from the store (the fire's day ${h.fireBurn && h.fireBurn.wood})`);
   check(heatUse(st, h).fire && heatUse(st, h).total === 0, "the fire warms them (no heating from the store on top)");
-  // More people: more firewood (the per-head shares), the fire itself the same.
+  // More people: more wood (the per-head shares), the fire itself the same.
   const extra = []; for (let i = 0; i < 4; i++) { const s = plain(makeSurvivor(st)); s.location = { kind: "base", baseId: h.id }; st.survivors.push(s); extra.push(s); }
   const f2 = Wd.fireDayBurn(st, h);
   check(f2.heads === n + 4 && f2.fire === f.fire && near(f2.total - f.total, 4 * (4.5 + Wd.WOOD.fire.boilHead + Wd.WOOD.fire.cookHead) * land, 0.01), `4 more people: +${r1(f2.total - f.total)} a day (${r1(4.5 + Wd.WOOD.fire.boilHead + Wd.WOOD.fire.cookHead)} each × ${land}), the fire itself still ${f2.fire}`);
@@ -145,7 +145,7 @@ section("A camp's or shelter's fire burns for its people: warmth, the water boil
   st.hour = chill * 24 + 1; delete h.fireBoil; h.stock[RAW] = 50; h.stock.water = 0; h.stock.wood = 0;
   const w = Wd.woodNeed(st, h);
   check(w.heat > 0 && w.fire > 0 && near(w.fire, r1((Wd.WOOD.fire.shelter + f.boil + f.cook) * land), 0.11) && w.need >= w.heat + w.nights && w.pressing, `the shelter's plan: the fire's ${w.fire} a day, the nights' ${w.nights}, the winter's ${w.heat} (the fire burns it): ${w.need} wanted, pressing`);
-  check(/firewood a day/.test(text(renderModal(st, ui({ id: h.id, tab: "overview" })) || "")) || /firewood a day/.test(text(renderModal(st, ui({ id: h.id })) || "")), "the base window's Fire row shows what the fire burns a day");
+  check(/wood a day/.test(text(renderModal(st, ui({ id: h.id, tab: "overview" })) || "")) || /wood a day/.test(text(renderModal(st, ui({ id: h.id })) || "")), "the base window's Fire row shows what the fire burns a day");
   const v = shelterView(st, h);
   check(v && v.burn && near(v.burn.total, Wd.fireDayBurn(st, h).total, 0.01), `shelterView carries the fire's burn (${v && v.burn && v.burn.total})`);
   // It goes out with the pile, and cannot be lit without an hour's worth.
@@ -189,12 +189,12 @@ section("A team's camp fire burns for its people too");
   startOrder(st, p, { type: "camp", hours: 30 });
   let burnt = 0;
   for (let i = 0; i < 12; i++) { st.hour++; burnt += Wd.campDayBurn(st, p).total / 24; taskHour(st, p); }
-  check(p.campFire !== false && near(300 - carried(p, "wood"), burnt, 0.05) && burnt > 12 * Wd.WOOD.fire.camp * land / 24, `12 hours in camp: ${r1(300 - carried(p, "wood"))} firewood burned (more than the bare fire's ${r1(12 * Wd.WOOD.fire.camp * land / 24)})`);
+  check(p.campFire !== false && near(300 - carried(p, "wood"), burnt, 0.05) && burnt > 12 * Wd.WOOD.fire.camp * land / 24, `12 hours in camp: ${r1(300 - carried(p, "wood"))} wood burned (more than the bare fire's ${r1(12 * Wd.WOOD.fire.camp * land / 24)})`);
   st.hour = cold * 24 + 8;
   check(Wd.campDayBurn(st, p).heat > c.heat && near(Wd.campDayBurn(st, p).heat, 4 * 15), "a freezing day in camp: 15 a head for warmth");
   p.cargo.supplies.wood = 0;
   st.hour++; taskHour(st, p);
-  check(p.campFire === false, "no firewood carried: the fire goes out");
+  check(p.campFire === false, "no wood carried: the fire goes out");
 }
 
 // ======================================================================
@@ -250,7 +250,7 @@ section("AI groups: their woodpiles burn for the cool nights too");
   const { warm, chill, cold } = daysOf(st);
   check(near(groupHeatShare(cold), Wd.freezeShare(cold) + HEAT.night * Wd.chillShare(cold)) && groupHeatShare(cold) >= Wd.freezeShare(cold), `a freezing day's share ${groupHeatShare(cold)} (the frost ${Wd.freezeShare(cold)} + the thaws' nights)`);
   const chillDays = []; for (let d = 0; d < 112; d++) if (Wd.chillShare(d) > 0) chillDays.push(d);
-  check(chillDays.length > 20 && chillDays.length < 112 && chillDays.every((d) => near(groupHeatShare(d), Wd.freezeShare(d) + HEAT.night * (1 - Wd.freezeShare(d)))), `${chillDays.length} days a year have cool nights: HEAT.night of a freezing day's firewood a head (${GROUP_WOOD.burn * HEAT.night})`);
+  check(chillDays.length > 20 && chillDays.length < 112 && chillDays.every((d) => near(groupHeatShare(d), Wd.freezeShare(d) + HEAT.night * (1 - Wd.freezeShare(d)))), `${chillDays.length} days a year have cool nights: HEAT.night of a freezing day's wood a head (${GROUP_WOOD.burn * HEAT.night})`);
   check([...Array(112).keys()].some((d) => groupHeatShare(d) === 0), "and high summer burns none");
   void warm; void chill; void survivorById;
 }

@@ -9,6 +9,7 @@ import { ROLES } from "../sim/economy.js";
 import { SKILL_NAMES } from "../sim/data.js";
 import { assignStations } from "../sim/buildings.js";
 import { COOK_SECOND, cookPlusOf, setCookPlus } from "../sim/kitchen.js"; // Cook + a second job (fixed, part-time)
+import { assignedRole } from "../sim/noidle.js"; // a Manual person helping elsewhere this hour keeps their own job
 import { STANCES } from "../sim/parties.js";
 import { vehiclesAtBase } from "../sim/vehicles.js";
 import { PERSONALITIES } from "../sim/autopilot.js";
@@ -44,11 +45,12 @@ export function roleSelect(state, s, extra = "") {
   const role = roleOf(state, s);
   const plus = cookPlusOf(state, s);
   const roles = state.work ? state.work.roles.map((r) => [r.id, r.name, r.kind]) : DEFAULT_ROLES().map((r) => [`@${r.name}`, r.name, r.kind || "base"]);
-  const desc = role ? `${role.name}: works by its priorities (Work tab)${role.kind === "crew" ? " and goes on the crew's trips" : ""}.` : plus ? `Manual: ${cookPlusName(plus)}: cooks in the cooking hours (05:00–06:00, 16:00–20:00) and works as ${ROLES[plus].name} the rest of the day (counted at ${ROLES[plus].name} for the day's work).` : ROLES[s.role] ? `Manual: ${ROLES[s.role].desc}` : "Role";
+  const own = assignedRole(s); // sim/noidle.js: their job, not the one they help with this hour
+  const desc = role ? `${role.name}: works by its priorities (Work tab)${role.kind === "crew" ? " and goes on the crew's trips" : ""}.` : plus ? `Manual: ${cookPlusName(plus)}: cooks in the cooking hours (05:00–06:00, 16:00–20:00) and works as ${ROLES[plus].name} the rest of the day (counted at ${ROLES[plus].name} for the day's work).` : ROLES[own] ? `Manual: ${ROLES[own].desc}${own !== s.role && ROLES[s.role] ? ` (No work for it this hour: helping with ${ROLES[s.role].name} meanwhile.)` : ""}` : "Role";
   const fixedName = (k, r) => (k === "cook" ? "Cook (kitchen all day)" : r.name);
   return `<select data-action="role" data-id="${s.id}"${tip(desc)}${extra}>
     <optgroup label="Work roles (priorities)">${roles.map(([id, name, kind]) => `<option value="w:${esc(id)}" ${role && role.id === id ? "selected" : ""}>${esc(name)}${kind === "crew" ? " (crew)" : ""}</option>`).join("")}</optgroup>
-    <optgroup label="Fixed job (Manual)">${Object.entries(ROLES).map(([k, r]) => `<option value="${k}" ${!role && !plus && s.role === k ? "selected" : ""}>${esc(fixedName(k, r))}</option>`).join("")}</optgroup>
+    <optgroup label="Fixed job (Manual)">${Object.entries(ROLES).map(([k, r]) => `<option value="${k}" ${!role && !plus && own === k ? "selected" : ""}>${esc(fixedName(k, r))}</option>`).join("")}</optgroup>
     <optgroup label="${esc(COOK_PLUS_LABEL)}">${COOK_SECOND.map((k) => `<option value="cook+${k}" ${!role && plus === k ? "selected" : ""}>${esc(cookPlusName(k))}</option>`).join("")}</optgroup>
   </select>`;
 }
@@ -81,6 +83,7 @@ export function applyRoleChoice(state, s, value) {
   if (!s) return "";
   const v = String(value || "");
   let msg = "";
+  delete s.helpWas; // sim/noidle.js: the job picked now holds (not given back as last hour's help ends)
   if (v.startsWith("w:")) {
     workState(state);
     const key = v.slice(2);

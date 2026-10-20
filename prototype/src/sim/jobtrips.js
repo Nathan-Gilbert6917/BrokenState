@@ -37,9 +37,12 @@ import { addFood, qtyOf } from "./foods.js"; // food by type: the loads come hom
 import { noteOutput } from "./output.js";
 import { tileLabel } from "./parties.js";
 import { RAW } from "./water.js";
-import { armTripEvent, fireTripEvent, holdTrip, creditBonus, holdText } from "./tripevents.js"; // trouble on the way (trips-plus #2)
+import { armTripEvent, fireTripEvent, holdTrip, creditBonus, holdText, followHold, bankFinds } from "./tripevents.js"; // trouble on the way (trips-plus #2); a crew's (teamwork)
+import { noteMates, teamMult, matesText } from "./teamwork.js"; // teamwork: the same job on the same tile at the same time, a crew
 import { lunchOverlap, isLunchHour } from "./meals.js"; // the lunch break out at work
 import { PACK, packFood, topUpPack } from "./eating.js"; // the food they take out for lunch
+import { chopHour, hasChopWork } from "./woodwork.js"; // woodwork: the woodcutters fell the trees marked on the base map before going out
+import { haulStep, haulDropped, haulTripState } from "./hauling.js"; // hauling: a haul trip is s.trip with job "haul" (call-time only)
 
 const r2 = (v) => Math.round((v || 0) * 100) / 100;
 const POPS = 12; // deposits kept for the map
@@ -87,6 +90,7 @@ export function returnTools(state, base, s) {
   if (!s || !s.gear || !base) return 0;
   const take = (arr, k) => { const it = arr[k]; if (it && it.jobTool) { delete it.jobTool; arr[k] = null; base.armory.push(it); n++; } };
   for (const k of Object.keys(s.gear)) if (k !== "backpack" && k !== "rig" && k !== "armor" && k !== "carry") take(s.gear, k);
+  if (s.gear.carry && s.gear.carry.haulCart) { delete s.gear.carry.haulCart; base.armory.push(s.gear.carry); s.gear.carry = null; n++; } // hauling.js: the armory's cart back
   (s.pockets || []).forEach((_, i) => take(s.pockets, i));
   const pk = packOf(s);
   if (pk) pk.forEach((_, i) => take(pk, i));
@@ -170,8 +174,12 @@ function sampleHour(t) {
 }
 
 // The load, rolled when the work ends: { job-specific fields } (the dice of the old daily jobs, for these hours).
+// teamwork.js: a crew's member works as many more hours' worth as the crew's bonus (teamMult: the land thins by it too).
 function rollLoad(state, base, s, t) {
-  const hrs = tripHours(state, t);
+  const n = noteMates(state, s, t);
+  const tm = teamMult(t.job, n);
+  if (n > 1) t.crewN = n;
+  const hrs = tripHours(state, t) * (TRIP_JOBS[t.job].fixed ? 1 : tm);
   if (!(hrs > 1e-6)) return { empty: true };
   const h = sampleHour(t);
   switch (t.job) {
@@ -185,12 +193,12 @@ function rollLoad(state, base, s, t) {
   }
 }
 
-// What a load is, in a few words: "18 food (2 small game)", "140 firewood (14 kg)", "2 water" …
+// What a load is, in a few words: "18 food (2 small game)", "140 wood (14 kg)", "2 water" …
 export function loadText(t) {
   const c = t.carry;
   if (!c || c.empty) return "";
   switch (t.job) {
-    case "wood": return c.wood > 0 ? `${Math.round(c.wood)} firewood (${Math.round(c.wood * 0.1)} kg)` : "";
+    case "wood": return c.wood > 0 ? `${Math.round(c.wood)} wood (${Math.round(c.wood * 0.1)} kg)` : "";
     case "forage": return c.food > 0.05 || c.herbs || c.honey ? [c.food > 0.05 ? `${r1(c.food)} food` : "", c.herbs ? `${c.herbs} meds (herbs)` : "", c.honey ? "honey" : ""].filter(Boolean).join(", ") : "";
     case "hunt": case "fish": {
       const n = [c.deer ? `${c.deer} deer` : "", c.hog ? `${c.hog} hog${c.hog > 1 ? "s" : ""}` : "", c.small ? `${c.small} small game` : "", c.fish ? `${c.fish} fish` : ""].filter(Boolean).join(", ");
@@ -198,16 +206,16 @@ export function loadText(t) {
     }
     case "scavenge": return c.finds ? Object.entries({ ...c.got, ...(c.ammo ? { ammo: c.ammo.q } : {}) }).map(([k, n]) => `${n} ${k === "buildmat" ? "building materials" : k}`).join(", ") : "";
     case "water": return c.water > 0 ? `${r1(c.water)} water (un-purified)` : "";
-    default: return "";
+    default: return c.text || ""; // hauling.js: the load's own words
   }
 }
 const r1 = (v) => Math.round((v || 0) * 10) / 10;
-// The pop over the base when a load comes in: "+18 food", "+140 firewood" …
+// The pop over the base when a load comes in: "+18 food", "+140 wood" …
 function popText(t) {
   const c = t.carry;
   if (!c || c.empty) return "";
   switch (t.job) {
-    case "wood": return c.wood > 0.5 ? `+${Math.round(c.wood)} firewood` : "";
+    case "wood": return c.wood > 0.5 ? `+${Math.round(c.wood)} wood` : "";
     case "forage": return c.food > 0.05 ? `+${r1(c.food)} food${c.herbs ? ` +${c.herbs} meds` : ""}` : c.herbs ? `+${c.herbs} meds` : "";
     case "hunt": case "fish": return c.rations > 0.05 ? `+${Math.round(c.rations)} ${t.job === "fish" ? "fish" : "meat"}` : "";
     case "scavenge": return c.finds ? `+${loadText(t)}` : "";
@@ -280,7 +288,7 @@ function credit(state, base, s, t, now) {
       }
     }
   }
-  const bonus = creditBonus(state, base, t, st); // tripevents.js: a find, a boar's meat (with the load: a stockpile's room too)
+  const bonus = [creditBonus(state, base, t, st), bankFinds(state, base, s)].filter(Boolean).join(" "); // tripevents.js: a find, a boar's meat (with the load: a stockpile's room too); what a crew's dice gave them to carry (teamwork)
   let popTile = dp.tile;
   if (dp.put) {
     let left = 0, home = 0;
@@ -325,11 +333,13 @@ function packForTrip(state, base, s) {
 
 // One person's trips up to the end of the hour starting at `now`.
 function stepPerson(state, base, s, now) {
+  if (s.trip ? s.trip.job === "haul" : s.role === "haul") return haulStep(state, base, s, now); // hauling.js
   const end = now + 1;
   for (let guard = 0; guard < 6; guard++) {
     const t = s.trip;
     if (t) {
-      if (!t.evr) armTripEvent(state, base, s, t); // tripevents.js: the trip's trouble, if any (its own dice, once)
+      if (!t.evr) armTripEvent(state, base, s, t); // tripevents.js: the trip's trouble, if any (its own dice, once; a crew's one roll)
+      if (t.follow && followHold(state, base, s, t, now)) return; // teamwork: a mate's card or battle holds the crew
       if (t.ev && t.ev.pending && holdTrip(state, base, s, t, now)) return; // a card waits: they hold where they are
       if (!s.alive || s.trip !== t) return;
       if (t.workEnd > now) {
@@ -350,6 +360,7 @@ function stepPerson(state, base, s, now) {
       const at = t.drop != null ? t.drop : null; // left the load at a stockpile: the next trip sets out from there
       if (from < end && dayOf(from) === dayOf(t.leave)) {
         const job = mayGo(state, base, s, Math.floor(from));
+        if (job === "wood" && hasChopWork(base)) return; // woodwork: home with the load, they go to the felling marked on the map (the next hour)
         const nt = job === t.job ? planTrip(state, base, s, job, from, at) : null;
         if (nt && checkOutTool(state, base, s, job)) { nt.n = n; s.trip = nt; packForTrip(state, base, s); continue; }
       } else if (t.next != null || dayOf(from) === dayOf(t.leave)) s.tripNext = { t: r2(from), n, day: dayOf(t.leave), ...(at != null ? { from: at } : {}) };
@@ -357,6 +368,9 @@ function stepPerson(state, base, s, now) {
     }
     const job = mayGo(state, base, s, now);
     if (!job) return;
+    // woodwork: a woodcutter at the base works the felling marked on the base map (woodwork.js chopJobs) before any
+    // trip out to the land: the hour goes on it.
+    if (job === "wood" && chopHour(state, base, s, now)) { delete s.tripNext; return; }
     const nx = s.tripNext && s.tripNext.day === dayOf(now) ? s.tripNext : null;
     const start = Math.max(now, nx ? nx.t : now);
     if (start >= end) return;
@@ -374,7 +388,7 @@ export function jobTripsHour(state, now = state.hour) {
   for (const s of state.survivors) {
     if (!s.trip && !s.tripNext) continue;
     const l = s.location;
-    if (!s.alive || !l || l.kind !== "base" || (s.trip && l.baseId !== s.trip.base)) { delete s.trip; delete s.tripNext; }
+    if (!s.alive || !l || l.kind !== "base" || (s.trip && l.baseId !== s.trip.base)) { if (s.trip && s.trip.job === "haul") haulDropped(state, s); delete s.trip; delete s.tripNext; }
   }
   for (const base of state.bases) for (const s of atBase(state, base.id)) { if (!s.trip) returnTools(state, base, s); stepPerson(state, base, s, now); }
 }
@@ -400,30 +414,33 @@ export function tripDay(state, base, end = state.hour) {
 export function tripState(state, s, t = state.hour) {
   const tr = s && s.trip;
   if (!tr || t < tr.leave || t >= tr.home) return null;
+  if (tr.job === "haul") return haulTripState(state, s, t); // hauling.js
   const c = TRIP_JOBS[tr.job];
-  const held = holdText(tr); // tripevents.js: a card waits ("Facing a bear")
-  if (held) return { phase: tr.ev.phase || "work", f: tr.ev.f ?? 0.5, progress: tr.ev.f ?? 0.5, text: `${held} near ${tileLabel(state, tr.tile)}`, stage: "", job: tr.job, held: true };
+  const mates = matesText(state, s, t); // teamwork.js: out with others of the crew ("with Mara")
+  const w = mates ? ` with ${mates}` : "";
+  const held = holdText(tr); // tripevents.js: a card waits ("Facing a bear"); a crew's mates hold with them
+  if (held) { const ev = tr.ev && tr.ev.pending ? tr.ev : tr.follow; return { phase: ev.phase || "work", f: ev.f ?? 0.5, progress: ev.f ?? 0.5, text: `${held}${w} near ${tileLabel(state, tr.tile)}`, stage: "", job: tr.job, held: true, ...(mates ? { mates } : {}) }; }
   const where = tileLabel(state, tr.tile);
   const wtext = tr.job === "fish" || tr.job === "water" ? (state.tiles[tr.tile] && state.tiles[tr.tile].river ? "the river" : "the water") : where;
   const span = Math.max(1e-6, tr.workEnd - tr.arrive);
   const progress = Math.max(0, Math.min(1, (t - tr.arrive) / span));
   // The lunch hour at the work: stopped there, eating from the pack (on a walk out or home it is eaten on the way: the
   // walk's line stays).
-  if (t >= tr.arrive && t < tr.workEnd && isLunchHour(Math.floor(t), state)) return { phase: "work", f: progress, progress, text: `Lunch break at ${wtext} (from their pack)`, stage: "Lunch", job: tr.job, lunch: true };
-  if (t < tr.arrive) return { phase: "out", f: (t - tr.leave) / Math.max(1e-6, tr.arrive - tr.leave), progress: 0, text: `Heading to ${wtext}`, stage: "", job: tr.job };
+  if (t >= tr.arrive && t < tr.workEnd && isLunchHour(Math.floor(t), state)) return { phase: "work", f: progress, progress, text: `Lunch break${w} at ${wtext} (from their pack)`, stage: "Lunch", job: tr.job, lunch: true, ...(mates ? { mates } : {}) };
+  if (t < tr.arrive) return { phase: "out", f: (t - tr.leave) / Math.max(1e-6, tr.arrive - tr.leave), progress: 0, text: `Heading to ${wtext}${w}`, stage: "", job: tr.job, ...(mates ? { mates } : {}) };
   if (t < tr.workEnd) {
     const stage = c.stage[Math.min(c.stage.length - 1, Math.floor(progress * c.stage.length))];
-    return { phase: "work", f: progress, progress, text: `${stage} at ${wtext} ${Math.floor(progress * 100)}%`, stage, job: tr.job };
+    return { phase: "work", f: progress, progress, text: `${stage}${w} at ${wtext} ${Math.floor(progress * 100)}%`, stage, job: tr.job, ...(mates ? { mates } : {}) };
   }
   const load = loadText(tr);
   const f = (t - tr.workEnd) / Math.max(1e-6, tr.home - tr.workEnd);
-  if (tr.drop != null) { const T = state.tiles[tr.drop]; const at = `stockpile (${T ? `${T.x},${T.y}` : tr.drop})`; return { phase: "back", f, progress: 1, text: load ? `Dropping ${load} at ${at}` : `Dropping at ${at}`, stage: "", job: tr.job, load, drop: tr.drop }; }
-  return { phase: "back", f, progress: 1, text: load ? `Bringing ${load} back` : tr.carry ? "Heading home empty-handed" : "Heading home", stage: "", job: tr.job, load };
+  if (tr.drop != null) { const T = state.tiles[tr.drop]; const at = `stockpile (${T ? `${T.x},${T.y}` : tr.drop})`; return { phase: "back", f, progress: 1, text: load ? `Dropping ${load} at ${at}${w}` : `Dropping at ${at}${w}`, stage: "", job: tr.job, load, drop: tr.drop, ...(mates ? { mates } : {}) }; }
+  return { phase: "back", f, progress: 1, text: `${load ? `Bringing ${load} back` : tr.carry ? "Heading home empty-handed" : "Heading home"}${w}`, stage: "", job: tr.job, load, ...(mates ? { mates } : {}) };
 }
 // The people of a base out on trips at time t: [{ s, st (tripState), trip }].
 export function outWorkers(state, base, t = state.hour) {
   const out = [];
-  for (const s of atBase(state, base.id)) { const st = tripState(state, s, t); if (st) out.push({ s, st, trip: s.trip }); }
+  for (const s of atBase(state, base.id)) { if (s.trip && s.trip.job === "haul") continue; const st = tripState(state, s, t); if (st) out.push({ s, st, trip: s.trip }); } // haulers: ui/workermap.js draws them on their route
   return out;
 }
 export { survivorById };

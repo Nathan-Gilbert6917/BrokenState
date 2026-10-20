@@ -28,8 +28,8 @@ const section = (t) => console.log(`\n${t}`);
 const t0 = Date.now();
 registerCombatHandler("bbat", () => {});
 const GENERAL = ["gen_barn", "gen_hall", "gen_lodge", "gen_cabin", "gen_hut"];
-const world = (s = seed, factions = 6) => { const st = createWorld({ seed: s, factionCount: factions }); st.started = true; st.hour = 24 * 3 + 12; return st; };
-const rich = (base) => Object.assign(base.stock, { scrap: 400, parts: 30 });
+const world = (s = seed, factions = 6) => { const st = createWorld({ seed: s, factionCount: factions }); st.started = true; st.hour = 24 * 3 + 12; st.landOff = true; return st; }; // landOff: the land (basescatter.js) is tools/baseviewtest.js's
+const rich = (base) => Object.assign(base.stock, { scrap: 400, parts: 30, wood: 4000 }); // wood: a barn is 2,250 (woodwork)
 const addPeople = (st, base, n) => { for (let i = 0; i < n; i++) { const s = makeSurvivor(st); s.location = { kind: "base", baseId: base.id }; st.survivors.push(s); } };
 const wishes = (st, base) => housingAI.wishes(st, base); // autopilot.js buildWishes
 const types = (list) => list.map((w) => w.type).join(", ");
@@ -104,7 +104,7 @@ section("Storage when goods lie outside (storageWish)");
   const st = world(), h = hub(st);
   parkAway(st, h);
   const hall = addBuilding(h, "gen_hall");
-  h.stock.scrap = 700; // 1400 kg of scrap alone, against the main house's 1200
+  h.stock.scrap = 700; h.stock.wood = 1000; // 1400 kg of scrap alone, against the main house's 1200 (wood: a bunkhouse can be paid for, so the beds wish is no general building)
   const so = storageOf(st, h);
   check(so.outsideKg > 0 && so.cap === 1200, `goods lie outside (${Math.round(so.outsideKg)} kg; room ${so.cap} kg)`);
   const w = wishes(st, h);
@@ -132,7 +132,7 @@ section("Storage when goods lie outside (storageWish)");
   h.buildings = h.buildings.filter((b) => b.id !== hall.id);
   const out3 = storageOf(st, h).outsideKg;
   const w3 = wishes(st, h), s3 = w3.find((x) => ["crates", "shed", "storehouse", "warehouse"].includes(x.type));
-  check(s3 && BUILDINGS[s3.type].storeKg >= out3 && !w3.some((x) => GENERAL.includes(x.type)), `no general building: ${s3 ? BUILDINGS[s3.type].name : "nothing"} for ${Math.round(out3)} kg outside`);
+  check(s3 && BUILDINGS[s3.type].storeKg >= out3 && !w3.some((x) => GENERAL.includes(x.type)), `no general building: ${s3 ? BUILDINGS[s3.type].name : "nothing"} for ${Math.round(out3)} kg outside (${types(w3)})`);
   // Nothing on the ladder can go up (every plot taken): a general building for shelves and lockers, not saved for.
   rich(h); h.stock.scrap = 1500;
   fillPlots(h, "building", ["cistern", "greenhouse", "common_room"]);

@@ -176,7 +176,7 @@ section("The raid map (combat.js placeMilTrucks, AREAS.miltrucks; the crews)");
     const err = combatAct(st, { type: "search", unit: u.id, box: box.id, open: true });
     if (err) { console.log("    search:", err); continue; }
     opened++;
-    const allowed = new Set([...Object.values(TRUCK_LOOT).flatMap((T) => [...T.sup.map(([k]) => k), ...T.gear.map(([k]) => k)]), ...Object.values(TRUCK_GEAR).flatMap((r) => r.map(([k]) => k))]); // TRUCK_GEAR: the weapons overhaul's hook (TRUCK_LOOT_HOOKS)
+    const allowed = new Set([...Object.values(TRUCK_LOOT).flatMap((T) => [...T.sup.map(([k]) => k), ...T.gear.map(([k]) => k)]), ...Object.values(TRUCK_GEAR).flatMap((r) => r.map(([k]) => k)), ...Object.keys(TRUCK_KINDS).flatMap((kind) => Object.keys(gunsFrom(`truck:${kind}`)))]); // TRUCK_GEAR: the weapons overhaul's hook (TRUCK_LOOT_HOOKS); gundist.js: a listed gun's Army kin (truck:<kind>)
     if (box.contents && [...Object.keys(box.contents.sup).filter((k) => !["arrows", "wood"].includes(k)), ...box.contents.gear.filter((it) => !it.blueprint && !it.book && GEAR[it.key] && !["key"].includes(it.key)).map((it) => it.key)].every((k) => allowed.has(k) || (isRoundKey(k) && allowed.has("ammo")) || (FOODS[k] && (allowed.has("food") || allowed.has("preserved"))) /* food by type: the truck's "food" as the Army's items */ || k === "frag" || k === "smokegren" || k === "flashbang" /* TRUCK_FLASH: crates of them now and then */ || !!(GEAR[k] && GEAR[k].mag))) lootOk++; // GEAR mag: the spare magazines a found gun comes with (carrykit.js gunMags, w2-kit)
     value += box.contents ? valueOf(box.contents) : 0;
     const after = b.units.filter((x) => x.ztype === "soldier" && x.aware).length;
@@ -189,7 +189,7 @@ section("The raid map (combat.js placeMilTrucks, AREAS.miltrucks; the crews)");
     st.combat = null;
   }
   // A National Guard base's street map: everything in every container (the motor pool's trucks apart from the rest).
-  let baseTrucks = 0;
+  let baseTrucks = 0, baseArea = 0;
   for (let i = 0; i < 4; i++) {
     const st = createWorld({ seed: SEED * 300 + i, factionCount: 7 });
     const tile = st.militaryIds[0];
@@ -209,6 +209,7 @@ section("The raid map (combat.js placeMilTrucks, AREAS.miltrucks; the crews)");
       if (combatAct(st, { type: "search", unit: u.id, box: c.id, open: true }) || !c.contents) continue;
       if (c.truck) baseTrucks += valueOf(c.contents); else baseValue += valueOf(c.contents);
     }
+    baseArea += (b.w * b.h) / (40 * 30); // the street map's area over the old Large one's (battlesize.js: a base's raid map is the run's largest)
     baseRaids++;
     st.combat = null;
   }
@@ -220,7 +221,7 @@ section("The raid map (combat.js placeMilTrucks, AREAS.miltrucks; the crews)");
   check(opened >= 3 && rose === opened, `the crew strapped in rises when it is opened (${rose}/${opened})`);
   check(heatUp === opened, `the noise: Heat goes up (${heatUp}/${opened})`);
   check(again === opened, `an opened truck stays opened on the next raid (${again}/${opened})`);
-  check(baseRaids > 0 && truckValue > 0.15 * (baseValue / baseRaids) && truckValue < 0.75 * (baseValue / baseRaids), "one intact cargo truck is a good haul: 15–75% of everything in a National Guard base's buildings");
+  check(baseRaids > 0 && truckValue > 0.15 * (baseValue / baseArea) && truckValue < 0.75 * (baseValue / baseArea), `one intact cargo truck is a good haul: 15–75% of everything in a National Guard base's buildings, on a 40 × 30 map's worth of them (${Math.round(baseValue / baseArea)})`);
   check(baseRaids > 0 && baseTrucks / baseRaids < 0.8 * (baseValue / baseRaids), "the motor pool adds to a base without doubling it");
 }
 
@@ -506,10 +507,10 @@ section("Found cars (foundcars.js)");
   } else check(true, "no locked car on this map");
   // Keys, hotwire, inspect, siphon, claim on the first car that runs or can be fixed.
   let target = null;
-  for (const id of ids) { const r = carRecord(st, b, id); if (repairOf(r) && stand(r)) { target = r; break; } }
+  for (const id of ids) { const r = carRecord(st, b, id); if (repairOf(r) && !r.open && stand(r)) { target = r; break; } } // not the one just broken into
   if (!target) { const r = carRecord(st, b, ids[0]); r.cond = { engine: "ok", tyres: "ok", battery: "ok", fuel: 4 }; target = r; stand(r); }
   stand(target);
-  target.locked = false;
+  target.locked = false; target.open = false;
   check(act(target, "enter") === "" && target.open, "an unlocked car: Get in");
   act(target, "keys");
   check(target.keys === true || target.keys === false, `looked for the keys: ${target.keys ? "found" : "none"}`);

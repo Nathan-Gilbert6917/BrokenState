@@ -25,7 +25,7 @@ export const SUP_ITEM = {
   parts:        { stack: 3,   word: "machine parts" },
   scrap:        { stack: 4,   word: "scrap" },
   jars:         { stack: 6,   word: "jars" },
-  wood:         { stack: 30,  word: "firewood" },                  // a 3 kg bundle
+  wood:         { stack: 30,  word: "wood" },                  // a 3 kg bundle
   carparts:     { stack: 2,   bulky: true, word: "car parts" },
   gunparts:     { stack: 10,  small: true, word: "gun parts" },
   electronics:  { stack: 10,  small: true, word: "electronics" },

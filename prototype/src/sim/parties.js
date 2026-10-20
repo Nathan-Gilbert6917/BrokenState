@@ -9,6 +9,7 @@
  * @typedef {{ vehicle?: boolean | "bike", speed?: number, footSpeed?: number | null, fuelMult?: number, progress?: number,
  *   idx?: number, fuel?: number, offroad?: number, onroad?: number, walkers?: number, cartTer?: any, maxHours?: number, startHour?: number, weather?: boolean, known?: number, used?: number }} TravelOpts
  */
+import { haulConvoyArrive } from "./hauling.js"; // AI parity: a group's haul convoy unloads at its outpost (call-time only)
 import { sendMembers } from "./members.js"; // an AI party is its people (docs/adr/0001-ai-parity.md)
 import { kitParty, packForJob } from "./loadouts.js"; // the launchers go with a raid; the rest of the job's kit
 import { teamTraitFx, appetite } from "./traits.js"; // Keen Eye: the team's sight; Glutton: the food a trip takes
@@ -79,6 +80,7 @@ import { packRounds, addRecord, drawTeamShots, sortFind, suppliesText, findRound
 import { packLauncherRounds } from "./launchers.js"; // the rounds for the launchers the crew carries (section 13)
 import { loadoutRounds } from "./gunrounds.js"; // the rounds their guns and spare magazines leave loaded with (physical rounds)
 import { packMags, packShells } from "./carrykit.js"; // magazines as items (section 15): the spares go along; each gun's rounds at hand
+import { campPitchHours } from "./tents.js"; // the team's tent bags pitch a camp quicker (call-time only)
 import { SHELLS, usesInternal } from "./mags.js"; // a shotgun's shells at hand are its tube's load too
 import { noteTripHome } from "./trips.js"; // order templates and repeat trips
 import { prisonersHome } from "./prisoners.js";
@@ -103,7 +105,7 @@ import { waterIn, drawWater, waterText, teamWaterIn, takeTeamWater, stockHas, ta
 import { partySaw } from "./groupworld.js"; // a group learns your bases its parties pass
 import { lyingFor, INTEL } from "./intel.js"; // a gang that overheard a group's caravan waits for it
 import { withLook, surveyErr, noteLook } from "./intelnotes.js"; // what a team sees of a group's base (the State Map's estimates, intelest.js)
-import { KEY_KINDS, keyKg } from "./carry.js"; // a capped water or firewood task counts its own haul (call-time only: safe in the import cycle)
+import { KEY_KINDS, keyKg } from "./carry.js"; // a capped water or wood task counts its own haul (call-time only: safe in the import cycle)
 import { nomadCampAt, nomadCampArrive } from "./nomads.js"; // a nomad camp you spotted: attack it (call-time only)
 import { unpackPerson } from "./supitems.js"; // supplies carried as items, unpacked at home (call-time only: safe in the import cycle)
 import { fightSides, fightersOf, applySide } from "./groupfight.js"; // fights nobody watches: your rules
@@ -150,7 +152,7 @@ export const MISSIONS = {
   strikecamp:  { name: "Strike the camp",  desc: "Old saves' order: a camp is struck from its base window now (staging.js strikeCamp).", hidden: true },
   hunt:        { name: "Hunting",          desc: "A hunting trip (hunting.js): the team's name while its plan hunts.", hidden: true },
   fish:        { name: "Fishing",          desc: "A fishing trip (hunting.js): the team's name while its plan fishes.", hidden: true },
-  wood:        { name: "Woodcutting",      desc: "A woodcutting trip (woodcutting.js): the team's name while its plan cuts firewood.", hidden: true },
+  wood:        { name: "Woodcutting",      desc: "A woodcutting trip (woodcutting.js): the team's name while its plan cuts wood.", hidden: true },
   caravan:     { name: "Trade caravan",    desc: "Caravan stop: trade here, unload, stay a day, go on to the next destination or return home (caravans.js).", hidden: true },
 };
 
@@ -257,7 +259,7 @@ export const poolLoad = (p) => supplyLoad(p.supplies) + cargoLoad(p.cargo);
 export function cargoRoom(state, p) {
   let cap = partyCapacity(state, p);
   if (p.haulCap != null && !p.vehicle) cap = Math.min(cap, p.haulCap);
-  if (p.task && p.task.capKg != null && p.task.kind0 != null && KEY_KINDS[p.task.type]) cap = Math.min(cap, poolLoad(p) + Math.max(0, p.task.capKg - (keyKg(p, KEY_KINDS[p.task.type]) - p.task.kind0))); // carry.js capTask: water and firewood counted by themselves
+  if (p.task && p.task.capKg != null && p.task.kind0 != null && KEY_KINDS[p.task.type]) cap = Math.min(cap, poolLoad(p) + Math.max(0, p.task.capKg - (keyKg(p, KEY_KINDS[p.task.type]) - p.task.kind0))); // carry.js capTask: water and wood counted by themselves
   else if (p.task && p.task.capKg != null && p.task.pool0 != null) cap = Math.min(cap, p.task.pool0 + p.task.capKg); // carry.js capTask: collect only as much as asked
   return Math.max(0, cap - poolLoad(p));
 }
@@ -1900,9 +1902,10 @@ export function pitchDone(state, p) {
   p.phase = "out"; // its mission (outpost, establish) is still on it
   return arrive(state, p) || "";
 }
-// Hours of pitching an order takes on arrival (the planner's and the queue's estimates).
-/** @param {State} state @param {string} mission */
-export const pitchHoursFor = (state, mission) => (mission === "outpost" || mission === "establish" || mission === "camp" ? CAMP.setupHours : 0);
+// Hours of pitching an order takes on arrival (the planner's and the queue's estimates): with the team (p), what its
+// tent bags make of it (tents.js campPitchHours).
+/** @param {State} state @param {string} mission @param {Party | null} [p] */
+export const pitchHoursFor = (state, mission, p = null) => (mission === "outpost" || mission === "establish" || mission === "camp" ? (p ? campPitchHours(state, p) : CAMP.setupHours) : 0);
 
 // ---------- arriving and acting ----------
 /** @param {State} state @param {Party} p */
@@ -2737,7 +2740,10 @@ function aiPartyHour(state, p) {
     }
   }
   if (p.idx >= p.path.length - 1) {
-    if (p.kind === "convoy") {
+    if (p.kind === "convoy" && p.haulTo != null) {
+      haulConvoyArrive(state, p); // hauling.js: a group's haulers at its outpost
+      removeParty(state, p);
+    } else if (p.kind === "convoy") {
       const to = factionById(state, p.targetFaction);
       if (to && to.alive) {
         addFoods(to, typedFood(state, "stores", 10));

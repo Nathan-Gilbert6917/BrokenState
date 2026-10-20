@@ -19,8 +19,11 @@
 //   - Hovering an order lights the card's action diamonds it would spend (data-spend on the button, data-s on the
 //     diamonds: 1 is the last; styles.css :has). Orders that need doing now (a jam, a gun or shotgun empty, someone to
 //     revive) pulse (URGENT).
-//   - Fits from 1280×720 up to a TV: the bar is a size container; narrow, the buttons fold to their icons (the label
-//     is in the tip), very wide it grows (styles.css #cbbar).
+//   - Each order is a tile that reads without a hover (the user's request 2026-10-18): the icon over its name, its key as
+//     a keycap at the top left, its cost as a pill at the top right (◆1, ◆2, free, ends turn; a tray button: +N orders
+//     behind it). The turn controls on the right are labelled tiles too. styles.css #cbbar .bb-btn / .bb-ctl.
+//   - Fits from 1280×720 up to a TV: the bar is a size container; narrow, the tiles shrink a little and wrap to a
+//     second row, very wide it grows (styles.css #cbbar).
 import { KEYMAP, KEY_BY_ID, keyLabel } from "./keymap.js";
 import { unitChips, weaponPanelHtml } from "./battlehud.js";
 import { statusIcons } from "./status.js";
@@ -34,6 +37,7 @@ import { BMAP } from "../sim/buildingmaps.js";
 import { WINDOW } from "../sim/windows.js"; // the window orders' costs
 import { SHOVE, BOARD } from "../sim/barricade.js"; // Shove, Board up, Tear down (sim/barricade.js)
 import { WIRE } from "../sim/wire.js"; // Cut wire (sim/wire.js)
+import { TENT_TAKE } from "../sim/data-tents.js"; // Take down, Slash at a tent (sim/tentfight.js)
 import { MEDIC } from "../sim/medics.js";
 import { PLATE_AP } from "../sim/carrykit.js";
 
@@ -47,11 +51,11 @@ const shortKey = (k) => String(k || "").replace(/Shift\+/g, "⇧").replace(/Ctrl
 export const ICON = {
   move: "👣", face: "🧭", sneak: "🤫", goup: "⬆️", godown: "⬇️", evac: "🚨", evacStop: "✋", retreat: "🏃", extract: "🏁",
   shoot: "🎯", cab: "🚘", overwatch: "👁️", reload: "🔄", ammocycle: "🔃", getshells: "📥", firemode: "🔀", unjam: "🔧", suppress: "💢",
-  launch: "🚀", glround: "🔃", glreload: "🔄", melee: "🗡️", pull: "👊", subdue: "🤜", taser: "⚡", reloadTaser: "🔋", pepper: "🌶️",
+  launch: "🚀", glround: "🔃", glreload: "🔄", melee: "🗡️", shoveFoe: "🫸", pull: "👊", subdue: "🤜", taser: "⚡", reloadTaser: "🔋", pepper: "🌶️",
   throw: "🧨", throwspear: "🔱", pickspear: "✊", hunker: "🛡️",
   meds: "💊", heal: "🩹", revive: "💉", selfStab: "🩸", dragAlly: "🛷", dropVehicle: "🚑", drag: "🛷", tie: "🪢", finish: "💀", execute: "☠️", plate: "🦺",
   search: "🔍", searchBody: "🔍", quick: "🔎", ground: "🧺", dropCarried: "📤", dropAllCarried: "📤", pickCarried: "📦", crush: "🥾", doubletap: "💥", pickup: "🏋️", stowbody: "📦",
-  peek: "🚪", close: "🚪", brace: "🧱", climb: "🧗", checkwindow: "🪟", openwindow: "🪟", closewindow: "🪟", breakwindow: "🪟", shove: "🪑", boardup: "🔨", teardown: "🪓", cutwire: "✂️", lights: "💡", light: "🔦", nvg: "🥽", visor: "⛑️",
+  peek: "🚪", close: "🚪", brace: "🧱", climb: "🧗", checkwindow: "🪟", openwindow: "🪟", closewindow: "🪟", breakwindow: "🪟", shove: "🪑", boardup: "🔨", teardown: "🪓", cutwire: "✂️", strike: "⛺", slashtent: "🔪", lights: "💡", light: "🔦", nvg: "🥽", visor: "⛑️",
   vehicle: "🧳", board: "🚙", disembark: "🚶", drive: "🏎️", turn: "↪️", gunner: "🪖", pullOut: "🆘",
   surrender: "🙌", takeAlive: "🤝", ladder: "🪜", push: "✋", ram: "🐏", dropRam: "⬇️", loadRam: "🐏", unloadRam: "🐏", takeRam: "🐏", drop: "🪨",
   inventory: "🎒", handover: "🤲", cones: "📐", more: "⋯", callout: "📣",
@@ -65,9 +69,9 @@ export const COST = {
   dropCarried: 0, dropAllCarried: 0, evac: "all", evacStop: 0, dragAlly: 0, dropVehicle: 0, inventory: 0, cones: 0, selfStab: 0, takeRam: 0, dropRam: 0,
   shoot: "end", cab: "end", overwatch: "end", melee: "end", hunker: "end", subdue: "end", taser: "end", launch: "end", brace: "end", ram: "end", drop: "end", surrender: "end",
   reload: 1, getshells: 1, suppress: 1, throwspear: 1, pickspear: 1, throw: 1, tie: 1, drag: 1, meds: 1, heal: 1, revive: 2, finish: 1, crush: 1, doubletap: 1, pickup: 1,
-  stowbody: 1, pickCarried: 1, close: 1, climb: BMAP.CLIMB.ap, checkwindow: 0, openwindow: WINDOW.OPEN_AP, closewindow: WINDOW.OPEN_AP, breakwindow: WINDOW.BREAK.ap, shove: SHOVE.AP, boardup: BOARD.AP, teardown: BOARD.TEAR.ap, cutwire: WIRE.AP, lights: INDOOR.AP, search: SEARCH.ap, searchBody: SEARCH.ap, extract: 1, retreat: 1, board: 1, disembark: 1,
+  stowbody: 1, pickCarried: 1, close: 1, climb: BMAP.CLIMB.ap, checkwindow: 0, openwindow: WINDOW.OPEN_AP, closewindow: WINDOW.OPEN_AP, breakwindow: WINDOW.BREAK.ap, shove: SHOVE.AP, boardup: BOARD.AP, teardown: BOARD.TEAR.ap, cutwire: WIRE.AP, strike: TENT_TAKE.AP, slashtent: TENT_TAKE.SLASH_AP, lights: INDOOR.AP, search: SEARCH.ap, searchBody: SEARCH.ap, extract: 1, retreat: 1, board: 1, disembark: 1,
   turn: 1, gunner: 1, drive: 2, pullOut: MEDIC.PULL.AP, goup: 1, godown: 1, unjam: 1, plate: PLATE_AP, reloadTaser: 1, pepper: 1, execute: 1, glreload: 1, ladder: 1,
-  push: 1, loadRam: 1, unloadRam: 1, handover: 1, callout: 1, // handover: unitOrders' ap wins (a free Face toward the mate out of the cone)
+  push: 1, shoveFoe: 1, loadRam: 1, unloadRam: 1, handover: 1, callout: 1, // handover: unitOrders' ap wins (a free Face toward the mate out of the cone)
 };
 const costOf = (o) => (o.ap != null ? o.ap : COST[o.v] != null ? COST[o.v] : String(o.v).startsWith("rescue:") ? 1 : null);
 const costWord = (c) => (c === 0 ? "Free" : c === "end" ? "Ends the unit's turn" : c === "all" ? "Uses everyone's actions" : c == null ? "" : `${c} action${c === 1 ? "" : "s"}`);
@@ -83,10 +87,10 @@ const costBadge = (c) => (c === 0 ? "free" : c === "end" ? "end" : c === "all" ?
 // the vehicle, the rest, then the look-only buttons (in the card's corner).
 const GROUPS = [
   ["move", "face", "sneak", "goup", "godown", "evac", "evacStop", "retreat", "extract"],
-  ["shoot", "cab", "overwatch", "reload", "ammocycle", "getshells", "firemode", "unjam", "suppress", "launch", "glround", "glreload", "melee", "pull", "subdue", "taser", "reloadTaser", "pepper", "throw", "throwspear", "pickspear", "hunker"],
+  ["shoot", "cab", "overwatch", "reload", "ammocycle", "getshells", "firemode", "unjam", "suppress", "launch", "glround", "glreload", "melee", "shoveFoe", "pull", "subdue", "taser", "reloadTaser", "pepper", "throw", "throwspear", "pickspear", "hunker"],
   ["meds", "heal", "revive", "selfStab", "dragAlly", "dropVehicle", "drag", "tie", "finish", "execute", "plate"],
   ["search", "searchBody", "quick", "ground", "handover", "dropCarried", "dropAllCarried", "pickCarried", "crush", "doubletap", "pickup", "stowbody"],
-  ["peek", "close", "brace", "climb", "checkwindow", "openwindow", "closewindow", "breakwindow", "shove", "boardup", "teardown", "cutwire", "lights", "light", "nvg", "visor"], // doors, windows (sim/windows.js), barricades (sim/barricade.js), wire (sim/wire.js) and lights
+  ["peek", "close", "brace", "climb", "checkwindow", "openwindow", "closewindow", "breakwindow", "shove", "boardup", "teardown", "cutwire", "strike", "slashtent", "lights", "light", "nvg", "visor"], // doors, windows (sim/windows.js), barricades (sim/barricade.js), wire (sim/wire.js) and lights
   ["vehicle", "board", "disembark", "drive", "turn", "gunner", "pullOut"],
   ["callout"], // the rest: Call out (sim/parley.js), a rescue's ropes and locks, the siege kit, Surrender, Take them alive
   ["inventory", "cones"],
@@ -115,7 +119,7 @@ const WHEN = {
   ground: "Nothing on the ground within reach.", drag: "Stand next to a body, someone knocked out or a downed teammate.",
   heal: "Only a medic heals: someone carrying a med kit (bandage, trauma or surgical).", revive: "Only a medic, next to a downed teammate.",
   finish: "No downed enemy in sight.", gunner: "Only from inside a vehicle with a turret.", pullOut: "Nobody down inside a vehicle.",
-  retreat: "No evac strip here.", extract: "Raids only: from a green extraction zone.", subdue: "Nobody right next to them to subdue.",
+  retreat: "No evac strip here.", extract: "Raids only: from a green extraction zone.", subdue: "Nobody right next to them to subdue.", shoveFoe: "Nobody right next to them to shove.",
   tie: "Nobody knocked out or surrendered next to them.", throw: "Nothing to throw.", climb: "Inside a building on a raid: right next to a window.",
   peek: "Right next to a door or doorway (inside a building on a raid, or a house on the map).", close: "Next to an open door.",
   brace: "Next to a closed door.", crush: "No body right next to them that could get up.", doubletap: "No body in sight that could get up.",
@@ -133,7 +137,7 @@ export const BAR_KEYS = KEYMAP.filter((k) => k.ctx === "battle" && (k.v || k.id 
 const vOfKey = (k) => (k.v ? k.v : k.id === "battle.inventory" ? "inventory" : "cones");
 const keyOfV = (v) => (v === "inventory" ? "battle.inventory" : v === "cones" ? "bview.cones" : `battle.${v}`);
 const KEYDEF = new Map(BAR_KEYS.map((k) => [vOfKey(k), k]));
-const SHORT = { light: "Light", nvg: "NVG", lights: "Lights", vehicle: "Vehicle", search: "Search", quick: "Quick search", retreat: "Retreat", extract: "Extract", stowbody: "Stow body", pickup: "Pick up body", crush: "Crush skull", visor: "Visor", firemode: "Fire mode", unjam: "Unjam", suppress: "Suppress", throwspear: "Throw spear", pickspear: "Pick up spear", ammocycle: "Next round", launch: "Launch", gunner: "Turret", pullOut: "Pull out", close: "Close door", brace: "Brace door", climb: "Climb", checkwindow: "Check window", openwindow: "Open window", closewindow: "Close window", breakwindow: "Break window", shove: "Shove", boardup: "Board up", teardown: "Tear down", cutwire: "Cut wire", face: "Face", sneak: "Sneak", drag: "Drag", ground: "Ground", callout: "Call out" };
+const SHORT = { light: "Light", nvg: "NVG", lights: "Lights", vehicle: "Vehicle", search: "Search", quick: "Quick search", retreat: "Retreat", extract: "Extract", stowbody: "Stow body", pickup: "Pick up body", crush: "Crush skull", visor: "Visor", firemode: "Fire mode", unjam: "Unjam", suppress: "Suppress", throwspear: "Throw spear", pickspear: "Pick up spear", ammocycle: "Next round", launch: "Launch", gunner: "Turret", pullOut: "Pull out", close: "Close door", brace: "Brace door", climb: "Climb", checkwindow: "Check window", openwindow: "Open window", closewindow: "Close window", breakwindow: "Break window", shove: "Shove", shoveFoe: "Shove foe", boardup: "Board up", teardown: "Tear down", cutwire: "Cut wire", strike: "Take down", slashtent: "Slash tent", face: "Face", sneak: "Sneak", drag: "Drag", ground: "Ground", callout: "Call out" };
 const nameOf = (v) => { if (SHORT[v]) return SHORT[v]; const k = KEYDEF.get(v); return k ? k.label.split(/ \(|:/)[0] : v; };
 
 // The bar's orders for the selected unit: unitOrders' list, the core ones it lacks (greyed, with why), Inventory and

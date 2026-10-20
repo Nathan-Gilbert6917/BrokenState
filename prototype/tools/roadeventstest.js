@@ -162,7 +162,7 @@ section("Hub events: the new ones");
   const lose = Math.round(foodIn(h0.stock) * RATS.share);
   check(rats.text.includes(`${Math.min(RATS.max, Math.max(RATS.min, lose))} food`), "the rats' loss on the card is the code's");
   const cold = hubEventCard(s0, "cold", h0);
-  check(cold.choices[0].label.includes(`${COLD.wood * atBase(s0, h0.id).length} firewood`), "the cold snap's firewood is 3 days' heating a head");
+  check(cold.choices[0].label.includes(`${COLD.wood * atBase(s0, h0.id).length} wood`), "the cold snap's wood is 3 days' heating a head");
 }
 
 // ---------------------------------------------------------------------------------------------------------

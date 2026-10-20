@@ -10,8 +10,11 @@
 // plainly, and a parked car that is storage is a container too.
 // moveCarButton: the Move button for a parked car (the base window's Vehicles tab): the map opens with the car picked.
 import { baseById } from "../sim/world.js";
-import { openBaseMap, layoutOf, itemByKey, unplaceItem, baseMapSummary, storeContents, gridOfCell, buildMenu, fittingsIn, hostedItems, neighboursOf, canLink, FOOT, GRID, STEAL, NO_BUILD } from "../sim/basemap.js";
-import { BUILDINGS, demolishRefund, pieceName, ringMat } from "../sim/buildings.js";
+import { openBaseMap, layoutOf, itemByKey, unplaceItem, baseMapSummary, storeContents, gridOfCell, buildMenu, fittingsIn, hostedItems, neighboursOf, canLink, FOOT, GRID, STEAL, NO_BUILD, landPieceAt, chopToolAt, landWords, bagKindOf, pickFoot, pickName } from "../sim/basemap.js";
+import { clearOf, pieceWord, CLEAR } from "../sim/basescatter.js"; // the land: a piece's clearing
+import { layoutDone } from "../sim/staging.js"; // Open the build map: the base's ask ends once its map is open
+import { BUILDINGS, demolishRefund, pieceName, ringMat, TENTS, tentKind } from "../sim/buildings.js";
+import { chopHands } from "../sim/woodwork.js"; // woodwork: who is felling a clearing
 import { nearRect, active } from "../sim/combat.js"; // who of yours stands next to a store of theirs (an assault)
 import { HAUL } from "../sim/raidloot.js";
 import { badge, hint, costChips, chip } from "./uikit.js";
@@ -28,6 +31,8 @@ const HOSTS = "a hut, cabin, lodge, hall or barn";
 const MENU_TIP = {
   "General buildings": `Empty shells of five sizes (the hut to the barn): once one stands, fittings and benches go on its floor. No plot: the map is the limit. Two standing against each other can share a doorway.`,
   Fittings: `Built only on the floor inside ${HOSTS}: bunk beds (+2 beds), storage shelves and lockers (containers: the Storage tab), a wood stove (a cook fire indoors).`,
+  Tents: `The Makeshift tent is built (poles and a tarp: 1 bed, −1 mood a day for its sleeper, no storage). A tent bag in the stores is pitched with a click, no builders: a one-person tent (1 bed, 15 kg out of the weather), a two-person (2, 30 kg), a four-person 3 × 3 (4, 60 kg). Strike one to pack it back into its bag. A new camp has no beds until a tent is up.`,
+  Furniture: `Beds crafted at the bench (Crafting) and set from the stores on the floor inside ${HOSTS}: a cot (1 bed, −1 mood a day for its sleeper), a bed (1), a bunk bed (2, −0.5 each), a large bed 2 × 2 (2, +1 each; a lodge, hall or barn only: a hut's or a cabin's floor has no room for it). No builders: a click sets it. Demolish picks it up again.`,
   Buildings: "The buildings with a roof of their own (on a building plot) and the yard's roofed stores.",
   "Yard things": "The small things in the yard (on a utility plot): benches, barrels, the well, crates… A bench, a crate or a locker may stand inside a general building too.",
   Defences: "Barricades, spike pits, the trench, sandbags, floodlights, the watchtower, and the wall's pieces (walls 1×1, 1×2, 1×4 of the wall's material, the 1×4 gate, wall stands): anywhere on the map, inside the yard or out in front of the wall; a wall that would close a ring with no gate in it is refused. (The wire, the guard towers and the minefield lay themselves round the wall.)",
@@ -72,16 +77,21 @@ export function layoutPanel(state, b, cui, preview = "") {
   if (!base) return "";
   const lay = layoutOf(state, base);
   const picked = L.pick ? itemByKey(state, base, L.pick) : null;
-  const pickD = L.pickType ? BUILDINGS[L.pickType] : null, pickF = L.pickType ? FOOT[L.pickType] : null;
+  const pickD = L.pickType ? BUILDINGS[L.pickType] : null, pickF = L.pickType ? FOOT[L.pickType] : null, pickBag = L.pickType ? bagKindOf(L.pickType) : null;
   let html = `<div class="cbhead"><div class="cbtitle">Base map: ${esc(base.name)}</div>
     <div class="small muted">Pick something to build from the Build list and click where it goes (its outline follows the mouse: green fits, red does not; R turns it). Click a placed thing, on the map or in the lists, to select it: its card has Move, the doorways and Demolish; a second click on the map lifts it to move it. Nothing is built within ${NO_BUILD} cells of the edge (the tinted margin). Esc puts the pick down. Nobody is on the map; the clock stands still.</div></div>`;
   if (pickD && pickF) html += `<div class="card small" style="margin-top:0.4rem"><div class="spread"><b>Building: ${esc(pickD.piece ? pieceName({ type: L.pickType, mat: pickD.piece === "stand" ? 0 : ringMat(base) }) : pickD.name)}</b><span class="muted">${pickF.w} × ${pickF.h}${L.rot & 1 ? " (turned)" : ""}</span></div>
     <div class="muted">Click where it goes (R turns it); ${pickF.fit ? `a fitting goes on the floor inside ${HOSTS}` : pickF.general ? "an empty shell: fittings (bunks, shelves, lockers, a stove) and benches go on its floor once it stands" : pickF.kind === "wall" ? "a wall piece goes anywhere, the ring round the yard too, of the wall's own material (the Defenses tab picks another); leave no gap, and a gate before the ring closes" : pickF.kind === "gate" ? "a gate: your people walk through it, attackers batter it; the cell either side of it stays open" : pickF.kind === "stand" ? "a wall stand: put it right behind a wall so whoever climbs it sees and shoots over it" : pickF.kind === "defence" ? "a defence goes anywhere on the map, inside the yard or out in front of the wall" : "anywhere on the map, right against anything else, only the cell outside its door kept open"}. The cost is paid when it is placed; the builders do the rest.</div>
     <div class="cbactions" style="margin-top:0.3rem"><button data-action="cb-deploy" data-v="rotate" data-tip="Turn it a quarter (R)">Turn <span class="key">R</span></button><button data-action="cb-deploy" data-v="pickType" data-bt="" data-tip="Put it down without building it (Esc)">Cancel <span class="key">Esc</span></button></div></div>`;
+  else if (pickBag) html += `<div class="card small" style="margin-top:0.4rem"><div class="spread"><b>Pitching: ${esc(pickName(L.pickType))}</b><span class="muted">${pickFoot(L.pickType).w} × ${pickFoot(L.pickType).h}${L.rot & 1 ? " (turned)" : ""}</span></div>
+    <div class="muted">Click where it goes (R turns it): on open ground, a way in and out kept. Its bag comes out of the stores; no cost, no builders.</div>
+    <div class="cbactions" style="margin-top:0.3rem"><button data-action="cb-deploy" data-v="rotate" data-tip="Turn it a quarter (R)">Turn <span class="key">R</span></button><button data-action="cb-deploy" data-v="pickType" data-bt="" data-tip="Put it down without pitching it (Esc)">Cancel <span class="key">Esc</span></button></div></div>`;
   else if (picked) html += `<div class="card small" style="margin-top:0.4rem"><div class="spread"><b>${esc(picked.label)}</b><span class="muted">${sizeText(picked)}${L.rot & 1 ? " (turned)" : ""}</span></div>
     <div class="muted">${picked.fit ? `A fitting: on the floor inside ${HOSTS}.` : picked.kind === "wall" ? "A wall piece: anywhere on the map, the ring round the yard too. R turns it. Walls only hold where they close round the base (a house's walls count): leave no gap, and put a gate in before the ring closes (always a way in and out)." : picked.kind === "gate" ? "A gate (1×4): your people walk through it, attackers batter it. The cell either side of it stays open. R turns it." : picked.kind === "stand" ? "A wall stand: a platform a level up. Put it right behind a wall so whoever climbs it sees and shoots over it. R turns it." : picked.kind === "defence" ? "A defence: anywhere on the map, right next to anything, inside the yard or out in front of the wall." : picked.kind === "field" ? "A crop plot: anywhere on the map, right next to anything else." : picked.kind === "vehicle" ? "A parked car: anywhere on the map, right next to anything else; raiders and the dead batter it if it stands in their way." : picked.general ? "A general building: anywhere on the map, right next to anything else, the cell outside its door kept open; what stands inside moves with it." : "A building: anywhere on the map, right next to anything else, only the cell outside its door kept open."}</div>
     <div class="cbactions" style="margin-top:0.3rem"><button data-action="cb-deploy" data-v="rotate" data-tip="Turn it a quarter (R)">Turn <span class="key">R</span></button><button data-action="cb-deploy" data-v="pick" data-k="" data-tip="Put the pick down without placing it (Esc)">Cancel <span class="key">Esc</span></button>${["wall", "gate", "stand"].includes(picked.kind) && picked.key.startsWith("b:") ? `<button data-action="demolish" data-base="${base.id}" data-id="${picked.rec.id}" data-ok="1" data-tip="Pull this piece down for good: half its scrap and parts come back. A gap it leaves in the wall is a way in.">Pull it down</button>` : ""}</div></div>`;
   html += selectionCard(state, base, L, lay);
+  html += landCard(state, base, L);
+  html += clearingList(state, base);
   html += preview; // what is under the mouse (ui/combat.js previewHtml: the pick's fit, a placed thing, a store)
   const msg = cui.msg || L.msg; // the last order's refusal first (ui/combat.js act), else what the map said it did
   if (msg) html += `<div class="small ${cui.msg ? "warn" : "good"} cbmsg">${esc(msg)}</div>`;
@@ -118,7 +128,7 @@ function buildHtml(state, base, L) {
       const short = !m.ok && /^Needs \d/.test(m.why); // short of materials: the red chips say it
       return `<div class="bmrow${on ? " on" : ""}${m.ok ? "" : " off"}"${tip(`${m.name}: ${m.w} × ${m.h} cells, ${m.hours} work-hours. ${m.desc}${m.ok ? "" : ` ${m.why}.`}`)}>
         <div class="spread"><span><b>${esc(m.name)}</b> <span class="small muted">${m.w} × ${m.h}</span></span><button class="mini${on ? " active" : m.ok ? " primary" : ""}" data-action="cb-deploy" data-v="pickType" data-bt="${on ? "" : m.type}" ${m.ok ? "" : "disabled"}${tip(m.ok ? (on ? "Picked: click where it goes on the map (click here again to put it down)" : "Pick it: its outline follows the mouse; click where it goes") : m.why)}>${on ? "Picked" : "Build"}</button></div>
-        <div class="bmfoot">${costChips(m.cost, base.stock)}${chip({ icon: "⏱", name: `${m.hours}h`, t: `${m.hours} work-hours for the builders` })}</div>
+        <div class="bmfoot">${m.tentBag ? chip({ icon: "⛺", name: `${m.have} in the stores`, tone: m.have ? "ok" : "bad", t: "Tent bags are found, traded or carried in: pitched from the stores with a click, no cost and no builders" }) : m.furniture ? chip({ icon: "🛏", name: `${m.have} in the stores`, tone: m.have ? "ok" : "bad", t: "Furniture is crafted at the bench (Crafting) or found, and set from the stores: no cost and no builders" }) : `${costChips(m.cost, base.stock)}${chip({ icon: "⏱", name: `${m.hours}h`, t: `${m.hours} work-hours for the builders` })}`}</div>
         ${m.ok || short || !m.why ? "" : `<div class="small bmwhy">${esc(m.why)}</div>`}</div>`;
     }).join("");
     html += fold(`bm:${name}`, `<b>${esc(name)}</b> ${badge(`${ready} ready`, ready ? "good" : "muted", `${ready} of ${list.length} can be built now`)}`, body, { cls: "pf-card bmfold", open: name === "General buildings" || list.some((m) => m.type === L.pickType), tipText: MENU_TIP[name] || "" });
@@ -151,10 +161,12 @@ function selectionCard(state, base, L, lay) {
     }).join("")}</div>` : `<div class="small muted" style="margin-top:0.25rem">Stands against no other building: put one right against its wall to open a doorway between them.</div>`;
   }
   const btns = [];
-  if (e.at) btns.push(`<button data-action="cb-deploy" data-v="lift" data-k="${it.key}"${tip("Lift it off the map and click where it goes (R turns it); or click it on the map again")}>Move</button>`);
+  if (e.at) btns.push(`<button data-action="cb-deploy" data-v="lift" data-k="${it.key}"${tip("Pick it up: its outline follows the mouse, click where it goes (R turns it, Esc leaves it where it is); or click it on the map again. Nothing else on the map moves.")}>Move</button>`);
   if (e.at && !e.auto) btns.push(`<button data-action="cb-deploy" data-v="unplace" data-k="${it.key}"${tip("Let the game place it again")}>Auto</button>`);
   if (!e.at) btns.push(`<button data-action="cb-deploy" data-v="pick" data-k="${it.key}"${tip("Pick it and click where it goes")}>Place</button>`);
-  if (isBld) btns.push(`<button class="danger" data-action="cb-deploy" data-v="demolish" data-k="${it.key}"${tip(`Pull it down (asks first): about half its scrap and parts come back${refundText(rec)}${it.general ? "; what stands inside comes down with it" : ""}`)}>Demolish</button>`);
+  if (isBld && it.type === "tent" && TENTS[tentKind(rec)].bag) btns.push(`<button data-action="cb-deploy" data-v="demolish" data-k="${it.key}"${tip("Strike it: packed back into its bag, the bag into the stores (sim/tents.js). Its beds and its room out of the weather go with it.")}>Strike</button>`);
+  else if (isBld && BUILDINGS[it.type] && BUILDINGS[it.type].furniture) btns.push(`<button data-action="cb-deploy" data-v="demolish" data-k="${it.key}"${tip("Pick it up: back into the stores, whole (sim/beds.js)")}>Pick up</button>`);
+  else if (isBld) btns.push(`<button class="danger" data-action="cb-deploy" data-v="demolish" data-k="${it.key}"${tip(`Pull it down (asks first): about half its scrap and parts come back${refundText(rec)}${it.general ? "; what stands inside comes down with it (furniture is carried out into the stores)" : ""}`)}>Demolish</button>`);
   if (isJob) btns.push(`<button class="danger" data-action="cb-deploy" data-v="demolish" data-k="${it.key}"${tip("Cancel the job: half the materials come back")}>Cancel the job</button>`);
   btns.push(`<button data-action="cb-deploy" data-v="select" data-k="" data-tip="Deselect (Esc)">✕</button>`);
   return `<div class="card small bmsel" style="margin-top:0.4rem"><div class="spread"><b>${esc(it.label)}</b><span class="muted">${sizeText(it)}${it.built ? "" : " · going up"}</span></div>
@@ -221,10 +233,10 @@ export function layoutHover(state, b, h, ghost) {
   const L = b.layout, base = baseById(state, L.baseId);
   if (!base) return "";
   const [gx, gy] = gridOfCell(b, h.x, h.y);
-  if (ghost) return ghost.ok ? `<span class="good">Fits here.</span> Click to ${L.pickType ? "build" : "place"} it at ${gx}, ${gy}${ghost.host ? " (inside)" : ""}.` : `<span class="danger">${esc(ghost.why)}.</span>`;
+  if (ghost) return ghost.ok ? `<span class="good">Fits here.</span> Click to ${L.pickType ? "build" : "place"} it at ${gx}, ${gy}${ghost.host ? " (inside)" : ""}.` : ghost.land ? `<span class="warn">${esc(ghost.why)}.</span>` : `<span class="danger">${esc(ghost.why)}.</span>`;
   const picked = L.pick ? itemByKey(state, base, L.pick) : null;
   if (picked) return `Click where ${esc(picked.label)} goes.`;
-  if (L.pickType) return `Click where the ${esc(BUILDINGS[L.pickType] ? BUILDINGS[L.pickType].name.toLowerCase() : L.pickType)} goes.`;
+  if (L.pickType) return `Click where the ${esc(pickName(L.pickType).toLowerCase())} goes.`;
   const cell = b.cells[h.y * b.w + h.x];
   if (cell && cell.nb) return `<span class="danger">${NB_TEXT}.</span>`;
   const F = b.deployPlan && b.deployPlan.fort;
@@ -233,6 +245,8 @@ export function layoutHover(state, b, h, ghost) {
   const how = e && L.sel === e.it.key ? "Selected: click again to lift and move it." : "Click to select it.";
   if (o) return `<b>${esc(o.name)}</b> <span class="muted">(going up: its outline, open ground in a raid). ${how}</span>`;
   if (e) return `<b>${esc(e.it.label)}</b> <span class="muted">${whereText(e)}. ${how}</span>`;
+  const lp = landPieceAt(state, base, gx, gy)[0];
+  if (lp) { const q = base.construction.find((c) => c.type === "clear" && c.pieces && c.pieces.some((p) => p.g === lp.g)); return `<b>${esc(pieceWord(lp).replace(/^an? /, "").replace(/^\w/, (m) => m.toUpperCase()))}</b> <span class="muted">${lp.k === "water" ? "the river: never built on" : q ? `being cleared (${Math.round((100 * (q.progress || 0)) / Math.max(1e-9, q.hours))}%)` : "the land: click it to clear it (nothing is built on it until then)"}.</span>`; }
   return `Cell ${gx}, ${gy}.`;
 }
 // A store container under the mouse in any base battle.
@@ -240,6 +254,37 @@ export function storeHover(c) {
   const s = storeContents(c);
   const lock = s.lock ? (s.lock.smashed ? " · lock smashed open" : s.lock.open ? " · unlocked" : ` · locked (${s.lock.hp}/${s.lock.mhp})`) : "";
   return `<b>${esc(c.label)}</b> · ${c.pile ? `<span class="warn">${PILE_NOTE}</span>` : "stores"}${lock}<br><span class="muted">${s.sup.length || s.gear.length ? `${s.sup.slice(0, 4).map(([n, q]) => `${q} ${esc(n.toLowerCase())}`).join(", ")}${s.sup.length > 4 || s.gear.length ? ", …" : ""}` : "empty"} (about ${s.kg} kg). Click it, or its button in the panel, to see everything in it.</span>`;
+}
+
+// ---------- the land (sim/basescatter.js) ----------
+const getText = (get) => Object.entries(get || {}).filter(([, v]) => v > 0).map(([k, v]) => `+${v} ${k === "carparts" ? `car part${v === 1 ? "" : "s"}` : k}`).join(", ");
+// The card of the piece of land clicked (L.land: its grid cell): what it is, and its clearing (alone, with the rest of
+// its stand or line, a wreck stripped first), each as a job in the construction queue.
+function landCard(state, base, L) {
+  if (!L.land) return "";
+  const one = landPieceAt(state, base, L.land[0], L.land[1]);
+  if (!one.length) return "";
+  const p = one[0];
+  const close = `<button data-action="cb-deploy" data-v="landClose" data-tip="Close">✕</button>`;
+  if (p.k === "water") return `<div class="card small bmsel" style="margin-top:0.4rem"><div class="spread"><b>The river</b>${close}</div><div class="muted">Nothing is built on the water, and it is never cleared: walk across at the fords.</div></div>`;
+  const tool = chopToolAt(state, base);
+  const all = landPieceAt(state, base, L.land[0], L.land[1], true);
+  const c1 = clearOf(p, tool), cs = p.k === "wreck" ? clearOf(p, tool, "strip") : null;
+  const queued = base.construction.find((c) => c.type === "clear" && c.pieces && c.pieces.some((q) => q.g === p.g));
+  let cAll = null;
+  if (all.length > 1) { cAll = { hours: 0, get: {} }; for (const q of all) { const c = clearOf(q, tool); if (!c) continue; cAll.hours += c.hours; for (const [k, v] of Object.entries(c.get)) cAll.get[k] = (cAll.get[k] || 0) + v; } }
+  const btn = (label, mode, clump, c, t) => `<button data-action="cb-deploy" data-v="clear" data-mode="${mode}" data-clump="${clump ? 1 : 0}"${queued ? " disabled" : ""}${tip(queued ? "Queued already: the construction queue" : t)}>${label}</button>`;
+  const what = p.k === "wreck" ? (p.looted ? "Stripped already: what is left is dragged off." : "Strip it first for its scrap and a car part (once), or clear it, which strips it too.") : CLEAR[p.k] ? "" : "";
+  return `<div class="card small bmsel" style="margin-top:0.4rem"><div class="spread"><b>${esc(pieceWord(p).replace(/^an? /, "").replace(/^\w/, (m) => m.toUpperCase()))}</b>${close}</div>
+    <div class="muted">The land: nothing is built on it until it is cleared. ${what}${p.k === "tree" && !tool ? " No cutting tool at the base (an axe, a machete): felling takes half as long again." : ""}</div>
+    ${queued ? `<div class="small warn" style="margin-top:0.2rem">Queued: ${esc(queued.label)} (${Math.round((100 * (queued.progress || 0)) / Math.max(1e-9, queued.hours))}%)</div>` : ""}
+    <div class="cbactions" style="margin-top:0.3rem">${c1 ? btn(`${(CLEAR[p.k] || CLEAR.wreck).verb} it · ${c1.hours}h${getText(c1.get) ? ` · ${getText(c1.get)}` : ""}`, "clear", false, c1, p.k === "tree" || p.k === "log" || p.k === "stump" || p.k === "bush" || p.k === "fence" ? "Queue its felling: the woodcutters (Cut wood) do it before their trips, and the builders from the construction queue, like a building" : "Queue its clearing: the builders do it from the construction queue, like a building") : ""}${cs ? btn(`Strip it · ${cs.hours}h · ${getText(cs.get)}`, "strip", false, cs, "Strip it of its scrap and a car part (once); it still has to be dragged off to build there") : ""}${cAll ? btn(`All ${all.length} · ${Math.round(cAll.hours * 10) / 10}h${getText(cAll.get) ? ` · ${getText(cAll.get)}` : ""}`, "clear", true, cAll, `Clear the whole ${p.k === "tree" ? "stand of trees" : p.k === "bush" ? "hedge" : p.k === "fence" ? "fence run" : "heap"} it is part of (${landWords(all)}) as one job`) : ""}</div></div>`;
+}
+// The clearing jobs in the queue (the construction queue's own), with how far each is and Cancel.
+function clearingList(state, base) {
+  const jobs = base.construction.filter((c) => c.type === "clear");
+  if (!jobs.length) return "";
+  return `<h3 data-tip="${esc("The land being cleared: jobs in the construction queue like the buildings, worked by the builders from the top; the woodcutters (Cut wood) fell the trees, logs, stumps, bushes and fences first, ahead of their trips out for wood. The wood, the scrap and the parts come into the stores when each is done.")}">Clearing <span class="muted small">${jobs.length}</span></h3><div class="card small">${jobs.map((c) => { const pct = Math.round((100 * (c.progress || 0)) / Math.max(1e-9, c.hours)); const who = chopHands(state, base, c); return `<div class="spread" style="margin-top:0.15rem"><span>${esc(c.label)} <span class="muted">${pct}% of ${c.hours}h${getText(c.get) ? ` · ${getText(c.get)}` : ""}${who.length ? ` · ${esc(who.join(", "))} on it` : ""}</span></span><button class="mini" data-action="cb-deploy" data-v="unclear" data-id="${c.id}"${tip("Cancel this clearing")}>Cancel</button></div>`; }).join("")}</div>`;
 }
 
 // ---------- actions (main.js) ----------
@@ -264,6 +309,20 @@ export const BASEMAP_ACTIONS = {
 export function moveCarButton(state, base, v) {
   if (!base || !v || !itemByKey(state, base, `v:${v.id}`)) return "";
   return `<button class="mini" data-action="bm-open" data-base="${base.id}" data-key="v:${v.id}" data-tab="vehicles"${tip("Move it on the base map: click any free cells it fits, in the yard or beyond the wall (R turns it)")}>Move</button>`;
+}
+// Open the build map (sim/staging.js; a card's button, uiAction "basemap", main.js choice; ui/buildmap.js's alert and
+// key): that base's map, nothing picked, its Build list ready; closing it comes back to the base window's tab (the
+// Base map tab unless told). The base's ask to be laid out ends (layoutDone). "" when it opened, else why not (the
+// base is gone, a battle on): nothing is changed then.
+export function openBuildMap(state, ui, baseId, tab = "basemap") {
+  const b = baseById(state, Number(baseId));
+  if (!b) return "That base is gone: there is no build map to open.";
+  const err = openBaseMap(state, b.id);
+  if (err) return err;
+  layoutDone(state, b.id);
+  ui.mapFrom = { id: b.id, tab };
+  ui.baseView = null; ui.baseMsg = "";
+  return "";
 }
 // After Build on the Construction tab (main.js queuebuild): the map opens with the new job picked.
 export function openForJob(state, ui, base, type) {

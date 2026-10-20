@@ -1,7 +1,7 @@
 // @ts-check
 // The Kitchen (buildings.js "canteen"; the older "kitchen" key is the Preserving room, which jars food): a base's
 // cookhouse with a cook on the Cook job (economy.js ROLES.cook, work.js work type "meals"). User request 2026-10-10:
-// "Add kitchen building" that makes meals real; kitchen-plus (the same day): firewood, part-time fixed cooks, the
+// "Add kitchen building" that makes meals real; kitchen-plus (the same day): wood, part-time fixed cooks, the
 // Cooking skill.
 //
 // What it does (everything scales with `cover`, the share of the people living here a day's cooks can feed):
@@ -13,16 +13,16 @@
 //   mood     hot meals: +KITCHEN.mood a day (+KITCHEN.moodSkilled with a Cooking 6+ cook; Hearty Portions +0.5) for
 //            everyone here (relations.js moodFactors). Only the Kitchen gives it (the Preserving room jars, no meals).
 //   water    the meals' water (soup, tea, porridge) is boiled: KITCHEN.boil of the day's drinking is purified
-//            (worm.js purifyCap) on the stove's firewood.
+//            (worm.js purifyCap) on the stove's wood.
 //   the worm the kitchen's stoves cook every meat, fish and crop through, cooks on duty or not, while the stove is lit:
 //            it does all the cook fire does (worm.js baseCooks), so a base with a lit kitchen needs no cook fire (the
 //            governor takes its cook fire down for the utility plot: autopilot.js cookFireDown).
-//   firewood the stove burns KITCHEN.wood.stove a day (lit for the worm whether anyone cooks or not) and
-//            KITCHEN.wood.meal a meal served (two a person fed: 12 people = 4 + 24 = 28 firewood, 2.8 kg, a day; Low
+//   wood the stove burns KITCHEN.wood.stove a day (lit for the worm whether anyone cooks or not) and
+//            KITCHEN.wood.meal a meal served (two a person fed: 12 people = 4 + 24 = 28 wood, 2.8 kg, a day; Low
 //            Flame a third less on the meals). Burned at midnight before the day's eating (kitchenFireDaily, economy.js
 //            baseDaily) from what the base holds beyond the day's water boiler and heating (they come first). Short of it
 //            the stove is cold (base.kitchenCold): cold meals, no saving, no mood, no boiled water, and the worm's food
-//            waits for a cook fire as before. It counts in the firewood forecasts (woodcutting.js woodNeed: kitchen).
+//            waits for a cook fire as before. It counts in the wood forecasts (woodcutting.js woodNeed: kitchen).
 // Cooks on work priorities (work.js type "meals") are part-time: the Cook type claims only the cooking hours
 // (KITCHEN.cookHours: 05:00 breakfast, serving at 06:00, dinner 16–19, serving at 20:00) and the rest of their day goes
 // to their other priorities; s.cookHour (the last hour they cooked) counts them as the day's cooks for 24 hours.
@@ -40,13 +40,13 @@
 // The meals themselves (wave 2 cooking, cooking.js): the cooks' hours work the Kitchen's bills (recipes that turn raw
 // ingredients into meals more filling than their makings, with purified water and a chance of food poisoning); a fixed
 // Cook gives cooking.js COOK.fullDay hours, a part-time cook their cooking hours (cookHoursLately). This file keeps the
-// service: who is fed hot meals, the saving, the mood, the boiled water, the firewood.
+// service: who is fed hot meals, the saving, the mood, the boiled water, the wood.
 // A cook too ill to work (work factor under KITCHEN.minWork) feeds nobody; a weaker one feeds fewer (× work factor).
 // No kitchen, or nobody on Cook: the food is eaten as before (no penalty beyond the worm's raw-food rules).
 // The day (kitchenDaily, economy.js after the eating): base.kitchenDay = { day, cooks, served, meals, saved, cover, wood,
 // cold } for the base's Kitchen card, and the Work now panel's Cook row (output.js: meals and food saved).
 // AI groups (groupworks.js KITCHEN): a group base of KITCHEN size builds one; the people it serves eat 10% less, burn
-// the same firewood a head from the group's woodpile, and their groups grow a little faster (no skills by name).
+// the same wood a head from the group's woodpile, and their groups grow a little faster (no skills by name).
 import { MEALS } from "./meals.js"; // the mealtimes (the hunters' late breakfast)
 import { atBase, residents, skill, hourOfDay, log } from "./world.js";
 import { count } from "./buildings.js";
@@ -60,7 +60,7 @@ import { heatUse } from "./upkeep.js";
 export const KITCHEN = {
   perCook: 12, save: 0.1, skill: "cooking", skillFrom: 4, skillStep: 0.005, saveMax: 0.13,
   mood: 1, moodSkilled: 1.5, moodSkillAt: 6, boil: 0.25, minWork: 0.35,
-  // Firewood (0.1 kg a unit): the stove a day, and a meal (two a person fed a day). Measured 2026-10-10: 28 a day for
+  // Wood (0.1 kg a unit): the stove a day, and a meal (two a person fed a day). Measured 2026-10-10: 28 a day for
   // 12 people, about a quarter of one woodcutter's day on forest land (woodcutting.js WOOD.rate 18 an hour × 6).
   wood: { stove: 4, meal: 1, keepDays: 14 },
   // Cooking perks (skills.js PERK_TREE.cooking).
@@ -121,7 +121,7 @@ export const cookShare = (state, s) => (dayRole(state, s) === "cook" ? 1 : Math.
 export const cooksAt = (state, base) => atBase(state, base.id).filter((s) => (dayRole(state, s) === "cook" || cookedLately(state, s)) && !s.inBed && workFactor(s) >= KITCHEN.minWork);
 // Cooks a base's kitchen wants: one per KITCHEN.perCook people living here (0 without a kitchen).
 export const cooksWanted = (state, base) => (hasKitchen(base) ? Math.max(1, Math.ceil(residents(state, base.id).length / KITCHEN.perCook)) : 0);
-// The stove is cold today (no firewood to spare at midnight: kitchenFireDaily).
+// The stove is cold today (no wood to spare at midnight: kitchenFireDaily).
 export const kitchenCold = (base) => !!base && hasKitchen(base) && base.kitchenCold === true;
 
 // The kitchen's day as if its stove is lit: { built, cooks, wanted, fed, served, cover, skill (the best cook's
@@ -146,7 +146,7 @@ function serviceOf(state, base) {
   const count = Math.min(cooks.length, Math.max(1, Math.ceil(shares.reduce((a, x) => a + x.v, 0) - 0.15)));
   return { built, cooks, main: shares.slice(0, count).map((x) => x.s), count, wanted: cooksWanted(state, base), fed, served: Math.min(fed, Math.round(fed * cover)), cover, skill: best, rate, save: rate * cover, mood: mood * cover, boil: KITCHEN.boil * cover, cold: false };
 }
-// The kitchen's day: as serviceOf, with a cold stove (no firewood) serving nothing: { …, cold: true, served 0, cover 0,
+// The kitchen's day: as serviceOf, with a cold stove (no wood) serving nothing: { …, cold: true, served 0, cover 0,
 // save 0, mood 0, boil 0 } (the cooks still listed).
 export function kitchenService(state, base) {
   const ks = serviceOf(state, base);
@@ -164,7 +164,7 @@ export function eatsAtKitchen(state, base, s) {
   return ids.indexOf(s.id) < ks.served;
 }
 
-// The stove's firewood a day with its stove lit and today's cooks: { stove, meals (two a person served), need, low
+// The stove's wood a day with its stove lit and today's cooks: { stove, meals (two a person served), need, low
 // (Low Flame), served }. 0 without a kitchen.
 export function kitchenWood(state, base) {
   if (!hasKitchen(base)) return { stove: 0, meals: 0, need: 0, low: false, served: 0 };
@@ -180,10 +180,10 @@ function woodReserve(state, base) {
   const heat = heatUse(state, base);
   return (boil.active ? boil.wood * (boil.share ?? 1) : 0) + (heat.total > 0 ? heat.wood : 0);
 }
-// Can the stove be lit today (firewood beyond the boiler's and the heating's day)? For the governor and the Work tab.
+// Can the stove be lit today (wood beyond the boiler's and the heating's day)? For the governor and the Work tab.
 export const kitchenCanLight = (state, base) => hasKitchen(base) && Math.max(0, base.stock.wood || 0) - woodReserve(state, base) + 1e-9 >= kitchenWood(state, base).need;
 // Daily at midnight (economy.js baseDaily, before the worm's cooking and the day's eating): the stove burns its day of
-// firewood, or goes cold. base.kitchenBurn = { day, wood }; a log line when it goes cold and when it is lit again.
+// wood, or goes cold. base.kitchenBurn = { day, wood }; a log line when it goes cold and when it is lit again.
 export function kitchenFireDaily(state, base) {
   if (!hasKitchen(base)) { delete base.kitchenCold; delete base.kitchenBurn; return; }
   const w = kitchenWood(state, base);
@@ -199,7 +199,7 @@ export function kitchenFireDaily(state, base) {
   } else {
     base.kitchenBurn = { day: workDay(state.hour), wood: 0 };
     if (!base.kitchenCold && residents(state, base.id).length && base.stoveSave) log(state, `The kitchen's stove at ${base.name} is let go cold: the woodpile is kept for the winter's heating (${Math.round(base.stock.wood || 0)} of the ${base.stoveSave} the cold needs). Cold meals until the wood is in.`, "info");
-    else if (!base.kitchenCold && residents(state, base.id).length) log(state, `The kitchen at ${base.name} is cold: no firewood to spare for the stove (it needs ${Math.ceil(w.need)} a day after the water boiler and the heating). Cold meals: no food saved, no lift to the mood${count(base, "cookhouse") ? "; the cook fire cooks the game and greens" : ", and nothing cooks the game and greens from infected land"}.`, "danger");
+    else if (!base.kitchenCold && residents(state, base.id).length) log(state, `The kitchen at ${base.name} is cold: no wood to spare for the stove (it needs ${Math.ceil(w.need)} a day after the water boiler and the heating). Cold meals: no food saved, no lift to the mood${count(base, "cookhouse") ? "; the cook fire cooks the game and greens" : ", and nothing cooks the game and greens from infected land"}.`, "danger");
     base.kitchenCold = true;
     if (residents(state, base.id).length) base.kitchenColdDay = workDay(state.hour); // the cook fire stays a while after (autopilot.js cookFireRedundant)
   }

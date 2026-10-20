@@ -47,7 +47,7 @@
 //   KITCHEN.save less a day (groupEatMult, factions.js: their food a day), as your cooks' hot meals do, and its cooks
 //   (one per KITCHEN.perCook of them, as yours) bring in nothing from the fields (groupCookShare: their food from the
 //   land × (1 − the share of their people cooking)). Coarse: no cooks by name and no skills, no boiled water (they keep
-//   no water stock). kitchen-plus (2026-10-10): the stoves burn firewood from the group's woodpile as yours do
+//   no water stock). kitchen-plus (2026-10-10): the stoves burn wood from the group's woodpile as yours do
 //   (KITCHEN.wood: a kitchen's stove and two meals a person fed a day, after the day's heating; short of it the kitchens
 //   are cold: no saving, the cooks back in the fields: f.kitchenCold), and hot meals keep the group together: its growth
 //   chance × (1 + KITCHEN.growth × the share fed) and its desertion pressure − KITCHEN.morale × the share fed
@@ -132,8 +132,10 @@
 //   room is what raiders find their goods inside or lying out on the piles (basemap.js, raidloot.js).
 // - Old saves (no state.groupWorks) and the hardcore military (an army base built before the fall) count as built
 //   up: none of this changes them. tools/barestarttest.js.
+import { groupHaulCrew } from "./hauling.js"; // AI parity: their haulers' crew-days (call-time only)
 import { foodIn, takeFood } from "./foods.js"; // days of food (every kind)
-import { groupFetchedWater } from "./grouptrips.js"; // water carried in from the water a base holds (as your Fetch water)
+import { teamMult } from "./teamwork.js"; // teamwork: a crew of two or more fells a build's wood faster
+import { groupFetchedWater, groupWoodLand } from "./grouptrips.js"; // groupWoodLand: the wood land their bases hold (woodwork: they cut a build's wood) // water carried in from the water a base holds (as your Fetch water)
 import { day, skill } from "./world.js";
 import { MEAL_WORK_SHARE } from "./meals.js"; // their crews stop for breakfast, lunch and dinner too (21 of 24 hours)
 import { season, THIRST } from "./weather.js"; // summer water: the season and its thirst
@@ -152,29 +154,37 @@ import { BUILDINGS, CAMP as CAMP_BASE } from "./buildings.js"; // storage: your 
 import { storageOf } from "./basestorage.js"; // storage: a base's room and what lies outside (call-time only)
 import { STORE_WISH } from "./autopilot.js"; // storage: your governor's ladder (call-time only)
 import { homesOf, stockTonight, worksBuildings } from "./groupbases.js"; // storage: their bases as base objects (call-time only)
+import { hallDef, hallWork, groupBedsDaily, furnSleepers } from "./beds.js"; // beds as furniture: their hall, the furniture they craft and its sleepers (call-time only)
+import { groupTentSleepers } from "./tents.js"; // the tent bags on their shelf, pitched at their camps (call-time only)
 
 /** @typedef {{ water?: number, farms?: number, beds?: number, walls?: number, bench?: number, store?: number, sickbay?: number, pens?: number, camp?: number, still?: number, power?: number, powerTier?: number, freezer?: number, sealer?: number, kitchen?: number, shop?: number, radio?: number, garage?: number, reload?: number, gate?: number, storebox?: number, crates?: number, shed?: number, warehouse?: number, mill?: number, grinder?: number, mach?: Object<string, { wear: number, spares: number, broken: boolean, on?: boolean, noSpares?: boolean }> }} Works */
 
 export const GROUP_WORKS = {
   WORKS: {
     water: { name: "a well", cost: { scrap: 3 }, work: 3 },
-    farms: { name: "fields", cost: { scrap: 4 }, work: 4 },
-    beds:  { name: "quarters", cost: { scrap: 8 }, work: 4 },
-    walls: { name: "a wall", cost: { scrap: 6 }, work: 6 },
-    bench: { name: "a workshop", cost: { scrap: 6, parts: 1 }, work: 4 },
+    // Wood (2026-10-20, "Convert all fire wood into just wood so it can be used for fueling and uses as a building
+    // material"): their fields' fencing, quarters and walls take a share in wood as yours do (a quarter of yours, as
+    // the scrap; woodwork 2026-10-20 raised yours and theirs with it: fields 75, quarters 150, a wall 250, pens 125, a
+    // workshop 50, a kitchen 75), from the woodpile they cut and burn (factions.js GROUP_WOOD) above WOOD.keepHead a
+    // head; what the pile cannot spare their crew cuts as part of the job (WOOD.cutDay a crew-day on their land:
+    // groupWoodLand), so their woodcutting covers their builds and a build never waits on wood.
+    farms: { name: "fields", cost: { scrap: 2, wood: 75 }, work: 4 },
+    beds:  { name: "quarters", cost: { scrap: 3, wood: 150 }, work: 4 },
+    walls: { name: "a wall", cost: { scrap: 2, wood: 250 }, work: 6 },
+    bench: { name: "a workshop", cost: { scrap: 5, parts: 1, wood: 50 }, work: 4 },
     // Storage (storageWork): your storage buildings at your costs, your hours ÷ CREW_HOURS (storeDef).
     get store() { return storeDef("store"); },
     get storebox() { return storeDef("storebox"); },
     get crates() { return storeDef("crates"); },
     get shed() { return storeDef("shed"); },
     get warehouse() { return storeDef("warehouse"); },
-    pens: { name: "an animal pen", cost: { scrap: 4 }, work: 3 },
+    pens: { name: "an animal pen", cost: { scrap: 2, wood: 125 }, work: 3 },
     // Machines (freezer-parts; MACH): yours cost 15 scrap + 2 parts, 20 + 4, 30 + 5 + 2 electronics, 12 + 2 + 2.
     still: { name: "an ethanol still", cost: { scrap: 4, parts: 1 }, work: 3 },
     power: { name: "a generator", cost: { scrap: 5, parts: 2 }, work: 4 },
     freezer: { name: "a walk-in freezer", cost: { scrap: 8, parts: 3 }, work: 5 },
     sealer: { name: "a vacuum sealer", cost: { scrap: 3, parts: 2 }, work: 2 },
-    kitchen: { name: "a kitchen", cost: { scrap: 5, parts: 1 }, work: 4 }, // yours: 20 scrap, a part, 24 work-hours (scaled as the rest)
+    kitchen: { name: "a kitchen", cost: { scrap: 4, parts: 1, wood: 75 }, work: 4 }, // yours: 20 scrap, a part, 24 work-hours (scaled as the rest)
     // ai-locks (2026-10-11; LOCKS below): the buildings your rules ask for, scaled as the rest (about a quarter of your
     // scrap, half your parts). Yours: a machine shop 25 scrap + 3 parts, a radio station 30 + 6, a garage 20 + 2, a
     // reloading bench 20 scrap + a part + 3 gun parts (on an ammo bench), a reinforced gate 14 + a part.
@@ -187,6 +197,8 @@ export const GROUP_WORKS = {
     // scaled as the rest; their wear and repairs are cooking.js groupFitWear (your FIXTURES grainmill / meatgrinder).
     mill: { name: "a grain mill", cost: { scrap: 2, parts: 1 }, work: 1 },
     grinder: { name: "a meat grinder", cost: { scrap: 2, parts: 1 }, work: 1 },
+    // Beds as furniture (beds.js hallWork): your Lodge, the general building their furniture is set in.
+    get hall() { return hallDef(); },
   },
   // ai-locks: your build rules for those works (buildings.js req and blueprints.js LOCKED), read by workLock. mech: the
   // group's mechanic (groupSkill) at your Mechanics minimum; bp: the manual they must have studied; bench: a workshop
@@ -214,6 +226,7 @@ export const GROUP_WORKS = {
     floor: 0.5, // fuel a head kept back from a bigger generator's burn (groupcare.js keeps the same before selling)
   },
   CREW: 6, SALVAGE: 2,
+  WOOD: { keepHead: 120, cutDay: 360, landMin: 0.25 }, // woodwork: the pile a head they never build from (their winter's), wood a crew-day of felling cuts on land of wood score 1 (grouptrips.js groupWoodLand, at least landMin)
   CREW_HOURS: 8, // your work-hours a crew-day of theirs, as the works above were scaled (a well's 24 hours 3, a machine shop's 48 hours 6)
   SERVES: { water: 10, farms: 8, beds: 8 }, // people one of each serves
   WALL_GOAL: { typed: 7, home: 4, open: 1 }, WALLED_TYPES: ["fortress", "military"], // as conquest.js CONQUEST.WALLS (the old fixed walls)
@@ -261,6 +274,7 @@ export function worksAt(f, tile) {
 const n = (w, k) => (w && w[k]) || 0;
 const mainOf = (f) => f.bases[0];
 // The people living at a base: the main base twice a share (conquest.js peopleAt's weights).
+export const groupPeopleAt = (f, tile) => peopleAt(f, tile); // beds.js: the people a base's beds are for
 function peopleAt(f, tile) {
   const i = f.bases.indexOf(tile);
   if (i < 0) return 0;
@@ -293,9 +307,12 @@ export const isCamp = (f, tile) => !!(f && f.works && f.works[tile] && f.works[t
 // A group's new base founded from nothing starts as a camp (factions.js expansion; this world's groups build).
 export function pitchCamp(state, f, tile) { if (groupsBuild(state, f)) worksAt(f, tile).camp = 1; }
 
-// Summed over the group's bases: how many people its water, fields and quarters serve.
+// Summed over the group's bases: how many people its water, fields and quarters serve. Quarters: their furniture's
+// sleepers too (beds.js furnSleepers), and the tents on their shelf (tents.js groupTentSleepers), pitched at their
+// camps for the people there (as your camp's bags go up).
 function served(f, k, state = null) {
-  return f.bases.reduce((a, t) => a + n(f.works && f.works[t], k) * W.SERVES[k], 0) + (k === "water" && state ? groupFieldWells(state, f) * W.SERVES.water : 0); // fieldworks.js: their field wells
+  return f.bases.reduce((a, t) => a + n(f.works && f.works[t], k) * W.SERVES[k] + (k === "beds" ? furnSleepers(f.works && f.works[t]) : 0), 0) + (k === "water" && state ? groupFieldWells(state, f) * W.SERVES.water : 0) // fieldworks.js: their field wells
+    + (k === "beds" ? Math.min(groupTentSleepers(f), f.bases.reduce((a, t) => a + (isCamp(f, t) ? peopleAt(f, t) : 0), 0)) : 0);
 }
 // 0–1: water and fields for everyone.
 export function provisioned(state, f) {
@@ -312,7 +329,7 @@ function kitchenFed(state, f) {
   const fed = f.bases.reduce((a, t) => a + (n(f.works && f.works[t], "kitchen") > 0 ? peopleAt(f, t) : 0), 0);
   return Math.min(1, fed / f.pop);
 }
-// The share fed hot meals today: as kitchenFed, 0 while the kitchens are cold (no firewood: groupKitchenDaily).
+// The share fed hot meals today: as kitchenFed, 0 while the kitchens are cold (no wood: groupKitchenDaily).
 export const groupKitchenShare = (state, f) => (f.kitchenCold ? 0 : kitchenFed(state, f));
 export const groupEatMult = (state, f) => 1 - W.KITCHEN.save * groupKitchenShare(state, f);
 // The share of the group's people cooking in its kitchens (one per KITCHEN.perCook fed): they work no fields.
@@ -320,14 +337,14 @@ export const groupCookShare = (state, f) => groupKitchenShare(state, f) / W.KITC
 // Hot meals keep a group together (factions.js growth, groupcare.js desertion).
 export const groupKitchenGrowth = (state, f) => 1 + W.KITCHEN.growth * groupKitchenShare(state, f);
 export const groupKitchenMorale = (state, f) => W.KITCHEN.morale * groupKitchenShare(state, f);
-// The kitchens' firewood a day: a stove each and two meals a person they feed (yours: kitchen.js KITCHEN.wood).
+// The kitchens' wood a day: a stove each and two meals a person they feed (yours: kitchen.js KITCHEN.wood).
 export function groupKitchenWood(state, f) {
   if (!groupsBuild(state, f)) return 0;
   let k = 0, fed = 0;
   for (const t of f.bases) if (n(f.works && f.works[t], "kitchen") > 0) { k++; fed += peopleAt(f, t); }
   return k ? k * W.KITCHEN.wood.stove + fed * W.KITCHEN.wood.head : 0;
 }
-// Daily (factions.js, before the day's food): the kitchens burn their firewood from the woodpile, after `heat` (the
+// Daily (factions.js, before the day's food): the kitchens burn their wood from the woodpile, after `heat` (the
 // day's heating); short of it they are cold today (f.kitchenCold). wood0: the woodpile (an unset one at its start).
 export function groupKitchenDaily(state, f, heat = 0, wood0 = f.stock.wood) {
   const need = groupKitchenWood(state, f);
@@ -448,7 +465,7 @@ export function nextWork(state, f) {
     const goal = wallGoal(f, tile);
     if (n(w, "water") < wanted(f, tile, "water", state)) return { tile, type: "water", why: summerThirst(state, true) > 1 && n(w, "water") >= wanted(f, tile, "water") ? "water for the summer" : "water" };
     if (foodShort && n(w, "farms") < wanted(f, tile, "farms")) return { tile, type: "farms", why: "food is short" };
-    if (n(w, "beds") < wanted(f, tile, "beds")) return { tile, type: "beds", why: "people sleep rough" };
+    if (n(w, "beds") * W.SERVES.beds + furnSleepers(w) < peopleAt(f, tile)) return { tile, type: "beds", why: "people sleep rough" }; // (n < wanted, with the furniture's sleepers: beds.js)
     if (tile === mainOf(f)) { const jail = jailWork(state, f); if (jail) return jail; }
     if (tile === mainOf(f)) { const sb = sickbayWork(state, f, false); if (sb) return sb; }
     if (n(w, "walls") < goal && threatened(state, f, tile)) return { tile, type: "walls", why: "threatened" };
@@ -481,7 +498,7 @@ export function nextWork(state, f) {
   // Manual; it "needs walls to matter").
   const main = mainOf(f), mw = worksAt(f, main);
   if (!n(mw, "gate") && n(mw, "walls") >= wallGoal(f, main) && !workLock(state, f, "gate")) return { tile: main, type: "gate", why: "a reinforced gate" };
-  return null;
+  return hallWork(state, f, main); // beds.js: last of all, a Lodge at the main base to set their furniture in (or null)
 }
 
 // ---------- the works your rules ask for (ai-locks 2026-10-11, the user's rule: "AI groups need to have the same
@@ -760,23 +777,55 @@ export function groupWorksDaily(state, f) {
   if (!groupsBuild(state, f)) return;
   groupTechDaily(state, f); // machines-2: their manuals, bought and studied
   groupPartsDaily(state, f); // machines-2: parts from their workshop before the day's machines and builds
+  groupBedsDaily(state, f); // beds.js: a piece of furniture crafted and set in their hall
   // A job at a base they no longer hold is dropped (the materials are lost with the base).
   if (f.job && !f.bases.includes(f.job.tile)) f.job = null;
-  if (!f.job) {
-    const next = nextWork(state, f);
-    if (!next) { groupMachinesDaily(state, f); return; }
-    const def = next.def || W.WORKS[next.type]; // a jail step brings its own (groupjails.js STEPS)
-    // Short of building materials: made from their scrap, as you would (crafting.js buildmat).
-    const bmShort = Math.max(0, (def.cost.buildmat || 0) - (f.stock.buildmat || 0));
-    if (bmShort && (f.stock.scrap || 0) >= bmShort * W.BUILDMAT_SCRAP + (def.cost.scrap || 0)) { f.stock.scrap -= bmShort * W.BUILDMAT_SCRAP; f.stock.buildmat = (f.stock.buildmat || 0) + bmShort; }
-    const use = MACH_ORDER.includes(next.type) || next.type === "powerup" ? "machine" : "free"; // the earmark only for a machine (gen-tiers: an upgrade too)
-    const can = Object.entries(def.cost).every(([k, v]) => (k === "parts" ? canPayParts(f, v, use) : (f.stock[k] || 0) >= v));
-    if (can) for (const [k, v] of Object.entries(def.cost)) { if (k === "parts") payParts(f, v, use); else f.stock[k] -= v; }
-    f.job = { tile: next.tile, type: next.type, left: def.work * (can ? 1 : W.SALVAGE), paid: can };
+  // noidle (AI parity with your governor: nobody stays a builder with nothing to build): the day's crew-days go to
+  // work that exists. A job finished part-way through the day hands the rest of them to the next job (f.crewCarry =
+  // { n, day }, spent on it the next day with that day's crew: they were lost); with nothing to build they stay on the land, where
+  // the fields and the hunting count every working head anyway (factions.js), and nothing is carried.
+  // f.crewDay = { day, crew (today's), carried (from yesterday), built, carry (to the next job), land }.
+  const crew0 = (Math.max(1, workingPeople(f) / W.CREW) + (f.prisonWork || 0) / W.CREW) * MEAL_WORK_SHARE; // their prisoners work too (groupjails.js); the ill rest (groupcare.js GROUP_ILL); meals.js: the meal hours off
+  const today = crew0 - groupHaulCrew(state, f, crew0); // hauling.js: yesterday's haulers' crew-days (at most half)
+  const carried = f.crewCarry && f.crewCarry.day === day(state) - 1 ? f.crewCarry.n : 0; // yesterday's spare, for today's job
+  delete f.crewCarry;
+  const cd = f.crewDay = { day: day(state), crew: today, carried, built: 0, carry: 0, land: 0 };
+  if (!f.job && !startWork(state, f)) { cd.land = today + carried; groupMachinesDaily(state, f); return; } // nothing to build: on the land
+  const crew = today + carried;
+  const use = Math.min(crew, Math.max(0, f.job.left));
+  f.job.left -= use;
+  cd.built = use;
+  if (f.job.left <= 1e-9) {
+    finishWork(state, f);
+    if (crew - use > 1e-9) { cd.carry = crew - use; f.crewCarry = { n: cd.carry, day: day(state) }; } // the next job's, tomorrow
   }
-  f.job.left -= (Math.max(1, workingPeople(f) / W.CREW) + (f.prisonWork || 0) / W.CREW) * MEAL_WORK_SHARE; // their prisoners work too (groupjails.js); the ill rest (groupcare.js GROUP_ILL); meals.js: the meal hours off
   groupMachinesDaily(state, f); // freezer-parts: the still, the generator, the freezer and the sealer run, wear and break
-  if (f.job.left > 0) return;
+}
+// The next job (nextWork) started: paid from the stores, or salvaged. false: nothing to build.
+function startWork(state, f) {
+  const next = nextWork(state, f);
+  if (!next) return false;
+  const def = next.def || W.WORKS[next.type]; // a jail step brings its own (groupjails.js STEPS)
+  // Short of building materials: made from their scrap, as you would (crafting.js buildmat).
+  const bmShort = Math.max(0, (def.cost.buildmat || 0) - (f.stock.buildmat || 0));
+  if (bmShort && (f.stock.scrap || 0) >= bmShort * W.BUILDMAT_SCRAP + (def.cost.scrap || 0)) { f.stock.scrap -= bmShort * W.BUILDMAT_SCRAP; f.stock.buildmat = (f.stock.buildmat || 0) + bmShort; }
+  const use = MACH_ORDER.includes(next.type) || next.type === "powerup" ? "machine" : "free"; // the earmark only for a machine (gen-tiers: an upgrade too)
+  // Wood (woodwork): from the pile above their winter's keep; the rest their crew cuts as part of the job (extra
+  // crew-days by their land), so wood never sends them to salvage.
+  const can = Object.entries(def.cost).every(([k, v]) => (k === "wood" ? true : k === "parts" ? canPayParts(f, v, use) : (f.stock[k] || 0) >= v));
+  let cut = 0;
+  if (can) for (const [k, v] of Object.entries(def.cost)) {
+    if (k === "parts") payParts(f, v, use);
+    else if (k === "wood") { const pay = Math.max(0, Math.min(v, Math.floor((f.stock.wood || 0) - f.pop * W.WOOD.keepHead))); f.stock.wood = (f.stock.wood || 0) - pay; cut = v - pay; }
+    else f.stock[k] -= v;
+  }
+  // teamwork.js: the felling goes as fast as a crew's (teamMult on its crew-days: a crew of two or more a day, as yours).
+  const cutDays = cut > 0 ? cut / (W.WOOD.cutDay * Math.max(W.WOOD.landMin, groupWoodLand(state, f)) * teamMult("wood", Math.floor(Math.max(1, workingPeople(f) / W.CREW)))) : 0;
+  f.job = { tile: next.tile, type: next.type, left: def.work * (can ? 1 : W.SALVAGE) + cutDays, paid: can, ...(cut > 0 ? { cut } : {}) };
+  return true;
+}
+// The job done: what it builds.
+function finishWork(state, f) {
   if (f.job.type === "jail") jailBuilt(state, f, f.job.tile);
   else if (f.job.type === "camp") delete worksAt(f, f.job.tile).camp; // established
   else if (f.job.type === "powerup") { const w = worksAt(f, f.job.tile); if (n(w, "power")) w.powerTier = groupGenTier(w) + 1; } // gen-tiers: the generator a tier up
@@ -790,7 +839,7 @@ export function groupKitchenText(state, f) {
   const fed = kitchenFed(state, f);
   if (!(fed > 0)) return "";
   const people = Math.round(fed * f.pop);
-  if (f.kitchenCold) return `Kitchen: cold, no firewood (${people} of ${f.pop} would be fed)`;
+  if (f.kitchenCold) return `Kitchen: cold, no wood (${people} of ${f.pop} would be fed)`;
   return `Kitchen: hot meals for ${people} of ${f.pop} (−${Math.round(W.KITCHEN.save * fed * 1000) / 10}% food, growth +${Math.round(W.KITCHEN.growth * fed * 100)}%, fewer desert)`;
 }
 const jailStepName = (f) => { const t = (f.jails && f.jails[f.job.tile]) || 0; return (GROUP_JAIL.STEPS[t + 1] || GROUP_JAIL.STEPS[1]).name; };
@@ -811,7 +860,7 @@ export function worksText(state, f) {
   if (t.power) { const tiers = f.bases.map((b) => groupGenTier(f.works && f.works[b])).filter(Boolean); const top = Math.max(1, ...tiers); bits.push(top > 1 ? W.MACH.tiers[top].name : "a generator"); } // gen-tiers
   if (t.freezer) bits.push(`a walk-in freezer${groupFreezerOn(f) ? " (on)" : " (off)"}`);
   if (t.sealer) bits.push("a vacuum sealer");
-  if (t.kitchen) bits.push(`${t.kitchen > 1 ? `${t.kitchen} kitchens` : "a kitchen"}${f.kitchenCold ? " (cold: no firewood)" : ""}`);
+  if (t.kitchen) bits.push(`${t.kitchen > 1 ? `${t.kitchen} kitchens` : "a kitchen"}${f.kitchenCold ? " (cold: no wood)" : ""}`);
   if (t.mill) bits.push("a grain mill"); // wave 2 cooking
   if (t.grinder) bits.push("a meat grinder");
   for (const k of ["shop", "radio", "garage", "reload", "gate"]) if (t[k]) bits.push(W.WORKS[k].name); // ai-locks
