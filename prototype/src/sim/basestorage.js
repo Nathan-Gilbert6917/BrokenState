@@ -9,7 +9,7 @@
 // holds fills it: the supplies in base.stock (data.js SUPPLIES weight a unit, food by type included) and the items in
 // base.armory (inventory.js itemLoad). What does not fit lies OUTSIDE, in the open. Nothing is ever refused or blocked:
 // goods past the room are simply left out, with penalties. Water is not counted (its tanks, cisterns and barrels are
-// its own room: economy.js waterCapacity).
+// its own room: economy.js waterCapacity), nor is the woodpile (wood: stacked in the yard, woodpileOf).
 //
 // THE CONTAINERS (storageOf containers, in this order):
 //   1. the base's own core by tier (CORE_KG, as basemap.js tierKey reads the tier): a camp nothing ("camps start with
@@ -69,7 +69,12 @@ const CORE_NAME = { camp: "Camp cache", shelter: "Bunk shack", outpost: "Bunk sh
 export const OUTSIDE_WEAR = 0.02; // a share of an item's full uses lost a day outside (× WET_WEAR on a wet day)
 export const WET_WEAR = 2;
 export const WARN_DAYS = 3;       // the log line: at most once in this many days a base
-const NOT_STORED = new Set(["water", "rawwater"]); // their own tanks and barrels
+// Not goods in the room: water (its own tanks and barrels) and wood (the woodpile, stacked in the yard: the user's pick
+// 2026-10-20, "don't count the woodpile against storage room"; it reaches 6,000-9,000 by autumn). The woodpile is never
+// "outside" either (storageOf outsideKg); a raid still takes from it (basemap.js outsideOf lays it as piles on the map).
+const NOT_STORED = new Set(["water", "rawwater", "wood"]);
+/** The woodpile: the wood a base holds (whole units), kept apart from its storage room. @param {any} base */
+export const woodpileOf = (base) => Math.max(0, Math.floor((base && base.stock && base.stock.wood) || 0));
 const WET = new Set(["rain", "storm", "snow", "blizzard"]);
 const r1 = (v) => Math.round(v * 10) / 10;
 const EPS = 1e-9;
@@ -259,13 +264,14 @@ export function storageSummary(state, base) {
   const rows = [`Storage ${kgText(st.used)} / ${kgText(st.cap)} kg`];
   rows.push(st.containers.length ? `Room: ${containerWords(st).join(", ")}` : "No storage yet: park a vehicle here or build a storage box");
   if (st.outsideKg > 0) rows.push(`${kgText(st.outsideKg)} kg outside: ${outsideWords(base, st).join(", ")}`);
+  if (woodpileOf(base) > 0) rows.push(`Woodpile: ${woodpileOf(base)} wood`); // stacked in the yard, not in the room
   return rows;
 }
 /** The storage in one line ("Storage 420 / 650 kg: shed 600, …; 80 kg outside: 12 scrap, …"). @param {any} state @param {any} base */
 export function storageLine(state, base) {
   const st = storageOf(state, base);
   const room = st.containers.length ? containerWords(st).join(", ") : "no storage yet";
-  return `Storage ${kgText(st.used)} / ${kgText(st.cap)} kg: ${room}${st.outsideKg > 0 ? `; ${kgText(st.outsideKg)} kg outside: ${outsideWords(base, st).join(", ")}` : ""}`;
+  return `Storage ${kgText(st.used)} / ${kgText(st.cap)} kg: ${room}${st.outsideKg > 0 ? `; ${kgText(st.outsideKg)} kg outside: ${outsideWords(base, st).join(", ")}` : ""}${woodpileOf(base) > 0 ? `; woodpile ${woodpileOf(base)} wood` : ""}`;
 }
 
 // ---------- the daily wear outside ----------

@@ -45,11 +45,13 @@ function setup({ mech = 3 } = {}) {
 function setMech(f, mech) {
   for (const s of f.people || []) if (s.skills) { s.skills.mechanics = mech; s.skills.mechanics = mech - (skill(s, "mechanics") - mech); }
 }
-// Firewood (the cheapest a kg: it lies outside first) so that about `kg` lies outside the base tonight.
+// Empty jars (cheap a kg, no food: no still or kitchen wished for them) so that about `kg` lies outside the base
+// tonight. The woodpile is no longer goods in the room (basestorage.js woodpileOf, the user's pick 2026-10-20), but the
+// same wood still comes with it: the wooden storage builds are paid from it as before.
 function pileOutside(st, f, tile, kg) {
   const s = groupStorage(st, f, tile);
-  const wood = Math.ceil((kg + s.free) / 0.1);
-  f.stock.wood = (f.stock.wood || 0) + wood;
+  f.stock.jars = (f.stock.jars || 0) + Math.ceil((kg + s.free) / 0.4);
+  f.stock.wood = (f.stock.wood || 0) + Math.ceil((kg + s.free) / 0.1);
   return groupStorage(st, f, tile);
 }
 const isStore = (w) => !!w && STORE_KEYS.includes(w.type);
@@ -161,7 +163,8 @@ section("What they build, by size and need");
     const tn = stockTonight(st, f);
     const share = (tn[t1].scrap || 0) / Math.max(1, f.stock.scrap);
     if (check(share > 0, `the outpost has people and its share of the stores (${Math.round(share * 100)}%)`)) {
-      f.stock.wood = Math.ceil(3000 / 0.1 / share);
+      f.stock.wood = Math.ceil(3000 / 0.1 / share); // the woodpile for the shed's wood (it takes no room now)
+      f.stock.jars = Math.ceil(3000 / 0.4 / share); // and 3000 kg of goods at the outpost
       const s = groupStorage(st, f, t1);
       const w = nextWork(st, f);
       check(s.outsideKg > 600 && w && w.tile === t1 && w.type === "shed", `${Math.round(s.outsideKg)} kg outside the outpost: a shed (${w && w.tile === t1 ? w.type : JSON.stringify(w)})`);

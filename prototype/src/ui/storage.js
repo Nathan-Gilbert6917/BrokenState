@@ -10,7 +10,7 @@
 // everything laid out afresh) and Put the rest away (only the unassigned). ui.storage = { from, to, qty }.
 import { baseById } from "../sim/world.js";
 import { containersOf, containerByKey, putItem, putSupply, autoStore, kgOf, LOOSE, OUTSIDE } from "../sim/containers.js";
-import { storageOf, storageSummary, itemRoomKg } from "../sim/basestorage.js";
+import { storageOf, storageSummary, itemRoomKg, woodpileOf } from "../sim/basestorage.js";
 import { rowName } from "../sim/itemnames.js";
 import { FOODS } from "../sim/foods.js";
 import { badge, hint, pbar, chip, supName, supIcon } from "./uikit.js";
@@ -64,6 +64,7 @@ export function storageTab(state, b, ui) {
     ${pbar(pct, pct > 95 ? "bad" : pct > 80 ? "warn" : "info", `${r0(st.inside)} / ${r0(st.cap)} kg`, `${Math.round(pct)}% used`, null, `${r0(st.inside)} kg kept inside ${r0(st.cap)} kg of room`)}
     <div class="small muted">${rows.slice(1, 2).map(esc).join("")}</div>
     ${st.outsideKg > 0 ? `<div class="small warn"${tip(KIND_TIP.outside)}>⚠ <b>${r0(st.outsideKg)} kg lie outside: they weather, and raiders take them first.</b> ${over ? "The base's storage is too small for its goods: build a storage box, crates, a shed or a storehouse, shelves and lockers inside a general building, or park a vehicle here." : "Tidy up to make room."}</div>` : `<div class="small good">Nothing lies outside.</div>`}
+    <div class="small" style="margin-top:0.2rem"${tip("The woodpile (sim/basestorage.js woodpileOf): the base's wood, stacked in the yard. It takes no storage room and never counts as goods left outside; the fires and the builds take from it, and a raid can carry some off.")}>🪵 Woodpile: ${woodpileOf(b)} wood</div>
     ${byKey[LOOSE].kg > 0 ? `<div class="small muted" style="margin-top:0.2rem"${tip(KIND_TIP.loose)}>${r0(byKey[LOOSE].kg)} kg ${nowhere}, inside wherever there is room.</div>` : ""}
     ${cars.some((c) => c.kg > 0) ? `<div class="small muted" style="margin-top:0.2rem">Goods in a car stay on the base's books: if the car drives off they are ${nowhere} again (it does not take them); on the map a raid can loot the car where it stands.</div>` : ""}
     <div class="row" style="margin-top:0.4rem;flex-wrap:wrap"><button class="mini primary" data-action="st-tidy" data-base="${b.id}"${tip("Lay everything out afresh (what is in a car stays), the most valuable for their weight first: food where it keeps (cellar, cold store, freezer, storehouse, crates, shelves), rounds and guns in the armory, dear things (meds, parts) in the base itself and the storehouse, gear in the lockers, the rest in the warehouse or the storehouse first. The game does this daily on the autopilot.")}>Tidy up</button><button class="mini" data-action="st-rest" data-base="${b.id}" ${byKey[LOOSE].kg + byKey[OUTSIDE].kg > 0 ? "" : "disabled"}${tip(byKey[LOOSE].kg + byKey[OUTSIDE].kg > 0 ? `Put what is ${nowhere} into the containers with room; what is in a container stays where it is.` : `Nothing is ${nowhere}.`)}>Put the rest away</button></div>

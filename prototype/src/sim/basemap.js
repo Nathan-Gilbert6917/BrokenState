@@ -119,7 +119,7 @@ import { isChopTool, bestChop } from "./woodcutting.js"; // felling a tree goes 
 import { layMines } from "./mines.js"; // the main base's minefield, buried in the open ground round the yard (call-time only)
 import { FORT } from "./fort.js"; // the wire rings' and the mines' distances from the wall (call-time only: the modules load in a circle)
 import { cfgOf } from "./worldcfg.js"; // the run's dials: Base yard to start / at most
-import { storageOf, coreStoreKg, vehicleStoreKg } from "./basestorage.js"; // the base's room and what lies outside (call-time only)
+import { storageOf, coreStoreKg, vehicleStoreKg, woodpileOf } from "./basestorage.js"; // the base's room and what lies outside (call-time only)
 import { BED_FOOT } from "./data-beds.js"; // beds as furniture: a cot, bed or bunk bed 1 × 2, a large bed 2 × 2, on a general building's floor
 import { setFurnitureAt, furnitureInStores } from "./beds.js"; // beds as furniture: set from the stores where the ghost is (call-time only)
 
@@ -1669,6 +1669,10 @@ export function outsideOf(state, base) {
     if (n > 0) { sup[k] = n; kg += n * kgOf(k); }
   }
   for (const i of st.outside.gear) { const it = base.armory && base.armory[i]; if (it) { gear.push(i); kg += itemKg(it); } }
+  // The woodpile (basestorage.js woodpileOf: never in the room, never "outside" in the books) lies in the yard all the
+  // same: it is laid with the piles, and a raid takes from it as from anything left out.
+  const wood = woodpileOf(base);
+  if (wood > 0) { sup.wood = (sup.wood || 0) + wood; kg += wood * kgOf("wood"); }
   return gear.length || Object.keys(sup).length ? { sup, gear, kg } : null;
 }
 // The piles of what lies outside, laid on the map (buildBaseMap, after the buildings and the doorways): crates stacked

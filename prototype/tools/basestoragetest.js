@@ -7,7 +7,7 @@
 //   - the room by tier (a camp 0, a shelter 150, an outpost 500, the main hub 1200), the same for the groups' bases;
 //   - a parked truck adds its payload, and a team driving off in it takes the room away;
 //   - a storage box adds 60 once built (nothing while it is in the queue); where the storage buildings may stand;
-//   - the fill: valuables inside, scrap and firewood outside first;
+//   - the fill: valuables inside, scrap outside first; the woodpile (wood) is never in the room nor outside;
 //   - an opened fire safe in the armory is room, a sealed one an item;
 //   - the fire safe and the rifle case: carried in both arms only (no pocket, pack slot or pouch), two hands;
 //   - the daily wear outside (doubled on a wet day), none inside, and the throttled log line.
@@ -127,25 +127,25 @@ section("Storage buildings");
 }
 
 // ======================================================================
-section("The fill: valuables in, scrap and firewood out");
+section("The fill: valuables in, scrap out; the woodpile apart");
 {
   const st = W(), h = hub(st);
   asCamp(h); parkAway(st, h); empty(h);
   addBuilding(h, "storebox"); // 60 kg
   h.stock.scrap = 30;  // 60 kg, worth 0.5 a kg
-  h.stock.wood = 100;  // 10 kg, worth 0.2 a kg
+  h.stock.wood = 100;  // the woodpile: stacked in the yard, not in the room (the user's pick 2026-10-20)
   h.stock.meds = 10;   // 1 kg, worth 80 a kg
   const ring = newItem("goldring"), axe = newItem("fireaxe");
   h.armory.push(axe, ring);
   const s = storageOf(st, h);
-  check(s.cap === 60 && near(s.used, 60 + 10 + 1 + 0.05 + 2.7, 0.11), `cap 60, used ${s.used} kg (everything, inside and out)`);
+  check(s.cap === 60 && near(s.used, 60 + 1 + 0.05 + 2.7, 0.11), `cap 60, used ${s.used} kg (everything, inside and out, the woodpile apart)`);
   check(!s.outside.gear.length, "the gold ring and the axe are inside");
   check(!s.outside.sup.meds, "the meds are inside");
-  check(s.outside.sup.wood >= 90, `the firewood is outside first (${s.outside.sup.wood} of 100: a few sticks fill the last corner)`);
+  check(!s.outside.sup.wood && !s.containers.some((c) => c.sup.wood), `the woodpile is neither in the room nor "outside" (${s.outside.sup.wood || 0})`);
   check(s.outside.sup.scrap > 0 && s.outside.sup.scrap < 30, `then the scrap that does not fit (${s.outside.sup.scrap} of 30)`);
   check(near(s.outsideKg + s.inside, s.used, 0.11) && s.inside <= s.cap + 1e-9, `inside ${s.inside} + outside ${s.outsideKg} = used`);
   const sum = storageSummary(st, h);
-  check(/^Storage \d+ \/ 60 kg$/.test(sum[0]) && /storage box 60/.test(sum[1]) && /kg outside: .*wood/i.test(sum[2] || ""), `the summary rows (${sum.join(" | ")})`);
+  check(/^Storage \d+ \/ 60 kg$/.test(sum[0]) && /storage box 60/.test(sum[1]) && /kg outside: .*scrap/i.test(sum[2] || "") && sum[3] === "Woodpile: 100 wood", `the summary rows (${sum.join(" | ")})`);
   // A heavy, cheap item goes out before a light, dear one.
   h.stock = { scrap: 29 };
   const sledge = newItem("fireaxe"); sledge.quality = 0.2; // a worn axe: little worth for its weight

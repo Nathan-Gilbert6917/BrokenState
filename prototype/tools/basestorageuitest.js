@@ -202,7 +202,7 @@ section("The autopilot's storage ladder by the size of base");
   // An outpost: crates or a storage shed.
   st = W(); h = hub(st);
   const o = mkOutpost(st, h.tile + 1);
-  Object.assign(o.stock, { scrap: 300, buildmat: 2, wood: 200 }); // 600 kg + 2 buildmat + 20 kg of wood, room 500
+  Object.assign(o.stock, { scrap: 300, buildmat: 2, wood: 600 }); // 600 kg + 2 buildmat, room 500; the woodpile (no room) pays a shed's 400 wood (woodwork)
   w = storageWish(st, o);
   check(w && ["crates", "shed"].includes(w.type) && BUILDINGS[w.type].storeKg >= storageOf(st, o).outsideKg, `an outpost: ${w && w.type} for ${storageOf(st, o).outsideKg} kg outside`);
   o.stock.scrap = 500;
