@@ -40,6 +40,7 @@ import { sumRecs } from "./rounds.js"; // rounds by key: each gun judged by its 
 import { wandererJoinChance, wandererJoins } from "./groupcare.js"; // AI parity: groups recruit wanderers by type, food and beds
 import { swapGun, kitGunSource, bodyGunSource } from "./gundist.js"; // the gun distribution: wanderers' guns
 import { carriedRec } from "./ammo.js"; // the loose rounds people carry
+import { PARLEY } from "./parley.js"; // fighting side by side (g.fought)
 
 export const WANDER = {
   // The road: per tile a team enters, ROAD × the tile's density × the mode's factor (× NIGHT at night), at most ROAD_MAX;
@@ -363,6 +364,7 @@ export function talkChance(state, p, g, gift = false) {
   const m = W.MOODS[g.mood] || W.MOODS.wary;
   let c = m.talk + W.TALK_SKILL * talkSkill(state, p) + (g.talked || g.gifted ? W.AGAIN_BONUS : 0) + (gift ? W.GIFT_BONUS * (g.mood === "desperate" ? 1.3 : 1) : 0);
   if (anyPerk(partyMembers(state, p), "charming")) c += 0.05;
+  c += Math.min(PARLEY.ODDS.foughtMax, (g.fought || 0) * PARLEY.ODDS.fought); // parley.js: they fought beside you on a raid's map
   return clamp(c, 0.05, 0.95);
 }
 function remember(state, g, p) {
@@ -778,7 +780,7 @@ export function wanderersAfterRaid(state, p, result, tileId = null) {
       bump(state, "raid-neutral-attacked");
       continue;
     }
-    if (!r.met || !g.people.length || !p || !state.parties.includes(p) || !partyMembers(state, p).length) continue;
+    if (!r.met || r.noCard || !g.people.length || !p || !state.parties.includes(p) || !partyMembers(state, p).length) continue; // noCard: they agreed to join on the map (parley.js: its recruit card)
     bump(state, "raid-neutral-met");
     addCard(state, neutralCard(state, p, g, { site: true }));
   }

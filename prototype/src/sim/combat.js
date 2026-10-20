@@ -85,6 +85,7 @@ import { volFought } from "./volunteers.js"; // volunteers: an allied group's pe
 import { thirdFoes, enemyTargetsThird, hostilePair, thirdPlan, thirdSideHit, thirdSideUnit, placeThird, thirdResult } from "./thirdside.js";
 import { crossFoes, crossTurn, crossDraw, crossHit, noteShot, crossRound } from "./crossfire.js"; // a raid's raiders and dead fight on contact; their noise draws the dead to them while you are unseen; shots heard, not seen
 import { folkTick, resolveBattleCards, dropBattleCards } from "./floorfolk.js"; // who holds the upper floors of a city building (the crawl)
+import { placeParley, parleySetup, parleyTick, parleySpotted, parleyEnemyPhase, parleyEnd, parleyResult, callOut, parleyHarm, botCallOut } from "./parley.js"; // other groups on a raid's map: they call out, you call out (every hook marked "parley.js")
 import { isHardcore } from "./hardcore.js";
 import { raidCarrySetup, autoTake, stashAll, raidHome, personalRoom, trunkSpace, atVehicle, setRefit, haulLoad, dropHaul, dropHeld } from "./raidloot.js"; // loot by hand: each survivor carries their own, the vehicle has a trunk
 import { SEARCH, hideSome, revealHidden, quickRefusal, quickNoise, quickHurt, quickable, botPressed, takeFree } from "./search.js"; // full search (1 action) and the quick rummage
@@ -3975,6 +3976,7 @@ export function damage(b, t, raw, by, nonLethal = false, hit = null) {
   }
   if (b.rescue) eff *= captiveHitMult(b, t, by); // rescueraid.js: guards shoot to wound captives
   t.hp = Math.max(0, t.hp - eff);
+  if (b.parley && by && eff > 0) parleyHarm(b, t, by, false); // parley.js: an allied group's hit on the dead or a hostile
   if (t.hp > 0) {
     if (t.ztype === "boneback" || t.ztype === "flinger") afterHit(b, t, by, hit, eff); // middead.js
     swarmBite(b, t, by); // carriers.js: a worm swarm's bite can leave the worm in the living
@@ -3997,6 +3999,7 @@ export function damage(b, t, raw, by, nonLethal = false, hit = null) {
   } else {
     t.dead = true;
     t.killedBy = by ? by.side : null;
+    if (b.parley && by) parleyHarm(b, t, by, true); // parley.js: fighting side by side (theirs, or yours next to them)
     if (by && by.sid != null) { const k = (b.killsBy || (b.killsBy = {}))[by.sid] || (b.killsBy[by.sid] = { z: 0, h: 0 }); k[t.kind === "zombie" ? "z" : "h"]++; } // service record (relations.js)
     if (b.raid && t.kind === "human" && !searchedInBattle(b, t)) b.raid.containers.push({ id: b.nextId++, x: t.x, y: t.y, f: t.f || 0, kind: "body", area: null, searched: false, kit: t.kit, weapon: t.weapon, label: `${t.name}'s body`, uid: t.id }); // uid: dragged along with the body (stealth.js)
     else if (b.raid && t.bodyBox) dropBodyBox(b, t); // carriers.js: one of the risen, put down: the body it got up from (what was on it)
@@ -4051,8 +4054,8 @@ function detect(b, mover) {
     // Light Step and Ghost (skills.js), night and a flashlight (stealth.js).
     const r = detectRange(b, e, mover);
     if (dist(e.x, e.y, mover.x, mover.y) <= r && los(b, e.x, e.y, mover.x, mover.y)) {
-      alertPod(b, e.pod, `${e.name} spotted ${mover.name}!`);
-    } else if (lightSpotted(b, e, mover)) alertPod(b, e.pod, `${e.name} sees ${mover.name}'s light!`);
+      if (!parleySpotted(b, e, mover)) alertPod(b, e.pod, `${e.name} spotted ${mover.name}!`); // parley.js: their group may call out instead
+    } else if (lightSpotted(b, e, mover) && !parleySpotted(b, e, mover)) alertPod(b, e.pod, `${e.name} sees ${mover.name}'s light!`);
   }
 }
 // A raider, a soldier, any enemy person (not the dead: they keep their own senses, decoys.js) who sees a light one of
@@ -4958,6 +4961,11 @@ export function combatAct(state, act) {
       u.hunker = false;
       break;
     }
+    case "callout": { // parley.js: shout to another group in sight to talk (1 action; the card opens over the fight)
+      const err = callOut(state, b, u, t);
+      if (err) return err;
+      break;
+    }
     case "pickup": { // carriers.js: pick up a body next to the unit (1 action; slower, no shooting while carrying)
       const err = pickUp(b, u, t);
       if (err) return err;
@@ -4985,6 +4993,7 @@ export function combatAct(state, act) {
   closePlan(b); // raidplan.js: anyone acted: the team went in as it was
   bump(b);
   if (b.raid && b.raid.folk) folkTick(state, b); // floorfolk.js: the barricaded survivors' door reached, the nest stirring
+  if (b.raid) parleyTick(state, b); // parley.js: a group that called out to your people: its card
   checkEnd(state, b);
   if (!b.over && b.phase === "player" && !b.units.some((x) => x.side === "player" && activeAny(x) && x.ap > 0)) endPlayerTurn(state);
   return "";
@@ -5001,6 +5010,7 @@ export function endPlayerTurn(state) {
   for (const u of b.units) if (u.side === "player") { u.ap = 0; u.suppressed = 0; } // pinned (suppressing fire) until their own turn ends
   stunTurnEnd(b, ["player"]); // throwables.js: a flashbang's stun served this turn wears off
   b.phase = "enemy";
+  if (b.parley) parleyEnemyPhase(b); // parley.js: a treacherous group's trap sprung, a standoff out of patience, your time to get out up
   for (const u of b.units) if ((u.side === "enemy" || u.side === "third") && activeAny(u)) { u.ap = u.surprised ? 0 : 2; u.ow = false; u.hunker = false; u.surprised = false; if (u.vaulted) u.vaulted = 0; } // thirdside.js: the third side moves in the enemy phase too
   for (const u of enemyCartsLetGo(state, b)) u.ap = Math.max(0, u.ap - CART_FIGHT.park); // carts.js: theirs park their carts as cover first (an action, as yours)
   stunTurnStart(b, ["enemy", "third"]); // throwables.js: the ones a flashbang caught lose their actions
@@ -5100,6 +5110,7 @@ function startPlayerTurn(state, b) {
   // A base battle (interior.js): the wall breached (on to the yard map), the yard lost (the last stand).
   if (b.tier && !b.over) tierPlayerTurn(state, b);
   if (b.raid && b.raid.folk && !b.over) folkTick(state, b); // floorfolk.js: the nest woken by the Heat or the noise of the enemy phase
+  if (b.raid && !b.over) parleyTick(state, b); // parley.js: the groups that called out in the enemy phase: their cards
   offerClear(b);
   if (b.evacOrder && !b.over) evacTurn(state, b); // the Evac order stands: the next leg toward the way out
 }
@@ -6887,8 +6898,9 @@ export function createRaid(state, setup) {
   let pod = 0, zn = 0, hn = 0;
   const buildings = map.areas.filter((a) => !a.outdoor);
   // thirdside.js: the people on the move (wanderers.js groups with a side, or its armed survivors) come into a building through interiorOccupants instead.
-  if (pick) placeInterior(state, b, map, groups.filter((g) => !g.side && !g.wanderer).map((g) => ({ ...g, count: Math.max(0, Math.min(MAX_ENEMIES, Math.round(g.count || 0))) }))); // buildingmaps.js: in the rooms
+  if (pick) placeInterior(state, b, map, groups.filter((g) => !g.side && !g.wanderer && !g.parley).map((g) => ({ ...g, count: Math.max(0, Math.min(MAX_ENEMIES, Math.round(g.count || 0))) }))); // buildingmaps.js: in the rooms
   for (const g of pick ? [] : groups) {
+    if (g.parley) continue; // parley.js: an AI group's party, placed below
     // The dead scale with the street map's size (battlesize.js raidDeadScale: more of them over a city center); a
     // campsite's own dead (campsite.js campRoster, g.camp) fewer on a small map as any raid's, never more than the camp's
     // count on a big one (an older save's: scaled as they always were). The higher cap only with the big-map scales
@@ -6920,6 +6932,7 @@ export function createRaid(state, setup) {
         if (!c) continue;
         u.x = c[0]; u.y = c[1]; u.aware = false; u.pod = pod; u.home = [hx, hy];
         if (g.factionId != null) u.factionId = g.factionId; // prisoners.js: whose people they are
+        if (g.name) u.gname = g.name; // parley.js: the group's own name on its record
         if (u.factionId != null) armFromArsenal(state, b, u, hn); // arsenal.js
         if (g.side === "neutral" || g.side === "military") thirdSideUnit(b, u, g, i); // thirdside.js: survivors hiding here, a squad clearing it
         if (g.camp) u.camp = g.camp; // campsite.js: the campers (placed round their fire: campRaidUnits)
@@ -6929,6 +6942,7 @@ export function createRaid(state, setup) {
     }
   }
   truckCrews(state, b); // miltrucks.js: the turned crews standing round the Army trucks
+  placeParley(state, b, groups.filter((g) => g.parley)); // parley.js: an AI group's party scavenging the site (scavenge.js raidEnemies)
   placeBodies(b, state.seed); // sleepers.js: bodies lie about, Sleepers among them
   placeWalking(state, b); // carriers.js: the walking dead that drifted near this tile, among the ordinary dead
   if (b.raid.camp) campRaidUnits(state, b, b.raid.camp); // campsite.js: its tents on the battle's list, the campers round the fire or asleep in the tents, the dead among them, the bodies, the fire's glow
@@ -6952,6 +6966,7 @@ export function createRaid(state, setup) {
   stageAtStart(state, b); // carry.js: the loads into the vehicle, the rest set down in the entry zone
   planStart(state, b, rs); // raidplan.js: before going in, the side, a scout, the night
   placeMapCarts(state, b); cartHelpStart(state, b); // carts.js: carts standing in the barns and garages; two on a hand cart
+  parleySetup(state, b); // parley.js: a record for every other group on the map (none: no b.parley, the old paths)
   return b;
 }
 
@@ -7008,10 +7023,10 @@ export function notice(b, e) {
     if (p.side !== "player" || !active(p)) continue;
     const r = detectRange(b, e, p, false); // stealth.js: shorter at night, longer for a flashlight
     if (dist(e.x, e.y, p.x, p.y) <= r && los(b, e.x, e.y, p.x, p.y)) {
-      alertPod(b, e.pod, `${e.name} spotted ${p.name}!`);
+      if (!parleySpotted(b, e, p)) alertPod(b, e.pod, `${e.name} spotted ${p.name}!`); // parley.js: their group may call out instead
       return;
     }
-    if (lightSpotted(b, e, p)) { alertPod(b, e.pod, `${e.name} sees ${p.name}'s light!`); return; } // a light at night, from far off
+    if (lightSpotted(b, e, p)) { if (!parleySpotted(b, e, p)) alertPod(b, e.pod, `${e.name} sees ${p.name}'s light!`); return; } // a light at night, from far off
   }
 }
 
@@ -7037,14 +7052,16 @@ export function alertNear(b, x, y, radius, why, src = null) {
 }
 const FLOOR_DAMP = 5; // a storey between a noise and a listener counts as this many tiles more
 
-// Heat climbs every turn and with noise. Each new stage brings a wave of the dead.
+// Heat climbs every turn and with noise. Each new stage (every RAID_HEAT.stage) brings a wave of the dead.
+export const RAID_HEAT = { turn: 1.2, noise: 1, infection: 0.6, stage: 25 }; // a turn's Heat: turn + noise × b.noise + infection × b.infection (parley.js shoutCost reads it)
 function raidTurn(b) {
   const R = b.raid;
   const rng = b.rng;
   const noise = b.noise;
   b.noise = 0;
-  R.heat = Math.min(100, R.heat + 1.2 * (R.big ? raidHeatRate(b.w, b.h) : 1) + noise * 1.0 + b.infection * 0.6); // a big map (battlesize.js raidBig): the clock runs slower
-  const stage = Math.min(3, Math.floor(R.heat / 25));
+  const K = RAID_HEAT;
+  R.heat = Math.min(100, R.heat + K.turn * (R.big ? raidHeatRate(b.w, b.h) : 1) + noise * K.noise + b.infection * K.infection); // a big map (battlesize.js raidBig): the clock runs slower
+  const stage = Math.min(3, Math.floor(R.heat / K.stage));
   if (stage > R.stage) {
     R.stage = stage;
     say(b, `Heat is now ${HEAT_NAMES[stage]}.`, "danger");
@@ -7288,6 +7305,7 @@ function endRaid(state, b) {
   const rng = state.rng;
   const R = b.raid;
   b.over = true;
+  parleyEnd(b); // parley.js: the pods that held their fire are the enemy's again
   settleVehicle(state, b); // everyone out of the vehicle; what ramming cost it
   b.phase = "over";
   MED.settleFoes(b, "raid"); // medics.js: the downed guards (tied ones can still be taken out as prisoners)
@@ -7354,6 +7372,7 @@ function endRaid(state, b) {
     turns: b.turn, medsUsed: b.medsUsed, extraKilled: enemies.filter((u) => u.reinforcement && u.dead).length,
     tactical: true, worn: true,
     third: thirdResult(b), // thirdside.js: the survivors or soldiers who were there (null: none)
+    parley: parleyResult(b), // parley.js: the groups talked to, their truces, trades and joiners (null: no other group)
     raid: {
       extractedIds, carriedIds, vehicleKept, hadVehicle, heat: Math.round(R.heat),
       searched: R.containers.filter((c) => c.searched && c.kind !== "body" && c.kind !== "ground").length, total: R.containers.filter((c) => c.kind !== "body" && c.kind !== "ground").length, // ground.js piles are not places to search
@@ -7427,7 +7446,7 @@ function autoRaidTurn(state) {
   const party = state.parties.find((x) => x.id === b.setup.partyId);
   const stairCells = () => (R.stairs || []).filter(([x, y]) => cellAt(b, x, y).walk);
   const exitCells = () => { const out = []; for (const zz of R.zones) for (let y = zz.y0; y < zz.y0 + zz.h; y++) for (let x = zz.x0; x < zz.x0 + zz.w; x++) if (cellAt(b, x, y).walk) out.push([x, y]); return out; };
-  if (R.folk) resolveBattleCards(state); // floorfolk.js: a card raised over the fight (the survivors upstairs) answered by its weights
+  if (R.folk || b.parley) resolveBattleCards(state); // floorfolk.js: a card raised over the fight (the survivors upstairs, parley.js: a group's call) answered by its weights
   // The squad's call to leave, once a turn (BOT_LEAVE above).
   const squad = b.units.filter((x) => x.side === "player" && !x.left && !x.dead);
   const standing = squad.filter(activeAny);
@@ -7493,6 +7512,10 @@ function autoRaidTurn(state) {
       // stealth.js: a flashbang into a room (or a knot) of two or more people who know the team is there, then the rest
       // of the turn (the stunned cannot watch the doorway).
       if (!leave && botFlash(state, b, u, true)) continue;
+      // parley.js: another group in sight, not yet hostile and aware (or an unaware pod too many for the squad): the
+      // best talker who sees them calls out (botCallOut's weighed rule), the card answered at once by its weights.
+      const talk = b.parley ? botCallOut(state, b, leave) : null;
+      if (talk) { const err = combatAct(state, { type: "callout", unit: talk.unit.id, target: talk.target.id }); resolveBattleCards(state); if (!err) continue; }
       if (!leave && u.gl && aiLaunch(b, u)) break; // launchers.js: HE or a rocket on three or more bunched up (the turn's attack)
       // Fight only what is close; otherwise keep moving (shooting raises Heat).
       const foes = foesOf(b, u).filter((f) => f.aware && canSee(b, u, f) && dist(u.x, u.y, f.x, f.y) <= (leave ? 1.5 : 4));
@@ -7567,7 +7590,7 @@ function autoRaidTurn(state) {
   }
   // Storeys: the view ends on the floor of the first of your people still standing.
   if (b.floors && !b.over) { const first = b.units.find((x) => x.side === "player" && activeAny(x)); if (first && (first.f || 0) !== (b.floor || 0)) setFloor(b, first.f || 0); }
-  if (R.folk) resolveBattleCards(state); // a card its moves raised this turn
+  if (R.folk || b.parley) resolveBattleCards(state); // a card its moves raised this turn
   bump(b);
   if (!b.over && b.phase === "player") endPlayerTurn(state);
 }

@@ -238,7 +238,7 @@ function barricadeSurvivors(state, b) {
 // The raiders: better armed deeper in; upstairs (offices, apartments, police) with a watcher by the stairs below; their stash.
 function holeUpRaiders(state, b, n, up) {
   const rng = state.rng, R = b.raid, K = FOLK.RAIDERS;
-  const raiders = b.units.filter((u) => u.side === "enemy" && u.kind === "human" && u.kit === "raiders" && !u.occupant && standing(u));
+  const raiders = b.units.filter((u) => u.side === "enemy" && u.kind === "human" && u.kit === "raiders" && !u.occupant && !u.party && standing(u)); // party: another group's people passing through (parley.js)
   if (!raiders.length) return null;
   if (n >= K.strongFrom) {
     const p = Math.min(K.strongMax, K.strongPer * (n - K.strongFrom + 1));

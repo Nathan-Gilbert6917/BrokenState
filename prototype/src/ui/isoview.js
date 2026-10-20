@@ -30,6 +30,7 @@ import { unitCanvas, unitFacing, muzzleOf } from "./sprites.js";
 import { unitFigure, unitFigureDown, corpseFigure, figureMuzzle, FIG } from "./figures.js"; // every body as a low-poly figure, facing its way; the fallen lying along the world's x
 import { unitDownCanvas, drawDowned, downScale, corpseCanvas } from "./downsprites.js";
 import { thirdRing } from "../sim/thirdside.js";
+import { parleyStatus } from "../sim/parley.js"; // another group's people on a raid's map: the hostility badge
 import { endangered, imminent } from "../sim/carriers.js"; // a body in danger from the worm
 import { isMedic } from "../sim/medics.js"; // a med kit makes a medic: the cross tag
 import { nlTags } from "./nonlethal.js"; // status tags of the non-lethal kit (sim/nonlethal.js)
@@ -2218,6 +2219,11 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   const h = H.hover;
   if (H.cone) fillCells(ctx, b, (i) => H.cone.has(i), "rgba(255,140,40,0.32)"); // the pepper spray's cone (ui/nonlethal.js)
   if (H.mode === "parkCart" && u) { const ps = new Set(parkCells(b, u).map(([x, y]) => y * b.w + x)); fillCells(ctx, b, (i) => ps.has(i), "rgba(224,168,79,0.38)"); } // sim/carts.js: the four cells beside them a cart can be parked on
+  if (H.callout && H.callout.length) { // Call out (ui/combat.js): whom the selected one can call to, one per group
+    ctx.strokeStyle = "#ffd166"; ctx.lineWidth = 2; ctx.setLineDash([4, 3]); ctx.beginPath();
+    for (const t of H.callout) if (onFloor(b, t)) diamond(ctx, t.x, t.y, tileTop(b, t.x, t.y), 1.5);
+    ctx.stroke(); ctx.setLineDash([]);
+  }
   if (H.mode === "meds" && u) {
     ctx.strokeStyle = COL.good; ctx.lineWidth = 2; ctx.beginPath();
     for (const p of players) if (!p.dead && !p.left && (p === u || Math.max(Math.abs(u.x - p.x), Math.abs(u.y - p.y)) === 1)) diamond(ctx, p.x, p.y, tileTop(b, p.x, p.y), 1.5);
@@ -2715,6 +2721,11 @@ function drawLabels(ctx, b, s, H) {
   }
   const hh = hAt(b, t.x, t.y);
   const tags = [];
+  // Another group's people on a raid's map (sim/parley.js): ⚔ while actively hostile, else the word (Truce, Allied …);
+  // an amber ! when the sim says one of yours sees through them (status.tell, nothing else).
+  const g = b.raid && t.side !== "player" && !t.down ? parleyStatus(b, t) : null;
+  if (g) tags.push(g.active ? ["⚔", g.color || COL.bad, true] : [String(g.label || "").toUpperCase(), g.color || "#e9d98f"]); // true: a filled pill
+  if (g && g.tell) tags.push(["!", "#f0b44a", true]); // a tell (parleyStatus.tell: one of yours saw through them, and they give themselves away now)
   if (t.down && !t.surr) tags.push([t.ko ? (t.tied ? "TIED" : "ZZ") : t.stab ? "+" : "!", t.ko ? "#9aa0a8" : t.stab ? COL.good : COL.bad]); // surr: its own tag (ui/nonlethal.js)
   else if (t.tied && !t.down) tags.push(["TIED", "#c9a74a"]); // a captive of yours tied up on a rescue raid (sim/rescueraid.js)
   if (t.ztype && !t.down) tags.push([`${t.short}${t.elite ? "★" : ""}`, ringOf(t)]);
@@ -2728,17 +2739,17 @@ function drawLabels(ctx, b, s, H) {
   if (t.floored && !t.down && !t.dead) tags.push(["FLAT", "#ffd166"]); // shoved flat on their back (sim/shoving.js): an action to get up
   if (t.heldBy != null && !t.down && !t.dead) tags.push(["HELD", "#ff8f85"]); // one of the dead has hold of them (sim/shoving.js gripOf)
   if (t.stun && !t.down && !t.dead) tags.push(t.stun.dazed ? ["DZ", "#cfd6e0"] : ["STN", "#ffffff"]); // a flashbang (sim/throwables.js)
-  if (t.side === "enemy" && !t.aware && !t.ko) tags.push(t.investigate ? ["??", "#e0a84f"] : ["?", "#ffd166"]);
+  if (t.side === "enemy" && !t.aware && !t.ko && !(g && g.label === "Unaware" && !t.investigate)) tags.push(t.investigate ? ["??", "#e0a84f"] : ["?", "#ffd166"]);
   if (t.side === "player" && t.post && b.phase === "deploy") tags.push([t.post === "gate" ? "G" : t.post === "wall" ? "W" : t.post === "tower" ? "T" : "P", "#e0a84f"]);
   if (t.surprised) tags.push(["!", "#ffd166"]);
   tags.push(...nlTags(t)); // stunned, blinded, hands up, pulling blows (ui/nonlethal.js)
   if (hh && !t.down) tags.push(["▲".repeat(hh), "#ffe296"]);
   ctx.font = `700 ${fs}px Segoe UI, sans-serif`;
   let tx = X - bw / 2;
-  for (const [txt, col] of tags) {
+  for (const [txt, col, fill] of tags) {
     const w = ctx.measureText(txt).width + 6;
-    ctx.fillStyle = "rgba(15,17,20,0.9)"; rr(ctx, tx, by - fs - 4, w, fs + 2, 3); ctx.fill();
-    ctx.fillStyle = col; ctx.textAlign = "left"; ctx.fillText(txt, tx + 3, by - 5);
+    ctx.fillStyle = fill ? col : "rgba(15,17,20,0.9)"; rr(ctx, tx, by - fs - 4, w, fs + 2, 3); ctx.fill();
+    ctx.fillStyle = fill ? "#1a0f0e" : col; ctx.textAlign = "left"; ctx.fillText(txt, tx + 3, by - 5);
     tx += w + 2;
   }
   // The hit chance of the selected unit against each enemy in sight (X-COM's labels).

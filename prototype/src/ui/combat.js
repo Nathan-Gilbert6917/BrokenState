@@ -24,6 +24,8 @@ import { WINDOW, windowsBy, windowState, windowWord, openRefusal, isWindow, wind
 import { WIRE, cutTargets, cutRefusal, cutterOf } from "../sim/wire.js"; // Cut wire (the user's request 2026-10-19)
 import { SHOVE, BOARD, CRAWL, shoveTargets, shoveDests, shoveRefusal, shovePlan, tallPiece, canShove, shoveable, pieceName, boardTargets, boardRefusal, boardsOf, tearTargets, isBoarded, boardedName, boardedUnder, targetWord } from "../sim/barricade.js"; // furniture shoved in the way, doors and windows boarded up (the user's request 2026-10-18)
 import { INTERIOR } from "../sim/interior.js";
+import { PARLEY, parleyStatus, parleyGroupsSeen, callOutRefusal, callOutTargets } from "../sim/parley.js"; // other groups on a raid's map: Call out, hostile or not (the user's request 2026-10-20)
+import * as PARLEY_SIM from "../sim/parley.js"; // the exports that may not be there yet (shoutCost), looked up when present
 import { TENT_TAKE, tentsNear, strikeRefusal, slashTargets, slashRefusal, goesLeft, tentWord, tentWear } from "../sim/tentfight.js"; // Take down and Slash at a tent (the user's request 2026-10-20)
 import { clearEnough } from "../sim/battlesize.js";
 import { SUPPLIES, GEAR } from "../sim/data.js";
@@ -428,7 +430,7 @@ function act(state, a) {
   if (!err && a.type !== "end") {
     const u = unitById(b, a.unit);
     if (u && u.side === "player") followFloor(b, u); // Go up / Go down: the view goes with them
-    if (!u || !active(u) || u.ap < 1 || ["throw", "drag", "tie", "subdue", "shoveFoe", "taser", "pepper", "execute", "surrender", "peek", "close", "brace", "checkwindow", "openwindow", "closewindow", "breakwindow", "shove", "boardup", "teardown", "cutwire", "strike", "slashtent", "keylock", "keyunlock", "doubletap", "pickup", "crush", "goup", "godown", "drive", "loadRam", "unloadRam", "board", "disembark", "turn", "heal", "revive", "dragAlly", "dropAlly", "finish", "pullOut", "suppress", "throwspear", "unjam", "launch", "glreload", "face", "overwatch"].includes(a.type)) cui.mode = "move";
+    if (!u || !active(u) || u.ap < 1 || ["throw", "drag", "tie", "subdue", "shoveFoe", "taser", "pepper", "execute", "surrender", "peek", "close", "brace", "checkwindow", "openwindow", "closewindow", "breakwindow", "shove", "boardup", "teardown", "cutwire", "strike", "slashtent", "keylock", "keyunlock", "doubletap", "pickup", "crush", "goup", "godown", "drive", "loadRam", "unloadRam", "board", "disembark", "turn", "heal", "revive", "dragAlly", "dropAlly", "finish", "pullOut", "suppress", "throwspear", "unjam", "launch", "glreload", "face", "overwatch", "callout"].includes(a.type)) cui.mode = "move";
     cui.ammoAsk = null;
     cui.shoveAsk = null; // the Shove chooser (sim/barricade.js) closes once anything is done
     if (a.type !== "face") cui.handAsk = null; // the Hand over chooser stays open across the free Face toward the mate
@@ -555,6 +557,12 @@ export function combatClick(state, px, py) {
     return;
   }
   if (!u || !active(u) || u.ap < 1) { cui.msg = "Pick a unit that still has actions."; return; }
+  // Call out (sim/parley.js): the person clicked names the group to call to (never a shot; the sim says why not).
+  if (cui.mode === "callout") {
+    if (who && who.side !== "player" && active(who) && v.seen.has(who.id)) return void callOut(state, b, u, who);
+    cui.mode = "move"; cui.msg = "";
+    return;
+  }
   if (who && who.side === "enemy" && active(who) && v.seen.has(who.id)) return void attack(state, u, who);
   if (who && who.side === "enemy" && who.down && !who.dead && playerSees(b, who)) return void attack(state, u, who); // sim/medics.js: a downed enemy (never finished by a plain click)
   // The third side (sim/thirdside.js): attacking them takes a second click, and turns them (or all the soldiers) on you.
@@ -688,6 +696,7 @@ function arrowsChip(b) {
 
 function attack(state, u, t) {
   const b = state.combat;
+  if (cui.mode === "callout") return void callOut(state, b, u, t); // a target picked on the strip while calling out
   if (cui.mode === "taser") return void act(state, { type: "taser", unit: u.id, target: t.id }); // ui/nonlethal.js
   // A downed enemy (sim/medics.js): only Finish kills them; a plain click says so.
   if (t.side === "enemy" && t.down && !t.dead) {
@@ -1274,7 +1283,7 @@ export function unitOrders(state, b, u) {
   nlButtons(state, b, u, btn, cui);
   siegeButtons(b, u, btn);
   if (b.evacCols) btn("retreat", "Retreat", "This unit leaves the battle. Only from the green evac strip. A downed teammate lying on the strip is carried out with the last one to leave; anyone else who is down and left behind is lost. To pull everyone out at once, Sound the retreat (Shift+R).", ap > 0 && evacAt(b, u.x, u.y), "R", { why: noAp || "Only from the green evac strip." });
-  if (b.raid) raidButtons(state, b, u, btn);
+  if (b.raid) { raidButtons(state, b, u, btn); callButton(state, b, u, btn); }
   else { doorButtons(b, u, btn, true); windowButtons(b, u, btn); } // a field map's houses (sim/combat.js genMap): with a door or a window next to them
   keyButtons(b, u, btn); // sim/basemap.js: the defenders' keys on their base's map
   barricadeButtons(state, b, u, btn); // sim/barricade.js: Shove, Board up, Tear down
@@ -1653,6 +1662,15 @@ export function combatAction(state, key, d, ui = null) { // ui: main.js's screen
   }
   if (v === "shoot" || v === "melee") { cui.mode = cui.mode === v ? "move" : v; cui.msg = v === "shoot" ? "Click a visible enemy to shoot." : "Click an adjacent enemy to strike."; return; }
   if (nlCbAct(state, b, u, v, cui, act)) return; // tasers, pepper spray, pulled blows, Execute, Surrender, Take them alive (ui/nonlethal.js)
+  // Call out (sim/parley.js): one group to call to, at once; more, click whom (the targets are marked on the map).
+  if (v === "callout") {
+    const ts = callTargets(state, b, u);
+    if (ts.length === 1) return void callOut(state, b, u, ts[0]);
+    if (!ts.length) { cui.mode = "move"; cui.msg = callWhy(state, b, u); return; }
+    cui.mode = cui.mode === "callout" ? "move" : "callout";
+    cui.msg = cui.mode === "callout" ? `Click someone of the group to call out to (${groupNames(b, ts)}). Esc: cancel.` : "";
+    return;
+  }
   if (v === "shoveFoe") { // sim/shoving.js
     const near = pushTargets(b, u);
     if (near.length === 1) return void act(state, { type: "shoveFoe", unit: u.id, target: near[0].id });
@@ -2033,6 +2051,7 @@ export function renderRaidTop(state) {
     ${sel && sel.side === "player" && active(sel) && quickable(searchableNear(b, sel)).length ? `<span class="ct-sub" data-tip="${esc(`Shift+Q, no action (once a turn): heard ${quickRadius(b, sel)} tiles off, Heat +${SEARCH.quick.heat}. Only ${Math.round(SEARCH.quick.reveal[0] * 100)}–${Math.round(SEARCH.quick.reveal[1] * 100)}% of what is inside turns up; ${quickHurtPct(state, b, sel)} chance of cutting yourself (less likely with Scavenging or Stealth, more in the dark without a light).`)}">Quick search: loud, ${quickHurtPct(state, b, sel)} cut</span>` : ""}
     ${planOpen(b) && !b.over && planUI.map ? planChip(b) : ""}
   </div>`;
+  if (!b.over) mid += groupChips(b); // sim/parley.js: the other groups seen, hostile or not
   // The right: the Menu, the view, the Log.
   const right = `<div class="ct-box"><button class="mini cbmenu" data-action="set-open" data-tip="Menu: save the battle as it stands, load, options">⚙ Menu</button>${viewBar(b, { floor: false })}<button class="mini${LOGWIN.open ? " active" : ""}" data-action="cb-log" data-v="toggle" data-tip="${esc(`Show or hide the log (${keyLabel("bview.log") || "Shift+M"}). It is a small window: drag its title to move it, its corner to resize it, – to fold it to the title.`)}">📜 Log</button></div>`;
   return `<div class="ct-mid">${mid}</div><div class="ct-right">${right}</div>`;
@@ -2140,6 +2159,92 @@ function raidHead(state, b, phase) {
     ${b.night ? nightHtml(b) : ""}
     ${raidKeyLine(state, b)}
   </div>`;
+}
+
+// ---------- other groups on a raid's map (sim/parley.js) ----------
+// A group's status as your people see it: null for your own, the dead, anyone in no group, and outside raids.
+const groupOf = (b, t) => (b && b.raid && t ? parleyStatus(b, t) : null);
+// The hover text's first word on one of the third side: by their group's status when they have one (allied, a standoff).
+function thirdWord(b, t) {
+  const g = groupOf(b, t);
+  if (g && g.allied) return "Fighting beside you: the dead and hostile groups are their foes too. They never shoot your people.";
+  if (g && g.standoff) return "Guns up, holding their fire: they wait for your answer.";
+  return t.team === "military" ? "A soldier: fights the dead and anyone who attacks them, not you unless you fire on them." : `A survivor keeping to themselves: they defend themselves or run.${g ? "" : " Talk to them after the fight."}`;
+}
+const groupNames = (b, ts) => [...new Set(ts.map((t) => (groupOf(b, t) || {}).name).filter(Boolean))].join(", ") || "another group";
+// Whom u can call out to now, one per group (kept per map change: the map marks them every frame in callout mode).
+function callTargets(state, b, u) {
+  if (!b || !b.raid || !u || u.side !== "player") return [];
+  const key = `${b.rev}:${b.turn}:${b.phase}:${u.id}:${u.x},${u.y}:${u.ap}`;
+  if (cui.callCache && cui.callCache.b === b && cui.callCache.key === key) return cui.callCache.list;
+  const list = (callOutTargets(state, b, u) || []).filter(Boolean);
+  cui.callCache = { b, key, list };
+  return list;
+}
+// Why u cannot call out now: the sim's reason about the nearest one of another group in sight, or nobody in sight.
+function callWhy(state, b, u) {
+  if (u.ap < 1) return NO_AP;
+  const v = view(b), d = (t) => Math.max(Math.abs(t.x - u.x), Math.abs(t.y - u.y));
+  const near = b.units.filter((t) => t.side !== "player" && active(t) && v.seen.has(t.id) && groupOf(b, t)).sort((p, q) => d(p) - d(q))[0];
+  return (near && callOutRefusal(state, b, u, near)) || "Nobody of another group in sight: survivors, soldiers or a hostile group's people.";
+}
+// The person clicked (or any of their group in sight): the call goes to the one of that group u can call to.
+function callOut(state, b, u, t) {
+  const g = groupOf(b, t), ts = callTargets(state, b, u);
+  const to = ts.find((x) => x.id === t.id) || (g && ts.find((x) => { const o = groupOf(b, x); return o && o.key === g.key; })) || t;
+  act(state, { type: "callout", unit: u.id, target: to.id });
+}
+// What a shout costs (sim/parley.js shoutCost when it is there: its reach, Heat and how risky it is here; else PARLEY's numbers).
+const SHOUT_RISK = { low: "little risk now", some: "some risk now: the dead are close to stirring", high: "a real risk now: it is enough to bring more of the dead" };
+function shoutText(state, b) {
+  let c = null;
+  try { c = typeof PARLEY_SIM.shoutCost === "function" ? PARLEY_SIM.shoutCost(state, b) : null; } catch { c = null; }
+  const r = c && c.radius != null ? c.radius : PARLEY && PARLEY.SHOUT, heat = c && c.heat != null ? c.heat : PARLEY && PARLEY.HEAT;
+  if (!r) return "";
+  return ` The shout is heard ${r} tiles off${heat ? ` (Heat +${heat})` : ""}: the dead and the unaware come to look${c && SHOUT_RISK[c.risk] ? `; ${SHOUT_RISK[c.risk]}` : ""}.`;
+}
+function callButton(state, b, u, btn) {
+  const ts = callTargets(state, b, u), me = esc(u.name.split(" ")[0]);
+  const shout = shoutText(state, b);
+  btn("callout", "Call out", `1 action: ${me} shouts to ${ts.length ? esc(groupNames(b, ts)) : "another group in sight"} to talk, friendly or not: hold your fire, both walk away, trade, ask them to join, ask what they know, or attack them while they listen. The odds go by how hostile they are and ${me}'s Speech.${shout}${ts.length > 1 ? " More than one group in sight: click the one to call to." : ""}`,
+    ts.length > 0, "Alt+O", { why: ts.length ? "" : callWhy(state, b, u), on: cui.mode === "callout" });
+}
+// The group line of the hover text: who they are with, the stance your people see, hostile now or not (and Call out).
+function groupLine(state, b, t) {
+  const g = groupOf(b, t);
+  if (!g) return "";
+  const u = selUnit(b), ts = state && u && u.side === "player" && active(u) ? callTargets(state, b, u) : [];
+  const can = ts.some((x) => { const o = groupOf(b, x); return o && o.key === g.key; });
+  const how = !can ? "" : cui.mode === "callout" ? " · <b>Click to call out to them.</b>" : ` · Call out (${esc(keyLabel("battle.callout", 1) || "Alt+O")}) to talk.`;
+  const now = g.active ? `<span class="danger">Actively hostile</span>` : g.allied ? `<span class="good">Fighting beside you</span>` : `<span class="good">Not hostile</span>`;
+  const leave = groupLeave(g);
+  return `<br><span class="small"><b style="color:${esc(g.color || "")}">${esc(cap1(g.name))}</b> — ${esc(cap1(g.shown || "unknown"))} group · ${esc(g.label)} · ${now}${leave ? ` · <span class="warn">${esc(leave)}</span>` : ""}${g.tell ? ` · <span class="warn"><b>${TELL_MARK}</b> Something is off about them.</span>` : ""}${how}</span>`;
+}
+// A walk-away (sim/parley.js parleyStatus leaveBy / goes): your people's countdown to be out of their sight, or theirs leaving.
+const groupLeave = (g) => (!g || !g.leaving ? "" : g.goes === "you" && g.leaveBy != null ? `Leave their sight: ${g.leaveBy} turn${g.leaveBy === 1 ? "" : "s"}` : g.goes === "them" ? "Leaving" : "");
+// The mark of a tell (parleyStatus.tell: one of yours saw through them, and they give themselves away now). Only the sim's flag.
+const TELL_MARK = "!";
+// What each word of the indicator means (the strip's chips).
+const GROUP_WORD = {
+  Hostile: "They shoot your people on sight.", Unaware: "They have not seen your people yet.", Standoff: "Guns up, nobody firing yet: they wait for an answer.",
+  Truce: "Both sides hold their fire. Either side can break it.", Peaceful: "They keep to themselves; they fight back if attacked.", Leaving: "Both sides keep apart until one of you is gone.",
+  Allied: "They fight beside you: the dead and hostile groups are their foes too. Nobody of yours shoots them, and they never shoot yours.",
+};
+// The raid's strip: a chip for each group your people have seen, hostile now or not.
+function groupChips(b) {
+  const gs = (b.raid && parleyGroupsSeen(b)) || [];
+  if (!gs.length) return "";
+  const call = keyLabel("battle.callout", 1) || "Alt+O";
+  return `<div class="ct-box cbgroups">${gs.map((g) => {
+    const leave = groupLeave(g);
+    // Not shooting yet is not peace: a pod that has not seen you, or holds its fire waiting for an answer, is a warning.
+    const wary = !g.active && (g.label === "Unaware" || g.label === "Standoff");
+    const word = g.active ? "HOSTILE" : g.allied ? "ALLIED" : leave ? leave.toUpperCase() : wary ? `NOT FIRING · ${g.label.toUpperCase()}` : "NOT HOSTILE";
+    const cls = g.active ? " hostile" : g.allied ? " allied" : leave || wary ? " leaving" : "";
+    const leaveTip = leave ? (g.goes === "you" ? ` You agreed to walk away from their ground: ${g.leaveBy} turn${g.leaveBy === 1 ? "" : "s"} left for your people to be out of their sight, or they open fire.` : " They agreed to pack up and leave the map.") : "";
+    const tip = `${cap1(g.name)}: ${g.label}. ${GROUP_WORD[g.label] || ""}${leaveTip}${g.tell ? " Something is off about them: one of yours does not trust them." : ""} They show as a ${g.shown || "unknown"} group${g.count ? `, ${g.count} seen` : ""}. Call out (${call}) to talk to them, whatever their stance.`;
+    return `<span class="ct-group${cls}" data-tip="${esc(tip)}"><i style="background:${esc(g.color || "")}"></i>${esc(cap1(g.name))} <span class="muted">${esc(cap1(g.shown || ""))}</span> <b>${esc(word)}</b>${g.tell ? `<em class="tell">${TELL_MARK}</em>` : ""}</span>`;
+  }).join("")}</div>`;
 }
 
 function raidButtons(state, b, u, btn) {
@@ -2731,10 +2836,10 @@ function previewHtml(b, state = null) {
     const zt = t.ztype && ZTYPES[t.ztype] ? `<br><span class="small">${esc(ZTYPES[t.ztype].special)}${t.ztype === "spitter" && t.cd > 0 ? " Spits again next turn." : ""}${t.windup != null ? ` Winding up to throw at ${esc((b.units.find((o) => o.id === t.windup) || {}).name || "someone")}.` : t.ztype === "flinger" && t.cd > 0 ? " Throws again soon." : ""}${t.ztype === "nightmare" && t.screamCd > 0 ? ` Screams again in ${t.screamCd} turn${t.screamCd > 1 ? "s" : ""}.` : ""}${ar}${bp} <span class="good">Counter: ${esc(ZTYPES[t.ztype].counter)}</span></span>` : "";
     // One of the risen (sim/carriers.js): who it was, and the armour it still wears.
     const turned = t.turned ? `<br><span class="small danger">${esc(t.turned.name)}, got up as one of the dead${t.armor < 0.99 ? `, still in their armour (a hit does ${Math.round(t.armor * 100)}%)` : ""}. Put down, what they had on is on the body.</span>` : "";
-    return `<b>${esc(t.name)}</b> <span class="muted">${gunText(b, t)} · ${Math.round(t.hp)}/${t.maxHp} hp</span>${stealthy}${sense}${kit}${zt}${turned}<br>${o ? (o.ok ? `<span class="${hitTone(o.chance)}"><b class="cbbig">${o.chance}%</b> ${esc(o.label)}</span>${breakdownHtml(hitBreakdown(b, u, t, o))}` : `<span class="muted">${esc(o.label)}</span>`) : ""}`;
+    return `<b>${esc(t.name)}</b> <span class="muted">${gunText(b, t)} · ${Math.round(t.hp)}/${t.maxHp} hp</span>${stealthy}${sense}${kit}${zt}${turned}${groupLine(state, b, t)}<br>${o ? (o.ok ? `<span class="${hitTone(o.chance)}"><b class="cbbig">${o.chance}%</b> ${esc(o.label)}</span>${breakdownHtml(hitBreakdown(b, u, t, o))}` : `<span class="muted">${esc(o.label)}</span>`) : ""}`;
   }
   // The third side (sim/thirdside.js): survivors keeping to themselves, soldiers fighting the dead.
-  if (t && t.side === "third" && v.seen.has(t.id)) return `<b>${esc(t.name)}</b> <span class="muted">${esc(t.weaponName)} · ${Math.round(t.hp)}/${t.maxHp} hp</span><br><span class="small">${t.team === "military" ? "A soldier: fights the dead and anyone who attacks them, not you unless you fire on them." : "A survivor keeping to themselves: they defend themselves or run. Talk to them after the fight."} Click twice to attack.</span>`;
+  if (t && t.side === "third" && v.seen.has(t.id)) return `<b>${esc(t.name)}</b> <span class="muted">${esc(t.weaponName)} · ${Math.round(t.hp)}/${t.maxHp} hp</span><br><span class="small">${thirdWord(b, t)} Click twice to attack.</span>${groupLine(state, b, t)}`;
   // The knocked out (sim/stealth.js).
   if (t && t.side === "enemy" && t.ko && v.vis[h.y * W + h.x]) return `<b>${esc(t.name)}</b> · ${t.tied ? "tied up: your prisoner if you win" : `out cold, wakes in about ${Math.max(1, t.wake - b.turn)} turn${t.wake - b.turn === 1 ? "" : "s"}: Tie up (T) from next to them`}. <span class="muted">Drag (Shift+D) moves them out of sight.</span>`;
   if (t && t.side === "player" && t.vol != null) return `<b style="color:${VOL_COLOR}">${esc(t.name)}</b> <span class="muted">${Math.round(t.hp)}/${t.maxHp} hp · ${gunText(b, t)}</span><br><span class="small">Volunteer from ${esc(t.volGroup || "an allied group")}: their own orders. They act on their own at the end of your turn.</span>`; // sim/volunteers.js
@@ -3089,6 +3194,7 @@ function drawIsoView(state, b, now, cw, ch) {
     unitAt: (x, y) => unitAt(b, x, y), pathTo, odds, bubble: noBubble, // the hover card is ui/battlehud.js's
     hits: NO_HITS, retreatOpen: !!plan, plan, // the hit chances over the enemies are ui/battlehud.js's (hudPaint)
     threat: (x, y) => threatAt(b, v, x, y), // the threat preview: lines from whoever could hit the hovered tile
+    callout: cui.mode === "callout" && v.u && !hold ? callTargets(state, b, v.u) : null, // Call out: whom it can be called to (sim/parley.js)
     cone: nlConeMask(b, v.u, cui), // the pepper spray's cone toward the hovered tile (ui/nonlethal.js)
     throwMarks: throwPreview(b, v.u), // throw mode: the range and the reach of the hovered spot (sim/throwables.js)
     ghost: b.layout && cui.hover ? ghostAt(state, b, cui.hover.x, cui.hover.y) : null, // the base map: the pick's footprint under the mouse (sim/basemap.js)
