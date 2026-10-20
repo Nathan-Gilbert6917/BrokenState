@@ -325,6 +325,22 @@ section("A map past the old Large (BIG): the dead, Heat, the loot and the ways o
   check(b.units.length > before && arrivals.length > 0 && arrivals.every((u) => P.some((p) => Math.hypot(p.x - u.x, p.y - u.y) <= BIG.NEAR + 1)), `${arrivals.length} of the dead come in at Heat's first stage within ${BIG.NEAR} tiles of your people on a ${b.w}×${b.h} map`);
 }
 
+// ---------- 3c. an older save, and a campsite's own dead ----------
+section("An older save keeps its old raid maps; a campsite's own dead never grow with the map");
+{
+  const old = world(SEED, 3);
+  old.raidLegacy = true; // save.js: a save from before the raid map dials
+  const farm = raid(old, "farm", [{ kind: "zombies", count: 4, power: 2 }]), city = raid(world(SEED, 3), "city", [{ kind: "zombies", count: 4, power: 2 }]);
+  const oldCity = (() => { const st = world(SEED, 3); st.raidLegacy = true; return raid(st, "city", [{ kind: "zombies", count: 4, power: 2 }]); })();
+  check(dimStr([farm.w, farm.h]) === "32×24" && dimStr([oldCity.w, oldCity.h]) === "40×30" && oldCity.raid.zones.length === 3 && !oldCity.raid.big && !farm.raid.big && city.raid.big,
+    `an older save's raids: a farm ${dimStr([farm.w, farm.h])}, a city ${dimStr([oldCity.w, oldCity.h])} with ${oldCity.raid.zones.length} ways out and no big-map scales (a new world's city ${dimStr([city.w, city.h])}, scaled)`);
+  // A campsite's own dead (campsite.js campRoster, g.camp): fewer on a small map, never more than the camp's count on a big one.
+  const camp = (st) => raid(st, "city", [{ kind: "zombies", count: 3, power: 2, camp: "abandoned" }]).units.filter((u) => u.side === "enemy").length;
+  const oldSt = world(SEED, 3); oldSt.raidLegacy = true;
+  const newCamp = camp(world(SEED, 3)), oldCamp = camp(oldSt);
+  check(newCamp === 3 && oldCamp === Math.round(3 * raidDeadScale(40, 30)), `a camp's 3 dead: ${newCamp} on a new world's 56×42 map (not more), ${oldCamp} on an older save's 40×30 map (scaled as it always was)`);
+}
+
 // ---------- 4. the anti-slog ends ----------
 section("The anti-slog ends");
 {

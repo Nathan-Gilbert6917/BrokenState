@@ -78,7 +78,7 @@ import { bonebackMult, afterHit, onDeath, climbOver, sowerRound, terrorRuns } fr
 import { placeBodies, spotCheck, wakeNear, sleeperDies, burnBodies } from "./sleepers.js"; // bodies on the ground, the Sleepers among them
 import { stirBodies, carrierRound, burst, swarmHit, swarmBite, crush, tapRefusal, tap, pickUp, putDown, stowBody, botCrush, turnedBody, walkingBody, walkingBox, walksOn, turnedName, turnedLine, dropBodyBox, endBodies, placeWalking } from "./carriers.js"; // the Carrier raises the human dead; its worm swarm; bodies carried, shot, burnt; the walking loot
 import { hasWorm, WORM } from "./worm.js"; // the worm in a living person (half the healing while it is in them)
-import { fieldDims, raidDims, densify, coverTarget, spawnRules, clearEnough, fledFarEnough, raidAreaTypes, raidDeadScale, roomBoxes, raidHeatRate, raidLootShare, BIG as BIG_RAID, RAID as RAID_SIZE, CONTACT } from "./battlesize.js"; // map sizes by context, cover, spawns, the anti-slog ends
+import { fieldDims, raidDims, densify, coverTarget, spawnRules, clearEnough, fledFarEnough, raidAreaTypes, raidDeadScale, roomBoxes, raidHeatRate, raidLootShare, raidBig, BIG as BIG_RAID, RAID as RAID_SIZE, CONTACT } from "./battlesize.js"; // map sizes by context, cover, spawns, the anti-slog ends
 // The third side (neutral survivors, military squads: wanderers.js brings them, thirdside.js runs them). Every hook
 // below is marked "thirdside.js"; a battle without a third side takes exactly the old paths.
 import { volFought } from "./volunteers.js"; // volunteers: an allied group's people with your team, moved by their AI (volunteerTurn below)
@@ -139,7 +139,7 @@ import { swapGun, kitGunSource, bodyGunSource, areaSourceName } from "./gundist.
 import { planStart, closePlan } from "./raidplan.js"; // choices before a raid: the side, a scout, the night (docs/suggestions-5.md #23)
 import { fightersOf } from "./groupfight.js"; // a group's people in a fight by the numbers
 import { ammoFactor } from "./arsenal.js";
-import { cfgOf, lootQty, battleDials } from "./worldcfg.js";
+import { cfgOf, lootQty, battleDials, legacyRaids } from "./worldcfg.js";
 import { concealHidden, concealAim, concealScore, softOn, softCost, markShot, tentStep, tentAI, tearTent, softSetup, settleTents } from "./softcover.js"; // bushes and tents: they hide people, stop no bullets; tents slashed, burned and worn (the user's picks 2026-10-20) // the run's dials (World… on the new-run screen): the battle carries its own
 import { strikeAct, slashAct, settleTentsDown } from "./tentfight.js"; // tents taken down (and carried off) and slashed in a fight (the user's request 2026-10-20)
 import { campRaidMap, campRaidUnits, campSleeperTurn, tentBoxLoot, campAfter } from "./campsite.js"; // the campsite raid: its clearing, its tents and their loot, its campers (the user's request 2026-10-20)
@@ -6532,7 +6532,7 @@ function genRaidMap(rng, tile, areaTypes, withVehicle, extra = {}) {
     { side: "west", x0: 0, y0: rng.int(2, H - 5) },
     { side: "east", x0: W - 3, y0: rng.int(2, H - 5) },
     // On a map past the old Large (battlesize.js BIG) a way out on both long sides: a long walk to the one edge is a slog.
-    ...(t.bridge ? [] : W * H > BIG_RAID.FROM ? [{ side: "north", x0: rng.int(8, W - 11), y0: 0 }, { side: "south", x0: rng.int(8, W - 11), y0: 0 }] : [{ side: rng.chance(0.5) ? "north" : "south", x0: rng.int(8, W - 11), y0: 0 }]),
+    ...(t.bridge ? [] : extra.big ? [{ side: "north", x0: rng.int(8, W - 11), y0: 0 }, { side: "south", x0: rng.int(8, W - 11), y0: 0 }] : [{ side: rng.chance(0.5) ? "north" : "south", x0: rng.int(8, W - 11), y0: 0 }]),
   ]);
   zoneSpots.sort((a, c) => (a.side === "west" ? -1 : c.side === "west" ? 1 : 0));
   for (const zs of zoneSpots) {
@@ -6789,10 +6789,11 @@ export function createRaid(state, setup) {
     if (tile && tile.road && !types.includes("roadcars")) types.push("roadcars"); // a site on a road: the cars left on the road outside it too (AREAS.roadcars)
     const trucks = trucksAt(state, tileId); // miltrucks.js: Army trucks here (a road, a convoy, a base's motor pool, an army wreck)
     if (trucks.length && !types.includes("miltrucks")) { if (poiI != null) types.push("miltrucks"); else types.unshift("miltrucks"); } // first: they want the room (a POI's map: last)
-    map = genRaidMap(mrng, tile, types, withVehicle, { trucks });
+    map = genRaidMap(mrng, tile, types, withVehicle, { trucks, big: raidBig(state, W, H) });
     if (entryFrom(map, entrySide, withVehicle)) { const z = map.zones[0]; map.reach = flood(map.cells, z.x0 + 1, z.y0 + 1); }
     if (campPoi) { campRaidMap(state, tileId, poiI, map, W, H, mrng); map.reach = flood(map.cells, map.zones[0].x0 + 1, map.zones[0].y0 + 1); } // campsite.js: the clearing, the fire and the tents round it
   }
+  const big = raidBig(state, W, H); // battlesize.js: the big-map scales (past the old Large, a world made since the raid map dials)
   const b = {
     setup, tileId: party ? partyTile(party) : tileId, w: W, h: H, cells: map.cells, reach: map.reach,
     place: placeName(tile),
@@ -6804,7 +6805,7 @@ export function createRaid(state, setup) {
     ...battleDials(state), // worldcfg.js: the run's dials this battle reads (b.zDmg, b.infectBite, b.wear, b.failures)
     raid: {
       areas: map.areas, containers: map.containers, zones: map.zones,
-      hasVehicle: !!withVehicle, vehicleZone: map.zones.findIndex((z) => z.vehicle), heat: setup.raid?.heat0 || 0, stage: 0, spawned: 0, spawnCap: Math.round(RAID_SIZE.SPAWN_CAP * raidDeadScale(W, H)), // vehicleZone: the zone the vehicle touches now (syncVehicleZone), -1 when driven off
+      hasVehicle: !!withVehicle, vehicleZone: map.zones.findIndex((z) => z.vehicle), heat: setup.raid?.heat0 || 0, stage: 0, spawned: 0, spawnCap: Math.round(RAID_SIZE.SPAWN_CAP * raidDeadScale(W, H, big)), ...(big ? { big: true } : {}), // vehicleZone: the zone the vehicle touches now (syncVehicleZone), -1 when driven off
       // Hardcore (hardcore-loot.js): sites hold about twice a normal start's loot, so the cap is higher there.
       // A point of interest's containers hold what they held untouched (pois.js poiFull: how picked over it is shows
       // as containers already ransacked, poicont.js), else the site's loot.
@@ -6868,9 +6869,11 @@ export function createRaid(state, setup) {
   if (pick) placeInterior(state, b, map, groups.filter((g) => !g.side && !g.wanderer).map((g) => ({ ...g, count: Math.max(0, Math.min(MAX_ENEMIES, Math.round(g.count || 0))) }))); // buildingmaps.js: in the rooms
   for (const g of pick ? [] : groups) {
     // The dead scale with the street map's size (battlesize.js raidDeadScale: more of them over a city center); a
-    // campsite's own dead (campsite.js campRoster, g.camp) are the camp's count whatever the map. The higher cap only
-    // past the old Large (battlesize.js BIG): at or under it a group stays at MAX_ENEMIES, as it always was.
-    const count = Math.max(0, Math.min(g.kind === "zombies" && W * H > BIG_RAID.FROM ? MAX_RAID_DEAD : MAX_ENEMIES, Math.round((g.count || 0) * (g.kind === "zombies" && !g.camp ? raidDeadScale(W, H) : 1))));
+    // campsite's own dead (campsite.js campRoster, g.camp) fewer on a small map as any raid's, never more than the camp's
+    // count on a big one (an older save's: scaled as they always were). The higher cap only with the big-map scales
+    // (battlesize.js raidBig): otherwise a group stays at MAX_ENEMIES, as it always was.
+    const zs = raidDeadScale(W, H, big), scale = g.kind !== "zombies" ? 1 : g.camp && !legacyRaids(state) ? Math.min(1, zs) : zs;
+    const count = Math.max(0, Math.min(g.kind === "zombies" && big ? MAX_RAID_DEAD : MAX_ENEMIES, Math.round((g.count || 0) * scale)));
     if (!count) continue;
     if (g.kind === "zombies") {
       const zl = siteList(rng, g.mix, count); // the armoured dead of a military site or a police station (deadsoldiers.js); the bred kinds met exploring (hivetech.js siteSpecials)
@@ -7019,7 +7022,7 @@ function raidTurn(b) {
   const rng = b.rng;
   const noise = b.noise;
   b.noise = 0;
-  R.heat = Math.min(100, R.heat + 1.2 * raidHeatRate(b.w, b.h) + noise * 1.0 + b.infection * 0.6); // a map past the old Large: the clock runs slower (battlesize.js BIG)
+  R.heat = Math.min(100, R.heat + 1.2 * (R.big ? raidHeatRate(b.w, b.h) : 1) + noise * 1.0 + b.infection * 0.6); // a big map (battlesize.js raidBig): the clock runs slower
   const stage = Math.min(3, Math.floor(R.heat / 25));
   if (stage > R.stage) {
     R.stage = stage;
@@ -7043,7 +7046,7 @@ function spawnWave(b, n) {
   }
   // A map past the old Large: they come in where the fight is, not from the far side of it (battlesize.js BIG.NEAR),
   // when enough edge cells are that near.
-  const near = W * H > BIG_RAID.FROM && players.length ? cells.filter(([x, y]) => players.some((p) => dist(p.x, p.y, x, y) <= BIG_RAID.NEAR)) : [];
+  const near = R.big && players.length ? cells.filter(([x, y]) => players.some((p) => dist(p.x, p.y, x, y) <= BIG_RAID.NEAR)) : [];
   if (near.length >= n) cells.splice(0, cells.length, ...near);
   rng.shuffle(cells);
   const made = Math.min(n, cells.length);
@@ -7127,7 +7130,7 @@ export function searchBox(state, b, u, box, open = false, quick = false) {
   const party = state.parties.find((x) => x.id === b.setup.partyId);
   if (u.xpT && !box.contents) u.xpT.boxes++; // skills.js: Scavenging XP for each container opened
   const rich = box.kind === "body" ? 1 : R.richness * Math.min(FLOOR_RICH.cap, Math.pow(FLOOR_RICH.perFloor, box.f || 0)) * (box.rich || 1); // upper storeys are less picked over (buildingmaps.js); a nest's floor richer still (floorfolk.js)
-  const reward = box.kind === "body" ? 1 : (R.reward ?? 1) * (box.truck ? 1 : raidLootShare(b.w, b.h)); // buildingmaps.js rewardMult: city sites pay more, the countryside less; a map past the old Large has more containers, each holds a little less (battlesize.js BIG)
+  const reward = box.kind === "body" ? 1 : (R.reward ?? 1) * (box.truck || !R.big ? 1 : raidLootShare(b.w, b.h)); // buildingmaps.js rewardMult: city sites pay more, the countryside less; a map past the old Large has more containers, each holds a little less (battlesize.js BIG)
   // Roll what is inside (once); anything that does not fit stays in the container.
   if (!box.contents) {
     const sup = {}, gear = [];

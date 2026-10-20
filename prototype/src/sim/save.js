@@ -45,6 +45,7 @@ import { migrateCanners, migrateWalls, legacyCampTents, BUILDINGS } from "./buil
 import { migrateTentList } from "./tents.js"; // the tentkit branch's base.tents list: map pieces now
 import { migrateCots } from "./beds.js"; // beds as furniture: the retired makeshift cots become Cots set at the base
 import { ensurePois, packPois } from "./pois.js"; // points of interest: saved as the changes from the seed's lists; a save from before gets its lists on load
+import { RAID_MAPS } from "./worldcfg.js"; // raid maps by the World… dials: an older save keeps the sizes it was made with
 import { tidyCarts } from "./carts.js"; // carts: grids sized, lots only real supplies (every load; nothing older needs changing)
 /** @import { State } from "./types" */
 /**
@@ -177,6 +178,9 @@ export function deserializeState(save) {
   }
   // woodcutting.js: saves from before wood (no state.woodcutting) start every base with none, and the work roles
   // get the Cut wood job at the priority they give foraging. Worlds made since carry the mark, so they load unchanged.
+  // Raid maps (worldcfg.js RAID_MAPS, 2026-10-20): a save from before the raid map dials keeps the old sizes and none of
+  // the big-map scales (battlesize.js legacy paths), so its places' maps and containers stay as they were.
+  if (!state.raidMaps) { state.raidLegacy = true; state.raidMaps = RAID_MAPS; }
   if (!state.woodcutting) {
     for (const b of state.bases || []) if (b.stock && !Number.isFinite(b.stock.wood)) b.stock.wood = 0;
     for (const r of (state.work && state.work.roles) || []) if (r.pri && r.pri.wood == null && r.pri.forage > 0) r.pri.wood = r.pri.forage;

@@ -45,7 +45,8 @@ import { armPerson } from "./fighters.js";
 import { armFromArsenal } from "./arsenal.js"; // a person given the weapon the occupants list names
 import { noiseAt, detectRange, isBehind, throwablesOf, THROWABLES } from "./stealth.js";
 import { applyZType, siteList } from "./zombietypes.js";
-import { fitMargins, buildingTarget, densifyOutside, densify, coverTarget, buildingDeadScale, streetDeadScale, raidMaxDims, raidDims } from "./battlesize.js";
+import { fitMargins, buildingTarget, densifyOutside, densify, coverTarget, buildingDeadScale, streetDeadScale, raidMaxDims, raidDims, SIZE_CLASSES } from "./battlesize.js";
+import { legacyRaids } from "./worldcfg.js"; // an older save: a neighbourhood's street laid out as it always was
 import { rollWin, winMixOf, windowOpen } from "./windows.js"; // the windows' states (open, locked, fixed), a throw through an open one
 
 export const BMAP = {
@@ -830,8 +831,10 @@ export function streetHouses(state, tileId, option) {
   return lo + Math.min(hi - lo, Math.floor(hash01(state.seed, "streethouses", tileId, option.id) * (hi - lo + 1)));
 }
 export function streetMap(state, tileId, option, withVehicle) {
-  const S = STREET;
-  const [MAXW, MAXH] = raidMaxDims(state); // the run's largest raid map (World… Raid map, largest): a neighbourhood's street fills it, as a city's or a town's map does
+  const S = STREET, legacy = legacyRaids(state);
+  // The run's largest raid map (World… Raid map, largest): a neighbourhood's street fills it, as a city's or a town's map
+  // does. An older save (worldcfg.js legacyRaids): as it always was, at most Extra-large wide, at least Medium.
+  const [MAXW, MAXH] = legacy ? [SIZE_CLASSES.XL.w, SIZE_CLASSES.M.h] : raidMaxDims(state);
   const tile = state.tiles[tileId];
   const rng = new Rng(specSeed(state, tileId, option)); // the street's own dice: the layout of the yards, the cars, the trees
   const n = streetHouses(state, tileId, option);
@@ -854,7 +857,7 @@ export function streetMap(state, tileId, option, withVehicle) {
   // The layout: the north row's fronts in line along the north sidewalk, the south row's along the south one.
   const inRow = (r) => houses.filter((h) => h.row === r);
   const rowW = (r) => inRow(r).reduce((a, h) => a + h.bw, 0) + (perRow[r] - 1) * S.GAP + 2 * S.SIDE;
-  const W = Math.max(MAXW, rowW(0), rowW(1)); // never narrower than its houses need (a small dial: the houses and their yards past it)
+  const W = legacy ? Math.max(SIZE_CLASSES.M.w, Math.min(MAXW, Math.max(rowW(0), rowW(1)))) : Math.max(MAXW, rowW(0), rowW(1)); // never narrower than its houses need (a small dial: the houses and their yards past it)
   const depth = [0, 1].map((r) => Math.max(...inRow(r).map((h) => h.bh)));
   let front = S.FRONT, road = S.ROAD;
   const tall = () => 2 * S.BACK + depth[0] + depth[1] + 2 + 2 * front + road;
@@ -1793,7 +1796,10 @@ export function placeInterior(state, b, map, groups) {
     }
     return out;
   };
-  const scale = map.street ? STREET.DEAD * streetDeadScale(W, H) : buildingDeadScale(Math.max(BMAP.DEAD_SCALE[0], Math.min(BMAP.DEAD_SCALE[1], (W * H) / (RAID_W * RAID_H))), W, H); // a street of houses: the whole roster (more past the old Extra-large); battlesize.js buildingDeadScale: more on a map past the old Large
+  // A street of houses: the whole roster (more past the old Extra-large); a building's by its map's area (more past the
+  // old Large). The big-map scales only on a map that has them (battlesize.js raidBig, b.raid.big; an older save's never).
+  const base = map.street ? STREET.DEAD : Math.max(BMAP.DEAD_SCALE[0], Math.min(BMAP.DEAD_SCALE[1], (W * H) / (RAID_W * RAID_H)));
+  const scale = !(b.raid && b.raid.big) ? base : map.street ? base * streetDeadScale(W, H) : buildingDeadScale(base, W, H);
   let pod = 0, zn = 0, hn = 0;
   const lockedDead = new Set();
   const put = (u, c, home = null) => { u.x = c[0]; u.y = c[1]; u.home = home || [c[0], c[1]]; b.units.push(u); };

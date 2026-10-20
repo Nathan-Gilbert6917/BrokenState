@@ -58,7 +58,7 @@ export function worldConfigModal(state, ui) {
       <span class="small ${sum ? "" : "muted"}" style="flex:1;min-width:12rem">${sum ? esc(sum) : "Standard: every dial at 1, the worm curable, the usual sizes."}</span>
     </div>
     <div class="wcgroups">${groups}</div>
-    <div class="row" style="margin-top:0.8rem;justify-content:flex-end"><span class="small muted" style="flex:1">${ui.started ? "The game is running: these are this run's dials, read only." : "Done builds the world again on the same seed if anything changed (your colonists are kept)."}</span><button class="primary" data-action="wc-close">Done</button></div>
+    <div class="row" style="margin-top:0.8rem;justify-content:flex-end"><span class="small muted" style="flex:1">${ui.started ? `The game is running: these are this run's dials, read only.${state && state.raidLegacy ? " This world was made before the raid map dials: its raid maps keep the sizes it was made with (28 × 20 to 40 × 30)." : ""}` : "Done builds the world again on the same seed if anything changed (your colonists are kept)."}</span><button class="primary" data-action="wc-close">Done</button></div>
   </div>`;
 }
 

@@ -135,7 +135,7 @@ export function planModalHtml(state) {
   const P = planOf(b);
   const R = b.raid;
   const scouted = !!(P.scout && P.scout.ok);
-  const big = R ? bigMapNote(b.w, b.h) : ""; // Heat and containers: a raid map's (a base assault or a rescue has neither)
+  const big = R && R.big ? bigMapNote(b.w, b.h) : ""; // Heat and containers: a raid map's with the big-map scales (sim/battlesize.js raidBig; a base assault or a rescue has neither, nor an older save's map)
   let html = `<div class="box rplanbox"><div class="spread"><h1>Before you go in</h1><span class="muted"${tip(big)}>${esc(b.place)} · ${esc(mapSizeText(b.w, b.h))} · ${hh(hourOfDay(state))}${b.night ? ", night" : ", day"}${P.hours ? ` · ${P.hours} h spent` : ""}</span></div>
     ${big ? `<div class="small muted" style="margin-bottom:0.3rem">${esc(big)}</div>` : ""}
     <div class="small muted" style="margin-bottom:0.5rem">Nobody is on the map yet. Send a scout first, ${b.night ? "" : "wait for night, "}then pick the side to go in from${P.sides.length > 1 ? "" : " (one way in here)"}; or leave. You can go in with or without a scout: a scout only tells you more.</div>`;

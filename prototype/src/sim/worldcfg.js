@@ -131,6 +131,22 @@ export function presetOf(cfg) {
   return null;
 }
 
+// ---------- raid maps in an older save ----------
+// Worlds made since the raid map dials (2026-10-20) carry state.raidMaps = RAID_MAPS (world.js createWorld); a save
+// from before has none, and save.js marks it raidLegacy on load: its raid maps keep the sizes it was made with (the old
+// table, 28 × 20 to 40 × 30, a town 36 × 26, a neighbourhood's street up to 48 × 34) and none of the big-map scales
+// (battlesize.js BIG), so its places, their containers and what was left in them stay where they were.
+export const RAID_MAPS = 1;
+/** @param {any} state */
+export const legacyRaids = (state) => !!(state && state.raidLegacy);
+// The run's raid map dials as [smallest, largest]: each clamped to its range, the two in order whatever was stored
+// (a hand-edited or older settings object can hold them the wrong way round: the range never runs backwards).
+/** @param {any} state */
+export function raidRange(state) {
+  const a = cleanValue("raidMin", cfgOf(state, "raidMin")), b = cleanValue("raidMax", cfgOf(state, "raidMax"));
+  return a <= b ? [a, b] : [b, a];
+}
+
 // ---------- reading them in the sim ----------
 /** The dial on this world (its default when the world has none, or the dial is unset). @param {any} state */
 export function cfgOf(state, key) {

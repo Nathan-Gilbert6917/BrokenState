@@ -16,7 +16,8 @@ import { hubEventChance } from "../src/sim/hubevents.js";
 import { gridOf as cityGrid, crawlRange, GRID as CITY } from "../src/sim/citygrid.js";
 import { gridOf as baseGrid, GRID as BASE, stampGrid, yardHalf, GRID_MAX } from "../src/sim/basemap.js";
 import { denDepth, HCRAWL } from "../src/sim/hivecrawl.js";
-import { raidDims, buildingTarget } from "../src/sim/battlesize.js";
+import { raidDims, buildingTarget, raidMinDims, raidMaxDims, raidBig } from "../src/sim/battlesize.js";
+import { raidRange, legacyRaids, RAID_MAPS } from "../src/sim/worldcfg.js";
 import { buildingMap } from "../src/sim/buildingmaps.js";
 import { wearSlot } from "../src/sim/crafting.js";
 import { wear as vehWear, breakdownRoll } from "../src/sim/vehicles.js";
@@ -72,6 +73,22 @@ section("the world");
   check(!("worldCfg" in st), "setWorldCfg with all-default values removes the object");
   const back = deserializeState(JSON.parse(JSON.stringify(serializeState(b))));
   check(back.worldCfg && back.worldCfg.hunger === 2 && back.worldCfg.hordes === 2, "the dials survive save and load");
+  // Raid maps in an older save (worldcfg.js RAID_MAPS, legacyRaids): a world made now carries the mark and loads as it
+  // is; a save from before (no mark) keeps the old raid map sizes and none of the big-map scales.
+  check(a.raidMaps === RAID_MAPS && !legacyRaids(a) && !legacyRaids(back), "a new world carries the raid map mark and loads as a new one");
+  const old = world();
+  delete old.raidMaps;
+  const oldBack = deserializeState(JSON.parse(JSON.stringify(serializeState(old))));
+  const at = (st, ty) => st.tiles.find((t) => t.loc && t.loc.type === ty);
+  const dimsOf = (st, ty) => (at(st, ty) ? raidDims(at(st, ty), st).join("×") : "");
+  check(legacyRaids(oldBack) && oldBack.raidMaps === RAID_MAPS && dimsOf(oldBack, "town") === "36×26" && dimsOf(oldBack, "city") === "40×30" && buildingTarget(at(oldBack, "city"), false, oldBack).join("×") === "24×18" && !raidBig(oldBack, 48, 34),
+    `an older save keeps its old raid maps (a town ${dimsOf(oldBack, "town")}, a city ${dimsOf(oldBack, "city")}, a building at a site with several 24×18 at least, no big-map scales)`);
+  const again = deserializeState(JSON.parse(JSON.stringify(serializeState(oldBack))));
+  check(legacyRaids(again) && dimsOf(again, "town") === "36×26", "and keeps them through another save and load");
+  // The dials in order whatever was stored: a hand-edited or older settings object with them the wrong way round, or out of range.
+  const inv = { worldCfg: { raidMin: 70, raidMax: 30 } }, wild = { worldCfg: { raidMin: 5, raidMax: 500 } };
+  check(raidRange(inv).join() === "30,70" && raidMinDims(inv)[0] === 30 && raidMaxDims(inv)[0] === 70 && raidDims(at(a, "town"), inv)[0] === 70 && raidRange(wild).join() === "24,80",
+    `inverted dials read in order (${raidRange(inv).join("–")}; a town's map ${raidDims(at(a, "town"), inv).join("×")}), out-of-range ones clamped (${raidRange(wild).join("–")})`);
   const bd = battleDials(b);
   check(bd.zDmg === 1 && bd.wear === 1 && bd.failures === 1 && bd.infectBite === 1 && battleDials({ worldCfg: { zDmg: 1.5 } }).zDmg === 1.5, "the battle's dials");
   // The same seed with the standard dials is the same world as one built with no worldCfg at all (a default run is unchanged).
