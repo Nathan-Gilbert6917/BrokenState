@@ -787,6 +787,12 @@ function prims(k, o) {
       if (hi < 1) { const [c0, c1] = band(0.4, 1); out.push({ u0: hi - 0.03, u1: hi, v0: c0, v1: c1, z0: 0, z1: 10, m: flap }); }
       return out;
     }
+    // A tent slashed open or flattened (sim/softcover.js torn): the canvas in a heap on its poles, the cuts dark.
+    case "torn": {
+      const cloth = tex(hex("#6f7452"), 0.14, 3), cut = flatM(hex("#2e3022"));
+      const a = (hash3(v, 9, 3) - 0.5) * 0.2;
+      return [{ blob: [0.42 + a, 0.46, 2], ru: 0.36, rz: 3, m: cloth }, { blob: [0.62, 0.58 - a, 2], ru: 0.26, rz: 4, m: cloth }, { u0: 0.3, u1: 0.7, v0: 0.48, v1: 0.52, z0: 3, z1: 4, m: cut }, { u0: 0.18, u1: 0.24, v0: 0.2, v1: 0.26, z0: 0, z1: 6, m: flatM(PAL.woodDk) }];
+    }
     // The base map's scatter (sim/basescatter.js): bushes, a tree stump, a fallen log (joined along its length).
     case "bush": {
       const lc = v === 1 ? PAL.leaf2 : mul(PAL.leaf, 0.9 + (v & 2) * 0.05);
@@ -818,7 +824,7 @@ function prims(k, o) {
 }
 const OUTLINED = new Set(["tree", "boulder", "rock", "car", "truck", "vehicle", "crate", "hay", "pump", "barrel", "well", "barricade", "sandbag", "hivewall",
   "table", "bed", "rack", "locker", "shelf", "cabinet", "counter", "gunsafe", "tanktrap", "spikes", "beartrap", "stairs", "ladder", "tower", "bars", "gate", "palisade",
-  "tent", "lamp", "firepit", "bush", "stump", "log"]); // props stand out with an outline (the base map's tent, floodlight and fire pit too: sim/basemap.js)
+  "tent", "torn", "lamp", "firepit", "bush", "stump", "log"]); // props stand out with an outline (the base map's tent, floodlight and fire pit too: sim/basemap.js)
 
 // The cells' block sprites by look (sprite, roofSprite, massSprite; null: nothing to draw): a key holds all the picture
 // depends on, so one never goes stale. Each entry keeps the frame it was last drawn in (iso.frames); past SPRITES
@@ -1187,7 +1193,8 @@ function blockTop0(k, o) {
     case "boulder": return 20; case "crate": return o.v >= 2 ? 22 : 13;
     case "fence": return 14; case "barricade": return 16; case "sandbag": return 13; case "hay": return 13; case "cabinet": return 14; case "counter": return 12; case "well": return 12; case "barrel": return 13;
     case "rock": return 10; case "wire": return 10; case "rail": return 13; case "tanktrap": return 12;
-    case "outline": return 9; case "tent": return 18; case "firepit": return 7; case "lamp": return 38; // the base map (sim/basemap.js)
+    case "outline": return 9; case "tent": return 18; case "torn": return 5; case "firepit": return 7; case "lamp": return 38; // the base map (sim/basemap.js; torn: sim/softcover.js)
+    case "outline": return 9; case "tent": return 15; case "torn": return 5; case "firepit": return 7; case "lamp": return 38; // the base map (sim/basemap.js; torn: sim/softcover.js)
     case "bush": return 12; case "stump": return 6; case "log": return 7; // its scatter (sim/basescatter.js)
     default: return 0;
   }

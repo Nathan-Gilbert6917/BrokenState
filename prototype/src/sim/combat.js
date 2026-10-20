@@ -138,7 +138,8 @@ import { swapGun, kitGunSource, bodyGunSource, areaSourceName } from "./gundist.
 import { planStart, closePlan } from "./raidplan.js"; // choices before a raid: the side, a scout, the night (docs/suggestions-5.md #23)
 import { fightersOf } from "./groupfight.js"; // a group's people in a fight by the numbers
 import { ammoFactor } from "./arsenal.js";
-import { cfgOf, lootQty, battleDials } from "./worldcfg.js"; // the run's dials (World… on the new-run screen): the battle carries its own
+import { cfgOf, lootQty, battleDials } from "./worldcfg.js";
+import { concealHidden, concealAim, concealScore, softOn, softCost, markShot, tentStep, tentAI, tearTent, softSetup, settleTents } from "./softcover.js"; // bushes and tents: they hide people, stop no bullets; tents slashed, burned and worn (the user's picks 2026-10-20) // the run's dials (World… on the new-run screen): the battle carries its own
 
 // Result handlers by key. Other modules register theirs while they load (conflicts.js, scavenge.js), which can be
 // before this module's own body has run (the imports are circular), so the map is made on first use: a `var`
@@ -418,6 +419,7 @@ export function finishCombat(state, setup, result) {
   capturePrisoners(state, setup, result, battle); // prisoners.js: the knocked out go with the team or into the cells
   if (battle) settleClaims(state, battle, result); // foundcars.js: the cars claimed on the map join the team or stay parked there
   if (battle) settleBaseBattle(state, battle); // basemap.js: a base map's fight: the loot the raiders got away with, the cars and buildings battered
+  if (battle) settleTents(state, battle); // softcover.js: a camp's tents slashed or burned keep their wear
   settleCarried(state, setup, result, battle); // carry.js: won, the loads set down are picked up again; else they stay on the ground
   settleArsenal(state, setup, result, battle); // arsenal.js: a group's dead lose their kit (or it is picked up), the rest wears, rounds spent
   settleThird(state, setup, result, battle); // arsenal.js: a group's soldiers on the third side (their dead, wounds, kit)
@@ -736,9 +738,12 @@ export const CELL = {
   // The base map (basemap.js): a building's outline while it is going up (stakes and string: open ground to walk on,
   // the Base map view only), the camp's tents and fire, a floodlight on its pole.
   outline:   { walk: true,  cover: 0, los: false, name: "Building outline" },
-  tent:      { walk: false, cover: 1, los: false, name: "Tent" },
+  // Soft cover (softcover.js, the user's picks 2026-10-20): a tent and a bush hide whoever is in them or right next to
+  // them, stop no bullets (no cover), cost CONCEAL.MOVE more to walk into; a tent slashed to nothing is torn open.
+  tent:      { walk: true,  cover: 0, los: false, name: "Tent" },
+  torn:      { walk: true,  cover: 0, los: false, name: "Torn tent" },
   // The base map's scatter (basescatter.js, 2026-10-20): the land round a base and what lies about its yard.
-  bush:      { walk: false, cover: 1, los: false, name: "Bushes" },
+  bush:      { walk: true,  cover: 0, los: false, name: "Bushes" },
   stump:     { walk: false, cover: 1, los: false, name: "Tree stump" },
   log:       { walk: false, cover: 1, los: false, name: "Fallen log" },
   firepit:   { walk: false, cover: 1, los: false, name: "Fire pit" },
@@ -2448,7 +2453,8 @@ export function canSeeAt(b, a, x, y) {
 // Someone sneaking (vision.js) is not seen by the other sides behind half or full cover facing them (from
 // further than a tile), unless they have a light switched on at night: it shows over the cover. A light switched on at
 // night (vision.js activeLight) is seen from the daylight range by anyone facing it; night vision shows nothing.
-export const canSee = (b, a, t) => !(t.low && a.side === "player" && !zRevealed(b, t)) && !sneakHidden(b, a, t) && ((t.size > 1 ? unitCells(t).some(([x, y]) => canSeeAt(b, a, x, y)) : canSeeAt(b, a, t.x, t.y)) || litFrom(b, a, t));
+// Someone in a bush or a tent, or right next to one, is seen only from closer (softcover.js concealHidden).
+export const canSee = (b, a, t) => !(t.low && a.side === "player" && !zRevealed(b, t)) && !sneakHidden(b, a, t) && !(softOn(b) && concealHidden(b, a, t)) && ((t.size > 1 ? unitCells(t).some(([x, y]) => canSeeAt(b, a, x, y)) : canSeeAt(b, a, t.x, t.y)) || litFrom(b, a, t));
 export function sneakHidden(b, a, t) {
   if (!t.sneaking || t.side === a.side) return false; // anyone sneaking, from the other sides
   if (b.night && activeLight(t)) return false; // the light gives them away
@@ -2539,6 +2545,7 @@ export function reachable(b, u, maxCost, opts = {}) {
   // half cover at CRAWL.COST (barricade.js crawlable: never a closed window).
   const vaulter = canVault(u), clamber = !vaulter && !climber && clambers(u);
   const vaults = (x, y) => { const c = b.cells[idx(x, y)]; return vaulter ? vaultNow(u, b, c) : clamber && (windowOpen(c) || crawlable(b, c)); };
+  const soft = softOn(b); // bushes and tents (softcover.js): a step into one costs a little more
   const noDoors = u.side === "player" && u.kind === "human" && handsBusy(u) && !b.botTurn; // carry.js: the hands full, a closed door stays shut to them (opening it takes a hand)
   const start = idx(u.x, u.y);
   d[start] = 0;
@@ -2565,7 +2572,7 @@ export function reachable(b, u, maxCost, opts = {}) {
       if (avoid && avoid.has(j)) continue;
       const climb = climber ? Math.abs(hAt(b, nx, ny) - hAt(b, x, y)) + (cellAt(b, nx, ny).walk && !barredCell(b.cells[j]) ? 0 : MIDDEAD.CLIMBER.COST) : climbCost(b, x, y, nx, ny, diag, per);
       if (climb === Infinity) continue;
-      const step = (diag ? 1.5 : 1) + climb + (vault ? overCost(b, u, b.cells[j]) : 0); // a vault, a clamber through a window, the dead's crawl (barricade.js)
+      const step = (diag ? 1.5 : 1) + climb + (vault ? overCost(b, u, b.cells[j]) : 0) + (soft ? softCost(b.cells[j]) : 0); // a vault, a clamber through a window, the dead's crawl (barricade.js); into a bush or a tent (softcover.js)
       const nr = real[cur] + step, nd = aw ? d[cur] + step + aw[j] : nr;
       if (nr <= maxCost + 1e-6 && nd < d[j]) {
         if (d[j] === Infinity) { open.push(j); reached.push(j); }
@@ -2626,7 +2633,7 @@ export function distField(b, sources, walker = null) {
   // What each cell is for this walker, worked out once (the cells do not change while the field is made): passable,
   // walkable for the corner rule, its height (climbCost's h), a ladder or stairs, the cost of battering it. The same
   // sums as asking each cell again for each of its eight neighbours, which was most of a siege's enemy turn (sizetest).
-  const N = W * H, h = climber ? hAt : siege ? hSiege : hAt;
+  const N = W * H, h = climber ? hAt : siege ? hSiege : hAt, soft = softOn(b);
   const okA = new Uint8Array(N), sideA = new Uint8Array(N), climbA = new Uint8Array(N), hA = new Float64Array(N), overA = new Float64Array(N), bashA = new Float64Array(N);
   for (let y = 0, i = 0; y < H; y++) for (let x = 0; x < W; x++, i++) {
     const c = b.cells[i], ov = over(x, y), vl = !CELL[c.k].walk && vault(x, y);
@@ -2634,7 +2641,7 @@ export function distField(b, sources, walker = null) {
     sideA[i] = cellAt(b, x, y).walk || ov ? 1 : 0; // a vaulted cell is no corner to cut either (as reachable)
     climbA[i] = climbAt(b, x, y) ? 1 : 0;
     hA[i] = h(b, x, y);
-    overA[i] = ov ? MIDDEAD.CLIMBER.COST : vl ? (vaulter ? vaultCost(b, c, walker) : windowOpen(c) ? VAULT.COST : CRAWL.COST) : 0; // a Climber's wall, a person's vault (a window crashed through dearer), the dead through a window, the dead's crawl over half cover
+    overA[i] = ov ? MIDDEAD.CLIMBER.COST : vl ? (vaulter ? vaultCost(b, c, walker) : windowOpen(c) ? VAULT.COST : CRAWL.COST) : soft ? softCost(c) : 0; // a Climber's wall, a person's vault (a window crashed through dearer), the dead through a window, the dead's crawl over half cover; into a bush or a tent (softcover.js)
     bashA[i] = !ov && !vl && siege && (breakable(c) && (!CELL[c.k].walk || (barredCell(c) && !doorOpens(b, walker, c)))) ? SIEGE.COST + c.hp * SIEGE.PER_HP : 0;
   }
   // A binary heap of (distance, cell), stale entries skipped: the same field as scanning for the nearest open cell,
@@ -2825,6 +2832,10 @@ export function shotOdds(b, a, t, ax = a.x, ay = a.y, opts = {}) {
   // Smoke and flares (throwables.js): a shot into or out of a cloud, anyone at a target in a flare's light at night.
   if (b.smoke && b.smoke.length && (smokeAt(b, tx, ty) || smokeAt(b, ax, ay))) aim -= SMOKE.aim;
   P && mark("Smoke");
+  // In a bush or a tent, or right next to one (softcover.js): hard to make out from more than a tile off; no cover.
+  const hid = softOn(b) ? concealAim(b, t, tx, ty, ax, ay) : null;
+  if (hid) { aim -= hid.aim; notes.push(`concealed ${hid.why} −${hid.aim}`); }
+  P && mark(hid ? `Target concealed (${hid.why})` : "Target concealed");
   if (b.flares && b.flares.length && (b.night || b.dark) && flareLit(b, tx, ty)) aim += FLARE.aim; // whoever shoots at a target in its light
   P && mark("Target lit by a flare");
   if (a.stun) aim -= a.stun.aim; // still seeing spots from a flashbang (throwables.js FLASH)
@@ -2847,7 +2858,7 @@ export function shotOdds(b, a, t, ax = a.x, ay = a.y, opts = {}) {
   const chance = Math.max(5, Math.min(95, Math.round(aim)));
   const crit = opts.reaction ? 0 : (cov.level === 0 ? (t.kind === "zombie" ? CRIT.DEAD : CRIT.EXPOSED) : CRIT.COVER) + (a.critBonus || 0); // critBonus: Deadeye
   const ad = (af.dmg ?? 1) * slow * spread; // the loaded type's damage, buckshot's spread at range, a light round's past its reach (ROUND_REACH dmg) (hollow points' soft-target bonus: damage, ammo.js softMult)
-  return { chance, crit, dmg: [Math.round(w.dmg[0] * a.dmgMult * gm.dmg * ad), Math.round(w.dmg[1] * a.dmgMult * gm.dmg * ad)], cover: cov.level, flanked: cov.flanked, exposed: !cov.any && t.kind !== "zombie", dist: d, height: up, notes, ...(P ? { parts: P, aim } : {}) };
+  return { chance, crit, dmg: [Math.round(w.dmg[0] * a.dmgMult * gm.dmg * ad), Math.round(w.dmg[1] * a.dmgMult * gm.dmg * ad)], cover: cov.level, flanked: cov.flanked, exposed: !cov.any && t.kind !== "zombie", dist: d, height: up, notes, conceal: hid ? hid.why : null, ...(P ? { parts: P, aim } : {}) };
 }
 
 // Tactical (traits.js, u.tact from playerUnit): a Tactical shooter's bonus on a flanked target, a Tactical target in
@@ -3858,6 +3869,7 @@ export function createBattle(state, setup) {
   stealthSetup(state, b); // stealth.js: lights, suppressors, which way the enemy faces
   nlSetup(state, b); // nonlethal.js: tasers and spray on both sides
   siegeSetup(state, b); // siege.js: the raiders' ladders, ram and grenades; a team's ladders and ram
+  softSetup(state, b); // softcover.js: bushes and tents on the map; a camp's tents worn as its record keeps them
   b.enemyStart = b.units.filter((u) => u.side === "enemy").length;
 
   const foeName = e.name || e.kind;
@@ -4102,6 +4114,7 @@ export function moveAlong(b, u, path) {
         break;
       }
     }
+    if (softOn(b) && u.kind === "zombie") tentStep(b, u, x, y); // softcover.js: the dead tear a tent they walk through
     if (!burned && fireStep(b, u, x, y)) { burned = true; if (!active(u)) break; } // into a Molotov's flames (throwables.js): once a move
     if (acidStep(b, u, x, y) && !active(u)) break; // into a spitter's acid (acid.js): once a round
     // Overwatch (sustained, section 20): every enemy that moves within range and in sight draws a reaction (once per
@@ -4239,6 +4252,7 @@ export function fire(b, a, t, opts = {}) {
   b.noise += noise;
   if (noise) b.gunshots = (b.gunshots || 0) + noise / w.noise; // camp danger (fieldheat.js noteGunfire): a muffled shot counts half
   if (a.sneaking && noise && noise >= w.noise) { a.sneaking = false; say(b, `${a.name}'s shot gives them away: no longer sneaking.`, "info"); } // vision.js: a suppressed shot or a bow keeps it
+  if (noise && noise >= w.noise) markShot(b, a); // softcover.js: a loud shot shows a shooter hidden in a bush or a tent
   deafen(b, a.x, a.y, bangOf(b, a, w, noise, mode), a); // hearing.js: the bang (one an action; a stream louder)
   if (a.xpT) a.xpT.shots++;
   const rolls = moded ? trig.fired : trig.jam ? 0 : 1; // a gun without modes (or a bow: no rounds at all) makes one roll unless it jammed
@@ -4320,6 +4334,7 @@ export function suppress(b, a, x, y) {
   const noise = shotNoise(b, a, w);
   b.noise += noise;
   if (noise) b.gunshots = (b.gunshots || 0) + noise / w.noise;
+  if (noise && noise >= w.noise) markShot(b, a); // softcover.js: a loud burst shows a shooter hidden in a bush or a tent
   if (a.xpT) a.xpT.shots++;
   if (trig.fired > 0) deafen(b, a.x, a.y, bangOf(b, a, w, noise, gunModes(w) && gunModes(w).auto ? "auto" : "burst"), a); // hearing.js
   const pinned = trig.fired > 0 ? coneTargets(b, a, x, y, foesOf(b, a)) : [];
@@ -5142,6 +5157,7 @@ function scoreCell(b, u, x, y, foes, cost, field, facts = scoreFacts(b, u, foes)
     if (d > facts.range[k] || !los(b, x, y, f.x, f.y)) continue;
     const c = coverAgainst(b, x, y, f.x, f.y).level;
     s += c === 2 ? 0 : c === 1 ? -5 : -14;
+    if (c < 2 && softOn(b)) s += concealScore(b, x, y, f.x, f.y); // softcover.js: hidden in a bush or a tent (either side's AI)
   }
   if (facts.fire) {
     // Buckshot and birdshot do less the further off (data-ammo.js spreadMult): a shotgunner's spot is worth what its
@@ -5267,6 +5283,7 @@ function aiUnit(b, u) {
   if (u.post && holdPost(b, u)) return; // deploy.js: a defender posted at the gate or on a tower stays there
   if (u.ztype && zombieTurn(b, u)) return; // zombietypes.js: a screamer shrieks or hangs back, a brute smashes through
   if (!canFire(b, u) && aiGrabGun(b, u) && u.ap < 1) return; // ground.js: a gun lying right there, taken up
+  if (softOn(b) && tentAI(b, u) && (u.ap < 1 || !active(u))) return; // softcover.js: an attacker on a camp with nobody in sight slashes or burns a tent
   if (!canFire(b, u)) return aiMelee(b, u);
   for (let step = 0; step < 3 && u.ap > 0 && active(u); step++) {
     const foes = foesOf(b, u);
@@ -5614,6 +5631,7 @@ export function breakCell(b, x, y, by = null) {
   else if (c.k === "tanktrap") c.k = "rubble"; // a bridge barricade's trap, broken up: open ground again (a vehicle can pass)
   else if (c.k === "cart") cartKnocked(b, x, y); // carts.js: shoved over, its cell open again (the cart and its load stay there)
   else if (c.k === "barricade") c.k = "rubble"; // a base map's barricade battered through (basemap.js: it wears afterwards)
+  else if (c.k === "tent") tearTent(b, c); // softcover.js: a blast tears a tent open (it wears afterwards: settleTents)
   else if (c.k === "car" && c.car) { for (const q of b.cells) if (q.car && q.car.id === c.car.id) { q.k = "truck"; q.hp = 0; } } // a parked car wrecked (basemap.js: its condition afterwards)
   b.losCache.fill(0);
   if (b.tier) b.tier.broken = (b.tier.broken || 0) + 1;

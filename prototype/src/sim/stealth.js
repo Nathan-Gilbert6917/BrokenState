@@ -53,6 +53,7 @@ import { LIGHTS, lightOf } from "./lights.js"; // headlamps, flashlights, torche
 import { loadNoise } from "./ammo.js"; // a round's noise (subsonic, +P)
 import { RELOAD_FX } from "./data-ammo.js"; // black-powder handloads are louder (reloading.js)
 import { nightLight } from "./fighters.js"; // a light for someone made for this fight, at night
+import { noticeMult, concealSneak } from "./softcover.js"; // bushes and tents: noticed from closer, sneaking there unheard
 
 export const STEALTH = {
   NIGHT_SIGHT: 7, NIGHT_ZOMBIE_SIGHT: 5, LIGHT_SIGHT: 9, NIGHT_DETECT: 0.6, LIGHT_DETECT: 3, // LIGHT_*: a flashlight's (each light's own: lights.js LIGHTS)
@@ -235,7 +236,8 @@ export function detectRange(b, e, mover, perks = true) {
   // (half the range), and nothing of someone sneaking. The dead have no front. Behind cover facing the guard (full
   // cover; half cover too for someone sneaking) they are not seen either: heard, or not at all.
   const near = Math.hypot(e.x - mover.x, e.y - mover.y) < 1.5;
-  const unseen = !near && ((e.kind === "human" && !inArc(e, mover.x, mover.y, VISION.HALF)) || coverAgainst(b, mover.x, mover.y, e.x, e.y).level >= (mover.sneaking ? 1 : 2));
+  // In a bush or a tent, or beside one (softcover.js): sneaking there counts as behind half cover.
+  const unseen = !near && ((e.kind === "human" && !inArc(e, mover.x, mover.y, VISION.HALF)) || coverAgainst(b, mover.x, mover.y, e.x, e.y).level >= (mover.sneaking ? 1 : 2) || concealSneak(b, e, mover));
   if (unseen) r = earshot(e, mover, r);
   if (perks && mover.ghost) r = Math.min(r, 2);
   return r;
@@ -253,6 +255,8 @@ export function noticeRange(b, e, mover, perks = true) {
   // A light the guard carries (vision.js: a soldier's military flashlight): down its beam they see further.
   const el = activeLight(e);
   if (b.night && el && LIGHTS[el] && !LIGHTS[el].round && inArc(e, mover.x, mover.y, (LIGHTS[el].beam || 20) * Math.PI / 180)) r = Math.max(r, Math.min(range, LIGHTS[el].sight));
+  // In a bush or a tent, or beside one (softcover.js CONCEAL: × notice), noticed only from closer.
+  { const m = noticeMult(b, e, mover); if (m < 1) r = Math.max(1, Math.round(r * m)); }
   if (perks && mover.ghost) r = Math.min(r, 2);
   return r;
 }
