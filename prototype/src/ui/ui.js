@@ -2202,7 +2202,7 @@ function wallCard(state, b, ui) {
       ${c.cost && Object.keys(c.cost).length ? `<div class="gcard-foot">${costChips(c.cost, b.stock)}${chip({ icon: "⏱", name: `${c.hours}h`, t: `${c.hours} work-hours for the builders` })}</div>` : ""}
       ${!c.ok && !c.short ? `<div class="gcard-why">${esc(c.reason)}</div>` : ""}
     </div>`;
-  const grown = yardHalf(b) > ringHalf(b);
+  const grown = yardHalf(b, true) > ringHalf(b); // the yard the buildings want (sim/basemap.js: the yard stops at a pegged ring)
   return `<div class="card small"${tip("Walls are built piece by piece: 1×1, 1×2 and 1×4 walls and 1×4 gates of a material, placed and turned on the base map. They only hold when they close a ring round the base (a house's walls count too): a gap anywhere is a way in. Wall stands raise your people a level so they see and shoot over the wall.")}>
     <div class="spread"><b>Walls</b><span class="muted">${wi.walls} wall piece${wi.walls === 1 ? "" : "s"} · ${wi.gates} gate${wi.gates === 1 ? "" : "s"} · ${wi.stands} stand${wi.stands === 1 ? "" : "s"}</span></div>
     <div style="margin:0.2rem 0 0.4rem">${now}${mats ? ` <span class="muted">(${esc(mats)} cells)</span>` : ""}</div>

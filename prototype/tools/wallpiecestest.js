@@ -251,7 +251,8 @@ section("The Wallbreaker, old saves, widening the ring, a group's wall");
   check(piecesOf(hb).length === piecesOf(hub(loadFromString(saveToString(back)))).length, "migrating again changes nothing");
   // Widening the ring.
   for (let i = 0; i < 6; i++) addBuilding(hb, "bunkhouse");
-  check(BM.yardHalf(hb) > BM.ringHalf(hb), `the yard grew past the ring (${2 * BM.yardHalf(hb)} > ${2 * BM.ringHalf(hb)})`);
+  // The yard stops at a pegged ring (pt-int round 2: nothing the game places lands on it); the yard the buildings want grows.
+  check(BM.yardHalf(hb, true) > BM.ringHalf(hb) && BM.yardHalf(hb) === BM.ringHalf(hb), `the yard the buildings want grew past the ring (${2 * BM.yardHalf(hb, true)} > ${2 * BM.ringHalf(hb)}), the yard held at it`);
   const msg = BM.widenRing(hb);
   check(BM.ringHalf(hb) === BM.yardHalf(hb) && /further out/.test(msg), "Widen the ring: pegged out at the yard's edge");
   check(!hasWall(hb) && BM.ringPlan(back, hb).pieces.length > 0, "the game's pieces moved out: gaps for the Ring wall to close");

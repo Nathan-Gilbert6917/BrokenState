@@ -1151,6 +1151,10 @@ export function queueBuild(state, base, type, opts = {}) {
   if (!chk.ok) return chk.reason;
   if (BUILDINGS[type].furniture) return setFurniture(state, base, type).msg; // beds.js: set from the stores (the game places it), no job
   if (BUILDINGS[type].wall) { // the Ring wall: the pieces to close the ring (job.pieces), or the pieces to raise (job.ids); its materials gathered as they come in
+    // The ring pegged out where its pieces were counted (basemap.js ensureRing; pt-int round 2): pegged only when the job
+    // finished, the yard had grown meanwhile (each build queued after it widens a hub's yard), the pieces were laid on
+    // the wider ring, it did not close, and the governor queued the rest again and again (2.5 rings by day 125).
+    if (chk.kind === "ring") ensureRing(base);
     base.construction.push({ id: newId(), type: "walls", kind: chk.kind, mat: chk.tier, ...(chk.kind === "ring" ? { pieces: chk.pieces } : { ids: chk.ids }), cost: { ...chk.cost }, paid: {}, progress: 0, hours: Math.max(1, chk.hours) });
     return `${chk.kind === "ring" ? `Ring wall queued at ${base.name}: ${chk.pieces.length} ${chk.def.mat.toLowerCase()} pieces, laid where the ring runs` : `${base.name}: ${chk.ids.length} wall pieces to be raised to ${chk.def.mat.toLowerCase()}`}. The materials are taken from the stores as they come in.`;
   }
@@ -1283,7 +1287,9 @@ export function constructionHour(state) {
       if (job.type === "walls") { // the Ring wall: its pieces laid where the ring runs, or the pieces raised a material
         const mat = matOf({ mat: job.mat || job.tier || 1 });
         if (job.kind === "upgrade") { for (const id of job.ids || []) { const b = base.buildings.find((x) => x.id === id && isPiece(x.type)); if (b && matOf(b) < mat) b.mat = mat; } }
-        else { ensureRing(base); const ids = []; for (const type of job.pieces || []) { const id = newId(); ids.push(id); base.buildings.push({ id, type, mat }); } for (const id of ids) clearUnder(state, base, `b:${id}`); } // the ground under the pieces the game lays cleared with them (basemap.js)
+        // A ring: the pieces the ring takes now (what stands may have moved since the job was counted: its own list could
+        // leave gaps the governor rang again, pt-int round 2), else the job's list.
+        else { ensureRing(base); const ids = []; const now = ringPlan(state, base).pieces; for (const type of now.length ? now : job.pieces || []) { const id = newId(); ids.push(id); base.buildings.push({ id, type, mat }); } for (const id of ids) clearUnder(state, base, `b:${id}`); } // the ground under the pieces the game lays cleared with them (basemap.js)
         log(state, `${base.name}: ${job.kind === "upgrade" ? `the wall is ${WALL_TIERS[mat].mat.toLowerCase()} now` : `a ring of ${WALL_TIERS[mat].name.toLowerCase()} stands round the yard`} (wall strength ${baseWalls(base)}${hasWall(base) ? "" : ": it does not close yet"}).`, "good");
         continue;
       }

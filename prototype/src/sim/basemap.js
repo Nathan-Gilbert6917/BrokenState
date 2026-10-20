@@ -309,9 +309,13 @@ export function strikeTent(state, base, id) {
 const grows = (type) => { const f = FOOT[type]; return !!f && f.kind !== "defence" && !f.fit && !WALL_KINDS.has(f.kind); };
 const footCount = (base) => base.buildings.filter((b) => grows(b.type)).length + base.construction.filter((c) => !c.target && grows(c.type)).length;
 // The yard's half-size: by tier and buildings, and never smaller than what is placed inside it needs.
-export function yardHalf(base) {
+export function yardHalf(base, raw = false) {
   const g = gridOf(base);
   let C = Math.min(g.cap, g.yard + g.per * footCount(base));
+  // The ring pegged out (ensureRing: its pieces counted, or laid): the yard stops at it, so nothing the game places
+  // lands on the ring's cells and opens it again (the governor re-ringing, pt-int round 2); more room inside is
+  // Widen the wall (widenRing), what does not fit goes outside the wall.
+  if (!raw && base && base.plan && base.plan.ring != null) return Math.min(C, base.plan.ring); // raw: the yard the buildings would want (widenRing)
   // Nothing placed stands under the wall ring: a thing the band would cut through (placed inside while the yard was
   // bigger, or just outside before the yard grew) pulls the yard out over it, up to the cap; a thing well beyond the
   // band stays outside the wall.
@@ -338,7 +342,7 @@ export function ensureRing(base) { const P = planOf(base); if (P.ring == null) P
 // The yard has grown past the ring: the ring out to the yard's edge (the game's pieces move out with it; the gaps
 // they leave want more pieces: Ring wall). Returns a message.
 export function widenRing(base) {
-  const C = yardHalf(base), R = ringHalf(base);
+  const C = yardHalf(base, true), R = ringHalf(base);
   if (C <= R) return "The wall already runs round the whole yard.";
   planOf(base).ring = C;
   return `The ring is pegged out ${C - R} cells further out, round the whole yard: the wall pieces the game places move out to it (close the gaps with Ring wall).`;
@@ -923,7 +927,10 @@ export function autoLayout(state, base, except = null) {
       const f = fitFirst(it, inner, order, resume[`s${it.w}`] || 0); resume[`s${it.w}`] = f ? f[1] : order.length; if (f) take(it, f[0]);
     }
   };
-  wallPass();
+  // The wall pieces are laid over the land from the start (their ground cleared with them: buildings.js clearUnder), as
+  // ringPlan counts the ring's runs: laid around the land first, a wall 4 long took the run another needed and the ring
+  // was left with gaps no piece fits (the governor ringing again; pt-int round 2). Never on the river.
+  if (occ.land) { const L = occ.land; occ.land = L.waterOnly; noLand = true; wallPass(); occ.land = L; noLand = false; } else wallPass();
   // Where the game had each thing before the player's last change on the map (holdAuto): there again while it still
   // fits and leaves a way in and out, so placing one thing never shuffles the rest; then the others as below.
   if (sticky) for (const it of items) {
