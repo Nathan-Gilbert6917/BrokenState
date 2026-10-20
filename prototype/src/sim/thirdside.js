@@ -10,10 +10,15 @@
 // Hooks in combat.js (all marked "thirdside.js"): who fights whom (foesOf), the turn queue, the AI's plan, a hit by
 // your people (damage), overwatch, placing them (createBattle setup.third, createRaid groups with a side) and the
 // result (result.third). A battle with no third side takes exactly the old paths.
+// parley.js: an enemy pod holding its fire (a standoff, a truce) is a third side too (its b.third record fromEnemy,
+// its units' own pod in u.pfrom): it fights only the dead that come at it, and the enemy's people leave it alone.
+// An allied group (u.ally: Fight with us) fights as soldiers do, the dead and the enemy's people up and fighting, and
+// the enemy's people who are up and fighting go after it.
 import { enemyUnit, active, los, WEAPONS, say, registerOccupantSide } from "./combat.js";
 import { GEAR } from "./data.js";
 import { lootItem } from "./inventory.js";
 import { refitPerson, fromPerson, memberize } from "./fighters.js"; // a person: rebuilt with their own weapon and health
+import { parleyMet, parleyHit, parleyPlan } from "./parley.js"; // a group you can talk to: its call, a truce broken, a walk-away
 
 export const THIRD = {
   THREAT_DEAD: 7,      // the dead this close (tiles) are a threat to neutrals
@@ -125,6 +130,8 @@ registerOccupantSide("military", placeOccupants);
 // ---------- who fights whom ----------
 // What a third-side unit fights: soldiers the dead and armed people up and fighting; neutrals what threatens them now.
 export function thirdFoes(b, u) {
+  if (u.ally) return b.units.filter((o) => o !== u && active(o) && ((o.side === "enemy" && (o.kind === "zombie" || o.aware)) || (o.wild && o.side !== "third" && o.side !== "player"))); // parley.js: allied with you: the dead and the hostile who are up and fighting
+  if (u.pfrom != null) return b.units.filter((o) => active(o) && o.side === "enemy" && o.kind === "zombie" && dist(o, u) <= THIRD.THREAT_DEAD); // parley.js: a pod at peace
   if (u.team === "military") {
     return b.units.filter((o) => o !== u && active(o) && ((o.side === "enemy" && (o.kind === "zombie" || o.aware)) || (o.wild && o.side !== "third" && o.side !== "player")));
   }
@@ -134,7 +141,7 @@ export function thirdFoes(b, u) {
 }
 
 // Does enemy human e go after third-side unit o? Soldiers once e is up and fighting; neutrals when e is a predator.
-export const enemyTargetsThird = (o, e) => (o.team === "military" ? !!e.aware : PREDATORS.has(e.kit));
+export const enemyTargetsThird = (o, e) => (o.ally ? !!e.aware : o.pfrom != null ? false : o.team === "military" ? !!e.aware : PREDATORS.has(e.kit)); // parley.js: not a pod of theirs holding its fire
 
 // Overwatch and any other "may a shoot b" check involving the third side: false when neither would fight the other.
 export function hostilePair(b, a, t) {
@@ -149,17 +156,20 @@ export function hostilePair(b, a, t) {
 // "hold" (stay put this turn), "flee" (run for the edge) or "fight" (the usual AI against thirdFoes).
 export function thirdPlan(b, u) {
   const g = b.third && b.third[u.tgroup];
-  if (g && !g.met && b.units.some((p) => p.side === "player" && active(p) && dist(p, u) <= THIRD.SEE && los(b, p.x, p.y, u.x, u.y))) {
+  const leave = b.parley ? parleyPlan(b, u) : null; // parley.js: a group that agreed to walk away heads off the map
+  if (leave) return leave;
+  const seen = g && !g.met ? b.units.find((p) => p.side === "player" && active(p) && dist(p, u) <= THIRD.SEE && los(b, p.x, p.y, u.x, u.y)) : null;
+  if (seen) {
     g.met = true;
     if (!g.called) {
       g.called = true;
-      say(b, g.team === "military" ? `Soldiers wave your people off: "Civilians! Stay out of our line of fire."` : `${cap(g.name)} call out from cover: "Don't shoot! We're not with anyone."`, "info");
+      if (!parleyMet(b, u, seen)) say(b, g.team === "military" ? `Soldiers wave your people off: "Civilians! Stay out of our line of fire."` : `${cap(g.name)} call out from cover: "Don't shoot! We're not with anyone."`, "info"); // parley.js: or they call out to talk (a card)
     }
   }
   const foes = thirdFoes(b, u);
   if (!foes.length) return "hold";
   u.aware = true;
-  if (u.team === "military") return "fight";
+  if (u.team === "military" || u.ally) return "fight"; // parley.js: an allied group fights like soldiers
   const armed = u.weapon && u.weapon !== "fists";
   const mates = b.units.filter((o) => o.side === "third" && o.tgroup === u.tgroup && active(o) && o.weapon !== "fists").length;
   if (armed && foes.some((f) => adj(u, f))) return "fight"; // cornered
@@ -178,12 +188,14 @@ export function thirdSideHit(b, t, by) {
   for (const o of turned) {
     o.side = "enemy";
     o.aware = true;
-    o.pod = 900 + o.tgroup; // their own group for the alarm (alertPod)
+    o.pod = o.pfrom ?? 900 + o.tgroup; // their own group for the alarm (alertPod); parley.js: a pod at peace, its own pod again
+    delete o.pfrom;
     o.ow = false;
     const r = b.third && b.third[o.tgroup];
     if (r) r.hostile = true;
   }
   if (g) say(b, military ? "You fired on the soldiers. The whole squad turns its guns on you!" : `${cap(g.name)} fight back!`, "danger");
+  if (b.parley) parleyHit(b, turned, by); // parley.js: a truce broken by your people
 }
 
 // ---------- the result ----------
@@ -198,7 +210,7 @@ export function thirdSideHit(b, t, by) {
 export function thirdResult(b) {
   if (!b.third || !b.third.length) return null;
   const enemyStands = b.units.some((e) => e.side === "enemy" && e.kind === "human" && active(e));
-  return b.third.map((g, i) => {
+  const out = b.third.map((g, i) => {
     const mine = b.units.filter((u) => u.tgroup === i);
     const gaveUp = mine.filter((u) => u.side === "third" && u.surr && u.surrTo === "enemy" && !u.dead && !u.fled).length;
     const stands = mine.some((u) => u.side === "third" && active(u));
@@ -210,8 +222,10 @@ export function thirdResult(b) {
       deadPeople: mine.filter((u) => u.dead && u.who && !u.who.transient).map((u) => u.who), // fighters.js: the very people who fell
       hurt: mine.filter((u) => !u.dead && u.who && !u.who.transient).map((u) => [u.who, u.hp]),
       gaveUp, taken: enemyStands ? gaveUp : 0, freed: enemyStands ? 0 : gaveUp, held,
+      noCard: !!g.noCard, // parley.js: they agreed to join on the map (its own recruit card)
     };
-  });
+  }).filter((r, i) => !b.third[i].fromEnemy); // parley.js: an enemy pod that held its fire was never a third side
+  return out.length ? out : null;
 }
 
 const cap = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);

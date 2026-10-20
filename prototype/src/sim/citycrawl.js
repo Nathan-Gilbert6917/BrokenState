@@ -47,6 +47,7 @@ import { makeCandidate, offerRecruits } from "./recruits.js";
 import { searchHazards } from "./health.js";
 import { wormSearch } from "./worm.js"; // the worm: hands that handled the dead
 import { FOLK, rollFolk, placeFolk, folkHint, noteFolk, folkAfterPlace } from "./floorfolk.js"; // who holds the upper floors (docs/multi-storey-crawl.md phase 3)
+import { parleyGoodwill, parleyAfterRaid, crawlParties } from "./parley.js"; // other groups talked to on the map (no trade window in the crawl: a swap)
 import { noteSearch } from "./relations.js";
 import { factionById } from "./world.js";
 import { changeGoodwill } from "./factions.js";
@@ -519,7 +520,7 @@ export function specialChance(state, n) {
 // Who is in a place: the site's own (scavenge.js raidEnemies: the dead, guards of a group that holds it, rival
 // scavengers) with more and tougher dead deeper, and raiders holed up in it.
 function placeGroups(state, c, place, n = c.block) {
-  const groups = raidEnemies(state, c.tile).map((g) => ({ ...g }));
+  const groups = raidEnemies(state, c.tile).filter((g) => !g.parley).map((g) => ({ ...g })); // parley.js: the groups met in a place come by crawlParties (enterPlace)
   for (const g of groups) {
     if (g.kind !== "zombies") continue;
     g.count = Math.max(1, Math.round(g.count * deadMult(n) * place.dead));
@@ -673,15 +674,16 @@ export function enterPlace(state, p, placeId, opts = {}) {
   const n = c.block;
   const t = state.tiles[c.tile];
   const snap = c.buildings[place.id] || null;
-  const groups = snap ? [] : placeGroups(state, c, place);
-  const total = groups.reduce((a, g) => a + g.count, 0);
+  const groups = snap ? [] : [...placeGroups(state, c, place), ...crawlParties(state, c.tile, place.id, n, placeStoreys(state, c, place, n))]; // parley.js: other groups in the place, several at once
+  const own = groups.filter((g) => !g.parley); // the place's own (the setup's kind and name as before)
+  const total = own.reduce((a, g) => a + g.count, 0);
   const H = CRAWL.HEAT0;
   const heat0 = Math.round(Math.min(H.max, (isNight(state) ? H.night : H.day) + H.perBlock * (n - 1) + Math.max(0, c.alert - c.floor) * H.fromAlert));
   const setup = {
     mode: "raid", tile: c.tile, partyId: p.id, canRetreat: true, ambush: null, handler: "crawl",
-    enemy: { kind: groups.length > 1 ? "mixed" : groups[0]?.kind || "zombies", count: total, power: 3, name: groups.map((g) => g.name).join(" and ") || "nobody", groups },
+    enemy: { kind: own.length > 1 ? "mixed" : own[0]?.kind || "zombies", count: total, power: 3, name: own.map((g) => g.name).join(" and ") || "nobody", groups },
     raid: { heat0, place: placeOption(c, place, n), gunSite: place.key }, // gundist.js: a police station's armoury draws police guns (as the quick search's)
-    context: { factionIds: groups.filter((g) => g.factionId).map((g) => g.factionId), crawl: { kind: "place", place: place.id, block: n, heat0 } },
+    context: { factionIds: groups.filter((g) => g.factionId && !g.parley).map((g) => g.factionId), crawl: { kind: "place", place: place.id, block: n, heat0 } }, // parley.js: a party in the place is not their land
   };
   // The vehicle waits at the city's edge: not on the building's map.
   const veh = p.vehicle;
@@ -828,6 +830,7 @@ function afterPlace(state, result, setup, battle) {
     }
   }
   if (r.alerted) for (const id of setup.context.factionIds || []) { const f = factionById(state, id); if (f) changeGoodwill(state, f, -10, "you raided their land"); }
+  parleyGoodwill(state, result); // parley.js: a truce kept, a truce broken, their people taken
   if (!p || !state.parties.includes(p)) return;
   if (!partyMembers(state, p).length) { crawlWiped(state, p, line); return; }
   if (!c) { awaitOrders(state, p, "The team is out of the building."); return; }
@@ -841,6 +844,7 @@ function afterPlace(state, result, setup, battle) {
   const got = [...Object.entries(result.loot.supplies || {}).map(([k, v]) => `${v} ${keyWord(k)}`), ...(result.loot.gear || []).map((g) => g.name)];
   say2(c, `${line} ${got.length ? `Found ${got.join(", ")}.` : "Found nothing."}${(result.survivorsDead || []).length ? ` Lost: ${(result.survivorsDead || []).map((id) => state.survivors.find((x) => x.id === id)?.name).join(", ")}.` : ""} Alert +${Math.round(gained * CRAWL.ALERT.fromHeat)}.`, result.outcome === "extracted" ? "good" : "danger", state.hour);
   if (result.outcome === "extracted" && folkAfterPlace(state, p, battle)) say2(c, "The survivors from upstairs wait for you on the street.", "good", state.hour); // floorfolk.js: the recruit card
+  if (result.outcome === "extracted") parleyAfterRaid(state, p, result, { crawl: true }); // parley.js: those who agreed to join; a swap
   for (let i = 0; i < (r.hours || 1); i++) searchHazards(state, partyMembers(state, p), c.city);
   wormSearch(state, p, c.tile, r.hours || 1); // worm.js
   passHours(state, p, r.hours || 1);

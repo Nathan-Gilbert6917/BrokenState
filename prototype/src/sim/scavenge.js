@@ -56,6 +56,7 @@ import { mixWeight } from "./zombietypes.js";
 import { searchMeds } from "./medfinds.js";
 import { ZTYPES, BEASTS } from "./hiveconst.js";
 import { siteWanderers, siteEncounter, wanderersAfterRaid } from "./wanderers.js";
+import { siteParty, parleyGoodwill, parleyAfterRaid, parleyTrade } from "./parley.js"; // an AI group's party on the site; what the talks on the map leave behind
 import { crawlTile, startCrawl } from "./citycrawl.js";
 import { addFind, roundsText } from "./ammo.js"; // rounds by calibre
 import { carriedRec } from "./ammo.js"; // the loose rounds people carry
@@ -110,6 +111,8 @@ export function raidEnemies(state, tileId) {
   // People on the move (wanderers.js, its own dice): armed survivors squatting here (enemies), survivors hiding and a
   // military squad clearing the place (side "neutral" / "military": a third side on the raid map, thirdside.js).
   groups.push(...siteWanderers(state, tileId));
+  const party = siteParty(state, tileId); // parley.js: an AI group's people scavenging here too (friendly, neutral or hostile; hash dice)
+  if (party) groups.push(party);
   const surge = heatSurge(state, tileId);
   if (surge) groups.push(surge);
   return groups;
@@ -209,7 +212,7 @@ export function startScavenge(state, p) {
       enemy: { kind: foes.length > 1 ? "mixed" : foes[0]?.kind || "zombies", count: total, power: 3, name: names || "nobody", groups },
       raid: { heat0: isNight(state) ? 0 : 5, choose: rs.choose, poi: rs.poi ?? null, kind: rs.kind || null, place: rs.place || null }, // choose: a site with several buildings offers them first (buildingmaps.js)
       plan: true, // raidplan.js: before going in, the side to come in from, a scout first, or wait for night
-      context: { factionIds: foes.filter((g) => g.factionId).map((g) => g.factionId) },
+      context: { factionIds: foes.filter((g) => g.factionId && !g.parley).map((g) => g.factionId) }, // parley.js: a party on the site is not their land
     });
     return true;
   }
@@ -248,6 +251,7 @@ export function afterRaid(state, result, setup, battle = null) {
     const f = factionById(state, id);
     if (f) changeGoodwill(state, f, -10, "you raided their land");
   }
+  parleyGoodwill(state, result); // parley.js: a truce kept, a truce broken, their people taken
   const loot = [...Object.entries(result.loot.supplies).map(([k, v]) => `${v} ${keyWord(k)}`), ...result.loot.gear.map((g) => g.name)];
   // Called off before going in (raidplan.js callOff): nobody set foot on the site; the team turns back for orders.
   if (r.calledOff) {
@@ -269,9 +273,11 @@ export function afterRaid(state, result, setup, battle = null) {
   for (let i = 0; i < (r.hours || 1); i++) searchHazards(state, partyMembers(state, p), tileLabel(state, setup.tile));
   wormSearch(state, p, setup.tile, r.hours || 1); // worm.js: the eggs on what they handled, rolled tonight or at home
   wanderersAfterRaid(state, p, result, setup.tile); // wanderers.js: the survivors you found there can be talked to; the soldiers remember
+  parleyAfterRaid(state, p, result); // parley.js: those who agreed to join; a swap with those who agreed to trade
   // The raid took time; the world moved on meanwhile.
   for (let i = 0; i < r.hours && state.parties.includes(p); i++) tickHour(state);
   if (state.parties.includes(p)) awaitOrders(state, p, `The team is out of ${tileLabel(state, setup.tile)}${loot.length ? ` with ${loot.join(", ")}` : ""}.`);
+  parleyTrade(state, p, result); // parley.js: a group whose people agreed to trade: its trade window, now the team is out
 }
 
 // A raid on a map as an approach, for the heat it leaves (its Heat when it ended): under 25 a sneak, under 50 normal, else loud.
