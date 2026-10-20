@@ -11,6 +11,7 @@ import { TRIP_JOBS } from "../sim/tripland.js"; // the outdoor jobs: their loads
 import { kitWarnings, gearOutdoorWorkers } from "../sim/tripgear.js"; // the outdoor workers' kit: the chips, Gear outdoor workers (trips-plus #2)
 import { lunchHour } from "../sim/meals.js"; // the lunch hour (the Work tab)
 import { noWorkRoles, helpingText, helpingAs } from "../sim/noidle.js"; // roles with no work: the quiet alert
+import { crewAt, crewKey, teamMult } from "../sim/teamwork.js"; // a crew out on the same job and tile: grouped in the row
 const hh = (h) => `${String(h).padStart(2, "0")}:00`;
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -80,13 +81,28 @@ export function gearOutButton(state, base) {
 const atBaseOut = (state, base) => (state.survivors || []).filter((s) => s.alive && s.location && s.location.kind === "base" && s.location.baseId === base.id && TRIP_JOBS[s.role]);
 // What the button would hand out, without moving anything.
 const gearPreview = (state, base) => gearOutdoorWorkers(state, base, { pinned: true, dry: true }).map((x) => `${first(x.s)}: ${String(x.item.name || "").toLowerCase()}`);
+// An outdoor job's people with those out together as a crew (sim/teamwork.js) framed as one: "🤝 Mara Ben".
+function wnCrews(state, base, row) {
+  const seen = new Set(), out = [];
+  for (const x of row.people) {
+    if (seen.has(x.s.id)) continue;
+    const crew = x.s.trip && x.s.trip.leave <= state.hour && state.hour < x.s.trip.home ? crewAt(state, x.s, state.hour) : [x.s];
+    const key = crew.length > 1 ? crewKey(x.s.trip) : "";
+    const members = key ? row.people.filter((y) => !seen.has(y.s.id) && crew.includes(y.s)) : [x];
+    for (const y of members) seen.add(y.s.id);
+    if (members.length < 2) { out.push(wnPerson(state, x, base)); continue; }
+    const m = teamMult(x.s.trip.job, crew.length);
+    out.push(`<span class="wn-crew" style="display:inline-flex;gap:0.2rem;align-items:center;border:1px solid rgba(160,200,140,0.45);border-radius:6px;padding:0 0.25rem"${tip(`Out together as a crew of ${crew.length} (same job, same tile): ${m >= 1 ? `+${Math.round((m - 1) * 100)}%` : `${Math.round((m - 1) * 100)}%`} on each one's load; trouble on the way meets them all, and they fight it together.`)}><i aria-hidden="true">🤝</i>${members.map((y) => wnPerson(state, y, base)).join("")}</span>`);
+  }
+  return out.join("");
+}
 function wnRow(state, base, row) {
   const n = row.people.length;
   const busy = row.job === "rest" ? "" : `<span class="wn-count small ${row.now ? "good" : "muted"}">${row.now} of ${n} at it now${row.out ? ` · ${row.out} out on the land` : ""}</span>`;
   const days = row.stalledDays >= 1 ? ` (${plural(row.stalledDays, "day")})` : "";
   return `<div class="wn-row wn-${row.job}">
     <div class="wn-head"><span class="wn-ico" aria-hidden="true">${row.icon}</span><b class="wn-name">${esc(row.name)}</b>${busy}</div>
-    <div class="wn-people">${row.people.map((x) => wnPerson(state, x, TRIP_JOBS[row.job] ? base : null)).join("")}</div>
+    <div class="wn-people">${TRIP_JOBS[row.job] ? wnCrews(state, base, row) : row.people.map((x) => wnPerson(state, x, null)).join("")}</div>
     ${row.why ? `<div class="wn-why small ${row.stalledDays >= STALL_ALERT_DAYS ? "danger" : "warn"}">⚠️ ${esc(row.why)}${days}</div>` : ""}
     ${row.progress ? wnBar(row.progress) : ""}
     ${row.goal ? wnBar(row.goal, "wn-goal") : ""}
