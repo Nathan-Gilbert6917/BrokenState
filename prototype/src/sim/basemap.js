@@ -1203,16 +1203,16 @@ export function buildBaseMap(state, base, rng, opts = {}) {
     for (const c of cellsOf(it, atG)) {
       const x = c.x + ox, y = c.y + oy, q = at(x, y);
       if (!q) continue;
+      if (c.box) (boxes[c.box] = boxes[c.box] || []).push([x, y]);
       if (piece) { // a wall piece (buildings.js piece): its material's hit points; broken, a breach or a gate hanging open
         piece.cells.push([x, y]);
         q.k = broken && c.k === "palisade" ? "breach" : c.k; q.f = "dirt"; delete q.h; delete q.t;
         if (q.k === "palisade") { q.t = 1; q.hp = q.mhp = it.cellHp; q.wm = it.mat || 1; F.ring.push([x, y]); }
-        else if (q.k === "gate") { q.hp = q.mhp = it.cellHp; q.wm = it.mat || 1; q.keyed = true; if (broken) q.hp = 0; else q.bar = true; } // keyed: the defenders' keys bar and unbar it (keyAct)
+        else if (q.k === "gate") { q.hp = q.mhp = it.cellHp; q.wm = it.mat || 1; q.keyed = true; if (broken) q.hp = 0; else q.bar = true; } // keyed: your people hold the key (keyAct)
         else if (q.k === "stand") { q.h = 1; F.walkway.push([x, y]); }
         used[y * W + x] = 1;
         continue;
       }
-      if (c.box) (boxes[c.box] = boxes[c.box] || []).push([x, y]);
       q.k = c.k; if (c.f) q.f = c.f;
       if (c.dk && !weak) q.dk = c.dk; else delete q.dk;
       if (c.lockDoor) { q.lockDoor = true; if (weak) c.hp = INTERIOR.DOOR_HP; }
@@ -1820,6 +1820,9 @@ export function settleBaseBattle(state, b) {
     for (let y = s.y0; y < s.y0 + s.h; y++) for (let x = s.x0; x < s.x0 + s.w; x++) if (b.cells[y * b.w + x].k === "smashed") n += MAP_WEAR.window;
     wearOn(fx, n);
   }
+  // The armory's locks smashed open (forceLock): MAP_WEAR.lock a lock on the armory (both: broken, its containers
+  // open until it is repaired).
+  if (b.stores) for (const c of b.stores.containers) if (c.lock && !(c.lock.hp > 0) && c.bid != null) wearOn(base.buildings.find((x) => x.id === c.bid), MAP_WEAR.lock); // smashed, not unlocked with the key
   // The wall pieces: a breach battered through a piece (not one there when the fight began), a gate battered open.
   const pre = new Set((F.breaches || []).map(([x, y]) => y * b.w + x));
   for (const p of F.pieces || []) {
@@ -1828,9 +1831,6 @@ export function settleBaseBattle(state, b) {
     const n = p.cells.filter(([x, y]) => !pre.has(y * b.w + x) && (p.kind === "gate" ? !barredCell(b.cells[y * b.w + x]) && b.cells[y * b.w + x].mhp : b.cells[y * b.w + x].k === "breach")).length;
     if (n) wearOn(fx, MAP_WEAR.breach * (p.kind === "gate" ? 1 : n));
   }
-  // The armory's locks smashed open (forceLock): MAP_WEAR.lock a lock on the armory (both: broken, its containers
-  // open until it is repaired).
-  if (b.stores) for (const c of b.stores.containers) if (c.lock && !(c.lock.hp > 0) && c.bid != null) wearOn(base.buildings.find((x) => x.id === c.bid), MAP_WEAR.lock); // smashed, not unlocked with the key
   for (const e of layoutOf(state, base)) {
     if (!e.at || e.it.kind !== "defence" || e.it.k !== "barricade" || !e.it.rec) continue;
     const r = rectOf(e.it, e.at);
