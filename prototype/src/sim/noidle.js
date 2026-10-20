@@ -73,6 +73,7 @@ import { workFactor } from "./health.js";
 import { hasTrait } from "./traits.js";
 import { baseNeeds, JOB_SKILL } from "./idlework.js";
 import { ROLE_AREA } from "./autopilot.js";
+import { helpHaulOpen, localWork } from "./hauling.js"; // hauling: local hauling as a help and a fallback (call-time only)
 
 export const NOIDLE = {
   minWork: 0.35,     // under this work factor they are resting for their health, not idle (activity.js MIN_WORK)
@@ -83,9 +84,9 @@ export const NOIDLE = {
   fellThird: 3,      // the governor's felling crew: at most a third of the people
 };
 const NO_WORK = new Set(["idle", "stalled"]);
-export const HELP_ORDER = ["build", "wood", "water", "farm", "guard"];
-const NO_WORK_TEXT = { rest: "Nothing to do on their priorities", build: "No building to do", wood: "No wood to cut", farm: "No field work", cook: "Nothing to cook", medic: "Nobody to look after", craft: "Nothing to craft", operate: "The station is idle", scavenge: "Nothing left to scavenge", forage: "Nothing to forage", hunt: "No hunting here", fish: "No fishing here", water: "No water to fetch", teach: "Nobody to teach", read: "Nothing to read", trainee: "No training" };
-const HELP_TEXT = { build: "helping the builders", wood: "helping chop wood", water: "helping fetch water", farm: "helping tend the fields", guard: "standing guard", scavenge: "helping scavenge", forage: "helping forage" };
+export const HELP_ORDER = ["build", "wood", "water", "farm", "haul", "guard"]; // haul: local hauling (hauling.js: salvage, the ruins)
+const NO_WORK_TEXT = { rest: "Nothing to do on their priorities", build: "No building to do", wood: "No wood to cut", farm: "No field work", cook: "Nothing to cook", medic: "Nobody to look after", craft: "Nothing to craft", operate: "The station is idle", scavenge: "Nothing left to scavenge", forage: "Nothing to forage", hunt: "No hunting here", fish: "No fishing here", water: "No water to fetch", teach: "Nobody to teach", read: "Nothing to read", trainee: "No training", haul: "Nothing to haul" };
+const HELP_TEXT = { build: "helping the builders", wood: "helping chop wood", water: "helping fetch water", farm: "helping tend the fields", guard: "standing guard", scavenge: "helping scavenge", forage: "helping forage", haul: "helping haul salvage" };
 const roleName = (k) => (ROLES[k] ? ROLES[k].name : k);
 const first = (s) => s.name.split(" ")[0];
 
@@ -136,6 +137,7 @@ function helpOpen(state, base, s, job, h, count) {
     }
     case "water": return n < NOIDLE.waterMax && !underAttack(state, base) && inTripHours("water", h) && waterRunningShort(state, base) && !fetchWaterWhy(state, base);
     case "farm": { const fw = farmersWanted(state, base); return fw.active + fw.toSow > 0 && n < fw.ideal; }
+    case "haul": return !underAttack(state, base) && helpHaulOpen(state, base, h, n); // hauling.js: salvage, the ruins
     case "guard": return true;
     default: return false;
   }
@@ -249,6 +251,7 @@ export function planNoIdle(state, base, list, roleOf, areas = null) {
   const needs = baseNeeds(state, base, roleOf).filter((n) => !areas || areas[ROLE_AREA[n.job]] !== false);
   const ppl = atBase(state, base.id);
   if (!woodWorkWhy(state, base) && Math.max(0, base.stock.wood || 0) < NOIDLE.woodSpare && !needs.some((n) => n.job === "wood") && (!areas || areas.production !== false)) needs.push({ job: "wood", score: 0.6, cap: 3 - ppl.filter((x) => roleOf(x) === "wood").length, why: `wood ${Math.round(base.stock.wood || 0)}: the builds' material`, station: null });
+  if ((!areas || areas.production !== false) && localWork(state, base) && !needs.some((n) => n.job === "haul")) needs.push({ job: "haul", score: 0.3, cap: 2 - ppl.filter((x) => roleOf(x) === "haul").length, why: "local hauling: salvage and scrap near the base", station: null }); // hauling.js
   if (!areas || areas.defence !== false) needs.push({ job: "guard", score: 0.05, cap: 99, why: "a lookout on the walls", station: null });
   const plan = [];
   for (const s of [...list].sort((a, b) => a.id - b.id)) {

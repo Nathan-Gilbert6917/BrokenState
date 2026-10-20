@@ -73,6 +73,7 @@ export function gatherStores(state, f) {
   for (const t of f.bases.slice(1)) {
     const h = H[t];
     if (!h) continue;
+    h.held = Object.fromEntries(goods(h.stock)); // hauling.js groupHaulDaily: what it held, against what the run out gives it
     for (const [k, q] of goods(h.stock)) { f.stock[k] = (f.stock[k] || 0) + q; h.stock[k] = 0; }
   }
 }

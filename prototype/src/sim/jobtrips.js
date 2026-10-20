@@ -41,6 +41,7 @@ import { armTripEvent, fireTripEvent, holdTrip, creditBonus, holdText } from "./
 import { lunchOverlap, isLunchHour } from "./meals.js"; // the lunch break out at work
 import { PACK, packFood, topUpPack } from "./eating.js"; // the food they take out for lunch
 import { chopHour, hasChopWork } from "./woodwork.js"; // woodwork: the woodcutters fell the trees marked on the base map before going out
+import { haulStep, haulDropped, haulTripState } from "./hauling.js"; // hauling: a haul trip is s.trip with job "haul" (call-time only)
 
 const r2 = (v) => Math.round((v || 0) * 100) / 100;
 const POPS = 12; // deposits kept for the map
@@ -88,6 +89,7 @@ export function returnTools(state, base, s) {
   if (!s || !s.gear || !base) return 0;
   const take = (arr, k) => { const it = arr[k]; if (it && it.jobTool) { delete it.jobTool; arr[k] = null; base.armory.push(it); n++; } };
   for (const k of Object.keys(s.gear)) if (k !== "backpack" && k !== "rig" && k !== "armor" && k !== "carry") take(s.gear, k);
+  if (s.gear.carry && s.gear.carry.haulCart) { delete s.gear.carry.haulCart; base.armory.push(s.gear.carry); s.gear.carry = null; n++; } // hauling.js: the armory's cart back
   (s.pockets || []).forEach((_, i) => take(s.pockets, i));
   const pk = packOf(s);
   if (pk) pk.forEach((_, i) => take(pk, i));
@@ -199,7 +201,7 @@ export function loadText(t) {
     }
     case "scavenge": return c.finds ? Object.entries({ ...c.got, ...(c.ammo ? { ammo: c.ammo.q } : {}) }).map(([k, n]) => `${n} ${k === "buildmat" ? "building materials" : k}`).join(", ") : "";
     case "water": return c.water > 0 ? `${r1(c.water)} water (un-purified)` : "";
-    default: return "";
+    default: return c.text || ""; // hauling.js: the load's own words
   }
 }
 const r1 = (v) => Math.round((v || 0) * 10) / 10;
@@ -326,6 +328,7 @@ function packForTrip(state, base, s) {
 
 // One person's trips up to the end of the hour starting at `now`.
 function stepPerson(state, base, s, now) {
+  if (s.trip ? s.trip.job === "haul" : s.role === "haul") return haulStep(state, base, s, now); // hauling.js
   const end = now + 1;
   for (let guard = 0; guard < 6; guard++) {
     const t = s.trip;
@@ -379,7 +382,7 @@ export function jobTripsHour(state, now = state.hour) {
   for (const s of state.survivors) {
     if (!s.trip && !s.tripNext) continue;
     const l = s.location;
-    if (!s.alive || !l || l.kind !== "base" || (s.trip && l.baseId !== s.trip.base)) { delete s.trip; delete s.tripNext; }
+    if (!s.alive || !l || l.kind !== "base" || (s.trip && l.baseId !== s.trip.base)) { if (s.trip && s.trip.job === "haul") haulDropped(state, s); delete s.trip; delete s.tripNext; }
   }
   for (const base of state.bases) for (const s of atBase(state, base.id)) { if (!s.trip) returnTools(state, base, s); stepPerson(state, base, s, now); }
 }
@@ -405,6 +408,7 @@ export function tripDay(state, base, end = state.hour) {
 export function tripState(state, s, t = state.hour) {
   const tr = s && s.trip;
   if (!tr || t < tr.leave || t >= tr.home) return null;
+  if (tr.job === "haul") return haulTripState(state, s, t); // hauling.js
   const c = TRIP_JOBS[tr.job];
   const held = holdText(tr); // tripevents.js: a card waits ("Facing a bear")
   if (held) return { phase: tr.ev.phase || "work", f: tr.ev.f ?? 0.5, progress: tr.ev.f ?? 0.5, text: `${held} near ${tileLabel(state, tr.tile)}`, stage: "", job: tr.job, held: true };
@@ -428,7 +432,7 @@ export function tripState(state, s, t = state.hour) {
 // The people of a base out on trips at time t: [{ s, st (tripState), trip }].
 export function outWorkers(state, base, t = state.hour) {
   const out = [];
-  for (const s of atBase(state, base.id)) { const st = tripState(state, s, t); if (st) out.push({ s, st, trip: s.trip }); }
+  for (const s of atBase(state, base.id)) { if (s.trip && s.trip.job === "haul") continue; const st = tripState(state, s, t); if (st) out.push({ s, st, trip: s.trip }); } // haulers: ui/workermap.js draws them on their route
   return out;
 }
 export { survivorById };

@@ -38,6 +38,7 @@
 // - When fewer than 2 aggressive groups are left hostile to you (from day 60), a new gang from beyond the border
 //   settles 12–30 tiles from your hub (2% a day): 12–18 people, hostile, at any time of the run (makeGang; raider
 //   bands from outside that settle use it too, visitors.js settleBands).
+import { groupHaulDaily } from "./hauling.js"; // AI parity: their haulers carry the run out (call-time only)
 import { personKey } from "./members.js"; // dice the same in every world on the seed
 import { ensureMembers, syncMembers, placeMembers, moveMember, removeMember } from "./members.js"; // a group's people (docs/adr/0001-ai-parity.md)
 import { kitOut } from "./loadouts.js"; // what each of them carries
@@ -164,6 +165,7 @@ export function peopleUp(state, f) {
   kitOut(state, f);
   syncBuildings(state, f); // groupbases.js: their bases as base objects, with the buildings they put up
   spreadStores(state, f); // and each outpost's stores out to it (its people's share)
+  groupHaulDaily(state, f); // hauling.js: what the outposts took beyond what they held goes out on a convoy of their haulers
   for (const h of Object.values(homesOf(state, f))) autoStore(state, h); // containers.js: what came in today put away in each base's containers (nothing in or out of the books)
 }
 export const GROUP_BREAK = 3;

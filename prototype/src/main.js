@@ -1,4 +1,5 @@
 // Entry point: game loop, input, and the action dispatcher that connects the UI to the simulation.
+import { haulAdd, haulDel, haulVeh, haulFormChange } from "./ui/hauling.js"; // the Hauling panel's actions
 import { togglePeopleIdle, assignIdlePreview } from "./ui/activity.js"; // the People tab's Idle filter, Assign all idle
 import { gearOutdoorWorkers, gearText } from "./sim/tripgear.js"; // the Work now panel's Gear outdoor workers (trips-plus #2)
 import { applyIdlePlan } from "./sim/idlework.js";
@@ -873,6 +874,10 @@ const actions = {
   cxtab: (d) => { ui.baseView.cx = d.tab; ui.baseView.tab = "construction"; ui.baseMsg = ""; }, // Construction: the Buildings or the Defenses list (from the Defence tab too)
   closebase: () => { ui.baseView = null; ui.baseMsg = ""; ui.supplyForm = null; },
   // Supply runs (Supply runs tab of the base screen).
+  // Hauling (ui/hauling.js, the Supply runs tab).
+  "hl-add": (d) => { ui.baseMsg = haulAdd(state, ui, d.base); },
+  "hl-del": (d) => { haulDel(state, d.id); },
+  "hl-veh": (d) => { haulVeh(state, d.id); },
   "sr-new": (d) => { ui.supplyForm = jobForm(state, null, Number(d.base)); ui.supplyError = ""; },
   "sr-edit": (d) => {
     const j = supplyRunById(state, Number(d.id));
@@ -1462,6 +1467,7 @@ document.addEventListener("drop", (ev) => {
 });
 
 const changeActions = {
+  "hl-f": (el) => haulFormChange(ui, el), // ui/hauling.js: the Add order form
   uiscale: (el) => { ui.scale = Number(el.value); document.documentElement.style.setProperty("--ui-scale", ui.scale); setTimeout(() => { resize(); fitWindows(); }, 50); options.uiScale = ui.scale; saveOptions(options); },
   // A work role ("w:…", priorities) or a fixed job (Manual) (ui/work.js).
   role: (el) => {
