@@ -53,6 +53,7 @@ function struckAt(b, to) {
 export function meleeCue(b, f, a, mem = {}) {
   return { ...blowCue(b, f, a, mem), at: f.to, enemy: f.side !== "player", pan: panOfX(b, f.to && f.to[0]) }; // at: placed by ui/gunsfx.js spatial (pan: with no listener)
 }
+const SHOVE_TEXT = new Set(["SHOVED", "FLOORED", "FALL", "THROUGH"]);
 function blowCue(b, f, a, mem) {
   if (!f.hit) return { name: "whoosh", ...(a ? clsOf(a) : {}) };
   const text = f.text || "";
@@ -60,6 +61,7 @@ function blowCue(b, f, a, mem) {
   const self = f.from && f.to && f.from[0] === f.to[0] && f.from[1] === f.to[1];
   // A door, a window, a barricade, a wall battered (combat.js bash, siege.js): no one stands there.
   if (!t && !self && a) return { name: /BROKEN|SMASHED/.test(text) ? "meleeCrit" : "melee", struct: true, broke: /BROKEN|SMASHED/.test(text), ...clsOf(a) };
+  if (SHOVE_TEXT.has(text)) return { name: text === "SHOVED" ? "melee" : "meleeCrit", cls: "punch", w: 0.3, kill: text !== "SHOVED" }; // sim/shoving.js: a shoulder into them; flat on their back, a fall, through a window: the body going down
   if (text) return { name: (f.dmg || 0) >= 25 ? "meleeCrit" : "melee" }; // KO, STUN, RAMMED, ROCK, a launcher's round (gun-sfx's)…
   const cue = { name: "melee", ...(a ? clsOf(a) : { cls: "metal", w: CLASS.metal.w }) };
   const kill = !!(t && (t.dead || t.down) && (f.dmg || 0) > 0);

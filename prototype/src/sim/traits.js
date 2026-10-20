@@ -45,7 +45,7 @@
 // Everyone with traits plays by these: your people, the autopilot's, recruits, wanderers, prisoners, children grown
 // up, and anyone of yours in a fight by the numbers. Other groups' people are numbers (factions.js strength), not
 // survivors, so no trait touches them until they join you or are taken prisoner.
-import { TRAITS, BIRTH_TRAITS, SWAP_TRAITS, LATE_TRAITS, DIET_TRAITS, DIET_ROLLED, clashIn, traitKind } from "./data.js";
+import { TRAITS, BIRTH_TRAITS, SWAP_TRAITS, LATE_TRAITS, DIET_TRAITS, DIET_ROLLED, PICK_ONLY_TRAITS, clashIn, traitKind } from "./data.js";
 import { Rng } from "./rng.js";
 
 // ---------- the tiers: points and numbers (tune here) ----------
@@ -66,6 +66,7 @@ export const TRAIT_TIERS = {
   ironstomach:  { pts: [2, 3, 4],    fx: { sick: [0.5, 0.35, 0.2], shrug: [1 / 3, 1 / 2, 2 / 3] }, say: (f) => `${pc(1 - f.sick)} less chance of an upset stomach from un-purified water or food poisoning from bad cooking or uncooked food, and shrugs off the worm's eggs ${shrugText(f.shrug)} (water, raw food, camping, searching)` },
   quickheal:    { pts: [3, 5, 7],    fx: { heal: [1.3, 1.5, 1.75] }, say: (f) => `Wounds heal ${pc(f.heal - 1)} faster while resting (at a base, in a hospital bed, in camp, as a prisoner)` },
   strongback:   { pts: [3, 5, 7],    fx: { max: [48, 52, 56], feel: [0.9, 0.85, 0.8] }, say: (f) => `Max load ${f.max} kg instead of 40, and loads feel ${pc(1 - f.feel)} lighter (a better load band)` },
+  bulldozer:    { pts: [3, 5, 7],    fx: { shove: [10, 15, 20], knock: [0.15, 0.25, 0.35] }, say: (f) => `Throws their weight about: a shove lands ${f.shove}% more often and knocks the target flat ${pc(f.knock)} more often (sim/shoving.js)` },
   fleet:        { pts: [3, 5, 8],    fx: { mob: [1, 1, 2], escape: [10, 15, 20] }, say: (f) => `+${f.mob} tile${f.mob === 1 ? "" : "s"} a move in battle, and +${f.escape}% to break off and get away from a fight (a team on foot all Fleet-Footed: +1 to Run for it on the road)` },
   farmraised:   { pts: [3, 5, 7],    fx: { skill: [3, 5, 7], cook: [1, 2, 3] }, say: (f) => `+${f.skill} Farming, +${f.cook} Cooking` }, // cook: kitchen-plus (Cooking, 2026-10-10)
   persuasive:   { pts: [3, 5, 7],    fx: { skill: [3, 5, 7] }, say: (f) => `+${f.skill} Speech (better prices, talks, recruiting)` },
@@ -310,7 +311,7 @@ export function traitHash(...n) {
 // DIET_* (2026-10-11): Picky Eater and Vegetarian come in last (dietTraits), DIET_SHARE of the time each; LATE_SHARE is
 // fixed at what it was before them (3 of the 34 traits then), so every seed keeps its rolls but for the few a food trait
 // now takes the place of.
-export const TRAIT_ROLL = { SALT: 0x7a17, NEW_SHARE: SWAP_TRAITS.length / (SWAP_TRAITS.length + BIRTH_TRAITS.length), LATE_SALT: 0x1a7e, LATE_SHARE: LATE_TRAITS.length / (Object.keys(TRAITS).length - DIET_TRAITS.length), DIET_SALT: 0xd1e7, DIET_SHARE: DIET_ROLLED.length / Object.keys(TRAITS).length, ON: true };
+export const TRAIT_ROLL = { SALT: 0x7a17, NEW_SHARE: SWAP_TRAITS.length / (SWAP_TRAITS.length + BIRTH_TRAITS.length), LATE_SALT: 0x1a7e, LATE_SHARE: LATE_TRAITS.length / (Object.keys(TRAITS).length - DIET_TRAITS.length - PICK_ONLY_TRAITS.length), DIET_SALT: 0xd1e7, DIET_SHARE: DIET_ROLLED.length / (Object.keys(TRAITS).length - PICK_ONLY_TRAITS.length), ON: true };
 // The dice for the n-th person a world makes.
 /** @param {number} seed @param {number} n @returns {Rng} */
 export const traitDice = (seed, n) => new Rng(((Math.imul((seed | 0) ^ TRAIT_ROLL.SALT, 2654435761) ^ Math.imul((n | 0) + 0x3c6e, 1597334677)) >>> 0) || 1);

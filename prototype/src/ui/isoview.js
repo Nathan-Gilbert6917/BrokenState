@@ -2426,7 +2426,7 @@ function feet(s) { return project(s.wx, s.wy, s.z); }
 // The sprite, standing (or lying) at the unit's feet. silhouette: only the figure (for the see-through pass).
 function drawBody(ctx, state, b, s, H, silhouette = false) {
   const t = s.t, S = FR.S, [X, Y] = feet(s);
-  if (t.dead || t.down) {
+  if (t.dead || t.down || t.floored) { // floored: shoved flat on their back (sim/shoving.js) until they get up
     // Lying on the ground: the figure laid along the world's x (the head toward -x, or +x facing the other way), so it
     // turns with the view; the flat picture (ui/downsprites.js) laid onto the floor's axes when there is none.
     const f = unitFacing(b, t);
@@ -2693,6 +2693,7 @@ function drawLabels(ctx, b, s, H) {
   if (t.boss && !t.down) tags.push([t.boss === "broodmother" ? "BROOD" : t.boss === "hivemind" ? "MIND" : "WALL", COL.bad]);
   if (t.ow) tags.push(["OW", "#e0a84f"]);
   if (t.hunker) tags.push(["HD", "#4aa3ff"]);
+  if (t.floored && !t.down && !t.dead) tags.push(["FLAT", "#ffd166"]); // shoved flat on their back (sim/shoving.js): an action to get up
   if (t.stun && !t.down && !t.dead) tags.push(t.stun.dazed ? ["DZ", "#cfd6e0"] : ["STN", "#ffffff"]); // a flashbang (sim/throwables.js)
   if (t.side === "enemy" && !t.aware && !t.ko) tags.push(t.investigate ? ["??", "#e0a84f"] : ["?", "#ffd166"]);
   if (t.side === "player" && t.post && b.phase === "deploy") tags.push([t.post === "gate" ? "G" : t.post === "wall" ? "W" : t.post === "tower" ? "T" : "P", "#e0a84f"]);
