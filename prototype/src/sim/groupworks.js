@@ -770,12 +770,12 @@ export function groupWorksDaily(state, f) {
   // A job at a base they no longer hold is dropped (the materials are lost with the base).
   if (f.job && !f.bases.includes(f.job.tile)) f.job = null;
   // noidle (AI parity with your governor: nobody stays a builder with nothing to build): the day's crew-days go to
-  // work that exists. A job finished part-way through the day hands the rest of them to the next job (f.crewCarry,
-  // spent on it the next day with that day's crew: they were lost); with nothing to build they stay on the land, where
+  // work that exists. A job finished part-way through the day hands the rest of them to the next job (f.crewCarry =
+  // { n, day }, spent on it the next day with that day's crew: they were lost); with nothing to build they stay on the land, where
   // the fields and the hunting count every working head anyway (factions.js), and nothing is carried.
   // f.crewDay = { day, crew (today's), carried (from yesterday), built, carry (to the next job), land }.
   const today = (Math.max(1, workingPeople(f) / W.CREW) + (f.prisonWork || 0) / W.CREW) * MEAL_WORK_SHARE; // their prisoners work too (groupjails.js); the ill rest (groupcare.js GROUP_ILL); meals.js: the meal hours off
-  const carried = f.crewCarry || 0;
+  const carried = f.crewCarry && f.crewCarry.day === day(state) - 1 ? f.crewCarry.n : 0; // yesterday's spare, for today's job
   delete f.crewCarry;
   const cd = f.crewDay = { day: day(state), crew: today, carried, built: 0, carry: 0, land: 0 };
   if (!f.job && !startWork(state, f)) { cd.land = today + carried; groupMachinesDaily(state, f); return; } // nothing to build: on the land
@@ -785,7 +785,7 @@ export function groupWorksDaily(state, f) {
   cd.built = use;
   if (f.job.left <= 1e-9) {
     finishWork(state, f);
-    if (crew - use > 1e-9) f.crewCarry = cd.carry = crew - use; // the next job's, tomorrow
+    if (crew - use > 1e-9) { cd.carry = crew - use; f.crewCarry = { n: cd.carry, day: day(state) }; } // the next job's, tomorrow
   }
   groupMachinesDaily(state, f); // freezer-parts: the still, the generator, the freezer and the sealer run, wear and break
 }

@@ -12,7 +12,8 @@
 // It only uses the same calls as the UI (canBuild / queueBuild, queueCraft, treatAtBase, launchExpedition,
 // startOrder, saveSupplyRun ...), plays by what the player knows of the map (knowledge snapshots, markers,
 // known groups), and never draws from state.rng. Turning it off hands everything back as it is.
-import { fellCrew, fellScore, fellFit, noWorkFor, planNoIdle } from "./noidle.js"; // noidle: a woodcutter on the felling, nobody in a role with no work (call-time only)
+import { isChopJob } from "./woodwork.js"; // noidle: the felling in the queue
+import { fellCrew, fellUrgent, fellScore, fellFit, noWorkFor, planNoIdle } from "./noidle.js"; // noidle: a woodcutter on the felling, nobody in a role with no work (call-time only)
 import { FOODS, FOOD_KEYS, foodIn, foodSplit, unitsOf, qtyOf, sellPick, foodNeeds, foodUnits } from "./foods.js"; // food by type (foods.js)
 import { gearOutdoorWorkers, outReady, tripKit } from "./tripgear.js"; // the outdoor workers' kit for their trips (trips-plus #2)
 import { govFieldWorks, fieldJobs, govSnares, snareLinesWanted, playerWorks, gatheredScrap } from "./fieldworks.js"; // field works: the governor's and a base leader's share
@@ -2380,11 +2381,16 @@ function planRoles(state, base, areas = ALL_AREAS) {
   // idle builders"): while felling or wood-giving clearing is queued here (its own for wood, the sites, the player's
   // marks), woodcutters work it before their trips: one, more while the woodpile is low, the best first (fellScore:
   // skill, the tool they carry, traits, health). Off again once the felling is done and the woodpile needs nobody (4a).
-  const fc = areas.production ? fellCrew(state, base, people.length) : 0;
-  if (fc) {
+  // Here, ahead of the builders, while the woodpile is under the fires' days and three days' burn (heat first, as
+  // govWoodwork puts that felling at the front of the queue) or the felling is all there is to build; otherwise after
+  // the builders (5'), from the hands left.
+  const fellNow = (urgentOnly) => {
+    const fc = areas.production ? fellCrew(state, base, people.length) : 0;
+    if (!fc || (urgentOnly && !fellUrgent(state, base) && base.construction.some((c) => !isChopJob(c)))) return;
     const have = [...want.values()].filter((w) => w.role === "wood").length;
     for (const s of ranked("wood", fellScore, fellFit(people.length <= 3)).slice(0, Math.max(0, fc - have))) give(s, "wood");
-  }
+  };
+  fellNow(true);
 
   // 4b. Cautious (reserves): while food is not short, the stations that refill a short supply (the ammo bench,
   // the med station: stationWorth) get their operator before the plots take every hand, and standing guards
@@ -2404,15 +2410,18 @@ function planRoles(state, base, areas = ALL_AREAS) {
 
   // 5. Builders while something is queued: more for big jobs. The field works planned from here (fieldworks.js: a
   // tower, a well …) are built by the same builders (buildings.js constructionHour → fieldBuildHour), so they count.
-  // Only work builders can do now (noidle.js): its own felling for wood is the woodcutters' (4a'), and a build waiting
-  // for its materials (gatherStalled) or the base on alert has nothing for them.
+  // Only work builders can do now (noidle.js): a build waiting for its materials (gatherStalled; a camp's step up while
+  // its builders can make the building materials) or the base on alert has nothing for them. Its felling for wood is
+  // builder work too (a builder clears all day, a woodcutter by daylight): the woodcutters on it (4a', 5') come on top.
   const fieldLeft = fieldJobs(state, base).reduce((a, j) => a + Math.max(0, j.hours - j.progress), 0);
-  const buildable = underAttack(state, base) ? [] : base.construction.filter((j) => j.gov !== "wood" && (!gatherStalled(j) || j === campMaterialsWork(base))); // a camp's builders make the step up's building materials
+  const buildable = underAttack(state, base) ? [] : base.construction.filter((j) => !gatherStalled(j) || j === campMaterialsWork(base)); // a camp's builders make the step up's building materials
   if (areas.building && (buildable.length || fieldLeft > 0)) {
     const left = buildable.reduce((a, j) => a + j.hours - j.progress, 0) + fieldLeft;
     const n = Math.min(3, Math.max(1, Math.ceil(left / 40)), Math.max(1, Math.floor(free.size / 2)));
     for (const s of ranked("build", (x) => skill(x, "mechanics"), (x) => !x.inBed).slice(0, n)) give(s, "build");
   }
+  // 5'. The felling's woodcutters when the woodpile is not short (4a').
+  fellNow(false);
   // 5a. Upkeep at a big hub (UPKEEP_CREW): one or two builders kept on upkeep, build queue or not, while anything is
   // worn, so the wells and pumps are mended before they break (breakdowns.js: only builders with nothing to build did
   // upkeep, and a big hub always has something queued: its wells broke over and over).

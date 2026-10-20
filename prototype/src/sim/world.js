@@ -1067,6 +1067,7 @@ function hourOfWorld(state) {
   cooksHour(state); // kitchen.js: whoever is on Cook in a cooking hour counts as one of the day's cooks (s.cookHour)
   foodMarkAll(state, "player"); // the governor, the stewards and the crews: trades, teams packed
   jobTripsHour(state); // jobtrips.js: the outdoor jobs' trips (out to the base's land, the work, home with the load)
+  helpHour(state); // noidle.js: again, for anyone whose work the trips just finished (the last tree felled: the builders on it)
   foodMarkAll(state, "job"); // the hunters', fishers' and foragers' loads home
   tiredHour(state); // sleep.js: the hour's sleep owed or slept off (a watch in someone's sleep hours keeps them up)
   settleAll(state); // ammo.js: again, for what the work, the crews and the governor moved after the first settle (no generic ammo is left in a holder of yours between hours)

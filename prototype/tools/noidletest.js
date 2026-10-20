@@ -57,9 +57,18 @@ section("1. The governor: with the construction queue empty nobody stays a build
   const job = BM.queueClear(st, h, [t1], { label: "Fell a tree for wood" });
   job.gov = "wood";
   governRoles(st, h);
-  check(!atBase(st, h.id).some((s) => s.role === "build" && !s.upkeep) && atBase(st, h.id).some((s) => s.role === "wood"), `only its felling queued: a woodcutter on it, no builders (${tally(roles(st, h))})`);
-  // A build queued: builders again.
+  check(atBase(st, h.id).some((s) => s.role === "wood"), `only its felling queued: a woodcutter on it (builders may fell too: clearing is builder work) (${tally(roles(st, h))})`);
+  // The felling done: nobody left a builder.
   h.construction = h.construction.filter((c) => c !== job);
+  h.stock.wood = 5000;
+  governRoles(st, h);
+  check(!atBase(st, h.id).some((s) => s.role === "build" && !s.upkeep) && !atBase(st, h.id).some((s) => s.role === "wood"), `the felling done, the woodpile fine: no builders, no woodcutter (${tally(roles(st, h))})`);
+  // A build waiting for its materials: nothing for builders either.
+  h.construction.push({ id: 99000, type: "craftbench", progress: 5, hours: 20, paid: { scrap: 0 }, cost: { scrap: 50 } });
+  governRoles(st, h);
+  check(!atBase(st, h.id).some((s) => s.role === "build" && !s.upkeep), `only a build waiting for its materials: no builders (${tally(roles(st, h))})`);
+  h.construction = [];
+  // A build queued: builders again.
   h.stock.scrap = 200; h.stock.wood = 5000;
   h.construction.push({ id: 99001, type: "craftbench", progress: 0, hours: 20 });
   governRoles(st, h);
@@ -259,21 +268,23 @@ section("7. AI groups: no crew-days on work that does not exist");
 {
   const st = world(SEED + 6, { factionCount: 8 });
   const fs = st.factions.filter((f) => f.alive && groupsBuild(st, f) && f.bases.length).slice(0, 4);
-  let days = 0, carried = 0, landDays = 0, bad = 0, lost = 0;
+  let days = 0, carried = 0, used = 0, landDays = 0, bad = 0, lost = 0;
   for (const f of fs) {
     f.stock.scrap = 400; f.stock.parts = 20;
     for (let d = 0; d < 40; d++) {
+      st.hour += 24;
       groupWorksDaily(st, f);
       const c = f.crewDay;
       if (!c) continue;
       days++;
       if (Math.abs(c.carried + c.crew - (c.built + c.carry + c.land)) > 1e-6) bad++;
+      if (c.carried > 0) used++;
       if (c.carry > 0) carried++;
       if (c.land > 0) { landDays++; if (f.job) lost++; }
     }
   }
   check(fs.length > 0 && days > 0 && !bad, `${fs.length} groups, ${days} group-days: every crew-day built or on the land (${bad} off)`);
-  check(carried > 0, `${carried} days a finished job's spare crew-days went on to the next job (they were lost)`);
+  check(carried > 0 && used > 0, `${carried} days a finished job's spare crew-days were handed on, ${used} days they went into the next job (they were lost)`);
   check(!lost, `crew on the land only on days with nothing to build (${landDays} such days)`);
 }
 

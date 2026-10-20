@@ -28,12 +28,16 @@
 //    governor has already planned, then wood while the woodpile is under NOIDLE.woodSpare (wood is the builds'
 //    material), then a lookout on the walls; the best need first, the one they are best at between equal needs. The
 //    governor's own steps (food, water, heat, defence first) are untouched: only the people it left with no work move.
-//    Its builders come only with building work (step 5 no longer counts its own felling for wood: gov "wood"); the
-//    felling gets woodcutters (fellCrew: one, two when the woodpile is under the fires' days and three days' burn,
-//    three under the fires' days alone; never more than the trees queued or a third of the people), the best first by
-//    skill, tools, traits and health (fellScore), off again once the felling is done and the woodpile needs nobody.
-// 2. Manual people (the player's roles, pinned people too): helpHour, every hour after every role is set (world.js,
-//    after sickRestHour): someone at a base whose job has no work this hour helps with the first of HELP_ORDER that
+//    Its builders come only with work they can do now (step 5: a job in the queue not waiting for its materials, the
+//    felling and clearing too, a field work; nothing on alert); the felling gets woodcutters on top (fellCrew: one, two
+//    when the woodpile is under the fires' days and three days' burn, three under the fires' days alone; never more
+//    than the trees queued or a third of the people), the best first by skill, tools, traits and health (fellScore),
+//    ahead of the builders while the woodpile is that low (fellUrgent: heat first) or the felling is all that is
+//    queued, after them otherwise; off again once the felling is done and the woodpile needs nobody. (Builders fell
+//    all day, woodcutters by daylight: taking the felling from the builders cost the hub openings builds, 12 seeds.)
+// 2. Manual people (the player's roles, pinned people too; and anyone the governor's hour left with no work, the last
+//    tree felled within the hour): helpHour, every hour after every role is set (world.js, after sickRestHour, and
+//    again after the job trips): someone at a base whose job has no work this hour helps with the first of HELP_ORDER that
 //    has work now and room: the builders (a construction job to work, NOIDLE.buildMax builders at most), the felling
 //    marked on the base map (its daylight hours, NOIDLE.chopEach a tree) or the wood for the cold (woodNeed short, wood
 //    land), Fetch water while it runs short (the hauling there is), the fields (a plot to tend, up to the plots' ideal
@@ -50,7 +54,7 @@
 // 3. AI parity: the AI groups have no people with jobs of their own (factions.js counts); their builders are their crew
 //    (groupworks.js groupWorksDaily: people / CREW crew-days a day), coarse and daily, by the same rule: no crew-days are
 //    left on work that does not exist. A job finished part-way through the day hands the rest of its crew-days to the
-//    next job (f.crewCarry, spent on it the next day: they were lost), and a day with nothing to build leaves the crew
+//    next job (f.crewCarry = { n, day }, spent on it the next day: they were lost), and a day with nothing to build leaves the crew
 //    on the land, where their fields and hunting already count every working head (f.crewDay = { day, crew, carried,
 //    built, carry, land }: carried + crew = built + carry + land). Their cooks: groupworks.js groupCookShare is 0 while
 //    the kitchens are cold (back in the fields), as before.
@@ -218,6 +222,11 @@ export function fellCrew(state, base, heads) {
   const w = Math.max(0, base.stock.wood || 0);
   const n = 1 + (w < wn.dailyKeep + 3 * (wn.daily || 0) ? 1 : 0) + (w < wn.dailyKeep ? 1 : 0);
   return Math.min(n, left, Math.max(1, Math.floor(heads / NOIDLE.fellThird)));
+}
+/** The woodpile under the fires' days and three days' burn (autopilot.js govWoodwork's front of the queue): the felling's woodcutters go ahead of the builders. */
+export function fellUrgent(state, base) {
+  const wn = woodNeed(state, base);
+  return Math.max(0, base.stock.wood || 0) < wn.dailyKeep + 3 * (wn.daily || 0);
 }
 /** The best woodcutter first: skill (woodcutterMult: Farming and Mechanics, health, wounds), the tool they carry, traits. */
 export function fellScore(s) {
