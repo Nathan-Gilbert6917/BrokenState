@@ -8,7 +8,7 @@
 //   here (activity.js jobCheck: not "stalled" for them: the land, the tools, the skill a craft needs …).
 //   Needs, highest first: a patient in danger with nobody on Medic; wood short as the cold comes (by how near);
 //   food under a week (the plots first, then wild food: forage, hunt, fish); water running short (Fetch water); a broken well, pump or wall to repair; the
-//   build queue (water builds first); food under 20 days; the Kitchen short of cooks (kitchen.js: one per 12 people);
+//   felling marked on the base map (woodcutters, not the builders: noidle.js); the build queue (water builds first); food under 20 days; the Kitchen short of cooks (kitchen.js: one per 12 people);
 //   a free station with work; the craft queue; wood for the
 //   coming season; scavenging around the base while it is not picked clean (the last resort).
 // applyIdlePlan(state, base, plan, hold?) puts each on their job by hand (Manual, as the role drop-down does).
@@ -36,15 +36,17 @@ import { actingLeader } from "./steward.js";
 import { ROLE_AREA } from "./autopilot.js";
 import { idlePeople, jobCheck, dayJob } from "./activity.js";
 import { hasKitchen, cooksWanted, isCook, kitchenCanLight } from "./kitchen.js"; // the Kitchen's cooks
+import { chopJobs } from "./woodwork.js"; // the felling marked on the base map (noidle)
 
 export const IDLE_HOUR = 7; // the leader's and the governor's daily look at the stalled jobs
 const first = (s) => s.name.split(" ")[0];
 const n0 = (v) => Math.round(v || 0);
 
 // What this base needs, as open jobs: [{ job, score, cap, why, station? }], best first.
-export function baseNeeds(state, base) {
+// roleOf: the job each person counts at (noidle.js: the governor's plan before it is applied).
+export function baseNeeds(state, base, roleOf = (s) => s.role) {
   const ppl = atBase(state, base.id);
-  const on = (job) => ppl.filter((s) => s.role === job).length;
+  const on = (job) => ppl.filter((s) => roleOf(s) === job).length;
   const foodDays = edibleFood(base) / Math.max(1, ppl.length);
   const out = [];
   const add = (job, score, cap, why, station = null) => { if (cap > 0 && score > 0) out.push({ job, score, cap, why, station }); };
@@ -75,8 +77,11 @@ export function baseNeeds(state, base) {
   // Repairs: a broken well, pump or wall with nobody on it.
   const open = (base.repairs || []).filter((j) => j.who == null).length;
   if (open) add("build", 6.5, open, `${open} repair${open === 1 ? "" : "s"} waiting`);
-  // The build queue.
-  const job = base.construction.find((c) => !gatherStalled(c));
+  // The felling marked on the base map (woodwork.js): woodcutters, one for each two trees (noidle.js: not left to builders).
+  const fell = chopJobs(base).filter((c) => (c.progress || 0) < c.hours - 1e-9).length;
+  if (fell && !underAttack(state, base)) add("wood", 4.2, Math.ceil(fell / 2) - on("wood"), `${fell} tree${fell === 1 ? "" : "s"} marked for felling`);
+  // The build queue (the governor's own felling for wood is the woodcutters', above).
+  const job = base.construction.find((c) => !gatherStalled(c) && c.gov !== "wood");
   if (job && !underAttack(state, base)) {
     const water = ["well", "rain_catcher", "cistern"].includes(job.type);
     add("build", water ? 7 : 4, (water ? 4 : 3) - on("build"), `${BUILDINGS[job.type] ? BUILDINGS[job.type].name : job.type} queued (${n0(job.hours - job.progress)} work-hours left)`);
@@ -84,7 +89,7 @@ export function baseNeeds(state, base) {
   // The Kitchen short of cooks (kitchen.js): hot meals stretch the food (−10%) for the people a cook feeds.
   if (hasKitchen(base) && kitchenCanLight(state, base)) add("cook", 3.5, cooksWanted(state, base) - ppl.filter((s) => isCook(state, s)).length, `the kitchen wants ${cooksWanted(state, base)} cook${cooksWanted(state, base) === 1 ? "" : "s"} for ${ppl.length} people: hot meals stretch the food`);
   // Stations with work and nobody on them.
-  const busy = new Set(ppl.filter((s) => s.role === "operate").map((s) => s.station));
+  const busy = new Set(ppl.filter((s) => roleOf(s) === "operate").map((s) => s.station));
   for (const st of stations(base)) if (!busy.has(st.id) && !st.broken && !stationWork(state, base, st)) add("operate", 3, 1, `the ${BUILDINGS[st.type].name.toLowerCase()} has work and no operator`, st.id);
   // The craft queue.
   if (!on("craft") && craftQueue(base).length) add("craft", 3, 1, `${craftQueue(base).length} in the craft queue`);
@@ -93,7 +98,7 @@ export function baseNeeds(state, base) {
   return out.sort((a, b) => b.score - a.score);
 }
 
-const JOB_SKILL = { water: "scouting", cook: "cooking", medic: "medicine", wood: "farming", farm: "farming", forage: "farming", hunt: "shooting", fish: "scouting", build: "mechanics", operate: "mechanics", craft: "crafting", scavenge: "scavenging" };
+export const JOB_SKILL = { water: "scouting", cook: "cooking", medic: "medicine", wood: "farming", farm: "farming", forage: "farming", hunt: "shooting", fish: "scouting", build: "mechanics", operate: "mechanics", craft: "crafting", scavenge: "scavenging" };
 
 // One job each for these people (default: the base's idle), by the base's needs. areas: a leader's areas (only jobs
 // in an area handed over).
@@ -122,6 +127,7 @@ export const planText = (plan) => plan.map((p) => `${first(p.s)} → ${ROLES[p.j
 export function applyIdlePlan(state, base, plan, hold = 0) {
   for (const p of plan) {
     toManual(state, p.s);
+    delete p.s.helpWas; // noidle.js: the job given now holds (not given back as an hour's help ends)
     p.s.role = p.job;
     p.s.station = p.job === "operate" ? p.station : null;
     if (hold > 0) p.s.govIdle = { role: p.job, station: p.station ?? null, until: state.hour + hold };

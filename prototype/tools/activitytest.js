@@ -195,7 +195,7 @@ section("The People tab and the base Overview");
 // ======================================================================
 section("Saves: the output counter survives; an old save has none");
 {
-  const text = saveToString(state);
+  const text = saveToString(state, { dropCards: true }); // a card the world rolled meanwhile (a stranger at the gate: noidle 2026-10-20 moved the dice) is not what this saves
   const back = loadFromString(text);
   const bb = back.bases.find((b) => b.id === base.id);
   check(JSON.stringify(outputDays(bb, "wood")) === JSON.stringify(outputDays(base, "wood")), "base.output saved and loaded");
