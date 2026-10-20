@@ -22,7 +22,8 @@
 //   (by the job, not the hour: asleep woodcutters on bare land still say why). stalledDays: since when (stallDaily).
 //
 // workingActivity(state, s): the job's state by the job, not the clock (at its working hour): what the Idle list,
-//   the Bases badge and the stalled-job alert read. idlePeople(state, base?) → [{ s, base, act, why }]: people at a
+//   the Bases badge and the stalled-job alert read. Someone helping elsewhere this hour (noidle.js) is read at their
+//   own job (dayJob): a job with no work stays on the Idle list so the player can give them another. idlePeople(state, base?) → [{ s, base, act, why }]: people at a
 //   base with nothing to do (a work role with no work, or a job that cannot be done here), not counting anyone
 //   resting (the Rest job, free time), in bed, ill or hurt, on watch or away. workCount(state, base) → { total,
 //   working, idle, hurt, resting }.
@@ -47,8 +48,8 @@ import { forageWorkWhy, forageTime, baseForageDay } from "./foraging.js";
 import { huntWorkWhy, fishWorkWhy, baseHuntDay, baseFishDay } from "./hunting.js";
 import { hospitalDef, isHurt, patients } from "./medical.js";
 import { workFactor, isSick } from "./health.js";
-import { lessonOf, bookDef, skillProgress, bookHours } from "./skills.js";
-import { BLUEPRINTS, studyHours } from "./blueprints.js";
+import { lessonOf, bookDef, skillProgress, bookHours, bestBook, armoryBooks } from "./skills.js";
+import { BLUEPRINTS, studyHours, studyable, canStudy } from "./blueprints.js";
 import { edibleFood } from "./storage.js";
 import { sleepHour, sleepingIn } from "./sleep.js";
 import { onWatchNow } from "./watch.js";
@@ -270,6 +271,8 @@ function fixedJobActivity(state, base, s, job, h) {
     case "read": {
       if (s.studying && BLUEPRINTS[s.studying]) return act("work", `Studying the ${BLUEPRINTS[s.studying].name}`, "", job);
       if (s.reading && bookDef(s.reading)) return act("work", `Reading ${GEAR[s.reading] ? GEAR[s.reading].name : "a book"}`, "", job);
+      // A book or blueprint here they could take up (skills.js readingDaily hands out the copies at midnight): work, not idle.
+      if (bestBook(s, armoryBooks(base), state) || studyable(state, base).some((id) => canStudy(s, id))) return act("work", "Picking a book to read", "A book or blueprint here they can learn from: they take a copy up for the day.", job);
       return act("stalled", "Reader – nothing to read", "No book or blueprint here they can learn from.", job);
     }
     default: return act("work", ROLES[job] ? ROLES[job].name : "Working", "", job);
@@ -357,7 +360,7 @@ export function outputSeries(state, base, job, days = 7) {
 export function dayJob(state, s) {
   const t = isManaged(state, s) ? s.task : null;
   if (t && (t.kind === "sched" || t.kind === "emerg") && t.last && state.hour - t.last.hour <= 72) return t.last.role;
-  return s.role;
+  return helpingAs(s) ? s.helpWas.role : s.role; // noidle.js: helping elsewhere this hour, their own job is still theirs
 }
 const JOB_ORDER = () => Object.keys(ROLES).filter((k) => k !== "rest");
 
@@ -507,6 +510,7 @@ export function workingActivity(state, s) {
   const job = dayJob(state, s);
   if (job === "rest") return act("free", "Resting", "Their job is Rest: recovers mood.", job);
   if (job === "guard") return act("guard", "On guard", "", job);
+  if (helpingAs(s) && job === s.helpWas.role) return jobCheck(state, base, s, job, s.helpWas.station); // noidle.js: their own job, by the job (they help elsewhere meanwhile)
   return jobActivity(state, base, s, job, WORK_HOUR[job] ?? 12);
 }
 const IDLE_KINDS = new Set(["idle", "stalled"]);

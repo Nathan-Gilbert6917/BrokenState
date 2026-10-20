@@ -473,7 +473,7 @@ export function readReason(s, key, state = null) {
 }
 
 // Copies of each book in a base's armory, and who reads which there.
-const armoryBooks = (base) => {
+export const armoryBooks = (base) => {
   const n = {};
   for (const it of base.armory) if (it && bookDef(it.key)) n[it.key] = (n[it.key] || 0) + 1;
   return n;

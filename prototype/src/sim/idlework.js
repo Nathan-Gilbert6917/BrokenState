@@ -127,6 +127,7 @@ export const planText = (plan) => plan.map((p) => `${first(p.s)} → ${ROLES[p.j
 export function applyIdlePlan(state, base, plan, hold = 0) {
   for (const p of plan) {
     toManual(state, p.s);
+    delete p.s.helpWas; // noidle.js: the job given now holds (not given back as an hour's help ends)
     p.s.role = p.job;
     p.s.station = p.job === "operate" ? p.station : null;
     if (hold > 0) p.s.govIdle = { role: p.job, station: p.station ?? null, until: state.hour + hold };

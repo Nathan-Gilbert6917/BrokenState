@@ -18,7 +18,8 @@ import { TRIP, TRIP_JOBS, walkHours, onTileHours, distFactor, tripScale, ownedWa
 import { tripState, tripTarget, planTrip, tripDay, outWorkers, loadText } from "../src/sim/jobtrips.js";
 import { PACK, packFood } from "../src/sim/eating.js"; // the food a trip takes out (lunch)
 import { groupFoodLand, groupWoodLand, groupHomeShare, groupWalkers, groupFetchedWater, GROUP_TRIPS, GROUP_LUNCH_SHARE } from "../src/sim/grouptrips.js";
-import { describeActivity, baseWork } from "../src/sim/activity.js";
+import { describeActivity, baseWork, jobCheck } from "../src/sim/activity.js";
+import { assignedRole } from "../src/sim/noidle.js"; // noidle: a job with no work, its people helping elsewhere
 import { outputDays } from "../src/sim/output.js";
 import * as Wd from "../src/sim/woodcutting.js";
 import * as H from "../src/sim/hunting.js";
@@ -206,7 +207,9 @@ section("Fishing and fetching water need a water tile the base owns");
   check(WORK_TYPES.fish.open(ctx).cap === 0 && WORK_TYPES.water.open(ctx).cap === 0, "the Fish and Fetch water jobs are closed there");
   const f0 = onJob(dry, db, atBase(dry, db.id)[0], "fish");
   tickTo(dry, 7);
-  check(!f0.trip && describeActivity(dry, f0).kind === "stalled" && /no water in the base's land/.test(describeActivity(dry, f0).text), `a fisher there: "${describeActivity(dry, f0).text}"`);
+  // noidle (2026-10-20): the job has no work, so they help elsewhere for the hour and keep their role; the job's own line says why.
+  const own = jobCheck(dry, db, f0, assignedRole(f0));
+  check(!(f0.trip && f0.trip.job === "fish") && assignedRole(f0) === "fish" && own.kind === "stalled" && /no water in the base's land/.test(own.text), `a fisher there: "${own.text}" (meanwhile: "${describeActivity(dry, f0).text}")`);
   check(!!ROLES.water && !!WORK_TYPES.water && !!TRIP_JOBS.water, "Fetch water is a role, a work type and a trip job");
 
   const wet = seedWith((st, b) => !!H.fishWater(st, b));

@@ -142,10 +142,12 @@ export function workChip(state, base) {
 // alerts.js SECTIONS: a job at a base that has been unable to work for STALL_ALERT_DAYS or more (one per base and job;
 // gone when it can work again).
 // alerts.js SECTIONS (noidle, the user's request 2026-10-20): the roles with no work at each base (by the job), one quiet
-// alert a base, so the player can reassign them; meanwhile they help elsewhere (sim/noidle.js helpHour).
+// alert a base, so the player can reassign them; meanwhile they help elsewhere (sim/noidle.js helpHour). A job stalled
+// STALL_ALERT_DAYS or more has the stalled-job alert (stallAlerts) instead.
 export function noWorkAlerts(state, out) {
   const by = new Map();
-  for (const r of noWorkRoles(state)) { if (!by.has(r.base.id)) by.set(r.base.id, []); by.get(r.base.id).push(r); }
+  const loud = new Set(stalledJobs(state).map((j) => `${j.base.id}:${j.job}`)); // stalled 2+ days: the stalled-job alert has it
+  for (const r of noWorkRoles(state)) { if (loud.has(`${r.base.id}:${r.job}`)) continue; if (!by.has(r.base.id)) by.set(r.base.id, []); by.get(r.base.id).push(r); }
   for (const [id, rows] of by) {
     const b = rows[0].base;
     const n = rows.reduce((a, r) => a + r.people.length, 0);
@@ -155,9 +157,7 @@ export function noWorkAlerts(state, out) {
   }
 }
 export function stallAlerts(state, out) {
-  const quiet = new Set(noWorkRoles(state).map((r) => `${r.base.id}:${r.job}`)); // already in the quiet no-work alert (they help elsewhere)
   for (const j of stalledJobs(state)) {
-    if (quiet.has(`${j.base.id}:${j.job}`)) continue;
     out.push({ key: `stall:${j.base.id}:${j.job}`, kind: "stalled", icon: "⏸", tone: "warn", text: `${j.base.name}: ${j.name} stalled ${plural(j.days, "day")}`, tip: `${j.people.map(first).join(", ")} ${j.people.length === 1 ? "is" : "are"} on ${j.name} and cannot work: ${j.why}. Give them another job or fix what it needs. Click to open the base.`, go: { base: j.base.id, tab: "overview" } });
   }
 }
