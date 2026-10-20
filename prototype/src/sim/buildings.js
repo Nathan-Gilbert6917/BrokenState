@@ -23,7 +23,7 @@ import { fieldBuildHour, fieldAwayEnd } from "./fieldworks.js"; // field works: 
 import { MINES } from "./mines.js"; // a minefield's mines (call-time only)
 import { baseCarts, CART_JOB } from "./carts.js"; // a cart at the base: a builder hauls the materials faster (call-time only)
 import { woodNeed } from "./woodcutting.js"; // the Ring wall leaves the wood for heating (call-time only)
-import { carryPlacement, fittingRoom, fittingsIn, wallInfo, ringPlan, ensureRing, siteWaits, finishClear, clearUnder } from "./basemap.js"; // the base map (call-time only): a finished job's building keeps the spot it was placed on; a general building with room for a fitting; the fittings inside one; the wall pieces' ring
+import { carryPlacement, fittingRoom, fittingsIn, wallInfo, ringPlan, ensureRing, siteWaits, finishClear, clearUnder, autoLayout, pinAuto, FOOT } from "./basemap.js"; // the base map (call-time only): a finished job's building keeps the spot it was placed on; a general building with room for a fitting; the fittings inside one; the wall pieces' ring
 import { BED_BUILDINGS } from "./data-beds.js"; // beds as furniture: the placed cot, bed, bunk bed and large bed (beds.js)
 import { TENT_TYPES, TENT_S } from "./data-tents.js"; // the one tent table (TENTS below)
 import { strikeTentAtBase } from "./tents.js"; // a bag's tent pulled down: struck back into its bag (call-time only)
@@ -1264,6 +1264,7 @@ export function constructionHour(state) {
     if (job.paid) job.progress = Math.min(job.progress, job.hours * gatherCap(job)); // never ahead of the materials
     noteOutput(state, base, "build", Math.max(0, job.progress - was), "workh");
     if (job.progress >= job.hours - 1e-9) {
+      const spot = !job.at && job.type !== "clear" && FOOT[job.type] && !FOOT[job.type].fit && !BUILDINGS[job.type].wall ? autoLayout(state, base).get(`c:${job.id}`) || null : null; // where the game had it going up: it stands there (pinAuto below)
       base.construction.splice(base.construction.indexOf(job), 1);
       noteOutput(state, base, "build", 1, "done");
       if (job.type === "clear") { finishClear(state, base, job); continue; } // basescatter.js: the land cleared, its yield into the stores
@@ -1304,6 +1305,7 @@ export function constructionHour(state) {
         continue;
       }
       const nb = addBuilding(base, job.type);
+      if (spot && nb && nb.id != null) { pinAuto(base, `b:${nb.id}`, spot); if (base.plan && base.plan.autoAt) delete base.plan.autoAt[`c:${job.id}`]; } // basemap.js: it stands where it went up
       carryPlacement(job, nb, base); // basemap.js: where it was placed while it went up, its host, and the doorway links that named the job
       clearUnder(state, base, `b:${nb.id}`); // basemap.js: its ground is cleared (siteWaits saw to it; a piece the game laid over the land)
       if (job.mat && isPiece(job.type)) nb.mat = job.mat; // a wall piece's material

@@ -792,6 +792,7 @@ export function siteWaits(state, base, job) {
   if (!hit.length) return false;
   const queued = new Set(base.construction.filter((c) => c.type === "clear" && c.mode !== "strip" && c.pieces).flatMap((c) => c.pieces.map((p) => p.g)));
   if (hit.some((p) => !queued.has(p.g))) queueClear(state, base, hit, { label: `Clear the site for the ${it.label.replace(/ \(building\)$/, "").toLowerCase()}`, before: job });
+  if (!it.at) pinQueued(state, base); // its site held for it while it is cleared, and the other queued builds' with it, from the one layout (pinAuto)
   return true;
 }
 // A thing put up where the game placed it over the land (the wall pieces of a Ring wall): its ground cleared with it.
@@ -933,10 +934,16 @@ export function autoLayout(state, base, except = null) {
   if (occ.land) { const L = occ.land; occ.land = L.waterOnly; noLand = true; wallPass(); occ.land = L; noLand = false; } else wallPass();
   // Where the game had each thing before the player's last change on the map (holdAuto): there again while it still
   // fits and leaves a way in and out, so placing one thing never shuffles the rest; then the others as below.
-  if (sticky) for (const it of items) {
-    if (it.key === except || it.at || it.fit || WALL_KINDS.has(it.kind)) continue;
-    const s = sticky[it.key];
-    if (s && fits(it, s[0], s[1], s[2] || 0) && reach(it, [s[0], s[1], s[2] || 0])) take(it, [s[0], s[1], s[2] || 0]);
+  // Over the land as well (never the river): a spot held there had its clearing queued, or was cleared when it was built.
+  if (sticky) {
+    const L = occ.land;
+    if (L) { occ.land = L.waterOnly; noLand = true; }
+    for (const it of items) {
+      if (it.key === except || it.at || it.fit || WALL_KINDS.has(it.kind)) continue;
+      const s = sticky[it.key];
+      if (s && fits(it, s[0], s[1], s[2] || 0) && reach(it, [s[0], s[1], s[2] || 0])) take(it, [s[0], s[1], s[2] || 0]);
+    }
+    if (L) { occ.land = L; noLand = false; }
   }
   const itemPass = () => {
     for (const it of items) {
@@ -1129,6 +1136,24 @@ export function layoutOf(state, base) {
 // Before the player changes the map (the view's put, build, demolish, doorways, Auto): where the game has everything
 // it placed (not the wall pieces nor the fittings: they have their own order) is remembered (base.plan.autoAt), and
 // the auto layout keeps each there while it fits (the playtest 2026-10-20: moving one thing shuffled the rest).
+// One thing the game placed held where it is (pt-int round 2: a crowded forest camp's huts shuffled round each time the
+// land under them was cleared, a hut built on one site standing on another's the next hour): a job whose site's clearing
+// is queued (siteWaits), a building finished where its job stood (buildings.js constructionHour).
+export function pinAuto(base, key, at) {
+  if (!at) return;
+  const P = planOf(base);
+  (P.autoAt || (P.autoAt = {}))[key] = at.slice();
+}
+// Every queued build the game placed, held where this one layout has it (siteWaits: a site's clearing queued). Held one
+// at a time, each new layout moved the builds not yet held, one of them onto land whose clearing was never queued.
+export function pinQueued(state, base) {
+  const P = planOf(base), auto = autoLayout(state, base);
+  for (const c of base.construction) {
+    const key = `c:${c.id}`, f = FOOT[c.type];
+    if (c.type === "clear" || c.at || !f || f.fit || WALL_KINDS.has(f.kind) || (P.autoAt && P.autoAt[key])) continue;
+    pinAuto(base, key, auto.get(key));
+  }
+}
 export function holdAuto(state, base) {
   const hold = {};
   for (const e of layoutOf(state, base)) if (e.auto && e.at && !e.it.fit && !WALL_KINDS.has(e.it.kind)) hold[e.it.key] = e.at.slice();
