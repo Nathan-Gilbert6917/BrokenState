@@ -88,7 +88,9 @@ function placeTeam(state, tile, { n = 2, weapon = "huntrifle", second = "pistol"
     if (skills) Object.assign(s.skills, skills);
   });
   const near = state.tiles.find((t) => t.terrain !== "water" && state.grid.distance(t.id, h.tile) === 2 && planPath(state, h.tile, t.id, false));
-  const res = launchExpedition(state, { memberIds: ids, dest: near.id, mission: "move", stance: "normal", supplies: { food: 6, water: 6 } });
+  // No loadout (parties.js launchExpedition: a trip's guns and spare magazines leave loaded out of the stores, rounds by
+  // calibre in the team's bags): the team's rounds are the generic `ammo` set below, and none means none.
+  const res = launchExpedition(state, { memberIds: ids, dest: near.id, mission: "move", stance: "normal", supplies: { food: 6, water: 6 }, loadout: false, shells: false });
   if (res.error) throw new Error(res.error);
   const p = res.party;
   Object.assign(p.supplies, { water: 8, ammo, arrows }); setFood(p, 8);

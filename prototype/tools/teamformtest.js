@@ -18,6 +18,7 @@ import { ROCKET } from "../src/sim/launchers.js";
 import { newItem, stripAll, allCarried, itemLoad, packOf, quickMove, carriedSpots } from "../src/sim/inventory.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
 import { SUPPLIES } from "../src/sim/data.js";
+import { isRoundItem, roundsInItem } from "../src/sim/itemstack.js"; // rounds at hand: a stack in a pocket is the supply it was packed from (carrykit.js packShells)
 import { contactable } from "../src/sim/orders.js";
 import { enterOption, joinBase } from "../src/sim/moveout.js";
 import { loadFromBase, dropOff } from "../src/sim/teaminv.js";
@@ -38,11 +39,13 @@ function mk(seed = SEED) {
   return state;
 }
 // Every item object anywhere that matters here (people at the base and on teams, the armory, cargo), walked into packs,
-// rigs, carriers' plates and guns' attachments; each one once.
-function itemsOf(state) {
+// rigs, carriers' plates and guns' attachments; each one once. A stack of loose rounds is not one of them: it is a
+// supply in item form (a forming team's rounds at hand, carrykit.js packShells), counted by suppliesOf (into `rounds`).
+function itemsOf(state, rounds = null) {
   const seen = [];
   const walk = (it) => {
     if (!it || typeof it !== "object") return;
+    if (isRoundItem(it)) { if (rounds) rounds.push(it); return; }
     seen.push(it);
     for (const c of it.contents || []) walk(c);
     for (const c of Object.values(it.inserts || {})) walk(c);
@@ -60,8 +63,13 @@ function suppliesOf(state) {
   const add = (o) => { for (const [k, q] of Object.entries(o || {})) if (SUPPLIES[k] && Number.isFinite(q)) out[k] = (out[k] || 0) + q; };
   for (const b of state.bases) add(b.stock);
   for (const p of state.parties) { add(p.supplies); add(p.cargo && p.cargo.supplies); }
+  const rounds = [];
+  itemsOf(state, rounds);
+  for (const it of rounds) if (SUPPLIES[it.key]) out[it.key] = (out[it.key] || 0) + roundsInItem(it); // the stacks at hand in pockets, rigs and packs
   return out;
 }
+// A team's supply of a kind: packed (teamform.js teamHas) and at hand in its people's pockets, rigs and packs.
+const teamRounds = (state, p, k) => teamHas(p, k) + partyMembers(state, p).reduce((a, s) => a + carriedSpots(s).filter((x) => x.item && x.item.key === k).reduce((b, x) => b + roundsInItem(x.item), 0), 0);
 const bikesTotal = (state) => state.vehicles.filter(isBike).reduce((a, v) => a + (v.count || 1), 0);
 function census(state) {
   const items = itemsOf(state);
@@ -128,7 +136,7 @@ section("Forming: people, a car, supplies and cargo leave the base, nothing lost
   check(a.gear.weapon === rifle && a.gear.backpack === pack, "they keep the kit set at the base");
   check(car.loc.kind === "party" && car.loc.partyId === p.id && partyVehicle(state, p) === car, "the car went with the team");
   check(p.cargo.gear.includes(crowbar) && !h.armory.includes(crowbar), "the crowbar went into the cargo");
-  check(teamHas(p, "food") >= 10 && teamHas(p, "food") < 11.21 && teamHas(p, "a_556_fmj") === 30 + gunCapacity(rifle) && teamHas(p, "fuel") === 5, `the supplies were packed, and the rifle's magazine on top (${teamHas(p, "a_556_fmj")} 5.56: 30 + ${gunCapacity(rifle)})`);
+  check(teamHas(p, "food") >= 10 && teamHas(p, "food") < 11.21 && teamRounds(state, p, "a_556_fmj") === 30 + gunCapacity(rifle) && teamHas(p, "fuel") === 5, `the supplies were packed, and the rifle's magazine on top (${teamRounds(state, p, "a_556_fmj")} 5.56: 30 + ${gunCapacity(rifle)}; ${teamHas(p, "a_556_fmj")} packed, the rest at hand)`);
   check(pre.loadout.a_556_fmj === gunCapacity(rifle) && loadoutCount(pre.loadout) === gunCapacity(rifle) && near(pre.load, supplyLoad({ food: 10, water: 10, fuel: 5, a_556_fmj: 30 + gunCapacity(rifle) }) + itemLoad(crowbar)), `the preview counts the loadout (${JSON.stringify(pre.loadout)}, ${pre.load} kg)`);
   check(roundsText(state, rifle, `s:${a.id}:weapon`) === `0/${gunCapacity(rifle)}`, `on the team the rifle's badge reads what is in it (2026-10-20: physical; its magazine's worth goes along in the bags and fills it as a fight starts): ${roundsText(state, rifle, `s:${a.id}:weapon`)}`);
   check(!!enterOption(state, p), "Enter base is offered on its own tile");

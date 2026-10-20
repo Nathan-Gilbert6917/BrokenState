@@ -144,12 +144,15 @@ section("Weight in a fight");
   for (let i = 0; i < 6; i++) s.gear.backpack.contents[i] = newItem("frag");
   s.gear.backpack.contents[6] = newItem("ceramicplate"); s.gear.backpack.contents[7] = newItem("steelplate");
   for (let i = 8; i < s.gear.backpack.contents.length && battleKg(s) * feelFactor(s) < 30; i++) s.gear.backpack.contents[i] = newItem("steelplate"); // a heavy load: over 28 kg
-  const kg = battleKg(s);
+  const kgBefore = battleKg(s);
   setRounds(h.stock, 300, ["ar"]);
   const b = (st.combat = createBattle(st, { tile: h.tile, baseId: h.id, fighterIds: [s.id], enemy: { kind: "soldiers", count: 4, power: 5 }, ambush: null, canRetreat: true, handler: "rigtest", context: {} }));
   const u = b.units.find((x) => x.sid === s.id);
-  const felt = kg * feelFactor(s);
-  check(Math.abs(u.armLoad - kg) < 0.05 && u.mob === bandFor(felt).mob && u.dash === bandFor(felt).dash, `a fully kitted fighter: ${r1(kg)} kg (felt ${r1(felt)}: the pack's frame), mob ${u.mob}${u.dash ? `, dash ${u.dash}` : ""}`);
+  // The unit is weighed as the fight opens, after the defence fills its gun and magazines out of the base's stock and
+  // takes a magazine's worth of loose rounds at hand (combat.js, carrykit.js looseWant): physical rounds that weigh, so
+  // the unit's kg is the kit's plus theirs (at most about 1.5 kg here: 120 rounds of 5.56).
+  const kg = kgBefore, felt = u.armLoad * feelFactor(s);
+  check(u.armLoad >= kg - 0.05 && u.armLoad - kg <= 2 && u.mob === bandFor(felt).mob && u.dash === bandFor(felt).dash, `a fully kitted fighter: ${r1(kg)} kg of kit, ${r1(u.armLoad)} with the fight's rounds (felt ${r1(felt)}: the pack's frame), mob ${u.mob}${u.dash ? `, dash ${u.dash}` : ""}`);
   check(felt > 28 && u.mob === 4, `over 28 kg felt: 4 tiles an action`);
   u.ap = 2; u.dash = -1; u.mob = 5;
   check(dashRange(u) === 9, "a Medium load's dash: 9 tiles, not 10");

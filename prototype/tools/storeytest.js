@@ -244,7 +244,9 @@ console.log("A raid in a building with storeys: floors, the stairs, what is off 
       const took = !!box.contents && (Object.keys(R.found).length > 0 || R.foundGear.length > 0);
       let turns = 1;
       while (err === "" && !box.searched && turns < 4) { b.turn++; b.phase = "player"; u.ap = 2; turns++; err = combatAct(st, { type: "search", unit: u.id, box: box.id }); }
-      check(err === "" && took && box.searched, `searching it upstairs works (${err || "ok"}, emptied in ${turns} turn${turns === 1 ? "" : "s"})`);
+      // Emptied, or searched with the rest left inside for want of room (one person's pack: food by type and firewood
+      // weigh what they do, so a full cabinet seldom fits; combat.js searchBox "No room for the rest").
+      check(err === "" && took && (box.searched || box.partial), `searching it upstairs works (${err || "ok"}, ${box.searched ? `emptied in ${turns} turn${turns === 1 ? "" : "s"}` : `${turns} turns, the rest left inside for want of room`})`);
     }
     // No extraction upstairs.
     const z = R.zones[0];

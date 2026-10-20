@@ -528,7 +528,10 @@ export function powerEquiv(kind, cp) {
 }
 // Refitted 2026-10-19 after AI parity (enemies are people with finite rounds and your rules: docs/adr/0001-ai-parity.md),
 // a logistic on 2376 map fights (tools/calibrate.js --raw, seeds 5, 6 and 8): no compensation, the map's own odds.
-export const ODDS = { RATIO: 4.06, NUMBERS: 3.74, ZOMBIES: 2.17, MIXED: 2.76, SOLDIERS: -3.83, HIVE: -0.44, THEY_AMBUSH: 0.81, YOU_AMBUSH: -0.57, MIN: 0.03, MAX: 0.97 };
+// Refitted again the same day after the loose rounds at hand for every gun (carrykit.js looseWant), the same logistic
+// on 3888 map fights (48 a matchup, seeds 5, 6 and 8): your people win 63% on the map (the dead 65%, soldiers 21%),
+// where the old numbers gave 52% (the dead 49%).
+export const ODDS = { RATIO: 4.49, NUMBERS: 2.39, ZOMBIES: 3.38, MIXED: 2.3, SOLDIERS: -2.6, HIVE: -0.3, THEY_AMBUSH: 0.76, YOU_AMBUSH: -0.72, MIN: 0.03, MAX: 0.97 };
 export function winOdds(ratio, enemy = null) {
   const e = enemy || {};
   const dead = e.kind === "zombies";
@@ -3507,6 +3510,9 @@ export function fillBattleUnit(b, u, s, { gun = true, spares = /** @type {boolea
   fitMags(b, u, carriedSpots(s), magCap(u), s);
   syncMags(u);
   loadMag(u, u.mag);
+  // Weighed again: the rounds that went from the boxes at hand into the gun and the spares weigh as the magazines' loads
+  // now (carrykit.js battleKg counts a magazine full), so the kg weighed as the unit was made counted them twice.
+  if (n > 0 && u.side === "player" && s && u.mob0 == null && u.dragMob == null) weighPlayer(u, s);
   return n;
 }
 /** @param {any} b @param {[any, any][]} team [unit, survivor] pairs, guns already loaded */
