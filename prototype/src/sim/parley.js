@@ -20,8 +20,11 @@
 //                 a standoff: converted to the third side (toThird: b.third gets a record with fromEnemy, the units keep
 //                 their pod in u.pfrom), guns up, nobody firing, until the card is answered (STANDOFF_TURNS at most).
 //   Call out    - a unit of yours that can see one of theirs (combat.js canSee, the same floor) shouts to their group,
-//                 whatever its stance (combatAct {type:"callout"}, 1 action; the shout is heard SHOUT tiles off: the
-//                 dead and the unaware come, Heat +HEAT). An enemy pod called to goes into a standoff.
+//                 whatever its stance (combatAct {type:"callout"}, 1 action; the shout is heard shoutCost().radius tiles
+//                 off: the dead and the unaware come, Heat +shoutCost().heat). An enemy pod called to goes into a standoff.
+//   the stakes  - shoutCost: a shout's reach and Heat by the place's density (DENSE: city or countryside, a crawl's block,
+//                 b.infection), and its risk: "high" when it tips the Heat a stage (combat.js raidTurn: a wave). The
+//                 button's tip and the card (card.shout) show it; their call carries by the stance they show (LOUD).
 //   the card    - a battle card (floorfolk.js pattern: card.battle, card.parley = the key; the raid bot answers by the
 //                 choices' ai weights) with what they said and the options, each with its odds: hold your fire (a
 //                 truce), let's both walk away (a group on its own ground: you have LEAVE_TURNS turns to be gone; else
@@ -49,6 +52,12 @@
 //                 a tell): the card warns, Hold your fire / Trade / Fight with us are marked risky. In a truce a
 //                 treacherous group edges a step a turn toward your people (never within BETRAY.near + TELL.keep, never
 //                 firing): parleyStatus.tell for a group seen through. A tell changes nothing true.
+//   the haul    - an allied group that fought beside you (its fought points): Split what we found on its card, and its
+//                 own card ("ask for a share", card.split) when one of yours gets out: SPLIT.share of what was found goes
+//                 to them (rec.split; fighting-together points, goodwill); out with the haul and nothing shared: keptAll.
+//   the bot     - botCallOut (combat.js autoRaidTurn): the best talker who sees a group calls out by a weighed rule
+//                 (BOT), once a group a battle (rec.botCalled) but in a standoff; its cards answered at once.
+//   names       - a group keeps the name the raid gave it (u.gname); two alike told apart (apart: their place, or "(2)").
 //   a grudge    - a truce your people broke (a hit after it, Attack them after talking): that group will not talk again
 //                 this battle, and its AI group (f.grudge) or wanderer group (g.grudge) remembers it GRUDGE_DAYS: its
 //                 people's hostility +GRUDGE.hostility, a truce and a join less likely. Broken by them: no grudge.
@@ -60,15 +69,21 @@
 //                 Leaving, Allied); parleyGroupsSeen: the groups seen, for the raid's strip.
 //   after       - endRaid: the converted pods back to the enemy (parleyEnd), result.parley (parleyResult); scavenge.js
 //                 afterRaid and citycrawl.js afterPlace: goodwill (a truce kept +, a truce broken by you −, more than an
-//                 attack; people taken −; fighting side by side +), the recruit card, the swap card, the trade window queued once out.
+//                 attack; people taken −; fighting side by side +; the haul shared +, kept all −), the recruit card, the
+//                 swap card (also for a group Hostile toward you: factions.js attitude), the trade window queued once out.
 // Every roll is a hash of the battle's own key (b.parley.seed), never the world's dice. A battle with no other human
 // group takes exactly the old paths (no b.parley at all).
 // THIS FILE IS THE CONTRACT the UI is written against (ui/combat.js, ui/isoview.js, ui/battlebar.js): keep the
 // exported names and the shapes they return.
 import { addCard, skill, survivorById, factionById, day } from "./world.js";
 import { hash01, hasPerk, gainXp, USE } from "./skills.js";
-import { changeGoodwill } from "./factions.js";
-import { say, fx, active, activeAny, canSee, setFloor, alertNear, enemyUnit, unitById, moveAlong, CELL } from "./combat.js";
+import { changeGoodwill, attitude } from "./factions.js";
+import { say, fx, active, activeAny, canSee, setFloor, alertNear, enemyUnit, unitById, moveAlong, CELL, RAID_HEAT } from "./combat.js";
+import { carriedSpots } from "./inventory.js";
+import { isCountStack } from "./itemstack.js";
+import { stockKeyOf } from "./supitems.js";
+import { itemValue } from "./valuation.js";
+import { trunkVehicle } from "./raidloot.js";
 import { armFromArsenal, keepItem } from "./arsenal.js";
 import { thirdSideUnit, thirdSideHit } from "./thirdside.js";
 import { groupById, siteRoll } from "./wanderers.js";
@@ -82,8 +97,13 @@ import { keyWord } from "./water.js";
 import { gunLeavesTeam } from "./gunload.js";
 
 export const PARLEY = {
-  SHOUT: 6, // the noise of a shout (tiles), heard by the dead and the unaware
-  HEAT: 1, // a shout's Heat (b.noise)
+  SHOUT: 6, // the noise of a shout (tiles), heard by the dead and the unaware: on the quietest ground; + DENSE.reach × density
+  HEAT: 1, // a shout's Heat (b.noise), on the quietest ground; + DENSE.heat × density
+  // A shout's stakes (shoutCost): the place's density 0..1, its tile (terrain; else other), a city crawl's block past the
+  // first (perBlock), the dead in it (b.infection × infection). Risk "high": the shout tips the Heat a stage this turn (a
+  // wave, combat.js raidTurn); "some": within `near` Heat of it after, or a stage that sends the dead already.
+  DENSE: { terrain: { city: 0.55, suburb: 0.3 }, other: 0.1, perBlock: 0.1, infection: 0.35, reach: 4, heat: 9, near: 8 },
+  LOUD: { hostile: 1, neutral: 0.5, friendly: 0 }, // their call: this much of a shout's reach and Heat, by the stance they show
   LEAVE_TURNS: 4, // walking away from a group on its own ground: turns you have to be out of its sight
   STANDOFF_TURNS: 2, // an unanswered standoff: their turns before they stop waiting
   CALL: { friendly: 0.9, neutral: 0.7, hostile: 0.35, treacherous: 0.85 }, // they call out when they first see you
@@ -116,13 +136,21 @@ export const PARLEY = {
   GRUDGE_DAYS: 30, // a group whose truce your people broke remembers it this many days (f.grudge, g.grudge: { day })
   GRUDGE: { hostility: 20, odds: 0.15 }, // meanwhile: its people's hostility +20, a truce and a join 15% less likely
   PARTY: { chance: 0.25, range: 10, window: 72, count: [2, 4], power: 4 }, // an AI group's party on the site
-  GOODWILL: { kept: 4, broke: -25, attack: -10, join: -6, fought: 1.5, foughtMax: 15, foughtKept: 30 }, // after the raid (join: a person taken; fought: a point of fighting together, at most foughtMax a battle; foughtKept: the points a group remembers)
+  GOODWILL: { kept: 4, broke: -25, attack: -10, join: -6, fought: 1.5, foughtMax: 15, foughtKept: 30, split: 4, keptAll: -3 }, // after the raid (join: a person taken; fought: a point of fighting together, at most foughtMax a battle; foughtKept: the points a group remembers; split, keptAll: SPLIT)
   // A city crawl's place (citycrawl.js enterPlace): up to `max` groups on its map, a slot each (1, +1 from block `deep`,
   // +1 in a building of `tall` storeys) at `chance`; who: an AI group's party (one within `range` tiles), survivors
   // scavenging (friendly or neutral), a raider crew (hostile). The crawl's own dice (a hash of the place and the window).
   CRAWL: { max: 3, deep: 3, tall: 3, chance: 0.3, range: 12, kinds: { group: 0.4, survivors: 0.35, raiders: 0.25 }, perBlock: 0.3,
     names: { survivors: ["survivors scavenging here", "a band of scavengers", "a family on the move"], raiders: ["a raider crew", "a gang of looters", "armed strangers"] } },
-  BARTER: 12, CUT: 0.85, // a swap with a group that has no trade window: this much value given, CUT of it back
+  BARTER: 12, CUT: 0.85, // a swap with a group that has no trade window (or a Hostile one): this much value given, CUT of it back
+  // Split what we found (an allied group that fought beside you: on its card, and its own card when one of yours gets
+  // out): `share` of each supply found and found gear up to `share` of its worth goes to them; fighting together +fought
+  // points (Join's odds, their memory), GOODWILL.split. Out with `min` worth or more found, nothing shared: GOODWILL.keptAll.
+  // The bot: split at ai + aiPer × the points they fought for (at most aiMax), against keep.
+  SPLIT: { share: 1 / 3, fought: 4, min: 10, ai: 0.3, aiPer: 0.05, aiMax: 0.9, keep: 0.5 },
+  // The raid bot's own call (botCallOut): gain × the best talker's odds (a third side: Fight with us or What do you know;
+  // an unaware hostile pod: a truce, only when it outnumbers yours lose × or more) − risk[shoutCost risk] ≥ min.
+  BOT: { gain: { third: 1, pod: 1 }, risk: { low: 0, some: 0.15, high: 0.4 }, min: 0.3, lose: 1, hurt: 50 },
 };
 
 const clamp = (v, a, c) => Math.max(a, Math.min(c, v));
@@ -145,7 +173,7 @@ const shownHostility = (rec) => (rec.treacherous && !rec.unmasked ? rec.lie : re
 const NOUN = { raider: "raiders", expansionist: "fighters", zealot: "zealots", military: "soldiers", fortress: "guards", traders: "guards", commune: "militia" };
 const KIT_NAME = { raiders: "the raiders", survivors: "armed survivors", zealots: "the zealots", soldiers: "the soldiers" };
 const COLOR = { Hostile: "#ff8f85", Unaware: "#e0c46c", Standoff: "#f2a65a", Truce: "#8fc4e9", Peaceful: "#8fd19b", Leaving: "#c4b8a4", Allied: "#4fe08a" };
-const foughtScore = (rec) => { const F = PARLEY.FOUGHT, x = rec.fought || {}; return (x.kills || 0) * F.kill + (x.hits || 0) * F.hit + (x.turns || 0) * F.turn + (x.helped || 0) * F.help; };
+const foughtScore = (rec) => { const F = PARLEY.FOUGHT, x = rec.fought || {}; return (x.kills || 0) * F.kill + (x.hits || 0) * F.hit + (x.turns || 0) * F.turn + (x.helped || 0) * F.help + (x.split || 0); }; // split: SPLIT.fought
 
 // An AI group's hostility toward you (0 friendly .. 100 hostile).
 function factionHostility(f) {
@@ -163,7 +191,7 @@ function grudgeOf(state, factionId, wid) {
 
 // ---------- the records ----------
 function book(state, b) {
-  if (!b.parley) b.parley = { seed: Math.floor(hash01(state.seed, "parley", b.tileId ?? 0, state.hour) * 4294967296), groups: [], pending: [] };
+  if (!b.parley) b.parley = { seed: Math.floor(hash01(state.seed, "parley", b.tileId ?? 0, state.hour) * 4294967296), groups: [], pending: [], ground: groundOf(state, b) }; // ground: the tile's part of a shout's stakes (shoutCost)
   return b.parley;
 }
 function record(o) {
@@ -174,8 +202,8 @@ function record(o) {
     truce: false, standoff: false, standoffAt: null, leaving: false, goes: null, leaveBy: null, betrayAt: null, ambush: null,
     calledOut: false, talks: 0, tried: {}, seen: false, trade: false, joining: false, told: false, gave: null,
     brokeTruce: null, turned: false, unmasked: false, betrayed: false, attacked: false, suspect: {},
-    allied: false, fought: { kills: 0, hits: 0, turns: 0, helped: 0 },
-    speaker: null, tellAt: null, grudge: !!o.grudge,
+    allied: false, fought: { kills: 0, hits: 0, turns: 0, helped: 0, split: 0 }, split: null, splitAsked: false, kept: false, botCalled: false,
+    speaker: null, tellAt: null, grudge: !!o.grudge, base: o.name, // base: the name given (apart)
   };
 }
 // A record for the group of unit u (made the first time a group is met in the battle).
@@ -196,19 +224,43 @@ function newRecord(state, b, u, key) {
   const stance = stanceOf(h);
   const tr = PARLEY.TREACHERY;
   const treacherous = stance === "hostile" && roll(b, "treachery", key) < (f ? tr[f.type] ?? tr.group : tr.loose);
-  const name = T ? T.name : f ? (f.known ? `${f.name} ${NOUN[f.type] || "people"}` : "armed strangers") : u.occupant === "hostile" ? "the squatters" : KIT_NAME[u.kit] || "armed strangers";
+  const name = T ? T.name : u.gname ? u.gname : f ? (f.known ? `${f.name} ${NOUN[f.type] || "people"}` : "armed strangers") : u.occupant === "hostile" ? "the squatters" : KIT_NAME[u.kit] || "armed strangers";
   return record({ key, name, factionId: f ? f.id : null, wid: T ? T.wid : null, tgroup: third ? u.tgroup : null, pod: third ? null : u.pod, team: T ? T.team : null, stance, hostility: h, treacherous, home: !third, folk: u.folk === "survivors", grudge });
 }
-// Every human group on the map has its record; its units are stamped with the key.
+// Every human group on the map has its record; its units are stamped with the key. A group met later with a name
+// already taken: "(2)" after it (apart).
 function ensureRecords(state, b) {
   if (!on(b)) return null;
   for (const u of b.units) {
     if (!other(u) || u.dead) continue;
     const key = keyOf(u);
-    if (!b.parley || !recByKey(b, key)) book(state, b).groups.push(newRecord(state, b, u, key));
+    if (!b.parley || !recByKey(b, key)) {
+      const P = book(state, b), rec = newRecord(state, b, u, key);
+      const same = P.groups.filter((g) => g.base === rec.name).length;
+      if (same) rec.name = `${rec.name} (${same + 1})`;
+      P.groups.push(rec);
+    }
     u.pk = key;
   }
   return b.parley || null;
+}
+// Two groups with one name told apart (the raid's strip, the cards): by where they hold (the area or room of their
+// home, "the raiders at the store") when that tells them all apart, else "(2)", "(3)" after the second and on.
+// rec.base keeps the name they were given.
+function apart(b) {
+  const areaOf = (rec) => {
+    const u = unitsOf(b, rec)[0], at = u && (u.home || [u.x, u.y]);
+    const a = at && (b.raid.areas || []).find((x) => x && x.name && at[0] >= x.x0 && at[0] < x.x0 + x.w && at[1] >= x.y0 && at[1] < x.y0 + x.h);
+    return a ? a.name.toLowerCase() : null;
+  };
+  const by = new Map();
+  for (const rec of b.parley.groups) { rec.base = rec.base || rec.name; by.set(rec.base, [...(by.get(rec.base) || []), rec]); }
+  for (const list of by.values()) {
+    if (list.length < 2) continue;
+    const at = list.map(areaOf);
+    const told = at.every((x) => x) && new Set(at).size === at.length;
+    list.forEach((rec, i) => { rec.name = told ? `${rec.base} at the ${at[i]}` : i ? `${rec.base} (${i + 1})` : rec.base; });
+  }
 }
 
 // ---------- placing (combat.js createRaid) ----------
@@ -324,7 +376,7 @@ export function placeParley(state, b, groups) {
 }
 // The records for every other group on the map, once it is set up (combat.js createRaid).
 export function parleySetup(state, b) {
-  ensureRecords(state, b);
+  if (ensureRecords(state, b)) apart(b);
 }
 
 // ---------- peace and war ----------
@@ -452,7 +504,13 @@ export function parleyMet(b, u, p) {
   if (roll(b, "call", rec.key) >= callChance(rec)) return false;
   b.parley.pending.push({ key: rec.key, by: p.id });
   say(b, `${cap(rec.name)} call out to ${p.name}.`, "info");
+  loudCall(b, rec, u);
   return true;
+}
+// Their call, as loud as the stance they show (PARLEY.LOUD: a hostile shout carries as yours does).
+function loudCall(b, rec, u) {
+  const frac = PARLEY.LOUD[shownOf(rec)] || 0;
+  if (frac > 0) shout(null, b, u, "enemy", frac, `${cap(rec.name)}'s shouting carries: others heard it too.`);
 }
 // combat.js detect / notice: enemy person e has just seen unit p of yours. True when the alarm is not raised: their
 // pod calls out instead (a standoff, the card at the next tick), or you got the drop on them this turn.
@@ -470,6 +528,7 @@ export function parleySpotted(b, e, p) {
   rec.standoffAt = b.turn;
   b.parley.pending.push({ key: rec.key, by: p.id });
   say(b, `${e.name} spots ${p.name}, but ${rec.name} hold their fire and call out.`, "danger");
+  loudCall(b, rec, e);
   return true;
 }
 
@@ -499,6 +558,9 @@ export function parleyTick(state, b) {
     const rec = recByKey(b, c.key);
     if (rec && standing(b, rec).length && !rec.turned) openCard(state, b, rec, { by: "them", speaker: null, saw: c.by }); // the best talker who sees them answers
   }
+  // One of yours out, some still in: an allied group that fought beside you asks for its share (once).
+  if (b.units.some((u) => u.side === "player" && u.left && !u.dead) && b.units.some((u) => u.side === "player" && activeAny(u)))
+    for (const rec of P.groups) if (!rec.splitAsked && canSplit(b, rec) && standing(b, rec).length && !cardFor(state, rec.key)) { rec.splitAsked = true; splitCard(state, b, rec); }
 }
 // combat.js endPlayerTurn, before the enemy's actions are dealt: the betrayals, a standoff's patience, the time you had
 // to get out, and whoever you got the drop on knowing it now.
@@ -573,11 +635,80 @@ export function callOut(state, b, u, t) {
   rec.seen = true;
   if (toThird(b, rec)) { rec.turned = false; rec.standoff = true; rec.standoffAt = b.turn; } // an enemy pod, aware or not (or a group that turned): guns up, waiting for what you say
   say(b, `${u.name} calls out to ${rec.name}.`, "info");
-  fx(b, { type: "noise", x: u.x, y: u.y, r: PARLEY.SHOUT, side: "player", kind: "shout" });
-  b.noise = (b.noise || 0) + PARLEY.HEAT;
-  alertNear(b, u.x, u.y, PARLEY.SHOUT, `${first(u.name)}'s shout carries: others heard it too.`);
-  openCard(state, b, rec, { by: "you", speaker: u.id });
+  const cost = shout(state, b, u, "player", 1, `${first(u.name)}'s shout carries: others heard it too.`);
+  openCard(state, b, rec, { by: "you", speaker: u.id, shout: cost });
   return "";
+}
+
+// ---------- a shout's stakes ----------
+// How crowded the place is, 0..1 (PARLEY.DENSE): the tile's terrain, a city crawl's block, the dead in it.
+const groundOf = (state, b) => { const D = PARLEY.DENSE, t = state && state.tiles && b.tileId != null ? state.tiles[b.tileId] : null; return t ? D.terrain[t.terrain] ?? D.other : D.other; };
+function density(state, b) {
+  const D = PARLEY.DENSE;
+  const ground = state ? groundOf(state, b) : b.parley && b.parley.ground != null ? b.parley.ground : D.other; // b.parley.ground: their call (no state at hand)
+  const crawl = b.setup && b.setup.context && b.setup.context.crawl;
+  return clamp(ground + (crawl ? D.perBlock * Math.max(0, (crawl.block || 1) - 1) : 0) + (b.infection || 0) * D.infection, 0, 1);
+}
+// What a Call out shout would cost now (the button's tip, the card): { radius, heat, risk, density, wave, text }, null off a
+// raid (state may be null: the tile's part from b.parley.ground).
+//   radius  - tiles: the dead and the unaware within it come (combat.js alertNear)
+//   heat    - the Heat it adds at the end of the turn (b.noise: combat.js raidTurn)
+//   risk    - "low" | "some" | "high": high when it tips the Heat a stage this turn (a wave of the dead, while the raid's
+//             spawn cap has room); some within DENSE.near Heat of the next stage after it, or a stage that sends the dead already
+//   wave    - true when it would bring a wave (risk high)
+export function shoutCost(state, b) {
+  if (!b || !b.raid) return null;
+  const D = PARLEY.DENSE, K = RAID_HEAT, R = b.raid;
+  const d = density(state, b);
+  const radius = Math.round(PARLEY.SHOUT + D.reach * d), heat = Math.round(PARLEY.HEAT + D.heat * d);
+  const next = (R.heat || 0) + K.turn + (b.noise || 0) * K.noise + (b.infection || 0) * K.infection; // the turn's end without it
+  const stage = Math.max(R.stage || 0, Math.min(3, Math.floor(next / K.stage)));
+  const room = (R.spawnCap ?? 1) - (R.spawned || 0) > 0;
+  const wave = room && stage < 3 && Math.floor((next + heat * K.noise) / K.stage) > stage;
+  const risk = wave ? "high" : room && (stage >= 2 || (stage < 3 && K.stage * (stage + 1) - (next + heat * K.noise) <= D.near)) ? "some" : "low";
+  return { radius, heat, risk, density: Math.round(d * 100) / 100, wave, text: `heard ${radius} tiles off, Heat +${heat}${wave ? ": enough to bring more of the dead" : risk === "some" ? ": the dead are close to stirring" : ""}` };
+}
+// A shout from unit u (frac of a full one): the noise, its Heat, the unaware near it woken. Returns its shoutCost (null: none).
+function shout(state, b, u, side, frac, line) {
+  const c = shoutCost(state, b);
+  if (!c || !(frac > 0)) return null;
+  const r = Math.max(1, Math.round(c.radius * frac)), heat = Math.round(c.heat * frac);
+  fx(b, { type: "noise", x: u.x, y: u.y, r, side, kind: "shout" });
+  b.noise = (b.noise || 0) + heat;
+  alertNear(b, u.x, u.y, r, line);
+  return frac === 1 ? c : { ...c, radius: r, heat };
+}
+
+// ---------- the raid bot's call (combat.js autoRaidTurn) ----------
+// A group for the bot to call out to now, and who calls: { unit, target } or null. A third side your people have no
+// word with yet, or an unaware hostile pod that outnumbers your people standing (BOT.lose; the badly hurt count half)
+// - not one that is hostile and aware. Weighed: BOT.gain × the odds of the best talker of yours who sees them and has an
+// action (a third side: Fight with us or What do you know; a pod: a truce) − BOT.risk[the shout's risk] ≥ BOT.min.
+// Once a group a battle (rec.botCalled), again while it stands off; never on the way out but to a pod.
+export function botCallOut(state, b, leaving = false) {
+  if (!on(b) || !b.parley || b.over) return null;
+  const W = PARLEY.BOT;
+  const risk = W.risk[(shoutCost(state, b) || {}).risk] || 0;
+  const ours = b.units.filter((p) => p.side === "player" && active(p)).reduce((a, p) => a + (p.hp < W.hurt ? 0.5 : 1), 0);
+  for (const rec of b.parley.groups) {
+    if ((rec.botCalled && !rec.standoff) || rec.brokeTruce === "player" || rec.joining || rec.leaving || cardFor(state, rec.key)) continue;
+    const theirs = standing(b, rec);
+    if (!theirs.length) continue;
+    const third = theirs.some((u) => u.side === "third");
+    let opts;
+    if (third) { if (leaving || (!rec.standoff && (rec.truce || rec.allied || rec.talks > 0))) continue; opts = ["ally", "info"]; }
+    else { if (theirs.some((u) => u.aware) || theirs.length < ours * W.lose) continue; opts = ["truce"]; }
+    for (const p of speakersFor(state, b, rec)) {
+      if (p.vol != null || !active(p) || p.ap < 1) continue; // volunteers.js: they act on their own
+      const t = callOutTargets(state, b, p).find((x) => x.pk === rec.key);
+      if (!t) continue;
+      const odds = Math.max(...opts.map((o) => parleyOdds(state, b, rec, o, p)));
+      if (W.gain[third ? "third" : "pod"] * odds - risk < W.min) break; // the best talker's odds, or none
+      rec.botCalled = true;
+      return { unit: p, target: t };
+    }
+  }
+  return null;
 }
 
 // ---------- the odds ----------
@@ -681,6 +812,7 @@ function openCard(state, b, rec, o) {
   const talker = ` Speaking: ${sp.name} (Speech ${speechOf(state, sp)}).`;
   const who = `${n === 1 ? "One of them" : `${n} of them`}${armed ? `, ${armed === n ? (n === 1 ? "armed" : "all armed") : `${armed} armed`}` : ", unarmed"}.`;
   const now = rec.standoff ? " Guns up on both sides; nobody fires while you answer." : rec.allied ? " They are fighting beside you." : rec.truce ? " There is a truce between you." : rec.leaving ? " You agreed to keep apart." : "";
+  const heard = o.shout && !o.again && !o.switched ? o.shout : null;
   const lead = o.switched ? `${sp.name} steps up to talk to ${rec.name}.` : o.again ? `${cap(rec.name)} wait for your answer.` : o.by === "them" ? `${cap(rec.name)} call out to ${first(sp.name)}: ${SAID.them[shown]}` : `${sp.name} calls out to ${rec.name}. ${SAID.you[shown]}`;
   const odds = (opt) => parleyOdds(state, b, rec, opt, sp);
   const asked = (opt) => rec.tried[opt] === b.turn;
@@ -701,7 +833,7 @@ function openCard(state, b, rec, o) {
     () => (rec.standoff || hostileShown ? 1 : 0.5) * odds("truce"), (st) => ask(st, b, rec, "truce", sp, o));
   if (!rec.leaving) add("walk", "Let's both walk away", `${pct(odds("walk"))}: ${rec.home ? `this is their ground: your people have ${PARLEY.LEAVE_TURNS} turns to get out of their sight, then they shoot` : "they pack up and leave the map"}; nobody shoots meanwhile${fireText}`,
     () => (rec.home ? 0.15 : 0.3) * odds("walk"), (st) => ask(st, b, rec, "walk", sp, o));
-  if (!rec.trade) add("trade", "Trade", risky(`${pct(odds("trade"))}: they will trade once you are out (${f && !b.setup.context?.crawl ? `the trade window with ${f.name}` : "a swap of supplies"}); a truce meanwhile${fireText}`),
+  if (!rec.trade) add("trade", "Trade", risky(`${pct(odds("trade"))}: they will trade once you are out (${f && !b.setup.context?.crawl && attitude(f) !== "Hostile" ? `the trade window with ${f.name}` : "a swap of supplies"}); a truce meanwhile${fireText}`),
     () => 0, (st) => ask(st, b, rec, "trade", sp, o));
   if (!rec.allied && !rec.joining) add("ally", o.by === "them" ? "Watch our backs" : "Fight with us", risky(`${pct(odds("ally"))}: they fight the dead and the hostile groups alongside you for the rest of this fight (nobody of yours shoots them, they never shoot yours); fighting side by side counts with them after, and when you ask them to join${fireText}`),
     () => (hostileShown ? 0 : 0.7) * odds("ally"), (st) => ask(st, b, rec, "ally", sp, o));
@@ -710,6 +842,7 @@ function openCard(state, b, rec, o) {
     () => (hostileShown ? 0 : 0.25) * odds("join"), (st) => ask(st, b, rec, "join", sp, o));
   if (!rec.told) add("info", "What do you know?", `${pct(odds("info"))}: what they know of their floor (the dead and other people marked on the map, the places to search)${fireText}`,
     () => 0.6 * odds("info"), (st) => ask(st, b, rec, "info", sp, o));
+  if (canSplit(b, rec)) choices.push({ label: "Split what we found", hint: splitHint(state, rec), disabled: () => !canSplit(b, rec) || shut(), ai: () => splitAi(rec), resolve: live((st) => splitHaul(st, b, rec)) });
   const haul = haulCount(b);
   if (hostileShown && !rec.truce) choices.push({
     label: "Hand over what you found", hint: haul ? `Your people's haul (${haul} kind${haul === 1 ? "" : "s"} of things carried) goes to them; they let you be: a truce` : "Your people carry nothing they want",
@@ -726,8 +859,9 @@ function openCard(state, b, rec, o) {
   choices.push({ label: "Never mind", hint: rec.standoff ? "Say nothing more: they stop waiting and go back to fighting" : "Leave it there", ai: () => 0.01, resolve: live(() => neverMind(b, rec)) });
   const card = {
     title: o.by === "them" && !o.again ? `${cap(rec.name)} call out` : `Talking to ${rec.name}`,
-    text: `${lead} ${who}${now}${talker}${off}`.replace(/\s+/g, " ").trim(),
+    text: `${lead} ${who}${now}${talker}${off}${heard ? ` The shout was ${heard.text}.` : ""}`.replace(/\s+/g, " ").trim(),
     where: b.place, partyId: p ? p.id : undefined, battle: true, parley: rec.key, choices,
+    shout: heard || null, // plain data: what the Call out's shout cost (shoutCost), on the card it opened
     speaker: { id: sp.id, name: sp.name, speech: speechOf(state, sp) }, speakers: cands.map((x) => ({ id: x.id, name: x.name, speech: speechOf(state, x) })), // plain data: who talks, who could (parleySpeak)
   };
   putCard(state, card);
@@ -799,6 +933,95 @@ function ask(st, b, rec, opt, sp, o) {
   // A standoff's card comes back until it is settled; a truce with a friendly group offers to fight together.
   if (standing(b, rec).length && (rec.standoff || (ok && opt === "truce" && shownOf(rec) === "friendly" && !rec.allied))) openCard(st, b, rec, { ...o, again: true, switched: false, speaker: sp ? sp.id : o.speaker });
   return line;
+}
+// ---------- sharing the haul (PARLEY.SPLIT) ----------
+// What your people found, by its base worth (b.raid.found, foundGear: what is still the team's).
+function foundWorth(b) {
+  const R = b.raid;
+  if (!R) return 0;
+  let v = 0;
+  for (const [k, n] of Object.entries(R.found || {})) if (n > 0) v += n * supValue(k);
+  for (const it of R.foundGear || []) v += itemValue(it);
+  return v;
+}
+const foughtFor = (rec) => foughtScore(rec) - ((rec.fought && rec.fought.split) || 0); // the points they fought for (a share's not counted)
+// A share for an allied group that fought beside you: once, while allied, with something found.
+const canSplit = (b, rec) => !!b.raid && !!rec.allied && foughtFor(rec) > 0 && !rec.split && foundWorth(b) > 0;
+const splitAi = (rec) => { const S = PARLEY.SPLIT; return Math.min(S.aiMax, S.ai + S.aiPer * foughtFor(rec)); };
+function splitHint(state, rec) {
+  const O = PARLEY.ODDS, fb = foughtBonus(state, rec);
+  const up = Math.max(0, Math.min(O.foughtMax, fb + PARLEY.SPLIT.fought * O.fought) - fb);
+  return `A third of what your people found goes to them (each supply found; the found gear up to a third of its worth); it counts with them as fighting together${up > 0 ? ` (Join +${pct(up)})` : ""}, and their group remembers it`;
+}
+// Split what we found: SPLIT.share of each supply found (from the loose haul, then pockets, the rig and packs, then the
+// trunk), and the found gear, the dearest first, up to that share of its worth; to their group's stores when it has them.
+function splitHaul(st, b, rec) {
+  const R = b.raid, S = PARLEY.SPLIT;
+  const f = rec.factionId != null ? factionById(st, rec.factionId) : null;
+  const keep = f && f.alive ? f : null;
+  const mine = b.units.filter((u) => u.side === "player" && !u.dead);
+  const people = mine.map((u) => (u.sid != null ? survivorById(st, u.sid) : null)).filter(Boolean);
+  const p = trunkVehicle(st, b) ? st.parties.find((x) => x.id === b.setup.partyId) : null;
+  const trunk = p && p.cargo ? p.cargo : null;
+  const stowed = (s) => carriedSpots(s).filter((x) => x.where === "pocket" || x.where === "rig" || x.where === "pack"); // never what is worn or in hand
+  let worth = 0, kinds = 0;
+  for (const [k, n] of Object.entries(R.found)) {
+    const want = Math.round(n * S.share);
+    if (!(want > 0)) continue;
+    let got = 0;
+    const take = (have, fn) => { const q = Math.min(Math.floor(have), want - got); if (q > 0) { fn(q); got += q; } };
+    for (const u of mine) if (u.haul && got < want) take(u.haul.sup[k] || 0, (q) => { u.haul.sup[k] -= q; });
+    for (const s of people) for (const x of stowed(s)) if (got < want && isCountStack(x.item) && stockKeyOf(x.item) === k) take(x.item.dur || 0, (q) => { x.item.dur -= q; if (!(x.item.dur >= 1)) x.take(); });
+    if (trunk && trunk.supplies && got < want) take(trunk.supplies[k] || 0, (q) => { trunk.supplies[k] -= q; });
+    if (!got) continue;
+    R.found[k] -= got;
+    if (!(R.found[k] > 0)) delete R.found[k];
+    if (keep) keep.stock[k] = (keep.stock[k] || 0) + got;
+    worth += got * supValue(k);
+    kinds++;
+  }
+  let budget = (R.foundGear || []).reduce((a, it) => a + itemValue(it), 0) * S.share;
+  const where = (it) => {
+    for (const u of mine) { const i = u.haul ? u.haul.gear.indexOf(it) : -1; if (i >= 0) return () => u.haul.gear.splice(i, 1); }
+    for (const s of people) { const x = stowed(s).find((y) => y.item === it); if (x) return x.take; }
+    const i = trunk && trunk.gear ? trunk.gear.indexOf(it) : -1;
+    return i >= 0 ? () => trunk.gear.splice(i, 1) : null;
+  };
+  for (const it of [...(R.foundGear || [])].sort((a, c) => itemValue(c) - itemValue(a))) {
+    const v = itemValue(it), off = v <= budget ? where(it) : null;
+    if (!off) continue;
+    off();
+    budget -= v; worth += v; kinds++;
+    R.foundGear.splice(R.foundGear.indexOf(it), 1);
+    gunLeavesTeam(b, it);
+    if (keep) keepItem(st, keep, it, "taken");
+  }
+  rec.split = { worth: Math.round(worth), kinds };
+  if (kinds) rec.fought.split = (rec.fought.split || 0) + S.fought;
+  const line = kinds ? `Your people split what they found with ${rec.name}: a third of it goes with them.` : `${cap(rec.name)} wave it off: there is nothing at hand to share.`;
+  say(b, line, kinds ? "good" : "info");
+  return line;
+}
+function keepAll(b, rec) {
+  rec.kept = true;
+  const line = `${cap(rec.name)} say nothing more about it. They will remember.`;
+  say(b, line, "info");
+  return line;
+}
+// One of yours is out with the haul: an allied group that fought beside you asks for its share (a card, once).
+function splitCard(state, b, rec) {
+  const p = state.parties.find((x) => x.id === b.setup.partyId);
+  const live = (fn) => (st) => (st.combat !== b || b.over ? "Too late: the fight is over." : !standing(b, rec).length ? `${cap(rec.name)} are gone.` : !rec.allied ? `${cap(rec.name)} are past sharing anything.` : ((b.rev = (b.rev || 0) + 1), fn(st)));
+  const n = Object.values(b.raid.found).filter((v) => v > 0).length + b.raid.foundGear.length;
+  putCard(state, {
+    title: `${cap(rec.name)} ask for a share`,
+    text: `"We fought for that too." ${cap(rec.name)} watch your people take out what you found (${n} kind${n === 1 ? "" : "s"} of things).`,
+    where: b.place, partyId: p ? p.id : undefined, battle: true, parley: rec.key, split: true,
+    choices: [
+      { label: "Split what we found", hint: splitHint(state, rec), disabled: () => !canSplit(b, rec), ai: () => splitAi(rec), resolve: live((st) => splitHaul(st, b, rec)) },
+      { label: "Keep it all", hint: `They fought beside you for nothing: their group remembers it${rec.factionId != null ? ` (goodwill ${PARLEY.GOODWILL.keptAll})` : ""}`, ai: () => PARLEY.SPLIT.keep, resolve: live(() => keepAll(b, rec)) },
+    ],
+  });
 }
 function neverMind(b, rec) {
   if (rec.standoff) { turnHostile(b, rec, `${cap(rec.name)} take that for an answer and raise their guns.`); return "They raise their guns."; }
@@ -925,6 +1148,7 @@ export function parleyEnd(b) {
 // result.parley: a line per group (plain, but joiners: the very people who agreed to come).
 export function parleyResult(b) {
   if (!b || !b.parley) return null;
+  const out = b.units.some((u) => u.side === "player" && u.left && !u.dead), worth = foundWorth(b);
   return b.parley.groups.map((rec) => {
     const mine = unitsOf(b, rec);
     return {
@@ -932,6 +1156,7 @@ export function parleyResult(b) {
       stance: rec.stance, treacherous: rec.treacherous, seen: rec.seen, talked: rec.talks > 0, truce: rec.truce && !rec.turned,
       brokeTruce: rec.brokeTruce, betrayed: rec.betrayed, attacked: rec.attacked, trade: rec.trade && !rec.turned, joining: rec.joining, told: rec.told, gave: rec.gave,
       allied: rec.allied, fought: foughtScore(rec), foughtBy: { ...rec.fought },
+      split: rec.split, kept: !!rec.kept, keptAll: out && !!rec.allied && foughtFor(rec) > 0 && !(rec.split && rec.split.kinds) && !rec.brokeTruce && worth >= PARLEY.SPLIT.min, // SPLIT: shared, or out with the haul after they fought
       start: mine.length, dead: mine.filter((u) => u.dead).length,
       joiners: rec.joining ? mine.filter((u) => u.left && !u.dead).map((u) => u.who || { name: u.name }) : [],
     };
@@ -951,6 +1176,15 @@ export function parleyGoodwill(state, result) {
     if (r.joining && r.joiners.length) changeGoodwill(state, f, G.join * r.joiners.length, "you took their people");
   }
   for (const r of (result && result.parley) || []) if (r.brokeTruce === "player" && r.wid != null) { const g = groupById(state, r.wid); if (g) g.grudge = { day: day(state) }; } // a wanderer group remembers too
+  // The haul: shared with those who fought beside you, or kept from them (PARLEY.SPLIT).
+  for (const r of (result && result.parley) || []) {
+    const f = r.factionId != null ? factionById(state, r.factionId) : null;
+    if (r.split && r.split.kinds && !r.brokeTruce && f && f.alive) changeGoodwill(state, f, G.split, "you shared what you found with their people");
+    if (!r.keptAll) continue;
+    if (f && f.alive) changeGoodwill(state, f, G.keptAll, "you kept all you found after their people fought beside you");
+    const g = r.wid != null ? groupById(state, r.wid) : null;
+    if (g) g.fought = Math.max(0, (g.fought || 0) - PARLEY.SPLIT.fought);
+  }
   // Fighting side by side: their group's goodwill, and what it remembers (foughtBonus); a wanderer group's mood.
   for (const r of (result && result.parley) || []) {
     if (!(r.fought > 0) || r.brokeTruce) continue;
@@ -973,17 +1207,23 @@ export function parleyAfterRaid(state, p, result, opts = {}) {
   if (!p || !state.parties.includes(p) || !partyMembers(state, p).length) return;
   for (const r of (result && result.parley) || []) {
     if (r.joining) joinCard(state, p, r);
-    if (r.trade && (opts.crawl || r.factionId == null || !factionById(state, r.factionId)?.alive)) barterCard(state, p, r);
+    if (r.trade && !tradeGroup(state, r, opts)) { const f = r.factionId != null ? factionById(state, r.factionId) : null; barterCard(state, p, r, !opts.crawl && !!f && f.alive); } // shut: a Hostile group's
   }
+}
+// The group whose trade window opens for a trade agreed on the map: alive, and not Hostile toward you (factions.js
+// attitude: its stores stay shut, its people there swap with you as agreed); none in a city crawl. Else null.
+function tradeGroup(state, r, opts = {}) {
+  const f = !opts.crawl && r.factionId != null ? factionById(state, r.factionId) : null;
+  return f && f.alive && attitude(f) !== "Hostile" ? f : null;
 }
 // The trade window with a group whose people agreed to trade (trade.js openTrade queues it behind one already open).
 export function parleyTrade(state, p, result) {
   if (!p || p.owner !== "player" || !state.parties.includes(p) || !partyMembers(state, p).length) return false;
   let opened = false;
   for (const r of (result && result.parley) || []) {
-    if (!r.trade || r.factionId == null) continue;
-    const f = factionById(state, r.factionId);
-    if (!f || !f.alive) continue;
+    if (!r.trade) continue;
+    const f = tradeGroup(state, r);
+    if (!f) continue;
     openTrade(state, p, f);
     opened = true;
   }
@@ -1015,7 +1255,7 @@ function joinCard(state, p, r) {
     intro: `${cap(r.name)} slipped away from the site as agreed and wait for you outside.`,
   });
 }
-function barterCard(state, p, r) {
+function barterCard(state, p, r, shut = false) {
   const goods = ["food", "water", "meds", "scrap"];
   const val = (k) => carriedAny(p, k) * supValue(k);
   const V = PARLEY.BARTER;
@@ -1036,5 +1276,5 @@ function barterCard(state, p, r) {
     });
   }
   choices.push({ label: "Nothing today", hint: "You part ways", resolve: () => "You part ways." });
-  addCard(state, { title: `Trading with ${r.name}`, text: `${cap(r.name)} come out to trade, as agreed. ${mine.length ? "They have a little of what you are short of." : "You have nothing they want."}`, where: tileLabel(state, partyTile(p)), partyId: p.id, choices });
+  addCard(state, { title: `Trading with ${r.name}`, text: `${cap(r.name)} come out to trade, as agreed.${shut ? " Their group will not open its stores to you, but these ones keep their word." : ""} ${mine.length ? "They have a little of what you are short of." : "You have nothing they want."}`, where: tileLabel(state, partyTile(p)), partyId: p.id, choices });
 }

@@ -84,7 +84,7 @@ import { volFought } from "./volunteers.js"; // volunteers: an allied group's pe
 import { thirdFoes, enemyTargetsThird, hostilePair, thirdPlan, thirdSideHit, thirdSideUnit, placeThird, thirdResult } from "./thirdside.js";
 import { crossFoes, crossTurn, crossDraw, crossHit, noteShot, crossRound } from "./crossfire.js"; // a raid's raiders and dead fight on contact; their noise draws the dead to them while you are unseen; shots heard, not seen
 import { folkTick, resolveBattleCards, dropBattleCards } from "./floorfolk.js"; // who holds the upper floors of a city building (the crawl)
-import { placeParley, parleySetup, parleyTick, parleySpotted, parleyEnemyPhase, parleyEnd, parleyResult, callOut, parleyHarm } from "./parley.js"; // other groups on a raid's map: they call out, you call out (every hook marked "parley.js")
+import { placeParley, parleySetup, parleyTick, parleySpotted, parleyEnemyPhase, parleyEnd, parleyResult, callOut, parleyHarm, botCallOut } from "./parley.js"; // other groups on a raid's map: they call out, you call out (every hook marked "parley.js")
 import { isHardcore } from "./hardcore.js";
 import { raidCarrySetup, autoTake, stashAll, raidHome, personalRoom, trunkSpace, atVehicle, setRefit, haulLoad, dropHaul, dropHeld } from "./raidloot.js"; // loot by hand: each survivor carries their own, the vehicle has a trunk
 import { SEARCH, hideSome, revealHidden, quickRefusal, quickNoise, quickHurt, quickable, botPressed, takeFree } from "./search.js"; // full search (1 action) and the quick rummage
@@ -6851,6 +6851,7 @@ export function createRaid(state, setup) {
         if (!c) continue;
         u.x = c[0]; u.y = c[1]; u.aware = false; u.pod = pod; u.home = [hx, hy];
         if (g.factionId != null) u.factionId = g.factionId; // prisoners.js: whose people they are
+        if (g.name) u.gname = g.name; // parley.js: the group's own name on its record
         if (u.factionId != null) armFromArsenal(state, b, u, hn); // arsenal.js
         if (g.side === "neutral" || g.side === "military") thirdSideUnit(b, u, g, i); // thirdside.js: survivors hiding here, a squad clearing it
         b.units.push(u);
@@ -6968,14 +6969,16 @@ export function alertNear(b, x, y, radius, why, src = null) {
 }
 const FLOOR_DAMP = 5; // a storey between a noise and a listener counts as this many tiles more
 
-// Heat climbs every turn and with noise. Each new stage brings a wave of the dead.
+// Heat climbs every turn and with noise. Each new stage (every RAID_HEAT.stage) brings a wave of the dead.
+export const RAID_HEAT = { turn: 1.2, noise: 1, infection: 0.6, stage: 25 }; // a turn's Heat: turn + noise × b.noise + infection × b.infection (parley.js shoutCost reads it)
 function raidTurn(b) {
   const R = b.raid;
   const rng = b.rng;
   const noise = b.noise;
   b.noise = 0;
-  R.heat = Math.min(100, R.heat + 1.2 + noise * 1.0 + b.infection * 0.6);
-  const stage = Math.min(3, Math.floor(R.heat / 25));
+  const K = RAID_HEAT;
+  R.heat = Math.min(100, R.heat + K.turn + noise * K.noise + b.infection * K.infection);
+  const stage = Math.min(3, Math.floor(R.heat / K.stage));
   if (stage > R.stage) {
     R.stage = stage;
     say(b, `Heat is now ${HEAT_NAMES[stage]}.`, "danger");
@@ -7414,6 +7417,10 @@ function autoRaidTurn(state) {
       // stealth.js: a flashbang into a room (or a knot) of two or more people who know the team is there, then the rest
       // of the turn (the stunned cannot watch the doorway).
       if (!leave && botFlash(state, b, u, true)) continue;
+      // parley.js: another group in sight, not yet hostile and aware (or an unaware pod too many for the squad): the
+      // best talker who sees them calls out (botCallOut's weighed rule), the card answered at once by its weights.
+      const talk = b.parley ? botCallOut(state, b, leave) : null;
+      if (talk) { const err = combatAct(state, { type: "callout", unit: talk.unit.id, target: talk.target.id }); resolveBattleCards(state); if (!err) continue; }
       if (!leave && u.gl && aiLaunch(b, u)) break; // launchers.js: HE or a rocket on three or more bunched up (the turn's attack)
       // Fight only what is close; otherwise keep moving (shooting raises Heat).
       const foes = foesOf(b, u).filter((f) => f.aware && canSee(b, u, f) && dist(u.x, u.y, f.x, f.y) <= (leave ? 1.5 : 4));

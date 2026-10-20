@@ -1841,6 +1841,7 @@ export function placeInterior(state, b, map, groups) {
       for (let i = 0; i < Math.max(0, Math.min(20, Math.round(g.count))); i++) {
         const u = enemyUnit(b, rng, g.kind, g.power, ++hn);
         u.aware = false; u.pod = pod;
+        if (g.name) u.gname = g.name; // parley.js: the group's own name on its record
         if (g.factionId != null) { u.factionId = g.factionId; armFromArsenal(state, b, u, hn); } // arsenal.js / fighters.js: one of the group's people
         let c = null;
         if (i === 1 && rng.chance(0.5)) c = rng.pick(roomCells(rooms.find((a) => a.entry) || home).filter(([x, y]) => d2(x, y) >= 6));

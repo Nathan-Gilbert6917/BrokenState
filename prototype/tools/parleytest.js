@@ -13,7 +13,11 @@
 //     you know (ghosts and containers), Trade (the trade window queued; a swap with a group that has none), the haul
 //     handed over;
 //   - parleyStatus's labels and active flag; parleyGroupsSeen;
-//   - no card outlives the battle; a save round-trip keeps b.parley; the raid bot answers the cards.
+//   - no card outlives the battle; a save round-trip keeps b.parley; the raid bot answers the cards;
+//   - a shout's stakes by how crowded the place is (shoutCost: reach, Heat, the risk of a wave), their loud call too;
+//   - Split what we found with an allied group that fought beside you (on its card; its own card when one of yours
+//     gets out), You kept it all; a Hostile group's people trade by a swap, never its trade window;
+//   - the raid bot calls out on its own (botCallOut: the best talker, once a group), and its raids still end.
 // Usage: node tools/parleytest.js
 import { createWorld, hub, atBase, factionById, survivorById } from "../src/sim/world.js";
 import { launchExpedition } from "../src/sim/parties.js";
@@ -28,7 +32,10 @@ import { foesOf, setFloor } from "../src/sim/combat.js";
 import * as CC from "../src/sim/citycrawl.js";
 import { BUILDINGS } from "../src/sim/buildingmaps.js";
 import { day } from "../src/sim/world.js";
-import { PARLEY, crawlParties, foughtBonus, parleySpeak, parleyStatus, parleyGroupsSeen, callOutRefusal, callOutTargets, parleyOdds, siteParty, parleyGoodwill, parleyAfterRaid, parleyTrade, parleyTick } from "../src/sim/parley.js";
+import { PARLEY, crawlParties, foughtBonus, parleySpeak, parleyStatus, parleyGroupsSeen, callOutRefusal, callOutTargets, parleyOdds, siteParty, parleyGoodwill, parleyAfterRaid, parleyTrade, parleyTick, shoutCost, botCallOut } from "../src/sim/parley.js";
+import { makeItem } from "../src/sim/crafting.js";
+import { itemValue } from "../src/sim/valuation.js";
+import { skill } from "../src/sim/world.js";
 import { LOCATIONS } from "../src/sim/data.js";
 
 let passes = 0, fails = 0;
@@ -742,6 +749,277 @@ section("A broken truce: no more talk this battle, and their group remembers (GR
   const bb2 = endRaidNow(st2);
   parleyGoodwill(st2, bb2.result);
   check(rec2.brokeTruce === "them" && !f2.grudge, "they broke it on you: no grudge held against you");
+}
+
+// ---------- a shout's stakes ----------
+section("A shout's stakes: by how crowded the place is (shoutCost); their loud call");
+{
+  const ground = (state, b, terrain, inf, block) => {
+    state.tiles[b.tileId].terrain = terrain;
+    if (b.parley) b.parley.ground = PARLEY.DENSE.terrain[terrain] ?? PARLEY.DENSE.other;
+    b.infection = inf;
+    b.setup.context = block ? { crawl: { kind: "place", block } } : {};
+  };
+  // A cell d0..d1 tiles from u, free (the dead placed there).
+  const band = (b, u, z, d0, d1) => {
+    for (let y = 1; y < b.h - 1; y++) for (let x = 1; x < b.w - 1; x++) { const d = Math.hypot(x - u.x, y - u.y); if (d >= d0 && d <= d1 && open(b, x, y)) { z.x = x; z.y = y; z.f = 0; return true; } }
+    return false;
+  };
+  const shoutAt = (seed, terrain, inf, block) => {
+    const state = world(seed);
+    const R = raid(state, [raiders(2), { kind: "zombies", count: 2, power: 2, name: "the dead" }], { dead: true });
+    ground(state, R.b, terrain, inf, block);
+    return { state, ...R };
+  };
+  const Q = shoutAt(131, "plains", 0, 0), D = shoutAt(131, "city", 0.8, 4);
+  const quiet = shoutCost(Q.state, Q.b), dense = shoutCost(D.state, D.b);
+  console.log(`  farmland, no dead: heard ${quiet.radius} tiles, Heat +${quiet.heat} (${quiet.risk}); a city's block 4, infection 0.8: heard ${dense.radius} tiles, Heat +${dense.heat} (${dense.risk}), density ${dense.density}`);
+  check(dense.radius > quiet.radius && dense.heat > quiet.heat && dense.density > quiet.density, "a crowded place: the shout carries further and costs more Heat");
+  check(quiet.risk === "low" && quiet.heat <= 2 && quiet.radius <= PARLEY.SHOUT + 1, "on quiet ground, at Heat 0: low risk, little Heat");
+  check(typeof dense.text === "string" && dense.text.includes(`Heat +${dense.heat}`), `the tip's words ("${dense.text}")`);
+  // Near a stage: the dense shout tips it (a wave), the quiet one comes close.
+  for (const X of [Q, D]) { X.b.raid.heat = 20; X.b.raid.stage = 0; X.b.raid.spawnCap = 12; X.b.raid.spawned = 0; }
+  const q2 = shoutCost(Q.state, Q.b), d2 = shoutCost(D.state, D.b);
+  check(d2.risk === "high" && d2.wave && q2.risk === "some" && !q2.wave, `at Heat 20: the city's shout would bring a wave (${d2.risk}), the farmland's comes close (${q2.risk})`);
+  D.b.raid.spawnCap = 0;
+  check(shoutCost(D.state, D.b).risk === "low", "no more of the dead to come (the spawn cap reached): low");
+  D.b.raid.spawnCap = 12;
+  // The call itself: the dead between the two reaches hear the city's shout, not the farmland's; the Heat; the wave.
+  for (const X of [Q, D]) {
+    const u = X.mine[0], pod = X.b.units.filter((x) => x.side === "enemy" && x.kind === "human");
+    const [z1, z2] = X.b.units.filter((x) => x.kind === "zombie");
+    outOfSight(X.b, u, z2); z2.aware = false;
+    X.inSight = inSight(X.b, u, pod, 3, 5);
+    X.placed = band(X.b, u, z1, quiet.radius + 1, dense.radius - 0.5);
+    for (const x of pod) x.aware = false;
+    z1.aware = false;
+    X.noise0 = X.b.noise || 0;
+    X.err = combatAct(X.state, { type: "callout", unit: u.id, target: pod[0].id });
+    X.z1 = z1;
+    X.card = card(X.state, pod[0].pk);
+  }
+  check(Q.inSight && D.inSight && Q.placed && D.placed && !Q.err && !D.err, "(test setup: both groups in sight, the dead placed between the reaches, the calls made)");
+  check(D.z1.aware && !Q.z1.aware, "the dead between the reaches: the city's shout wakes them, the farmland's does not");
+  check(D.b.noise - D.noise0 === dense.heat && Q.b.noise - Q.noise0 === quiet.heat, `the Heat: +${D.b.noise - D.noise0} in the city, +${Q.b.noise - Q.noise0} on farmland (b.noise, the turn's end)`);
+  check(D.card && D.card.shout && D.card.shout.heat === dense.heat && D.card.text.includes(`Heat +${dense.heat}`), "the card says what the shout cost (card.shout, its text)");
+  D.state.cards.length = 0;
+  nextTurn(D.state);
+  check(D.b.raid.stage >= 1 && D.b.raid.spawned > 0, `the turn's end: Heat ${Math.round(D.b.raid.heat)}, stage ${D.b.raid.stage}, ${D.b.raid.spawned} more of the dead (the raid's own wave)`);
+  // Their call: a hostile pod's carries as yours does; nobody shouts on quiet terms.
+  const st3 = world(132);
+  const R3 = raid(st3, [raiders(3)]);
+  ground(st3, R3.b, "city", 0.5, 0);
+  const pod3 = R3.b.units.filter((x) => x.side === "enemy" && x.kind === "human");
+  inSight(R3.b, R3.mine[0], pod3, 2, 3);
+  const n0 = R3.b.noise || 0, want = shoutCost(st3, R3.b).heat;
+  const call = PARLEY.CALL.hostile;
+  PARLEY.CALL.hostile = 1;
+  try { notice(R3.b, pod3[0]); } finally { PARLEY.CALL.hostile = call; }
+  check(recOf(R3.b, pod3[0]).standoff && (R3.b.noise || 0) - n0 === Math.round(want * PARLEY.LOUD.hostile), `a hostile pod calling out shouts too: Heat +${(R3.b.noise || 0) - n0}`);
+  check(PARLEY.LOUD.friendly === 0, "a friendly group calls quietly");
+}
+
+// ---------- sharing the haul ----------
+section("Split what we found with allies who fought beside you; its own card when one of yours gets out; You kept it all");
+{
+  // An allied friendly party, a haul found (supplies loose, two pieces of gear).
+  const allied = (seed, kills) => {
+    const state = world(seed);
+    const f = state.factions.find((x) => x.alive && !x.outsider);
+    f.goodwill = 20;
+    const R = raid(state, [partyOf(f, "friendly", 3)]);
+    const party = R.b.units.filter((x) => x.side === "third");
+    inSight(R.b, R.mine[0], party, 3, 5);
+    combatAct(state, { type: "callout", unit: R.mine[0].id, target: party[0].id });
+    sure(1, () => choose(state, card(state, party[0].pk), "Fight with us"));
+    state.cards.length = 0;
+    const rec = recOf(R.b, party[0]);
+    R.b.raid.found.scrap = (R.b.raid.found.scrap || 0) + 30; R.mine[0].haul.sup.scrap = 30;
+    const bar = makeItem("crowbar"), knife = makeItem("knife");
+    R.mine[1].haul.gear.push(bar, knife); R.b.raid.foundGear.push(bar, knife);
+    rec.fought.kills = kills;
+    R.mine[0].ap = 2;
+    return { state, f, party, rec, gear: [bar, knife], ...R };
+  };
+  const A = allied(141, 0);
+  combatAct(A.state, { type: "callout", unit: A.mine[0].id, target: A.party[0].id });
+  check(!card(A.state, A.party[0].pk).choices.some((x) => x.label === "Split what we found"), "allied, but they have not fought beside you yet: nothing to split");
+  A.state.cards.length = 0;
+  A.rec.fought.kills = 2; // they fought beside you
+  A.mine[0].ap = 2;
+  combatAct(A.state, { type: "callout", unit: A.mine[0].id, target: A.party[0].id });
+  const c = card(A.state, A.party[0].pk);
+  const sc = c && c.choices.find((x) => x.label === "Split what we found");
+  check(!!sc && /third/.test(sc.hint) && /Join \+\d+%/.test(sc.hint) && sc.ai(A.state) > 0, `their card offers Split what we found ("${sc && sc.hint}")`);
+  const join0 = parleyOdds(A.state, A.b, A.rec, "join", A.mine[0]), stock0 = A.f.stock.scrap || 0;
+  const gearWorth = A.gear.reduce((a, it) => a + itemValue(it), 0);
+  choose(A.state, c, "Split what we found");
+  const gone = A.gear.filter((it) => !A.b.raid.foundGear.includes(it));
+  check(A.mine[0].haul.sup.scrap === 20 && A.b.raid.found.scrap === 20 && (A.f.stock.scrap || 0) === stock0 + 10, "a third of each supply found: off your people and the raid's finds, into their group's stores");
+  check(gone.reduce((a, it) => a + itemValue(it), 0) <= gearWorth / 3 + 1e-9 && gone.every((it) => !A.mine[1].haul.gear.includes(it)), `the found gear up to a third of its worth (${gone.map((it) => it.key).join(", ") || "none"} of ${A.gear.map((it) => it.key).join(", ")})`);
+  check(A.rec.split && A.rec.split.kinds >= 1 && A.rec.fought.split === PARLEY.SPLIT.fought && parleyOdds(A.state, A.b, A.rec, "join", A.mine[0]) > join0, `it counts as fighting together: join ${pc(join0)} → ${pc(parleyOdds(A.state, A.b, A.rec, "join", A.mine[0]))}`);
+  A.mine[0].ap = 2;
+  A.state.cards.length = 0;
+  combatAct(A.state, { type: "callout", unit: A.mine[0].id, target: A.party[0].id });
+  check(!card(A.state, A.party[0].pk).choices.some((x) => x.label === "Split what we found"), "once: not offered again");
+  A.state.cards.length = 0;
+  const gwA = A.f.goodwill;
+  const bbA = endRaidNow(A.state);
+  const rA = bbA.result.parley.find((x) => x.key === A.rec.key);
+  check(rA && rA.split && rA.split.kinds && !rA.keptAll, "result.parley: shared, not kept");
+  parleyGoodwill(A.state, bbA.result);
+  check(A.f.goodwill > gwA, `their group remembers: goodwill ${gwA} → ${Math.round(A.f.goodwill)}`);
+  // One of yours gets out: they ask for a share (a card of their own); Keep it all.
+  const B = allied(142, 2);
+  B.mine[2].left = true; // extracted
+  parleyTick(B.state, B.b);
+  const bc = card(B.state, B.party[0].pk);
+  check(!!bc && /ask for a share/.test(bc.title) && bc.split && ["Split what we found", "Keep it all"].every((l) => bc.choices.some((x) => x.label === l)), `one of yours out: "${bc && bc.title}" (Split what we found, Keep it all)`);
+  choose(B.state, bc, "Keep it all");
+  parleyTick(B.state, B.b);
+  check(B.rec.kept && !card(B.state, B.party[0].pk), "kept: they ask once");
+  const bbB = endRaidNow(B.state);
+  const rB = bbB.result.parley.find((x) => x.key === B.rec.key);
+  check(rB && rB.keptAll && rB.kept, "result.parley: You kept it all (out with the haul after they fought)");
+  const gw0 = B.f.goodwill, fw0 = B.f.foughtWith;
+  parleyGoodwill(B.state, { parley: bbB.result.parley.map((r) => ({ ...r, keptAll: false })) });
+  const shared = B.f.goodwill;
+  B.f.goodwill = gw0; B.f.foughtWith = fw0;
+  parleyGoodwill(B.state, bbB.result);
+  check(B.f.goodwill < shared, `keeping it all costs a little goodwill (${Math.round(shared)} had you not → ${Math.round(B.f.goodwill)})`);
+  // Everyone out at once, nothing offered: kept all the same.
+  const C = allied(143, 2);
+  const rC = endRaidNow(C.state).result.parley.find((x) => x.key === C.rec.key);
+  check(rC && rC.keptAll && !rC.kept, "everyone out at once after they fought, nothing shared: kept it all");
+  // Nothing found: nothing to keep from them.
+  const E = allied(144, 2);
+  E.b.raid.found = {}; E.b.raid.foundGear = []; E.mine[0].haul.sup = {}; E.mine[1].haul.gear = [];
+  const rE = endRaidNow(E.state).result.parley.find((x) => x.key === E.rec.key);
+  check(rE && !rE.keptAll, "out with nothing found: nothing kept from them");
+  // The bot: their card answered by its weights (fought hard beside you: it shares).
+  const F = allied(145, 4);
+  F.mine[2].left = true;
+  parleyTick(F.state, F.b);
+  resolveBattleCards(F.state);
+  check(F.rec.split && F.rec.split.kinds > 0 && !card(F.state, F.party[0].pk), "the bot answers their card: it shares with those who fought hard beside it");
+}
+
+// ---------- trading with a Hostile group ----------
+section("A trade agreed with a group that is Hostile toward you: a swap, never its trade window");
+{
+  const state = world(151);
+  const f = state.factions.find((x) => x.alive && !x.outsider);
+  f.goodwill = 40;
+  const R = raid(state, [partyOf(f, "friendly", 2)]);
+  const party = R.b.units.filter((x) => x.side === "third");
+  inSight(R.b, R.mine[0], party, 3, 6);
+  combatAct(state, { type: "callout", unit: R.mine[0].id, target: party[0].id });
+  sure(1, () => choose(state, card(state, party[0].pk), "Trade"));
+  const bb = endRaidNow(state);
+  R.p.phase = "idle";
+  f.goodwill = -60; // Hostile toward you by the time you are out (factions.js attitude)
+  state.trade = null;
+  check(!parleyTrade(state, R.p, bb.result) && !state.trade, "no trade window with a Hostile group");
+  state.cards.length = 0;
+  R.p.cargo = R.p.cargo || { supplies: {}, gear: [] };
+  R.p.supplies.food = 20; R.p.supplies.water = 2;
+  parleyAfterRaid(state, R.p, bb.result);
+  const sw = state.cards.find((c) => /^Trading with/.test(c.title));
+  check(!!sw && /will not open its stores/.test(sw.text), `the swap card instead ("${sw && sw.text}")`);
+  f.goodwill = 10;
+  state.cards.length = 0;
+  parleyAfterRaid(state, R.p, bb.result);
+  check(!state.cards.some((c) => /^Trading with/.test(c.title)) && parleyTrade(state, R.p, bb.result) && state.trade && state.trade.factionId === f.id, "not Hostile: its trade window, no swap card");
+}
+
+// ---------- the bot calls out ----------
+section("The raid bot calls out on its own: the best talker, once a group; a pod only when it outnumbers yours");
+{
+  const calls = (b, name) => b.log.filter((l) => /calls out to/.test(l.text) && l.text.includes(name)).length;
+  const keep = { ...PARLEY.CALL };
+  try {
+    for (const k of Object.keys(PARLEY.CALL)) PARLEY.CALL[k] = 0; // they never call first here
+    // A third side in sight: the best talker of yours who sees them calls.
+    const state = world(161);
+    const f = state.factions.find((x) => x.alive && !x.outsider);
+    f.goodwill = 40;
+    const { b, mine } = raid(state, [partyOf(f, "neutral", 2)], { skills: { speech: 6 } });
+    const party = b.units.filter((x) => x.side === "third");
+    inSight(b, mine[0], party, 3, 5);
+    for (const x of mine.slice(1)) { x.x = mine[0].x; x.y = mine[0].y; } // the others next to mine[0] (as close as it gets)
+    for (const [i, x] of mine.slice(1).entries()) { for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]]) if (open(b, mine[0].x + dx, mine[0].y + dy)) { x.x = mine[0].x + dx; x.y = mine[0].y + dy; break; } faceToward(x, party[0].x, party[0].y); void i; }
+    survivorById(state, mine[1].sid).skills.speech = 12;
+    const rec = recOf(b, party[0]);
+    const seers = mine.filter((p) => party.some((t) => canSee(b, p, t)));
+    const best = [...seers].sort((p, q) => skill(survivorById(state, q.sid), "speech") - skill(survivorById(state, p.sid), "speech"))[0];
+    const plan = botCallOut(state, b);
+    rec.botCalled = false; // (the plan only: the turn calls again)
+    check(!!plan && plan.unit === best && plan.target.pk === rec.key, `the plan: ${plan && plan.unit.name} calls (the best talker who sees them: ${best && best.name})`);
+    autoPlayerTurn(state);
+    check(rec.botCalled && rec.talks > 0 && rec.speaker === best.id && calls(b, rec.name) === 1, `the bot's turn: ${best.name} calls out to ${rec.name}, the card answered (${rec.allied ? "allied" : rec.truce ? "a truce" : rec.told ? "told" : `talks ${rec.talks}`})`);
+    check(!state.cards.some((c) => c && c.battle), "no card left waiting");
+    for (let i = 0; i < 4 && !b.over; i++) { runEnemyPhase(state); if (!b.over) autoPlayerTurn(state); }
+    check(calls(b, rec.name) === 1, "once a group a battle");
+    // An unaware hostile pod: called to only when it outnumbers yours.
+    const pods = (seed, n) => {
+      const st = world(seed);
+      const R = raid(st, [raiders(n)], { skills: { speech: 12 } });
+      const pod = R.b.units.filter((x) => x.side === "enemy" && x.kind === "human");
+      inSight(R.b, R.mine[0], pod, 4, 6);
+      for (const x of pod) x.aware = false;
+      return { st, pod, rec: recOf(R.b, pod[0]), ...R };
+    };
+    const big = pods(162, 4), small = pods(163, 2);
+    check(big.pod.length > big.mine.length && small.pod.length < small.mine.length, `(test setup: ${big.pod.length} of them against ${big.mine.length}; ${small.pod.length} against ${small.mine.length})`);
+    const pb = botCallOut(big.st, big.b), ps = botCallOut(small.st, small.b);
+    big.rec.botCalled = false; // (the plan only)
+    check(!!pb && pb.target.pk === big.rec.key && !ps, "an unaware pod that outnumbers yours: call out; one yours can take: no");
+    for (const x of small.pod) x.aware = true;
+    check(!botCallOut(small.st, small.b), "a hostile pod that knows you are there: no talk");
+    autoPlayerTurn(big.st);
+    check(big.rec.talks > 0 && !big.st.cards.some((c) => c && c.battle), `the bot's turn with the pod: they talk (${big.rec.truce ? "a truce" : big.rec.turned ? "it went wrong" : big.rec.standoff ? "still standing off" : "talked"}), no card left`);
+    // Risky ground lowers the bar: a high-risk shout at middling odds is not made.
+    big.rec.botCalled = false;
+    const mid = PARLEY.BOT.min;
+    PARLEY.BOT.min = 0.9;
+    try { check(!botCallOut(big.st, big.b), "below the weighed bar (BOT.min): no call"); } finally { PARLEY.BOT.min = mid; }
+  } finally { Object.assign(PARLEY.CALL, keep); }
+  // Headless raids with groups the bot calls to still end, and never leave a card.
+  let ended = 0, talked = 0, n = 0;
+  for (const seed of [171, 172, 173, 174]) {
+    const state = world(seed);
+    const f = state.factions.find((x) => x.alive && !x.outsider);
+    const { b } = raid(state, [raiders(4), partyOf(f, seed % 2 ? "friendly" : "neutral", 2), { kind: "zombies", count: 3, power: 2, name: "the dead" }], { dead: true, skills: { speech: 10 } });
+    n++;
+    let waiting = 0;
+    for (let i = 0; i < 120 && !b.over; i++) {
+      autoPlayerTurn(state);
+      if (state.cards.some((c) => c && c.battle)) waiting++;
+      if (!b.over) runEnemyPhase(state);
+    }
+    if (b.over) ended++;
+    if (b.parley && b.parley.groups.some((g) => g.botCalled)) talked++;
+    check(waiting === 0, `seed ${seed}: no card waiting after a bot's turn (${b.over ? `${b.result.outcome}, ${b.turn} turns` : "still going"})`);
+    if (!b.over) { for (const u of b.units) if (u.side === "player" && !u.dead) u.left = true; endCalledOff(state); }
+    finishCombat(state, b.setup, b.result);
+  }
+  console.log(`  ${n} headless raids: ${ended} ended on their own, the bot called out in ${talked}`);
+  check(ended === n, "every headless raid ends on its own");
+  check(talked > 0, "the bot calls out in them");
+}
+
+// ---------- names ----------
+section("The groups' own names; two with one name told apart");
+{
+  const state = world(181);
+  const { b } = raid(state, [raiders(2), raiders(2), { kind: "survivors", count: 2, power: 3, name: "armed survivors", guard: true }]);
+  const recs = b.parley.groups;
+  const names = recs.map((r) => r.name);
+  console.log(`  ${names.join("; ")}`);
+  check(recs.length === 3 && recs.filter((r) => r.base === "rival scavengers").length === 2 && recs.some((r) => r.name === "armed survivors"), "each record has its group's own name (setup.enemy.groups[i].name), not the kit's");
+  check(new Set(names).size === names.length && recs.filter((r) => r.base === "rival scavengers").every((r) => r.name.startsWith("rival scavengers") && (/ at the /.test(r.name) || / \(\d\)$/.test(r.name) || r.name === "rival scavengers")), "the two rival scavengers told apart (where they hold, or a number)");
+  const pods = [...new Set(b.units.filter((u) => u.side === "enemy" && u.kind === "human").map((u) => u.pk))];
+  check(pods.length === 3 && pods.map((k) => parleyStatus(b, b.units.find((u) => u.pk === k)).name).every((n, i, a) => a.indexOf(n) === i), "their badges differ");
 }
 
 // ---------- the bot ----------
