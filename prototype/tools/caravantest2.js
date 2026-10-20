@@ -318,10 +318,14 @@ section("The groups rob caravans");
   const c = C.roadCaravans(st).find((x) => x.ref === m);
   check(!!c && C.wouldRaid(st, r, c), `${r.name} would rob merchants passing by`);
   const food0 = food(r) || 0, meds0 = r.stock.meds || 0, wares0 = (r.wares || []).length;
-  const mf = food(m) || 0, mm = Math.floor(m.stock.meds || 0), items = m.wares.length;
+  const mf = food(m) || 0, mm = Math.floor(m.stock.meds || 0), gear = m.wares.slice();
   const won = C.groupRobs(st, r, c, 999, 1);
   check(won && !st.visitors.includes(m), "won by the numbers: the caravan is gone");
-  check(Math.abs((food(r) || 0) - food0 - mf) < 1e-6 && (r.stock.meds || 0) === meds0 + mm && (r.wares || []).length === Math.min(12, wares0 + items), `everything into their stock and onto their shelf (+${mf} food, +${mm} meds, ${items} items)`);
+  // Each item goes where the group keeps what it takes (arsenal.js keepItem, docs/adr/0001-ai-parity.md): fighting kit
+  // (a gun, armour, a crowbar) onto its books, the rest onto its shelf; nothing is lost.
+  const kept = (it) => (r.wares || []).includes(it) ? "shelf" : r.arsenal && r.arsenal.items.includes(it) ? "books" : null;
+  const onShelf = gear.filter((it) => kept(it) === "shelf").length, onBooks = gear.filter((it) => kept(it) === "books").length;
+  check(Math.abs((food(r) || 0) - food0 - mf) < 1e-6 && (r.stock.meds || 0) === meds0 + mm && gear.every(kept) && (r.wares || []).length === wares0 + onShelf, `everything into their stock, onto their shelf or their books (+${mf} food, +${mm} meds, ${gear.length} items: ${onShelf} on the shelf, ${onBooks} fighting kit)`);
   // The hourly odds: a gang near the road robs a passing caravan sooner or later.
   let hit = false;
   for (let i = 0; i < 400 && !hit; i++) {
