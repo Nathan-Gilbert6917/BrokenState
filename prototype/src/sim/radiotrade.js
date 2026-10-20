@@ -25,7 +25,7 @@ import { SUPPLIES, SUPPLY_KEYS } from "./data.js";
 import { log, day, factionById, baseById, atBase, skill } from "./world.js";
 import { planPath, travelHours, partyMembers, cargoRoom } from "./parties.js";
 import { attitude, changeGoodwill } from "./factions.js";
-import { available, poolKey, ensureWares, WARES_MAX, need } from "./trade.js";
+import { available, poolKey, ensureWares, need } from "./trade.js";
 import { keepItem } from "./arsenal.js"; // what comes back to a group: its books or its shelf
 import { refusal } from "./radio.js";
 import { sendCaravan, caravanEnRoute, caravanCapacity, CARAVAN_SPEED } from "./caravans.js";
@@ -290,8 +290,7 @@ export function completeRadioDeal(state, p, deal) {
     f.stock[pk] = (f.stock[pk] || 0) + q;
   }
   f.wares = f.wares || [];
-  for (const g of c.gear) { p.cargo.gear.splice(p.cargo.gear.indexOf(g), 1); f.wares.push(g); }
-  if (f.outsider && f.wares.length > WARES_MAX) f.wares.splice(0, f.wares.length - WARES_MAX); // a group that lives here keeps all it bought
+  for (const g of c.gear) { p.cargo.gear.splice(p.cargo.gear.indexOf(g), 1); f.wares.push(g); } // all of it: nothing cut off the shelf to fit a size
   for (const [k, q] of Object.entries(deal.get.supplies)) p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) + q;
   p.cargo.gear.push(...deal.get.gear);
   radioDeals(state).splice(radioDeals(state).indexOf(deal), 1);

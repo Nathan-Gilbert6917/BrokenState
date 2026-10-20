@@ -527,8 +527,17 @@ function prims(k, o) {
       return o.part === "front" ? front : back;
     }
     case "palisade": {
-      // The base's wall line: upright logs with pointed tops and a sheet-metal brace; battered ones are shorter.
+      // The base's wall line: upright logs with pointed tops and a sheet-metal brace; battered ones are shorter. A wall
+      // piece (sim/basemap.js) by its material (o.mat, sim/buildings.js WALL_TIERS): planks, logs, scrap metal, sheets.
       const ax = along(o), top = o.stub ? STUB : PALISADE;
+      if (o.mat === 1 || o.mat === 3 || o.mat === 4) {
+        const dmgTop = top - (o.dmg ? Math.floor(o.dmg * 10) : 0);
+        const face = o.mat === 1 ? (f, s, t, X, Y) => (f === "top" ? PAL.woodLt : Math.floor(s) % 5 < 1 ? PAL.woodDk : mul(PAL.wood, 0.85 + n2(Math.floor(s / 5), 0, 7 + v) * 0.25))
+          : o.mat === 3 ? (f, s, t, X, Y) => { const q = n2(Math.floor(s / 6), Math.floor(t / 5), 13 + v); return q > 0.72 ? mul(PAL.rust, 0.85 + n2(X, Y, 5) * 0.25) : q < 0.22 ? PAL.metalDk : mul(PAL.metal, 0.82 + n2(X, Y, 4) * 0.22); }
+          : (f, s, t, X, Y) => (Math.floor(s) % 8 < 1 || Math.floor(t) % 10 < 1 ? PAL.metalDk : mul(PAL.metal, 0.95 + n2(X, Y, 3) * 0.08));
+        const post = o.mat === 1 ? tex(PAL.woodDk, 0.1) : tex(PAL.metalDk, 0.08);
+        return [run(ax, 0.4, 0.6, 0, dmgTop, face), run(ax, 0.36, 0.64, 0, dmgTop + 2, post, 0, 0.1), run(ax, 0.36, 0.64, 0, dmgTop + 2, post, 0.9, 1)];
+      }
       const logs = [];
       for (let i = 0; i < 4; i++) {
         const a = 0.125 + i * 0.25, hgt = top - (o.dmg ? Math.floor(hash3(i, v, 11) * o.dmg * 14) : 0) - (i % 2) * 2;
@@ -565,6 +574,17 @@ function prims(k, o) {
         { u0: 0.84, u1: 0.96, v0: 0.84, v1: 0.96, z0: 0, z1: z, m: dk },
         { u0: 0, u1: 1, v0: 0, v1: 1, z0: z - 3, z1: z, m: (f, s, t) => (f === "top" ? mul(PAL.woodLt, (s | 0) % 4 < 1 ? 0.75 : 0.95 + n2(s, t, 8) * 0.1) : PAL.woodDk) },
         { u0: 0, u1: 1, v0: 0, v1: 0.08, z0: z, z1: z + 7, m: wood }, { u0: 0, u1: 0.08, v0: 0.08, v1: 1, z0: z, z1: z + 7, m: wood },
+      ];
+    }
+    case "stand": {
+      // A wall stand (sim/basemap.js): a plank platform a level up on four posts, a ladder up its back.
+      const z = LV, dk = tex(PAL.woodDk, 0.1);
+      return [
+        { u0: 0.04, u1: 0.16, v0: 0.04, v1: 0.16, z0: 0, z1: z, m: dk }, { u0: 0.84, u1: 0.96, v0: 0.04, v1: 0.16, z0: 0, z1: z, m: dk },
+        { u0: 0.04, u1: 0.16, v0: 0.84, v1: 0.96, z0: 0, z1: z, m: dk },
+        { u0: 0.42, u1: 0.58, v0: 0.92, v1: 0.98, z0: 0, z1: z, m: (f, s, t) => (Math.floor(t) % 5 < 1 ? PAL.woodLt : PAL.woodDk) }, // the ladder
+        { u0: 0.84, u1: 0.96, v0: 0.84, v1: 0.96, z0: 0, z1: z, m: dk },
+        { u0: 0, u1: 1, v0: 0, v1: 1, z0: z - 3, z1: z, m: (f, s, t) => (f === "top" ? mul(PAL.woodLt, (s | 0) % 4 < 1 ? 0.75 : 0.95 + n2(s, t, 8) * 0.1) : PAL.woodDk) },
       ];
     }
     case "walkway": case "loft": case "roof": {
@@ -1046,7 +1066,7 @@ const JOINS = {
   rack: new Set(["rack", "shelf"]), bed: new Set(["bed"]), bars: new Set(["bars", "wall", "idoor", "odoor"]), table: new Set(["table"]),
   palisade: new Set(["palisade", "gate", "breach", "siegeladder"]), gate: new Set(["palisade", "gate", "breach", "siegeladder"]),
   fence: new Set(["fence"]), wire: new Set(["wire"]), rail: new Set(["rail"]), sandbag: new Set(["sandbag", "barricade"]), barricade: new Set(["barricade", "sandbag"]),
-  walkway: new Set(["walkway", "tower"]), trench: new Set(["trench"]), shelf: WALLISH, locker: WALLISH, cabinet: WALLISH, counter: WALLISH,
+  walkway: new Set(["walkway", "tower", "stand"]), stand: new Set(["stand", "walkway", "tower"]), trench: new Set(["trench"]), shelf: WALLISH, locker: WALLISH, cabinet: WALLISH, counter: WALLISH,
   outline: new Set(["outline"]), // the base map: a building's outline joins along its sides (sim/basemap.js)
 };
 // What a cell looks like in this view: its kind and options (see prims), or null for open ground. focus: on a building's
@@ -1092,6 +1112,7 @@ function lookOf(b, scene, x, y, cut, focus = null) {
   if (c.mhp) o.dmg = Math.round(clamp01(1 - c.hp / c.mhp) * 3) / 3;
   if (k === "gate") o.barred = barredCell(c);
   if (k === "palisade" && c.t === 1) o.top = PALISADE;
+  if ((k === "palisade" || k === "gate") && c.wm) o.mat = c.wm; // a wall piece's material (sim/basemap.js)
   if (k === "door") { const d = ((b.raid ? b.raid.doors : b.doors) || []).find((q) => q.x === x && q.y === y); o.vault = !!(d && d.lock && d.lock.kind === "vault"); } // a raid's, a field map's houses' (sim/combat.js b.doors)
   if (c.roll) o.roll = true; // a roller door (sim/buildingmaps.js)
   if (c.h > 0 && FURNITURE.has(k)) o.raise = c.h * LV; // furniture on an upper floor
@@ -1126,7 +1147,7 @@ function blockTop0(k, o) {
     case "rack": return 31; case "table": return 11; case "bed": return 8; case "bars": return o.stub ? STUB : 28;
     case "palisade": case "gate": return PALISADE;
     case "tower": return 2 * LV + 7;
-    case "walkway": case "loft": case "roof": return LV;
+    case "walkway": case "loft": case "roof": case "stand": return LV;
     case "stairs": return LV / 2;
     case "ladder": return LV;
     case "tree": return o.v === 3 && o.alt ? 30 : 40;
@@ -1375,7 +1396,7 @@ export function isoPick(b, px, py, opts = {}) {
   }
   return best;
 }
-const SOLIDWALK = new Set(["walkway", "tower", "loft", "roof", "stairs"]);
+const SOLIDWALK = new Set(["walkway", "tower", "loft", "roof", "stairs", "stand"]);
 const NOCUT = new Set();
 
 // ---------- what hides a cell ----------
@@ -1663,10 +1684,12 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     fillCells(ctx, b, (i) => ok[i], `rgba(${COL.goodRgb},0.16)`);
     outlineCells(ctx, b, (i) => ok[i], `rgba(${COL.goodRgb},0.8)`, 1.5);
   }
-  // The base map's layout mode (sim/basemap.js): the yard's edge, and the pick's footprint under the mouse (green
+  // The base map's layout mode (sim/basemap.js): the no-build margin (c.nb: the cells within NO_BUILD of the grid's
+  // edge, a dark red wash under everything else), the yard's edge, and the pick's footprint under the mouse (green
   // where it fits, red where not), with the cells outside its doors.
   if (b.layout && b.deployPlan && b.deployPlan.fort) {
     const Fm = b.deployPlan.fort, w = Fm.wall;
+    fillCells(ctx, b, (i) => !!b.cells[i].nb, "rgba(150,40,40,0.22)", false);
     const yard = (i) => { const x = i % b.w, y = (i / b.w) | 0; return x >= w.x0 && x <= w.x1 && y >= w.y0 && y <= w.y1 && (x === w.x0 || x === w.x1 || y === w.y0 || y === w.y1); };
     ctx.setLineDash([5, 4]);
     outlineCells(ctx, b, yard, Fm.walled ? "rgba(200,170,110,0.55)" : "rgba(230,216,184,0.5)", 1.5);

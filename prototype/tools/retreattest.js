@@ -13,9 +13,7 @@ import {
   active, createBattle, autoPlayerTurn, runEnemyPhase, closeCombat, registerCombatHandler, combatAct, endPlayerTurn,
   soundRetreat, retreatPlan, retreatRefusal, escapeOdds, retreatAdvice, fightOutlook, evacAt, inEvac, RETREAT, RETREAT_AI, unitAt, loadPenalty, loadMag,
 } from "../src/sim/combat.js";
-import { newItem, allItems } from "../src/sim/inventory.js";
-import { roundsInItem } from "../src/sim/itemstack.js"; // rounds in a box or a loose stack on a person
-import { stackN } from "../src/sim/roundstack.js"; // rounds in a magazine
+import { newItem, carriedSpots } from "../src/sim/inventory.js";
 import "../src/sim/hives.js"; // the "hive" battle layout
 import { combatAction, combatKey, retreatAskOpen, retreatConfirmHtml, cui } from "../src/ui/combat.js";
 import { autoResolveCombat } from "../src/sim/combat.js";
@@ -430,34 +428,29 @@ const numbersSetup = (p, enemy, extra = {}) => ({ tile: partyTile(p), partyId: p
   console.log("Retreat by the numbers: a team's fight");
   const st = createWorld({ seed, factionCount: 6 });
   const f = st.factions.find((x) => x.alive && x.bases.length);
-  const seen = { retreat: 0, carriedLive: 0, carriedDied: 0, carriedTried: 0, medicSum: 0, left: 0, captured: 0, leftDead: 0, partial: 0, noLoot: 0, refund: 0, consistent: 0, zLeftDead: 0, zLeft: 0 };
+  const seen = { retreat: 0, carriedLive: 0, carriedDied: 0, carriedTried: 0, medicSum: 0, left: 0, captured: 0, leftDead: 0, partial: 0, noLoot: 0, refund: 0, whole: 0, consistent: 0, zLeftDead: 0, zLeft: 0 };
   for (let i = 0; i < 260; i++) {
     const zombies = i % 4 === 3;
     const p = teamOut(st, 3, { shooting: 4, weapon: "pistol" });
     for (const s of partyMembers(st, p)) s.health = st.rng.int(35, 100);
     const enemy = zombies ? { kind: "zombies", count: 10, power: 3, name: "the dead" } : { kind: "raiders", count: 5, power: 5, factionId: f.id, name: "raiders" };
     const before = partyMembers(st, p).map((s) => s.id);
-    // Every round the team has, any calibre: the supplies and the cargo (ammo.js totalRounds) and what is on the people
-    // (the rounds at hand in their pockets, the magazines' loads and the guns' own: carrykit.js packShells, gunload.js;
-    // a fight spends those first).
-    const onPerson = (s) => allItems(s).reduce((b, it) => b + roundsInItem(it) + (Array.isArray(it.stack) ? stackN(it.stack) : 0) + (it.loaded && Number.isFinite(it.loaded.n) ? it.loaded.n : 0), 0);
-    const kit0 = new Map(partyMembers(st, p).map((s) => [s.id, onPerson(s)]));
-    const ammo0 = totalRounds(p.supplies) + totalRounds(p.cargo.supplies) + [...kit0.values()].reduce((a, n) => a + n, 0);
+    // ammo.js: every round, any calibre: the team's stores and the loose rounds and boxes its people carry in their
+    // pockets and rig (combat.js takeHandRounds: a fight by the numbers fires those too; the unfired go back into
+    // the team's supplies).
+    const atHand = () => before.map((id) => survivorById(st, id)).filter((s) => s && s.alive).reduce((a, s) => a + carriedSpots(s).filter((x) => (x.where === "pocket" || x.where === "rig") && /^a_/.test(x.item.key)).reduce((b, x) => b + Math.max(0, Math.floor(Number(x.item.dur) || 0)), 0), 0);
+    const ammo0 = totalRounds(p.supplies) + totalRounds(p.cargo.supplies) + atHand();
     const r = autoResolveCombat(st, numbersSetup(p, enemy, { retreatPolicy: i % 2 ? "most" : "losing" }));
-    // What the fight cost in rounds: the supplies and the cargo, and the people who came back with the team. One lost on
-    // the way out, dead or taken, takes the rounds on them along (not the team's any more), among them the ones drawn
-    // for them and fired: with a loss the rounds spent by those who came back are at most what the fight used; with
-    // everyone back, exactly that (the rounds drawn and not fired go back to the packed supplies: combat.js refund).
-    const back = partyMembers(st, p);
-    const lostOne = back.length < kit0.size;
-    const spent = ammo0 - totalRounds(p.supplies) - totalRounds(p.cargo.supplies) - back.reduce((a, s) => a + onPerson(s), 0) - [...kit0].filter(([id]) => !back.some((s) => s.id === id)).reduce((a, [, n]) => a + n, 0);
-    const ammo1 = ammo0 - spent;
+    const ammo1 = totalRounds(p.supplies) + totalRounds(p.cargo.supplies) + atHand();
     if (r.outcome === "retreat") {
       seen.retreat++;
       const ro = r.retreatOrder;
       if (ro && ro.by === "policy" && r.loot.gear.length === 0 && !Object.keys(r.loot.supplies).length) seen.noLoot++;
       if (r.enemiesKilled < enemy.count && r.enemiesLeft > 0) seen.partial++;
-      if ((lostOne ? spent <= r.ammoUsed : spent === r.ammoUsed) && r.ammoUsed < Math.min(ammo0, 3 * 6) && ro.round < BREAKOFF.ROUNDS) seen.refund++;
+      // (Counted where nobody fell or was taken: the rounds in a fallen one's pockets go with their body, not the fight.)
+      const whole = !r.survivorsDead.length && !(r.captured || []).length;
+      if (whole) seen.whole++;
+      if (whole && ammo0 - ammo1 === r.ammoUsed && r.ammoUsed < Math.min(ammo0, 3 * 6) && ro.round < BREAKOFF.ROUNDS) seen.refund++;
       // Everyone is accounted for: home with the team, dead, or a prisoner.
       const ok = before.every((id) => { const s = survivorById(st, id); return !s.alive ? r.survivorsDead.includes(id) : s.location.kind === "captive" ? r.captured.includes(id) : partyMembers(st, p).includes(s); });
       if (ok) seen.consistent++;
@@ -477,7 +470,7 @@ const numbersSetup = (p, enemy, extra = {}) => ({ tile: partyTile(p), partyId: p
   check(seen.noLoot === seen.retreat, `a broken-off fight takes no loot and is marked as the policy's retreat (${seen.noLoot}/${seen.retreat})`);
   check(seen.partial === seen.retreat, `the enemy loses part of its people, not all (${seen.partial}/${seen.retreat})`);
   check(seen.consistent === seen.retreat, `everyone is home with the team, dead or a prisoner (${seen.consistent}/${seen.retreat})`);
-  check(seen.refund >= seen.retreat * 0.5, `the rounds not fought do not use their ammo (${seen.refund}/${seen.retreat})`);
+  check(seen.whole >= 20 && seen.refund >= seen.whole * 0.5, `the rounds not fought do not use their ammo (${seen.refund}/${seen.whole} of the retreats nobody was lost in)`);
   check(seen.carriedLive > 0, `the downed are carried out, and come home barely alive (${seen.carriedLive})`);
   check(seen.left > 0 && seen.left === seen.captured + seen.leftDead && seen.captured > 0 && seen.leftDead > 0, `left to a group's people: taken prisoner or killed (${seen.captured} taken, ${seen.leftDead} killed of ${seen.left})`);
   check(seen.zLeft === seen.zLeftDead, `left to the dead: lost (${seen.zLeftDead}/${seen.zLeft})`);

@@ -1,7 +1,8 @@
 // Groups and each other: a relations matrix between the AI groups, pacts, wars (raids, sieges, territory, peace
 // terms), news on the radio, and what you can do about it (stay out, sell to both sides, broker a ceasefire,
-// join a war on one side). Also the prisoner calls other systems use (prisonerTaken, askRansom, payRansom,
-// releasePrisoner) and the daily / hourly entry points for jobs (jobs.js) and the coalition (alliance.js).
+// join a war on one side). Also the daily / hourly entry points for jobs (jobs.js) and the coalition (alliance.js).
+// A war's captives are people in the captor's jail (groupjails.js, through groupfight.js applySide); the peace sends
+// each side's home as themselves (endWar: groupjails.js freeHeld).
 //
 // Relations (state.diplo.rel["a|b"], −100..100, one number per pair)
 // - Start from the two types (a raider gang −44 with everyone, −20 with another gang; zealots −34; other
@@ -51,7 +52,7 @@
 import { stockAt, loseBase, gainBase } from "./groupbases.js"; // their bases as base objects (what is there)
 import { foodIn, takeFood, addFoodsTo, foodShare, bestFoodKey, scaleFood } from "./foods.js"; // the groups' food by type
 import { Rng } from "./rng.js";
-import { groupCapture, jailsOn } from "./groupjails.js"; // jailhouse: war captives into the raider's jail
+import { groupCapture, jailsOn, freeHeld } from "./groupjails.js"; // jailhouse: war captives into the raider's jail, home with the peace
 import { SUPPLIES, SUPPLY_KEYS, supplyFew, supValue } from "./data.js";
 import { day, log, hub, factionById, addCard, playerStrength, atBase, skill } from "./world.js";
 import { groupPayoutSpare } from "./upkeep.js"; // the pay-out reserve (food)
@@ -307,7 +308,7 @@ export function startWar(state, a, b, reason = "land") {
   if (warBetween(state, a, b)) return warBetween(state, a, b);
   const w = {
     id: d.seq++, a: a.id, b: b.id, reason, start: day(state), score: { [a.id]: 0, [b.id]: 0 }, exh: { [a.id]: 0, [b.id]: 0 },
-    pop0: { [a.id]: a.pop, [b.id]: b.pop }, raids: 0, captives: { [a.id]: 0, [b.id]: 0 }, playerSide: null, brokerDay: -99, asked: false,
+    pop0: { [a.id]: a.pop, [b.id]: b.pop }, raids: 0, playerSide: null, brokerDay: -99, asked: false,
   };
   d.wars.push(w);
   d.stats.wars++;
@@ -334,7 +335,7 @@ export function allyWar(state, p, enemy, reason = "pact") {
   if (warBetween(state, p, enemy)) return null;
   const w2 = {
     id: d.seq++, a: p.id, b: enemy.id, reason, start: day(state), score: { [p.id]: 0, [enemy.id]: 0 }, exh: { [p.id]: 0, [enemy.id]: 0 },
-    pop0: { [p.id]: p.pop, [enemy.id]: enemy.pop }, raids: 0, captives: { [p.id]: 0, [enemy.id]: 0 }, playerSide: null, brokerDay: -99, asked: false,
+    pop0: { [p.id]: p.pop, [enemy.id]: enemy.pop }, raids: 0, playerSide: null, brokerDay: -99, asked: false,
   };
   d.wars.push(w2);
   d.stats.wars++;
@@ -531,7 +532,7 @@ function endWar(state, w, terms, text) {
   syncWarFlags(state);
   const a = factionById(state, w.a), b = factionById(state, w.b);
   // Captives go home.
-  for (const f of [a, b]) if (f && f.alive && w.captives[f.id]) f.pop += w.captives[f.id];
+  if (a && b) { freeHeld(state, a, b); freeHeld(state, b, a); } // groupjails.js: each side's people held by the other walk home as themselves
   if (a && b) {
     d.lastPeace[key(a, b)] = day(state);
     d.rel[key(a, b)] = Math.max(relation(state, a, b), -15);
@@ -728,57 +729,10 @@ export function autoWarTrade(state, style, deal) {
   return "";
 }
 
-// ---------- prisoners (the combat side calls these) ----------
-// prisonerTaken(state, f, s): you took one of their people (a knocked-out enemy). They resent it: −5 goodwill
-// (−2 if hostile already). Returns the line for the log.
-export function prisonerTaken(state, f, s = null) {
-  if (!f) return "";
-  f.prisonersHeld = (f.prisonersHeld || 0) + 1;
-  f.known = true;
-  changeGoodwill(state, f, attitude(f) === "Hostile" ? -2 : -5, "you hold their people");
-  return `${s && s.name ? s.name : "One of them"} of ${f.name} is your prisoner.`;
-}
-// What they would pay to get a prisoner back: { ok, offer: { key: qty }, value, text }. No dice.
-export function askRansom(state, f, s = null) {
-  if (!f || !f.alive) return { ok: false, offer: {}, value: 0, text: "Nobody is left to pay for them." };
-  if (!(f.prisonersHeld > 0)) return { ok: false, offer: {}, value: 0, text: `You hold none of ${f.name}'s people.` };
-  const base = 30 + (s && s.skillTotal ? s.skillTotal : 0);
-  const value = base * (attitude(f) === "Hostile" ? 0.6 : 1) * (atWar(state, f) ? 1.3 : 1);
-  const offer = {};
-  let left = value;
-  for (const k of SUPPLY_KEYS.filter((x) => x !== "water" && x !== "rawwater" && available(f, x) > 0).sort((x, y) => need(f, x) - need(f, y))) {
-    if (left <= 0) break;
-    const unit = buyPrice(state, f, k, 0, 1);
-    const q = Math.min(available(f, k), Math.ceil(left / unit));
-    if (q <= 0) continue;
-    offer[k] = q;
-    left -= q * unit;
-  }
-  const ok = Object.keys(offer).length > 0;
-  const what = Object.entries(offer).map(([k, q]) => `${q} ${keyWord(k)}`).join(", ");
-  return { ok, offer, value: Math.round(value), text: ok ? `${f.name} would pay ${what} to have them back.` : `${f.name} has nothing to pay with.` };
-}
-// They pay and get their person back (+3 goodwill). opts.baseId: where the ransom goes (default the hub).
-export function payRansom(state, f, s = null, opts = {}) {
-  const q = askRansom(state, f, s);
-  if (!q.ok) return q.text;
-  const base = (opts.baseId != null && state.bases.find((b) => b.id === opts.baseId)) || hub(state);
-  for (const [k, n] of Object.entries(q.offer)) {
-    f.stock[k] = Math.max(0, (f.stock[k] || 0) - n);
-    base.stock[k] = (base.stock[k] || 0) + n;
-  }
-  f.prisonersHeld = Math.max(0, f.prisonersHeld - 1);
-  f.pop += 1;
-  changeGoodwill(state, f, 3, "you returned their person for a ransom");
-  return `${f.name} paid ${Object.entries(q.offer).map(([k, n]) => `${n} ${keyWord(k)}`).join(", ")} to ${base.name} and took their person home.`;
-}
-// Let a prisoner go for nothing: +8 goodwill (+4 if hostile).
-export function releasePrisoner(state, f, s = null) {
-  if (!f) return "";
-  if (f.prisonersHeld > 0) { f.prisonersHeld -= 1; if (f.alive) f.pop += 1; }
-  changeGoodwill(state, f, attitude(f) === "Hostile" ? 4 : 8, "you let their person go");
-  return `You let ${s && s.name ? s.name : "the prisoner"} go back to ${f.name}.`;
-}
+// ---------- prisoners ----------
+// Your prisoners are people: prisoners.js holds them (the record, the very member of their group), and a ransom, a
+// release or a trade back puts each one in their group's list as themselves. Nothing here moves a head count.
+
 // A rescue raid of yours on a group's base (to free your own people): they resent it (−15), and their enemies
 // think better of you (+3).
 export function rescueRaidDone(state, f, won = true) {

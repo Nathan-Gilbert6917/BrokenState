@@ -30,13 +30,14 @@ import {
   planPath, travelHours, spawnAiParty, removeParty, partyTile, tileLabel, partyMembers, awaitOrders, startReturn, launchExpedition,
   partySpeed, carryCapacity, supplyLoad, fuelForPath, plannedPace, paceOpts, modeSpeed, foodForHours, waterForHours,
 } from "./parties.js";
+import { packShells } from "./carrykit.js"; // the crew's rounds at hand, out of their own
 import { attitude, changeGoodwill, isAggressiveType, baseDefense } from "./factions.js";
 import { startCombat, registerCombatHandler } from "./combat.js";
 import { startOrder } from "./orders.js";
 import { partyVehicle, partyFuel, vehicleById, isCar } from "./vehicles.js";
 import { itemLoad } from "./inventory.js";
 import {
-  available, need, demand, roundNeeds, openTrade, openCaravanTrade, tradeContext, executeTrade, endTrade, setQty, balanceWith, tradeVerdict, ensureWares, WARES_MAX,
+  available, need, demand, roundNeeds, openTrade, openCaravanTrade, tradeContext, executeTrade, endTrade, setQty, balanceWith, tradeVerdict, ensureWares,
   autoSellGear, gearBuyPrice, sellPrice,
 } from "./trade.js";
 import { marketOf, groupStockKey } from "./trade.js";
@@ -48,7 +49,6 @@ import { baseCals, expandAmmo, kindTheme } from "./ammo.js";
 import { payoutBreaks } from "./upkeep.js"; // the governor never pays food or water out of the base's reserve
 import { groupEscort, escortStrength, cargoValue } from "./escorts.js"; // a caravan's guards: the cargo's wish, what they can spare
 import { pendingDeal, dealCarried, completeRadioDeal, goodsText } from "./radiotrade.js"; // deals agreed over the radio
-import { packShells } from "./carrykit.js"; // the crew's rounds at hand (the goods to trade are cargo)
 import { pickGunToBuy, noteGunBought } from "./govguns.js"; // the governor buys a gun for the unarmed
 import { keepItem } from "./arsenal.js"; // a caravan home: what it carries onto the books or the shelf
 
@@ -393,9 +393,6 @@ export function launchCaravan(state, form) {
   const cap = carryCapacity(state, members, v);
   const load = supplyLoad(supplies) + items.reduce((s, g) => s + itemLoad(g), 0); // the road's food in days: parties.js FOOD_PACK_KG a day
   if (members.length && load > cap + 1e-9) return { error: `Too much to carry: goods and supplies weigh ${Math.ceil(load)}, the crew${v ? ` and the ${v.name}` : ""} can carry ${cap}.` };
-  // shells: false: the launch would put the rounds among the supplies at hand in the crew's pockets (carrykit.js
-  // packShells), and the rounds to trade are cargo, not theirs to load; the crew's own are put at hand once the goods
-  // are out of the supplies (their guns' loads still come out of the stores: launchExpedition's loadout).
   const res = launchExpedition(state, { memberIds: form.crew, dest: stops[0], mission: "move", stance: form.stance || "normal", vehicleId: form.vehicleId || null, supplies, fromBaseId: h.id, shells: false });
   if (res.error) return res;
   const p = res.party;
@@ -404,7 +401,9 @@ export function launchCaravan(state, form) {
     p.supplies[k] -= q;
     p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) + q;
   }
-  packShells(p.supplies, members); // carrykit.js: each gun's rounds at hand out of what is left to the crew
+  // The crew's rounds at hand (carrykit.js packShells) come out of their own (the guns' loads the launch took), never
+  // the rounds going to trade.
+  packShells(p.supplies, partyMembers(state, p));
   for (const i of idx) p.cargo.gear.push(...h.armory.splice(i, 1));
   p.teamMission = "caravan";
   p.caravan = { stops, idx: -1 };

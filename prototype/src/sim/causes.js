@@ -20,7 +20,7 @@ import { foodIn } from "./foods.js"; // days of food
 import { day, baseById, factionById, atBase, residents, alive } from "./world.js";
 import { diaryEntries } from "./diary.js";
 import { fixtures, fixtureName, jobFor, fxDef, isBroken, isWaterFixture } from "./breakdowns.js";
-import { count } from "./buildings.js";
+import { count, pieceKind } from "./buildings.js";
 import { CONDITIONS, conditionsOf } from "./health.js";
 import { weatherOnDay } from "./weather.js";
 import { attitude } from "./factions.js";
@@ -141,7 +141,7 @@ function brokenFactors(state, base, test, today) {
 
 // The walls: their state (100% = no wear), or that there were none.
 function wallsFactor(base) {
-  const ws = fixtures(base).filter((fx) => fx.type === "walls" || fx.type === "gate");
+  const ws = fixtures(base).filter((fx) => fx.type === "walls" || fx.type === "gate" || pieceKind(fx.type) === "wall" || pieceKind(fx.type) === "gate");
   if (!ws.length) return F(`${base.name} had no walls built.`);
   const pct = Math.round(100 - ws.reduce((a, fx) => a + Math.min(100, fx.wear || 0), 0) / ws.length);
   const broken = ws.filter(isBroken).length;
@@ -473,7 +473,7 @@ export function noteBaseLoss(state, base, how = "lost", f = null) {
     if (how === "retreat") out.push(F(`Everyone was pulled out (Retreat on the raid warning card).`));
     if (ev && how !== "retreat") out.push(quote(ev));
     if (how !== "retreat") out.push(wallsFactor(base), ...defendersFactors(state, base));
-    out.push(...brokenFactors(state, base, (fx) => fx.type === "walls" || fx.type === "gate", today));
+    out.push(...brokenFactors(state, base, (fx) => fx.type === "walls" || fx.type === "gate" || pieceKind(fx.type) === "wall" || pieceKind(fx.type) === "gate", today));
     if (f) out.push(...factionFactors(state, f, today, base.name));
     const earlier = diaryLines(state, today - 20, today - 1, (e) => e.text.includes(base.name) && /horde|overran|broke into|broke through|drove off|raid/.test(e.text), 1)[0];
     if (earlier) out.push(quote(earlier));

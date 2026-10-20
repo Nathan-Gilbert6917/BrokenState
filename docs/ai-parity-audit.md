@@ -155,34 +155,173 @@ rewritten to assert the shared rule as each batch lands.
 
 Every *Fix* finding above landed on the `ai-parity` branch, with these exceptions and notes.
 
+**Closed in the follow-up pass (2026-10-19): the base's defence.**
+- 4.16, siege kit: the kit dice (siege.js raidSiegeKit) only say what a raid wants; it comes out of the group's own
+  stores (arsenal.js packRaidKit, from factions.js launchRaidOnBase). Ladders and the ram are items on the group's
+  books, made once by your recipe through its crafting (groupCraftable, payCraft, groupCraftOut) when it has none, out
+  with the raid (party.siegeGear, not spare at home) and home with whoever comes back, else left in your armory or on
+  the ground (siegeGearHome, parties.js removeParty). Grenades are real frag grenades and pipe bombs off its books or
+  off the people staying home, stowed on the raiders; the battle no longer hands any out (siege.js hand). Thrown on
+  the map they are spent (fighters.js spentThrows), by the numbers they leave the raiders who threw them
+  (raidOnBase), unthrown they come home, and a dead raider's are loot: on the body on the map, in your armory by the
+  numbers (raidOnBase's dead are now the raid's very people, members.js diedQuietly). An outsider band's grenades are
+  the ones its people carry (visitors.js bandKit). tools/siegetest.js, ailockstest.js, conservationtest.js.
+- 7.4, a horde at an AI base goes through your base's code step for step (groupfight.js hordeAtGroup, defences.js
+  atTheWalls, shared with hordeAttackBase): spike pits used up, the minefield, bear traps from the group's books or
+  shelf (worn as yours), floodlights' fuel, the Wallbreaker and brutes smashing defences, the hold limit with the
+  people there manning the walls (defences.js guardHold, defendersAt) and the defence buildings; held at the walls it
+  loses defences.js heldKill and falls back, crawlers that slip in are fought inside; a break-in is fought on the
+  people there and the horde loses what it loses at yours (all that broke in, else the share killed and 15% more).
+  hordes.js's own loss formula is gone. tools/paritytest.js section 4.
+- 7.7, an AI group's judgement of a base it cannot hold (groupflight.js cannotHold, hordeOverrun) is the fight's own
+  check (groupfight.js groupHoldCheck: the same pits, traps, mines, hold limit and break-in against the people there
+  behind the wall tier). No wall counters or field towers. tools/flighttest.js "The judgement is the fight's".
+
 **Done with a caveat.**
-- 4.16, siege kit: a raid on your base still brings its ladders, rams and grenades by kit dice, not from the raiders'
-  stores. The grenades are the one remaining "from nothing" source in a fight.
-- 7.4, a horde at an AI base: your base's two steps. The walls hold back the dead up to the base's limit; the rest
-  break in as your break-in force (defences.js breakInForce) and are fought by the numbers on the very people there,
-  behind the base's defence tiers (hordes.js onHordeEnter, groupfight.js). Traps and special buildings at an AI base
-  still do nothing against it, and the horde's own losses keep hordes.js's formula.
-- 7.7, an AI group's judgement of a base it cannot hold (groupflight.js) still reads the wall counters for the
-  decision. The fight itself goes through the defence tiers.
-- 5.15, vehicles: a vehicle's contents travel as the party's cargo and are robbed with it. An AI vehicle record
-  still has no cargo of its own.
 - Soldiers' field load: an AI person carries a weight by kit with no item behind it (carrykit.js CARRY.BASE_KG,
   fighters.js build), so the user's decision of 2026-10-08 ("soldiers in full kit move 4") holds. It is weighed by
   your rule (felt load, a strong back, Fleet-Footed) and leaves nothing on the body.
 - The off-screen odds (combat.js ODDS) were refitted on 2,376 map fights after the change. No compensation was added:
   where an AI side is now weaker, the fix is its starting gear or recruitment.
 
+**Closed in the follow-up pass (2026-10-19): people and goods move as themselves.**
+- A nomad band's trade shelf is what it carries: nothing is cut off to fit a size (the 12-item trims in nomads.js,
+  trade.js and radiotrade.js are gone, WARES_MAX with them). Goods come onto it only as far as the band's people can
+  carry them by your teams' rule (nomads.js bandRoom: parties.js carryCapacity on its people, less its stores and
+  its shelf): what it cannot carry from a container it raids stays in the container (poicont.js lootPoiAbstract
+  opts.room), what it takes from a team it beat is what fits, and a trade that would load a band (or a visitor met on
+  the road, by its capacity) past it is turned down (trade.js tradeVerdict). Outsiders' shelves get nothing new from
+  nowhere (trade.js ensureWares). Checks: tools/nomadtest.js (raids, trade), tools/paritytest.js section 4.
+- AI people move as themselves, never as a head count (members.js header):
+  - Loans between groups (volunteers.js aiLendDaily, the council's councilVolVote): the lender's very people leave
+    its list with what they carry (lendPeople, location "lent"), are held on the loan, and come home as themselves
+    (loanHome); the ones who fell are buried by the group they fought for, which keeps their kit and rounds; one may
+    stay with it as its own.
+  - Hardcore: a band's people are records from the start (hardcore-groups.js makeBand), its road losses come off the
+    list, founding its hub makes that list the group's, a band taken in by a group moves into its list (joinGroup);
+    the military's strike force is its own list of the very soldiers (strike.people: their dead fall off it, the rest
+    come home into the list); when the base falls the garrison's dead and survivors are its people, the splinter
+    groups and stragglers are those same soldiers, and the ones who reach you are offered as themselves with their
+    kit. Your meds patch up their wounded instead of adding soldiers.
+  - Rescue jobs (jobs.js): the captives are the very people in the holders' jail (data.ids; raiders grabbing a group's
+    people on the road put them there, groupjails.js capturePeople), and freeing them walks those people home
+    (groupjails.js freeHeld). A job failed or called off moves nobody.
+  - War captives: the war's head count (w.captives) is gone; captives are people in the captor's jail and the peace
+    sends each side's home as themselves (diplomacy.js endWar). A jail record is always a person: no phantom
+    prisoners from a short head count (groupCapture), none brought home by a number (groupjails.js goHome,
+    prisoners.js goHome, conquest.js: your prisoners at a base the group takes back), and the dead head-count prisoner
+    calls in diplomacy.js are gone. A group that falls sends its heir only people it has (factions.js takeOver).
+  - Nomad bands taking in wanderers you met take those very people (nomads.js recruit).
+  Checks: tools/volunteers2test.js, tools/jailtest.js, tools/diplotest.js (rescue jobs, the peace), tools/hcgroupstest.js
+  (founding, a band taken in, the strike force and the fall), tools/paritytest.js section 4, and
+  tools/conservationtest.js (no person in two places at once; every group's head count is its list).
+
+**Closed in the follow-up pass (2026-10-19): combat, robbery, deserters, vehicles.**
+- Decoys and the crush: every other side's people get your bots' two moves on their own turn (combat.js aiUnit →
+  aiRepertoire), through the same functions: a decoy they carry thrown on the dead pressing their side, once a turn for
+  the side (decoys.js botDecoy; fighters.js counts the decoys and a flare among what a person throws, and the thrown
+  one leaves them after), and a body in danger next to them crushed for 1 action when none of their foes is next to
+  them (carriers.js botCrush, combat.js crushAct). A decoy pulls the dead off whoever they are fighting (decoys.js
+  lureTurn reads combat.js foesOf), and by the numbers a side's decoys and Molotovs count against the dead for every
+  side (groupfight.js fightSides reads decoys.js lureEdge).
+- Your convoy robbed: its very people are the side in your place in the fight (groupfight.js fightSides, a side
+  `{ yours: true }`), and its rounds land on them by your team's rules (groupfight.js applyYours → breakoff.js
+  landFight, the code your team's fights by the numbers use): wounds, deaths, the left behind taken by the band. A
+  convoy pulls out when the fight turns unless you set its policy (breakoff.js convoyPolicy). Beaten off, the convoy
+  takes what the band's dead carried; a convoy with nobody left is wiped as a team is (caravanraids.js groupRobs; the
+  raiders from outside the same way: visitors.js hitConvoy).
+- Your deserters: one who joins a group goes over as the very person with all they carry and the haul they took
+  from your stores (groupcare.js takeInFromYours, members.js joinFromYours: the record moves to the group's list under
+  a member's id, a stub of who they were stays in yours carrying nothing; the rounds are noted in the ledger). One who
+  follows a group's preachers out (playerwars.js convert) goes the same way.
+- 5.15, vehicles: a group's vehicle record has a cargo of its own in your vehicles' shape (v.cargo), and every move of
+  a vehicle between your vehicles and a group's records takes it along (vehicles.js carryCargo): a car of yours left
+  with cargo in it and taken off the map, your team's car taken with it, one stolen, bought, sold, seized with a base,
+  lost on a raid, an escort's truck taken with its caravan (it used to vanish; now the gang keeps it). Whoever ends up
+  with it unloads it at home (arsenal.js unloadVehicle, vehicles.js cargoToBase); what is in a car you sell or buy
+  stays with the seller.
+
+- The last head counts of people changing sides: a captive of yours who turns goes over as the very person
+  (conflicts.js captivesDaily → members.js joinFromYours, their kit onto the group's books), and a group's deserter
+  is always one of its people at home (groupcare.js desertOne): with everyone out with a party nobody walks out, so
+  no deserter is made up for your gates and no group gains a head from nobody.
+
+**Closed in the follow-up pass (2026-10-19): packing for the job, the fallen base's stores.**
+- Scenario loadouts (the user's request: "AI groups need to act how a player would and be supplying their group for
+  different scenarios"). The job kit is on the groups' books (arsenal.js isJobKitKey, arsenalWorthy: decoys and road
+  flares, packs, the crowbar and lockpicks, makeshift picks, a drill and a grinder), kept, scavenged, crafted and
+  traded for like a gun, and not dealt out at home every day (loadouts.js kitOut). A party forming packs for its job
+  out of what the group holds (loadouts.js packForJob, JOB_KIT, called from parties.js spawnAiParty), as your planner
+  and governor pack a team (launchExpedition, kit.js packTripKit / packHiveKit): a pack on every empty back; a raid or
+  war party grenades, bombs and Molotovs, a flashbang or smoke and a tourniquet each, a med kit to its best Medicine
+  and a second helping of loose rounds out of the stores; a way through the dead (a horde on the path, land at
+  infection 0.5 or more) a decoy and a Molotov each, your hive squad's two flares and a blade beside the gun;
+  scavengers the crowbar to their best Scavenging, the picks and the drill; a caravan or convoy a med kit and
+  tourniquets; a hunting party (none is sent yet: the groups' hunting is a factor on their food) a hunting rifle or
+  bow in the hands of its best shot. It comes from spare first, then what the people staying home have stowed, never
+  more than room allows, and the home keeps a share of the decoys, Molotovs and flares (JOB.KEEP). Home defence: a
+  horde the walls will not hold meets the decoys kept at home first, set out by your warning card's odds and used up
+  (groupfight.js hordeAtGroup through defences.js armoryDecoys, decoyChance, lureOff). Seeking: a scavenging party
+  brings the site's job kit home on a draw of its own, what the group is shortest of first (arsenal.js scavFinds,
+  SCAV_KIT, jobKitShort); a group short of decoys makes them by your recipes (arsenalDaily, CRAFT.decoys); and it
+  pays more for job kit while it is short (trade.js gearPool counts the books' kit of that kind). Checks:
+  tools/jobkittest.js, tools/paritytest.js section 7, tools/conservationtest.js (parties packed under the checks),
+  tools/arsenaltest.js.
+- Hardcore splinters and stragglers (hardcore-groups.js militaryFalls, makeSplinter, makeBand): their stores are the
+  fallen base's. The soldiers who get out take what they can carry of the armory by the kit-out's rule (loadouts.js
+  grabKit); its stores go out with the groups they leave in, each by its people from the base and as far as they can
+  carry (carryOut: parties.js carryCapacity, your teams' rule); the strike force's remnant has what the strike took
+  out (its rounds, and rations and meds now packed from the base when it leaves: launchStrike, home again if it comes
+  back). What nobody can carry lies in the ruin's ground (carry.js leaveOnGround), in place of the loot the ruin was
+  given to stand for the armory (RUIN_LOOT, gone). makeSplinter's minimums and the stragglers' rations are gone; a
+  band keeps its stores to the unit (rounds by key too) when it founds its hub or joins a group, and a splinter that
+  founds a hub has its people's kit for books, with no starting kit or rounds dealt (arsenal.js arsenalFromPeople).
+  Checks: tools/hcgroupstest.js ("The fall: the splinters' stores are the fallen base's", and the founded splinters'
+  books).
+
+**Closed in the follow-up pass (2026-10-19): outsider raiders and nomad newcomers.**
+- 4.16, an outsider band's siege kit: the ladders and the ram are real items in the band's gear. It sets out with
+  them from beyond the border by the old kit dice, thrown once (siege.js bandSetOutKit), and carries them by your
+  teams' rule (nomads.js bandRoom). Against a walled base of yours it brings all it has hands for (visitors.js bandKit;
+  the ram takes two, a ladder one more each, as packRaidKit); short of what the raid's dice want it makes more through
+  a group's crafting (makeSiegeGear → arsenal.js bandMakes: groupCraftable, payCraft, groupCraftOut, paid from its
+  stores) only with the means: your recipes need a bench and a band on the road has none, as your team in the field
+  has none. After the raid they go on with whoever is left, else lie in your yard (siegeGearBack); a band broken or
+  wiped out leaves all it carried where it ended (dropBandGoods: your base's stores and armory, else the ground).
+  Its grenades stay its people's own. The band lives as a nomad band does, by the nomads' code: people records, a
+  day's forage, food and water from its stores with hunger costing people (raiderDay → nomads.js bandFeeds), its
+  wounded cared for from its meds (bandCare), what it robs, loots or steals taken only as far as it can carry it
+  (addToStock → stockBand, shelveBand: the rest stays or lies on the ground), and no food or scrap from an empty
+  caravan. Hostile, it trades with nobody, as the nomad looters do not. Its gear goes to the gang it becomes when it
+  settles. tools/siegetest.js "Raiders from beyond the border", visitortest.js "Raiders live as a nomad band does",
+  paritytest.js section 4.
+- Newcomers to a nomad band (nomads.js recruit): refugees from outside and someone off the road each join as a person,
+  made as one who joins you is (bands.js bandNewcomer: recruits.js makeCandidate under the band's own dice), with only
+  what they carry of their own; a refugee party whose people a fight drew gives its very people. They are a mouth
+  the band's stores feed and water (bandFeeds: every head), its meds care for (bandCare: groupmedical.js
+  groupMedicalDaily on its people, no sick bay), and, up to work, hands that forage, find water, survey and raid for
+  it (bandHands) and carry for it (bandRoom). The last of a refugee party brings what they still carried, as far as
+  the band can carry it. tools/nomadtest.js "Newcomers", conservationtest.js (bands' people and shelves, the ground).
+
 **Still open (small, noted for a later pass).**
-- Decoys and the crush are only in your bots' repertoire.
-- Your convoy people come out of a robbery unharmed.
-- A nomad band's trade shelf is still trimmed to size.
-- AI loans, hardcore merges, rescue jobs and war captive counts still move head counts in places.
-- One of your deserters joins a group as a fresh member, not with what they carried.
+- The soldiers of a fallen base who reach you carry their kit and what they took of the armory, but none of its
+  stores (your recruit card takes people, not supplies); the strike force's food is carried, not eaten, while it is out.
+- A refugee or scout party from outside has no people records until a fight draws them (bands.js syncBand); its
+  stores are the party's, not any one person's.
+- A raider band that settles (visitors.js settleBands) still becomes a gang by factions.js makeGang's head count and
+  starting stores, not its very people (its gear does go with it).
+- tools/dettest.js fails on one seed (42 at 461f710, 7 after the job-kit pass): two worlds on the seed in one
+  process part where two groups deal their people's kit in a different order, and later their stores' rounds differ.
+  Something in the groups' stores still reads process-wide state; not found yet.
 
 **Found on the way.** Dice keyed on a person's id came out differently in two worlds on one seed, because your
 people's and newcomers' ids come from a counter shared by the process; they now use a world-local key (members.js
 personKey), and tools/dettest.js passes in full. A group that fell gave its heir half its stores without taking them
 out, and tributes and jail payments paid "ammo" from a generic count; both now move the very rounds.
+In the job-kit pass: a second helping of loose rounds onto a stack already on a person counted the part that merged
+twice when the rest had no room (loadouts.js armRounds); a group picking a loaded gun off a death site brought its
+rounds in unnoted (economy.js deathSitesDaily, now noted "found"); and a hardcore band dropped any rounds by key and
+car parts it scavenged and carried (bandDay, foundHub, joinGroup keep them now).
 
 **Tests.** `tools/paritytest.js` swaps the sides of each shared rule and checks both come out the same.
 `tools/conservationtest.js` plays a campaign and checks the AI side never holds more rounds than its noted sources

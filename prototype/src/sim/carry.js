@@ -577,7 +577,28 @@ function addGroundSupply(site, key, q, extra = {}) {
     cur.value = cur.qty * supValue(key);
   } else site.items.push({ kind: "supply", key, name: SUPPLIES[key].name, qty: q, value: q * supValue(key), ...(FOODS[key] ? { left: extra.left ?? FOODS[key].shelf } : {}), ...(extra.eggs != null ? { eggs: extra.eggs } : {}), ...(extra.worm > 0 ? { worm: extra.worm } : {}) });
 }
+// Supplies left on a tile's ground by those who cannot carry them on (nomads.js leaveOnGround: a band's goods where
+// nobody of it is left to carry them, or what will not fit).
+export function leaveSuppliesAt(state, tile, sup) {
+  const list = Object.entries(sup || {}).filter(([k, q]) => SUPPLIES[k] && q > 1e-9);
+  if (!list.length || tile == null) return;
+  const site = groundAt(state, tile, true);
+  for (const [k, q] of list) addGroundSupply(site, k, q);
+}
 const touched = (state, site) => { site.lastConfirmed = day(state); markDeathSite(state, site); };
+// Stores and kit left on a tile's ground by nobody's team (hardcore-groups.js militaryFalls: what nobody could carry
+// out of a fallen base stays in its ruin): every supply of `stock` as a stack, every item of `items` as itself.
+// Returns the site, or null with nothing to leave.
+export function leaveOnGround(state, tile, stock = {}, items = []) {
+  const sup = Object.entries(stock || {}).filter(([k, q]) => SUPPLIES[k] && Number.isFinite(q) && q > EPS);
+  const gear = (items || []).filter(Boolean);
+  if (!sup.length && !gear.length) return null;
+  const site = groundAt(state, tile, true);
+  for (const [k, q] of sup) addGroundSupply(site, k, q);
+  for (const it of gear) site.items.push(groundGear(it));
+  touched(state, site);
+  return site;
+}
 function dropSite(state, site) {
   if (site.items.length || (site.walked && site.walked.length) || site.names.length) return;
   const i = state.deathSites.indexOf(site);
@@ -787,7 +808,7 @@ export const keyKg = (p, k) => (((p.supplies && p.supplies[k]) || 0) + ((p.cargo
 // ---------- fights ----------
 // The acts that need free hands (combat.js combatAct). Carrying a body or dragging someone blocks the same.
 // Doors, locks, windows, a car's wires and a captive's ropes need the hands too (the user's ask, 2026-10-19).
-const HAND_ACTS = new Set(["shoot", "melee", "reload", "getshells", "throw", "throwspear", "launch", "glreload", "suppress", "overwatch", "doubletap", "finish", "taser", "reloadTaser", "pepper", "unjam", "subdue", "tie", "pickup", "dragAlly", "meds", "heal", "revive", "plate", "turret", "gunner", "open", "close", "brace", "keylock", "keyunlock", "climb", "checkwindow", "openwindow", "closewindow", "breakwindow", "car", "rescue"]);
+const HAND_ACTS = new Set(["shoot", "melee", "reload", "getshells", "throw", "throwspear", "launch", "glreload", "suppress", "overwatch", "doubletap", "finish", "taser", "reloadTaser", "pepper", "unjam", "subdue", "tie", "pickup", "dragAlly", "meds", "heal", "revive", "plate", "turret", "gunner", "open", "close", "brace", "keylock", "keyunlock", "forceStore", "climb", "checkwindow", "openwindow", "closewindow", "breakwindow", "car", "rescue"]);
 export const handsKg = (u) => kgOf(u && u.hands) + (u && u.bag ? itemLoad(u.bag) : 0) + (u ? haulLoad(u) : 0);
 // Arms full of supplies or a bag (the loads: autoDrop, fitHands, the end of a fight); a hand on a cart (carts.js).
 export const armsBusy = (u) => !!(u && (u.hands || u.bag || u.cartHelp != null)); // cartHelp: helping pull a hand cart (carts.js)

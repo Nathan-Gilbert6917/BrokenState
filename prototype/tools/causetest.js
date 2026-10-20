@@ -10,7 +10,7 @@ import { basesDaily } from "../src/sim/economy.js";
 import { recomputeOwnership, resolveRaidOnPlayer, changeGoodwill } from "../src/sim/factions.js";
 import { launchExpedition, outpostName } from "../src/sim/parties.js";
 import { teamNeedsHour } from "../src/sim/needs.js";
-import { addBuilding } from "../src/sim/buildings.js";
+import { addBuilding, isPiece } from "../src/sim/buildings.js";
 import { breakFixture, fixtures } from "../src/sim/breakdowns.js";
 import { catchWorm } from "../src/sim/worm.js";
 import { occupyPlayerBase } from "../src/sim/conquest.js";
@@ -159,7 +159,7 @@ let st1, thirstDead;
   const t = freeNear(st, h.tile, 4, 10);
   const o = outpost(st, t, 3);
   addBuilding(o, "walls");
-  for (const fx of fixtures(o)) if (fx.type === "walls") fx.wear = 70;
+  for (const fx of fixtures(o)) if (fx.type === "walls" || isPiece(fx.type)) fx.wear = 70; // the wall: a ring of pieces (buildings.js addRing)
   for (const s of atBase(st, o.id)) s.health = 5;
   // One of its people out on a trip.
   const away = plain(makeSurvivor(st, 0.9)); away.location = { kind: "base", baseId: h.id }; st.survivors.push(away);

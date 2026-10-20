@@ -79,7 +79,8 @@ import { FARM_ACTIONS, FARM_CHANGE } from "./ui/farming.js";
 import { COOK_ACTIONS, COOK_CHANGE } from "./ui/cooking.js"; // wave 2 cooking: the stations' bills
 import { PROD_ACTIONS, PROD_CHANGE } from "./ui/production.js";
 import { queueReloadUpgrade } from "./sim/reloading.js"; // the reloading bench
-import { queueCannerUpgrade, queueGenUpgrade } from "./sim/buildings.js"; // machines-2: the pressure canner fitted to a preserving room; gen-tiers: a generator upgraded
+import { queueCannerUpgrade, queueGenUpgrade } from "./sim/buildings.js";
+import { widenRing, refreshBaseMap } from "./sim/basemap.js"; // the Defenses tab's Widen the ring (the wall pieces the game places) // machines-2: the pressure canner fitted to a preserving room; gen-tiers: a generator upgraded
 import { HEALTH_ACTIONS, HEALTH_CHANGE } from "./ui/health.js";
 import { SKILL_ACTIONS, SKILL_CHANGE } from "./ui/skills.js";
 import { TRADE_ACTIONS, TRADE_CHANGE_ACTIONS } from "./ui/tradewindow.js";
@@ -127,6 +128,7 @@ import { initTitle, showTitle, syncTitle, titleFrame, titleKey, titleCovers, TIT
 import { WORK_ACTIONS, WORK_CHANGE, workKey, applyRoleChoice } from "./ui/work.js";
 import { DEFENCE_ACTIONS, DEFENCE_CHANGE } from "./ui/defence.js";
 import { BASEMAP_ACTIONS, openForJob } from "./ui/basemap.js"; // the base map tab; Build opens the map to place the new building
+import { STORAGE_ACTIONS, STORAGE_CHANGE } from "./ui/storage.js"; // the base window's Storage tab: the containers (sim/containers.js)
 import { INTEL_ACTIONS, INTEL_CHANGE } from "./ui/intel.js"; // hidden bases (Run silent) and radio security (sim/hiding.js, sim/intel.js)
 import { toManual } from "./sim/work.js";
 import {
@@ -863,6 +865,8 @@ const actions = {
     ui.supplyForm = null;
   },
   basetab: (d) => { ui.baseView.tab = d.tab; ui.baseMsg = ""; },
+  "wall-mat": (d) => { ui.baseView.wallMat = Number(d.mat) || 1; }, // the Defenses tab: the material the wall pieces are built of (sim/buildings.js WALL_TIERS)
+  "wall-widen": (d) => { const b = baseOf(d); if (b) ui.baseMsg = widenRing(b); },
   cxtab: (d) => { ui.baseView.cx = d.tab; ui.baseView.tab = "construction"; ui.baseMsg = ""; }, // Construction: the Buildings or the Defenses list (from the Defence tab too)
   closebase: () => { ui.baseView = null; ui.baseMsg = ""; ui.supplyForm = null; },
   // Supply runs (Supply runs tab of the base screen).
@@ -912,7 +916,7 @@ const actions = {
     baseSay(deleteSupplyRun(state, j));
   },
   makemedic: (d) => { const s = survivorById(state, Number(d.id)); ui.baseMsg = makeMedic(state, s); if (s && s.location.kind === "base") assignStations(state, baseById(state, s.location.baseId)); }, // a graduated trainee (sim/training.js)
-  queuebuild: (d) => { const b = baseOf(d), n = b ? b.construction.length : 0; ui.baseMsg = queueBuild(state, b, d.type); if (b && b.construction.length > n) openForJob(state, ui, b, d.type); }, // a building with a footprint: the base map opens to place its outline (ui/basemap.js)
+  queuebuild: (d) => { const b = baseOf(d), n = b ? b.construction.length : 0; ui.baseMsg = queueBuild(state, b, d.type, { ...(d.mat ? { mat: Number(d.mat) } : {}), ...(d.kind ? { kind: d.kind } : {}) }); if (b && b.construction.length > n) openForJob(state, ui, b, d.type); }, // a building with a footprint: the base map opens to place its outline (ui/basemap.js)
   // Construction tab (sim/buildings.js): a water barrel's next tier, and pulling a building down (asks first: ui/confirm.js) to free its plot.
   "barrel-up": (d) => { ui.baseMsg = queueBarrelUpgrade(state, baseOf(d), Number(d.id)); },
   "bunk-expand": (d) => { ui.baseMsg = queueBunkhouseExpand(state, baseOf(d), Number(d.id)); },
@@ -924,6 +928,7 @@ const actions = {
     const name = what && BUILDINGS[what.type] ? BUILDINGS[what.type].name : "this building";
     if (ask(ui, d, "demolish", { kind: "demolish", title: `Pull down ${name}${b ? ` at ${b.name}` : ""}?`, text: `It is gone for good and its plot is free again. About half its scrap and parts come back${what ? ` (${demolishText(what)})` : ""}.`, yes: "Pull it down" })) return;
     ui.baseMsg = demolish(state, b, id);
+    if (state.combat && state.combat.layout && b && !b.buildings.some((x) => x.id === id)) { state.combat.layout.pick = null; refreshBaseMap(state); state.combat.layout.msg = ui.baseMsg; } // a wall piece pulled down on the base map (ui/basemap.js)
   },
   // The camp fire (sim/fieldheat.js): a camp's or shelter's (data-base) or a resting team's (data-team).
   campfire: (d) => {
@@ -1390,6 +1395,7 @@ for (const [k, fn] of Object.entries(WORK_ACTIONS)) actions[k] = (d, ev) => fn(s
 // The Defence tab: the watch roster and the defence plan's drill (ui/defence.js).
 for (const [k, fn] of Object.entries(DEFENCE_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 for (const [k, fn] of Object.entries(BASEMAP_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // the base map (ui/basemap.js)
+for (const [k, fn] of Object.entries(STORAGE_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // the Storage tab (ui/storage.js): move goods between containers, tidy up
 
 // Inventory drag and drop: tiles carry data-drag (their location), slots and storage boxes data-drop.
 // The team panel's order queue (ui/expedition.js queueBlock): lines carry data-qdrag / data-qdrop (their index);
@@ -1651,6 +1657,7 @@ for (const [k, fn] of Object.entries(DEFENCE_CHANGE)) changeActions[k] = (el) =>
 for (const [k, fn] of Object.entries(INTEL_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // intel-discipline
 for (const [k, fn] of Object.entries(PRISON_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // prisoners-tab: the rations and work selects (ui/prisoners.js)
 for (const [k, fn] of Object.entries(INV_CHANGE)) changeActions[k] = (el) => fn(state, ui, el);
+for (const [k, fn] of Object.entries(STORAGE_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // ui/storage.js: the mover's from / to and how many
 for (const [k, fn] of Object.entries(TEAMINV_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // ui/teaminv.js: how many of a picked supply
 for (const [k, fn] of Object.entries(TEAMMEET_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // ui/teammeet.js
 for (const [k, fn] of Object.entries(TEAMFORM_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // ui/teamform.js: sort, supply amounts, days

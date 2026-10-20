@@ -34,6 +34,7 @@ import { groundPile, fieldReady, pileCount } from "../sim/ground.js"; // bodies 
 import { isCart, cartSpec, cartFree, feltKg, boxFree, cartFrac, cartBroken } from "../sim/carts.js"; // a wheelbarrow, a hand cart: In arms with its own grid; on a battle map a container up to its kg
 import { SEARCH } from "../sim/search.js";
 import { ask } from "./confirm.js"; // breaking down anything above junk asks first (one confirmation style)
+import { containersOf, putItem } from "../sim/containers.js"; // the storage box's container picker: where a thing put in the armory is kept (the Storage tab)
 import { itemArtHtml } from "./itemart.js"; // every other item's own drawing on its tile
 import { isGunKey, gunIconHtml } from "./gunart.js"; // a gun (not a bow or a blade): the gun builder opens on it; its picture on its tile
 import { gunTipText, slotOfPart, SLOT_NAMES as PART_SLOT_NAMES } from "./gunbuilder.js"; // the gun builder (ui/gunbuilder.js)
@@ -242,7 +243,7 @@ export function storageBox(state, ui, place, user) {
     const b = baseById(state, st.id);
     const junk = b ? armoryJunk(b) : [];
     const bulk = junk.length ? ` <button class="mini" data-action="inv-burnjunk" data-base="${st.id}"${tip(`Break down every piece of junk with firewood in it (wooden, paper or cloth things worth ${BURN.junkValue} or less, not marked Keep): ${junk.length} item${junk.length === 1 ? "" : "s"}, +${burnablesWood(junk)} firewood into ${b.name}'s stores.`)}>Break down junk for firewood (+${burnablesWood(junk)})</button>` : "";
-    head = `<div class="spread"><b${tip("Gear stored at this base. Equip it on anyone here.")}>Armory</b><span class="small muted">${st.list.length} items${bulk}</span></div>${b ? repairsBox(state, b) : ""}`;
+    head = `<div class="spread"><b${tip("Gear stored at this base. Equip it on anyone here.")}>Armory</b><span class="small muted">${st.list.length} items${bulk}</span></div>${b ? storePicker(state, ui, b) : ""}${b ? repairsBox(state, b) : ""}`;
   }
   // The supplies kept here, as stacks with their weight (firewood too: 0.1 kg each): the team's supplies (what it packed
   // and what it found, one stock for the tiles: teamPool; the user's request 2026-10-18: the packed rounds in the truck
@@ -257,13 +258,39 @@ export function storageBox(state, ui, place, user) {
   return `${head}${storageGroups(state, ui, st, loc, user)}
     ${supHtml}`;
 }
+// The container picker in the armory's box (sim/containers.js, the Storage tab; base building 2026-10-19): where a
+// thing put in the armory from here is kept. "Anywhere": the game places it (autoStore). Remembered per base in
+// ui.invStore = { [baseId]: containerKey }; keptWhere applies it after a move.
+const invStoreOf = (ui, baseId) => (ui && ui.invStore && ui.invStore[baseId]) || null;
+function storePicker(state, ui, b) {
+  const key = invStoreOf(ui, b.id);
+  const L = containersOf(state, b).filter((c) => c.assignable);
+  return `<div class="row small invstorepick"><span class="muted"${tip("Where a thing put in the armory from here is kept (the Storage tab's containers): a container with room, or anywhere and the game places it in the room left (the most valuable for its weight first). What the base has no room for lies outside: it weathers, and raiders take it first.")}>Kept in</span><select data-action="inv-storepick" data-base="${b.id}"${tip("The container a thing taken off a survivor goes into")}><option value=""${key ? "" : " selected"}>Anywhere (the game places it)</option>${L.map((c) => `<option value="${esc(c.key)}"${c.key === key ? " selected" : ""}>${esc(c.label)} (${Math.round(c.free)} kg free)</option>`).join("")}</select></div>`;
+}
+// Runs a move (fn gives the message) and puts whatever landed in the armory meanwhile into the picked container; a
+// container with no room keeps the move and says so after the message.
+function keptWhere(state, ui, fn) {
+  const s = ui && ui.inv && ui.inv.sid != null ? survivorById(state, ui.inv.sid) : null;
+  const place = s ? personPlace(s) : null;
+  const b = place && place.startsWith("base:") ? baseById(state, Number(place.slice(5))) : null;
+  const key = b ? invStoreOf(ui, b.id) : null;
+  if (!b || !key) return fn();
+  const had = new Set(b.armory);
+  const out = fn();
+  let err = "";
+  for (const it of b.armory) if (it && !had.has(it)) { const e = putItem(state, b, it, key); if (e && !err) err = e; }
+  return err ? `${out ? `${out} ` : ""}${err}: kept anywhere.` : out;
+}
 // The stored items grouped by type, as cards or compact rows (ui/armoryview.js), inside the drop box. Each keeps the
-// tile's clicks and drags: data-action="inv-click" data-loc (the item), data-drop (the list), data-drag; the ⚙ on a gun.
+// tile's clicks and drags: data-action="inv-click" data-loc (the item), data-drop (the list), data-drag; the ⚙ on a gun;
+// with a container picked, a chip of where each is kept (item.store).
 function storageGroups(state, ui, st, loc, user) {
   const base = st.o === "armory" ? baseById(state, st.id) : null;
   const stored = base ? storageTags(state, base) : null; // base storage (sim/basestorage.js): "Outside: weathering", an opened box's "+N kg storage"
   const entries = st.list.map((item, i) => ({ item, loc: `${loc}:${i}`, bad: !!(user && GEAR[item.key] && GEAR[item.key].skill && GEAR[item.key].req && !gearEffect(user, item).usable), tags: stored ? stored.tagsOf(i) : [], outside: !!(stored && stored.outside.has(i)) }));
-  const cell = (e, inner, cls) => `<div class="islot store ${cls}${ui.invSel === e.loc ? " sel" : ""}" data-action="inv-click" data-loc="${e.loc}" data-drop="${loc}"${tip(`Weighs ${Math.round(itemLoad(e.item) * 10) / 10} kg`)}><div class="ain" draggable="true" data-drag="${e.loc}"${tipAttrs(itemShortTip(e.item, e.loc, user, state), itemTip(e.item, user))}>${inner}</div>${gearCog(state, ui, e.item, e.loc)}</div>`;
+  const labels = base && invStoreOf(ui, st.id) ? Object.fromEntries(containersOf(state, base).map((c) => [c.key, c.label])) : null;
+  const kept = (item) => (labels && item.store != null && labels[item.store] ? `<span class="chip ikept"${tip(`Kept in ${labels[item.store]}`)}>${esc(labels[item.store])}</span>` : "");
+  const cell = (e, inner, cls) => `<div class="islot store ${cls}${ui.invSel === e.loc ? " sel" : ""}" data-action="inv-click" data-loc="${e.loc}" data-drop="${loc}"${tip(`Weighs ${Math.round(itemLoad(e.item) * 10) / 10} kg`)}><div class="ain" draggable="true" data-drag="${e.loc}"${tipAttrs(itemShortTip(e.item, e.loc, user, state), itemTip(e.item, user))}>${inner}</div>${gearCog(state, ui, e.item, e.loc)}${kept(e.item)}</div>`;
   const wrap = (inner) => `<div class="istore agroups" data-action="inv-click" data-loc="${loc}" data-drop="${loc}"${tip(`Drop or click here to put the selected item in ${st.name}`)}>${inner}</div>`;
   return armoryView(entries, { ns: "store", cell, wrap, state, empty: "Empty. Drop items here." });
 }
@@ -698,7 +725,7 @@ function raidModal(state, ui) {
     const sups = Object.entries(box.contents.sup).filter(([, v]) => v >= 1);
     const n = box.contents.gear.length + sups.length;
     const w = sups.reduce((a, [k, v]) => a + supWeight(k) * v, 0) + box.contents.gear.reduce((a, g) => a + itemLoad(g), 0);
-    mid = `<div><div class="spread"><b${tip(box.cart ? `The ${box.cart.name.toLowerCase()} on the map: up to ${cartSpec(box.cart).cap} kg (${kg(boxFree(box))} kg more fits). Drag things in from bodies, piles and your people; taking things out is hauling time. Take cart (1 action, next to it) to push it on with all in it.` : box.kind === "ground" ? "Things on the ground here. Taking them is hauling (the first kg a turn free); putting things down is free." : box.drop ? "What a fallen teammate carried. Take it home for them." : "")}>${esc(box.label)}</b><span class="small muted">${n} thing${n === 1 ? "" : "s"} · ${kg(w)}${box.cart ? `/${cartSpec(box.cart).cap}` : ""} kg</span></div>
+    mid = `<div><div class="spread"><b${tip(box.cart ? `The ${box.cart.name.toLowerCase()} on the map: up to ${cartSpec(box.cart).cap} kg (${kg(boxFree(box))} kg more fits). Drag things in from bodies, piles and your people; taking things out is hauling time. Take cart (1 action, next to it) to push it on with all in it.` : box.kind === "ground" ? "Things on the ground here. Taking them is hauling (the first kg a turn free); putting things down is free." : box.kind === "store" ? `Their stores (sim/assaultstores.js): taking is hauling (the first ${HAUL.free} kg a turn free, then ${HAUL.per} kg an action${box.haulRate > 1 ? `; off a pile ${box.haulRate} times as fast` : ""}). What ${first} carries when the fight ends comes home and is gone from their stores; a loss leaves it with them.` : box.drop ? "What a fallen teammate carried. Take it home for them." : "")}>${esc(box.label)}</b><span class="small muted">${n} thing${n === 1 ? "" : "s"} · ${kg(w)}${box.cart ? `/${cartSpec(box.cart).cap}` : ""} kg</span></div>
       <div class="istore" data-action="inv-click" data-loc="${bl}:list" data-drop="${bl}:list"${tip(box.cart ? `Drop here to put it in the ${box.cart.name.toLowerCase()}` : "Drop here to leave it in the container")}>${sups.map(([k, v]) => supTile(ui, `${bl}:sup:${k}`, k, v)).join("")}${gearTiles(ui, box.contents.gear, bl, s) || (sups.length ? "" : `<span class="small muted">Empty.</span>`)}</div>
       ${box.quick ? `<div class="small warn" style="margin-top:0.3rem"${tip(`Rummaged through in a hurry (Quick search): only part of what is inside turned up. A full search turns up the rest, if there is more: ${SEARCH.ap} action, quiet.`)}>Rummaged in a hurry: a full search may turn up more.</div>` : ""}
       <div class="row" style="margin-top:0.4rem"><button class="mini" data-action="rl-takeall"${tip(`Everything that fits on ${first}: supplies carried, small things in pockets, the rest in the pack or carried.`)} ${n ? "" : "disabled"}>Take all</button>${box.quick ? `<button class="mini" data-action="rl-full"${tip(`${first} goes through it properly: ${SEARCH.ap} action, quiet. Whatever the rummage missed turns up here.`)} ${u.ap >= SEARCH.ap && !b.over && b.phase === "player" ? "" : "disabled"}>Search it in full (${SEARCH.ap} action)</button>` : ""}</div></div>`;
@@ -967,7 +994,7 @@ function clickLoc(state, ui, loc, ev = null) {
     return;
   }
   if (sel === loc) {
-    ui.invMsg = quickMove(state, loc, ui.inv.sid);
+    ui.invMsg = keptWhere(state, ui, () => quickMove(state, loc, ui.inv.sid));
     ui.invSel = null;
     return;
   }
@@ -979,7 +1006,7 @@ function clickLoc(state, ui, loc, ev = null) {
   }
   // A stored item clicked as a target means "into storage".
   const target = (to.o === "armory" || to.o === "cargo") ? `${to.o}:${to.id}:list` : loc;
-  ui.invMsg = moveItem(state, sel, target);
+  ui.invMsg = keptWhere(state, ui, () => moveItem(state, sel, target));
   ui.invSel = null;
 }
 
@@ -1030,7 +1057,7 @@ export function invDrop(state, ui, from, to, half = false, one = false, at = nul
     return;
   }
   const t = parseLoc(to);
-  ui.invMsg = moveItem(state, from, (t.o === "armory" || t.o === "cargo") ? `${t.o}:${t.id}:list` : to);
+  ui.invMsg = keptWhere(state, ui, () => moveItem(state, from, (t.o === "armory" || t.o === "cargo") ? `${t.o}:${t.id}:list` : to));
   ui.invSel = null;
 }
 
@@ -1044,7 +1071,7 @@ export const INV_ACTIONS = {
   "inv-click": (state, ui, d, ev) => clickLoc(state, ui, d.loc, ev),
   "inv-cancel": (state, ui) => { ui.invSel = null; closeStack(ui); },
   "inv-loose": (state, ui, d) => { ui.invLoose = d.v === "1"; if (ui.stack) ui.stack.qty = null; }, // rounds out of the stores onto a person: boxed or loose (the mover's chips)
-  "inv-store": (state, ui) => { if (ui.invSel) ui.invMsg = toStorage(state, ui.invSel); ui.invSel = null; },
+  "inv-store": (state, ui) => { if (ui.invSel) ui.invMsg = keptWhere(state, ui, () => toStorage(state, ui.invSel)); ui.invSel = null; },
   // Gun attachments (sim/inventory.js fitModAt / unfitModAt; sim/gunmods.js).
   "inv-fitmod": (state, ui, d) => { if (!ui.invSel) return; const gun = itemAt(state, ui.invSel); ui.invMsg = fitModAt(state, ui.invSel, d.mod); reselect(state, ui, gun); },
   "inv-unmod": (state, ui, d) => { if (ui.invSel && ui.inv) ui.invMsg = unfitModAt(state, ui.invSel, d.mount, ui.inv.sid); },
@@ -1142,4 +1169,5 @@ export const INV_ACTIONS = {
 // Typed in (wired in main.js with the other change handlers): the stack mover's slider and number box (sm-qtyset).
 export const INV_CHANGE = {
   ...STACK_CHANGE,
+  "inv-storepick": (state, ui, el) => { (ui.invStore || (ui.invStore = {}))[el.dataset.base] = el.value || null; ui.invMsg = ""; }, // the armory box's container picker (storePicker)
 };
