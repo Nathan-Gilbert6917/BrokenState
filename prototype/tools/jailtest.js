@@ -19,8 +19,9 @@ import { housingAI, setAutopilot } from "../src/sim/autopilot.js";
 import { takeCaptive, captivesOf, allCaptives, CAPTIVE_TOOL } from "../src/sim/conflicts.js";
 import {
   GROUP_JAIL, groupJailTier, groupJailCap, groupRoom, groupHeld, groupCapture, groupJailsHour, groupJailsDaily, captiveEscape,
-  groupLabour, jailWork, jailText, groupPrisoners, groupJailGuards, jailOf,
+  groupLabour, jailWork, jailText, groupPrisoners, groupJailGuards, jailOf, capturePeople,
 } from "../src/sim/groupjails.js";
+import { ensureMembers } from "../src/sim/members.js";
 import { nextWork, groupWorksDaily } from "../src/sim/groupworks.js";
 import { workState, assignRole, planBase, schedAt, roleOf, taskWhy, toManual } from "../src/sim/work.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
@@ -509,7 +510,10 @@ const noDice = (fn) => {
   // Labour: raiders lean hardest.
   const per = (type) => groupLabour(st, { type, prisoners: [{}], id: -1, bases: [] });
   check(per("raider") > per("commune") && per("raider") > per("military"), `a prisoner's work for raiders ${per("raider").toFixed(2)}, the military ${per("military").toFixed(2)}, a commune ${per("commune").toFixed(2)}`);
-  a.prisoners = [{ id: newId(), from: b.id, power: 3, since: day(st) }, { id: newId(), from: b.id, power: 3, since: day(st) }];
+  // Prisoners are people (docs/adr/0001-ai-parity.md): the very members of the other group, taken out of its list.
+  const takeFrom = (captor, victim, n) => { const people = ensureMembers(st, victim).filter((s) => s.alive).slice(0, n); capturePeople(st, captor, victim, people); return people; };
+  a.prisoners = [];
+  takeFrom(a, b, 2);
   const scrap0 = a.stock.scrap;
   quiet(); GROUP_JAIL.CAPTIVE.death = 0;
   const keepE = { ...PRISON.ESCAPE }, keepL = PRISON.LABOUR.escapeGuarded;
@@ -521,11 +525,13 @@ const noDice = (fn) => {
   const pw = a.prisonWork; a.prisonWork = 0; a.job.left = 100; groupWorksDaily(st, a); const slow = 100 - a.job.left; a.prisonWork = pw;
   check(fast > slow, `their building goes faster (${fast.toFixed(2)} vs ${slow.toFixed(2)} crew-days a day)`);
   // Exchange.
-  b.prisoners = [{ id: newId(), from: a.id, power: 3, since: day(st) }];
+  b.prisoners = [];
+  const [xa] = takeFrom(b, a, 1);
   T.exchange = 1;
   const pa = a.pop, pb = b.pop, rel0 = relation(st, a, b);
   groupJailsDaily(st);
   check(a.prisoners.length === 1 && b.prisoners.length === 0 && a.pop === pa + 1 && b.pop === pb + 1 && relation(st, a, b) > rel0, `exchange: one for one (${a.name} ${pa} → ${a.pop}, ${b.name} ${pb} → ${b.pop}), relations up`);
+  check(a.people.includes(xa) && xa.location.kind === "member" && xa.location.fid === a.id, `the one ${a.name} got back is their very person (${xa.name}), not a head count`);
   // Ransom back.
   quiet(); T.ransom = 1;
   for (const k of ["ammo", "food", "scrap"]) b.stock[k] = 5000;
@@ -539,12 +545,14 @@ const noDice = (fn) => {
     const victim = fs.find((f) => f !== raider && f !== mil);
     for (const f of fs) if (f !== mil) f.jails = { [f.bases[0]]: 0 }; // only the military could take one
     raider.jails = { [raider.bases[0]]: 3 };
-    raider.prisoners = [{ id: newId(), from: victim.id, power: 3, since: day(st) - 1 }];
+    raider.prisoners = [];
+    const [sold] = takeFrom(raider, victim, 1);
+    raider.prisoners[0].since = day(st) - 1;
     for (const k of ["ammo", "food", "scrap"]) mil.stock[k] = 5000;
     T.sale = 1;
     const pv = victim.pop;
     groupJailsDaily(st);
-    check(raider.prisoners.length === 0 && victim.pop === pv + 1 && (st.stats.groupJail.boughtFree || 0) >= 1, `${raider.name} sold one to ${mil.name}, who set them free (${victim.name} ${pv} → ${victim.pop})`);
+    check(raider.prisoners.length === 0 && victim.pop === pv + 1 && victim.people.includes(sold) && (st.stats.groupJail.boughtFree || 0) >= 1, `${raider.name} sold one to ${mil.name}, who set them free (${victim.name} ${pv} → ${victim.pop}: ${sold.name} home)`);
     // Your captive sold on: a card, and the rescue follows (factionId and tile).
     quiet(); T.sellYours = 1;
     const other = fs.find((f) => f.type === "raider" && f !== raider) || fs.find((f) => f.type === "expansionist") || null;
@@ -565,7 +573,8 @@ const noDice = (fn) => {
     quiet(); T.sale = 1;
     for (const f of fs) f.jails = { [f.bases[0]]: 0 };
     raider.jails = { [raider.bases[0]]: 3 };
-    raider.prisoners = [{ id: newId(), from: victim.id, power: 3, since: day(st) - 1 }];
+    raider.prisoners = [];
+    takeFrom(raider, victim, 1);
     groupJailsDaily(st);
     check(raider.prisoners.length === 1, "nobody with room to buy: the prisoner stays");
   } else console.log("    (no raider and military pair in this world)");

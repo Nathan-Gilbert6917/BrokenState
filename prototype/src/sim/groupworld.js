@@ -50,15 +50,15 @@
 // whose base it was (still standing elsewhere) takes it ill: relations ABANDON.FORMER_REL.
 import { foodIn, takeFood, addFoodsTo, DAY_VALUE, typeGoods, groupMix } from "./foods.js"; // food paid in days
 import { SUPPLIES, GEAR } from "./data.js";
-import { wallTier } from "./buildings.js"; // WALL_TIERS: a base's wall by its tier
+import { wallTier, pieceKind, matOf } from "./buildings.js"; // WALL_TIERS: a base's wall by its tier
 import { groupStockKey } from "./trade.js"; // a group's one count of parts (part kinds come out of it)
 import { day, log, addCard, atBase, supplyValue } from "./world.js";
 import { sameBloc, betray } from "./blocs.js"; // AI blocs: theft between members is betrayal
 import { hash01 } from "./skills.js";
-import { factionVehicles, vehicleValue, upgradesOf, upgradeCost, groupCost, VEHICLE_TYPES, TURRET_KG, TURRET_FIT, VEH_UPGRADES, WRECK } from "./vehicles.js";
+import { factionVehicles, vehicleValue, upgradesOf, upgradeCost, groupCost, VEHICLE_TYPES, TURRET_KG, TURRET_FIT, VEH_UPGRADES, WRECK, carryCargo, cargoToBase } from "./vehicles.js";
 import { workshopFactor, worksAt, groupSkill, groupFreeParts } from "./groupworks.js";
 import { weightOf, tickOf, fitPeople } from "./groupcare.js";
-import { removeFromArsenal, issueKit } from "./arsenal.js";
+import { removeFromArsenal, issueKit, unloadVehicle } from "./arsenal.js"; // unloadVehicle: what is in a vehicle into their stores
 import { relation, changeRelation, pactBetween } from "./diplomacy.js"; // changeRelation: also a group moving into another's old base
 import { captivesOf } from "./conflicts.js";
 import { preparedDefense, strength, recomputeOwnership } from "./factions.js";
@@ -259,16 +259,19 @@ function record(f, v, extra = {}) {
   f.vehSeq = (f.vehSeq || 0) + 1;
   const rec = { id: `f${f.id}-g${f.vehSeq}${extra.salt || ""}`, type: v.type, name: v.name, fuel: Math.round(v.fuel || 0), condition: Math.round(v.condition ?? 60), owner: f.id };
   if (v.upgrades) rec.upgrades = JSON.parse(JSON.stringify(v.upgrades));
+  carryCargo(v, rec); // vehicles.js: what is in it goes with it
   factionVehicles(f).push(rec);
   return rec;
 }
-// One of yours (or one left on the map) into a group's motor pool.
+// One of yours (or one left on the map) into a group's motor pool, with what was left in it (parties.js leaveVehicle:
+// a team's cargo it could not carry on foot): driven home and unloaded into their stores (arsenal.js unloadVehicle).
 export function takeVehicle(state, f, v, why = "took") {
   const i = state.vehicles.indexOf(v);
   if (i < 0) return null;
   state.vehicles.splice(i, 1);
   for (let j = state.markers.length - 1; j >= 0; j--) if (state.markers[j].key === `vehicle:${v.id}`) state.markers.splice(j, 1);
   const rec = record(f, v);
+  unloadVehicle(state, f, rec, "taken from you");
   f.vehiclesTaken = (f.vehiclesTaken || 0) + 1;
   return rec;
 }
@@ -314,6 +317,7 @@ export function stealFromGroup(state, f, o, d = day(state)) {
   factionVehicles(o).splice(factionVehicles(o).indexOf(v), 1);
   v.owner = f.id;
   factionVehicles(f).push(v);
+  unloadVehicle(state, f, v, "stolen", true); // anything in it is the thieves' too (a transfer between groups)
   f.vehiclesStolen = (f.vehiclesStolen || 0) + 1;
   if (h(state, f.name, o.name, tickOf(f), "found") < 0.5) {
     changeRelation(state, f, o, -15);
@@ -347,6 +351,7 @@ export function sellBetween(state, f, buyer) {
   const worth = ["scrap", "fuel", "ammo", "parts", "food", "meds"].reduce((a, k) => a + Math.max(0, (k === "food" ? foodIn(buyer.stock) : buyer.stock[k] || 0) - (k === "food" ? 20 : 0)) * (k === "food" ? DAY_VALUE : (SUPPLIES[k] && SUPPLIES[k].value) || 1), 0);
   if (worth < price) return null;
   payGoods(buyer.stock, f.stock, price);
+  unloadVehicle(state, f, v, "kept", true); // what is in it stays with the seller (as yours does: vehicletrade.js sellVehicle)
   factionVehicles(f).splice(factionVehicles(f).indexOf(v), 1);
   v.owner = buyer.id;
   factionVehicles(buyer).push(v);
@@ -358,7 +363,7 @@ export function sellVehicleTo(state, f, v, base) {
   if (!v || !base || v.type === "bike") return null;
   const price = vehiclePrice(f, v);
   const { paid, short } = payGoods(f.stock, base.stock, price);
-  if (v.cargo && v.cargo.supplies) for (const [k, q] of Object.entries(v.cargo.supplies)) base.stock[k] = (base.stock[k] || 0) + q;
+  cargoToBase(base, v); // vehicles.js: its supplies into the stores, its items into the armory (none of it sold)
   takeVehicle(state, f, v);
   return { price, paid, short };
 }
@@ -370,6 +375,7 @@ export function buyVehicleFrom(state, f, rec, base, createVehicle) {
   const worth = ["scrap", "fuel", "ammo", "parts", "food", "meds"].reduce((a, k) => a + Math.max(0, k === "food" ? foodIn(base.stock) : base.stock[k] || 0) * (k === "food" ? DAY_VALUE : (SUPPLIES[k] && SUPPLIES[k].value) || 1), 0);
   if (worth < price) return { refused: `They want goods worth ${price}.` };
   payGoods(base.stock, f.stock, price);
+  unloadVehicle(state, f, rec, "kept", true); // what is in it stays with them (as yours does when you sell)
   factionVehicles(f).splice(i, 1);
   const v = createVehicle(state, VEHICLE_TYPES[rec.type] ? rec.type : "truck", { kind: "base", baseId: base.id }, { fuel: rec.fuel, condition: rec.condition, name: rec.name });
   if (rec.upgrades) v.upgrades = JSON.parse(JSON.stringify(rec.upgrades));
@@ -437,11 +443,15 @@ export const abandonedAt = (state, tile) => (state.abandoned || []).find((a) => 
 // "farm", "raincatcher", "bench", so a lost outpost's fields, catchers and benches were never counted).
 // ai-locks (2026-10-11): a machine shop is a workshop and their machine shop, a reloading bench a workshop and their
 // reloading bench; a radio station, a garage and a reinforced gate are those works of theirs (groupworks.js LOCKS).
-const PLAYER_WORKS = { walls: "walls", farm_plot: "farms", greenhouse: "farms", animal_pen: "pens", well: "water", rain_catcher: "water", cistern: "water", bunkhouse: "beds", barracks: "beds", craftbench: "bench", workbench: "bench", toolbench: "bench", machine_shop: ["bench", "shop"], ammo_bench: "bench", reload_bench: ["bench", "reload"], storehouse: "store", cellar: "store", radio: "radio", garage: "garage", gate: "gate" };
+// Storage (2026-10-19): a storage box, crates, a shed and a warehouse are their storage works (groupworks.js storageWork).
+const PLAYER_WORKS = { walls: "walls", farm_plot: "farms", greenhouse: "farms", animal_pen: "pens", well: "water", rain_catcher: "water", cistern: "water", bunkhouse: "beds", barracks: "beds", craftbench: "bench", workbench: "bench", toolbench: "bench", machine_shop: ["bench", "shop"], ammo_bench: "bench", reload_bench: ["bench", "reload"], storehouse: "store", cellar: "store", storebox: "storebox", crates: "crates", shed: "shed", warehouse: "warehouse", radio: "radio", garage: "garage", gate: "gate" };
 // A lost outpost's buildings as works (standing ones only).
 function worksOfBuildings(list) {
   const works = {};
-  for (const b of list || []) { if (b.broken) continue; for (const k of [].concat(PLAYER_WORKS[b.type] || [])) works[k] = (works[k] || 0) + (b.type === "walls" && b.tier ? Math.max(1, b.tier - 1) : 1); } // a wall by its tier (buildings.js WALL_TIERS)
+  for (const b of list || []) { if (b.broken) continue; for (const k of [].concat(PLAYER_WORKS[b.type] || [])) works[k] = (works[k] || 0) + (b.type === "walls" && b.tier ? Math.max(1, b.tier - 1) : 1); }
+  // Wall pieces (buildings.js piece): a wall of their works by the material most of them are of, as one tiered wall was.
+  const ws = (list || []).filter((b) => !b.broken && (pieceKind(b.type) === "wall" || pieceKind(b.type) === "gate"));
+  if (ws.length) works.walls = (works.walls || 0) + Math.max(1, Math.round(ws.reduce((a, b) => a + matOf(b), 0) / ws.length) - 1); // a wall by its tier (buildings.js WALL_TIERS)
   return works;
 }
 // A group's base its people left (it died out): the works stay, and some of the stores.
@@ -464,7 +474,7 @@ export function leavePlayerBase(state, base) {
   const buildings = JSON.parse(JSON.stringify(base.buildings || []));
   const stock = {};
   for (const [k, q] of Object.entries(base.stock || {})) if (SUPPLIES[k] && k !== "water" && k !== "rawwater" && q >= 1) { const left = Math.floor(q * ABANDON.STOCK_YOURS); if (left > 0) stock[k] = left; }
-  const rec = { tile: base.tile, from: "player", fromName: base.name, works: worksOfBuildings(buildings), buildings, stock, day: day(state) };
+  const rec = { tile: base.tile, from: "player", fromName: base.name, works: worksOfBuildings(buildings), buildings, stock, day: day(state), ...(base.plan ? { plan: JSON.parse(JSON.stringify(base.plan)) } : {}) }; // plan: where things were placed, the wall's ring (basemap.js)
   abandonedList(state).push(rec);
   return rec;
 }
@@ -528,15 +538,19 @@ export function occupyAbandoned(state, f, tile) {
   return rec;
 }
 // One period's rot on a lost outpost's own buildings: one of them (by the dice) takes ABANDON.ROT wear, breaks at 100,
-// and one already broken falls in. The works follow.
+// and one already broken falls in. The wall's pieces (buildings.js piece) rot as one: the wall. The works follow.
 function rotBuildings(state, rec, d) {
   const list = rec.buildings;
   if (!list.length) return;
-  const b = list[Math.floor(h(state, rec.tile, d, "rot") * list.length) % list.length];
-  if (b.broken) list.splice(list.indexOf(b), 1);
-  else {
-    b.wear = Math.min(100, (b.wear || 0) + ABANDON.ROT);
-    if (b.wear >= 100) b.broken = { day: d, cause: "left to rot" };
+  const wall = list.filter((b) => pieceKind(b.type));
+  const units = list.filter((b) => !pieceKind(b.type)).map((b) => [b]);
+  if (wall.length) units.push(wall);
+  for (const b of units[Math.floor(h(state, rec.tile, d, "rot") * units.length) % units.length]) {
+    if (b.broken) list.splice(list.indexOf(b), 1);
+    else {
+      b.wear = Math.min(100, (b.wear || 0) + ABANDON.ROT);
+      if (b.wear >= 100) b.broken = { day: d, cause: "left to rot" };
+    }
   }
   rec.works = worksOfBuildings(list);
 }

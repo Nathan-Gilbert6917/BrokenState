@@ -40,7 +40,9 @@
 // own deserters who do not come back may join a group near the base they left (playerDeserters).
 // Every roll is a hash (skills.js hash01): the world's dice are not touched (bar a recruit card's own).
 import { totalRounds, spendAmmo } from "./rounds.js"; // a group's rounds by calibre
-import { MEMBER, woundMembersBy, syncMembers, homeMembers, removeMember, addMember } from "./members.js"; // the wounded are people
+import { MEMBER, woundMembersBy, syncMembers, homeMembers, removeMember, addMember, joinFromYours } from "./members.js"; // the wounded are people
+import { note, roundsIn } from "./ledger.js"; // the conservation test's ledger (off in play)
+import { carriedRounds } from "./loadouts.js"; // the rounds on a person
 import { groupMedicalDaily } from "./groupmedical.js"; // and heal by your rules
 import { moveFoodUnits, DAY_VALUE, foodIn } from "./foods.js"; // food by type (foods.js)
 import { groupDietPressure } from "./eating.js"; // their rations and the sameness of their food (wave 2 eating)
@@ -50,10 +52,10 @@ import { day, log, hub } from "./world.js";
 import { groupPayoutSpare } from "./upkeep.js"; // the pay-out reserve (food)
 import { Rng } from "./rng.js";
 import { growthFactor, groupKitchenMorale } from "./groupworks.js";
-import { issueKit, removeFromArsenal, addToArsenal } from "./arsenal.js";
+import { removeFromArsenal, addToArsenal } from "./arsenal.js";
 import { stripAll, allItems, allCarried } from "./inventory.js";
 import { isRoundItem } from "./itemstack.js";
-import { makeCandidate, offerRecruits, RETURN } from "./recruits.js";
+import { offerRecruits, RETURN } from "./recruits.js";
 import { newNeutralGroup } from "./wanderers.js";
 import { hash01 } from "./skills.js";
 import { itemDur, itemDurMax } from "./crafting.js";
@@ -502,23 +504,15 @@ export function desertDaily(state, f, d = day(state)) {
 // One of them walks out with their own gun and armour: to your gates, to another group, or onto the road.
 export function desertOne(state, f, d = day(state), where = null) {
   const D = CARE.DESERT;
-  // members.js: one of their people at home walks out with what they carry (docs/adr/0001-ai-parity.md); a group
-  // still counted by the numbers alone: one head, and a gun and a vest off the books.
+  // members.js: one of their people at home walks out with what they carry (docs/adr/0001-ai-parity.md); with nobody
+  // at home (all of them out with a party) nobody walks out today.
   syncMembers(state, f);
   const home0 = homeMembers(f);
   const who = home0.length ? home0[Math.floor(h(state, f.name, tickOf(f), "dk") * home0.length) % home0.length] : null;
+  if (!who) return null;
   const kit = [];
-  if (who) {
-    for (const it of allCarried(who)) if (it && f.arsenal && f.arsenal.items.includes(it)) kit.push(it); // inventory.js: rig pouches, plates, mounts too
-    removeMember(state, f, who, "deserted"); // their kit leaves the group's books with them
-  } else {
-    if (f.arsenal) {
-      const issue = issueKit(state, f, f.pop, "home");
-      const lo = issue[Math.floor(h(state, f.name, tickOf(f), "dk") * issue.length)] || null;
-      for (const it of lo ? [lo.weapon, lo.armour.armor] : []) if (it && removeFromArsenal(f, it, "deserted")) kit.push(it);
-    }
-    f.pop -= 1;
-  }
+  for (const it of allCarried(who)) if (it && f.arsenal && f.arsenal.items.includes(it)) kit.push(it); // inventory.js: rig pouches, plates, mounts too
+  removeMember(state, f, who, "deserted"); // their kit leaves the group's books with them
   f.deserted = (f.deserted || 0) + 1;
   noteStrife(f, SPLINTER.DESERTER); // splinters.js: every one who goes makes the rest think of going together
   if (f.wounded > f.pop) f.wounded = f.pop;
@@ -526,9 +520,8 @@ export function desertOne(state, f, d = day(state), where = null) {
   const g = state.grid, home = f.bases[0];
   const base = home != null ? state.bases.filter((b) => g.distance(b.tile, home) <= D.playerRange).sort((a, b) => g.distance(a.tile, home) - g.distance(b.tile, home))[0] : null;
   if (base && r < D.toPlayer && hub(state)) {
-    const s = who || makeCandidate(state, { quality: 0.8, minHealth: 45, gearChance: 0 });
-    if (who) { delete s.fid; s.pending = true; s.role = "rest"; s.location = { kind: "pending" }; s.health = Math.max(s.health, 45); }
-    else for (const it of kit) { const slot = GEAR[it.key].slot; if (!s.gear[slot]) s.gear[slot] = it; }
+    const s = who;
+    delete s.fid; s.pending = true; s.role = "rest"; s.location = { kind: "pending" }; s.health = Math.max(s.health, 45);
     offerRecruits(state, [s], { source: "deserter", baseId: base.id, title: "A deserter at the gate", intro: `${s.name} walked out of ${f.known ? f.name : "a group nearby"} and asks to join you${kit.length ? `, bringing ${kit.map((x) => x.name).join(" and ")}` : ""}.` });
     return { to: "player", kit, who: s };
   }
@@ -538,7 +531,7 @@ export function desertOne(state, f, d = day(state), where = null) {
     const o = state.factions.filter((x) => x.alive && x !== f && !x.outsider && x.bases.length && !wars.has(x.id) && Math.min(...x.bases.map((b) => g.distance(b, home))) <= D.range && (where === "group" || per(x) > per(f)))
       .sort((a, b) => per(b) - per(a) || a.id - b.id)[0];
     if (o) {
-      if (who) addMember(state, o, who); else o.pop += 1; // members.js: the very person, in the other group's list
+      addMember(state, o, who); // members.js: the very person, in the other group's list
       if (o.arsenal) o.arsenal.pop0 = o.pop; // their kit came with them
       for (const it of kit) addToArsenal(state, o, it, "deserter");
       if (o.known && f.known) log(state, `One of ${f.name} went over to ${o.name}.`, "info");
@@ -579,6 +572,20 @@ export function wandererJoins(state, f, wg) {
   f.recruitedWanderers = (f.recruitedWanderers || 0) + n;
   return n;
 }
+// One of yours joins a group (a deserter: playerDeserters; a convert: playerwars.js): the very person, in its list
+// with everything they carry (members.js joinFromYours: a stub of who they were stays in yours), not a newcomer made
+// for it. Their kit goes onto the group's books as a recruit's does (wandererJoins), the rest stays on them; what they
+// brought besides (took: supplies by key, a deserter's haul from your stores) goes into the group's stock. The rounds
+// come over from your side (ledger.js note). Returns the person.
+export function takeInFromYours(state, f, s, why, took = {}) {
+  const rounds = carriedRounds(s) + roundsIn(took);
+  const who = joinFromYours(state, f, s);
+  for (const it of allCarried(who)) if (it && !isRoundItem(it)) addToArsenal(state, f, it, why);
+  if (f.arsenal) f.arsenal.pop0 = f.pop; // their kit came with them (arsenalDaily's newcomers' guns are for the others)
+  for (const [k, q] of Object.entries(took || {})) if (q > 0) { const tk = k === "rawwater" ? "water" : k; f.stock[tk] = (f.stock[tk] || 0) + q; } // one water pool (trade.js poolKey); food items by key (foods.js)
+  note(state, `a ${why} of yours`, rounds);
+  return who;
+}
 // Your deserters who do not come back (recruits.js RETURN) may join a group near the base they left.
 export function playerDeserters(state, d = day(state), force = false) {
   const D = CARE.DESERT;
@@ -595,12 +602,9 @@ export function playerDeserters(state, d = day(state), force = false) {
     const f = state.factions.filter((x) => x.alive && !x.outsider && x.bases.length && near(x) <= D.playerRange).sort((a, b) => near(a) - near(b) || a.id - b.id)[0];
     if (!f) continue;
     state.deserters.splice(state.deserters.indexOf(e), 1);
-    s.joinedGroup = f.id;
-    f.pop += 1;
-    if (f.arsenal) f.arsenal.pop0 = f.pop;
-    for (const it of stripAll(s)) addToArsenal(state, f, it, "deserter");
-    log(state, `Word on the road: ${s.name}, who walked out on you, has joined ${f.known ? f.name : "a group nearby"}.`, "info");
-    out.push({ s, f });
+    const who = takeInFromYours(state, f, s, "deserter", e.took); // with what they took from your stores when they left (morale.js desertionHaul)
+    log(state, `Word on the road: ${who.name}, who walked out on you, has joined ${f.known ? f.name : "a group nearby"}.`, "info");
+    out.push({ s: who, f });
   }
   return out;
 }

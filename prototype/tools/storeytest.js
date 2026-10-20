@@ -240,13 +240,13 @@ console.log("A raid in a building with storeys: floors, the stairs, what is off 
       turnToBox(u, box); // vision.js: facing it
       err = combatAct(st, { type: "search", unit: u.id, box: box.id });
       // Hauling takes time (raidloot.js HAUL: 8 kg a turn free, then 12 kg an action): a heavy find (firewood is 3 kg
-      // each, loot.js AREA_WOOD) may not all come out in the one action left, so come back next turn for the rest. What
-      // comes out loose fills the hands (carry.js: two different things carried, nothing more is taken), so the finds
-      // are set down on the floor between turns (free), as the bot does.
+      // each, loot.js AREA_WOOD) may not all come out in the one action left, so come back next turn for the rest.
       const took = !!box.contents && (Object.keys(R.found).length > 0 || R.foundGear.length > 0);
       let turns = 1;
-      while (err === "" && !box.searched && turns < 6) { b.turn++; b.phase = "player"; u.ap = 2; turns++; combatAct(st, { type: "dropAllCarried", unit: u.id }); err = combatAct(st, { type: "search", unit: u.id, box: box.id }); }
-      check(err === "" && took && box.searched, `searching it upstairs works (${err || "ok"}, emptied in ${turns} turn${turns === 1 ? "" : "s"})`);
+      while (err === "" && !box.searched && turns < 4) { b.turn++; b.phase = "player"; u.ap = 2; turns++; err = combatAct(st, { type: "search", unit: u.id, box: box.id }); }
+      // Emptied, or searched with the rest left inside for want of room (one person's pack: food by type and firewood
+      // weigh what they do, so a full cabinet seldom fits; combat.js searchBox "No room for the rest").
+      check(err === "" && took && (box.searched || box.partial), `searching it upstairs works (${err || "ok"}, ${box.searched ? `emptied in ${turns} turn${turns === 1 ? "" : "s"}` : `${turns} turns, the rest left inside for want of room`})`);
     }
     // No extraction upstairs.
     const z = R.zones[0];

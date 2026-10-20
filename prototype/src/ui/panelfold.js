@@ -104,5 +104,5 @@ if (hasDoc) {
     if (t && t.matches && t.matches(FADE_SEL)) fadeEdges(t);
   }, { capture: true, passive: true });
   // A new window size or UI size changes what overflows.
-  if (typeof window !== "undefined") window.addEventListener("resize", () => { updateFades(document.getElementById("left")); updateFades(document.getElementById("right")); });
+  if (typeof window !== "undefined" && typeof window.addEventListener === "function") window.addEventListener("resize", () => { updateFades(document.getElementById("left")); updateFades(document.getElementById("right")); });
 }

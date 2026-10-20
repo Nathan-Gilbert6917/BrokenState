@@ -30,13 +30,14 @@ import {
   planPath, travelHours, spawnAiParty, removeParty, partyTile, tileLabel, partyMembers, awaitOrders, startReturn, launchExpedition,
   partySpeed, carryCapacity, supplyLoad, fuelForPath, plannedPace, paceOpts, modeSpeed, foodForHours, waterForHours,
 } from "./parties.js";
+import { packShells } from "./carrykit.js"; // the crew's rounds at hand, out of their own
 import { attitude, changeGoodwill, isAggressiveType, baseDefense } from "./factions.js";
 import { startCombat, registerCombatHandler } from "./combat.js";
 import { startOrder } from "./orders.js";
 import { partyVehicle, partyFuel, vehicleById, isCar } from "./vehicles.js";
 import { itemLoad } from "./inventory.js";
 import {
-  available, need, demand, roundNeeds, openTrade, openCaravanTrade, tradeContext, executeTrade, endTrade, setQty, balanceWith, tradeVerdict, ensureWares, WARES_MAX,
+  available, need, demand, roundNeeds, openTrade, openCaravanTrade, tradeContext, executeTrade, endTrade, setQty, balanceWith, tradeVerdict, ensureWares,
   autoSellGear, gearBuyPrice, sellPrice,
 } from "./trade.js";
 import { marketOf, groupStockKey } from "./trade.js";
@@ -392,24 +393,17 @@ export function launchCaravan(state, form) {
   const cap = carryCapacity(state, members, v);
   const load = supplyLoad(supplies) + items.reduce((s, g) => s + itemLoad(g), 0); // the road's food in days: parties.js FOOD_PACK_KG a day
   if (members.length && load > cap + 1e-9) return { error: `Too much to carry: goods and supplies weigh ${Math.ceil(load)}, the crew${v ? ` and the ${v.name}` : ""} can carry ${cap}.` };
-  const res = launchExpedition(state, { memberIds: form.crew, dest: stops[0], mission: "move", stance: form.stance || "normal", vehicleId: form.vehicleId || null, supplies, fromBaseId: h.id });
+  const res = launchExpedition(state, { memberIds: form.crew, dest: stops[0], mission: "move", stance: form.stance || "normal", vehicleId: form.vehicleId || null, supplies, fromBaseId: h.id, shells: false });
   if (res.error) return res;
   const p = res.party;
   // The goods to trade travel as cargo; the rest is what the crew lives on.
   for (const [k, q] of Object.entries(goods)) {
     p.supplies[k] -= q;
-    // The crew's rounds at hand (parties.js launchExpedition: carrykit.js packShells, out of what was packed) came out
-    // of the goods when the rounds to trade were of their guns' calibre: the hub's stock covers them, as it does a
-    // trip's loadout; what it cannot cover is short in the cargo.
-    if (p.supplies[k] < 0) {
-      const owed = -p.supplies[k], take = Math.min(owed, Math.max(0, Math.floor(h.stock[k] || 0)));
-      h.stock[k] = (h.stock[k] || 0) - take;
-      p.supplies[k] += take;
-    }
-    const short = Math.max(0, -Math.min(0, p.supplies[k]));
-    p.supplies[k] = Math.max(0, p.supplies[k]);
-    p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) + q - short;
+    p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) + q;
   }
+  // The crew's rounds at hand (carrykit.js packShells) come out of their own (the guns' loads the launch took), never
+  // the rounds going to trade.
+  packShells(p.supplies, partyMembers(state, p));
   for (const i of idx) p.cargo.gear.push(...h.armory.splice(i, 1));
   p.teamMission = "caravan";
   p.caravan = { stops, idx: -1 };

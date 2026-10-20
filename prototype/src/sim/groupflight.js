@@ -2,18 +2,20 @@
 // cannot hold off, or whose base the dead have just overrun, leaves: it falls back to another of its bases, settles a
 // new site away from the horde, or as a last resort goes over to an ally; the base it left stands abandoned (its works,
 // some of the stores) for whoever comes (groupworld.js leaveGroupBase / occupyAbandoned). Coarse and cheap: one check a
-// day for the world and one at the moment a horde walks in (hordes.js onHordeEnter), counts rather than people.
+// day for the world and one at the moment a horde walks in (hordes.js onHordeEnter), on the defence the fight itself reads.
 //
 // You have no such button: your answer to a horde you cannot hold is your own (pull a team out of a battle, move people
 // between bases: moveout.js, give up an outpost). The groups' version is that choice made for them, by the numbers.
 //
-// Cannot hold: the dead's weight on the walls (hordes.js hordeWallPower: the horde's size × 0.12, × 1.6 with a
-// Wallbreaker at its head, × its special dead) at least RATIO × the base's defence (the same sum factions.js
-// resolveOrdinaryRaid uses: the walls, 0.8 × the group's strength, a military group's Humvee at its main base).
+// Cannot hold: judged by the very defence the fight goes through (groupfight.js groupHoldCheck, your base's check:
+// defences.js holdCheck): the spike pits, bear traps and mines first, then the walls up to the hold limit (the walls,
+// the people at that base manning them, the defence buildings and kit: defences.js holdLimit), and above it the dead
+// that would break in (defences.js breakInForce, a Wallbreaker among them) against the people there behind the base's
+// wall tier, as the fight inside counts them. They cannot hold when that check says the dead would overrun them.
 //   - Ahead (flightDaily): the hordes within NEAR tiles whose target or goal is the base, summed. ODDS a day × the
 //     type's GROUP_PRIORITIES flee (zealots stand their ground, traders and communes run) they go before it arrives:
 //     STRAGGLE of their people are lost on the way, and LEAVE of the base's share of the stores stays behind.
-//   - Overrun (hordeOverrun, after the fight): the dead won and were RATIO × the defence: they go (a chance of the
+//   - Overrun (hordeOverrun, after the fight): the dead won, and the check before it said they would: they go (a chance of the
 //     type's flee, at most 1), OVERRUN_STRAGGLE lost on the way and OVERRUN_LEAVE of the base's stores left.
 // Where to: another of its bases with no horde coming (the nearest; it becomes the main one if the lost one was); else
 // a free site SITE tiles off (CLEAR from any group's base, CLEAR_YOU from yours, HIVE from a hive, HORDE from any horde,
@@ -31,20 +33,20 @@ import { loseBase, gatherStores } from "./groupbases.js"; // their bases as base
 import { day, log } from "./world.js";
 import { hash01 } from "./skills.js";
 import { weightOf, tickOf } from "./groupcare.js";
-import { strength, recomputeOwnership, collapseFaction, GROUP_BREAK } from "./factions.js";
-import { groupBaseDefence } from "./groupworks.js";
-import { groupTurretPower, factionVehicles } from "./vehicles.js";
+import { recomputeOwnership, collapseFaction, GROUP_BREAK } from "./factions.js";
+import { factionVehicles } from "./vehicles.js";
+import { groupHoldCheck } from "./groupfight.js"; // the defence tiers the fight itself goes through
+import { mergeMix } from "./zombietypes.js";
 import { leaveGroupBase, abandonedAt, occupyAbandoned, ABANDON } from "./groupworld.js";
-import { hordeWallPower } from "./hordes.js";
 import { relation, pactBetween } from "./diplomacy.js";
 import { sameBloc } from "./blocs.js";
 import { canHearGroup } from "./radio.js";
-import { removeFromArsenal, addToArsenal } from "./arsenal.js";
+import { removeFromArsenal, addToArsenal, unloadVehicle } from "./arsenal.js";
 import { tileLabel } from "./parties.js";
 import { syncMembers, membersOf, ensureMembers, moveMember } from "./members.js"; // a group taken in by an ally: its people go over
 
 export const FLIGHT = {
-  NEAR: 3, RATIO: 1.6, ODDS: 0.5,
+  NEAR: 3, ODDS: 0.5,
   STRAGGLE: [0.02, 0.06], OVERRUN_STRAGGLE: [0.04, 0.1], LEAVE: 0.35, OVERRUN_LEAVE: 0.6,
   SITE: [3, 10], AWAY: 2, CLEAR: 3, CLEAR_YOU: 4, HIVE: 5, HORDE: 6, REVISIT: 90, KEPT_PULL: 2,
   ALLY_RANGE: 15, ALLY_REL: 35, GAP: 10, HEAR: 12,
@@ -52,15 +54,21 @@ export const FLIGHT = {
 const h = (state, ...k) => hash01(state.seed, "flight", ...k);
 const live = (state) => state.factions.filter((f) => f.alive && !f.outsider && f.bases.length && !f.hcNoGrow);
 
-// The base's defence against the dead (factions.js resolveOrdinaryRaid's sum, without a bloc's help).
-export const baseHold = (state, f, tile) => groupBaseDefence(state, f, tile) + strength(f) * 0.8 + (tile === f.bases[0] ? groupTurretPower(f) : 0);
+// The base's check against these hordes as one (groupfight.js groupHoldCheck): their sizes summed, the Wallbreakers
+// among them (at most 2), their special dead mixed by size. null with no horde.
+export function holdAgainst(state, f, tile, hordes) {
+  if (!hordes.length) return null;
+  let size = 0, bosses = 0, mix = null;
+  for (const x of hordes) { if (x.mix || mix) mix = mergeMix(mix, size, x.mix, x.size); size += x.size; bosses += x.bosses || 0; }
+  return groupHoldCheck(state, f, tile, size, Math.min(2, bosses), mix);
+}
 // The hordes coming for a base: within NEAR tiles, its tile their target or their goal.
 export function hordesComing(state, tile) {
   const g = state.grid;
   return (state.hordes || []).filter((x) => x.tile !== tile && g.distance(x.tile, tile) <= FLIGHT.NEAR && (x.target === tile || (x.goal && x.goal.tile === tile)));
 }
 // Can they hold this base against these hordes?
-export const cannotHold = (state, f, tile, hordes) => hordes.length > 0 && hordes.reduce((s, x) => s + hordeWallPower(x), 0) >= FLIGHT.RATIO * baseHold(state, f, tile);
+export const cannotHold = (state, f, tile, hordes) => { const c = holdAgainst(state, f, tile, hordes); return !!c && c.tier === "overrun"; };
 
 // ---------- where to ----------
 function fallbackBase(state, f, tile) {
@@ -157,7 +165,7 @@ function joinAlly(state, f, ally, tile) {
   for (const [k, q] of Object.entries(f.stock)) if (q > 0) ally.stock[k] = (ally.stock[k] || 0) + q;
   if (f.arsenal) for (const it of [...f.arsenal.items]) { removeFromArsenal(f, it, "joined"); addToArsenal(state, ally, it, "joined"); }
   if (ally.arsenal) ally.arsenal.pop0 = ally.pop;
-  for (const v of factionVehicles(f).splice(0)) { v.owner = ally.id; factionVehicles(ally).push(v); }
+  for (const v of factionVehicles(f).splice(0)) { v.owner = ally.id; factionVehicles(ally).push(v); unloadVehicle(state, ally, v, "joined", true); } // what is in them too (vehicles.js carryCargo)
   ally.wounded = (ally.wounded || 0) + (f.wounded || 0);
   f.pop = 0;
   f.joinedAlly = ally.id;
@@ -187,9 +195,10 @@ export function flightDaily(state, d = day(state)) {
     }
   }
 }
-// A horde has just fought its way into a base of theirs (hordes.js onHordeEnter): att, def before the fight.
-export function hordeOverrun(state, f, tile, att, def, held) {
-  if (held || !f || !f.alive || f.outsider || f.hcNoGrow || !f.bases.includes(tile) || att < FLIGHT.RATIO * def) return null;
+// A horde has just fought its way into a base of theirs (hordes.js onHordeEnter): check, the base's check before the
+// fight (groupfight.js groupHoldCheck). Beaten when the check said they would be: no hope of holding it.
+export function hordeOverrun(state, f, tile, check, held) {
+  if (held || !f || !f.alive || f.outsider || f.hcNoGrow || !f.bases.includes(tile) || !check || check.tier !== "overrun") return null;
   if (h(state, f.name, tickOf(f), tile, "overrun") >= Math.min(1, weightOf(f, "flee", 1))) return null;
   return fleeBase(state, f, tile, [tile], "overrun");
 }

@@ -94,7 +94,7 @@ section("BASE-03: what each kind of base may build");
   }
   check(!bad.length, `placeProblem and canBuild agree for every building at every kind of base${bad.length ? `: ${bad.join(", ")}` : ""}`);
   asShelter(b3);
-  check(Object.keys(SHELTER.build).filter((k) => k !== "outpost_up").every((k) => placeProblem(b3, k) === ""), "everything on the shelter's list stands at a shelter (the hub's: an outpost's step up aside)");
+  check(Object.keys(SHELTER.build).filter((k) => k !== "outpost_up" && !BUILDINGS[k].fit).every((k) => placeProblem(b3, k) === ""), "everything on the shelter's list stands at a shelter (the hub's: an outpost's step up aside; the fittings need a hut or cabin to stand in first)");
 
 }
 

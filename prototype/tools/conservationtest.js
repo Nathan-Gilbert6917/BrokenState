@@ -3,7 +3,11 @@
 // road, the visitors and nomad bands) never holds more rounds than it held the day before plus what the legitimate
 // sources noted coming in that day (src/sim/ledger.js: scavenged, made at a bench, traded or taken from you, a group
 // or band created with its holdings). Transfers between AI groups cancel out. Also: no item is in two places at once
-// (a group's books hold an item only where one of its people carries it, or as its spare).
+// (a group's books hold an item only where one of its people carries it, out with its raid, or as its spare; a band's
+// shelf, a raider band's ladders and ram on it; the ground where a band left its goods), and no person either (a
+// group's list, a jail, a loan, a band, newcomers who joined one: people move as themselves), each group's head count
+// being its list.
+// And the groups' parties pack for their jobs (loadouts.js packForJob: decoys, flares, packs, tools) under these checks.
 // Usage: node tools/conservationtest.js [seed] [days]
 import { createWorld, tickHour, day } from "../src/sim/world.js";
 import { setAutopilot } from "../src/sim/autopilot.js";
@@ -12,6 +16,7 @@ import { carriedRounds } from "../src/sim/loadouts.js";
 import { isRoundItem } from "../src/sim/itemstack.js";
 import { nomadsOf } from "../src/sim/nomads.js";
 import { roundsIn } from "../src/sim/ledger.js";
+import { isJobKitKey } from "../src/sim/arsenal.js";
 
 const seed = Number(process.argv[2] || 7);
 const DAYS = Number(process.argv[3] || 60);
@@ -53,6 +58,33 @@ function holdings(state) {
   // Wandering groups met on the road (wanderers.js): people with what they carry, who may join a group.
   for (const g of (state.wanderers && state.wanderers.groups) || []) for (const s of g.people || []) if (s && s.alive !== false) add(`wanderers #${g.wid}|carried`, carriedRounds(s));
   for (const b of nomadsOf(state)) { const k = `nomads ${b.name} #${b.id ?? b.serial ?? ""}`; add(`${k}|stock`, once(b.stock)); add(`${k}|shelf`, itemRounds(b.wares)); for (const s of b.people || []) if (s && s.alive !== false) add(`${k}|carried`, carriedRounds(s)); }
+  // People off every group's list for a while, with what they carry: lent to another group (volunteers.js), a
+  // hardcore band on the road and the military's strike force (hardcore-groups.js).
+  for (const [k, s] of awayPeople(state)) add(`${k}|carried`, carriedRounds(s));
+  return out;
+}
+// [holder, person] for the AI people away from any group's list (they are still somebody's: counted where they are).
+function awayPeople(state) {
+  const out = [];
+  for (const L of (state.vols && state.vols.aiLoans) || []) for (const s of L.people || []) if (s && s.alive !== false) out.push([`lent by ${L.from}`, s]);
+  const H = state.hardcore && state.hardcore.groups;
+  for (const b of (H && H.bands) || []) for (const s of b.people || []) if (s && s.alive !== false) out.push([`band ${b.name} #${b.id}`, s]);
+  for (const s of (H && H.military && H.military.strike && H.military.strike.people) || []) if (s && s.alive !== false) out.push(["strike force", s]);
+  return out;
+}
+// Every AI person in one place (docs/adr/0001-ai-parity.md: people move as themselves, never as a count): a group's
+// list, a jail, a loan, a band. Returns where a person is twice, and the living groups whose head count is not their list.
+function peopleTwice(state) {
+  const where = new Map(), out = [];
+  const put = (s, tag) => { if (!s || s.alive === false) return; const was = where.get(s); if (was) out.push(`${s.name}: ${was} and ${tag}`); else where.set(s, tag); };
+  for (const f of state.factions || []) {
+    for (const s of f.people || []) put(s, `${f.name}'s list`);
+    for (const r of f.prisoners || []) put(r.s, `${f.name}'s jail`);
+    if (f.alive !== false && Array.isArray(f.people) && f.pop !== f.people.filter((s) => s.alive !== false).length && f.pop === f.popSeen) out.push(`${f.name}: a head count of ${f.pop} for ${f.people.length} people`);
+  }
+  for (const b of nomadsOf(state)) for (const s of b.people || []) put(s, `${b.name}'s band`);
+  for (const v of state.visitors || []) for (const s of v.people || []) put(s, `${v.name}'s band`);
+  for (const [k, s] of awayPeople(state)) put(s, k);
   return out;
 }
 const sum = (m) => [...m.values()].reduce((a, n) => a + n, 0);
@@ -66,10 +98,23 @@ function duplicates(state) {
   const people = [];
   for (const s of state.survivors || []) if (s.alive !== false) people.push([s, `your ${s.name}`]);
   for (const f of state.factions || []) for (const s of f.people || []) if (s.alive !== false) people.push([s, `${f.name}'s ${s.name}`]);
+  for (const [k, s] of awayPeople(state)) people.push([s, `${k}: ${s.name}`]);
+  // The bands' people (nomads, raiders from beyond the border: newcomers who joined them among them) and shelves (a
+  // raider band's ladders and ram on it), and what lies on the ground (a band's goods where it ended).
+  for (const b of [...nomadsOf(state), ...(state.visitors || [])]) for (const s of b.people || []) if (s && s.alive !== false) people.push([s, `${b.name}'s ${s.name}`]);
+  for (const b of nomadsOf(state)) for (const it of b.wares || []) put(it, `${b.name}'s shelf`);
+  for (const v of state.visitors || []) for (const it of v.wares || []) put(it, `${v.name}'s shelf`);
+  for (const d of state.deathSites || []) for (const g of d.items || []) if (g && g.kind === "gear") put(g.item, `the ground at ${d.tile}`);
   for (const [s, tag] of people) for (const it of allCarried(s)) put(it, tag);
   for (const b of state.bases || []) for (const it of b.armory || []) put(it, `${b.name}'s armory`);
   for (const f of state.factions || []) for (const it of f.wares || []) put(it, `${f.name}'s shelf`);
   for (const p of state.parties || []) for (const it of (p.cargo && p.cargo.gear) || []) put(it, `party ${p.id}'s cargo`);
+  // A group's raid out with its ladders and ram (arsenal.js packRaidKit): on its own books, in no one's hands or lists.
+  for (const p of state.parties || []) for (const it of p.siegeGear || []) {
+    const f = (state.factions || []).find((x) => x.id === p.owner);
+    if (!f || !f.arsenal || !f.arsenal.items.includes(it) || it.withParty !== p.id) dup.push(`${it.name || it.key}: out with raid ${p.id} but not on ${f ? f.name : "its group"}'s books`);
+    else if (where.has(it)) dup.push(`${it.name || it.key}: out with raid ${p.id} and at ${where.get(it)}`);
+  }
   for (const f of state.factions || []) {
     const mine = new Set((f.people || []).filter((s) => s.alive !== false));
     for (const it of (f.arsenal && f.arsenal.items) || []) {
@@ -89,7 +134,9 @@ st.ledgerOn = true;
 st.ledger = { total: 0, by: {} };
 let prev = holdings(st), prevLedger = 0, worst = 0, worstDay = null, bad = 0;
 const lines = [];
-let dupFirst = null;
+let dupFirst = null, twiceFirst = null, lentSeen = 0;
+const packedSeen = new Set(), packedKit = {};
+let packedParties = 0;
 // TRACE=day1,day2: the writers of rounds into the AI side's stores on those days (a debugging aid).
 const TRACE = new Set(String(process.env.TRACE || "").split(",").filter(Boolean).map(Number));
 const INTERNAL = /collectRounds|armRounds|gatherStores|spreadStores|settleRec|settleGroup/;
@@ -144,10 +191,26 @@ for (let d = 0; d < DAYS; d++) {
   }
   if (sig.size) { console.log(`    trace, day ${day(st)}:`); for (const [k, n] of [...sig.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10)) console.log(`      +${Math.round(n)} ${k}`); }
   if (!dupFirst) { const dups = duplicates(st); if (dups.length) dupFirst = `day ${day(st)}: ${dups.slice(0, 3).join("; ")}`; }
+  if (!twiceFirst) { const tw = peopleTwice(st); if (tw.length) twiceFirst = `day ${day(st)}: ${tw.slice(0, 3).join("; ")}`; }
+  lentSeen += ((st.vols && st.vols.aiLoans) || []).reduce((a, L) => a + (L.people || []).length, 0);
+  // The groups' parties packed for their jobs (loadouts.js packForJob): decoys, flares, packs and tools out of their
+  // stores onto the people going, under the same checks (no item in two places, no round from nowhere).
+  for (const p of st.parties) {
+    if (p.owner === "player" || !p.jobs || packedSeen.has(p.id)) continue;
+    packedSeen.add(p.id);
+    const f = st.factions.find((x) => x.id === p.owner);
+    const kit = ((f && f.people) || []).filter((s) => s.alive !== false && s.location && s.location.partyId === p.id).flatMap((s) => allCarried(s)).filter((it) => it && isJobKitKey(it.key));
+    if (kit.length) { packedParties++; for (const it of kit) packedKit[it.key] = (packedKit[it.key] || 0) + 1; }
+  }
 }
 for (const l of lines) console.log(`    ${l}`);
+const joinedNow = nomadsOf(st).reduce((a, b) => a + (b.people || []).filter((s) => s.alive !== false && s.joinedNomads === b.id).length, 0);
+const siegeNow = (st.visitors || []).reduce((a, v) => a + (v.wares || []).filter((it) => it && (it.key === "ladder" || it.key === "ram")).length, 0);
+console.log(`    nomad bands took in ${(st.nomads && st.nomads.stats && st.nomads.stats.recruited) || 0} newcomers (${joinedNow} of them in their lists now, as people); raider bands carry ${siegeNow} ladders and rams`);
 console.log(`    noted sources: ${Object.entries(st.ledger.by).map(([k, n]) => `${k} ${Math.round(n)}`).join(", ") || "none"}`);
 check(bad === 0, `the AI side never holds more rounds than came in (${bad} day${bad === 1 ? "" : "s"} over${worstDay != null ? `, the worst +${Math.round(worst)} on day ${worstDay}` : ""})`);
 check(!dupFirst, `no item in two places at once${dupFirst ? ` (${dupFirst})` : ""}`);
+check(!twiceFirst, `no person in two places at once, every group's head count its list (${twiceFirst || `${lentSeen} lent-person-days on loans seen`})`);
+check(packedParties > 0, `the groups' parties packed job kit out of their own stores (${packedParties} parties: ${Object.entries(packedKit).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([k, n]) => `${n} ${k}`).join(", ") || "none"}), under the checks above`);
 console.log(`\n${passes} passed, ${fails} failed`);
 process.exit(fails ? 1 : 0);

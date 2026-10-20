@@ -20,6 +20,7 @@ import { tradeContext, spread } from "./trade.js";
 import { factionVehicles, vehicleValue, createVehicle, VEHICLE_TYPES, upgradesOf, carsAtBase, isCar, partyVehicles, dropPartyVehicle } from "./vehicles.js";
 import { vehicleWant } from "./groupworld.js";
 import { joinTeam } from "./foundcars.js";
+import { unloadVehicle } from "./arsenal.js"; // a group's vehicle sold to you: what is in it stays with them
 
 export const VTRADE = { WANT: { short: 1.2, plenty: 0.8, sell: 1 }, MERCHANT: 1.3, DELIVERY: 1, PAY: ["scrap", "fuel", "ammo", "parts", "food", "meds"], KEEP_FOOD: 20 };
 export const GOV = { afford: 2, idle: 30, keep: 2 };
@@ -93,7 +94,7 @@ export function buyVehicle(state, i) {
   if (!r) return `They want goods worth ${o.price}; you do not have that much to give.`;
   const rec = o.rec;
   if (ctx.visitor) ctx.visitor.pickupSold = true;
-  else factionVehicles(ctx.f).splice(factionVehicles(ctx.f).indexOf(rec), 1);
+  else { unloadVehicle(state, ctx.f, rec, "kept", true); factionVehicles(ctx.f).splice(factionVehicles(ctx.f).indexOf(rec), 1); } // arsenal.js: what is in it stays with them, as yours stays with you when you sell
   const type = VEHICLE_TYPES[rec.type] ? rec.type : "truck";
   let where;
   if (ctx.kind === "radio") {
