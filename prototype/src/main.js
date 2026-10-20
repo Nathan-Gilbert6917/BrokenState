@@ -127,7 +127,7 @@ import { loadOptions, saveOptions } from "./ui/saves.js";
 import { initTitle, showTitle, syncTitle, titleFrame, titleKey, titleCovers, TITLE_ACTIONS } from "./ui/title.js"; // the title screen the game opens on
 import { WORK_ACTIONS, WORK_CHANGE, workKey, applyRoleChoice } from "./ui/work.js";
 import { DEFENCE_ACTIONS, DEFENCE_CHANGE } from "./ui/defence.js";
-import { BASEMAP_ACTIONS, openForJob } from "./ui/basemap.js"; // the base map tab; Build opens the map to place the new building
+import { BASEMAP_ACTIONS, openForJob, openBuildMap } from "./ui/basemap.js"; // the base map tab; Build opens the map to place the new building
 import { STORAGE_ACTIONS, STORAGE_CHANGE } from "./ui/storage.js"; // the base window's Storage tab: the containers (sim/containers.js)
 import { INTEL_ACTIONS, INTEL_CHANGE } from "./ui/intel.js"; // hidden bases (Run silent) and radio security (sim/hiding.js, sim/intel.js)
 import { toManual } from "./sim/work.js";
@@ -1191,6 +1191,7 @@ const actions = {
     }
     if (c.uiAction && c.uiAction.type === "volpick") { openVolPick(ui, c.uiAction.askId); return; } // sim/volunteers.js: a group's ask, choose who goes
     if (c.uiAction && c.uiAction.type === "moveout") { openMoveOut(c.uiAction.baseId); return; } // the Overcrowded card (sim/moveout.js)
+    if (c.uiAction && c.uiAction.type === "basemap") { const why = openBuildMap(state, ui, c.uiAction.baseId); if (why) ui.cardResult = { title: card.title, text: why }; return; } // sim/staging.js: Open the build map (a camp set up, a base gone up a tier)
     if (c.uiAction && c.uiAction.type === "radioCaravan") { // a group asked you to bring your side (sim/radiotrade.js): the planner for that deal
       const deal = radioDeals(state).find((x) => x.factionId === c.uiAction.factionId);
       if (deal) TRADE_ACTIONS["rd-dealcaravan"](state, ui, { id: deal.id });

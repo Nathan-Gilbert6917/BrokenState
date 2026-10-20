@@ -113,6 +113,7 @@ section("Brought in one trip; cancel; save");
     const job = tierUpJob(b);
     tickHour(st);
     check(!gatherStalled(job) && gatherCap(job) > 0 && (b.stock.scrap || 0) + gatherRows(job)[0].have >= 20, "everything in at once: nothing to wait for (the rest in the stores until the work needs it)");
+    st.cards.length = 0; // the "Camp set up" card (staging.js: Open the build map) answered first: a card cannot be saved
     const back = deserializeState(serializeState(st));
     const b2 = back.bases.find((x) => x.id === b.id);
     check(b2 && isShelter(b2) && tierUpJob(b2) && JSON.stringify(tierUpJob(b2).paid) === JSON.stringify(job.paid), "a save keeps the camp and what its job has taken");

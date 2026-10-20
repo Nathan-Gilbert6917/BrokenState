@@ -188,7 +188,9 @@ export function makeCamp(state, p, tile, { up = false } = {}) {
   if (p.owner === "player") state.campOpen = base.id; // main.js opens its base window (once)
   const w = waterSource(state, tile);
   const job = tierUpJob(base);
-  log(state, `${name} set up camp ${tileLabel(state, tile)}: ${base.name}, ${people.length} ${people.length === 1 ? "person" : "people"}.${job ? ` To build it up into ${base.type === "outpost" ? "an outpost" : "a shelter"}: ${gatherShort({ ...job, paid: {} })} brought in, then ${job.hours} work-hours by its builders (Construction).` : ""} Water: ${w ? waterText(state, tile) : "none nearby"}.`, "good");
+  const said = `${name} set up camp ${tileLabel(state, tile)}: ${base.name}, ${people.length} ${people.length === 1 ? "person" : "people"}.${job ? ` To build it up into ${base.type === "outpost" ? "an outpost" : "a shelter"}: ${gatherShort({ ...job, paid: {} })} brought in, then ${job.hours} work-hours by its builders (Construction).` : ""} Water: ${w ? waterText(state, tile) : "none nearby"}.`;
+  log(state, said, "good");
+  if (p.owner === "player") baseReadyCard(state, base, "Camp set up", `${said} ${BUILD_MAP_TEXT}`);
   return base;
 }
 // "Calder Woods Camp" (outpostName's place, a camp's word).
@@ -380,7 +382,33 @@ export function campBecameShelter(state, base) {
   if (firstHubPending(state)) { hubFounded(state, base, when); return; }
   const people = atBase(state, base.id).length;
   const text = `Day ${day(state)}: ${base.name} is your new shelter, ${when}. ${people} ${people === 1 ? "person lives" : "people live"} there. ${shelterText()}`;
-  addCard(state, { title: "A new home", text, choices: [{ label: "OK", resolve: () => "" }] });
+  addCard(state, { title: "A new home", text, mapBase: base.id, choices: [{ label: "OK", default: true, resolve: () => "" }, buildMapChoice(base)] });
+}
+// buildings.js upgradeShelter: a shelter built up into a base, or an outpost camp into an established outpost.
+export function baseUpgraded(state, base) {
+  const outpost = base.type === "outpost";
+  baseReadyCard(state, base, outpost ? "An established outpost" : "A real base", `Day ${day(state)}: ${base.name} is ${outpost ? "an established outpost" : "a real base"} now. More buildings open up there (Construction). ${BUILD_MAP_TEXT}`);
+}
+
+// ---------- Open the build map (the user's request 2026-10-20) ----------
+// "When a camp/base is established add an option to open up the build map to set up things like tents etc.": the
+// card that says a camp stands, or that a base went up a tier, carries a button that opens that base's base map
+// (ui/basemap.js openBuildMap, routed by main.js's card choice: uiAction "basemap"). It is an extra button, never the
+// answer a card takes by itself: OK is the default, and a uiAction choice is left out of the auto-answers and the
+// governor's picks (cardrules.js usableChoices). A card left waiting after its base is gone is dropped (cardrules.js
+// trayStale: mapBase); answered anyway, the button says the base is gone and opens nothing.
+export const BUILD_MAP_LABEL = "Open the build map";
+const BUILD_MAP_TEXT = `${BUILD_MAP_LABEL} to lay it out: where its buildings, tents, fields and defences go.`;
+export const buildMapChoice = (base) => ({
+  label: BUILD_MAP_LABEL, hint: "This base's map: pick something from its Build list and click where it goes, or move what stands there.",
+  uiAction: { type: "basemap", baseId: base.id }, resolve: () => "",
+});
+// The card with OK and the button (not under the governor: it opens no windows either). Returns the card, or null.
+export function baseReadyCard(state, base, title, text) {
+  if (!base || state.autopilot) return null;
+  const card = { title, text, mapBase: base.id, choices: [{ label: "OK", default: true, resolve: () => "" }, buildMapChoice(base)] };
+  addCard(state, card);
+  return card;
 }
 
 // What a new shelter is (the founding cards).

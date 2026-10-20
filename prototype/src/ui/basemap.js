@@ -265,6 +265,18 @@ export function moveCarButton(state, base, v) {
   if (!base || !v || !itemByKey(state, base, `v:${v.id}`)) return "";
   return `<button class="mini" data-action="bm-open" data-base="${base.id}" data-key="v:${v.id}" data-tab="vehicles"${tip("Move it on the base map: click any free cells it fits, in the yard or beyond the wall (R turns it)")}>Move</button>`;
 }
+// A card's Open the build map (sim/staging.js buildMapChoice, uiAction "basemap"; main.js choice): that base's map,
+// nothing picked, its Build list ready; closing it comes back to the base window's Base map tab. "" when it opened,
+// else why not (the base is gone, a battle on): nothing is changed then.
+export function openBuildMap(state, ui, baseId) {
+  const b = baseById(state, Number(baseId));
+  if (!b) return "That base is gone: there is no build map to open.";
+  const err = openBaseMap(state, b.id);
+  if (err) return err;
+  ui.mapFrom = { id: b.id, tab: "basemap" };
+  ui.baseView = null; ui.baseMsg = "";
+  return "";
+}
 // After Build on the Construction tab (main.js queuebuild): the map opens with the new job picked.
 export function openForJob(state, ui, base, type) {
   if (!base || !FOOT[type]) return false;
