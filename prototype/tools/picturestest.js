@@ -1,6 +1,6 @@
 // The kept pictures after a lost GPU context (src/ui/pictures.js; README "Lost pictures drawn again"), on stub canvases:
-// - every module with a picture cache (sprites, figures, the battle's ground, fog, edge and light masks, the marks,
-//   the map's chunks, shade, clouds, minimap, gun art) registers how to forget it; forgetPictures drops them all;
+// - every module with a picture cache (sprites, figures, the carts, the battle's ground, fog, edge and light masks,
+//   the marks, the map's chunks, shade, clouds, minimap, gun art) registers how to forget it; forgetPictures drops them all;
 // - a battle frame that changes nothing makes no canvas; after forgetPictures the next frame makes the ground, the
 //   fog and the sprites again (the builds counted, canvases made);
 // - the battle canvas is watched: contextlost is counted, contextrestored forgets the pictures once for a burst of
@@ -69,6 +69,35 @@ console.log("The pictures forgotten and drawn again");
   check(made === again, "and kept once more: a frame after that makes none");
   check(JSON.stringify(b) === before, "the battle is untouched by the forgetting and the frames after it");
   check(!nan, `no NaN reached a canvas (${nan})`);
+}
+
+// ---------- 1b. the carts' models (ui/cartmodel.js) ----------
+console.log("The carts' pictures forgotten and drawn again");
+{
+  const CM = await import("../src/ui/cartmodel.js");
+  const p0 = CM.cartArtStats.painted;
+  const a = CM.cartCanvas("barrow", 45, { held: true }), m = CM.cartMarkerCanvas("cart", true);
+  CM.cartCanvas("barrow", 45, { held: true });
+  check(a && a.figure && m && CM.cartArtStats.painted === p0 + 1, "a cart's picture is made once and kept (and the State Map's cart marker)");
+  PIC.forgetPictures("the carts");
+  const b2 = CM.cartCanvas("barrow", 45, { held: true });
+  check(b2 && b2 !== a && CM.cartArtStats.painted === p0 + 2 && CM.cartMarkerCanvas("cart", true) !== m, "after a lost context both are drawn again");
+  // A battle with a cart pushed and one parked (loaded, broken) draws them as models, and again after a forget.
+  const { newItem } = await import("../src/sim/inventory.js");
+  const K = await import("../src/sim/carts.js");
+  const { st, b } = battles(45, ["field-town"])[0];
+  const [u, v] = b.units.filter((t) => t.side === "player" && !t.dead);
+  u.bag = newItem("wheelbarrow"); v.bag = newItem("handcart"); v.bag.dur = 0;
+  K.letGoCart(st, b, v, { quiet: true });
+  K.cartBoxes(b)[0].contents.sup.wood = 120;
+  const n0 = CM.cartArtStats.painted, e = draw(st);
+  check(!e && CM.cartArtStats.painted >= n0 + 2, `a battle with a cart pushed and a broken one parked draws them (${CM.cartArtStats.painted - n0} painted)${e ? `: ${e}` : ""}`);
+  const n1 = CM.cartArtStats.painted;
+  draw(st);
+  check(CM.cartArtStats.painted === n1, "kept: the next frame paints none");
+  PIC.forgetPictures("the carts in a battle");
+  draw(st);
+  check(CM.cartArtStats.painted >= n1 + 2, "forgotten: painted again in the next frame");
 }
 
 // ---------- 2. the canvas's own report ----------

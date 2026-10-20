@@ -37,7 +37,7 @@ import { battleWeather, fogColour, fogCss, skirtFor, drawVignette, setEdgeCanvas
 import { paintLights, drawGlow, drawDarkness, drawShade, setLightsCanvas } from "./battlelights.js"; // night: flashlight beams, lantern pools, the darkness; by day a dark room's shade
 import { ingestMarks, revealMarks, drawMarks, knownBody, setMarksCanvas } from "./battlemarks.js"; // blood, brass, scorch, glass that stay
 import { drawGroundIso, drawPileIso, drawCartIso, drawCartBoxIso } from "./ground.js";
-import { isCart, parkCells } from "../sim/carts.js"; // a cart pushed (u.bag); Park cart's cells
+import { isCart, parkCells, cartSpec } from "../sim/carts.js"; // a cart pushed (u.bag), its look; Park cart's cells
 import { groundPiles, pileCount } from "../sim/ground.js"; // things on the ground (sim/ground.js)
 import { planOpen } from "../sim/raidplan.js"; // before a raid: while the plan is open the team is not on the map yet (not drawn)
 import { onForgetPictures } from "./pictures.js"; // the pictures kept here are dropped when the GPU context comes back (they would be blank)
@@ -1890,12 +1890,11 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
       }
     }
     for (const c of bodies.get(d) || []) drawCorpseIso(ctx, b, c, !vis[c.y * b.w + c.x]);
-    for (const p of piles.get(d) || []) if (!unknownCell(p.y * b.w + p.x)) { if (p.cart) drawCartBoxIso(ctx, p, project, (x, y) => standZ(b, x, y), S); else drawPileIso(ctx, p, project, (x, y) => standZ(b, x, y), S); } // ui/ground.js (a cart: its own sprite)
+    for (const p of piles.get(d) || []) if (!unknownCell(p.y * b.w + p.x)) { if (p.cart) drawCartBoxIso(ctx, p, project, (x, y) => standZ(b, x, y), S, { yaw: parkedYaw(b, p), fog: !vis[p.y * b.w + p.x] }); else drawPileIso(ctx, p, project, (x, y) => standZ(b, x, y), S); } // ui/ground.js (a cart: its own model, ui/cartmodel.js)
     for (const q of gh.get(d) || []) drawGhost(ctx, state, b, q, H);
     for (const f of siegeAt.get(d) || []) f();
     for (const s of (sh.get(d) || []).filter((q) => !flatDead.has(q.t)).sort((a, c) => a.z - c.z || (active(a.t) ? 1 : 0) - (active(c.t) ? 1 : 0))) {
       drawUnitIso(ctx, state, b, s, H, now);
-      if (isCart(s.t.bag) && !s.t.dead) { const [X, Y] = project(s.wx + 0.5, s.wy - 0.05, s.z); drawCartIso(ctx, s.t.bag, X, Y, S, (s.t.bag.contents || []).filter(Boolean).length); } // sim/carts.js: the cart rolls with its pusher
     }
     for (const f of siegeOver.get(d) || []) f();
     for (const [L, , , sx, sy, fog, faded] of fronts) {
@@ -2354,10 +2353,16 @@ function drawBody(ctx, state, b, s, H, silhouette = false) {
     drawDowned(ctx, unitDownCanvas(state, b, t, H.salt), X, Y, [x1 - X, y1 - Y], [x2 - X, y2 - Y], { facing: f, scale: downScale(t), alpha: !silhouette && t.dead ? 0.92 : 1 });
     return;
   }
-  const fig = unitFigure(state, b, t, H.salt, unitYaw(b, t, FR.r)); // a low-poly figure facing its way (ui/figures.js), else the flat sprite mirrored to its side
+  const yaw = unitYaw(b, t, FR.r);
+  const fig = unitFigure(state, b, t, H.salt, yaw); // a low-poly figure facing its way (ui/figures.js), else the flat sprite mirrored to its side
   frameFigs.push(["up", t]);
   const cv = fig || unitCanvas(state, b, t, H.salt);
   if (!cv) return;
+  // A cart in the arms (sim/carts.js) rolls with its pusher, facing their way (ui/ground.js, ui/cartmodel.js): the
+  // wheelbarrow pushed ahead, the hand cart pulled behind; whichever end is nearer the viewer drawn over the figure.
+  const cart = isCart(t.bag) ? t.bag : null;
+  const a = (yaw * Math.PI) / 180, ahead = Math.cos(a) + Math.sin(a) > 0, cartOver = cart && (cartLookOf(cart) === "cart" ? !ahead : ahead);
+  if (cart && !cartOver) drawCartIso(ctx, cart, X, Y, S, { yaw, held: true });
   const facing = sideFacing(b, t, FR.r);
   const hgt = UNIT_H * unitBig(t) * S, w = hgt * (22 / 26);
   ctx.save();
@@ -2375,6 +2380,13 @@ function drawBody(ctx, state, b, s, H, silhouette = false) {
   if (fig) { const g = cv.figure || FIG; ctx.drawImage(cv, -g.ox * S, -g.oy * S, g.w * S, g.h * S); } // 1 grid px = 1 art px, the feet at (ox, oy)
   else ctx.drawImage(cv, -w / 2, -hgt * 0.94, w, hgt);
   ctx.restore();
+  if (cartOver) drawCartIso(ctx, cart, X, Y, S, { yaw, held: true });
+}
+const cartLookOf = (item) => (cartSpec(item) || {}).look || "barrow";
+// A parked cart's heading: one of the world's four ways, by the container (it keeps it while it stands), as a yaw.
+function parkedYaw(b, c) {
+  const d = [[1, 0], [0, 1], [-1, 0], [0, -1]][(((c.id || 0) * 2654435761) >>> 0) % 4];
+  return dirYaw(b, c, FR.r, d);
 }
 // The sprite's facing on screen: the view turned a half (rotation 1 or 2) shows the world mirrored.
 const viewFacing = (facing, r) => (r === 1 || r === 2 ? -facing : facing);
