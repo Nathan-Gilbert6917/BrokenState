@@ -1,4 +1,4 @@
-// Carrying the team's supplies (src/sim/carry.js): food, water, firewood and fresh game held person by person in
+// Carrying the team's supplies (src/sim/carry.js): food, water, wood and fresh game held person by person in
 // pockets, packs and the arms (and the vehicle); hands full block weapons in a fight until Drop carried (free); the
 // ground on the State Map (put down, picked up later by another team, spoiling, the marker); how much to collect;
 // a save and load; the autopilot playing on.
@@ -60,12 +60,12 @@ console.log("Placing the team's supplies: packs, pockets, the arms");
   const packSlots = Object.entries(ra.pack).reduce((s, [k, q]) => s + Math.ceil(q / C.HOLD[k].pack - 1e-6), 0);
   check(packSlots <= 6 && packSlots === 6 && (ra.pack.water || 0) > 0, `the school backpack's 6 slots hold water first (${C.recText(ra.pack)}; ${packSlots} slots)`);
   check(Object.keys(rb.pack).length === 0, "no pack: nothing in the pack");
-  check(Object.values(ra.pocket).reduce((x, y) => x + y, 0) + Object.values(rb.pocket).reduce((x, y) => x + y, 0) > 0 && !ra.pocket.wood && !rb.pocket.wood, `pockets take small things only (${C.recText(ra.pocket)} / ${C.recText(rb.pocket)}; no firewood)`);
+  check(Object.values(ra.pocket).reduce((x, y) => x + y, 0) + Object.values(rb.pocket).reduce((x, y) => x + y, 0) > 0 && !ra.pocket.wood && !rb.pocket.wood, `pockets take small things only (${C.recText(ra.pocket)} / ${C.recText(rb.pocket)}; no wood)`);
   const handsA = C.kgOf(ra.hands), handsB = C.kgOf(rb.hands);
   check(handsA + handsB > 0 && handsA <= C.HANDS_KG + 1e-6 && handsB <= C.HANDS_KG + 1e-6, `the rest is carried in the arms, at most ${C.HANDS_KG} kg each (${Math.round(handsA * 10) / 10} kg and ${Math.round(handsB * 10) / 10} kg)`);
   const weak = [a, b].sort((x, y) => (combat(x) - combat(y)))[0];
   check(C.kgOf(h.by[weak.id].hands) >= Math.min(handsA, handsB), "the weaker fighter carries first");
-  check(near(C.kgOf(ra.pack) + C.kgOf(ra.pocket) + C.kgOf(ra.hands) + C.kgOf(rb.pack) + C.kgOf(rb.pocket) + C.kgOf(rb.hands), C.kgOf(tot)), `the weights add up to the pool's (a day of food ${C.unitKg("food")} kg, water 1 kg, firewood 0.1 kg: ${C.kgOf(tot).toFixed(1)} kg)`);
+  check(near(C.kgOf(ra.pack) + C.kgOf(ra.pocket) + C.kgOf(ra.hands) + C.kgOf(rb.pack) + C.kgOf(rb.pocket) + C.kgOf(rb.hands), C.kgOf(tot)), `the weights add up to the pool's (a day of food ${C.unitKg("food")} kg, water 1 kg, wood 0.1 kg: ${C.kgOf(tot).toFixed(1)} kg)`);
   // Drinking lightens the arms first.
   const before = C.kgOf(h.by[a.id].hands) + C.kgOf(h.by[b.id].hands);
   p.cargo.supplies.rawwater -= 5;
@@ -80,7 +80,7 @@ console.log("Placing the team's supplies: packs, pockets, the arms");
   const m2 = C.moveHeld(st, p, "wood", 10, { sid: (h.by[a.id].hands.wood ? a : b).id, place: "hands" }, { sid: b.id, place: "pack" });
   check(/No room/.test(m2), `no pack, no room (${m2})`);
   const m3 = C.moveHeld(st, p, "wood", 5, { sid: (h.by[a.id].hands.wood ? a : b).id, place: "hands" }, { sid: a.id, place: "pocket" });
-  check(/No room/.test(m3), `firewood never goes in a pocket (${m3})`);
+  check(/No room/.test(m3), `wood never goes in a pocket (${m3})`);
   // An item in the pack pushes supplies out into the arms.
   a.gear.backpack.contents[0] = newItem("flashlight");
   C.settleHold(st, p);
@@ -187,14 +187,14 @@ console.log("The ground: put down by one team, picked up by another");
   const tile = partyTile(p);
   const msg = C.dropHands(st, p);
   const site = C.groundAt(st, tile);
-  check(site && /firewood/.test(C.groundText(site)) && !C.carriersOf(st, p).length, `Set down: ${msg}`);
+  check(site && /wood/.test(C.groundText(site)) && !C.carriersOf(st, p).length, `Set down: ${msg}`);
   const item = newItem("machete");
   crew[0].pockets[0] = null;
   p.cargo.gear.push(item);
   const m2 = C.dropItemToGround(st, `cargo:${p.id}:list:${p.cargo.gear.indexOf(item)}`);
   check(/on the ground/.test(m2) && site.items.some((it) => it.item === item), `an item on the ground (${m2})`);
   const mk = st.markers.find((m) => m.key === `death:${tile}`);
-  check(mk && /Cargo left behind: .*firewood/.test(mk.label) && /Machete/.test(deathLabel(site)), `a marker on the map with the contents (${mk && mk.label})`);
+  check(mk && /Cargo left behind: .*wood/.test(mk.label) && /Machete/.test(deathLabel(site)), `a marker on the map with the contents (${mk && mk.label})`);
   // Food on the ground spoils.
   C.dropHeld(st, p, "food", 4, { sid: crew[0].id, place: C.settleHold(st, p).by[crew[0].id].pack.food ? "pack" : C.settleHold(st, p).by[crew[0].id].pocket.food ? "pocket" : "hands" });
   const fit = site.items.find((it) => it.kind === "supply" && FOODS[it.key]);
@@ -207,7 +207,7 @@ console.log("The ground: put down by one team, picked up by another");
   const iWood = site.items.findIndex((it) => it.key === "wood");
   const before = site.items[iWood].qty;
   const r = C.pickUpGround(st, q, iWood, 20);
-  check(/Picked up 20 firewood/.test(r) && near(site.items[iWood].qty, before - 20) && near(q.cargo.supplies.wood || 0, 20), `another team picks up 20 of ${before} firewood (${r})`);
+  check(/Picked up 20 wood/.test(r) && near(site.items[iWood].qty, before - 20) && near(q.cargo.supplies.wood || 0, 20), `another team picks up 20 of ${before} wood (${r})`);
   const r2 = C.pickUpAll(st, q);
   check(/Picked up/.test(r2) && q.cargo.gear.includes(item), `Pick up all: ${r2}`);
   const left = C.groundAt(st, tile);
@@ -248,7 +248,7 @@ console.log("How much to collect");
   if (q.phase === "task") {
     check(near(cargoRoom(st, q), 3, 0.01), `Cut wood, 30 asked: room for 3 kg (30 × 0.1) while it works (${cargoRoom(st, q)})`);
     for (let i = 0; i < 6 && q.phase === "task"; i++) tickHour(st);
-    check((q.cargo.supplies.wood || 0) <= 30.0001, `it stops at 30 firewood (${Math.round((q.cargo.supplies.wood || 0) * 10) / 10})`);
+    check((q.cargo.supplies.wood || 0) <= 30.0001, `it stops at 30 wood (${Math.round((q.cargo.supplies.wood || 0) * 10) / 10})`);
   } else check(true, `(no wood on this tile: ${q.lastMsg || "skipped"})`);
 }
 

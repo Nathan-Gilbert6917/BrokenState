@@ -61,20 +61,20 @@ export const CRAFTS = {
   tourniquet:  { gear: "tourniquet",  in: { scrap: 1 },           hours: 1,  skill: "medicine",  min: 1, field: true },
   dressings:   { name: "Boiled-rag dressings", supplies: { meds: 1 }, in: { scrap: 2, water: 2 }, hours: 6, skill: "medicine", min: 3, field: true,
                  desc: "Rags boiled clean and folded into dressings: 1 meds. Slower than a med station, but needs no building." },
-  // Arrows and bolts for hunting with a bow or crossbow (hunting.js): straight shoots split from the firewood, fletched,
+  // Arrows and bolts for hunting with a bow or crossbow (hunting.js): straight shoots split from the wood, fletched,
   // with scrap points.
   // Building materials (data.js buildmat; user request 2026-10-09: "Building materials can be crafted with scraps"):
   // scrap hammered, bolted and nailed into panels, beams and blocks. Anywhere, a team too.
   buildmat:    { name: "Building materials", supplies: { buildmat: 1 }, in: { scrap: 3 }, hours: 3, skill: "mechanics", min: 0, field: true,
                  desc: "Scrap hammered, bolted and nailed into panels, beams and blocks: 1 building material from 3 scrap. What a camp takes to become a base (with scrap): Establish the outpost, Build up into a shelter, Build up into a base." },
   arrows:      { name: "Arrows (12)", supplies: { arrows: 12 }, in: { wood: 30, scrap: 1 }, hours: 4, skill: "mechanics", min: 1, field: true,
-                 desc: "Straight shafts split from firewood, fletched, with points filed from scrap: 12 arrows (or crossbow bolts), what a bow or crossbow shoots in fights and on hunts. A hunt loses about half the arrows it shoots; a won fight gets about half back." },
+                 desc: "Straight shafts split from wood, fletched, with points filed from scrap: 12 arrows (or crossbow bolts), what a bow or crossbow shoots in fights and on hunts. A hunt loses about half the arrows it shoots; a won fight gets about half back." },
   crowbar:     { gear: "crowbar",     in: { scrap: 4 },           hours: 5,  skill: "mechanics", min: 1 },
   // Makeshift picks (locks.js MAKESHIFT_PICK): n a craft as one stack (data-stacks.js STACK_MAX), always known, a team too.
   makeshiftpick: { name: "Makeshift picks (3)", gear: "makeshiftpick", n: 3, in: { scrap: 1 }, hours: 1, skill: "mechanics", min: 0, field: true },
   // Makeshift ear protection (hearing.js; data.js ragplugs): rag twists dipped in wax, a few pairs a craft, a team too.
   ragplugs:    { gear: "ragplugs",    in: { scrap: 1 },           hours: 1,  skill: "mechanics", min: 0, field: true },
-  // Boards and nails (barricade.js; data.js GEAR.boards): planks split from a bundle of firewood, nails from a scrap.
+  // Boards and nails (barricade.js; data.js GEAR.boards): planks split from a bundle of wood, nails from a scrap.
   // Anywhere, a team too: boarded up over a door or a window in a fight.
   boards:      { gear: "boards",      in: { wood: 30, scrap: 1 }, hours: 1,  skill: "mechanics", min: 0, field: true },
   waterfilter: { gear: "waterfilter", in: { scrap: 4 },           hours: 6,  skill: "mechanics", min: 2, field: true },
@@ -94,7 +94,7 @@ export const CRAFTS = {
   // powder pulled from a few rounds and fuel packed in a scrap tube.
   flare:       { gear: "flare",       in: { scrap: 1, fuel: 1, ammo: 4 }, hours: 2, skill: "mechanics", min: 2, field: true },
   flashlight:  { gear: "flashlight",  in: { scrap: 2, parts: 1 }, hours: 6,  skill: "mechanics", min: 3 },
-  // Lights (lights.js): a torch from firewood anywhere, a headlamp and a lantern at the bench, a spotlight in a workshop.
+  // Lights (lights.js): a torch from wood anywhere, a headlamp and a lantern at the bench, a spotlight in a workshop.
   torch:       { gear: "torch",       in: { wood: 1, scrap: 1 },  hours: 1,  skill: "mechanics", min: 0, field: true },
   headlamp:    { gear: "headlamp",    in: { scrap: 1, parts: 1 }, hours: 5,  skill: "mechanics", min: 3 },
   windlight:   { gear: "windlight",   in: { scrap: 2, parts: 1 }, hours: 4,  skill: "mechanics", min: 2 }, // a dynamo from a motor out of the scrap
@@ -134,11 +134,11 @@ export const CRAFTS = {
   // A field repair kit (repair.js): tools, pins and springs for 5 repairs on the road.
   repairkit:   { gear: "repairkit",   in: { scrap: 3, gunparts: 1, parts: 1 }, hours: 8, skill: "mechanics", min: 3, needs: "workshop" },
   // The reloading bench's own inputs (reloading.js; section 12): black powder from charcoal, sulphur and saltpetre
-  // (firewood, scrap, food for the latrine's saltpetre), and match-head primers. Both are used only when the factory
+  // (wood, scrap, food for the latrine's saltpetre), and match-head primers. Both are used only when the factory
   // powder or primers run out; loads with them are handloads that jam more (black powder: ×1.5 and louder; match-head
   // primers: misfires ×3).
   blackpowder: { name: "Black powder (a can)", supplies: { blackpowder: 100 }, in: { wood: 90, scrap: 1, food: 2 }, hours: 8, skill: "mechanics", min: 4, needs: "reload_bench",
-                 desc: "Charcoal from firewood, sulphur scraped from old matches and batteries, saltpetre leached from the latrine: a can's worth of black powder (100 pistol charges) for the reloading bench, used when the smokeless powder runs out. Its loads foul the gun (jams ×1.5) and are louder." },
+                 desc: "Charcoal from wood, sulphur scraped from old matches and batteries, saltpetre leached from the latrine: a can's worth of black powder (100 pistol charges) for the reloading bench, used when the smokeless powder runs out. Its loads foul the gun (jams ×1.5) and are louder." },
   matchprimers: { name: "Match-head primers (50)", supplies: { matchprimers: 50 }, in: { scrap: 1 }, hours: 6, skill: "mechanics", min: 8, needs: "reload_bench",
                  desc: "Spent primers knocked out, re-anviled and packed with scraped match heads: 50 primers for the reloading bench, used when the factory primers run out. They fail three times as often (misfires and jams ×3)." },
   // ---------- special gear (craft-books): locked until a craft book is read or a blueprint studied (blueprints.js) ----------
@@ -223,7 +223,7 @@ export function craftOutputText(key) {
     if (d.heat) fx.push(`${Object.entries(d.heat).filter(([k]) => k !== "hours").map(([k, v]) => `Heat ×${v} ${k === "stay" ? "staying put" : k === "camp" ? "camping" : "searching"}`).join(", ")}${d.heat.hours ? `, for ${d.heat.hours} hours, used up` : ""}`);
     if (d.defence && d.defence.alarm) fx.push("an alarm for a base (everyone counts half on the walls) or a camp (less trouble)");
     // Wave 2 cooking (cooking.js): the camp cook pot was a bare "tool" here; it says what it cooks and where.
-    if (r.gear === "cookpot") fx.push("cooks over a fire: a Camp fire station for simple meals and stew at a base without a Kitchen or a cook fire (1 firewood an hour), and a camping team's fresh food into simple meals at a lit fire");
+    if (r.gear === "cookpot") fx.push("cooks over a fire: a Camp fire station for simple meals and stew at a base without a Kitchen or a cook fire (1 wood an hour), and a camping team's fresh food into simple meals at a lit fire");
     if (d.ears) fx.push(`ear protection carried in a pocket or the pack, under any helmet (hearing.js): takes ${d.ears.cut} off a bang's loudness (foam earplugs ${GEAR.earplugs.ears.cut}), hearing ${d.ears.hear} tiles; a pair a fight`);
     if (r.gear === "boards") fx.push("nailed across a closed door, a doorway or a window in a fight (barricade.js Board up, both actions): 40 hit points a layer, up to 3, that the dead and raiders batter through; a bundle in the team's vehicle counts from next to it"); // it said only "tool"
     if (r.gear === "makeshiftpick") fx.push("picks locks in a raid without the crowbar and lockpicks (locks.js): 30% + 4% a Stealth point − 15% a difficulty step, as quiet, but one snaps in two every attempt; not a safe, a steel security door or a gun safe");

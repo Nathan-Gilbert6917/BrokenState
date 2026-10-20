@@ -34,8 +34,8 @@ const check = (ok, what) => { if (ok) pass++; else fail++; console.log(`  ${ok ?
 const section = (t) => console.log(`\n${t}`);
 const t0 = Date.now();
 registerCombatHandler("bbu", () => {});
-const world = (s = seed) => { const st = createWorld({ seed: s, factionCount: 6 }); st.started = true; st.hour = 24 * 3 + 12; return st; };
-const rich = (base) => Object.assign(base.stock, { scrap: 999, parts: 99, buildmat: 99, electronics: 9, meds: 20 });
+const world = (s = seed) => { const st = createWorld({ seed: s, factionCount: 6 }); st.started = true; st.hour = 24 * 3 + 12; st.landOff = true; return st; }; // landOff: the land (basescatter.js) is tools/baseviewtest.js's
+const rich = (base) => Object.assign(base.stock, { scrap: 999, parts: 99, buildmat: 99, electronics: 9, meds: 20, wood: 99999 });
 const asCamp = (base) => { base.tier = 0; base.camp = true; base.buildings = []; base.construction = []; delete base.plan; return base; }; // (tools/basebuildtest.js): a camp's view is its whole grid, margin and all
 const keyOf = (b) => `b:${b.id}`;
 const openView = (st, base, pick = null) => { globalThis.window = {}; try { return BM.openBaseMap(st, base.id, pick); } finally { delete globalThis.window; } };

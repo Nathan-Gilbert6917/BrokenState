@@ -280,12 +280,12 @@ export const HEALTH_ACTIONS = {
     b.wormCareOthers = !othersCareOn(b);
     ui.baseMsg = b.wormCareOthers ? `The night's care at ${b.name} treats the worm in prisoners and guests too.` : `The night's care at ${b.name} treats only your own people.`;
   },
-  // The water boiler (sim/worm.js): may it burn the armory's cheap wooden, paper and cloth junk when the firewood runs short?
+  // The water boiler (sim/worm.js): may it burn the armory's cheap wooden, paper and cloth junk when the wood runs short?
   "boiler-junk": (state, ui, d) => {
     const b = baseOf(state, d);
     if (!b) return;
     b.boilerJunk = !boilerJunkOn(b);
-    ui.baseMsg = b.boilerJunk ? `The water boiler at ${b.name} may burn spare wooden items and paper from the armory when the firewood runs short.` : `The water boiler at ${b.name} burns only firewood, items marked to burn, and fuel.`;
+    ui.baseMsg = b.boilerJunk ? `The water boiler at ${b.name} may burn spare wooden items and paper from the armory when the wood runs short.` : `The water boiler at ${b.name} burns only wood, items marked to burn, and fuel.`;
   },
   "health-auto": (state, ui, d) => {
     const b = baseOf(state, d);

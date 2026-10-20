@@ -1,6 +1,6 @@
-// Woodcutting and firewood: deadfall, felled trees, old fence rails and furniture split into firewood, the winter's
-// heating (upkeep.js heatUse: a base burns firewood first, 30 firewood heating as much as 0.2 fuel: HEAT.wood =
-// 0.2 / 30 a firewood, then fuel for the rest). Fuel is scarce and wanted for the vehicles and the generator; wood grows back.
+// Woodcutting and wood: deadfall, felled trees, old fence rails and furniture split into wood, the winter's
+// heating (upkeep.js heatUse: a base burns wood first, 30 wood heating as much as 0.2 fuel: HEAT.wood =
+// 0.2 / 30 a wood, then fuel for the rest). Fuel is scarce and wanted for the vehicles and the generator; wood grows back.
 // Two ways to cut it:
 //   - the base job "Cut wood" (work.js, economy.js ROLES "wood"): people cut within 2 tiles of the base 6 hours a day;
 //   - the team order "Cut wood" on a land tile (N hours, like Forage; orders.js), and a plan step.
@@ -11,8 +11,8 @@
 //               water 0) × 1.1 by a river or lake (driftwood, riverside trees) × a site (cabins, lodges, campgrounds,
 //               ranger stations 1.3: woodpiles and woodlots; farms, ranches and barns 1.2: woodlots and fences)
 //               × (1 − 0.4 × infection) × hive land 0.5 (its red ring 0.25)
-//   level     = 1 untouched; each firewood taken lowers it by 1 / (DEPLETE × the tile's abundance, at least 0.1): a
-//               forest tile gives about 7,500 firewood (750 kg) from full before it is cut bare; it grows back
+//   level     = 1 untouched; each wood taken lowers it by 1 / (DEPLETE × the tile's abundance, at least 0.1): a
+//               forest tile gives about 7,500 wood (750 kg) from full before it is cut bare; it grows back
 //               toward 1 with a half-life of HALF_LIFE (60) days (trees are slow: about a quarter of what was cut
 //               comes back within a season, three quarters within a year).
 // Season and hour: winter × 0.85 (short days, frozen hands; × 0.75 more under deep snow), otherwise 1; daylight
@@ -22,7 +22,7 @@
 //   a saw-blade machete ×1.2; bare hands ×1: deadfall and branches; GEAR `chop` overrides) × their work factor
 //   (illness), × 0.5 when badly hurt (under 40 health). On one tile the best counts 1, the next 0.9, 0.8, … (at least
 //   0.4). A team's spare tools in the cargo go to those without one; at a base the armory's tools do.
-// Firewood an hour = RATE (18) × abundance × level × season × time × weather × the woodcutters.
+// Wood an hour = RATE (18) × abundance × level × season × time × weather × the woodcutters.
 //   Expect (an average woodcutter, skill ~3: × 0.85): a forest tile with a fire axe ~23 an hour (about 140 a day on
 //   the base job), bare-handed ~14; hills about 60% of that, farmland a quarter, suburbs a fifth, a city next to
 //   nothing.
@@ -31,23 +31,23 @@
 //   rolls 0.15% a person-hour for a deep cut or a sprain (half without a tool); the base job is a work accident risk
 //   like the others (health.js WORK_RISK.wood).
 // Fires (camp fires, 2026-10-12, user request "Lit camp fires use fire wood it goes out"): every lit fire burns
-//   firewood: a shelter's or camp's WOOD.fire.shelter a day from its store, a team's camp WOOD.fire.camp a day from
+//   wood: a shelter's or camp's WOOD.fire.shelter a day from its store, a team's camp WOOD.fire.camp a day from
 //   what it carries. Deadfall picked up around it (wood abundance 0.15+ on the tile or next to it) stretches the pile
-//   (× WOOD.fire.deadfall) but no longer feeds it for free. With no firewood left the fire goes out (a team's, a
-//   camp's or a shelter's alike): no warmth, no boiled water, no cooking on it until firewood comes and it is lit again.
-//   The fire does the work (fire-nights, 2026-10-19, user request "Firewood still does not seem to be a highly needed and
-//   consuming item ... Having a camp uses firewood. Boiling water uses fire wood, cooking uses firewood. Bases use
-//   firewood to heat up the survivors during the night"): on top of the fire itself (WOOD.fire.shelter / camp a day) a
-//   camp's or shelter's fire burns, a head fed there, their warmth (upkeep.js heatRate: 15 firewood a freezing day,
+//   (× WOOD.fire.deadfall) but no longer feeds it for free. With no wood left the fire goes out (a team's, a
+//   camp's or a shelter's alike): no warmth, no boiled water, no cooking on it until wood comes and it is lit again.
+//   The fire does the work (fire-nights, 2026-10-19, user request "Wood still does not seem to be a highly needed and
+//   consuming item ... Having a camp uses wood. Boiling water uses fire wood, cooking uses wood. Bases use
+//   wood to heat up the survivors during the night"): on top of the fire itself (WOOD.fire.shelter / camp a day) a
+//   camp's or shelter's fire burns, a head fed there, their warmth (upkeep.js heatRate: 15 wood a freezing day,
 //   4.5 on a cool night under HEAT.chillAt, none on a warm one), WOOD.fire.boilHead to boil the day's drinking while
 //   un-purified water is drawn here (worm.js baseWater drawn) and WOOD.fire.cookHead for the pot (fireDayBurn: 6 people
 //   on a cool spring night with water from the river: 18 + 6 × (4.5 + 3 + 1) = 69 a day, 34.5 where deadfall lies
 //   about; a freezing day 132 / 66). A team's camp fire the same for its people: WOOD.fire.camp + a head their warmth and
 //   WOOD.fire.campHead for the pot (campDayBurn). Every base above a shelter burns its people's warmth from the store
-//   at midnight (needs.js heatDaily), the nights' as the frost's. So firewood is burned most of the year: the
+//   at midnight (needs.js heatDaily), the nights' as the frost's. So wood is burned most of the year: the
 //   woodpile's plan (woodNeed) keeps WOOD.nightDays of the nights' fires (chillDaysAhead) on top of the winter's stock,
 //   and the governor keeps a woodcutter on it out of the stocking season as it does for the boiler (autopilot.js woodCritical).
-// Firewood is a supply (data.js SUPPLIES.wood: 0.1 kg a unit, cheap, dear in winter; every firewood figure here was a
+// Wood is a supply (data.js SUPPLIES.wood: 0.1 kg a unit, cheap, dear in winter; every wood figure here was a
 // 30th of this when a unit was a 3 kg bundle): stored at bases with no limit, carried by teams, traded.
 import { log, skill, atBase } from "./world.js";
 import { partyMembers, partyTile, tileLabel, teamName, cargoRoom, carried, takeSupply } from "./parties.js";
@@ -59,16 +59,16 @@ import { SUPPLIES, GEAR } from "./data.js";
 import { econStats } from "./farming.js";
 import { carriedItems } from "./hunting.js";
 import { mouthsAt, HEAT, woodFor, heatRate } from "./upkeep.js"; // heatRate: what a head's warmth burns today (a freezing day, a cool night)
-import { KITCHEN, hasKitchen, kitchenWood } from "./kitchen.js"; // the Kitchen's stove burns firewood every day (woodNeed)
-import { boilerUse, WORM, baseWater } from "./worm.js"; // the water boiler burns firewood a head every day its water needs boiling; baseWater: a camp's fire boils the drinking while un-purified water is drawn
+import { KITCHEN, hasKitchen, kitchenWood } from "./kitchen.js"; // the Kitchen's stove burns wood every day (woodNeed)
+import { boilerUse, WORM, baseWater } from "./worm.js"; // the water boiler burns wood a head every day its water needs boiling; baseWater: a camp's fire boils the drinking while un-purified water is drawn
 import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
 import { workLand, distFactor, tripScale, TRIP_JOBS, walkMult, tileFactor } from "./tripland.js"; // the Cut wood job in trips: the land and its walking (jobtrips.js)
 import { baseCarts, CART_JOB } from "./carts.js"; // a cart at the base: a woodcutter hauls more home (call-time only)
 
 // ---------- numbers ----------
 export const WOOD = {
-  rate: 18,                  // firewood a woodcutter-hour: average skill, bare hands, untouched forest, daylight (0.6 when a unit was 3 kg)
-  deplete: 7500,             // firewood a full tile of abundance 1 gives before it is cut bare (750 kg)
+  rate: 18,                  // wood a woodcutter-hour: average skill, bare hands, untouched forest, daylight (0.6 when a unit was 3 kg)
+  deplete: 7500,             // wood a full tile of abundance 1 gives before it is cut bare (750 kg)
   halfLife: 60,              // days for the cut land to grow half back
   minHours: 2, maxHours: 24, defHours: 8,
   weights: [1, 0.9, 0.8, 0.7, 0.6, 0.5], floorWeight: 0.4,
@@ -83,7 +83,7 @@ export const WOOD = {
   // to the cold, if sooner; at least minDays), plus the boiler's.
   base: { radius: 2, hours: 6, crowd: 0.05, crowdFloor: 0.5, stockDays: 21, minDays: 5 },
   worth: 12,                 // a woodcutter must be expected to bring in this much a day for the job to be open
-  fire: { land: 0.15, shelter: 18, camp: 9, deadfall: 0.5, keepDays: 4, boilHead: 3, cookHead: 1, campHead: 2 }, // deadfall enough to help (abundance), firewood a lit fire burns a day, × deadfall where there is some; a head: boiling the drinking, the pot (a team's pot: campHead)
+  fire: { land: 0.15, shelter: 18, camp: 9, deadfall: 0.5, keepDays: 4, boilHead: 3, cookHead: 1, campHead: 2 }, // deadfall enough to help (abundance), wood a lit fire burns a day, × deadfall where there is some; a head: boiling the drinking, the pot (a team's pot: campHead)
   nightDays: 14, chillAmp: 5,  // the nights' fires (fire-nights): days of them kept in store; a season's night is about this much under its mean (chillDaysAhead)
   bitter: 1.05, spare: 1.2,  // the winter's need: bitter days a little more, and a fifth to spare
 };
@@ -114,7 +114,7 @@ export function woodLevel(state, tile, hour = state.hour) {
   return 1 - (1 - r[0]) * Math.pow(0.5, days / WOOD.halfLife);
 }
 const depletePer = (state, tile) => 1 / (WOOD.deplete * Math.max(0.1, woodAbundance(state, tile)));
-// Takes `amount` firewood off a tile's level.
+// Takes `amount` wood off a tile's level.
 export function takeWood(state, tile, amount) {
   if (!(amount > 0)) return;
   const store = state.wood || (state.wood = {});
@@ -173,7 +173,7 @@ export const chopPower = (crew) => crew.reduce((a, c, i) => a + c.mult * (WOOD.w
 const teamSpare = (p) => ((p && p.cargo && p.cargo.gear) || []);
 
 // ---------- rates and estimates ----------
-// Firewood an hour on this tile at this level for a crew of power `power` (no randomness).
+// Wood an hour on this tile at this level for a crew of power `power` (no randomness).
 export function woodRate(state, tile, hour, power, level = woodLevel(state, tile, hour)) {
   return WOOD.rate * woodAbundance(state, tile) * level * seasonWood(state, hour) * woodTime(hour) * weatherMult(state, hour, tile) * power;
 }
@@ -251,9 +251,9 @@ export function woodSummary(state, p, t) {
   const hurt = got.hurt && got.hurt.length ? ` ${got.hurt.map((id) => state.survivors.find((s) => s.id === id)).filter(Boolean).map(first).join(" and ")} got hurt at it.` : "";
   const stop = got.stopped ? ` Stopped: ${got.stopped}` : "";
   p.lastHaul = { kind: "wood", wood: got.wood, hour: state.hour };
-  if (got.wood >= 30) log(state, `${teamName(state, p)} cut wood near ${tileLabel(state, tile)}: ${Math.floor(got.wood)} firewood.`, "good");
+  if (got.wood >= 30) log(state, `${teamName(state, p)} cut wood near ${tileLabel(state, tile)}: ${Math.floor(got.wood)} wood.`, "good");
   return got.wood >= 15
-    ? `Cut wood ${t.done}h: ${Math.round(got.wood)} firewood to carry home.${left}${hurt} Wood left here: ${word}.${stop}`
+    ? `Cut wood ${t.done}h: ${Math.round(got.wood)} wood to carry home.${left}${hurt} Wood left here: ${word}.${stop}`
     : `Cut wood ${t.done}h and got next to nothing${woodAbundance(state, tile) < 0.1 ? " (bare ground)" : ""}.${hurt} Wood left here: ${word}.${stop}`;
 }
 
@@ -277,7 +277,7 @@ export function woodTripTile(state, base, hour = state.hour) {
   }
   return best;
 }
-// Expected firewood a woodcutter brings in a day at this base (for the job's "worth it", the panels, the autopilot):
+// Expected wood a woodcutter brings in a day at this base (for the job's "worth it", the panels, the autopilot):
 // on a fair day of this season (no storm), from the tile its woodcutters go to (woodTripTile, its walk counted). s:
 // that person (with their own tool or the armory's best), else an average one (skill ~3) with the armory's best tool.
 export function baseWoodDay(state, base, s = null, hour = state.hour) {
@@ -295,7 +295,7 @@ export function woodWorkWhy(state, base) {
 }
 // The k-th woodcutter's share at a base (0 = the first): WOOD.base.crowd less for each one before them.
 export const woodCrowd = (k) => Math.max(WOOD.base.crowdFloor, 1 - WOOD.base.crowd * k);
-// Hands it takes to bring in `perDay` firewood a day here (each extra one at woodCrowd; 0 when nothing is wanted or
+// Hands it takes to bring in `perDay` wood a day here (each extra one at woodCrowd; 0 when nothing is wanted or
 // the land gives nothing). `each`: one woodcutter's day (baseWoodDay).
 export function handsForDay(perDay, each, crowd = woodCrowd, max = 40) {
   if (!(perDay > 0) || !(each > 0)) return 0;
@@ -305,7 +305,7 @@ export function handsForDay(perDay, each, crowd = woodCrowd, max = 40) {
 }
 // The woodcutters a base wants (no fixed cap: sized to the need): enough to cut what the coming cold still needs
 // (woodNeed) within `days` (default: WOOD.base.stockDays, or the days to the cold if sooner; at least minDays) and to
-// keep up with the water boiler's and the Kitchen's daily firewood. 0 when the pile holds it.
+// keep up with the water boiler's and the Kitchen's daily wood. 0 when the pile holds it.
 export function woodHandsWanted(state, base, { w = woodNeed(state, base), days = null } = {}) {
   if (!w.short || w.need <= 0) return 0;
   const each = baseWoodDay(state, base);
@@ -314,7 +314,7 @@ export function woodHandsWanted(state, base, { w = woodNeed(state, base), days =
 }
 // One woodcutter's trip (jobtrips.js): `hours` of the old job's hours (the walk already out of them) on `tile`, read
 // at `hour`; their share as the k-th of the base's woodcutters (woodCrowd), with their own tool or the armory's. The
-// land thins by what they cut; the firewood comes home with them. Returns { wood, tool }.
+// land thins by what they cut; the wood comes home with them. Returns { wood, tool }.
 export function woodTrip(state, base, s, tile, hours, hour) {
   const people = atBase(state, base.id).filter((x) => x.role === "wood" && !x.inBed && workFactor(x) >= 0.35);
   if (!people.includes(s)) people.push(s);
@@ -328,7 +328,7 @@ export function woodTrip(state, base, s, tile, hours, hour) {
   gainXp(state, s, "mechanics", USE.woodMech * share);
   return { wood: amount, tool: !!c.tool };
 }
-// Daily (economy.js baseDaily): the Cut wood job's day is in (its trips brought the firewood home through the day,
+// Daily (economy.js baseDaily): the Cut wood job's day is in (its trips brought the wood home through the day,
 // jobtrips.js): the woodcutters' noise for the base's Heat, the day's total for the panels and the log. Returns
 // { wood, tools } (the day's trips) or null with nobody on the job.
 export function woodDaily(state, base) {
@@ -343,11 +343,11 @@ export function woodDaily(state, base) {
   base.woodToday = r1(got.wood);
   if (!day) noteOutput(state, base, "wood", 0, "wood"); // a day on the job that brought nothing (the Work now panel)
   const who = day ? day.who.map((id) => crew.find((c) => c.s.id === id) || null).filter(Boolean) : [];
-  if (got.wood >= 30) log(state, `${(who.length ? who : crew).map((c) => first(c.s)).join(" and ")} cut ${Math.round(got.wood)} firewood around ${base.name}${got.tools < crew.length ? ` (${crew.length - got.tools === crew.length ? "no axe: deadfall by hand" : `${crew.length - got.tools} without an axe`})` : ""}.`, "good");
+  if (got.wood >= 30) log(state, `${(who.length ? who : crew).map((c) => first(c.s)).join(" and ")} cut ${Math.round(got.wood)} wood around ${base.name}${got.tools < crew.length ? ` (${crew.length - got.tools === crew.length ? "no axe: deadfall by hand" : `${crew.length - got.tools} without an axe`})` : ""}.`, "good");
   return got;
 }
 
-// ---------- the winter's firewood ----------
+// ---------- the winter's wood ----------
 // The share of days below freezing by part of the year (weather.js: about 30 days a year; late autumn 13%, winter
 // 92%, early spring 16%). The governor's heating fuel plan (autopilot.js heatFuelWant) uses the same table.
 export const FREEZE_SHARE = { "autumn-late": 0.13, "winter-early": 0.92, "winter-late": 0.92, "spring-early": 0.16 };
@@ -388,7 +388,7 @@ export function chillDaysAhead(state, hour = state.hour, horizon = WOOD.nightDay
   return r1(n);
 }
 // The share of a calendar day that is a cool night above freezing (the AI groups' heating, factions.js, burns
-// HEAT.night of a freezing day's firewood for it, as your bases do).
+// HEAT.night of a freezing day's wood for it, as your bases do).
 export const chillShare = (dayIdx) => {
   const m = Weather.seasonalMeanTemp ? Weather.seasonalMeanTemp(dayIdx) : 10;
   return m - WOOD.chillAmp < HEAT.chillAt ? 1 - freezeShare(dayIdx) : 0;
@@ -399,23 +399,23 @@ export function daysToCold(state, hour = state.hour) {
   for (let d = today; d < today + 130; d++) if (freezeShare(d) >= COLD_SHARE) return d - today;
   return 130;
 }
-// The stocking season: from late summer through the cold (a winter's firewood is cut in late summer and autumn).
+// The stocking season: from late summer through the cold (a winter's wood is cut in late summer and autumn).
 export function woodSeason(state, hour = state.hour) {
   const s = Weather.season(state, hour);
   return s.key === "autumn" || s.key === "winter" || (s.key === "summer" && s.dayOfSeason > 14) || (s.key === "spring" && s.dayOfSeason <= 14);
 }
-// The firewood a base wants for the rest of the coming cold: everyone fed there (+ extra heads, e.g. teams coming
+// The wood a base wants for the rest of the coming cold: everyone fed there (+ extra heads, e.g. teams coming
 // home) × 0.5 a day (woodFor(HEAT.fuel)) × the freezing days ahead × WOOD.bitter, with a fifth to spare. Shelters keep warm by their fire: a camp or shelter wants WOOD.fire.keepDays of
 // its fire's burn (fire) in store instead.
 // The water boiler (worm.js boilerUse) burns the same a head every day its water needs boiling, in every season:
 // WORM.BOILER_DAYS days of it are wanted in store on top, and the stocking season is always on while it burns.
 // { need, have, days (freezing days ahead), soon (the stocking season), short (have < need), cold (winter: the hard
-// cold is here), toCold (days until it is), boiler (the boiler's firewood a day, 0 when it does not burn), kitchen (the
+// cold is here), toCold (days until it is), boiler (the boiler's wood a day, 0 when it does not burn), kitchen (the
 // Kitchen's stove a day, kitchen.js kitchenWood: every day of the cold spell of it wanted in store, coldSpanAhead, at least
 // KITCHEN.wood.keepDays; heat: the heating's part of need; stoveDays: the stove's days counted), fire (a camp's or a
 // shelter's lit fire a day: fireBurn), daily (boiler + kitchen + fire: what burns every day in every season), pressing
 // (the boiler burns, the pile is under the kitchen's keepDays, or under what the fire wants) }.
-// A camp or a shelter (tier 0): its lit fire burns firewood every day (fireBurn: less where deadfall lies about), and
+// A camp or a shelter (tier 0): its lit fire burns wood every day (fireBurn: less where deadfall lies about), and
 // WOOD.fire.keepDays of it are wanted in store; it keeps the place warm and boils its water. With the fire put out
 // (BASE-05) it is heated from the woodpile like a base, and a boiler burns only on days the fire does not boil the
 // water (worm.js boilerUse).
@@ -434,7 +434,7 @@ export function woodNeed(state, base, extraHeads = 0) {
   const kitchen = shelter || !hasKitchen(base) ? 0 : r1(kitchenWood(state, base).need);
   // The stove burns every day of the cold spell, frost or not (ap-food, 2026-10-11: it counted only its
   // KITCHEN.wood.keepDays, a quarter of the spell, and the census at ac1c1c6 met the second winter with the woodpile at
-  // 10% of the cold's need and 7.4 base-days without heat a game, 0.9 before the stove burned firewood).
+  // 10% of the cold's need and 7.4 base-days without heat a game, 0.9 before the stove burned wood).
   const stoveDays = kitchen > 0 ? Math.max(KITCHEN.wood.keepDays, coldSpanAhead(state)) : 0;
   // The winter's heating (the frost's days ahead): a camp's or shelter's lit fire burns it by the hour, any other base
   // from the store at midnight (fire-nights: it was counted 0 with the fire lit, as if the fire warmed them for free).
@@ -457,8 +457,8 @@ export function woodNeed(state, base, extraHeads = 0) {
   const season = woodSeason(state);
   return { need, have, days: r1(days), soon: season || pressing, season, short: have < need, cold: daysToCold(state) === 0, toCold: daysToCold(state), heads, boiler, kitchen, fire, nights, night, chill, daily, dailyKeep, pressing, heat: Math.ceil(heat), stoveDays };
 }
-// A base the winter will catch short of firewood (the alert, the Upkeep line): in the stocking season, with less than
-// the coming cold needs and less heat in store (firewood and fuel) than that. null when it is fine.
+// A base the winter will catch short of wood (the alert, the Upkeep line): in the stocking season, with less than
+// the coming cold needs and less heat in store (wood and fuel) than that. null when it is fine.
 export function woodShortfall(state, base) {
   if (base.tier === 0 || !atBase(state, base.id).length) return null;
   const w = woodNeed(state, base);
@@ -474,7 +474,7 @@ export function woodShortfall(state, base) {
 // Deadfall within reach of a fire (the tile or one next to it).
 export const fireWood = (state, tile) => Math.max(woodAbundance(state, tile), ...state.grid.neighbors(tile).map((n) => woodAbundance(state, n)));
 export const fireLandOk = (state, tile) => fireWood(state, tile) >= WOOD.fire.land;
-// Firewood a lit fire burns a day on this tile (deadfall picked up around it stretches the pile).
+// Wood a lit fire burns a day on this tile (deadfall picked up around it stretches the pile).
 export const fireBurn = (state, tile, perDay) => perDay * (fireLandOk(state, tile) ? WOOD.fire.deadfall : 1);
 // Does a camp's or shelter's fire boil the drinking today: un-purified water is drawn here (worm.js baseWater: the
 // river, rain catchers, hauled water, or some in store), so the pot is on. Once a day (baseWater adds the water up).
@@ -508,13 +508,13 @@ export function campDayBurn(state, p, tile = p ? partyTile(p) : null, heads = nu
 }
 const r2 = (x) => Math.round(x * 100) / 100;
 // Can this fire be lit now (the autopilot and the fire toggles): a camp's or shelter's store, or a team's carried
-// firewood, holds at least an hour of its burn.
+// wood, holds at least an hour of its burn.
 export function canLight(state, x) {
   if (!x) return false;
   if (x.members) return carried(x, "wood") >= campDayBurn(state, x).total / 24 - 1e-9;
   return (x.stock && x.stock.wood || 0) >= fireDayBurn(state, x).total / 24 - 1e-9;
 }
-// Hourly (needs.js needsHour): a camp's or shelter's lit fire burns an hour's firewood from its store (fireDayBurn: the
+// Hourly (needs.js needsHour): a camp's or shelter's lit fire burns an hour's wood from its store (fireDayBurn: the
 // fire, its people's warmth, the pot); with too little it burns what there is and goes out (base.fire = false: no
 // warmth, boiled water or cooking until it is lit again).
 export function shelterFire(state, base) {
@@ -525,7 +525,7 @@ export function shelterFire(state, base) {
   base.fire = false;
   delete base.campFire;
   delete base.fireFed;
-  log(state, `${base.name}'s fire went out: no firewood left to burn. No warmth, boiled water or cooking on it until firewood comes in and it is lit again.`, "danger");
+  log(state, `${base.name}'s fire went out: no wood left to burn. No warmth, boiled water or cooking on it until wood comes in and it is lit again.`, "danger");
 }
 // What the fire burned today (the base window's Fire row, the balance runs): base.fireBurn = { day, wood }.
 function noteFire(state, base, wood) {
@@ -535,7 +535,7 @@ function noteFire(state, base, wood) {
   const es = econStats(state);
   es.fireWood = (es.fireWood || 0) + wood;
 }
-// Hourly in camp (orders.js campHour): a team's lit fire burns a little of the firewood it carries (campDayBurn: the
+// Hourly in camp (orders.js campHour): a team's lit fire burns a little of the wood it carries (campDayBurn: the
 // fire, its people's warmth, the pot; less where deadfall lies about); with none it goes out. Returns true when the
 // fire went out this hour.
 export function campFireHour(state, p) {
@@ -544,7 +544,7 @@ export function campFireHour(state, p) {
   const per = campDayBurn(state, p, tile).total / 24;
   if (carried(p, "wood") >= per - 1e-9) { takeSupply(p, "wood", per); return false; }
   p.campFire = false;
-  log(state, `${teamName(state, p)}: the camp fire went out at ${tileLabel(state, tile)}: no firewood left to burn. Cut wood or bring some to light it again.`, "info");
+  log(state, `${teamName(state, p)}: the camp fire went out at ${tileLabel(state, tile)}: no wood left to burn. Cut wood or bring some to light it again.`, "info");
   return true;
 }
 
@@ -559,14 +559,14 @@ export function baseWoodHint(state, base) {
 }
 
 // ---------- burnables: gear made of wood, paper or cloth (data.js GEAR `burnShare`) ----------
-// The firewood an item makes goes by its weight: floor(weight × burnShare / the firewood's 0.1 kg) (burnOf): a 0.3 kg
+// The wood an item makes goes by its weight: floor(weight × burnShare / the wood's 0.1 kg) (burnOf): a 0.3 kg
 // paperback 3, a 0.6 kg handbook 6, a 3 kg guitar (0.9 of it wood) 27, a 1.2 kg nail bat (0.8) 9, a 1 kg school
 // backpack (0.5) 5, a 9 kg siege ladder 90.
-// Break down for firewood (inventory.js breakDownAt, the inventory screen; breakDownJunk, the armory's bulk button):
-// the item is gone and its burnOf firewood goes into the base's stores (from the armory, or someone's pack at a base)
-// or the team's cargo supplies (from the cargo or a member's pack: the camp fire burns it like any firewood carried).
+// Break down for wood (inventory.js breakDownAt, the inventory screen; breakDownJunk, the armory's bulk button):
+// the item is gone and its burnOf wood goes into the base's stores (from the armory, or someone's pack at a base)
+// or the team's cargo supplies (from the cargo or a member's pack: the camp fire burns it like any wood carried).
 // It takes no time: it is kindling.
-// The water boiler (worm.js boilerDaily) burns, after the firewood, what the base allows from its armory: items marked
+// The water boiler (worm.js boilerDaily) burns, after the wood, what the base allows from its armory: items marked
 // to burn (it.fire = "burn", any value) and, with the base's "Boiler may burn spare wooden items and paper" on
 // (base.boilerJunk, on by default), cheap junk (isJunk: burnable, a pack item (never a weapon, a tool, armour or a
 // bag) worth at most BURN.junkValue). An item marked to keep (it.fire = "keep") is never burned, nor anything worn or
@@ -578,7 +578,7 @@ export const burnOf = (it) => (it && GEAR[it.key] ? burnOfKey(it.key) : 0);
 export const isJunk = (it) => burnOf(it) > 0 && GEAR[it.key].slot === "pack" && (GEAR[it.key].value || 0) <= BURN.junkValue;
 export const boilerJunkOn = (base) => !!base && base.boilerJunk !== false;
 export const boilerMayBurn = (base, it) => burnOf(it) > 0 && it.fire !== "keep" && (it.fire === "burn" || (boilerJunkOn(base) && isJunk(it)));
-// What the boiler may burn from this base's armory, the cheapest firewood first (value per firewood).
+// What the boiler may burn from this base's armory, the cheapest wood first (value per wood).
 export function boilerBurnables(base) {
   const per = (it) => (GEAR[it.key].value || 0) / burnOf(it);
   return (base.armory || []).filter((it) => boilerMayBurn(base, it)).sort((a, b) => per(a) - per(b));
@@ -594,12 +594,12 @@ export function itemsText(list) {
   const parts = Object.entries(n).map(([nm, k]) => (k === 1 ? `${/^[aeiou]/.test(nm) ? "an" : "a"} ${nm}` : `${NUM[k] || k} ${nm}${/s$/.test(nm) ? "" : "s"}`));
   return parts.length <= 1 ? parts.join("") : `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
 }
-// The bulk button: every piece of unmarked junk in the armory into firewood. Returns the message.
+// The bulk button: every piece of unmarked junk in the armory into wood. Returns the message.
 export function breakDownJunk(state, base) {
   const list = armoryJunk(base);
   if (!list.length) return "No junk to break down in the armory.";
   const wood = burnablesWood(list);
   for (const it of list) base.armory.splice(base.armory.indexOf(it), 1);
   base.stock.wood = Math.max(0, base.stock.wood || 0) + wood;
-  return `Broke down ${itemsText(list)} for firewood at ${base.name}: +${wood} firewood.`;
+  return `Broke down ${itemsText(list)} for wood at ${base.name}: +${wood} wood.`;
 }

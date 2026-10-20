@@ -791,12 +791,12 @@ export function dayMeanTemp(state, dayIdx = dayIndex(state)) {
   return (d.hi + d.lo) / 2;
 }
 // The low of a day (°C, about 05:00): the night's fires go by it (upkeep.js HEAT.chillAt: a cool night below it burns
-// firewood for warmth at every base, a freezing day the whole day).
+// wood for warmth at every base, a freezing day the whole day).
 /** @param {State} state @param {number} [dayIdx] */
 export function dayLowTemp(state, dayIdx = dayIndex(state)) {
   return dayRec(state, dayIdx).lo;
 }
-// The season's mean for a day before its weather (seasonalMean), for the firewood plans (woodcutting.js chillDaysAhead:
+// The season's mean for a day before its weather (seasonalMean), for the wood plans (woodcutting.js chillDaysAhead:
 // the nights ahead that will want a fire) without generating the days.
 /** @param {number} dayIdx */
 export const seasonalMeanTemp = (dayIdx) => seasonalMean(dayIdx);

@@ -550,7 +550,7 @@ export function offerCard(state, f) {
     const qty = Math.max(3, Math.min(hubSpare(state, k), Math.ceil((refQty(k) || 10) * rng.range(0.6, 1.2))));
     const value = qty * sellPrice(state, f, k, speech, qty);
     let pay = maxBuyable(state, f, payKey, speech, value);
-    // A cheap, bulky surplus (firewood, scrap) pays for little: the caravan brings at most two lots of it and asks for
+    // A cheap, bulky surplus (wood, scrap) pays for little: the caravan brings at most two lots of it and asks for
     // what that is worth, not hundreds of units for a few jars.
     const cap = (refQty(payKey) || 10) * 2;
     let want = qty;

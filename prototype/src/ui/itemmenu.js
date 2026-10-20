@@ -2,7 +2,7 @@
 // inventory window, the team inventory, the loot screen, the search window and the kit seen from a battle, the base's
 // Armory tab, the team forming and meeting windows) for a small menu of what can be done with it there.
 //   - every item: Inspect (its whole description in the menu), Equip / Put away / Take, Split and Open on stacks,
-//     Repair, Salvage, Break down for firewood, the boiler's mark;
+//     Repair, Salvage, Break down for wood, the boiler's mark;
 //   - a gun: Reload (out of a fight the round it takes the field with; in a fight the Reload order, with the round to
 //     hand to pick), Unload (the rounds kept on it), Modify (the gun builder; in a fight the parts the fighter carries,
 //     an action a part), Repair; in a fight also Clear jam and the fire mode;
@@ -227,7 +227,7 @@ function calmRows(state, ui, m, item, d, s, out) {
     const label = !isSealed(item) ? "Look inside" : !item.locked ? "Open" : o.ok && o.tool && o.tool.kind === "picks" ? `Pick the lock (${o.tool.item.name})` : o.ok && o.tool ? `Force it open (${o.tool.item.name})` : "Force it open";
     out.push(row("opencase", label, (st2, ui2) => openBoxWindow(state, ui2, loc, s ? s.id : null), { why: o.ok ? "" : o.why, tip: isSealed(item) ? `${item.locked ? `Locked with ${lockWords(item)}` : "Not locked"}. Free out of a fight; a window shows what is inside.` : "What is inside, to take out" }));
   }
-  // Repair, salvage, firewood.
+  // Repair, salvage, wood.
   if (!body && !looting && repairKind(item)) {
     let r = null;
     try { r = repairInfoAt(state, loc); } catch { r = null; }
@@ -242,7 +242,7 @@ function calmRows(state, ui, m, item, d, s, out) {
   }
   const bd = breakDownInfo(state, loc);
   if (!body && bd.wood > 0) {
-    out.push(row("burn", `Break down for firewood (+${bd.wood})`, (st2, ui2) => { ui2.invSel = loc; INV_ACTIONS["inv-breakdown"](state, ui2, {}); }, { why: bd.ok ? "" : bd.reason, tip: isJunk(item) ? "Junk: kindling" : "Worth more than junk: asks first" }));
+    out.push(row("burn", `Break down for wood (+${bd.wood})`, (st2, ui2) => { ui2.invSel = loc; INV_ACTIONS["inv-breakdown"](state, ui2, {}); }, { why: bd.ok ? "" : bd.reason, tip: isJunk(item) ? "Junk: kindling" : "Worth more than junk: asks first" }));
     if (L.o === "armory") {
       const b = baseById(state, L.id);
       const mark = item.fire === "burn" ? "burn" : item.fire === "keep" ? "keep" : "";

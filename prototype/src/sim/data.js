@@ -46,7 +46,7 @@ export const SUPPLIES = {
   ammo:  { name: "Ammo",  value: 0.5, weight: 0.02, cat: "ammo" }, // abstract rounds (other groups' stores, a plan's or a deal's "N ammo"); yours are by calibre (ROUND_SUPPLIES)
   // Arrows and crossbow bolts: what a bow or crossbow shoots (1 a shot; it never uses ammo). Hunting (hunting.js) often
   // loses one (in the brush, broken in the animal); in a fight about half the arrows shot are picked up again after a
-  // win and none after a loss or a retreat (world.js ARROWS, combat.js). Made by hand from firewood and a little scrap
+  // win and none after a loss or a retreat (world.js ARROWS, combat.js). Made by hand from wood and a little scrap
   // (crafting.js), found at hunting lodges, gun stores, sports shops and campgrounds.
   arrows: { name: "Arrows", value: 0.4, weight: 0.03, cat: "bow" },
   // Spare parts by kind (docs/weapons-overhaul-plan.md section 10): "parts" are machine parts (buildings, generators,
@@ -59,13 +59,13 @@ export const SUPPLIES = {
   // Jars (and lids) are what the preserving room fills (foods.js f_jarred, two portions a jar): found in kitchens,
   // shops and farms, and most come back when the food in them is eaten at a base (storage.js).
   jars:  { name: "Jars",  value: 0.5, weight: 0.4, cat: "containers" },
-  // Firewood (woodcutting.js): split logs, branches and kindling, 0.1 kg a unit (a 3 kg bundle is 30), cut from the
+  // Wood (woodcutting.js): split logs, branches and kindling, 0.1 kg a unit (a 3 kg bundle is 30), cut from the
   // land around a base (the Cut wood job) or by a team (the Cut wood order), found in woodpiles and log baskets, or
-  // broken down from wooden, paper and cloth things (by their weight). The winter's heating: a base burns firewood
-  // before fuel, 30 firewood heating as much as 0.2 fuel (upkeep.js HEAT.wood). Bulky and cheap: anyone with an axe
-  // can cut it. (It was 3 kg a unit: every firewood figure is WOOD_UNITS times what it was; save.js scales old saves.)
-  // bulk: what counts as one where a rule asks for "a few" of a supply (supplyFew: 5 to spare is 150 firewood).
-  wood:  { name: "Firewood", value: 0.02, weight: 0.1, cat: "firewood", bulk: 30 },
+  // broken down from wooden, paper and cloth things (by their weight). The winter's heating: a base burns wood
+  // before fuel, 30 wood heating as much as 0.2 fuel (upkeep.js HEAT.wood). Bulky and cheap: anyone with an axe
+  // can cut it. (It was 3 kg a unit: every wood figure is WOOD_UNITS times what it was; save.js scales old saves.)
+  // bulk: what counts as one where a rule asks for "a few" of a supply (supplyFew: 5 to spare is 150 wood).
+  wood:  { name: "Wood", value: 0.02, weight: 0.1, cat: "firewood", bulk: 30 },
   carparts:    { name: "Car parts",   value: 7,  weight: 3,   cat: "vehicle" },
   gunparts:    { name: "Gun parts",   value: 10, weight: 0.5, cat: "gunmod" },
   electronics: { name: "Electronics", value: 12, weight: 0.3, cat: "electronics" },
@@ -89,7 +89,7 @@ export const SUPPLY_KEYS = Object.keys(SUPPLIES);
 // The supplies a screen lists one by one: every key but the rounds (shown together as "Ammo", ammo.js totalRounds) and
 // the food (shown in a Food section of its own, foods.js).
 export const STOCK_KEYS = SUPPLY_KEYS.filter((k) => !ROUND_SUPPLIES[k] && !RELOAD_SUPPLIES[k] && !FOOD_SUPPLIES[k]); // the bench's inputs: on the reloading card (ui/production.js)
-// Firewood units to one before firewood was 0.1 kg a unit (a 3 kg bundle): save.js scales an older save's firewood by it.
+// Wood units to one before wood was 0.1 kg a unit (a 3 kg bundle): save.js scales an older save's wood by it.
 export const WOOD_UNITS = 30;
 // "A few" of a supply in a rule (n to spare, n to lose): n units, × its bulk (firewood: 30 a unit of the old 3 kg bundle).
 /** @param {string} k a supply key @param {number} n @returns {number} */
@@ -108,7 +108,7 @@ export const supplyFew = (k, n) => n * ((SUPPLIES[k] && SUPPLIES[k].bulk) || 1);
 // needs these fields. bulky = too big for a pocket or a pack (only the team's cargo or a base's armory).
 // burnShare = the share of its weight that burns (wood, paper, cloth and wax 1; a bat with nails, a guitar's strings and
 // pegs, magazines under duct tape 0.8–0.9; a bag's straps and buckles 0.5; metal and plastic things none): broken
-// down it makes floor(weight × burnShare / 0.1 kg) firewood (woodcutting.js burnOf). "Break down for firewood" in the
+// down it makes floor(weight × burnShare / 0.1 kg) wood (woodcutting.js burnOf). "Break down for wood" in the
 // inventory, and the water boiler may burn it from the armory (woodcutting.js burnables).
 export const GEAR = {
   knife:      { name: "Kitchen knife",            slot: "weapon", skill: "shooting", power: 1, req: 0,  value: 5,  noise: 0, small: true, desc: "A chef's knife from a kitchen block. Quiet, light, and better than bare hands.", weight: 0.3, cat: "melee" },
@@ -167,7 +167,7 @@ export const GEAR = {
   // un-purified water drunk from infected sources (no filter carried, no camp fire lit) and that water is safe; bases
   // never use them (a team leaving packs a tube from the armory: autopilot.js launchTrip, the planner). Loot: pharmacies, clinics, hospitals, camping places, truck stops,
   // supply drops; pressed at a med station (crafting.js).
-  puritabs:   { name: "Purification tablets",     slot: "pack",   skill: null,       power: 0,   req: 0, value: 10, noise: 0, small: true, dur: 10, tabs: true, weight: 0.1, cat: "medical", desc: "A tube of 10 iodine tablets for the road: one makes 10 un-purified water safe to drink without stopping to boil it (the worm's eggs die). A team carrying them drops one in per 10 un-purified water drunk (any of it can carry the worm) when it has no water filter and no lit camp fire with something to burn: on the move, or at a camp out of firewood. A base uses them only in an emergency (its boiler cold with nothing to burn, and no water filter); otherwise a team leaving packs a tube from the armory." },
+  puritabs:   { name: "Purification tablets",     slot: "pack",   skill: null,       power: 0,   req: 0, value: 10, noise: 0, small: true, dur: 10, tabs: true, weight: 0.1, cat: "medical", desc: "A tube of 10 iodine tablets for the road: one makes 10 un-purified water safe to drink without stopping to boil it (the worm's eggs die). A team carrying them drops one in per 10 un-purified water drunk (any of it can carry the worm) when it has no water filter and no lit camp fire with something to burn: on the move, or at a camp out of wood. A base uses them only in an emergency (its boiler cold with nothing to burn, and no water filter); otherwise a team leaving packs a tube from the armory." },
   backpack:   { burnShare: 0.5, name: "School backpack",          slot: "backpack", skill: null,     power: 1,   req: 0, value: 5,  noise: 0, makeshift: true, carry: 6, slots: 6, desc: "A school bag reinforced with straps: 6 pack slots and +6 kg max load.", weight: 1, cat: "packs" },
   // The stealth kit (stealth.js). Throwables work from a pocket or the pack, the oil-filter suppressor fitted to a gun
   // (gunmods.js; carried loose it still works in battle); thrown, a throwable is
@@ -178,7 +178,7 @@ export const GEAR = {
   flashlight: { name: "Flashlight",               slot: "tool",   skill: null,       power: 0,   req: 0, value: 8,  noise: 0, small: true, desc: "In the off hand at night: a beam 9 tiles ahead the way you face (the dark around stays dark) and search at full speed, but guards notice the light from 3 tiles further.", weight: 0.3, cat: "tools" },
   windlight:  { name: "Wind-up flashlight",       slot: "tool",   skill: null,       power: 0,   req: 0, value: 5,  noise: 0, small: true, desc: "A plastic dynamo torch: crank it and it shines, no batteries ever. In the off hand at night: a dim beam 7 tiles ahead the way you face, shorter than a real flashlight's; guards notice it 2 tiles further off.", weight: 0.4, cat: "tools" },
   tacflash:   { name: "Military flashlight",      slot: "tool",   skill: null,       power: 0,   req: 0, value: 16, noise: 0, small: true, desc: "An issue tactical light, machined aluminium. In the off hand at night: the longest beam of any flashlight, 12 tiles ahead the way you face but narrow; guards notice it 3 tiles further off.", weight: 0.35, cat: "tools" },
-  torch:      { name: "Torch",                    slot: "tool",   skill: null,       power: 0,   req: 0, value: 2,  noise: 0, desc: "A pitch-soaked branch, burning. In the off hand at night: a pool of light 4 tiles all round and search by it, but an open flame is seen from 4 tiles further. No batteries: anyone can make one from firewood.", weight: 0.7, cat: "tools" },
+  torch:      { name: "Torch",                    slot: "tool",   skill: null,       power: 0,   req: 0, value: 2,  noise: 0, desc: "A pitch-soaked branch, burning. In the off hand at night: a pool of light 4 tiles all round and search by it, but an open flame is seen from 4 tiles further. No batteries: anyone can make one from wood.", weight: 0.7, cat: "tools" },
   lantern:    { name: "Lantern",                  slot: "tool",   skill: null,       power: 0,   req: 0, value: 12, noise: 0, desc: "A camping lantern. In the off hand at night: a pool of light 5 tiles all round; guards notice it from 4 tiles further.", weight: 1.2, cat: "tools" },
   spotlight:  { name: "Spotlight",                slot: "tool",   skill: null,       power: 0,   req: 0, value: 18, noise: 0, desc: "A handheld spotlight on a heavy battery pack. In the off hand at night: a broad beam 11 tiles ahead the way you face, but it is seen from 6 tiles further. The heaviest light.", weight: 3.5, cat: "tools" },
   // Hand-crank radio (radio.js listeners): a receiver, never a transmitter (listen: true). A base holding one in
@@ -313,9 +313,9 @@ export const GEAR = {
   sandbags:    { name: "Sandbags",                 slot: "pack", skill: null, power: 0, req: 0, value: 6,  noise: 0, bulky: true, defence: { hold: 0.04, max: 4, cover: 3 }, desc: "A bundle of filled sandbags. In a base's armory each bundle holds back 4% more of a horde (up to 4), and they are stacked as cover on the battle map if the dead break in.", weight: 15, cat: "defence" },
   // Boards and nails (barricade.js; the user's request 2026-10-18): a bundle nailed across a door, a doorway or a
   // window in a fight (Board up, both actions, loud): 40 hit points of boards the dead and raiders must batter
-  // through, up to three layers. Crafted from firewood and a scrap anywhere (crafting.js), found at hardware stores
+  // through, up to three layers. Crafted from wood and a scrap anywhere (crafting.js), found at hardware stores
   // and farms. One bundle a board-up; torn down again, the boards are spent.
-  boards:      { name: "Boards and nails",         slot: "pack", skill: null, power: 0, req: 0, value: 4,  noise: 0, makeshift: true, desc: "Planks split from firewood and a handful of nails, tied in a bundle. In a fight, Board up (both actions, from next to it, either side) nails them across a closed door, a doorway or a window: 40 hit points of boards the dead and raiders must batter through (up to three layers), no sight through it, no way through. Loud: the unaware within 6 tiles turn toward the hammering (Heat +3 in a raid). Tear down (both actions) gives the door or window back, and about half the bundles come off whole. One bundle a board-up; a bundle in the team's vehicle counts from next to it. 4 kg, a pack slot.", weight: 4, cat: "defence" },
+  boards:      { name: "Boards and nails",         slot: "pack", skill: null, power: 0, req: 0, value: 4,  noise: 0, makeshift: true, desc: "Planks split from wood and a handful of nails, tied in a bundle. In a fight, Board up (both actions, from next to it, either side) nails them across a closed door, a doorway or a window: 40 hit points of boards the dead and raiders must batter through (up to three layers), no sight through it, no way through. Loud: the unaware within 6 tiles turn toward the hammering (Heat +3 in a raid). Tear down (both actions) gives the door or window back, and about half the bundles come off whole. One bundle a board-up; a bundle in the team's vehicle counts from next to it. 4 kg, a pack slot.", weight: 4, cat: "defence" },
   // Camp kit against Heat (fieldheat.js, scavenge.js). heat.stay = × Heat gained on the spot (waiting, camping,
   // gathering...), heat.camp = only while camping, heat.search = × a search's Heat; a team counts each kind once.
   // scentmask is used up: 24 hours of cover from one (heat.hours).
@@ -325,7 +325,7 @@ export const GEAR = {
   ragboots:    { burnShare: 1, name: "Rag-wrapped boots",        slot: "pack", skill: null, power: 0, req: 0, value: 2,  noise: 0, small: true, makeshift: true, heat: { search: 0.85, stay: 0.95 }, desc: "Strips of blanket bound around the boots: soft steps. A team with them gains Heat 15% slower while searching and 5% slower on the spot.", weight: 0.5, cat: "camp" },
   // The camp cook pot (cooking.js POT, 2026-10-12, user request "Add a craft to allow cooking small meal types at a camp or
   // any base level"): crafted from scrap by anyone, anywhere.
-  cookpot:     { name: "Camp cook pot",            slot: "pack", skill: null, power: 0, req: 0, value: 6,  noise: 0, makeshift: true, desc: "A dented pot, a wire bail and a scrap grill for over a fire. Kept at any base without a Kitchen or a cook fire (in its armory, or carried by someone there), it is a Camp fire station for small meals: simple meals and stew, tended 4 hours a day by whoever cooks best, burning 1 firewood an hour. Carried by a team camping at a lit fire, it cooks any fresh food it carries (forage, vegetables, eggs, raw meat and fish) into simple meals, where without one the team can only roast its raw meat.", weight: 1.2, cat: "camp" },
+  cookpot:     { name: "Camp cook pot",            slot: "pack", skill: null, power: 0, req: 0, value: 6,  noise: 0, makeshift: true, desc: "A dented pot, a wire bail and a scrap grill for over a fire. Kept at any base without a Kitchen or a cook fire (in its armory, or carried by someone there), it is a Camp fire station for small meals: simple meals and stew, tended 4 hours a day by whoever cooks best, burning 1 wood an hour. Carried by a team camping at a lit fire, it cooks any fresh food it carries (forage, vegetables, eggs, raw meat and fish) into simple meals, where without one the team can only roast its raw meat.", weight: 1.2, cat: "camp" },
   stove:       { name: "Smokeless stove",          slot: "pack", skill: null, power: 0, req: 0, value: 14, noise: 0, heat: { camp: 0.6 }, desc: "A folding twig stove and a trowel for a Dakota fire hole: hot food with no smoke and little light. A camping team with one gains Heat 40% slower from its fire and cooking.", weight: 1.5, cat: "camp" },
   // Optics (optics.js): carried by anyone on a team (hands, pockets, pack or the cargo), the best one counts, a second
   // one adds a quarter of its bonus. optics.look = × the odds of spotting hidden places and finds (the Survey mission,
@@ -407,7 +407,7 @@ export const CATEGORIES = {
   food:        { name: "food", group: "food" },
   water:       { name: "water", group: "food" },
   fuel:        { name: "fuel", group: "survival" },
-  firewood:    { name: "firewood", group: "survival" },
+  firewood:    { name: "wood", group: "survival" },
   parts:       { name: "spare parts", group: "survival" },
   scrap:       { name: "scrap", group: "survival" },
   containers:  { name: "jars and containers", group: "survival" },

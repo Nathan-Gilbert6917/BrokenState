@@ -331,7 +331,7 @@ export function razeGroupBase(state, target, tile, attacker) {
 // A group's woodpile a head: at the start, the most it keeps, cut a day, burned on a freezing day (the share of freezing
 // days by the time of year, woodcutting.js FREEZE_SHARE) and HEAT.night of that for a cool night above freezing
 // (woodcutting.js chillShare; fire-nights, as your bases: upkeep.js HEAT.night).
-export const GROUP_WOOD = { start: 120, cap: 240, cut: 3.6, burn: 9 }; // firewood of 0.1 kg (30 times the old 3 kg units)
+export const GROUP_WOOD = { start: 120, cap: 240, cut: 3.6, burn: 9 }; // wood of 0.1 kg (30 times the old 3 kg units)
 export const groupHeatShare = (dayIdx) => freezeShare(dayIdx) + HEAT.night * chillShare(dayIdx);
 export function factionsDaily(state) {
   const rng = state.rng;
@@ -356,7 +356,7 @@ export function factionsDaily(state) {
     // fish only where a base holds water, nothing from a besieged base's land. Their kitchens' hot meals stretch the
     // food and their cooks work no fields (groupworks.js KITCHEN).
     const hands = workingPeople(f);
-    groupKitchenDaily(state, f, f.pop * GROUP_WOOD.burn * groupHeatShare(today - 1), f.stock.wood ?? f.pop * GROUP_WOOD.start); // groupworks.js: the kitchens' stoves burn their firewood (after the heating), or are cold
+    groupKitchenDaily(state, f, f.pop * GROUP_WOOD.burn * groupHeatShare(today - 1), f.stock.wood ?? f.pop * GROUP_WOOD.start); // groupworks.js: the kitchens' stoves burn their wood (after the heating), or are cold
     // Food by type (foods.js, coarse for the AI: no lots): their fields, hunters and pens bring in their kind of food
     // (groupFieldFood: crops, grain, game, eggs) by the people at work (their land: grouptrips.js groupFoodLand; their
     // cooks are in the kitchen), everyone eats a day's food (less where a kitchen feeds them: groupEatMult; the soonest
@@ -398,7 +398,7 @@ export function factionsDaily(state) {
     arsenalDaily(state, f); // arsenal.js: newcomers' weapons, makeshift weapons and explosives from their scrap
     groupCareDaily(state, f); // groupcare.js: the wounded heal (meds, medics), repairs at a workshop, food bought when short, desertion
     groupWorldDaily(state, f); // groupworld.js: scouting (and spies at your walls), vehicles taken, stolen, sold, fitted out
-    // Firewood (woodcutting.js): they cut a little every day and burn it on freezing days, so their woodpile (and its
+    // Wood (woodcutting.js): they cut a little every day and burn it on freezing days, so their woodpile (and its
     // price, trade.js) runs low by the end of a winter and fills again by the autumn.
     f.stock.wood = Math.max(0, Math.min(f.pop * GROUP_WOOD.cap, (f.stock.wood ?? f.pop * GROUP_WOOD.start) + hands * GROUP_WOOD.cut * groupWoodLand(state, f) - f.pop * GROUP_WOOD.burn * groupHeatShare(today - 1))); // grouptrips.js: the wood land their bases hold
 

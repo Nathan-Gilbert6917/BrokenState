@@ -64,10 +64,10 @@ export const ROLES = {
   hunt:     { name: "Hunt",     desc: "Hunts the base's hunting grounds at dawn and dusk (its own tile and the tiles next to it; with a Hunting cabin the land within 2 tiles), walking out to the best ground and home with the catch, by the base's hunting mix (Farming tab): traps (silent, small game), bows (silent, the base's arrows) or guns (the base's ammo; shots add Heat and can draw the dead); no weapon: snares. Brings in fresh game, which spoils fast unless it is eaten, dried or smoked. Hunted hard, the land runs out of game for weeks." },
   fish:     { name: "Fish",     desc: "Fishes the river or lake by a base 3 hours a day, with a fishing rod, a net or a spear (carried, or in the armory: one each, a net for two). Brings in fresh fish, which spoils fast. The tools wear a use a day." },
   forage:   { name: "Forage",   desc: "Gathers wild food within 2 tiles of the base 6 hours a day (foraging.js): berries, nuts, mushrooms, greens, roots, apples, now and then herbs (meds) or honey. About a ration a day each in summer, more in autumn, little in spring, next to nothing in winter; Farming and Scouting help. The land picked hard grows back over weeks." },
-  wood:     { name: "Cut wood", desc: "Cuts firewood within 2 tiles of the base 6 hours a day (woodcutting.js): the heating (a base burns firewood before fuel: 15, 1.5 kg, a head a day below freezing, 4.5 for the night's fire on a cool night under 8°C) and a camp's fire (its people's warmth, the water boiled and the pot). Forest gives most (about 140 a day each with an axe), hills fair, farmland and suburbs little, a city next to nothing. An axe (their own or one from the armory), a machete or a sledgehammer cuts much faster than bare hands; Farming and Mechanics help. Loud (base Heat), and axes slip. The land cut hard grows back over seasons." },
+  wood:     { name: "Cut wood", desc: "Cuts wood within 2 tiles of the base 6 hours a day (woodcutting.js): the heating (a base burns wood before fuel: 15, 1.5 kg, a head a day below freezing, 4.5 for the night's fire on a cool night under 8°C) and a camp's fire (its people's warmth, the water boiled and the pot). Forest gives most (about 140 a day each with an axe), hills fair, farmland and suburbs little, a city next to nothing. An axe (their own or one from the armory), a machete or a sledgehammer cuts much faster than bare hands; Farming and Mechanics help. Loud (base Heat), and axes slip. The land cut hard grows back over seasons." },
   water:    { name: "Fetch water", desc: "Carries water from the nearest water in the base's own land (a river or lake tile the base holds, or one right next to it that nobody holds: a camp's river bank) in two buckets: out, filling them, back, a few trips a day (fewer the further the water). River and lake water is un-purified: it goes into the base's un-purified water (the worm's eggs; a water boiler or filters make it safe), up to the barrels' room. Needs a water tile in the base's land." },
   // kitchen.js: the Kitchen's cooks (one per 12 people living here).
-  cook:     { name: "Cook",     desc: "Cooks the base's meals in the Kitchen (Construction: a building plot), one cook for every 12 people living here: cooks only in the cooking hours (05:00–06:00, 16:00–20:00) with a second job the rest of the day (Cook + Farm …), or the kitchen all day (plain Cook). Hot meals stretch the food (everyone fed at the kitchen eats 10% less a day, up to 13% with a good cook: Cooking 5+), lift spirits (+1 mood a day, +1.5 with Cooking 6+) and boil a quarter of the day's drinking water; the stove burns firewood (28 a day for 12 people). Trains Cooking. Without a kitchen there is nothing to cook." },
+  cook:     { name: "Cook",     desc: "Cooks the base's meals in the Kitchen (Construction: a building plot), one cook for every 12 people living here: cooks only in the cooking hours (05:00–06:00, 16:00–20:00) with a second job the rest of the day (Cook + Farm …), or the kitchen all day (plain Cook). Hot meals stretch the food (everyone fed at the kitchen eats 10% less a day, up to 13% with a good cook: Cooking 5+), lift spirits (+1 mood a day, +1.5 with Cooking 6+) and boil a quarter of the day's drinking water; the stove burns wood (28 a day for 12 people). Trains Cooking. Without a kitchen there is nothing to cook." },
   read:     { name: "Read",     desc: "Reads a book from this base's armory 6 hours a day (pick it on their survivor screen, or leave it to them): skill books give 4 XP an hour up to the book's level, comics and novels give mood. One reader per copy at a time; a reader does no other work." },
 };
 
@@ -573,7 +573,7 @@ function baseDaily(state, base) {
   huntingDaily(state, base); // hunting.js: the Hunt and Fish jobs
   foodMark(state, base, "hunt");
   tripEventsDaily(state, base); // tripevents.js: the day's gunshots out on the land (base.tripNoise, hordes drawn)
-  kitchenFireDaily(state, base); // kitchen.js: the stove's day of firewood (after the boiler's and the heating's), or cold meals
+  kitchenFireDaily(state, base); // kitchen.js: the stove's day of wood (after the boiler's and the heating's), or cold meals
   woodDaily(state, base); // woodcutting.js: the Cut wood job
   for (const s of people) if (s.role === "rest" || s.inBed) s.mood = Math.min(100, s.mood + (s.role === "rest" ? 6 : 3));
   assignStations(state, base);
@@ -581,7 +581,7 @@ function baseDaily(state, base) {
   foodMark(state, base, "station");
   flowMark(state, base); // history.js: the day's production so far is in (before anyone drinks or eats)
 
-  // Purifying (worm.js purifyDaily): the boiler (it burns its firewood now), the water filters and a shelter's fire
+  // Purifying (worm.js purifyDaily): the boiler (it burns its wood now), the water filters and a shelter's fire
   // turn un-purified water into purified water before anyone drinks.
   purifyDaily(state, base);
   // Drinking: people first (purified water first, then un-purified: worm.js rolls the share drunk un-purified), then the
@@ -715,7 +715,7 @@ function shipFromOutposts(state) {
       // Water and seed: an outpost keeps a week of water (its own well is small) and food to sow its plots.
       // Food and water by everyone fed here (per head × heads, upkeep.js: prisoners and guests too); ammo by the staff.
       const fed = mouthsAt(state, base).heads;
-      // Firewood: a few days of the water boiler's (worm.js boilerUse) stays here; the rest pools at the hub, which sends
+      // Wood: a few days of the water boiler's (worm.js boilerUse) stays here; the rest pools at the hub, which sends
       // heating and boiler wood back over the line as the outpost runs short (needs.js heatDaily, worm.js boilerDaily).
       const boil = boilerUse(state, base);
       // Food: past RATION_DAYS, so a staffed outpost is not on short rations while the hub's cellar is full (huge census:

@@ -18,7 +18,7 @@
 //   one row per job someone here is on (the job the day's systems count them at: work.js workDayRoles), in ROLES
 //   order. progress: { frac, text } toward the next output (today's share of the job's hours with the expected
 //   amount by midnight; a build or craft job's work-hours; the next harvest). goal: a longer target (the winter's
-//   firewood). last: what it brought in on the last days it worked (output.js). why: why it brings in nothing now
+//   wood). last: what it brought in on the last days it worked (output.js). why: why it brings in nothing now
 //   (by the job, not the hour: asleep woodcutters on bare land still say why). stalledDays: since when (stallDaily).
 //
 // workingActivity(state, s): the job's state by the job, not the clock (at its working hour): what the Idle list,
@@ -172,7 +172,7 @@ function tripTip(state, base, s, job) {
 // The job cannot be done here: the stalled line.
 function tripWhy(state, base, job) {
   switch (job) {
-    case "wood": { const why = woodWorkWhy(state, base); return why ? act("stalled", `Can't cut wood: ${why}`, `Nothing worth cutting around ${base.name}: ${why}. Send a team to cut wood on a forest tile, or trade for firewood.`, job) : null; }
+    case "wood": { const why = woodWorkWhy(state, base); return why ? act("stalled", `Can't cut wood: ${why}`, `Nothing worth cutting around ${base.name}: ${why}. Send a team to cut wood on a forest tile, or trade for wood.`, job) : null; }
     case "forage": { const why = forageWorkWhy(state, base); return why ? act("stalled", `Can't forage: ${why}`, `Nothing worth gathering around ${base.name}: ${why}.`, job) : null; }
     case "hunt": { const why = huntWorkWhy(state, base); return why ? act("stalled", `Can't hunt: ${why}`, `The Hunt job needs game on the base's hunting grounds (the tiles next to it; with a Hunting cabin the land within 2 tiles): ${why}.`, job) : null; }
     case "fish": { const why = fishWorkWhy(state, base); return why ? act("stalled", `Can't fish: ${why}`, `The Fish job needs a river or lake tile in the base's own land (or right next to it, if nobody holds it: a camp's river bank) and a rod, net or spear: ${why}.`, job) : null; }
@@ -183,7 +183,7 @@ function tripWhy(state, base, job) {
 }
 function offActivity(job) {
   switch (job) {
-    case "wood": return act("off", "Done chopping for the day", `Woodcutters are out ${hours("wood")}: back at it in the morning. Each load of firewood goes into the store when they bring it home.`, job);
+    case "wood": return act("off", "Done chopping for the day", `Woodcutters are out ${hours("wood")}: back at it in the morning. Each load of wood goes into the store when they bring it home.`, job);
     case "forage": return act("off", "Done foraging for the day", `Out ${hours("forage")}: out again in the morning.`, job);
     case "hunt": return act("off", "Hunter – out again at dusk", `Hunters go out at dawn and dusk (${hours("hunt")}); the catch comes in when they bring it home.`, job);
     case "fish": return act("off", "Fisher – out again at dusk", `Fishers are out at dawn and dusk (${hours("fish")}); the catch comes in when they bring it home.`, job);
@@ -285,10 +285,10 @@ const lower = (t) => (t ? t[0].toLowerCase() + t.slice(1) : "");
 const buildName = (j) => (BUILDINGS[j.type] ? BUILDINGS[j.type].name.toLowerCase() : j.type);
 
 // ---------- units ----------
-// "140 firewood (14 kg)", "12 food", "3 work-hours" …
+// "140 wood (14 kg)", "12 food", "3 work-hours" …
 export function amountText(unit, n) {
   const v = r1(n);
-  if (unit === "wood") return `${n0(v)} firewood (${r1(v * SUPPLIES.wood.weight)} kg)`;
+  if (unit === "wood") return `${n0(v)} wood (${r1(v * SUPPLIES.wood.weight)} kg)`;
   if (unit === "workh") return `${r1(v)} work-hours`;
   if (unit === "done") return `${n0(v)} finished`;
   if (unit === "items") return `${n0(v)} made`;
@@ -394,7 +394,7 @@ function jobProgress(state, base, job, list, h) {
     out.progress = daily(dayShare(woodTime, h), expect, "wood", ` · ${crew.filter((c) => c.tool).length} of ${crew.length} with a cutting tool`);
     const w = woodNeed(state, base);
     const kg = (v) => n0(v * SUPPLIES.wood.weight);
-    if (w.need > 0) out.goal = { frac: Math.min(1, w.have / w.need), text: `Winter store: ${n0(w.have)} of ${n0(w.need)} firewood (${kg(w.have)} of ${kg(w.need)} kg)${w.short ? (expect > 0 ? ` · ~${Math.ceil((w.need - w.have) / expect)} more days at this pace` : "") : " · enough for the cold ahead"}` };
+    if (w.need > 0) out.goal = { frac: Math.min(1, w.have / w.need), text: `Winter store: ${n0(w.have)} of ${n0(w.need)} wood (${kg(w.have)} of ${kg(w.need)} kg)${w.short ? (expect > 0 ? ` · ~${Math.ceil((w.need - w.have) / expect)} more days at this pace` : "") : " · enough for the cold ahead"}` };
   } else if (job === "forage" && !forageWorkWhy(state, base)) {
     out.progress = daily(dayShare(inWin("forage"), h), able(list).reduce((a, s) => a + baseForageDay(state, base, s), 0), "food");
   } else if (job === "hunt" && !huntWorkWhy(state, base)) {

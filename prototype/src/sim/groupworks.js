@@ -47,7 +47,7 @@
 //   KITCHEN.save less a day (groupEatMult, factions.js: their food a day), as your cooks' hot meals do, and its cooks
 //   (one per KITCHEN.perCook of them, as yours) bring in nothing from the fields (groupCookShare: their food from the
 //   land × (1 − the share of their people cooking)). Coarse: no cooks by name and no skills, no boiled water (they keep
-//   no water stock). kitchen-plus (2026-10-10): the stoves burn firewood from the group's woodpile as yours do
+//   no water stock). kitchen-plus (2026-10-10): the stoves burn wood from the group's woodpile as yours do
 //   (KITCHEN.wood: a kitchen's stove and two meals a person fed a day, after the day's heating; short of it the kitchens
 //   are cold: no saving, the cooks back in the fields: f.kitchenCold), and hot meals keep the group together: its growth
 //   chance × (1 + KITCHEN.growth × the share fed) and its desertion pressure − KITCHEN.morale × the share fed
@@ -158,9 +158,12 @@ import { homesOf, stockTonight, worksBuildings } from "./groupbases.js"; // stor
 export const GROUP_WORKS = {
   WORKS: {
     water: { name: "a well", cost: { scrap: 3 }, work: 3 },
-    farms: { name: "fields", cost: { scrap: 4 }, work: 4 },
-    beds:  { name: "quarters", cost: { scrap: 8 }, work: 4 },
-    walls: { name: "a wall", cost: { scrap: 6 }, work: 6 },
+    // Wood (2026-10-20, "Convert all fire wood into just wood so it can be used for fueling and uses as a building
+    // material"): their fields' fencing, quarters and walls take a share in wood as yours do (a quarter of yours, as
+    // the scrap), from the woodpile they cut and burn (factions.js GROUP_WOOD); short of it, they salvage (SALVAGE).
+    farms: { name: "fields", cost: { scrap: 3, wood: 40 }, work: 4 },
+    beds:  { name: "quarters", cost: { scrap: 6, wood: 75 }, work: 4 },
+    walls: { name: "a wall", cost: { scrap: 4, wood: 100 }, work: 6 },
     bench: { name: "a workshop", cost: { scrap: 6, parts: 1 }, work: 4 },
     // Storage (storageWork): your storage buildings at your costs, your hours ÷ CREW_HOURS (storeDef).
     get store() { return storeDef("store"); },
@@ -168,7 +171,7 @@ export const GROUP_WORKS = {
     get crates() { return storeDef("crates"); },
     get shed() { return storeDef("shed"); },
     get warehouse() { return storeDef("warehouse"); },
-    pens: { name: "an animal pen", cost: { scrap: 4 }, work: 3 },
+    pens: { name: "an animal pen", cost: { scrap: 3, wood: 60 }, work: 3 },
     // Machines (freezer-parts; MACH): yours cost 15 scrap + 2 parts, 20 + 4, 30 + 5 + 2 electronics, 12 + 2 + 2.
     still: { name: "an ethanol still", cost: { scrap: 4, parts: 1 }, work: 3 },
     power: { name: "a generator", cost: { scrap: 5, parts: 2 }, work: 4 },
@@ -312,7 +315,7 @@ function kitchenFed(state, f) {
   const fed = f.bases.reduce((a, t) => a + (n(f.works && f.works[t], "kitchen") > 0 ? peopleAt(f, t) : 0), 0);
   return Math.min(1, fed / f.pop);
 }
-// The share fed hot meals today: as kitchenFed, 0 while the kitchens are cold (no firewood: groupKitchenDaily).
+// The share fed hot meals today: as kitchenFed, 0 while the kitchens are cold (no wood: groupKitchenDaily).
 export const groupKitchenShare = (state, f) => (f.kitchenCold ? 0 : kitchenFed(state, f));
 export const groupEatMult = (state, f) => 1 - W.KITCHEN.save * groupKitchenShare(state, f);
 // The share of the group's people cooking in its kitchens (one per KITCHEN.perCook fed): they work no fields.
@@ -320,14 +323,14 @@ export const groupCookShare = (state, f) => groupKitchenShare(state, f) / W.KITC
 // Hot meals keep a group together (factions.js growth, groupcare.js desertion).
 export const groupKitchenGrowth = (state, f) => 1 + W.KITCHEN.growth * groupKitchenShare(state, f);
 export const groupKitchenMorale = (state, f) => W.KITCHEN.morale * groupKitchenShare(state, f);
-// The kitchens' firewood a day: a stove each and two meals a person they feed (yours: kitchen.js KITCHEN.wood).
+// The kitchens' wood a day: a stove each and two meals a person they feed (yours: kitchen.js KITCHEN.wood).
 export function groupKitchenWood(state, f) {
   if (!groupsBuild(state, f)) return 0;
   let k = 0, fed = 0;
   for (const t of f.bases) if (n(f.works && f.works[t], "kitchen") > 0) { k++; fed += peopleAt(f, t); }
   return k ? k * W.KITCHEN.wood.stove + fed * W.KITCHEN.wood.head : 0;
 }
-// Daily (factions.js, before the day's food): the kitchens burn their firewood from the woodpile, after `heat` (the
+// Daily (factions.js, before the day's food): the kitchens burn their wood from the woodpile, after `heat` (the
 // day's heating); short of it they are cold today (f.kitchenCold). wood0: the woodpile (an unset one at its start).
 export function groupKitchenDaily(state, f, heat = 0, wood0 = f.stock.wood) {
   const need = groupKitchenWood(state, f);
@@ -790,7 +793,7 @@ export function groupKitchenText(state, f) {
   const fed = kitchenFed(state, f);
   if (!(fed > 0)) return "";
   const people = Math.round(fed * f.pop);
-  if (f.kitchenCold) return `Kitchen: cold, no firewood (${people} of ${f.pop} would be fed)`;
+  if (f.kitchenCold) return `Kitchen: cold, no wood (${people} of ${f.pop} would be fed)`;
   return `Kitchen: hot meals for ${people} of ${f.pop} (−${Math.round(W.KITCHEN.save * fed * 1000) / 10}% food, growth +${Math.round(W.KITCHEN.growth * fed * 100)}%, fewer desert)`;
 }
 const jailStepName = (f) => { const t = (f.jails && f.jails[f.job.tile]) || 0; return (GROUP_JAIL.STEPS[t + 1] || GROUP_JAIL.STEPS[1]).name; };
@@ -811,7 +814,7 @@ export function worksText(state, f) {
   if (t.power) { const tiers = f.bases.map((b) => groupGenTier(f.works && f.works[b])).filter(Boolean); const top = Math.max(1, ...tiers); bits.push(top > 1 ? W.MACH.tiers[top].name : "a generator"); } // gen-tiers
   if (t.freezer) bits.push(`a walk-in freezer${groupFreezerOn(f) ? " (on)" : " (off)"}`);
   if (t.sealer) bits.push("a vacuum sealer");
-  if (t.kitchen) bits.push(`${t.kitchen > 1 ? `${t.kitchen} kitchens` : "a kitchen"}${f.kitchenCold ? " (cold: no firewood)" : ""}`);
+  if (t.kitchen) bits.push(`${t.kitchen > 1 ? `${t.kitchen} kitchens` : "a kitchen"}${f.kitchenCold ? " (cold: no wood)" : ""}`);
   if (t.mill) bits.push("a grain mill"); // wave 2 cooking
   if (t.grinder) bits.push("a meat grinder");
   for (const k of ["shop", "radio", "garage", "reload", "gate"]) if (t[k]) bits.push(W.WORKS[k].name); // ai-locks

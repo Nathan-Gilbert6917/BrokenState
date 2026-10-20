@@ -1,5 +1,5 @@
 // One confirmation style for orders that cannot be taken back (executing or releasing a prisoner, pulling a building
-// down, breaking gear down for firewood, robbing a caravan or merchants, joining a war, expelling a coalition member,
+// down, breaking gear down for wood, robbing a caravan or merchants, joining a war, expelling a coalition member,
 // giving up a job, ending a trade route, deleting a supply run or a work role, digging a growing crop under): a small
 // box over everything that spells out what happens, Yes / Cancel, Enter / Esc, and "Don't ask again" for that kind of
 // order (remembered in the options: options.noAsk; Menu → Options → Confirmations asks again). The menu's own
@@ -13,7 +13,7 @@ const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<
 // The kinds, as the box and the menu name them ("Don't ask again before …").
 export const ASK_KINDS = {
   execute: "executing a prisoner", release: "releasing a prisoner", demolish: "pulling a building down",
-  breakdown: "breaking gear down for firewood", rob: "robbing a caravan or merchants", war: "joining or leaving a war",
+  breakdown: "breaking gear down for wood", rob: "robbing a caravan or merchants", war: "joining or leaving a war",
   expel: "expelling a coalition member", giveup: "giving up a job", endroute: "ending a trade route",
   delrun: "deleting a supply run", delrole: "deleting a work role", clearcrop: "digging a growing crop under",
   stripv: "stripping a vehicle for parts", salvage: "taking gear apart for parts",

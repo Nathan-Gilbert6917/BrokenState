@@ -38,6 +38,7 @@ function fortHub(st, list = BUILT, extra = 2) {
   for (let i = 0; i < extra; i++) { const s = makeSurvivor(st); s.location = { kind: "base", baseId: h.id }; st.survivors.push(s); }
   for (const s of atBase(st, h.id)) { s.health = 100; if (!s.gear.weapon) s.gear.weapon = newItem("pistol"); }
   h.stock.ammo = 300; h.stock.meds = 10;
+  BM.clearAllLand(st, h); // the rules of placement here, not the land (tools/baseviewtest.js)
   return h;
 }
 function baseBattle(st, h, enemy = { kind: "raiders", count: 8, power: 3, name: "raiders" }, context = {}) {

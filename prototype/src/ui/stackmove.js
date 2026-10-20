@@ -1,4 +1,4 @@
-// The stack mover: one panel for moving part of a stack of supplies (food, water, firewood, scrap, rounds...) from
+// The stack mover: one panel for moving part of a stack of supplies (food, water, wood, scrap, rounds...) from
 // one place to another, used by every screen that moves stacks (ui/inventory.js: the search window of a raid, Loot
 // the bodies, the inventory window). It shows the stack (icon, name, how many, the weight of one), where it comes
 // from and where it goes (in words, with a pick of destinations when there are several), a slider, a number box and

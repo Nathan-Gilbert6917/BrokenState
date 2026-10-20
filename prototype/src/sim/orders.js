@@ -388,7 +388,7 @@ export function startOrder(state, p, o) {
       return `The team fills every container it has with water (${FETCH_WATER_HOURS}h).`;
     }
     case "hunt": {
-      // A bow or crossbow carried and no arrows (hunting.js arrowsWanted): a dozen made first from the firewood and scrap
+      // A bow or crossbow carried and no arrows (hunting.js arrowsWanted): a dozen made first from the wood and scrap
       // carried (a field craft), then the hunt.
       if (arrowsWanted(partyMembers(state, p), carried(p, "arrows"))) {
         const opt = fieldCraftOptions(state, p).find((x) => x.key === "arrows");
@@ -418,7 +418,7 @@ export function startOrder(state, p, o) {
       return `The team goes foraging (${huntHours(o)}h).`;
     }
     case "wood": {
-      // Firewood for the winter (woodcutting.js): by the land, the tools and the people.
+      // Wood for the winter (woodcutting.js): by the land, the tools and the people.
       const why = woodProblem(state, p);
       if (why) return fail(`Cut wood: ${why}`);
       startTask(state, p, { type: "wood", hours: huntHours(o), qty: o.qty });
@@ -606,7 +606,7 @@ export const campHealPerHour = (state, p, s) => (isHurt(s) && !s.woundInfected &
 // The camp fire (fieldheat.js FIRE, a toggle in the team panel) lifts spirits more: +0.3 an hour lit, +0.1 out.
 function campHour(state, p) {
   campForageHour(state, p);
-  campFireHour(state, p); // woodcutting.js: a fire on bare ground burns carried firewood, or goes out
+  campFireHour(state, p); // woodcutting.js: a fire on bare ground burns carried wood, or goes out
   if (starving(p)) return;
   const mood = fireLit(p) ? FIRE.campMood : FIRE.campMoodOut;
   for (const s of partyMembers(state, p)) {

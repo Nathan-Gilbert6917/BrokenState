@@ -1,5 +1,5 @@
 // @ts-check
-// Carrying the team's supplies: where food, water, firewood, fresh game, fuel and the rest physically are, person by
+// Carrying the team's supplies: where food, water, wood, fresh game, fuel and the rest physically are, person by
 // person, what carrying by hand costs in a fight, putting things on the ground and picking them up again, and how
 // much a team collects.
 //
@@ -10,8 +10,8 @@
 //   p.hold = { by: { [survivorId]: { pocket: {key: qty}, pack: {key: qty}, hands: {key: qty} } }, car: {key: qty} }
 //
 //   pocket  small things only: HOLD[key].pocket units a free pocket (a ration, a bottle of water)
-//   pack    HOLD[key].pack units a free pack slot (2 L of water, 4 rations, a 2 kg bundle of firewood)
-//   hands   anything, carried in the arms: a 20 L jerrycan, a crate, an armful of firewood, a deer carcass. Up to
+//   pack    HOLD[key].pack units a free pack slot (2 L of water, 4 rations, a 2 kg bundle of wood)
+//   hands   anything, carried in the arms: a 20 L jerrycan, a crate, an armful of wood, a deer carcass. Up to
 //           HANDS_KG a person; past that someone is overloaded. Hands full: no gun, no blade, no reload, no throw,
 //           no treating (combat.js) until it is set down (Drop carried: free).
 //   THE HANDS (the user's ask, 2026-10-19). Everything in the "carried" part of the inventory fills the hands: the
@@ -124,7 +124,7 @@ export const HOLD = {
   meat:      { pack: 2,  pocket: 0, name: "days of raw meat" },
   fuel:      { pack: 2,  pocket: 0, name: "fuel" },
   jars:      { pack: 4,  pocket: 0, name: "jars" },
-  wood:      { pack: 20, pocket: 0, name: "firewood" },
+  wood:      { pack: 20, pocket: 0, name: "wood" },
   parts:     { pack: 1,  pocket: 0, name: "machine parts" },
   scrap:     { pack: 1,  pocket: 0, name: "scrap" },
   carparts:  { pack: 0,  pocket: 0, name: "car parts" },
@@ -797,7 +797,7 @@ export function capTask(p, task, state = null) {
   task.qty = Math.max(0, Math.floor(Number(task.qty) || 0));
   task.capKg = task.qty * collectKg(state, task.type); // forage: the season's mix (foraging.js forageKg)
   task.pool0 = poolLoad(p);
-  // Water and firewood are counted by themselves (keyKg): the team's meals while it works lighten the load, and that
+  // Water and wood are counted by themselves (keyKg): the team's meals while it works lighten the load, and that
   // must not count as room for more (eating.js teamMeal: breakfast, lunch and dinner on the road).
   if (KEY_KINDS[task.type]) task.kind0 = keyKg(p, KEY_KINDS[task.type]);
 }

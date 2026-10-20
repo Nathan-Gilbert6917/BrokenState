@@ -31,7 +31,7 @@
 // THE FILL (deterministic, pure): every good is ranked by its worth a kg (supplies: data.js supValue / supWeight;
 // items: valuation.js itemValue / itemLoad), the densest first (supplies before items on a tie, then by key or armory
 // order), and goes in while there is room; a supply stack goes in as many whole units as fit and the rest lies outside.
-// So the valuables are kept in and the cheap, heavy things (scrap, firewood, building materials) are what lies outside.
+// So the valuables are kept in and the cheap, heavy things (scrap, wood, building materials) are what lies outside.
 // (The design said "supplies first, then the items"; one ranking for both keeps a gold ring inside before a pile of
 // scrap, which is what the user asked for.)
 //
@@ -46,7 +46,7 @@
 //   - raiders: outsideShare is the share of the goods lying outside, for the base map's piles (basemap.js: easier to
 //     steal).
 // The base window shows it all (storageSummary / storageLine).
-import { BUILDINGS, isCamp, isShelter } from "./buildings.js"; // call-time only (the import cycle)
+import { BUILDINGS, isCamp, isShelter, tentOf } from "./buildings.js"; // call-time only (the import cycle)
 import { GEAR, SUPPLIES, supValue, supWeight } from "./data.js";
 import { BOX_STORE_KG } from "./data-boxes.js";
 import { itemLoad, itemKg } from "./inventory.js"; // call-time only
@@ -133,7 +133,7 @@ export function storageOf(state, base) {
   const tier = tierOf(base);
   const box = (key, name, cap, kind, type) => ({ key, name, cap, kind, type, sup: {}, gear: [], kg: 0 });
   if (CORE_KG[tier] > 0) containers.push(box("core", CORE_NAME[tier], CORE_KG[tier], "core", tier));
-  for (const b of base.buildings || []) { const kg = buildingKg(b.type); if (kg > 0) containers.push(box(`b:${b.id}`, BUILDINGS[b.type].name, kg, "building", b.type)); }
+  for (const b of base.buildings || []) { const kg = b.type === "tent" ? tentOf(b).storeKg : buildingKg(b.type); if (kg > 0) containers.push(box(`b:${b.id}`, b.type === "tent" ? tentOf(b).name : BUILDINGS[b.type].name, kg, "building", b.type)); } // a tent keeps its kind's kg out of the weather (buildings.js TENTS)
   if (state && !base.group) for (const v of carsAtBase(state, base.id)) { const kg = vehicleStoreKg(v); if (kg > 0) containers.push(box(`v:${v.id}`, v.name, kg, "vehicle", v.type)); }
   const armory = base.armory || [];
   armory.forEach((it, i) => { if (it && isOpenBox(it) && boxKg(it) > 0) containers.push(box(`a:${i}`, it.name, boxKg(it), "box", it.key)); });
@@ -233,7 +233,7 @@ function containerWords(st) {
     return `${e.n > 1 ? `${e.n} ${plural(nm)}` : nm} ${kgText(e.cap)}`;
   });
 }
-// What lies outside in words: "12 scrap, 40 firewood, a fire axe" (the heaviest first, at most `max` of them).
+// What lies outside in words: "12 scrap, 40 wood, a fire axe" (the heaviest first, at most `max` of them).
 function outsideWords(base, st, max = 8) {
   const bits = [];
   for (const [k, q] of Object.entries(st.outside.sup)) bits.push({ kg: q * supWeight(k), t: `${Math.round(q * 10) / 10} ${keyWord(k) === k && SUPPLIES[k] ? SUPPLIES[k].name.toLowerCase() : keyWord(k)}` });

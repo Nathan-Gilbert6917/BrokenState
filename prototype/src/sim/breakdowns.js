@@ -147,6 +147,7 @@ export const FIXTURES = {
   gen_lodge:   { raidOnly: true, repair: { hours: 8, cost: { scrap: 9, parts: 1 }, min: 1 }, rig: { hours: 3, cost: { scrap: 4 }, min: 0 }, what: "a wrecked lodge: no shelter in it" },
   gen_hall:    { raidOnly: true, repair: { hours: 11, cost: { scrap: 13, parts: 1 }, min: 1 }, rig: { hours: 4, cost: { scrap: 6 }, min: 0 }, what: "a wrecked hall: no shelter in it" },
   gen_barn:    { raidOnly: true, repair: { hours: 15, cost: { scrap: 20, parts: 1 }, min: 1 }, rig: { hours: 5, cost: { scrap: 8 }, min: 0 }, what: "a wrecked barn: no shelter in it" },
+  tent:        { raidOnly: true, repair: { hours: 1, cost: { scrap: 1, wood: 20 }, min: 0 }, rig: { hours: 1, cost: { scrap: 1, wood: 10 }, min: 0 }, what: "nobody sleeps in it" }, // a tent (buildings.js TENTS): mended like any building
   bunks:       { raidOnly: true, repair: { hours: 1, cost: { scrap: 2 }, min: 0 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "2 fewer beds" },
   shelves:     { raidOnly: true, repair: { hours: 1, cost: { scrap: 1 }, min: 0 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "collapsed shelves: no room on them" },
   lockers:     { raidOnly: true, repair: { hours: 1, cost: { scrap: 2 }, min: 0 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "a buckled locker: no room in it" },

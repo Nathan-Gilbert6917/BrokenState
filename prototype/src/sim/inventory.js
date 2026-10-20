@@ -41,7 +41,7 @@ import { lootGun } from "./gunfire.js"; // an enemy's gun: the condition it foug
 import { MEDS } from "./medfinds.js"; // how rare meds are
 import { CLIPS, ADMIN_KG, POUCH_NAMES, KIT_LOOT, SUPPLY_POUCHES } from "./data-kit.js"; // rigs, pouches, magazines and clips (sections 15-16)
 import { bodyKit } from "./carrykit.js"; // an enemy's rig and magazines onto its body (call-time only: safe in the import cycle)
-import { burnOf, burnShare } from "./woodcutting.js"; // the firewood an item makes (call-time only: safe in the import cycle)
+import { burnOf, burnShare } from "./woodcutting.js"; // the wood an item makes (call-time only: safe in the import cycle)
 import { enemyGunLoaded, unloadInto, stockFor } from "./gunload.js"; // the rounds left in a gun, kept on it (call-time only: safe in the import cycle)
 import { dropHeadgear, earsOnBody } from "./helmets.js"; // an enemy's helmet and ear protection on its body
 import { AMMO_STACK } from "./data-stacks.js";
@@ -681,7 +681,7 @@ export function stripAt(state, gunLoc, slot, sid = null) {
   return unfitModAt(state, gunLoc, slot, sid);
 }
 
-// ---------- breaking things down for firewood (data.js GEAR burnShare; woodcutting.js burnOf: by its weight) ----------
+// ---------- breaking things down for wood (data.js GEAR burnShare; woodcutting.js burnOf: by its weight) ----------
 // What breaking down the item at a location would give: { ok, reason, item, wood, place }. Items in a base's armory, a
 // team's cargo, or a pocket or pack of someone at a base or on a team (not what is worn or held: take it off first;
 // not a body's).
@@ -692,14 +692,14 @@ export function breakDownInfo(state, str) {
   const place = placeOf(state, loc);
   let reason = "";
   if (!item) reason = "Nothing there.";
-  else if (!(wood > 0)) reason = burnShare(item.key) > 0 ? `Too little of the ${item.name} burns to make firewood.` : `The ${item.name} will not burn.`;
+  else if (!(wood > 0)) reason = burnShare(item.key) > 0 ? `Too little of the ${item.name} burns to make wood.` : `The ${item.name} will not burn.`;
   else if (loc.o === "body") reason = "Take it first.";
   else if (loc.o === "s" && EQUIP_SLOTS.includes(loc.slot)) reason = "Take it off first.";
   else if (!place) reason = "Out of reach.";
   return { ok: !reason, reason, item, wood, place };
 }
-// Breaks it down: the item is gone and its firewood goes into the base's stores or the team's cargo supplies (a team's
-// camp fire burns it like any firewood carried). No time: it is kindling. Returns the message.
+// Breaks it down: the item is gone and its wood goes into the base's stores or the team's cargo supplies (a team's
+// camp fire burns it like any wood carried). No time: it is kindling. Returns the message.
 export function breakDownAt(state, str) {
   const info = breakDownInfo(state, str);
   if (!info.ok) return info.reason;
@@ -710,22 +710,22 @@ export function breakDownAt(state, str) {
     const b = baseById(state, id);
     if (!b) return "Out of reach.";
     b.stock.wood = Math.max(0, b.stock.wood || 0) + info.wood;
-    where = `${b.name}'s firewood`;
+    where = `${b.name}'s wood`;
   } else {
     const p = state.parties.find((x) => x.id === id);
     if (!p) return "Out of reach.";
     p.cargo = p.cargo || { supplies: {}, gear: [] };
     p.cargo.supplies.wood = Math.max(0, p.cargo.supplies.wood || 0) + info.wood;
-    where = "the team's firewood";
+    where = "the team's wood";
   }
   removeAt(state, str);
   unlistFromSites(state, info.item);
-  return `Broke down the ${info.item.name} for firewood: +${info.wood} to ${where}.`;
+  return `Broke down the ${info.item.name} for wood: +${info.wood} to ${where}.`;
 }
 // ---------- salvage: taking things apart for parts (docs/weapons-overhaul-plan.md section 10) ----------
 // A gun: floor(value / 30) + 1 gun parts and a scrap (its attachments come off into storage first); an attachment
 // worth 25 or more: a gun part; gadgets: electronics (a phone, a camera, a console 1, a laptop 2, night vision 3, a
-// thermal 4...). Where breaking down for firewood works (storage, a pocket, the pack; not worn or held, not a body's).
+// thermal 4...). Where breaking down for wood works (storage, a pocket, the pack; not worn or held, not a body's).
 // The parts go to the base's stores or the team's cargo. No time: a screwdriver and a hammer.
 export const SALVAGE_ELECTRONICS = { phone: 1, camera: 1, console: 1, laptop: 2, nvg: 3, thermal: 4, milradio: 3, handradio: 1, pocketradio: 1, thermalscope: 3, peq: 1, weaponlight: 1 };
 const GUN_CATS = ["pistol", "shotgun", "rifle", "automatic"];
@@ -776,7 +776,7 @@ export function setFireMark(state, str, mark) {
   const item = itemAt(state, str);
   if (!item || loc.o !== "armory") return "";
   if (mark === "burn" || mark === "keep") item.fire = mark; else delete item.fire;
-  return item.fire === "burn" ? `The water boiler may burn the ${item.name} when the firewood runs short.` : item.fire === "keep" ? `The ${item.name} is kept from the fire.` : `The ${item.name}: no mark (junk burns while the base allows it).`;
+  return item.fire === "burn" ? `The water boiler may burn the ${item.name} when the wood runs short.` : item.fire === "keep" ? `The ${item.name} is kept from the fire.` : `The ${item.name}: no mark (junk burns while the base allows it).`;
 }
 
 // Can a team take on `gained` kg (an item from a body) while losing `lost` kg of max load (a pack taken off)?

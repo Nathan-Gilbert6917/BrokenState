@@ -25,7 +25,7 @@ const logged = (st, re) => st.log.some((l) => re.test(l.text));
 const FEST_DAY = 2 * SEASON_DAYS + FEST.DAY - START_OFFSET;
 // Jump to the morning of a campaign day (no ticking: the festival is checked on its own).
 const morning = (st, d) => { st.hour = (d - 1) * 24 + FEST.HOUR; };
-const stock = (st, food = 500) => { const h = hub(st); setFood(h, food); setJarred(h, 0); h.stock.firewood = 200; return h; };
+const stock = (st, food = 500) => { const h = hub(st); setFood(h, food); setJarred(h, 0); h.stock.wood = 200; return h; };
 const festCard = (st) => st.cards.find((c) => c.festival);
 const t0 = Date.now();
 
@@ -79,7 +79,7 @@ const t0 = Date.now();
   const cost = Math.ceil(people.length * FEST.FULL.food);
   const text = holdFestival(st, h, "FULL");
   check(food(h) === 300 - cost, `${cost} food for ${people.length} people`);
-  check(h.stock.firewood === 200 - FEST.FULL.wood && !h.armory.some((it) => it.key === "vodka" || it.key === "whiskey"), `a bonfire (${FEST.FULL.wood} firewood) and the bottles`);
+  check(h.stock.wood === 200 - FEST.FULL.wood && !h.armory.some((it) => it.key === "vodka" || it.key === "whiskey"), `a bonfire (${FEST.FULL.wood} wood) and the bottles`);
   const lift = FEST.FULL.mood + FEST.FULL.fire + FEST.FULL.drink;
   check(people.every((s) => Math.abs(s.mood - (50 + lift)) < 0.01), `everyone at the hub mood +${lift}`);
   check(worker.role === "rest" && worker.restUntil === day(st) + 1 && worker.restPrev === "farm", "a farmer has the day off");
@@ -122,7 +122,7 @@ const t0 = Date.now();
   const away = alive(st).find((s) => !people.includes(s));
   if (away) away.mood = 50;
   holdFestival(st, h, "SMALL");
-  check(food(h) === 300 - Math.ceil(people.length * FEST.SMALL.food) && h.stock.firewood === 200, `a small one: ${Math.ceil(people.length * FEST.SMALL.food)} food, no firewood`);
+  check(food(h) === 300 - Math.ceil(people.length * FEST.SMALL.food) && h.stock.wood === 200, `a small one: ${Math.ceil(people.length * FEST.SMALL.food)} food, no wood`);
   check(people.every((s) => Math.abs(s.mood - (50 + FEST.SMALL.mood)) < 0.01) && people.every((s) => s.restUntil == null || s.role !== "rest" || s.inBed), `mood +${FEST.SMALL.mood}, no day off`);
   check(!away || Math.abs(away.mood - (50 + FEST.SMALL.outpost)) < 0.01, away ? `someone away from the hub +${FEST.SMALL.outpost}` : "(nobody away from the hub)");
   const st2 = world();

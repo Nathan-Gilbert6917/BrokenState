@@ -773,12 +773,18 @@ function prims(k, o) {
       return out;
     }
     case "tent": {
-      // A ridge tent (sim/basemap.js TENT: 2 × 1, its cells joined along the ridge): the fly stepped up to the ridge
-      // pole, the ends closed where it stops, a dark door flap at the near end.
-      const cloth = tex(hex("#6f7452"), 0.1, 3), dk = tex(hex("#4e5238"), 0.1, 4);
-      const ax = along(o), lo = ax === "u" ? (o.j & 2 ? 0 : 0.1) : (o.j & 8 ? 0 : 0.1), hi = ax === "u" ? (o.j & 1 ? 1 : 0.9) : (o.j & 4 ? 1 : 0.9);
-      const out = [run(ax, 0.1, 0.9, 0, 6, cloth, lo, hi), run(ax, 0.2, 0.8, 6, 11, cloth, lo, hi), run(ax, 0.36, 0.64, 11, 15, dk, lo, hi)];
-      if (hi < 1) out.push(run(ax, 0.38, 0.62, 0, 9, flatM(hex("#2e3022")), hi - 0.03, hi)); // the flap at the open end
+      // A ridge tent (sim/buildings.js TENTS: 1 × 2, 2 × 2, 3 × 3): the ridge runs along the view's u axis between its rows;
+      // each cell is the slope of its half, stepped up to the ridge on the side it joins the other row (o.j: 4 +v, 8 −v),
+      // its ends closed where it stops along u (no join there), a dark flap at the open ends. A lone cell: a pup tent.
+      const cloth = tex(hex("#6f7452"), 0.1, 3), dk = tex(hex("#4e5238"), 0.1, 4), flap = flatM(hex("#2e3022"));
+      const lo = o.j & 2 ? 0 : 0.08, hi = o.j & 1 ? 1 : 0.92;
+      const side = o.j & 4 ? 1 : o.j & 8 ? -1 : 0;
+      if ((o.j & 12) === 12) return [{ u0: lo, u1: hi, v0: 0, v1: 1, z0: 0, z1: 15, m: cloth }, { u0: lo, u1: hi, v0: 0.2, v1: 0.8, z0: 15, z1: 20, m: dk }]; // the middle row of a big tent (3 × 3): the ridge over it
+      if (!side) return [run("u", 0.1, 0.9, 0, 6, cloth, lo, hi), run("u", 0.2, 0.8, 6, 11, cloth, lo, hi), run("u", 0.36, 0.64, 11, 15, dk, lo, hi)];
+      const band = (a0, a1) => (side > 0 ? [a0, a1] : [1 - a1, 1 - a0]); // a band of this cell's v, measured from the far edge toward the ridge
+      const out = [];
+      for (const [v0, z0, z1, m] of [[0.06, 0, 5, cloth], [0.32, 5, 10, cloth], [0.6, 10, 15, cloth], [0.84, 15, 18, dk]]) { const [c0, c1] = band(v0, 1); out.push({ u0: lo, u1: hi, v0: c0, v1: c1, z0, z1, m }); }
+      if (hi < 1) { const [c0, c1] = band(0.4, 1); out.push({ u0: hi - 0.03, u1: hi, v0: c0, v1: c1, z0: 0, z1: 10, m: flap }); }
       return out;
     }
     // The base map's scatter (sim/basescatter.js): bushes, a tree stump, a fallen log (joined along its length).
@@ -1181,7 +1187,7 @@ function blockTop0(k, o) {
     case "boulder": return 20; case "crate": return o.v >= 2 ? 22 : 13;
     case "fence": return 14; case "barricade": return 16; case "sandbag": return 13; case "hay": return 13; case "cabinet": return 14; case "counter": return 12; case "well": return 12; case "barrel": return 13;
     case "rock": return 10; case "wire": return 10; case "rail": return 13; case "tanktrap": return 12;
-    case "outline": return 9; case "tent": return 15; case "firepit": return 7; case "lamp": return 38; // the base map (sim/basemap.js)
+    case "outline": return 9; case "tent": return 18; case "firepit": return 7; case "lamp": return 38; // the base map (sim/basemap.js)
     case "bush": return 12; case "stump": return 6; case "log": return 7; // its scatter (sim/basescatter.js)
     default: return 0;
   }
@@ -1730,6 +1736,24 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     outlineCells(ctx, b, yard, Fm.walled ? "rgba(200,170,110,0.55)" : "rgba(230,216,184,0.5)", 1.5);
     ctx.setLineDash([]);
   }
+  // The land being cleared (sim/basemap.js F.clearing: the construction queue's clearing jobs): an amber wash over the
+  // pieces and a dashed edge; how far each is goes over it with the tags (below).
+  const FmL = b.layout && b.deployPlan && b.deployPlan.fort;
+  if (FmL && FmL.clearing && FmL.clearing.length) {
+    const inC = new Set(FmL.clearing.flatMap((c) => c.cells.map(([x, y]) => y * b.w + x)));
+    fillCells(ctx, b, (i) => inC.has(i), "rgba(230,170,60,0.28)");
+    ctx.setLineDash([4, 3]);
+    outlineCells(ctx, b, (i) => inC.has(i), "rgba(240,190,80,0.95)", 1.5);
+    ctx.setLineDash([]);
+  }
+  // A picked thing being moved: where it stands now dimmed under a dashed edge while its ghost follows the mouse.
+  if (H.ghost && H.ghost.from) {
+    const inF = new Set(H.ghost.from.map(([x, y]) => y * b.w + x));
+    fillCells(ctx, b, (i) => inF.has(i), "rgba(10,12,16,0.45)");
+    ctx.setLineDash([5, 4]);
+    outlineCells(ctx, b, (i) => inF.has(i), "rgba(230,216,184,0.7)", 1.5);
+    ctx.setLineDash([]);
+  }
   if (H.ghost) {
     const inG = new Set(H.ghost.cells.map(([x, y]) => y * b.w + x)), inD = new Set(H.ghost.doors.map(([x, y]) => y * b.w + x));
     fillCells(ctx, b, (i) => inG.has(i), H.ghost.ok ? `rgba(${COL.goodRgb},0.35)` : "rgba(220,70,60,0.35)");
@@ -2120,6 +2144,16 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     const [X, Y] = project((Math.min(...xs) + Math.max(...xs) + 1) / 2, (Math.min(...ys) + Math.max(...ys) + 1) / 2, s.roof ? LV + 10 : (s.storeys === 2 ? WALL2 : WALL1) + 12);
     tag(ctx, s.name, X, Y, "#e6d8b8", Math.max(10, 3.8 * S));
   }
+  // The base map's land being cleared: how far each clearing is, over its pieces; the picked thing's old spot dimmed
+  // over its sprites (a dimmed copy while the ghost follows the mouse).
+  const FmT = b.layout && b.deployPlan && b.deployPlan.fort;
+  if (FmT && FmT.clearing) for (const c of FmT.clearing) {
+    if (!c.cells.length) continue;
+    const xs = c.cells.map((q) => q[0]), ys = c.cells.map((q) => q[1]);
+    const [X, Y] = project((Math.min(...xs) + Math.max(...xs) + 1) / 2, (Math.min(...ys) + Math.max(...ys) + 1) / 2, 34);
+    tag(ctx, `Clearing ${c.pct}%`, X, Y, "#f0c060", Math.max(10, 3.6 * S));
+  }
+  if (H.ghost && H.ghost.from) for (const [x, y] of H.ghost.from) { ctx.fillStyle = "rgba(12,14,18,0.42)"; ctx.beginPath(); diamond(ctx, x, y, 14); ctx.fill(); }
   // The stores on a base map (sim/basemap.js): a crate marker over each building that holds goods, with its weight.
   if (b.stores) for (const c0 of b.stores.containers) {
     const ci = c0.y * b.w + c0.x;

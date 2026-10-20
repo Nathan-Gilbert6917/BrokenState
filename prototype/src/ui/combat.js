@@ -39,7 +39,7 @@ import { earStatus, visorState } from "../sim/hearing.js"; // deaf and dazed chi
 import { noiseGhosts } from "../sim/crossfire.js"; // shots and blasts heard out of sight: markers in the fog with a guess of the sound
 import { canPlace, LIT_ZONES } from "../sim/deploy.js";
 import { layoutPanel, layoutHover, storeHover, storesHtml } from "./basemap.js"; // the base map's layout mode, the stores on the map
-import { ghostAt, itemAtCell, storeAt, FOOT, keyOptions, keyTargets, KEY_AP } from "../sim/basemap.js"; // keyOptions: the defenders' keys (Lock, Unlock)
+import { ghostAt, itemAtCell, storeAt, FOOT, keyOptions, keyTargets, KEY_AP, landPieceAt, gridOfCell } from "../sim/basemap.js"; // keyOptions: the defenders' keys (Lock, Unlock)
 import { BUILDINGS, demolishRefund } from "../sim/buildings.js"; // layout mode's Demolish: the question names the building and the refund
 import { ask } from "./confirm.js"; // one confirmation style (the base map's Demolish asks as the Construction tab's does)
 const refundWords = (rec) => { const t = Object.entries(demolishRefund(rec) || {}).filter(([, q]) => q > 0).map(([k, q]) => `${q} ${k}`).join(", "); return t ? ` (${t})` : ""; };
@@ -654,6 +654,10 @@ function layoutClick(state, b, px, py) {
   }
   const sc = storeAt(b, c.x, c.y);
   if (sc) { cui.storeView = cui.storeView === sc.id ? null : sc.id; cui.msg = ""; return; }
+  // A piece of the land (sim/basescatter.js: a tree, a bush, a wreck…): its card, to queue its clearing.
+  const [gx, gy] = gridOfCell(b, c.x, c.y);
+  if (landPieceAt(state, state.bases.find((o) => o.id === b.layout.baseId), gx, gy).length) { cui.storeView = null; return void act(state, { type: "land", x: c.x, y: c.y }); }
+  if (b.layout.land) b.layout.land = null;
   if (b.layout.sel) return void act(state, { type: "select", key: null }); // open ground: deselect
   cui.msg = "Pick something to build from the Build list, or a placed thing from the lists, then click where it goes; click a placed thing to select it, again to move it.";
 }
@@ -1513,6 +1517,9 @@ export function combatAction(state, key, d, ui = null) { // ui: main.js's screen
       if (d.v === "select") return void act(state, { type: "select", key: d.k || null }); // a placed thing's card
       if (d.v === "pickType") return void act(state, { type: "pickType", bt: d.bt || null }); // a type to build: the ghost is its footprint
       if (d.v === "link" || d.v === "unlink") return void act(state, { type: d.v, a: d.a, b: d.b }); // a doorway between two buildings
+      if (d.v === "clear") return void act(state, { type: "clear", clump: d.clump === "1", mode: d.mode || "clear" }); // the land's card (sim/basescatter.js)
+      if (d.v === "landClose") { b.layout.land = null; return; }
+      if (d.v === "unclear") return void act(state, { type: "unclear", id: d.id });
       if (d.v === "demolish") { // a standing building asks first (ui/confirm.js, as the Construction tab's Demolish); a queued job is only cancelled
         const base = state.bases.find((x) => x.id === b.layout.baseId), rec = base && d.k && d.k.startsWith("b:") ? base.buildings.find((x) => x.id === Number(d.k.slice(2))) : null;
         if (rec && ui && ask(ui, d, "cb-deploy", { kind: "demolish", title: `Pull down ${BUILDINGS[rec.type] ? BUILDINGS[rec.type].name : "this building"} at ${base.name}?`, text: `It is gone for good${FOOT[rec.type] && FOOT[rec.type].general ? ", and whatever stands inside it with it" : ""}. About half its scrap and parts come back${refundWords(rec)}.`, yes: "Pull it down" })) return;

@@ -1,6 +1,6 @@
-// Carrying the team's supplies (sim/carry.js): where each person keeps food, water, firewood and the rest (pockets,
+// Carrying the team's supplies (sim/carry.js): where each person keeps food, water, wood and the rest (pockets,
 // pack, carried in the arms, the vehicle), setting things down on the ground and picking them up again, and the
-// "how much?" box before a team collects water, firewood, wild food or game.
+// "how much?" box before a team collects water, wood, wild food or game.
 //   ui.carry     the open box: { kind: "qty", d (the order's data), qty } or { kind: "pick", partyId }
 //   ui.carrySel  the selected stack in an inventory: { pid, sid, place, key }   ui.carryN: how many to move
 //   ui.carryMsg  the last message
@@ -167,7 +167,7 @@ export function teamCarryCard(state, ui, p) {
   }).join("");
   const carriers = v.people.filter((x) => x.handsKg > 0 || x.bag).length;
   const site = groundAt(state, partyTile(p));
-  return `<div class="card small"><div class="spread"><b${tip("Who keeps the team's food, water, firewood and the rest where: pockets, packs, carried in the arms (no weapon in a fight until set down), the vehicle. Open someone's inventory to move it about.")}>Carried</b>${carriers > 1 ? `<button class="mini" data-action="carry-drophands" data-pid="${p.id}">Everyone set down</button>` : ""}</div>
+  return `<div class="card small"><div class="spread"><b${tip("Who keeps the team's food, water, wood and the rest where: pockets, packs, carried in the arms (no weapon in a fight until set down), the vehicle. Open someone's inventory to move it about.")}>Carried</b>${carriers > 1 ? `<button class="mini" data-action="carry-drophands" data-pid="${p.id}">Everyone set down</button>` : ""}</div>
     ${lines}${Object.keys(v.car).length ? `<div>Vehicle: ${esc(recText(v.car))}</div>` : ""}
     ${site && site.items.length ? `<div class="spread" style="margin-top:0.3rem"><span${tip("On the ground of this tile: put down by a team, or left after a fight")}>On the ground here: ${esc(site.items.slice(0, 4).map(groundItemText).join(", "))}${site.items.length > 4 ? "…" : ""}</span><button class="mini" data-action="carry-pick" data-pid="${p.id}">Pick up…</button></div>` : ""}
   </div>`;

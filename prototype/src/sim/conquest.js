@@ -74,7 +74,8 @@ import { unitPower, arsenalShareTo, addToArsenal, arsenalWorthy } from "./arsena
 import { fortAssault, fortSize, assaultBase } from "./fort.js"; // their walled base on one fort map
 import { layAssaultStores, stockAssaultStores } from "./assaultstores.js"; // their real stores on the map (the wall-line map too)
 import { assaultDims, CONTACT } from "./battlesize.js";
-import { tentCount, TENT } from "./basemap.js"; // a camp's tents (their camp pitches as many as yours)
+import { tentCount } from "./basemap.js"; // their camp's tents (basemap.js AI_CAMP_TENTS)
+import { TENTS } from "./buildings.js";
 import { captivesOf, takeCaptive } from "./conflicts.js";
 import { makeCandidate, offerRecruits } from "./recruits.js";
 import { surrenderPrisoners, prisonersOf, handOver } from "./prisoners.js";
@@ -345,14 +346,15 @@ registerBattleLayout("baseAssault", (b, ctx) => {
       for (let t = 0; t < 8; t++) { const x = ctx.rng.int(X + 2, X + 5), y = ctx.rng.int(1, ctx.H - 2); if (ctx.free(x, y)) { ctx.put(x, y, i % 2 ? "sandbag" : "barricade"); break; } }
     }
     // Their camp (groupbases.js h.camp; ADR 0001): its tents pitched in their grounds behind the line, as many as a
-    // camp of yours has (basemap.js tentCount), each a 2 × 1 ridge tent with open ground all round it.
+    // camp's (basemap.js tentCount: makeshift tents, as yours are built), each with open ground all round it.
     const fac = e.factionId != null ? factionById(ctx.state, e.factionId) : null, home = fac ? homeAt(ctx.state, fac, b.tileId) : null;
     if (home && walls < 1) {
-      const clear = (x, y) => { for (let yy = y - 1; yy <= y + TENT.H; yy++) for (let xx = x - 1; xx <= x + TENT.W; xx++) if (!ctx.free(xx, yy)) return false; return true; };
+      const TW = TENTS.makeshift.w, TH = TENTS.makeshift.h;
+      const clear = (x, y) => { for (let yy = y - 1; yy <= y + TH; yy++) for (let xx = x - 1; xx <= x + TW; xx++) if (!ctx.free(xx, yy)) return false; return true; };
       for (let i = 0, n = tentCount(home); i < n; i++) {
         for (let t = 0; t < 40; t++) {
-          const x = ctx.rng.int(X + 3, ctx.W - 2 - TENT.W), y = ctx.rng.int(2, ctx.H - 3);
-          if (clear(x, y)) { for (let dx = 0; dx < TENT.W; dx++) ctx.put(x + dx, y, "tent"); break; }
+          const x = ctx.rng.int(X + 3, ctx.W - 2 - TW), y = ctx.rng.int(2, ctx.H - 3 - TH);
+          if (clear(x, y)) { for (let dy = 0; dy < TH; dy++) for (let dx = 0; dx < TW; dx++) ctx.put(x + dx, y + dy, "tent"); break; }
         }
       }
     }

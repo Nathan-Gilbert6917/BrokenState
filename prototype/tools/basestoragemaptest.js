@@ -42,7 +42,7 @@ UIC.initCombatUI({ clientWidth: 1600, clientHeight: 900, width: 0, height: 0, ge
 let clock = 1e6;
 const draw = (st) => { try { clock += 50; UIC.drawCombat(st, clock); return ""; } catch (e) { return e.stack.split("\n").slice(0, 3).join(" "); } };
 
-const world = () => { const st = createWorld({ seed: SEED, factionCount: 6 }); st.started = true; st.visitorsOff = true; return st; };
+const world = () => { const st = createWorld({ seed: SEED, factionCount: 6 }); st.started = true; st.visitorsOff = true; st.landOff = true; return st; }; // landOff: the land (basescatter.js) is tools/baseviewtest.js's
 const asCamp = (b) => { b.tier = 0; b.camp = true; b.buildings = []; b.construction = []; };
 function raid(st, h, count = 8) {
   for (const s of atBase(st, h.id)) { s.health = 100; s.gear.weapon = newItem("knife"); }

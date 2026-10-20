@@ -34,7 +34,7 @@ let pass = 0, fail = 0;
 const check = (ok, what) => { if (ok) pass++; else { fail++; console.log(`  FAIL: ${what}`); } return !!ok; };
 const section = (t) => console.log(t);
 const W = () => { const st = createWorld({ seed: SEED, factionCount: 6 }); st.visitorsOff = true; return st; };
-const rich = (b) => Object.assign(b.stock, { scrap: 999, parts: 99, meds: 99, electronics: 9, gunparts: 9 });
+const rich = (b) => Object.assign(b.stock, { scrap: 999, parts: 99, meds: 99, electronics: 9, gunparts: 9, wood: 99999 });
 const skilled = (st, b) => { for (const s of atBase(st, b.id)) Object.assign(s.skills, { medicine: 10, mechanics: 10, farming: 5 }); };
 const ui = (baseView) => ({ started: true, speed: 0, tab: "bases", selected: -1, survivor: null, baseView, expedition: null, diary: null, roster: null, help: false });
 const modal = (st, b, tab) => { st.cards.length = 0; return renderModal(st, ui({ id: b.id, tab })) || ""; };

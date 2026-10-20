@@ -16,18 +16,18 @@
 // it, for your people to take and carry off.
 import { homeAt } from "./groupbases.js"; // their base as they built it
 import { factionById } from "./world.js";
-import { CELL, unitAt, say, resizeBattle, WEAPONS, coverAgainst, active, isRanged, placeCar } from "./combat.js";
+import { CELL, unitAt, say, resizeBattle, WEAPONS, coverAgainst, active, isRanged } from "./combat.js";
 import { buildInterior } from "./interior.js";
 import { DEPLOY, attackSide, fromTileOf, wallHp, gateHp } from "./deploy.js";
 import { count, hasWall } from "./buildings.js";
 import { densify, COVER } from "./battlesize.js"; // cover over the margin
-import { layScatter, scatterSeed } from "./basescatter.js"; // the land round their base, as round yours (ADR 0001)
+import { landSpec, landOf, layLand } from "./basescatter.js"; // the land round their base, as round yours (ADR 0001)
 import { poweredType } from "./power.js";
 import { isNight } from "./world.js";
 import { armoryDefence, bossUnit } from "./defences.js";
 import { layMines } from "./mines.js"; // the main base's minefield in the margin
 import { preBoardBase } from "./barricade.js"; // their outer windows and doors boarded before your assault (the user's pick 2026-10-18)
-import { buildBaseMap, baseMapSize, makeStores, markThieves, FLOOD, faceOf, landOf } from "./basemap.js"; // the base map: every real base's own layout, walled or not
+import { buildBaseMap, baseMapSize, makeStores, markThieves, FLOOD, faceOf, terrainOf } from "./basemap.js"; // the base map: every real base's own layout, walled or not
 import { layAssaultStores, stockAssaultStores } from "./assaultstores.js"; // their real stores on the map of an assault
 
 // Which map a base fights on: its own base map (basemap.js: the player's layout, walled or not, the attack from any
@@ -115,13 +115,9 @@ export function buildFort(base, c, rng, opts = {}) {
   // by the tile's terrain, fixed by the tile), not right by the wall (the attackers' side of it is theirs); the
   // densify below tops it up.
   const mx = x0 + Math.floor(yw / 2), my = y0 + Math.floor(yh / 2);
-  layScatter({
-    cells, W, H, ox: mx, oy: my, seed: scatterSeed(base ? base.tile : 0), terrain: opts.state && base ? landOf(opts.state, base) : "plains", G: Math.ceil(Math.max(W, H) / 2) + 1,
-    yard: () => false,
-    ok: (x, y) => x >= 0 && y >= 0 && x < W && y < H && cells[y * W + x].k === "open" && !(x >= wx0 - 2 && x <= wx1 + 2 && y >= wy0 - 2 && y <= wy1 + 2),
-    pass: (q) => !!(CELL[q.k] && CELL[q.k].walk),
-    car: (x, y, ax, len, body, ok) => placeCar(cells, W, H, x, y, ax ? "y" : "x", len, body === "truck" ? "truck" : "car", ok, Math.abs(x * 31 + y * 17) % 1000),
-  });
+  const spec = landSpec(opts.state || null, base, { G: Math.ceil(Math.max(W, H) / 2) + 1, C: 0, tier: "camp", terrain: opts.state && base ? terrainOf(opts.state, base) : "plains" });
+  spec.clear = 0; spec.river = ""; // their yard is the fort's own; no river through their margin
+  layLand({ cells, W, H, ox: mx, oy: my, land: landOf(spec, null), ok: (x, y) => cells[y * W + x].k === "open" && !(x >= wx0 - 2 && x <= wx1 + 2 && y >= wy0 - 2 && y <= wy1 + 2), floor: (x, y) => cells[y * W + x].k === "open" && !(x >= wx0 - 2 && x <= wx1 + 2 && y >= wy0 - 2 && y <= wy1 + 2) });
   // The wire (buildings.js barbed_wire, razor_wire; wire.js): rings round the wall in the margin, FORT.WIRE cells out
   // for each barbed wire fence and FORT.RAZOR for the concertina wire, with a gap in front of every gate (the way in
   // they funnel the attackers to). wireOut: the outermost ring (the attackers start beyond it: fortDefence).

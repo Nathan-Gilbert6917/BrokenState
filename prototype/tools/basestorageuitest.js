@@ -132,7 +132,7 @@ section("The Armory tab: the Storage card and the items' badges");
 section("The Construction tab: the storage buildings' kg");
 {
   const st = W(), h = hub(st);
-  Object.assign(h.stock, { scrap: 999, parts: 99, buildmat: 20 });
+  Object.assign(h.stock, { scrap: 999, parts: 99, buildmat: 20, wood: 99999 });
   const html = modal(st, h, "construction");
   for (const [t, kg] of [["shed", 600], ["storehouse", 2000], ["warehouse", 6000], ["crates", 150]]) {
     const i = html.indexOf(`<span class="gcard-title">${BUILDINGS[t].name}`);
@@ -152,7 +152,7 @@ section("The autopilot: a storage box at a camp whose goods lie outside");
   st.noWanderers = true;
   asCamp(h); parkAway(st, h); h.farm = null;
   empty(h);
-  Object.assign(h.stock, { scrap: 120, parts: 4, water: 40 });
+  Object.assign(h.stock, { scrap: 120, parts: 4, water: 40, wood: 2500 }); // wood: the storage box's and the hut's (2026-10-20)
   for (const s of atBase(st, h.id)) s.role = "build";
   setAutopilot(st, true, "balanced");
   // The governor queues one building a call; the yard's jobs are finished at once (never the step up).
@@ -184,7 +184,7 @@ section("The autopilot's storage ladder by the size of base");
 {
   // A camp: a storage box.
   let st = W(), h = hub(st);
-  asCamp(h); parkAway(st, h); empty(h); h.stock.scrap = 30;
+  asCamp(h); parkAway(st, h); empty(h); h.stock.scrap = 30; h.stock.wood = 50;
   let w = storageWish(st, h);
   check(w && w.type === "storebox", `a camp: a storage box (${w && w.type})`);
   queueBuild(st, h, "storebox");
@@ -193,16 +193,16 @@ section("The autopilot's storage ladder by the size of base");
   st = W(); h = hub(st); asCamp(h); parkAway(st, h); empty(h); h.stock.scrap = 2; // 4 kg
   check(storageOf(st, h).outsideKg < STORE_WISH.minKg && storageWish(st, h) === null, "a few kg outside: nothing wanted");
   // A shelter: a box for a little, storage crates for more.
-  st = W(); h = hub(st); asShelter(h); parkAway(st, h); empty(h); h.stock.scrap = 90; // 180 kg, room 150
+  st = W(); h = hub(st); asShelter(h); parkAway(st, h); empty(h); h.stock.scrap = 87; h.stock.wood = 100; // 184 kg, room 150 (wood: the storage box's and the crates'
   w = storageWish(st, h);
   check(w && w.type === "storebox", `a shelter, 30 kg outside: a storage box (${w && w.type})`);
-  h.stock.scrap = 150; // 300 kg: 150 outside
+  h.stock.scrap = 145; // 300 kg: 150 outside
   w = storageWish(st, h);
   check(w && w.type === "crates", `a shelter, 150 kg outside: storage crates (${w && w.type})`);
   // An outpost: crates or a storage shed.
   st = W(); h = hub(st);
   const o = mkOutpost(st, h.tile + 1);
-  Object.assign(o.stock, { scrap: 300, buildmat: 2 }); // 600 kg + 2 buildmat, room 500
+  Object.assign(o.stock, { scrap: 300, buildmat: 2, wood: 200 }); // 600 kg + 2 buildmat + 20 kg of wood, room 500
   w = storageWish(st, o);
   check(w && ["crates", "shed"].includes(w.type) && BUILDINGS[w.type].storeKg >= storageOf(st, o).outsideKg, `an outpost: ${w && w.type} for ${storageOf(st, o).outsideKg} kg outside`);
   o.stock.scrap = 500;
