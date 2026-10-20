@@ -346,12 +346,33 @@ const noTime = (u, what) => `No time: ${u.name.split(" ")[0]} has no actions lef
 // Moves the item (or the supply stack, as much of it as fits; qty: at most that many) at `from` to `to`, for the
 // survivor in unit `uid`. Returns a message ("" when nothing happened).
 export function raidMove(state, uid, fromStr, toStr, qty = Infinity) {
+  const crumb = crumbBefore(state.combat, fromStr);
   const r = raidMoveAt(state, uid, fromStr, toStr, qty);
+  if (crumb) crumbAfter(state, crumb, toStr);
   // The vehicle loaded or unloaded: the pool the team shares out (on foot, or past the bikes' racks) changed, so each
   // one's share of it with it (raidShares; a car's riders carry none): the window's weights are right at once.
   const b = state.combat;
   if (b && b.raid && lootLayer(b) && (parseRaidLoc(fromStr).o === "trunk" || parseRaidLoc(toStr).o === "trunk")) raidShares(state, b);
   return r;
+}
+// A stack carried loose moves in whole units (planSupply): what is left of a part-unit (half a kilo of meat from a food
+// item, carry.js HAUL_MIN) goes along with the last of it into the list it went to (a container, the ground, the
+// vehicle, a teammate's Carried), so no crumb is left in the hands, unseen and unmovable.
+function crumbBefore(b, fromStr) {
+  const F = parseRaidLoc(fromStr);
+  if (!b || F.o !== "haul" || F.slot !== "sup") return null;
+  const u = b.units.find((x) => x.id === F.id);
+  return u && u.haul ? { b, u, k: String(F.i), had: u.haul.sup[String(F.i)] || 0 } : null;
+}
+function crumbAfter(state, c, toStr) {
+  const left = c.u.haul ? c.u.haul.sup[c.k] || 0 : 0;
+  if (!(left < c.had - EPS) || !(left > EPS) || left >= 1 - EPS) return;
+  const T = parseRaidLoc(toStr);
+  if (!isList(T) || T.o === "stow") return;
+  const B = place(state, c.b, T);
+  if (!B || !B.sup || B.sup === c.u.haul.sup) return;
+  B.sup[c.k] = (B.sup[c.k] || 0) + left;
+  c.u.haul.sup[c.k] = 0;
 }
 function raidMoveAt(state, uid, fromStr, toStr, qty = Infinity) {
   const b = state.combat;
