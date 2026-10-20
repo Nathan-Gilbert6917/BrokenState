@@ -28,6 +28,7 @@ import { TENT_TAKE, tentsNear, strikeRefusal, slashTargets, slashRefusal, goesLe
 import { clearEnough } from "../sim/battlesize.js";
 import { SUPPLIES, GEAR } from "../sim/data.js";
 import { rescueOptions } from "../sim/rescueraid.js"; // a rescue raid on a group's base: captives, the cell, the armory
+import { PUSH, pushTargets, pushRefusal, pushOdds, pushHazard } from "../sim/shoving.js"; // a foe shoved back a tile or flat on their back (the user's request 2026-10-20)
 import { subdueOdds, canSubdue, throwablesOf, THROWABLES, THROW_KEYS, dragable, heldDown, STEALTH } from "../sim/stealth.js";
 import { flashCells, flashReach, stunLabel, FRAG, BLAST, SMOKE } from "../sim/throwables.js"; // a flashbang's reach and stun; the throw preview
 import { glLabel, glName, glRange, glLoads, glRounds, roundLabel, launchRefusal, glReloadRefusal, backblastCells, enclosedAt, LAUNCH, GL_HE, ROCKET } from "../sim/launchers.js"; // grenade launchers and rockets (section 13)
@@ -427,7 +428,7 @@ function act(state, a) {
   if (!err && a.type !== "end") {
     const u = unitById(b, a.unit);
     if (u && u.side === "player") followFloor(b, u); // Go up / Go down: the view goes with them
-    if (!u || !active(u) || u.ap < 1 || ["throw", "drag", "tie", "subdue", "taser", "pepper", "execute", "surrender", "peek", "close", "brace", "checkwindow", "openwindow", "closewindow", "breakwindow", "shove", "boardup", "teardown", "cutwire", "strike", "slashtent", "keylock", "keyunlock", "doubletap", "pickup", "crush", "goup", "godown", "drive", "loadRam", "unloadRam", "board", "disembark", "turn", "heal", "revive", "dragAlly", "dropAlly", "finish", "pullOut", "suppress", "throwspear", "unjam", "launch", "glreload", "face", "overwatch"].includes(a.type)) cui.mode = "move";
+    if (!u || !active(u) || u.ap < 1 || ["throw", "drag", "tie", "subdue", "shoveFoe", "taser", "pepper", "execute", "surrender", "peek", "close", "brace", "checkwindow", "openwindow", "closewindow", "breakwindow", "shove", "boardup", "teardown", "cutwire", "strike", "slashtent", "keylock", "keyunlock", "doubletap", "pickup", "crush", "goup", "godown", "drive", "loadRam", "unloadRam", "board", "disembark", "turn", "heal", "revive", "dragAlly", "dropAlly", "finish", "pullOut", "suppress", "throwspear", "unjam", "launch", "glreload", "face", "overwatch"].includes(a.type)) cui.mode = "move";
     cui.ammoAsk = null;
     cui.shoveAsk = null; // the Shove chooser (sim/barricade.js) closes once anything is done
     if (a.type !== "face") cui.handAsk = null; // the Hand over chooser stays open across the free Face toward the mate
@@ -694,6 +695,7 @@ function attack(state, u, t) {
     cui.msg = `${t.name} is down${t.ko ? " (out cold)" : t.stab ? " (stabilized)" : " and bleeding"}. Finish them (${keyLabel("battle.finish", 1) || "Shift+K"}) to kill them for good${t.ko || t.wounded ? ", tie them up (T) to take them prisoner" : ""}, or leave them.`;
     return;
   }
+  if (cui.mode === "shoveFoe") return void act(state, { type: "shoveFoe", unit: u.id, target: t.id }); // sim/shoving.js: the sim says why not
   if (cui.mode === "subdue") {
     if (!canSubdue(u, t, b)) { cui.msg = "Subdue needs them right next to you."; return; }
     return void act(state, { type: "subdue", unit: u.id, target: t.id });
@@ -1249,6 +1251,10 @@ export function unitOrders(state, b, u) {
   gunButtons(state, b, u, btn);
   plateButton(state, b, u, btn);
   btn("melee", "Melee", "Strike an adjacent enemy. Silent: it does not alert others or draw zombies. Ends the turn.", ap > 0 && foesAdj, "E", { why: noAp || (foesAdj ? "" : "No enemy right next to them (not across a wall's corner).") });
+  { // sim/shoving.js: a foe right next to them shoved back a tile or flat on their back
+    const near = pushTargets(b, u), why = pushRefusal(b, u), po = near.length === 1 ? pushOdds(b, u, near[0]) : null, hz = near.length === 1 ? pushHazard(b, u, near[0]) : "";
+    btn("shoveFoe", po ? `Shove foe (${po.chance}%)` : "Shove foe", `${PUSH.AP} action: shove someone or one of the dead right next to ${u.name.split(" ")[0]} (arms free). It lands about ${PUSH.BASE}% of the time (better for a good hand-to-hand fighter, a Strong back, a Bulldozer, a target unaware or reeling; worse on the armoured dead, and on a target hunkered down or bracing a door): pushed back a tile, straight away, or knocked flat on their back, always when a wall or someone is behind them (the one behind may go down too), after a fall or through a window. Flat on their back: no overwatch, blows at them +${PUSH.FLOOR_AIM}, and getting up takes their next turn's first action. Shoved into the flames, acid, a trench, a pit or a mine they get what is there; off a walkway or ladder they fall (${PUSH.FALL[0]}–${PUSH.FALL[1]} a level); through a window the glass cuts them and the crash is heard. Brutes, wall-breakers and bosses do not budge. One of the dead that has hold of someone lets go when shoved off or floored. Enemy people shove too.${hz ? ` Behind them now: ${hz}.` : ""}${u.heldBy != null ? " Something has hold of them: shove it off to move again." : ""}${near.length > 1 ? " Several next to them: click the one." : ""}`, !why, "", { why, ap: PUSH.AP });
+  }
   btn("overwatch", "Overwatch", `${OVERWATCH_TIP} Click the way to watch: only what moves in its cone draws a reaction.`, ap > 0 && ammo, "O", { why: fireWhy });
   btn("hunker", "Hunker down", `Ends the turn. +${COVER_DEF[1]} defense on top of cover until your next turn. Only helps when in cover.`, ap > 0, "H", { why: noAp });
   if (b.vehicle) btn("drive", "Drive", `Both actions, from inside or next to the ${b.vehicle.kind === "truck" ? "truck" : "car"}: click where to drive it, up to ${DRIVE.RANGE} cells. It drives through people (anyone in the way is hit for ${RAMMING.HIT[0]}–${RAMMING.HIT[1]}, the dead ${RAMMING.ZOMBIE_HIT[0]}–${RAMMING.ZOMBIE_HIT[1]}, and shoved aside) and light obstacles (fences, crates, sandbags, barricades, tank traps: broken, at a cost to the vehicle's condition); walls, trees, other cars, water, railings and trenches stop it. Loud: the unaware within ${DRIVE.RADIUS} tiles hear the engine${b.raid ? `, Heat +${DRIVE.HEAT}` : ""}. Whoever is aboard rides along, the loot and the siege ram too; extract from a zone it stands at to keep it.`, ap >= DRIVE.AP && (u.aboard || atVehicle(b, u)), "", { why: ap < DRIVE.AP ? "Driving takes both actions." : "Stand next to the vehicle (or get in) to drive it.", ap: DRIVE.AP });
@@ -1647,6 +1653,14 @@ export function combatAction(state, key, d, ui = null) { // ui: main.js's screen
   }
   if (v === "shoot" || v === "melee") { cui.mode = cui.mode === v ? "move" : v; cui.msg = v === "shoot" ? "Click a visible enemy to shoot." : "Click an adjacent enemy to strike."; return; }
   if (nlCbAct(state, b, u, v, cui, act)) return; // tasers, pepper spray, pulled blows, Execute, Surrender, Take them alive (ui/nonlethal.js)
+  if (v === "shoveFoe") { // sim/shoving.js
+    const near = pushTargets(b, u);
+    if (near.length === 1) return void act(state, { type: "shoveFoe", unit: u.id, target: near[0].id });
+    if (!near.length) { cui.msg = pushRefusal(b, u); return; }
+    cui.mode = cui.mode === "shoveFoe" ? "move" : "shoveFoe";
+    cui.msg = "Click who to shove, right next to them.";
+    return;
+  }
   // The stealth kit (sim/stealth.js).
   if (v === "subdue") {
     const near = b.units.filter((t) => canSubdue(u, t, b));
@@ -2661,6 +2675,13 @@ function odds(b, u, t) {
     const p = finishOdds(u, t, b);
     return { ok: !why, chance: p, finish: true, label: why ? `Finish (downed): ${why}` : `Finish (downed): ${p}%, ${SIM.meleeReach(b, u, t) ? "a blow from next to them" : "one round"}: dead for good, no revive, no prisoner. Use Finish (${keyLabel("battle.finish", 1) || "Shift+K"}); a plain click does not` };
   }
+  if (cui.mode === "shoveFoe") { // sim/shoving.js
+    const why = pushRefusal(b, u, t);
+    if (why) return { ok: false, label: why };
+    const o = pushOdds(b, u, t);
+    const hz = pushHazard(b, u, t);
+    return { ok: true, chance: o.chance, label: `Shove ${o.chance}%: pushed back a tile, or flat on their back (${Math.round(o.knock * 100)}%, sure with no room behind them)${hz ? `. Behind them: ${hz}` : ""}` };
+  }
   if (cui.mode === "subdue") {
     if (!canSubdue(u, t, b)) return { ok: false, label: t.kind === "zombie" ? "The dead cannot be subdued" : "Subdue needs them right next to you" };
     const o = subdueOdds(b, u, t);
@@ -3180,10 +3201,10 @@ function animTile(b, t, now) {
     if (f.type !== "move" || f.unit !== t.id) continue;
     if (!cui.anim.has(f.seq)) cui.anim.set(f.seq, now);
     // el: never below 0 (sync stamps a new battle's fx with performance.now(), a little after the frame's own time)
-    const per = 70, el = Math.max(0, now - cui.anim.get(f.seq)), total = f.path.length * per;
+    const per = f.shove ? 110 : 70, el = Math.max(0, now - cui.anim.get(f.seq)), total = f.path.length * per;
     if (el >= total) break;
     const pts = [f.from, ...f.path];
-    const k = el / per, s = Math.floor(k), fr = k - s;
+    const k = el / per, s = Math.floor(k), lin = k - s, fr = f.shove ? 1 - (1 - lin) * (1 - lin) : lin; // shoved back (sim/shoving.js): a stumble, fast then slowing
     const a = pts[s], c = pts[Math.min(pts.length - 1, s + 1)];
     return [a[0] + (c[0] - a[0]) * fr, a[1] + (c[1] - a[1]) * fr];
   }
