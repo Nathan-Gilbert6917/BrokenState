@@ -48,6 +48,7 @@ import { foodMarkAll } from "./foodlog.js"; // the bases' food ledger (the Food 
 import { autopilotHour, autopilotResolve } from "./autopilot.js";
 import { productionHour } from "./production.js";
 import { stewardHour } from "./steward.js";
+import { helpRestore, helpHour, helpDayRoles } from "./noidle.js"; // no idle workers: help elsewhere for the hour
 import { cookShiftHour, cooksHour } from "./kitchen.js"; // part-time cooks: the cooking hours (kitchen-plus)
 import { workHour, workDayRoles } from "./work.js";
 import { stallDaily } from "./activity.js";
@@ -1003,6 +1004,7 @@ function hourOfWorld(state) {
   if (state.hour % 24 === 0) {
     workDayRoles(state); // work.js: people asleep or off at midnight count at their day's work (set again below)
     watchDayRoles(state); // watch.js: Manual people on watch likewise
+    helpDayRoles(state); // noidle.js: a Manual person whose job had no work counts at the job they helped with
     weatherDaily(state); // first, so the day's farming, water and sickness read today's weather
     basesDaily(state);
     storageDaily(state); // basestorage.js: items left outside past a base's storage wear (rain and snow double it)
@@ -1051,6 +1053,7 @@ function hourOfWorld(state) {
   hiveBirthHour(state); // hivebirth.js: a new hive site heard of, the dead seen massing, a hive you knew of risen
   festivalHour(state); // festival.js: the morning of the harvest festival
   crowdCardsHour(state); // moveout.js: a base of yours with more people than beds says so (once, then after a while or when worse)
+  helpRestore(state); // noidle.js: last hour's helpers back on their own job before anyone sets roles
   workHour(state); // work.js: people on work priorities get this hour's job (before stewards, which skip them)
   cookShiftHour(state); // kitchen.js: a Manual "Cook + second job" cooks in the cooking hours, the second job otherwise
   crewHour(state); // crews.js: crew roles run their own trips and answer their teams' small cards
@@ -1060,6 +1063,7 @@ function hourOfWorld(state) {
   watchHour(state); // watch.js: Manual people on the watch roster stand guard on their shift (after the stewards)
   jailGuardHour(state); // prisoners.js: Manual people on a jail's roster guard it while anyone is held there
   sickRestHour(state); // sickrest.js: the ill at a base rest (Manual and pinned: their job back when well); a log line each way
+  helpHour(state); // noidle.js: a Manual person whose job has no work this hour helps with one that has (their role kept)
   cooksHour(state); // kitchen.js: whoever is on Cook in a cooking hour counts as one of the day's cooks (s.cookHour)
   foodMarkAll(state, "player"); // the governor, the stewards and the crews: trades, teams packed
   jobTripsHour(state); // jobtrips.js: the outdoor jobs' trips (out to the base's land, the work, home with the load)

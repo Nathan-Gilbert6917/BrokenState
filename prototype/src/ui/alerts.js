@@ -41,7 +41,7 @@ import { tripAlerts } from "./trips.js"; // a team sent from the planner is home
 import { pileCount } from "./pacing.js";
 import { recentRepairs } from "../sim/repairwait.js";
 import { fieldworkAlerts } from "./fieldworks.js"; // field works out on the bases' land // a breakdown repaired on the road: the team drives on
-import { stallAlerts } from "./activity.js"; // a job at a base unable to work for 2+ days
+import { stallAlerts, noWorkAlerts } from "./activity.js"; // a job at a base unable to work for 2+ days; roles with no work (sim/noidle.js)
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -55,6 +55,7 @@ const EVENT_HOURS = 24;             // "building finished" and the like stay up 
 const teamLabel = (state, p) => `${MISSIONS[p.teamMission || p.mission]?.name || "Team"} (${partyMembers(state, p).map((s) => firstName(s.name)).join(", ")})`;
 const SECTIONS = {
   stalled: stallAlerts, // ui/activity.js: a job at a base that cannot work (no trees, nothing to build …) for 2+ days
+  nowork: noWorkAlerts, // ui/activity.js: the roles at a base with no work, quiet (they help elsewhere meanwhile)
   road: roadAlerts, // no base (hardcore's first hub, the exiles): the team's food and water, a home to set up (Establish base); camps left alone (ui/hardcore.js)
   teams(state, out) {
     for (const p of state.parties) {

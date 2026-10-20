@@ -769,29 +769,50 @@ export function groupWorksDaily(state, f) {
   groupPartsDaily(state, f); // machines-2: parts from their workshop before the day's machines and builds
   // A job at a base they no longer hold is dropped (the materials are lost with the base).
   if (f.job && !f.bases.includes(f.job.tile)) f.job = null;
-  if (!f.job) {
-    const next = nextWork(state, f);
-    if (!next) { groupMachinesDaily(state, f); return; }
-    const def = next.def || W.WORKS[next.type]; // a jail step brings its own (groupjails.js STEPS)
-    // Short of building materials: made from their scrap, as you would (crafting.js buildmat).
-    const bmShort = Math.max(0, (def.cost.buildmat || 0) - (f.stock.buildmat || 0));
-    if (bmShort && (f.stock.scrap || 0) >= bmShort * W.BUILDMAT_SCRAP + (def.cost.scrap || 0)) { f.stock.scrap -= bmShort * W.BUILDMAT_SCRAP; f.stock.buildmat = (f.stock.buildmat || 0) + bmShort; }
-    const use = MACH_ORDER.includes(next.type) || next.type === "powerup" ? "machine" : "free"; // the earmark only for a machine (gen-tiers: an upgrade too)
-    // Wood (woodwork): from the pile above their winter's keep; the rest their crew cuts as part of the job (extra
-    // crew-days by their land), so wood never sends them to salvage.
-    const can = Object.entries(def.cost).every(([k, v]) => (k === "wood" ? true : k === "parts" ? canPayParts(f, v, use) : (f.stock[k] || 0) >= v));
-    let cut = 0;
-    if (can) for (const [k, v] of Object.entries(def.cost)) {
-      if (k === "parts") payParts(f, v, use);
-      else if (k === "wood") { const pay = Math.max(0, Math.min(v, Math.floor((f.stock.wood || 0) - f.pop * W.WOOD.keepHead))); f.stock.wood = (f.stock.wood || 0) - pay; cut = v - pay; }
-      else f.stock[k] -= v;
-    }
-    const cutDays = cut > 0 ? cut / (W.WOOD.cutDay * Math.max(W.WOOD.landMin, groupWoodLand(state, f))) : 0;
-    f.job = { tile: next.tile, type: next.type, left: def.work * (can ? 1 : W.SALVAGE) + cutDays, paid: can, ...(cut > 0 ? { cut } : {}) };
+  // noidle (AI parity with your governor: nobody stays a builder with nothing to build): the day's crew-days go to
+  // work that exists. A job finished part-way through the day hands the rest of them to the next job (f.crewCarry,
+  // spent on it the next day with that day's crew: they were lost); with nothing to build they stay on the land, where
+  // the fields and the hunting count every working head anyway (factions.js), and nothing is carried.
+  // f.crewDay = { day, crew (today's), carried (from yesterday), built, carry (to the next job), land }.
+  const today = (Math.max(1, workingPeople(f) / W.CREW) + (f.prisonWork || 0) / W.CREW) * MEAL_WORK_SHARE; // their prisoners work too (groupjails.js); the ill rest (groupcare.js GROUP_ILL); meals.js: the meal hours off
+  const carried = f.crewCarry || 0;
+  delete f.crewCarry;
+  const cd = f.crewDay = { day: day(state), crew: today, carried, built: 0, carry: 0, land: 0 };
+  if (!f.job && !startWork(state, f)) { cd.land = today + carried; groupMachinesDaily(state, f); return; } // nothing to build: on the land
+  const crew = today + carried;
+  const use = Math.min(crew, Math.max(0, f.job.left));
+  f.job.left -= use;
+  cd.built = use;
+  if (f.job.left <= 1e-9) {
+    finishWork(state, f);
+    if (crew - use > 1e-9) f.crewCarry = cd.carry = crew - use; // the next job's, tomorrow
   }
-  f.job.left -= (Math.max(1, workingPeople(f) / W.CREW) + (f.prisonWork || 0) / W.CREW) * MEAL_WORK_SHARE; // their prisoners work too (groupjails.js); the ill rest (groupcare.js GROUP_ILL); meals.js: the meal hours off
   groupMachinesDaily(state, f); // freezer-parts: the still, the generator, the freezer and the sealer run, wear and break
-  if (f.job.left > 0) return;
+}
+// The next job (nextWork) started: paid from the stores, or salvaged. false: nothing to build.
+function startWork(state, f) {
+  const next = nextWork(state, f);
+  if (!next) return false;
+  const def = next.def || W.WORKS[next.type]; // a jail step brings its own (groupjails.js STEPS)
+  // Short of building materials: made from their scrap, as you would (crafting.js buildmat).
+  const bmShort = Math.max(0, (def.cost.buildmat || 0) - (f.stock.buildmat || 0));
+  if (bmShort && (f.stock.scrap || 0) >= bmShort * W.BUILDMAT_SCRAP + (def.cost.scrap || 0)) { f.stock.scrap -= bmShort * W.BUILDMAT_SCRAP; f.stock.buildmat = (f.stock.buildmat || 0) + bmShort; }
+  const use = MACH_ORDER.includes(next.type) || next.type === "powerup" ? "machine" : "free"; // the earmark only for a machine (gen-tiers: an upgrade too)
+  // Wood (woodwork): from the pile above their winter's keep; the rest their crew cuts as part of the job (extra
+  // crew-days by their land), so wood never sends them to salvage.
+  const can = Object.entries(def.cost).every(([k, v]) => (k === "wood" ? true : k === "parts" ? canPayParts(f, v, use) : (f.stock[k] || 0) >= v));
+  let cut = 0;
+  if (can) for (const [k, v] of Object.entries(def.cost)) {
+    if (k === "parts") payParts(f, v, use);
+    else if (k === "wood") { const pay = Math.max(0, Math.min(v, Math.floor((f.stock.wood || 0) - f.pop * W.WOOD.keepHead))); f.stock.wood = (f.stock.wood || 0) - pay; cut = v - pay; }
+    else f.stock[k] -= v;
+  }
+  const cutDays = cut > 0 ? cut / (W.WOOD.cutDay * Math.max(W.WOOD.landMin, groupWoodLand(state, f))) : 0;
+  f.job = { tile: next.tile, type: next.type, left: def.work * (can ? 1 : W.SALVAGE) + cutDays, paid: can, ...(cut > 0 ? { cut } : {}) };
+  return true;
+}
+// The job done: what it builds.
+function finishWork(state, f) {
   if (f.job.type === "jail") jailBuilt(state, f, f.job.tile);
   else if (f.job.type === "camp") delete worksAt(f, f.job.tile).camp; // established
   else if (f.job.type === "powerup") { const w = worksAt(f, f.job.tile); if (n(w, "power")) w.powerTier = groupGenTier(w) + 1; } // gen-tiers: the generator a tier up

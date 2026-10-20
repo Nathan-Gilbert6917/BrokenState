@@ -10,6 +10,7 @@ import { fold } from "./panelfold.js"; // the Bases tab's per-base Idle drop-dow
 import { TRIP_JOBS } from "../sim/tripland.js"; // the outdoor jobs: their loads come in as they get home (sim/jobtrips.js)
 import { kitWarnings, gearOutdoorWorkers } from "../sim/tripgear.js"; // the outdoor workers' kit: the chips, Gear outdoor workers (trips-plus #2)
 import { lunchHour } from "../sim/meals.js"; // the lunch hour (the Work tab)
+import { noWorkRoles, helpingText } from "../sim/noidle.js"; // roles with no work: the quiet alert
 const hh = (h) => `${String(h).padStart(2, "0")}:00`;
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -140,8 +141,23 @@ export function workChip(state, base) {
 }
 // alerts.js SECTIONS: a job at a base that has been unable to work for STALL_ALERT_DAYS or more (one per base and job;
 // gone when it can work again).
+// alerts.js SECTIONS (noidle, the user's request 2026-10-20): the roles with no work at each base (by the job), one quiet
+// alert a base, so the player can reassign them; meanwhile they help elsewhere (sim/noidle.js helpHour).
+export function noWorkAlerts(state, out) {
+  const by = new Map();
+  for (const r of noWorkRoles(state)) { if (!by.has(r.base.id)) by.set(r.base.id, []); by.get(r.base.id).push(r); }
+  for (const [id, rows] of by) {
+    const b = rows[0].base;
+    const n = rows.reduce((a, r) => a + r.people.length, 0);
+    const list = rows.map((r) => `${r.name} (${r.people.map(first).join(", ")})`).join(", ");
+    const helping = rows.map(helpingText).filter(Boolean).join(", ");
+    out.push({ key: `nowork:${id}:${rows.map((r) => r.job).join(",")}`, kind: "nowork", icon: "💤", tone: "info", text: `${b.name}: no work for ${list}`, tip: `${rows.map((r) => `${r.name}: ${r.why.replace(/^[^:–]*[:–]\s*/, "").toLowerCase() || "nothing to do"}`).join("; ")}. ${plural(n, "person has", "people have")} a job with no work; they help where there is work meanwhile${helping ? ` (${helping})` : ""} and go back to their own job when it has some. Give them another job to keep them on it. Click to open the base.`, go: { base: id, tab: "overview" } });
+  }
+}
 export function stallAlerts(state, out) {
+  const quiet = new Set(noWorkRoles(state).map((r) => `${r.base.id}:${r.job}`)); // already in the quiet no-work alert (they help elsewhere)
   for (const j of stalledJobs(state)) {
+    if (quiet.has(`${j.base.id}:${j.job}`)) continue;
     out.push({ key: `stall:${j.base.id}:${j.job}`, kind: "stalled", icon: "⏸", tone: "warn", text: `${j.base.name}: ${j.name} stalled ${plural(j.days, "day")}`, tip: `${j.people.map(first).join(", ")} ${j.people.length === 1 ? "is" : "are"} on ${j.name} and cannot work: ${j.why}. Give them another job or fix what it needs. Click to open the base.`, go: { base: j.base.id, tab: "overview" } });
   }
 }

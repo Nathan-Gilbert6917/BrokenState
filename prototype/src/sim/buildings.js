@@ -1205,15 +1205,22 @@ function gatherHour(state, base) {
 // A camp (isCamp) whose step up waits for building materials while its stores hold the scrap: its builders make them
 // there (the field recipe, crafting.js buildmat: CAMP.matScrap scrap and CAMP.matHours work-hours each), as a team
 // does on the road. The hour goes on that instead of the building. True when they worked on it.
-function campMaterialsHour(state, base) {
-  if (!isCamp(base)) return false;
+// The camp's step up waits for building materials its builders can make from the scrap here (noidle.js: builder work
+// though the job itself is waiting for its materials). Returns the step-up job or null.
+export function campMaterialsWork(base) {
+  if (!isCamp(base)) return null;
   const job = tierUpJob(base);
-  if (!job || !job.paid || !gatherStalled(job)) return false;
+  if (!job || !job.paid || !gatherStalled(job)) return null;
   const bm = gatherRows(job).find((r) => r.key === "buildmat" && !r.ok);
-  if (!bm || (base.stock.buildmat || 0) >= 1) return false;
+  if (!bm || (base.stock.buildmat || 0) >= 1) return null;
   const sc = gatherRows(job).find((r) => r.key === "scrap");
   const scrapNeed = sc ? Math.max(0, sc.need - sc.have) : 0;
-  if ((base.stock.scrap || 0) - scrapNeed < CAMP.matScrap) return false; // the step up's own scrap first
+  if ((base.stock.scrap || 0) - scrapNeed < CAMP.matScrap) return null; // the step up's own scrap first
+  return job;
+}
+function campMaterialsHour(state, base) {
+  const job = campMaterialsWork(base);
+  if (!job) return false;
   const rate = buildRate(state, base);
   if (rate <= 0) return false;
   job.matWork = (job.matWork || 0) + rate;

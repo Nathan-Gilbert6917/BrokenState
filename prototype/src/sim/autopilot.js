@@ -12,6 +12,7 @@
 // It only uses the same calls as the UI (canBuild / queueBuild, queueCraft, treatAtBase, launchExpedition,
 // startOrder, saveSupplyRun ...), plays by what the player knows of the map (knowledge snapshots, markers,
 // known groups), and never draws from state.rng. Turning it off hands everything back as it is.
+import { fellCrew, fellScore, fellFit, noWorkFor, planNoIdle } from "./noidle.js"; // noidle: a woodcutter on the felling, nobody in a role with no work (call-time only)
 import { FOODS, FOOD_KEYS, foodIn, foodSplit, unitsOf, qtyOf, sellPick, foodNeeds, foodUnits } from "./foods.js"; // food by type (foods.js)
 import { gearOutdoorWorkers, outReady, tripKit } from "./tripgear.js"; // the outdoor workers' kit for their trips (trips-plus #2)
 import { govFieldWorks, fieldJobs, govSnares, snareLinesWanted, playerWorks, gatheredScrap } from "./fieldworks.js"; // field works: the governor's and a base leader's share
@@ -52,7 +53,7 @@ import { KITCHEN, hasKitchen, cooksWanted, kitchenCold, kitchenCanLight, kitchen
 import { conditionsOf, CONDITIONS, treatCondition, treatConditionInfo, medsToTreatAll, autoWantsCondition } from "./health.js";
 import { govCookBills } from "./cooking.js"; // wave 2 cooking: the governor's and the stewards' bills
 import { canUpgradeKitchen, queueCannerUpgrade, canUpgradeGenerator, queueGenUpgrade, stationOperator, hasWall } from "./buildings.js"; // machines-2: the pressure canner; gen-tiers: a generator upgraded
-import { nextWallTier, wallTier } from "./buildings.js"; // WALL_TIERS: one wall, built up a tier at a time
+import { nextWallTier, wallTier, underAttack, campMaterialsWork } from "./buildings.js"; // WALL_TIERS: one wall, built up a tier at a time
 import { WOODWORK, queueChop, queuedChopWood, clearAhead } from "./woodwork.js"; // woodwork: felling for wood, clearing the next sites ahead (govWoodwork)
 import { fittingRoom } from "./basemap.js"; // base building: a general building with floor for a fitting (bedWishes, storageWish, stoveWish)
 import { autoStore } from "./containers.js"; // the stores tidied daily (tidyStores)
@@ -2375,6 +2376,16 @@ function planRoles(state, base, areas = ALL_AREAS) {
   // woodcutter or two go before the builders and the stations.
   if (wood && !woodFirst) for (const s of ranked("wood", wood.score, wood.fit).slice(0, wood.critical)) give(s, "wood");
 
+  // 4a'. The felling (noidle.js fellCrew, the user's request 2026-10-20: "put a woodcutter on its own felling, not just
+  // idle builders"): while felling or wood-giving clearing is queued here (its own for wood, the sites, the player's
+  // marks), woodcutters work it before their trips: one, more while the woodpile is low, the best first (fellScore:
+  // skill, the tool they carry, traits, health). Off again once the felling is done and the woodpile needs nobody (4a).
+  const fc = areas.production ? fellCrew(state, base, people.length) : 0;
+  if (fc) {
+    const have = [...want.values()].filter((w) => w.role === "wood").length;
+    for (const s of ranked("wood", fellScore, fellFit(people.length <= 3)).slice(0, Math.max(0, fc - have))) give(s, "wood");
+  }
+
   // 4b. Cautious (reserves): while food is not short, the stations that refill a short supply (the ammo bench,
   // the med station: stationWorth) get their operator before the plots take every hand, and standing guards
   // come first while hordes or raiders are near.
@@ -2393,9 +2404,12 @@ function planRoles(state, base, areas = ALL_AREAS) {
 
   // 5. Builders while something is queued: more for big jobs. The field works planned from here (fieldworks.js: a
   // tower, a well …) are built by the same builders (buildings.js constructionHour → fieldBuildHour), so they count.
+  // Only work builders can do now (noidle.js): its own felling for wood is the woodcutters' (4a'), and a build waiting
+  // for its materials (gatherStalled) or the base on alert has nothing for them.
   const fieldLeft = fieldJobs(state, base).reduce((a, j) => a + Math.max(0, j.hours - j.progress), 0);
-  if (areas.building && (base.construction.length || fieldLeft > 0)) {
-    const left = base.construction.reduce((a, j) => a + j.hours - j.progress, 0) + fieldLeft;
+  const buildable = underAttack(state, base) ? [] : base.construction.filter((j) => j.gov !== "wood" && (!gatherStalled(j) || j === campMaterialsWork(base))); // a camp's builders make the step up's building materials
+  if (areas.building && (buildable.length || fieldLeft > 0)) {
+    const left = buildable.reduce((a, j) => a + j.hours - j.progress, 0) + fieldLeft;
     const n = Math.min(3, Math.max(1, Math.ceil(left / 40)), Math.max(1, Math.floor(free.size / 2)));
     for (const s of ranked("build", (x) => skill(x, "mechanics"), (x) => !x.inBed).slice(0, n)) give(s, "build");
   }
@@ -2498,6 +2512,15 @@ function planRoles(state, base, areas = ALL_AREAS) {
   }
   if (plenty) planStudy(state, base, free, give, { foodDays, urgent: !!threat.urgent, plenty });
   for (const s of [...free]) give(s, s.mood < 40 ? "rest" : "scavenge");
+
+  // 11. Nobody left in a role with no work (noidle.js, the user's request 2026-10-20: "There should never be idle
+  // workers for any profession"): whoever the steps above gave a job that has no work (by the job: activity.js
+  // jobCheck: nothing to build, no crops, a cold kitchen, a quiet ward, the ruins picked clean …) goes to the most
+  // useful job that has work (planNoIdle: the base's needs, wood, a lookout). Not the people kept above (pinned, on
+  // priorities, an area not handed over) or held by this morning's move (s.govIdle).
+  const planned = (x) => (want.get(x.id) || { role: "scavenge" }).role;
+  const noWork = people.filter((s) => !kept.has(s.id) && !(s.govIdle && state.hour < s.govIdle.until) && noWorkFor(state, base, s, planned(s), (want.get(s.id) || {}).station ?? null));
+  if (noWork.length) for (const p of planNoIdle(state, base, noWork, planned, areas)) want.set(p.s.id, { role: p.job, station: p.station ?? null, upkeep: false });
 
   let changed = 0;
   for (const s of people) {
