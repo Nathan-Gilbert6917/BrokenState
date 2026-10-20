@@ -36,6 +36,7 @@ import { claimsTaken, takeGroupClaims } from "./claims.js"; // the groups' claim
 import { keyWord } from "./water.js"; // "un-purified water" in texts
 import { sumRecs, totalRounds } from "./rounds.js"; // rounds by calibre
 import { firstHubPending } from "./hardcore-start.js";
+import { askLayout } from "./staging.js"; // Open the build map: a base new to you asks to be laid out (ui/buildmap.js alert)
 
 export const OCCUPY = {
   // A group's works as your buildings (groupworks.js keys → buildings.js BUILDINGS).
@@ -249,6 +250,7 @@ export function takeAbandoned(state, tile, p = null) {
   const t = state.tiles[tile];
   if (t.ruin) delete t.ruin;
   state.bases.push(base);
+  askLayout(state, base, "occupied");
   const people = p && state.parties.includes(p) ? partyMembers(state, p).length : 0;
   if (p && state.parties.includes(p)) settleInto(state, p, base);
   assignStations(state, base);

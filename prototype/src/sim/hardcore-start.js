@@ -256,7 +256,7 @@ export function hubFounded(state, base, when = "") {
     ? `Day ${day(state)}: the camp is a shelter now. ${base.name} is founded, your first shelter${when ? `, ${when}` : ""}. ${shelterText()} Build it up before the cold.`
     : `Day ${day(state)}: the camp is built up. ${base.name} is founded, your first hub${when ? `, ${when}` : ""}. It is bare: no buildings yet, a barricade of scrap and the camp's stores. Build farm plots, a well and beds before the cold.`;
   log(state, text, "good");
-  addCard(state, { title: "A place of your own", text, mapBase: base.id, choices: [{ label: "OK", default: true, resolve: () => "" }, buildMapChoice(base)] }); // staging.js: Open the build map
+  addCard(state, { title: "A place of your own", text, mapBase: base.id, choices: [{ label: "OK", default: true, resolve: () => "" }, buildMapChoice(base)] }); // staging.js: Open the build map (a rename while it waits rewrites its text: basenames.js renameBase)
 }
 
 // ---------- the spawn ----------

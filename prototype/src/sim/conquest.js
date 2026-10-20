@@ -90,6 +90,7 @@ import { blocAssaultHelp } from "./blocs.js"; // AI blocs: members' fighters at 
 import { askBaseName } from "./basenames.js"; // name a base you take
 import { pwarBaseTaken } from "./playerwars.js"; // wars with you: a base taken counts
 import { carriedRec } from "./ammo.js"; // the loose rounds people carry
+import { askLayout } from "./staging.js"; // Open the build map: a base new to you asks to be laid out (ui/buildmap.js alert)
 
 export const CONQUEST = {
   FIGHT_SHARE: 0.6, MIN_DEF: 3, MAX_DEF: 16, HOME_WEIGHT: 2,
@@ -422,6 +423,7 @@ export function captureBase(state, f, tile, p, info = {}) {
   if (kit.length) got.push(kit.length === 1 ? kit[0].name : `${kit.length} pieces of their kit`);
   state.bases.push(base);
   askBaseName(state, base);
+  askLayout(state, base, occ ? "returned" : "conquered");
   const seized = home && f.vehicles && f.vehicles.length ? seizeGroupVehicles(state, f, base) : []; // vehicles.js: their Army truck and Humvee are yours
   // Who holds it: one or two of the team (the weakest fighters), everyone when you have no other base.
   const team = p && state.parties.includes(p) ? partyMembers(state, p) : [];
@@ -742,6 +744,7 @@ export function conquestDaily(state) {
       o.base.type = hub(state) ? "outpost" : "hub";
       o.base.alert = false;
       state.bases.push(o.base);
+      askLayout(state, o.base, "returned");
       recomputeOwnership(state);
       log(state, `${o.name} stands empty: its holders are gone. It is yours again (nobody is there yet).`, "good");
       history(state, `${o.name} came back to you empty.`);
