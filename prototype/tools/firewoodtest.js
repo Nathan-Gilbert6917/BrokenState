@@ -1,7 +1,7 @@
-// Firewood as a 0.1 kg unit (data.js SUPPLIES.wood; it was a 3 kg bundle): the unit and its weight; every firewood
+// Wood as a 0.1 kg unit (data.js SUPPLIES.wood; it was a 3 kg bundle): the unit and its weight; every wood
 // figure 30 times what it was, so the balance is unchanged (woodcutting, the woodpile and its plans, heating and its
 // fuel equivalence, the boiler, camp and shelter fires, the groups, trade and the radio, the loot); breaking things
-// down by their weight and burnable share; firewood as a stack in the raid window, the cargo and the stores (split,
+// down by their weight and burnable share; wood as a stack in the raid window, the cargo and the stores (split,
 // weighed); the top bar; an older save scaled ×30 once on load.
 // Usage: node tools/firewoodtest.js [seed]
 import { createWorld, hub, atBase } from "../src/sim/world.js";
@@ -35,26 +35,26 @@ globalThis.document = globalThis.document || { createElement: () => ({ width: 0,
 // ======================================================================
 section("The unit: 0.1 kg");
 {
-  check(SUPPLIES.wood.weight === 0.1 && WOOD_UNITS === 30, `a firewood weighs ${SUPPLIES.wood.weight} kg (a 3 kg bundle is ${WOOD_UNITS})`);
+  check(SUPPLIES.wood.weight === 0.1 && WOOD_UNITS === 30, `a wood weighs ${SUPPLIES.wood.weight} kg (a 3 kg bundle is ${WOOD_UNITS})`);
   check(near(SUPPLIES.wood.value / SUPPLIES.wood.weight, 0.6 / 3, 1e-9), `worth the same a kg as before (${SUPPLIES.wood.value} a unit, ${SUPPLIES.wood.value / SUPPLIES.wood.weight} a kg)`);
-  check(supplyFew("wood", 5) === 150 && supplyFew("food", 5) === 5, "\"a few\" firewood in a rule is 30 times a few of anything else (5 to spare: 150)");
+  check(supplyFew("wood", 5) === 150 && supplyFew("food", 5) === 5, "\"a few\" wood in a rule is 30 times a few of anything else (5 to spare: 150)");
 }
 
 // ======================================================================
-section("Every firewood figure × 30: the balance unchanged");
+section("Every wood figure × 30: the balance unchanged");
 {
   const st = mk();
   const st0 = createWorld({ seed: SEED, factionCount: 6 });
-  // [what, now, before (in 3 kg units), × (30, or 1/30 for a figure per firewood)]
+  // [what, now, before (in 3 kg units), × (30, or 1/30 for a figure per wood)]
   const rows = [
-    ["woodcutting rate a woodcutter-hour", Wd.WOOD.rate, 0.6, 30], ["a forest tile's firewood (deplete)", Wd.WOOD.deplete, 250, 30],
+    ["woodcutting rate a woodcutter-hour", Wd.WOOD.rate, 0.6, 30], ["a forest tile's wood (deplete)", Wd.WOOD.deplete, 250, 30],
     ["a woodcutter's worth (the job opens)", Wd.WOOD.worth, 0.4, 30], ["a shelter's fire a day", Wd.WOOD.fire.shelter, 0.6, 30],
     ["a camp fire a day", Wd.WOOD.fire.camp, 0.3, 30], ["the boiler a head a day", WORM.BOILER_WOOD_HEAD, 0.2, 30],
-    ["heat (fuel) of one firewood", HEAT.wood, 0.2, 1 / 30], ["firewood for a head's freezing day", woodFor(HEAT.fuel), 0.5, 30],
+    ["heat (fuel) of one wood", HEAT.wood, 0.2, 1 / 30], ["wood for a head's freezing day", woodFor(HEAT.fuel), 0.5, 30],
     ["a group's start a head", GROUP_WOOD.start, 4, 30], ["a group's cap a head", GROUP_WOOD.cap, 8, 30],
     ["a group's cutting a head a day", GROUP_WOOD.cut, 0.12, 30], ["a group's burn a freezing day", GROUP_WOOD.burn, 0.3, 30],
     ["a trade lot", LOT.wood, 20, 30], ["a cabin's woodpile (min)", SITE_WOOD.cabin[1], 2, 30], ["a cabin's woodpile (max)", SITE_WOOD.cabin[2], 6, 30],
-    ["a barn's woodpile in a raid (max)", AREA_WOOD.barn[2], 5, 30], ["the hub's start", hub(st0).stock.wood, 10, 30],
+    ["a barn's woodpile in a raid (max)", AREA_WOOD.barn[2], 5, 30], ["the hub's start (and 400 for building since 2026-10-20)", hub(st0).stock.wood - 400, 10, 30],
   ];
   for (const [what, now, was, x] of rows) check(near(now, was * x, 1e-9), `${what}: ${was} → ${Math.round(now * 1e6) / 1e6}`);
   check(SITE_WOOD.cabin[0] === 0.4 && AREA_WOOD.barn[0] === 0.3, "the loot's chances unchanged (only the amounts)");
@@ -68,38 +68,38 @@ section("Every firewood figure × 30: the balance unchanged");
   heatDaily(st, h);
   const burned = 10000 - h.stock.wood;
   check(near(burned, n * 0.5 * 30, 1e-6) && near(burned * SUPPLIES.wood.weight, n * 0.5 * 3, 1e-6) && h.stock.fuel === 5 && !h.cold,
-    `a freezing day for ${n}: ${burned} firewood (${(burned * SUPPLIES.wood.weight).toFixed(1)} kg, what ${n * 0.5} of the old 3 kg units weighed), no fuel`);
+    `a freezing day for ${n}: ${burned} wood (${(burned * SUPPLIES.wood.weight).toFixed(1)} kg, what ${n * 0.5} of the old 3 kg units weighed), no fuel`);
   check(near(burned * HEAT.wood, n * HEAT.fuel, 1e-9), `the same warmth: ${burned} × ${HEAT.wood.toFixed(5)} = ${(burned * HEAT.wood).toFixed(2)} fuel's worth`);
-  // Half the firewood: the fuel covers the rest, as before.
+  // Half the wood: the fuel covers the rest, as before.
   h.stock.wood = burned / 2; h.stock.fuel = 5;
   heatDaily(st, h);
-  check(h.stock.wood === 0 && near(5 - h.stock.fuel, n * HEAT.fuel / 2, 0.06), `half the firewood: ${(5 - h.stock.fuel).toFixed(2)} fuel for the rest`);
+  check(h.stock.wood === 0 && near(5 - h.stock.fuel, n * HEAT.fuel / 2, 0.06), `half the wood: ${(5 - h.stock.fuel).toFixed(2)} fuel for the rest`);
   // The woodpile's plan: 15 a head a freezing day, × the bitter days, a fifth to spare; and the nights' fires ahead
   // (fire-nights: 4.5 a head a cool night, WOOD.nightDays of them).
   h.stock.wood = 0;
   const w = Wd.woodNeed(st, h);
-  check(w.need > 0 && Math.abs(w.need - (w.heads * 15 * Wd.WOOD.bitter * w.days * Wd.WOOD.spare + w.nights + w.boiler * WORM.BOILER_DAYS)) <= w.need * 0.01, `the cold ahead: ${w.need} firewood for ${w.heads} (${(w.need * 0.1).toFixed(0)} kg; the nights' fires ${w.nights})`);
+  check(w.need > 0 && Math.abs(w.need - (w.heads * 15 * Wd.WOOD.bitter * w.days * Wd.WOOD.spare + w.nights + w.boiler * WORM.BOILER_DAYS)) <= w.need * 0.01, `the cold ahead: ${w.need} wood for ${w.heads} (${(w.need * 0.1).toFixed(0)} kg; the nights' fires ${w.nights})`);
   // The boiler: 6 a head, 0.04 fuel a head instead.
   addBuilding(h, "boiler");
   const bu = boilerUse(st, h);
-  check(near(bu.wood, bu.heads * 6, 1e-9) && near(bu.fuel, Math.round(bu.heads * 6 * HEAT.wood * 100) / 100, 1e-9), `the boiler: ${bu.wood} firewood or ${bu.fuel} fuel a day for ${bu.heads}`);
-  // Trade: a firewood costs a 30th of a bundle (summer, a lot).
+  check(near(bu.wood, bu.heads * 6, 1e-9) && near(bu.fuel, Math.round(bu.heads * 6 * HEAT.wood * 100) / 100, 1e-9), `the boiler: ${bu.wood} wood or ${bu.fuel} fuel a day for ${bu.heads}`);
+  // Trade: a wood costs a 30th of a bundle (summer, a lot).
   const f = st.factions.find((x) => x.alive);
   st.hour = 24 * 40;
   const per = sellPrice(st, f, "wood", 0, LOT.wood);
-  check(per > 0 && per < 0.1, `a group pays ${per.toFixed(4)} a firewood (${(per * 30).toFixed(2)} a 3 kg bundle)`);
+  check(per > 0 && per < 0.1, `a group pays ${per.toFixed(4)} a wood (${(per * 30).toFixed(2)} a 3 kg bundle)`);
 }
 
 // ======================================================================
 section("Breaking things down: by weight × the burnable share");
 {
   const rows = Object.entries(GEAR).filter(([, d]) => d.burnShare > 0).map(([k, d]) => ({ k, name: d.name, kg: d.weight, share: d.burnShare, wood: Wd.burnOf(newItem(k)) }));
-  for (const r of rows) console.log(`    ${r.name.padEnd(30)} ${String(r.kg).padStart(4)} kg × ${String(r.share).padEnd(3)} → ${r.wood} firewood`);
+  for (const r of rows) console.log(`    ${r.name.padEnd(30)} ${String(r.kg).padStart(4)} kg × ${String(r.share).padEnd(3)} → ${r.wood} wood`);
   check(rows.length >= 20 && rows.every((r) => r.wood === Math.floor(r.kg * r.share / 0.1 + 1e-9)), `${rows.length} burnable items: floor(weight × share / 0.1 kg)`);
   const by = (k) => Wd.burnOf(newItem(k));
   check(by("novel") === 3 && by("guitar") === 27 && by("nailbat") === 9 && by("backpack") === 5 && by("ladder") === 90 && by("surgerybook") === 15,
     `a paperback 3, a guitar 27 (3 kg × 0.9), a nail bat 9 (1.2 kg × 0.8), a school backpack 5 (1 kg × 0.5), a siege ladder 90, a surgery book 15`);
-  check(by("pistol") === 0 && by("knife") === 0 && !GEAR.pistol.burnShare && Object.values(GEAR).every((d) => d.burn == null), "metal things none; no hand-set firewood left (burn → burnShare)");
+  check(by("pistol") === 0 && by("knife") === 0 && !GEAR.pistol.burnShare && Object.values(GEAR).every((d) => d.burn == null), "metal things none; no hand-set wood left (burn → burnShare)");
   const st = mk();
   const h = hub(st);
   h.stock.wood = 0;
@@ -108,15 +108,15 @@ section("Breaking things down: by weight × the burnable share");
   const msg = breakDownAt(st, loc("guitar"));
   check(h.stock.wood === 27 && /\+27 to/.test(msg), `"${msg}"`);
   check(!breakDownInfo(st, loc("pistol")).ok && /will not burn/.test(breakDownInfo(st, loc("pistol")).reason), "a pistol will not burn");
-  // A thing whose burnable part is under a firewood says so (a light item, share set for the check).
+  // A thing whose burnable part is under a wood says so (a light item, share set for the check).
   const keep = GEAR.knife.burnShare;
   GEAR.knife.burnShare = 0.1;
   h.armory.push(newItem("knife"));
   check(!breakDownInfo(st, loc("knife")).ok && /Too little/.test(breakDownInfo(st, loc("knife")).reason), `too little of it burns: "${breakDownInfo(st, loc("knife")).reason}"`);
   if (keep == null) delete GEAR.knife.burnShare; else GEAR.knife.burnShare = keep;
-  // The boiler burns things worth their firewood by weight.
+  // The boiler burns things worth their wood by weight.
   const list = [newItem("novel"), newItem("magazines")];
-  check(Wd.burnablesWood(list) === 7, "a novel and a stack of magazines: 7 firewood's worth for the boiler");
+  check(Wd.burnablesWood(list) === 7, "a novel and a stack of magazines: 7 wood's worth for the boiler");
 }
 
 // ======================================================================
@@ -158,17 +158,17 @@ section("A stack like any supply: the raid window, the cargo, the stores, the lo
   box.searched = true;
   const msg = RL.raidMove(st, u.id, `rbox:${box.id}:sup:wood`, `haul:${u.id}:list`, 40);
   check(u.haul.sup.wood === 40 && box.contents.sup.wood === 110, `split the stack: 40 of 150 taken, 110 left ("${msg}")`);
-  check(near(RL.haulLoad(u), 4, 1e-6), `40 firewood carried weigh ${RL.haulLoad(u)} kg`);
+  check(near(RL.haulLoad(u), 4, 1e-6), `40 wood carried weigh ${RL.haulLoad(u)} kg`);
   const { inventoryModal } = await import("../src/ui/inventory.js");
   const ui = { inv: { raid: true, uid: u.id, box: box.id }, invSel: null, invMsg: "" };
   const html = inventoryModal(st, ui) || "";
-  // The firewood icon is its own drawing (ui/itemart.js, the wood supply's picture) as an <img>, not an emoji.
+  // The wood icon is its own drawing (ui/itemart.js, the wood supply's picture) as an <img>, not an emoji.
   const { supplyIcon } = await import("../src/ui/stackmove.js");
   const { SUPPLY_ART } = await import("../src/ui/itemart.js");
   const woodIcon = supplyIcon("wood");
-  check(typeof SUPPLY_ART.wood === "function" && /^<img class="iart/.test(woodIcon), "firewood has its own drawing for an icon");
-  const woodTile = (n, kg) => `<span class="iico">${woodIcon}</span><span class="iname">Firewood</span><span class="icount">×${n}</span>${kg != null ? `<span class="ikg">${kg}</span>` : ""}`;
-  check(html.includes(woodTile(110)) && html.includes(woodTile(40)) && html.includes(`rbox:${box.id}:sup:wood`), "the search window shows both stacks with the firewood icon (110 in the box, 40 carried)");
+  check(typeof SUPPLY_ART.wood === "function" && /^<img class="iart/.test(woodIcon), "wood has its own drawing for an icon");
+  const woodTile = (n, kg) => `<span class="iico">${woodIcon}</span><span class="iname">Wood</span><span class="icount">×${n}</span>${kg != null ? `<span class="ikg">${kg}</span>` : ""}`;
+  check(html.includes(woodTile(110)) && html.includes(woodTile(40)) && html.includes(`rbox:${box.id}:sup:wood`), "the search window shows both stacks with the wood icon (110 in the box, 40 carried)");
   check(/11 kg/.test(html) || /11<\/span>/.test(html), "a stack shows its weight (110 × 0.1 kg = 11 kg)");
   // Back on the map: the team's cargo and the base's stores list it with its weight.
   st.combat = null;
@@ -177,25 +177,25 @@ section("A stack like any supply: the raid window, the cargo, the stores, the lo
   const s = partyMembers(st, p)[0];
   const ui2 = { inv: { sid: s.id }, invSel: null, invMsg: "" };
   const cargoHtml = inventoryModal(st, ui2) || "";
-  check(/>Supplies \([\d.]+ kg\)/.test(cargoHtml) && cargoHtml.includes(woodTile(150, 15)), "the team's cargo lists the firewood stack (150, 15 kg)");
+  check(/>Supplies \([\d.]+ kg\)/.test(cargoHtml) && cargoHtml.includes(woodTile(150, 15)), "the team's cargo lists the wood stack (150, 15 kg)");
   check(near(poolLoad(p) - poolLoad({ ...p, cargo: { ...p.cargo, supplies: { ...p.cargo.supplies, wood: 0 } } }), 15, 1e-6), "and it weighs 15 kg in the team's load");
   const h = hub(st);
   h.stock.wood = 300;
   const keeper = atBase(st, h.id)[0];
   const baseHtml = inventoryModal(st, { inv: { sid: keeper.id }, invSel: null, invMsg: "" }) || "";
-  check(/In the stores \(/.test(baseHtml) && baseHtml.includes(woodTile(300, 30)), "the armory screen lists the base's firewood (300, 30 kg)");
+  check(/In the stores \(/.test(baseHtml) && baseHtml.includes(woodTile(300, 30)), "the armory screen lists the base's wood (300, 30 kg)");
   const { topbarParts } = await import("../src/ui/ui.js");
   const top = topbarParts(st, { speed: 1 }).stock;
-  check(/Firewood<\/span><span class="nb-amt">300</.test(top) && /Weight 0\.1 each/.test(top), "the top bar counts it (Firewood 300, 0.1 kg each)");
+  check(/Wood<\/span><span class="nb-amt">300</.test(top) && /Weight 0\.1 each/.test(top), "the top bar counts it (Wood 300, 0.1 kg each)");
   // The loot: a cabin's woodpile is a stack of 60–180 (6–18 kg).
   const fake = { seed: SEED, hour: 0, tiles: [{ loc: { type: "cabin" }, loot: 1 }] };
   const finds = [];
   for (let hr = 0; hr < 300; hr++) { fake.hour = hr; const q = rollSiteWood(fake, 0); if (q) finds.push(q); }
-  check(finds.length > 60 && finds.every((q) => q >= 60 && q <= 180) && Math.max(...finds) > 150, `a cabin's search hour finds 60–180 firewood (${Math.min(...finds)}–${Math.max(...finds)} in ${finds.length} finds)`);
+  check(finds.length > 60 && finds.every((q) => q >= 60 && q <= 180) && Math.max(...finds) > 150, `a cabin's search hour finds 60–180 wood (${Math.min(...finds)}–${Math.max(...finds)} in ${finds.length} finds)`);
 }
 
 // ======================================================================
-section("An older save: its firewood × 30, once");
+section("An older save: its wood × 30, once");
 {
   const st = mk();
   const h = hub(st);
@@ -213,14 +213,14 @@ section("An older save: its firewood × 30, once");
   p.supplies.wood = 1; p.cargo.supplies.wood = 2;
   p.task = { type: "wood", hours: 8, done: 2, got: { wood: 1.2, left: 0.5 } };
   (st.econStats = st.econStats || {}).heatWood = 100; st.econStats.woodCut = 50;
-  st.woodcutting = 1; // a save from before firewood was 0.1 kg
+  st.woodcutting = 1; // a save from before wood was 0.1 kg
   const back = deserializeState(JSON.parse(JSON.stringify(serializeState(st))));
   const hb = hub(back), pb = back.parties.find((x) => x.id === p.id), fb = back.factions.find((x) => x.id === f.id);
   const rb = role && back.work.roles.find((r) => r.name === role.name);
   check(back.woodcutting === 2, "the mark moves on to 2");
-  check(hb.stock.wood === 300 && near(hb.woodToday, 45) && near(hb.boilerBurn.wood, 24) && near(hb.boilerBurn.itemWood, 9), `the base: 10 → ${hb.stock.wood} firewood; the day's cut and the boiler's figures too`);
+  check(hb.stock.wood === 300 && near(hb.woodToday, 45) && near(hb.boilerBurn.wood, 24) && near(hb.boilerBurn.itemWood, 9), `the base: 10 → ${hb.stock.wood} wood; the day's cut and the boiler's figures too`);
   check(pb.supplies.wood === 30 && pb.cargo.supplies.wood === 60 && near(pb.task.got.wood, 36) && near(pb.task.got.left, 15), "a team's supplies, cargo and Cut wood haul × 30");
-  check(fb.stock.wood === 1200 && !fb.market, "a group's woodpile × 30; its market made afresh (prices per firewood)");
+  check(fb.stock.wood === 1200 && !fb.market, "a group's woodpile × 30; its market made afresh (prices per wood)");
   check(back.econStats.heatWood === 3000 && back.econStats.woodCut === 1500, "the economy's tallies × 30");
   check(!rb || (rb.pri.wood === pri && rb.min.wood === 2), "the work roles' Cut wood priority and minimum are not amounts: unchanged");
   check(JSON.stringify(back.wood || {}) === JSON.stringify(st.wood || {}), "the land's wood levels unchanged");

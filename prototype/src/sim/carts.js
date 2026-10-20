@@ -10,7 +10,7 @@
 // WHAT IT HOLDS. Three things, all within GEAR cart.cap kg:
 //   items   its own grid (item.contents, GEAR slots: 10 and 16), addressed "s:<id>:bag:<i>" like a carried bag's;
 //           bulky things and packs go in too (inventory.js fitReason "bag" on a cart: only its kg limits).
-//   the team's supplies  water, food, firewood, game, fuel cans... (carry.js HOLD): with a team the pool stays one pool
+//   the team's supplies  water, food, wood, game, fuel cans... (carry.js HOLD): with a team the pool stays one pool
 //           (parties.js) and the cart is a place for it like the car, owned by its pusher (p.hold.by[sid].cart, carry.js
 //           settleHold: the car first, then the carts, then packs, pockets, hands; cartFree kg of room).
 //   lots    item.held [{ k, q, left?, egg?, eggs? }]: the supplies it carries when no team holds it (set down on a
@@ -658,7 +658,7 @@ export function cartsEnd(state, b, outcome) {
 // ---------- abandoned on the State Map ----------
 // A new world (world.js createWorld): road tiles near towns and cities (ROAD_CARTS.range tiles of one) now and then
 // have a cart abandoned on them (ROAD_CARTS.p a tile, its own dice: nothing else of the world changes), sometimes with a
-// little in it (scrap, firewood, a fuel can). A ground site like any (state.deathSites, site.abandoned: its marker reads
+// little in it (scrap, wood, a fuel can). A ground site like any (state.deathSites, site.abandoned: its marker reads
 // "Abandoned cart: ..."), seen when a team or a base sees the tile (markers.js live markers), taken as any cart on the
 // ground (pickUpGround, the Recover mission). The groups' scavengers find them too, slowly (economy.js deathSitesDaily:
 // ×ROAD_CARTS.scav its chance a day): the nearest group keeps the cart (f.carts).

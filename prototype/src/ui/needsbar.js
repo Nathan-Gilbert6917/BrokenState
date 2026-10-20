@@ -71,7 +71,7 @@ export function baseNeeds(state, h) {
       r.note = ln.short;
       base += ` ${ln.tip}`;
     } else if (k === "fuel") {
-      if (h.cold && heads) { r.level = 2; r.note = "cold"; base += " Out of firewood and fuel: everyone here is cold."; }
+      if (h.cold && heads) { r.level = 2; r.note = "cold"; base += " Out of wood and fuel: everyone here is cold."; }
     } else if (k === "meds") {
       const ill = illnessSummary(state, h);
       r.level = ill.noMeds ? 2 : (h.stock.meds || 0) < Math.max(NEEDS_AT.medsLow, ill.ill + ill.worm) ? 1 : 0;
@@ -137,7 +137,7 @@ export function needsBar(state, hub) {
     rows = baseNeeds(state, hub);
     title = `${esc(hub.name)} stores`;
     chips = baseChips(state, hub);
-    foot = `<button class="mini" data-action="openbase" data-id="${hub.id}" data-tab="farming"${tip(`Open ${hub.name}'s Farming tab: food, water, firewood and the upkeep`)}>Open base</button><button class="mini" data-action="ld-open"${tip("Ledger: production and use of every resource day by day")}>📈 Ledger</button>`;
+    foot = `<button class="mini" data-action="openbase" data-id="${hub.id}" data-tab="farming"${tip(`Open ${hub.name}'s Farming tab: food, water, wood and the upkeep`)}>Open base</button><button class="mini" data-action="ld-open"${tip("Ledger: production and use of every resource day by day")}>📈 Ledger</button>`;
   } else {
     const road = roadNeeds(state);
     if (road) {

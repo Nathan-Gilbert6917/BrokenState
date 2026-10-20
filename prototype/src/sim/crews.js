@@ -166,7 +166,7 @@ FIELD_TYPES.fish = {
         score: (need.food || 0) * Math.min(2.5, x.est.rations / 10) / (1 + x.dist / 6) }));
   },
 };
-// Firewood (woodcutting.js): a trip to cut wood 8 hours on the best wood land within range and come home, from late
+// Wood (woodcutting.js): a trip to cut wood 8 hours on the best wood land within range and come home, from late
 // summer while the hub's woodpile is short of what the coming cold needs. The hub's axes go along.
 const woodFit = (s) => woodcutterMult(s) * bestChop(s).mult;
 FIELD_TYPES.wood = {
@@ -184,7 +184,7 @@ FIELD_TYPES.wood = {
       const e = expectWood(state, team, id, WOOD.defHours, state.hour + 24, Infinity, power);
       if (e.all < 180) continue;
       const dist = state.grid.distance(base.tile, id);
-      out.push({ tile: id, mission: "move", fit: woodFit, onSite: WOOD.defHours, chopGear: true, why: `cut firewood (~${Math.round(e.all)}; ${Math.floor(w.have)} of ${w.need} for the winter)`,
+      out.push({ tile: id, mission: "move", fit: woodFit, onSite: WOOD.defHours, chopGear: true, why: `cut wood (~${Math.round(e.all)}; ${Math.floor(w.have)} of ${w.need} for the winter)`,
         steps: [{ kind: "wood", hours: WOOD.defHours }, { kind: "home" }],
         score: Math.min(2.5, e.all / 240) * (w.cold ? 1.4 : 1) / (1 + dist / 6) });
     }

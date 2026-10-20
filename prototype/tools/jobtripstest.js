@@ -11,7 +11,7 @@
 //   walks to its shore and the water carrier brings un-purified water by the bucket, into the barrels' room.
 // - A base on alert: outdoor work on hold ("On hold: base under siege"), those out cut short and walk home.
 // - Out of the walls: a hunter out mid-trip is not among the base's defenders (combatants, baseDefense); at night they are.
-// - The groups: their food and firewood by the land their bases hold, fewer at the walls by day, walkers by day.
+// - The groups: their food and wood by the land their bases hold, fewer at the walls by day, walkers by day.
 // - Saves keep a trip under way; the Layers box has Base workers.
 import { createWorld, tickHour, hub, atBase, hourOfDay, outOnTrip, homeAt, isHome } from "../src/sim/world.js";
 import { TRIP, TRIP_JOBS, walkHours, onTileHours, distFactor, tripScale, ownedWater, workLand, tripRoute, NO_WATER, waterTripsADay } from "../src/sim/tripland.js";
@@ -107,10 +107,10 @@ section("A woodcutter's day: home outside the hours, out on the base's land, the
     if (tr && tr.carry) carry = tr;
     if ((base.stock.wood || 0) > before + 0.001) creditAt = state.hour;
   }
-  check(creditAt != null && carry && carry.home >= creditAt && carry.home < creditAt + 1, `the firewood is in the store in the hour they get home (${creditAt}:00, home ${carry && r1(carry.home)})`);
+  check(creditAt != null && carry && carry.home >= creditAt && carry.home < creditAt + 1, `the wood is in the store in the hour they get home (${creditAt}:00, home ${carry && r1(carry.home)})`);
   const back = carry ? tripState(state, { trip: carry }, carry.home - 0.05) : null;
-  check(back && back.phase === "back" && /^Bringing .*firewood.* back$/.test(back.text), `on the way home: "${back && back.text}"`);
-  check(base.tripPops && base.tripPops.some((p) => /^\+\d+ firewood$/.test(p.text)), `a deposit pop for the map (${base.tripPops && base.tripPops.map((p) => p.text).join(", ")})`);
+  check(back && back.phase === "back" && /^Bringing .*wood.* back$/.test(back.text), `on the way home: "${back && back.text}"`);
+  check(base.tripPops && base.tripPops.some((p) => /^\+\d+ wood$/.test(p.text)), `a deposit pop for the map (${base.tripPops && base.tripPops.map((p) => p.text).join(", ")})`);
   // Out again in the afternoon, home by the end of the hours.
   tickTo(state, 15);
   check(cutter.trip && cutter.trip.n >= 1, "out again after the deposit (the second trip)");
@@ -277,8 +277,8 @@ section("The groups: their land, their walls by day, their walkers");
   recomputeOwnership(state);
   const fs = state.factions.filter((f) => f.alive && f.bases.length);
   const food = fs.map((f) => groupFoodLand(state, f)), wood = fs.map((f) => groupWoodLand(state, f));
-  note(`food from the land × ${food.map((x) => x.toFixed(2)).join(", ")}; firewood × ${wood.map((x) => x.toFixed(2)).join(", ")}`);
-  check(food.every((x) => x >= 0.9 - 1e-9 && x <= 1.1 + GROUP_TRIPS.fish + 1e-9) && wood.every((x) => x >= 0.5 * GROUP_LUNCH_SHARE - 1e-9 && x <= 1.5 * GROUP_LUNCH_SHARE + 1e-9), "by the land their bases hold (0.9–1.1 food, 0.5–1.5 firewood, less the lunch hour)");
+  note(`food from the land × ${food.map((x) => x.toFixed(2)).join(", ")}; wood × ${wood.map((x) => x.toFixed(2)).join(", ")}`);
+  check(food.every((x) => x >= 0.9 - 1e-9 && x <= 1.1 + GROUP_TRIPS.fish + 1e-9) && wood.every((x) => x >= 0.5 * GROUP_LUNCH_SHARE - 1e-9 && x <= 1.5 * GROUP_LUNCH_SHARE + 1e-9), "by the land their bases hold (0.9–1.1 food, 0.5–1.5 wood, less the lunch hour)");
   check(Math.abs(GROUP_LUNCH_SHARE - 11 / 12) < 1e-9, "their woodcutters stop for lunch too (11 of their 12 outdoor hours)");
   check(groupHomeShare(12) < 1 && groupHomeShare(23) === 1, `by day ${Math.round((1 - groupHomeShare(12)) * 100)}% of them are out at work, none at night`);
   const f = fs.find((x) => x.pop / x.bases.length >= 4) || fs[0];
@@ -312,7 +312,7 @@ section("Stockpiles as drop points: a trip that is not the window's last leaves 
 {
   // A hub whose woodcutters go 2 tiles out, with room for a stockpile on a tile next to both the hub and that ground.
   const pileSpot = (st, b, tg) => st.grid.neighbors(tg).find((id) => st.grid.distance(id, b.tile) === 1 && FW.placeProblem(st, b, "stockpile", id) === "");
-  const state = seedWith((st, b) => { b.stock.wood = 200; const t = Wd.woodTripTile(st, b); return !Wd.woodWorkWhy(st, b) && t && t.d === 2 && pileSpot(st, b, t.id) != null; }); // (the stockpile's 90 firewood)
+  const state = seedWith((st, b) => { b.stock.wood = 200; const t = Wd.woodTripTile(st, b); return !Wd.woodWorkWhy(st, b) && t && t.d === 2 && pileSpot(st, b, t.id) != null; }); // (the stockpile's 90 wood)
   const base = hub(state);
   const cutter = onJob(state, base, atBase(state, base.id)[0], "wood");
   base.armory.push(newItem("fireaxe"));
@@ -335,15 +335,15 @@ section("Stockpiles as drop points: a trip that is not the window's last leaves 
   const wd = (T) => (T && T.wood && T.wood.wood) || 0;
   const without = wd(tripDay(noPile, hub(noPile), dayEnd)), withIt = wd(tripDay(state, base, dayEnd));
   const tgWith = Wd.woodTripTile(state, base);
-  note(`a woodcutter's day 2 tiles out: ${Math.round(without)} firewood walking home, ${Math.round(withIt)} with the stockpile beside the ground (now going to ${tgWith.d} out)`);
-  check(without > 0 && tgWith.d === 2 && withIt > without * 1.05, "far ground pays with a stockpile next to it: the day's firewood rises (the midday load dropped there, out again from it, home at the end of the hours)");
+  note(`a woodcutter's day 2 tiles out: ${Math.round(without)} wood walking home, ${Math.round(withIt)} with the stockpile beside the ground (now going to ${tgWith.d} out)`);
+  check(without > 0 && tgWith.d === 2 && withIt > without * 1.05, "far ground pays with a stockpile next to it: the day's wood rises (the midday load dropped there, out again from it, home at the end of the hours)");
   delete base.tripTally;
   check(pile && pile.built, `a stockpile stands next to the woods (${state.tiles[at].x},${state.tiles[at].y}), 1 tile from the hub`);
   const t1 = planTrip(state, base, cutter, "wood", d0 + 7);
   check(t1 && t1.drop === pile.tile && t1.workEnd - t1.arrive > plain.workEnd - plain.arrive + 0.2, `the morning trip drops at the stockpile: ${Math.round((t1.workEnd - t1.arrive) * 100) / 100} h at the work against ${Math.round((plain.workEnd - plain.arrive) * 100) / 100} walking home`);
   note(`the morning trip: ${Math.round((t1.workEnd - t1.arrive) * 100) / 100} h at the work dropping at the stockpile, ${Math.round((plain.workEnd - plain.arrive) * 100) / 100} h walking home`);
   const st1 = tripState(state, { trip: { ...t1, carry: { wood: 140 } } }, t1.home - 0.05);
-  check(st1 && /^Dropping .*firewood.* at stockpile \(\d+,\d+\)$/.test(st1.text), `on the way: "${st1 && st1.text}"`);
+  check(st1 && /^Dropping .*wood.* at stockpile \(\d+,\d+\)$/.test(st1.text), `on the way: "${st1 && st1.text}"`);
   const t2 = planTrip(state, base, cutter, "wood", t1.home + TRIP.deposit, t1.drop);
   check(t2 && t2.from === pile.tile && t2.drop == null && t2.arrive - t2.leave < plain.arrive - plain.leave, "the afternoon trip sets out from the stockpile (a shorter walk) and brings its load home (the window's last)");
   // A day of it: the morning's wood in the stockpile, the afternoon's at the base.
@@ -355,7 +355,7 @@ section("Stockpiles as drop points: a trip that is not the window's last leaves 
     const a = describeActivity(state, cutter);
     if (/stockpile \(\d+,\d+\)/.test(a.why)) sawDrop = `${a.text} — ${a.why}`;
   }
-  check((pile.contents.wood || 0) > pile0 && (base.stock.wood || 0) > wood0, `the morning's firewood at the stockpile (${pile.contents.wood || 0}), the afternoon's at the base (+${Math.round((base.stock.wood || 0) - wood0)})`);
+  check((pile.contents.wood || 0) > pile0 && (base.stock.wood || 0) > wood0, `the morning's wood at the stockpile (${pile.contents.wood || 0}), the afternoon's at the base (+${Math.round((base.stock.wood || 0) - wood0)})`);
   check(/stockpile \(\d+,\d+\)/.test(sawDrop) && /haul team/.test(sawDrop), `the Work now line and its tooltip: "${sawDrop}"`);
   // The haul team brings it home.
   const inPile = pile.contents.wood || 0, w1 = base.stock.wood || 0;
@@ -363,9 +363,9 @@ section("Stockpiles as drop points: a trip that is not the window's last leaves 
   const res = FW.sendHaul(state, pile.id);
   check(res && !res.error, `a haul team sets out (${res && (res.error || res.text)})`);
   for (let i = 0; i < 24 && res.party && state.parties.includes(res.party); i++) tickHour(state);
-  note(`a day: ${inPile} firewood left at the stockpile; the haul brings it in`);
+  note(`a day: ${inPile} wood left at the stockpile; the haul brings it in`);
   const burned = (base.heat && base.heat.wood) || 0; // the night's fire at midnight meanwhile (fire-nights: upkeep.js HEAT.night)
-  check(!(pile.contents.wood > 0.5) && (base.stock.wood || 0) + burned >= w1 + inPile * 0.9, `the haul brought it home: the stockpile ${JSON.stringify(pile.contents)}, the base's firewood ${Math.round(w1)} → ${Math.round(base.stock.wood || 0)} (${Math.round(burned)} burned for the night's fire meanwhile)`);
+  check(!(pile.contents.wood > 0.5) && (base.stock.wood || 0) + burned >= w1 + inPile * 0.9, `the haul brought it home: the stockpile ${JSON.stringify(pile.contents)}, the base's wood ${Math.round(w1)} → ${Math.round(base.stock.wood || 0)} (${Math.round(burned)} burned for the night's fire meanwhile)`);
 }
 
 console.log(`\n${passed} passed, ${fails} failed`);

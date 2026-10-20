@@ -103,7 +103,7 @@ import { waterIn, drawWater, waterText, teamWaterIn, takeTeamWater, stockHas, ta
 import { partySaw } from "./groupworld.js"; // a group learns your bases its parties pass
 import { lyingFor, INTEL } from "./intel.js"; // a gang that overheard a group's caravan waits for it
 import { withLook, surveyErr, noteLook } from "./intelnotes.js"; // what a team sees of a group's base (the State Map's estimates, intelest.js)
-import { KEY_KINDS, keyKg } from "./carry.js"; // a capped water or firewood task counts its own haul (call-time only: safe in the import cycle)
+import { KEY_KINDS, keyKg } from "./carry.js"; // a capped water or wood task counts its own haul (call-time only: safe in the import cycle)
 import { nomadCampAt, nomadCampArrive } from "./nomads.js"; // a nomad camp you spotted: attack it (call-time only)
 import { unpackPerson } from "./supitems.js"; // supplies carried as items, unpacked at home (call-time only: safe in the import cycle)
 import { fightSides, fightersOf, applySide } from "./groupfight.js"; // fights nobody watches: your rules
@@ -150,7 +150,7 @@ export const MISSIONS = {
   strikecamp:  { name: "Strike the camp",  desc: "Old saves' order: a camp is struck from its base window now (staging.js strikeCamp).", hidden: true },
   hunt:        { name: "Hunting",          desc: "A hunting trip (hunting.js): the team's name while its plan hunts.", hidden: true },
   fish:        { name: "Fishing",          desc: "A fishing trip (hunting.js): the team's name while its plan fishes.", hidden: true },
-  wood:        { name: "Woodcutting",      desc: "A woodcutting trip (woodcutting.js): the team's name while its plan cuts firewood.", hidden: true },
+  wood:        { name: "Woodcutting",      desc: "A woodcutting trip (woodcutting.js): the team's name while its plan cuts wood.", hidden: true },
   caravan:     { name: "Trade caravan",    desc: "Caravan stop: trade here, unload, stay a day, go on to the next destination or return home (caravans.js).", hidden: true },
 };
 
@@ -257,7 +257,7 @@ export const poolLoad = (p) => supplyLoad(p.supplies) + cargoLoad(p.cargo);
 export function cargoRoom(state, p) {
   let cap = partyCapacity(state, p);
   if (p.haulCap != null && !p.vehicle) cap = Math.min(cap, p.haulCap);
-  if (p.task && p.task.capKg != null && p.task.kind0 != null && KEY_KINDS[p.task.type]) cap = Math.min(cap, poolLoad(p) + Math.max(0, p.task.capKg - (keyKg(p, KEY_KINDS[p.task.type]) - p.task.kind0))); // carry.js capTask: water and firewood counted by themselves
+  if (p.task && p.task.capKg != null && p.task.kind0 != null && KEY_KINDS[p.task.type]) cap = Math.min(cap, poolLoad(p) + Math.max(0, p.task.capKg - (keyKg(p, KEY_KINDS[p.task.type]) - p.task.kind0))); // carry.js capTask: water and wood counted by themselves
   else if (p.task && p.task.capKg != null && p.task.pool0 != null) cap = Math.min(cap, p.task.pool0 + p.task.capKg); // carry.js capTask: collect only as much as asked
   return Math.max(0, cap - poolLoad(p));
 }

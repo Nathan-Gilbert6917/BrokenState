@@ -1,7 +1,7 @@
 // Item icons, the food family (ui/itemart.js; the kit and the rules: ui/itemart/kit.js): every food (sim/foods.js
 // FOODS: tins, dry goods, snacks, rations, fresh food, crops, forage, meat and fish, preserves and cooked meals) and the
 // base supplies (sim/data.js SUPPLIES: water, fuel, meds, generic rounds, reloading stock, arrows, parts, scrap, jars,
-// firewood, building materials). Each drawing is a 16 × 16 grid, light from the top left; toCanvas adds the outline.
+// wood, building materials). Each drawing is a 16 × 16 grid, light from the top left; toCanvas adds the outline.
 import { C, R, H, V, dots, shade, line, disc, ring, oval, box, text, stamp } from "./kit.js";
 
 // A few colours of this family's own.

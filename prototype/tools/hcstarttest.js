@@ -316,7 +316,7 @@ const campOf = (st) => st.bases.find((b) => b.camp === true) || null;
   check(h && structuresOf(h).map((s) => s.key).join() === "shack" && baseWalls(h) === 0 && wallHold(h) === wallHold({ ...h, tier: undefined }), `base battles: only a shack, and no wall it did not build (${h && structuresOf(h).map((s) => s.key).join()}; buildings.js WALL_TIERS)`);
   if (h) {
     h.construction.length = 0;
-    Object.assign(h.stock, { scrap: 200, parts: 20, meds: 10, buildmat: 10 });
+    Object.assign(h.stock, { scrap: 200, parts: 20, meds: 10, buildmat: 10, wood: 2000 });
     const ok = (k) => canBuild(st, h, k).ok;
     check(ok("rain_catcher") && ok("smoker") && ok("barricades") && ok("farm_plot") && ok("hub_up"), "a shelter builds a rain catcher, a drying rack, a barricade, a farm plot, and the step up into a base");
     check(ok("walls") && !ok("well") && !ok("storehouse") && !ok("radio"), "a wall (the Defenses tab: up to a timber palisade) but no well, storehouse or the rest at a shelter");

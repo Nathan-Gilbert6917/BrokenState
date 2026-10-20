@@ -5,7 +5,7 @@
 //   job:  the role key (economy.js ROLES: wood, forage, hunt, fish, farm, scavenge, operate, build, craft …)
 //   day:  the work day it was made on. The daily systems run at midnight (world.js tickHour, hour % 24 === 0) and
 //         count for the day that just ended; the hourly ones (construction, crafting) for the day they run in.
-//   unit: a supply key (firewood is "wood", food "food" …) or a work measure ("workh": work-hours done, "items").
+//   unit: a supply key (wood is "wood", food "food" …) or a work measure ("workh": work-hours done, "items").
 // Only the last OUTPUT_KEEP days are kept a job (saves from before kept 3: they simply have fewer). Pure bookkeeping: it reads no dice and changes nothing else.
 export const OUTPUT_KEEP = 7;
 // The work day an hour counts for (1-based like world.js day): the midnight tick belongs to the day before it.

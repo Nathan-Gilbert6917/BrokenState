@@ -18,7 +18,7 @@
 //     never crawled: the dead batter a shoved piece of it or go round.
 //   Boarding up (BOARD, boardsOf, boardTargets, boardAct, tearTargets, tearAct, breakBoarded; combatAct "boardup",
 //   "teardown")
-//     A bundle of boards and nails (data.js GEAR.boards, crafted from firewood and a scrap: crafting.js CRAFTS.boards)
+//     A bundle of boards and nails (data.js GEAR.boards, crafted from wood and a scrap: crafting.js CRAFTS.boards)
 //     nailed over a door (closed, barred or broken in), a doorway or a window (closed, open, broken) from either side
 //     for both actions: the cell becomes "boarded" (CELL: a wall for sight and movement, full cover) with hit points
 //     (BOARD.HP a layer, up to BOARD.MAX layers, on top of a closed door's own) that the dead and the human enemy
@@ -33,7 +33,7 @@
 //        nothing is in sight to shoot (aiBarricade; combat.js aiUnit): a half-cover piece next to it shoved into a door
 //        frame, or boards (u.boards, by kit: BOARD.KIT) nailed over an outer window or door.
 //     3. A group's base you assault starts boarded up (preBoardBase; fort.js fortAssault): their outer windows and doors
-//        nearest your side, as many bundles as their stock pays for at the player's recipe (30 firewood and a scrap a
+//        nearest your side, as many bundles as their stock pays for at the player's recipe (30 wood and a scrap a
 //        bundle), up to BOARD.AI.MAX.
 //     4. Tearing boards down gives a bundle back BOARD.TEAR.BACK of the time a layer (hash dice), into the kit or on the
 //        ground at the unit's feet.
@@ -241,7 +241,7 @@ export const tearTargets = (b, u) => {
 export function boardRefusal(state, b, u) {
   if (!u || !active(u)) return "That unit cannot act.";
   if (u.kind !== "human") return "Only people board things up.";
-  if (!boardsOf(state, u, b)) return `${first(u)} carries no boards and nails (crafted from firewood and a scrap: Boards and nails; a bundle in the team's vehicle counts from next to it).`;
+  if (!boardsOf(state, u, b)) return `${first(u)} carries no boards and nails (crafted from wood and a scrap: Boards and nails; a bundle in the team's vehicle counts from next to it).`;
   if (!boardTargets(b, u).length) return "Stand right next to a closed door, a doorway or a window (not diagonally); an open door is closed first.";
   if (u.ap < BOARD.AP) return "Boarding up takes both actions.";
   return "";
@@ -391,7 +391,7 @@ export function aiBarricade(b, u, H = { say, alertNear: () => {}, fx: null }) {
 
 // ---------- a group's base before your assault (pick 3) ----------
 // Their outer windows and doors nearest your side boarded up before you arrive, each bundle paid from their stock at
-// the player's recipe (BOARD.AI.WOOD firewood and BOARD.AI.SCRAP scrap), at most BOARD.AI.MAX. side: the edge you come
+// the player's recipe (BOARD.AI.WOOD wood and BOARD.AI.SCRAP scrap), at most BOARD.AI.MAX. side: the edge you come
 // from (fort.js). Returns how many were boarded.
 export function preBoardBase(state, b, factionId, side = "west") {
   const f = state && factionId != null ? factionById(state, factionId) : null;

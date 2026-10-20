@@ -57,7 +57,7 @@ const isStore = (w) => !!w && STORE_KEYS.includes(w.type);
 // ======================================================================
 section("Your costs and hours, your rules");
 {
-  const want = { storebox: [2, 1], crates: [4, 1], shed: [12, 2], store: [18, 3], warehouse: [40, 6] };
+  const want = { storebox: [1, 1], crates: [3, 1], shed: [10, 2], store: [18, 3], warehouse: [40, 6] }; // scrap (wood besides: 2026-10-20)
   for (const [k, [scrap, work]] of Object.entries(want)) {
     const d = storeDef(k), B = BUILDINGS[STORE_BUILDING[k]];
     check(JSON.stringify(d.cost) === JSON.stringify(B.cost) && d.cost.scrap === scrap, `${d.name}: your cost (${JSON.stringify(d.cost)})`);
@@ -127,9 +127,9 @@ section("What they build, by size and need");
     pileOutside(st, f, main, 1500);
     const w = nextWork(st, f);
     check(w && w.type === "crates", `1500 kg outside, 10 scrap: crates, what they can pay for (${w && w.type})`);
-    f.stock.scrap = 2;
+    f.stock.scrap = 0;
     const w2 = nextWork(st, f);
-    check(!isStore(w2), `2 scrap: no storage (${w2 && w2.type})`);
+    check(!isStore(w2), `no scrap: no storage (${w2 && w2.type})`);
   }
   // Everything inside: none.
   {
@@ -182,7 +182,7 @@ section("What they build, by size and need");
     check(s.cap === 0 && s.outsideKg > 5 && w && w.tile === t1 && w.type === "storebox", `${Math.round(s.outsideKg)} kg on the ground at a camp: a storage box (${w && w.type})`);
     check(storeLock(st, f, t1, "warehouse") === "an outpost or the main base", "a warehouse: an outpost or the main base only");
     check(storeLock(st, f, t1, "shed") !== "", "no shed at a camp (your camp builds none)");
-    f.stock.scrap = W.CAMP.cost.scrap + 1;
+    f.stock.scrap = W.CAMP.cost.scrap;
     const w2 = nextWork(st, f);
     check(w2 && w2.type === "camp", `scrap for the step up only: the camp first (${w2 && w2.type})`);
     f.stock.scrap = 200; f.works[t1].storebox = 4;

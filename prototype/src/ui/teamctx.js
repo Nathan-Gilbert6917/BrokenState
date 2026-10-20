@@ -204,7 +204,7 @@ export function teamTileMenu(state, ui, p, tile, { append = false } = {}) {
     }
   }
 
-  // Food, firewood and water from the land
+  // Food, wood and water from the land
   if (!water && !theirs) {
     const job = (type, extra = {}) => [{ type, hours: LAND_HOURS, ...extra }];
     if (forageAbundance(state, tile) >= 0.05) add("Land", "forage", `Forage ${LAND_HOURS}h`, job("forage"), { why: cap(forageProblem(state, p, tile)), hint: "Wild food: berries, nuts, mushrooms, greens, roots. Quiet; best in forest, summer and autumn." });
@@ -216,7 +216,7 @@ export function teamTileMenu(state, ui, p, tile, { append = false } = {}) {
     } else if (gameAbundance(state, tile) >= 0.08) add("Land", "snare:set", `Set snares (${SNARE.setHours}h)`, [{ type: "snare", mode: "set" }], { why: cap(snareProblem(state, p, tile, "set")), hint: `Lay a line of ${SNARE.count} snares (snare wire or ${SNARE.scrap} scrap); come back within 2–3 days to collect.` });
     const fs = fishSpot(state, tile);
     if (fs) add("Land", "fish", `Fish ${LAND_HOURS}h`, job("fish"), { why: cap(fishProblem(state, p, tile)), hint: `Fish in ${fs.name}. Quiet. Needs a rod, a net or a spear.` });
-    if (woodAbundance(state, tile) >= 0.1) add("Land", "wood", `Cut firewood ${LAND_HOURS}h`, job("wood"), { why: cap(woodProblem(state, p, tile)), hint: "Firewood for the winter (daylight only). Loud: Heat; an axe makes it far quicker." });
+    if (woodAbundance(state, tile) >= 0.1) add("Land", "wood", `Cut wood ${LAND_HOURS}h`, job("wood"), { why: cap(woodProblem(state, p, tile)), hint: "Wood for the winter (daylight only). Loud: Heat; an axe makes it far quicker." });
     if (besideWater(state, tile)) {
       const room = Math.floor(cargoRoom(state, p));
       add("Land", "water", `Fetch water (${FETCH_WATER_HOURS}h)`, [{ type: "water" }], { why: room < 1 ? "No room left to carry any water." : "", hint: `Fill every free container from the river or lake (room for about ${room}): un-purified water to boil, filter or bring home.` });
@@ -228,7 +228,7 @@ export function teamTileMenu(state, ui, p, tile, { append = false } = {}) {
     const camping = p.phase === "task" && p.task && p.task.type === "camp" && partyTile(p) === tile;
     const lit = fireLit(p);
     const burn = canLight(state, p);
-    const noFire = burn ? "" : "No firewood carried: a fire burns firewood (deadfall about only stretches it). Cut wood or bring some.";
+    const noFire = burn ? "" : "No wood carried: a fire burns wood (deadfall about only stretches it). Cut wood or bring some.";
     // Set up camp (sim/staging.js): a camp is the barest base; its base window opens when it stands (Strike camp there).
     if (p.owner === "player" && p.kind === "expedition" && !p.caravan && p.crewRole == null) add("Camp", "setcamp", "Set up camp here", [{ type: "mission", mission: "camp" }], { why: cap(campProblem(state, tile) || ""), hint: "Make camp (1 hour, no materials): the team's people live there while it stands, what it carries goes into the camp's stores, its vehicles park there. Manage it in its base window; Strike camp packs everyone up again." });
     if (camping) add("Camp", lit ? "fireout" : "fire", lit ? "Put the camp fire out" : "Light a camp fire", [], { special: lit ? "fireout" : "fire", why: lit ? "" : noFire, hint: lit ? "Darker and quieter, but cold food, unboiled water and cold nights." : "Warmth, hot food and boiled water, better spirits; its light and smoke carry, most at night." });
@@ -308,7 +308,7 @@ const GROUP_TIP = {
   Go: "Travel, look, survey, cross water",
   Base: "Your base: move in, drop off, load, resupply",
   Site: "What you know is here: from the live view, the last report, markers and the groups you know",
-  Land: "Food, firewood and water from the land",
+  Land: "Food, wood and water from the land",
   Camp: "Rest on the spot",
   Team: "The team's own gear and the land you hold",
   "Field work": "A field work here: your stockpile (load, leave finds), or a group's structure (wreck, take, loot)",

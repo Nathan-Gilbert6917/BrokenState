@@ -57,7 +57,7 @@
 //   instead: everything goes, its people walk to your nearest base, the tile is a ruin (tile.ruin: a little loot, an
 //   outpost there needs 5 scrap). The hub razed is the hub lost.
 import { peopleHere, syncMembers } from "./members.js"; // the people who live at a base
-import { loseBase, gainBase } from "./groupbases.js"; // their bases as base objects (what is there)
+import { loseBase, gainBase, homeAt } from "./groupbases.js"; // their bases as base objects (what is there)
 import { foodIn, packPick, takeItem } from "./foods.js"; // food packed by the days
 import { sumRecs } from "./rounds.js"; // rounds by calibre
 import { packRounds } from "./ammo.js";
@@ -74,6 +74,8 @@ import { unitPower, arsenalShareTo, addToArsenal, arsenalWorthy } from "./arsena
 import { fortAssault, fortSize, assaultBase } from "./fort.js"; // their walled base on one fort map
 import { layAssaultStores, stockAssaultStores } from "./assaultstores.js"; // their real stores on the map (the wall-line map too)
 import { assaultDims, CONTACT } from "./battlesize.js";
+import { tentCount } from "./basemap.js"; // their camp's tents (basemap.js AI_CAMP_TENTS)
+import { TENTS } from "./buildings.js";
 import { captivesOf, takeCaptive } from "./conflicts.js";
 import { makeCandidate, offerRecruits } from "./recruits.js";
 import { surrenderPrisoners, prisonersOf, handOver } from "./prisoners.js";
@@ -342,6 +344,19 @@ registerBattleLayout("baseAssault", (b, ctx) => {
     }
     for (let i = 0; i < 2 + Math.min(6, walls); i++) {
       for (let t = 0; t < 8; t++) { const x = ctx.rng.int(X + 2, X + 5), y = ctx.rng.int(1, ctx.H - 2); if (ctx.free(x, y)) { ctx.put(x, y, i % 2 ? "sandbag" : "barricade"); break; } }
+    }
+    // Their camp (groupbases.js h.camp; ADR 0001): its tents pitched in their grounds behind the line, as many as a
+    // camp's (basemap.js tentCount: makeshift tents, as yours are built), each with open ground all round it.
+    const fac = e.factionId != null ? factionById(ctx.state, e.factionId) : null, home = fac ? homeAt(ctx.state, fac, b.tileId) : null;
+    if (home && walls < 1) {
+      const TW = TENTS.makeshift.w, TH = TENTS.makeshift.h;
+      const clear = (x, y) => { for (let yy = y - 1; yy <= y + TH; yy++) for (let xx = x - 1; xx <= x + TW; xx++) if (!ctx.free(xx, yy)) return false; return true; };
+      for (let i = 0, n = tentCount(home); i < n; i++) {
+        for (let t = 0; t < 40; t++) {
+          const x = ctx.rng.int(X + 3, ctx.W - 2 - TW), y = ctx.rng.int(2, ctx.H - 3 - TH);
+          if (clear(x, y)) { for (let dy = 0; dy < TH; dy++) for (let dx = 0; dx < TW; dx++) ctx.put(x + dx, y + dy, "tent"); break; }
+        }
+      }
     }
     // assaultstores.js: their stores on their side of the map (behind the wall line, or where it would be), as crates.
     const yard = { W: ctx.W, H: ctx.H, cells: b.cells, x0: X + 2, y0: 1, yw: Math.max(0, ctx.W - X - 3), yh: ctx.H - 2, indoor: null, doors: [], buildings: [], stores: [] };

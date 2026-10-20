@@ -86,7 +86,7 @@ function addCargo(state, p, key, qty, mix = null) {
   const room = cargoRoom(state, p);
   const take = Math.min(unitsThatFit(room, key), qty);
   p.cargo.supplies[key] = (p.cargo.supplies[key] || 0) + take;
-  const word = key === "wood" ? "firewood" : key === "water" ? "bottles of water" : key;
+  const word = key === "wood" ? "wood" : key === "water" ? "bottles of water" : key;
   return take < qty ? `${take} ${word} (no room for the rest)` : `${take} ${word}`;
 }
 // What grows wild (an orchard's apples, brambles' berries): `units` days of food split by the table's weights, in

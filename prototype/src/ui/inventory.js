@@ -20,7 +20,7 @@ import {
 } from "../sim/inventory.js";
 import { repairKind, repairInfo, fieldRepairInfo, repairPreview, queueRepair, fieldRepair, cancelRepair, repairJobStatus } from "../sim/repair.js"; // gear repairs at the bench
 import { ATTACH, MOUNTS, MOUNT_NAMES, takesMods, modsText, attachText, fitsText, modFitReason, modLabel } from "../sim/gunmods.js"; // gun attachments
-import { isJunk, armoryJunk, burnablesWood, breakDownJunk, boilerJunkOn, BURN } from "../sim/woodcutting.js"; // break down for firewood; what the boiler may burn
+import { isJunk, armoryJunk, burnablesWood, breakDownJunk, boilerJunkOn, BURN } from "../sim/woodcutting.js"; // break down for wood; what the boiler may burn
 import { survivorURL, spriteImg, canvasURL, unitCanvas } from "./sprites.js";
 import { figureSpinImg } from "./figures.js"; // the survivor as a low-poly figure turning through 360°, to see all that is on them
 import { cui } from "./combat.js";
@@ -241,13 +241,13 @@ export function storageBox(state, ui, place, user) {
     head = `<div class="spread"><b${tip(v ? `The team's cargo rides in the ${vehicleLabel(v).toLowerCase()}${isBike(v) ? " (15 kg a rack; the rest is shared out among the people)" : ""}. Drag things from a survivor into it, or out of it onto them. On a raid map the vehicle waits in its zone: walk to it to load or unload.` : "Found cargo the team carries, by weight (a pack also weighs what is in it). It is shared out with the packed supplies among the team (sim/load.js). Moving things between the cargo and the people weighs nothing extra: it is the same team.")}>${v ? `${esc(vehicleLabel(v))} (team cargo)` : "Team cargo"}</b><span class="small ${load > cap ? "danger" : "muted"}"${tip("Supplies and cargo against what the team can carry on top of what it wears (and its vehicle)")}>load ${Math.round(load)}/${Math.round(cap)} kg</span></div>
       <div class="bar"><i style="width:${Math.min(100, (load / Math.max(1, cap)) * 100)}%;background:${load > cap * 0.9 ? "var(--danger)" : "var(--info)"}"></i></div>`;
   } else {
-    // Junk with firewood in it (sim/woodcutting.js): the bulk button breaks it all down (marked "keep" stays).
+    // Junk with wood in it (sim/woodcutting.js): the bulk button breaks it all down (marked "keep" stays).
     const b = baseById(state, st.id);
     const junk = b ? armoryJunk(b) : [];
-    const bulk = junk.length ? ` <button class="mini" data-action="inv-burnjunk" data-base="${st.id}"${tip(`Break down every piece of junk with firewood in it (wooden, paper or cloth things worth ${BURN.junkValue} or less, not marked Keep): ${junk.length} item${junk.length === 1 ? "" : "s"}, +${burnablesWood(junk)} firewood into ${b.name}'s stores.`)}>Break down junk for firewood (+${burnablesWood(junk)})</button>` : "";
+    const bulk = junk.length ? ` <button class="mini" data-action="inv-burnjunk" data-base="${st.id}"${tip(`Break down every piece of junk with wood in it (wooden, paper or cloth things worth ${BURN.junkValue} or less, not marked Keep): ${junk.length} item${junk.length === 1 ? "" : "s"}, +${burnablesWood(junk)} wood into ${b.name}'s stores.`)}>Break down junk for wood (+${burnablesWood(junk)})</button>` : "";
     head = `<div class="spread"><b${tip("Gear stored at this base. Equip it on anyone here.")}>Armory</b><span class="small muted">${st.list.length} items${bulk}</span></div>${b ? storePicker(state, ui, b) : ""}${b ? repairsBox(state, b) : ""}`;
   }
-  // The supplies kept here, as stacks with their weight (firewood too: 0.1 kg each): the team's supplies (what it packed
+  // The supplies kept here, as stacks with their weight (wood too: 0.1 kg each): the team's supplies (what it packed
   // and what it found, one stock for the tiles: teamPool; the user's request 2026-10-18: the packed rounds in the truck
   // dragged onto a survivor before a raid, not a line of text), the base's stores.
   const pool = st.o === "cargo" ? teamPool(st.party) : ((baseById(state, st.id) || {}).stock || {});
@@ -255,7 +255,7 @@ export function storageBox(state, ui, place, user) {
   const sups = Object.entries(pool).filter(([k, v]) => SUPPLIES[k] && v >= 1);
   const supKg = sups.reduce((a, [k, v]) => a + supWeight(k) * v, 0);
   const packedOf = (k) => (st.o === "cargo" ? Math.floor(Math.max(0, (st.party.supplies || {})[k] || 0)) : 0);
-  const supHtml = sups.length ? `<div class="invlabel"${tip(st.o === "cargo" ? "The team's supplies, by weight: what it packed at the start and what it found on the way (one pool: shared out among the people, or riding in the vehicle). Drag a stack onto a member's pockets, rig or pack (rounds boxed or loose), or click it and say how many." : "The base's stores: food, water, firewood, fuel, meds, rounds by calibre and type, parts")}>${st.o === "cargo" ? "Supplies" : "In the stores"} (${kg(supKg)} kg)</div>
+  const supHtml = sups.length ? `<div class="invlabel"${tip(st.o === "cargo" ? "The team's supplies, by weight: what it packed at the start and what it found on the way (one pool: shared out among the people, or riding in the vehicle). Drag a stack onto a member's pockets, rig or pack (rounds boxed or loose), or click it and say how many." : "The base's stores: food, water, wood, fuel, meds, rounds by calibre and type, parts")}>${st.o === "cargo" ? "Supplies" : "In the stores"} (${kg(supKg)} kg)</div>
     <div class="istore supgrid">${sups.map(([k, v]) => { const l = `${st.o}:${st.id}:sup:${k}`; const pk = packedOf(k); const extra = pk > 0 && pk < Math.floor(v) ? ` ${pk} packed at the start, ${Math.floor(v) - pk} found on the way.` : pk > 0 ? " Packed at the start." : st.o === "cargo" ? " Found on the way." : ""; return supTile(ui, l, k, v, extra, invDests(state, ui, l).length > 0); }).join("")}</div>` : "";
   return `${head}${storageGroups(state, ui, st, loc, user)}
     ${supHtml}`;
@@ -383,7 +383,7 @@ function reselect(state, ui, item) {
   ui.invSel = i >= 0 ? `${l.o}:${l.id}:list:${i}` : null;
 }
 
-// The selected item's firewood (sim/inventory.js breakDownAt): "Break down for firewood (+N)" (asks first for anything
+// The selected item's wood (sim/inventory.js breakDownAt): "Break down for wood (+N)" (asks first for anything
 // that is not junk: ui/confirm.js), and in an armory the water boiler's mark (may burn / keep).
 // Repair (sim/repair.js) and Salvage (sim/inventory.js salvageAt) for the selected item: at a base the repair goes in
 // its queue (the bench, the crafters), in the field it takes a field repair kit; the tooltip is the preview (the new
@@ -417,14 +417,14 @@ function burnButtons(state, ui, item, from) {
   const bd = breakDownInfo(state, ui.invSel);
   if (!(bd.wood > 0) || from.o === "body") return "";
   const junk = isJunk(item);
-  const btn = `<button class="mini" data-action="inv-breakdown" ${bd.ok ? "" : "disabled"}${tip(bd.ok ? `Break the ${item.name} down for firewood: +${bd.wood} firewood, by its weight (${kg(bd.wood * SUPPLIES.wood.weight)} kg of its ${kg(GEAR[item.key].weight || 0)} kg burns; ${bd.place.startsWith("base") ? "into the base's stores" : "into the team's cargo: the camp fire burns it"}). The ${item.name} is gone. No time: it is kindling.${junk ? "" : " It is worth more than junk: asks first."}` : bd.reason)}>Break down for firewood (+${bd.wood})</button>`;
+  const btn = `<button class="mini" data-action="inv-breakdown" ${bd.ok ? "" : "disabled"}${tip(bd.ok ? `Break the ${item.name} down for wood: +${bd.wood} wood, by its weight (${kg(bd.wood * SUPPLIES.wood.weight)} kg of its ${kg(GEAR[item.key].weight || 0)} kg burns; ${bd.place.startsWith("base") ? "into the base's stores" : "into the team's cargo: the camp fire burns it"}). The ${item.name} is gone. No time: it is kindling.${junk ? "" : " It is worth more than junk: asks first."}` : bd.reason)}>Break down for wood (+${bd.wood})</button>`;
   if (from.o !== "armory") return btn;
   const b = baseById(state, from.id);
   const mark = item.fire === "burn" ? "burn" : item.fire === "keep" ? "keep" : "";
   const now = mark === "burn" ? "marked: the boiler may burn it" : mark === "keep" ? "marked: kept from the fire" : junk ? (boilerJunkOn(b) ? "junk: the boiler may burn it" : "junk (the base keeps junk from the boiler)") : "not burned unless marked";
   const next = mark === "" ? (junk ? "keep" : "burn") : mark === "burn" ? "keep" : "";
   const label = next === "burn" ? "Boiler may burn it" : next === "keep" ? "Keep from the fire" : "Clear the mark";
-  return `${btn} <button class="mini" data-action="inv-firemark" data-mark="${next}"${tip(`The water boiler burns firewood first, then what the base allows from the armory (cheap junk while "Boiler may burn spare wooden items and paper" is on, and anything marked to burn), then fuel. Now: ${now}.`)}>${label}</button>`;
+  return `${btn} <button class="mini" data-action="inv-firemark" data-mark="${next}"${tip(`The water boiler burns wood first, then what the base allows from the armory (cheap junk while "Boiler may burn spare wooden items and paper" is on, and anything marked to burn), then fuel. Now: ${now}.`)}>${label}</button>`;
 }
 
 // People who can trade items at a place, the place's name.
@@ -1317,7 +1317,7 @@ export const INV_ACTIONS = {
   "inv-openbox": (state, ui) => { if (!ui.invSel) return; if (ui.inv && ui.inv.peek) fightMove(state, ui, ui.invSel, null, "open"); else ui.invMsg = openAt(state, ui.invSel); }, // a stack of boxes into loose rounds; a handful out of a bulk container
   "inv-boxrounds": (state, ui) => { if (!ui.invSel) return; if (ui.inv && ui.inv.peek) fightMove(state, ui, ui.invSel, null, "box"); else ui.invMsg = boxAt(state, ui.invSel); }, // loose rounds packed back into boxes
   "inv-use": (state, ui) => { if (ui.invSel && ui.inv) ui.invMsg = useItemOn(state, ui.inv.sid, ui.invSel); ui.invSel = null; }, // sim/comforts.js
-  // Firewood (sim/inventory.js breakDownAt; sim/woodcutting.js breakDownJunk): anything above junk asks first (ui/confirm.js).
+  // Wood (sim/inventory.js breakDownAt; sim/woodcutting.js breakDownJunk): anything above junk asks first (ui/confirm.js).
   // Repairs and salvage (sim/repair.js, sim/inventory.js salvageAt).
   "inv-repair": (state, ui) => {
     if (!ui.invSel) return;
@@ -1340,7 +1340,7 @@ export const INV_ACTIONS = {
   "inv-breakdown": (state, ui, d = {}) => {
     if (!ui.invSel) return;
     const it = itemAt(state, ui.invSel);
-    if (it && !isJunk(it) && ask(ui, d, "inv-breakdown", { kind: "breakdown", title: `Break the ${it.name} down for firewood?`, text: `It is gone for good: +${breakDownInfo(state, ui.invSel).wood} firewood. It is worth more than junk (it could be worn, traded or repaired).`, yes: "Break it down" })) return;
+    if (it && !isJunk(it) && ask(ui, d, "inv-breakdown", { kind: "breakdown", title: `Break the ${it.name} down for wood?`, text: `It is gone for good: +${breakDownInfo(state, ui.invSel).wood} wood. It is worth more than junk (it could be worn, traded or repaired).`, yes: "Break it down" })) return;
     ui.invMsg = breakDownAt(state, ui.invSel);
     ui.invSel = null;
   },

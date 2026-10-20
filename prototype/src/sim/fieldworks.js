@@ -29,7 +29,7 @@
 //   snares     A snare line (forest, hills, farmland): small game day by day (hunting.js snare rules × SNARES.lines),
 //              checked by a hunter of the base each morning (with no hunter there, anyone fit at home: it is close);
 //              rots, can be robbed (its wires torn). Field craft (hc-food 2026-10-11, user pick: "field craft for snare
-//              line is cheap couple scrap"; was 4 scrap, 15 firewood and 3 work-hours, a base's builders only, never at
+//              line is cheap couple scrap"; was 4 scrap, 15 wood and 3 work-hours, a base's builders only, never at
 //              a camp, and the governor never set one): 2 scrap and 1 work-hour plus the walk, no bench and no builders
 //              needed (with nobody on Build anyone at home sets it, CRAFT_RATE), at every base from a camp up. It does
 //              not count against FIELD.MAX (its own cap, SNARES.max a base), and besides the base's land it goes on a
@@ -84,7 +84,7 @@ import { healthRest } from "./work.js";
 import { SUPPLIES, SKILL_NAMES } from "./data.js";
 import { hordeWallPower } from "./hordes.js";
 import { RELAY_RANGE, RELAY_UPKEEP_DAYS } from "./radio.js";
-import { woodNeed } from "./woodcutting.js"; // the governor keeps the winter's firewood (govFieldWorks)
+import { woodNeed } from "./woodcutting.js"; // the governor keeps the winter's wood (govFieldWorks)
 import { TRIP_HOOKS } from "./tripland.js"; // the job trips' plug-in points: installed at load (installTripHooks, end of file)
 import { GAME_TERRAIN, ANIMALS, SNARE, snareDayRate, takeGame, meatAt, addMeat, depositGame, snareZombieChance, putDownSnared } from "./hunting.js"; // blinds and snare lines
 import { wormKill, wormMeatAt } from "./worm.js"; // a snare's catch may be infested, as the hunters'
@@ -142,7 +142,7 @@ export const FIELD = {
   // snareShort: days of food a person under which a group wants a snare line (another under half that; hc-food: was 10
   // and one line, among their other works).
   AI: { every: 5, max: [1, 12, 4], stock: 0.15, gar: 2, garPop: 10, work: 3, pileDaily: 0.4, haulEvery: 6, short: 3, cache: 0.1, costShare: 0.6, snareShort: 10 },
-  GOV: { towerPop: 6, garrisonPop: 10, repairAt: 0.7, roadRaids: 2, pileHands: 2, pileEvery: 5, woodKeep: 0.5 }, // woodKeep: the share of the cold's firewood kept back from field works
+  GOV: { towerPop: 6, garrisonPop: 10, repairAt: 0.7, roadRaids: 2, pileHands: 2, pileEvery: 5, woodKeep: 0.5 }, // woodKeep: the share of the cold's wood kept back from field works
   // Shifts at a tower or a roadblock (the base's watch roster's way, watch.js): who walks out for which hours. Each shift
   // holds up to the structure's garrison; a person stands one shift at one structure. They leave the base `walk` hours
   // (the tiles × WALK.pace, whole hours) before it starts and are home that long after it ends.
@@ -1654,7 +1654,7 @@ export function teamActs(state, p, tile) {
   if (fw.owner === "player") {
     if (fw.kind === "stockpile" && fw.built) {
       out.push({ act: "load", label: `Load from the stockpile (${T.load}h)`, hours: T.load, why: Object.keys(fw.contents || {}).length ? (cargoRoom(state, p) < 1 ? "No room to carry anything." : "") : "The stockpile is empty.", hint: `Take what is there (${contentsText(fw)}) as far as there is room; bring it home.` });
-      out.push({ act: "unload", label: `Leave finds at the stockpile (${T.unload}h)`, hours: T.unload, why: stockRoom(fw) < 1 ? "The stockpile is full." : "", hint: "Leave what the team found (scrap, parts, materials, firewood…) here for a haul team; it keeps its food, water, meds and ammo." });
+      out.push({ act: "unload", label: `Leave finds at the stockpile (${T.unload}h)`, hours: T.unload, why: stockRoom(fw) < 1 ? "The stockpile is full." : "", hint: "Leave what the team found (scrap, parts, materials, wood…) here for a haul team; it keeps its food, water, meds and ammo." });
     }
     if (fw.kind === "cache" && fw.built) {
       out.push({ act: "draw", label: `Take supplies from the cache (${T.load}h)`, hours: T.load, why: Object.keys(fw.contents || {}).length ? (cargoRoom(state, p) < 1 ? "No room to carry anything." : "") : "The cache is empty.", hint: `Fuel, food, water, meds and ammo into the team's supplies, as far as there is room (${contentsText(fw)}).` });
@@ -1733,7 +1733,7 @@ export function teamActDone(state, p, act) {
 // ---------- the groups' own (AI parity) ----------
 // Every FIELD.AI.every days a group may put one up near its main base (coarse, paid from its stores, standing after
 // FIELD.AI.work days): groupWants; by your rules (ai-locks 2026-10-11: groupFieldLock, your Mechanics; paid
-// AI.costShare of your scrap and firewood, a part from those above their machines' earmark). Daily: repairs from scrap; guards on their towers and roadblocks once they have the
+// AI.costShare of your scrap and wood, a part from those above their machines' earmark). Daily: repairs from scrap; guards on their towers and roadblocks once they have the
 // people (AI.gar: 2, round the clock; 1 by day); their stockpile fills with what their outdoor people drop there
 // (AI.pileDaily kg a person, out of their stores) and goes home every AI.haulEvery days (not while hostile people or
 // the dead stand on it); they draw on their stockpiles and caches when short (food under AI.short days a person, fuel
@@ -1763,8 +1763,8 @@ export function groupFieldDaily(state) {
     buildGroupWork(state, f, pick.kind, pick.tile, false);
   }
 }
-// What a group pays for one (coarse: AI.costShare of your scrap and firewood, a machine part where yours takes any).
-// ai-locks (2026-10-11): the firewood was not paid before (a tower is 120 of yours, a roadblock 150).
+// What a group pays for one (coarse: AI.costShare of your scrap and wood, a machine part where yours takes any).
+// ai-locks (2026-10-11): the wood was not paid before (a tower is 120 of yours, a roadblock 150).
 export const groupFieldCost = (kind) => ({ scrap: Math.ceil((K[kind].cost.scrap || 0) * FIELD.AI.costShare), wood: Math.ceil((K[kind].cost.wood || 0) * FIELD.AI.costShare), parts: K[kind].cost.parts ? 1 : 0 });
 // "" when the group may put one up by your rules (placeProblem's: FIELD.KINDS req, your Mechanics, their mechanic
 // standing in: the relay mast's 3; your mast needs no manual, unlike the relay built at a base), else why not.
@@ -1790,7 +1790,7 @@ function groupStores(state, f, fw) {
   for (const k of ["fuel", "ammo"]) if ((f.stock[k] || 0) < 1) drew = move(k) || drew;
   if (drew) { fw.drawn = day(state); fwStat(state, "aiDrawn"); }
   if (fw.kind !== "stockpile") return;
-  // Their outdoor people drop goods here: AI.pileDaily kg a person (scrap, food, firewood), out of their stores.
+  // Their outdoor people drop goods here: AI.pileDaily kg a person (scrap, food, wood), out of their stores.
   const kg = Math.min(stockRoom(fw), f.pop * A.pileDaily);
   if (kg >= 1) for (const [k0, share] of [["scrap", 0.5], ["food", 0.3], ["wood", 0.2]]) {
     const k = k0 === "food" ? bestFoodKey(f.stock, true) : k0; // foods.js: the food they have most of (what keeps first)
@@ -1894,7 +1894,7 @@ export function govFieldWorks(state, base, { threatened = false, waterShort = fa
   }
   const n = atBase(state, base.id).length + mine.reduce((a, fw) => a + postedAt(state, fw).length, 0);
   const busy = jobsOf(state, base).length > 0;
-  // Firewood is the winter's: the governor spends none of it on a field work (a tower 120, a roadblock 150, their repairs)
+  // Wood is the winter's: the governor spends none of it on a field work (a tower 120, a roadblock 150, their repairs)
   // while the woodpile, less the cost, is behind GOV.woodKeep of what the coming cold needs (woodcutting.js woodNeed).
   // (woodtest seed 43: a tower bought from the starting 300 in spring, then rebuilt, left the hub nothing to start on.)
   const w = woodNeed(state, base);

@@ -4,7 +4,7 @@
 //   flashlight 0.3 kg  in the off hand; a beam 9 tiles ahead
 //   tacflash   0.35 kg a military flashlight in the off hand: the longest, narrowest beam, 12 tiles
 //   torch      0.7 kg  in the off hand; a pool of light 4 tiles all round, an open flame seen from further off; made
-//                      from firewood, no batteries
+//                      from wood, no batteries
 //   lantern    1.2 kg  in the off hand; a pool 5 tiles all round
 //   spotlight  3.5 kg  in the off hand; 11 tiles down a broad beam, seen from far away
 // In battle (vision.js) a beam shines the way its carrier faces and is what they see by at night (sight: its length,

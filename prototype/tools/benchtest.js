@@ -21,7 +21,7 @@ const seed = Number(process.argv[2] || 42);
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
 const W = () => { const st = createWorld({ seed, factionCount: 6 }); unlockAll(st); return st; };
-const rich = (b) => Object.assign(b.stock, { scrap: 9999, parts: 999, meds: 999, food: 500, water: 200 });
+const rich = (b) => Object.assign(b.stock, { scrap: 9999, parts: 999, meds: 999, food: 500, water: 200, wood: 99999 });
 const mkOutpost = (st, tile) => {
   const b = { id: newId(), tile, type: "outpost", name: "Test Outpost", stock: { food: 0, water: 0, fuel: 0, meds: 0, ammo: 0, parts: 0, scrap: 0 }, radio: false, watchtower: false, buildings: [], construction: [], armory: [] };
   st.bases.push(b);

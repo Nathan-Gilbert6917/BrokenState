@@ -127,7 +127,7 @@ html = modal(st, { id: camp.id, tab: "construction" });
 check(/Build up into a shelter/.test(html) && /20 scrap|Scrap (\d+\/)?20\b/.test(plain(html)) && /2 building materials|2 buildmat|Building materials (\d+\/)?2\b/.test(plain(html)) && /20 work-hours/.test(html), "the next stage: Build up into a shelter, 20 scrap, 2 building materials, 20 work-hours");
 check(/Available once the shelter stands/.test(html) && /Available once it is a base/.test(html), "the later buildings, greyed with when they open (the shelter, the base)");
 check(canBuild(st, camp, "camp_up").ok && !canBuild(st, camp, "hub_up").ok && !canBuild(st, camp, "outpost_up").ok, "the camp's step up is buildable; the shelter's and an outpost's are not");
-camp.stock.scrap = (camp.stock.scrap || 0) + 30;
+camp.stock.scrap = (camp.stock.scrap || 0) + 30; camp.stock.wood = (camp.stock.wood || 0) + 600; // wood: the wooden builds (2026-10-20)
 check(canBuild(st, camp, "barricades").ok && /queued/.test(queueBuild(st, camp, "barricades")), "a barricade can be built at a camp");
 // BASE-03 (2026-10-12): the crafting bench, water boiler, cook fire and drying rack are camp buildings too; they share
 // the camp's two utility plots with the rain catcher, crates and barrel.

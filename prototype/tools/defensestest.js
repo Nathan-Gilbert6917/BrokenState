@@ -29,7 +29,7 @@ const seed = Number(process.argv[2] || 7);
 let pass = 0, fail = 0;
 const check = (ok, what) => { if (ok) pass++; else fail++; console.log(`  ${ok ? "ok  " : "FAIL"} ${what}`); return ok; };
 registerCombatHandler("deftest", () => {});
-const world = () => { const st = createWorld({ seed, factionCount: 6 }); st.started = true; st.hour = 24 * 3 + 12; return st; };
+const world = () => { const st = createWorld({ seed, factionCount: 6 }); st.started = true; st.hour = 24 * 3 + 12; st.landOff = true; return st; }; // landOff: the land (basescatter.js) is tools/baseviewtest.js's
 const rich = (base) => Object.assign(base.stock, { scrap: 999, parts: 99, buildmat: 99, electronics: 9, wood: 99999 });
 const asCamp = (base) => { base.tier = 0; base.camp = true; return base; };
 const asShelter = (base) => { base.tier = 0; delete base.camp; return base; };

@@ -26,7 +26,7 @@ let pass = 0, fail = 0;
 const check = (ok, what) => { if (ok) pass++; else fail++; console.log(`  ${ok ? "ok  " : "FAIL"} ${what}`); return ok; };
 const section = (t) => console.log(`\n${t}`);
 registerCombatHandler("wptest", () => {});
-const world = () => { const st = createWorld({ seed, factionCount: 6 }); st.started = true; st.hour = 24 * 3 + 12; return st; };
+const world = () => { const st = createWorld({ seed, factionCount: 6 }); st.started = true; st.hour = 24 * 3 + 12; st.landOff = true; return st; }; // landOff: the land (basescatter.js) is tools/baseviewtest.js's
 const rich = (base) => Object.assign(base.stock, { scrap: 9999, parts: 99, buildmat: 999, wood: 99999 });
 const asCamp = (base) => { base.tier = 0; base.camp = true; return base; };
 const finishAll = (st, base) => { for (let i = 0; i < 400 && base.construction.length; i++) { for (const j of base.construction) j.progress = j.hours; constructionHour(st); } };

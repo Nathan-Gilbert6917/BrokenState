@@ -185,12 +185,12 @@ function rollLoad(state, base, s, t) {
   }
 }
 
-// What a load is, in a few words: "18 food (2 small game)", "140 firewood (14 kg)", "2 water" …
+// What a load is, in a few words: "18 food (2 small game)", "140 wood (14 kg)", "2 water" …
 export function loadText(t) {
   const c = t.carry;
   if (!c || c.empty) return "";
   switch (t.job) {
-    case "wood": return c.wood > 0 ? `${Math.round(c.wood)} firewood (${Math.round(c.wood * 0.1)} kg)` : "";
+    case "wood": return c.wood > 0 ? `${Math.round(c.wood)} wood (${Math.round(c.wood * 0.1)} kg)` : "";
     case "forage": return c.food > 0.05 || c.herbs || c.honey ? [c.food > 0.05 ? `${r1(c.food)} food` : "", c.herbs ? `${c.herbs} meds (herbs)` : "", c.honey ? "honey" : ""].filter(Boolean).join(", ") : "";
     case "hunt": case "fish": {
       const n = [c.deer ? `${c.deer} deer` : "", c.hog ? `${c.hog} hog${c.hog > 1 ? "s" : ""}` : "", c.small ? `${c.small} small game` : "", c.fish ? `${c.fish} fish` : ""].filter(Boolean).join(", ");
@@ -202,12 +202,12 @@ export function loadText(t) {
   }
 }
 const r1 = (v) => Math.round((v || 0) * 10) / 10;
-// The pop over the base when a load comes in: "+18 food", "+140 firewood" …
+// The pop over the base when a load comes in: "+18 food", "+140 wood" …
 function popText(t) {
   const c = t.carry;
   if (!c || c.empty) return "";
   switch (t.job) {
-    case "wood": return c.wood > 0.5 ? `+${Math.round(c.wood)} firewood` : "";
+    case "wood": return c.wood > 0.5 ? `+${Math.round(c.wood)} wood` : "";
     case "forage": return c.food > 0.05 ? `+${r1(c.food)} food${c.herbs ? ` +${c.herbs} meds` : ""}` : c.herbs ? `+${c.herbs} meds` : "";
     case "hunt": case "fish": return c.rations > 0.05 ? `+${Math.round(c.rations)} ${t.job === "fish" ? "fish" : "meat"}` : "";
     case "scavenge": return c.finds ? `+${loadText(t)}` : "";

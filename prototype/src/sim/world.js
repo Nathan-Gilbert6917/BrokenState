@@ -156,7 +156,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
     idBase: nextId - 1, // localId: this world's ids counted from its own start
     fleetV: 1, // several vehicles to a team (vehicles.js fleets: p.vehicleIds); save.js gives older saves the list
     kitV: 2, magFitV: 1, // carry kit (w2-kit): a new world in either mode is born with it (carrykit.js migrateKit is for older saves only; a hardcore world never set it and gained magazines on every load)
-    woodcutting: 2, // a world with firewood, 0.1 kg a unit (save.js: older saves are given it, or scaled to it, on load)
+    woodcutting: 2, // a world with wood, 0.1 kg a unit (save.js: older saves are given it, or scaled to it, on load)
     rawWater: 1, // a world with purified and un-purified water (water.js; save.js: older saves are given it on load)
     foodTypes: 1, // a world with food by type (foods.js; save.js migrateFood: older saves are typed on load)
     sickRest: "all", // sickrest.js: the Work tab's "Sick people rest" (all, serious, off; save.js: older saves get "all")
@@ -221,7 +221,8 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
     // player's (or the governor's) pick: a bunkhouse, a crafting bench, a farm plot and a rain catcher come to 45.
     // Food by type (foods.js): 80 days of a town's stores (cans, rice, pasta, oats, a few sacks of potatoes and onions)
     // and 10 of food that keeps (jars, jerky, peanut butter).
-    stock: { water: 50, rawwater: 0, fuel: 12, meds: 6, ammo: 80, arrows: 0, parts: HUB_START.parts, scrap: HUB_START.scrap, jars: 12, wood: 300, buildmat: 0, ...addFoodsTo(typedFood(state, "stores", 80), typedFood(state, "keeps", 10)) },
+    stock: { water: 50, rawwater: 0, fuel: 12, meds: 6, ammo: 80, arrows: 0, parts: HUB_START.parts, scrap: HUB_START.scrap, jars: 12, wood: 700, buildmat: 0, // wood: 300 for the fires and 400 more since it builds too (2026-10-20: a bunkhouse 300, a farm plot 150)
+    ...addFoodsTo(typedFood(state, "stores", 80), typedFood(state, "keeps", 10)) },
     radio: false, watchtower: false, buildings: [], construction: [], armory: [],
   });
   const hubBase = state.bases[0];
@@ -1036,7 +1037,7 @@ function hourOfWorld(state) {
     fieldworksDaily(state); // fieldworks.js: relay masts' parts, raids on your field works, the groups' own, towers drawing the dead
     // eras.js: the Accord's and the containment's clocks (the victories need them to have run: checkGameOver).
     if (!state.gameOver) erasVictoryDaily(state, !state.allianceWon && accordHolds(state), hivesSecured(state));
-    causesDaily(state); // causes.js: the day each base's water, food, scrap, meds, ammo or firewood ran out
+    causesDaily(state); // causes.js: the day each base's water, food, scrap, meds, ammo or wood ran out
     ensureLeader(state);
     if (day(state) % 5 === 0) log(state, `Day ${day(state)}. ${alive(state).length} survivors.`, "info");
     foodMarkAll(state, "player"); // foodlog.js: supply runs and trade routes

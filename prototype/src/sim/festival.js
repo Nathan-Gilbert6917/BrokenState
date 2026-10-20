@@ -4,7 +4,7 @@
 // the hub, if at least FEST.MIN_PEOPLE live there:
 // - Hold the festival: a day off for everyone at the hub except the guards and the medics (the Rest role until
 //   midnight: work.js and morale.js already honour restUntil), FULL.food extra food a head (a child at the hub half), a bonfire of FULL.wood
-//   firewood if the hub has it, a bottle of liquor from the armory for every DRINK_PER people if there is any. Everyone
+//   wood if the hub has it, a bottle of liquor from the armory for every DRINK_PER people if there is any. Everyone
 //   at the hub mood +FULL.mood (+fire, +drink), then +FULL.glow a day for FULL.glowDays days ("The harvest festival" in
 //   the mood breakdown, relations.js moodFactors); everyone else (outposts, teams) gets the smaller outpost share. Every
 //   pair at the hub grows a little closer (relations.js bumpPair) and there is a FULL.story chance of a story: a couple,
@@ -95,7 +95,7 @@ export function festivalCard(state, b) {
   const daysAfter = (k) => { const fo = foodOutlook(state, b) || {}; const burn = fo.daysLeft > 0 && Number.isFinite(fo.daysLeft) ? foodOf(b) / fo.daysLeft : 0; return burn > 0 ? (foodOf(b) - costOf(n(), k)) / burn : 99; };
   const avgMood = () => { const p = residents(state, b.id); return p.length ? p.reduce((a, s) => a + s.mood, 0) / p.length : 60; };
   const F = FEST.FULL, S = FEST.SMALL;
-  const wood = (b.stock.firewood || 0) >= F.wood, drink = liquor(b).length > 0;
+  const wood = (b.stock.wood || 0) >= F.wood, drink = liquor(b).length > 0;
   return {
     title: "The harvest festival",
     where: b.name,
@@ -105,7 +105,7 @@ export function festivalCard(state, b) {
       `${residents(state, b.id).length} people live at the hub${childrenAt(state, b.id).length ? ` with ${childrenAt(state, b.id).length} children` : ""}; the food would last about ${Math.max(0, Math.floor(daysAfter("FULL")))} days after a full festival.`,
     choices: [
       {
-        label: `Hold the festival (${costOf(n(), "FULL")} food${wood ? `, ${F.wood} firewood` : ""}${drink ? `, ${Math.min(liquor(b).length, Math.ceil(residents(state, b.id).length / FEST.DRINK_PER))} bottles` : ""})`,
+        label: `Hold the festival (${costOf(n(), "FULL")} food${wood ? `, ${F.wood} wood` : ""}${drink ? `, ${Math.min(liquor(b).length, Math.ceil(residents(state, b.id).length / FEST.DRINK_PER))} bottles` : ""})`,
         hint: `A day off at the hub for all but the guards and medics. Everyone there mood +${F.mood}${wood ? ` (+${F.fire} for the bonfire)` : ""}${drink ? ` (+${F.drink} for the drink)` : ""}, then +${F.glow} a day for ${F.glowDays} days; people at the outposts and on the road +${F.outpost}, then +${F.outpostGlow} a day. Everyone at the hub grows a little closer, ${Math.round(F.story * 100)}% chance of a story (a couple, a peace, a friendship)`,
         disabled: (st) => foodOf(b) < costOf(n(), "FULL"),
         ai: () => (daysAfter("FULL") >= 40 ? 8 + (avgMood() < 50 ? 2 : 0) : 0),
@@ -147,7 +147,7 @@ export function holdFestival(state, b, kind) {
   const d = day(state);
   let lift = K.mood;
   const extras = [];
-  if (full && (b.stock.firewood || 0) >= K.wood) { b.stock.firewood -= K.wood; lift += K.fire; extras.push("a bonfire"); }
+  if (full && (b.stock.wood || 0) >= K.wood) { b.stock.wood -= K.wood; lift += K.fire; extras.push("a bonfire"); }
   const bottles = full ? liquor(b).slice(0, Math.ceil(people.length / FEST.DRINK_PER)) : [];
   if (bottles.length) { for (const it of bottles) takeOneAt(b.armory, b.armory.indexOf(it)); lift += K.drink; extras.push(`${bottles.length} bottle${bottles.length === 1 ? "" : "s"}`); }
   // The day off: the Rest role until midnight (morale.js gives the old role back), but for the guards and the medics.
@@ -210,4 +210,4 @@ export function festivalGlow(state, s) {
 export const festivalNow = (state, b) => { const L = state.festival && state.festival.last; return !!L && L.baseId === b.id && L.day === day(state); };
 
 // ---------- help (ui/help.js) ----------
-export const FESTIVAL_HELP = `Once a year, on the morning of autumn day ${FEST.DAY} (after the harvest, before the hard frosts), the people at your hub ask for a harvest festival (a card; the hub needs at least ${FEST.MIN_PEOPLE} people). <i>Hold the festival:</i> a day off for everyone at the hub but the guards and the medics, ${FEST.FULL.food} food a head (a child counts as half: children have no mood of their own, but they eat), a bonfire of ${FEST.FULL.wood} firewood if the hub has it and a bottle of liquor from the armory for every ${FEST.DRINK_PER} people if there is any. Everyone at the hub mood +${FEST.FULL.mood} (+${FEST.FULL.fire} with the bonfire, +${FEST.FULL.drink} with drink), then +${FEST.FULL.glow} a day for ${FEST.FULL.glowDays} days; people at the outposts and on the road +${FEST.FULL.outpost}, then +${FEST.FULL.outpostGlow} a day. Everyone at the hub grows a little closer, and ${Math.round(FEST.FULL.story * 100)}% of festivals leave a story: two friends becoming a couple, two rivals making peace, or a new friendship. <i>A small festival:</i> an evening supper with no day off, ${FEST.SMALL.food} food a head, mood +${FEST.SMALL.mood} and +${FEST.SMALL.glow} a day for ${FEST.SMALL.glowDays} days (+${FEST.SMALL.outpost} elsewhere), a ${Math.round(FEST.SMALL.story * 100)}% chance of a story. <i>Skip it:</i> nothing, unless spirits at the hub are already under ${FEST.SKIP.below} (then mood ${FEST.SKIP.mood}). While the hub is under attack or has under ${FEST.FOOD_DAYS} days of food the festival is put off ${FEST.POSTPONE} days, once; still not possible then, there is none that year. On the festival day extra fires burn at the hub on the map.`;
+export const FESTIVAL_HELP = `Once a year, on the morning of autumn day ${FEST.DAY} (after the harvest, before the hard frosts), the people at your hub ask for a harvest festival (a card; the hub needs at least ${FEST.MIN_PEOPLE} people). <i>Hold the festival:</i> a day off for everyone at the hub but the guards and the medics, ${FEST.FULL.food} food a head (a child counts as half: children have no mood of their own, but they eat), a bonfire of ${FEST.FULL.wood} wood if the hub has it and a bottle of liquor from the armory for every ${FEST.DRINK_PER} people if there is any. Everyone at the hub mood +${FEST.FULL.mood} (+${FEST.FULL.fire} with the bonfire, +${FEST.FULL.drink} with drink), then +${FEST.FULL.glow} a day for ${FEST.FULL.glowDays} days; people at the outposts and on the road +${FEST.FULL.outpost}, then +${FEST.FULL.outpostGlow} a day. Everyone at the hub grows a little closer, and ${Math.round(FEST.FULL.story * 100)}% of festivals leave a story: two friends becoming a couple, two rivals making peace, or a new friendship. <i>A small festival:</i> an evening supper with no day off, ${FEST.SMALL.food} food a head, mood +${FEST.SMALL.mood} and +${FEST.SMALL.glow} a day for ${FEST.SMALL.glowDays} days (+${FEST.SMALL.outpost} elsewhere), a ${Math.round(FEST.SMALL.story * 100)}% chance of a story. <i>Skip it:</i> nothing, unless spirits at the hub are already under ${FEST.SKIP.below} (then mood ${FEST.SKIP.mood}). While the hub is under attack or has under ${FEST.FOOD_DAYS} days of food the festival is put off ${FEST.POSTPONE} days, once; still not possible then, there is none that year. On the festival day extra fires burn at the hub on the map.`;

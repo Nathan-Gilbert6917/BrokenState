@@ -61,7 +61,7 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 export { itemValue };
 
 // Stock per head at which a group is comfortable (need 1 at the reference, 0.5 at 1.5× it, 2.2 at none).
-// Preserved food (storage.js) keeps, so every group wants some; jars matter only to those who preserve. Firewood
+// Preserved food (storage.js) keeps, so every group wants some; jars matter only to those who preserve. Wood
 // (woodcutting.js): groups cut their own; the seasons move its price (valuation.js: dear in winter, cheap in summer).
 // Arrows (hunting.js): groups fletch their own and keep them (comfortable, none to spare) until they hold more.
 const REF = { food: 6, // days of food a head (every kind together, foods.js foodIn)
@@ -69,7 +69,7 @@ const REF = { food: 6, // days of food a head (every kind together, foods.js foo
 // Per head a group never sells: it keeps this much for itself. Food and water: the pay-out reserve your governor keeps
 // (upkeep.js PAYOUT.days a head, read when used: the modules load in a cycle; it was 2 and 1.5).
 const RESERVE = { get food() { return PAYOUT.days; }, get water() { return PAYOUT.days; }, fuel: 0.5, meds: 0.3, ammo: 3, arrows: 2, parts: 0, scrap: 0, preserved: 0.5, jars: 0, wood: 60, carparts: 0, gunparts: 0, electronics: 0, buildmat: 0, brass: 0, powder: 0, primers: 0, blackpowder: 0, matchprimers: 0 };
-// Groups always have some water (wells, rain barrels), firewood (they cut their own: woodcutting.js) and arrows (they
+// Groups always have some water (wells, rain barrels), wood (they cut their own: woodcutting.js) and arrows (they
 // make their own): with no figure yet they count as comfortable.
 // Water (water.js): other groups keep a single pool (f.stock.water; they purify their own). Un-purified water is
 // priced by that pool at its own base value (half of purified water's), goes into the pool when they take it, and is
@@ -318,7 +318,7 @@ export function autoSellGear(state, needs) {
   if (!items.length) return "";
   const t = ctx.t;
   t.offer = {}; t.ask = {}; t.offerGear = [...items]; t.askGear = []; t.deal = null;
-  // Firewood (woodcutting.js) only when the base is really short of it: it is cheap, so a deal balanced with it fills
+  // Wood (woodcutting.js) only when the base is really short of it: it is cheap, so a deal balanced with it fills
   // the woodpile with hundreds the base does not need.
   needs = foodNeeds(needs, ctx.theirHave, null); // foods.js: food as the item they hold most of
   const want = Object.keys(needs).filter((k) => SUPPLIES[k] && (ctx.theirHave[k] || 0) > 0 && (k !== "wood" || needs[k] >= 1.2)).sort((a, b) => needs[b] - needs[a] || a.localeCompare(b))[0];
@@ -872,7 +872,7 @@ export function executeTrade(state) {
     if (ctx.kind === "visit") takeFromParty(ctx.p, k, q);
     else ctx.base.stock[k] = (ctx.base.stock[k] || 0) - q;
     const tk = ctx.kind === "caravan" || isRoundKey(k) ? k : groupStockKey(k, f); // a group's own stores: one water pool, one count of parts; rounds by key (docs/adr/0001-ai-parity.md)
-    theirSup[tk] = (theirSup[tk] ?? (ctx.kind === "caravan" || FOODS[k] ? 0 : stockOf(f, k))) + q; // a group with no figure yet (water, firewood) starts from its comfortable stock
+    theirSup[tk] = (theirSup[tk] ?? (ctx.kind === "caravan" || FOODS[k] ? 0 : stockOf(f, k))) + q; // a group with no figure yet (water, wood) starts from its comfortable stock
     if (isRoundKey(k) || k === "ammo") note(state, "from you", q); // ledger.js
     gave.push(`${q} ${keyWord(k)}`);
   }

@@ -33,7 +33,7 @@ import { renderModal } from "../src/ui/ui.js";
 import { workNowPanel } from "../src/ui/activity.js";
 import { kitchenNote } from "../src/ui/kitchen.js";
 import { baseNeeds, planIdle } from "../src/sim/idlework.js";
-// kitchen-plus (2026-10-10): firewood, part-time fixed cooks, the Cooking skill, the cook fire down, the kitchen's slot, AI parity.
+// kitchen-plus (2026-10-10): wood, part-time fixed cooks, the Cooking skill, the cook fire down, the kitchen's slot, AI parity.
 import { kitchenWood, kitchenCanLight, kitchenCold, cookShiftHour, cooksHour, cookPlusOf, isCookHour, COOK_SECOND, jobShare } from "../src/sim/kitchen.js";
 import { farmLabour } from "../src/sim/farming.js";
 import { workFactor } from "../src/sim/health.js";
@@ -305,28 +305,28 @@ section("AI groups");
 }
 
 // ======================================================================
-section("Firewood: the stove (kitchen-plus pick 1)");
+section("Wood: the stove (kitchen-plus pick 1)");
 {
   const { st, h, ppl } = mk(12);
   addBuilding(h, "canteen");
   cook(ppl[0], 3);
   const kw = kitchenWood(st, h);
-  console.log(`  firewood a day for a 12-person base: ${kw.need} (stove ${kw.stove} + meals ${kw.meals})`);
+  console.log(`  wood a day for a 12-person base: ${kw.need} (stove ${kw.stove} + meals ${kw.meals})`);
   check(kw.need === KITCHEN.wood.stove + 12 * 2 * KITCHEN.wood.meal && kw.need === 28, `12 fed: 4 + 24 = 28 a day (${kw.need})`);
   const w = woodNeed(st, h);
-  check(w.kitchen === 28 && w.daily >= 28 && w.need >= 28 * KITCHEN.wood.keepDays, `the firewood forecast counts it (kitchen ${w.kitchen}, need ${w.need})`);
+  check(w.kitchen === 28 && w.daily >= 28 && w.need >= 28 * KITCHEN.wood.keepDays, `the wood forecast counts it (kitchen ${w.kitchen}, need ${w.need})`);
   st.hour = 24 * 3; h.stock.wood = 2000; setFood(h, 150); setJarred(h, 0);
   basesDaily(st);
   check(!kitchenCold(h) && h.kitchenDay && h.kitchenDay.wood === 28 && near(h.stock.wood, 2000 - 28 - (h.heat ? h.heat.wood : 0), 0.01), `midnight: the stove burned 28 (${h.kitchenDay && h.kitchenDay.wood}, ${h.stock.wood} left after the heating's ${h.heat ? h.heat.wood : 0})`);
-  check(kitchenCanLight(st, h), "can light with firewood in store");
+  check(kitchenCanLight(st, h), "can light with wood in store");
   h.stock.wood = 27;
-  check(!kitchenCanLight(st, h), "27 firewood will not light a 28 stove");
+  check(!kitchenCanLight(st, h), "27 wood will not light a 28 stove");
   h.stock.wood = 10;
   st.hour = 24 * 4;
   basesDaily(st);
   plain(ppl[0]); // the day's mood, back where it was
   const ks = kitchenService(st, h);
-  check(kitchenCold(h) && ks.cold && ks.save === 0 && ks.mood === 0 && ks.boil === 0 && near(h.stock.wood, Math.max(0, 10 - (h.heat ? h.heat.wood : 0)), 0.01), `no firewood: cold meals, nothing saved, nothing burned by the stove (${h.stock.wood} after the heating's ${h.heat ? h.heat.wood : 0})`);
+  check(kitchenCold(h) && ks.cold && ks.save === 0 && ks.mood === 0 && ks.boil === 0 && near(h.stock.wood, Math.max(0, 10 - (h.heat ? h.heat.wood : 0)), 0.01), `no wood: cold meals, nothing saved, nothing burned by the stove (${h.stock.wood} after the heating's ${h.heat ? h.heat.wood : 0})`);
   check(kitchenEatMult(st, h) === 1, "the food is eaten as without a kitchen");
   check(!moodFactors(st, ppl[3]).list.some((f) => /Hot meals/.test(f.label)), "no hot-meal mood");
   check(!baseCooks(h), "a cold stove cooks nothing (the worm)");
@@ -334,15 +334,15 @@ section("Firewood: the stove (kitchen-plus pick 1)");
   check(baseCooks(h), "the cook fire does it then");
   check(st.log.some((l) => /kitchen at .* is cold/.test(typeof l === "string" ? l : l.text || l.msg || "")), "a log line when it goes cold");
   const note = kitchenNote(st, h);
-  check(/Cold meals/.test(note) && /Firewood: 28 a day/.test(note) && !BAD.test(note), `the card says so: ${note.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()}`);
+  check(/Cold meals/.test(note) && /Wood: 28 a day/.test(note) && !BAD.test(note), `the card says so: ${note.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()}`);
   h.stock.wood = 500; st.hour = 24 * 5;
   basesDaily(st);
   plain(ppl[0]);
-  check(!kitchenCold(h) && kitchenService(st, h).save > 0, "firewood in: lit again at midnight");
+  check(!kitchenCold(h) && kitchenService(st, h).save > 0, "wood in: lit again at midnight");
   const up = upkeepLine(st, h);
-  check(/Kitchen stove: 28 firewood a day/.test(up.kitchen) && /firewood \d+/.test(up.short), `the Upkeep line: ${up.kitchen}; ${up.short}`);
+  check(/Kitchen stove: 28 wood a day/.test(up.kitchen) && /wood \d+/.test(up.short), `the Upkeep line: ${up.kitchen}; ${up.short}`);
   const wl = woodLine(st, h);
-  check(/^\d+d$/.test(wl.short) && /Kitchen's stove burns 28/.test(wl.tip), `the needs bar's firewood: ${wl.short} (days at the day's burn)`);
+  check(/^\d+d$/.test(wl.short) && /Kitchen's stove burns 28/.test(wl.tip), `the needs bar's wood: ${wl.short} (days at the day's burn)`);
   ppl[0].perks = ["lowflame"];
   check(kitchenWood(st, h).need === 4 + 16, `Low Flame: a third less on the meals (${kitchenWood(st, h).need})`);
 }
@@ -481,23 +481,23 @@ section("The governor: part-time cooks, the cook fire (picks 2, 5, 6)");
   st.hour = 24 * 3 + 16;
   for (const s of atBase(st, h.id)) if (s.role === "cook") s.role = "rest";
   governRoles(st, h);
-  check(!atBase(st, h.id).some((s) => s.role === "cook"), "no firewood for the stove: no cooks");
+  check(!atBase(st, h.id).some((s) => s.role === "cook"), "no wood for the stove: no cooks");
   // A Manual Cook + Farm whose roles the governor runs: it plans them itself.
   const c = atBase(st, h.id)[0];
   applyRoleChoice(st, c, "cook+farm");
   h.stock.wood = 2000;
   governRoles(st, h);
   check(!c.cookPlus, "the governor's roles drop a Cook + second job it plans");
-  // The cook fire comes down once the kitchen does its job and the firewood is there.
+  // The cook fire comes down once the kitchen does its job and the wood is there.
   const { st: s2, h: h2 } = mk(10);
   addBuilding(h2, "cookhouse"); addBuilding(h2, "canteen");
   s2.autopilot = true;
   h2.stock.wood = 30;
-  check(!cookFireRedundant(s2, h2), "firewood short (under two weeks of the stove): the cook fire stays");
+  check(!cookFireRedundant(s2, h2), "wood short (under two weeks of the stove): the cook fire stays");
   s2.hour = 24 * 3 + 9; governBase(s2, h2);
   check(count(h2, "cookhouse") === 1, "...and is not pulled down");
   h2.stock.wood = 2000;
-  check(cookFireRedundant(s2, h2), "a lit kitchen with firewood: the cook fire is redundant");
+  check(cookFireRedundant(s2, h2), "a lit kitchen with wood: the cook fire is redundant");
   governBase(s2, h2);
   check(count(h2, "cookhouse") === 0 && s2.log.some((l) => /cook fire at .* came down/.test(typeof l === "string" ? l : l.text || l.msg || "")), "pulled down at 09:00, with a line in the log");
   addBuilding(h2, "cookhouse");
@@ -514,7 +514,7 @@ section("The governor: part-time cooks, the cook fire (picks 2, 5, 6)");
 }
 
 // ======================================================================
-section("AI groups: firewood, growth, morale, the Groups card (pick 7)");
+section("AI groups: wood, growth, morale, the Groups card (pick 7)");
 {
   const st = createWorld({ seed: SEED, factionCount: 6 });
   st.started = true;
@@ -523,7 +523,7 @@ section("AI groups: firewood, growth, morale, the Groups card (pick 7)");
     f.pop = 20; f.bases = [f.bases[0]];
     const w = worksAt(f, f.bases[0]);
     Object.assign(w, { water: 5, farms: 5, beds: 5, walls: 7, bench: 1, store: 1, pens: 1, sickbay: 4, kitchen: 1 });
-    check(groupKitchenWood(st, f) === 4 + 20 * 2, `a kitchen for 20 burns 44 firewood a day (${groupKitchenWood(st, f)})`);
+    check(groupKitchenWood(st, f) === 4 + 20 * 2, `a kitchen for 20 burns 44 wood a day (${groupKitchenWood(st, f)})`);
     f.stock.wood = 1000;
     groupKitchenDaily(st, f, 0);
     check(f.stock.wood === 956 && !f.kitchenCold && near(groupEatMult(st, f), 0.9), "burned from the woodpile: hot meals");
@@ -535,7 +535,7 @@ section("AI groups: firewood, growth, morale, the Groups card (pick 7)");
     check(/🍲 Kitchen: hot meals/.test(groupCardExtras(st, f)), "on the Groups card");
     f.stock.wood = 30;
     groupKitchenDaily(st, f, 0);
-    check(f.kitchenCold && groupEatMult(st, f) === 1 && groupCookShare(st, f) === 0 && f.stock.wood === 30, "short of firewood: cold, no saving, the cooks back in the fields");
+    check(f.kitchenCold && groupEatMult(st, f) === 1 && groupCookShare(st, f) === 0 && f.stock.wood === 30, "short of wood: cold, no saving, the cooks back in the fields");
     check(desertPressure(st, f) > p1 && /cold/.test(groupKitchenText(st, f)), "and no morale from it");
     f.stock.wood = 1000;
     groupKitchenDaily(st, f, 980);

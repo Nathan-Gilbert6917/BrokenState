@@ -30,7 +30,7 @@ import { Rng } from "./rng.js";
 import { HexGrid } from "./hex.js";
 import { peekNextId, setNextId, day, hub, alive, fillCrafting, fillMelee, fillCooking, log } from "./world.js";
 import { WORLD_SIZES, worldSizeOf } from "./worldsize.js";
-import { WOOD_UNITS, GEAR } from "./data.js"; // firewood was a 3 kg bundle: older saves are scaled to 0.1 kg units
+import { WOOD_UNITS, GEAR } from "./data.js"; // wood was a 3 kg bundle: older saves are scaled to 0.1 kg units
 import { makeLosCache, SparseLos } from "./combat.js";
 import { migrateUnitStacks } from "./mags.js"; // physical rounds on a battle saved before them
 import { CRAFT_BOOKS, tech } from "./blueprints.js"; // craft books read before they unlocked anything // the line-of-sight cache of a loaded battle (sparse on a big yard)
@@ -40,7 +40,7 @@ import { migrateStaging } from "./staging.js"; // the old staging camp becomes a
 import { migrateStacks } from "./itemstack.js"; // stacks in a slot (2026-10-10)
 import { SICK_REST_MODES } from "./sickrest.js"; // the Work tab's "Sick people rest" (old saves: on)
 import { migrateGenerators, migrateGenTiers } from "./power.js"; // machines-2: generators without operators; gen-tiers: every old generator a tier-1 set
-import { migrateCanners, migrateWalls } from "./buildings.js"; // machines-2: the pressure canner fitted to a preserving room
+import { migrateCanners, migrateWalls, legacyCampTents } from "./buildings.js"; // machines-2: the pressure canner fitted to a preserving room
 import { ensurePois, packPois } from "./pois.js"; // points of interest: saved as the changes from the seed's lists; a save from before gets its lists on load
 import { tidyCarts } from "./carts.js"; // carts: grids sized, lots only real supplies (every load; nothing older needs changing)
 /** @import { State } from "./types" */
@@ -142,6 +142,7 @@ export function deserializeState(save) {
   }
   if (!state || !Array.isArray(state.tiles) || !state.grid || !Array.isArray(state.bases)) throw new SaveError("The save is damaged and cannot be loaded (no map or bases).", "damaged");
   setNextId(Number(s.nextId));
+  for (const b of state.bases) legacyCampTents(b); // a camp from before tents (it slept six round the fire): three two-person tents (buildings.js)
   // The world size (worldsize.js): a save from before sizes is a Normal 64 × 42 map (worked out from its grid).
   if (!WORLD_SIZES[state.worldSize]) state.worldSize = worldSizeOf(state); // a custom size stays "custom" (its grid says how big)
   if (state.mode !== "hardcore") state.mode = "normal"; // saves from before the modes (hardcore.js)
@@ -168,15 +169,15 @@ export function deserializeState(save) {
   for (const sv of state.survivors || []) for (const [k, h] of Object.entries(sv.books || {})) {
     if (CRAFT_BOOKS[k] && GEAR[k] && GEAR[k].book && h >= GEAR[k].book.hours - 1e-9 && !tech(state).known.includes(k)) tech(state).known.push(k);
   }
-  // woodcutting.js: saves from before firewood (no state.woodcutting) start every base with none, and the work roles
+  // woodcutting.js: saves from before wood (no state.woodcutting) start every base with none, and the work roles
   // get the Cut wood job at the priority they give foraging. Worlds made since carry the mark, so they load unchanged.
   if (!state.woodcutting) {
     for (const b of state.bases || []) if (b.stock && !Number.isFinite(b.stock.wood)) b.stock.wood = 0;
     for (const r of (state.work && state.work.roles) || []) if (r.pri && r.pri.wood == null && r.pri.forage > 0) r.pri.wood = r.pri.forage;
     state.woodcutting = 1;
   }
-  // Firewood of 0.1 kg (data.js SUPPLIES.wood; it was a 3 kg bundle): a save from before (woodcutting mark under 2)
-  // has every firewood amount scaled by WOOD_UNITS (scaleSavedWood), once: the mark goes to 2.
+  // Wood of 0.1 kg (data.js SUPPLIES.wood; it was a 3 kg bundle): a save from before (woodcutting mark under 2)
+  // has every wood amount scaled by WOOD_UNITS (scaleSavedWood), once: the mark goes to 2.
   if (!(state.woodcutting >= 2)) {
     scaleSavedWood(state, WOOD_UNITS);
     state.woodcutting = 2;
@@ -232,7 +233,7 @@ export function deserializeState(save) {
   // preserved food turned into typed items of the same calories (migrateFood), base.meat as raw venison, the worm's
   // eggs kept on egg lots. After the staging step (the old camp's stores come in as a base's). Once: state.foodTypes.
   if (!state.foodTypes) { migrateFood(state); state.foodTypes = 1; }
-  // A stock amount that is NaN is 0: before 7212b81 a team packing a supply its base had no key for (firewood on a
+  // A stock amount that is NaN is 0: before 7212b81 a team packing a supply its base had no key for (wood on a
   // hardcore hub) made the base's stock NaN, and saves of that time carry it (tools/savecorpustest.js found it).
   const unNaN = (o) => { if (o) for (const k of Object.keys(o)) if (Number.isNaN(o[k])) o[k] = 0; };
   for (const b of state.bases || []) unNaN(b.stock);
@@ -298,19 +299,19 @@ export function deserializeState(save) {
   return state;
 }
 
-// Firewood amounts × k (a save from before firewood was 0.1 kg a unit): every number kept under the key "wood" anywhere
+// Wood amounts × k (a save from before wood was 0.1 kg a unit): every number kept under the key "wood" anywhere
 // in the world (bases' stock and the day's heating and boiler figures, teams' supplies and cargo and a Cut wood order's
 // haul, groups', caravans', visitors' and the staging camp's stores, sites, containers and bodies, trades and deals;
 // an object reached twice is scaled once), except the work roles' priorities and minimums that share the key (pri,
 // over, a role's min); a Cut wood order's left-behind, the day's cut, the boiler's items' worth and the economy's
-// tallies too. The groups' markets (prices per firewood) are made afresh. state.wood (the land's levels) is not an amount.
+// tallies too. The groups' markets (prices per wood) are made afresh. state.wood (the land's levels) is not an amount.
 /** @param {State} state @param {number} k */
 export function scaleSavedWood(state, k) {
   const seen = new Set();
   const walk = (o, key, parent) => {
     if (!o || typeof o !== "object" || seen.has(o) || ArrayBuffer.isView(o) || o instanceof WeakMap || o instanceof WeakSet) return;
     seen.add(o);
-    if (key === "pri" || key === "over" || (key === "min" && parent && parent.pri)) return; // work.js roles: priorities, not firewood
+    if (key === "pri" || key === "over" || (key === "min" && parent && parent.pri)) return; // work.js roles: priorities, not wood
     if (o instanceof Map) { for (const v of o.values()) walk(v, "", o); return; }
     if (o instanceof Set || Array.isArray(o)) { for (const v of o) walk(v, "", o); return; }
     for (const name of Object.keys(o)) {

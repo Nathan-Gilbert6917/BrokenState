@@ -72,7 +72,7 @@ const answerCards = (st) => { while (st.cards.length) { const c = st.cards.shift
   const q1 = queueBuild(st, h, "bunkhouse");
   const q2 = queueBuild(st, h, "craftbench");
   check(/queued/.test(q1) && /queued/.test(q2), `a bunkhouse and a crafting bench queued (${q1} ${q2})`);
-  check(h.stock.scrap === HUB_START.scrap - 32 && h.stock.parts === HUB_START.parts - 1, "paid from the starting stores");
+  check(h.stock.scrap === HUB_START.scrap - BUILDINGS.bunkhouse.cost.scrap - BUILDINGS.craftbench.cost.scrap && h.stock.parts === HUB_START.parts - 1, "paid from the starting stores");
   tickHour(st);
   check(!st.cards.some((c) => c.crowdFor === h.id), "no Overcrowded card on the first hour");
   let bunkDay = null, benchDay = null;

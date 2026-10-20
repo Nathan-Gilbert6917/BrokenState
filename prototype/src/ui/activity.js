@@ -1,6 +1,6 @@
 // What people are doing, in the UI (sim/activity.js): the People tab's activity chip and its Idle filter, the base's
 // "Work now" panel (the Idle list on top, then one row per job: who is on it and what each is doing this hour, a bar
-// toward the next output, the winter target for firewood, what it brought in on its last days with a 7-day sparkline,
+// toward the next output, the winter target for wood, what it brought in on its last days with a 7-day sparkline,
 // and why it brings in nothing when it cannot work), the Bases card's "N of M working" chip and the stalled-job alert.
 // Small functions with their own classes (act-*, wn-*, idle-*) so the base window's look can change around them.
 import { describeActivity, workingActivity, baseWork, idlePeople, workCount, stalledJobs, outputSeries, amountText, STALL_ALERT_DAYS } from "../sim/activity.js";

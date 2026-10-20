@@ -6,10 +6,10 @@
 //   first, each job only while it has room (a hand count from the base's own sizing: woodHandsWanted, farmersWanted,
 //   the build queue's builders, one crafter, a free station each, one medic …), and only a job this person can do
 //   here (activity.js jobCheck: not "stalled" for them: the land, the tools, the skill a craft needs …).
-//   Needs, highest first: a patient in danger with nobody on Medic; firewood short as the cold comes (by how near);
+//   Needs, highest first: a patient in danger with nobody on Medic; wood short as the cold comes (by how near);
 //   food under a week (the plots first, then wild food: forage, hunt, fish); water running short (Fetch water); a broken well, pump or wall to repair; the
 //   build queue (water builds first); food under 20 days; the Kitchen short of cooks (kitchen.js: one per 12 people);
-//   a free station with work; the craft queue; firewood for the
+//   a free station with work; the craft queue; wood for the
 //   coming season; scavenging around the base while it is not picked clean (the last resort).
 // applyIdlePlan(state, base, plan, hold?) puts each on their job by hand (Manual, as the role drop-down does).
 // leaderIdleHour(state) (world.js, hourly; acts at IDLE_HOUR): at each base run by the governor (the dev autopilot) or
@@ -17,7 +17,7 @@
 //   day) are moved to what the base needs, by planIdle, and held there for a day (s.govIdle: autopilot.js planRoles
 //   keeps them, so the hourly plan does not move them back). Not pinned people, people on work priorities (they plan
 //   themselves), the leader, or roles in an area the leader was not handed. One log line each:
-//   "Leader Ana moved Sam from Build (nothing to build) to Cut wood (firewood 120 of 900 for the cold)."
+//   "Leader Ana moved Sam from Build (nothing to build) to Cut wood (wood 120 of 900 for the cold)."
 // The AI groups have no people with jobs of their own (factions.js: counts and stores), so nothing of theirs idles.
 import { gearOutdoorWorkers, gearText } from "./tripgear.js"; // Assign all idle: the outdoor workers geared for the land (trips-plus #2)
 import { atBase, hourOfDay, day, log, skill } from "./world.js";
@@ -51,11 +51,11 @@ export function baseNeeds(state, base) {
   // Care: a patient in danger and nobody on Medic.
   const pts = ppl.filter((s) => isSevere(s) || s.woundInfected || (isSick(s) && isHurt(s)));
   if (pts.length && !on("medic")) add("medic", 9, 1, `${pts.length} badly hurt or ill here and no medic`);
-  // Firewood: by how near the cold is.
+  // Wood: by how near the cold is.
   const w = woodNeed(state, base);
   if (w.short && w.need > 0 && !woodWorkWhy(state, base) && !(state.governor && state.governor.noWood)) { // gov.noWood: the test switch (woodtest.js)
     const score = w.cold ? 8.5 : w.toCold <= 14 ? 7 : w.soon ? 5 : 1.5;
-    add("wood", score, Math.max(1, woodHandsWanted(state, base, { w })) - on("wood"), `firewood ${n0(w.have)} of ${n0(w.need)} for the cold${w.cold ? " (it is here)" : ` (in ${w.toCold} days)`}`);
+    add("wood", score, Math.max(1, woodHandsWanted(state, base, { w })) - on("wood"), `wood ${n0(w.have)} of ${n0(w.need)} for the cold${w.cold ? " (it is here)" : ` (in ${w.toCold} days)`}`);
   }
   // Food.
   const fw = farmersWanted(state, base);

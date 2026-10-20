@@ -1004,7 +1004,7 @@ const actions = {
   "xp-order": (d) => {
     const p = partyById(d.id);
     if (!p || !(contactable(p) || commandable(state, p))) return; // the radio rule is checked for every team order below
-    if (askQty(state, ui, d)) return; // ui/carry.js: how much water, firewood, food or game (the box gives d.qty)
+    if (askQty(state, ui, d)) return; // ui/carry.js: how much water, wood, food or game (the box gives d.qty)
     const o = { type: d.type };
     if (d.qty != null && d.qty !== "") o.qty = Number(d.qty);
     if (d.mission) o.mission = d.mission;

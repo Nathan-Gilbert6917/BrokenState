@@ -3,7 +3,7 @@
 // same with or without it.
 //
 // What a row holds (columns by name: H.bc for a base, H.cc for the colony; readers look them up with col()):
-// - stocks at the end of the day: food, preserved, water (purified), rawwater, fuel, wood (firewood), meds, ammo,
+// - stocks at the end of the day: food, preserved, water (purified), rawwater, fuel, wood, meds, ammo,
 //   parts, scrap;
 // - flows over the day per resource group (food = fresh + preserved, water = both kinds): in (made, found, bought,
 //   brought home) and out (eaten, drunk, burned, spent, sent out), and moved (signed: shipped between your own bases

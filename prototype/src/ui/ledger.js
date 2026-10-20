@@ -22,12 +22,12 @@ const sg = (v) => `${v > 0 ? "+" : v < 0 ? "−" : "±"}${n1(Math.abs(v))}`;
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 export const RANGES = [[30, "30 days"], [90, "90 days"], [365, "365 days"], [0, "Whole run"]];
-const LABEL = { food: "Food", water: "Water", fuel: "Fuel", wood: "Firewood", meds: "Meds", ammo: "Ammo", parts: "Parts", scrap: "Scrap" };
+const LABEL = { food: "Food", water: "Water", fuel: "Fuel", wood: "Wood", meds: "Meds", ammo: "Ammo", parts: "Parts", scrap: "Scrap" };
 const ABOUT = {
   food: "Fresh and preserved food together. In: harvests, hunting, fishing, foraging, scavenging, teams and trade bringing it home. Out: eating, spoiling, seed, teams packing it, trade.",
   water: "Purified and un-purified water together. In: the well, springs, rivers, rain, claimed wells, teams fetching it. Out: drinking, the crops, teams packing it, evaporation.",
-  fuel: "In: found, bought, made by the still. Out: heating once the firewood is gone, the generator, refuelling vehicles.",
-  wood: "Firewood. In: the Cut wood job and teams, things broken down. Out: heating below freezing, the water boiler, the camp fires.",
+  fuel: "In: found, bought, made by the still. Out: heating once the wood is gone, the generator, refuelling vehicles.",
+  wood: "Wood. In: the Cut wood job and teams, things broken down. Out: heating below freezing, the water boiler, the camp fires.",
   meds: "In: found, bought, crafted. Out: treating the hurt and the ill, teams packing them.",
   ammo: "In: found, bought, the ammo bench. Out: fights at the base, hunting, teams packing it.",
   parts: "In: found, bought, the parts bench. Out: building, repairs.",
@@ -446,10 +446,10 @@ export function runSummaryHTML(state, opts = {}) {
 }
 
 // Up to n captions from the chronicle (sim/chronicle.js), the weightiest first, then put back in time order. Routine
-// lines (a skill rising, firewood cut, a trade) are left out, and so is news from beyond your sight (the chronicle has
+// lines (a skill rising, wood cut, a trade) are left out, and so is news from beyond your sight (the chronicle has
 // no fog of war) until the run is over.
 const BIG = /died|killed|overrun|was lost|destroyed|has fallen|holds the state|coalition|war|peace|pact|hive|horde of \d{3}|raid|taken prisoner|captured|rescued|outpost|founded|took over|deserted|allied/i;
-const ROUTINE = /rose to|took the perk|firewood|harvested|got over|night care|came down with|got a |needs \d+ medic|stores are full|traded with|has arrived|hunted near|key ring|have become|finished studying|brought word|is now friendly/i;
+const ROUTINE = /rose to|took the perk|wood|harvested|got over|night care|came down with|got a |needs \d+ medic|stores are full|traded with|has arrived|hunted near|key ring|have become|finished studying|brought word|is now friendly/i;
 export function notableEvents(state, n = 14) {
   const c = state.chronicle;
   if (!c || !Array.isArray(c.events)) return [];
@@ -496,7 +496,7 @@ export function sparkNode(values) {
 // The Help topic (ui/help.js).
 export function ledgerHelp() {
   return `The <b>Ledger</b> (📈 Ledger in the top bar, or <b>E</b>; E or Esc closes it) keeps the books: one line a day for each base and for the whole colony, written at midnight.<br><br>
-    <b>Resources:</b> a row each for food (fresh and preserved), water (purified and un-purified), fuel, firewood, meds, ammo, parts and scrap. The left chart is what came <span class="good">in</span> each day (harvests, hunting, foraging, wells, workshops, what teams and trade brought home) against what went <span class="danger">out</span> (eaten, drunk, burned, spent, spoiled, packed by teams, traded); the right one the stock. For one base a dashed <span style="color:var(--info)">moved</span> line is what the outposts' daily run shipped to or from your other bases; for <i>All bases</i> that nets out (only what the road loses shows). The figure by the name is in minus out a day on average over the days shown. Supply runs and trade convoys count as out where they load and in where they unload.<br><br>
+    <b>Resources:</b> a row each for food (fresh and preserved), water (purified and un-purified), fuel, wood, meds, ammo, parts and scrap. The left chart is what came <span class="good">in</span> each day (harvests, hunting, foraging, wells, workshops, what teams and trade brought home) against what went <span class="danger">out</span> (eaten, drunk, burned, spent, spoiled, packed by teams, traded); the right one the stock. For one base a dashed <span style="color:var(--info)">moved</span> line is what the outposts' daily run shipped to or from your other bases; for <i>All bases</i> that nets out (only what the road loses shows). The figure by the name is in minus out a day on average over the days shown. Supply runs and trade convoys count as out where they load and in where they unload.<br><br>
     <b>People:</b> population (everyone alive, and those at a base), deaths and arrivals a day, mood and Heat; for All bases also the hives you know of and the hives destroyed, the groups you know (allied, hostile) and the coalition's share of the land (the 60% line is what the alliance victory needs).<br><br>
     <b>Days:</b> 30, 90, 365 or the whole run. Move the mouse over a chart for that day's numbers. The last 120 days are kept day by day, older ones as weekly averages, anything older than about two years and four months as 28-day averages. A game saved before the Ledger existed starts its history on the day it was loaded.<br><br>
     <b>Run summary</b> (the Ledger's second tab, and the game-over and victory screens): the timeline of population, food, water, Heat, hives and land; the best of your people (most kills, longest with the group, top skill, most trips, most treated, most built), the worst day, deaths by cause (from the memorial wall), what happened (the timelapse's captions) and <i>Watch the timelapse</i>.<br><br>

@@ -49,7 +49,7 @@ export const ERRAND = { food: 3, water: 3, minDays: 3, maxDays: 5, lost: 0.08, f
 export const THEFT = { share: 0.06, min: 4, max: 25, lockScrap: 4, lockDays: 30, easyDays: 20 };
 export const RATS = { share: 0.05, min: 3, max: 20, scrap: 2 };
 export const FENCE = { shots: 3 }; // rounds a head of the dead, shooting from the wall
-// A cold snap: three days' extra heating (upkeep.js HEAT: about 15 firewood or 0.1 fuel a head a day below freezing).
+// A cold snap: three days' extra heating (upkeep.js HEAT: about 15 wood or 0.1 fuel a head a day below freezing).
 export const COLD = { wood: 45, fuel: 0.3, frostbite: 0.3 };
 export const SALVAGE = { scrap: [6, 12], risk: 0.2 };
 // Hardcore's first year (until the day a normal game would start), the first weeks most.
@@ -507,7 +507,7 @@ export const HUB_EVENTS = {
               c.base.stock.meds -= 2;
               moodAll(atBase(s2, c.base.id), 3);
               if (!s2.rng.chance(0.5)) return "In two days the fever breaks and they walk on, thanking everyone (mood +3).";
-              const [k, lo, hi, word] = s2.rng.pick([["scrap", 4, 8, "scrap"], ["parts", 1, 1, "machine part"], ["electronics", 1, 1, "electronics"], ["wood", 30, 60, "firewood"]]);
+              const [k, lo, hi, word] = s2.rng.pick([["scrap", 4, 8, "scrap"], ["parts", 1, 1, "machine part"], ["electronics", 1, 1, "electronics"], ["wood", 30, 60, "wood"]]);
               const q = s2.rng.int(lo, hi);
               c.base.stock[k] = (c.base.stock[k] || 0) + q;
               return `In two days the fever breaks. They leave ${q} ${word} in thanks (mood +3).`;
@@ -530,7 +530,7 @@ export const HUB_EVENTS = {
         title: `A cold snap at ${c.base.name}`,
         text: `A hard frost has settled over ${c.base.name} and will not lift. Water freezes in the buckets and people sleep in their coats.`,
         choices: [
-          { label: `Keep the fires going day and night (${wood} firewood)`, hint: "Nobody suffers", disabled: () => (c.base.stock.wood || 0) < COLD.wood * n(), ai: () => ((c.base.stock.wood || 0) >= 3 * wood ? 6 : 2), resolve: () => { c.base.stock.wood -= Math.min(c.base.stock.wood || 0, COLD.wood * n()); return "The stoves roar for three days and the cold stays outside."; } },
+          { label: `Keep the fires going day and night (${wood} wood)`, hint: "Nobody suffers", disabled: () => (c.base.stock.wood || 0) < COLD.wood * n(), ai: () => ((c.base.stock.wood || 0) >= 3 * wood ? 6 : 2), resolve: () => { c.base.stock.wood -= Math.min(c.base.stock.wood || 0, COLD.wood * n()); return "The stoves roar for three days and the cold stays outside."; } },
           { label: `Burn fuel in the stoves (${fuel} fuel)`, hint: "Nobody suffers; fuel is dear", disabled: () => (c.base.stock.fuel || 0) < Math.ceil(COLD.fuel * n()), ai: () => ((c.base.stock.fuel || 0) >= 40 ? 3 : -2), resolve: () => { c.base.stock.fuel -= Math.min(c.base.stock.fuel || 0, Math.ceil(COLD.fuel * n())); return "The fuel goes up the chimney, and everyone stays warm."; } },
           {
             label: "Bundle up and bear it", hint: `Everyone here mood -4; ${pct(COLD.frostbite)} someone is frostbitten (4–10 health)`, ai: () => -4,

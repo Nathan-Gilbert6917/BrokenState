@@ -138,7 +138,7 @@ function stationWants(state, base, b) {
 // Who could refuel now: at the base, not in a hospital bed, not resting sick, well enough to work.
 export const canRefuel = (state, s) => !!s && s.alive && !s.inBed && workFactor(s) >= 0.35 && !sickRestWhy(state, s);
 // The least busy of them: a builder with nothing to build (upkeep), a scavenger around the base, someone resting,
-// firewood, foraging, the plots and the rest in this order (a builder on a job after the plots); then the best at
+// wood, foraging, the plots and the rest in this order (a builder on a job after the plots); then the best at
 // Mechanics, then the lowest id.
 const CHORE_ORDER = ["build", "scavenge", "rest", "wood", "forage", "farm", "craft", "read", "trainee", "teach", "guard", "hunt", "fish", "operate", "medic"];
 export function refueller(state, base) {
