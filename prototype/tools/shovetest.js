@@ -4,8 +4,8 @@
 // enemy people shove too (aiPush: the gun's room made before the shot).
 // Usage: node tools/shovetest.js [seed]
 import { createWorld, makeSurvivor, hub } from "../src/sim/world.js";
-import { createBattle, combatAct, registerCombatHandler, endPlayerTurn, meleeOdds, runEnemyPhase, hAt } from "../src/sim/combat.js";
-import { PUSH, pushOdds, pushRefusal, pushTargets, pushDest, pushHazard } from "../src/sim/shoving.js";
+import { createBattle, combatAct, registerCombatHandler, endPlayerTurn, meleeOdds, runEnemyPhase, hAt, strike, reachable, escapeOdds } from "../src/sim/combat.js";
+import { PUSH, GRIP, pushOdds, pushRefusal, pushTargets, pushDest, pushHazard, gripOf, aiBreakOut } from "../src/sim/shoving.js";
 import { TRAITS, PICK_ONLY_TRAITS, SWAP_TRAITS } from "../src/sim/data.js";
 import { TRAIT_TIERS } from "../src/sim/traits.js";
 import { newItem } from "../src/sim/inventory.js";
@@ -308,6 +308,99 @@ console.log("AI: melee fighters, hazards, breaking out");
     if (logHas(b, n, new RegExp(`${e.name} shoves`))) broke++;
   }
   check(broke > 0, `a raider running with two foes round them shoves one aside (${broke} of 20)`);
+}
+
+console.log("Grapples: the dead getting hold");
+{
+  const st = createWorld({ seed, factionCount: 4 });
+  const a = fighter(st, "knife"), idle = fighter(st);
+  const b = openBattle(st, [a, idle], { kind: "zombies", count: 2, power: 3 });
+  const u = by(b, a), [z, z2] = foes(b);
+  place(u, 5, 5); place(by(b, idle), 20, 20); place(z, 6, 5); toughen(u); toughen(z);
+  let hits = 0, grabs = 0;
+  for (let i = 0; i < 400; i++) {
+    delete u.heldBy; b.rng.next();
+    const hp = u.hp;
+    strike(b, z, u);
+    if (u.hp < hp) { hits++; if (u.heldBy === z.id) grabs++; }
+  }
+  const rate = grabs / Math.max(1, hits);
+  check(hits > 50 && Math.abs(rate - GRIP.CHANCE) < 0.07, `a landed bite gets hold about ${Math.round(GRIP.CHANCE * 100)}% of the time (${grabs} of ${hits})`);
+  u.heldBy = z.id; fresh(b);
+  check(gripOf(b, u) === z, "held: the grip is there");
+  const mv = combatAct(st, { type: "move", unit: u.id, x: 3, y: 5 });
+  check(/has hold of/.test(mv) && u.x === 5, `held: no move (${mv})`);
+  const r = reachable(b, u, 6);
+  check(r.reached.length === 1, "held: nowhere in reach but where they stand");
+  check(meleeOdds(b, z, u, { parts: true }).parts.some(([l, v]) => /hold/.test(l) && v === GRIP.AIM), `its bites are surer while it holds on (+${GRIP.AIM})`);
+  check(escapeOdds(b, u).parts.some(([l, v]) => /hold/.test(l) && v === -GRIP.ESCAPE), `a retreat's odds fall while held (−${GRIP.ESCAPE})`);
+  // Shoved off: free.
+  let free = false;
+  for (let i = 0; i < 40 && !free; i++) { fresh(b); place(z, 6, 5); u.heldBy = z.id; combatAct(st, { type: "shoveFoe", unit: u.id, target: z.id }); free = !gripOf(b, u) && !/keeps their feet/.test(b.log[b.log.length - 1].text); }
+  check(free, "a shove that lands on what holds them breaks the grip");
+  fresh(b); place(z, 6, 5); u.heldBy = z.id;
+  check(combatAct(st, { type: "move", unit: u.id, x: 4, y: 5 }) !== "" && (z.dead = true) && !gripOf(b, u), "it dies: it lets go");
+  z.dead = false; place(z, 6, 5); u.heldBy = z.id; fresh(b);
+  check(combatAct(st, { type: "move", unit: u.id, x: 4, y: 4 }) !== "", "still held while it stands");
+  place(z, 9, 9);
+  check(!gripOf(b, u) && combatAct(st, { type: "move", unit: u.id, x: 4, y: 5 }) === "" && u.x === 4, "moved off away from them (pushed, dragged): let go, free to move");
+  // Never the beasts, bosses or big ones.
+  place(z, 5, 6); place(u, 5, 5); z.beast = true; delete u.heldBy;
+  let beast = 0;
+  for (let i = 0; i < 200; i++) { b.rng.next(); delete u.heldBy; strike(b, z, u); if (u.heldBy) beast++; }
+  check(beast === 0, "a beast's bite never holds on");
+  z.beast = false;
+  // The AI breaks a grip when it runs: a raider held by someone shoves them off.
+  const st2 = createWorld({ seed, factionCount: 4 });
+  const p1 = fighter(st2), p2 = fighter(st2);
+  const b2 = openBattle(st2, [p1, p2]);
+  const [e] = foes(b2), q = by(b2, p1);
+  place(q, 5, 5); place(by(b2, p2), 20, 20); place(e, 6, 5); toughen(q); toughen(e);
+  b2.phase = "enemy"; e.ap = 2; e.heldBy = q.id;
+  const n = b2.log.length;
+  check(aiBreakOut(b2, e) && b2.log.slice(n).some((l) => l.text.startsWith(`${e.name} shoves`)), "a person held, wanting to run, shoves what holds them first");
+}
+
+console.log("The animations' effects");
+{
+  const st = createWorld({ seed, factionCount: 4 });
+  const a = fighter(st), idle = fighter(st);
+  const b = openBattle(st, [a, idle]);
+  const u = by(b, a), [e] = foes(b);
+  place(u, 5, 5); place(by(b, idle), 20, 20); toughen(e);
+  let topple = null, stumble = null;
+  for (let k = 0; k < 60 && !(topple && stumble); k++) {
+    const f0 = b.fx.length;
+    landOne(st, b, u, e, 6, 5);
+    const fx = b.fx.slice(f0);
+    topple = topple || fx.find((f) => f.type === "topple" && f.unit === e.id);
+    stumble = stumble || fx.find((f) => f.type === "move" && f.unit === e.id && f.shove);
+  }
+  check(topple && topple.dir[0] === 1 && topple.dir[1] === 0, `floored: a topple effect, falling away from the shover (${topple && JSON.stringify(topple.dir)})`);
+  check(!!stumble, "shoved back: the move is marked as a shove (a stumble, not a walk)");
+}
+
+console.log("The melee AI hits whoever is flat first");
+{
+  let flat = 0, n = 0;
+  for (let k = 0; k < 12; k++) {
+    const st = createWorld({ seed: seed + k, factionCount: 4 });
+    const a = fighter(st), c = fighter(st);
+    const b = openBattle(st, [a, c], { kind: "raiders", count: 1, power: 5 });
+    const ua = by(b, a), uc = by(b, c), [e] = foes(b);
+    e.weapon = "machete"; e.ammo = 0;
+    place(ua, 5, 5); place(uc, 7, 5); place(e, 6, 5); toughen(ua); toughen(uc); toughen(e);
+    uc.hp = 10; uc.maxHp = 100; ua.floored = 1; // the weaker one stands; the other lies flat
+    for (const o of b.units) if (o.side === "player") o.ap = 0;
+    e.pushedT = b.turn; // no shove this turn: just the blow
+    const n0 = b.log.length;
+    endPlayerTurn(st); runEnemyPhase(st);
+    const blow = b.log.slice(n0).find((l) => new RegExp(`^${e.name} (strikes|lunges at|pulls the blow and clubs|swings to subdue)`).test(l.text));
+    if (!blow) continue;
+    n++;
+    if (blow.text.includes(ua.name)) flat++;
+  }
+  check(n > 0 && flat === n, `the blow goes to the one flat on their back, not the weakest (${flat} of ${n})`);
 }
 
 console.log(`\n${passes} passed, ${fails} failed`);

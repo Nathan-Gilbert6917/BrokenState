@@ -61,7 +61,7 @@ function blowCue(b, f, a, mem) {
   const self = f.from && f.to && f.from[0] === f.to[0] && f.from[1] === f.to[1];
   // A door, a window, a barricade, a wall battered (combat.js bash, siege.js): no one stands there.
   if (!t && !self && a) return { name: /BROKEN|SMASHED/.test(text) ? "meleeCrit" : "melee", struct: true, broke: /BROKEN|SMASHED/.test(text), ...clsOf(a) };
-  if (SHOVE_TEXT.has(text)) return { name: text === "SHOVED" ? "melee" : "meleeCrit", cls: "punch", w: 0.3, kill: text !== "SHOVED" }; // sim/shoving.js: a shoulder into them; flat on their back, a fall, through a window: the body going down
+  if (SHOVE_TEXT.has(text)) return { name: text === "SHOVED" ? "melee" : "meleeCrit", shove: true, floor: text !== "SHOVED" }; // sim/shoving.js: a shoulder into them; flat on their back, a fall, through a window: the body going down
   if (text) return { name: (f.dmg || 0) >= 25 ? "meleeCrit" : "melee" }; // KO, STUN, RAMMED, ROCK, a launcher's round (gun-sfx's)…
   const cue = { name: "melee", ...(a ? clsOf(a) : { cls: "metal", w: CLASS.metal.w }) };
   const kill = !!(t && (t.dead || t.down) && (f.dmg || 0) > 0);
@@ -83,7 +83,7 @@ function clsOf(a) {
 }
 
 // ---------- the voices ----------
-// o: { gain, pitch, cls, w, mat, through, head, kill, crit, struct, broke }. K: audio.js's building blocks.
+// o: { gain, pitch, cls, w, mat, through, head, kill, crit, struct, broke, shove, floor }. K: audio.js's building blocks.
 export function meleeVoices(K) {
   const { env, filt, noise, tone, thud, bell, crackle, R } = K;
   // The swing: a band of noise sweeping up and down; a heavy weapon's is longer and lower. Ends about when it lands.
@@ -184,8 +184,20 @@ export function meleeVoices(K) {
       noise(c, "white", t + 0.01, 0.25, filt(c, "bandpass", 1600, 0.9, env(c, out, t + 0.01, 0.35 * o.gain, 0.22, 0.003)));
     }
   }
+  // A shove (sim/shoving.js): no swing, a shoulder into them (a dull low thump and the rustle of clothes), feet
+  // scuffing back; floor: the body hitting the ground a moment later (no bone giving way: nobody was struck).
+  function shove(c, out, t, o) {
+    thud(c, out, t, 88 * o.pitch, 0.5 * o.gain, 0.09);
+    noise(c, "brown", t, 0.1, filt(c, "lowpass", 700 * o.pitch, 0.7, env(c, out, t, 0.35 * o.gain, 0.09, 0.003)));
+    noise(c, "white", t + 0.07, 0.14, filt(c, "bandpass", 2300, 0.8, env(c, out, t + 0.07, 0.09 * o.gain, 0.12, 0.01)));
+    if (!o.floor) return;
+    const drop = t + R(0.3, 0.38);
+    thud(c, out, drop, 60 * o.pitch, 0.6 * o.gain, 0.2);
+    noise(c, "brown", drop + 0.03, 0.14, filt(c, "lowpass", 480, 0.7, env(c, out, drop + 0.03, 0.28 * o.gain, 0.12, 0.004)));
+  }
   // A blow that lands: the swing, then (lead later) the impact, the armour, the kill.
   function blow(c, out, t, o, heavy) {
+    if (o.shove) return shove(c, out, t, o);
     if (o.struct) { swing(c, out, t, o, 0.12); return structure(c, out, t + (CLASS[o.cls] || CLASS.metal).lead, o); }
     if (!o.cls) { // a plain thud (an effect with no striker: the old sound)
       thud(c, out, t, (heavy ? 120 : 140) * o.pitch, (heavy ? 0.9 : 0.7) * o.gain, heavy ? 0.14 : 0.1);

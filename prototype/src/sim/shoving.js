@@ -22,11 +22,18 @@
 //     until then (ui/isoview.js).
 //   A shove that misses: the action is spent, the target keeps its feet. Either way an unaware target and its group
 //     are alerted, as by a blow.
-//   The AI (aiPush, aiMeleePush, aiBreakOut): anyone shoves a foe who would land in a hazard, a fall or a window; a
+//   Grapples (GRIP, gripOf, gripHit): one of the dead that lands a blow on someone living may get hold of them
+//     (GRIP.CHANCE; not the beasts, the bosses, the big ones or the ones that hang back). Held, they cannot move, run
+//     off the map or get into a vehicle (combat.js reachable, moveAlong, the extract / retreat / board acts) and its
+//     bites on them are surer (+GRIP.AIM); it lets go when it dies, goes down, is shoved off or floored, or they are
+//     moved away from it (shoved, dragged). A shove at it (or anyone's) is the way to break free; the AI does it when
+//     it wants to run (aiBreakOut).
+//   The AI (aiFree, aiPush, aiMeleePush, aiBreakOut): anyone held shoves what holds them; anyone shoves a foe who
+//     would land in a hazard, a fall or a window; a
 //     person with a melee weapon shoves a foe with no room behind them, then strikes the floored (+PUSH.FLOOR_AIM); a
 //     person running with two or more foes round them shoves one aside first. All through the same odds. (A gunman
 //     shoving the dead off to make room threw a shot away a turn: tools/shovebalance.js.)
-import { active, foesOf, meleeReach, nearCell, unitAt, CELL, moveAlong, say, fx, alertPod, alertNear, cornerBlocked, canFire, isRanged, damage, hAt } from "./combat.js"; // call-time only: the modules load in a circle
+import { active, foesOf, meleeReach, nearCell, unitAt, unitById, CELL, moveAlong, say, fx, alertPod, alertNear, cornerBlocked, canFire, isRanged, damage, hAt } from "./combat.js"; // call-time only: the modules load in a circle
 import { canShove } from "./barricade.js";
 import { faceToward } from "./vision.js";
 import { hash01 } from "./skills.js";
@@ -40,8 +47,12 @@ export const PUSH = {
   KNOCK: 0.35, KNOCK_SKILL: 0.01, KNOCK_STRONG: 0.1, FLOOR_AIM: 20,
   FALL: [8, 14], GLASS: [3, 7], CHAIN: 0.7, // damage a level of the fall, the cuts through a closed window, the chance the one behind goes down too
   AI_MIN: 45, // the AI shoves only when its odds are at least this
-  AI_HAZARD: 0.9, AI_MELEE: 0.5, AI_OUT: 0.8, // the share of the times it could: into a hazard, a fall or a window; before a blow; to break out of a ring of foes
+  AI_HAZARD: 0.9, AI_MELEE: 0.5, AI_OUT: 0.8, AI_FREE: 0.9, // the share of the times it could: into a hazard, a fall or a window; before a blow; to break out of a ring of foes when running; out of a grip
 };
+// The dead getting hold of someone (gripHit): the chance a landed blow grabs, its later bites' aim, the escape odds lost.
+export const GRIP = { CHANCE: 0.08, AIM: 10, ESCAPE: 25 };
+// The dead that never grab: the beasts (their own bite), the bosses, the big ones and the ones that hang back.
+const NO_GRIP = new Set(["spitter", "screamer", "swarm", "flinger", "sower", "brute", "wallbreaker", "broodmother", "carrier", "boneback"]);
 const IMMOVABLE = new Set(["brute", "wallbreaker", "broodmother", "deadcow"]);
 const HEAVY = { soldier: 15, riot: 15, boneback: 20, deadhog: 15, deadstag: 15 };
 const kindOf = (t) => t.ztype || t.variant || t.zkind || "";
@@ -108,7 +119,7 @@ export function pushDest(b, u, t) {
   const drop = here - hAt(b, x, y);
   return drop < 0 ? null : { x, y, drop, window: null };
 }
-// Someone standing right behind t (the cell pushDest looks at, or beyond a window), who may go down with it.
+// Someone standing right behind t (the cell straight behind it), who may go down with it.
 export function pushBlocker(b, u, t) {
   const [ux, uy] = nearCell(u, t.x, t.y);
   const x = t.x + Math.sign(t.x - ux), y = t.y + Math.sign(t.y - uy);
@@ -134,12 +145,14 @@ export function pushHazard(b, u, t, dest = pushDest(b, u, t)) {
   return out.join(" and ");
 }
 // Flat on their back: no overwatch, no hunker; getting up is an action. In their own side's phase (a shove from a
-// friend, a third-side unit shoved in the enemy phase) it comes out of this turn at once.
-function floor(b, t) {
+// friend, a third-side unit shoved in the enemy phase) it comes out of this turn at once. dir: the way they fall (the
+// figure topples that way: ui/isoview.js, fx "topple").
+function floor(b, t, dir) {
   if (!active(t)) return;
   t.hunker = false; t.ow = false;
-  if ((b.phase === "player") === (t.side === "player") && t.ap > 0) t.ap -= 1;
-  else t.floored = 1;
+  if ((b.phase === "player") === (t.side === "player") && t.ap > 0) { t.ap -= 1; return; }
+  t.floored = 1;
+  fx(b, { type: "topple", unit: t.id, dir });
 }
 // The shove (combatAct "shoveFoe" and the AI). Returns "" or why not.
 export function pushAct(b, u, t) {
@@ -160,6 +173,7 @@ export function pushAct(b, u, t) {
     return "";
   }
   const dest = pushDest(b, u, t), behind = pushBlocker(b, u, t);
+  const [ux, uy] = nearCell(u, t.x, t.y), dir = [Math.sign(t.x - ux), Math.sign(t.y - uy)];
   const fall = dest && dest.drop > 0, thru = dest && dest.window;
   const knock = !dest || fall || !!thru || hash01(b.rng.state, "pushknock", b.pushes, u.id, t.id) < o.knock;
   fx(b, { type: "melee", from: [u.x, u.y], to: [t.x, t.y], hit: true, crit: false, dmg: 0, side: u.side, text: thru ? "THROUGH" : fall ? "FALL" : knock ? "FLOORED" : "SHOVED" });
@@ -169,15 +183,17 @@ export function pushAct(b, u, t) {
     if (thru && thru.closed) { // the pane goes with a crash, and cuts them
       const w = b.cells[thru.y * b.w + thru.x];
       smashWindow(b, w);
+      fx(b, { type: "melee", from: [t.x, t.y], to: [thru.x, thru.y], hit: true, crit: false, dmg: 0, side: u.side, text: "BROKEN" }); // the pane's crash (ui/sfx-melee.js)
       glass = Math.round(damage(b, t, PUSH.GLASS[0] + Math.floor(hash01(b.rng.state, "pushglass", b.pushes, t.id) * (PUSH.GLASS[1] - PUSH.GLASS[0] + 1)), null, false, { how: "glass" }));
       glassNoise(b, thru.x, thru.y, { say, alertNear });
     }
     say(b, `${u.name} shoves ${first} ${thru ? (thru.closed ? `through the window: the glass goes with a crash${glass ? ` and cuts them (${glass})` : ""}` : "out through the window") : fall ? `off the edge, ${dest.drop} level${dest.drop === 1 ? "" : "s"} down` : knock ? "back and flat on their back" : "back a step"}.`, good);
     if (active(t)) {
       const face = t.face;
-      t.shoved = true; // no overwatch fires at someone being shoved (combat.js moveAlong)
+      t.shoved = true; // no overwatch fires at someone being shoved, and a grip does not hold them (combat.js moveAlong)
       try { moveAlong(b, t, [[dest.x, dest.y]]); } finally { delete t.shoved; } // a trench, a pit, a mine, the flames, acid: what is there
-      t.face = face; // shoved backwards: still facing the shover
+      if (face) t.face = face; // shoved backwards: still facing the shover
+      delete t.heldBy; // pulled out of whatever had hold of them
     }
     if (fall && active(t)) {
       const eff = Math.round(damage(b, t, (PUSH.FALL[0] + Math.floor(hash01(b.rng.state, "pushfall", b.pushes, t.id) * (PUSH.FALL[1] - PUSH.FALL[0] + 1))) * dest.drop, null, false, { how: "fall" }));
@@ -185,10 +201,10 @@ export function pushAct(b, u, t) {
     }
   } else say(b, `${u.name} shoves ${first} against ${behind ? `${behind.name}` : "what is behind them"}: ${knock ? "flat on their back" : "back a step"}.`, good);
   if (t.brace) delete t.brace; // a braced door let go (buildingmaps.js)
-  if (knock) floor(b, t); else { t.hunker = false; t.ow = false; }
+  if (knock) floor(b, t, dir); else { t.hunker = false; t.ow = false; }
   // The one right behind (the cell they were pushed toward) goes down too.
   if (behind && knock && !dest && hash01(b.rng.state, "pushchain", b.pushes, behind.id) < PUSH.CHAIN) {
-    floor(b, behind);
+    floor(b, behind, dir);
     say(b, `${behind.name} is taken down with them.`, behind.side === "player" ? "danger" : "good");
   }
   if (t.side === "enemy" && !t.dead && !t.aware) alertPod(b, t.pod, `${t.name} cries out!`);
@@ -201,6 +217,34 @@ export function getUpRound(b, sides) {
     if (active(u) && u.ap > 0) { u.ap -= 1; say(b, `${u.name} gets back up off the ground (one action this turn).`, u.side === "player" ? "danger" : "good"); }
     u.floored = 0;
   }
+}
+
+// ---------- grapples: the dead getting hold of someone ----------
+// What has hold of u, or null; a grip that no longer holds (the grabber dead, down, flat, moved off or shoved away; u
+// moved) is let go here.
+export function gripOf(b, u) {
+  if (!u || u.heldBy == null) return null;
+  const g = unitById(b, u.heldBy);
+  if (g && active(g) && active(u) && !g.floored && (g.f || 0) === (u.f || 0) && meleeReach(b, g, u)) return g;
+  delete u.heldBy;
+  return null;
+}
+// Can a gets hold of someone with a blow? The plain dead and most special ones; never a beast, a boss, a big one.
+const grabber = (a) => a.kind === "zombie" && !a.beast && !a.boss && (a.size || 1) === 1 && !NO_GRIP.has(a.ztype);
+// A blow landed by a on t (combat.js strike): one of the dead may get hold of someone living (its own dice: no other
+// roll in the battle moves). Returns words for the blow's log line.
+export function gripHit(b, a, t) {
+  if (!grabber(a) || t.kind !== "human" || !active(t) || t.aboard || gripOf(b, t)) return "";
+  if (hash01(b.rng.state, "grip", b.turn, a.id, t.id) >= GRIP.CHANCE) return "";
+  t.heldBy = a.id;
+  t.hunker = false;
+  fx(b, { type: "melee", from: [a.x, a.y], to: [t.x, t.y], hit: true, crit: false, dmg: 0, side: a.side, text: "GRABBED" });
+  return ` It gets hold of ${t.name.split(" ")[0]}: they cannot move until it lets go (shove it off, Alt+V, or kill it).`;
+}
+// Why u cannot move off its cell ("" when it can): a grip.
+export function gripRefusal(b, u) {
+  const g = gripOf(b, u);
+  return g ? `${g.name} has hold of ${u.name.split(" ")[0]}: shove it off (Alt+V) or kill it first.` : "";
 }
 
 // ---------- the AI (combat.js aiUnit) ----------
@@ -233,13 +277,24 @@ export function aiMeleePush(b, u) {
   u.pushedT = b.turn;
   return pushAct(b, u, list[0].t) === "";
 }
-// Running (flee) with two or more foes right round it: one is shoved aside first to open the way, the one best to
-// land (not one of the dead that is bigger than a person: they are not shoved at all). The run goes on after.
+// Held by one of the dead (any person, any weapon): it is shoved off first, while the action left still shoots or
+// strikes; held, it would bite again at +GRIP.AIM and nobody could step back to shoot (tools/shovebalance.js: the
+// pistols' fights with the dead fell 17 points of wins before the AI did this). Returns true when it shoved.
+export function aiFree(b, u) {
+  const g = canTry(b, u) ? gripOf(b, u) : null;
+  if (!g || !pushTargets(b, u).includes(g) || pushOdds(b, u, g).chance < PUSH.AI_MIN || !rolled(b, u, "aifree", PUSH.AI_FREE)) return false;
+  u.pushedT = b.turn;
+  return pushAct(b, u, g) === "";
+}
+// Running (flee), or wanting to move with one of the dead holding on, with two or more foes right round it or a grip on
+// it: one is shoved aside first to open the way (what holds them first, then the one best to land; not one of the
+// dead that is bigger than a person: they are not shoved at all). The run goes on after.
 export function aiBreakOut(b, u) {
   if (!canTry(b, u)) return false;
   const near = foesOf(b, u).filter((t) => (t.f || 0) === (u.f || 0) && meleeReach(b, u, t));
-  if (near.length < 2) return false;
-  const list = pushTargets(b, u).map((t) => ({ t, o: pushOdds(b, u, t) })).filter((p) => p.o.chance >= PUSH.AI_MIN).sort((p, q) => q.o.chance - p.o.chance);
+  const g = gripOf(b, u);
+  if (near.length < 2 && !g) return false;
+  const list = pushTargets(b, u).map((t) => ({ t, o: pushOdds(b, u, t) })).filter((p) => p.o.chance >= PUSH.AI_MIN).sort((p, q) => (q.t === g) - (p.t === g) || q.o.chance - p.o.chance);
   if (!list.length || !rolled(b, u, "aiout", PUSH.AI_OUT)) return false;
   u.pushedT = b.turn;
   return pushAct(b, u, list[0].t) === "";
