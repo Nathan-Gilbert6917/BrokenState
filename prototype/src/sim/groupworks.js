@@ -152,6 +152,7 @@ import { BUILDINGS, CAMP as CAMP_BASE } from "./buildings.js"; // storage: your 
 import { storageOf } from "./basestorage.js"; // storage: a base's room and what lies outside (call-time only)
 import { STORE_WISH } from "./autopilot.js"; // storage: your governor's ladder (call-time only)
 import { homesOf, stockTonight, worksBuildings } from "./groupbases.js"; // storage: their bases as base objects (call-time only)
+import { groupTentSleepers } from "./tents.js"; // the tent bags on their shelf, pitched at their camps (call-time only)
 
 /** @typedef {{ water?: number, farms?: number, beds?: number, walls?: number, bench?: number, store?: number, sickbay?: number, pens?: number, camp?: number, still?: number, power?: number, powerTier?: number, freezer?: number, sealer?: number, kitchen?: number, shop?: number, radio?: number, garage?: number, reload?: number, gate?: number, storebox?: number, crates?: number, shed?: number, warehouse?: number, mill?: number, grinder?: number, mach?: Object<string, { wear: number, spares: number, broken: boolean, on?: boolean, noSpares?: boolean }> }} Works */
 
@@ -293,9 +294,11 @@ export const isCamp = (f, tile) => !!(f && f.works && f.works[tile] && f.works[t
 // A group's new base founded from nothing starts as a camp (factions.js expansion; this world's groups build).
 export function pitchCamp(state, f, tile) { if (groupsBuild(state, f)) worksAt(f, tile).camp = 1; }
 
-// Summed over the group's bases: how many people its water, fields and quarters serve.
+// Summed over the group's bases: how many people its water, fields and quarters serve. Quarters: also the tents on
+// their shelf (tents.js groupTentSleepers), pitched at their camps for the people there (as your camp's bags go up).
 function served(f, k, state = null) {
-  return f.bases.reduce((a, t) => a + n(f.works && f.works[t], k) * W.SERVES[k], 0) + (k === "water" && state ? groupFieldWells(state, f) * W.SERVES.water : 0); // fieldworks.js: their field wells
+  return f.bases.reduce((a, t) => a + n(f.works && f.works[t], k) * W.SERVES[k], 0) + (k === "water" && state ? groupFieldWells(state, f) * W.SERVES.water : 0) // fieldworks.js: their field wells
+    + (k === "beds" ? Math.min(groupTentSleepers(f), f.bases.reduce((a, t) => a + (isCamp(f, t) ? peopleAt(f, t) : 0), 0)) : 0);
 }
 // 0–1: water and fields for everyone.
 export function provisioned(state, f) {

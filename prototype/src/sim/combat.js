@@ -41,6 +41,7 @@ import { areaSource, kitSource, spend } from "./itemcond.js";
 import { foundFill } from "./gunrounds.js"; // a found gun's few rounds
 import { rollAreaGuns } from "./gunfinds.js"; // the arsenal of 2026-10-10 in a raid container (its own dice)
 import { rollAreaFind, rollAreaWood, rollAreaArrows, rollAreaGunmod, splitParts, rollAreaGrenades, rollAreaLaunchers, rollAreaReload } from "./loot.js";
+import { rollAreaTent } from "./tents.js"; // tent bags in a raid's containers (their own dice)
 import { buzzAim } from "./comforts.js";
 import { needsAim } from "./needs.js";
 import { tiredAim } from "./sleep.js"; // Tired or Exhausted from the watch
@@ -7135,6 +7136,9 @@ export function searchBox(state, b, u, box, open = false, quick = false) {
       // Arrows: a quiver in a cabin's locker, bolts on a shop shelf (loot.js AREA_ARROWS; its own dice too).
       const arrows = rollAreaArrows(state, b.tileId, R.areas[box.area].type, box.kind, `box${bid}`);
       if (arrows > 0) sup.arrows = (sup.arrows || 0) + arrows;
+      // A tent bag: a campsite's, a garage's shelf, barracks stores (tents.js AREA_TENTS; its own dice too).
+      const tent = rollAreaTent(state, b.tileId, R.areas[box.area].type, site, `box${bid}`);
+      if (tent) gear.push(tent);
       if (def.alarm && box.kind === "car" && drng.chance(def.alarm) && !u.quiet) { // quiet: Quiet Hands never sets one off
         R.heat = Math.min(100, R.heat + 12);
         say(b, "A car alarm goes off! Heat jumps.", "danger");

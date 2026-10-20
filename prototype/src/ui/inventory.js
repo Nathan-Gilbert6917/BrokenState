@@ -83,7 +83,7 @@ function icon(key) {
 export function itemTip(item, s = null) {
   const d = GEAR[item.key];
   const kgTxt = isSealed(item) ? `${Math.round(itemLoad(item) * 10) / 10} kg; ${boxEmptyKg(item)} kg empty` : `${Math.round(itemLoad(item) * 10) / 10} kg${item.contents && item.contents.some(Boolean) ? " with what is inside" : ""}`; // a sealed box: only its weight tells
-  const bits = [`${d.name} (${SLOT_NAMES[d.slot] || d.slot}${d.small ? ", fits a pocket" : d.twoHands ? ", both hands: carried only" : d.bulky ? ", cargo only" : ""}, ${kgTxt})`];
+  const bits = [`${d.name} (${SLOT_NAMES[d.slot] || d.slot}${d.small ? ", fits a pocket" : d.twoHands ? ", both hands: carried only" : d.arms ? ", in the arms or the cargo" : d.bulky ? ", cargo only" : ""}, ${kgTxt})`];
   if (d.slot === "weapon") bits.push(`power ${d.power}${d.req ? `, needs ${SKILL_NAMES[d.skill]} ${d.req} for full use` : ""}`);
   if (d.slot === "weapon" && item.mods) bits.push(modsText(item)); // sim/gunmods.js: what is fitted and the net effect
   if (isHelmet(item.key)) bits.push(`${item.mods ? `fitted: ${helmetLabel(item).replace(/^[^(]*\(|\)$/g, "")}; ` : ""}mounts: ${helmetSlots(item).map((m) => HELM_MOUNTS[m].toLowerCase()).join(", ") || "none (a full shell)"}`); // sim/helmets.js

@@ -4,6 +4,9 @@
 // leave"). The rules a camp lives by are in buildings.js (CAMP, isCamp: a tier-0 base with camp: true, so everything a
 // shelter is and a little less); this file is setting one up, striking it, neglect, the hub's place among your camps,
 // the panels' views, and the old staging camp's save migration.
+// - Tents (tents.js): the hour is half an hour when the team's tent bags sleep everyone (campPitchHours); every bag it
+//   brought is pitched (beds under cover, storage out of the weather); Strike camp packs them back into bags first, a
+//   camp removed any other way leaves them in its cache; bags in its armory go up daily while someone sleeps rough.
 // - Set up camp (team order, any land tile you could build on, any time): CAMP.setupHours of work, no materials. The
 //   camp is a base on that tile: the team's people live there (base healing and needs, beds round the fire), its
 //   vehicles are parked there, everything it carries (supplies and cargo) goes into the camp's stores and armory (the
@@ -47,6 +50,7 @@ import { keyWord, RAW } from "./water.js";
 import { formTeam, fleetPlan } from "./teamform.js";
 import { isBike, isCar, MAX_VEHICLES } from "./vehicles.js";
 import { itemLoad } from "./inventory.js";
+import { campPitchHours, hoursText, pitchArmoryBags, strikeTents, campTentsDaily, isTentBag, tentsText, tentBeds } from "./tents.js"; // tent bags: a quicker camp, beds under cover, struck back into bags
 
 export const STAGING = {
   // The step up of the camp that is your hub (buildings.js camp_up): hardcore's first and the exiles' (user numbers
@@ -130,7 +134,7 @@ export function campOption(state, p, tile = partyTile(p)) {
   const w = waterSource(state, tile);
   return {
     mission: "camp", label: SETUP_LABEL, disabled: campProblem(state, tile),
-    desc: `Stop and make camp here (${CAMP.setupHours} hour, no materials): a camp is the barest base, tarps, bedrolls and a fire. The team's people live there while it stands (the hurt heal twice as fast as at a base without a hospital, they eat and drink from the camp's stores), what the team carries goes into the stores and its vehicles park there. Manage it in its base window; ${STRIKE_LABEL} there packs everyone up again as a team. It can be built up with time and materials (Construction: into ${hub(state) ? "an outpost" : "a shelter, then a base"}). Water: ${w ? waterText(state, tile) : "no river or lake nearby, only what is carried in"}. Its fire, its people and vehicles parked there draw the dead and raiders.`,
+    desc: `Stop and make camp here (${hoursText(campPitchHours(state, p))}, no materials${campPitchHours(state, p) < CAMP.setupHours ? ": the team's tent bags go up quickly" : ""}): a camp is the barest base, tarps, bedrolls and a fire, and the tents the team carries (beds under cover, storage out of the weather). The team's people live there while it stands (the hurt heal twice as fast as at a base without a hospital, they eat and drink from the camp's stores), what the team carries goes into the stores and its vehicles park there. Manage it in its base window; ${STRIKE_LABEL} there packs everyone up again as a team. It can be built up with time and materials (Construction: into ${hub(state) ? "an outpost" : "a shelter, then a base"}). Water: ${w ? waterText(state, tile) : "no river or lake nearby, only what is carried in"}. Its fire, its people and vehicles parked there draw the dead and raiders.`,
   };
 }
 // Establish base (no base at all: hardcore's first home, the exiles): a camp with its step up queued.
@@ -154,8 +158,9 @@ export function pitchArrive(state, p, mission) {
   const label = mission === "outpost" ? "Build outpost" : mission === "establish" ? ESTABLISH_LABEL : SETUP_LABEL;
   if (why) { delete p.pitched; awaitOrders(state, p, `${label}: ${why}`, { failed: true }); return ""; }
   if (!p.pitched) {
-    startTask(state, p, { type: "pitch", hours: CAMP.setupHours, mission });
-    return `Setting up camp (${CAMP.setupHours} hour).`;
+    const hours = campPitchHours(state, p); // tents.js: the team's tent bags make it quicker (TENTS.PITCH_FULL when they sleep everyone)
+    startTask(state, p, { type: "pitch", hours, mission });
+    return `Setting up camp (${hoursText(hours)}${hours < CAMP.setupHours ? ", the tents go up quickly" : ""}).`;
   }
   delete p.pitched;
   const base = makeCamp(state, p, tile, { up: mission !== "camp" });
@@ -183,12 +188,13 @@ export function makeCamp(state, p, tile, { up = false } = {}) {
   if (up) askBaseName(state, base);
   const name = teamName(state, p);
   settleInto(state, p, base);
+  const tents = pitchArmoryBags(state, base); // tents.js: every tent bag the team brought goes up (beds under cover, storage out of the weather)
   for (const s of people) s.role = up ? "build" : "scavenge"; // a camp meant to grow: its first job is its own step up
   recomputeOwnership(state);
   if (p.owner === "player") state.campOpen = base.id; // main.js opens its base window (once)
   const w = waterSource(state, tile);
   const job = tierUpJob(base);
-  log(state, `${name} set up camp ${tileLabel(state, tile)}: ${base.name}, ${people.length} ${people.length === 1 ? "person" : "people"}.${job ? ` To build it up into ${base.type === "outpost" ? "an outpost" : "a shelter"}: ${gatherShort({ ...job, paid: {} })} brought in, then ${job.hours} work-hours by its builders (Construction).` : ""} Water: ${w ? waterText(state, tile) : "none nearby"}.`, "good");
+  log(state, `${name} set up camp ${tileLabel(state, tile)}: ${base.name}, ${people.length} ${people.length === 1 ? "person" : "people"}.${tents.length ? ` Up went ${tentsText(tents.map((t) => t.type))}: ${Math.min(people.length, tentBeds(base))} of ${people.length} sleep under cover.` : ""}${job ? ` To build it up into ${base.type === "outpost" ? "an outpost" : "a shelter"}: ${gatherShort({ ...job, paid: {} })} brought in, then ${job.hours} work-hours by its builders (Construction).` : ""} Water: ${w ? waterText(state, tile) : "none nearby"}.`, "good");
   return base;
 }
 // "Calder Woods Camp" (outpostName's place, a camp's word).
@@ -219,6 +225,7 @@ export function strikeCamp(state, base) {
   if (why) return { error: why };
   // What the step up has taken so far comes back into the stores (it is packed with the rest).
   for (const job of base.construction) for (const [k, q] of Object.entries(job.paid || {})) base.stock[k] = (base.stock[k] || 0) + q;
+  base.armory.push(...strikeTents(state, base)); // tents.js: the tents come down into their bags (packed first, below)
   base.construction = [];
   const people = atBase(state, base.id);
   let party = null;
@@ -247,7 +254,7 @@ export function strikeCamp(state, base) {
       room -= q * w;
     }
     const items = [];
-    for (const it of [...base.armory].sort((a, b) => ((GEAR[b.key] && GEAR[b.key].value) || 0) - ((GEAR[a.key] && GEAR[a.key].value) || 0))) {
+    for (const it of [...base.armory].sort((a, b) => (isTentBag(b) ? 1 : 0) - (isTentBag(a) ? 1 : 0) || ((GEAR[b.key] && GEAR[b.key].value) || 0) - ((GEAR[a.key] && GEAR[a.key].value) || 0))) { // the tent bags first
       const kg = itemLoad(it);
       if (kg > room + 1e-9) continue;
       items.push(it);
@@ -269,6 +276,7 @@ export function strikeCamp(state, base) {
 export function removeCamp(state, base, why) {
   const i = state.bases.indexOf(base);
   if (i < 0) return "";
+  base.armory.push(...strikeTents(state, base)); // tents.js: a tent left pitched stays at the camp site: in the cache, as its bag
   const items = [];
   for (const [k, v] of Object.entries(base.stock)) {
     const q = n0(v);
@@ -333,7 +341,7 @@ export function campsHour(state) {
     if (!isCamp(base)) continue;
     if (campPresent(state, base)) base.lastPresent = state.hour;
     else if (base.lastPresent == null) base.lastPresent = state.hour;
-    if (state.hour % 24 === 0) campDaily(state, base);
+    if (state.hour % 24 === 0) { campTentsDaily(state, base); campDaily(state, base); } // tents.js: bags go up while someone sleeps rough; rough sleepers' mood
   }
 }
 // A camp left alone: looted after ABANDON days, gone after GONE days empty, bare and unworked.

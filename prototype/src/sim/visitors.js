@@ -110,6 +110,7 @@ import { baseDefense, strength as groupStrength, resolveRaidOnFaction, changeGoo
 import { raidTier } from "./defences.js";
 import { lookoutsSpot, surpriseAt, watchSawText, SURPRISE } from "./watch.js"; // the lookouts' warning; an unwatched night
 import { raidSiegeKit, kitText, GRENADES, bandSetOutKit } from "./siege.js";
+import { bandTentKit, bandTentCamp } from "./tents.js"; // tent bags: what raider bands carry and pitch (call-time only)
 import { raidDamage, raidReportCard } from "./breakdowns.js";
 import { fightOdds, spotFirstChance, payPlan, COOLDOWN_HOURS } from "./conflicts.js";
 import { startCombat, registerCombatHandler } from "./combat.js";
@@ -323,6 +324,7 @@ function makeVisitor(state, kind, tile, opts = {}) {
     const kit = bandSetOutKit(state, v.size, v.serial);
     for (let i = 0; kit && i < kit.ladders; i++) v.wares.push(lootItem("ladder", kitSource("raiders"), [state.seed, "bandkit", v.serial, "l", i]));
     if (kit && kit.ram) v.wares.push(lootItem("ram", kitSource("raiders"), [state.seed, "bandkit", v.serial, "r"]));
+    v.wares.push(...bandTentKit(state, "raiders", `r${v.serial}`, v.size)); // tents.js: the tent bags they carry (BAND_TENTS.raiders; their own dice)
   } else if (kind === "merchants") {
     const M = O.merchants;
     const fam = rng.pick(MERCHANT_NAMES.filter((n) => !taken.has(`the ${n} caravan`)).concat(MERCHANT_NAMES));
@@ -532,6 +534,7 @@ export function raiderDay(state, v) {
     leaveMap(state, v, "broken");
     return true;
   };
+  bandTentCamp(v, v.size, v.phase !== "travel"); // tents.js: their bags pitched where they stop (their stores' food keeps: bandFeeds)
   if (bandFeeds(state, v, RAIDER_LIFE(), rng, { camp: v.phase !== "travel", lose })) return;
   bandCare(state, v, lose);
 }

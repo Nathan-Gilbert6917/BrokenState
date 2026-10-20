@@ -156,6 +156,7 @@ import { roleOf, isManaged, taskLabel, taskWhy, priorityCount } from "../sim/wor
 import { nameModalUp, nameBaseModal, renameButton } from "./basename.js"; // naming and renaming bases
 import { firstHubCard, fromTeamRow, stagingTileCard, fireButton, stageSteps } from "./hardcore.js";
 import { stagingView, needText, ESTABLISH_LABEL, STAGING, shelterView, STRIKE_LABEL } from "../sim/staging.js";
+import { campSleep, tentsText, TENT_TYPES, TENTS } from "../sim/tents.js"; // the camp's tents: beds under cover, storage out of the weather
 import { gaugeRows, treatsRow, needsEffectText, foodOnThem, rationRow } from "./needs.js";
 import { packFood, packWater } from "../sim/eating.js"; // the planner's per-person ration line
 import { needsBar, needsBase } from "./needsbar.js"; // the top bar's Needs button and its drop-down of every supply
@@ -1577,6 +1578,20 @@ const CAMP_TABS = ["camp", "overview", "food", "construction", "basemap", "stora
 // and Strike camp. Everything acts through the base's own systems: teams are formed and edited here as at any base
 // (ui/teamform.js: people, vehicles, gear, supplies and cargo by weight and seats), stores and items are the base's
 // stock and armory (Armory tab, the team inventory), vehicles and their cargo the Vehicles tab.
+// The camp's tents (sim/tents.js): what is pitched, who sleeps under cover and who rough, the storage out of the
+// weather, the bags still packed in the armory (they go up while someone sleeps rough).
+function campTentsCard(state, b) {
+  const S = campSleep(state, b);
+  const types = S.tents.map((t) => t.type);
+  const rough = S.rough.length;
+  const roughTip = `Whoever has no bed under cover (a tent or a bunk) sleeps rough round the fire: −${TENTS.ROUGH_MOOD} mood a day (twice that on a wet day). The bedrolls still count as room: no crowding for it.`;
+  return `<h3>Tents (${S.tents.length})</h3>
+    <div class="card small"${tip("Tent bags the team brings go up when the camp is set up (quicker with bags for everyone: half an hour). Their sleepers are beds under cover; their storage keeps goods and food out of the weather. Strike camp packs them back into their bags first.")}>
+      ${S.tents.length ? `<div>${esc(tentsText(types).replace(/^./, (c) => c.toUpperCase()))}: sleep ${S.tents.reduce((a, t) => a + (TENT_TYPES[t.type] ? TENT_TYPES[t.type].sleepers : 0), 0)}, ${S.storeKg} kg out of the weather.</div>` : `<div class="muted">No tents pitched: tarps and bedrolls round the fire.</div>`}
+      <div class="${rough ? "warn" : "good"}"${tip(roughTip)}>${S.people ? `${S.covered} of ${S.people} sleep under cover${rough ? `; ${rough} sleep${rough === 1 ? "s" : ""} rough (${S.rough.map((s) => first(s)).join(", ")})` : ""}.` : "Nobody sleeps here now."}</div>
+      ${S.packed.length ? `<div class="muted">Packed in the armory: ${esc(tentsText(S.packed.map((it) => it.key)))} (they go up while someone sleeps rough).</div>` : ""}
+    </div>`;
+}
 function campTab(state, b) {
   const v = shelterView(state, b);
   const people = v.people || [];
@@ -1605,6 +1620,7 @@ function campTab(state, b) {
       <div class="card small">${people.length ? people.map((s) => `<div class="spread"><a class="link" data-action="survivor" data-id="${s.id}">${first(s)}</a><span class="muted">${esc(ROLES[s.role] ? ROLES[s.role].name : s.role || "")} · health ${n0(s.health)}</span></div>`).join("") : `<span class="muted">Nobody lives at the camp now.</span>`}
         <div class="row" style="margin-top:0.4rem">${formTeamButton(state, b)}${infoTip("Form a team: pick people, vehicles, gear and supplies from the camp's stores; they stand outside as a team (split as many teams as you like). A team at the camp is edited here (people in or out, vehicles, loading and dropping off by weight) or moves back in with Enter.")}</div>
       </div>
+      ${campTentsCard(state, b)}
       ${cropsCard(state, b, { farmTab: false })}
       <h3>Teams at the camp (${teams.length})</h3>
       <div class="card small">${teams.length ? teams.map((p) => `<div class="spread"><a class="link" data-action="xp-open" data-id="${p.id}">${esc(teamName(state, p))}</a><span class="row">${editTeamButton(state, p)}<button class="mini" data-action="xp-order" data-id="${p.id}" data-type="mission" data-mission="enter"${tip(`Move this team into ${b.name}: its people live at the camp, what it carries goes into the stores and armory, its vehicles park here`)}>Enter</button></span></div>`).join("") : `<span class="muted">No team stands at the camp.</span>`}</div>

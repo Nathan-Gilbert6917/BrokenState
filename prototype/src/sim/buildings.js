@@ -23,6 +23,7 @@ import { fieldBuildHour, fieldAwayEnd } from "./fieldworks.js"; // field works: 
 import { MINES } from "./mines.js"; // a minefield's mines (call-time only)
 import { baseCarts, CART_JOB } from "./carts.js"; // a cart at the base: a builder hauls the materials faster (call-time only)
 import { woodNeed } from "./woodcutting.js"; // the Ring wall leaves the firewood for heating (call-time only)
+import { tentBeds } from "./tents.js"; // the tents pitched at a base: their sleepers are beds under cover (call-time only)
 import { carryPlacement, fittingRoom, fittingsIn, wallInfo, ringPlan, ensureRing } from "./basemap.js"; // the base map (call-time only): a finished job's building keeps the spot it was placed on; a general building with room for a fitting; the fittings inside one; the wall pieces' ring
 
 export const RECIPES = {
@@ -748,7 +749,9 @@ export const underAttack = (state, base) => !!base.alert ||
 // sleeps nobody until it is repaired) and each pair of bunk beds built inside a general building (base building 2026-10-19).
 export const BEDS = { bunkhouse: 6, barracks: 12, cots: 2, bunks: 2 };
 // Beds for the adults: less the beds children take (family.js updateKidBeds: two to a bed; babies sleep with a parent).
-export const baseBeds = (base) => (isCamp(base) ? CAMP.beds : isShelter(base) ? SHELTER.beds : base.type === "hub" ? 4 : 2) + Object.entries(BEDS).reduce((a, [t, n]) => a + count(base, t) * n, 0) - (base.kidBeds || 0);
+// The tents pitched there (tents.js tentBeds: base.tents, a camp's bags; the seam pitchTentAtBase) sleep their sleepers
+// on top: at a camp the bedrolls round the fire (CAMP.beds) are room, the tents and bunks beds under cover.
+export const baseBeds = (base) => (isCamp(base) ? CAMP.beds : isShelter(base) ? SHELTER.beds : base.type === "hub" ? 4 : 2) + Object.entries(BEDS).reduce((a, [t, n]) => a + count(base, t) * n, 0) - (base.kidBeds || 0) + tentBeds(base);
 // Beds the construction queue adds when it is done: new bunkhouses and barracks, and a bunkhouse expanded into a
 // barracks (the difference). The autopilot counts them as beds to come (autopilot.js buildWishes, roomFor).
 export const queuedBeds = (base) => base.construction.reduce((a, c) => a + (!BEDS[c.type] ? 0 : c.target ? BEDS[c.type] - BEDS[BUILDINGS[c.type].from] : BEDS[c.type]), 0);
