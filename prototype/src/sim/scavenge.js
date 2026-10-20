@@ -45,6 +45,7 @@ import { foundFill } from "./gunrounds.js";
 import { rollSiteGuns } from "./gunfinds.js"; // the arsenal of 2026-10-10 (its own dice)
 import { swapGun } from "./gundist.js"; // the gun distribution: which gun a site's gear list yields
 import { rollFind, rollHuntFind, rollLightFind, rollCartFind, rollSiteWood, rollBuildmat, rollSiteArrows, rollGunmodFind, rollAnyModFind, sortParts, rollSiteGrenades, rollSiteLaunchers, rollSiteReload } from "./loot.js";
+import { rollBedFind } from "./beds.js"; // beds as furniture: a loose cot or bed found (its own dice)
 import { searchHeatMult, noteGunfire } from "./fieldheat.js";
 import { lockedSearchHour } from "./locks.js";
 import { truckSearchHour, convoyHeat0, convoyThreat } from "./miltrucks.js"; // an Army convoy's guard: Heat from the start, a harder fight
@@ -354,6 +355,8 @@ export function searchHour(state) {
   if (lamp) { e.found.gear.push(lamp); finds.push(lamp.name); }
   const cart = rollCartFind(state, e.tile, (perk("treasure") ? 2 : 1) * ap.loot, `h${e.hours}`); // a wheelbarrow, a hand cart (loot.js CART_FINDS; its own dice)
   if (cart) { e.found.gear.push(cart); finds.push(cart.name); }
+  const bedFind = rollBedFind(state, e.tile, kind, (perk("treasure") ? 2 : 1) * ap.loot, `h${e.hours}`); // a loose cot or bed where people slept (beds.js, data-beds.js BED_FINDS; its own dice)
+  if (bedFind) { e.found.gear.push(bedFind); finds.push(bedFind.name); }
   const part = rollAnyModFind(state, e.tile, (perk("treasure") ? 2 : 1) * ap.loot, `h${e.hours}`); // a sight, a suppressor (loot.js GUNMOD_FINDS, then SITE_MODS; their own dice)
   if (part) { e.found.gear.push(part); finds.push(part.name); }
   const rel = rollSiteReload(state, e.tile, (perk("treasure") ? 2 : 1) * ap.loot, `h${e.hours}`); // a bag of brass, a can of powder, a box of primers (loot.js SITE_RELOAD; its own dice)

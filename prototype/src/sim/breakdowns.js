@@ -80,6 +80,7 @@ import { vehiclesAtBase, shelteredAt, frostWear } from "./vehicles.js";
 import { isManaged, prio } from "./work.js";
 import { prisonLabour } from "./prisoners.js"; // prisoners-tab: prisoners set to Clean and mend (breakdownsDaily upkeep)
 import { cfgOf } from "./worldcfg.js"; // the run's dials: Failures
+import { BED_FIXTURES } from "./data-beds.js"; // beds as furniture: their raid wear and repair
 
 export const WELL_WATER = 6; // the hub pump's share (hubevents.js WELL_DOWN.water)
 export const SCRAP_PER_PART = 4; // a repair short of scrap can use a part instead of this much
@@ -172,6 +173,7 @@ export const FIXTURES = {
   guard_towers:{ raidOnly: true, outer: true, repair: { hours: 9, cost: { scrap: 10, parts: 1 }, min: 1 }, rig: { hours: 3, cost: { scrap: 4 }, min: 0 }, what: "a tower down: 8% less of a horde held back" },
   minefield:   { raidOnly: true, outer: true, repair: { hours: 6, cost: { scrap: 7, parts: 1 }, min: 1 }, rig: { hours: 2, cost: { scrap: 3 }, min: 0 }, what: "the mines dug up or set off: none left for the next attack" },
 };
+Object.assign(FIXTURES, BED_FIXTURES); // beds as furniture (data-beds.js): battered in a raid, a broken one sleeps nobody until it is repaired
 // The wall pieces (buildings.js piece, the user's request 2026-10-19): each wears and breaks on its own, a little with
 // age and every horde attack (a share of the old single wall's, by its length), and the raids' outer line. A broken
 // wall piece or gate is a gap in the ring: no wall strength by the numbers until it is repaired (basemap.js wallInfo).

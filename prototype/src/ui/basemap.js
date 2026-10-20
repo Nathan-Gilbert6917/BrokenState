@@ -28,6 +28,7 @@ const HOSTS = "a hut, cabin, lodge, hall or barn";
 const MENU_TIP = {
   "General buildings": `Empty shells of five sizes (the hut to the barn): once one stands, fittings and benches go on its floor. No plot: the map is the limit. Two standing against each other can share a doorway.`,
   Fittings: `Built only on the floor inside ${HOSTS}: bunk beds (+2 beds), storage shelves and lockers (containers: the Storage tab), a wood stove (a cook fire indoors).`,
+  Furniture: `Beds crafted at the bench (Crafting) and set from the stores on the floor inside ${HOSTS}: a cot (1 bed, −1 mood a day for its sleeper), a bed (1), a bunk bed (2, −0.5 each), a large bed 2 × 2 (2, +1 each). No builders: a click sets it. Demolish picks it up again.`,
   Buildings: "The buildings with a roof of their own (on a building plot) and the yard's roofed stores.",
   "Yard things": "The small things in the yard (on a utility plot): benches, barrels, the well, crates… A bench, a crate or a locker may stand inside a general building too.",
   Defences: "Barricades, spike pits, the trench, sandbags, floodlights, the watchtower, and the wall's pieces (walls 1×1, 1×2, 1×4 of the wall's material, the 1×4 gate, wall stands): anywhere on the map, inside the yard or out in front of the wall; a wall that would close a ring with no gate in it is refused. (The wire, the guard towers and the minefield lay themselves round the wall.)",
@@ -118,7 +119,7 @@ function buildHtml(state, base, L) {
       const short = !m.ok && /^Needs \d/.test(m.why); // short of materials: the red chips say it
       return `<div class="bmrow${on ? " on" : ""}${m.ok ? "" : " off"}"${tip(`${m.name}: ${m.w} × ${m.h} cells, ${m.hours} work-hours. ${m.desc}${m.ok ? "" : ` ${m.why}.`}`)}>
         <div class="spread"><span><b>${esc(m.name)}</b> <span class="small muted">${m.w} × ${m.h}</span></span><button class="mini${on ? " active" : m.ok ? " primary" : ""}" data-action="cb-deploy" data-v="pickType" data-bt="${on ? "" : m.type}" ${m.ok ? "" : "disabled"}${tip(m.ok ? (on ? "Picked: click where it goes on the map (click here again to put it down)" : "Pick it: its outline follows the mouse; click where it goes") : m.why)}>${on ? "Picked" : "Build"}</button></div>
-        <div class="bmfoot">${costChips(m.cost, base.stock)}${chip({ icon: "⏱", name: `${m.hours}h`, t: `${m.hours} work-hours for the builders` })}</div>
+        <div class="bmfoot">${m.furniture ? chip({ icon: "🛏", name: `${m.have} in the stores`, tone: m.have ? "ok" : "bad", t: "Furniture is crafted at the bench (Crafting) or found, and set from the stores: no cost and no builders" }) : `${costChips(m.cost, base.stock)}${chip({ icon: "⏱", name: `${m.hours}h`, t: `${m.hours} work-hours for the builders` })}`}</div>
         ${m.ok || short || !m.why ? "" : `<div class="small bmwhy">${esc(m.why)}</div>`}</div>`;
     }).join("");
     html += fold(`bm:${name}`, `<b>${esc(name)}</b> ${badge(`${ready} ready`, ready ? "good" : "muted", `${ready} of ${list.length} can be built now`)}`, body, { cls: "pf-card bmfold", open: name === "General buildings" || list.some((m) => m.type === L.pickType), tipText: MENU_TIP[name] || "" });
@@ -154,7 +155,8 @@ function selectionCard(state, base, L, lay) {
   if (e.at) btns.push(`<button data-action="cb-deploy" data-v="lift" data-k="${it.key}"${tip("Lift it off the map and click where it goes (R turns it); or click it on the map again")}>Move</button>`);
   if (e.at && !e.auto) btns.push(`<button data-action="cb-deploy" data-v="unplace" data-k="${it.key}"${tip("Let the game place it again")}>Auto</button>`);
   if (!e.at) btns.push(`<button data-action="cb-deploy" data-v="pick" data-k="${it.key}"${tip("Pick it and click where it goes")}>Place</button>`);
-  if (isBld) btns.push(`<button class="danger" data-action="cb-deploy" data-v="demolish" data-k="${it.key}"${tip(`Pull it down (asks first): about half its scrap and parts come back${refundText(rec)}${it.general ? "; what stands inside comes down with it" : ""}`)}>Demolish</button>`);
+  if (isBld && BUILDINGS[it.type] && BUILDINGS[it.type].furniture) btns.push(`<button data-action="cb-deploy" data-v="demolish" data-k="${it.key}"${tip("Pick it up: back into the stores, whole (sim/beds.js)")}>Pick up</button>`);
+  else if (isBld) btns.push(`<button class="danger" data-action="cb-deploy" data-v="demolish" data-k="${it.key}"${tip(`Pull it down (asks first): about half its scrap and parts come back${refundText(rec)}${it.general ? "; what stands inside comes down with it (furniture is carried out into the stores)" : ""}`)}>Demolish</button>`);
   if (isJob) btns.push(`<button class="danger" data-action="cb-deploy" data-v="demolish" data-k="${it.key}"${tip("Cancel the job: half the materials come back")}>Cancel the job</button>`);
   btns.push(`<button data-action="cb-deploy" data-v="select" data-k="" data-tip="Deselect (Esc)">✕</button>`);
   return `<div class="card small bmsel" style="margin-top:0.4rem"><div class="spread"><b>${esc(it.label)}</b><span class="muted">${sizeText(it)}${it.built ? "" : " · going up"}</span></div>

@@ -23,6 +23,8 @@ import { fieldBuildHour, fieldAwayEnd } from "./fieldworks.js"; // field works: 
 import { MINES } from "./mines.js"; // a minefield's mines (call-time only)
 import { baseCarts, CART_JOB } from "./carts.js"; // a cart at the base: a builder hauls the materials faster (call-time only)
 import { woodNeed } from "./woodcutting.js"; // the Ring wall leaves the firewood for heating (call-time only)
+import { BED_BUILDINGS } from "./data-beds.js"; // beds as furniture: the placed cot, bed, bunk bed and large bed (beds.js)
+import { furnitureBeds, furnitureProblem, canSetFurniture, setFurniture, pickUpFurniture, RETIRED_WHY, furnitureText } from "./beds.js"; // beds as furniture (call-time only)
 import { carryPlacement, fittingRoom, fittingsIn, wallInfo, ringPlan, ensureRing } from "./basemap.js"; // the base map (call-time only): a finished job's building keeps the spot it was placed on; a general building with room for a fitting; the fittings inside one; the wall pieces' ring
 
 export const RECIPES = {
@@ -90,7 +92,9 @@ export const BUILDINGS = {
   machine_shop: { name: "Machine shop",   plot: "building", cost: { scrap: 25, parts: 3 },  hours: 48, max: 2, station: "parts", req: { mechanics: 4 }, desc: "Workshop station. One operator machines spare parts. Needs a Mechanics 4+ survivor here to build." },
   // Makeshift cots (user request 2026-10-12, "makeshift cots that can be built for shelter to increase beds by 2"):
   // camp beds of scrap and canvas squeezed in under the shelter's roof: no plot, +2 beds each (BEDS), up to 2.
-  cots:         { name: "Makeshift cots", cost: { scrap: 6 },            hours: 6,  max: 2, shelterOnly: true, desc: "Camp beds of scrap frames and canvas squeezed in under the shelter's roof: +2 beds each, no plot. Shelters only (up to 2); they stay when the shelter becomes a base." },
+  // Superseded (beds as furniture, 2026-10-20): the Cot is crafted and set inside a building (beds.js); a save's built
+  // cots are each two Cots set at that base (beds.js migrateCots). retired: never built again (canBuild, the lists).
+  cots:         { name: "Makeshift cots", cost: { scrap: 6 },            hours: 6,  max: 2, shelterOnly: true, retired: "cot", desc: "Camp beds of scrap frames and canvas squeezed in under the shelter's roof: +2 beds each, no plot. Shelters only (up to 2); they stay when the shelter becomes a base." },
   bunkhouse:    { name: "Bunkhouse",      plot: "building", cost: { scrap: 20 },            hours: 30, max: 6, desc: "+6 beds. Overcrowding lowers mood every day." },
   // Housing (BEDS, baseBeds): twice a bunkhouse's beds on one building plot, for a base whose plots run short. from: a
   // standing bunkhouse can be expanded into one where it stands (BARRACKS_UP: no new plot; its jobs count against max).
@@ -308,6 +312,7 @@ export const BUILDINGS = {
   outpost_up:   { name: "Establish the outpost", cost: { scrap: 20, buildmat: 2 }, hours: 20, max: 1, shelterOnly: true, outpostOnly: true, tierUp: true, gather: true,
                   desc: "Turn the outpost camp into a real outpost: a shack with a roof, a dug spring (3 water a day), 6 building plots and 6 utility plots (walls are built on the Defenses tab). The materials are taken from the camp's stores as they come in (bring them with a team or a supply run); the builders here do the work, never more of it than the materials delivered allow." },
 };
+Object.assign(BUILDINGS, BED_BUILDINGS); // beds as furniture (data-beds.js, beds.js): set from the stores inside a general building, never queued
 
 // ---------- construction plots ----------
 // Every building stands on a plot, by the size of the base: building plots for anything with a roof (bunkhouses,
@@ -481,6 +486,7 @@ export function demolish(state, base, id) {
   const chk = canDemolish(state, base, id);
   if (!chk.ok) return chk.reason;
   const b = base.buildings.find((x) => x.id === id);
+  if (BUILDINGS[b.type].furniture) return pickUpFurniture(state, base, b); // beds.js: back into the stores whole
   const back = demolishRefund(b);
   // A general building (base building 2026-10-19) comes down with the fittings standing inside it, placed there by
   // hand (host) or by the game (basemap.js fittingsIn): their half back too, the ones queued for it cancelled and
@@ -492,6 +498,7 @@ export function demolish(state, base, id) {
     for (const f of fittingsIn(state, base, id)) { if (f.key.startsWith("c:")) cancelBuild(state, base, f.rec.id); else down.add(f.rec); }
     for (const x of base.buildings) if (x.host === id && BUILDINGS[x.type] && BUILDINGS[x.type].fit) down.add(x);
     for (const f of down) {
+      if (BUILDINGS[f.type].furniture) { pickUpFurniture(state, base, f); inside.push(`${BUILDINGS[f.type].name.toLowerCase()} (carried out into the stores)`); continue; } // beds.js: furniture is carried out, whole
       for (const [k, v] of Object.entries(demolishRefund(f))) back[k] = (back[k] || 0) + v;
       base.buildings.splice(base.buildings.indexOf(f), 1);
       inside.push(BUILDINGS[f.type].name.toLowerCase());
@@ -748,7 +755,10 @@ export const underAttack = (state, base) => !!base.alert ||
 // sleeps nobody until it is repaired) and each pair of bunk beds built inside a general building (base building 2026-10-19).
 export const BEDS = { bunkhouse: 6, barracks: 12, cots: 2, bunks: 2 };
 // Beds for the adults: less the beds children take (family.js updateKidBeds: two to a bed; babies sleep with a parent).
-export const baseBeds = (base) => (isCamp(base) ? CAMP.beds : isShelter(base) ? SHELTER.beds : base.type === "hub" ? 4 : 2) + Object.entries(BEDS).reduce((a, [t, n]) => a + count(base, t) * n, 0) - (base.kidBeds || 0);
+// Plus the beds of the furniture set inside the base's buildings (beds.js furnitureBeds: a cot 1, a bed 1, a bunk bed 2,
+// a large bed 2). plainBeds: the rest (before the children's), which sleep as a plain bed (beds.js bedSlots).
+export const plainBeds = (base) => (isCamp(base) ? CAMP.beds : isShelter(base) ? SHELTER.beds : base.type === "hub" ? 4 : 2) + Object.entries(BEDS).reduce((a, [t, n]) => a + count(base, t) * n, 0);
+export const baseBeds = (base) => plainBeds(base) + furnitureBeds(base) - (base.kidBeds || 0);
 // Beds the construction queue adds when it is done: new bunkhouses and barracks, and a bunkhouse expanded into a
 // barracks (the difference). The autopilot counts them as beds to come (autopilot.js buildWishes, roomFor).
 export const queuedBeds = (base) => base.construction.reduce((a, c) => a + (!BEDS[c.type] ? 0 : c.target ? BEDS[c.type] - BEDS[BUILDINGS[c.type].from] : BEDS[c.type]), 0);
@@ -940,6 +950,7 @@ export function runStations(state, base) {
 export function placeProblem(base, type) {
   const def = BUILDINGS[type];
   if (!def) return "Unknown building";
+  if (def.furniture) return furnitureProblem(base, type); // beds.js: inside a general building with room, at any base
   if (def.outpostOnly && base.type !== "outpost") return "Outposts only";
   if (def.hubOnly && base.type !== "hub") return "The main base only (an outpost camp is established instead)";
   // A shelter (tier 0) builds only a few survival buildings, and the step up into a base; a base never the step.
@@ -1028,6 +1039,8 @@ export function canBuildPiece(state, base, type, opts = {}) {
 
 export function canBuild(state, base, type, opts = {}) {
   const def = BUILDINGS[type];
+  if (def && def.furniture) return canSetFurniture(state, base, type); // beds.js: one in the stores and a building with room
+  if (def && def.retired) return { ok: false, locked: true, reason: RETIRED_WHY(def) }; // superseded (the makeshift cots: craft a Cot)
   if (def && def.wall) return canBuildWall(state, base, opts);
   if (def && def.piece) return canBuildPiece(state, base, type, opts);
   const queued = base.construction.filter((c) => c.type === type && (!c.target || def.from)).length; // a barrel's upgrade is not a new one; a bunkhouse expanded into a barracks is one more barracks
@@ -1077,6 +1090,7 @@ export function queueBuild(state, base, type, opts = {}) {
   /** @type {any} */
   const chk = canBuild(state, base, type, opts);
   if (!chk.ok) return chk.reason;
+  if (BUILDINGS[type].furniture) return setFurniture(state, base, type).msg; // beds.js: set from the stores (the game places it), no job
   if (BUILDINGS[type].wall) { // the Ring wall: the pieces to close the ring (job.pieces), or the pieces to raise (job.ids); its materials gathered as they come in
     base.construction.push({ id: newId(), type: "walls", kind: chk.kind, mat: chk.tier, ...(chk.kind === "ring" ? { pieces: chk.pieces } : { ids: chk.ids }), cost: { ...chk.cost }, paid: {}, progress: 0, hours: Math.max(1, chk.hours) });
     return `${chk.kind === "ring" ? `Ring wall queued at ${base.name}: ${chk.pieces.length} ${chk.def.mat.toLowerCase()} pieces, laid where the ring runs` : `${base.name}: ${chk.ids.length} wall pieces to be raised to ${chk.def.mat.toLowerCase()}`}. The materials are taken from the stores as they come in.`;
@@ -1242,7 +1256,7 @@ export function buildingSummary(state, base) {
   const people = atBase(state, base.id).length;
   return [
     ["Walls", wallSummary(base)],
-    ["Beds", `${baseBeds(base)} for ${people} people${people > baseBeds(base) ? " (overcrowded)" : ""}`],
+    ["Beds", `${baseBeds(base)} for ${people} people${people > baseBeds(base) ? " (overcrowded)" : ""}${furnitureText(base) ? `; furniture: ${furnitureText(base)}` : ""}`],
     ["Crop plots", `${farmSlots(base)}${count(base, "greenhouse") ? ` + ${count(base, "greenhouse") * 2} under glass` : ""}`],
     ["Workshop stations", `${stations(base).length}`],
     ["Crafting", benchOf(base) ? `${BUILDINGS[benchType(base)].name}: crafters ${Math.round((benchOf(base).rate - 1) * 100)}% faster, +${Math.round(benchOf(base).quality * 100)}% condition${benchOf(base).workshop ? ", workshop recipes" : ""}` : "No crafting bench: only the simple (Field) recipes"],

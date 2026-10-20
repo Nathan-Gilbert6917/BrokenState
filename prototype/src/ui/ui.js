@@ -2066,7 +2066,7 @@ function baseConstruction(state, b, ui) {
     </div>`;
   };
   const up = tierUpType(b);
-  const types = Object.entries(BUILDINGS).filter(([k, d]) => (!d.shelterOnly || isShelter(b)) && (!d.tierUp || k === up)).sort(([ka], [kb]) => (isShelter(b) ? (kb === up) - (ka === up) : 0));
+  const types = Object.entries(BUILDINGS).filter(([k, d]) => (!d.shelterOnly || isShelter(b)) && (!d.tierUp || k === up) && !d.furniture && !d.retired) // beds as furniture: set from the base map (sim/beds.js); the retired makeshift cots.sort(([ka], [kb]) => (isShelter(b) ? (kb === up) - (ka === up) : 0));
   // The two lists (the user's request 2026-10-19): Buildings, and Defenses (BUILDINGS tab "defenses": the wall's tiers,
   // wire, trenches, pits, sandbags, towers…), grouped by the size of base each opens at.
   const cx = ui.baseView.cx === "defenses" ? "defenses" : "buildings";

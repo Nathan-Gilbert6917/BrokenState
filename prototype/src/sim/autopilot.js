@@ -54,6 +54,7 @@ import { govCookBills } from "./cooking.js"; // wave 2 cooking: the governor's a
 import { canUpgradeKitchen, queueCannerUpgrade, canUpgradeGenerator, queueGenUpgrade, stationOperator, hasWall } from "./buildings.js"; // machines-2: the pressure canner; gen-tiers: a generator upgraded
 import { nextWallTier, wallTier } from "./buildings.js"; // WALL_TIERS: one wall, built up a tier at a time
 import { fittingRoom } from "./basemap.js"; // base building: a general building with floor for a fitting (bedWishes, storageWish, stoveWish)
+import { governBeds } from "./beds.js"; // beds as furniture: set from the stores, crafted when beds are short (call-time only)
 import { autoStore } from "./containers.js"; // the stores tidied daily (tidyStores)
 import { BUILDINGS, RECIPES, canDemolish, demolish, canBuild, queueBuild, count, countAll, stations, baseBeds, baseWalls, farmSlots, assignStations, isShelter, plotsFree, plotCap, BEDS, queuedBeds, BARRACKS_UP, canExpandBunkhouse, queueBunkhouseExpand, benchTier, tierUpType, tierUpJob, gatherRows, gatherStalled, isCamp, CAMP as CAMP_TIER, WATER_BARREL, canUpgradeBarrel, queueBarrelUpgrade, barrelTier, barrels, barrelName } from "./buildings.js";
 import { fireWanted } from "./fieldheat.js";
@@ -362,6 +363,7 @@ export function governBase(state, base, areas = ALL_AREAS) {
   if (areas.medical && hourOfDay(state) === TREAT_HOUR) for (const line of autoTreats(state, base)) say(state, line); // comforts.js: chocolate, coffee, smokes for the glum
   if (areas.building && hourOfDay(state) === WATER_WAIT.hour) waterSalvage(state, base);
   if (areas.building && hourOfDay(state) === PLAN_HOUR) tidyStores(state, base); // containers.js: the goods into the containers, before the day's builds
+  if (areas.building && hourOfDay(state) === PLAN_HOUR) for (const line of governBeds(state, base)) say(state, line); // beds.js: furniture set from the stores, a bunk bed or a cot crafted when beds are short
   if (areas.building) planBuilds(state, base, areas);
   if (areas.building && hourOfDay(state) === PLAN_HOUR + 2) { const msg = cookFireDown(state, base); if (msg) say(state, msg); } // kitchen.js: a lit kitchen does the cook fire's job
   if (areas.production && hourOfDay(state) === 23) stoveSave(state, base); // kitchen.js: the winter's firewood before the stove

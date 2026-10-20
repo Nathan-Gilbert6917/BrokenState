@@ -120,17 +120,16 @@ section("Plots and crop plots by stage (user numbers 2026-10-12)");
   for (const [t, k] of ring) if (k === "suburb") t.terrain = "forest";
   check(["bunkhouse", "cellar", "infirmary", "huntcabin"].every((k) => canBuild(st, h, k).ok), "the shelter's building plot takes a bunkhouse, root cellar, infirmary or hunting cabin");
   for (const [t, k] of ring) t.terrain = k;
-  // Makeshift cots (user request 2026-10-12): +2 beds each at a shelter, no plot, up to 2.
-  const beds0 = baseBeds(h), u0 = plotsUsed(h, "utility"), b0 = plotsUsed(h, "building");
-  check(canBuild(st, h, "cots").ok && !BUILDINGS.cots.plot, "a shelter builds makeshift cots (no plot)");
-  queueBuild(st, h, "cots");
-  check(queuedBeds(h) === 2 && plotsUsed(h, "utility") === u0 && plotsUsed(h, "building") === b0, "queued: 2 beds to come, no plot taken");
-  addBuilding(h, "cots"); h.construction = [];
-  check(baseBeds(h) === beds0 + 2, `built: +2 beds (${beds0} → ${baseBeds(h)})`);
+  // Makeshift cots (user request 2026-10-12) are superseded by the Cot (beds.js, 2026-10-20): never built again; one
+  // built in an old save sleeps 2 until the save is loaded (beds.js migrateCots sets two Cots in its place: bedstest.js).
+  const beds0 = baseBeds(h);
+  const cc = canBuild(st, h, "cots");
+  check(!cc.ok && cc.locked && /Superseded/.test(cc.reason || ""), `the makeshift cots are superseded by the Cot (${cc.reason})`);
   addBuilding(h, "cots");
-  check(baseBeds(h) === beds0 + 4 && !canBuild(st, h, "cots").ok, "two at most: +4 beds");
+  check(baseBeds(h) === beds0 + 2, `an old save's built cots still sleep 2 until it is loaded (${beds0} → ${baseBeds(h)})`);
+  h.buildings = h.buildings.filter((b) => b.type !== "cots");
   delete h.tier; delete h.camp;
-  check(placeProblem(h, "cots") !== "" && baseBeds(h) >= 4 + 4, "not at a base (Shelters only), and those built still sleep 2 each there");
+  check(placeProblem(h, "cots") !== "", "not at a base (Shelters only)");
   asCamp(h);
   check(placeProblem(h, "cots") !== "", "not at a camp either (the shelter's)");
 }
