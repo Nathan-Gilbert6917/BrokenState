@@ -135,8 +135,9 @@ export function planModalHtml(state) {
   const P = planOf(b);
   const R = b.raid;
   const scouted = !!(P.scout && P.scout.ok);
-  let html = `<div class="box rplanbox"><div class="spread"><h1>Before you go in</h1><span class="muted"${tip(bigMapNote(b.w, b.h))}>${esc(b.place)} · ${esc(mapSizeText(b.w, b.h))} · ${hh(hourOfDay(state))}${b.night ? ", night" : ", day"}${P.hours ? ` · ${P.hours} h spent` : ""}</span></div>
-    ${bigMapNote(b.w, b.h) ? `<div class="small muted" style="margin-bottom:0.3rem">${esc(bigMapNote(b.w, b.h))}</div>` : ""}
+  const big = R ? bigMapNote(b.w, b.h) : ""; // Heat and containers: a raid map's (a base assault or a rescue has neither)
+  let html = `<div class="box rplanbox"><div class="spread"><h1>Before you go in</h1><span class="muted"${tip(big)}>${esc(b.place)} · ${esc(mapSizeText(b.w, b.h))} · ${hh(hourOfDay(state))}${b.night ? ", night" : ", day"}${P.hours ? ` · ${P.hours} h spent` : ""}</span></div>
+    ${big ? `<div class="small muted" style="margin-bottom:0.3rem">${esc(big)}</div>` : ""}
     <div class="small muted" style="margin-bottom:0.5rem">Nobody is on the map yet. Send a scout first, ${b.night ? "" : "wait for night, "}then pick the side to go in from${P.sides.length > 1 ? "" : " (one way in here)"}; or leave. You can go in with or without a scout: a scout only tells you more.</div>`;
   const url = previewUrl(b);
   if (url) html += `<img class="rplanmap" src="${url}" alt="The site" style="display:block;margin:0 auto;height:9.5rem;width:auto;max-width:100%;object-fit:contain;image-rendering:pixelated;border:1px solid var(--line);border-radius:4px" data-tip="${esc(`The site from above, under the fog of war. Green: the ways in and out${R ? " (north at the top)" : ""}. ${scouted ? "What the scout saw: the dead (red) and their people (orange) where they stood, the containers (yellow) and locked doors (dark orange) within the circle." : "Send a scout to see who is where."}`)}">`;

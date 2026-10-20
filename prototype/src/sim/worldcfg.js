@@ -103,7 +103,7 @@ export function cleanValue(key, v) {
   const n = Number(v);
   if (!Number.isFinite(n)) return d.def;
   const c = Math.max(d.min, Math.min(d.max, n));
-  const stepped = d.kind === "int" ? Math.round(c) : Math.round(c / d.step) * d.step;
+  const stepped = Math.round(c / d.step) * d.step; // an int dial by its step too (a raid map's 2: an odd 33 is 34, the width the map is)
   return Math.round(Math.max(d.min, Math.min(d.max, stepped)) * 1000) / 1000;
 }
 // A whole settings object made safe (unknown keys dropped, missing ones their default), min ≤ max in every pair

@@ -310,6 +310,11 @@ section("A map past the old Large (BIG): the dead, Heat, the loot and the ways o
   const st = world(SEED, 3), gas = raid(st, "farm", [{ kind: "zombies", count: 4, power: 2 }]), city = raid(world(SEED, 3), "city", [{ kind: "zombies", count: 8, power: 2 }]);
   check(gas.raid.zones.length === 3 && city.raid.zones.length === 4 && city.raid.zones.some((z) => z.side === "north") && city.raid.zones.some((z) => z.side === "south"),
     `a way out on each long side of a big street map (${city.raid.zones.map((z) => z.side).join(", ")}; a 40×30 farm's ${gas.raid.zones.length})`);
+  // A big group of the dead (a crawl's horde): capped at 20 on a map at or under the old Large, as it always was; more past it.
+  const deadOn = (b) => b.units.filter((u) => u.side === "enemy" && u.kind === "zombie").length;
+  const horde = [{ kind: "zombies", count: 20, power: 2 }], farmH = raid(world(SEED, 3), "farm", horde), cityH = raid(world(SEED, 3), "city", horde);
+  check(farmH.w * farmH.h <= BIG.FROM && deadOn(farmH) <= 20 && cityH.w * cityH.h > BIG.FROM && deadOn(cityH) > 20,
+    `a group of 20 of the dead: ${deadOn(farmH)} on the ${farmH.w}×${farmH.h} farm (never over 20 there), ${deadOn(cityH)} on the ${cityH.w}×${cityH.h} city`);
   // The dead that come in at Heat come in near your people.
   const st2 = world(SEED + 1, 3), b = raid(st2, "city", [{ kind: "zombies", count: 4, power: 2 }]);
   st2.combat = b;

@@ -697,7 +697,7 @@ export const CRIT_MULT = 2;
 // the Assassin perk makes a blow on the unaware always critical. Lowered from 40 / 15 / 5 / 10 (a crit is ×2).
 export const CRIT = { EXPOSED: 25, DEAD: 10, COVER: 5, MELEE: 8 };
 const BLEED_TURNS = 3;
-const MAX_PLAYERS = 8, MAX_ENEMIES = 20, MAX_RAID_DEAD = 40; // MAX_RAID_DEAD: a group of the dead on a raid map (battlesize.js raidDeadScale: up to twice the usual on a big map)
+const MAX_PLAYERS = 8, MAX_ENEMIES = 20, MAX_RAID_DEAD = 40; // MAX_RAID_DEAD: a group of the dead on a raid map past the old Large (battlesize.js raidDeadScale: up to twice the usual on a big map)
 
 // walk: can stand there. cover: 0 none, 1 half, 2 full. los: blocks line of sight (up to tall, 1 by default: a
 // viewer high enough sees over it, verticality below). h: the height a unit standing there is raised to (a cell can
@@ -6868,8 +6868,9 @@ export function createRaid(state, setup) {
   if (pick) placeInterior(state, b, map, groups.filter((g) => !g.side && !g.wanderer).map((g) => ({ ...g, count: Math.max(0, Math.min(MAX_ENEMIES, Math.round(g.count || 0))) }))); // buildingmaps.js: in the rooms
   for (const g of pick ? [] : groups) {
     // The dead scale with the street map's size (battlesize.js raidDeadScale: more of them over a city center); a
-    // campsite's own dead (campsite.js campRoster, g.camp) are the camp's count whatever the map.
-    const count = Math.max(0, Math.min(g.kind === "zombies" ? MAX_RAID_DEAD : MAX_ENEMIES, Math.round((g.count || 0) * (g.kind === "zombies" && !g.camp ? raidDeadScale(W, H) : 1))));
+    // campsite's own dead (campsite.js campRoster, g.camp) are the camp's count whatever the map. The higher cap only
+    // past the old Large (battlesize.js BIG): at or under it a group stays at MAX_ENEMIES, as it always was.
+    const count = Math.max(0, Math.min(g.kind === "zombies" && W * H > BIG_RAID.FROM ? MAX_RAID_DEAD : MAX_ENEMIES, Math.round((g.count || 0) * (g.kind === "zombies" && !g.camp ? raidDeadScale(W, H) : 1))));
     if (!count) continue;
     if (g.kind === "zombies") {
       const zl = siteList(rng, g.mix, count); // the armoured dead of a military site or a police station (deadsoldiers.js); the bred kinds met exploring (hivetech.js siteSpecials)

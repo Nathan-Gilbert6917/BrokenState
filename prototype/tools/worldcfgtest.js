@@ -42,7 +42,7 @@ section("the settings object");
   check(CFG_KEYS.length >= 30 && CFG_KEYS.every((k) => k in d), `every dial has a default (${CFG_KEYS.length} dials)`);
   check(isDefaultCfg(d) && isDefaultCfg(null) && isDefaultCfg({}), "the defaults, nothing and an empty object are standard");
   check(cleanValue("hunger", 99) === WORLD_CFG.hunger.max && cleanValue("hunger", -1) === WORLD_CFG.hunger.min && cleanValue("hunger", "abc") === 1, "a multiplier is clamped to its range; garbage is its default");
-  check(cleanValue("hunger", 1.234) === 1.25 && cleanValue("cityMin", 7.6) === 8, "values snap to the step (0.05; whole numbers)");
+  check(cleanValue("hunger", 1.234) === 1.25 && cleanValue("cityMin", 7.6) === 8 && cleanValue("raidMin", 33) === 34 && cleanValue("raidMax", "0x31") === 50, "values snap to the step (0.05; whole numbers; a raid map's width by 2, as the map is)");
   check(cleanValue("curable", "false") === false && cleanValue("curable", "on") === true && cleanValue("curable", undefined) === true, "the toggle reads strings and defaults on");
   const c = cleanCfg({ hunger: 2, bogus: 5, cityMin: 35, cityMax: 20 });
   check(c.hunger === 2 && !("bogus" in c) && c.thirst === 1, "cleanCfg keeps known dials, drops unknown ones, fills the rest");

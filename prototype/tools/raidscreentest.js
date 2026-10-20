@@ -139,6 +139,16 @@ console.log("Before you go in");
     check(!RP.planUI.map && !RP.planUI.leave, "a new battle: the window up, nothing put aside");
     void b;
   }
+  // The map's size in the header; the note on a big map (Heat, containers) only on a raid map, never a base assault's.
+  {
+    const as = createWorld({ seed: 4242, factionCount: 5 }), h = hub(as);
+    const tile = as.tiles.find((t) => !t.loc && t.terrain === "plains" && t.id !== h.tile).id;
+    as.combat = createBattle(as, { tile, baseId: h.id, fighterIds: atBase(as, h.id).map((s) => s.id), enemy: { kind: "raiders", count: 10, power: 5, walls: 4, people: 60 }, ambush: null, canRetreat: true, handler: "test", context: {}, layout: "baseAssault", plan: true });
+    const ab = as.combat, win = RP.planModalHtml(as);
+    check(!ab.raid && ab.w * ab.h > 1200 && win.includes(`${ab.w} × ${ab.h}`) && !/A big map|Heat climbs/.test(win), `a base assault's plan (${ab.w} × ${ab.h}): its size, no raid map's note on Heat and containers`);
+    const big = plannedRaid(7100, "city");
+    if (big) check(big.combat.w * big.combat.h > 1200 && /A big map/.test(RP.planModalHtml(big)), `a big raid map's plan (${big.combat.w} × ${big.combat.h}): the note`);
+  }
 }
 
 // ---------- 3b. the rounds survive the battle being made again ----------
