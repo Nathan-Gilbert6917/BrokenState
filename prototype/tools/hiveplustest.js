@@ -21,6 +21,7 @@ import { condRolled } from "../src/sim/itemcond.js";
 import { LIGHTS, lightOf } from "../src/sim/lights.js";
 import { ensureArsenal } from "../src/sim/arsenal.js";
 import { allCarried } from "../src/sim/inventory.js";
+import { starterMags } from "../src/sim/carrykit.js"; // a colonist's spare magazines
 import * as HC from "../src/sim/hivecrawl.js";
 import { coreTrial } from "./hivecorecalib.js";
 
@@ -48,6 +49,10 @@ function squad(st, hv, { n = 6, lights = true, flares = 0, scouting = 3, stealth
     s.gear.weapon = item("ar"); s.gear.armor = item("plate"); s.gear.tool = null;
     s.pockets = [lights ? item("headlamp") : null, null, null, null];
     s.health = 100;
+    // Physical rounds (mags.js, 2026-10-18): a Reload draws only on what the person carries, never the team's bags, so
+    // a rifle with no spare magazine fires its 30 and no more. Each gets a colonist's starting spares (CARRY.START, in
+    // the plate carrier's pouches), filled from the team's rounds as the fight starts, as a squad of yours goes in.
+    starterMags(s);
     st.survivors.push(s);
     people.push(s);
   }
@@ -240,7 +245,7 @@ console.log("The Hivemind's second phase");
   const rate = (tier, lights) => { let w = 0, ph = 0; for (let i = 0; i < TRIALS; i++) { const r = coreTrial(100 + i, tier, { lights }); w += r.won; ph += r.phase2; } return { w: w / TRIALS, ph }; };
   const t2 = rate(2, true), t4 = rate(4, true), t4d = rate(4, false);
   console.log(`    the core with the rifle squad (${TRIALS} battles): tier 2 ${Math.round(t2.w * 100)}% (phase 2 in ${t2.ph}), tier 4 ${Math.round(t4.w * 100)}% (in ${t4.ph}); tier 4 without lights ${Math.round(t4d.w * 100)}%`);
-  check(t2.w >= 0.85 && t4.w >= 0.5, "the core stays winnable (before the second phase: tier 2 98%, tier 4 73%; tools/hivecorecalib.js for more battles)");
+  check(t2.w >= 0.85 && t4.w >= 0.5, "the core stays winnable (before the second phase: tier 2 98%, tier 4 73%; with physical rounds and the spares' rounds packed tier 2 100%, tier 4 88%; tools/hivecorecalib.js for more battles)");
   check(t2.ph + t4.ph > 0, "the second phase comes in real battles");
 }
 
@@ -397,9 +402,10 @@ console.log("The Hivemind's weak spots");
   let threw = 0, fired = 0, burned = 0, stunned = 0;
   for (let s = 0; s < 8; s++) {
     const { st, b } = core(SEED + 10 + s, { fire: 2, stun: 2 });
-    for (let i = 0; i < 60 && !b.over; i++) { if (b.phase === "player") autoPlayerTurn(st); else runEnemyPhase(st); }
-    if (b.log.some((l) => /throws a (Molotov|flashbang)/.test(l.text))) threw++;
-    if (b.log.some((l) => /throws a Molotov/.test(l.text))) fired++;
+    const seen = new Set(b.log); // the battle log keeps its last 80 lines (combat.js say): every line as it comes
+    for (let i = 0; i < 60 && !b.over; i++) { if (b.phase === "player") autoPlayerTurn(st); else runEnemyPhase(st); for (const l of b.log) seen.add(l); }
+    if ([...seen].some((l) => /throws a (Molotov|flashbang)/.test(l.text))) threw++;
+    if ([...seen].some((l) => /throws a Molotov/.test(l.text))) fired++;
     if (b.hivemind && b.hivemind.burned) burned++;
     if (b.hivemind && b.hivemind.stunned) stunned++;
     st.combat = null;
@@ -496,7 +502,10 @@ console.log("The autopilot's gate to the core, and its kit");
     const shots0 = HC.HIVEMIND.REACH.shots; HC.HIVEMIND.REACH.shots = 30; // a fight longer than the gun and the handful
     const sus = [HC.fireOf(pump, false).sustain, HC.fireOf(pump, true).sustain];
     HC.HIVEMIND.REACH.shots = shots0;
-    check(sus[1] > sus[0], `the gate counts the shells a trip packs at hand (a pump's sustained fire over 30 shots ${sus[0].toFixed(2)} → ${sus[1].toFixed(2)}: no Get shells)`);
+    // Physical rounds (mags.js): a Reload loads by hand up to MAGS.LOOSE out of what the shooter carries, the rounds at
+    // hand (pockets, rig) in 1 action, the pack's in both; a trip packs every gun's loose rounds at hand (carrykit.js
+    // packShells, looseWant), so a packed pump keeps up its fire better.
+    check(sus[1] > sus[0] && sus[0] < 1, `the gate counts the rounds a trip packs at hand (a pump's sustained fire over 30 shots ${sus[0].toFixed(2)} → ${sus[1].toFixed(2)})`);
     const shotTeam = [0, 1, 2, 3, 4, 5].map(() => one("shotgun", 7)), rifleTeam = [0, 1, 2, 3, 4, 5].map(() => one("huntrifle", 7));
     check(HC.coreFire(shotTeam, true).mult < HC.coreFire(rifleTeam, true).mult, `by the numbers six pumps count for less at the core than six hunting rifles of the same power (× ${HC.coreFire(shotTeam, true).mult.toFixed(2)} against × ${HC.coreFire(rifleTeam, true).mult.toFixed(2)})`);
   }

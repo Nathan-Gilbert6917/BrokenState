@@ -205,10 +205,16 @@ console.log("Vaulting through: open and broken at the vault's cost, a closed one
   const hp2 = u2.hp;
   const err2 = combatAct(st2, { type: "move", unit: u2.id, x: 11, y: 10 });
   check(err2 === "" && u2.x === 11 && c2.k === "window" && c2.win.open && u2.hp === hp2 && b2.noise === VAULT.NOISE && !e2.aware && logHas(b2, /vaults through the open window/), `through an open window: the window stays, nobody cut, only the vault's noise (${err2 || "ok"})`);
-  // Arms full: no vault through a window either.
+  // Arms full: an open window is vaulted through at double the movement, a closed one is not crashed through (breaking
+  // it takes a hand).
+  const freeD = reachable(b2, u2, 20).dist[idx(b2, 8, 10)];
   u2.hands = { food: 2 };
-  check(!isFinite(reachable(b2, u2, 20).dist[idx(b2, 8, 10)]) || !canVault(u2), "with the arms full the window is a wall");
+  check(reachable(b2, u2, 20).dist[idx(b2, 8, 10)] === freeD + 2 + VAULT.COST, `with the arms full an open window is vaulted at double (${reachable(b2, u2, 20).dist[idx(b2, 8, 10)]} = ${freeD} + ${2 + VAULT.COST})`);
+  c2.win.open = false;
+  check(!isFinite(reachable(b2, u2, 20).dist[idx(b2, 8, 10)]), "with the arms full a closed window is a wall (no crashing through it)");
   delete u2.hands;
+  check(isFinite(reachable(b2, u2, 20).dist[idx(b2, 8, 10)]), "free hands: a closed window is crashed through");
+  c2.win.open = true;
 }
 
 console.log("The dead clamber through an open or broken window, never a closed one");

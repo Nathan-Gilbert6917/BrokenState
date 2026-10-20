@@ -19,6 +19,7 @@ import {
   neutralCard, hostileCard, squadCard, wanderersDaily, wanderersAfterRaid, groupById, talkChance,
 } from "../src/sim/wanderers.js";
 import { thirdSideHit } from "../src/sim/thirdside.js";
+import { totalRounds, giveRoundsTo } from "../src/sim/ammo.js";
 
 const GAMES = Number(process.argv[2] ?? 4);
 const DAYS = Number(process.argv[3] ?? 90);
@@ -34,6 +35,7 @@ const pc = (v) => `${Math.round(v * 100)}%`;
 function team(state, tile) {
   const h = hub(state);
   const crew = atBase(state, h.id).slice(0, 3).map((x) => x.id);
+  const n = totalRounds(h.stock); if (n < 200) giveRoundsTo(state, h, 200 - n); // (each launch also takes its guns' loads, parties.js: a run of them drains the hub)
   const res = launchExpedition(state, { memberIds: crew, dest: tile, mission: "move", stance: "normal", supplies: { food: 12, water: 12, ammo: 40, meds: 2 } });
   const p = res.party;
   p.path = [h.tile, tile]; p.idx = 1; p.phase = "out";

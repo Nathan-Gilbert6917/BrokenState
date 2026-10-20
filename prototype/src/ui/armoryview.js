@@ -10,14 +10,19 @@
 // Used by the base's Armory tab (ui/ui.js baseArmory) and the storage box of the inventory windows (ui/inventory.js
 // storageBox: the base armory, a team's cargo). The callers wrap each item (cell): the inventory window keeps its
 // clicks, drags and drops (data-action="inv-click", data-loc, data-drop, data-drag), so nothing here moves anything.
-import { GEAR } from "../sim/data.js";
+//   storage  base storage limits (2026-10-19, sim/basestorage.js): the Armory tab's Storage card at the top (storageCard:
+//            the containers and their room, the kg used, what lies outside), and on the items (storageTags, an entry's
+//            tags): "Outside: weathering" on an item lying outside, "+N kg storage" on an opened box that is room; a
+//            fire safe or a rifle case is "Both hands" (inventory.js isTwoHands: carried only, in both arms) anywhere.
+import { GEAR, SUPPLIES } from "../sim/data.js";
 import { WEAPONS } from "../sim/combat.js";
 import { MAGAZINES, CLIPS, CALIBRE_CLIPS } from "../sim/data-kit.js";
 import { LIGHTS } from "../sim/lights.js";
 import { itemDur, itemDurMax } from "../sim/crafting.js";
-import { itemLoad, SLOT_NAMES } from "../sim/inventory.js";
+import { itemLoad, SLOT_NAMES, isTwoHands } from "../sim/inventory.js";
 import { stackLabel, countOf, isRoundItem, amountOf } from "../sim/itemstack.js";
 import { isHelmetPart } from "../sim/helmets.js";
+import { isBox, isSealed } from "../sim/boxes.js"; // a sealed box shows its weight, not its contents
 import { isGunKey, gunIconHtml, PART_ART } from "./gunart.js";
 import { itemArtHtml } from "./itemart.js"; // every item but a gun: its own drawing
 import { lookOf } from "./gunparts.js";
@@ -25,6 +30,10 @@ import { painter, toCanvas } from "./sprites.js";
 import { slotOfPart } from "./gunbuilder.js";
 import { gunRoundsLabel } from "./itemlabels.js"; // the rounds in a gun or a magazine (gun-mags: the real count)
 import { rowName } from "../sim/itemnames.js"; // row names: "… magazine", rounds "— loose"
+import { storageOf } from "../sim/basestorage.js";
+import { isShelter } from "../sim/buildings.js"; // a camp or a shelter (tier 0): a storage box or crates // base storage limits: the room, what lies outside
+import { keyWord } from "../sim/water.js";
+import { badge, pbar } from "./uikit.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -107,6 +116,7 @@ export function statBits(item, loc = null, state = null) {
   const r = gunRoundsLabel(item, loc, state);
   if (r) out.push([r.text, r.tip, `irounds ${r.cls}`]);
   if (isRoundItem(item)) out.push([`${amountOf(item)} rds`, "Rounds in this stack"]);
+  else if (isBox(item)) out.push(isSealed(item) ? [item.locked ? "locked" : "closed", "What is inside is unknown until it is opened: its weight is the only clue"] : [`${item.contents.filter(Boolean).length + Object.values(item.sup || {}).filter((v) => v > 0).length} in`, "What it holds (right-click: Look inside)"]);
   else if (item.contents) out.push([`${item.contents.filter(Boolean).length}/${item.contents.length} in`, "What it holds"]);
   else if (countOf(item) > 1) out.push([`×${countOf(item)}`, "How many in the stack"]);
   const dur = itemDur(item);
@@ -115,6 +125,63 @@ export function statBits(item, loc = null, state = null) {
   if (item.fire === "burn") out.push(["🔥", "Marked: the boiler may burn it"]);
   else if (item.fire === "keep") out.push(["keep", "Marked: kept from the fire"]);
   return out;
+}
+
+// ---------- storage (sim/basestorage.js) ----------
+const BOTH_HANDS_TIP = "Both hands: carried only. It never fits a pocket, a pack or a rig: whoever carries it holds it in both arms (put it down, or in a vehicle, to have the hands free).";
+// The badges every item shows wherever it is listed: [text, tone, tip].
+export function itemTags(item) {
+  return isTwoHands(item) ? [["Both hands", "info", BOTH_HANDS_TIP]] : [];
+}
+/**
+ * A base armory's storage badges, by armory index: an item lying outside ("Outside: weathering"), an opened box that
+ * is room ("+N kg storage"). One storageOf for the whole list. @param {any} state @param {any} base
+ * @returns {{ tagsOf: (i: number) => [string, string, string][], outside: Set<number> }}
+ */
+export function storageTags(state, base) {
+  const st = storageOf(state, base);
+  const outside = new Set(st.outside.gear);
+  const room = new Map(st.containers.filter((c) => c.kind === "box").map((c) => [Number(c.key.slice(2)), c.cap]));
+  const tagsOf = (i) => {
+    /** @type {[string, string, string][]} */
+    const out = [];
+    if (outside.has(i)) out.push(["Outside: weathering", "bad", "Lying outside: the base's storage is full. It wears a little every day (twice as fast in rain or snow) and raiders take it first. Build storage (a storage box, crates, a shed) or park a vehicle here."]);
+    if (room.has(i)) out.push([`+${room.get(i)} kg storage`, "good", `Opened: it serves as storage, room for ${room.get(i)} kg of the base's goods (what is still inside it fills it first).`]);
+    return out;
+  };
+  return { tagsOf, outside };
+}
+const kgN = (v) => `${Math.round(v)}`;
+/**
+ * The Armory tab's Storage card: the room (used / cap kg, a bar), the containers with their room, and what lies outside
+ * (supplies and items), or "No storage yet". @param {any} state @param {any} base
+ */
+export function storageCard(state, base) {
+  const st = storageOf(state, base);
+  /** @type {Map<string, { name: string, n: number, cap: number, kind: string }>} */
+  const by = new Map();
+  for (const c of st.containers) {
+    const k = c.kind === "vehicle" ? c.key : `${c.kind}:${c.type}:${c.name}`;
+    const e = by.get(k) || { name: c.name, n: 0, cap: 0, kind: c.kind };
+    e.n++; e.cap += c.cap;
+    by.set(k, e);
+  }
+  const KIND = { core: "the base itself", building: "a storage building", vehicle: "a parked vehicle: room only while it is here", box: "an opened box in the armory" };
+  const rows = [...by.values()].map((e) => `<div class="spread"${tip(`${e.name}: ${KIND[e.kind] || e.kind}`)}><span>${e.kind === "vehicle" ? "🚗 " : e.kind === "box" ? "🧳 " : "📦 "}${esc(e.name)}${e.n > 1 ? ` <span class="muted">×${e.n}</span>` : ""}</span><span class="muted">${kgN(e.cap)} kg${e.kind === "vehicle" ? " while parked" : ""}</span></div>`).join("");
+  const pct = st.cap > 0 ? (st.inside / st.cap) * 100 : st.used > 0 ? 100 : 0;
+  const out = st.outsideKg > 0;
+  const supOut = Object.entries(st.outside.sup).map(([k, q]) => `${Math.round(q * 10) / 10} ${SUPPLIES[k] ? (keyWord(k) === k ? SUPPLIES[k].name.toLowerCase() : keyWord(k)) : k}`);
+  const gearOut = st.outside.gear.map((i) => (base.armory || [])[i]).filter(Boolean).map((it) => it.name);
+  const outside = out ? `<div class="danger" style="margin-top:0.3rem"${tip("Goods past the storage lie outside, in the open: items wear a little every day (twice as fast in rain or snow) and raiders take them first. The densest valuables are kept in; the cheap, heavy things are what lies out.")}>⚠ ${kgN(st.outsideKg)} kg outside: weathering</div>
+      ${supOut.length ? `<div class="small"><span class="muted">Supplies:</span> ${esc(supOut.join(", "))}</div>` : ""}
+      ${gearOut.length ? `<div class="small"><span class="muted">Items (${gearOut.length}):</span> ${esc(gearOut.slice(0, 12).join(", "))}${gearOut.length > 12 ? ` and ${gearOut.length - 12} more` : ""}</div>` : ""}
+      <div class="small muted">Build storage in Construction (a storage box${isShelter(base) ? " or storage crates" : ", crates, a shed, a storehouse or a warehouse"}) or park a vehicle here.</div>` : "";
+  return `<h3${tip("Base storage: everything the base keeps (its stores and its armory, by weight) fills its containers; what does not fit lies outside.")}>Storage</h3>
+    <div class="card small storecard">
+      ${pbar(pct, out ? "bad" : pct > 85 ? "warn" : "good", `${kgN(st.used)} / ${kgN(st.cap)} kg`, out ? `${kgN(st.outsideKg)} kg outside` : `${kgN(st.free)} kg free`, null, "Goods kept here (stores and armory, by weight) against the room of the containers")}
+      ${rows || `<div class="warn">No storage yet: park a vehicle here or build a storage box</div>`}
+      ${outside}
+    </div>`;
 }
 
 // ---------- pictures ----------
@@ -254,14 +321,16 @@ export function armoryView(entries, opts = {}) {
   ${groupsHere.length > 1 || only ? `<div class="armchips">${chip("", "All", found.length)}${groupsHere.map(([id, name, icon]) => chip(id, `${icon} ${esc(name.split(/,| and /)[0])}`, counts.get(id))).join("")}</div>` : ""}`;
   // The groups.
   const itemHtml = (e) => {
+    const tagList = [...(e.tags || []), ...itemTags(e.item)];
+    const tags = tagList.length ? `<span class="atags">${tagList.map(([t, tone, tt]) => badge(esc(t), tone, tt)).join("")}</span>` : "";
     const bits = statBits(e.item, e.loc, opts.state || null);
     const stat = bits.map(([t, tt, cls]) => `<span${cls ? ` class="${cls}"` : ""}${tip(tt)}>${esc(t)}</span>`).join(" · ");
     const col = e.frac > 0.6 ? "var(--good)" : e.frac > 0.3 ? "var(--accent)" : "var(--danger)";
     const who = e.who ? `<span class="awho"${tip(e.whoTip || "")}>${esc(e.who)}</span>` : "";
     if (isCompact) {
-      return cell(e, `<span class="apic sm g-${e.g}">${itemPic(e.item, 1.05)}</span><span class="aname">${esc(e.name)}</span>${who}<span class="astat">${stat}</span><span class="akg">${kg1(itemLoad(e.item))} kg</span>`, `arow${e.bad ? " bad" : ""}`);
+      return cell(e, `<span class="apic sm g-${e.g}">${itemPic(e.item, 1.05)}</span><span class="aname">${esc(e.name)}</span>${tags}${who}<span class="astat">${stat}</span><span class="akg">${kg1(itemLoad(e.item))} kg</span>`, `arow${e.bad ? " bad" : ""}${e.outside ? " outside" : ""}`);
     }
-    return cell(e, `<span class="apic g-${e.g}">${itemPic(e.item, 2.3)}</span><span class="ainfo"><span class="aname">${esc(e.name)}</span><span class="astat">${stat || `<span class="muted">${kg1(itemLoad(e.item))} kg</span>`}</span>${who}</span><i class="idur"><b style="width:${Math.round(Math.max(0.05, e.frac) * 100)}%;background:${col}"></b></i>`, `acard${e.bad ? " bad" : ""}`);
+    return cell(e, `<span class="apic g-${e.g}">${itemPic(e.item, 2.3)}</span><span class="ainfo"><span class="aname">${esc(e.name)}</span>${tags}<span class="astat">${stat || `<span class="muted">${kg1(itemLoad(e.item))} kg</span>`}</span>${who}</span><i class="idur"><b style="width:${Math.round(Math.max(0.05, e.frac) * 100)}%;background:${col}"></b></i>`, `acard${e.bad ? " bad" : ""}${e.outside ? " outside" : ""}`);
   };
   const sections = ARMORY_GROUPS.filter(([id]) => byGroup.has(id) && (!only || only === id)).map(([id, name, icon]) => {
     const list = byGroup.get(id).sort(sortKey);

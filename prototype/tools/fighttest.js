@@ -4,7 +4,7 @@
 // you (size, escalation, siege pace, damage and repairs, tribute fading, provoked groups) and groups that grow.
 // Usage: node tools/fighttest.js [seed]
 import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
-import { setRounds, totalRounds } from "../src/sim/ammo.js"; // rounds by calibre
+import { setRounds, totalRounds, boxesOf, sweepBoxes } from "../src/sim/ammo.js"; // rounds by calibre
 import { createWorld, tickHour, hub, atBase, makeSurvivor, skill, survivorById, killSurvivor, usesArrows, armedFactor, spendShots, ARROWS } from "../src/sim/world.js";
 import { FACTION_TYPES, GEAR } from "../src/sim/data.js";
 import {
@@ -19,8 +19,8 @@ import {
   attitude, changeGoodwill, collapseFaction, recomputeOwnership, factionsDaily, raidWarning, deliverHelpCall,
   resolveRaidOnFaction, baseDefense, raidSize, siegePace, raidRepelled, resolveRaidOnPlayer, maxBases, strength, RAIDS,
 } from "../src/sim/factions.js";
-import { raidDamage, repairPlan } from "../src/sim/breakdowns.js";
-import { addBuilding, baseWalls, baseBeds, queueBuild, constructionHour } from "../src/sim/buildings.js";
+import { raidDamage, repairPlan, wallRepairPlan } from "../src/sim/breakdowns.js";
+import { addBuilding, baseWalls, baseBeds, queueBuild, constructionHour, isPiece } from "../src/sim/buildings.js";
 import { hordesHour, reduceHorde, HORDE_MAX_SIZE, HORDE_MIN_SIZE } from "../src/sim/hordes.js";
 import { endTrade, tradePending, routeProblem, routeWorth, routeExchange, createRoute } from "../src/sim/trade.js";
 import { routesDaily } from "../src/sim/economy.js";
@@ -288,7 +288,7 @@ const groupOf = (state, type) => {
       const after = st.cards.find((c) => c.title === "After the fight");
       check((p.cargo.supplies.ammo || 0) - ammo0 === (loot.supplies.ammo || 0) && Math.abs((food(p.cargo) || 0) - food0 - (food(loot) || 0)) < 1e-6,
         `the team gains exactly what was on the bodies (ammo +${(p.cargo.supplies.ammo || 0) - ammo0}, on bodies ${loot.supplies.ammo || 0})`);
-      check(p.cargo.gear.length - gear0 === loot.gear.length, "no bonus gun on top of the looted ones");
+      check(p.cargo.gear.length - gear0 === loot.gear.filter((it) => !/^a_/.test(it.key)).length, "no bonus gun on top of the looted ones"); // loose rounds go in as rounds (cargo supplies by key), not gear
       check(poolLoad(p) <= partyCapacity(st, p) + 1e-6, "the team is not over what it can carry");
       check(!!after && /Taken from the bodies/.test(after.text) === (Object.values(loot.supplies).some((q) => q > 0) || loot.gear.length > 0), "the card lists what was taken, once");
     }
@@ -706,23 +706,24 @@ const groupOf = (state, type) => {
     check(over.broken.length + (over.destroyed ? 1 : 0) >= 2, `overrun: ${over.text}`);
     const s5 = world(seed + 402), b5 = hub(s5);
     for (const t of ["walls", "walls", "gate", "barricades", "bunkhouse", "ammo_bench", "cistern", "common_room"]) addBuilding(b5, t);
-    const inner0 = b5.buildings.filter((b) => !["walls", "gate", "barricades"].includes(b.type)).reduce((a, b) => a + (b.wear || 0), 0);
+    const isOuter = (b) => ["walls", "gate", "barricades"].includes(b.type) || isPiece(b.type); // the wall: its pieces (buildings.js)
+    const inner0 = b5.buildings.filter((b) => !isOuter(b)).reduce((a, b) => a + (b.wear || 0), 0);
     raidDamage(s5, b5, { strength: 40, hours: 8, outcome: "held" });
-    const outerW = b5.buildings.filter((b) => ["walls", "gate", "barricades"].includes(b.type)).reduce((a, b) => a + (b.wear || 0), 0);
-    const innerW = b5.buildings.filter((b) => !["walls", "gate", "barricades"].includes(b.type)).reduce((a, b) => a + (b.wear || 0), 0) - inner0;
+    const outerW = b5.buildings.filter(isOuter).reduce((a, b) => a + (b.wear || 0), 0);
+    const innerW = b5.buildings.filter((b) => !isOuter(b)).reduce((a, b) => a + (b.wear || 0), 0) - inner0;
     check(outerW > innerW, `a raid driven off hits the defences first (outer ${outerW.toFixed(0)}, inner ${innerW.toFixed(0)})`);
     // Damaged and broken buildings work worse or not at all.
-    const wall = b5.buildings.find((b) => b.type === "walls");
-    wall.broken = null; wall.wear = 10;
+    const pieces = b5.buildings.filter((b) => isPiece(b.type)), wall = pieces[0];
+    for (const p of pieces) { p.broken = null; p.wear = 10; }
     const w0 = baseWalls(b5);
-    wall.wear = 70;
-    check(baseWalls(b5) === w0 - 1, `a damaged wall section gives 2 wall strength instead of 3 (${w0} → ${baseWalls(b5)})`);
+    for (const p of pieces) p.wear = 70;
+    check(Math.abs(baseWalls(b5) - w0 * 2 / 3) < 0.1, `a damaged wall gives two thirds of its wall strength (buildings.js WALL_DAMAGED: ${w0} → ${baseWalls(b5)})`);
     const bunk = b5.buildings.find((b) => b.type === "bunkhouse");
     bunk.broken = null;
     const beds0 = baseBeds(b5);
     bunk.broken = { day: 1, cause: "test" };
     check(baseBeds(b5) === beds0 - 6, `a wrecked bunkhouse gives no beds (${beds0} → ${baseBeds(b5)})`);
-    check(repairPlan(s5, b5, wall, "repair").ok || /Needs/.test(repairPlan(s5, b5, wall, "repair").why), "a damaged (unbroken) wall can be patched with a proper repair");
+    check(!repairPlan(s5, b5, wall, "repair").ok && wallRepairPlan(s5, b5).ok && wallRepairPlan(s5, b5).list.includes(wall), "a damaged (unbroken) wall is mended by the wall's repair order, not a repair of its own");
     // Nobody builds or repairs while the base is on alert.
     b5.stock.scrap = 200;
     queueBuild(s5, b5, "smoker");
@@ -834,7 +835,11 @@ const groupOf = (state, type) => {
   const stocked = fightOdds(st2, p2, enemy, null);
   p2.supplies.arrows = 0;
   const empty = fightOdds(st2, p2, enemy, null);
+  // No ammo: the team's generic rounds settle by calibre as it leaves (parties.js launchExpedition, so the shells at
+  // hand are packed from them), so none of any calibre is left in the bags.
   p2.supplies.arrows = 60; p2.supplies.ammo = 0;
+  for (const k of Object.keys(p2.supplies)) if (/^a_/.test(k)) p2.supplies[k] = 0;
+  for (const s of m2) { for (const it of boxesOf(s)) it.dur = 0; sweepBoxes(s); } // and none at hand (carrykit.js looseWant)
   const noAmmo = fightOdds(st2, p2, enemy, null);
   check(empty < stocked && noAmmo < stocked && noAmmo > empty, `bows without arrows fight worse (odds ${Math.round(stocked * 100)}% → ${Math.round(empty * 100)}% with no arrows, ${Math.round(noAmmo * 100)}% with no ammo for the one rifle)`);
   check(armedFactor(m2, 0, 60) > 0.6 && armedFactor(m2, 0, 60) < 1 && armedFactor(m2, 60, 60) === 1 && Math.abs(armedFactor(m2, 0, 0) - 0.6) < 1e-12, "armedFactor weighs the bows and the guns by their power");

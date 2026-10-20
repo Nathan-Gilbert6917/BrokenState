@@ -24,7 +24,7 @@
 // - The governor (autopilot.js) moves into a nearby abandoned base it can clear instead of founding an outpost when it
 //   wants one (occupyCandidate there).
 import { typeGoods, FOODS } from "./foods.js"; // an abandoned base's food by type
-import { BUILDINGS, plotsFree, countAll, count, assignStations, underAttack } from "./buildings.js";
+import { BUILDINGS, plotsFree, countAll, count, assignStations, underAttack, WALL_TIERS, addRing } from "./buildings.js";
 import { SUPPLIES, STOCK_KEYS } from "./data.js";
 import { log, addCard, day, hub, newId, combatPower, armedFactor, snapshot, atBase, removeBase } from "./world.js";
 import { evacuate, nearestOtherBase } from "./conquest.js"; // Abandon outpost: the people walk home
@@ -80,6 +80,7 @@ function buildingsFromWorks(state, rec) {
   for (const [k, type] of Object.entries(OCCUPY.FROM_WORKS)) {
     const q = Math.max(0, Math.floor((rec.works && rec.works[k]) || 0));
     const n = k === "walls" ? Math.ceil(q / OCCUPY.WALL_POINTS) : q;
+    if (k === "walls") { if (n) out.push({ type, wear, tier: Math.min(WALL_TIERS.length - 1, n + 1) }); continue; } // one wall of a tier (buildings.js WALL_TIERS): a section a tier above the stake fence
     for (let i = 0; i < n; i++) out.push({ type, wear });
   }
   return out;
@@ -221,6 +222,7 @@ function raise(base, list) {
     if (def.plot && plotsFree(base, def.plot) <= 0) { left.push(src); continue; }
     const b = { ...JSON.parse(JSON.stringify(src)), id: newId() };
     if (def.barrel && !b.tier) { b.tier = 1; b.holds = "rawwater"; }
+    if (src.type === "walls") { addRing(base, b.tier || 2, b.wear || 0); continue; } // a group's wall: a ring of wall pieces of its tier (buildings.js addRing)
     base.buildings.push(b);
   }
   base.radio = count(base, "radio") > 0;
@@ -236,6 +238,7 @@ export function takeAbandoned(state, tile, p = null) {
   const name = mine && !state.bases.some((b) => b.name === rec.fromName) ? rec.fromName : outpostName(state, tile);
   const base = { id: newId(), tile, type: noHub ? "hub" : "outpost", name, stock: emptyStock(), radio: false, watchtower: false, buildings: [], construction: [], armory: [] };
   base.occupiedFrom = { from: rec.from, name: rec.fromName, day: day(state), left: rec.day }; // the tile panel: whose it was
+  if (rec.plan) base.plan = JSON.parse(JSON.stringify(rec.plan)); // your old outpost: its map's plan (the crop plots placed, the wall's ring: basemap.js)
   const list = standingAt(state, rec);
   const rubble = raise(base, list);
   const got = stockText(rec.stock || {});

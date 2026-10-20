@@ -51,6 +51,7 @@
 import { Rng } from "./rng.js";
 import * as data from "./data.js";
 import { log, hurt, hub } from "./world.js";
+import { cfgOf } from "./worldcfg.js"; // the run's dials: Thirst
 /** @import { State, Party, Survivor } from "./types" */
 
 export const SEASON_DAYS = 28;
@@ -731,7 +732,7 @@ export const hotDay = (d) => d.k === "heat" || d.hi >= 30;
 /** @param {State} state @param {number} [dayIdx] */
 export function thirstFactor(state, dayIdx = dayIndex(state)) {
   const s = THIRST[seasonOfDay(dayIdx).key] ?? 1;
-  return hotDay(dayRec(state, dayIdx)) ? Math.max(s, THIRST.heat) : s;
+  return (hotDay(dayRec(state, dayIdx)) ? Math.max(s, THIRST.heat) : s) * cfgOf(state, "thirst"); // worldcfg.js: the run's Thirst dial
 }
 // The factor for the hour a team drinks in (parties.js consume runs after the clock moves on).
 /** @param {State} state @param {number} [hour] */
@@ -789,6 +790,16 @@ export function dayMeanTemp(state, dayIdx = dayIndex(state)) {
   const d = dayRec(state, dayIdx);
   return (d.hi + d.lo) / 2;
 }
+// The low of a day (°C, about 05:00): the night's fires go by it (upkeep.js HEAT.chillAt: a cool night below it burns
+// firewood for warmth at every base, a freezing day the whole day).
+/** @param {State} state @param {number} [dayIdx] */
+export function dayLowTemp(state, dayIdx = dayIndex(state)) {
+  return dayRec(state, dayIdx).lo;
+}
+// The season's mean for a day before its weather (seasonalMean), for the firewood plans (woodcutting.js chillDaysAhead:
+// the nights ahead that will want a fire) without generating the days.
+/** @param {number} dayIdx */
+export const seasonalMeanTemp = (dayIdx) => seasonalMean(dayIdx);
 
 // People burn more food keeping warm.
 /** @param {State} state @param {number} [dayIdx] */

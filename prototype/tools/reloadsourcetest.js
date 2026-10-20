@@ -229,7 +229,7 @@ const NO_SOURCE = /^No ammo to load: no .* on them \(none in their pockets, rig 
   const b = openBattle(st, [a], 400);
   const u = by(b, a);
   const K556 = "a_556_fmj";
-  check(u.mag === 30 && u.mags.filter((m) => m.where !== "gun").every((m) => m.item && stackN(m.item.stack) === m.cap) && b.pools[0][K556] === 400 - 110, `the gun and the three spares filled out of the base's stock at the start (${400 - b.pools[0][K556]} of 400)`);
+  check(u.mag === 30 && u.mags.filter((m) => m.where !== "gun").every((m) => m.item && stackN(m.item.stack) === m.cap) && b.pools[0][K556] === 400 - 140 && loose(a, K556) === 30, `the gun and the three spares filled out of the base's stock at the start, and a magazine's worth loose at hand (carrykit.js packShells: ${400 - b.pools[0][K556]} of 400, ${loose(a, K556)} loose)`);
   const costs = [];
   for (let i = 0; i < 3; i++) {
     again(b, u);
@@ -240,9 +240,12 @@ const NO_SOURCE = /^No ammo to load: no .* on them \(none in their pockets, rig 
     check(slot && slot.n === 0 && slot.item && stackN(slot.item.stack) === 0 && a.gear.weapon.mods.mag && a.gear.weapon.mods.mag !== slot.item, `the ${where}'s entry is the empty magazine now, the fresh one is the gun's fitted magazine`);
   }
   check(costs.join(" ") === "swap@rig:1 swap@pocket:1 swap@pack:2", `the rig's first, then the pocket's, then the pack's (${costs.join(" ")})`);
+  // The magazine's worth at hand is theirs to load: topped up by hand out of the pocket until none is left on them.
+  for (let i = 0; i < 12 && loose(a, K556) > 0; i++) { again(b, u); combatAct(st, { type: "reload", unit: u.id }); }
+  check(loose(a, K556) === 0, `the 30 loose at hand loaded out of their pocket (${loose(a, K556)} left)`);
   again(b, u, 3);
   const p3 = reloadPlan(b, u);
-  check(p3.mode === "rounds" && p3.kind === "topup" && p3.n === 0 && /^No ammo to load: no loaded spare magazine, and no rounds for the assault rifle on them \(none in their pockets, rig or pack\)\. The base's 290 are in its stock, not to hand in a fight/.test(p3.why) && reloadRefusal(b, u) === p3.why && b.pools[0][K556] === 290, `no loaded spare left and nothing on them: the stock's 290 are no source ("${p3.why}")`);
+  check(p3.mode === "rounds" && p3.kind === "topup" && p3.n === 0 && /^No ammo to load: no loaded spare magazine, and no rounds for the assault rifle on them \(none in their pockets, rig or pack\)\. The base's 260 are in its stock, not to hand in a fight/.test(p3.why) && reloadRefusal(b, u) === p3.why && b.pools[0][K556] === 260, `no loaded spare left and nothing on them: the stock's 260 are no source ("${p3.why}")`);
   // A speedloader: never the auto plan's; { clip: 0 } fills the cylinder out of their own rounds, 1 from a pocket, 2 from the pack, once a fight.
   const st2 = createWorld({ seed: seed + 5, factionCount: 4 });
   const c = fighter(st2, "revolver"), d = fighter(st2, "revolver");
@@ -250,7 +253,7 @@ const NO_SOURCE = /^No ammo to load: no .* on them \(none in their pockets, rig 
   c.pockets[1] = roundItem(K357, 20, true);
   withPack(d)[0] = newItem("speedloader");
   packOf(d)[1] = roundItem(K357, 20, true);
-  const b2 = openBattle(st2, [c, d], 100);
+  const b2 = openBattle(st2, [c, d]); // (no .357 in the stock: a defender would grab a pocketful of it at hand, carrykit.js looseWant)
   const v = by(b2, c), w = by(b2, d);
   check(v.clips.length === 1 && v.clips[0].where === "pocket" && !v.clips[0].used && w.clips.length === 1 && w.clips[0].where === "pack" && loose(c, K357) === 14 && loose(d, K357) === 14, "each has a speedloader (u.clips: a pocket / the pack) and 14 of their own 20 past the 6 loaded");
   again(b2, v); again(b2, w);
@@ -309,12 +312,18 @@ const NO_SOURCE = /^No ammo to load: no .* on them \(none in their pockets, rig 
     const ru = rb.units.find((x) => x.side === "player");
     const bags0 = rb.pools.reduce((n, p) => n + (p[K12] || 0), 0);
     check(isStacked(ru) && ru.mag === 6 && loose(g, K12) === SHELLS.CARRY - 6 && bags0 === 40 - SHELLS.CARRY, `the tube filled out of the pocket at the start (${loose(g, K12)} left there), the bags' ${bags0} untouched`);
-    loadMag(ru, 0);
+    // One action: the Reload and nothing after it (with more, the bot goes on to search and extract, and the battle's
+    // end puts the gun's rounds back in the pocket).
+    loadMag(ru, 0); ru.ap = 1;
     for (const x of rb.units) if (x.side !== "player") x.aware = false;
     st3.autoRetreat = false;
     autoPlayerTurn(st3);
     const rb2 = st3.combat && st3.combat.units ? st3.combat : rb;
-    check(logHas(rb2, new RegExp(`${g.name} racks in 6 12 gauge 00 buckshot from a pocket \\(6/6\\)\\.`)) && !logHas(rb2, /takes \d+ shells of .* out of the pack|out of the pack \(.*both actions\)/) && magIn(ru) === 6 && loose(g, K12) === SHELLS.CARRY - 12 && rb2.pools.reduce((n, p) => n + (p[K12] || 0), 0) === bags0, `the raid bot: 6 from the pocket for 1 action (${loose(g, K12)} left there), no Get shells, the bags still ${bags0}`);
+    // The bot may search and extract in the same turn (the fight over, the gun's rounds stay in it or go to a pocket):
+    // either way the 6 racked in are the pocket's (the test threw away the first 6).
+    const inGun = () => { const l = g.gear.weapon && g.gear.weapon.loaded; return !l ? 0 : Array.isArray(l.stack) ? l.stack.reduce((a, x) => a + (x.n || 0), 0) : l.n || 0; };
+    const shellsKept = () => (magIn(ru) === 6 && loose(g, K12) === SHELLS.CARRY - 12) || (magIn(ru) === 0 && loose(g, K12) + inGun() === SHELLS.CARRY - 6);
+    check(logHas(rb2, new RegExp(`${g.name} racks in 6 12 gauge 00 buckshot from a pocket \\(6/6\\)\\.`)) && !logHas(rb2, /takes \d+ shells of .* out of the pack|out of the pack \(.*both actions\)/) && shellsKept() && rb2.pools.reduce((n, p) => n + (p[K12] || 0), 0) === bags0, `the raid bot: 6 from the pocket for 1 action (${loose(g, K12)} left there), no Get shells, the bags still ${bags0}`);
   }
 }
 

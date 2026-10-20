@@ -11,15 +11,28 @@
 // deploy step, zone = the margin). Defenders deploy anywhere inside the ring (the walkway, the towers, the gates, the
 // yard, the buildings). The fight runs through its tiers on this one map (interior.js tierPlayerTurn): the wall until
 // enough attackers are inside, then the yard, then the last stand in the buildings. No fall back: it is all here.
+// A group's base you storm carries its real goods (assaultstores.js): their storage laid on the generated yard (their
+// main house, their storage buildings, piles outside for what their room does not hold) with what that base holds in
+// it, for your people to take and carry off.
+import { homeAt } from "./groupbases.js"; // their base as they built it
+import { factionById } from "./world.js";
 import { CELL, unitAt, say, resizeBattle, WEAPONS, coverAgainst, active, isRanged } from "./combat.js";
 import { buildInterior } from "./interior.js";
 import { DEPLOY, attackSide, fromTileOf, wallHp, gateHp } from "./deploy.js";
-import { count } from "./buildings.js";
+import { count, hasWall } from "./buildings.js";
 import { densify, COVER } from "./battlesize.js"; // cover over the margin
 import { poweredType } from "./power.js";
 import { isNight } from "./world.js";
 import { armoryDefence, bossUnit } from "./defences.js";
+import { layMines } from "./mines.js"; // the main base's minefield in the margin
 import { preBoardBase } from "./barricade.js"; // their outer windows and doors boarded before your assault (the user's pick 2026-10-18)
+import { buildBaseMap, baseMapSize, makeStores, markThieves, FLOOD, faceOf } from "./basemap.js"; // the base map: every real base's own layout, walled or not
+import { layAssaultStores, stockAssaultStores } from "./assaultstores.js"; // their real stores on the map of an assault
+
+// Which map a base fights on: its own base map (basemap.js: the player's layout, walled or not, the attack from any
+// side) for every real base; the generated yard (interior.js) for a group's base you storm (assaultBase, id −1) and
+// for the tests' old strip maps (c.strip).
+export const usesGrid = (base, c = null) => !!base && base.id >= 0 && !(c && c.strip);
 
 export const FORT = {
   MARGIN: 8,          // open ground round the wall (where the attackers stage)
@@ -30,6 +43,7 @@ export const FORT = {
   HORDE_SIDES: [1, 6, 12, 18], // a horde of at least this many of the dead can come from 1, 2, 3, 4 sides (how many: its dice)
   GATE_HOLD: 7, GATE_HOLD_TWO: 9, // defenders needed before one, two hold the gate facing the attack (DEPLOY.GATE_ONE / TWO)
   TRAP_HP: 25,
+  WIRE: [2, 4], RAZOR: 6, TRENCH: [3, 5], MINES: [2, 6], // cells out from the wall: the barbed wire fences' rings, the concertina wire's, the trenches' (within MARGIN)
 };
 const SIDES = ["north", "east", "south", "west"];
 const OPPOSITE = { north: "south", south: "north", east: "west", west: "east" };
@@ -39,7 +53,8 @@ const NEXT_TO = { north: ["west", "east"], south: ["west", "east"], east: ["nort
 // Builds the fort for a base (a real one, or the stand-in a group's base gets: assaultBase). Deterministic for the
 // same base (interior.js layoutSeed) except the margin's cover and the breaches (rng).
 export function buildFort(base, c, rng, opts = {}) {
-  const lay = buildInterior(base, { walled: false, c: c || {} });
+  if (usesGrid(base, c) && opts.state) return buildBaseMap(opts.state, base, rng, { view: !!(c && c.view), pitsAt: c && c.pitsAt }); // basemap.js
+  const lay = buildInterior(base, { walled: false, fort: true, c: c || {} });
   const yw = lay.W, yh = lay.H, M = FORT.MARGIN;
   const x0 = M + 2, y0 = M + 2; // the yard's origin: wall at x0 - 2, walkway at x0 - 1
   const W = yw + 4 + 2 * M, H = yh + 4 + 2 * M;
@@ -84,6 +99,12 @@ export function buildFort(base, c, rng, opts = {}) {
   // Watchtowers at the corners of the walkway (height 2) when the base has one.
   const towers = [];
   if (base && count(base, "watchtower")) for (const [x, y] of [[wx0 + 1, wy0 + 1], [wx1 - 1, wy0 + 1], [wx0 + 1, wy1 - 1], [wx1 - 1, wy1 - 1]]) { const q = put(x, y, "tower", "dirt"); q.h = 2; towers.push([x, y]); }
+  // The guard towers (buildings.js guard_towers, the Defenses tab): two more on the walkway, a quarter of the way along
+  // the north side and three quarters along the south (height 2).
+  if (base && count(base, "guard_towers")) {
+    const q = Math.max(2, Math.round((wx1 - wx0) / 4));
+    for (const [x, y] of [[wx0 + q, wy0 + 1], [wx1 - q, wy1 - 1]]) { const t = at(x, y); if (t && t.k === "walkway") { t.k = "tower"; t.h = 2; towers.push([x, y]); } }
+  }
   // Ladders up from the yard, every LADDER_EVERY cells along each side where the yard cell is free.
   const ladders = [];
   const ladderAt = (x, y) => { const q = at(x, y); if (q && q.k === "open" && q.f !== "floor") { put(x, y, "ladder"); ladders.push([x, y]); } };
@@ -97,27 +118,72 @@ export function buildFort(base, c, rng, opts = {}) {
     const q = at(x, y);
     if (q && q.k === "open") q.k = rng.chance(0.6) ? "rock" : rng.chance(0.5) ? "tree" : "boulder";
   }
+  // The wire (buildings.js barbed_wire, razor_wire; wire.js): rings round the wall in the margin, FORT.WIRE cells out
+  // for each barbed wire fence and FORT.RAZOR for the concertina wire, with a gap in front of every gate (the way in
+  // they funnel the attackers to). wireOut: the outermost ring (the attackers start beyond it: fortDefence).
+  let wireOut = 0;
+  const ringAt = (d, razor) => {
+    for (let y = wy0 - d; y <= wy1 + d; y++) for (let x = wx0 - d; x <= wx1 + d; x++) {
+      if (x !== wx0 - d && x !== wx1 + d && y !== wy0 - d && y !== wy1 + d) continue;
+      if (SIDES.some((s) => gates[s].some(([gx, gy]) => (s === "north" || s === "south" ? Math.abs(gx - x) <= 1 && x >= wx0 && x <= wx1 : Math.abs(gy - y) <= 1 && y >= wy0 && y <= wy1)))) continue;
+      const q = at(x, y);
+      if (!q || q.k !== "open") continue;
+      q.k = "wire";
+      if (razor) q.razor = true;
+    }
+    wireOut = Math.max(wireOut, d);
+  };
+  if (base) for (let i = 0; i < Math.min(FORT.WIRE.length, count(base, "barbed_wire")); i++) ringAt(FORT.WIRE[i], false);
+  // The trenches (buildings.js trench): rings FORT.TRENCH cells out, a crossing left every 4 cells and at the gates.
+  if (base) for (let i = 0; i < Math.min(FORT.TRENCH.length, count(base, "trench")); i++) {
+    const d = FORT.TRENCH[i];
+    for (let y = wy0 - d; y <= wy1 + d; y++) for (let x = wx0 - d; x <= wx1 + d; x++) {
+      if ((x !== wx0 - d && x !== wx1 + d && y !== wy0 - d && y !== wy1 + d) || (x + y + i * 2) % 4 === 2) continue;
+      if (SIDES.some((s) => gates[s].some(([gx, gy]) => (s === "north" || s === "south" ? Math.abs(gx - x) <= 1 && x >= wx0 && x <= wx1 : Math.abs(gy - y) <= 1 && y >= wy0 && y <= wy1)))) continue;
+      const q = at(x, y);
+      if (q && q.k === "open") q.k = "trench";
+    }
+    wireOut = Math.max(wireOut, d);
+  }
+  if (base && count(base, "razor_wire")) ringAt(FORT.RAZOR, true);
   // Masks: inside the ring (the walkway and the yard), indoors.
   const inside = new Uint8Array(W * H), indoor = new Uint8Array(W * H);
   for (let y = wy0 + 1; y <= wy1 - 1; y++) for (let x = wx0 + 1; x <= wx1 - 1; x++) inside[y * W + x] = 1;
   // Cover over the margin's open ground as on any field (battlesize.js densify), never within 2 cells of the wall.
   densify(cells, W, H, rng, { target: COVER.OPEN, keep: (x, y) => !!inside[y * W + x] || (x >= wx0 - 2 && x <= wx1 + 2 && y >= wy0 - 2 && y <= wy1 + 2) });
+  // Land mines (mines.js, the main base's Minefield): buried in the margin's open ground (after its cover, so nothing stands on one) FORT.MINES cells out, off the
+  // lanes to the gates (the base's own way out); the attackers start beyond them.
+  let minesLaid = 0;
+  if (base && count(base, "minefield")) {
+    const lane = (x, y) => SIDES.some((s) => gates[s].some(([gx, gy]) => (s === "north" || s === "south" ? Math.abs(gx - x) <= 1 : Math.abs(gy - y) <= 1)));
+    const cand = [];
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const d = Math.max(wx0 - x, x - wx1, wy0 - y, y - wy1);
+      if (d >= FORT.MINES[0] && d <= FORT.MINES[1] && !lane(x, y) && at(x, y).k === "open") cand.push([x, y]);
+    }
+    minesLaid = layMines(null, base, cells, cand, rng, W);
+    if (minesLaid) wireOut = Math.max(wireOut, FORT.MINES[1]);
+  }
+
   for (let y = 0; y < yh; y++) for (let x = 0; x < yw; x++) if (lay.indoor[y * yw + x]) indoor[(y0 + y) * W + x0 + x] = 1;
   const buildings = lay.buildings.map((s) => ({ name: s.name, key: s.key, roof: !!s.roof, storeys: s.storeys || 0, x0: s.x0 + x0, y0: s.y0 + y0, w: s.w, h: s.h, doors: (s.doors || []).map(off) }));
   return {
-    W, H, cells, M, x0, y0, yw, yh, wall: { x0: wx0, x1: wx1, y0: wy0, y1: wy1 }, ring, walkway, gates, towers: [...towers, ...lay.towers.map(off)], ladders,
-    inside, indoor, buildings, lofts: lay.lofts.map(off), roofs: lay.roofs.map(off), doors: lay.doors.map(off), lay,
+    W, H, cells, M, x0, y0, yw, yh, wall: { x0: wx0, x1: wx1, y0: wy0, y1: wy1 }, ring, walkway, gates, towers: [...towers, ...lay.towers.map(off)], ladders, wireOut, minesLaid,
+    inside, indoor, buildings, lofts: lay.lofts.map(off), roofs: lay.roofs.map(off), doors: lay.doors.map(off), lay, walled: true, lights: [], stores: [], vehicles: [],
   };
 }
 export const fortDims = (F) => [F.W, F.H];
 // The map's size before it is built (combat.js battleSize): the yard's plus the walkway, the wall and the margin.
-export function fortSize(base, c) {
-  const lay = buildInterior(base, { walled: false, c: c || {} });
+export function fortSize(base, c, state = null) {
+  if (usesGrid(base, c) && state) return baseMapSize(state, base, { view: !!(c && c.view), pitsAt: c && c.pitsAt }); // basemap.js
+  const lay = buildInterior(base, { walled: false, fort: true, c: c || {} });
   return [lay.W + 4 + 2 * FORT.MARGIN, lay.H + 4 + 2 * FORT.MARGIN];
 }
 // A walled base on land fights on the fort map. c.strip (a battle's context) keeps the old wall-line map and the yard map
 // after it (deploy.js, interior.js), which a bridge barricade still uses and the tests exercise.
-export const fortable = (state, base, c = null) => !!base && count(base, "walls") > 0 && !(state.tiles[base.tile] && state.tiles[base.tile].bridge) && !(c && c.strip);
+// Every real base on land fights on its base map (walled or not: usesGrid); the old strip maps keep the wall and yard
+// maps (deploy.js, interior.js), and so does a base on a bridge.
+export const fortable = (state, base, c = null) => !!base && (usesGrid(base, c) || hasWall(base)) && !(state.tiles[base.tile] && state.tiles[base.tile].bridge) && !(c && c.strip);
 
 // The side of the fort a cell lies on (which margin band), or null inside the ring.
 export function sideOf(F, x, y) {
@@ -128,8 +194,8 @@ export function sideOf(F, x, y) {
 }
 // Breaches on the attack side's wall (a horde that broke through: `want` of them, on no corner, apart from each other).
 function breach(F, rng, side, want) {
-  if (want <= 0) return [];
-  const w = F.wall, line = F.ring.filter(([x, y]) => sideOf(F, x, y) === side && !((x === w.x0 || x === w.x1) && (y === w.y0 || y === w.y1)) && F.cells[y * F.W + x].k === "palisade");
+  if (want <= 0 || F.walled === false) return [];
+  const w = F.wall, line = F.ring.filter(([x, y]) => faceOf(F, x, y) === side && !((x === w.x0 || x === w.x1) && (y === w.y0 || y === w.y1)) && F.cells[y * F.W + x].k === "palisade"); // the wall cells facing that side (the ring's, or the pieces': basemap.js)
   const out = [];
   for (const [x, y] of rng.shuffle(line.slice())) {
     if (out.length >= want) break;
@@ -155,7 +221,7 @@ const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
 export function fortDefence(b, ctx, base, c) {
   const state = ctx.state, rng = ctx.rng;
   if (ctx.phase === "map") {
-    const F = buildFort(base, c, rng);
+    const F = buildFort(base, c, rng, { state });
     const side = attackSide(state, base.tile, fromTileOf(state, c));
     const people = b.setup.enemy.kind !== "zombies", through = c.through || 0;
     const want = people || c.raidId != null || c.rescue ? 1 : (c.bosses || 0) + (through >= 120 ? 1 : 0) + (through >= 250 ? 1 : 0);
@@ -171,9 +237,11 @@ export function fortDefence(b, ctx, base, c) {
       const spots = margin(F, side).filter(([x, y]) => dist(x, y, Math.floor((w.x0 + w.x1) / 2), Math.floor((w.y0 + w.y1) / 2)) < Math.max(F.W, F.H) && (band ? x >= band[0] && x <= band[1] : (side === "north" ? y >= w.y0 - 2 && y <= w.y0 - 1 : y >= w.y1 + 1 && y <= w.y1 + 2)));
       const lay = (n, k) => { for (let i = 0; i < n && spots.length; i++) { const j = rng.int(0, spots.length - 1); const [x, y] = spots.splice(j, 1)[0]; if (F.cells[y * F.W + x].k === "open") F.cells[y * F.W + x].k = k; } };
       lay((kit.wire || 0) * 4, "wire"); lay(kit.traps || 0, "beartrap");
-      for (let i = 0; i < (c.pits || 0) * 5; i++) { const s = spots.length ? spots.splice(rng.int(0, spots.length - 1), 1)[0] : null; if (s && F.cells[s[1] * F.W + s[0]].k === "open") F.cells[s[1] * F.W + s[0]].k = "spikes"; }
+      // The base map lays the spike pits where they were placed (c.pitsAt, basemap.js); the old map scatters them here.
+      for (let i = 0; i < (usesGrid(base, c) ? 0 : (c.pits ?? count(base, "spike_pits")) * 5); i++) { const s = spots.length ? spots.splice(rng.int(0, spots.length - 1), 1)[0] : null; if (s && F.cells[s[1] * F.W + s[0]].k === "open") F.cells[s[1] * F.W + s[0]].k = "spikes"; } // a horde passes the pits it had; a raid meets the pits standing
     }
     F.side = side;
+    if (F.minesLaid) b.mines = { baseId: base.id, laid: F.minesLaid }; // mines.js settleMines: what is left goes back to the base
     resizeBattle(b, F.W, F.H, F.cells, Math.floor(F.W / 2), 0);
     b.deployPlan = { walled: true, fort: F, gate: F.gates[side], breaches: F.breaches, towers: F.towers };
     return;
@@ -181,6 +249,10 @@ export function fortDefence(b, ctx, base, c) {
   // Units.
   const F = b.deployPlan.fort, side = F.side;
   for (let i = 0; i < (b.setup.enemy.bosses || 0); i++) b.units.push(bossUnit(b, "wallbreaker"));
+  if (usesGrid(base, c)) {
+    b.stores = makeStores(state, base, F, rng); // basemap.js: the base's goods on the map, in its containers
+    if (b.setup.enemy.kind !== "zombies" && !c.drill) markThieves(b, rng); // some of the raiders go for them
+  }
   const okCell = (x, y) => x >= 0 && y >= 0 && x < F.W && y < F.H && b.reach[y * F.W + x] && CELL[b.cells[y * F.W + x].k].walk && !unitAt(b, x, y);
   // The attackers: in the margin on their side (a share of them round onto the sides next to it), pods together.
   const enemies = b.units.filter((u) => u.side === "enemy");
@@ -194,7 +266,9 @@ export function fortDefence(b, ctx, base, c) {
   const sides = [side, ...rng.shuffle(NEXT_TO[side].slice()), OPPOSITE[side]].slice(0, nSides);
   F.sides = sides;
   const bands = {};
-  for (const s of new Set([...sides, ...NEXT_TO[side]])) bands[s] = margin(F, s).filter(([x, y]) => okCell(x, y));
+  // Beyond the wire (F.wireOut: the outermost ring), as long as there is room out there.
+  const outside = (x, y) => Math.max(F.wall.x0 - x, x - F.wall.x1, F.wall.y0 - y, y - F.wall.y1) > (F.wireOut || 0);
+  for (const s of new Set([...sides, ...NEXT_TO[side]])) { const all = margin(F, s).filter(([x, y]) => okCell(x, y)); const out = F.wireOut ? all.filter(([x, y]) => outside(x, y)) : all; bands[s] = out.length ? out : all; }
   enemies.forEach((u, i) => {
     let s;
     if (horde) s = sides.length > 1 && i % 2 === 1 ? sides[1 + (Math.floor(i / 2) % (sides.length - 1))] : side; // the dead: only the sides they came from
@@ -220,7 +294,8 @@ export function fortDefence(b, ctx, base, c) {
   if (b.setup.deploy) {
     b.phase = "deploy";
     const from = (F.sides || [side]).length > 1 ? `The dead come from ${(F.sides).length} sides: ${F.sides.join(", ").replace(/, ([^,]*)$/, " and $1")}` : `The attack comes from the ${side}`;
-    say(b, `${from}. Place your defenders anywhere inside the walls: on the walkway (▲, shoot down over the wall) and the towers (▲▲), in the gates and the breaches to hold them, in the yard behind cover, in the buildings at the windows and on the roofs.`, "info");
+    say(b, F.walled === false ? `${from}, straight over the open ground: no walls here. Place your defenders anywhere in the yard: behind the barricades, in the buildings at the windows, on the roofs and the towers.`
+      : `${from}. Place your defenders anywhere inside the walls: on the walkway (▲, shoot down over the wall) and the towers (▲▲), in the gates and the breaches to hold them, in the yard behind cover, in the buildings at the windows and on the roofs.`, "info");
     b.deploy.sides = F.sides || [side];
   }
 }
@@ -236,8 +311,8 @@ function fortDefaults(b, F, side, okCell) {
   const put = (u, x, y, post) => { u.x = x; u.y = y; u.post = post; left.splice(left.indexOf(u), 1); };
   const w = F.wall, mid = [Math.floor((w.x0 + w.x1) / 2), Math.floor((w.y0 + w.y1) / 2)];
   const toward = side === "north" ? [mid[0], 0] : side === "south" ? [mid[0], F.H - 1] : side === "west" ? [0, mid[1]] : [F.W - 1, mid[1]];
-  const nGate = defs.length >= FORT.GATE_HOLD_TWO ? 2 : defs.length >= FORT.GATE_HOLD ? 1 : 0;
-  for (let i = 0; i < nGate && left.length; i++) { const [x, y] = F.gates[side][i]; if (okCell(x, y)) put(left[0], x, y, "gate"); }
+  const nGate = F.walled === false ? 0 : defs.length >= FORT.GATE_HOLD_TWO ? 2 : defs.length >= FORT.GATE_HOLD ? 1 : 0;
+  for (let i = 0; i < nGate && left.length && F.gates[side][i]; i++) { const [x, y] = F.gates[side][i]; if (okCell(x, y)) put(left[0], x, y, "gate"); }
   const shooters = () => left.filter((u) => !WEAPONS[u.weapon].melee && !isClose(u)).sort((a, c) => c.aim - a.aim);
   const towers = F.towers.filter(([x, y]) => b.cells[y * F.W + x].k === "tower").sort((p, q) => dist(p[0], p[1], toward[0], toward[1]) - dist(q[0], q[1], toward[0], toward[1])).slice(0, 2);
   for (const [x, y] of towers) { const s = shooters()[0]; if (s && okCell(x, y)) put(s, x, y, "tower"); }
@@ -245,7 +320,7 @@ function fortDefaults(b, F, side, okCell) {
   const dOpen = (x, y) => Math.min(99, ...openings.map(([ox, oy]) => dist(x, y, ox, oy)));
   const taken = [];
   const crowd = (x, y) => taken.reduce((a, [tx, ty]) => a + (Math.max(Math.abs(tx - x), Math.abs(ty - y)) <= 1 ? 3 : 0), 0);
-  const wallCells = F.walkway.filter(([x, y]) => sideOf(F, x, y) === null && b.cells[y * F.W + x].k === "walkway" && (side === "north" ? y === w.y0 + 1 : side === "south" ? y === w.y1 - 1 : side === "west" ? x === w.x0 + 1 : x === w.x1 - 1));
+  const wallCells = F.walkway.filter(([x, y]) => b.cells[y * F.W + x].k === "stand" ? faceOf(F, x, y) === side : sideOf(F, x, y) === null && b.cells[y * F.W + x].k === "walkway" && (side === "north" ? y === w.y0 + 1 : side === "south" ? y === w.y1 - 1 : side === "west" ? x === w.x0 + 1 : x === w.x1 - 1)); // the walkway facing the attack, or the wall stands on that side (basemap.js)
   for (const u of shooters()) {
     let best = null;
     for (const [x, y] of wallCells) {
@@ -263,7 +338,7 @@ function fortDefaults(b, F, side, okCell) {
     const close = isClose(u);
     let best = null;
     for (let y = F.y0; y < F.y0 + F.yh; y++) for (let x = F.x0; x < F.x0 + F.yw; x++) {
-      if (!okCell(x, y) || F.indoor[y * F.W + x]) continue;
+      if (!okCell(x, y) || F.indoor[y * F.W + x] || (F.inside && !F.inside[y * F.W + x])) continue; // inside the wall: a yard grown past it is not
       const d = dOpen(x, y);
       if (d < (close ? 2 : 1.5)) continue;
       let sc = coverAgainst(b, x, y, toward[0], toward[1]).level * (close ? 1 : 3) - Math.abs(d - (close ? 3 : DEPLOY.DEF_OPEN)) * 0.7 - crowd(x, y) * 0.7;
@@ -292,24 +367,26 @@ function finishFort(b, F, side, o) {
     b.evacSide = o.attackers === "enemy" ? OPPOSITE[side] : side;
   }
   const openings = [...F.gates.north, ...F.gates.south, ...F.gates.east, ...F.gates.west, ...(F.breaches || [])];
+  const walled = F.walled !== false;
   b.tier = {
-    map: "fort", stage: "wall", side, w0: W, h0: H, walled: true, interior: F.inside, indoor: F.indoor, entry: [], attackers: o.attackers,
+    map: "fort", stage: walled ? "wall" : "yard", side, w0: W, h0: H, walled, interior: F.inside, indoor: F.indoor, entry: [], attackers: o.attackers,
     breachRows: [], broken: 0, baseId: o.base ? o.base.id : null, openings,
     buildings: F.buildings.map((s) => { const cells = []; for (let y = s.y0; y < s.y0 + s.h; y++) for (let x = s.x0; x < s.x0 + s.w; x++) cells.push([x, y]); return { name: s.name, key: s.key, roof: s.roof, storeys: s.storeys, cells, doors: s.doors }; }),
     fort: { wall: F.wall, gates: F.gates, M: F.M },
   };
   b.deploy = {
-    side, walled: true, fort: true, attackers: o.attackers === "player", zone, gate: F.gates[side] || [], breaches: F.breaches || [], towers: F.towers, walkway: F.walkway, ladders: F.ladders,
-    floodlit: !!o.floodlit, night: !!o.night, lit: "center", frame: { fort: true, w0: W, h0: H, fromX: 0 },
+    side, walled, fort: true, attackers: o.attackers === "player", zone, gate: F.gates[side] || [], breaches: F.breaches || [], towers: F.towers, walkway: F.walkway, ladders: F.ladders,
+    floodlit: !!o.floodlit, night: !!o.night, lit: "center", fixedLit: !!(o.floodlit && F.lights && F.lights.length), frame: { fort: true, w0: W, h0: H, fromX: 0 },
     defaults: b.units.filter((u) => u.side === "player" && active(u)).map((u) => [u.id, u.x, u.y, u.post || null]),
   };
   b.holders = o.attackers === "player" ? "enemy" : "player";
-  if (o.floodlit) setFortLit(b, "center"); else b.lit = null;
+  if (o.floodlit && b.deploy.fixedLit) fixedLit(b, F);
+  else if (o.floodlit) setFortLit(b, "center"); else b.lit = null;
 }
 // Floodlights on the fort: a third of the attack side's margin (left / center / right as the defenders face it).
 export function setFortLit(b, zone) {
   const T = b.tier, F = T && T.fort;
-  if (!F || !b.deploy) return;
+  if (!F || !b.deploy || b.deploy.fixedLit) return; // placed floodlights (basemap.js) light the ground round them: nothing to aim
   const W = b.w, H = b.h, w = F.wall, side = T.side;
   const lit = new Uint8Array(W * H);
   const along = side === "north" || side === "south" ? [w.x0, w.x1] : [w.y0, w.y1];
@@ -324,16 +401,39 @@ export function setFortLit(b, zone) {
   b.deploy.lit = zone;
 }
 
+// Floodlights placed on the base map (basemap.js F.lights): each lights the cells within FLOOD.R of it, wherever it
+// stands, so where the lights go is part of the layout.
+function fixedLit(b, F) {
+  const W = b.w, H = b.h;
+  const lit = new Uint8Array(W * H);
+  for (const [lx, ly] of F.lights) for (let y = Math.max(0, ly - FLOOD.R); y <= Math.min(H - 1, ly + FLOOD.R); y++) for (let x = Math.max(0, lx - FLOOD.R); x <= Math.min(W - 1, lx + FLOOD.R); x++) if (Math.hypot(x - lx, y - ly) <= FLOOD.R) lit[y * W + x] = 1;
+  b.lit = lit;
+  b.deploy.lit = "fixed";
+}
+
 // ---------- a group's base you storm (conquest.js "baseAssault") ----------
 // A stand-in base for the group's: an outpost or a hub by the strength of their walls, with buildings for their
-// numbers, laid out by the same generator (deterministic for the tile).
+// numbers, laid out by the same generator (deterministic for the tile). Its stock and armory stay empty: their real
+// goods are laid on the map from their own base (assaultstores.js: its storage, by room, the rest on piles), and what
+// you carry off leaves that base when the fight ends.
 export function assaultBase(state, setup) {
   if (setup.fortBase) return setup.fortBase;
   const e = setup.enemy || {}, walls = e.walls || 0, people = (setup.context && setup.context.people) || e.count * 3 || 8;
   const tile = typeof setup.tile === "object" ? setup.tile.id : setup.tile;
+  // groupbases.js (docs/adr/0001-ai-parity.md): the base they actually built there, its own buildings (the same objects:
+  // what the fight breaks stays broken).
+  const f = e.factionId != null ? factionById(state, e.factionId) : null;
+  const h = f ? homeAt(state, f, tile) : null;
+  if (h && h.buildings.some((x) => x.type === "walls" && !x.broken)) {
+    setup.fortBase = { id: -1, tile, type: walls >= 5 || h.type === "hub" ? "hub" : "outpost", name: e.name || h.name, buildings: h.buildings.slice(), construction: [], armory: [], stock: { fuel: 0 }, radio: h.buildings.some((x) => x.type === "radio"), watchtower: h.buildings.some((x) => x.type === "watchtower"), group: f.id };
+    return setup.fortBase;
+  }
   const kinds = ["bunkhouse", "storehouse", "common_room", "infirmary", "garage", "bunkhouse", "cellar", "radio", "storehouse", "bunkhouse", "ammo_bench", "common_room"];
   const n = Math.max(2, Math.min(kinds.length, Math.round(people / 3)));
-  const buildings = [{ type: "walls" }, ...Array.from({ length: Math.max(0, Math.min(4, Math.round(walls / 3))) }, () => ({ type: "walls" })), ...kinds.slice(0, n).map((type) => ({ type }))];
+  // Their wall as one piece of the strength the old sections and free wall gave (buildings.js baseWalls reads str), so
+  // its hit points (deploy.js wallHp) are what they were.
+  const sections = 1 + Math.max(0, Math.min(4, Math.round(walls / 3)));
+  const buildings = [{ type: "walls", str: (walls >= 5 ? 3 : 1) + 3 * sections }, ...kinds.slice(0, n).map((type) => ({ type }))];
   if (walls >= 4) buildings.push({ type: "watchtower" });
   if (e.gate ?? walls >= 6) buildings.push({ type: "gate" }); // conquest.js nativeGate: the reinforced gate they built (ai-locks: your manual), else walls of 6+
   setup.fortBase = { id: -1, tile, type: walls >= 5 ? "hub" : "outpost", name: e.name || "their base", buildings, construction: [], armory: [], stock: { fuel: 0 }, radio: false, watchtower: walls >= 4 };
@@ -355,6 +455,7 @@ export function fortAssault(b, ctx, c) {
     for (let i = 0; i < 2 + Math.min(6, walls); i++) {
       for (let t = 0; t < 10; t++) { const x = rng.int(F.x0, F.x0 + F.yw - 1), y = rng.int(F.y0, F.y0 + F.yh - 1); const q = F.cells[y * F.W + x]; if (q.k === "open" && q.f !== "floor" && !F.indoor[y * F.W + x]) { q.k = i % 2 ? "sandbag" : "barricade"; break; } }
     }
+    layAssaultStores(state, b.setup, F); // assaultstores.js: their storage buildings, their core and the piles outside (no dice)
     F.side = "west";
     resizeBattle(b, F.W, F.H, F.cells, 0, Math.floor(F.H / 2));
     b.deployPlan = { walled: true, fort: F, gate: [], breaches: [], towers: F.towers };
@@ -391,6 +492,7 @@ export function fortAssault(b, ctx, c) {
   // Their vehicle? none. Your vehicle stands in the west margin (combat.js placed it by the edge): fine where it is.
   finishFort(b, F, "west", { attackers: "player", base: null, floodlit: false, night: isNight(state), deploy: true });
   preBoardBase(state, b, (b.setup.enemy || {}).factionId, "west"); // barricade.js: their windows and doors on your side boarded, paid from their stock
+  stockAssaultStores(state, b, F, rng); // assaultstores.js: their real goods in those containers (makeStores), yours to take
   b.phase = "deploy";
   b.acted = false;
   say(b, "Their walls. Stage your people: click one, then a green cell anywhere in the open ground round the base (any side). The gates are in the middle of each wall; the ram, ladders and grenades are for the wall (siege.js). Then start the assault.", "info");

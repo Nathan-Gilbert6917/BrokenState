@@ -8,10 +8,13 @@
 //     people's ways but not as a destination, not to its owner and not to allies; a team on its way stops at the
 //     foot of a bridge barricaded after it set out; AI groups take bridges when they expand
 // Usage: node tools/bridgetest.js [seed] [runs]
+import { setRounds } from "../src/sim/ammo.js";
+import { baseMapSize, yardHalf } from "../src/sim/basemap.js"; // the base map: the hub's battle map size
 import { createWorld, hub, atBase, tickHour } from "../src/sim/world.js";
 import { launchExpedition, planPath, missionProblem, spawnAiParty, bridgeHolder, bridgeClosedTo, outpostName, partyTile } from "../src/sim/parties.js";
 import { createBattle, registerCombatHandler, CELL, AREAS, raidAreasFor, ROAD, bridgeSpan, combatAct, bash, LOS_DENSE, makeLosCache } from "../src/sim/combat.js";
 import { raidEnemies } from "../src/sim/scavenge.js";
+import { totalRounds, giveRoundsTo } from "../src/sim/ammo.js";
 import { LOCKS, openOdds, lockedNear } from "../src/sim/locks.js";
 import { GEAR } from "../src/sim/data.js";
 import { atVehicle } from "../src/sim/raidloot.js";
@@ -32,11 +35,15 @@ const idx = (b, x, y) => y * b.w + x;
 
 const emptyStock = () => ({ food: 0, water: 0, fuel: 0, meds: 0, ammo: 0, parts: 0, scrap: 0, preserved: 0, jars: 0 });
 const baseOn = (state, tile) => { const base = { id: 9000 + state.bases.length, tile, type: "outpost", name: outpostName(state, tile), stock: emptyStock(), radio: false, watchtower: false, buildings: [], construction: [], armory: [] }; state.bases.push(base); return base; };
+// The hub's rounds kept at 80 or more: every launch below packs 30 (the same state launches several teams).
+const stockUp = (state) => { const h = hub(state); const n = totalRounds(h.stock); if (n < 80) giveRoundsTo(state, h, 80 - n); };
 const raidOn = (state, tile, withVehicle = false) => {
   const h = hub(state);
+  stockUp(state);
   const crew = atBase(state, h.id).slice(0, 3);
   // Nobody carries a pry tool: the only way into a locked car without picks is through the glass.
   for (const s of crew) { for (const slot of Object.keys(s.gear)) if (s.gear[slot] && GEAR[s.gear[slot].key] && GEAR[s.gear[slot].key].pry) s.gear[slot] = null; if (s.pack) s.pack = s.pack.filter((it) => !(GEAR[it.key] && GEAR[it.key].pry) && it.key !== "crowbar"); }
+  setRounds(h.stock, 200, crew.map((s) => s.gear.weapon && s.gear.weapon.key).filter(Boolean)); // ammo.js: rounds of the crew's calibres at the hub (each raid's team takes 30)
   const res = launchExpedition(state, { memberIds: crew.map((s) => s.id), dest: tile, mission: "scavenge", stance: "normal", vehicleId: withVehicle ? state.vehicles[0].id : null, supplies: { food: 6, water: 6, ammo: 30, meds: 1 } });
   if (res.error) throw new Error(res.error);
   const p = res.party;
@@ -324,6 +331,7 @@ for (let i = 0; i < runs; i++) {
   const h = hub(state);
   const tile = state.tiles.find((t) => t.road && !t.loc && t.terrain !== "water" && t.id !== h.tile && state.grid.distance(t.id, h.tile) > 1) || state.tiles.find((t) => t.id !== h.tile && t.terrain !== "water");
   const crew = atBase(state, h.id).slice(0, 4).map((s) => s.id);
+  stockUp(state);
   const res = launchExpedition(state, { memberIds: crew, dest: tile.id, mission: "move", stance: "normal", vehicleId: state.vehicles[0] ? state.vehicles[0].id : null, supplies: { food: 6, water: 6, ammo: 30, meds: 1 } });
   if (!res.error && state.vehicles[0]) {
     const p = res.party;
@@ -431,6 +439,7 @@ for (let i = 0; i < runs; i++) {
     for (const s of atBase(state, h.id)) if (s.location.kind !== "base") s.location = { kind: "base", baseId: h.id };
     const crew = atBase(state, h.id).slice(0, 3).map((s) => s.id);
     if (crew.length < 1) break;
+    stockUp(state);
     const res = launchExpedition(state, { memberIds: crew, dest: t.id, mission: "scavenge", stance: "normal", vehicleId: null, supplies: { food: 6, water: 6, ammo: 30, meds: 1 } });
     if (res.error) continue;
     const p = res.party;
@@ -469,9 +478,11 @@ for (let i = 0; i < runs; i++) {
   let b;
   try { b = state.combat = createBattle(state, { tile: h.tile, baseId: h.id, enemy: { kind: "zombies", count: 10, power: 3 }, ambush: null, canRetreat: true, handler: "bridgetest", layout: "baseDefence", deploy: true, context: { through: 50 } }); } finally { delete globalThis.window; }
   // The hub's battle is the fort map (fort.js): the yard, the walkway and wall rings and the margin all round.
-  check(b.tier && b.tier.map === "fort" && b.w === yw + 4 + 2 * FORT.MARGIN && b.h >= yh + 4 + 2 * FORT.MARGIN, `the hub fights on the fort map: the yard plus the rings and the margin (${b.w} × ${b.h} for a ${yw} × ${yh} yard)`);
+  // The base map (sim/basemap.js): the hub's own grid cropped to what stands on it plus the margin, the yard inside the ring.
+  const [mw, mh] = baseMapSize(state, h);
+  check(b.tier && b.tier.map === "fort" && b.w === mw && b.h === mh && b.w >= 2 * yardHalf(h) + 4 + 2 * FORT.MARGIN, `the hub fights on its base map: the yard plus the rings and the margin (${b.w} × ${b.h} for a ${2 * yardHalf(h)} × ${2 * yardHalf(h)} yard)`);
   const gatesN = b.cells.filter((c) => c.k === "gate").length, towersN = b.cells.filter((c) => c.k === "tower").length;
-  check(gatesN === 4 * FORT.GATE && towersN >= 4, `a gate in the middle of each wall and towers at the corners (${gatesN} gate cells, ${towersN} towers)`);
+  check(gatesN === 4 * 4 && towersN >= 4, `a 1×4 gate in the middle of each side of the wall and towers at the corners (${gatesN} gate cells, ${towersN} towers)`);
   const inside = b.units.filter((u) => u.side === "player" && b.tier.interior[u.y * b.w + u.x]).length, outside = b.units.filter((u) => u.side === "enemy" && !b.tier.interior[u.y * b.w + u.x]).length;
   check(inside === b.units.filter((u) => u.side === "player").length && outside === b.units.filter((u) => u.side === "enemy").length, `defenders inside the ring, the dead in the margin on the ${b.tier.side} (${inside} in, ${outside} out)`);
   check(b.phase === "deploy" && b.deploy.zone.reduce((a, v) => a + v, 0) > 1000 && !b.deploy.zone[0], "the deploy step: the whole inside is theirs to stand in, not the margin");
@@ -483,7 +494,7 @@ for (let i = 0; i < runs; i++) {
   const dead = b.units.filter((u) => u.side === "enemy").slice(0, 4);
   dead.forEach((z, i) => { z.x = yardCells[i][0]; z.y = yardCells[i][1]; z.aware = true; });
   tierPlayerTurn(state, b);
-  check(b.tier.stage === "yard" && b.tier.map === "fort" && b.w === yw + 4 + 2 * FORT.MARGIN, `four of the dead inside the ring: the yard stage, still on the fort map (${b.tier.stage}, ${b.w} × ${b.h})`);
+  check(b.tier.stage === "yard" && b.tier.map === "fort" && b.w === mw, `four of the dead inside the ring: the yard stage, still on the fort map (${b.tier.stage}, ${b.w} × ${b.h})`);
   const yard = { w: yw, h: yh };
   check(yard.w * yard.h <= LOS_DENSE ? b.losCache instanceof Int8Array : true, "a small map keeps the typed sight cache");
   const big = makeLosCache(100, 100);

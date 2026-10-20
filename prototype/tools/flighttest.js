@@ -4,7 +4,9 @@
 //     taken over (groupworld.js occupyAbandoned)
 //   - with another base they fall back to it (it becomes the main one); with nowhere to go an ally takes them in
 //   - a horde they can hold: they stay; zealots stand far more often than communes
-//   - overrun: a horde walking into the base (hordes.js onHordeEnter) and winning by RATIO: they leave
+//   - overrun: a horde walking into the base (hordes.js onHordeEnter) and winning where the check said it would: they leave
+//   - the judgement is the fight's: the same defence (groupfight.js groupHoldCheck: your base's hold limit and break-in),
+//     its defence buildings and kit counted, and what it says matches how the fights come out
 //   - it survives a save and load
 // Usage: node tools/flighttest.js [seed]                checks
 //        node tools/flighttest.js rate [days] [seeds...]  flights per world-year on the Balanced autopilot (normal worlds)
@@ -12,11 +14,16 @@ import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from ".
 import { createWorld, tickHour, day, hub } from "../src/sim/world.js";
 import { setAutopilot } from "../src/sim/autopilot.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
-import { makeHorde, hordesHour, HOURS_PER_TILE, hordeWallPower } from "../src/sim/hordes.js";
-import { FLIGHT, flightDaily, fleeBase, fleeSite, baseHold, hordesComing, cannotHold, hordeOverrun } from "../src/sim/groupflight.js";
+import { makeHorde, hordesHour, HOURS_PER_TILE } from "../src/sim/hordes.js";
+import { FLIGHT, flightDaily, fleeBase, fleeSite, holdAgainst, hordesComing, cannotHold, hordeOverrun } from "../src/sim/groupflight.js";
+import { hordeAtGroup } from "../src/sim/groupfight.js";
+import { homeAt } from "../src/sim/groupbases.js";
+import { addBuilding } from "../src/sim/buildings.js";
 import { abandonedAt, occupyAbandoned } from "../src/sim/groupworld.js";
 import { changeRelation, relation } from "../src/sim/diplomacy.js";
 import { tickGroup } from "../src/sim/groupcare.js";
+import { totalRounds } from "../src/sim/ammo.js";
+import { ensureMembers, syncMembers, membersOf } from "../src/sim/members.js";
 
 const t0 = Date.now();
 let passes = 0, fails = 0;
@@ -63,8 +70,9 @@ section("Ahead of a horde they cannot hold: a new site");
 {
   const st = world();
   const { f, tile, h } = setup(st);
-  check(hordesComing(st, tile).includes(h) && cannotHold(st, f, tile, [h]), `a horde of ${h.size} (${hordeWallPower(h).toFixed(1)} on the walls) against a defence of ${baseHold(st, f, tile).toFixed(1)}: they cannot hold`);
-  const pop0 = f.pop, food0 = food(f), ammo0 = f.stock.ammo;
+  const c = holdAgainst(st, f, tile, [h]);
+  check(hordesComing(st, tile).includes(h) && cannotHold(st, f, tile, [h]), `a horde of ${h.size}: the walls stop about ${c.limit}, ${c.through} would break in (${c.theirs.toFixed(0)} against their ${c.mine.toFixed(0)}): they cannot hold`);
+  const pop0 = f.pop, food0 = food(f), ammo0 = totalRounds(f.stock); // rounds by calibre (ammo.js)
   const odds = FLIGHT.ODDS;
   FLIGHT.ODDS = 99; // they always go
   flightDaily(st);
@@ -73,7 +81,7 @@ section("Ahead of a horde they cannot hold: a new site");
   check(!f.bases.includes(tile) && f.bases.length === 1 && f.alive, `they left (${f.bases[0] === tile ? "still there" : `now at ${f.bases[0]}`})`);
   check(g.distance(f.bases[0], h.tile) >= g.distance(tile, h.tile) + FLIGHT.AWAY, `the new site is farther from the dead (${g.distance(f.bases[0], h.tile)} tiles against ${g.distance(tile, h.tile)})`);
   check(f.pop < pop0 && f.pop >= pop0 * (1 - FLIGHT.STRAGGLE[1]) - 1, `a few lost on the way (${pop0} → ${f.pop})`);
-  check(food(f) < food0 && f.stock.ammo < ammo0 && food(f) >= food0 * (1 - FLIGHT.LEAVE) - 1, `the stores they could not carry stayed (food ${Math.round(food0)} → ${Math.round(food(f))})`);
+  check(food(f) < food0 && totalRounds(f.stock) < ammo0 && food(f) >= food0 * (1 - FLIGHT.LEAVE) - 1, `the stores they could not carry stayed (food ${Math.round(food0)} → ${Math.round(food(f))}, rounds ${ammo0} → ${totalRounds(f.stock)})`);
   const rec = abandonedAt(st, tile);
   check(!!rec && rec.from === f.id && (food(rec) || 0) > 0, `the old base stands abandoned with some stores (${rec ? JSON.stringify(rec.stock) : "none"})`);
   check(f.fledDay === day(st) && (st.stats.groupFlights || 0) === 1, "counted (stats.groupFlights)");
@@ -117,7 +125,7 @@ section("A horde they can hold; zealots stand, communes run");
 {
   const st = world();
   const { f, tile, h } = setup(st, "commune", 20);
-  check(!cannotHold(st, f, tile, [h]), `a horde of ${h.size}: they hold (${hordeWallPower(h).toFixed(1)} against ${baseHold(st, f, tile).toFixed(1)})`);
+  check(!cannotHold(st, f, tile, [h]), `a horde of ${h.size}: they hold (${holdAgainst(st, f, tile, [h]).tier}: the walls stop about ${holdAgainst(st, f, tile, [h]).limit})`);
   flightDaily(st);
   check(f.bases.includes(tile), "and stay");
   let ran = { zealot: 0, commune: 0 };
@@ -137,6 +145,10 @@ section("Overrun: the dead walk in and win");
 {
   const st = world();
   const { f, tile, h } = setup(st, "commune", 600, 1);
+  // Their people unarmed: the dead that break in (your rule, defences.js breakInForce: at most 20 of them, fought by
+  // the numbers on the very people there) beat them. (Twenty armed people would hold, as yours would.)
+  ensureMembers(st, f); syncMembers(st, f);
+  for (const s of membersOf(f)) { s.gear.weapon = null; s.gear.tool = null; }
   h.move = HOURS_PER_TILE - 0.01;
   const pop0 = f.pop;
   hordesHour(st); // the horde steps in: the fight (factions.js), then the flight
@@ -145,7 +157,39 @@ section("Overrun: the dead walk in and win");
   // Held: nothing.
   const s2 = world(seed + 1);
   const x = setup(s2, "commune", 30, 1);
-  check(hordeOverrun(s2, x.f, x.tile, 1, 10, true) === null && hordeOverrun(s2, x.f, x.tile, 12, 10, false) === null, "held, or won by less than RATIO: they stay");
+  check(hordeOverrun(s2, x.f, x.tile, { tier: "overrun" }, true) === null && hordeOverrun(s2, x.f, x.tile, { tier: "inside" }, false) === null, "held, or beaten where the check said they would hold: they stay");
+}
+
+section("The judgement is the fight's: the same defence tiers");
+{
+  // Their defence buildings count in the judgement as in the fight (groupfight.js groupHoldCheck reads the hold limit the
+  // fight's walls use): barricades and a trench at a base they took from you raise the size they hold at the walls.
+  const st = world();
+  const { f, tile } = setup(st, "commune", 20);
+  ensureMembers(st, f); syncMembers(st, f);
+  const base = homeAt(st, f, tile);
+  const before = holdAgainst(st, f, tile, [{ size: 100 }]).limit;
+  base.real = true; // a base of yours they hold: its buildings are yours (groupbases.js)
+  for (const t of ["barricades", "barricades", "trench"]) addBuilding(base, t);
+  const after = holdAgainst(st, f, tile, [{ size: 100 }]).limit;
+  check(after > before, `barricades and a trench raise the walls' hold in their judgement (${before} → ${after}), as at yours`);
+  // Across sizes and worlds: what the check says against how the fight (hordes.js onHordeEnter: groupfight.js
+  // hordeAtGroup) comes out. Held at the walls whenever it says so; overrun far more often where it says overrun.
+  const tally = { wall: [0, 0], inside: [0, 0], overrun: [0, 0] };
+  for (let i = 0; i < 24; i++) {
+    const s = world(seed + 100 + i);
+    const x = setup(s, ["commune", "raider", "fortress", "traders"][i % 4], [30, 120, 300, 700, 1500, 3000][i % 6], 1);
+    ensureMembers(s, x.f); syncMembers(s, x.f);
+    if (i % 3 === 2) for (const p of membersOf(x.f)) { p.gear.weapon = null; p.gear.tool = null; }
+    const c = holdAgainst(s, x.f, x.tile, [x.h]);
+    const r = hordeAtGroup(s, x.h, x.f, x.tile);
+    tally[c.tier][0]++;
+    if (r && r.held) tally[c.tier][1]++;
+  }
+  const rate = (k) => (tally[k][0] ? tally[k][1] / tally[k][0] : null);
+  console.log(`    held / judged: wall ${tally.wall[1]}/${tally.wall[0]}, inside ${tally.inside[1]}/${tally.inside[0]}, overrun ${tally.overrun[1]}/${tally.overrun[0]}`);
+  check(tally.wall[0] > 0 && tally.wall[1] === tally.wall[0], "every horde judged held at the walls was held there");
+  check(tally.overrun[0] > 0 && (rate("inside") == null || rate("overrun") < rate("inside")), "hordes judged to overrun them won far more often than those judged beaten inside");
 }
 
 section("Save and load");

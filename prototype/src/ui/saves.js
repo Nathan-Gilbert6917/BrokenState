@@ -105,6 +105,7 @@ export function loadOptions() {
       if (v.sound && typeof v.sound === "object") o.sound = { ...v.sound }; // volumes and mutes (ui/audio.js soundOptions cleans them)
       if (typeof v.guideSeen === "boolean") o.guideSeen = v.guideSeen; // a campaign was started here: the first-week guide box starts off (ui/guide.js)
       if (v.pacing && typeof v.pacing === "object") o.pacing = v.pacing; // Options → Pause for… (ui/pacing.js checks each switch)
+      if (v.worldCfg && typeof v.worldCfg === "object" && !Array.isArray(v.worldCfg)) o.worldCfg = v.worldCfg; // the new-run screen's World… dials (sim/worldcfg.js cleanCfg checks them)
       readDisplayOptions(o, v); // Display (palette, map text, reduce motion, minimap, dev tools, map animations) and the confirmations
     }
   } catch { /* unreadable: the defaults */ }

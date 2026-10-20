@@ -39,7 +39,7 @@ import {
   CELL, active, unitAt, transformBattle, say, reachable, pathTo, distField, moveAlong, resizeBattle, floodReach,
   coverAgainst, isRanged, WEAPONS, placeCar, CAR_LEN, parkRaidCar,
 } from "./combat.js";
-import { count, countAll } from "./buildings.js";
+import { count, countAll, BUILDINGS } from "./buildings.js";
 import { Rng } from "./rng.js";
 import { attackSide, fromTileOf, sideTf, sideUntf, setLit, DEPLOY, gateHp, wallHp } from "./deploy.js";
 import { armoryDefence, tierMults, TIERS } from "./defences.js";
@@ -47,6 +47,7 @@ import { poweredType } from "./power.js";
 import { isNight } from "./world.js";
 import { dimsAt, baseScale, baseSide, densify } from "./battlesize.js";
 import { siegeWallCut } from "./siege.js";
+import { layMines } from "./mines.js"; // the main base's minefield across the approach
 import { lateOut } from "./defenceplan.js"; // those not on watch when the attack hit come out
 import { rollWin, winMixOf } from "./windows.js"; // the windows' states
 
@@ -112,7 +113,10 @@ const hashStr = (s) => { let h = 2166136261; for (let i = 0; i < s.length; i++) 
 // The base's own dice for its map: the same base with the same buildings always looks the same.
 export function layoutSeed(base) {
   if (!base) return 7;
-  return hashStr(`${base.tile}|${base.type}|${base.buildings.map((x) => x.type).sort().join(",")}`);
+  // The wall's pieces (buildings.js piece) count as the one wall they were: adding a piece never reshuffles the map.
+  const types = base.buildings.filter((x) => !(BUILDINGS[x.type] && BUILDINGS[x.type].piece)).map((x) => x.type);
+  if (types.length < base.buildings.length && !types.includes("walls")) types.push("walls");
+  return hashStr(`${base.tile}|${base.type}|${types.sort().join(",")}`);
 }
 
 // ---------- the map (east-facing: the attackers on the east edge) ----------
@@ -291,12 +295,25 @@ function layInterior(base, opts, W, H, tight = false, wide = false) {
       for (const [ox, oy] of [[2, 0], [2, 1], [2, -1]]) if (bags > 0 && free(dx + ox, dy + oy) && !used[(dy + oy) * W + dx + ox - 1]) { put(dx + ox, dy + oy, "sandbag"); bags--; break; }
     }
     scatter(bags, "sandbag", I.WALL_X - 8, I.WALL_X - 3);
+    // Sandbag positions (buildings.js sandbag_wall, the Defenses tab): 4 cells each across the yard.
+    scatter(count(base, "sandbag_wall") * 4, "sandbag", I.WALL_X - 8, I.WALL_X - 3);
+    // Without a wall the base's wire fences (barbed_wire, razor_wire) are lines in front of the yard, short of where
+    // the attackers start (the east edge): barbed wire 2 and 4 columns in from the wall's line, concertina wire 5 (the trench at 3, a second at 6)
+    // (wire.js: it snags the living unless they cut it). On the fort map they are rings outside the wall (fort.js).
+    if (!walled && !opts.fort) {
+      const line = (x, razor) => { for (let y = 0; y < H; y++) { const q = at(x, y); if (q && q.k === "open") q.k = "wire"; if (razor && q && q.k === "wire") q.razor = true; } };
+      for (let i = 0; i < Math.min(2, count(base, "barbed_wire")); i++) line(I.WALL_X - 2 - 2 * i, false);
+      if (count(base, "razor_wire")) line(I.WALL_X - 5, true);
+    }
     // Without walls the dead come straight over the yard: the wire, the bear traps, the pits and the trench are here.
     if (!walled) {
       scatter((kit.wire || 0) * 4, "wire", I.WALL_X - 5, I.WALL_X - 3);
       scatter(kit.traps || 0, "beartrap", I.WALL_X - 6, I.WALL_X - 2, (x, y) => free(x, y) && x >= I.WALL_X - 6);
-      scatter((c.pits || 0) * 5, "spikes", I.WALL_X - 6, I.WALL_X - 2, (x, y) => free(x, y) && x >= I.WALL_X - 6);
-      if (count(base, "trench")) for (let y = 0; y < H; y++) if (free(I.WALL_X - 3, y) && y % 4 !== 2) put(I.WALL_X - 3, y, "trench");
+      if (!opts.fort) scatter((c.pits ?? count(base, "spike_pits")) * 5, "spikes", I.WALL_X - 6, I.WALL_X - 2, (x, y) => free(x, y) && x >= I.WALL_X - 6); // a raid meets the pits standing; the fort map digs them outside its wall (fort.js)
+      if (!opts.fort) { // the fort map digs its trenches outside the wall (fort.js)
+        if (count(base, "trench")) for (let y = 0; y < H; y++) if (free(I.WALL_X - 3, y) && y % 4 !== 2) put(I.WALL_X - 3, y, "trench");
+        if (count(base, "trench") >= 2) for (let y = 0; y < H; y++) if (free(I.WALL_X - 6, y) && y % 4 !== 0) put(I.WALL_X - 6, y, "trench"); // a second line further back
+      }
     }
     // The base's own clutter as cover: wells, rain barrels, crates, a car from the garage; fields for the farm plots.
     scatter(countAll(base, "well"), "well", I.YARD_X - 2, I.WALL_X - 3, (x, y) => free(x, y) && x >= 4);
@@ -322,6 +339,13 @@ function layInterior(base, opts, W, H, tight = false, wide = false) {
   densify(cells, W, H, rng, { target: I.YARD_COVER, keep: (x, y) => !!used[y * W + x], props: (f) => YARD_PROPS[f] || null });
   // Every door, ladder and the far edge reachable from the back gate: clear whatever clutter is in the way.
   connect(cells, W, H, out);
+  // Land mines (mines.js) without a wall: buried across the approach, short of where the attackers start (after the
+  // clutter, so nothing stands on one). The fort map lays its own in the margin (fort.js).
+  if (base && !walled && !opts.fort && count(base, "minefield")) {
+    const cand = [];
+    for (let y = 0; y < H; y++) for (let x = I.WALL_X - 7; x <= I.WALL_X - 2; x++) if (at(x, y) && at(x, y).k === "open" && !used[y * W + x]) cand.push([x, y]);
+    out.minesLaid = layMines(null, base, cells, cand, rng, W);
+  }
   out.doors = out.doors.filter(([x, y]) => at(x, y).k === "bdoor");
   out.windows = out.windows.filter(([x, y]) => at(x, y).k === "window");
   return out;
@@ -420,6 +444,7 @@ export function interiorMap(b, ctx, base, c) {
   const lay = buildInterior(base, { walled: false, c });
   resizeBattle(b, lay.W, lay.H, lay.cells, 0, Math.floor(lay.H / 2));
   b.deployPlan = { walled: false, interior: true, gate: [], breaches: [], towers: lay.towers, lay };
+  if (lay.minesLaid) b.mines = { baseId: base.id, laid: lay.minesLaid }; // mines.js settleMines
 }
 
 export function interiorUnits(b, ctx, base, c) {
@@ -669,7 +694,7 @@ export function tierPlayerTurn(state, b) {
   if (T.map === "wall") {
     const inside = foes.filter((f) => T.interior[f.y * b.w + f.x]).length;
     const need = Math.max(INTERIOR.BREACH_MIN, Math.ceil(foes.length * INTERIOR.BREACH_FRAC));
-    const onWall = b.units.some((u) => u.side === "player" && active(u) && ["walkway", "tower", "gate", "breach", "rubble"].includes(b.cells[u.y * b.w + u.x].k));
+    const onWall = b.units.some((u) => u.side === "player" && active(u) && ["walkway", "stand", "tower", "gate", "breach", "rubble"].includes(b.cells[u.y * b.w + u.x].k));
     if (inside >= need || (inside > 0 && !onWall)) toInterior(state, b, { why: "breach" });
     return;
   }
@@ -681,7 +706,7 @@ export function tierPlayerTurn(state, b) {
     if (T.stage === "wall") {
       const inside = attackers.filter((f) => T.interior[f.y * b.w + f.x]).length;
       const need = Math.max(INTERIOR.BREACH_MIN, Math.ceil(attackers.length * INTERIOR.BREACH_FRAC));
-      const onWall = b.units.some((u) => u.side === def && active(u) && ["walkway", "tower", "gate", "breach", "rubble"].includes(b.cells[u.y * b.w + u.x].k));
+      const onWall = b.units.some((u) => u.side === def && active(u) && ["walkway", "stand", "tower", "gate", "breach", "rubble"].includes(b.cells[u.y * b.w + u.x].k));
       if (inside >= need || (inside > 0 && !onWall)) {
         T.stage = "yard"; T.fellBackTurn = b.turn; T.why = "breach";
         say(b, att === "enemy" ? "They are through the wall! Hold the yard, and the buildings if it falls." : "You are through their wall! Into the yard.", att === "enemy" ? "danger" : "good");

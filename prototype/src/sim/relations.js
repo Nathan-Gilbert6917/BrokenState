@@ -29,7 +29,7 @@ import { foodIn, payFood } from "./foods.js"; // food by type (foods.js)
 import { rationKey, RATION_LEVELS } from "./meals.js"; // the ration levels (lean: −1 a day)
 import { hasTrait, traitFx, breakMult } from "./traits.js"; // Hothead, Glutton, Unlucky, Iron Will, Squeamish, Pessimist
 import { log, addCard, day, skill, atBase, residents, alive, baseById, hurt, combatPower } from "./world.js";
-import { count } from "./buildings.js";
+import { count, isPiece } from "./buildings.js";
 import { GEAR } from "./data.js";
 import { allItems } from "./inventory.js";
 import { season, weatherOnDay } from "./weather.js";
@@ -291,7 +291,9 @@ function splitUp(state, a, b, r) {
 }
 
 function baseCredits(state, base) {
-  const n = base.buildings.length;
+  // The wall's pieces (buildings.js piece) count as one building: the wall (a ring of fifty pieces is not fifty).
+  const pieces = base.buildings.filter((b) => isPiece(b.type)).length;
+  const n = base.buildings.length - pieces + (pieces ? 1 : 0);
   if (base.relBuilt == null) base.relBuilt = n;
   if (n > base.relBuilt) {
     const builders = atBase(state, base.id).filter((s) => s.role === "build");
@@ -494,6 +496,7 @@ function breakCard(state, base, s, what) {
         disabled: () => !t.who, ai: () => t.chance * 15,
         resolve: (st) => {
           if (!live()) return gone();
+          if (!t.who) return `Nobody is here to talk ${first(s)} round.`; // disabled then: an auto-answer that took it anyway
           const ok = st.rng.chance(t.chance);
           talkXp(st, t.who, ok); // skills.js: Speech for the talker
           addMood(st, s, ok ? 15 : 3, `Talked it through with ${first(t.who)}`);

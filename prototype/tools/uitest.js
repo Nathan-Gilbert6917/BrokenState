@@ -78,8 +78,11 @@ const mainSrc = readFileSync(new URL("../src/main.js", import.meta.url), "utf8")
 const inMain = (name) => new RegExp(`(^|[\\s{,])("${name}"|${/^[a-z]\w*$/i.test(name) ? name : "\\u0000"})\\s*:`, "m").test(mainSrc);
 import { WHY_ACTIONS } from "../src/ui/causes.js"; // Why? links on deaths and lost bases
 import { BN_ACTIONS, BN_INPUT } from "../src/ui/basename.js"; // naming and renaming bases
-const CLICK = { ...DIARY_ACTIONS, ...ALERT_ACTIONS, ...ROSTER_ACTIONS, ...EXPLORE_ACTIONS, ...WATCHLIST_ACTIONS, ...CONTROLS_ACTIONS, ...CODEX_ACTIONS, ...WHY_ACTIONS, ...BN_ACTIONS };
-const CHANGE = { ...DIARY_CHANGE, ...ROSTER_CHANGE, ...EXPLORE_CHANGE, ...BN_INPUT };
+import { WC_ACTIONS, WC_CHANGE } from "../src/ui/worldcfg.js"; // the new-run screen's World… window (the run's dials)
+import { BASEMAP_ACTIONS } from "../src/ui/basemap.js"; // the base map (the Construction tab's "Open the base map to build")
+import { STORAGE_ACTIONS, STORAGE_CHANGE } from "../src/ui/storage.js"; // the Storage tab (main.js registers both tables)
+const CLICK = { ...DIARY_ACTIONS, ...ALERT_ACTIONS, ...ROSTER_ACTIONS, ...EXPLORE_ACTIONS, ...WATCHLIST_ACTIONS, ...CONTROLS_ACTIONS, ...CODEX_ACTIONS, ...WHY_ACTIONS, ...BN_ACTIONS, ...WC_ACTIONS, ...BASEMAP_ACTIONS, ...STORAGE_ACTIONS };
+const CHANGE = { ...DIARY_CHANGE, ...ROSTER_CHANGE, ...EXPLORE_CHANGE, ...BN_INPUT, ...WC_CHANGE, ...STORAGE_CHANGE };
 function handlersOk(html, where) {
   const missing = [];
   for (const a of actionsIn(html)) {
@@ -642,11 +645,16 @@ section("New-run screen: world size and AI groups (sim/worldsize.js)");
     htmlOk(html, "new-run screen (Custom)");
     check(/value="custom" selected/.test(html) && /data-action="customw"[^>]*value="120"/.test(html) && /data-action="customh"[^>]*value="80"/.test(html) && html.includes("Experimental") && html.includes("× Huge"), "Custom: width, height and the warning (bigger than Huge)");
   }
-  // Starting people (sim/hardcore.js START_PEOPLE): Hardcore only; greyed out with the reason on a normal start.
+  // Starting people (sim/hardcore.js peopleRange): Normal 1–8 (six by default), Hardcore 1–4.
   {
-    const normalHtml = newRunScreen(createWorld({ seed: seed + 9, factionCount: 7 }), { worldSize: "normal", factionCount: 7, nrMsg: "", startPeople: 3 });
-    const nsel = /<select data-action="startpeople"([^>]*)>([\s\S]*?)<\/select>/.exec(normalHtml);
-    check(nsel && /disabled/.test(nsel[1]) && normalHtml.includes("Hardcore only"), "normal start: Starting people shown greyed out, Hardcore only");
+    for (const n of [1, 6, 8]) {
+      const nw = createWorld({ seed: seed + 9, factionCount: 7, startPeople: n });
+      const normalHtml = newRunScreen(nw, { worldSize: "normal", factionCount: 7, nrMsg: "", startPeople: n });
+      htmlOk(normalHtml, `new-run screen (Normal, ${n} starting)`);
+      const nsel = /<select data-action="startpeople"([^>]*)>([\s\S]*?)<\/select>/.exec(normalHtml);
+      check(nsel && !/disabled/.test(nsel[1]) && (nsel[2].match(/<option/g) || []).length === 8 && new RegExp(`value="${n}" selected`).test(nsel[2]) && nw.survivors.length === n && (normalHtml.match(/nrcard/g) || []).length === n,
+        `Normal: Starting people 1–8 with ${n} selected, ${n} colonist card${n > 1 ? "s" : ""}`);
+    }
     for (const n of [1, 2, 3, 4]) {
       const w = createWorld({ seed: seed + 9, factionCount: 7, mode: "hardcore", startPeople: n });
       const html = newRunScreen(w, { worldSize: "normal", factionCount: 7, nrMsg: "", startPeople: n });
@@ -696,8 +704,10 @@ section("Repairs tab after a raid (ui/explore.js, sim/breakdowns.js raidDamage)"
   htmlOk(html, "repairs tab after a raid");
   check(html.includes("Last raid: day") && html.includes("Test raiders") && html.includes("a break-in"), "it shows the last raid: who, how it went, the hours");
   check(rep.broken.length < 2 || /data-action="rp-all"/.test(html), `a Repair all button with the bill when several are broken (${rep.broken.length})`);
-  const damaged = BD.fixtures(h).find((fx) => !fx.broken && (fx.wear || 0) >= BD.RAID_DAMAGE.damaged);
-  check(!damaged || html.includes(">Patch</button>"), "a damaged building can be patched from the wear table");
+  const damaged = BD.fixtures(h).find((fx) => !fx.broken && (fx.wear || 0) >= BD.RAID_DAMAGE.damaged && !Buildings.isPiece(fx.type));
+  check(!damaged || new RegExp(`data-action="rp-start" data-base="${h.id}" data-fx="${damaged.id}" data-m="repair"`).test(html), "a damaged building has a Repair order in the list (repair orders 2026-10-19)");
+  const mend = BD.wallToMend(h);
+  check(!mend.length || h.wallRepair || new RegExp(`data-action="rw-order" data-base="${h.id}"`).test(html), `the wall's pieces: one wall row with Repair the wall (${mend.length} segments to mend), no row a piece`);
   EXPLORE_ACTIONS["rp-all"](w, ui, { base: String(h.id) });
   check((h.repairs || []).length >= Math.min(1, rep.broken.length) && /starts/.test(ui.baseMsg || ""), `Repair all starts the jobs ("${(ui.baseMsg || "").slice(0, 100)}")`);
   htmlOk(repairsTab(w, h), "repairs tab with jobs under way");

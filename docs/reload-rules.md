@@ -40,8 +40,10 @@ magazine "Unload" and "Reload with it".
   in. Unloading a spare (the item menu in a fight, 1 action) puts every round in it back as loose rounds on the person,
   each kind its own stack.
 - The fight's start fills the gun and the spares physically: the gun's own rounds (a gun put down or found keeps
-  exactly what it had), then the person's own rounds, then the team's bags (the rounds a team forming at a base took
-  for its guns). The fight's end puts what is left in the gun and the magazines back onto the person as loose rounds
+  exactly what it had), then the person's own rounds, then the team's bags (the rounds a team leaving a base took for
+  its guns and spares: the team-forming window and every other launch alike, parties.js launchExpedition, on top of the
+  rounds packed as supplies, which stay a reserve): every gun on the team first, then a spare each in turn, so the bags never fill one person's spares
+  while a teammate's gun starts empty. The fight's end puts what is left in the gun and the magazines back onto the person as loose rounds
   (the stores for what finds no room), so out of a fight the rounds are counted where they always were and the badge
   works as before. A mixed stack does not survive the fight.
 - The side's Ammo figure counts the bags, the pockets, the guns and the magazines once.

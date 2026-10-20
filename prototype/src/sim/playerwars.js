@@ -58,7 +58,7 @@ import { hash01 } from "./skills.js";
 import { attitude, changeGoodwill, strength, isAggressiveType, launchRaidOnBase, playerRaidWeight, nearestOwnBase, RAIDS } from "./factions.js";
 import { noteStrife, SPLINTER } from "./splinters.js"; // a war on you they lost stirs strife (splinter bands)
 import { ensureDiplo, knownAs, relation, DIPLO } from "./diplomacy.js";
-import { weightOf, fitPeople } from "./groupcare.js";
+import { weightOf, fitPeople, takeInFromYours } from "./groupcare.js";
 import { knowsOf } from "./groupworld.js";
 import { blocOf, blocMates, blocSpare, threatApplies, jointRaid, playerStruck, blocTitle } from "./blocs.js";
 import { isMember, controlledLand } from "./alliance.js";
@@ -142,7 +142,7 @@ function knownNear(state, f) {
 export function grievanceOf(state, f) {
   const g = { ...(f.griev || {}) };
   for (const k of GRIEVANCES) g[k] = g[k] || 0;
-  g.prisoners += PW.PRISONER * Math.max(theirPrisoners(state, f).length, f.prisonersHeld || 0);
+  g.prisoners += PW.PRISONER * theirPrisoners(state, f).length; // prisoners.js: the very people you hold
   g.growth += PW.NEAR_BASE * knownNear(state, f).length;
   g.total = GRIEVANCES.reduce((a, k) => a + g[k], 0);
   return g;
@@ -347,7 +347,7 @@ function warDay(state, w) {
   // Weariness.
   let e = PW.EXH_DAY;
   if (foodIn(f.stock) < f.pop * 2) e += PW.EXH_HUNGRY;
-  if ((f.stock.ammo || 0) < f.pop * 3) e += PW.EXH_HUNGRY / 2;
+  if (totalRounds(f.stock) < f.pop * 3) e += PW.EXH_HUNGRY / 2;
   const des = (f.deserted || 0) - (w.deserted || 0);
   if (des > 0) e += des * PW.EXH_DESERT;
   w.deserted = f.deserted || 0;
@@ -604,14 +604,15 @@ export function settle(state, warId, terms, lead = "Peace") {
   checkGameOver(state);
   return text;
 }
-// The least content at the hub (not the leader) goes over to them.
+// The least content at the hub (not the leader) goes over to them: the very person, with what they carry
+// (groupcare.js takeInFromYours: a stub of who they were stays in your list).
 function convert(state, f, hb) {
   const s = atBase(state, hb.id).filter((x) => !x.leader).sort((a, b) => (a.mood || 0) - (b.mood || 0) || a.id - b.id)[0];
   if (!s || atBase(state, hb.id).length <= 2) return null;
-  s.alive = false; s.left = true; s.station = null; s.inBed = false; s.joinedGroup = f.id;
-  f.pop += 1;
-  log(state, `${s.name} followed ${f.name}'s preachers out of ${hb.name}.`, "death");
-  return s;
+  const name = s.name;
+  const who = takeInFromYours(state, f, s, "convert");
+  log(state, `${name} followed ${f.name}'s preachers out of ${hb.name}.`, "death");
+  return who;
 }
 export function endPwar(state, w, how, text, terms = []) {
   const d = ensurePwars(state);

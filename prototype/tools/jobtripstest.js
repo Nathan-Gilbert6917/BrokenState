@@ -364,7 +364,8 @@ section("Stockpiles as drop points: a trip that is not the window's last leaves 
   check(res && !res.error, `a haul team sets out (${res && (res.error || res.text)})`);
   for (let i = 0; i < 24 && res.party && state.parties.includes(res.party); i++) tickHour(state);
   note(`a day: ${inPile} firewood left at the stockpile; the haul brings it in`);
-  check(!(pile.contents.wood > 0.5) && (base.stock.wood || 0) >= w1 + inPile * 0.9, `the haul brought it home: the stockpile ${JSON.stringify(pile.contents)}, the base's firewood ${Math.round(w1)} → ${Math.round(base.stock.wood || 0)}`);
+  const burned = (base.heat && base.heat.wood) || 0; // the night's fire at midnight meanwhile (fire-nights: upkeep.js HEAT.night)
+  check(!(pile.contents.wood > 0.5) && (base.stock.wood || 0) + burned >= w1 + inPile * 0.9, `the haul brought it home: the stockpile ${JSON.stringify(pile.contents)}, the base's firewood ${Math.round(w1)} → ${Math.round(base.stock.wood || 0)} (${Math.round(burned)} burned for the night's fire meanwhile)`);
 }
 
 console.log(`\n${passed} passed, ${fails} failed`);

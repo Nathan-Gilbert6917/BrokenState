@@ -15,7 +15,7 @@ import { canRadioGroup, hasNetwork } from "../sim/radio.js";
 import { firstHubGoal } from "./hardcore.js";
 import { marketOf, marketBoard, priceTrend, LOT } from "../sim/trade.js";
 import {
-  ensureJobs, JOB_TYPES, jobById, jobTile, acceptJob, declineJob, abandonJob, requestPickup, pickupProblem, rewardText, acceptProblem, jobsOf,
+  ensureJobs, JOB_TYPES, jobById, jobTile, acceptJob, declineJob, abandonJob, requestPickup, pickupProblem, rewardText, acceptProblem, jobsOf, rescueHeld,
 } from "../sim/jobs.js";
 import {
   ensureDiplo, relation, relWord, warsOf, enemyIn, brokerInfo, brokerCeasefire, joinWar, joinProblem, leaveWar, warById, pactsOf, knownAs,
@@ -148,7 +148,7 @@ export function jobProgress(state, j) {
     case "horde": { const h = state.hordes.find((x) => x.id === d.hordeId); return h ? `Horde of ${h.size} (was ${d.size0}) at ${tileLabel(state, h.tile)}${j.engaged ? " · your team has engaged it" : ""}` : "The horde is gone"; }
     case "escort": return d.stage === "waiting" ? `Their caravan waits at ${tileLabel(state, j.target)} for your team` : d.stage === "moving" ? `On the road: your team alongside ${d.road ? pct(d.near / d.road) : "0%"} of the hours (need 50%)` : "Arrived";
     case "deliver": return `${d.qty - d.left} of ${d.qty} ${d.key} handed over`;
-    case "rescue": return `${d.count} held at ${tileLabel(state, j.target)} by ${nameOf(state, d.holder)}`;
+    case "rescue": return `${rescueHeld(state, j).length} held at ${tileLabel(state, j.target)} by ${nameOf(state, d.holder)}`; // the very people still in their jail
     case "hive": return `${tileLabel(state, j.target)}${j.engaged ? " · your squad has been at the hive" : ""}`;
     case "scout": return `${d.seen || 0} of ${d.total || 19} tiles reported (need ${pct(d.need)})`;
     case "retrieve": return d.atHub ? "In your stores: ask them to fetch it" : d.carrier != null ? "Your team carries it: take it to their base" : `Waiting at ${tileLabel(state, d.site)}`;

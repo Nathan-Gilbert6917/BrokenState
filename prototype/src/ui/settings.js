@@ -255,6 +255,18 @@ async function saveIron(state, ui, api, why = "") {
 const IRON_NO = "Ironman: this game saves itself. There is no saving or loading by hand; Save and exit leaves it, and Continue picks it up again.";
 const ironBlocked = (state, ui) => { if (!ui.started || !state.ironman) return false; ui.settings.msg = IRON_NO; ui.settings.err = true; return true; };
 
+// A card's "Save and fight" (sim/loneattack.js attackCard; main.js choice): the fight has just opened and the card is
+// gone, so the game is saved as it stands, to the slot it was loaded from or saved to (a manual one), else a new slot.
+// An Ironman game saves itself as every battle opens: nothing more. Other open cards cannot be written (sim/save.js):
+// they are left out, as the battle-start save leaves them out.
+export function saveBeforeFight(state, ui, name, api = API) {
+  if (!api || !ui.started || !state || state.ironman) return null;
+  const id = targetSlot(ui) || newSlotId();
+  const p = writeSave(id, state, { name: name || defaultSaveName(state), thumb: api.thumb ? api.thumb() : null, why: "attacked", dropCards: !!saveBlocker(state) })
+    .then((entry) => { ui.slot = entry.id; markSaved(state, ui); if (api.refresh) api.refresh(); }, (e) => { if (!(e instanceof SaveError)) console.error("Broken State: the save before the fight failed:", e); });
+  if (api.track) api.track(p);
+  return p;
+}
 // The battle-start save of the battle on screen: Restart battle in the battle panel (ui/combat.js). Not in Ironman.
 export const battleRestartable = (state) => !!(state && state.combat && !state.ironman && state.combat.saveOk && state.combat.saveKey);
 

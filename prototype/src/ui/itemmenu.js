@@ -26,7 +26,8 @@ import { amountOf, countOf, isRoundItem, isBulk, bulkRecord } from "../sim/items
 import { useItemOn, useText } from "../sim/comforts.js";
 import { repairKind, repairInfoAt, repairAt } from "../sim/repair.js";
 import { isJunk, boilerJunkOn } from "../sim/woodcutting.js";
-import { isGunCase, caseText, openCaseAt } from "../sim/gunsafes.js";
+import { isBox, isSealed, openPlan, lockWords } from "../sim/boxes.js"; // lock boxes and cases (2026-10-19)
+import { openBoxWindow } from "./boxview.js";
 import { isHelmet, isHelmetPart, helmetFitReason, fitHelmetAt } from "../sim/helmets.js";
 import { modFitReason, fitsText } from "../sim/gunmods.js";
 import { treatWorm, wormOf } from "../sim/worm.js";
@@ -221,7 +222,11 @@ function calmRows(state, ui, m, item, d, s, out) {
     out.push(row("deworm", "Take the dewormer", () => treatWorm(state, base, s.id, "dewormer"), { why: !w || w.seen == null ? `Nobody knows ${first(s)} has the worm.` : !base ? "At a base (where they can rest it off)." : "", tip: "A sure cure while the worm is in the gut: it passes, and they are weak a few days" }));
   }
   if ((d.medKit || d.selfStab) && s && !body) out.push(medRow(state, s, `with the team's meds${d.medKit ? ` (the ${item.name} helps whoever treats)` : ""}`));
-  if (isGunCase(item) && !body) out.push(row("opencase", item.locked ? "Prise the case open" : "Open the case", () => openCaseAt(state, loc), { tip: `Inside: ${caseText(item)}` }));
+  if (isBox(item) && !body && !fight(state) && !RAID_O.has(L.o)) { // a box or a case: opened with the right tool, then its window (ui/boxview.js)
+    const o = isSealed(item) ? openPlan(state, loc, s ? s.id : null) : { ok: true };
+    const label = !isSealed(item) ? "Look inside" : !item.locked ? "Open" : o.ok && o.tool && o.tool.kind === "picks" ? `Pick the lock (${o.tool.item.name})` : o.ok && o.tool ? `Force it open (${o.tool.item.name})` : "Force it open";
+    out.push(row("opencase", label, (st2, ui2) => openBoxWindow(state, ui2, loc, s ? s.id : null), { why: o.ok ? "" : o.why, tip: isSealed(item) ? `${item.locked ? `Locked with ${lockWords(item)}` : "Not locked"}. Free out of a fight; a window shows what is inside.` : "What is inside, to take out" }));
+  }
   // Repair, salvage, firewood.
   if (!body && !looting && repairKind(item)) {
     let r = null;

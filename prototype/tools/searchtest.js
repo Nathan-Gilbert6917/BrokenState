@@ -391,8 +391,8 @@ console.log("Quick search costs: Heat +5, heard 7 tiles off (9 in the dark), a c
     b.phase = "player"; // the first of the crew is selected (autoSelect)
     let html = "";
     try { html = renderCombatPanel(st) || ""; } catch (e) { html = `ERR ${e.message}`; }
-    // A raid has no side panel since d58a9ca2: the line is a chip in the top strip (renderRaidTop), the share and the chance in its tooltip.
-    check(/data-tip="[^"]*Only 30–50% of what is inside turns up; 6% chance of cutting yourself[^"]*">Quick search: loud, 6% cut</.test(html), `the raid's top strip: "Quick search: loud, 6% cut", its tooltip "30–50%" and "6% chance of cutting yourself" (${html.startsWith("ERR") ? html : "ok"})`);
+    // (the raid without a side panel, d58a9ca: the head's line is short; the share it shows is in its tip)
+    check(/Quick search: loud, 6% cut/.test(html), `the raid panel: "Quick search: loud, 6% cut" (${html.startsWith("ERR") ? html : "ok"})`);
     check(/data-v="quick"[^>]*data-tip="[^"]*6% chance of cutting yourself/.test(html), "the Quick search button's tooltip gives the chance");
   }
 

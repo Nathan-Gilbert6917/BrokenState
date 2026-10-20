@@ -74,6 +74,7 @@
 //   every prisoner of theirs there and carry off a tenth of the stores.
 // Your own people taken captive by other groups are conflicts.js captives, not these; the groups' jails, labour and
 // prisoner trades are groupjails.js (the same JAIL tiers).
+import { totalRounds } from "./rounds.js"; // rounds by calibre
 import { DAY_VALUE, foodText, foodIn, payFood, takeFood, preservedIn, FOODS, addFood } from "./foods.js"; // food by type (foods.js)
 import { SUPPLIES, supValue } from "./data.js";
 import {
@@ -105,6 +106,7 @@ import { tiredLevel, TIRED } from "./sleep.js"; // a worn-out jail guard counts 
 import { groupMemberWorth } from "./ransom.js"; // the value rule: a group pays for its people only when they are worth it
 import { knowsLine } from "./intel.js"; // what their group knows of you
 import { foundAllOf } from "./hiding.js"; // their hidden outposts, told
+import { addMember } from "./members.js"; // a prisoner set free goes back to their group as themselves
 
 // The jail tiers (buildings.js family "jail"; the AI groups' jails too, groupjails.js), lower ones easier to get out
 // of. cap: prisoners held; unguarded / guarded: escapes a day in the cell with no guard / one average jail guard
@@ -510,7 +512,15 @@ export function captiveRecords(state, b, captives) {
   return captives.map((u) => {
     const fid = u.factionId ?? e.factionId ?? null;
     const f = fid != null ? factionById(state, fid) : null;
-    return makeRecord(state, { factionId: fid, group: f ? f.name : e.name || "strangers", kit: u.kit || "raiders", power: e.power || 3, unitName: u.name, tile: b.tileId });
+    const rec = makeRecord(state, { factionId: fid, group: f ? f.name : e.name || "strangers", kit: u.kit || "raiders", power: e.power || 3, unitName: u.name, tile: b.tileId });
+    if (u.who && !u.who.transient && u.who.fid === fid) { // one of the group's people (members.js): the prisoner is that very person (arsenal.js settlePeople counted them out)
+      rec.member = true;
+      const P = u.who;
+      P.pending = true; P.mood = 30; P.health = Math.max(1, Math.min(P.health || rec.s.health, rec.s.health));
+      P.role = "prisoner"; // arsenal.js settlePeople takes them off their group's list (then their place is your cells)
+      rec.s = P; rec.name = P.name;
+    }
+    return rec;
   });
 }
 function makeRecord(state, o) {
@@ -584,7 +594,7 @@ export function capturePrisoners(state, setup, result, battle) {
     p.caught = day(state);
     all.push(p);
     const f = factionById(state, p.factionId);
-    if (f) f.pop = Math.max(0, f.pop - 1);
+    if (f && !p.member) f.pop = Math.max(0, f.pop - 1);
     if (at.kind === "party") {
       // Booked into a jail with room (home first): they walk with the team and are handed over there.
       const to = home && freeCells(state, home) > 0 ? home : (basesWithRoom(state)[0] || {}).base;
@@ -773,13 +783,13 @@ export function prisonersHome(state, party, home) {
   overflow(state, extra);
 }
 
-// A prisoner leaves your hands: back to their group (pop +1), with goodwill if given.
+// A prisoner leaves your hands: back to their group as themselves (their record into its list), with goodwill if given.
 function goHome(state, p, goodwill = 0, why = "") {
   const i = (state.prisoners || []).indexOf(p);
   if (i >= 0) state.prisoners.splice(i, 1);
   const f = factionById(state, p.factionId);
   if (f && f.alive) {
-    f.pop += 1;
+    if (p.s && p.s.alive !== false) { delete p.s.pending; p.s.role = "member"; addMember(state, f, p.s); } // members.js: the very person back in their group's list (never a head by a number)
     if (goodwill) changeGoodwill(state, f, goodwill, why);
   }
   refreshTeam(state, p);
@@ -854,7 +864,7 @@ export function gatherIntel(state, p, full = true) {
     if (full) {
       for (const t of f.bases) tiles.add(t);
       f.known = true;
-      f.intel = { day: day(state), pop: f.pop, food: Math.round(foodIn(f.stock)), ammo: Math.round(f.stock.ammo || 0), scrap: Math.round(f.stock.scrap || 0), fuel: Math.round(f.stock.fuel || 0), meds: Math.round(f.stock.meds || 0) };
+      f.intel = { day: day(state), pop: f.pop, food: Math.round(foodIn(f.stock)), ammo: Math.round(totalRounds(f.stock)), scrap: Math.round(f.stock.scrap || 0), fuel: Math.round(f.stock.fuel || 0), meds: Math.round(f.stock.meds || 0) };
       lines.push(`${f.name} hold ${f.bases.map((t) => tileLabel(state, t)).join(", ")}: about ${f.pop} people, ${f.intel.food} days of food, ${f.intel.ammo} rounds, ${f.intel.meds} meds, ${f.intel.fuel} fuel.`);
       const jt = jailText(state, f); // groupjails.js: their jail and who is in it (now known)
       if (jt) lines.push(`Their jail: ${jt}.`);

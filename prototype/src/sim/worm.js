@@ -154,6 +154,7 @@ import { leaveMap } from "./visitors.js";
 import { teamCookHour } from "./cooking.js"; // wave 2 cooking: a team's camp fire cooks its raw meat into meals
 import { kitchenService, kitchenCold } from "./kitchen.js"; // the Kitchen boils the meals' water (purifyCap) and cooks like a cook fire (baseCooks)
 import { canLight, boilerBurnables, burnOf, burnablesWood, itemsText } from "./woodcutting.js"; // what keeps a camp fire burning; what the boiler may burn
+import { cfgOf, cfgChance } from "./worldcfg.js"; // the run's dials: Infection from the land, Infection curable
 
 export const WORM = {
   // Catching it
@@ -312,6 +313,9 @@ export function catchWorm(state, s, why = "", how = "") {
   if (how) st[how] = (st[how] || 0) + 1;
   return true;
 }
+// The run's Infection curable toggle (worldcfg.js): off, nothing takes the worm out (no dewormer, purge, surgery or luck).
+export const wormCurable = (state) => cfgOf(state, "curable");
+export const INCURABLE = "In this world the worm cannot be cured (World configuration).";
 export function cureWorm(state, s) {
   if (!s || !s.worm) return;
   s.worm = null;
@@ -598,7 +602,7 @@ export function eatRaw(state, people, rations, why, rate = WORM.RAW, how = "meat
   const sick = 1 - Math.pow(1 - Math.min(WORM.SICK_MAX, rate * WORM.SICK_X), rations / people.length);
   let n = 0;
   for (const s of people) {
-    if (wormRng(state).chance(per) && catchWorm(state, s, why, how)) n++;
+    if (wormRng(state).chance(cfgChance(state, "worm", per)) && catchWorm(state, s, why, how)) n++;
     sickRoll(state, s, sick, why, "poisoning"); // wave 2 cooking: uncooked food is food poisoning now (health.js), not an upset stomach
   }
   return n;
@@ -671,7 +675,7 @@ export function drinkHour(state, p, members, drank, raw = 0) {
   const chance = waterRisk(e, left / drank) / 24;
   if (!(chance > 0)) return;
   for (const s of members) {
-    if (wormRng(state).chance(chance)) catchWorm(state, s, `drinking un-purified water on the road`, "water");
+    if (wormRng(state).chance(cfgChance(state, "worm", chance))) catchWorm(state, s, `drinking un-purified water on the road`, "water");
     sickRoll(state, s, chance * WORM.SICK_X, "from un-purified water on the road");
   }
 }
@@ -721,7 +725,7 @@ export function wormTeamHour(state, p, members) {
   const inf = (state.tiles[partyTile(p)] || {}).infection || 0;
   if (inf < WORM.CAMP_AT) return;
   const chance = (WORM.CAMP * inf * (fire ? WORM.CAMP_FIRE : 1)) / 24;
-  for (const s of members) if (wormRng(state).chance(chance)) catchWorm(state, s, `camping on infested ground near ${tileLabel(state, partyTile(p))}`, "camp");
+  for (const s of members) if (wormRng(state).chance(cfgChance(state, "worm", chance))) catchWorm(state, s, `camping on infested ground near ${tileLabel(state, partyTile(p))}`, "camp");
 }
 
 // ---------- hands that handled the dead ----------
@@ -743,7 +747,7 @@ function rollHands(state, p, members, washed, why) {
   if (!h || !(h.chance > 0)) return 0;
   if (washed && wormRng(state).chance(WORM.SEARCH_WASH)) return 0;
   let n = 0;
-  for (const s of members) if (wormRng(state).chance(h.chance) && catchWorm(state, s, why, "search")) n++;
+  for (const s of members) if (wormRng(state).chance(cfgChance(state, "worm", h.chance)) && catchWorm(state, s, why, "search")) n++;
   return n;
 }
 // The team is home (parties.js returnHome): the day's hands are rolled now, washed if the base's water is safe.
@@ -852,6 +856,7 @@ export function wormTreatInfo(state, base, s, kind, ctx = null) {
 function courseTreatInfo(state, base, w, name, away, kind, ctx = null) {
   const out = { ok: false, reason: "", kind, cost: 0, chance: 0, treater: null, load: 1 };
   if (!w || w.seen == null) { out.reason = `Nobody knows ${name} has the worm.`; return out; }
+  if (!wormCurable(state)) { out.reason = INCURABLE; return out; } // worldcfg.js: the run's Infection curable toggle off
   if (away) { out.reason = away; return out; }
   if (w.treatedDay === day(state)) { out.reason = `Already treated today. Next ${nextDayText(state)}.`; return out; }
   if (kind === "dewormer") {
@@ -1108,13 +1113,13 @@ function baseWormDaily(state, base) {
     log(state, `${base.name} is drinking un-purified water${eggs > 0 ? " drawn from infected ground: it carries the worm's eggs" : ": even from clean ground it can carry the worm"}. Build a water boiler or keep water filters here (each purifies ${WORM.PURIFY_FILTER} a day); until then every day is a chance of catching it.`, "danger");
   }
   const why = `drinking un-purified water at ${base.name}`;
-  if (risk > 0) for (const s of people) { if (wormRng(state).chance(risk)) catchWorm(state, s, why, "water"); sickRoll(state, s, risk * WORM.SICK_X, `from un-purified water at ${base.name}`); }
+  if (risk > 0) for (const s of people) { if (wormRng(state).chance(cfgChance(state, "worm", risk))) catchWorm(state, s, why, "water"); sickRoll(state, s, risk * WORM.SICK_X, `from un-purified water at ${base.name}`); }
   // The prisoners, the guests and a holding convoy's crew: by the share of their drinking the purified water left
   // over does not cover.
   const other = waterRisk(eggs, othersRawShare(state, base));
   if (!(other > 0)) return;
-  for (const p of prisonersAt(state, base.id)) if (p.s && !p.s.worm && wormRng(state).chance(other)) catchWorm(state, p.s, why, "water");
-  for (const s of crewsAt(state, base)) { if (wormRng(state).chance(other)) catchWorm(state, s, why, "water"); sickRoll(state, s, other * WORM.SICK_X, `from un-purified water at ${base.name}`); }
+  for (const p of prisonersAt(state, base.id)) if (p.s && !p.s.worm && wormRng(state).chance(cfgChance(state, "worm", other))) catchWorm(state, p.s, why, "water");
+  for (const s of crewsAt(state, base)) { if (wormRng(state).chance(cfgChance(state, "worm", other))) catchWorm(state, s, why, "water"); sickRoll(state, s, other * WORM.SICK_X, `from un-purified water at ${base.name}`); }
   for (const v of state.visitors || []) {
     if (v.phase !== "sheltered" || v.shelterBase !== base.id) continue;
     const list = v.worm || (v.worm = []);
@@ -1131,7 +1136,7 @@ function captivesWormDaily(state) {
     const tile = s.location.tile;
     const eggs = sourceEggs(state, tile) * (f.wormBoilers && f.wormBoilers[tile] ? WORM.GROUPS.BOILER : 1);
     const c = waterRisk(eggs, 1) * WORM.RISE.CAPTIVE;
-    if (wormRng(state).chance(c)) catchWorm(state, s, `drinking ${f.name}'s water as their prisoner`, "water");
+    if (wormRng(state).chance(cfgChance(state, "worm", c))) catchWorm(state, s, `drinking ${f.name}'s water as their prisoner`, "water");
     sickRoll(state, s, c * WORM.SICK_X, `from ${f.name}'s water`);
   }
 }
@@ -1438,7 +1443,7 @@ function teamCard(state, p, s) {
     choices: [],
   };
   const live = (fn) => (st) => (cardStale(st, card) || !s.worm ? "Too late: nothing to decide any more." : fn(st));
-  if (!brain && teamHasDewormer(state, p)) card.choices.push({ label: "Give them the dewormer", hint: "A sure cure", resolve: live((st) => {
+  if (!brain && teamHasDewormer(state, p) && wormCurable(state)) card.choices.push({ label: "Give them the dewormer", hint: "A sure cure", resolve: live((st) => {
     if (!takeFrom(partyMembers(st, p), [(p.cargo && p.cargo.gear) || []], "dewormer")) return "The dewormer is gone. Nothing was done.";
     cureWorm(st, s);
     hurt(st, s, WORM.DEWORM_HP, partyTile(p), "of the worm", { raw: true });
@@ -1446,8 +1451,8 @@ function teamCard(state, p, s) {
   }) });
   card.choices.push({
     label: `Purge it (${WORM.PURGE_MEDS} meds)`,
-    get hint() { return brain ? "Too late: the worm is in the brain" : `Medicine check, ${Math.round(purgeChance() * 100)}%`; },
-    get disabled() { return brain || carried(p, "meds") < WORM.PURGE_MEDS; },
+    get hint() { return !wormCurable(state) ? INCURABLE : brain ? "Too late: the worm is in the brain" : `Medicine check, ${Math.round(purgeChance() * 100)}%`; },
+    get disabled() { return brain || !wormCurable(state) || carried(p, "meds") < WORM.PURGE_MEDS; },
     resolve: live((st) => {
       if (carried(p, "meds") < WORM.PURGE_MEDS) return `The team no longer has ${WORM.PURGE_MEDS} meds to spare. Nothing was done.`;
       takeSupply(p, "meds", WORM.PURGE_MEDS);
@@ -1469,9 +1474,9 @@ function teamCard(state, p, s) {
   }) });
   card.choices.push({
     label: "Hope it passes on its own",
-    hint: brain ? `${Math.round(WORM.HOPE_BRAIN * 100)}%; otherwise they turn within days` : `${Math.round(WORM.HOPE * 100)}%; otherwise get them to a base with meds before it reaches the brain`,
+    hint: !wormCurable(state) ? `${INCURABLE} They will turn.` : brain ? `${Math.round(WORM.HOPE_BRAIN * 100)}%; otherwise they turn within days` : `${Math.round(WORM.HOPE * 100)}%; otherwise get them to a base with meds before it reaches the brain`,
     resolve: live((st) => {
-      if (wormRng(st).chance(brain ? WORM.HOPE_BRAIN : WORM.HOPE)) { cureWorm(st, s); return `Against all odds, ${name} passes the worm whole.`; }
+      if (wormCurable(st) && wormRng(st).chance(brain ? WORM.HOPE_BRAIN : WORM.HOPE)) { cureWorm(st, s); return `Against all odds, ${name} passes the worm whole.`; }
       return brain ? `They keep ${name} close and wait. It will not be long.` : `The worm stays. ${name} keeps going; a purge at a base can still clear it.`;
     }),
   });
@@ -1495,7 +1500,7 @@ function baseBrainCard(state, s, base) {
         resolve: live((st) => { const i = info(); if (!i.ok) return i.reason; const msg = applyWormTreat(st, base, s, i); log(st, msg, /died/.test(msg) ? "death" : "good"); return msg; }),
       },
       { label: "Lock them away", hint: `Nobody is hurt when they turn; everyone loses ${WORM.LOCKED_MOOD} mood. ${Math.round(WORM.HOPE_BRAIN * 100)}% they pass it`, resolve: live((st) => {
-        if (wormRng(st).chance(WORM.HOPE_BRAIN)) { cureWorm(st, s); return `Locked away, ${name} sweats through the fits and passes the worm. Nobody can quite believe it.`; }
+        if (wormCurable(st) && wormRng(st).chance(WORM.HOPE_BRAIN)) { cureWorm(st, s); return `Locked away, ${name} sweats through the fits and passes the worm. Nobody can quite believe it.`; }
         s.worm.locked = true;
         s.role = "rest";
         return `${name} is locked in a room at ${base.name}. The others take turns at the door.`;

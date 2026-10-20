@@ -75,6 +75,7 @@ import { opticsFor, OPTICS } from "./optics.js";
 import { carriedAll } from "./comforts.js";
 import { listeners } from "./radio.js";
 import { withLook, surveyErr } from "./intelnotes.js"; // a close look at a group's base (the State Map's estimates)
+import { cfgOf } from "./worldcfg.js"; // the run's dials: Durability loss, Fuel use
 
 export const SURVEY = {
   radius: { min: 2, max: 4, def: 3 },
@@ -171,7 +172,7 @@ export function sweepRoute(state, { center, radius, hours, mode = false, stance 
 export function routeFuel(state, route, mode, mult = 1) {
   if (mode !== true) return 0;
   let f = 0;
-  for (let i = 1; i < route.length; i++) if (route[i] !== route[i - 1]) f += tileFuel(true, state.tiles[route[i - 1]].roadLinks.includes(route[i]), mult);
+  for (let i = 1; i < route.length; i++) if (route[i] !== route[i - 1]) f += tileFuel(true, state.tiles[route[i - 1]].roadLinks.includes(route[i]), mult * cfgOf(state, "fuel")); // worldcfg.js: the Fuel use dial
   return f;
 }
 export const routeMoves = (route) => route.reduce((a, t, i) => a + (i && t !== route[i - 1] ? 1 : 0), 0);
@@ -304,8 +305,8 @@ function enterTile(state, p, from, to) {
   if (p.vehicle) {
     const v = partyVehicle(state, p);
     const onRoad = state.tiles[from].roadLinks.includes(to);
-    for (const x of partyVehicles(state, p)) wear(x, onRoad, p.burden ? p.burden.fill : 0); // every vehicle (vehicles.js fleets)
-    if (!useFuel(state, p, tileFuel(p.vehicle, onRoad, fuelMultOf(p)))) {
+    for (const x of partyVehicles(state, p)) wear(x, onRoad, p.burden ? p.burden.fill : 0, cfgOf(state, "wear")); // every vehicle (vehicles.js fleets); worldcfg.js: the Durability loss dial
+    if (!useFuel(state, p, tileFuel(p.vehicle, onRoad, fuelMultOf(p) * cfgOf(state, "fuel")))) { // worldcfg.js: the Fuel use dial
       log(state, `The ${v ? v.name : "vehicle"} ran out of fuel during the survey near ${tileLabel(state, to)}. The team left it there and goes on on foot.`, "danger");
       leaveVehicle(state, p, to, "out of fuel");
       // The rest of the survey on foot, from here.

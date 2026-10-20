@@ -8,7 +8,7 @@
 //   Mechanics 4; the garage (vehicle repairs: full with one, 12 of 25 with a Mechanics 4 hand, none without); the
 //   reloading bench (Mechanics 3; their brass loaded only with one); their crafting (arsenal.js groupCraftable: your
 //   recipes, skill, bench and manuals; no gun of their kit from scrap and a part; a nail bat takes a bat; pipe bombs at
-//   Mechanics 5 and a workshop, Molotovs otherwise); the battering ram (a workshop and Mechanics 3); vehicle fitting
+//   Mechanics 5 and a workshop, Molotovs otherwise); the battering ram (a workshop and Mechanics 3; made once, carried again); vehicle fitting
 //   (your Mechanics for each upgrade, the turret's 6; parts above the machines' earmark); field works (the relay mast's
 //   Mechanics 3; firewood paid); gear repairs (guns Mechanics 3, armour of AC 4+ Mechanics 5); and every work of theirs
 //   standing for a building of yours. Usage: node tools/ailockstest.js (about 2 s).
@@ -17,7 +17,7 @@ import { GROUP_WORKS, nextWork, worksAt, workLock, groupHas, groupGarageMult, GA
 import { groupNetwork, MIL_RADIO_RANGE, GROUP_NET_RANGE, RELAY_RANGE } from "../src/sim/radio.js";
 import { assaultForce } from "../src/sim/conquest.js";
 import { assaultBase } from "../src/sim/fort.js";
-import { ARSENAL, arsenalDaily, ensureArsenal, groupCraftable, capSiegeKit } from "../src/sim/arsenal.js";
+import { ARSENAL, arsenalDaily, ensureArsenal, groupCraftable, packRaidKit, removeFromArsenal } from "../src/sim/arsenal.js";
 import { CRAFTS } from "../src/sim/crafting.js";
 import { BUILDINGS } from "../src/sim/buildings.js";
 import { GEN_TIERS } from "../src/sim/power.js"; // gen-tiers: the generator's upgrades (LOCKS power2 / power3)
@@ -28,6 +28,9 @@ import { groupFieldLock, groupFieldCost, FIELD, buildGroupWork } from "../src/si
 import { groupReloadDaily } from "../src/sim/reloading.js";
 import { lootItem, newItem } from "../src/sim/inventory.js";
 import { itemDurMax } from "../src/sim/crafting.js";
+import { ensureMembers, syncMembers } from "../src/sim/members.js";
+import { weightOf } from "../src/sim/groupcare.js";
+import { totalRounds } from "../src/sim/ammo.js";
 
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
@@ -42,8 +45,15 @@ function G(st, type, { pop = 16, knows = [], works = {} } = {}) {
   Object.assign(f.stock, { scrap: 300, parts: 30, food: pop * 10, fuel: 60, ammo: 400, wood: 2000, brass: 0, powder: 0, primers: 0 }); // food under the machines' 12 days
   f.partsMach = 0;
   f.jails = { [f.bases[0]]: 3 }; // a jailhouse (groupjails.js): not the next job
+  // members.js: a group's skills are its people's (groupworks.js groupSkill: the best at home); its people at the
+  // level its type's profile names (groupcare.js GROUP_PRIORITIES mechanic), so the gates read as they did.
+  ensureMembers(st, f); syncMembers(st, f);
+  const m = weightOf(f, "mechanic", 3);
+  for (const p of f.people) { p.skills.mechanics = m; p.skills.crafting = m; p.health = 100; p.alive = true; p.location = { kind: "member", fid: f.id, tile: f.bases[0] }; }
   return f;
 }
+// A group's type changed in a test: its people's skills follow (G above).
+function retype(st, f, type) { f.type = type; const m = weightOf(f, "mechanic", 3); for (const p of f.people || []) { p.skills.mechanics = m; p.skills.crafting = m; } }
 const BUILT = { water: 9, farms: 9, beds: 9, walls: 7, bench: 1, store: 1, pens: 1, kitchen: 1, sickbay: 2 };
 
 // ---------- 1. the machine shop and its parts ----------
@@ -64,9 +74,9 @@ const BUILT = { water: 9, farms: 9, beds: 9, walls: 7, bench: 1, store: 1, pens:
   worksAt(f, f.bases[0]).shop = 1;
   const full = partsRate(st, f);
   check(Math.abs(full - GROUP_WORKS.PARTS.rate) < 1e-9, `a machine shop, 16 people, Mechanics 4: ${full} a day`);
-  f.type = "military";
+  retype(st, f, "military");
   check(Math.abs(partsRate(st, f) - full) < 1e-9, "the military's Mechanics 6 makes no more than a 4 (your station: a part a day whoever runs it)");
-  f.type = "commune";
+  retype(st, f, "commune");
   check(Math.abs(partsRate(st, f) - full * GROUP_WORKS.PARTS.below) < 1e-9, `a commune (Mechanics 3) in a shop taken over: half (${partsRate(st, f)})`);
 }
 
@@ -132,7 +142,7 @@ const BUILT = { water: 9, farms: 9, beds: 9, walls: 7, bench: 1, store: 1, pens:
   const pick = () => { for (let i = 0; i < 6; i++) { const n = nextWork(st, f); if (!n || n.type === "sickbay") return n; worksAt(f, n.tile)[n.type] = 9; } return nextWork(st, f); };
   const a = pick();
   check(!a || a.type !== "sickbay", "raiders (Mechanics 3), a doctor of 12, the manual: no trauma hospital");
-  f.type = "traders";
+  retype(st, f, "traders");
   f.med = { doc: 12, docXp: 0, staff: 8, staffXp: 0 };
   const b = pick();
   check(b && b.type === "sickbay", "traders (Mechanics 4): the trauma hospital");
@@ -149,7 +159,7 @@ const BUILT = { water: 9, farms: 9, beds: 9, walls: 7, bench: 1, store: 1, pens:
   check((nextWork(st, f) || {}).type === "garage", `a car: a garage next (${JSON.stringify(nextWork(st, f))})`);
   worksAt(f, f.bases[0]).garage = 1;
   check(groupGarageMult(st, f) === 1, "a garage: the full repair step");
-  f.type = "traders"; worksAt(f, f.bases[0]).garage = 0;
+  retype(st, f, "traders"); worksAt(f, f.bases[0]).garage = 0;
   check(Math.abs(groupGarageMult(st, f) - GARAGE_LESS) < 1e-9, "traders (Mechanics 4), no garage: 12 of 25");
 }
 
@@ -160,14 +170,14 @@ const BUILT = { water: 9, farms: 9, beds: 9, walls: 7, bench: 1, store: 1, pens:
   const f = G(st, "zealot", { works: { ...BUILT } });
   Object.assign(f.stock, { brass: 200, powder: 400, primers: 200 });
   check(workLock(st, f, "reload") === "Mechanics 3" && (nextWork(st, f) || {}).type !== "reload", "zealots (Mechanics 2): no reloading bench");
-  f.type = "raider";
+  retype(st, f, "raider");
   check((nextWork(st, f) || {}).type === "reload", `raiders (Mechanics 3) with brass: a reloading bench (${JSON.stringify(nextWork(st, f))})`);
-  const a0 = f.stock.ammo;
+  const a0 = totalRounds(f.stock); // rounds by calibre (docs/adr/0001-ai-parity.md)
   arsenalDaily(st, f);
   check(f.stock.brass === 200 && !(f.reloaded > 0), "no reloading bench: none of their brass loaded");
   worksAt(f, f.bases[0]).reload = 1;
   const n = groupReloadDaily(st, f, groupHas(st, f, "reload"));
-  check(n > 0 && f.stock.ammo > a0, `a reloading bench: ${n} rounds loaded`);
+  check(n > 0 && totalRounds(f.stock) > a0, `a reloading bench: ${n} rounds loaded`);
 }
 
 // ---------- 7. their crafting: your recipes only ----------
@@ -199,7 +209,8 @@ const BUILT = { water: 9, farms: 9, beds: 9, walls: 7, bench: 1, store: 1, pens:
   for (const [type, knows] of [["military", ["weaponplans", "bowyer"]], ["raider", []], ["expansionist", []], ["fortress", ["weaponplans"]]]) {
     const f = G(st, type, { knows, works: { ...BUILT } });
     ensureArsenal(st, f);
-    f.arsenal.items = []; f.arsenal.pop0 = f.pop;
+    f.arsenal.items = []; f.arsenal.pop0 = f.pop; f.arsenal.rev = (f.arsenal.rev || 0) + 1; // arsenal.js: its cached sorting by revision
+    if (type === "raider" || type === "expansionist") f.wares = Array.from({ length: 20 }, () => newItem("bottle")); // empty bottles on their shelf: your Molotov recipe wants one
     for (let d = 0; d < 120; d++) { st.hour += 24; f.careTick = (f.careTick || 0) + 1; f.stock.scrap = 300; f.stock.fuel = 60; f.stock.ammo = 400; arsenalDaily(st, f); }
     const made = f.arsenal.items.filter((it) => it && it.key !== "smokegren");
     const bad = made.filter((it) => !makeable.has(it.key));
@@ -215,14 +226,28 @@ const BUILT = { water: 9, farms: 9, beds: 9, walls: 7, bench: 1, store: 1, pens:
   console.log("Siege kit");
   const st = W();
   const z = G(st, "zealot", { works: { ...BUILT } });
-  let kit = capSiegeKit(st, z, { ladders: 1, ram: 1, grenades: 0, kind: "pipebomb" });
-  check(kit && kit.ladders === 1 && !kit.ram, "zealots (Mechanics 2): ladders, no ram (your ram: Mechanics 3 and a workshop)");
+  // arsenal.js packRaidKit: a raid's ladders and ram are the group's own, made by your recipe (crafting.js CRAFTS
+  // .ladder / .ram) when it holds none, their scrap and parts paid once; kept and carried again after.
+  const raid = (f, n = 4) => { const p = { id: 900000 + f.id * 10 + (f.raidN = (f.raidN || 0) + 1), owner: f.id }; f.people.filter((s) => s.location.partyId == null).slice(0, n).forEach((s) => { s.location = { ...s.location, partyId: p.id }; }); return p; };
+  const scrap0 = z.stock.scrap;
+  let kit = packRaidKit(st, z, raid(z), { ladders: 1, ram: 1, grenades: 0, kind: "pipebomb" });
+  check(kit && kit.ladders === 1 && !kit.ram && z.stock.scrap === scrap0 - CRAFTS.ladder.in.scrap && z.arsenal.items.some((it) => it.key === "ladder"), `zealots (Mechanics 2): a ladder made (${scrap0} → ${z.stock.scrap} scrap) and on their books, no ram (your ram: Mechanics 3 and a workshop)`);
   const r = G(st, "raider", { works: { ...BUILT } });
-  kit = capSiegeKit(st, r, { ladders: 1, ram: 1, grenades: 0, kind: "pipebomb" });
-  check(kit && kit.ram === 1, "raiders with a workshop: the ram");
+  const rs0 = r.stock.scrap;
+  kit = packRaidKit(st, r, raid(r), { ladders: 1, ram: 1, grenades: 0, kind: "pipebomb" });
+  const ram = r.arsenal.items.find((it) => it.key === "ram");
+  check(kit && kit.ram === 1 && ram && r.stock.scrap === rs0 - CRAFTS.ram.in.scrap - CRAFTS.ladder.in.scrap, `raiders with a workshop: the ram made by your recipe (${rs0} → ${r.stock.scrap} scrap)`);
+  kit = packRaidKit(st, r, raid(r), { ladders: 0, ram: 1, grenades: 0, kind: "pipebomb" });
+  const rams = r.arsenal.items.filter((it) => it.key === "ram");
+  check(kit && kit.ram === 1 && rams.length === 2, "a second raid while the first is out: the first's ram is with it, so another is made");
+  for (const it of r.arsenal.items) delete it.withParty; // both raids home
+  const rs1 = r.stock.scrap;
+  kit = packRaidKit(st, r, raid(r), { ladders: 1, ram: 1, grenades: 0, kind: "pipebomb" });
+  check(kit && kit.ram === 1 && kit.ladders === 1 && r.stock.scrap === rs1 && r.arsenal.items.filter((it) => it.key === "ram").length === 2, "home again: the next raid carries the same ram and ladder, nothing paid again");
   worksAt(r, r.bases[0]).bench = 0;
-  kit = capSiegeKit(st, r, { ladders: 0, ram: 1, grenades: 0, kind: "pipebomb" });
-  check(!kit, "no workshop: no ram (and nothing else: no kit)");
+  for (const it of r.arsenal.items.filter((x) => x.key === "ram" || x.key === "ladder")) removeFromArsenal(r, it, "test");
+  kit = packRaidKit(st, r, raid(r), { ladders: 0, ram: 1, grenades: 0, kind: "pipebomb" });
+  check(!kit, "no workshop and no ram of their own: no ram (and nothing else: no kit)");
 }
 
 // ---------- 9. vehicle fitting ----------
@@ -287,7 +312,7 @@ const BUILT = { water: 9, farms: 9, beds: 9, walls: 7, bench: 1, store: 1, pens:
 // ---------- 12. nothing they build that you cannot ----------
 {
   console.log("Their works are your buildings");
-  const YOURS = { water: "well", farms: "farm_plot", beds: "bunkhouse", walls: "walls", bench: "workbench", store: "storehouse", pens: "animal_pen", still: "still", power: "generator", freezer: "freezer", sealer: "sealer", kitchen: "canteen", mill: "grainmill", grinder: "meatgrinder", shop: "machine_shop", radio: "radio", garage: "garage", reload: "reload_bench", gate: "gate" };
+  const YOURS = { water: "well", farms: "farm_plot", beds: "bunkhouse", walls: "walls", bench: "workbench", store: "storehouse", storebox: "storebox", crates: "crates", shed: "shed", warehouse: "warehouse", pens: "animal_pen", still: "still", power: "generator", freezer: "freezer", sealer: "sealer", kitchen: "canteen", mill: "grainmill", grinder: "meatgrinder", shop: "machine_shop", radio: "radio", garage: "garage", reload: "reload_bench", gate: "gate" };
   const missing = Object.keys(GROUP_WORKS.WORKS).filter((k) => !BUILDINGS[YOURS[k]]);
   check(!missing.length, `every work of theirs is a building of yours${missing.length ? ` (not: ${missing.join(", ")})` : ""}`);
   // gen-tiers: LOCKS power2 / power3 are your generator's upgrades (power.js GEN_TIERS req), not building types.

@@ -9,6 +9,11 @@
 // Shift+right-click, or the menu's toggle, adds to the end of its queue. A team busy on site (a raid, a city crawl,
 // a boat on the water) can only queue.
 //
+// Scavenge / raid is always on a land tile that is not a base of yours (2026-10-19, user request), greyed out with the
+// reason when there is nothing known to raid. "All orders" (ui.ctxAll, folded) lists every order the team can be given
+// for the tile (sim/parties.js orderOptions, the ones the menu does not already show, each with its reason when it cannot
+// be done now) and opens the team panel (its queue and every order where it stands).
+//
 // teamTileMenu(state, ui, p, tile, { append }) → { p, tile, append, forced, head, items }: the model (tools/teamctxtest.js)
 // teamCtxHtml(state, ui, menu)                 → the menu's team section
 // runTeamAction(state, ui, d)                  → does it (d: { id, tile, key, mode, ok }); returns the message, null when it asked first
@@ -50,6 +55,9 @@ const LAND_HOURS = HUNT.defHours; // hunt, fish, forage, cut wood: 8 hours (the 
 // Missions the hub's knowledge does not list but the team's own options do (on the tile, or by who holds it).
 const OWN_OPTIONS = ["outpost", "establish", "strikecamp", "drivehome"];
 
+// The "All orders" fold's group, and Scavenge / raid's reason when nothing is known to raid.
+const ALL = "All orders";
+const NOTHING_TO_RAID = "Nothing known here to scavenge or raid: take a quick look or survey the tile first to find its places.";
 // On the move and drawn part-way along a step at this minute (sim/parties.js glideAt): not on its tile any more.
 const drawnAway = (state, p) => {
   if (!onTheMove(p)) return false;
@@ -187,6 +195,13 @@ export function teamTileMenu(state, ui, p, tile, { append = false } = {}) {
       listed.add(o.mission);
       add("Site", `mission:${o.mission}`, o.label, [{ type: "mission", mission: o.mission }], { why: o.disabled || "", hint: o.desc });
     }
+    // Scavenge / raid, always: what the team's own options say of it, else why not (nothing known to raid here).
+    if (!listed.has("scavenge")) {
+      const own = optOf("scavenge");
+      add("Site", "mission:scavenge", t.loc || poiRaidSummary(state, tile, p) ? "Scavenge / raid the site" : "Scavenge / raid", [{ type: "mission", mission: "scavenge" }],
+        { why: own ? own.disabled || "" : NOTHING_TO_RAID, hint: MISSIONS.scavenge.desc });
+      listed.add("scavenge");
+    }
   }
 
   // Food, firewood and water from the land
@@ -251,6 +266,16 @@ export function teamTileMenu(state, ui, p, tile, { append = false } = {}) {
   const homeNow = home && !append && partyTile(p) !== home.tile ? moveEstimate(state, p, home.tile) : null;
   if (home) add("Team", "home", `Go home (${home.name})`, [{ type: "home" }], { move: false, task: homeNow ? homeNow.hours : undefined, why: partyTile(p) === home.tile && p.phase !== "out" && !append ? "The team is at home." : "", hint: `Head back to ${home.name} with everything carried.` });
 
+  // All orders (folded, ui.ctxAll): every order for the tile the menu does not show above, then the team panel.
+  if (ui && ui.ctxAll) {
+    const shown = (m) => items.some((it) => it.key === `mission:${m}` || (["survey", "fullsurvey", "sweep"].includes(m) && it.key === m) || (m === "camp" && it.key === "setcamp"));
+    for (const o of water ? [] : orderOptions(state, p, tile)) {
+      if (shown(o.mission)) continue;
+      add(ALL, `mission:${o.mission}`, o.label, [{ type: "mission", mission: o.mission }], { why: o.disabled || "", hint: o.desc });
+    }
+    add(ALL, "panel", "📋 Team panel: queue and every order…", [], { special: "panel", hint: "Open the team's panel: what it is doing, its queue, and every order it can be given where it stands." });
+  }
+
   const travelText = water ? "" : here ? (append ? "where its queue ends" : "here") : travel.hours == null ? "no route" : `~${hrsText(travel.hours)} away${travel.wear > 0 ? ` (this route costs the carts ~${Math.round(travel.wear)} wear)` : ""}`;
   const head = {
     name: `Team: ${partyMembers(state, p).map((s) => s.name.split(" ")[0]).join(", ")}`,
@@ -287,6 +312,7 @@ const GROUP_TIP = {
   Camp: "Rest on the spot",
   Team: "The team's own gear and the land you hold",
   "Field work": "A field work here: your stockpile (load, leave finds), or a group's structure (wreck, take, loot)",
+  [ALL]: "Every order the team can be given for this tile, and its panel",
 };
 /** @param {State} state @param {any} ui @param {ReturnType<typeof teamTileMenu>} m */
 export function teamCtxHtml(state, ui, m) {
@@ -297,15 +323,19 @@ export function teamCtxHtml(state, ui, m) {
     ? `<div class="tcmode small muted"${tip("Busy on site (a raid, a city crawl, a boat on the water): new orders wait in its queue.")}>Busy on site: adds to the queue</div>`
     : `<button class="tcmode mini${m.append ? " active" : ""}" data-action="tc-mode"${tip("Replace: the team drops its plan and does this (it asks first when that drops orders under way). Add to queue: after what it is doing and its queue. Shift+right-click opens the menu in queue mode.")}>${m.append ? "Adding to the queue ⇄" : "Replacing its plan ⇄"}</button>`;
   let group = "";
-  const rows = m.items.map((it) => {
+  const row = (it) => {
     const g = it.group !== group ? `<div class="tcgroup small muted"${tip(GROUP_TIP[it.group] || "")}>${esc(it.group)}</div>` : "";
     group = it.group;
     const h = itemHours(it);
     const why = it.disabled ? `${it.label}: ${it.disabled}` : [it.hint, it.move ? `First the team travels to ${m.head.tile}${it.travel != null ? ` (~${hrsText(it.travel)})` : ""}.` : ""].filter(Boolean).join(" ");
     return `${g}<button class="tcitem" data-action="tc-do" data-id="${m.p.id}" data-tile="${m.tile}" data-key="${esc(it.key)}" data-mode="${mode}" ${it.disabled ? "disabled" : ""}${tip(why)}><span>${esc(it.label)}</span>${h ? `<span class="tch">${esc(h)}</span>` : ""}</button>`;
-  }).join("");
+  };
+  const rows = m.items.filter((it) => it.group !== ALL).map(row).join("");
+  group = ALL; // the fold's button heads its rows
+  const all = m.items.filter((it) => it.group === ALL);
+  const fold = `<button class="tcfold" data-action="tc-all"${tip(GROUP_TIP[ALL])}>${all.length ? "▾" : "▸"} All orders</button>${all.map(row).join("")}`;
   const none = m.head.water && !m.items.some((it) => it.group === "Go") ? `<div class="small muted" style="padding:0.3rem 0.5rem">Open water: teams cross it by boat from a shore next to it</div>` : "";
-  return `<div class="tchead"><div class="head">${esc(m.head.name)}</div><div class="small muted">${esc(m.head.situation)}</div><div class="small">→ ${esc(m.head.tile)}</div>${toggle}</div>${rows}${none}`;
+  return `<div class="tchead"><div class="head">${esc(m.head.name)}</div><div class="small muted">${esc(m.head.situation)}</div><div class="small">→ ${esc(m.head.tile)}</div>${toggle}</div>${rows}${none}${fold}`;
 }
 
 // ---------- doing it ----------
@@ -359,6 +389,10 @@ export function runTeamAction(state, ui, d, acts = {}) {
   if (it.disabled) return `${it.label}: ${it.disabled}`;
   if (it.special === "drop" || it.special === "load" || it.special === "inventory") {
     if (acts["ti-open"]) acts["ti-open"]({ id: p.id, tab: it.special === "inventory" ? "team" : it.special });
+    return "";
+  }
+  if (it.special === "panel") {
+    if (acts["xp-open"]) acts["xp-open"]({ id: p.id });
     return "";
   }
   if (it.special === "meet") {

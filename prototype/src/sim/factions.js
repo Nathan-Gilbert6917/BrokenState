@@ -38,7 +38,12 @@
 // - When fewer than 2 aggressive groups are left hostile to you (from day 60), a new gang from beyond the border
 //   settles 12–30 tiles from your hub (2% a day): 12–18 people, hostile, at any time of the run (makeGang; raider
 //   bands from outside that settle use it too, visitors.js settleBands).
-import { FOODS, foodIn, takeFood, payFood, giveFood, typedFood, typeGoods, typeStray, groupMix, ageCoarse, foodText, addFoodsTo as addItemsTo, groupStartFood, groupFieldFood } from "./foods.js"; // the groups' food by type (coarse: no lots)
+import { personKey } from "./members.js"; // dice the same in every world on the seed
+import { ensureMembers, syncMembers, placeMembers, moveMember, removeMember } from "./members.js"; // a group's people (docs/adr/0001-ai-parity.md)
+import { kitOut } from "./loadouts.js"; // what each of them carries
+import { syncBuildings, spreadStores, gatherStores, loseBase, gainBase, stockAt, homesOf } from "./groupbases.js"; // their bases as base objects
+import { autoStore } from "./containers.js"; // each base's goods put away in its containers, the same way as yours (ADR 0001)
+import { FOODS, foodIn, takeFood, payFood, giveFood, typedFood, typeGoods, typeStray, groupMix, ageCoarse, COARSE, foodText, addFoodsTo as addItemsTo, groupStartFood, groupFieldFood } from "./foods.js"; // the groups' food by type (coarse: no lots)
 import { groupFoodLand, groupTripLosses, groupWoodLand, groupHomeShare } from "./grouptrips.js"; // the groups' outdoor work, by the job trips' rules (coarsely)
 import { FACTION_TYPES, FACTION_COLORS, GEAR } from "./data.js";
 import {
@@ -46,6 +51,7 @@ import {
   factionById, baseById, survivorById, makeSurvivor, RADIO_RANGE, supplyValue, armedFactor, spendShots, arrowsBack,
 } from "./world.js";
 import { spawnAiParty, sendHelpSquad, removeParty, awaitOrders, tileLabel } from "./parties.js";
+import { raidMines } from "./mines.js"; // a minefield on a raid's way in
 import { baseWalls, count, isCamp } from "./buildings.js"; // a camp (staging.js): only its own tile, a light raid target
 import { radioBasesInRange, removeBase, localId } from "./world.js";
 import { goodwillMult } from "./traits.js"; // Diplomatic: goodwill gains and losses
@@ -62,11 +68,12 @@ import { raidDamage, raidReportCard, RAID_DAMAGE } from "./breakdowns.js";
 import { occupyPlayerBase, razePlayerBase, retreatFrom, nearestOtherBase, CONQUEST, ensureConquest } from "./conquest.js";
 import { controlledLand, ALLIANCE, coalitionMask, isMember as isMemberOf } from "./alliance.js";
 import { gangArms, recruitBonus, gangPopBonus, isLate, ERAS, raidPaceOpen, noteRaid, raidPrep, raidSizeRange } from "./eras.js";
-import { raidTier } from "./defences.js";
+import { raidTier, pitsOnRaid } from "./defences.js";
 import { SURPRISE } from "./watch.js"; // an unwatched night: the raiders get the first move
 import { hcNoRaiders, hcGroupRaidsQuiet } from "./hardcore-groups.js";
 import { raidSiegeKit, kitText } from "./siege.js";
-import { freezeShare } from "./woodcutting.js";
+import { freezeShare, chillShare } from "./woodcutting.js"; // the freezing days and the cool nights (fire-nights) their woodpiles burn for
+import { HEAT } from "./upkeep.js";
 import { ensureHives, hiveGuard, destroyHive, hivesLeftText } from "./hives.js";
 import { markThreat } from "./hivetech.js";
 import { groupHiveCrawl, groupTakeHoard, groupMakeKit } from "./hivecrawl.js"; // a war party crawls the same den as your teams; the core's hoard
@@ -81,7 +88,7 @@ import { freeOnCollapse } from "./groupjails.js"; // jailhouse: the people a col
 import { groupCookDaily } from "./cooking.js"; // wave 2 cooking: the groups' kitchens cook by your recipes, coarsely
 import { groupWorksDaily, groupEatMult, groupCookShare, groupKitchenDaily, groupKitchenGrowth, fieldsFactor, penFood, growthFactor, workshopFactor, storeFactor, groupBaseDefence, pitchCamp, groupFreezerOn, GROUP_WORKS } from "./groupworks.js"; // barestart: what the groups build
 import { factionVehicles, groupTurretPower, raidTurretPower, loseRaidHumvee, humveeLeftText } from "./vehicles.js"; // a military group's motor pool: the Humvee's M2 in their raids, lost when one fails
-import { ensureArsenal, groupStrength, kitFactor, arsenalDaily, capSiegeKit, raidOnBase, wallPower, raidCount, clashKit, inheritArsenal, smokeCover } from "./arsenal.js"; // group arsenals: everyone fights with what their group holds
+import { ensureArsenal, groupStrength, kitFactor, arsenalDaily, packRaidKit, raidOnBase, wallPower, raidCount, clashKit, inheritArsenal, smokeCover, removeFromArsenal, addToArsenal } from "./arsenal.js"; // group arsenals: everyone fights with what their group holds
 import { groupRation, GROUP_EAT } from "./eating.js"; // ration levels for the groups (wave 2 eating)
 import { RATION_LEVELS } from "./meals.js";
 import { festivalDay } from "./festival.js"; // the harvest festival's day: the groups feast too
@@ -96,8 +103,12 @@ import { noteGrievance, ceasefireWith, pwarRaidDone, pwarById, goalText } from "
 import { sameBloc, blocOf, blocHelpFor, blocHelpAfter, jointRaid, jointAfter, blocPlayerHelp } from "./blocs.js"; // AI blocs: help, joint raids
 import { flightDaily } from "./groupflight.js"; // groups leaving a base they cannot hold against the dead
 import { splinterDaily } from "./splinters.js"; // splinter bands
+import { fightSides, fightersOf, applySide, wallMult } from "./groupfight.js"; // fights nobody watches: your rules for both sides
+import { cfgOf } from "./worldcfg.js"; // the run's dials: Food spoilage, the groups' starting rounds, Raids on you
+const KIND_OF = { raider: "raiders", expansionist: "fighters", zealot: "zealots", military: "soldiers", fortress: "soldiers", traders: "guards", commune: "militia" };
 
 export const RAIDS = {
+  LEFT_BEHIND: 0.5, // groupbases.js: the share of a base's stores left behind when its people give it up and fall back
   CAMP_W: 0.35, // a camp of yours (staging.js) draws a raid this much as often as a base with the same stores
   REACH: 30, FACTION_REACH: 14, SIZE: [0.6, 1.0], CAP: 1.0, MIN: 4, ESCALATE: 0.25, ESC_MAX: 2,
   PLAYER_W: 2.5, GREED: 1500, LAND: 0.2, GRUDGE: 0.5, GRUDGE_MAX: 4, GRUDGE_FADE: 0.01, SIZE_REF: 35, DIST: 12,
@@ -142,6 +153,17 @@ export const GROUP_HIVE = {
 // group has grown to 40–50 or your crawls have thinned the guard first (then +GOODWILL). tools/grouphivetest.js measures it.
 // A group of GROUP_BREAK people or fewer is broken (collapseFaction): every floor that kept groups above 8 (war raids,
 // peace when a side is worn down) lets them be ground down this far.
+// A group's people made to agree with its head count, placed over its bases, their kit handed out (members.js, loadouts.js).
+export function peopleUp(state, f) {
+  if (!f || f.alive === false || f.outsider) return;
+  ensureMembers(state, f);
+  syncMembers(state, f);
+  placeMembers(state, f);
+  kitOut(state, f);
+  syncBuildings(state, f); // groupbases.js: their bases as base objects, with the buildings they put up
+  spreadStores(state, f); // and each outpost's stores out to it (its people's share)
+  for (const h of Object.values(homesOf(state, f))) autoStore(state, h); // containers.js: what came in today put away in each base's containers (nothing in or out of the books)
+}
 export const GROUP_BREAK = 3;
 export const groupBroken = (f) => !!f && f.pop <= GROUP_BREAK;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -182,11 +204,12 @@ export function createFactions(state, count) {
       id: newId(), name, type, color: FACTION_COLORS[i % FACTION_COLORS.length],
       bases: [site.id], pop, alive: true, known: false,
       goodwill: def.goodwill + rng.int(-8, 8), lastDiplomacy: 0, pact: null,
-      stock: { ammo: pop * 10 * def.arms, fuel: pop * 1, meds: pop, parts: 2, scrap: pop * 3, jars: 0, wood: pop * GROUP_WOOD.start, arrows: pop * 2, brass: 0, powder: 0, primers: 0, blackpowder: 0, matchprimers: 0, ...groupStartFood(state, type, pop) }, // food: foods.js (6.5 days a head of its kind's food); jars: storage.js; wood: woodcutting.js; brass..primers: reloading.js
+      stock: { ammo: pop * 10 * def.arms * cfgOf(state, "aiGear"), fuel: pop * 1, meds: pop, parts: 2, scrap: pop * 3, jars: 0, wood: pop * GROUP_WOOD.start, arrows: pop * 2, brass: 0, powder: 0, primers: 0, blackpowder: 0, matchprimers: 0, ...groupStartFood(state, type, pop) }, // food: foods.js (6.5 days a head of its kind's food); jars: storage.js; wood: woodcutting.js; brass..primers: reloading.js
       lootedGear: [], raidCooldown: rng.int(4, 10),
     });
     factionVehicles(state.factions[state.factions.length - 1]); // vehicles.js: a military group starts with an Army truck and a Humvee (M2 turret)
     ensureArsenal(state, state.factions[state.factions.length - 1]); // arsenal.js: its weapons, armour and explosives (hashed: the world's dice stay put)
+    peopleUp(state, state.factions[state.factions.length - 1]); // members.js, loadouts.js: its people, each carrying their share of that kit
   });
 }
 
@@ -306,8 +329,10 @@ export function razeGroupBase(state, target, tile, attacker) {
 }
 
 // A group's woodpile a head: at the start, the most it keeps, cut a day, burned on a freezing day (the share of freezing
-// days by the time of year, woodcutting.js FREEZE_SHARE).
+// days by the time of year, woodcutting.js FREEZE_SHARE) and HEAT.night of that for a cool night above freezing
+// (woodcutting.js chillShare; fire-nights, as your bases: upkeep.js HEAT.night).
 export const GROUP_WOOD = { start: 120, cap: 240, cut: 3.6, burn: 9 }; // firewood of 0.1 kg (30 times the old 3 kg units)
+export const groupHeatShare = (dayIdx) => freezeShare(dayIdx) + HEAT.night * chillShare(dayIdx);
 export function factionsDaily(state) {
   const rng = state.rng;
   const today = day(state);
@@ -316,11 +341,13 @@ export function factionsDaily(state) {
     if (!f.alive) continue;
     const def = FACTION_TYPES[f.type];
     tickGroup(f); // groupcare.js: the group's own day count (its daily rolls)
+    syncMembers(state, f); // members.js: the head count and the people made to agree (what the day's events changed)
+    gatherStores(state, f); // groupbases.js: the outposts' stores in to the main base for the day's work
     // Eras (eras.js): from year 3 the aggressive groups arm themselves better every year.
     if (isAggressiveType(f)) f.gear = gangArms(state);
     // Food and growth.
     // Their fields and workshops: food a little short of what they eat for the less farming types (the rest from
-    // the sites they strip, aiscav.js), and FACTION_MAKE of the old ammo, scrap, fuel and meds made from nothing.
+    // the sites they strip, aiscav.js), and FACTION_MAKE of the old scrap, fuel and building material made from nothing (the economy pass: ADR 0001).
     const off = !!state.aiScavOff; // test switch (tools/depletetest.js): the old economy, no scavenging groups
     // groupworks.js: a group short of wells and fields gets a little less from the land, and one sleeping rough grows
     // slower (CROWDED_GROWTH; both 1 once it has built them; old saves are built up).
@@ -329,7 +356,7 @@ export function factionsDaily(state) {
     // fish only where a base holds water, nothing from a besieged base's land. Their kitchens' hot meals stretch the
     // food and their cooks work no fields (groupworks.js KITCHEN).
     const hands = workingPeople(f);
-    groupKitchenDaily(state, f, f.pop * GROUP_WOOD.burn * freezeShare(today - 1), f.stock.wood ?? f.pop * GROUP_WOOD.start); // groupworks.js: the kitchens' stoves burn their firewood (after the heating), or are cold
+    groupKitchenDaily(state, f, f.pop * GROUP_WOOD.burn * groupHeatShare(today - 1), f.stock.wood ?? f.pop * GROUP_WOOD.start); // groupworks.js: the kitchens' stoves burn their firewood (after the heating), or are cold
     // Food by type (foods.js, coarse for the AI: no lots): their fields, hunters and pens bring in their kind of food
     // (groupFieldFood: crops, grain, game, eggs) by the people at work (their land: grouptrips.js groupFoodLand; their
     // cooks are in the kitchen), everyone eats a day's food (less where a kitchen feeds them: groupEatMult; the soonest
@@ -348,7 +375,8 @@ export function factionsDaily(state) {
     for (const q of state.parties) if (q.owner === f.id && q.rations) away += takeFood(q.rations, Math.max(1, q.heads || 1) * mult, { state }).units;
     const eat = Math.max(0, f.pop * mult - away);
     const hungry = takeFood(f.stock, eat, { state }).units < eat - 1e-6;
-    f.foodSpoiled = ageCoarse(f.stock, 1, undefined, { frozen: groupFreezerOn(f) ? GROUP_WORKS.MACH.room : 0 }); // groupworks.js: a running walk-in freezer
+    f.hungryToday = hungry; // groupmedical.js: nobody heals on an empty stomach
+    f.foodSpoiled = ageCoarse(f.stock, 1, COARSE.factor * cfgOf(state, "spoil"), { frozen: groupFreezerOn(f) ? GROUP_WORKS.MACH.room : 0 }); // worldcfg.js: the Food spoilage dial // groupworks.js: a running walk-in freezer
     groupTripLosses(state, f); // grouptrips.js: their workers out on the land meet trouble too (fewer losses the better armed)
     // Growth: newcomers by the type's pull (groupcare.js GROUP_PRIORITIES recruit: 0.7 + 0.3 x it, so about as before);
     // wanderers and deserters join through their own systems (wanderers.js, groupcare.js).
@@ -360,10 +388,11 @@ export function factionsDaily(state) {
     }
     // groupworks.js: without a workshop they make less, without a storehouse they keep less (1 once built).
     const mk = (off ? 1 : FACTION_MAKE) * workshopFactor(state, f), cap = storeFactor(state, f);
-    f.stock.ammo = Math.min(f.pop * 30 * cap, f.stock.ammo + hands * 0.3 * def.arms * mk);
+    // (No rounds from nothing any more: docs/adr/0001-ai-parity.md. Theirs come from the sites they strip, their bench,
+    // trade and the fields they hold, by calibre, as yours do.)
     f.stock.scrap = Math.min(f.pop * 10 * cap, f.stock.scrap + hands * 0.2 * mk);
     f.stock.fuel = Math.min(f.pop * 3 * cap, f.stock.fuel + hands * 0.04 * mk); // fuel is scarce (economy rework)
-    f.stock.meds = Math.min(f.pop * 3 * cap, f.stock.meds + hands * 0.04 * mk);
+    // (No meds from nothing either: theirs come from the sites they strip, trade and the fields they hold, as yours.)
     f.stock.buildmat = Math.min(f.pop * 2 * cap, (f.stock.buildmat || 0) + hands * 0.03 * mk); // building materials (data.js): salvaged lumber and blocks, for their outpost camps (groupworks.js CAMP)
     groupWorksDaily(state, f); // groupworks.js: the base starts bare; water, fields, quarters, walls, by need
     arsenalDaily(state, f); // arsenal.js: newcomers' weapons, makeshift weapons and explosives from their scrap
@@ -371,7 +400,7 @@ export function factionsDaily(state) {
     groupWorldDaily(state, f); // groupworld.js: scouting (and spies at your walls), vehicles taken, stolen, sold, fitted out
     // Firewood (woodcutting.js): they cut a little every day and burn it on freezing days, so their woodpile (and its
     // price, trade.js) runs low by the end of a winter and fills again by the autumn.
-    f.stock.wood = Math.max(0, Math.min(f.pop * GROUP_WOOD.cap, (f.stock.wood ?? f.pop * GROUP_WOOD.start) + hands * GROUP_WOOD.cut * groupWoodLand(state, f) - f.pop * GROUP_WOOD.burn * freezeShare(today - 1))); // grouptrips.js: the wood land their bases hold
+    f.stock.wood = Math.max(0, Math.min(f.pop * GROUP_WOOD.cap, (f.stock.wood ?? f.pop * GROUP_WOOD.start) + hands * GROUP_WOOD.cut * groupWoodLand(state, f) - f.pop * GROUP_WOOD.burn * groupHeatShare(today - 1))); // grouptrips.js: the wood land their bases hold
 
     // Expansion: claim a nearby site. Aggressive groups push out more, toward rich sites and toward you.
     const agg = isAggressiveType(f);
@@ -402,7 +431,7 @@ export function factionsDaily(state) {
         if (agg) t = rng.weighted(cands, (c) => (c.bridge && !c.loc ? bridgeW(c) : (0.4 + (c.loot || 0)) * (1 + 2 / (1 + toYou(c.id) / 6))) * pull(c));
         else t = rng.weighted(cands, (c) => (c.bridge && !c.loc ? bridgeW(c) : 1) * pull(c));
         const fromNothing = !abandonedAt(state, t.id);
-        f.bases.push(t.id);
+        gainBase(state, f, t.id); // groupbases.js: a base object of theirs
         occupyAbandoned(state, f, t.id); // groupworld.js: the works and stores left there are theirs (a card when it was yours)
         if (fromNothing) pitchCamp(state, f, t.id); // groupworks.js: a camp until established (as your outpost camp)
         expanded(f);
@@ -445,7 +474,7 @@ export function factionsDaily(state) {
     // groupcare.js prio: hunger pushes a raid, the wounded hold it back (the type's own rate is FACTION_TYPES raid).
     // groupworld.js: a group that has scouted you lately comes more often.
     const scouted = f.scoutedYou != null && today - f.scoutedYou <= KNOW.SCOUTED_DAYS ? KNOW.SCOUTED : 1;
-    if (raidRate > 0 && f.raidCooldown <= 0 && fitPeople(f) >= 8 && !hcGroupRaidsQuiet(state) && rng.chance(raidRate * 1.5 * scouted * (weightOf(f, "raid") ? prio(f, "raid") / weightOf(f, "raid") : 1))) {
+    if (raidRate > 0 && f.raidCooldown <= 0 && fitPeople(f) >= 8 && !hcGroupRaidsQuiet(state) && rng.chance(raidRate * 1.5 * scouted * cfgOf(state, "raids") * (weightOf(f, "raid") ? prio(f, "raid") / weightOf(f, "raid") : 1))) { // worldcfg.js: the run's Raids on you dial
       launchRaid(state, f);
       f.raidCooldown = rng.int(8, 16) + (f.decoyWaste || 0); // intel.js decoyRaid: the march to a decoy outpost and back
       f.decoyWaste = 0;
@@ -462,11 +491,19 @@ export function factionsDaily(state) {
         const mates = partners.filter((o) => sameBloc(state, f, o)); // blocs.js: trade first within the bloc
         const to = rng.pick(mates.length && hash01(state.seed, "convoy", f.name, today) < 0.6 ? mates : partners);
         const q = spawnAiParty(state, f, "convoy", f.bases[0], to.bases[0], { strength: Math.max(2, f.pop * 0.1), targetFaction: to.id });
-        // caravans.js escortParty: what it carries (the 10 food and 10 scrap it delivers) is worth a token guard to them.
-        if (q) { q.goods = { supplies: { ...typedFood(state, groupMix(f), 10), scrap: 10 }, gear: [] }; escortParty(state, f, q, q.goods); }
+        // caravans.js escortParty: what it carries is worth a token guard to them. Up to 10 food and 10 scrap, out of
+        // their own stores (docs/adr/0001-ai-parity.md: nothing from nowhere).
+        if (q) {
+          const food = takeFood(f.stock, Math.min(Math.max(0, foodIn(f.stock) - f.pop * 2), 10), { eggs: false, state });
+          const scrap = Math.max(0, Math.min(10, Math.floor((f.stock.scrap || 0) - f.pop)));
+          f.stock.scrap = (f.stock.scrap || 0) - scrap;
+          q.goods = { supplies: { ...food.items, scrap }, gear: [] };
+          escortParty(state, f, q, q.goods);
+        }
       }
     }
 
+    peopleUp(state, f); // members.js, loadouts.js: the day's newcomers and losses, who lives where, what each carries
     if (groupBroken(f)) collapseFaction(state, f);
   }
   groupCareWorld(state); // groupcare.js: your deserters may join a group near the base they left
@@ -665,8 +702,9 @@ export function launchRaidOnBase(state, f, base, opts = {}) {
   if (p) {
     p.esc = f.raidEsc || 1; f.raidedYou = day(state); noteRaid(state); // the autopilot's grudge (autopilot.js conquest); the pace (eras.js)
     if (knownByRadio(state, f, base)) p.viaRadio = true; // intel.js: they know this base only from your radio (the warning says so)
-    // Siege kit by how prepared they are (siege.js): ladders, a ram, grenades against a walled base.
-    p.siege = capSiegeKit(state, f, raidSiegeKit(state, base, { count: raidForce(f, p.strength).count, key: localId(state, p.id) /* localId: ids are process-wide */, prepared: !!opts.prepared || p.esc > 1.01 || weightOf(f, "siegePrep", 0) > 0, kind: weightOf(f, "bombs", "pipebomb") })); // arsenal.js: only the explosives they hold
+    // Siege kit by how prepared they are (siege.js raidSiegeKit: what they want), out of their own stores (arsenal.js
+    // packRaidKit: their ladders and ram, made by your recipe if they have none; grenades on the raiders themselves).
+    p.siege = packRaidKit(state, f, p, raidSiegeKit(state, base, { count: raidForce(f, p.strength).count, key: localId(state, p.id) /* localId: ids are process-wide */, prepared: !!opts.prepared || p.esc > 1.01 || weightOf(f, "siegePrep", 0) > 0, kind: weightOf(f, "bombs", "pipebomb") }));
   }
   return p;
 }
@@ -776,6 +814,12 @@ function resolveRaidOnPlayerNow(state, party, opts = {}) {
   const def = baseDefense(state, base, caught) + allies.power;
   const att = party.strength + raidTurretPower(state, party) + (baseWalls(base) ? wallPower(state, f, raidCount(f, party.strength)) : 0); // vehicles.js: the Humvee and its M2 if the raid brought it; arsenal.js: launchers against walls
   if (allies.names.length) log(state, `Fighters from ${allies.names.join(" and ")} came to help defend ${base.name}.`, "good");
+  // mines.js: the minefield on their way in (fought on the map, the mines are settled there instead).
+  const mined = beaten ? { used: 0, dead: 0 } : raidMines(state, base);
+  // defences.js: raiders who fall into the spike pits on the way in.
+  const pitDead = beaten || !count(base, "spike_pits") ? 0 : pitsOnRaid(state, base);
+  if (!beaten && count(base, "spike_pits")) { f.pop = Math.max(0, f.pop - pitDead); log(state, `${f.name} raiders blundered into the spike pits at ${base.name}${pitDead ? `: ${pitDead} of them killed on the stakes` : ", hurt but alive"}.`, "good"); }
+  if (mined.used) { f.pop = Math.max(0, f.pop - mined.dead); log(state, `${f.name} raiders ran into the minefield at ${base.name}: ${mined.used} mine${mined.used === 1 ? "" : "s"} went off${mined.dead ? `, ${mined.dead} of them killed` : ""}.`, "good"); }
   const shot = beaten ? { ammo: 0, arrows: 0 } : spendShots(base.stock, people, 3); // 3 a head: the bows' in arrows, the rest's in ammo
   // The walls, the yard and the buildings (defences.js raidTier): held at the wall, a break-in pushed back from the
   // yard or the buildings, or overrun.
@@ -789,7 +833,7 @@ function resolveRaidOnPlayerNow(state, party, opts = {}) {
   let outcome, head, keep = false, raze = false, theirDead = 0, kitMoved = null;
   // arsenal.js raidOnBase: their dead's kit (yours when you hold the field), your dead's gear and a share of your armory
   // (theirs when they got in), the rounds and explosives they spent.
-  const settleKit = () => (kitMoved = kitMoved || raidOnBase(state, f, base, party, { outcome, theirDead, armory0, store: count(base, "storehouse") > 0 }));
+  const settleKit = () => (kitMoved = kitMoved || raidOnBase(state, f, base, party, { outcome, theirDead, armory0, store: count(base, "storehouse") > 0, armory: count(base, "armory") > 0 }));
   if (ratio >= RAIDS.HOLD) {
     outcome = "held";
     state.stats.raidsRepelled += 1;
@@ -927,39 +971,53 @@ function resolveOrdinaryRaid(state, party, attacker, target, helpPower) {
   // Clearly outmatched at a base that is not their main one: they may give it up and fall back to the others.
   if (att > def * RAIDS.ABANDON && target.bases.length > 1 && party.target.tile !== target.bases[0] && rng.chance(RAIDS.ABANDON_CHANCE)) {
     const lost = party.target.tile;
-    target.bases = target.bases.filter((b) => b !== lost);
-    for (const k of Object.keys(target.stock)) { const q = target.stock[k] * 0.1; target.stock[k] -= q; if (attacker) attacker.stock[k] = (attacker.stock[k] || 0) + q; }
-    if (attacker) clashKit(state, attacker, 0, 0, target, 0, "a", 0.2, false); // arsenal.js: the spare kit left behind there, half carried off
+    // groupbases.js: they carry what they can of that base's stores to the others; the rest is left there.
+    const left = loseBase(state, target, lost);
+    const behind = {};
+    if (left) for (const [k, q] of Object.entries(left.stock)) { if (!(typeof q === "number" && q > 0)) continue; const n = q * RAIDS.LEFT_BEHIND; behind[k] = n; target.stock[k] = (target.stock[k] || 0) + q - n; }
     const kept = attacker && rng.chance(keepChance(state, attacker, lost));
-    if (kept) attacker.bases.push(lost);
-    else leaveGroupBase(state, target, lost, 0.5 / Math.max(1, target.bases.length + 1)); // groupworld.js: "it stands empty" was only words: its works stand there for whoever comes (an Occupy order, another group)
+    if (kept) gainBase(state, attacker, lost, behind);
+    else {
+      if (attacker) for (const [k, n] of Object.entries(behind)) { attacker.stock[k] = (attacker.stock[k] || 0) + n / 2; behind[k] = n / 2; } // half looted, half left
+      leaveGroupBase(state, target, lost, 0, behind); // groupworld.js: "it stands empty" was only words: its works stand there for whoever comes (an Occupy order, another group)
+    }
     recomputeOwnership(state);
     state.stats.abandonedBases = (state.stats.abandonedBases || 0) + 1;
     if (report) log(state, `${whom[0].toUpperCase() + whom.slice(1)} gave up ${tileLabel(state, lost)} to ${who} without a fight${kept ? "" : " (it stands empty)"}.`, "info");
     return false;
   }
-  if (att > def * 1.1) {
-    const hit = Math.ceil(target.pop * rng.range(0.2, 0.35));
-    const covered = smokeCover(state, target, hit); // arsenal.js: smoke over their retreat spares a few
-    const loss = hit - covered;
-    target.pop -= loss;
-    clashKit(state, attacker, attN, 0, target, loss, "a", 0.4); // arsenal.js: the field is theirs: half the dead's kit and of the spare kit they lose
-    // nonlethal.js raidPrisoners: the winners take a share of the beaten alive by type, into their jail (groupjails.js:
-    // as many as it holds; the rest sold on, let go or killed by type). Returns those taken alive (fewer dead).
-    const taken = raidPrisoners(state, attacker, target, loss);
-    for (const k of Object.keys(target.stock)) {
-      const lost = target.stock[k] * 0.4;
-      target.stock[k] -= lost;
+  // groupfight.js: the fight itself by your by-the-numbers rules, on both sides' very people (docs/adr/0001-ai-parity.md):
+  // the raid's members against those living at the base hit, behind its walls (your defence tiers, off its own
+  // buildings), the helpers and turrets as strength; the dead (a horde) and raiders from outside by their numbers.
+  const tile = party.target.tile;
+  const A = attacker ? fightersOf(state, attacker, { party }) : [];
+  const D = fightersOf(state, target, { tile });
+  const fight = fightSides(state,
+    party.horde ? { f: null, people: [], kind: "zombies", count: party.horde.count, power: party.horde.power } // hordes.js: the dead that broke in, as a break-in force at your base
+      : { f: attacker, people: A, kind: attacker ? KIND_OF[attacker.type] || "raiders" : party.raidName ? "raiders" : "zombies", count: attacker ? A.length : Math.max(1, Math.round(party.strength / 3)), power: (A.length ? 0 : party.strength) + raidTurretPower(state, party) },
+    { f: target, people: D, kind: KIND_OF[target.type] || "raiders", mult: wallMult(state, target, tile), power: helpPower + (tile === target.bases[0] ? groupTurretPower(target) : 0) },
+    { mine: attacker || party.raidName ? "att" : "def" }); // a horde at their walls: the defenders in your place
+  if (party.horde) party.horde.killShare = fight.rD ? fight.rD.killShare : 0; // groupfight.js hordeAtGroup: the dead they cut down inside, the horde's loss
+  if (fight.attWon) {
+    const lostD = applySide(state, target, fight.rD, D, { holder: attacker, captor: attacker });
+    applySide(state, attacker, fight.rA, A, { holder: attacker, captor: target });
+    const loss = lostD.dead.length + lostD.taken, taken = lostD.taken, covered = 0;
+    const hitStock = stockAt(state, target, party.target.tile); // groupbases.js: the stores at the base hit, not the others'
+    for (const k of Object.keys(hitStock)) {
+      if (typeof hitStock[k] !== "number") continue;
+      const lost = hitStock[k] * 0.4;
+      hitStock[k] -= lost;
       if (attacker) attacker.stock[k] = (attacker.stock[k] || 0) + lost / 2; // half of it is carried home
     }
+    target.lossAt = party.target.tile; // members.js: the dead were the people there
     if (target.bases.length > 1 && rng.chance(0.5)) {
       const lost = party.target.tile;
-      target.bases = target.bases.filter((b) => b !== lost);
+      const lostHome = loseBase(state, target, lost); // groupbases.js: the base object and what is left in it
       target.lostBaseDay = day(state); // valuation.js: they want weapons and defences, and sell off fine things
       const fate = attacker ? baseFate(state, attacker, lost) : "leave"; // keep it, burn it or loot it and go
-      if (fate === "keep") attacker.bases.push(lost);
+      if (fate === "keep") gainBase(state, attacker, lost, lostHome ? lostHome.stock : null);
       else if (fate === "raze") razeGroupBase(state, target, lost, attacker);
-      else if (leaveGroupBase(state, target, lost, 0.5 / Math.max(1, target.bases.length + 1))) state.stats.leftBases = (state.stats.leftBases || 0) + 1; // groupworld.js: looted and left standing, its works there for whoever comes
+      else if (leaveGroupBase(state, target, lost, 0, lostHome ? lostHome.stock : {})) state.stats.leftBases = (state.stats.leftBases || 0) + 1; // groupworld.js: looted and left standing, its works there for whoever comes
       recomputeOwnership(state); // a base changed hands: the land around it follows at once
     }
     if (report) log(state, `${who[0].toUpperCase() + who.slice(1)} hit ${whom} hard (${loss - taken} dead${taken ? `, ${taken} taken prisoner` : ""}${covered ? `; ${covered} got away under smoke` : ""}).`, "danger");
@@ -967,11 +1025,8 @@ function resolveOrdinaryRaid(state, party, attacker, target, helpPower) {
     if (groupBroken(target)) collapseFaction(state, target, attacker);
     return false;
   }
-  const tp = target.pop;
-  target.pop = Math.max(1, target.pop - rng.int(0, 2));
-  const ap = attacker ? attacker.pop : 0;
-  if (attacker) { const hit = rng.int(1, 3); attacker.pop = Math.max(0, attacker.pop - hit + smokeCover(state, attacker, hit)); } // arsenal.js: the beaten raiders' smoke spares a few
-  clashKit(state, attacker, attN, attacker ? ap - attacker.pop : 0, target, tp - target.pop, "b"); // arsenal.js: the defenders hold the field
+  applySide(state, target, fight.rD, D, { holder: target, captor: attacker }); // groupfight.js: the defenders hold the field
+  applySide(state, attacker, fight.rA, A, { holder: target, captor: target });
   const hv = loseRaidHumvee(state, party, { faction: target }); // vehicles.js: the raid's Humvee falls to the defenders
   if (report) log(state, `${whom[0].toUpperCase() + whom.slice(1)} held off ${who}${hv ? ` and took their ${hv.name}` : ""}.`, "info");
   return true;
@@ -989,6 +1044,7 @@ export function collapseFaction(state, f, by = null, opts = {}) {
   freeOnCollapse(state, f); // groupjails.js: the people they held walk home
   if (f.known && !opts.into) log(state, `${f.name} has collapsed.`, "danger");
   if (!opts.into) takeOver(state, f, ruins, by);
+  scatterRest(state, f); // members.js: those nobody took in go their own way, with what they carry
   // groupworld.js: the bases nobody took stand empty, their works and some stores left for whoever comes.
   for (const t of ruins) leaveGroupBase(state, f, t, 1 / Math.max(1, ruins.length));
   // Their people on the road are gone with them: raids, sieges and convoys end here.
@@ -1007,7 +1063,10 @@ export function collapseFaction(state, f, by = null, opts = {}) {
   // A recruit card (recruits.js): 1–3 of them, with the hub's beds, food and water.
   if (!opts.into && state.rng.chance(0.6) && hub(state)) {
     const n = state.rng.int(1, 3);
-    const list = Array.from({ length: n }, () => makeCandidate(state, { quality: 0.9, minHealth: 45 }));
+    // The refugees are some of their very people (members.js: the ones who scattered), else people of the dead lands.
+    const own = (f.scattered || []).filter((x) => x && x.alive !== false).slice(0, n);
+    for (const x of own) { delete x.fid; x.pending = true; x.role = "rest"; x.location = { kind: "pending" }; x.health = Math.max(x.health, 45); }
+    const list = [...own, ...Array.from({ length: Math.max(0, n - own.length) }, () => makeCandidate(state, { quality: 0.9, minHealth: 45 }))];
     offerRecruits(state, list, {
       source: "refugees", baseId: hub(state).id, title: "Refugees at the gate",
       intro: `Survivors from ${knownName(f, "a group that fell apart out in the dead lands")} have reached ${hub(state).name}. They ask to join you.`,
@@ -1015,6 +1074,15 @@ export function collapseFaction(state, f, by = null, opts = {}) {
   }
 }
 
+// A broken group's people who are left go their own way, each with what they carry (members.js removeMember: off
+// its books), once: f.scattered keeps them (some reach your gates as refugees: collapseFaction).
+function scatterRest(state, f) {
+  if (!Array.isArray(f.people)) return [];
+  const rest = f.people.filter((x) => x.alive !== false);
+  for (const x of rest) { removeMember(state, f, x, "scattered"); x.location = { kind: "scattered" }; }
+  f.scattered = [...(f.scattered || []), ...rest].slice(-12);
+  return rest;
+}
 // The winner takes the spoils: bases (nearest to its own first, up to its cap), 2–4 survivors and half the stores.
 function takeOver(state, f, ruins, by) {
   if (!ruins.length) return;
@@ -1033,9 +1101,15 @@ function takeOver(state, f, ruins, by) {
     heir.bases.push(r);
     taken.push(r);
   }
-  heir.pop += state.rng.int(2, 4);
-  for (const k of Object.keys(f.stock)) heir.stock[k] = (heir.stock[k] || 0) + Math.floor((f.stock[k] || 0) / 2);
-  inheritArsenal(state, heir, f); // arsenal.js: half their kit, and their vehicles
+  const joiners = state.rng.int(2, 4);
+  // members.js: that many of the broken group's own people go over, with what they carry (the rest scatter); a
+  // group with nobody left sends nobody (never a head count from nowhere).
+  const people = Array.isArray(f.people) ? f.people.filter((s) => s.alive).sort((a, b) => hash01(state.seed, "heir", f.name, personKey(state, a.id)) - hash01(state.seed, "heir", f.name, personKey(state, b.id))).slice(0, joiners) : [];
+  if (people.length) { if (!Array.isArray(heir.people)) ensureMembers(state, heir); for (const s of people) moveMember(state, f, heir, s, null, { give: (it) => removeFromArsenal(f, it, "taken", { keepOn: true }), take: (it) => addToArsenal(state, heir, it, "taken") }); }
+  gatherStores(state, f); // groupbases.js: every base's stores
+  for (const k of Object.keys(f.stock)) { const q = Math.floor((f.stock[k] || 0) / 2); if (!(q > 0)) continue; heir.stock[k] = (heir.stock[k] || 0) + q; f.stock[k] -= q; } // half of it moves (the rest is left in the ruins)
+  scatterRest(state, f); // members.js: the rest of them leave with what they carry (it is never dealt out twice)
+  inheritArsenal(state, heir, f); // arsenal.js: all their kit, their shelf and their vehicles
   state.stats.takeovers = (state.stats.takeovers || 0) + 1;
   if (heir.known || f.known || taken.some((t) => state.live.has(t))) {
     log(state, `${knownName(heir, "Another group")} has taken over what was left of ${knownName(f, "a broken group")}${taken.length ? ` (${taken.length} base${taken.length === 1 ? "" : "s"})` : ""}.`, isAggressiveType(heir) ? "danger" : "info");

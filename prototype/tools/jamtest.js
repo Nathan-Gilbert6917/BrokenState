@@ -6,6 +6,7 @@
 // no shot or overwatch while jammed, enemies jam and clear their jams, your side's AI and the raid bot clear theirs, a
 // save in the middle of a jam.
 // Usage: node tools/jamtest.js [seed]
+import { setRounds } from "../src/sim/ammo.js";
 import { createWorld, makeSurvivor, hub } from "../src/sim/world.js";
 import { WEAPONS, createBattle, combatAct, registerCombatHandler, runEnemyPhase, autoPlayerTurn, canFire, fireRefusal, fire, magIn, loadMag } from "../src/sim/combat.js";
 import { jamChance, rollTrigger, JAM, misfires, jamGun, unjam, gunQ, gunCond, enemyGunQ, enemyGunCond, MISFIRE_KEYS } from "../src/sim/gunfire.js";
@@ -38,7 +39,7 @@ function fighter(state, weapon = "pistol", shooting = 9) {
 }
 function openBattle(state, crew, enemy = { kind: "raiders", count: 2, power: 3 }, ammo = 300) {
   const h = hub(state);
-  h.stock.ammo = ammo; h.stock.meds = 0;
+  setRounds(h.stock, ammo, crew.map((s) => s.gear.weapon && s.gear.weapon.key).filter(Boolean)); h.stock.meds = 0; // ammo.js: rounds of the crew's calibres (generic ammo fills no magazine)
   const b = (state.combat = createBattle(state, { tile: h.tile, baseId: h.id, fighterIds: crew.map((s) => s.id), enemy, ambush: null, canRetreat: true, handler: "jamtest", context: {} }));
   for (const c of b.cells) c.k = "open";
   b.losCache.fill(0);

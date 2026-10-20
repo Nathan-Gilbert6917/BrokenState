@@ -129,7 +129,7 @@ export const sneakMob = (u) => Math.max(1, Math.round(u.mob * VISION.SNEAK_MOB *
 // Footsteps of a move: "dash" (heard far), "scuff" (heard near) or "" (silent). cost: what the move cost, mob: the
 // pace it was measured against.
 export function stepNoise(b, u, cost, mob) {
-  if (u.sneaking || u.side !== "player") return "";
+  if (u.sneaking || u.kind !== "human") return ""; // anyone on foot (docs/adr/0001-ai-parity.md); the dead have their own sounds
   if (cost > mob + 1e-6) return "dash";
   const S = VISION.STEP_NOISE;
   const p = Math.max(S.min, S.chance - S.perStealth * (u.stealth || 0));

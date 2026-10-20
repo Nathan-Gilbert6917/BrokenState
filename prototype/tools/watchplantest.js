@@ -163,14 +163,16 @@ let planned = null;
   st.combat = null;
 }
 
-section("A map turned to face the attack (no walls: the yard and buildings)");
+section("A base without walls: its base map, the plan holding from any side");
 {
+  // The base map (sim/basemap.js): a base without walls fights on the same map as a walled one (no ring, the attack
+  // from any side, nothing turned), so a plan made in the drill holds whichever side the attack comes from.
   const st = world(seed + 1);
   const h = armHub(st, ["bunkhouse", "storehouse", "barricades"], 4);
   h.buildings = h.buildings.filter((x) => x.type !== "walls"); // a hub starts with a wall section
   startDrill(st, h.id);
   const b = st.combat;
-  check(b.tier.map === "interior" && b.deploy.side === "east", `the drill faces east (${b.tier.map})`);
+  check(b.tier.map === "fort" && !b.tier.walled && b.deploy.fort, `the drill: the base map with no walls (${b.tier.map}, unwalled)`);
   const u = playersOf(b)[1];
   let target = null;
   for (let y = 0; y < b.h && !target; y++) for (let x = 0; x < b.w && !target; x++) if (canPlace(b, x, y) && !unitAt(b, x, y) && Math.abs(y - b.h / 2) > 2) target = [x, y];
@@ -182,22 +184,20 @@ section("A map turned to face the attack (no walls: the yard and buildings)");
   const north = g.within(h.tile, 3).map((id) => [id, g.toPixel(id, 1)]).filter(([, [x, y]]) => Math.abs(x - hx) < (hy - y) * 0.6 && hy - y > 0).map(([id]) => id)[0];
   const r = attack(st, h, { fromTile: north });
   const ru = playersOf(r).find((x) => x.sid === u.sid);
-  const back = sideUntf(r.deploy.side, r.deploy.frame.w0, r.deploy.frame.h0)(ru.x, ru.y);
-  check(r.deploy.side === "north" && back[0] === target[0] && back[1] === target[1], `the attack from the ${r.deploy.side}: the plan turns with the map (${ru.x},${ru.y} ← ${target})`);
+  check(r.deploy.side === "north" && ru.x === target[0] && ru.y === target[1], `the attack from the ${r.deploy.side}: the same post, the map does not turn (${ru.x},${ru.y})`);
   check(!deployProblems(r).length, "valid posts");
   // Changed in the deploy step and saved back.
   let t2 = null;
   for (let y = r.h - 1; y >= 0 && !t2; y--) for (let x = r.w - 1; x >= 0 && !t2; x--) if (canPlace(r, x, y) && !unitAt(r, x, y)) t2 = [x, y];
   combatAct(st, { type: "place", unit: ru.id, x: t2[0], y: t2[1] });
   combatAct(st, { type: "savePlan" });
-  const p = plansOf(h)[0].maps.interior.posts.find((q) => q[0] === ru.sid);
-  const want = sideUntf("north", r.deploy.frame.w0, r.deploy.frame.h0)(t2[0], t2[1]);
-  check(p[1] === want[0] && p[2] === want[1], "changed in the deploy step, saved back as the plan (on the east-facing layout)");
+  const p = plansOf(h)[0].maps.fort.posts.find((q) => q[0] === ru.sid);
+  check(p[1] === t2[0] && p[2] === t2[1], "changed in the deploy step, saved back as the plan");
   st.combat = null;
-  // The base grows a wall: a new map, the plan is not used.
+  // The base grows a wall: the same map with the ring on its band, the plan still fits it.
   addBuilding(h, "walls");
   const r2 = attack(st, h);
-  check(planKey(r2) !== "interior" || planStale(st, r2) || !planFor(st, r2), `walls built: another map (${r2.tier.map}), the yard plan is not used for it`);
+  check(r2.tier.walled && planKey(r2) === "fort" && (planStale(st, r2) || !!planFor(st, r2)), `walls built: the same map with the ring (${r2.tier.map}), the plan ${planFor(st, r2) ? "still fits it" : "is laid out again when the map changed size"}`);
   st.combat = null;
   clearPlan(st, h);
   check(!plansOf(h).length, "cleared");
@@ -660,10 +660,10 @@ section("The governor's plan: by role from the default posts, and not worse in i
   const rng0 = st.rng.state;
   const line = defaultRolePlan(st, h);
   const gp = plansOf(h).find((p) => p.by === "governor");
-  check(line && gp && gp.maps.interior && gp.maps.interior.posts.every((p) => PLAN_ROLES[p[3]]), `no walls: a plan by role (${line})`);
+  // The base map (sim/basemap.js): a base without walls fights on the same map as a walled one, from any side, so the
+  // governor leaves the default posts to face the attack there too (no fixed plan).
+  check(line === "" && !gp, `no walls: the base map, no fixed plan (the default posts face the attack)`);
   check(st.rng.state === rng0 && !st.combat, "it draws nothing from the game's dice and leaves no battle open");
-  const roles = gp.maps.interior.posts.map((p) => p[3]);
-  check(roles.includes("shooter"), `best shots on the perches and at the windows (${roles.join(", ")})`);
   const st2 = world(seed + 8);
   const h2 = armHub(st2);
   check(defaultRolePlan(st2, h2) === "" && !plansOf(h2).length, "a walled base (the fort map): no plan, the default posts face the attack");
@@ -675,7 +675,7 @@ section("The governor's plan: by role from the default posts, and not worse in i
   const n1 = plansOf(h).length;
   const g = st.governor.planSig[h.id];
   autopilotDaily(st);
-  check(n1 === 1 && plansOf(h).length === 1 && st.governor.planSig[h.id] === g, "the governor lays it out once, and again only when the base changes");
+  check(n1 === 0 && plansOf(h).length === 0 && st.governor.planSig[h.id] === g, "the governor's morning pass lays none out on the base map, and looks again only when the base changes");
   setAutopilot(st, false);
   // Paired fights: the same world and the same horde with the governor's plan and without, a day later (one away, a
   // newcomer), by day with the defences manned and at night with two on watch.

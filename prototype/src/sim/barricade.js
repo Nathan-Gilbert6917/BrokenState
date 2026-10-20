@@ -43,10 +43,11 @@
 //     7. Boards come from the team's vehicle too, from next to it (boardsOf: raidloot.js trunkVehicle). A cart's load
 //        (the carts branch) when that lands.
 import { CELL, unitAt, active, canVault, vaultable, clambers, VAULT, vaultCost, refitKit, say } from "./combat.js"; // call-time only: the modules load in a circle
+import { handsBusy } from "./carry.js"; // the hands full of a load shove nothing (call-time only: the modules load in a circle)
 import { windowOpen, smashWindow, insideOf } from "./windows.js";
 import { doorBroken } from "./buildingmaps.js";
 import { survivorById, factionById, skill } from "./world.js";
-import { carriedSpots, newItem, stow } from "./inventory.js";
+import { carriedSpots, lootItem, stow } from "./inventory.js";
 import { dropToGround } from "./ground.js";
 import { trunkVehicle, atVehicle } from "./raidloot.js";
 import { hasTrait } from "./traits.js";
@@ -57,7 +58,7 @@ export const SHOVE = { AP: 2, NOISE: 1, RADIUS: 3, HELP_AP: 1, STRONG_MELEE: 6 }
 export const CRAWL = { COST: 4 };
 export const BOARD = {
   AP: 2, HP: 40, MAX: 3, NOISE: 1.5, HEAT: 3, RADIUS: 6, TEAR: { ap: 2, noise: 0.5, radius: 3, BACK: 0.5 },
-  KIT: { guards: 0.4, militia: 0.4, fighters: 0.3, survivalists: 0.3, preppers: 0.5, soldiers: 0.2 }, // the chance a human of this kit carries a bundle (the AI's boards: u.boards)
+  KIT: { guards: 0.4, militia: 0.4, fighters: 0.3, survivalists: 0.3, preppers: 0.5, soldiers: 0.2, drifters: 0.15 }, // the chance a human of this kit carries a bundle (the AI's boards: u.boards)
   AI: { MAX: 6, WOOD: 30, SCRAP: 1 }, // a group's base boarded before an assault: at most this many bundles, each paid from their stock at the player's recipe
 };
 // What can be shoved, and the hit points a shoved piece gets (the dead batter it: combat.js bash, SIEGE).
@@ -74,7 +75,7 @@ const burning = (b, x, y) => !!(b.fires && b.fires.some((f) => f.x === x && f.y 
 
 // ---------- shoving ----------
 export const shoveable = (c) => !!c && (!!FURNITURE[c.k] || c.k === "cart") && !c.car; // carts.js: a parked cart is shoved as furniture is (its load stays in it)
-export const canShove = (u) => canVault(u); // on their feet, arms free, not the dead, not carrying or dragging anyone
+export const canShove = (u) => canVault(u) && !handsBusy(u); // on their feet, arms free (a load in the hands vaults, at double, but shoves nothing), not the dead, not carrying or dragging anyone
 export const pieceName = (c) => (c && CELL[c.k] ? CELL[c.k].name.toLowerCase() : "furniture");
 // The pieces right next to the unit (not diagonally): [{ x, y, c }].
 export function shoveTargets(b, u) {
@@ -195,7 +196,7 @@ export const crawls = (u) => clambers(u);
 export const crawlable = (b, c) => !!c && c.k !== "window" && (vaultable(b, c) || c.k === "cart"); // carts.js: the dead crawl over a parked cart (the living never vault it: shove it or go round)
 // The tiles over the step a cell costs the one going over it: a person's vault (a closed window crashed through
 // dearer), the dead's clamber through a window, the dead's crawl over half cover.
-export const overCost = (b, u, c) => (canVault(u) ? vaultCost(b, c) : windowOpen(c) ? VAULT.COST : CRAWL.COST);
+export const overCost = (b, u, c) => (canVault(u) ? vaultCost(b, c, u) : windowOpen(c) ? VAULT.COST : CRAWL.COST); // with the hands full the crossing costs double (combat.js vaultCost)
 
 // ---------- boards ----------
 const BOARDABLE = new Set(["idoor", "bdoor", "doorway", "window", "smashed", "boarded"]);
@@ -310,7 +311,9 @@ export function tearAct(state, b, u, act, H) {
   const s = u.sid != null ? survivorById(state, u.sid) : null;
   let kept = 0, down = 0;
   for (let i = 0; i < back; i++) {
-    const it = newItem("boards");
+    // Its condition through the roller like any other find (itemcond.js): planks pried off a wall with bent nails are
+    // knocked about, a wreck's range. Hash dice of the same parts as tearBack's, so the battle's dice stay put.
+    const it = lootItem("boards", "wreck", [b.turn || 0, b.tears, "tearq", o.x, o.y, i]);
     if (s && stow(s, it)) kept++;
     else { dropToGround(b, u, it); down++; }
   }

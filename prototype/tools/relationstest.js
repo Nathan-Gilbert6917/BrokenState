@@ -453,6 +453,7 @@ section("Render: survivor screen and memorial wall");
   if (ui) {
     const st = W();
     const h = hub(st);
+    addBuilding(h, "walls"); addBuilding(h, "walls"); // a timber palisade: no base has a wall it did not build (buildings.js WALL_TIERS), and this month must leave two people here
     for (let i = 0; i < 30; i++) { for (let k = 0; k < 24; k++) tickHour(st); while (st.cards.length) { const c = st.cards.shift(); const ch = c.choices.find((x) => !(typeof x.disabled === "function" ? x.disabled(st) : x.disabled)); if (ch) ch.resolve(st); } }
     const [a, b] = atBase(st, h.id);
     setO(st, a, b, -50);

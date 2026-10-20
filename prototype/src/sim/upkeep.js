@@ -140,29 +140,42 @@ export const groupPayoutSpare = (f, kind) => (PAYOUT_KINDS.includes(kind) ? Math
 // two winters); at 0.2 a winter takes about 15 firewood a head (450 since a unit is 0.1 kg), a forest hub's woodcutters keep up, a big hub on
 // farmland or one short of hands does not quite (about 2 cold base-days a winter on average, all on poor land).
 // HEAT.wood is per firewood of 0.1 kg (0.2 a 3 kg bundle, the unit before: every firewood figure is 30 times what it was).
-export const HEAT = { fuel: 0.1, bitter: 1.5, freezeAt: 0, bitterAt: -8, wood: 0.2 / 30 };
-// Fuel one person needs heating a day (today unless dayIdx): 0 at or above 0°C, HEAT.fuel below, ×HEAT.bitter below −8°C.
+// night / chillAt (fire-nights, 2026-10-19, user request "Bases use firewood to heat up the survivors during the night"): on a day
+// above freezing whose low is under HEAT.chillAt °C (spring and autumn nights, a clear night most of the year but
+// midsummer) a base burns HEAT.night of a freezing day's heating a head (0.03 fuel: 4.5 firewood, 0.45 kg, for the
+// night's fire), so firewood is burned most of the year, not only in the frost. The nights' firewood is a daily draw
+// (woodcutting.js woodNeed: WOOD.nightDays of it kept in store), the winter's is stocked ahead.
+export const HEAT = { fuel: 0.1, bitter: 1.5, freezeAt: 0, bitterAt: -8, wood: 0.2 / 30, night: 0.3, chillAt: 8 };
+// Fuel one person needs heating a day (today unless dayIdx): 0 on a warm day, HEAT.fuel × HEAT.night on a day above 0°C with
+// a night under HEAT.chillAt, HEAT.fuel on a day below 0°C (the mean), ×HEAT.bitter below −8°C.
 export function heatRate(state, dayIdx) {
   const t = Weather.dayMeanTemp ? (dayIdx == null ? Weather.dayMeanTemp(state) : Weather.dayMeanTemp(state, dayIdx)) : 10;
-  return heatRateAt(t);
+  const lo = Weather.dayLowTemp ? (dayIdx == null ? Weather.dayLowTemp(state) : Weather.dayLowTemp(state, dayIdx)) : t;
+  return heatRateAt(t, lo);
 }
-// The same for a day's mean temperature (°C): the threat forecast (sim/forecast.js) asks it of the forecast's days.
-export const heatRateAt = (t) => (t < HEAT.bitterAt ? HEAT.fuel * HEAT.bitter : t < HEAT.freezeAt ? HEAT.fuel : 0);
+// The same for a day's mean temperature and its low (°C): the threat forecast (sim/forecast.js) asks it of the forecast's days.
+export const heatRateAt = (t, lo = t) => (t < HEAT.bitterAt ? HEAT.fuel * HEAT.bitter : t < HEAT.freezeAt ? HEAT.fuel : lo < HEAT.chillAt ? HEAT.fuel * HEAT.night : 0);
+// A day above freezing whose night wants a fire (heatRateAt: the night's share only).
+export const chillNightAt = (t, lo) => heatRateAt(t, lo) > 0 && t >= HEAT.freezeAt;
 // Firewood for `fuel` worth of heat.
 export const woodFor = (fuel) => Math.round((fuel / HEAT.wood) * 1e9) / 1e9; // rounded off: HEAT.wood is a 30th
 // A shelter (tier 0) with its camp fire lit (fieldheat.js fireLit: lit unless put out) is warmed by the fire. The fire
-// burns deadfall gathered around it, or firewood from the store where the ground is bare (woodcutting.js shelterFire:
-// base.fireFed false = nothing left to burn, so it does not warm).
+// burns the firewood its people's warmth takes (the same a head as any base's heating, fire-nights) by the hour from
+// the store, stretched by deadfall gathered around it (woodcutting.js shelterFire, fireDayBurn: base.fireFed false =
+// nothing left to burn, so it does not warm).
 export const fireWarmed = (base) => !!base && base.tier === 0 && (base.campFire ?? base.fire) !== false && base.fireFed !== false;
 // Heating a day at a base: { each (fuel a head), n (the heads fed there), total (in fuel), wood (the same in firewood),
-// fire (a shelter's fire does it), text }. text: "6 people × 0.1 = 0.6 → 90 firewood a day (or 0.6 fuel)".
+// fire (a shelter's fire does it: it burns the same wood by the hour), night (a cool night's fire only, not a freezing
+// day), text }. text: "6 people × 0.1 = 0.6 → 90 firewood a day (or 0.6 fuel)".
 export function heatUse(state, base, dayIdx) {
   const each = heatRate(state, dayIdx);
   const n = mouthsAt(state, base).heads;
   const fire = each > 0 && fireWarmed(base);
+  const night = each > 0 && each < HEAT.fuel;
   const total = fire ? 0 : n * each;
-  const text = !each ? "no heating needed (above 0°C)" : fire ? `the camp fire keeps ${n} ${n === 1 ? "person" : "people"} warm (no fuel)` : n ? `${perHeadText(n, n === 1 ? "person" : "people", each)} → ${Math.round(woodFor(n * each))} firewood a day (or ${r1(n * each).toFixed(1)} fuel)` : "nobody here";
-  return { each: r2(each), n, total, wood: woodFor(total), fire, text };
+  const what = night ? "a cool night" : "a freezing day";
+  const text = !each ? `no heating needed (above 0°C, nights above ${HEAT.chillAt}°C)` : fire ? `the camp fire keeps ${n} ${n === 1 ? "person" : "people"} warm on ${what} (it burns ${Math.round(woodFor(n * each))} firewood a day for them)` : n ? `${night ? "the night's fire: " : ""}${perHeadText(n, n === 1 ? "person" : "people", each)} → ${Math.round(woodFor(n * each))} firewood a day (or ${r1(n * each).toFixed(1)} fuel)` : "nobody here";
+  return { each: r2(each), n, total, wood: woodFor(total), fire, night, text };
 }
 
 // A per-head rate as text: 1.0, 1.3, 0.99.

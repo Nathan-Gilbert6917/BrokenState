@@ -82,9 +82,9 @@ function deadEntries() {
     stats.push(["Follows", senses(z.senses)]);
     if (z.share) stats.push(["In a horde", `about ${pct(z.share)} of a horde from a hive that breeds it`]);
     if (z.wall && z.wall !== 1) stats.push(["At the walls", `presses ${x(z.wall)} as hard as one of the ordinary dead`]);
-    stats.push(["Comes from", g ? `a hive with a ${g.name} (tier ${g.tier})` : z.military ? "military sites, police stations and hordes that crossed them" : k === "swarm" ? "a Carrier or Flinger, a Sleeper bursting" : k === "sleeper" ? "the bodies lying on battle maps, more on infected ground" : "—"]);
+    stats.push(["Comes from", g ? `a hive with a ${g.name} (tier ${g.tier})` : z.military ? "military sites, police stations and hordes that crossed them" : z.beast ? (k === "deadcat" || k === "deadhound" ? "the towns and the cities (the houses, neighbourhoods, motels and apartment blocks most of all)" + (k === "deadhound" ? ", the farmland and the farms" : "") + ", more on infected ground" : "the hills, the woods and the farmland (more on infected ground, by the farms, barns and ranches, and where an infested herd grazes), and hordes that crossed such land") : k === "swarm" ? "a Carrier or Flinger, a Sleeper bursting" : k === "sleeper" ? "the bodies lying on battle maps, more on infected ground" : "—"]);
     out.push({
-      key: `z:${k}`, cat: "dead", name: z.name, sub: g ? "Special dead, bred by hives" : z.military ? "The armoured dead" : "Special dead",
+      key: `z:${k}`, cat: "dead", name: z.name, sub: g ? "Special dead, bred by hives" : z.military ? "The armoured dead" : z.beast ? "The dead beasts" : "Special dead",
       stats, text: z.special, how: z.counter,
       sprite: () => (k === "runner" || k === "brute" ? zombieCanvas(k, 7) : k === "soldier" || k === "riot" ? armoredCanvas(k, 7) : k === "sleeper" ? zombieCanvas("bloated", 3) : ztypeBattleCanvas(k)),
     });
@@ -343,11 +343,12 @@ function groupEntries() {
   });
   // Nomad bands (sim/nomads.js): one entry a tier, opened when one is seen.
   const NOMAD_TEXT = {
+    0: ["wary, not hostile; they trade", "only what they made from scrap: pipe spears, spiked bats, shivs, a scrap crossbow or a pipe shotgun, tyre vests", "The weakest people on the road, getting by on makeshift gear. Trade food for their handmade bits, swap news, share food; a fight with them is short, and all you take is scrap work.", "From the start."],
     1: ["hostile", "melee weapons and a pistol or two, no armour", "They rob a team they can take and scatter before one that is stronger. Pay them, talk them down, fight or run; a team stronger than they are can run them down for what they drop.", "From the start."],
     2: ["neutral, willing to trade", "hunting rifles, bows and shotguns, light armour", "The best foragers and hunters on the road, with a medic or two. Trade with them, swap news, share food; they remember a kindness.", "From year 2."],
     3: ["neutral and defensive", "rifles and carbines, plate carriers and steel (armour class 3 and up), a pickup or a Humvee", "Well armed and careful: they keep you at rifle range but will trade. Attacking them is a hard fight.", "From year 4."],
   };
-  for (const tier of [1, 2, 3]) {
+  for (const tier of [0, 1, 2, 3]) {
     const T = NOMADS.TIERS[tier], [att, arms, how, from] = NOMAD_TEXT[tier];
     out.push({
       key: `n:${tier}`, cat: "groups", name: `Nomads: ${T.name}`, sub: "Nomads",

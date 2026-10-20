@@ -165,6 +165,8 @@ function droppedWeapon(p, key) {
     case "machete": case "sawmachete": case "springmachete": p.rect(15, y, 20, y, metal); p.set(14, y, "#3a2a1c"); break;
     case "bat": case "spikedbat": case "nailbat": p.rect(14, y, 20, y, "#a07a48"); p.set(21, y, "#8a6638"); break;
     case "prybar": case "crowbar": case "pipespear": case "spear": p.rect(14, y, 21, y, "#6d7378"); break;
+    case "halligan": p.rect(14, y, 21, y, "#9aa3ab"); p.set(22, y - 1, "#9aa3ab"); p.set(22, y + 1, "#9aa3ab"); break; // (sim/data-survival.js)
+    case "pipewrench": p.rect(14, y, 18, y, "#c8362e"); p.rect(19, y - 1, 20, y, "#55595e"); break;
     case "fireaxe": case "sledge": p.rect(14, y, 20, y, wood); p.rect(21, y - 1, 21, y, key === "sledge" ? "#5b5f63" : "#a83a2a"); break;
     case "crossbow": case "compbow": case "xbow": case "pulleybow": p.rect(13, y, 20, y, wood); p.rect(20, y - 2, 20, y, metal); break;
     default: { const L = BLADE_LOOK[key]; if (L) { const n = Math.max(2, Math.min(8, L.len)); p.set(14, y, L.handle); p.rect(15, y, 14 + n, y, L.blade); if (L.guard) p.set(15, y - 1, L.guard); } break; } // knives and swords (sim/data-blades.js)
@@ -300,6 +302,32 @@ export function paintDownedZombie(variant, seed, look = zombieLook(), searched =
 }
 
 // The hive's special dead and the armoured dead (sim/zombietypes.js, deadsoldiers.js).
+// The dead beasts (sim/deadbeasts.js) lying on their side, head to the left: the body's length and depth, its hide,
+// the legs stuck out, a stag's antlers, a cow's horns, a hog's tusks; the worms that spilled out of the split hide.
+const BEAST_DOWN = {
+  deadstag: { L: 11, D: 2.6, hide: "#b08a5c", dark: "#7c5c3a", head: 3, antlers: true },
+  deadhog: { L: 10, D: 3, hide: "#6e5a48", dark: "#4a3a2c", head: 2.6, tusks: true },
+  deadhound: { L: 8, D: 2, hide: "#8a8278", dark: "#5a544c", head: 2.4 },
+  deadcat: { L: 6, D: 1.5, hide: "#9890a0", dark: "#5e5868", head: 1.8 },
+  deadcow: { L: 14, D: 3.6, hide: "#d8ccb4", dark: "#9a8e78", head: 3.2, horns: true },
+};
+function layBeast(p, B) {
+  const WORM = "#f0e4c0", WORM_D = "#cdbf94", SPLIT = "#5c1e1a";
+  const x0 = 4 + B.head, cx = x0 + B.L / 2;
+  p.disc(cx, CY, B.L / 2 + 1.5, B.D + 1.6, POOL); // the pool it lies in
+  p.disc(cx, CY, B.L / 2, B.D, B.hide); // the body on its side
+  p.rect(Math.round(x0 + 1), CY - Math.round(B.D) + 1, Math.round(x0 + B.L - 1), CY - Math.round(B.D) + 1, shade(B.hide, 0.15)); // the back's edge
+  for (const dx of [B.L * 0.25, B.L * 0.75]) for (const dy of [1, 2]) p.rect(Math.round(x0 + dx), CY + Math.round(B.D) + dy - 1, Math.round(x0 + dx), CY + Math.round(B.D) + dy, B.dark); // the legs stuck out
+  p.disc(x0 - B.head / 2, CY - 0.5, B.head / 2 + 0.6, B.head / 2, B.hide); // the head
+  p.set(Math.round(x0 - B.head + 0.5), CY - 1, "#3a1412"); // the eye, gone dark
+  if (B.antlers) for (const [x, y] of [[x0 - B.head - 1, CY - 3], [x0 - B.head - 2, CY - 4], [x0 - B.head, CY - 4], [x0 - B.head - 1, CY - 5]]) p.set(Math.round(x), y, "#d8d0bc");
+  if (B.horns) { p.set(Math.round(x0 - B.head), CY - 3, "#d8d0bc"); p.set(Math.round(x0 - B.head + 1), CY - 3, "#d8d0bc"); }
+  if (B.tusks) p.set(Math.round(x0 - B.head - 1), CY + 1, "#d8d0bc");
+  p.rect(Math.round(x0 + B.L * 0.3), CY, Math.round(x0 + B.L * 0.7), CY, SPLIT); // the hide split along the belly
+  for (const [dx, dy] of [[0.35, 1], [0.5, -1], [0.65, 1], [0.8, 0], [0.25, -1]]) { p.set(Math.round(x0 + B.L * dx), CY + dy, WORM); p.set(Math.round(x0 + B.L * dx) + 1, CY + dy, WORM_D); } // the worms spilling out
+  for (const [dx, dy] of [[-0.1, B.D + 2], [1.1, -B.D - 1], [0.5, B.D + 3]]) p.set(Math.round(x0 + B.L * dx), CY + Math.round(dy), WORM);
+  return p;
+}
 export function paintDownedZType(kind, seed = 0, look = zombieLook(), searched = false) {
   const rng = new Rng(seed * 9173 + 29);
   const p = downPainter();
@@ -365,6 +393,7 @@ export function paintDownedZType(kind, seed = 0, look = zombieLook(), searched =
     p.rect(8, CY - 1, 14, CY + 1, "#3a1412");
     for (const [x, y] of [[9, CY], [11, CY - 1], [12, CY + 1], [13, CY], [7, CY + 2], [15, CY - 2], [16, CY + 3], [6, CY - 3], [10, CY + 4]]) p.set(x, y, "#f0e4c0");
   } else if (kind === "carrier") return paintDownedZombie("bloated", seed, look, searched); // burst open, the worms gone (sim/carriers.js)
+  else if (BEAST_DOWN[kind]) layBeast(p, BEAST_DOWN[kind]); // the dead beasts (sim/deadbeasts.js): on its side, the hide split, the worms spilling out
   else return paintDownedZombie("walker", seed, look, searched);
   wounds(p, rng, 2, 7, 20);
   return p;

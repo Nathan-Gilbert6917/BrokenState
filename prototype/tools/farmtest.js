@@ -591,7 +591,8 @@ has(Weather.growthFactor, "growthFactor"); has(Weather.cropDamage, "cropDamage")
     st.cards.length = 0; h.stock.water = 80; setFood(h, 2000); alive(st).forEach((s) => { s.health = 100; s.mood = 60; });
   }
   const finds = (econStats(st).scavFinds || 0) - finds0;
-  check(finds >= 60 && brought >= 150, `six scavengers bring in real supplies in 60 days (${finds} finds, ${Math.round(brought)} supplies)`);
+  // 50 finds (was 60: 57 measured on dev 2026-10-19 once people drink by the hour and fetch water; the supplies brought, 223, are what matters).
+  check(finds >= 50 && brought >= 150, `six scavengers bring in real supplies in 60 days (${finds} finds, ${Math.round(brought)} supplies)`);
   check(h.scavLeft < 1, `the surroundings get picked over (${h.scavLeft.toFixed(2)} left)`);
 }
 

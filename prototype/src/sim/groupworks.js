@@ -17,6 +17,7 @@
 //   within reach) and the walls are under their goal;
 //   the rest of the fields; a bench once the necessities are up (they make ammo and gear every day);
 //   a storehouse once their stores fill (a stock at STORE_FULL of what it can hold);
+//   (storage, right after the walls under threat: storageWork below);
 //   walls up to their goal (the fortress and the military want theirs, others a home wall and a fence at their outposts).
 //   A sick bay (sickbayWork, at the main base, after the jail's first step; the four tiers of your hospital: infirmary,
 //   field hospital, clinic, trauma hospital; f.works[tile].sickbay = the tier): the infirmary once quarters are up and
@@ -35,7 +36,8 @@
 //   water and fields: their food from the land is × (FIELDS_MIN + (1 − FIELDS_MIN) × how provisioned they are);
 //   quarters: people sleeping rough slow the group's growth (CROWDED_GROWTH × the chance);
 //   bench: their workshops make WORKSHOP_MIN of the ammo, scrap, fuel and meds without one;
-//   storehouse: their stores hold STORE_CAP of the usual caps without one;
+//   storage: their stores hold STORE_CAP of the usual caps without any (a storage box, crates, a shed, a storehouse or a
+//   warehouse at any base: storeFactor);
 //   outpost camps (2026-10-09, parity with your outpost camp, buildings.js outpost_up): a base a group founds from
 //   nothing (factions.js expansion; not one it moves into, groupworld.js occupyAbandoned) starts as a camp
 //   (f.works[tile].camp): its defence × CAMP.DEF and nothing else built there until CAMP (its materials and work) is done,
@@ -110,11 +112,29 @@
 //   changes, f.fuelFlow, less the extra burn stays at 0 or more, and their fuel above half a fuel a head covers 30 days
 //   of it). With a freezer and a sealer (3 power) a tier-1 set covers them, so today they stay at tier 1, as most of
 //   your bases do; the rule is there for the day their machines draw more.
+// - Storage (base storage limits, 2026-10-19, the user's "have AI groups build storage units etc so the player can raid
+//   their supplies"; docs/adr/0001-ai-parity.md: your rules): a group's base is measured by your rule (basestorage.js
+//   storageOf: its core by tier, the storage buildings its works stand for, groupbases.js WORKS_BUILDING; a camp of
+//   theirs has no core, as yours). When goods lie outside a base tonight (groupStorage: the stores as the supply run
+//   will leave them, groupbases.js stockTonight; STORE_WISH.minKg or more, or an item), storageWork puts up the
+//   building your governor would (autopilot.js storageWish, its ladder by the base's size: a storage box at a camp,
+//   crates or a storage shed at an outpost, crates, a shed, the storehouse or a warehouse at the main base): the
+//   smallest that takes what lies outside, else the biggest they can build now. Your buildings' rules (storeLock):
+//   their most a base (BUILDINGS max; a camp's CAMP.build), the warehouse at an outpost or the main base only and with
+//   a Mechanics 2+ hand (groupSkill); your costs (storeDef, paid when the job starts: a storage box 2 scrap, crates 4,
+//   a shed 12 and a building material, the storehouse 18, a warehouse 40, 4 building materials and a part) and they
+//   start it only when they can pay (as your canBuild), building materials made from their scrap as for any job; at a
+//   camp, only from the scrap the step up does not need (as your camp's yard), and before it. Work: your hours ÷
+//   CREW_HOURS crew-days (a box or crates 1, a shed 2, the storehouse 3, a warehouse 6). In nextWork after water, the
+//   fields when food is short, quarters, the jail and infirmary and the walls under threat, before the rest. Plots
+//   are not counted (their bases keep none). Not at a base of yours they took (groupbases.js real: its buildings are
+//   yours). The old storehouse once "the stores are full" (storesFull) stays at the main base. Abstract no more: the
+//   room is what raiders find their goods inside or lying out on the piles (basemap.js, raidloot.js).
 // - Old saves (no state.groupWorks) and the hardcore military (an army base built before the fall) count as built
 //   up: none of this changes them. tools/barestarttest.js.
 import { foodIn, takeFood } from "./foods.js"; // days of food (every kind)
 import { groupFetchedWater } from "./grouptrips.js"; // water carried in from the water a base holds (as your Fetch water)
-import { day } from "./world.js";
+import { day, skill } from "./world.js";
 import { MEAL_WORK_SHARE } from "./meals.js"; // their crews stop for breakfast, lunch and dinner too (21 of 24 hours)
 import { season, THIRST } from "./weather.js"; // summer water: the season and its thirst
 import { weightOf, medOf, workingPeople } from "./groupcare.js"; // the type profiles; the group's doctor (a clinic needs a good one)
@@ -128,8 +148,12 @@ import { relation } from "./diplomacy.js"; // buying a manual from traders they 
 import { SUPPLIES } from "./data.js";
 import { groupFieldDefence, groupFieldWells } from "./fieldworks.js"; // the groups' field works: towers, wells
 import { groupWantsMill, groupWantsGrinder } from "./cooking.js"; // wave 2 cooking: a grain mill and a meat grinder by a kitchen
+import { BUILDINGS, CAMP as CAMP_BASE } from "./buildings.js"; // storage: your storage buildings, their costs and rules (call-time only)
+import { storageOf } from "./basestorage.js"; // storage: a base's room and what lies outside (call-time only)
+import { STORE_WISH } from "./autopilot.js"; // storage: your governor's ladder (call-time only)
+import { homesOf, stockTonight, worksBuildings } from "./groupbases.js"; // storage: their bases as base objects (call-time only)
 
-/** @typedef {{ water?: number, farms?: number, beds?: number, walls?: number, bench?: number, store?: number, sickbay?: number, pens?: number, camp?: number, still?: number, power?: number, powerTier?: number, freezer?: number, sealer?: number, kitchen?: number, shop?: number, radio?: number, garage?: number, reload?: number, gate?: number, mach?: Object<string, { wear: number, spares: number, broken: boolean, on?: boolean, noSpares?: boolean }> }} Works */
+/** @typedef {{ water?: number, farms?: number, beds?: number, walls?: number, bench?: number, store?: number, sickbay?: number, pens?: number, camp?: number, still?: number, power?: number, powerTier?: number, freezer?: number, sealer?: number, kitchen?: number, shop?: number, radio?: number, garage?: number, reload?: number, gate?: number, storebox?: number, crates?: number, shed?: number, warehouse?: number, mill?: number, grinder?: number, mach?: Object<string, { wear: number, spares: number, broken: boolean, on?: boolean, noSpares?: boolean }> }} Works */
 
 export const GROUP_WORKS = {
   WORKS: {
@@ -138,7 +162,12 @@ export const GROUP_WORKS = {
     beds:  { name: "quarters", cost: { scrap: 8 }, work: 4 },
     walls: { name: "a wall", cost: { scrap: 6 }, work: 6 },
     bench: { name: "a workshop", cost: { scrap: 6, parts: 1 }, work: 4 },
-    store: { name: "a storehouse", cost: { scrap: 7 }, work: 5 },
+    // Storage (storageWork): your storage buildings at your costs, your hours ÷ CREW_HOURS (storeDef).
+    get store() { return storeDef("store"); },
+    get storebox() { return storeDef("storebox"); },
+    get crates() { return storeDef("crates"); },
+    get shed() { return storeDef("shed"); },
+    get warehouse() { return storeDef("warehouse"); },
     pens: { name: "an animal pen", cost: { scrap: 4 }, work: 3 },
     // Machines (freezer-parts; MACH): yours cost 15 scrap + 2 parts, 20 + 4, 30 + 5 + 2 electronics, 12 + 2 + 2.
     still: { name: "an ethanol still", cost: { scrap: 4, parts: 1 }, work: 3 },
@@ -185,6 +214,7 @@ export const GROUP_WORKS = {
     floor: 0.5, // fuel a head kept back from a bigger generator's burn (groupcare.js keeps the same before selling)
   },
   CREW: 6, SALVAGE: 2,
+  CREW_HOURS: 8, // your work-hours a crew-day of theirs, as the works above were scaled (a well's 24 hours 3, a machine shop's 48 hours 6)
   SERVES: { water: 10, farms: 8, beds: 8 }, // people one of each serves
   WALL_GOAL: { typed: 7, home: 4, open: 1 }, WALLED_TYPES: ["fortress", "military"], // as conquest.js CONQUEST.WALLS (the old fixed walls)
   FOOD_SHORT: 8, STORE_FULL: 0.9,
@@ -311,7 +341,7 @@ export const sleepingRough = (state, f) => groupsBuild(state, f) && served(f, "b
 export const growthFactor = (state, f) => (sleepingRough(state, f) ? W.CROWDED_GROWTH : 1);
 const hasAny = (f, k) => f.bases.some((t) => n(f.works && f.works[t], k) > 0);
 export const workshopFactor = (state, f) => (!groupsBuild(state, f) || hasAny(f, "bench") ? 1 : W.WORKSHOP_MIN);
-export const storeFactor = (state, f) => (!groupsBuild(state, f) || hasAny(f, "store") ? 1 : W.STORE_CAP);
+export const storeFactor = (state, f) => (!groupsBuild(state, f) || STORE_KEYS.some((k) => hasAny(f, k)) ? 1 : W.STORE_CAP); // any storage of theirs: the full caps
 
 // Is this base threatened (walls go up ahead of the rest)?
 export function threatened(state, f, tile) {
@@ -345,13 +375,76 @@ function sickbayWork(state, f, upper) {
   return { tile, type: "sickbay", why: `${next.name} (the sick bay upgraded)`, def: next };
 }
 
+// ---------- storage (see the header) ----------
+// Their storage works as your buildings (groupbases.js WORKS_BUILDING has the same).
+export const STORE_BUILDING = { storebox: "storebox", crates: "crates", shed: "shed", store: "storehouse", warehouse: "warehouse" };
+const STORE_KEYS = Object.keys(STORE_BUILDING);
+const STORE_WORK = { storebox: "storebox", crates: "crates", shed: "shed", storehouse: "store", warehouse: "warehouse" };
+const STORE_NAME = { storebox: ["a storage box", "storage boxes"], crates: ["storage crates", "stacks of storage crates"], shed: ["a storage shed", "storage sheds"], store: ["a storehouse", "storehouses"], warehouse: ["a warehouse", "warehouses"] };
+/** A storage work: your building's cost and its hours as crew-days (CREW_HOURS). @param {string} k */
+export function storeDef(k) {
+  const B = BUILDINGS[STORE_BUILDING[k]];
+  return { name: STORE_NAME[k][0], cost: { ...B.cost }, work: Math.max(1, Math.round(B.hours / W.CREW_HOURS)) };
+}
+// The size of a group's base on your governor's ladder (autopilot.js STORE_WISH): a camp, the main base (hub), an outpost.
+const storeSize = (f, tile) => (isCamp(f, tile) ? "camp" : tile === mainOf(f) ? "hub" : "outpost");
+/** Why they may not put up storage work k at a base now ("" when they may): your building's rules. @returns {string} */
+export function storeLock(state, f, tile, k) {
+  const B = BUILDINGS[STORE_BUILDING[k]];
+  if (!B) return "no such building";
+  const camp = isCamp(f, tile);
+  if (camp && B.size && B.size !== "camp") return "an outpost or the main base"; // the warehouse (buildings.js size)
+  const max = camp ? CAMP_BASE.build[STORE_BUILDING[k]] || 0 : B.max || 1;
+  if (n(f.works && f.works[tile], k) >= max) return max ? `${max} at most` : "not at a camp";
+  for (const [sk, v] of Object.entries(B.req || {})) if (groupSkill(f, sk) < v) return `${sk[0].toUpperCase()}${sk.slice(1)} ${v}`;
+  return "";
+}
+// Can they pay a cost now, with `keep` left over (building materials made from scrap as a job's start does)?
+function canAfford(f, cost, keep = {}) {
+  const s = f.stock || {};
+  const bm = Math.max(0, (cost.buildmat || 0) + (keep.buildmat || 0) - (s.buildmat || 0));
+  if ((s.scrap || 0) < (cost.scrap || 0) + (keep.scrap || 0) + bm * W.BUILDMAT_SCRAP) return false;
+  return Object.entries(cost).every(([k, v]) => k === "scrap" || k === "buildmat" || (k === "parts" ? canPayParts(f, v, "free") : (s[k] || 0) >= v));
+}
+// A base of theirs as basestorage.js measures it tonight: its core by tier, the buildings its works stand for, the
+// stores the supply run will leave there (groupbases.js stockTonight), the main base's armory.
+function storageStandIn(state, f, tile, tonight) {
+  const h = homesOf(state, f)[tile];
+  const stock = tonight[tile] || {};
+  if (h && h.real) return { ...h, stock }; // a base of yours they took: its own buildings and tier
+  const buildings = [];
+  for (const [type, c] of Object.entries(worksBuildings(state, f, tile))) for (let i = 0; i < c; i++) buildings.push({ id: `${tile}:${type}:${i}`, type });
+  return { id: h ? h.id : tile, tile, type: tile === mainOf(f) ? "hub" : "outpost", camp: isCamp(f, tile), group: true, stock, armory: (h && h.armory) || [], buildings, construction: [] };
+}
+/** A group's base's storage tonight (basestorage.js storageOf on storageStandIn). */
+export function groupStorage(state, f, tile, tonight = stockTonight(state, f)) {
+  return storageOf(state, storageStandIn(state, f, tile, tonight));
+}
+// The storage a base wants (see the header), or null. room(tile): its storage tonight (memoised a nextWork call).
+function storageWork(state, f, tile, room) {
+  const h = homesOf(state, f)[tile];
+  if (!h || h.real) return null;
+  const st = room(tile);
+  if (st.outsideKg < STORE_WISH.minKg && !st.outside.gear.length) return null;
+  const keep = isCamp(f, tile) ? W.CAMP.cost : {}; // a camp's step up keeps its materials
+  const ok = STORE_WISH.ladder[storeSize(f, tile)].map((t) => STORE_WORK[t]).filter((k) => k && !storeLock(state, f, tile, k) && canAfford(f, storeDef(k).cost, keep));
+  if (!ok.length) return null;
+  const kg = (k) => BUILDINGS[STORE_BUILDING[k]].storeKg;
+  const k = ok.find((x) => kg(x) >= st.outsideKg) || ok[ok.length - 1];
+  return { tile, type: k, why: `${Math.round(st.outsideKg)} kg of their goods lie outside (room for ${kg(k)} kg)`, def: storeDef(k) };
+}
+
 // The next job a group would start: { tile, type, why } or null (all built).
 export function nextWork(state, f) {
   if (!groupsBuild(state, f) || !f.bases.length) return null;
   const foodShort = foodIn(f.stock) < f.pop * W.FOOD_SHORT;
+  /** @type {Record<number, ReturnType<typeof storageOf>>} */
+  const rooms = {};
+  let tonight = null;
+  const room = (t) => rooms[t] || (rooms[t] = groupStorage(state, f, t, tonight || (tonight = stockTonight(state, f))));
   for (const tile of f.bases) {
     const w = worksAt(f, tile);
-    if (n(w, "camp")) return { tile, type: "camp", why: "an outpost camp to establish", def: W.CAMP }; // nothing else there before it
+    if (n(w, "camp")) return storageWork(state, f, tile, room) || { tile, type: "camp", why: "an outpost camp to establish", def: W.CAMP }; // nothing else there before it (storage boxes for what lies on the ground: a camp has no room)
     const goal = wallGoal(f, tile);
     if (n(w, "water") < wanted(f, tile, "water", state)) return { tile, type: "water", why: summerThirst(state, true) > 1 && n(w, "water") >= wanted(f, tile, "water") ? "water for the summer" : "water" };
     if (foodShort && n(w, "farms") < wanted(f, tile, "farms")) return { tile, type: "farms", why: "food is short" };
@@ -359,12 +452,14 @@ export function nextWork(state, f) {
     if (tile === mainOf(f)) { const jail = jailWork(state, f); if (jail) return jail; }
     if (tile === mainOf(f)) { const sb = sickbayWork(state, f, false); if (sb) return sb; }
     if (n(w, "walls") < goal && threatened(state, f, tile)) return { tile, type: "walls", why: "threatened" };
+    const sw = storageWork(state, f, tile, room);
+    if (sw) return sw;
     if (n(w, "farms") < wanted(f, tile, "farms")) return { tile, type: "farms", why: "fields for everyone" };
     if (n(w, "walls") > 0 && n(w, "farms") > 0 && n(w, "pens") < W.PENS.max) return { tile, type: "pens", why: "food behind the walls" };
     if (tile === mainOf(f)) { const jail = jailWork(state, f, true); if (jail) return jail; } // communes: later
     if (tile === mainOf(f)) {
       if (!hasAny(f, "bench")) return { tile, type: "bench", why: "a workshop for their gear and ammo" };
-      if (!hasAny(f, "store") && storesFull(state, f)) return { tile, type: "store", why: "the stores are full" };
+      if (!hasAny(f, "store") && storesFull(state, f) && !storeLock(state, f, tile, "store")) return { tile, type: "store", why: "the stores are full", def: storeDef("store") };
       // The kitchen before the workshop's machines (ap-food, user pick 2026-10-11): hot meals stretch the food and lift the
       // group's growth from the day it stands; the machine shop, the upgraded sick bay and the machines come after it.
       if (peopleAt(f, tile) >= W.KITCHEN.size && !n(w, "kitchen")) return { tile, type: "kitchen", why: "hot meals for the people there" };
@@ -620,8 +715,12 @@ export function groupTech(f) {
 }
 export const groupKnows = (state, f, id) => !!f && (!groupsBuild(state, f) || groupTech(f).known.includes(id));
 const lacks = (f, id) => { const T = groupTech(f); return !T.known.includes(id) && !T.held.includes(id); };
-// The group's best at a skill, coarse.
+// The group's best at a skill: its best person at home who is up to work (members.js; docs/adr/0001-ai-parity.md: the
+// people's own skills, as your base's best hand), else the old coarse figure by type (a group not yet people).
+// A band with no base (nomads.js, visitors.js: band.people, location "band") reads its own people, all with it.
 export function groupSkill(f, sk) {
+  const people = f && Array.isArray(f.people) ? f.people.filter((s) => s.alive !== false && s.location && (s.location.kind === "member" || s.location.kind === "band") && s.location.partyId == null && (s.health ?? 100) >= 60) : [];
+  if (people.length) return Math.max(0, ...people.map((s) => skill(s, sk)));
   if (sk === "medicine") return medOf(f).doc;
   if (sk === "farming") return TECH.farm[f.type] ?? TECH.farm.dflt;
   return weightOf(f, "mechanic", 3);
@@ -698,7 +797,7 @@ const jailStepName = (f) => { const t = (f.jails && f.jails[f.job.tile]) || 0; r
 // "water, 2 fields, quarters for 16, walls 2/4 · building a wall" (the Groups tab).
 export function worksText(state, f) {
   if (!groupsBuild(state, f) || !f.bases.length) return "";
-  const t = { water: 0, farms: 0, beds: 0, bench: 0, store: 0, still: 0, power: 0, freezer: 0, sealer: 0, kitchen: 0, mill: 0, grinder: 0, shop: 0, radio: 0, garage: 0, reload: 0, gate: 0 };
+  const t = { water: 0, farms: 0, beds: 0, bench: 0, store: 0, storebox: 0, crates: 0, shed: 0, warehouse: 0, still: 0, power: 0, freezer: 0, sealer: 0, kitchen: 0, mill: 0, grinder: 0, shop: 0, radio: 0, garage: 0, reload: 0, gate: 0 };
   for (const b of f.bases) for (const k of Object.keys(t)) t[k] += n(f.works && f.works[b], k);
   const main = mainOf(f);
   const bits = [];
@@ -707,7 +806,7 @@ export function worksText(state, f) {
   if (t.beds) bits.push(`quarters for ${t.beds * W.SERVES.beds}`);
   bits.push(`walls ${groupWalls(state, f, main)}/${wallGoal(f, main)}`);
   if (t.bench) bits.push("a workshop");
-  if (t.store) bits.push("a storehouse");
+  for (const k of ["warehouse", "store", "shed", "crates", "storebox"]) if (t[k]) bits.push(t[k] > 1 ? `${t[k]} ${STORE_NAME[k][1]}` : STORE_NAME[k][0]); // storage, the biggest first
   if (t.still) bits.push("an ethanol still");
   if (t.power) { const tiers = f.bases.map((b) => groupGenTier(f.works && f.works[b])).filter(Boolean); const top = Math.max(1, ...tiers); bits.push(top > 1 ? W.MACH.tiers[top].name : "a generator"); } // gen-tiers
   if (t.freezer) bits.push(`a walk-in freezer${groupFreezerOn(f) ? " (on)" : " (off)"}`);

@@ -5,7 +5,9 @@
 //   gear by day.
 // - Raiders: a raid on your base (held, a break-in that carries your stock off, paid off, talked down, defended in
 //   person), on a group's base (factions.js resolveRaidOnFaction), on a group's convoy, on merchants; team cards
-//   (stopped / seen first, every choice); leaving off the map at a border tile.
+//   (stopped / seen first, every choice); leaving off the map at a border tile. They live as a nomad band does
+//   (nomads.js): their people are records, a day's food and water from their stores, hungry they lose people and
+//   break up with their goods left where they ended, they take only what they can carry, nothing from nowhere.
 // - Merchants: rare goods (a manual, books, gear, fuel, meds, preserved food), the price model (cheap fuel, dear
 //   food), the trade window at your base (buy a blueprint), a team trading on the road, trade with a group, the radio
 //   call and invitation, reputation after an attack (traders, communes and fortresses, the next merchants).
@@ -16,13 +18,13 @@
 // - Determinism (two worlds in one process), save / load mid-visit (identical after 30 more days), the autopilot's
 //   choices, a [days]-day Balanced run per style without NaN, and the UI pieces (Groups tab section, alerts, trade
 //   window extras) without undefined / NaN and with a handler for every data-action.
-import { foodSplit, foodText, FOODS } from "../src/sim/foods.js";
+import { foodSplit, foodText, FOODS, foodIn } from "../src/sim/foods.js";
 import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { totalRounds } from "../src/sim/ammo.js"; // rounds by calibre
 import { readFileSync, readdirSync } from "node:fs";
 import { createWorld, tickHour, day, hub, atBase, newId, residents, combatPower } from "../src/sim/world.js";
 import { setAutopilot } from "../src/sim/autopilot.js";
-import { launchExpedition, partyTile, spawnAiParty, planPath } from "../src/sim/parties.js";
+import { launchExpedition, partyTile, spawnAiParty, planPath, partyMembers } from "../src/sim/parties.js";
 import { addBuilding } from "../src/sim/buildings.js";
 import { attitude } from "../src/sim/factions.js";
 import { tradeContext, tradeVerdict, toggleGear, balanceWith, executeTrade, endTrade, buyPrice, sellPrice, need } from "../src/sim/trade.js";
@@ -34,6 +36,10 @@ import { tradeWindow } from "../src/ui/tradewindow.js";
 import { digest } from "./digest.js";
 import { poisOf, poiPool } from "../src/sim/pois.js"; // points of interest (Session 4b: the bands raid them)
 import { groupWouldSurvey, bestGroupPoi } from "../src/sim/grouppois.js";
+import { NOMADS, bandPeople, bandRoom } from "../src/sim/nomads.js"; // a raider band lives as a nomad band does
+import { groundAt } from "../src/sim/carry.js";
+import { newItem } from "../src/sim/inventory.js";
+import { SUPPLIES } from "../src/sim/data.js";
 
 const days = Number(process.argv[2] || 365);
 const seed = Number(process.argv[3] || 42);
@@ -297,6 +303,66 @@ section("Raiders and everyone else: groups, their caravans, merchants, sites; le
 }
 
 // ======================================================================================
+section("Raiders live as a nomad band does: people, the carry rule, food and water, nothing from nowhere");
+{
+  const st = world();
+  tick(st, 24);
+  clearCards(st);
+  const v = V.spawnVisitor(st, "raiders", { size: 6, power: 3 });
+  const people = bandPeople(st, v);
+  check(people.length === v.size && people.every((s) => s.location.kind === "band" && s.skills), `their people are records with what they carry (${people.length} for a band of ${v.size})`);
+  check(v.stock.water > 0 && foodIn(v.stock) > 0, `they set out with food and water for the road (${foodIn(v.stock).toFixed(1)} days of food, ${v.stock.water} water)`);
+  // A day: every head eats and drinks from their stores (nomads.js bandFeeds, through raiderDay).
+  const T1 = NOMADS.TIERS[1], f1 = T1.forage, w1 = T1.water;
+  T1.forage = 0; T1.water = 0;
+  const w0 = v.stock.water, d0 = foodIn(v.stock);
+  V.raiderDay(st, v);
+  check(Math.abs(w0 - v.stock.water - v.size * NOMADS.DRINK) < 1e-6 && d0 - foodIn(v.stock) >= v.size * NOMADS.EAT - 1e-6, `a day on the road: ${v.size} heads drink ${(w0 - v.stock.water).toFixed(1)} and eat ${(d0 - foodIn(v.stock)).toFixed(1)} days of food`);
+  // With nothing left they go hungry and lose people, and at the last they break up; what they carried lies where
+  // they ended.
+  for (const k of Object.keys(v.stock)) if (k === "water" || FOODS[k]) v.stock[k] = 0;
+  v.wares.push(newItem("ladder"));
+  const lad = v.wares[v.wares.length - 1], tile = v.tile;
+  let n = 0;
+  const size0 = v.size;
+  while (st.visitors.includes(v) && n < 200) { st.hour += 24; V.raiderDay(st, v); n++; }
+  T1.forage = f1; T1.water = w1;
+  const ground = groundAt(st, tile);
+  check(!st.visitors.includes(v) && ground && ground.items.some((x) => x.item === lad), `with no food or water: ${size0} → 0 in ${n} days, their ladder left on the ground where they broke up`);
+  // Robbing a convoy of yours they take only what their people can carry (bandRoom); the rest stays in the convoy.
+  const h = hub(st);
+  const ids = atBase(st, h.id).slice(0, 1).map((s) => s.id);
+  const dest = ringLand(st, h.tile, 4)[0];
+  const res = launchExpedition(st, { memberIds: ids, dest, mission: "move", stance: "normal", supplies: { food: 4, water: 4 } });
+  if (!res.error) {
+    const p = res.party;
+    p.path = [dest]; p.idx = 0; p.progress = 0; p.phase = "waiting"; p.dest = dest; p.orders = []; // out on the road, away from the walls
+    p.kind = "convoy";
+    for (const s of partyMembers(st, p)) s.health = 5;
+    p.cargo.supplies.scrap = 2000; // far more than anyone carries
+    const r = V.spawnVisitor(st, "raiders", { size: 6, power: 6 });
+    place(st, r, partyTile(p));
+    r.goal = { kind: "party", partyId: p.id, tile: partyTile(p) };
+    const room = bandRoom(st, r), scrap0 = r.stock.scrap || 0;
+    for (let i = 0; i < 4 && st.parties.includes(p) && (r.stock.scrap || 0) === scrap0; i++) tick(st);
+    const took = (r.stock.scrap || 0) - scrap0;
+    const left = st.parties.includes(p) ? p.cargo.supplies.scrap || 0 : null;
+    check(took > 0 && took * SUPPLIES.scrap.weight <= room + 1e-6 && (left == null || left + took === 2000), `a convoy robbed: they took ${took} scrap (${Math.round(took * SUPPLIES.scrap.weight)} kg of the ${Math.round(room)} kg they could carry); the rest stays in the convoy (${left ?? "the convoy lost"})`);
+  } else check(false, `a convoy for the test (${res.error})`);
+  // A group's caravan with nothing on it gives nothing (no food or scrap from nowhere).
+  const from = st.factions.find((x) => x.alive && x.bases.length);
+  const to = st.factions.find((x) => x.alive && x !== from && x.bases.length);
+  const q = spawnAiParty(st, from, "caravan", from.bases[0], to.bases[0], { strength: 1 });
+  q.goods = { supplies: {}, gear: [] };
+  const r2 = V.spawnVisitor(st, "raiders", { size: 8, power: 5 });
+  place(st, r2, partyTile(q));
+  r2.goal = { kind: "aiparty", partyId: q.id, tile: partyTile(q) };
+  const before = JSON.stringify(r2.stock);
+  for (let i = 0; i < 4 && st.parties.includes(q); i++) tick(st);
+  check(!st.parties.includes(q) && JSON.stringify(r2.stock) === before, "an empty caravan robbed: nothing comes from nowhere");
+}
+
+// ======================================================================================
 section("Your teams meet them");
 {
   const st = world();
@@ -419,7 +485,7 @@ section("The governor and a toll that would strand the team");
     }
     return { why: "no toll card in 12 tries" };
   };
-  const dry = tollAi({ water: 20, food: 6 }); // enough water to pay the toll (food travels as typed items, water partly in canteens), not enough left for the way home
+  const dry = tollAi({ water: 22, food: 6 }); // enough water to pay the toll (food travels as typed items, water partly in canteens, and the team drinks by the hour on the road: 20 left 14 at the stop, under the 15 the toll asks), not enough left for the way home
   check(dry.ai === 5, `a toll paid in the water the team needs to get home: score ${dry.ai} (${dry.label || dry.why})`);
   const rich = tollAi({ water: 20, food: 12, scrap: 30 });
   check(rich.ai >= 55, `a toll paid from spare scrap: the usual score ${rich.ai} (${rich.label || rich.why})`);

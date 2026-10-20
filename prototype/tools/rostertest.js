@@ -52,7 +52,7 @@ const cap = (k) => WEAPONS[k].cap;
 check(cap("leverrifle") === 6, "the lever-action holds 6 (section 3)");
 const byCat = (cat) => guns.filter((k) => GEAR[k] && GEAR[k].cat === cat);
 check(byCat("pistol").every((k) => cap(k) >= 5 && cap(k) <= (WEAPONS[k].cal === "57x28" ? 20 : 15)), `pistols hold 5–15 (a snub-nose five; the 5.7 pistol 20) (${byCat("pistol").map((k) => `${k} ${cap(k)}`).join(", ")})`);
-check(byCat("shotgun").every((k) => cap(k) >= 1 && cap(k) <= 8), `shotguns hold 1–8 (${byCat("shotgun").map((k) => `${k} ${cap(k)}`).join(", ")})`);
+check(byCat("shotgun").every((k) => cap(k) >= 1 && cap(k) <= (k === "ksg" ? 14 : 8)), `shotguns hold 1–8 (the bullpup pump's twin tubes 14) (${byCat("shotgun").map((k) => `${k} ${cap(k)}`).join(", ")})`);
 check(byCat("automatic").every((k) => cap(k) >= (WEAPONS[k].cal === "308" || WEAPONS[k].cal === "45acp" ? 20 : k === "famas" ? 25 : 30)), `automatic weapons hold 30 or more (the .308 battle rifles 20, the .45 SMGs 25, the FAMAS 25) (${byCat("automatic").map((k) => `${k} ${cap(k)}`).join(", ")})`);
 check(byCat("rifle").every((k) => cap(k) >= (INTERNAL[k] === 1 ? 1 : 5) && cap(k) <= 30), `rifles hold 5–30 (a single-shot one) (${byCat("rifle").map((k) => `${k} ${cap(k)}`).join(", ")})`);
 check(guns.filter((k) => WEAPONS[k].ammo > 0 && !WEAPONS[k].mounted).every((k) => cap(k) % WEAPONS[k].ammo === 0 || WEAPONS[k].modes), "a magazine is a whole number of shots (or the gun has fire modes; a turret's belt aside)");
@@ -127,7 +127,8 @@ for (let i = 0; i < 400 && units < 30; i++) {
   const u = enemyUnit(b, r, "soldiers", 9, i);
   if (u.weapon !== "sniper") continue;
   units++;
-  if (!u.modItems || !u.modItems.optic || u.modItems.optic.key !== "tacscope" || !u.modItems.bipod || u.modItems.bipod.key !== "bipod") bad++;
+  const mi = (u.item && u.item.mods) || u.modItems; // a person (fighters.js): the parts are on the gun in their hands
+  if (!mi || !mi.optic || mi.optic.key !== "tacscope" || !mi.bipod || mi.bipod.key !== "bipod") bad++;
   const body = enemyBody(new Rng(2000 + i), u, KITS.soldiers);
   if (body.gear && body.gear.weapon && body.gear.weapon.key === "sniper") { bodies++; if (!fitted(body.gear.weapon)) bad++; }
 }

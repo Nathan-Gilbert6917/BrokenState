@@ -9,11 +9,12 @@
 //   state.groupJails) and groups without a record count as holding cells everywhere with no limit; the hardcore
 //   military holds its people in a jailhouse block.
 // - What they hold: your people (conflicts.js captives, s.location.kind "captive") and other groups' people
-//   (f.prisoners: { id, from: a group id, power, since }). Both count against the room (groupRoom). Groups take
-//   prisoners from each other in raids they win (nonlethal.js raidPrisoners: a share of the beaten by the winner's
-//   type, NL_TAKE, through groupCapture; a war raid's captive too, diplomacy.js resolveWarRaid, which in an older save
-//   keeps the war's own head count, w.captives). Nonlethal's head counts (f.held) in a save are turned into records
-//   (migrateHeld). This is the one model of prisoners between groups.
+//   (f.prisoners: { id, from: a group id, power, since, s: the very person }). Both count against the room
+//   (groupRoom). Groups take prisoners from each other in raids they win (nonlethal.js raidPrisoners: a share of the
+//   beaten by the winner's type, NL_TAKE, through groupCapture; a war raid's captives, groupfight.js applySide through
+//   capturePeople; raiders grabbing a group's people on the road, jobs.js rescueJob). Every record is a person: a
+//   prisoner going home (freeHeld, goHome: a rescue, a peace, a ransom, an exchange) goes back into their group's list
+//   as themselves, never as a head count. This is the one model of prisoners between groups.
 // - No room (jailOf full, by type: groupcare.js GROUP_PRIORITIES jail): raiders, expansionists and traders sell the extra one to a group with room (unsold:
 //   raiders and expansionists kill them, traders let them go; your people: kept over the room for YOURS.days for you
 //   to ransom them (ransom.js talks; a sale is tried each day), then killed by raiders and expansionists, let go by
@@ -45,9 +46,14 @@ import { JAIL_TIERS, PRISON, cellEscape, guardTighten, groupGuardStrength } from
 import { allCaptives, CAPTIVE_TOOL } from "./conflicts.js";
 import { changeRelation, relation, warBetween, atWar, news, knownAs } from "./diplomacy.js";
 import { available } from "./trade.js";
+import { spendAmmo } from "./rounds.js"; // rounds paid by calibre
+import { roundsText } from "./ammo.js"; // and named so in the news
 import { tileLabel } from "./parties.js";
 import { openNegotiation, dealFor, talksOf, groupMemberWorth } from "./ransom.js"; // rescue: buying your people back; the value rule
 import { weightOf } from "./groupcare.js"; // the type profiles
+import { captivesFrom, takeQuietly, homeAgain, fighterScore, removeMember } from "./members.js"; // prisoners between groups are people
+import { stripAll } from "./inventory.js";
+import { keepItem } from "./arsenal.js";
 
 export const GROUP_JAIL = {
   // The step up to each tier (groupworks.js job "jail"): what it costs and crew-days of work.
@@ -202,40 +208,78 @@ export const captiveTurnMult = (s) => (s.mood < G.CAPTIVE.broken ? G.CAPTIVE.bro
 const bump = (state, k, n = 1) => { const st = state.stats.groupJail || (state.stats.groupJail = {}); st[k] = (st[k] || 0) + n; };
 // A group took n of victim's people (their head count already lowered by the caller): held while there is room,
 // the rest by type (jailOf full): sold, killed or let go. Returns how many it holds; out.killed: how many it killed.
+// Only people who are there are taken: a prisoner is always a person's record, never a head with nobody behind it
+// (the caller's count of the rest stands as its losses).
 export function groupCapture(state, captor, victim, n, out = null) {
   if (!captor || !victim || n <= 0) return 0;
   let held = 0;
-  for (let i = 0; i < n; i++) {
+  // The very people (members.js: the caller took them off the head count): stripped as yours are (conflicts.js
+  // takeCaptive), their kit the captors' (arsenal.js keepItem).
+  const people = Array.isArray(victim.people) || victim.pop > 0 ? captivesFrom(state, victim, n) : [];
+  for (const s of people) {
     const rec = { id: newId(), from: victim.id, power: state.rng.int(2, 4), since: day(state) };
+    if (!takeQuietly(state, victim, s)) continue;
+    for (const it of stripAll(s)) keepItem(state, captor, it, "stolen");
+    rec.s = s; rec.power = Math.max(1, Math.min(5, Math.round(fighterScore(s) / 4) || rec.power));
     if (groupRoom(state, captor) > 0) { groupPrisoners(captor).push(rec); held++; bump(state, "taken"); continue; }
     if (fullFate(state, captor, rec) && out) out.killed = (out.killed || 0) + 1;
   }
   return held;
+}
+// These very people of the victim's taken by the captor in a fight by the numbers (groupfight.js): out of the
+// victim's list (members.js removeMember: off its head count), stripped as yours are (the kit the captor's), into the
+// captor's jail as there is room, else its full-jail rule (fullFate). Returns those held.
+export function capturePeople(state, captor, victim, people) {
+  let held = 0;
+  for (const s of people || []) {
+    if (!s || s.alive === false || !removeMember(state, victim, s, "taken")) continue;
+    for (const it of stripAll(s)) keepItem(state, captor, it, "stolen");
+    s.location = { kind: "held" };
+    const rec = { id: newId(), from: victim.id, power: Math.max(1, Math.min(5, Math.round(fighterScore(s) / 4) || 3)), since: day(state), s };
+    if (Array.isArray(captor.bases) && groupRoom(state, captor) > 0) { groupPrisoners(captor).push(rec); held++; bump(state, "taken"); continue; }
+    if (fullFate(state, captor, rec)) { s.alive = false; s.health = 0; }
+  }
+  return held;
+}
+// A prisoner of another group's out of a jail into group g's list (their own group, or captors they turned to): the
+// very person (members.js homeAgain). Nobody is added by a number: a record with no living person behind it brings
+// nobody home.
+function goHome(state, g, rec) {
+  if (!g || !rec || !rec.s || rec.s.alive === false) return false;
+  const s = rec.s;
+  rec.s = null;
+  return homeAgain(state, g, s);
+}
+// The people of group fromId held in f's jail (records with the very person: the rescue jobs' captives, jobs.js).
+export const heldFrom = (f, fromId) => (f ? groupPrisoners(f).filter((r) => r.from === fromId && r.s && r.s.alive !== false) : []);
+// Out of f's jail and home to their own group g, as themselves (a rescue, a peace): those of g's held there, or only
+// the ones whose ids are given. Returns the people who went home.
+export function freeHeld(state, f, g, ids = null) {
+  const out = [];
+  if (!f || !g || !g.alive) return out;
+  for (const rec of heldFrom(f, g.id)) {
+    if (ids && !ids.includes(rec.s.id)) continue;
+    const s = rec.s;
+    f.prisoners.splice(f.prisoners.indexOf(rec), 1);
+    if (goHome(state, g, rec)) out.push(s);
+  }
+  if (out.length) bump(state, "freed", out.length);
+  return out;
 }
 // No room for one more of another group's people: true when they kill them.
 function fullFate(state, f, rec) {
   const how = jailOf(f).full || "release";
   const from = factionById(state, rec.from);
   if (how === "sell" && sellTo(state, f, rec)) return false;
-  if (how === "kill" || (how === "sell" && jailOf(f).unsold === "kill")) { bump(state, "killedFull"); return true; }
-  if (from && from.alive) { from.pop += 1; changeRelation(state, f, from, 1); }
+  if (how === "kill" || (how === "sell" && jailOf(f).unsold === "kill")) { if (rec.s) { rec.s.alive = false; rec.s.health = 0; } bump(state, "killedFull"); return true; }
+  if (from && from.alive) { goHome(state, from, rec); changeRelation(state, f, from, 1); }
   bump(state, "releasedFull");
   return false;
 }
-// A save from nonlethal's head counts (f.held = { group id: n }): records in the holder's jail list (over its room
-// they are kept: the old count had no limit; nobody new comes in until there is room). A holder gone: they go home.
+// A save from nonlethal's head counts (f.held = { group id: n }): old saves need not load (docs/adr/0001-ai-parity.md),
+// and a count is nobody: it is dropped, never turned into prisoners or people from nowhere.
 export function migrateHeld(state) {
-  for (const f of state.factions || []) {
-    if (!f.held) continue;
-    for (const [tid, n] of Object.entries(f.held)) {
-      const from = factionById(state, Number(tid));
-      for (let i = 0; i < n; i++) {
-        if (!f.alive) { if (from && from.alive) from.pop += 1; continue; }
-        groupPrisoners(f).push({ id: newId(), from: Number(tid), power: 3, since: day(state) });
-      }
-    }
-    delete f.held;
-  }
+  for (const f of state.factions || []) if (f.held) delete f.held;
 }
 // A buyer for a prisoner of f's: a group with room that buys people (jailOf buyer), not the prisoner's own group, not at war
 // with f, with something to pay.
@@ -255,10 +299,17 @@ function payWith(o, value) {
   return null;
 }
 const priceOf = (rec) => G.TRADE.value + G.TRADE.perPower * (rec.power || 3);
+// Returns what was paid as words for the news ("70 rounds of 9mm FMJ", "3 days of food", "12 scrap").
 function pay(from, to, terms) {
-  if (terms.key === "food") { addFoodsTo(to.stock, takeFood(from.stock, terms.qty).items); return; } // foods.js: days of food as the items they hold
+  if (terms.key === "food") { addFoodsTo(to.stock, takeFood(from.stock, terms.qty).items); return `${terms.qty} days of food`; } // foods.js: days of food as the items they hold
+  if (terms.key === "ammo") { // rounds.js: the very rounds, by calibre
+    const keys = spendAmmo(from.stock, terms.qty).keys;
+    for (const [k, n] of Object.entries(keys)) to.stock[k] = (to.stock[k] || 0) + n;
+    return roundsText(keys);
+  }
   from.stock[terms.key] = Math.max(0, (from.stock[terms.key] || 0) - terms.qty);
   to.stock[terms.key] = (to.stock[terms.key] || 0) + terms.qty;
+  return `${terms.qty} ${terms.key}`;
 }
 // Sold on: to a buyer as labour (into its jail) or to the military to be freed. False: nobody buys.
 function sellTo(state, f, rec) {
@@ -266,12 +317,12 @@ function sellTo(state, f, rec) {
   const buyer = buyerFor(state, f, rec.from, price);
   if (!buyer) return false;
   const terms = payWith(buyer, price);
-  pay(buyer, f, terms);
+  const paid = pay(buyer, f, terms);
   const from = factionById(state, rec.from);
   const list = groupPrisoners(f);
   if (list.includes(rec)) list.splice(list.indexOf(rec), 1);
   if (jailOf(buyer).buyer === "free") {
-    if (from && from.alive) { from.pop += 1; changeRelation(state, buyer, from, G.TRADE.freeRel); }
+    if (from && from.alive) { goHome(state, from, rec); changeRelation(state, buyer, from, G.TRADE.freeRel); }
     bump(state, "boughtFree");
     news(state, `${cap(knownAs(state, buyer))} bought one of ${knownAs(state, from)}'s people from ${knownAs(state, f)} and set them free.`, "info", [buyer, f, from]);
     return true;
@@ -279,7 +330,7 @@ function sellTo(state, f, rec) {
   groupPrisoners(buyer).push({ ...rec, since: day(state) });
   if (from && from.alive && relation(state, buyer, from) <= G.TRADE.enemyRel) changeRelation(state, f, from, G.TRADE.enemySaleRel); // sold to their enemies
   bump(state, "sold");
-  news(state, `${cap(knownAs(state, f))} sold a prisoner of ${knownAs(state, from)} to ${knownAs(state, buyer)} for ${terms.qty} ${terms.key}.`, "info", [buyer, f, from]);
+  news(state, `${cap(knownAs(state, f))} sold a prisoner of ${knownAs(state, from)} to ${knownAs(state, buyer)} for ${paid}.`, "info", [buyer, f, from]);
   return true;
 }
 const cap = (t) => String(t).charAt(0).toUpperCase() + String(t).slice(1);
@@ -359,7 +410,7 @@ function overflowDue(state, s, f) {
 // Your captive sold on to another group: their factionId and tile change (rescue missions follow), and a card.
 function sellYours(state, s, f, buyer, value) {
   const terms = payWith(buyer, value);
-  if (terms) pay(buyer, f, terms);
+  const paid = terms ? pay(buyer, f, terms) : "";
   const tile = buyer.bases[0];
   s.location = { ...s.location, kind: "captive", factionId: buyer.id, tile, soldDay: day(state) }; // a hidden tool (rescue) goes with them
   delete s.location.fresh; delete s.location.overflow;
@@ -369,7 +420,7 @@ function sellYours(state, s, f, buyer, value) {
     return;
   }
   bump(state, "yoursSold");
-  const text = `${s.name} was sold to ${buyer.name} at ${tileLabel(state, tile)}${terms ? ` for ${terms.qty} ${terms.key}` : ""}.`;
+  const text = `${s.name} was sold to ${buyer.name} at ${tileLabel(state, tile)}${paid ? ` for ${paid}` : ""}.`;
   log(state, text, "danger");
   addCard(state, { title: `${first(s)} was sold`, text: `${text} A rescue or a ransom now has to go there.`, choices: [{ label: "OK", resolve: () => "" }] });
   news(state, `${cap(knownAs(state, f))} sold one of your people to ${knownAs(state, buyer)}.`, "danger", [f, buyer]);
@@ -396,18 +447,18 @@ export function groupJailsDaily(state) {
       if (!list.includes(rec)) continue;
       const from = factionById(state, rec.from);
       // Escape: by their jail (all of them are worked).
-      if (rng.chance(prisonerEscape(state, f, f.bases[0]))) { list.splice(list.indexOf(rec), 1); if (from && from.alive) from.pop += 1; bump(state, "escaped"); continue; }
+      if (rng.chance(prisonerEscape(state, f, f.bases[0]))) { list.splice(list.indexOf(rec), 1); if (from && from.alive) goHome(state, from, rec); bump(state, "escaped"); continue; }
       // Ransom back: their own group buys them, not at war.
       if (from && from.alive && !warBetween(state, f, from) && rng.chance(T.ransom)) {
         const terms = payWith(from, priceOf(rec));
         // The value rule (ransom.js groupMemberWorth, as yours): worth the price to them, and not out of their last days of food.
         if (terms && groupMemberWorth(from, rec.power) >= priceOf(rec) && (terms.key !== "food" || foodIn(from.stock) - terms.qty >= from.pop * G.RANSOM_KEEP_DAYS)) {
-          pay(from, f, terms);
+          const paid = pay(from, f, terms);
           list.splice(list.indexOf(rec), 1);
-          from.pop += 1;
+          goHome(state, from, rec);
           changeRelation(state, f, from, T.ransomRel);
           bump(state, "ransomed");
-          if (f.known || from.known) news(state, `${cap(knownAs(state, from))} paid ${terms.qty} ${terms.key} to ${knownAs(state, f)} for one of their people.`, "info", [f, from]);
+          if (f.known || from.known) news(state, `${cap(knownAs(state, from))} paid ${paid} to ${knownAs(state, f)} for one of their people.`, "info", [f, from]);
           continue;
         }
       }
@@ -417,8 +468,8 @@ export function groupJailsDaily(state) {
         if (back) {
           list.splice(list.indexOf(rec), 1);
           groupPrisoners(from).splice(groupPrisoners(from).indexOf(back), 1);
-          from.pop += 1;
-          f.pop += 1;
+          goHome(state, from, rec);
+          goHome(state, f, back);
           changeRelation(state, f, from, T.exchangeRel);
           bump(state, "exchanged");
           if (f.known || from.known) news(state, `${cap(knownAs(state, f))} and ${knownAs(state, from)} swapped prisoners, one for one.`, "info", [f, from]);
@@ -428,7 +479,7 @@ export function groupJailsDaily(state) {
       // Sale: raiders and their like sell people as labour (or to the military, who free them).
       if (jailOf(f).full === "sell" && rec.since !== day(state) && rng.chance(T.sale) && sellTo(state, f, rec)) continue; // not one bought today
       // Turned: held long, one joins them.
-      if (day(state) - rec.since >= T.recruitDays && rng.chance(T.recruit * weightOf(f, "recruit"))) { list.splice(list.indexOf(rec), 1); f.pop += 1; bump(state, "turned"); } // groupcare.js GROUP_PRIORITIES recruit
+      if (day(state) - rec.since >= T.recruitDays && rng.chance(T.recruit * weightOf(f, "recruit"))) { list.splice(list.indexOf(rec), 1); goHome(state, f, rec); bump(state, "turned"); } // groupcare.js GROUP_PRIORITIES recruit
     }
     // Your people sold on (raiders and the like), where someone has room: held over their room (overflow), a buyer is
     // looked for every day, and the days for a ransom run out (overflowDue).
@@ -444,7 +495,7 @@ export function groupJailsDaily(state) {
 
 // A group collapses (factions.js collapseFaction): the other groups' people it held walk home.
 export function freeOnCollapse(state, f) {
-  for (const rec of f.prisoners || []) { const from = factionById(state, rec.from); if (from && from.alive) from.pop += 1; }
+  for (const rec of f.prisoners || []) { const from = factionById(state, rec.from); if (from && from.alive) goHome(state, from, rec); }
   f.prisoners = [];
 }
 

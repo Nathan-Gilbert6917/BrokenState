@@ -56,9 +56,10 @@ console.log("Triggers from events and state");
   const nb = free(b, A.x, A.y); B.x = nb[0]; B.y = nb[1];
   detectBarks(st, b, all);
   const gun = mine.find((u) => C.hasMag(u)) || A;
+  const keep = Array.isArray(gun.stack) ? JSON.parse(JSON.stringify(gun.stack)) : null, m0 = gun.mag; // physical rounds (mags.js): a refill puts real rounds back, none from nowhere
   C.loadMag(gun, 1);
   detectBarks(st, b, all);
-  C.loadMag(gun, null);
+  gun.stack = null; C.loadMag(gun, null); // (physical rounds, mags.js: a stack is never filled from nothing; refilled plainly)
   let L = detectBarks(st, b, all);
   check(has(L, "reload", gun), `a magazine filled up again: reload (${trigs(L)})`);
   C.loadMag(gun, 0);

@@ -25,6 +25,11 @@ import { READ_HOURS } from "../src/sim/skills.js";
 import { relation } from "../src/sim/diplomacy.js";
 import { stationIO } from "../src/sim/production.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
+import { ensureMembers, syncMembers, membersOf } from "../src/sim/members.js";
+import { skill as skillOf } from "../src/sim/world.js";
+// A group's best mechanic is one of its people (groupworks.js groupSkill): every one of them set to n (traits count).
+const setMech = (st, f, n) => { ensureMembers(st, f); syncMembers(st, f); for (const x of membersOf(f)) { x.skills.mechanics = n; x.skills.mechanics = Math.max(0, 2 * n - skillOf(x, "mechanics")); } };
+
 
 const govDays = Number(process.argv[2] || 120);
 const seeds = process.argv.length > 3 ? process.argv.slice(3).map(Number) : [11];
@@ -465,7 +470,7 @@ const near = (a, b) => Math.abs(a - b) < 1e-6;
   // Their machine parts: a workshop makes them from scrap, by the mechanic and the people, up to what they want.
   const st4 = W(9);
   const h4 = st4.factions.find((x) => x.alive && !x.hcMilitary);
-  h4.type = "traders"; h4.pop = 16; // mechanic 4
+  h4.type = "traders"; h4.pop = 16; setMech(st4, h4, 4); // mechanic 4
   Object.assign(h4.stock, { parts: 0, scrap: 200 });
   h4.works = {}; const w4 = worksAt(h4, h4.bases[0]);
   check(partsRate(st4, h4) === 0, "no workshop: no parts");
@@ -476,13 +481,13 @@ const near = (a, b) => Math.abs(a - b) < 1e-6;
   let made = 0;
   for (let i = 0; i < 20; i++) made += groupPartsDaily(st4, h4);
   check(made === 5 && h4.stock.parts === 5 && near(h4.stock.scrap, 200 - 20 * GROUP_WORKS.PARTS.rate * GROUP_WORKS.PARTS.scrap), `20 days: ${made} parts for ${200 - h4.stock.scrap} scrap`);
-  h4.type = "military"; h4.pop = 25;
+  h4.type = "military"; h4.pop = 25; setMech(st4, h4, 6);
   check(near(partsRate(st4, h4), GROUP_WORKS.PARTS.rate * GROUP_WORKS.PARTS.popMax), `the military of 25: ${partsRate(st4, h4).toFixed(2)} a day (their Mechanics 6 makes no more than a 4: your station's rule)`);
-  h4.type = "commune"; h4.pop = 16;
+  h4.type = "commune"; h4.pop = 16; setMech(st4, h4, 3);
   check(near(partsRate(st4, h4), GROUP_WORKS.PARTS.rate * GROUP_WORKS.PARTS.below), `a commune of 16 (mechanic 3, a shop taken over): ${partsRate(st4, h4).toFixed(3)} a day, half (your Mechanics 4 rule)`);
   h4.pop = 6;
   check(partsRate(st4, h4) < GROUP_WORKS.PARTS.rate / 2, `a commune of 6: ${partsRate(st4, h4).toFixed(2)} a day`);
-  h4.type = "traders"; h4.pop = 16;
+  h4.type = "traders"; h4.pop = 16; setMech(st4, h4, 4);
   h4.stock.parts = partsWant(st4, h4);
   check(groupPartsDaily(st4, h4) === 0 && !(h4.partsWip > 1), `at what they want (${partsWant(st4, h4)}): no more`);
   h4.stock.parts = 0; h4.stock.scrap = 16;

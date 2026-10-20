@@ -271,15 +271,16 @@ const stats = (state) => { const st = /** @type {any} */ (state); return st.grou
  * opts.news false: quiet; "left": only things of yours taken, the caller tells of the rest). Returns null without
  * the POI, else { took, goods (supplies, the player's left supplies among them; opts.haul false: those alone, the
  * caller turns `took` into goods its own way), left (the player's left supplies), gear (items the player left there),
- * boxes (your containers emptied), stripped, strippedNow, pool }.
+ * boxes (your containers gone through), stripped, strippedNow, pool }. opts.room: the kg the holder can carry off from
+ * your containers (nomads.js bandRoom); what does not fit stays in them (poicont.js lootPoiAbstract).
  * @param {State} state @param {any} who @param {Tile | number} tile @param {number} i @param {number} need
- * @param {{ eff?: number, hours?: number, heat?: number, floor?: number, news?: boolean | "left", name?: string, haul?: boolean, count?: boolean }} [opts]
+ * @param {{ eff?: number, hours?: number, heat?: number, floor?: number, news?: boolean | "left", name?: string, haul?: boolean, count?: boolean, room?: number }} [opts]
  */
 export function raidPoiAsGroup(state, who, tile, i, need, opts = {}) {
   const t = tileOf(state, tile), p = poiAt(t, i);
   if (!p) return null;
   const before = poiPool(t, i), was = !!p.stripped, band0 = poiBand(t, i);
-  const r = lootPoiAbstract(state, who, t, i, need / poiHouses(state, t, i), { floor: opts.floor != null ? opts.floor : AISCAV.floor, heat: opts.heat != null ? opts.heat : TILE_HEAT.AI, hours: opts.hours });
+  const r = lootPoiAbstract(state, who, t, i, need / poiHouses(state, t, i), { floor: opts.floor != null ? opts.floor : AISCAV.floor, heat: opts.heat != null ? opts.heat : TILE_HEAT.AI, hours: opts.hours, room: opts.room });
   if (!r) return null;
   const goods = r.took > 0 && opts.haul !== false ? haulFor(t, r.took, before, opts.eff != null ? opts.eff : AISCAV.eff, state, isSitePoi(t, i) ? null : p.kind) : {};
   for (const [k, q] of Object.entries(r.left.sup)) goods[k] = (goods[k] || 0) + q;

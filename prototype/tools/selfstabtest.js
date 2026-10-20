@@ -25,6 +25,7 @@ import { ARSENAL, starterKit } from "../src/sim/arsenal.js";
 import { battleCaptives } from "../src/sim/stealth.js";
 import { gearCues } from "../src/ui/sfx-gear.js";
 import { Rng } from "../src/sim/rng.js";
+import { refitPerson } from "../src/sim/fighters.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
 
 let pass = 0, fail = 0;
@@ -235,10 +236,15 @@ section("The enemy: their kits carry tourniquets; a downed fighter stabilizes th
   check(caps.includes(E) && caps.includes(F) && !E.dead, "the self-stabilized are prisoners");
   check(G.dead && !caps.includes(G) && M.dead, "the ones still bleeding died");
   // Their body: a tourniquet not used is on it; a used one is not.
-  const body = enemyBody(new Rng(3), { ...foe(b, "soldiers", 1, 1), selfKits: tq() }, null);
+  // (A person, fighters.js: the very tourniquet they carry; one without a record: its kit's.)
+  const withTq = (u) => { if (u.who) { for (const c of carriedSpots(u.who)) if (c.item && c.item.key === "tourniquet") c.take(); stow(u.who, newItem("tourniquet")); refitPerson(b, u); } else u.selfKits = tq(); return u; };
+  const body = enemyBody(new Rng(3), withTq(foe(b, "soldiers", 1, 1)), null);
   const all = carriedSpots(body).map((c) => c.item);
   check(all.some((it) => it.key === "tourniquet"), "an unused tourniquet is on the body to loot");
-  const body2 = enemyBody(new Rng(3), { ...foe(b, "soldiers", 1, 2), selfKits: [{ ...tq()[0], used: 1 }] }, null);
+  const P2 = withTq(foe(b, "soldiers", 1, 2));
+  check(P2.selfKits && P2.selfKits.length === 1, `their tourniquet is their self-aid kit (${JSON.stringify((P2.selfKits || []).map((k) => k.key))})`);
+  P2.selfKits[0].used = 1;
+  const body2 = enemyBody(new Rng(3), P2, null);
   const all2 = carriedSpots(body2).map((c) => c.item);
   check(!all2.some((it) => it.key === "tourniquet"), "a used one is not");
 }

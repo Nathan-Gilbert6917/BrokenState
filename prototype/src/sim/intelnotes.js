@@ -29,6 +29,7 @@ const night = (state) => { const h = ((state.hour % 24) + 24) % 24; return h < 6
 export function peopleAtBase(f, tile) {
   const i = f.bases.indexOf(tile);
   if (i < 0) return 0;
+  if (Array.isArray(f.people)) return f.people.filter((s) => s.alive && s.location && s.location.kind === "member" && s.location.partyId == null && s.location.tile === tile).length; // members.js peopleHere: the people who live there
   const w = f.bases.length - 1 + HOME_WEIGHT;
   return Math.max(1, Math.round((f.pop * (i === 0 ? HOME_WEIGHT : 1)) / w));
 }

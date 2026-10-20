@@ -307,8 +307,14 @@ console.log("Force the door: the barricade down, the group hostile, they fire fi
     folkTick(w.state, b);
     const card = battleCard(w.state);
     // One of them has a pistol whatever the dice gave, so the shots-first path is played.
+    // Placed across the doorway from you, so the door coming down shows you to them (where the dice put them, a
+    // corner of the room may hide the doorway).
+    const [dx, dy] = S.doors[0];
     const gun = survivors(b)[0];
+    const ix = 2 * dx - spot[0], iy = 2 * dy - spot[1];
+    if (!survivors(b).some((x) => x !== gun && x.x === ix && x.y === iy)) { gun.x = ix; gun.y = iy; }
     gun.weapon = "pistol"; gun.weaponName = "Pistol";
+    gun.magW = "pistol"; gun.magMax = 15; gun.mag = 15; gun.stack = [{ k: "a_9mm_fmj", n: 15 }]; gun.jam = null; // (loaded: a gun fires only the rounds in it, mags.js)
     const armed = survivors(b).filter((x) => x.weapon !== "fists" && !["knife", "bat", "prybar", "machete", "spikedbat", "pipespear"].includes(x.weapon)).length;
     const shotsBefore = b.log.length;
     const text = sure(w.state, true, () => card.choices[3].resolve(w.state));

@@ -40,8 +40,9 @@ import { captivesOf, allCaptives, freeCaptive, isCaptive, payPlan } from "./conf
 import { canRadioGroup } from "./radio.js";
 import { launchExpedition, partyMembers, partyTile, tileLabel, awaitOrders, planPath, wipeIfEmpty, carried } from "./parties.js";
 import { prisonersOf, teamPace, handOver } from "./prisoners.js";
-import { registerCombatHandler, startCombat, winOdds, WEAPONS } from "./combat.js";
-import { afterRescueBattle, tacticalPossible, groupArmory, kindOf } from "./rescueraid.js";
+import { registerCombatHandler, startCombat, byNumbersOdds, WEAPONS } from "./combat.js";
+import { afterRescueBattle, tacticalPossible, kindOf } from "./rescueraid.js";
+import { keepItem } from "./arsenal.js"; // what a ransom pays them goes onto their books
 import { assaultForce } from "./conquest.js";
 import { itemValue } from "./valuation.js";
 import { thirstAhead } from "./weather.js";
@@ -139,7 +140,8 @@ function raidOdds(state, f, captives) {
   if (squad.length < 3) return null;
   const tile = f.bases.includes(captives[0].location.tile) ? captives[0].location.tile : f.bases[0];
   const force = assaultForce(state, f, tile, null);
-  const odds = winOdds(squad.reduce((a, x) => a + combatPower(x), 0) / Math.max(0.1, force.count * force.power * force.fortified), { kind: force.kind, count: force.count, people: squad.length });
+  // combat.js byNumbersOdds: the very people at that base (docs/adr/0001-ai-parity.md), behind their walls.
+  const odds = byNumbersOdds(state, { tile, enemy: { ...force, factionId: force.factionId ?? f.id } }, squad).win;
   return { odds, count: force.count, jail: groupJailGuards(state, f) };
 }
 // A team at their gates paying from what it carries (conflicts.js rescue and trade-visit cards; the governor): worth
@@ -361,8 +363,7 @@ function pay(state, f, stock, armory, plan) {
   for (const it of plan.gear) {
     const i = armory ? armory.indexOf(it) : -1;
     if (i >= 0) armory.splice(i, 1);
-    const list = f.arsenal && Array.isArray(f.arsenal.items) ? f.arsenal.items : groupArmory(state, f);
-    list.push(it);
+    keepItem(state, f, it, "ransom"); // arsenal.js: onto their books (or their shelf), as anything else they take in
   }
 }
 // On the road between the hub and their base, about halfway (never on a base).
@@ -460,7 +461,7 @@ export function handoverArrive(state, p) {
 function completeHandover(state, p, f, deal) {
   const held = deal.captiveIds.map((id) => survivorById(state, id)).filter((s) => s && isCaptive(s) && s.location.factionId === f.id);
   for (const [k, q] of Object.entries(deal.supplies)) { const t = Math.min(q, Math.floor(p.cargo.supplies[k] || 0)); p.cargo.supplies[k] -= t; f.stock[k] = (f.stock[k] || 0) + t; }
-  for (const it of deal.gear) { const i = p.cargo.gear.indexOf(it); if (i >= 0) { p.cargo.gear.splice(i, 1); (f.arsenal && Array.isArray(f.arsenal.items) ? f.arsenal.items : groupArmory(state, f)).push(it); } }
+  for (const it of deal.gear) { const i = p.cargo.gear.indexOf(it); if (i >= 0) { p.cargo.gear.splice(i, 1); keepItem(state, f, it, "ransom"); } }
   for (const id of deal.prisonerIds) handOver(state, id);
   for (const s of held) freeCaptive(state, s, p);
   dealsOf(state).splice(dealsOf(state).indexOf(deal), 1);
@@ -475,7 +476,7 @@ function completeHandover(state, p, f, deal) {
 function betrayalCard(state, p, f, deal) {
   const e = handoverParty(state, f, p, deal);
   const mine = partyMembers(state, p);
-  const odds = winOdds(mine.reduce((a, s) => a + combatPower(s), 0) / Math.max(0.1, e.count * e.power * 1.4), { ...e, people: mine.length, ambush: "enemy" });
+  const odds = byNumbersOdds(state, { tile: partyTile(p), partyId: p.id, enemy: { ...e }, ambush: "enemy" }, mine).win; // combat.js: the odds the fight is resolved on (their handover party's very people)
   return {
     title: `Betrayal at the handover`, partyId: p.id, where: tileLabel(state, partyTile(p)),
     text: `As the goods change hands, ${f.name}'s people go for their guns: they mean to keep the goods and ${deal.captiveIds.length === 1 ? "your person" : "your people"}. They have the drop on you.`,
@@ -494,7 +495,7 @@ function betrayalCard(state, p, f, deal) {
 // They keep the goods (and the prisoners walking with the team go back to them).
 function lostHandover(state, p, f, deal) {
   for (const [k, q] of Object.entries(deal.supplies)) { const t = Math.min(q, Math.floor((p.cargo.supplies[k] || 0))); p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) - t; f.stock[k] = (f.stock[k] || 0) + t; }
-  for (const it of deal.gear) { const i = p.cargo.gear.indexOf(it); if (i >= 0) { p.cargo.gear.splice(i, 1); (f.arsenal && Array.isArray(f.arsenal.items) ? f.arsenal.items : groupArmory(state, f)).push(it); } }
+  for (const it of deal.gear) { const i = p.cargo.gear.indexOf(it); if (i >= 0) { p.cargo.gear.splice(i, 1); keepItem(state, f, it, "ransom"); } }
   for (const id of deal.prisonerIds) { const pr = prisonersOf(state).find((x) => x.id === id); if (pr && pr.at.kind === "party" && pr.at.partyId === p.id) handOver(state, id); }
   const i = dealsOf(state).indexOf(deal);
   if (i >= 0) dealsOf(state).splice(i, 1);

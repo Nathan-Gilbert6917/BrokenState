@@ -15,16 +15,30 @@
 //           than hunger: a full gauge lasts under two days.
 // So one ration and one water a day keep a person level, the same daily totals as before (parties.js packing, the
 // planners' estimates, upkeep.js at a base).
+// The ratio (2026-10-19, user request: thirst at a base never moved while hunger did; "make thirst go down in ratio
+// to hunger based on how it typically is on average depending on season to the average American"): a ration is a
+// day's food (DAY_KCAL, 2000 kcal: about the US adult mean intake) and a water a day's drink (about 3 L: the US adult
+// mean total water intake is near 3 L a day, the adequate intake 2.7 L for women and 3.7 L for men). Thirst falls
+// NEEDS.water / NEEDS.food = 1.5× as fast as hunger: a day's drinking is spread over more, smaller drinks than the
+// three meals, so the gauge moves between drinks where hunger moves between meals, and runs out in under two days
+// where hunger takes two and a half. The season scales it (weather.js THIRST: spring and autumn 1, summer 1.3,
+// winter 0.9, a hot day 1.6: people drink most in the summer heat and least in winter), so a summer gauge falls
+// about 2× hunger's and a winter one about 1.35×; hunger goes the other way in the cold (×1.1–1.2 below freezing).
 //
 // When they eat (a team's ration setting, p.ration): full: below 70 they eat up to 100; short: below 40 up to 48 (the
 // body's slow-down makes that about 60% of a ration a day: food lasts longer, people are Hungry: work −10%); none:
 // nobody eats (water is never rationed: thirst kills too fast). Who eats first when there is not enough (p.share):
 // "hurt" (default: the hurt first, then the hungriest) or "even" (everyone gets the same share of what there is).
 // At a base everyone eats by the hour, each to their own target (80–100% full) at the mealtimes (eating.js
-// baseEatHour: meal breaks, what they eat, the base's ration level; economy.js counts the day at midnight). Water is
-// still drunk from the store once a day (economy.js baseDaily): the thirst gauge follows the base's share: watered in
-// full, it holds and climbs NEEDS.recover an hour; with no water it falls. Under rationing the base's share
-// (base.share) decides who gets watered first (the hurt, then the workers, then those resting).
+// baseEatHour: meal breaks, what they eat, the base's ration level; economy.js counts the day at midnight). Thirst
+// falls by the hour at a base too (NEEDS.water a day × the day's thirst) and people drink from the stores when they
+// drop below NEEDS.drink[0] (70), up to full (NEEDS.drink[1]): the same rhythm as on a team, a drink about every half
+// day in spring, oftener in summer. The stores still pay once a day (economy.js baseDaily: per head × the day's
+// thirst, upkeep.js), so the gauge is the day's water as it is drunk, not a second charge. The base's share decides
+// what the gauge gets: watered in full, they drink their fill; with no water nobody drinks and it falls; under
+// rationing (base.thirstDays with some water: base.waterFed) each person's share of a day's water trickles in by the
+// hour and the gauge drifts down by what is missing. Under rationing the base's share (base.share) decides who gets
+// watered first (the hurt, then the workers, then those resting).
 // Everyone also carries a pack (eating.js PACK: about a day and a half of food that keeps and of purified water):
 // away from the stores (a job trip, a field work, an errand) they eat from it; on a team, after the team's shared
 // supplies are gone.
@@ -70,11 +84,11 @@ import { teamPoisonHour } from "./cooking.js"; // wave 2 cooking: food poisoning
 import { teamWaterIn, takeTeamWater, drawWater, waterIn, RAW } from "./water.js"; // purified and un-purified water
 import { baseEatHour, eatingDaily, eatTarget, noteEat, eatPack, drinkPack, packFood, packWater, rationOf, emptyPack, PACK, teamMeal, roomU } from "./eating.js";
 import { mealOf } from "./meals.js"; // a team eats at breakfast, lunch and dinner too (eating.js teamMeal: a shared pot) // meal breaks and the carried rations (wave 2)
+import { cfgOf } from "./worldcfg.js"; // the run's dials: Hunger
 
 export const NEEDS = {
   max: 100, food: 40, water: 60, lean: 50, leanRate: 0.6, ration: 0.6,
   eat: { full: [70, 100], short: [40, 48], none: null }, drink: [70, 100],
-  recover: 3,
   hurtFood: 0.6, hurtWater: 1.0,
   moodLow: 25, moodHunger: 0.08, moodThirst: 0.12, coldMood: 0.04,
   low: 25, starving: 15, warnBack: 40,
@@ -209,7 +223,7 @@ export function teamNeedsHour(state, p, members) {
   for (const s of members) {
     ensureNeeds(s);
     const r = personRation(p.burden, s, p.vehicle, moving);
-    s.hunger = clamp(s.hunger - (NEEDS.food / 24) * r * cold * (s.hunger < NEEDS.lean ? NEEDS.leanRate : 1) * appetite(s)); // a Glutton (traits.js)
+    s.hunger = clamp(s.hunger - (NEEDS.food / 24) * cfgOf(state, "hunger") * r * cold * (s.hunger < NEEDS.lean ? NEEDS.leanRate : 1) * appetite(s)); // a Glutton (traits.js); worldcfg.js: the Hunger dial
     s.thirst = clamp(s.thirst - (NEEDS.water / 24) * r * tf);
     // health.js frailty: hours marched today and their load (the ration multiplier), not riding in a car; reset nightly.
     if (moving && !(p.vehicle && p.vehicle.type !== "bike")) { s.marchHours = (s.marchHours || 0) + 1; s.marchLoad = (s.marchLoad || 0) + r; }
@@ -333,7 +347,12 @@ function baseHour(state, base, people) {
   for (const s of people) {
     ensureNeeds(s);
     const w = ws.get(s);
-    s.thirst = clamp(s.thirst - wr + w * wr + (fW >= 1 ? NEEDS.recover : 0));
+    // Thirst falls as hunger does (the season's rate), then they drink. Watered in full: a drink from the stores
+    // when they drop below the drink line, up to full (the stores paid for the day at midnight, economy.js). Short:
+    // their share of the day's water by the hour (the gauge drifts down by what is missing); none: it falls.
+    s.thirst = clamp(s.thirst - wr);
+    if (w >= 1) { if (s.thirst < NEEDS.drink[0]) s.thirst = clamp(NEEDS.drink[1]); }
+    else if (w > 0) s.thirst = clamp(s.thirst + w * wr);
     warnPerson(state, s);
   }
 }
@@ -345,7 +364,7 @@ function errandHour(state, s) {
   const old = s.location.pack || null;
   if (old && old.food != null) delete old.food; // an errand packed before food was by type (save.js): it went hungry on it
   const tf = Weather.thirstAt ? Weather.thirstAt(state) : 1;
-  s.hunger = clamp(s.hunger - (NEEDS.food / 24) * (s.hunger < NEEDS.lean ? NEEDS.leanRate : 1) * appetite(s));
+  s.hunger = clamp(s.hunger - (NEEDS.food / 24) * cfgOf(state, "hunger") * (s.hunger < NEEDS.lean ? NEEDS.leanRate : 1) * appetite(s)); // worldcfg.js: the Hunger dial
   s.thirst = clamp(s.thirst - (NEEDS.water / 24) * tf);
   const at = NEEDS.eat.full[0], to = eatTarget(s);
   // Breakfast, lunch and dinner from the pack: at least a meal's food value, the closest fit (eating.js).
@@ -508,7 +527,9 @@ export function heatDaily(state, base) {
   const es = econStats(state);
   es.heatWood = (es.heatWood || 0) + wood;
   es.heatFuel = (es.heatFuel || 0) + burn;
-  const short = Math.max(0, 1 - (burn + wood * HEAT.wood) / use.total);
+  // A cool night without a fire (fire-nights: use.night) is a share of a freezing day's cold (HEAT.night of the mood and
+  // health lost), a freezing day the whole of it.
+  const short = Math.max(0, 1 - (burn + wood * HEAT.wood) / use.total) * Math.min(1, use.each / HEAT.fuel);
   if (short < 0.02) { base.cold = false; return; }
   base.cold = Math.round(short * 100) / 100;
   const people = residents(state, base.id);
@@ -517,7 +538,7 @@ export function heatDaily(state, base) {
     hurt(state, s, Math.round(COLD.hp * short * 10) / 10, base.tile, `of cold at ${base.name}`, { raw: true });
   }
   es.coldDays = (es.coldDays || 0) + 1; // base-days with someone cold (the balance runs)
-  log(state, `${base.name} has ${burn > 0 || wood > 0 ? "too little" : "no"} firewood or fuel to keep warm (needs ${use.text}): everyone there is cold (mood −${r1(COLD.mood * short)}, health −${r1(COLD.hp * short)}, and illness as outdoors).`, "danger");
+  log(state, `${base.name} has ${burn > 0 || wood > 0 ? "too little" : "no"} firewood or fuel to keep warm (needs ${use.text}): everyone there is cold${use.night ? " through the night" : ""} (mood −${r1(COLD.mood * short)}, health −${r1(COLD.hp * short)}, and illness as outdoors).`, "danger");
 }
 
 // ---------- errands ----------

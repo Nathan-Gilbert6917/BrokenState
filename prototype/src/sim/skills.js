@@ -351,7 +351,7 @@ export function addXp(state, s, key, amt) {
   }
   if ((s.skills[key] || 0) >= SKILL_MAX) s.xp[key] = 0;
   if (up) {
-    log(state, `${first(s)}'s ${SKILL_NAMES[key]} rose to ${skill(s, key)}.`, "good");
+    if (s.fid == null) log(state, `${first(s)}'s ${SKILL_NAMES[key]} rose to ${skill(s, key)}.`, "good"); // members.js: another group's people learn by the same rule, off your log
     checkMilestones(state, s, key);
   }
 }
@@ -375,6 +375,8 @@ function checkMilestones(state, s, key) {
 export function perkCard(state, s, key, ms) {
   const opts = (PERK_TREE[key] && PERK_TREE[key][ms]) || [];
   if (!opts.length) return;
+  // members.js: one of another group's people takes the perk the card's own answer would (perkScore), no card.
+  if (s.fid != null) { const best = opts.map((p) => [p, perkScore(state, s, p.id)]).sort((a, b) => b[1] - a[1] || (a[0].id < b[0].id ? -1 : 1))[0]; if (best) choosePerk(state, s, best[0].id); return; }
   addCard(state, {
     title: `${first(s)} reached ${SKILL_NAMES[key]} ${ms}`,
     text: `${s.name} has a perk point to spend for ${SKILL_NAMES[key]} ${ms}. Pick one perk (it is for good), or decide later from the skill tree on their survivor screen.`,
@@ -415,7 +417,7 @@ export function choosePerk(state, s, id) {
     // The card for that milestone is answered now.
     const tag = `${s.id}:${p.skill}:${p.ms}`;
     for (let i = state.cards.length - 1; i >= 0; i--) if (state.cards[i].perkFor === tag) state.cards.splice(i, 1); // in place
-    log(state, `${first(s)} took the perk ${p.name} (${SKILL_NAMES[p.skill]} ${p.ms}).`, "good");
+    if (s.fid == null) log(state, `${first(s)} took the perk ${p.name} (${SKILL_NAMES[p.skill]} ${p.ms}).`, "good");
   }
   return `${s.name} took ${p.name}: ${p.desc}`;
 }
@@ -822,11 +824,20 @@ export function skillsHour(state) {
 // Battles (combat.js)
 // ======================================================================================
 // Called once the player's units are on the battle map: per-unit perks and the team-wide ones, and XP tallies.
+// Every person on the map, whatever their side (docs/adr/0001-ai-parity.md: a group's people have perks and earn XP as
+// yours do): called again once the other sides are placed, each unit once (u.perked); Rally and Commander are a side's.
+const personOfUnit = (state, u) => (u.who ? u.who : u.sid != null ? survivorById(state, u.sid) : null);
 export function battlePerks(state, b) {
-  const mine = b.units.filter((u) => u.side === "player");
-  let rally = false, commander = false;
+  const bySide = new Map();
+  for (const u of b.units) if (u.kind === "human" && (u.side === "player" || u.who)) { if (!bySide.has(u.side)) bySide.set(u.side, []); bySide.get(u.side).push(u); }
+  for (const list of bySide.values()) sidePerks(state, list);
+}
+function sidePerks(state, all) {
+  const mine = all.filter((u) => !u.perked);
+  let rally = all.some((u) => u.perked && u.rallyPerk), commander = all.some((u) => u.perked && u.commanderPerk);
   for (const u of mine) {
-    const s = survivorById(state, u.sid);
+    const s = personOfUnit(state, u);
+    u.perked = true;
     u.xpT = { shots: 0, hits: 0, kills: 0, swings: 0, melee: 0, mkills: 0, heals: 0, sneak: 0, boxes: 0 };
     if (!s) continue;
     if (hasPerk(s, "steadyaim")) u.aim += 5;
@@ -846,8 +857,8 @@ export function battlePerks(state, b) {
     if (hasPerk(s, "miracle")) u.miracle = true;
     if (hasPerk(s, "treasure")) u.scavBonus = 5;
     if (hasPerk(s, "quiethands")) u.quiet = true;
-    if (hasPerk(s, "rally")) rally = true;
-    if (hasPerk(s, "commander")) commander = true;
+    if (hasPerk(s, "rally")) { rally = true; u.rallyPerk = true; }
+    if (hasPerk(s, "commander")) { commander = true; u.commanderPerk = true; }
   }
   for (const u of mine) {
     if (rally) { u.aim += 5; u.meleeAim += 5; }
@@ -858,9 +869,9 @@ export function battlePerks(state, b) {
 // When a battle on the map ends: XP from what each unit did (combat.js wearFielded).
 export function battleXp(state, b) {
   for (const u of b.units) {
-    if (u.side !== "player" || !u.xpT) continue;
-    const s = survivorById(state, u.sid);
-    if (!s || !s.alive) continue;
+    if (!u.xpT || !(u.side === "player" || u.who)) continue;
+    const s = personOfUnit(state, u);
+    if (!s || s.alive === false || s.transient) continue; // a transient person (fighters.js) has no life after the fight
     const t = u.xpT;
     gainXp(state, s, "shooting", t.shots * USE.shot + t.hits * USE.hit + t.kills * USE.kill, "fight");
     gainXp(state, s, "melee", (t.swings || 0) * USE.swing + (t.melee || 0) * USE.melee + (t.mkills || 0) * USE.kill, "fight"); // swings, blows landed, melee kills

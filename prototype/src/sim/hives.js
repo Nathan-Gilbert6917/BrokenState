@@ -81,6 +81,7 @@ export function siteDue(state, n) {
 }
 import { hiveAllies, broodAfterAllies } from "./alliance.js";
 import { overwriteClaims } from "./claims.js"; // claims.js: a hive risen wipes the claims around it (agent A's hook)
+import { cfgOf } from "./worldcfg.js"; // the run's dials: Hive growth
 
 // HIVE and BOSS_NAMES live in hiveconst.js (no imports, so any module can read them at load time).
 export { HIVE, BOSS_NAMES };
@@ -156,7 +157,7 @@ export function hivesDaily(state) {
   const info = state.hiveInfo;
   for (const hive of [...state.hives]) {
     const n = clusterSize(state, hive);
-    hive.income = Math.round(growthIncome(state, hive, hiveIncome(n)) * hiveStarve(state) * 10) / 10; // biomass pits, feeding grounds (hivetech.js); the outbreak burned out: starving (eras.js)
+    hive.income = Math.round(growthIncome(state, hive, hiveIncome(n)) * hiveStarve(state) * cfgOf(state, "hiveGrowth") * 10) / 10; // worldcfg.js: the run's Hive growth dial // biomass pits, feeding grounds (hivetech.js); the outbreak burned out: starving (eras.js)
     hive.res = Math.min(HIVE.RES_CAP, hive.res + hive.income);
     growthStep(state, hive); // its guard first, then a growth it wants (or saves for)
     produce(state, hive, n, rd);

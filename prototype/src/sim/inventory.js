@@ -18,6 +18,7 @@
 //   "armory:<baseId>:list[:<i>]"  "cargo:<partyId>:list[:<i>]"       storage (a base armory, a team's cargo)
 //   "body:<bodyIndex>:<slot>[:<i>]"  "body:<bodyIndex>:sup:<key>"     bodies of the battle that just ended
 // Items only move between people, storage and bodies at the same place (one base, or one team).
+import { personBody } from "./fighters.js"; // a person's body: what they carried
 import { typedFood, FOODS } from "./foods.js"; // a body's food as items; a food item's word
 import { Rng } from "./rng.js";
 // Which food a body carries is rolled on dice of its own, hashed from the body's dice position (never drawn from them:
@@ -28,7 +29,7 @@ import { factoryFit, seedOf } from "./factoryfit.js";
 import { FACTORY_FIT } from "./data-guns.js"; // guns found already fitted (section 22)
 import { fitMod, stripMod, modFitReason, fitsSlot, isGunmod, takesMods, fittedKg, ATTACH } from "./gunmods.js";
 import { itemDur } from "./crafting.js"; // a group's med kit with its uses (arsenal.js)
-import { GEAR, SUPPLIES, supValue } from "./data.js";
+import { GEAR, SUPPLIES, supValue, supWeight } from "./data.js";
 import { isCart, heldKg, cartFree } from "./carts.js"; // a wheelbarrow, a hand cart: In arms only, its own grid takes bulky things
 import { survivorById, baseById, day, newId } from "./world.js";
 import { partyCapacity, poolLoad, cargoRoom, unitsThatFit } from "./parties.js";
@@ -112,8 +113,12 @@ export const isSmall = (key) => !!(GEAR[key] && GEAR[key].small);
 export const packSize = (item) => (item && GEAR[item.key] && GEAR[item.key].slots) || 0;
 export const carryOf = (item) => (item && GEAR[item.key] && GEAR[item.key].carry) || 0;
 export const isBulky = (key) => !!(GEAR[key] && GEAR[key].bulky);
-// A container that can be carried in the arms (EQUIP_SLOTS carry): a pack, a rig or a pouched vest, a gun case.
-export const isCarryable = (item) => { const d = item && GEAR[item.key]; return !!(d && (d.slot === "backpack" || d.slot === "rig" || d.slots || d.pouches || d.gunCase)); };
+// A container that can be carried in the arms (EQUIP_SLOTS carry): a pack, a rig or a pouched vest, a gun case, a fire
+// safe (twoHands).
+export const isCarryable = (item) => { const d = item && GEAR[item.key]; return !!(d && (d.slot === "backpack" || d.slot === "rig" || d.slots || d.pouches || d.gunCase || d.twoHands)); };
+// Carried in both arms only (GEAR twoHands: the fire safe, the rifle case; the user's request 2026-10-19, "small safes
+// (Carried only slot two hands)"): bulky (no pocket, pack slot or rig pouch), and it fills both hands (carry.js handsCount).
+export const isTwoHands = (item) => !!(item && GEAR[item.key] && GEAR[item.key].twoHands);
 // What an item weighs (kg): its own weight, and a pack also what is inside it.
 // A count stack (GEAR count: true, item.dur = how many are left: a box of rounds, a stack of boxes) weighs its share
 // left; loose rounds by the round, a bulk container empty and its rounds, a stack of a consumable n of it
@@ -124,7 +129,8 @@ export const itemKg = (item) => {
   return stackKg(item, d.count && d.dur && Number.isFinite(item.dur) ? d.weight * Math.max(0, item.dur) / d.dur : d.weight);
 };
 // A gun also weighs its fitted attachments (gunmods.js: item.mods).
-export const itemLoad = (item) => itemKg(item) + (item && item.contents ? item.contents.filter(Boolean).reduce((a, c) => a + itemLoad(c), 0) : 0) + modsKg(item) + insertsKg(item) + heldKg(item); // carts.js: the supplies a cart carries away from a team (item.held)
+export const itemLoad = (item) => itemKg(item) + (item && item.contents ? item.contents.filter(Boolean).reduce((a, c) => a + itemLoad(c), 0) : 0) + modsKg(item) + insertsKg(item) + heldKg(item) + boxSupKg(item); // carts.js: the supplies a cart carries away from a team (item.held); boxes.js: the rounds in a box or case (item.sup)
+const boxSupKg = (item) => (item && item.sup && GEAR[item.key] && GEAR[item.key].box ? Object.entries(item.sup).reduce((a, [k, v]) => a + (v > 0 ? supWeight(k) * v : 0), 0) : 0); // (boxes.js boxSupKg, here to keep the import cycle out)
 const insertsKg = (item) => (item && GEAR[item.key] && GEAR[item.key].inserts ? Object.values(insertsOf(item)).reduce((a, x) => a + (x ? itemKg(x) : 0), 0) : 0); // a carrier's plates (section 16)
 const modsKg = (item) => (item && item.mods ? Object.values(item.mods).reduce((a, m) => a + (m ? fittedKg(m) : 0), 0) : 0); // a lighter handguard or stock replaces the factory one (gunmods.js fittedKg)
 
@@ -947,6 +953,7 @@ export function toStorage(state, fromStr) {
 // gear, pockets, supplies }. A fallen survivor's body is the survivor's own inventory (their things are also
 // listed at the death site, see world.killSurvivor); an enemy body has its own.
 export function enemyBody(rng, u, kit) {
+  if (u && u.who && !u.bodied) return personBody(u); // fighters.js: a person's body is what they carried (docs/adr/0001-ai-parity.md)
   const body = ensureInv({ name: u.name, kind: u.kind, uid: u.id, kit: u.kit || null, supplies: {} });
   const add = (k, n) => { if (n > 0) body.supplies[k] = (body.supplies[k] || 0) + n; };
   if (u.kind === "zombie") {

@@ -226,6 +226,13 @@ section("Their bodies (deadsoldiers.js bodyLoot; inventory.js enemyBody, deadBod
 }
 
 // ---------- raids: bodies to search, harder and richer at a base ----------
+// The armour a body of this kind of the dead carries on average (deadBodyFinds over 400 rolls of fixed dice).
+const ARM = ["vest", "plate", "milhelmet", "riothelmet"];
+const ARM_MEAN = new Map();
+function armourMean(ztype) {
+  if (!ARM_MEAN.has(ztype)) { const rng = new Rng(7919); let n = 0; for (let i = 0; i < 400; i++) n += deadBodyFinds(rng, ztype).gear.filter((g) => g && ARM.includes(g.key)).length; ARM_MEAN.set(ztype, n / 400); }
+  return ARM_MEAN.get(ztype);
+}
 function raidAt(state, tile, opts = {}) {
   const h = hub(state);
   const crew = atBase(state, h.id).slice(0, 3);
@@ -239,15 +246,30 @@ function raidAt(state, tile, opts = {}) {
   const setup = { mode: "raid", tile, partyId: p.id, canRetreat: true, ambush: null, handler: "milz", enemy: { kind: "mixed", count: 1, power: 3, groups }, raid: { heat0: 5 }, context: {} };
   state.combat = createBattle(state, setup);
   const b = state.combat;
+  // The ordinary-dead arm: the Army trucks on a military raid map have their turned crews standing round them
+  // (combat.js truckCrews, miltrucks.js MILTRUCK.AROUND dead soldiers each), whatever the site's mix says. Without
+  // this, "ordinary dead only" still had about 10 dead soldiers a raid (more than the mix gives), and the dead the bot
+  // kills near the trucks are those crews in both arms alike: the armour on the bodies came out identical (0.76 vs
+  // 0.76, then 0.88 vs 0.88). So the crews stand there as ordinary dead too, same place, same id, same power as
+  // truckCrews gives them. (A crew still strapped in a cab that tears free when a cargo bed is opened mid-raid,
+  // truckCrewRises, stays a soldier: rare, and in both arms.)
+  if (opts.noMix) {
+    const power = 2 + (b.infection || 0) * 3;
+    b.units = b.units.map((u) => {
+      if (u.kind !== "zombie" || !u.ztype || !ARMORED.includes(u.ztype)) return u;
+      const z = enemyUnit(b, b.rng, "zombies", power, 0);
+      return Object.assign(z, { id: u.id, name: u.name, x: u.x, y: u.y, f: u.f, aware: u.aware, pod: u.pod, home: u.home });
+    });
+  }
   const start = { soldiers: b.units.filter((u) => u.ztype === "soldier").length, dead: b.units.filter((u) => u.kind === "zombie").length };
   let guard = 0;
   while (!b.over && guard++ < 200) { autoPlayerTurn(state); runEnemyPhase(state); }
   const zb = b.raid.containers.filter((c) => c.kind === "body" && c.zombie);
-  // The armour the dead soldiers and riot cops killed in it carry (what is there to take, searched or not: a body not
-  // searched is rolled as a search would roll it, deadBodyFinds with its plates' wear, on dice of its own).
-  const ARM = ["vest", "plate", "milhelmet", "riothelmet"];
-  const gearOf = (c) => (c.contents && Array.isArray(c.contents.gear) ? c.contents.gear : deadBodyFinds(new Rng(c.id * 7919 + 13), c.ztype || null, c.plateDur ?? null).gear);
-  const armourOn = zb.reduce((a, c) => a + gearOf(c).filter((g) => g && ARM.includes(g.key)).length, 0);
+  // The armour the dead soldiers and riot cops killed in it carry (what is there to take, searched or not), in
+  // expectation: each body counts its kind's mean (armourMean: deadBodyFinds rolled many times). One roll a body (and a
+  // searched body's contents, less what the bot took off it) made the comparison below a coin toss: about +0.1 a raid
+  // between the two against ±0.17 of dice over 60 raids (0.86 vs 0.78 at one commit, 0.75 vs 0.76 at the next).
+  const armourOn = zb.reduce((a, c) => a + armourMean(c.ztype || null), 0);
   const out = { ...start, armourOn, over: b.over, result: b.result, zbodies: zb.length, zsearched: zb.filter((c) => c.searched).length, solBodies: zb.filter((c) => c.ztype === "soldier").length, solSearched: zb.filter((c) => c.ztype === "soldier" && c.searched).length, b };
   state.combat = null;
   return out;

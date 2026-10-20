@@ -171,6 +171,7 @@ export function figureLimbs(app, weaponKey = null, armorKey = null) {
   if (D && D.body === "swarm") return swarmLimbs(D);
   if (D && D.body === "hivemind") return hivemindLimbs(D);
   if (D && D.body === "broodmother") return broodmotherLimbs(D);
+  if (D && D.body === "beast") return beastLimbs(D, app.skin); // the dead beasts (sim/deadbeasts.js)
   const F = [];
   const skin = app.skin, hair = app.hair, top = app.top, pants = app.pants;
   const big = (D && (D.scale || (D.brute ? 1.3 : 1))) || 1;
@@ -361,6 +362,44 @@ function crawlerLimbs(F, o) {
   F.height = 8;
   return F;
 }
+// The dead beasts (sim/deadbeasts.js): four-legged bodies, thin and split, pale worms in the splits. D: { body: "beast",
+// animal: "stag" | "hog" | "hound" | "cow", eye }. Figure space: forward +f, left +l, z up; a tile is 16 units.
+function beastLimbs(D, skin) {
+  const F = [], a = D.animal, SPLIT = "#5c1e1a";
+  const dark = shade(skin, -0.3), lit = shade(skin, 0.15);
+  const worms = (face, s, t) => { const q = (Math.round(s * 9) * 7 + Math.round(t * 11) * 5) % 17; return face === "top" ? lit : q === 0 ? SPLIT : q === 1 ? WORM : q === 9 ? WORM_D : null; };
+  // the body along f: its length, the back's height, its radii (vertical, across), the legs' radius and where they stand
+  const B = a === "cow" ? { L: 17, z: 10.5, rz: 4.6, ry: 4.2, leg: 1.1, lf: 6, lw: 2.6, neck: [7, 9], head: [4.2, 2.2, 8.5], horns: 1.6 }
+    : a === "hog" ? { L: 12, z: 6.2, rz: 3.2, ry: 2.8, leg: 0.9, lf: 4, lw: 2, neck: [2.5, 5.5], head: [3.4, 1.9, 4.6], tusks: 1 }
+    : a === "hound" ? { L: 9, z: 5.2, rz: 1.8, ry: 1.6, leg: 0.6, lf: 3, lw: 1.3, neck: [2.4, 6.4], head: [2.6, 1.3, 6.2], tail: 1 }
+    : a === "cat" ? { L: 6.5, z: 3.4, rz: 1.3, ry: 1.1, leg: 0.4, lf: 2.2, lw: 0.9, neck: [1.4, 4.2], head: [1.8, 1.0, 4.2], tailUp: 1 }
+    : { L: 13, z: 10, rz: 3, ry: 2.4, leg: 0.7, lf: 4.5, lw: 1.8, neck: [5.5, 15.5], head: [3.4, 1.5, 15.6], antlers: 1 }; // the stag
+  F.push(limb([-B.L / 2, 0, B.z], [B.L / 2, 0, B.z], B.rz, B.ry, skin, { u: [0, 0, 1], taper: 0.92, tex: worms })); // the body, its hide split
+  for (const f of [-B.lf, B.lf]) for (const side of [-1, 1]) { // the legs, tapered to the hoof or paw
+    const l = side * B.lw;
+    F.push(limb([f, l, B.z - B.rz * 0.6], [f, l, 0.2], B.leg, B.leg, dark, { sides: 6, taper: 0.7 }));
+  }
+  const nf = B.L / 2 - 0.5, [nx, nz] = B.neck; // the neck: up and forward (a stag), low and forward (a hog, a cow)
+  F.push(limb([nf, 0, B.z + B.rz * 0.3], [nf + nx, 0, nz], B.ry * 0.5, B.ry * 0.45, skin, { sides: 6, taper: 0.85 }));
+  const [hl, hr, hz] = B.head, hx = nf + nx;
+  F.push(limb([hx, 0, hz], [hx + hl, 0, hz - hl * 0.35], hr, hr * 0.9, skin, { u: [0, 0, 1], taper: 0.8, tex: (face, s, t) => (face === "top" ? lit : t > 0.8 ? SPLIT : null) })); // the head, the muzzle down a little
+  for (const side of [-1, 1]) F.push(limb([hx + hl * 0.35, side * hr * 0.9, hz + hr * 0.3], [hx + hl * 0.35 + 0.3, side * hr * 1.05, hz + hr * 0.3], 0.45, 0.45, D.eye, { sides: 4 })); // the eyes, amber
+  F.push(limb([hx + hl * 0.5, 0, hz - hl * 0.3], [hx + hl * 0.5 + 0.6, 0, hz - hl * 0.3 - 1.2], 0.35, 0.35, WORM, { sides: 4, taper: 0.5 })); // a worm from the jaw
+  if (B.antlers) for (const side of [-1, 1]) { // a stag's antlers of bone: a beam back and up, two tines each
+    const base = [hx + hl * 0.2, side * hr * 0.6, hz + hr * 0.8], tip = [hx - 2.2, side * 3.2, hz + 5.5];
+    F.push(limb(base, tip, 0.4, 0.4, BONE, { sides: 4, taper: 0.5 }));
+    F.push(limb([hx - 0.6, side * 1.9, hz + 3], [hx + 1.2, side * 2.8, hz + 5], 0.32, 0.32, BONE, { sides: 4, taper: 0.4 }));
+    F.push(limb([hx - 1.6, side * 2.7, hz + 4.6], [hx - 1.2, side * 4.4, hz + 6.6], 0.3, 0.3, BONE, { sides: 4, taper: 0.4 }));
+  }
+  if (B.horns) for (const side of [-1, 1]) F.push(limb([hx + hl * 0.2, side * hr * 0.7, hz + hr * 0.7], [hx + hl * 0.2 - 0.6, side * (hr * 0.7 + B.horns), hz + hr * 0.7 + 1.2], 0.35, 0.35, BONE, { sides: 4, taper: 0.4 })); // a cow's short horns
+  if (B.tusks) for (const side of [-1, 1]) F.push(limb([hx + hl * 0.8, side * hr * 0.7, hz - hl * 0.3], [hx + hl * 0.8 + 0.8, side * hr * 0.9, hz - hl * 0.3 + 1], 0.3, 0.3, BONE, { sides: 4, taper: 0.4 })); // a hog's tusks
+  if (B.tailUp) F.push(limb([-B.L / 2, 0, B.z + 0.4], [-B.L / 2 - 1.2, 0, B.z + 3.6], 0.3, 0.3, dark, { sides: 4, taper: 0.6 })); // a cat's tail up
+  else if (B.tail) F.push(limb([-B.L / 2, 0, B.z + 0.5], [-B.L / 2 - 2.6, 0, B.z - 1.8], 0.4, 0.4, dark, { sides: 4, taper: 0.5 })); // a dog's tail down
+  else F.push(limb([-B.L / 2, 0, B.z + B.rz * 0.4], [-B.L / 2 - 1.6, 0, B.z - B.rz * 0.6], 0.45, 0.45, dark, { sides: 4, taper: 0.5 })); // a tail hanging
+  if (B.tailUp) for (const side of [-1, 1]) F.push(limb([hx + hl * 0.1, side * hr * 0.6, hz + hr * 0.8], [hx + hl * 0.1 - 0.3, side * hr * 0.8, hz + hr * 0.8 + 0.9], 0.3, 0.3, dark, { sides: 4, taper: 0.3 })); // a cat's ears
+  F.height = Math.max(B.z + B.rz, hz + hr) + (B.antlers ? 7 : B.tailUp ? 4 : 2);
+  return F;
+}
 // A worm swarm: a low, writhing mass of pale worms with a few raised heads.
 function swarmLimbs(D) {
   const F = [], WL = "#fff8e0";
@@ -460,6 +499,12 @@ export function specialApp(ztype, seed) {
     case "nightmare": return base("#6e6a78", "#1e1c24", "#ff3a2a", { thin: true, scale: 1.15, pose: "claws", longArms: true, jaw: true });
     case "soldier": return base("#8ea36b", "#55603b", Z.amber, { camo: ["#55603b", "#3e4630", "#6b6a4a", "#4a3f2c"] }, { topStyle: "jacket", helmet: "milhelmet", armor: "plate" }); // the armoured dead (sim/deadsoldiers.js)
     case "riot": return base("#a7a69b", "#23262d", Z.amber, { pads: "#2e3137", visorUp: true }, { topStyle: "jacket", helmet: "riothelmet", armor: "riot" });
+    // the dead beasts (sim/deadbeasts.js): four-legged bodies (beastLimbs), the hide split, worms in the splits
+    case "deadstag": return base("#b08a5c", "#7c5c3a", Z.amber, { body: "beast", animal: "stag" });
+    case "deadhog": return base("#6e5a48", "#4a3a2c", Z.amber, { body: "beast", animal: "hog" });
+    case "deadhound": return base("#8a8278", "#5a544c", Z.amber, { body: "beast", animal: "hound" });
+    case "deadcow": return base("#d8ccb4", "#9a8e78", Z.amber, { body: "beast", animal: "cow" });
+    case "deadcat": return base("#9890a0", "#5e5868", Z.amber, { body: "beast", animal: "cat" });
     default: return zombieApp("walker", seed); // a sleeper on its feet, anything new
   }
 }
@@ -573,7 +618,7 @@ export function unitFigure(state, b, t, salt, yaw, standing = false) {
 export function unitFigureDown(state, b, t, salt, yaw) {
   const u = unitApp(state, b, t, salt);
   const D = u.app.dead;
-  if (D && (D.body === "swarm" || D.body === "hivemind" || D.body === "broodmother")) return figureCanvas(t.dead ? { ...u.app, skin: shade(u.app.skin, -0.4), top: shade(u.app.top, -0.4) } : u.app, null, null, yaw); // no way to lay a mass down: darker
+  if (D && (D.body === "swarm" || D.body === "hivemind" || D.body === "broodmother" || D.body === "beast")) return figureCanvas(t.dead ? { ...u.app, skin: shade(u.app.skin, -0.4), top: shade(u.app.top, -0.4) } : u.app, null, null, yaw); // no way to lay a mass (or a four-legged body) down: darker
   return figureCanvas({ ...u.app, down: { pose: t.dead ? "dead" : "down", pool: !!t.dead } }, null, u.armor, yaw, u.o || {});
 }
 // A body on the ground (sim/sleepers.js: c.seed, c.burnt, c.burst) as a lying figure.

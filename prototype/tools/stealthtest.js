@@ -149,7 +149,8 @@ function clearMap(b) { for (const c of b.cells) c.k = "open"; b.losCache.fill(0)
   const speed0 = partySpeed(p);
   closeCombat(st);
   const held = prisonersWith(st, p.id);
-  check(held.length === 1 && f.pop === pop0 - 1, `the prisoner walks with the team (their group ${pop0} → ${f.pop})`);
+  const fell = enemies.filter((e) => e.dead && e.who && !e.who.transient).length; // their people who died leave the group too (arsenal.js settlePeople)
+  check(held.length === 1 && f.pop === pop0 - 1 - fell, `the prisoner walks with the team (their group ${pop0} → ${f.pop}: the prisoner and ${fell} dead)`);
   check(Math.abs(partySpeed(p) - speed0 * (1 - PRISON.ROAD_SLOW)) < 1e-9, `a team on foot walks 10% slower per prisoner (${speed0} → ${partySpeed(p).toFixed(2)})`);
   const before = { food: food(p) + (food(p.cargo) || 0) };
   st.hour = Math.ceil(st.hour / 24) * 24 - 1;
@@ -430,7 +431,10 @@ function prisonWorld(s, n = 2, cells = 1) {
   const day0 = raid(false), nite = raid(true), lit = raid(true, "flashlight"), nvg = raid(true, "nvg");
   const gd = day0.units.find((u) => u.side === "enemy" && u.kind === "human"), gn = nite.units.find((u) => u.side === "enemy" && u.kind === "human");
   const zn = nite.units.find((u) => u.side === "enemy" && u.kind === "zombie");
-  check(!day0.night && nite.night && gd.sight === 13 && gn.sight === STEALTH.NIGHT_SIGHT && zn.sight === STEALTH.NIGHT_ZOMBIE_SIGHT, `enemy sight by day ${gd.sight}, at night ${gn.sight} (the dead ${zn.sight})`);
+  // People are people (docs/adr/0001-ai-parity.md): an enemy in the dark with no light sees what yours do (the second
+  // of the crew carries none).
+  const mine = nite.units.find((u) => u.side === "player" && !u.light && !u.nvg);
+  check(!day0.night && nite.night && gd.sight === 13 && mine && gn.sight === mine.sight && zn.sight === STEALTH.NIGHT_ZOMBIE_SIGHT, `enemy sight by day ${gd.sight}, at night ${gn.sight} as yours (${mine && mine.sight}; the dead ${zn.sight})`);
   const me = (b) => b.units.find((u) => u.side === "player");
   // Night vision sees as far as a military flashlight's beam (12, vision.js nvgSight; the user's request of 2026-10-12:
   // "up to the military flashlight"), no longer the full day's 13.

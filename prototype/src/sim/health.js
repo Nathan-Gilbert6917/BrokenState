@@ -62,6 +62,7 @@ import { hungerOf, thirstOf } from "./needs.js";
 import { partyMembers, onTheMove } from "./parties.js";
 import { foodStore } from "./storage.js";
 import { medKitBonus } from "./crafting.js";
+import { cfgOf } from "./worldcfg.js"; // the run's dials: Sickness
 
 // sev = starting severity [min, max]; drift = change per day untreated (before rest and care);
 // hp = health lost per day at severity 100; work = how much they can work at severity 100 (1 = fully);
@@ -494,7 +495,8 @@ export function illnessRisk(state, s, ctx = null) {
   }
   const frail = frailty(state, s, ctx);
   out.frail = frail;
-  const add = (key, p, cause, why, guarded = true) => { if (p > 0) out.parts.push({ key, p: Math.min(0.5, p * frail.f * (guarded ? ctx.guard : 1)), cause, why }); };
+  const sickMult = cfgOf(state, "sickness"); // worldcfg.js: the run's Sickness dial
+  const add = (key, p, cause, why, guarded = true) => { p *= sickMult; if (p > 0) out.parts.push({ key, p: Math.min(0.5, p * frail.f * (guarded ? ctx.guard : 1)), cause, why }); };
   const where = ctx.where;
   // Weather.
   let ex;

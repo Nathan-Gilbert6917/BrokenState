@@ -25,7 +25,7 @@
 // road conflicts, ambushes, rescues, outsider fights, group-base assaults. A base defence (defences.js, raids)
 // does not use it: breakOff below is the helper for "abandon the base" there.
 import { woundMult, fleetEscape } from "./traits.js"; // Tough, Frail, Fleet-Footed
-import { RETREAT, downChance, loadPenalty } from "./combat.js";
+import { RETREAT, downChance, loadPenalty, KITS } from "./combat.js";
 import { battleKg } from "./carrykit.js"; // the kit carried (kg): the escape check's load penalty
 import { hurt, isNight, skill, log, factionById, survivorById, localId } from "./world.js";
 import { armorMult } from "./inventory.js";
@@ -34,7 +34,8 @@ import { Rng } from "./rng.js";
 import { woundTrauma } from "./health.js";
 import { fightXp, hash01 } from "./skills.js";
 import { takeCaptive } from "./conflicts.js";
-import { memberMedic, MEDIC } from "./medics.js"; // a medic's kit: the carried and the fallen pull through more often
+import { memberMedic, MEDIC } from "./medics.js";
+import { groupFighters } from "./members.js"; // a group's people who fought (their XP) // a medic's kit: the carried and the fallen pull through more often
 
 export const RETREAT_POLICIES = {
   never:  { name: "Never",              short: "never",                desc: "Fight it out to the end, win or lose." },
@@ -110,6 +111,12 @@ export function teamPolicy(state, p) {
   }
   if (state.autopilot) return STYLE_POLICY[(state.governor && state.governor.personality) || "balanced"] || "losing";
   return "never";
+}
+// A convoy of yours caught on the road by robbers (caravanraids.js groupRobs, visitors.js hitConvoy): its own policy
+// if one was set or its crew role has one, else it pulls out when the fight turns ("losing"): it carries goods, it is
+// not out to fight, as a group's traders and communes pull out (groupfight.js policyOf). A decision, not a rule.
+export function convoyPolicy(state, p) {
+  return policySource(state, p) === "default" ? "losing" : teamPolicy(state, p);
 }
 // Where it came from, for the card ("set on this team", "the crew's role", "the autopilot's style").
 export function policySource(state, p) {
@@ -271,12 +278,14 @@ export function wantsOut(policy, look) {
 // fight that is not broken off plays out exactly as it would with the policy Never.
 // Returns { win, outcome, round (broken off after this round, or null), hits: [{ id, raw }], worn: [{ id, raw }] (broken
 // off: the blows still to come, in part), members, run, killShare }.
-export function rollFight(rng, model, policy = "never") {
+// forcedWin: the fight's outcome already decided (groupfight.js: one roll for both sides of a fight between groups),
+// so no draw for it.
+export function rollFight(rng, model, policy = "never", forcedWin = null) {
   const R = BREAKOFF.ROUNDS;
   const ms = model.members.map((m) => ({ ...m, down: false, hit: false }));
   const n = ms.length;
   const w = clamp(model.win, 0.05, 0.95);
-  const win = rng.chance(w);
+  const win = forcedWin == null ? rng.chance(w) : !!forcedWin;
   // The fight's blows, drawn up front (BREAKOFF.LOST_DOWN ...: calibrated on the battle map): who goes down, who is
   // wounded, in a shuffled order. A won fight takes its knocks early; a lost one keeps taking them, the last ones in
   // the last round (so a team that breaks off early is spared most of them).
@@ -313,7 +322,14 @@ export function rollFight(rng, model, policy = "never") {
     if (wantsOut(policy, state)) { round = r; break; }
   }
   if (round == null) {
-    const killShare = win ? 1 : rng.range(BREAKOFF.KILLS_LOST[0], BREAKOFF.KILLS_LOST[1]);
+    let killShare = win ? 1 : rng.range(BREAKOFF.KILLS_LOST[0], BREAKOFF.KILLS_LOST[1]);
+    // Their flight (combat.js shouldFlee, the same rule as on the map: docs/adr/0001-ai-parity.md): people who are not
+    // fearless run once a third of them are left and those standing against them are twice as many. No dice.
+    const E = model.enemy || {}, cnt = Math.max(0, Math.round(E.count || 0));
+    if (win && cnt >= 3 && E.kind !== "zombies" && !(KITS[E.kind] && KITS[E.kind].fearless)) {
+      const run = Math.floor(cnt / 3), standing = ms.filter((m) => !m.down).length;
+      if (run > 0 && standing >= run * 2) killShare = (cnt - run) / cnt;
+    }
     if (win) medicSaves(rng, ms); // medics.js: a medic still standing saves some of the fallen
     return { win, outcome: win ? "victory" : "defeat", round: null, hits, members: ms, run: null, killShare };
   }
@@ -358,30 +374,27 @@ function medicSaves(rng, ms) {
 }
 
 // ---------- the real fight ----------
-// combat.js autoResolveCombat: people (alive), win (the odds), ammoUsed and arrowsUsed (already taken from pools),
-// refund(n, key) gives back the rounds (key "ammo") or arrows ("arrows") not fired. Applies wounds, deaths, the
-// carried, the left behind (killed or taken), XP; returns the result.
-export function fightByNumbers(state, setup, people, { win, ammoUsed, arrowsUsed = 0, refund, tile }) {
+// A fight's rounds (rollFight) onto your people, the one path for your team's fight by the numbers (fightByNumbers)
+// and for a fight nobody watched that your people were in (groupfight.js applyYours: a convoy of yours robbed on the
+// road, docs/adr/0001-ai-parity.md: the fight their people take by the same rounds). The wounds of the rounds fought:
+// fought to the end a fall is death (as it always was by the numbers), a medic's save is barely alive; broken off,
+// the blows on the runners, the downed carried out (barely alive, or they did not pull through) or left behind (taken
+// by the captor group's people when it caught them, else dead). kind: the enemy's (the armour worn by the wounds:
+// armour.js absorbOffscreen). Returns { hurtIds (a Set), deadIds, captured, carriedIds }.
+export function landFight(state, fight, people, { tile, cause, kind, captor = null, party = null }) {
   const rng = state.rng;
-  const party = setup.partyId != null ? state.parties.find((x) => x.id === setup.partyId) : null;
-  const policy = policyFor(state, setup);
-  const f = setup.enemy.factionId != null ? factionById(state, setup.enemy.factionId) : null;
-  const capture = f && f.alive && f.bases && f.bases.length && setup.enemy.kind !== "zombies" ? BREAKOFF.CAPTURE : 0;
-  const model = fightModel(state, people, { win, enemy: setup.enemy, ambush: setup.ambush, party, capture });
-  const fight = rollFight(rng, model, policy);
-  const cause = `in a fight with ${setup.enemy.name || setup.enemy.kind}`;
   const byId = new Map(people.map((s) => [s.id, s]));
   const hurtIds = new Set(), deadIds = [], captured = [], carriedIds = [];
   const broke = fight.round != null;
   const downNow = new Set(fight.members.filter((m) => m.down).map((m) => m.id));
   const saved = new Set(fight.members.filter((m) => m.saved).map((m) => m.id)); // medics.js: fell, but a medic kept them alive
-  // Wounds of the rounds fought. Fought to the end, a fall is death (as it always was by the numbers); broken off,
-  // the downed are carried or left (below) instead.
+  // Wounds of the rounds fought. Fought to the end, a fall is death; broken off, the downed are carried or left
+  // (below) instead.
   for (const h of fight.hits) {
     const s = byId.get(h.id);
     if (!s || !s.alive || ((broke || saved.has(h.id)) && downNow.has(h.id))) continue;
     hurt(state, s, h.raw, tile, cause);
-    if (s.alive) absorbOffscreen(s, h.raw, setup.enemy.kind, state);
+    if (s.alive) absorbOffscreen(s, h.raw, kind, state);
     (s.alive ? hurtIds.add(s.id) : deadIds.push(s.id));
   }
   for (const id of saved) { // medics.js: barely alive, as the carried
@@ -396,7 +409,7 @@ export function fightByNumbers(state, setup, people, { win, ammoUsed, arrowsUsed
       const s = byId.get(b.id);
       if (!s || !s.alive || downNow.has(b.id)) continue;
       hurt(state, s, b.raw, tile, fight.worn.includes(b) ? cause : `${cause}, running for it`);
-      if (s.alive) absorbOffscreen(s, b.raw, setup.enemy.kind, state);
+      if (s.alive) absorbOffscreen(s, b.raw, kind, state);
       (s.alive ? hurtIds.add(s.id) : deadIds.push(s.id));
     }
     const barely = (s) => { s.health = Math.min(s.health, rng.int(5, 15)); woundTrauma(state, s, 30); hurtIds.add(s.id); };
@@ -409,9 +422,28 @@ export function fightByNumbers(state, setup, people, { win, ammoUsed, arrowsUsed
     for (const l of fight.run.left) {
       const s = byId.get(l.id);
       if (!s || !s.alive) continue;
-      if (l.captured && f) { barely(s); hurtIds.delete(s.id); takeCaptive(state, s, f, party); captured.push(s.id); }
+      if (l.captured && captor) { barely(s); hurtIds.delete(s.id); takeCaptive(state, s, captor, party); captured.push(s.id); }
       else { hurt(state, s, 9999, tile, `${cause}; left behind`, { raw: true }); deadIds.push(s.id); }
     }
+  }
+  return { hurtIds, deadIds, captured, carriedIds };
+}
+
+// combat.js autoResolveCombat: people (alive), win (the odds), ammoUsed and arrowsUsed (already taken from pools),
+// refund(n, key) gives back the rounds (key "ammo") or arrows ("arrows") not fired. Applies wounds, deaths, the
+// carried, the left behind (killed or taken), XP; returns the result.
+export function fightByNumbers(state, setup, people, { win, ammoUsed, arrowsUsed = 0, refund, tile }) {
+  const rng = state.rng;
+  const party = setup.partyId != null ? state.parties.find((x) => x.id === setup.partyId) : null;
+  const policy = policyFor(state, setup);
+  const f = setup.enemy.factionId != null ? factionById(state, setup.enemy.factionId) : null;
+  const capture = f && f.alive && f.bases && f.bases.length && setup.enemy.kind !== "zombies" ? BREAKOFF.CAPTURE : 0;
+  const model = fightModel(state, people, { win, enemy: setup.enemy, ambush: setup.ambush, party, capture });
+  const fight = rollFight(rng, model, policy);
+  const cause = `in a fight with ${setup.enemy.name || setup.enemy.kind}`;
+  const { hurtIds, deadIds, captured, carriedIds } = landFight(state, fight, people, { tile, cause, kind: setup.enemy.kind, captor: f, party });
+  const broke = fight.round != null;
+  if (broke) {
     // Rounds not fought: the ammo (and the arrows) for them was not fired.
     const back = Math.floor((ammoUsed * (BREAKOFF.ROUNDS - 1 - fight.round)) / BREAKOFF.ROUNDS);
     if (back > 0 && refund) { refund(back); ammoUsed -= back; }
@@ -419,8 +451,11 @@ export function fightByNumbers(state, setup, people, { win, ammoUsed, arrowsUsed
     if (kept > 0 && refund) { refund(kept, "arrows"); arrowsUsed -= kept; }
   }
   const count = setup.enemy.count;
-  const killed = Math.min(count, Math.floor(count * fight.killShare));
+  const killed = Math.min(count, Math.floor(count * fight.killShare + 1e-9));
   fightXp(state, people, fight.outcome === "victory"); // skills.js: Shooting XP for everyone who fought
+  // Their people who fought gain it too, by the same rule (docs/adr/0001-ai-parity.md): the party's, else the fittest at home.
+  const ef = setup.enemy && setup.enemy.factionId != null ? factionById(state, setup.enemy.factionId) : null;
+  if (ef && ef.alive && !ef.outsider) fightXp(state, groupFighters(state, ef, setup.enemy.partyId, count), fight.outcome !== "victory");
   const result = {
     outcome: fight.outcome,
     enemiesKilled: killed, enemiesLeft: count - killed,

@@ -74,10 +74,11 @@ section("Every firewood figure × 30: the balance unchanged");
   h.stock.wood = burned / 2; h.stock.fuel = 5;
   heatDaily(st, h);
   check(h.stock.wood === 0 && near(5 - h.stock.fuel, n * HEAT.fuel / 2, 0.06), `half the firewood: ${(5 - h.stock.fuel).toFixed(2)} fuel for the rest`);
-  // The woodpile's plan: 15 a head a freezing day, × the bitter days, a fifth to spare.
+  // The woodpile's plan: 15 a head a freezing day, × the bitter days, a fifth to spare; and the nights' fires ahead
+  // (fire-nights: 4.5 a head a cool night, WOOD.nightDays of them).
   h.stock.wood = 0;
   const w = Wd.woodNeed(st, h);
-  check(w.need > 0 && Math.abs(w.need - (w.heads * 15 * Wd.WOOD.bitter * w.days * Wd.WOOD.spare + w.boiler * WORM.BOILER_DAYS)) <= w.need * 0.01, `the cold ahead: ${w.need} firewood for ${w.heads} (${(w.need * 0.1).toFixed(0)} kg)`);
+  check(w.need > 0 && Math.abs(w.need - (w.heads * 15 * Wd.WOOD.bitter * w.days * Wd.WOOD.spare + w.nights + w.boiler * WORM.BOILER_DAYS)) <= w.need * 0.01, `the cold ahead: ${w.need} firewood for ${w.heads} (${(w.need * 0.1).toFixed(0)} kg; the nights' fires ${w.nights})`);
   // The boiler: 6 a head, 0.04 fuel a head instead.
   addBuilding(h, "boiler");
   const bu = boilerUse(st, h);
@@ -176,7 +177,7 @@ section("A stack like any supply: the raid window, the cargo, the stores, the lo
   const s = partyMembers(st, p)[0];
   const ui2 = { inv: { sid: s.id }, invSel: null, invMsg: "" };
   const cargoHtml = inventoryModal(st, ui2) || "";
-  check(/Found supplies \(15 kg\)/.test(cargoHtml) && cargoHtml.includes(woodTile(150, 15)), "the team's cargo lists the firewood stack (150, 15 kg)");
+  check(/>Supplies \([\d.]+ kg\)/.test(cargoHtml) && cargoHtml.includes(woodTile(150, 15)), "the team's cargo lists the firewood stack (150, 15 kg)");
   check(near(poolLoad(p) - poolLoad({ ...p, cargo: { ...p.cargo, supplies: { ...p.cargo.supplies, wood: 0 } } }), 15, 1e-6), "and it weighs 15 kg in the team's load");
   const h = hub(st);
   h.stock.wood = 300;

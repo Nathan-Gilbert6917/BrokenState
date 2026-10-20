@@ -45,6 +45,7 @@ import { roundsIn, baseType, withHand, GENERIC_KEYS, roundOf, isLaunchRound } fr
 import { hash01 } from "./skills.js";
 import { buildLock } from "./blueprints.js";
 import { relation, warsOf } from "./diplomacy.js";
+import { note } from "./ledger.js"; // the conservation test's ledger (off in play)
 
 export const RELOAD = {
   UP: { cost: { parts: 1, gunparts: 3, scrap: 20 }, hours: 24, req: { mechanics: 3 } }, // the upgrade (buildings.js reload_bench)
@@ -379,7 +380,7 @@ export const handMake = (state, hk) => (state && state.handloads && state.handlo
 // u.loadBp, u.loadMp (gunfire.js ammoJam), u.loadAim (combat.js shotOdds), u.loadBp (stealth.js shotNoise). A factory
 // round clears them (only the ones set here: a test's "old" rounds stay).
 export function noteHandLoad(b, u) {
-  if (!b || !u || u.side !== "player") return;
+  if (!b || !u || !(u.side === "player" || u.who)) return; // anyone's handloads mark their shots (docs/adr/0001-ai-parity.md)
   const hk = nextHand(b, u);
   if (!hk) {
     if (u.handLoad) { u.loadCond = "factory"; delete u.loadHq; delete u.loadBp; delete u.loadMp; delete u.loadAim; u.handLoad = false; }
@@ -488,20 +489,43 @@ export function groupBrass(f, n) {
 }
 // A group's day (arsenal.js arsenalDaily): sellers restock; a group with a workshop buys what it lacks every
 // buyEvery days and loads rounds from its brass, powder, primers and scrap into its ammo count. Returns the rounds made.
+// A group's reloading bench by your bench's code (docs/adr/0001-ai-parity.md): its best mechanic at home operates it,
+// on the calibre its guns are shortest of (rounds against guns, its common load), as many rounds as your operator would
+// make (dayRate at the recipe's Mechanics, inputsFor), through runReload (the same inputs, factory or handload keys,
+// the dies' wear). Powder and primers: a trading or military group's own when it is made (its creation seed), then
+// bought from another group (groupBuyReload) and pulled from rounds it cannot use (groupPull); none from nowhere.
 export function groupReloadDaily(state, f, workshop) {
   if (!f || !f.stock || !f.alive) return 0;
   const G = RELOAD.GROUP, d = day(state);
   const sell = G.stock[f.type];
-  if (sell) for (const k of ["powder", "primers"]) { const cap = Math.round(f.pop * sell[k][1] * 10), want = Math.round(f.pop * sell[k][0] * 10); if (num(f.stock[k]) < want) f.stock[k] = Math.min(cap, num(f.stock[k]) + Math.ceil(f.pop * 2)); }
+  if (sell && !f.reloadSeeded) { for (const k of ["powder", "primers"]) f.stock[k] = Math.max(num(f.stock[k]), Math.round(f.pop * sell[k][0] * 10)); f.reloadSeeded = true; }
   if (!workshop) return 0;
   groupPull(state, f);
   if (num(f.stock.brass) >= G.buyBrass && (num(f.stock.powder) < Math.min(G.want.powder, num(f.stock.brass) * G.pc) / 2 || num(f.stock.primers) < Math.min(G.want.primers, num(f.stock.brass)) / 2) && (f.reloadDeal == null || d - f.reloadDeal >= G.buyEvery)) groupBuyReload(state, f, d);
-  const pc = G.pc;
-  const n = Math.floor(Math.min(G.max, f.pop * G.perHead, num(f.stock.brass), num(f.stock.primers), num(f.stock.powder) / pc, num(f.stock.scrap) * RELOAD.LEAD));
-  if (!(n >= 1)) return 0;
-  f.stock.brass -= n; f.stock.primers -= n; f.stock.powder = Math.max(0, num(f.stock.powder) - n * pc); f.stock.scrap = Math.max(0, num(f.stock.scrap) - Math.ceil(n / RELOAD.LEAD));
-  f.stock.ammo = num(f.stock.ammo) + n;
+  const home = f.homes ? Object.values(f.homes).find((h) => h && h.type === "hub" && h.stock === f.stock) : null;
+  if (!home) return 0;
+  const people = (f.people || []).filter((s) => s.alive !== false && s.location && s.location.kind === "member" && s.location.partyId == null && (s.health ?? 100) >= 60);
+  const op = people.sort((a, b) => mech(b) - mech(a) || a.id - b.id)[0] || null;
+  if (!op) return 0;
+  // The calibre short the most: its rounds in the stores against the guns on the books that shoot it.
+  const guns = {};
+  for (const it of (f.arsenal && f.arsenal.items) || []) { const c = calOf(it && it.key); if (c && CALIBERS[c]) guns[c] = (guns[c] || 0) + 1; }
+  let cal = null, worst = Infinity;
+  for (const [c, n] of Object.entries(guns)) {
+    const t = baseType(c), rec = loadRecipe(c, t);
+    if (!rec || mech(op) < rec[0]) continue;
+    const have = Object.entries(f.stock).filter(([k]) => { const r = roundOf(k); return r && r.cal === c; }).reduce((a, [, q]) => a + num(q), 0);
+    const per = have / n;
+    if (per < worst) { worst = per; cal = c; }
+  }
+  if (!cal) return 0;
+  const type = baseType(cal), rec = loadRecipe(cal, type);
+  const inp = inputsFor(state, home, cal, type);
+  const n0 = Math.min(G.max, dayRate(rec[1], mech(op)), inp.n);
+  if (!(n0 >= 1)) return 0;
+  const n = runReload(state, home, null, { reload: { cal, type, n: n0, order: { key: ammoKey(cal, type) } }, op });
   f.reloaded = num(f.reloaded) + n;
+  note(state, "bench", n); // ledger.js (a test switch)
   return n;
 }
 // A group short of brass pulls rounds of the calibres its guns do not shoot (coarse: its one ammo count, by its kind's
@@ -512,15 +536,16 @@ export function groupPull(state, f) {
   const guns = {};
   for (const it of (f.arsenal && f.arsenal.items) || []) { const c = calOf(it && it.key); if (c) guns[c] = true; }
   if (!Object.keys(guns).length) return 0;
-  const mix = kindMix(f.type);
-  let tot = 0, unused = 0, charge = 0;
-  for (const [k, w] of Object.entries(mix)) { const r = roundOf(k); if (!r) continue; tot += w; if (!guns[r.cal]) { unused += w; charge += w * (pullYield(k).powder); } }
-  if (!(unused > 0) || !(tot > 0)) return 0;
-  const n = Math.floor(Math.min(G.max, num(f.stock.ammo) * (unused / tot) * G.share, num(f.stock.ammo) - f.pop * G.keepHead));
+  // Their rounds by key (docs/adr/0001-ai-parity.md): the calibres none of their guns shoot, a share of them pulled.
+  const keys = Object.keys(f.stock).filter((k) => { const r = roundOf(k); return r && !guns[r.cal] && num(f.stock[k]) >= 1; });
+  const unused = keys.reduce((a, k) => a + Math.floor(num(f.stock[k])), 0);
+  if (!(unused > 0)) return 0;
+  const n = Math.floor(Math.min(G.max, unused * G.share));
   if (!(n >= 1)) return 0;
-  f.stock.ammo -= n;
+  let left = n, charge = 0;
+  for (const k of keys) { if (left <= 0) break; const q = Math.min(left, Math.floor(num(f.stock[k]))); f.stock[k] -= q; left -= q; charge += q * pullYield(k).powder; }
   f.stock.brass = num(f.stock.brass) + n;
-  f.stock.powder = num(f.stock.powder) + Math.floor(n * charge / unused);
+  f.stock.powder = num(f.stock.powder) + Math.floor(charge);
   f.stock.primers = num(f.stock.primers) + Math.floor(n * P.PRIMER);
   f.stock.scrap = num(f.stock.scrap) + Math.floor(n / RELOAD.LEAD);
   f.pulled = num(f.pulled) + n;

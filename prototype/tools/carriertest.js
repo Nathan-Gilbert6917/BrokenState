@@ -33,6 +33,7 @@ import { applyZType, typeStrength, mixWeight } from "../src/sim/zombietypes.js";
 import { CARRIER, ZTYPES, GROWTHS } from "../src/sim/hiveconst.js";
 import { growthWish, startGrowth, hiveMix } from "../src/sim/hivetech.js";
 import { newItem, allItems, armorMult } from "../src/sim/inventory.js";
+import { isRoundItem } from "../src/sim/itemstack.js";
 import { launchExpedition, partyTile, cargoRoom, cargoLoad, bodiesLoad } from "../src/sim/parties.js";
 import { createVehicle, carsAtBase, VEHICLE_TYPES } from "../src/sim/vehicles.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
@@ -153,7 +154,7 @@ section("Bodies near a Carrier get up at once; the dead never do; the map marks 
   check(!!z && active(z) && z.kind === "zombie" && z.name === `${raider.name} (turned)` && z.x === raider.x && z.y === raider.y && raider.off, `at the enemy's turn it gets up at once: ${z ? z.name : "nothing"} where the body lay (the body gone from the map)`);
   check(logSince(b, n0).some((t) => /gets up/.test(t) && t.includes(raider.name)), `the log: “${logSince(b, n0).find((t) => /gets up/.test(t))}”`);
   check(!!z && z.ap === CARRIER.RISE_AP && z.wild && z.reinforcement && z.weapon === "claws", `up with ${CARRIER.RISE_AP} action, teeth and nails (no gun), after anything living, not one of the enemy the battle began with`);
-  check(!!z && Math.abs(z.armor - raider.armor) < 1e-9, `it wears the raider's vest: ×${z ? z.armor : "?"} of every hit`);
+  check(!!z && Math.abs(z.armor - (raider.wornArmor ?? raider.armor)) < 1e-9, `it wears the raider's vest: ×${z ? z.armor : "?"} of every hit`); // fighters.js: a person rises in what they wore, as yours do (no trait in it)
   check(!risenFrom(b, walkers[0]) && !risenFrom(b, far) && !risenFrom(b, beyond), "the walker never gets up again, nor the raiders out of reach");
   // Never twice: the risen killed lies still.
   kill(b, z);
@@ -389,7 +390,11 @@ section("The risen wear what the person wore; their things are never duplicated 
   const sA = survivorById(st, A.sid);
   sA.gear.armor = newItem("plate", 0.9);
   sA.gear.head = newItem("milhelmet", 0.8);
-  const mine = allItems(sA);
+  // Loose rounds are counted, not tracked: looted, they fold into the team's stock (the check after the loot).
+  const mine = allItems(sA).filter((it) => !isRoundItem(it));
+  const loose = allItems(sA).filter(isRoundItem), looseN = loose.reduce((a, it) => a + Math.floor(it.dur), 0);
+  const teamRounds = () => loose.reduce((a, it) => a + (p.supplies[it.key] || 0) + ((p.cargo && p.cargo.supplies && p.cargo.supplies[it.key]) || 0), 0);
+  const rounds0 = teamRounds();
   carrier.x = 10; carrier.y = 10;
   A.x = 11; A.y = 10;
   kill(b, A, carrier);
@@ -410,6 +415,7 @@ section("The risen wear what the person wore; their things are never duplicated 
   check(names.filter((n) => n.startsWith(raider.name)).length === 1 && names.includes(`${raider.name} (turned)`), `the raider is one body, "${raider.name} (turned)"`);
   const counts = mine.map((it) => places(st, it));
   check(mine.length >= 2 && counts.every((n) => n === 1), `each of ${first(sA.name)}'s ${mine.length} things is in exactly one place after the loot (${counts.join(", ")}): ${mine.map((it) => it.name).join(", ")}`);
+  check(teamRounds() - rounds0 === looseN, `the ${looseN} rounds ${first(sA.name)} had at hand are in the team's stock (${teamRounds() - rounds0})`);
   const back = mine.filter((it) => p.cargo.gear.includes(it) || st.survivors.some((s) => s.alive && allItems(s).includes(it)));
   check(back.length >= 1, `put down and looted, the team has their things back (${back.map((it) => it.name).join(", ") || "none"}; what did not fit stays at the death site)`);
   const raiderBody = b.bodies.find((x) => x.name === `${raider.name} (turned)`);
