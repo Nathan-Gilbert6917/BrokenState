@@ -22,11 +22,12 @@ import { groupsBuild } from "./groupworks.js";
 import { membersAt, homeMembers, MEMBER } from "./members.js";
 import { weightOf } from "./groupcare.js";
 import { SUPPLIES } from "./data.js";
+import { BED_WORKS_BUILDING } from "./data-beds.js"; // beds as furniture: their hall a Lodge, each piece itself (beds.js)
 
 // A works count of theirs as your building (groupworld.js PLAYER_WORKS the other way round). The storage works
 // (groupworks.js storageWork: a storage box, crates, a shed, the storehouse, a warehouse) are your storage buildings, so
 // basestorage.js storageOf counts their room at that base.
-export const WORKS_BUILDING = { walls: "walls", farms: "farm_plot", pens: "animal_pen", water: "well", beds: "bunkhouse", bench: "workbench", shop: "machine_shop", reload: "reload_bench", store: "storehouse", storebox: "storebox", crates: "crates", shed: "shed", warehouse: "warehouse", radio: "radio", garage: "garage", gate: "gate", kitchen: "kitchen", still: "still", freezer: "freezer" };
+export const WORKS_BUILDING = { ...BED_WORKS_BUILDING, walls: "walls", farms: "farm_plot", pens: "animal_pen", water: "well", beds: "bunkhouse", bench: "workbench", shop: "machine_shop", reload: "reload_bench", store: "storehouse", storebox: "storebox", crates: "crates", shed: "shed", warehouse: "warehouse", radio: "radio", garage: "garage", gate: "gate", kitchen: "kitchen", still: "still", freezer: "freezer" };
 // What a base that is not built up by hand holds (the hardcore military: groupworks.js groupsBuild false); its storehouse
 // (2000 kg on top of the main house's 1200: basestorage.js) keeps an army base's stores in.
 export const BUILT_UP = { walls: 6, farms: 2, water: 1, beds: 2, bench: 1, store: 1, gate: 1 };

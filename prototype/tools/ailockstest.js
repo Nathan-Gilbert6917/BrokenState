@@ -312,7 +312,7 @@ const BUILT = { water: 9, farms: 9, beds: 9, walls: 7, bench: 1, store: 1, pens:
 // ---------- 12. nothing they build that you cannot ----------
 {
   console.log("Their works are your buildings");
-  const YOURS = { water: "well", farms: "farm_plot", beds: "bunkhouse", walls: "walls", bench: "workbench", store: "storehouse", storebox: "storebox", crates: "crates", shed: "shed", warehouse: "warehouse", pens: "animal_pen", still: "still", power: "generator", freezer: "freezer", sealer: "sealer", kitchen: "canteen", mill: "grainmill", grinder: "meatgrinder", shop: "machine_shop", radio: "radio", garage: "garage", reload: "reload_bench", gate: "gate" };
+  const YOURS = { water: "well", farms: "farm_plot", beds: "bunkhouse", walls: "walls", bench: "workbench", store: "storehouse", storebox: "storebox", crates: "crates", shed: "shed", warehouse: "warehouse", pens: "animal_pen", still: "still", power: "generator", freezer: "freezer", sealer: "sealer", kitchen: "canteen", mill: "grainmill", grinder: "meatgrinder", shop: "machine_shop", radio: "radio", garage: "garage", reload: "reload_bench", gate: "gate", hall: "gen_lodge" }; // hall: beds as furniture (beds.js), your Lodge
   const missing = Object.keys(GROUP_WORKS.WORKS).filter((k) => !BUILDINGS[YOURS[k]]);
   check(!missing.length, `every work of theirs is a building of yours${missing.length ? ` (not: ${missing.join(", ")})` : ""}`);
   // gen-tiers: LOCKS power2 / power3 are your generator's upgrades (power.js GEN_TIERS req), not building types.

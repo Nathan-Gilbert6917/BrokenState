@@ -29,6 +29,7 @@ import { WATER, waterCapacity, waterProduction } from "./economy.js"; // the fil
 import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
 import { craftedCond } from "./itemcond.js"; // a crafted item's condition is the craft's own roll
 import { cfgOf } from "./worldcfg.js"; // the run's dials: Durability loss
+import { BED_CRAFTS, BED_SPEC } from "./data-beds.js"; // beds as furniture: a cot, a bed, a bunk bed, a large bed (beds.js)
 
 // in = materials (base stock), hours = work-hours, skill + min = who can make it, out = gear key or supplies.
 // needs: "workshop" (an ammo bench or machine shop at this base) or a building key. field: can be made by a team.
@@ -150,6 +151,7 @@ export const CRAFTS = {
   traumakit:   { gear: "traumakit",   in: { scrap: 2, meds: 2 }, hours: 8,  skill: "medicine",  min: 4, cmin: 3 },
   // ---------- end of special gear ----------
 };
+Object.assign(CRAFTS, BED_CRAFTS); // beds as furniture (data-beds.js): wood, scrap, a large bed's springs; at a crafting bench
 
 export const WORKSHOP_TYPES = ["ammo_bench", "reload_bench", "machine_shop"]; // stations with metal tools (a reloading bench is an ammo bench upgraded: reloading.js)
 export const MAX_CRAFT_QUEUE = 8;
@@ -203,6 +205,7 @@ export function craftOutputText(key) {
   else if (d.slot === "insert") bits.push(`plate for a plate carrier's front or back pocket, armor ${d.power} (${/steel/.test(r.gear) ? "steel: it can spall, and can be patched" : "ceramic: it can shatter, and cannot be patched"})`); // section 16
   else if (d.slot === "backpack") bits.push(`pack, ${d.slots} pack slots, +${d.carry} kg more to carry (max load)${d.ease ? `, load counts ${Math.round(d.ease * 100)}% lighter` : ""}`);
   else if (d.cart) bits.push(`a cart pushed in the arms: ${d.cart.cap} kg in ${d.slots} slots, its pusher feels ${Math.round(d.cart.frac * 100)}% of it${d.cart.twoMan ? ", a second person can help pull" : ""}; hands full (a pistol one-handed at most)`); // carts.js
+  else if (d.furniture) bits.push(`furniture: set inside a hut, cabin, lodge, hall or barn (the base map's Build list, Furniture) for ${BED_SPEC[d.furniture].sleepers === 1 ? "1 bed" : `${BED_SPEC[d.furniture].sleepers} beds`} on ${BED_SPEC[d.furniture].w} × ${BED_SPEC[d.furniture].h} cells, ${BED_SPEC[d.furniture].mood ? `${BED_SPEC[d.furniture].mood > 0 ? "+" : "−"}${Math.abs(BED_SPEC[d.furniture].mood)} mood a day for each sleeper` : "a night's sleep with no mood lost"}; bulky, carried in both arms or a cart`); // beds.js
   else if (r.gear === "bicycle") bits.push("a bike for the base: teams ride out on bikes, one each (faster on roads, no fuel, a 15 kg rack)");
   else if (r.gear === "beartrap") bits.push("a bear trap kept in a base's stores: set on the approach when a horde attacks, it catches about 3 of the dead (up to 4 traps; a quarter break each time)");
   else if (r.gear === "repairkit") bits.push("a field repair kit: mends a gun, an attachment, armour or a makeshift tool anywhere, one use a repair (half a workbench's restore, twice the lost maximum; repair.js)");

@@ -118,6 +118,8 @@ import { layMines } from "./mines.js"; // the main base's minefield, buried in t
 import { FORT } from "./fort.js"; // the wire rings' and the mines' distances from the wall (call-time only: the modules load in a circle)
 import { cfgOf } from "./worldcfg.js"; // the run's dials: Base yard to start / at most
 import { storageOf, coreStoreKg, vehicleStoreKg } from "./basestorage.js"; // the base's room and what lies outside (call-time only)
+import { BED_FOOT } from "./data-beds.js"; // beds as furniture: a cot, bed or bunk bed 1 × 2, a large bed 2 × 2, on a general building's floor
+import { setFurnitureAt, furnitureInStores } from "./beds.js"; // beds as furniture: set from the stores where the ghost is (call-time only)
 
 // The grid by tier: core = the half-size of the middle structure's own ground, yard = the yard's half-size to start
 // with, per = yard growth a building with a footprint, cap = the yard's largest half-size, out = open ground beyond the
@@ -216,6 +218,7 @@ export const FOOT = {
   // Not placed (laid round the wall by the map itself: the wire rings, the guard towers on the walkway, the minefield
   // in the open ground): barbed_wire, razor_wire, guard_towers, minefield.
 };
+Object.assign(FOOT, BED_FOOT); // beds as furniture (data-beds.js, beds.js): fittings set from the stores, drawn as bed cells
 export const FIELD = { kind: "field", w: 3, h: 2 };
 // What holds the base's goods on the map (makeStores): a weight for the share of the stores each takes.
 const STORES = { warehouse: 4, storehouse: 3, cellar: 2, coldstore: 2, freezer: 2, shed: 1.5, crates: 1, storebox: 0.5, armory: 1, shelves: 1, lockers: 1 }; // the armory: two locked containers of its own kind (pushStore), no share of the rest; shelves and lockers: the fittings that keep goods (base building)
@@ -2249,6 +2252,7 @@ export function layoutAct(state, b, act) {
       if (!g) return "Nothing to build.";
       if (!g.ok && g.land) return clearSite(state, base, L, g.land);
       if (!g.ok) return g.why;
+      if (d && d.furniture) return setFurnitureAt(state, b, base, bt, g); // beds.js: set from the stores where it was clicked (no job)
       const opts = pieceOpts(base, bt);
       const chk = canBuild(state, base, bt, opts);
       if (!chk.ok) return chk.reason || "It cannot be built here now.";
@@ -2337,18 +2341,18 @@ export function layoutAct(state, b, act) {
 // A wall piece or gate built from the map is of the material the wall is mostly of (buildings.js ringMat: wood with
 // none); the Defenses tab picks another. A stand has no material.
 const pieceOpts = (base, bt) => (BUILDINGS[bt] && BUILDINGS[bt].piece && BUILDINGS[bt].piece !== "stand" ? { mat: ringMat(base) } : {});
-const MENU_GROUPS = ["General buildings", "Fittings", "Buildings", "Yard things", "Defences"];
+const MENU_GROUPS = ["General buildings", "Fittings", "Furniture", "Buildings", "Yard things", "Defences"];
 export function buildMenu(state, base) {
   const out = [];
   for (const [type, d] of Object.entries(BUILDINGS)) {
     const f = FOOT[type];
     if (!f || d.upgradeOnly) continue; // an upgrade in place (the reloading bench) is queued from the building it upgrades
-    const group = d.general ? "General buildings" : d.fit ? "Fittings" : f.kind === "defence" || WALL_KINDS.has(f.kind) ? "Defences" : f.kind === "prop" || f.kind === "pen" ? "Yard things" : "Buildings";
+    const group = d.general ? "General buildings" : d.furniture ? "Furniture" : d.fit ? "Fittings" : f.kind === "defence" || WALL_KINDS.has(f.kind) ? "Defences" : f.kind === "prop" || f.kind === "pen" ? "Yard things" : "Buildings";
     const opts = pieceOpts(base, type);
     /** @type {any} */
     const chk = canBuild(state, base, type, opts);
     const piece = !!d.piece; // a wall piece, gate or stand: its material's name, cost and hours (buildings.js canBuildPiece)
-    out.push({ type, name: piece ? pieceName({ type, ...opts }) : d.name, group, w: f.w, h: f.h, cost: piece && chk.cost ? { ...chk.cost } : { ...d.cost }, hours: piece && chk.hours != null ? chk.hours : d.hours, ok: !!chk.ok, why: chk.ok ? "" : chk.reason || "", desc: d.desc || "" });
+    out.push({ type, name: piece ? pieceName({ type, ...opts }) : d.name, group, w: f.w, h: f.h, cost: piece && chk.cost ? { ...chk.cost } : { ...d.cost }, hours: piece && chk.hours != null ? chk.hours : d.hours, ok: !!chk.ok, why: chk.ok ? "" : chk.reason || "", desc: d.desc || "", ...(d.furniture ? { furniture: true, have: furnitureInStores(base, type) } : {}) });
   }
   return out.sort((a, b) => MENU_GROUPS.indexOf(a.group) - MENU_GROUPS.indexOf(b.group)); // stable: BUILDINGS' order within a group
 }

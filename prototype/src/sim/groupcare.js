@@ -52,6 +52,7 @@ import { day, log, hub } from "./world.js";
 import { groupPayoutSpare } from "./upkeep.js"; // the pay-out reserve (food)
 import { Rng } from "./rng.js";
 import { growthFactor, groupKitchenMorale } from "./groupworks.js";
+import { groupBedMorale } from "./beds.js"; // beds as furniture: their beds' mood (call-time only)
 import { removeFromArsenal, addToArsenal } from "./arsenal.js";
 import { stripAll, allItems, allCarried } from "./inventory.js";
 import { isRoundItem } from "./itemstack.js";
@@ -491,7 +492,7 @@ export function desertPressure(state, f) {
   p += (woundedOf(f) / pop) * 2;
   if (warsOf(state, f).length || atWarWithYou(state, f)) p += 0.5; // playerwars.js: a war with you weighs the same
   p += groupDietPressure(state, f); // eating.js: lean rations +, a recent feast −, the same few foods + (wave 2 eating)
-  p = Math.max(0, p - groupKitchenMorale(state, f)); // groupworks.js: hot meals from their kitchens keep people (kitchen-plus)
+  p = Math.max(0, p - groupKitchenMorale(state, f) - groupBedMorale(state, f)); // groupworks.js: hot meals from their kitchens keep people (kitchen-plus); beds.js: their beds (a large bed lifts, a cot or a bunk weighs)
   return p * weightOf(f, "harsh");
 }
 export function desertDaily(state, f, d = day(state)) {

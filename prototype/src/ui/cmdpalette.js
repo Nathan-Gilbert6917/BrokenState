@@ -76,7 +76,7 @@ export function paletteIndex(state, ui, options = API && API.options) {
   const base = ui.started ? selectedBase(state, ui) : null;
   if (base) {
     for (const [type, def] of Object.entries(BUILDINGS)) {
-      if (def.hidden) continue; // a clearing is queued from the base map
+      if (def.hidden || def.furniture || def.retired) continue; // a clearing is queued from the base map; beds as furniture are set from it too (sim/beds.js); the retired makeshift cots
       const chk = canBuild(state, base, type);
       if (!chk.ok && NEVER.test(chk.reason || "")) continue;
       add(`build:${base.id}:${type}`, "build", `Build ${def.name}`, `${base.name}${chk.ok ? "" : ` · ${chk.reason}`}`, (st, u, act) => {

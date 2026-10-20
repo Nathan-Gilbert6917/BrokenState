@@ -41,6 +41,7 @@ import { migrateStacks } from "./itemstack.js"; // stacks in a slot (2026-10-10)
 import { SICK_REST_MODES } from "./sickrest.js"; // the Work tab's "Sick people rest" (old saves: on)
 import { migrateGenerators, migrateGenTiers } from "./power.js"; // machines-2: generators without operators; gen-tiers: every old generator a tier-1 set
 import { migrateCanners, migrateWalls, legacyCampTents } from "./buildings.js"; // machines-2: the pressure canner fitted to a preserving room
+import { migrateCots } from "./beds.js"; // beds as furniture: the retired makeshift cots become Cots set at the base
 import { ensurePois, packPois } from "./pois.js"; // points of interest: saved as the changes from the seed's lists; a save from before gets its lists on load
 import { tidyCarts } from "./carts.js"; // carts: grids sized, lots only real supplies (every load; nothing older needs changing)
 /** @import { State } from "./types" */
@@ -272,6 +273,8 @@ export function deserializeState(save) {
   if (!(state.machinesV >= 1)) { migrateGenerators(state); migrateCanners(state); state.machinesV = 1; }
   // Walls by tier (buildings.js WALL_TIERS, 2026-10-19): a save's wall sections become one wall of a tier (idempotent).
   migrateWalls(state);
+  // Beds as furniture (beds.js, 2026-10-20): a save's built makeshift cots become two Cots set at that base each (idempotent).
+  migrateCots(state);
   // gen-tiers (2026-10-10): generator tiers (power.js GEN_TIERS); every generator standing (yours and the groups') is tier 1. Once.
   if (!(state.genTiersV >= 1)) { migrateGenTiers(state); state.genTiersV = 1; }
   // pois.js (2026-10-15): points of interest on the tiles. A save from before gets every tile's list from its seed (hash

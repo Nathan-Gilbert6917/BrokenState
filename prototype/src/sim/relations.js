@@ -33,6 +33,7 @@ import { count, isPiece } from "./buildings.js";
 import { GEAR } from "./data.js";
 import { allItems } from "./inventory.js";
 import { season, weatherOnDay } from "./weather.js";
+import { bedLine } from "./beds.js"; // beds as furniture: where someone sleeps (call-time only)
 import { crowdInfo, talker } from "./morale.js";
 import { partyMembers, tileLabel } from "./parties.js";
 import { farmOf } from "./farming.js";
@@ -331,6 +332,7 @@ export function moodFactors(state, s) {
     if (!(base.hungerDays > 0)) add("Fed", 1, false); // out of food or water: the starving and parched lines below
     if (base.rationing) add("Short rations", -3, false);
     else if (rationKey(state, base) === "lean") add("Lean rations (smaller portions)", RATION_LEVELS.lean.mood, false); // economy.js, eating.js
+    if (!pl.route) { const bl = bedLine(state, s, base); if (bl) add(bl.label, bl.v, true, bl.tip); } // beds.js: the bed they sleep in (a cot, a bunk, a large bed) or none
     if (!pl.route && s.role === "rest") add("Resting (Rest role)", 6, false);
     else if (!pl.route && s.inBed) add("In a hospital bed", 3, false);
     if (base.dog) add(`${base.dog.name} the dog`, 0.5, false);

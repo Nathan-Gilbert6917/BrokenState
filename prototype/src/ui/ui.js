@@ -2068,7 +2068,7 @@ function baseConstruction(state, b, ui) {
     </div>`;
   };
   const up = tierUpType(b);
-  const types = Object.entries(BUILDINGS).filter(([k, d]) => !d.hidden && (!d.shelterOnly || isShelter(b)) && (!d.tierUp || k === up)).sort(([ka], [kb]) => (isShelter(b) ? (kb === up) - (ka === up) : 0));
+  const types = Object.entries(BUILDINGS).filter(([k, d]) => !d.hidden && !d.furniture && !d.retired && (!d.shelterOnly || isShelter(b)) && (!d.tierUp || k === up)).sort(([ka], [kb]) => (isShelter(b) ? (kb === up) - (ka === up) : 0));
   // The two lists (the user's request 2026-10-19): Buildings, and Defenses (BUILDINGS tab "defenses": the wall's tiers,
   // wire, trenches, pits, sandbags, towers…), grouped by the size of base each opens at.
   const cx = ui.baseView.cx === "defenses" ? "defenses" : "buildings";

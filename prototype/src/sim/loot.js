@@ -24,6 +24,7 @@ import { BOX_TAGS } from "./data-boxes.js"; // lockable boxes
 import { rollBoxFind, rollAreaBox } from "./boxes.js"; // their own dice, last of all
 import { KIT_TAGS } from "./data-kit.js"; // carry kit: magazines, rigs, plates (wave 2)
 import { CART_TAGS } from "./data-carts.js"; // a wheelbarrow and a hand cart (carts.js)
+import { BED_TAGS } from "./data-beds.js"; // beds as furniture (beds.js)
 import { rollSiteKit, rollAreaKit, kitWares } from "./carrykit.js"; // their own tables and dice, after the attachments
 import { rollPartFind, rollAreaPart, partWares } from "./partfinds.js"; // the parts catalogue (2026-10-10): by tags and rarity, its own dice, last
 import { PART_INFO } from "./data-gunmods.js"; // the catalogue's parts: where each is kept
@@ -175,6 +176,7 @@ Object.assign(ITEM_TAGS, BLADE_TAGS); // knives and swords (data-blades.js)
 Object.assign(ITEM_TAGS, SURV_TAGS); // survival gear (data-survival.js)
 Object.assign(ITEM_TAGS, BOX_TAGS); // lockable boxes (data-boxes.js)
 Object.assign(ITEM_TAGS, CART_TAGS); // carts (data-carts.js)
+Object.assign(ITEM_TAGS, BED_TAGS); // beds as furniture (data-beds.js)
 
 // ---------- small finds per site type (the hour-by-hour search) ----------
 // p = chance per search hour at full loot (× the approach's pace, Treasure Hunter ×2); items = weights.

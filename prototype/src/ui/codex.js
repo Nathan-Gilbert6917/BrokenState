@@ -254,7 +254,7 @@ function supplyEntries() {
   }));
 }
 function buildingEntries() {
-  return Object.entries(BUILDINGS).filter(([, b]) => !b.hidden).map(([k, b]) => {
+  return Object.entries(BUILDINGS).filter(([, b]) => !b.hidden && !b.furniture && !b.retired).map(([k, b]) => { // beds as furniture are items (their own entries); the retired makeshift cots
     const stats = [["Costs", Object.entries(b.cost).map(([s, n]) => `${n} ${(SUPPLIES[s] || { name: s }).name.toLowerCase()}`).join(", ")], ["Takes", `${b.hours} hours of building`], ["At most", `${b.max} a base`]];
     if (b.plot) stats.push(["Stands on", `a ${PLOT_NAMES[b.plot].toLowerCase()}`]);
     if (b.req) stats.push(["Needs", Object.entries(b.req).map(([s, n]) => `a ${SKILL_NAMES[s] || s} ${n}+ survivor there`).join(", ")]);

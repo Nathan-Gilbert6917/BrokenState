@@ -152,6 +152,7 @@ import { BUILDINGS, CAMP as CAMP_BASE } from "./buildings.js"; // storage: your 
 import { storageOf } from "./basestorage.js"; // storage: a base's room and what lies outside (call-time only)
 import { STORE_WISH } from "./autopilot.js"; // storage: your governor's ladder (call-time only)
 import { homesOf, stockTonight, worksBuildings } from "./groupbases.js"; // storage: their bases as base objects (call-time only)
+import { hallDef, hallWork, groupBedsDaily, furnSleepers } from "./beds.js"; // beds as furniture: their hall, the furniture they craft and its sleepers (call-time only)
 
 /** @typedef {{ water?: number, farms?: number, beds?: number, walls?: number, bench?: number, store?: number, sickbay?: number, pens?: number, camp?: number, still?: number, power?: number, powerTier?: number, freezer?: number, sealer?: number, kitchen?: number, shop?: number, radio?: number, garage?: number, reload?: number, gate?: number, storebox?: number, crates?: number, shed?: number, warehouse?: number, mill?: number, grinder?: number, mach?: Object<string, { wear: number, spares: number, broken: boolean, on?: boolean, noSpares?: boolean }> }} Works */
 
@@ -190,6 +191,8 @@ export const GROUP_WORKS = {
     // scaled as the rest; their wear and repairs are cooking.js groupFitWear (your FIXTURES grainmill / meatgrinder).
     mill: { name: "a grain mill", cost: { scrap: 2, parts: 1 }, work: 1 },
     grinder: { name: "a meat grinder", cost: { scrap: 2, parts: 1 }, work: 1 },
+    // Beds as furniture (beds.js hallWork): your Lodge, the general building their furniture is set in.
+    get hall() { return hallDef(); },
   },
   // ai-locks: your build rules for those works (buildings.js req and blueprints.js LOCKED), read by workLock. mech: the
   // group's mechanic (groupSkill) at your Mechanics minimum; bp: the manual they must have studied; bench: a workshop
@@ -264,6 +267,7 @@ export function worksAt(f, tile) {
 const n = (w, k) => (w && w[k]) || 0;
 const mainOf = (f) => f.bases[0];
 // The people living at a base: the main base twice a share (conquest.js peopleAt's weights).
+export const groupPeopleAt = (f, tile) => peopleAt(f, tile); // beds.js: the people a base's beds are for
 function peopleAt(f, tile) {
   const i = f.bases.indexOf(tile);
   if (i < 0) return 0;
@@ -296,9 +300,10 @@ export const isCamp = (f, tile) => !!(f && f.works && f.works[tile] && f.works[t
 // A group's new base founded from nothing starts as a camp (factions.js expansion; this world's groups build).
 export function pitchCamp(state, f, tile) { if (groupsBuild(state, f)) worksAt(f, tile).camp = 1; }
 
-// Summed over the group's bases: how many people its water, fields and quarters serve.
+// Summed over the group's bases: how many people its water, fields and quarters serve (beds: their furniture's
+// sleepers too, beds.js furnSleepers).
 function served(f, k, state = null) {
-  return f.bases.reduce((a, t) => a + n(f.works && f.works[t], k) * W.SERVES[k], 0) + (k === "water" && state ? groupFieldWells(state, f) * W.SERVES.water : 0); // fieldworks.js: their field wells
+  return f.bases.reduce((a, t) => a + n(f.works && f.works[t], k) * W.SERVES[k] + (k === "beds" ? furnSleepers(f.works && f.works[t]) : 0), 0) + (k === "water" && state ? groupFieldWells(state, f) * W.SERVES.water : 0); // fieldworks.js: their field wells
 }
 // 0–1: water and fields for everyone.
 export function provisioned(state, f) {
@@ -451,7 +456,7 @@ export function nextWork(state, f) {
     const goal = wallGoal(f, tile);
     if (n(w, "water") < wanted(f, tile, "water", state)) return { tile, type: "water", why: summerThirst(state, true) > 1 && n(w, "water") >= wanted(f, tile, "water") ? "water for the summer" : "water" };
     if (foodShort && n(w, "farms") < wanted(f, tile, "farms")) return { tile, type: "farms", why: "food is short" };
-    if (n(w, "beds") < wanted(f, tile, "beds")) return { tile, type: "beds", why: "people sleep rough" };
+    if (n(w, "beds") * W.SERVES.beds + furnSleepers(w) < peopleAt(f, tile)) return { tile, type: "beds", why: "people sleep rough" }; // (n < wanted, with the furniture's sleepers: beds.js)
     if (tile === mainOf(f)) { const jail = jailWork(state, f); if (jail) return jail; }
     if (tile === mainOf(f)) { const sb = sickbayWork(state, f, false); if (sb) return sb; }
     if (n(w, "walls") < goal && threatened(state, f, tile)) return { tile, type: "walls", why: "threatened" };
@@ -484,7 +489,7 @@ export function nextWork(state, f) {
   // Manual; it "needs walls to matter").
   const main = mainOf(f), mw = worksAt(f, main);
   if (!n(mw, "gate") && n(mw, "walls") >= wallGoal(f, main) && !workLock(state, f, "gate")) return { tile: main, type: "gate", why: "a reinforced gate" };
-  return null;
+  return hallWork(state, f, main); // beds.js: last of all, a Lodge at the main base to set their furniture in (or null)
 }
 
 // ---------- the works your rules ask for (ai-locks 2026-10-11, the user's rule: "AI groups need to have the same
@@ -763,6 +768,7 @@ export function groupWorksDaily(state, f) {
   if (!groupsBuild(state, f)) return;
   groupTechDaily(state, f); // machines-2: their manuals, bought and studied
   groupPartsDaily(state, f); // machines-2: parts from their workshop before the day's machines and builds
+  groupBedsDaily(state, f); // beds.js: a piece of furniture crafted and set in their hall
   // A job at a base they no longer hold is dropped (the materials are lost with the base).
   if (f.job && !f.bases.includes(f.job.tile)) f.job = null;
   if (!f.job) {
