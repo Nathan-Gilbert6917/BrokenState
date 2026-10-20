@@ -44,6 +44,7 @@ import { baseCooks, cookEggs } from "./worm.js";
 import { cookBills, poisonRoll, COOK_RECIPES } from "./cooking.js"; // wave 2 cooking: bills at the stations, food poisoning from the day's meals
 import { FOODS, DAY_KCAL, foodIn, foodSplit, syncLots, lotsOf, takeFood, addFood, ageLots, unitsOf, qtyOf, foodText, eggFood } from "./foods.js";
 import { foodAte } from "./foodlog.js"; // the base's food ledger (the Food tab): what was eaten, by the item
+import { tentFoodDays } from "./tents.js"; // the tents pitched at a base keep food dry (call-time only)
 
 export const STORE = { hubCellar: 200, pantry: 40, rootCellar: 200, storehouse: 150, coldStore: 150, crates: 30, freezer: 300 };
 // Shelf used a day by where the food sits (× the day's weather, storeFactor).
@@ -88,6 +89,7 @@ export function storeSpaces(base) {
   if (base.type !== "hub") out.push({ key: "pantry", name: "Pantry", kind: "dry", cap: STORE.pantry });
   if (count(base, "storehouse")) out.push({ key: "storehouse", name: "Storehouse", kind: "dry", cap: count(base, "storehouse") * STORE.storehouse });
   if (count(base, "crates")) out.push({ key: "crates", name: "Storage crates", kind: "dry", cap: count(base, "crates") * STORE.crates });
+  if (tentFoodDays(base) > 0) out.push({ key: "tents", name: "Tents", kind: "dry", cap: tentFoodDays(base) }); // tents.js: the pitched tents' storage, a day of food a kilo
   // The cold store is an ice house (machines-2: never powered): good in winter, poor in summer.
   if (count(base, "coldstore")) out.push({ key: "coldstore", name: "Cold store", kind: "cold", cap: count(base, "coldstore") * STORE.coldStore });
   // The walk-in freezers (freezer-parts: buildings.js freezer, power.js base.freezerOn / base.freezersOn): every one

@@ -114,8 +114,8 @@ export const packSize = (item) => (item && GEAR[item.key] && GEAR[item.key].slot
 export const carryOf = (item) => (item && GEAR[item.key] && GEAR[item.key].carry) || 0;
 export const isBulky = (key) => !!(GEAR[key] && GEAR[key].bulky);
 // A container that can be carried in the arms (EQUIP_SLOTS carry): a pack, a rig or a pouched vest, a gun case, a fire
-// safe (twoHands).
-export const isCarryable = (item) => { const d = item && GEAR[item.key]; return !!(d && (d.slot === "backpack" || d.slot === "rig" || d.slots || d.pouches || d.gunCase || d.twoHands)); };
+// safe (twoHands), a tent bag (arms: data-tents.js).
+export const isCarryable = (item) => { const d = item && GEAR[item.key]; return !!(d && (d.slot === "backpack" || d.slot === "rig" || d.slots || d.pouches || d.gunCase || d.twoHands || d.arms)); };
 // Carried in both arms only (GEAR twoHands: the fire safe, the rifle case; the user's request 2026-10-19, "small safes
 // (Carried only slot two hands)"): bulky (no pocket, pack slot or rig pouch), and it fills both hands (carry.js handsCount).
 export const isTwoHands = (item) => !!(item && GEAR[item.key] && GEAR[item.key].twoHands);
@@ -403,7 +403,7 @@ export function fitReason(item, slot, h = null, kind = null) {
   if (slot === "pouch") return kind ? pouchReason(item, kind) : "No pouch there.";
   if (slot === "insert") return isInsert(item) ? "" : `Only a plate goes in a plate carrier's plate pocket.`;
   if (slot === "bag") return packSize(item) ? "A pack does not fit inside a pack." : d.bulky ? `The ${item.name} is too big for a pack.` : "";
-  if (slot === "carry") return isCarryable(item) ? "" : `Only a bag, a rig or a case is carried in the arms (not the ${item.name}).`;
+  if (slot === "carry") return isCarryable(item) ? "" : `Only a bag, a rig, a case or a tent bag is carried in the arms (not the ${item.name}).`;
   // A supply in the hand (supitems.js: a bottle of water, a can of fuel, meds, a box of rounds), unless it is bulky.
   if (slot === "tool" && d.slot !== "tool" && (d.supKey || (d.count && SUPPLIES[item.key]))) return d.bulky || d.hand === false ? `The ${item.name} is too big to hold in one hand.` : "";
   if (EQUIP_SLOTS.includes(slot)) {

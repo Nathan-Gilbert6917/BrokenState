@@ -27,6 +27,8 @@
 //      (data-boxes.js) each, cash box 3, fire safe 15, toolbox 10, equipment case 12, rifle case 8, pistol case 3. Its
 //      own weight is not counted (it is the room); what is still inside it is, and fills it first. A sealed box is an
 //      item like any other until it is opened.
+//   5. the tents pitched there (tents.js, data-tents.js TENT_TYPES storeKg: a one-person tent 15, a two-person 30, a
+//      four-person 60, a makeshift one nothing): kept out of the weather, not assignable.
 //
 // THE FILL (deterministic, pure): every good is ranked by its worth a kg (supplies: data.js supValue / supWeight;
 // items: valuation.js itemValue / itemLoad), the densest first (supplies before items on a tie, then by key or armory
@@ -58,6 +60,7 @@ import { weatherOnDay } from "./weather.js"; // call-time only
 import { rollsWear, isPaper } from "./itemcond.js"; // call-time only
 import { itemDur, itemDurMax } from "./crafting.js"; // call-time only
 import { keyWord } from "./water.js"; // call-time only
+import { tentsOf, TENT_TYPES } from "./tents.js"; // call-time only: the tents pitched at a base keep their storage out of the weather
 export { STORE_KG } from "./buildings.js";
 export { BOX_STORE_KG } from "./data-boxes.js";
 
@@ -122,11 +125,11 @@ const ASSIGNABLE = new Set(["core", "building", "vehicle"]);
  * With nothing assigned this is THE FILL exactly.
  * @param {any} state @param {any} base
  * @returns {{ cap: number, used: number, inside: number, outsideKg: number, free: number,
- *   containers: { key: string, name: string, cap: number, kind: "core" | "building" | "vehicle" | "box", type: string, sup: Record<string, number>, gear: number[], kg: number }[],
+ *   containers: { key: string, name: string, cap: number, kind: "core" | "building" | "vehicle" | "box" | "tent", type: string, sup: Record<string, number>, gear: number[], kg: number }[],
  *   outside: { sup: Record<string, number>, gear: number[] }, loose: { sup: Record<string, number>, gear: number[], kg: number } }}
  */
 export function storageOf(state, base) {
-  /** @type {{ key: string, name: string, cap: number, kind: "core" | "building" | "vehicle" | "box", type: string, sup: Record<string, number>, gear: number[], kg: number }[]} */
+  /** @type {{ key: string, name: string, cap: number, kind: "core" | "building" | "vehicle" | "box" | "tent", type: string, sup: Record<string, number>, gear: number[], kg: number }[]} */
   const containers = [];
   const out = { cap: 0, used: 0, inside: 0, outsideKg: 0, free: 0, containers, outside: { sup: /** @type {Record<string, number>} */ ({}), gear: /** @type {number[]} */ ([]) }, loose: { sup: /** @type {Record<string, number>} */ ({}), gear: /** @type {number[]} */ ([]), kg: 0 } };
   if (!base) return out;
@@ -137,6 +140,9 @@ export function storageOf(state, base) {
   if (state && !base.group) for (const v of carsAtBase(state, base.id)) { const kg = vehicleStoreKg(v); if (kg > 0) containers.push(box(`v:${v.id}`, v.name, kg, "vehicle", v.type)); }
   const armory = base.armory || [];
   armory.forEach((it, i) => { if (it && isOpenBox(it) && boxKg(it) > 0) containers.push(box(`a:${i}`, it.name, boxKg(it), "box", it.key)); });
+  // 5. the tents pitched there (tents.js base.tents; the seam pitchTentAtBase): their storage out of the weather. Not
+  //    assignable (the goods put away nowhere fill them).
+  for (const t of tentsOf(base)) { const T = TENT_TYPES[t.type]; if (T && T.storeKg > 0) containers.push(box(`t:${t.id}`, T.name, T.storeKg, "tent", t.type)); }
   out.cap = containers.reduce((a, c) => a + c.cap, 0);
 
   // The assigned goods into their containers (THE ASSIGNMENTS).

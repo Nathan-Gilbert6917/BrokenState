@@ -26,6 +26,7 @@ import { dropOff, loadFromBase, transferProblem } from "../src/sim/teaminv.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
 import { GEAR } from "../src/sim/data.js";
 import { renderModal, renderRight } from "../src/ui/ui.js";
+import { TENTS, tentBeds } from "../src/sim/tents.js"; // the hardcore start's tent bags: a quicker camp, beds under cover
 const plain = (h) => String(h).replace(/<[^>]+>/g, ""); // the text without markup (cost chips split name and count into spans)
 
 const SEED = Number(process.argv[2] || 42);
@@ -45,6 +46,7 @@ st.noWanderers = true;
 const p = roadTeam(st);
 const tile = partyTile(p);
 const people = partyMembers(st, p).map((s) => s.id);
+const partyCount = people.length; // one one-person tent each (tents.js TENTS.HARDCORE), pitched at the camp
 const car = st.vehicles.find((v) => v.loc.kind === "party" && v.loc.partyId === p.id);
 p.cargo.gear.push(item("crowbar"));
 Object.assign(p.cargo.supplies, { scrap: 9, water: 30 }); setFood(p.cargo, 30);
@@ -52,7 +54,7 @@ const opt = campOption(st, p);
 check(opt && opt.label === "Set up camp" && !opt.disabled && orderOptions(st, p).some((o) => o.mission === "camp"), "Set up camp is on the team's orders (and the right-click menu, the team panel)");
 st.cards.length = 0;
 giveOrder(st, p, "camp");
-check(p.phase === "task" && p.task.type === "pitch" && p.task.hours === CAMP.setupHours, `an hour's work first (${p.task && p.task.hours}h), nothing carried needed`);
+check(p.phase === "task" && p.task.type === "pitch" && p.task.hours === TENTS.PITCH_FULL, `the work first, nothing carried needed: half the hour with the hardcore start's tent bags (tents.js; ${p.task && p.task.hours}h)`);
 run(st, 2, () => st.bases.length > 0);
 const camp = st.bases[0];
 check(!!camp && isCamp(camp) && camp.tile === tile && tierName(camp) === "Camp" && camp.type === "hub", `the camp stands: a base, your hub while it is your only one (${camp && tierName(camp)})`);
@@ -61,7 +63,7 @@ check(!st.parties.includes(p) && people.every((id) => atBase(st, camp.id).some((
 check(car && car.loc.kind === "base" && car.loc.baseId === camp.id, "its vehicle is parked at the camp");
 check(camp.armory.some((it) => it.key === "crowbar") && camp.stock.scrap >= 9 && food(camp) >= 30, "what it carried is in the camp's stores and armory");
 check(!tierUpJob(camp), "a plain camp: nothing building until you queue the step up");
-check(baseBeds(camp) === CAMP.beds && farmSlots(camp) === 1 && plotCap(camp, "building") === 0 && plotCap(camp, "utility") === 2, "barebones: bedrolls, one crop plot, no building plot, two utility plot");
+check(baseBeds(camp) === CAMP.beds + tentBeds(camp) && tentBeds(camp) === partyCount && farmSlots(camp) === 1 && plotCap(camp, "building") === 0 && plotCap(camp, "utility") === 2, "barebones: bedrolls, one crop plot, no building plot, two utility plot");
 let html = modal(st, { id: camp.id, tab: "camp" });
 check(/class="tabs"/.test(html) && /data-tab="camp"/.test(html) && /data-tab="construction"/.test(html) && !/data-tab="farming"/.test(html) && !/data-tab="defence"/.test(html), "the base window: a Camp tab and only the tabs a camp uses");
 check(/Strike camp/.test(html) && /Form a team/.test(html) && /People here/.test(html) && /Stores/.test(html) && /Vehicles \(1\)/.test(html), "the Camp tab: people, form a team, stores, vehicles, Strike camp");

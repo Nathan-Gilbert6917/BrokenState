@@ -10,6 +10,7 @@ import { supItemGear } from "./data-supitems.js"; // every supply's item form, f
 import { MOD_GEAR } from "./data-gunmods.js";
 import { KIT_GEAR } from "./data-kit.js";
 import { CART_GEAR } from "./data-carts.js"; // a wheelbarrow and a hand cart, pushed in the arms (carts.js)
+import { TENT_GEAR } from "./data-tents.js"; // tent bags: one-, two- and four-person tents (tents.js)
 import { HELMET_GEAR } from "./data-helmets.js"; // helmets, visors, helmet mounts, ear protection (helmets.js, hearing.js)
 import { BLADE_GEAR } from "./data-blades.js"; // knives and swords (blades.js: where they turn up)
 import { NL_GEAR } from "./data-nonlethal.js"; // tasers, cartridges, pepper spray, the stun baton (nonlethal.js)
@@ -726,6 +727,7 @@ Object.assign(GEAR, BOX_GEAR); // lockable boxes (data-boxes.js)
 for (const [k, p] of Object.entries(BOX_PATCH)) if (GEAR[k]) Object.assign(GEAR[k], p); // the gun cases are boxes too
 Object.assign(GEAR, CART_GEAR); // carts (data-carts.js, carts.js)
 Object.assign(GEAR, BED_GEAR); // beds as furniture (data-beds.js, beds.js)
+Object.assign(GEAR, TENT_GEAR); // tent bags (data-tents.js, tents.js)
 Object.assign(GEAR, supItemGear(SUPPLIES, GEAR)); // supplies as items: s_<key> (data-supitems.js; rounds keep their boxes)
 // The Melee skill (world.js MELEE_SKILL): every melee weapon goes by Melee, not Shooting (its req, the skill-gap rule).
 for (const d of Object.values(GEAR)) if (d.slot === "weapon" && d.cat === "melee" && d.skill === "shooting") d.skill = "melee";

@@ -29,6 +29,7 @@ import { LISTEN, listenProblem, listenIn } from "./radiolisten.js"; // Listen in
 import { networkById } from "./radio.js";
 import { teamActProblem, teamActHours, teamActDone } from "./fieldworks.js"; // field works: load, unload, wreck, take
 import { capTask, holdName, COLLECT } from "./carry.js"; // a quantity to collect (o.qty: the team panel asks)
+import { roadTentsHour } from "./tents.js"; // the tents on a night's rest on the road (call-time only)
 
 export const REPAIR_HOURS = 3;   // a roadside repair
 export const FETCH_WATER_HOURS = 2; // Fetch water: filling containers at a river or lake
@@ -167,7 +168,7 @@ export function queueEstimate(state, p) {
     else if (o.type === "treat") hours = FIELD_TREAT_HOURS;
     else if (o.type === "mission" && o.mission === "survey") hours = SURVEY_HOURS;
     else if (o.type === "fullsurvey" || (o.type === "mission" && o.mission === "fullsurvey")) hours = LOOK.hours; // the POI survey (survey.js)
-    else if (o.type === "mission" && pitchHoursFor(state, o.mission)) hours = pitchHoursFor(state, o.mission); // pitching a camp (parties.js)
+    else if (o.type === "mission" && pitchHoursFor(state, o.mission)) hours = pitchHoursFor(state, o.mission, p); // pitching a camp (parties.js; quicker with tent bags: tents.js)
     else if (o.type === "sweep" || (o.type === "mission" && o.mission === "sweep")) {
       const sw = sweepEstimate(state, { ...sweepOpts(o.type === "sweep" ? o : p.sweepPlan || {}), center: tile, mode: vehicle, stance: p.stance, fuelMult: paceOpts(p).fuelMult });
       hours = sw.hours;
@@ -546,7 +547,7 @@ export function tasksDue(state, frac) {
   let any = false;
   for (const p of [...state.parties]) {
     const t = p.phase === "task" ? p.task : null;
-    if (!t || !t.owed || t.hours == null || t.afloat || p.owner !== "player" || !state.parties.includes(p)) continue;
+    if (!t || (!t.owed && !(t.hours < 1)) || t.hours == null || t.afloat || p.owner !== "player" || !state.parties.includes(p)) continue; // a job under an hour (tents.js: a camp pitched with tent bags) ends at its minute too
     if (t.done - t.owed + frac < t.hours - 1e-9) continue;
     finishTask(state, p);
     any = true;
@@ -613,6 +614,7 @@ function campHour(state, p) {
     s.health = Math.min(100, s.health + campHealPerHour(state, p, s));
     s.mood = Math.min(100, (s.mood || 0) + mood);
   }
+  roadTentsHour(state, p); // tents.js: the night's rest in the team's tents; whoever they do not sleep sleeps rough
 }
 
 // ---------- roadside repairs ----------

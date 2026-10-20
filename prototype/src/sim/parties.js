@@ -79,6 +79,7 @@ import { packRounds, addRecord, drawTeamShots, sortFind, suppliesText, findRound
 import { packLauncherRounds } from "./launchers.js"; // the rounds for the launchers the crew carries (section 13)
 import { loadoutRounds } from "./gunrounds.js"; // the rounds their guns and spare magazines leave loaded with (physical rounds)
 import { packMags, packShells } from "./carrykit.js"; // magazines as items (section 15): the spares go along; each gun's rounds at hand
+import { campPitchHours } from "./tents.js"; // the team's tent bags pitch a camp quicker (call-time only)
 import { SHELLS, usesInternal } from "./mags.js"; // a shotgun's shells at hand are its tube's load too
 import { noteTripHome } from "./trips.js"; // order templates and repeat trips
 import { prisonersHome } from "./prisoners.js";
@@ -1900,9 +1901,10 @@ export function pitchDone(state, p) {
   p.phase = "out"; // its mission (outpost, establish) is still on it
   return arrive(state, p) || "";
 }
-// Hours of pitching an order takes on arrival (the planner's and the queue's estimates).
-/** @param {State} state @param {string} mission */
-export const pitchHoursFor = (state, mission) => (mission === "outpost" || mission === "establish" || mission === "camp" ? CAMP.setupHours : 0);
+// Hours of pitching an order takes on arrival (the planner's and the queue's estimates): with the team (p), what its
+// tent bags make of it (tents.js campPitchHours).
+/** @param {State} state @param {string} mission @param {Party | null} [p] */
+export const pitchHoursFor = (state, mission, p = null) => (mission === "outpost" || mission === "establish" || mission === "camp" ? (p ? campPitchHours(state, p) : CAMP.setupHours) : 0);
 
 // ---------- arriving and acting ----------
 /** @param {State} state @param {Party} p */

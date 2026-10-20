@@ -37,6 +37,7 @@ import { rosterModal, openRoster } from "../src/ui/roster.js";
 import { settingsModal, openSettings } from "../src/ui/settings.js";
 import { newRunScreen } from "../src/ui/newgame.js";
 import { loadOptions } from "../src/ui/saves.js";
+import { isTentBag, TENTS } from "../src/sim/tents.js"; // the hardcore start's tent bags
 
 // Setting up a camp takes an hour (staging.js STAGING.PITCH): skipped here, the camp (a base) stands at once.
 const establishNow = (st, p) => { p.pitched = true; return giveOrder(st, p, "establish"); };
@@ -204,7 +205,9 @@ section("Who they were: three backgrounds, no two alike; one car between them wi
     const cs = asGeneric(Object.fromEntries(Object.entries(p.cargo.supplies).filter(([k]) => !FOODS[k]))); // ammo.js: the rounds in the back, counted as the old "ammo"; food by type apart
     const fd = foodIn(p.cargo.supplies), flo = ((TR.food || [0])[0] || 0) + ((TR.preserved || [0])[0] || 0), fhi = ((TR.food || [0, 0])[1] || 0) + ((TR.preserved || [0, 0])[1] || 0);
     check(Object.entries(cs).every(([k, q]) => TR[k] && q >= TR[k][0] && q <= TR[k][1]) && Object.keys(TR).filter((k) => SUPPLIES[k] && TR[k][0] > 0).every((k) => cs[k] >= TR[k][0]) && fd >= flo - 1 && fd <= fhi + 1, `seed ${st.seed}: the supplies in the back are the owner's (${JSON.stringify(cs)}, ${fd.toFixed(1)} days of food)`);
-    check(p.cargo.gear.every((g) => TR.gear && TR.gear[g.key]) && p.cargo.gear.length >= TR.n[0] && p.cargo.gear.length <= TR.n[1], `seed ${st.seed}: the things in the back are the owner's (${p.cargo.gear.map((g) => g.key).join(", ")})`);
+    const back = p.cargo.gear.filter((g) => !isTentBag(g)); // tents.js: the tent bags each one got (TENTS.HARDCORE) ride in the back too
+    check(back.every((g) => TR.gear && TR.gear[g.key]) && back.length >= TR.n[0] && back.length <= TR.n[1], `seed ${st.seed}: the things in the back are the owner's (${back.map((g) => g.key).join(", ")})`);
+    check(p.cargo.gear.filter(isTentBag).length === m.length * TENTS.HARDCORE, `seed ${st.seed}: and a one-person tent bag for each of them`);
     const line = hc0.grabbed[hc0.grabbed.length - 1];
     check(new RegExp(`^${owner.name.split(" ")[0]} got everyone into their ${v.name.toLowerCase()}`).test(line) && /tank \d+% full/.test(line) && /in the back/.test(line) && st.cards[0].text.includes(line), `seed ${st.seed}: the opening blurb says whose car and what is in the back`);
     check(st.log.some((l) => /set off in .*: tank \d+% full/.test(l.text) && Math.floor(l.hour / 24) === 0), `seed ${st.seed}: day 1's log says they set off in it`);
