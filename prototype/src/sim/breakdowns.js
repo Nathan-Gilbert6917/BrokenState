@@ -80,6 +80,7 @@ import { vehiclesAtBase, shelteredAt, frostWear } from "./vehicles.js";
 import { isManaged, prio } from "./work.js";
 import { prisonLabour } from "./prisoners.js"; // prisoners-tab: prisoners set to Clean and mend (breakdownsDaily upkeep)
 import { cfgOf } from "./worldcfg.js"; // the run's dials: Failures
+import { mendTents } from "./softcover.js"; // a camp's tents slashed or burned in a fight, mended a day at a time
 
 export const WELL_WATER = 6; // the hub pump's share (hubevents.js WELL_DOWN.water)
 export const SCRAP_PER_PART = 4; // a repair short of scrap can use a part instead of this much
@@ -693,6 +694,7 @@ export function breakdownsDaily(state) {
     // Parked vehicles in the frost; the garage keeps its cars out of it (vehicles.js frostWear).
     if (wx && wx.lo <= -3) { const inside = shelteredAt(state, base); for (const v of vehiclesAtBase(state, base.id)) v.condition = Math.max(1, v.condition - frostWear(state, base, v, wx.key === "blizzard" ? WEAR.vehicleBlizzard : WEAR.vehicleFrost, inside)); }
   }
+  mendTents(state); // softcover.js: the campers patch their tents (TENT_FIGHT.MEND a day)
 }
 
 // A machine (see the header): one that needs machine parts to repair or keeps spares.

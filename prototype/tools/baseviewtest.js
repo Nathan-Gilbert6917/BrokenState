@@ -158,7 +158,7 @@ section("The scatter: the land's, fixed by the tile");
   // Nothing walled off by the scatter: every open cell the map's edge reaches with the scatter cleared, it reaches as it is.
   const flood = (thru) => { const seen = new Uint8Array(r.w * r.h), q = []; const can = (i) => CELL[r.cells[i].k].walk || (thru && SCAT.has(r.cells[i].k)); for (let x = 0; x < r.w; x++) for (const y of [0, r.h - 1]) { const i = y * r.w + x; if (can(i) && !seen[i]) { seen[i] = 1; q.push(i); } } for (let y = 0; y < r.h; y++) for (const x of [0, r.w - 1]) { const i = y * r.w + x; if (can(i) && !seen[i]) { seen[i] = 1; q.push(i); } } for (let k = 0; k < q.length; k++) { const i = q[k], x = i % r.w, y = (i - x) / r.w; for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = x + dx, ny = y + dy, j = ny * r.w + nx; if (nx >= 0 && ny >= 0 && nx < r.w && ny < r.h && !seen[j] && can(j)) { seen[j] = 1; q.push(j); } } } return seen; };
   const fa = flood(false), fb = flood(true);
-  let shut = 0; for (let i = 0; i < r.w * r.h; i++) if (fb[i] && !fa[i] && CELL[r.cells[i].k].walk) shut++;
+  let shut = 0; for (let i = 0; i < r.w * r.h; i++) if (fb[i] && !fa[i] && CELL[r.cells[i].k].walk && !SCAT.has(r.cells[i].k)) shut++; // a bush is walked into now (softcover.js) but is scatter, not open ground
   check(!shut, `the scatter shuts no open ground off from the map's edge (${shut} cells)`);
   // Nothing on top of what stands or in its buffer: no scatter next to a door.
   const doorNear = Fr.doors.filter(([x, y]) => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => SCAT.has((r.cells[(y + dy) * r.w + x + dx] || {}).k)));
