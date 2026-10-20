@@ -132,6 +132,7 @@
 //   room is what raiders find their goods inside or lying out on the piles (basemap.js, raidloot.js).
 // - Old saves (no state.groupWorks) and the hardcore military (an army base built before the fall) count as built
 //   up: none of this changes them. tools/barestarttest.js.
+import { groupHaulCrew } from "./hauling.js"; // AI parity: their haulers' crew-days (call-time only)
 import { foodIn, takeFood } from "./foods.js"; // days of food (every kind)
 import { groupFetchedWater, groupWoodLand } from "./grouptrips.js"; // groupWoodLand: the wood land their bases hold (woodwork: they cut a build's wood) // water carried in from the water a base holds (as your Fetch water)
 import { day, skill } from "./world.js";
@@ -783,7 +784,8 @@ export function groupWorksDaily(state, f) {
   // { n, day }, spent on it the next day with that day's crew: they were lost); with nothing to build they stay on the land, where
   // the fields and the hunting count every working head anyway (factions.js), and nothing is carried.
   // f.crewDay = { day, crew (today's), carried (from yesterday), built, carry (to the next job), land }.
-  const today = (Math.max(1, workingPeople(f) / W.CREW) + (f.prisonWork || 0) / W.CREW) * MEAL_WORK_SHARE; // their prisoners work too (groupjails.js); the ill rest (groupcare.js GROUP_ILL); meals.js: the meal hours off
+  const crew0 = (Math.max(1, workingPeople(f) / W.CREW) + (f.prisonWork || 0) / W.CREW) * MEAL_WORK_SHARE; // their prisoners work too (groupjails.js); the ill rest (groupcare.js GROUP_ILL); meals.js: the meal hours off
+  const today = crew0 - groupHaulCrew(state, f, crew0); // hauling.js: yesterday's haulers' crew-days (at most half)
   const carried = f.crewCarry && f.crewCarry.day === day(state) - 1 ? f.crewCarry.n : 0; // yesterday's spare, for today's job
   delete f.crewCarry;
   const cd = f.crewDay = { day: day(state), crew: today, carried, built: 0, carry: 0, land: 0 };

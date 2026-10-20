@@ -64,10 +64,11 @@ import { fetchWaterWhy, fetchWaterDay } from "./economy.js"; // Fetch water
 
 import { MEALS, MEAL_WORK_SHARE, mealOf, lunchHour } from "./meals.js";
 import { hasKitchen, kitchenService, eatsAtKitchen, cookActivity, cookPlusOf, cookShiftRole, kitchenCanLight } from "./kitchen.js"; // the Kitchen's cooks and its hot meals
+import { haulActivity } from "./hauling.js"; // hauling: the Haul job's line (call-time only)
 import { helpingAs, helpLine } from "./noidle.js"; // noidle: a Manual person whose job has no work this hour helps elsewhere (call-time only)
 
 // Icons by job, and by kind for everything that is not a job.
-export const JOB_ICONS = { water: "🪣", wood: "🪓", farm: "🌱", forage: "🍄", hunt: "🏹", fish: "🎣", build: "🔨", craft: "🧰", operate: "⚙️", medic: "✚", trainee: "✚", teach: "🎓", read: "📚", scavenge: "🔍", guard: "🛡️", rest: "☕", cook: "🍳" };
+export const JOB_ICONS = { water: "🪣", wood: "🪓", farm: "🌱", forage: "🍄", hunt: "🏹", fish: "🎣", build: "🔨", craft: "🧰", operate: "⚙️", medic: "✚", trainee: "✚", teach: "🎓", read: "📚", scavenge: "🔍", guard: "🛡️", rest: "☕", cook: "🍳", haul: "📦" };
 export const KIND_ICONS = { sleep: "💤", guard: "🛡️", hurt: "🩹", free: "☕", idle: "⏸", stalled: "⚠️", off: "🕓", away: "🚶", captive: "⛓️", eat: "🍲" };
 // Mealtimes (meals.js: the hour each starts; an hour each). Hunters and fishers are out on the dawn trip (06–10), so they eat after.
 export { MEALS };
@@ -146,6 +147,7 @@ function jobActivity(state, base, s, job, h, opts = {}) {
   const name = ROLES[job] ? ROLES[job].name : job;
   if (weak && ["wood", "forage", "hunt", "fish", "water"].includes(job)) return act("stalled", `${name}: too weak to work`, "Ill, hurt or in very low spirits: the day's work is skipped until they are better.", job);
   if (TRIP_JOBS[job]) return tripJobActivity(state, base, s, job, h, opts);
+  if (job === "haul") return haulActivity(state, base, s, h, opts); // hauling.js: a route trip, local hauling, or nothing
   return fixedJobActivity(state, base, s, job, h);
 }
 // The outdoor jobs (jobtrips.js): can it be done here, on hold while the base is attacked, out on a trip (where and

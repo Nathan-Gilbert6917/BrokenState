@@ -12,6 +12,7 @@
 // It only uses the same calls as the UI (canBuild / queueBuild, queueCraft, treatAtBase, launchExpedition,
 // startOrder, saveSupplyRun ...), plays by what the player knows of the map (knowledge snapshots, markers,
 // known groups), and never draws from state.rng. Turning it off hands everything back as it is.
+import { HAUL, govHauling, haulersWanted, haulScore, onHaulTrip } from "./hauling.js"; // hauling: haul orders and haulers (call-time only)
 import { isChopJob } from "./woodwork.js"; // noidle: the felling in the queue
 import { fellCrew, fellUrgent, fellScore, fellFit, noWorkFor, planNoIdle } from "./noidle.js"; // noidle: a woodcutter on the felling, nobody in a role with no work (call-time only)
 import { FOODS, FOOD_KEYS, foodIn, foodSplit, unitsOf, qtyOf, sellPick, foodNeeds, foodUnits } from "./foods.js"; // food by type (foods.js)
@@ -330,6 +331,7 @@ export function autopilotHour(state) {
     trackHuntTrips(state); // the hunting trips' catch against what they were sent for (huntTripYield)
     for (const b of state.bases) if (b.owner == null || b.owner === "player") b.filterFill = filterFill(state, b); // crafting.js filtersInUse
     for (const b of [...state.bases]) governBase(state, b);
+    if (state.hour % HAUL.govEvery === 0) govHauling(state); // hauling.js: its standing haul orders between its bases
     if (hourOfDay(state) === PLAN_HOUR) autopilotDaily(state);
     else if (hourOfDay(state) === EMERGENCY.hour) emergencyTrips(state); // a second look in the afternoon: thirst does not wait for the morning
     for (const b of state.bases) govWatch(state, b); // the night watch's roster (before the roles: planRoles 1a)
@@ -2123,7 +2125,7 @@ export function farmCrewLimits(state, base, foodDays, heads) {
   const comfy = foodDays >= target && wp.short <= 0 && wp.end >= wp.margin * FARM_AP.winterMargin * (P && P.homeFood ? 1.5 : 1);
   return { hungry: foodDays < target || winterShort(state, base) > 0, comfy, cap: comfy ? Math.max(1, Math.ceil(heads * FARM_AP.share)) : Infinity };
 }
-export const ROLE_AREA = { water: "food", cook: "food", hunt: "food", fish: "food", forage: "food", farm: "food", wood: "production", medic: "medical", trainee: "medical", guard: "defence", operate: "production", craft: "production", build: "building", rest: "roles", scavenge: "roles", teach: "roles", read: "roles" };
+export const ROLE_AREA = { water: "food", cook: "food", hunt: "food", fish: "food", forage: "food", farm: "food", wood: "production", medic: "medical", trainee: "medical", guard: "defence", operate: "production", craft: "production", build: "building", rest: "roles", scavenge: "roles", teach: "roles", read: "roles", haul: "production" };
 
 function planRoles(state, base, areas = ALL_AREAS) {
   const people = atBase(state, base.id);
@@ -2139,6 +2141,7 @@ function planRoles(state, base, areas = ALL_AREAS) {
   // its test switch governor.priorityRoles; otherwise it sets every role, as before).
   const byPriority = (s) => (!state.autopilot || g.priorityRoles) && isManaged(state, s);
   for (const s of people) if (s.pinned || !areas[ROLE_AREA[s.role]] || byPriority(s)) give(s, s.role, s.role === "operate" ? s.station : null);
+  for (const s of [...free]) if (onHaulTrip(state, s)) give(s, "haul"); // hauling.js: out on the road with a load, a hauler till home
   const kept = new Set(want.keys()); // a Manual "Cook + second job" (kitchen.js s.cookPlus) keeps it only while kept here
   // ...and anyone the leader or the governor moved off a stalled job this morning (idlework.js leaderIdleHour), for the day.
   for (const s of [...free]) if (s.govIdle && state.hour < s.govIdle.until && !s.inBed && areas[ROLE_AREA[s.govIdle.role]]) give(s, s.govIdle.role, s.govIdle.station);
@@ -2433,6 +2436,15 @@ function planRoles(state, base, areas = ALL_AREAS) {
   // upkeep, and a big hub always has something queued: its wells broke over and over).
   const mend = areas.building ? upkeepCrew(state, base, people.length) : 0;
   if (mend) for (const s of ranked("build", (x) => skill(x, "mechanics") + (x.upkeep ? STICKY : 0), (x) => !x.inBed).slice(0, mend)) give(s, "build", null, true);
+
+  // 5c. Haulers (hauling.js haulersWanted): one for each pair of bases this base is the hauling end of (the end with
+  // more people) while a standing haul order there has goods to move, at most two; the best by health, a strong back
+  // and Scouting. Its orders are set by govHauling (autopilotHour). With nothing to move a hauler hauls locally.
+  if (areas.production) {
+    const have = [...want.values()].filter((w) => w.role === "haul").length;
+    const hw = haulersWanted(state, base) - have;
+    if (hw > 0) for (const s of ranked("haul", haulScore, (x) => !x.inBed && !x.leader && (x.health ?? 100) >= 50).slice(0, hw)) give(s, "haul");
+  }
 
   // 5b. A Medic trainee (training.js planTrainees) while the base has too few skilled medics for its hospital and food
   // for TRAINING.foodDays days: ahead of the comfortable farm crew (at the step of the teachers and readers, the farm

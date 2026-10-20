@@ -1,5 +1,6 @@
 // DOM panels and modals. Every user action goes through the action dispatcher in main.js.
 // Any element with data-tip="..." shows a hover description.
+import { haulPanel } from "./hauling.js"; // the Supply runs tab's Hauling panel (sim/hauling.js)
 import { baseFoodHtml } from "./food.js"; // food by type: the base window's Food section (the top bar's Food row: ui/needsbar.js)
 import { foodChainTab } from "./foodchain.js"; // the base window's Food tab: the food chain (sources, stores, kitchen, eating, losses)
 import { FOODS, packPick, foodText, foodIn } from "../sim/foods.js"; // food by type (foods.js)
@@ -1549,7 +1550,7 @@ const BASE_TABS = [
   ["armory", "Armory", "Stored gear and everyone's equipment at this base"],
   ["crafting", "Crafting", "Hand-made makeshift gear and supplies: craft queue, crafters and recipes (no station needed)"],
   ["vehicles", "Vehicles", "Fuel, condition, refuel and repair"],
-  ["convoys", "Supply runs", "Convoy jobs between your bases: send supplies, bring goods back, on a schedule"],
+  ["convoys", "Supply runs", "Hauling (the haulers' standing orders between your bases) and convoy jobs between your bases: send supplies, bring goods back, on a schedule"],
   ["medical", "Medical", "Infirmary or hospital, medics, beds, and treating the injured with meds"],
   ["repairs", "Repairs", "Broken buildings and equipment, repair jobs, wear and parked vehicles (breakdowns.js)"],
   ["prisoners", "Prisoners", "People taken prisoner in battle: cells, guards and food; question, ransom, trade back, win over or release them"],
@@ -2400,7 +2401,7 @@ function baseConvoys(state, b, ui) {
   if (ui.supplyForm && ui.supplyForm.originId === b.id) return supplyFormView(state, b, ui);
   const jobs = supplyRuns(state).filter((j) => j.originId === b.id || j.destId === b.id || jobParty(state, j)?.destBaseId === b.id);
   const others = state.bases.filter((x) => x.id !== b.id);
-  return `<div class="spread" style="gap:1rem;align-items:flex-start"><div class="small muted">Convoy jobs between your own bases. A run takes supplies from the base it leaves, travels the road like any team (events, fuel, vehicle wear) and can bring goods back. Outposts hold back the stock these runs need instead of shipping it to the hub.</div>
+  return `${haulPanel(state, b, ui)}<div class="spread" style="gap:1rem;align-items:flex-start;margin-top:0.6rem"><div class="small muted">Convoy jobs between your own bases. A run takes supplies from the base it leaves, travels the road like any team (events, fuel, vehicle wear) and can bring goods back. Outposts hold back the stock these runs need instead of shipping it to the hub.</div>
     <button class="primary" data-action="sr-new" data-base="${b.id}" ${others.length ? "" : "disabled"}${tip(others.length ? `Set up a convoy that leaves from ${b.name}` : "You need a second base first: found an outpost")}>New supply run</button></div>
     ${jobs.length ? jobs.map((j) => jobCard(state, j, b)).join("") : `<div class="muted small" style="margin-top:0.6rem">No supply runs from or to ${esc(b.name)} yet.</div>`}`;
 }

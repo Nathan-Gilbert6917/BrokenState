@@ -98,7 +98,7 @@ export function baseNeeds(state, base, roleOf = (s) => s.role) {
   return out.sort((a, b) => b.score - a.score);
 }
 
-export const JOB_SKILL = { water: "scouting", cook: "cooking", medic: "medicine", wood: "farming", farm: "farming", forage: "farming", hunt: "shooting", fish: "scouting", build: "mechanics", operate: "mechanics", craft: "crafting", scavenge: "scavenging" };
+export const JOB_SKILL = { water: "scouting", cook: "cooking", medic: "medicine", wood: "farming", farm: "farming", forage: "farming", hunt: "shooting", fish: "scouting", build: "mechanics", operate: "mechanics", craft: "crafting", scavenge: "scavenging", haul: "scavenging" };
 
 // One job each for these people (default: the base's idle), by the base's needs. areas: a leader's areas (only jobs
 // in an area handed over).

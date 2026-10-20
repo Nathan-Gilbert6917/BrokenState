@@ -9,6 +9,7 @@
 // route as a faint line (H.hoverSid, trips-plus #4): the way out (dashed), the spot they work, the way back with the load
 // (dotted, to where they drop it: the base, or a stockpile when sim/fieldworks takes the load there). Trouble on the
 // way (sim/tripevents.js base.tripAlerts): a "!" over them for a little while ("?" for a small thing, "+" a find).
+import { outHaulers } from "../sim/hauling.js"; // haulers on the road between your bases
 import { tripState, outWorkers } from "../sim/jobtrips.js";
 import { tripRoute, TRIP_JOBS, shoreOf } from "../sim/tripland.js";
 import { TRIP_EV } from "../sim/tripevents.js";
@@ -206,6 +207,26 @@ export function drawWorkers(ctx, state, H) {
         if (fig.members.length > 6) lines.push(`<span class="muted">and ${fig.members.length - 6} more</span>`);
         hits.push({ x: pl.x, y: pl.y, r: Math.max(6, w * 0.6), html: `<span style="color:#cfe2f7">Out from ${esc(base.name)}</span><br>${lines.join("<br>")}`, baseId: base.id, sid: lead.s.id });
       }
+    }
+    // Haulers (sim/hauling.js) on the road between your bases: a figure with a sack along the route, out with the load
+    // and home again; at the far end, standing by its gate; "!" while trouble holds them.
+    for (const x of outHaulers(state, base, H.t)) {
+      const tr = x.trip, k = x.s.id;
+      const pts = (tr.path || [base.tile, tr.tile]).map((id) => H.toPixel(id));
+      if (pts.length < 2) continue;
+      const st = x.st;
+      const u = st.phase === "out" ? 0 : st.phase === "work" ? Math.max(0, Math.min(1, st.f)) : st.turned ? (st.reach ?? 0.5) * (1 - st.f) : 1 - Math.max(0, Math.min(1, st.f));
+      const a = along(pts, u);
+      const back = st.phase === "back";
+      const yaw = back ? (a.yaw + 180) % 360 : a.yaw;
+      const movingNow = !(st.phase === "out" || (st.phase === "work" && st.f >= 1)) && !st.held;
+      if (movingNow) moving = true;
+      const cv = mapWorkerCanvas("haul", H.color, yaw, H.cycleFrame(k * 7 + 5, movingNow, 420), st.load ? "sack" : "");
+      const uu = SOLO_PX * s, gy = a.p[1] + 6 * s, [, , w, h] = pieceBox(cv, a.p[0], gy, uu);
+      ctx.beginPath(); ctx.ellipse(a.p[0], gy + 1 * s, 5 * s, 2 * s, 0, 0, Math.PI * 2); ctx.fillStyle = "rgba(0,0,0,0.3)"; ctx.fill();
+      H.piece(cv, a.p[0], gy + (movingNow ? H.stepBob(k * 7 + 5, 0.7 * s) : 0), uu);
+      if (st.held) { alertMark(ctx, a.p[0], a.p[1] - h * 0.5 - 6 * s, "!", s, true); moving = true; }
+      hits.push({ x: a.p[0], y: a.p[1], r: Math.max(6, w * 0.6), html: `<span style="color:#cfe2f7">Hauler from ${esc(base.name)}</span><br><b>${esc(x.s.name)}</b><br>${esc(st.text)}`, baseId: base.id, sid: k });
     }
     // Trouble where nobody walks any more (a death out there): its mark on the tile for a while.
     for (const a of base.tripAlerts || []) {

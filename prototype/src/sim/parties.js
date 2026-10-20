@@ -9,6 +9,7 @@
  * @typedef {{ vehicle?: boolean | "bike", speed?: number, footSpeed?: number | null, fuelMult?: number, progress?: number,
  *   idx?: number, fuel?: number, offroad?: number, onroad?: number, walkers?: number, cartTer?: any, maxHours?: number, startHour?: number, weather?: boolean, known?: number, used?: number }} TravelOpts
  */
+import { haulConvoyArrive } from "./hauling.js"; // AI parity: a group's haul convoy unloads at its outpost (call-time only)
 import { sendMembers } from "./members.js"; // an AI party is its people (docs/adr/0001-ai-parity.md)
 import { kitParty, packForJob } from "./loadouts.js"; // the launchers go with a raid; the rest of the job's kit
 import { teamTraitFx, appetite } from "./traits.js"; // Keen Eye: the team's sight; Glutton: the food a trip takes
@@ -2739,7 +2740,10 @@ function aiPartyHour(state, p) {
     }
   }
   if (p.idx >= p.path.length - 1) {
-    if (p.kind === "convoy") {
+    if (p.kind === "convoy" && p.haulTo != null) {
+      haulConvoyArrive(state, p); // hauling.js: a group's haulers at its outpost
+      removeParty(state, p);
+    } else if (p.kind === "convoy") {
       const to = factionById(state, p.targetFaction);
       if (to && to.alive) {
         addFoods(to, typedFood(state, "stores", 10));
