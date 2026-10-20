@@ -64,6 +64,7 @@ import { huntWorkWhy, fishWorkWhy, fishWorkHands, huntWorkCap, hunterMult, bestH
 import { forageWorkWhy, forageWorkCap, foragerMult, FORAGE_SHORT } from "./foraging.js";
 import { foodUse, HEAT, woodFor } from "./upkeep.js";
 import { woodWorkWhy, woodHandsWanted, woodNeed, woodcutterMult, bestChop } from "./woodcutting.js";
+import { chopJobs } from "./woodwork.js"; // woodwork: the felling marked on the base map
 import { waterIn, stockHas } from "./water.js"; // purified and un-purified water count together
 import { watchShift, shiftText } from "./watch.js"; // the base's watch roster (Defence tab)
 import { sleepingIn } from "./sleep.js"; // off a watch: sleep until rested
@@ -374,13 +375,15 @@ export const WORK_TYPES = {
     name: "Cut wood", ing: "Cutting wood", short: "Wood", role: "wood", skill: "farming",
     desc: "Cuts wood within 2 tiles of the base 6 hours a day while the store is short of what the fires need (heating 15, 1.5 kg, a head a day below freezing and 4.5 for the night's fire on a cool night under 8°C; the water boiler 6 a head a day; a camp's fire its people's warmth, 3 a head to boil the water and 1 for the pot, on top of its own 18): forest best (about 140 a day each with an axe), hills fair, farmland and suburbs little, a city next to nothing. As many as it takes to have the pile in within three weeks (no fixed cap; each one past the first brings in 5% less, at least half). Their own axe, machete or sledgehammer, or one from the armory, cuts much faster than bare hands. Loud (base Heat), and axes slip; the land cut hard grows back over seasons.",
     open(ctx) {
+      // woodwork: the trees marked for felling on the base map (woodwork.js) open the job by themselves, a hand a job (up to 3).
+      const chop = Math.min(3, chopJobs(ctx.base).length);
       const why = woodWorkWhy(ctx.state, ctx.base);
-      if (why) return { cap: 0, why };
+      if (why) return chop ? { cap: chop, urg: 3 } : { cap: 0, why };
       const w = woodNeed(ctx.state, ctx.base);
-      if (!w.short) return { cap: 0, why: w.need > 0 ? `enough wood for the cold ahead (${Math.floor(w.have)} of ${w.need})` : "no heating needed here" };
+      if (!w.short) return chop ? { cap: chop, urg: 3 } : { cap: 0, why: w.need > 0 ? `enough wood for the cold ahead (${Math.floor(w.have)} of ${w.need})` : "no heating needed here" };
       const burn = Math.max(0.1, w.heads * woodFor(HEAT.fuel) + (w.daily || 0)); // a day's heating, boiling and the kitchen's stove
       const urg = w.cold ? (w.have < burn * 5 ? 7 : 4.5) : w.toCold <= 14 ? 5 : w.soon ? 3 : 1;
-      return { cap: Math.max(1, woodHandsWanted(ctx.state, ctx.base, { w })), urg }; // sized to the need (the pile in within 3 weeks), no fixed cap
+      return { cap: Math.max(1, chop, woodHandsWanted(ctx.state, ctx.base, { w })), urg }; // sized to the need (the pile in within 3 weeks), no fixed cap
     },
     // The governor's rule (autopilot.js planRoles 4a, planWood): from autumn (the cold within WOOD_AP.autumn days, or
     // here, or a water boiler burning wood) the woodcutters it takes to have the pile in by the cold go before the

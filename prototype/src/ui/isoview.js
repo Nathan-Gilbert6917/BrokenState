@@ -2157,7 +2157,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     if (!c.cells.length) continue;
     const xs = c.cells.map((q) => q[0]), ys = c.cells.map((q) => q[1]);
     const [X, Y] = project((Math.min(...xs) + Math.max(...xs) + 1) / 2, (Math.min(...ys) + Math.max(...ys) + 1) / 2, 34);
-    tag(ctx, `Clearing ${c.pct}%`, X, Y, "#f0c060", Math.max(10, 3.6 * S));
+    tag(ctx, `${c.who && c.who.length ? `${c.who.slice(0, 3).join(", ")}${c.who.length > 3 ? ` +${c.who.length - 3}` : ""}: ` : ""}Clearing ${c.pct}%`, X, Y, "#f0c060", Math.max(10, 3.6 * S)); // woodwork: who is felling it (sim/woodwork.js chopHands)
   }
   if (H.ghost && H.ghost.from) for (const [x, y] of H.ghost.from) { ctx.fillStyle = "rgba(12,14,18,0.42)"; ctx.beginPath(); diamond(ctx, x, y, 14); ctx.fill(); }
   // The stores on a base map (sim/basemap.js): a crate marker over each building that holds goods, with its weight.

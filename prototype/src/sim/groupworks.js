@@ -133,7 +133,7 @@
 // - Old saves (no state.groupWorks) and the hardcore military (an army base built before the fall) count as built
 //   up: none of this changes them. tools/barestarttest.js.
 import { foodIn, takeFood } from "./foods.js"; // days of food (every kind)
-import { groupFetchedWater } from "./grouptrips.js"; // water carried in from the water a base holds (as your Fetch water)
+import { groupFetchedWater, groupWoodLand } from "./grouptrips.js"; // groupWoodLand: the wood land their bases hold (woodwork: they cut a build's wood) // water carried in from the water a base holds (as your Fetch water)
 import { day, skill } from "./world.js";
 import { MEAL_WORK_SHARE } from "./meals.js"; // their crews stop for breakfast, lunch and dinner too (21 of 24 hours)
 import { season, THIRST } from "./weather.js"; // summer water: the season and its thirst
@@ -162,24 +162,27 @@ export const GROUP_WORKS = {
     water: { name: "a well", cost: { scrap: 3 }, work: 3 },
     // Wood (2026-10-20, "Convert all fire wood into just wood so it can be used for fueling and uses as a building
     // material"): their fields' fencing, quarters and walls take a share in wood as yours do (a quarter of yours, as
-    // the scrap), from the woodpile they cut and burn (factions.js GROUP_WOOD); short of it, they salvage (SALVAGE).
-    farms: { name: "fields", cost: { scrap: 3, wood: 40 }, work: 4 },
-    beds:  { name: "quarters", cost: { scrap: 6, wood: 75 }, work: 4 },
-    walls: { name: "a wall", cost: { scrap: 4, wood: 100 }, work: 6 },
-    bench: { name: "a workshop", cost: { scrap: 6, parts: 1 }, work: 4 },
+    // the scrap; woodwork 2026-10-20 raised yours and theirs with it: fields 75, quarters 150, a wall 250, pens 125, a
+    // workshop 50, a kitchen 75), from the woodpile they cut and burn (factions.js GROUP_WOOD) above WOOD.keepHead a
+    // head; what the pile cannot spare their crew cuts as part of the job (WOOD.cutDay a crew-day on their land:
+    // groupWoodLand), so their woodcutting covers their builds and a build never waits on wood.
+    farms: { name: "fields", cost: { scrap: 2, wood: 75 }, work: 4 },
+    beds:  { name: "quarters", cost: { scrap: 3, wood: 150 }, work: 4 },
+    walls: { name: "a wall", cost: { scrap: 2, wood: 250 }, work: 6 },
+    bench: { name: "a workshop", cost: { scrap: 5, parts: 1, wood: 50 }, work: 4 },
     // Storage (storageWork): your storage buildings at your costs, your hours ÷ CREW_HOURS (storeDef).
     get store() { return storeDef("store"); },
     get storebox() { return storeDef("storebox"); },
     get crates() { return storeDef("crates"); },
     get shed() { return storeDef("shed"); },
     get warehouse() { return storeDef("warehouse"); },
-    pens: { name: "an animal pen", cost: { scrap: 3, wood: 60 }, work: 3 },
+    pens: { name: "an animal pen", cost: { scrap: 2, wood: 125 }, work: 3 },
     // Machines (freezer-parts; MACH): yours cost 15 scrap + 2 parts, 20 + 4, 30 + 5 + 2 electronics, 12 + 2 + 2.
     still: { name: "an ethanol still", cost: { scrap: 4, parts: 1 }, work: 3 },
     power: { name: "a generator", cost: { scrap: 5, parts: 2 }, work: 4 },
     freezer: { name: "a walk-in freezer", cost: { scrap: 8, parts: 3 }, work: 5 },
     sealer: { name: "a vacuum sealer", cost: { scrap: 3, parts: 2 }, work: 2 },
-    kitchen: { name: "a kitchen", cost: { scrap: 5, parts: 1 }, work: 4 }, // yours: 20 scrap, a part, 24 work-hours (scaled as the rest)
+    kitchen: { name: "a kitchen", cost: { scrap: 4, parts: 1, wood: 75 }, work: 4 }, // yours: 20 scrap, a part, 24 work-hours (scaled as the rest)
     // ai-locks (2026-10-11; LOCKS below): the buildings your rules ask for, scaled as the rest (about a quarter of your
     // scrap, half your parts). Yours: a machine shop 25 scrap + 3 parts, a radio station 30 + 6, a garage 20 + 2, a
     // reloading bench 20 scrap + a part + 3 gun parts (on an ammo bench), a reinforced gate 14 + a part.
@@ -221,6 +224,7 @@ export const GROUP_WORKS = {
     floor: 0.5, // fuel a head kept back from a bigger generator's burn (groupcare.js keeps the same before selling)
   },
   CREW: 6, SALVAGE: 2,
+  WOOD: { keepHead: 120, cutDay: 360, landMin: 0.25 }, // woodwork: the pile a head they never build from (their winter's), wood a crew-day of felling cuts on land of wood score 1 (grouptrips.js groupWoodLand, at least landMin)
   CREW_HOURS: 8, // your work-hours a crew-day of theirs, as the works above were scaled (a well's 24 hours 3, a machine shop's 48 hours 6)
   SERVES: { water: 10, farms: 8, beds: 8 }, // people one of each serves
   WALL_GOAL: { typed: 7, home: 4, open: 1 }, WALLED_TYPES: ["fortress", "military"], // as conquest.js CONQUEST.WALLS (the old fixed walls)
@@ -782,9 +786,17 @@ export function groupWorksDaily(state, f) {
     const bmShort = Math.max(0, (def.cost.buildmat || 0) - (f.stock.buildmat || 0));
     if (bmShort && (f.stock.scrap || 0) >= bmShort * W.BUILDMAT_SCRAP + (def.cost.scrap || 0)) { f.stock.scrap -= bmShort * W.BUILDMAT_SCRAP; f.stock.buildmat = (f.stock.buildmat || 0) + bmShort; }
     const use = MACH_ORDER.includes(next.type) || next.type === "powerup" ? "machine" : "free"; // the earmark only for a machine (gen-tiers: an upgrade too)
-    const can = Object.entries(def.cost).every(([k, v]) => (k === "parts" ? canPayParts(f, v, use) : (f.stock[k] || 0) >= v));
-    if (can) for (const [k, v] of Object.entries(def.cost)) { if (k === "parts") payParts(f, v, use); else f.stock[k] -= v; }
-    f.job = { tile: next.tile, type: next.type, left: def.work * (can ? 1 : W.SALVAGE), paid: can };
+    // Wood (woodwork): from the pile above their winter's keep; the rest their crew cuts as part of the job (extra
+    // crew-days by their land), so wood never sends them to salvage.
+    const can = Object.entries(def.cost).every(([k, v]) => (k === "wood" ? true : k === "parts" ? canPayParts(f, v, use) : (f.stock[k] || 0) >= v));
+    let cut = 0;
+    if (can) for (const [k, v] of Object.entries(def.cost)) {
+      if (k === "parts") payParts(f, v, use);
+      else if (k === "wood") { const pay = Math.max(0, Math.min(v, Math.floor((f.stock.wood || 0) - f.pop * W.WOOD.keepHead))); f.stock.wood = (f.stock.wood || 0) - pay; cut = v - pay; }
+      else f.stock[k] -= v;
+    }
+    const cutDays = cut > 0 ? cut / (W.WOOD.cutDay * Math.max(W.WOOD.landMin, groupWoodLand(state, f))) : 0;
+    f.job = { tile: next.tile, type: next.type, left: def.work * (can ? 1 : W.SALVAGE) + cutDays, paid: can, ...(cut > 0 ? { cut } : {}) };
   }
   f.job.left -= (Math.max(1, workingPeople(f) / W.CREW) + (f.prisonWork || 0) / W.CREW) * MEAL_WORK_SHARE; // their prisoners work too (groupjails.js); the ill rest (groupcare.js GROUP_ILL); meals.js: the meal hours off
   groupMachinesDaily(state, f); // freezer-parts: the still, the generator, the freezer and the sealer run, wear and break

@@ -35,14 +35,14 @@ import { BED_CRAFTS, BED_SPEC } from "./data-beds.js"; // beds as furniture: a c
 // needs: "workshop" (an ammo bench or machine shop at this base) or a building key. field: can be made by a team.
 export const CRAFTS = {
   pipespear:   { gear: "pipespear",   in: { scrap: 3 },           hours: 4,  skill: "mechanics", min: 0, field: true },
-  spikedbat:   { gear: "spikedbat",   in: { scrap: 4 },           hours: 6,  skill: "mechanics", min: 0, field: true },
+  spikedbat:   { gear: "spikedbat",   in: { scrap: 3, wood: 15 }, hours: 6,  skill: "mechanics", min: 0, field: true },
   sawmachete:  { gear: "sawmachete",  in: { scrap: 6 },           hours: 10, skill: "mechanics", min: 3 },
   // Knives (data-blades.js): a shiv ground from a strip of scrap anywhere; a Bowie knife forged from an old file at a workshop.
   shiv:        { gear: "shiv",        in: { scrap: 2 },           hours: 2,  skill: "mechanics", min: 0, field: true },
   bowie:       { gear: "bowie",       in: { scrap: 5 },           hours: 10, skill: "mechanics", min: 3, cmin: 4, needs: "workshop" },
-  crossbow:    { gear: "crossbow",    in: { scrap: 8, parts: 1 }, hours: 16, skill: "mechanics", min: 5, needs: "workshop" },
+  crossbow:    { gear: "crossbow",    in: { scrap: 7, parts: 1, wood: 20 }, hours: 16, skill: "mechanics", min: 5, needs: "workshop" },
   pipegun:     { gear: "pipegun",     in: { scrap: 6, parts: 2 }, hours: 14, skill: "mechanics", min: 6, needs: "workshop" },
-  makeshiftrod: { gear: "makeshiftrod", in: { scrap: 1 },         hours: 2,  skill: "mechanics", min: 0, field: true },
+  makeshiftrod: { gear: "makeshiftrod", in: { scrap: 1, wood: 5 }, hours: 2,  skill: "mechanics", min: 0, field: true },
   // Machine parts in crafting (freezer-parts 2026-10-10, user request "use these parts for crafting"): the recipes with
   // a mechanism take machine parts (springs, gears, bearings, valves): the crossbow, pipe gun, lights, suppressor,
   // bicycle, ram, repair kit, pulley bow as before, and these two for food: a real fishing rod with a reel (the
@@ -107,14 +107,14 @@ export const CRAFTS = {
   // Carts (carts.js, data-carts.js): a tray beaten out of scrap on a wheel and two handles; a plank bed on two wheels
   // with a T handle. At a workshop (the welding, the wheels' bearings).
   wheelbarrow: { gear: "wheelbarrow", in: { scrap: 6, parts: 1 }, hours: 8, skill: "mechanics", min: 2, needs: "workshop" },
-  handcart:    { gear: "handcart",    in: { scrap: 6, parts: 2, wood: 40 }, hours: 12, skill: "mechanics", min: 3, needs: "workshop" },
+  handcart:    { gear: "handcart",    in: { scrap: 5, parts: 2, wood: 120 }, hours: 12, skill: "mechanics", min: 3, needs: "workshop" },
   // gearIn = items used up (from the base armory; in the field from the team's cargo or someone's pockets and pack).
   nailbat:     { gear: "nailbat",     gearIn: { bat: 1 }, in: { scrap: 1 }, hours: 2, skill: "mechanics", min: 0, field: true },
   molotov:     { gear: "molotov",     gearIn: { bottle: 1 }, in: { fuel: 1 }, hours: 1, skill: "mechanics", min: 0, field: true },
   pipebomb:    { gear: "pipebomb",    in: { scrap: 2, parts: 1, ammo: 15 }, hours: 6, skill: "mechanics", min: 5, needs: "workshop" },
   // Siege kit (siege.js): a ladder for walls, a ram for gates (taken along on an Assault, kit.js).
-  ladder:      { gear: "ladder",      in: { scrap: 4 },           hours: 4,  skill: "mechanics", min: 1 },
-  ram:         { gear: "ram",         in: { scrap: 8, parts: 2 }, hours: 10, skill: "mechanics", min: 3, needs: "workshop" },
+  ladder:      { gear: "ladder",      in: { scrap: 1, wood: 100 }, hours: 4,  skill: "mechanics", min: 1 },
+  ram:         { gear: "ram",         in: { scrap: 5, parts: 2, wood: 150 }, hours: 10, skill: "mechanics", min: 3, needs: "workshop" },
   tripwire:    { gear: "tripwire",    in: { scrap: 1 },           hours: 2,  skill: "mechanics", min: 0, field: true },
   slingbag:    { gear: "slingbag",    in: { scrap: 2 },           hours: 3,  skill: "mechanics", min: 0 },
   // The camp cook pot (cooking.js POT): small meals at a base with no Kitchen or cook fire, or on a team's camp fire.
