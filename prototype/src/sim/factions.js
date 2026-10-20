@@ -105,6 +105,8 @@ import { flightDaily } from "./groupflight.js"; // groups leaving a base they ca
 import { splinterDaily } from "./splinters.js"; // splinter bands
 import { fightSides, fightersOf, applySide, wallMult } from "./groupfight.js"; // fights nobody watches: your rules for both sides
 import { cfgOf } from "./worldcfg.js"; // the run's dials: Food spoilage, the groups' starting rounds, Raids on you
+import { raidSpoils } from "./basestorage.js"; // a raid on a group's base takes the goods first, the woodpile last (call-time only)
+import { STEAL } from "./basemap.js"; // what one raider carries off (call-time only)
 const KIND_OF = { raider: "raiders", expansionist: "fighters", zealot: "zealots", military: "soldiers", fortress: "soldiers", traders: "guards", commune: "militia" };
 
 export const RAIDS = {
@@ -1003,9 +1005,11 @@ function resolveOrdinaryRaid(state, party, attacker, target, helpPower) {
     applySide(state, attacker, fight.rA, A, { holder: attacker, captor: target });
     const loss = lostD.dead.length + lostD.taken, taken = lostD.taken, covered = 0;
     const hitStock = stockAt(state, target, party.target.tile); // groupbases.js: the stores at the base hit, not the others'
-    for (const k of Object.keys(hitStock)) {
+    // 40% of the stores, the woodpile only with the room the raiders' carry has left (basestorage.js raidSpoils: the
+    // goods and valuables first, as your raiders' thieves on a base map: basemap.js thiefTurn).
+    const spoils = raidSpoils(hitStock, 0.4, Math.max(1, attN) * STEAL.KG * 2); // ×2: half of it is carried home
+    for (const [k, lost] of Object.entries(spoils)) {
       if (typeof hitStock[k] !== "number") continue;
-      const lost = hitStock[k] * 0.4;
       hitStock[k] -= lost;
       if (attacker) attacker.stock[k] = (attacker.stock[k] || 0) + lost / 2; // half of it is carried home
     }

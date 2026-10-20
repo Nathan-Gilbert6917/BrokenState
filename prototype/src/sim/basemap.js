@@ -113,6 +113,7 @@ import { itemKg } from "./inventory.js";
 import { normalizeBins, OUTSIDE } from "./containers.js"; // the assignments (item.store, base.bins): a theft taken out of its bin; the piles' key
 import { FIXTURES, WEAR, breakFixture } from "./breakdowns.js";
 import { log, atBase, newId } from "./world.js";
+import { fireLit } from "./fieldheat.js"; // (call-time only) a camp's fire drawn lit or cold
 import { pitchStoredBag, bagsInStores } from "./tents.js"; // (call-time only) a tent bag pitched from the Build list
 import { chopHands } from "./woodwork.js"; // who is felling a clearing (call-time only)
 import { isChopTool, bestChop } from "./woodcutting.js"; // felling a tree goes slower without a cutting tool at the base (call-time only)
@@ -1540,6 +1541,10 @@ export function buildBaseMap(state, base, rng, opts = {}) {
     }
   }
   layPiles(state, base, F, { C: R, G, inside, used, keep }); // what lies outside: piles near the middle, off the wall's ring
+  // The fires (a camp's or a shelter's fire, a cook fire): drawn burning while lit (ui/isoview.js firepit: c.lit), cold
+  // ash and stones once a camp's or a shelter's fire is out (fieldheat.js fireLit).
+  const fireOn = !isShelter(base) || fireLit(base);
+  for (const c of F.cells) if (c.k === "firepit") { if (fireOn) c.lit = true; else delete c.lit; }
   // The wall: the pieces placed (by hand or by the game). Walled when no way in from the map's edge reaches the base
   // itself (the attackers' way: open ground they can walk, never a barred gate or door): the inside is then what they
   // cannot reach round the base (its yard, its houses, the stands), the wall's rect its bounds; else the yard and the
@@ -1924,14 +1929,21 @@ export function thiefTurn(b, u) {
   if (foes.some((f) => Math.max(Math.abs(f.x - u.x), Math.abs(f.y - u.y)) <= 1)) return false; // someone right there: fight
   const boxes = b.stores.containers.filter((c) => c.kg > 0.5);
   if (!boxes.length) return u.loot ? leaveWithLoot(b, u) : false;
-  // A pile left outside first (no lid, no lock, no door to batter): the nearest one with goods; the rest once the
-  // piles are bare, an open one before a lock. Whatever container is right there is taken from all the same.
-  const piles = boxes.filter((c) => c.pile);
-  const goal = piles.length ? piles : boxes;
+  // The goods and valuables before the woodpile (the user's rule 2026-10-20): a container with anything but wood in it
+  // first, wherever it is; the woodpile (wood on the piles: outsideOf) only when nothing better is left, and never by
+  // one already carrying goods (off with them instead). A pile left outside first among those (no lid, no lock, no
+  // door to batter): the nearest one; the rest once the piles are bare, an open one before a lock. Whatever container
+  // is right there is taken from all the same, the woodpile only as above.
+  const goodsKg = (c) => c.kg - ((c.sup && c.sup.wood) || 0) * kgOf("wood");
+  const rich = boxes.filter((c) => goodsKg(c) > 0.5);
+  if (!rich.length && u.loot && u.loot.kg > 0) return leaveWithLoot(b, u);
+  const pool = rich.length ? rich : boxes;
+  const piles = pool.filter((c) => c.pile);
+  const goal = piles.length ? piles : pool;
   const nearIn = (list, x, y) => list.filter((c) => nearRect(c, x, y)).sort((a, c) => lockedBox(a) - lockedBox(c))[0] || null;
-  const near = (x, y) => nearIn(goal, x, y) || nearIn(boxes, x, y);
+  const near = (x, y) => nearIn(goal, x, y) || nearIn(pool, x, y);
   const here = near(u.x, u.y);
-  if (here) { if (lockedBox(here)) forceLock(b, u, here); else takeLoot(b, u, here); u.ap = 0; return true; }
+  if (here) { if (lockedBox(here)) forceLock(b, u, here); else takeLoot(b, u, here, { noWood: rich.length > 0 }); u.ap = 0; return true; }
   // On toward the nearest one: the cells round every container with goods (the piles while there are any).
   const targets = [];
   for (const c of goal) for (let y = c.y - 1; y <= c.y + c.h; y++) for (let x = c.x - 1; x <= c.x + c.w; x++) {
@@ -1954,7 +1966,7 @@ export function thiefTurn(b, u) {
       u.ap -= 1; moved = true;
       moveAlong(b, u, pathTo(r, best % W, (best / W) | 0));
       const box = near(u.x, u.y);
-      if (box && u.ap > 0) { if (lockedBox(box)) forceLock(b, u, box); else takeLoot(b, u, box); u.ap = 0; }
+      if (box && u.ap > 0) { if (lockedBox(box)) forceLock(b, u, box); else takeLoot(b, u, box, { noWood: rich.length > 0 }); u.ap = 0; }
       continue;
     }
     // No way nearer: a barred door or a wall in the way is battered.
@@ -1990,7 +2002,7 @@ export function forceLock(b, u, box) {
 // the food, scrap and wood last; never water), up to STEAL.KG in all and STEAL.TURN a turn (a heavy item alone may
 // take the turn), twice that from a pile left outside (STEAL.PILE). Nothing worth the weight left to take: off with
 // what it has (u.loot.full).
-export function takeLoot(b, u, box) {
+export function takeLoot(b, u, box, opts = {}) { // opts.noWood: leave the woodpile while goods are left on the map (thiefTurn)
   u.loot = u.loot || { sup: {}, gear: [], kg: 0, from: {} };
   u.loot.from = u.loot.from || {}; // { [containerKey]: { k: n } }: what came out of the assigned part of each container (applyStolen: out of its bin)
   const carry = STEAL.KG - u.loot.kg;
@@ -2002,7 +2014,7 @@ export function takeLoot(b, u, box) {
     u.loot.gear.push(g); u.loot.kg += g.kg; room = Math.max(0, room - g.kg); box.kg -= g.kg;
     got.push(g.name);
   }
-  const keys = Object.keys(box.sup).filter((k) => box.sup[k] > 0 && k !== "water" && k !== "rawwater");
+  const keys = Object.keys(box.sup).filter((k) => box.sup[k] > 0 && k !== "water" && k !== "rawwater" && !(opts.noWood && k === "wood"));
   const rank = (k) => { const i = TAKE_ORDER.indexOf(k); return i >= 0 ? i : FOODS[k] ? 5.5 - Math.min(0.4, FOODS[k].kcal / (FOODS[k].kg * 10000)) : SUPPLIES[k] && SUPPLIES[k].cat === "ammo" ? 6 : 8; };
   keys.sort((a, c) => rank(a) - rank(c));
   for (const k of keys) {

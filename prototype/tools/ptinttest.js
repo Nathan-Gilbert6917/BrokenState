@@ -32,7 +32,21 @@ import { containersOf, putSupply, putItem, normalizeBins } from "../src/sim/cont
 import { storeSpaces } from "../src/sim/storage.js";
 import { crowdInfo } from "../src/sim/morale.js";
 import { moodFactors } from "../src/sim/relations.js";
-import { createBattle, finishCombat } from "../src/sim/combat.js";
+import { createBattle, finishCombat, active, CELL, unitAt } from "../src/sim/combat.js";
+import { tentAI } from "../src/sim/softcover.js";
+import { TENT_TAKE } from "../src/sim/data-tents.js";
+import { raidSpoils } from "../src/sim/basestorage.js";
+// Stand u on a free walkable cell next to tent t (as campsitetest does).
+function besideTent(b, u, t) {
+  for (const [x, y] of t.cells) for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]]) {
+    const nx = x + dx, ny = y + dy;
+    if (nx < 0 || ny < 0 || nx >= b.w || ny >= b.h) continue;
+    const c = b.cells[ny * b.w + nx];
+    if (c.tentId != null || !CELL[c.k].walk || unitAt(b, nx, ny)) continue;
+    u.x = nx; u.y = ny; return true;
+  }
+  return false;
+}
 import { saveToString, loadFromString } from "../src/sim/save.js";
 import { craftQueue } from "../src/sim/crafting.js";
 import { constructionHour, canBuild, addBuilding, gatherRows, tierUpJobFor } from "../src/sim/buildings.js";
@@ -442,6 +456,77 @@ section("Picks: wood in the tents, beds and furniture; wood in the step ups; the
   check(storageSummary(st, h).includes("Woodpile: 5000 wood"), "the Storage tab's line: Woodpile: 5000 wood");
   const out = BM.outsideOf(st, h);
   check(out && out.sup.wood === 5000, "a raid's map lays it with the piles: stealable");
+}
+
+
+// ---------- round 4: campsite merged ----------
+section("Round 4: a fire pit is drawn burning only while lit");
+{
+  const st = world(seed + 40);
+  const camp = campWith(st, 2);
+  camp.fire = true;
+  BM.openBaseMap(st, camp.id);
+  const pits = () => st.combat.cells.filter((c) => c.k === "firepit");
+  check(pits().length > 0 && pits().every((c) => c.lit), `the camp's fire lit: its pit burns (${pits().length})`);
+  camp.fire = false;
+  BM.refreshBaseMap(st);
+  check(pits().length > 0 && pits().every((c) => !c.lit), "put out: cold ash and stones (no c.lit, no flame)");
+  st.combat = null;
+}
+
+section("Round 4: raiders go for the goods before the woodpile; a base tent taken down with the woodpile out");
+{
+  const st = world(seed + 41);
+  const camp = campWith(st, 2, ["tent2"]);
+  camp.stock.wood = 1000; camp.stock.scrap = 40; camp.stock.meds = 6;
+  for (const s of atBase(st, camp.id)) { s.health = 100; s.gear.weapon = newItem("pistol"); }
+  globalThis.window = {};
+  let b;
+  try { b = createBattle(st, { tile: camp.tile, baseId: camp.id, enemy: { kind: "raiders", count: 3, power: 3, name: "raiders" }, ambush: null, canRetreat: true, handler: "soft", layout: "baseDefence", deploy: true, context: { night: false, ready: { manned: true } } }); }
+  finally { delete globalThis.window; }
+  st.combat = b;
+  const boxes = (b.stores && b.stores.containers) || [];
+  const woodBox = boxes.find((c) => c.pile && c.sup && c.sup.wood > 0);
+  const goods = boxes.filter((c) => c.kg - ((c.sup && c.sup.wood) || 0) * 0.1 > 0.5);
+  check(!!woodBox && goods.length > 0, `the woodpile lies with the piles on the map (${woodBox ? woodBox.sup.wood : 0} wood), goods in ${goods.length} container(s)`);
+  // A thief right next to the woodpile, goods elsewhere: no wood taken.
+  const e = b.units.find((u) => u.side === "enemy" && u.kind === "human");
+  const mine = b.units.filter((u) => u.side === "player");
+  for (const u of mine) u.dead = true;
+  e.thief = true; e.ap = 2; e.loot = null;
+  if (woodBox) { e.x = woodBox.x - 1; e.y = woodBox.y; }
+  for (let k = 0; k < 12 && active(e) && !(e.loot && e.loot.kg > 0); k++) { e.ap = 2; BM.thiefTurn(b, e); }
+  check(!!e.loot && e.loot.kg > 0 && !e.loot.sup.wood, `the thief walked past the woodpile to the goods (${e.loot ? JSON.stringify(e.loot.sup) : "nothing"})`);
+  // Nothing but wood left: an empty-handed thief takes wood; one already carrying goods makes off instead.
+  for (const c of boxes) { for (const k of Object.keys(c.sup || {})) if (k !== "wood") delete c.sup[k]; c.gear = []; c.kg = ((c.sup && c.sup.wood) || 0) * 0.1; }
+  const f = b.units.filter((u) => u.side === "enemy" && u.kind === "human" && u !== e)[0];
+  if (f && woodBox) { f.thief = true; f.loot = null; f.x = woodBox.x - 1; f.y = woodBox.y; f.ap = 2; BM.thiefTurn(b, f); }
+  check(!f || (f.loot && f.loot.sup.wood > 0), `nothing better left: an empty-handed thief takes wood (${f && f.loot ? JSON.stringify(f.loot.sup) : "-"})`);
+  const ex = e.x, ey = e.y; e.ap = 2; BM.thiefTurn(b, e);
+  check(!e.loot.sup.wood, "one carrying goods leaves the woodpile be and makes off");
+  // The tent taken down by a raider who gets away: the record struck, the woodpile still on the books.
+  const t = (b.tents || []).find((x) => x.owner && x.owner.base === camp.id);
+  const keep = TENT_TAKE.AI_TAKE; TENT_TAKE.AI_TAKE = 1;
+  if (t && f) { f.loot = null; besideTent(b, f, t); for (let k = 0; k < 6 && !t.down; k++) { b.turn++; f.ap = 2; tentAI(b, f, st); } }
+  TENT_TAKE.AI_TAKE = keep;
+  for (const u of mine) u.dead = false;
+  if (f) f.fled = true;
+  for (const u of b.units) if (u.side === "enemy" && u !== f) { u.dead = true; u.hp = 0; }
+  const beds0 = baseBeds(camp);
+  b.phase = "player";
+  finishCombat(st, b.setup, { outcome: "win", enemiesKilled: 2, worn: true });
+  check(!!t && t.down && !T.tentsOf(camp).length && baseBeds(camp) === beds0 - 2, `taken down and carried off: no tent left at the camp, its 2 beds gone (${baseBeds(camp)})`);
+  check(Math.floor(camp.stock.wood) >= 1000 - 22 * 3 && woodpileOf(camp) === Math.floor(camp.stock.wood), `the woodpile on the books (${woodpileOf(camp)}), not in the room`);
+  check(BM.layoutOf(st, camp).every((e2) => !e2.it || e2.it.type !== "tent") && !storageOf(st, camp).containers.some((c) => c.kind === "tent"), "the map and the storage have no tent; the held spot is let go (stale pins harmless)");
+}
+
+section("Round 4: a group's raid on a group's base takes the goods before the woodpile");
+{
+  const stock = { scrap: 400, meds: 30, ammo: 200, wood: 6000, water: 300 };
+  const few = raidSpoils(stock, 0.4, 3 * 22 * 2);
+  check(few.scrap > 0 && few.meds > 0 && !few.wood && !few.water, `three raiders, a full store: goods only (${JSON.stringify(few)})`);
+  const lean = raidSpoils({ scrap: 2, wood: 6000 }, 0.4, 3 * 22 * 2);
+  check(lean.scrap > 0 && lean.wood > 0 && lean.wood * 0.1 + lean.scrap * 2 <= 3 * 22 * 2 + 1e-6, `little else to take: wood to fill their carry (${JSON.stringify(lean)})`);
 }
 
 console.log(`\n${pass} passed, ${fail} failed (${((Date.now() - t0) / 1000).toFixed(1)} s)`);

@@ -75,6 +75,24 @@ export const WARN_DAYS = 3;       // the log line: at most once in this many day
 const NOT_STORED = new Set(["water", "rawwater", "wood"]);
 /** The woodpile: the wood a base holds (whole units), kept apart from its storage room. @param {any} base */
 export const woodpileOf = (base) => Math.max(0, Math.floor((base && base.stock && base.stock.wood) || 0));
+/**
+ * What raiders carry off a store by the numbers (factions.js: a group's raid on another group's base): `frac` of every
+ * good, the woodpile last (the user's rule 2026-10-20: the stores and valuables first, wood only with the room their
+ * carry has left once the goods are in: carryKg). Water is never taken. Returns { key: amount } (the stock unchanged).
+ * @param {Record<string, any>} stock @param {number} frac @param {number} carryKg
+ */
+export function raidSpoils(stock, frac, carryKg) {
+  const out = {};
+  let kg = 0;
+  for (const [k, q] of Object.entries(stock || {})) {
+    if (typeof q !== "number" || !(q > 0) || k === "water" || k === "rawwater" || k === "wood") continue;
+    out[k] = q * frac;
+    kg += out[k] * (supWeight(k) || 0);
+  }
+  const w = Math.max(0, (stock && stock.wood) || 0);
+  if (w > 0) { const room = Math.max(0, carryKg - kg); const n = Math.min(w * frac, room / (supWeight("wood") || 0.1)); if (n > 0) out.wood = n; }
+  return out;
+}
 const WET = new Set(["rain", "storm", "snow", "blizzard"]);
 const r1 = (v) => Math.round(v * 10) / 10;
 const EPS = 1e-9;

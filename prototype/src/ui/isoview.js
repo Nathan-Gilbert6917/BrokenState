@@ -811,10 +811,18 @@ function prims(k, o) {
       for (const [e, end] of [[lo, !(ax === "u" ? o.j & 2 : o.j & 8)], [hi, !(ax === "u" ? o.j & 1 : o.j & 4)]]) if (end) out.push(run(ax, 0.34, 0.66, 0, 6, flatM(PAL.woodLt), e === lo ? lo : hi - 0.02, e === lo ? lo + 0.02 : hi)); // the cut ends
       return out;
     }
-    case "firepit": return [
-      { cyl: [0.5, 0.5, 0.36], z0: 0, z1: 4, m: (f, s, t, X, Y) => (f === "top" && Math.hypot(s, t * 2) < 5 ? mul(hex("#3a2a1c"), 0.9 + n2(X, Y, 2) * 0.2) : mul(PAL.stone, 0.85 + n2(X, Y, 3) * 0.2)) },
-      { blob: [0.5, 0.5, 2], ru: 0.1, rz: 5, m: flatM(hex("#e07a2a")) }, { blob: [0.44, 0.56, 2], ru: 0.08, rz: 7, m: flatM(hex("#f5b640")) },
-    ];
+    // A fire pit: a ring of stones; lit (o.lit: the cell's c.lit, sim/campsite.js and sim/basemap.js), flames over embers;
+    // cold, grey ash and two charred logs, no flame and no glow.
+    case "firepit": {
+      if (o.lit) return [
+        { cyl: [0.5, 0.5, 0.36], z0: 0, z1: 4, m: (f, s, t, X, Y) => (f === "top" && Math.hypot(s, t * 2) < 5 ? mul(hex("#3a2a1c"), 0.9 + n2(X, Y, 2) * 0.2) : mul(PAL.stone, 0.85 + n2(X, Y, 3) * 0.2)) },
+        { blob: [0.5, 0.5, 2], ru: 0.1, rz: 5, m: flatM(hex("#e07a2a")) }, { blob: [0.44, 0.56, 2], ru: 0.08, rz: 7, m: flatM(hex("#f5b640")) },
+      ];
+      return [
+        { cyl: [0.5, 0.5, 0.36], z0: 0, z1: 4, m: (f, s, t, X, Y) => (f === "top" && Math.hypot(s, t * 2) < 5 ? mul(hex("#6b6862"), 0.85 + n2(X, Y, 2) * 0.3) : mul(PAL.stone, 0.85 + n2(X, Y, 3) * 0.2)) },
+        { u0: 0.36, u1: 0.62, v0: 0.46, v1: 0.53, z0: 4, z1: 5, m: flatM(hex("#2b2622")) }, { u0: 0.47, u1: 0.54, v0: 0.36, v1: 0.6, z0: 4, z1: 5, m: flatM(hex("#33302b")) },
+      ];
+    }
     case "lamp": return [
       { u0: 0.38, u1: 0.62, v0: 0.38, v1: 0.62, z0: 0, z1: 3, m: flatM(PAL.conc) }, { u0: 0.46, u1: 0.54, v0: 0.46, v1: 0.54, z0: 3, z1: 34, m: tex(PAL.metalDk, 0.1) },
       { u0: 0.3, u1: 0.7, v0: 0.42, v1: 0.58, z0: 32, z1: 38, m: (f) => (f === "top" ? PAL.metal : hex("#f3e4a0")) },
@@ -847,7 +855,7 @@ function spritePut(key, s) {
 }
 // A cached sprite for a cell's look.
 function sprite(k, o, fog) {
-  const key = `${iso.straight ? "s|" : ""}${k}|${o.v}|${o.alt}|${o.j}|${o.n}|${o.top}|${o.stub ? 1 : 0}|${o.mat}|${o.dmg}|${o.barred ? 1 : 0}|${o.dir}|${o.part || ""}|${o.vault ? 1 : 0}|${o.roll ? 1 : 0}|${fog ? 1 : 0}|${o.car ? `${o.car.i},${o.car.j},${o.car.L},${o.car.ax},${o.car.kind},${o.car.v},${o.car.body || ""},${o.car.mil ? o.car.mil.cond : ""},${upKey(o.car.up)},${iso.rot & 3}` : ""}`;
+  const key = `${iso.straight ? "s|" : ""}${k}|${o.v}|${o.alt}|${o.j}|${o.n}|${o.top}|${o.stub ? 1 : 0}|${o.mat}|${o.dmg}|${o.barred ? 1 : 0}|${o.dir}|${o.part || ""}|${o.vault ? 1 : 0}|${o.roll ? 1 : 0}|${o.lit ? 1 : 0}|${fog ? 1 : 0}|${o.car ? `${o.car.i},${o.car.j},${o.car.L},${o.car.ax},${o.car.kind},${o.car.v},${o.car.body || ""},${o.car.mil ? o.car.mil.cond : ""},${upKey(o.car.up)},${iso.rot & 3}` : ""}`;
   let s = spriteGet(key);
   if (s === undefined) {
     const p = prims(k, o);
@@ -1148,6 +1156,7 @@ function lookOf(b, scene, x, y, cut, focus = null) {
   if ((k === "palisade" || k === "gate") && c.wm) o.mat = c.wm; // a wall piece's material (sim/basemap.js)
   if (k === "door") { const d = ((b.raid ? b.raid.doors : b.doors) || []).find((q) => q.x === x && q.y === y); o.vault = !!(d && d.lock && d.lock.kind === "vault"); } // a raid's, a field map's houses' (sim/combat.js b.doors)
   if (c.roll) o.roll = true; // a roller door (sim/buildingmaps.js)
+  if (k === "firepit" && c.lit) o.lit = true; // a fire pit burning (its flames: prims)
   if (c.h > 0 && FURNITURE.has(k)) o.raise = c.h * LV; // furniture on an upper floor
   if (k === "ladder" || k === "stairs") {
     // Towards the higher neighbour (the walkway, the loft, the roof).
@@ -1194,7 +1203,6 @@ function blockTop0(k, o) {
     case "fence": return 14; case "barricade": return 16; case "sandbag": return 13; case "hay": return 13; case "cabinet": return 14; case "counter": return 12; case "well": return 12; case "barrel": return 13;
     case "rock": return 10; case "wire": return 10; case "rail": return 13; case "tanktrap": return 12;
     case "outline": return 9; case "tent": return 18; case "torn": return 5; case "firepit": return 7; case "lamp": return 38; // the base map (sim/basemap.js; torn: sim/softcover.js)
-    case "outline": return 9; case "tent": return 15; case "torn": return 5; case "firepit": return 7; case "lamp": return 38; // the base map (sim/basemap.js; torn: sim/softcover.js)
     case "bush": return 12; case "stump": return 6; case "log": return 7; // its scatter (sim/basescatter.js)
     default: return 0;
   }
