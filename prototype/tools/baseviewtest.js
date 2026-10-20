@@ -45,9 +45,10 @@ registerCombatHandler("bvt", () => {});
 const world = (s = seed) => { const st = createWorld({ seed: s, factionCount: 6 }); st.started = true; return st; };
 const LAND = new Set([...SC.SCATTER_KINDS, "water"]);
 // The land on a map in grid coordinates: "gx,gy" → kind (a wreck's cells: car cells marked c.wreck).
+// (not the piles of what lies outside, crates too: the woodpile is laid with them since the user's pick of 2026-10-20)
 function landOn(b) {
   const F = b.deployPlan.fort, out = new Map();
-  for (let y = 0; y < b.h; y++) for (let x = 0; x < b.w; x++) { const c = b.cells[y * b.w + x]; if (LAND.has(c.k) || c.wreck) out.set(`${x - F.ox},${y - F.oy}`, c.k); }
+  for (let y = 0; y < b.h; y++) for (let x = 0; x < b.w; x++) { const c = b.cells[y * b.w + x]; if ((LAND.has(c.k) || c.wreck) && !c.pile) out.set(`${x - F.ox},${y - F.oy}`, c.k); }
   return out;
 }
 // A grid cell by the edge of a map's crop (the land keeps off the outermost ring), or off the map.

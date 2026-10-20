@@ -1144,7 +1144,7 @@ const wishCheck = (state, base, w) => { const c = w.barrel != null ? canUpgradeB
 // What a build leaves of the coming cold's wood out of the stocking season: none WOOD_BUILD_KEEP days or more before
 // the cold, rising to all of it at the cold (woodtest: the pile two-fifths in by the winter with the builds taking wood;
 // barestarttest: the first bunkhouse on day one, 2026-10-20).
-const WOOD_BUILD_KEEP = 150, WOOD_BUILD_SMALL = 100; // KEEP: days before the cold over which the share kept rises from none to all
+const WOOD_BUILD_KEEP = 150, WOOD_BUILD_SMALL = 150; // KEEP: days before the cold over which the share kept rises from none to all; SMALL: a tent, a box, crates, shelves (150 since the fittings took more wood, the user's pick 2026-10-20)
 // The wood a big build leaves in store (planBuilds): the fires' days, and the coming cold's need by the share above
 // (once the stocking for the cold is on, all of it). woodNeed result in. govWoodwork fells toward it.
 const buildWoodKeep = (wn) => (wn.soon ? wn.need : Math.max(wn.dailyKeep, wn.need * Math.max(0, Math.min(1, 1 - wn.toCold / WOOD_BUILD_KEEP))));

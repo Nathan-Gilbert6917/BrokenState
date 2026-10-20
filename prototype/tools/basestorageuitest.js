@@ -184,7 +184,7 @@ section("The autopilot's storage ladder by the size of base");
 {
   // A camp: a storage box.
   let st = W(), h = hub(st);
-  asCamp(h); parkAway(st, h); empty(h); h.stock.scrap = 30; h.stock.wood = 50;
+  asCamp(h); parkAway(st, h); empty(h); h.stock.scrap = 30; h.stock.wood = 100; // a storage box is 80 wood (the user's pick 2026-10-20)
   let w = storageWish(st, h);
   check(w && w.type === "storebox", `a camp: a storage box (${w && w.type})`);
   queueBuild(st, h, "storebox");
@@ -193,7 +193,7 @@ section("The autopilot's storage ladder by the size of base");
   st = W(); h = hub(st); asCamp(h); parkAway(st, h); empty(h); h.stock.scrap = 2; // 4 kg
   check(storageOf(st, h).outsideKg < STORE_WISH.minKg && storageWish(st, h) === null, "a few kg outside: nothing wanted");
   // A shelter: a box for a little, storage crates for more.
-  st = W(); h = hub(st); asShelter(h); parkAway(st, h); empty(h); h.stock.scrap = 87; h.stock.wood = 100; // 184 kg, room 150 (wood: the storage box's and the crates'
+  st = W(); h = hub(st); asShelter(h); parkAway(st, h); empty(h); h.stock.scrap = 87; h.stock.wood = 200; // 184 kg, room 150 (wood: the storage box's and the crates'
   w = storageWish(st, h);
   check(w && w.type === "storebox", `a shelter, 30 kg outside: a storage box (${w && w.type})`);
   h.stock.scrap = 145; // 300 kg: 150 outside

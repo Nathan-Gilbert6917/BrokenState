@@ -145,6 +145,7 @@ const ALLOWED = {
   "startgear.js": /newItem\(key, 1\)/, "custompoints.js": /newItem\(key, 1\)/, // starting gear picked under Customize (new), and its price probe: not loot
   "hubevents.js": /newItem\("ar", Math\.round\(st\.rng\.range/, // the Guard deserter's own rifle, its condition rolled there (as recruit gear: not loot)
   "barricade.js": /newItem\("boards"\)/, // boards pried off a door or window come back as bundles (the team's own: not loot)
+  "tents.js": /newItem\(r\.kind\)|newItem\("tent1"\)/, // a pitched tent with no bag on its record struck into one (an old camp's tents: not loot); the hardcore start's own one-person tents (as starting gear)
   "volunteers.js": /newItem\("(knife|flashlight)"\)/, // a volunteer's own plain knife and light when their group lent no weapon (as recruit gear: not loot)
 };
 const strays = [];
