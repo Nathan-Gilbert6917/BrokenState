@@ -9,7 +9,7 @@
 // Model space: +x forward, +y left, z up, the ground at z = 0, in art px (a person is 30 tall, a tile 16 along an
 // axis). A held cart's origin is under its pusher's feet: the wheelbarrow runs forward from the hands to its wheel,
 // the hand cart trails behind the one pulling its T handle. A parked one (held: false) is centred on its cell.
-// What it holds shows (load: kind and level 0..3): firewood as logs, scrap as steel and rust, fuel as red cans,
+// What it holds shows (load: kind and level 0..3): wood as logs, scrap as steel and rust, fuel as red cans,
 // water as blue jugs, anything else as sacks and a crate. Worn, its paint rusts; broken (a wheel off, carts.js
 // cartBroken) it sags onto the ground with the wheel lying beside it.
 //
@@ -107,7 +107,7 @@ function load(F, kind, level, x0, x1, y0, y1, z0, z1, seed) {
   const top = z0 + (z1 - z0) * [0, 0.5, 0.95, 1.35][level], L = x1 - x0, W = y1 - y0;
   let g = 20;
   const rnd = (k) => hash(seed, k, level);
-  if (kind === "wood") { // firewood: logs along the bed, stacked
+  if (kind === "wood") { // wood: logs along the bed, stacked
     const r = 1.15, per = Math.max(1, Math.floor(W / (2 * r + 0.15)));
     for (let layer = 0, z = z0 + r; z - r < top - 0.4 && layer < 4; layer++, z += 2 * r * 0.86) {
       const n = per - (layer % 2), off = (W - n * 2 * r) / 2 + r + (layer % 2) * r;

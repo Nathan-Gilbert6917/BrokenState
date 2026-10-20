@@ -75,6 +75,7 @@ import { fortAssault, fortSize, assaultBase } from "./fort.js"; // their walled 
 import { layAssaultStores, stockAssaultStores } from "./assaultstores.js"; // their real stores on the map (the wall-line map too)
 import { assaultDims, CONTACT } from "./battlesize.js";
 import { tentCount } from "./basemap.js"; // their camp's tents (basemap.js AI_CAMP_TENTS)
+import { groupCampTents } from "./tents.js"; // their real tents (the bags on their shelf) where they have them
 import { TENTS } from "./buildings.js";
 import { captivesOf, takeCaptive } from "./conflicts.js";
 import { makeCandidate, offerRecruits } from "./recruits.js";
@@ -87,7 +88,7 @@ import { markAbandonedVehicle } from "./markers.js";
 import { thirstAhead } from "./weather.js";
 import { keyWord } from "./water.js"; // "un-purified water" in texts
 import { noteBaseLoss } from "./causes.js"; // "Why?": the chain of causes of a lost base
-import { groupWalls, groupsBuild, worksAt } from "./groupworks.js"; // barestart: the walls a group has built at its base
+import { groupWalls, groupsBuild, worksAt, groupPeopleAt } from "./groupworks.js"; // barestart: the walls a group has built at its base
 import { blocAssaultHelp } from "./blocs.js"; // AI blocs: members' fighters at an ally's walls
 import { askBaseName } from "./basenames.js"; // name a base you take
 import { pwarBaseTaken } from "./playerwars.js"; // wars with you: a base taken counts
@@ -346,13 +347,14 @@ registerBattleLayout("baseAssault", (b, ctx) => {
     for (let i = 0; i < 2 + Math.min(6, walls); i++) {
       for (let t = 0; t < 8; t++) { const x = ctx.rng.int(X + 2, X + 5), y = ctx.rng.int(1, ctx.H - 2); if (ctx.free(x, y)) { ctx.put(x, y, i % 2 ? "sandbag" : "barricade"); break; } }
     }
-    // Their camp (groupbases.js h.camp; ADR 0001): its tents pitched in their grounds behind the line, as many as a
-    // camp's (basemap.js tentCount: makeshift tents, as yours are built), each with open ground all round it.
+    // Their camp (groupbases.js h.camp; ADR 0001): its tents pitched in their grounds behind the line, each with open
+    // ground all round it: their real tents, the bags on their shelf, where they have them (tents.js groupCampTents,
+    // their sizes), else a camp's makeshift tents (basemap.js tentCount: AI_CAMP_TENTS, as yours are built).
     const fac = e.factionId != null ? factionById(ctx.state, e.factionId) : null, home = fac ? homeAt(ctx.state, fac, b.tileId) : null;
-    if (home && walls < 1) {
-      const TW = TENTS.makeshift.w, TH = TENTS.makeshift.h;
-      const clear = (x, y) => { for (let yy = y - 1; yy <= y + TH; yy++) for (let xx = x - 1; xx <= x + TW; xx++) if (!ctx.free(xx, yy)) return false; return true; };
-      for (let i = 0, n = tentCount(home); i < n; i++) {
+    if (home && walls < 1 && tentCount(home) > 0) {
+      for (const kind of groupCampTents(fac, groupPeopleAt(fac, b.tileId))) {
+        const TW = TENTS[kind].w, TH = TENTS[kind].h;
+        const clear = (x, y) => { for (let yy = y - 1; yy <= y + TH; yy++) for (let xx = x - 1; xx <= x + TW; xx++) if (!ctx.free(xx, yy)) return false; return true; };
         for (let t = 0; t < 40; t++) {
           const x = ctx.rng.int(X + 3, ctx.W - 2 - TW), y = ctx.rng.int(2, ctx.H - 3 - TH);
           if (clear(x, y)) { for (let dy = 0; dy < TH; dy++) for (let dx = 0; dx < TW; dx++) ctx.put(x + dx, y + dy, "tent"); break; }

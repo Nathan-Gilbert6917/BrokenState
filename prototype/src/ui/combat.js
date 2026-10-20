@@ -40,7 +40,7 @@ import { noiseGhosts } from "../sim/crossfire.js"; // shots and blasts heard out
 import { canPlace, LIT_ZONES } from "../sim/deploy.js";
 import { layoutPanel, layoutHover, storeHover, storesHtml } from "./basemap.js"; // the base map's layout mode, the stores on the map
 import { ghostAt, itemAtCell, storeAt, FOOT, keyOptions, keyTargets, KEY_AP, landPieceAt, gridOfCell } from "../sim/basemap.js"; // keyOptions: the defenders' keys (Lock, Unlock)
-import { BUILDINGS, demolishRefund } from "../sim/buildings.js"; // layout mode's Demolish: the question names the building and the refund
+import { BUILDINGS, demolishRefund, TENTS, tentKind } from "../sim/buildings.js"; // layout mode's Demolish: the question names the building and the refund
 import { ask } from "./confirm.js"; // one confirmation style (the base map's Demolish asks as the Construction tab's does)
 const refundWords = (rec) => { const t = Object.entries(demolishRefund(rec) || {}).filter(([, q]) => q > 0).map(([k, q]) => `${q} ${k}`).join(", "); return t ? ` (${t})` : ""; };
 import { planFor, planStale, planKey, PLAN_MAPS, plansOf, currentPlan, planTags, startText, roleOf, PLAN, PLAN_WHO, PLAN_WHEN, PLAN_ROLES } from "../sim/defenceplan.js"; // the base's defence plans (the deploy step, the drill)
@@ -1523,7 +1523,7 @@ export function combatAction(state, key, d, ui = null) { // ui: main.js's screen
       if (d.v === "unclear") return void act(state, { type: "unclear", id: d.id });
       if (d.v === "demolish") { // a standing building asks first (ui/confirm.js, as the Construction tab's Demolish); a queued job is only cancelled
         const base = state.bases.find((x) => x.id === b.layout.baseId), rec = base && d.k && d.k.startsWith("b:") ? base.buildings.find((x) => x.id === Number(d.k.slice(2))) : null;
-        if (rec && ui && !(BUILDINGS[rec.type] && BUILDINGS[rec.type].furniture) && ask(ui, d, "cb-deploy", { kind: "demolish", title: `Pull down ${BUILDINGS[rec.type] ? BUILDINGS[rec.type].name : "this building"} at ${base.name}?`, text: `It is gone for good${FOOT[rec.type] && FOOT[rec.type].general ? ", and whatever stands inside it with it" : ""}. About half its scrap and parts come back${refundWords(rec)}.`, yes: "Pull it down" })) return;
+        if (rec && ui && !(BUILDINGS[rec.type] && BUILDINGS[rec.type].furniture) && !(rec.type === "tent" && TENTS[tentKind(rec)].bag) && ask(ui, d, "cb-deploy", { kind: "demolish", title: `Pull down ${BUILDINGS[rec.type] ? BUILDINGS[rec.type].name : "this building"} at ${base.name}?`, text: `It is gone for good${FOOT[rec.type] && FOOT[rec.type].general ? ", and whatever stands inside it with it" : ""}. About half its scrap and parts come back${refundWords(rec)}.`, yes: "Pull it down" })) return;
         return void act(state, { type: "demolish", key: d.k });
       }
       return;

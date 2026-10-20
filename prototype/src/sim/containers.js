@@ -39,7 +39,7 @@ import { storageOf, byWorth, supGood, itemGood, itemRoomKg, storedKey, isStoreBu
 export const OUTSIDE = "outside"; // the pseudo-container of what lies outside (storageOf outside)
 export const LOOSE = "loose";     // the pseudo-container of what is inside but in no container (storageOf loose)
 const UNASSIGNED = new Set([OUTSIDE, LOOSE]);
-const ASSIGNABLE = new Set(["core", "building", "vehicle"]);
+const ASSIGNABLE = new Set(["core", "building", "vehicle", "tent"]); // a pitched tent (basestorage.js 5.): dry, food or gear, by hand (never in PREFER: Tidy up leaves it to you)
 const NO_FOOD = new Set(["lockers", "armory"]);
 const DEFAULT_KG = 1; // a stock key with no weight of its own (basemap.js STEAL.DEFAULT_KG)
 const EPS = 1e-6;
@@ -121,7 +121,7 @@ export function containersOf(state, base) {
     const kg = box ? itemRoomKg(box) : heldKg(base, c);
     return {
       key: c.key, label: `${c.name}${n[c.name] > 1 ? ` ${of.get(c)}` : ""}`, kind, type: typeOf(c), cap: c.cap,
-      bid: kind === "building" ? Number(c.key.slice(2)) : null, vid: kind === "vehicle" ? Number(c.key.slice(2)) : null,
+      bid: kind === "building" || kind === "tent" ? Number(c.key.slice(2)) : null, vid: kind === "vehicle" ? Number(c.key.slice(2)) : null,
       foodOk: assignable && !NO_FOOD.has(c.type), assignable,
       gear: c.gear.map((ai) => ({ item: armory[ai], ai })), sup: { ...c.sup }, kg, free: Math.max(0, c.cap - kg),
     };

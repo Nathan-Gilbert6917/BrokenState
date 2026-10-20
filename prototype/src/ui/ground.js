@@ -121,7 +121,7 @@ export function drawCartIso(ctx, cart, X, Y, S, o = {}) {
   }
 }
 // What a cart holds, for its picture: the things counted (n, a pile's count), the main kind of load by weight
-// (firewood, scrap and parts, fuel, water, else goods), how full (level 0..3 of its kg) and its wear (0 new, 1 worn
+// (wood, scrap and parts, fuel, water, else goods), how full (level 0..3 of its kg) and its wear (0 new, 1 worn
 // out). box: a parked cart's loot-layer container (its contents), else the item's own grid and lots.
 const LOAD_KIND = { wood: "wood", scrap: "scrap", parts: "scrap", carparts: "scrap", gunparts: "scrap", electronics: "scrap", buildmat: "scrap", fuel: "fuel", water: "water", rawwater: "water" };
 export function cartLoad(cart, box = null) {

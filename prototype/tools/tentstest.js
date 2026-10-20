@@ -31,6 +31,7 @@ import { makeCamp as nightCamp } from "../src/sim/nightmarch.js";
 import { roadTeam } from "../src/sim/hardcore-start.js";
 import * as N from "../src/sim/nomads.js";
 import * as T from "../src/sim/tents.js";
+import { bedLine, roughNight } from "../src/sim/beds.js"; // sleeping rough: the one rule (the pt-int merge)
 import { TENT_TYPES, TENT_S, TENTS, TENT_FINDS, AREA_TENTS, TENT_TAGS, BAND_TENTS } from "../src/sim/data-tents.js";
 import { ITEM_TAGS, SITE_TAGS, AREA_TAGS, fitsTags } from "../src/sim/loot.js";
 import { hasItemArt } from "../src/ui/itemart.js";
@@ -160,7 +161,9 @@ console.log("Set up camp: quicker with bags, beds and storage from the tents");
   const others = atBase(st, base.id).filter((s) => s !== s4).map((s) => [s, s.mood]);
   T.campTentsDaily(st, base);
   const rough = T.campSleep(st, base).rough;
-  check(rough.length === 1 && s4.mood < 60 && s4.mood >= 60 - TENTS.ROUGH_MOOD * TENTS.WET && others.every(([s, m]) => s.mood === m), `four people, beds for three: one sleeps rough (mood ${60} → ${s4.mood}), the rest untouched`);
+  // The mood of it is beds.js's one rule (bedLine, applied by relations.js each morning; the pt-int merge), not the camp's day.
+  const bl = bedLine(st, s4, base), rn = roughNight(st, base);
+  check(rough.length === 1 && rough[0] === s4 && s4.mood === 60 && others.every(([s, m]) => s.mood === m) && bl && bl.v === rn.v && rn.v <= -1 && rn.v >= -3, `four people, beds for three: one sleeps rough, the one rough line (${bl && bl.label}: ${bl && bl.v}), nothing taken twice`);
   base.armory.push(newItem("tent1"));
   T.campTentsDaily(st, base);
   check(T.tentsOf(base).length === 3 && !T.campSleep(st, base).rough.length, "a bag in the camp's armory goes up for whoever sleeps rough");

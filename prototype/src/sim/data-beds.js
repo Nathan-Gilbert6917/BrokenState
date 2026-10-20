@@ -25,14 +25,22 @@ export const BED_SPEC = {
 };
 // The rest of a base's beds (the camp's bedrolls, the shelter's and the base's own, a bunkhouse's and a barracks'
 // built-in bunks) sleep as a plain bed (mood 0); the bunk beds fitting built inside a general building (buildings.js
-// bunks) is a bunk bed by another road and sleeps as one. Nobody in a bed: they sleep rough (BED_MOOD.rough a day, on
-// top of the base's crowding: morale.js).
+// bunks) is a bunk bed by another road and sleeps as one. A pitched tent is a bed too, by its kind (data-tents.js
+// TENT_TYPES mood: a makeshift tent −1, a proper tent 0). Nobody in a bed: they sleep rough.
+// THE ONE ROUGH-SLEEPING RULE at a base, a camp included (the pt-int merge, 2026-10-20; beds.js bedLine, applied by
+// relations.js each morning): BED_MOOD.rough a day for each person without a bed, × ROUGH_WEATHER (the user's pick
+// 2026-10-20, "sleeping rough is worse in winter or rain"): ×wet on a wet day (rain, a storm), ×freezing on a freezing
+// one (a hard frost, snow, a blizzard, or a low at or below 0 °C; the worse of the two, never both), and on a freezing
+// night coldIll a chance each of a chest cold (health.js CONDITIONS.chestcold; beds.js roughColdDaily, its own dice).
+// A camp is never crowded (morale.js crowdInfo); a base past its beds is crowded as well (the old Overcrowded rule,
+// the whole base's). On the road: tents.js roadTentsHour (the team's bags).
 export const BED_MOOD = { plain: 0, bunks: -0.5, rough: -1 };
+export const ROUGH_WEATHER = { wet: 2, freezing: 3, coldIll: 0.03, WET: ["rain", "storm", "snow", "blizzard"], COLD: ["frost", "snow", "blizzard"] };
 
 // The items (data.js Object.assign(GEAR, BED_GEAR)). slot "pack" + bulky + twoHands: carried in both arms only (as the
 // fire safe: inventory.js, carry.js handsCount), or in a cart, the team's cargo or a vehicle; kept in the base's
 // armory (its weight counts against the base's storage room: basestorage.js). burnShare: the share of its weight that
-// breaks down into firewood.
+// breaks down into wood.
 /** @type {Record<string, any>} */
 export const BED_GEAR = {
   cot:     { name: "Cot", slot: "pack", skill: null, power: 0, req: 0, value: 6, noise: 0, weight: 7, cat: "camp", bulky: true, twoHands: true, burnShare: 0.5, furniture: "cot",

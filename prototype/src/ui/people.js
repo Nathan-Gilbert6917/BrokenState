@@ -68,7 +68,7 @@ export function crowdingRow(state, b) {
   const ci = crowdInfo(state, b);
   const text = ci.penalty > 0
     ? `Crowding costs everyone here ${n1(ci.penalty)} mood a day (2 + 8 per 100% over the beds, up to ${CROWD.cap}).${ci.leader ? ` The leader gives +${n1(ci.lift)} of their +${n1(ci.rawLift)} (Leadership × ${LEADER_LIFT}, at most half the crowding).` : " No leader here to soften it."} Illness spreads more easily too. Build bunkhouses (+6 beds) or move people out.`
-    : `Everyone has a bed: +${CROWD.roomy} mood a day.${ci.leader ? ` The leader adds +${n1(ci.lift)} (Leadership × ${LEADER_LIFT}).` : ""}`;
+    : ci.roomy ? `Everyone has a bed: +${CROWD.roomy} mood a day.${ci.leader ? ` The leader adds +${n1(ci.lift)} (Leadership × ${LEADER_LIFT}).` : ""}` : `A camp is never crowded, but ${ci.people - ci.beds} of its ${ci.people} people have no bed: they sleep rough round the fire (each loses mood: sim/beds.js). Pitch a tent bag or build a Makeshift tent.${ci.leader ? ` The leader adds +${n1(ci.lift)} (Leadership × ${LEADER_LIFT}).` : ""}`;
   return `<div${tip(text)}>Beds</div><div><span class="${ci.level.tone}">${ci.beds} for ${ci.people} · ${esc(ci.level.name)}${ci.penalty > 0 ? ` (${Math.round(ci.ratio * 100)}%)` : ""}</span> <span class="muted">mood ${sgn(ci.net)}/day</span></div>`;
 }
 

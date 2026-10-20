@@ -11,7 +11,7 @@
 // 5. An AI shooter gets the same penalty and the same blindness at someone in a bush; an AI person in a bush gets the
 //    same concealment from your shots, and its cell scoring counts it.
 // Usage: node tools/softcovertest.js [seed]
-import { createWorld, hub, atBase, makeSurvivor } from "../src/sim/world.js";
+import { createWorld, hub, atBase, makeSurvivor, newId } from "../src/sim/world.js";
 import {
   createBattle, registerCombatHandler, CELL, shotOdds, canSee, coverAgainst, reachable, sightRange, bestShot, foesOf, finishCombat,
 } from "../src/sim/combat.js";
@@ -249,6 +249,8 @@ section("Tent damage persists on the base after the fight");
   const tiles = Object.keys(st.tiles).map(Number).filter((t) => st.tiles[t].terrain !== "water" && !st.tiles[t].bridge && !st.bases.some((x) => x.tile === t));
   const camp = { id: 9000 + st.bases.length, tile: tiles.sort((a, c) => a - c)[0] ?? st.grid.neighbors(h0.tile)[0], type: "outpost", name: "Test Camp", stock: { water: 0, fuel: 0, meds: 0, ammo: 0, arrows: 0, parts: 0, scrap: 0, jars: 0, wood: 0, buildmat: 0, rawwater: 0 }, radio: false, watchtower: false, buildings: [], construction: [], armory: [], tier: 0, camp: true, fire: true };
   st.bases.push(camp);
+  // Its three tents: base map pieces, building records keyed b:<id> (the pt-int merge: every tent is one).
+  for (let i = 0; i < 3; i++) camp.buildings.push({ id: newId(), type: "tent", tent: "makeshift" });
   for (let i = 0; i < 3; i++) { const s = makeSurvivor(st); s.location = { kind: "base", baseId: camp.id }; s.health = 100; s.gear.weapon = newItem("pistol"); st.survivors.push(s); }
   const raid = () => {
     globalThis.window = {};
@@ -268,13 +270,13 @@ section("Tent damage persists on the base after the fight");
   of(keys[2])[0].hp = SOFT.TENT_FIGHT.HP / 2;
   b.phase = "player";
   finishCombat(st, b.setup, { outcome: "win", enemiesKilled: 0, worn: true });
-  const P = camp.plan || {};
-  const i = (k) => k.slice(2);
-  check(P.tentHp && P.tentHp[i(keys[0])] === 0 && P.tentHp[i(keys[1])] === 0 && P.tentHp[i(keys[2])] === 75, `kept on the camp's record after the fight (plan.tentHp ${JSON.stringify(P.tentHp)})`);
+  const recOf = (k, base = camp) => base.buildings.find((x) => `b:${x.id}` === k);
+  const hps = (base = camp) => keys.map((k) => recOf(k, base) && recOf(k, base).tentHp);
+  check(keys.every((k) => /^b:\d+$/.test(k)) && recOf(keys[0]).tentHp === 0 && recOf(keys[1]).tentHp === 0 && recOf(keys[2]).tentHp === 75 && !(camp.plan && camp.plan.tentHp), `kept on each tent's own record after the fight (rec.tentHp ${JSON.stringify(hps())})`);
   check(st.log.some((l) => /burned in the fight/.test(l.text)) && st.log.some((l) => /slashed/.test(l.text)), "the log says which were slashed and which burned");
   // Save and load keep it; the next fight starts from it.
   const st2 = loadFromString(saveToString(st));
-  check(JSON.stringify(st2.bases.find((x) => x.id === camp.id).plan.tentHp) === JSON.stringify(P.tentHp), "save and load keep it");
+  check(JSON.stringify(hps(st2.bases.find((x) => x.id === camp.id))) === JSON.stringify(hps()), "save and load keep it");
   b = raid();
   const torn = b.cells.filter((c) => c.tent === keys[0] || c.tent === keys[1]);
   const worn = b.cells.filter((c) => c.tent === keys[2]);
@@ -287,15 +289,15 @@ section("Tent damage persists on the base after the fight");
   st.combat = null;
   // The campers mend them a day at a time.
   SOFT.mendTents(st);
-  check(P.tentHp[i(keys[0])] === SOFT.TENT_FIGHT.MEND && P.tentHp[i(keys[2])] === undefined, `a day's mending: +${SOFT.TENT_FIGHT.MEND}, the one at 75% whole again (${JSON.stringify(P.tentHp)})`);
+  check(recOf(keys[0]).tentHp === SOFT.TENT_FIGHT.MEND && recOf(keys[2]).tentHp === undefined, `a day's mending: +${SOFT.TENT_FIGHT.MEND}, the one at 75% whole again (${JSON.stringify(hps())})`);
   for (let d = 0; d < 4; d++) SOFT.mendTents(st);
-  check(!P.tentHp, "mended whole in a few days: the record forgets them");
+  check(hps().every((v) => v === undefined), "mended whole in a few days: the records forget them");
   // A fight with no wear leaves the record alone.
   b = raid();
   check(b.cells.filter((c) => c.tent).every((c) => c.k === "tent" && c.hp === SOFT.TENT_FIGHT.HP), "pitched again: the next fight's tents are whole");
   b.phase = "player";
   finishCombat(st, b.setup, { outcome: "win", enemiesKilled: 0, worn: true });
-  check(!camp.plan.tentHp, "an untouched fight records nothing");
+  check(hps().every((v) => v === undefined) && !(camp.plan && camp.plan.tentHp), "an untouched fight records nothing");
 }
 
 console.log(`\n${pass} passed, ${fail} failed (${((Date.now() - t0) / 1000).toFixed(1)} s)`);

@@ -27,8 +27,8 @@
 //      (data-boxes.js) each, cash box 3, fire safe 15, toolbox 10, equipment case 12, rifle case 8, pistol case 3. Its
 //      own weight is not counted (it is the room); what is still inside it is, and fills it first. A sealed box is an
 //      item like any other until it is opened.
-//   5. the tents pitched there (tents.js, data-tents.js TENT_TYPES storeKg: a one-person tent 15, a two-person 30, a
-//      four-person 60, a makeshift one nothing): kept out of the weather, not assignable.
+//   5. the tents pitched there (base map pieces, tents.js; data-tents.js TENT_TYPES storeKg: a one-person tent 15, a
+//      two-person 30, a four-person 60, a makeshift one nothing): kept out of the weather, assignable (food or gear).
 //
 // THE FILL (deterministic, pure): every good is ranked by its worth a kg (supplies: data.js supValue / supWeight;
 // items: valuation.js itemValue / itemLoad), the densest first (supplies before items on a tie, then by key or armory
@@ -48,7 +48,7 @@
 //   - raiders: outsideShare is the share of the goods lying outside, for the base map's piles (basemap.js: easier to
 //     steal).
 // The base window shows it all (storageSummary / storageLine).
-import { BUILDINGS, isCamp, isShelter, tentOf } from "./buildings.js"; // call-time only (the import cycle)
+import { BUILDINGS, isCamp, isShelter, tentOf, tentKind } from "./buildings.js"; // call-time only (the import cycle)
 import { GEAR, SUPPLIES, supValue, supWeight } from "./data.js";
 import { BOX_STORE_KG } from "./data-boxes.js";
 import { itemLoad, itemKg } from "./inventory.js"; // call-time only
@@ -60,7 +60,6 @@ import { weatherOnDay } from "./weather.js"; // call-time only
 import { rollsWear, isPaper } from "./itemcond.js"; // call-time only
 import { itemDur, itemDurMax } from "./crafting.js"; // call-time only
 import { keyWord } from "./water.js"; // call-time only
-import { tentsOf, TENT_TYPES } from "./tents.js"; // call-time only: the tents pitched at a base keep their storage out of the weather
 export { STORE_KG } from "./buildings.js";
 export { BOX_STORE_KG } from "./data-boxes.js";
 
@@ -109,9 +108,9 @@ export const itemRoomKg = (it) => (!it || !GEAR[it.key] ? 0 : isOpenBox(it) ? Ma
 /** A good of the fill: a supply stack ({ sup, q, unit }) or an armory item ({ i }), with its worth a kg. */
 export const supGood = (k, q) => ({ sup: k, kg: q * supWeight(k), unit: supWeight(k), q, dens: supDensity(k), rank: 0 });
 export const itemGood = (it, i) => { const kg = itemRoomKg(it); return { i, kg, unit: kg, q: 1, dens: itemDensity(it, kg), rank: 1 }; };
-// Containers the goods can be assigned to by containers.js (item.store, base.bins): the core, a building, a parked car.
+// Containers the goods can be assigned to by containers.js (item.store, base.bins): the core, a building, a parked car, a tent.
 // An opened box is room but no assignable container: it is an item of the armory, and its index moves.
-const ASSIGNABLE = new Set(["core", "building", "vehicle"]);
+const ASSIGNABLE = new Set(["core", "building", "vehicle", "tent"]); // a pitched tent too (the user's pick 2026-10-20: tents in the Storage tab)
 
 /**
  * The base's storage: its containers' room (cap, kg), all its goods' weight (used, kg: inside and outside), what lies
@@ -136,13 +135,14 @@ export function storageOf(state, base) {
   const tier = tierOf(base);
   const box = (key, name, cap, kind, type) => ({ key, name, cap, kind, type, sup: {}, gear: [], kg: 0 });
   if (CORE_KG[tier] > 0) containers.push(box("core", CORE_NAME[tier], CORE_KG[tier], "core", tier));
-  for (const b of base.buildings || []) { const kg = b.type === "tent" ? tentOf(b).storeKg : buildingKg(b.type); if (kg > 0) containers.push(box(`b:${b.id}`, b.type === "tent" ? tentOf(b).name : BUILDINGS[b.type].name, kg, "building", b.type)); } // a tent keeps its kind's kg out of the weather (buildings.js TENTS)
+  for (const b of base.buildings || []) { if (b.type === "tent") continue; const kg = buildingKg(b.type); if (kg > 0) containers.push(box(`b:${b.id}`, BUILDINGS[b.type].name, kg, "building", b.type)); } // the tents: 5. below
   if (state && !base.group) for (const v of carsAtBase(state, base.id)) { const kg = vehicleStoreKg(v); if (kg > 0) containers.push(box(`v:${v.id}`, v.name, kg, "vehicle", v.type)); }
   const armory = base.armory || [];
   armory.forEach((it, i) => { if (it && isOpenBox(it) && boxKg(it) > 0) containers.push(box(`a:${i}`, it.name, boxKg(it), "box", it.key)); });
-  // 5. the tents pitched there (tents.js base.tents; the seam pitchTentAtBase): their storage out of the weather. Not
-  //    assignable (the goods put away nowhere fill them).
-  for (const t of tentsOf(base)) { const T = TENT_TYPES[t.type]; if (T && T.storeKg > 0) containers.push(box(`t:${t.id}`, T.name, T.storeKg, "tent", t.type)); }
+  // 5. the tents standing there (base map pieces: buildings.js TENTS = data-tents.js TENT_TYPES storeKg; a broken one
+  //    none): their storage out of the weather, counted once, here. Assignable like a storage building (the Storage
+  //    tab: food or gear kept in a tent, dry), else the goods put away nowhere fill them; keyed by the record (b:<id>).
+  for (const b of base.buildings || []) { if (b.type !== "tent" || b.broken) continue; const T = tentOf(b); if (T.storeKg > 0) containers.push(box(`b:${b.id}`, T.name, T.storeKg, "tent", tentKind(b))); }
   out.cap = containers.reduce((a, c) => a + c.cap, 0);
 
   // The assigned goods into their containers (THE ASSIGNMENTS).

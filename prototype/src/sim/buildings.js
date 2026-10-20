@@ -25,6 +25,8 @@ import { baseCarts, CART_JOB } from "./carts.js"; // a cart at the base: a build
 import { woodNeed } from "./woodcutting.js"; // the Ring wall leaves the wood for heating (call-time only)
 import { carryPlacement, fittingRoom, fittingsIn, wallInfo, ringPlan, ensureRing, siteWaits, finishClear, clearUnder } from "./basemap.js"; // the base map (call-time only): a finished job's building keeps the spot it was placed on; a general building with room for a fitting; the fittings inside one; the wall pieces' ring
 import { BED_BUILDINGS } from "./data-beds.js"; // beds as furniture: the placed cot, bed, bunk bed and large bed (beds.js)
+import { TENT_TYPES, TENT_S } from "./data-tents.js"; // the one tent table (TENTS below)
+import { strikeTentAtBase } from "./tents.js"; // a bag's tent pulled down: struck back into its bag (call-time only)
 import { furnitureBeds, furnitureProblem, canSetFurniture, setFurniture, pickUpFurniture, RETIRED_WHY, furnitureText } from "./beds.js"; // beds as furniture (call-time only)
 
 export const RECIPES = {
@@ -498,6 +500,12 @@ export function demolish(state, base, id) {
   if (!chk.ok) return chk.reason;
   const b = base.buildings.find((x) => x.id === id);
   if (BUILDINGS[b.type].furniture) return pickUpFurniture(state, base, b); // beds.js: back into the stores whole
+  if (b.type === "tent" && TENTS[tentKind(b)].bag) { // a tent from a bag (tents.js): struck back into it, the bag into the stores
+    const name = tentOf(b).name, bag = strikeTentAtBase(state, base, id);
+    if (bag) base.armory.push(bag);
+    log(state, `${name} at ${base.name} struck and packed into its bag (in the stores).`, "info");
+    return `${name} struck: its bag is back in the stores.`;
+  }
   const back = demolishRefund(b);
   // A general building (base building 2026-10-19) comes down with the fittings standing inside it, placed there by
   // hand (host) or by the game (basemap.js fittingsIn): their half back too, the ones queued for it cancelled and
@@ -767,21 +775,16 @@ export const underAttack = (state, base) => !!base.alert ||
 // sleeps nobody until it is repaired) and each pair of bunk beds built inside a general building (base building 2026-10-19).
 export const BEDS = { bunkhouse: 6, barracks: 12, cots: 2, bunks: 2 };
 // Tents (the user's rules 2026-10-20): one kind of map piece (BUILDINGS.tent, a record { type: "tent", tent: kind })
-// in sizes, ready for tent bags: its footprint, the people it sleeps and the kg it keeps out of the weather (TENT_STORE_KG
-// a sleeper's share: basestorage.js storageOf counts it as room). The Makeshift tent is the one built (a poor bed: mood).
-export const TENT_STORE_KG = 15;
-export const TENTS = {
-  makeshift: { name: "Makeshift tent", w: 1, h: 2, sleepers: 1, storeKg: 0, mood: -1 },
-  tent1:     { name: "One-person tent", w: 1, h: 2, sleepers: 1, storeKg: TENT_STORE_KG },
-  tent2:     { name: "Two-person tent", w: 2, h: 2, sleepers: 2, storeKg: 2 * TENT_STORE_KG },
-  tent4:     { name: "Four-person tent", w: 3, h: 3, sleepers: 4, storeKg: 4 * TENT_STORE_KG },
-};
+// in sizes, pitched from tent bags (tents.js) or the Makeshift tent built: its footprint, the people it sleeps, the kg
+// it keeps out of the weather (basestorage.js storageOf: a "tent" container; storage.js storeSpaces: the Tents dry
+// room) and the mood a night in it is worth (beds.js bedSlots). ONE TABLE: data-tents.js TENT_TYPES, re-exported here
+// as TENTS (the pt-int merge); TENT_STORE_KG is its S.
+export const TENT_STORE_KG = TENT_S;
+export const TENTS = TENT_TYPES;
 export const tentKind = (b) => (b && TENTS[b.tent] ? b.tent : "makeshift");
 export const tentOf = (b) => TENTS[tentKind(b)];
 // The beds a base's standing tents give (a broken one sleeps nobody until it is mended): their sleepers.
 export const tentBeds = (base) => (base.buildings || []).reduce((a, b) => a + (b.type === "tent" && !b.broken ? tentOf(b).sleepers : 0), 0);
-// The sleepers in makeshift tents (a poor night's sleep: morale.js crowdInfo).
-export const makeshiftBeds = (base) => (base.buildings || []).reduce((a, b) => a + (b.type === "tent" && !b.broken && tentKind(b) === "makeshift" ? 1 : 0), 0);
 // Beds for the adults: less the beds children take (family.js updateKidBeds: two to a bed; babies sleep with a parent).
 // A camp has none of its own (the user's rule 2026-10-20: "A new base has no beds until tents are put up"): its tents.
 // plainBeds: the tier's own and the built bed buildings (before the children's), which sleep as a plain bed (beds.js bedSlots);

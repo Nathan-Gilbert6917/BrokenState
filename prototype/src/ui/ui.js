@@ -157,7 +157,8 @@ import { roleOf, isManaged, taskLabel, taskWhy, priorityCount } from "../sim/wor
 import { nameModalUp, nameBaseModal, renameButton } from "./basename.js"; // naming and renaming bases
 import { firstHubCard, fromTeamRow, stagingTileCard, fireButton, stageSteps } from "./hardcore.js";
 import { stagingView, needText, ESTABLISH_LABEL, STAGING, shelterView, STRIKE_LABEL } from "../sim/staging.js";
-import { campSleep, tentsText, TENT_TYPES, TENTS } from "../sim/tents.js"; // the camp's tents: beds under cover, storage out of the weather
+import { campSleep, tentsText, TENT_TYPES } from "../sim/tents.js"; // the camp's tents: beds under cover, storage out of the weather
+import { BED_MOOD, ROUGH_WEATHER } from "../sim/data-beds.js"; // the one rough-sleeping rule (sim/beds.js bedLine)
 import { gaugeRows, treatsRow, needsEffectText, foodOnThem, rationRow } from "./needs.js";
 import { packFood, packWater } from "../sim/eating.js"; // the planner's per-person ration line
 import { needsBar, needsBase } from "./needsbar.js"; // the top bar's Needs button and its drop-down of every supply
@@ -1585,10 +1586,10 @@ function campTentsCard(state, b) {
   const S = campSleep(state, b);
   const types = S.tents.map((t) => t.type);
   const rough = S.rough.length;
-  const roughTip = `Whoever has no bed under cover (a tent or a bunk) sleeps rough round the fire: −${TENTS.ROUGH_MOOD} mood a day (twice that on a wet day). The bedrolls still count as room: no crowding for it.`;
+  const roughTip = `A camp has no beds of its own: its tents are its beds. Whoever has none sleeps rough round the fire: ${-BED_MOOD.rough} mood a day, ×${ROUGH_WEATHER.wet} on a wet day, ×${ROUGH_WEATHER.freezing} on a freezing one, with a ${Math.round(ROUGH_WEATHER.coldIll * 100)}% chance of a chest cold that night (sim/beds.js, the one rule). A camp is never crowded.`;
   return `<h3>Tents (${S.tents.length})</h3>
-    <div class="card small"${tip("Tent bags the team brings go up when the camp is set up (quicker with bags for everyone: half an hour). Their sleepers are beds under cover; their storage keeps goods and food out of the weather. Strike camp packs them back into their bags first.")}>
-      ${S.tents.length ? `<div>${esc(tentsText(types).replace(/^./, (c) => c.toUpperCase()))}: sleep ${S.tents.reduce((a, t) => a + (TENT_TYPES[t.type] ? TENT_TYPES[t.type].sleepers : 0), 0)}, ${S.storeKg} kg out of the weather.</div>` : `<div class="muted">No tents pitched: tarps and bedrolls round the fire.</div>`}
+    <div class="card small"${tip("Tent bags the team brings go up when the camp is set up (quicker with bags for everyone: half an hour), placed on the base map by the game (move them there, or pitch more from the Build list's Tents). Their sleepers are beds; their storage keeps goods and food out of the weather. A Makeshift tent can be built (1 bed, a poor one). Strike camp packs them back into their bags first.")}>
+      ${S.tents.length ? `<div>${esc(tentsText(types).replace(/^./, (c) => c.toUpperCase()))}: sleep ${S.tents.reduce((a, t) => a + (TENT_TYPES[t.type] ? TENT_TYPES[t.type].sleepers : 0), 0)}, ${S.storeKg} kg out of the weather.</div>` : `<div class="muted">No tents up: nobody has a bed. Pitch a tent bag or build a Makeshift tent (the base map).</div>`}
       <div class="${rough ? "warn" : "good"}"${tip(roughTip)}>${S.people ? `${S.covered} of ${S.people} sleep under cover${rough ? `; ${rough} sleep${rough === 1 ? "s" : ""} rough (${S.rough.map((s) => first(s)).join(", ")})` : ""}.` : "Nobody sleeps here now."}</div>
       ${S.packed.length ? `<div class="muted">Packed in the armory: ${esc(tentsText(S.packed.map((it) => it.key)))} (they go up while someone sleeps rough).</div>` : ""}
     </div>`;

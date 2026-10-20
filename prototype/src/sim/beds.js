@@ -26,8 +26,16 @@
 // (furnitureBeds), less the children's. Each person sleeps in a bed of their own (bedAssignments): the beds sorted best
 // first by their mood (a large bed, a bed or a plain bed, a bunk bed or the bunk beds fitting, a cot; the children
 // take the worst), the people in order (the leader, then by id), one each. Their mood a day follows the bed
-// (bedLine, relations.js moodFactors: a cot −1, a bunk −0.5, a large bed +1); nobody without a bed: they sleep rough
-// (BED_MOOD.rough a day, on top of the base's crowding, morale.js). Away on a team: no line.
+// (bedLine, relations.js moodFactors: a cot −1, a bunk −0.5, a large bed +1). The pitched tents are beds in the same
+// list (the pt-int merge: tentBeds once, each sleeper's mood by its kind, data-tents.js TENT_TYPES: a makeshift tent
+// −1, a one-, two- or four-person tent 0). Nobody without a bed: they sleep rough, THE ONE RULE for a base and a camp
+// (BED_MOOD.rough a day × data-beds.js ROUGH_WEATHER: ×2 wet, ×3 freezing, a chest cold now and then on a freezing
+// night: roughColdDaily; a camp is never crowded,
+// morale.js). Away on a team: no line (the road's rule: tents.js roadTentsHour).
+//
+// THE GOVERNOR'S ORDER for beds (governBeds, before the day's builds): the spare tent bags in the stores pitched first
+// (free: tents.js pitchArmoryBags); then, at a camp or a shelter, the Makeshift tents (autopilot.js buildWishes, a
+// sleeper's each); then the furniture crafted here (only while the beds built, pitched and queued still fall short).
 //
 // THE OLD MAKESHIFT COTS (buildings.js cots: a shelter's build, +2 beds) are retired: never built again (canBuild:
 // RETIRED_WHY), and a save's built cots are each two Cots set at that base (migrateCots, save.js), placed by the game.
@@ -47,11 +55,16 @@
 // the mean a head × BEDS_AI.morale off their desertion pressure, groupcare.js desertPressure, as hot meals' is).
 // Their bases' map (groupbases.js WORKS_BUILDING: the hall a Lodge, each piece itself) is laid out by the same auto
 // layout, the furniture on the Lodge's floor.
-import { BED_SPEC, BED_KINDS, BED_MOOD, BED_FINDS, BED_CRAFTS, BEDS_AI } from "./data-beds.js";
-import { BUILDINGS, BEDS, addBuilding, count, plainBeds, baseBeds } from "./buildings.js"; // (call-time only: the modules load in a circle)
+import { BED_SPEC, BED_KINDS, BED_MOOD, BED_FINDS, BED_CRAFTS, BEDS_AI, ROUGH_WEATHER } from "./data-beds.js";
+import { BUILDINGS, BEDS, addBuilding, count, plainBeds, baseBeds, queuedBeds, isShelter, canBuild } from "./buildings.js"; // (call-time only: the modules load in a circle)
+import { pitchArmoryBags, tentsText } from "./tents.js"; // (call-time only) the governor pitches spare bags first
 import { fittingRoom, placeItem, refreshBaseMap } from "./basemap.js"; // (call-time only)
 import { makeItem, canCraft, queueCraft, craftQueue } from "./crafting.js"; // (call-time only)
 import { residents } from "./world.js";
+import { tentKind } from "./buildings.js"; // (call-time only) a pitched tent's kind
+import { TENT_TYPES } from "./data-tents.js"; // the one tent table: a pitched tent's sleepers and mood
+import { weatherAt } from "./weather.js"; // (call-time only) a wet or freezing night for the rough sleepers
+import { addCondition, CONDITIONS } from "./health.js"; // (call-time only) a chest cold from a freezing night sleeping rough
 import { hash01 } from "./skills.js";
 import { pickWeighted } from "./loot.js"; // (call-time only)
 import { lootItem } from "./inventory.js";
@@ -146,6 +159,7 @@ export function pickUpFurniture(state, base, rec) {
 export function bedSlots(base) {
   const slots = [];
   for (const b of base.buildings || []) { const s = BED_SPEC[b.type]; if (s && !b.broken) for (let i = 0; i < s.sleepers; i++) slots.push({ kind: b.type, mood: s.mood }); }
+  for (const b of base.buildings || []) { if (b.type !== "tent" || b.broken) continue; const k = tentKind(b), T = TENT_TYPES[k]; for (let i = 0; i < T.sleepers; i++) slots.push({ kind: `tent:${k}`, mood: T.mood || 0 }); } // the pitched tents (buildings.js tentBeds)
   const bunks = count(base, "bunks") * BEDS.bunks;
   const plain = Math.max(0, plainBeds(base) - bunks);
   for (let i = 0; i < bunks; i++) slots.push({ kind: "bunks", mood: BED_MOOD.bunks });
@@ -163,7 +177,29 @@ export function bedAssignments(state, base) {
   people.forEach((s, i) => out.set(s.id, slots[i] || null));
   return out;
 }
-const slotWord = (slot) => (slot.kind === "bunks" ? "in a bunk bed (the bunk beds fitting)" : slot.kind === "plain" ? "in a bed" : BED_SPEC[slot.kind].word);
+const slotWord = (slot) => (slot.kind === "bunks" ? "in a bunk bed (the bunk beds fitting)" : slot.kind === "plain" ? "in a bed" : slot.kind.startsWith("tent:") ? `in a ${TENT_TYPES[slot.kind.slice(5)].name.toLowerCase()}` : BED_SPEC[slot.kind].word);
+// The rough sleepers' night (THE ONE RULE, see the header): BED_MOOD.rough × ROUGH_WEATHER (freezing ×3, else wet ×2)
+// at the base's tile.
+/** @returns {{ v: number, wet: boolean, cold: boolean }} */
+export function roughNight(state, base) {
+  const w = state && base && base.tile != null ? weatherAt(state, base.tile) : null;
+  const wet = !!w && ROUGH_WEATHER.WET.includes(w.key), cold = !!w && (ROUGH_WEATHER.COLD.includes(w.key) || (w.lo != null && w.lo <= 0));
+  return { v: BED_MOOD.rough * (cold ? ROUGH_WEATHER.freezing : wet ? ROUGH_WEATHER.wet : 1), wet, cold };
+}
+// A freezing night sleeping rough (relations.js relationsDaily, after the mood): ROUGH_WEATHER.coldIll a chance each of
+// a chest cold (health.js), on its own dice (hashed: the game's dice untouched). Returns who caught one.
+export function roughColdDaily(state, base) {
+  if (!roughNight(state, base).cold) return [];
+  const a = bedAssignments(state, base), d = Math.floor(state.hour / 24), got = [];
+  for (const [id, slot] of a) {
+    if (slot) continue;
+    const s = state.survivors.find((x) => x.id === id);
+    if (!s || !s.alive || hash01(state.seed, "roughcold", id, d) >= ROUGH_WEATHER.coldIll) continue;
+    const C = CONDITIONS.chestcold;
+    if (addCondition(state, s, "chestcold", `sleeping rough on a freezing night at ${base.name}`, { sev: C.sev[0] + Math.floor(hash01(state.seed, "roughcoldsev", id, d) * (C.sev[1] - C.sev[0] + 1)), cause: "weather" })) got.push(s);
+  }
+  return got;
+}
 // The mood line for where someone sleeps tonight (relations.js moodFactors, applied there each morning), or null (a
 // plain bed, a hospital bed, away from home).
 export function bedLine(state, s, base) {
@@ -171,9 +207,13 @@ export function bedLine(state, s, base) {
   const a = bedAssignments(state, base);
   if (!a.has(s.id)) return null;
   const slot = a.get(s.id);
-  if (!slot) return { label: `Sleeps rough: no bed for them (${a.size} people for ${baseBeds(base)} beds)`, v: BED_MOOD.rough, tip: "Set more beds inside the base's buildings (craft cots, beds, bunk beds or large beds), or build a bunkhouse" };
+  if (!slot) {
+    const n = roughNight(state, base), how = n.wet && n.cold ? ", wet and freezing" : n.wet ? ", wet" : n.cold ? ", freezing" : "";
+    return { label: `Sleeps rough${how}: no bed for them (${a.size} people for ${baseBeds(base)} beds)`, v: n.v, tip: `${-BED_MOOD.rough} mood a day, ×${ROUGH_WEATHER.wet} on a wet day, ×${ROUGH_WEATHER.freezing} on a freezing one (and a ${Math.round(ROUGH_WEATHER.coldIll * 100)}% chance of a chest cold that night). ${base.camp ? "Pitch a tent bag (the base map's Build list, Tents) or build a Makeshift tent" : "Set more beds inside the base's buildings (craft cots, beds, bunk beds or large beds), pitch a tent bag, or build a bunkhouse"}` };
+  }
   if (!slot.mood) return null;
-  return { label: `Sleeps ${slotWord(slot)}`, v: slot.mood, tip: slot.mood > 0 ? "A large bed: a good night's sleep" : "A cot or a bunk is no real rest: a bed or a large bed would do better" };
+  const tent = slot.kind.startsWith("tent:");
+  return { label: `Sleeps ${slotWord(slot)}`, v: slot.mood, tip: slot.mood > 0 ? "A large bed: a good night's sleep" : tent ? "A makeshift tent of poles and a tarp is no real rest: a proper tent or a bed would do better" : "A cot or a bunk is no real rest: a bed or a large bed would do better" };
 }
 // The base window's line: "2 cots, 1 large bed (4 beds)" or "".
 export function furnitureText(base) {
@@ -217,6 +257,12 @@ export const GOV_BEDS = { keepScrap: 15, keepWood: 120 };
 // building with room; short of beds, a bunk bed (else a cot) queued at the bench. Returns the lines to say.
 export function governBeds(state, base) {
   const out = [];
+  // 1. The spare tent bags in the stores, pitched first (free; tents.js: the smallest that does it, placed by the game).
+  const short = residents(state, base.id).length - baseBeds(base);
+  if (short > 0) {
+    const recs = pitchArmoryBags(state, base, short);
+    if (recs.length) out.push(`${base.name}: ${tentsText(recs.map((r) => r.type))} pitched from the stores (+${bedsWord(recs.reduce((a, r) => a + TENT_TYPES[r.type].sleepers, 0))}).`);
+  }
   for (const type of BED_KINDS) {
     while (furnitureInStores(base, type) && canSetFurniture(state, base, type).ok) {
       const r = setFurniture(state, base, type);
@@ -226,7 +272,10 @@ export function governBeds(state, base) {
   }
   if (craftQueue(base).some((j) => BED_SPEC[j.recipe])) return out; // one at a time
   const people = residents(state, base.id).length;
-  if (people <= baseBeds(base)) return out;
+  if (people <= baseBeds(base) + queuedBeds(base)) return out; // the builds queued (a makeshift tent, a bunkhouse) count
+  // 2. A camp or a shelter puts up Makeshift tents first (autopilot.js buildWishes) while it may build more of them.
+  if (isShelter(base) && canBuild(state, base, "tent").ok) return out;
+  // 3. The furniture, crafted here.
   for (const type of ["bunkbed", "cot"]) {
     const c = BED_CRAFTS[type].in;
     if ((base.stock.scrap || 0) < (c.scrap || 0) + GOV_BEDS.keepScrap || (base.stock.wood || 0) < (c.wood || 0) + GOV_BEDS.keepWood) continue;

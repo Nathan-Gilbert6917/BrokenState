@@ -17,7 +17,8 @@
 // 6. AI parity: their walled base's margin wears the same land; their works cost wood; their camp pitches 2 × 2 tents.
 // Usage: node tools/baseviewtest.js [seed]
 import { readFileSync, readdirSync } from "node:fs";
-import { createWorld, hub, atBase, makeSurvivor } from "../src/sim/world.js";
+import { createWorld, hub, atBase, makeSurvivor, residents } from "../src/sim/world.js";
+import { bedLine } from "../src/sim/beds.js"; // the one rough line and a bed's mood (the pt-int merge)
 import { createBattle, registerCombatHandler, combatAct, CELL } from "../src/sim/combat.js";
 import { addBuilding, queueBuild, canBuild, constructionHour, baseBeds, tentBeds, TENTS, TENT_STORE_KG, BUILDINGS } from "../src/sim/buildings.js";
 import { crowdInfo, crowding, CROWD } from "../src/sim/morale.js";
@@ -251,7 +252,9 @@ section("Tents: a Makeshift tent built, tents pitched from bags, beds from sleep
   people(st, camp, 3);
   check(tentBeds(camp) === 0 && baseBeds(camp) === 0 && !BM.layoutOf(st, camp).some((e) => e.it.type === "tent"), "a new camp has no tents and no beds");
   const ci0 = crowdInfo(st, camp);
-  check(ci0.penalty === CROWD.rough && ci0.net < 0 && crowding(st, camp) <= 1, `its people sleep rough round the fire: −${ci0.penalty} mood a day, no crowding (${crowding(st, camp)})`);
+  // The pt-int merge: a camp is never crowded; each of its people without a bed has the one rough line (beds.js bedLine).
+  const rl = residents(st, camp.id).map((s) => bedLine(st, s, camp));
+  check(ci0.penalty === 0 && ci0.net <= 0 + ci0.lift && crowding(st, camp) <= 1 && rl.length === 3 && rl.every((l) => l && l.v < 0 && /rough/.test(l.label)), `its people sleep rough round the fire: ${rl[0] && rl[0].v} mood a day each (beds.js), no crowding (${crowding(st, camp)})`);
   check(BUILDINGS.tent.name === "Makeshift tent" && TENTS.makeshift.w === 1 && TENTS.makeshift.h === 2 && TENTS.makeshift.sleepers === 1 && TENTS.makeshift.storeKg === 0, `the one built: the Makeshift tent, 1 × 2, one sleeper, no storage, ${Object.entries(BUILDINGS.tent.cost).map(([k, v]) => `${v} ${k}`).join(" + ")}, mood ${TENTS.makeshift.mood} a day`);
   check([["tent1", 1, 2, 1, 1], ["tent2", 2, 2, 2, 2], ["tent4", 3, 3, 4, 4]].every(([k, w, h, n, s]) => TENTS[k].w === w && TENTS[k].h === h && TENTS[k].sleepers === n && TENTS[k].storeKg === s * TENT_STORE_KG), `tents from bags: tent1 1 × 2, tent2 2 × 2, tent4 3 × 3; 1, 2, 4 sleepers; ${TENT_STORE_KG}, ${2 * TENT_STORE_KG}, ${4 * TENT_STORE_KG} kg kept dry`);
   camp.stock.wood = 500; camp.stock.scrap = 20;
@@ -265,7 +268,8 @@ section("Tents: a Makeshift tent built, tents pitched from bags, beds from sleep
   check(mk && mk.tent === "makeshift" && tentBeds(camp) === 1 && baseBeds(camp) === 1, `put up: a makeshift tent, ${baseBeds(camp)} bed`);
   const e = BM.layoutOf(st, camp).find((q) => q.it.key === `b:${mk.id}`);
   check(e && e.at && e.it.w === 1 && e.it.h === 2, `placed in the clearing by the game (${e && e.at}), 1 × 2`);
-  check(crowdInfo(st, camp).makeshift < 0, `a poor night in it: ${crowdInfo(st, camp).makeshift} mood a day over the camp`);
+  const ml = residents(st, camp.id).map((s) => bedLine(st, s, camp)).filter((l) => l && /makeshift/.test(l.label));
+  check(ml.length === 1 && ml[0].v === TENTS.makeshift.mood, `a poor night in it: ${ml[0] && ml[0].v} mood a day for its one sleeper (beds.js bedLine)`);
   // A bag's tent pitched and struck.
   const p = BM.pitchTent(st, camp, "tent4");
   check(p.tent && p.tent.tent === "tent4" && tentBeds(camp) === 5 && storageOf(st, camp).cap >= 4 * TENT_STORE_KG, `a four-person tent pitched (pitchTent): beds ${tentBeds(camp)}, ${4 * TENT_STORE_KG} kg of room`);

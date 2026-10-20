@@ -23,16 +23,16 @@
 //     action, AI_SLASH of the time, once a turn) or throws a Molotov onto one (AI_BURN of the time, the side's throw of
 //     the turn, the whole turn). A cell at 0 is a torn tent (CELL torn: open, no concealment); fire (throwables.js
 //     FIRE.fuel tent) burns a tent cell to rubble; a blast tears it (combat.js breakCell).
-//   Wear after the fight: a camp's tents are tagged with their map item at the start (softSetup: c.tent = "t:<i>"),
-//     their hit points set from the record; afterwards (settleTents, combat.js finishCombat) the share left is kept on
-//     the base (base.plan.tentHp[i], or rec.tentHp on a building record, 0–100; missing is 100) and the next fight and
+//   Wear after the fight: a base's tents are tagged with their map item at the start (softSetup: c.tent = "b:<id>",
+//     the tent's building record), their hit points set from the record; afterwards (settleTents, combat.js
+//     finishCombat) the share left is kept on the record (rec.tentHp, 0–100; missing is 100) and the next fight and
 //     the Base map view start from it: a wrecked tent (0) lies torn. The campers mend them (mendTents, breakdowns.js
 //     breakdownsDaily): TENT_FIGHT.MEND a day while anyone is at home, a wrecked one pitched again the same way.
 import { CELL, active, say, fx, foesOf, canSee, sightRange, playerSees, los } from "./combat.js"; // (call-time only: the import cycle)
 import { activeLight } from "./vision.js";
 import { throwAt, THROWABLES } from "./stealth.js"; // (call-time only)
 import { FIRE, fireAt } from "./throwables.js"; // (call-time only)
-import { layoutOf, rectOf, itemByKey, tentCount } from "./basemap.js"; // (call-time only)
+import { layoutOf, rectOf, itemByKey } from "./basemap.js"; // (call-time only)
 import { log, atBase } from "./world.js";
 
 export const SOFT = new Set(["bush", "tent"]);
@@ -206,17 +206,13 @@ export function tentAI(b, u) {
 }
 
 // ---------- the base's tents before and after ----------
-// Where a tent's share of hit points is kept (0–100; missing: 100): a building record's own (rec.tentHp: a tent that
-// is a building), else the camp's plan by its index (base.plan.tentHp[i] for the map item t:<i>).
+// Where a tent's share of hit points is kept (0–100; missing: 100): its building record's own (rec.tentHp). Every
+// tent of yours is a record in base.buildings with its map key b:<id> (basemap.js pitchTent, the Makeshift tent built;
+// the pt-int merge, 2026-10-20), so this is the one place; an old save's base.plan.tentHp is dropped on load (save.js).
 function tentStore(base, key, it) {
-  if (it && it.rec) return { get: () => it.rec.tentHp ?? 100, set: (v) => { if (v >= 100) delete it.rec.tentHp; else it.rec.tentHp = v; } };
-  const m = /^t:(\d+)$/.exec(key || "");
-  if (!m) return null;
-  const P = base.plan || (base.plan = { plots: [] });
-  return {
-    get: () => (P.tentHp && P.tentHp[m[1]] != null ? P.tentHp[m[1]] : 100),
-    set: (v) => { if (v >= 100) { if (P.tentHp) { delete P.tentHp[m[1]]; if (!Object.keys(P.tentHp).length) delete P.tentHp; } } else (P.tentHp || (P.tentHp = {}))[m[1]] = v; },
-  };
+  if (!it || !it.rec || it.rec.type !== "tent" || !String(key || "").startsWith("b:")) return null; // a standing tent (a queued one, c:<id>, is a site)
+  const rec = it.rec;
+  return { get: () => rec.tentHp ?? 100, set: (v) => { if (v >= 100) delete rec.tentHp; else rec.tentHp = v; } };
 }
 const baseOf = (state, b) => {
   const F = b.deployPlan && b.deployPlan.fort;
@@ -272,17 +268,12 @@ export function settleTents(state, b) {
     log(state, pct <= 0 ? `${name} at ${base.name} was ${burned ? "burned" : "slashed to rags"} in the fight: the campers will pitch it again.` : `${name} at ${base.name} was ${burned ? "burned" : "slashed"} in the fight (${pct}% left): the campers will mend it.`, "danger");
   }
 }
-// The campers mend their tents (breakdowns.js breakdownsDaily): TENT_FIGHT.MEND a day while anyone is at home. A camp
-// whose tents were struck forgets their wear.
+// The campers mend their tents (breakdowns.js breakdownsDaily): TENT_FIGHT.MEND a day while anyone is at home. A tent
+// struck goes with its record (and its wear).
 export function mendTents(state) {
   for (const base of state.bases || []) {
-    const P = base.plan;
-    const recs = (base.buildings || []).filter((r) => r.tentHp != null);
-    if (!(P && P.tentHp) && !recs.length) continue;
-    if (P && P.tentHp && !tentCount(base)) delete P.tentHp; // struck (the step up to a shelter)
-    if (!atBase(state, base.id).length) continue;
-    if (P && P.tentHp) for (const i of Object.keys(P.tentHp)) { const v = P.tentHp[i] + TENT_FIGHT.MEND; if (v >= 100) delete P.tentHp[i]; else P.tentHp[i] = v; }
-    if (P && P.tentHp && !Object.keys(P.tentHp).length) delete P.tentHp;
+    const recs = (base.buildings || []).filter((r) => r.type === "tent" && r.tentHp != null);
+    if (!recs.length || !atBase(state, base.id).length) continue;
     for (const r of recs) { const v = r.tentHp + TENT_FIGHT.MEND; if (v >= 100) delete r.tentHp; else r.tentHp = v; }
   }
 }

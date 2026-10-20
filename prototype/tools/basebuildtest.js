@@ -220,7 +220,7 @@ section("The view: nobody on it, Build, the menu");
   check(b.units.length === 0 && L.sel === null && L.pickType === null && L.pick === null, "nobody on the map; sel and pickType empty");
   const menu = BM.buildMenu(st, h);
   const groups = [...new Set(menu.map((m) => m.group))];
-  check(groups.join("|") === "General buildings|Fittings|Furniture|Buildings|Yard things|Defences", `the menu's groups in order: ${groups.join(", ")}`);
+  check(groups.join("|") === "Tents|General buildings|Fittings|Furniture|Buildings|Yard things|Defences", `the menu's groups in order: ${groups.join(", ")}`);
   const hutM = menu.find((m) => m.type === "gen_hut"), bunksM = menu.find((m) => m.type === "bunks"), bunkM = menu.find((m) => m.type === "bunkhouse"), pitsM = menu.find((m) => m.type === "spike_pits");
   check(hutM && hutM.group === "General buildings" && hutM.ok && hutM.w === 4 && hutM.h === 4 && hutM.cost.scrap === BUILDINGS.gen_hut.cost.scrap && hutM.cost.wood === BUILDINGS.gen_hut.cost.wood && hutM.hours === 14 && hutM.desc.length > 20, `the hut: ${hutM.w} × ${hutM.h}, ${hutM.cost.scrap} scrap + ${hutM.cost.wood} wood, ${hutM.hours} h, ok`);
   check(bunksM && bunksM.group === "Fittings" && !bunksM.ok && /Needs a building to stand in/.test(bunksM.why), `the bunks: ${bunksM.why}`);

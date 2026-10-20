@@ -12,23 +12,23 @@
 //   bags (teamTentBags: the cargo, what each one carries in the arms, a cart's or a pack's contents) sleep everyone,
 //   by the share they sleep when they sleep only some.
 //
-// AT A CAMP (a base: staging.js makeCamp). Every bag the team brought is pitched (pitchArmoryBags, after settleInto put
-//   it in the camp's armory). A pitched tent is a record on the base (base.tents: { id, type, item, day }): the bag it
-//   came out of is kept on it (item), so striking gives the same bag back. The tents' sleepers are beds under cover
-//   (tentBeds: buildings.js baseBeds adds them on top of the camp's bedrolls, CAMP.beds); its storage is room out of
-//   the weather twice over, as the base keeps its goods: kg in basestorage.js storageOf (a "tent" container: the goods
-//   in it do not weather) and days of food in storage.js storeSpaces (a dry room: food keeps as in a pantry).
+// AT A BASE (a camp: staging.js makeCamp; any base: the base map, the governor). Every bag the team brought to a new
+//   camp is pitched (pitchArmoryBags, after settleInto put it in the camp's armory). A pitched tent is a BASE MAP PIECE
+//   (the pt-int merge, 2026-10-20): a record { type: "tent", tent: kind, item, day } in base.buildings, put up through
+//   basemap.js pitchTent (placed by hand from the base map's Build list, Tents: pitchStoredBag; else the game's auto
+//   layout round the fire) and struck through basemap.js strikeTent (the base map's Strike: buildings.js demolish). The
+//   bag it came out of rides on it (item), so striking gives the same bag back. Its sleepers are beds once (buildings.js
+//   tentBeds in baseBeds; a camp has no beds of its own, CAMP.beds 0) and each sleeper's mood follows its kind (beds.js
+//   bedSlots, data-tents.js TENT_TYPES mood); its storage is room out of the weather once, as the base keeps its goods:
+//   kg in basestorage.js storageOf (a "tent" container keyed b:<id>: the goods in it do not weather) and days of food
+//   in storage.js storeSpaces (the Tents dry room).
 //   Daily (campTentsDaily, staging.js campsHour): bags packed in the camp's armory are pitched while someone sleeps
-//   rough; whoever has no bed under cover (tents and bunks: roofBeds) sleeps rough round the fire, TENTS.ROUGH_MOOD a
-//   day (×WET on a wet day). The bedrolls still count as room for crowding (morale.js), so it is a mild cost.
+//   rough (the governor does the same at any base it runs: beds.js governBeds, before its Makeshift tents and its
+//   furniture). Sleeping rough itself is beds.js's one rule (bedLine), never counted here.
 //   Strike camp (staging.js strikeCamp) strikes every tent back into its bag first and packs the bags before the rest
 //   of the armory; a camp removed any other way (gone after its days alone) leaves its tents in its cache as bags. A
-//   tent left pitched when a team leaves stays at the camp.
-//
-// THE SEAM FOR THE BASE MAP (the baseview branch places tent pieces on a base's grid): pitchTentAtBase(state, base,
-//   type, item?) records a tent of a type on a base (its sleepers and storage through base.tents) and returns the
-//   record; strikeTentAtBase(state, base, id) takes it down and returns its bag (null for a makeshift tent). Placing it
-//   on the map is the merge's job: these two are the calls to point at it.
+//   tent left pitched when a team leaves stays at the camp. An old save's base.tents list becomes map pieces
+//   (migrateTentList, save.js).
 //
 // ON THE ROAD (nightmarch.js Make camp until dawn; orders.js rest task "camp"): the bags go up for the night
 //   (roadTentLine says so); whoever they do not sleep sleeps rough, TENTS.ROAD_ROUGH over the night's hours
@@ -63,7 +63,9 @@ import { lootItem, newItem } from "./inventory.js"; // call-time only
 import { siteSource, areaSource } from "./itemcond.js"; // call-time only
 import { partyMembers } from "./parties.js"; // call-time only (the import cycle)
 import { atBase, hourOfDay, log, localId } from "./world.js"; // call-time only
-import { CAMP, isCamp, baseBeds } from "./buildings.js"; // call-time only (buildings.js reads tentBeds)
+import { CAMP, isCamp, baseBeds, tentBeds, tentKind } from "./buildings.js"; // call-time only
+import { pitchTent, strikeTent, AI_CAMP_TENTS } from "./basemap.js"; // call-time only: a pitched tent is a base map piece
+import { bedAssignments } from "./beds.js"; // call-time only: who sleeps in which bed (the one assignment)
 import { weatherAt } from "./weather.js"; // call-time only
 import { FOODS, unitsOf } from "./foods.js"; // call-time only
 export { TENT_TYPES, TENTS, TENT_S, TENT_BAGS } from "./data-tents.js";
@@ -102,49 +104,91 @@ export function tentsText(types) {
   return parts.length <= 1 ? parts.join("") : `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
 }
 
-// ---------- pitched at a base: the seam ----------
-/** The tents pitched at a base (base.tents). @param {any} base @returns {{ id: number, type: string, item: any, day: number }[]} */
-export const tentsOf = (base) => (base && Array.isArray(base.tents) ? base.tents : []);
-/** Beds under cover the pitched tents give (their sleepers). @param {any} base */
-export const tentBeds = (base) => tentsOf(base).reduce((a, t) => a + (TENT_TYPES[t.type] ? TENT_TYPES[t.type].sleepers : 0), 0);
-/** Kg the pitched tents keep out of the weather. @param {any} base */
-export const tentStoreKg = (base) => tentsOf(base).reduce((a, t) => a + (TENT_TYPES[t.type] ? TENT_TYPES[t.type].storeKg : 0), 0);
+// ---------- pitched at a base: on the base map ----------
+// A pitched tent is a base map piece (the pt-int merge, 2026-10-20): a record { type: "tent", tent: kind, item, day } in
+// base.buildings, placed through basemap.js pitchTent (by hand, or the game's auto layout round the fire), drawn,
+// fought over (softcover.js) and moved like anything else. The bag it came out of rides on the record (item), so
+// striking it gives the same bag back. Its sleepers are beds once (buildings.js tentBeds, in baseBeds; each sleeper's
+// mood by its kind: beds.js bedSlots), its storage room once (basestorage.js: a "tent" container; storage.js: the
+// Tents dry room). tentsOf gives views of them: { id, type (its kind), item, day, rec }.
+/** The tents standing at a base (base.buildings records), as views. @param {any} base @returns {{ id: number, type: string, item: any, day: number, rec: any }[]} */
+export const tentsOf = (base) => ((base && base.buildings) || []).filter((b) => b && b.type === "tent").map((b) => ({ id: b.id, type: tentKind(b), item: b.item || null, day: b.day || 0, rec: b }));
+/** Beds under cover the pitched tents give (their sleepers): buildings.js tentBeds, the one count. */
+export { tentBeds };
+/** Kg the standing tents keep out of the weather (a broken one nothing). @param {any} base */
+export const tentStoreKg = (base) => ((base && base.buildings) || []).reduce((a, b) => a + (b && b.type === "tent" && !b.broken ? TENT_TYPES[tentKind(b)].storeKg : 0), 0);
 /** Days of food the pitched tents keep dry (storage.js storeSpaces: a day of food is about a kilo, carry.js FOOD_KG). @param {any} base */
 export const tentFoodDays = (base) => tentStoreKg(base);
 /**
- * THE SEAM: pitch a tent of a type at a base. Records it on the base (base.tents) so its sleepers are beds
- * (buildings.js baseBeds) and its storage is room out of the weather (basestorage.js, storage.js). item: the bag it
- * came out of (kept for the strike), none for a makeshift tent. Returns the record, or null for an unknown type.
- * @param {any} state @param {any} base @param {string} type @param {any} [item]
+ * Pitch a tent of a type at a base: a map piece (basemap.js pitchTent: at [x, y, r] placed by hand, else the game's
+ * auto layout). item: the bag it came out of (kept for the strike), none for a makeshift tent. Returns its view, or
+ * null (an unknown type, a spot that does not fit).
+ * @param {any} state @param {any} base @param {string} type @param {any} [item] @param {number[]|null} [at]
  */
-export function pitchTentAtBase(state, base, type, item = null) {
+export function pitchTentAtBase(state, base, type, item = null, at = null) {
   if (!base || !TENT_TYPES[type]) return null;
-  if (!Array.isArray(base.tents)) base.tents = [];
-  base.tentSeq = (base.tentSeq || 0) + 1;
-  const rec = { id: base.tentSeq, type, item: item || null, day: state ? Math.floor(state.hour / 24) + 1 : 0 };
-  base.tents.push(rec);
-  return rec;
+  const r = pitchTent(state, base, type, at);
+  if (!r || r.error || !r.tent) return null;
+  if (item) { delete item.store; r.tent.item = item; } // containers.js: an assignment to a container goes with it out of the stores
+  r.tent.day = state ? Math.floor(state.hour / 24) + 1 : 0;
+  return tentsOf(base).find((t) => t.id === r.tent.id) || null;
 }
-/** A bag pitched at a base (pitchTentAtBase with its type and the bag). @param {any} state @param {any} base @param {any} item */
-export const pitchBagAtBase = (state, base, item) => (isTentBag(item) ? pitchTentAtBase(state, base, bagType(item), item) : null);
+/** A bag pitched at a base (pitchTentAtBase with its type and the bag). @param {any} state @param {any} base @param {any} item @param {number[]|null} [at] */
+export const pitchBagAtBase = (state, base, item, at = null) => (isTentBag(item) ? pitchTentAtBase(state, base, bagType(item), item, at) : null);
 /**
- * THE SEAM: strike the tent `id` at a base. Returns its bag (the one it came out of; a new one if it had none), or null
- * for a makeshift tent (nothing to pack) or no such tent. The caller puts the bag where it goes.
+ * Strike the tent `id` at a base (off the base and its map: basemap.js strikeTent). Returns its bag (the one it came
+ * out of; a new one if it had none), or null for a makeshift tent (nothing to pack) or no such tent. The caller puts the
+ * bag where it goes.
  * @param {any} state @param {any} base @param {number} id
  */
 export function strikeTentAtBase(state, base, id) {
-  const list = tentsOf(base);
-  const i = list.findIndex((t) => t.id === id);
-  if (i < 0) return null;
-  const [rec] = list.splice(i, 1);
-  const T = TENT_TYPES[rec.type];
-  return T && T.bag ? rec.item || newItem(rec.type) : null;
+  const rec = ((base && base.buildings) || []).find((b) => b.id === id && b.type === "tent");
+  if (!rec) return null;
+  const r = strikeTent(state, base, id);
+  if (!r || r.error) return null;
+  const T = TENT_TYPES[r.kind];
+  return T && T.bag ? (rec.item && typeof rec.item === "object" ? rec.item : newItem(r.kind)) : null;
 }
 /** Strikes every tent at a base; returns the bags. @param {any} state @param {any} base */
 export function strikeTents(state, base) {
   const bags = [];
-  for (const rec of [...tentsOf(base)]) { const it = strikeTentAtBase(state, base, rec.id); if (it) bags.push(it); }
+  for (const t of tentsOf(base)) { const it = strikeTentAtBase(state, base, t.id); if (it) bags.push(it); }
   return bags;
+}
+/**
+ * A bag in the stores pitched where the base map's ghost is (basemap.js layoutAct build on "bag:<kind>"), or placed by
+ * the game (at null). Returns the view, or { error }.
+ * @param {any} state @param {any} base @param {string} kind @param {number[]|null} [at]
+ */
+export function pitchStoredBag(state, base, kind, at = null) {
+  const bag = armoryBags(base).find((x) => bagType(x.item) === kind);
+  if (!bag) return { error: `No ${TENT_TYPES[kind] ? TENT_TYPES[kind].name.toLowerCase() : "tent"} bag in the stores` };
+  const view = pitchBagAtBase(state, base, bag.item, at);
+  if (!view) return { error: "It does not fit there" };
+  takeBag(base, bag);
+  return view;
+}
+/** Bags of a kind in a base's stores (the base map's Build list, Tents). @param {any} base @param {string} kind */
+export const bagsInStores = (base, kind) => armoryBags(base).filter((x) => bagType(x.item) === kind).length;
+// Off the armory (or out of the cart, bag or case it was in).
+/** @param {any} base @param {any} x */
+function takeBag(base, x) {
+  if (x.inner) x.list[/** @type {number} */ (x.j)] = null;
+  else { const i = base.armory.indexOf(x.item); if (i >= 0) base.armory.splice(i, 1); }
+}
+// An old save's base.tents (the tentkit branch's own list, before the merge): each one a map piece now, its bag kept.
+/** @param {any} state */
+export function migrateTentList(state) {
+  for (const base of (state && state.bases) || []) {
+    if (!base || !Array.isArray(base.tents)) continue;
+    for (const t of base.tents) {
+      if (!t || !TENT_TYPES[t.type] || base.id < 0) continue;
+      const r = pitchTent(state, base, t.type);
+      if (r && r.tent) { if (t.item) r.tent.item = t.item; if (t.day) r.tent.day = t.day; }
+    }
+    delete base.tents;
+    delete base.tentSeq;
+  }
 }
 
 // ---------- a camp ----------
@@ -181,27 +225,30 @@ export function pitchArmoryBags(state, base, need = Infinity) {
   }
   const recs = [];
   for (const x of pick) {
-    if (x.inner) x.list[/** @type {number} */ (x.j)] = null; else { const i = base.armory.indexOf(x.item); if (i >= 0) base.armory.splice(i, 1); }
-    const rec = pitchBagAtBase(state, base, x.item);
-    if (rec) recs.push(rec);
+    const rec = pitchBagAtBase(state, base, x.item); // a map piece the game places (basemap.js pitchTent)
+    if (!rec) continue;
+    takeBag(base, x);
+    recs.push(rec);
   }
   return recs;
 }
-/** Beds under a roof at a camp: the tents' and the bunks' (baseBeds less the bedrolls round the fire). @param {any} base */
-export const roofBeds = (base) => (isCamp(base) ? Math.max(0, baseBeds(base) - CAMP.beds) : baseBeds(base));
+/** Beds under cover at a base (a camp has none of its own, CAMP.beds 0: its tents and any bunks). @param {any} base */
+export const roofBeds = (base) => baseBeds(base);
 /**
- * Who sleeps where at a camp: { people, covered, rough: survivors without a bed under cover (the hurt get one first),
- * tents, storeKg, packed (bags still in the armory) }.
+ * Who sleeps where at a camp: { people, covered, rough: the people without a bed (beds.js bedAssignments, the one
+ * assignment), tents, storeKg, packed (bags still in the armory) }.
  * @param {any} state @param {any} base
  */
 export function campSleep(state, base) {
-  const people = atBase(state, base.id).slice().sort((a, b) => (a.health || 0) - (b.health || 0) || a.id - b.id);
-  const covered = Math.min(people.length, roofBeds(base));
-  return { people: people.length, covered, rough: people.slice(covered), tents: tentsOf(base), storeKg: tentStoreKg(base), packed: armoryBags(base).map((x) => x.item) };
+  const a = bedAssignments(state, base);
+  const people = [...a.keys()].map((id) => state.survivors.find((s) => s.id === id)).filter(Boolean);
+  const rough = people.filter((s) => !a.get(s.id));
+  return { people: people.length, covered: people.length - rough.length, rough, tents: tentsOf(base), storeKg: tentStoreKg(base), packed: armoryBags(base).map((x) => x.item) };
 }
 /**
- * A camp's day (staging.js campsHour): bags packed in its armory go up while someone sleeps rough; whoever still has
- * no bed under cover loses TENTS.ROUGH_MOOD mood (×WET on a wet day). Returns how many slept rough.
+ * A camp's day (staging.js campsHour): bags packed in its armory go up while someone sleeps rough (free: before the
+ * governor's builds). The mood of sleeping rough is beds.js's one rule (bedLine, relations.js), not here. Returns how
+ * many still sleep rough.
  * @param {any} state @param {any} base
  */
 export function campTentsDaily(state, base) {
@@ -212,9 +259,6 @@ export function campTentsDaily(state, base) {
     if (recs.length) log(state, `${base.name}: ${tentsText(recs.map((r) => r.type))} went up from the stores.`, "info");
     S = campSleep(state, base);
   }
-  const w = weatherAt(state, base.tile);
-  const loss = TENTS.ROUGH_MOOD * (w && WET.has(w.key) ? TENTS.WET : 1);
-  for (const s of S.rough) s.mood = Math.max(0, (s.mood || 0) - loss);
   base.slept = { day: Math.floor(state.hour / 24), rough: S.rough.length, covered: S.covered };
   return S.rough.length;
 }
@@ -388,5 +432,19 @@ export function bandSpoilMult(b, camping) {
 }
 
 // ---------- AI groups ----------
+/**
+ * The tents an AI group's camp stands with on a battle map (conquest.js, the fight at it): its real tents, the bags on
+ * its shelf (biggest first, enough to sleep the people there), else AI_CAMP_TENTS makeshift tents of sticks and tarps
+ * (basemap.js). Returns the kinds (TENT_TYPES keys).
+ * @param {any} f @param {number} people
+ */
+export function groupCampTents(f, people) {
+  const bags = ((f && f.wares) || []).filter((it) => it && it.withParty == null && isTentBag(it)).sort((a, b) => bagSleepers(b) - bagSleepers(a));
+  if (!bags.length) return Array(AI_CAMP_TENTS).fill("makeshift");
+  const out = [];
+  let left = Math.max(1, people || 0);
+  for (const it of bags) { if (left <= 0) break; out.push(bagType(it)); left -= bagSleepers(it); }
+  return out;
+}
 /** People the tent bags on a group's shelf sleep (groupworks.js: quarters at its camps). @param {any} f */
 export const groupTentSleepers = (f) => sleepersOf(((f && f.wares) || []).filter((it) => it && it.withParty == null));

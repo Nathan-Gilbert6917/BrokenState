@@ -113,6 +113,7 @@ import { itemKg } from "./inventory.js";
 import { normalizeBins, OUTSIDE } from "./containers.js"; // the assignments (item.store, base.bins): a theft taken out of its bin; the piles' key
 import { FIXTURES, WEAR, breakFixture } from "./breakdowns.js";
 import { log, atBase, newId } from "./world.js";
+import { pitchStoredBag, bagsInStores } from "./tents.js"; // (call-time only) a tent bag pitched from the Build list
 import { isChopTool, bestChop } from "./woodcutting.js"; // felling a tree goes slower without a cutting tool at the base (call-time only)
 import { layMines } from "./mines.js"; // the main base's minefield, buried in the open ground round the yard (call-time only)
 import { FORT } from "./fort.js"; // the wire rings' and the mines' distances from the wall (call-time only: the modules load in a circle)
@@ -287,6 +288,12 @@ export function pitchTent(state, base, kind, at = null) {
   }
   return { tent: rec };
 }
+// A tent bag picked from the Build list (Tents): its pick type "bag:<kind>" (pitched, not built: tents.js
+// pitchStoredBag), its footprint its kind's. pickFoot: the footprint of any pick type, a bag's included.
+export const BAG_PICK = "bag:";
+export const bagKindOf = (bt) => (typeof bt === "string" && bt.startsWith(BAG_PICK) && TENTS[bt.slice(BAG_PICK.length)] && TENTS[bt.slice(BAG_PICK.length)].bag ? bt.slice(BAG_PICK.length) : null);
+export const pickFoot = (bt) => { const k = bagKindOf(bt); return k ? { ...FOOT.tent, w: TENTS[k].w, h: TENTS[k].h } : FOOT[bt] || null; };
+export const pickName = (bt) => { const k = bagKindOf(bt); return k ? TENTS[k].name : BUILDINGS[bt] ? BUILDINGS[bt].name : bt; };
 // Strike a standing tent: off the base and its map. Returns { kind, name } (the bag to give back, for tent bags) or { error }.
 export function strikeTent(state, base, id) {
   const rec = base && base.buildings.find((b) => b.id === id && b.type === "tent");
@@ -2164,7 +2171,8 @@ export function ghostAt(state, b, x, y) {
   if (!L || !F || (!L.pick && !L.pickType)) return null;
   const base = state.bases.find((o) => o.id === L.baseId);
   if (!base) return null;
-  const it = L.pick ? itemByKey(state, base, L.pick) : FOOT[L.pickType] ? { ...FOOT[L.pickType], key: null, type: L.pickType, label: BUILDINGS[L.pickType] ? BUILDINGS[L.pickType].name : L.pickType, built: true } : null;
+  const pf = L.pickType ? pickFoot(L.pickType) : null;
+  const it = L.pick ? itemByKey(state, base, L.pick) : pf ? { ...pf, key: null, type: bagKindOf(L.pickType) ? "tent" : L.pickType, label: pickName(L.pickType), built: true } : null;
   if (!it) return null;
   const [w, h] = dimsOf(it, L.rot);
   const [gx, gy] = gridOfCell(b, x, y);
@@ -2241,7 +2249,7 @@ export function layoutAct(state, b, act) {
       return "";
     }
     case "pickType": {
-      if (act.bt && !FOOT[act.bt]) return "That is not built on the map.";
+      if (act.bt && !pickFoot(act.bt)) return "That is not built on the map.";
       L.pickType = act.bt || null; L.pick = null; L.rot = 0; L.msg = "";
       return "";
     }
@@ -2253,6 +2261,16 @@ export function layoutAct(state, b, act) {
       if (!g.ok && g.land) return clearSite(state, base, L, g.land);
       if (!g.ok) return g.why;
       if (d && d.furniture) return setFurnitureAt(state, b, base, bt, g); // beds.js: set from the stores where it was clicked (no job)
+      if (bagKindOf(bt)) { // tents.js: a tent bag from the stores pitched where it was clicked (no job, no cost)
+        holdAuto(state, base);
+        const kind = bagKindOf(bt), r = pitchStoredBag(state, base, kind, g.at);
+        if (r.error) return r.error;
+        L.msg = `${TENTS[kind].name} pitched there: +${TENTS[kind].sleepers} bed${TENTS[kind].sleepers === 1 ? "" : "s"}${TENTS[kind].storeKg ? `, ${TENTS[kind].storeKg} kg out of the weather` : ""}.`;
+        L.sel = `b:${r.id}`;
+        if (!bagsInStores(base, kind)) L.pickType = null; // none left to pitch
+        refreshBaseMap(state);
+        return "";
+      }
       const opts = pieceOpts(base, bt);
       const chk = canBuild(state, base, bt, opts);
       if (!chk.ok) return chk.reason || "It cannot be built here now.";
@@ -2341,18 +2359,24 @@ export function layoutAct(state, b, act) {
 // A wall piece or gate built from the map is of the material the wall is mostly of (buildings.js ringMat: wood with
 // none); the Defenses tab picks another. A stand has no material.
 const pieceOpts = (base, bt) => (BUILDINGS[bt] && BUILDINGS[bt].piece && BUILDINGS[bt].piece !== "stand" ? { mat: ringMat(base) } : {});
-const MENU_GROUPS = ["General buildings", "Fittings", "Furniture", "Buildings", "Yard things", "Defences"];
+const MENU_GROUPS = ["Tents", "General buildings", "Fittings", "Furniture", "Buildings", "Yard things", "Defences"];
 export function buildMenu(state, base) {
   const out = [];
   for (const [type, d] of Object.entries(BUILDINGS)) {
     const f = FOOT[type];
     if (!f || d.upgradeOnly) continue; // an upgrade in place (the reloading bench) is queued from the building it upgrades
-    const group = d.general ? "General buildings" : d.furniture ? "Furniture" : d.fit ? "Fittings" : f.kind === "defence" || WALL_KINDS.has(f.kind) ? "Defences" : f.kind === "prop" || f.kind === "pen" ? "Yard things" : "Buildings";
+    const group = type === "tent" ? "Tents" : d.general ? "General buildings" : d.furniture ? "Furniture" : d.fit ? "Fittings" : f.kind === "defence" || WALL_KINDS.has(f.kind) ? "Defences" : f.kind === "prop" || f.kind === "pen" ? "Yard things" : "Buildings";
     const opts = pieceOpts(base, type);
     /** @type {any} */
     const chk = canBuild(state, base, type, opts);
     const piece = !!d.piece; // a wall piece, gate or stand: its material's name, cost and hours (buildings.js canBuildPiece)
     out.push({ type, name: piece ? pieceName({ type, ...opts }) : d.name, group, w: f.w, h: f.h, cost: piece && chk.cost ? { ...chk.cost } : { ...d.cost }, hours: piece && chk.hours != null ? chk.hours : d.hours, ok: !!chk.ok, why: chk.ok ? "" : chk.reason || "", desc: d.desc || "", ...(d.furniture ? { furniture: true, have: furnitureInStores(base, type) } : {}) });
+  }
+  // The tent bags in the stores (tents.js), pitched from the list: no cost, no builders (a click pitches one).
+  for (const [k, T] of Object.entries(TENTS)) {
+    if (!T.bag) continue;
+    const have = bagsInStores(base, k);
+    out.push({ type: `${BAG_PICK}${k}`, name: `${T.name} (bag)`, group: "Tents", w: T.w, h: T.h, cost: {}, hours: 0, ok: have > 0, why: have ? "" : `No ${T.name.toLowerCase()} bag in the stores: find one, or bring one home`, desc: `Pitch a ${T.name.toLowerCase()} from its bag in the stores: sleeps ${T.sleepers}, keeps ${T.storeKg} kg out of the weather. Strike it to pack it back into its bag.`, tentBag: true, have });
   }
   return out.sort((a, b) => MENU_GROUPS.indexOf(a.group) - MENU_GROUPS.indexOf(b.group)); // stable: BUILDINGS' order within a group
 }
