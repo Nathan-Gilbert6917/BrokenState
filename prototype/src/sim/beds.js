@@ -99,7 +99,7 @@ export function furnitureProblem(base, type) {
   if (!BED_SPEC[type]) return "Not a piece of furniture";
   if (fittingRoom(null, base, type)) return "";
   const s = BED_SPEC[type];
-  return `Needs a building to stand in with ${s.w} × ${s.h} of free floor (${HOSTS})`;
+  return `Needs a building to stand in with ${s.w} × ${s.h} of free floor (${s.w > 1 && s.h > 1 ? "a lodge, hall or barn: a hut's or a cabin's floor has no room for it" : HOSTS})`;
 }
 // buildings.js canBuild for a piece of furniture: one in the stores, and a building with room for it.
 /** @returns {{ ok: boolean, reason?: string, short?: boolean }} */

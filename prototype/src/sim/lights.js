@@ -21,7 +21,7 @@
 // crews' trips (kit.js packTripKit): one each, the lightest first, and only lights that will work (an off-hand light
 // only for someone whose off hand is free; a headlamp for anyone).
 import { GEAR } from "./data.js";
-import { EQUIP_SLOTS, packOf, stow } from "./inventory.js";
+import { EQUIP_SLOTS, packOf, stow, rigPouches, allItems } from "./inventory.js";
 import { helmetLight } from "./helmets.js";
 import { SURV_LIGHTS } from "./data-survival.js"; // the angle-head flashlight, the solar lantern
 
@@ -39,12 +39,13 @@ Object.assign(LIGHTS, SURV_LIGHTS); // survival gear (data-survival.js): an angl
 export const LIGHT_KEYS = Object.keys(LIGHTS).sort((a, b) => (GEAR[a]?.weight || 0) - (GEAR[b]?.weight || 0));
 const brighter = (a, b) => (!a ? b : !b ? a : LIGHTS[b].sight > LIGHTS[a].sight ? b : a);
 
-// Everything a person carries (worn, pockets, pack).
+// Everything a person carries (worn, pockets, a rig's pouches, pack): a headlamp works wherever it is carried.
 function carriedItems(s) {
   if (!s) return [];
   const out = [];
   for (const slot of EQUIP_SLOTS) if (s.gear && s.gear[slot]) out.push(s.gear[slot]);
   for (const it of s.pockets || []) if (it) out.push(it);
+  for (const it of (s.gear && rigPouches(s)) || []) if (it) out.push(it);
   for (const it of packOf(s) || []) if (it) out.push(it);
   return out;
 }
@@ -84,7 +85,7 @@ export function packLights(base, crew, into = null) {
       if (i < 0) continue;
       const it = base.armory[i];
       if (!stow(s, it)) continue;
-      if (!hasLight(s)) { unstow(s, it); continue; } // went into a pocket where it does not help
+      if (!hasLight(s)) { unstow(s, it); if (allItems(s).includes(it)) { base.armory.splice(i, 1); out.push(it.name); if (into) into.push(it); break; } continue; } // went where it does not help (still on them, somewhere unstow cannot reach: theirs now, never in two places)
       base.armory.splice(i, 1);
       out.push(it.name);
       if (into) into.push(it);
@@ -98,12 +99,16 @@ export function unpackLights(base, crew, items) {
   for (const it of items) for (const s of crew) unstow(s, it);
   base.armory.push(...items);
 }
-// Takes an item back off a person (packLights trying a light that would not work where it went).
+// Takes an item back off a person (packLights trying a light that would not work where it went), wherever stow put it:
+// a rig's pouch too (inventory.js stow: sparePouchFor). Missed there, the light stayed on them and in the armory as
+// well, and the governor handed the same headlamp to someone else (conservationtest seed 7, pt-int round 2).
 function unstow(s, it) {
   for (const slot of EQUIP_SLOTS) if (s.gear[slot] === it) s.gear[slot] = null;
   if (s.pockets) { const i = s.pockets.indexOf(it); if (i >= 0) s.pockets[i] = null; }
   const pk = packOf(s);
   if (pk) { const i = pk.indexOf(it); if (i >= 0) pk[i] = null; }
+  const rp = rigPouches(s);
+  if (rp) { const i = rp.indexOf(it); if (i >= 0) rp[i] = null; }
 }
 
 // What packLights would take for this crew from this armory, without moving anything (the planner's Lights line).

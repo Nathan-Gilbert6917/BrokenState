@@ -35,6 +35,10 @@ import { moodFactors } from "../src/sim/relations.js";
 import { createBattle, finishCombat } from "../src/sim/combat.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
 import { craftQueue } from "../src/sim/crafting.js";
+import { constructionHour, canBuild, addBuilding } from "../src/sim/buildings.js";
+import * as TE from "../src/sim/tripevents.js";
+import { packLights, hasLight } from "../src/sim/lights.js";
+import { allItems, rigPouches } from "../src/sim/inventory.js";
 import { roadTeam } from "../src/sim/hardcore-start.js";
 
 const seed = Number(process.argv[2] || 7);
@@ -322,6 +326,90 @@ section("AI camps: their real tents on the battle map, else four makeshift");
   check(T.groupCampTents(f, 5).join() === "tent4,tent2", `bags biggest first for 5 people: ${T.groupCampTents(f, 5).join(", ")}`);
   check(T.groupCampTents({ wares: [] }, 5).join() === Array(BM.AI_CAMP_TENTS).fill("makeshift").join(), `no bags: ${BM.AI_CAMP_TENTS} makeshift tents`);
 }
+
+
+// ---------- round 2 (woodwork + gunmags2 merged): the bugs ----------
+// (2: the Kitchen and the pen queued in time is kitchentest's "a hub of 8+ queues a kitchen" and progpickstest's pen.)
+section("Round 2: the ring wall is built once");
+{
+  const st = world(seed + 20);
+  const h = hub(st);
+  for (const k of ["scrap", "wood", "buildmat", "parts"]) h.stock[k] = 50000;
+  const msg = queueBuild(st, h, "walls");
+  const job = h.construction.find((c) => c.type === "walls");
+  const R0 = BM.ringHalf(h);
+  for (let i = 0; i < 6; i++) h.construction.push({ id: 990000 + i, type: "gen_hut", progress: 0, hours: 14, cost: {}, paid: {} }); // the yard would grow meanwhile
+  check(!!job && job.kind === "ring" && BM.ringHalf(h) === R0 && BM.yardHalf(h) === R0 && BM.yardHalf(h, true) > R0, `the ring pegged when queued (${msg.slice(0, 40)}…): the yard held at it (${BM.yardHalf(h)}; wanted ${BM.yardHalf(h, true)})`);
+  job.paid = { ...job.cost }; job.progress = job.hours - 0.01;
+  for (let i = 0; i < 3 && h.construction.includes(job); i++) constructionHour(st);
+  const wi = BM.wallInfo(st, h);
+  check(!h.construction.includes(job) && wi.enclosed && BM.ringPlan(st, h).pieces.length === 0 && canBuild(st, h, "walls").kind === "upgrade", `laid: the ring closes (${h.buildings.filter((b) => /^(wall|gate)/.test(b.type)).length} pieces), nothing left to ring again`);
+}
+
+section("Round 2: a crowded forest camp's huts stay where they went up");
+{
+  let moved = 0, overlap = 0;
+  for (const sd of [43, 47]) {
+    const st = createWorld({ seed: sd, factionCount: 6 }); st.started = true;
+    const tile = Object.keys(st.tiles).map(Number).filter((t) => st.tiles[t].terrain === "forest" && !st.tiles[t].bridge && !st.bases.some((b) => b.tile === t)).sort((a, b) => a - b)[sd % 5];
+    const c = { id: 9000 + st.bases.length, tile, type: "outpost", name: "Test Camp", stock: { water: 50, wood: 0, scrap: 0 }, buildings: [], construction: [], armory: [], tier: 0, camp: true, fire: false };
+    st.bases.push(c);
+    for (let i = 0; i < 2; i++) { const s = makeSurvivor(st); s.location = { kind: "base", baseId: c.id }; s.role = "build"; st.survivors.push(s); }
+    BM.landFor(st, c);
+    for (let i = 0; i < 6; i++) c.construction.push({ id: 81000 + i, type: "tent", progress: 0, hours: 3 });
+    for (let i = 0; i < 4; i++) c.construction.push({ id: 81020 + i, type: "gen_hut", progress: 0, hours: 14 });
+    const where = new Map();
+    for (let hr = 0; hr < 900 && c.construction.length; hr++) {
+      const before = c.buildings.length;
+      constructionHour(st);
+      const lay = BM.layoutOf(st, c);
+      for (const b of c.buildings.slice(before)) { const e = lay.find((q) => q.it.key === `b:${b.id}`); if (e && e.at) where.set(b.id, String(e.at)); }
+      for (const [id, at] of where) { const e = lay.find((q) => q.it.key === `b:${id}`); if (e && String(e.at) !== at) { moved++; where.set(id, String(e.at)); } }
+      const huts = lay.filter((e) => e.at && e.it.type === "gen_hut");
+      for (let i = 0; i < huts.length; i++) for (let j = i + 1; j < huts.length; j++) { const a = BM.rectOf(huts[i].it, huts[i].at), b = BM.rectOf(huts[j].it, huts[j].at); if (a.x0 < b.x0 + b.w && b.x0 < a.x0 + a.w && a.y0 < b.y0 + b.h && b.y0 < a.y0 + a.h) overlap++; }
+    }
+  }
+  check(!moved && !overlap, `two forest camps, four huts each: no built hut moved (${moved}), none on another's site (${overlap})`);
+}
+
+section("Round 2: a large bed and a cabin's floor agree");
+{
+  const st = world(seed + 21);
+  const h = hub(st);
+  BM.clearAllLand(st, h);
+  const cab = addBuilding(h, "gen_cabin");
+  let placed = false;
+  for (const [x, y] of [[-20, 8], [-20, -12], [14, 14], [0, -20]]) if (BM.placeItem(st, h, `b:${cab.id}`, x, y, 0) === "") { placed = true; break; }
+  check(placed && BM.fittingRoom(st, h, "bed") === `b:${cab.id}` && !BM.fittingRoom(st, h, "bigbed"), "a cabin takes a bed but not a large bed (its 3 × 2 floor keeps the middle clear between its doors)");
+  check(!/cabin, lodge/.test(GEAR.bigbed.desc) && /cabin's floor has no room/.test(GEAR.bigbed.desc) && /lodge, hall or barn/.test(BD.furnitureProblem(h, "bigbed")), `the text says so: "${BD.furnitureProblem(h, "bigbed")}"`);
+}
+
+section("Round 2: trip dice for one who joined from an AI group are the same in every world");
+{
+  const a = world(42), b = world(42);
+  const s = { id: 1e9 + 979 };
+  const t = { leave: 24 * 30 + 8, n: 2, job: "hunt" };
+  check(a.idBase !== b.idBase && TE.diceFor(a, s, t).next() === TE.diceFor(b, s, t).next(), `worlds from ids ${a.idBase} and ${b.idBase}: the same roll`);
+  const y = { id: a.idBase + 5 }, z = { id: b.idBase + 5 };
+  check(TE.diceFor(a, y, t).next() === TE.diceFor(b, z, t).next(), "one of yours (a world-local id) the same too");
+}
+
+section("Round 2: a light handed out is in one place");
+{
+  const st = world(seed + 22);
+  const h = hub(st);
+  const s = atBase(st, h.id)[0];
+  s.gear.tool = newItem("crowbar"); // the off hand full: a flashlight cannot go there
+  s.gear.rig = newItem("chestrig");
+  for (let i = 0; i < (s.pockets || []).length; i++) s.pockets[i] = newItem("tourniquet");
+  const lamp = newItem("headlamp");
+  h.armory.push(lamp);
+  packLights(h, [s]);
+  const onHer = [...allItems(s), ...(rigPouches(s) || [])].includes(lamp), inArmory = h.armory.includes(lamp); // a rig's pouches hold their own (inventory.js)
+  check(onHer !== inArmory, `the headlamp is on ${s.name.split(" ")[0]} (${onHer}) or in the armory (${inArmory}), never both`);
+  check(!onHer || hasLight(s), "on them, it is their light (a headlamp works from a rig's pouch)");
+}
+
 
 console.log(`\n${pass} passed, ${fail} failed (${((Date.now() - t0) / 1000).toFixed(1)} s)`);
 process.exit(fail ? 1 : 0);

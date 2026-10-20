@@ -35,6 +35,7 @@ import { Rng } from "./rng.js";
 import { hash01, gainXp } from "./skills.js";
 import { GEAR } from "./data.js";
 import { log, hurt, skill, combatPower, addCard, localId } from "./world.js";
+import { personKey } from "./members.js"; // dice the same in every world on the seed (call-time only)
 import { woundMult, accidentMult } from "./traits.js";
 import { armorMult, carriedSpots, lootItem } from "./inventory.js"; // lootItem: a find or a trade rolls its condition (itemcond.js)
 import { addCondition, CONDITIONS } from "./health.js";
@@ -116,7 +117,9 @@ const sumStock = (st, want) => Object.entries(want).every(([k, q]) => (k === "fo
 const managed = (state, base) => !state.autopilot && !stewardOn(base);
 // The trip's own dice: the seed, the person, the day, the trip of the day and its job (never the world's rng; the
 // person by their world-local id: ids are process-wide, tools/sameseedtest.js).
-const diceFor = (state, s, t, salt = "") => new Rng(Math.floor(hash01("tripev", state.seed, localId(state, s.id), Math.floor(t.leave / 24), t.n || 0, t.job, salt) * 4294967296));
+// personKey (members.js): one who joined from an AI group keeps their member id (MEMBER.ID0 up), the same in every world on
+// the seed; localId would take the world's own first id off it, a different number in each (sameseedtest seed 42).
+export const diceFor = (state, s, t, salt = "") => new Rng(Math.floor(hash01("tripev", state.seed, personKey(state, s.id), Math.floor(t.leave / 24), t.n || 0, t.job, salt) * 4294967296));
 export const evStats = (state) => {
   if (!state.stats) state.stats = {};
   return state.stats.tripEv || (state.stats.tripEv = { trips: 0, n: 0, kinds: {}, hurt: 0, killed: 0, fled: 0, dropped: 0, won: 0, shots: 0, found: 0, cards: 0, meat: 0, lostHours: 0 });

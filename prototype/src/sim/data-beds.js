@@ -50,7 +50,7 @@ export const BED_GEAR = {
   bunkbed: { name: "Bunk bed", slot: "pack", skill: null, power: 0, req: 0, value: 20, noise: 0, weight: 32, cat: "camp", bulky: true, twoHands: true, burnShare: 0.7, furniture: "bunkbed",
     desc: "Two beds stacked on posts with a ladder. Set it inside a hut, cabin, lodge, hall or barn (the base map's Build list, Furniture) for 2 beds on one 1 × 2 floor. Cramped and shared: each of the two loses half a mood a day. 32 kg: carried in both arms or in a cart." },
   bigbed:  { name: "Large bed", slot: "pack", skill: null, power: 0, req: 0, value: 30, noise: 0, weight: 45, cat: "camp", bulky: true, twoHands: true, burnShare: 0.6, furniture: "bigbed",
-    desc: "A big double bed with a sprung mattress. Set it inside a cabin, lodge, hall or barn (the base map's Build list, Furniture) for 2 beds on a 2 × 2 floor: the two who sleep in it gain 1 mood a day. 45 kg: carried in both arms or in a cart (a hut's floor has no room for it)." },
+    desc: "A big double bed with a sprung mattress. Set it inside a lodge, hall or barn (the base map's Build list, Furniture) for 2 beds on a 2 × 2 floor: the two who sleep in it gain 1 mood a day. 45 kg: carried in both arms or in a cart (a hut's or a cabin's floor has no room for it: the 3 × 2 inside a cabin keeps its middle clear between its two doors)." },
 };
 
 // The recipes (crafting.js Object.assign(CRAFTS, BED_CRAFTS)): wood (key wood) for the frame, scrap for the fixings,
