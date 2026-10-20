@@ -834,6 +834,7 @@ section("The hunting mix: traps, bows and guns (a base's setting, its hunters an
   {
     const p = res.party;
     p.supplies.ammo = 0;
+    for (const k of Object.keys(p.supplies)) if (/^a_/.test(k)) p.supplies[k] = 0; // (no rounds at all: the rounds their carried guns' spares took along, gunrounds.js loadoutRounds, too)
     const a0 = p.supplies.arrows;
     let r = null;
     for (let i = 0; i < 10 && (!r || r.outcome !== "victory"); i++) {

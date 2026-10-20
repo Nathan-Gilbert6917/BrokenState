@@ -9,6 +9,7 @@ globalThis.localStorage = { getItem: (k) => (k in store ? store[k] : null), setI
 
 const { createWorld, hub, atBase } = await import("../src/sim/world.js");
 const { makeItem } = await import("../src/sim/crafting.js");
+const { reloadGunAt } = await import("../src/sim/itemacts.js");
 const AV = await import("../src/ui/armoryview.js");
 const { inventoryModal, INV_ACTIONS } = await import("../src/ui/inventory.js");
 const { renderModal } = await import("../src/ui/ui.js");
@@ -73,8 +74,12 @@ section("The base Armory tab");
   check(/data-action="armv-type"[^>]*data-g="guns"/.test(html), "type chips");
   const sg = h.armory.findIndex((x) => x.key === "shotgun");
   check(new RegExp(`data-action="gb-open" data-loc="armory:${h.id}:list:${sg}"`).test(html), "the gun's ⚙ stays");
-  // The cards' rounds are gun-mags' real count (the base's 9mm stores fill the stored pistol), its names and short tips.
+  // The cards' rounds are the real count (2026-10-20: what is in the gun; the stored pistol reloaded from the base's 9mm
+  // stores, itemacts.js reloadGunAt), its names and short tips.
   h.stock.a_9mm_fmj = 40;
+  html = renderModal(st, ui) || "";
+  check(![...html.matchAll(/class="irounds (\w+)"[^>]*>(\d+)\/(\d+)</g)].some((m) => m[1] === "full"), "rounds in the stores alone load no stored gun");
+  reloadGunAt(st, `armory:${h.id}:list:${h.armory.findIndex((x) => x.key === "pistol")}`);
   html = renderModal(st, ui) || "";
   const rds = [...html.matchAll(/class="irounds (\w+)"[^>]*>(\d+)\/(\d+)</g)].map((m) => m.slice(1));
   check(rds.some(([c, n, cap]) => c === "full" && n === cap && Number(n) > 0), `a stored pistol with 9mm in the stores shows real rounds, not 0/N (${rds.map((r) => `${r[1]}/${r[2]}`).join(" ")})`);

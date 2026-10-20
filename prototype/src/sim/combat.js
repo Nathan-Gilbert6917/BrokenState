@@ -106,7 +106,7 @@ import { personFromLegacy } from "./fighters.js"; // every human on the map is a
 import { bandize, settleBand } from "./bands.js"; // nomad bands and visitors: their own people // group arsenals: their units armed from what the group holds
 // Grenade launchers and rockets (section 13) and what explosions do to gear (section 24): a unit's second weapon (u.gl).
 import { fitLauncher, refitLauncher, kitLauncher, launchRefusal, launch, glReloadRefusal, glReload, aiLaunch, launcherBody, launcherLoot, blastLoot, launcherBattleEnd, blownUpCargo, blastHit, blastBox, blastPiles } from "./launchers.js";
-import { fitMags, tracksMags, gunEntry, reloadPlan, doReload, fittedMag, getShells, getShellsRefusal, isShellGun, isMag, magEntryAt, loadMagPlan, loadMagFrom, fillUnit, spares as spareMags, isStacked, syncMags, unloadMagPlan, unloadMagFrom } from "./mags.js";
+import { fitMags, tracksMags, gunEntry, reloadPlan, doReload, fittedMag, getShells, getShellsRefusal, isShellGun, isMag, magEntryAt, loadMagPlan, loadMagFrom, fillUnit, spares as spareMags, isStacked, syncMags, unloadMagPlan, unloadMagFrom, removeMagUnit } from "./mags.js";
 import { stackN, takeTop } from "./roundstack.js"; // physical rounds in a gun (loadMag) // magazines as items (section 15): spares, reload sources (a pocket or the rig 1 action, the pack both), top-up, internal magazines
 import { weighPlayer, kitEnemy, unitMagItems, withMags, plateSwapPlan, swapPlate, packShells as handOutShells } from "./carrykit.js"; // the kit's weight: battle mob by load band (R17); enemies' rigs and magazines; a base's defenders' loose rounds out of its stock (handOutShells: packShells is the AI's Get shells check below)
 import { allCarried, carriedSpots, stow } from "./inventory.js";
@@ -3135,6 +3135,8 @@ export function magCap(u) {
   if (!hasMag(u)) return 0;
   const g = gunEntry(u); // mags.js: the magazine in the gun now (a spare of another size after a reload)
   if (g) return g.cap;
+  const gi = u.item || u.arsItem;
+  if (gi && gi.magOut && gi.key === u.weapon) return 1; // its magazine taken out (itemacts.js / mags.js removeMag): the round in the chamber, nothing more
   const m = magItem(u);
   const fit = fittedMag(u.item || u.arsItem || (u.modItems && u.gmWeapon === u.weapon ? { mods: u.modItems } : null)); // a magazine item fitted: its rounds (data-kit.js)
   return Math.max(1, Math.round((fit ? MAG_CAP(fit.key) : WEAPONS[u.weapon].cap) * (m.capMult ?? 1)) + (m.cap || 0));
@@ -3495,7 +3497,7 @@ export function refitKit(b, u, s) {
 // none is left, so the team's bags load each gun before anyone's spare magazines and share the spares out. (fighters.js
 // builds every person through it too: a person's own kit, never your team's bags.)
 export function fillBattleUnit(b, u, s, { gun = true, spares = /** @type {boolean | number} */ (true) } = {}) {
-  const n = fillUnit(b, u, { gun, spares });
+  const n = fillUnit(b, u, { gun, spares, top: true }); // top: the rounds left in a gun or a magazine since the last fight, topped up (mags.js)
   sweepBoxes(s);
   u.boxes = boxesOf(s);
   fitMags(b, u, carriedSpots(s), magCap(u), s);
@@ -3537,6 +3539,16 @@ function invAct(state, b, u, act) {
     if (!line) return "No room for the rounds: a free pocket or pack slot is needed (or loose rounds of the same kind with room).";
     say(b, line, "info");
     u.ap -= INV_AP;
+    u.hunker = false;
+    refitKit(b, u, s);
+    return "";
+  }
+  if (op === "magout") { // the magazine out of the gun in the hands (mags.js removeMagUnit): the round in the chamber stays
+    if (from.slot !== "weapon" || item !== u.item) return "Only the gun in the hands: draw it first.";
+    const r = removeMagUnit(b, u, s);
+    if (r.why) return r.why;
+    say(b, r.line, "info");
+    u.ap -= r.cost;
     u.hunker = false;
     refitKit(b, u, s);
     return "";

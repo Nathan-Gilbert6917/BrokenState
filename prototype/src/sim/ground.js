@@ -321,10 +321,10 @@ export function groundEnd(state, b, outcome) {
     h.gear.length = 0;
     for (const k of Object.keys(h.sup)) h.sup[k] = 0;
   }
-  // gunload.js: the guns that came home with rounds in them (picked up, handed over) are unloaded into the stores.
+  // gunload.js: the rounds left in the guns and the magazines stay in them (out of a fight the badge counts them where
+  // they are, 2026-10-20); a gun that came home with rounds in it (picked up, handed over) keeps them too.
   const living = b.units.filter((u) => u.side === "player" && !u.dead && !u.lostBehind && !u.nlTaken).map((u) => survivorById(state, u.sid)).filter((s) => s && s.alive);
-  returnStacks(b, living, st ? stockFor(state, st) : null); // mags.js: what is left in the guns and the magazines goes back onto the person as loose rounds (the stores for what finds no room)
-  if (st) unloadInto(st, teamGuns(living, st.list), stockFor(state, st));
+  returnStacks(b, living, st ? stockFor(state, st) : null); // gunload.js: what is left in the gun in the hands goes onto it (it.loaded), each magazine keeps its own
   if (!L) return;
   for (const c of L.containers.slice()) {
     if (c.kind !== "body" || c.uid == null) continue;

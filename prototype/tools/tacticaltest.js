@@ -523,20 +523,20 @@ section("8. The rounds in a gun go with it");
   foe2.weapon = "huntrifle"; foe2.weaponName = WEAPONS.huntrifle.name; foe2.arsItem = null; C.loadMag(foe2, 1);
   surrender(b, foe2);
   check((b.nlDrops || []).some((d) => d.uid === foe2.id && d.loaded && d.loaded.n === 1), "one who gives up throws down a gun with what was in it");
-  // The end: the guns that came home with rounds in them are unloaded into the stores.
+  // The end (2026-10-20, physical rounds out of a fight): the guns that came home with rounds in them keep them.
   const kept = newItem("pistol", 1); kept.loaded = { n: 4, key };
   s1.pockets[s1.pockets.indexOf(null)] = kept;
   for (const e of E(b)) if (!e.dead) { if (e.surr) e.tied = true; else kill(b, e); }
   const stock0 = h.stock[key] || 0;
   endBattleNow(st, "victory");
-  check(!kept.loaded && (h.stock[key] || 0) >= stock0 + 4, `a gun with rounds in it coming home is unloaded into the stores (${stock0} → ${h.stock[key] || 0})`);
+  check(kept.loaded && kept.loaded.n === 4 && (h.stock[key] || 0) === stock0, `a gun with rounds in it coming home keeps them (${kept.loaded && kept.loaded.n}; the stores ${stock0} → ${h.stock[key] || 0})`);
   const onBody = b.bodies.flatMap((x) => allItems(x)).find((it) => it.key === "huntrifle" && it.loaded && it.loaded.n === 1);
-  const home = h.armory.find((it) => it.key === "huntrifle" && !it.loaded);
-  check(!!onBody || !!home, `the gun thrown down is loot after the win with its round in it (headless: taken home, the round into the stores)`);
+  const home = h.armory.find((it) => it.key === "huntrifle" && it.loaded && it.loaded.n === 1);
+  check(!!onBody || !!home, `the gun thrown down is loot after the win with its round in it (headless: taken home, the round still in it)`);
   check(dupesLive(st).length === 0, "no item in two places");
-  closeCombat(st); // headless: everything taken (the loot screen's taken: its rounds into the stores)
+  closeCombat(st); // headless: everything taken (the loot screen's taken: a gun keeps the rounds in it)
   const anyLoaded = h.armory.filter((it) => it.loaded).length;
-  check(anyLoaded === 0, `nothing taken home still holds rounds of its own (${anyLoaded})`);
+  check(anyLoaded > 0, `guns taken home still hold the rounds left in them (${anyLoaded}): Unload takes them out`);
 }
 
 console.log(`\n${fail ? "failed" : "passed"}: ${pass} checks passed, ${fail} failed`);

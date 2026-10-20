@@ -339,6 +339,7 @@ export function fitMod(gun, mod) {
   const old = gun.mods[slot] || null;
   const kids = old ? childSlots(gun, slot) : [];
   gun.mods[slot] = mod;
+  if (slot === "mag") delete gun.magOut; // a magazine fitted in the builder is in the gun (itemacts.js Remove magazine took the last one out)
   const off = old ? [old] : [];
   const open = new Set(slotsOf({ key: gun.key, mods: Object.fromEntries(Object.entries(gun.mods).filter(([k]) => !kids.includes(k))) }));
   for (const c of kids) if (gun.mods[c] && !open.has(c)) { off.unshift(gun.mods[c]); delete gun.mods[c]; }

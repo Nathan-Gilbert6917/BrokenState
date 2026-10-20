@@ -24,7 +24,7 @@ import {
   starterLoad, enemyLoad, findRounds, themeOf, mixForCals, gunCals, packRounds, drawShots, ammoEdge, benchRounds, baseAmmo, settleAll,
   kindShare, softMult, typeFor, loadOf, pickLoad, huntLoad, foldRounds, migrateAmmo, carriedRec, sweepBoxes,
 } from "../src/sim/ammo.js";
-import { newItem, enemyBody, itemKg } from "../src/sim/inventory.js";
+import { newItem, enemyBody, itemKg, carriedSpots } from "../src/sim/inventory.js";
 import { roundItem, amountOf } from "../src/sim/itemstack.js";
 import { itemValue } from "../src/sim/valuation.js";
 import { launchExpedition, partyMembers } from "../src/sim/parties.js";
@@ -153,7 +153,7 @@ const place = (u, x, y) => { u.x = x; u.y = y; u.dead = false; u.down = false; }
   check(u1.mag === 14 && u2.mag === 7, "a shot comes out of the shooter's gun, nothing else");
   endBattleNow(st2, "victory");
   closeCombat(st2, { take: false });
-  check(p2.pockets.some((x) => x && x.key === "a_9mm_fmj" && x.loose && x.dur === 7) && !p2.pockets.some((x) => x && x.key === "a_9mm_fmj" && !x.loose), "after the fight the 7 in the gun are loose in a pocket again; the emptied box is thrown away");
+  check(p2.gear.weapon.loaded && p2.gear.weapon.loaded.n === 7 && !p2.pockets.some((x) => x && x.key === "a_9mm_fmj"), "after the fight the 7 in the gun stay in it (gunload.js returnStacks, 2026-10-20: physical out of a fight too); the emptied box is thrown away");
   const st3 = createWorld({ seed: seed + 3, factionCount: 4 });
   const q = fighter(st3, "pistol");
   q.pockets[2] = newBox("a_9mm_fmj", 1);
@@ -281,7 +281,10 @@ const place = (u, x, y) => { u.x = x; u.y = y; u.dead = false; u.down = false; }
   check(Math.abs(share("pistol", "hp") - 0.2) < 0.04 && Math.abs(share("shotgun", "slug") - 0.15) < 0.04 && Math.abs(share("huntrifle", "sp") - 0.4) < 0.05 && !share("ar", "ap"), `pistols 20% HP (${share("pistol", "hp").toFixed(2)}), shotguns 15% slugs, hunting rifles 40% SP; 5.56 common only`);
   const st = createWorld({ seed: seed + 8, factionCount: 4 });
   const h = hub(st);
-  check(!h.stock.ammo && totalRounds(h.stock) >= 80 && roundsIn(h.stock, "9mm") > 0 && roundsIn(h.stock, "308") > 0, `a new hub's 80 rounds go by its guns' calibres (${JSON.stringify(Object.fromEntries(ROUND_KEYS.filter((k) => h.stock[k] > 0).map((k) => [k, h.stock[k]])))})`);
+  // (2026-10-20: the crew's guns and magazines are loaded out of them at the start, itemacts.js loadUpAll: counted with the stores)
+  const all = { ...h.stock };
+  for (const sv of st.survivors) for (const x of carriedSpots(sv)) for (const r of [...((x.item.loaded && x.item.loaded.stack) || []), ...(Array.isArray(x.item.stack) ? x.item.stack : [])]) all[r.k] = (all[r.k] || 0) + r.n;
+  check(!h.stock.ammo && totalRounds(all) >= 80 && roundsIn(all, "9mm") > 0 && roundsIn(all, "308") > 0, `a new hub's 80 rounds go by its guns' calibres, in the stores or loaded (${JSON.stringify(Object.fromEntries(ROUND_KEYS.filter((k) => all[k] > 0).map((k) => [k, all[k]])))})`);
 }
 
 // 7. The economy.

@@ -12,6 +12,7 @@ import { DEFAULT_SIZE, sizeDef, customDef, isCustom, clampHives } from "./worlds
 import { FIRST_NAMES, LAST_NAMES, SKILLS, ROLLED_SKILLS, TRAITS, BIRTH_TRAITS, clashIn, GEAR, SUPPLIES, SUPPLY_KEYS, supValue } from "./data.js";
 import { traitDice, swapNewTraits, noteBornTraits, woundMult, traitSkill, traitPower, rollTiers, tidyTiers, cleanTier } from "./traits.js"; // the newer traits: own dice at birth, their rules
 import { sanitizeLibrary } from "./custombg.js";
+import { loadUpAll } from "./itemacts.js"; // physical rounds out of a fight (2026-10-20): the crew's guns loaded at the start
 import { sanitizeStartGear, hasPicks, normalStartGear, sanitizeStartVehicle } from "./startgear.js"; // gear picked on the new-run screen (Customize)
 import { appearanceFor, craftingStart, CRAFT_START, meleeStart, meleeOldSave, cookingStart, cookingOldSave } from "./appearance.js";
 export { radioBasesInRange };
@@ -190,6 +191,8 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
     hardcoreAfterHives(state);
     state.ammoCal = 2; // rounds by calibre from the start (save.js migrates older saves)
     state.stacks = 1; // stacks in a slot from the start (itemstack.js; save.js tidies older saves)
+    state.physOutV = 1; // guns and magazines hold physical rounds out of a fight from the start (itemacts.js; save.js loads up older saves)
+    loadUpAll(state, { stores: false }); // itemacts.js: the guns and magazines they got out with loaded from the rounds they carry (the team's supplies too at Start: main.js)
     updateVision(state);
     log(state, `Day 1. Calder is falling. ${state.startPeople === 1 ? "You got out alone" : `${countWord(state.startPeople).replace(/^./, (c) => c.toUpperCase())} of you got out`} with what you could carry. ${state.factions.length + (state.hardcore?.groups?.bands?.length || 0)} other groups are out there somewhere.`, "info");
     startChronicle(state);
@@ -260,6 +263,8 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
   settleAll(state); // ammo.js: the hub's 80 rounds by the calibres of the guns it starts with
   state.ammoCal = 2; // rounds by calibre from the start (save.js migrates older saves)
   state.stacks = 1; // stacks in a slot from the start (itemstack.js; save.js tidies older saves)
+  state.physOutV = 1; // guns and magazines hold physical rounds out of a fight from the start (save.js loads up older saves)
+  loadUpAll(state, { stores: false }); // itemacts.js: every gun and magazine the crew carries loaded from the rounds each carries; at Start (main.js) out of the hub's stores too, after the new-run screen's edits (the world's stock stays whole until the run starts)
 
   seedRoadCarts(state); // carts.js: now and then a cart abandoned on a road near a town (its own dice)
   ensureHives(state); // the hives mapgen.js placed, with their starting resources (hives.js)

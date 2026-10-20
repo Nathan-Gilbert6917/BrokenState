@@ -33,6 +33,7 @@ import { WORLD_SIZES, worldSizeOf } from "./worldsize.js";
 import { WOOD_UNITS, GEAR } from "./data.js"; // wood was a 3 kg bundle: older saves are scaled to 0.1 kg units
 import { makeLosCache, SparseLos } from "./combat.js";
 import { migrateUnitStacks } from "./mags.js"; // physical rounds on a battle saved before them
+import { loadUpAll } from "./itemacts.js"; // physical rounds out of a fight (2026-10-20): an older save's guns and magazines loaded once
 import { CRAFT_BOOKS, tech } from "./blueprints.js"; // craft books read before they unlocked anything // the line-of-sight cache of a loaded battle (sparse on a big yard)
 import { saveSummary, campaignKey } from "./savesummary.js"; // the save list's one-line summary and campaign groups
 import { noteLootAge } from "./itemcond.js"; // the years since the fall, for loot rolled after a load
@@ -294,6 +295,11 @@ export function deserializeState(save) {
   // Physical rounds (mags.js, 2026-10-18): a unit of yours from a save made before (u.mags counters, no u.stack) gets
   // the rounds it showed loaded out of what it carries and the team's bags.
   if (b && !b.over) for (const u of b.units || []) if (u.side === "player" && u.sid != null && !Array.isArray(u.stack) && Array.isArray(u.mags) && u.magsW === u.weapon) migrateUnitStacks(b, u, (state.survivors || []).find((x) => x && x.id === u.sid) || null);
+  // Physical rounds out of a fight (2026-10-20, itemacts.js): a save from before counted a gun's rounds out of the
+  // stores to hand (the badge); every gun and magazine your people carry is now loaded with those very rounds, once
+  // (what each carries first, then the stores of its place), so the badges read as they did. Not in the middle of a
+  // fight (the next load does it).
+  if (!(state.physOutV >= 1) && !(b && !b.over)) { loadUpAll(state); state.physOutV = 1; }
   if (b && Array.isArray(b.floors) && b.floors.length) {
     const F = b.floors[b.floor || 0] || b.floors[0];
     b.floor = b.floors.indexOf(F);

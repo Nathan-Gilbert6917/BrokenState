@@ -160,11 +160,11 @@ section("1. A carrier sets down a load and a bag in a fight: ground piles, picke
   finishCombat(st, setup, b.result);
   closeCombat(st);
   const back = partyMembers(st, p).some((s) => s.gear.carry === pack) || p.cargo.gear.includes(pack);
-  check(back && !spare.loaded, `won: the bag is back (${a.gear.carry === pack ? "in its carrier's arms" : "in the cargo"}), the gun in it unloaded`);
-  // (physical rounds: what was left in the guns in hand and their magazines went back onto their people as loose
-  // rounds, gunload.js returnStacks; the bag's gun into the team's bags)
-  const onThem = partyMembers(st, p).flatMap((s) => carriedWithBag(s)).reduce((n, it) => n + (it && it.key === "a_9mm_fmj" ? Math.floor(it.dur || 0) : 0), 0);
-  check(near(rounds(p, "a_9mm_fmj") + onThem, r0), `no round made or lost (${r0} → ${rounds(p, "a_9mm_fmj")} in the bags + ${onThem} on the team)`);
+  check(back && spare.loaded && spare.loaded.n === inGun, `won: the bag is back (${a.gear.carry === pack ? "in its carrier's arms" : "in the cargo"}), the gun in it keeps its ${inGun} rounds (2026-10-20: physical out of a fight)`);
+  // (physical rounds, 2026-10-20: what was left in the guns in hand and their magazines stays in them, gunload.js
+  // returnStacks; the bag's gun keeps its own)
+  const all9 = rounds(p, "a_9mm_fmj", st) + (spare.loaded ? (Array.isArray(spare.loaded.stack) ? inStack(spare.loaded.stack, "a_9mm_fmj") : spare.loaded.key === "a_9mm_fmj" ? spare.loaded.n : 0) : 0); // the bag's gun (in the arms or the cargo: inside a bag, not counted by rounds())
+  check(near(all9, r0), `no round made or lost (${r0} → ${all9}: the bags, the pockets, the guns and the magazines)`);
   check(near(C.holdTotals(p).rawwater, water0), `the water is all the team's still (${Math.round(C.holdTotals(p).rawwater)} of ${water0})`);
   check(partyMembers(st, p).some((s) => s.gear.carry === loot) || p.cargo.gear.includes(loot) || hub(st).armory.includes(loot), "the looted pack set down came back too");
 }

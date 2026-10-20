@@ -1,6 +1,6 @@
-// The item right-click menu (src/ui/itemmenu.js; its rules src/sim/itemacts.js). Out of a fight: a magazine Unloaded
-// stays empty (its badge, a fight's spares) until Loaded again (with a round of its own), a gun's Reload with sets the
-// round it takes the field with, eating and drinking from a base's stores and from the pack (raw food and un-purified
+// The item right-click menu (src/ui/itemmenu.js; its rules src/sim/itemacts.js). Out of a fight (physical rounds,
+// 2026-10-20): Load rounds / Load rounds with / Unload rounds on a magazine and Reload / Reload with / Unload on a gun
+// move real rounds out of the stores and onto the person (an Unloaded one stays empty, also as a fight starts), eating and drinking from a base's stores and from the pack (raw food and un-purified
 // water refused), the menu's rows for a gun, a magazine, a treat, a food stack and the pack. In a fight: a treat used
 // (1 action from a pocket, 2 from the pack; refused in the enemy turn, with no actions left and on someone else's
 // fighter), a bite from the pack lifting the aim that hunger cost (refitUnit), a gun part fitted and taken off in the
@@ -15,6 +15,8 @@ const { createBattle, combatAct, registerCombatHandler } = await import("../src/
 const { newItem, itemAt } = await import("../src/sim/inventory.js");
 const { setRounds, giveRounds } = await import("../src/sim/ammo.js");
 const { gunRounds } = await import("../src/sim/gunrounds.js");
+const { stackN } = await import("../src/sim/roundstack.js");
+const { keyFor } = await import("../src/sim/rounds.js");
 const { addFood } = await import("../src/sim/foods.js");
 const { rationOf } = await import("../src/sim/eating.js");
 const IA = await import("../src/sim/itemacts.js");
@@ -48,7 +50,8 @@ function menu(state, ui, loc, extra = {}) {
 const rowOf = (rows, re) => rows.find((r) => re.test(r.label));
 const run = (state, ui, id) => ITEMMENU_ACTIONS["im-run"](state, ui, { id });
 
-// 1. Magazines out of a fight.
+// 1. Magazines and guns out of a fight: physical rounds (2026-10-20: the badge counts what is in it; Load rounds,
+// Unload rounds, Reload, Reload with and Unload move real rounds, free, out of what the holder carries and the stores).
 {
   console.log("Magazines and guns out of a fight");
   const state = fresh();
@@ -57,42 +60,56 @@ const run = (state, ui, id) => ITEMMENU_ACTIONS["im-run"](state, ui, { id });
   const s = person(state);
   s.pockets[0] = newItem("mag_stanag_30");
   const ml = `s:${s.id}:pocket:0`;
-  check(gunRounds(state, s.pockets[0], ml).n === 30, "a spare magazine shows full from the rounds to hand (30/30)");
-  check(IA.unloadMagAt(state, ml).startsWith("Unloaded") && s.pockets[0].unloaded === true, "Unload: kept empty (item.unloaded)");
+  const K = "a_556_fmj";
+  const loose = () => s.pockets.reduce((a, it) => a + (it && it.key === K ? Math.floor(it.dur || 0) : 0), 0);
+  check(gunRounds(state, s.pockets[0], ml).n === 0, "a new spare magazine shows what is in it: nothing (0/30), whatever the stores hold");
+  const k0 = h.stock[K];
+  check(IA.loadMagAt(state, ml).startsWith("Loaded") && gunRounds(state, s.pockets[0], ml).n === 30 && h.stock[K] === k0 - 30, `Load rounds: 30 out of the base's stores into it (${k0} → ${h.stock[K]})`);
+  check(/full/.test(IA.loadMagRefusal(state, ml)), "…a full one takes no more");
+  check(/^30 rounds out/.test(IA.unloadMagAt(state, ml)) && s.pockets[0].unloaded === true && stackN(s.pockets[0].stack) === 0 && loose() === 30, `Unload rounds: all 30 out onto them as loose rounds (${loose()}), the magazine kept empty`);
   check(gunRounds(state, s.pockets[0], ml).n === 0 && gunRounds(state, s.pockets[0], ml).src === "unloaded", "…its rounds badge reads 0, 'unloaded'");
-  check(/already empty/.test(IA.unloadMagRefusal(state, ml)), "…a second Unload is refused");
+  check(/empty/.test(IA.unloadMagRefusal(state, ml)), "…a second Unload is refused");
   const b = (state.combat = createBattle(state, { tile: h.tile, baseId: h.id, fighterIds: [s.id], enemy: { kind: "raiders", count: 1, power: 2 }, ambush: null, canRetreat: true, handler: "imtest", context: {} }));
   const u = b.units.find((x) => x.sid === s.id);
   const spare = u.mags && u.mags.find((x) => x.where === "pocket");
-  check(spare && spare.n === 0, "a fight starts with the unloaded spare empty (mags.js fitMags)");
-  check(/Not in the middle of a fight/.test(IA.loadMagRefusal(state, ml)), "…and it cannot be loaded in the fight");
+  check(spare && spare.n === 0, "a fight starts with the unloaded spare empty (mags.js fillUnit), the rounds on them or not");
+  check(/Not in the middle of a fight/.test(IA.loadMagRefusal(state, ml)), "…and it cannot be loaded out of a fight's rules in the fight");
   state.combat = null;
+  for (const it of s.pockets) if (it && it.key !== "mag_stanag_30") delete it.stack;
+  s.gear.weapon.loaded = null; delete s.gear.weapon.loaded;
   const choices = IA.magLoadChoices(s.pockets[0]);
   check(choices.length > 1, `a STANAG magazine takes ${choices.length} kinds of round`);
   const other = choices.find((x) => x.id !== "fmj") || choices[1];
-  check(IA.loadMagAt(state, ml, other.id).startsWith("Loaded") && !s.pockets[0].unloaded && s.pockets[0].load === other.id, `Load with ${other.name}: loaded again, with its own round`);
-  // A gun's Reload with: the round it takes the field with.
+  const OK = keyFor("556", other.id);
+  h.stock[OK] = 40;
+  const lw = IA.loadMagAt(state, ml, other.id);
+  check(lw.startsWith("Loaded") && !s.pockets[0].unloaded && s.pockets[0].load === other.id && s.pockets[0].stack[0].k === OK && h.stock[OK] === 10, `Load rounds with ${other.name}: 30 of them in it, its own round (${lw})`);
+  // A gun: Reload with a kind loads it now (and it takes the field with it); Unload takes them out again.
   const gl = `s:${s.id}:weapon`;
   const loads = IA.gunLoadChoices(s.gear.weapon);
-  const alt = loads.find((x) => x.id !== loads[0].id);
-  check(alt && /loaded with/.test(IA.setGunLoad(state, gl, alt.id)) && s.gear.weapon.load === alt.id, `Reload with ${alt && alt.name}: item.load set`);
-  check(/does not take/.test(IA.setGunLoad(state, gl, "zz")) || /refus|not/.test(IA.setGunLoad(state, gl, "zz")), "…a round it does not take is refused");
-  check(/holds no rounds of its own/.test(IA.unloadGunRefusal(state, gl)), "Unload on a gun with no rounds of its own is refused (it is filled from the stores at a fight)");
-  s.gear.weapon.loaded = { n: 12, key: "a_556_fmj" };
-  const before = h.stock.a_556_fmj || 0;
-  check(/12 rounds/.test(IA.unloadGunAt(state, gl)) && (h.stock.a_556_fmj || 0) === before + 12 && !s.gear.weapon.loaded, "…one with 12 rounds of its own: they go into the base's stores");
+  const alt = loads.find((x) => x.id === other.id) || loads[1];
+  const rw = IA.setGunLoad(state, gl, alt.id);
+  check(alt && /^Loaded 10 /.test(rw) && s.gear.weapon.load === alt.id && gunRounds(state, s.gear.weapon, gl).n === 10, `Reload with ${alt && alt.name}: the 10 left loaded now, item.load set (${rw})`);
+  check(/does not take/.test(IA.setGunLoad(state, gl, "zz")), "…a round it does not take is refused");
+  const rl = IA.reloadGunAt(state, gl);
+  check(gunRounds(state, s.gear.weapon, gl).n === 30 && /^Loaded 20/.test(rl), `Reload: topped up to 30 from the loose rounds on them and the stores (${rl})`);
+  check(/full/.test(IA.reloadGunRefusal(state, gl)), "…a full gun is refused");
+  const lo0 = loose();
+  check(/30 rounds/.test(IA.unloadGunAt(state, gl)) && !s.gear.weapon.loaded && s.gear.weapon.unloaded === true, "Unload: its 30 rounds out, kept empty");
+  check(/empty/.test(IA.unloadGunRefusal(state, gl)), "…a second Unload is refused");
+  check(s.pockets.reduce((a, it) => a + (it && /^a_556/.test(it.key) ? Math.floor(it.dur || 0) : 0), 0) - lo0 === 30, "…the 30 are loose on them");
   // The rows.
   const ui = { inv: { sid: s.id } };
   const g = menu(state, ui, gl);
-  check(["Inspect", "Put in the armory", "Reload with", "Modify", "Repair"].every((l) => g.some((r) => r.label.startsWith(l))), `a gun's menu: ${g.map((r) => r.label).join(", ")}`);
+  check(["Inspect", "Put in the armory", "Reload", "Reload with", "Unload", "Remove magazine", "Modify", "Repair"].every((l) => g.some((r) => r.label.startsWith(l))), `a gun's menu: ${g.map((r) => r.label).join(", ")}`);
   const mg = menu(state, ui, ml);
-  check(rowOf(mg, /^Unload$/) && rowOf(mg, /^Load with$/) && rowOf(mg, /^Fit to$/), `a magazine's menu: ${mg.map((r) => r.label).join(", ")}`);
-  run(state, ui, rowOf(mg, /^Unload$/).id);
-  check(s.pockets[0].unloaded === true && /Unloaded/.test(ui.invMsg) && ui.imenu === null, "…Unload from the menu: done, the message shown, the menu closed");
-  check(rowOf(menu(state, ui, ml), /^Load$/), "…then the menu offers Load");
+  check(rowOf(mg, /^Load rounds$/) && rowOf(mg, /^Load rounds with$/) && rowOf(mg, /^Unload rounds$/) && rowOf(mg, /^Insert into$/) && rowOf(mg, /^Fit to$/), `a magazine's menu: ${mg.map((r) => r.label).join(", ")}`);
+  run(state, ui, rowOf(mg, /^Unload rounds$/).id);
+  check(s.pockets[0].unloaded === true && /out of the/.test(ui.invMsg) && ui.imenu === null, "…Unload rounds from the menu: done, the message shown, the menu closed");
+  check(rowOf(menu(state, ui, ml), /^Load rounds$/) && !rowOf(menu(state, ui, ml), /^Load rounds$/).off, "…then Load rounds can be done");
   ui.imenu = null; openItemMenu(state, ui, { loc: gl }, 10, 10);
-  run(state, ui, "reload");
-  check(ui.imenu && ui.imenu.open === "reload" && /✓/.test(itemMenuHtml(state, ui)), "Reload with opens its rounds (the loaded one ticked), the menu stays open");
+  run(state, ui, "reloadwith");
+  check(ui.imenu && ui.imenu.open === "reloadwith" && /✓/.test(itemMenuHtml(state, ui)), "Reload with opens its rounds (the gun's own ticked), the menu stays open");
 }
 
 // 2. Eating and drinking out of a fight.

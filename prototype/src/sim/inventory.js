@@ -34,7 +34,8 @@ import { isCart, heldKg, cartFree } from "./carts.js"; // a wheelbarrow, a hand 
 import { survivorById, baseById, day, newId } from "./world.js";
 import { partyCapacity, poolLoad, cargoRoom, unitsThatFit } from "./parties.js";
 import { bodyLoot } from "./deadsoldiers.js";
-import { bodyRounds, findRounds, unbox } from "./ammo.js"; // rounds by calibre (call-time only: safe in the import cycle)
+import { bodyRounds, findRounds, unbox, calOf } from "./ammo.js"; // rounds by calibre (call-time only: safe in the import cycle)
+import { keyFor } from "./rounds.js"; // a body's pistol: its own round
 import { condition, kitSource, spend } from "./itemcond.js"; // the condition loot comes in (one roller for every source)
 import { armourCond, lootArmour } from "./armour.js"; // per-hit armour: condition, an enemy body's worn piece
 import { lootGun } from "./gunfire.js"; // an enemy's gun: the condition it fought in
@@ -518,6 +519,16 @@ export function itemAt(state, str) {
   const r = ref(state, parseLoc(str));
   return r ? r.get() : null;
 }
+// Puts an item at an empty location (a person's slot, a pocket, a pouch, a pack slot; a storage list takes it at its
+// end). Returns true when it went there.
+export function putAt(state, str, item) {
+  const r = ref(state, parseLoc(str));
+  if (!r || !item) return false;
+  if (r.put) { r.put(item); return true; }
+  if (r.get()) return false;
+  r.set(item);
+  return true;
+}
 // Takes the item at a location away for good (a treat used up, comforts.js). Returns it, or null.
 export function removeAt(state, str) {
   const r = ref(state, parseLoc(str));
@@ -796,8 +807,7 @@ function taken(state, loc, item) {
   if (b && b.result) b.result.loot.gear.push(item);
   const body = battleBodies(state)[loc.id];
   if (body && body.sid != null) unlistFromSites(state, item);
-  const st = storageFor(state, battlePlace(b));
-  unloadInto(st, [item, ...(Array.isArray(item.contents) ? item.contents : [])], stockFor(state, st)); // gunload.js: a gun's rounds into the stores
+  // (a gun keeps the rounds left in it: gunload.js, 2026-10-20; its badge counts them, Unload takes them out)
 }
 // (A site whose body got up and walked off, carriers.js, stays on the map with nothing on it: site.walked.)
 export function unlistFromSites(state, item) {
@@ -1052,7 +1062,8 @@ export function deadBodyFinds(rng, ztype, plateDur = null) {
   if (sup.food) { const n = sup.food; delete sup.food; Object.assign(sup, typedFood(null, "travel", n, { rng: foodDice(rng, 0x2b0d) })); } // foods.js: a candy bar, a can in a coat pocket (dice of its own)
   if (rng.chance(ZBODY.find)) { const k = rng.pick(ZBODY.FINDS); if (GEAR[k]) gear.push(lootItem(k, "survivor", GEAR[k].makeshift ? rng : spend(rng))); }
   if (rng.chance(ZBODY.pistol)) { gear.push(lootItem("pistol", "survivor", spend(rng))); sup.ammo = (sup.ammo || 0) + rng.int(3, 8); }
-  if (sup.ammo) { const n = sup.ammo; delete sup.ammo; Object.assign(sup, findRounds(gear.some((g) => g.key === "pistol") ? "police" : "home", n, "deadbody", rng && Number.isFinite(rng.state) ? rng.state : 0)); } // ammo.js: rounds by calibre
+  const pistol = gear.find((g) => g.key === "pistol" && calOf(g.key));
+  if (sup.ammo) { const n = sup.ammo; delete sup.ammo; Object.assign(sup, pistol ? { [keyFor(calOf(pistol.key), null)]: n } : findRounds("home", n, "deadbody", rng && Number.isFinite(rng.state) ? rng.state : 0)); } // ammo.js: rounds by calibre (a pistol on them: its own, 2026-10-20)
   if (rng.chance(ZBODY.bag)) gear.push(lootItem(rng.pick(ZOMBIE_PACKS), "survivor", spend(rng)));
   return { sup, gear };
 }

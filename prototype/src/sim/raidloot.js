@@ -918,11 +918,10 @@ export function raidHome(state, b, homeUids) {
     for (const k of Object.keys(h.sup)) h.sup[k] = 0;
     h.gear.length = 0;
   }
-  // gunload.js: the guns that came home with rounds in them are unloaded into the team's cargo.
+  // gunload.js: the rounds left in the guns and the magazines stay in them (2026-10-20: physical rounds out of a fight).
   if (p) p.cargo = p.cargo || { supplies: {}, gear: [] };
   const homePeople = b.units.filter((u) => u.side === "player" && homeUids.has(u.id)).map((u) => survivorById(state, u.sid)).filter(Boolean);
-  returnStacks(b, homePeople, p ? p.cargo.supplies || (p.cargo.supplies = {}) : null); // mags.js: what is left in the guns and the magazines goes back onto the person as loose rounds
-  if (p) unloadInto(null, teamGuns(homePeople, p.cargo.gear || []), p.cargo.supplies || (p.cargo.supplies = {})); // a bag in the arms and one in the cargo too
+  returnStacks(b, homePeople, p ? p.cargo.supplies || (p.cargo.supplies = {}) : null); // gunload.js: what is left in the gun in the hands goes onto it, each magazine keeps its own
   // The piles nobody picked up stay behind: they were found, but nobody brought them home.
   for (const c of R.containers) {
     if (!c.drop || !c.contents) continue;

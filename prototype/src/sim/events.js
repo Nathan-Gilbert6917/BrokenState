@@ -25,7 +25,10 @@ import { lootItem } from "./inventory.js";
 import { spend } from "./itemcond.js"; // the condition of what is found
 import { teamPolicy, wantsOut, breakOff, RETREAT_POLICIES } from "./breakoff.js";
 import { totalRounds, spendAmmo } from "./rounds.js"; // rounds by calibre
-import { calRounds, partyCals, roundsText } from "./ammo.js"; // a find of rounds named by calibre
+import { calRounds, partyCals, roundsText, calOf } from "./ammo.js"; // a find of rounds named by calibre
+import { keyFor } from "./rounds.js"; // a gun's own round (the officer's pistol)
+import { setGunStack } from "./gunload.js"; // the rounds in a gun (2026-10-20: physical out of a fight)
+import { gunCapacity } from "./gunrounds.js";
 import { swapGun } from "./gundist.js"; // the gun distribution: a crashed Humvee's gun
 import { marchingNow, NIGHT_MARCH } from "./nightmarch.js"; // pushing on through the night: more trouble on the road
 import { isHardcore } from "./hardcore.js"; // hardcore's year Calder falls: road cards of its own (HC_EVENTS)
@@ -88,6 +91,12 @@ function addCargo(state, p, key, qty, mix = null) {
   p.cargo.supplies[key] = (p.cargo.supplies[key] || 0) + take;
   const word = key === "wood" ? "wood" : key === "water" ? "bottles of water" : key;
   return take < qty ? `${take} ${word} (no room for the rest)` : `${take} ${word}`;
+}
+// Rounds of one key into the team's cargo, as far as they fit (a gun's own rounds: not the team's mix). Returns the words.
+function addRoundsToCargo(state, p, key, qty) {
+  const t = Math.min(unitsThatFit(cargoRoom(state, p), key), Math.floor(qty));
+  if (t > 0) p.cargo.supplies[key] = (p.cargo.supplies[key] || 0) + t;
+  return t > 0 ? `${roundsText({ [key]: t })}${t < qty ? " (no room for the rest)" : ""}` : "";
 }
 // What grows wild (an orchard's apples, brambles' berries): `units` days of food split by the table's weights, in
 // whole items. Not typedFood: it leaves out the kinds only the shops had once the shops are bare, and a tree is no shop.
@@ -752,8 +761,17 @@ const HC_EVENTS = [
             const hurtTxt = s.rng.chance(0.2) ? ` It takes longer than it should. ${injureRandom(s, p, 5, 15, "putting down the dead")}` : "";
             if (!s.parties.includes(p)) return hurtTxt.trim();
             const it = lootItem("pistol", "survivor", s.rng);
-            const gun = addGearToCargo(s, p, it) ? `a ${it.name.toLowerCase()}` : "nothing (no room for the pistol)";
-            return `Nobody talks about it afterwards (mood -3). The team takes ${gun} and ${addCargo(s, p, "ammo", s.rng.int(8, 15))}.${hurtTxt}`;
+            // Its rounds are the pistol's own (the user's report 2026-10-20: "a 9mm pistol and some ammo", the ammo by
+            // the team's other guns' calibres, none of it movable onto a survivor as the pistol's): what fits its
+            // magazine is in it (gunload.js it.loaded, the badge's count), the rest loose 9mm in the cargo.
+            const n = s.rng.int(8, 15), key = keyFor(calOf(it.key), null);
+            const inGun = Math.min(n, gunCapacity(it));
+            setGunStack(it, [{ k: key, n: inGun }]);
+            const took = addGearToCargo(s, p, it);
+            const spare = took ? n - inGun : n;
+            const extra = spare > 0 ? addRoundsToCargo(s, p, key, spare) : "";
+            const gun = took ? `a ${it.name.toLowerCase()} with ${inGun} rounds in it` : "nothing (no room for the pistol)";
+            return `Nobody talks about it afterwards (mood -3). The team takes ${gun}${extra ? ` and ${extra}` : ""}.${hurtTxt}`;
           },
         },
         { label: "Let them be", hint: "Everyone on the team mood -1", resolve: (s) => { cheer(partyMembers(s, p), -1); return "The team goes round by the gardens and does not look back."; } },

@@ -24,6 +24,8 @@ import { calOf, roundsOf } from "./ammo.js";
 import { CALIBERS } from "./data-ammo.js";
 import { typeFor, keyFor, withHand } from "./rounds.js";
 import { standardMag, magFitsGun, isMag, enemyMags, enemyMagCount, magLoad, takesMagItems, usesInternal, magItemLoad, SHELLS, fittedMag } from "./mags.js";
+import { stackN } from "./roundstack.js";
+import { gunStackOf } from "./gunload.js"; // the rounds already in a gun out of a fight (call-time only)
 import { roundItem, mergeInto, canStack } from "./itemstack.js";
 import { feelFactor, bandIndex, LOAD_BANDS } from "./load.js";
 import { itemOnKg, cartOf, CART_FIGHT } from "./carts.js"; // a cart pushed in a fight: its share of the weight, a tile less a move
@@ -255,9 +257,12 @@ export function handWant(s, gun) {
   const loose = looseWant(gun);
   if (!(loose > 0) || (SHELLS.on && SHELLS.GUNS[gun.key] && usesInternal(gun.key, gun))) return loose;
   const w = WEAPONS[gun.key], fit = fittedMag(gun), m = gunMods(gun);
-  let n = gun.loaded ? 0 : Math.max(1, Math.round(((fit ? MAGAZINES[fit.key].cap : w.cap) || 1) * (m.capMult ?? 1)) + (m.cap || 0));
+  // (2026-10-20: a gun and its spares keep the rounds in them out of a fight; a fight's start tops them up: what is
+  // missing is drawn, none for one Unloaded by hand or a gun with its magazine out)
+  const room = (cap, st) => Math.max(0, cap - stackN(st));
+  let n = gun.unloaded || gun.magOut ? 0 : room(Math.max(1, Math.round(((fit ? MAGAZINES[fit.key].cap : w.cap) || 1) * (m.capMult ?? 1)) + (m.cap || 0)), gunStackOf(gun));
   const cal = calOf(gun.key), key = keyFor(cal, typeFor(cal, gun.load)); // a spare set to a round of its own (mags.js magItemLoad) loads that, not these
-  for (const x of carriedSpots(s)) if (x.item && x.item !== fit && isMag(x.item) && !Array.isArray(x.item.stack) && !x.item.unloaded && magFitsGun(gun.key, x.item.key) && keyFor(cal, typeFor(cal, x.item.load || gun.load)) === key) n += MAGAZINES[x.item.key].cap;
+  for (const x of carriedSpots(s)) if (x.item && x.item !== fit && isMag(x.item) && !x.item.unloaded && magFitsGun(gun.key, x.item.key) && keyFor(cal, typeFor(cal, x.item.load || gun.load)) === key) n += room(MAGAZINES[x.item.key].cap, x.item.stack);
   return loose + n;
 }
 // Rounds at hand for a trip (parties.js launchExpedition, every trip of yours: the planner's and the autopilot's) and
