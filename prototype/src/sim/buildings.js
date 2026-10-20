@@ -53,6 +53,8 @@ export const RECIPES = {
 // 8 scrap. The workbench (16 scrap, a part, 18 hours, Mechanics 2) and the master workbench (28, 3 parts, 30 hours,
 // Mechanics 5) are unchanged: each still costs more than the tier below and the whole road to a workbench is now
 // 28 scrap and 2 parts (it was 24 and 1).
+// woodwork (2026-10-20): the table is wood: the crafting bench 10 scrap, a part and 100 wood (still within the asked
+// 10-12 scrap), the workbench 12 scrap, a part and 200 wood; the master workbench (a lathe, a welder) none.
 export const BENCH = {
   craftbench: { rate: 1.25, quality: 0.05, workshop: false },
   workbench:  { rate: 1.4,  quality: 0.08, workshop: true },
@@ -84,7 +86,7 @@ export const STORE_KG = { storebox: 60, crates: 150, shed: 600, storehouse: 2000
 // reserve and its next builds (autopilot.js govWoodwork, woodwork.js).
 export const BUILDINGS = {
   farm_plot:    { name: "Farm plot",      cost: { scrap: 3, wood: 300 },             hours: 12, max: 10, desc: "+2 crop plots (Farming tab). Every base starts with some plots: a camp 1, a shelter 2, an outpost 4, the main base 8." },
-  craftbench:   { name: "Crafting bench", plot: "utility", family: "bench", tier: 1, cost: { scrap: 8, parts: 1, wood: 200 }, hours: 12, max: 1, craft: BENCH.craftbench, // BENCH: why it costs this
+  craftbench:   { name: "Crafting bench", plot: "utility", family: "bench", tier: 1, cost: { scrap: 10, parts: 1, wood: 100 }, hours: 12, max: 1, craft: BENCH.craftbench, // BENCH: why it costs this
                   desc: `A heavy table with a vise and hand tools in the yard. ${BENCH_GATE}: with this one ${benchText("craftbench")}. Upgrade it into a workbench for the workshop recipes and an ammo bench.` },
   workbench:    { name: "Workbench",      plot: "utility", family: "bench", tier: 2, upgrades: "craftbench", cost: { scrap: 12, parts: 1, wood: 200 }, hours: 18, max: 1, req: { mechanics: 2 }, craft: BENCH.workbench,
                   desc: `Bench grinder, drill press and clamps under a roof of tin: ${benchText("workbench")}. It counts as a workshop: the workshop recipes can be made here, and an ammo bench can be built at this base. Upgrades the crafting bench on its plot. Needs a Mechanics 2+ survivor here to build.` },

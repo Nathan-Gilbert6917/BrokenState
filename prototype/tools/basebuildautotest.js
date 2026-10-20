@@ -29,7 +29,7 @@ const t0 = Date.now();
 registerCombatHandler("bbat", () => {});
 const GENERAL = ["gen_barn", "gen_hall", "gen_lodge", "gen_cabin", "gen_hut"];
 const world = (s = seed, factions = 6) => { const st = createWorld({ seed: s, factionCount: factions }); st.started = true; st.hour = 24 * 3 + 12; st.landOff = true; return st; }; // landOff: the land (basescatter.js) is tools/baseviewtest.js's
-const rich = (base) => Object.assign(base.stock, { scrap: 400, parts: 30, wood: 1200 });
+const rich = (base) => Object.assign(base.stock, { scrap: 400, parts: 30, wood: 4000 }); // wood: a barn is 2,250 (woodwork)
 const addPeople = (st, base, n) => { for (let i = 0; i < n; i++) { const s = makeSurvivor(st); s.location = { kind: "base", baseId: base.id }; st.survivors.push(s); } };
 const wishes = (st, base) => housingAI.wishes(st, base); // autopilot.js buildWishes
 const types = (list) => list.map((w) => w.type).join(", ");

@@ -2772,8 +2772,8 @@ function nextBuildWood(state, base, areas = ALL_AREAS) {
   return { wood, type: null, keep: false };
 }
 // Every WOODWORK.govEvery hours at a base of yours with land on its map (basemap.js landFor): when the woodpile and
-// the felling already queued come to less than the fires' reserve (in the stocking season the cold's whole need, as
-// buildWoodKeep; out of it the fires' days, woodNeed dailyKeep, or the share the next build keeps back) plus the next
+// the felling already queued come to less than the fires' reserve (woodNeed dailyKeep: the fires' days in store, or the
+// share of the coming cold's need the next build leaves back, buildWoodKeep: all of it in the stocking season) plus the next
 // builds' wood (nextBuildWood), the nearest trees beyond the walls are felled for it, a job a tree, at most
 // WOODWORK.govMax of them waiting (woodwork.js queueChop; the builders fell when they have nothing else to build, the
 // woodcutters before their trips). And the sites of the builds queued and of the next one are cleared ahead
@@ -2782,9 +2782,15 @@ function govWoodwork(state, base, areas = ALL_AREAS) {
   if (gov(state).noWood || base.group || (base.owner != null && base.owner !== "player")) return;
   const next = nextBuildWood(state, base, areas);
   const wn = woodNeed(state, base);
-  const reserve = Math.max(wn.soon ? wn.need : wn.dailyKeep, next.keep ? buildWoodKeep(wn) : 0);
+  const reserve = Math.max(wn.dailyKeep, next.keep ? buildWoodKeep(wn) : 0); // the fires' days; the cold's share a big wooden build leaves (the winter's own pile is the woodcutters': planWood)
   const want = Math.ceil(reserve + next.wood - Math.max(0, base.stock.wood || 0) - queuedChopWood(base));
   if (want > 0) { const jobs = queueChop(state, base, want); if (jobs.length) gov(state).stats.chops = (gov(state).stats.chops || 0) + jobs.length; }
+  // Under the fires' own days and three more (the opening, after a bunkhouse took the pile): its felling goes to the front of the queue,
+  // ahead of the builds (the builders work the first job they can).
+  if ((base.stock.wood || 0) < wn.dailyKeep + 3 * (wn.daily || 0)) { // and three days more of the daily burn
+    const mine = base.construction.filter((c) => c.gov === "wood");
+    if (mine.length && base.construction[0] !== mine[0]) { const rest = base.construction.filter((c) => c.gov !== "wood"); base.construction.splice(0, base.construction.length, ...mine, ...rest); }
+  }
   const ahead = clearAhead(state, base, next.type);
   if (ahead.length) gov(state).stats.clearAhead = (gov(state).stats.clearAhead || 0) + ahead.length;
 }

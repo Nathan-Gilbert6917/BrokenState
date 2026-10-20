@@ -21,11 +21,12 @@
 //   queue next (siteFor: where the auto layout would put it), only where the layout found no open ground; nothing else.
 // AI groups have no grid: their land clearing stays coarse (groupworks.js: their crew cuts a build's wood).
 import { atBase } from "./world.js";
-import { woodcutterMult, seasonWood } from "./woodcutting.js";
+import { woodcutterMult, seasonWood, WOOD } from "./woodcutting.js";
 import { landFor, queueClear, finishClear, siteWaits, itemByKey, autoLayout, landUnder, ringHalf, FOOT, WALL_KINDS } from "./basemap.js"; // call-time only (the modules load in a circle)
 import { noteOutput } from "./output.js";
 import { BUILDINGS } from "./buildings.js"; // call-time only
 import * as Weather from "./weather.js";
+import { gainXp, USE } from "./skills.js"; // the felling teaches as the trips do (woodcutting.js woodTrip)
 
 export const WOODWORK = {
   pace: 1,        // work-hours an hour of an average woodcutter (woodcutterMult avg) felling on the base map
@@ -62,6 +63,8 @@ export function chopHour(state, base, s, now = state.hour) {
   job.progress = (job.progress || 0) + rate;
   (job.chop || (job.chop = {}))[s.id] = now;
   s.chop = { base: base.id, job: job.id, hour: now };
+  gainXp(state, s, "farming", USE.wood / WOOD.base.hours); // an hour of the trips' day's
+  gainXp(state, s, "mechanics", USE.woodMech / WOOD.base.hours);
   noteOutput(state, base, "wood", 0, "wood"); // the day on the job (the Work now panel), the wood when it is done
   if (job.progress >= job.hours - 1e-9) {
     base.construction.splice(base.construction.indexOf(job), 1);

@@ -17,7 +17,7 @@ import { BUILDINGS, WALL_TIERS, STAND, BARRACKS_UP, WATER_BARREL, queueBuild, ca
 import { CRAFTS, queueCraft } from "../src/sim/crafting.js";
 import { FIELD } from "../src/sim/fieldworks.js";
 import { GROUP_WORKS, groupWorksDaily } from "../src/sim/groupworks.js";
-import { burnOfKey } from "../src/sim/woodcutting.js";
+import { burnOfKey, woodNeed } from "../src/sim/woodcutting.js";
 import { setAutopilot, autopilotHour, autopilotStats } from "../src/sim/autopilot.js";
 import { jobTripsHour } from "../src/sim/jobtrips.js";
 import { describeActivity } from "../src/sim/activity.js";
@@ -124,20 +124,29 @@ section("2. The raised costs come out of the stores (yours and the groups')");
   const w0 = h.stock.wood;
   const r = queueCraft(st, h, "ladder");
   check(/queued/.test(r) && w0 - h.stock.wood === 100, `a siege ladder: −${w0 - h.stock.wood} wood (${r})`);
-  // The groups: a wall's wood from the woodpile above their keep, the rest cut as part of the job.
-  const f = st.factions.find((x) => x.alive && x.bases.length);
-  f.job = null;
-  f.stock.scrap = 100;
-  const keep = f.pop * GROUP_WORKS.WOOD.keepHead;
-  const def = GROUP_WORKS.WORKS.walls;
-  f.stock.wood = keep + 100;
-  // The job made by groupWorksDaily: their works set up so a wall is next (water, fields, quarters built).
-  const w = (f.works || (f.works = {}))[f.bases[0]] || (f.works[f.bases[0]] = {});
-  Object.assign(w, { water: 5, farms: 5, beds: 5 });
-  groupWorksDaily(st, f);
-  if (f.job && f.job.type === "walls") {
-    check(f.stock.wood === keep && f.job.cut === def.cost.wood - 100 && f.job.left > def.work - 1, `a group's wall: 100 wood from its pile (it keeps ${keep}), the other ${f.job.cut} cut by its crew (${Math.round((f.job.left - def.work + 1) * 10) / 10} crew-days more), never salvaged for wood (paid: ${f.job.paid})`);
-  } else check(true, `(the group's next work is ${f.job ? f.job.type : "none"}: the wall's wood checked by the numbers only)`);
+  // The groups: a work's wood from the woodpile above their keep, the rest cut by their crew as part of the job.
+  let seen = 0;
+  for (const f of st.factions.filter((x) => x.alive && x.bases.length)) {
+    f.job = null;
+    f.stock.scrap = 100; f.stock.parts = 10;
+    const keep = f.pop * GROUP_WORKS.WOOD.keepHead;
+    f.stock.wood = keep + 30;
+    groupWorksDaily(st, f);
+    const def = f.job && GROUP_WORKS.WORKS[f.job.type];
+    if (!def || !(def.cost.wood > 0) || !f.job.paid) continue;
+    seen++;
+    check(f.stock.wood === keep && f.job.cut === def.cost.wood - 30 && f.job.paid, `${f.name}'s ${def.name}: 30 wood from its pile (it keeps ${keep}), the other ${f.job.cut} cut by its crew (${Math.round(f.job.left * 10) / 10} crew-days left of ${def.work}), paid, not salvaged`);
+    if (seen >= 2) break;
+  }
+  if (!seen) {
+    const f = st.factions.find((x) => x.alive && x.bases.length);
+    const w = (f.works || (f.works = {}))[f.bases[0]] || (f.works[f.bases[0]] = {});
+    Object.assign(w, { water: 9 });
+    f.job = null; f.stock.wood = f.pop * GROUP_WORKS.WOOD.keepHead;
+    groupWorksDaily(st, f);
+    const def = f.job && GROUP_WORKS.WORKS[f.job.type];
+    check(!!def && def.cost.wood > 0 && f.job.cut === def.cost.wood && f.job.left > 0, `a group with no wood to spare: its crew cuts all the wood for ${def ? def.name : "the work"} as part of the job (${f.job ? f.job.cut : "-"} wood)`);
+  }
 }
 
 // ---------- 3. Woodcutters fell the marked trees first ----------
@@ -231,9 +240,19 @@ section("4. The governor fells for wood when short, a few trees at a time beyond
   st2.hour = Math.ceil(st2.hour / WW.WOODWORK.govEvery) * WW.WOODWORK.govEvery + 24 * 2;
   autopilotHour(st2);
   check(!h2.construction.some((c) => c.gov === "wood"), "with the woodpile full nothing is felled");
-  // A build of the governor's waits behind no felling: queued ahead of its own felling jobs.
-  const i0 = h.construction.findIndex((c) => c.gov === "wood");
-  check(h.construction.slice(0, Math.max(0, i0)).every((c) => c.type !== "clear" || c.gov !== "wood") && h.construction.slice(i0).every((c) => c.type === "clear"), `its builds go ahead of its felling (${h.construction.map((c) => c.type + (c.gov ? `:${c.gov}` : "")).join(", ")})`);
+  // Under the fires' days (wood 0): its felling first; above them, behind its builds (the builders fell when idle).
+  const order = (hb) => hb.construction.map((c) => c.type + (c.gov ? `:${c.gov}` : "")).join(", ");
+  check(h.construction[0] && h.construction[0].gov === "wood", `no wood at all: the felling at the front of the queue (${order(h)})`);
+  const st5 = world(SEED + 5);
+  const h5 = hub(st5);
+  setAutopilot(st5, true);
+  st5.hour = Math.ceil(st5.hour / WW.WOODWORK.govEvery) * WW.WOODWORK.govEvery + 24 * 2;
+  h5.stock.wood = 900; h5.stock.scrap = 200;
+  for (let i = 0; i < 3; i++) { autopilotHour(st5); st5.hour += WW.WOODWORK.govEvery; }
+  const wn5 = woodNeed(st5, h5);
+  const i5 = h5.construction.findIndex((c) => c.gov === "wood");
+  const urgent = (h5.stock.wood || 0) < wn5.dailyKeep + 3 * (wn5.daily || 0);
+  check(i5 < 0 || urgent || h5.construction.slice(i5).every((c) => c.type === "clear"), `with the fires' days in store its builds go ahead of its felling (${order(h5)}; ${Math.round(h5.stock.wood)} wood)`);
 
   // Clear ahead: a forest camp with more queued than open ground.
   const st3 = world(SEED + 9);
