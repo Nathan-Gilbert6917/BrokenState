@@ -270,12 +270,14 @@ const cellsOf = (b, f = 0) => (b.floors && (f || 0) !== (b.floor || 0) && b.floo
 const NOPARK = new Set(["gate", "tanktrap", "vehicle", "cart"]);
 // Can a cart stand on this cell as a barricade: plain ground or an opening (a doorway, a broken door, a breach), no
 // trap, no height, nothing on it (a unit, a body, another cart).
-function parkable(b, x, y, f) {
+// units false: whoever stands there does not count (a found cart: foundCart steps them aside).
+const standsAt = (b, x, y, f) => b.units.filter((o) => o.x === x && o.y === y && (o.f || 0) === f && !o.left && !o.off && !o.fled && !o.aboard && !o.burnt);
+function parkable(b, x, y, f, units = true) {
   if (x < 0 || y < 0 || x >= b.w || y >= b.h) return false;
   const c = cellsOf(b, f)[y * b.w + x];
   const d = c && CELL[c.k];
   if (!d || !d.walk || d.trap || d.h || d.climb || d.perch || c.h || NOPARK.has(c.k)) return false;
-  if (b.units.some((o) => o.x === x && o.y === y && (o.f || 0) === f && !o.left && !o.off && !o.fled && !o.aboard && !o.burnt)) return false;
+  if (units && standsAt(b, x, y, f).length) return false;
   return !cartBoxes(b).some((o) => o.x === x && o.y === y && (o.f || 0) === f);
 }
 // The four cells beside a unit a cart can stand on: left, right, in front, behind (no corner, nothing further).
@@ -520,8 +522,25 @@ export const MAP_CARTS = { areas: { barn: 0.35, garage: 0.25, workshop: 0.2, war
 // kind, c.dk): what locks.js may lock or unlock by the hour.
 const DOOR_CELLS = new Set(["door", "idoor", "odoor", "bdoor", "doorway"]);
 const isDoorCell = (c) => !!c && (DOOR_CELLS.has(c.k) || c.dk != null);
-function foundCart(state, b, x, y, f, key, tag) {
-  if (!parkable(b, x, y, f) || x < 2 || y < 1 || x > b.w - 3 || y > b.h - 2 || evacAt(b, x, y)) return null; // not on the way out (the evac strip, the edges)
+// Whoever stands on a found cart's cell steps to the nearest free cell they can reach (the cart is the map's own dice,
+// not where the team or the dead happened to start: raidapproachtest, the same map from another side).
+function stepAside(b, x, y, f) {
+  const reach = f && b.floors && b.floors[f] ? b.floors[f].reach : b.reach;
+  for (const o of standsAt(b, x, y, f)) {
+    let to = null;
+    for (let r = 1; r <= 4 && !to; r++) for (let dy = -r; dy <= r && !to; dy++) for (let dx = -r; dx <= r && !to; dx++) {
+      const nx = x + dx, ny = y + dy;
+      if (Math.max(Math.abs(dx), Math.abs(dy)) === r && parkable(b, nx, ny, f) && (!reach || reach[ny * b.w + nx])) to = [nx, ny];
+    }
+    if (!to) return false;
+    o.x = to[0]; o.y = to[1];
+    if (o.home) o.home = [to[0], to[1]];
+  }
+  return true;
+}
+function foundCart(state, b, x, y, f, key, tag, anyUnit = false) {
+  if (!parkable(b, x, y, f, !anyUnit) || x < 2 || y < 1 || x > b.w - 3 || y > b.h - 2 || evacAt(b, x, y)) return null; // not on the way out (the evac strip, the edges)
+  if (anyUnit && !stepAside(b, x, y, f)) return null;
   const roll = (...k) => hash01(state.seed, "mapcart", b.tileId ?? 0, tag, ...k);
   const cart = lootItem(key, siteSource(key === "handcart" ? "farm" : "hardware"), roll("q"));
   const box = { id: b.nextId++, x, y, f, kind: "ground", drop: true, cart, sid: null, side: null, found: true, area: null, searched: true, partial: false, label: `${cart.name} (abandoned)`, contents: { sup: {}, gear: [] } };
@@ -553,7 +572,7 @@ export function placeMapCarts(state, b) {
         // the same map by day and after waiting for night). Skipping doors keeps "its own dice" the hour's no matter.
         if (isDoorCell(cellsOf(b, a.f || 0)[y * b.w + x]) || (a.doors && a.doors.some(([dx, dy]) => dx === x && dy === y))) continue;
         const key = hash01(state.seed, "mapcart", b.tileId ?? 0, "kind", a.id) < (a.type === "barn" || a.type === "farmhouse" || a.type === "warehouse" ? 0.55 : 0.2) ? "handcart" : "wheelbarrow";
-        if (foundCart(state, b, x, y, a.f || 0, key, `a${a.id}`)) { n++; break; }
+        if (foundCart(state, b, x, y, a.f || 0, key, `a${a.id}`, true)) { n++; break; }
       }
     }
   } else if (!R && b.tileId != null && state.tiles[b.tileId] && state.tiles[b.tileId].road && hash01(state.seed, "mapcart", b.tileId, "road", state.hour) < MAP_CARTS.road) {
