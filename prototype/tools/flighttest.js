@@ -139,8 +139,10 @@ section("Overrun: the dead walk in and win");
 {
   const st = world();
   const { f, tile, h } = setup(st, "commune", 600, 1);
-  // Their people unarmed: the dead that break in (your rule, defences.js breakInForce: at most 20 of them, fought by
-  // the numbers on the very people there) beat them. (Twenty armed people would hold, as yours would.)
+  // Eight of them, unarmed: the dead that break in (your rule, defences.js breakInForce: at most 20 of them, fought by
+  // the numbers on the very people there) beat them at the odds' cap (combat.js ODDS MAX). Twenty unarmed hold one
+  // time in four (the dead the map's odds, 2026-10-19), and twenty armed would hold, as yours would.
+  f.pop = 8;
   ensureMembers(st, f); syncMembers(st, f);
   for (const s of membersOf(f)) { s.gear.weapon = null; s.gear.tool = null; }
   h.move = HOURS_PER_TILE - 0.01;
