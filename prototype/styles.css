@@ -464,6 +464,21 @@ table.t.fc-rooms td, table.t.fc-rooms th { padding: 0.1rem 0.15rem; }
 .cbunit:hover { border-color: var(--accent); }
 .cbunit.on { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
 .cbunit.done { opacity: 0.65; }
+/* The base map's layout panel (ui/basemap.js): the Build list's rows and folds, the selected thing's card, why-not lines. */
+.bmfold { margin-bottom: 0.3rem; }
+.bmrow { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 0.3rem 0.5rem; margin-bottom: 0.3rem; }
+.bmrow.on { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
+.bmrow.off { opacity: 0.75; }
+.bmfoot { display: flex; flex-wrap: wrap; gap: 0.25rem; align-items: center; margin-top: 0.2rem; }
+.bmwhy { color: color-mix(in srgb, var(--danger) 80%, var(--text)); margin-top: 0.15rem; }
+.bmsel { border-color: var(--accent); }
+#cbpanel h4 { margin: 0.5rem 0 0.25rem; font-size: 0.8rem; font-weight: 600; }
+/* The Storage tab (ui/storage.js): the containers' cards, the mover's rows, the kept-in chip on an armory tile (ui/inventory.js). */
+.stcard .stchips { display: flex; flex-wrap: wrap; gap: 0.2rem; margin-top: 0.25rem; }
+.strow { gap: 0.4rem; margin-top: 0.2rem; align-items: center; }
+.strow input[type="number"] { width: 4.5rem; }
+.invstorepick { gap: 0.4rem; margin: 0.25rem 0; align-items: center; }
+.islot .ikept { position: absolute; left: 2px; bottom: 2px; font-size: 0.6rem; line-height: 1.1; padding: 0 0.3rem; margin: 0; pointer-events: none; background: color-mix(in srgb, var(--info) 35%, #2c3139); max-width: calc(100% - 4px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cbunit.out { opacity: 0.5; }
 .cbunit.vol { cursor: default; border-color: #6f5a99; } /* a volunteer (sim/volunteers.js): not yours to select */
 .cbunit.vol:hover { border-color: #6f5a99; }

@@ -71,7 +71,7 @@ export function assaultGoods(state, setup, except = null) {
   for (const [k, q] of Object.entries(h.stock || {})) if (typeof q === "number" && q >= 1 && SUPPLIES[k] && !NOT_STORED.has(k)) stock[k] = Math.floor(q);
   const items = [];
   for (const it of [...(h.stock === f.stock ? spareKit(f) : []), ...(h.armory || [])]) if (it && !items.includes(it) && !(except && except.has(it))) items.push(it);
-  const view = { id: -1, tile, type: h.type, tier: h.tier, camp: h.camp, group: true, fid: f.id, name: h.name, buildings: h.buildings || [], construction: [], stock, armory: items };
+  const view = { id: -1, tile, type: h.type, tier: h.tier, camp: h.camp, group: true, fid: f.id, name: h.name, buildings: h.buildings || [], construction: [], stock, armory: items, bins: h.bins || null }; // bins: where their goods are kept (containers.js autoStore, daily: factions.js peopleUp), read as storageOf reads yours
   return { f, h, tile, view };
 }
 

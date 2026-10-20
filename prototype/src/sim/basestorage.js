@@ -95,56 +95,111 @@ const boxKg = (it) => BOX_STORE_KG[it.key] || 0;
 // Worth a kg of a supply key, of an item.
 const supDensity = (k) => { const w = supWeight(k); return w > 0 ? supValue(k) / w : 0; };
 
+// Worth a kg of an armory item (an opened box: what is in it stays in it, first of all).
+const itemDensity = (it, kg) => (isOpenBox(it) ? Infinity : kg > 0 ? itemValue(it) / kg : 0);
+/** THE FILL's order: the densest first, supplies before items on a tie, then by key or armory order. */
+export const byWorth = (a, b) => b.dens - a.dens || a.rank - b.rank || (a.sup && b.sup ? (a.sup < b.sup ? -1 : a.sup > b.sup ? 1 : 0) : (a.i || 0) - (b.i || 0));
+/** Whether a supply key is a good that takes room (in SUPPLIES, has a weight; not water). @param {string} k */
+export const storedKey = (k) => !NOT_STORED.has(k) && !!SUPPLIES[k] && supWeight(k) > 0;
+/** The kg an armory item takes in the room (an opened box: only what is still in it). @param {any} it */
+export const itemRoomKg = (it) => (!it || !GEAR[it.key] ? 0 : isOpenBox(it) ? Math.max(0, itemLoad(it) - itemKg(it)) : itemLoad(it));
+/** A good of the fill: a supply stack ({ sup, q, unit }) or an armory item ({ i }), with its worth a kg. */
+export const supGood = (k, q) => ({ sup: k, kg: q * supWeight(k), unit: supWeight(k), q, dens: supDensity(k), rank: 0 });
+export const itemGood = (it, i) => { const kg = itemRoomKg(it); return { i, kg, unit: kg, q: 1, dens: itemDensity(it, kg), rank: 1 }; };
+// Containers the goods can be assigned to by containers.js (item.store, base.bins): the core, a building, a parked car.
+// An opened box is room but no assignable container: it is an item of the armory, and its index moves.
+const ASSIGNABLE = new Set(["core", "building", "vehicle"]);
+
 /**
  * The base's storage: its containers' room (cap, kg), all its goods' weight (used, kg: inside and outside), what lies
  * outside (outsideKg, and outside.sup units by key, outside.gear armory indices), the containers.
+ * THE ASSIGNMENTS (containers.js, base building 2026-10-19): a good the player or the game put in a container
+ * (item.store = its key; base.bins[key][supply] = whole units) fills that container first, up to its room, in THE
+ * FILL's order within it (clamped to the books as it is read: a bin never counts more than the stock still holds,
+ * earlier containers first; nothing is changed here). Each container then carries what it holds by assignment (sup,
+ * gear: armory indices, kg). What is not assigned (and what an assignment could not fit) fills the room left over by
+ * THE FILL, pooled over every container (loose: what lies inside wherever there is room), and the rest lies outside.
+ * With nothing assigned this is THE FILL exactly.
  * @param {any} state @param {any} base
  * @returns {{ cap: number, used: number, inside: number, outsideKg: number, free: number,
- *   containers: { key: string, name: string, cap: number, kind: "core" | "building" | "vehicle" | "box", type: string }[],
- *   outside: { sup: Record<string, number>, gear: number[] } }}
+ *   containers: { key: string, name: string, cap: number, kind: "core" | "building" | "vehicle" | "box", type: string, sup: Record<string, number>, gear: number[], kg: number }[],
+ *   outside: { sup: Record<string, number>, gear: number[] }, loose: { sup: Record<string, number>, gear: number[], kg: number } }}
  */
 export function storageOf(state, base) {
-  /** @type {{ key: string, name: string, cap: number, kind: "core" | "building" | "vehicle" | "box", type: string }[]} */
+  /** @type {{ key: string, name: string, cap: number, kind: "core" | "building" | "vehicle" | "box", type: string, sup: Record<string, number>, gear: number[], kg: number }[]} */
   const containers = [];
-  const out = { cap: 0, used: 0, inside: 0, outsideKg: 0, free: 0, containers, outside: { sup: /** @type {Record<string, number>} */ ({}), gear: /** @type {number[]} */ ([]) } };
+  const out = { cap: 0, used: 0, inside: 0, outsideKg: 0, free: 0, containers, outside: { sup: /** @type {Record<string, number>} */ ({}), gear: /** @type {number[]} */ ([]) }, loose: { sup: /** @type {Record<string, number>} */ ({}), gear: /** @type {number[]} */ ([]), kg: 0 } };
   if (!base) return out;
   const tier = tierOf(base);
-  if (CORE_KG[tier] > 0) containers.push({ key: "core", name: CORE_NAME[tier], cap: CORE_KG[tier], kind: "core", type: tier });
-  for (const b of base.buildings || []) { const kg = buildingKg(b.type); if (kg > 0) containers.push({ key: `b:${b.id}`, name: BUILDINGS[b.type].name, cap: kg, kind: "building", type: b.type }); }
-  if (state && !base.group) for (const v of carsAtBase(state, base.id)) { const kg = vehicleStoreKg(v); if (kg > 0) containers.push({ key: `v:${v.id}`, name: v.name, cap: kg, kind: "vehicle", type: v.type }); }
+  const box = (key, name, cap, kind, type) => ({ key, name, cap, kind, type, sup: {}, gear: [], kg: 0 });
+  if (CORE_KG[tier] > 0) containers.push(box("core", CORE_NAME[tier], CORE_KG[tier], "core", tier));
+  for (const b of base.buildings || []) { const kg = buildingKg(b.type); if (kg > 0) containers.push(box(`b:${b.id}`, BUILDINGS[b.type].name, kg, "building", b.type)); }
+  if (state && !base.group) for (const v of carsAtBase(state, base.id)) { const kg = vehicleStoreKg(v); if (kg > 0) containers.push(box(`v:${v.id}`, v.name, kg, "vehicle", v.type)); }
   const armory = base.armory || [];
-  armory.forEach((it, i) => { if (it && isOpenBox(it) && boxKg(it) > 0) containers.push({ key: `a:${i}`, name: it.name, cap: boxKg(it), kind: "box", type: it.key }); });
+  armory.forEach((it, i) => { if (it && isOpenBox(it) && boxKg(it) > 0) containers.push(box(`a:${i}`, it.name, boxKg(it), "box", it.key)); });
   out.cap = containers.reduce((a, c) => a + c.cap, 0);
 
-  // The goods, ranked (THE FILL).
+  // The assigned goods into their containers (THE ASSIGNMENTS).
+  const stock = base.stock || {};
+  const have = (k) => { const q = stock[k]; return typeof q === "number" && q > EPS && storedKey(k) ? q : 0; };
+  /** @type {Record<string, number>} */
+  const asgUnits = {};
+  const placed = new Set();
+  const bins = base.bins && typeof base.bins === "object" ? base.bins : null;
+  let held = 0;
+  for (const c of containers) {
+    if (!ASSIGNABLE.has(c.kind)) continue;
+    const mine = [];
+    const bin = bins && bins[c.key];
+    if (bin && typeof bin === "object") for (const k of Object.keys(bin).sort()) {
+      const n = Math.min(Math.floor(Number(bin[k]) || 0), Math.floor(have(k) - (asgUnits[k] || 0) + EPS));
+      if (n > 0) mine.push(supGood(k, n));
+    }
+    armory.forEach((it, i) => { if (it && it.store === c.key && GEAR[it.key] && !isOpenBox(it) && !placed.has(i)) { const g = itemGood(it, i); if (g.kg > EPS) mine.push(g); } });
+    mine.sort(byWorth);
+    let room = c.cap, kg = 0;
+    for (const g of mine) {
+      if (g.sup) {
+        const fit = Math.min(g.q, Math.floor((room + EPS) / g.unit));
+        if (fit <= 0) continue;
+        c.sup[g.sup] = fit; asgUnits[g.sup] = (asgUnits[g.sup] || 0) + fit;
+        room -= fit * g.unit; kg += fit * g.unit;
+      } else if (g.kg <= room + EPS) { c.gear.push(/** @type {number} */ (g.i)); placed.add(g.i); room -= g.kg; kg += g.kg; }
+    }
+    c.gear.sort((a, b) => a - b);
+    c.kg = r1(kg);
+    held += kg;
+    out.used += kg;
+  }
+
+  // The rest, ranked (THE FILL), into the room left over.
   /** @type {{ sup?: string, i?: number, kg: number, unit: number, q: number, dens: number, rank: number }[]} */
   const goods = [];
-  for (const [k, q] of Object.entries(base.stock || {})) {
-    if (typeof q !== "number" || !(q > EPS) || NOT_STORED.has(k) || !SUPPLIES[k]) continue;
-    const w = supWeight(k);
-    if (!(w > 0)) continue;
-    goods.push({ sup: k, kg: q * w, unit: w, q, dens: supDensity(k), rank: 0 });
+  for (const k of Object.keys(stock)) {
+    const q = have(k) - (asgUnits[k] || 0);
+    if (q > EPS) goods.push(supGood(k, q));
   }
   armory.forEach((it, i) => {
-    if (!it || !GEAR[it.key]) return;
-    const open = isOpenBox(it);
-    const kg = open ? Math.max(0, itemLoad(it) - itemKg(it)) : itemLoad(it); // an opened box: only what is still in it
-    if (!(kg > EPS)) return;
-    goods.push({ i, kg, unit: kg, q: 1, dens: open ? Infinity : itemValue(it) / kg, rank: 1 }); // what is in a box stays in the box
+    if (!it || !GEAR[it.key] || placed.has(i)) return;
+    const g = itemGood(it, i);
+    if (g.kg > EPS) goods.push(g);
   });
-  goods.sort((a, b) => b.dens - a.dens || a.rank - b.rank || (a.sup && b.sup ? (a.sup < b.sup ? -1 : a.sup > b.sup ? 1 : 0) : (a.i || 0) - (b.i || 0)));
-  let room = out.cap;
+  goods.sort(byWorth);
+  let room = Math.max(0, out.cap - held);
   for (const g of goods) {
     out.used += g.kg;
     if (g.sup) {
       const fit = Math.min(g.q, Math.floor((room + EPS) / g.unit));
       room -= fit * g.unit;
+      if (fit > EPS) { out.loose.sup[g.sup] = Math.round(fit * 100) / 100; out.loose.kg += fit * g.unit; }
       const left = g.q - fit;
       if (left > EPS) { out.outside.sup[g.sup] = Math.round(left * 100) / 100; out.outsideKg += left * g.unit; }
-    } else if (g.kg <= room + EPS) room -= g.kg;
+    } else if (g.kg <= room + EPS) { room -= g.kg; out.loose.gear.push(/** @type {number} */ (g.i)); out.loose.kg += g.kg; }
     else { out.outside.gear.push(/** @type {number} */ (g.i)); out.outsideKg += g.kg; }
   }
   out.outside.gear.sort((a, b) => a - b);
+  out.loose.gear.sort((a, b) => a - b);
+  out.loose.kg = r1(out.loose.kg);
   out.used = r1(out.used);
   out.outsideKg = r1(out.outsideKg);
   out.inside = r1(Math.max(0, out.used - out.outsideKg));

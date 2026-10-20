@@ -34,6 +34,36 @@
 // the yard, pits and the trench in front of the wall, the floodlights and the watchtower at the corners). A thing
 // that fits nowhere is left off the map (it still counts by the numbers: defences.js).
 //
+// Base building (the user's request 2026-10-19, "a full base building system": docs/base-building/plan.md):
+//   The no-build margin (NO_BUILD): the five cells nearest every edge of the grid take nothing, by hand or by the game
+//     ("Within 5 cells of the map's edge"); the view tints them (c.nb) and the fort record carries F.noBuild.
+//   General buildings (buildings.js gen_hut … gen_barn; FOOT general: true, plain: true): empty shells of some size
+//     whose indoor cells (the non-border cells) take fittings (FOOT fit: true: bunks, shelves, lockers, the stove) and
+//     indoor props (FOOT indoor: true: the benches, crates, the relay…). occupancy keeps a standing general building's
+//     floor cells apart (occ.floor: cell → the host's key) from its walls (occ.foot): a fitting must stand wholly on
+//     one host's floor ("Only inside a building"), an indoor prop may stand there or in the yard, anything else on a
+//     floor cell is "On top of" the building, and the cell inside every door (inn, the counterpart of out) stays clear
+//     as the outside one does. placeItem keeps rec.host (the host's id) true on a fitting or an indoor prop inside;
+//     moving or lifting a general building carries what stands inside it along by the same offset (rec.carry while
+//     it is lifted; what does not fit afterwards is unplaced), and demolishing one pulls its fittings down with it
+//     (buildings.js demolish). The auto layout puts fittings inside the general buildings with room, nearest the
+//     middle first, and leaves them off the map when none has room.
+//   Doorways (base.plan.links = [{ a, b }], item keys): two house-kind buildings whose footprints touch along a run of
+//     at least one cell (neither cell a corner) can be linked; the pair of wall cells in the middle of the run become
+//     barred doors facing each other (bdoor, INTERIOR.DOOR_HP, no outside cell to keep clear; the two cells inside
+//     them stay clear as any door's). neighboursOf / canLink / linkBuildings / unlinkBuildings / linksOf; a link whose
+//     buildings no longer touch is dropped when read; carryPlacement rewrites c:<job> keys to b:<building> when a
+//     queued building finishes. Never between wall pieces (WALL_KINDS): only house-kind items link.
+//   A way in and out (plan Part F; the "a way in and out" section): a walkable path at least PATH.WIDTH wide must join
+//     the grid's edge to everything placed (a house by a door of its own or of a doorway link, anything else by a
+//     cell next to it). Wall pieces block, gate pieces and stands walk; a wall piece that would close a ring with no
+//     gate in it is refused (GATE_WHY), by hand and by the auto layout (which lays the gates before the walls).
+//     reachProblem is the dearer check placeItem, ghostAt (so layoutAct put / build) and autoLayout run after
+//     placeProblemAt passes.
+//   The view (openBaseMap): nobody on the map (survivors never show); b.layout also keeps sel (a selected item's key)
+//     and pickType (a type to build: layoutAct build queues it and places the job at the ghost); buildMenu lists what
+//     can be built on the map by group.
+//
 // The wall (wallInfo, buildBaseMap): the pieces placed, nothing else. The base is walled when they close round the
 // base itself (with the houses: a house's walls and barred doors keep the dead out as well as a wall does); the
 // attackers then start outside and the fight opens at the wall, otherwise in the yard (a gap anywhere is a way in).
@@ -44,7 +74,10 @@
 // The stores (makeStores): the base's own stock and armory are what is on the map in a battle, spread over the
 // buildings that hold goods (the core, the storage box, crates, shed, storehouse and warehouse, cellars, the cold store,
 // the freezer: STORES) and the parked cars that are storage, as containers whose contents can be looked at by clicking
-// them at any time (never "unknown" ones: ui/combat.js), each taking a share by its room (basestorage.js).
+// them at any time (never "unknown" ones: ui/combat.js), each taking a share by its room (basestorage.js). What the
+// player or the game put in a container (containers.js: item.store, base.bins; base building 2026-10-19) is in that
+// container's map entry (by key: "core", b:<id>, v:<id>) and a thief who takes it takes it out of that bin
+// (takeLoot u.loot.from → b.stolen.from → applyStolen); the unassigned goods spread over the room left.
 // Base storage limits (2026-10-19, the user: "You can also leave things out not in containers but if they are outside
 // the durability decays and easier for raiders to steal. Camps start with no storage but using a vehicle you can use
 // the storage of the truck as a storage unit until better storage is made"): what does not fit the base's room
@@ -67,8 +100,8 @@
 // anything else (its length by type: carLen, an Army truck 5), in the yard or beyond the wall. Hordes and raiders batter what
 // stands in their way: doors, windows, walls, barricades and parked cars (combat.js bash); when the fight is over the
 // buildings battered on the map wear as fixtures (breakdowns.js) and the cars lose condition (settleBaseBattle).
-import { BUILDINGS, STORE_KG, count, isCamp, isShelter, farmSlots, tierName, pieceName, pieceHp, matOf, WALL_TIERS, WALL_DAMAGED } from "./buildings.js";
-import { CELL, placeCar, say, fx, unitAt, active, distField, reachable, pathTo, moveAlong, bash, siegeTarget, foesOf, nearRect, createBattle, WEAPONS, structureName, barredCell } from "./combat.js";
+import { BUILDINGS, STORE_KG, count, isCamp, isShelter, farmSlots, tierName, canBuild, queueBuild, cancelBuild, canDemolish, demolish, pieceName, pieceHp, matOf, ringMat, WALL_TIERS, WALL_DAMAGED } from "./buildings.js"; // (call-time only: the modules load in a circle) canBuild…demolish: the view's Build, Demolish; pieceName…: the wall pieces
+import { CELL, placeCar, say, fx, unitAt, active, distField, reachable, pathTo, moveAlong, bash, siegeTarget, foesOf, nearRect, createBattle, barredCell, WEAPONS, structureName } from "./combat.js";
 import { carsAtBase } from "./vehicles.js";
 import { DEPLOY } from "./deploy.js"; // the reinforced gate's hit points (call-time only)
 import { INTERIOR, layoutSeed } from "./interior.js";
@@ -77,6 +110,7 @@ import { Rng } from "./rng.js";
 import { SUPPLIES } from "./data.js";
 import { FOODS } from "./foods.js";
 import { itemKg } from "./inventory.js";
+import { normalizeBins, OUTSIDE } from "./containers.js"; // the assignments (item.store, base.bins): a theft taken out of its bin; the piles' key
 import { FIXTURES, WEAR, breakFixture } from "./breakdowns.js";
 import { log, atBase } from "./world.js";
 import { layMines } from "./mines.js"; // the main base's minefield, buried in the open ground round the yard (call-time only)
@@ -96,6 +130,10 @@ export const GRID = {
 export const GRID_MAX = 150; // the biggest grid: 300 × 300
 export const MARGIN = 8;     // open ground round what stands on the battle map (fort.js FORT.MARGIN)
 export const VIEW_PAD = 8;   // the Base map view shows this much more than the battle map
+// The no-build margin (the user's request 2026-10-19, "a 5 tile margin around the edge of the map as a no build
+// section"): the cells within this many of the grid's edge take nothing, by hand or by the game (placeProblemAt).
+export const NO_BUILD = 5;
+export const NO_BUILD_WHY = `Within ${NO_BUILD} cells of the map's edge (nothing is built there)`;
 export const FLOOD = { R: 7 }; // a placed floodlight lights the cells within this many tiles of it
 export const DEF_HP = { barricade: 60, car: 50 }; // hit points of a barricade and a parked car on the map (bash)
 // Raiders stealing from the stores: the share of a raid's people who go for the stores once the wall is passed, the
@@ -141,11 +179,22 @@ export function stampGrid(state, base) {
 // ladder), prop (k: the yard thing it is drawn as), pen (a fence ring with hay inside), field (the ground only),
 // defence (k: the cell kind; no buffer), vehicle (a parked car, 2 cells wide). Buildings with no footprint (walls,
 // camouflage, cots, the step-ups and upgrades in place) are not on the map as things of their own.
+// Base building (2026-10-19): general: true, plain: true on a house is a general building (an empty shell: no counter,
+// no loft; its indoor cells take fittings and indoor props); fit: true on a prop is a fitting (only inside a general
+// building); indoor: true on a prop (every prop drawn as a counter, table, crate or locker: INDOOR_K) may stand
+// inside one as well as in the yard. Not the barrels, the well, the pump, the fire pit, the bars.
+const INDOOR_K = new Set(["counter", "table", "crate", "locker"]);
 const HOUSE = (w, h, storeys = 1, extra = {}) => ({ kind: "house", w, h, storeys, ...extra });
 const ROOF = (w, h) => ({ kind: "roof", w, h });
-const PROP = (k, w = 1, h = 1, extra = {}) => ({ kind: "prop", k, w, h, ...extra });
+const PROP = (k, w = 1, h = 1, extra = {}) => ({ kind: "prop", k, w, h, ...(INDOOR_K.has(k) ? { indoor: true } : {}), ...extra });
+const FIT = (k, w = 1, h = 1) => ({ kind: "prop", k, w, h, fit: true, indoor: true });
 const DEF = (k, w, h, extra = {}) => ({ kind: "defence", k, w, h, ...extra });
 export const FOOT = {
+  // General buildings (buildings.js gen_*): the hut 4 × 4 (a 2 × 2 floor: bunks and a stove), the cabin, the lodge,
+  // the hall, the barn. Fittings: bunks (a bed cell, 2 × 1), shelves, lockers, the stove (a counter cell).
+  gen_hut: HOUSE(4, 4, 1, { general: true, plain: true }), gen_cabin: HOUSE(5, 4, 1, { general: true, plain: true }), gen_lodge: HOUSE(6, 5, 1, { general: true, plain: true }),
+  gen_hall: HOUSE(8, 6, 1, { general: true, plain: true }), gen_barn: HOUSE(10, 7, 1, { general: true, plain: true }),
+  bunks: FIT("bed", 2, 1), shelves: FIT("shelf", 2, 1), lockers: FIT("locker"), stove: FIT("counter"),
   bunkhouse: HOUSE(5, 4, 2), barracks: HOUSE(6, 4, 2), infirmary: HOUSE(5, 4), field_hosp: HOUSE(5, 4), clinic: HOUSE(5, 4), hospital: HOUSE(6, 5, 2),
   machine_shop: HOUSE(5, 4), radio: HOUSE(4, 3), garage: HOUSE(5, 4, 1, { wide: true }), common_room: HOUSE(5, 4), chapel: HOUSE(4, 4), kitchen: HOUSE(4, 3),
   canteen: HOUSE(5, 4), huntcabin: HOUSE(3, 3), greenhouse: HOUSE(4, 3, 1, { glass: true }), cells: HOUSE(4, 4), jailhouse: HOUSE(5, 4), freezer: HOUSE(3, 3),
@@ -167,14 +216,14 @@ export const FOOT = {
 };
 export const FIELD = { kind: "field", w: 3, h: 2 };
 // What holds the base's goods on the map (makeStores): a weight for the share of the stores each takes.
-const STORES = { warehouse: 4, storehouse: 3, cellar: 2, coldstore: 2, freezer: 2, shed: 1.5, crates: 1, storebox: 0.5, armory: 1 }; // the armory: two locked containers of its own kind (pushStore), no share of the rest
+const STORES = { warehouse: 4, storehouse: 3, cellar: 2, coldstore: 2, freezer: 2, shed: 1.5, crates: 1, storebox: 0.5, armory: 1, shelves: 1, lockers: 1 }; // the armory: two locked containers of its own kind (pushStore), no share of the rest; shelves and lockers: the fittings that keep goods (base building)
 const BUILD_KINDS = new Set(["house", "roof", "prop", "pen", "field", "vehicle"]); // the kinds the yard grows for (footCount) and the cover props keep off
 export const WALL_KINDS = new Set(["wall", "gate", "stand"]); // the wall pieces: anywhere, the ring too
 export const hasFootprint = (type) => !!FOOT[type];
 
 // ---------- the middle: the camp, the shelter, the base ----------
 // Each part: a footprint (as FOOT) at a cell relative to the middle; store: it holds goods (a container in a battle),
-// with its label.
+// with its label. (What lies outside, past the base's room, is on the piles: layPiles.)
 const CORE = {
   camp: [
     { kind: "prop", k: "firepit", w: 1, h: 1, x: 0, y: 0, name: "Camp fire" },
@@ -197,15 +246,16 @@ const CORE = {
     { kind: "house", w: 6, h: 5, storeys: 2, x: -7, y: -7, name: "Main house", key: "hall", store: 4 },
     { kind: "prop", k: "well", w: 1, h: 1, x: 3, y: -6, name: "Well" },
     { kind: "roof", w: 2, h: 2, x: 3, y: -2, name: "Cellar", key: "cellar", store: 3 },
-    { kind: "prop", k: "crate", v: 2, w: 1, h: 1, x: 3, y: 2, name: "Crates", store: 1 }, { kind: "prop", k: "crate", v: 1, w: 1, h: 1, x: 5, y: 2 },
+    { kind: "prop", k: "crate", v: 2, w: 1, h: 1, x: 3, y: 2, name: "Crates", store: 1 },
   ],
 };
 export const coreParts = (base) => CORE[tierKey(base)];
 export const coreName = (base) => tierName(base);
 
 // ---------- sizes ----------
-// How many buildings with a footprint stand or are queued (the yard grows with them).
-const grows = (type) => !!FOOT[type] && FOOT[type].kind !== "defence" && !WALL_KINDS.has(FOOT[type].kind);
+// How many buildings with a footprint stand or are queued (the yard grows with them; not the fittings: they stand
+// inside a building that already counts; not the wall pieces: they stand round it).
+const grows = (type) => { const f = FOOT[type]; return !!f && f.kind !== "defence" && !f.fit && !WALL_KINDS.has(f.kind); };
 const footCount = (base) => base.buildings.filter((b) => grows(b.type)).length + base.construction.filter((c) => !c.target && grows(c.type)).length;
 // The yard's half-size: by tier and buildings, and never smaller than what is placed inside it needs.
 export function yardHalf(base) {
@@ -298,15 +348,16 @@ export const itemByKey = (state, base, key) => itemsOf(state, base).find((it) =>
 // ---------- local layouts (a footprint's cells, turned) ----------
 // A house's cells in its own frame at r = 0 (the front on the south side): walls, a barred front door in the middle
 // of the front (two for a wide one), a back door on bigger houses, windows, the upper floor (the back half) and its
-// stairs. Each cell: { dx, dy, k, ... }; doors carry out: the cell outside them.
+// stairs. Each cell: { dx, dy, k, ... }; doors carry out: the cell outside them, and inn: the cell inside (both kept
+// clear). A plain house (FOOT plain: a general building) has no counter and never a loft: its floor is empty.
 function houseCells(f) {
   if (f.armory) return armoryCells(f);
-  const { w, h } = f, two = f.storeys === 2 && w >= 5 && h >= 4;
+  const { w, h } = f, two = f.storeys === 2 && !f.plain && w >= 5 && h >= 4;
   const cells = [];
   const border = (x, y) => x === 0 || y === 0 || x === w - 1 || y === h - 1;
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) cells.push({ dx: x, dy: y, k: border(x, y) ? "wall" : "open", f: "floor", t: border(x, y) && two ? 2 : 0, indoor: !border(x, y) });
   const at = (x, y) => cells[y * w + x];
-  const door = (x, y, hp, out) => { const c = at(x, y); c.k = "bdoor"; c.hp = hp; c.t = 0; c.indoor = true; c.door = true; c.out = out; };
+  const door = (x, y, hp, out) => { const c = at(x, y); c.k = "bdoor"; c.hp = hp; c.t = 0; c.indoor = true; c.door = true; c.out = out; c.inn = [2 * x - out[0], 2 * y - out[1]]; };
   const win = (x, y) => { const c = at(x, y); if (c.k !== "wall") return; if ((x === 0 || x === w - 1) && (y === 0 || y === h - 1)) return; c.k = "window"; c.hp = INTERIOR.WINDOW_HP; c.t = 0; };
   const mx = Math.floor(w / 2);
   door(mx, h - 1, f.wide ? INTERIOR.WIDE_DOOR_HP : INTERIOR.DOOR_HP, [mx, h]);
@@ -322,7 +373,7 @@ function houseCells(f) {
     const loftY = Math.floor((h - 2) / 2); // the back (north) half is the upper floor, up the stairs at its south edge
     for (let y = 1; y <= loftY; y++) for (let x = 1; x < w - 1; x++) { const c = at(x, y); c.k = "loft"; c.h = 1; }
     const s = at(1, loftY + 1); s.k = "stairs";
-  } else if (w >= 4 && h >= 3) {
+  } else if (!f.plain && w >= 4 && h >= 3) {
     const c = at(mx > 1 ? mx - 1 : 1, 1);
     if (c.k === "open" && !cells.some((d) => d.door && Math.abs(d.dx - c.dx) + Math.abs(d.dy - c.dy) <= 1)) c.k = "counter";
   }
@@ -340,7 +391,7 @@ function armoryCells(f) {
   }
   const at = (x, y) => cells[y * w + x];
   const mx = Math.floor(w / 2);
-  Object.assign(at(mx, h - 1), { k: "bdoor", hp: ARMORY_LOCK.DOOR_HP, dk: ARMORY_LOCK.DOOR_KIND, lockDoor: true, indoor: true, door: true, out: [mx, h] });
+  Object.assign(at(mx, h - 1), { k: "bdoor", hp: ARMORY_LOCK.DOOR_HP, dk: ARMORY_LOCK.DOOR_KIND, lockDoor: true, indoor: true, door: true, out: [mx, h], inn: [mx, h - 2] }); // inn: the cell inside, kept clear (base building)
   for (let x = 1; x < w - 2; x++) Object.assign(at(x, 1), { k: "rack", box: "gear" });
   for (let y = 1; y < h - 1; y++) Object.assign(at(w - 2, y), { k: "locker", box: "ammo" });
   return cells;
@@ -402,110 +453,245 @@ export function cellsOf(it, at) {
     const [dx, dy] = turn(c.dx, c.dy, it.w, it.h, r);
     const o = { ...c, x: at[0] + dx, y: at[1] + dy };
     if (c.out) { const [ox, oy] = turn(c.out[0], c.out[1], it.w, it.h, r); o.out = [at[0] + ox, at[1] + oy]; }
+    if (c.inn) { const [ix, iy] = turn(c.inn[0], c.inn[1], it.w, it.h, r); o.inn = [at[0] + ix, at[1] + iy]; }
     if (c.out2) { const [ox, oy] = turn(c.out2[0], c.out2[1], it.w, it.h, r); o.out2 = [at[0] + ox, at[1] + oy]; }
     if (c.ladder) { const [lx, ly] = turn(c.ladder[0], c.ladder[1], it.w, it.h, r); o.ladder = [at[0] + lx, at[1] + ly]; }
     return o;
   });
 }
 // The cells outside an item's doors.
-export const doorCellsOf = (it, at) => cellsOf(it, at).flatMap((c) => [c.out, c.out2]).filter(Boolean);
+export const doorCellsOf = (it, at) => cellsOf(it, at).flatMap((c) => [c.out, c.out2]).filter(Boolean); // a gate keeps a cell clear on either side (out, out2)
+// The cells inside an item's doors (inn, the counterpart of out): kept as clear as the outside ones.
+export const innCellsOf = (it, at) => cellsOf(it, at).filter((c) => c.inn).map((c) => c.inn);
+// A general building's floor: the indoor cells (not its doors) that take fittings and indoor props.
+const isFloor = (c) => !!c.indoor && c.k === "open" && !c.door;
+export const floorCellsOf = (it, at) => cellsOf(it, at).filter(isFloor).map((c) => [c.x, c.y]);
+// The cells of an item's footprint rect.
+function rectCells(it, at) {
+  const r = rectOf(it, at), out = [];
+  for (let y = r.y0; y < r.y0 + r.h; y++) for (let x = r.x0; x < r.x0 + r.w; x++) out.push([x, y]);
+  return out;
+}
 
 // ---------- placement rules ----------
 const K = (x, y) => (y + 2048) * 4096 + (x + 2048);
-// The occupancy of everything but `skip`: footprints and the cells outside doors, each with the key of what is there.
+// A standing general building (FOOT general; not one going up): its floor takes fittings and indoor props.
+const hostOf = (it) => !!it && !!it.general && it.built !== false;
+// A thing's cells into an occupancy: a standing general building's walls and doors in foot and its floor cells in
+// floor (cell → its key), anything else's whole footprint in foot; the cells outside and inside its doors in door.
+function markOcc(occ, it, at, key) {
+  const put = (m, x, y, v) => { if (!m.has(K(x, y))) m.set(K(x, y), v); };
+  if (hostOf(it)) for (const c of cellsOf(it, at)) put(isFloor(c) ? occ.floor : occ.foot, c.x, c.y, key);
+  else for (const [x, y] of rectCells(it, at)) put(occ.foot, x, y, key);
+  for (const [x, y] of doorCellsOf(it, at)) put(occ.door, x, y, key);
+  for (const [x, y] of innCellsOf(it, at)) put(occ.door, x, y, key);
+  if (it.label) occ.names.set(key, it.label);
+}
+// The occupancy of everything but `skip` (a key, or a Set of keys): footprints (foot), the cells outside and inside
+// doors (door, the doorways between linked buildings too) and the floors of the general buildings (floor), each with
+// the key of what is there; names: the keys' labels for the reasons.
 export function occupancy(state, base, skip = null, auto = null) {
   stampGrid(state, base);
-  const occ = { foot: new Map(), door: new Map() };
-  const put = (m, x, y, key) => { if (!m.has(K(x, y))) m.set(K(x, y), key); };
-  const mark = (it, at, key) => {
-    const r = rectOf(it, at);
-    for (let y = r.y0; y < r.y0 + r.h; y++) for (let x = r.x0; x < r.x0 + r.w; x++) put(occ.foot, x, y, key);
-    for (const [x, y] of doorCellsOf(it, at)) put(occ.door, x, y, key);
-  };
-  for (const p of coreParts(base)) mark(p, [p.x, p.y, 0], "core");
-  for (const it of itemsOf(state, base)) {
-    if (it.key === skip) continue;
+  const skips = skip instanceof Set ? skip : new Set(skip ? [skip] : []);
+  const occ = { foot: new Map(), door: new Map(), floor: new Map(), names: new Map() };
+  for (const p of coreParts(base)) markOcc(occ, p, [p.x, p.y, 0], "core");
+  const items = itemsOf(state, base), pos = new Map();
+  for (const it of items) {
+    if (skips.has(it.key)) continue;
     const at = it.at || (auto && auto.get(it.key)) || null;
-    if (at) mark(it, at, it.key);
+    if (at) { pos.set(it.key, at); markOcc(occ, it, at, it.key); }
   }
+  for (const l of liveLinks(base, items, pos)) for (const [x, y] of l.inn) if (!occ.door.has(K(x, y))) occ.door.set(K(x, y), l.a);
   return occ;
 }
-// Why an item cannot stand at (x, y) turned r, or "" when it can. occ: occupancy(…) without this item.
-export function placeProblemAt(base, it, x, y, r, occ, dims = null) { // dims: { G, R } worked out once (autoLayout)
+// Why an item cannot stand at (x, y) turned r, or "" when it can. occ: occupancy(…) without this item; dims: { G, R }
+// worked out once (autoLayout). The rules (2026-10-19): on the map and not within the no-build margin (NO_BUILD);
+// never on the ring's band (the wall pieces may: WALL_KINDS), on top of anything, in a doorway (the cell outside or
+// inside a door, either side of a gate); a fitting wholly on one standing general building's floor, an indoor prop
+// there or anywhere in the yard, and anything else never on a floor cell.
+export function placeProblemAt(base, it, x, y, r, occ, dims = null) {
   const at = [x, y, r & 3];
   const rect = rectOf(it, at);
-  const G = dims ? dims.G : gridHalf(base), R = dims ? dims.R : ringHalf(base), wallish = WALL_KINDS.has(it.kind);
+  const G = dims ? dims.G : gridHalf(base), R = dims ? dims.R : ringHalf(base), N = G - NO_BUILD, wallish = WALL_KINDS.has(it.kind);
   if (rect.x0 < -G || rect.y0 < -G || rect.x0 + rect.w > G || rect.y0 + rect.h > G) return "Off the map";
+  if (rect.x0 < -N || rect.y0 < -N || rect.x0 + rect.w > N || rect.y0 + rect.h > N) return NO_BUILD_WHY;
+  const inner = !!(it.fit || it.indoor);
+  let host = null;
   for (let yy = rect.y0; yy < rect.y0 + rect.h; yy++) for (let xx = rect.x0; xx < rect.x0 + rect.w; xx++) {
     const k = K(xx, yy);
     if (!wallish && onBand(xx, yy, R)) return "That is where the wall stands";
-    if (occ.foot.has(k)) return `On top of ${nameOf(occ.foot.get(k))}`;
-    if (occ.door.has(k)) return `In the doorway of ${nameOf(occ.door.get(k))}`;
+    if (occ.foot.has(k)) return `On top of ${nameOf(occ, occ.foot.get(k))}`;
+    if (occ.door.has(k)) return `In the doorway of ${nameOf(occ, occ.door.get(k))}`;
+    const fl = occ.floor ? occ.floor.get(k) : undefined;
+    if (fl != null) {
+      if (!inner) return `On top of ${nameOf(occ, fl)}`;
+      if (host != null && host !== fl) return "Only inside one building";
+      host = fl;
+    } else if (it.fit) return "Only inside a building";
   }
+  if (it.fit && host == null) return "Only inside a building";
   for (const [ox, oy] of doorCellsOf(it, at)) {
     const k = K(ox, oy);
-    if (occ.foot.has(k)) return `Its door would open onto ${nameOf(occ.foot.get(k))}`;
+    if (occ.foot.has(k)) return `Its door would open onto ${nameOf(occ, occ.foot.get(k))}`;
+    if (occ.floor && occ.floor.has(k)) return `Its door would open onto ${nameOf(occ, occ.floor.get(k))}`;
     if (!wallish && onBand(ox, oy, R)) return "Its door would open onto the wall";
   }
   return "";
 }
-const nameOf = (key) => (key === "core" ? "the base itself" : key.startsWith("p:") ? "a crop plot" : key.startsWith("v:") ? "a parked car" : key.startsWith("c:") ? "a building going up" : key.startsWith("w:") ? "the wall" : "a building");
-// Place an item by hand (the Base map view). Returns an error, or "".
+const nameOf = (occ, key) => (key === "core" ? "the base itself" : key.startsWith("p:") ? "a crop plot" : key.startsWith("v:") ? "a parked car" : key.startsWith("w:") ? "the wall" : occ && occ.names && occ.names.get(key) ? occ.names.get(key) : key.startsWith("c:") ? "a building going up" : "a building");
+// The host (a general building's item key) under a cell of an occupancy, or null.
+export const floorHostAt = (occ, x, y) => (occ && occ.floor && occ.floor.get(K(x, y))) || null;
+// What stands inside a general building at its spot: the fittings and indoor props whose cells are all on its floor.
+export function hostedItems(state, base, host) {
+  if (!host || !host.at || !hostOf(host)) return [];
+  const fl = new Set(floorCellsOf(host, host.at).map(([x, y]) => K(x, y)));
+  return itemsOf(state, base).filter((o) => (o.fit || o.indoor) && o.at && rectCells(o, o.at).every(([x, y]) => fl.has(K(x, y))));
+}
+// A standing, unbroken general building with room on its floor for a fitting of this type (buildings.js placeProblem
+// / canBuild: "Needs a building to stand in"), as its item key, or null. Against everything placed by hand or by the
+// game (the auto layout's fittings too). state may be null (the Construction tab's checks): the cars are left out.
+export function fittingRoom(state, base, type) {
+  const f = FOOT[type];
+  if (!f || !f.fit) return null;
+  const auto = autoLayout(state, base);
+  const occ = occupancy(state, base, null, auto);
+  const probe = { ...f, type, key: null, label: BUILDINGS[type] ? BUILDINGS[type].name : type };
+  for (const it of itemsOf(state, base)) {
+    if (!hostOf(it) || (it.rec && it.rec.broken)) continue;
+    const at = it.at || auto.get(it.key);
+    if (!at) continue;
+    for (const [x, y] of floorCellsOf(it, at)) for (const r of [0, 1]) if (!placeProblemAt(base, probe, x, y, r, occ)) return it.key;
+  }
+  return null;
+}
+// The fittings standing inside a general building (by its id), placed there by hand or by the game: the items
+// (b:<id> standing, c:<id> queued). buildings.js demolish pulls them down with it.
+export function fittingsIn(state, base, id) {
+  const auto = autoLayout(state, base);
+  const items = itemsOf(state, base), host = items.find((it) => it.key === `b:${id}`);
+  const at = host && (host.at || auto.get(host.key));
+  if (!host || !at || !hostOf(host)) return [];
+  const fl = new Set(floorCellsOf(host, at).map(([x, y]) => K(x, y)));
+  return items.filter((o) => o.fit && o.rec && (o.at || auto.get(o.key)) && rectCells(o, o.at || auto.get(o.key)).every(([x, y]) => fl.has(K(x, y))));
+}
+// A fitting or an indoor prop keeps its host's id (rec.host) while it stands inside one.
+const setHost = (it, hostKey) => { if (!it.rec) return; if (hostKey && hostKey.startsWith("b:")) it.rec.host = Number(hostKey.slice(2)); else delete it.rec.host; };
+// Place an item by hand (the Base map view). Returns an error, or "". A general building moved takes what stands
+// inside it along (carryInside); a fitting or an indoor prop put down inside one gets its host.
 export function placeItem(state, base, key, x, y, r = 0) {
   const it = itemByKey(state, base, key);
   if (!it) return "That is not on this base any more.";
-  const why = placeProblemAt(base, it, x, y, r, occupancy(state, base, key, null)); // against what is placed by hand and the base itself: what the game placed moves out of the way (autoLayout)
+  const was = it.at ? it.at.slice() : null;
+  const inside = hostOf(it) ? hostedItems(state, base, it) : [];
+  const skip = new Set([key, ...inside.map((o) => o.key)]);
+  const occ = occupancy(state, base, skip, null); // against what is placed by hand and the base itself: what the game placed moves out of the way (autoLayout)
+  const at = [x, y, r & 3];
+  const why = placeProblemAt(base, it, x, y, r, occ) || reachProblem(state, base, it, at, occ, { skip }); // and a way in and out stays (the dearer check second)
   if (why) return why;
-  setAt(base, it, [x, y, r & 3]);
+  setAt(base, it, at);
+  if (it.fit || it.indoor) setHost(it, floorHostAt(occ, x, y));
+  if (hostOf(it)) carryInside(state, base, it, inside, was, at);
   return "";
 }
+// Lift an item off the map (back to the game's own spot). A general building lifted takes what stands inside it off
+// too, remembering where each stood in it (rec.carry) for when it is put down again.
 export function unplaceItem(state, base, key) {
   const it = itemByKey(state, base, key);
   if (!it) return "That is not on this base any more.";
+  if (hostOf(it) && it.at) {
+    const inside = hostedItems(state, base, it);
+    if (inside.length) it.rec.carry = inside.map((o) => ({ key: o.key, dx: o.at[0] - it.at[0], dy: o.at[1] - it.at[1], r: o.at[2] || 0 }));
+    for (const o of inside) setAt(base, o, null);
+  }
   setAt(base, it, null);
   return "";
 }
+// A general building moved (was → at) or put down after a lift (rec.carry): what stood inside goes along by the same
+// offset, turn-free; what does not fit there any more is unplaced (a fitting off the map, an indoor prop back to the
+// game's own spot). Only things still off the map are carried (one placed by hand meanwhile stays where it is).
+function carryInside(state, base, host, inside, was, at) {
+  const moves = was ? inside.map((o) => ({ key: o.key, dx: o.at[0] - was[0], dy: o.at[1] - was[1], r: o.at[2] || 0 })) : host.rec.carry || [];
+  delete host.rec.carry;
+  if (was) for (const o of inside) setAt(base, o, null);
+  for (const m of moves) {
+    const o = itemByKey(state, base, m.key);
+    if (!o || o.at || !(o.fit || o.indoor)) continue;
+    const occ = occupancy(state, base, m.key, null);
+    const nx = at[0] + m.dx, ny = at[1] + m.dy;
+    if (placeProblemAt(base, o, nx, ny, m.r, occ)) continue;
+    setAt(base, o, [nx, ny, m.r]);
+    setHost(o, floorHostAt(occ, nx, ny));
+  }
+}
 function setAt(base, it, at) {
   if (it.key.startsWith("p:")) { const plots = planOf(base).plots, i = Number(it.key.slice(2)); while (plots.length <= i) plots.push(null); plots[i] = at; return; }
-  if (at) it.rec.at = at; else delete it.rec.at;
+  if (at) it.rec.at = at; else { delete it.rec.at; delete it.rec.host; }
 }
-// A finished job's building takes the job's spot (buildings.js constructionHour); an upgrade in place keeps the
-// standing building's (addBuilding: a hospital tier, a bench, a jail).
-export function carryPlacement(from, to) { if (from && from.at && to) to.at = from.at.slice(); }
+// A finished job's building takes the job's spot and its host (buildings.js constructionHour); an upgrade in place
+// keeps the standing building's (addBuilding: a hospital tier, a bench, a jail). With the base, the doorway links that
+// named the job (c:<id>) or the old building (b:<id>) name the new building.
+export function carryPlacement(from, to, base = null) {
+  if (!from || !to) return;
+  if (from.at) to.at = from.at.slice();
+  if (from.host != null) to.host = from.host;
+  if (base && from.id != null) for (const l of linksArr(base)) for (const s of ["a", "b"]) if (l[s] === `c:${from.id}` || l[s] === `b:${from.id}`) l[s] = `b:${to.id}`;
+}
 
 // ---------- the auto layout ----------
 // Where everything not placed by hand goes: a Map key → [x, y, r], the same for the same base and items (its own
-// dice: interior.js layoutSeed and the items). except: an item left out (being placed by hand).
+// dice: interior.js layoutSeed and the items). except: an item left out (being placed by hand). Everything keeps out
+// of the no-build margin (placeProblemAt); the fittings go last, inside the general buildings with room (nearest the
+// middle first), and are left off the map when none has room; an indoor prop goes in the yard as before.
 const autoCache = new Map();
+const SPIRAL_MORE = 24; // autoLayout: the spots further out tried when the three nearest leave no way in and out
 export function autoLayout(state, base, except = null) {
   stampGrid(state, base);
   const items = itemsOf(state, base);
   const sig = items.map((it) => `${it.key}${it.at ? `@${it.at.join(",")}` : ""}`).join("|");
-  const key = `${base.id}|${layoutSeed(base)}|${yardHalf(base)}|${ringHalf(base)}|${except || ""}|${sig}`;
+  // What reachProblem reads is in the key: the items and where they stand (the wall pieces among them), the core's
+  // parts (the tier), the yard and the ring (the grid's size and the margin), the doorway links.
+  const key = `${base.id}|${tierKey(base)}|${layoutSeed(base)}|${yardHalf(base)}|${ringHalf(base)}|${except || ""}|${sig}|${linksArr(base).map((l) => `${l.a}>${l.b}`).join(",")}`;
   let out = autoCache.get(key);
   if (out) return out;
   out = new Map();
   const rng = new Rng(layoutSeed(base) ^ 0x5bd1e995);
   const C = yardHalf(base), G = gridHalf(base), R = ringHalf(base);
   const occ = occupancy(state, base, except, null);
-  const take = (it, at) => {
-    out.set(it.key, at);
-    const r = rectOf(it, at);
-    for (let y = r.y0; y < r.y0 + r.h; y++) for (let x = r.x0; x < r.x0 + r.w; x++) occ.foot.set(K(x, y), it.key);
-    for (const [x, y] of doorCellsOf(it, at)) if (!occ.door.has(K(x, y))) occ.door.set(K(x, y), it.key);
-  };
+  const take = (it, at) => { out.set(it.key, at); markOcc(occ, it, at, it.key); };
   const dims = { G, R };
   const fits = (it, x, y, r) => !placeProblemAt(base, it, x, y, r, occ, dims);
-  // Buildings, fields and cars: spiral out from the middle, the first spot that fits (a few of the nearest, by dice).
+  // A way in and out (reachProblem) against what is placed by hand and what the layout has taken so far (out).
+  const skips = new Set(except ? [except] : []);
+  const reach = (it, at) => !reachProblem(state, base, it, at, occ, { items, auto: out, skip: new Set([it.key, ...skips]) });
+  const yardOnly = (it) => (it.indoor && !it.fit ? { ...it, indoor: false } : it); // the game puts an indoor prop in the yard, never inside
+  // Buildings, fields and cars: spiral out from the middle, the first spot that fits (a few of the nearest, by dice:
+  // the dice pick one of up to three, then the others in order, the first that leaves a way in and out).
+  // None of those leaving a way in: on out along the spiral, the next spots in turn (up to SPIRAL_MORE of them).
   const spiral = (it, rs) => {
     const found = [];
-    for (let d = 0; d <= C && found.length < 3; d++) {
+    let d0 = 0;
+    for (let d = 0; d <= C && found.length < 3; d++, d0 = d) {
       for (let y = -d; y <= d; y++) for (let x = -d; x <= d; x++) {
         if (Math.max(Math.abs(x), Math.abs(y)) !== d) continue;
         for (const r of rs) { const [w, h] = dimsOf(it, r); if (fits(it, x - Math.floor(w / 2), y - Math.floor(h / 2), r)) found.push([x - Math.floor(w / 2), y - Math.floor(h / 2), r]); }
       }
     }
-    return found.length ? found[rng.int(0, found.length - 1)] : null;
+    if (!found.length) return null;
+    const i = rng.int(0, found.length - 1);
+    for (const at of [found[i], ...found.filter((_, j) => j !== i)]) if (reach(it, at)) return at;
+    let more = 0;
+    for (let d = d0; d <= C && more < SPIRAL_MORE; d++) {
+      for (let y = -d; y <= d && more < SPIRAL_MORE; y++) for (let x = -d; x <= d && more < SPIRAL_MORE; x++) {
+        if (Math.max(Math.abs(x), Math.abs(y)) !== d) continue;
+        for (const r of rs) {
+          const [w, h] = dimsOf(it, r), at = [x - Math.floor(w / 2), y - Math.floor(h / 2), r];
+          if (!fits(it, at[0], at[1], r)) continue;
+          more++;
+          if (reach(it, at)) return at;
+        }
+      }
+    }
+    return null;
   };
   // Defences: the first of their default spots that fits (around the yard's edge inside the wall for barricades and
   // the lights, the corners for the watchtower, in front of the wall for pits and the trench).
@@ -516,17 +702,18 @@ export function autoLayout(state, base, except = null) {
     else if (k === "lamp") spots.push([edge, edge], [-edge, -edge], [edge, -edge], [-edge, edge]);
     else if (k === "tower") spots.push([edge - 1, edge - 1], [-edge, -edge], [edge - 1, -edge], [-edge, edge - 1]);
     else if (k === "spikes") spots.push([-1, out, 0], [-1, -out - 1, 0], [out, -1, 1], [-out - 1, -1, 1], [5, out, 0], [-7, out, 0], [5, -out - 1, 0], [-7, -out - 1, 0]);
-    else if (k === "trench") spots.push([-5, out + 2, 0], [out + 2, -5, 1], [-5, -out - 3, 0], [-out - 3, -5, 1]);
-    for (const s of spots) if (s[0] >= -G && s[1] >= -G && fits(it, s[0], s[1], s[2] || 0)) return [s[0], s[1], s[2] || 0];
+    else if (k === "trench") spots.push([-5, out + 2, 0], [out + 2, -5, 1], [-5, -out - 3, 0], [-out - 3, -5, 1], [-5, out + 1, 0], [out + 1, -5, 1], [-5, -out - 2, 0], [-out - 2, -5, 1]); // the nearer line too: a camp's grid ends in the margin two cells out
+    for (const s of spots) if (s[0] >= -G && s[1] >= -G && fits(it, s[0], s[1], s[2] || 0) && reach(it, [s[0], s[1], s[2] || 0])) return [s[0], s[1], s[2] || 0];
     return spiral(it, [0, 1]);
   };
   // The wall pieces the game places (no dice): the gates in the middle of the ring's sides, then the walls round it from
-  // the north-west corner, longest first, each in the first run of the ring it fits (ringPlan counts the same way);
-  // the stands on the inner line, nearest the middle of a side first (by the gates).
+  // the north-west corner, longest first, each in the first run of the ring it fits (ringPlan counts the same way) and
+  // leaves a way in and out (reachProblem: the gates go first, so a planned ring closes; a wall that would close a ring
+  // with no gate in it is left off the map); the stands on the inner line, nearest the middle of a side first (by the gates).
   const outer = ringSides(R), inner = ringSides(R, true);
   // from: where to start in the order (the walls of a length resume after the last one placed: nothing before it has
   // room for one, and only fills up). Returns [at, index] or null.
-  const fitFirst = (it, sides, order, from = 0) => { for (let k = from; k < order.length; k++) { const [si, i] = order[k]; const sd = sides[si]; if (i < 0 || i + it.w > sd.cells.length) continue; const at = alongAt(sd, i); if (fits(it, at[0], at[1], at[2])) return [at, k]; } return null; };
+  const fitFirst = (it, sides, order, from = 0) => { for (let k = from; k < order.length; k++) { const [si, i] = order[k]; const sd = sides[si]; if (i < 0 || i + it.w > sd.cells.length) continue; const at = alongAt(sd, i); if (fits(it, at[0], at[1], at[2]) && reach(it, at)) return [at, k]; } return null; };
   const runOrder = (sides) => sides.flatMap((sd, si) => sd.cells.map((_, i) => [si, i]));
   const autoWall = items.filter((it) => !it.at && it.key !== except && WALL_KINDS.has(it.kind));
   const outerOrder = runOrder(outer), resume = {};
@@ -539,9 +726,24 @@ export function autoLayout(state, base, except = null) {
     const f = fitFirst(it, inner, order, resume[`s${it.w}`] || 0); resume[`s${it.w}`] = f ? f[1] : order.length; if (f) take(it, f[0]);
   }
   for (const it of items) {
-    if (it.key === except) continue;
-    if (it.at || WALL_KINDS.has(it.kind)) continue;
-    const at = it.kind === "defence" ? defSpots(it) : spiral(it, it.kind === "field" || it.kind === "vehicle" ? [0, 1] : [0]);
+    if (it.key === except || it.at || it.fit || WALL_KINDS.has(it.kind)) continue; // the wall pieces were laid round the ring above
+    const at = it.kind === "defence" ? defSpots(it) : spiral(yardOnly(it), it.kind === "field" || it.kind === "vehicle" ? [0, 1] : [0]);
+    if (at) take(it, at);
+  }
+  // The fittings: into the standing general buildings with room, those nearest the middle first, the first floor cell
+  // that fits (turned if need be) and leaves the way to the door; the cells inside the doorways between linked
+  // buildings stay clear.
+  const pos = new Map(items.filter((it) => it.at || out.has(it.key)).map((it) => [it.key, it.at || out.get(it.key)]));
+  for (const l of liveLinks(base, items, pos)) for (const [x, y] of l.inn) if (!occ.door.has(K(x, y))) occ.door.set(K(x, y), l.a);
+  const mid = (it, at) => { const r = rectOf(it, at); return Math.hypot(r.x0 + r.w / 2, r.y0 + r.h / 2); };
+  const hosts = items.filter((it) => hostOf(it) && it.key !== except && pos.has(it.key) && !(it.rec && it.rec.broken)).map((it) => ({ it, at: pos.get(it.key), d: mid(it, pos.get(it.key)) })).sort((p, q) => p.d - q.d);
+  for (const it of items) {
+    if (it.key === except || it.at || !it.fit) continue;
+    let at = null;
+    for (const h of hosts) {
+      for (const [x, y] of floorCellsOf(h.it, h.at)) { for (const r of [0, 1]) if (fits(it, x, y, r) && reach(it, [x, y, r])) { at = [x, y, r]; break; } if (at) break; }
+      if (at) break;
+    }
     if (at) take(it, at);
   }
   if (autoCache.size > 300) autoCache.clear();
@@ -701,6 +903,227 @@ export function layoutOf(state, base) {
   return itemsOf(state, base).map((it) => ({ it, at: it.at || auto.get(it.key) || null, auto: !it.at }));
 }
 
+// ---------- doorways between buildings ----------
+// The user's request 2026-10-19: "If you place buildings next to each other you can create a doorway between them."
+// base.plan.links = [{ a, b }] (item keys as itemsOf gives them: b:<id> standing, c:<id> queued). Two house-kind
+// items touch when their footprints stand side by side along a run of at least one cell: A's border cell orthogonally
+// next to B's, neither a corner, both plain wall (or a window) with an open floor cell behind each. The doorway is
+// the pair in the middle of the run: both wall cells become barred doors facing each other on the battle map
+// (buildBaseMap), with no outside cell to keep clear; the two cells inside them stay clear as any door's (occupancy).
+const linksArr = (base) => { const p = planOf(base); return p.links || (p.links = []); };
+// Where A at atA and B at atB touch: null, or { run, a: [x, y], b: [x, y], inn: [[x, y], [x, y]] } (the run's length,
+// the two door cells, the cell inside each).
+function touching(A, atA, B, atB) {
+  if (!A || !B || A.kind !== "house" || B.kind !== "house" || !atA || !atB) return null;
+  const ra = rectOf(A, atA), rb = rectOf(B, atB);
+  const ax1 = ra.x0 + ra.w, ay1 = ra.y0 + ra.h, bx1 = rb.x0 + rb.w, by1 = rb.y0 + rb.h;
+  const ca = new Map(cellsOf(A, atA).map((c) => [K(c.x, c.y), c])), cb = new Map(cellsOf(B, atB).map((c) => [K(c.x, c.y), c]));
+  const wallish = (c) => !!c && (c.k === "wall" || c.k === "window");
+  const pairs = [];
+  const tryPair = (pa, pb) => {
+    const ia = [2 * pa[0] - pb[0], 2 * pa[1] - pb[1]], ib = [2 * pb[0] - pa[0], 2 * pb[1] - pa[1]];
+    if (wallish(ca.get(K(...pa))) && wallish(cb.get(K(...pb))) && isFloor(ca.get(K(...ia)) || {}) && isFloor(cb.get(K(...ib)) || {})) pairs.push({ a: pa, b: pb, inn: [ia, ib] });
+  };
+  if (ax1 === rb.x0 || bx1 === ra.x0) { // side by side: the shared column pair
+    const xa = ax1 === rb.x0 ? ax1 - 1 : ra.x0, xb = ax1 === rb.x0 ? rb.x0 : bx1 - 1;
+    for (let y = Math.max(ra.y0, rb.y0); y < Math.min(ay1, by1); y++) if (y !== ra.y0 && y !== ay1 - 1 && y !== rb.y0 && y !== by1 - 1) tryPair([xa, y], [xb, y]);
+  } else if (ay1 === rb.y0 || by1 === ra.y0) { // one above the other: the shared row pair
+    const ya = ay1 === rb.y0 ? ay1 - 1 : ra.y0, yb = ay1 === rb.y0 ? rb.y0 : by1 - 1;
+    for (let x = Math.max(ra.x0, rb.x0); x < Math.min(ax1, bx1); x++) if (x !== ra.x0 && x !== ax1 - 1 && x !== rb.x0 && x !== bx1 - 1) tryPair([x, ya], [x, yb]);
+  }
+  if (!pairs.length) return null;
+  const p = pairs[(pairs.length - 1) >> 1];
+  return { run: pairs.length, a: p.a, b: p.b, inn: p.inn };
+}
+// The links live at the positions given (pos: key → at; a link with an item off the map is not live), without
+// changing the plan: [{ a, b, da, db, inn, run }].
+function liveLinks(base, items, pos) {
+  const out = [];
+  const L = base.plan && base.plan.links;
+  if (!L || !L.length) return out;
+  const byKey = new Map(items.map((it) => [it.key, it]));
+  for (const l of L) {
+    const t = touching(byKey.get(l.a), pos.get(l.a), byKey.get(l.b), pos.get(l.b));
+    if (t) out.push({ a: l.a, b: l.b, da: t.a, db: t.b, inn: t.inn, run: t.run });
+  }
+  return out;
+}
+const posOf = (state, base) => new Map(layoutOf(state, base).filter((e) => e.at).map((e) => [e.it.key, e.at]));
+// The live links with their two door cells (grid coordinates); a link whose buildings are gone, or both stand on the
+// map and no longer touch, is dropped from the plan here.
+export function linksOf(state, base) {
+  const items = itemsOf(state, base), pos = posOf(state, base), byKey = new Map(items.map((it) => [it.key, it]));
+  const L = linksArr(base);
+  for (let i = L.length - 1; i >= 0; i--) {
+    const l = L[i], A = byKey.get(l.a), B = byKey.get(l.b);
+    if (!A || !B || (pos.has(l.a) && pos.has(l.b) && !touching(A, pos.get(l.a), B, pos.get(l.b)))) L.splice(i, 1);
+  }
+  return liveLinks(base, items, pos);
+}
+const linkOf = (base, a, b) => linksArr(base).find((l) => (l.a === a && l.b === b) || (l.a === b && l.b === a)) || null;
+// The house-kind items touching this one on the map: [{ key, label, run, a, b, linked }] (a, b: the doorway's cells,
+// this one's first).
+export function neighboursOf(state, base, key) {
+  const items = itemsOf(state, base), pos = posOf(state, base);
+  const A = items.find((it) => it.key === key);
+  if (!A || !pos.has(key)) return [];
+  const out = [];
+  for (const B of items) {
+    if (B.key === key || B.kind !== "house" || !pos.has(B.key)) continue;
+    const t = touching(A, pos.get(key), B, pos.get(B.key));
+    if (t) out.push({ key: B.key, label: B.label, run: t.run, a: t.a, b: t.b, linked: !!linkOf(base, key, B.key) });
+  }
+  return out;
+}
+// Why a doorway cannot be opened between a and b, or "".
+export function canLink(state, base, a, b) {
+  const items = itemsOf(state, base), A = items.find((it) => it.key === a), B = items.find((it) => it.key === b);
+  if (!A || !B) return "That building is gone";
+  if (a === b) return "A building cannot share a doorway with itself";
+  if (A.kind !== "house" || B.kind !== "house") return "Only buildings with walls share a doorway";
+  if (A.armory || B.armory) return "The armory has one way in, its security door"; // ARMORY_LOCK: a doorway would go round its locked door
+  const pos = posOf(state, base);
+  if (!pos.has(a) || !pos.has(b)) return "Both buildings must stand on the map";
+  const t = touching(A, pos.get(a), B, pos.get(b));
+  if (!t) return "They do not stand against each other";
+  if (linkOf(base, a, b)) return "They share a doorway already";
+  const occ = occupancy(state, base, null, autoLayout(state, base));
+  for (const [x, y] of t.inn) { const k = occ.foot.get(K(x, y)); if (k && k !== a && k !== b) return `${nameOf(occ, k)} stands inside where the doorway would open`; } // (a building going up holds its whole outline)
+  return "";
+}
+export function linkBuildings(state, base, a, b) {
+  const why = canLink(state, base, a, b);
+  if (why) return why;
+  linksArr(base).push({ a, b });
+  autoCache.clear();
+  return "";
+}
+export function unlinkBuildings(state, base, a, b) {
+  const l = linkOf(base, a, b);
+  if (!l) return "They share no doorway";
+  const L = linksArr(base);
+  L.splice(L.indexOf(l), 1);
+  autoCache.clear();
+  return "";
+}
+
+// ---------- a way in and out ----------
+// The user's request 2026-10-19 (docs/base-building/plan.md Part F): "there needs to be at least a 1 × 4 tiles you can
+// walk through from in the base to out of the base and from out of the base to into the base. Gates count. You can
+// have a circle of buildings as long as one of the doors lets you in to the base to access all other buildings;
+// otherwise you cannot place". The rule: on the base's map as it would be built, a walkable path at least PATH.WIDTH
+// cells wide must join the grid's edge (the no-build margin is always open ground) to everything placed: a house-kind
+// building by one of its door cells (a doorway link's door counts: the walk goes through buildings' floors), a fitting
+// by a floor cell next to it (so its host's door must be reached), anything else (a prop, a crate, a defence, a crop
+// plot, a car, the core's fire) by a walkable cell next to its footprint; the core by its house's doors, or a cell next
+// to each part without a door. What walks is what CELL says walks on the battle map (open ground, fields, trenches,
+// pits, wire, doors, gate pieces and wall stands) less what stands raised (SOLID: a flat roof, a watchtower); walls
+// (the wall pieces among them: there is no drawn ring, the pieces are the wall), windows, fences, props, crates,
+// barricades, fittings and parked cars do not; a queued building or piece counts as built (it will be), a broken piece
+// as standing (it will be mended). A wall piece that would close a ring with no gate in it (a pocket of open ground the
+// edge reached before it went down and does not after) is refused with GATE_WHY: always a way in and out on foot,
+// gates counting (the user's rule; the auto layout lays the gates first, so a planned ring closes). reachProblem is the
+// dearer check (one flood fill over the whole grid, two for a wall piece that closes something) callers run after
+// placeProblemAt passes: placeItem, ghostAt (the hover's reason, so layoutAct put / build refuse it) and autoLayout on
+// the spots it picks. It counts what is placed by hand, the core and, with opts.auto, what the layout has taken so far:
+// what the game places re-flows after a hand placement and is checked again then.
+export const PATH = { WIDTH: 1 }; // the path's least width in cells. Only 1 is implemented: a 4-neighbour flood fill, where one open cell joins two; a wider path would fill over the cells a WIDTH × WIDTH block of open cells fits on. The constant is here so the rule reads as one number.
+export const REACH_WHY = "Nothing could walk to it from outside the base: leave a way in (a path at least one cell wide, a door or a gate)";
+const SOLID = new Set(["roof", "tower"]); // raised cells the battle map lets people climb onto (a ladder, a tower's own) but no path in or out goes over
+export const GATE_WHY = "Needs a gate in the wall first: the wall would shut everything inside off from the outside";
+const walks = (k) => !SOLID.has(k) && !!CELL[k] && !!CELL[k].walk;
+// Why `it` cannot stand at `at` (grid coordinates [x, y, r]) for want of a way in and out, or "". Checked after
+// placeProblemAt passes (occ: the same occupancy, kept for the signature; the grid is built afresh from the items).
+// Counted: the core, every item placed by hand (it.at) and, with opts.auto (a Map key → at, as occupancy takes), what
+// the layout has taken so far; never the keys in opts.skip (default: it.key; a general building being moved also skips
+// what stands inside it, which moves along). opts.items: the items (itemsOf) when the caller has them already.
+// Returns REACH_WHY when nothing could walk to the candidate itself, GATE_WHY for a wall piece that closes a ring with
+// no gate, else "That would shut off <label>: no way to walk to it from outside the base" naming the first thing (the
+// core's parts first, then the items in their order) the placement would cut off. One Uint8Array over the (2G)² grid
+// and one flood fill: a few ms on the biggest grid.
+export function reachProblem(state, base, it, at, occ, opts = {}) {
+  stampGrid(state, base);
+  const G = gridHalf(base), N = 2 * G;
+  const on = (x, y) => x >= -G && x < G && y >= -G && y < G;
+  const idx = (x, y) => (y + G) * N + (x + G);
+  const blk = new Uint8Array(N * N);
+  const block = (x, y) => { if (on(x, y)) blk[idx(x, y)] = 1; };
+  // A thing's cells onto the grid: a car's whole rect and a flat-roofed block stand solid; anything else by its cells
+  // (cellsOf: a house's walls and windows block, its doors and floor walk; a pen's fence and hay block, its gap walks;
+  // a field walks; a prop, a fitting or a defence by its cell kind: a trench or pits walk, a barricade or a crate not).
+  const lay = (o, atO) => {
+    if (o.kind === "vehicle" || o.kind === "roof") { for (const [x, y] of rectCells(o, atO)) block(x, y); return; }
+    for (const c of cellsOf(o, atO)) if (!walks(c.k)) block(c.x, c.y);
+  };
+  const items = opts.items || itemsOf(state, base);
+  const skips = opts.skip instanceof Set ? opts.skip : new Set(opts.skip ? [opts.skip] : it && it.key ? [it.key] : []);
+  const auto = opts.auto || null;
+  const counted = [], pos = new Map();
+  for (const o of items) {
+    if (skips.has(o.key)) continue;
+    const a = o.at || (auto && auto.get(o.key)) || null;
+    if (!a) continue;
+    counted.push({ it: o, at: a }); pos.set(o.key, a); lay(o, a);
+  }
+  const core = coreParts(base);
+  for (const p of core) lay(p, [p.x, p.y, 0]);
+  if (it && at) { lay(it, at); if (it.key) pos.set(it.key, at); }
+  // A wall piece's own cells (GATE_WHY's second flood leaves them open; placeProblemAt keeps them off everything else).
+  const mine = it && at && it.kind === "wall" ? cellsOf(it, at).filter((c) => !walks(c.k) && on(c.x, c.y)).map((c) => idx(c.x, c.y)) : [];
+  // (No ring is drawn: the wall pieces are the wall, laid above by their cells: a wall blocks, a gate and a stand walk.)
+  // The doorways between linked buildings: both door cells walk.
+  const links = liveLinks(base, items, pos);
+  for (const l of links) for (const [x, y] of [l.da, l.db]) if (on(x, y)) blk[idx(x, y)] = 0;
+  // The flood fill from every open cell on the grid's edge (PATH.WIDTH 1: 4-neighbour, over the open cells).
+  const flood = (bk) => {
+    const seen = new Uint8Array(N * N), q = new Int32Array(N * N);
+    let qh = 0, qt = 0;
+    const seed = (i) => { if (!bk[i] && !seen[i]) { seen[i] = 1; q[qt++] = i; } };
+    for (let i = 0; i < N; i++) { seed(i); seed((N - 1) * N + i); seed(i * N); seed(i * N + N - 1); }
+    while (qh < qt) {
+      const i = q[qh++], x = i % N, y = (i / N) | 0;
+      if (x > 0) seed(i - 1);
+      if (x < N - 1) seed(i + 1);
+      if (y > 0) seed(i - N);
+      if (y < N - 1) seed(i + N);
+    }
+    return seen;
+  };
+  const seen = flood(blk);
+  const reached = (x, y) => on(x, y) && seen[idx(x, y)] === 1;
+  // A thing is reached: a house by a door cell of its own or of a doorway link it is part of; anything else by a
+  // walkable cell 4-adjacent to its footprint (a fitting's: the host's open floor next to it).
+  const nextTo = (o, atO) => {
+    const r = rectOf(o, atO);
+    for (let x = r.x0; x < r.x0 + r.w; x++) if (reached(x, r.y0 - 1) || reached(x, r.y0 + r.h)) return true;
+    for (let y = r.y0; y < r.y0 + r.h; y++) if (reached(r.x0 - 1, y) || reached(r.x0 + r.w, y)) return true;
+    return false;
+  };
+  const doorsOf = (o, atO, key) => {
+    const d = cellsOf(o, atO).filter((c) => c.door).map((c) => [c.x, c.y]);
+    if (key) for (const l of links) { if (l.a === key) d.push(l.da); if (l.b === key) d.push(l.db); }
+    return d;
+  };
+  const ok = (o, atO, key) => (o.kind === "house" ? doorsOf(o, atO, key).some(([x, y]) => reached(x, y)) : nextTo(o, atO));
+  if (it && at && !ok(it, at, it.key)) return REACH_WHY;
+  // A wall piece closing a ring with no gate in it: an open cell next to it that the edge no longer reaches, but
+  // reached without it (any pocket the piece closes touches it). A gate would have let the walk through.
+  if (it && at && it.kind === "wall" && mine.length) {
+    const pocket = [];
+    for (const i of mine) for (const j of [i % N > 0 ? i - 1 : -1, i % N < N - 1 ? i + 1 : -1, i - N, i + N]) if (j >= 0 && j < N * N && !blk[j] && !seen[j]) pocket.push(j);
+    if (pocket.length) {
+      const open = blk.slice();
+      for (const i of mine) open[i] = 0;
+      const was = flood(open);
+      if (pocket.some((j) => was[j])) return GATE_WHY;
+    }
+  }
+  const shut = (name) => `That would shut off ${name}: no way to walk to it from outside the base`;
+  for (const p of core) if (!ok(p, [p.x, p.y, 0], null)) return shut(p.name || coreName(base));
+  for (const e of counted) if (!ok(e.it, e.at, e.it.key)) return shut(e.it.label);
+  return "";
+}
+
 // ---------- the map ----------
 // Builds the base's map for a battle (fort.js buildFort) or the Base map view (opts.view: outlines for the queued
 // buildings, VIEW_PAD more ground). opts.pitsAt: spike pits used up on the horde that reached the walls (defences.js
@@ -727,12 +1150,16 @@ export function buildBaseMap(state, base, rng, opts = {}) {
     W, H, cells, M: MARGIN, ox, oy, x0: -C + ox, y0: -C + oy, yw: 2 * C, yh: 2 * C, walled: false, view,
     wall: { x0: -R - 2 + ox, x1: R + 1 + ox, y0: -R - 2 + oy, y1: R + 1 + oy }, ring: [], walkway: [], gates: { north: [], east: [], south: [], west: [] }, towers: [], ladders: [], pieces: [],
     buildings: [], lofts: [], roofs: [], doors: [], windows: [], outlines: [], stores: [], vehicles: [], lights: [], inside: null, indoor, lay: { W, H, G: null, buildings: [] },
+    noBuild: NO_BUILD, // the no-build margin round the grid (nothing stands within it; the view tints it: c.nb)
   };
   for (let y = -C; y < C; y++) for (let x = -C; x < C; x++) { const c = at(x + ox, y + oy); if (c) c.f = "dirt"; }
-  // A container of the stores (makeStores). The armory (ARMORY_LOCK): two locked containers inside it in place of one,
-  // the gun cage (holds "gear") and the ammo lockers (holds "ammo"), each over its own cells (boxes: the map cells
-  // armoryCells tagged, turned with the building); with the armory broken (breakdowns.js) they stand open.
-  const pushStore = (label, x, y, w, h, weight, bid, it, boxes = null) => {
+  if (view) for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const gx = x - ox, gy = y - oy; if (gx < NO_BUILD - G || gy < NO_BUILD - G || gx >= G - NO_BUILD || gy >= G - NO_BUILD) cells[y * W + x].nb = 1; }
+  // A container of the stores (makeStores), with its container's key (containers.js: "core", b:<id>, v:<id>). The
+  // armory (ARMORY_LOCK): two locked containers inside it in place of one, the gun cage (holds "gear") and the ammo
+  // lockers (holds "ammo"), each over its own cells (boxes: the map cells armoryCells tagged, turned with the
+  // building); with the armory broken (breakdowns.js) they stand open.
+  const pushStore = (label, x, y, w, h, weight, bid, it, boxes = null, key = null) => {
+    const skey = key || (bid == null ? "core" : `b:${bid}`);
     if (it.type === "armory" && boxes) {
       const locked = !(it.rec && it.rec.broken);
       for (const [holds, what] of [["gear", "gun cage"], ["ammo", "ammo lockers"]]) {
@@ -740,11 +1167,11 @@ export function buildBaseMap(state, base, rng, opts = {}) {
         if (!list.length) continue;
         const xs = list.map((p) => p[0]), ys = list.map((p) => p[1]);
         const x0 = Math.min(...xs), y0 = Math.min(...ys);
-        F.stores.push({ id: F.stores.length + 1, label: `${label} ${what}`, x: x0, y: y0, w: Math.max(...xs) - x0 + 1, h: Math.max(...ys) - y0 + 1, weight: 0, bid, holds, ...(locked ? { lock: { hp: ARMORY_LOCK.HP, mhp: ARMORY_LOCK.HP, open: false } } : {}) });
+        F.stores.push({ id: F.stores.length + 1, key: skey, label: `${label} ${what}`, x: x0, y: y0, w: Math.max(...xs) - x0 + 1, h: Math.max(...ys) - y0 + 1, weight: 0, bid, holds, ...(locked ? { lock: { hp: ARMORY_LOCK.HP, mhp: ARMORY_LOCK.HP, open: false } } : {}) });
       }
       return;
     }
-    F.stores.push({ id: F.stores.length + 1, label, x, y, w, h, weight, bid, room: it.room || 0 });
+    F.stores.push({ id: F.stores.length + 1, key: skey, label, x, y, w, h, weight, bid, room: it.room || 0 });
   };
   // A thing's cells onto the map. built: false lays an outline instead (the view).
   const lay1 = (it, atG, key, built, name) => {
@@ -765,7 +1192,7 @@ export function buildBaseMap(state, base, rng, opts = {}) {
         F.vehicles.push({ id: it.veh ? it.veh.id : null, name: it.label, x0: rect.x0, y0: rect.y0, w: rect.w, h: rect.h });
         // A car that is storage (basestorage.js vehicleStoreKg: its payload while it is parked here) holds goods.
         const room = it.veh ? vehicleStoreKg(it.veh) : 0;
-        if (room > 0) F.stores.push({ id: F.stores.length + 1, label: it.label, x: rect.x0, y: rect.y0, w: rect.w, h: rect.h, weight: 1, bid: null, vid: it.veh.id, room });
+        if (room > 0) F.stores.push({ id: F.stores.length + 1, key: `v:${it.veh.id}`, label: it.label, x: rect.x0, y: rect.y0, w: rect.w, h: rect.h, weight: 1, bid: null, vid: it.veh.id, room });
       }
       return;
     }
@@ -805,27 +1232,48 @@ export function buildBaseMap(state, base, rng, opts = {}) {
       bcells.push([x, y]);
     }
     if (piece) { F.pieces.push(piece); return; }
+    // A store entry's key (containers.js): "core" for the base itself, b:<id> for a building or a fitting that keeps
+    // goods (the general buildings keep nothing of their own: their shelves and lockers do).
+    const bid = it.rec && it.key && it.key.startsWith("b:") ? it.rec.id : null;
+    const skey = key === "core" ? "core" : key;
     if (it.kind === "house" || it.kind === "roof") {
-      const b = { name, key: it.key0 || it.type, bid: it.rec && it.key && it.key.startsWith("b:") ? it.rec.id : null, type: it.type, x0: mx, y0: my, w: r.w, h: r.h, roof: it.kind === "roof", storeys: it.kind === "house" ? (it.storeys === 2 && r.w >= 4 && r.h >= 4 ? 2 : 1) : 0, doors };
+      const b = { name, key: it.key0 || it.type, ikey: key, bid, type: it.type, x0: mx, y0: my, w: r.w, h: r.h, roof: it.kind === "roof", storeys: it.kind === "house" ? (it.storeys === 2 && r.w >= 4 && r.h >= 4 ? 2 : 1) : 0, doors };
       F.buildings.push(b);
       F.lay.buildings.push(b);
-      if (it.store) pushStore(name, mx, my, r.w, r.h, it.store, b.bid, it, boxes);
-    } else if (it.store) pushStore(name, mx, my, r.w, r.h, it.store, it.rec && it.key.startsWith("b:") ? it.rec.id : null, it);
+      if (it.store) pushStore(name, mx, my, r.w, r.h, it.store, b.bid, it, boxes, skey);
+    } else if (it.store) pushStore(name, mx, my, r.w, r.h, it.store, bid, it, null, skey);
   };
   // The middle: the camp, the shelter or the base itself.
   // room: the kg it holds (basestorage.js: the core's room shared over its stores, a storage building's STORE_KG).
   const coreW = coreParts(base).reduce((a, p) => a + (p.store || 0), 0) || 1;
   for (const p of coreParts(base)) lay1({ ...p, key0: p.key || p.k, room: p.store ? (coreStoreKg(base) * p.store) / coreW : 0 }, [p.x, p.y, 0], "core", true, p.name || coreName(base));
-  // Everything placed, by hand or by the game.
+  // Everything placed, by hand or by the game: the buildings first, then the fittings and indoor props that stand
+  // inside them (laid over their floor).
   const reinforced = count(base, "gate") ? DEPLOY.GATE_HP_REINFORCED : 0; // buildings.js gate: every gate stronger
-  for (const e of lay) {
+  const late = (e) => !!(e.it.fit || e.it.indoor);
+  for (const e of [...lay.filter((e) => !late(e)), ...lay.filter(late)]) {
     const it = e.it;
     const store = STORES[it.type] || 0;
     const cellHp = it.kind === "wall" ? pieceHp(it.rec) || WALL_TIERS[matOf(it.rec)].hp : it.kind === "gate" ? (pieceHp(it.rec) || WALL_TIERS[matOf(it.rec)].gateHp) + reinforced : 0;
     lay1({ ...it, store, room: store ? STORE_KG[it.type] || 0 : 0, cellHp }, e.at, it.key, it.built, it.label);
   }
   if (opts.pitsAt) for (const atG of opts.pitsAt) if (atG) lay1({ ...FOOT.spike_pits, type: "spike_pits" }, atG, "pits", true, "Spike pits");
-  layPiles(state, base, F, { C, G, inside, used, keep });
+  // The doorways between linked buildings (linksOf): the two facing wall cells become barred doors, in F.doors and in
+  // each building's doors (settleBaseBattle wears them), with no outside cell; only between two buildings standing.
+  const byIkey = new Map(F.buildings.map((s) => [s.ikey, s]));
+  for (const l of linksOf(state, base)) {
+    const A = byIkey.get(l.a), B = byIkey.get(l.b);
+    if (!A || !B) continue;
+    for (const [s, [gx, gy]] of [[A, l.da], [B, l.db]]) {
+      const x = gx + ox, y = gy + oy, q = at(x, y);
+      if (!q) continue;
+      q.k = "bdoor"; q.f = "floor"; q.hp = q.mhp = INTERIOR.DOOR_HP; q.link = 1; delete q.t; delete q.h;
+      indoor[y * W + x] = 1; used[y * W + x] = 1;
+      F.windows = F.windows.filter(([wx, wy]) => wx !== x || wy !== y);
+      F.doors.push([x, y]); s.doors.push([x, y]);
+    }
+  }
+  layPiles(state, base, F, { C: R, G, inside, used, keep }); // what lies outside: piles near the middle, off the wall's ring
   // The wall: the pieces placed (by hand or by the game). Walled when no way in from the map's edge reaches the base
   // itself (the attackers' way: open ground they can walk, never a barred gate or door): the inside is then what they
   // cannot reach round the base (its yard, its houses, the stands), the wall's rect its bounds; else the yard and the
@@ -945,9 +1393,9 @@ export function baseMapSize(state, base, opts = {}) {
 }
 
 // ---------- the stores on the map ----------
-// What lies outside (basestorage.js storageOf: the goods past the base's room), as it goes on the map: whole units of
-// the supplies (a stack of 12.5 with 3.5 outside: 3 on the pile, the 9 that fit inside), the armory indices of the
-// items, and their weight. null when nothing whole lies out.
+// What lies outside (basestorage.js storageOf, the assignments honoured: the goods past the base's room), as it goes
+// on the map: whole units of the supplies (a stack of 12.5 with 3.5 outside: 3 on the pile, the 9 that fit inside),
+// the armory indices of the items, and their weight. null when nothing whole lies out.
 export function outsideOf(state, base) {
   if (!base) return null;
   const st = storageOf(state, base);
@@ -960,23 +1408,26 @@ export function outsideOf(state, base) {
   for (const i of st.outside.gear) { const it = base.armory && base.armory[i]; if (it) { gear.push(i); kg += itemKg(it); } }
   return gear.length || Object.keys(sup).length ? { sup, gear, kg } : null;
 }
-// The piles of what lies outside, laid on the map (buildBaseMap, before the cover): crates stacked on the open ground
-// of the yard as near the middle as there is room, every cell of a pile free (never on a footprint, a buffer round
-// one, a doorway or the band) and open ground all round it (walkable, nothing to batter: no door). One a PILE.KG of
-// what lies out, at most PILE.MAX; a yard too full for one puts it on the open ground beyond the band, and with no room
-// at all the goods stay in the real containers (makeStores).
+// The piles of what lies outside, laid on the map (buildBaseMap, after the buildings and the doorways): crates stacked
+// on the open ground of the yard as near the middle as there is room, every cell of a pile free (never on a footprint,
+// a buffer round one, a doorway, the wall's ring or the no-build margin) and open ground all round it (walkable,
+// nothing to batter: no door; so a pile never shuts a way in: basemap reachProblem). One a PILE.KG of what lies out, at
+// most PILE.MAX; a yard too full for one puts it on the open ground beyond the ring, and with no room at all the goods
+// stay in the real containers (makeStores). Their key is "outside" (containers.js OUTSIDE).
 function layPiles(state, base, F, m) {
   const out = outsideOf(state, base);
   if (!out) return;
   const { C, G, inside, used, keep } = m, { cells, W, ox, oy } = F;
   const n = Math.max(1, Math.min(PILE.MAX, Math.ceil(out.kg / PILE.KG)));
   const pw = PILE.W, ph = PILE.H;
+  const lim = G - NO_BUILD;
   const free = (x, y) => inside(x, y) && !used[y * W + x] && !keep[y * W + x] && cells[y * W + x].k === "open";
   const clear = (x, y) => inside(x, y) && !used[y * W + x] && cells[y * W + x].k === "open";
   const fits = (gx, gy) => {
     for (let y = gy - 1; y <= gy + ph; y++) for (let x = gx - 1; x <= gx + pw; x++) {
       if (onBand(x, y, C)) return false;
       const inR = x >= gx && x < gx + pw && y >= gy && y < gy + ph;
+      if (inR && (x < -lim || y < -lim || x >= lim || y >= lim)) return false;
       if (inR ? !free(x + ox, y + oy) : !clear(x + ox, y + oy)) return false;
     }
     return true;
@@ -989,25 +1440,34 @@ function layPiles(state, base, F, m) {
       for (let y = my - 1; y <= my + ph; y++) for (let x = mx - 1; x <= mx + pw; x++) if (inside(x, y)) keep[y * W + x] = 1;
       for (let y = my; y < my + ph; y++) for (let x = mx; x < mx + pw; x++) { const c = cells[y * W + x]; c.k = "crate"; c.v = (x + y) % 2 ? 1 : 2; c.pile = true; used[y * W + x] = 1; }
       laid++;
-      F.stores.push({ id: F.stores.length + 1, label: n > 1 ? `${PILE.LABEL} ${laid}` : PILE.LABEL, x: mx, y: my, w: pw, h: ph, weight: 0, bid: null, pile: true, room: 0 });
+      F.stores.push({ id: F.stores.length + 1, key: OUTSIDE, label: n > 1 ? `${PILE.LABEL} ${laid}` : PILE.LABEL, x: mx, y: my, w: pw, h: ph, weight: 0, bid: null, pile: true, room: 0 });
     }
   }
 }
-// The base's stock and armory spread over its containers (F.stores): what lies outside (outsideOf) on the piles, the
-// rest over the real containers (the base itself, the storage buildings, the cars that are storage), supplies by whole
-// units, the armory's items one by one, each container taking a share by its room (food leans to the cellars, the cold
-// store, the freezer and the storehouse, gear to the core and the storehouse; with no room at all, by the STORES
-// weights). Nothing leaves the base's records: a container holds counts and armory indexes, and only what a raider gets
-// away with is taken from the base when the fight ends (settleBaseBattle, applyStolen). Deterministic (only rng).
-// An armory's containers (holds: "gear" | "ammo") take every item and every round and arrow kept inside, and nothing else.
+// The base's stock and armory on its containers (F.stores: the core's parts, the storage buildings and fittings, the
+// armory's gun cage and ammo lockers, the parked cars that are storage, the piles), by basestorage.js storageOf with
+// the assignments honoured (containers.js: item.store, base.bins), one answer with the Storage tab and the storage
+// lines:
+//   1. what is assigned and fits its container is in that container's map entries, matched by key ("core", b:<id>,
+//      v:<id>; the core's several parts share its goods by their room; the armory's rounds and arrows in its ammo
+//      lockers, the rest in its gun cage), marked asg (takeLoot: what comes out of it comes out of that bin);
+//   2. what lies outside (outsideOf) on the piles;
+//   3. the rest (unassigned, or kept in a container that is not on the map) spread over the real containers, each
+//      taking a share by the room it has left (food leans to the cellars, the cold store, the freezer and the
+//      storehouse, gear to the core, the storehouse and the warehouse; with no room at all, by the STORES weights); an
+//      armory's ammo lockers take every round and arrow and its gun cage every item of these, and nothing else.
+// Supplies go by whole units, the armory's items one by one. Nothing leaves the base's records: a container holds
+// counts and armory indexes, and only what a raider gets away with is taken from the base when the fight ends
+// (settleBaseBattle, applyStolen). Deterministic (only rng); with nothing assigned, as the spread always was.
 export function makeStores(state, base, F, rng) {
   if (!F.stores.length) return null;
-  const boxes = F.stores.map((s) => ({ ...s, sup: {}, gear: [] }));
+  const keyOf = (s) => s.key || (s.pile ? OUTSIDE : s.vid != null ? `v:${s.vid}` : s.bid == null ? "core" : `b:${s.bid}`);
+  const boxes = F.stores.map((s) => ({ ...s, key: keyOf(s), sup: {}, asg: {}, gear: [] }));
   const gearBox = boxes.find((b) => b.holds === "gear") || null, ammoBox = boxes.find((b) => b.holds === "ammo") || null;
   const piles = boxes.filter((b) => b.pile), real = boxes.filter((b) => !b.pile && !b.holds);
   const out = (piles.length && outsideOf(state, base)) || { sup: {}, gear: [] };
-  const roomTot = real.reduce((a, b) => a + (b.room || 0), 0);
-  const wOf = (b) => (roomTot > 0 ? b.room || 0 : b.weight || 1);
+  const armory = base.armory || [];
+  const gOf = (i) => { const it = armory[i]; return { ai: i, key: it.key, name: it.name, kg: itemKg(it) }; };
   const split = (q, weights) => {
     const tot = weights.reduce((a, v) => a + v, 0) || 1;
     const res = weights.map((v) => Math.floor((q * v) / tot));
@@ -1015,26 +1475,57 @@ export function makeStores(state, base, F, rng) {
     if (left > 0) res[weights.indexOf(Math.max(...weights))] += left;
     return res;
   };
+  // 1. The assigned goods (storageOf's containers: what fits of each assignment).
+  const asgSup = {}, asgGear = new Set(), held = new Map(); // held: kg in a map entry by assignment
+  const put = (b, k, n) => { b.sup[k] = (b.sup[k] || 0) + n; b.asg[k] = (b.asg[k] || 0) + n; held.set(b, (held.get(b) || 0) + n * kgOf(k)); };
+  if (base.bins || armory.some((it) => it && it.store != null)) {
+    for (const c of storageOf(state, base).containers) {
+      const mine = boxes.filter((b) => !b.pile && b.key === c.key);
+      if (!mine.length) continue; // not on the map: its goods are spread with the rest
+      const pick = (holds) => { const l = mine.filter((b) => !b.holds || b.holds === holds); return l.length ? l : mine; };
+      for (const [k, n] of Object.entries(c.sup)) {
+        const list = pick(isAmmoKey(k) ? "ammo" : "gear");
+        split(n, list.map((b) => Math.max(0.1, b.room || b.weight || 1))).forEach((q, j) => { if (q > 0) put(list[j], k, q); });
+        asgSup[k] = (asgSup[k] || 0) + n;
+      }
+      for (const ai of c.gear) {
+        if (!armory[ai]) continue;
+        const list = pick("gear");
+        let j = 0;
+        for (let i = 1; i < list.length; i++) if ((held.get(list[i]) || 0) / Math.max(0.1, list[i].room || 1) < (held.get(list[j]) || 0) / Math.max(0.1, list[j].room || 1)) j = i;
+        const g = gOf(ai);
+        list[j].gear.push(g); held.set(list[j], (held.get(list[j]) || 0) + g.kg);
+        asgGear.add(ai);
+      }
+    }
+  }
+  // 3. The rest: by the room each container has left (dev's spread, in the room left after the assignments).
+  const left = (b) => Math.max(0, (b.room || 0) - (held.get(b) || 0));
+  const roomTot = real.reduce((a, b) => a + left(b), 0);
+  const wOf = (b) => (roomTot > 0 ? left(b) : b.weight || 1);
   for (const [k, q0] of Object.entries(base.stock)) {
-    const q = Math.floor(q0 || 0);
+    const q = Math.floor(q0 || 0) - (asgSup[k] || 0);
     if (!(q > 0)) continue;
     const ammo = !!ammoBox && isAmmoKey(k); // the rounds and arrows kept inside: the ammo lockers
     const inN = real.length || ammo ? q - Math.min(q, out.sup[k] || 0) : 0;
-    if (inN > 0 && ammo) ammoBox.sup[k] = inN;
+    if (inN > 0 && ammo) ammoBox.sup[k] = (ammoBox.sup[k] || 0) + inN;
     else if (inN > 0) {
       const food = !!FOODS[k];
       const weights = real.map((b) => wOf(b) * (food && ["cellar", "coldstore", "freezer", "storehouse"].includes(typeOfStore(base, b)) ? 2 : 1) * rng.range(0.7, 1.3));
-      split(inN, weights).forEach((n, i) => { if (n > 0) real[i].sup[k] = n; });
+      split(inN, weights).forEach((n, i) => { if (n > 0) real[i].sup[k] = (real[i].sup[k] || 0) + n; });
     }
-    if (q - inN > 0) split(q - inN, piles.map(() => 1)).forEach((n, i) => { if (n > 0) piles[i].sup[k] = n; });
+    // 2. What lies outside: the piles (with no real container on the map, everything there).
+    const pileN = q - inN;
+    if (pileN > 0) { const to = piles.length ? piles : [gearBox || boxes[0]]; split(pileN, to.map(() => 1)).forEach((n, i) => { if (n > 0) to[i].sup[k] = (to[i].sup[k] || 0) + n; }); }
   }
   const outside = new Set(out.gear);
   let pi = 0;
-  base.armory.forEach((it, i) => {
-    if (!it) return;
-    const g = { ai: i, key: it.key, name: it.name, kg: itemKg(it) };
+  armory.forEach((it, i) => {
+    if (!it || asgGear.has(i)) return;
+    const g = gOf(i);
     if (piles.length && (outside.has(i) || (!real.length && !gearBox))) { piles[pi++ % piles.length].gear.push(g); return; }
     if (gearBox) { gearBox.gear.push(g); return; } // every item kept inside: the gun cage
+    if (!real.length) { boxes[0].gear.push(g); return; }
     const weights = real.map((b) => wOf(b) * (["core", "storehouse", "warehouse"].includes(typeOfStore(base, b)) ? 2 : 1));
     const tot = weights.reduce((a, v) => a + v, 0);
     let pick = rng.range(0, tot), j = 0;
@@ -1048,6 +1539,7 @@ export function makeStores(state, base, F, rng) {
 const kgOf = (k) => (SUPPLIES[k] ? SUPPLIES[k].weight : FOODS[k] ? FOODS[k].kg : STEAL.DEFAULT_KG);
 // A supply the ammo lockers hold: the abstract rounds and arrows, and any supply of the ammo kind (rounds by calibre).
 const isAmmoKey = (k) => k === "ammo" || k === "arrows" || !!(SUPPLIES[k] && SUPPLIES[k].cat === "ammo");
+// The building type behind a map container (a pile: "pile"; a car: "vehicle"; the core's parts: "core").
 const typeOfStore = (base, s) => (s.pile ? "pile" : s.vid != null ? "vehicle" : s.bid == null ? "core" : (base.buildings.find((b) => b.id === s.bid) || {}).type || "core");
 // The container at a cell of the battle (ui/combat.js hover and click), or null.
 export const storeAt = (b, x, y) => (b.stores ? b.stores.containers.find((c) => x >= c.x && x < c.x + c.w && y >= c.y && y < c.y + c.h) || null : null);
@@ -1232,7 +1724,8 @@ export function forceLock(b, u, box) {
 // take the turn), twice that from a pile left outside (STEAL.PILE). Nothing worth the weight left to take: off with
 // what it has (u.loot.full).
 export function takeLoot(b, u, box) {
-  u.loot = u.loot || { sup: {}, gear: [], kg: 0 };
+  u.loot = u.loot || { sup: {}, gear: [], kg: 0, from: {} };
+  u.loot.from = u.loot.from || {}; // { [containerKey]: { k: n } }: what came out of the assigned part of each container (applyStolen: out of its bin)
   const carry = STEAL.KG - u.loot.kg;
   let room = Math.min(carry, STEAL.TURN * (box.pile ? STEAL.PILE : 1));
   const got = [];
@@ -1249,6 +1742,10 @@ export function takeLoot(b, u, box) {
     const kg = Math.max(0.01, kgOf(k));
     const n = Math.min(box.sup[k], Math.floor(room / kg));
     if (n <= 0) continue;
+    // The spread part (nobody's bin) goes first; what comes out of the assigned part is charged to the container's bin.
+    const asg = (box.asg && box.asg[k]) || 0;
+    const fromBin = Math.max(0, n - Math.max(0, box.sup[k] - asg));
+    if (fromBin > 0 && box.key) { box.asg[k] = asg - fromBin; const f = u.loot.from[box.key] || (u.loot.from[box.key] = {}); f[k] = (f[k] || 0) + fromBin; }
     box.sup[k] -= n; if (box.sup[k] <= 0) delete box.sup[k];
     u.loot.sup[k] = (u.loot.sup[k] || 0) + n; u.loot.kg += n * kg; room -= n * kg; box.kg -= n * kg;
     got.push(`${n} ${SUPPLIES[k] ? SUPPLIES[k].name.toLowerCase() : FOODS[k] ? FOODS[k].word : k}`);
@@ -1287,10 +1784,11 @@ export function settleBaseBattle(state, b) {
   if (!F || !b.tier || b.tier.map !== "fort" || b.drill || b.layout) return;
   const base = state.bases.find((x) => x.id === b.tier.baseId) || null;
   // The loot that left with the raiders.
-  const stolen = { sup: {}, gear: [], kg: 0 };
+  const stolen = { sup: {}, gear: [], kg: 0, from: {} }; // from: by the container it came out of (containers.js bins: applyStolen)
   for (const u of b.units) {
     if (!u.loot || !u.fled) continue;
     for (const [k, n] of Object.entries(u.loot.sup)) stolen.sup[k] = (stolen.sup[k] || 0) + n;
+    for (const [key, got] of Object.entries(u.loot.from || {})) { const f = stolen.from[key] || (stolen.from[key] = {}); for (const [k, n] of Object.entries(got)) f[k] = (f[k] || 0) + n; }
     stolen.gear.push(...u.loot.gear);
     stolen.kg += u.loot.kg;
   }
@@ -1353,6 +1851,14 @@ export function applyStolen(state, base, stolen) {
     sup[k] = n;
     parts.push(`${n} ${SUPPLIES[k] ? SUPPLIES[k].name.toLowerCase() : FOODS[k] ? FOODS[k].word : k}`);
   }
+  // Out of the bins of the containers it was taken from (containers.js; a stolen item's assignment goes with it), as
+  // much as really left the stock; then the bins made to agree with what is left.
+  const bins = base.bins || {};
+  for (const [key, got] of Object.entries(stolen.from || {})) {
+    const bin = bins[key];
+    if (!bin) continue;
+    for (const [k, n] of Object.entries(got)) if (bin[k] > 0 && sup[k] > 0) { const q = Math.min(bin[k], n, sup[k]); bin[k] -= q; if (bin[k] <= 0) delete bin[k]; }
+  }
   // The items by their armory index (makeStores: a pile's, a car's or a building's alike); one no longer where it was
   // (the armory changed during the fight) is found again by its key.
   const taken = new Set();
@@ -1365,6 +1871,7 @@ export function applyStolen(state, base, stolen) {
   const idx = [...taken].sort((a, c) => c - a);
   const gear = idx.map((i) => base.armory[i]);
   for (const i of idx) base.armory.splice(i, 1);
+  if (base.bins) normalizeBins(state, base);
   for (const g of gear) parts.push(g.name);
   if (!parts.length) return null;
   const text = `They got away with ${parts.length > 4 ? `${parts.slice(0, 4).join(", ")} and more` : parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}` : parts[0]}.`;
@@ -1381,15 +1888,17 @@ export function takeStock(base, k, n) {
 }
 
 // ---------- the Base map view (the Base map tab, Build) ----------
-// Opens the base's map as a battle with nobody to fight, in layout mode: the queued buildings as outlines, every
-// store's contents in view, and the picked item's footprint placed by a click (ui/combat.js layout mode). pick: the
-// item to place first (a building just queued), or null.
+// Opens the base's map as a battle with nobody on it (the survivors never show: the user's request 2026-10-19), in
+// layout mode: the queued buildings as outlines, every store's contents in view, and the picked item's footprint
+// placed by a click (ui/combat.js layout mode). pick: the item to place first (a building just queued), or null.
+// The layout record (b.layout): baseId, pick (an item key being placed), pickType (a building type to build: the
+// ghost is its footprint and a click queues and places it), rot, sel (a placed item's key, for the panel), msg.
 export function openBaseMap(state, baseId, pick = null) {
   if (state.combat) return "Finish the battle first.";
   const base = state.bases.find((x) => x.id === baseId);
   if (!base) return "";
   const b = viewBattle(state, base);
-  b.layout = { baseId: base.id, pick: pick && itemByKey(state, base, pick) ? pick : null, rot: 0, msg: "" };
+  b.layout = { baseId: base.id, pick: pick && itemByKey(state, base, pick) ? pick : null, pickType: null, sel: null, rot: 0, msg: "" };
   state.combat = b;
   return "";
 }
@@ -1399,7 +1908,7 @@ function viewBattle(state, base, prev = null) {
     enemy: { kind: "zombies", count: 1, power: 1, types: { runner: 1 }, name: "nobody (the base map)" }, context: { baseId: base.id, drill: true, view: true, noPlan: true },
   };
   const b = createBattle(state, setup);
-  b.units = b.units.filter((u) => u.side === "player");
+  b.units = []; // nobody on the map: the survivors do not show in the building view
   b.log = [];
   b.drill = true;
   b.phase = "deploy";
@@ -1417,21 +1926,26 @@ export function refreshBaseMap(state) {
 }
 // Map cell → grid cell in the view.
 export const gridOfCell = (b, x, y) => { const F = b.deployPlan && b.deployPlan.fort; return F ? [x - F.ox, y - F.oy] : [x, y]; };
-// The picked item's footprint over the hovered cell (centered on it): its map cells and whether it fits there.
+// The picked item's footprint (L.pick), or the footprint of the type to build (L.pickType: FOOT[bt]), over the hovered
+// cell (centered on it): its map cells and whether it fits there (a fitting fits only on a general building's floor;
+// a general building being moved is checked without what stands inside it, which moves along).
 export function ghostAt(state, b, x, y) {
   const L = b.layout, F = b.deployPlan && b.deployPlan.fort;
-  if (!L || !L.pick || !F) return null;
+  if (!L || !F || (!L.pick && !L.pickType)) return null;
   const base = state.bases.find((o) => o.id === L.baseId);
-  const it = base && itemByKey(state, base, L.pick);
+  if (!base) return null;
+  const it = L.pick ? itemByKey(state, base, L.pick) : FOOT[L.pickType] ? { ...FOOT[L.pickType], key: null, type: L.pickType, label: BUILDINGS[L.pickType] ? BUILDINGS[L.pickType].name : L.pickType, built: true } : null;
   if (!it) return null;
   const [w, h] = dimsOf(it, L.rot);
   const [gx, gy] = gridOfCell(b, x, y);
   const x0 = gx - Math.floor(w / 2), y0 = gy - Math.floor(h / 2);
-  const why = placeProblemAt(base, it, x0, y0, L.rot, occupancy(state, base, L.pick, null));
+  const skip = L.pick ? new Set([L.pick, ...hostedItems(state, base, it).map((o) => o.key)]) : null;
+  const occ = occupancy(state, base, skip, null);
+  const why = placeProblemAt(base, it, x0, y0, L.rot, occ) || reachProblem(state, base, it, [x0, y0, L.rot], occ, { skip }); // the hover's reason: layoutAct put / build refuse what is red here
   const cells = [];
   for (let yy = y0; yy < y0 + h; yy++) for (let xx = x0; xx < x0 + w; xx++) cells.push([xx + F.ox, yy + F.oy]);
   const doors = doorCellsOf(it, [x0, y0, L.rot]).map(([dx, dy]) => [dx + F.ox, dy + F.oy]);
-  return { cells, doors, ok: !why, why, at: [x0, y0, L.rot] };
+  return { cells, doors, ok: !why, why, at: [x0, y0, L.rot], type: it.type, fit: !!it.fit, host: it.fit || it.indoor ? floorHostAt(occ, x0, y0) : null };
 }
 // The item whose footprint covers a map cell in the view (a click on a placed thing picks it up), or null.
 export function itemAtCell(state, b, x, y) {
@@ -1448,15 +1962,70 @@ export function itemAtCell(state, b, x, y) {
   return null;
 }
 // Layout mode's commands (combat.js combatAct via deploy.js): pick an item, turn it, put it down at a map cell, lift
-// one off the map (back to the game's own spot), close the view. Returns an error, or "".
+// one off the map (back to the game's own spot), close the view; base building (2026-10-19): select a placed thing
+// (sel), pick a type to build (pickType), build it at a cell (queueBuild and the job placed at the ghost; a failed
+// placement cancels the job and returns why), open or close a doorway (link / unlink), pull a building down or cancel
+// a job (demolish). Returns an error, or "".
 export function layoutAct(state, b, act) {
   const L = b.layout;
   if (!L) return "Not the base map.";
   const base = state.bases.find((o) => o.id === L.baseId);
   if (!base) { state.combat = null; return ""; }
   switch (act.type) {
-    case "pick": L.pick = act.key && itemByKey(state, base, act.key) ? act.key : null; L.msg = ""; return "";
+    case "pick": L.pick = act.key && itemByKey(state, base, act.key) ? act.key : null; L.pickType = null; L.msg = ""; return "";
     case "rotate": L.rot = (L.rot + 1) & 3; return "";
+    case "select": L.sel = act.key && itemByKey(state, base, act.key) ? act.key : null; return "";
+    case "pickType": {
+      if (act.bt && !FOOT[act.bt]) return "That is not built on the map.";
+      L.pickType = act.bt || null; L.pick = null; L.rot = 0; L.msg = "";
+      return "";
+    }
+    case "build": {
+      if (!L.pickType) return "Pick something to build first.";
+      const bt = L.pickType, d = BUILDINGS[bt];
+      const g = ghostAt(state, b, Number(act.x), Number(act.y));
+      if (!g) return "Nothing to build.";
+      if (!g.ok) return g.why;
+      const opts = pieceOpts(base, bt);
+      const chk = canBuild(state, base, bt, opts);
+      if (!chk.ok) return chk.reason || "It cannot be built here now.";
+      const text = queueBuild(state, base, bt, opts);
+      const job = base.construction.filter((c) => c.type === bt && !c.target).pop();
+      if (!job) return text;
+      const err = placeItem(state, base, `c:${job.id}`, g.at[0], g.at[1], g.at[2]);
+      if (err) { cancelBuild(state, base, job.id); return err; }
+      L.msg = `${d && d.piece ? pieceName({ type: bt, ...opts }) : d ? d.name : bt} queued and placed${g.host ? " inside" : ""}: the builders will put it up there.`;
+      L.sel = `c:${job.id}`;
+      refreshBaseMap(state);
+      return "";
+    }
+    case "link": {
+      const err = linkBuildings(state, base, act.a, act.b);
+      if (err) return err;
+      L.msg = "A doorway opened between them.";
+      refreshBaseMap(state);
+      return "";
+    }
+    case "unlink": {
+      const err = unlinkBuildings(state, base, act.a, act.b);
+      if (err) return err;
+      L.msg = "The doorway is walled up again.";
+      refreshBaseMap(state);
+      return "";
+    }
+    case "demolish": {
+      const it = itemByKey(state, base, act.key);
+      if (!it || !it.rec) return "That is gone.";
+      let text;
+      if (it.key.startsWith("b:")) { const chk = canDemolish(state, base, it.rec.id); if (!chk.ok) return chk.reason; text = demolish(state, base, it.rec.id); }
+      else if (it.key.startsWith("c:")) text = cancelBuild(state, base, it.rec.id);
+      else return "Only a building or a job in the queue.";
+      if (L.pick === act.key) L.pick = null;
+      if (L.sel === act.key) L.sel = null;
+      L.msg = text;
+      refreshBaseMap(state);
+      return "";
+    }
     case "put": {
       if (!L.pick) return "Pick something to place first (the list on the right), or click a placed thing to move it.";
       const g = ghostAt(state, b, Number(act.x), Number(act.y));
@@ -1475,6 +2044,7 @@ export function layoutAct(state, b, act) {
       if (!it) return "That is gone.";
       unplaceItem(state, base, act.key);
       L.pick = act.key;
+      L.pickType = null;
       L.rot = it.at ? it.at[2] || 0 : 0;
       refreshBaseMap(state);
       state.combat.layout.msg = `${it.label} lifted: click where it goes (R turns it).`;
@@ -1492,6 +2062,26 @@ export function layoutAct(state, b, act) {
     case "endLayout": state.combat = null; return "";
     default: return "The base map: pick a building, field, defence or car and click where it goes.";
   }
+}
+// What can be built on the map (the layout panel's Build section, ui/basemap.js): every building type with a
+// footprint and every fitting, by group, each with whether it can go up now (canBuild) and why not.
+// A wall piece or gate built from the map is of the material the wall is mostly of (buildings.js ringMat: wood with
+// none); the Defenses tab picks another. A stand has no material.
+const pieceOpts = (base, bt) => (BUILDINGS[bt] && BUILDINGS[bt].piece && BUILDINGS[bt].piece !== "stand" ? { mat: ringMat(base) } : {});
+const MENU_GROUPS = ["General buildings", "Fittings", "Buildings", "Yard things", "Defences"];
+export function buildMenu(state, base) {
+  const out = [];
+  for (const [type, d] of Object.entries(BUILDINGS)) {
+    const f = FOOT[type];
+    if (!f || d.upgradeOnly) continue; // an upgrade in place (the reloading bench) is queued from the building it upgrades
+    const group = d.general ? "General buildings" : d.fit ? "Fittings" : f.kind === "defence" || WALL_KINDS.has(f.kind) ? "Defences" : f.kind === "prop" || f.kind === "pen" ? "Yard things" : "Buildings";
+    const opts = pieceOpts(base, type);
+    /** @type {any} */
+    const chk = canBuild(state, base, type, opts);
+    const piece = !!d.piece; // a wall piece, gate or stand: its material's name, cost and hours (buildings.js canBuildPiece)
+    out.push({ type, name: piece ? pieceName({ type, ...opts }) : d.name, group, w: f.w, h: f.h, cost: piece && chk.cost ? { ...chk.cost } : { ...d.cost }, hours: piece && chk.hours != null ? chk.hours : d.hours, ok: !!chk.ok, why: chk.ok ? "" : chk.reason || "", desc: d.desc || "" });
+  }
+  return out.sort((a, b) => MENU_GROUPS.indexOf(a.group) - MENU_GROUPS.indexOf(b.group)); // stable: BUILDINGS' order within a group
 }
 // The Base map tab's lines (ui/basemap.js): the grid, the yard, the walls and what is placed.
 export function baseMapSummary(state, base) {

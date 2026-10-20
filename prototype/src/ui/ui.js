@@ -143,6 +143,7 @@ import { describeActivity } from "../sim/activity.js"; // the find box also look
 import { pickBar, pickCard, ownBaseCard, groupBaseCard } from "./mapselect.js"; // teams, parties and bands selected on the map; a base's card
 import { defenceTab } from "./defence.js"; // the watch roster and the defence plan
 import { baseMapTab, moveCarButton } from "./basemap.js"; // the base map: what stands where on the base's own map (sim/basemap.js)
+import { storageTab } from "./storage.js"; // the Storage tab: the containers the base keeps its goods in (sim/containers.js over sim/basestorage.js)
 import { wallInfo, ringPlan, ringHalf, yardHalf } from "../sim/basemap.js"; // the wall pieces: whether they close round the base, what the ring still needs
 import { pieceCost, pieceHours, pieceName, matOf, ringMat, isPiece } from "../sim/buildings.js"; // the wall pieces' materials (Defenses tab)
 import { huntInfo, gameWord, fishKit, expectFish, fishLevel, snareLine, expectSnare, bestHuntWeapon, hunterMult, HUNT, frozenAt, meatAt, gameAbundance, partyHuntMix, huntMixOf, HUNT_METHODS, METHOD_NAMES } from "../sim/hunting.js";
@@ -1539,7 +1540,8 @@ const BASE_TABS = [
   ["workshops", "Workshops", "Base scavenging and workshop stations: who works where and what they produce"],
   ["buildings", "Buildings", "What is built here and the bonuses it gives"],
   ["construction", "Construction", "Build queue with timers, and what you can build"],
-  ["basemap", "Base map", "The base's own map: where every building, field, defence and parked car stands (the map a horde or a raid fights over); open it to place things by hand"],
+  ["basemap", "Base map", "The base's own map: where every building, field, defence and parked car stands (the map a horde or a raid fights over); open it to build on it and place things by hand"],
+  ["storage", "Storage", "Where the base keeps its goods: every container (the base itself, storage boxes, crates, the shed, the storehouse and warehouse, cellars, shelves and lockers, the armory, the cars parked here) with its room and what is kept in it; move things between them, tidy up; what the base has no room for lies outside, weathering, and raiders take it first"],
   ["fieldworks", "Field works", "Roadblocks, wells, watch towers, relay masts and stockpiles out on the base's land: plan them on the map, post lookouts, repair them"],
   ["armory", "Armory", "Stored gear and everyone's equipment at this base"],
   ["crafting", "Crafting", "Hand-made makeshift gear and supplies: craft queue, crafters and recipes (no station needed)"],
@@ -1556,7 +1558,7 @@ function baseModal(state, ui) {
   // A camp (sim/staging.js, the barest base): its own Camp tab first, and only the tabs a camp has use for.
   const tabs = isCamp(b) ? BASE_TABS.filter(([k]) => CAMP_TABS.includes(k)) : BASE_TABS.filter(([k]) => k !== "camp");
   const tab = tabs.some(([k]) => k === ui.baseView.tab) ? ui.baseView.tab : tabs[0][0];
-  const body = { camp: campTab, overview: baseOverview, food: foodChainTab, work: workTab, defence: defenceTab, farming: baseFarming, workshops: baseWorkshops, buildings: baseBuildings, construction: baseConstruction, basemap: baseMapTab, fieldworks: fieldWorksTab, armory: baseArmory, crafting: baseCrafting, vehicles: baseVehicles, convoys: baseConvoys, medical: baseMedical, repairs: repairsTab, prisoners: prisonTab }[tab](state, b, ui);
+  const body = { camp: campTab, overview: baseOverview, food: foodChainTab, work: workTab, defence: defenceTab, farming: baseFarming, workshops: baseWorkshops, buildings: baseBuildings, construction: baseConstruction, basemap: baseMapTab, storage: storageTab, fieldworks: fieldWorksTab, armory: baseArmory, crafting: baseCrafting, vehicles: baseVehicles, convoys: baseConvoys, medical: baseMedical, repairs: repairsTab, prisoners: prisonTab }[tab](state, b, ui);
   return `<div class="box wide basebox">
     <div class="spread"><input class="basename" data-action="baserename" data-base="${b.id}" maxlength="40" value="${esc(b.name)}"${tip("Click to rename this base (Enter to confirm)")}>${renameButton(b, "✎ Rename")}<span class="muted">${tierName(b)} · ${atBase(state, b.id).length} people · Day ${day(state)} ${clock(state)}</span></div>
     <div class="tabs">${tabs.map(([k, l, t]) => `<button data-action="basetab" data-tab="${k}" class="${tab === k ? "active" : ""}"${tip(t)}>${l}</button>`).join("")}</div>
@@ -1567,7 +1569,7 @@ function baseModal(state, ui) {
 }
 
 // The tabs a camp shows (BASE_TABS keys).
-const CAMP_TABS = ["camp", "overview", "food", "construction", "basemap", "armory", "vehicles", "crafting", "work", "medical"];
+const CAMP_TABS = ["camp", "overview", "food", "construction", "basemap", "storage", "armory", "vehicles", "crafting", "work", "medical"];
 
 // ---------- the camp (sim/staging.js) ----------
 // The Camp tab: the stage ladder and the step up (tierUpRows), what each stage opens up, the people at the camp, the
@@ -2124,7 +2126,7 @@ function baseConstruction(state, b, ui) {
     <div>
       <div class="tabs cx-tabs">${[["buildings", "Buildings", "Everything with a roof, the yard's utilities, fields"], ["defenses", "Defenses", "Walls (built up a tier at a time), wire, trenches, spike pits, sandbags, towers: every base has the first ones, and more open as the base grows"]].map(([k, l, t]) => `<button data-action="cxtab" data-tab="${k}" class="${cx === k ? "active" : ""}"${tip(t)}>${l}${badge(String(types.filter((e) => isDef(e) === (k === "defenses") && e[0] !== up && fit[e[0]].chk.ok).length), "muted", "Ready to build")}</button>`).join("")}</div>
       ${cx === "defenses" ? defensesPane(state, b, types.filter(isDef), fit, section, ui) : `
-      ${hint(`🔨 At this ${esc(here)}: <b>${readyAll}</b> ready to build${infoTip("Each list puts what can be built now first, then what is not yet (materials, skills, a free plot, the tier below, a manual); what this kind of base never takes is folded away at the bottom, with the stage it opens at. Click a list's title to fold it.")}`)}
+      ${hint(`🔨 At this ${esc(here)}: <b>${readyAll}</b> ready to build${infoTip("Each list puts what can be built now first, then what is not yet (materials, skills, a free plot, the tier below, a manual); what this kind of base never takes is folded away at the bottom, with the stage it opens at. Click a list's title to fold it.")}<span class="cx-right">${mapBuildBtn(b)}</span>`)}
       ${up && fit[up] && !fit[up].where ? section("stage", "Next stage", types.filter(([k]) => k === up), "", "The step up to the next stage of this base") : ""}
       ${section("buildings", "Buildings", types.filter(([k, d]) => d.plot === "building" && k !== up && d.tab !== "defenses"), freeText("building"), "Anything with a roof, on a building plot")}
       ${section("utilities", "Utilities", types.filter(([k, d]) => d.plot === "utility" && k !== up && d.tab !== "defenses"), freeText("utility"), "The small things in the yard, on a utility plot")}
@@ -2133,6 +2135,9 @@ function baseConstruction(state, b, ui) {
   </div>`;
 }
 
+// Build on the map (ui/basemap.js bm-open, base building 2026-10-19): the Buildings and Defenses panes open the base
+// map, whose Build list queues the same things where you click (a building queued here opens the map too: queuebuild).
+const mapBuildBtn = (b) => `<button class="mini" data-action="bm-open" data-base="${b.id}" data-tab="construction"${tip("Open the base map and build on it: pick a type from its Build list (general buildings, fittings, buildings, yard things, defences), its outline follows the mouse, a click where it fits queues it there. Close the map to come back here.")}>Open the base map to build</button>`;
 // Construction's Defenses tab (sim/buildings.js tab "defenses", the user's requests 2026-10-19): the walls on their
 // own card (the pieces, gates and stands, a material to build them of, the ring), then the defences by the size of
 // base each opens at (a camp, a shelter, an outpost, the main base), each list the Buildings tab's (section): what can
@@ -2140,7 +2145,7 @@ function baseConstruction(state, b, ui) {
 function defensesPane(state, b, list, fit, section, ui) {
   const lim = holdLimit(state, b);
   const groups = Object.keys(DEF_SIZE).map((size) => [size, list.filter(([k, d]) => !d.wall && !d.piece && (d.size || "outpost") === size)]).filter(([, l]) => l.length);
-  return `${hint(`🛡 Every base has the first defenses; more open as it grows (camp → shelter → outpost → main hub). Built defenses stand on the battle map when the base is attacked. Holds back about <b>${lim}</b> of the dead now.${infoTip("The hold limit (Defence tab): the wall's strength, everyone on guard and the defences' bonuses. Raiders meet the same wall, wire, trenches and towers on the battle map, and by the numbers.")}`)}
+  return `${hint(`🛡 Every base has the first defenses; more open as it grows (camp → shelter → outpost → main hub). Built defenses stand on the battle map when the base is attacked. Holds back about <b>${lim}</b> of the dead now.${infoTip("The hold limit (Defence tab): the wall's strength, everyone on guard and the defences' bonuses. Raiders meet the same wall, wire, trenches and towers on the battle map, and by the numbers.")}<span class="cx-right">${mapBuildBtn(b)}</span>`)}
     ${wallCard(state, b, ui)}
     ${groups.map(([size, l]) => section(`def:${size}`, `${DEF_SIZE_NAMES[size]}${size === "hub" ? "" : " and up"}`, l, sizeFits(b, size) ? "" : badge(opensAt(size), "muted"), sizeFits(b, size) ? `Defenses any ${DEF_SIZE_NAMES[size].toLowerCase()} or bigger base can build` : opensAt(size))).join("")}`;
 }

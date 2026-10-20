@@ -41,7 +41,8 @@
 import { personKey } from "./members.js"; // dice the same in every world on the seed
 import { ensureMembers, syncMembers, placeMembers, moveMember, removeMember } from "./members.js"; // a group's people (docs/adr/0001-ai-parity.md)
 import { kitOut } from "./loadouts.js"; // what each of them carries
-import { syncBuildings, spreadStores, gatherStores, loseBase, gainBase, stockAt } from "./groupbases.js"; // their bases as base objects
+import { syncBuildings, spreadStores, gatherStores, loseBase, gainBase, stockAt, homesOf } from "./groupbases.js"; // their bases as base objects
+import { autoStore } from "./containers.js"; // each base's goods put away in its containers, the same way as yours (ADR 0001)
 import { FOODS, foodIn, takeFood, payFood, giveFood, typedFood, typeGoods, typeStray, groupMix, ageCoarse, COARSE, foodText, addFoodsTo as addItemsTo, groupStartFood, groupFieldFood } from "./foods.js"; // the groups' food by type (coarse: no lots)
 import { groupFoodLand, groupTripLosses, groupWoodLand, groupHomeShare } from "./grouptrips.js"; // the groups' outdoor work, by the job trips' rules (coarsely)
 import { FACTION_TYPES, FACTION_COLORS, GEAR } from "./data.js";
@@ -161,6 +162,7 @@ export function peopleUp(state, f) {
   kitOut(state, f);
   syncBuildings(state, f); // groupbases.js: their bases as base objects, with the buildings they put up
   spreadStores(state, f); // and each outpost's stores out to it (its people's share)
+  for (const h of Object.values(homesOf(state, f))) autoStore(state, h); // containers.js: what came in today put away in each base's containers (nothing in or out of the books)
 }
 export const GROUP_BREAK = 3;
 export const groupBroken = (f) => !!f && f.pop <= GROUP_BREAK;

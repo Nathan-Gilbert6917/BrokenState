@@ -347,7 +347,8 @@ section("The Defenses tab");
   check(/a closed wall, mostly wooden wall/.test(def), "the Defence tab says what stands");
   piecesOf(h, ["wall"])[0].wear = 75;
   const rep = plain(renderModal(st, ui({ id: h.id, tab: "repairs" })));
-  check(/Wall: \d+ pieces in good order/.test(rep) && /Wooden wall 1×4/.test(rep), "the Repairs tab: the sound pieces on one row, the worn one on its own");
+  // (Merged with the repair orders: the pieces have no rows of their own in the Repairs table, one row for the wall.)
+  check(/The wall\s*\d+ pieces/.test(rep) && /1 segment to mend/.test(rep) && /Repair the wall/.test(rep) && !/Wooden wall 1×4/.test(rep), "the Repairs tab: one row for the wall (its pieces, the segment to mend, Repair the wall), no row a piece");
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
