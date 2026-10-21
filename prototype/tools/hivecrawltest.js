@@ -18,6 +18,7 @@ import { launchExpedition } from "../src/sim/parties.js";
 import { setAutopilot } from "../src/sim/autopilot.js";
 import * as HC from "../src/sim/hivecrawl.js";
 import { inGrid } from "../src/sim/citygrid.js";
+import { starterMags } from "../src/sim/carrykit.js"; // a colonist's spare magazines
 
 const SEED = Number(process.argv[2] || 7);
 let passed = 0, failed = 0;
@@ -41,6 +42,7 @@ function squad(st, hv, { n = 6, weapon = "ar", armor = "plate", shoot = 9, steal
     s.gear.weapon = { key: weapon, name: GEAR[weapon].name, quality: 1 };
     s.gear.armor = armor ? { key: armor, name: GEAR[armor].name, quality: 1 } : null;
     s.health = 100;
+    starterMags(s); // physical rounds (mags.js, 2026-10-18): a Reload draws only on what the person carries, so a rifle with no spare magazine fires its 30 and stops; a colonist's starting spares, as hiveplustest's squad
     st.survivors.push(s);
     people.push(s);
   }
@@ -329,8 +331,9 @@ console.log("In the chambers");
       HC.moveTo(s3, q, way[0]);
       steps++;
     }
-    if (q.hiveCrawl && c3.enc && c3.enc.room === outBy) {
-      check(HC.encounterOptions(s3, q).some((o) => o.id === "out"), `at the ${HC.mouthSide(d3, outBy)} mouth its brood is in the way, and Get out of the hive is there`);
+    // The mouth's brood fought, the hot mouth may draw a swarm on its heels (converge, the hour's roll on the shared clock: the dice move with the world's other hours, noidle.js 2026-10-20): each fought in turn.
+    for (let g = 0; g < 4 && q.hiveCrawl && c3.enc && c3.enc.room === outBy; g++) {
+      check(HC.encounterOptions(s3, q).some((o) => o.id === "out"), `at the ${HC.mouthSide(d3, outBy)} mouth ${c3.enc.kind === "swarm" ? "a swarm" : "its brood"} is in the way, and Get out of the hive is there`);
       HC.resolveHiveEnc(s3, q, "numbers");
     }
     const act = q.hiveCrawl ? HC.roomActions(s3, q).find((a) => a.id === "out") : null;
@@ -468,9 +471,10 @@ console.log("The autopilot");
   const clear = den.rooms.filter((r) => hv.denMem.rooms[r.id] && hv.denMem.rooms[r.id].left === 0).length;
   check(c.deepest >= 2 && !p.hiveCrawl && (st.parties.includes(p) || !st.hives.includes(hv)), `a deep hive (${den.depth} deep): the team got ${c.deepest} chambers in and came out (${c.kills} killed, ${clear} chambers clear behind it)`);
   // Turned back, it walks out on its own (leaving is a walk, 2026-10-13): a chamber a step to the nearest, safest
-  // mouth, and out by it.
+  // mouth, and out by it. Turned back by c.headOut: spent in a fight (a swarm on its heels) it falls back from the
+  // encounter and heads out with no "turns back" line, which comes only from a chamber (turnBack).
   const outLine = (st.log.find((l) => /Out of .* by its \w+ mouth/.test(l.text)) || {}).text || "";
-  check(!st.hives.includes(hv) || (!!outLine && c.log.some((l) => /turns back/.test(l.text))), `... turned back, it walked out by a mouth on its own: "${outLine.slice(0, 90)}"`);
+  check(!st.hives.includes(hv) || (!!outLine && !!c.headOut), `... turned back, it walked out by a mouth on its own: "${outLine.slice(0, 90)}"`);
   let walked = 0, outs = 0;
   for (let s = 0; s < 6; s++) {
     const { st: s5, hv: h5 } = world(SEED + 30 + s, 900, 100);
