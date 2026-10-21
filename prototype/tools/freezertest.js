@@ -10,6 +10,7 @@
 // coarse fuel, breaks it and repairs it with parts its workshop made (kept for the machines: the earmark); 10-day governor runs keeping the freezer on with
 // nobody operating the generator; and a 120-day governor run with nothing NaN or negative.
 // Usage: node tools/freezertest.js [days for the governor run] [seeds...]
+import { stockTools } from "./toolset.js"; // every tool a build or recipe can need (toolreqs.js)
 import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, tickHour, hub, atBase, day } from "../src/sim/world.js";
 import { addBuilding, canBuild, queueBuild, constructionHour, BUILDINGS, recipeOutput, CANNER, count, countAll, demolishRefund, canUpgradeKitchen, queueCannerUpgrade, cancelBuild, buildRate, stations } from "../src/sim/buildings.js";
@@ -35,7 +36,7 @@ const govDays = Number(process.argv[2] || 120);
 const seeds = process.argv.length > 3 ? process.argv.slice(3).map(Number) : [11];
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
-const W = (seed = 42) => { const st = createWorld({ seed, factionCount: 6 }); st.started = true; return st; };
+const W = (seed = 42) => { const st = createWorld({ seed, factionCount: 6 }); st.started = true; stockTools(hub(st)); return st; }; // every tool (toolset.js)
 const at8 = (st) => { st.hour = Math.ceil(st.hour / 24) * 24 + 8; }; // 08:00 of the next day
 function quietHub(st, { refrig = true } = {}) {
   const h = hub(st);
