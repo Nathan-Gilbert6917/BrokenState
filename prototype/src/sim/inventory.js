@@ -73,11 +73,11 @@ export const ZOMBIE_PACKS = ["slingbag", "slingbag", "backpack"];
 // The dead who were survivors (the user's request 2026-10-21: "increase loot spawn of zombies being previous survivors
 // with gear on them like side arms ammo melee packs and survival items"): ZSURV.chance of the plain dead (not a dead
 // soldier, a dead beast or a boss) turned with their kit still on them, each part on its own chance: a side arm on the
-// belt with a box of its rounds, a melee weapon, a pack with survival things in it, earplugs, food, water, meds. On
+// belt with a box of its rounds, a melee weapon, a pack with survival things in it, earplugs, food, water. On
 // dice of their own (foodDice: hashed from the dice's position and the body), so no other roll in the world moves.
 export const ZSURV = {
   on: true, // a test switch (tools/itemcondtest.js: the bodies' baseline from before them)
-  chance: 0.18, sidearm: 0.4, rounds: [4, 14], melee: 0.5, pack: 0.45, stuff: [2, 4], ears: 0.1, food: 0.4, water: 0.3, meds: 0.2,
+  chance: 0.18, sidearm: 0.4, rounds: [4, 14], melee: 0.5, pack: 0.45, stuff: [2, 4], ears: 0.1, food: 0.4, water: 0.3, // no meds: they stay rare (tools/medstest.js); the packs carry bandages and tourniquets
   SIDEARMS: ["pistol", "pistol", "compact9", "revolver", "pistol22", "pistol45", "snub38", "service38"],
   MELEE: ["knife", "knife", "huntknife", "survivalknife", "combatknife", "hatchet", "machete", "bat", "hammer", "kukri", "golfclub", "pocketknife"],
   PACKS: ["backpack", "backpack", "hikingpack", "slingbag"],
@@ -107,7 +107,6 @@ export function survivorDead(rng, tag = 0, ztype = null) {
   if (d.chance(ZSURV.ears)) out.ears = item(d.chance(0.7) ? "earplugs" : "earmuffs");
   if (d.chance(ZSURV.food)) Object.assign(out.sup, typedFood(null, "travel", 1, { rng: foodDice(d, 0x70f) }));
   if (d.chance(ZSURV.water)) out.sup.water = (out.sup.water || 0) + 1;
-  if (d.chance(ZSURV.meds)) out.sup.meds = (out.sup.meds || 0) + 1;
   return out;
 }
 // Their kit onto a body (enemyBody): the belt, the pack, the ears in their slots (or stowed), the supplies.

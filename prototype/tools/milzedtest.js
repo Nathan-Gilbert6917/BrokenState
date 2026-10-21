@@ -22,7 +22,8 @@ import { applyZType, ZKINDS, battleTypes, mixList, typeStrength, mixWeight } fro
 import { MILDEAD, ARMORED, armorVs, siteDeadMix, hordeMilitaryPickup, bodyLoot } from "../src/sim/deadsoldiers.js";
 import { createBattle, enemyUnit, damage, WEAPONS, registerCombatHandler, autoPlayerTurn, runEnemyPhase, closeCombat, active, ZOMBIE_MOVE, combatAct, CRIT_MULT, CRIT, meleeOdds, shotOdds } from "../src/sim/combat.js";
 import { raidEnemies } from "../src/sim/scavenge.js";
-import { enemyBody, newItem, deadBodyFinds, allItems } from "../src/sim/inventory.js";
+import { enemyBody, newItem, deadBodyFinds, allItems, ZSURV } from "../src/sim/inventory.js";
+import { isSidearmKey } from "../src/sim/holsters.js";
 import { launchExpedition } from "../src/sim/parties.js";
 import { makeHorde } from "../src/sim/hordes.js";
 import { landEffect } from "../src/sim/throwables.js";
@@ -216,9 +217,18 @@ section("Their bodies (deadsoldiers.js bodyLoot; inventory.js enemyBody, deadBod
   const pct = (k) => Math.round(((tally[k] || 0) / n) * 100);
   check(pct("vest") + pct("plate") >= 30 && pct("milhelmet") >= 25 && totalRounds(sup) / n >= 3, `a dead soldier's body (${n}): a vest ${pct("vest")}%, a plate carrier ${pct("plate")}%, a combat helmet ${pct("milhelmet")}%, an assault rifle ${pct("ar")}%, a carbine ${pct("carbine")}%, a radio ${pct("milradio")}%, a smoke grenade ${pct("smokegren")}%; ${r2(totalRounds(sup) / n)} rounds a body`);
   check(armorQ / armorN < 0.7, `the armour on them is worn: ${Math.round((armorQ / armorN) * 100)}% condition on average`);
-  const zf = { items: 0, ammo: 0, pistol: 0 };
-  for (let i = 0; i < n; i++) { const f = deadBodyFinds(rng, null); zf.items += f.gear.length; zf.ammo += totalRounds(f.sup); zf.pistol += f.gear.some((g) => g.key === "pistol") ? 1 : 0; }
-  check(zf.items / n < 0.45 && zf.ammo / n < 1.5 && zf.pistol / n < 0.04, `one of the ordinary dead (raid body): ${r2(zf.items / n)} items, ${r2(zf.ammo / n)} rounds a body, a pistol ${Math.round((zf.pistol / n) * 1000) / 10}% (a bonus, not the loot)`);
+  // The pockets' finds alone (the former survivors' kit off: inventory.js ZSURV), then with it (the user's request
+  // 2026-10-21: more loot on the dead who were survivors), still well short of a raider's body.
+  const zfOf = (on) => {
+    const zf = { items: 0, ammo: 0, pistol: 0 };
+    ZSURV.on = on;
+    for (let i = 0; i < n; i++) { const f = deadBodyFinds(rng, null, null, i); zf.items += f.gear.length; zf.ammo += totalRounds(f.sup); zf.pistol += f.gear.some((g) => isSidearmKey(g.key)) ? 1 : 0; }
+    ZSURV.on = true;
+    return zf;
+  };
+  const zf = zfOf(false), zs = zfOf(true);
+  check(zf.items / n < 0.45 && zf.ammo / n < 1.5 && zf.pistol / n < 0.04, `one of the ordinary dead (raid body), their pockets: ${r2(zf.items / n)} items, ${r2(zf.ammo / n)} rounds a body, a pistol ${Math.round((zf.pistol / n) * 1000) / 10}% (a bonus, not the loot)`);
+  check(zs.items > zf.items && zs.items / n < 1 && zs.ammo / n < 3.5 && zs.pistol / n > zf.pistol / n && zs.pistol / n < 0.15, `with the ones who were survivors: ${r2(zs.items / n)} items, ${r2(zs.ammo / n)} rounds a body, a handgun ${Math.round((zs.pistol / n) * 1000) / 10}% (more, still a bonus)`);
   check(GEAR.milhelmet && GEAR.milhelmet.slot === "head", "the combat helmet is an item (head slot)");
   const rl = { riothelmet: 0 };
   for (let i = 0; i < 500; i++) for (const g of bodyLoot(rng, "riot", newItem).gear) rl[g.key] = (rl[g.key] || 0) + 1;

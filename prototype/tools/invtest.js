@@ -345,8 +345,9 @@ section("Death sites and captives");
   const s = person();
   s.gear.weapon = item("pistol");
   const l1 = stow(s, item("knife"));
-  const l2 = stow(s, item("machete"));
-  check(/pocket/.test(l1) && l2 === "", "stow: a knife goes to a pocket; a machete with full hands and no pack has nowhere to go");
+  const l2 = stow(s, item("knife"));
+  const l3 = stow(s, item("machete"));
+  check(/:melee$/.test(l1) && /pocket/.test(l2) && l3 === "", "stow: with full hands a knife goes on the belt (holsters.js), a second one to a pocket; a machete with the belt taken and no pack has nowhere to go");
 }
 
 // ---------- combat with the new model ----------

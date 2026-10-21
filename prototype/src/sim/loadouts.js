@@ -18,6 +18,7 @@ import { ensureArsenal, isThrowKey, isKitThrowKey, isNonlethalKey, isSelfAidKey,
 import { skill } from "./world.js"; // who of a party takes a med kit, a crowbar, a hunting rifle
 import { ensureMembers, homeMembers, fighterScore, isWounded, carriers, stripRegistry, HOME_SHARE } from "./members.js";
 import { isEarKey, earGearOf, earSlotReason } from "./helmets.js";
+import { holsterReason } from "./holsters.js";
 import { WEAPONS } from "./combat.js";
 import { carriedSpots } from "./inventory.js";
 import { calOf, gunLoads, settleGroup } from "./ammo.js";
@@ -215,7 +216,7 @@ const isHuntKey = (k) => !!(GEAR[k] && GEAR[k].slot === "weapon" && WEAPONS[k] &
 const isMeleeKey = (k) => !!(GEAR[k] && GEAR[k].slot === "weapon" && GEAR[k].cat === "melee" && WEAPONS[k]);
 const bySkill = (key) => (s) => skill(s, key);
 // to: "stow" (the default), "tool" (the off hand when it is free, else stowed), "back" (worn when the back is free),
-// "side" (the off hand of one holding a gun), "hand" (in the hands, their own weapon to the off hand or stowed).
+// "side" (the melee slot of one holding a gun, else the off hand), "hand" (in the hands, their own weapon to the off hand or stowed).
 // each: so many a head going; n: so many for the party. keep: the home's share of the group's own. by: who first.
 export const JOB_KIT = {
   raid: [
@@ -316,7 +317,9 @@ function putOn(f, s, it, to = "stow") {
   if (to === "tool" && !g.tool) { g.tool = it; return true; }
   if (to === "side") {
     const gun = g.weapon && WEAPONS[g.weapon.key] && GEAR[g.weapon.key] && GEAR[g.weapon.key].cat !== "melee";
-    if (!gun || g.tool) return false;
+    if (!gun) return false;
+    if (!g.melee && !holsterReason(it, "melee")) { g.melee = it; return true; } // holsters.js: on the belt, drawn for an action in a fight
+    if (g.tool) return false;
     g.tool = it;
     return true;
   }
