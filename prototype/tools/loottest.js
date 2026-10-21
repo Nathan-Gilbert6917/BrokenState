@@ -62,6 +62,7 @@ for (const [t, f] of Object.entries(CART_FINDS)) addAll(Object.keys(f.items), `c
 for (const [t, f] of Object.entries(WARE_CARTS)) addAll(Object.keys(f.items), `sold:${t}`);
 for (const [t, f] of Object.entries(TENT_FINDS)) addAll(Object.keys(f.items), `tentfind:${t}`); // tent bags (data-tents.js; tents.js)
 for (const [a, f] of Object.entries(AREA_TENTS)) addAll(Object.keys(f.items), `raid:${a}`);
+addAll(["canvas"], "tent:wrecked"); // a wrecked or burned tent taken down in a fight leaves its canvas (tentfight.js takeResult)
 for (const [t, f] of Object.entries(GUNMOD_FINDS)) addAll(Object.keys(f.items), `modfind:${t}`); // gun attachments (gunmods.js)
 for (const [a, f] of Object.entries(AREA_GUNMODS)) addAll(Object.keys(f.items), `raid:${a}`);
 for (const [t, f] of Object.entries(WARE_GUNMODS)) addAll(Object.keys(f.items), `sold:${t}`);
