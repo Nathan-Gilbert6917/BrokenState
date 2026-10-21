@@ -116,7 +116,9 @@ import { cfgOf } from "./worldcfg.js"; // the run's dials: Food spoilage
 
 // ---------- the table ----------
 // pack: units a pack slot holds, pocket: units a pocket holds (0: never there). kg: per unit (food: FOOD_KG a day,
-// meat: MEAT_KG a day).
+// meat: MEAT_KG a day). both: carried in both arms only, up to `hands` units a person (building materials and metal
+// sheets, the user's call 2026-10-21: "carried by the carried slot with two hands … stacked up to 4"): they fill both
+// hands (handsCount), and nobody holds more than `hands` of them (settleHold, roomAt, raidloot.js planSupply).
 export const HOLD = {
   water:     { pack: 2,  pocket: 1, name: "purified water" },
   rawwater:  { pack: 2,  pocket: 1, name: "un-purified water" },
@@ -128,8 +130,12 @@ export const HOLD = {
   parts:     { pack: 1,  pocket: 0, name: "machine parts" },
   scrap:     { pack: 1,  pocket: 0, name: "scrap" },
   carparts:  { pack: 0,  pocket: 0, name: "car parts" },
-  buildmat:  { pack: 0,  pocket: 0, name: "building materials" }, // lumber and blocks: in the arms or a vehicle
+  buildmat:  { pack: 0,  pocket: 0, hands: 4, both: true, name: "building materials" }, // lumber and blocks: in both arms or a vehicle
+  metalsheet: { pack: 0, pocket: 0, hands: 4, both: true, name: "metal sheets" },      // 6 kg a sheet: four is an armful (24 kg)
 };
+// A supply carried in both arms only (HOLD both), and the most of it one person holds.
+export const bothArms = (k) => !!(HOLD[k] && HOLD[k].both);
+export const armsCap = (k) => (HOLD[k] && HOLD[k].hands > 0 ? HOLD[k].hands : Infinity);
 // In the order they are packed: water and food in the packs first, the bulky stuff last (it ends up in the arms).
 export const HOLD_KEYS = Object.keys(HOLD);
 export const HANDS_KG = 25;     // what one person carries in their arms before counting as overloaded
@@ -338,7 +344,7 @@ function placeLoose(h, members, loose, car, rack) {
     for (const s of order) {
       if (!(loose[k] > EPS)) break;
       const rec = h.by[s.id].hands;
-      const n = Math.min(loose[k], Math.max(0, HANDS_KG - armsKg(s)) / unitKg(k));
+      const n = Math.min(loose[k], Math.max(0, HANDS_KG - armsKg(s)) / unitKg(k), Math.max(0, armsCap(k) - (rec[k] || 0)));
       if (n > EPS) { add(rec, k, n); loose[k] -= n; }
     }
     if (loose[k] > EPS && order.length) {
@@ -534,7 +540,7 @@ export function roomAt(state, p, w, k) {
   const s = survivorById(state, w.sid);
   const rec = h.by[w.sid] && h.by[w.sid][w.place];
   if (!s || !rec) return 0;
-  if (w.place === "hands") return cartOf(s) || s.cartHelp != null ? 0 : Math.max(0, HANDS_KG - kgOf(rec) - bagKg(s)) / unitKg(k); // a cart's pusher: hands on the handles
+  if (w.place === "hands") return cartOf(s) || s.cartHelp != null ? 0 : Math.min(Math.max(0, HANDS_KG - kgOf(rec) - bagKg(s)) / unitKg(k), Math.max(0, armsCap(k) - (rec[k] || 0))); // a cart's pusher: hands on the handles; building materials and metal sheets: up to 4 a person
   if (w.place === "cart") return cartOf(s) ? Math.max(0, cartFree(cartOf(s)) - kgOf(rec)) / unitKg(k) : 0;
   return roomFor(rec, k, w.place, slotsOf(s, w.place));
 }
@@ -846,13 +852,14 @@ export const handsBusy = (u) => armsBusy(u) || haulBusy(u);
 // How many different things fill the hands: each kind of supply in the arms, the bag, each item and each kind of
 // supply carried loose. Two or more: both hands full (handsTakeRefusal). A cart pushed takes both hands, helping to
 // pull one a hand (carts.js); a twoHands thing (the fire safe, the rifle case: inventory.js isTwoHands) both hands,
-// each one of them.
+// each one of them; an armful of building materials or metal sheets (HOLD both) both hands.
 export function handsCount(u) {
   if (!u) return 0;
-  let n = Object.values(u.hands || {}).filter((q) => q > EPS).length + (u.bag ? (isCart(u.bag) || isTwoHands(u.bag) ? 2 : 1) : 0) + (u.cartHelp != null ? 1 : 0);
+  const kinds = (rec, min) => Object.entries(rec || {}).reduce((a, [k, q]) => a + (q >= min - EPS && q > EPS ? (bothArms(k) ? 2 : 1) : 0), 0);
+  let n = kinds(u.hands, 0) + (u.bag ? (isCart(u.bag) || isTwoHands(u.bag) ? 2 : 1) : 0) + (u.cartHelp != null ? 1 : 0);
   if (u.haul) {
     const keys = new Set(u.haul.gear.filter((it) => !isTwoHands(it)).map((it) => it.key));
-    n += keys.size + 2 * u.haul.gear.filter(isTwoHands).length + Object.values(u.haul.sup).filter((v) => v >= HAUL_MIN - EPS).length;
+    n += keys.size + 2 * u.haul.gear.filter(isTwoHands).length + kinds(u.haul.sup, HAUL_MIN);
   }
   return n;
 }

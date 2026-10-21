@@ -46,7 +46,7 @@ const setSkill = (people, k, v) => people.forEach((s) => (s.skills[k] = v, s.tra
   setSkill(ppl, "mechanics", 0);
   h.stock.scrap = 0;
   check(!canCraft(st, h, "spikedbat").ok && /scrap/.test(canCraft(st, h, "spikedbat").reason), "no scrap blocks a craft");
-  h.stock.scrap = 200; h.stock.parts = 20; h.stock.meds = 20; h.stock.water = 50;
+  h.stock.scrap = 200; h.stock.parts = 20; h.stock.meds = 20; h.stock.water = 50; h.stock.metalsheet = 5;
   check(canCraft(st, h, "spikedbat").ok, "spiked bat needs no skill");
   check(/Mechanics 3/.test(canCraft(st, h, "sawmachete").reason || ""), "saw-blade machete needs Mechanics 3");
   ppl[0].skills.mechanics = 8;

@@ -24,6 +24,7 @@ import { MINES } from "./mines.js"; // a minefield's mines (call-time only)
 import { baseCarts, CART_JOB } from "./carts.js"; // a cart at the base: a builder hauls the materials faster (call-time only)
 import { woodNeed } from "./woodcutting.js"; // the Ring wall leaves the wood for heating (call-time only)
 import { carryPlacement, fittingRoom, fittingsIn, wallInfo, ringPlan, ensureRing, siteWaits, finishClear, clearUnder, autoLayout, pinAuto, FOOT } from "./basemap.js"; // the base map (call-time only): a finished job's building keeps the spot it was placed on; a general building with room for a fitting; the fittings inside one; the wall pieces' ring
+import { withBuildmat, siteShort, payCost, siteCost, SITE_MAKE, MADE_KEYS, madeText } from "./buildmats.js"; // building materials in every build, metal sheets in the roofed and reinforced ones (made on site from scrap when short)
 import { BED_BUILDINGS } from "./data-beds.js"; // beds as furniture: the placed cot, bed, bunk bed and large bed (beds.js)
 import { TENT_TYPES, TENT_S } from "./data-tents.js"; // the one tent table (TENTS below)
 import { strikeTentAtBase } from "./tents.js"; // a bag's tent pulled down: struck back into its bag (call-time only)
@@ -348,6 +349,23 @@ export const BUILDINGS = {
 };
 Object.assign(BUILDINGS, BED_BUILDINGS); // beds as furniture (data-beds.js, beds.js): set from the stores inside a general building, never queued
 
+// ---------- building materials and metal sheets (buildmats.js; the user's calls 2026-10-21) ----------
+// Every building, defence and upgrade takes building materials, by its size (buildmats.js withBuildmat: one for every
+// 12 scrap's worth, the scrap they stand for taken off); the ones with a tin or steel roof, steel cladding, plate or
+// steel doors take metal sheets as well (SHEETS, 5 scrap off a sheet). Not the wall cells (their material is the wall:
+// WALL_TIERS, the metal-sheet wall's are sheets), the sandbags (sacks and dirt), a makeshift tent (poles and a tarp),
+// the fittings inside a building (fit) or the beds (furniture). What the stores lack of either, the builders make on
+// site from scrap (canBuild, queueBuild: buildmats.js siteCost), so a base with the scrap builds as before.
+export const SHEETS = {
+  workbench: 1, toolbench: 2, machine_shop: 2, garage: 3, storehouse: 2, shed: 1, warehouse: 4, armory: 2, // roofs, steel doors and cladding
+  gate: 2, guard_towers: 2, watchtower: 1, // plate on the gate, the towers' and the watchtower's roofs and shields
+  cells: 1, jailhouse: 2, radio: 1, relay: 1, generator: 1, freezer: 2, coldstore: 1,
+  bunkhouse: 1, barracks: 2, common_room: 1, canteen: 1, kitchen: 1, field_hosp: 1, clinic: 2, hospital: 3,
+  gen_cabin: 1, gen_lodge: 1, gen_hall: 2, gen_barn: 3,
+};
+const NO_BUILDMAT = new Set(["sandbag1", "tent", "walls", "wall1", "wall2", "wall4", "clear", "cots"]);
+for (const [k, d] of Object.entries(BUILDINGS)) if (d.cost && !NO_BUILDMAT.has(k) && !d.fit && !d.furniture) d.cost = withBuildmat(d.cost, SHEETS[k] || 0);
+
 // ---------- construction plots ----------
 // Every building stands on a plot, by the size of the base: building plots for anything with a roof (bunkhouses,
 // the storehouse, cellars, workshops, the hospital), utility plots for the small things in the yard (the boiler, water
@@ -401,6 +419,7 @@ export const WATER_BARREL = {
   ],
   holds: "rawwater", // what a new barrel holds (water.js RAW)
 };
+for (const T of WATER_BARREL.tiers) if (T && T.cost) T.cost = withBuildmat(T.cost); // building materials (buildmats.js)
 export const barrels = (base) => base.buildings.filter((b) => b.type === "water_barrel");
 export const barrelTier = (b) => Math.max(1, Math.min(WATER_BARREL.tiers.length - 1, b.tier || 1));
 export const barrelCap = (b) => WATER_BARREL.tiers[barrelTier(b)].cap;
@@ -414,7 +433,7 @@ export function canUpgradeBarrel(state, base, id) {
   const next = WATER_BARREL.tiers[barrelTier(b) + 1];
   if (!next) return { ok: false, reason: "Already a water tank (the top tier)" };
   if (base.construction.some((c) => c.target === id)) return { ok: false, reason: "An upgrade is already queued" };
-  for (const [k, v] of Object.entries(next.cost)) if ((base.stock[k] || 0) < v) return { ok: false, reason: `Needs ${v} ${keyWord(k)}` };
+  { const why = siteShort(base.stock, next.cost, keyWord); if (why) return { ok: false, reason: why }; }
   return { ok: true, next };
 }
 export function queueBarrelUpgrade(state, base, id) {
@@ -422,8 +441,8 @@ export function queueBarrelUpgrade(state, base, id) {
   if (!chk.ok) return chk.reason;
   const b = base.buildings.find((x) => x.id === id);
   const tier = barrelTier(b) + 1;
-  for (const [k, v] of Object.entries(chk.next.cost)) base.stock[k] -= v;
-  base.construction.push({ id: newId(), type: "water_barrel", target: id, tier, cost: { ...chk.next.cost }, progress: 0, hours: chk.next.hours });
+  const pay = payCost(base.stock, chk.next.cost);
+  base.construction.push({ id: newId(), type: "water_barrel", target: id, tier, cost: pay.paid, progress: 0, hours: chk.next.hours + pay.hours });
   return `${barrelName(b)} → ${chk.next.name} queued at ${base.name}.`;
 }
 // Purified or un-purified: switching only changes what the barrel keeps room for (water of the other kind in it now
@@ -439,7 +458,7 @@ export function setBarrelHolds(base, id, kind) {
 // { type: "barracks", target: the bunkhouse's id, cost }. The bunkhouse sleeps its 6 until the job is done, cannot be
 // pulled down meanwhile (canDemolish), and the job counts against the barracks' max (canBuild). The whole way costs a
 // little more than a new barracks (20 + 24 scrap, 2 parts, 30 + 30 work-hours): the price of the plot it saves.
-export const BARRACKS_UP = { cost: { scrap: 16, parts: 2, wood: 400 }, hours: 30 };
+export const BARRACKS_UP = { cost: withBuildmat({ scrap: 16, parts: 2, wood: 400 }, SHEETS.barracks), hours: 30 }; // its roof: the barracks' sheets
 export function canExpandBunkhouse(state, base, id) {
   const b = base && base.buildings.find((x) => x.id === id && x.type === "bunkhouse");
   if (!b) return { ok: false, reason: "That bunkhouse is gone" };
@@ -447,7 +466,7 @@ export function canExpandBunkhouse(state, base, id) {
   if (base.construction.some((c) => c.target === id)) return { ok: false, reason: "It is being expanded already" };
   const queued = base.construction.filter((c) => c.type === "barracks").length;
   if (countAll(base, "barracks") + queued >= BUILDINGS.barracks.max) return { ok: false, reason: `Limit reached (${BUILDINGS.barracks.max} barracks)` };
-  for (const [k, v] of Object.entries(BARRACKS_UP.cost)) if ((base.stock[k] || 0) < v) return { ok: false, reason: `Needs ${v} ${keyWord(k)}` };
+  { const why = siteShort(base.stock, BARRACKS_UP.cost, keyWord); if (why) return { ok: false, reason: why }; }
   const lock = buildLock(state, base, "barracks");
   if (lock) return { ok: false, reason: lock, locked: true };
   return { ok: true };
@@ -455,8 +474,8 @@ export function canExpandBunkhouse(state, base, id) {
 export function queueBunkhouseExpand(state, base, id) {
   const chk = canExpandBunkhouse(state, base, id);
   if (!chk.ok) return chk.reason;
-  for (const [k, v] of Object.entries(BARRACKS_UP.cost)) base.stock[k] -= v;
-  base.construction.push({ id: newId(), type: "barracks", target: id, cost: { ...BARRACKS_UP.cost }, progress: 0, hours: BARRACKS_UP.hours });
+  const pay = payCost(base.stock, BARRACKS_UP.cost);
+  base.construction.push({ id: newId(), type: "barracks", target: id, cost: pay.paid, progress: 0, hours: BARRACKS_UP.hours + pay.hours });
   return `Bunkhouse → barracks queued at ${base.name}.`;
 }
 
@@ -473,7 +492,7 @@ export function canUpgradeGenerator(state, base, id) {
   if (!next) return { ok: false, top: true, reason: `Already an ${GEN_TIERS[tier].name.toLowerCase()} (the top tier)` };
   if (base.construction.some((c) => c.target === id)) return { ok: false, queued: true, reason: "An upgrade is already queued" };
   if (b.broken) return { ok: false, reason: "Repair it first (Repairs tab)" };
-  for (const [k, v] of Object.entries(next.cost)) if ((base.stock[k] || 0) < v) return { ok: false, short: true, reason: `Needs ${v} ${keyWord(k)}`, next, tier: tier + 1 };
+  { const why = siteShort(base.stock, next.cost, keyWord); if (why) return { ok: false, short: true, reason: why, next, tier: tier + 1 }; }
   for (const [sk, lvl] of Object.entries(next.req || {})) if (!atBase(state, base.id).some((s) => skill(s, sk) >= lvl)) return { ok: false, reason: `Needs a ${SKILL_NAMES[sk] || sk} ${lvl}+ survivor here`, next, tier: tier + 1 };
   const lock = upgradeLock(state, `generator${tier + 1}`);
   if (lock) return { ok: false, locked: true, reason: lock, next, tier: tier + 1 };
@@ -483,8 +502,8 @@ export function queueGenUpgrade(state, base, id) {
   const chk = canUpgradeGenerator(state, base, id);
   if (!chk.ok) return chk.reason;
   const b = base.buildings.find((x) => x.id === id);
-  for (const [k, v] of Object.entries(chk.next.cost)) base.stock[k] -= v;
-  base.construction.push({ id: newId(), type: "generator", target: id, tier: chk.tier, cost: { ...chk.next.cost }, progress: 0, hours: chk.next.hours });
+  const pay = payCost(base.stock, chk.next.cost);
+  base.construction.push({ id: newId(), type: "generator", target: id, tier: chk.tier, cost: pay.paid, progress: 0, hours: chk.next.hours + pay.hours });
   return `${genName(b)} → ${chk.next.name} queued at ${base.name}.`;
 }
 
@@ -495,11 +514,11 @@ const ringJobName = (job) => { const T = WALL_TIERS[matOf({ mat: job.mat || job.
 const JOBNAME_REST = (job) => (job.target && job.type === "generator" ? `Upgrade a generator to ${GEN_TIERS[job.tier] ? `a ${GEN_TIERS[job.tier].name.toLowerCase()}` : "the next tier"}` : job.target && job.type === "barracks" ? "Expand a bunkhouse into a barracks" : job.target && job.type === "reload_bench" ? "Upgrade an ammo bench into a reloading bench" : job.target && job.type === "canner" ? "Fit a pressure canner to a preserving room" : job.target ?`Upgrade to ${WATER_BARREL.tiers[job.tier] ? WATER_BARREL.tiers[job.tier].name.toLowerCase() : "the next tier"}` : BUILDINGS[job.type].name);
 
 // ---------- demolishing ----------
-// Pulls a building down to free its plot: half its scrap, parts and electronics back (rounded down), and for a barrel half of its
+// Pulls a building down to free its plot: half its scrap, parts, electronics and metal sheets back (rounded down), and for a barrel half of its
 // upgrades' too. Not while the base is under attack, nor with an upgrade of it in the queue.
 export function demolishRefund(b) {
   const out = {};
-  const add = (cost) => { for (const [k, v] of Object.entries(cost || {})) if (k === "scrap" || k === "parts" || k === "electronics") out[k] = (out[k] || 0) + v; };
+  const add = (cost) => { for (const [k, v] of Object.entries(cost || {})) if (k === "scrap" || k === "parts" || k === "electronics" || k === "metalsheet") out[k] = (out[k] || 0) + v; };
   add(BUILDINGS[b.type].cost);
   if (b.type === "water_barrel") for (let t = 2; t <= barrelTier(b); t++) add(WATER_BARREL.tiers[t].cost);
   if (b.type === "kitchen" && b.canner) add(BUILDINGS.canner.cost); // machines-2: its pressure canner's half too
@@ -668,7 +687,10 @@ export const opensAt = (size) => `Opens at ${DEF_AT[size]}`;
 //   1 Wooden wall      2 strength,  60 hp (gate  80)  40 wood a section (gate 60 + a scrap), 2 work-hours  any base (a camp too)
 //   2 Log palisade     4 strength, 100 hp (gate 110)  64 wood (gate 90 + 2 scrap), 3 work-hours          a shelter and up
 //   3 Scrap-metal wall 8 strength, 160 hp (gate 150)  2 scrap, 4 work-hours                   an outpost or the main base
-//   4 Metal-sheet wall 12 strength, 240 hp (gate 200) 3 scrap, 1 building materials, 6 work-hours, Mechanics 3: the main base
+//   4 Metal-sheet wall 12 strength, 240 hp (gate 200) a metal sheet and a scrap, 6 work-hours, Mechanics 3: the main base
+// The gates and the stands take building materials (hinges, bars, ladders and fixings: buildmats.js withBuildmat, made
+// on site from scrap when the stores have none); the metal-sheet gate two sheets as well (the user's call 2026-10-21:
+// metal sheets for the metal wall upgrades).
 // (A main hub's ring is about 50 sections and 2 gates: some 2,100 wood in wood, 3,300 in logs, 110 scrap in scrap metal.)
 // woodwork (2026-10-20, the user's pick "Raise the wood costs for builds including walls"): a 1×4 of planks was 8
 // wood (0.8 kg); now 40, logs 64, the gates and stands with a scrap of hinges and nails: about 1.5 builder-days of
@@ -681,10 +703,11 @@ export const WALL_TIERS = [
   { key: "wood",  name: "Wooden wall",      gateName: "Wooden gate",      mat: "Wood",         strength: 2,  hp: 60,  gateHp: 80,  size: "camp",    cost: { wood: 40 },            gate: { wood: 60, scrap: 1 },          hours: 2, desc: "Planks nailed to posts sunk in the ground, sharpened along the top: cheap, and it keeps the dead back a while." },
   { key: "logs",  name: "Log palisade",     gateName: "Log gate",         mat: "Logs",         strength: 4,  hp: 100, gateHp: 110, size: "shelter", cost: { wood: 64 },            gate: { wood: 90, scrap: 2 },          hours: 3, desc: "Logs set upright in a ditch, lashed, pinned and spiked: a real wall." },
   { key: "scrap", name: "Scrap-metal wall", gateName: "Scrap-metal gate", mat: "Scrap metal",  strength: 8,  hp: 160, gateHp: 150, size: "outpost", cost: { scrap: 2 },            gate: { scrap: 4, parts: 1 },          hours: 4, desc: "Car doors, roofing and pallets welded and bolted onto steel posts." },
-  { key: "sheet", name: "Metal-sheet wall", gateName: "Metal-sheet gate", mat: "Metal sheets", strength: 12, hp: 240, gateHp: 200, size: "hub",     cost: { scrap: 3, buildmat: 1 }, gate: { scrap: 6, buildmat: 2, parts: 1 }, hours: 6, req: { mechanics: 3 }, desc: "Overlapping steel sheets bolted to a welded frame on a concrete footing: the strongest wall there is." },
+  { key: "sheet", name: "Metal-sheet wall", gateName: "Metal-sheet gate", mat: "Metal sheets", strength: 12, hp: 240, gateHp: 200, size: "hub",     cost: { metalsheet: 1, scrap: 1 }, gate: { metalsheet: 2, buildmat: 1, parts: 1 }, hours: 6, req: { mechanics: 3 }, desc: "Overlapping steel sheets bolted to a welded frame on a concrete footing: the strongest wall there is." },
 ];
 // A wall stand's cost and hours (a 1×4's; the smaller ones pay their share): no material, the same for every base.
-export const STAND = { cost: { wood: 50, scrap: 1 }, hours: 2 };
+export const STAND = { cost: withBuildmat({ wood: 50, scrap: 1 }), hours: 2 };
+for (const T of WALL_TIERS) if (T && !T.gate.buildmat) T.gate = withBuildmat(T.gate);
 export const WALL_DAMAGED = 2 / 3, LEGACY_WALL = 3;
 // ---------- wall pieces ----------
 export const isPiece = (type) => !!(BUILDINGS[type] && BUILDINGS[type].piece);
@@ -915,7 +938,7 @@ export function canUpgradeKitchen(state, base, id) {
   if (b.broken) return { ok: false, reason: "Repair it first (Repairs tab)" };
   if (base.construction.some((c) => c.target === id)) return { ok: false, reason: "It is being fitted already" };
   const item = cannerItem(base) >= 0;
-  if (!item) for (const [k, v] of Object.entries(BUILDINGS.canner.cost)) if ((base.stock[k] || 0) < v) return { ok: false, reason: `Needs ${v} ${keyWord(k)}` };
+  if (!item) { const why = siteShort(base.stock, BUILDINGS.canner.cost, keyWord); if (why) return { ok: false, reason: why }; }
   for (const [sk, lvl] of Object.entries(BUILDINGS.canner.req)) if (!atBase(state, base.id).some((s) => skill(s, sk) >= lvl)) return { ok: false, reason: `Needs a ${SKILL_NAMES[sk] || sk} ${lvl}+ survivor here` };
   return { ok: true, item };
 }
@@ -923,10 +946,10 @@ export function queueCannerUpgrade(state, base, id) {
   const chk = canUpgradeKitchen(state, base, id);
   if (!chk.ok) return chk.reason;
   /** @type {Object<string, number>} */ let cost = { ...BUILDINGS.canner.cost };
-  let item;
+  let item, more = 0;
   if (chk.item) { item = base.armory.splice(cannerItem(base), 1)[0]; cost = {}; } // the canner from the armory: no materials
-  else for (const [k, v] of Object.entries(cost)) base.stock[k] -= v;
-  base.construction.push({ id: newId(), type: "canner", target: id, cost, progress: 0, hours: BUILDINGS.canner.hours, item });
+  else { const pay = payCost(base.stock, cost); cost = pay.paid; more = pay.hours; }
+  base.construction.push({ id: newId(), type: "canner", target: id, cost, progress: 0, hours: BUILDINGS.canner.hours + more, item });
   return `A pressure canner for the preserving room queued at ${base.name}${chk.item ? " (the one in the armory)" : ""}.`;
 }
 // Saves from before (save.js, once): a canner kept in a base's armory is fitted to a preserving room there without
@@ -1071,7 +1094,8 @@ export function canBuildWall(state, base, opts = {}) {
   return { ...out, ok: true, gather: true }; // its materials are taken as they come in (gatherHour)
 }
 // The material a new ring is closed in when none is asked for (the governor): the best this base builds that its
-// stores cover now (the wood its heating needs kept back), else the one they cover most of.
+// stores cover now (the wood its heating needs kept back; the metal sheets and building materials they lack counted as
+// the scrap to make them on site: buildmats.js siteCost), else the one they cover most of.
 function bestRingMat(state, base, pieces) {
   const fits = (m) => sizeFits(base, WALL_TIERS[m].size) && !Object.entries(WALL_TIERS[m].req || {}).some(([sk, lvl]) => !atBase(state, base.id).some((s) => skill(s, sk) >= lvl));
   const keep = { wood: woodNeed(state, base).need };
@@ -1080,7 +1104,8 @@ function bestRingMat(state, base, pieces) {
     if (!fits(m)) continue;
     const cost = {};
     for (const type of pieces) for (const [k, v] of Object.entries(pieceCost(type, m))) cost[k] = (cost[k] || 0) + v;
-    const share = Math.min(...Object.entries(cost).map(([k, v]) => Math.max(0, (base.stock[k] || 0) - (keep[k] || 0)) / v));
+    const take = siteCost(base.stock, cost).take;
+    const share = Math.min(...Object.entries(take).map(([k, v]) => Math.max(0, (base.stock[k] || 0) - (keep[k] || 0)) / v));
     if (share >= 1) return m;
     if (share > bestShare) { best = m; bestShare = share; }
   }
@@ -1101,7 +1126,7 @@ export function canBuildPiece(state, base, type, opts = {}) {
   if (T && !sizeFits(base, T.size)) return { ok: false, mat, size: T.size, reason: `${T.mat}: ${opensAt(T.size).toLowerCase()}` };
   if (T) for (const [sk, lvl] of Object.entries(T.req || {})) if (!atBase(state, base.id).some((s) => skill(s, sk) >= lvl)) return { ok: false, mat, reason: `${T.mat}: needs a ${SKILL_NAMES[sk] || sk} ${lvl}+ survivor here` };
   const cost = pieceCost(type, mat || 1);
-  for (const [k, v] of Object.entries(cost)) if ((base.stock[k] || 0) < v) return { ok: false, mat, short: true, cost, reason: `Needs ${v} ${keyWord(k)}` };
+  { const why = siteShort(base.stock, cost, keyWord); if (why) return { ok: false, mat, short: true, cost, reason: why }; }
   return { ok: true, mat, cost, hours: pieceHours(type, mat || 1) };
 }
 
@@ -1143,7 +1168,7 @@ export function canBuild(state, base, type, opts = {}) {
   }
   if (type === "huntcabin" && cabinProblem(state, base)) return { ok: false, reason: `Hunting cabin: ${cabinProblem(state, base)}` };
   if (def.needsWall && !hasWall(base)) return { ok: false, reason: "Needs a wall closed round the base first (Walls, on this tab)" };
-  if (!def.gather) for (const [k, v] of Object.entries(def.cost)) if ((base.stock[k] || 0) < v) return { ok: false, reason: `Needs ${v} ${keyWord(k)}` }; // gather: taken as it comes in
+  if (!def.gather) { const why = siteShort(base.stock, def.cost, keyWord); if (why) return { ok: false, reason: why }; } // gather: taken as it comes in; building materials and sheets the stores lack made on site from scrap (buildmats.js)
   if (def.req) {
     for (const [sk, lvl] of Object.entries(def.req)) {
       if (!atBase(state, base.id).some((s) => skill(s, sk) >= lvl)) return { ok: false, reason: `Needs a ${SKILL_NAMES[sk] || sk} ${lvl}+ survivor here` };
@@ -1168,15 +1193,15 @@ export function queueBuild(state, base, type, opts = {}) {
     return `${chk.kind === "ring" ? `Ring wall queued at ${base.name}: ${chk.pieces.length} ${chk.def.mat.toLowerCase()} pieces, laid where the ring runs` : `${base.name}: ${chk.ids.length} wall pieces to be raised to ${chk.def.mat.toLowerCase()}`}. The materials are taken from the stores as they come in.`;
   }
   if (BUILDINGS[type].piece) { // a wall piece, gate or stand of a material: placed on the base map while it goes up
-    for (const [k, v] of Object.entries(chk.cost)) base.stock[k] -= v;
-    const job = { id: newId(), type, ...(chk.mat ? { mat: chk.mat } : {}), cost: { ...chk.cost }, progress: 0, hours: chk.hours };
+    const pay = payCost(base.stock, chk.cost); // building materials and sheets the stores lack: made on site from scrap (their hours on the job)
+    const job = { id: newId(), type, ...(chk.mat ? { mat: chk.mat } : {}), cost: pay.paid, progress: 0, hours: chk.hours + pay.hours };
     base.construction.push(job);
     return `${pieceName({ type, mat: chk.mat })} queued at ${base.name}.`;
   }
   if (BUILDINGS[type].gather) { base.construction.push(BUILDINGS[type].tierUp ? tierUpJobFor(base, type) : gatherJob(type)); return `${BUILDINGS[type].name} queued at ${base.name}: the materials are taken from the stores as they come in.`; }
-  for (const [k, v] of Object.entries(BUILDINGS[type].cost)) base.stock[k] -= v;
-  base.construction.push({ id: newId(), type, progress: 0, hours: BUILDINGS[type].hours });
-  return `${BUILDINGS[type].name} queued at ${base.name}.`;
+  const pay = payCost(base.stock, BUILDINGS[type].cost); // building materials and sheets the stores lack: made on site from scrap (their hours on the job)
+  base.construction.push({ id: newId(), type, progress: 0, hours: BUILDINGS[type].hours + pay.hours, cost: pay.paid });
+  return `${BUILDINGS[type].name} queued at ${base.name}${pay.hours ? ` (the builders make the ${madeText(pay.made)} from scrap first)` : ""}.`;
 }
 
 // Cancelling an untouched job refunds everything; a started one gives half back, rounded up (the same rule as
@@ -1239,33 +1264,44 @@ function gatherHour(state, base) {
   }
 }
 
-// A camp (isCamp) whose step up waits for building materials while its stores hold the scrap: its builders make them
-// there (the field recipe, crafting.js buildmat: CAMP.matScrap scrap and CAMP.matHours work-hours each), as a team
-// does on the road. The hour goes on that instead of the building. True when they worked on it.
-// The camp's step up waits for building materials its builders can make from the scrap here (noidle.js: builder work
-// though the job itself is waiting for its materials). Returns the step-up job or null.
-export function campMaterialsWork(base) {
-  if (!isCamp(base)) return null;
-  const job = tierUpJob(base);
-  if (!job || !job.paid || !gatherStalled(job)) return null;
-  const bm = gatherRows(job).find((r) => r.key === "buildmat" && !r.ok);
-  if (!bm || (base.stock.buildmat || 0) >= 1) return null;
-  const sc = gatherRows(job).find((r) => r.key === "scrap");
+// A job that gathers its materials (a camp's step up, a Ring wall with its gates, a metal-sheet wall) waiting for
+// building materials or metal sheets while the stores hold the scrap: its builders make them there (buildmats.js
+// SITE_MAKE: a building material CAMP.matScrap scrap and CAMP.matHours work-hours, as crafting.js buildmat and a team on
+// the road; a metal sheet 5 scrap and 4 work-hours), any base (the user's call 2026-10-21: building materials in every
+// build). The hour goes on that instead of the building. Returns the job (noidle.js: builder work though the job itself
+// is waiting for its materials) or null; siteMakeKey says which they make.
+const siteMakeKey = (base, job) => {
+  const rows = gatherRows(job);
+  const sc = rows.find((r) => r.key === "scrap");
   const scrapNeed = sc ? Math.max(0, sc.need - sc.have) : 0;
-  if ((base.stock.scrap || 0) - scrapNeed < CAMP.matScrap) return null; // the step up's own scrap first
-  return job;
+  for (const k of MADE_KEYS) {
+    if (!rows.some((r) => r.key === k && !r.ok) || (base.stock[k] || 0) >= 1) continue;
+    if ((base.stock.scrap || 0) - scrapNeed >= SITE_MAKE[k].scrap) return k; // the job's own scrap first
+  }
+  return null;
+};
+export function campMaterialsWork(base) {
+  if (!base || !base.construction) return null;
+  const up = tierUpJob(base);
+  for (const job of up ? [up, ...base.construction.filter((c) => c !== up)] : base.construction) {
+    if (!job.paid || !gatherStalled(job)) continue;
+    if (siteMakeKey(base, job)) return job;
+  }
+  return null;
 }
 function campMaterialsHour(state, base) {
   const job = campMaterialsWork(base);
   if (!job) return false;
   const rate = buildRate(state, base);
   if (rate <= 0) return false;
+  const k = siteMakeKey(base, job);
+  const M = SITE_MAKE[k];
   job.matWork = (job.matWork || 0) + rate;
-  if (job.matWork >= CAMP.matHours) {
-    job.matWork -= CAMP.matHours;
-    base.stock.scrap -= CAMP.matScrap;
-    base.stock.buildmat = (base.stock.buildmat || 0) + 1;
-    log(state, `${base.name}: the builders made building materials from scrap for the step up.`, "info");
+  if (job.matWork >= M.hours) {
+    job.matWork -= M.hours;
+    base.stock.scrap -= M.scrap;
+    base.stock[k] = (base.stock[k] || 0) + 1;
+    log(state, `${base.name}: the builders made ${k === "metalsheet" ? "a metal sheet" : "building materials"} from scrap for ${jobName(job).toLowerCase()}.`, "info");
   }
   return true;
 }

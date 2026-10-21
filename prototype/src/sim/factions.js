@@ -398,6 +398,7 @@ export function factionsDaily(state) {
     f.stock.fuel = Math.min(f.pop * 3 * cap, f.stock.fuel + hands * 0.04 * mk); // fuel is scarce (economy rework)
     // (No meds from nothing either: theirs come from the sites they strip, trade and the fields they hold, as yours.)
     f.stock.buildmat = Math.min(f.pop * 2 * cap, (f.stock.buildmat || 0) + hands * 0.03 * mk); // building materials (data.js): salvaged lumber and blocks, for their outpost camps (groupworks.js CAMP)
+    f.stock.metalsheet = Math.min(f.pop * cap, (f.stock.metalsheet || 0) + hands * 0.015 * mk); // metal sheets (data.js): roofing and car panels pulled off, for their roofs, plating and sheet-metal gear
     groupWorksDaily(state, f); // groupworks.js: the base starts bare; water, fields, quarters, walls, by need
     arsenalDaily(state, f); // arsenal.js: newcomers' weapons, makeshift weapons and explosives from their scrap
     groupCareDaily(state, f); // groupcare.js: the wounded heal (meds, medics), repairs at a workshop, food bought when short, desertion

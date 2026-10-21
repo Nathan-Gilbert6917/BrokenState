@@ -18,6 +18,7 @@ import { count, benchTier } from "./buildings.js";
 import { hasPerk, gainXp, USE, hash01 } from "./skills.js";
 import { newItem } from "./inventory.js";
 import { cfgOf } from "./worldcfg.js"; // the run's dials: Failures
+import { siteCost, payCost } from "./buildmats.js"; // a plating's metal sheets: made from scrap in the garage when the stores have none
 import { unloadVehicle } from "./arsenal.js"; // a group's vehicle unloaded into its stores (call-time only)
 
 // The hardcore start's cars (hardcore-start.js ARCHETYPES) added the SUV, the Hummer and the work van; anything that
@@ -439,16 +440,20 @@ export function repair(state, base, v) {
 // Every upgrade's weight comes off the payload (payloadOf: vehicleCapacity, load.js weighTeam): the full kit on a pickup
 // (glass 90 + plate 2 × 180) is 450 kg of its 650.
 // Built as garage jobs at a base (base.garage, garageHour): materials paid when queued, the work done by people on the
-// Craft role with the Mechanics level; stripping one refunds half its car parts, and glass comes out whole (a spare set
-// kept at the base, base.spareGlass, fitted again with no materials).
+// Craft role with the Mechanics level; stripping one refunds half its car parts and metal sheets, and glass comes out
+// whole (a spare set kept at the base, base.spareGlass, fitted again with no materials).
+// Metal sheets (the user's request 2026-10-21: "reinforced with metal like armor to cars"): the armour plate is six
+// sheets of steel bolted over the body, the scrap plating three among its scrap-steel plates; sheets the stores lack
+// are made from scrap in the garage (buildmats.js siteCost: 5 scrap and 4 work-hours each), so a base with the scrap
+// still fits them. A stripped car gives its plating's sheets back by half (stripYield: sheetPlates).
 // =====================================================================================================================
 // Part kinds (plan section 10): car parts are their own supply once it exists, plain parts until then.
 export const costOf = (kind) => (SUPPLIES[kind] ? kind : "parts");
 export const VEH_UPGRADES = {
   glass:      { name: "Bulletproof glass", slot: "windows", max: 1, cost: { carparts: 4, scrap: 12 }, hours: 16, mech: 5, kg: 90, shop: "garage" },
   mesh:       { name: "Mesh grilles", slot: "windows", max: 1, cost: { scrap: 8 }, hours: 6, mech: 2, kg: 30 },
-  plating:    { name: "Armour plate", slot: "plating", max: 2, cost: { carparts: 6, parts: 2, scrap: 40 }, hours: 24, mech: 6, kg: 180, fuel: 1.15, speed: 0.95, armour: 1, shop: "garage" },
-  scrapPlate: { name: "Scrap plating", slot: "plating", max: 1, cost: { carparts: 2, scrap: 30 }, hours: 12, mech: 3, kg: 230, fuel: 1.18, speed: 0.94, armour: 0.5, shop: "bench" },
+  plating:    { name: "Armour plate", slot: "plating", max: 2, cost: { carparts: 6, parts: 2, scrap: 10, metalsheet: 6 }, hours: 24, mech: 6, kg: 180, fuel: 1.15, speed: 0.95, armour: 1, shop: "garage" },
+  scrapPlate: { name: "Scrap plating", slot: "plating", max: 1, cost: { carparts: 2, scrap: 15, metalsheet: 3 }, hours: 12, mech: 3, kg: 230, fuel: 1.18, speed: 0.94, armour: 0.5, shop: "bench" },
 };
 export const TURRET_KG = { lmg: 60, m2hb: 90 };
 // Turrets (the user's rules, wave 2). The LMG turret is a garage job, the player's and the AI groups' alike: it takes an
@@ -480,6 +485,8 @@ export const upgradesOf = (v) => ({ glass: 0, mesh: 0, plating: 0, scrapPlate: 0
 export const hasUpgrades = (v) => { const u = upgradesOf(v); return !!(u.glass || u.mesh || u.plating || u.scrapPlate || u.turret); };
 // The armour level: real plate 1 a level, scrap plating half a level.
 export const armourOf = (v) => { const u = upgradesOf(v); return u.plating + 0.5 * u.scrapPlate; };
+// The metal sheets in its plating (stripYield gives half back).
+export const sheetPlates = (v) => { const u = upgradesOf(v); return u.plating * (VEH_UPGRADES.plating.cost.metalsheet || 0) + u.scrapPlate * (VEH_UPGRADES.scrapPlate.cost.metalsheet || 0); };
 export function upgradeKg(v) {
   const u = upgradesOf(v);
   return u.glass * VEH_UPGRADES.glass.kg + u.mesh * VEH_UPGRADES.mesh.kg + u.plating * VEH_UPGRADES.plating.kg + u.scrapPlate * VEH_UPGRADES.scrapPlate.kg + (u.turret ? TURRET_KG[u.turret.gun] || 60 : 0);
@@ -802,7 +809,8 @@ export function upgradeProblem(state, base, v, key, op = "fit") {
   if (!atBase(state, base.id).some((s) => skill(s, "mechanics") >= U.mech)) return `Needs a Mechanics ${U.mech}+ survivor here.`;
   if (!shopOk(base, U.shop)) return `Needs ${SHOP_TEXT[U.shop]} at this base.`;
   if (key === "glass" && (base.spareGlass || 0) > 0) return "";
-  for (const [k, q] of Object.entries(upgradeCost(key))) if ((base.stock[k] || 0) < q) return `Needs ${costText(upgradeCost(key))} (short of ${(SUPPLIES[k] ? SUPPLIES[k].name : k).toLowerCase()}).`;
+  const c = siteCost(base.stock, upgradeCost(key)); // metal sheets the stores lack: made from scrap in the garage
+  for (const [k, q] of Object.entries(c.take)) if ((base.stock[k] || 0) < q) return `Needs ${costText(upgradeCost(key))} (short of ${(SUPPLIES[k] ? SUPPLIES[k].name : k).toLowerCase()}${k === "scrap" && c.extra ? `: ${q} with the metal sheets made from it` : ""}).`;
   return "";
 }
 // The garage menu for one vehicle: [{ key, op, name, ok, why, cost, hours, mech, kg }].
@@ -827,11 +835,12 @@ export function upgradeOptions(state, base, v) {
   else { const why = upgradeProblem(state, base, v, "turret", "fit"); out.push({ key: "turret", op: "fit", name: TURRET_NAME.lmg, ok: !why, why, cost: upgradeCost("turret"), items: [TURRET_FIT.item], hours: TURRET_FIT.hours, mech: TURRET_FIT.mech, kg: TURRET_KG.lmg, shop: TURRET_FIT.shop }); }
   return out;
 }
-// What stripping one level gives back: half its car parts (rounded down), and glass whole (a spare set).
+// What stripping one level gives back: half its car parts and metal sheets (rounded down), and glass whole (a spare set).
 export function stripRefund(key) {
   const c = VEH_UPGRADES[key].cost.carparts || 0;
   const out = {};
   if (c >= 2) out[costOf("carparts")] = Math.floor(c / 2);
+  if ((VEH_UPGRADES[key].cost.metalsheet || 0) >= 2) out.metalsheet = Math.floor(VEH_UPGRADES[key].cost.metalsheet / 2);
   if (key === "glass") out.spareGlass = 1;
   return out;
 }
@@ -848,7 +857,7 @@ export function queueUpgrade(state, base, v, key, op = "fit") {
       job.item = it;
       job.paid = upgradeCost(key); for (const [k, q] of Object.entries(job.paid)) base.stock[k] = (base.stock[k] || 0) - q;
     } else if (key === "glass" && (base.spareGlass || 0) > 0) { base.spareGlass -= 1; job.paid = { spareGlass: 1 }; }
-    else { job.paid = upgradeCost(key); for (const [k, q] of Object.entries(job.paid)) base.stock[k] = (base.stock[k] || 0) - q; }
+    else { const pay = payCost(base.stock, upgradeCost(key)); job.paid = pay.paid; job.hours += pay.hours; } // metal sheets the stores lack: made from scrap first (their hours on the job)
   }
   garageQueue(base).push(job);
   const note = fitters(state, base, job.mech).length ? "" : ` Nobody on the Craft role here has Mechanics ${job.mech}+ yet.`;
@@ -929,11 +938,13 @@ export function finishUpgrade(state, base, v, key, op = "fit", job = null) {
   v.upgrades = u;
   return `${U.name}${U.max > 1 ? ` (level ${u[key]})` : ""} fitted to the ${v.name} at ${base.name}: ${upgradeEffects(v)}.`;
 }
-// Strips a car parked at a base for parts (section 10): 3–8 car parts by its condition, 20 scrap and the fuel in its
-// tank into the base's stores; the vehicle is gone. Not bikes. Returns the message.
-export const STRIP = { min: 3, max: 8, scrap: 20 };
+// Strips a car parked at a base for parts (section 10): 3–8 car parts by its condition, 20 scrap, its body panels and
+// roof as metal sheets (STRIP.sheets by its type, and its sheet-metal plating's back: the user's request 2026-10-21,
+// "items that can be salvaged for metal sheets like cars") and the fuel in its tank into the base's stores; the vehicle
+// is gone. Not bikes. Returns the message.
+export const STRIP = { min: 3, max: 8, scrap: 20, sheets: { truck: 3, sedan: 2, suv: 3, hummer: 2, van: 4, miltruck: 4 } };
 /** @param {any} v */
-export const stripYield = (v) => ({ carparts: STRIP.min + Math.round((STRIP.max - STRIP.min) * Math.max(0, Math.min(100, v.condition || 0)) / 100), scrap: STRIP.scrap, fuel: Math.floor(Math.max(0, v.fuel || 0)) });
+export const stripYield = (v) => ({ carparts: STRIP.min + Math.round((STRIP.max - STRIP.min) * Math.max(0, Math.min(100, v.condition || 0)) / 100), scrap: STRIP.scrap, metalsheet: (STRIP.sheets[v.type] || 0) + Math.floor(sheetPlates(v) / 2), fuel: Math.floor(Math.max(0, v.fuel || 0)) });
 export function stripVehicle(state, base, v) {
   if (!v || !base || v.loc.kind !== "base" || v.loc.baseId !== base.id) return "That vehicle is not parked here.";
   if (isBike(v)) return "Bikes are not stripped for car parts.";
@@ -942,7 +953,7 @@ export function stripVehicle(state, base, v) {
   const t = upgradesOf(v).turret; // an LMG turret's gun comes off with the rest; an M2 is scrapped with the hull
   if (t && turretRemovable(t) && t.item) base.armory.push(t.item);
   state.vehicles.splice(state.vehicles.indexOf(v), 1);
-  const msg = `Stripped the ${v.name} for parts: ${got.carparts} car parts, ${got.scrap} scrap${got.fuel ? `, ${got.fuel} fuel from its tank` : ""}. It is gone.`;
+  const msg = `Stripped the ${v.name} for parts: ${got.carparts} car parts, ${got.scrap} scrap${got.metalsheet ? `, ${got.metalsheet} metal sheet${got.metalsheet === 1 ? "" : "s"}` : ""}${got.fuel ? `, ${got.fuel} fuel from its tank` : ""}. It is gone.`;
   log(state, msg, "info");
   return msg;
 }

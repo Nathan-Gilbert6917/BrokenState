@@ -77,7 +77,7 @@ console.log("Craft books unlock recipes");
   const h = hub(st);
   clearRoles(st, h);
   addBuilding(h, "machine_shop");
-  Object.assign(h.stock, { scrap: 200, parts: 30, meds: 20, wood: 300 });
+  Object.assign(h.stock, { scrap: 200, parts: 30, meds: 20, wood: 300, metalsheet: 5 });
   const smith = addPerson(st, h, "farm", { mechanics: 8, crafting: 8, stealth: 5, medicine: 6 });
   const chk = canCraft(st, h, "springmachete");
   check(!chk.ok && chk.locked && /Backyard Blacksmithing/.test(chk.reason), `a locked recipe is refused (${chk.reason})`);

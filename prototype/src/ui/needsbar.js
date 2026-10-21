@@ -30,7 +30,7 @@ const n0 = (v) => Math.floor((v || 0) + 1e-9);
 const n1 = (v) => (Math.round((v || 0) * 10) / 10).toString();
 const dd = (d) => (!isFinite(d) ? "∞" : d >= 99 ? "99+d" : d < 1 ? "<1d" : `${Math.floor(d)}d`);
 
-export const NEEDS_ICON = { food: "🥫", water: "💧", fuel: "⛽", wood: "🪵", meds: "✚", ammo: "⁍", parts: "⚙", scrap: "🔩", carparts: "🛞", gunparts: "🔧", electronics: "🔌", buildmat: "🧱" };
+export const NEEDS_ICON = { food: "🥫", water: "💧", fuel: "⛽", wood: "🪵", meds: "✚", ammo: "⁍", parts: "⚙", scrap: "🔩", carparts: "🛞", gunparts: "🔧", electronics: "🔌", buildmat: "🧱", metalsheet: "🛡" };
 // Urgency: 2 critical (red), 1 low (amber), 0 fine (green), null no outlook (a count only, grey).
 export const LEVEL_CLS = { 2: "nb-crit", 1: "nb-low", 0: "nb-ok" };
 // The thresholds (days left, rounds a head): food as the Bases tab colours it (farming.js foodLine), water as the

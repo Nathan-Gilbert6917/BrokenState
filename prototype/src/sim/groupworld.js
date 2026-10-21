@@ -55,6 +55,7 @@ import { groupStockKey } from "./trade.js"; // a group's one count of parts (par
 import { day, log, addCard, atBase, supplyValue } from "./world.js";
 import { sameBloc, betray } from "./blocs.js"; // AI blocs: theft between members is betrayal
 import { hash01 } from "./skills.js";
+import { siteCost } from "./buildmats.js"; // a plating's metal sheets made from scrap when short
 import { factionVehicles, vehicleValue, upgradesOf, upgradeCost, groupCost, VEHICLE_TYPES, TURRET_KG, TURRET_FIT, VEH_UPGRADES, WRECK, carryCargo, cargoToBase } from "./vehicles.js";
 import { workshopFactor, worksAt, groupSkill, groupFreeParts } from "./groupworks.js";
 import { weightOf, tickOf, fitPeople } from "./groupcare.js";
@@ -424,7 +425,7 @@ export function fitUpgrade(state, f) {
     if (!v) continue;
     if (groupSkill(f, "mechanics") < (VEH_UPGRADES[key].mech || 0)) continue; // ai-locks: your Mechanics for the job (glass 5, plate 6, scrap plating 3, mesh 2)
     // (trade.js groupStockKey: their car parts first, 2 machine parts for each one short: vehicles.js groupCost)
-    const { cost, ok } = groupCost(f, upgradeCost(key), groupStockKey, { scrap: 5 });
+    const { cost, ok } = groupCost(f, siteCost(f.stock, upgradeCost(key)).take, groupStockKey, { scrap: 5 }); // metal sheets they lack: made from their scrap (buildmats.js), as yours
     if (!ok || !freePartsOk(f, cost)) continue;
     for (const [k, q] of Object.entries(cost)) f.stock[k] -= q;
     const u = upgradesOf(v);

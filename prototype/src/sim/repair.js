@@ -42,7 +42,7 @@ export const REPAIR = {
 // Materials of the armour pieces (section 17), where GEAR has none of its own (armour.js may add GEAR material / ac).
 const MATERIAL = {
   vest: "soft", tacvest: "soft", softinsert: "soft", plate: "soft", ceramicplate: "ceramic", steelplate: "steel", scrapvest: "steel",
-  tirevest: "padding", sportspads: "padding", padding: "padding", shinguards: "padding",
+  sheetvest: "steel", sheetarms: "steel", sheetlegs: "steel", tirevest: "padding", sportspads: "padding", padding: "padding", shinguards: "padding",
   kneeguards: "hard", riotarms: "hard", riotlegs: "hard", bikehelmet: "hard", footballhelmet: "hard", riothelmet: "hard", milhelmet: "hard", rivethelmet: "hard",
 };
 const AC = { vest: 2, tacvest: 2, softinsert: 2, steelplate: 4, ceramicplate: 5, plate: 2, scrapvest: 3, milhelmet: 3, riothelmet: 2, riotarms: 2, riotlegs: 2 };
@@ -65,6 +65,7 @@ export const REPAIR_KINDS = {
   hard:    { name: "hard armour",         skill: "mechanics", min: 3, in: { parts: 1, scrap: 2 }, hours: 2 },
   hardmk:  { name: "makeshift helmet",    skill: "mechanics", min: 1, in: { scrap: 2 }, hours: 1, soft: true },
   steel:   { name: "steel plate",         skill: "mechanics", min: 3, in: { scrap: 4, fuel: 1 }, hours: 4 },
+  sheet:   { name: "sheet-metal armour",  skill: "mechanics", min: 2, in: { metalsheet: 1, scrap: 1 }, hours: 3 }, // GEAR sheet: patched with a metal sheet (2026-10-21)
   camp:    { name: "camp kit",            skill: "crafting",  min: 1, in: { scrap: 1 }, hours: 1, soft: true },
   fish:    { name: "fishing gear",        skill: "crafting",  min: 0, in: { scrap: 1 }, hours: 1, soft: true },
   cart:    { name: "cart wheel",          skill: "mechanics", min: 1, in: { parts: 1, scrap: 1 }, hours: 2 }, // carts.js: a wheel, its axle and bearings (a broken cart drags)
@@ -87,6 +88,7 @@ export function repairKind(item) {
     if (mat === "ceramic") return { refuse: `Ceramic plates cannot be repaired: the ${item.name} has to be replaced.` };
     if (mat === "soft") return k("soft");
     if (mat === "padding") return k("padding");
+    if (d.sheet) return k("sheet"); // metal-sheet armour: a new sheet riveted on
     if (mat === "steel") return k("steel");
     return k(d.makeshift ? "hardmk" : "hard");
   }

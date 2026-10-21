@@ -443,7 +443,7 @@ export function handOver(state, f, tile) {
   f.bases = f.bases.filter((x) => x !== tile);
   const base = {
     id: newId(), tile, type: "outpost", name: outpostName(state, tile),
-    stock: { water: 15, fuel: 0, meds: 2, ammo: 20, arrows: 0, parts: 0, scrap: 10, jars: 0, buildmat: 0, ...typedFood(state, GROUP_MIX[f.type] || "stores", 20) }, // foods.js: 20 days of their kind of food // arrows: every base keeps the count (a base without it read undefined)
+    stock: { water: 15, fuel: 0, meds: 2, ammo: 20, arrows: 0, parts: 0, scrap: 10, jars: 0, buildmat: 0, metalsheet: 0, ...typedFood(state, GROUP_MIX[f.type] || "stores", 20) }, // foods.js: 20 days of their kind of food // arrows: every base keeps the count (a base without it read undefined)
     radio: false, watchtower: false, buildings: [], construction: [], armory: [],
   };
   state.bases.push(base);

@@ -257,7 +257,7 @@ export function storeHover(c) {
 }
 
 // ---------- the land (sim/basescatter.js) ----------
-const getText = (get) => Object.entries(get || {}).filter(([, v]) => v > 0).map(([k, v]) => `+${v} ${k === "carparts" ? `car part${v === 1 ? "" : "s"}` : k}`).join(", ");
+const getText = (get) => Object.entries(get || {}).filter(([, v]) => v > 0).map(([k, v]) => `+${v} ${k === "carparts" ? `car part${v === 1 ? "" : "s"}` : k === "metalsheet" ? `metal sheet${v === 1 ? "" : "s"}` : k}`).join(", ");
 // The card of the piece of land clicked (L.land: its grid cell): what it is, and its clearing (alone, with the rest of
 // its stand or line, a wreck stripped first), each as a job in the construction queue.
 function landCard(state, base, L) {

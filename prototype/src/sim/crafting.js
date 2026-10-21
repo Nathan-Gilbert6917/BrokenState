@@ -56,7 +56,15 @@ export const CRAFTS = {
   padding:     { gear: "padding",     in: { scrap: 2 },           hours: 3,  skill: "mechanics", min: 0, field: true },
   shinguards:  { gear: "shinguards",  in: { scrap: 2 },           hours: 3,  skill: "mechanics", min: 0, field: true },
   tirevest:    { gear: "tirevest",    in: { scrap: 6 },           hours: 8,  skill: "mechanics", min: 2 },
-  scrapvest:   { gear: "scrapvest",   in: { scrap: 10, parts: 1 },hours: 18, skill: "mechanics", min: 4, needs: "workshop" },
+  scrapvest:   { gear: "scrapvest",   in: { scrap: 5, metalsheet: 1, parts: 1 }, hours: 18, skill: "mechanics", min: 4, needs: "workshop" }, // its plates cut from a metal sheet (2026-10-21)
+  // Sheet-metal armour and weapons (the user's request 2026-10-21: "craft makeshift metal armor for survivors" and
+  // "makeshift metal weapons"): a cuirass of two sheets at a workshop; vambraces and greaves, a machete and a hatchet
+  // cut from one at a bench (data.js GEAR, armour.js ARMOUR, combat.js WEAPONS).
+  sheetvest:   { gear: "sheetvest",   in: { metalsheet: 2, scrap: 2 }, hours: 14, skill: "mechanics", min: 3, needs: "workshop" },
+  sheetarms:   { gear: "sheetarms",   in: { metalsheet: 1, scrap: 1 }, hours: 5,  skill: "mechanics", min: 2 },
+  sheetlegs:   { gear: "sheetlegs",   in: { metalsheet: 1, scrap: 1 }, hours: 5,  skill: "mechanics", min: 2 },
+  sheetmachete: { gear: "sheetmachete", in: { metalsheet: 1, wood: 5 }, hours: 5, skill: "mechanics", min: 1 },
+  sheethatchet: { gear: "sheethatchet", in: { metalsheet: 1, wood: 10 }, hours: 5, skill: "mechanics", min: 1 },
   bandagekit:  { gear: "bandagekit",  in: { scrap: 2, meds: 1 },  hours: 4,  skill: "medicine",  min: 2, field: true },
   // medics.js MEDIC.SELF: a strap cut from a belt or webbing, a scrap rod for the windlass.
   tourniquet:  { gear: "tourniquet",  in: { scrap: 1 },           hours: 1,  skill: "medicine",  min: 1, field: true },
@@ -68,6 +76,10 @@ export const CRAFTS = {
   // scrap hammered, bolted and nailed into panels, beams and blocks. Anywhere, a team too.
   buildmat:    { name: "Building materials", supplies: { buildmat: 1 }, in: { scrap: 3 }, hours: 3, skill: "mechanics", min: 0, field: true,
                  desc: "Scrap hammered, bolted and nailed into panels, beams and blocks: 1 building material from 3 scrap. What a camp takes to become a base (with scrap): Establish the outpost, Build up into a shelter, Build up into a base." },
+  // Metal sheets (data.js metalsheet; the user's request 2026-10-21): scrap cut, hammered flat and riveted into a sheet
+  // at a workshop (the welding, the brake). Found and salvaged too: this is what a base short of them falls back on.
+  metalsheet:  { name: "Metal sheet", supplies: { metalsheet: 1 }, in: { scrap: 4 }, hours: 4, skill: "mechanics", min: 1, needs: "workshop",
+                 desc: "Scrap cut, hammered flat and riveted into a sheet: 1 metal sheet from 4 scrap. For roofs, metal walls and gates, reinforced builds, a vehicle's plating, sheet-metal armour and weapons. Builders make one on site for 5 scrap when the stores have none." },
   arrows:      { name: "Arrows (12)", supplies: { arrows: 12 }, in: { wood: 30, scrap: 1 }, hours: 4, skill: "mechanics", min: 1, field: true,
                  desc: "Straight shafts split from wood, fletched, with points filed from scrap: 12 arrows (or crossbow bolts), what a bow or crossbow shoots in fights and on hunts. A hunt loses about half the arrows it shoots; a won fight gets about half back." },
   crowbar:     { gear: "crowbar",     in: { scrap: 4 },           hours: 5,  skill: "mechanics", min: 1 },
@@ -106,7 +118,7 @@ export const CRAFTS = {
   bicycle:     { gear: "bicycle",     in: { scrap: 8, parts: 2 }, hours: 14, skill: "mechanics", min: 3, needs: "workshop" },
   // Carts (carts.js, data-carts.js): a tray beaten out of scrap on a wheel and two handles; a plank bed on two wheels
   // with a T handle. At a workshop (the welding, the wheels' bearings).
-  wheelbarrow: { gear: "wheelbarrow", in: { scrap: 6, parts: 1 }, hours: 8, skill: "mechanics", min: 2, needs: "workshop" },
+  wheelbarrow: { gear: "wheelbarrow", in: { scrap: 1, metalsheet: 1, parts: 1 }, hours: 8, skill: "mechanics", min: 2, needs: "workshop" }, // the tray: a metal sheet (2026-10-21)
   handcart:    { gear: "handcart",    in: { scrap: 5, parts: 2, wood: 120 }, hours: 12, skill: "mechanics", min: 3, needs: "workshop" },
   // gearIn = items used up (from the base armory; in the field from the team's cargo or someone's pockets and pack).
   nailbat:     { gear: "nailbat",     gearIn: { bat: 1 }, in: { scrap: 1 }, hours: 2, skill: "mechanics", min: 0, field: true },
@@ -127,7 +139,7 @@ export const CRAFTS = {
   // solvent trap drilled out at a machine shop, a cheap magnifier for a scope, a rubber butt pad, a sling.
   bottlecan:   { gear: "bottlecan",   gearIn: { bottle: 1 }, in: { scrap: 1 }, hours: 1, skill: "mechanics", min: 0, field: true },
   makeshiftrig: { gear: "makeshiftrig", gearIn: { backpack: 1 }, in: { scrap: 1 }, hours: 3, skill: "mechanics", min: 0, field: true }, // carry kit (data-kit.js): a school bag cut into chest pouches
-  steelplate:  { gear: "steelplate",  in: { scrap: 8 }, hours: 10, skill: "mechanics", min: 4, needs: "workshop" }, // a plate carrier's steel insert (section 16)
+  steelplate:  { gear: "steelplate",  in: { scrap: 3, metalsheet: 1 }, hours: 10, skill: "mechanics", min: 4, needs: "workshop" }, // a plate carrier's steel insert (section 16), cut from a metal sheet (2026-10-21)
   solventcan:  { gear: "solventcan",  in: { scrap: 3, gunparts: 1 }, hours: 10, skill: "mechanics", min: 6, needs: "machine_shop" },
   scrapscope:  { gear: "scrapscope",  gearIn: { monocular: 1 }, in: { scrap: 2 }, hours: 4, skill: "mechanics", min: 2 },
   recoilpad:   { gear: "recoilpad",   in: { scrap: 1, wood: 10 }, hours: 2, skill: "mechanics", min: 0, field: true },
@@ -145,7 +157,7 @@ export const CRAFTS = {
   // ---------- special gear (craft-books): locked until a craft book is read or a blueprint studied (blueprints.js) ----------
   // cmin: Crafting needed besides the recipe's own skill.
   springmachete: { gear: "springmachete", in: { scrap: 8, parts: 1 }, hours: 14, skill: "mechanics", min: 3, cmin: 5, needs: "workshop" },
-  rivethelmet: { gear: "rivethelmet", in: { scrap: 6 },          hours: 10, skill: "mechanics", min: 2, cmin: 4 },
+  rivethelmet: { gear: "rivethelmet", in: { scrap: 1, metalsheet: 1 }, hours: 10, skill: "mechanics", min: 2, cmin: 4 }, // its plates cut from a metal sheet (2026-10-21)
   pulleybow:   { gear: "pulleybow",   in: { scrap: 5, parts: 2, wood: 30 }, hours: 16, skill: "mechanics", min: 3, cmin: 6, needs: "workshop" },
   woodghillie: { gear: "woodghillie", in: { scrap: 3 },          hours: 10, skill: "stealth",   min: 3, cmin: 3 },
   traumakit:   { gear: "traumakit",   in: { scrap: 2, meds: 2 }, hours: 8,  skill: "medicine",  min: 4, cmin: 3 },

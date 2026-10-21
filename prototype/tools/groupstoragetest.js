@@ -59,10 +59,12 @@ const isStore = (w) => !!w && STORE_KEYS.includes(w.type);
 // ======================================================================
 section("Your costs and hours, your rules");
 {
-  const want = { storebox: [1, 1], crates: [1, 1], shed: [4, 2], store: [10, 3], warehouse: [40, 6] }; // scrap (wood besides: 2026-10-20; woodwork's costs)
-  for (const [k, [scrap, work]] of Object.entries(want)) {
+  // scrap, building materials, metal sheets (wood besides: 2026-10-20; woodwork's costs; building materials in every
+  // building and sheets on the roofed ones: buildmats.js, 2026-10-21)
+  const want = { storebox: [0, 1, 0, 1], crates: [0, 1, 0, 1], shed: [0, 1, 1, 2], store: [0, 2, 2, 3], warehouse: [20, 4, 4, 6] };
+  for (const [k, [scrap, bm, ms, work]] of Object.entries(want)) {
     const d = storeDef(k), B = BUILDINGS[STORE_BUILDING[k]];
-    check(JSON.stringify(d.cost) === JSON.stringify(B.cost) && d.cost.scrap === scrap, `${d.name}: your cost (${JSON.stringify(d.cost)})`);
+    check(JSON.stringify(d.cost) === JSON.stringify(B.cost) && (d.cost.scrap || 0) === scrap && d.cost.buildmat === bm && (d.cost.metalsheet || 0) === ms, `${d.name}: your cost (${JSON.stringify(d.cost)})`);
     check(d.work === work && d.work === Math.max(1, Math.round(B.hours / W.CREW_HOURS)), `${d.name}: ${B.hours} work-hours are ${d.work} crew-days`);
     check(W.WORKS[k].name === d.name && W.WORKS[k].work === d.work, `${d.name}: in WORKS`);
   }
@@ -106,7 +108,7 @@ section("What they build, by size and need");
   const cases = [[40, "crates"], [400, "shed"], [1500, "store"], [4000, "warehouse"]];
   for (const [kg, type] of cases) {
     const { st, f, main } = setup();
-    Object.assign(f.stock, { scrap: 200, buildmat: 10, parts: 10 });
+    Object.assign(f.stock, { scrap: 200, buildmat: 10, metalsheet: 10, parts: 10 });
     const s = pileOutside(st, f, main, kg);
     const w = nextWork(st, f);
     check(w && w.type === type && w.tile === main, `${Math.round(s.outsideKg)} kg outside the main base: ${type} (${w && w.type}: ${w && w.why})`);
@@ -114,7 +116,7 @@ section("What they build, by size and need");
   // No Mechanics 2 hand: the biggest they can build (the storehouse).
   {
     const { st, f, main } = setup({ mech: 1 });
-    Object.assign(f.stock, { scrap: 200, buildmat: 10, parts: 10 });
+    Object.assign(f.stock, { scrap: 200, buildmat: 10, metalsheet: 10, parts: 10 });
     pileOutside(st, f, main, 4000);
     const w = nextWork(st, f);
     check(w && w.type === "store", `4000 kg outside, nobody at Mechanics 2: the storehouse (${w && w.type})`);
@@ -185,7 +187,7 @@ section("What they build, by size and need");
     check(s.cap === 0 && s.outsideKg > 5 && w && w.tile === t1 && w.type === "storebox", `${Math.round(s.outsideKg)} kg on the ground at a camp: a storage box (${w && w.type})`);
     check(storeLock(st, f, t1, "warehouse") === "an outpost or the main base", "a warehouse: an outpost or the main base only");
     check(storeLock(st, f, t1, "shed") !== "", "no shed at a camp (your camp builds none)");
-    f.stock.scrap = W.CAMP.cost.scrap;
+    f.stock.scrap = W.CAMP.cost.scrap; f.stock.buildmat = W.CAMP.cost.buildmat;
     const w2 = nextWork(st, f);
     check(w2 && w2.type === "camp", `scrap for the step up only: the camp first (${w2 && w2.type})`);
     f.stock.scrap = 200; f.works[t1].storebox = 4;
@@ -199,7 +201,7 @@ section("The job pays your cost, the building stands, the room grows");
 {
   for (const [kg, type] of [[400, "shed"], [4000, "warehouse"]]) {
     const { st, f, main } = setup();
-    Object.assign(f.stock, { scrap: 200, buildmat: 10, parts: 10 });
+    Object.assign(f.stock, { scrap: 200, buildmat: 10, metalsheet: 10, parts: 10 });
     f.works[main].shop = 0; // no machine shop turning their scrap into parts today (locked: Mechanics 4)
     const before = pileOutside(st, f, main, kg);
     const s0 = { ...f.stock };

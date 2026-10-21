@@ -255,6 +255,7 @@ export const GROUP_WORKS = {
   // defence share until then.
   CAMP: { name: "the outpost camp established", cost: { scrap: 10, buildmat: 1 }, work: 3, DEF: 0.5 }, // yours: 20 scrap, 2 building materials, 20 work-hours
   BUILDMAT_SCRAP: 3, // building materials made from scrap when short (crafting.js buildmat, as yours)
+  SHEET_SCRAP: 5, // metal sheets made from scrap when short (buildmats.js SITE_MAKE, as your builders on site)
   // Summer water (summer-water 2026-10-10, parity with your governor's summer store, autopilot.js SUMMER_STORE): from
   // SUMMER_LEAD days before summer and through it a group wants its wells for everyone at summer's thirst
   // (weather.js THIRST.summer: a well serves SERVES.water / 1.3 people then), so the extra well goes up in late spring;
@@ -416,12 +417,13 @@ export function storeLock(state, f, tile, k) {
   for (const [sk, v] of Object.entries(B.req || {})) if (groupSkill(f, sk) < v) return `${sk[0].toUpperCase()}${sk.slice(1)} ${v}`;
   return "";
 }
-// Can they pay a cost now, with `keep` left over (building materials made from scrap as a job's start does)?
+// Can they pay a cost now, with `keep` left over (building materials and metal sheets made from scrap as a job's start does)?
 function canAfford(f, cost, keep = {}) {
   const s = f.stock || {};
   const bm = Math.max(0, (cost.buildmat || 0) + (keep.buildmat || 0) - (s.buildmat || 0));
-  if ((s.scrap || 0) < (cost.scrap || 0) + (keep.scrap || 0) + bm * W.BUILDMAT_SCRAP) return false;
-  return Object.entries(cost).every(([k, v]) => k === "scrap" || k === "buildmat" || (k === "parts" ? canPayParts(f, v, "free") : (s[k] || 0) >= v));
+  const ms = Math.max(0, (cost.metalsheet || 0) + (keep.metalsheet || 0) - (s.metalsheet || 0));
+  if ((s.scrap || 0) < (cost.scrap || 0) + (keep.scrap || 0) + bm * W.BUILDMAT_SCRAP + ms * W.SHEET_SCRAP) return false;
+  return Object.entries(cost).every(([k, v]) => k === "scrap" || k === "buildmat" || k === "metalsheet" || (k === "parts" ? canPayParts(f, v, "free") : (s[k] || 0) >= v));
 }
 // A base of theirs as basestorage.js measures it tonight: its core by tier, the buildings its works stand for, the
 // stores the supply run will leave there (groupbases.js stockTonight), the main base's armory.
@@ -809,6 +811,8 @@ function startWork(state, f) {
   // Short of building materials: made from their scrap, as you would (crafting.js buildmat).
   const bmShort = Math.max(0, (def.cost.buildmat || 0) - (f.stock.buildmat || 0));
   if (bmShort && (f.stock.scrap || 0) >= bmShort * W.BUILDMAT_SCRAP + (def.cost.scrap || 0)) { f.stock.scrap -= bmShort * W.BUILDMAT_SCRAP; f.stock.buildmat = (f.stock.buildmat || 0) + bmShort; }
+  const msShort = Math.max(0, (def.cost.metalsheet || 0) - (f.stock.metalsheet || 0)); // metal sheets likewise (a roof, a roller door)
+  if (msShort && (f.stock.scrap || 0) >= msShort * W.SHEET_SCRAP + (def.cost.scrap || 0)) { f.stock.scrap -= msShort * W.SHEET_SCRAP; f.stock.metalsheet = (f.stock.metalsheet || 0) + msShort; }
   const use = MACH_ORDER.includes(next.type) || next.type === "powerup" ? "machine" : "free"; // the earmark only for a machine (gen-tiers: an upgrade too)
   // Wood (woodwork): from the pile above their winter's keep; the rest their crew cuts as part of the job (extra
   // crew-days by their land), so wood never sends them to salvage.

@@ -40,7 +40,7 @@ import { armorMult, enemyBody, allyBody, bodyEmpty, takeAllBodies, leaveBodies, 
 import { areaSource, kitSource, spend } from "./itemcond.js";
 import { foundFill } from "./gunrounds.js"; // a found gun's few rounds
 import { rollAreaGuns } from "./gunfinds.js"; // the arsenal of 2026-10-10 in a raid container (its own dice)
-import { rollAreaFind, rollAreaWood, rollAreaArrows, rollAreaGunmod, splitParts, rollAreaGrenades, rollAreaLaunchers, rollAreaReload } from "./loot.js";
+import { rollAreaFind, rollAreaWood, rollAreaSheets, rollAreaArrows, rollAreaGunmod, splitParts, rollAreaGrenades, rollAreaLaunchers, rollAreaReload } from "./loot.js";
 import { rollAreaTent } from "./tents.js"; // tent bags in a raid's containers (their own dice)
 import { buzzAim } from "./comforts.js";
 import { needsAim } from "./needs.js";
@@ -853,6 +853,8 @@ export const WEAPONS = {
   spikedbat:  { name: "Spiked bat",        melee: true, dmg: [16, 25] },
   pipespear:  { name: "Pipe spear",        melee: true, dmg: [15, 23] },
   sawmachete: { name: "Saw-blade machete", melee: true, dmg: [17, 27] },
+  sheetmachete: { name: "Sheet-metal machete", melee: true, dmg: [16, 26] }, // cut from a metal sheet (crafting.js; 2026-10-21)
+  sheethatchet: { name: "Sheet-metal hatchet", melee: true, dmg: [16, 25] },
   crossbow:   { name: "Scrap crossbow",    dmg: [18, 26], opt: 7, fall: 4, aim: -4, ammo: 0, arrows: 1, noise: 0 },
   pipegun:    { name: "Pipe shotgun",      dmg: [20, 32], opt: 3, fall: 8, aim: -6, ammo: 1, noise: 3, close: 8, cap: 1, cal: "12ga", rel: 1.2 }, // a single-shot zip gun: reloaded after every shot
   // Special crafted weapons (craft books and blueprints, blueprints.js): better than the makeshift ones above.
@@ -7261,6 +7263,9 @@ export function searchBox(state, b, u, box, open = false, quick = false) {
       // Wood: a log basket, a shed's kindling, a broken chair (loot.js AREA_WOOD; its own dice too).
       const wood = rollAreaWood(state, b.tileId, R.areas[box.area].type, box.kind, `box${bid}`);
       if (wood > 0) sup.wood = (sup.wood || 0) + wood;
+      // Metal sheets: a wrecked car's panels and roof, a stack in a garage or a barn (loot.js AREA_SHEETS; its own dice too).
+      const sheets = rollAreaSheets(state, b.tileId, R.areas[box.area].type, box.kind, `box${bid}`);
+      if (sheets > 0) sup.metalsheet = (sup.metalsheet || 0) + sheets;
       // Arrows: a quiver in a cabin's locker, bolts on a shop shelf (loot.js AREA_ARROWS; its own dice too).
       const arrows = rollAreaArrows(state, b.tileId, R.areas[box.area].type, box.kind, `box${bid}`);
       if (arrows > 0) sup.arrows = (sup.arrows || 0) + arrows;

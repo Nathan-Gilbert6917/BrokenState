@@ -90,7 +90,7 @@ export const INTERCEPT = { RANGE: 6, HOURS: 48 };
 export const MEET = { COOLDOWN: 48 };
 export const WITNESS = { BASE_RANGE: 3, TRADER_ESCAPE: 0.35 };
 // The escort's vehicle after a won fight: runs (a share), needs an engine (a share), else wrecked (stripped: parts, scrap).
-export const ESCORT_TAKE = { RUNS: 0.6, REPAIR: 0.3, FUEL: [6, 25], COND: [45, 75], REPAIR_COND: [25, 45], SALVAGE: { parts: [2, 4], scrap: [6, 12] } };
+export const ESCORT_TAKE = { RUNS: 0.6, REPAIR: 0.3, FUEL: [6, 25], COND: [45, 75], REPAIR_COND: [25, 45], SALVAGE: { parts: [2, 4], scrap: [6, 12], sheets: [1, 3] } }; // sheets: its panels and roof (metal sheets, 2026-10-21)
 export const AI_RAID = { RANGE: 3, CHANCE: 0.03, RICH: 600, BAND: 0.35, EDGE: 1.1, COOLDOWN: 24, KEEP: 1 };
 // A group's trade convoy carries what it delivers (parties.js aiPartyHour: 10 food, 10 scrap) when nothing is listed.
 export const AI_CONVOY_GOODS = { food: 10, scrap: 10 };
@@ -318,7 +318,9 @@ export function lootCaravan(state, p, goods, opts) {
       const parts = P.parts[0] + Math.floor(dice("sp") * (P.parts[1] - P.parts[0] + 1)), scrap = P.scrap[0] + Math.floor(dice("ss") * (P.scrap[1] - P.scrap[0] + 1));
       sup.parts = (sup.parts || 0) + parts;
       sup.scrap = (sup.scrap || 0) + scrap;
-      out.push(`Their ${V.name} was shot to pieces: stripped for ${parts} parts and ${scrap} scrap.`);
+      const sheets = P.sheets[0] + Math.floor(dice("sm") * (P.sheets[1] - P.sheets[0] + 1));
+      sup.metalsheet = (sup.metalsheet || 0) + sheets;
+      out.push(`Their ${V.name} was shot to pieces: stripped for ${parts} parts, ${scrap} scrap and ${sheets} metal sheet${sheets === 1 ? "" : "s"}.`);
     }
   }
   // Into the team's cargo as far as it goes.
