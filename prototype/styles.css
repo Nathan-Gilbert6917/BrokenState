@@ -1468,6 +1468,16 @@ body.tl-on #watchlist, body.tl-on #noteedit { display: none !important; }
 .gd-step.cur .gd-go { color: var(--accent); font-weight: bold; }
 .gd-show { font-size: 0.8rem; padding: 0.08rem 0.45rem; white-space: nowrap; }
 .gd-why { font-size: 0.86rem; color: var(--muted); margin: 0 0 0.3rem 1.45rem; line-height: 1.35; }
+.gd-note { border-bottom: 1px solid var(--line); margin: 0.15rem 0 0.25rem; padding-bottom: 0.2rem; }
+.gd-note .gd-name { flex: 1; color: #ffd166; }
+.gd-note .gd-why { margin-left: 0; }
+/* The note over a window seen for the first time (ui/guide.js renderGuideTip): over the windows and the battle
+   (#modal.over-combat 30), under the item menu (35). */
+#guidetip { position: fixed; top: 3.2rem; left: 0.75rem; z-index: 32; width: min(24rem, calc(100vw - 1.5rem)); }
+#guidetip:has(.onmap) { left: 50%; top: 5.6rem; transform: translateX(-50%); }
+#guidetip .gdtip { background: rgba(20,22,26,0.96); border: 1px solid var(--line); border-left: 5px solid #ffd166; border-radius: 8px; box-shadow: 0 6px 18px rgba(0,0,0,0.55); padding: 0.35rem 0.45rem 0.45rem 0.6rem; font-size: 0.92rem; }
+#guidetip .gd-title { color: #ffd166; }
+#guidetip .gd-why { margin: 0.15rem 0 0; color: var(--text); }
 .gd-pulse { outline: 2px solid #ffd166; outline-offset: 2px; animation: gdpulse 1s ease-in-out 10; }
 @keyframes gdpulse { 50% { box-shadow: 0 0 0 0.4rem rgba(255,209,102,0.45); outline-color: #fff2c4; } }
 /* The Ledger, the run summary and the top bar's stock trends (ui/ledger.js). */
