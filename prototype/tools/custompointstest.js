@@ -36,6 +36,8 @@ import { totalRounds } from "../src/sim/ammo.js";
 let pass = 0, fail = 0;
 const VERBOSE = process.argv.includes("-v");
 const check = (ok, msg) => { if (ok) { pass++; if (VERBOSE) console.log(`  ok ${msg}`); } else { fail++; console.log(`FAIL ${msg}`); } return ok; };
+// The car's back as picked: the hardcore start's tent bags (tents.js hardcoreTents, TENTS.HARDCORE a survivor) ride there too.
+const backOf = (p) => p.cargo.gear.filter((it) => it.key !== "tent1");
 const section = (t) => console.log(`\n== ${t}`);
 const t0 = Date.now();
 const ROLL = 9091; // a crew roll of its own (main.js gives a Customize crew one)
@@ -84,7 +86,7 @@ section("A blank start, Start from the dice, Clear");
     check(st.survivors.every((s) => s.startPoints && pricePerson(st, s).total === 0 && SKILLS.every((k) => s.skills[k] === 0) && !s.traits.length), `${mode}: everyone blank, 0 points spent`);
     check(st.survivors.every((s) => !allCarried(s).length && START_GEAR.SLOTS.every((k) => !s.gear[k])), `${mode}: nothing worn, held or carried`);
     if (mode === "normal") check(st.bases[0].armory.length === 0 && !st.bases[0].armory.some((it) => GEAR[it.key].slot === "weapon"), "normal: the dice's weapons and vest are not handed to the armory on top");
-    else check(st.parties[0].cargo.gear.length === 0 && totalRounds(st.parties[0].supplies) === 0, "Hardcore: nothing of the grab or the car's back on the team (the rolled guns' rounds neither)");
+    else check(backOf(st.parties[0]).length === 0 && totalRounds(st.parties[0].supplies) === 0, "Hardcore: nothing of the grab or the car's back on the team (the rolled guns' rounds neither)");
     // Start from the dice: what was rolled, priced.
     const ui = UI();
     check(SG_ACTIONS["sg-dice"](st, ui, { i: 0 }) === true, `${mode}: Start from the dice asks for a rebuild`);
@@ -247,7 +249,7 @@ section("The vehicle's back");
   const hc = blankWorld(42, { mode: "hardcore" });
   const hi = startVehicleInfo(hc);
   check(hi && hi.hard && hi.room > 0 && hi.room < 900, `Hardcore: the ${hi.name}, ${hi.room} kg of room with everyone in it`);
-  check(hc.parties[0].cargo.gear.length === 0, "blank: an empty back");
+  check(backOf(hc.parties[0]).length === 0, "blank: an empty back");
   ui.gearEdit = { i: 0, sel: null, msg: "" };
   check(SG_ACTIONS["sg-trunk-dice"](hc, ui) === true, "the dice's back can be loaded");
   const dice = hc.survivors.find((s) => s.diceTrunk).diceTrunk;
@@ -257,7 +259,7 @@ section("The vehicle's back");
   SG_CHANGE["sg-trunk-owner"](hc, ui, { value: String(owner3.id) });
   const h2 = again(hc);
   check(h2.hardcore.start.carOwner === h2.survivors[2].id, "whoever pays owns the car");
-  check(h2.parties[0].cargo.gear.map((it) => it.key).join() === dice.items.join(), "the car's back is exactly what was picked");
+  check(backOf(h2.parties[0]).map((it) => it.key).join() === dice.items.join(), "the car's back is exactly what was picked");
   // Room.
   const heavy = h2.survivors[2];
   for (let k = 0; k < 20; k++) SG_CHANGE["sg-trunk-add"](h2, ui, { value: "sandbags", dataset: {} });
