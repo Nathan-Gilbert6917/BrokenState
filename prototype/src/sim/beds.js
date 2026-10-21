@@ -55,6 +55,7 @@
 // the mean a head × BEDS_AI.morale off their desertion pressure, groupcare.js desertPressure, as hot meals' is).
 // Their bases' map (groupbases.js WORKS_BUILDING: the hall a Lodge, each piece itself) is laid out by the same auto
 // layout, the furniture on the Lodge's floor.
+import { siteCost } from "./buildmats.js"; // the Lodge's building materials and sheets made from scrap when short
 import { BED_SPEC, BED_KINDS, BED_MOOD, BED_FINDS, BED_CRAFTS, BEDS_AI, ROUGH_WEATHER } from "./data-beds.js";
 import { BUILDINGS, BEDS, addBuilding, count, plainBeds, baseBeds, queuedBeds, isShelter, canBuild } from "./buildings.js"; // (call-time only: the modules load in a circle)
 import { pitchArmoryBags, tentsText } from "./tents.js"; // (call-time only) the governor pitches spare bags first
@@ -308,7 +309,7 @@ export function hallWork(state, f, tile) {
   const w = f.works && f.works[tile];
   if (nW(w, "hall") || nW(w, "camp")) return null;
   const def = hallDef();
-  if (!canPay(f, def.cost, { scrap: BEDS_AI.keep * f.pop })) return null;
+  if (!canPay(f, siteCost(f.stock || {}, def.cost).take, { scrap: BEDS_AI.keep * f.pop })) return null; // its building materials and sheets: from their scrap when short (groupworks.js startWork)
   return { tile, type: "hall", why: "a lodge to set beds in", def };
 }
 // A day's furniture for one group: at most one piece, at the first base with a hall and floor left for it (your rule:

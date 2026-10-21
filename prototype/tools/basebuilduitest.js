@@ -129,7 +129,7 @@ section("The layout panel: the Build list");
   check(st.combat.layout.msg.includes("Hut queued and placed") && html.includes("Hut queued and placed"), `the panel shows the result: "${st.combat.layout.msg}"`);
   check(html.includes("Hut (building)") && new RegExp(`data-k="c:${job.id}"[^>]*>[\\s\\S]*?placed`).test(html), "the Placed list has the hut's outline, placed");
   check(st.combat.layout.sel === `c:${job.id}` && html.includes("bmsel") && html.includes("Cancel the job"), "the new job is selected: its card with Cancel the job");
-  check(h.stock.scrap === 999 - BUILDINGS.gen_hut.cost.scrap, "the cost was paid");
+  check(h.stock.scrap === 999 - (BUILDINGS.gen_hut.cost.scrap || 0) && h.stock.buildmat === 99 - BUILDINGS.gen_hut.cost.buildmat, "the cost was paid (its building material from the stores)");
   act(st, { type: "endLayout" });
 }
 
