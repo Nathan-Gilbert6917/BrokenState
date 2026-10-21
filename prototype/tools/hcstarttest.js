@@ -39,6 +39,7 @@ import { settingsModal, openSettings } from "../src/ui/settings.js";
 import { newRunScreen } from "../src/ui/newgame.js";
 import { loadOptions } from "../src/ui/saves.js";
 import { isTentBag, TENTS } from "../src/sim/tents.js"; // the hardcore start's tent bags
+import { assignedRole } from "../src/sim/noidle.js"; // noidle: a job with no work, its people helping elsewhere
 
 // Setting up a camp takes an hour (staging.js STAGING.PITCH): skipped here, the camp (a base) stands at once.
 const establishNow = (st, p) => { p.pitched = true; return giveOrder(st, p, "establish"); };
@@ -288,7 +289,7 @@ const campOf = (st) => st.bases.find((b) => b.camp === true) || null;
   const job = tierUpJob(camp);
   const needScrap = st.tiles[tile0].ruin ? STAGING.HARDCORE.needs.scrap - STAGING.RUIN_SCRAP : STAGING.HARDCORE.needs.scrap;
   check(job && job.type === "camp_up" && gatherRows(job).find((r) => r.key === "scrap").need === needScrap && gatherRows(job).find((r) => r.key === "buildmat").need === STAGING.HARDCORE.needs.buildmat && job.hours === STAGING.HARDCORE.work, `its step up is queued: ${needText(STAGING.HARDCORE.needs)}, ${job && job.hours} work-hours`);
-  check(atBase(st, camp.id).every((s) => s.role === "build"), "everyone on Build");
+  check(atBase(st, camp.id).every((s) => assignedRole(s) === "build"), `everyone on Build (${atBase(st, camp.id).map((s) => s.role).join(", ")} this hour: noidle.js, no materials yet)`); // their own job; with nothing to build they help elsewhere for the hour
   check(baseWalls(camp) === 0 && baseBeds(camp) === CAMP.beds && farmSlots(camp) === 1 && plotCap(camp, "building") === 0 && plotCap(camp, "utility") === 2, `a camp is barer than a shelter: walls 0, beds ${baseBeds(camp)}, one crop plot, two utility plots`);
   // (BASE-03, 2026-10-12: the drying rack, bench, boiler and cook fire are camp buildings now; the watchtower still waits.)
   check(!canBuild(st, camp, "hub_up").ok && !canBuild(st, camp, "watchtower").ok && /shelter/.test(canBuild(st, camp, "watchtower").reason) && /once it is a base/.test(canBuild(st, camp, "well").reason), "the rest waits for the shelter or the base (and says so)");

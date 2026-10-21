@@ -251,6 +251,7 @@ export function strikeCamp(state, base) {
       if (have < 1 || !SUPPLIES[k]) continue;
       const q = w > 0 ? Math.min(have, Math.floor((room + 1e-9) / w)) : have;
       if (q < 1) continue;
+      if (q === have) base.stock[k] = Math.max(base.stock[k], q); // n0 counts 0.9999… as 1: the stores hold it whole (launchExpedition checks to the last digit)
       supplies[k] = q;
       room -= q * w;
     }
