@@ -54,7 +54,7 @@ section("Every wood figure × 30: the balance unchanged");
     ["a group's start a head", GROUP_WOOD.start, 4, 30], ["a group's cap a head", GROUP_WOOD.cap, 8, 30],
     ["a group's cutting a head a day", GROUP_WOOD.cut, 0.12, 30], ["a group's burn a freezing day", GROUP_WOOD.burn, 0.3, 30],
     ["a trade lot", LOT.wood, 20, 30], ["a cabin's woodpile (min)", SITE_WOOD.cabin[1], 2, 30], ["a cabin's woodpile (max)", SITE_WOOD.cabin[2], 6, 30],
-    ["a barn's woodpile in a raid (max)", AREA_WOOD.barn[2], 5, 30], ["the hub's start (and 400 for building since 2026-10-20)", hub(st0).stock.wood - 400, 10, 30],
+    ["a barn's woodpile in a raid (max)", AREA_WOOD.barn[2], 5, 30], ["the hub's start (and 700 for building since woodwork 2026-10-20: world.js, its costs raised)", hub(st0).stock.wood - 700, 10, 30],
   ];
   for (const [what, now, was, x] of rows) check(near(now, was * x, 1e-9), `${what}: ${was} → ${Math.round(now * 1e6) / 1e6}`);
   check(SITE_WOOD.cabin[0] === 0.4 && AREA_WOOD.barn[0] === 0.3, "the loot's chances unchanged (only the amounts)");

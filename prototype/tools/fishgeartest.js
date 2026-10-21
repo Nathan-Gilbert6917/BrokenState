@@ -78,9 +78,9 @@ section("The new fishing tools");
   check(GEAR.pipespear.fish === "spear", "the pipe spear (makeshift) spears fish too");
   check(CRAFTS.makeshiftrod && CRAFTS.makeshiftrod.field && canCraft(state, h, "makeshiftrod").ok, "a makeshift rod can be crafted at a base");
   const p = placeTeam(state, h.tile, 1);
-  p.supplies.scrap = 2;
+  p.supplies.scrap = 2; p.supplies.wood = 5; // a sapling's 5 wood too since woodwork 2026-10-20 (crafting.js makeshiftrod: 1 scrap, 5 wood)
   const opt = fieldCraftOptions(state, p).find((o) => o.key === "makeshiftrod");
-  check(opt && opt.ok, "and in the field from a team's scrap");
+  check(opt && opt.ok, "and in the field from a team's scrap and wood");
   check(Object.values(HUNT_FINDS).some((f) => f.items.spear) && ITEM_TAGS.spear && GEAR_DUR.spear, "the spear turns up at lodges, cabins and campgrounds, and wears");
   const angler = makeSurvivor(state);
   const one = (it) => H.fishKit([angler], [it]); // the same fisher for every tool: the tools are compared

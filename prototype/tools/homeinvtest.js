@@ -179,7 +179,7 @@ section("INV-03: the Fish job's rod goes out with the fisher, one rod one fisher
   for (let i = 0; i < 30; i++) {
     tickHour(state);
     if (a.trip && a.trip.job === "fish") { outSeen = true; if (allCarried(a).includes(rod) || allCarried(b).includes(rod)) outWith = true; }
-    if (a.trip && b.trip) bOut = true;
+    if (a.trip && b.trip && a.trip.job === "fish" && b.trip.job === "fish") bOut = true; // b with no rod has no Fish work, so helps cut wood or farm for the hour (noidle.js helpHour, 2026-10-20): out, but never fishing
   }
   check(outSeen && outWith, "on a fishing trip the rod is carried, not in the armory");
   check(!bOut, "never two fishers out on one rod");
