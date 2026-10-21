@@ -27,6 +27,7 @@ import { stationIO } from "../src/sim/production.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
 import { ensureMembers, syncMembers, membersOf } from "../src/sim/members.js";
 import { skill as skillOf } from "../src/sim/world.js";
+import { siteCost } from "../src/sim/buildmats.js"; // what a cost takes from the stores (building materials made from scrap when short)
 // A group's best mechanic is one of its people (groupworks.js groupSkill): every one of them set to n (traits count).
 const setMech = (st, f, n) => { ensureMembers(st, f); syncMembers(st, f); for (const x of membersOf(f)) { x.skills.mechanics = n; x.skills.mechanics = Math.max(0, 2 * n - skillOf(x, "mechanics")); } };
 
@@ -335,8 +336,9 @@ const near = (a, b) => Math.abs(a - b) < 1e-6;
   h.stock.parts = parts0;
   const p0 = h.stock.parts, s0 = h.stock.scrap;
   check(canUpgradeKitchen(st, h, k1.id).ok, "with all of it: ok");
+  const take = siteCost(h.stock, D.cost).take;
   queueCannerUpgrade(st, h, k1.id);
-  check(h.stock.parts === p0 - D.cost.parts && h.stock.scrap === s0 - D.cost.scrap && h.construction.some((c) => c.type === "canner" && c.target === k1.id), "queued: the parts and scrap paid");
+  check(h.stock.parts === p0 - D.cost.parts && h.stock.scrap === s0 - take.scrap && h.construction.some((c) => c.type === "canner" && c.target === k1.id), "queued: the parts and scrap paid");
   check(countAll(h, "kitchen") === 1 && canBuild(st, h, "kitchen").ok === canBuild(st, h, "kitchen").ok, "the fitting is no new kitchen");
   check(!canUpgradeKitchen(st, h, k1.id).ok, "not twice");
   for (const s of atBase(st, h.id)) s.role = "build";
