@@ -133,6 +133,10 @@ export const KEYMAP = [
     // sim/combat.js handoverAct: trade with the teammate next to them in their view cone (1 action a move). H is
     // Hunker down and Shift+H Heal, so it sits on Alt+H.
     ["handover", "Hand over: trade with the teammate next to them in their view cone (1 action a move)", "Alt+KeyH"],
+    // sim/holsters.js: the side arm or the melee weapon drawn, the slung main weapon back (1 action each; P for Pistol,
+    // M for Melee, R for the Rifle).
+    ["drawside", "Draw the side arm (1 action; the main weapon slung)", "Alt+KeyP"], ["drawmelee", "Draw the melee weapon (1 action)", "Alt+KeyM"],
+    ["drawmain", "Main weapon: the slung gun back in the hands (1 action)", "Alt+KeyR"],
     // sim/barricade.js: furniture shoved a tile, boards nailed across a door or window, the boards torn down (Alt: every
     // Shift letter is taken; not Alt+D, E or F, which a browser takes for its own menus).
     ["shove", "Shove: a piece of furniture next to them one tile (2 actions)", "Alt+KeyS"], ["boardup", "Board up: boards and nails across the door or window next to them (2 actions)", "Alt+KeyB"],

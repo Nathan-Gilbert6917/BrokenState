@@ -100,7 +100,7 @@ import { nlHit, nlDown, nlAfterHit, nlAimPen, nlNoOw, nlStrike, nlAct, nlSetup, 
 import { ammoPen, spreadMult } from "./data-ammo.js"; // a round's penetration: what bulletproof glass stops (riderHitMult); shot spreading with range
 import { noteFight } from "./causes.js"; // "Why?": the odds of a fight by the numbers
 import { calOf, calName, roundsOf, takeBattleRounds, sideRounds, chooseLoad, enemyLoad, pickLoad, boxesOf, sweepBoxes, formFinds, typeFx, typeFor, roundName, settleBase, settleParty, drawTeamShots, ammoEdge, refundShots, softMult, bodyRounds, sortFind, raidTheme } from "./ammo.js"; // rounds by calibre and type
-import { loadFx, unitRound, loadRefusal } from "./ammo.js"; // calibre compatibility (2026-10-10): the round loaded, a 5.56 gun's .223
+import { loadFx, unitRound, loadRefusal, gunTakes } from "./ammo.js"; // calibre compatibility (2026-10-10): the round loaded, a 5.56 gun's .223
 import { trucksAt, TRUCK_KINDS, truckLoot, truckRng, markOpened, truckName, MILTRUCK, CONVOY_GUARD, guardedTrucks } from "./miltrucks.js"; // Army trucks on the map, their cargo and crews (a convoy's guard)
 import { carAct, settleClaims } from "./foundcars.js"; // any car on a map: get in, keys or hotwire, inspect, claim
 import { armFromArsenal, settleArsenal, settleThird } from "./arsenal.js";
@@ -112,10 +112,11 @@ import { fitMags, tracksMags, gunEntry, reloadPlan, doReload, fittedMag, getShel
 import { stackN, takeTop } from "./roundstack.js"; // physical rounds in a gun (loadMag) // magazines as items (section 15): spares, reload sources (a pocket or the rig 1 action, the pack both), top-up, internal magazines
 import { weighPlayer, kitEnemy, unitMagItems, withMags, plateSwapPlan, swapPlate, packShells as handOutShells } from "./carrykit.js"; // the kit's weight: battle mob by load band (R17); enemies' rigs and magazines; a base's defenders' loose rounds out of its stock (handOutShells: packShells is the AI's Get shells check below)
 import { allCarried, carriedSpots, stow } from "./inventory.js";
+import { drawPlan, drawWeapon, drawOptions, holsterAll, DRAW_AP } from "./holsters.js"; // the side arm and melee slots: drawn for an action
 import { parseLoc, itemAt, moveItem, slotKind, fitReason, splitAt, openAt, boxAt as boxRoundsAt, rigOf, pouchesOf } from "./inventory.js"; // the survivor's inventory in a fight (combatAct "inv"; boxAt here is a raid's container)
 import { amountOf, canStack, isRoundItem } from "./itemstack.js";
 import { deepShift } from "./deeploot.js";
-import { typesOf, withHand } from "./rounds.js"; // shells and rounds at hand (takeHandRounds)
+import { typesOf, withHand, roundOf as roundOfKey } from "./rounds.js"; // shells and rounds at hand (takeHandRounds)
 import { ammoKey } from "./data-ammo.js";
 import { rescueAct, rescueRefusal, guardTurn, rescueRound, rescueBot, rescueDone, captiveStays, captiveHitMult } from "./rescueraid.js"; // a rescue raid on a group's base: captives on the map
 import { raidBuilding, buildingMap, buildingOptions, placeInterior, windowsNear, interiorIntro, BMAP, doorNoise, doorBroken, doorAct, peekSees, rewardMult, botEscape, DOOR_KINDS, doorSees } from "./buildingmaps.js";
@@ -3461,8 +3462,8 @@ setRefit(refitUnit);
 // it instead (mags.js loadMagPlan / loadMagFrom, 2026-10-18 user request): 1 action with the rounds in a pocket or a
 // rig pouch, both with them in the pack (mags.js LOAD_AP); nothing changes place, so no refit.
 export const INV_AP = 1;
-const INV_SLOTS = ["pocket", "pack", "pouch", "weapon", "tool", "carry"]; // inventory.js slotKind: a rig pouch is "pouch", the rig itself "rig"
-const INV_WORN = "Armour, a helmet, the rig and the pack stay as they are in a fight: only the pockets, the pack's slots, the rig's pouches and the hands change.";
+const INV_SLOTS = ["pocket", "pack", "pouch", "weapon", "tool", "carry", "sidearm", "melee", "slung", "ears"]; // inventory.js slotKind: a rig pouch is "pouch", the rig itself "rig"; the holsters and the sling (holsters.js), Ear pro (helmets.js)
+const INV_WORN = "Armour, a helmet, the rig and the pack stay as they are in a fight: only the pockets, the pack's slots, the rig's pouches, the hands, the belt and the ears change.";
 // u.fit (what playerUnit gave at the start: refitUnit's baseline) for a unit that has none yet (a field battle).
 export function ensureFit(b, u, s) {
   if (u.fit || !s) return;
@@ -3532,6 +3533,80 @@ export function tidyRounds(b, u, s) {
   sweepBoxes(s);
   refitKit(b, u, s);
 }
+// ---------- the holsters (holsters.js; the user's request 2026-10-21) ----------
+// combatAct "draw" { unit, slot: "sidearm" | "melee" | "main" }: the side arm or the melee weapon in the hands, or the
+// slung main weapon back, for DRAW_AP (one action), by anyone: your people, your bots and anyone else's (s: the person,
+// u.who). The unit is refit at once (refitKit): the gun put away keeps its rounds on it (gunload.js gunOut), the one
+// drawn comes with what is in it (gunIn: a gun carried into the fight is loaded from the rounds they carry).
+// Why u cannot draw from that slot now ("" when it can).
+export function drawRefusal(b, u, s, slot) {
+  if (!s || !s.gear) return "Nothing to draw.";
+  if (!u || !active(u)) return "That unit cannot act.";
+  if ((u.ap || 0) < DRAW_AP) return "No action left.";
+  if (u.gunner) return "On the turret: get down first.";
+  if (u.spearOut) return "The spear is out: pick it up first.";
+  if (u.carrying != null || u.dragging != null) return u.carrying != null ? "Hands full: put the body down first." : "Hands full: dragging someone (put them down first, Shift+D).";
+  return drawPlan(s, slot).why;
+}
+function drawAct(b, u, s, slot) {
+  const why = drawRefusal(b, u, s, slot);
+  if (why) return why;
+  const line = drawWeapon(s, slot);
+  if (!line) return "Nothing to draw.";
+  u.ap -= DRAW_AP;
+  u.hunker = false;
+  u.ow = false;
+  u.drewTurn = strikeMark(b);
+  refitKit(b, u, s);
+  say(b, line, u.side === "player" ? "info" : "danger");
+  fx(b, { type: "draw", at: [u.x, u.y], uid: u.id, key: s.gear.weapon ? s.gear.weapon.key : null });
+  return "";
+}
+// A gun with something to fire: rounds in it (its record, gunload.js), or loose or boxed rounds it takes on them.
+export function gunRoundsOn(s, item) {
+  const w = item && WEAPONS[item.key];
+  if (!w || w.melee) return false;
+  const cal = calOf(item.key);
+  if (!cal) return !w.ammo && !w.arrows; // nothing to load (a bow's arrows are the team's)
+  if (item.loaded && item.loaded.n > 0) return true;
+  return allCarried(s).some((it) => isRoundItem(it) && amountOf(it) > 0 && gunTakes(item.key, (roundOfKey(it.key) || {}).cal));
+}
+// What the AI draws now, if anything (one brain for every side: docs/adr/0001-ai-parity.md): out of rounds with no
+// Reload left, the melee weapon with a foe next to them, else the side arm while it has rounds, else the melee weapon;
+// a melee weapon or bare hands with nobody next to them, the slung gun (or the side arm) back while it has rounds; bare
+// hands with a foe next to them, the melee weapon. Once a turn. Returns "sidearm", "melee", "main" or null.
+export function drawChoice(b, u, s) {
+  if (!s || !s.gear || u.kind !== "human" || (u.ap || 0) < DRAW_AP || u.drewTurn === strikeMark(b) || u.gunner || u.spearOut) return null;
+  const opts = drawOptions(s).filter((o) => !o.why);
+  if (!opts.length) return null;
+  const has = (slot) => opts.find((o) => o.slot === slot) || null;
+  const armed = (slot) => { const o = has(slot); return !!o && gunRoundsOn(s, o.item); };
+  const close = foesOf(b, u).some((f) => active(f) && inMelee(b, u, f));
+  if (isRanged(u)) {
+    if (hasShots(b, u)) return null;
+    if (close && has("melee")) return "melee";
+    if (armed("sidearm")) return "sidearm";
+    if (has("melee")) return "melee";
+    if (armed("main")) return "main";
+    return null;
+  }
+  if (close) return u.weapon === "fists" && has("melee") ? "melee" : null;
+  if (armed("main")) return "main";
+  if (armed("sidearm")) return "sidearm";
+  return u.weapon === "fists" && has("melee") ? "melee" : null;
+}
+// The AI's draw (aiUnit for anyone else's people, the bots for yours). True when it drew.
+function aiDraw(b, u, s) {
+  const slot = drawChoice(b, u, s);
+  return !!slot && !drawAct(b, u, s, slot);
+}
+// Your bots (the battle AI playing your side, the raid bot): the same choice, through combatAct.
+function botDraw(state, b, u) {
+  const s = u.sid != null ? survivorById(state, u.sid) : null;
+  const slot = drawChoice(b, u, s);
+  return !!slot && !combatAct(state, { type: "draw", unit: u.id, slot });
+}
+
 // combatAct "inv": the move checked and done (the error, or "" when it happened and INV_AP was spent).
 function invAct(state, b, u, act) {
   const s = u.sid != null ? survivorById(state, u.sid) : null;
@@ -4636,6 +4711,11 @@ export function combatAct(state, act) {
       if (err) return err;
       break;
     }
+    case "draw": { // holsters.js: the side arm or the melee weapon drawn, or the slung weapon taken back (DRAW_AP)
+      const err = drawAct(b, u, u.sid != null ? survivorById(state, u.sid) : null, act.slot);
+      if (err) return err;
+      break;
+    }
     case "handover": { // a thing given to, or taken from, the teammate next to them in their cone (handoverAct): HANDOVER_AP
       const err = handoverAct(state, b, u, act);
       if (err) return err;
@@ -5350,6 +5430,7 @@ function aiUnit(b, u) {
   // An empty gun is reloaded first (1 action), then the turn goes on with the other (a shot, often). Your side's gun
   // out of its loaded type, or empty, takes the best type to hand against the foes in sight (ammo.js pickLoad).
   if (aiReload(b, u)) { if (u.ap < 1) return; }
+  if (u.who && aiDraw(b, u, u.who) && u.ap < 1) return; // holsters.js: dry with no Reload: the side arm or the melee weapon (your people: botDraw)
   if (u.suppressed && u.kind === "human" && !u.post) return aiPinned(b, u); // pinned by suppressing fire: to cover
   if (u.post && holdPost(b, u)) return; // deploy.js: a defender posted at the gate or on a tower stays there
   if (u.ztype && zombieTurn(b, u)) return; // zombietypes.js: a screamer shrieks or hangs back, a brute smashes through
@@ -6127,6 +6208,7 @@ function autoPlayerTurnNow(state, opts) {
     if (active(u) && u.ap > 0 && b.tier) tierAI(b, u); // interior.js: into the buildings once the yard is lost
     const skull = botCrush(b, u); // carriers.js: a body in danger next to them (a Carrier near, the worm in it), crushed before it gets up
     if (skull) combatAct(state, skull);
+    if (active(u) && u.ap > 0 && !u.jam) botDraw(state, b, u); // holsters.js: dry with no Reload, the side arm or the melee weapon
     if (active(u) && u.ap > 0) aiUnit(b, u);
     checkEnd(state, b);
   }
@@ -6397,6 +6479,9 @@ function endBattle(state, b, outcome) {
 // piece). A bandage kit loses one use per treatment its carrier gave. A broken item is gone.
 function wearFielded(state, b, fought) {
   battleXp(state, b); // skills.js: XP for what each unit did in this battle (once, as it ends)
+  // holsters.js: everyone's slung weapon back in the hands (a drawn side arm or blade back on the belt), before the
+  // wear below reads the hands (u.fielded: the weapon they took the field with).
+  for (const u of b.units) { const p = u.who || (u.side === "player" && u.sid != null ? survivorById(state, u.sid) : null); if (p) holsterAll(p); }
   for (const u of b.units) {
     if (u.side !== "player") continue;
     const s = survivorById(state, u.sid);
@@ -7186,7 +7271,7 @@ export function searchBox(state, b, u, box, open = false, quick = false) {
     const sup = {}, gear = [];
     if (box.kind === "body" && box.zombie) {
       // One of the dead (inventory.js deadBodyFinds): pockets, now and then a pistol; a dead soldier's kit.
-      const f = deadBodyFinds(rng, box.ztype, box.plateDur ?? null); // a dead soldier's plates as worn as they were shot (deadsoldiers.js)
+      const f = deadBodyFinds(rng, box.ztype, box.plateDur ?? null, box.uid ?? box.id); // uid: the body's own dice for a former survivor's kit (inventory.js survivorDead) // a dead soldier's plates as worn as they were shot (deadsoldiers.js)
       Object.assign(sup, f.sup);
       gear.push(...f.gear);
       if (box.ztype === "spitter") { // the burst acid sac is still dripping
@@ -7538,6 +7623,7 @@ function autoRaidTurn(state) {
       if (u.jam && !combatAct(state, { type: u.jam.kind === "double" && botReloadClears(b, u) ? "reload" : "unjam", unit: u.id })) continue;
       // An empty gun: reloaded (1 action) when something is close or there is time (not on the way out), then on.
       if ((magEmpty(b, u) || (calOf(u.weapon) && !hasShot(b, WEAPONS[u.weapon], u))) && (foes.length || !leave)) { const rt = reloadType(b, u, foes); if (rt != null) { const am = rt === typeFor(calOf(u.weapon), u.load) ? null : rt; if (packShells(b, u, am) && !combatAct(state, { type: "getshells", unit: u.id, ammo: am })) continue; if (!combatAct(state, { type: "reload", unit: u.id, ammo: am })) continue; } } // ammo.js: another type when its own has run out; mags.js: a shotgun's shells all in the pack: a handful to hand first (1 action), not both actions on the pack
+      if (foes.length && !u.jam && botDraw(state, b, u)) continue; // holsters.js: dry with no Reload: the side arm or the melee weapon
       const adj = foes.find((f) => inMelee(b, u, f)); // a spear reaches 2
       const shot = foes.length ? bestShot(b, u, foes) : null;
       const fair = shot && shot.o.chance >= 45;

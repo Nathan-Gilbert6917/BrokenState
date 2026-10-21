@@ -14,6 +14,7 @@ import {
   playerVision, enemyGhosts, vehicleExit, heightAt, HEIGHT, sightRange, structureName, barredCell, doorHeld, WEAPONS, CRIT_MULT, hitMult, vaultsNear,
 } from "../sim/combat.js";
 import * as SIM from "../sim/combat.js";
+import { drawOptions, drawPlan, DRAW_AP } from "../sim/holsters.js"; // the side arm and melee slots (Draw side arm, Draw melee, Main weapon)
 import { magsLine, spareRounds, reloadText, isShellGun, shellsInPack, getShellsRefusal, shellsLine, SHELLS, tracksMags, reloadPlan, reloadOptions, gunStackText, isStacked, MAGS } from "../sim/mags.js";
 import { kitWarnings, kitWarnDue } from "../sim/kitcheck.js"; // the kit check before the first move: empty guns, no healing, the hurt // magazines as items (section 15): spares, what a Reload does
 import { plateSwapPlan, PLATE_AP } from "../sim/carrykit.js"; // a broken plate swapped from the pack (2 actions)
@@ -308,6 +309,25 @@ function plateButton(state, b, u, btn) {
   const p = s ? plateSwapPlan(s) : null;
   if (!p || /No plate carrier|sound/.test(p.why)) return "";
   return btn("plate", "Swap plate", p.why ? `A plate in the carrier is broken or worn. ${p.why}` : `${PLATE_AP} actions: a spare plate from the pack into the carrier's ${p.side} pocket (a broken one is dropped).`, !p.why && u.ap >= PLATE_AP);
+}
+// The belt (sim/holsters.js; the user's request 2026-10-21): the side arm or the melee weapon drawn, or the slung main
+// weapon taken back, DRAW_AP (1 action) each; a button for each holster with something in it and the sling.
+export const DRAW_V = { sidearm: "drawside", melee: "drawmelee", main: "drawmain" };
+const DRAW_SLOT = { drawside: "sidearm", drawmelee: "melee", drawmain: "main" };
+function holsterButtons(state, b, u, btn) {
+  const s = u.side === "player" && u.sid != null ? (state.survivors || []).find((x) => x.id === u.sid) : null;
+  if (!s || u.aboard) return "";
+  const held = s.gear && s.gear.weapon;
+  for (const o of drawOptions(s)) {
+    const why = SIM.drawRefusal(b, u, s, o.slot);
+    const label = o.slot === "sidearm" ? "Draw side arm" : o.slot === "melee" ? "Draw melee" : "Main weapon";
+    const what = o.slot === "main" ? `take the slung ${esc(o.item.name)} back in the hands` : `draw the ${esc(o.item.name)} from the ${o.slot === "sidearm" ? "side arm" : "melee"} slot`;
+    const put = drawPlan(s, o.slot).put;
+    const away = held && put ? ` The ${esc(held.name)} ${put === "slung" ? "is slung (Main weapon takes it back)" : `goes back in the ${put === "sidearm" ? "side arm" : "melee"} slot`}.` : "";
+    const use = o.slot === "melee" ? " A melee weapon strikes the enemy right next to them (Melee, V) and makes no noise: for when the rounds run out or the dead are too close." : o.slot === "sidearm" ? " A handgun with what is in it (one carried into the fight is loaded from the rounds they carry); Reload as usual." : "";
+    btn(DRAW_V[o.slot], label, `${DRAW_AP} action: ${what}.${away}${use}`, !why, "", { why, ap: DRAW_AP });
+  }
+  return "";
 }
 // The spare magazines a fighter of yours carries (sim/mags.js): "+3 mags", "2 clips".
 function magsTag(b, u) {
@@ -1269,6 +1289,7 @@ export function unitOrders(state, b, u) {
   if (kinds.length > 1) btn("ammocycle", "Next round", `Free: the kind of round the next Reload loads (${kinds.map((x) => `${x.short || x.name} ${x.n}`).join(", ")}); then Reload (${keyLabel("battle.reload", 1) || "I"}) loads it.`, true, "⇧I", { ap: 0 });
   if (gun && isShellGun(u) && (shellsInPack(b, u) || !getShellsRefusal(b, u))) btn("getshells", shellsInPack(b, u) ? '<span class="danger">Get shells</span>' : "Get shells", `1 action: up to ${SHELLS.GRAB} shells out of the pack, loose at hand (pockets), ready to load for 1 action a Reload (a Reload straight from the pack takes both actions). ${shellsLine(b, u)}.${getShellsRefusal(b, u) ? ` ${getShellsRefusal(b, u)}` : ""}`, ap >= 1 && !getShellsRefusal(b, u), "", { why: getShellsRefusal(b, u) || noAp });
   gunButtons(state, b, u, btn);
+  holsterButtons(state, b, u, btn); // sim/holsters.js: Draw side arm, Draw melee, Main weapon
   plateButton(state, b, u, btn);
   btn("melee", "Melee", "Strike an adjacent enemy. Silent: it does not alert others or draw zombies. Ends the turn.", ap > 0 && foesAdj, "E", { why: noAp || (foesAdj ? "" : "No enemy right next to them (not across a wall's corner).") });
   { // sim/shoving.js: a foe right next to them shoved back a tile or flat on their back
@@ -1603,6 +1624,7 @@ export function combatAction(state, key, d, ui = null) { // ui: main.js's screen
   if (groundCbAct(state, b, u, v, cui, act)) return; // ui/ground.js: Search a body (a field battle), Ground
   if (v === "search" && b.raid) return void openSearch(state, b, u, null, { full: true });
   if (v === "quick" && b.raid) return void openSearch(state, b, u, null, { quick: true }); // sim/search.js: the rummage
+  if (DRAW_SLOT[v]) return void act(state, { type: "draw", unit: u.id, slot: DRAW_SLOT[v] }); // sim/holsters.js: the side arm, the melee weapon, the slung gun back
   if (v === "evac" || v === "evacStop") return void act(state, { type: v }); // sim/combat.js evacTurn: everyone to the way out
   if (v === "cab") return void act(state, { type: "cab", unit: u.id }); // sim/combat.js fireCab: their vehicle's cab and hull
   if (v === "board" || v === "disembark" || v === "turn" || v === "gunner") return void act(state, { type: v, unit: u.id }); // sim/combat.js boardVehicle / disembark / turnVehicle / manTurret

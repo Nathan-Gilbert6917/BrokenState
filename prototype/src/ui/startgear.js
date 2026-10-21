@@ -30,12 +30,13 @@ import { gunIconHtml } from "./gunart.js"; // the picked gun as it comes (its pi
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
 const freeEdit = (ui) => !!ui.freeEdit && !ui.ironman; // Customize, as ui/newgame.js
-const SLOT_LABELS = { weapon: "Hands", tool: "Off hand", armor: "Body", head: "Head", arms: "Arms", legs: "Legs", rig: "Rig", backpack: "Bag" };
+const SLOT_LABELS = { weapon: "Hands", tool: "Off hand", armor: "Body", head: "Head", ears: "Ear pro", arms: "Arms", legs: "Legs", rig: "Rig", backpack: "Bag" };
 const SLOT_TIPS = {
   weapon: "The weapon in their hands (a gun comes with a full load and two more of its rounds, in the price)",
   tool: "The off hand: a light, a radio, a medical kit, night vision…",
   armor: "Body armour (a vest or carrier with pouches takes magazines and meds itself)",
-  head: "A helmet, ear protection or a headset",
+  head: "A helmet or a hat",
+  ears: "Ear protection: earplugs, muffs, electronic defenders, a team headset (only what is worn here protects the ears; no muffs under a full-shell helmet)",
   arms: "Arm guards", legs: "Leg guards",
   rig: "A chest rig: pouches for magazines, grenades, a radio and small things (not over a vest that has pouches of its own)",
   backpack: "A bag: pack slots and more weight they can carry",

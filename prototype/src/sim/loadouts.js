@@ -17,7 +17,7 @@ import { equipPeople, equipTools } from "./equip.js";
 import { ensureArsenal, isThrowKey, isKitThrowKey, isNonlethalKey, isSelfAidKey, isLauncherKey, addToArsenal, isJobKitKey, isDecoyKey, isPackKey, isScavToolKey, isMedKitKey } from "./arsenal.js";
 import { skill } from "./world.js"; // who of a party takes a med kit, a crowbar, a hunting rifle
 import { ensureMembers, homeMembers, fighterScore, isWounded, carriers, stripRegistry, HOME_SHARE } from "./members.js";
-import { isEarKey, earGearOf, isHelmet, helmetFitReason, fitHelmetMod } from "./helmets.js";
+import { isEarKey, earGearOf, earSlotReason } from "./helmets.js";
 import { WEAPONS } from "./combat.js";
 import { carriedSpots } from "./inventory.js";
 import { calOf, gunLoads, settleGroup } from "./ammo.js";
@@ -74,8 +74,8 @@ export function dealKit(spare, people) {
   for (const x of equipPeople(spare, people)) handed.push(x);
   for (const x of equipTools(spare, people, { medic: (s) => (s.skills.medicine || 0) >= 5 })) handed.push(x);
   const fighters = people.filter((s) => !isWounded(s));
-  // One each, best fighters first: a tourniquet, ear protection (muffs and headsets worn as yours wear them: on the
-  // helmet's ear mount, else on a bare head; plugs in a pocket).
+  // One each, best fighters first: a tourniquet, ear protection (in the Ear pro slot as yours wear it: muffs and
+  // headsets not under a full-shell helmet, plugs under any).
   for (const want of [isSelfAidKey, (k) => isEarKey(k)]) {
     for (const s of fighters) {
       if (want !== isSelfAidKey ? earGearOf(s) : allCarried(s).some((it) => it && want(it.key))) continue;
@@ -432,10 +432,9 @@ export function armRounds(f, s, stock, pass) {
 const p0 = (s) => s;
 // Ear protection put on: a helmet's ear mount (helmets.js), else the head slot when it is free. False: neither.
 function wearEars(s, it) {
-  const helm = s.gear.head;
-  if (helm && isHelmet(helm.key) && !helmetFitReason(helm, it)) { fitHelmetMod(helm, it); return true; }
-  if (!s.gear.head && GEAR[it.key] && GEAR[it.key].slot === "head") { s.gear.head = it; return true; }
-  return false;
+  if (s.gear.ears || earSlotReason(it, s)) return false; // helmets.js: the Ear pro slot, as yours wear it
+  s.gear.ears = it;
+  return true;
 }
 const packRoom = (s) => { const pk = s.gear.backpack; return !!(pk && Array.isArray(pk.contents) && pk.contents.includes(null)); };
 // Their weapon can go in the off hand (a handgun or a light weapon) and the off hand is free.

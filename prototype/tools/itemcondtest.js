@@ -27,7 +27,7 @@ import { Rng } from "../src/sim/rng.js";
 import { createWorld, tickHour, day, hub } from "../src/sim/world.js";
 import { setAutopilot } from "../src/sim/autopilot.js";
 import { KITS, AREAS } from "../src/sim/combat.js";
-import { enemyBody, deadBodyFinds, allItems, lootItem, newItem, ZOMBIE_FINDS, ZOMBIE_PACKS, ZOMBIE_PACK_STUFF, ZBODY } from "../src/sim/inventory.js";
+import { enemyBody, deadBodyFinds, allItems, lootItem, newItem, ZOMBIE_FINDS, ZOMBIE_PACKS, ZOMBIE_PACK_STUFF, ZBODY, ZSURV } from "../src/sim/inventory.js";
 import { HEAD_FINDS, AREA_HEAD, WARE_HEAD } from "../src/sim/helmets.js"; // helmets and ear protection (their own dice)
 import { WARE_CARTS } from "../src/sim/loot.js"; // carts on a merchant's table (loot.js cartWares)
 import { SITE_FINDS, rollAreaFind, AREA_FINDS, rollFind, rollHuntFind, rollLightFind, LIGHT_FINDS, rollGunmodFind, rollAreaGunmod, AREA_GUNMODS, WARE_GUNMODS, WARE_MODS, SITE_MODS, AREA_MODS, rollSiteMod } from "../src/sim/loot.js"; // WARE_MODS / SITE_MODS / AREA_MODS: the economy agent's parts
@@ -225,7 +225,7 @@ for (const kit of Object.keys(KITS)) {
   const rng = new Rng(8);
   const items = [];
   for (let i = 0; i < 3000; i++) items.push(...allItems(enemyBody(rng, { kind: "zombie", name: "z", id: i }, null)), ...deadBodyFinds(rng, null).gear);
-  within("one of the dead", items, new Set([...ZOMBIE_FINDS, ...ZOMBIE_PACKS, ...ZOMBIE_PACK_STUFF, ...ZBODY.FINDS, "pistol"]));
+  within("one of the dead", items, new Set([...ZOMBIE_FINDS, ...ZOMBIE_PACKS, ...ZOMBIE_PACK_STUFF, ...ZBODY.FINDS, "pistol", ...ZSURV.SIDEARMS, ...ZSURV.MELEE, ...ZSURV.PACKS, ...ZSURV.STUFF, "earplugs", "earmuffs"])); // ZSURV: the ones who were survivors (inventory.js survivorDead)
   for (const z of ["soldier", "riot"]) {
     const B = MILDEAD.BODY[z];
     const its = [];
@@ -325,7 +325,7 @@ for (const T of [SURV_KITS, AR_KITS, CALIBRE_KITS, ARSENAL_KITS]) for (const [ki
 check(kitTails, "the later guns sit at the end of each kit's lists (ARSENAL_KITS, CALIBRE_KITS, AR_KITS, SURV_KITS in order: a new table goes in this list)");
 for (const kind of Object.keys(TRUCK_GEAR)) { nlStash.push([TRUCK_GEAR, kind, TRUCK_GEAR[kind]]); TRUCK_GEAR[kind] = TRUCK_GEAR[kind].filter((r) => !ARSENAL_GEAR[r[0]]); }
 const BASE = {
-  bodies: { keys: "917048c944387995", rng: 94849467201019 }, areaFinds: { keys: "4f69608bbca97f26", rng: 19566617580356 }, trucks: "ddd64fb55272735e",
+  bodies: { keys: "f3c0458d59ea051f", rng: 94849467201019 }, areaFinds: { keys: "4f69608bbca97f26", rng: 19566617580356 }, trucks: "ddd64fb55272735e",
   // groupWares.keys and visitors: re-baselined for gen-tiers' Industrial Power Manual (blueprints.js indpower, now in
   // the military's wares and the traders' manuals); with it taken out they come back to 8b17671c3192515c,
   // 3bdc366902700698 / 706e068b336b9d26 / 12580090440502 exactly.
@@ -334,6 +334,9 @@ const BASE = {
   // WARE_BOOKS) are taken off above (NIGHT_LIGHTS, cookBook), so the old hashes hold (the world's dice unchanged). With
   // them left in they come to 449949deb71a9b49 and 6d226e0b96b09acc; the dazzling-bardeen merge (08ab2d0) carried both
   // that re-baseline and the take-off (8b2f1d3), which is why the two drift checks failed there.
+  // bodies.keys: re-baselined for the holsters (holsters.js, 2026-10-21; was 917048c944387995): a kit's second weapon
+  // with the pockets full went nowhere (inventory.js stow), or into the pack; now a handgun or a small melee weapon goes
+  // on the belt. The same items rolled on the same dice (the rng position holds), the dead's own finds unchanged.
   // groupWares.keys: re-baselined for the parity pass (trade.js ensureWares: nobody's shelf rolls on from week to
   // week any more, so each restock is a fresh shelf of the same draws, with no carry-over of the last 12).
   siteFinds: "edc8e9c7fdaab752", groupWares: { keys: "dcbb48f4247749e8", rng: 2670422955354 }, visitors: { keys: "c6ac67fed2276a9e", merchants: "bf202c687fe737a0", rng: 12799878338062 },
@@ -343,6 +346,7 @@ const BASE = {
 const bodyExtra = MILDEAD.BODY_EXTRA;
 MILDEAD.BODY_EXTRA = {};
 KIT_LOOT.on = false; // the carry kit (carrykit.js) only adds: checked below
+ZSURV.on = false; // the dead who were survivors (inventory.js survivorDead): their own dice, they only add
 // (only the flashbang hook: the roster's guns and the rounds by calibre stay, they are in the baselines above)
 const takeHooks = (re) => { const out = TRUCK_LOOT_HOOKS.filter((f) => re.test(String(f))); for (const f of out) TRUCK_LOOT_HOOKS.splice(TRUCK_LOOT_HOOKS.indexOf(f), 1); return out; };
 const takeFlashHooks = () => takeHooks(/truckflash/);
@@ -379,6 +383,7 @@ const truckHooks = takeHooks(/truckflash|formFinds/); // and the boxed and bulk 
   check(h16(ks.join("|")) === BASE.trucks, "trucks: the same items, the dice where they were");
 }
 MILDEAD.BODY_EXTRA = bodyExtra;
+ZSURV.on = true;
 TRUCK_LOOT_HOOKS.push(...truckHooks);
 KIT_LOOT.on = true;
 {

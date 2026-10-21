@@ -135,8 +135,16 @@ export function tile(item, loc, s, drag = true) {
 }
 
 // One slot box (equipment, pocket or pack cell). Clicks select / drop; drops land on data-drop.
+// What an empty slot takes, where it is not plain (sim/holsters.js, sim/helmets.js).
+const SLOT_HINT = {
+  sidearm: "a handgun. In a fight, Draw side arm (1 action) puts it in the hands and slings the main weapon",
+  melee: "a small melee weapon (a knife, a hatchet, a machete, a bat: 1 kg or less). In a fight, Draw melee (1 action) puts it in the hands to strike whoever is right next to them",
+  ears: "ear protection: earplugs, muffs, electronic defenders, a headset. Only what is here protects the ears from gunfire and bangs (not in a pocket or the pack; no muffs under a full-shell helmet, earplugs fit under any)",
+};
 function slotBox(state, ui, loc, label, s, readonly) {
   const item = itemAt(state, loc);
+  const hint = SLOT_HINT[String(loc).split(":")[2]];
+  if (!item && hint) return `<div class="islot${ui.invSel === loc ? " sel" : ""} empty"${readonly ? "" : ` data-action="inv-click" data-loc="${loc}" data-drop="${loc}"`}${tip(`${label}: empty. Takes ${hint}.`)}><span class="islab">${label}</span></div>`;
   const sel = ui.invSel === loc ? " sel" : "";
   const act = readonly ? (item ? ` data-loc="${loc}"` : "") : ` data-action="inv-click" data-loc="${loc}" data-drop="${loc}"`; // read-only: still right-clicked for the item menu (ui/itemmenu.js)
   return `<div class="islot${sel}${item ? "" : " empty"}"${act}${item ? "" : tip(`${label}: empty`)}><span class="islab">${label}</span>${item ? tile(item, loc, s, !readonly) : ""}${!readonly && /:weapon$/.test(loc) ? gearCog(state, ui, item, loc) : ""}</div>`;
@@ -147,8 +155,9 @@ function gearCog(state, ui, item, loc) {
   return `<button class="mini gbcog" data-action="gb-open" data-loc="${loc}" style="position:absolute;right:2px;top:2px;padding:0 0.25rem;line-height:1.2"${tip(`Modify the ${item.name}: the gun builder (sights, muzzle, magazine, stock, grip and the rest; the ammo it is loaded with)`)}>⚙</button>`;
 }
 
-// The paper doll: portrait in the middle, hands / off hand / pack on the left, head / body / arms / legs on the
-// right, pockets and pack below. holder = survivor or body; prefix = "s:<id>" or "body:<i>".
+// The paper doll: portrait in the middle, hands (the slung main weapon under them while a holster's is drawn) / off
+// hand / side arm / melee / rig / pack on the left, head / ear pro / body / arms / legs on the right, pockets and pack
+// below (sim/holsters.js, sim/helmets.js earGearOf). holder = survivor or body; prefix = "s:<id>" or "body:<i>".
 // "Food on them": the pack of food and water everyone carries (sim/eating.js), counted in their load.
 const foodLine = (s) => `<div class="small muted" data-imenu="ration:${s.id}"${tip(`Their pack of food and water (sim/eating.js: about ${PACK.food} days of each, topped up from the stores at a base each morning; eaten away from the stores). Counted in the load above. Right-click: eat or drink from it now.`)}>Food on them: ${Math.round(packFood(s) * 10) / 10} d · water ${Math.round(packWater(s) * 10) / 10} (${Math.round(packKg(s) * 10) / 10} kg)</div>`;
 export function doll(state, ui, holder, prefix, portrait, { readonly = false, user = null, weightLine = null, bagBoxes = true } = {}) { // bagBoxes false: the In arms grid is drawn in the Carried list instead (a fight's windows)
@@ -178,9 +187,9 @@ export function doll(state, ui, holder, prefix, portrait, { readonly = false, us
     weight = `<div class="small"${tip(`Wears and carries ${kg(worn)} kg on them${teamTxt}, of a ${max} kg max load (40, 28 with a Bad Back, 48 with a Strong Back, + the pack and Packrat). On foot: pace ${Math.round(pl.speed * 100)}%, food and water ${Math.round(pl.eat * 100)}% on the move. ${BANDS_HELP}`)}>${kg(worn)}/${max} kg ${bandChip(pl.band)}${shareTxt}</div>`;
   }
   return `<div class="doll">
-      <div class="dollside">${box("weapon")}${box("tool")}${box("rig")}${box("backpack")}${box("carry")}</div>
+      <div class="dollside">${box("weapon")}${holder.gear && holder.gear.slung ? box("slung") : ""}${box("tool")}${box("sidearm")}${box("melee")}${box("rig")}${box("backpack")}${box("carry")}</div>
       <div class="dollport">${portrait}<div class="small muted"${tip("Armor from every worn piece (body, head, arms, legs) adds up, to a cap of 5.5. Each point cuts damage taken by 6%.")}>Armor ${Math.round(arm * 10) / 10}</div>${weight}${holder.traits ? foodLine(holder) : ""}${battleLine(holder)}</div>
-      <div class="dollside">${box("head")}${box("armor")}${insertBoxes(state, ui, holder, prefix, user, readonly)}${box("arms")}${box("legs")}</div>
+      <div class="dollside">${box("head")}${box("ears")}${box("armor")}${insertBoxes(state, ui, holder, prefix, user, readonly)}${box("arms")}${box("legs")}</div>
     </div>
     <div class="invlabel"${tip("Pockets hold small things: knives, pistols, kits, radios, goggles. Nothing in a pocket is in use until it is moved to a hand.")}>Pockets</div>
     <div class="invgrid">${Array.from({ length: POCKETS }, (_, i) => slotBox(state, ui, `${prefix}:pocket:${i}`, "", user, readonly)).join("")}</div>
@@ -363,7 +372,7 @@ function helmetBar(state, ui, item) {
       const fit = choices.filter((c) => HELMET_ATTACH[c.item.key].mount === m);
       return box(HELM_MOUNTS[m], fit.length ? fit.map((c) => `<button class="mini" data-action="inv-helmfit" data-part="${c.loc}"${tip(`Fit the ${c.item.name} to the ${item.name}`)}>${esc(c.item.name)}</button>`).join(" ") : `<span class="muted">empty</span>`);
     });
-    return `<div class="row small" style="flex-wrap:wrap;gap:0.25rem;margin-top:0.3rem"><span class="muted">Helmet mounts:</span> ${boxes.join(" ") || `<span class="muted">none: a full shell (only earplugs in a pocket protect the ears)</span>`}</div>`;
+    return `<div class="row small" style="flex-wrap:wrap;gap:0.25rem;margin-top:0.3rem"><span class="muted">Helmet mounts:</span> ${boxes.join(" ") || `<span class="muted">none: a full shell (only earplugs in Ear pro protect the ears)</span>`}</div>`;
   }
   if (isHelmetPart(item.key) && ui.inv) {
     const s = survivorById(state, ui.inv.sid);

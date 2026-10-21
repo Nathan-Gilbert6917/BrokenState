@@ -2,6 +2,9 @@
 // Survivor inventory: RPG-style equipment slots, pockets and a pack, plus bodies to loot after a battle.
 // s.gear stays the source of truth for what is worn or held, so combat, medical and crafting keep reading it:
 //   weapon = Hands (main weapon), tool = Off hand (a tool in use: med kit, radio, goggles, crowbar),
+//   sidearm / melee = a handgun and a small melee weapon on the belt, slung = the main weapon on its sling while one of
+//   them is drawn (holsters.js: drawn for an action in a fight), ears = Ear pro (the only ear protection that works:
+//   helmets.js earGearOf),
 //   armor = Body, head / arms / legs = more armor (power adds up, see armorPower),
 //   backpack = a pack; the pack item's own `contents` array holds more items (slots from GEAR[key].slots).
 // s.pockets = POCKETS slots for small items (GEAR[key].small). Items in pockets and packs do nothing until
@@ -48,6 +51,9 @@ import { dropHeadgear, earsOnBody } from "./helmets.js"; // an enemy's helmet an
 import { AMMO_STACK } from "./data-stacks.js";
 import { stackKg, canStack, mergeInto, isSpent, splitHalf, useOne, openRounds, takeOut, fillBulk, isBulk, isRoundItem, amountOf, stackLabel, countOf, boxRounds, mergeForm, boxesIn } from "./itemstack.js"; // stacks in a slot (consumables, rounds loose or boxed, bulk containers)
 import { swapGun, bodyGunSource } from "./gundist.js";
+import { HOLSTERS, holsterOf, holsterReason, isSidearmKey } from "./holsters.js";
+import { ZTYPES } from "./hiveconst.js"; // the dead beasts and bosses (no survivor's kit on them: survivorDead) // the side arm and melee slots, the sling
+import { earSlotReason, isEarKey } from "./helmets.js"; // the Ear pro slot (call-time only: safe in the import cycle)
 import { settleItems } from "./supitems.js"; // supplies held as items, back into a stock when stored (call-time only: safe in the import cycle) // the gun distribution: a body's spare gun
 
 export const POCKETS = 4;
@@ -55,15 +61,63 @@ export const ARMOR_CAP = 5.5;   // armor power from all worn pieces counts up to
 export const ARMOR_SLOTS = ["head", "armor", "arms", "legs"];
 // carry: a bag carried in the arms instead of worn (carry.js: a looted pack, a second pack, a rig, a gun case; the
 // whole bag with what is in it, its weight on them; hands full until it is set down). Its contents: "s:<id>:bag:<i>".
-export const EQUIP_SLOTS = ["weapon", "tool", "head", "armor", "arms", "legs", "rig", "backpack", "carry"];
-export const SLOT_NAMES = { weapon: "Hands", tool: "Off hand", head: "Head", armor: "Body", arms: "Arms", legs: "Legs", rig: "Rig", backpack: "Backpack", pocket: "Pocket", pack: "Pack", cargo: "Cargo", pouch: "Rig pouch", insert: "Plate carrier", carry: "In arms", bag: "Carried bag" };
-const INV_VERSION = 2; // 2: the rig slot, plate carriers with inserts (section 16)
+export const EQUIP_SLOTS = ["weapon", "tool", "sidearm", "melee", "slung", "head", "ears", "armor", "arms", "legs", "rig", "backpack", "carry"];
+export const SLOT_NAMES = { weapon: "Hands", tool: "Off hand", sidearm: "Side arm", melee: "Melee", slung: "Slung", ears: "Ear pro", head: "Head", armor: "Body", arms: "Arms", legs: "Legs", rig: "Rig", backpack: "Backpack", pocket: "Pocket", pack: "Pack", cargo: "Cargo", pouch: "Rig pouch", insert: "Plate carrier", carry: "In arms", bag: "Carried bag" };
+const INV_VERSION = 3; // 2: the rig slot, plate carriers with inserts (section 16); 3: the holsters and Ear pro (holsters.js, helmets.js)
 
 // Odd things the dead still carry in their pockets (a zombie body has one now and then).
 export const ZOMBIE_FINDS = ["knife", "knife", "bandagekit", "pistol", "padding", "phone", "phone", "photos", "goldring", "watch", "smokes", "lighters", "candy", "batteries", "baton"];
 // Some of the dead still wear a bag (ZOMBIE_PACK of them): a sling bag or a school backpack with a few things inside.
 export const ZOMBIE_PACK = 0.08;
 export const ZOMBIE_PACKS = ["slingbag", "slingbag", "backpack"];
+// The dead who were survivors (the user's request 2026-10-21: "increase loot spawn of zombies being previous survivors
+// with gear on them like side arms ammo melee packs and survival items"): ZSURV.chance of the plain dead (not a dead
+// soldier, a dead beast or a boss) turned with their kit still on them, each part on its own chance: a side arm on the
+// belt with a box of its rounds, a melee weapon, a pack with survival things in it, earplugs, food, water, meds. On
+// dice of their own (foodDice: hashed from the dice's position and the body), so no other roll in the world moves.
+export const ZSURV = {
+  on: true, // a test switch (tools/itemcondtest.js: the bodies' baseline from before them)
+  chance: 0.18, sidearm: 0.4, rounds: [4, 14], melee: 0.5, pack: 0.45, stuff: [2, 4], ears: 0.1, food: 0.4, water: 0.3, meds: 0.2,
+  SIDEARMS: ["pistol", "pistol", "compact9", "revolver", "pistol22", "pistol45", "snub38", "service38"],
+  MELEE: ["knife", "knife", "huntknife", "survivalknife", "combatknife", "hatchet", "machete", "bat", "hammer", "kukri", "golfclub", "pocketknife"],
+  PACKS: ["backpack", "backpack", "hikingpack", "slingbag"],
+  STUFF: ["flashlight", "headlamp", "lighters", "lighters", "bandagekit", "bandagekit", "tourniquet", "puritabs", "batteries", "pocketradio", "handradio", "multitool", "binoculars", "handwarmer", "makeshiftpick", "snarewire", "earplugs", "chocolate", "instcoffee", "smokes", "photos"],
+};
+// What one of the dead who was a survivor still has on them: { sidearm, melee, pack, ears, sup } (items or null), or
+// null for one who was not. tag: the body's own (its unit id). ztype: a dead soldier, a beast, a sleeper get none.
+export function survivorDead(rng, tag = 0, ztype = null) {
+  if (!ZSURV.on || (ztype && ((ZTYPES[ztype] && (ZTYPES[ztype].beast || ZTYPES[ztype].boss)) || ["soldier", "riot", "swarm", "sleeper"].includes(ztype)))) return null;
+  const d = foodDice(rng, (0x5afe ^ Math.imul((Number(tag) | 0) + 1, 2654435761)) >>> 0);
+  if (!d.chance(ZSURV.chance)) return null;
+  const out = { sidearm: null, melee: null, pack: null, ears: null, sup: {} };
+  const item = (k) => (GEAR[k] ? lootItem(k, "survivor", d) : null);
+  if (d.chance(ZSURV.sidearm)) {
+    out.sidearm = item(d.pick(ZSURV.SIDEARMS));
+    const cal = out.sidearm && calOf(out.sidearm.key);
+    if (cal) out.sup[keyFor(cal, null)] = d.int(ZSURV.rounds[0], ZSURV.rounds[1]);
+  }
+  if (d.chance(ZSURV.melee)) out.melee = item(d.pick(ZSURV.MELEE));
+  if (d.chance(ZSURV.pack)) {
+    out.pack = item(d.pick(ZSURV.PACKS));
+    if (out.pack && Array.isArray(out.pack.contents)) {
+      const n = Math.min(out.pack.contents.length, d.int(ZSURV.stuff[0], ZSURV.stuff[1]));
+      for (let i = 0; i < n; i++) out.pack.contents[i] = item(d.pick(ZSURV.STUFF));
+    }
+  }
+  if (d.chance(ZSURV.ears)) out.ears = item(d.chance(0.7) ? "earplugs" : "earmuffs");
+  if (d.chance(ZSURV.food)) Object.assign(out.sup, typedFood(null, "travel", 1, { rng: foodDice(d, 0x70f) }));
+  if (d.chance(ZSURV.water)) out.sup.water = (out.sup.water || 0) + 1;
+  if (d.chance(ZSURV.meds)) out.sup.meds = (out.sup.meds || 0) + 1;
+  return out;
+}
+// Their kit onto a body (enemyBody): the belt, the pack, the ears in their slots (or stowed), the supplies.
+function wearSurvivorKit(body, kit) {
+  for (const [slot, it] of [["sidearm", kit.sidearm], ["melee", kit.melee], ["ears", kit.ears], ["backpack", kit.pack]]) {
+    if (!it) continue;
+    if (!body.gear[slot]) body.gear[slot] = it; else stow(body, it, "");
+  }
+  for (const [k, n] of Object.entries(kit.sup)) if (n > 0) body.supplies[k] = (body.supplies[k] || 0) + n;
+}
 export const ZOMBIE_PACK_STUFF = ["chocolate", "candy", "phone", "photos", "novel", "magazines", "batteries", "lighters", "toiletpaper", "bandagekit", "knife", "flashlight", "smokes", "instcoffee", "cards", "soap"];
 
 // worn: found or starting gear comes part-worn, FOUND_DUR / START_DUR of its uses left (data.js GEAR dur). Pass the
@@ -233,16 +287,31 @@ export function ensureInv(s) {
     if (it.dur != null) it.dur = Math.min(it.dur, GEAR.sportspads.dur);
     if (!g.head) { g.head = newItem("footballhelmet", it.quality || 1); if (it.dur != null) g.head.dur = Math.min(GEAR.footballhelmet.dur, it.dur); }
   }
+  earsToSlot(s); // 3: ear protection on the head, a helmet's ear mount or carried, into Ear pro
   for (const k of EQUIP_SLOTS) {
     const it = g[k];
     const want = it && GEAR[it.key] ? GEAR[it.key].slot : null;
-    if (!it || !want || want === k) continue;
+    if (!it || !want || want === k || HOLSTERS.includes(k) || k === "slung") continue; // a side arm, a melee weapon, a slung gun: where they are
     if (!g[want]) { g[want] = it; g[k] = null; }
     else if (isSmall(it.key) && s.pockets.indexOf(null) >= 0) { s.pockets[s.pockets.indexOf(null)] = it; g[k] = null; }
     // Otherwise it stays where it was: it still works there.
   }
   if (g.backpack) ensurePack(g.backpack);
   return s;
+}
+
+// An old save's ear protection (INV_VERSION 3): muffs on the head or on a helmet's ear mount, plugs in a pocket, the rig
+// or the pack, into the Ear pro slot (the best of them; the rest stay where they are, doing nothing there).
+function earsToSlot(s) {
+  const g = s.gear;
+  const helm = g.head;
+  if (helm && helm.mods && helm.mods.ears) { const e = helm.mods.ears; delete helm.mods.ears; if (!g.ears && !earSlotReason(e, s)) g.ears = e; else if (!stow(s, e)) (s.loose || (s.loose = [])).push(e); }
+  if (helm && isEarKey(helm.key)) { if (!g.ears) { g.ears = helm; g.head = null; } }
+  if (g.ears) return;
+  const cut = (it) => (GEAR[it.key].ears.cut || 0) + (GEAR[it.key].ears.hear || 0) / 10;
+  let best = null;
+  for (const sp of carriedSpots(s)) if (sp.item && isEarKey(sp.item.key) && sp.where !== "ears" && !earSlotReason(sp.item, s) && (!best || cut(sp.item) > cut(best.item))) best = sp;
+  if (best) { best.take(); g.ears = best.item; }
 }
 
 // Armor one piece gives: its listed power scaled by condition. A piece at 100% gives it all, at 60% it gives 80%, at
@@ -336,6 +405,8 @@ export function stow(s, item, prefix = `s:${s.id}`) {
   if (at) return at;
   const slot = GEAR[item.key].slot;
   if (EQUIP_SLOTS.includes(slot) && !s.gear[slot] && !fitReason(item, slot, s)) { s.gear[slot] = item; return `${prefix}:${slot}`; } // books (slot "pack") are never worn
+  const hol = holsterOf(item); // holsters.js: a handgun or a small melee weapon onto the belt when the hands are taken
+  if (hol && !s.gear[hol]) { s.gear[hol] = item; return `${prefix}:${hol}`; }
   const pi = pouchFor(s, item); // a magazine, a grenade, a radio, meds: a rig pouch of its kind first
   if (pi >= 0) { rigPouches(s)[pi] = item; return `${prefix}:rig:${pi}`; }
   if (isSmall(item.key)) {
@@ -405,6 +476,8 @@ export function fitReason(item, slot, h = null, kind = null) {
   if (slot === "insert") return isInsert(item) ? "" : `Only a plate goes in a plate carrier's plate pocket.`;
   if (slot === "bag") return packSize(item) ? "A pack does not fit inside a pack." : d.bulky ? `The ${item.name} is too big for a pack.` : "";
   if (slot === "carry") return isCarryable(item) ? "" : `Only a bag, a rig, a case or a tent bag is carried in the arms (not the ${item.name}).`;
+  if (HOLSTERS.includes(slot) || slot === "slung") return holsterReason(item, slot); // holsters.js
+  if (slot === "ears") return earSlotReason(item, h); // helmets.js: ear protection, nothing over the ears under a full shell
   // A supply in the hand (supitems.js: a bottle of water, a can of fuel, meds, a box of rounds), unless it is bulky.
   if (slot === "tool" && d.slot !== "tool" && (d.supKey || (d.count && SUPPLIES[item.key]))) return d.bulky || d.hand === false ? `The ${item.name} is too big to hold in one hand.` : "";
   if (EQUIP_SLOTS.includes(slot)) {
@@ -983,6 +1056,8 @@ export function enemyBody(rng, u, kit) {
       for (let i = 0; i < n; i++) pack.contents[i] = lootItem(rng.pick(ZOMBIE_PACK_STUFF), "survivor", spend(rng));
       body.gear.backpack = pack;
     }
+    const was = !u.beast && !u.boss ? survivorDead(rng, u.id, u.ztype) : null; // one who was a survivor: their kit (dice of its own)
+    if (was) wearSurvivorKit(body, was);
     return body;
   }
   for (const [k, n] of Object.entries(bodyRounds(u, rng.int(3, 10)))) add(k, n); // ammo.js: rounds of their gun's calibre and load
@@ -1054,7 +1129,7 @@ export const ZBODY = {
   find: 0.3, FINDS: ["phone", "phone", "lighters", "smokes", "candy", "chocolate", "goldring", "watch", "photos", "batteries", "bandagekit", "knife", "cigarettes", "cards", "deodorant", "lipbalm"],
   pistol: 0.02, bag: 0.03,
 };
-export function deadBodyFinds(rng, ztype, plateDur = null) {
+export function deadBodyFinds(rng, ztype, plateDur = null, tag = 0) {
   const mil = ztype ? bodyLoot(rng, ztype, armouredItem, plateDur) : null;
   if (mil) return mil;
   const sup = {}, gear = [];
@@ -1062,7 +1137,12 @@ export function deadBodyFinds(rng, ztype, plateDur = null) {
   if (sup.food) { const n = sup.food; delete sup.food; Object.assign(sup, typedFood(null, "travel", n, { rng: foodDice(rng, 0x2b0d) })); } // foods.js: a candy bar, a can in a coat pocket (dice of its own)
   if (rng.chance(ZBODY.find)) { const k = rng.pick(ZBODY.FINDS); if (GEAR[k]) gear.push(lootItem(k, "survivor", GEAR[k].makeshift ? rng : spend(rng))); }
   if (rng.chance(ZBODY.pistol)) { gear.push(lootItem("pistol", "survivor", spend(rng))); sup.ammo = (sup.ammo || 0) + rng.int(3, 8); }
-  const pistol = gear.find((g) => g.key === "pistol" && calOf(g.key));
+  const was = survivorDead(rng, tag, ztype); // one who was a survivor (ZSURV): their kit, on dice of its own (no draw: rolled here so their side arm takes the stray rounds below)
+  if (was) {
+    for (const it of [was.sidearm, was.melee, was.pack, was.ears]) if (it) gear.push(it);
+    for (const [k, n] of Object.entries(was.sup)) if (n > 0) sup[k] = (sup[k] || 0) + n;
+  }
+  const pistol = gear.find((g) => isSidearmKey(g.key) && calOf(g.key)); // a handgun on them: the rounds are its own
   if (sup.ammo) { const n = sup.ammo; delete sup.ammo; Object.assign(sup, pistol ? { [keyFor(calOf(pistol.key), null)]: n } : findRounds("home", n, "deadbody", rng && Number.isFinite(rng.state) ? rng.state : 0)); } // ammo.js: rounds by calibre (a pistol on them: its own, 2026-10-20)
   if (rng.chance(ZBODY.bag)) gear.push(lootItem(rng.pick(ZOMBIE_PACKS), "survivor", spend(rng)));
   return { sup, gear };
