@@ -4,6 +4,7 @@
 // the tile panel puts the camp's card first (its stage, the step up's bar, who is there, Open camp and Strike camp); a
 // shelter building up into a base shows a bar of the work.
 // node tools/campcardtest.js
+import { stockTools } from "./toolset.js"; // every tool a build or recipe can need (toolreqs.js)
 import { createWorld, tickHour } from "../src/sim/world.js";
 import { roadTeam } from "../src/sim/hardcore-start.js";
 import { establishArrive, tierInfo } from "../src/sim/staging.js";
@@ -70,6 +71,7 @@ for (let i = 0; i < 24 * 6 && base.camp; i++) { tickHour(st2); st2.cards.length 
 check(!base.camp && base.tier === 0, `the camp's builders build it up into the shelter (${base.camp ? "still a camp" : "a shelter"})`);
 if (!base.camp) {
   for (const [k, v] of Object.entries(BUILDINGS.hub_up.cost)) base.stock[k] = (base.stock[k] || 0) + v;
+  stockTools(base); // a hammer and a saw (toolreqs.js)
   const r = queueBuild(st2, base, "hub_up");
   const job = base.construction.find((c) => c.type === "hub_up");
   check(!!job, `hub_up queued (${r && r.reason ? r.reason : "ok"})`);

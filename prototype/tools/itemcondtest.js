@@ -55,6 +55,7 @@ import { starterKit } from "../src/sim/arsenal.js";
 import { BLADE_FINDS, AREA_BLADES, WARE_BLADES } from "../src/sim/blades.js"; // knives and swords (their own dice)
 import { BLADE_KIT_PATCH } from "../src/sim/data-blades.js";
 import { SURV_FINDS, AREA_SURV, WARE_SURV } from "../src/sim/survival.js"; // survival gear (its own dice)
+import { TOOL_FINDS, AREA_TOOLS, CAR_TOOLS, WARE_TOOLS } from "../src/sim/toolreqs.js"; // tools for building and crafting (their own dice)
 import { SURV_KIT_PATCH } from "../src/sim/data-survival.js";
 import { BOX_FINDS } from "../src/sim/data-boxes.js"; // lock boxes (boxes.js, their own dice, last)
 import { ARSENAL_FINDS, ARSENAL_KITS, CALIBRE_KITS, AR_KITS, SURV_KITS, ARSENAL_GEAR } from "../src/sim/data-guns.js"; // the arsenal of 2026-10-10 (gunfinds.js, its own dice)
@@ -138,6 +139,7 @@ const ALLOWED = {
   "carrykit.js": /starting gear/, // a colonist's starting spare magazines (not loot)
   "deadsoldiers.js": /newItem\([kg], q\(range\), rng\)/, // the maker handed in (inventory.js armouredItem; g: gundist.js swapGun's rifle)
   "hardcore-start.js": /./, "recruits.js": /./, "world.js": /startdur/, // starting and recruit gear (START_DUR), not loot
+  "toolreqs.js": /newItem\(k, 1\)/, // an older save's hub given the tool shelf a new hub starts with (migrateTools: starting gear, not loot)
   "blueprints.js": /bpItemKey/, "skills.js": /newItem\(key, 1\)|newItem\(list\[/, // paper
   "visitors.js": /bpItemKey|newItem\(k, 1\)\)/, // a merchant's blueprints and books (paper)
   "vehicles.js": /newItem\(t\.gun, 0\.8\)/, // a turret's own gun coming off a vehicle (not loot)
@@ -247,7 +249,7 @@ check(Object.values(AREAS).every((a) => (a.gear || []).every(([k]) => !!GEAR[k])
     const its = [];
     for (let w = 0; w < 25; w++) { st.hour = w * 168; its.push(...restock(st, f)); }
     f.type = was;
-    within(`a ${type} group's wares`, its, new Set([...WARES[type], ...Object.keys((WARE_BLADES[type] || {}).items || {}), ...Object.keys((WARE_SURV[type] || {}).items || {}), ...newGuns(type), ...Object.keys((WARE_EXTRAS[type] || {}).items || {}), ...Object.keys((WARE_GUNMODS[type] || {}).items || {}), ...Object.keys((WARE_MODS[type] || {}).items || {}), ...Object.keys((WARE_HEAD[type] || {}).items || {}), ...Object.keys((WARE_KIT[type] || {}).items || {}), ...paper(type), ...Object.keys(gunsFrom(`trader:${type}`)), ...Object.keys(partPool(PART_FINDS.WARE_TAGS[type]))])); // partfinds.js partWares: the catalogue's parts by the shelf's tags
+    within(`a ${type} group's wares`, its, new Set([...WARES[type], ...Object.keys((WARE_BLADES[type] || {}).items || {}), ...Object.keys((WARE_SURV[type] || {}).items || {}), ...Object.keys((WARE_TOOLS[type] || {}).items || {}), ...newGuns(type), ...Object.keys((WARE_EXTRAS[type] || {}).items || {}), ...Object.keys((WARE_GUNMODS[type] || {}).items || {}), ...Object.keys((WARE_MODS[type] || {}).items || {}), ...Object.keys((WARE_HEAD[type] || {}).items || {}), ...Object.keys((WARE_KIT[type] || {}).items || {}), ...paper(type), ...Object.keys(gunsFrom(`trader:${type}`)), ...Object.keys(partPool(PART_FINDS.WARE_TAGS[type]))])); // partfinds.js partWares: the catalogue's parts by the shelf's tags
   }
   st.hour = 0;
   const com = [];
@@ -300,7 +302,7 @@ for (const K of Object.values(KITS)) for (const f of ["weapons", "strong", "loot
 for (const B of Object.values(MILDEAD.BODY)) for (const f of ["items", "armor"]) if (Array.isArray(B[f]) && B[f].some((r) => LATER_KEYS.has(r[0]))) { nlStash.push([B, f, B[f]]); B[f] = B[f].filter((r) => !LATER_KEYS.has(r[0])); }
 for (const T of Object.values(TRUCK_LOOT)) if (T.gear.some((r) => LATER_KEYS.has(r[0]))) { nlStash.push([T, "gear", T.gear]); T.gear = T.gear.filter((r) => !LATER_KEYS.has(r[0])); }
 for (const type of Object.keys(WARES)) if (WARES[type].some((k) => LATER_KEYS.has(k))) { nlStash.push([WARES, type, WARES[type]]); WARES[type] = WARES[type].filter((k) => !LATER_KEYS.has(k)); }
-for (const T of [BLADE_FINDS, AREA_BLADES, WARE_BLADES, SURV_FINDS, AREA_SURV, WARE_SURV, BOX_FINDS.site, BOX_FINDS.area]) for (const v of Object.values(T)) { headStash.push([v, v.p]); v.p = 0; }
+for (const T of [BLADE_FINDS, AREA_BLADES, WARE_BLADES, SURV_FINDS, AREA_SURV, WARE_SURV, BOX_FINDS.site, BOX_FINDS.area, TOOL_FINDS, AREA_TOOLS, WARE_TOOLS, { car: CAR_TOOLS }]) for (const v of Object.values(T)) { headStash.push([v, v.p]); v.p = 0; } // tools (toolreqs.js, 2026-10-21): their own dice, last
 for (const f of ["site", "area", "wares"]) { nlStash.push([ARSENAL_FINDS, f, ARSENAL_FINDS[f]]); ARSENAL_FINDS[f] = {}; }
 // - the parts catalogue (partfinds.js: PART_FINDS site / area / wares chances at 0, rolled last on their own dice) and
 //   the gun distribution (gundist.js swapGun: a listed gun swapped for one of its source's pool on a hash; off, every
@@ -485,7 +487,7 @@ section("5. Merchants' specialities");
   for (let i = 0; i < 300; i++) { const v = V.spawnVisitor(w, "merchants"); if (!v) continue; (by[v.spec] = by[v.spec] || []).push(v); w.visitors.length = 0; }
   check(Object.keys(V.MERCHANT_SPECS).every((k) => (by[k] || []).length >= 20), `every speciality turns up (${Object.keys(V.MERCHANT_SPECS).map((k) => `${k} ${(by[k] || []).length}`).join(", ")})`);
   const blue = new Set(Object.keys(GEAR).filter((k) => GEAR[k].blueprint));
-  const mods = new Set([...Object.keys(WARE_GUNMODS.merchants.items), ...Object.keys(WARE_MODS.merchants.items), ...Object.keys(WARE_HEAD.merchants.items), ...Object.keys(WARE_KIT.merchants.items), ...Object.keys(WARE_BLADES.merchants.items), ...Object.keys(WARE_SURV.merchants.items), ...Object.keys(WARE_CARTS.merchants.items), ...Object.keys(partPool(PART_FINDS.WARE_TAGS.merchants))]); // WARE_BLADES: knives and swords (blades.js bladeWares, with the parts)
+  const mods = new Set([...Object.keys(WARE_GUNMODS.merchants.items), ...Object.keys(WARE_MODS.merchants.items), ...Object.keys(WARE_HEAD.merchants.items), ...Object.keys(WARE_KIT.merchants.items), ...Object.keys(WARE_BLADES.merchants.items), ...Object.keys(WARE_SURV.merchants.items), ...Object.keys(WARE_TOOLS.merchants.items), ...Object.keys(WARE_CARTS.merchants.items), ...Object.keys(partPool(PART_FINDS.WARE_TAGS.merchants))]); // WARE_BLADES: knives and swords (blades.js bladeWares, with the parts)
   for (const [k, S] of Object.entries(V.MERCHANT_SPECS)) {
     const vs = by[k] || [];
     const allowed = new Set([...S.gear, ...S.books, ...V.MERCHANT_VALUABLES, ...blue, ...(k === "arms" || k === "general" ? mods : []), ...(k === "arms" ? newGuns("merchants") : []), ...Object.keys(gunsFrom("trader:merchants"))]); // gundist.js: a merchant's gun // an arms dealer's newer guns (visitors.js gunWares)

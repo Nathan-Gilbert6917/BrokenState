@@ -28,7 +28,7 @@ import { sanitizeLibrary } from "./custombg.js"; // a save's custom backgrounds:
 import { migrateKit, migrateMagFits } from "./carrykit.js"; // old saves: carriers' plates, spare magazines
 import { Rng } from "./rng.js";
 import { HexGrid } from "./hex.js";
-import { peekNextId, setNextId, day, hub, alive, fillCrafting, fillMelee, fillCooking, log } from "./world.js";
+import { peekNextId, setNextId, day, hub, alive, fillCrafting, fillMelee, fillCooking, log, HUB_TOOLS } from "./world.js";
 import { WORLD_SIZES, worldSizeOf } from "./worldsize.js";
 import { WOOD_UNITS, GEAR } from "./data.js"; // wood was a 3 kg bundle: older saves are scaled to 0.1 kg units
 import { makeLosCache, SparseLos } from "./combat.js";
@@ -43,6 +43,7 @@ import { SICK_REST_MODES } from "./sickrest.js"; // the Work tab's "Sick people 
 import { migrateGenerators, migrateGenTiers } from "./power.js"; // machines-2: generators without operators; gen-tiers: every old generator a tier-1 set
 import { migrateCanners, migrateWalls, legacyCampTents, BUILDINGS } from "./buildings.js"; // machines-2: the pressure canner fitted to a preserving room
 import { migrateTentList } from "./tents.js"; // the tentkit branch's base.tents list: map pieces now
+import { migrateTools } from "./toolreqs.js"; // the tools: an older save's hub gets the tool shelf
 import { migrateCots } from "./beds.js"; // beds as furniture: the retired makeshift cots become Cots set at the base
 import { ensurePois, packPois } from "./pois.js"; // points of interest: saved as the changes from the seed's lists; a save from before gets its lists on load
 import { RAID_MAPS } from "./worldcfg.js"; // raid maps by the World… dials: an older save keeps the sizes it was made with
@@ -284,6 +285,9 @@ export function deserializeState(save) {
   migrateWalls(state);
   // Beds as furniture (beds.js, 2026-10-20): a save's built makeshift cots become two Cots set at that base each (idempotent).
   migrateCots(state);
+  // The tools (toolreqs.js, 2026-10-21): builds and recipes need tools at the base; the main hub gets a new hub's tool
+  // shelf (world.js HUB_TOOLS) where it has nothing of a kind. Once.
+  if (!(state.toolsV >= 1)) { migrateTools(state, HUB_TOOLS); state.toolsV = 1; }
   // gen-tiers (2026-10-10): generator tiers (power.js GEN_TIERS); every generator standing (yours and the groups') is tier 1. Once.
   if (!(state.genTiersV >= 1)) { migrateGenTiers(state); state.genTiersV = 1; }
   // pois.js (2026-10-15): points of interest on the tiles. A save from before gets every tile's list from its seed (hash

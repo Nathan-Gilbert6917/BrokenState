@@ -5,6 +5,7 @@
 // governor raises a radio relay at an outpost that brings a known group into reach, none where it would not link).
 // Usage: node tools/autotest.js [days] [cautious|balanced|aggressive|all] [seeds...] [size=small|normal|large|huge]
 // (Normal by default; other sizes play with their default group count, sim/worldsize.js.)
+import { stockTools } from "./toolset.js"; // every tool a build or recipe can need (toolreqs.js)
 import { createWorld, tickHour, day, alive, hub, newId, RADIO_RANGE, atBase, usesArrows, archerCount, ARROWS } from "../src/sim/world.js";
 import { launchExpedition, estimateTrip, startReturn, partyMembers } from "../src/sim/parties.js";
 import { newItem } from "../src/sim/inventory.js";
@@ -218,6 +219,7 @@ function relayCheck(seed) {
     for (const x of state.factions) if (x !== f) x.known = false;
     const o = { id: newId(), tile: oT.id, type: "outpost", name: "Relay Hill", stock: { food: 80, water: 80, fuel: 10, meds: 2, ammo: 20, parts: 6, scrap: 80 }, radio: false, watchtower: false, buildings: [], construction: [], armory: [] };
     state.bases.push(o);
+    stockTools(o); // a drill, wrenches and pliers for the relay (toolreqs.js); the radio's reach is the subject here
     for (const t of ["farm_plot", "well", "rain_catcher", "boiler", "cookhouse"]) addBuilding(o, t); // the outpost's first wishes met
     const crew = alive(state).filter((s) => s.location.kind === "base").slice(0, 2);
     crew[0].skills.mechanics = 5;

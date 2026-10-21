@@ -87,6 +87,7 @@ import { activeHospital, patients, healRatePerHour, hospitalTypes, nextHospitalT
 import { CRAFTS, craftName, craftQueue, crafters, craftRate, canCraft, craftJobStatus, craftOutputText, craftQuality, hasWorkshop, itemDur, itemDurMax, durUnit, MAX_CRAFT_QUEUE, craftInText, benchQuality, benchNeeded, hasBench, craftMean } from "../sim/crafting.js";
 import { cartOf } from "../sim/carts.js"; // the planner: the carts the crew push (their wear)
 import { craftEdge, lockNote } from "../sim/blueprints.js"; // the crafting edge from known manuals and read craft books
+import { baseToolItems, toolFor, kindHelp, buildTools, craftTools, TOOL_KINDS } from "../sim/toolreqs.js"; // the tools a build or a recipe needs (their chips)
 import { canAttempt, meetsNeeds } from "../sim/crafting.js"; // the recipe cards colour their skill and station chips
 import { chip, costChips, chipList, statRows, badge, pbar, sectionHead, infoTip, hint, firstSentence, stockTile, supName, supIcon } from "./uikit.js"; // game-like panel pieces (the base window)
 import { orderCell, racksCard, powerCard, craftOrdersCard, stewardCard, pinButton, reloadCard, genUpgradeBtn } from "./production.js";
@@ -177,6 +178,8 @@ import { roundsLine, baseAmmo, baseAmmoBreakdown, teamAmmoBreakdown, breakdownTe
 import { panelHead, panelTab } from "./layout.js"; // the boxes over the map share one header and folded tab
 import { fold, peopleQuery, peopleIsCompact } from "./panelfold.js"; // side-panel folds; the People tab's find box
 import { fieldWorksTab, survivorPostText } from "./fieldworks.js"; // the base window's Field works tab and view
+// The tools a build or a recipe needs, a chip each: ok when something at the base covers it (toolreqs.js).
+const toolChips = (state, b, kinds) => { if (!kinds.length) return ""; const items = baseToolItems(state, b); return kinds.map((k) => { const ok = !!toolFor(items, k); return chip({ icon: "🔨", name: TOOL_KINDS[k].name.replace(/^an? /, ""), ok, t: `${ok ? "At the base" : "Missing: needed in the armory or on someone here when it is queued"}: ${kindHelp(k)}` }); }).join(""); };
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -2103,7 +2106,7 @@ function baseConstruction(state, b, ui) {
     return `<div class="gcard ${state_}${where ? " cx-na" : ""}"${tip(d.desc)}>
       <div class="gcard-top"><span class="gcard-title">${esc(d.name)}${have ? ` <span class="muted small"${tip(`${have} standing here, ${d.max} at most`)}>${have}/${d.max}</span>` : ""}${status}</span>${btn}</div>
       <div class="gcard-desc">${esc(firstSentence(d.desc))}</div>${isMachine(k) ? `<div class="small muted"${tip("A machine: it wears, breaks down and takes machine parts to keep (Help: Machines and machine parts)")}>⚙ ${esc(machineText(k))}${POWER_USERS[k] ? ` · draws ${POWER_USERS[k].need} power` : ""}</div>` : ""}
-      <div class="gcard-foot">${costChips(d.cost, where ? null : b.stock, { tips: (c, h, n) => `${supName(c)}: ${n} needed${h != null ? `, ${n0(h)} in the stores` : ""}${d.gather ? " (taken from the stores as it comes in)" : ""}` })}${chip({ icon: "⏱", name: `${d.hours}h`, t: `${d.hours} work-hours for the builders` })}${d.storeKg ? chip({ icon: "📦", name: `${d.storeKg} kg storage`, tone: "ok", t: `Storage: holds ${d.storeKg} kg of the base's goods (its stores and armory, by weight); goods past the base's storage lie outside, where things wear and raiders take them first` }) : ""}</div>
+      <div class="gcard-foot">${costChips(d.cost, where ? null : b.stock, { tips: (c, h, n) => `${supName(c)}: ${n} needed${h != null ? `, ${n0(h)} in the stores` : ""}${d.gather ? " (taken from the stores as it comes in)" : ""}` })}${where ? "" : toolChips(state, b, buildTools(k))}${chip({ icon: "⏱", name: `${d.hours}h`, t: `${d.hours} work-hours for the builders` })}${d.storeKg ? chip({ icon: "📦", name: `${d.storeKg} kg storage`, tone: "ok", t: `Storage: holds ${d.storeKg} kg of the base's goods (its stores and armory, by weight); goods past the base's storage lie outside, where things wear and raiders take them first` }) : ""}</div>
       ${!where && k === "canteen" ? kitchenNote(state, b) : ""}${!where && k === "generator" ? genTiersNote(state, b) : ""}
       ${where ? `<div class="gcard-why">${esc(where)}</div>` : !chk.ok && !short && !lock ? `<div class="gcard-why">${esc(chk.reason)}</div>` : ""}${lock}
     </div>`;
@@ -2329,7 +2332,7 @@ function baseCrafting(state, b) {
     return `<div class="gcard ${chk.ok ? "ok" : lock ? "locked" : "blocked"}"${tip(d ? `${d.desc || ""} Worth: ${worthTier({ key: r.gear, quality: 1 })}.` : r.desc)}>
       <div class="gcard-top"><span class="gcard-title">${esc(craftName(k))}${tags}${edge.n ? badge(`Edge +${Math.round(edge.quality * 100)}%`, "good", `From ${edge.from.join(" and ")}: +${Math.round(edge.quality * 100)}% condition, ${Math.round((edge.speed - 1) * 100)}% faster.`) : ""}</span><button class="mini${chk.ok ? " primary" : ""}" data-action="queuecraft" data-base="${b.id}" data-recipe="${k}" ${chk.ok ? "" : "disabled"}${tip(chk.ok ? "Pay the materials now; crafters do the rest" : chk.reason)}>Craft</button></div>
       <div class="gcard-desc">→ ${esc(craftOutputText(k))}</div>
-      <div class="gcard-foot">${costChips(r.in, b.stock, { word: (c) => (c === "ammo" ? "Rounds" : supName(c)) })}${gearChips.join("")}${!r.min && !r.cmin ? "" : chip({ icon: SKILL_ICON[r.skill] || "★", name: `${SKILL_NAMES[r.skill]} ${r.min}+${r.cmin ? ` · Crafting ${r.cmin}+` : ""}`, ok: skilled, tone: skilled ? "" : "short", t: skilled ? "Someone here has the skill" : `Needs a ${SKILL_NAMES[r.skill]} ${r.min}+${r.cmin ? ` and Crafting ${r.cmin}+` : ""} survivor here` })}${chip({ icon: "⏱", name: `${r.hours}h`, t: `${r.hours} work-hours` })}</div>
+      <div class="gcard-foot">${costChips(r.in, b.stock, { word: (c) => (c === "ammo" ? "Rounds" : supName(c)) })}${gearChips.join("")}${toolChips(state, b, craftTools(k))}${!r.min && !r.cmin ? "" : chip({ icon: SKILL_ICON[r.skill] || "★", name: `${SKILL_NAMES[r.skill]} ${r.min}+${r.cmin ? ` · Crafting ${r.cmin}+` : ""}`, ok: skilled, tone: skilled ? "" : "short", t: skilled ? "Someone here has the skill" : `Needs a ${SKILL_NAMES[r.skill]} ${r.min}+${r.cmin ? ` and Crafting ${r.cmin}+` : ""} survivor here` })}${chip({ icon: "⏱", name: `${r.hours}h`, t: `${r.hours} work-hours` })}</div>
       ${!chk.ok && !short && !lock && skilled && (station || !r.needs) ? `<div class="gcard-why">${esc(chk.reason)}</div>` : ""}${lock}
     </div>`;
   };

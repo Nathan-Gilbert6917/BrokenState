@@ -111,6 +111,10 @@ export const HUB_VISION = 3;
 // little over; 3 parts are the bench's, a well's and one spare. It used to be 25 scrap and 2 parts with two farm plots,
 // a crafting bench, a bunkhouse and a wall section already standing (69 scrap of buildings). tools/barestarttest.js.
 export const HUB_START = { scrap: 50, parts: 3 };
+// The town hall's tool shelf (the tools, 2026-10-21: builds and recipes need tools at the base, toolreqs.js): a tool kit
+// (a hammer, a saw, wrenches, pliers), a shovel and a hatchet in the hub's armory, so the first builds, the fields and
+// the first woodcutter go ahead; the drill, the welder, the sewing kit and the better axes are found or traded for.
+export const HUB_TOOLS = ["toolkit", "shovel", "hatchet"];
 export const OUTPOST_VISION = 2;
 export const RADIO_RANGE = 12; // a radio station's reach; a base with a Military encrypted radio in its armory reaches radio.js MIL_RADIO_RANGE (24)
 
@@ -166,6 +170,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
     gunSlots: 1, attachV: 2, // (attachV: gunmods.js migrateParts, save.js) // a world with gun attachment slots (gunmods.js; save.js: older saves have their guns' parts moved on load)
     machinesV: 1, // machines-2: generators with no operator, the pressure canner fitted to a kitchen (save.js migrates older saves)
     genTiersV: 1, // gen-tiers: generators have tiers (power.js GEN_TIERS; save.js makes older saves' generators tier 1)
+    toolsV: 1, // the tools: a new world in either mode is born with them (toolreqs.js migrateTools is for older saves only)
     raidMaps: 1, // raid maps by the World… dials (worldcfg.js RAID_MAPS; save.js: an older save keeps its old raid map sizes)
     groupJails: 1, // jailhouse: the AI groups keep prisoners in jails they build, work them and trade them (groupjails.js); older saves: no limit
     grid: map.grid, tiles: map.tiles, cityId: map.cityId, originId: map.originId,
@@ -253,6 +258,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
   state.survivors.forEach((s, i) => starterMags(s, onPoints(i) ? null : state.bases[0].armory)); // carrykit.js: two spare magazines with a starting gun (section 15)
   state.kitV = 2; // carry kit: rigs, magazines as items, carriers with plates (carrykit.js migrateKit for older saves)
   state.survivors[0].gear.armor = newItem("vest", 1, hash01(state.seed, "startdur", "vest"), START_DUR);
+  for (const k of HUB_TOOLS) state.bases[0].armory.push(newItem(k, 1, hash01(state.seed, "startdur", `tool:${k}`), START_DUR)); // hashed dice: the world's are untouched
   state.survivors.forEach((s) => (s.location = { kind: "base", baseId: state.bases[0].id }));
   state.survivors[0].leader = true;
   // Who they were (hardcore-start.js normalStartBackgrounds, 2026-10-07): a background each, with dice of their own,

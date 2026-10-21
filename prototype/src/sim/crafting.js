@@ -29,10 +29,14 @@ import { WATER, waterCapacity, waterProduction } from "./economy.js"; // the fil
 import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
 import { craftedCond } from "./itemcond.js"; // a crafted item's condition is the craft's own roll
 import { cfgOf } from "./worldcfg.js"; // the run's dials: Durability loss
+import { TOOL_CRAFTS } from "./data-tools.js"; // the makeshift tools and the sewing kit
+import { craftTools, craftToolProblem, wearBaseTools, partyToolItems, toolsMissing, toolsText, wearTools, kindsOf } from "./toolreqs.js"; // the tools a recipe needs (data-tools.js CRAFT_TOOLS)
 import { BED_CRAFTS, BED_SPEC } from "./data-beds.js"; // beds as furniture: a cot, a bed, a bunk bed, a large bed (beds.js)
 
 // in = materials (base stock), hours = work-hours, skill + min = who can make it, out = gear key or supplies.
 // needs: "workshop" (an ammo bench or machine shop at this base) or a building key. field: can be made by a team.
+// Tools (data-tools.js CRAFT_TOOLS, toolreqs.js): the kinds a recipe needs, kept at the base (or carried by the team in
+// the field) when it is queued; not used up, a makeshift tool loses a use.
 export const CRAFTS = {
   pipespear:   { gear: "pipespear",   in: { scrap: 3 },           hours: 4,  skill: "mechanics", min: 0, field: true },
   spikedbat:   { gear: "spikedbat",   in: { scrap: 3, wood: 15 }, hours: 6,  skill: "mechanics", min: 0, field: true },
@@ -152,6 +156,7 @@ export const CRAFTS = {
   // ---------- end of special gear ----------
 };
 Object.assign(CRAFTS, BED_CRAFTS); // beds as furniture (data-beds.js): wood, scrap, a large bed's springs; at a crafting bench
+Object.assign(CRAFTS, TOOL_CRAFTS); // makeshift tools (data-tools.js): scrap and a stick, anywhere
 
 export const WORKSHOP_TYPES = ["ammo_bench", "reload_bench", "machine_shop"]; // stations with metal tools (a reloading bench is an ammo bench upgraded: reloading.js)
 export const MAX_CRAFT_QUEUE = 8;
@@ -229,6 +234,7 @@ export function craftOutputText(key) {
     if (r.gear === "cookpot") fx.push("cooks over a fire: a Camp fire station for simple meals and stew at a base without a Kitchen or a cook fire (1 wood an hour), and a camping team's fresh food into simple meals at a lit fire");
     if (d.ears) fx.push(`ear protection worn in the Ear pro slot, under any helmet (hearing.js): takes ${d.ears.cut} off a bang's loudness (foam earplugs ${GEAR.earplugs.ears.cut}), hearing ${d.ears.hear} tiles; a pair a fight`);
     if (r.gear === "boards") fx.push("nailed across a closed door, a doorway or a window in a fight (barricade.js Board up, both actions): 40 hit points a layer, up to 3, that the dead and raiders batter through; a bundle in the team's vehicle counts from next to it"); // it said only "tool"
+    if (kindsOf(r.gear).length) fx.push(`counts as ${toolsText(kindsOf(r.gear))} for building and crafting (toolreqs.js)${d.toolWear ? ", a use a job" : ""}`); // the makeshift tools, the sewing kit
     if (r.gear === "makeshiftpick") fx.push("picks locks in a raid without the crowbar and lockpicks (locks.js): 30% + 4% a Stealth point − 15% a difficulty step, as quiet, but one snaps in two every attempt; not a safe, a steel security door or a gun safe");
     bits.push(`${d.throw || d.suppressor || d.siege || d.cat === "gunmod" || (d.selfStab && !d.medKit) ? "kit" : d.heat ? "camp kit" : "tool"}${fx.length ? `, ${fx.join(", ")}` : ""}`);
   }
@@ -240,6 +246,7 @@ export function craftOutputText(key) {
 }
 export function durUnit(key) {
   const d = GEAR[key];
+  if (d.toolWear) return d.slot === "weapon" ? "jobs or fights" : "jobs"; // a makeshift tool (toolreqs.js wearTools): a use a build or craft it serves
   if (d.tabs) return "tablets"; // purification tablets: dur counts the tablets in the tube (worm.js)
   if (d.count) return "left"; // a count stack (data-ammo.js: a box of rounds, primers): what is in it
   if (d.slot === "weapon" || ARMOR_SLOTS.includes(d.slot)) return "fights";
@@ -336,6 +343,8 @@ export function canCraft(state, base, key) {
   if (r.spent && (base.spentFilters || 0) < r.spent) return { ok: false, reason: "Needs a clogged water filter here (one is kept each time a filter clogs at this base)" };
   const lock = craftLock(state, key); // blueprints.js: advanced recipes need a studied blueprint
   if (lock) return { ok: false, reason: lock, locked: true };
+  const tools = craftToolProblem(state, base, key); // toolreqs.js: a hammer, a saw, a sewing kit…
+  if (tools) return { ok: false, reason: tools, tools: true };
   return { ok: true };
 }
 
@@ -352,6 +361,7 @@ export function queueCraft(state, base, key) {
   const taken = [];
   for (const [k, v] of Object.entries(r.gearIn || {})) for (let i = 0; i < v; i++) taken.push(...base.armory.splice(base.armory.findIndex((it) => it && it.key === k), 1));
   if (r.spent) base.spentFilters -= r.spent;
+  wearBaseTools(state, base, craftTools(key)); // toolreqs.js: a makeshift tool loses a use
   craftQueue(base).push({ id: newId(), recipe: key, progress: 0, hours: r.hours, ...(taken.length ? { gearTaken: taken } : {}), ...(r.spent ? { spent: r.spent } : {}) });
   const note = crafters(state, base).length ? "" : " Nobody is on the Craft role yet.";
   return `${craftName(key)} queued at ${base.name}.${note}`;
@@ -634,6 +644,8 @@ export function fieldCraftOptions(state, party) {
       if (miss) reason = `Needs ${miss[1]} ${miss[0]}; the team carries ${Math.floor(partyHas(party, miss[0]))}`;
       const missG = Object.entries(r.gearIn || {}).find(([k, v]) => partyItems(state, party).filter((x) => x.it.key === k).length < v);
       if (!reason && missG) reason = `Needs ${missG[1] > 1 ? `${missG[1]} × ` : "a "}${GEAR[missG[0]].name.toLowerCase()} with the team`;
+      const missT = toolsMissing(partyToolItems(party, members), craftTools(key)); // toolreqs.js: what the team carries
+      if (!reason && missT.length) reason = `Needs ${toolsText(missT)} with the team`;
     }
     return { key, name: craftName(key), ok: !reason, reason, in: { ...r.in }, gearIn: { ...(r.gearIn || {}) }, inText: craftInText(r), hours: r.hours, skill: r.skill, min: r.min, out: craftOutputText(key) };
   });
@@ -670,6 +682,8 @@ export function fieldCraft(state, party, recipeKey) {
   for (const [k, v] of Object.entries(r.in)) partyTake(party, k, v);
   for (const [k, v] of Object.entries(r.gearIn || {})) for (let i = 0; i < v; i++) { const x = partyItems(state, party).find((y) => y.it.key === k); if (x) x.take(); }
   const members = partyMembers(state, party);
+  party.cargo = party.cargo || { supplies: {}, gear: [] };
+  wearTools(state, craftTools(recipeKey), partyToolItems(party, members), members, [party.cargo.gear]); // toolreqs.js: a makeshift tool loses a use
   const able = members.filter((s) => canAttempt(s, r));
   const maker = able.reduce((a, s) => (craftSkill(s) > craftSkill(a) ? s : a), able[0]); // the best at Crafting who may attempt it
   const who = maker.name.split(" ")[0];

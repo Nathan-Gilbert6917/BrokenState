@@ -97,6 +97,8 @@ import { GUN_WEAPONS, KIT_PATCH, WEAPON_PATCH } from "./data-guns.js"; // the we
 import { withFactory } from "./factoryfit.js"; // a sniper rifle carried with its scope and bipod (section 22)
 import { throwLanding } from "./throwables.js"; // a thrown spear lands like any throw
 import { BLADE_WEAPONS, BLADE_KIT_PATCH } from "./data-blades.js"; // knives and swords (merged below)
+import { TOOL_MELEE } from "./data-tools.js"; // the felling axe, the shovel, the makeshift axe (merged below)
+import { rollAreaTool } from "./toolreqs.js"; // tools in a raid container and a car's trunk (their own dice)
 import { SURV_MELEE, SURV_KIT_PATCH } from "./data-survival.js"; // survival gear: the Halligan bar and the pipe wrench (merged below)
 import { NL_WEAPONS, NL_KIT_PATCH } from "./data-nonlethal.js"; // the stun baton; tasers and spray on guards (merged below)
 import { nlHit, nlDown, nlAfterHit, nlAimPen, nlNoOw, nlStrike, nlAct, nlSetup, nlEnemyPhase, nlTurnStart, nlAI, nlBreak, nlBattleEnd, nlRaidEnd, nlDropPiles, nlSpared, blinded, setTakeAlive } from "./nonlethal.js"; // non-lethal weapons, taking people alive, surrender
@@ -939,6 +941,7 @@ Object.assign(WEAPONS, BLADE_WEAPONS);
 for (const [kind, patch] of Object.entries(BLADE_KIT_PATCH)) for (const [k, list] of Object.entries(patch)) if (KITS[kind]) KITS[kind][k] = [...(KITS[kind][k] || []), ...list];
 // Survival gear (data-survival.js): the two tool weapons' battle numbers, and what the kits' bodies carry (loot lists only).
 Object.assign(WEAPONS, SURV_MELEE);
+Object.assign(WEAPONS, TOOL_MELEE); // data-tools.js
 for (const [kind, patch] of Object.entries(SURV_KIT_PATCH)) for (const [k, list] of Object.entries(patch)) if (KITS[kind]) KITS[kind][k] = [...(KITS[kind][k] || []), ...list];
 
 const idx = (x, y) => y * W + x;
@@ -7378,6 +7381,9 @@ export function searchBox(state, b, u, box, open = false, quick = false) {
       // A tent bag: a campsite's, a garage's shelf, barracks stores (tents.js AREA_TENTS; its own dice too).
       const tent = rollAreaTent(state, b.tileId, R.areas[box.area].type, site, `box${bid}`);
       if (tent) gear.push(tent);
+      // A tool: a workshop's bench, a barn's wall, a car's trunk (toolreqs.js AREA_TOOLS / CAR_TOOLS; its own dice too).
+      const tool = rollAreaTool(state, b.tileId, R.areas[box.area].type, box.kind, `box${bid}`);
+      if (tool) gear.push(tool);
       if (def.alarm && box.kind === "car" && drng.chance(def.alarm) && !u.quiet) { // quiet: Quiet Hands never sets one off
         R.heat = Math.min(100, R.heat + 12);
         say(b, "A car alarm goes off! Heat jumps.", "danger");

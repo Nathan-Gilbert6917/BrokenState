@@ -12,6 +12,7 @@
 // It only uses the same calls as the UI (canBuild / queueBuild, queueCraft, treatAtBase, launchExpedition,
 // startOrder, saveSupplyRun ...), plays by what the player knows of the map (knowledge snapshots, markers,
 // known groups), and never draws from state.rng. Turning it off hands everything back as it is.
+import { basicToolWanted, TOOL_KINDS } from "./toolreqs.js"; // the tools a base keeps for building and crafting (planCrafts)
 import { HAUL, govHauling, haulersWanted, haulScore, onHaulTrip } from "./hauling.js"; // hauling: haul orders and haulers (call-time only)
 import { isChopJob } from "./woodwork.js"; // noidle: the felling in the queue
 import { fellCrew, fellUrgent, fellScore, fellFit, noWorkFor, planNoIdle } from "./noidle.js"; // noidle: a woodcutter on the felling, nobody in a role with no work (call-time only)
@@ -3343,6 +3344,16 @@ export function planCrafts(state, base) {
     queueCraft(state, base, fr);
     gov(state).stats.crafts++;
     say(state, `Queued ${fr === "waterfilter" ? GEAR.waterfilter.name : "a clogged water filter re-packed"} at ${base.name}: water for the summer and dry spells (${f0 + 1} of ${fw0} filters).`);
+    return;
+  }
+  // The basic tools (toolreqs.js BASIC_KINDS: a hammer, a saw, a shovel, an axe): one nothing here covers is made from
+  // scrap (a makeshift one) before the rest, or the builds and recipes that need it never go up. Not at a camp: its
+  // essentials need none, and its scrap is for the step up into a shelter.
+  const tw = isCamp(base) ? null : basicToolWanted(state, base);
+  if (tw && canCraft(state, base, tw.recipe).ok) {
+    queueCraft(state, base, tw.recipe);
+    gov(state).stats.crafts++;
+    say(state, `Queued a ${GEAR[CRAFTS[tw.recipe].gear].name.toLowerCase()} at ${base.name}: nothing there serves as ${TOOL_KINDS[tw.kind].name} for building and crafting.`);
     return;
   }
   if (q.length >= 3) return;

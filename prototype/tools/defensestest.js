@@ -7,6 +7,7 @@
 // a multitool, a repair kit's pliers, an axe, a hatchet, a machete), Cut wire; trenches that slow the dead more than the
 // living; and every defense built standing on the base's battle map when it is raided (fort.js, interior.js, deploy.js).
 // Usage: node tools/defensestest.js [seed]
+import { stockTools } from "./toolset.js"; // every tool a build or recipe can need (toolreqs.js)
 import { createWorld, hub, atBase, survivorById } from "../src/sim/world.js";
 import {
   BUILDINGS, WALL_TIERS, count, canBuild, queueBuild, constructionHour, baseWalls, wallOf, wallTier, wallSectionHp, placeProblem, migrateWalls, addBuilding, cancelBuild, demolishRefund,
@@ -29,7 +30,7 @@ const seed = Number(process.argv[2] || 7);
 let pass = 0, fail = 0;
 const check = (ok, what) => { if (ok) pass++; else fail++; console.log(`  ${ok ? "ok  " : "FAIL"} ${what}`); return ok; };
 registerCombatHandler("deftest", () => {});
-const world = () => { const st = createWorld({ seed, factionCount: 6 }); st.started = true; st.hour = 24 * 3 + 12; st.landOff = true; return st; }; // landOff: the land (basescatter.js) is tools/baseviewtest.js's
+const world = () => { const st = createWorld({ seed, factionCount: 6 }); st.started = true; st.hour = 24 * 3 + 12; st.landOff = true; stockTools(hub(st)); return st; }; // landOff: the land (basescatter.js) is tools/baseviewtest.js's
 const rich = (base) => Object.assign(base.stock, { scrap: 999, parts: 99, buildmat: 99, electronics: 9, wood: 99999 });
 const asCamp = (base) => { base.tier = 0; base.camp = true; return base; };
 const asShelter = (base) => { base.tier = 0; delete base.camp; return base; };
