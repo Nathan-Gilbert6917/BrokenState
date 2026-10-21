@@ -52,6 +52,8 @@ export const SITE_TAGS = {
   house: ["home", "kitchen"], neighbourhood: ["home", "kitchen", "garage"], garage: ["garage", "tools"], corner: ["shop", "kitchen"],
   pizza: ["kitchen", "shop"], farmstand: ["farm", "shop", "kitchen"], shed: ["tools", "farm", "garage"], blind: ["hunt", "outdoor"],
   campsite: ["camp", "outdoor"], hikercamp: ["camp", "outdoor"], mineshack: ["industry", "tools", "outdoor"],
+  // A pawn shop (pois.js shopExtra, the city crawl): whatever people pawned, guns and camping gear behind the counter.
+  pawnshop: ["shop", "guns", "hunt", "crime", "home", "outdoor", "camp", "tools", "sport", "tech", "travel"],
 };
 export const AREA_TAGS = {
   house: ["home", "kitchen"], farmhouse: ["home", "farm", "hunt"], store: ["shop"], kitchen: ["kitchen"], pharmacy: ["medical", "shop"],
@@ -59,7 +61,7 @@ export const AREA_TAGS = {
   office: ["office", "tech"], armory: ["police", "military", "guns"], barracks: ["military", "camp"], motorpool: ["military", "garage"],
   barn: ["farm", "tools"], lab: ["school", "tech", "medical"], cabin: ["hunt", "outdoor", "home"], hangar: ["travel", "industry", "garage"],
   cellblock: ["prison", "crime"], control: ["tech", "industry"], campsite: ["camp", "outdoor"], wreck: ["travel", "garage"],
-  pumps: ["travel"], gunshop: ["guns", "hunt"], lockers: ["school", "sport"], chapel: ["church"],
+  pumps: ["travel"], gunshop: ["guns", "hunt"], hardware: ["tools", "shop", "farm", "industry", "garage"], pawnshop: ["shop", "guns", "hunt", "crime", "home", "outdoor", "camp", "tools", "sport", "tech", "travel"], lockers: ["school", "sport"], chapel: ["church"],
   milwreck: ["military", "crash"], medwreck: ["medical", "crash"], newswreck: ["tech", "crash"], fuselage: ["crash", "travel"],
   cargodrop: ["crash", "camp", "military"],
   roadcars: ["travel", "home", "garage"], // the cars people fled in (combat.js AREAS.roadcars)
@@ -201,6 +203,7 @@ export const SITE_FINDS = {
   pharmacy: { p: 0.285, items: { razors: 2, soap: 2, toiletpaper: 2, candy: 2, chocolate: 1, batteries: 1, smokes: 1, puritabs: 2, deodorant: 3, toothpaste: 3, shampoo: 2, wetwipes: 2, lipbalm: 2, makeup: 1, perfume: 0.5 } },
   supermarket: { p: 0.216, items: { chocolate: 3, instcoffee: 2, candy: 2, tea: 2, honey: 1, smokes: 2, cigarettes: 1, vodka: 1, wine: 2, whiskey: 0.5, coffee: 0.5, toiletpaper: 2, soap: 1, candles: 1, batteries: 1, lighters: 1, deodorant: 2, toothpaste: 2, shampoo: 2, wetwipes: 1, lipbalm: 1 } },
   gunstore: { p: 0.08, items: { gamecall: 2, scentmask: 1, monocular: 1 } },
+  pawnshop: { p: 0.22, items: { goldring: 3, goldchain: 2, watch: 3, diamond: 0.5, pearls: 1, coins: 2, stamps: 1, silverware: 1, vinyl: 1, tcards: 1, guitar: 1, harmonica: 1, camera: 2, laptop: 1.5, console: 1.5, phone: 2, batteries: 1, lighters: 1, gamecall: 0.5, handradio: 0.5 } },
   hardware: { p: 0.1, items: { batteries: 3, lighters: 2, tripwire: 1, candles: 1, toiletpaper: 1, handradio: 0.5 } },
   apartments: { p: 0.18, items: { goldring: 2, watch: 1, pearls: 1, silverware: 0.5, coins: 1, stamps: 0.5, vinyl: 1, phone: 2, laptop: 1, console: 1, photos: 3, cards: 1, guitar: 0.5, harmonica: 0.5, vodka: 1, wine: 1, smokes: 1, chocolate: 1, candles: 1, deodorant: 2, toothpaste: 1, shampoo: 1, makeup: 1, perfume: 0.5, lipbalm: 0.5 } },
   office: { p: 0.125, items: { phone: 3, laptop: 2, watch: 1, instcoffee: 2, coffee: 0.5, photos: 2, scotch: 0.5, cigars: 0.5, stamps: 0.5, toiletpaper: 1, makeup: 0.5 } },
@@ -253,6 +256,7 @@ export const GUNMOD_FINDS = {
   ranch: { p: 0.025, items: { choke: 1, scope4x: 1, bipod: 0.5 } },
   mall: { p: 0.02, items: { reddot: 1, laser: 1, comp: 1, choke: 1 } },
   town: { p: 0.01, items: { reddot: 1, laser: 1, choke: 1 } },
+  pawnshop: { p: 0.06, items: { reddot: 2, scope4x: 1.5, laser: 1.5, comp: 1, choke: 1, extmag: 1, bipod: 0.6 } }, // gunshops.js
 };
 export function rollGunmodFind(state, tileId, mult = 1, salt = "") {
   const t = state.tiles[tileId];
@@ -268,6 +272,7 @@ export const rollAnyModFind = (state, tileId, mult = 1, salt = "") => rollGunmod
 export const AREA_GUNMODS = {
   armory: { p: 0.12, items: { reddot: 2, laser: 2, extmag: 2, holo: 1, foregrip: 1, tubeext: 1, scope4x: 0.5, riflecan: 0.3 } },
   gunshop: { p: 0.12, items: { reddot: 2, scope4x: 2, laser: 1.5, comp: 1.5, choke: 1.5, extmag: 1.5, bipod: 1, brake: 1, holo: 0.7, pistolcan: 0.3 } },
+  pawnshop: { p: 0.06, items: { reddot: 1.5, scope4x: 1, laser: 1, comp: 0.6, choke: 0.6, extmag: 0.8 } },
   barracks: { p: 0.05, items: { reddot: 1, holo: 1, foregrip: 1, drum: 0.3 } },
   milwreck: { p: 0.06, items: { holo: 1, reddot: 1, drum: 0.4, riflecan: 0.3 } },
   cabin: { p: 0.03, items: { scope4x: 1, bipod: 1, choke: 1 } },
@@ -320,15 +325,18 @@ export const SITE_MODS = {
   farm: { p: 0.01, items: { recoilpad: 1, sling: 1 } },
   hardware: { p: 0.02, items: { repairkit: 1 } },
   autoshop: { p: 0.02, items: { repairkit: 1 } },
+  pawnshop: { p: 0.05, items: { scopemount: 1.5, recoilpad: 1.5, sling: 2, revgrip: 1, foldstock: 0.6, repairkit: 1 } }, // gunshops.js
 };
 export const AREA_MODS = {
   armory: { p: 0.08, items: { tritium: 1, rmr: 1, weaponlight: 2, collapsible: 1, acog: 0.6, can9: 0.3, kevlarkit: 2, sling: 1 } },
   gunshop: { p: 0.08, items: { scopemount: 2, sidemount: 0.6, recoilpad: 2, revgrip: 1.5, flashhider: 1.5, sling: 2, tritium: 1, can22: 0.5, foldstock: 0.6, repairkit: 0.5 } },
+  pawnshop: { p: 0.05, items: { scopemount: 1, recoilpad: 1, sling: 1.5, revgrip: 0.8, foldstock: 0.5, repairkit: 0.8 } },
   barracks: { p: 0.05, items: { acog: 1, quadrail: 0.6, weaponlight: 1, sling: 1, kevlarkit: 1, peq: 0.15 } },
   milwreck: { p: 0.05, items: { acog: 1, weaponlight: 1, can556: 0.2, kevlarkit: 0.6 } },
   motorpool: { p: 0.03, items: { repairkit: 1 } },
   cabin: { p: 0.02, items: { scopemount: 1, recoilpad: 1, sling: 1 } },
   workshop: { p: 0.02, items: { repairkit: 1 } },
+  hardware: { p: 0.03, items: { repairkit: 1 } }, // gunshops.js
   garage: { p: 0.015, items: { repairkit: 1 } },
 };
 export function rollSiteMod(state, tileId, mult = 1, salt = "") {
@@ -364,6 +372,7 @@ export const PARTS_MIX = {};
 for (const t of ["autoshop", "gas", "truckstop", "crashsite", "convoy", "wreck", "roadcars", "garage", "motorpool", "pumps"]) PARTS_MIX[t] = { carparts: 0.6 };
 for (const t of ["factory", "dam", "workshop", "warehouse", "quarry"]) PARTS_MIX[t] = { carparts: 0.1, electronics: 0.1 }; // machine parts 0.8
 for (const t of ["gunstore", "gunshop", "armory", "barracks", "milwreck", "crash_mil"]) PARTS_MIX[t] = { gunparts: 0.6 };
+PARTS_MIX.pawnshop = { gunparts: 0.4 }; // gunshops.js
 for (const t of ["radiotower", "univ", "lab", "office", "control", "airport", "hangar", "newswreck", "crash_news", "mall"]) PARTS_MIX[t] = { electronics: 0.6 };
 PARTS_MIX.military = { gunparts: 0.4, electronics: 0.2, carparts: 0.2 };
 PARTS_MIX.police = { gunparts: 0.3, electronics: 0.1, carparts: 0.1 };
@@ -506,6 +515,8 @@ export const AREA_FINDS = {
   wreck: { p: 0.066, items: { phone: 2, photos: 2, smokes: 1, flare: 2, watch: 0.5, goldring: 0.3, cigarettes: 0.5, wetwipes: 0.5, perfume: 0.3 } },
   roadcars: { p: 0.08, items: { phone: 2, photos: 2, smokes: 1, flare: 1, watch: 0.5, goldring: 0.2, cigarettes: 1, chocolate: 1 } },
   gunshop: { p: 0.04, items: { gamecall: 1, scentmask: 1, monocular: 1 } },
+  hardware: { p: 0.12, items: { batteries: 3, lighters: 2, tripwire: 1.5, candles: 1, handradio: 0.5 } }, // gunshops.js
+  pawnshop: { p: 0.16, items: { goldring: 2, goldchain: 1.5, watch: 2, diamond: 0.3, pearls: 0.6, coins: 1.5, silverware: 0.6, vinyl: 1, guitar: 0.6, camera: 1.5, laptop: 1, console: 1, phone: 1.5, batteries: 1, handradio: 0.4 } },
   lockers: { p: 0.133, items: { phone: 2, console: 1, tcards: 1, candy: 1, guitar: 0.3, deodorant: 2, shampoo: 1, lipbalm: 0.5 } },
   chapel: { p: 0.08, items: { candles: 3, wine: 1, coins: 1, silverware: 0.5 } },
   milwreck: { p: 0.06, items: { frag: 1, smokegren: 2, flare: 1, chocolate: 1, cigarettes: 1 } },
@@ -610,20 +621,20 @@ export function rollAreaFind(rng, areaType, rich = 1, scav = 0, site = null) {
 // Site searches (scavenge.js searchHour), a roll each search hour × the site's loot left:
 export const SITE_WOOD = {
   farm: [0.3, 60, 150], barn: [0.35, 60, 180], ranch: [0.3, 60, 150], cabin: [0.4, 60, 180], lodge: [0.35, 60, 150], campground: [0.4, 60, 150],
-  ranger: [0.35, 60, 150], hardware: [0.25, 30, 120], feedstore: [0.2, 30, 90], town: [0.15, 30, 90], church: [0.1, 30, 90], motel: [0.08, 30, 60],
+  ranger: [0.35, 60, 150], hardware: [0.4, 60, 180], feedstore: [0.2, 30, 90], town: [0.15, 30, 90], church: [0.1, 30, 90], motel: [0.08, 30, 60],
 };
 // Raid map containers (combat.js, a building's rooms too): by the room's type, × FURNITURE for wooden furniture
 // (cabinets, shelves, a counter; anything else half): a living room's log basket, a shed's kindling, a barn's woodpile.
 export const AREA_WOOD = {
   house: [0.12, 30, 90], farmhouse: [0.2, 30, 120], barn: [0.3, 60, 150], cabin: [0.3, 60, 150], campsite: [0.35, 30, 120],
-  garage: [0.1, 30, 90], workshop: [0.15, 30, 90], chapel: [0.08, 30, 60],
+  garage: [0.1, 30, 90], workshop: [0.15, 30, 90], chapel: [0.08, 30, 60], hardware: [0.25, 30, 90],
 };
 const FURNITURE = { cabinet: 1, shelf: 1, counter: 1 };
 // Wood found this search hour at a site, or 0.
 // Building materials (data.js buildmat: lumber, blocks, sheet metal; what a camp takes to become a base): a find of its
 // own each search hour, like SITE_WOOD (its own dice: nothing else a search finds changed). [chance, min, max].
 export const BUILDMAT_FINDS = {
-  hardware: [0.35, 2, 5], quarry: [0.3, 2, 4], warehouse: [0.22, 1, 4], factory: [0.18, 1, 3], barn: [0.18, 1, 3],
+  hardware: [0.55, 3, 7], quarry: [0.3, 2, 4], warehouse: [0.22, 1, 4], factory: [0.18, 1, 3], barn: [0.18, 1, 3], // hardware: gunshops.js, the builder's shop (was [0.35, 2, 5])
   farm: [0.12, 1, 2], feedstore: [0.12, 1, 2], ranch: [0.08, 1, 2], town: [0.1, 1, 2], city: [0.08, 1, 2],
   apartments: [0.06, 1, 2], office: [0.06, 1, 2], school: [0.06, 1, 2], motel: [0.06, 1, 2], church: [0.06, 1, 2],
   mall: [0.06, 1, 2], prison: [0.06, 1, 2], campground: [0.05, 1, 1], cabin: [0.05, 1, 1], dam: [0.08, 1, 2],
@@ -657,7 +668,7 @@ export function rollAreaWood(state, tileId, areaType, boxKind, salt = "") {
 // up where bows are kept. Their own dice (hash01), so the rest of a search or a raid is unchanged. [chance, min, max].
 // Site searches (scavenge.js searchHour), a roll each search hour × the site's loot left:
 export const SITE_ARROWS = {
-  lodge: [0.3, 6, 18], gunstore: [0.25, 6, 24], mall: [0.08, 6, 12], campground: [0.12, 4, 12], cabin: [0.12, 3, 10],
+  lodge: [0.3, 6, 18], gunstore: [0.25, 6, 24], pawnshop: [0.08, 4, 12], mall: [0.08, 6, 12], campground: [0.12, 4, 12], cabin: [0.12, 3, 10],
   ranger: [0.1, 4, 12], hardware: [0.05, 4, 10], farm: [0.04, 3, 8], ranch: [0.05, 3, 8],
 };
 // Raid map containers (combat.js, a building's rooms too): by the room's type (lockers, shelves and crates in full,
@@ -713,6 +724,7 @@ for (const [where, n] of [[SITE_FINDS.hospital, 3], [SITE_FINDS.clinic, 2], [SIT
 // powder and primers as supplies (reloading.js: arms dealers, the traders' and soldiers' groups).
 export const SITE_RELOAD = {
   gunstore: { p: 0.2, items: { brass: 3, powder: 3, primers: 4 } },
+  pawnshop: { p: 0.04, items: { brass: 2, powder: 1 } }, // gunshops.js
   lodge: { p: 0.08, items: { brass: 2, powder: 2, primers: 0.5 } },
   ranch: { p: 0.05, items: { brass: 1, powder: 2 } },
   military: { p: 0.05, items: { brass: 2, primers: 1 } },
@@ -722,6 +734,7 @@ export const SITE_RELOAD = {
 };
 export const AREA_RELOAD = {
   gunshop: { p: 0.1, items: { brass: 2, powder: 2, primers: 1.5 } },
+  pawnshop: { p: 0.03, items: { brass: 1.5, powder: 1 } },
   armory: { p: 0.06, items: { brass: 2, primers: 1 } },
   barracks: { p: 0.04, items: { brass: 2, primers: 0.5 } },
   cabin: { p: 0.03, items: { brass: 1, powder: 1 } },

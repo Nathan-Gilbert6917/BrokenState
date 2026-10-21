@@ -110,7 +110,8 @@ export const SURV_FINDS = {
   police: { p: 0.04, items: { legrig: 2, anglelight: 1, halligan: 0.5, rangefinder: 0.3 } },
   military: { p: 0.04, items: { anglelight: 2, legrig: 1, rangefinder: 1 } },
   crash_mil: { p: 0.02, items: { anglelight: 1, rangefinder: 0.5 } },
-  gunstore: { p: 0.05, items: { rangefinder: 2, legrig: 1 } },
+  gunstore: { p: 0.1, items: { rangefinder: 2, legrig: 2.5 } }, // gunshops.js: the gun and gear shops' racks (was 0.05, legrig 1)
+  pawnshop: { p: 0.1, items: { legrig: 1.5, rangefinder: 1, solarlantern: 2, anglelight: 1, leatherjacket: 2, motopants: 1, pipewrench: 1.5 } }, // gunshops.js: what was pawned
   lodge: { p: 0.04, items: { rangefinder: 1, solarlantern: 1.5, anglelight: 0.5 } },
   campground: { p: 0.04, items: { solarlantern: 2, anglelight: 1 } },
   cabin: { p: 0.03, items: { solarlantern: 1, rangefinder: 0.5, leatherjacket: 0.5 } },
@@ -122,6 +123,7 @@ export const SURV_FINDS = {
 export const AREA_SURV = {
   house: { p: 0.02, items: { leatherjacket: 1, solarlantern: 0.6, pipewrench: 0.4 } },
   garage: { p: 0.04, items: { pipewrench: 2, leatherjacket: 0.6, motopants: 0.6 } },
+  hardware: { p: 0.05, items: { pipewrench: 3, solarlantern: 1, halligan: 0.3 } }, // gunshops.js
   workshop: { p: 0.04, items: { pipewrench: 2, halligan: 0.2, chainsleeves: 0.4 } },
   kitchen: { p: 0.02, items: { chainsleeves: 1 } },
   store: { p: 0.02, items: { solarlantern: 1, leatherjacket: 0.6, chainsleeves: 0.3 } },
@@ -130,7 +132,8 @@ export const AREA_SURV = {
   barracks: { p: 0.04, items: { anglelight: 2, legrig: 1 } },
   campsite: { p: 0.04, items: { solarlantern: 2, anglelight: 0.6 } },
   cabin: { p: 0.03, items: { solarlantern: 1, rangefinder: 0.4 } },
-  gunshop: { p: 0.04, items: { rangefinder: 1.5, legrig: 1 } },
+  gunshop: { p: 0.08, items: { rangefinder: 1.5, legrig: 2 } },
+  pawnshop: { p: 0.08, items: { legrig: 1.2, rangefinder: 0.8, solarlantern: 1.5, anglelight: 0.8, leatherjacket: 1.5, motopants: 0.6, pipewrench: 1 } },
   roadcars: { p: 0.02, items: { leatherjacket: 1, pipewrench: 0.5, motopants: 0.3 } },
 };
 /** @type {Record<string, { p: number, items: Record<string, number> }>} */

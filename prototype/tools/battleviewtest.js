@@ -18,7 +18,7 @@ const t0 = performance.now();
 // A 2D context that records every stroke (its dash and colour) and counts NaNs.
 let nan = 0, strokes = [];
 const recorder = () => {
-  const st = { dash: [], strokeStyle: "", lineWidth: 1 };
+  const st = { dash: [], strokeStyle: "", lineWidth: 1, globalAlpha: 1 }; // (a real context's globalAlpha starts at 1: drawFigure multiplies it)
   const own = {
     createImageData: (w, h) => ({ data: new Uint8ClampedArray(w * h * 4) }),
     measureText: (t) => ({ width: String(t).length * 6 }),

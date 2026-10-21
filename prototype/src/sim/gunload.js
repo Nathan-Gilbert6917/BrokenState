@@ -81,7 +81,7 @@ export function gunLeavesTeam(b, item) {
   forget(b, item);
   return item.loaded;
 }
-const startGun = (b, item) => b.units.some((o) => o.side === "player" && Array.isArray(o.startGuns) && o.startGuns.includes(item));
+const startGun = (b, item) => b.units.some((o) => (o.side === "player" || o.who) && Array.isArray(o.startGuns) && o.startGuns.includes(item)); // o.who: anyone else's person (fighters.js), drawing their own side arm (holsters.js)
 function forget(b, item) { for (const o of b.units) if (Array.isArray(o.startGuns)) { const i = o.startGuns.indexOf(item); if (i >= 0) o.startGuns.splice(i, 1); } }
 
 // A gun taken into a fighter's hands: how many rounds are in its magazine (null: loaded full, one carried into the
@@ -89,7 +89,7 @@ function forget(b, item) { for (const o of b.units) if (Array.isArray(o.startGun
 export function gunIn(b, u, item) {
   if (!b || !u || !isGun(item)) return 0;
   const cal = calOf(item.key);
-  if (u.side === "player" && Array.isArray(u.stack) && item.loaded) { // physical rounds (mags.js fillUnit reads the record off the item as the stack)
+  if ((u.side === "player" || u.who) && Array.isArray(u.stack) && item.loaded) { // physical rounds (mags.js fillUnit reads the record off the item as the stack); anyone else's person too (fighters.js)
     const { n, key } = item.loaded;
     const t = typeOfKey(key, cal, item.key);
     if (t) u.load = t;

@@ -115,7 +115,7 @@ const STYLE_OF = {
   house: "house", farmhouse: "house", cabin: "house", lodge: "house", ranger: "house", motel: "house", neighbourhood: "house",
   grocery: "shop", corner: "shop", pharmacy: "shop", hardware: "shop", feedstore: "shop", diner: "shop", gasstation: "shop", truckstop: "shop", supermarket: "shop", deptstore: "shop",
   clinic: "office", infirmary: "office", hospital: "office", school: "office", offices: "office", lab: "office", terminal: "office", apartments: "office",
-  gunstore: "secure", police: "secure", barracks: "secure", armorybldg: "secure", cellblock: "secure", control: "secure",
+  gunstore: "secure", pawnshop: "secure", police: "secure", barracks: "secure", armorybldg: "secure", cellblock: "secure", control: "secure",
   firestation: "works", messhall: "works", radio: "works", warehouse: "works", factory: "works", hangar: "works", motorpool: "works", autoshop: "works", garage: "works", workshop: "works", machineshed: "works",
   barn: "barn", church: "church",
 };
@@ -286,9 +286,13 @@ function shop(rng, v) {
       sales = S({ name: "Showroom", type: "gunshop", furnish: "gundesk", maxBoxes: 4 });
       back = [[rng.int(4, 5), { role: "armory", name: "Gun cage", type: "gunshop", lock: ["vault", 0.8], boxLock: ["cage", 0.6], maxBoxes: 3 }], ["*", { role: "stock", type: "store", name: "Back room", maxBoxes: 3 }], [rng.int(3, 4), { role: "office", gunSafe: ["gunsafe2", 0.5] }]]; // locks.js gun safes: the owner's safe
       break;
+    case "pawnshop": // gunshops.js: the counter and its cases in front, the gun case and the stock behind
+      sales = S({ name: "Pawn counter", type: "pawnshop", maxBoxes: 6 });
+      back = [[rng.int(4, 5), { role: "armory", name: "Gun case", type: "gunshop", lock: ["door", 0.6], boxLock: ["cage", 0.5], maxBoxes: 3 }], ["*", { role: "stock", type: "pawnshop", name: "Back room", maxBoxes: 4 }], [rng.int(3, 4), { role: "office", gunSafe: ["gunsafe2", 0.3] }]];
+      break;
     case "hardware":
-      sales = S({ name: "Hardware aisles", type: "workshop" });
-      back = [["*", { role: "stock", type: "warehouse" }], [rng.int(3, 4), { role: "office", lock: ["door", 0.25] }], [3, { role: "parts", name: "Tool crib", type: "garage" }]];
+      sales = S({ name: "Hardware aisles", type: "hardware" }); // gunshops.js: the materials for building and crafting
+      back = [["*", { role: "stock", type: "hardware", name: "Lumber and stock" }], [rng.int(3, 4), { role: "office", lock: ["door", 0.25] }], [3, { role: "parts", name: "Tool crib", type: "garage" }]];
       break;
     case "feedstore":
       sales = S({ name: "Store", type: "barn" });
@@ -635,6 +639,7 @@ export const BUILDINGS = {
   corner:      { name: "Corner store", make: (r) => shop(r, "corner") },
   pharmacy:    { name: "Pharmacy", make: (r) => shop(r, "pharmacy") },
   gunstore:    { name: "Gun store", make: (r) => shop(r, "gunstore") },
+  pawnshop:    { name: "Pawn shop", make: (r) => shop(r, "pawnshop") },
   hardware:    { name: "Hardware store", make: (r) => shop(r, "hardware") },
   feedstore:   { name: "Feed store", make: (r) => shop(r, "feedstore") },
   diner:       { name: "Diner", make: (r) => shop(r, "diner") },
@@ -676,7 +681,7 @@ export const BUILDINGS = {
 // The storeys a type can have, [min, max] (the city crawl's bonus can add to offices and apartments, up to MAX_STOREYS).
 export const STOREYS_BY_TYPE = {
   house: [2, 2], farmhouse: [2, 2], cabin: [1, 1], lodge: [2, 2], ranger: [1, 1],
-  grocery: [1, 1], corner: [1, 2], pharmacy: [1, 1], gunstore: [1, 1], hardware: [1, 1], feedstore: [1, 1], diner: [1, 1], gasstation: [1, 1], truckstop: [1, 1],
+  grocery: [1, 1], corner: [1, 2], pharmacy: [1, 1], gunstore: [1, 1], pawnshop: [1, 1], hardware: [1, 1], feedstore: [1, 1], diner: [1, 1], gasstation: [1, 1], truckstop: [1, 1],
   supermarket: [1, 2], deptstore: [1, 2],
   clinic: [1, 3], infirmary: [1, 3], hospital: [3, 5], police: [2, 3], school: [2, 3], offices: [3, 8], lab: [1, 3], barracks: [2, 2], armorybldg: [1, 1],
   cellblock: [1, 1], messhall: [2, 2], control: [1, 3], radio: [1, 1], terminal: [1, 3], firestation: [2, 2],
@@ -689,7 +694,7 @@ export const STOREYS_BY_TYPE = {
 // with the street map as one more choice. Missing (campgrounds, crash sites, water): the street map only.
 export const SITES = {
   // One building.
-  pharmacy: ["pharmacy"], gunstore: ["gunstore"], hardware: ["hardware"], grocery: ["grocery"], diner: ["diner"], supermarket: ["supermarket"],
+  pharmacy: ["pharmacy"], gunstore: ["gunstore"], pawnshop: ["pawnshop"], hardware: ["hardware"], grocery: ["grocery"], diner: ["diner"], supermarket: ["supermarket"],
   police: ["police"], clinic: ["clinic"], hospital: ["hospital"], school: ["school"], office: ["offices"], firestation: ["firestation"],
   church: ["church"], motel: ["motel"], apartments: ["apartments"], autoshop: ["autoshop"], feedstore: ["feedstore"], cabin: ["cabin"],
   lodge: ["lodge"], ranger: ["ranger"], radiotower: ["radio"], barn: ["barn"], truckstop: ["truckstop"], gas: ["gasstation"], quarry: ["workshop"],

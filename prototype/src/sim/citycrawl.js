@@ -59,6 +59,7 @@ import { crawlGuns } from "./gunfinds.js";
 import { deepShift, cacheChance, isFine, valuePerKg, wantOf, DEEP } from "./deeploot.js"; // deeper blocks hold what is dear by the kilo; a full team swaps
 import { itemValue } from "./valuation.js";
 import { atBase } from "./world.js";
+import { shopPlace, SHOP } from "./gunshops.js"; // a gun store or a pawn shop on a block, on its own dice
 import { gridOf, inGrid, isEdge, levelOf, ringOf, maxLevel, entryOf, headingToward, turn, rimOf, pathToRim, dirTo, keyOf, xyOf, DIRS, DIR_NAMES, cellsOf } from "./citygrid.js"; // the round grid of blocks (2026-10-13)
 
 // ---------- tuning ----------
@@ -436,10 +437,7 @@ export function genBlock(state, c, cell = c.cell) {
   const nPlaces = clamp(CRAWL.PLACES[0] + (rng.chance(0.5) ? 1 : 0) + (rng.chance(0.15 * (n - 1)) ? 1 : 0), CRAWL.PLACES[0], CRAWL.PLACES[1]);
   const pool = Object.keys(PLACE_POOL).filter((k) => BUILDINGS[k] && n >= PLACE_POOL[k].from);
   const places = [];
-  for (let j = 0; j < nPlaces; j++) {
-    const left = pool.filter((k) => !places.some((pl) => pl.key === k));
-    const key = rng.weighted(left, (k) => Math.max(0.02, PLACE_POOL[k].w + PLACE_POOL[k].deep * (n - 1)));
-    const P = PLACE_POOL[key];
+  const addPlace = (rng, key, P, j) => {
     const street = rng.chance(0.6) ? streetA : STREETS[rng.int(0, STREETS.length - 1)];
     const id = `${cell}p${j}`;
     const raiders = n >= CRAWL.RAIDERS.from && rng.chance(Math.min(CRAWL.RAIDERS.max, CRAWL.RAIDERS.chance + CRAWL.RAIDERS.perBlock * (n - CRAWL.RAIDERS.from)));
@@ -453,7 +451,15 @@ export function genBlock(state, c, cell = c.cell) {
     // Who holds its upper floors (floorfolk.js), by the city's dice: the same people every visit.
     place.folk = rollFolk(rng, { key, n, storeys: placeStoreys(state, c, place, n), danger: placeDanger(state, c, place, n).level, raiders });
     places.push(place);
+  };
+  for (let j = 0; j < nPlaces; j++) {
+    const left = pool.filter((k) => !places.some((pl) => pl.key === k));
+    const key = rng.weighted(left, (k) => Math.max(0.02, PLACE_POOL[k].w + PLACE_POOL[k].deep * (n - 1)));
+    addPlace(rng, key, PLACE_POOL[key], j);
   }
+  // gunshops.js: a gun store or a pawn shop besides, on its own dice (the places above are as they were).
+  const shop = shopPlace(state, c.tile, cell, places, CRAWL.PLACES[1]);
+  if (shop && BUILDINGS[shop]) addPlace(new Rng(seedOf(state.seed, "crawlshop", c.tile, cell)), shop, SHOP.PLACE[shop], places.length);
   // This visit: a place may be shut.
   if (places.length > 2 && vr.chance(CRAWL.BLOCKED)) {
     const pl = vr.pick(places);

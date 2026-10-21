@@ -17,11 +17,13 @@ import { describeActivity } from "../src/sim/activity.js";
 import { jobTripsHour } from "../src/sim/jobtrips.js";
 import { storageOf } from "../src/sim/basestorage.js";
 import { foodIn } from "../src/sim/foods.js";
+import { addDays } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { gatherJob } from "../src/sim/buildings.js";
 import * as HL from "../src/sim/hauling.js";
 import * as NI from "../src/sim/noidle.js";
 import * as TE from "../src/sim/tripevents.js";
 import { homesOf, gatherStores, spreadStores } from "../src/sim/groupbases.js";
+import { placeMembers } from "../src/sim/members.js";
 
 const SEED = Number(process.argv[2] || 42);
 let pass = 0, fail = 0;
@@ -51,7 +53,7 @@ section("1. A standing order moves the right goods at the hauler's weight, in th
   h.stock.scrap = 400; h.stock.meds = 30;
   o.stock.scrap = 0;
   HL.addHaulOrder(st, { from: h.id, to: o.id, what: "scrap", mode: "send", qty: 100 });
-  atHour(st, 6);
+  atHour(st, 7); // after breakfast (06:00: eating.js)
   const cap = HL.haulCap(st, h, s);
   const p = HL.planHaul(st, h, s, st.hour);
   check(!!p && p.dest === o, `a trip planned to ${o.name} (${p ? `${Math.round(p.outKg)} kg, ${p.outH.toFixed(1)} h out, ${p.backH.toFixed(1)} h back` : "none"})`);
@@ -83,7 +85,7 @@ section("2. Storage room at the far end is kept to; the woodpile is exempt");
   h.stock.scrap = 500; h.stock.wood = 3000;
   HL.addHaulOrder(st, { from: h.id, to: o.id, what: "scrap", mode: "send", qty: 0 });
   HL.addHaulOrder(st, { from: h.id, to: o.id, what: "wood", mode: "send", qty: 1000 });
-  atHour(st, 6);
+  atHour(st, 7);
   run(st, 1);
   const t = s.trip;
   const free = 500 - 490;
@@ -114,7 +116,7 @@ section("4. Road events can hit a hauler");
   st.autopilot = true; // events resolve at once
   h.stock.scrap = 400;
   HL.addHaulOrder(st, { from: h.id, to: o.id, what: "scrap", mode: "send", qty: 0 });
-  atHour(st, 6);
+  atHour(st, 7);
   run(st, 1);
   const t = s.trip;
   t.evr = 1;
@@ -123,7 +125,7 @@ section("4. Road events can hit a hauler");
   run(st, 2);
   check(TE.evStats(st).n === n0 + 1, "a find on the road (tripevents.js) fired on the haul trip");
   const s2 = person(st, h);
-  st.hour = Math.floor(st.hour / 24) * 24 + 24 + 6;
+  st.hour = Math.floor(st.hour / 24) * 24 + 24 + 7;
   run(st, 1);
   const t2 = s2.trip;
   if (t2) {
@@ -176,11 +178,12 @@ section("7. The governor: an order and a hauler for a shortage");
   for (let i = 0; i < 3; i++) person(st, o, "farm");
   for (let i = 0; i < 4; i++) person(st, h, "farm");
   for (const k of Object.keys(o.stock)) if (k !== "water") o.stock[k] = 0;
+  addDays(h, 300); // plenty at the hub: HAUL.foodPlenty days for its ten (foodIn counts person-days)
   setAutopilot(st, true);
-  atHour(st, 6);
+  atHour(st, 7);
   HL.govHauling(st);
   const ord = HL.haulOrders(st).find((x) => x.from === h.id && x.to === o.id && x.what === "food");
-  check(!!ord && ord.gov, `a food order hub → ${o.name} (${ord ? HL.orderText(st, ord) : "none"}; the hub has ${Math.round(foodIn(h.stock))} days)`);
+  check(!!ord && ord.gov, `a food order hub → ${o.name} (${ord ? HL.orderText(st, ord) : "none"}; the hub has ${Math.round(foodIn(h.stock))} person-days)`);
   check(HL.haulOrders(st).some((x) => x.from === o.id && x.to === h.id && x.what === "surplus"), "and the outpost's surplus order (the shipping's rule)");
   governRoles(st, h);
   check(atBase(st, h.id).some((s) => s.role === "haul"), `a hauler at the hub (${atBase(st, h.id).map((s) => s.role).join(", ")})`);
@@ -194,6 +197,7 @@ section("8. An AI group with two bases moves goods on a haul convoy");
   else {
     const t2 = Object.keys(st.tiles).map(Number).find((t) => { const d = st.grid.distance(f.bases[0], t); const T = st.tiles[t]; return d >= 2 && d <= 3 && T.terrain !== "water" && !T.bridge && T.owner == null; });
     f.bases.push(t2);
+    placeMembers(st, f); // some of its people move in (the stores go out by who lives where: groupbases.js spreadPlan)
     const H = homesOf(st, f);
     f.stock.scrap = (f.stock.scrap || 0) + 600;
     gatherStores(st, f);

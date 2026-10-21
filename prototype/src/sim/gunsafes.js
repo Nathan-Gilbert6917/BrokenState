@@ -228,8 +228,8 @@ export function openCaseDump(state, str) {
 // A raid container of this area type (locks.js lockedLoot, its own dice): { item: chance } each its own roll.
 export const GUN_FINDS = {
   house: { pistolcase: 0.012, riflecase: 0.008 }, farmhouse: { riflecase: 0.03, pistolcase: 0.01 }, cabin: { riflecase: 0.035, pistolcase: 0.015 },
-  gunshop: { riflecase: 0.04, pistolcase: 0.04 }, hangar: { pistolcase: 0.005, riflecase: 0.005, anglegrinder: 0.02 },
-  garage: { powerdrill: 0.04, anglegrinder: 0.015 }, workshop: { powerdrill: 0.05, anglegrinder: 0.03 }, warehouse: { powerdrill: 0.015 },
+  gunshop: { riflecase: 0.04, pistolcase: 0.04 }, pawnshop: { pistolcase: 0.05, riflecase: 0.04, powerdrill: 0.03 }, // gunshops.js: pawned in their cases hangar: { pistolcase: 0.005, riflecase: 0.005, anglegrinder: 0.02 },
+  garage: { powerdrill: 0.04, anglegrinder: 0.015 }, hardware: { powerdrill: 0.06, anglegrinder: 0.03 }, workshop: { powerdrill: 0.05, anglegrinder: 0.03 }, warehouse: { powerdrill: 0.015 },
   motorpool: { anglegrinder: 0.02 },
 };
 // A locked car's trunk (LOCK_LOOT.car): a case 4% of the time. TODO: miltrucks cargo 0.15 (its branch calls rollGunCase).
