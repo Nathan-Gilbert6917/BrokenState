@@ -1,8 +1,8 @@
 // Diplomacy screens: the Goals card, the Jobs list and the coalition line in the Groups tab, the extras in each
-// group's card and in the radio panel (wants and surplus, wars, invite), and the Diplomacy window with four tabs:
-// Jobs, Market board, World affairs (wars, pacts, relations between groups) and Coalition (members, council,
-// both victories). Handlers: DIPLO_ACTIONS / DIPLO_CHANGE, registered by main.js. Rules: sim/jobs.js,
-// sim/diplomacy.js, sim/alliance.js, sim/trade.js (market lists).
+// group's card and in the radio panel (wants and surplus, wars, invite), and the Diplomacy window with five tabs:
+// Jobs, Market board, World affairs (wars, pacts, relations between groups), Coalition (members, council, both
+// victories) and Coalition standing (ui/coalition.js). Handlers: DIPLO_ACTIONS / DIPLO_CHANGE, registered by main.js.
+// Rules: sim/jobs.js, sim/diplomacy.js, sim/alliance.js, sim/coalition.js, sim/trade.js (market lists).
 import { crawlProgressLine } from "../sim/hivecrawl.js"; // the Goals card: how deep your crawls got
 import { SUPPLIES, SUPPLY_KEYS } from "../sim/data.js";
 import { day, factionById, hub } from "../sim/world.js";
@@ -24,6 +24,7 @@ import {
   ensureAlliance, isMember, allianceMembers, memberLand, inviteProblem, inviteToAlliance, inviteBloc, expel, goalsProgress, councilVote, nextCouncilDay, ALLIANCE, controlRadius,
 } from "../sim/alliance.js";
 import { bandsOf, knownBands, bandInfo, militaryStatus } from "../sim/hardcore-groups.js";
+import { coalitionStandingTab } from "./coalition.js"; // the Coalition standing tab (sim/coalition.js)
 import { ask } from "./confirm.js";
 import { volAskButton } from "./volunteers.js"; // ask a group for volunteers (sim/volunteers.js) // joining or leaving a war, expelling a member, giving up a job ask first
 import { ensureBlocs, blocOf, blocMembers, blocTitle, foeText, leaveBlocSide, BLOC, previewVote, voteText, blocCarrier } from "../sim/blocs.js"; // AI blocs
@@ -331,10 +332,10 @@ export function radioDiploBlock(state, f) {
 }
 
 // ---------- the Diplomacy window ----------
-const TABS = [["jobs", "Jobs"], ["market", "Market board"], ["affairs", "World affairs"], ["coalition", "Coalition & goals"]];
+const TABS = [["jobs", "Jobs"], ["market", "Market board"], ["affairs", "World affairs"], ["coalition", "Coalition & goals"], ["standing", "Coalition standing"]];
 export function diplomacyModal(state, ui) {
   const d = ui.diplo || { tab: "jobs" };
-  const body = d.tab === "market" ? marketTab(state, ui) : d.tab === "affairs" ? affairsTab(state) : d.tab === "coalition" ? coalitionTab(state) : jobsBlock(state, false);
+  const body = d.tab === "market" ? marketTab(state, ui) : d.tab === "affairs" ? affairsTab(state) : d.tab === "coalition" ? coalitionTab(state) : d.tab === "standing" ? coalitionStandingTab(state) : jobsBlock(state, false);
   return `<div class="box wide"><h1>🤝 Diplomacy</h1>
     <div class="tabs">${TABS.map(([k, l]) => `<button data-action="dp-tab" data-tab="${k}" class="${d.tab === k ? "active" : ""}">${l}</button>`).join("")}</div>
     ${ui.diploMsg ? `<div class="result">${esc(ui.diploMsg)}</div>` : ""}
@@ -432,7 +433,7 @@ function coalitionTab(state) {
     <h3${tip(`Invite a group when it is in radio reach (its base within your radio coverage + 6 tiles: your stations and the linked relays at your bases; or a team at its gates, a base of yours within ${ALLIANCE.NEIGHBOUR} tiles, a member within ${ALLIANCE.MEMBER_RELAY}), its goodwill is ${ALLIANCE.GOODWILL}+, it has a pact with you and you did a job for it (or the council votes it in). Members share sightings, send fighters against raids and hordes coming for your bases, join your hive assaults and sit in the council each season.`)}>${esc(A.name)}</h3>
     ${ms.length ? `<table class="t small"><tr><th>Member</th><th>Goodwill</th><th>Since</th><th>Bases</th><th${tip(`A member's land counts after a year in the coalition (${ALLIANCE.LAND_AFTER} days) and while it is not at war`)}>Land</th><th></th></tr>${ms.map((f) => `<tr><td><span class="swatch" style="background:${f.color}"></span>${esc(f.name)}</td><td style="color:${attColor(attitude(f))}">${Math.round(f.goodwill)}</td><td>day ${A.joined[f.id] ?? "?"}</td><td>${f.bases.length}</td><td>${memberLandCell(state, f)}</td>
       <td><button class="mini" data-action="job-locate" data-tile="${f.bases[0]}">Locate</button> <button class="mini" data-action="al-expel" data-id="${f.id}"${tip("Throw them out: −15 goodwill")}>Expel</button></td></tr>`).join("")}</table>
-      <div class="small muted">Next council: day ${nextCouncilDay(state)} (every ${ALLIANCE.COUNCIL_EVERY} days, at the start of a season).</div>` : `<div class="muted small">No members yet.</div>`}
+      <div class="small muted">Next council: day ${nextCouncilDay(state)} (every ${ALLIANCE.COUNCIL_EVERY} days, at the start of a season). <a class="link" data-action="dp-tab" data-tab="standing"${tip("Each member's standing, its modifiers, its record and the risk it leaves")}>Standing and risks</a></div>` : `<div class="muted small">No members yet.</div>`}
     <h3>Invite</h3>
     ${others.length ? `<table class="t small"><tr><th>Group</th><th>Goodwill</th><th>Pact</th><th>Jobs done</th><th>Council vote</th><th></th></tr>${others.map((f) => {
       const why = inviteProblem(state, f);
