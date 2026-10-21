@@ -22,7 +22,7 @@ export { TOOL_KINDS, BUILD_TOOLS, WALL_TOOLS, CRAFT_TOOLS, TOOL_FINDS, AREA_TOOL
 export function baseToolItems(state, base) {
   return [...(base.armory || []), ...atBase(state, base.id).flatMap((s) => allCarried(s))].filter(Boolean);
 }
-/** A team's: its people's things and the cargo. @param {any} state @param {any} party @param {any[]} members */
+/** A team's: its people's things and the cargo. @param {any} party @param {any[]} members */
 export const partyToolItems = (party, members) => [...members.flatMap((s) => allCarried(s)), ...((party && party.cargo && party.cargo.gear) || [])].filter(Boolean);
 
 const kindRank = (kind, key) => TOOL_KINDS[kind].items.indexOf(key);
