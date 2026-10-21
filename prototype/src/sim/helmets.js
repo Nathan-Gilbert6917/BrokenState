@@ -409,6 +409,7 @@ export const HEAD_FINDS = {
   quarry: { p: 0.05, items: { hardhat: 3, earmuffs: 2, earplugs: 1 } },
   warehouse: { p: 0.03, items: { hardhat: 2, earplugs: 1 } },
   gunstore: { p: 0.08, items: { earmuffs: 3, eardef: 2, earplugs: 3 } },
+  pawnshop: { p: 0.04, items: { earmuffs: 2, eardef: 1 } }, // gunshops.js
   police: { p: 0.05, items: { riotvisor: 2, eardef: 1, helmetlight: 1 } },
   military: { p: 0.05, items: { highcut: 0.6, commset: 1, ballvisor: 0.4, nvgmount: 0.3, helmetlight: 1, earplugs: 1 } },
   crash_mil: { p: 0.05, items: { highcut: 0.8, commset: 1, ballvisor: 0.4, helmetlight: 0.5 } },
@@ -417,8 +418,10 @@ export const HEAD_FINDS = {
 };
 export const AREA_HEAD = {
   workshop: { p: 0.04, items: { hardhat: 2, earmuffs: 1, earplugs: 1, helmetlight: 0.5 } },
+  hardware: { p: 0.05, items: { hardhat: 3, earmuffs: 1.5, earplugs: 1.5, helmetlight: 0.6 } }, // gunshops.js
   warehouse: { p: 0.03, items: { hardhat: 2, earplugs: 1 } },
   gunshop: { p: 0.06, items: { earmuffs: 2, eardef: 1, earplugs: 2 } },
+  pawnshop: { p: 0.03, items: { earmuffs: 1.5, eardef: 1 } },
   armory: { p: 0.06, items: { riotvisor: 2, eardef: 1, helmetlight: 1 } },
   barracks: { p: 0.04, items: { highcut: 0.4, commset: 1, ballvisor: 0.3, nvgmount: 0.2, earplugs: 1 } },
   milwreck: { p: 0.04, items: { highcut: 0.5, commset: 1, ballvisor: 0.3 } },

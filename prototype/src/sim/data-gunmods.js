@@ -574,9 +574,9 @@ export const PART_FINDS = {
   FIND_W: { common: 1, uncommon: 0.5, scarce: 0.22, rare: 0.08, veryrare: 0.025 },
   site: { gunstore: 0.09, police: 0.04, prison: 0.015, military: 0.05, crash_mil: 0.03, convoy: 0.03, airdrop: 0.01, mall: 0.04, town: 0.012,
           city: 0.012, apartments: 0.008, motel: 0.006, truckstop: 0.006, gas: 0.004, farm: 0.01, ranch: 0.012, cabin: 0.015, lodge: 0.02,
-          feedstore: 0.008, hardware: 0.006, school: 0.003 },
+          feedstore: 0.008, hardware: 0.006, school: 0.003, pawnshop: 0.06 }, // pawnshop: gunshops.js
   area: { gunshop: 0.08, armory: 0.06, barracks: 0.03, milwreck: 0.03, house: 0.008, farmhouse: 0.012, cabin: 0.02, store: 0.012, lockers: 0.006,
-          roadcars: 0.004, garage: 0.004 },
+          roadcars: 0.004, garage: 0.004, pawnshop: 0.06 },
   wares: { traders: 0.4, military: 0.3, fortress: 0.15, expansionist: 0.2, raider: 0.25, commune: 0.15, zealot: 0.05, merchants: 0.45 },
   WARE_TAGS: { traders: ["guns", "hunt", "home", "farm", "mall", "shop"], military: ["military"], fortress: ["police", "military"],
                merchants: ["guns", "hunt", "police", "military", "mall"], expansionist: ["police", "guns", "military", "shop"],

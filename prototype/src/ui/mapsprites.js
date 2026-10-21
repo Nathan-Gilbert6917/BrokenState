@@ -1629,6 +1629,24 @@ function paintPizza() {
   return p;
 }
 
+function paintPawnShop() {
+  const p = painter(20, 17);
+  // Pawn shop (sim/gunshops.js): a brick shopfront with barred windows, the three gold balls hung over the door, a
+  // guitar and a rifle in the window.
+  block(p, 2, 6, 17, 15, BRICK);
+  for (let y = 8; y <= 14; y += 2) for (let x = 3 + (y % 4 ? 0 : 1); x <= 16; x += 3) p.set(x, y, shade(BRICK, -0.2));
+  p.rect(2, 6, 17, 7, "#3c3a36"); p.rect(4, 6, 13, 6, GOLD);                                         // the sign board
+  p.rect(3, 9, 10, 13, GLASS); p.rect(3, 9, 10, 9, GLASS_LIT);                                        // the window
+  p.rect(4, 10, 4, 13, WOOD_LIT); p.rect(4, 12, 5, 13, WOOD);                                         // a guitar
+  p.rect(6, 11, 10, 11, STEEL); p.rect(9, 12, 10, 12, WOOD_LIT);                                      // a rifle on the rack
+  for (let x = 3; x <= 10; x += 2) p.rect(x, 9, x, 13, "#2a2a2a");                                    // the bars
+  p.rect(12, 10, 15, 15, METAL); p.rect(12, 10, 15, 10, shade(METAL, 0.3)); p.set(14, 13, OUTLINE);  // a steel door
+  p.rect(16, 3, 16, 6, METAL); p.rect(15, 3, 17, 3, METAL);                                           // the bracket
+  for (const [x, y] of [[14, 4], [17, 4], [15, 1]]) { p.rect(x, y, x + 1, y + 1, GOLD); p.set(x, y, shade(GOLD, 0.3)); } // the three balls
+  p.rect(2, 16, 17, 16, ASPHALT);
+  return p;
+}
+
 function paintFarmstand() {
   const p = painter(18, 15);
   // Roadside stand: a shingle roof on posts over a counter of baskets, a painted sign leaning by the road.
@@ -1726,6 +1744,7 @@ const POI_PAINT = {
   // Points of interest (sim/pois.js): the small places a tile holds besides its site.
   house: paintHouse, neighbourhood: paintNeighbourhood, garage: paintGarage, corner: paintCorner, pizza: paintPizza,
   farmstand: paintFarmstand, shed: paintShed, blind: paintBlind, campsite: paintCampsite, hikercamp: paintHikercamp, mineshack: paintMineshack,
+  pawnshop: paintPawnShop, // sim/gunshops.js
 };
 
 // A kind with no painter of its own (a point of interest added without one, pois.js): a plain small building on a

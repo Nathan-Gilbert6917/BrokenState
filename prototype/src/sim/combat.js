@@ -2318,7 +2318,7 @@ function genMap(rng, tile, opts = {}) {
     case "quarry": scatter("boulder", 6); scatter("rock", 8); for (const c of cells) if (c.f === floor) c.f = "dirt"; break;
     // Map site types (mapgen.js): big city blocks, small shops, garages, farms, cabins, open-air sites.
     case "apartments": case "office": case "supermarket": case "school": case "warehouse": case "hardware": building(7, 5); scatter("car", 3); scatter("crate", 3); break;
-    case "pharmacy": case "gunstore": case "grocery": case "diner": case "motel": case "church": case "clinic": case "feedstore":
+    case "pharmacy": case "gunstore": case "pawnshop": case "grocery": case "diner": case "motel": case "church": case "clinic": case "feedstore":
       building(5, 4); building(4, 3); scatter("car", 2); fenceLine(rx(), rng.int(1, H - 2), X(4), true); break;
     case "autoshop": case "firestation": case "truckstop": building(5, 4); scatter("truck", 2); scatter("car", 3); scatter("crate", 2); break;
     case "ranch": case "barn": building(6, 4); fenceLine(rx(X(3), X(6)), rng.int(1, Y(3)), X(8), true); fenceLine(rx(X(3), X(6)), rng.int(Y(9), Y(11)), X(8), true); scatter("hay", 5); break;
@@ -6490,6 +6490,10 @@ export const AREAS = {
   roadcars:  { name: "Cars on the road", outdoor: true, road: true, boxes: ["car", "car", "car"], loot: { fuel: [0.35, 1, 3], food: [0.3, 1, 3], water: [0.3, 1, 2], scrap: [0.35, 1, 3], ammo: [0.12, 4, 10], meds: [0.06, 1, 1] }, gear: [["pistol", 0.03], ["flashlight", 0.04], ["bottle", 0.06], ["slingbag", 0.03], ["backpack", 0.02], ["prybar", 0.02], ["binoculars", 0.01], ["compact9", 0.02]], alarm: 0.15 },
   pumps:     { name: "Fuel pumps",     outdoor: true, boxes: ["pump", "pump"], loot: { fuel: [0.7, 3, 8] }, gear: [] },
   gunshop:   { name: "Gun counter",    boxes: ["locker", "counter", "shelf"],  loot: { ammo: [0.85, 12, 35], scrap: [0.2, 1, 2] }, gear: [["pistol", 0.12], ["shotgun", 0.1], ["huntrifle", 0.1], ["vest", 0.05], ["kneeguards", 0.05], ["revolver", 0.08], ["leverrifle", 0.06], ["compbow", 0.04], ["xbow", 0.04], ["ghillie", 0.03], ["camonet", 0.03], ["binoculars", 0.06], ["spotscope", 0.03], ["monocular", 0.04], ["pistol22", 0.06], ["pistol45", 0.06], ["compact9", 0.06], ["rifle22", 0.06], ["dbshotgun", 0.05], ["semishotgun", 0.02], ["combatknife", 0.04], ["tomahawk", 0.03], ["kukri", 0.03], ["ak", 0.01]] },
+  // A pawn shop's counter and cases (gunshops.js): pawned guns, rigs and camping gear among the jewellery and the tools.
+  pawnshop:  { name: "Pawn counter",   boxes: ["counter", "cabinet", "shelf"], loot: { ammo: [0.45, 6, 20], scrap: [0.4, 1, 4], parts: [0.2, 1, 2] }, gear: [["pistol", 0.08], ["revolver", 0.07], ["shotgun", 0.06], ["huntrifle", 0.05], ["rifle22", 0.06], ["compact9", 0.06], ["leverrifle", 0.03], ["dbshotgun", 0.03], ["compbow", 0.03], ["xbow", 0.02], ["binoculars", 0.05], ["monocular", 0.03], ["hikingpack", 0.05], ["backpack", 0.04], ["duffle", 0.03], ["waterfilter", 0.04], ["stove", 0.04], ["headlamp", 0.04], ["lantern", 0.03], ["handradio", 0.04], ["vest", 0.03], ["kneeguards", 0.03], ["machete", 0.04], ["hatchet", 0.03], ["kukri", 0.02], ["katana", 0.01], ["golfclub", 0.03], ["bicycle", 0.02], ["repairkit", 0.02]] },
+  // A hardware store's aisles and its yard stock (gunshops.js): lumber, blocks and fixings, wire, scrap and parts, the tools.
+  hardware:  { name: "Hardware aisles", boxes: ["shelf", "shelf", "crate"], loot: { scrap: [0.85, 4, 12], parts: [0.55, 1, 3], buildmat: [0.45, 1, 3], wood: [0.3, 20, 60], fuel: [0.1, 1, 2] }, gear: [["hammer", 0.08], ["crowbar", 0.05], ["prybar", 0.05], ["sledge", 0.04], ["hatchet", 0.04], ["pickaxe", 0.03], ["machete", 0.03], ["boards", 0.08], ["barbedwire", 0.05], ["sandbags", 0.04], ["beartrap", 0.02], ["flashlight", 0.05], ["headlamp", 0.03], ["kneeguards", 0.03], ["toolbox", 0.04], ["repairkit", 0.02]] },
   lockers:   { name: "Locker room",    boxes: ["locker", "locker", "shelf"],   loot: { water: [0.4, 1, 3], meds: [0.06, 1, 1], scrap: [0.3, 1, 3] }, gear: [["sportspads", 0.1], ["footballhelmet", 0.08], ["backpack", 0.06], ["kneeguards", 0.04], ["bat", 0.1], ["golfclub", 0.04]] },
   chapel:    { name: "Chapel",         boxes: ["cabinet", "shelf", "counter"], loot: { food: [0.5, 2, 6], water: [0.5, 2, 5], meds: [0.07, 1, 1] }, gear: [["bandagekit", 0.05]] },
   // First aid on hand: a school nurse, a fire station's first-aid room, a barracks' medical store (medfinds.js).
@@ -6517,8 +6521,8 @@ export const AREA_SETS = {
   road: ["roadcars", "roadcars", "wreck", "campsite"], bridge: ["roadcars", "roadcars", "roadcars", "campsite"],
   // City blocks.
   autoshop: ["garage", "garage", "workshop", "wreck"], pharmacy: ["pharmacy", "pharmacy", "store", "office"],
-  supermarket: ["store", "store", "kitchen", "warehouse", "wreck"], gunstore: ["gunshop", "store", "office", "wreck"],
-  hardware: ["workshop", "store", "garage", "warehouse"], apartments: ["house", "house", "house", "kitchen", "garage"],
+  supermarket: ["store", "store", "kitchen", "warehouse", "wreck"], gunstore: ["gunshop", "store", "office", "wreck"], pawnshop: ["pawnshop", "pawnshop", "gunshop", "store", "office"],
+  hardware: ["hardware", "hardware", "workshop", "garage", "warehouse"], apartments: ["house", "house", "house", "kitchen", "garage"],
   office: ["office", "office", "office", "kitchen"], school: ["lockers", "office", "kitchen", "nurse", "lockers"],
   firestation: ["garage", "nurse", "kitchen", "motorpool"], warehouse: ["warehouse", "warehouse", "warehouse", "office", "wreck"],
   // Small-town shops.

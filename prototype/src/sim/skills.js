@@ -566,6 +566,7 @@ export const BOOK_SITES = {
   hardware: { p: 0.05, books: ["enginebook", "scavbook", "diybook", "forgebook"] },
   factory: { p: 0.05, books: ["enginebook", "scavbook", "forgebook"] },
   gunstore: { p: 0.07, books: ["gunbook", "prepbook"] },
+  pawnshop: { p: 0.06, books: ["gunbook", "prepbook", "survivalbook", "bushcraftbook", "novel"] }, // gunshops.js
   office: { p: 0.06, books: ["talkbook", "leadbook", "novel"] },
   mall: { p: 0.06, books: ["comic", "novel", "talkbook", "gardenbook", "diybook", "cookbook", "chefbook"] },
   church: { p: 0.04, books: ["novel"] },
