@@ -105,7 +105,7 @@ import { renderLogPanel, DIARY_ACTIONS, DIARY_CHANGE } from "./ui/diary.js";
 import { WHY_ACTIONS } from "./ui/causes.js"; // "Why?" on deaths and lost bases
 import { renderAlerts, ALERT_ACTIONS, mapHotkey, initAlerts } from "./ui/alerts.js";
 import { ROSTER_ACTIONS, ROSTER_CHANGE } from "./ui/roster.js";
-import { GUIDE_ACTIONS, guideCheck, renderGuide, guidePulse, startGuide, guideDefault } from "./ui/guide.js"; // the first-week guide under the alerts
+import { GUIDE_ACTIONS, guideCheck, renderGuide, renderGuideTip, guidePulse, startGuide, guideDefault } from "./ui/guide.js"; // the first-week guide under the alerts; its notes over new windows
 import { LEDGER_ACTIONS, ledgerKey, drawCharts, sparkNode } from "./ui/ledger.js"; // the Ledger, the run summary, the stock trends
 import { WATCHLIST_ACTIONS, renderWatchlist, syncWatchlist, ctxWatchlist } from "./ui/watchlist.js"; // the Watching panel (📌) and map notes
 import { EXPLORE_ACTIONS, EXPLORE_CHANGE } from "./ui/explore.js";
@@ -566,6 +566,7 @@ function refresh(user = true) {
   setPanel("alerts", alertsHTML(alerts) + renderGuide(state, ui), user); // the first-week guide sits under the alerts
   setPanel("watchlist", ui.started ? renderWatchlist(state, ui, { folded: !!layout.all }) : "", user); // ui/watchlist.js: under the running orders
   renderCombat(user);
+  setPanel("guidetip", renderGuideTip(state, ui), user); // the first-week guide's note over a window new to the player (ui/guide.js)
   setPanel("banner", bannerHTML(), user);
   syncWatchlist(state, ui, { act: actions, refresh }); // places the Watching panel; the map-note editor
   syncOverlays(); // ui/overlaydrag.js: moved boxes in their place, every box kept on the map
