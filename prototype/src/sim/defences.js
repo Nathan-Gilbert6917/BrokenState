@@ -150,12 +150,13 @@ export const spikeKill = (base, n) => {
 // below. The wall: +4% a tier of the wall (a stake fence 4%, a concrete wall 16%), a watchtower +5%, a reinforced gate
 // +5%, a trench +3% a line, lit floodlights at night +3%, a barbed wire fence +3% a line and concertina wire +5% (the yard's
 // without a wall), the guard towers +4%. The yard: +3% a barricade, +1.5% a sandbag bundle and a roll of wire in the
-// armory, +2% a spike pit, +3% a sandbag position. The buildings: +2% a building that can be held (interior.js defensibleCount, up to 5). A fight is held at
+// armory, +2% a spike pit, +3% a sandbag position, +0.5% a 1×1 Sandbags (the first 16: a position's 3% is 4 cells and
+// a bonus to the horde hold; the pieces are cover on the battle map, little more by the numbers). The buildings: +2% a building that can be held (interior.js defensibleCount, up to 5). A fight is held at
 // the wall when the defenders are worth HELD_AT_WALL × the attackers there, else in the yard when they match them
 // with the yard counted, else in the buildings (the last stand), else lost.
 export const TIERS = {
   WALL: { per: 0.04, max: 4, tower: 0.05, gate: 0.05, trench: 0.03, flood: 0.03, fence: 0.03, razor: 0.05, towers: 0.04, mines: 0.04 },
-  YARD: { barricade: 0.03, bags: 0.015, wire: 0.015, pits: 0.02, positions: 0.03 },
+  YARD: { barricade: 0.03, bags: 0.015, wire: 0.015, pits: 0.02, positions: 0.03, sandbags: 0.005, sandbagMax: 16 },
   BUILDINGS: { per: 0.02, max: 5 },
   HELD_AT_WALL: 1.15,
 };
@@ -167,7 +168,7 @@ export function tierMults(state, base, night = false) {
   const wall = walls ? 1 + T.WALL.per * Math.min(T.WALL.max, wallTier(base) || walls) + (count(base, "watchtower") ? T.WALL.tower : 0) + (count(base, "gate") ? T.WALL.gate : 0)
     + T.WALL.trench * Math.min(2, count(base, "trench")) + (flood && night ? T.WALL.flood : 0) + wireOut + T.WALL.towers * count(base, "guard_towers") : 1;
   const mined = minesLeft(base) > 0 ? T.WALL.mines * count(base, "minefield") : 0; // mines.js: a field with mines left, at the wall or in front of the yard
-  const yard = 1 + T.YARD.barricade * count(base, "barricades") + T.YARD.bags * kit.bags + T.YARD.wire * kit.wire + T.YARD.pits * count(base, "spike_pits") + T.YARD.positions * count(base, "sandbag_wall") + (walls ? 0 : wireOut);
+  const yard = 1 + T.YARD.barricade * count(base, "barricades") + T.YARD.bags * kit.bags + T.YARD.wire * kit.wire + T.YARD.pits * count(base, "spike_pits") + T.YARD.positions * count(base, "sandbag_wall") + T.YARD.sandbags * Math.min(T.YARD.sandbagMax, count(base, "sandbag1")) + (walls ? 0 : wireOut);
   const held = defensibleCount(base);
   const buildings = 1 + T.BUILDINGS.per * Math.min(T.BUILDINGS.max, held);
   return { wall: wall + (walls ? mined : 0), yard: yard + (walls ? 0 : mined), buildings, walled: walls > 0, held };

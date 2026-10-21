@@ -677,8 +677,26 @@ function prims(k, o) {
       return out;
     }
     case "sandbag": {
-      const ax = along(o), bag = (f, s, t) => mul(PAL.sand, ((s | 0) % 5 < 1 || (t | 0) % 4 < 1 ? 0.72 : 0.95) + (f === "top" ? 0.05 : 0));
-      return [run(ax, 0.22, 0.78, 0, 5, bag), run(ax, 0.28, 0.72, 5, 10, bag, 0.04, 0.96), run(ax, 0.34, 0.66, 10, 13, bag, 0.12, 0.88)];
+      // Three courses of bags, each narrower than the one below, laid like bricks: a bag half a tile long, each course's
+      // seams half a bag over from the one below, counted from the tile's edge so they carry on into the next cell.
+      // Joined (JOINS: the sandbag and barricade neighbours, sim/basemap.js sandbag1 pieces side by side) a course runs
+      // out to that side of the tile; round a corner the two runs meet square; a free end steps in course by course.
+      // A lone cell is a short stack along its axis (along), both ends stepped in.
+      const COURSES = [[0.2, 0.8, 0, 5, 0.06], [0.26, 0.74, 5, 10, 0.12], [0.33, 0.67, 10, 13, 0.2]]; // across, z0, z1, a free end's step
+      const bag = (ax, a0, row) => (f, s, t, X, Y) => {
+        const d = f === "top" ? (ax === "u" ? s : t) : f === (ax === "u" ? "south" : "east") ? s : -1; // along the run (a run's end face: none)
+        const p = d < 0 ? -1 : a0 * 16 + d + (row & 1) * 4, i = Math.floor(p / 8);
+        const seam = (p >= 0 && p % 8 < 0.9) || (f !== "top" && t < 0.7);
+        const tuck = f === "top" && (ax === "u" ? t : s) < 1.2; // the fold of the sack along the back
+        return mul(PAL.sand, seam ? 0.7 : (0.88 + hash3(i, row, 31) * 0.14) * (tuck ? 0.9 : 1) + (f === "top" ? 0.05 : 0));
+      };
+      const ju = o.j & 3, jv = o.j & 12, out = [];
+      COURSES.forEach(([c0, c1, z0, z1, e], row) => {
+        if (!ju && !jv) { const ax = along(o); out.push(run(ax, c0, c1, z0, z1, bag(ax, e, row), e, 1 - e)); return; }
+        if (ju) { const a0 = o.j & 2 ? 0 : jv ? c0 : e, a1 = o.j & 1 ? 1 : jv ? c1 : 1 - e; out.push(run("u", c0, c1, z0, z1, bag("u", a0, row), a0, a1)); }
+        if (jv) { const a0 = o.j & 8 ? 0 : ju ? c0 : e, a1 = o.j & 4 ? 1 : ju ? c1 : 1 - e; out.push(run("v", c0, c1, z0, z1, bag("v", a0, row), a0, a1)); }
+      });
+      return out;
     }
     case "barricade": {
       const ax = along(o);
@@ -860,7 +878,7 @@ function sprite(k, o, fog) {
   let s = spriteGet(key);
   if (s === undefined) {
     const p = prims(k, o);
-    s = p.length ? paint(p, { fog, outline: OUTLINED.has(k) }) : null;
+    s = p.length ? paint(p, { fog, outline: OUTLINED.has(k) && !(k === "sandbag" && o.j) }) : null; // joined sandbags: no outline, or each cell's would cross the wall at the join
     iso.builds.sprites++;
     spritePut(key, s);
   }

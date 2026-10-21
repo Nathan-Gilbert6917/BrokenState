@@ -159,7 +159,7 @@ export const ARMORY_LOCK = { DOOR_HP: 90, DOOR_KIND: "security", HP: 60, PRY: 2,
 // What the map's battering does to the buildings afterwards (breakdowns.js wear): a door or window broken in, a wall
 // section breached, a barricade battered through, an armory lock smashed open; a parked car's condition lost for the
 // hit points it lost.
-export const MAP_WEAR = { door: 15, window: 8, breach: 30, barricade: 60, lock: 50, carCondition: 60 };
+export const MAP_WEAR = { door: 15, window: 8, breach: 30, barricade: 60, lock: 50, carCondition: 60, sandbag: 100 }; // sandbag: a 1×1 Sandbags smashed or shoved off its cell is burst (broken: refilled as a repair)
 
 export const tierKey = (base) => (isCamp(base) ? "camp" : isShelter(base) ? "shelter" : base.type === "hub" ? "hub" : "outpost");
 // The grid by tier, under the run's Base yard dials (worldcfg.js baseMin / baseMax, stamped on the base as base.gridCfg by
@@ -215,6 +215,7 @@ export const FOOT = {
   animal_pen: { kind: "pen", w: 4, h: 3 },
   barricades: DEF("barricade", 3, 1), spike_pits: DEF("spikes", 3, 2), trench: DEF("trench", 16, 1), floodlights: DEF("lamp", 1, 1), watchtower: DEF("tower", 2, 2),
   sandbag_wall: DEF("sandbag", 4, 1), // the Defenses tab's sandbag positions: 4 cells, placed like a barricade
+  sandbag1: DEF("sandbag", 1, 1), // Sandbags (buildings.js sandbag1): one cell; side by side they are drawn as one wall (ui/isoview.js)
   // The wall pieces (buildings.js piece): a line of wall cells, a 1×4 gate, a raised wall stand; turned by R.
   wall1: { kind: "wall", w: 1, h: 1 }, wall2: { kind: "wall", w: 2, h: 1 }, wall4: { kind: "wall", w: 4, h: 1 }, gate4: { kind: "gate", w: 4, h: 1 },
   stand1: { kind: "stand", w: 1, h: 1 }, stand2: { kind: "stand", w: 2, h: 1 }, stand4: { kind: "stand", w: 4, h: 1 },
@@ -852,6 +853,7 @@ export function autoLayout(state, base, except = null) {
   const C = yardHalf(base), G = gridHalf(base), R = ringHalf(base);
   const occ = occupancy(state, base, except, null);
   const take = (it, at) => { out.set(it.key, at); markOcc(occ, it, at, it.key); };
+  const laid = out; // what the layout has taken so far, by key (defSpots' own out is the line in front of the wall)
   const dims = { G, R };
   const fits = (it, x, y, r) => !placeProblemAt(base, it, x, y, r, occ, dims);
   // A way in and out (reachProblem) against what is placed by hand and what the layout has taken so far (out).
@@ -898,6 +900,10 @@ export function autoLayout(state, base, except = null) {
     else if (k === "tower") spots.push([edge - 1, edge - 1], [-edge, -edge], [edge - 1, -edge], [-edge, edge - 1]);
     else if (k === "spikes") spots.push([-1, out, 0], [-1, -out - 1, 0], [out, -1, 1], [-out - 1, -1, 1], [5, out, 0], [-7, out, 0], [5, -out - 1, 0], [-7, -out - 1, 0]);
     else if (k === "trench") spots.push([-5, out + 2, 0], [out + 2, -5, 1], [-5, -out - 3, 0], [-out - 3, -5, 1], [-5, out + 1, 0], [out + 1, -5, 1], [-5, -out - 2, 0], [-out - 2, -5, 1]); // the nearer line too: a camp's grid ends in the margin two cells out
+    else if (k === "sandbag" && it.w === 1 && it.h === 1) { // Sandbags (sandbag1): on from either end of a row already down, else a new row inside the yard's south edge, the middle out
+      for (const o of items) { const p = o !== it && o.kind === "defence" && o.k === "sandbag" && o.w === 1 && o.h === 1 && (o.at || laid.get(o.key)); if (p) spots.push([p[0] + 1, p[1], 0], [p[0] - 1, p[1], 0]); } // by hand or laid by the game already
+      for (let i = 0; i < 2 * edge; i++) spots.push([i % 2 ? -((i + 1) >> 1) : i >> 1, edge - 3, 0]);
+    }
     for (const s of spots) if (s[0] >= -G && s[1] >= -G && fits(it, s[0], s[1], s[2] || 0) && reach(it, [s[0], s[1], s[2] || 0])) return [s[0], s[1], s[2] || 0];
     return spiral(it, [0, 1]);
   };
@@ -1461,6 +1467,7 @@ export function buildBaseMap(state, base, rng, opts = {}) {
     const weak = it.type === "armory" && it.rec && it.rec.broken; // the armory broken: its door an ordinary barred one
     const piece = WALL_KINDS.has(it.kind) ? { bid: it.rec && key && key.startsWith("b:") ? it.rec.id : null, kind: it.kind, cells: [] } : null;
     const broken = !!(piece && it.rec && it.rec.broken);
+    if (it.type === "sandbag1" && it.rec && it.rec.broken) return; // a burst Sandbags: open ground, no cover there until it is refilled
     for (const c of cellsOf(it, atG)) {
       const x = c.x + ox, y = c.y + oy, q = at(x, y);
       if (!q) continue;
@@ -2116,6 +2123,12 @@ export function settleBaseBattle(state, b) {
     let gone = 0;
     for (let y = r.y0; y < r.y0 + r.h; y++) for (let x = r.x0; x < r.x0 + r.w; x++) { const c = b.cells[(y + F.oy) * b.w + x + F.ox]; if (c && c.k === "rubble") gone++; }
     if (gone) wearOn(e.it.rec, MAP_WEAR.barricade);
+  }
+  // Sandbags (sandbag1) smashed by the dead or shoved off their cell: burst, refilled as a repair (breakdowns.js).
+  for (const e of layoutOf(state, base)) {
+    if (!e.at || e.it.type !== "sandbag1" || !e.it.built || !e.it.rec || e.it.rec.broken) continue; // a queued one was only its outline
+    const r = rectOf(e.it, e.at), c = b.cells[(r.y0 + F.oy) * b.w + r.x0 + F.ox];
+    if (c && c.k !== "sandbag") wearOn(e.it.rec, MAP_WEAR.sandbag);
   }
 }
 // What the raiders carried off leaves the base's stock and armory (conflicts.js, after a raid beaten off on the map):
