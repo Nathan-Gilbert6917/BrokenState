@@ -578,11 +578,11 @@ section("Raiders from beyond the border: the ladders and the ram they set out wi
   // none (as your team in the field has none).
   const n = V.spawnVisitor(st, "raiders", { size: 9, power: 4 });
   n.wares = n.wares.filter((it) => it.key !== "ram" && it.key !== "ladder");
-  n.stock.scrap = 20; n.stock.parts = 4;
+  n.stock.scrap = 20; n.stock.parts = 4; n.stock.wood = 400; // wood for the recipes since the woodwork (2026-10-20)
   const people = bandRoom(st, n) && n.people;
   people[0].skills.mechanics = 6; people[0].health = 100;
   const made0 = V.makeSiegeGear(st, n, { ladders: 2, ram: 1 });
-  check(!made0.length && n.stock.scrap === 20 && n.stock.parts === 4, "a band on the road has no bench: it makes no ladder or ram, and pays nothing");
+  check(!made0.length && n.stock.scrap === 20 && n.stock.parts === 4 && n.stock.wood === 400, "a band on the road has no bench: it makes no ladder or ram, and pays nothing");
   n.siegeFor = { baseId: h.id, kit: { ladders: 2, ram: 1, grenades: 0 } };
   const kn = V.bandKit(st, n, h);
   check(!kn || (!kn.ladders && !kn.ram), `with none of its own it brings none (${JSON.stringify(kn)})`);
@@ -594,7 +594,8 @@ section("Raiders from beyond the border: the ladders and the ram they set out wi
   st.groupWorks = gw;
   const R = CRAFTS.ram.in, L = CRAFTS.ladder.in;
   check(made.length === 3 && made.filter((it) => it.key === "ladder").length === 2 && made.some((it) => it.key === "ram") && made.every((it) => n.wares.includes(it)) &&
-    n.stock.scrap === 20 - R.scrap - 2 * L.scrap && n.stock.parts === 4 - R.parts, `with a bench: a ram and two ladders made by your recipes, paid from their stores (scrap 20 → ${n.stock.scrap}, parts 4 → ${n.stock.parts})`);
+    n.stock.scrap === 20 - R.scrap - 2 * L.scrap && n.stock.parts === 4 - R.parts && n.stock.wood === 400 - R.wood - 2 * L.wood,
+    `with a bench: a ram and two ladders made by your recipes, paid from their stores (scrap 20 → ${n.stock.scrap}, parts 4 → ${n.stock.parts}, wood 400 → ${n.stock.wood})`);
   // By the numbers at your walls: every piece is with the band or in your yard after it, none made, none lost.
   n.goal = { kind: "base", baseId: h.id, tile: h.tile };
   n.tile = h.tile;
