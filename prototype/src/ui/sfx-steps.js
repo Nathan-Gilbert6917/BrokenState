@@ -1,5 +1,5 @@
 // Footsteps in battle: every unit that moves (sim/combat.js fx type "move": unit, from, path) is heard stepping along
-// the path as the battle screen slides it there (ui/combat.js animTile: 70 ms a cell), on what it walks on, by its
+// the path as the battle screen walks it there (ui/moveanim.js: the mover's pace, eased in and out), on what it walks on, by its
 // gait and by its load. The dead have their own steps by kind. Everyone alike: your people, the enemy, the third side.
 // Pure functions until a voice plays: node tools import it.
 //
@@ -14,8 +14,9 @@
 import { playerSees, active } from "../sim/combat.js";
 import { weatherAt } from "../sim/weather.js";
 import { panOfX } from "./sfx-out.js";
+import { deadKind, gaitOf, planOf, timeAt } from "./moveanim.js"; // the gaits and the walk's timing (the battle screen's)
+export { deadKind, gaitOf };
 
-export const STEP_MS = 70;      // the battle screen's slide, ms a cell (ui/combat.js animTile)
 export const MAX_STEPS = 6;     // steps heard for one move
 export const MAX_MOVERS = 3;    // movers heard in one frame
 export const HEAR_TILES = 6;    // an unseen mover this close to one of your people is heard (muffled)
@@ -52,21 +53,6 @@ export function groundOf(wx) {
     mud: !wx.frozen && ((Number(wx.mud) || 0) >= 0.35 || k === "rain" || k === "storm"),
     wet: k === "rain" || k === "storm",
   };
-}
-
-const HEAVY_DEAD = new Set(["brute", "boneback", "flinger", "nightmare", "deadcow", "deadhog"]); // the dead beasts (sim/deadbeasts.js): a cow and a hog tread heavy, a stag and a dog run
-export function deadKind(u) {
-  if (!u || u.kind !== "zombie") return null;
-  if (u.low || u.ztype === "crawler") return "crawler";
-  if (u.ztype === "soldier" || u.ztype === "riot") return "armoured";
-  if (u.boss || HEAVY_DEAD.has(u.ztype) || u.variant === "wallbreaker" || u.variant === "broodmother") return "brute";
-  if (u.ztype === "runner" || u.ztype === "climber" || u.ztype === "deadstag" || u.ztype === "deadhound") return "runner";
-  return "shuffle";
-}
-export function gaitOf(b, u, len) {
-  if (u.side === "player" && b.units.some((e) => e.side === "enemy" && !e.aware && active(e))) return "sneak"; // stealth: nobody has seen you yet
-  const mob = Number(u.mob) || 5;
-  return len > mob ? "run" : "walk";
 }
 
 // The steps of the moves logged since the last call. mem: kept by the caller (a new or loaded battle starts quiet).
@@ -114,14 +100,14 @@ export function stepCues(state, mem, now = 0) {
     const dk = deadKind(u);
     const gait = dk ? null : gaitOf(b, u, len);
     const n = Math.max(1, Math.min(MAX_STEPS, Math.round(len / STRIDE[dk || gait])));
-    const span = len * STEP_MS / 1000;
+    const plan = planOf(b, u, f); // walked as the screen walks it (ui/moveanim.js): after the mover's moves before it, eased
     const load = dk ? (dk === "armoured" ? 2 : 0) : Math.max(0, Math.min(3, Number(u.loadBand) || 0));
     const gain = STEP_GAIN * (dk ? 1 : GAIT_GAIN[gait]) * (seen ? 1 : 0.55) * (u.side === "player" ? 1 : 0.85);
     for (let i = 0; i < n; i++) {
       const k = Math.min(len - 1, Math.floor((i * len) / n));
       const [x, y] = f.path[k];
       out.push({
-        name: "step", delay: (i * span) / n + rng() * 0.012, gain, at: [x, y], enemy: u.side !== "player", pan: panOfX(b, x), dist, seen, surf: surfaceAt(b, x, y, mem.ground),
+        name: "step", delay: (plan.delay + timeAt(plan, (i * len) / n)) / 1000 + rng() * 0.012, gain, at: [x, y], enemy: u.side !== "player", pan: panOfX(b, x), dist, seen, surf: surfaceAt(b, x, y, mem.ground),
         gait, load, dk, foot: (mem.foot = 1 - mem.foot),
       });
     }
