@@ -197,7 +197,9 @@ function warDays(st, f, days, onDay = null) {
     st.started = true;
     const h = hub(st);
     const end = st.hour + 365 * 24;
-    while (st.hour < end && !st.gameOver) { tickHour(st); if (st.hour % 24 === 0) { h.stock.food = Math.max(h.stock.food || 0, 200); h.stock.water = Math.max(h.stock.water || 0, 200); } }
+    // Nobody plays the holdout: it fell on day 91 when the test was written, and on day 20 now (crowded, its people
+    // walk off: 2026-10-21), before any group's first look at a hive (GROUP_HIVE.EVERY); the groups' year goes on without it.
+    while (st.hour < end && !(st.gameOver && st.victory)) { tickHour(st); if (st.gameOver && !st.victory) st.gameOver = false; if (st.hour % 24 === 0) { h.stock.food = Math.max(h.stock.food || 0, 200); h.stock.water = Math.max(h.stock.water || 0, 200); } }
     return st;
   };
   const a = run(31), b = run(31);
