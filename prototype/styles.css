@@ -549,6 +549,7 @@ table.t.fc-rooms td, table.t.fc-rooms th { padding: 0.1rem 0.15rem; }
 /* Allied (fights beside you) green, a walk-away's countdown amber, a tell (parleyStatus.tell) an amber "!" pill. */
 #cbtop .ct-group.allied { border-color: color-mix(in srgb, var(--good) 65%, transparent); background: color-mix(in srgb, var(--good) 14%, transparent); }
 #cbtop .ct-group.leaving b { color: #ffd166; }
+#cbtop .ct-group .ct-ordered { font-size: 0.72rem; color: #4fe08a; } /* Ally orders: how many of an allied group are under your orders */
 #cbtop .ct-group .tell { font-style: normal; font-weight: 800; font-size: 0.7rem; line-height: 1; padding: 0.1rem 0.3rem; border-radius: 4px; background: #f0b44a; color: #1a0f0e; }
 :root.cb #cbtop .ct-group.leaving b { color: #f0e442; }
 :root.cb #cbtop .ct-group .tell { background: #f0e442; }
@@ -559,6 +560,12 @@ table.t.fc-rooms td, table.t.fc-rooms th { padding: 0.1rem 0.15rem; }
 #cbcards .cbcard.cbmsg, #cbcards .cbmsg { margin-top: 0; }
 #cbcards .cbcard .cbresult { margin-top: 0; }
 #cbcards .ct-toast { background: rgba(60,40,16,0.94); border-color: #8a6a2a; }
+/* Ally orders (ui/combat.js allyCard): the orders for the ally picked, the allies' green (sim/parley.js Allied). */
+#cbcards .cbally { border-color: color-mix(in srgb, #4fe08a 55%, transparent); }
+#cbcards .cbally .cbally-orders { display: flex; flex-wrap: wrap; gap: 0.25rem; margin: 0.35rem 0; }
+#cbcards .cbally .cbally-orders .mini b { color: #4fe08a; margin-left: 0.2rem; }
+#cbcards .cbally .mini.active { border-color: #4fe08a; }
+#cbcards .cbally .small + .small { margin-top: 0.25rem; }
 #cbcards .cbprev { margin-top: 0; min-height: 0; background: rgba(20,22,26,0.94); }
 #cbcards .cbprev.empty { display: none; }
 #cbcards .rplan .rplanmap, #cbcards .rplan .rplan-nomap { height: 10rem; }

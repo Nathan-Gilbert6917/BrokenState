@@ -42,6 +42,7 @@
 //                 parleyHarm from combat.js damage): Join's odds rise by it (foughtBonus, the hint says so), and after
 //                 the battle its group's goodwill (capped) and memory (f.foughtWith; a wanderer group's g.fought, its
 //                 mood: wanderers.js talkChance reads it). Treachery still applies; your attack ends it as any truce.
+//                 Your people can give its people orders (allyorders.js: attack, move, overwatch, retreat...).
 //   the odds    - base[option] + ODDS.speech × (Speech − 8) of the unit that spoke + perks (Smooth Talker +2 Speech,
 //                 Silver Tongue, Charming) − hostility × h[option] (Join: Leadership too), 5–95%. A treacherous group
 //                 takes a truce or a trade easily (it is a ploy); the speaker's Speech and Scouting may see through it.
@@ -95,6 +96,7 @@ import { addCargo } from "./conflicts.js";
 import { supValue } from "./data.js";
 import { keyWord } from "./water.js";
 import { gunLeavesTeam } from "./gunload.js";
+import { allyOrdersEnd, allyOrdersGoodwill } from "./allyorders.js"; // orders to an allied group's people (their count after the raid)
 
 export const PARLEY = {
   SHOUT: 6, // the noise of a shout (tiles), heard by the dead and the unaware: on the quietest ground; + DENSE.reach × density
@@ -415,7 +417,7 @@ function toEnemy(b, rec, aware = true) {
 }
 function hostile(rec, b = null) {
   if (rec.treacherous) rec.unmasked = true; // the lie is out: shown as what it is from now on
-  if (b) for (const u of b.units) if (u.pk === rec.key) delete u.ally;
+  if (b) for (const u of b.units) if (u.pk === rec.key) { delete u.ally; delete u.aorder; } // allyorders.js: no order of yours stands
   if (b && b.third && rec.tgroup != null && b.third[rec.tgroup]) b.third[rec.tgroup].allied = false;
   rec.allied = false;
   rec.turned = true; rec.truce = false; rec.standoff = false; rec.leaving = false; rec.goes = null; rec.leaveBy = null;
@@ -1139,6 +1141,7 @@ export function parleyGroupsSeen(b) {
 // The pods that held their fire are the enemy's again (the result counts them as theirs; a building's snapshot keeps them).
 export function parleyEnd(b) {
   if (!b || !b.parley) return;
+  allyOrdersEnd(b); // allyorders.js: who died under your orders, who got out by one; the orders off the units
   for (const u of b.units) {
     if (u.pfrom == null || u.side !== "third") continue;
     u.side = "enemy"; u.pod = u.pfrom;
@@ -1158,6 +1161,7 @@ export function parleyResult(b) {
       allied: rec.allied, fought: foughtScore(rec), foughtBy: { ...rec.fought },
       split: rec.split, kept: !!rec.kept, keptAll: out && !!rec.allied && foughtFor(rec) > 0 && !(rec.split && rec.split.kinds) && !rec.brokeTruce && worth >= PARLEY.SPLIT.min, // SPLIT: shared, or out with the haul after they fought
       start: mine.length, dead: mine.filter((u) => u.dead).length,
+      orders: rec.aorders ? { ...rec.aorders } : null, // allyorders.js: { given, heeded, dead (under your orders), out (got off the map by one) }
       joiners: rec.joining ? mine.filter((u) => u.left && !u.dead).map((u) => u.who || { name: u.name }) : [],
     };
   });
@@ -1200,6 +1204,7 @@ export function parleyGoodwill(state, result) {
       if (g.mood === "wary" && r.fought >= PARLEY.FOUGHT.kill * 1.5) g.mood = "friendly";
     }
   }
+  allyOrdersGoodwill(state, result); // allyorders.js: their people who died following your orders
 }
 // The recruit card for those who agreed to come; the swap card for a trade with anyone but a group's trade window
 // (opts.crawl: no trade window in a city crawl either).
