@@ -4,15 +4,17 @@
 // main.js's dispatcher (PROD_ACTIONS on click, PROD_CHANGE on change).
 import { baseById, survivorById, atBase, skill, day, hourOfDay } from "../sim/world.js";
 import { BUILDINGS, stations, count } from "../sim/buildings.js";
-import { SKILL_NAMES, SUPPLIES } from "../sim/data.js";
+import { SKILL_NAMES, SUPPLIES, GEAR } from "../sim/data.js";
 import { CRAFTS, craftName, MAX_CRAFT_QUEUE } from "../sim/crafting.js";
 import { ROLES } from "../sim/economy.js";
 import {
   ORDER_MODES, FALLBACK_ROLES, QUALITY_STEPS, RACK, stationOrder, hasOrder, setStationOrder, clearStationOrder, orderHold,
   productKey, inputKeys, untilMargin, craftOrders, addCraftOrder, setCraftOrder, removeCraftOrder, craftOrderStatus, bestQuality,
 } from "../sim/production.js";
-import { POWER, POWER_USERS, STILL, REFUEL, powerStatus, refreshPower, generators, generatorLine, setGenReserve, GEN_TIERS, genTier, genDef, genName, genTank, genTierText } from "../sim/power.js";
+import { POWER, POWER_USERS, STILL, REFUEL, powerStatus, refreshPower, generators, generatorLine, setGenReserve, GEN_TIERS, genTier, genDef, genName, genTank, genTierText, isGenset } from "../sim/power.js"; // isGenset: a found generator (sim/electric.js), never upgraded
 import { canUpgradeGenerator } from "../sim/buildings.js"; // gen-tiers: a generator upgraded where it stands
+import { gridWired, climateNeed, circuitState } from "../sim/electric.js"; // the breaker panel's circuits (the switchboard)
+import { CIRCUITS, POWER_MOOD } from "../sim/data-power.js";
 import { genFixture, machineText } from "../sim/breakdowns.js";
 import { STEWARD_AREAS, stewardOf, setSteward, setStewardArea, setStewardStyle, setPinned, stewardSummary, STEWARD_LOG_HOUR, leaderChoices, leaderOf, leaderStatus, leaderScore, ledBy, setLeader, actingLeader, actsShare } from "../sim/steward.js";
 import { LEADER_LIFT } from "../sim/morale.js";
@@ -75,34 +77,51 @@ export function genUpgradeBtn(state, b, x) {
   return `<button class="mini" data-action="gen-up" data-base="${b.id}" data-id="${x.id}" ${chk.ok ? "" : "disabled"}${tip(`${preview}${chk.ok ? "" : ` ${chk.reason}.`}`)}>Upgrade${chk.locked ? " 🔒" : ""}</button>`;
 }
 
-// Supply and demand, the generators (no operator: machines-2) with their tanks and switches, the fuel kept back, the
-// morning's refuelling, and every powered building with its switch.
+// Supply and demand, the generators (no operator: machines-2; the found ones too, sim/electric.js) with their tanks and
+// switches, the fuel kept back, the morning's refuelling, and the switchboard (the power grid, 2026-10-21: "a panel in
+// the base to turn on and off machines/buildings that require power"): every powered machine with its switch, and with
+// a breaker panel the wired buildings' circuits (lights, and climate on a hot or a cold day), each switched, all of a
+// group on or off at once (pw-group).
 export function powerCard(state, b) {
   const gens = generators(b);
-  const users = b.buildings.filter((x) => POWER_USERS[x.type]);
+  const wired = gridWired(b);
+  const users = b.buildings.filter((x) => POWER_USERS[x.type] || (wired && CIRCUITS[x.type]));
   const usesText = Object.entries(POWER_USERS).map(([k, u]) => `${BUILDINGS[k].name} (${u.need}): ${u.what}`).join("; ");
-  if (!gens.length && !users.length) return `<h3>Power</h3><div class="small muted"${tip(`A generator (Construction) runs by itself: ${POWER.genOut} power for ${POWER.genFuel} fuel a day while something draws power, from a tank refuelled every morning by someone at the base; an ethanol still makes fuel from surplus or spoiled food. ${usesText}`)}>⚡ No generator and nothing to power <span class="sk-info">ⓘ</span></div>`;
+  if (!gens.length && !users.length && !wired) return `<h3>Power</h3><div class="small muted"${tip(`A generator (Construction) runs by itself: ${POWER.genOut} power for ${POWER.genFuel} fuel a day while something draws power, from a tank refuelled every morning by someone at the base; an ethanol still makes fuel from surplus or spoiled food. ${usesText}`)}>⚡ No generator and nothing to power <span class="sk-info">ⓘ</span></div>`;
   const ps = powerStatus(state, b);
   const toggle = (x, off) => `<button class="mini" data-action="pw-toggle" data-base="${b.id}" data-id="${x.id}"${tip(off ? "Let it run (or draw power) again" : "Switch it off (saves fuel)")}>${off ? "Switch on" : "Switch off"}</button>`;
   const row = (u) => {
     const d = BUILDINGS[u.b.type];
     const st = u.b.broken ? `<span class="chip off"${tip("Broken: it draws no power until it is repaired (Repairs tab)")}>Broken</span>` : u.off ? `<span class="chip off">Switched off</span>` : u.served ? `<span class="chip on">Powered</span>` : u.wants ? `<span class="chip off"${tip("Not enough power: build another generator, fill its tank, or switch something off")}>No power</span>` : `<span class="chip"${tip("A workshop station draws power only while its operator works it")}>Not working</span>`;
-    return `<tr><td${tip(`${d.desc} Powered: ${POWER_USERS[u.b.type].what}.`)}>${esc(d.name)}</td><td>${u.need}</td><td class="small">${esc(POWER_USERS[u.b.type].what)}</td><td>${st}</td><td>${toggle(u.b, u.off)}</td></tr>`;
+    const what = u.what || (POWER_USERS[u.b.type] ? POWER_USERS[u.b.type].what : "");
+    return `<tr><td${tip(`${d.desc} Powered: ${what}.`)}>${esc(d.name)}</td><td>${u.need}</td><td class="small">${esc(what)}</td><td>${st}</td><td>${toggle(u.b, u.off)}</td></tr>`;
   };
-  const genRow = (g) => `<tr><td${tip(`${BUILDINGS.generator.desc} ${genTierText(g.def, genTier(g.b))}. Repairs: ${genFixture(genTier(g.b)).repair.cost.parts} parts, Mechanics ${genFixture(genTier(g.b)).repair.min}+.`)}>${esc(genName(g.b))}<br><span class="muted">tier ${genTier(g.b)} of ${GEN_TIERS.length - 1}</span></td><td>+${g.def.out}</td><td class="small">${esc(generatorLine(state, b, g.b, ps))}</td><td>${g.running ? `<span class="chip on">Running</span>` : g.b.broken ? `<span class="chip off">Broken</span>` : g.off ? `<span class="chip off">Switched off</span>` : /^Tank dry/.test(g.reason) ? `<span class="chip off"${tip(g.reason)}>Tank dry</span>` : `<span class="chip">Standby</span>`}</td><td><span class="row">${g.b.broken ? "" : toggle(g.b, g.off)}${genUpgradeBtn(state, b, g.b)}</span></td></tr>`;
+  const genTip = (g) => (isGenset(g.b) ? `${GEAR[g.b.type] ? GEAR[g.b.type].desc : ""} Repairs: the Repairs tab.` : `${BUILDINGS.generator.desc} ${genTierText(g.def, genTier(g.b))}. Repairs: ${genFixture(genTier(g.b)).repair.cost.parts} parts, Mechanics ${genFixture(genTier(g.b)).repair.min}+.`);
+  const genSub = (g) => (isGenset(g.b) ? `found · ${g.def.idle === g.def.full ? `${Math.round((g.def.full / 24) * 100) / 100}` : `${Math.round((g.def.idle / 24) * 100) / 100}–${Math.round((g.def.full / 24) * 100) / 100}`} fuel an hour` : `tier ${genTier(g.b)} of ${GEN_TIERS.length - 1}`);
+  const genRow = (g) => `<tr><td${tip(genTip(g))}>${esc(genName(g.b))}<br><span class="muted">${genSub(g)}</span></td><td>+${g.def.out}</td><td class="small">${esc(generatorLine(state, b, g.b, ps))}</td><td>${g.running ? `<span class="chip on">Running</span>` : g.b.broken ? `<span class="chip off">Broken</span>` : g.off ? `<span class="chip off">Switched off</span>` : /^Tank dry/.test(g.reason) ? `<span class="chip off"${tip(g.reason)}>Tank dry</span>` : `<span class="chip">Standby</span>`}</td><td><span class="row">${g.b.broken ? "" : toggle(g.b, g.off)}${isGenset(g.b) ? "" : genUpgradeBtn(state, b, g.b)}</span></td></tr>`;
   const R = b.refuel && b.refuel.day === day(state) ? b.refuel : null;
   const refuel = !gens.length ? "" : R ? `Refuelled today at ${String(R.hour % 24).padStart(2, "0")}:00 by ${esc(R.name ? R.name.split(" ")[0] : "someone")} (${R.fuel} fuel, half an hour).` : hourOfDay(state) < REFUEL.from ? `Refuelled from ${String(REFUEL.from).padStart(2, "0")}:00 by whoever is least busy here.` : gens.every((x) => (x.tank || 0) >= genTank(x) - 1e-9) ? "The tanks are full." : "Not refuelled yet today.";
   const res = b.genReserve || null;
   const reserve = gens.length ? `<div class="row prodctl" style="margin-top:0.3rem">Keep <input type="number" min="0" max="99999" step="1" class="po-n" data-action="pw-reserve" data-base="${b.id}" value="${res ? res.n : 0}"${tip("Fuel kept back for the vehicles, the floodlights, the winter's heating: the generators' tanks are filled only from the fuel above it. At the reserve they run their tanks dry and the power goes off.")}> fuel back from the generators${res && res.by === "ai" ? ` <span class="chip"${tip("Set by this base's steward (or the autopilot). Change it and it becomes yours: stewards leave it alone.")}>steward</span>` : ""}</div>` : "";
   const cls = ps.demand > ps.supply ? "danger" : "";
+  // The switchboard's groups: the machines, and the wired buildings' circuits (a breaker panel), each with All on / All off.
+  const machines = ps.users.filter((u) => !u.circuit), circuits = ps.users.filter((u) => u.circuit);
+  const groupHead = (name, g, list) => {
+    const anyOn = list.some((u) => !u.off), anyOff = list.some((u) => u.off);
+    return `<tr><th colspan="4" class="small">${esc(name)}</th><th><span class="row">${anyOff ? `<button class="mini" data-action="pw-group" data-base="${b.id}" data-g="${g}" data-on="1"${tip(`Switch every one of these on`)}>All on</button>` : ""}${anyOn ? `<button class="mini" data-action="pw-group" data-base="${b.id}" data-g="${g}" data-on="0"${tip(`Switch every one of these off (saves fuel${g === "circuits" ? "; the people here miss the lights and the comfort" : ""})`)}>All off</button>` : ""}</span></th></tr>`;
+  };
+  const cs = circuitState(state, b, ps), need = climateNeed(state, b);
+  const gridLine = wired ? `<div class="muted" style="margin-top:0.3rem"${tip(`The breaker panel wires the buildings: each one's lights draw power, and its fans and air conditioning on a hot day, its heaters on a cold one. All lit: +${POWER_MOOD.lit} mood a day for everyone here; on a hot or a cold day +${POWER_MOOD.comfy} more with the climate on. Switched off or short of power, the dark buildings cost up to ${POWER_MOOD.dark}, the heat or the cold without comfort up to ${POWER_MOOD.harsh} a day.`)}>🔌 Breaker panel: ${cs ? `${cs.n - cs.dark} of ${cs.n} wired building${cs.n === 1 ? "" : "s"} lit` : "no building to wire yet"}${need ? ` · today is ${need === "hot" ? "hot: the fans and air conditioning draw too" : "cold: the heaters draw too"}` : ""}.</div>`
+    : `<div class="muted" style="margin-top:0.3rem"${tip("A breaker panel (Construction, a utility plot, Mechanics 2) wires the buildings: lights inside, fans in the heat and heaters in the cold, each switched here. Lit and comfortable, people are happier; a wired building left dark makes them miserable.")}>🔌 No breaker panel: the buildings are not wired (no lights, no fans or heaters).</div>`;
   // The steward's last look at an upgrade (autopilot.js autoGenUpgrade: base.genUp), when the power is short.
   const gu = b.genUp && b.genUp.day >= day(state) - 1 && !b.genUp.ok && b.genUp.need > b.genUp.cap ? `<div class="muted" style="margin-top:0.3rem"${tip("The governor or the base's steward upgrades a generator when the base wants more power than its generators give, the materials and a good enough mechanic are here, and the fuel coming in can carry the bigger burn (never into a fuel deficit, the winter's heating counted).")}>🤖 Upgrade on hold: ${esc(b.genUp.why)}.</div>` : "";
   return `<h3>Power</h3>
     <div class="card small">
       <div class="spread"><b class="${cls}">${ps.supply} supply / ${ps.demand} demand</b><span class="muted">${ps.running} of ${gens.length} generator${gens.length === 1 ? "" : "s"} running · ${ps.fuelPerDay} fuel a day · +${ps.heat} Heat · ${Math.floor(b.stock.fuel || 0)} fuel here</span></div>
       ${gens.length ? "" : `<div class="danger">No generator: build one in Construction (Mechanics 3+).</div>`}
-      <table class="t"><tr><th>Building</th><th${tip("Power it gives (+) or draws")}>Power</th><th>With power</th><th>Status</th><th></th></tr>${ps.gens.map(genRow).join("")}${ps.users.map(row).join("")}</table>
+      <table class="t"><tr><th>Building</th><th${tip("Power it gives (+) or draws")}>Power</th><th>With power</th><th>Status</th><th></th></tr>${ps.gens.map(genRow).join("")}${machines.length ? groupHead("Machines", "machines", machines) : ""}${machines.map(row).join("")}${circuits.length ? groupHead("Buildings (lights and climate)", "circuits", circuits) : ""}${circuits.map(row).join("")}</table>
       ${users.length ? "" : `<div class="muted">Nothing here draws power yet. ${esc(usesText)}.</div>`}
+      ${gridLine}
       ${refuel ? `<div class="muted" style="margin-top:0.3rem">⛽ ${refuel}</div>` : ""}${reserve}${gu}
       <div class="muted" style="margin-top:0.3rem">A generator needs no operator: it runs only while something draws power, from its own tank (a day and a half at full load). Tiers: ${GEN_TIERS.slice(1).map((t, i) => `${i + 1}. ${t.name} ${t.out} power for ${t.idle === t.full ? t.full : `${t.idle}–${t.full}`} fuel a day, tank ${t.tank}`).join("; ")}. Upgrade one where it stands (Upgrade); each tier burns more fuel, the bigger sets by the power drawn. Every morning from ${String(REFUEL.from).padStart(2, "0")}:00 someone able at the base refuels it (half an hour); with nobody able here (away, ill or in a bed) it runs its tank dry. A breakdown needs a Mechanics 3+ hand and machine parts (Repairs tab). Powered stations still need their operators. The still turns 8 food (up to ${STILL.mash} of it yesterday's spoiled food) and 2 water into 3 fuel a day.</div>
     </div>`;
@@ -254,6 +273,17 @@ export const PROD_ACTIONS = {
     refreshPower(state, b);
     const x = b.buildings.find((y) => y.id === id);
     say(ui, x ? `${BUILDINGS[x.type].name}: power ${b.powerOff[id] ? "switched off" : "on"}.` : "");
+  },
+  // The switchboard: a whole group on or off (the machines, or the wired buildings' circuits: sim/electric.js).
+  "pw-group": (state, ui, d) => {
+    const b = baseOf(state, d);
+    if (!b) return;
+    b.powerOff = b.powerOff || {};
+    const on = d.on === "1";
+    const list = powerStatus(state, b).users.filter((u) => (d.g === "circuits" ? u.circuit : !u.circuit));
+    for (const u of list) { if (on) delete b.powerOff[u.b.id]; else b.powerOff[u.b.id] = true; }
+    refreshPower(state, b);
+    say(ui, `${d.g === "circuits" ? "The buildings' circuits" : "The machines"}: ${list.length} switched ${on ? "on" : "off"}.`);
   },
   "co-toggle": (state, ui, d) => { const b = baseOf(state, d); const o = b && craftOrders(b).find((x) => x.id === Number(d.id)); if (o) say(ui, setCraftOrder(state, b, o.id, { on: !o.on }) || `Order ${o.on ? "resumed" : "paused"}.`); },
   "co-del": (state, ui, d) => { const b = baseOf(state, d); if (b) say(ui, removeCraftOrder(state, b, d.id)); },

@@ -28,6 +28,8 @@ import { GEAR } from "./data.js";
 import { minesLeft, minesKill, spendMines, MINES } from "./mines.js"; // land mines (the main base's Minefield)
 import { count, baseWalls, wallTier as wallTierBuilt, wallOf, wallTierOf, WALL_TIERS, hasWall, piecesOf, matOf, pieceName } from "./buildings.js";
 import { poweredType } from "./power.js";
+import { fenceCharged, spotOn } from "./electric.js"; // the power grid: a charged fence, lit spotlights (call-time only)
+import { FENCE, SPOT } from "./data-power.js";
 import {
   createBattle, startCombat, autoPlayerTurn, runEnemyPhase, closeCombat, combatants, registerCombatHandler, registerBattleLayout, endBattleNow,
   registerBattleSize, MAP_W, MAP_H,
@@ -120,7 +122,9 @@ export function defenceMult(state, base, cut = null) {
   const flood = count(base, "floodlights") && (poweredType(base, "floodlights") || (base.stock.fuel || 0) >= DEFENCE.FLOOD_FUEL); // on generator power they burn no fuel (power.js)
   const k = (p) => (cut ? 1 - (cut[p] || 0) : 1), kit = armoryDefence(base), wireCut = cut ? kit.wire * GEAR.barbedwire.defence.hold * (cut.wire || 0) : 0;
   return 1 + DEFENCE.BARRICADE * count(base, "barricades") * k("barricades") + DEFENCE.TRENCH * Math.min(1, count(base, "trench")) * k("trench") + DEFENCE.TRENCH2 * Math.max(0, count(base, "trench") - 1) * k("trench") + DEFENCE.GATE * count(base, "gate") * k("gate") + (flood ? DEFENCE.FLOOD * k("light") : 0) + kit.hold - wireCut
-    + DEFENCE.WIRE * count(base, "barbed_wire") * k("wire") + DEFENCE.RAZOR * count(base, "razor_wire") * k("wire") + DEFENCE.BAGS * count(base, "sandbag_wall") + (hasWall(base) ? DEFENCE.TOWERS * count(base, "guard_towers") * k("light") : 0);
+    + DEFENCE.WIRE * count(base, "barbed_wire") * k("wire") + DEFENCE.RAZOR * count(base, "razor_wire") * k("wire") + DEFENCE.BAGS * count(base, "sandbag_wall") + (hasWall(base) ? DEFENCE.TOWERS * count(base, "guard_towers") * k("light") : 0)
+    + (fenceCharged(base) ? FENCE.hold * k("wire") : 0) // electric.js: the fence charger powered
+    + (isNight(state) ? Math.min(SPOT.holdMax, base.buildings.filter((b) => spotOn(base, b)).length * SPOT.hold) * k("light") : 0); // electric.js: the mounted spotlights lit at night
 }
 // Bear traps: the dead caught before they reach the walls.
 export const trapKill = (base, n) => Math.min(n, armoryDefence(base).traps * GEAR.beartrap.defence.kill);

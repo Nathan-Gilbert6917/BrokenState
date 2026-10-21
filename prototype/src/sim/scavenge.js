@@ -47,6 +47,7 @@ import { rollSiteGuns } from "./gunfinds.js"; // the arsenal of 2026-10-10 (its 
 import { rollShopShelves, rollShopSupplies } from "./shopshelves.js"; // a gun store's or a pawn shop's shelves as a POI (gunshops.js)
 import { swapGun } from "./gundist.js"; // the gun distribution: which gun a site's gear list yields
 import { rollTentFind } from "./tents.js"; // tent bags (their own dice)
+import { rollPowerFind } from "./electric.js"; // generators, spotlights, fridges (their own dice)
 import { rollFind, rollHuntFind, rollLightFind, rollCartFind, rollSiteWood, rollBuildmat, rollSiteArrows, rollGunmodFind, rollAnyModFind, sortParts, rollSiteGrenades, rollSiteLaunchers, rollSiteReload } from "./loot.js";
 import { rollBedFind } from "./beds.js"; // beds as furniture: a loose cot or bed found (its own dice)
 import { searchHeatMult, noteGunfire } from "./fieldheat.js";
@@ -374,6 +375,8 @@ export function searchHour(state) {
   if (bedFind) { e.found.gear.push(bedFind); finds.push(bedFind.name); }
   const tent = rollTentFind(state, e.tile, kind, left, (perk("treasure") ? 2 : 1) * ap.loot, `h${e.hours}`); // a tent bag (tents.js, data-tents.js TENT_FINDS by the site or POI; its own dice)
   if (tent) { e.found.gear.push(tent); finds.push(tent.name); }
+  const pw = rollPowerFind(state, e.tile, kind, left, (perk("treasure") ? 2 : 1) * ap.loot, `h${e.hours}`); // a generator, a spotlight, a fridge (electric.js, data-power.js POWER_FINDS by the site or POI; its own dice)
+  if (pw) { e.found.gear.push(pw); finds.push(pw.name); }
   const part = rollAnyModFind(state, e.tile, (perk("treasure") ? 2 : 1) * ap.loot, `h${e.hours}`); // a sight, a suppressor (loot.js GUNMOD_FINDS, then SITE_MODS; their own dice)
   if (part) { e.found.gear.push(part); finds.push(part.name); }
   const rel = rollSiteReload(state, e.tile, (perk("treasure") ? 2 : 1) * ap.loot, `h${e.hours}`); // a bag of brass, a can of powder, a box of primers (loot.js SITE_RELOAD; its own dice)

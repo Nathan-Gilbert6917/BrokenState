@@ -30,6 +30,7 @@ import { noteOutput } from "./output.js"; // the base's Work now panel: what eac
 import { craftedCond } from "./itemcond.js"; // a crafted item's condition is the craft's own roll
 import { cfgOf } from "./worldcfg.js"; // the run's dials: Durability loss
 import { BED_CRAFTS, BED_SPEC } from "./data-beds.js"; // beds as furniture: a cot, a bed, a bunk bed, a large bed (beds.js)
+import { POWER_CRAFTS } from "./data-power.js"; // the mounted spotlight (electric.js)
 
 // in = materials (base stock), hours = work-hours, skill + min = who can make it, out = gear key or supplies.
 // needs: "workshop" (an ammo bench or machine shop at this base) or a building key. field: can be made by a team.
@@ -152,8 +153,9 @@ export const CRAFTS = {
   // ---------- end of special gear ----------
 };
 Object.assign(CRAFTS, BED_CRAFTS); // beds as furniture (data-beds.js): wood, scrap, a large bed's springs; at a crafting bench
+Object.assign(CRAFTS, POWER_CRAFTS); // the mounted spotlight (data-power.js): a work light's parts at a workshop
 
-export const WORKSHOP_TYPES = ["ammo_bench", "reload_bench", "machine_shop"]; // stations with metal tools (a reloading bench is an ammo bench upgraded: reloading.js)
+export const WORKSHOP_TYPES = ["ammo_bench", "reload_bench", "ammo_press", "machine_shop"]; // stations with metal tools (a reloading bench is an ammo bench upgraded: reloading.js)
 export const MAX_CRAFT_QUEUE = 8;
 const FIELD_QUALITY = -0.05;  // made on the road with less to work with
 const WORKSHOP_QUALITY = 0.1; // workshop recipes come out a little better

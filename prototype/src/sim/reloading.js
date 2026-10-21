@@ -31,6 +31,10 @@
 // battle's first pool, as with arrows); none after a loss or a retreat. By calibre in b.brassBy (the log line); one
 // generic brass in the stock.
 //
+// The ammo press (2026-10-21, data-power.js PRESS: the machine ammo crafter): a reloading bench in all of this, only
+// motorised: it works the same orders at PRESS.rate × the rounds a day (reloadJob's mult), and only while it has power
+// (buildings.js stationStatus: idle without it, before any of this is asked).
+//
 // The other groups (AI parity): their fights leave them brass (arsenal.js takeArsenalRounds → groupBrass); a group
 // with a workshop and the inputs loads rounds into its one ammo count each day (groupReloadDaily), and buys powder
 // and primers from a trading or military group when short (the hunger trade's pattern). Arms dealers and the
@@ -46,6 +50,7 @@ import { hash01 } from "./skills.js";
 import { buildLock } from "./blueprints.js";
 import { relation, warsOf } from "./diplomacy.js";
 import { note } from "./ledger.js"; // the conservation test's ledger (off in play)
+import { PRESS } from "./data-power.js"; // the ammo press: the reloading orders faster
 
 export const RELOAD = {
   UP: { cost: { parts: 1, gunparts: 3, scrap: 20 }, hours: 24, req: { mechanics: 3 } }, // the upgrade (buildings.js reload_bench)
@@ -117,8 +122,10 @@ export const handHq = (m) => Math.min(1, RELOAD.HQ[0] + RELOAD.HQ[1] * Math.max(
 export const handOf = (key) => { const ks = withHand(key); return ks.length > 1 ? ks[1] : null; };
 
 // ---------- the building ----------
-export const isReloadBench = (st) => !!st && st.type === "reload_bench";
-export const reloadBenches = (base) => (base ? base.buildings.filter((b) => b.type === "reload_bench") : []);
+export const isReloadBench = (st) => !!st && (st.type === "reload_bench" || st.type === "ammo_press");
+export const reloadBenches = (base) => (base ? base.buildings.filter(isReloadBench) : []);
+// A station's rounds a day × this (the ammo press works faster).
+export const benchMult = (st) => (st && st.type === "ammo_press" ? PRESS.rate : 1);
 export const hasReloadBench = (base) => reloadBenches(base).some((b) => !b.broken);
 // Can this ammo bench be upgraded into a reloading bench now?
 export function canUpgradeAmmoBench(state, base, id) {
@@ -192,7 +199,7 @@ function inputsFor(state, base, cal, type) {
   return { n: Math.max(0, n), reason };
 }
 // Every order's status for this operator today (the UI): [{ order, n (rounds it would make), reason, have, short }].
-export function reloadRows(state, base, op) {
+export function reloadRows(state, base, op, mult = 1) {
   const m = mech(op);
   /** @type {{ order: any, n: number, reason: string, have: number, short: number, cal?: string, type?: string }[]} */
   const rows = [];
@@ -208,7 +215,7 @@ export function reloadRows(state, base, op) {
     else if (m < rec[0]) reason = `needs Mechanics ${rec[0]} (the operator has ${m})`;
     else {
       const inp = inputsFor(state, base, r.cal, r.type);
-      n = Math.min(dayRate(rec[1], m), short, inp.n);
+      n = Math.min(dayRate(rec[1] * mult, m), short, inp.n);
       if (n < 1) { n = 0; reason = inp.reason || "short of inputs"; }
     }
     rows.push({ order: o, n, reason, have, short: Math.max(0, short), cal: r.cal, type: r.type });
@@ -216,9 +223,9 @@ export function reloadRows(state, base, op) {
   return rows;
 }
 // The best job for this operator today: the order furthest short (by share) it can work, { order, cal, type, n }, or null.
-export function reloadJob(state, base, op) {
+export function reloadJob(state, base, op, mult = 1) {
   let best = null, bestShort = 0;
-  for (const r of reloadRows(state, base, op)) {
+  for (const r of reloadRows(state, base, op, mult)) {
     const s = r.short / Math.max(1, r.order.n);
     if (r.n >= 1 && s > bestShort) { bestShort = s; best = { order: r.order, cal: r.cal, type: r.type, n: r.n }; }
   }
@@ -238,7 +245,7 @@ export function reloadWanted(state, base) {
 // none to work (it runs as an ammo bench: the common rounds from scrap, under its station order).
 export function reloadStatus(state, base, st, op) {
   if (!op || !isReloadBench(st) || (base.orders && base.orders[st.id] && base.orders[st.id].mode === "off")) return null; // its station order Off: off altogether
-  const job = reloadJob(state, base, op);
+  const job = reloadJob(state, base, op, benchMult(st));
   if (!job) {
     const pj = pullJob(state, base, op); // nothing to load: pull the rounds marked for it (their parts feed the loading)
     if (!pj) return null;

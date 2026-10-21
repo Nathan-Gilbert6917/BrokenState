@@ -125,6 +125,8 @@ import { rescueAct, rescueRefusal, guardTurn, rescueRound, rescueBot, rescueDone
 import { raidBuilding, buildingMap, buildingOptions, placeInterior, windowsNear, interiorIntro, BMAP, doorNoise, doorBroken, doorAct, peekSees, rewardMult, botEscape, DOOR_KINDS, doorSees } from "./buildingmaps.js";
 import { WINDOW, windowOpen, windowAct, smashWindow, glassNoise, rollWin, winMixOf } from "./windows.js"; // the map's windows: open, locked, fixed or broken (the user's request 2026-10-17)
 import { wireStep, cutAct, kitCutter, cutterKeyOf, WIRE } from "./wire.js";
+import { FENCE } from "./data-power.js"; // the fence charger's bite (electric.js)
+import { rollAreaPower } from "./electric.js"; // a generator, a spotlight, a fridge in a raid's container (its own dice)
 import { mineStep, settleMines } from "./mines.js"; // land mines: set off underfoot, the rest kept by the base when it is over // barbed wire snags the living unless they cut it (the user's request 2026-10-19)
 import { CRAWL, FURNITURE, crawlable, overCost, shoveAct, boardAct, tearAct, breakBoarded, breakPiece, boardedName, aiBarricade, kitBoards } from "./barricade.js"; // furniture shoved in the way, doors and windows boarded up, the dead crawling over half cover (the user's request 2026-10-18)
 import { poiFull } from "./pois.js"; // a raid on a point of interest: what that place held untouched (setup.raid.poi)
@@ -765,6 +767,7 @@ export const CELL = {
   log:       { walk: false, cover: 1, los: false, name: "Fallen log" },
   firepit:   { walk: false, cover: 1, los: false, name: "Fire pit" },
   lamp:      { walk: false, cover: 1, los: false, name: "Floodlight" },
+  spot:      { walk: false, cover: 1, los: false, name: "Spotlight" }, // a mounted spotlight on the ground (data-power.js; on a wall stand the cell stays a stand, c.spot)
   hivewall:  { walk: false, cover: 2, los: true,  name: "Hive flesh", tall: 2 },
   // A locked door in a raid (locks.js): blocks movement and sight until it is opened (then it is open floor).
   door:      { walk: false, cover: 2, los: true,  name: "Locked door" },
@@ -4221,7 +4224,17 @@ export function moveAlong(b, u, path) {
         const eff = Math.round(damage(b, u, b.rng.int(WIRE.RAZOR_DEAD[0], WIRE.RAZOR_DEAD[1]), null));
         u.ap = 0; say(b, `${u.name} is caught in the razor wire (${eff}).`, "good");
       } else { u.ap = 0; say(b, trap === "wire" ? `${u.name} is snagged on the barbed wire.` : `${u.name} flounders in the trench.`, "good"); }
+      if (trap === "wire" && b.cells[idx(x, y)].shock && active(u)) { // electric.js: the fence charger powered (data-power.js FENCE)
+        const eff = Math.round(damage(b, u, b.rng.int(FENCE.DEAD[0], FENCE.DEAD[1]), null));
+        fx(b, { type: "melee", from: [x, y], to: [x, y], hit: true, crit: false, dmg: eff, side: "player", text: "ZAP" });
+        say(b, `${u.name} jerks on the charged wire (${eff}).`, "good");
+      }
       if (!active(u) || trap !== "spikes") break;
+    }
+    if (trap === "wire" && u.kind !== "zombie" && b.cells[idx(x, y)].shock && b.cells[idx(x, y)].k === "wire" && u.side !== "player") { // electric.js: a charged wire bites the living too (your people know where the charge runs)
+      const eff = Math.round(damage(b, u, b.rng.int(FENCE.LIVING[0], FENCE.LIVING[1]), null, false, { how: "wire" }));
+      fx(b, { type: "melee", from: [x, y], to: [x, y], hit: true, crit: false, dmg: eff, side: "player", text: "ZAP" });
+      say(b, `${u.name} is shocked by the charged wire (${eff}).`, "good");
     }
     if (trap === "wire" && u.kind !== "zombie" && wireStep(null, b, u, x, y, { say, damage, fx })) break; // wire.js: the living snagged, or cutting through
     if (b.cells[idx(x, y)].mine && mineStep(b, u, x, y, { say })) break; // mines.js: a mine underfoot (never one of yours)
@@ -7376,6 +7389,9 @@ export function searchBox(state, b, u, box, open = false, quick = false) {
       // A tent bag: a campsite's, a garage's shelf, barracks stores (tents.js AREA_TENTS; its own dice too).
       const tent = rollAreaTent(state, b.tileId, R.areas[box.area].type, site, `box${bid}`);
       if (tent) gear.push(tent);
+      // A generator, a spotlight, a fridge: a garage's, a hardware store's, the motor pool's (electric.js AREA_POWER; its own dice too).
+      const pw = rollAreaPower(state, b.tileId, R.areas[box.area].type, site, `box${bid}`);
+      if (pw) gear.push(pw);
       if (def.alarm && box.kind === "car" && drng.chance(def.alarm) && !u.quiet) { // quiet: Quiet Hands never sets one off
         R.heat = Math.min(100, R.heat + 12);
         say(b, "A car alarm goes off! Heat jumps.", "danger");

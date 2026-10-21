@@ -45,10 +45,12 @@ import { cookBills, poisonRoll, COOK_RECIPES } from "./cooking.js"; // wave 2 co
 import { FOODS, DAY_KCAL, foodIn, foodSplit, syncLots, lotsOf, takeFood, addFood, ageLots, unitsOf, qtyOf, foodText, eggFood } from "./foods.js";
 import { foodAte } from "./foodlog.js"; // the base's food ledger (the Food tab): what was eaten, by the item
 import { tentFoodDays } from "./tents.js"; // the tents pitched at a base keep food dry (call-time only)
+import { fridgesOn } from "./electric.js"; // the fridges with power (call-time only)
+import { FRIDGE } from "./data-power.js";
 
 export const STORE = { hubCellar: 200, pantry: 40, rootCellar: 200, storehouse: 150, coldStore: 150, crates: 30, freezer: 300 };
 // Shelf used a day by where the food sits (× the day's weather, storeFactor).
-export const FACTOR = { outside: 1.5, dry: 1, cellar: 0.35, freezer: 0.05, stable: 1 };
+export const FACTOR = { outside: 1.5, dry: 1, cellar: 0.35, freezer: 0.05, stable: 1, fridge: FRIDGE.factor };
 export const RACK = { food: 4, out: 3, keepDays: 15 };   // drying rack: days of food in, out, days of eating kept fresh
 export const JAR_RATIONS = 2, JAR_RETURN = 0.85;
 // The simple meal: kcal out per kcal of raw makings (wave 2 cooking: cooking.js COOK_RECIPES.simple.gain, 1.25: more
@@ -71,6 +73,7 @@ const n1 = (v) => Math.round((v || 0) * 10) / 10;
 export function storeFactor(kind, temp, { wet = false, heat = false } = {}) {
   const cold = temp < 5, hot = temp > 24 || heat;
   if (kind === "freezer") return FACTOR.freezer;
+  if (kind === "fridge") return FACTOR.fridge; // a refrigerator with power (electric.js)
   if (kind === "cold") return temp < 0 ? 0.15 : temp < 5 ? 0.3 : temp < 15 ? 0.6 : 0.9; // an ice house: its ice lasts into spring
   if (kind === "cellar") return FACTOR.cellar * (cold ? 0.8 : hot ? 1.2 : 1);
   if (kind === "dry") return FACTOR.dry * (cold ? 0.7 : hot ? 1.25 : 1);
@@ -99,6 +102,14 @@ export function storeSpaces(base) {
     const on = Math.min(fz, base.freezersOn ?? (base.freezerOn ? fz : 0));
     if (on) out.push({ key: "freezer", name: "Walk-in freezer", kind: "freezer", cap: on * STORE.freezer });
     if (fz - on) out.push({ key: "freezeroff", name: "Walk-in freezer (off)", kind: "dry", cap: (fz - on) * STORE.freezer });
+  }
+  // The refrigerators (electric.js, data-power.js FRIDGE): FRIDGE.room days each, cold while it has power, a cupboard
+  // without (a broken one holds nothing).
+  const fr = count(base, "fridge");
+  if (fr) {
+    const on = Math.min(fr, fridgesOn(base));
+    if (on) out.push({ key: "fridge", name: "Refrigerators", kind: "fridge", cap: on * FRIDGE.room });
+    if (fr - on) out.push({ key: "fridgeoff", name: "Refrigerators (off)", kind: "dry", cap: (fr - on) * FRIDGE.room });
   }
   return out;
 }
@@ -362,7 +373,7 @@ export function storageDaily(state, base) {
 }
 
 // ---------- text ----------
-const KIND_WORD = { cellar: "cellar", dry: "room temperature", cold: "ice house", freezer: "frozen", outside: "outside" };
+const KIND_WORD = { cellar: "cellar", dry: "room temperature", cold: "ice house", freezer: "frozen", fridge: "refrigerated", outside: "outside" };
 // "in cellar 180/200, outside 40 (spoiling 2.3/day)" plus the food that keeps, for the base panel, Farming tab and top bar.
 export function storeLine(state, base) {
   const s = foodStore(state, base);

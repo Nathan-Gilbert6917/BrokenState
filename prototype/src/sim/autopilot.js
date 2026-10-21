@@ -60,6 +60,7 @@ import { nextWallTier, wallTier, underAttack, campMaterialsWork } from "./buildi
 import { WOODWORK, queueChop, queuedChopWood, clearAhead } from "./woodwork.js"; // woodwork: felling for wood, clearing the next sites ahead (govWoodwork)
 import { fittingRoom } from "./basemap.js"; // base building: a general building with floor for a fitting (bedWishes, storageWish, stoveWish)
 import { governBeds } from "./beds.js"; // beds as furniture: set from the stores, crafted when beds are short (call-time only)
+import { governPower } from "./electric.js"; // the power grid: found generators, spotlights and fridges set from the stores (call-time only)
 import { autoStore } from "./containers.js"; // the stores tidied daily (tidyStores)
 import { BUILDINGS, RECIPES, canDemolish, demolish, canBuild, queueBuild, count, countAll, stations, baseBeds, baseWalls, farmSlots, assignStations, isShelter, plotsFree, plotCap, BEDS, queuedBeds, BARRACKS_UP, canExpandBunkhouse, queueBunkhouseExpand, benchTier, tierUpType, tierUpJob, gatherRows, gatherStalled, isCamp, CAMP as CAMP_TIER, WATER_BARREL, canUpgradeBarrel, queueBarrelUpgrade, barrelTier, barrels, barrelName } from "./buildings.js";
 import { fireWanted } from "./fieldheat.js";
@@ -369,6 +370,7 @@ export function governBase(state, base, areas = ALL_AREAS) {
   if (areas.medical && hourOfDay(state) === TREAT_HOUR) for (const line of autoTreats(state, base)) say(state, line); // comforts.js: chocolate, coffee, smokes for the glum
   if (areas.building && hourOfDay(state) === WATER_WAIT.hour) waterSalvage(state, base);
   if (areas.building && hourOfDay(state) === PLAN_HOUR) tidyStores(state, base); // containers.js: the goods into the containers, before the day's builds
+  if (areas.building && hourOfDay(state) === PLAN_HOUR) for (const line of governPower(state, base)) say(state, line); // electric.js: generators set while the power falls short, spotlights and fridges once one runs
   if (areas.building && hourOfDay(state) === PLAN_HOUR) for (const line of governBeds(state, base)) say(state, line); // beds.js: furniture set from the stores, a bunk bed or a cot crafted when beds are short
   if (areas.building && base.tunnels && base.tunnels.length) { const line = autoFillTunnels(state, base); if (line) say(state, line); } // tunnels.js: the dead's tunnels under the walls filled first
   if (areas.building) planBuilds(state, base, areas);
@@ -2579,7 +2581,7 @@ function upkeepCrew(state, base, n) {
 // station: the building, when known. Its standing order (production.js; the governor's own from govOrders, or the
 // player's) comes first: a station it holds is never staffed, and an until / keep order replaces the stock check.
 function stationWorth(state, base, recipe, station = null) {
-  if (station && station.type === "reload_bench" && reloadWanted(state, base)) return true; // reloading.js: a reloading order short and makeable (its station order holds only the common rounds)
+  if (station && (station.type === "reload_bench" || station.type === "ammo_press") && reloadWanted(state, base)) return true; // reloading.js: a reloading order short and makeable (its station order holds only the common rounds)
   if (station && orderHold(state, base, station)) return false;
   const byOrder = !!station && stationOrder(base, station).mode !== "forever";
   const st = base.stock;
