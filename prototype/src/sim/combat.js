@@ -86,6 +86,7 @@ import { thirdFoes, enemyTargetsThird, hostilePair, thirdPlan, thirdSideHit, thi
 import { crossFoes, crossTurn, crossDraw, crossHit, noteShot, crossRound } from "./crossfire.js"; // a raid's raiders and dead fight on contact; their noise draws the dead to them while you are unseen; shots heard, not seen
 import { folkTick, resolveBattleCards, dropBattleCards } from "./floorfolk.js"; // who holds the upper floors of a city building (the crawl)
 import { placeParley, parleySetup, parleyTick, parleySpotted, parleyEnemyPhase, parleyEnd, parleyResult, callOut, parleyHarm, botCallOut } from "./parley.js"; // other groups on a raid's map: they call out, you call out (every hook marked "parley.js")
+import { allyOrder, allyTurn, allyEvac, allyKeepsWatch, allyIntelTick } from "./allyorders.js"; // orders to an allied group's people (every hook marked "allyorders.js"; none run without an ally)
 import { isHardcore } from "./hardcore.js";
 import { raidCarrySetup, autoTake, stashAll, raidHome, personalRoom, trunkSpace, atVehicle, setRefit, haulLoad, dropHaul, dropHeld } from "./raidloot.js"; // loot by hand: each survivor carries their own, the vehicle has a trunk
 import { SEARCH, hideSome, revealHidden, quickRefusal, quickNoise, quickHurt, quickable, botPressed, takeFree } from "./search.js"; // full search (1 action) and the quick rummage
@@ -4478,7 +4479,7 @@ export function combatAct(state, act) {
   }
   if (b.phase !== "player") return "Wait for the enemy turn to finish.";
   if (act.type === "takeAlive") { setTakeAlive(b, act.on); bump(b); return ""; } // nonlethal.js: the AI playing your side prefers non-lethal
-  if (act.type === "evac") { const why = evacRefusal(b); if (why) return why; b.evacOrder = true; say(b, "Evac! Everyone heads for the way out.", "danger"); evacTurn(state, b); return ""; } // evacTurn: everyone to the exits or the vehicle
+  if (act.type === "evac") { const why = evacRefusal(b); if (why) return why; b.evacOrder = true; say(b, "Evac! Everyone heads for the way out.", "danger"); if (b.parley) allyEvac(state, b); evacTurn(state, b); return ""; } // allyorders.js: the allies told to retreat too // evacTurn: everyone to the exits or the vehicle
   if (act.type === "evacStop") { b.evacOrder = false; say(b, "The evac is called off.", "info"); bump(b); return ""; }
   if (act.type === "dropCarried" || act.type === "dropAllCarried") { const err = carriedAct(state, b, act); if (!err) bump(b); return err; } // carry.js: free, even with no actions left
   if (act.type === "letGoCart") { const err = cartAct(state, b, act); if (!err) bump(b); return err; } // carts.js: let go of a cart (free)
@@ -4529,6 +4530,7 @@ export function combatAct(state, act) {
     }
     case "face": { // vision.js: turn where they stand (free: it needs an action left, it does not use one)
       if (!faceAfterMove(u, act)) return "Face which way?";
+      if (b.intel) allyIntelTick(b); // allyorders.js: a cone turned at night may see a marked cell
       bump(b);
       return "";
     }
@@ -4961,6 +4963,11 @@ export function combatAct(state, act) {
       u.hunker = false;
       break;
     }
+    case "allyorder": { // allyorders.js: an order to an ally within reach (1 action; they may ignore it)
+      const err = allyOrder(state, b, u, act);
+      if (err) return err;
+      break;
+    }
     case "callout": { // parley.js: shout to another group in sight to talk (1 action; the card opens over the fight)
       const err = callOut(state, b, u, t);
       if (err) return err;
@@ -4994,6 +5001,7 @@ export function combatAct(state, act) {
   bump(b);
   if (b.raid && b.raid.folk) folkTick(state, b); // floorfolk.js: the barricaded survivors' door reached, the nest stirring
   if (b.raid) parleyTick(state, b); // parley.js: a group that called out to your people: its card
+  if (b.intel) allyIntelTick(b); // allyorders.js: what an ally told you of, dropped where your people now see
   checkEnd(state, b);
   if (!b.over && b.phase === "player" && !b.units.some((x) => x.side === "player" && activeAny(x) && x.ap > 0)) endPlayerTurn(state);
   return "";
@@ -5011,7 +5019,7 @@ export function endPlayerTurn(state) {
   stunTurnEnd(b, ["player"]); // throwables.js: a flashbang's stun served this turn wears off
   b.phase = "enemy";
   if (b.parley) parleyEnemyPhase(b); // parley.js: a treacherous group's trap sprung, a standoff out of patience, your time to get out up
-  for (const u of b.units) if ((u.side === "enemy" || u.side === "third") && activeAny(u)) { u.ap = u.surprised ? 0 : 2; u.ow = false; u.hunker = false; u.surprised = false; if (u.vaulted) u.vaulted = 0; } // thirdside.js: the third side moves in the enemy phase too
+  for (const u of b.units) if ((u.side === "enemy" || u.side === "third") && activeAny(u)) { u.ap = u.surprised ? 0 : 2; u.ow = allyKeepsWatch(u); u.hunker = false; u.surprised = false; if (u.vaulted) u.vaulted = 0; } // thirdside.js: the third side moves in the enemy phase too; allyorders.js: an ally on an overwatch order keeps watching
   for (const u of enemyCartsLetGo(state, b)) u.ap = Math.max(0, u.ap - CART_FIGHT.park); // carts.js: theirs park their carts as cover first (an action, as yours)
   stunTurnStart(b, ["enemy", "third"]); // throwables.js: the ones a flashbang caught lose their actions
   tickEars(b, ["enemy", "third"]); // hearing.js: their deafness and daze wear off a turn
@@ -5111,6 +5119,7 @@ function startPlayerTurn(state, b) {
   if (b.tier && !b.over) tierPlayerTurn(state, b);
   if (b.raid && b.raid.folk && !b.over) folkTick(state, b); // floorfolk.js: the nest woken by the Heat or the noise of the enemy phase
   if (b.raid && !b.over) parleyTick(state, b); // parley.js: the groups that called out in the enemy phase: their cards
+  if (b.intel && !b.over) allyIntelTick(b); // allyorders.js: what an ally told you of, dropped where your people now see
   offerClear(b);
   if (b.evacOrder && !b.over) evacTurn(state, b); // the Evac order stands: the next leg toward the way out
 }
@@ -5297,6 +5306,7 @@ function aiUnit(b, u) {
   const own = bossAI(u);
   if (own && own.turn) { own.turn(b, u); u.ap = 0; return; } // registerBossAI: a boss that plays its own turn (hivecrawl.js's Hivemind)
   if (u.side === "third") { // thirdside.js: neutrals stay put, defend themselves or run; soldiers fight the dead
+    if (u.aorder && (allyTurn(b, u) || !active(u) || u.ap <= 0)) return; // allyorders.js: an ally plays the order your people gave it
     const plan = thirdPlan(b, u);
     if (plan === "hold") { u.ap = 0; return; }
     if (plan === "flee") return flee(b, u);
@@ -5463,6 +5473,8 @@ function aiReload(b, u) {
   aiLoad(b, u, t === cur ? null : t);
   return true;
 }
+// allyorders.js: an ally holding a spot reloads as the AI does.
+export const reloadAI = (b, u) => aiReload(b, u);
 // A shotgun whose next Reload would dig straight in the pack (mags.js: no shells of the type at hand, both actions) and
 // can Get shells instead (1 action: a handful to hand, then 1-action Reloads).
 const packShells = (b, u, type = null) => isShellGun(u) && tracksMags(u) && reloadPlan(b, u, type).from === "pack" && !getShellsRefusal(b, u, type);
@@ -6231,7 +6243,7 @@ function checkEnd(state, b) {
   if (b.over) return;
   volunteersFollow(b); // volunteers.js: your people all out (or, in a raid, none of them standing): they pull out with them
   if (b.raid) {
-    if (!b.units.some((u) => u.side === "player" && activeAny(u))) { leaveAboard(b); endRaid(state, b); } // nobody on foot on any floor (buildingmaps.js storeys): whoever is in the vehicle drives off with it
+    if (!b.units.some((u) => u.side === "player" && activeAny(u))) { if (b.parley && b.units.some((u) => u.side === "player" && u.left && !u.dead)) allyEvac(state, b); leaveAboard(b); endRaid(state, b); } // allyorders.js: your people out, the allies pull out too; nobody on foot on any floor (buildingmaps.js storeys): whoever is in the vehicle drives off with it
     return;
   }
   // Attackers still outside a base's wall waiting to come in (interior.js) count as not beaten.
@@ -7466,6 +7478,7 @@ function autoRaidTurn(state) {
     }
     if (why) R.botOut = { turn: b.turn, why };
   }
+  if (R.botOut && b.parley && !R.botAllies) { R.botAllies = true; allyEvac(state, b); } // allyorders.js: the squad leaving tells its allies to retreat
   for (const u of b.units.filter((x) => x.side === "player" && x.vol == null)) { // volunteers act in volunteerTurn
     if (b.floors && activeAny(u) && (u.f || 0) !== (b.floor || 0)) setFloor(b, u.f || 0); // storeys: each one acts on its own floor
     // Cut off: the safe way to the exit (down the stairs first, upstairs) against the plain one, two turns running.

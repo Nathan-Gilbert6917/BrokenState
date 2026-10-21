@@ -19,6 +19,7 @@ import { GEAR } from "./data.js";
 import { lootItem } from "./inventory.js";
 import { refitPerson, fromPerson, memberize } from "./fighters.js"; // a person: rebuilt with their own weapon and health
 import { parleyMet, parleyHit, parleyPlan } from "./parley.js"; // a group you can talk to: its call, a truce broken, a walk-away
+import { allyFoes } from "./allyorders.js"; // an ally under an order of yours fights what the order says
 
 export const THIRD = {
   THREAT_DEAD: 7,      // the dead this close (tiles) are a threat to neutrals
@@ -129,8 +130,9 @@ registerOccupantSide("military", placeOccupants);
 
 // ---------- who fights whom ----------
 // What a third-side unit fights: soldiers the dead and armed people up and fighting; neutrals what threatens them now.
-export function thirdFoes(b, u) {
-  if (u.ally) return b.units.filter((o) => o !== u && active(o) && ((o.side === "enemy" && (o.kind === "zombie" || o.aware)) || (o.wild && o.side !== "third" && o.side !== "player"))); // parley.js: allied with you: the dead and the hostile who are up and fighting
+// own: an ally's own foes, not narrowed by an order of yours (allyorders.js allyFoes: an attack's target, a push's cell).
+export function thirdFoes(b, u, own = false) {
+  if (u.ally) { const all = b.units.filter((o) => o !== u && active(o) && ((o.side === "enemy" && (o.kind === "zombie" || o.aware)) || (o.wild && o.side !== "third" && o.side !== "player"))); return u.aorder && !own ? allyFoes(b, u, all) : all; } // parley.js: allied with you: the dead and the hostile who are up and fighting; allyorders.js: an order of yours
   if (u.pfrom != null) return b.units.filter((o) => active(o) && o.side === "enemy" && o.kind === "zombie" && dist(o, u) <= THIRD.THREAT_DEAD); // parley.js: a pod at peace
   if (u.team === "military") {
     return b.units.filter((o) => o !== u && active(o) && ((o.side === "enemy" && (o.kind === "zombie" || o.aware)) || (o.wild && o.side !== "third" && o.side !== "player")));
