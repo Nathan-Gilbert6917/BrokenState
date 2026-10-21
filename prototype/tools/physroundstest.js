@@ -24,6 +24,7 @@ const { gunRounds } = await import("../src/sim/gunrounds.js");
 const { gunRoundsLabel } = await import("../src/ui/itemlabels.js");
 const IA = await import("../src/sim/itemacts.js");
 const { stackN } = await import("../src/sim/roundstack.js");
+const { calOf } = await import("../src/sim/ammo.js");
 const { saveToString, loadFromString } = await import("../src/sim/save.js");
 const { createBattle, combatAct, registerCombatHandler, magCap } = await import("../src/sim/combat.js");
 const { returnStacks, gunStackOf } = await import("../src/sim/gunload.js");
@@ -107,13 +108,16 @@ section("1. An event's pistol comes with its own rounds, movable onto a survivor
   check(carriedSpots(s).some((x) => x.item.key === "pistol") && pocketsOf(s, K9) === 17 && !(h.stock[K9] > 0), `a case in a pocket: the pistol and its 17 rounds onto them (${m1} ${m2})`);
 }
 {
-  // A body with a pistol: the rounds are its calibre.
+  // A body with a pistol: the rounds are its calibre (one who was a survivor may carry another handgun, with its own:
+  // inventory.js survivorDead; every round on the body is for one of its guns).
   let found = 0, right = 0;
   for (let i = 0; i < 4000 && found < 5; i++) {
     const f = deadBodyFinds(new Rng(1000 + i), null);
     if (!f.gear.some((g) => g.key === "pistol")) continue;
     found++;
-    if (Object.keys(f.sup).filter((k) => /^a_/.test(k)).every((k) => k === K9)) right++;
+    const cals = new Set(f.gear.map((g) => calOf(g.key)).filter(Boolean));
+    const keys = Object.keys(f.sup).filter((k) => /^a_/.test(k));
+    if (keys.includes(K9) && keys.every((k) => [...cals].some((c) => k.startsWith(`a_${c}_`)))) right++;
   }
   check(found > 0 && right === found, `a body's pistol brings 9mm (${right} of ${found})`);
 }

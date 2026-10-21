@@ -25,7 +25,7 @@ import { GEAR } from "../src/sim/data.js";
 import { createBattle, registerCombatHandler, combatAct, endPlayerTurn, runEnemyPhase, shotOdds, enemyUnit, fire, escapeOdds, enemyGhosts, sightRange, KITS, WEAPONS } from "../src/sim/combat.js";
 import { HEAR, HEARING, bangOf, deafen, exposure, tickEars, hearRange, hearMult, heardGhosts, earHold, dazedAim, linkAim, linkEscape, fitHeadgear, settleEars } from "../src/sim/hearing.js";
 import { kitHeadgear as kitHeadgearT } from "../src/sim/helmets.js";
-import { HELMETS, HELMET_ATTACH, FACE, HEAD_KIT, HEAD_FINDS, AREA_HEAD, WARE_HEAD, helmetFitReason, fitHelmetMod, removeHelmetMod, helmetSlots, faceOf, visorAim, toggleVisor, helmetNvg, helmetLight, earGearOf, fitHelmetAt, stripHelmetAt, helmetChoices, rollHeadKit, rollHeadFind, rollAreaHead, headWares } from "../src/sim/helmets.js";
+import { HELMETS, HELMET_ATTACH, FACE, HEAD_KIT, HEAD_FINDS, AREA_HEAD, WARE_HEAD, helmetFitReason, fitHelmetMod, removeHelmetMod, helmetSlots, faceOf, visorAim, toggleVisor, helmetNvg, helmetLight, earGearOf, fitHelmetAt, stripHelmetAt, helmetChoices, rollHeadKit, rollHeadFind, rollAreaHead, headWares, earSlotReason } from "../src/sim/helmets.js";
 import { HELMET_GEAR } from "../src/sim/data-helmets.js";
 import { CRAFTS, craftOutputText, makeItem } from "../src/sim/crafting.js"; // rag earplugs: the makeshift recipe
 import { craftLock } from "../src/sim/blueprints.js";
@@ -60,7 +60,7 @@ const world = (s = seed) => { const st = createWorld({ seed: s, factionCount: 6 
 function openBattle(st, enemy = { kind: "raiders", count: 4, power: 3 }, n = 3, gear = null) {
   const h = hub(st);
   const people = atBase(st, h.id).slice(0, n);
-  for (const s of people) { s.gear.head = null; s.gear.tool = null; s.pockets = s.pockets.map(() => null); if (s.gear.backpack) s.gear.backpack.contents = s.gear.backpack.contents.map(() => null); }
+  for (const s of people) { s.gear.head = null; s.gear.ears = null; s.gear.tool = null; s.pockets = s.pockets.map(() => null); if (s.gear.backpack) s.gear.backpack.contents = s.gear.backpack.contents.map(() => null); }
   if (gear) people.forEach((s, i) => gear(s, i));
   st.combat = createBattle(st, { tile: h.tile, baseId: h.id, fighterIds: people.map((s) => s.id), enemy, ambush: null, canRetreat: false, handler: "ht", context: {} });
   const b = st.combat;
@@ -357,8 +357,10 @@ section("6. The face zone: bites with and without a visor, the ballistic visor c
 section("7. Mounts: what fits where; the inventory calls");
 {
   const bike = newItem("bikehelmet"), riot = newItem("riothelmet"), foot = newItem("footballhelmet");
-  for (const h of [bike, riot, foot]) check(/full shell/.test(helmetFitReason(h, newItem("earmuffs"))), `a ${h.name.toLowerCase()} rejects ear muffs (full shell)`);
-  check(!helmetFitReason(newItem("milhelmet"), newItem("commset")), "a combat helmet takes a headset");
+  // Ear protection goes in the Ear pro slot, never on a helmet (the user's request 2026-10-21; helmets.js earSlotReason).
+  for (const h of [bike, riot, foot]) check(/full shell/.test(earSlotReason(newItem("earmuffs"), null, h)) && !earSlotReason(newItem("earplugs"), null, h), `under a ${h.name.toLowerCase()} no ear muffs in Ear pro (full shell), earplugs fit`);
+  check(!earSlotReason(newItem("commset"), null, newItem("milhelmet")), "a headset in Ear pro under a combat helmet");
+  check(!!helmetFitReason(newItem("milhelmet"), newItem("commset")) && !helmetSlots(newItem("highcut")).includes("ears"), "helmets have no ear mount any more");
   check(!helmetFitReason(riot, newItem("helmetlight")), "a riot helmet takes a light");
   const hh = newItem("hardhat");
   check(/mount/.test(helmetFitReason(hh, newItem("nvg"))), "a hard hat has no nvg mount without the bracket");
@@ -417,14 +419,14 @@ section("9. The visor toggle, fog, the ballistic visor's sight; the team headset
 {
   const st = world();
   const b = openBattle(st, { kind: "raiders", count: 2, power: 3 }, 3, (s, i) => {
-    if (i === 0) { const h = newItem("highcut"); fitHelmetMod(h, newItem("ballvisor")); fitHelmetMod(h, newItem("commset")); s.gear.head = h; }
-    if (i === 1) s.gear.head = newItem("commset");
+    if (i === 0) { const h = newItem("highcut"); fitHelmetMod(h, newItem("ballvisor")); s.gear.head = h; s.gear.ears = newItem("commset"); }
+    if (i === 1) s.gear.ears = newItem("commset");
   });
   const [a, c, d] = P(b);
   const [e0] = E(b);
   place(a, 5, 5); place(c, 5, 8); place(d, 5, 11); place(e0, 12, 5);
   a.weapon = "ar"; a.ap = 2;
-  check(a.ears && a.ears.key === "commset" && a.link && c.link && !d.link, "the headsets: on the helmet's ear mount and on a bare head");
+  check(a.ears && a.ears.key === "commset" && a.link && c.link && !d.link, "the headsets in Ear pro: under a helmet and on a bare head");
   check(a.vsight === -1 && sightRange(b, a) === a.sight - 1, "a ballistic visor down: a tile of sight");
   b.visorFog = false;
   check(visorAim(a, b) === -2, "a ballistic visor down: −2 aim");
@@ -457,7 +459,7 @@ section("9. The visor toggle, fog, the ballistic visor's sight; the team headset
 section("10. Flashbangs: ear protection alone takes at most 0.4; a near one still costs an action");
 {
   const st = world();
-  const b = openBattle(st, { kind: "raiders", count: 2, power: 3 }, 2, (s, i) => { if (i === 0) s.gear.head = newItem("commset"); });
+  const b = openBattle(st, { kind: "raiders", count: 2, power: 3 }, 2, (s, i) => { if (i === 0) s.gear.ears = newItem("commset"); });
   const [me, mate] = P(b);
   check(near(me.earCut, 0.4), `a headset: u.earCut 0.4 (${me.earCut})`);
   check(near(flashCut(me), 0.4), "flashCut reads it");
@@ -578,33 +580,36 @@ section("12. Loot tags and sources; repair; earplugs wear a pair a fight");
   // Earplugs: a pair a fight.
   const s = atBase(st, hub(st).id)[0];
   s.pockets = s.pockets.map(() => null);
-  s.gear.head = null;
+  s.gear.head = null; s.gear.ears = null;
   const pl = newItem("earplugs");
   s.pockets[0] = pl;
   const u = {};
   fitHeadgear(u, s);
-  check(u.ears && u.ears.key === "earplugs" && near(u.earCut, 0.3), "earplugs in a pocket work (cut 3; a flashbang's 0.3)");
+  check(!u.ears && !earGearOf(s), "earplugs in a pocket do nothing (only Ear pro protects: the user's rule 2026-10-21)");
+  s.pockets[0] = null; s.gear.ears = pl;
+  fitHeadgear(u, s);
+  check(u.ears && u.ears.key === "earplugs" && near(u.earCut, 0.3), "earplugs in Ear pro work (cut 3; a flashbang's 0.3)");
   settleEars(u, s, true);
   check(pl.dur === GEAR.earplugs.dur - 1, `a pair used in a fight (${pl.dur} left)`);
   pl.dur = 1;
   settleEars(u, s, true);
-  check(s.pockets[0] == null, "the last pair: the strip is gone");
+  check(s.gear.ears == null, "the last pair: the strip is gone");
   const muffsOnly = newItem("earmuffs");
   s.pockets[1] = muffsOnly;
-  check(!earGearOf(s), "muffs in a pocket do nothing (worn only)");
+  check(!earGearOf(s), "muffs in a pocket do nothing (worn in Ear pro only)");
   // Rag earplugs (data.js ragplugs, crafting.js CRAFTS.ragplugs): makeshift plugs, weaker than foam, worn a pair a fight.
   s.pockets[1] = null;
   const rd = GEAR.ragplugs, rr = CRAFTS.ragplugs;
-  check(rd && rd.makeshift && rd.small && rd.slot === "pack" && rd.ears && rd.ears.cut < GEAR.earplugs.ears.cut && rd.ears.hear === GEAR.earplugs.ears.hear && rd.dur < GEAR.earplugs.dur, "rag earplugs: a small makeshift pocket item, a weaker cut than foam, the same hearing, fewer fights");
+  check(rd && rd.makeshift && rd.small && rd.slot === "ears" && rd.plugs && rd.ears && rd.ears.cut < GEAR.earplugs.ears.cut && rd.ears.hear === GEAR.earplugs.ears.hear && rd.dur < GEAR.earplugs.dur, "rag earplugs: a small makeshift Ear pro item, a weaker cut than foam, the same hearing, fewer fights");
   check(rr && rr.gear === "ragplugs" && rr.in.scrap === 1 && Object.keys(rr.in).length === 1 && rr.hours === 1 && rr.min === 0 && rr.field === true && !rr.needs, "the recipe: 1 scrap, 1 hour, no skill, in the field");
   check(craftLock({ known: [] }, "ragplugs") === "", "no book or blueprint locks them");
   check(/ear protection/.test(craftOutputText("ragplugs")) && /2 off/.test(craftOutputText("ragplugs")) && /fights/.test(craftOutputText("ragplugs")), `the recipe's output text says what they do (${craftOutputText("ragplugs")})`);
   const rp = makeItem("ragplugs", 0.75);
   check(rp.dur === rd.dur, `made at 75% they last the listed ${rd.dur} fights (${rp.dur})`);
   check(makeItem("ragplugs", 1).dur > rd.dur, "well made, more");
-  s.pockets[0] = rp;
+  s.gear.ears = rp;
   fitHeadgear(u, s);
-  check(u.ears && u.ears.key === "ragplugs" && u.ears.cut === 2 && u.ears.hear === -3 && !u.ears.elec && near(u.earCut, 0.2), "rag plugs in a pocket work (cut 2; a flashbang's 0.2)");
+  check(u.ears && u.ears.key === "ragplugs" && u.ears.cut === 2 && u.ears.hear === -3 && !u.ears.elec && near(u.earCut, 0.2), "rag plugs in Ear pro work (cut 2; a flashbang's 0.2)");
   u.x = 0; u.y = 0;
   const rifleOut = bangOf({ cells: [], w: 0 }, { x: 0, y: 0, weapon: "ar" }); // a rifle outdoors: bang 3 (section 1)
   const shooterIn = (ears) => { const keep = u.ears; u.ears = ears; const e = exposure(u, 0, 0, rifleOut, u); u.ears = keep; return e; }; // the same unit as its own shooter (+1)
@@ -618,12 +623,12 @@ section("12. Loot tags and sources; repair; earplugs wear a pair a fight");
   check(rp.dur === rd.dur - 1, "none used when nobody fought");
   rp.dur = 1;
   settleEars(u, s, true);
-  check(s.pockets[0] == null, "the last pair: the tin is gone");
-  s.pockets[0] = newItem("ragplugs"); s.pockets[1] = newItem("earplugs");
+  check(s.gear.ears == null, "the last pair: the tin is gone");
+  s.gear.ears = newItem("ragplugs"); s.pockets[1] = newItem("earplugs");
   fitHeadgear(u, s);
-  check(u.ears && u.ears.key === "earplugs", "foam plugs are used over rag plugs when both are carried");
+  check(u.ears && u.ears.key === "ragplugs", "the plugs in Ear pro are the ones used (foam in a pocket does nothing)");
   settleEars(u, s, true);
-  check(s.pockets[1].dur === GEAR.earplugs.dur - 1 && s.pockets[0].dur === rd.dur, "and only the foam strip wears");
+  check(s.pockets[1].dur === GEAR.earplugs.dur && s.gear.ears.dur === rd.dur - 1, "and only the worn pair wears");
   check(repairKind(newItem("ragplugs")) === null && repairKind(newItem("earplugs")) === null, "earplugs are used up, never mended (repair.js)");
   check(IA.hasItemArt("ragplugs", "gear"), "rag earplugs have their drawing (ui/itemart)");
 }
@@ -637,8 +642,8 @@ section("13. A save round trip keeps helmet mods (and a battle's deaf units)");
   const helm = newItem("highcut");
   fitHelmetMod(helm, newItem("ballvisor"));
   fitHelmetMod(helm, newItem("nvg"));
-  fitHelmetMod(helm, newItem("commset"));
   s.gear.head = helm;
+  s.gear.ears = newItem("commset");
   const hh = newItem("hardhat");
   fitHelmetMod(hh, newItem("nvgmount"));
   fitHelmetMod(hh, newItem("helmetlight"));
@@ -646,7 +651,7 @@ section("13. A save round trip keeps helmet mods (and a battle's deaf units)");
   const st2 = loadFromString(saveToString(st));
   const s2 = survivorById(st2, s.id);
   const h2 = s2.gear.head;
-  check(h2 && h2.key === "highcut" && h2.mods && h2.mods.face.key === "ballvisor" && h2.mods.nvg.key === "nvg" && h2.mods.ears.key === "commset", "the worn helmet keeps its visor, goggles and headset");
+  check(h2 && h2.key === "highcut" && h2.mods && h2.mods.face.key === "ballvisor" && h2.mods.nvg.key === "nvg" && s2.gear.ears && s2.gear.ears.key === "commset", "the worn helmet keeps its visor and goggles, Ear pro its headset");
   const hh2 = hub(st2).armory.find((it) => it.key === "hardhat");
   check(hh2 && hh2.mods && hh2.mods.rail.key === "nvgmount" && hh2.mods.light.key === "helmetlight", "a hard hat in the armory keeps its mount and light");
   check(helmetNvg(s2) && earGearOf(s2).key === "commset", "and they still work after loading");
