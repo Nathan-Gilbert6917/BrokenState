@@ -118,6 +118,7 @@ import { pitchStoredBag, bagsInStores } from "./tents.js"; // (call-time only) a
 import { chopHands } from "./woodwork.js"; // who is felling a clearing (call-time only)
 import { isChopTool, bestChop } from "./woodcutting.js"; // felling a tree goes slower without a cutting tool at the base (call-time only)
 import { layMines } from "./mines.js"; // the main base's minefield, buried in the open ground round the yard (call-time only)
+import { tunnelAt, queueFill } from "./tunnels.js"; // the tunnels the dead dug: a hole's card, Fill tunnel (call-time only)
 import { FORT } from "./fort.js"; // the wire rings' and the mines' distances from the wall (call-time only: the modules load in a circle)
 import { cfgOf } from "./worldcfg.js"; // the run's dials: Base yard to start / at most
 import { storageOf, coreStoreKg, vehicleStoreKg, woodpileOf } from "./basestorage.js"; // the base's room and what lies outside (call-time only)
@@ -2287,6 +2288,10 @@ export function layoutAct(state, b, act) {
     // trees, the hedgerow or the fence run it is part of; mode "strip": a wreck stripped of its scrap and a part).
     case "unclear": { const job = base.construction.find((c) => c.id === Number(act.id) && c.type === "clear"); if (!job) return "That clearing is gone."; L.msg = cancelBuild(state, base, job.id); refreshBaseMap(state); return ""; }
     case "land": { const [gx, gy] = gridOfCell(b, Number(act.x), Number(act.y)); L.land = landPieceAt(state, base, gx, gy).length ? [gx, gy] : null; if (L.land) L.sel = null; return ""; }
+    // The tunnels the dead dug (tunnels.js): a hole's card (tunnel: the record's id), Fill tunnel queued, cancelled.
+    case "tunnel": { const r = act.id != null ? (base.tunnels || []).find((q) => q.id === Number(act.id)) : tunnelAt(base, Number(act.x), Number(act.y)); L.tunnel = r ? r.id : null; if (r) { L.sel = null; L.land = null; } return ""; }
+    case "fillTunnel": { const job = queueFill(state, base, Number(act.id ?? L.tunnel)); if (!job) return "Already queued, or the tunnel is gone."; L.msg = `${job.label} queued first (${job.hours} work-hours): the builders fill it before the rest.`; return ""; }
+    case "unfill": { const job = base.construction.find((c) => c.id === Number(act.id) && c.type === "filltunnel"); if (!job) return "That job is gone."; L.msg = cancelBuild(state, base, job.id); return ""; }
     case "clear": {
       const at = act.x != null ? gridOfCell(b, Number(act.x), Number(act.y)) : L.land;
       const list = at ? landPieceAt(state, base, at[0], at[1], !!act.clump) : [];

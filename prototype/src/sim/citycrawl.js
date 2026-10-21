@@ -39,6 +39,7 @@ import { eraTier } from "./hivetech.js";
 import { ZTYPES } from "./hiveconst.js";
 import { MILDEAD, siteDeadMix, maxMix } from "./deadsoldiers.js";
 import { beastMix } from "./deadbeasts.js"; // the city's dead pets among the street's dead
+import { widenMix, shapeKinds, poolPlace } from "./deadpool.js"; // the dead the years bring; the era's kinds by the kind of place
 import { lootItem, itemLoad } from "./inventory.js";
 import { areaSource, spend } from "./itemcond.js"; // the condition of what is found
 import { rollAreaFind } from "./loot.js";
@@ -503,9 +504,9 @@ export function placeRichness(state, c, place, n = c.block) {
   return clamp(site * (1 + CRAWL.RICH.perBlock * (n - 1)) * place.rich * (1 - CRAWL.RICH.looted * (place.looted || 0)), CRAWL.RICH.min, CRAWL.RICH.max);
 }
 // A kind of special dead deeper in the city: one of the kinds the hives have grown by now (hivetech.js eraTier, by
-// their shares); before any, one of SPECIAL.types.
-export function crawlKind(state, rng) {
-  const kinds = eraKinds(eraTier(state));
+// their shares, shaped by the kind of place the crawl is: deadpool.js shapeKinds); before any, one of SPECIAL.types.
+export function crawlKind(state, rng, tile = null) {
+  const kinds = tile != null && state.tiles[tile] ? shapeKinds(eraKinds(eraTier(state)), poolPlace(state, state.tiles[tile])) : eraKinds(eraTier(state));
   const tot = Object.values(kinds).reduce((a, v) => a + v, 0);
   if (!tot) return rng.pick(CRAWL.SPECIAL.types);
   let r = rng.next() * tot;
@@ -700,9 +701,9 @@ export function enterPlace(state, p, placeId, opts = {}) {
   else {
     // The special dead deeper in (zombietypes.js).
     const sp = specialChance(state, n);
-    if (sp > 0) for (const u of b.units) if (u.side === "enemy" && u.kind === "zombie" && !u.ztype && state.rng.chance(sp)) applyZType(u, crawlKind(state, state.rng), false, groups.find((g) => g.kind === "zombies")?.power || 3);
+    if (sp > 0) for (const u of b.units) if (u.side === "enemy" && u.kind === "zombie" && !u.ztype && state.rng.chance(sp)) applyZType(u, crawlKind(state, state.rng, c.tile), false, groups.find((g) => g.kind === "zombies")?.power || 3);
     // Who holds the upper floors (floorfolk.js): survivors barricaded in, the raiders holed up with a watcher, a nest on top.
-    placeFolk(state, b, place, n, { kind: (rng) => crawlKind(state, rng) });
+    placeFolk(state, b, place, n, { kind: (rng) => crawlKind(state, rng, c.tile) });
   }
   say(b, `City crawl, block ${n} (${DEPTHS[Math.min(n, DEPTHS.length - 1)]}). The city's Alert is ${alertName(c.alert)}: you start at Heat ${heat0}. Extract to come back out to the street.`, c.alert >= 60 ? "danger" : "info");
   c.inside = place.id;
@@ -866,7 +867,7 @@ export function quickSearch(state, p, place) {
     const groups = placeGroups(state, c, place).map((g) => (g.kind === "zombies" ? { ...g, count: Math.max(1, Math.round(g.count * 0.5)) } : g));
     const enemy = mergeGroups(groups);
     const sp = enemy.kind === "zombies" ? specialChance(state, n) : 0;
-    if (sp > 0) enemy.types = { [crawlKind(state, rng)]: Math.max(1, Math.round(enemy.count * sp)) };
+    if (sp > 0) enemy.types = { [crawlKind(state, rng, c.tile)]: Math.max(1, Math.round(enemy.count * sp)) };
     const setup = { tile: c.tile, partyId: p.id, enemy, ambush: null, canRetreat: true, handler: "crawlfight", context: { crawl: { kind: "quick", place: place.id, block: n } } };
     const res = autoResolveCombat(state, setup);
     finishCombat(state, setup, res);
@@ -1203,11 +1204,11 @@ function makeEncounter(state, c, n, ctx) {
     const sp = specialChance(state, n);
     if (sp > 0) {
       const k = Math.round(enemy.count * sp);
-      if (k > 0) enemy.types = { [crawlKind(state, rng)]: k };
+      if (k > 0) enemy.types = { [crawlKind(state, rng, c.tile)]: k };
     }
     // The armoured dead of the city (deadsoldiers.js siteDeadMix: riot police, soldiers near a base) and its dead pets
     // (deadbeasts.js beastMix: dogs and cats loose in the streets): no dice.
-    const mil = maxMix(siteDeadMix(state, c.tile), beastMix(state, c.tile));
+    const mil = maxMix(maxMix(siteDeadMix(state, c.tile), beastMix(state, c.tile)), widenMix(state, c.tile)); // deadpool.js: riot police and soldiers the years bring
     if (mil) {
       enemy.mix = mil;
       const add = battleTypes(mil, enemy.count) || {};

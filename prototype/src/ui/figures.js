@@ -221,6 +221,7 @@ export function figureLimbs(app, weaponKey = null, armorKey = null) {
     F.push(limb([0, 0, shoulderZ + 0.2], [0, 0, shoulderZ - 1.4], TD / 2 * 0.9, TW / 2 * 0.98, top, { taper: 1.0 })); // the shoulders' round
   }
   if (D && D.pads) for (const side of [-1, 1]) F.push(limb([0, side * (TW / 2 + 0.4), shoulderZ + 1.2], [0, side * (TW / 2 + 0.4), shoulderZ - 2.2], 2.2, 2.0, D.pads, { sides: 6, taper: 1.1 })); // a riot cop's shoulder guards
+  if (D && D.hide) F.push(limb([0, 0, shoulderZ + 0.4], [0, 0, legH - 1.5], TD / 2 + 0.9, TW / 2 + 0.8, D.hide, { taper: 0.95, tex: (face, s, t) => (face === "top" ? shade(D.hide, 0.15) : (Math.round(t * 8) % 3 === 0 ? shade(D.hide, -0.3) : null)) })); // a Husk's dried hide wrapped round it (sim/counterdead.js)
   const armor = armorKey ? ARMOR[armorKey] || ARMOR.vest : null;
   if (armor) F.push(limb([0, 0, shoulderZ - 0.8], [0, 0, legH + 2.6], TD / 2 + 0.6, TW / 2 + 0.5, armor, { taper: 0.92, tex: (face, s, t) => (face === "top" ? shade(armor, 0.1) : armorKey === "plate" && (face === "front" || face === "back") && s > 0.25 && s < 0.75 && t > 0.15 && t < 0.8 ? shade(armor, -0.2) : t < 0.12 && (face === "front" || face === "back") && Math.abs(s - 0.5) > 0.25 ? shade(armor, -0.3) : null) }));
   if (app.accessory === "backpack") F.push(boxL([-TD / 2 - 0.4, 0, legH + 9.5], [-TD / 2 - 0.4, 0, legH + 2.5], 1.6, TW * 0.34, "#6b4a2a", { u: [1, 0, 0], tex: (face, s, t) => (face === "back" && t > 0.3 && t < 0.4 ? "#4a3220" : null) }));
@@ -263,7 +264,7 @@ export function figureLimbs(app, weaponKey = null, armorKey = null) {
     arm(-1, [1.2, -(sideL + 1.6), shoulderZ + 1.5], H); hangLong(1);
     F.push(boxL(add(H, [0, 0, 0.8]), add(H, [0, 0, 7.5]), 2.8 * big * 0.75, 2.4 * big * 0.75, "#9a968c", { u: [1, 0, 0], group: 1, tex: (face, s, t) => (face === "top" ? "#b8b4aa" : (Math.round(s * 5) + Math.round(t * 7)) % 4 === 0 ? "#7a4a30" : null) }));
   }
-  else if (D && D.pose === "claws") { hangLong(1); hangLong(-1); for (const side of [-1, 1]) F.push(limb([0.6, side * (sideL + 0.6), shoulderZ - 13 * longArm], [1.6, side * (sideL + 0.6), shoulderZ - 15.5 * longArm], 0.5, 0.5, BONE, { sides: 4 })); } // clawed, hanging
+  else if (D && D.pose === "claws") { hangLong(1); hangLong(-1); for (const side of [-1, 1]) F.push(D.spades ? boxL([0.6, side * (sideL + 0.6), shoulderZ - 12.5 * longArm], [1.4, side * (sideL + 0.6), shoulderZ - 16.5 * longArm], 1.9, 0.7, D.spades, { u: [0, 0, 1] }) : limb([0.6, side * (sideL + 0.6), shoulderZ - 13 * longArm], [1.6, side * (sideL + 0.6), shoulderZ - 15.5 * longArm], 0.5, 0.5, BONE, { sides: 4 })); } // clawed, hanging (a Digger's: broad spade hands caked in clay)
   else if (D && D.pose === "stubs") { arm(1, [0.2, sideL + 0.2, shoulderZ - 3.5], [0.8, sideL + 0.4, shoulderZ - 7]); arm(-1, [0.2, -(sideL + 0.2), shoulderZ - 3.5], [0.8, -(sideL + 0.4), shoulderZ - 7]); } // stubby arms on a swollen body
   else if (hold === "gun" || hold === "smg") {
     // low ready: the gun ahead and a little to the right, muzzle down; the right hand on the grip, the left out to the fore-end
@@ -497,6 +498,12 @@ export function specialApp(ztype, seed) {
     case "flinger": return base("#8f9a86", "#3f4a3a", Z.amber, { pose: "throw", longArms: true });
     case "sower": return base("#a8a07a", "#5a5440", Z.amber, { wide: 1.3, bloated: true, pose: "stubs", eggs: "#e8dca0", legs: "short" });
     case "nightmare": return base("#6e6a78", "#1e1c24", "#ff3a2a", { thin: true, scale: 1.15, pose: "claws", longArms: true, jaw: true });
+    // the counter-dead (sim/counterdead.js, sim/tunnels.js): each its own silhouette and colours
+    case "digger": return base("#8c7656", "#5a4632", Z.amber, { wide: 1.2, pose: "claws", longArms: true, spades: "#6a4e30", headDrop: 1.6, legs: "short" });
+    case "melter": return base("#9fbf5a", "#3a4a2a", "#d8ff6a", { wide: 1.1, acid: "#c8f04a", splits: true, ribs: true });
+    case "husk": return base("#a89880", "#6a5238", Z.red, { wide: 1.15, hide: "#b8a07a", scale: 1.05 });
+    case "tripper": return base("#a89880", "#4a4440", Z.amber, { thin: true, pose: "reach", headDrop: 2.6, run: true });
+    case "darkwalker": return base("#d8d8e0", "#141418", "#000000", { thin: true, scale: 1.12, pose: "claws", longArms: true });
     case "soldier": return base("#8ea36b", "#55603b", Z.amber, { camo: ["#55603b", "#3e4630", "#6b6a4a", "#4a3f2c"] }, { topStyle: "jacket", helmet: "milhelmet", armor: "plate" }); // the armoured dead (sim/deadsoldiers.js)
     case "riot": return base("#a7a69b", "#23262d", Z.amber, { pads: "#2e3137", visorUp: true }, { topStyle: "jacket", helmet: "riothelmet", armor: "riot" });
     // the dead beasts (sim/deadbeasts.js): four-legged bodies (beastLimbs), the hide split, worms in the splits

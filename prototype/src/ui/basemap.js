@@ -15,6 +15,8 @@ import { clearOf, pieceWord, CLEAR } from "../sim/basescatter.js"; // the land: 
 import { layoutDone } from "../sim/staging.js"; // Open the build map: the base's ask ends once its map is open
 import { BUILDINGS, demolishRefund, pieceName, ringMat, TENTS, tentKind } from "../sim/buildings.js";
 import { chopHands } from "../sim/woodwork.js"; // woodwork: who is felling a clearing
+import { fillJobOf, fillHours } from "../sim/tunnels.js"; // the tunnels the dead dug: Fill tunnel
+import { DIG } from "../sim/hiveconst.js";
 import { nearRect, active } from "../sim/combat.js"; // who of yours stands next to a store of theirs (an assault)
 import { HAUL } from "../sim/raidloot.js";
 import { badge, hint, costChips, chip } from "./uikit.js";
@@ -91,7 +93,9 @@ export function layoutPanel(state, b, cui, preview = "") {
     <div class="cbactions" style="margin-top:0.3rem"><button data-action="cb-deploy" data-v="rotate" data-tip="Turn it a quarter (R)">Turn <span class="key">R</span></button><button data-action="cb-deploy" data-v="pick" data-k="" data-tip="Put the pick down without placing it (Esc)">Cancel <span class="key">Esc</span></button>${["wall", "gate", "stand"].includes(picked.kind) && picked.key.startsWith("b:") ? `<button data-action="demolish" data-base="${base.id}" data-id="${picked.rec.id}" data-ok="1" data-tip="Pull this piece down for good: half its scrap and parts come back. A gap it leaves in the wall is a way in.">Pull it down</button>` : ""}</div></div>`;
   html += selectionCard(state, base, L, lay);
   html += landCard(state, base, L);
+  html += tunnelCard(state, base, L);
   html += clearingList(state, base);
+  html += tunnelList(state, base);
   html += preview; // what is under the mouse (ui/combat.js previewHtml: the pick's fit, a placed thing, a store)
   const msg = cui.msg || L.msg; // the last order's refusal first (ui/combat.js act), else what the map said it did
   if (msg) html += `<div class="small ${cui.msg ? "warn" : "good"} cbmsg">${esc(msg)}</div>`;
@@ -285,6 +289,26 @@ function clearingList(state, base) {
   const jobs = base.construction.filter((c) => c.type === "clear");
   if (!jobs.length) return "";
   return `<h3 data-tip="${esc("The land being cleared: jobs in the construction queue like the buildings, worked by the builders from the top; the woodcutters (Cut wood) fell the trees, logs, stumps, bushes and fences first, ahead of their trips out for wood. The wood, the scrap and the parts come into the stores when each is done.")}">Clearing <span class="muted small">${jobs.length}</span></h3><div class="card small">${jobs.map((c) => { const pct = Math.round((100 * (c.progress || 0)) / Math.max(1e-9, c.hours)); const who = chopHands(state, base, c); return `<div class="spread" style="margin-top:0.15rem"><span>${esc(c.label)} <span class="muted">${pct}% of ${c.hours}h${getText(c.get) ? ` · ${getText(c.get)}` : ""}${who.length ? ` · ${esc(who.join(", "))} on it` : ""}</span></span><button class="mini" data-action="cb-deploy" data-v="unclear" data-id="${c.id}"${tip("Cancel this clearing")}>Cancel</button></div>`; }).join("")}</div>`;
+}
+
+// ---------- the tunnels the dead dug (sim/tunnels.js) ----------
+const tunnelWhere = (r) => (r.a ? `from ${r.a[0]}, ${r.a[1]} to ${r.b[0]}, ${r.b[1]}` : "not yet found on the map (it shows once a fight here turns it up)");
+const fillPct = (j) => Math.round((100 * (j.progress || 0)) / Math.max(1e-9, j.hours));
+// The card of the hole clicked (L.tunnel: the record's id): what it does, and Fill tunnel.
+function tunnelCard(state, base, L) {
+  const r = L.tunnel != null ? (base.tunnels || []).find((q) => q.id === L.tunnel) : null;
+  if (!r) return "";
+  const job = fillJobOf(base, r.id), len = r.len || DIG.LEN[0];
+  return `<div class="card small bmsel" style="margin-top:0.4rem"><div class="spread"><b>A tunnel the dead dug</b><button data-action="cb-deploy" data-v="tunnelClose" data-tip="Close">✕</button></div>
+    <div class="muted">${len} cells under the defences, ${esc(tunnelWhere(r))}. Until it is filled the walls hold less against a horde (−${Math.round(DIG.HOLD * 100)}% a tunnel, at most −${Math.round(DIG.HOLD_MAX * 100)}%) and every fight here starts with it open: the dead crawl through it.</div>
+    ${job ? `<div class="small warn" style="margin-top:0.2rem">Queued: ${esc(job.label)} (${fillPct(job)}%)</div>` : ""}
+    <div class="cbactions" style="margin-top:0.3rem"><button data-action="cb-deploy" data-v="fillTunnel" data-id="${r.id}"${job ? " disabled" : ""}${tip(job ? "Queued already: the construction queue" : `Queue it first in the construction queue: ${DIG.FILL_BASE} + ${DIG.FILL_PER} work-hours a cell, worked by the builders`)}>Fill tunnel · ${fillHours(len)}h</button></div></div>`;
+}
+// Every open tunnel at the base: its fill job's progress and Cancel, or Fill tunnel.
+function tunnelList(state, base) {
+  const list = base.tunnels || [];
+  if (!list.length) return "";
+  return `<h3 data-tip="${esc("Tunnels the dead dug under the defences (Diggers): open until filled. Each takes some of the walls' hold, and the next horde can crawl through it. Filling is a job in the construction queue, put first, worked by the builders.")}">Tunnels <span class="muted small">${list.length}</span></h3><div class="card small">${list.map((r) => { const j = fillJobOf(base, r.id), len = r.len || DIG.LEN[0]; return `<div class="spread" style="margin-top:0.15rem"><span><a href="#" data-action="cb-deploy" data-v="tunnel" data-id="${r.id}">${len}-cell tunnel</a> <span class="muted">${j ? `filling: ${fillPct(j)}% of ${j.hours}h` : esc(r.a ? "open" : "open, not yet found on the map")}</span></span>${j ? `<button class="mini" data-action="cb-deploy" data-v="unfill" data-id="${j.id}"${tip("Cancel the filling")}>Cancel</button>` : `<button class="mini" data-action="cb-deploy" data-v="fillTunnel" data-id="${r.id}"${tip(`Queue Fill tunnel (${fillHours(len)} work-hours)`)}>Fill · ${fillHours(len)}h</button>`}</div>`; }).join("")}</div>`;
 }
 
 // ---------- actions (main.js) ----------

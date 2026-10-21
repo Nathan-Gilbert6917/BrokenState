@@ -11,16 +11,20 @@
 // - Crawler: low in the grass: your people cannot see (or shoot) it until it is within 2.5 tiles, stands in
 //   floodlight or a flare's light, or has struck; its first bite from hiding hits 1.4× as hard. Light and keeping
 //   together.
+// The counter-dead (Digger, Melter, Husk, Tripper, Dark-walker: counterdead.js, tunnels.js) take their turns here too.
 // On the State Map a horde carries its special dead as a mix: the share of each kind (h.mix, hordes.js), turned
 // into unit counts for a battle (battleTypes) and weighed in fights by the numbers (mixWeight, typeStrength).
 // Everything here is deterministic: the battle's rng only.
-import { ZTYPES, TECH, GROWTHS, AMBIENT } from "./hiveconst.js";
+import { ZTYPES, TECH, GROWTHS, AMBIENT, POOL } from "./hiveconst.js";
 import { LOCATIONS } from "./data.js";
 import { CELL, say, fx, reachable, pathTo, moveAlong, active, adjacent, enemyUnit, ZOMBIE_MOVE } from "./combat.js";
 import { flareLit } from "./throwables.js";
 import { carrierTurn } from "./carriers.js";
 import { flingerTurn, nightmareTurn } from "./middead.js"; // the mid game's special dead
 import { cartKnocked } from "./carts.js"; // a brute smashes a parked cart aside in one blow
+import { diggerTurn } from "./tunnels.js"; // the Digger: under the walls
+import { tripperTurn, darkTurn } from "./counterdead.js"; // the counter-dead: the Tripper to the mines, the Dark-walker off the light
+import { shapeKinds } from "./deadpool.js"; // the era's kinds shaped by the place
 
 export const ZKINDS = Object.keys(ZTYPES);
 const round = (v, n = 1000) => Math.round(v * n) / n;
@@ -110,10 +114,11 @@ export function siteList(rng, mix, n) {
 }
 
 // ---------- the special dead away from a hive's hordes ----------
-// The kinds the hives have grown by the era's tier (the calendar, hivetech.js eraTier), by their shares.
+// The kinds the hives have grown by the era's tier (the calendar, hivetech.js eraTier), by their shares (the
+// counter-dead at POOL.WILD of theirs: bred in answer to walls, rarer in the wild).
 export function eraKinds(tier) {
   const out = {};
-  for (const G of Object.values(GROWTHS)) if (G.unlocks && G.tier <= tier && ZTYPES[G.unlocks]) out[G.unlocks] = ZTYPES[G.unlocks].share;
+  for (const G of Object.values(GROWTHS)) if (G.unlocks && G.tier <= tier && ZTYPES[G.unlocks]) out[G.unlocks] = ZTYPES[G.unlocks].share * (G.counter ? POOL.WILD : 1);
   return out;
 }
 // The kind of place a tile is for the special dead met there: "city" (a city, its blocks and big-town sites: data.js
@@ -127,13 +132,13 @@ export function placeKind(t) {
 // The special dead among the dead met on a tile when exploring it (scavenge.js raidEnemies, conflicts.js, a city
 // crawl), as shares: AMBIENT.PER_YEAR a game year (at most MAX) by the kind of place, of the kinds of the era; on a
 // hive's land + TERRITORY, on the red-skull ring + RED of the kinds the nearest hive breeds (the era's if it breeds
-// none). All together at most CAP. o: { years, era, toughness, hiveKinds } (hivetech.js / hives.js work them out:
-// scavenge.js siteSpecials). null: none.
+// none). All together at most CAP. o: { years, era, toughness, hiveKinds, place } (hivetech.js / hives.js work them
+// out: scavenge.js siteSpecials; place: deadpool.js poolPlace, the era's kinds shaped by it). null: none.
 export function ambientMix(t, o) {
   const A = AMBIENT, kind = placeKind(t);
   const parts = [];
   const time = Math.min(A.MAX[kind], A.PER_YEAR[kind] * (o.years || 0));
-  const era = eraKinds(o.era || 0);
+  const era = o.place ? shapeKinds(eraKinds(o.era || 0), o.place) : eraKinds(o.era || 0);
   if (time > 0) parts.push([time, era]);
   if (o.toughness >= 3) parts.push([A.RED, o.hiveKinds && Object.keys(o.hiveKinds).length ? o.hiveKinds : era]);
   else if (o.toughness >= 1) parts.push([A.TERRITORY, era]);
@@ -186,6 +191,8 @@ export function applyZType(u, kind, elite = false, power = 2) {
   if (kind === "sleeper") { u.mob = 0; u.dormant = true; } // sleepers.js: a body on the ground until it splits
   if (z.beast) { u.beast = true; u.wild = true; } // deadbeasts.js: a dead animal; it goes for every living thing
   if (kind === "deadcat") u.low = true; // deadbeasts.js: it hides as a crawler does (zRevealed, strikeBonus)
+  if (kind === "darkwalker") { u.low = true; u.dark = true; } // counterdead.js: hidden in the dark, floodlight does not show it
+  if (kind === "melter") u.zkind = "melter"; // combat.js UNIT_SIEGE melter: its blows eat through structures
   return u;
 }
 
@@ -195,7 +202,7 @@ export function zRevealed(b, t) {
   if (!t.low) return true;
   const r = ZTYPES.crawler.reveal;
   for (const o of b.units) if (o.side === "player" && active(o) && Math.hypot(o.x - t.x, o.y - t.y) <= r) return true;
-  if (b.lit && b.lit[t.y * b.w + t.x]) return true;
+  if (b.lit && b.lit[t.y * b.w + t.x] && !t.dark) return true; // a Dark-walker (counterdead.js): floodlight does not show it
   if (b.flares && b.flares.length && flareLit(b, t.x, t.y)) return true;
   return false;
 }
@@ -203,8 +210,8 @@ export function zRevealed(b, t) {
 export function strikeBonus(b, a) {
   if (!a.low) return 1;
   a.low = false;
-  say(b, `${a.name} lunges out of the grass!`, "danger");
-  return ZTYPES.crawler.ambush;
+  say(b, `${a.name} lunges out of the ${a.dark ? "dark" : "grass"}!`, "danger");
+  return (ZTYPES[a.ztype] && ZTYPES[a.ztype].ambush) || ZTYPES.crawler.ambush;
 }
 
 // At the start of the enemy's turn: the spitters' and screamers' cooldowns tick down.
@@ -227,6 +234,9 @@ export function zombieTurn(b, u) {
   if (u.ztype === "carrier") return carrierTurn(b, u); // carriers.js: to the bodies
   if (u.ztype === "flinger") return flingerTurn(b, u); // middead.js: winds up, throws a worm swarm
   if (u.ztype === "nightmare") return nightmareTurn(b, u); // middead.js: screams, your people panic
+  if (u.ztype === "digger") return diggerTurn(b, u); // tunnels.js: under the walls
+  if (u.ztype === "tripper") return tripperTurn(b, u); // counterdead.js: onto the mines it smells
+  if (u.ztype === "darkwalker") return darkTurn(b, u); // counterdead.js: toward the living, off the lit ground
   return false;
 }
 

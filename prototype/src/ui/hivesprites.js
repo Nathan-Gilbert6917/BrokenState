@@ -312,6 +312,41 @@ function paintGrowth(kind) {
       for (const [x, y] of [[4, 4], [8, 2], [12, 4], [6, 1], [10, 1]]) p.set(x, y, "#d0446a");
       break;
     }
+    // The counter-dead's growths (sim/counterdead.js, sim/tunnels.js).
+    case "tunnels": {
+      // The tunnel mound: a heap of turned earth riddled with burrow mouths.
+      p.disc(8, 10.5, 7.5, 3, "#4a3826"); p.disc(8, 8.5, 6, 4, "#7a5e3e"); p.disc(8, 7.5, 4, 2.5, "#8c7050");
+      for (const [x, y] of [[5, 9], [10, 8], [8, 11], [12, 10]]) { p.rect(x - 1, y, x, y, "#140c06"); p.set(x + 1, y, "#4a3826"); }
+      p.set(3, 11, BONE); p.set(13, 11, BONE);
+      break;
+    }
+    case "meltpool": {
+      // The melt pool: a steaming green pool, a wall stone half eaten in it.
+      p.disc(8, 10.5, 7.5, 3, POOLC); p.disc(8, 10, 6, 2.4, "#6aa030"); p.disc(8, 10, 4, 1.6, "#c8f04a");
+      p.rect(10, 6, 13, 9, "#8a8a82"); p.set(10, 6, "#6aa030"); p.set(11, 7, "#6aa030");
+      for (const [x, y] of [[4, 5], [6, 3], [8, 5], [5, 1]]) p.set(x, y, "#e2f8a0"); // the steam
+      break;
+    }
+    case "huskbed": {
+      // The husk bed: dried hides stretched on bone pegs.
+      base();
+      p.rect(3, 6, 12, 10, "#b8a07a"); p.rect(3, 6, 12, 6, "#d8c09a"); for (const x of [5, 8, 11]) p.rect(x, 7, x, 9, "#8a7050");
+      for (const [x, y] of [[2, 5], [13, 5], [2, 11], [13, 11]]) p.set(x, y, BONE);
+      break;
+    }
+    case "blastscar": {
+      // The blast scar: blackened, cratered ground, bones flung about.
+      p.disc(8, 10.5, 7.5, 3, "#2a2620"); p.disc(6, 10, 2.5, 1.2, "#141210"); p.disc(11, 9.5, 2, 1, "#141210");
+      for (const [x, y] of [[3, 8], [9, 7], [13, 11], [5, 12]]) { p.set(x, y, BONE); p.set(x + 1, y, shade(BONE, -0.3)); }
+      p.set(7, 6, "#e2412f"); p.set(12, 7, "#e2a02f");
+      break;
+    }
+    case "gloom": {
+      // The gloom pit: a pit blacker than the night, pale hands at its lip.
+      p.disc(8, 10.5, 7.5, 3.2, "#08080c"); p.disc(8, 10, 6, 2.6, "#000000");
+      for (const [x, y] of [[4, 9], [12, 9], [8, 8]]) { p.set(x, y, "#d8d8e0"); p.set(x, y - 1, "#b8b8c4"); }
+      break;
+    }
     default: base(); p.disc(8, 9, 5, 3, FLESH);
   }
   return p;
@@ -551,6 +586,62 @@ function paintDeadCat() {
   p.rect(2, 24, 20, 25, "#4a6a30"); for (const x of [3, 7, 13, 19]) p.set(x, 23, "#5f8a3a");       // the grass (or the rug) it hides in
   return p;
 }
-const ZPAINT = { spitter: paintSpitter, screamer: paintScreamer, shepherd: paintShepherd, carrier: paintCarrier, swarm: paintSwarm, boneback: paintBoneback, climber: paintClimber, flinger: paintFlinger, sower: paintSower, nightmare: paintNightmare, deadstag: paintDeadStag, deadhog: paintDeadHog, deadhound: paintDeadHound, deadcow: paintDeadCow, deadcat: paintDeadCat };
+// The counter-dead (sim/counterdead.js, sim/tunnels.js): the flat painters, the figures' fallback (ui/figures.js).
+// The Digger: hunched and broad, clay to the elbows, great spade hands.
+function paintDigger() {
+  const p = painter(22, 26);
+  const SKIN = "#8c7656", DARK = "#5a4632", CLAY = "#6a4e30";
+  p.rect(7, 20, 9, 25, DARK); p.rect(12, 20, 14, 25, shade(DARK, -0.2));
+  p.disc(11, 15, 6.5, 5.5, SKIN); p.rect(14, 11, 16, 19, DARK);
+  p.rect(5, 7, 10, 12, SKIN); p.rect(5, 7, 10, 7, DARK); p.set(6, 9, "#e2e07a"); p.set(9, 9, "#e2e07a"); // the head low
+  p.rect(2, 13, 5, 20, CLAY); p.rect(1, 20, 6, 22, CLAY); p.rect(16, 14, 19, 21, CLAY); p.rect(15, 21, 20, 23, CLAY); // spade hands
+  p.rect(2, 24, 20, 25, "#4a3826"); for (const x of [4, 9, 15]) p.set(x, 23, "#7a5e3e"); // the turned earth
+  return p;
+}
+// The Melter: weeping green acid, the skin split and steaming.
+function paintMelter() {
+  const p = painter(22, 26);
+  const SKIN = "#9fbf5a", DARK = "#6a8a38", ACID = "#c8f04a", CLOTH = "#3a4a2a";
+  p.rect(7, 19, 9, 25, CLOTH); p.rect(12, 19, 14, 25, shade(CLOTH, -0.25));
+  p.rect(7, 10, 14, 19, SKIN); p.rect(12, 10, 14, 19, DARK); p.rect(9, 13, 10, 16, "#3a1412");
+  p.rect(7, 3, 12, 9, SKIN); p.set(8, 5, "#d8ff6a"); p.set(11, 5, "#d8ff6a"); p.rect(9, 7, 10, 8, "#3a1412");
+  p.rect(4, 10, 6, 17, SKIN); p.rect(15, 10, 17, 17, DARK);
+  for (const [x, y] of [[5, 18], [5, 20], [16, 18], [10, 17], [11, 20], [9, 22]]) p.set(x, y, ACID); // dripping
+  for (const [x, y] of [[8, 1], [11, 0], [13, 2]]) p.set(x, y, "#e2f8a0"); // steam
+  return p;
+}
+// The Husk: wrapped in a dry hide, stiff and broad.
+function paintHusk() {
+  const p = painter(22, 26);
+  const HIDE = "#b8a07a", DARK = "#8a7050", SKIN = "#a89880";
+  p.rect(7, 19, 9, 25, DARK); p.rect(12, 19, 14, 25, shade(DARK, -0.2));
+  p.rect(5, 9, 16, 19, HIDE); p.rect(5, 9, 16, 9, "#d8c09a"); for (const y of [12, 15, 18]) p.rect(5, y, 16, y, DARK); // the hide
+  p.rect(8, 3, 13, 8, SKIN); p.set(9, 5, "#e2412f"); p.set(12, 5, "#e2412f"); p.rect(10, 7, 11, 7, "#3a1412");
+  p.rect(3, 10, 4, 17, HIDE); p.rect(17, 10, 18, 17, DARK);
+  return p;
+}
+// The Tripper: nose to the ground, sniffing, ahead of the rest.
+function paintTripper() {
+  const p = painter(22, 26);
+  const SKIN = "#a89880", DARK = "#78685a", CLOTH = "#4a4440";
+  p.rect(14, 18, 16, 25, CLOTH); p.rect(17, 18, 19, 25, shade(CLOTH, -0.25));
+  p.rect(9, 13, 18, 18, CLOTH); p.rect(9, 13, 18, 13, shade(CLOTH, 0.15)); // bent double
+  p.rect(3, 15, 8, 20, SKIN); p.rect(3, 15, 8, 15, DARK); p.set(4, 17, "#e2e07a"); p.set(6, 17, "#e2e07a"); // the head down by the ground
+  p.rect(2, 19, 3, 21, "#3a1412");
+  p.rect(9, 18, 10, 24, SKIN); p.rect(12, 18, 13, 24, DARK);
+  p.disc(4, 24, 2, 1, "#2a2620"); p.set(4, 23, "#e2412f"); // a mine's pin it has found
+  return p;
+}
+// The Dark-walker: pale and gaunt, black eyes, in dark rags.
+function paintDarkwalker() {
+  const p = painter(22, 26);
+  const SKIN = "#d8d8e0", DARK = "#a8a8b4", CLOTH = "#141418";
+  p.rect(8, 19, 9, 25, CLOTH); p.rect(12, 19, 13, 25, CLOTH);
+  p.rect(8, 10, 13, 19, CLOTH); p.rect(11, 10, 13, 19, "#202028");
+  p.rect(8, 3, 13, 9, SKIN); p.rect(8, 3, 13, 3, DARK); p.rect(9, 5, 9, 6, "#000000"); p.rect(12, 5, 12, 6, "#000000"); p.rect(10, 8, 11, 8, "#3a1412");
+  p.rect(5, 10, 6, 21, SKIN); p.rect(15, 10, 16, 21, DARK); p.set(5, 22, BONE); p.set(16, 22, BONE); // long arms, clawed
+  return p;
+}
+const ZPAINT = { digger: paintDigger, melter: paintMelter, husk: paintHusk, tripper: paintTripper, darkwalker: paintDarkwalker, spitter: paintSpitter, screamer: paintScreamer, shepherd: paintShepherd, carrier: paintCarrier, swarm: paintSwarm, boneback: paintBoneback, climber: paintClimber, flinger: paintFlinger, sower: paintSower, nightmare: paintNightmare, deadstag: paintDeadStag, deadhog: paintDeadHog, deadhound: paintDeadHound, deadcow: paintDeadCow, deadcat: paintDeadCat };
 export const ztypeBattleCanvas = (kind) => cached(`ztype:${kind}`, () => (ZPAINT[kind] || paintCrawler)());
 onForgetPictures(() => cache.clear()); // ui/pictures.js: drawn again after a lost GPU context

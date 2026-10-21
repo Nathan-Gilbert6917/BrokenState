@@ -83,6 +83,8 @@ function deadEntries() {
     stats.push(["Follows", senses(z.senses)]);
     if (z.share) stats.push(["In a horde", `about ${pct(z.share)} of a horde from a hive that breeds it`]);
     if (z.wall && z.wall !== 1) stats.push(["At the walls", `presses ${x(z.wall)} as hard as one of the ordinary dead`]);
+    if (z.answers) stats.push(["Counters", `${z.answers}: bred by a hive whose hordes meet them (sim/counterdead.js)`]); // the counter-dead
+    if (z.breed) stats.push(["Costs the hive", `${z.breed} resources each, on top of the horde`]);
     stats.push(["Comes from", g ? `a hive with a ${g.name} (tier ${g.tier})` : z.military ? "military sites, police stations and hordes that crossed them" : z.beast ? (k === "deadcat" || k === "deadhound" ? "the towns and the cities (the houses, neighbourhoods, motels and apartment blocks most of all)" + (k === "deadhound" ? ", the farmland and the farms" : "") + ", more on infected ground" : "the hills, the woods and the farmland (more on infected ground, by the farms, barns and ranches, and where an infested herd grazes), and hordes that crossed such land") : k === "swarm" ? "a Carrier or Flinger, a Sleeper bursting" : k === "sleeper" ? "the bodies lying on battle maps, more on infected ground" : "—"]);
     out.push({
       key: `z:${k}`, cat: "dead", name: z.name, sub: g ? "Special dead, bred by hives" : z.military ? "The armoured dead" : z.beast ? "The dead beasts" : "Special dead",
@@ -142,6 +144,7 @@ function hiveEntries() {
   for (const [k, g] of Object.entries(GROWTHS)) {
     const stats = [["Tier", g.tier], ["Costs the hive", `${g.cost} resources, ${g.days} days`]];
     if (g.unlocks && ZTYPES[g.unlocks]) stats.push(["Breeds", ZTYPES[g.unlocks].name]);
+    if (g.counter && ZTYPES[g.unlocks]) stats.push(["Grown", `only by a hive whose hordes have met ${ZTYPES[g.unlocks].answers} (its read of them, the tile panel)`]);
     out.push({
       key: `h:${k}`, cat: "hives", name: g.name, sub: "Hive growth", stats, text: g.desc,
       how: `Burn the growth (right-click its tile): fight its guard in a small battle, or set it on fire (${TECH.FIRE_FUEL} fuel burns ${TECH.FIRE_DMG}% of it, ${TECH.BOMBS} Molotovs ${TECH.BOMB_DMG}%; it regrows ${TECH.REGROW}% a day). Destroying its hive withers it.`,

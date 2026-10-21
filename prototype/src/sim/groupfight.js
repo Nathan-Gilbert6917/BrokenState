@@ -10,8 +10,8 @@ import { combatPower, isNight, day, spendShots, arrowsBack } from "./world.js";
 import { winOdds, powerEquiv } from "./combat.js";
 import { fightModel, rollFight, landFight, BREAKOFF } from "./breakoff.js";
 import { ammoFactor, keepItem, removeFromArsenal } from "./arsenal.js";
-import { tierMults, atTheWalls, holdLimit, spikeKill, trapKill, breakInForce, breakInCount, heldKill, crawlerSlip, retreat, BOSS_STRENGTH, armoryDecoys, decoyChance, lureOff } from "./defences.js"; // your base's defence, step for step; its decoys
-import { minesKill } from "./mines.js";
+import { digTunnels } from "./tunnels.js"; // the Diggers' tunnels under their walls
+import { tierMults, atTheWalls, holdLimit, spikeKill, minesTake, trapKill, breakInForce, breakInCount, heldKill, crawlerSlip, retreat, BOSS_STRENGTH, armoryDecoys, decoyChance, lureOff } from "./defences.js"; // your base's defence, step for step; its decoys
 import { mixWeight } from "./zombietypes.js";
 import { reduceHorde, hordeWallPower } from "./hordes.js";
 import { climberSlip } from "./middead.js";
@@ -163,8 +163,8 @@ export function groupHoldCheck(state, f, tile, size, bosses = 0, mix = null) {
   const base = homeAt(state, f, tile);
   if (!f || !base) return null;
   return withKit(state, f, base, () => {
-    const after = Math.max(0, size - spikeKill(base, size) - trapKill(base, size) - minesKill(base, size));
-    const limit = holdLimit(state, base, bosses);
+    const after = Math.max(0, size - spikeKill(base, size, mix) - trapKill(base, size) - minesTake(base, size, mix));
+    const limit = holdLimit(state, base, bosses, false, mix); // the counter-dead among them, the tunnels under their walls (counterdead.js, tunnels.js)
     const lim = limit / mixWeight(mix, "wall");
     if (after <= lim) return { size, after, limit, lim, holds: true, through: 0, mine: 0, theirs: 0, tier: "wall" };
     const through = breakInCount(after, lim);
@@ -194,6 +194,7 @@ export function hordeAtGroup(state, h, f, tile) {
   }
   const w = withKit(state, f, base, () => atTheWalls(state, h, base));
   if (!w) return { held: true, check }; // the pits, the mines or the traps finished it
+  if (w.dig) digTunnels(state, base, w.dig, h); // tunnels.js: its Diggers tunnel under their walls (no battle map here, held or not); their crew fills them (groupworks.js)
   const people = fightersOf(state, f, { tile });
   const shot = spendShots(base.stock, people, 3); // 3 a head from the base's stores, as at yours
   if (h.size <= w.lim) {

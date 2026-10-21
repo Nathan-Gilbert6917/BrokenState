@@ -283,6 +283,15 @@ const SECTIONS = {
   },
   // A breakdown repaired on the road (sim/repairwait.js): the team's vehicle runs again and it drives on. News: it goes
   // once clicked (opens the team, centred) and by itself after a day.
+  tunnels(state, out) { // sim/tunnels.js: tunnels the dead dug under a base's defences, open until filled
+    for (const b of state.bases) {
+      const list = b.tunnels || [];
+      if (!list.length) continue;
+      const left = list.filter((r) => !b.construction.some((c) => c.type === "filltunnel" && c.tunnel === r.id)).length;
+      out.push({ key: `tunnels:${b.id}:${list.length}:${left}`, kind: "tunnels", icon: "🕳", tone: left ? "danger" : "warn", text: `${b.name}: ${list.length === 1 ? "a tunnel" : `${list.length} tunnels`} under the walls${left ? "" : " (filling)"}`,
+        tip: `The dead dug ${list.length === 1 ? "a tunnel" : `${list.length} tunnels`} under the defences of ${b.name}. Until filled the walls hold less and the next horde can crawl through. ${left ? `Open the base map, click a hole and queue Fill tunnel (${left} not queued yet).` : "All of them are queued to be filled."} Click to open the base.`, go: { base: b.id, tab: "basemap" } });
+    }
+  },
   repairs(state, out) {
     for (const p of recentRepairs(state)) {
       const n = p.repairNews;
@@ -294,7 +303,7 @@ const SECTIONS = {
     if (n > 1) out.push({ key: `cards:${n}`, kind: "cards", icon: "🃏", tone: "info", text: `${n} cards waiting`, tip: "Cards are answered one at a time: these are still in the pile. Close the screens on top to see the next one.", go: { cards: true } });
   },
 };
-const ORDER = ["breakin", "starve", "thirst", "desert", "outsiders", "tower", "horde", "gathering", "ice", "front", "nomeds", "spread", "food", "teamfood", "water", "worm", "sick", "ill", "fixed", "wait", "plan", "broken", "idle", "stalled", "nowork", "crash", "cards", "layout", "trip", "caravan", "built"];
+const ORDER = ["breakin", "tunnels", "starve", "thirst", "desert", "outsiders", "tower", "horde", "gathering", "ice", "front", "nomeds", "spread", "food", "teamfood", "water", "worm", "sick", "ill", "fixed", "wait", "plan", "broken", "idle", "stalled", "nowork", "crash", "cards", "layout", "trip", "caravan", "built"];
 
 // Good news (Options → "Good news alerts", options.goodNews, on by default): news that asks nothing of you. Off, these
 // kinds are left out of the stack, so no row, flash or chime (ui/soundcues.js hears only what is shown); the log and the

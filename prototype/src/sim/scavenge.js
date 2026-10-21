@@ -54,6 +54,7 @@ import { gunSearchHour } from "./locks.js"; // gun safes, drills and grinders (t
 import { siteDeadMix, bodyLoot, MILDEAD, maxMix } from "./deadsoldiers.js";
 import { beastMix, BEAST_KINDS } from "./deadbeasts.js"; // the dead beasts of the hills, the woods and the farmland
 import { siteSpecials } from "./hivetech.js"; // the special dead met exploring
+import { widenMix } from "./deadpool.js"; // the dead the years bring, whatever the hives do
 import { mixWeight } from "./zombietypes.js";
 import { searchMeds } from "./medfinds.js";
 import { ZTYPES, BEASTS } from "./hiveconst.js";
@@ -99,7 +100,9 @@ export function raidEnemies(state, tileId) {
   // police station), placed among them by share (combat.js createRaid, buildingmaps.js placeInterior).
   // The bred kinds too (hivetech.js siteSpecials): more in towns and cities as the years go by, and on a hive's land.
   // The dead beasts of the land too (deadbeasts.js beastMix: the hills, the woods, the farms).
-  const mix = maxMix(maxMix(siteDeadMix(state, tileId), siteSpecials(state, tileId)), beastMix(state, tileId));
+  // And the dead the years bring whatever the hives do (deadpool.js widenMix: soldiers out of the military sites, riot
+  // police in the towns and cities, the countryside's dead beasts).
+  const mix = maxMix(maxMix(maxMix(siteDeadMix(state, tileId), siteSpecials(state, tileId)), beastMix(state, tileId)), widenMix(state, tileId));
   if (z > 0) groups.push({ kind: "zombies", count: Math.max(1, Math.min(14, z)), power: 2 + inf * 3 + hz, name: hz >= 3 ? "the hive's dead" : mix && mix.soldier >= 0.3 ? "the dead soldiers" : mix && BEAST_KINDS.some((k) => mix[k] >= 0.12) ? "the dead and the dead beasts" : "the dead", mix });
   const baseOwner = state.factions.find((f) => f.alive && f.bases.includes(tileId));
   const owner = typeof t.owner === "number" ? factionById(state, t.owner) : null;

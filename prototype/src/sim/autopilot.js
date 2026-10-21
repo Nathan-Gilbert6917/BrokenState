@@ -44,6 +44,7 @@ import { autoVisitorTrade } from "./visitors.js";
 import { radioTradeIfShort, hasNetwork, canListen, radioScan, dealQuote, radioDeal, refusal, inCoverage, canRadioGroup, relayReach, RELAY_RANGE, GROUP_REACH, tradeBase, hubSpare, radioSpeech } from "./radio.js";
 import { attitude, baseDefense, strength, isAggressiveType, raidStakes } from "./factions.js";
 import { holdCheck, defenceWishes, hordeThreat, DECOY_FUEL, towerHordes } from "./defences.js";
+import { autoFillTunnels } from "./tunnels.js"; // the dead's tunnels under the walls: Fill tunnel queued first
 import { defaultRolePlan, plansOf } from "./defenceplan.js"; // the governor's defence plan (governorPlans, stewardSafety)
 import { siteBonus, waterOutlook, foodOutlook, waterCapacity, waterProduction, waterNeed, summerWater, waterRunningShort, supplyLine, WATER, fetchWaterWhy, fetchWaterDay } from "./economy.js";
 import { mouthsAt, foodUse, HEAT, payoutSpare, payoutBreaks } from "./upkeep.js"; // upkeep-per-head: the governor's days of food and water count everyone fed at a base
@@ -369,6 +370,7 @@ export function governBase(state, base, areas = ALL_AREAS) {
   if (areas.building && hourOfDay(state) === WATER_WAIT.hour) waterSalvage(state, base);
   if (areas.building && hourOfDay(state) === PLAN_HOUR) tidyStores(state, base); // containers.js: the goods into the containers, before the day's builds
   if (areas.building && hourOfDay(state) === PLAN_HOUR) for (const line of governBeds(state, base)) say(state, line); // beds.js: furniture set from the stores, a bunk bed or a cot crafted when beds are short
+  if (areas.building && base.tunnels && base.tunnels.length) { const line = autoFillTunnels(state, base); if (line) say(state, line); } // tunnels.js: the dead's tunnels under the walls filled first
   if (areas.building) planBuilds(state, base, areas);
   if (areas.building && state.hour % WOODWORK.govEvery === 0) govWoodwork(state, base, areas); // woodwork: felling for wood when short, the next sites cleared ahead
   if (areas.building && hourOfDay(state) === PLAN_HOUR + 2) { const msg = cookFireDown(state, base); if (msg) say(state, msg); } // kitchen.js: a lit kitchen does the cook fire's job

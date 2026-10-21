@@ -168,6 +168,93 @@ export const GROWTHS = {
               desc: "A pool of rot thick with the worm's eggs: the hive's hordes bring Sowers that seed the land they cross with eggs." },
   hollow:   { name: "Dread hollow",    tier: 2, cost: 40, days: 40, max: 1, unlocks: "nightmare", danger: 4,
               desc: "A pit in the ground that screams at night: the hive's hordes bring Nightmares whose scream sends your people running." },
+  // The counter-dead (counterdead.js, tunnels.js; COUNTER below): tier 2, bred in answer to the defences of the bases
+  // the hive's hordes go for (counter: the hive grows one only once its read of those defences asks for it).
+  tunnels:  { name: "Tunnel mound",    tier: 2, cost: 35, days: 30, max: 1, unlocks: "digger", counter: true, danger: 3.5,
+              desc: "A mound of turned earth over a warren of burrows: the hive's hordes bring Diggers that tunnel under walls and trenches." },
+  meltpool: { name: "Melt pool",       tier: 2, cost: 35, days: 30, max: 1, unlocks: "melter", counter: true, danger: 3.5,
+              desc: "A steaming pool of acid the dead wallow in: the hive's hordes bring Melters whose acid eats through walls and gates." },
+  huskbed:  { name: "Husk bed",        tier: 2, cost: 30, days: 25, max: 1, unlocks: "husk", counter: true, danger: 3,
+              desc: "A bed of drying hides and bone: the hive's hordes bring Husks that wire and spike pits barely hurt." },
+  blastscar:{ name: "Blast scar",      tier: 2, cost: 30, days: 25, max: 1, unlocks: "tripper", counter: true, danger: 3,
+              desc: "Scorched, cratered ground the dead keep blundering over: the hive's hordes bring Trippers that walk ahead and set off your mines." },
+  gloom:    { name: "Gloom pit",       tier: 2, cost: 35, days: 30, max: 1, unlocks: "darkwalker", counter: true, danger: 3.5,
+              desc: "A pit no light reaches: the hive's hordes bring Dark-walkers that keep out of the light and that floodlights do not show." },
+};
+
+// ---------- the counter-dead (counterdead.js, tunnels.js) ----------
+// The defences a base relies on, as a hive reads them (counterdead.js defenceProfile, 0–1 each): walls (the wall's
+// strength, the gate, the barricades), trench, wire (barbed and concertina wire, spike pits), mines, light (lit
+// floodlights, the watchtower, guard towers). The kinds that answer each (ZTYPES counters): walls Diggers, Melters,
+// Climbers; trench Diggers; wire Husks; mines Trippers; light Dark-walkers.
+// Adaptation (counterdead.js adaptDaily): each hive keeps a read of those (hive.adapt), moving READ of the way a day
+// toward what the bases its hordes may attack have built (yours within its attack range, a group's within GROUP_RANGE:
+// the same rule a hive picks its targets by, hives.js attackTarget), and HIT of the way at once when one of its hordes
+// meets a base's defences (defences.js atTheWalls, every base alike). A counter growth is wished for once a read
+// reaches MIN (WISH_BASE + WISH × the read in growthWish); a counter kind's share in a new horde is × (1 + MIX × the
+// read), its odds + ODDS × the read.
+// By the numbers (counterdead.js counterCut): each kind takes CUT[kind][part] × its share of the horde off that part of
+// the defence (walls: the wall's hold; gate, barricades, trench, wire, light: their bonus to the hold limit; pits: the
+// dead the spike pits take; mines: the dead the mines take, the mines spent on Trippers), each part at most MAX.
+export const COUNTER = {
+  PARTS: ["walls", "trench", "wire", "mines", "light"],
+  READ: 1 / 30, HIT: 0.35, MIN: 0.2, WISH_BASE: 1.5, WISH: 4, MIX: 1.5, ODDS: 0.25, GROUP_RANGE: 22,
+  CUT: {
+    digger: { walls: 2, trench: 4 }, melter: { walls: 2.5, gate: 4, barricades: 4 },
+    husk: { wire: 4, pits: 4 }, tripper: { mines: 5 }, darkwalker: { light: 4 },
+  },
+  MAX: 0.75,
+  // Breeding (counterdead.js payCounters, from hives.js buy): a hive pays for each of the counter-dead in a new horde
+  // (ZTYPES breed: resources each, about 0.8 a point of the kind's weight over an ordinary dead's; an ordinary one costs
+  // a medium horde's 8 / 65 ≈ 0.12), after the horde's own cost; short of it, it brings as many as it can pay for. The
+  // counter-dead are at most KIND_MAX of a horde each and SHARE_MAX together (within TECH.MIX_MAX of all the special).
+  KIND_MAX: 0.12, SHARE_MAX: 0.2,
+  // Battle: a Husk walks through wire and spike pits unhurt and unstopped; a Melter's blows at a wall section, the gate,
+  // a door or a barricade do MELT × (combat.js UNIT_SIEGE melter); a Tripper sniffs out mines within SNIFF tiles and
+  // walks onto them, taking BLAST of a blast; a Dark-walker is low in the dark (a crawler's reveal), floodlit ground
+  // does not show it, and it keeps off lit cells (LIT: the cost it weighs a lit cell at).
+  MELT: 4, SNIFF: 6, BLAST: 0.35, LIT: 6,
+};
+// The Digger's tunnels (tunnels.js). It goes down only on bare ground (a cell of kind GROUND with a floor in FLOORS:
+// dirt, grass, a field; never a road, a floor, gravel, rubble, water) and comes up only on bare ground, at most RANGE
+// cells (Chebyshev) away, under anything between (walls, gates, buildings, wire, trenches, mines: nothing is set off).
+// It digs PER_TURN cells a turn, unseen; it digs only when the tunnel saves GAIN moves of walking (or battering).
+// The tunnel stays open: the dead crawl through it (in at one end, out at the other: CRAWL moves a cell, a turn under
+// for every two actions' moves of theirs, at least one), the pathing links its ends (combat.js reachable / distField).
+// A blocked exit: it waits under up to WAIT turns, then comes up at the free bare cell nearest it (never on an
+// occupied, unwalkable or mined cell). Your people see a hole once one of theirs has had it in sight, or when the dead
+// come up out of it in their view; they can stand on a hole to block it.
+// On your base's map (the fort map: the base map) the open tunnels are kept on the base (base.tunnels) and every fight
+// there starts with them until they are filled: Fill tunnel, a job in the construction queue (FILL_BASE + FILL_PER
+// work-hours a cell), worked by the builders. By the numbers each open tunnel takes HOLD of the walls' hold (at most
+// HOLD_MAX), and every EVERY Diggers at walls that held dig one (at most NUM an attack, LEN cells long) where no battle
+// map is fought (your walls that held, a group's base); a group's crew fills GROUP_DAY work-hours a day of theirs.
+export const DIG = {
+  FLOORS: ["dirt", "grass", "field"], GROUND: ["open", "bush"],
+  RANGE: 8, PER_TURN: 3, GAIN: 4, CRAWL: 1.5, WAIT: 3,
+  EVERY: 8, NUM: 2, LEN: [5, 9], HOLD: 0.08, HOLD_MAX: 0.4,
+  FILL_BASE: 4, FILL_PER: 2, GROUP_DAY: 16,
+};
+// The dead met away from a hive's hordes broaden with the years (deadpool.js; zombietypes.js ambientMix): the era's
+// kinds are shaped by the place (AFFINITY: × a kind's share by the kind of place, the total kept), the counter kinds
+// at WILD of their share there (bred in answer to walls, rarer in the wild); and from START_DAY on, beyond the hives:
+// soldiers out of the military sites within MIL_RANGE tiles (MIL_YEAR a year, at most MIL_MAX, less with the distance),
+// riot police in towns and cities (RIOT_YEAR, at most RIOT_MAX), the dead beasts of the countryside's ground
+// (BEAST_YEAR, at most BEAST_MAX, by the terrain's kinds), all × the run's Zombie damage dial (DIAL: its power).
+// A hive's brood (hivecrawl.js) gets BROOD_YEAR a year (at most BROOD_MAX) of the era's kinds it does not breed.
+export const POOL = {
+  AFFINITY: {
+    city: { climber: 1.6, screamer: 1.4, spitter: 1.3, melter: 1.3, darkwalker: 1.4, carrier: 1.2, runner: 0.8, digger: 0.5 },
+    town: { runner: 1.2, carrier: 1.2, climber: 1.2, flinger: 1.2, nightmare: 1.2 },
+    other: { runner: 1.4, crawler: 1.6, digger: 1.6, husk: 1.3, sower: 1.4, climber: 0.7, melter: 0.7 },
+    military: { brute: 1.8, boneback: 1.8, tripper: 1.6, husk: 1.4, runner: 0.7 },
+  },
+  WILD: 0.5, START_DAY: 60,
+  MIL_RANGE: 3, MIL_YEAR: 0.025, MIL_MAX: 0.15,
+  RIOT_YEAR: 0.008, RIOT_MAX: 0.06,
+  BEAST_YEAR: 0.012, BEAST_MAX: 0.08,
+  BROOD_YEAR: 0.02, BROOD_MAX: 0.12,
+  DIAL: 0.5,
 };
 
 // ---------- the mid game's special dead (middead.js) and the Sleepers (sleepers.js) ----------
@@ -301,7 +388,7 @@ export const ZTYPES = {
   boneback: { name: "Boneback", short: "Bb", hp: 1.4, dmg: 1.1, aim: 5, mob: 2.5, armor: 1, share: 0.08, wall: 1.6, weight: 1.8, senses: ["noise"],
               special: `Plates of bone grown over its chest and face: a hit from the front does ${Math.round(MIDDEAD.BONEBACK.FRONT * 100)}% of its damage, from the side or behind all of it. Hit, it turns to face whoever hit it. Slow.`,
               counter: "Flank it: two shooters from different sides, or hit it from behind while it turns on someone else. Fire gets round the plates." },
-  climber:  { name: "Climber", short: "Cl", hp: 0.8, dmg: 1.0, aim: 5, mob: 3.5, armor: 1, share: 0.08, wall: 1.3, weight: 1.4, slip: MIDDEAD.CLIMBER.SLIP, senses: ["noise", "light"],
+  climber:  { name: "Climber", short: "Cl", hp: 0.8, dmg: 1.0, aim: 5, mob: 3.5, armor: 1, share: 0.08, wall: 1.3, weight: 1.4, slip: MIDDEAD.CLIMBER.SLIP, senses: ["noise", "light"], counters: ["walls"], answers: "walls and wall stands",
               special: "Thin, with hooked fingers: it goes over walls, fences, barricades, cars and crates instead of breaking them, and climbs onto walkways without a ladder. At a base's walls some of them get over even when the horde is held.",
               counter: "Defenders inside the walls as well as on them, a watchtower over the yard, overwatch. A building with its doors shut keeps them out." },
   flinger:  { name: "Flinger", short: "Fl", hp: 1.1, dmg: 0.9, aim: 0, mob: 2.5, armor: 1, share: 0.05, wall: 1.3, weight: 1.7, priority: 2.2, keep: 5, senses: ["noise"],
@@ -313,6 +400,23 @@ export const ZTYPES = {
   nightmare: { name: "Nightmare", short: "Nm", hp: 1.3, dmg: 1.0, aim: 5, mob: 3, armor: 0.9, share: 0.03, wall: 1.5, weight: 2.2, priority: 2.6, keep: 5, senses: [],
               special: `Hangs back and screams every ${MIDDEAD.NIGHTMARE.EVERY} turns: the Heat climbs, the dead around wake and come, and your people within ${MIDDEAD.NIGHTMARE.RANGE} tiles who lose their nerve panic and spend their next turn running (to the way out if there is one, else away from the dead). Ignores decoys.`,
               counter: "Kill it first, at range, and keep the team out of its reach. The brave hold their nerve better, and so does someone with a friend beside them." },
+  // The counter-dead (COUNTER, DIG above; counterdead.js, tunnels.js): bred in answer to a base's defences.
+  // counters: the parts of a defence it answers (COUNTER.PARTS); answers: the words for the tooltips and the codex.
+  digger:   { name: "Digger", short: "Di", breed: 0.4, hp: 1.2, dmg: 1.0, aim: 5, mob: 2.5, armor: 0.9, share: 0.06, wall: 1.5, weight: 1.5, senses: ["noise"], counters: ["walls", "trench"], answers: "walls and trenches",
+              special: `Broad, clay-caked hands for digging. Where the way to the living is long or walled, it goes down on bare ground (dirt, grass, a field) and tunnels up to ${DIG.RANGE} tiles under anything (walls, gates, buildings, wire, trenches, mines), unseen, ${DIG.PER_TURN} tiles a turn, and comes up on bare ground behind them. The tunnel stays: the other dead crawl through it. Tunnels dug at your base stay open until filled (Fill tunnel on the base map).`,
+              counter: "Pave or build over the ground just inside the walls (it only comes up on bare ground), keep someone inside the walls, stand on its hole to stop it coming up, and fill the tunnels after the fight." },
+  melter:   { name: "Melter", short: "Me", breed: 0.5, hp: 1.1, dmg: 0.9, aim: 0, mob: 2.5, armor: 1, share: 0.05, wall: 1.9, weight: 1.6, priority: 1.8, burn: 1.2, senses: ["noise", "light"], counters: ["walls"], answers: "walls, gates and barricades",
+              special: `Its skin weeps acid. Its blows at a wall section, the gate, a door or a barricade eat through ${COUNTER.MELT} times as fast as another's; at a base's walls by the numbers it makes the walls, the gate and the barricades count for less.`,
+              counter: "Shoot it before it reaches the wall: from the walkway, the towers and the stands. Fire hurts it more." },
+  husk:     { name: "Husk", short: "Hu", breed: 0.4, hp: 1.5, dmg: 1.0, aim: 5, mob: 3, armor: 0.85, share: 0.07, wall: 1.3, weight: 1.5, burn: 1.3, senses: ["noise"], counters: ["wire"], answers: "barbed wire, concertina wire and spike pits",
+              special: "Wrapped in a dried hide as tough as leather: it walks through barbed and razor wire and over spike pits unhurt and unstopped, and shrugs off a little of every hit. By the numbers wire and spike pits count for less against its horde.",
+              counter: "Guns and blades, not traps; fire (the dry hide burns)." },
+  tripper:  { name: "Tripper", short: "Tr", breed: 0.25, hp: 1.6, dmg: 0.8, aim: 0, mob: 3, armor: 1, share: 0.05, wall: 1.1, weight: 1.3, senses: ["noise"], counters: ["mines"], answers: "minefields",
+              special: `It sniffs the ground: it smells out mines within ${COUNTER.SNIFF} tiles and walks onto them, ahead of the rest, setting them off on itself; a blast does ${Math.round(COUNTER.BLAST * 100)}% of its damage to it. By the numbers the mines go off on the Trippers and take fewer of the rest.`,
+              counter: "Shoot it before it reaches the minefield, or let it waste a few mines: the field still holds the rest." },
+  darkwalker:{ name: "Dark-walker", short: "Dw", breed: 0.35, hp: 0.9, dmg: 1.2, aim: 10, mob: 3.5, armor: 1, share: 0.06, wall: 1.1, weight: 1.4, reveal: 2.5, ambush: 1.4, senses: ["heat"], counters: ["light"], answers: "floodlights and watchtowers",
+              special: "Pale and silent, it keeps to the dark: unseen until it is within 2 tiles of your people, in a flare's light or has struck (floodlights do not show it), it keeps off floodlit ground, and its first blow from the dark hits hard. By the numbers floodlights and towers count for less against its horde.",
+              counter: "Flares and flashlights close in, people kept together, and someone inside the walls as well as on them." },
   // Not bred: a body full of the worm lying among the others on the map (SLEEPER above, sleepers.js). It never walks.
   sleeper:  { name: "Sleeper", short: "Sl", hp: 0.6, dmg: 0, aim: 0, mob: 0, armor: 1, share: 0, wall: 1, weight: 1, senses: [],
               special: `A body like any other on the ground, so full of the worm that it splits open when anyone comes next to it: a worm swarm pours out and bites. Spotted (Scouting), it shows.`,

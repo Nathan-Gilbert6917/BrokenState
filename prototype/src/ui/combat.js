@@ -84,7 +84,7 @@ import { barHtml } from "./battlebar.js"; // the bottom bar: the selected one's 
 import { softWord } from "../sim/softcover.js"; // bushes and tents: what they hide, that they stop no bullets
 import { watchCanvas } from "./pictures.js"; // the battle canvas reports a lost GPU context (the kept pictures would be blank)
 // Ground-ring colors of a hive's special dead (sim/zombietypes.js); ordinary dead keep the green ring.
-const ZRING = { runner: "#ffb43b", brute: "#c8c4b0", spitter: "#9ad63a", screamer: "#c99ae0", crawler: "#6ab0c8", shepherd: "#e8e2ff", soldier: "#a8b878", riot: "#8aa0c8", carrier: "#e6d8a8", swarm: "#f0e4c0", boneback: "#d8b48a", climber: "#8fd0a0", flinger: "#e8a0c8", sower: "#e8e070", nightmare: "#e0506e", sleeper: "#b0d8ff" };
+const ZRING = { runner: "#ffb43b", brute: "#c8c4b0", spitter: "#9ad63a", screamer: "#c99ae0", crawler: "#6ab0c8", shepherd: "#e8e2ff", soldier: "#a8b878", riot: "#8aa0c8", carrier: "#e6d8a8", swarm: "#f0e4c0", boneback: "#d8b48a", climber: "#8fd0a0", flinger: "#e8a0c8", sower: "#e8e070", nightmare: "#e0506e", digger: "#b08a5a", melter: "#c8f04a", husk: "#d8c09a", tripper: "#e2a02f", darkwalker: "#9a9ab8", sleeper: "#b0d8ff" };
 
 // Battle size; raids use a bigger map. Set from the battle in sync().
 let W = MAP_W, H = MAP_H;
@@ -670,6 +670,8 @@ function layoutClick(state, b, px, py) {
   }
   const sc = storeAt(b, c.x, c.y);
   if (sc) { cui.storeView = cui.storeView === sc.id ? null : sc.id; cui.msg = ""; return; }
+  // A hole the dead dug (sim/tunnels.js): its card, to queue Fill tunnel.
+  if ((b.tunnels || []).some((t) => t.open && ((t.a[0] === c.x && t.a[1] === c.y) || (t.b[0] === c.x && t.b[1] === c.y)))) { cui.storeView = null; return void act(state, { type: "tunnel", x: c.x, y: c.y }); }
   // A piece of the land (sim/basescatter.js: a tree, a bush, a wreck…): its card, to queue its clearing.
   const [gx, gy] = gridOfCell(b, c.x, c.y);
   if (landPieceAt(state, state.bases.find((o) => o.id === b.layout.baseId), gx, gy).length) { cui.storeView = null; return void act(state, { type: "land", x: c.x, y: c.y }); }
@@ -1561,6 +1563,10 @@ export function combatAction(state, key, d, ui = null) { // ui: main.js's screen
       if (d.v === "link" || d.v === "unlink") return void act(state, { type: d.v, a: d.a, b: d.b }); // a doorway between two buildings
       if (d.v === "clear") return void act(state, { type: "clear", clump: d.clump === "1", mode: d.mode || "clear" }); // the land's card (sim/basescatter.js)
       if (d.v === "landClose") { b.layout.land = null; return; }
+      if (d.v === "tunnel") return void act(state, { type: "tunnel", id: d.id }); // sim/tunnels.js: a hole's card (from the list)
+      if (d.v === "tunnelClose") { b.layout.tunnel = null; return; }
+      if (d.v === "fillTunnel") return void act(state, { type: "fillTunnel", id: d.id });
+      if (d.v === "unfill") return void act(state, { type: "unfill", id: d.id });
       if (d.v === "unclear") return void act(state, { type: "unclear", id: d.id });
       if (d.v === "demolish") { // a standing building asks first (ui/confirm.js, as the Construction tab's Demolish); a queued job is only cancelled
         const base = state.bases.find((x) => x.id === b.layout.baseId), rec = base && d.k && d.k.startsWith("b:") ? base.buildings.find((x) => x.id === Number(d.k.slice(2))) : null;
@@ -3095,7 +3101,7 @@ function previewHtml(b, state = null) {
     })() : "";
     // A Boneback (sim/middead.js): how much of a hit from where the selected unit stands gets past its plates.
     const bp = t.ztype === "boneback" && u && active(u) ? (() => { const m = hitMult(t, u, { how: "shot" }) / (t.armor || 1); return ` <span class="${m >= 0.8 ? "good" : "danger"}">${m >= 0.8 ? `${esc(u.name.split(" ")[0])} has its flank: every hit counts.` : `It faces ${esc(u.name.split(" ")[0])}: ${Math.round(m * 100)}% of a hit gets through. Hit it from the side or behind.`}</span>`; })() : "";
-    const zt = t.ztype && ZTYPES[t.ztype] ? `<br><span class="small">${esc(ZTYPES[t.ztype].special)}${t.ztype === "spitter" && t.cd > 0 ? " Spits again next turn." : ""}${t.windup != null ? ` Winding up to throw at ${esc((b.units.find((o) => o.id === t.windup) || {}).name || "someone")}.` : t.ztype === "flinger" && t.cd > 0 ? " Throws again soon." : ""}${t.ztype === "nightmare" && t.screamCd > 0 ? ` Screams again in ${t.screamCd} turn${t.screamCd > 1 ? "s" : ""}.` : ""}${ar}${bp} <span class="good">Counter: ${esc(ZTYPES[t.ztype].counter)}</span></span>` : "";
+    const zt = t.ztype && ZTYPES[t.ztype] ? `<br><span class="small">${ZTYPES[t.ztype].answers ? `<b>Bred against ${esc(ZTYPES[t.ztype].answers)}.</b> ` : ""}${esc(ZTYPES[t.ztype].special)}${t.ztype === "spitter" && t.cd > 0 ? " Spits again next turn." : ""}${t.windup != null ? ` Winding up to throw at ${esc((b.units.find((o) => o.id === t.windup) || {}).name || "someone")}.` : t.ztype === "flinger" && t.cd > 0 ? " Throws again soon." : ""}${t.ztype === "nightmare" && t.screamCd > 0 ? ` Screams again in ${t.screamCd} turn${t.screamCd > 1 ? "s" : ""}.` : ""}${ar}${bp} <span class="good">Counter: ${esc(ZTYPES[t.ztype].counter)}</span></span>` : "";
     // One of the risen (sim/carriers.js): who it was, and the armour it still wears.
     const turned = t.turned ? `<br><span class="small danger">${esc(t.turned.name)}, got up as one of the dead${t.armor < 0.99 ? `, still in their armour (a hit does ${Math.round(t.armor * 100)}%)` : ""}. Put down, what they had on is on the body.</span>` : "";
     return `<b>${esc(t.name)}</b> <span class="muted">${gunText(b, t)} · ${Math.round(t.hp)}/${t.maxHp} hp</span>${stealthy}${sense}${kit}${zt}${turned}${groupLine(state, b, t)}<br>${o ? (o.ok ? `<span class="${hitTone(o.chance)}"><b class="cbbig">${o.chance}%</b> ${esc(o.label)}</span>${breakdownHtml(hitBreakdown(b, u, t, o))}` : `<span class="muted">${esc(o.label)}</span>`) : ""}`;
