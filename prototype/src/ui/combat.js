@@ -26,6 +26,8 @@ import { SHOVE, BOARD, CRAWL, shoveTargets, shoveDests, shoveRefusal, shovePlan,
 import { INTERIOR } from "../sim/interior.js";
 import { PARLEY, parleyStatus, parleyGroupsSeen, callOutRefusal, callOutTargets } from "../sim/parley.js"; // other groups on a raid's map: Call out, hostile or not (the user's request 2026-10-20)
 import * as PARLEY_SIM from "../sim/parley.js"; // the exports that may not be there yet (shoutCost), looked up when present
+import { ALLY_ORDER, ALLY_ORDERS, allyOrderTargets, allyOrderRefusal, allyOdds, allyOrderOf, allyOrdersShown } from "../sim/allyorders.js"; // orders to allies on a raid's map (the user's request 2026-10-21)
+import * as ALLY_SIM from "../sim/allyorders.js"; // the exports that may not be there yet (allyIntel: Tell me what you see), looked up when present
 import { TENT_TAKE, tentsNear, strikeRefusal, slashTargets, slashRefusal, goesLeft, tentWord, tentWear } from "../sim/tentfight.js"; // Take down and Slash at a tent (the user's request 2026-10-20)
 import { clearEnough } from "../sim/battlesize.js";
 import { SUPPLIES, GEAR } from "../sim/data.js";
@@ -167,6 +169,7 @@ function sync(b) {
   cui.mode = "move";
   cui.msg = "";
   cui.hover = null;
+  cui.allyAsk = null;
   cui.anim.clear();
   if (!again) cui.salt = Math.floor(Math.random() * 9973); // varies zombie / enemy looks between battles (the same fight made again keeps them)
   cui.lastStep = performance.now();
@@ -405,6 +408,7 @@ export function combatRelease(state, px, py) {
   const d = cui.drag;
   cui.drag = null;
   if (!state.combat || !d) return null;
+  if (!d.moved && d.button === 2 && allyBack()) { cui.redraw = true; return null; } // Ally orders: back a step, not out (main.js cancelAction would drop it all)
   return d.moved ? "drag" : d.button === 0 ? "click" : d.button === 2 ? "cancel" : null;
 }
 export function combatWheel(state, px, py, dy) {
@@ -430,7 +434,7 @@ function act(state, a) {
   if (!err && a.type !== "end") {
     const u = unitById(b, a.unit);
     if (u && u.side === "player") followFloor(b, u); // Go up / Go down: the view goes with them
-    if (!u || !active(u) || u.ap < 1 || ["throw", "drag", "tie", "subdue", "shoveFoe", "taser", "pepper", "execute", "surrender", "peek", "close", "brace", "checkwindow", "openwindow", "closewindow", "breakwindow", "shove", "boardup", "teardown", "cutwire", "strike", "slashtent", "keylock", "keyunlock", "doubletap", "pickup", "crush", "goup", "godown", "drive", "loadRam", "unloadRam", "board", "disembark", "turn", "heal", "revive", "dragAlly", "dropAlly", "finish", "pullOut", "suppress", "throwspear", "unjam", "launch", "glreload", "face", "overwatch", "callout"].includes(a.type)) cui.mode = "move";
+    if (!u || !active(u) || u.ap < 1 || ["throw", "drag", "tie", "subdue", "shoveFoe", "taser", "pepper", "execute", "surrender", "peek", "close", "brace", "checkwindow", "openwindow", "closewindow", "breakwindow", "shove", "boardup", "teardown", "cutwire", "strike", "slashtent", "keylock", "keyunlock", "doubletap", "pickup", "crush", "goup", "godown", "drive", "loadRam", "unloadRam", "board", "disembark", "turn", "heal", "revive", "dragAlly", "dropAlly", "finish", "pullOut", "suppress", "throwspear", "unjam", "launch", "glreload", "face", "overwatch", "callout", "allyorder"].includes(a.type)) cui.mode = "move";
     cui.ammoAsk = null;
     cui.shoveAsk = null; // the Shove chooser (sim/barricade.js) closes once anything is done
     if (a.type !== "face") cui.handAsk = null; // the Hand over chooser stays open across the free Face toward the mate
@@ -461,7 +465,7 @@ export function combatClick(state, px, py) {
   if (b.phase === "deploy") return void deployClick(state, b, px, py);
   if (b.phase !== "player") { cui.msg = "Wait for the enemy turn to finish."; return; }
   const c = cellFromPx(px, py);
-  if (!c) return;
+  if (!c) { if (allyMode()) cui.msg = "Off the map: click a tile on it."; return; }
   const v = view(b);
   const u = selUnit(b);
   const who = unitAt(b, c.x, c.y);
@@ -477,6 +481,7 @@ export function combatClick(state, px, py) {
       return void act(state, { type: "overwatch", unit: u.id, ...(ang != null ? { face: ang } : {}) });
     }
   }
+  if (allyMode()) return void allyClick(state, b, u, c, who); // Ally orders (sim/allyorders.js): the ally, then what the order needs
   if (u && active(u) && groundClick(state, b, u, c, cui, act)) return; // ui/ground.js: the body picked to search
   // sim/carts.js Park cart: click the free cell next to the pusher to leave the cart on (a doorway to plug, cover).
   if (u && active(u) && cui.mode === "parkCart") { cui.mode = "move"; return void act(state, { type: "parkCart", unit: u.id, x: c.x, y: c.y }); }
@@ -1244,7 +1249,7 @@ export function unitOrders(state, b, u) {
   if (u.light) btn("light", activeLight(u) ? "Light off" : "Light on", lightTip(b, u), !u.aboard && !u.gunner, "Alt+L", { on: !!activeLight(u), why: "Get out of the vehicle first." }); // sim/combat.js switchAct
   if (u.nvg) btn("nvg", nvgOn(u) ? "NVG off" : "NVG on", nvgTip(b, u), !u.aboard && !u.gunner, "Alt+N", { on: nvgOn(u), why: "Get out of the vehicle first." });
   if (b.evacOrder) btn("evacStop", "Stop evac", "Call off the Evac: your people stay where they are and take orders again.", true, "", { on: true });
-  else { const why = evacRefusal(b); btn("evac", "Evac", `Everyone still standing heads for the way out with the actions they have: ${b.raid ? "the extraction zones" : "the evac strip"}${b.vehicle ? ", or a free seat in the vehicle (in it counts as out)" : ""}, whichever is nearer. Arriving, they ${b.raid ? "extract" : "slip away"}${b.vehicle ? " or get in" : ""}. The order stands: each turn starts with the next leg until everyone is out or you call it off. The downed are not carried (Sound the retreat carries them).`, !why, "", { why }); }
+  else { const why = evacRefusal(b); btn("evac", "Evac", `Everyone still standing heads for the way out with the actions they have: ${b.raid ? "the extraction zones" : "the evac strip"}${b.vehicle ? ", or a free seat in the vehicle (in it counts as out)" : ""}, whichever is nearer. Arriving, they ${b.raid ? "extract" : "slip away"}${b.vehicle ? " or get in" : ""}. The order stands: each turn starts with the next leg until everyone is out or you call it off. The downed are not carried (Sound the retreat carries them).${b.raid && b.units.some((t) => t.ally && active(t)) ? " Allies are told to retreat too (they may not heed it)." : ""}`, !why, "", { why }); }
   btn("shoot", "Shoot", gun ? (ammo ? `Fire at a visible enemy. Ends this unit's turn. Hover an enemy to see the hit chance.${hasMag(u) ? ` ${esc(u.weaponName)}: ${magLabel(b, u)} loaded.` : ""}` : fireRefusal(b, u)) : "No usable gun.", ap > 0 && ammo, "F", { why: fireWhy });
   if (gun && SIM.cabTarget(b, u)) { const tg = SIM.cabTarget(b, u), o = SIM.cabOdds(b, u, tg), who = SIM.cabSeat(b, tg.v); btn("cab", "Shoot the cab", `Fire at their ${esc(tg.v.name || tg.v.kind)} (${o.chance}% a round): each hit wears it (heavy and armour-piercing rounds; ${SIM.HULL.PEN + 1}+ penetration) and half get in at the windscreen${tg.v.up && tg.v.up.plating ? " (less with the plate)" : ""}, at ${who ? "whoever is at the wheel" : "nobody: the cab is empty"}${tg.v.up && tg.v.up.glass ? " through bulletproof glass" : ""}. A driver down stops it. Ends this unit's turn.`, ap > 0 && ammo, "", { why: fireWhy }); }
   if (gun && hasMag(u)) {
@@ -1283,7 +1288,7 @@ export function unitOrders(state, b, u) {
   nlButtons(state, b, u, btn, cui);
   siegeButtons(b, u, btn);
   if (b.evacCols) btn("retreat", "Retreat", "This unit leaves the battle. Only from the green evac strip. A downed teammate lying on the strip is carried out with the last one to leave; anyone else who is down and left behind is lost. To pull everyone out at once, Sound the retreat (Shift+R).", ap > 0 && evacAt(b, u.x, u.y), "R", { why: noAp || "Only from the green evac strip." });
-  if (b.raid) { raidButtons(state, b, u, btn); callButton(state, b, u, btn); }
+  if (b.raid) { raidButtons(state, b, u, btn); callButton(state, b, u, btn); allyButton(state, b, u, btn); }
   else { doorButtons(b, u, btn, true); windowButtons(b, u, btn); } // a field map's houses (sim/combat.js genMap): with a door or a window next to them
   keyButtons(b, u, btn); // sim/basemap.js: the defenders' keys on their base's map
   barricadeButtons(state, b, u, btn); // sim/barricade.js: Shove, Board up, Tear down
@@ -1452,7 +1457,7 @@ export function combatKey(state, e) {
   if (retreatAskOpen(b) && space) { cui.msg = `Press ${keyLabel("battle.confirm", 1) || "Enter"} or Sound the retreat to give the order, Esc to keep fighting.`; return true; }
   if (fallAskOpen(b) && confirm) { combatAction(state, "cb-fallback", { v: "go" }); return true; }
   if (space || confirm) { requestEndTurn(state, space ? "space" : "enter"); return true; }
-  if (e.code === "Escape") { if (cui.barTray != null) { cui.barTray = null; return true; } cui.mode = "move"; cui.msg = ""; cui.endAsk = null; cui.retreatAsk = null; cui.fallAsk = null; cui.dragId = null; cui.handAsk = null; cui.shoveAsk = null; return true; }
+  if (e.code === "Escape") { if (cui.barTray != null) { cui.barTray = null; return true; } if (allyBack()) return true; cui.allyAsk = null; cui.mode = "move"; cui.msg = ""; cui.endAsk = null; cui.retreatAsk = null; cui.fallAsk = null; cui.dragId = null; cui.handAsk = null; cui.shoveAsk = null; return true; }
   if (k === "battle.autoplay") { combatAction(state, "cb-autoplay", {}); return true; } // the AI plays your side
   if (k === "battle.inventory") { combatAction(state, "cb-inv", {}); return true; } // the selected survivor's kit (read-only)
   if (b.phase === "deploy") return false;
@@ -1587,6 +1592,7 @@ export function combatAction(state, key, d, ui = null) { // ui: main.js's screen
   if (key === "cb-act" && d.v === "building") return void act(state, { type: "building", id: d.k });
   if (key !== "cb-act" || !u) return;
   const v = d.v;
+  if (allyCbAct(state, b, u, v, d)) return; // Ally orders (sim/allyorders.js): open, the card's buttons
   if (typeof v === "string" && v.startsWith("rescue:")) return void act(state, { type: "rescue", unit: u.id, op: v.slice(7) }); // sim/rescueraid.js
   if (groundCbAct(state, b, u, v, cui, act)) return; // ui/ground.js: Search a body (a field battle), Ground
   if (v === "search" && b.raid) return void openSearch(state, b, u, null, { full: true });
@@ -1830,6 +1836,7 @@ export function combatTick(state, now) {
   const b = state.combat;
   if (!b) return false;
   sync(b);
+  if (cui.redraw) { cui.redraw = false; return true; } // the cards again (a right click's step back in Ally orders)
   if (isRedeploy(b) && cui.autoRedeploy) { act(state, { type: "start" }); return true; }
   // The AI plays your side (cb-autoplay): your turn (and a deploy step) at the enemy turn's pace, until you take back
   // control. It may sound the retreat from a fight it judges lost, as the autopilot does.
@@ -2070,6 +2077,7 @@ export function renderRaidCards(state) {
   if (planOpen(b) && planUI.map) html += `<div class="cbcard">${planAsideHtml(state, b)}</div>`; // ui/raidplan.js: the window put aside to look at the site (the window itself: ui.js pickModal)
   if (b.raid.choose) html += `<div class="cbcard">${chooseHtml(b)}</div>`;
   if (kitWarnDue(state, b)) html += `<div class="cbcard">${kitWarnHtml(state, b)}</div>`; // sim/kitcheck.js: empty guns, no healing, the hurt, before anyone goes in
+  html += allyCard(state, b); // Ally orders (sim/allyorders.js): the orders for the ally picked
   if (cui.msg) html += `<div class="cbcard ct-toast small warn">${esc(cui.msg)}</div>`;
   if (u && alive(u) && floorsOf(b) && u.f != null && u.f !== floorNo(b)) {
     html += `<div class="cbcard small muted">Showing ${floorLabel(b, floorNo(b)).toLowerCase()}; ${esc(u.name.split(" ")[0])} is on ${floorLabel(b, u.f).toLowerCase()}. <button class="mini" data-action="cb-view" data-v="fgo" data-tip="Back to the selected unit's floor (Home also centers on them).">Go to ${esc(u.name.split(" ")[0])}</button></div>`;
@@ -2235,6 +2243,7 @@ function groupChips(b) {
   const gs = (b.raid && parleyGroupsSeen(b)) || [];
   if (!gs.length) return "";
   const call = keyLabel("battle.callout", 1) || "Alt+O";
+  const ordered = gs.some((g) => g.allied) ? allyOrderCount(b) : null; // Ally orders: how many of an allied group are under orders
   return `<div class="ct-box cbgroups">${gs.map((g) => {
     const leave = groupLeave(g);
     // Not shooting yet is not peace: a pod that has not seen you, or holds its fire waiting for an answer, is a warning.
@@ -2242,9 +2251,258 @@ function groupChips(b) {
     const word = g.active ? "HOSTILE" : g.allied ? "ALLIED" : leave ? leave.toUpperCase() : wary ? `NOT FIRING · ${g.label.toUpperCase()}` : "NOT HOSTILE";
     const cls = g.active ? " hostile" : g.allied ? " allied" : leave || wary ? " leaving" : "";
     const leaveTip = leave ? (g.goes === "you" ? ` You agreed to walk away from their ground: ${g.leaveBy} turn${g.leaveBy === 1 ? "" : "s"} left for your people to be out of their sight, or they open fire.` : " They agreed to pack up and leave the map.") : "";
-    const tip = `${cap1(g.name)}: ${g.label}. ${GROUP_WORD[g.label] || ""}${leaveTip}${g.tell ? " Something is off about them: one of yours does not trust them." : ""} They show as a ${g.shown || "unknown"} group${g.count ? `, ${g.count} seen` : ""}. Call out (${call}) to talk to them, whatever their stance.`;
-    return `<span class="ct-group${cls}" data-tip="${esc(tip)}"><i style="background:${esc(g.color || "")}"></i>${esc(cap1(g.name))} <span class="muted">${esc(cap1(g.shown || ""))}</span> <b>${esc(word)}</b>${g.tell ? `<em class="tell">${TELL_MARK}</em>` : ""}</span>`;
+    const n = ordered && g.allied ? ordered.get(g.key) || 0 : 0;
+    const tip = `${cap1(g.name)}: ${g.label}. ${GROUP_WORD[g.label] || ""}${leaveTip}${g.tell ? " Something is off about them: one of yours does not trust them." : ""} They show as a ${g.shown || "unknown"} group${g.count ? `, ${g.count} seen` : ""}. Call out (${call}) to talk to them, whatever their stance.${g.allied ? ` Ally orders (${keyLabel("battle.allyorder", 1) || "Alt+A"}): tell one of them within ${ALLY_ORDER.RANGE} tiles what to do${n ? `; ${n} under your orders now` : ""}.` : ""}`;
+    return `<span class="ct-group${cls}" data-tip="${esc(tip)}"><i style="background:${esc(g.color || "")}"></i>${esc(cap1(g.name))} <span class="muted">${esc(cap1(g.shown || ""))}</span> <b>${esc(word)}</b>${n ? ` <span class="ct-ordered">🫡${n}</span>` : ""}${g.tell ? `<em class="tell">${TELL_MARK}</em>` : ""}</span>`;
   }).join("")}</div>`;
+}
+
+// ---------- orders to allies on a raid's map (sim/allyorders.js) ----------
+// Ally orders (Alt+A): one of yours tells an ally (sim/parley.js u.ally) within ALLY_ORDER.RANGE tiles what to do; they
+// may not heed it. The ally: the one in reach at once, more: click one (cui.mode "allypick", those in reach marked, the
+// reach shaded). Then the card of orders over the map ("allymenu": each with the odds they heed it, Whole group, Cancel),
+// then what the order needs ("allytarget"): an enemy your people see, any tile (the fog too: you do not see what they
+// see), the way to watch (the cone from the ally). Esc and a right click go back a step. cui.allyAsk = { uid, ally,
+// kind, group, many }. Only allies your people see now are offered and marked; the markers you set show wherever they are.
+export const ALLY_COLOR = "#4fe08a"; // sim/parley.js's Allied
+cui.allyAsk = null;
+const ALLY_MODES = new Set(["allypick", "allymenu", "allytarget"]);
+const allyMode = () => ALLY_MODES.has(cui.mode);
+const allyDef = (kind) => ALLY_ORDERS.find((o) => o.kind === kind) || null;
+const oddsPct = (p) => (typeof p === "number" && isFinite(p) ? `${Math.round(Math.max(0, Math.min(1, p)) * 100)}%` : "");
+const allyOddsOf = (state, b, u, a, order) => (state ? oddsPct(allyOdds(state, b, u, a, order)) : "");
+const tilesOff = (p, q) => Math.hypot(p.x - q.x, p.y - q.y);
+// Whom u can give an order to now, those your people see (kept per map change: the map marks them every frame).
+function allyTargets(state, b, u) {
+  if (!b || !b.raid || !u || u.side !== "player" || !active(u) || u.ap < 1) return [];
+  const v = view(b), key = `${v.key}:${b.turn}:${b.phase}:${u.id}:${u.x},${u.y}:${u.ap}`;
+  if (cui.allyCache && cui.allyCache.b === b && cui.allyCache.key === key) return cui.allyCache.list;
+  const list = (allyOrderTargets(state, b, u) || []).filter((t) => t && active(t) && v.seen.has(t.id));
+  cui.allyCache = { b, key, list };
+  return list;
+}
+// Why u cannot give an order now: no actions, no allies, none in sight, none in reach, else the sim's reason.
+function allyWhy(state, b, u) {
+  if (u.ap < 1) return NO_AP;
+  const v = view(b), allies = b.units.filter((t) => t.ally && active(t));
+  if (!allies.length) return "No allies here: call out to a group and ask them to fight with you.";
+  const near = allies.filter((t) => v.seen.has(t.id)).sort((p, q) => tilesOff(u, p) - tilesOff(u, q))[0];
+  if (!near) return "No ally in sight of your people.";
+  const me = u.name.split(" ")[0];
+  if (tilesOff(u, near) > ALLY_ORDER.RANGE || (near.f ?? 0) !== (u.f ?? 0)) return `No ally within ${ALLY_ORDER.RANGE} tiles of ${me} (the nearest, ${near.name}, is ${Math.round(tilesOff(u, near))} off${(near.f ?? 0) !== (u.f ?? 0) ? ", on another floor" : ""}).`;
+  return allyOrderRefusal(state, b, u, near, { kind: "hold" }) || `No ally can take an order from ${me} now.`;
+}
+// The flow as it stands, or null (another unit selected, the ally gone, out of the ally modes).
+function allyNow(b) {
+  const ask = cui.allyAsk, u = b && selUnit(b);
+  if (!ask || !allyMode() || !u || u.id !== ask.uid || !active(u) || b.phase !== "player" || b.over) return null;
+  const a = ask.ally != null ? unitById(b, ask.ally) : null;
+  if (ask.ally != null && (!a || !active(a) || !a.ally)) return null;
+  return { u, a, ask, o: ask.kind ? allyDef(ask.kind) : null };
+}
+function allyClose() { cui.allyAsk = null; if (allyMode()) cui.mode = "move"; }
+function allyOpen(u, a, many) {
+  const was = cui.allyAsk;
+  cui.allyAsk = { uid: u.id, ally: a.id, kind: null, group: !!(was && was.uid === u.id && was.group), many: !!many };
+  cui.mode = "allymenu"; cui.msg = "";
+}
+const allyPickMsg = (ts) => `Click the ally to give an order to (${ts.length} within ${ALLY_ORDER.RANGE} tiles, marked). Esc: cancel.`;
+// Esc, a right click: back a step (the target to the card, the card to picking the ally, else out). False: not in the flow.
+function allyBack() {
+  if (!allyMode()) return false;
+  const ask = cui.allyAsk;
+  cui.msg = "";
+  if (cui.mode === "allytarget" && ask) { ask.kind = null; cui.mode = "allymenu"; }
+  else if (cui.mode === "allymenu" && ask && ask.many) { ask.ally = null; cui.mode = "allypick"; cui.msg = "Click the ally to give an order to. Esc: cancel."; }
+  else allyClose();
+  return true;
+}
+// An order in words: "Move to (12, 30)", "Attack Rook", "Overwatch toward (4, 9)" (the target named only while your people see it).
+function allyWhat(b, o) {
+  const at = o.x != null && o.y != null ? ` (${o.x}, ${o.y})` : "";
+  const t = o.targetId != null ? unitById(b, o.targetId) : null;
+  if (o.kind === "attack") return `Attack ${t && active(t) && view(b).seen.has(t.id) ? t.name : "their target"}`;
+  if (o.kind === "move") return `Move to${at}`;
+  if (o.kind === "push") return `Push to${at}`;
+  if (o.kind === "retreat") return `Retreat${at ? ` by${at}` : ""}`;
+  if (o.kind === "overwatch") return `Overwatch${Array.isArray(o.face) ? ` toward (${o.face[0]}, ${o.face[1]})` : ""}`;
+  return `${o.label || (allyDef(o.kind) || {}).label || o.kind}${o.kind === "free" ? "" : at}`;
+}
+// The order sent (act "allyorder": the sim may refuse it, the refusal shows; given, the odds they heed it show).
+function allySend(state, b, f, o, extra) {
+  const { u, a, ask } = f;
+  const order = { kind: o.kind, ...extra, ...(ask.group ? { group: true } : {}) };
+  const p = allyOddsOf(state, b, u, a, order);
+  const what = allyWhat(b, { kind: o.kind, label: o.label, x: extra.x, y: extra.y, targetId: extra.target, face: extra.face });
+  if (!act(state, { type: "allyorder", unit: u.id, ally: a.id, order })) return;
+  cui.allyAsk = null;
+  cui.msg = `${u.name.split(" ")[0]} tells ${ask.group ? `${a.name}'s group` : a.name}: ${what}.${p ? ` ${p} they heed it.` : ""}`;
+}
+// The button, the key and the card's buttons (combatAction "cb-act": allyorder, allykind (d.k), allygroup, allypick (d.k), allyclose).
+function allyCbAct(state, b, u, v, d) {
+  if (v === "allyorder") {
+    if (allyMode()) { allyClose(); cui.msg = ""; return true; }
+    const ts = allyTargets(state, b, u);
+    if (!ts.length) { cui.mode = "move"; cui.msg = allyWhy(state, b, u); return true; }
+    if (ts.length === 1) { allyOpen(u, ts[0], false); return true; }
+    cui.allyAsk = { uid: u.id, ally: null, kind: null, group: false, many: true };
+    cui.mode = "allypick"; cui.msg = allyPickMsg(ts);
+    return true;
+  }
+  if (v !== "allykind" && v !== "allygroup" && v !== "allypick" && v !== "allyclose") return false;
+  if (v === "allyclose") { allyClose(); cui.msg = ""; return true; }
+  const f = allyNow(b);
+  if (!f) { allyClose(); return true; }
+  if (v === "allypick") { const ts = allyTargets(state, b, u), a = ts.find((t) => t.id === Number(d.k)); if (a) allyOpen(u, a, ts.length > 1); return true; }
+  if (!f.a) return true;
+  if (v === "allygroup") { f.ask.group = !f.ask.group; return true; }
+  const o = allyDef(d.k);
+  if (!o) return true;
+  if (!o.need) { allySend(state, b, f, o, {}); return true; }
+  f.ask.kind = o.kind;
+  cui.mode = "allytarget";
+  const name = f.a.name.split(" ")[0];
+  cui.msg = o.need === "unit" ? `Click an enemy your people see for ${name} to go after. Esc: back to the orders.`
+    : o.need === "face" ? `Click the way ${name} should watch: the cone shows it from where they stand. Esc: back to the orders.`
+    : `Click where ${name} should ${o.kind === "push" ? "push to" : "go"}: any tile, the fog too (you do not see what they see). Esc: back to the orders.`;
+  return true;
+}
+// A click on the map in the flow: the ally (picking, or another one in reach while the card is open), then the target.
+function allyClick(state, b, u, c, who) {
+  const f = allyNow(b);
+  if (!f) { allyClose(); return; }
+  if (cui.mode !== "allytarget") {
+    const ts = allyTargets(state, b, u), a = who && ts.find((t) => t.id === who.id);
+    if (a) return void allyOpen(u, a, f.ask.many || ts.length > 1);
+    if (cui.mode === "allymenu") { allyClose(); cui.msg = ""; return; }
+    cui.msg = allyPickMsg(ts);
+    return;
+  }
+  const { a, o } = f;
+  if (!a || !o) { allyClose(); return; }
+  if (o.need === "unit") {
+    if (who && who.side === "enemy" && active(who) && view(b).seen.has(who.id)) return void allySend(state, b, f, o, { target: who.id });
+    cui.msg = `Click an enemy your people see for ${a.name.split(" ")[0]} to go after. Esc: back to the orders.`;
+    return;
+  }
+  if (o.need === "face") {
+    if (c.x === a.x && c.y === a.y) { cui.msg = `Click away from ${a.name.split(" ")[0]}, the way they should watch.`; return; }
+    return void allySend(state, b, f, o, { face: [c.x, c.y] });
+  }
+  allySend(state, b, f, o, { x: c.x, y: c.y }); // a cell: any, fog or not (the sim says why not)
+}
+function allyButton(state, b, u, btn) {
+  const ts = allyTargets(state, b, u), me = esc(u.name.split(" ")[0]);
+  btn("allyorder", "Ally orders", `1 action: ${me} tells an ally within ${ALLY_ORDER.RANGE} tiles what to do: attack a target, move or push to a tile (the fog too: you do not see what they see), overwatch a cone, hold, follow, cover ${me}, retreat off the map, or fight as they see fit. They may not heed it: the odds show on each order.${ts.length > 1 ? " More than one in reach: click the one." : ""}`,
+    ts.length > 0, "Alt+A", { why: ts.length ? "" : allyWhy(state, b, u), on: allyMode() });
+}
+// The card over the map: the orders for the ally picked, each with the odds they heed it; Whole group; the others in reach; Cancel.
+function allyCard(state, b) {
+  const f = allyNow(b);
+  if (!f || !f.a || cui.mode !== "allymenu") return "";
+  const { u, a, ask } = f, me = u.name.split(" ")[0];
+  const ts = allyTargets(state, b, u), mates = ts.filter((t) => t.pk != null && t.pk === a.pk).length, g = groupOf(b, a);
+  const cur = allyOrderOf(b, a);
+  const rows = ALLY_ORDERS.map((o) => {
+    const order = { kind: o.kind, ...(ask.group ? { group: true } : {}) }, p = allyOddsOf(state, b, u, a, order);
+    const why = o.need ? "" : allyOrderRefusal(state, b, u, a, order) || ""; // an order that needs a pick: the sim says on the pick
+    const need = o.need === "unit" ? " Then click the enemy." : o.need === "cell" ? " Then click the tile (any, the fog too)." : o.need === "face" ? " Then click the way to watch." : "";
+    return `<button class="mini${cur && cur.kind === o.kind ? " active" : ""}" data-action="cb-act" data-v="allykind" data-k="${esc(o.kind)}" ${why ? "disabled " : ""}data-tip="${esc(`${o.tip}.${need}${p ? ` ${p} they heed it.` : ""}${why ? ` Not now: ${why}` : ""}`)}">${esc(o.label)}${p ? ` <b>${esc(p)}</b>` : ""}</button>`;
+  }).join(" ");
+  const others = ts.length > 1 ? `<div class="small muted">In reach: ${ts.map((t) => `<button class="mini${t.id === a.id ? " active" : ""}" data-action="cb-act" data-v="allypick" data-k="${t.id}" data-tip="${esc(`Orders for ${t.name}.`)}">${esc(t.name.split(" ")[0])}</button>`).join(" ")}</div>` : "";
+  return `<div class="cbcard cbally"><div><b style="color:${ALLY_COLOR}">🫡 Orders for ${esc(a.name)}</b> <span class="muted small">${g ? `${esc(cap1(g.name))} · ` : ""}${esc(me)} gives it (1 action) · they may not heed it${cur ? ` · now: ${esc(allyWhat(b, cur))}` : ""}</span></div>
+    <div class="cbally-orders">${rows}</div>${others}
+    <div class="small"><button class="mini${ask.group ? " active" : ""}" data-action="cb-act" data-v="allygroup" data-tip="${esc(`The order goes to every one of ${g ? cap1(g.name) : `${a.name}'s group`} within ${ALLY_ORDER.RANGE} tiles of ${me} (${mates} now).`)}">${ask.group ? "✔" : "✗"} Whole group${mates > 1 ? ` (${mates})` : ""}</button> <button class="mini" data-action="cb-act" data-v="allyclose" data-tip="Close without giving an order (Esc).">Cancel</button></div></div>`;
+}
+// The hover line of an ally: the order your people gave them (as they know it), and the key.
+function allyLine(state, b, t) {
+  if (!t || !t.ally || !b.raid) return "";
+  const o = allyOrderOf(b, t), by = o && o.by != null ? unitById(b, o.by) : null;
+  const u = selUnit(b), can = state && u && u.side === "player" && active(u) && allyTargets(state, b, u).some((x) => x.id === t.id);
+  const how = cui.mode === "allypick" && can ? " · <b>Click to give them an order.</b>" : can ? ` · Ally orders (${esc(keyLabel("battle.allyorder", 1) || "Alt+A")})` : "";
+  const now = o ? `Orders: ${esc(allyWhat(b, o))}${by ? ` · given by ${esc(by.name.split(" ")[0])}` : ""} · ${o.heeded ? '<span class="good">heeded</span>' : '<span class="warn">not heeded</span>'}` : "No orders: their own call";
+  return `<br><span class="small" style="color:${ALLY_COLOR}">${o && o.icon ? `${esc(o.icon)} ` : ""}${now}</span><span class="small">${how}</span>`;
+}
+// The hover card while picking what the order needs: the tile or the way (and the odds), or the enemy (the rest as usual).
+function allyPreview(state, b, h) {
+  const f = allyNow(b);
+  if (!f || !f.a || !f.o || cui.mode !== "allytarget") return "";
+  const { u, a, o } = f, name = esc(a.name.split(" ")[0]), extra = f.ask.group ? { group: true } : {};
+  if (o.need === "unit") {
+    const t = unitAt(b, h.x, h.y);
+    if (!t || t.side !== "enemy" || !active(t) || !view(b).seen.has(t.id)) return "";
+    const p = allyOddsOf(state, b, u, a, { kind: o.kind, target: t.id, ...extra });
+    return `<b>${esc(o.label)} ${esc(t.name)}</b> <span class="muted">· ${name}</span>${p ? ` · <b class="cbbig">${esc(p)}</b> they heed it` : ""}<br><span class="small muted">Click to give the order. Esc: back to the orders.</span>`;
+  }
+  const order = o.need === "face" ? { kind: o.kind, face: [h.x, h.y], ...extra } : { kind: o.kind, x: h.x, y: h.y, ...extra };
+  const p = h.x === a.x && h.y === a.y && o.need === "face" ? "" : allyOddsOf(state, b, u, a, order);
+  return `<b>${esc(allyWhat(b, { kind: o.kind, label: o.label, x: order.x, y: order.y, face: order.face }))}</b> <span class="muted">· ${name}</span>${p ? ` · <b class="cbbig">${esc(p)}</b> they heed it` : ""}<br><span class="small muted">${o.need === "face" ? "The cone from where they stand." : "Any tile, the fog too: you do not see what they see."} Click to give the order. Esc: back to the orders.</span>`;
+}
+// How many of each allied group are under your orders (the strip's chips): group key → count.
+function allyOrderCount(b) {
+  const out = new Map();
+  for (const o of allyOrdersShown(b) || []) {
+    const a = o && unitById(b, o.allyId);
+    if (a && a.pk != null && active(a)) out.set(a.pk, (out.get(a.pk) || 0) + 1);
+  }
+  return out;
+}
+// The map's marks (ui/isoview.js drawAllyMarks): the orders given (a flag on the tile to go to, a dashed line from an
+// ally your people see, a crosshair on a target they see, the order's icon by the badge, the overwatch cone: kept per map
+// change), and while picking: the allies in reach and the reach, the ally picked, the tile under the mouse.
+function allyMarks(state, b, v) {
+  const key = `${v.key}:${b.turn}:${b.phase}:${(b.log || []).length}`;
+  if (!cui.allyShown || cui.allyShown.b !== b || cui.allyShown.key !== key) {
+    const flags = [], cross = [], cones = [], icons = new Map(), f = floorNo(b);
+    for (const o of allyOrdersShown(b) || []) {
+      const a = o && unitById(b, o.allyId);
+      if (!a || a.dead || a.left || a.fled) continue;
+      const seen = active(a) && v.seen.has(a.id) && onFloor(b, a);
+      const from = seen ? [a.x + (a.size || 1) / 2, a.y + (a.size || 1) / 2] : null;
+      if (o.x != null && o.y != null && (!floorsOf(b) || (a.f ?? f) === f)) flags.push({ x: o.x, y: o.y, kind: o.kind, from, retreat: o.kind === "retreat" }); // set by you: shown wherever it is
+      const t = o.targetId != null ? unitById(b, o.targetId) : null;
+      if (t && active(t) && v.seen.has(t.id) && onFloor(b, t)) cross.push({ x: t.x, y: t.y, size: t.size || 1, from });
+      if (!seen) continue;
+      if (o.icon) icons.set(a.id, String(o.icon));
+      if (Array.isArray(o.face) && (o.face[0] !== a.x || o.face[1] !== a.y)) cones.push({ a, face: o.face });
+    }
+    cui.allyShown = { b, key, flags, cross, cones, icons, intel: allyIntelShown(b, v) };
+  }
+  const S = cui.allyShown, out = { flags: S.flags, cross: S.cross, icons: S.icons, intel: S.intel, pick: null, ring: null, hover: null, color: ALLY_COLOR };
+  const fl = allyNow(b);
+  if (!fl) return out;
+  const { u, a, o, ask } = fl;
+  out.ring = { x: u.x, y: u.y, r: ALLY_ORDER.RANGE };
+  const ts = allyTargets(state, b, u);
+  out.pick = !a ? ts : ask.group ? ts.filter((t) => t.id === a.id || (t.pk != null && t.pk === a.pk)) : [a];
+  const h = cui.hover;
+  if (a && o && h && o.need === "cell") out.hover = { x: h.x, y: h.y, from: [a.x + 0.5, a.y + 0.5], kind: o.kind };
+  if (a && o && h && o.need === "unit") { const t = unitAt(b, h.x, h.y); if (t && t.side === "enemy" && active(t) && v.seen.has(t.id)) out.hover = { x: t.x, y: t.y, size: t.size || 1, from: [a.x + 0.5, a.y + 0.5], unit: true }; }
+  return out;
+}
+// Tell me what you see (sim/allyorders.js allyIntel): what an ally told your people is in the fog, as they told it (it
+// does not move with what is there): only on cells your people do not see now, on the floor shown.
+function allyIntelShown(b, v) {
+  const list = typeof ALLY_SIM.allyIntel === "function" ? ALLY_SIM.allyIntel(b) || [] : [];
+  const f = floorNo(b), F = floorsOf(b);
+  return list.filter((m) => m && Number.isInteger(m.x) && Number.isInteger(m.y) && m.x >= 0 && m.y >= 0 && m.x < b.w && m.y < b.h && !v.vis[m.y * b.w + m.x] && (!F || (m.f ?? 0) === f));
+}
+// The hover text of the marks on a cell in the fog: who told it, when, what.
+function allyIntelHover(b, v, x, y) {
+  if (!b.raid || v.vis[y * b.w + x]) return "";
+  const here = allyIntelShown(b, v).filter((m) => m.x === x && m.y === y);
+  return here.map((m) => {
+    const by = typeof m.by === "number" ? unitById(b, m.by) : null, who = by ? by.name : typeof m.by === "string" ? m.by : "an ally";
+    return `<b style="color:${ALLY_COLOR}">?</b> Told by ${esc(who)}${m.turn != null ? ` on turn ${m.turn}` : ""}: ${esc(m.label || m.kind || "something")}. <span class="muted">Not seen by your people.</span>`;
+  }).join("<br>");
+}
+// The overwatch cones of the allies your people see (green, dashed: theirs), and the way being picked for one.
+const allyConeR = (b, a) => Math.min(sightAt(b, a), WEAPONS[a.weapon] ? (WEAPONS[a.weapon].opt || 8) + 8 : 16);
+const allyWedge = (b, a, ang) => ({ round: false, near: 0, ang, wedges: [{ r: allyConeR(b, a), half: VISION.HALF }] });
+function drawAllyCones(b) {
+  for (const c of cui.allyShown && cui.allyShown.b === b ? cui.allyShown.cones : []) drawCone(b, c.a.x, c.a.y, allyWedge(b, c.a, Math.atan2(c.face[1] - c.a.y, c.face[0] - c.a.x)), "rgba(79,224,138,0.07)", "rgba(79,224,138,0.7)", true);
+  const f = allyNow(b), h = cui.hover;
+  if (f && f.a && f.o && f.o.need === "face" && h && (h.x !== f.a.x || h.y !== f.a.y)) drawCone(b, f.a.x, f.a.y, allyWedge(b, f.a, Math.atan2(h.y - f.a.y, h.x - f.a.x)), "rgba(79,224,138,0.16)", "rgba(130,240,170,0.95)");
 }
 
 function raidButtons(state, b, u, btn) {
@@ -2814,6 +3072,10 @@ function previewHtml(b, state = null) {
   if (b.layout && state) return layoutHover(state, b, h, ghostAt(state, b, h.x, h.y)); // the base map (ui/basemap.js)
   if (b.stores && !unitAt(b, h.x, h.y)) { const sc = storeAt(b, h.x, h.y); if (sc && (b.phase === "deploy" || !CDEF(b.cells[h.y * W + h.x]).walk)) return storeHover(sc); } // a store on the base map
   if (u && (cui.mode === "suppress" || cui.mode === "throwspear" || cui.mode === "launch")) return aimPreview(b, u, h); // the weapons overhaul's targeting
+  const ap = allyMode() ? allyPreview(state, b, h) : ""; // Ally orders: the tile, the way or the enemy picked, the odds they heed it
+  if (ap) return ap;
+  const ih = allyIntelHover(b, view(b), h.x, h.y); // Tell me what you see: what an ally told your people is there
+  if (ih) return ih;
   const v = view(b);
   const t = unitAt(b, h.x, h.y);
   const nlp = nlPreview(b, t && (t.side === "player" || v.vis[h.y * W + h.x]) ? t : null, h, u, cui); // the pepper cone, hands up, your knocked out (ui/nonlethal.js)
@@ -2839,7 +3101,7 @@ function previewHtml(b, state = null) {
     return `<b>${esc(t.name)}</b> <span class="muted">${gunText(b, t)} · ${Math.round(t.hp)}/${t.maxHp} hp</span>${stealthy}${sense}${kit}${zt}${turned}${groupLine(state, b, t)}<br>${o ? (o.ok ? `<span class="${hitTone(o.chance)}"><b class="cbbig">${o.chance}%</b> ${esc(o.label)}</span>${breakdownHtml(hitBreakdown(b, u, t, o))}` : `<span class="muted">${esc(o.label)}</span>`) : ""}`;
   }
   // The third side (sim/thirdside.js): survivors keeping to themselves, soldiers fighting the dead.
-  if (t && t.side === "third" && v.seen.has(t.id)) return `<b>${esc(t.name)}</b> <span class="muted">${esc(t.weaponName)} · ${Math.round(t.hp)}/${t.maxHp} hp</span><br><span class="small">${thirdWord(b, t)} Click twice to attack.</span>${groupLine(state, b, t)}`;
+  if (t && t.side === "third" && v.seen.has(t.id)) return `<b>${esc(t.name)}</b> <span class="muted">${esc(t.weaponName)} · ${Math.round(t.hp)}/${t.maxHp} hp</span><br><span class="small">${thirdWord(b, t)} Click twice to attack.</span>${groupLine(state, b, t)}${allyLine(state, b, t)}`;
   // The knocked out (sim/stealth.js).
   if (t && t.side === "enemy" && t.ko && v.vis[h.y * W + h.x]) return `<b>${esc(t.name)}</b> · ${t.tied ? "tied up: your prisoner if you win" : `out cold, wakes in about ${Math.max(1, t.wake - b.turn)} turn${t.wake - b.turn === 1 ? "" : "s"}: Tie up (T) from next to them`}. <span class="muted">Drag (Shift+D) moves them out of sight.</span>`;
   if (t && t.side === "player" && t.vol != null) return `<b style="color:${VOL_COLOR}">${esc(t.name)}</b> <span class="muted">${Math.round(t.hp)}/${t.maxHp} hp · ${gunText(b, t)}</span><br><span class="small">Volunteer from ${esc(t.volGroup || "an allied group")}: their own orders. They act on their own at the end of your turn.</span>`; // sim/volunteers.js
@@ -3195,11 +3457,13 @@ function drawIsoView(state, b, now, cw, ch) {
     hits: NO_HITS, retreatOpen: !!plan, plan, // the hit chances over the enemies are ui/battlehud.js's (hudPaint)
     threat: (x, y) => threatAt(b, v, x, y), // the threat preview: lines from whoever could hit the hovered tile
     callout: cui.mode === "callout" && v.u && !hold ? callTargets(state, b, v.u) : null, // Call out: whom it can be called to (sim/parley.js)
+    allyMarks: b.raid && !hold ? allyMarks(state, b, v) : null, // Ally orders (sim/allyorders.js): the markers you set, the allies in reach while picking
     cone: nlConeMask(b, v.u, cui), // the pepper spray's cone toward the hovered tile (ui/nonlethal.js)
     throwMarks: throwPreview(b, v.u), // throw mode: the range and the reach of the hovered spot (sim/throwables.js)
     ghost: b.layout && cui.hover ? ghostAt(state, b, cui.hover.x, cui.hover.y) : null, // the base map: the pick's footprint under the mouse (sim/basemap.js)
   });
   if (!b.over && b.phase !== "deploy" && !hold) drawCones(b, v); // sim/vision.js: the view cones (the selected one's, the toggle's, the way being picked)
+  if (b.raid && !b.over && !hold) drawAllyCones(b); // Ally orders: an ally's overwatch cone, the way being picked for one
   // Suppressing fire's cone, a thrown spear's reach: ground diamonds over the scene (isoview.js project).
   if (v.u && (cui.mode === "suppress" || cui.mode === "throwspear" || cui.mode === "launch")) {
     const band = aimArea(b, v.u, v.vis, cui.hover, cui.mode);

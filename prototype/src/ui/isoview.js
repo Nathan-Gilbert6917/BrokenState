@@ -2224,6 +2224,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     for (const t of H.callout) if (onFloor(b, t)) diamond(ctx, t.x, t.y, tileTop(b, t.x, t.y), 1.5);
     ctx.stroke(); ctx.setLineDash([]);
   }
+  if (H.allyMarks) drawAllyGround(ctx, b, H.allyMarks); // Ally orders (ui/combat.js allyMarks): the reach, the allies in it
   if (H.mode === "meds" && u) {
     ctx.strokeStyle = COL.good; ctx.lineWidth = 2; ctx.beginPath();
     for (const p of players) if (!p.dead && !p.left && (p === u || Math.max(Math.abs(u.x - p.x), Math.abs(u.y - p.y)) === 1)) diamond(ctx, p.x, p.y, tileTop(b, p.x, p.y), 1.5);
@@ -2260,6 +2261,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   drawFxIso(ctx, b, now, H, state, shown);
   // Labels over the units: health, actions, status, the hit chance against each enemy in sight.
   for (const s of shown) drawLabels(ctx, b, s, H);
+  if (H.allyMarks) drawAllyMarks(ctx, b, H.allyMarks); // Ally orders: the flags you set, the targets, the tile being picked
   // The retreat confirm: each one's odds of getting out over their head.
   if (H.retreatOpen && H.plan) {
     for (const p of H.plan.units) {
@@ -2309,7 +2311,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
         if (shot && u) tag(ctx, `⚠ ${T.shot}%`, EX, EY - 10, T.shot >= 50 ? COL.bad : T.shot >= 25 ? "#e0a84f" : "#9aa0a8", Math.max(10, 3.2 * S));
       }
     }
-    if (u && active(u) && b.phase === "player") {
+    if (u && active(u) && b.phase === "player" && !String(H.mode || "").startsWith("ally")) { // (an ally's target being picked: not your shot)
       const t = H.unitAt(h.x, h.y);
       if (t && t.side === "enemy" && active(t) && v.seen.has(t.id)) {
         const o = H.odds(b, u, t);
@@ -2725,6 +2727,8 @@ function drawLabels(ctx, b, s, H) {
   // an amber ! when the sim says one of yours sees through them (status.tell, nothing else).
   const g = b.raid && t.side !== "player" && !t.down ? parleyStatus(b, t) : null;
   if (g) tags.push(g.active ? ["⚔", g.color || COL.bad, true] : [String(g.label || "").toUpperCase(), g.color || "#e9d98f"]); // true: a filled pill
+  const ao = H.allyMarks && H.allyMarks.icons && H.allyMarks.icons.get(t.id);
+  if (ao) tags.push([ao, ALLY_COL]); // an ally under your orders (sim/allyorders.js): the order's icon
   if (g && g.tell) tags.push(["!", "#f0b44a", true]); // a tell (parleyStatus.tell: one of yours saw through them, and they give themselves away now)
   if (t.down && !t.surr) tags.push([t.ko ? (t.tied ? "TIED" : "ZZ") : t.stab ? "+" : "!", t.ko ? "#9aa0a8" : t.stab ? COL.good : COL.bad]); // surr: its own tag (ui/nonlethal.js)
   else if (t.tied && !t.down) tags.push(["TIED", "#c9a74a"]); // a captive of yours tied up on a rescue raid (sim/rescueraid.js)
@@ -2757,6 +2761,109 @@ function drawLabels(ctx, b, s, H) {
     const o = H.hits.get(t.id);
     const col = o.chance >= 65 ? COL.good : o.chance >= 35 ? COL.mid : COL.bad;
     tag(ctx, `${o.chance}%`, X + bw / 2 + 14, by + 4, col, fs);
+  }
+}
+
+// ---------- orders to allies (ui/combat.js allyMarks, sim/allyorders.js) ----------
+// Only what your people set or see: a flag on a tile you sent an ally to (wherever it is, the fog too), a thin dashed
+// line to it from an ally your people see, a crosshair on a target they see; while picking, the reach (shaded), the
+// allies in it, the tile under the mouse. Nothing an ally sees is drawn.
+const ALLY_COL = "#4fe08a"; // sim/parley.js's Allied
+function drawAllyGround(ctx, b, M) {
+  for (const m of M.intel || []) drawIntelMark(ctx, b, m, FR.S); // Tell me what you see: told, not seen
+  if (M.ring) {
+    const { x: rx, y: ry, r } = M.ring;
+    fillCells(ctx, b, (i) => Math.hypot((i % b.w) - rx, ((i / b.w) | 0) - ry) <= r, "rgba(79,224,138,0.07)");
+  }
+  if (M.pick && M.pick.length) {
+    ctx.strokeStyle = M.color || ALLY_COL; ctx.lineWidth = 2; ctx.beginPath();
+    for (const t of M.pick) if (onFloor(b, t)) diamond(ctx, t.x, t.y, tileTop(b, t.x, t.y), 1.5);
+    ctx.stroke();
+  }
+}
+// What an ally told your people is in the fog (sim/allyorders.js allyIntel; ui/combat.js keeps only the fogged cells):
+// a dim, dashed shadow of what it is with a "?" over it; the fog stays as it is.
+const INTEL_TINT = { zombie: "181,211,106", person: "200,214,232" }; // the dead green, people pale
+function isoBox(ctx, b, x0, y0, x1, y1, z0, z1) { // the outline of a box on the ground (cells), its top filled
+  const p = (x, y, z) => project(x, y, z), top = [p(x0, y0, z1), p(x1, y0, z1), p(x1, y1, z1), p(x0, y1, z1)], bot = [p(x0, y0, z0), p(x1, y0, z0), p(x1, y1, z0), p(x0, y1, z0)];
+  ctx.beginPath(); top.forEach(([X, Y], i) => (i ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y))); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); bot.forEach(([X, Y], i) => (i ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y))); ctx.closePath();
+  for (let i = 0; i < 4; i++) { ctx.moveTo(...top[i]); ctx.lineTo(...bot[i]); }
+  ctx.stroke();
+}
+function drawIntelMark(ctx, b, m, S) {
+  const { x, y } = m, z = tileTop(b, x, y), [X, Y] = project(x + 0.5, y + 0.5, z);
+  const rgb = INTEL_TINT[m.kind] || "190,226,200";
+  ctx.save();
+  ctx.fillStyle = `rgba(${rgb},0.2)`; ctx.strokeStyle = `rgba(${rgb},0.7)`; ctx.lineWidth = 1.4; ctx.setLineDash([3, 3]);
+  let top = Y - 14 * S;
+  if (m.kind === "zombie" || m.kind === "person") { // a figure: the head, the body
+    const lean = m.kind === "zombie" ? 2 * S : 0;
+    ctx.beginPath(); ctx.ellipse(X, Y, 7 * S, 3.2 * S, 0, 0, Math.PI * 2); ctx.stroke();
+    rr(ctx, X - 4 * S + lean, Y - 21 * S, 8 * S, 19 * S, 3 * S); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.arc(X + lean * 1.5, Y - 25 * S, 3.6 * S, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    top = Y - 30 * S;
+  } else if (m.kind === "door" || m.kind === "window") { // a frame (a window's with its cross bar, higher up)
+    const lo = m.kind === "door" ? Y : Y - 10 * S, hi = m.kind === "door" ? Y - 24 * S : Y - 22 * S, w = (m.kind === "door" ? 6 : 7) * S;
+    ctx.fillRect(X - w, hi, 2 * w, lo - hi); ctx.strokeRect(X - w, hi, 2 * w, lo - hi);
+    if (m.kind === "window") { ctx.beginPath(); ctx.moveTo(X, hi); ctx.lineTo(X, lo); ctx.moveTo(X - w, (hi + lo) / 2); ctx.lineTo(X + w, (hi + lo) / 2); ctx.stroke(); }
+    top = hi - 4 * S;
+  } else if (m.kind === "vehicle") { // a car: the body, the cabin
+    isoBox(ctx, b, x + 0.06, y + 0.22, x + 0.94, y + 0.78, z, z + 7);
+    isoBox(ctx, b, x + 0.3, y + 0.28, x + 0.72, y + 0.72, z + 7, z + 12);
+    top = Y - 20 * S;
+  } else if (m.kind === "body") isoBox(ctx, b, x + 0.15, y + 0.35, x + 0.85, y + 0.65, z, z + 2.5); // someone lying there
+  else { const k = m.kind === "item" ? 0.32 : 0.22; isoBox(ctx, b, x + k, y + k, x + 1 - k, y + 1 - k, z, z + (m.kind === "item" ? 4 : 9)); } // a crate, a thing
+  ctx.setLineDash([]);
+  ctx.font = `800 ${Math.max(13, Math.round(5.2 * S))}px Segoe UI, sans-serif`; ctx.textAlign = "center";
+  ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0,0,0,0.75)"; ctx.fillStyle = "rgba(190,236,206,0.92)";
+  ctx.strokeText("?", X, top); ctx.fillText("?", X, top);
+  ctx.restore();
+}
+// A flag on a tile: a pole and a pennant, the tile outlined, dashed.
+function allyFlag(ctx, b, x, y, S, alpha = 1) {
+  const z = tileTop(b, x, y);
+  ctx.globalAlpha = alpha;
+  ctx.strokeStyle = ALLY_COL; ctx.lineWidth = 1.5; ctx.setLineDash([4, 3]);
+  ctx.beginPath(); diamond(ctx, x, y, z, 2); ctx.stroke(); ctx.setLineDash([]);
+  const [X, Y] = project(x + 0.5, y + 0.5, z), top = Y - UNIT_H * 0.9 * S;
+  ctx.strokeStyle = "rgba(15,17,20,0.9)"; ctx.lineWidth = 3.5; ctx.beginPath(); ctx.moveTo(X, Y); ctx.lineTo(X, top); ctx.stroke();
+  ctx.strokeStyle = "#d8e8dc"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(X, Y); ctx.lineTo(X, top); ctx.stroke();
+  const pw = Math.max(9, 5 * S), ph = Math.max(7, 3.6 * S);
+  ctx.fillStyle = ALLY_COL; ctx.beginPath(); ctx.moveTo(X, top); ctx.lineTo(X + pw, top + ph / 2); ctx.lineTo(X, top + ph); ctx.closePath(); ctx.fill();
+  ctx.globalAlpha = 1;
+}
+// A crosshair on a target: a ring and four ticks at the chest.
+function allyCross(ctx, b, x, y, n, S, alpha = 1) {
+  const [X, Y] = project(x + n / 2, y + n / 2, standZ(b, x, y) + UNIT_H * 0.55), R = Math.max(7, 4.2 * S) * n;
+  ctx.globalAlpha = alpha; ctx.strokeStyle = ALLY_COL; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(X, Y, R, 0, Math.PI * 2); ctx.stroke();
+  ctx.beginPath();
+  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { ctx.moveTo(X + dx * R * 0.5, Y + dy * R * 0.5); ctx.lineTo(X + dx * R * 1.4, Y + dy * R * 1.4); }
+  ctx.stroke(); ctx.globalAlpha = 1;
+}
+// A thin dashed line from the ally (cells, their middle) to a tile or a unit.
+function allyLine(ctx, b, from, x, y, z, alpha = 1) {
+  const [x0, y0] = from, fx = Math.max(0, Math.min(b.w - 1, Math.floor(x0))), fy = Math.max(0, Math.min(b.h - 1, Math.floor(y0)));
+  const [X0, Y0] = project(x0, y0, standZ(b, fx, fy) + UNIT_H * 0.3), [X1, Y1] = project(x, y, z);
+  ctx.globalAlpha = alpha; ctx.strokeStyle = ALLY_COL; ctx.lineWidth = 1.2; ctx.setLineDash([5, 4]);
+  ctx.beginPath(); ctx.moveTo(X0, Y0); ctx.lineTo(X1, Y1); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
+}
+function drawAllyMarks(ctx, b, M) {
+  const S = FR.S, inMap = (x, y) => x >= 0 && y >= 0 && x < b.w && y < b.h;
+  for (const f of M.flags || []) {
+    if (!inMap(f.x, f.y)) continue;
+    if (f.from) allyLine(ctx, b, f.from, f.x + 0.5, f.y + 0.5, tileTop(b, f.x, f.y), 0.8);
+    allyFlag(ctx, b, f.x, f.y, S);
+  }
+  for (const t of M.cross || []) {
+    if (t.from) allyLine(ctx, b, t.from, t.x + t.size / 2, t.y + t.size / 2, standZ(b, t.x, t.y) + UNIT_H * 0.45, 0.6);
+    allyCross(ctx, b, t.x, t.y, t.size, S);
+  }
+  const h = M.hover;
+  if (h && inMap(h.x, h.y)) {
+    if (h.unit) { allyLine(ctx, b, h.from, h.x + h.size / 2, h.y + h.size / 2, standZ(b, h.x, h.y) + UNIT_H * 0.45, 0.9); allyCross(ctx, b, h.x, h.y, h.size, S, 0.9); }
+    else { allyLine(ctx, b, h.from, h.x + 0.5, h.y + 0.5, tileTop(b, h.x, h.y), 0.9); allyFlag(ctx, b, h.x, h.y, S, 0.65); }
   }
 }
 

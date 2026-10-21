@@ -40,6 +40,7 @@ import { WIRE } from "../sim/wire.js"; // Cut wire (sim/wire.js)
 import { TENT_TAKE } from "../sim/data-tents.js"; // Take down, Slash at a tent (sim/tentfight.js)
 import { MEDIC } from "../sim/medics.js";
 import { PLATE_AP } from "../sim/carrykit.js";
+import { ALLY_ORDER } from "../sim/allyorders.js"; // Ally orders' reach (sim/allyorders.js)
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const plain = (h) => String(h || "").replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"');
@@ -58,7 +59,7 @@ export const ICON = {
   peek: "🚪", close: "🚪", brace: "🧱", climb: "🧗", checkwindow: "🪟", openwindow: "🪟", closewindow: "🪟", breakwindow: "🪟", shove: "🪑", boardup: "🔨", teardown: "🪓", cutwire: "✂️", strike: "⛺", slashtent: "🔪", lights: "💡", light: "🔦", nvg: "🥽", visor: "⛑️",
   vehicle: "🧳", board: "🚙", disembark: "🚶", drive: "🏎️", turn: "↪️", gunner: "🪖", pullOut: "🆘",
   surrender: "🙌", takeAlive: "🤝", ladder: "🪜", push: "✋", ram: "🐏", dropRam: "⬇️", loadRam: "🐏", unloadRam: "🐏", takeRam: "🐏", drop: "🪨",
-  inventory: "🎒", handover: "🤲", cones: "📐", more: "⋯", callout: "📣",
+  inventory: "🎒", handover: "🤲", cones: "📐", more: "⋯", callout: "📣", allyorder: "🫡",
 };
 const iconOf = (v) => ICON[v] || (String(v).startsWith("rescue:") ? "🔓" : "•");
 
@@ -71,7 +72,7 @@ export const COST = {
   reload: 1, getshells: 1, suppress: 1, throwspear: 1, pickspear: 1, throw: 1, tie: 1, drag: 1, meds: 1, heal: 1, revive: 2, finish: 1, crush: 1, doubletap: 1, pickup: 1,
   stowbody: 1, pickCarried: 1, close: 1, climb: BMAP.CLIMB.ap, checkwindow: 0, openwindow: WINDOW.OPEN_AP, closewindow: WINDOW.OPEN_AP, breakwindow: WINDOW.BREAK.ap, shove: SHOVE.AP, boardup: BOARD.AP, teardown: BOARD.TEAR.ap, cutwire: WIRE.AP, strike: TENT_TAKE.AP, slashtent: TENT_TAKE.SLASH_AP, lights: INDOOR.AP, search: SEARCH.ap, searchBody: SEARCH.ap, extract: 1, retreat: 1, board: 1, disembark: 1,
   turn: 1, gunner: 1, drive: 2, pullOut: MEDIC.PULL.AP, goup: 1, godown: 1, unjam: 1, plate: PLATE_AP, reloadTaser: 1, pepper: 1, execute: 1, glreload: 1, ladder: 1,
-  push: 1, shoveFoe: 1, loadRam: 1, unloadRam: 1, handover: 1, callout: 1, // handover: unitOrders' ap wins (a free Face toward the mate out of the cone)
+  push: 1, shoveFoe: 1, loadRam: 1, unloadRam: 1, handover: 1, callout: 1, allyorder: 1, // handover: unitOrders' ap wins (a free Face toward the mate out of the cone)
 };
 const costOf = (o) => (o.ap != null ? o.ap : COST[o.v] != null ? COST[o.v] : String(o.v).startsWith("rescue:") ? 1 : null);
 const costWord = (c) => (c === 0 ? "Free" : c === "end" ? "Ends the unit's turn" : c === "all" ? "Uses everyone's actions" : c == null ? "" : `${c} action${c === 1 ? "" : "s"}`);
@@ -92,7 +93,7 @@ const GROUPS = [
   ["search", "searchBody", "quick", "ground", "handover", "dropCarried", "dropAllCarried", "pickCarried", "crush", "doubletap", "pickup", "stowbody"],
   ["peek", "close", "brace", "climb", "checkwindow", "openwindow", "closewindow", "breakwindow", "shove", "boardup", "teardown", "cutwire", "strike", "slashtent", "lights", "light", "nvg", "visor"], // doors, windows (sim/windows.js), barricades (sim/barricade.js), wire (sim/wire.js) and lights
   ["vehicle", "board", "disembark", "drive", "turn", "gunner", "pullOut"],
-  ["callout"], // the rest: Call out (sim/parley.js), a rescue's ropes and locks, the siege kit, Surrender, Take them alive
+  ["callout", "allyorder"], // the rest: Call out (sim/parley.js), Ally orders (sim/allyorders.js), a rescue's ropes and locks, the siege kit, Surrender, Take them alive
   ["inventory", "cones"],
 ];
 const MISC = 6, VIEW = 7;
@@ -101,7 +102,7 @@ const TRAY = [["Moving", "🗺️"], ["Fight", "⚔️"], ["Wounded", "🩺"], [
 // The orders that stand on the bar, not in their group's tray: the everyday ones, and those that only show up when
 // they matter (a jam, the way out, the shells in the pack, someone down, getting in or out of the car).
 export const PRIMARY = new Set(["move", "sneak", "evacStop", "retreat", "extract", "shoot", "overwatch", "reload", "unjam", "getshells", "melee", "throw", "launch", "hunker",
-  "meds", "heal", "revive", "selfStab", "search", "searchBody", "board", "disembark", "drive", "callout"]); // callout: on the bar while someone of another group is in sight (greyed: its tray)
+  "meds", "heal", "revive", "selfStab", "search", "searchBody", "board", "disembark", "drive", "callout", "allyorder"]); // callout: on the bar while someone of another group is in sight, allyorder while an ally is in range (greyed: its tray)
 const TRAY_FROM = 9; // fewer orders than this (Inventory and Cones aside): all on the bar, no trays
 const GROUP_OF = new Map(GROUPS.flatMap((g, i) => g.map((v, j) => [v, [i, j]])));
 const rankOf = (v) => GROUP_OF.get(v) || [MISC, 99];
@@ -129,6 +130,7 @@ const WHEN = {
   launch: "No grenade launcher or rocket carried.", meds: "No meds left.", face: "Nobody to turn.", sneak: "Nobody to keep low.", hunker: "Nobody to hunker.",
   handover: "Nobody of yours right next to them in their view cone to trade with.",
   callout: "Raids only: someone of another group in sight (survivors, soldiers, a hostile group's people).",
+  allyorder: `Raids only: an allied group (Fight with us) with someone of theirs in sight within ${ALLY_ORDER.RANGE} tiles.`,
 };
 const whenOf = (v, b, u) => { const w = WHEN[v]; return typeof w === "function" ? w(b, u) : w || "Not possible here now."; };
 // Every battle order of the key table (Battle orders: the ones with a v), the inventory and the view cones: the
@@ -137,7 +139,7 @@ export const BAR_KEYS = KEYMAP.filter((k) => k.ctx === "battle" && (k.v || k.id 
 const vOfKey = (k) => (k.v ? k.v : k.id === "battle.inventory" ? "inventory" : "cones");
 const keyOfV = (v) => (v === "inventory" ? "battle.inventory" : v === "cones" ? "bview.cones" : `battle.${v}`);
 const KEYDEF = new Map(BAR_KEYS.map((k) => [vOfKey(k), k]));
-const SHORT = { light: "Light", nvg: "NVG", lights: "Lights", vehicle: "Vehicle", search: "Search", quick: "Quick search", retreat: "Retreat", extract: "Extract", stowbody: "Stow body", pickup: "Pick up body", crush: "Crush skull", visor: "Visor", firemode: "Fire mode", unjam: "Unjam", suppress: "Suppress", throwspear: "Throw spear", pickspear: "Pick up spear", ammocycle: "Next round", launch: "Launch", gunner: "Turret", pullOut: "Pull out", close: "Close door", brace: "Brace door", climb: "Climb", checkwindow: "Check window", openwindow: "Open window", closewindow: "Close window", breakwindow: "Break window", shove: "Shove", shoveFoe: "Shove foe", boardup: "Board up", teardown: "Tear down", cutwire: "Cut wire", strike: "Take down", slashtent: "Slash tent", face: "Face", sneak: "Sneak", drag: "Drag", ground: "Ground", callout: "Call out" };
+const SHORT = { light: "Light", nvg: "NVG", lights: "Lights", vehicle: "Vehicle", search: "Search", quick: "Quick search", retreat: "Retreat", extract: "Extract", stowbody: "Stow body", pickup: "Pick up body", crush: "Crush skull", visor: "Visor", firemode: "Fire mode", unjam: "Unjam", suppress: "Suppress", throwspear: "Throw spear", pickspear: "Pick up spear", ammocycle: "Next round", launch: "Launch", gunner: "Turret", pullOut: "Pull out", close: "Close door", brace: "Brace door", climb: "Climb", checkwindow: "Check window", openwindow: "Open window", closewindow: "Close window", breakwindow: "Break window", shove: "Shove", shoveFoe: "Shove foe", boardup: "Board up", teardown: "Tear down", cutwire: "Cut wire", strike: "Take down", slashtent: "Slash tent", face: "Face", sneak: "Sneak", drag: "Drag", ground: "Ground", callout: "Call out", allyorder: "Ally orders" };
 const nameOf = (v) => { if (SHORT[v]) return SHORT[v]; const k = KEYDEF.get(v); return k ? k.label.split(/ \(|:/)[0] : v; };
 
 // The bar's orders for the selected unit: unitOrders' list, the core ones it lacks (greyed, with why), Inventory and

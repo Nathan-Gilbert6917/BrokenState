@@ -139,6 +139,8 @@ export const KEYMAP = [
     ["teardown", "Tear down: the boards next to them (2 actions)", "Alt+KeyJ"],
     // sim/parley.js: shout to another group in sight (a raid's survivors, a hostile group's people) to talk (Alt+O: call Out).
     ["callout", "Call out: talk to another group in sight (raids; 1 action)", "Alt+KeyO"],
+    // sim/allyorders.js: tell an allied survivor within 5 tiles what to do; they may ignore it (Alt+A: Ally).
+    ["allyorder", "Ally orders: tell an allied survivor within 5 tiles what to do (raids; 1 action)", "Alt+KeyA"],
     // sim/shoving.js: a foe right next to them shoved back a tile or flat on their back (1 action).
     ["shoveFoe", "Shove foe: someone or one of the dead right next to them, back a tile or flat on their back (1 action)", "Alt+KeyV"],
     // sim/tentfight.js: a tent next to them taken down (both actions a go, a couple of turns) or slashed (1 action).
