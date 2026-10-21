@@ -280,6 +280,8 @@ const CONDITION_HOW = {
   stomach: "It passes in a few days; 1 meds ends it at once if you want. Purified water prevents it.",
   poisoning: "It passes in a day or two (they rest it out); 1 meds ends it at once. A better cook, a clean kitchen (Clean first) and cooked meat prevent it.",
   pneumonia: "It kills without meds: treat it at once and get them into a hospital bed. They cannot work until it clears.",
+  campfever: "A course of meds (two doses or more) and rest: alone it drags on for weeks. Catching and worst where people are packed in: more beds, a hospital and keeping the sick apart slow it.",
+  woundfever: "Treat it at once (two doses or more) and get them into a hospital bed: it kills without meds. It comes from an infected wound, so clean those too.",
 };
 function conditionEntries() {
   const out = Object.entries(CONDITIONS).map(([k, c]) => {

@@ -75,6 +75,7 @@ import { atWarWithYou } from "./playerwars.js"; // a group at war with you conte
 import { keepItem } from "./arsenal.js"; // gear your people left in a container, taken home
 import { scavVehicle, scavSaw } from "./groupworld.js"; // a wreck brought home now and then; the bases they saw // GROUP_PRIORITIES scavenge: how often a type sends parties out // group arsenals: weapons and armour found at the site; a party lost is people and kit lost
 import { note, roundsIn } from "./ledger.js"; // the conservation test's ledger (off in play)
+import { winterScavFood } from "./winter.js"; // winter: less food in a find (call-time only)
 
 export const AISCAV = {
   minPop: 6, gapMin: 6, gapMax: 10, retry: 3, minNeed: 0.25, baseWant: 0.15, range: 10, share: 0.12,
@@ -139,6 +140,7 @@ export function haulFor(t, taken, level, eff, state = null, kind = null) {
   const units = taken * AISCAV.perLoot * Math.max(0, level) * eff;
   const out = {};
   for (let i = 0; i < keys.length; i++) out[keys[i]] = units * (w[i] / total) * (MULT[keys[i]] || 1);
+  if (state && out.food > 0) out.food = winterScavFood(state, out.food, false); // winter.js: your finds' winter food (AI parity)
   if (state && (out.food > 0 || out.preserved > 0)) {
     const shop = kind ? 1 : shopFood(state, t);
     let drawn = 0;

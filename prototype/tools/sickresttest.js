@@ -15,6 +15,7 @@ import { unfitWhy } from "../src/sim/trips.js";
 import { FILTERS } from "../src/ui/teamform.js";
 import { setAutopilot, governRoles } from "../src/sim/autopilot.js";
 import { GROUP_ILL, illDaily, illOf, workingPeople } from "../src/sim/groupcare.js";
+import { groupSickMult } from "../src/sim/disease.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
 import { workTab, taskChip } from "../src/ui/work.js";
 
@@ -210,7 +211,8 @@ section("AI groups (coarse)");
   f.pop = 40; f.wounded = 0; f.ill = 0;
   for (let i = 0; i < 120; i++) illDaily(st, f);
   const share = illOf(f) / f.pop;
-  check(share > 0.03 && share < 0.12, `a group of 40 settles at ${(share * 100).toFixed(1)}% ill (rate ${GROUP_ILL.rate}, mend ${GROUP_ILL.mend})`);
+  const m = groupSickMult(st, f, GROUP_ILL.rate); // disease.js: more people a base, more of it (and flu season)
+  check(share > 0.03 && share < 0.12 * m, `a group of 40 settles at ${(share * 100).toFixed(1)}% ill (rate ${GROUP_ILL.rate} × ${m.toFixed(2)} for ${(f.pop / Math.max(1, f.bases.length)).toFixed(0)} a base, mend ${GROUP_ILL.mend})`);
   check(Math.abs(workingPeople(f) - (f.pop - f.ill)) < 1e-9 && workingPeople(f) < f.pop, `their ill do not work (${workingPeople(f).toFixed(1)} of ${f.pop} at work)`);
   f.ill = 50;
   check(illOf(f) === 40 && workingPeople(f) === 0, "never more ill than people");
