@@ -11,6 +11,7 @@
 // worm once spotted, an infected wound), a group you know, an outsider party on a live tile. Until then it shows as
 // "???" with its category. state.codex = { seen: { key: day }, fresh: [keys not looked at yet] } is saved with the
 // campaign (sim/save.js writes the whole state); an older save without it opens what its world already shows.
+import { MEET } from "../sim/trademeet.js"; // meeting to trade: the wait, the groups' halfway rule
 import { FOODS, FOOD_GROUPS } from "../sim/foods.js"; // food by type in the codex
 import { STORE, FACTOR } from "../sim/storage.js"; // the food chain entries: food rooms and spoilage
 import { WOOD } from "../sim/woodcutting.js"; // a camp's fire a day
@@ -403,6 +404,11 @@ function placeEntries() {
     stats: [["Who", "the other groups' scavenging parties, raiders and travellers from outside, and in hardcore the bands on the road"], ["What they know", "the places by the roads and in the towns near where they live, and what their own surveys find (8 hours on a tile, as yours)"], ["Where first", "the places on the roads near their bases go first; off-road and unknown ground stays richer for longer"], ["Same tile", "in different places nobody minds; in the same place you meet them (a group at war with you comes for you either way)"]],
     text: "The places run down without you: the groups send parties to the places they know near their bases, one place at a time, and survey tiles to find the hidden ones. They ransack containers as they go, they take what you left in a container you opened, and their raids stir a tile up. A party in a place shows on the map beside your team, and the place dialogue says when one is in it right now. The log says when a place you can see (or hear of on your radio) is picked clean, or when strangers emptied what you left.",
     how: "Do not leave things in a container near a group's base for long. Survey off the roads for the places nobody has picked over yet.", sprite: null,
+  }, {
+    key: "k:trademeet", cat: "places", name: "🤝 Meeting to trade", sub: "At a base, halfway, or a tile you pick",
+    stats: [["Where", "one of your bases, halfway along their road to it, or any tile you pick on the map (land, no base, no hive, not where the dead are)"], ["Their caravan", `waits ${MEET.WAIT_HOURS} hours at the tile, then goes home`], ["Fee", "none: each side walks its own leg"], ["Who trades", "any team of yours on the tile, from what it carries"], ["The groups", `their convoys meet at the partner's base, or halfway when the road between them is over ${MEET.AI_FAR_HOURS} hours`]],
+    text: "When you ask a group for a trade caravan, or agree a deal over the radio with We meet, you choose where. At a base the caravan trades with that base's stores for a day. At a tile in the open it waits two days, and the trade window opens when a team of yours stands on that tile; a deal agreed over the radio is filled in and honoured. A group far from your bases may call asking to meet halfway. The groups trade among themselves the same way: a convoy to a near partner's base and back with their goods, or both convoys to the middle of the road when they live far apart.",
+    how: "Meet halfway when their base is far: it halves their walk, so groups that will not come all the way may still come. Send the team with your side loaded (the trade caravan planner opens aimed at the tile), and get there inside the two days.", sprite: null,
   }];
   // Windows and doors on the battle maps (sim/windows.js, sim/buildingmaps.js DOOR_KINDS; opened on the first map with one).
   out.push({

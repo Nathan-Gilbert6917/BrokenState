@@ -19,7 +19,7 @@ import { findPath } from "./hex.js";
 import { roadblockOnEnter, rollRoadblock } from "./roadblocks.js";
 import { partyEnter as fieldPartyEnter, teamEnter as fieldTeamEnter, fieldRaidArrive, teamActs as fieldActs } from "./fieldworks.js"; // field works: roadblocks, raids on them
 import { TERRAIN, ROAD_COST, GEAR, SUPPLIES, supValue, supWeight, FACTION_TYPES } from "./data.js";
-import { FOODS, foodIn, takeFood, moveFood, packPick, addFood, foodText, typedFood, addFoods, unitsOf, DAY_KG } from "./foods.js"; // food by type: packed with its lots, eaten the soonest to spoil first
+import { FOODS, foodIn, takeFood, moveFood, packPick, addFood, foodText, typedFood, unitsOf, DAY_KG } from "./foods.js"; // food by type: packed with its lots, eaten the soonest to spoil first
 import {
   newId, log, addCard, day, hub, baseById, survivorById, atBase, skill, combatPower, hurt,
   factionById, snapshot, mergeKnowledge, gearEffect, radioBasesInRange, isNight, archerCount, usesArrows, armedFactor, arrowsBack, ARROWS, localId,
@@ -69,6 +69,7 @@ import { openTrade, routeExchange } from "./trade.js";
 import { caravanArrive, caravanHour, caravanStop } from "./caravans.js";
 import { caravanGuarded } from "./jobs.js";
 import { caravanOrderChoices, gangAmbush, wouldRaid } from "./caravanraids.js"; // any caravan on the road can be robbed
+import { meetChoices, groupConvoyArrive, convoyMeetHour } from "./trademeet.js"; // trades met at a tile: their caravan waiting, the groups' convoys meeting halfway
 import { crashesHour, crashSurvey } from "./crashes.js";
 import { breakdownsHour } from "./breakdowns.js";
 import { travelFactor, travelEffects, travelHazard, thirstAt, thirstAhead, coldAt, riverFrozen, ICE } from "./weather.js";
@@ -1759,6 +1760,7 @@ export function ordersCard(state, p, text, doneLabel, title) {
       ...(queued ? [{ label: `Resume queued orders (${queued})`, hint: `Carry on with: ${queueText(state, p)}`, order: true, resolve: (st) => resumeQueue(st, p) }] : []),
       // caravanraids.js: a caravan in sight, attack it (within a tile) or go after it.
       ...caravanOrderChoices(state, p),
+      ...meetChoices(state, p), // trademeet.js: a group's caravan waiting here to trade
       ...opts.map((o) => ({
         label: o.mission === "sweep" ? `Sweep ${sweepOpts(p.sweepPlan || {}).radius} tiles around (${sweepOpts(p.sweepPlan || {}).hours}h)` : o.mission === "fullsurvey" ? `Survey this tile (${LOOK.hours}h)` : o.mission === "survey" ? `Quick look (${LOOK.quickHours}h)` : o.label, hint: o.disabled || o.desc, disabled: !!o.disabled, order: o.mission === "survey" || o.mission === "sweep" || o.mission === "fullsurvey",
         resolve: (st) => {
@@ -2660,6 +2662,7 @@ function aiPartyHour(state, p) {
     return;
   }
   if (p.kind === "caravan" && p.phase !== "out") return caravanHour(state, p); // at your gates (caravans.js)
+  if (p.kind === "convoy" && p.phase === "meet") return convoyMeetHour(state, p); // trademeet.js: waiting halfway for the other group's convoy
   if (p.kind === "scav" && p.phase === "search") return scavSearchHour(state, p); // scavenging a site (aiscav.js)
   const entered = stepAlong(state, p, p.vehicle ? 1 : 0.9);
   const owner = entered.length && state.bases.length ? factionById(state, p.owner) : null;
@@ -2744,12 +2747,7 @@ function aiPartyHour(state, p) {
       haulConvoyArrive(state, p); // hauling.js: a group's haulers at its outpost
       removeParty(state, p);
     } else if (p.kind === "convoy") {
-      const to = factionById(state, p.targetFaction);
-      if (to && to.alive) {
-        addFoods(to, typedFood(state, "stores", 10));
-        to.stock.scrap += 10;
-      }
-      removeParty(state, p);
+      groupConvoyArrive(state, p); // trademeet.js: the swap at the partner's base or halfway, then home with the other's load
     } else if (p.kind === "caravan") {
       caravanArrive(state, p); // caravans.js: trade at your base, or home again
     } else if (p.kind === "scav") {

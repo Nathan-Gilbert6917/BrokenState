@@ -850,7 +850,7 @@ function pickModal(state, ui) {
   if (!state.autopilot && activeCrawl(state)) return ["crawl", () => crawlModal(state, ui)]; // a city crawl's block card (ui/citycrawl.js)
   if (!state.autopilot && activeHiveCrawl(state)) return ["hivecrawl", () => hiveCrawlModal(state, ui)]; // a hive crawl's chamber (ui/hivecrawl.js)
   if (state.engagement && !state.autopilot) return ["search", () => engagementModal(state)]; // on autopilot the governor searches (sim/autopilot.js)
-  if (state.trade && !state.autopilot) return ["trade", () => tradeWindow(state, ui)]; // ui/tradewindow.js
+  if (state.trade && !state.autopilot && !ui.meetPick) return ["trade", () => tradeWindow(state, ui)]; // ui/tradewindow.js (put aside while a meeting tile is picked on the map)
   if (ui.volPick) return ["volpick", () => volPickModal(state, ui)]; // ui/volunteers.js: a group's ask of you, choose who goes
   if (ui.volReq) return ["volreq", () => volRequestModal(state, ui)]; // ui/volunteers.js: ask a group for volunteers
   if (ui.diplo) return ["diplo", () => diplomacyModal(state, ui)]; // ui/diplomacy.js: jobs, market board, world affairs, coalition (over the radio panel)

@@ -23,7 +23,7 @@ import {
   caravansAt, incomingCaravans, caravanGuards, attackCaravan, caravanDestinations, caravanEstimate, launchCaravan, caravanHome,
 } from "../sim/caravans.js";
 import {
-  openRadioTrade, setRadioBase, setDelivery, setFeeOffer, deliveryFee, deliveryHours, pendingDeal, radioDeals, dealById, cancelRadioDeal, dealCaravanForm, dealLine, goodsText,
+  openRadioTrade, setRadioBase, setDelivery, setFeeOffer, setMeetTile, deliveryFee, deliveryHours, pendingDeal, radioDeals, dealById, cancelRadioDeal, dealCaravanForm, dealLine, goodsText,
 } from "../sim/radiotrade.js"; // trading over the radio
 import { captivesOf } from "../sim/conflicts.js";
 import { itemDur, itemDurMax } from "../sim/crafting.js";
@@ -40,6 +40,7 @@ import { radioSecurity } from "./intel.js"; // radio discipline, encryption, dec
 import { ask } from "./confirm.js"; // attacking a caravan asks first (one confirmation style)
 import { supplyAmt } from "../sim/rounds.js"; // "ammo": every round, any calibre
 import { stackLabel, isRoundItem, isBulk, countOf } from "../sim/itemstack.js"; // stacks in the trade lists (2026-10-10)
+import { meetPlaces, meetHours, meetProblem, meetCaravans, meetCaravanForm, caravanWhere } from "../sim/trademeet.js"; // where to meet: a base, halfway, a tile you pick
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -90,7 +91,7 @@ function gearRows(state, ctx, side) {
   const mine = side === "mine";
   const pool = mine ? ctx.myGear : ctx.theirGear;
   const chosen = mine ? ctx.t.offerGear : ctx.t.askGear;
-  if (!pool.length) return `<div class="small muted">${mine ? (ctx.kind === "visit" ? "No items in the team's cargo." : "No items in the armory.") : "No items for sale."}</div>`;
+  if (!pool.length) return `<div class="small muted">${mine ? (ctx.p ? "No items in the team's cargo." : "No items in the armory.") : "No items for sale."}</div>`;
   const prices = tradeTotals(state).lines.gear; // this group's price for each item (one not in the deal: as the next of its kind)
   return `<table class="t">${pool.map((g, i) => {
     const on = chosen.includes(g);
@@ -105,7 +106,7 @@ function intelBlock(state, ctx) {
   const io = intelOffer(state, ctx);
   const sp = spread(ctx.f, ctx.speech);
   const it = ctx.t.intel;
-  const where = ctx.kind === "visit" ? "around their gates" : `around ${ctx.f.name}'s base`;
+  const where = ctx.kind === "visit" ? "around their gates" : ctx.kind === "meet" ? "around the meeting place" : `around ${ctx.f.name}'s base`;
   return `<h3${tip("Their scouts' reports. A report shows each tile as it is now: who holds it, loot left, infection, hordes and hives. The fog lifts only on the tiles you pay for. A team carries the report home (or radios it in); at your base it goes on the map at once.")}>Intel</h3>
     <div class="row small" style="flex-wrap:wrap">${io.areas.map((a) => `<button class="mini ${it.area === a.key ? "active" : ""}" data-action="tw-intel" data-f="area" data-v="${a.key}"${tip(`${a.tiles} tiles ${where}: ${p1(a.value * sp.buy)} in trade value`)}>${esc(a.name)} · ${p1(a.value * sp.buy)}</button>`).join("")}
       <button class="mini ${it.sightings ? "active" : ""}" data-action="tw-intel" data-f="sightings"${tip(`Every horde and hive within 12 tiles of them (${io.sightings.hordes} hordes, ${io.sightings.nests} hives that they know of)`)}>Horde and hive sightings · ${p1(io.sightings.value * sp.buy)}</button>
@@ -147,11 +148,25 @@ function deliveryPick(state, ctx) {
   return `<div class="row small" style="margin:0.3rem 0;flex-wrap:wrap"><b>Delivery:</b>
     ${b("fetch", "We fetch it", `You send a trade caravan from ${base.name} to ${f.name} with your side, and it brings theirs back. They set their side aside for about ten days. No fee.`)}
     ${b("deliver", `They bring it${hrs != null ? ` · fee ${p1(fee)}` : ""}`, hrs != null ? `Their caravan brings their side to ${base.name} (about ${hrs}h) and takes yours back. The fee (in their prices) goes on their side; they may still say no.` : `They have no way to reach ${base.name} over land.`)}
-    <span class="muted">${ctx.delivery === "deliver" ? `Have your side ready at ${esc(base.name)} when they arrive.` : `Agreeing opens the trade caravan planner from ${esc(base.name)}.`}</span></div>
+    ${b("meet", "We meet · no fee", `Both sides carry their own goods to a tile: halfway along their road to ${base.name}, or one you pick on the map. Their caravan waits there two days; the planner opens to send your side from ${base.name}. They may still say no.`)}
+    <span class="muted">${ctx.delivery === "deliver" ? `Have your side ready at ${esc(base.name)} when they arrive.` : ctx.delivery === "meet" ? `Agreeing sends their caravan to the tile and opens the trade caravan planner from ${esc(base.name)}.` : `Agreeing opens the trade caravan planner from ${esc(base.name)}.`}</span></div>
+    ${ctx.delivery === "meet" ? meetRow(state, ctx) : ""}
     ${ctx.delivery === "deliver" && hrs != null ? `<div class="row small" style="margin:0.2rem 0 0.3rem;flex-wrap:wrap"><b>Fee:</b>
       <button class="mini ${ctx.t.feeOffer == null ? "active" : ""}" data-action="tw-feemode" data-v="theirs"${tip("They name the fee for the trip")}>Their fee · ${p1(fee)}</button>
       <button class="mini ${ctx.t.feeOffer != null ? "active" : ""}" data-action="tw-feemode" data-v="mine"${tip("Name your own fee. Too low and they stay home (they tell you their lowest); more than theirs earns a little goodwill.")}>Your offer</button>
       ${ctx.t.feeOffer != null ? `<input type="number" min="0" class="tw-qty" data-action="tw-fee" value="${ctx.t.feeOffer}"${tip("Your fee, in their prices")}>` : ""}</div>` : ""}`;
+}
+
+// We meet (sim/trademeet.js): the tile, halfway or picked on the map.
+function meetRow(state, ctx) {
+  const { f, t } = ctx;
+  const tile = ctx.meetTile;
+  const why = tile != null ? meetProblem(state, f, tile) : "No road halfway: pick a tile on the map.";
+  const hrs = tile != null ? meetHours(state, f, tile) : null;
+  return `<div class="row small" style="margin:0.2rem 0 0.3rem;flex-wrap:wrap"><b>Meet at:</b> ${tile != null ? esc(tileLabel(state, tile)) : "nowhere yet"}${hrs != null ? ` <span class="muted">(about ${hrs}h for them)</span>` : ""}
+    <button class="mini ${t.meetHalf ? "active" : ""}" data-action="tw-meethalf"${tip("Halfway along their road to the base you trade from")}>Halfway</button>
+    <button class="mini ${!t.meetHalf ? "active" : ""}" data-action="tw-meetpick"${tip("Click any tile on the map: in the open, not a base, not a hive, not where the dead are")}>Pick on the map…</button>
+    ${why ? `<span class="danger">${esc(why)}</span>` : ""}</div>`;
 }
 
 export function tradeWindow(state, ui) {
@@ -172,6 +187,8 @@ export function tradeWindow(state, ui) {
     ? `Nomads, ${esc(ctx.nomad.label.replace(/^Nomads \((.*)\)$/, "$1").toLowerCase())}, no base · met near ${esc(tileLabel(state, ctx.center))} · trading from what the team carries`
     : ctx.kind === "visit"
     ? `Your team at their gates (${esc(tileLabel(state, ctx.center))}) · trading from what the team carries`
+    : ctx.kind === "meet" // a meeting at a tile in the open (sim/trademeet.js)
+    ? `Their caravan met at ${esc(tileLabel(state, ctx.center))} · ${caravanGuards(f, c)} guards · waits until ${when(c.stayUntil)} · trading from what the team carries`
     : `Their caravan at ${esc(ctx.base.name)} · ${caravanGuards(f, c)} guards · leaves ${when(c.stayUntil)} · trading from ${esc(ctx.base.name)}'s stores and armory`;
   const total = tot.offer + tot.ask;
   const pct = total > 0 ? Math.round((tot.offer / total) * 100) : 50;
@@ -204,8 +221,8 @@ export function tradeWindow(state, ui) {
       ${radio ? "" : `<button data-action="gift" ${tot.offer > 0 ? "" : "disabled"}${tip("Give your side for nothing in return. Raises goodwill (up to 15 a day).")}>Give your side as a gift</button>`}
       ${ctx.visitor ? visitorTradeButtons(state, ui, ctx) : ctx.nomad ? "" : `<button data-action="pact" data-k="nonaggression" ${f.pact ? "disabled" : ""}${tip("They stop treating you as a target. Needs goodwill about -10 or more.")}>Non-aggression pact</button>
       <button data-action="pact" data-k="trade" ${f.pact === "trade" ? "disabled" : ""}${tip("Lets you set up a recurring trade route. Needs goodwill 20.")}>Trade pact</button>
-      ${c ? `<button data-action="tw-attack" data-id="${c.id}"${tip(`Fight its ${caravanGuards(f, c)} guards for everything it carries. ${f.name} turn hostile for good, other groups think less of you, and ${f.name} will raid you. Asks first.`)}>Attack the caravan…</button>` : ""}`}
-      <button data-action="tradeleave" style="margin-left:auto"${tip(radio ? "Hang up: back to the radio panel" : c ? "Close the window. The caravan stays until its day is up; reopen it from the Bases tab." : "End the visit. The team then waits for orders.")}>${radio ? "Hang up" : c ? "Close" : "Leave"}</button>
+      ${c && ctx.kind !== "meet" ? `<button data-action="tw-attack" data-id="${c.id}"${tip(`Fight its ${caravanGuards(f, c)} guards for everything it carries. ${f.name} turn hostile for good, other groups think less of you, and ${f.name} will raid you. Asks first.`)}>Attack the caravan…</button>` : ""}`}
+      <button data-action="tradeleave" style="margin-left:auto"${tip(radio ? "Hang up: back to the radio panel" : ctx.kind === "meet" ? "Close the window. The caravan waits on the tile until its time is up; trade again from the team's orders card." : c ? "Close the window. The caravan stays until its day is up; reopen it from the Bases tab." : "End the visit. The team then waits for orders.")}>${radio ? "Hang up" : c ? "Close" : "Leave"}</button>
     </div></div>`;
 }
 
@@ -223,6 +240,7 @@ export function radioModal(state, ui) {
   const pend = pendingDeal(state, f); // a radio deal waiting for your caravan (sim/radiotrade.js)
   const tb = state.bases.some((b) => b.id === ui.radioBase) ? ui.radioBase : (base || state.bases[0] || {}).id;
   const coming = incomingCaravans(state).filter((c) => c.owner === f.id);
+  const meetAt = ui.radioMeet && ui.radioMeet.factionId === f.id ? ui.radioMeet.tile : null; // a tile to meet at (sim/trademeet.js), else the base
   return `<div class="box wide"><h1>📻 ${esc(f.name)}</h1>
     <div class="where">${FACTION_TYPES[f.type].label} · <span style="color:${attColor(a)}">${a}</span> · goodwill ${Math.round(f.goodwill)}${f.pact ? ` · ${f.pact === "trade" ? "trade pact" : "non-aggression pact"}` : ""} · ${reach ? `<span class="good">in radio reach</span>` : outOfReachTag(state, f)}</div>
     <div class="grid2">
@@ -231,7 +249,8 @@ export function radioModal(state, ui) {
         <div class="choices">
           ${btn("rd-greet", "Greet them / keep in touch", cd("greet") ? `Again in ${cd("greet")} day(s)` : "+2 goodwill. Regular contact stops neutral groups drifting hostile when you expand nearby.", !reach || cd("greet"))}
           ${btn("rd-news", "Ask for news", no || (cd("news") ? `Again in ${cd("news")} day(s)` : "A report of the land around their bases (more if they like you) and the hordes near them."), !!no || cd("news"))}
-          ${btn("rd-caravan", "Ask them to send a trade caravan", noTrade || (cd("caravan") ? `Again in ${cd("caravan")} day(s)` : coming.length ? "Their caravan is already out" : `If they agree, a caravan of what they can spare comes to ${base ? base.name : "your base"} and stays a day.`), !!noTrade || cd("caravan") || coming.length)}
+          ${btn("rd-caravan", "Ask them to send a trade caravan", noTrade || (cd("caravan") ? `Again in ${cd("caravan")} day(s)` : coming.length ? "Their caravan is already out" : meetAt ? `If they agree, a caravan of what they can spare goes to ${tileLabel(state, meetAt)} and waits two days for a team of yours.` : `If they agree, a caravan of what they can spare comes to ${(baseById(state, tb) || base || { name: "your base" }).name} and stays a day.`), !!noTrade || cd("caravan") || coming.length)}
+          ${meetPicker(state, ui, f, tb, meetAt)}
           ${btn("rd-help", "Call for help", no || (cd("help") ? `Again in ${cd("help")} day(s)` : "Friendly groups or pact partners harry a raid on its way to you, or send food if the hub is starving. Costs 4 goodwill."), !!no || cd("help"))}
           ${btn("rd-pact", "Propose a non-aggression pact", "Needs goodwill about -10 or more", !!no || !!f.pact, ' data-k="nonaggression"')}
           ${btn("rd-pact", "Propose a trade pact", "Needs goodwill 20. Opens trade routes.", !!no || f.pact === "trade", ' data-k="trade"')}
@@ -243,7 +262,7 @@ export function radioModal(state, ui) {
           <div class="row" style="margin-top:0.3rem"><button data-action="rd-dealcaravan" data-id="${pend.id}"${tip("Open the trade caravan planner with your side loaded")}>Send a caravan…</button><button data-action="rd-dealcancel" data-id="${pend.id}"${tip("Their side goes back into their stores; they think less of you (goodwill -3)")}>Call it off</button></div>`
         : `<div class="row small">From ${state.bases.length > 1 ? `<select data-action="rd-tradebase">${state.bases.map((b) => `<option value="${b.id}" ${b.id === tb ? "selected" : ""}>${esc(b.name)}</option>`).join("")}</select>` : esc(state.bases[0] ? state.bases[0].name : "nowhere")}</div>
           <div style="margin-top:0.3rem">${btn("rd-trade", "Open the trade window…", noTrade || (state.trade ? "Finish the trade on screen first" : "Their spare stock and wares against your base's stores. Afterwards a caravan carries the goods: yours, or theirs for a fee."), !!noTrade || !!state.trade)}</div>`}
-        ${coming.length ? `<div class="small" style="margin-top:0.4rem">${coming.map((c) => c.phase === "trading" ? `Their caravan is at ${esc(baseById(state, c.baseId)?.name || "your base")} until ${when(c.stayUntil)}.` : `Their caravan is on the way to ${esc(baseById(state, c.baseId)?.name || "your base")}.`).join(" ")}</div>` : ""}
+        ${coming.length ? `<div class="small" style="margin-top:0.4rem">${coming.map((c) => c.phase === "trading" ? `Their caravan ${c.meetTile != null ? "waits" : "is"} at ${esc(caravanWhere(state, c))} until ${when(c.stayUntil)}.` : `Their caravan is on the way to ${esc(caravanWhere(state, c))}.`).join(" ")}</div>` : ""}
       </div>
     </div>
     ${moodBlock(state, f)}
@@ -252,6 +271,55 @@ export function radioModal(state, ui) {
     ${(f.radioLog || []).length ? `<h3>On the radio</h3><div class="small">${f.radioLog.map((l) => `<div><span class="muted">Day ${l.day}</span> ${esc(l.text)}</div>`).join("")}</div>` : ""}
     <div class="row" style="margin-top:0.8rem;justify-content:flex-end"><button class="primary" data-action="rd-close">Close</button></div></div>`;
 }
+
+// Where their trade caravan goes: one of your bases, halfway to it, or a tile you picked on the map (sim/trademeet.js).
+function meetPicker(state, ui, f, tb, meetAt) {
+  const places = meetPlaces(state, f);
+  if (!places.length) return "";
+  const cur = meetAt != null ? `t:${meetAt}` : `b:${tb}`;
+  const opt = (v, label) => `<option value="${v}" ${v === cur ? "selected" : ""}>${esc(label)}</option>`;
+  const opts = places.map((x) => opt(x.baseId != null ? `b:${x.baseId}` : `t:${x.tile}`, `${x.name}${x.hours != null ? ` (about ${x.hours}h for them)` : ""}`));
+  if (meetAt != null && !places.some((x) => x.tile === meetAt && x.baseId == null)) opts.push(opt(`t:${meetAt}`, `A tile you picked: ${tileLabel(state, meetAt)}${meetHours(state, f, meetAt) != null ? ` (about ${meetHours(state, f, meetAt)}h for them)` : ""}`));
+  const why = meetAt != null ? meetProblem(state, f, meetAt) : null;
+  return `<div class="row small" style="flex-wrap:wrap"${tip("Where their caravan meets you. At a base it trades with that base's stores for a day. At a tile in the open it waits two days, and any team of yours on that tile trades with it from what the team carries: halfway saves both sides the long walk.")}>Where to meet: <select data-action="rd-meet">${opts.join("")}</select>
+    <button class="mini" data-action="rd-meetpick"${tip("Click any tile on the map to meet at")}>Pick on the map…</button>${why ? ` <span class="danger">${esc(why)}</span>` : ""}</div>`;
+}
+
+// ---------- picking a meeting tile on the map (main.js) ----------
+// ui.meetPick: { factionId, trade } while the player picks; the radio panel (or the radio trade window) comes back after.
+export function meetPickBanner(state, ui) {
+  if (!ui.meetPick) return "";
+  const f = factionById(state, ui.meetPick.factionId);
+  return `<div class="movemode" data-tip="The clock waits until you pick a tile.">🤝 A tile to meet ${esc(f ? f.name : "them")} at: <b>click a tile</b> · <b>Esc</b> cancels` +
+    (ui.meetMsg ? `<br><span class="danger">${esc(ui.meetMsg)}</span>` : "") + `</div>`;
+}
+export function meetPickClick(state, ui, tile) {
+  const f = factionById(state, ui.meetPick.factionId);
+  const why = f ? meetProblem(state, f, tile) : "They are gone.";
+  if (why) { ui.meetMsg = why; return false; }
+  if (ui.meetPick.trade && state.trade && state.trade.radio) setMeetTile(state, tile);
+  else { ui.radioMeet = { factionId: f.id, tile }; ui.radioWith = f.id; }
+  ui.meetPick = null;
+  ui.meetMsg = "";
+  return true;
+}
+export function meetPickCancel(ui) {
+  if (!ui.meetPick) return false;
+  if (!ui.meetPick.trade) ui.radioWith = ui.meetPick.factionId;
+  ui.meetPick = null;
+  ui.meetMsg = "";
+  return true;
+}
+// The trade caravan planner for their caravan meeting you (the newest one of this group's with a deal on it).
+function meetPlan(state, ui, f) {
+  const c = meetCaravans(state).filter((x) => x.owner === f.id).sort((a, b) => (b.deal ? 1 : 0) - (a.deal ? 1 : 0) || b.id - a.id)[0];
+  if (!c) return false;
+  ui.caravanPlan = meetCaravanForm(state, c);
+  ui.cvMsg = "";
+  ui.radioWith = null;
+  return true;
+}
+export const openMeetPlan = (state, ui, factionId) => { const f = factionById(state, factionId); return !!f && meetPlan(state, ui, f); };
 
 // ---------- Groups tab: radio header ----------
 export function groupsRadioHeader(state) {
@@ -326,6 +394,15 @@ function worthAtStops(state, form) {
   return `<h3${tip("What each group on the route would give for what you load, at today's prices (your Speech adds to it). Their kind, their state and their stock all move it.")}>Worth to them</h3><table class="t">${rows.map((r) => `<tr><td>${esc(r.f.name)}${whyHtml(r.why)}</td><td class="muted">${p1(r.worth)}</td></tr>`).join("")}</table>`;
 }
 
+// The planner for a meeting (sim/trademeet.js meetCaravanForm): whom, where, until when.
+function meetLine(state, form) {
+  const c = form.meetId != null ? state.parties.find((x) => x.id === form.meetId) : null;
+  const f = c ? factionById(state, c.owner) : null;
+  if (!c || !f) return "";
+  const until = c.phase === "trading" ? `waits there until ${when(c.stayUntil)}` : `is on its way (about ${c.eta}h from when it set out) and waits two days`;
+  return `<div class="small good" style="margin:0.3rem 0"${tip("At the tile the trade window opens with their caravan; the team trades from what it carries")}>To meet the ${esc(f.name)} caravan at ${esc(tileLabel(state, c.meetTile))}: it ${until}${c.deal && !c.dealDone ? ". Load your side of the deal" : ""}.</div>`;
+}
+
 export function caravanPlanModal(state, ui) {
   const form = ui.caravanPlan;
   const h = caravanHome(state, form); // the hub, or the base picked (a radio deal's base)
@@ -346,6 +423,7 @@ export function caravanPlanModal(state, ui) {
   return `<div class="box wide"><h1>New trade caravan</h1>
     ${state.bases.length > 1 ? `<div class="row small">From <select data-action="cp-from">${state.bases.map((b) => `<option value="${b.id}" ${b.id === h.id ? "selected" : ""}>${esc(b.name)}</option>`).join("")}</select></div>` : ""}
     ${deal ? `<div class="small good" style="margin:0.3rem 0"${tip("At their base the caravan's stop card offers Complete the radio deal when it carries your side")}>For the radio deal with ${esc(dealLine(state, deal))}.</div>` : ""}
+    ${meetLine(state, form)}
     <div class="grid2">
       <div>
         <h3>Destinations, in order</h3>
@@ -404,6 +482,7 @@ export const TRADE_ACTIONS = {
     // Booked over the radio (sim/radiotrade.js): back to the radio panel, or on to the caravan planner when you fetch.
     const deal = pendingDeal(state, f);
     if (deal && t.delivery === "fetch") { ui.caravanPlan = dealCaravanForm(state, deal); ui.cvMsg = ""; ui.radioWith = null; }
+    else if (t.delivery === "meet" && meetPlan(state, ui, f)) { /* sim/trademeet.js: the planner aimed at the meeting tile */ }
     else ui.radioWith = f.id;
     ui.radioMsg = ui.tradeMsg;
     ui.tradeMsg = "";
@@ -429,7 +508,10 @@ export const TRADE_ACTIONS = {
   "rd-scan": (state, ui) => { ui.radioMsg = radioScan(state); },
   "rd-greet": (state, ui) => { const f = radioF(state, ui); if (f) ui.radioMsg = radioGreet(state, f); },
   "rd-news": (state, ui) => { const f = radioF(state, ui); if (f) ui.radioMsg = radioNews(state, f); },
-  "rd-caravan": (state, ui) => { const f = radioF(state, ui); if (f) ui.radioMsg = radioRequestCaravan(state, f); },
+  "rd-caravan": (state, ui) => { const f = radioF(state, ui); if (f) ui.radioMsg = radioRequestCaravan(state, f, ui.radioMeet && ui.radioMeet.factionId === f.id ? { meetTile: ui.radioMeet.tile } : { baseId: ui.radioBase }); },
+  "rd-meetpick": (state, ui) => { const f = radioF(state, ui); if (!f) return; ui.meetPick = { factionId: f.id, trade: false }; ui.meetMsg = ""; ui.radioWith = null; },
+  "tw-meetpick": (state, ui) => { const t = state.trade; if (t && t.radio) { ui.meetPick = { factionId: t.factionId, trade: true }; ui.meetMsg = ""; ui.tradeMsg = ""; } },
+  "tw-meethalf": (state, ui) => { setMeetTile(state, null); ui.tradeMsg = ""; },
   "rd-help": (state, ui) => { const f = radioF(state, ui); if (f) ui.radioMsg = radioHelp(state, f); },
   "rd-pact": (state, ui, d) => { const f = radioF(state, ui); if (f) ui.radioMsg = radioPact(state, f, d.k); },
   "rd-deal": (state, ui) => { const f = radioF(state, ui); if (f) ui.radioMsg = radioDeal(state, f, ui.radioDeal || {}).text; },
@@ -485,6 +567,10 @@ export const TRADE_CHANGE_ACTIONS = {
   "tw-fee": (state, ui, el) => { setFeeOffer(state, el.value); ui.tradeMsg = ""; },
   "tw-radiobase": (state, ui, el) => { setRadioBase(state, el.value); ui.radioBase = Number(el.value); ui.tradeMsg = ""; },
   "rd-tradebase": (state, ui, el) => { ui.radioBase = Number(el.value); },
+  "rd-meet": (state, ui, el) => { // b:<base id> or t:<tile> (sim/trademeet.js)
+    const [k, v] = String(el.value).split(":");
+    if (k === "b") { ui.radioBase = Number(v); ui.radioMeet = null; } else ui.radioMeet = { factionId: ui.radioWith, tile: Number(v) };
+  },
   "cp-from": (state, ui, el) => { const form = ui.caravanPlan; form.fromBaseId = Number(el.value); form.crew = []; form.gear = []; form.vehicleId = null; },
   "rd-dealf": (state, ui, el) => {
     const d = (ui.radioDeal = ui.radioDeal || { wantKey: "meds", wantQty: 10, payKey: "ammo", payQty: 40 });
