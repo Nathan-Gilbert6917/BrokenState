@@ -449,9 +449,10 @@ Object.assign(GUN_RARITY, SURV_RARITY);
 export const ARSENAL_FINDS = {
   FIND_W: { common: 1, uncommon: 0.5, scarce: 0.22, rare: 0.08, veryrare: 0.025 },
   site: { gunstore: 0.06, police: 0.03, prison: 0.02, military: 0.03, crash_mil: 0.02, convoy: 0.02, airdrop: 0.01, farm: 0.02, ranch: 0.025,
-          barn: 0.01, feedstore: 0.008, cabin: 0.025, lodge: 0.02, town: 0.006, city: 0.006, motel: 0.005, apartments: 0.005, truckstop: 0.004 },
+          barn: 0.01, feedstore: 0.008, cabin: 0.025, lodge: 0.02, town: 0.006, city: 0.006, motel: 0.005, apartments: 0.005, truckstop: 0.004,
+          pawnshop: 0.05 }, // gunshops.js: a pawn shop's guns behind the counter
   area: { gunshop: 0.08, armory: 0.07, barracks: 0.03, milwreck: 0.04, motorpool: 0.015, cabin: 0.04, farmhouse: 0.03, barn: 0.015, house: 0.006,
-          cellblock: 0.008, roadcars: 0.005 },
+          cellblock: 0.008, roadcars: 0.005, pawnshop: 0.07 },
   wares: { traders: 0.45, military: 0.35, fortress: 0.25, expansionist: 0.3, raider: 0.2, commune: 0.2, zealot: 0.08, merchants: 0.5 },
   scav: 0.25,
   stash: { cheap: 0.15, mid: 0.35, high: 0.35, highMil: 0.4, pistolcase: 0.12, riflecase: 0.15 },
@@ -535,6 +536,7 @@ export const GUN_DRAWS = {
   farm: { hunting: 1, civilian: 0.5 },
   woods: { hunting: 1, civilian: 0.3 },
   gunshop: { civilian: 1, hunting: 1, police: 0.3, surplus: 0.5, special: 0.06 },
+  pawnshop: { civilian: 1, hunting: 0.8, surplus: 0.5, makeshift: 0.1, police: 0.1 }, // gunshops.js: what people pawned
   army: { military: 1, special: 0.15 },
   raiders: { civilian: 1, makeshift: 0.8, hunting: 0.6, surplus: 0.6, police: 0.15, military: 0.1 },
   soldiers: { military: 1, special: 0.25, police: 0.1 },
@@ -548,7 +550,7 @@ export const GUN_DRAWS = {
 };
 /** @type {Record<string, Record<string, number> | string>} */
 export const PLACE_DRAWS = {
-  "site:gunstore": "gunshop", "site:police": { police: 1, civilian: 0.25 }, "site:prison": { police: 1 },
+  "site:gunstore": "gunshop", "site:pawnshop": "pawnshop", "area:pawnshop": "pawnshop", "site:police": { police: 1, civilian: 0.25 }, "site:prison": { police: 1 },
   "site:military": { military: 1, special: 0.2, police: 0.15 }, "site:crash_mil": { military: 1, special: 0.3 }, "site:convoy": { military: 1, special: 0.1 },
   "site:airdrop": { military: 1, special: 0.3 },
   "site:farm": "farm", "site:ranch": "farm", "site:barn": "farm", "site:feedstore": "farm",

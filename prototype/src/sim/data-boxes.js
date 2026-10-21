@@ -118,6 +118,7 @@ export const BOX_FINDS = {
     store: { p: 0.04, items: { cashbox: 3 } },
     office: { p: 0.04, items: { cashbox: 3, firebox: 0.8, gearcase: 0.8 } },
     garage: { p: 0.04, items: { toolbox: 3 } },
+    hardware: { p: 0.05, items: { toolbox: 3, cashbox: 0.5 } }, // gunshops.js: a hardware store's aisles
     workshop: { p: 0.04, items: { toolbox: 3 } },
     warehouse: { p: 0.02, items: { toolbox: 1, cashbox: 1 } },
     cabin: { p: 0.02, items: { firebox: 1, gearcase: 0.6, toolbox: 0.6 } },
