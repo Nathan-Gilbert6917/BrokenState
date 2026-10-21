@@ -19,7 +19,7 @@
 // No meds where the patient is: the dose is not given (a log line each night and an alert: ui/alerts.js noMeds).
 //
 // Where people fall ill (chances per person per day; all × frailty and the place's protections, see illnessRisk):
-//   - ordinary life: SICK.common a chest cold (colds go round);
+//   - ordinary life: SICK.common a chest cold (colds go round; × disease.js headMult at a base);
 //   - cold and wet weather (weather.exposureRisk): teams on the road in full (a lit camp fire × FIRE.warm), at a base
 //     outdoor workers at 60% and everyone else indoors at a quarter of half, unless the base is cold (needs.js heatDaily:
 //     no heating fuel below 0°C; a shelter with its fire out): then indoors is as cold as out. Cold brings a chest cold
@@ -41,7 +41,9 @@
 //     rummage on a raid map up to 9% a cut, 6% by day with no skill (search.js quickHurt);
 //   - wounds: a hit of 10+ health that does not kill: 25% a deep cut that needs dressing (world.hurt); an untreated
 //     cut can become an infected wound (medical.js woundInfected);
-//   - foraged mushrooms (foraging.js), the bites of the dead (combat.js: their own rules).
+//   - foraged mushrooms (foraging.js), the bites of the dead (combat.js: their own rules);
+//   - disease.js: the everyday chances × headcount at a base (headMult), flu season in winter and at its edges, camp
+//     fever in packed bunks, wound fever from an infected wound, and what newcomers carry in (s.incubating).
 // Frailty (frailty): hunger or thirst below 50 up to ×2 each, below 50 health ×1.3, the Sickly trait ×1.5 (traits.js), hard work at a base (building,
 // scavenging, foraging) or a long march under a load (needs.js counts the hours) up to ×SICK.march.cap, sleeping rough
 // on a team ×SICK.rough; both gauges at 75+ ×SICK.fed. A base's hospital (×(1 − SICK.hospital × tier): cleaner, the sick kept apart) lowers everything but
@@ -63,6 +65,7 @@ import { partyMembers, onTheMove } from "./parties.js";
 import { foodStore } from "./storage.js";
 import { medKitBonus } from "./crafting.js";
 import { cfgOf } from "./worldcfg.js"; // the run's dials: Sickness
+import { diseaseRisk, diseaseDice, newcomersDaily, headMult } from "./disease.js"; // camp fever, wound fever, flu season, headcount, newcomers (call-time only)
 
 // sev = starting severity [min, max]; drift = change per day untreated (before rest and care);
 // hp = health lost per day at severity 100; work = how much they can work at severity 100 (1 = fully);
@@ -97,6 +100,12 @@ export const CONDITIONS = {
                desc: "Vomiting and cramps from a meal: bad cooking, a dirty kitchen or raw meat. Off work for about a day (they rest it out), a low mood, then it passes; a bad case costs a little health and lasts a few days. 1 meds ends it at once (automatic care leaves it to pass). Better cooks and a clean kitchen make it rarer." },
   pneumonia: { name: "Pneumonia",  kind: "illness", icon: "🫁", sev: [50, 75], drift: 4,  hp: 12, work: 0,    meds: 1, treat: 30, spread: 0.01,
                desc: "Fluid in the lungs: cannot work, and it kills without meds. A hospital bed helps a lot." },
+  // disease.js (the user's request 2026-10-21: "disease ... that need to be treated with rest and meds"). rise: the
+  // drift a day for its first days (it climbs before it turns); minCourse: a course is at least this many doses.
+  campfever: { name: "Camp fever", kind: "illness", icon: "🦟", sev: [30, 55], drift: 4, hp: 7, work: 0.2, meds: 1, treat: 35, spread: 0.03, rise: { days: 4, drift: 6 }, minCourse: 2,
+               desc: "Lice and filth in packed bunks: fever, a rash and an aching head. Catching, worst in a crowded base, and it climbs for its first days. Rest alone barely holds it: it drags on for weeks and kills the weak. A course of meds (at least two doses) and a bed see it off." },
+  woundfever: { name: "Wound fever", kind: "illness", icon: "🩸", sev: [35, 60], drift: 4, hp: 10, work: 0.1, meds: 1, treat: 30, spread: 0, rise: { days: 2, drift: 6 }, minCourse: 2,
+               desc: "An infected wound gone into the blood: shaking, burning, barely conscious. Not catching. It climbs fast and kills without meds; a hospital bed helps most. Clean the wound (treat the infection) so it does not come back." },
 };
 export const CONDITION_KEYS = Object.keys(CONDITIONS);
 const RESPIRATORY = new Set(["chestcold", "flu", "pneumonia"]);
@@ -220,7 +229,7 @@ export function dosesFor(c) {
   const d = CONDITIONS[c.key];
   if (!d || d.kind !== "illness" || d.cure) return 1; // cure: one dose ends it (an upset stomach)
   const n =c.sev < SICK.dose.one ? 1 : c.sev < SICK.dose.two ? 2 : 3;
-  return c.key === "pneumonia" ? Math.max(2, n) : n;
+  return c.key === "pneumonia" ? Math.max(2, n) : Math.max(d.minCourse || 1, n);
 }
 // Does it still want a dose (no course yet, or a course not finished)?
 export const needsDose = (c) => !!c && !c.mending && (c.course == null || (c.dosed || 0) < c.course);
@@ -448,7 +457,7 @@ export function baseRiskCtx(state, base) {
     if (fs.fresh > 0 && fs.outside > 0) spoil = (fs.outside / fs.fresh) * Math.min(1, fs.outRate / 0.03);
   } catch { spoil = 0; }
   return {
-    kind: "base", base, people, crowd: over, filter, coldCamp, hosp, guard: Math.max(0, 1 - SICK.hospital * (hosp.tier || 0)),
+    kind: "base", base, people, crowd: over, head: headMult(people.length), filter, coldCamp, hosp, guard: Math.max(0, 1 - SICK.hospital * (hosp.tier || 0)), // head: disease.js, more people more of it
     quarantine: (base.quarantineUntil || 0) >= day(state), spoil,
     outside: exposure(state, false), inside: exposure(state, !coldCamp && !base.cold), where: `at ${base.name}`,
   };
@@ -496,7 +505,7 @@ export function illnessRisk(state, s, ctx = null) {
   const frail = frailty(state, s, ctx);
   out.frail = frail;
   const sickMult = cfgOf(state, "sickness"); // worldcfg.js: the run's Sickness dial
-  const add = (key, p, cause, why, guarded = true) => { p *= sickMult; if (p > 0) out.parts.push({ key, p: Math.min(0.5, p * frail.f * (guarded ? ctx.guard : 1)), cause, why }); };
+  const add = (key, p, cause, why, guarded = true) => { p *= sickMult; if (!(p > 0)) return null; const x = { key, p: Math.min(0.5, p * frail.f * (guarded ? ctx.guard : 1)), cause, why }; out.parts.push(x); return x; };
   const where = ctx.where;
   // Weather.
   let ex;
@@ -513,8 +522,8 @@ export function illnessRisk(state, s, ctx = null) {
       add("flu", ex.chance * (1 - SICK.coldSplit), "weather", `in the ${ex.reason}${coldWhy} ${where}`, false);
     }
   }
-  // Ordinary life.
-  add("chestcold", SICK.common, "common", `from a cold going round ${where}`);
+  // Ordinary life: more of it the more people live together (disease.js headMult).
+  add("chestcold", SICK.common * (ctx.head || 1), "common", `from a cold going round ${where}`);
   // Hunger and thirst.
   const G = SICK.gauge, h = hungerOf(s), t = thirstOf(s);
   if (t < G.below) add("dysentery", G.base + G.addThirst * (G.below - t) / G.below, "hunger", `drinking whatever they could find ${where}`);
@@ -542,9 +551,11 @@ export function illnessRisk(state, s, ctx = null) {
   }
   if (from) {
     const n = ctx.people.filter((o) => o !== s && o.alive && isContagious(o)).length;
-    add(from.key, Math.min(SICK.spread.cap, best * Math.max(1, Math.sqrt(n))), "contagion", `caught from ${first(from.src)} ${where}`);
-    out.parts[out.parts.length - 1].from = from.src;
+    const x = add(from.key, Math.min(SICK.spread.cap, best * Math.max(1, Math.sqrt(n))), "contagion", `caught from ${first(from.src)} ${where}`);
+    if (x) x.from = from.src; // (none with the Sickness dial at 0)
   }
+  // disease.js: flu season, camp fever, wound fever (last, on hash dice: the world's dice run as before).
+  diseaseRisk(state, s, ctx, add);
   out.total = 1 - out.parts.reduce((a, x) => a * (1 - x.p), 1);
   return out;
 }
@@ -553,7 +564,7 @@ export function illnessRisk(state, s, ctx = null) {
 function rollOnset(state, s, ctx) {
   const r = illnessRisk(state, s, ctx);
   for (const x of r.parts) {
-    if (!state.rng.chance(x.p)) continue;
+    if (!(x.hash ? diseaseDice(state, s, x.key) < x.p : state.rng.chance(x.p))) continue;
     return addCondition(state, s, x.key, x.why, { cause: x.cause, from: x.from });
   }
   return null;
@@ -567,6 +578,7 @@ export function conditionDrift(state, s, c) {
   const today = day(state);
   let drift = d.drift;
   if (c.key === "flu" && c.days < 3) drift = 4;
+  if (d.rise && c.days < d.rise.days) drift = d.rise.drift; // disease.js: camp fever, wound fever climb first
   if (c.key === "fever" && c.days < 2) drift += 2;
   const weak = hungerOf(s) < SICK.gauge.below || thirstOf(s) < SICK.gauge.below;
   const p = partyOf(state, s);
@@ -652,6 +664,7 @@ export function healthDaily(state) {
     }
   }
   for (const s of state.survivors) { s.marchLoad = 0; s.marchHours = 0; } // needs.js counts a team's march by the hour
+  newcomersDaily(state); // disease.js: what newcomers carried in shows; who is new at a base
   // New cases.
   for (const base of state.bases) baseOnsets(state, base);
   teamOnsets(state);

@@ -15,8 +15,8 @@
 //               a forest tile gives about 40 rations from full before it is stripped; it grows back toward 1 with a
 //               half-life of HALF_LIFE days (most of it back within a season). Unlike a site's loot, it comes back.
 // Season (weather.js; 28 days each): spring 0.35 → 0.75 (greens and shoots, then the first strawberries), summer
-//   0.95 → 1.1 (berries), autumn 1.25 → 0.8 (nuts, apples, mushrooms and roots, until the frosts), winter 0.12
-//   (rose hips and roots; × 0.5 under snow). Time of day: daylight (07–18) 1, dawn and dusk (05–06, 19) 0.6, night
+//   0.95 → 1.1 (berries), autumn 1.25 → 0.8 (nuts, apples, mushrooms and roots, until the frosts), winter 0.08
+//   (winter.js WINTER.forage: rose hips and roots; × 0.5 under snow). Time of day: daylight (07–18) 1, dawn and dusk (05–06, 19) 0.6, night
 //   0.1. A storm or blizzard × 0.5.
 // People: a forager = 0.6 + 0.05 × (0.55 Farming + 0.45 Scouting) (Farming: knowing the plants; Scouting: finding
 //   them) × 1.25 with the Forager perk × their work factor (illness), × 0.5 when badly hurt (under 40 health).
@@ -50,6 +50,7 @@ import { FOODS, addFood, typedFood, unitsOf, qtyOf, foodIn, foodText } from "./f
 import { sumRecs } from "./rounds.js"; // rounds by calibre
 import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
 import { workLand, distFactor, walkMult, tileFactor } from "./tripland.js"; // the Forage job in trips: the land and its walking (jobtrips.js)
+import { WINTER } from "./winter.js"; // winter's forage (call-time only)
 
 // ---------- numbers ----------
 export const FORAGE = {
@@ -137,7 +138,7 @@ export function seasonForage(state, hour = state.hour) {
   if (s.key === "spring") return 0.35 + 0.4 * f;
   if (s.key === "summer") return 0.95 + 0.15 * f;
   if (s.key === "autumn") return 1.25 - 0.45 * f;
-  return 0.12 * ((Weather.weather(state, hour).snowCover || 0) >= 0.3 ? 0.5 : 1);
+  return WINTER.forage * ((Weather.weather(state, hour).snowCover || 0) >= 0.3 ? 0.5 : 1); // winter.js
 }
 export function forageTime(hour) {
   const h = ((hour % 24) + 24) % 24;

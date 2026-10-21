@@ -36,6 +36,7 @@ import { tickHour } from "./world.js";
 import { engLootMult } from "./raidplan.js"; // a scout sent first: the team knows where to look
 import { searchHazards } from "./health.js";
 import { wormSearch } from "./worm.js"; // the worm: hands that handled the dead
+import { winterScavFood } from "./winter.js"; // winter: less food in a find (call-time only)
 import { anyPerk, rollBook, gainXpAll, USE, hash01 } from "./skills.js";
 import { noteSearch } from "./relations.js";
 import { itemLoad, lootItem, armouredItem } from "./inventory.js";
@@ -335,6 +336,7 @@ export function searchHour(state) {
     const key = rng.weighted(Object.keys(table), (k) => table[k]);
     let qty = lootQty(state, key, Math.round(rng.range(4, 9) * left * ap.loot * engLootMult(e) * (1 + scav / 15) * lootPerk(key) * (key === "ammo" ? 6 : key === "scrap" ? 2.5 : key === "fuel" ? 0.7 : key === "jars" ? 2 : 1))); // worldcfg.js: the run's loot dial for this kind // fuel is scarce; ruins are full of scrap (expeditions are the source now); jars come by the box
     if (key === "meds" && qty > 0) qty = searchMeds(t, qty); // medfinds.js: a box of them only at a pharmacy, clinic, hospital or medevac wreck
+    if (key === "food") qty = winterScavFood(state, qty); // winter.js: gardens frozen, larders long eaten
     if (qty > 0 && key === "ammo") {
       finds.push(roundsText(addFind(e.found.supplies, kind, qty, false, e.tile, e.hours, i))); // ammo.js: the rounds a place like this holds, by calibre, named
     } else if (qty > 0 && (key === "food" || key === "preserved")) {

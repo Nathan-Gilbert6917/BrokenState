@@ -8,10 +8,11 @@
 // card, recruits.js), a wandering preacher, food stolen from the stores, a stray dog, storm damage (a leaking roof
 // over the stores, a broken well pump), a request for a feast, someone asking to leave on a personal errand, two
 // survivors who have grown close (partners, relations.js), remembering the dead (a memorial service), rats in the food
-// stores, the dead at the fence, a sick traveller at the gate, a cold snap in winter, music by the fire at night and a
-// wreck below the walls to strip. Hardcore's first year adds hungry people at the gate, a deserter from the Guard, the
-// emergency broadcast going quiet (once) and refugees from the city where the outbreak began. The cards about how
-// people get on (a feud, making up, a friend's ask, an apprentice, jealousy, a theft, a new face) are bondevents.js's.
+// stores, the dead at the fence, a sick traveller at the gate, a cold snap in winter, music by the fire at night, a
+// wreck below the walls to strip, and sickness (disease.js): flu season, bad water and a coughing stranger at the
+// gate. Hardcore's first year adds hungry people at the gate, a deserter from the Guard, the emergency broadcast going
+// quiet (once) and refugees from the city where the outbreak began. The cards about how people get on (a feud, making
+// up, a friend's ask, an apprentice, jealousy, a theft, a new face) are bondevents.js's.
 import { foodIn, payFood, takeFood, addFood, addFoodUnits, gainGoods, foodText } from "./foods.js"; // the cards' food in days (a feast, scraps, a theft)
 import { BUILDINGS, BEDS, count, assignStations } from "./buildings.js";
 import { SUPPLIES, supValue } from "./data.js";
@@ -35,6 +36,7 @@ import { hardcoreEraOffset, hcOutbreakCity } from "./hardcore-outbreak.js";
 import { hcMilitary } from "./hardcore-groups.js";
 import { cfgOf } from "./worldcfg.js"; // the run's dials: Events
 import { BOND_EVENTS } from "./bondevents.js"; // bonds: a feud, making up, a friend's ask, an apprentice, jealousy, a theft, a new face
+import * as Disease from "./disease.js"; // flu season, bad water, a coughing stranger (call-time only: the cards live there)
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const firstName = (s) => s.name.split(" ")[0];
@@ -705,6 +707,11 @@ export const HUB_EVENTS = {
       });
     },
   },
+
+  // Sickness (disease.js): flu season (quarantine, dose now or wait), bad water, a coughing stranger at the gate.
+  fluseason: { name: "Flu season", weight: (st, c) => Disease.fluSeasonWeight(st, c), card: (st, c) => Disease.fluSeasonCard(st, c) },
+  badwater: { name: "Bad water", weight: (st, c) => Disease.badWaterWeight(st, c), card: (st, c) => Disease.badWaterCard(st, c) },
+  cough: { name: "A coughing stranger", weight: (st, c) => Disease.coughWeight(st, c), card: (st, c) => Disease.coughCard(st, c) },
 
   // Remembering the dead (relations.js): likelier after deaths nobody has marked yet, never in the week after a service.
   memorial: {

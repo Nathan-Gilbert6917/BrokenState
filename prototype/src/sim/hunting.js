@@ -15,7 +15,8 @@
 //   big:   6.5% × abundance × level × season × time of day × weather × team(big)   (a deer 30 rations, a wild hog 16;
 //          hills and mountains only deer)
 //   small: 32% × the same × team(small), a second one at a third of that   (rabbits, birds: 2 rations each)
-//   season: spring 0.8, summer 0.9, autumn 1.25 (fat and moving), winter 0.95 (× 1.2 with snow on the ground: tracks)
+//   season: spring 0.8, summer 0.9, autumn 1.25 (fat and moving), winter 0.6 (winter.js WINTER.game: lean, holed up
+//          and few; × 1.2 with snow on the ground: tracks)
 //   time of day: dawn and dusk (05–07, 17–19) × 1.3, day × 1, night (20–04) × 0.35; a storm or blizzard × 0.5
 //   team: the best three hunters count 1, ½ and ¼ (+0.08 a hand without a weapon, up to two, driving game):
 //     a hunter = their best hunting weapon (big / small game: hunting rifle 1 / 0.8, bows and crossbows 0.6 + 0.08 ×
@@ -64,7 +65,7 @@
 //   rations an hour a rod (a makeshift rod 0.42), 1.2 a net worked by two (0.7 by one), a spear 0.5 (a pipe spear
 //   0.35; GEAR fishPower), each × its condition (0.6 + 0.4 × quality: a well-made rod catches more) × water (a deep river bend or a lake 1, a river 0.85, a pond 0.6)
 //   × season
-//   (spring 1.15, summer 1, autumn 0.9, winter 0.75) × time of day (dawn/dusk 1.4, night 0.5) × skill
+//   (spring 1.15, summer 1, autumn 0.9, winter 0.5: winter.js WINTER.fish) × time of day (dawn/dusk 1.4, night 0.5) × skill
 //   (0.6 + 0.08 × (0.6 Scouting + 0.4 Stealth)) × the water's level. Frozen water: ice fishing needs a tool to cut
 //   the ice (crowbar, machete, hatchet or axe) and catches half. Spears (fish: "spear") strike in the shallows by
 //   sight: daytime × 1.2, dawn and dusk × 1, night × 0.15, and no use through ice. One tool a fisher (a net two), the
@@ -110,6 +111,7 @@ import { totalRounds, sumRecs } from "./rounds.js"; // rounds by calibre
 import { huntRounds, huntLoad, takeHuntShots, baseAmmo, carriedRec, spendCarried } from "./ammo.js"; // a gun hunts with its own calibre and load (R9)
 import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
 import { workLand, distFactor, waterSources, shoreOf, NO_WATER, walkMult, tileGameMult } from "./tripland.js"; // the Hunt and Fish jobs in trips: the land, the water and the walking (jobtrips.js)
+import { WINTER } from "./winter.js"; // winter's game and fish (call-time only)
 
 // ---------- numbers ----------
 export const HUNT = {
@@ -224,10 +226,10 @@ export const gameWord = (v) => (v >= 0.6 ? "plenty" : v >= 0.3 ? "some" : v >= 0
 // ---------- seasons, hours, weather ----------
 export function seasonGame(state, hour = state.hour) {
   const k = Weather.season(state, hour).key;
-  const m = { spring: 0.8, summer: 0.9, autumn: 1.25, winter: 0.95 }[k] ?? 1;
+  const m = { spring: 0.8, summer: 0.9, autumn: 1.25, winter: WINTER.game }[k] ?? 1; // winter.js: lean and holed up
   return m * ((Weather.weather(state, hour).snowCover || 0) >= 0.3 ? 1.2 : 1);
 }
-export const seasonFish = (state, hour = state.hour) => ({ spring: 1.15, summer: 1, autumn: 0.9, winter: 0.75 }[Weather.season(state, hour).key] ?? 1);
+export const seasonFish = (state, hour = state.hour) => ({ spring: 1.15, summer: 1, autumn: 0.9, winter: WINTER.fish }[Weather.season(state, hour).key] ?? 1); // winter.js: sluggish in the cold water
 export function timeOfDay(hour, kind = "hunt") {
   const h = ((hour % 24) + 24) % 24;
   if (kind === "spear") return (h >= 5 && h <= 7) || (h >= 17 && h <= 19) ? 1 : h >= 20 || h <= 4 ? 0.15 : 1.2; // by sight

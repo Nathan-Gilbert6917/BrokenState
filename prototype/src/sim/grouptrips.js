@@ -5,7 +5,9 @@
 //     counted (tripland.js distFactor, the same as yours); a camp's hunters only on the tiles next to it (no cabin's
 //     reach, as yours: hunting.js huntRadius): 0.9–1.1 × the land share of their food, 1 for a base with
 //     usual land (GROUP_TRIPS.foodRef); +fish where the base holds a water tile (no fishing without one, as yours).
-//   - wood (groupWoodLand): × the best wood land's yield against GROUP_TRIPS.woodRef (0.5–1.5).
+//   - wood (groupWoodLand): × the best wood land's yield against GROUP_TRIPS.woodRef (0.5–1.5), × the season's
+//     (woodcutting.js seasonWood: winter less, as yours).
+//   - the season (winter.js groupWildSeason): their food × the wild share's season (winter about 0.87, autumn 1.07).
 //   - water: a base holding a water tile carries water from it (groupFetchedWater: GROUP_TRIPS.fetchServes people's
 //     drinking, groupworks.js provisioned) while its wells fall short.
 //   - a base under siege (a raid camped at it) sends nobody out: its land counts nothing that day.
@@ -15,7 +17,8 @@
 import { workLand, distFactor, ownedWater, TRIP_JOBS } from "./tripland.js";
 import { gameAbundance, gameLevel } from "./hunting.js";
 import { forageAbundance, forageLevel } from "./foraging.js";
-import { woodAbundance, woodLevel } from "./woodcutting.js";
+import { woodAbundance, woodLevel, seasonWood } from "./woodcutting.js";
+import { groupWildSeason } from "./winter.js"; // the season's wild food (winter lean, autumn fat: AI parity for your forage, game and fish)
 import { kitFactor } from "./arsenal.js"; // their kit: how well their workers out on the land are armed (trips-plus #2)
 import { woundGroup } from "./groupcare.js";
 import { hash01 } from "./skills.js";
@@ -56,7 +59,7 @@ export function groupFoodLand(state, f) {
     const r = Math.min(2, groupFoodScore(state, f, tile) / GROUP_TRIPS.foodRef);
     sum += 1 - GROUP_TRIPS.foodSpread + GROUP_TRIPS.foodSpread * r + (ownsWater(state, f, tile) ? GROUP_TRIPS.fish : 0);
   }
-  return sum / f.bases.length;
+  return (sum / f.bases.length) * groupWildSeason(state); // winter.js
 }
 // The share of their outdoor day left after the lunch hour (meals.js: all work stops for lunch, yours and theirs; your
 // woodcutters lose it on their trips, jobtrips.js). Their food is not cut: it is mostly their fields, and your farms
@@ -67,7 +70,7 @@ export function groupWoodLand(state, f) {
   if (!f.bases.length) return GROUP_LUNCH_SHARE;
   let sum = 0;
   for (const tile of f.bases) sum += besieged(state, f, tile) ? 0 : Math.max(0.5, Math.min(1.5, groupWoodScore(state, f, tile) / GROUP_TRIPS.woodRef));
-  return (sum / f.bases.length) * GROUP_LUNCH_SHARE;
+  return (sum / f.bases.length) * GROUP_LUNCH_SHARE * seasonWood(state); // woodcutting.js: winter's wood, as yours
 }
 // People's drinking their water carriers bring in (groupworks.js provisioned): fetchServes for each base holding water.
 export const groupFetchedWater = (state, f) => f.bases.filter((tile) => ownsWater(state, f, tile) && !besieged(state, f, tile)).length * GROUP_TRIPS.fetchServes;

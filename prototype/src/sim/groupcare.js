@@ -73,6 +73,7 @@ import { homesOf } from "./groupbases.js";
 import { benchTier } from "./buildings.js";
 import { spareKit } from "./loadouts.js";
 import { skill } from "./world.js";
+import { groupSickMult, groupIllCare } from "./disease.js"; // the ill: headcount, flu season, newcomers, meds (call-time only)
 import { gainXp } from "./skills.js";
 import { BUILDINGS } from "./buildings.js";
 import { hospitalTypes } from "./medical.js";
@@ -329,11 +330,15 @@ function heal(state, f, d) {
 export const GROUP_ILL = { rate: 0.0075, mend: 0.1, rough: 1.25, bay: 0.12, farm: 0.45 };
 export const illOf = (f) => (f ? Math.max(0, Math.min(f.pop || 0, f.ill || 0)) : 0);
 export const workingPeople = (f, share = 1) => Math.max(0, (f.pop || 0) - illOf(f) * share);
+// disease.js (your headcount, flu season, newcomers and meds, coarsely): the rate × groupSickMult; groupIllCare doses
+// the ill from their meds (the dosed mend faster), and the untreated may die of it.
 export function illDaily(state, f) {
-  const ill = illOf(f);
+  let ill = illOf(f);
+  const care = groupIllCare(state, f, ill);
+  ill = Math.max(0, ill - care.died);
   const rest = Math.max(0, (f.pop || 0) - woundedOf(f) - ill);
-  const mult = (sleepingRough(state, f) ? GROUP_ILL.rough : 1) * (1 - GROUP_ILL.bay * groupHospitalTier(state, f));
-  f.ill = Math.round((ill * (1 - GROUP_ILL.mend) + rest * GROUP_ILL.rate * Math.max(0, mult)) * 1000) / 1000;
+  const mult = (sleepingRough(state, f) ? GROUP_ILL.rough : 1) * (1 - GROUP_ILL.bay * groupHospitalTier(state, f)) * groupSickMult(state, f, GROUP_ILL.rate);
+  f.ill = Math.round((ill * (1 - GROUP_ILL.mend - care.mend) + rest * GROUP_ILL.rate * Math.max(0, mult) + care.carried) * 1000) / 1000;
 }
 
 // After a fight: the group's dead and wounded (and the losses that make people think of leaving).
