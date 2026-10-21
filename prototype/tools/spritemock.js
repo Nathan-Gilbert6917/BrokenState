@@ -32,7 +32,7 @@ function bodyPainter() {
 // ---------- holds ----------
 // Which hold a weapon gets (the brief, "Hold grammar"). Guns by the kind the painter resolves them to; melee by the
 // two-handed table; bows upright; crossbows like a long gun.
-export const TWO_HANDED = ["bat", "spikedbat", "nailbat", "sledge", "fireaxe", "pickaxe", "spear", "pipespear", "golfclub", "katana", "broadsword"];
+export const TWO_HANDED = ["bat", "spikedbat", "nailbat", "sledge", "fireaxe", "pickaxe", "spear", "pipespear", "golfclub", "hockeystick", "katana", "broadsword"];
 export const BOWS = ["pulleybow", "compbow"], XBOWS = ["crossbow", "xbow"];
 export const HOLDS = ["none", "side", "shouldered", "bow", "pistol", "level2", "lowready", "tube"];
 function gunKind(key) {
@@ -289,6 +289,7 @@ function drawMelee(p, key, hx, hy) {
     case "hammer": p.rect(hx + 1, hy - 4, hx + 1, hy + 2, wood); p.rect(hx, hy - 5, hx + 3, hy - 5, "#55595e"); break;
     case "etool": p.rect(hx + 1, hy - 5, hx + 1, hy + 2, "#4b5340"); p.rect(hx, hy - 8, hx + 2, hy - 6, "#5f6b4a"); break;
     case "golfclub": p.rect(hx + 1, hy - 8, hx + 1, hy + 2, "#c2c9cf"); p.rect(hx + 1, hy - 9, hx + 3, hy - 9, "#55595e"); break;
+    case "hockeystick": p.rect(hx + 1, hy - 8, hx + 1, hy + 2, "#c9a46a"); p.rect(hx + 1, hy + 1, hx + 1, hy + 2, "#2a2c30"); p.rect(hx + 1, hy - 10, hx + 4, hy - 9, "#2a2c30"); p.set(hx + 2, hy - 10, "#e8e4d8"); p.set(hx + 3, hy - 9, "#e8e4d8"); break; // a pale shaft, the taped blade turned out at its end (sim/data-guns.js)
     case "nailbat": drawMelee(p, "bat", hx, hy); p.set(hx, hy - 6, metal); p.set(hx + 3, hy - 6, metal); p.set(hx, hy - 4, metal); p.set(hx + 3, hy - 4, metal); p.set(hx, hy - 2, metal); break;
     case "prybar": p.rect(hx + 1, hy - 7, hx + 1, hy + 2, "#7d858c"); p.set(hx + 2, hy - 8, "#7d858c"); p.set(hx, hy + 2, "#7d858c"); break;
     case "fireaxe": p.rect(hx + 1, hy - 7, hx + 1, hy + 2, "#b08a5a"); p.rect(hx + 2, hy - 8, hx + 3, hy - 5, "#c8362e"); p.set(hx + 4, hy - 7, metal); p.set(hx + 4, hy - 6, metal); break;

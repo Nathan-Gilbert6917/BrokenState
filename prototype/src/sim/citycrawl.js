@@ -59,7 +59,8 @@ import { crawlGuns } from "./gunfinds.js";
 import { deepShift, cacheChance, isFine, valuePerKg, wantOf, DEEP } from "./deeploot.js"; // deeper blocks hold what is dear by the kilo; a full team swaps
 import { itemValue } from "./valuation.js";
 import { atBase } from "./world.js";
-import { shopPlace, SHOP } from "./gunshops.js"; // a gun store or a pawn shop on a block, on its own dice
+import { shopPlaces, crawlFranchise, franchiseName } from "./shops.js"; // the shops and services on a block besides its own (their own dice), a place's franchise
+import { PLACE_W } from "./data-shops.js"; // a shop's crawl place stats (rich, dead, rare)
 import { gridOf, inGrid, isEdge, levelOf, ringOf, maxLevel, entryOf, headingToward, turn, rimOf, pathToRim, dirTo, keyOf, xyOf, DIRS, DIR_NAMES, cellsOf } from "./citygrid.js"; // the round grid of blocks (2026-10-13)
 
 // ---------- tuning ----------
@@ -437,12 +438,14 @@ export function genBlock(state, c, cell = c.cell) {
   const nPlaces = clamp(CRAWL.PLACES[0] + (rng.chance(0.5) ? 1 : 0) + (rng.chance(0.15 * (n - 1)) ? 1 : 0), CRAWL.PLACES[0], CRAWL.PLACES[1]);
   const pool = Object.keys(PLACE_POOL).filter((k) => BUILDINGS[k] && n >= PLACE_POOL[k].from);
   const places = [];
+  const setting = t.loc && t.loc.type === "town" ? "town" : "city"; // shops.js: a town's crawl or a city's
   const addPlace = (rng, key, P, j) => {
     const street = rng.chance(0.6) ? streetA : STREETS[rng.int(0, STREETS.length - 1)];
     const id = `${cell}p${j}`;
     const raiders = n >= CRAWL.RAIDERS.from && rng.chance(Math.min(CRAWL.RAIDERS.max, CRAWL.RAIDERS.chance + CRAWL.RAIDERS.perBlock * (n - CRAWL.RAIDERS.from)));
+    const v = crawlFranchise(state, c.tile, cell, j, key, setting, n); // shops.js: its franchise (its name, its layout; none for a kind without)
     const place = {
-      id, slot: j, key, name: `${BUILDINGS[key].name} on ${street}`, kind: BUILDINGS[key].name, rare: !!P.rare,
+      id, slot: j, key, name: `${v ? franchiseName(key, v) : BUILDINGS[key].name} on ${street}`, kind: BUILDINGS[key].name, rare: !!P.rare, ...(v ? { v } : {}),
       dead: P.dead * (0.85 + rng.next() * 0.3), rich: P.rich, raiders,
       looted: mem.looted[id] || 0, // picked over by an earlier crawl
       blocked: null, quick: false,
@@ -457,9 +460,9 @@ export function genBlock(state, c, cell = c.cell) {
     const key = rng.weighted(left, (k) => Math.max(0.02, PLACE_POOL[k].w + PLACE_POOL[k].deep * (n - 1)));
     addPlace(rng, key, PLACE_POOL[key], j);
   }
-  // gunshops.js: a gun store or a pawn shop besides, on its own dice (the places above are as they were).
-  const shop = shopPlace(state, c.tile, cell, places, CRAWL.PLACES[1]);
-  if (shop && BUILDINGS[shop]) addPlace(new Rng(seedOf(state.seed, "crawlshop", c.tile, cell)), shop, SHOP.PLACE[shop], places.length);
+  // shops.js: up to two shops or services besides, on their own dice (the places above are as they were).
+  const extra = shopPlaces(state, c.tile, cell, places, CRAWL.PLACES[1], n, setting, (k) => !!BUILDINGS[k]);
+  extra.forEach((key, j) => addPlace(new Rng(seedOf(state.seed, "crawlshop", c.tile, cell, j)), key, PLACE_W[key].crawl, places.length));
   // This visit: a place may be shut.
   if (places.length > 2 && vr.chance(CRAWL.BLOCKED)) {
     const pl = vr.pick(places);
@@ -549,7 +552,12 @@ function placeGroups(state, c, place, n = c.block) {
 // buildingmaps.js MAX_STOREYS).
 export const STOREY_BONUS = { from1: 4, at1: 1, from2: 7, at2: 2 };
 export const storeyBonus = (n) => (n >= STOREY_BONUS.from2 ? STOREY_BONUS.at2 : n >= STOREY_BONUS.from1 ? STOREY_BONUS.at1 : 0);
-export const placeOption = (c, place, n = c.block) => ({ id: `cc${n}-${place.slot}`, key: place.key, name: place.name, storeyBonus: storeyBonus(n) });
+// variant: the place's franchise (shops.js), or the one its building was left with (a building left before franchises: none).
+export const placeOption = (c, place, n = c.block) => {
+  const snap = c.buildings && c.buildings[place.id];
+  const variant = (snap ? snap.v : place.v) || null;
+  return { id: `cc${n}-${place.slot}`, key: place.key, name: place.name, storeyBonus: storeyBonus(n), ...(variant ? { variant } : {}) };
+};
 // How many storeys a place has (the block card): the archetype's dice for this place, without building its map.
 export function placeStoreys(state, c, place, n = c.block) {
   const spec = buildingSpec(state, c.tile, placeOption(c, place, n));
@@ -821,6 +829,8 @@ function afterPlace(state, result, setup, battle) {
     if (ctx.kind === "place") {
       const before = c.buildings[ctx.place];
       const snap = snapshotBuilding(battle);
+      const pv = placeById(c, ctx.place);
+      if (pv && (before ? before.v : pv.v)) snap.v = before ? before.v : pv.v; // the franchise its building was laid out by (placeOption)
       c.buildings[ctx.place] = snap;
       // The site remembers how picked over the place is (a later crawl finds less in it); the city a little too.
       const place = placeById(c, ctx.place);

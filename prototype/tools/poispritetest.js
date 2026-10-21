@@ -14,6 +14,8 @@ const seed = Number(process.argv[2] || 42);
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log("  FAIL:", msg); } };
 const section = (s) => console.log(`\n${s}`);
+// A place's name in the panel's HTML: as it is, or escaped (a franchise's "Bait & Tackle", sim/shops.js).
+const hasName = (html, name) => html.includes(name) || html.includes(name.replace(/&/g, "&amp;"));
 const W = () => { const st = createWorld({ seed, factionCount: 8 }); st.started = true; st.cards.length = 0; return st; };
 
 // A stub 2D context: records what is drawn (fillRect for the painters' signatures, fillText for the map's names,
@@ -116,7 +118,7 @@ const text = (html) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
   check(panel.includes(`<h2>${name}</h2>`), "the tile panel's heading is the top POI's name");
   check(/Places/.test(panel), "the panel has a Places section");
   const known = knownPois(st, kz);
-  for (const i of known) check(text(panel).includes(poiName(kz, i)) && text(tip).includes(poiName(kz, i)), `${poiName(kz, i)} is listed in the panel and the hover text`);
+  for (const i of known) check(hasName(text(panel), poiName(kz, i)) && hasName(text(tip), poiName(kz, i)), `${poiName(kz, i)} is listed in the panel and the hover text`);
   const hidden = poisOf(kz).length - known.length;
   if (hidden) check(/possibly more unknown/i.test(panel) && /possibly more unknown/i.test(tip), "with a hidden remainder: \"possibly more unknown\"");
   else check(!/possibly more unknown/i.test(panel), "nothing hidden: no \"possibly more unknown\"");
@@ -149,7 +151,7 @@ const text = (html) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
   if (site) {
     const sp = UI.renderRight(st, { selected: site.id });
     check(sp.includes(`<h2>${site.loc.name}</h2>`), `a site tile keeps its site's name (${site.loc.name})`);
-    for (const i of knownPois(st, site)) if (i) check(text(sp).includes(poiName(site, i)), `its extra ${poiName(site, i)} is listed`);
+    for (const i of knownPois(st, site)) if (i) check(hasName(text(sp), poiName(site, i)), `its extra ${poiName(site, i)} is listed`);
   }
   // The dev reveal shows everything.
   setPoiReveal(true);

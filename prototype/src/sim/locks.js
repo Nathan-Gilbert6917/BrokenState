@@ -43,6 +43,7 @@ import { rollGunStash, TIER_STASH, blastContents, rollAreaGunFinds, CAR_CASE, ro
 import { haulOf } from "./raidloot.js";
 import { isBox, boxTool, boxCost, openBox, lockWords } from "./boxes.js"; // lock boxes and cases: the tools for their locks (2026-10-19)
 import { swapGun } from "./gundist.js"; // the gun distribution: which gun a locked container holds
+import { ROWS, mergeRows } from "./data-shops.js";
 // What rounds a locked thing holds (ammo.js themes), by its loot kind.
 const LOCK_AMMO = { guns: "guns", evidence: "police", miltruck: "military", crash: "military", safe: "home", cash: "home", gear: "home", car: "home" };
 
@@ -79,7 +80,7 @@ const RULES = {
   lockers: [["locker"], "locker", 0.3], barracks: [["locker"], "locker", 0.35], garage: [["locker"], "locker", 0.15], workshop: [["locker"], "locker", 0.15],
   pharmacy: [["cabinet"], "drugs", 0.35], clinic: [["cabinet", "locker"], "drugs", 0.3], lab: [["cabinet"], "drugs", 0.25],
   office: [["cabinet"], "safe", 0.08], control: [["cabinet"], "safe", 0.12], cellblock: [["locker", "cabinet"], "evidence", 0.3],
-  armory: [["locker", "crate"], "cage", 0.45], gunshop: [["locker", "counter"], "cage", 0.4], pawnshop: [["counter", "cabinet"], "cage", 0.35], // a pawn shop's locked cases (gunshops.js)
+  armory: [["locker", "crate"], "cage", 0.45], gunshop: [["locker", "counter"], "cage", 0.4], pawnshop: [["counter", "cabinet"], "cage", 0.35], // a pawn shop's locked cases (shops.js)
   warehouse: [["crate"], "crate", 0.12], hangar: [["crate", "locker"], "crate", 0.2], motorpool: [["crate", "locker"], "crate", 0.2],
   milwreck: [["crate"], "case", 0.45], medwreck: [["crate"], "case", 0.4], newswreck: [["crate"], "case", 0.35],
   fuselage: [["crate", "locker"], "case", 0.4], cargodrop: [["crate"], "case", 0.25],
@@ -1047,3 +1048,6 @@ function searchSafe(state, e, members, kind, roll, site) {
   const verb = { key: "Unlocked", force: "Pried open (loud)", drill: "Drilled open (loud)", grind: "Cut open (loud)", crack: "Cracked", blow: "Blew open (loud)" }[how];
   return ` ${verb} ${A.toLowerCase()} ${lower}: ${bits.length ? bits.join(", ") : "nothing inside"}.`;
 }
+
+// data-shops.js: the town's and the city's shops and services (their rows; this module's own rows win).
+mergeRows(RULES, ROWS.LOCK_RULES); mergeRows(ROOM, ROWS.LOCK_ROOM); mergeRows(SEARCH_LOCK, ROWS.SEARCH_LOCK); mergeRows(SEARCH_KIND, ROWS.SEARCH_KIND);

@@ -63,6 +63,7 @@ import { isRoundItem, isBulk } from "../src/sim/itemstack.js"; // rounds loose o
 import { gunsFrom, bodyGunSource, GUN_DIST } from "../src/sim/gundist.js"; // the gun distribution: which gun a source yields
 import { PART_FINDS } from "../src/sim/data-gunmods.js"; // the parts catalogue's finds (partfinds.js, its own dice)
 import { partPool } from "../src/sim/partfinds.js";
+import { AREA_DEFS, NEW_KINDS } from "../src/sim/data-shops.js"; // the raid rooms and site types new after the baselines
 
 // A shelf's stock as the generator makes it (trade.js ensureWares): a group that lives here is stocked once and then
 // trades only what it owns (docs/adr/0001-ai-parity.md), so the generator is sampled the way a visitor's shelf is made.
@@ -197,7 +198,9 @@ st.started = true;
   w.started = true;
   setAutopilot(w, true, "balanced");
   // Sampled every day (the stock on the map at one hour depends on which caravans happen to be there then).
-  const seen = new Set();
+  // Your people's starting weapons (world.js: part-worn by START_DUR, not rolled) are no group's find: one taken off
+  // your dead or traded to a group can turn up on its table (seed 77 since the shops of 2026-10-21, data-shops.js).
+  const seen = new Set(w.survivors.map((s) => s.gear.weapon).filter(Boolean));
   const items = [];
   const take = () => { for (const it of [...w.factions.flatMap((f) => f.wares || []), ...(w.visitors || []).flatMap((v) => v.wares || [])]) if (it && !seen.has(it)) { seen.add(it); items.push(it); } };
   while (day(w) <= 40 && !w.gameOver) { tickHour(w); if (w.hour % 24 === 12) take(); }
@@ -347,7 +350,7 @@ const bodyExtra = MILDEAD.BODY_EXTRA;
 MILDEAD.BODY_EXTRA = {};
 KIT_LOOT.on = false; // the carry kit (carrykit.js) only adds: checked below
 ZSURV.on = false; // the dead who were survivors (inventory.js survivorDead): their own dice, they only add
-const NEW_AREAS = ["hardware", "pawnshop"]; // raid rooms added after the baseline (gunshops.js: their own rows, the rest's dice as they were)
+const NEW_AREAS = ["hardware", "pawnshop", ...Object.keys(AREA_DEFS)]; // raid rooms added after the baseline (shops.js, data-shops.js: their own rows, the rest's dice as they were)
 // (only the flashbang hook: the roster's guns and the rounds by calibre stay, they are in the baselines above)
 const takeHooks = (re) => { const out = TRUCK_LOOT_HOOKS.filter((f) => re.test(String(f))); for (const f of out) TRUCK_LOOT_HOOKS.splice(TRUCK_LOOT_HOOKS.indexOf(f), 1); return out; };
 const takeFlashHooks = () => takeHooks(/truckflash/);

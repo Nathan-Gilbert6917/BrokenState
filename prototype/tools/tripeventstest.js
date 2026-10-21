@@ -430,5 +430,26 @@ section("Days at the hub: six outdoor workers, the events as they come");
   check(state.log.some((l) => /near /.test(l.text) && /(met|found|lost the way|slipped|turned|fell|cut|traveller|stranger|killed|put down)/.test(l.text)), "log lines for them");
 }
 
+// ======================================================================
+section("An accident on a job with no list of its own (haul): the road's, never a crash");
+{
+  const state = mk();
+  const { b, s } = lone(state, "wood");
+  const kinds0 = { ...TRIP_EV.kinds };
+  for (const k of Object.keys(TRIP_EV.kinds)) TRIP_EV.kinds[k] = k === "injury" ? 1 : 0;
+  let ok = 0, err = null, pools = new Set();
+  for (let i = 0; i < 20; i++) {
+    const t = forcedTrip(state, b, s, { kind: "injury" }, 900 + i);
+    t.job = "haul";
+    delete t.ev.force; // the trip's own dice: buildEvent picks the pool
+    try { fireTripEvent(state, b, s, t, Math.floor(t.ev.at)); ok++; if (t.ev.pool) pools.add(t.ev.pool); } catch (e) { err = e; break; }
+    delete s.trip;
+    s.health = 100; s.conditions = [];
+  }
+  Object.assign(TRIP_EV.kinds, kinds0);
+  check(!err && ok === 20, `20 accidents on a haul trip settle (${err ? err.message : ok + " ok"})`);
+  check(pools.size === 1 && pools.has("walk"), `and take the road's list: ${[...pools].join(", ") || "none"}`);
+}
+
 console.log(`\n${passed} passed, ${fails} failed`);
 process.exit(fails ? 1 : 0);

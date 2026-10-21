@@ -19,6 +19,7 @@ import { newItem } from "../src/sim/inventory.js";
 import { weatherOnDay } from "../src/sim/weather.js";
 import { Rng } from "../src/sim/rng.js";
 import { GEAR } from "../src/sim/data.js";
+import { woodNeed } from "../src/sim/woodcutting.js"; // the coming cold's wood a big build leaves (the common room check)
 import { WHY_ACTIONS } from "../src/ui/causes.js"; // the "Why?" link on the memorial wall
 import { BOND } from "../src/sim/bonds.js"; // bonds: a close friend grieves longer, a friend who walks out is missed
 import {
@@ -557,8 +558,8 @@ section(`Determinism, and ${longDays} days on autopilot without NaN`);
   const wantsCommon = !!hb && housingAI.wishes(st, hb).some((w) => w.type === "common_room");
   if (hb && !hasCommon) console.log(`  no common room at day ${longDays}: ${hbHere.length} at the hub, their mood ${hbMood.toFixed(0)}, ${Math.round(hb.stock.scrap || 0)} scrap${wantsCommon ? " (the governor wants one)" : ""}`);
   check(!hb || hasCommon || wantsCommon || al.length < 8 || hbMood >= 75, `a big hub with low spirits has a common room (or one going up, or the governor wants one)${hb && !hasCommon ? ` (none: mood ${hbMood.toFixed(0)})` : ""}`);
-  // The rule: a hub of 10 whose spirits stay low (mood held at 60), with the scrap for it, gets a common room within
-  // two weeks: behind water, beds, food stores and the infirmary (two building slots), about a week in on seed 42.
+  // The rule: a hub of 10 whose spirits stay low (mood held at 60), with the scrap and wood for it, gets a common room within
+  // two weeks: behind water, beds, food stores and the infirmary (two building slots), day 9 on seed 42.
   {
     const s2 = createWorld({ seed, factionCount: 8 });
     s2.started = true;
@@ -574,8 +575,11 @@ section(`Determinism, and ${longDays} days on autopilot without NaN`);
     const wants = () => h2.buildings.some((b) => b.type === "common_room") || h2.construction.some((c) => c.type === "common_room");
     // The scrap kept at 400 (and the parts at 40): "with the scrap for it" all the way, so the check is the rule and
     // not a race between the common room and the builds ahead of it for one stock (with newcomers coming in, seed 42
-    // can spend the 400 on an infirmary, a field hospital and an ammo bench by day 9 and have none left).
-    while (hours < 24 * 14 && !wants() && !s2.gameOver) { for (const p of atBase(s2, h2.id)) p.mood = Math.min(p.mood, 60); h2.stock.scrap = Math.max(h2.stock.scrap || 0, 400); h2.stock.parts = Math.max(h2.stock.parts || 0, 40); tickHour(s2); hours++; }
+    // can spend the 400 on an infirmary, a field hospital and an ammo bench by day 9 and have none left). The wood the
+    // same: the room is 400 of it (woodwork 2026-10-20), and a big wooden build leaves the coming cold's share of the
+    // woodpile (autopilot.js keepsWood), so the cold's whole need and the room's wood are kept in.
+    const crWood = () => woodNeed(s2, h2).need + BUILDINGS.common_room.cost.wood;
+    while (hours < 24 * 14 && !wants() && !s2.gameOver) { for (const p of atBase(s2, h2.id)) p.mood = Math.min(p.mood, 60); h2.stock.scrap = Math.max(h2.stock.scrap || 0, 400); h2.stock.parts = Math.max(h2.stock.parts || 0, 40); h2.stock.wood = Math.max(h2.stock.wood || 0, crWood()); tickHour(s2); hours++; }
     check(wants(), `the autopilot builds a common room once the hub is big enough and spirits are low (10 people at mood 60: ${wants() ? `queued on day ${Math.ceil(hours / 24)}` : "not in 14 days"})`);
   }
 }

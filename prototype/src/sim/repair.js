@@ -43,7 +43,7 @@ export const REPAIR = {
 const MATERIAL = {
   vest: "soft", tacvest: "soft", softinsert: "soft", plate: "soft", ceramicplate: "ceramic", steelplate: "steel", scrapvest: "steel",
   tirevest: "padding", sportspads: "padding", padding: "padding", shinguards: "padding",
-  kneeguards: "hard", riotarms: "hard", riotlegs: "hard", bikehelmet: "hard", footballhelmet: "hard", riothelmet: "hard", milhelmet: "hard", rivethelmet: "hard",
+  kneeguards: "hard", riotarms: "hard", riotlegs: "hard", bikehelmet: "hard", footballhelmet: "hard", goaliemask: "hard", riothelmet: "hard", milhelmet: "hard", rivethelmet: "hard",
 };
 const AC = { vest: 2, tacvest: 2, softinsert: 2, steelplate: 4, ceramicplate: 5, plate: 2, scrapvest: 3, milhelmet: 3, riothelmet: 2, riotarms: 2, riotlegs: 2 };
 export const materialOf = (key) => (GEAR[key] && GEAR[key].material) || MATERIAL[key] || null;

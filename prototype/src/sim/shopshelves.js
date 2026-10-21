@@ -1,5 +1,5 @@
 // @ts-check
-// The shelves of a gun store or a pawn shop that is a point of interest (gunshops.js): every site table here rolls by
+// The shelves of a gun store or a pawn shop that is a point of interest (shops.js): every site table here rolls by
 // the tile's site type (tile.loc.type), so a shop POI beside another site, or on a bare suburb or city block, would
 // find none of its own rigs, magazines and survival gear. This roll gives it its own kind's tables (carrykit.js
 // SITE_KIT, data-survival.js SURV_FINDS, loot.js SITE_FINDS / SITE_MODS / GUNMOD_FINDS / HUNT_FINDS / LIGHT_FINDS /
@@ -19,7 +19,7 @@ import { BLADE_FINDS } from "./blades.js";
 import { ARSENAL_FINDS } from "./data-guns.js";
 import { drawGun } from "./gundist.js";
 import { foundFill } from "./gunrounds.js";
-import { isShopKind } from "./gunshops.js";
+import { isShopKind } from "./shops.js";
 
 /** @param {Record<string, number>} items @param {number} r */
 function pickW(items, r) {

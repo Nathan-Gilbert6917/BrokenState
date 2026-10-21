@@ -18,7 +18,7 @@
 // Meds are spent only on need (FIELD_CARE below, medical.js, health.js): a wound, an infection, an illness, a downed
 // fighter in battle; never a flat daily drain.
 export const MEDS = {
-  SITES: ["pharmacy", "clinic", "hospital", "crash_med"],
+  SITES: ["pharmacy", "clinic", "hospital", "crash_med", "vet"], // vet: a veterinary clinic (data-shops.js)
   SEARCH_SCALE: 0.25, SEARCH_MAX: 2,
   BODY_HUMAN: 0.1,
 };
