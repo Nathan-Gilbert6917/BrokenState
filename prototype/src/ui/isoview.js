@@ -27,7 +27,7 @@ import { CELL, active, coverSides, evacAt, barredCell, moveMob, vaultable, vault
 import { canPlace } from "../sim/deploy.js";
 import { acidAt } from "../sim/acid.js";
 import { unitCanvas, unitFacing, muzzleOf } from "./sprites.js";
-import { unitFigure, unitFigureDown, corpseFigure, figureMuzzle, FIG } from "./figures.js"; // every body as a low-poly figure, facing its way; the fallen lying along the world's x
+import { unitFigure, unitFigureDown, corpseFigure, figureMuzzle, figureStats, FIG } from "./figures.js"; // every body as a low-poly figure, facing its way; the fallen lying along the world's x
 import { unitDownCanvas, drawDowned, downScale, corpseCanvas } from "./downsprites.js";
 import { thirdRing } from "../sim/thirdside.js";
 import { parleyStatus } from "../sim/parley.js"; // another group's people on a raid's map: the hostility badge
@@ -42,6 +42,7 @@ import { isCart, parkCells, cartSpec } from "../sim/carts.js"; // a cart pushed 
 import { groundPiles, pileCount } from "../sim/ground.js"; // things on the ground (sim/ground.js)
 import { planOpen } from "../sim/raidplan.js"; // before a raid: while the plan is open the team is not on the map yet (not drawn)
 import { onForgetPictures } from "./pictures.js"; // the pictures kept here are dropped when the GPU context comes back (they would be blank)
+import { strideOf } from "./moveanim.js"; // walking: the step of the walk cycle and the bob
 
 // ---------- constants ----------
 const HW = 16, HH = 8;          // half a tile in art px (a tile: 32 × 16)
@@ -1631,6 +1632,7 @@ export const SNEAK_LOOK = { squash: 0.8, alpha: 0.82, filter: "brightness(0.62) 
 // Draw the battle. H: what ui/combat.js knows (the cached view, the selected unit, the mode, the hover, helpers).
 export function drawIso(ctx, cw, ch, state, b, now, H) {
   frameNow = now; // the frame's clock, for the bodies' own animations (toppleOf)
+  walkPaints = WALK_PAINTS;
   const t0 = typeof performance !== "undefined" ? performance.now() : 0;
   if (iso.battle !== b || iso.mapKey !== mapKey(b)) newBattleCamera(b, cw, ch); // a new battle, or its map swapped (the fall back to the yard)
   iso.cw = cw; iso.ch = ch;
@@ -1882,7 +1884,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
 
   // ---------- the painter's pass: every cell from the back to the front ----------
   const items = [];
-  // Units by where they stand (sliding along their last move).
+  // Units by where they stand (walking their moves: ui/moveanim.js).
   const shown = [];
   for (const t of b.units) {
     if (t.left || t.fled || t.off || !onFloor(b, t)) continue; // on another floor: a marker only (below)
@@ -2495,8 +2497,10 @@ function drawBody(ctx, state, b, s, H, silhouette = false) {
     drawDowned(ctx, unitDownCanvas(state, b, t, H.salt), X, Y, [x1 - X, y1 - Y], [x2 - X, y2 - Y], { facing: f, scale: downScale(t), alpha: !silhouette && t.dead ? 0.92 : 1 });
     return;
   }
-  const yaw = unitYaw(b, t, FR.r);
-  const fig = unitFigure(state, b, t, H.salt, yaw); // a low-poly figure facing its way (ui/figures.js), else the flat sprite mirrored to its side
+  const m = H.moveOf ? H.moveOf(t, frameNow) : null; // walking (ui/combat.js moveNow): facing the step it is on, striding
+  const yaw = m && m.dir ? dirYaw(b, t, FR.r, m.dir) : unitYaw(b, t, FR.r);
+  const walk = m ? strideOf(m) : null;
+  const fig = walkFigure(state, b, t, H.salt, yaw, walk) || unitFigure(state, b, t, H.salt, yaw); // a low-poly figure facing its way (ui/figures.js), else the flat sprite mirrored to its side
   frameFigs.push(["up", t]);
   const cv = fig || unitCanvas(state, b, t, H.salt);
   if (!cv) return;
@@ -2509,7 +2513,7 @@ function drawBody(ctx, state, b, s, H, silhouette = false) {
   const hgt = UNIT_H * unitBig(t) * S, w = hgt * (22 / 26);
   ctx.save();
   ctx.imageSmoothingEnabled = false;
-  ctx.translate(X, Y);
+  ctx.translate(X, Y - (walk ? walk.bob * S : 0)); // walking: up a little as the legs pass
   if (!fig && facing < 0) ctx.scale(-1, 1);
   const spent = t.side === "player" && t.ap === 0 && b.phase === "player";
   if (!silhouette && spent) ctx.globalAlpha *= 0.65;
@@ -2525,6 +2529,16 @@ function drawBody(ctx, state, b, s, H, silhouette = false) {
   if (cartOver) drawCartIso(ctx, cart, X, Y, S, { yaw, held: true });
 }
 const cartLookOf = (item) => (cartSpec(item) || {}).look || "barrow";
+// A step of a walk (ui/moveanim.js strideOf) as a figure: painted when first needed, at most WALK_PAINTS new ones a
+// frame (a horde setting off at once), the standing figure meanwhile (null).
+const WALK_PAINTS = 4;
+let walkPaints = WALK_PAINTS;
+function walkFigure(state, b, t, salt, yaw, walk) {
+  if (!walk || !walk.stride) return null;
+  const n = figureStats.painted, fig = unitFigure(state, b, t, salt, yaw, false, { stride: walk.stride, cached: walkPaints <= 0 });
+  if (figureStats.painted > n) walkPaints--;
+  return fig;
+}
 // A parked cart's heading: one of the world's four ways, by the container (it keeps it while it stands), as a yaw.
 function parkedYaw(b, c) {
   const d = [[1, 0], [0, 1], [-1, 0], [0, -1]][(((c.id || 0) * 2654435761) >>> 0) % 4];
