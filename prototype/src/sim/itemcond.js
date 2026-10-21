@@ -103,13 +103,13 @@ export const SITE_SOURCE = {
   police: "police", prison: "police",
   gunstore: "shop", hardware: "shop", mall: "shop", pharmacy: "shop", supermarket: "shop", grocery: "shop", feedstore: "shop",
   town: "home", city: "home", apartments: "home", motel: "home", farm: "home", ranch: "home", cabin: "home",
-  house: "home", neighbourhood: "home", corner: "shop", pizza: "shop", farmstand: "shop", // points of interest (pois.js)
+  house: "home", neighbourhood: "home", corner: "shop", pizza: "shop", farmstand: "shop", pawnshop: "shop", // points of interest (pois.js)
   crashsite: "wreck", crash_mil: "wreck", crash_cargo: "wreck", crash_med: "wreck", crash_news: "wreck",
 };
 // A raid container's area type (combat.js AREAS); an armoury goes by its site (a police or a military one).
 export const AREA_SOURCE = {
   house: "home", farmhouse: "home", kitchen: "home", lockers: "home", cabin: "home",
-  store: "shop", pharmacy: "shop", gunshop: "shop",
+  store: "shop", pharmacy: "shop", gunshop: "shop", pawnshop: "shop", hardware: "shop",
   barracks: "military", motorpool: "military", cargodrop: "military",
   cellblock: "police", control: "police",
   wreck: "wreck", roadcars: "wreck", milwreck: "wreck", medwreck: "wreck", newswreck: "wreck", fuselage: "wreck",

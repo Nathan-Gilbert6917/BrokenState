@@ -44,6 +44,7 @@ import { gunMags } from "./carrykit.js"; // a found gun's spare magazines
 import { siteSource } from "./itemcond.js";
 import { foundFill } from "./gunrounds.js";
 import { rollSiteGuns } from "./gunfinds.js"; // the arsenal of 2026-10-10 (its own dice)
+import { rollShopShelves, rollShopSupplies } from "./shopshelves.js"; // a gun store's or a pawn shop's shelves as a POI (gunshops.js)
 import { swapGun } from "./gundist.js"; // the gun distribution: which gun a site's gear list yields
 import { rollTentFind } from "./tents.js"; // tent bags (their own dice)
 import { rollFind, rollHuntFind, rollLightFind, rollCartFind, rollSiteWood, rollBuildmat, rollSiteArrows, rollGunmodFind, rollAnyModFind, sortParts, rollSiteGrenades, rollSiteLaunchers, rollSiteReload } from "./loot.js";
@@ -351,7 +352,7 @@ export function searchHour(state) {
     }
   }
   const gearList = kind ? LOCATIONS[kind].gear : [];
-  if (gearList.length && rng.chance(0.07 * left * (1 + scav / 15) * ap.loot * (perk("treasure") ? 2 : 1) * cfgOf(state, "lootGuns"))) { // worldcfg.js: the run's Guns and gear dial
+  if (gearList.length && rng.chance(0.07 * left * (1 + scav / 15) * ap.loot * (perk("treasure") ? 2 : 1) * (LOCATIONS[kind].gearRate || 1) * cfgOf(state, "lootGuns"))) { // worldcfg.js: the run's Guns and gear dial; gearRate: a gun store's or a pawn shop's shelves
     const g = swapGun(`site:${kind}`, rng.pick(gearList), rng); // gundist.js: which gun, by the site's draws (a hash of the draw: no extra one)
     const found = foundFill(lootItem(g, siteSource(kind), rng), e.tile, e.hours, "scav"); // itemcond.js: a gun shop's stock used, a crash site's scorched; gunrounds.js: a few rounds in it now and then (its own dice)
     e.found.gear.push(found, ...gunMags(found, siteSource(kind), e.tile, e.hours)); // carrykit.js: a gun's spare magazines (own dice)
@@ -383,6 +384,9 @@ export function searchHour(state) {
   if (gl.length) { e.found.gear.push(...gl); finds.push(gl.length > 1 ? `${gl.length} × ${gl[0].name}` : gl[0].name); }
   const ag = rollSiteGuns(state, e.tile, (perk("treasure") ? 2 : 1) * ap.loot, `h${e.hours}`); // an over-under, a battle rifle (gunfinds.js GUN_FINDS; its own dice)
   if (ag.length) { e.found.gear.push(...ag); finds.push(ag[0].name); }
+  const shelf = rollShopShelves(state, e.tile, kind, left, (perk("treasure") ? 2 : 1) * ap.loot, `h${e.hours}`); // a gun store's or a pawn shop's own rigs, gear and guns as a POI (shopshelves.js; its own dice)
+  if (shelf.length) { e.found.gear.push(...shelf); finds.push(...new Set(shelf.map((it) => it.name))); }
+  for (const [k, q] of Object.entries(rollShopSupplies(state, e.tile, kind, left, ap.loot * (1 + scav / 30), `h${e.hours}`))) { e.found.supplies[k] = (e.found.supplies[k] || 0) + q; finds.push(`${q} ${k === "wood" ? "wood" : "building materials"}`); } // a hardware store's lumber and fixings as a POI
   const wood = rollSiteWood(state, e.tile, ap.loot, `h${e.hours}`); // a woodpile, a log basket (loot.js SITE_WOOD; its own dice)
   if (wood > 0) { e.found.supplies.wood = (e.found.supplies.wood || 0) + wood; finds.push(`${wood} wood`); }
   const bm = rollBuildmat(state, e.tile, ap.loot * (1 + scav / 30), `h${e.hours}`); // lumber, blocks, sheet metal (loot.js BUILDMAT_FINDS; its own dice)
