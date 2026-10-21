@@ -56,6 +56,7 @@ import { beastMix } from "./deadbeasts.js"; // the dead beasts of the hills, the
 import { convoyGuards } from "./miltrucks.js"; // an Army convoy's guard among the dead met there
 import { siteList } from "./zombietypes.js";
 import { siteSpecials } from "./hivetech.js"; // the special dead met exploring
+import { widenMix } from "./deadpool.js"; // the dead the years bring, whatever the hives do
 import { keyWord } from "./water.js"; // "un-purified water" in texts
 import { totalIn, sumRecs, ROUND_KEYS, isRoundKey } from "./rounds.js"; // rounds by calibre
 import { addFindVia, kindTheme, findRounds, calRounds, partyCals, roundsText } from "./ammo.js";
@@ -185,7 +186,7 @@ function enemyGroup(state, p, f, scale = 1, horde = null) {
     // The bred kinds met away from a hive's hordes (hivetech.js siteSpecials: towns and cities as the years go by, a
     // hive's land): each of the dead one of them at its share (a roll each).
     // The dead beasts of the land (deadbeasts.js beastMix), or the ones a horde picked up crossing it.
-    const mix = maxMix(maxMix(maxMix(siteDeadMix(state, partyTile(p)), armoredOf(horde && horde.mix)), horde ? null : siteSpecials(state, partyTile(p))), horde ? null : beastMix(state, partyTile(p)));
+    const mix = maxMix(maxMix(maxMix(maxMix(siteDeadMix(state, partyTile(p)), armoredOf(horde && horde.mix)), horde ? null : siteSpecials(state, partyTile(p))), horde ? null : beastMix(state, partyTile(p))), horde ? null : widenMix(state, partyTile(p))); // deadpool.js: the dead the years bring
     const g = { kind: "zombies", count: Math.max(4, count), power: 1 + hz, name: hz >= 3 ? "the hive's dead" : "the dead" };
     if (mix) {
       g.mix = mix;

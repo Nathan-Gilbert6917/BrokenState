@@ -31,6 +31,7 @@ import { HIVE, BOSS_NAMES, GROWTHS, ZTYPES, TECH, SHEPHERD } from "../sim/hiveco
 import { LADDER, RAM, DROP, CUT } from "../sim/siege.js";
 import { FIRE, FRAG, BLAST, FLASH } from "../sim/throwables.js";
 import { growthAt, growthInfo, growthsOf, hiveTier } from "../sim/hivetech.js";
+import { hiveCounterText } from "../sim/counterdead.js"; // a hive's read of the defences it meets
 import { mixText } from "../sim/zombietypes.js";
 import { snapshot } from "../sim/world.js";
 
@@ -628,6 +629,7 @@ export function renderRight(state, ui) {
   // A hive you can see: what has grown around it and how far it has evolved (sim/hivetech.js).
   const liveHive = isLive && t.hive ? hiveAt(state, id) : null;
   const hiveGrowths = liveHive ? growthsOf(state, liveHive, false).map((g) => `${GROWTHS[g.kind].name}${state.hour < g.ready ? " (growing)" : ""}`) : [];
+  const hiveRead = liveHive ? hiveCounterText(state, liveHive, growthsOf(state, liveHive).map((g) => GROWTHS[g.kind] && GROWTHS[g.kind].unlocks).filter(Boolean)) : ""; // sim/counterdead.js: what it has learned of the defences it meets
   // The hives you know of (live or reported): this tile's place in their land.
   const knownHives = state.tiles.filter((x) => (liveSet(state).has(x.id) ? x.hive : state.knowledge[x.id] && state.knowledge[x.id].hive)).map((x) => x.id);
   const hz = knownHives.length ? hiveDanger(state, id, knownHives) : { territory: false, red: false };
@@ -685,6 +687,7 @@ export function renderRight(state, ui) {
         ${info.hive ? `<div${tip(`An infestation hive: it grows hordes, radiates infection over its land and holds the ${BOSS_NAMES.hive}. Destroy every hive to win (Destroy hive mission; see Help → Eras and winning).`)}>Hive</div><div class="danger">Yes${liveHive ? ` · tier ${hiveTier(state, liveHive)}` : ""}</div>` : ""}
         ${info.hive ? hiveCrawlRow(state, id) : ""}
         ${hiveGrowths.length ? `<div${tip("Structures the hive has grown on the land around it (Burn the growth mission on each one's tile): income, a bigger guard, the special dead its hordes carry, Wallbreakers.")}>Growths</div><div class="danger">${esc(hiveGrowths.join(", "))}</div>` : ""}
+        ${hiveRead ? `<div${tip("What the hive has learned of the defences of the bases its hordes go for (yours and the groups'): the more a base relies on walls, trenches, wire, mines or lights, the likelier it grows the growth that breeds their answer, and the more of those dead its hordes bring (it pays for each).")}>Against defences</div><div class="danger">${esc(hiveRead)}</div>` : ""}
         ${info.growth ? `<div${tip(`${GROWTHS[info.growth.kind] ? GROWTHS[info.growth.kind].desc : ""} Burn it (Burn the growth: fight its guard, or 4 fuel / 2 Molotovs a fire) and its hive loses that. It regrows its flesh a little every day.`)}>Hive growth</div><div class="danger">${esc(info.growth.name)}${info.growth.withered ? " · withered (its hive is gone)" : info.growth.growing ? " · still growing" : ` · flesh ${info.growth.hp}%`}${isLive ? "" : " (then)"}</div>` : ""}
         ${info.site ? `<div${tip(`The dead gather here to build a new hive: it stands once ${HIVE.SITE_BIOMASS} of them have gone into it. Send a Cull horde team and Break up the gathering: before the mound is begun the site is given up, after that the hive loses a big part of what has gone in and starts over (Help: Hives being born).`)}>Hive being built</div><div class="danger">${info.site.started ? "under way" : "gathering"} · ${Math.round(info.site.biomass)}/${HIVE.SITE_BIOMASS} dead${siteText(state, id) ? `<div class="small">${esc(siteText(state, id))}</div>` : ""}</div>` : ""}` : ""}
         ${hz.territory && !info?.hive ? `<div${tip("Land a hive holds: at least 3 danger skulls. On the red-skull ring right around a hive every one of the dead is much tougher (+3 power; +1 elsewhere in its land).")}>Hive land</div><div class="danger">${hz.red ? "Red-skull ground: much tougher dead" : "Yes: tougher dead"}</div>` : ""}

@@ -232,7 +232,7 @@ function fixedJobActivity(state, base, s, job, h) {
       const j = base.construction.find((c) => !gatherStalled(c));
       if (!j && campMaterialsWork(base)) return act("work", "Making building materials for the step up", "The camp's step up waits for building materials: the builders make them from the scrap here.", job);
       if (!j) return act("stalled", "Builder – waiting for materials", "The queued builds wait for their materials to be gathered or brought in.", job);
-      return act("work", `${j.type === "clear" && j.label ? j.label : `Building ${buildName(j)}`} (${pct(j.progress / Math.max(1, j.hours))})`, "", job); // a clearing job by its label ("Fell a tree for wood (40%)")
+      return act("work", `${(j.type === "clear" || j.type === "filltunnel") && j.label ? j.label : `Building ${buildName(j)}`} (${pct(j.progress / Math.max(1, j.hours))})`, "", job); // a clearing job by its label ("Fell a tree for wood (40%)")
     }
     case "craft": {
       const q = craftQueue(base);

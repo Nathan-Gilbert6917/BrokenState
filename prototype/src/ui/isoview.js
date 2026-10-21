@@ -1847,6 +1847,24 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     ctx.fillStyle = "rgba(230,60,50,0.95)";
     ctx.beginPath(); ctx.ellipse(X, Y - 0.6 * S, 0.9 * S, 0.6 * S, 0, 0, Math.PI * 2); ctx.fill();
   }
+  // The Diggers' tunnels (sim/tunnels.js): a hole of dark earth at each end your people have seen, a ring of spoil
+  // round it, and a faint dashed line under the ground between two seen ends.
+  if (b.tunnels) for (const t of b.tunnels) {
+    if (!t.open) continue;
+    const ends = [[t.a, t.seenA], [t.b, t.seenB]].filter(([p, seen]) => seen && p && p[0] >= 0 && p[1] >= 0 && p[0] < b.w && p[1] < b.h);
+    for (const [[x, y]] of ends) {
+      const [X, Y] = project(x + 0.5, y + 0.5, tileTop(b, x, y));
+      ctx.fillStyle = "rgba(110,84,52,0.9)";
+      ctx.beginPath(); ctx.ellipse(X, Y, 5.2 * S, 2.9 * S, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "rgba(12,8,4,0.95)";
+      ctx.beginPath(); ctx.ellipse(X, Y + 0.3 * S, 3.4 * S, 1.8 * S, 0, 0, Math.PI * 2); ctx.fill();
+    }
+    if (ends.length === 2) {
+      const [X0, Y0] = project(t.a[0] + 0.5, t.a[1] + 0.5, 0), [X1, Y1] = project(t.b[0] + 0.5, t.b[1] + 0.5, 0);
+      ctx.strokeStyle = "rgba(176,138,90,0.45)"; ctx.lineWidth = 1.2; ctx.setLineDash([3, 5]);
+      ctx.beginPath(); ctx.moveTo(X0, Y0); ctx.lineTo(X1, Y1); ctx.stroke(); ctx.setLineDash([]);
+    }
+  }
   // A Shepherd's aura (sim/decoys.js): the dead inside ignore decoys and fire.
   for (const a of OV.auras) {
     if (!vis[a.y * b.w + a.x]) continue;
@@ -2449,7 +2467,7 @@ function shieldsIso(ctx, b, x, y, alpha) {
 }
 
 // ---------- units ----------
-const ZRING = { runner: "#ffb43b", brute: "#c8c4b0", spitter: "#9ad63a", screamer: "#c99ae0", crawler: "#6ab0c8", shepherd: "#e8e2ff", soldier: "#a8b878", riot: "#8aa0c8", carrier: "#e6d8a8", swarm: "#f0e4c0", boneback: "#d8b48a", climber: "#8fd0a0", flinger: "#e8a0c8", sower: "#e8e070", nightmare: "#e0506e", sleeper: "#b0d8ff", deadstag: "#d2a86a", deadhog: "#8c7a66", deadhound: "#c0b8a8", deadcow: "#e8dcc0", deadcat: "#b8a8c8" }; // the dead beasts (sim/deadbeasts.js)
+const ZRING = { runner: "#ffb43b", brute: "#c8c4b0", spitter: "#9ad63a", screamer: "#c99ae0", crawler: "#6ab0c8", shepherd: "#e8e2ff", soldier: "#a8b878", riot: "#8aa0c8", carrier: "#e6d8a8", swarm: "#f0e4c0", boneback: "#d8b48a", climber: "#8fd0a0", flinger: "#e8a0c8", sower: "#e8e070", nightmare: "#e0506e", digger: "#b08a5a", melter: "#c8f04a", husk: "#d8c09a", tripper: "#e2a02f", darkwalker: "#9a9ab8", sleeper: "#b0d8ff", deadstag: "#d2a86a", deadhog: "#8c7a66", deadhound: "#c0b8a8", deadcow: "#e8dcc0", deadcat: "#b8a8c8" }; // the dead beasts (sim/deadbeasts.js)
 const ringOf = (t) => (t.side === "player" ? (t.vol != null ? "#c9a2ff" : "#8fc1ff") : t.side === "third" ? thirdRing(t) : t.kind === "zombie" ? (t.ztype ? ZRING[t.ztype] || "#b5d36a" : t.boss ? COL.bad : "#b5d36a") : "#ff8f85");
 function feet(s) { return project(s.wx, s.wy, s.z); }
 // The sprite, standing (or lying) at the unit's feet. silhouette: only the figure (for the see-through pass).
