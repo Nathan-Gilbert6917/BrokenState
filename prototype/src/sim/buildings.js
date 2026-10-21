@@ -141,6 +141,15 @@ export const BUILDINGS = {
   // living too, until it is cut with a multitool or another tool that cuts wire.
   barbed_wire:  { name: "Barbed wire fence", cost: { scrap: 5, wood: 75 },            hours: 6,  max: 2, defence: true, tab: "defenses", size: "camp", desc: "Barbed wire strung on stakes across the approach: the base holds back 6% more of a horde a line and counts more against raiders. On the battle map it is a line of wire outside the wall (in front of the yard without one): the dead that reach it lose the rest of their turn, and people are snagged (the rest of their turn and a few cuts) unless they carry something to cut it with (a multitool, a field repair kit's pliers, an axe, a hatchet or a machete), which cuts a way through instead. Anyone of yours with a cutter can Cut wire next to them (1 action)." },
   sandbag_wall: { name: "Sandbag positions", cost: { scrap: 6 },            hours: 10, max: 3, defence: true, tab: "defenses", size: "shelter", desc: "Sandbagged fighting positions in the yard: the base holds back 5% more of a horde each and counts more against raiders, and on the battle map they are 4 cells of sandbags (cover) behind the wall or across the yard." },
+  // Sandbags (the user's request 2026-10-21: "sandbags as a defense build, half cover, when next to each other the
+  // sprites meld together to make a wall of sandbags"): a 1×1 piece placed by hand on the base map (basemap.js FOOT
+  // sandbag1: one sandbag cell, half cover: combat.js CELL sandbag), the pieces side by side drawn as one wall
+  // (ui/isoview.js). The cost: the dirt is free, the sacks are not and the filling is the work. About forty bags fill a
+  // cell of waist-high wall, a work-hour with a shovel, and the sacks (feed sacks, grain bags, tarp sewn into tubes) and
+  // the twine are a scrap. So a run of four is 4 scrap and 4 hours: less scrap a cell than the Sandbag positions
+  // (6 for 4 cells, with their horde bonus) and more work than a wooden wall's 1×1 (10 wood, half an hour: full cover).
+  // A camp builds them: anyone can fill a sack. By the numbers each counts in the yard (defences.js TIERS.YARD.sandbags).
+  sandbag1:     { name: "Sandbags",          cost: { scrap: 1 },            hours: 1,  max: 120, defence: true, tab: "defenses", size: "camp", desc: "One cell of filled sandbags, waist high: half cover on the battle map, stopping bullets but not sight (people vault them, the dead crawl over). Place them side by side on the base map and they lie as one sandbag wall, round corners too. Each counts a little in a fight for the yard by the numbers (+0.5%, the first 16). The dead smash them, and one burst or shoved off its cell in a fight is refilled as a repair." },
   // Trenches (the user's request 2026-10-19: "trenches, which can slow down zombies more than humans"): any base, two
   // lines at most (one at a camp or a shelter). On the battle map the dead that drop in lose the rest of their turn;
   // the living climb out for one action (combat.js moveAlong, TRENCH_AP).
@@ -570,7 +579,7 @@ export const SHELTER = {
   // building on its building plot (a bunkhouse, a root cellar, a makeshift infirmary or a hunting cabin), a barricade,
   // a farm plot, the shelter's defences (the Defenses tab) and the step up.
   build: { rain_catcher: 2, smoker: 1, boiler: 1, cookhouse: 1, water_barrel: 2, crates: 2, storebox: 6, watchtower: 1, barricades: 2, trench: 1, farm_plot: 1, hub_up: 1, outpost_up: 1, craftbench: 1, lockup: 1, bunkhouse: 1, cellar: 1, infirmary: 1, huntcabin: 1, cots: 2,
-    walls: 1, ...PIECE_CAPS, spike_pits: 2, barbed_wire: 2, sandbag_wall: 2, // the Defenses tab: walls, gates and stands up to a log palisade (WALL_TIERS), wire, pits, sandbags
+    walls: 1, ...PIECE_CAPS, spike_pits: 2, barbed_wire: 2, sandbag_wall: 2, sandbag1: 60, // the Defenses tab: walls, gates and stands up to a log palisade (WALL_TIERS), wire, pits, sandbags (positions and the 1×1 pieces)
     gen_hut: 2, gen_cabin: 1, bunks: 4, shelves: 4, stove: 1, tent: 8 }, // base building (2026-10-19): two huts or a cabin on the map, bunks, shelves and a stove inside them
 };
 export const isShelter = (base) => !!base && base.tier === 0;
@@ -597,7 +606,7 @@ export const CAMP = {
   // The yard things a camp may build (the most of each; they share its two utility plots). The crafting bench, the
   // water boiler, the cook fire and the drying rack (BASE-03, user request 2026-10-12): camps build them too. The camp's
   // defences (the Defenses tab, 2026-10-19): a stake fence (the wall's first tier), a spike pit, a line of barbed wire.
-  build: { barricades: 1, rain_catcher: 1, crates: 1, storebox: 4, water_barrel: 1, craftbench: 1, boiler: 1, cookhouse: 1, smoker: 1, camp_up: 1, outpost_up: 1, walls: 1, ...PIECE_CAPS, spike_pits: 1, barbed_wire: 1, trench: 1, // the Defenses tab: a stake fence, a pit, a line of wire, a trench
+  build: { barricades: 1, rain_catcher: 1, crates: 1, storebox: 4, water_barrel: 1, craftbench: 1, boiler: 1, cookhouse: 1, smoker: 1, camp_up: 1, outpost_up: 1, walls: 1, ...PIECE_CAPS, spike_pits: 1, barbed_wire: 1, trench: 1, sandbag1: 40, // the Defenses tab: a stake fence, a pit, a line of wire, a trench, sandbags
     gen_hut: 1, bunks: 2, shelves: 2, stove: 1, tent: 8 }, // base building (2026-10-19): one hut on the map, bunks, shelves and a stove inside it
   ruinScrap: 10,     // on the ruins of a burned base: 10 scrap less for the step up (salvage)
   matScrap: 3, matHours: 3, // its builders make building materials for the step up from scrap (= crafting.js buildmat)
