@@ -343,6 +343,7 @@ const BASE = {
 const bodyExtra = MILDEAD.BODY_EXTRA;
 MILDEAD.BODY_EXTRA = {};
 KIT_LOOT.on = false; // the carry kit (carrykit.js) only adds: checked below
+const NEW_AREAS = ["hardware", "pawnshop"]; // raid rooms added after the baseline (gunshops.js: their own rows, the rest's dice as they were)
 // (only the flashbang hook: the roster's guns and the rounds by calibre stay, they are in the baselines above)
 const takeHooks = (re) => { const out = TRUCK_LOOT_HOOKS.filter((f) => re.test(String(f))); for (const f of out) TRUCK_LOOT_HOOKS.splice(TRUCK_LOOT_HOOKS.indexOf(f), 1); return out; };
 const takeFlashHooks = () => takeHooks(/truckflash/);
@@ -366,7 +367,7 @@ const truckHooks = takeHooks(/truckflash|formFinds/); // and the boxed and bulk 
 {
   const rng = new Rng(77);
   const ks = [];
-  for (const a of Object.keys(AREA_FINDS)) for (let i = 0; i < 300; i++) { const it = rollAreaFind(rng, a, 1, 5); ks.push(it ? it.key : "-"); }
+  for (const a of Object.keys(AREA_FINDS).filter((k) => !NEW_AREAS.includes(k))) for (let i = 0; i < 300; i++) { const it = rollAreaFind(rng, a, 1, 5); ks.push(it ? it.key : "-"); }
   check(h16(ks.join("|")) === BASE.areaFinds.keys && rng.state === BASE.areaFinds.rng, "raid containers' small finds: the same, the dice where they were");
 }
 {
@@ -436,7 +437,7 @@ KIT_LOOT.on = false; // the carry kit's finds and wares (carrykit.js SITE_KIT / 
   for (const t of sites) for (let hr = 0; hr < 120; hr++) {
     w.hour = hr;
     for (const f of [rollFind, rollHuntFind, rollLightFind, rollGunmodFind]) { const it = f(w, t.id, 3, "s"); ks.push(it ? it.key : "-"); }
-    for (const a of Object.keys(AREA_GUNMODS)) { const it = rollAreaGunmod(w, t.id, a, `b${hr}`); ks.push(it ? it.key : "-"); }
+    for (const a of Object.keys(AREA_GUNMODS).filter((k) => !NEW_AREAS.includes(k))) { const it = rollAreaGunmod(w, t.id, a, `b${hr}`); ks.push(it ? it.key : "-"); }
   }
   w.hour = 0;
   check(h16(ks.join("|")) === BASE.siteFinds, "site finds: the same");

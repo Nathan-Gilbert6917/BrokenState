@@ -634,7 +634,7 @@ const FURNITURE = { cabinet: 1, shelf: 1, counter: 1 };
 // Building materials (data.js buildmat: lumber, blocks, sheet metal; what a camp takes to become a base): a find of its
 // own each search hour, like SITE_WOOD (its own dice: nothing else a search finds changed). [chance, min, max].
 export const BUILDMAT_FINDS = {
-  hardware: [0.55, 3, 7], quarry: [0.3, 2, 4], // hardware: gunshops.js, the builder's shop (was [0.35, 2, 5]) warehouse: [0.22, 1, 4], factory: [0.18, 1, 3], barn: [0.18, 1, 3],
+  hardware: [0.55, 3, 7], quarry: [0.3, 2, 4], warehouse: [0.22, 1, 4], factory: [0.18, 1, 3], barn: [0.18, 1, 3], // hardware: gunshops.js, the builder's shop (was [0.35, 2, 5])
   farm: [0.12, 1, 2], feedstore: [0.12, 1, 2], ranch: [0.08, 1, 2], town: [0.1, 1, 2], city: [0.08, 1, 2],
   apartments: [0.06, 1, 2], office: [0.06, 1, 2], school: [0.06, 1, 2], motel: [0.06, 1, 2], church: [0.06, 1, 2],
   mall: [0.06, 1, 2], prison: [0.06, 1, 2], campground: [0.05, 1, 1], cabin: [0.05, 1, 1], dam: [0.08, 1, 2],
