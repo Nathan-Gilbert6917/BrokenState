@@ -11,8 +11,11 @@
 // - A group that qualifies may also ask to join (3% a day): a card (Welcome them / Not now).
 // - A group in an AI bloc brings the invitation to its bloc: the members vote, and the bloc may join together
 //   (blocs.js blocJoinsCoalition; "Invite the whole bloc", inviteBloc, sends it through a member that qualifies).
-// - A member leaves when its goodwill falls below 20, its pact with you is gone, or it goes to war with another
-//   member (then the one that started it is expelled).
+// - A member leaves when its standing (coalition.js: goodwill plus what it remembers) falls below 20, or below its own
+//   leave line by chance (coalition.js toleranceCheck: and turns hostile far below it), its pact with you is gone, or
+//   it goes to war with another member (then the one that started it is expelled).
+// - Keeping them (coalition.js): standing and its modifiers, the members' asks every few days, refusal fatigue,
+//   demands to expel a member (coalitionDaily, after the council's day).
 //
 // What members do
 // - Share sightings: every day each member reports every horde within 12 tiles of its bases and every hive and
@@ -70,6 +73,7 @@ import { payRoundsOf, suppliesText } from "./ammo.js"; // the council's "ammo" s
 import { volunteerGroupsAt, councilWar, councilVolCard } from "./volunteers.js"; // volunteers with your team: no double count at a hive or an assault
 import { blocOf, blocById, blocMembers, blocTitle, blocJoinsCoalition, blocCarrier, blocVoteWait } from "./blocs.js"; // AI blocs vote on joining together
 import { atWarWithYou } from "./playerwars.js";
+import { toleranceCheck, coalitionDaily, noteAnswer } from "./coalition.js"; // standing, asks and tolerance bands
 
 export const ALLIANCE = {
   NAME: "The Calder Coalition", GOODWILL: 50, LEAVE_GOODWILL: 20, VOTE_REL: 10, ASK_CHANCE: 0.03,
@@ -174,6 +178,7 @@ export function admitToAlliance(state, f, why = "they joined your coalition", qu
   for (const m of allianceMembers(state)) if (m !== f) changeRelation(state, m, f, 10);
   if (!quiet) log(state, `${f.name} joined ${A.name}. ${A.members.length} member${A.members.length === 1 ? "" : "s"} now.`, "good");
 }
+export function leaveAlliance(state, f, why) { return leave(state, f, why); }
 function leave(state, f, why) {
   const A = ensureAlliance(state);
   A.members = A.members.filter((id) => id !== f.id);
@@ -195,8 +200,8 @@ export function allianceDaily(state) {
   for (const id of [...A.members]) {
     const f = factionById(state, id);
     if (!f || !f.alive) { A.members = A.members.filter((x) => x !== id); A.history.unshift({ day: day(state), text: `${f ? f.name : "A member"} is gone.` }); continue; }
-    if (f.goodwill < ALLIANCE.LEAVE_GOODWILL) leave(state, f, "it no longer trusts you");
-    else if (!f.pact) leave(state, f, "there is no pact with you any more");
+    if (toleranceCheck(state, f)) continue; // coalition.js: standing under 20, or under its leave line by chance
+    if (!f.pact) leave(state, f, "there is no pact with you any more");
     else if (allianceMembers(state).some((m) => m !== f && warsOf(state, f).some((w) => w.a === f.id && enemyIn(w, f) === m.id))) leave(state, f, "it attacked another member");
   }
   const ms = allianceMembers(state);
@@ -204,6 +209,7 @@ export function allianceDaily(state) {
   hordeHelp(state, ms);
   askToJoin(state);
   council(state, ms);
+  coalitionDaily(state, allianceMembers(state)); // coalition.js: memories fade, members drift, their asks
 }
 
 function shareSightings(state, ms) {
@@ -356,11 +362,11 @@ export function councilCard(state, kind, ms = allianceMembers(state)) {
             if (supplyAmt(hub(st).stock, k) < qty) return `${h.name} no longer has ${qty} ${k}.`;
             const sent = sendOf(st); // rounds: by calibre, out of the stock by key (their store keeps one ammo count: settleAll folds them)
             for (const [kk, q] of Object.entries(sent)) { if (kk === "food") { moveFoodUnits(hub(st), f, q, { state: st }); continue; } useSupply(hub(st).stock, kk, q); f.stock[kk] = (f.stock[kk] || 0) + q; } // foods.js: days of food, the soonest to spoil first
-            changeGoodwill(st, f, 6, "the council's request"); everyone(st, others, 3, "the council's request");
+            changeGoodwill(st, f, 6, "the council's request"); everyone(st, others, 3, "the council's request"); noteAnswer(st, f, true);
             A.stats.granted++; A.history.unshift({ day: day(st), text: `You sent ${suppliesText(sent)} to ${f.name}.` });
             return `${suppliesText(sent)} sent to ${f.name}.`;
           } },
-        { label: "Refuse", hint: "−4 goodwill with every member", ai: () => 0, resolve: (st) => { everyone(st, ms, -4, "you refused the council"); A.stats.refused++; A.history.unshift({ day: day(st), text: `You refused to send ${k} to ${f.name}.` }); return "You refuse. The council is not pleased."; } },
+        { label: "Refuse", hint: "−4 goodwill with every member", ai: () => 0, resolve: (st) => { everyone(st, ms, -4, "you refused the council"); noteAnswer(st, f, false); A.stats.refused++; A.history.unshift({ day: day(st), text: `You refused to send ${k} to ${f.name}.` }); return "You refuse. The council is not pleased."; } },
       ],
     };
   }
@@ -377,7 +383,7 @@ export function councilCard(state, kind, ms = allianceMembers(state)) {
       if (no) {
         const base = no.resolve;
         no.hint = "−1 goodwill with them, −3 with every member";
-        no.resolve = (st) => { const t = base(st); everyone(st, ms, -3, "you refused the council"); A.stats.refused++; return t; };
+        no.resolve = (st) => { const t = base(st); everyone(st, ms, -3, "you refused the council"); noteAnswer(st, f, false); A.stats.refused++; return t; };
       }
       card.choices = card.choices.filter((c) => c.label !== "Maybe later");
       A.history.unshift({ day: day(state), text: `The council asked you to take a job for ${f.name}.` });
@@ -393,6 +399,7 @@ export function councilCard(state, kind, ms = allianceMembers(state)) {
     const chance = clamp(0.25 + speech * 0.04 + (a.goodwill + b.goodwill) / 400, 0.05, 0.9);
     const side = (st, win, lose) => {
       changeGoodwill(st, win, 6, "your ruling"); changeGoodwill(st, lose, -8, "your ruling against them"); changeRelation(st, win, lose, -10);
+      noteAnswer(st, win, true); noteAnswer(st, lose, false); // coalition.js: the tally
       A.history.unshift({ day: day(st), text: `You ruled for ${win.name} against ${lose.name} (${what}).` });
       return `You ruled for ${win.name}. ${lose.name} will remember it.`;
     };

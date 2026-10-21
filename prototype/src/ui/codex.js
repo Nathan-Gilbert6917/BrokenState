@@ -27,6 +27,7 @@ import { WINDOW } from "../sim/windows.js"; // the map's windows: open, locked, 
 import { PUSH, GRIP } from "../sim/shoving.js"; // people and the dead shoved back a tile or flat on their back
 import { SHOVE, BOARD, CRAWL, FURNITURE, shoveable, isBoarded } from "../sim/barricade.js"; // furniture shoved in the way, boards over doors and windows, the dead crawling over half cover
 import { NOMADS } from "../sim/nomads.js"; // nomad bands: one entry a tier
+import { BAL } from "../sim/coalition.js"; // keeping the coalition together
 import { BUILDINGS, RECIPES, PLOT_NAMES } from "../sim/buildings.js";
 import { CONDITIONS, SICK } from "../sim/health.js";
 import { WORM, wormSeen } from "../sim/worm.js";
@@ -359,6 +360,13 @@ function groupEntries() {
       sprite: () => enemyCanvas(T.kit === "preppers" ? "soldiers" : "raiders", NOMADS.COLORS[tier], null, null, tier + 1),
     });
   }
+  // Keeping the Calder Coalition together (sim/coalition.js): opened once a group has joined.
+  out.push({
+    key: "k:coalition", cat: "groups", name: "🤝 Keeping the coalition", sub: "Standing, asks and tolerance",
+    stats: [["Standing", "goodwill plus what they remember: each act at once, a quarter of it for good, the rest fading in a month or two"], ["Asks", "every few days: a quarrel, a favour at another's expense, a trade, aid, fighters or rounds"], ["Refusals", `harder the more you refuse against what you grant (up to ×${BAL.FAT.MAX}), and "Requests ignored" deepens`], ["Leaving", `under a member's leave line (${BAL.LEAVE + Math.min(...Object.values(BAL.TOL)) - 3}–${BAL.LEAVE + Math.max(...Object.values(BAL.TOL)) + 3} by its kind) it may go; under 20 at once; far under, in anger`], ["Expulsion", `a member that cannot stand another demands it goes: expel, hold talks (${BAL.TALKS.food} days of food to each side) or refuse; refuse ${BAL.DEMAND_MAX} times and it leaves`]],
+    text: "Every member of the Calder Coalition weighs you and the others all the time, as rulers do in a grand strategy game. What you grant and refuse, the rulings you make between them, the fights you join, all go on a ledger of named modifiers that fade with time, on top of their goodwill and their relations with each other. Neighbours rub each other raw on the border, trade partners and those who share an enemy grow closer, and now and then something happens between them. Touchy kinds (raiders, zealots, expansionists) leave sooner than communes and traders; a warlike member that leaves in anger declares war on you.",
+    how: "Open Diplomacy → Coalition standing: each member's bar, its leave and hostile lines, what it remembers, its record and its risks, and the grid of how members feel about each other. Grant the asks of members close to their line, split quarrels when you can, and do not refuse the same member again and again. A member who leaves takes its land out of the count and is a group outside the coalition, which blocks the victory.", sprite: null,
+  });
   return out;
 }
 
@@ -524,6 +532,7 @@ function seenNow(state) {
   for (const st of state.hiveSites || []) if (known(st.tile)) keys.add("h:site");
   for (const g of state.hiveGrowths || []) if (known(g.tile) && GROWTHS[g.kind]) keys.add(`h:${g.kind}`);
   for (const f of state.factions || []) if (f.known && FACTION_TYPES[f.type]) keys.add(`g:${f.type}`);
+  if (state.alliance && Array.isArray(state.alliance.members) && state.alliance.members.length) keys.add("k:coalition"); // sim/coalition.js
   for (const v of state.visitors || []) if (v && live.has(v.tile)) keys.add(`o:${v.kind}`);
   for (const b of (state.nomads && state.nomads.bands) || []) if (b && b.known && live.has(b.tile)) keys.add(`n:${b.tier}`); // sim/nomads.js
   // Points of interest known on a tile seen or reported (sim/pois.js: the hub's knowledge, never a hidden one).
