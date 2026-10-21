@@ -74,7 +74,7 @@ export const CLEAR = {
   barrel:  { hours: 0.5, get: { scrap: 1 },  word: "an old drum", verb: "Haul off" },
   wreck:   { hours: 6,   get: { scrap: 2 },  word: "a wreck", verb: "Drag off" },
   strip:   { hours: 2,   get: { scrap: 6, carparts: 1 }, word: "a wreck", verb: "Strip" },
-  NO_TOOL: 1.5,
+  NO_TOOL: 2.5, // a tree, a fallen log or a stump with no axe, saw or machete at the base (it was 1.5 until the tools, 2026-10-21)
 };
 export const profileOf = (terrain) => PROFILES[terrain] || PROFILES.plains;
 const hashStr = (s) => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; };
@@ -275,7 +275,7 @@ export function clearOf(p, tool = true, mode = "clear") {
   }
   const c = CLEAR[p.k];
   if (!c) return null;
-  return { hours: c.hours * (p.k === "tree" && !tool ? CLEAR.NO_TOOL : 1), get: { ...c.get }, mode };
+  return { hours: c.hours * ((p.k === "tree" || p.k === "log" || p.k === "stump") && !tool ? CLEAR.NO_TOOL : 1), get: { ...c.get }, mode };
 }
 
 // ---------- laying the land on a map ----------

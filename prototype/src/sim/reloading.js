@@ -44,6 +44,7 @@ import { baseCals, partyCals, calOf, nextHand, armoured, kindMix } from "./ammo.
 import { roundsIn, baseType, withHand, GENERIC_KEYS, roundOf, isLaunchRound } from "./rounds.js";
 import { hash01 } from "./skills.js";
 import { buildLock } from "./blueprints.js";
+import { buildToolProblem } from "./toolreqs.js"; // the tools the upgrade needs (data-tools.js BUILD_TOOLS.reload_bench)
 import { relation, warsOf } from "./diplomacy.js";
 import { note } from "./ledger.js"; // the conservation test's ledger (off in play)
 
@@ -128,6 +129,8 @@ export function canUpgradeAmmoBench(state, base, id) {
   if (base.construction.some((c) => c.target === id)) return { ok: false, reason: "It is being upgraded already" };
   for (const [k, v] of Object.entries(RELOAD.UP.cost)) if ((base.stock[k] || 0) < v) return { ok: false, reason: `Needs ${v} ${SUPPLIES[k] ? SUPPLIES[k].name.toLowerCase() : k}` };
   for (const [sk, lvl] of Object.entries(RELOAD.UP.req)) if (!atBase(state, base.id).some((s) => skill(s, sk) >= lvl)) return { ok: false, reason: `Needs a Mechanics ${lvl}+ survivor here` };
+  const tools = buildToolProblem(state, base, "reload_bench");
+  if (tools) return { ok: false, tools: true, reason: tools };
   const lock = buildLock(state, base, "reload_bench");
   if (lock) return { ok: false, reason: lock, locked: true };
   return { ok: true };

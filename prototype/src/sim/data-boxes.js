@@ -70,7 +70,7 @@ export const BOX_HOLDS = {
   },
   tools: {
     kinds: { empty: 2, items: 8 },
-    items: { hammer: 3, pipewrench: 2, multitool: 2, boxcutter: 3, batteries: 1.5, lighters: 1, repairkit: 0.4, powerdrill: 0.3, headlamp: 1, flashlight: 1, makeshiftpick: 0.5 }, n: [2, 3],
+    items: { hammer: 3, pipewrench: 2, multitool: 2, boxcutter: 3, batteries: 1.5, lighters: 1, repairkit: 0.4, powerdrill: 0.3, headlamp: 1, flashlight: 1, makeshiftpick: 0.5, handsaw: 1.5, handdrill: 0.6, sewingkit: 0.6 }, n: [2, 3],
   },
   gear: {
     kinds: { empty: 3, items: 5, gun: 1.5 },

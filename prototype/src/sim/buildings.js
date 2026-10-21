@@ -25,6 +25,7 @@ import { baseCarts, CART_JOB } from "./carts.js"; // a cart at the base: a build
 import { woodNeed } from "./woodcutting.js"; // the Ring wall leaves the wood for heating (call-time only)
 import { finishFill } from "./tunnels.js"; // a tunnel under the walls filled (call-time only)
 import { carryPlacement, fittingRoom, fittingsIn, wallInfo, ringPlan, ensureRing, siteWaits, finishClear, clearUnder, autoLayout, pinAuto, FOOT } from "./basemap.js"; // the base map (call-time only): a finished job's building keeps the spot it was placed on; a general building with room for a fitting; the fittings inside one; the wall pieces' ring
+import { buildTools, buildToolProblem, wearBaseTools } from "./toolreqs.js"; // the tools a build needs (data-tools.js BUILD_TOOLS, WALL_TOOLS)
 import { BED_BUILDINGS } from "./data-beds.js"; // beds as furniture: the placed cot, bed, bunk bed and large bed (beds.js)
 import { TENT_TYPES, TENT_S } from "./data-tents.js"; // the one tent table (TENTS below)
 import { strikeTentAtBase } from "./tents.js"; // a bag's tent pulled down: struck back into its bag (call-time only)
@@ -82,7 +83,7 @@ export const STORE_KG = { storebox: 60, crates: 150, shed: 600, storehouse: 2000
 // Wood in the costs (woodwork, 2026-10-20: "Raise the wood costs for builds including walls", "Add wood to the cost of
 // builds that makes sense"): a wooden build's cost is mostly wood, with scrap (or parts) for the nails, hinges, tin
 // and fittings; its worth in all at about 50 wood a scrap, as baseview first priced it (a bunkhouse 7 scrap and 600 wood,
-// about the 20 scrap it was). What a base makes a day: a woodcutter on a trip 85-140 (forest, by hand or with an axe;
+// about the 20 scrap it was). What a base makes a day: a woodcutter on a trip 45-160 (forest, by hand or with a fire axe;
 // farmland a quarter of that), a woodcutter felling the trees marked on the base map about 330 (11 daylight hours at a
 // work-hour an hour: a tree is 4 work-hours and 120 wood), a builder clearing about 600 (constructionHour round the
 // clock). So a farm plot's 300 is a builder's half-day of felling, a bunkhouse's 600 a day. Metal, electrical, medical
@@ -452,6 +453,8 @@ export function canExpandBunkhouse(state, base, id) {
   const queued = base.construction.filter((c) => c.type === "barracks").length;
   if (countAll(base, "barracks") + queued >= BUILDINGS.barracks.max) return { ok: false, reason: `Limit reached (${BUILDINGS.barracks.max} barracks)` };
   for (const [k, v] of Object.entries(BARRACKS_UP.cost)) if ((base.stock[k] || 0) < v) return { ok: false, reason: `Needs ${v} ${keyWord(k)}` };
+  const tools = buildToolProblem(state, base, "barracks"); // toolreqs.js
+  if (tools) return { ok: false, tools: true, reason: tools };
   const lock = buildLock(state, base, "barracks");
   if (lock) return { ok: false, reason: lock, locked: true };
   return { ok: true };
@@ -460,6 +463,7 @@ export function queueBunkhouseExpand(state, base, id) {
   const chk = canExpandBunkhouse(state, base, id);
   if (!chk.ok) return chk.reason;
   for (const [k, v] of Object.entries(BARRACKS_UP.cost)) base.stock[k] -= v;
+  wearBaseTools(state, base, buildTools("barracks"));
   base.construction.push({ id: newId(), type: "barracks", target: id, cost: { ...BARRACKS_UP.cost }, progress: 0, hours: BARRACKS_UP.hours });
   return `Bunkhouse → barracks queued at ${base.name}.`;
 }
@@ -479,6 +483,8 @@ export function canUpgradeGenerator(state, base, id) {
   if (b.broken) return { ok: false, reason: "Repair it first (Repairs tab)" };
   for (const [k, v] of Object.entries(next.cost)) if ((base.stock[k] || 0) < v) return { ok: false, short: true, reason: `Needs ${v} ${keyWord(k)}`, next, tier: tier + 1 };
   for (const [sk, lvl] of Object.entries(next.req || {})) if (!atBase(state, base.id).some((s) => skill(s, sk) >= lvl)) return { ok: false, reason: `Needs a ${SKILL_NAMES[sk] || sk} ${lvl}+ survivor here`, next, tier: tier + 1 };
+  const tools = buildToolProblem(state, base, "generator"); // toolreqs.js
+  if (tools) return { ok: false, tools: true, reason: tools, next, tier: tier + 1 };
   const lock = upgradeLock(state, `generator${tier + 1}`);
   if (lock) return { ok: false, locked: true, reason: lock, next, tier: tier + 1 };
   return { ok: true, next, tier: tier + 1 };
@@ -921,6 +927,8 @@ export function canUpgradeKitchen(state, base, id) {
   const item = cannerItem(base) >= 0;
   if (!item) for (const [k, v] of Object.entries(BUILDINGS.canner.cost)) if ((base.stock[k] || 0) < v) return { ok: false, reason: `Needs ${v} ${keyWord(k)}` };
   for (const [sk, lvl] of Object.entries(BUILDINGS.canner.req)) if (!atBase(state, base.id).some((s) => skill(s, sk) >= lvl)) return { ok: false, reason: `Needs a ${SKILL_NAMES[sk] || sk} ${lvl}+ survivor here` };
+  const tools = buildToolProblem(state, base, "canner"); // toolreqs.js
+  if (tools) return { ok: false, tools: true, reason: tools };
   return { ok: true, item };
 }
 export function queueCannerUpgrade(state, base, id) {
@@ -1072,6 +1080,8 @@ export function canBuildWall(state, base, opts = {}) {
   const out = { wall: true, kind, tier, def, pieces, ids, cost, hours: Math.round(hours * 10) / 10 };
   if (!sizeFits(base, def.size)) return { ...out, ok: false, size: def.size, reason: `${def.name}: ${opensAt(def.size).toLowerCase()}` };
   for (const [sk, lvl] of Object.entries(def.req || {})) if (!atBase(state, base.id).some((s) => skill(s, sk) >= lvl)) return { ...out, ok: false, reason: `Needs a ${SKILL_NAMES[sk] || sk} ${lvl}+ survivor here` };
+  const tools = buildToolProblem(state, base, "walls", def.key); // toolreqs.js: by the material (WALL_TOOLS)
+  if (tools) return { ...out, ok: false, tools: true, reason: `${def.name}: ${tools.charAt(0).toLowerCase()}${tools.slice(1)}` };
   return { ...out, ok: true, gather: true }; // its materials are taken as they come in (gatherHour)
 }
 // The material a new ring is closed in when none is asked for (the governor): the best this base builds that its
@@ -1106,6 +1116,8 @@ export function canBuildPiece(state, base, type, opts = {}) {
   if (T) for (const [sk, lvl] of Object.entries(T.req || {})) if (!atBase(state, base.id).some((s) => skill(s, sk) >= lvl)) return { ok: false, mat, reason: `${T.mat}: needs a ${SKILL_NAMES[sk] || sk} ${lvl}+ survivor here` };
   const cost = pieceCost(type, mat || 1);
   for (const [k, v] of Object.entries(cost)) if ((base.stock[k] || 0) < v) return { ok: false, mat, short: true, cost, reason: `Needs ${v} ${keyWord(k)}` };
+  const tools = buildToolProblem(state, base, type, T ? T.key : null); // toolreqs.js: by the material (WALL_TOOLS)
+  if (tools) return { ok: false, mat, tools: true, reason: tools };
   return { ok: true, mat, cost, hours: pieceHours(type, mat || 1) };
 }
 
@@ -1153,6 +1165,8 @@ export function canBuild(state, base, type, opts = {}) {
       if (!atBase(state, base.id).some((s) => skill(s, sk) >= lvl)) return { ok: false, reason: `Needs a ${SKILL_NAMES[sk] || sk} ${lvl}+ survivor here` };
     }
   }
+  const tools = buildToolProblem(state, base, type); // toolreqs.js: a hammer and a saw, a shovel, a welding kit…
+  if (tools) return { ok: false, tools: true, reason: tools };
   const lock = buildLock(state, base, type); // blueprints.js: upper tiers need a studied manual or blueprint
   if (lock) return { ok: false, reason: lock, locked: true };
   return { ok: true };
@@ -1168,15 +1182,18 @@ export function queueBuild(state, base, type, opts = {}) {
     // finished, the yard had grown meanwhile (each build queued after it widens a hub's yard), the pieces were laid on
     // the wider ring, it did not close, and the governor queued the rest again and again (2.5 rings by day 125).
     if (chk.kind === "ring") ensureRing(base);
+    wearBaseTools(state, base, buildTools("walls", chk.def.key)); // toolreqs.js: a makeshift tool loses a use
     base.construction.push({ id: newId(), type: "walls", kind: chk.kind, mat: chk.tier, ...(chk.kind === "ring" ? { pieces: chk.pieces } : { ids: chk.ids }), cost: { ...chk.cost }, paid: {}, progress: 0, hours: Math.max(1, chk.hours) });
     return `${chk.kind === "ring" ? `Ring wall queued at ${base.name}: ${chk.pieces.length} ${chk.def.mat.toLowerCase()} pieces, laid where the ring runs` : `${base.name}: ${chk.ids.length} wall pieces to be raised to ${chk.def.mat.toLowerCase()}`}. The materials are taken from the stores as they come in.`;
   }
   if (BUILDINGS[type].piece) { // a wall piece, gate or stand of a material: placed on the base map while it goes up
     for (const [k, v] of Object.entries(chk.cost)) base.stock[k] -= v;
+    wearBaseTools(state, base, buildTools(type, chk.mat ? WALL_TIERS[chk.mat].key : null));
     const job = { id: newId(), type, ...(chk.mat ? { mat: chk.mat } : {}), cost: { ...chk.cost }, progress: 0, hours: chk.hours };
     base.construction.push(job);
     return `${pieceName({ type, mat: chk.mat })} queued at ${base.name}.`;
   }
+  wearBaseTools(state, base, buildTools(type));
   if (BUILDINGS[type].gather) { base.construction.push(BUILDINGS[type].tierUp ? tierUpJobFor(base, type) : gatherJob(type)); return `${BUILDINGS[type].name} queued at ${base.name}: the materials are taken from the stores as they come in.`; }
   for (const [k, v] of Object.entries(BUILDINGS[type].cost)) base.stock[k] -= v;
   base.construction.push({ id: newId(), type, progress: 0, hours: BUILDINGS[type].hours });
