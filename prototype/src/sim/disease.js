@@ -112,7 +112,7 @@ export function newcomersDaily(state) {
       if (!init || was === AWAY || (was == null && s.born != null) || s.incubating || isIll(s)) continue; // the first pass; known from it; a birth; already carrying
       const from = was != null ? baseById(state, was) : null;
       const p = (was != null ? CARRY.moved : CARRY.outside) * mult;
-      if (!(dice(state, "carry", localId(state, s.id), base.id, d) < p)) continue;
+      if (!(dice(state, "carry", localId(state, s.id), localId(state, base.id), d) < p)) continue; // localId: the same dice for a world made after another one in this process (tradetest determinism)
       const mix = CARRY.mix[season(state).key === "winter" ? "winter" : "other"];
       const keys = Object.keys(mix), total = keys.reduce((a, k) => a + mix[k], 0);
       let r = dice(state, "carrykind", localId(state, s.id), d) * total, key = keys[0];
