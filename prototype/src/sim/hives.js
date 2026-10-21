@@ -46,6 +46,7 @@ import {
   growthIncome, growthStep, growthsDaily, guardMin, extraOut, attackRange, canRaiseBoss, hiveMix, borderMix, markThreat, witherGrowths, assaultTypes, hiveMods,
   savingFor, growthsOf, growthCounts,
 } from "./hivetech.js"; // the hives' tech tree: growths around a hive and the special dead they breed
+import { payCounters } from "./counterdead.js"; // the counter-dead: paid for in the hive's resources, each
 
 // Bigger maps (worldsize.js): border hordes come as often per tile of land as on a Normal map (days between them
 // divided by the area), with more build sites at a time. A Normal map is untouched. New build sites are not paced
@@ -186,7 +187,8 @@ function buy(state, hive, kind, o) {
   const stats = state.hiveInfo.stats;
   stats.hordes++;
   stats.zombies += size;
-  const { mix, elite } = hiveMix(state, hive, o.role === "guard" ? "guard" : kind); // the special dead its growths breed, by the horde's size (hivetech.js)
+  let { mix, elite } = hiveMix(state, hive, o.role === "guard" ? "guard" : kind); // the special dead its growths breed, by the horde's size (hivetech.js)
+  if (mix) { payCounters(state, hive, mix, size); if (!Object.keys(mix).length) mix = null; } // counterdead.js: the counter-dead are paid for, each (ZTYPES breed), as many as it can
   return makeHorde(state, { size, hive: hive.id, mix, elite, ...o });
 }
 const biggest = (res) => (res >= HORDE_SIZES.large.cost ? "large" : res >= HORDE_SIZES.medium.cost ? "medium" : "small");

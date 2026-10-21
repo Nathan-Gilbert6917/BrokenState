@@ -53,7 +53,8 @@ import { coversCell, nearCell, unitCells,
 } from "./combat.js";
 import { fightNow, bossUnit, placeUnitRight } from "./defences.js";
 import { hiveById, hiveGuard, broodForce, destroyHive, molotovsOf } from "./hives.js";
-import { hiveTier, hiveMods, markThreat, growthsOf, growthById, destroyGrowth } from "./hivetech.js";
+import { hiveTier, hiveMods, markThreat, growthsOf, growthById, destroyGrowth, eraTier } from "./hivetech.js";
+import { broodWiden } from "./deadpool.js"; // the era's kinds the hive does not breed, by the years
 import { BOSS_NAMES, GROWTHS, ZTYPES, HIVE } from "./hiveconst.js";
 import { applyZType } from "./zombietypes.js";
 import { reduceHorde } from "./hordes.js";
@@ -559,15 +560,19 @@ function setLeft(state, hive, room, n) {
   mem.rooms[room.id] = { left: Math.max(0, Math.round(n)), at: state.hour, burned: !!(was && was.burned) };
 }
 // The special dead among n brood at a layer: the kinds the hive's growths breed, a share rising with the depth.
+// And, as the years go by, a few of the era's kinds it does not breed (deadpool.js broodWiden), whatever it has grown.
 function broodTypes(state, hive, n, layer) {
   const kinds = hiveMods(state, hive).unlocks;
-  if (!kinds.length || n < 2) return null;
+  const extra = broodWiden(state, eraTier(state), kinds, n, layer);
+  if ((!kinds.length && !extra) || n < 2) return null;
   const S = HCRAWL.SPECIAL;
-  const k = Math.round(n * Math.min(S.max, S.base + S.perLayer * layer));
-  if (k <= 0) return null;
+  const k = kinds.length ? Math.round(n * Math.min(S.max, S.base + S.perLayer * layer)) : 0;
+  if (k <= 0 && !extra) return null;
   const out = {};
   for (let i = 0; i < k; i++) { const kind = kinds[(i + layer) % kinds.length]; out[kind] = (out[kind] || 0) + 1; }
-  return out;
+  let room = Math.max(0, n - 1 - k);
+  if (extra) for (const [kind, m] of Object.entries(extra)) { const add = Math.min(m, room); if (add > 0) { out[kind] = (out[kind] || 0) + add; room -= add; } }
+  return Object.keys(out).length ? out : null;
 }
 // What fights in a chamber: { count, power, types, elite, name } (count: what is left in it now, or `count`).
 export function roomForce(state, hive, room, count = null) {

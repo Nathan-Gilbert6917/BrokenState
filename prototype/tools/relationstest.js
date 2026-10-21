@@ -20,6 +20,7 @@ import { weatherOnDay } from "../src/sim/weather.js";
 import { Rng } from "../src/sim/rng.js";
 import { GEAR } from "../src/sim/data.js";
 import { WHY_ACTIONS } from "../src/ui/causes.js"; // the "Why?" link on the memorial wall
+import { BOND } from "../src/sim/bonds.js"; // bonds: a close friend grieves longer, a friend who walks out is missed
 import {
   getRel, opinion, relKind, relationsDaily, moodFactors, noteMeals, onDeath, memorialList, holdMemorial, memorialInfo, memorialWeight,
   battleRecord, tripDone, noteSearch, noteRescue, rec, friendAim, teamSpirit, friendlyCrew, quarrelPair, couplePair, makePartners,
@@ -121,7 +122,7 @@ section("Grief on a death, and the memorial wall");
   check(near(partner.mood, 70 - hitP, 0.11), `the partner: mood -${hitP} (${partner.mood.toFixed(1)})`);
   check(near(known.mood, 70 + GRIEF.acquaint), `someone they knew: ${GRIEF.acquaint}`);
   check(rival.mood === 70, "a rival: no change");
-  check(friend.grief && friend.grief.days === Math.round(GRIEF.daysBase + GRIEF.daysPer * 0.8) && partner.grief.days === GRIEF.daysBase + GRIEF.daysPer, `grieving: ${friend.grief && friend.grief.days} days (friend), ${partner.grief && partner.grief.days} (partner)`);
+  check(friend.grief && friend.grief.days === Math.round(GRIEF.daysBase + GRIEF.daysPer * 0.8) + BOND.closeGrief && partner.grief.days === GRIEF.daysBase + GRIEF.daysPer + BOND.closeGrief, `grieving: ${friend.grief && friend.grief.days} days (friend), ${partner.grief && partner.grief.days} (partner) (a close friend and a partner ${BOND.closeGrief} days longer: bonds.js)`);
   partner.mood = 60;
   check(near(workFactor(partner), 1 - GRIEF.work, 0.011) && near(moodWork(friend), moodCurve(friend.mood) * (1 - GRIEF.work * 0.8), 0.002), `grief slows work: partner ×${workFactor(partner)}, friend ×${moodWork(friend).toFixed(2)}`);
   const f = factor(st, partner, /Grieving/);
@@ -130,7 +131,7 @@ section("Grief on a death, and the memorial wall");
   check(m && m.id === dead.id && m.grievedBy.length === 2 && m.partner === partner.name && /fever/.test(m.cause) && m.place === h.name && m.days >= 1, `memorial entry: ${m && `${m.name}, ${m.days} days, ${m.cause}, ${m.place}, grieved by ${m.grievedBy.join(", ")}`}`);
   check(st.log.some((l) => /grieving for/.test(l.text)), "a log line names who grieves");
   // Grief counts down and ends.
-  for (let i = 0; i < 12; i++) { nextDay(st); relationsDaily(st); }
+  for (let i = 0; i < 12 + BOND.closeGrief; i++) { nextDay(st); relationsDaily(st); }
   check(!friend.grief && !partner.grief, "grief ends after its days");
   // Memorial service: food per person, mood, grief shortened, once a week.
   const s2 = W();
@@ -151,14 +152,14 @@ section("Grief on a death, and the memorial wall");
   const before = g.mood;
   holdMemorial(s2, h2);
   check(g.mood >= Math.min(100, before + MEMORIAL.all + MEMORIAL.chapel) - 0.11, "a chapel lifts a service by 2 more");
-  // Deserting friends hurt half as much (no grief days).
+  // Deserting friends hurt half as much, grief days at half (bonds.js BOND.leftGrief: "Misses …").
   const s3 = W();
   const h3 = hub(s3);
   const [q, w] = atBase(s3, h3.id).filter((s) => !s.leader);
   setO(s3, q, w, 60); w.mood = 70;
   const { desert } = await import("../src/sim/morale.js");
   desert(s3, h3, q);
-  check(near(w.mood, 70 - (GRIEF.hit + GRIEF.hitPer * 0.6) / 2, 0.11) && !w.grief && !memorialList(s3).length, "a friend who walks out: half the grief hit, no grief days, no memorial line");
+  check(near(w.mood, 70 - (GRIEF.hit + GRIEF.hitPer * 0.6) / 2, 0.11) && w.grief && w.grief.left && w.grief.days === Math.round((GRIEF.daysBase + GRIEF.daysPer * 0.6) * BOND.leftGrief) && !memorialList(s3).length, "a friend who walks out: half the grief hit, half the grief days (missed, not mourned), no memorial line");
 }
 
 // ---------------------------------------------------------------------------------------------------------

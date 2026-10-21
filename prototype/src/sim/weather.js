@@ -52,6 +52,7 @@ import { Rng } from "./rng.js";
 import * as data from "./data.js";
 import { log, hurt, hub } from "./world.js";
 import { cfgOf } from "./worldcfg.js"; // the run's dials: Thirst
+import { frostMult, coldSnap } from "./winter.js"; // winter frosts and cold snaps (cropDamage; call-time only)
 /** @import { State, Party, Survivor } from "./types" */
 
 export const SEASON_DAYS = 28;
@@ -679,7 +680,9 @@ export function growthFactor(state, crop, dayIdx = dayIndex(state)) {
 }
 
 // Daily chances that a standing crop dies (kill) and that a ripe crop or a harvest in the field rots (rot).
-// reason names the main cause ("" when there is no risk): frost, hard freeze, blizzard, drought, heat, storm, wet, snow.
+// reason names the main cause ("" when there is no risk): frost, hard freeze, cold snap, blizzard, drought, heat,
+// storm, wet, snow. Winter (winter.js FROST): frost and a hard freeze × frostMult (winter, late autumn, early spring),
+// and outdoors a cold snap that takes hardy crops too (coldSnap); under glass neither.
 /** @param {State} state @param {number} [dayIdx] */
 export function cropDamage(state, crop, dayIdx = dayIndex(state)) {
   const c = cropClimate(crop);
@@ -688,8 +691,10 @@ export function cropDamage(state, crop, dayIdx = dayIndex(state)) {
   const causes = [];
   const tender = 1 - clamp(c.hardy, 0, 1);
   const shelter = c.sheltered || (c.seasons.length >= 4 && c.hardy >= 1 && !c.tall);
-  if (d.lo <= -4) causes.push(["hard freeze", 0.65 * tender + (d.lo <= -12 && !shelter ? 0.03 : 0)]);
-  else if (d.lo <= 0 || d.k === "frost") causes.push(["frost", 0.35 * tender]);
+  const fm = frostMult(dayIdx);
+  if (d.lo <= -4) causes.push(["hard freeze", Math.min(0.9, 0.65 * tender * fm) + (d.lo <= -12 && !shelter ? 0.03 : 0)]);
+  else if (d.lo <= 0 || d.k === "frost") causes.push(["frost", 0.35 * tender * fm]);
+  if (!shelter) { const snap = coldSnap(dayIdx, d); if (snap > 0) causes.push(["cold snap", snap]); }
   if (d.k === "blizzard" && !shelter) causes.push(["blizzard", 0.03 + 0.2 * tender]);
   if (!d.frozen && d.hi > 8 && (d.k === "drought" || d.soil < 0.1)) causes.push(["drought", Math.min(0.15, (0.02 + 0.01 * Math.max(0, d.dry - 5)) * (0.5 + c.thirst))]);
   if (d.k === "heat") causes.push(["heat", 0.01 + 0.03 * c.thirst]);

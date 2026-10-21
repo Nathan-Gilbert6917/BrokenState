@@ -93,6 +93,12 @@ export const PROFILE = { // sub: a second, detuned pulse an octave down (diploph
   sower:       { f0: 60, shift: 0.88, rasp: 0.85, drive: 2.2, wet: 0.9, fry: 0.65, sub: 0.35 },
   nightmare:   { f0: 80, shift: 0.95, rasp: 0.6, drive: 2.4, wet: 0.2, fry: 0.3, sub: 0.3 },
   sleeper:     { f0: 66, shift: 0.9, rasp: 0.8, drive: 2.4, wet: 0.7, fry: 0.4, sub: 0.3 },
+  // The counter-dead (sim/counterdead.js, sim/tunnels.js).
+  digger:      { f0: 52, shift: 0.79, rasp: 0.95, drive: 3.2, wet: 0.5, fry: 0.55, sub: 0.4 },
+  melter:      { f0: 76, shift: 0.93, rasp: 0.65, drive: 2.4, wet: 1, fry: 0.45, sub: 0.3 },
+  husk:        { f0: 57, shift: 0.84, rasp: 0.9, drive: 3, wet: 0.15, fry: 0.6, sub: 0.35 },
+  tripper:     { f0: 98, shift: 1.02, rasp: 0.8, drive: 2.6, wet: 0.35, fry: 0.25, sub: 0.25 },
+  darkwalker:  { f0: 120, shift: 1.08, rasp: 0.4, drive: 1.6, wet: 0.2, fry: 0.15, sub: 0.2 },
   wallbreaker: { f0: 34, shift: 0.6, rasp: 1, drive: 5.5, wet: 0.4, fry: 0.8, sub: 0.5, slow: 1.35, giant: true },
   broodmother: { f0: 30, shift: 0.56, rasp: 0.85, drive: 4.5, wet: 1, fry: 0.7, sub: 0.5, slow: 1.4, giant: true },
   // The dead beasts (sim/deadbeasts.js): animal throats, no words in them.
@@ -911,6 +917,11 @@ export const VOICE_SETS = {
   flinger: { ...COMMON, idle: ["gurgle", "moan"] },
   sower: { ...COMMON, idle: "spores" },
   nightmare: { ...COMMON, idle: "whisper", aggro: "laugh", hurt: "glitch", death: "wail", shriek: "nightmare" },
+  digger: { ...COMMON, idle: ["rumble", "moan"], step: "scrabble" }, // the counter-dead (sim/counterdead.js)
+  melter: { ...COMMON, idle: ["gurgle", "gurgle", "wheeze"] },
+  husk: { ...COMMON, idle: ["creak", "moan"], hurt: "crack" },
+  tripper: { ...COMMON, idle: ["pant", "moan"], aggro: "spot" },
+  darkwalker: { ...COMMON, idle: "whisper", aggro: "hiss" },
   sleeper: { ...COMMON, idle: "silent", aggro: "gasp", wake: "wake", death: "splat", step: "silent", snarl: "silent", breath: "silent" },
   wallbreaker: { ...COMMON, idle: "rumble", aggro: "roar", attack: "roarShort", death: "roarDeath", step: "stomp", bash: "smash" },
   broodmother: { ...COMMON, idle: ["bellow", "bloat"], aggro: "roar", attack: "roarShort", death: "roarDeath", step: "stomp", bash: "smash" },

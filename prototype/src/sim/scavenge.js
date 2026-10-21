@@ -36,6 +36,7 @@ import { tickHour } from "./world.js";
 import { engLootMult } from "./raidplan.js"; // a scout sent first: the team knows where to look
 import { searchHazards } from "./health.js";
 import { wormSearch } from "./worm.js"; // the worm: hands that handled the dead
+import { winterScavFood } from "./winter.js"; // winter: less food in a find (call-time only)
 import { anyPerk, rollBook, gainXpAll, USE, hash01 } from "./skills.js";
 import { noteSearch } from "./relations.js";
 import { itemLoad, lootItem, armouredItem } from "./inventory.js";
@@ -54,6 +55,7 @@ import { gunSearchHour } from "./locks.js"; // gun safes, drills and grinders (t
 import { siteDeadMix, bodyLoot, MILDEAD, maxMix } from "./deadsoldiers.js";
 import { beastMix, BEAST_KINDS } from "./deadbeasts.js"; // the dead beasts of the hills, the woods and the farmland
 import { siteSpecials } from "./hivetech.js"; // the special dead met exploring
+import { widenMix } from "./deadpool.js"; // the dead the years bring, whatever the hives do
 import { mixWeight } from "./zombietypes.js";
 import { searchMeds } from "./medfinds.js";
 import { ZTYPES, BEASTS } from "./hiveconst.js";
@@ -99,7 +101,9 @@ export function raidEnemies(state, tileId) {
   // police station), placed among them by share (combat.js createRaid, buildingmaps.js placeInterior).
   // The bred kinds too (hivetech.js siteSpecials): more in towns and cities as the years go by, and on a hive's land.
   // The dead beasts of the land too (deadbeasts.js beastMix: the hills, the woods, the farms).
-  const mix = maxMix(maxMix(siteDeadMix(state, tileId), siteSpecials(state, tileId)), beastMix(state, tileId));
+  // And the dead the years bring whatever the hives do (deadpool.js widenMix: soldiers out of the military sites, riot
+  // police in the towns and cities, the countryside's dead beasts).
+  const mix = maxMix(maxMix(maxMix(siteDeadMix(state, tileId), siteSpecials(state, tileId)), beastMix(state, tileId)), widenMix(state, tileId));
   if (z > 0) groups.push({ kind: "zombies", count: Math.max(1, Math.min(14, z)), power: 2 + inf * 3 + hz, name: hz >= 3 ? "the hive's dead" : mix && mix.soldier >= 0.3 ? "the dead soldiers" : mix && BEAST_KINDS.some((k) => mix[k] >= 0.12) ? "the dead and the dead beasts" : "the dead", mix });
   const baseOwner = state.factions.find((f) => f.alive && f.bases.includes(tileId));
   const owner = typeof t.owner === "number" ? factionById(state, t.owner) : null;
@@ -332,6 +336,7 @@ export function searchHour(state) {
     const key = rng.weighted(Object.keys(table), (k) => table[k]);
     let qty = lootQty(state, key, Math.round(rng.range(4, 9) * left * ap.loot * engLootMult(e) * (1 + scav / 15) * lootPerk(key) * (key === "ammo" ? 6 : key === "scrap" ? 2.5 : key === "fuel" ? 0.7 : key === "jars" ? 2 : 1))); // worldcfg.js: the run's loot dial for this kind // fuel is scarce; ruins are full of scrap (expeditions are the source now); jars come by the box
     if (key === "meds" && qty > 0) qty = searchMeds(t, qty); // medfinds.js: a box of them only at a pharmacy, clinic, hospital or medevac wreck
+    if (key === "food") qty = winterScavFood(state, qty); // winter.js: gardens frozen, larders long eaten
     if (qty > 0 && key === "ammo") {
       finds.push(roundsText(addFind(e.found.supplies, kind, qty, false, e.tile, e.hours, i))); // ammo.js: the rounds a place like this holds, by calibre, named
     } else if (qty > 0 && (key === "food" || key === "preserved")) {

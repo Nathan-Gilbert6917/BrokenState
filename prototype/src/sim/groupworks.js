@@ -153,6 +153,7 @@ import { groupWantsMill, groupWantsGrinder } from "./cooking.js"; // wave 2 cook
 import { BUILDINGS, CAMP as CAMP_BASE } from "./buildings.js"; // storage: your storage buildings, their costs and rules (call-time only)
 import { storageOf } from "./basestorage.js"; // storage: a base's room and what lies outside (call-time only)
 import { STORE_WISH } from "./autopilot.js"; // storage: your governor's ladder (call-time only)
+import { groupFillDaily } from "./tunnels.js"; // the dead's tunnels under their walls (call-time only)
 import { homesOf, stockTonight, worksBuildings } from "./groupbases.js"; // storage: their bases as base objects (call-time only)
 import { hallDef, hallWork, groupBedsDaily, furnSleepers } from "./beds.js"; // beds as furniture: their hall, the furniture they craft and its sleepers (call-time only)
 import { groupTentSleepers } from "./tents.js"; // the tent bags on their shelf, pitched at their camps (call-time only)
@@ -778,6 +779,7 @@ export function groupWorksDaily(state, f) {
   groupTechDaily(state, f); // machines-2: their manuals, bought and studied
   groupPartsDaily(state, f); // machines-2: parts from their workshop before the day's machines and builds
   groupBedsDaily(state, f); // beds.js: a piece of furniture crafted and set in their hall
+  groupFillDaily(state, f, homesOf(state, f)); // tunnels.js: the dead's tunnels under their walls filled (coarse: so many work-hours a day)
   // A job at a base they no longer hold is dropped (the materials are lost with the base).
   if (f.job && !f.bases.includes(f.job.tile)) f.job = null;
   // noidle (AI parity with your governor: nobody stays a builder with nothing to build): the day's crew-days go to

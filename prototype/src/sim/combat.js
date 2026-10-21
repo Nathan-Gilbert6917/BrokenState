@@ -51,6 +51,7 @@ import { siegeSetup, siegeAct, siegeAI, botSiege, afterMove, checkRams, isCrew, 
 import { lureTurn, herded, shepherdTurn, botDecoy, lureEdge } from "./decoys.js"; // decoys, fire and the senses of the dead; the Shepherd
 import { battlePerks, battleXp, rollBook, fightXp, hash01 } from "./skills.js";
 import { battleRecord, friendAim, teamSpirit } from "./relations.js";
+import { bondNerve } from "./bonds.js"; // friends alongside: steadier nerve
 import { refitSenses, senses } from "./stealth.js";
 import { LIGHTS } from "./lights.js"; // a light's name (switchAct)
 import { gunMods, unitMods, modRange, modLabel, enemyMods, fittedSuppressor, NO_MODS, situationalAim, roundReach } from "./gunmods.js"; // gun attachments; a fitted magazine changes a gun's capacity (magCap)
@@ -65,7 +66,9 @@ import { battleUse, battleMod } from "./itemacts.js"; // the item menu's orders 
 import { lockRaid, openLock, lockedLoot, raidLocksEnd, autoLock, lockTargets, lockedMsg, botDone } from "./locks.js";
 import { safeTurn } from "./locks.js"; // gun safes: a charge set on one goes off at the start of the next turn
 import { applyZType, typeList, typeStrength, zRevealed, strikeBonus, zTick, zombieTurn, nextOfMix, mixList, siteList } from "./zombietypes.js"; // a hive's special dead
-import { ZTYPES, MIDDEAD } from "./hiveconst.js";
+import { ZTYPES, MIDDEAD, COUNTER, DIG } from "./hiveconst.js";
+import { tunnelLinks, tunnelSig, usesTunnels, crawlIn, tunnelRound, settleTunnels } from "./tunnels.js"; // the Digger's tunnels: the dead crawl under the walls
+import { trapProof } from "./counterdead.js"; // the Husk through wire and spike pits
 import { ACID, acidAt, acidArmor, acidWeights, acidStep, acidRound, spitterBurst } from "./acid.js"; // a spitter's acid sac bursts when it dies
 import { armorVs, stabsGap, ARMORED, armoredOf, wearPlate, maxMix } from "./deadsoldiers.js"; // the armoured dead: soldiers, riot police
 import { beastsOf, packAim, beastBite, beastHit, beastDies } from "./deadbeasts.js"; // the dead beasts: worm-ridden animals that walk
@@ -219,7 +222,8 @@ export function transformBattle(b, side) {
   W = nw; H = nh;
   b.w = nw; b.h = nh; b.cells = cells;
   b.losCache = makeLosCache(W, H);
-  for (const u of b.units) { const [nx, ny] = tf(u.x, u.y); u.x = nx; u.y = ny; }
+  for (const u of b.units) { const [nx, ny] = tf(u.x, u.y); u.x = nx; u.y = ny; if (u.under) { u.under.from = tf(...u.under.from); u.under.to = tf(...u.under.to); } }
+  for (const t of b.tunnels || []) { t.a = tf(...t.a); t.b = tf(...t.b); } // tunnels.js: the holes turn with the map
   const p = b.units.find((u) => u.side === "player");
   b.reach = flood(cells, p ? p.x : 0, p ? p.y : 0);
   return tf;
@@ -234,6 +238,7 @@ export function resizeBattle(b, w, h, cells, rx = 0, ry = 0) {
   b.reach = flood(cells, rx, ry);
   b.acid = []; // acid pools (acid.js) stay on the old map
   b.corpses = []; // and the bodies lying about (sleepers.js)
+  b.tunnels = []; // and the tunnels (tunnels.js: whoever is under one comes up on the new map)
   return b;
 }
 // The cells the player side can stand on, flooded from (x, y) (after the map changed).
@@ -825,6 +830,7 @@ const DOORS = new Set(["door", "idoor", "odoor"]);
 export const UNIT_SIEGE = {
   human: { bash: 1, climb: HEIGHT.CLIMB }, zombie: { bash: 1, climb: HEIGHT.CLIMB_DEAD },
   wallbreaker: { bash: 3, climb: 3 }, broodmother: { bash: 2, climb: 3 },
+  melter: { bash: COUNTER.MELT, climb: HEIGHT.CLIMB_DEAD }, // counterdead.js: its acid eats through what it batters
 };
 export const siegeRule = (u) => ({ bash: 1, climb: HEIGHT.CLIMB, ...(u && UNIT_SIEGE[u.kind]), ...(u && UNIT_SIEGE[u.variant || u.zkind]), ...(u && UNIT_SIEGE[u.boss]) });
 
@@ -2559,6 +2565,7 @@ export function reachable(b, u, maxCost, opts = {}) {
   const vaults = (x, y) => { const c = b.cells[idx(x, y)]; return vaulter ? vaultNow(u, b, c) : clamber && (windowOpen(c) || crawlable(b, c)); };
   const soft = softOn(b); // bushes and tents (softcover.js): a step into one costs a little more
   const noDoors = u.side === "player" && u.kind === "human" && handsBusy(u) && !b.botTurn; // carry.js: the hands full, a closed door stays shut to them (opening it takes a hand)
+  const tl = b.tunnels && usesTunnels(u) ? tunnelLinks(b) : null; // tunnels.js: an open tunnel's far end one move past its near one (moveAlong sends the unit under there)
   const start = idx(u.x, u.y);
   d[start] = 0;
   real[start] = 0;
@@ -2593,6 +2600,12 @@ export function reachable(b, u, maxCost, opts = {}) {
         if (aw) real[j] = nr;
         prev[j] = cur;
       }
+    }
+    const links = tl && tl.get(cur);
+    if (links) for (const [j] of links) {
+      if (occ[j] === 1) continue;
+      const nr = real[cur] + 1, nd = aw ? d[cur] + 1 + aw[j] : nr;
+      if (nr <= maxCost + 1e-6 && nd < d[j]) { if (d[j] === Infinity) { open.push(j); reached.push(j); } d[j] = nd; if (aw) real[j] = nr; prev[j] = cur; }
     }
   }
   // Downed bodies can be stepped over but not stood on; nor is half cover vaulted, a window gone through or a
@@ -2630,7 +2643,8 @@ export function distField(b, sources, walker = null) {
   const vaulter = !climber && canVault(walker); // a person: over half cover at vaultCost (vaultable)
   const clamber = !climber && !vaulter && (!walker || clambers(walker)); // the dead, or nobody in particular: through an open or broken window (windows.js)
   const crawl = clamber && !!walker; // one of the dead (not the field of nobody in particular): over half cover at CRAWL.COST (barricade.js)
-  const key = `${siege ? 1 : 0}${climber ? "c" : ""}${vaulter ? "v" : ""}${clamber ? "t" : ""}${crawl ? "w" : ""}${per}|${burning ? [...burning].join(".") : ""}|${sources.map((s) => s[0] + s[1] * W).join(",")}`;
+  const tl = walker && b.tunnels && usesTunnels(walker) ? tunnelLinks(b) : null; // tunnels.js: the dead crawl from one end to the other at DIG.CRAWL a cell
+  const key = `${siege ? 1 : 0}${climber ? "c" : ""}${vaulter ? "v" : ""}${clamber ? "t" : ""}${crawl ? "w" : ""}${per}|${burning ? [...burning].join(".") : ""}|${tl ? tunnelSig(b) : ""}|${sources.map((s) => s[0] + s[1] * W).join(",")}`;
   const cache = fieldCache(b);
   const hit = cache.get(key);
   if (hit) return hit;
@@ -2679,6 +2693,8 @@ export function distField(b, sources, walker = null) {
       const nd = d[cur] + (diag ? 1.5 : 1) + climb + (climber ? 0 : overA[j]) + bashA[j] + (aw ? aw[j] : 0); // aw: acid.js; overA here: a vault
       if (nd < d[j]) { d[j] = nd; heap.push(d[j], j); }
     }
+    const links = tl && tl.get(cur);
+    if (links) for (const [j, len] of links) { if (!okA[j]) continue; const nd = d[cur] + 1 + len * DIG.CRAWL; if (nd < d[j]) { d[j] = nd; heap.push(d[j], j); } }
   }
   return d;
 }
@@ -3374,7 +3390,7 @@ export function playerUnit(b, s, side = "player") { // side: fighters.js builds 
     weapon: key, weaponName: key === "fists" ? (item ? `${item.name} (unusable)` : "Fists") : modLabel(item), // "9mm pistol (red dot, suppressor)"
     gm: key === "fists" ? NO_MODS : gunMods(item), gmWeapon: key, // gunmods.js: what its attachments add (shotOdds, shotNoise)
     aim: 40 + skill(s, "shooting") * 2.5 - (1 - mult) * 30 + bravery + ((b.setup && b.setup.relAim && b.setup.relAim[s.id]) || 0) + buzzAim(s) + needsAim(s) + illnessAim(s) + tiredAim(s), // friends alongside, rivals, revenge (relations.js); a hangover (comforts.js); hunger, thirst (needs.js); illness (health.js); tiredness (sleep.js)
-    nerve: (s.traits.includes("brave") ? MIDDEAD.NIGHTMARE.BRAVE : 0) + (s.traits.includes("coward") ? MIDDEAD.NIGHTMARE.COWARD : 0), // middead.js: a Nightmare's scream
+    nerve: (s.traits.includes("brave") ? MIDDEAD.NIGHTMARE.BRAVE : 0) + (s.traits.includes("coward") ? MIDDEAD.NIGHTMARE.COWARD : 0) + ((b.setup && b.setup.relNerve && b.setup.relNerve[s.id]) || 0), // middead.js: a Nightmare's scream; friends alongside (bonds.js)
     strongBack: s.traits.includes("strongback"), // shoving.js: a harder shove
     bulldozer: s.traits.includes("bulldozer") ? { shove: traitFx(s, "bulldozer", "shove"), knock: traitFx(s, "bulldozer", "knock") } : null, // shoving.js
     meleeAim: 75 + meleeAimBonus(s) + bravery + meleeTraitAim(s), dmgMult: (0.6 + 0.4 * mult) * (0.75 + 0.25 * q), // Melee (world.js MELEE_SKILL): 75 at Melee 5, ±2 a point
@@ -3799,6 +3815,7 @@ const initials = (name) => name.split(" ").map((w) => w[0]).join("").slice(0, 2)
 // ---------- setup ----------
 export function createBattle(state, setup) {
   setup.relAim = friendAim(state, combatants(state, setup), setup); // relations.js: aim per survivor id
+  setup.relNerve = bondNerve(state, combatants(state, setup)); // bonds.js: nerve per survivor id (a Nightmare's scream)
   if (setup.mode === "raid") return createRaid(state, setup);
   const rs = state.rng.state; // raidplan.js: the dice the map is made from (the same map again)
   [W, H] = battleSize(state, setup);
@@ -4030,6 +4047,7 @@ export function hitMult(t, by, hit) {
   if (hit && hit.how === "acid") return acidArmor(t);
   if (hit && hit.how === "glass") return 1; // the cuts of a vault through a closed window (windows.js): no armour against them
   if (t.ztype === "boneback") return bonebackMult(t, by, hit) * t.armor;
+  if (t.ztype === "tripper" && hit && hit.how === "blast") return COUNTER.BLAST * t.armor; // counterdead.js: it walks onto the mines
   if (t.ztype && (ARMORED.includes(t.ztype) || t.ztype === "swarm")) return armorVs(t, by, hit);
   if (personHit(t, hit) && t.pieces) return armourExpect(t, by, hit);
   return t.armor;
@@ -4160,6 +4178,8 @@ export function moveAlong(b, u, path) {
   let stepI = -1; // the step's index in the path (a trench: the cell before it)
   for (const [x, y] of path) {
     stepI++;
+    // A step from one end of an open tunnel to the other: down it (tunnels.js crawlIn), off the map until it comes up.
+    if (b.tunnels && Math.max(Math.abs(x - u.x), Math.abs(y - u.y)) > 1 && crawlIn(b, u, x, y)) break;
     const there = unitAt(b, x, y);
     const last = x === path[path.length - 1][0] && y === path[path.length - 1][1];
     // Your people squeeze past the third side on the way (reachable: through, never stopping there); stopping at the
@@ -4190,7 +4210,7 @@ export function moveAlong(b, u, path) {
     const stopAtDoor = b.cells[idx(x, y)].k === "idoor" && openDoor(b, x, y, u) && u.side !== "player";
     // Traps on a base's battle map (defences.js): spikes hurt the dead, a trench stops them for the turn.
     const trap = CELL[b.cells[idx(x, y)].k].trap;
-    if (trap && u.kind === "zombie") {
+    if (trap && u.kind === "zombie" && !trapProof(u, trap)) { // counterdead.js: a Husk walks through wire and over spike pits
       if (trap === "spikes") { const eff = Math.round(damage(b, u, b.rng.int(SPIKES.DEAD[0], SPIKES.DEAD[1]), null)); say(b, `${u.name} is impaled in a spike pit (${eff}).`, "good"); }
       else if (trap === "beartrap") {
         const eff = Math.round(damage(b, u, b.rng.int(14, 22), null));
@@ -5112,6 +5132,7 @@ export function endPlayerTurn(state) {
   MED.foesBleed(b); // medics.js: the enemy's downed bleed out unless their people stabilized them
   zTick(b); // zombietypes.js: spitters and screamers get ready again
   sowerRound(b); // middead.js: Sowers thicken the ground with eggs
+  tunnelRound(b); // tunnels.js: the dead under the ground come up at the far end; your people see the holes in view
   burnBodies(b); // sleepers.js: bodies in the flames burn, a Sleeper's worms with them
   carrierRound(state, b); // carriers.js: bodies near a Carrier and bodies with the worm in them get up (and act this turn); bodies in the flames burn; worm swarms sink
   acidRound(b, ["enemy", "third"]); // acid.js: hostile people and the third side starting their turn in a spitter's acid
@@ -6502,6 +6523,7 @@ export function closeCombat(state, { take = true } = {}) {
   const b = state.combat;
   if (!b || !b.over) return;
   settleMines(state, b); // mines.js: the base's fields keep the mines that did not go off
+  settleTunnels(state, b); // tunnels.js: the tunnels the dead dug under your base stay open until filled
   if (b.bodies && b.bodies.length) {
     if (take) takeAllBodies(state);
     leaveBodies(state, b);

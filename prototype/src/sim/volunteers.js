@@ -47,6 +47,7 @@ import { attitude, changeGoodwill } from "./factions.js";
 import { warsOf, enemyIn, relation, changeRelation } from "./diplomacy.js";
 import { jobsDoneFor } from "./jobs.js";
 import { isMember, reachVia } from "./alliance.js";
+import { noteAnswer } from "./coalition.js"; // a member's call answered counts in the coalition's tally
 import { issueKit, removeFromArsenal, addToArsenal, takeArsenalRounds, unitPower, arsenalWorthy, kitOf, keepItem } from "./arsenal.js";
 import { collectRounds } from "./loadouts.js"; // a lent fighter who fell: their rounds into the stores of the group that buried them
 import { allItems, allCarried, newItem, stripAll } from "./inventory.js";
@@ -608,6 +609,7 @@ export function answerAsk(state, askId, ids) {
   const f = factionById(state, ask.fid);
   V.asks = V.asks.filter((a) => a !== ask);
   if (!f || !f.alive) return "They are gone.";
+  if (!ask.quiet) noteAnswer(state, f, !!(ids && ids.length)); // coalition.js (the coalition's own asks tally themselves)
   if (!ids || !ids.length) {
     V.stats.declined++;
     changeGoodwill(state, f, -declineCost(f, ask), "you would not lend them people");
@@ -978,10 +980,10 @@ export function councilVolVote(state, m, e, yes, ids, rel = 10) {
   log(state, `The council sends fighters to ${m.name}: ${sent.join(", ") || "none from the other members"}.${mine}`, "good");
   return `The vote carries (${yesN} of ${votes.length + 1}).${mine}`;
 }
-// An ask with no card (the council's): answered at once by councilVolVote.
-function makeAskQuiet(state, f, need, n, days) {
+// An ask with no card (the council's, coalition.js military aid): answered at once.
+export function makeAskQuiet(state, f, need, n, days) {
   const V = ensureVols(state);
-  const ask = { id: V.nextAsk++, fid: f.id, kind: need.kind, label: need.label, n, days, expires: state.hour + VOL.AI.expire, owed: false };
+  const ask = { id: V.nextAsk++, fid: f.id, kind: need.kind, label: need.label, n, days, expires: state.hour + VOL.AI.expire, owed: false, quiet: true };
   V.asks.push(ask);
   return ask;
 }

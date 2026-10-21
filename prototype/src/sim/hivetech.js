@@ -40,6 +40,9 @@ import { registerCombatHandler, registerBattleLayout } from "./combat.js";
 import { fightNow } from "./defences.js";
 import { battleTypes, mixText, ambientMix } from "./zombietypes.js";
 import { rampDay } from "./eras.js"; // the game day the eras' ramps count by (hardcore: from the normal start)
+import { counterNeed, counterOdds, counterMix, counterNews, adaptDaily } from "./counterdead.js"; // the counter-dead: bred in answer to the defences the hive has read
+import { poolPlace } from "./deadpool.js"; // the era's kinds met exploring, shaped by the place
+import { COUNTER } from "./hiveconst.js";
 
 const hash = (n) => { let x = (n >>> 0) ^ 0x85ebca6b; x = Math.imul(x ^ (x >>> 16), 0x45d9f3b); x = Math.imul(x ^ (x >>> 16), 0x45d9f3b); return (x ^ (x >>> 16)) >>> 0; };
 const r1 = (v) => Math.round(v * 10) / 10;
@@ -120,7 +123,7 @@ export function mixOdds(state, hive, size = "medium") {
   const H = HORDEMIX;
   const kinds = {};
   for (const k of m.unlocks) {
-    kinds[k] = size === "guard" ? H.GUARD : Math.min(H.MAX, (H.ODDS[size] ?? H.ODDS.medium) + H.TIER * Math.max(0, tier - kindTier(k)) + (brood ? H.BROOD : 0));
+    kinds[k] = size === "guard" ? H.GUARD : Math.min(H.MAX, (H.ODDS[size] ?? H.ODDS.medium) + H.TIER * Math.max(0, tier - kindTier(k)) + (brood ? H.BROOD : 0) + counterOdds(state, hive, k)); // counterdead.js: a counter kind likelier the more its read asks
   }
   const most = size === "guard" ? m.unlocks.length : (H.KINDS[size] ?? H.KINDS.medium) + (tier >= 3 ? 1 : 0) + (tier >= 4 ? 1 : 0);
   return { kinds, most };
@@ -139,7 +142,9 @@ export function hiveMix(state, hive, size = "medium") {
   if (!came.length) return { mix: null, elite: m.elite };
   const mix = {};
   let total = 0;
-  for (const k of came) { const v = ZTYPES[k].share * rollRange(state, 0.6, 1.4, "mix", hive.id, k, seq); mix[k] = v; total += v; }
+  for (const k of came) mix[k] = ZTYPES[k].share * rollRange(state, 0.6, 1.4, "mix", hive.id, k, seq);
+  counterMix(state, hive, mix); // counterdead.js: the counter-dead × the read, each at most KIND_MAX, together SHARE_MAX (paid for in hives.js buy)
+  for (const k in mix) total += mix[k];
   const f = total > TECH.MIX_MAX ? TECH.MIX_MAX / total : 1;
   for (const k in mix) mix[k] = Math.round(mix[k] * f * 1000) / 1000;
   return { mix, elite: m.elite };
@@ -170,7 +175,7 @@ export function borderMix(state) {
   if (rampDay(state) < TECH.BORDER_DAY) return null;
   const era = eraTier(state);
   const mix = {};
-  for (const G of Object.values(GROWTHS)) if (G.unlocks && G.tier <= era) mix[G.unlocks] = Math.round(ZTYPES[G.unlocks].share * TECH.BORDER_SHARE * rollRange(state, 0.5, 1.5, "border", G.unlocks) * 1000) / 1000;
+  for (const G of Object.values(GROWTHS)) if (G.unlocks && !G.counter && G.tier <= era) mix[G.unlocks] = Math.round(ZTYPES[G.unlocks].share * TECH.BORDER_SHARE * rollRange(state, 0.5, 1.5, "border", G.unlocks) * 1000) / 1000;
   return Object.keys(mix).length ? mix : null;
 }
 
@@ -186,7 +191,7 @@ export function siteSpecials(state, tileId) {
     const hv = state.hives.reduce((a, h) => (!a || state.grid.distance(h.tile, tileId) < state.grid.distance(a.tile, tileId) ? h : a), null);
     if (hv) { hiveKinds = {}; for (const k of hiveMods(state, hv).unlocks) hiveKinds[k] = ZTYPES[k].share; }
   }
-  return ambientMix(t, { years: rampDay(state) / 112, era: eraTier(state), toughness: tough, hiveKinds });
+  return ambientMix(t, { years: rampDay(state) / 112, era: eraTier(state), toughness: tough, hiveKinds, place: poolPlace(state, t) }); // deadpool.js: the era's kinds by the kind of place
 }
 
 // ---------- threat ----------
@@ -226,10 +231,13 @@ export function growthWish(state, hive, rand = true) {
     const have = mine.filter((g) => g.kind === k).length;
     if (G.tier > tier || have >= G.max || (G.boss && !HIVE.BOSS_DEN)) continue;
     let s = 1;
-    if (G.income) s = (age < 180 || (hive.income || 0) <= 3 ? 3 : 1.2) / (1 + have);
+    // A counter growth (counterdead.js): only once the hive's read of the defences it meets asks for its kind.
+    const need = G.unlocks ? counterNeed(state, hive, G.unlocks) : 0;
+    if (G.counter) { if (need < COUNTER.MIN) continue; s = COUNTER.WISH_BASE + COUNTER.WISH * need; }
+    else if (G.income) s = (age < 180 || (hive.income || 0) <= 3 ? 3 : 1.2) / (1 + have);
     else if (G.guard) s = 1.5 + (threat ? 4 : 0);
     else if (G.incomeMult) s = 1.5 + (clusterSize(state, hive) <= 2 ? 1.5 : 0);
-    else if (G.unlocks) s = 2.5 + (mateHas(k) ? -1 : 1) + (G.tier >= 2 ? 0.5 : 0) - (G.tier === 0 ? 1 : 0); // the worm cyst (tier 0): after the first pit
+    else if (G.unlocks) s = 2.5 + (mateHas(k) ? -1 : 1) + (G.tier >= 2 ? 0.5 : 0) - (G.tier === 0 ? 1 : 0) + (need >= COUNTER.MIN ? COUNTER.WISH * need * 0.5 : 0); // the worm cyst (tier 0): after the first pit; a Climber's scaffold sooner against walls (counterdead.js)
     else if (G.boss) s = 3.5;
     else if (G.elite) s = 3 + (spawners >= 2 ? 1 : 0);
     if (rand) s *= rollRange(state, 0.8, 1.2, "wish", hive.id, k);
@@ -276,6 +284,7 @@ export const savingFor = (state, hive) => (hive.growSave && GROWTHS[hive.growSav
 
 // ---------- every day: growing, regrowing, rotting, the spire calling ----------
 export function growthsDaily(state) {
+  adaptDaily(state); // counterdead.js: each hive's read of the defences its hordes may meet
   const list = ensureGrowths(state);
   for (const g of [...list]) {
     if (g.withered != null) {
@@ -311,6 +320,7 @@ function completeGrowth(state, g) {
   const hive = hiveById(state, g.hive);
   const G = GROWTHS[g.kind];
   if (!hive || !G) return;
+  if (G.counter) counterNews(state, hive, G.unlocks); // counterdead.js: "The hive near X has begun breeding Diggers"
   const what = `${article(G.name)} ${G.name.toLowerCase()}`;
   if (state.live.has(g.tile)) {
     log(state, `The dead at ${hive.name} have grown ${what}. ${G.desc}`, "danger");

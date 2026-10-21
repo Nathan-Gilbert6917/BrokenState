@@ -28,6 +28,7 @@ import { BELT_KG } from "../sim/holsters.js"; // the side arm and melee slots (k
 import { PUSH, GRIP } from "../sim/shoving.js"; // people and the dead shoved back a tile or flat on their back
 import { SHOVE, BOARD, CRAWL, FURNITURE, shoveable, isBoarded } from "../sim/barricade.js"; // furniture shoved in the way, boards over doors and windows, the dead crawling over half cover
 import { NOMADS } from "../sim/nomads.js"; // nomad bands: one entry a tier
+import { BAL } from "../sim/coalition.js"; // keeping the coalition together
 import { BUILDINGS, RECIPES, PLOT_NAMES } from "../sim/buildings.js";
 import { CONDITIONS, SICK } from "../sim/health.js";
 import { WORM, wormSeen } from "../sim/worm.js";
@@ -39,6 +40,8 @@ import { allItems, SLOT_NAMES, ARMOR_CAP } from "../sim/inventory.js";
 import { MEDIC } from "../sim/medics.js"; // stabilizing oneself: the odds by item (MEDIC.SELF)
 import { durUnit } from "../sim/crafting.js"; // what an item's uses count (fights, days of fishing...)
 import { day } from "../sim/world.js";
+import { BOND } from "../sim/bonds.js"; // bonds between survivors: the People entry
+import { REL } from "../sim/relations.js";
 import { FIELD } from "../sim/fieldworks.js"; // field works: one entry a kind
 import { BLUEPRINTS, CRAFT_BOOKS, LOCKED, techName, unlockName } from "../sim/blueprints.js"; // what a manual or craft book unlocks
 import { BIRTH } from "../sim/hivebirth.js"; // a hive being born: breaking up the gathering
@@ -58,7 +61,7 @@ const list = (a) => (a.length < 2 ? a.join("") : `${a.slice(0, -1).join(", ")} a
 
 export const CODEX_CATS = [
   ["dead", "The dead"], ["hives", "Hives"], ["items", "Items"], ["supplies", "Supplies"], ["buildings", "Buildings"],
-  ["places", "Places"], ["conditions", "Illness and injury"], ["groups", "Groups and outsiders"], ["weather", "Weather"],
+  ["places", "Places"], ["conditions", "Illness and injury"], ["people", "People"], ["groups", "Groups and outsiders"], ["weather", "Weather"],
 ];
 const CAT_NAME = Object.fromEntries(CODEX_CATS);
 
@@ -84,6 +87,8 @@ function deadEntries() {
     stats.push(["Follows", senses(z.senses)]);
     if (z.share) stats.push(["In a horde", `about ${pct(z.share)} of a horde from a hive that breeds it`]);
     if (z.wall && z.wall !== 1) stats.push(["At the walls", `presses ${x(z.wall)} as hard as one of the ordinary dead`]);
+    if (z.answers) stats.push(["Counters", `${z.answers}: bred by a hive whose hordes meet them (sim/counterdead.js)`]); // the counter-dead
+    if (z.breed) stats.push(["Costs the hive", `${z.breed} resources each, on top of the horde`]);
     stats.push(["Comes from", g ? `a hive with a ${g.name} (tier ${g.tier})` : z.military ? "military sites, police stations and hordes that crossed them" : z.beast ? (k === "deadcat" || k === "deadhound" ? "the towns and the cities (the houses, neighbourhoods, motels and apartment blocks most of all)" + (k === "deadhound" ? ", the farmland and the farms" : "") + ", more on infected ground" : "the hills, the woods and the farmland (more on infected ground, by the farms, barns and ranches, and where an infested herd grazes), and hordes that crossed such land") : k === "swarm" ? "a Carrier or Flinger, a Sleeper bursting" : k === "sleeper" ? "the bodies lying on battle maps, more on infected ground" : "—"]);
     out.push({
       key: `z:${k}`, cat: "dead", name: z.name, sub: g ? "Special dead, bred by hives" : z.military ? "The armoured dead" : z.beast ? "The dead beasts" : "Special dead",
@@ -143,6 +148,7 @@ function hiveEntries() {
   for (const [k, g] of Object.entries(GROWTHS)) {
     const stats = [["Tier", g.tier], ["Costs the hive", `${g.cost} resources, ${g.days} days`]];
     if (g.unlocks && ZTYPES[g.unlocks]) stats.push(["Breeds", ZTYPES[g.unlocks].name]);
+    if (g.counter && ZTYPES[g.unlocks]) stats.push(["Grown", `only by a hive whose hordes have met ${ZTYPES[g.unlocks].answers} (its read of them, the tile panel)`]);
     out.push({
       key: `h:${k}`, cat: "hives", name: g.name, sub: "Hive growth", stats, text: g.desc,
       how: `Burn the growth (right-click its tile): fight its guard in a small battle, or set it on fire (${TECH.FIRE_FUEL} fuel burns ${TECH.FIRE_DMG}% of it, ${TECH.BOMBS} Molotovs ${TECH.BOMB_DMG}%; it regrows ${TECH.REGROW}% a day). Destroying its hive withers it.`,
@@ -281,6 +287,8 @@ const CONDITION_HOW = {
   stomach: "It passes in a few days; 1 meds ends it at once if you want. Purified water prevents it.",
   poisoning: "It passes in a day or two (they rest it out); 1 meds ends it at once. A better cook, a clean kitchen (Clean first) and cooked meat prevent it.",
   pneumonia: "It kills without meds: treat it at once and get them into a hospital bed. They cannot work until it clears.",
+  campfever: "A course of meds (two doses or more) and rest: alone it drags on for weeks. Catching and worst where people are packed in: more beds, a hospital and keeping the sick apart slow it.",
+  woundfever: "Treat it at once (two doses or more) and get them into a hospital bed: it kills without meds. It comes from an infected wound, so clean those too.",
 };
 function conditionEntries() {
   const out = Object.entries(CONDITIONS).map(([k, c]) => {
@@ -360,6 +368,13 @@ function groupEntries() {
       sprite: () => enemyCanvas(T.kit === "preppers" ? "soldiers" : "raiders", NOMADS.COLORS[tier], null, null, tier + 1),
     });
   }
+  // Keeping the Calder Coalition together (sim/coalition.js): opened once a group has joined.
+  out.push({
+    key: "k:coalition", cat: "groups", name: "🤝 Keeping the coalition", sub: "Standing, asks and tolerance",
+    stats: [["Standing", "goodwill plus what they remember: each act at once, a quarter of it for good, the rest fading in a month or two"], ["Asks", "every few days: a quarrel, a favour at another's expense, a trade, aid, fighters or rounds"], ["Refusals", `harder the more you refuse against what you grant (up to ×${BAL.FAT.MAX}), and "Requests ignored" deepens`], ["Leaving", `under a member's leave line (${BAL.LEAVE + Math.min(...Object.values(BAL.TOL)) - 3}–${BAL.LEAVE + Math.max(...Object.values(BAL.TOL)) + 3} by its kind) it may go; under 20 at once; far under, in anger`], ["Expulsion", `a member that cannot stand another demands it goes: expel, hold talks (${BAL.TALKS.food} days of food to each side) or refuse; refuse ${BAL.DEMAND_MAX} times and it leaves`]],
+    text: "Every member of the Calder Coalition weighs you and the others all the time, as rulers do in a grand strategy game. What you grant and refuse, the rulings you make between them, the fights you join, all go on a ledger of named modifiers that fade with time, on top of their goodwill and their relations with each other. Neighbours rub each other raw on the border, trade partners and those who share an enemy grow closer, and now and then something happens between them. Touchy kinds (raiders, zealots, expansionists) leave sooner than communes and traders; a warlike member that leaves in anger declares war on you.",
+    how: "Open Diplomacy → Coalition standing: each member's bar, its leave and hostile lines, what it remembers, its record and its risks, and the grid of how members feel about each other. Grant the asks of members close to their line, split quarrels when you can, and do not refuse the same member again and again. A member who leaves takes its land out of the count and is a group outside the coalition, which blocks the victory.", sprite: null,
+  });
   return out;
 }
 
@@ -475,9 +490,30 @@ function foodChainEntries() {
     how: "Keep a few days of wood in store (the Food tab shows the hours left), put someone on Cut wood, and light the fire again once wood comes in.", sprite: null,
   }];
 }
+// How people get on (sim/relations.js, sim/bonds.js, sim/bondevents.js): opened once two of yours are more than
+// strangers (a pair friendly or worse than neutral).
+function peopleEntries() {
+  const B = BOND;
+  return [{
+    key: "k:bonds", cat: "people", name: "🤝 Bonds between survivors", sub: "How people get on",
+    stats: [
+      ["Levels", `rival ${REL.rival} or below, disliked ${B.disliked}, neutral, friendly ${B.friendly}+, friend ${REL.friend}+, close friend ${REL.close}+ (partners: Family)`],
+      ["Moves it", "chemistry, temper and traits; fighting side by side, saving each other, rough trips, crews on the same job, lessons, meals and a common room together; crowding, short rations, a rival's success, someone sitting the work out, quarrels, theft"],
+      ["Beside a friend", `work +${pct(B.work.friend)} (a close friend +${pct(B.work.close)}, at most +${pct(B.work.cap)}) and mood +${B.mood.friend} on the same job at a base; the load +${pct(B.crewLoad.friend)} out on a job trip together`],
+      ["Beside a rival", `mood ${B.mood.rival} on the same job, ${pct(B.quarrelChance)} a day of a quarrel; the load ${pct(B.crewLoad.rival)} out together`],
+      ["In a fight", `+3 aim a friend alongside (up to +6), −2 a rival; nerve +${pct(B.nerve.friend)} a friend against a scream (up to +${pct(B.nerve.max)})`],
+      ["Lessons", `from a friend +${pct(B.teach.friend)} XP, a close friend +${pct(B.teach.close)}, a rival ${pct(B.teach.rival)}`],
+      ["Circles", `three or more who are all friends: +${B.clique.in} mood a day; whoever there is left out ${B.clique.out}`],
+      ["Loss", `a close friend grieves ${B.closeGrief} days longer; a friend walking out is grieved at half, and a deeply unhappy close friend (mood under ${B.follow.mood}) may follow them`],
+      ["A promise", `to a dying friend: mood +${B.promise.mood} and work +${pct(B.work.promise)} for ${B.promise.days} days; broken, mood ${B.promise.broken} and ${B.promise.brokenMood} a day for ${B.promise.brokenDays} days`],
+    ],
+    text: "Every pair of your people has one opinion of each other that drifts, day by day, toward how well they fit and what they have been through together. The survivor screen's People list shows each tie with its level and the main reason for it; the Bonds card shows what those ties do for them now, and the mood breakdown lists each one with its number. People lean toward the work a friend is on and away from a rival's (within the priorities you set). At the hub, how people get on brings its own cards: a feud that comes to blows, two old enemies making up, a friend asking to work alongside, someone asking to be taught, jealousy over the leader's favour, a theft from a friend, a newcomer welcomed or shunned; and a dying friend may ask for a promise. Other groups' people keep no opinions (they are treated as fed and rested); anyone who joins you is under these rules from the first day.",
+    how: "Put friends on the same job and keep rivals apart. Talk rivals round or share a meal from the survivor screen, a common room and the Kitchen's hot meals bring everyone closer, and crowding and short rations drive them apart. Welcome a newcomer before a circle shuts them out.", sprite: null,
+  }];
+}
 export function codexEntries() {
   if (!ENTRIES) {
-    ENTRIES = [...deadEntries(), ...hiveEntries(), ...itemEntries(), ...supplyEntries(), ...foodChainEntries(), ...buildingEntries(), ...fieldEntries(), ...placeEntries(), ...conditionEntries(), ...groupEntries(), ...weatherEntries()];
+    ENTRIES = [...deadEntries(), ...hiveEntries(), ...itemEntries(), ...supplyEntries(), ...foodChainEntries(), ...buildingEntries(), ...fieldEntries(), ...placeEntries(), ...conditionEntries(), ...peopleEntries(), ...groupEntries(), ...weatherEntries()];
     BY_KEY = new Map(ENTRIES.map((e) => [e.key, e]));
   }
   return ENTRIES;
@@ -532,11 +568,13 @@ function seenNow(state) {
   for (const st of state.hiveSites || []) if (known(st.tile)) keys.add("h:site");
   for (const g of state.hiveGrowths || []) if (known(g.tile) && GROWTHS[g.kind]) keys.add(`h:${g.kind}`);
   for (const f of state.factions || []) if (f.known && FACTION_TYPES[f.type]) keys.add(`g:${f.type}`);
+  if (state.alliance && Array.isArray(state.alliance.members) && state.alliance.members.length) keys.add("k:coalition"); // sim/coalition.js
   for (const v of state.visitors || []) if (v && live.has(v.tile)) keys.add(`o:${v.kind}`);
   for (const b of (state.nomads && state.nomads.bands) || []) if (b && b.known && live.has(b.tile)) keys.add(`n:${b.tier}`); // sim/nomads.js
   // Points of interest known on a tile seen or reported (sim/pois.js: the hub's knowledge, never a hidden one).
   for (const t of state.tiles || []) if (t && Array.isArray(t.pois) && t.pois.length && known(t.id)) for (const i of knownPois(state, t)) { keys.add(`p:${poisOf(t)[i].kind}`); keys.add("k:pois"); if (poisOf(t)[i].cont && Object.keys(poisOf(t)[i].cont.mine || {}).length) keys.add("k:containers"); if (poisOf(t)[i].cont && poisOf(t)[i].cont.last) keys.add("k:aipois"); }
   if (Object.values(state.poiKnow || {}).some((k) => k && k.heat)) keys.add("k:tileheat"); // a team has seen a tile's heat (sim/pois.js noteTileHeat)
+  if (Object.values(state.rel || {}).some((r) => r && (r.o >= BOND.friendly || r.o <= BOND.disliked))) keys.add("k:bonds"); // sim/bonds.js: two of yours more than strangers
   weatherSeen(state, keys);
   return keys;
 }

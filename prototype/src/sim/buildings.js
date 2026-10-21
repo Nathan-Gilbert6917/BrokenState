@@ -23,6 +23,7 @@ import { fieldBuildHour, fieldAwayEnd } from "./fieldworks.js"; // field works: 
 import { MINES } from "./mines.js"; // a minefield's mines (call-time only)
 import { baseCarts, CART_JOB } from "./carts.js"; // a cart at the base: a builder hauls the materials faster (call-time only)
 import { woodNeed } from "./woodcutting.js"; // the Ring wall leaves the wood for heating (call-time only)
+import { finishFill } from "./tunnels.js"; // a tunnel under the walls filled (call-time only)
 import { carryPlacement, fittingRoom, fittingsIn, wallInfo, ringPlan, ensureRing, siteWaits, finishClear, clearUnder, autoLayout, pinAuto, FOOT } from "./basemap.js"; // the base map (call-time only): a finished job's building keeps the spot it was placed on; a general building with room for a fitting; the fittings inside one; the wall pieces' ring
 import { BED_BUILDINGS } from "./data-beds.js"; // beds as furniture: the placed cot, bed, bunk bed and large bed (beds.js)
 import { TENT_TYPES, TENT_S } from "./data-tents.js"; // the one tent table (TENTS below)
@@ -320,6 +321,9 @@ export const BUILDINGS = {
   // cleared"): one job in the construction queue a piece of the base map's land (basescatter.js CLEAR: its hours and
   // what it gives), worked by the builders like a building; the yield arrives when it is done (finishClear). Never built
   // from a list: queued from the base map (a piece's card, a red site clicked) or by the game for a site it placed.
+  // Filling a tunnel the dead dug under the walls (tunnels.js queueFill / finishFill, the user's request 2026-10-21):
+  // DIG.FILL_BASE + DIG.FILL_PER work-hours a cell of it, first in the queue; queued from the base map (a hole's card).
+  filltunnel:   { name: "Filling a tunnel", cost: {}, hours: 1, max: 100000, hidden: true, desc: "Filling in a tunnel the dead dug under the defences: the walls hold less and the dead crawl through it until it is done. Queued from the base map (click the hole)." },
   clear:        { name: "Clearing", cost: {}, hours: 1, max: 100000, hidden: true, clear: true, desc: "Clearing the land on the base map: felling a tree, digging out a stump, dragging off a wreck. Queued from the base map." },
   bunks:        { name: "Bunk beds",      fit: true, cost: { scrap: 2, wood: 200 }, hours: 4, max: 24, desc: "A pair of bunks of scrap tubing and planks, 2 × 1 on the floor of a hut, cabin, lodge, hall or barn: +2 beds each. Overcrowding lowers mood every day." },
   shelves:      { name: "Storage shelves", fit: true, cost: { scrap: 2, wood: 150 }, hours: 4, max: 24, storeKg: STORE_KG.shelves, desc: "Shelving of planks and angle iron, 2 × 1 on the floor of a general building: holds 150 kg of the base's goods (Storage tab), kept under a roof. In a raid it is a store on the map that raiders go for once they are past the wall." },
@@ -489,7 +493,7 @@ export function queueGenUpgrade(state, base, id) {
 }
 
 // The name of a queue job: a new building, a barrel's upgrade or a bunkhouse expanded into a barracks.
-export const jobName = (job) => (job.type === "clear" ? job.label || "Clearing" : job.type === "walls" ? ringJobName(job) : isPiece(job.type) ? pieceName({ type: job.type, mat: job.mat }) : JOBNAME_REST(job));
+export const jobName = (job) => (job.type === "clear" || job.type === "filltunnel" ? job.label || BUILDINGS[job.type].name : job.type === "walls" ? ringJobName(job) : isPiece(job.type) ? pieceName({ type: job.type, mat: job.mat }) : JOBNAME_REST(job));
 // The Ring wall's job: "Ring wall: 52 scrap-metal pieces" or "Upgrade the wall to scrap metal (12 pieces)".
 const ringJobName = (job) => { const T = WALL_TIERS[matOf({ mat: job.mat || job.tier || 1 })]; const n = job.kind === "upgrade" ? (job.ids || []).length : (job.pieces || []).length; return job.kind === "upgrade" ? `Upgrade the wall to ${T.mat.toLowerCase()}${n ? ` (${n} pieces)` : ""}` : `Ring wall: ${n ? `${n} ` : ""}${T.mat.toLowerCase()} pieces`; };
 const JOBNAME_REST = (job) => (job.target && job.type === "generator" ? `Upgrade a generator to ${GEN_TIERS[job.tier] ? `a ${GEN_TIERS[job.tier].name.toLowerCase()}` : "the next tier"}` : job.target && job.type === "barracks" ? "Expand a bunkhouse into a barracks" : job.target && job.type === "reload_bench" ? "Upgrade an ammo bench into a reloading bench" : job.target && job.type === "canner" ? "Fit a pressure canner to a preserving room" : job.target ?`Upgrade to ${WATER_BARREL.tiers[job.tier] ? WATER_BARREL.tiers[job.tier].name.toLowerCase() : "the next tier"}` : BUILDINGS[job.type].name);
@@ -1289,6 +1293,7 @@ export function constructionHour(state) {
       base.construction.splice(base.construction.indexOf(job), 1);
       noteOutput(state, base, "build", 1, "done");
       if (job.type === "clear") { finishClear(state, base, job); continue; } // basescatter.js: the land cleared, its yield into the stores
+      if (job.type === "filltunnel") { finishFill(state, base, job); continue; } // tunnels.js: the tunnel under the walls filled in
       if (BUILDINGS[job.type].tierUp) { upgradeShelter(state, base); continue; } // the shelter becomes a base
       if (job.target && job.type === "barracks") { // a bunkhouse expanded (BARRACKS_UP); nothing if it was lost meanwhile
         const b = base.buildings.find((x) => x.id === job.target && x.type === "bunkhouse");

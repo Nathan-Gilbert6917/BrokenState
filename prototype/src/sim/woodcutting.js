@@ -15,7 +15,8 @@
 //               forest tile gives about 7,500 wood (750 kg) from full before it is cut bare; it grows back
 //               toward 1 with a half-life of HALF_LIFE (60) days (trees are slow: about a quarter of what was cut
 //               comes back within a season, three quarters within a year).
-// Season and hour: winter × 0.85 (short days, frozen hands; × 0.75 more under deep snow), otherwise 1; daylight
+// Season and hour: winter × 0.7 (winter.js WINTER.wood: short days, frozen hands, the deadfall buried; × 0.75 more
+//   under deep snow), otherwise 1; daylight
 //   (07–18) 1, dawn and dusk (05–06, 19) 0.5, night nothing (nobody fells trees in the dark). A storm × 0.4.
 // People: a woodcutter = 0.7 + 0.05 × (0.7 Farming + 0.3 Mechanics) (Farming: land work, felling and hauling;
 //   Mechanics: keeping the tools sharp) × their tool (a fire axe ×1.6, a sledgehammer and wedges ×1.3, a machete ×1.25,
@@ -64,6 +65,7 @@ import { boilerUse, WORM, baseWater } from "./worm.js"; // the water boiler burn
 import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
 import { workLand, distFactor, tripScale, TRIP_JOBS, walkMult, tileFactor } from "./tripland.js"; // the Cut wood job in trips: the land and its walking (jobtrips.js)
 import { baseCarts, CART_JOB } from "./carts.js"; // a cart at the base: a woodcutter hauls more home (call-time only)
+import { WINTER } from "./winter.js"; // winter's wood (call-time only)
 
 // ---------- numbers ----------
 export const WOOD = {
@@ -72,7 +74,7 @@ export const WOOD = {
   halfLife: 60,              // days for the cut land to grow half back
   minHours: 2, maxHours: 24, defHours: 8,
   weights: [1, 0.9, 0.8, 0.7, 0.6, 0.5], floorWeight: 0.4,
-  dusk: 0.5, night: 0, storm: 0.4, winter: 0.85, snow: 0.75,
+  dusk: 0.5, night: 0, storm: 0.4, snow: 0.75, // winter: winter.js WINTER.wood (seasonWood)
   hurt: 40, hurtMult: 0.5,
   injury: 0.0015,            // a team order: a cut or a sprain, per person-hour of chopping (half without a tool)
   noise: { axe: 0.8, hands: 0.3 }, // base Heat a woodcutter adds (hordes.js baseHeat)
@@ -125,7 +127,7 @@ export const woodWord = (v) => (v >= 0.6 ? "plenty" : v >= 0.3 ? "some" : v >= 0
 // ---------- season, hour, weather ----------
 export function seasonWood(state, hour = state.hour) {
   if (Weather.season(state, hour).key !== "winter") return 1;
-  return WOOD.winter * ((Weather.weather(state, hour).snowCover || 0) >= 0.5 ? WOOD.snow : 1);
+  return WINTER.wood * ((Weather.weather(state, hour).snowCover || 0) >= 0.5 ? WOOD.snow : 1); // winter.js
 }
 export function woodTime(hour) {
   const h = ((hour % 24) + 24) % 24;

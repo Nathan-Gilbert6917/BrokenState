@@ -517,12 +517,13 @@ export function cropProgress(state, base) {
 }
 
 // ---------- the daily tick ----------
+const FROSTS = new Set(["frost", "hard freeze", "cold snap"]); // weather.js cropDamage's cold reasons (out.frost)
 // watered: share (0..1) of today's crop water the base could give (economy.js decides, people drink first).
-// Returns { harvested, sown, died, rotted } for the log and tests.
+// Returns { harvested, sown, died, rotted, frost } for the log and tests (frost: the crops the cold killed).
 export function farmingDaily(state, base, watered = 1) {
   const rng = state.rng;
   const f = farmOf(state, base);
-  const out = { harvested: 0, sown: 0, died: [], rotted: [], plots: 0 };
+  const out = { harvested: 0, sown: 0, died: [], rotted: [], plots: 0, frost: [] };
   const care = careToday(state, base);
   const site = siteFarm(state, base);
   const wx = todayWeather(state);
@@ -546,6 +547,7 @@ export function farmingDaily(state, base, watered = 1) {
         p.stage = "dead";
         p.note = `Killed by ${p.thirsty && !dmg.reason ? "thirst" : dmg.reason || "the weather"} on day ${day(state)}`;
         out.died.push(`${c.name} (${dmg.reason || "thirst"})`);
+        if (FROSTS.has(dmg.reason)) out.frost.push(c.name);
         continue;
       }
       if (p.grown >= c.days) {
@@ -605,7 +607,10 @@ export function farmingDaily(state, base, watered = 1) {
     f.lastHarvest = { day: day(state), food: out.harvested };
     log(state, `${base.name}: harvested ${out.harvested} days of food from ${out.plots} plot${out.plots === 1 ? "" : "s"}.`, "good");
   }
-  if (out.died.length) log(state, `${base.name}: crops lost to the weather: ${out.died.join(", ")}.`, "danger");
+  // The cold's losses get a line of their own (winter.js: winter frosts and cold snaps), naming the cure.
+  if (out.frost.length) log(state, `❄ ${base.name}: the frost killed ${out.frost.join(", ")} in the open field${out.frost.length === 1 ? "" : "s"}${greenhouseLimit(base) ? "; the greenhouse plots came through" : ": only a greenhouse keeps the winter off a crop"}.`, "danger");
+  const other = out.died.filter((x) => !FROSTS.has(x.slice(x.lastIndexOf("(") + 1, -1)));
+  if (other.length) log(state, `${base.name}: crops lost to the weather: ${other.join(", ")}.`, "danger");
   if (out.rotted.length) log(state, `${base.name}: ${out.rotted.join(", ")} rotted in the field (nobody harvested in time).`, "danger");
   return out;
 }

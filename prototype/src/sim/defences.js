@@ -10,6 +10,9 @@
 // armory, barbed wire +5% a roll and sandbags +4% a bundle, armoryDefence). Spike pits thin the horde first (7% + 4 per pit, used up),
 // then bear traps from the armory (3 each); a tripwire alarm there has everyone count half on the walls unwarned. A Wallbreaker (hives.js) cuts the limit to 60% (two: 35%) and smashes a
 // defence every time it attacks (a barricade, the reinforced gate, else a wall section 40% of the time).
+// The counter-dead in a horde (counterdead.js counterCut) take their part off: Diggers the walls and the trench, Melters
+// the walls, the gate and the barricades, Husks the wire and the spike pits, Trippers the mines, Dark-walkers the lights
+// and towers; tunnels under the walls (tunnels.js) take theirs off the walls' hold until filled.
 // A horde at or under the limit is beaten off at the walls. Above it, the dead break in: the part the walls
 // still held back stays outside (the limit × 0.5) and the rest is fought on the base's battle map, with the
 // barricades as cover, spike pits and a trench in front, and the Wallbreaker among them. In the browser that is
@@ -42,6 +45,8 @@ import { raidDamage } from "./breakdowns.js";
 import { defensibleCount, wallMapRows } from "./interior.js";
 import { mixWeight, battleTypes, mixText } from "./zombietypes.js";
 import { climberSlip } from "./middead.js"; // Climbers over the walls
+import { counterCut, noteDefences, counterText } from "./counterdead.js"; // the counter-dead: what they take off the defence they answer, the hive's read of it
+import { layTunnels, digCount, digTunnels, openTunnels } from "./tunnels.js"; // the Diggers' tunnels under the walls
 import { SURPRISE, surpriseAt, lookoutsSpot, watchSawText } from "./watch.js"; // an unwatched night, the watch's early warning
 import { tiredLevel, TIRED } from "./sleep.js"; // an exhausted guard counts half
 import { membersAt, isWounded } from "./members.js"; // a group's people at a base of theirs (defendersAt)
@@ -109,10 +114,13 @@ export function guardHold(state, base) {
   return p * DEFENCE.GUARD_PER_POWER;
 }
 
-export function defenceMult(state, base) {
+// cut (counterdead.js counterCut): what a horde's counter-dead take off each part (the trench to Diggers, the gate and
+// the barricades to Melters, the wire to Husks, the lights and towers to Dark-walkers).
+export function defenceMult(state, base, cut = null) {
   const flood = count(base, "floodlights") && (poweredType(base, "floodlights") || (base.stock.fuel || 0) >= DEFENCE.FLOOD_FUEL); // on generator power they burn no fuel (power.js)
-  return 1 + DEFENCE.BARRICADE * count(base, "barricades") + DEFENCE.TRENCH * Math.min(1, count(base, "trench")) + DEFENCE.TRENCH2 * Math.max(0, count(base, "trench") - 1) + DEFENCE.GATE * count(base, "gate") + (flood ? DEFENCE.FLOOD : 0) + armoryDefence(base).hold
-    + DEFENCE.WIRE * count(base, "barbed_wire") + DEFENCE.RAZOR * count(base, "razor_wire") + DEFENCE.BAGS * count(base, "sandbag_wall") + (hasWall(base) ? DEFENCE.TOWERS * count(base, "guard_towers") : 0);
+  const k = (p) => (cut ? 1 - (cut[p] || 0) : 1), kit = armoryDefence(base), wireCut = cut ? kit.wire * GEAR.barbedwire.defence.hold * (cut.wire || 0) : 0;
+  return 1 + DEFENCE.BARRICADE * count(base, "barricades") * k("barricades") + DEFENCE.TRENCH * Math.min(1, count(base, "trench")) * k("trench") + DEFENCE.TRENCH2 * Math.max(0, count(base, "trench") - 1) * k("trench") + DEFENCE.GATE * count(base, "gate") * k("gate") + (flood ? DEFENCE.FLOOD * k("light") : 0) + kit.hold - wireCut
+    + DEFENCE.WIRE * count(base, "barbed_wire") * k("wire") + DEFENCE.RAZOR * count(base, "razor_wire") * k("wire") + DEFENCE.BAGS * count(base, "sandbag_wall") + (hasWall(base) ? DEFENCE.TOWERS * count(base, "guard_towers") * k("light") : 0);
 }
 // Bear traps: the dead caught before they reach the walls.
 export const trapKill = (base, n) => Math.min(n, armoryDefence(base).traps * GEAR.beartrap.defence.kill);
@@ -128,10 +136,13 @@ function wearDefenceKit(state, base) {
 }
 
 // surprise (watch.js surpriseAt: an unwatched night): the defence buildings' bonus counts SURPRISE.HORDE_DEFENCE.
-export function holdLimit(state, base, bosses = 0, surprise = false) {
+// mix: the horde's special dead (h.mix): its counter-dead take their part off (counterdead.js counterCut); the tunnels
+// under the walls take theirs off the walls' hold whatever comes (tunnels.js tunnelHold).
+export function holdLimit(state, base, bosses = 0, surprise = false, mix = null) {
   const boss = DEFENCE.BOSS[Math.min(2, bosses)];
-  const mult = defenceMult(state, base);
-  return Math.round((wallHold(base) + guardHold(state, base)) * (surprise ? 1 + (mult - 1) * SURPRISE.HORDE_DEFENCE : mult) * boss);
+  const cut = counterCut(base, mix);
+  const mult = defenceMult(state, base, cut);
+  return Math.round((wallHold(base) * cut.hold + guardHold(state, base)) * (surprise ? 1 + (mult - 1) * SURPRISE.HORDE_DEFENCE : mult) * boss);
 }
 
 // A raid by the numbers (factions.js resolveRaidOnPlayer) and the spike pits: each pit has a raider or two fall in,
@@ -139,10 +150,13 @@ export function holdLimit(state, base, bosses = 0, surprise = false) {
 // a couple). Returns how many of them died.
 export const SPIKE_RAID = 0.5;
 export const pitsOnRaid = (state, base) => { let dead = 0; for (let i = count(base, "spike_pits"); i > 0; i--) if (state.rng.chance(SPIKE_RAID)) dead++; return dead; };
-export const spikeKill = (base, n) => {
+// mix: Husks among the horde (counterdead.js counterCut pits) walk over them: the pits take less.
+export const spikeKill = (base, n, mix = null) => {
   const k = count(base, "spike_pits");
-  return k ? Math.min(n, Math.round(n * DEFENCE.SPIKE_FRAC * k + DEFENCE.SPIKE_FLAT * k)) : 0;
+  return k ? Math.min(n, Math.round((n * DEFENCE.SPIKE_FRAC * k + DEFENCE.SPIKE_FLAT * k) * (mix ? 1 - counterCut(base, mix).pits : 1))) : 0;
 };
+// The dead the minefield takes of a horde of n (mines.js minesKill), less what goes off on its Trippers (counterCut mines).
+export const minesTake = (base, n, mix = null) => Math.round(minesKill(base, n) * (mix ? 1 - counterCut(base, mix).mines : 1));
 
 // ---------- the three tiers (interior.js): wall, yard, buildings ----------
 // What each tier of a base's defence multiplies its defenders' strength by, in fights resolved by the numbers
@@ -218,8 +232,8 @@ export function raidTier(state, base, def, att, hold, brk, kit = null, surprise 
 // in (through) and whether the yard or a last stand in the buildings is expected to stop them (tier: "wall" | "yard" |
 // "buildings" | "overrun").
 export function holdCheck(state, base, size, bosses = 0, mix = null) {
-  const after = Math.max(0, size - spikeKill(base, size) - trapKill(base, size) - minesKill(base, size));
-  const limit = holdLimit(state, base, bosses);
+  const after = Math.max(0, size - spikeKill(base, size, mix) - trapKill(base, size) - minesTake(base, size, mix));
+  const limit = holdLimit(state, base, bosses, false, mix); // the counter-dead among them (counterdead.js)
   // mix: the horde's special dead (h.mix): they press the walls by their weight (wallWeight).
   const wm = mixWeight(mix, "wall");
   const holds = after * wm <= limit;
@@ -254,20 +268,22 @@ export function atTheWalls(state, h, base, o = {}) {
   const say = o.say || (() => {});
   const notes = [];
   base.hordeHits = (base.hordeHits || 0) + 1;
+  noteDefences(state, h, base); // counterdead.js: the hive learns what this base relies on
   // Spike pits: one use.
   const pits = count(base, "spike_pits");
   const pitsAt = pits && o.map ? layoutOf(state, base).filter((e) => e.it.type === "spike_pits" && e.at).map((e) => e.at) : []; // basemap.js: where they stood, for the fight's map
   if (pits) {
-    const k = spikeKill(base, h.size);
+    const k = spikeKill(base, h.size, h.mix); // Husks walk over them (counterdead.js)
     base.buildings = base.buildings.filter((b) => b.type !== "spike_pits");
     notes.push(`The spike pits took about ${k}.`);
     if (reduceHorde(state, h, k)) { say(`A horde ran onto the spike pits at ${base.name} and was torn apart. ${notes.join(" ")}`, "good"); return null; }
   }
   // Land mines (mines.js): the dead set them off on the way in, MINES.KILL each; the rest stay buried (the battle map).
-  const boom = minesKill(base, h.size);
-  if (boom) {
-    spendMines(base, Math.ceil(boom / MINES.KILL));
-    notes.push(`The minefield took about ${boom}${minesLeft(base) ? ` (${minesLeft(base)} mines left)` : " (every mine gone off)"}.`);
+  // Trippers among them (counterdead.js) walk onto mines on purpose: the same mines go off, fewer of the rest die.
+  const went = minesKill(base, h.size), boom = minesTake(base, h.size, h.mix);
+  if (went) {
+    spendMines(base, Math.ceil(went / MINES.KILL));
+    notes.push(`The minefield took about ${boom}${boom < went ? " (Trippers walked onto the mines ahead of the rest)" : ""}${minesLeft(base) ? ` (${minesLeft(base)} mines left)` : " (every mine gone off)"}.`);
     if (reduceHorde(state, h, boom)) { say(`A horde walked into the minefield at ${base.name} and was blown apart. ${notes.join(" ")}`, "good"); return null; }
   }
   // The defence kit in the armory: bear traps catch a few; the wire and traps count for this attack (and the map),
@@ -280,7 +296,7 @@ export function atTheWalls(state, h, base, o = {}) {
   // An unwatched night (watch.js surpriseAt): the dead were at the walls before anyone woke.
   const sp = o.surprise || null;
   if (sp) notes.unshift(`${sp.why}: the dead were at the walls before anyone woke, and the defences counted half with nobody manning them.`);
-  const limit = holdLimit(state, base, bosses, !!sp);
+  const limit = holdLimit(state, base, bosses, !!sp, h.mix); // its counter-dead (counterdead.js), the tunnels under the walls (tunnels.js)
   const worn = kit.wire || kit.traps ? wearDefenceKit(state, base) : "";
   if (worn) notes.push(worn);
   if (caught && reduceHorde(state, h, caught)) { say(`The last of a horde was caught in the bear traps at ${base.name}. ${notes.join(" ")}`, "good"); return null; }
@@ -291,9 +307,11 @@ export function atTheWalls(state, h, base, o = {}) {
   const smasher = bosses ? (bosses > 1 ? `The ${BOSS_NAMES.horde}s` : `The ${BOSS_NAMES.horde}`) + (brutes ? " and the brutes" : "") : "The brutes";
   if (smashed.length) notes.push(`${smasher} smashed ${smashed.length > 1 && smashed[0] === smashed[1] ? `two ${smashed[0].replace(/^a /, "")}s` : smashed.join(" and ")}.`);
   if (h.mix && mixText(h.mix, h.size)) notes.push(`Among them: ${mixText(h.mix, h.size)}${h.elite ? " (elite)" : ""}.`);
+  if (openTunnels(base)) notes.push(`${openTunnels(base) === 1 ? "A tunnel" : `${openTunnels(base)} tunnels`} under the walls weakened them.`);
   // The special dead press the walls by their weight: the limit in plain dead is the hold limit / the weight.
   const wm = wallWeight(h);
-  return { notes, limit, wm, lim: limit / wm, bosses, floodlit, kit, pits, pitsAt, sp };
+  // dig: the tunnels its Diggers dig where no battle map is fought (tunnels.js digTunnels: the caller's choice).
+  return { notes, limit, wm, lim: limit / wm, bosses, floodlit, kit, pits, pitsAt, sp, dig: digCount(h) };
 }
 // The dead cut down below walls that held: 8, and the guards' share, and an eighth of the horde.
 export const heldKill = (state, base, h) => Math.min(h.size, Math.round(8 + guardHold(state, base) * 0.8 + h.size * 0.12));
@@ -318,6 +336,7 @@ export function hordeAttackBase(state, h, base) {
     if (people.length && h.size > lim * 0.7 && rng.chance(0.4)) hurt(state, rng.pick(people), rng.int(10, 30), base.tile, `fighting the horde at ${base.name}`);
     const slip = crawlerSlip(state, base, h, floodlit); // crawlers that got past the walls anyway
     const climb = climberSlip(h, !!base.watchtower, manned(state, base)); // and Climbers that went over them (middead.js)
+    if (w.dig && digTunnels(state, base, w.dig, h)) log(state, `Diggers among the horde tunnelled under the walls of ${base.name} while it was held: ${w.dig === 1 ? "a tunnel" : `${w.dig} tunnels`} to fill (the base map, Fill tunnel). The walls hold less until then.`, "danger"); // tunnels.js
     if (!reduceHorde(state, h, killed)) retreat(state, h, base);
     if (slip + climb >= 4 && people.length) crawlersInside(state, base, h, slip, climb);
     return;
@@ -588,7 +607,7 @@ function warningCard(state, h, base) {
   return {
     title: `Horde heading for ${base.name}`,
     kind: "horde",
-    text: `Lookouts see a horde of about ${h.size} (score ${hordeScore(h.size)})${bosses ? `, a ${BOSS_NAMES.horde} at its head,` : ""} ${dist} tile${dist === 1 ? "" : "s"} out and coming this way.${watchSawText(state, base, h.tile, HORDE_WARN_TILES)}${ledByShepherd(h) ? " It moves together, led by something that isn't fooled: decoys and fire will hardly turn it." : ""}${h.mix && mixText(h.mix, h.size) ? ` Among them: ${mixText(h.mix, h.size)}${h.elite ? " (elite)" : ""}.` : ""} ${holdText(state, base, h.size, bosses, h.mix)}${crawlerSlip(state, base, h, false) >= 4 ? " Crawlers may slip past the walls: a watchtower and lit floodlights see them coming." : ""}${climberSlip(h, !!base.watchtower, false) >= 2 ? " Climbers among them will go over the walls: defenders inside them and a watchtower over the yard catch them." : ""}${h.mix && h.mix.sower > 0 ? " Sowers among them seed the land they cross with the worm's eggs." : ""}`,
+    text: `Lookouts see a horde of about ${h.size} (score ${hordeScore(h.size)})${bosses ? `, a ${BOSS_NAMES.horde} at its head,` : ""} ${dist} tile${dist === 1 ? "" : "s"} out and coming this way.${watchSawText(state, base, h.tile, HORDE_WARN_TILES)}${ledByShepherd(h) ? " It moves together, led by something that isn't fooled: decoys and fire will hardly turn it." : ""}${h.mix && mixText(h.mix, h.size) ? ` Among them: ${mixText(h.mix, h.size)}${h.elite ? " (elite)" : ""}.` : ""} ${holdText(state, base, h.size, bosses, h.mix)}${crawlerSlip(state, base, h, false) >= 4 ? " Crawlers may slip past the walls: a watchtower and lit floodlights see them coming." : ""}${climberSlip(h, !!base.watchtower, false) >= 2 ? " Climbers among them will go over the walls: defenders inside them and a watchtower over the yard catch them." : ""}${h.mix && h.mix.sower > 0 ? " Sowers among them seed the land they cross with the worm's eggs." : ""}${counterText(h.mix) ? ` Bred against defences like these: ${counterText(h.mix)}.` : ""}${openTunnels(base) ? ` ${openTunnels(base) === 1 ? "A tunnel" : `${openTunnels(base)} tunnels`} under the walls still open: the walls hold less and the dead can crawl through (fill them from the base map).` : ""}`,
     choices: [
       {
         label: "Man the defences",
@@ -699,6 +718,7 @@ registerBattleLayout("baseDefence", (b, ctx) => {
   const base = ctx.state.bases.find((x) => x.id === setup.baseId) || null;
   if (fortable(ctx.state, base, c)) { // fort.js: both phases (a bridge barricade keeps the deck map below)
     fortDefence(b, ctx, base, c);
+    if (ctx.phase === "units" && b.setup.enemy.kind === "zombies") layTunnels(ctx.state, b, base, c); // tunnels.js: the tunnels the dead dug before, until filled (the base map's view shows them too)
     if (ctx.phase === "units") applyPlan(ctx.state, b); // defenceplan.js: the base's defence plan, if it has one
     return;
   }

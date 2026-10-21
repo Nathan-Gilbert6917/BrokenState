@@ -76,7 +76,7 @@ export function cardIcon(card, kind) {
   if (card.outbreakBase != null) return "🦠";
   if (card.crashId != null) return "✈";
   if (card.convoyId != null) return "🪖"; // miltrucks.js: an abandoned Army convoy
-  if (card.jobId != null || card.allianceAsk != null) return "📜";
+  if (card.jobId != null || card.allianceAsk != null || card.coalAsk != null) return "📜"; // coalition.js: a member's ask
   if (card.partyId != null) return "🚶";
   return "🃏";
 }
@@ -116,6 +116,7 @@ export function trayStale(state, card) {
   const fGone = (id) => { const f = (state.factions || []).find((x) => x.id === id); return !f || f.alive === false; };
   if (card.radioFrom != null && fGone(card.radioFrom)) return "the group is gone";
   if (card.allianceAsk != null && fGone(card.allianceAsk)) return "the group is gone";
+  if (Array.isArray(card.coalIds) && card.coalIds.some((id) => !(state.alliance && state.alliance.members.includes(id)))) return "they are no longer in the coalition"; // coalition.js
   if (card.volAsk != null && !(state.vols && state.vols.asks.some((a) => a.id === card.volAsk))) return "they no longer ask"; // volunteers.js
   if (card.volWatch != null && !(state.vols && state.vols.loans.some((l) => l.id === card.volWatch))) return "your people are home"; // volunteers.js: the fight you could watch
   if (card.volVet != null && !(state.factions || []).some((f) => (f.volVets || []).some((v) => v.s && v.s.id === card.volVet && !v.out))) return "they are not there to ask"; // volunteers.js: an old hand asking to join

@@ -24,6 +24,7 @@ import { needsWork } from "./needs.js";
 import { nearSnap } from "./mentalbreaks.js";
 import { totalRounds, spendAmmo } from "./rounds.js"; // rounds by calibre
 import { talkXp } from "./skills.js";
+import { bondWork } from "./bonds.js"; // work beside a friend, a promise kept (call-time only)
 
 export const CROWD = { base: 2, perOver: 8, cap: 16, leaderShare: 0.5, roomy: 1 }; // a camp is never crowded: its people with no tent sleep rough round the fire (2026-10-20: a new camp has no beds until tents are up), each their own line (beds.js bedLine, the one rough-sleeping rule)
 export const LEADER_LIFT = 0.15; // mood a day per point of the leader's Leadership
@@ -89,7 +90,7 @@ export function moodWork(s) {
   if (s.onBreak) return 0;
   const grief = s.grief ? 1 - 0.2 * Math.min(1, s.grief.bond || 0) : 1;
   const late = s.expecting && s.expecting.late ? 0.85 : 1; // family.js FAMILY.lateWork: the last weeks of a pregnancy
-  return Math.round(moodCurve(s.mood) * grief * late * buzzWork(s) * needsWork(s) * 1000) / 1000; // a coffee buzz or a hangover (comforts.js); hunger and thirst below 50 (needs.js)
+  return Math.round(moodCurve(s.mood) * grief * late * buzzWork(s) * needsWork(s) * bondWork(s) * 1000) / 1000; // a coffee buzz or a hangover (comforts.js); hunger and thirst below 50 (needs.js); friends on the same job (bonds.js)
 }
 
 // What the People tab shows next to someone's mood.

@@ -49,6 +49,7 @@ import { tripEventsDaily } from "./tripevents.js"; // trouble on job trips: the 
 import { kitchenDaily, kitchenFireDaily } from "./kitchen.js"; // the Kitchen's day: meals served, food saved
 import { keepItem } from "./arsenal.js"; // a group that loots a death site keeps the very item
 import { lootQty } from "./worldcfg.js"; // the run's dials: the loot by kind (the base's scavengers)
+import { winterScavFood } from "./winter.js"; // winter: less food in a find (call-time only)
 import { note, goodsRounds } from "./ledger.js"; // the conservation test's ledger (off in play): rounds off the ground
 
 export const ROLES = {
@@ -193,7 +194,8 @@ export function scavTrip(state, base, s, tile, share, k = 0) {
   const got = {};
   for (let i = 0; i < n; i++) {
     const key0 = rng.weighted(keys, (x) => table[x]);
-    const q = lootQty(state, key0, rng.int(SCAV_FIND[key0][0], SCAV_FIND[key0][1])); // worldcfg.js: the run's loot dial for this kind
+    let q = lootQty(state, key0, rng.int(SCAV_FIND[key0][0], SCAV_FIND[key0][1])); // worldcfg.js: the run's loot dial for this kind
+    if (key0 === "food") q = winterScavFood(state, q); // winter.js
     if (!(q > 0)) continue;
     const tag = `scav${localId(state, s.id)}${k ? `:${k}` : ""}${i ? `/${i}` : ""}`; // (a world-local id: tools/sameseedtest.js)
     if (key0 === "ammo") out.ammo = { type, q: (out.ammo ? out.ammo.q : 0) + q, tile };
