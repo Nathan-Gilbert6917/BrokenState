@@ -47,7 +47,7 @@ import { season, dayIndex } from "./weather.js";
 import { cfgOf } from "./worldcfg.js"; // the run's dials: Sickness
 import { waterIn, drawWater } from "./water.js";
 import { makeCandidate, recruitCard } from "./recruits.js";
-import { homeMembers, removeMember } from "./members.js";
+import { homeMembers, removeMember, personKey } from "./members.js"; // personKey: a person's id as this world's dice read it (a member's own range, else localId)
 
 export const HEAD = { free: 6, per: 0.04, cap: 2.2, ref: 12 };
 export const FLU = { winter: 0.002, edge: 0.001 };
@@ -87,7 +87,7 @@ export function diseaseRisk(state, s, ctx, add) {
   return parts;
 }
 // Today's dice for a part (health.js rollOnset): the seed, the person, the day and the illness.
-export const diseaseDice = (state, s, key) => dice(state, "onset", key, localId(state, s.id), day(state));
+export const diseaseDice = (state, s, key) => dice(state, "onset", key, personKey(state, s.id), day(state));
 
 // ---------- newcomers ----------
 // A day's pass (health.js healthDaily, before the new cases): incubations that show today, then who is new where.
@@ -112,13 +112,13 @@ export function newcomersDaily(state) {
       if (!init || was === AWAY || (was == null && s.born != null) || s.incubating || isIll(s)) continue; // the first pass; known from it; a birth; already carrying
       const from = was != null ? baseById(state, was) : null;
       const p = (was != null ? CARRY.moved : CARRY.outside) * mult;
-      if (!(dice(state, "carry", localId(state, s.id), base.id, d) < p)) continue;
+      if (!(dice(state, "carry", personKey(state, s.id), localId(state, base.id), d) < p)) continue;
       const mix = CARRY.mix[season(state).key === "winter" ? "winter" : "other"];
       const keys = Object.keys(mix), total = keys.reduce((a, k) => a + mix[k], 0);
-      let r = dice(state, "carrykind", localId(state, s.id), d) * total, key = keys[0];
+      let r = dice(state, "carrykind", personKey(state, s.id), d) * total, key = keys[0];
       for (const k of keys) { r -= mix[k]; if (r < 0) { key = k; break; } }
       const [lo, hi] = CARRY.incubate;
-      s.incubating = { key, day: d + lo + Math.floor(dice(state, "incubate", localId(state, s.id), d) * (hi - lo + 1)), from: from ? `from ${from.name}` : "from the road" };
+      s.incubating = { key, day: d + lo + Math.floor(dice(state, "incubate", personKey(state, s.id), d) * (hi - lo + 1)), from: from ? `from ${from.name}` : "from the road" };
     }
   }
 }
