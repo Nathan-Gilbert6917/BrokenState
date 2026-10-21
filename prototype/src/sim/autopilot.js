@@ -1721,6 +1721,12 @@ function handleTrade(state) {
     return;
   }
   if (ctx.kind === "radio") { state.trade = null; return; } // a radio trade left open by hand (radiotrade.js): closed
+  if (ctx.kind === "meet") { // a group's caravan met at a tile (trademeet.js): the deal agreed over the radio, nothing else
+    const v = tradeVerdict(state);
+    say(state, `Caravan from ${ctx.f.name} met at ${tileLabel(state, ctx.center)}: ${v.ok && v.honoured ? executeTrade(state).replace(/\.$/, "") : "nothing was agreed beforehand"}.`);
+    endTrade(state);
+    return;
+  }
   if (ctx.kind === "caravan") {
     // Their caravan at one of your bases (caravans.js): only the Aggressive style ever attacks one.
     say(state, `Caravan from ${ctx.f.name} at ${ctx.base.name}: ${autoCaravanTrade(state, needs(state, ctx.base), gov(state).personality, tradeSpare(state, ctx.base)).replace(/\.$/, "")}.`);

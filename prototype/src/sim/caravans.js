@@ -51,6 +51,7 @@ import { groupEscort, escortStrength, cargoValue } from "./escorts.js"; // a car
 import { pendingDeal, dealCarried, completeRadioDeal, goodsText } from "./radiotrade.js"; // deals agreed over the radio
 import { pickGunToBuy, noteGunBought } from "./govguns.js"; // the governor buys a gun for the unarmed
 import { keepItem } from "./arsenal.js"; // a caravan home: what it carries onto the books or the shelf
+import { isMeet, meetArrive, meetHour, caravanWhere, meetCaravans, meetChoices } from "./trademeet.js"; // a trade met at a tile in the open
 
 export const CARAVAN_STAY_HOURS = 24;
 export const CARAVAN_SPEED = 0.9; // on foot with a wagon (parties.js aiPartyHour)
@@ -59,7 +60,7 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 // ---------- their caravans ----------
 export const isCaravan = (p) => p && p.kind === "caravan";
 export const caravanEnRoute = (state, f) => state.parties.some((p) => isCaravan(p) && p.owner === f.id && !p.leaving);
-export const caravansAt = (state, baseId) => state.parties.filter((p) => isCaravan(p) && p.phase === "trading" && p.baseId === baseId);
+export const caravansAt = (state, baseId) => state.parties.filter((p) => isCaravan(p) && p.phase === "trading" && p.baseId === baseId && p.meetTile == null);
 export const incomingCaravans = (state) => state.parties.filter((p) => isCaravan(p) && !p.leaving && p.escortJob == null); // an escorted caravan (jobs.js) goes to another group
 export const guardPower = (f) => 2.2 + FACTION_TYPES[f.type].arms * 1.6;
 export const caravanGuards = (f, c) => (c.escort ? clamp(c.escort.guards, 1, 14) : clamp(Math.round(c.strength / guardPower(f)), 1, 8)); // escorts.js: who went with it
@@ -85,15 +86,17 @@ export function caravanSurplus(state, f) {
   return goods;
 }
 
-// Sends a caravan from the group's main base to one of your bases. Takes the goods from their stock (they come
-// back if the caravan gets home). Returns the party, or null when there is no land route.
-export function sendCaravan(state, f, base, { goods = null, deal = null, gift = false } = {}) {
+// Sends a caravan from the group's main base to one of your bases, or to a meeting tile (meetTile: trademeet.js;
+// base is then the base the deal was made from, or null). Takes the goods from their stock (they come back if the
+// caravan gets home). Returns the party, or null when there is no land route.
+export function sendCaravan(state, f, base, { goods = null, deal = null, gift = false, meetTile = null } = {}) {
   const from = f.bases[0];
-  if (from == null || !base) return null;
-  const route = planPath(state, from, base.tile, false);
+  const to = meetTile != null ? meetTile : base ? base.tile : null;
+  if (from == null || to == null) return null;
+  const route = planPath(state, from, to, false);
   if (!route) return null;
   const guards = guardsFor(f);
-  const p = spawnAiParty(state, f, "caravan", from, base.tile, { strength: guards * guardPower(f) });
+  const p = spawnAiParty(state, f, "caravan", from, to, { strength: guards * guardPower(f) });
   if (!p) return null;
   const g = { supplies: {}, gear: [] };
   for (const [k, q] of Object.entries((goods && goods.supplies) || {})) {
@@ -115,11 +118,11 @@ export function sendCaravan(state, f, base, { goods = null, deal = null, gift = 
     g.gear.push(item);
   }
   const eta = travelHours(state, route.path, { vehicle: false, speed: CARAVAN_SPEED }).hours;
-  Object.assign(p, { goods: g, deal, gift, dealDone: false, baseId: base.id, home: from, capacity: caravanCapacity(f), leaving: false, eta, sentDay: day(state) });
+  Object.assign(p, { goods: g, deal: deal && meetTile != null && base ? { ...deal, baseId: base.id } : deal, gift, dealDone: false, baseId: meetTile != null ? null : base.id, meetTile, home: from, capacity: caravanCapacity(f), leaving: false, eta, sentDay: day(state) });
   escortParty(state, f, p, g); // escorts.js: the guards the cargo is worth to them, out of what they can spare
   f.known = true;
   f.lastDiplomacy = day(state);
-  log(state, `${f.name} ${gift ? "send aid" : "send a caravan"} to ${base.name}. It should arrive in about ${eta}h.`, "info");
+  log(state, meetTile != null ? `${f.name} send a caravan to meet you at ${tileLabel(state, meetTile)}. It should be there in about ${eta}h and waits two days.` : `${f.name} ${gift ? "send aid" : "send a caravan"} to ${base.name}. It should arrive in about ${eta}h.`, "info");
   return p;
 }
 
@@ -152,6 +155,11 @@ export function caravanArrive(state, p) {
     removeParty(state, p);
     return;
   }
+  if (isMeet(p)) { // trademeet.js: at the meeting tile, it waits for a team of yours
+    if (!f || !f.alive || attitude(f) === "Hostile") { caravanLeave(state, p, ""); return; }
+    meetArrive(state, p);
+    return;
+  }
   const base = baseById(state, p.baseId);
   if (!base || !f || !f.alive || attitude(f) === "Hostile") {
     caravanLeave(state, p, "");
@@ -180,6 +188,7 @@ export function caravanArrive(state, p) {
 
 // parties.js aiPartyHour, every hour a caravan is not on the road: it waits out its day at your base.
 export function caravanHour(state, p) {
+  if (isMeet(p) && p.phase === "trading") return meetHour(state, p); // trademeet.js: waiting at a meeting tile
   if (p.phase === "trading" && state.hour >= p.stayUntil) caravanLeave(state, p, "Its day is up.");
   // A fight with it that never happened (nobody left to fight it): it goes home.
   if (p.phase === "fighting") {
@@ -190,10 +199,16 @@ export function caravanHour(state, p) {
 
 export function caravanLeave(state, p, why) {
   const f = factionById(state, p.owner);
+  // A team of yours trading with it at a meeting tile (trademeet.js), or waiting its turn: back to its orders.
+  for (const v of [state.trade, ...(state.tradeQueue || [])]) {
+    if (!v || !v.meet || v.caravanId !== p.id) continue;
+    const q = state.parties.find((x) => x.id === v.partyId);
+    if (q && q.phase === "engaged") awaitOrders(state, q, `The ${f ? f.name : ""} caravan has gone.`);
+  }
   if (state.trade && state.trade.caravanId === p.id) state.trade = null;
   if (state.tradeQueue) state.tradeQueue = state.tradeQueue.filter((v) => v.caravanId !== p.id);
   if (p.phase === "trading" && p.deal && !p.dealDone && f && f.alive) changeGoodwill(state, f, -3, "you did not keep the deal");
-  if (p.phase === "trading" && f && why) log(state, `The ${f.name} caravan leaves ${baseById(state, p.baseId)?.name || "your base"}. ${why}`, "info");
+  if (p.phase === "trading" && f && why) log(state, `The ${f.name} caravan leaves ${caravanWhere(state, p)}. ${why}`, "info");
   const back = planPath(state, partyTile(p), p.home, false);
   if (!back || !f || !f.alive) return removeParty(state, p);
   p.phase = "out";
@@ -325,12 +340,19 @@ export function caravanDestinations(state) {
     for (const b of f.bases) out.push({ tile: b, name: `${f.name} (${tileLabel(state, b)})`, factionId: f.id, hostile: attitude(f) === "Hostile" });
   }
   for (const b of state.bases) if (b.type === "outpost") out.push({ tile: b.tile, name: `${b.name} (your outpost)`, baseId: b.id });
+  // trademeet.js: a group's caravan on its way to meet you, or waiting, at a tile in the open.
+  for (const c of meetCaravans(state)) {
+    const f = factionById(state, c.owner);
+    if (f && !out.some((x) => x.tile === c.meetTile)) out.push({ tile: c.meetTile, name: `Meet the ${f.name} caravan (${tileLabel(state, c.meetTile)})`, factionId: f.id, meetId: c.id });
+  }
   return out;
 }
 const destName = (state, tile) => {
   const f = state.factions.find((x) => x.alive && x.bases.includes(tile));
   const b = state.bases.find((x) => x.tile === tile);
-  return f && f.known ? f.name : b ? b.name : tileLabel(state, tile);
+  const m = !f && !b ? meetCaravans(state).find((c) => c.meetTile === tile) : null;
+  const mf = m ? factionById(state, m.owner) : null;
+  return f && f.known ? f.name : b ? b.name : mf ? `the ${mf.name} caravan at ${tileLabel(state, tile)}` : tileLabel(state, tile);
 };
 
 // Leg by leg estimate for a planned caravan: { legs: [{ tile, name, hours | null }], back, hours, food, water, fuel }.
@@ -462,6 +484,7 @@ export function caravanCard(state, p, text = "") {
       resolve: (st) => { const msg = completeRadioDeal(st, p, deal); caravanCard(st, p, msg); return msg; },
     });
   }
+  choices.push(...meetChoices(state, p)); // trademeet.js: their caravan waiting here to meet you
   if (f) {
     const hostile = attitude(f) === "Hostile";
     choices.push({ label: `Trade with ${f.name}`, hint: hostile ? `${f.name} are hostile: they will not trade` : "Opens the trade window: supplies, every item, intel", disabled: hostile, resolve: (st) => { openTrade(st, p, f); return ""; } });

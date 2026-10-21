@@ -72,7 +72,8 @@ import { rumourFromNews, RUMOUR } from "./survey.js";
 import { raidPaceOpen, noteRaid } from "./eras.js";
 import { supplyAmt } from "./rounds.js"; // "ammo": every round there, any calibre
 import { payoutSpare, payoutBreaks } from "./upkeep.js"; // food and water: never paid out of the base's reserve
-import { deliveryFee, deliveryRefusal, bookDeal, radioDealsDaily, pendingDeal, counterOk } from "./radiotrade.js"; // trades over the radio
+import { deliveryFee, deliveryHours, deliveryRefusal, bookDeal, radioDealsDaily, pendingDeal, counterOk } from "./radiotrade.js"; // trades over the radio
+import { meetRefusal, halfwayTile, meetHours, MEET } from "./trademeet.js"; // a trade met halfway or at a tile you pick
 
 export const RELAY_RANGE = 6;
 export const RELAY_UPKEEP_DAYS = 10;
@@ -377,22 +378,30 @@ export function radioNews(state, f) {
   return note(state, f, `${f.name} pass on what they see: ${tiles.size} tiles around their land${hordes ? `, ${hordes} horde${hordes === 1 ? "" : "s"} on the move near them` : ", no hordes near them"}. It is on your map.${rumour}`);
 }
 
-// Ask them to send a caravan of their goods. Rolls once (uses the world's random numbers).
-export function radioRequestCaravan(state, f) {
+// Ask them to send a caravan of their goods. Rolls once (uses the world's random numbers). where: { baseId } one of
+// your bases (default: tradeBase), or { meetTile } a tile to meet at (trademeet.js: halfway, or one you picked).
+export function radioRequestCaravan(state, f, where = {}) {
   const why = refusal(state, f, true);
   if (why) return note(state, f, why);
   if (caravanEnRoute(state, f)) return "Their caravan is already on its way or at your gates.";
   if (since(state, f, "caravan") < COOLDOWN.caravan) return `You asked ${f.name} for a caravan recently.`;
-  const base = tradeBase(state, f);
-  if (!base) return note(state, f, `${f.name} have no way to reach any of your bases over land.`);
+  const meetTile = where && Number.isInteger(where.meetTile) ? where.meetTile : null;
+  if (meetTile != null) {
+    const no = meetRefusal(state, f, meetTile);
+    if (no) return note(state, f, `${f.name} will not meet you there: ${no}`);
+  }
+  const picked = where && where.baseId != null ? baseById(state, where.baseId) : null;
+  const base = meetTile != null ? null : picked && planPath(state, f.bases[0], picked.tile, false) ? picked : tradeBase(state, f);
+  if (meetTile == null && !base) return note(state, f, `${f.name} have no way to reach any of your bases over land.`);
   mark(state, f, "caravan");
   const bonus = f.type === "traders" ? 0.25 : f.type === "commune" ? 0.15 : 0;
   const chance = clamp(0.45 + f.goodwill / 100 + bonus, 0.1, 0.95);
   if (!state.rng.chance(chance)) return note(state, f, `${f.name} have nothing to spare for a trip right now. (${Math.round(chance * 100)}% chance with them.)`);
   ensureWares(state, f);
-  const c = sendCaravan(state, f, base, { goods: caravanSurplus(state, f) });
-  if (!c) return note(state, f, `${f.name} cannot get a caravan to ${base.name}.`);
-  return note(state, f, `${f.name} agree: a caravan sets out for ${base.name} (about ${c.eta}h).`);
+  const c = sendCaravan(state, f, base, { goods: caravanSurplus(state, f), meetTile });
+  const place = meetTile != null ? tileLabel(state, meetTile) : base.name;
+  if (!c) return note(state, f, `${f.name} cannot get a caravan to ${place}.`);
+  return note(state, f, meetTile != null ? `${f.name} agree: a caravan sets out to meet you at ${place} (about ${c.eta}h) and waits there two days. Send a team to that tile.` : `${f.name} agree: a caravan sets out for ${place} (about ${c.eta}h).`);
 }
 
 // What a deal { wantKey, wantQty, payKey, payQty } looks like to them (no random numbers; the UI shows it).
@@ -575,6 +584,12 @@ export function offerCard(state, f) {
   // They may ask you to bring your side to them instead (always when they will not send a caravan), adding the
   // delivery fee to what they pay (radiotrade.js).
   const cannot = deliveryRefusal(state, f, base);
+  // Your base is far from them (or too far to deliver to): they may ask to meet halfway instead (trademeet.js).
+  const hrs = deliveryHours(state, f, base);
+  if (hrs != null && (hrs > MEET.OFFER_HOURS || /too far/.test(cannot || "")) && rng.chance(MEET.OFFER_CHANCE)) {
+    const mid = halfwayTile(state, f.bases[0], base.tile, f.id);
+    if (mid != null && !meetRefusal(state, f, mid, caravanEnRoute(state, f))) return meetOfferCard(state, f, base, mid, deal, text);
+  }
   if (cannot || rng.chance(0.3)) {
     const fee = deliveryFee(state, f, base);
     const extra = Math.min(available(f, getKey) - getQty, Math.max(1, Math.round(fee / buyPrice(state, f, getKey, speech, getQty))));
@@ -644,6 +659,34 @@ function bringCard(state, f, base, b, said) {
     bring: { factionId: f.id, baseId: base.id, give: { supplies: { [giveKey]: giveQty }, gear: [] }, get: { supplies: { [getKey]: getQty }, gear: [] } },
     text: `${f.name} (${attitude(f).toLowerCase()}) call you. ${text} "Could you bring it to us at ${where}? We will add ${extra} ${keyWord(getKey)} for the trip." If you agree, they set the ${keyWord(getKey)} aside for you and your caravan takes the ${keyWord(giveKey)} to them; the deal waits about ten days.`,
     choices,
+  };
+}
+// A call asking to meet halfway (trademeet.js): their caravan takes their side to the tile and waits two days; the
+// trade caravan planner opens from your base with your side loaded. The governor declines (it plans no meetings).
+function meetOfferCard(state, f, base, tile, deal, said) {
+  const [giveKey, giveQty] = Object.entries(deal.offer)[0];
+  const [getKey, getQty] = Object.entries(deal.ask)[0];
+  const where = tileLabel(state, tile);
+  const text = said.replace(/, delivered to [^."]+\./, ".");
+  return {
+    title: `On the radio: ${f.name}`,
+    radioFrom: f.id,
+    text: `${f.name} (${attitude(f).toLowerCase()}) call you. ${text} "${base.name} is a long way for us. Meet us halfway, at ${where}?" If you agree, their caravan brings the ${keyWord(getKey)} there (about ${meetHours(state, f, tile)}h for them) and waits two days; send a team with the ${keyWord(giveKey)} and the trade window opens when it gets there. No fee: each side walks its own half.`,
+    choices: [
+      {
+        label: `Agree to meet at ${where}: ${giveQty} ${keyWord(giveKey)} for ${getQty} ${keyWord(getKey)}…`,
+        hint: `Opens the trade caravan planner from ${base.name} with the ${keyWord(giveKey)} loaded (it has ${Math.floor(base.stock[giveKey] || 0)} now)`,
+        uiAction: { type: "meetCaravan", factionId: f.id }, affordable: () => false,
+        resolve: (st) => {
+          const why = refusal(st, f, true) || meetRefusal(st, f, tile, caravanEnRoute(st, f));
+          if (why) return note(st, f, why);
+          const c = sendCaravan(st, f, base, { goods: { supplies: { [getKey]: getQty }, gear: [] }, deal, meetTile: tile });
+          if (!c) return `${f.name} cannot get to ${where} after all.`;
+          return note(st, f, `Agreed: ${giveQty} ${keyWord(giveKey)} for ${getQty} ${keyWord(getKey)}, met at ${where}. Their caravan sets out (about ${c.eta}h) and waits there two days.`);
+        },
+      },
+      { label: "No, thank you", hint: "Nothing changes", resolve: (st) => note(st, f, `You turned down ${f.name}'s offer.`) },
+    ],
   };
 }
 const REF_QTY = { food: 25, water: 25, fuel: 12, meds: 8, ammo: 60, parts: 3, scrap: 20, wood: 600 }; // wood: woodcutting.js (60 kg)

@@ -52,6 +52,7 @@ import { radioTradeContext, radioTradeProblem, bookRadioTrade, matchGear, sameGe
 import { intoArsenalFromShelf, shelfSurplus, kitClass } from "./arsenal.js"; // group arsenals: the guns you sell them they use; their surplus is for sale
 import { swapGun } from "./gundist.js";
 import { groupMachineCount, groupMachParts } from "./groupworks.js"; // freezer-parts: their machines want spare parts // the gun distribution: which gun a group's shelf holds
+import { meetTradeContext, resumeMeetTrade } from "./trademeet.js"; // a team of yours and their caravan at a meeting tile
 import { note, goodsRounds } from "./ledger.js"; // the conservation test's ledger (off in play)
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -617,6 +618,7 @@ export function advanceTradeQueue(state) {
     const v = q.shift();
     if (v.visitorId != null) { resumeVisitorTrade(state, v); continue; } // outsiders (visitors.js)
     if (v.nomadId != null) { resumeNomadTrade(state, v); continue; } // nomads (nomads.js)
+    if (v.meet) { resumeMeetTrade(state, v); continue; } // a meeting at a tile (trademeet.js)
     const f = factionById(state, v.factionId);
     if (v.caravanId != null) {
       const c = state.parties.find((x) => x.id === v.caravanId);
@@ -640,6 +642,7 @@ export function tradeContext(state) {
   if (t.visitorId != null) return visitorTradeContext(state, t); // merchants and travellers from outside (visitors.js)
   if (t.nomadId != null) return nomadTradeContext(state, t); // nomad bands (nomads.js): a visit, from what the team carries
   if (t.radio) return radioTradeContext(state, t); // over the radio (radiotrade.js)
+  if (t.meet) return meetTradeContext(state, t); // a team of yours and their caravan at a meeting tile (trademeet.js)
   const f = factionById(state, t.factionId);
   if (!f || !f.alive) return null;
   const have = {}, theirHave = {};
@@ -747,7 +750,7 @@ export function tradeVerdict(state) {
   if (ctx.kind === "radio") {
     const why = radioTradeProblem(state, ctx, offerGear, askGear); // radiotrade.js: a deal waiting, their caravan's load
     if (why) return out(false, why);
-  } else if (ctx.kind === "visit") {
+  } else if (ctx.p) { // a team (a visit, or a meeting at a tile: the caravan's room too, below)
     const p = ctx.p;
     const freed = weigh(t.offer) + gearWeight(offerGear); // what leaves the team is weight it no longer carries (sim/load.js: one pool)
     const room = cargoRoom(state, p) + freed;
@@ -763,7 +766,8 @@ export function tradeVerdict(state) {
       const theirNeed = weigh(t.offer) + gearWeight(offerGear);
       if (theirNeed > theirRoom + 1e-9 && theirNeed > theirFreed + 1e-9) return out(false, `They cannot carry that much: your goods weigh ${Math.ceil(theirNeed)}, and they have room for ${Math.max(0, Math.floor(theirRoom))}.`);
     }
-  } else {
+  }
+  if (ctx.caravan) {
     const c = ctx.caravan;
     const room = c.capacity - weigh(c.goods.supplies) - gearWeight(c.goods.gear) + weigh(t.ask) + gearWeight(askGear);
     const need = weigh(t.offer) + gearWeight(offerGear);
@@ -864,29 +868,29 @@ export function executeTrade(state) {
   if (ctx.kind === "radio") return bookRadioTrade(state, v); // over the radio: booked, a caravan carries it (radiotrade.js)
   const { t, f } = ctx;
   const offerGear = liveGear(t.offerGear, ctx.myGear), askGear = liveGear(t.askGear, ctx.theirGear);
-  const theirSup = ctx.kind === "caravan" ? ctx.caravan.goods.supplies : f.stock;
-  const theirGear = ctx.kind === "caravan" ? ctx.caravan.goods.gear : (f.wares = f.wares || []);
+  const theirSup = ctx.caravan ? ctx.caravan.goods.supplies : f.stock;
+  const theirGear = ctx.caravan ? ctx.caravan.goods.gear : (f.wares = f.wares || []);
   const gave = [], got = [];
   for (const [k, q] of Object.entries(t.offer)) {
     if (!(q > 0)) continue;
-    if (ctx.kind === "visit") takeFromParty(ctx.p, k, q);
+    if (ctx.p) takeFromParty(ctx.p, k, q);
     else ctx.base.stock[k] = (ctx.base.stock[k] || 0) - q;
-    const tk = ctx.kind === "caravan" || isRoundKey(k) ? k : groupStockKey(k, f); // a group's own stores: one water pool, one count of parts; rounds by key (docs/adr/0001-ai-parity.md)
-    theirSup[tk] = (theirSup[tk] ?? (ctx.kind === "caravan" || FOODS[k] ? 0 : stockOf(f, k))) + q; // a group with no figure yet (water, wood) starts from its comfortable stock
+    const tk = ctx.caravan || isRoundKey(k) ? k : groupStockKey(k, f); // a group's own stores: one water pool, one count of parts; rounds by key (docs/adr/0001-ai-parity.md)
+    theirSup[tk] = (theirSup[tk] ?? (ctx.caravan || FOODS[k] ? 0 : stockOf(f, k))) + q; // a group with no figure yet (water, wood) starts from its comfortable stock
     if (isRoundKey(k) || k === "ammo") note(state, "from you", q); // ledger.js
     gave.push(`${q} ${keyWord(k)}`);
   }
   for (const [k, q] of Object.entries(t.ask)) {
     if (!(q > 0)) continue;
-    const tk = ctx.kind === "caravan" || isRoundKey(k) ? k : groupStockKey(k, f); // a group's own stores: one count of parts; rounds by key (docs/adr/0001-ai-parity.md: as yours)
-    theirSup[tk] = (theirSup[tk] ?? (ctx.kind === "caravan" || FOODS[tk] ? 0 : stockOf(f, tk))) - q;
-    if (ctx.kind === "visit") ctx.p.cargo.supplies[k] = (ctx.p.cargo.supplies[k] || 0) + q;
+    const tk = ctx.caravan || isRoundKey(k) ? k : groupStockKey(k, f); // a group's own stores: one count of parts; rounds by key (docs/adr/0001-ai-parity.md: as yours)
+    theirSup[tk] = (theirSup[tk] ?? (ctx.caravan || FOODS[tk] ? 0 : stockOf(f, tk))) - q;
+    if (ctx.p) ctx.p.cargo.supplies[k] = (ctx.p.cargo.supplies[k] || 0) + q;
     else ctx.base.stock[k] = (ctx.base.stock[k] || 0) + q;
     got.push(`${q} ${keyWord(k)}`);
   }
   for (const g of offerGear) { moveItem(ctx.myGear, theirGear, g); gave.push(g.name); }
   for (const g of askGear) { moveItem(theirGear, ctx.myGear, g); got.push(g.name); }
-  if (ctx.kind !== "caravan") intoArsenalFromShelf(state, f, offerGear); // arsenal.js: the guns and armour they bought go to their fighters
+  if (!ctx.caravan) intoArsenalFromShelf(state, f, offerGear); // arsenal.js: the guns and armour they bought go to their fighters
   // Intel: the tiles paid for are reported (a team carries the report home, or radios it in when in contact).
   const tiles = intelTiles(state, ctx.center, t.intel);
   if (tiles.length) {
@@ -909,7 +913,7 @@ export function executeTrade(state) {
   t.deal = null;
   const msg = `Traded with ${f.name}: ${gave.join(", ") || "nothing"} for ${got.join(", ") || "nothing"}.`;
   // skills.js: Speech XP for whoever did the talking (the best Speech on the team, or at the base).
-  const talkers = ctx.kind === "visit" ? partyMembers(state, ctx.p) : atBase(state, ctx.base.id);
+  const talkers = ctx.p ? partyMembers(state, ctx.p) : atBase(state, ctx.base.id);
   gainXp(state, [...talkers].sort((a, b) => skill(b, "speech") - skill(a, "speech") || a.id - b.id)[0], "speech", USE.trade);
   log(state, msg, "good");
   return msg;
@@ -922,20 +926,20 @@ export function giftAll(state) {
   if (!ctx || tot.offer <= 0) return "Offer something first.";
   if (ctx.kind === "radio") return "A gift cannot go over the radio: give it at their gates, or when their caravan is at yours.";
   const { t, f } = ctx;
-  const theirSup = ctx.kind === "caravan" ? ctx.caravan.goods.supplies : f.stock;
-  const theirGear = ctx.kind === "caravan" ? ctx.caravan.goods.gear : (f.wares = f.wares || []);
+  const theirSup = ctx.caravan ? ctx.caravan.goods.supplies : f.stock;
+  const theirGear = ctx.caravan ? ctx.caravan.goods.gear : (f.wares = f.wares || []);
   for (const [k, q] of Object.entries(t.offer)) {
     if (!(q > 0)) continue;
-    if (ctx.kind === "visit") takeFromParty(ctx.p, k, q);
+    if (ctx.p) takeFromParty(ctx.p, k, q);
     else ctx.base.stock[k] = (ctx.base.stock[k] || 0) - q;
-    const tk = ctx.kind === "caravan" ? k : groupStockKey(k, f);
+    const tk = ctx.caravan ? k : groupStockKey(k, f);
     theirSup[tk] = (theirSup[tk] || 0) + q;
     if (/^a_/.test(tk) || tk === "ammo") note(state, "from you", q); // ledger.js: a gift of yours
   }
   const given = liveGear(t.offerGear, ctx.myGear);
   note(state, "from you", goodsRounds(given));
   for (const g of given) moveItem(ctx.myGear, theirGear, g);
-  if (ctx.kind !== "caravan") intoArsenalFromShelf(state, f, given); // arsenal.js
+  if (!ctx.caravan) intoArsenalFromShelf(state, f, given); // arsenal.js
   const today = day(state);
   if (f.giftGwDay !== today) { f.giftGwDay = today; f.giftGw = 0; }
   const gain = Math.max(0, Math.min(tot.offer / 6, 15 - f.giftGw));
