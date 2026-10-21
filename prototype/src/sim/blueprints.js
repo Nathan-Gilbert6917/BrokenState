@@ -12,7 +12,8 @@
 //
 // Early buildings are never locked; only the upper tiers listed in LOCKED (the Clinic and Trauma hospital, the
 // machine shop and generator, the reinforced gate and trench, the cistern, the cold store and the walk-in freezer, a
-// second preserving room, the radio relay), the generator's third tier (unlocks.upgrades: an upgrade where it stands,
+// second preserving room, the radio relay and the radio station: the station opens without it in the mid game,
+// ERA_OPEN), the generator's third tier (unlocks.upgrades: an upgrade where it stands,
 // not a building type: gen-tiers, the Industrial Power Manual) and three crafts (scrap crossbow, pipe shotgun, scrap
 // plate vest).
 // The AI groups (machines-2 2026-10-10, the user's rule: "AI groups need to have the same restrictions and gameplay
@@ -24,6 +25,7 @@ import { hash01, gainXp, READ_HOURS, BOOK_SITES, WARE_BOOKS, readReason } from "
 import { newItem } from "./inventory.js";
 import { workFactor } from "./health.js";
 import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
+import { yearOf } from "./eras.js"; // ERA_OPEN: the radio station from the mid game
 
 // sites: where it turns up on the shelves (location types). unlocks.buildings / unlocks.crafts: what it opens;
 // unlocks.from: a building type free up to this many (the first preserving room needs no manual).
@@ -48,8 +50,10 @@ export const BLUEPRINTS = {
     sites: ["supermarket", "warehouse", "factory", "truckstop", "univ", "grocery"], desc: "Insulated cold rooms, ice packing and compressor loops." },
   canning: { name: "Commercial Canning Guide", skill: "farming", min: 3, hours: 16, value: 40, unlocks: { buildings: ["kitchen"], from: { kitchen: 1 } },
     sites: ["farm", "feedstore", "school", "grocery", "supermarket", "church", "ranch"], desc: "Pressure canning in batches: a second preserving room." },
-  radioeng: { name: "Radio Engineering Handbook", skill: "mechanics", min: 3, hours: 24, value: 60, unlocks: { buildings: ["relay"] },
-    sites: ["radiotower", "airport", "police", "military", "univ"], desc: "Antennas, repeaters and line-of-sight links." },
+  // envoys.js (2026-10-21, "Radios should be a mid to late game communication"): the radio station too. Without the
+  // handbook it opens in the mid game (ERA_OPEN: by then the know-how has gone round).
+  radioeng: { name: "Radio Engineering Handbook", skill: "mechanics", min: 3, hours: 24, value: 60, unlocks: { buildings: ["relay", "radio"] },
+    sites: ["radiotower", "airport", "police", "military", "univ"], desc: "Antennas, transmitters, repeaters and line-of-sight links." },
   weaponplans: { name: "Improvised Weapons Plans", skill: "mechanics", min: 4, hours: 20, value: 55, unlocks: { crafts: ["crossbow", "pipegun"] },
     sites: ["gunstore", "police", "prison", "military", "hardware", "lodge"], desc: "Leaf-spring crossbows and zip guns, with drawings." },
   armorsmith: { name: "Armor Smithing Notes", skill: "mechanics", min: 3, hours: 16, value: 45, unlocks: { crafts: ["scrapvest"] },
@@ -149,7 +153,7 @@ for (const [key, d] of Object.entries(CRAFT_BOOKS)) {
 function unlockName(k) {
   const names = {
     clinic: "the Clinic", hospital: "the Trauma hospital", machine_shop: "the machine shop", generator: "the generator", gate: "the reinforced gate",
-    trench: "the trench", cistern: "the cistern", coldstore: "the cold store", freezer: "the walk-in freezer", kitchen: "a second preserving room", relay: "the radio relay",
+    trench: "the trench", cistern: "the cistern", coldstore: "the cold store", freezer: "the walk-in freezer", kitchen: "a second preserving room", relay: "the radio relay", radio: "the radio station",
     crossbow: "the scrap crossbow", pipegun: "the pipe shotgun", scrapvest: "the scrap plate vest",
     generator3: "the industrial diesel set (a generator's third tier)",
   };
@@ -180,12 +184,16 @@ export function whereFound(id) {
   return `${sites.join(", ")}; locked safes and cases, crash sites, traders`;
 }
 
+// Buildings a manual locks only until an era's year (eras.js yearOf): the radio station from the mid game (year 5).
+// groupworks.js LOCKS reads the same for the groups' station.
+export const ERA_OPEN = { radio: 5 };
+export const eraOpens = (state, type) => ERA_OPEN[type] != null && !!state && yearOf(state) >= ERA_OPEN[type];
 // "" when the building can be built as far as tech goes, else why not.
 export function buildLock(state, base, type) {
   const L = LOCKED.buildings[type];
-  if (!L || isKnown(state, L.bp)) return "";
+  if (!L || isKnown(state, L.bp) || eraOpens(state, type)) return "";
   if (L.from && base && base.buildings.filter((b) => b.type === type).length + base.construction.filter((c) => c.type === type).length < L.from) return "";
-  return `Needs the ${BLUEPRINTS[L.bp].name} (studied)`;
+  return `Needs the ${BLUEPRINTS[L.bp].name} (studied)${ERA_OPEN[type] ? `, or the mid game (year ${ERA_OPEN[type]})` : ""}`;
 }
 // "" when an upgrade (LOCKED.upgrades: "generator3") is open as far as tech goes, else why not.
 export function upgradeLock(state, key) {

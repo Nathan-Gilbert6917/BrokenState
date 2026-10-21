@@ -144,7 +144,7 @@ import { jailWork, jailBuilt, GROUP_JAIL } from "./groupjails.js"; // jailhouse:
 import { FIXTURES, WEAR, genFixture } from "./breakdowns.js"; // freezer-parts: the groups' machines wear and break as yours; gen-tiers: a generator's by its tier
 import { POWER_USERS, GEN_TIERS, genBurn, genUpgradeFuelOk, GEN_UP } from "./power.js"; // gen-tiers: your generator's tiers
 import { hash01 } from "./skills.js";
-import { BLUEPRINTS, BP_KEYS, WARE_BP, ZONE_P, CRASH_BP, siteBlueprints } from "./blueprints.js"; // machines-2: the groups' manuals (groupTech)
+import { BLUEPRINTS, BP_KEYS, WARE_BP, ZONE_P, CRASH_BP, siteBlueprints, eraOpens } from "./blueprints.js"; // machines-2: the groups' manuals (groupTech)
 import { READ_HOURS } from "./skills.js"; // a reader's day of study
 import { relation } from "./diplomacy.js"; // buying a manual from traders they are not hostile to
 import { SUPPLIES } from "./data.js";
@@ -206,7 +206,7 @@ export const GROUP_WORKS = {
   // (their "bench", your workbench) at any base first. RADIO_POP: the people before they want a station; RELOAD_BRASS:
   // the brass before they want a reloading bench (reloading.js RELOAD.GROUP.buyBrass).
   LOCKS: {
-    shop: { mech: 4, bp: "machinist", bench: true }, radio: { mech: 4, bench: true }, garage: { bench: true },
+    shop: { mech: 4, bp: "machinist", bench: true }, radio: { mech: 4, bp: "radioeng", era: "radio", bench: true }, garage: { bench: true }, // radio: blueprints.js ERA_OPEN (envoys.js: radios are mid game)
     reload: { mech: 3, bench: true }, gate: { bp: "armyeng" },
     // gen-tiers: the generator's upgrades (MACH.tiers), your canUpgradeGenerator's Mechanics and manual.
     power2: { mech: 4, bench: true }, power3: { mech: 5, bp: "indpower", bench: true },
@@ -511,7 +511,7 @@ export function workLock(state, f, k) {
   if (!L) return "";
   if (L.bench && !hasAny(f, "bench")) return "a workshop";
   if (L.mech && groupSkill(f, "mechanics") < L.mech) return `Mechanics ${L.mech}`;
-  if (L.bp && !groupKnows(state, f, L.bp)) return `the ${BLUEPRINTS[L.bp].name}`;
+  if (L.bp && !groupKnows(state, f, L.bp) && !(L.era && eraOpens(state, L.era))) return `the ${BLUEPRINTS[L.bp].name}`;
   return "";
 }
 // Has the group this work at any base? Old saves and the hardcore military (they do not build) count as built up.

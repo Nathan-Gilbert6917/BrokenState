@@ -1632,6 +1632,7 @@ export function render(state) {
     }
     piece(cv, x, gy + dy, uk);
     notePiece(cv, x, gy, uk);
+    if (p.kind === "envoy") pill(x, y - 24 * s, `${p.errand || "✉ envoy"}`, "#6b5f2e", s); // sim/envoys.js: a group's envoy and its errand
   }
   // Hardcore mode (sim/hardcore-groups.js): bands on the road that will found a group, in that group's colors, where
   // you can see them; the military's strike force on its way to the city hive as its convoy of trucks.
@@ -2353,8 +2354,10 @@ function drawPlayerParty(state, p) {
 }
 
 // A crew's team (sim/crews.js) carries its role's name above the sprite.
+// A crew's name, or an envoy's errand (sim/envoys.js p.envoyTag: "✉ aid · Northgate"), over the team.
 function crewTag(p, x, y) {
-  if (!p.crewName) return;
+  const label = p.crewName || (p.envoy != null ? p.envoyTag : "");
+  if (!label) return;
   const s = zoomBoost();
   const size = 10 * s * readable.text;
   ctx.save();
@@ -2363,11 +2366,12 @@ function crewTag(p, x, y) {
   ctx.textBaseline = "middle";
   ctx.lineWidth = size * 0.3;
   ctx.strokeStyle = "rgba(13,15,18,0.85)";
-  ctx.strokeText(p.crewName, x, y - 22 * s);
-  ctx.fillStyle = "#e0a84f";
-  ctx.fillText(p.crewName, x, y - 22 * s);
+  ctx.strokeText(label, x, y - 22 * s);
+  ctx.fillStyle = p.crewName ? "#e0a84f" : ENVOY_COLOR;
+  ctx.fillText(label, x, y - 22 * s);
   ctx.restore();
 }
+const ENVOY_COLOR = "#f2e6a0"; // envoys on the map: yours and theirs, a pale parchment tag
 
 export function tileTooltip(state, id) {
   const t = state.tiles[id];

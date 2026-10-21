@@ -1725,6 +1725,7 @@ section("Radio relays on screen: the radio header, a group's radio panel, the Co
     const s = makeSurvivor(w); s.skills.mechanics = 5; s.location = { kind: "base", baseId: o.id }; w.survivors.push(s);
     const f = w.factions.find((x) => x.alive && x.bases.length);
     f.bases = [fT.id]; f.known = true; f.goodwill = 60; f.pact = "trade";
+    (f.works = f.works || {})[fT.id] = { ...(f.works[fT.id] || {}), radio: 1 }; // sim/envoys.js: a set of their own (a radio link needs both)
     check(relaySpotFor(w, f) === o, "a relay at the outpost would reach the group");
     const head = groupsRadioHeader(w);
     // The radio and diplomacy windows' handlers are main.js's TRADE_ACTIONS / DIPLO_ACTIONS (tradetest checks them):

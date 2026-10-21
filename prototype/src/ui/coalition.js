@@ -1,9 +1,10 @@
 // The Diplomacy window's Coalition standing tab (sim/coalition.js): each member's standing toward you as a bar with its
 // leave and hostile lines, its modifiers, its record of asks granted and refused and the fatigue that comes of it, its
-// risk flags and the land the coalition would keep without it; then the member-to-member grid, each cell's modifiers
+// risk flags, how word reaches it (radio or envoy: commsBadge) and the land the coalition would keep without it; then the member-to-member grid, each cell's modifiers
 // in its tip. Read only: answers come on the cards, Expel is on the Coalition tab.
 import { allianceMembers, controlledLand, ALLIANCE } from "../sim/alliance.js";
 import { standing, standingParts, pairStanding, pairParts, band, risks, recordOf, fatigue, landWithout, ensureBalance, BAL } from "../sim/coalition.js";
+import { commsWith } from "../sim/envoys.js"; // radio or envoy
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -13,6 +14,12 @@ const swatch = (c) => `<span class="swatch" style="background:${c}"></span>`;
 const at = (v) => Math.max(0, Math.min(100, (v + 100) / 2)); // −100..100 → a bar's 0..100%
 const tone = (v) => (v < -20 ? "var(--danger)" : v < 20 ? "var(--muted)" : "var(--good)");
 const RISK_CLASS = { leave: "danger", hostile: "danger", quit: "danger", grudge: "warn", uneasy: "muted" };
+// How word reaches a member (sim/envoys.js): by radio (instant) or by envoy (in person, the answer when it is home).
+export function commsBadge(state, f) {
+  return commsWith(state, f) === "radio"
+    ? `<span class="good small"${tip("A radio link both ways: their asks come at once and your answers reach them at once.")}>📻 by radio</span>`
+    : `<span class="muted small"${tip("No radio link: their asks come by envoy (the card when it reaches your hub) and hear your answer when it gets home; your messages go by envoy (Diplomacy → Envoys).")}>✉ by envoy</span>`;
+}
 
 // A bar from −100 to 100: the standing, with ticks at the leave and hostile lines.
 function standingBar(s, b) {
@@ -28,7 +35,7 @@ function memberRow(state, f, land) {
   const without = landWithout(state, f);
   const parts = standingParts(state, f);
   return `<div class="card small">
-    <div class="spread"><b>${swatch(f.color)}${esc(f.name)}</b><span${tip(partsText(parts))} style="color:${tone(s)}">standing <b>${Math.round(s)}</b></span></div>
+    <div class="spread"><b>${swatch(f.color)}${esc(f.name)}</b> ${commsBadge(state, f)}<span${tip(partsText(parts))} style="color:${tone(s)}">standing <b>${Math.round(s)}</b></span></div>
     <div class="row" style="gap:0.5rem;align-items:center">${standingBar(s, b)}<span class="muted"${tip(`By their kind (${f.type}) and their own temper: under ${b.leave} they may leave, a little likelier each day; under ${b.floor} they leave at once; leaving under ${b.hostile} they turn hostile${f.type === "raider" || f.type === "expansionist" || f.type === "zealot" ? " and declare war" : ""}. Another member under ${b.grudge} with them and they demand its expulsion.`)}>leaves under ${b.leave} · hostile under ${b.hostile}</span></div>
     <div>Goodwill ${Math.round(f.goodwill)}${partsList(parts) ? ` · ${partsList(parts)}` : ""}</div>
     <div${tip(`Asks granted and refused (all time). The recent count fades ${Math.round((1 - BAL.TALLY_FADE) * 100)}% a day; each refusal over the grants with them makes the next refusal land harder (+${Math.round(BAL.FAT.OWN * 100)}%) and deepens "Requests ignored" day by day.`)}>Record: <b class="good">${r.nAcc}</b> granted · <b class="${r.nRef > r.nAcc ? "danger" : ""}">${r.nRef}</b> refused${x > 1.01 ? ` · <span class="danger">refusals land ×${x.toFixed(1)}</span>` : ""}</div>

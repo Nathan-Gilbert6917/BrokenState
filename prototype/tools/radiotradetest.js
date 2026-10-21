@@ -27,6 +27,7 @@ import { DIPLO_ACTIONS, DIPLO_CHANGE } from "../src/ui/diplomacy.js";
 import { LISTEN_ACTIONS } from "../src/ui/radiolisten.js";
 import { INTEL_ACTIONS, INTEL_CHANGE } from "../src/ui/intel.js"; // radio security in the Groups header
 import { VOL_ACTIONS, VOL_CHANGE } from "../src/ui/volunteers.js"; // and these (the radio panel's Ask for volunteers: vol-open)
+import { worksAt } from "../src/sim/groupworks.js"; // envoys.js: a radio link needs a set of their own too
 
 const seed = Number(process.argv[2] || 42);
 let fails = 0, passes = 0;
@@ -52,7 +53,9 @@ function setup(s) {
     .sort((a, b) => st.grid.distance(a.bases[0], h.tile) - st.grid.distance(b.bases[0], h.tile))[0];
   Object.assign(f, { type: "traders", goodwill: 45, known: true, pop: Math.max(f.pop, 24) });
   f.bases = [f.bases[0]];
+  worksAt(f, f.bases[0]).radio = 1;
   if (!canRadioGroup(st, f)) f.bases = [st.grid.within(h.tile, 10).find((t) => land(st, t) && st.grid.distance(t, h.tile) >= 6 && !st.bases.some((b) => b.tile === t) && planPath(st, t, h.tile, false))];
+  worksAt(f, f.bases[0]).radio = 1; // a station of their own: a radio link both ways (envoys.js)
   Object.assign(f.stock, { ammo: 600, meds: 60, fuel: 60, parts: 10, scrap: 120, water: 150 }); setFood(f, 300);
   for (const x of st.factions) if (x !== f) x.goodwill = Math.max(x.goodwill, -20);
   st.hordes = st.hordes.filter((x) => st.grid.distance(x.tile, f.bases[0]) > 6);

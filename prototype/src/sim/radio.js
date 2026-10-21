@@ -14,7 +14,8 @@
 //   one already there (a station built after it) stands idle, using no parts, until the station is gone or broken.
 //   A relay at a hub without a station is like any other: it works once a station or linked relay reaches it.
 // - Your teams in coverage report live (world.js radioBasesInRange); groups whose base is within coverage plus
-//   GROUP_REACH (6) tiles (their own sets reach that far) can be called (canRadioGroup), and that is what "in radio
+//   GROUP_REACH (6) tiles (their own sets reach that far) can be called (canRadioGroup) when they have a set of their own
+//   (groupHasSet: a station, the military's army sets; envoys.js: otherwise word goes in person), and that is what "in radio
 //   reach" means for the coalition too (alliance.js reachVia: a relay that brings a group's base within coverage + 6
 //   makes it invitable). A chain runs through your own bases only (every node is one of state.bases); the
 //   coalition's other ways in (a team at their gates, a base of yours or a member's next door) are alliance.js's.
@@ -109,8 +110,9 @@ export function groupNetwork(state, f) {
     const on = f.bases.filter((tile) => !groupHides(state, f, tile)); // hiding.js: a hidden outpost keeps off the air
     return net([...(on.length ? on : f.bases), ...groupRelayTiles(state, f)].map((tile) => ({ tile, range }))); // fieldworks.js: their relay masts
   }
-  // ai-locks: their stations (the military: every base), the hidden ones kept off the air unless all are hidden.
-  const mil = f.type === "military";
+  // ai-locks: their stations (the military and the Guard's splinters: every base), the hidden ones kept off the air
+  // unless all are hidden.
+  const mil = f.type === "military" || !!f.hcSplinter; // hardcore-groups.js: what was left of the Guard carries its sets
   const st = f.bases.filter((tile) => mil || (f.works && f.works[tile] && f.works[tile].radio > 0));
   const on = st.filter((tile) => !groupHides(state, f, tile));
   const nodes = (on.length ? on : st).map((tile) => ({ tile, range: mil ? MIL_RADIO_RANGE : RADIO_RANGE }));
@@ -221,7 +223,7 @@ export function relayReach(state, base, groups = null, outOfReach = false) {
   if (!base || hasStation(base) || count(base, "relay")) return [];
   const nodes = radioNodes(state, base).filter((n) => n.linked); // the cheap test first: would it link at all?
   if (!nodes.some((n) => n.base === base && !n.field)) return [];
-  const list = (groups || state.factions).filter((f) => f && f.alive && f.bases.length && (outOfReach || !canRadioGroup(state, f)));
+  const list = (groups || state.factions).filter((f) => f && f.alive && f.bases.length && groupHasSet(state, f) && (outOfReach || !canRadioGroup(state, f))); // a group with no set of its own is never brought in
   if (!list.length) return [];
   const g = state.grid;
   return list.filter((f) => f.bases.some((t) => nodes.some((n) => g.distance(n.tile, t) <= n.range + GROUP_REACH)));
@@ -243,7 +245,7 @@ export function relaySpotFor(state, f) {
 }
 function relaySpotNow(state, f) {
   const cur = radioNodes(state).filter((n) => n.linked);
-  if (!cur.length || canRadioGroup(state, f)) return null;
+  if (!cur.length || !groupHasSet(state, f) || canRadioGroup(state, f)) return null;
   const g = state.grid;
   const near = (b) => Math.min(...f.bases.map((t) => g.distance(t, b.tile)));
   // Only a base a linked node reaches can link a new relay (radioNodes): the rest are never worth the full test.
@@ -290,7 +292,18 @@ function relayUpkeep(state) {
 }
 
 // ---------- who can be called ----------
-export const canRadioGroup = (state, f) => !!f && f.alive && f.bases.some((b) => inCoverage(state, b, GROUP_REACH));
+// A two-way link (envoys.js, 2026-10-21: "Radios should be a mid to late game communication"): their base within your
+// coverage + GROUP_REACH and a set of their own to answer on (groupHasSet). Without one, word goes by envoy (envoys.js).
+export const canRadioGroup = (state, f) => !!f && f.alive && groupHasSet(state, f) && f.bases.some((b) => inCoverage(state, b, GROUP_REACH));
+// In your coverage + GROUP_REACH, set or no set (the "build a relay" hints).
+export const inRadioReach = (state, f) => !!f && f.alive && f.bases.some((b) => inCoverage(state, b, GROUP_REACH));
+// A set of their own: a radio station at a base (groupworks.js "radio" work), the military's and the Guard's splinters'
+// army sets at every base, an old save's or the hardcore Guard's network by type (groupNetwork's rule, cheaply).
+export function groupHasSet(state, f) {
+  if (!f || !f.alive || !f.bases || !f.bases.length) return false;
+  if (!groupsBuild(state, f) || f.type === "military" || f.hcSplinter) return true;
+  return f.bases.some((t) => !!(f.works && f.works[t] && f.works[t].radio > 0));
+}
 // Speech on the radio: the best talker at a base with a transmitter that reaches them (else at the hub).
 export function radioSpeech(state) {
   const h = hub(state);
@@ -309,7 +322,7 @@ function note(state, f, text) {
 // Why a group will not take your call or your business (null = they will).
 export function refusal(state, f, forTrade = false) {
   if (!f || !f.alive) return "Nobody answers on that channel any more.";
-  if (!canRadioGroup(state, f)) return `${f.name} is out of radio reach.`;
+  if (!canRadioGroup(state, f)) return inRadioReach(state, f) && !groupHasSet(state, f) ? `${f.name} have no radio of their own: send them an envoy (Diplomacy → Envoys).` : `${f.name} is out of radio reach.`;
   if (attitude(f) === "Hostile") return `${f.name} curse at you and go silent.`;
   if (forTrade && f.goodwill < (isAggressiveType(f) ? 0 : -15)) return `${f.name} do not trust you enough to deal. (Goodwill ${isAggressiveType(f) ? 0 : -15} needed.)`;
   return null;

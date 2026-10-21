@@ -230,7 +230,7 @@ export function formTeam(state, opts) {
 // expedition of yours (not a convoy, a caravan or a crew). Null otherwise.
 /** @param {State} state @param {Party} p @returns {Base | null} */
 export function editBase(state, p) {
-  if (!isPlayerTeam(p) || p.kind !== "expedition" || p.caravan || p.crewRole != null) return null;
+  if (!isPlayerTeam(p) || p.kind !== "expedition" || p.caravan || p.crewRole != null || p.envoy != null) return null; // envoys.js: an envoy is not changed
   if (p.phase !== "waiting" || onTheMove(p)) return null;
   return teamBase(state, p);
 }
@@ -238,6 +238,7 @@ export function editBase(state, p) {
 /** @param {State} state @param {Party} p */
 export function editProblem(state, p) {
   if (!p || !state.parties.includes(p)) return "That team is gone.";
+  if (p.envoy != null) return "An envoy is on its errand: it cannot be changed."; // envoys.js
   if (!isPlayerTeam(p) || p.kind !== "expedition" || p.caravan || p.crewRole != null) return "Only your own teams can be changed at a base.";
   if (!teamBase(state, p)) return "The team is not on one of your bases' tiles.";
   if (p.phase !== "waiting" || onTheMove(p)) return "The team is busy: stop it (or let it finish) first.";

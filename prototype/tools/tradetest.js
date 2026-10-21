@@ -47,7 +47,10 @@ const seed = Number(process.argv[2] || 42);
 const longDays = Number(process.argv[3] || 200);
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
-const world = (s = seed, n = 8) => createWorld({ seed: s, factionCount: n });
+// sim/envoys.js: a radio link needs a set on both sides; these worlds test radio trade, so every group has a station
+// at each of its bases (onAir again after a test moves a base).
+const onAir = (st) => { for (const f of st.factions) for (const t of f.bases) (f.works = f.works || {})[t] = { ...(f.works[t] || {}), radio: 1 }; return st; };
+const world = (s = seed, n = 8) => onAir(createWorld({ seed: s, factionCount: n }));
 const near = (a, b, eps = 1e-6) => Math.abs(a - b) < eps;
 const choice = (card, re) => card.choices.find((c) => re.test(c.label));
 const off = (state, c) => (typeof c.disabled === "function" ? c.disabled(state) : !!c.disabled);
@@ -438,6 +441,7 @@ function visit(st, f, n = 2, cargo = {}) {
   check(right === total, `a group can be called when a base of theirs is within coverage (${R}) + ${GROUP_REACH} (${right}/${total})`);
   const f = st.factions[0];
   f.bases = [g.within(h.tile, 9).find((t) => g.distance(t, h.tile) === 9)];
+  onAir(st);
   f.known = false;
   const msg = radioScan(st);
   check(f.known && f.heard && /New voices/.test(msg), "scanning the airwaves finds a group in reach");
@@ -466,12 +470,14 @@ function dealWorld(s) {
   h.stock.ammo = 400;
   // Their base within radio reach and a walk from the hub.
   if (!canRadioGroup(st, f)) f.bases = [st.grid.within(h.tile, 10).find((t) => land(st, t) && st.grid.distance(t, h.tile) >= 6 && !st.bases.some((b) => b.tile === t) && planPath(st, t, h.tile, false))];
+  onAir(st);
   return { st, h, f };
 }
 {
   console.log("Radio deal and caravan");
   const { st, h, f } = dealWorld(seed);
   if (!canRadioGroup(st, f)) f.bases = [st.grid.within(h.tile, 10).find((t) => land(st, t) && planPath(st, t, h.tile, false) && st.grid.distance(t, h.tile) >= 6)];
+  onAir(st);
   const q = dealQuote(st, f, { wantKey: "meds", wantQty: 6, payKey: "ammo", payQty: 1 });
   const res = radioDeal(st, f, { wantKey: "meds", wantQty: 6, payKey: "ammo", payQty: q.minPay });
   if (check(res.ok, `the deal is agreed: ${res.text}`)) {

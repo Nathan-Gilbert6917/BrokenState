@@ -23,6 +23,7 @@ import * as B from "../src/sim/blocs.js";
 import * as W from "../src/sim/playerwars.js";
 import { execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { worksAt } from "../src/sim/groupworks.js"; // envoys.js: a radio link needs a set of their own too
 
 const PRESSURE = process.argv[2] === "--pressure";
 const ONE = process.argv[2] === "--one"; // child: one autopilot run → JSON
@@ -106,6 +107,7 @@ function setup(types, s = seed) {
     used.push(t);
     f.type = type;
     f.bases = [t];
+    worksAt(f, t).radio = 1; // a station of their own: in radio reach both ways (envoys.js)
     f.known = true;
     f.pop = 24;
     f.pact = null;

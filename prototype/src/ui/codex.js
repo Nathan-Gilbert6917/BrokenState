@@ -28,6 +28,8 @@ import { PUSH, GRIP } from "../sim/shoving.js"; // people and the dead shoved ba
 import { SHOVE, BOARD, CRAWL, FURNITURE, shoveable, isBoarded } from "../sim/barricade.js"; // furniture shoved in the way, boards over doors and windows, the dead crawling over half cover
 import { NOMADS } from "../sim/nomads.js"; // nomad bands: one entry a tier
 import { BAL } from "../sim/coalition.js"; // keeping the coalition together
+import { ENVOY, envoysHelp } from "../sim/envoys.js"; // envoys and radio links
+import { ERA_OPEN } from "../sim/blueprints.js"; // the radio station's era
 import { BUILDINGS, RECIPES, PLOT_NAMES } from "../sim/buildings.js";
 import { CONDITIONS, SICK } from "../sim/health.js";
 import { WORM, wormSeen } from "../sim/worm.js";
@@ -372,6 +374,13 @@ function groupEntries() {
     text: "Every member of the Calder Coalition weighs you and the others all the time, as rulers do in a grand strategy game. What you grant and refuse, the rulings you make between them, the fights you join, all go on a ledger of named modifiers that fade with time, on top of their goodwill and their relations with each other. Neighbours rub each other raw on the border, trade partners and those who share an enemy grow closer, and now and then something happens between them. Touchy kinds (raiders, zealots, expansionists) leave sooner than communes and traders; a warlike member that leaves in anger declares war on you.",
     how: "Open Diplomacy → Coalition standing: each member's bar, its leave and hostile lines, what it remembers, its record and its risks, and the grid of how members feel about each other. Grant the asks of members close to their line, split quarrels when you can, and do not refuse the same member again and again. A member who leaves takes its land out of the count and is a group outside the coalition, which blocks the victory.", sprite: null,
   });
+  // Envoys (sim/envoys.js): opened once you know a group.
+  out.push({
+    key: "k:envoys", cat: "groups", name: "✉ Envoys and radio links", sub: "Word carried in person",
+    stats: [["Radio link", "your station or a linked relay reaching their base (+6 tiles) and a set of their own; starting bases have none, only military bases"], ["Envoy", "at least one survivor, a vehicle if you like, the goods; food and water for there and back; no other orders"], ["Answer", "given when the envoy arrives, known when it is home"], ["Lost", `on the way there: never delivered, no refusal; on the way back: what was agreed stands, you never hear it; "no word" at ${ENVOY.OVERDUE}× the trip`], ["The station", `the Radio Engineering Handbook studied, or the mid game (year ${ERA_OPEN.radio})`]],
+    text: envoysHelp(),
+    how: "Diplomacy → Envoys (or a group's card: Communicate…): pick the message, the goods and who goes. The Messages list shows each one travelling, awaiting return, overdue, lost or returned with its answer. Coalition members' asks without a link come by their envoys, on the map with their errand: they can be intercepted, and their death loses the ask.", sprite: null,
+  });
   return out;
 }
 
@@ -559,6 +568,7 @@ function seenNow(state) {
   for (const g of state.hiveGrowths || []) if (known(g.tile) && GROWTHS[g.kind]) keys.add(`h:${g.kind}`);
   for (const f of state.factions || []) if (f.known && FACTION_TYPES[f.type]) keys.add(`g:${f.type}`);
   if (state.alliance && Array.isArray(state.alliance.members) && state.alliance.members.length) keys.add("k:coalition"); // sim/coalition.js
+  if ((state.factions || []).some((f) => f.known) || (state.envoys && state.envoys.msgs.length)) keys.add("k:envoys"); // sim/envoys.js
   for (const v of state.visitors || []) if (v && live.has(v.tile)) keys.add(`o:${v.kind}`);
   for (const b of (state.nomads && state.nomads.bands) || []) if (b && b.known && live.has(b.tile)) keys.add(`n:${b.tier}`); // sim/nomads.js
   // Points of interest known on a tile seen or reported (sim/pois.js: the hub's knowledge, never a hidden one).

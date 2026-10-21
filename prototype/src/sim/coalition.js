@@ -42,6 +42,11 @@
 // - grudge: its standing with another member under it, it demands that member's expulsion; quit (QUIT_GAP under it) and
 //   a refusal sends it out.
 // Members leaving or expelled leave the land count and the victory's "no group outside" (alliance.js).
+// Without a radio link (envoys.js, 2026-10-21): an ask is carried by the asker's envoy and its card comes up only when
+// the envoy reaches your gates (raise → envoys.js envoyAsk; askCard's `focus` builds it again for that member then);
+// while one is on its way no other ask is raised. Answered at your gates, what the answer does to the asker's books
+// (remember, noteAnswer) waits in a sink until its envoy is home (withSink, replaySink), and the goods you send ride
+// with the envoy (sendGoods; takeGoods takes theirs out of what the envoy brought).
 // Dice: hash01 (skills.js) on the seed, the day and the groups' names, so the world's other streams are not shifted.
 import { day, log, hub, factionById, addCard, atBase, skill } from "./world.js";
 import { changeGoodwill } from "./factions.js";
@@ -60,6 +65,8 @@ import { moveFoodUnits } from "./foods.js";
 import { supValue } from "./data.js";
 import { playerClaims } from "./claims.js";
 import { note } from "./ledger.js";
+import { foodIn } from "./foods.js";
+import { envoyAsk, askInFlight } from "./envoys.js"; // asks carried in person without a radio link (call-time only)
 
 export const BAL = {
   LAST: 0.25, MOD_CAP: 30,
@@ -104,10 +111,33 @@ function addMod(state, aId, bId, key, label, v, days) {
   m.fade = days > 0 ? Math.abs(m.v) / days : 0;
   return m;
 }
+// ---------- an answer carried by an envoy (envoys.js) ----------
+// sink: { calls: [], goods: { key: q } (what you send rides with their envoy), from: { key: q } | null (what their
+// envoy brought) }. Inside withSink, remember and noteAnswer are kept as calls for replaySink.
+let SINK = null;
+export function withSink(sink, fn) {
+  const was = SINK;
+  SINK = sink;
+  try { return fn(); } finally { SINK = was; }
+}
+// The calls kept, made now. who(id): the group for an id (gone: the call is dropped).
+export function replaySink(state, calls, who = (id) => factionById(state, id)) {
+  for (const c of calls || []) {
+    const f = who(c.f);
+    if (!f || !f.alive) continue;
+    if (c.op === "note") { noteAnswer(state, f, c.accepted); continue; }
+    const o = c.other === "you" ? "you" : who(c.other);
+    if (o && (o === "you" || o.alive)) remember(state, f, o, c.key, c.label, c.v, c.kind);
+  }
+}
+// What a group can hand over: out of what its envoy brought while answering at your gates, else its stores.
+const spareOf = (st, f, k) => (SINK && SINK.from ? (k === "food" ? foodIn(SINK.from) : SINK.from[groupStockKey(k, f)] || 0) : available(f, k));
+
 // An act remembered: other is "you" or a member. LAST of v for good (goodwill or the relation), the rest fading over
 // the kind's days. Returns the immediate change.
 export function remember(state, f, other, key, label, v, kind = key) {
   if (!f || !v) return 0;
+  if (SINK) { SINK.calls.push({ op: "remember", f: f.id, other: other === "you" ? "you" : other.id, key, label, v, kind }); return v; } // envoys.js: when the envoy is home
   const days = BAL.DAYS[kind] || 40;
   if (other === "you") {
     changeGoodwill(state, f, v * BAL.LAST, label.toLowerCase());
@@ -148,6 +178,7 @@ export const recordOf = (state, f) => ({ ...recOf(state, f) });
 // One answer to a member's ask (any: these cards, the council's, a call for volunteers). Not a member: nothing.
 export function noteAnswer(state, f, accepted) {
   if (!f || !isMember(state, f)) return;
+  if (SINK) { SINK.calls.push({ op: "note", f: f.id, accepted: !!accepted }); return; } // envoys.js: tallied when the envoy is home
   const B = ensureBalance(state), r = recOf(state, f);
   if (accepted) { r.acc++; r.nAcc++; B.all.acc++; B.all.nAcc++; B.stats.accepted++; } else { r.ref++; r.nRef++; B.all.ref++; B.all.nRef++; B.stats.refused++; }
 }
@@ -229,7 +260,7 @@ export function coalitionDaily(state, ms) {
   if (!ms.length) return;
   for (const f of ms) neglect(state, f);
   pairDrift(state, ms);
-  if (!hub(state) || state.cards.some((c) => c.coalAsk)) return;
+  if (!hub(state) || state.cards.some((c) => c.coalAsk) || askInFlight(state)) return; // envoys.js: an ask on its way counts as open
   if (expelDemand(state, ms)) return;
   const d = day(state);
   if (B.next == null) B.next = d + BAL.FIRST;
@@ -242,8 +273,15 @@ export function coalitionDaily(state, ms) {
 }
 function raise(state, card) {
   const B = ensureBalance(state);
-  card.coalAsk = B.seq++;
   B.stats.asks++;
+  if (envoyAsk(state, card)) return card; // envoys.js: no radio link with the asker: its envoy carries the ask (the card on arrival)
+  card.coalAsk = B.seq++;
+  addCard(state, card);
+  return card;
+}
+// An ask that came by envoy, as a card at your gates (envoys.js): its number in the "one open at a time" rule.
+export function raiseArrived(state, card) {
+  card.coalAsk = ensureBalance(state).seq++;
   addCard(state, card);
   return card;
 }
@@ -320,12 +358,15 @@ function expelDemand(state, ms) {
   raise(state, expelCard(state, best.a, best.b));
   return true;
 }
-export function askCard(state, kind, ms = allianceMembers(state)) {
-  if (kind === "dispute") return disputeCard(state, ms);
-  if (kind === "favour") return favourCard(state, ms);
-  if (kind === "trade") return tradeCard(state, ms);
-  if (kind === "aid") return aidCard(state, ms);
-  if (kind === "military") return militaryCard(state, ms);
+// focus: the ids the ask is about ([asker] or [a, b]: envoys.js builds an ask again when its envoy arrives); params: a
+// trade's { k, j, q } (what the envoy brought for it).
+export function askCard(state, kind, ms = allianceMembers(state), focus = null, params = null) {
+  if (kind === "dispute") return disputeCard(state, ms, focus);
+  if (kind === "favour") return favourCard(state, ms, focus);
+  if (kind === "trade") return tradeCard(state, ms, focus, params);
+  if (kind === "aid") return aidCard(state, ms, focus);
+  if (kind === "military") return militaryCard(state, ms, focus);
+  if (kind === "expel" && focus) { const a = factionById(state, focus[0]), b = factionById(state, focus[1]); return a && b && isMember(state, a) && isMember(state, b) ? expelCard(state, a, b) : null; }
   if (kind === "expel") { // the worst pair (the tools; the daily demand waits for a grudge)
     let best = null;
     for (const a of ms) for (const b of ms) if (a !== b && (!best || pairStanding(state, a, b) < best.p)) best = { a, b, p: pairStanding(state, a, b) };
@@ -339,9 +380,10 @@ const worry = (state, f) => { const s = standing(state, f), b = band(state, f); 
 const bandHint = (state, f) => { const b = band(state, f); return `standing ${Math.round(standing(state, f))}, leaves under ${b.leave}`; };
 const fatHint = (state, f) => { const x = fatigue(state, f); return x > 1.01 ? ` (×${x.toFixed(1)}: you refuse more than you grant)` : ""; };
 
-function disputeCard(state, ms) {
+const inFocus = (focus, ...fs) => !focus || fs.every((f, i) => f.id === focus[i]);
+function disputeCard(state, ms, focus = null) {
   const pairs = [];
-  for (const a of ms) for (const b of ms) if (a.id < b.id) pairs.push({ a, b, p: pairStanding(state, a, b) });
+  for (const a of ms) for (const b of ms) if (a.id < b.id && (!focus || (focus.includes(a.id) && focus.includes(b.id)))) pairs.push({ a, b, p: pairStanding(state, a, b) });
   if (!pairs.length) return null;
   pairs.sort((x, y) => x.p - y.p || x.a.id - y.a.id);
   const { a, b } = pairs[0].p < 25 ? pairs[0] : pairs[Math.floor(dice(state, "pair", day(state)) * pairs.length)];
@@ -383,10 +425,10 @@ const FAVOURS = [
   { ask: (o) => `your gates shut to ${o}'s caravans for a season`, did: "Shut your gates to them" },
   { ask: (o) => `the salvage rights you hold near ${o}`, did: "Gave them your salvage rights" },
 ];
-function favourCard(state, ms) {
+function favourCard(state, ms, focus = null) {
   const d = day(state);
   const opts = [];
-  for (const a of ms) for (const b of ms) if (a !== b) opts.push({ a, b, p: pairStanding(state, a, b) });
+  for (const a of ms) for (const b of ms) if (a !== b && inFocus(focus, a, b)) opts.push({ a, b, p: pairStanding(state, a, b) });
   if (!opts.length) return null;
   opts.sort((x, y) => x.p - y.p || dice(state, "fav", d, x.a.name, x.b.name) - dice(state, "fav", d, y.a.name, y.b.name));
   const { a, b } = opts[Math.floor(dice(state, "favpick", d) * Math.min(3, opts.length))];
@@ -407,10 +449,12 @@ function favourCard(state, ms) {
 function sendGoods(state, f, k, qty) {
   const h = hub(state);
   const rec = k === "ammo" ? payRoundsOf(state, h, qty) : { [k]: qty };
+  const to = SINK ? SINK.goods : null; // envoys.js: onto their envoy, into their stores when it is home
   for (const [kk, q] of Object.entries(rec)) {
-    if (kk === "food") { moveFoodUnits(h, f, q, { state }); continue; }
+    if (kk === "food") { moveFoodUnits(h, to || f, q, { state }); continue; }
     useSupply(h.stock, kk, q);
     const tk = isRoundKey(kk) || kk === "ammo" ? kk : groupStockKey(kk, f);
+    if (to) { to[tk] = (to[tk] || 0) + q; continue; } // the ledger's note when they are home (envoys.js)
     f.stock[tk] = (f.stock[tk] || 0) + q;
     if (isRoundKey(kk) || kk === "ammo") note(state, "from you", q); // ledger.js: rounds into the AI side
   }
@@ -418,17 +462,19 @@ function sendGoods(state, f, k, qty) {
 }
 function takeGoods(state, f, k, qty) {
   const h = hub(state);
-  if (k === "food") { moveFoodUnits(f, h, qty, { state }); return; }
+  const from = SINK && SINK.from ? SINK.from : null; // envoys.js: out of what their envoy brought
+  if (k === "food") { moveFoodUnits(from || f, h, qty, { state }); return; }
   const tk = groupStockKey(k, f);
-  f.stock[tk] = Math.max(0, (f.stock[tk] || 0) - qty);
+  if (from) from[tk] = Math.max(0, (from[tk] || 0) - qty);
+  else f.stock[tk] = Math.max(0, (f.stock[tk] || 0) - qty);
   h.stock[k] = (h.stock[k] || 0) + qty;
 }
 const hubHas = (state, k) => { const h = hub(state); return h ? supplyAmt(h.stock, k) : 0; };
 const shortOf = (f) => Object.keys(BAL.QTY).filter((k) => need(f, k) >= 1.3);
 
-function aidCard(state, ms) {
+function aidCard(state, ms, focus = null) {
   const opts = [];
-  for (const f of ms) for (const k of shortOf(f)) if (hubHas(state, k) >= BAL.QTY[k]) opts.push({ f, k });
+  for (const f of ms) if (inFocus(focus, f)) for (const k of shortOf(f)) if (hubHas(state, k) >= BAL.QTY[k]) opts.push({ f, k });
   if (!opts.length) return null;
   const { f, k } = opts[Math.floor(dice(state, "aid", day(state)) * opts.length)];
   const qty = BAL.QTY[k], h = hub(state), others = ms.filter((m) => m !== f);
@@ -451,9 +497,10 @@ function aidCard(state, ms) {
 }
 
 const GIVE = ["meds", "fuel", "scrap", "water", "parts", "food"];
-function tradeCard(state, ms) {
+function tradeCard(state, ms, focus = null, params = null) {
+  if (params) { const f = ms.find((m) => inFocus(focus, m)); return f ? tradeOffer(state, f, params.k, params.j, params.q) : null; }
   const opts = [];
-  for (const f of ms) for (const k of shortOf(f)) {
+  for (const f of ms) if (inFocus(focus, f)) for (const k of shortOf(f)) {
     if (hubHas(state, k) < BAL.QTY[k] * 2) continue;
     const value = BAL.QTY[k] * supValue(k === "ammo" ? "ammo" : k) * 1.15;
     for (const j of GIVE) {
@@ -464,15 +511,19 @@ function tradeCard(state, ms) {
   }
   if (!opts.length) return null;
   const { f, k, j, q } = opts[Math.floor(dice(state, "trade", day(state)) * opts.length)];
+  return tradeOffer(state, f, k, j, q);
+}
+// f offers q of j for BAL.QTY[k] of k (coalTrade: what an envoy carries for it, envoys.js).
+function tradeOffer(state, f, k, j, q) {
   const qty = BAL.QTY[k];
   return {
-    title: `Coalition: ${f.name} offer a trade`, coalIds: [f.id], coalKind: "trade",
+    title: `Coalition: ${f.name} offer a trade`, coalIds: [f.id], coalKind: "trade", coalTrade: { k, j, q },
     text: `${f.name} need ${SUP_WORD[k]} and offer ${q} ${SUP_WORD[j]} for ${qty} ${SUP_WORD[k]}, a little over the value. (${bandHint(state, f)}.)`,
     choices: [
-      { label: `Trade ${qty} ${SUP_WORD[k]} for ${q} ${SUP_WORD[j]}`, hint: `${sign(BAL.GAIN.trade)} with ${f.name}`, disabled: (st) => hubHas(st, k) < qty || available(f, j) < q,
+      { label: `Trade ${qty} ${SUP_WORD[k]} for ${q} ${SUP_WORD[j]}`, hint: `${sign(BAL.GAIN.trade)} with ${f.name}`, disabled: (st) => hubHas(st, k) < qty || spareOf(st, f, j) < q,
         ai: (st) => (hubHas(st, k) >= qty * 2 ? 3 + worry(st, f) : -1),
         resolve: (st) => {
-          if (hubHas(st, k) < qty || available(f, j) < q) return "The goods are no longer there.";
+          if (hubHas(st, k) < qty || spareOf(st, f, j) < q) return "The goods are no longer there.";
           const sent = sendGoods(st, f, k, qty);
           takeGoods(st, f, j, q);
           accepted(st, f, "trade", "Traded when they needed it", BAL.GAIN.trade, "trade");
@@ -483,8 +534,8 @@ function tradeCard(state, ms) {
   };
 }
 
-function militaryCard(state, ms) {
-  const opts = ms.map((f) => ({ f, need: groupNeed(state, f) })).filter((o) => o.need);
+function militaryCard(state, ms, focus = null) {
+  const opts = ms.filter((f) => inFocus(focus, f)).map((f) => ({ f, need: groupNeed(state, f) })).filter((o) => o.need);
   if (!opts.length) return null;
   const { f, need: nd } = opts[Math.floor(dice(state, "mil", day(state)) * opts.length)];
   const days = 4 + Math.floor(dice(state, "days", day(state), f.name) * 4);

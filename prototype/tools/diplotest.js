@@ -34,6 +34,7 @@ import { PAYOUT } from "../src/sim/upkeep.js"; // the pay-out reserve: a group's
 
 import { execFileSync, execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { worksAt } from "../src/sim/groupworks.js";
 const DIGEST = process.argv[2] === "--digest"; // child process for the determinism check: prints one world's digest
 const COLLAPSE = process.argv[2] === "--collapse"; // child process: one year with (on) or without (off) wars between groups
 const seed = Number(process.argv[DIGEST || COLLAPSE ? 3 : 2] || 42);
@@ -72,7 +73,7 @@ function setup(s = seed) {
   const g = st.grid;
   const spots = g.within(h.tile, 7).filter((t) => g.distance(t, h.tile) >= 4 && free(st, t) && planPath(st, t, h.tile, false));
   const live = st.factions.filter((f) => f.alive);
-  live.forEach((f, i) => { f.known = true; const t = spots[i * 4]; if (t != null) f.bases.unshift(t); });
+  live.forEach((f, i) => { f.known = true; const t = spots[i * 4]; if (t != null) { f.bases.unshift(t); worksAt(f, t).radio = 1; } }); // envoys.js: a set of their own, a radio link both ways
   recomputeOwnership(st);
   D.ensureDiplo(st);
   st.cards.length = 0;

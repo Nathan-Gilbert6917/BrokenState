@@ -20,6 +20,7 @@ import * as AL from "../src/sim/alliance.js";
 import * as C from "../src/sim/coalition.js";
 import * as W from "../src/sim/playerwars.js";
 import * as V from "../src/sim/volunteers.js";
+import { worksAt } from "../src/sim/groupworks.js"; // envoys.js: a radio link needs a set of their own too
 
 const SEED = Number(process.argv[2] || 7);
 let passed = 0, failed = 0;
@@ -48,6 +49,7 @@ function setup(types, { seed = SEED, gap = 3, members = true } = {}) {
     const t = spots.find((x) => used.every((u) => g.distance(u, x) >= gap));
     used.push(t);
     Object.assign(f, { type, bases: [t], known: true, pop: 24, pact: "trade", goodwill: 60 });
+    worksAt(f, t).radio = 1; // a station of their own: the asks come by radio (envoys.js tools/envoystest.js has them by envoy)
     setFood(f, 400);
     fs.push(f);
   }
