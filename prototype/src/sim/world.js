@@ -170,6 +170,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
     gunSlots: 1, attachV: 2, // (attachV: gunmods.js migrateParts, save.js) // a world with gun attachment slots (gunmods.js; save.js: older saves have their guns' parts moved on load)
     machinesV: 1, // machines-2: generators with no operator, the pressure canner fitted to a kitchen (save.js migrates older saves)
     genTiersV: 1, // gen-tiers: generators have tiers (power.js GEN_TIERS; save.js makes older saves' generators tier 1)
+    toolsV: 1, // the tools: a new world in either mode is born with them (toolreqs.js migrateTools is for older saves only)
     raidMaps: 1, // raid maps by the World… dials (worldcfg.js RAID_MAPS; save.js: an older save keeps its old raid map sizes)
     groupJails: 1, // jailhouse: the AI groups keep prisoners in jails they build, work them and trade them (groupjails.js); older saves: no limit
     grid: map.grid, tiles: map.tiles, cityId: map.cityId, originId: map.originId,
@@ -257,8 +258,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
   state.survivors.forEach((s, i) => starterMags(s, onPoints(i) ? null : state.bases[0].armory)); // carrykit.js: two spare magazines with a starting gun (section 15)
   state.kitV = 2; // carry kit: rigs, magazines as items, carriers with plates (carrykit.js migrateKit for older saves)
   state.survivors[0].gear.armor = newItem("vest", 1, hash01(state.seed, "startdur", "vest"), START_DUR);
-  for (const k of HUB_TOOLS) state.bases[0].armory.push(newItem(k, 1, hash01(state.seed, "starttool", k), START_DUR)); // hashed dice: the world's are untouched
-  state.toolsV = 1; // the tools (toolreqs.js migrateTools for older saves)
+  for (const k of HUB_TOOLS) state.bases[0].armory.push(newItem(k, 1, hash01(state.seed, "startdur", `tool:${k}`), START_DUR)); // hashed dice: the world's are untouched
   state.survivors.forEach((s) => (s.location = { kind: "base", baseId: state.bases[0].id }));
   state.survivors[0].leader = true;
   // Who they were (hardcore-start.js normalStartBackgrounds, 2026-10-07): a background each, with dice of their own,

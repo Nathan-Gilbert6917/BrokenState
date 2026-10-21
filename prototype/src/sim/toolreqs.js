@@ -9,7 +9,7 @@
 // tool (GEAR toolWear) that is the only one of its kind for a job loses a use when the job is queued (wearTools).
 // AI groups build and craft by their own coarse rules (groupworks.js, arsenal.js) and need no tools.
 import { GEAR } from "./data.js";
-import { atBase } from "./world.js";
+import { atBase, residents } from "./world.js";
 import { hash01 } from "./skills.js";
 import { allCarried, lootItem, newItem } from "./inventory.js";
 import { siteSource, areaSource, traderSource } from "./itemcond.js";
@@ -79,11 +79,14 @@ export function wearTools(state, kinds, items, people, lists) {
 export const wearBaseTools = (state, base, kinds) => kinds.length && wearTools(state, kinds, baseToolItems(state, base), atBase(state, base.id), [base.armory || []]);
 
 // The basic kit the governor keeps at a base it runs (autopilot.js planCrafts): a makeshift tool crafted for a basic kind
-// nothing here covers, unless one is queued. Returns the recipe to queue, or null.
+// nothing of the base's covers, unless one is queued. Its own people's things count wherever they are (a woodcutter out
+// with the hatchet, a team it sent out with the shovel as a weapon: they bring them back). Returns the recipe, or null.
 export const BASIC_KINDS = ["hammer", "saw", "dig", "axe"];
 /** @param {any} state @param {any} base */
 export function basicToolWanted(state, base) {
-  const items = baseToolItems(state, base);
+  const teams = (state.parties || []).filter((p) => p.owner === "player" && p.homeBaseId === base.id);
+  const out = teams.flatMap((p) => partyToolItems(p, (p.members || []).map((id) => state.survivors.find((s) => s.id === id)).filter(Boolean)));
+  const items = [...(base.armory || []), ...residents(state, base.id).flatMap((s) => allCarried(s)), ...out].filter(Boolean);
   const q = base.crafting || [];
   for (const k of BASIC_KINDS) {
     const key = TOOL_MAKESHIFT[k];

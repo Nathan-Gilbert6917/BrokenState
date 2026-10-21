@@ -5,6 +5,7 @@
 // groups' jails (groupjails.js: built after capturing, capacity and the no-room fates by type, your captive's escape and
 // fate, groupJailTier for the rescue map, labour, trades between groups, a sale of your captive), save round-trips.
 // Usage: node tools/jailtest.js [seed]
+import { stockTools } from "./toolset.js"; // every tool a build or recipe can need (toolreqs.js)
 import { createWorld, tickHour, hub, atBase, day, newId, factionById } from "../src/sim/world.js";
 import { BUILDINGS, addBuilding, canBuild, queueBuild, constructionHour, SHELTER, plotsFree } from "../src/sim/buildings.js";
 import {
@@ -39,7 +40,7 @@ const near = (a, b, eps = 1e-9) => Math.abs(a - b) <= eps;
 const pct = (v) => `${Math.round(v * 1000) / 10}%`;
 const t0 = Date.now();
 
-const world = (s = seed) => { const st = createWorld({ seed: s, factionCount: 8 }); st.started = true; st.visitorsOff = true; return st; };
+const world = (s = seed) => { const st = createWorld({ seed: s, factionCount: 8 }); st.started = true; st.visitorsOff = true; stockTools(hub(st)); return st; }; // every tool (toolset.js)
 const jail = (h, type) => { h.buildings = h.buildings.filter((b) => !JAIL[b.type]); if (type) addBuilding(h, type); };
 const groupOf = (st, pred = () => true) => st.factions.find((f) => f.alive && f.pop >= 8 && f.bases.length && pred(f));
 // One average jail guard (prisoners.js JAIL_GUARD: Scouting 4 counts 1), on the roster and the Guard role.

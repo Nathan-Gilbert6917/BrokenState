@@ -4,6 +4,7 @@
 // background, a small team's skills and loaded seats, armed strangers sized to the team), saves before, during and
 // after the camp, and the autopilot founding one.
 // Usage: node tools/hcstarttest.js [autopilot games] [days] (default 8 games, 40 days)
+import { stockTools } from "./toolset.js"; // every tool a build or recipe can need (toolreqs.js)
 import { FOODS, foodIn } from "../src/sim/foods.js";
 import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { totalRounds, foldRounds } from "../src/sim/ammo.js"; // rounds by calibre
@@ -320,6 +321,7 @@ const campOf = (st) => st.bases.find((b) => b.camp === true) || null;
   if (h) {
     h.construction.length = 0;
     Object.assign(h.stock, { scrap: 200, parts: 20, meds: 10, buildmat: 10, wood: 2000 });
+    stockTools(h); // a hammer, a saw, a shovel… (toolreqs.js): what a shelter may build is the subject here
     const ok = (k) => canBuild(st, h, k).ok;
     check(ok("rain_catcher") && ok("smoker") && ok("barricades") && ok("farm_plot") && ok("hub_up"), "a shelter builds a rain catcher, a drying rack, a barricade, a farm plot, and the step up into a base");
     check(ok("walls") && !ok("well") && !ok("storehouse") && !ok("radio"), "a wall (the Defenses tab: up to a timber palisade) but no well, storehouse or the rest at a shelter");

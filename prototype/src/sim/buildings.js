@@ -1085,9 +1085,10 @@ export function canBuildWall(state, base, opts = {}) {
   return { ...out, ok: true, gather: true }; // its materials are taken as they come in (gatherHour)
 }
 // The material a new ring is closed in when none is asked for (the governor): the best this base builds that its
-// stores cover now (the wood its heating needs kept back), else the one they cover most of.
+// stores cover now (the wood its heating needs kept back), else the one they cover most of. Only a material whose tools
+// are here (toolreqs.js WALL_TOOLS): scrap metal with no drill falls back to wood.
 function bestRingMat(state, base, pieces) {
-  const fits = (m) => sizeFits(base, WALL_TIERS[m].size) && !Object.entries(WALL_TIERS[m].req || {}).some(([sk, lvl]) => !atBase(state, base.id).some((s) => skill(s, sk) >= lvl));
+  const fits = (m) => sizeFits(base, WALL_TIERS[m].size) && !Object.entries(WALL_TIERS[m].req || {}).some(([sk, lvl]) => !atBase(state, base.id).some((s) => skill(s, sk) >= lvl)) && !buildToolProblem(state, base, "walls", WALL_TIERS[m].key);
   const keep = { wood: woodNeed(state, base).need };
   let best = 1, bestShare = -1;
   for (let m = WALL_TIERS.length - 1; m >= 1; m--) {
