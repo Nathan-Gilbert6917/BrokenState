@@ -5,6 +5,7 @@
 import { allianceMembers, controlledLand, ALLIANCE } from "../sim/alliance.js";
 import { standing, standingParts, pairStanding, pairParts, band, risks, recordOf, fatigue, landWithout, ensureBalance, BAL } from "../sim/coalition.js";
 import { commsWith } from "../sim/envoys.js"; // radio or envoy
+import { commsButton, loanButtons } from "./envoys.js"; // Communicate…, Request volunteers…, Propose a joint operation…
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -38,7 +39,8 @@ function memberRow(state, f, land) {
     <div class="spread"><b>${swatch(f.color)}${esc(f.name)}</b> ${commsBadge(state, f)}<span${tip(partsText(parts))} style="color:${tone(s)}">standing <b>${Math.round(s)}</b></span></div>
     <div class="row" style="gap:0.5rem;align-items:center">${standingBar(s, b)}<span class="muted"${tip(`By their kind (${f.type}) and their own temper: under ${b.leave} they may leave, a little likelier each day; under ${b.floor} they leave at once; leaving under ${b.hostile} they turn hostile${f.type === "raider" || f.type === "expansionist" || f.type === "zealot" ? " and declare war" : ""}. Another member under ${b.grudge} with them and they demand its expulsion.`)}>leaves under ${b.leave} · hostile under ${b.hostile}</span></div>
     <div>Goodwill ${Math.round(f.goodwill)}${partsList(parts) ? ` · ${partsList(parts)}` : ""}</div>
-    <div${tip(`Asks granted and refused (all time). The recent count fades ${Math.round((1 - BAL.TALLY_FADE) * 100)}% a day; each refusal over the grants with them makes the next refusal land harder (+${Math.round(BAL.FAT.OWN * 100)}%) and deepens "Requests ignored" day by day.`)}>Record: <b class="good">${r.nAcc}</b> granted · <b class="${r.nRef > r.nAcc ? "danger" : ""}">${r.nRef}</b> refused${x > 1.01 ? ` · <span class="danger">refusals land ×${x.toFixed(1)}</span>` : ""}</div>
+    <div class="row" style="margin:0.15rem 0">${commsButton(state, f)}${loanButtons(state, f)}</div>
+    <div${tip(`Asks granted and refused (all time). The recent count fades ${Math.round((1 - BAL.TALLY_FADE) * 100)}% a day; each refusal over the grants with them makes the next refusal land harder (+${Math.round(BAL.FAT.OWN * 100)}%) and deepens "Requests ignored" day by day.`)}>Record: <b class="good">${r.nAcc}</b> granted · <b class="${r.nRef > r.nAcc ? "danger" : ""}">${r.nRef}</b> refused${x > 1.01 ? ` · <span class="danger">refusals land ×${x.toFixed(1)}</span>` : ""}${r.tAcc || r.tRef ? ` · <span class="muted"${tip("Your asks of them (volunteers, joint operations: sim/loans.js)")}>they granted ${r.tAcc} of yours, refused ${r.tRef}</span>` : ""}</div>
     ${flags.length ? `<div>${flags.map((k) => `<span class="${RISK_CLASS[k.kind] || ""}">⚠ ${esc(k.text)}</span>`).join(" · ")}</div>` : ""}
     <div class="muted"${tip(`The coalition holds ${pct(land.pct)} of the land; the victory needs over ${pct(ALLIANCE.LAND_NEEDED)} and no group outside the coalition.`)}>If they leave: land ${pct(without)}${without <= ALLIANCE.LAND_NEEDED && land.pct > ALLIANCE.LAND_NEEDED ? ` <span class="danger">(under the ${pct(ALLIANCE.LAND_NEEDED)} needed)</span>` : ""}, and a group outside the coalition.</div>
   </div>`;

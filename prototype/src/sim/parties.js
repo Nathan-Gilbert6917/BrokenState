@@ -68,6 +68,7 @@ import { isCart, cartWearStep, cartRouteWear } from "./carts.js";
 import { openTrade, routeExchange } from "./trade.js";
 import { caravanArrive, caravanHour, caravanStop } from "./caravans.js";
 import { envoyArrive, envoyHome, envoyCarryOn, envoyLocked, envoyAiWait, envoyAiArrive, envoysHour, ENVOY_LOCKED } from "./envoys.js"; // messages carried in person (call-time only)
+import { loanPartyArrive } from "./loans.js"; // volunteers on loan, joint operations (call-time only)
 import { caravanGuarded } from "./jobs.js";
 import { caravanOrderChoices, gangAmbush, wouldRaid } from "./caravanraids.js"; // any caravan on the road can be robbed
 import { crashesHour, crashSurvey } from "./crashes.js";
@@ -2428,7 +2429,7 @@ function unloadAt(state, p, base, members) {
   addStock(base, p.supplies);
   addStock(base, p.cargo.supplies);
   base.armory.push(...p.cargo.gear);
-  for (const m of members) unpackPerson(state, m, base); // supitems.js: the water, meds, food… they carry as items, into the stores
+  for (const m of members) if (!m.loan) unpackPerson(state, m, base); // supitems.js: the water, meds, food… they carry as items, into the stores (loans.js: not what someone on loan carries: theirs)
   bodiesHome(state, p, base); // carriers.js
   const vs = partyVehicles(state, p); // every one it has (vehicles.js fleets)
   for (const x of vs) x.loc = { kind: "base", baseId: base.id };
@@ -2671,6 +2672,7 @@ function aiPartyHour(state, p) {
   }
   if (p.kind === "caravan" && p.phase !== "out") return caravanHour(state, p); // at your gates (caravans.js)
   if (p.kind === "envoy" && p.phase === "wait") return envoyAiWait(state, p); // envoys.js: at the gates, waiting for the answer
+  if (p.kind === "opparty" && p.phase === "wait") return; // loans.js: at the rendezvous, waiting for your team (loansHour)
   if (p.kind === "scav" && p.phase === "search") return scavSearchHour(state, p); // scavenging a site (aiscav.js)
   const entered = stepAlong(state, p, p.vehicle ? 1 : 0.9);
   const owner = entered.length && state.bases.length ? factionById(state, p.owner) : null;
@@ -2700,7 +2702,7 @@ function aiPartyHour(state, p) {
       }
       if (horde.size < 5) state.hordes.splice(state.hordes.indexOf(horde), 1); // too few left to be a horde
     }
-    if ((p.kind === "convoy" || p.kind === "caravan" || p.kind === "envoy") && !caravanGuarded(state, p)) { // jobs.js: raiders leave a caravan you escort alone; envoys.js: an envoy on the road is fair game too
+    if ((p.kind === "convoy" || p.kind === "caravan" || p.kind === "envoy" || p.kind === "loan" || p.kind === "opparty") && !caravanGuarded(state, p)) { // jobs.js: raiders leave a caravan you escort alone; envoys.js: an envoy on the road is fair game too
       for (const r of state.factions) {
         // Raider gangs (not a group they have a pact with), and aggressive groups at war with its group (caravanraids.js wouldRaid).
         if (!r.alive || r.id === p.owner || !isAggressiveType(r)) continue;
@@ -2765,6 +2767,8 @@ function aiPartyHour(state, p) {
       caravanArrive(state, p); // caravans.js: trade at your base, or home again
     } else if (p.kind === "envoy") {
       envoyAiArrive(state, p); // envoys.js: at the other end (the message delivered) or home (the answer known)
+    } else if (p.kind === "loan" || p.kind === "opparty") {
+      loanPartyArrive(state, p); // loans.js: volunteers at your base or home; a joint operation's party at the rendezvous
     } else if (p.kind === "scav") {
       scavArrived(state, p); // aiscav.js: at the site (search) or home (the haul into their stock)
     } else if (p.kind === "fwraid") {

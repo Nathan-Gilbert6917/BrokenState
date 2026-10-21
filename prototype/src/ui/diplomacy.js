@@ -25,7 +25,7 @@ import {
 } from "../sim/alliance.js";
 import { bandsOf, knownBands, bandInfo, militaryStatus } from "../sim/hardcore-groups.js";
 import { coalitionStandingTab } from "./coalition.js"; // the Coalition standing tab (sim/coalition.js)
-import { envoysTab, commsButton, ENVOY_ACTIONS, ENVOY_CHANGE } from "./envoys.js"; // the Envoys tab (sim/envoys.js)
+import { envoysTab, commsButton, loanButtons, ENVOY_ACTIONS, ENVOY_CHANGE } from "./envoys.js"; // the Envoys tab (sim/envoys.js)
 import { ask } from "./confirm.js";
 import { volAskButton } from "./volunteers.js"; // ask a group for volunteers (sim/volunteers.js) // joining or leaving a war, expelling a member, giving up a job ask first
 import { ensureBlocs, blocOf, blocMembers, blocTitle, foeText, leaveBlocSide, BLOC, previewVote, voteText, blocCarrier } from "../sim/blocs.js"; // AI blocs
@@ -215,7 +215,7 @@ export function groupCardExtras(state, f) {
     ${marketLine(m)}
     ${jobs.length ? `<div>${jobs.map((j) => `${JOB_TYPES[j.type].icon} ${esc(JOB_TYPES[j.type].name)} (${j.status === "offered" ? "offered" : "under way"})`).join(" · ")}</div>` : ""}
   </div>
-  <div class="row" style="margin-top:0.25rem">${commsButton(state, f)}${member ? "" : `<button class="mini" data-action="al-invite" data-id="${f.id}" ${inv ? "disabled" : ""}${tip(inviteTip(state, f, inv))}>Invite to the coalition</button>`}${declareRow(state, f)}</div>`;
+  <div class="row" style="margin-top:0.25rem">${commsButton(state, f)}${loanButtons(state, f)}${member ? "" : `<button class="mini" data-action="al-invite" data-id="${f.id}" ${inv ? "disabled" : ""}${tip(inviteTip(state, f, inv))}>Invite to the coalition</button>`}${declareRow(state, f)}</div>`;
 }
 // Their bloc (sim/blocs.js): its colour, the members, its foe; leave it if you stand with it.
 function blocLine(state, f) {

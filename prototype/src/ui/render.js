@@ -1632,7 +1632,13 @@ export function render(state) {
     }
     piece(cv, x, gy + dy, uk);
     notePiece(cv, x, gy, uk);
-    if (p.kind === "envoy") pill(x, y - 24 * s, `${p.errand || "✉ envoy"}`, "#6b5f2e", s); // sim/envoys.js: a group's envoy and its errand
+    if (p.kind === "envoy" || p.kind === "loan" || p.kind === "opparty") pill(x, y - 24 * s, `${p.errand || "✉ envoy"}`, "#6b5f2e", s); // sim/envoys.js, sim/loans.js: a group's envoy, volunteers or joint-op party and its errand
+  }
+  // Joint operations' rendezvous (sim/loans.js): a flag with the day, while one is planned or under way.
+  if (on("teams")) for (const o of (state.vols && state.vols.ops) || []) {
+    if (o.status !== "planned" && o.status !== "met") continue;
+    const [rx, ry] = g.toPixel(o.tile, HEX);
+    pill(rx, ry - 30 * zoomBoost(), `⚑ rendezvous day ${o.day}`, "#7a3b2e", zoomBoost());
   }
   // Hardcore mode (sim/hardcore-groups.js): bands on the road that will found a group, in that group's colors, where
   // you can see them; the military's strike force on its way to the city hive as its convoy of trucks.

@@ -48,7 +48,7 @@
 // for aid, how much they have spare and need it; military aid, the coalition, a pact, their own war or a horde. A
 // gift is always taken, a pact signed by the radio's rules (trade.js proposePact), an invitation accepted when they
 // would join (alliance.js inviteProblem, in person). A hostile group hears nothing.
-import { day, log, hub, baseById, factionById, snapshot, survivorById } from "./world.js";
+import { day, log, hub, baseById, factionById, snapshot, survivorById, addCard } from "./world.js";
 import { attitude, changeGoodwill } from "./factions.js";
 import { canRadioGroup, groupNetwork, netCovers, tradeBase } from "./radio.js";
 import { launchExpedition, estimateTrip, spawnAiParty, removeParty, partyTile, partyMembers, planPath, startReturn, tileLabel, carryCapacity, supplyLoad, teamName } from "./parties.js";
@@ -60,11 +60,13 @@ import { moveFoodUnits, foodIn, addFood, FOODS } from "./foods.js";
 import { useSupply, supplyAmt, isRoundKey } from "./rounds.js";
 import { payRoundsOf, suppliesText } from "./ammo.js";
 import { isMember, allianceMembers, inviteProblem, inviteToAlliance, holdCouncil, ensureAlliance } from "./alliance.js";
-import { standing, remember, withSink, replaySink, askCard, raiseArrived } from "./coalition.js";
+import { standing, remember, withSink, replaySink, askCard, raiseArrived, noteTheirAnswer } from "./coalition.js";
 import { warsOf } from "./diplomacy.js";
 import { sendCaravan } from "./caravans.js";
 import { note } from "./ledger.js";
 import { RAW } from "./water.js";
+import { loanQuote, sendLoan, opQuote, joinOp, noteOpAnswer, planOp, opById, proposalCard, loansHour, OPS } from "./loans.js"; // volunteers on loan, joint operations
+import { ensureVols } from "./volunteers.js";
 
 export const ENVOY = {
   PACK: 1.3, PACK_MIN: 1,      // food and water packed: the round trip's (estimateTrip) × PACK, at least PACK_MIN day a head more
@@ -89,6 +91,8 @@ export const KINDS = {
   askaid: { label: "Ask for aid", desc: "Some of their goods for nothing: they give what they can spare, and it costs a little standing." },
   askmil: { label: "Ask for military aid", desc: `Their fighters harry the next raid on a base of yours within ${ENVOY.HARRY_RANGE} tiles of them (its strength × ${ENVOY.HARRY}) for ${ENVOY.HARRY_DAYS} days.` },
   news: { label: "Send news or a warning", desc: "What you know of the dead near them: a warning of a horde near their land helps standing a little; they tell you what they see in return." },
+  volunteers: { label: "Request volunteers", desc: "Some of their people to live and work at a base of yours for a span of days (loans.js): at work, on your teams, in your fights. They weigh it by standing, their kind, their own headcount and trouble, the purpose and what you offer." },
+  jointop: { label: "Propose a joint operation", desc: "A hive, a crawl, a group's base, a horde or a place to raid, together: their fighters meet your team at a rendezvous on a day and join it (loans.js). A share of the loot makes them likelier to come." },
 };
 export const GOODS = ["food", "water", "meds", "ammo", "fuel", "scrap", "parts"];
 export const GET_GOODS = ["food", "water", "meds", "fuel", "scrap", "parts"];
@@ -147,6 +151,13 @@ export function aiAnswer(state, f, kind, payload = {}, salt = 0) {
     return f.goodwill >= needed ? { yes: true, p: null, why: "" } : { yes: false, p: null, why: `they want goodwill ${needed} for it (now ${Math.round(f.goodwill)})` };
   }
   if (kind === "invite") { const why = inviteProblem(state, f, true); return { yes: !why, p: null, why }; }
+  if (kind === "volunteers" || kind === "jointop") { // loans.js: volunteers.js askQuote's points and more
+    const o = kind === "jointop" ? opById(state, payload.opId) : null;
+    if (kind === "jointop" && !o) return { yes: false, p: null, why: "there is no such operation" };
+    const q = kind === "jointop" ? opQuote(state, f, o) : loanQuote(state, f, payload);
+    const worst = [...(q.parts || [])].sort((a, b) => a.v - b.v)[0];
+    return { yes: !!q.yes, p: null, points: q.points, why: q.yes ? "" : q.refuse || (worst ? `${worst.label} weighs against it` : "they said no") };
+  }
   const T = ENVOY.ODDS.type[f.type] || {};
   let needs = 0;
   if (kind === "trade") {
@@ -238,6 +249,19 @@ function deliver(state, msg, f, p) {
       credit(state, f, "askmil", "Asked for their fighters", ENVOY.GAIN.askMil, "favour");
       text = `${f.name} will harry the next raid on a base of yours near them (for ${ENVOY.HARRY_DAYS} days).`;
     } else text = `${f.name} will not send fighters (${a.why}).`;
+  } else if (msg.kind === "volunteers") {
+    const loan = yes ? sendLoan(state, f, P, msg.id) : null;
+    if (yes && !loan) { msg.answer.yes = false; msg.answer.why = "they could not get anyone to you"; }
+    noteTheirAnswer(state, f, !!loan);
+    if (!loan) ensureVols(state).refused[f.id] = day(state);
+    text = loan ? `${f.name} send ${loan.n} of theirs to ${(baseById(state, loan.baseId) || {}).name} for ${loan.days} days.` : `${f.name} will send nobody (${msg.answer.why}).`;
+  } else if (msg.kind === "jointop") {
+    const o = opById(state, P.opId);
+    const party = yes && o ? joinOp(state, f, o, msg.id) : null;
+    if (yes && !party) { msg.answer.yes = false; msg.answer.why = "they could not get anyone there"; }
+    if (o && !party) noteOpAnswer(state, f, o, false);
+    noteTheirAnswer(state, f, !!party);
+    text = party ? `${f.name} join the operation: ${o.groups.find((g) => g.fid === f.id).n} of theirs at ${tileLabel(state, o.tile)} on day ${o.day}.` : `${f.name} will not join the operation (${msg.answer.why}).`;
   } else if (msg.kind === "news") {
     if (yes) {
       const h = hordeNear(state, f);
@@ -286,6 +310,18 @@ export function messageProblem(state, f, kind, payload = {}, base = hub(state)) 
   if (kind === "pact" && !["nonaggression", "trade"].includes(payload.pact)) return "Pick the pact.";
   if (kind === "invite" && isMember(state, f)) return `${f.name} is already in the coalition.`;
   if (kind === "invite" && (f.outsider || f.nomad)) return `${f.name} join nothing.`;
+  if (kind === "volunteers") {
+    if (!baseById(state, payload.baseId)) return "Pick the base they come to.";
+    if (!(payload.n >= 1) || !(payload.days >= 1)) return "How many, and for how long?";
+    const o = payload.offer;
+    if (o && o.qty > 0 && !has(o.key, o.qty)) return `${base.name} has not ${o.qty} ${WORD[o.key] || o.key} to offer.`;
+  }
+  if (kind === "jointop") {
+    const o = payload.opId != null ? opById(state, payload.opId) : null;
+    if (payload.opId != null && (!o || o.status === "done" || o.status === "off")) return "That operation is over.";
+    if (o && o.groups.some((g) => g.fid === f.id && g.status !== "refused")) return `${f.name} are already asked.`;
+    if (!o && (!OPS[payload.op] || payload.target == null)) return "Pick the operation and its target.";
+  }
   return "";
 }
 // The base of theirs an envoy goes to: the nearest to where it sets out.
@@ -322,9 +358,16 @@ export function envoyPlan(state, { fid, kind, payload = {}, memberIds = [], vehi
 export function communicate(state, opts) {
   const f = factionById(state, opts.fid);
   const home = opts.fromBaseId != null ? baseById(state, opts.fromBaseId) : hub(state);
-  const kind = opts.kind, P = opts.payload || {};
+  const kind = opts.kind;
+  let P = opts.payload || {};
   const why = messageProblem(state, f, kind, P, home);
   if (why) return { ok: false, text: why };
+  if (kind === "jointop") { // loans.js: the operation, and this group asked to it
+    const o = P.opId != null ? opById(state, P.opId) : planOp(state, { op: P.op, target: P.target, tile: P.tile ?? null, dayAt: P.dayAt ?? null, share: P.share || 0, n: P.n || 3 });
+    const g = o.groups.find((x) => x.fid === f.id);
+    if (g) g.status = "asked"; else o.groups.push({ fid: f.id, status: "asked" });
+    P = { ...P, opId: o.id };
+  }
   if (commsWith(state, f) === "radio") {
     const a = aiAnswer(state, f, kind, P, `r${ensureEnvoys(state).seq}`);
     if (!KINDS[kind].carry) {
@@ -454,7 +497,7 @@ function sendAiEnvoy(state, f, msg, toTile, goods = null) {
   p.envoy = msg.id;
   p.homeTile = from;
   p.goods = goods || { supplies: {}, gear: [] };
-  p.errand = msg.kind === "ask" ? `✉ ${msg.ask}` : msg.kind === "council" ? "✉ council" : "✉ word";
+  p.errand = msg.kind === "ask" ? `✉ ${msg.ask}` : msg.kind === "council" ? "✉ council" : msg.kind === "propose" ? "✉ joint op" : "✉ word";
   msg.partyId = p.id;
   return p;
 }
@@ -499,6 +542,17 @@ export function envoyAiArrive(state, p) {
     msg.status = "delivered";
     const C = ensureEnvoys(state).council;
     if (!C || C.held) return goHome(state, p);
+    p.phase = "wait";
+    return;
+  }
+  if (msg.kind === "propose") { // loans.js: a joint operation they propose
+    msg.status = "delivered";
+    if (!f || !f.alive || !hub(state)) { msg.answered = true; return goHome(state, p); }
+    const card = proposalCard(state, f, msg.prop, (st, yes, o) => { msg.accepted = !!yes; msg.opId = o ? o.id : null; });
+    card.envoyMsg = msg.id;
+    card.text = `${f.name}'s envoy has come to ${hub(state).name}. ${card.text} Their envoy takes your answer home; their fighters set out once they hear it.`;
+    for (const ch of card.choices) wrapChoice(state, ch, msg, p);
+    addCard(state, card);
     p.phase = "wait";
     return;
   }
@@ -560,7 +614,8 @@ function aiHome(state, p, msg, f) {
     msg.status = "returned";
     msg.returned = state.hour;
     ensureEnvoys(state).stats.returned++;
-    if (msg.kind === "ask" && msg.calls && f && f.alive) wordHome(state, f, msg.calls);
+    if ((msg.kind === "ask" || msg.kind === "propose") && msg.calls && f && f.alive) wordHome(state, f, msg.calls);
+    if (msg.kind === "propose" && msg.accepted && f && f.alive) { const o = opById(state, msg.opId); if (o) joinOp(state, f, o); } // they heard your yes: their fighters set out
   }
   removeParty(state, p);
 }
@@ -579,6 +634,19 @@ function wordHome(state, asker, calls) {
     const msg = newMsg(state, { from: asker.id, to: id, kind: "word", calls: cs });
     if (!sendAiEnvoy(state, asker, msg, destOf(state, o, { tile: asker.bases[0] }))) { msg.status = "lost"; msg.noRoute = true; }
   }
+}
+
+// loans.js: a joint operation a group proposes: a card now by radio, else carried by its envoy. True: sent.
+export function proposeRoute(state, f, prop) {
+  const h = hub(state);
+  if (!h) return false;
+  if (canRadioGroup(state, f)) {
+    addCard(state, proposalCard(state, f, prop, (st, yes, o) => { if (yes && o) joinOp(st, f, o); }));
+    return true;
+  }
+  const msg = newMsg(state, { from: f.id, to: "you", kind: "propose", prop, title: `${f.name} propose a joint operation` });
+  if (!sendAiEnvoy(state, f, msg, h.tile)) { msg.status = "lost"; msg.noRoute = true; return false; }
+  return true;
 }
 
 // ---------- the council (alliance.js council) ----------
@@ -614,6 +682,7 @@ function councilHour(state) {
 
 // ---------- hourly (parties.js movePartiesHour) ----------
 export function envoysHour(state) {
+  loansHour(state); // loans.js: volunteers on loan, joint operations
   const E = state.envoys;
   if (!E || !E.msgs.length) return;
   const d = day(state);
@@ -662,7 +731,7 @@ export function messageList(state, n = 14) {
   return rows.map((m) => {
     const status = statusOf(state, m);
     const mine = m.from === "you";
-    const what = mine ? KINDS[m.kind] ? KINDS[m.kind].label : m.kind : m.kind === "council" ? "a delegate to the council" : m.title ? m.title.replace(/^Coalition: /, "") : "a request";
+    const what = mine ? KINDS[m.kind] ? KINDS[m.kind].label : m.kind : m.kind === "council" ? "a delegate to the council" : m.kind === "propose" ? "a joint operation" : m.title ? m.title.replace(/^Coalition: /, "") : "a request";
     const answer = mine ? (status === "returned" ? (m.homeText || (m.answer && m.answer.text) || "") : "") : m.answerLabel ? `you answered: ${m.answerLabel}` : "";
     return { m, status, who: mine ? nameOf(state, m.to) : nameOf(state, m.from), mine, what, via: m.via || "envoy", answer, due: m.due ?? null };
   });

@@ -29,6 +29,7 @@ import { SHOVE, BOARD, CRAWL, FURNITURE, shoveable, isBoarded } from "../sim/bar
 import { NOMADS } from "../sim/nomads.js"; // nomad bands: one entry a tier
 import { BAL } from "../sim/coalition.js"; // keeping the coalition together
 import { ENVOY, envoysHelp } from "../sim/envoys.js"; // envoys and radio links
+import { LOAN } from "../sim/loans.js"; // volunteers on loan, joint operations
 import { ERA_OPEN } from "../sim/blueprints.js"; // the radio station's era
 import { BUILDINGS, RECIPES, PLOT_NAMES } from "../sim/buildings.js";
 import { CONDITIONS, SICK } from "../sim/health.js";
@@ -374,6 +375,13 @@ function groupEntries() {
     text: "Every member of the Calder Coalition weighs you and the others all the time, as rulers do in a grand strategy game. What you grant and refuse, the rulings you make between them, the fights you join, all go on a ledger of named modifiers that fade with time, on top of their goodwill and their relations with each other. Neighbours rub each other raw on the border, trade partners and those who share an enemy grow closer, and now and then something happens between them. Touchy kinds (raiders, zealots, expansionists) leave sooner than communes and traders; a warlike member that leaves in anger declares war on you.",
     how: "Open Diplomacy → Coalition standing: each member's bar, its leave and hostile lines, what it remembers, its record and its risks, and the grid of how members feel about each other. Grant the asks of members close to their line, split quarrels when you can, and do not refuse the same member again and again. A member who leaves takes its land out of the count and is a group outside the coalition, which blocks the victory.", sprite: null,
   });
+  // Volunteers on loan and joint operations (sim/loans.js): opened once you have asked for either.
+  out.push({
+    key: "k:loans", cat: "groups", name: "⚑ Volunteers on loan and joint operations", sub: "Their people with yours",
+    stats: [["Asking", "Diplomacy → Envoys: Request volunteers (a base, how many, how long, a purpose, an offer or a favour) or Propose a joint operation; by envoy, or at once by radio"], ["They weigh", "standing, their kind, their own headcount and trouble (a war, a horde), the danger of the purpose, what you offer, a loot share"], ["On loan", `live at the base as your own: roles, beds, food, teams, your fights; their kit is theirs; home when the days are up or their group calls them back`], ["A death", `costs standing: ${LOAN.DEATH.other} in your care, ${LOAN.DEATH.fight} in a fight, ${LOAN.DEATH.op} on the work they came for`], ["Joint operation", `their party waits at the rendezvous up to ${LOAN.WAIT} days past the day; your team there: they join it as volunteers (their group's orders in a fight); the loot share when they leave; fighting together +${LOAN.FOUGHT}`]],
+    text: "A group can lend you people: they walk to your base, live there and work like your own for the days agreed, and walk home again. Or several groups can join you for one blow: a hive, a crawl, a group's base, a horde, a place to raid. Their parties are on the map on the way and can be ambushed: a party that never comes is missed, and the operation goes on with whoever is there. The groups propose operations to you too.",
+    how: "Mark the rendezvous (⚑ on the map) and bring a team there on or after the day. Promise a share of the loot to win a reluctant group over, and pay it: spending the haul before they get their share costs standing. Keep loaned people alive: a death in your care costs much more than one in the fight they came for.", sprite: null,
+  });
   // Envoys (sim/envoys.js): opened once you know a group.
   out.push({
     key: "k:envoys", cat: "groups", name: "✉ Envoys and radio links", sub: "Word carried in person",
@@ -569,6 +577,7 @@ function seenNow(state) {
   for (const f of state.factions || []) if (f.known && FACTION_TYPES[f.type]) keys.add(`g:${f.type}`);
   if (state.alliance && Array.isArray(state.alliance.members) && state.alliance.members.length) keys.add("k:coalition"); // sim/coalition.js
   if ((state.factions || []).some((f) => f.known) || (state.envoys && state.envoys.msgs.length)) keys.add("k:envoys"); // sim/envoys.js
+  if (state.vols && ((state.vols.baseLoans || []).length || (state.vols.ops || []).length)) keys.add("k:loans"); // sim/loans.js
   for (const v of state.visitors || []) if (v && live.has(v.tile)) keys.add(`o:${v.kind}`);
   for (const b of (state.nomads && state.nomads.bands) || []) if (b && b.known && live.has(b.tile)) keys.add(`n:${b.tier}`); // sim/nomads.js
   // Points of interest known on a tile seen or reported (sim/pois.js: the hub's knowledge, never a hidden one).

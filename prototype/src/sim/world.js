@@ -99,6 +99,7 @@ import { leavePlayerBase, abandonedAt } from "./groupworld.js"; // a lost outpos
 import { noteLootAge } from "./itemcond.js"; // the years since the fall: shops and homes keep getting worse (COND_AGE)
 import { starterMags } from "./carrykit.js"; // a starting gun's spare magazines
 import { volunteersHour, volunteerFell } from "./volunteers.js"; // people lent between groups, both ways
+import { loanFell } from "./loans.js"; // people on loan to your bases
 import { noteLook, keepLook } from "./intelnotes.js"; // what your people learned of the groups' bases (the State Map's estimates, intelest.js)
 import { jobTripsHour } from "./jobtrips.js"; // the outdoor jobs in trips: out to the base's land and home with the load
 import { seedRoadCarts } from "./carts.js"; // abandoned carts on the roads near towns (a new world)
@@ -651,6 +652,7 @@ export function killSurvivor(state, s, tileId, cause, extraItems = []) {
   s.inBed = false;
   log(state, `${s.name} died ${cause}.`, "death");
   if (s.vol) volunteerFell(state, s, tileId, cause); // volunteers.js: another group's person: their group mourns, not your memorial wall
+  else if (s.loan) loanFell(state, s, tileId, cause); // loans.js: on loan to you: their group mourns (standing), not your memorial wall
   else {
     const entry = onDeath(state, s, tileId, cause); // relations.js: grief for friends and a partner, a line on the memorial wall
     noteDeath(state, s, tileId, cause, entry); // causes.js: why it happened, on the memorial entry

@@ -174,7 +174,13 @@ export function pairParts(state, a, b) {
 
 // ---------- the tally and fatigue ----------
 const recOf = (state, f) => { const B = ensureBalance(state); return B.rec[f.id] || (B.rec[f.id] = { acc: 0, ref: 0, nAcc: 0, nRef: 0 }); };
-export const recordOf = (state, f) => ({ ...recOf(state, f) });
+export const recordOf = (state, f) => ({ tAcc: 0, tRef: 0, ...recOf(state, f) });
+// Their answer to an ask of yours (loans.js: volunteers, a joint operation): on the record (tAcc / tRef), no fatigue.
+export function noteTheirAnswer(state, f, yes) {
+  if (!f || !isMember(state, f)) return;
+  const r = recOf(state, f);
+  if (yes) r.tAcc = (r.tAcc || 0) + 1; else r.tRef = (r.tRef || 0) + 1;
+}
 // One answer to a member's ask (any: these cards, the council's, a call for volunteers). Not a member: nothing.
 export function noteAnswer(state, f, accepted) {
   if (!f || !isMember(state, f)) return;
