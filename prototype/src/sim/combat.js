@@ -51,6 +51,7 @@ import { siegeSetup, siegeAct, siegeAI, botSiege, afterMove, checkRams, isCrew, 
 import { lureTurn, herded, shepherdTurn, botDecoy, lureEdge } from "./decoys.js"; // decoys, fire and the senses of the dead; the Shepherd
 import { battlePerks, battleXp, rollBook, fightXp, hash01 } from "./skills.js";
 import { battleRecord, friendAim, teamSpirit } from "./relations.js";
+import { bondNerve } from "./bonds.js"; // friends alongside: steadier nerve
 import { refitSenses, senses } from "./stealth.js";
 import { LIGHTS } from "./lights.js"; // a light's name (switchAct)
 import { gunMods, unitMods, modRange, modLabel, enemyMods, fittedSuppressor, NO_MODS, situationalAim, roundReach } from "./gunmods.js"; // gun attachments; a fitted magazine changes a gun's capacity (magCap)
@@ -3373,7 +3374,7 @@ export function playerUnit(b, s, side = "player") { // side: fighters.js builds 
     weapon: key, weaponName: key === "fists" ? (item ? `${item.name} (unusable)` : "Fists") : modLabel(item), // "9mm pistol (red dot, suppressor)"
     gm: key === "fists" ? NO_MODS : gunMods(item), gmWeapon: key, // gunmods.js: what its attachments add (shotOdds, shotNoise)
     aim: 40 + skill(s, "shooting") * 2.5 - (1 - mult) * 30 + bravery + ((b.setup && b.setup.relAim && b.setup.relAim[s.id]) || 0) + buzzAim(s) + needsAim(s) + illnessAim(s) + tiredAim(s), // friends alongside, rivals, revenge (relations.js); a hangover (comforts.js); hunger, thirst (needs.js); illness (health.js); tiredness (sleep.js)
-    nerve: (s.traits.includes("brave") ? MIDDEAD.NIGHTMARE.BRAVE : 0) + (s.traits.includes("coward") ? MIDDEAD.NIGHTMARE.COWARD : 0), // middead.js: a Nightmare's scream
+    nerve: (s.traits.includes("brave") ? MIDDEAD.NIGHTMARE.BRAVE : 0) + (s.traits.includes("coward") ? MIDDEAD.NIGHTMARE.COWARD : 0) + ((b.setup && b.setup.relNerve && b.setup.relNerve[s.id]) || 0), // middead.js: a Nightmare's scream; friends alongside (bonds.js)
     strongBack: s.traits.includes("strongback"), // shoving.js: a harder shove
     bulldozer: s.traits.includes("bulldozer") ? { shove: traitFx(s, "bulldozer", "shove"), knock: traitFx(s, "bulldozer", "knock") } : null, // shoving.js
     meleeAim: 75 + meleeAimBonus(s) + bravery + meleeTraitAim(s), dmgMult: (0.6 + 0.4 * mult) * (0.75 + 0.25 * q), // Melee (world.js MELEE_SKILL): 75 at Melee 5, ±2 a point
@@ -3724,6 +3725,7 @@ const initials = (name) => name.split(" ").map((w) => w[0]).join("").slice(0, 2)
 // ---------- setup ----------
 export function createBattle(state, setup) {
   setup.relAim = friendAim(state, combatants(state, setup), setup); // relations.js: aim per survivor id
+  setup.relNerve = bondNerve(state, combatants(state, setup)); // bonds.js: nerve per survivor id (a Nightmare's scream)
   if (setup.mode === "raid") return createRaid(state, setup);
   const rs = state.rng.state; // raidplan.js: the dice the map is made from (the same map again)
   [W, H] = battleSize(state, setup);

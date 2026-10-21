@@ -39,6 +39,7 @@ import { tileLabel } from "./parties.js";
 import { RAW } from "./water.js";
 import { armTripEvent, fireTripEvent, holdTrip, creditBonus, holdText, followHold, bankFinds } from "./tripevents.js"; // trouble on the way (trips-plus #2); a crew's (teamwork)
 import { noteMates, teamMult, matesText } from "./teamwork.js"; // teamwork: the same job on the same tile at the same time, a crew
+import { bondCrewMult } from "./bonds.js"; // bonds: a friend in the crew, a rival (call-time only)
 import { lunchOverlap, isLunchHour } from "./meals.js"; // the lunch break out at work
 import { PACK, packFood, topUpPack } from "./eating.js"; // the food they take out for lunch
 import { chopHour, hasChopWork } from "./woodwork.js"; // woodwork: the woodcutters fell the trees marked on the base map before going out
@@ -179,7 +180,8 @@ function rollLoad(state, base, s, t) {
   const n = noteMates(state, s, t);
   const tm = teamMult(t.job, n);
   if (n > 1) t.crewN = n;
-  const hrs = tripHours(state, t) * (TRIP_JOBS[t.job].fixed ? 1 : tm);
+  const bm = n > 1 ? bondCrewMult(state, s, t) : 1; // bonds.js: friends in the crew work better, a rival worse
+  const hrs = tripHours(state, t) * (TRIP_JOBS[t.job].fixed ? 1 : tm * bm);
   if (!(hrs > 1e-6)) return { empty: true };
   const h = sampleHour(t);
   switch (t.job) {

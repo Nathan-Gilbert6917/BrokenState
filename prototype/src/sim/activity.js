@@ -66,6 +66,7 @@ import { MEALS, MEAL_WORK_SHARE, mealOf, lunchHour } from "./meals.js";
 import { hasKitchen, kitchenService, eatsAtKitchen, cookActivity, cookPlusOf, cookShiftRole, kitchenCanLight } from "./kitchen.js"; // the Kitchen's cooks and its hot meals
 import { haulActivity } from "./hauling.js"; // hauling: the Haul job's line (call-time only)
 import { helpingAs, helpLine } from "./noidle.js"; // noidle: a Manual person whose job has no work this hour helps elsewhere (call-time only)
+import { bondWorkNote } from "./bonds.js"; // bonds: beside a friend or a rival on the job (call-time only)
 
 // Icons by job, and by kind for everything that is not a job.
 export const JOB_ICONS = { water: "🪣", wood: "🪓", farm: "🌱", forage: "🍄", hunt: "🏹", fish: "🎣", build: "🔨", craft: "🧰", operate: "⚙️", medic: "✚", trainee: "✚", teach: "🎓", read: "📚", scavenge: "🔍", guard: "🛡️", rest: "☕", cook: "🍳", haul: "📦" };
@@ -136,6 +137,8 @@ export function describeActivity(state, s, h = hourOfDay(state), opts = {}) {
   }
   const a = jobActivity(state, base, s, job, h, opts);
   if (t && t.why && !a.why.includes(t.why)) a.why = a.why ? `${a.why} ${t.why}.` : t.why;
+  const bn = a.kind === "work" ? bondWorkNote(state, s) : ""; // bonds.js: who they work beside
+  if (bn) a.why = a.why ? `${a.why} ${bn}` : bn;
   // noidle.js: their own job has no work this hour, so they help with this one ("No building to do: helping chop wood").
   if (helpingAs(s) === job && h === hourOfDay(state) && a.kind === "work") return helpLine(s, a);
   return a;

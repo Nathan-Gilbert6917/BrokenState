@@ -10,7 +10,8 @@
 // survivors who have grown close (partners, relations.js), remembering the dead (a memorial service), rats in the food
 // stores, the dead at the fence, a sick traveller at the gate, a cold snap in winter, music by the fire at night and a
 // wreck below the walls to strip. Hardcore's first year adds hungry people at the gate, a deserter from the Guard, the
-// emergency broadcast going quiet (once) and refugees from the city where the outbreak began.
+// emergency broadcast going quiet (once) and refugees from the city where the outbreak began. The cards about how
+// people get on (a feud, making up, a friend's ask, an apprentice, jealousy, a theft, a new face) are bondevents.js's.
 import { foodIn, payFood, takeFood, addFood, addFoodUnits, gainGoods, foodText } from "./foods.js"; // the cards' food in days (a feast, scraps, a theft)
 import { BUILDINGS, BEDS, count, assignStations } from "./buildings.js";
 import { SUPPLIES, supValue } from "./data.js";
@@ -33,6 +34,7 @@ import { isHardcore } from "./hardcore.js"; // hardcore's year Calder falls: hub
 import { hardcoreEraOffset, hcOutbreakCity } from "./hardcore-outbreak.js";
 import { hcMilitary } from "./hardcore-groups.js";
 import { cfgOf } from "./worldcfg.js"; // the run's dials: Events
+import { BOND_EVENTS } from "./bondevents.js"; // bonds: a feud, making up, a friend's ask, an apprentice, jealousy, a theft, a new face
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const firstName = (s) => s.name.split(" ")[0];
@@ -711,6 +713,7 @@ export const HUB_EVENTS = {
     card: (st, c) => memorialCard(st, c.base),
   },
 };
+Object.assign(HUB_EVENTS, BOND_EVENTS); // bondevents.js: the cards about how people get on
 export const HUB_EVENT_IDS = Object.keys(HUB_EVENTS);
 
 // ---------- how often ----------
