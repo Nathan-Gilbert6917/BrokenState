@@ -70,6 +70,7 @@ import { watchShift, shiftText } from "./watch.js"; // the base's watch roster (
 import { sleepingIn } from "./sleep.js"; // off a watch: sleep until rested
 import { wormFilterUrgent, woodCritical, farmCrewLimits, FARM_AP } from "./autopilot.js"; // the governor's rules: a filter while the worm is in the water (planRoles 1b), the autumn's woodcutters (4a)
 import { baseAmmo } from "./ammo.js"; // rounds by calibre: what fits the guns there
+import { bondPull } from "./bonds.js"; // a friend's job pulls, a rival's pushes (within a priority; call-time only)
 import { KITCHEN, hasKitchen, cooksWanted, isCookHour, kitchenCanLight, markCooked } from "./kitchen.js"; // the Kitchen's cooks (work type "meals")
 
 export const PRIO_MAX = 5;
@@ -918,6 +919,7 @@ export function planBase(state, base) {
       if (give(s, key, prio(state, s, key), "emerg", `Emergency: ${em.why} (${T.name} is set)`)) slots--;
     }
   }
+  const pull = bondPull(state, people); // bonds.js: beside a friend, away from a rival (a fraction of a skill point)
   for (let p = 1; p <= PRIO_MAX && ctx.free.size; p++) {
     const pairs = [];
     for (const s of ctx.free) {
@@ -929,7 +931,7 @@ export function planBase(state, base) {
         if (o.cap - ctx.used[key] <= 0) { note(s, key, o.cap ? o.capNote || `full (${ctx.used[key]} of ${o.cap})` : o.why); continue; }
         const why = T.can ? T.can(ctx, s) : "";
         if (why) { note(s, key, why); continue; }
-        pairs.push({ s, key, urg: o.urg || 0, score: (o.urg || 0) + rankOf(ctx, s, key) / 4 + (s.task && s.task.t === key ? STICKY : 0) });
+        pairs.push({ s, key, urg: o.urg || 0, score: (o.urg || 0) + rankOf(ctx, s, key) / 4 + (s.task && s.task.t === key ? STICKY : 0) + pull(s, key) });
       }
     }
     pairs.sort((a, b) => b.score - a.score || a.s.id - b.s.id || WORK_KEYS.indexOf(a.key) - WORK_KEYS.indexOf(b.key));

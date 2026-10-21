@@ -1,15 +1,17 @@
 // Relationships, mood breakdown, service record and the memorial wall in the UI (sim/relations.js).
 // - relChip: a compact chip for the People tab / roster (♥ partner, +n friends, −n rivals; names in the tooltip);
 // - moodTipAttr: every mood factor with its number, as a multi-line tooltip for a mood bar;
-// - relationsSection: the survivor screen's mood, people, service record and notable moments;
+// - relationsSection: the survivor screen's mood, people (level, opinion and why: sim/bonds.js), their bonds' buffs
+//   and debuffs now, service record and notable moments;
 // - memorialModal / memorialButton: the Memorial wall (from the base panel), with a memorial service;
 // - REL_ACTIONS: the handlers (main.js registers them).
 import { day, survivorById, baseById, hub } from "../sim/world.js";
 import {
-  survivorSummary, relationsOf, KIND_NAMES, RECORD_KEYS, daysWith, memorialList, memorialInfo, holdMemorial, peaceInfo, makePeace,
+  survivorSummary, RECORD_KEYS, daysWith, memorialList, memorialInfo, holdMemorial, peaceInfo, makePeace,
   PEACE, MEMORIAL, compat, temperName, REL,
 } from "../sim/relations.js";
 import { moodWork, MOOD_WORK } from "../sim/morale.js";
+import { notableBonds, bondEffects, BOND } from "../sim/bonds.js"; // levels, reasons, buffs and debuffs
 import { survivorURL, spriteImg } from "./sprites.js";
 import { whyButton } from "./causes.js"; // the "Why?" link of a death (sim/causes.js)
 
@@ -66,26 +68,37 @@ export function relationsSection(state, s, ui = {}) {
     </div>` : "";
   return `${ui.relMsg ? `<div class="result small">${esc(ui.relMsg)}</div>` : ""}${mem ? memorialHeader(state, mem) : ""}
     <div class="grid2">
-      <div>${moodBlock}${peopleBlock(state, s)}</div>
+      <div>${moodBlock}${peopleBlock(state, s)}${s.alive ? bondsBlock(state, s) : ""}</div>
       <div>${recordBlock(state, s, r)}</div>
     </div>`;
 }
 
 function peopleBlock(state, s) {
-  const list = relationsOf(state, s).filter((x) => x.kind !== "known" || Math.abs(x.o) >= 20).slice(0, 10);
+  const list = notableBonds(state, s, 10, (o) => compat(state, s, o).parts); // sim/bonds.js: the level, the reason, mentor and promise tags
   const rows = list.map((x) => {
     const o = x.other;
     const c = compat(state, s, o);
-    const why = `${KIND_NAMES[x.kind]} · opinion ${Math.round(x.o)} (friends at ${REL.friend}+, rivals at ${REL.rival} or below). Why: ${c.parts.map(([k, v]) => `${k} ${sgn(v)}`).join(", ")}${Math.abs(x.rel.h) >= 1 ? `, shared history ${sgn(x.rel.h)}` : ""}. They drift toward that each day they share a base, a team or a job.`;
-    const tone = x.kind === "rival" ? "var(--danger)" : x.kind === "known" ? "var(--muted)" : "var(--good)";
+    const hist = (x.rel.why || []).slice(0, 4).map((w) => `${w.t} ${sgn(w.v)} (day ${w.d})`).join("; ");
+    const why = `${x.name} · opinion ${Math.round(x.o)} (friendly at ${BOND.friendly}+, friend at ${REL.friend}+, close friend at ${REL.close}+; disliked at ${BOND.disliked} or below, rival at ${REL.rival} or below). Fit: ${c.parts.map(([k, v]) => `${k} ${sgn(v)}`).join(", ")}${Math.abs(x.rel.h) >= 1 ? `, shared history ${sgn(x.rel.h)}` : ""}${hist ? `. What moved it: ${hist}` : ""}. They drift toward that each day they share a base, a team or a job.`;
+    const bad = x.level === "rival" || x.level === "disliked";
+    const tone = bad ? "var(--danger)" : x.level === "friendly" ? "var(--muted)" : "var(--good)";
+    const sub = [x.why, ...x.tags].filter(Boolean).join(" · ");
     let act = "";
-    if (s.alive && o.alive && x.kind === "rival") {
+    if (s.alive && o.alive && x.level === "rival") {
       const p = peaceInfo(state, s, o);
       act = `<button class="mini" data-action="rel-peace" data-id="${s.id}" data-other="${o.id}" ${p.ok && p.who ? "" : "disabled"}${tip(p.ok ? (p.who ? `${first(p.who)} talks it out with them: ${Math.round(p.chance * 100)}% to bury the hatchet (+${PEACE.talkOk / 2} now and lasting history), else it gets a little worse. Once in ${PEACE.cooldown} days.` : "Nobody else at the base can talk them round") : p.reason)}>Talk it out</button><button class="mini" data-action="rel-gift" data-id="${s.id}" data-other="${o.id}" ${p.ok && p.hasFood ? "" : "disabled"}${tip(p.ok ? (p.hasFood ? `A shared meal (${PEACE.food} days of food from the base): +${PEACE.gift / 2} now and lasting history. Once in ${PEACE.cooldown} days.` : `Needs ${PEACE.food} food at the base`) : p.reason)}>Shared meal</button>`;
     }
-    return `<div class="row small"${tip(why)}><span style="width:7.5rem"><a data-action="survivor" data-id="${o.id}" class="link">${esc(o.name)}</a>${o.alive ? "" : " †"}</span><span style="width:6rem" class="muted">${esc(x.partner ? "♥ Partner" : KIND_NAMES[x.kind])}</span><div style="flex:1">${bar((x.o + 100) / 2, tone)}</div><span style="width:2rem">${Math.round(x.o)}</span>${act}</div>`;
+    return `<div class="row small"${tip(why)}><span style="width:7.5rem"><a data-action="survivor" data-id="${o.id}" class="link">${esc(o.name)}</a>${o.alive ? "" : " †"}</span><span style="width:6rem" class="${bad ? "danger" : "muted"}">${esc(x.level === "partner" ? "♥ Partner" : x.name)}</span><div style="flex:1">${bar((x.o + 100) / 2, tone)}${sub ? `<div class="muted" style="font-size:0.85em">${esc(sub)}</div>` : ""}</div><span style="width:2rem">${Math.round(x.o)}</span>${act}</div>`;
   });
   return `<h3>People</h3><div class="card small">${rows.join("") || `<span class="muted">No close ties yet. People get to know each other at a base, on a team, at the same job and in a fight.</span>`}</div>`;
+}
+
+// What their ties do for them now (sim/bonds.js bondEffects): work beside friends, rivals, fights, lessons, promises,
+// circles.
+function bondsBlock(state, s) {
+  const fx = bondEffects(state, s);
+  if (!fx.length) return "";
+  return `<h3>Bonds</h3><div class="card small">${fx.map((e) => `<div class="${e.good ? "good" : "danger"}">${e.good ? "▲" : "▼"} ${esc(e.text)}</div>`).join("")}</div>`;
 }
 
 function recordBlock(state, s, r) {

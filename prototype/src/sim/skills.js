@@ -60,6 +60,7 @@ import { CRAFTS, craftQueue } from "./crafting.js";
 import { studyBlueprint, blueprintWares, bookUnlocksPending, learnBook } from "./blueprints.js";
 import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
 import { hasKitchen, cookedLately, jobShare } from "./kitchen.js"; // the Kitchen's cooks learn Cooking (full-day and part-time)
+import { lessonBond } from "./bonds.js"; // a friend learns faster from a friend, a rival hardly listens (call-time only)
 
 export const MILESTONES = [5, 10, 15];
 export const SKILL_MAX = 20;
@@ -683,7 +684,7 @@ function teachingDaily(state, base) {
     if (!T.teach || !lesson.set) T.teach = { skill: lesson.skill, learners: lesson.learners.slice() };
     const rate = teachRate(T, lesson.skill) * jobShare(state, T, "teach"); // kitchen.js: a part-time cook teaches the rest of the day
     let taught = 0;
-    for (const id of lesson.learners) taught += gainXp(state, survivorById(state, id), lesson.skill, rate, "study");
+    for (const id of lesson.learners) { const L = survivorById(state, id); taught += gainXp(state, L, lesson.skill, rate * lessonBond(state, T, L, lesson.skill), "study"); } // bonds.js: × by how they get on
     noteOutput(state, base, "teach", taught, "xp");
     gainXp(state, T, "leadership", USE.teachLead);
     gainXp(state, T, "speech", USE.teachSpeech);

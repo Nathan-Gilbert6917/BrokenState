@@ -38,6 +38,8 @@ import { allItems, SLOT_NAMES, ARMOR_CAP } from "../sim/inventory.js";
 import { MEDIC } from "../sim/medics.js"; // stabilizing oneself: the odds by item (MEDIC.SELF)
 import { durUnit } from "../sim/crafting.js"; // what an item's uses count (fights, days of fishing...)
 import { day } from "../sim/world.js";
+import { BOND } from "../sim/bonds.js"; // bonds between survivors: the People entry
+import { REL } from "../sim/relations.js";
 import { FIELD } from "../sim/fieldworks.js"; // field works: one entry a kind
 import { BLUEPRINTS, CRAFT_BOOKS, LOCKED, techName, unlockName } from "../sim/blueprints.js"; // what a manual or craft book unlocks
 import { BIRTH } from "../sim/hivebirth.js"; // a hive being born: breaking up the gathering
@@ -57,7 +59,7 @@ const list = (a) => (a.length < 2 ? a.join("") : `${a.slice(0, -1).join(", ")} a
 
 export const CODEX_CATS = [
   ["dead", "The dead"], ["hives", "Hives"], ["items", "Items"], ["supplies", "Supplies"], ["buildings", "Buildings"],
-  ["places", "Places"], ["conditions", "Illness and injury"], ["groups", "Groups and outsiders"], ["weather", "Weather"],
+  ["places", "Places"], ["conditions", "Illness and injury"], ["people", "People"], ["groups", "Groups and outsiders"], ["weather", "Weather"],
 ];
 const CAT_NAME = Object.fromEntries(CODEX_CATS);
 
@@ -467,9 +469,30 @@ function foodChainEntries() {
     how: "Keep a few days of wood in store (the Food tab shows the hours left), put someone on Cut wood, and light the fire again once wood comes in.", sprite: null,
   }];
 }
+// How people get on (sim/relations.js, sim/bonds.js, sim/bondevents.js): opened once two of yours are more than
+// strangers (a pair friendly or worse than neutral).
+function peopleEntries() {
+  const B = BOND;
+  return [{
+    key: "k:bonds", cat: "people", name: "🤝 Bonds between survivors", sub: "How people get on",
+    stats: [
+      ["Levels", `rival ${REL.rival} or below, disliked ${B.disliked}, neutral, friendly ${B.friendly}+, friend ${REL.friend}+, close friend ${REL.close}+ (partners: Family)`],
+      ["Moves it", "chemistry, temper and traits; fighting side by side, saving each other, rough trips, crews on the same job, lessons, meals and a common room together; crowding, short rations, a rival's success, someone sitting the work out, quarrels, theft"],
+      ["Beside a friend", `work +${pct(B.work.friend)} (a close friend +${pct(B.work.close)}, at most +${pct(B.work.cap)}) and mood +${B.mood.friend} on the same job at a base; the load +${pct(B.crewLoad.friend)} out on a job trip together`],
+      ["Beside a rival", `mood ${B.mood.rival} on the same job, ${pct(B.quarrelChance)} a day of a quarrel; the load ${pct(B.crewLoad.rival)} out together`],
+      ["In a fight", `+3 aim a friend alongside (up to +6), −2 a rival; nerve +${pct(B.nerve.friend)} a friend against a scream (up to +${pct(B.nerve.max)})`],
+      ["Lessons", `from a friend +${pct(B.teach.friend)} XP, a close friend +${pct(B.teach.close)}, a rival ${pct(B.teach.rival)}`],
+      ["Circles", `three or more who are all friends: +${B.clique.in} mood a day; whoever there is left out ${B.clique.out}`],
+      ["Loss", `a close friend grieves ${B.closeGrief} days longer; a friend walking out is grieved at half, and a deeply unhappy close friend (mood under ${B.follow.mood}) may follow them`],
+      ["A promise", `to a dying friend: mood +${B.promise.mood} and work +${pct(B.work.promise)} for ${B.promise.days} days; broken, mood ${B.promise.broken} and ${B.promise.brokenMood} a day for ${B.promise.brokenDays} days`],
+    ],
+    text: "Every pair of your people has one opinion of each other that drifts, day by day, toward how well they fit and what they have been through together. The survivor screen's People list shows each tie with its level and the main reason for it; the Bonds card shows what those ties do for them now, and the mood breakdown lists each one with its number. People lean toward the work a friend is on and away from a rival's (within the priorities you set). At the hub, how people get on brings its own cards: a feud that comes to blows, two old enemies making up, a friend asking to work alongside, someone asking to be taught, jealousy over the leader's favour, a theft from a friend, a newcomer welcomed or shunned; and a dying friend may ask for a promise. Other groups' people keep no opinions (they are treated as fed and rested); anyone who joins you is under these rules from the first day.",
+    how: "Put friends on the same job and keep rivals apart. Talk rivals round or share a meal from the survivor screen, a common room and the Kitchen's hot meals bring everyone closer, and crowding and short rations drive them apart. Welcome a newcomer before a circle shuts them out.", sprite: null,
+  }];
+}
 export function codexEntries() {
   if (!ENTRIES) {
-    ENTRIES = [...deadEntries(), ...hiveEntries(), ...itemEntries(), ...supplyEntries(), ...foodChainEntries(), ...buildingEntries(), ...fieldEntries(), ...placeEntries(), ...conditionEntries(), ...groupEntries(), ...weatherEntries()];
+    ENTRIES = [...deadEntries(), ...hiveEntries(), ...itemEntries(), ...supplyEntries(), ...foodChainEntries(), ...buildingEntries(), ...fieldEntries(), ...placeEntries(), ...conditionEntries(), ...peopleEntries(), ...groupEntries(), ...weatherEntries()];
     BY_KEY = new Map(ENTRIES.map((e) => [e.key, e]));
   }
   return ENTRIES;
@@ -529,6 +552,7 @@ function seenNow(state) {
   // Points of interest known on a tile seen or reported (sim/pois.js: the hub's knowledge, never a hidden one).
   for (const t of state.tiles || []) if (t && Array.isArray(t.pois) && t.pois.length && known(t.id)) for (const i of knownPois(state, t)) { keys.add(`p:${poisOf(t)[i].kind}`); keys.add("k:pois"); if (poisOf(t)[i].cont && Object.keys(poisOf(t)[i].cont.mine || {}).length) keys.add("k:containers"); if (poisOf(t)[i].cont && poisOf(t)[i].cont.last) keys.add("k:aipois"); }
   if (Object.values(state.poiKnow || {}).some((k) => k && k.heat)) keys.add("k:tileheat"); // a team has seen a tile's heat (sim/pois.js noteTileHeat)
+  if (Object.values(state.rel || {}).some((r) => r && (r.o >= BOND.friendly || r.o <= BOND.disliked))) keys.add("k:bonds"); // sim/bonds.js: two of yours more than strangers
   weatherSeen(state, keys);
   return keys;
 }

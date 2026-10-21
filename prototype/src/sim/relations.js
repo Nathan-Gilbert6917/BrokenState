@@ -14,6 +14,8 @@
 // friends tell stories by the fire. A friend or partner who dies: mood -(6 + 14 x bond) at once and "Grieving" for
 // 3 + 7 x bond days (-(0.5 + bond) mood a day, work x(1 - 0.2 x bond)); bond = opinion/100 for friends, 1 for a
 // partner. Friends of someone killed by a group want revenge (+5 aim against them for 60 days, mood +6 when avenged).
+// The web on top of it (named levels and reasons, work beside friends and rivals, cliques, lessons, promises, who
+// follows whom out, the cards): bonds.js and bondevents.js.
 //
 // Daily mood factors added here (the rest stay where they were: beds and the leader in morale.js; food, rationing,
 // rest, hunger and thirst in economy.js; the dog in hubevents.js), all listed with numbers by moodFactors():
@@ -44,6 +46,7 @@ import { starveMood, NEEDS } from "./needs.js"; // starving and parched days (ne
 import { festivalGlow } from "./festival.js";
 import { familyMood } from "./family.js"; // children and expecting (family.js)
 import { kitchenService } from "./kitchen.js"; // the Kitchen's hot meals
+import { noteWhy, bondTraitParts, bondMood, bondsDaily, bondsOnDeath, bondsOnLeave, bondStates } from "./bonds.js"; // the web of bonds: levels, reasons, buffs, behaviours (call-time only)
 
 export const REL = { friend: 40, close: 70, rival: -30, split: 15, partnerFloor: 70, drift: 0.05, baseRate: 1, teamRate: 2.5, jobRate: 0.6, histFade: 0.99, leader: 0.6, jitter: 1.2 };
 export const MOODF = {
@@ -148,6 +151,7 @@ export function compat(state, a, b) {
   tr -= 10 * has("loud") + 10 * has("greedy") + (traitFx(a, "hothead", "opinion") + traitFx(b, "hothead", "opinion")) + 5 * has("glutton"); // a Hothead flares up, a Glutton takes more than their share
   tr += 10 * has("medic") + 5 * has("lucky") - 5 * has("unlucky");
   if (tr) parts.push(["Traits", tr]);
+  for (const p of bondTraitParts(a, b)) parts.push(p); // bonds.js: diets, two Pessimists, Diplomatic and the rest
   const sp = 1.5 * (skill(a, "speech") + skill(b, "speech") - 10);
   if (Math.abs(sp) >= 1) parts.push(["Speech", sp]);
   return { parts, v: parts.reduce((x, p) => x + p[1], 0) };
@@ -158,11 +162,13 @@ function pairTarget(state, a, b, r, leaderL) {
   return clamp(t, -90, 95);
 }
 // Shared history: lasts (fades 1% a day) and pulls the opinion with it; half of it shows at once.
-export function bumpPair(state, a, b, v) {
+// why: what it was, in words (bonds.js noteWhy: the survivor screen's reason for a tie).
+export function bumpPair(state, a, b, v, why = "") {
   const r = getRel(state, a, b, true);
   if (!r) return null;
   r.h = clamp(r.h + v, -60, 60);
   r.o = clamp(r.o + v * 0.5, -100, 100);
+  noteWhy(state, r, v, why);
   return r;
 }
 
@@ -255,6 +261,7 @@ export function relationsDaily(state) {
   }
   // Near the bottom: breaks.
   for (const base of state.bases) for (const s of atBase(state, base.id)) maybeBreak(state, base, s, rng);
+  bondsDaily(state, rng); // bonds.js: meals, friction, quarrels at work, envy, cliques, the day's work bonus, promises
 }
 
 function driftGroup(state, group, rate, ctx, rng) {
@@ -392,8 +399,9 @@ export function moodFactors(state, s) {
   else if (partner && partner.location && partner.location.kind !== "captive") add(`Misses ${first(partner)} (away)`, MOODF.partnerAway, true);
   if (fr) add(`${fr} friend${fr === 1 ? "" : "s"} close by`, Math.min(MOODF.friendMax, fr * MOODF.friend), true);
   if (rv) add(`${rv} rival${rv === 1 ? "" : "s"} close by`, Math.max(MOODF.rivalMax, rv * MOODF.rival), true);
+  for (const f of bondMood(state, s, pl, base)) add(f.label, f.v, true, f.tip || ""); // bonds.js: friends and rivals at work, cliques, promises, apprentices
   for (const f of familyMood(state, s, pl.route ? null : base)) add(f.label, f.v, true); // family.js: expecting, children
-  if (s.grief) add(`Grieving for ${s.grief.name} (${s.grief.days} day${s.grief.days === 1 ? "" : "s"} left)`, -(GRIEF.daily + GRIEF.dailyPer * s.grief.bond) * (base && count(base, "chapel") ? GRIEF.chapel : 1), true);
+  if (s.grief) add(`${s.grief.left ? "Misses" : "Grieving for"} ${s.grief.name} (${s.grief.days} day${s.grief.days === 1 ? "" : "s"} left)`, -(GRIEF.daily + GRIEF.dailyPer * s.grief.bond) * (base && count(base, "chapel") ? GRIEF.chapel : 1), true);
   if (s.rough != null && s.rough >= d) {
     if (base && !pl.route && s.role === "rest") add("Resting after a rough trip", MOODF.roughRest, true);
     else add("Shaken after a rough trip (rest helps)", MOODF.rough, true);
@@ -466,7 +474,7 @@ function maybeBreak(state, base, s, rng) {
     const foe = [...others].sort((a, b) => opinion(state, s, a) - opinion(state, s, b))[0];
     const dmg = rng.int(3, 8);
     hurt(state, foe, Math.min(dmg, foe.health - 5), base.tile, `in a fight with ${name} at ${base.name}`, { raw: true });
-    bumpPair(state, s, foe, -16);
+    bumpPair(state, s, foe, -16, `${first(s)} went for ${first(foe)} in a break`);
     s.onBreak = true;
     addMood(state, foe, -3, `Hit by ${name}`);
     text = `${s.name} picked a fight with ${first(foe)} at ${base.name}; ${first(foe)} took ${dmg} health in it.`;
@@ -503,7 +511,7 @@ function breakCard(state, base, s, what) {
           const ok = st.rng.chance(t.chance);
           talkXp(st, t.who, ok); // skills.js: Speech for the talker
           addMood(st, s, ok ? 15 : 3, `Talked it through with ${first(t.who)}`);
-          if (ok) bumpPair(st, s, t.who, 8);
+          if (ok) bumpPair(st, s, t.who, 8, `${first(t.who)} talked ${first(s)} round`);
           return ok ? `${first(t.who)} gets ${first(s)} talking. It helps (mood ${Math.round(s.mood)}).` : `${first(s)} will not open up (mood ${Math.round(s.mood)}).`;
         },
       },
@@ -542,6 +550,7 @@ export function onDeath(state, s, tileId, cause) {
     } else if (x.o >= 10 && x.kind !== "rival") addMood(state, o, GRIEF.acquaint, `${first(s)} died`);
   }
   if (grieved.length) log(state, `${listText(grieved.map((n) => n.split(" ")[0]))} ${grieved.length === 1 ? "is" : "are"} grieving for ${first(s)}.`, "info");
+  bondsOnDeath(state, s); // bonds.js: a close friend grieves longer, promises, a promise card
   // Squeamish (traits.js, by tier): any death in the group hits them, wherever they are, on top of any grief.
   for (const o of state.survivors) if (o !== s && o.alive && hasTrait(o, "squeamish") && o.location && o.location.kind !== "captive") addMood(state, o, -traitFx(o, "squeamish", "grief"), `${first(s)} died (squeamish)`);
   const partner = relationsOf(state, s).find((x) => x.partner);
@@ -571,6 +580,7 @@ export function onLeave(state, s, base) {
     if (bd > 0) addMood(state, x.other, -(GRIEF.hit + GRIEF.hitPer * bd) / 2, `${first(s)} walked out`);
     if (x.partner) x.rel.p = false;
   }
+  bondsOnLeave(state, s, base); // bonds.js: grief at half for a friend, a promise broken, a close friend may follow
 }
 
 export const memorialList = (state) => state.memorial || [];
@@ -694,13 +704,13 @@ export function battleRecord(state, setup, result, battle, people) {
     const s = state.survivors.find((x) => x.id === Number(sid));
     if (!s) continue;
     credit(s, "rescues", list.length);
-    for (const tid of list) { const t = state.survivors.find((x) => x.id === tid); if (t) { addMoment(state, s, `Kept ${first(t)} alive under fire at ${place}, day ${d}`, d); bumpPair(state, s, t, 12); } }
+    for (const tid of list) { const t = state.survivors.find((x) => x.id === tid); if (t) { addMoment(state, s, `Kept ${first(t)} alive under fire at ${place}, day ${d}`, d); bumpPair(state, s, t, 12, `${first(s)} kept ${first(t)} alive under fire`); } }
   }
   if (battle && battle.healsBy) for (const [sid, n] of Object.entries(battle.healsBy)) credit(state.survivors.find((x) => x.id === Number(sid)), "treated", n);
   // Shared hardship: everyone who fought side by side.
   const hard = dead.length > 0 || downed.length > 0;
   const living = fought.filter((s) => s.alive);
-  for (let i = 0; i < living.length; i++) for (let j = i + 1; j < living.length; j++) bumpPair(state, living[i], living[j], hard ? 10 : 6);
+  for (let i = 0; i < living.length; i++) for (let j = i + 1; j < living.length; j++) bumpPair(state, living[i], living[j], hard ? 10 : 6, `Fought side by side at ${place}`);
   const party = setup.partyId ? state.parties.find((p) => p.id === setup.partyId) : null;
   if (party && hard) party.relHard = true;
   // Moments for the big fights.
@@ -745,7 +755,7 @@ export function tripDone(state, p, members, home) {
     if (days >= 10) addMoment(state, s, `Came home after ${days} days out, day ${d}`, d);
     if (rough && p.kind !== "convoy") { s.rough = d + MOODF.roughDays; addMood(state, s, MOODF.roughHit, lost.length ? `A trip that cost ${first(lost[0])}` : "A rough trip"); }
   }
-  for (let i = 0; i < members.length; i++) for (let j = i + 1; j < members.length; j++) bumpPair(state, members[i], members[j], rough ? 6 : 3);
+  for (let i = 0; i < members.length; i++) for (let j = i + 1; j < members.length; j++) bumpPair(state, members[i], members[j], rough ? 6 : 3, rough ? "A rough trip together" : "On the road together");
 }
 // scavenge.js extract: a site searched.
 export function noteSearch(state, members) { for (const s of members) credit(s, "sites"); }
@@ -755,7 +765,7 @@ export function noteTreated(state, medic) { if (medic && medic.alive) credit(med
 export function noteRescue(state, freed, p) {
   const team = partyMembers(state, p).filter((s) => s !== freed);
   const d = day(state);
-  for (const s of team) { credit(s, "rescues"); addMoment(state, s, `Brought ${first(freed)} home from captivity, day ${d}`, d); bumpPair(state, s, freed, 15); }
+  for (const s of team) { credit(s, "rescues"); addMoment(state, s, `Brought ${first(freed)} home from captivity, day ${d}`, d); bumpPair(state, s, freed, 15, `${first(s)} brought ${first(freed)} home from captivity`); }
   addMoment(state, freed, `Freed from captivity, day ${d}`, d);
 }
 
@@ -850,8 +860,8 @@ export function makePartners(state, a, b) {
   addMoment(state, b, `Grew close to ${a.name}, day ${d}`, d);
 }
 // A falling-out or a making-up between two people (their shared history; hub quarrels, road arguments).
-export function relEvent(state, a, b, v) {
-  if (a && b && a !== b) bumpPair(state, a, b, v);
+export function relEvent(state, a, b, v, why = "") {
+  if (a && b && a !== b) bumpPair(state, a, b, v, why || (v > 0 ? "Patched up a quarrel" : "A quarrel"));
 }
 export function argumentWeight(state, p) {
   const m = partyMembers(state, p);
@@ -873,7 +883,7 @@ export function campfireCard(state, p) {
     text: `${first(a)} and ${first(b)} keep the team up half the night with stories from before.`,
     survivorIds: [a.id, b.id],
     choices: [
-      { label: "Let them talk", hint: "The team mood +2, the two of them +4 and closer", resolve: (st) => { for (const s of partyMembers(st, p)) addMood(st, s, s === a || s === b ? 4 : 2, "Stories by the fire"); bumpPair(st, a, b, 5); return "Laughter carries a long way at night, but nothing comes."; } },
+      { label: "Let them talk", hint: "The team mood +2, the two of them +4 and closer", resolve: (st) => { for (const s of partyMembers(st, p)) addMood(st, s, s === a || s === b ? 4 : 2, "Stories by the fire"); bumpPair(st, a, b, 5, "Stories by the fire"); return "Laughter carries a long way at night, but nothing comes."; } },
       { label: "Douse the fire early", hint: "Nothing changes", resolve: () => "Cold and dark, but quiet." },
     ],
   };
@@ -902,14 +912,14 @@ export function makePeace(state, a, b, how) {
     if (!info.hasFood) return `Needs ${PEACE.food} food at ${info.base.name}.`;
     payFood(info.base, PEACE.food, state);
     r.peaceDay = day(state);
-    bumpPair(state, a, b, PEACE.gift);
+    bumpPair(state, a, b, PEACE.gift, "A shared meal to make peace");
     return `A shared meal (${PEACE.food} days of food): ${first(a)} and ${first(b)} get on a little better (opinion ${Math.round(r.o)}).`;
   }
   if (!info.who) return "Nobody else here can talk them round.";
   r.peaceDay = day(state);
   const ok = state.rng.chance(info.chance);
   talkXp(state, info.who, ok); // skills.js: Speech for the peacemaker
-  bumpPair(state, a, b, ok ? PEACE.talkOk : PEACE.talkFail);
+  bumpPair(state, a, b, ok ? PEACE.talkOk : PEACE.talkFail, ok ? `${first(info.who)} made peace between them` : "Peace talks ended in shouting");
   return ok ? `${first(info.who)} sits them down. ${first(a)} and ${first(b)} shake hands (opinion ${Math.round(r.o)}).` : `${first(info.who)} tries, but it ends in shouting (opinion ${Math.round(r.o)}).`;
 }
 
@@ -937,9 +947,10 @@ export function survivorSummary(state, s) {
   const mf = moodFactors(state, s);
   const states = [];
   if (s.onBreak) states.push("On a break");
-  if (s.grief) states.push(`Grieving (${s.grief.days} d)`);
+  if (s.grief) states.push(`${s.grief.left ? "Misses someone" : "Grieving"} (${s.grief.days} d)`);
   if (s.rough != null && s.rough >= day(state)) states.push("Shaken");
   if (s.revenge) states.push(`Wants revenge on ${s.revenge.foe}`);
+  states.push(...bondStates(state, s)); // bonds.js: a promise, an apprenticeship
   return {
     mood: s.mood, moodPerDay: mf.net, factors: mf.list, notes: mf.notes, states, temper: temperName(state, s),
     partner: partner ? partner.other : null, friends: friends.map((x) => x.other), rivals: rivals.map((x) => x.other),
