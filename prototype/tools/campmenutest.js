@@ -15,6 +15,7 @@
 //   - Strike camp: everyone a team with what they can carry, the rest a cache, the camp gone (and with nobody there);
 //   - a camp beside a hub is an outpost camp; a real base retaken takes the hub's place; a camp holds only its tile.
 // Usage: node tools/campmenutest.js [seed]
+import { stockTools } from "./toolset.js"; // every tool a build or recipe can need (toolreqs.js)
 import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, tickHour, hub, atBase, day } from "../src/sim/world.js";
 import { BUILDINGS, CAMP, SHELTER, isCamp, isShelter, tierName, tierUpJob, canBuild, queueBuild, plotCap, baseBeds, farmSlots, gatherRows } from "../src/sim/buildings.js";
@@ -133,6 +134,7 @@ camp.stock.scrap = (camp.stock.scrap || 0) + 30; camp.stock.wood = (camp.stock.w
 check(canBuild(st, camp, "barricades").ok && /queued/.test(queueBuild(st, camp, "barricades")), "a barricade can be built at a camp");
 // BASE-03 (2026-10-12): the crafting bench, water boiler, cook fire and drying rack are camp buildings too; they share
 // the camp's two utility plots with the rain catcher, crates and barrel.
+stockTools(camp); // the bench and the boiler need tools (toolreqs.js); the plots are the subject here
 check(["rain_catcher", "smoker", "craftbench", "boiler", "cookhouse"].every((k) => canBuild(st, camp, k).ok), "two utility plots: a rain catcher, drying rack, crafting bench, water boiler or cook fire fits");
 {
   const scrap0 = camp.stock.scrap;

@@ -14,6 +14,7 @@
 //     the ladder by size (a box or crates at a shelter, crates or a shed at an outpost, the storehouse or a warehouse
 //     at the main base for a big overflow), one at a time, and the hub's governor queuing it.
 // Usage: node tools/basestorageuitest.js [seed]
+import { stockTools } from "./toolset.js"; // every tool a build or recipe can need (toolreqs.js)
 import { createWorld, hub, atBase, newId } from "../src/sim/world.js";
 import { BUILDINGS, addBuilding, queueBuild } from "../src/sim/buildings.js";
 import { storageOf } from "../src/sim/basestorage.js";
@@ -31,12 +32,12 @@ const SEED = Number(process.argv[2] || 42);
 let pass = 0, fail = 0;
 const check = (ok, what) => { if (ok) pass++; else { fail++; console.log(`  FAIL: ${what}`); } return !!ok; };
 const section = (t) => console.log(t);
-const W = () => { const st = createWorld({ seed: SEED, factionCount: 6 }); st.visitorsOff = true; return st; };
+const W = () => { const st = createWorld({ seed: SEED, factionCount: 6 }); st.visitorsOff = true; stockTools(hub(st)); return st; }; // every tool (toolset.js)
 const ui = (baseView) => ({ started: true, speed: 0, tab: "bases", selected: -1, survivor: null, baseView, expedition: null, diary: null, roster: null, help: false });
 const modal = (st, b, tab) => { st.cards.length = 0; return renderModal(st, ui({ id: b.id, tab })) || ""; };
 const plain = (h) => String(h).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
 const asShelter = (b) => { b.tier = 0; delete b.camp; b.buildings = []; b.construction = []; };
-const mkOutpost = (st, tile) => { const o = { id: newId(), tile, type: "outpost", name: "Test Outpost", stock: {}, radio: false, watchtower: false, buildings: [], construction: [], armory: [] }; st.bases.push(o); return o; };
+const mkOutpost = (st, tile) => { const o = { id: newId(), tile, type: "outpost", name: "Test Outpost", stock: {}, radio: false, watchtower: false, buildings: [], construction: [], armory: [] }; stockTools(o); st.bases.push(o); return o; };
 const asCamp = (b) => { b.tier = 0; b.camp = true; b.buildings = []; b.construction = []; };
 const parkAway = (st, b) => { for (const v of carsAtBase(st, b.id)) v.loc = { kind: "base", baseId: -1 }; };
 const empty = (b) => { b.stock = {}; b.armory = []; };

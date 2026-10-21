@@ -20,14 +20,14 @@
 // People: a woodcutter = 0.7 + 0.05 × (0.7 Farming + 0.3 Mechanics) (Farming: land work, felling and hauling;
 //   Mechanics: keeping the tools sharp) × their tool (the tools, 2026-10-21, the user's request "For wood gathering if
 //   the survivor does not have an axe the yield is lower and with an axe it provides substantially more yield": bare
-//   hands WOOD.hands ×0.5, deadfall and branches only; a felling axe ×2, a fire axe ×1.8, a hatchet or a bow saw ×1.5,
-//   a tomahawk ×1.4, a makeshift axe ×1.3; not axes: a sledgehammer and wedges ×1, a machete ×0.9, a saw-blade
-//   machete ×0.85, a kukri ×1, an entrenching tool ×0.75; CHOP below, GEAR `chop` overrides) × their work factor
+//   hands WOOD.hands ×0.7, deadfall and branches only; a felling axe ×2.2, a fire axe ×2, a hatchet or a bow saw ×1.6,
+//   a tomahawk ×1.5, a makeshift axe ×1.4; not axes: a sledgehammer and wedges ×1.1, a machete ×1, a saw-blade
+//   machete ×0.95, a kukri ×1.1, an entrenching tool ×0.85; CHOP below, GEAR `chop` overrides) × their work factor
 //   (illness), × 0.5 when badly hurt (under 40 health). On one tile the best counts 1, the next 0.9, 0.8, … (at least
 //   0.4). A team's spare tools in the cargo go to those without one; at a base the armory's tools do.
 // Wood an hour = RATE (18) × abundance × level × season × time × weather × the woodcutters.
-//   Expect (an average woodcutter, skill ~3: × 0.85): a forest tile with a felling axe ~31 an hour, a fire axe ~28
-//   (about 160 a day on the base job), bare-handed ~8 (about 45 a day); hills about 60% of that, farmland a quarter,
+//   Expect (an average woodcutter, skill ~3: × 0.85): a forest tile with a felling axe ~34 an hour, a fire axe ~31
+//   (about 175 a day on the base job), bare-handed ~11 (about 60 a day); hills about 60% of that, farmland a quarter,
 //   suburbs a fifth, a city next to nothing.
 // Risks: chopping is loud: a team order builds field Heat ×1.3 (fieldheat.js), and at a base each woodcutter adds to
 //   its Heat (base.woodNoise: 0.8 with an axe, 0.3 gathering by hand; hordes.js baseHeat). Axes slip: a team order
@@ -71,7 +71,7 @@ import { baseCarts, CART_JOB } from "./carts.js"; // a cart at the base: a woodc
 // ---------- numbers ----------
 export const WOOD = {
   rate: 18,                  // wood a woodcutter-hour: average skill, a tool of ×1, untouched forest, daylight (0.6 when a unit was 3 kg)
-  hands: 0.5,                // bare hands (no cutting tool): deadfall and branches, half a tool of ×1 (it was 1 until the tools, 2026-10-21)
+  hands: 0.7,                // bare hands (no cutting tool): deadfall and branches (it was 1 until the tools, 2026-10-21: an axe ~3 times it)
   deplete: 7500,             // wood a full tile of abundance 1 gives before it is cut bare (750 kg)
   halfLife: 60,              // days for the cut land to grow half back
   minHours: 2, maxHours: 24, defHours: 8,
@@ -95,7 +95,7 @@ export const WOOD_TERRAIN = { forest: 1, hills: 0.6, mountain: 0.35, plains: 0.2
 // Cutting tools (a GEAR entry's own `chop` overrides): what each does for a woodcutter's output.
 // Axes far ahead of the rest (the tools, 2026-10-21): data-guns.js and data-tools.js set the hatchet's, tomahawk's,
 // kukri's, entrenching tool's, felling axe's, bow saw's and makeshift axe's own.
-export const CHOP = { fireaxe: 1.8, sledge: 1, machete: 0.9, sawmachete: 0.85, springmachete: 0.9 };
+export const CHOP = { fireaxe: 2, sledge: 1.1, machete: 1, sawmachete: 0.95, springmachete: 1 };
 const SITE_BONUS = (type) => (/cabin|lodge|camp|ranger/.test(type || "") ? 1.3 : /farm|ranch|barn|orchard/.test(type || "") ? 1.2 : 1);
 const r1 = (x) => Math.round(x * 10) / 10;
 const first = (s) => s.name.split(" ")[0];

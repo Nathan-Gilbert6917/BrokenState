@@ -30,7 +30,7 @@ import { noteOutput } from "./output.js"; // the base's Work now panel: what eac
 import { craftedCond } from "./itemcond.js"; // a crafted item's condition is the craft's own roll
 import { cfgOf } from "./worldcfg.js"; // the run's dials: Durability loss
 import { TOOL_CRAFTS } from "./data-tools.js"; // the makeshift tools and the sewing kit
-import { craftTools, craftToolProblem, wearBaseTools, partyToolItems, toolsMissing, toolsText, wearTools } from "./toolreqs.js"; // the tools a recipe needs (data-tools.js CRAFT_TOOLS)
+import { craftTools, craftToolProblem, wearBaseTools, partyToolItems, toolsMissing, toolsText, wearTools, kindsOf } from "./toolreqs.js"; // the tools a recipe needs (data-tools.js CRAFT_TOOLS)
 import { BED_CRAFTS, BED_SPEC } from "./data-beds.js"; // beds as furniture: a cot, a bed, a bunk bed, a large bed (beds.js)
 
 // in = materials (base stock), hours = work-hours, skill + min = who can make it, out = gear key or supplies.
@@ -234,6 +234,7 @@ export function craftOutputText(key) {
     if (r.gear === "cookpot") fx.push("cooks over a fire: a Camp fire station for simple meals and stew at a base without a Kitchen or a cook fire (1 wood an hour), and a camping team's fresh food into simple meals at a lit fire");
     if (d.ears) fx.push(`ear protection carried in a pocket or the pack, under any helmet (hearing.js): takes ${d.ears.cut} off a bang's loudness (foam earplugs ${GEAR.earplugs.ears.cut}), hearing ${d.ears.hear} tiles; a pair a fight`);
     if (r.gear === "boards") fx.push("nailed across a closed door, a doorway or a window in a fight (barricade.js Board up, both actions): 40 hit points a layer, up to 3, that the dead and raiders batter through; a bundle in the team's vehicle counts from next to it"); // it said only "tool"
+    if (kindsOf(r.gear).length) fx.push(`counts as ${toolsText(kindsOf(r.gear))} for building and crafting (toolreqs.js)${d.toolWear ? ", a use a job" : ""}`); // the makeshift tools, the sewing kit
     if (r.gear === "makeshiftpick") fx.push("picks locks in a raid without the crowbar and lockpicks (locks.js): 30% + 4% a Stealth point − 15% a difficulty step, as quiet, but one snaps in two every attempt; not a safe, a steel security door or a gun safe");
     bits.push(`${d.throw || d.suppressor || d.siege || d.cat === "gunmod" || (d.selfStab && !d.medKit) ? "kit" : d.heat ? "camp kit" : "tool"}${fx.length ? `, ${fx.join(", ")}` : ""}`);
   }
@@ -245,6 +246,7 @@ export function craftOutputText(key) {
 }
 export function durUnit(key) {
   const d = GEAR[key];
+  if (d.toolWear) return d.slot === "weapon" ? "jobs or fights" : "jobs"; // a makeshift tool (toolreqs.js wearTools): a use a build or craft it serves
   if (d.tabs) return "tablets"; // purification tablets: dur counts the tablets in the tube (worm.js)
   if (d.count) return "left"; // a count stack (data-ammo.js: a box of rounds, primers): what is in it
   if (d.slot === "weapon" || ARMOR_SLOTS.includes(d.slot)) return "fights";
@@ -339,10 +341,10 @@ export function canCraft(state, base, key) {
   for (const [k, v] of Object.entries(r.in)) if (stockHas(base.stock, k) < v) return { ok: false, reason: `Needs ${v} ${keyWord(k)} (have ${Math.floor(stockHas(base.stock, k))})` };
   for (const [k, v] of Object.entries(r.gearIn || {})) if (base.armory.filter((it) => it && it.key === k).length < v) return { ok: false, reason: `Needs ${v > 1 ? `${v} × ` : "a "}${GEAR[k].name} in the armory` };
   if (r.spent && (base.spentFilters || 0) < r.spent) return { ok: false, reason: "Needs a clogged water filter here (one is kept each time a filter clogs at this base)" };
-  const tools = craftToolProblem(state, base, key); // toolreqs.js: a hammer, a saw, a sewing kit…
-  if (tools) return { ok: false, reason: tools, tools: true };
   const lock = craftLock(state, key); // blueprints.js: advanced recipes need a studied blueprint
   if (lock) return { ok: false, reason: lock, locked: true };
+  const tools = craftToolProblem(state, base, key); // toolreqs.js: a hammer, a saw, a sewing kit…
+  if (tools) return { ok: false, reason: tools, tools: true };
   return { ok: true };
 }
 

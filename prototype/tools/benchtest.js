@@ -6,6 +6,7 @@
 // working, and the governor (autopilot.js) builds a bench, upgrades it and puts up the ammo bench.
 // Usage: node tools/benchtest.js [seed]
 import { unlockAll } from "../src/sim/blueprints.js";
+import { stockTools } from "./toolset.js";
 import { createWorld, hub, newId, makeSurvivor, atBase } from "../src/sim/world.js";
 import {
   BUILDINGS, BENCH, addBuilding, canBuild, queueBuild, constructionHour, plotsUsed, plotsFree, count, countAll, benchTier, benchOf, SHELTER,
@@ -20,10 +21,11 @@ import { setAutopilot, governBase, housingAI } from "../src/sim/autopilot.js";
 const seed = Number(process.argv[2] || 42);
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
-const W = () => { const st = createWorld({ seed, factionCount: 6 }); unlockAll(st); return st; };
+const W = () => { const st = createWorld({ seed, factionCount: 6 }); unlockAll(st); stockTools(hub(st)); return st; }; // every tool (toolset.js): the benches are the subject here
 const rich = (b) => Object.assign(b.stock, { scrap: 9999, parts: 999, meds: 999, food: 500, water: 200, wood: 99999 });
 const mkOutpost = (st, tile) => {
   const b = { id: newId(), tile, type: "outpost", name: "Test Outpost", stock: { food: 0, water: 0, fuel: 0, meds: 0, ammo: 0, parts: 0, scrap: 0 }, radio: false, watchtower: false, buildings: [], construction: [], armory: [] };
+  stockTools(b); // every tool a build or recipe can need (toolreqs.js): the tests here are about the benches
   st.bases.push(b);
   return b;
 };

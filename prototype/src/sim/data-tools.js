@@ -21,10 +21,10 @@ export const TOOL_ITEMS = {
                  desc: "A steel box of hand tools: a claw hammer, a panel saw, screwdrivers, a set of spanners and sockets, pliers and side cutters, a tape and a level. Counts as a hammer, a saw, wrenches and pliers for building and crafting. Hardware stores, garages, farms and car trunks." },
   handsaw:     { name: "Hand saw",              slot: "pack", skill: null, power: 0, req: 0, value: 6,  noise: 0, weight: 0.7, cat: "tools",
                  desc: "A carpenter's panel saw: planks, beams and joints. Counts as a saw for building and crafting." },
-  bowsaw:      { name: "Bow saw",               slot: "pack", skill: null, power: 0, req: 0, value: 10, noise: 0, weight: 1.1, cat: "tools", chop: 1.5,
-                 desc: "A tubular steel bow with a coarse pruning blade: a saw for building and crafting, and it cuts firewood far faster than bare hands (×1.5, an axe more)." },
-  axe:         { name: "Felling axe",           slot: W, skill: ML, power: 2.3, req: 1, value: 18, noise: 0, pry: true, weight: 2.6, dur: 60, cat: "melee", chop: 2,
-                 desc: "A long hickory handle and a heavy forged head: the best tool there is for cutting wood (×2, four times bare hands), an axe for building and crafting, and a brutal slow weapon that can stagger (20%; −4 to hit, Melee 1 to use well). Farms, hardware stores, cabins." },
+  bowsaw:      { name: "Bow saw",               slot: "pack", skill: null, power: 0, req: 0, value: 10, noise: 0, weight: 1.1, cat: "tools", chop: 1.6,
+                 desc: "A tubular steel bow with a coarse pruning blade: a saw for building and crafting, and it cuts firewood far faster than bare hands (×1.6, an axe more)." },
+  axe:         { name: "Felling axe",           slot: W, skill: ML, power: 2.3, req: 1, value: 18, noise: 0, pry: true, weight: 2.6, dur: 60, cat: "melee", chop: 2.2,
+                 desc: "A long hickory handle and a heavy forged head: the best tool there is for cutting wood (×2.2, three times bare hands), an axe for building and crafting, and a brutal slow weapon that can stagger (20%; −4 to hit, Melee 1 to use well). Farms, hardware stores, cabins." },
   shovel:      { name: "Shovel",                slot: W, skill: ML, power: 1.6, req: 0, value: 6,  noise: 0, weight: 2, dur: 80, cat: "melee",
                  desc: "A long-handled round-point shovel: dig for a farm plot, a trench, a pit, a well, a cellar, sandbags. A club that staggers (25%) at a pinch." },
   handdrill:   { name: "Brace and bit",         slot: "pack", skill: null, power: 0, req: 0, value: 5,  noise: 0, weight: 1.3, cat: "tools",
@@ -38,8 +38,8 @@ export const TOOL_ITEMS = {
                  desc: "A steel bolt-head lashed to a stick: drives a nail. Counts as a hammer for building and crafting, about a dozen jobs before it falls apart." },
   scrapsaw:    { name: "Makeshift saw",         slot: "pack", skill: null, power: 0, req: 0, value: 1,  noise: 0, makeshift: true, toolWear: true, dur: 10, weight: 0.5, cat: "tools",
                  desc: "A hacksaw blade in a frame of bent rod: slow, but it cuts. Counts as a saw for building and crafting, about ten jobs before it falls apart." },
-  scrapaxe:    { name: "Makeshift axe",         slot: W, skill: ML, power: 1.6, req: 0, value: 2,  noise: 0, makeshift: true, toolWear: true, dur: 10, weight: 1.4, cat: "melee", chop: 1.3,
-                 desc: "A leaf-spring blade ground to an edge and wedged into a split branch: cuts wood (×1.3, better than bare hands), counts as an axe for building and crafting (about ten jobs), and a poor weapon." },
+  scrapaxe:    { name: "Makeshift axe",         slot: W, skill: ML, power: 1.6, req: 0, value: 2,  noise: 0, makeshift: true, toolWear: true, dur: 10, weight: 1.4, cat: "melee", chop: 1.4,
+                 desc: "A leaf-spring blade ground to an edge and wedged into a split branch: cuts wood (×1.4, twice bare hands), counts as an axe for building and crafting (about ten jobs), and a poor weapon." },
   scrapshovel: { name: "Makeshift shovel",      slot: "pack", skill: null, power: 0, req: 0, value: 1,  noise: 0, makeshift: true, toolWear: true, dur: 12, weight: 1.5, cat: "tools",
                  desc: "A hubcap beaten flat and bolted to a pole: it digs. Counts as a shovel for building and crafting, about a dozen jobs before it falls apart." },
 };
@@ -80,11 +80,15 @@ export const TOOL_CRAFTS = {
 
 // What each build needs (buildings.js BUILDINGS keys; a key not listed needs no tools). Wood work a hammer and a saw;
 // digging a shovel; pipes, machines and engines wrenches; wiring pliers; bolted steel a drill; steel plate a welder.
+// Housing, the general buildings and the step up into a base need no more than the hub's own tool shelf (world.js
+// HUB_TOOLS) or the makeshift ones: beds and a base never wait on a rare find. A camp's essentials need none at all (a
+// storage box, crates, barricades, a drying rack, a rain catcher, a tent, the cook fire; the step up into a shelter and
+// establishing an outpost): a camp is set up with what people have to hand.
 /** @type {Record<string, string[]>} */
 export const BUILD_TOOLS = {
   // farming and food
-  farm_plot: ["dig"], greenhouse: ["hammer", "saw", "drill"], animal_pen: ["hammer", "dig"], huntcabin: ["hammer", "saw"],
-  smoker: ["hammer"], kitchen: ["hammer", "saw"], canner: ["wrench"], canteen: ["hammer", "saw", "wrench"],
+  farm_plot: ["dig"], greenhouse: ["hammer", "saw"], animal_pen: ["hammer", "dig"], huntcabin: ["hammer", "saw"],
+  kitchen: ["hammer", "saw"], canner: ["wrench"], canteen: ["hammer", "saw", "wrench"],
   cellar: ["dig", "hammer"], coldstore: ["dig", "hammer", "saw"], freezer: ["wrench", "drill", "pliers"], sealer: ["wrench", "pliers"],
   grainmill: ["wrench"], meatgrinder: ["wrench"], still: ["wrench"],
   // workshops
@@ -92,12 +96,12 @@ export const BUILD_TOOLS = {
   ammo_bench: ["hammer", "wrench"], reload_bench: ["wrench"], med_station: ["hammer"], machine_shop: ["wrench", "drill", "welder"],
   garage: ["hammer", "saw", "wrench"], generator: ["wrench", "pliers"],
   // housing and the rooms
-  bunkhouse: ["hammer", "saw"], barracks: ["hammer", "saw", "drill"], common_room: ["hammer", "saw"], chapel: ["hammer", "saw"],
-  gen_hut: ["hammer", "saw"], gen_cabin: ["hammer", "saw"], gen_lodge: ["hammer", "saw"], gen_hall: ["hammer", "saw"], gen_barn: ["hammer", "saw", "drill"],
+  bunkhouse: ["hammer", "saw"], barracks: ["hammer", "saw"], common_room: ["hammer", "saw"], chapel: ["hammer", "saw"],
+  gen_hut: ["hammer", "saw"], gen_cabin: ["hammer", "saw"], gen_lodge: ["hammer", "saw"], gen_hall: ["hammer", "saw"], gen_barn: ["hammer", "saw"],
   bunks: ["hammer", "saw"], shelves: ["hammer", "saw"], lockers: ["wrench"], stove: ["wrench"],
   infirmary: ["hammer"], field_hosp: ["hammer", "saw"], clinic: ["hammer", "drill", "wrench"], hospital: ["drill", "wrench", "welder"],
   // storage
-  storebox: ["hammer"], crates: ["hammer"], shed: ["hammer", "saw"], storehouse: ["hammer", "saw"], warehouse: ["hammer", "drill", "wrench"],
+  shed: ["hammer", "saw"], storehouse: ["hammer", "saw"], warehouse: ["hammer", "wrench"],
   armory: ["drill", "welder"],
   // water
   well: ["dig", "wrench"], cistern: ["dig"], boiler: ["wrench"],
@@ -107,11 +111,11 @@ export const BUILD_TOOLS = {
   // walls and defences
   walls: ["hammer", "saw"], wall1: ["hammer", "saw"], wall2: ["hammer", "saw"], wall4: ["hammer", "saw"], gate4: ["hammer", "saw"],
   stand1: ["hammer", "saw"], stand2: ["hammer", "saw"], stand4: ["hammer", "saw"], watchtower: ["hammer", "saw"],
-  barricades: ["hammer"], spike_pits: ["dig"], barbed_wire: ["hammer", "pliers"], razor_wire: ["pliers"],
+  spike_pits: ["dig"], barbed_wire: ["hammer", "pliers"], razor_wire: ["pliers"],
   sandbag_wall: ["dig"], sandbag1: ["dig"], trench: ["dig"], gate: ["drill", "welder"], floodlights: ["wrench", "pliers"],
   minefield: ["dig", "pliers"], guard_towers: ["hammer", "saw", "drill"],
   // stepping up a tier
-  camp_up: ["hammer", "saw"], outpost_up: ["hammer", "saw"], hub_up: ["hammer", "saw", "drill"],
+  hub_up: ["hammer", "saw"],
 };
 // The wall pieces, the gates and the Ring wall by their material (buildings.js WALL_TIERS key; the stands stay
 // BUILD_TOOLS): timber nailed and sawn, scrap bolted up, metal sheets welded.
@@ -214,6 +218,6 @@ export const TOOL_HELP = `<b>Tools for building and crafting.</b> Most builds an
   welding kit; packs, padding and ghillie suits a sewing kit. A tool kit counts as a hammer, a saw, wrenches and pliers.
   A team's field craft looks in what the team carries. Tools are not used up; makeshift ones (a hammer, a saw, an axe and a
   shovel crafted from scrap anywhere) wear out after a dozen jobs or so. Hardware stores, farms, barns, sheds, garages and
-  the trunks of cars hold the most. <b>Woodcutting</b>: bare hands gather deadfall at half the rate of a tool; a felling axe
-  cuts four times as much (×2), a fire axe ×1.8, a hatchet or a bow saw ×1.5, a tomahawk ×1.4, a makeshift axe ×1.3; a
-  machete or a sledgehammer and wedges are little better than hands.`;
+  the trunks of cars hold the most. <b>Woodcutting</b>: bare hands only gather deadfall (×0.7); a felling axe cuts three
+  times as much (×2.2), a fire axe ×2, a hatchet or a bow saw ×1.6, a tomahawk ×1.5, a makeshift axe ×1.4; a machete or a
+  sledgehammer and wedges are little better than hands.`;

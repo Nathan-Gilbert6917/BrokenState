@@ -129,10 +129,10 @@ export function canUpgradeAmmoBench(state, base, id) {
   if (base.construction.some((c) => c.target === id)) return { ok: false, reason: "It is being upgraded already" };
   for (const [k, v] of Object.entries(RELOAD.UP.cost)) if ((base.stock[k] || 0) < v) return { ok: false, reason: `Needs ${v} ${SUPPLIES[k] ? SUPPLIES[k].name.toLowerCase() : k}` };
   for (const [sk, lvl] of Object.entries(RELOAD.UP.req)) if (!atBase(state, base.id).some((s) => skill(s, sk) >= lvl)) return { ok: false, reason: `Needs a Mechanics ${lvl}+ survivor here` };
-  const tools = buildToolProblem(state, base, "reload_bench");
-  if (tools) return { ok: false, tools: true, reason: tools };
   const lock = buildLock(state, base, "reload_bench");
   if (lock) return { ok: false, reason: lock, locked: true };
+  const tools = buildToolProblem(state, base, "reload_bench");
+  if (tools) return { ok: false, tools: true, reason: tools };
   return { ok: true };
 }
 export function queueReloadUpgrade(state, base, id) {

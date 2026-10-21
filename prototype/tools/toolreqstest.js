@@ -135,7 +135,7 @@ console.log("Woodcutting");
 {
   check(chopMult(null) === WOOD.hands && WOOD.hands < 1, "bare hands cut less than a tool of ×1");
   const axe = newItem("axe", 1), fire = newItem("fireaxe", 1), hatchet = newItem("hatchet", 1), machete = newItem("machete", 1);
-  check(chopMult(axe) >= 3.5 * WOOD.hands && chopMult(fire) >= 3 * WOOD.hands, "an axe cuts three to four times what bare hands do");
+  check(chopMult(axe) >= 3 * WOOD.hands && chopMult(fire) >= 2.8 * WOOD.hands, "an axe cuts about three times what bare hands do");
   check(chopMult(axe) > chopMult(fire) && chopMult(fire) > chopMult(hatchet) && chopMult(hatchet) > chopMult(machete), "a felling axe, a fire axe, a hatchet, then a machete");
   check(isChopTool(newItem("bowsaw", 1)) && isChopTool(newItem("scrapaxe", 1)) && !isChopTool(newItem("hammer", 1)), "a bow saw and a makeshift axe cut wood, a hammer does not");
   const st = world();
@@ -147,7 +147,7 @@ console.log("Woodcutting");
   const bare = baseWoodDay(st, base, s);
   s.gear.weapon = newItem("axe", 1);
   const withAxe = baseWoodDay(st, base, s);
-  check(bare > 0 && withAxe >= 3.5 * bare, `with a felling axe a woodcutter brings in ${withAxe.toFixed(0)} a day, bare-handed ${bare.toFixed(0)}`);
+  check(bare > 0 && withAxe >= 3 * bare, `with a felling axe a woodcutter brings in ${withAxe.toFixed(0)} a day, bare-handed ${bare.toFixed(0)}`);
 }
 
 console.log("Where tools turn up");

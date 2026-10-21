@@ -3341,8 +3341,9 @@ export function planCrafts(state, base) {
     return;
   }
   // The basic tools (toolreqs.js BASIC_KINDS: a hammer, a saw, a shovel, an axe): one nothing here covers is made from
-  // scrap (a makeshift one) before the rest, or the builds and recipes that need it never go up.
-  const tw = basicToolWanted(state, base);
+  // scrap (a makeshift one) before the rest, or the builds and recipes that need it never go up. Not at a camp: its
+  // essentials need none, and its scrap is for the step up into a shelter.
+  const tw = isCamp(base) ? null : basicToolWanted(state, base);
   if (tw && canCraft(state, base, tw.recipe).ok) {
     queueCraft(state, base, tw.recipe);
     gov(state).stats.crafts++;

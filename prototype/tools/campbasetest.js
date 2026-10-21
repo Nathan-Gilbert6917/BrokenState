@@ -13,6 +13,7 @@
 //     and its heating with the fire out are wanted (the Cut wood job opens), the woodpile is burned for them, and a
 //     boiler beside a lit fire burns nothing (the wood once, not twice).
 // Usage: node tools/campbasetest.js [seed]
+import { stockTools } from "./toolset.js"; // every tool a build or recipe can need (toolreqs.js)
 import { createWorld, hub, atBase, newId, tickHour } from "../src/sim/world.js";
 import { BUILDINGS, CAMP, SHELTER, CROP_PLOTS, addBuilding, canBuild, placeProblem, queueBuild, isCamp, isShelter, plotCap, farmSlots, baseBeds, queuedBeds, plotsUsed } from "../src/sim/buildings.js";
 import { setAutopilot } from "../src/sim/autopilot.js";
@@ -33,13 +34,13 @@ const SEED = Number(process.argv[2] || 42);
 let pass = 0, fail = 0;
 const check = (ok, what) => { if (ok) pass++; else { fail++; console.log(`  FAIL: ${what}`); } return !!ok; };
 const section = (t) => console.log(t);
-const W = () => { const st = createWorld({ seed: SEED, factionCount: 6 }); st.visitorsOff = true; return st; };
+const W = () => { const st = createWorld({ seed: SEED, factionCount: 6 }); st.visitorsOff = true; stockTools(hub(st)); return st; }; // every tool (toolset.js)
 const rich = (b) => Object.assign(b.stock, { scrap: 999, parts: 99, meds: 99, electronics: 9, gunparts: 9, wood: 99999 });
 const skilled = (st, b) => { for (const s of atBase(st, b.id)) Object.assign(s.skills, { medicine: 10, mechanics: 10, farming: 5 }); };
 const ui = (baseView) => ({ started: true, speed: 0, tab: "bases", selected: -1, survivor: null, baseView, expedition: null, diary: null, roster: null, help: false });
 const modal = (st, b, tab) => { st.cards.length = 0; return renderModal(st, ui({ id: b.id, tab })) || ""; };
 const plain = (h) => String(h).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
-const mkOutpost = (st, tile) => { const o = { id: newId(), tile, type: "outpost", name: "Test Outpost", stock: { water: 0, fuel: 0, meds: 0, ammo: 0, parts: 0, scrap: 0 }, radio: false, watchtower: false, buildings: [], construction: [], armory: [] }; st.bases.push(o); return o; };
+const mkOutpost = (st, tile) => { const o = { id: newId(), tile, type: "outpost", name: "Test Outpost", stock: { water: 0, fuel: 0, meds: 0, ammo: 0, parts: 0, scrap: 0 }, radio: false, watchtower: false, buildings: [], construction: [], armory: [] }; stockTools(o); st.bases.push(o); return o; };
 const first = (s) => s.name.split(" ")[0];
 const asCamp = (b) => { b.tier = 0; b.camp = true; b.buildings = []; b.construction = []; };
 const asShelter = (b) => { b.tier = 0; delete b.camp; b.buildings = []; b.construction = []; };

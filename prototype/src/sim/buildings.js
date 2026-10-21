@@ -453,10 +453,10 @@ export function canExpandBunkhouse(state, base, id) {
   const queued = base.construction.filter((c) => c.type === "barracks").length;
   if (countAll(base, "barracks") + queued >= BUILDINGS.barracks.max) return { ok: false, reason: `Limit reached (${BUILDINGS.barracks.max} barracks)` };
   for (const [k, v] of Object.entries(BARRACKS_UP.cost)) if ((base.stock[k] || 0) < v) return { ok: false, reason: `Needs ${v} ${keyWord(k)}` };
-  const tools = buildToolProblem(state, base, "barracks"); // toolreqs.js
-  if (tools) return { ok: false, tools: true, reason: tools };
   const lock = buildLock(state, base, "barracks");
   if (lock) return { ok: false, reason: lock, locked: true };
+  const tools = buildToolProblem(state, base, "barracks"); // toolreqs.js
+  if (tools) return { ok: false, tools: true, reason: tools };
   return { ok: true };
 }
 export function queueBunkhouseExpand(state, base, id) {
@@ -483,10 +483,10 @@ export function canUpgradeGenerator(state, base, id) {
   if (b.broken) return { ok: false, reason: "Repair it first (Repairs tab)" };
   for (const [k, v] of Object.entries(next.cost)) if ((base.stock[k] || 0) < v) return { ok: false, short: true, reason: `Needs ${v} ${keyWord(k)}`, next, tier: tier + 1 };
   for (const [sk, lvl] of Object.entries(next.req || {})) if (!atBase(state, base.id).some((s) => skill(s, sk) >= lvl)) return { ok: false, reason: `Needs a ${SKILL_NAMES[sk] || sk} ${lvl}+ survivor here`, next, tier: tier + 1 };
-  const tools = buildToolProblem(state, base, "generator"); // toolreqs.js
-  if (tools) return { ok: false, tools: true, reason: tools, next, tier: tier + 1 };
   const lock = upgradeLock(state, `generator${tier + 1}`);
   if (lock) return { ok: false, locked: true, reason: lock, next, tier: tier + 1 };
+  const tools = buildToolProblem(state, base, "generator"); // toolreqs.js
+  if (tools) return { ok: false, tools: true, reason: tools, next, tier: tier + 1 };
   return { ok: true, next, tier: tier + 1 };
 }
 export function queueGenUpgrade(state, base, id) {
@@ -1165,10 +1165,10 @@ export function canBuild(state, base, type, opts = {}) {
       if (!atBase(state, base.id).some((s) => skill(s, sk) >= lvl)) return { ok: false, reason: `Needs a ${SKILL_NAMES[sk] || sk} ${lvl}+ survivor here` };
     }
   }
-  const tools = buildToolProblem(state, base, type); // toolreqs.js: a hammer and a saw, a shovel, a welding kit…
-  if (tools) return { ok: false, tools: true, reason: tools };
   const lock = buildLock(state, base, type); // blueprints.js: upper tiers need a studied manual or blueprint
   if (lock) return { ok: false, reason: lock, locked: true };
+  const tools = buildToolProblem(state, base, type); // toolreqs.js: a hammer and a saw, a shovel, a welding kit…
+  if (tools) return { ok: false, tools: true, reason: tools };
   return { ok: true };
 }
 
