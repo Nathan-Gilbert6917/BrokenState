@@ -248,12 +248,13 @@ function customizeRow(state, ui) {
     </div>`;
 }
 
+const startWood = (state) => { const h = state.bases.find((b) => b.type === "hub"); return Math.floor(h ? h.stock.wood || 0 : 0); };
 export function newRunScreen(state, ui) {
   const people = state.survivors;
   const hard = isHardcore(state);
   const intro = hard
     ? `Hardcore. The day the State of Calder falls. ${people.length === 1 ? "You get out alone" : `${countWord(people.length).replace(/^./, (c) => c.toUpperCase())} of you get out`} with whatever you can grab: no hub, food and water for a day or three, and the outbreak just starting. Gather what a hub takes and found your own. ${state.factions.length} other groups are out there, starting out just like you.`
-    : `Six years after the outbreak. Your survivors hold a town in the State of Calder: the town hall (four beds, a well, a cellar, a fence) and nothing built yet. What to put up first, with ${HUB_START.scrap} scrap and ${HUB_START.parts} parts, is yours to choose: beds, a crafting bench, fields, walls. ${state.factions.length} other groups are out there, starting bare as well, along with the hordes.`;
+    : `Six years after the outbreak. Your survivors hold a town in the State of Calder: the town hall (four beds, a well, a cellar, no wall yet) and nothing built yet. What to put up first, with a woodpile of ${startWood(state).toLocaleString("en-US")} wood, ${HUB_START.scrap} scrap and ${HUB_START.parts} parts, is yours to choose: beds, a crafting bench, fields, walls. ${state.factions.length} other groups are out there, starting bare as well, along with the hordes.`;
   return `<div class="box wide">
     <div class="spread"><h1>Broken State — New run</h1><button data-action="nr-map"${tip("Put this screen aside and look at the world map: where you start, the groups, the roads (the banner's Back to setup, or Esc, brings it back)")}>🗺 View map</button></div>
     <div class="text small">${intro} Customize your starting colonists (name, skills, look) and choose your leader. The game starts paused: give your first orders, then press Space.</div>

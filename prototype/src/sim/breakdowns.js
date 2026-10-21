@@ -170,6 +170,7 @@ export const FIXTURES = {
   spike_pits:  { raidOnly: true, outer: true, repair: { hours: 2, cost: { scrap: 2 }, min: 0 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "filled-in pits: no toll on the next horde" },
   trench:      { raidOnly: true, outer: true, repair: { hours: 8, cost: { scrap: 4 }, min: 0 }, rig: { hours: 3, cost: { scrap: 2 }, min: 0 }, what: "a caved-in trench: 25% less of a horde held back" },
   sandbag_wall:{ raidOnly: true, outer: true, repair: { hours: 3, cost: { scrap: 2 }, min: 0 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "a burst position: 5% less of a horde held back, no cover there" },
+  sandbag1:    { raidOnly: true, outer: true, repair: { hours: 1, cost: { scrap: 1 }, min: 0 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "burst sandbags: no cover on that cell" }, // a 1×1 Sandbags: refilled at what it took to fill (basemap.js MAP_WEAR.sandbag)
   barbed_wire: { raidOnly: true, outer: true, repair: { hours: 2, cost: { scrap: 2 }, min: 0 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "cut wire: 6% less of a horde held back" },
   razor_wire:  { raidOnly: true, outer: true, repair: { hours: 3, cost: { scrap: 4, parts: 1 }, min: 1 }, rig: { hours: 1, cost: { scrap: 2 }, min: 0 }, what: "cut coils: 10% less of a horde held back" },
   guard_towers:{ raidOnly: true, outer: true, repair: { hours: 9, cost: { scrap: 10, parts: 1 }, min: 1 }, rig: { hours: 3, cost: { scrap: 4 }, min: 0 }, what: "a tower down: 8% less of a horde held back" },

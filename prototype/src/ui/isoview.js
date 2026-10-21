@@ -27,7 +27,7 @@ import { CELL, active, coverSides, evacAt, barredCell, moveMob, vaultable, vault
 import { canPlace } from "../sim/deploy.js";
 import { acidAt } from "../sim/acid.js";
 import { unitCanvas, unitFacing, muzzleOf } from "./sprites.js";
-import { unitFigure, unitFigureDown, corpseFigure, figureMuzzle, FIG } from "./figures.js"; // every body as a low-poly figure, facing its way; the fallen lying along the world's x
+import { unitFigure, unitFigureDown, corpseFigure, figureMuzzle, figureStats, FIG } from "./figures.js"; // every body as a low-poly figure, facing its way; the fallen lying along the world's x
 import { unitDownCanvas, drawDowned, downScale, corpseCanvas } from "./downsprites.js";
 import { thirdRing } from "../sim/thirdside.js";
 import { parleyStatus } from "../sim/parley.js"; // another group's people on a raid's map: the hostility badge
@@ -42,6 +42,7 @@ import { isCart, parkCells, cartSpec } from "../sim/carts.js"; // a cart pushed 
 import { groundPiles, pileCount } from "../sim/ground.js"; // things on the ground (sim/ground.js)
 import { planOpen } from "../sim/raidplan.js"; // before a raid: while the plan is open the team is not on the map yet (not drawn)
 import { onForgetPictures } from "./pictures.js"; // the pictures kept here are dropped when the GPU context comes back (they would be blank)
+import { strideOf } from "./moveanim.js"; // walking: the step of the walk cycle and the bob
 
 // ---------- constants ----------
 const HW = 16, HH = 8;          // half a tile in art px (a tile: 32 × 16)
@@ -677,8 +678,26 @@ function prims(k, o) {
       return out;
     }
     case "sandbag": {
-      const ax = along(o), bag = (f, s, t) => mul(PAL.sand, ((s | 0) % 5 < 1 || (t | 0) % 4 < 1 ? 0.72 : 0.95) + (f === "top" ? 0.05 : 0));
-      return [run(ax, 0.22, 0.78, 0, 5, bag), run(ax, 0.28, 0.72, 5, 10, bag, 0.04, 0.96), run(ax, 0.34, 0.66, 10, 13, bag, 0.12, 0.88)];
+      // Three courses of bags, each narrower than the one below, laid like bricks: a bag half a tile long, each course's
+      // seams half a bag over from the one below, counted from the tile's edge so they carry on into the next cell.
+      // Joined (JOINS: the sandbag and barricade neighbours, sim/basemap.js sandbag1 pieces side by side) a course runs
+      // out to that side of the tile; round a corner the two runs meet square; a free end steps in course by course.
+      // A lone cell is a short stack along its axis (along), both ends stepped in.
+      const COURSES = [[0.2, 0.8, 0, 5, 0.06], [0.26, 0.74, 5, 10, 0.12], [0.33, 0.67, 10, 13, 0.2]]; // across, z0, z1, a free end's step
+      const bag = (ax, a0, row) => (f, s, t, X, Y) => {
+        const d = f === "top" ? (ax === "u" ? s : t) : f === (ax === "u" ? "south" : "east") ? s : -1; // along the run (a run's end face: none)
+        const p = d < 0 ? -1 : a0 * 16 + d + (row & 1) * 4, i = Math.floor(p / 8);
+        const seam = (p >= 0 && p % 8 < 0.9) || (f !== "top" && t < 0.7);
+        const tuck = f === "top" && (ax === "u" ? t : s) < 1.2; // the fold of the sack along the back
+        return mul(PAL.sand, seam ? 0.7 : (0.88 + hash3(i, row, 31) * 0.14) * (tuck ? 0.9 : 1) + (f === "top" ? 0.05 : 0));
+      };
+      const ju = o.j & 3, jv = o.j & 12, out = [];
+      COURSES.forEach(([c0, c1, z0, z1, e], row) => {
+        if (!ju && !jv) { const ax = along(o); out.push(run(ax, c0, c1, z0, z1, bag(ax, e, row), e, 1 - e)); return; }
+        if (ju) { const a0 = o.j & 2 ? 0 : jv ? c0 : e, a1 = o.j & 1 ? 1 : jv ? c1 : 1 - e; out.push(run("u", c0, c1, z0, z1, bag("u", a0, row), a0, a1)); }
+        if (jv) { const a0 = o.j & 8 ? 0 : ju ? c0 : e, a1 = o.j & 4 ? 1 : ju ? c1 : 1 - e; out.push(run("v", c0, c1, z0, z1, bag("v", a0, row), a0, a1)); }
+      });
+      return out;
     }
     case "barricade": {
       const ax = along(o);
@@ -860,7 +879,7 @@ function sprite(k, o, fog) {
   let s = spriteGet(key);
   if (s === undefined) {
     const p = prims(k, o);
-    s = p.length ? paint(p, { fog, outline: OUTLINED.has(k) }) : null;
+    s = p.length ? paint(p, { fog, outline: OUTLINED.has(k) && !(k === "sandbag" && o.j) }) : null; // joined sandbags: no outline, or each cell's would cross the wall at the join
     iso.builds.sprites++;
     spritePut(key, s);
   }
@@ -1613,6 +1632,7 @@ export const SNEAK_LOOK = { squash: 0.8, alpha: 0.82, filter: "brightness(0.62) 
 // Draw the battle. H: what ui/combat.js knows (the cached view, the selected unit, the mode, the hover, helpers).
 export function drawIso(ctx, cw, ch, state, b, now, H) {
   frameNow = now; // the frame's clock, for the bodies' own animations (toppleOf)
+  walkPaints = WALK_PAINTS;
   const t0 = typeof performance !== "undefined" ? performance.now() : 0;
   if (iso.battle !== b || iso.mapKey !== mapKey(b)) newBattleCamera(b, cw, ch); // a new battle, or its map swapped (the fall back to the yard)
   iso.cw = cw; iso.ch = ch;
@@ -1864,7 +1884,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
 
   // ---------- the painter's pass: every cell from the back to the front ----------
   const items = [];
-  // Units by where they stand (sliding along their last move).
+  // Units by where they stand (walking their moves: ui/moveanim.js).
   const shown = [];
   for (const t of b.units) {
     if (t.left || t.fled || t.off || !onFloor(b, t)) continue; // on another floor: a marker only (below)
@@ -2477,8 +2497,10 @@ function drawBody(ctx, state, b, s, H, silhouette = false) {
     drawDowned(ctx, unitDownCanvas(state, b, t, H.salt), X, Y, [x1 - X, y1 - Y], [x2 - X, y2 - Y], { facing: f, scale: downScale(t), alpha: !silhouette && t.dead ? 0.92 : 1 });
     return;
   }
-  const yaw = unitYaw(b, t, FR.r);
-  const fig = unitFigure(state, b, t, H.salt, yaw); // a low-poly figure facing its way (ui/figures.js), else the flat sprite mirrored to its side
+  const m = H.moveOf ? H.moveOf(t, frameNow) : null; // walking (ui/combat.js moveNow): facing the step it is on, striding
+  const yaw = m && m.dir ? dirYaw(b, t, FR.r, m.dir) : unitYaw(b, t, FR.r);
+  const walk = m ? strideOf(m) : null;
+  const fig = walkFigure(state, b, t, H.salt, yaw, walk) || unitFigure(state, b, t, H.salt, yaw); // a low-poly figure facing its way (ui/figures.js), else the flat sprite mirrored to its side
   frameFigs.push(["up", t]);
   const cv = fig || unitCanvas(state, b, t, H.salt);
   if (!cv) return;
@@ -2491,7 +2513,7 @@ function drawBody(ctx, state, b, s, H, silhouette = false) {
   const hgt = UNIT_H * unitBig(t) * S, w = hgt * (22 / 26);
   ctx.save();
   ctx.imageSmoothingEnabled = false;
-  ctx.translate(X, Y);
+  ctx.translate(X, Y - (walk ? walk.bob * S : 0)); // walking: up a little as the legs pass
   if (!fig && facing < 0) ctx.scale(-1, 1);
   const spent = t.side === "player" && t.ap === 0 && b.phase === "player";
   if (!silhouette && spent) ctx.globalAlpha *= 0.65;
@@ -2507,6 +2529,16 @@ function drawBody(ctx, state, b, s, H, silhouette = false) {
   if (cartOver) drawCartIso(ctx, cart, X, Y, S, { yaw, held: true });
 }
 const cartLookOf = (item) => (cartSpec(item) || {}).look || "barrow";
+// A step of a walk (ui/moveanim.js strideOf) as a figure: painted when first needed, at most WALK_PAINTS new ones a
+// frame (a horde setting off at once), the standing figure meanwhile (null).
+const WALK_PAINTS = 4;
+let walkPaints = WALK_PAINTS;
+function walkFigure(state, b, t, salt, yaw, walk) {
+  if (!walk || !walk.stride) return null;
+  const n = figureStats.painted, fig = unitFigure(state, b, t, salt, yaw, false, { stride: walk.stride, cached: walkPaints <= 0 });
+  if (figureStats.painted > n) walkPaints--;
+  return fig;
+}
 // A parked cart's heading: one of the world's four ways, by the container (it keeps it while it stands), as a yaw.
 function parkedYaw(b, c) {
   const d = [[1, 0], [0, 1], [-1, 0], [0, -1]][(((c.id || 0) * 2654435761) >>> 0) % 4];

@@ -194,14 +194,15 @@ export function figureLimbs(app, weaponKey = null, armorKey = null) {
   else if (D && D.mound) F.push(limb([0, 0, legH + 1], [0, 0, 0], TD / 2 * 1.4, TW / 2 * 1.3, D.mound, { taper: 1.25 }));
   else for (const side of [-1, 1]) {
     const l = side * TW / 4, lc = side > 0 ? pants : shade(pants, -0.1), fwd = run * side;
+    const sw = (app.stride || 0) * side * 2.8 * big, lift = sw < 0 ? -sw * 0.3 : 0; // walking (ui/moveanim.js): this foot ahead or behind, the one behind off its heel
     if (down && down.pose === "down") { // knees drawn up: the thigh forward, the shin back down
       F.push(limb([0, l, legH], [4.5 * big, l, legH - 3 * big], TD / 2 * 0.9, TW / 4 * 0.9, lc, { taper: 0.9, tex: marks("leg" + side) }));
       F.push(limb([4.5 * big, l, legH - 3 * big], [2 * big, l, 1.4], TD / 2 * 0.8, TW / 4 * 0.8, lc, { taper: 0.85 }));
       F.push(limb([1.2 * big, l, 0.7], [4.4 * big, l, 0.7], 0.7, TW / 4 * 0.8, SHOE, { sides: 6, u: [0, 0, 1] }));
       continue;
     }
-    F.push(limb([fwd, l, legH], [fwd, l, 1.4], TD / 2 * 0.92, TW / 4 * 0.9, lc, { taper: 0.78, tex: marks("leg" + side) }));
-    F.push(limb([fwd - 0.8, l, 0.7], [fwd + 2.4, l, 0.7], 0.7, TW / 4 * 0.8, SHOE, { sides: 6, u: [0, 0, 1] }));
+    F.push(limb([fwd, l, legH], [fwd + sw, l, 1.4 + lift], TD / 2 * 0.92, TW / 4 * 0.9, lc, { taper: 0.78, tex: marks("leg" + side) }));
+    F.push(limb([fwd + sw - 0.8, l, 0.7 + lift], [fwd + sw + 2.4, l, 0.7 + lift * 0.4], 0.7, TW / 4 * 0.8, SHOE, { sides: 6, u: [0, 0, 1] }));
   }
   // the torso: narrower at the waist, the belt; a vest around it with its own depth
   const topTex = (face, s, t) => {
@@ -235,11 +236,12 @@ export function figureLimbs(app, weaponKey = null, armorKey = null) {
     F.push(limb(E, H, armR * 0.9, armR * 0.9, short ? skin : shade(top, -0.08), { sides: 6, taper: 0.9 }));
     F.push(limb(H, add(H, mul(norm(sub(H, E)), 1.8)), armR * 1.05, armR * 0.8, skin, { sides: 6 })); // the hand
   };
-  const hang = (side) => arm(side, [-0.4, side * (sideL + 0.3), shoulderZ - 6.4], [0.4, side * (sideL + 0.4), shoulderZ - 11.3]);
-  const reach = (side) => arm(side, [4.6, side * (sideL - 0.2), shoulderZ - 2.6], [9.4, side * TW * 0.3, shoulderZ - 3.2]);
+  const swing = (side) => -(app.stride || 0) * side; // walking: a free arm swings against its own side's leg
+  const hang = (side) => { const w = swing(side); arm(side, [-0.4 + w * 1.4, side * (sideL + 0.3), shoulderZ - 6.4], [0.4 + w * 3.4, side * (sideL + 0.4), shoulderZ - 11.3 + Math.abs(w) * 0.6]); };
+  const reach = (side) => { const w = swing(side) * 0.8; arm(side, [4.6, side * (sideL - 0.2), shoulderZ - 2.6], [9.4 + w, side * TW * 0.3, shoulderZ - 3.2 + w * 0.5]); }; // walking: the reaching hands bob
   const longArm = D && D.longArms ? 1.35 : 1;
   const armUp = (side) => arm(side, [-1.2, side * (sideL + 1.4), shoulderZ + 1.5 * longArm], [-2.8, side * (sideL + 2.6), shoulderZ + 6.5 * longArm]); // flung up and back
-  const hangLong = (side) => arm(side, [-0.4, side * (sideL + 0.4), shoulderZ - 7 * longArm], [0.6, side * (sideL + 0.6), shoulderZ - 13 * longArm]);
+  const hangLong = (side) => { const w = swing(side) * 0.6; arm(side, [-0.4 + w * 1.4, side * (sideL + 0.4), shoulderZ - 7 * longArm], [0.6 + w * 3.4, side * (sideL + 0.6), shoulderZ - 13 * longArm]); };
   if (down) { // lying: dead with the arms out a little; down with them over the chest
     if (down.pose === "down") { arm(1, [1.6, sideL * 0.9, shoulderZ - 5.5], [TD / 2 + 1.2, -1.5, shoulderZ - 4]); arm(-1, [1.6, -sideL * 0.9, shoulderZ - 6.5], [TD / 2 + 1.4, 1.5, shoulderZ - 5]); }
     else { arm(1, [0.2, sideL + 1.6, shoulderZ - 6], [0.8, sideL + 3.2, shoulderZ - 11]); arm(-1, [0.2, -(sideL + 1.6), shoulderZ - 6], [0.8, -(sideL + 3.2), shoulderZ - 11]); }
@@ -551,15 +553,21 @@ export const figureStats = { painted: 0, ms: 0, dropped: 0 }; // figures painted
 const MUZZLE = new WeakMap();
 export const figureMuzzle = (cv) => (cv && MUZZLE.get(cv)) || null;
 const lookKey = (a) => (a.key || [a.build, a.skin, a.hairStyle, a.hair, a.facial, a.topStyle, a.top, a.pants, a.accessory, a.accent, a.helmet, a.hood, a.sash, a.armband].join("|")) + (a.down ? `|down:${a.down.pose}:${a.down.pool ? 1 : 0}:${a.down.burnt ? 1 : 0}` : "");
+// Whether a figure walks on two legs (a stride changes its picture): not a mass, a beast, a crawler, a shroud or a mound.
+const legged = (a) => !a.down && !(a.dead && (a.dead.body || a.dead.shroud || a.dead.mound));
 const STEP = 15; // degrees a cached heading
 // The figure's canvas at a yaw (rounded to STEP), cached by its look, weapon, armour and heading; cv.figure = FIG.
+// o.stride: a walking pose (ui/moveanim.js strideOf: -1 .. 1 in halves); o.cached: only a picture already painted
+// (null on a miss: the caller draws the standing one instead of painting in a busy frame).
 export function figureCanvas(app, look = null, armorKey = null, yaw = 0, o = {}) {
   const y = (((Math.round(yaw / STEP) * STEP) % 360) + 360) % 360;
-  const key = `${lookKey(app)}|${look || ""}|${armorKey || ""}|${o.pack ? 1 : 0}|${y}`;
+  const st = o.stride && legged(app) ? o.stride : 0;
+  const key = `${lookKey(app)}|${look || ""}|${armorKey || ""}|${o.pack ? 1 : 0}|${y}${st ? `|st${st}` : ""}`;
   const e = cache.get(key);
   if (e !== undefined) { cache.delete(key); cache.set(key, e); return e.cv; }
+  if (o.cached) return null;
   const t0 = typeof performance !== "undefined" ? performance.now() : 0;
-  const p = paintBoxFigure({ ...app, accessory: o.pack ? "backpack" : app.accessory }, look ? String(look).split("|")[0] : null, armorKey, y, false);
+  const p = paintBoxFigure({ ...app, accessory: o.pack ? "backpack" : app.accessory, ...(st ? { stride: st } : {}) }, look ? String(look).split("|")[0] : null, armorKey, y, false);
   const cv = toCanvas(p);
   if (cv) { cv.figure = p.fig; if (p.muzzle) MUZZLE.set(cv, p.muzzle); }
   const bytes = p.w * p.h * 64; // the canvas, 4 × 4 px a grid px of 4 bytes (headless too, where there is none)
@@ -608,11 +616,12 @@ function unitApp(state, b, t, salt) {
   const f = b.setup && b.setup.enemy && b.setup.enemy.factionId != null ? (state.factions || []).find((x) => x.id === b.setup.enemy.factionId) : null;
   return { app: enemyApp(t.kit || "raiders", f ? f.color : null, seed), look: t.weapon && t.weapon !== "fists" ? weaponLook(unitGun(t)) : null, armor: t.armorKey };
 }
-// The figure for a battle unit at a yaw (standing: on its feet even when down or dead, for a panel's doll).
-export function unitFigure(state, b, t, salt, yaw, standing = false) {
+// The figure for a battle unit at a yaw (standing: on its feet even when down or dead, for a panel's doll). walk:
+// { stride, cached } a step of its walk (ui/moveanim.js; figureCanvas o.stride, o.cached).
+export function unitFigure(state, b, t, salt, yaw, standing = false, walk = null) {
   if (!standing && (t.dead || t.down)) return null;
   const u = unitApp(state, b, t, salt);
-  return figureCanvas(u.app, u.look, u.armor, yaw, u.o || {});
+  return figureCanvas(u.app, u.look, u.armor, yaw, walk && walk.stride ? { ...(u.o || {}), stride: walk.stride, cached: !!walk.cached } : u.o || {});
 }
 // The figure of a unit lying on the ground (dead, or down and alive), its head toward the yaw; the dead in a pool.
 export function unitFigureDown(state, b, t, salt, yaw) {

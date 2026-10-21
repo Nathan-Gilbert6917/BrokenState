@@ -1,13 +1,15 @@
 // The first-week guide (ui/guide.js) and Help's "Start here" topic, without a browser.
 // Usage: node tools/guidetest.js [seed]
 // - a normal start: the base list, nothing ticked at the start, each step ticks off from the state when it is really
-//   done (the stores looked at, people on priorities, a building queued, a team out and home, the clock run, the
-//   first dawn, the diary), with a toast; all done → the guide steps aside
+//   done (the stores looked at, people on priorities, a building queued, someone on Cut wood, a team out and home, the
+//   clock run, the first dawn, the diary), with a toast; all done → the checklist steps aside, the notes go on to day 7
 // - Show me: each step opens its screen and points at selectors that the rendered screen really has
 // - a Hardcore start: the road list (the team, the clock, water, the camp, its needs, the shelter), founded for real
 // - off after day 7 (not when brought back by hand), ✕, fold, the menu's toggle; saved and loaded with the world, an
 //   older save without it loads and shows nothing; the pulse (a stand-in DOM)
 // - options: the new-run box on for the first campaign only, guideSeen kept; the new-run screen and the menu's row
+// - new things: the first window of a kind gets a note over it (#guidetip), the first alert of a kind a line on the card,
+//   each once; their Help topics exist
 // - Help: "Start here" first, its links lead to topics that exist; README and main.js hooks
 import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { readFileSync } from "node:fs";
@@ -22,9 +24,11 @@ import { renderModal, renderRight, renderLeft, topbarParts } from "../src/ui/ui.
 import { newRunScreen } from "../src/ui/newgame.js";
 import { settingsModal, openSettings, SETTINGS_ACTIONS } from "../src/ui/settings.js";
 import { helpTopics, helpTab } from "../src/ui/help.js";
+import { addCard } from "../src/sim/world.js";
 import { loadOptions, saveOptions } from "../src/ui/saves.js";
 import {
   GUIDE, GUIDE_LISTS, GUIDE_ACTIONS, GUIDE_MENU_ACTIONS, guideSteps, startGuide, guideCheck, renderGuide, guidePulse, guideDefault, guideMenuRow,
+  POPUP_TIPS, ALERT_TIPS, popupOf, renderGuideTip,
 } from "../src/ui/guide.js";
 
 // Setting up a camp takes an hour (staging.js STAGING.PITCH): skipped here, the camp stands at once.
@@ -101,7 +105,7 @@ section("Normal start: the base list ticks off from the state");
   check(guideCheck(st, ui).length === 0 && !Object.keys(g.done).length, "nothing is ticked at the start");
   check(st.cards.length === cards0 && st.log.length === log0 && st.hour === hour0, "the check adds no cards or log lines and moves no clock");
   let html = renderGuide(st, ui);
-  check(clean(html) && /First week/.test(html) && html.includes(`0/${GUIDE_LISTS.base.length}`), "the card: clean, 0 of 8");
+  check(clean(html) && /First week/.test(html) && html.includes(`0/${GUIDE_LISTS.base.length}`), `the card: clean, 0 of ${GUIDE_LISTS.base.length}`);
   check((html.match(/data-action="gd-show"/g) || []).length === GUIDE_LISTS.base.length && /class="gd-why"/.test(html) && /▶/.test(html), "a Show me on every open step, the next one with its why line");
   check(renderGuide(st, { ...ui, started: false }) === "" && renderGuide(st, { ...ui, timelapse: {} }) === "", "hidden before the start and in the timelapse");
 
@@ -119,7 +123,7 @@ section("Normal start: the base list ticks off from the state");
   // stores: the Farming tab looked at.
   ui.baseView = { id: hub(st).id, tab: "farming" };
   let fresh = guideCheck(st, ui);
-  check(fresh.length === 1 && fresh[0].id === "stores" && g.done.stores === st.hour && ui.flash && /First week/.test(ui.flash.text) && /1 of 8/.test(ui.flash.text), `stores ticks off with a toast (${ui.flash && ui.flash.text})`);
+  check(fresh.length === 1 && fresh[0].id === "stores" && g.done.stores === st.hour && ui.flash && /First week/.test(ui.flash.text) && new RegExp(`1 of ${GUIDE_LISTS.base.length}`).test(ui.flash.text), `stores ticks off with a toast (${ui.flash && ui.flash.text})`);
   ui.baseView = null;
   // work: everyone on priorities.
   WORK_ACTIONS.weveryone(st, ui, { base: String(hub(st).id) });
@@ -128,6 +132,10 @@ section("Normal start: the base list ticks off from the state");
   const type = Object.keys(BUILDINGS).find((k) => canBuild(st, hub(st), k).ok);
   check(!!type && /queued/.test(queueBuild(st, hub(st), type)), `a building queued (${type})`);
   check(guideCheck(st, ui).some((x) => x.id === "build"), "build: a building queued");
+  // wood: nobody cuts wood at the start; someone put on Cut wood (a fixed job) ticks it.
+  check(!g.done.wood && !alive(st).some((s) => s.role === "wood"), "nobody starts on Cut wood");
+  { const w = alive(st).find((s) => s.location.kind === "base"); w.role = "wood"; if (w.work) w.work.role = null; }
+  check(guideCheck(st, ui).some((x) => x.id === "wood"), "wood: someone on Cut wood");
   // scavenge: a team out (any mission), then home.
   check(!g.done.scavenge && !g.done.home, "no team out yet");
   const h = hub(st);
@@ -145,13 +153,20 @@ section("Normal start: the base list ticks off from the state");
   check(!!g.done.home && !st.parties.includes(p) && crew.some((id) => st.survivors.find((s) => s.id === id).location.kind === "base"), `home: the team got back (hour ${g.done.home})`);
   check(g.on && !g.done.diary, "still on: the diary is left");
   html = renderGuide(st, ui);
-  check(clean(html) && (html.match(/gd-step done/g) || []).length === 7 && (html.match(/data-action="gd-show"/g) || []).length === 1, "the card: seven ticked, one Show me left");
+  check(clean(html) && (html.match(/gd-step done/g) || []).length === GUIDE_LISTS.base.length - 1 && (html.match(/data-action="gd-show"/g) || []).length === 1, "the card: all but one ticked, one Show me left");
   ui.diary = { day: 1 };
   guideCheck(st, ui);
-  check(!g.on && g.ended === "done" && /every step done/.test(ui.flash.text) && renderGuide(st, ui) === "", "all done: the guide steps aside with a toast");
+  check(g.on && g.stepsDone === st.hour && !g.ended && /every step done/.test(ui.flash.text) && renderGuide(st, ui) === "", "all done in the first week: the checklist steps aside with a toast, the notes go on");
+  ui.alertList = [{ kind: "nowork" }];
+  guideCheck(st, ui);
+  html = renderGuide(st, ui);
+  check(clean(html) && /New:/.test(html) && !/gd-step/.test(html), "after the steps: a new alert still gets its note (and no checklist)");
+  ui.alertList = [];
   ui.diary = null;
-  // The menu brings it back: a fresh list (the old one was finished), kept past day 7.
+  // The menu hides it; again brings it back: a fresh list (the old one was finished), kept past day 7.
   openSettings(ui, "game");
+  SETTINGS_ACTIONS["gd-toggle"](st, ui, {});
+  check(!st.guide.on && st.guide.ended === "closed", "Menu → Hide (the notes too)");
   SETTINGS_ACTIONS["gd-toggle"](st, ui, {});
   check(st.guide.on && st.guide.keep && !Object.keys(st.guide.done).length && /back/.test(ui.settings.msg), "Menu → Show: a fresh guide, kept past day 7");
   SETTINGS_ACTIONS["gd-toggle"](st, ui, {});
@@ -226,7 +241,8 @@ section("Hardcore: the road list, founded for real");
   establishNow(st, p);
   check(!!hub(st) && hub(st).camp === true && guideCheck(st, ui).some((x) => x.id === "camp"), "camp: the camp is set up (a base)");
   check(!g.done.needs, "the camp still needs its materials");
-  Object.assign(hub(st).stock, { scrap: 30, buildmat: 2 }); // a trip home with the rest
+  check(guideSteps(g).find((x) => x.id === "needs").why.includes("200 wood"), "needs: the step names the wood the step up takes");
+  Object.assign(hub(st).stock, { scrap: 30, buildmat: 2, wood: 300 }); // a trip home with the rest (the wood: a Cut wood order)
   check(guideCheck(st, ui).some((x) => x.id === "needs"), "needs: everything is in");
   run(st, 24 * 8, () => { guideCheck(st, ui); return !!hub(st) && hub(st).camp !== true; });
   run(st, 30, () => { guideCheck(st, ui); return !!g.done.night; }); // the shelter can stand within a day now (20 work-hours): its first night after it
@@ -275,6 +291,91 @@ section("Show me's pulse");
   check(!c.classList.contains("gd-pulse") && ui.guidePulse === null, "it ends");
   guidePulse({}, null);
   check(true, "no document: nothing happens");
+}
+
+// ---------- new things: the notes ----------
+section("New things: a note over a new window, a line for a new alert, each once");
+{
+  const st = createWorld({ seed: seed + 4, factionCount: 5 });
+  st.noWanderers = true;
+  const ui = freshUi();
+  const g = startGuide(st, true);
+  const ids = new Set(helpTopics().map((t) => t.id));
+  const bad = [...Object.entries(POPUP_TIPS).map(([id, t]) => [id, t]), ...ALERT_TIPS.map((t) => [t.id, t])].filter(([, t]) => !t.title || !t.text || (t.help && !ids.has(t.help)));
+  check(!bad.length, `every note has a title, a text and a Help topic that exists (${bad.map(([id, t]) => `${id}→${t.help}`).join(", ") || "all"})`);
+  check(popupOf(st, ui) === null && renderGuideTip(st, ui) === "", "nothing up: no note");
+  // A card that stops the clock (a team's orders).
+  const mk = (title) => ({ title, text: "A test card.", isOrders: true, choices: [{ label: "OK", resolve: () => "ok" }] });
+  st.cards.length = 0;
+  addCard(st, mk("Orders: the test team"));
+  const p = popupOf(st, ui);
+  check(p && p.id === "orders" && p.ref === st.cards[0], `a card up: its note's kind (${p && p.id})`);
+  let html = renderGuideTip(st, ui);
+  check(clean(html) && /New:/.test(html) && html.includes(POPUP_TIPS.orders.title) && /data-action="help-open" data-sec="team-panel"/.test(html) && g.seen.orders === st.hour, "the note: clean, its title, a ? to Help, marked seen");
+  check(renderGuideTip(st, ui) === html, "it stays while that card is up");
+  ui.settings = { tab: "help" };
+  check(renderGuideTip(st, ui) === "" && ui.guideTip, "Help open over it: hidden, kept");
+  ui.settings = null;
+  check(renderGuideTip(st, ui) === html, "back when Help closes");
+  GUIDE_ACTIONS["gd-tip-ok"](st, ui, {});
+  check(renderGuideTip(st, ui) === "", "✕ hides it");
+  st.cards.length = 0;
+  check(renderGuideTip(st, ui) === "" && !ui.guideTip, "the card answered: gone");
+  addCard(st, mk("Orders: another team"));
+  check(renderGuideTip(st, ui) === "", "the same kind again: told once");
+  st.cards.length = 0;
+  // A battle: the note's kind by the battle (a raid, a base defence, the build map, a fight).
+  const kinds = [[{ raid: {}, setup: {} }, "raid"], [{ setup: { layout: "baseDefence" } }, "defence"], [{ layout: {}, setup: { layout: "baseDefence", drill: true } }, "buildmap"], [{ setup: {} }, "battle"]];
+  for (const [b, want] of kinds) {
+    st.combat = b;
+    let got = null;
+    try { const x = popupOf(st, ui); got = x && x.id; } catch (e) { got = `error ${e.message}`; }
+    check(got === want, `a battle (${want}): ${got}`);
+  }
+  const setup = {};
+  st.combat = { raid: {}, setup };
+  html = renderGuideTip(st, ui);
+  check(/The raid map/.test(html) && /Shift\+A/.test(html), "the raid map's note");
+  st.combat = { raid: {}, setup }; // the battle made again (the raid's plan closed): the same raid
+  check(renderGuideTip(st, ui) === html, "the battle made again from the same setup keeps its note");
+  st.combat = null;
+  ui.guideTip = null;
+  // Alerts: the first of a kind gets a line on the card; cleared, it goes; the same kind again is not told.
+  ui.alertList = [{ kind: "wait" }];
+  guideCheck(st, ui);
+  html = renderGuide(st, ui);
+  check(ui.guideNote === "a-wait" && clean(html) && /class="gd-note"/.test(html) && /A team waits for orders/.test(html) && /data-sec="team-panel"/.test(html), "a team waiting: a New line on the card");
+  ui.alertList = [];
+  guideCheck(st, ui);
+  check(!ui.guideNote && !/gd-note/.test(renderGuide(st, ui)), "the alert cleared: the line goes");
+  ui.alertList = [{ kind: "plan" }];
+  guideCheck(st, ui);
+  check(!ui.guideNote, "the same kind again: told once");
+  ui.alertList = [{ kind: "nowork" }, { kind: "food" }];
+  guideCheck(st, ui);
+  check(ui.guideNote === "a-nowork", "one line at a time");
+  GUIDE_ACTIONS["gd-note-ok"](st, ui, {});
+  guideCheck(st, ui);
+  check(ui.guideNote === "a-food", "✕: the next one");
+  // Off: no notes; saved with the world; an older guide without seen gets one.
+  GUIDE_ACTIONS["gd-close"](st, ui, {});
+  addCard(st, mk("Orders: a third team"));
+  check(renderGuideTip(st, ui) === "" && !ui.guideNote, "the guide off: no notes");
+  st.cards.length = 0;
+  const ld = loadFromString(saveToString(st));
+  check(JSON.stringify(ld.guide.seen) === JSON.stringify(g.seen), "what was told is saved with the world");
+  const old = startGuide(createWorld({ seed: seed + 5, factionCount: 5 }), true);
+  delete old.seen;
+  const st2 = { ...st, guide: old };
+  ui.alertList = [{ kind: "worm" }];
+  ui.guideNote = null;
+  guideCheck(st2, ui);
+  check(old.seen && old.seen["a-worm"] != null, "a guide saved before the notes gets its seen list");
+  ui.alertList = [];
+  // main.js and index.html
+  const main = readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
+  const index = readFileSync(new URL("../index.html", import.meta.url), "utf8");
+  check(main.includes('setPanel("guidetip", renderGuideTip(state, ui), user)') && /id="guidetip"/.test(index), "main.js writes the note into #guidetip");
 }
 
 // ---------- options and the new-run screen ----------

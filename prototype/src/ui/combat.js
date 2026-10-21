@@ -83,14 +83,18 @@ import { hudPaint, hudSync, toggleHud, hitBreakdown, breakdownHtml, hitTone } fr
 import { barHtml } from "./battlebar.js"; // the bottom bar: the selected one's card, the orders, the turn controls (user request 2026-10-12)
 import { softWord } from "../sim/softcover.js"; // bushes and tents: what they hide, that they stop no bullets
 import { watchCanvas } from "./pictures.js"; // the battle canvas reports a lost GPU context (the kept pictures would be blank)
+import { planOf, moveAt } from "./moveanim.js"; // walking: each move walked out at the mover's pace, a unit's moves one after the other
 // Ground-ring colors of a hive's special dead (sim/zombietypes.js); ordinary dead keep the green ring.
 const ZRING = { runner: "#ffb43b", brute: "#c8c4b0", spitter: "#9ad63a", screamer: "#c99ae0", crawler: "#6ab0c8", shepherd: "#e8e2ff", soldier: "#a8b878", riot: "#8aa0c8", carrier: "#e6d8a8", swarm: "#f0e4c0", boneback: "#d8b48a", climber: "#8fd0a0", flinger: "#e8a0c8", sower: "#e8e070", nightmare: "#e0506e", sleeper: "#b0d8ff" };
 
 // Battle size; raids use a bigger map. Set from the battle in sync().
 let W = MAP_W, H = MAP_H;
 const ENEMY_STEP_MS = 420;
+// The enemy's next one goes once the last one seen walking is this far along its walk (the walks overlap a little, so a
+// horde does not file past one at a time), never later than WALK_WAIT_MAX ms after it set off.
+const WALK_WAIT = 0.6, WALK_WAIT_MAX = 2000;
 
-export const cui = { battle: null, sel: null, mode: "move", hover: null, msg: "", lastStep: 0, anim: new Map(), cache: { key: "" }, autoPlay: false, pickedDown: null, facePick: null, cones: false, handAsk: null, handReq: null, shoveAsk: null }; // handAsk: the Hand over chooser open for this unit; handReq: { sid, mate } the two-doll window asked for (ui/inventory.js takeLootReq); shoveAsk: { uid, x, y } the piece picked for Shove, its destinations offered (sim/barricade.js)
+export const cui = { battle: null, sel: null, mode: "move", hover: null, msg: "", lastStep: 0, anim: new Map(), movesSeen: 0, walkUntil: 0, cache: { key: "" }, autoPlay: false, pickedDown: null, facePick: null, cones: false, handAsk: null, handReq: null, shoveAsk: null }; // handAsk: the Hand over chooser open for this unit; handReq: { sid, mate } the two-doll window asked for (ui/inventory.js takeLootReq); shoveAsk: { uid, x, y } the piece picked for Shove, its destinations offered (sim/barricade.js)
 // The view cones of everyone (yours and the enemies you see), on or off (Alt+C, the view bar), kept per machine.
 const CONES_KEY = "bs.battle.cones";
 try { cui.cones = typeof localStorage !== "undefined" && localStorage.getItem(CONES_KEY) === "1"; } catch { cui.cones = false; }
@@ -171,6 +175,8 @@ function sync(b) {
   cui.hover = null;
   cui.allyAsk = null;
   cui.anim.clear();
+  cui.movesSeen = b.fxSeq || 0; // what was logged before is not walked again (stampMoves)
+  cui.walkUntil = 0;
   if (!again) cui.salt = Math.floor(Math.random() * 9973); // varies zombie / enemy looks between battles (the same fight made again keeps them)
   cui.lastStep = performance.now();
   if (!again) cui.autoPlay = !!(b.setup && b.setup.watch); // a new battle starts in your hands (a fight you only watch plays itself: sim/volunteers.js)
@@ -1836,33 +1842,37 @@ export function combatTick(state, now) {
   const b = state.combat;
   if (!b) return false;
   sync(b);
+  stampMoves(b, now); // the moves your orders made since the last frame (before the footsteps read them: ui/audio.js)
   if (cui.redraw) { cui.redraw = false; return true; } // the cards again (a right click's step back in Ally orders)
   if (isRedeploy(b) && cui.autoRedeploy) { act(state, { type: "start" }); return true; }
   // The AI plays your side (cb-autoplay): your turn (and a deploy step) at the enemy turn's pace, until you take back
   // control. It may sound the retreat from a fight it judges lost, as the autopilot does.
   if (cui.autoPlay && !b.over && (b.phase === "player" || b.phase === "deploy")) {
-    if (now - cui.lastStep < ENEMY_STEP_MS) return false;
+    if (now - cui.lastStep < ENEMY_STEP_MS || now < cui.walkUntil) return false;
     cui.lastStep = now;
     cui.endAsk = cui.retreatAsk = cui.fallAsk = null;
     cui.mode = "move";
     if (planOpen(b)) { botPlan(state, b); return true; } // sim/raidplan.js: a good scout first, the night if near and the team is stealthy
+    const before = b.fxSeq;
     SIM.autoPlayerTurn(state);
+    walkWait(b, stampMoves(b, now), before, now);
     ingestMarks(b, now);
     cui.sel = null;
     if (state.combat === b && b.phase === "player") autoSelect(b, false); // playing itself: the camera is left alone
     return true;
   }
   if (b.over || b.phase !== "enemy") return false;
-  if (now - cui.lastStep < ENEMY_STEP_MS) return false;
+  if (now - cui.lastStep < ENEMY_STEP_MS || now < cui.walkUntil) return false;
   cui.lastStep = now;
   // Skip quickly past enemies the player cannot see doing nothing visible.
   for (let i = 0; i < 30 && b.phase === "enemy" && !b.over; i++) {
     const before = b.fxSeq;
     const u = enemyStep(state);
+    const end = stampMoves(b, now);
     ingestMarks(b, now);
     if (!u) break;
-    // Pause only when something happened that the player can see.
-    if (b.fx.some((f) => f.seq > before && (f.type !== "move" || playerSees(b, u)))) break;
+    // Pause only when something happened that the player can see (and, when it walked where you see it, while it walks).
+    if (b.fx.some((f) => f.seq > before && (f.type !== "move" || playerSees(b, u)))) { if (playerSees(b, u)) walkWait(b, end, before, now); break; }
   }
   if (b.phase === "player") { cui.sel = null; autoSelect(b); }
   return true;
@@ -3452,6 +3462,7 @@ function drawIsoView(state, b, now, cw, ch) {
     known: v.known, allKnown: ownGround(b), // the fog of war indoors (ui/isoview.js)
     v, u: hold ? null : v.u, sel: hold ? null : cui.sel, mode: fp ? "move" : cui.mode, hover: fp ? { x: fp.x, y: fp.y } : cui.hover, salt: cui.salt,
     animPos: (t, n) => { const [x, y] = animTile(b, t, n), h = (t.size || 1) / 2; return [x + h, y + h]; }, // a 2 × 2 boss stands on its footprint's centre
+    moveOf: (t, n) => moveNow(b, t, n), // walking: the step it is on and how far along (its heading and stride: ui/moveanim.js)
     fxAge: (f, n) => { if (!cui.anim.has(f.seq)) cui.anim.set(f.seq, n); return Math.max(0, n - cui.anim.get(f.seq)); },
     unitAt: (x, y) => unitAt(b, x, y), pathTo, odds, bubble: noBubble, // the hover card is ui/battlehud.js's
     hits: NO_HITS, retreatOpen: !!plan, plan, // the hit chances over the enemies are ui/battlehud.js's (hudPaint)
@@ -3564,20 +3575,49 @@ function bubble(x, y, lines, color, cw) {
 
 
 
-// Units slide along their last move: where one is now, in cells (fractions while it moves).
+// Units walk their moves (ui/moveanim.js): where one is now, in cells (fractions while it moves).
 function animTile(b, t, now) {
+  const m = moveNow(b, t, now);
+  return m ? [m.x, m.y] : [t.x, t.y];
+}
+// The move a unit is walking at now and how far along it is (moveAt: x, y, dir, dist, gait), or null standing. A
+// move not set off yet (after the unit's moves before it: stampMoves) is the one before it still being walked.
+function moveNow(b, t, now) {
   for (let i = b.fx.length - 1; i >= 0; i--) {
     const f = b.fx[i];
     if (f.type !== "move" || f.unit !== t.id) continue;
     if (!cui.anim.has(f.seq)) cui.anim.set(f.seq, now);
-    // el: never below 0 (sync stamps a new battle's fx with performance.now(), a little after the frame's own time)
-    const per = f.shove ? 110 : 70, el = Math.max(0, now - cui.anim.get(f.seq)), total = f.path.length * per;
-    if (el >= total) break;
-    const pts = [f.from, ...f.path];
-    const k = el / per, s = Math.floor(k), lin = k - s, fr = f.shove ? 1 - (1 - lin) * (1 - lin) : lin; // shoved back (sim/shoving.js): a stumble, fast then slowing
-    const a = pts[s], c = pts[Math.min(pts.length - 1, s + 1)];
-    return [a[0] + (c[0] - a[0]) * fr, a[1] + (c[1] - a[1]) * fr];
+    const el = now - cui.anim.get(f.seq);
+    if (el < 0) continue; // still to come
+    return moveAt(b, t, f, el);
   }
-  return [t.x, t.y];
+  return null;
+}
+// The moves logged since the last look, timed: each one sets off now, or when the same unit's move before it ends
+// (two actions spent moving, the enemy's whole turn: walked one after the other, not the last one alone). The plan
+// keeps the wait (delay) for the footsteps (ui/sfx-steps.js). Returns when the last of them ends.
+function stampMoves(b, now) {
+  let end = now;
+  if (!b.fx || (cui.movesSeen || 0) >= (b.fxSeq || 0)) return end;
+  const last = new Map(); // unit -> when its latest move ends
+  for (const f of b.fx) {
+    if (f.type !== "move") continue;
+    const u = unitById(b, f.unit), p = planOf(b, u, f);
+    if (f.seq <= (cui.movesSeen || 0)) { if (cui.anim.has(f.seq)) last.set(f.unit, cui.anim.get(f.seq) + p.total); continue; }
+    const start = Math.max(now, last.get(f.unit) || 0);
+    cui.anim.set(f.seq, start);
+    p.delay = start - now;
+    last.set(f.unit, start + p.total);
+    end = Math.max(end, start + p.total);
+  }
+  cui.movesSeen = b.fxSeq;
+  return end;
+}
+// The enemy's (or the autopilot's) next one waits for the walk just logged where you can see it (WALK_WAIT).
+function walkWait(b, end, before, now) {
+  let from = Infinity;
+  for (const f of b.fx) if (f.type === "move" && f.seq > before && cui.anim.has(f.seq)) from = Math.min(from, cui.anim.get(f.seq));
+  if (from === Infinity || end <= now) return;
+  cui.walkUntil = Math.min(from + WALK_WAIT_MAX, from + (end - from) * WALK_WAIT);
 }
 

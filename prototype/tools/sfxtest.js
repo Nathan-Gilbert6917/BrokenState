@@ -14,6 +14,7 @@
 import * as C from "../src/sim/combat.js";
 import { WEAPONS } from "../src/sim/combat.js";
 import { battles } from "./isobattles.js";
+import { planOf } from "../src/ui/moveanim.js";
 
 let passed = 0, failed = 0;
 const check = (ok, msg) => { if (ok) passed++; else failed++; console.log(`  ${ok ? "ok" : "FAIL"}: ${msg}`); };
@@ -146,7 +147,7 @@ console.log("Footsteps");
   C.fx(bt, { type: "move", unit: me.id, from: [me.x, me.y], path: path(me, 4) });
   let s = stepCues(st, mem, 1);
   check(s.length >= 2 && s.length <= 4 && s.every((c) => c.name === "step" && c.gait === "walk" && c.seen && c.surf), `a 4-cell walk: ${s.length} steps (${s.map((c) => c.surf).join(", ")})`);
-  check(s.every((c, i) => i === 0 || c.delay > s[i - 1].delay) && s[s.length - 1].delay < 4 * S.STEP_MS / 1000, "paced along the move as it slides there");
+  check(s.every((c, i) => i === 0 || c.delay > s[i - 1].delay) && s[s.length - 1].delay < planOf(bt, me, bt.fx[bt.fx.length - 1]).total / 1000, "paced along the move as it is walked there");
   check(new Set(s.map((c) => c.foot)).size === 2, "left, right");
   me.loadBand = 3;
   C.fx(bt, { type: "move", unit: me.id, from: [me.x, me.y], path: path(me, (me.mob || 5) + 3) });
