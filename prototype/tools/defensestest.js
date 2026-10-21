@@ -31,7 +31,7 @@ let pass = 0, fail = 0;
 const check = (ok, what) => { if (ok) pass++; else fail++; console.log(`  ${ok ? "ok  " : "FAIL"} ${what}`); return ok; };
 registerCombatHandler("deftest", () => {});
 const world = () => { const st = createWorld({ seed, factionCount: 6 }); st.started = true; st.hour = 24 * 3 + 12; st.landOff = true; stockTools(hub(st)); return st; }; // landOff: the land (basescatter.js) is tools/baseviewtest.js's
-const rich = (base) => Object.assign(base.stock, { scrap: 999, parts: 99, buildmat: 99, electronics: 9, wood: 99999 });
+const rich = (base) => Object.assign(base.stock, { scrap: 999, parts: 99, buildmat: 99, metalsheet: 99, electronics: 9, wood: 99999 });
 const asCamp = (base) => { base.tier = 0; base.camp = true; return base; };
 const asShelter = (base) => { base.tier = 0; delete base.camp; return base; };
 const asOutpost = (base) => { delete base.tier; delete base.camp; base.type = "outpost"; return base; };
@@ -107,7 +107,9 @@ console.log("Walls by material, a ring of pieces closed and raised (tools/wallpi
   check(baseWalls(h) === 8 && wallHp(h) === 160, "damaged: two thirds of the strength and the hit points");
   const p = piecesOf(h, ["wall"]).find((x) => x.type === "wall4");
   const back = demolishRefund(p);
-  check(back.scrap === 1 && back.buildmat === undefined, `a 1×4 of metal sheets pulled down: half its scrap back (${back.scrap}; its building materials are not salvaged)`);
+  check(back.metalsheet === 0 && back.scrap === 0 && back.buildmat === undefined, `a 1×4 of metal sheets pulled down: half its sheet and scrap back, rounded down (${JSON.stringify(back)}; building materials are not salvaged)`);
+  const g4 = piecesOf(h, ["gate"])[0], gb = g4 ? demolishRefund(g4) : {};
+  check(gb.metalsheet === 1, `a metal-sheet gate pulled down: one of its two sheets back (${JSON.stringify(gb)})`);
 }
 
 console.log("Defenses count: the hold limit, raids by the numbers");

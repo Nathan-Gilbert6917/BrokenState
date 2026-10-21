@@ -155,6 +155,8 @@ export const WEAPON_PATCH = {
   spear:      { mclass: "pierce", reach: 2, throw: 5, takedown: 5 }, // the steel spear (data.js, fishing too)
   springmachete: { mclass: "blade", bleed: 0.3, takedown: 10 },
   sawmachete: { mclass: "blade", bleed: 0.3, takedown: 10 },
+  sheetmachete: { mclass: "blade", bleed: 0.2, takedown: 10 }, // metal-sheet weapons (crafting.js, 2026-10-21)
+  sheethatchet: { mclass: "chop", stagger: 0.1, takedown: 10 },
   bat:        { mclass: "blunt", stagger: 0.25, takedown: 20 },
   nailbat:    { mclass: "blunt", stagger: 0.2, bleed: 0.2, takedown: 15 },
   prybar:     { mclass: "blunt", takedown: 15 },

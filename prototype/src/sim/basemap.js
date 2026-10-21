@@ -779,7 +779,7 @@ export function finishClear(state, base, job) {
   base.land.n = (base.land.n || 0) + 1;
   const got = Object.entries(job.get || {}).filter(([, v]) => v > 0);
   for (const [k, v] of got) base.stock[k] = (base.stock[k] || 0) + v;
-  log(state, `${base.name}: ${job.label ? job.label.charAt(0).toLowerCase() + job.label.slice(1) : "the land cleared"}: done${got.length ? ` (+${got.map(([k, v]) => `${v} ${k === "carparts" ? "car part" + (v === 1 ? "" : "s") : k}`).join(", +")})` : ""}.`, "good");
+  log(state, `${base.name}: ${job.label ? job.label.charAt(0).toLowerCase() + job.label.slice(1) : "the land cleared"}: done${got.length ? ` (+${got.map(([k, v]) => `${v} ${k === "carparts" ? "car part" + (v === 1 ? "" : "s") : k === "metalsheet" ? "metal sheet" + (v === 1 ? "" : "s") : k}`).join(", +")})` : ""}.`, "good");
 }
 // Does this construction job wait for its site to be cleared (the game placed it over the land: autoLayout's second
 // pass)? Its clearing is queued just before it the first time it is asked. (buildings.js constructionHour.)
@@ -1927,7 +1927,7 @@ export function keyAct(state, b, u, act, H) {
 export function markThieves(b, rng) {
   for (const u of b.units) if (u.side === "enemy" && u.kind === "human" && !u.boss && rng.chance(STEAL.SHARE)) u.thief = true;
 }
-const TAKE_ORDER = ["meds", "parts", "electronics", "gunparts", "carparts", "fuel", "ammo", "arrows", "scrap", "jars", "wood"];
+const TAKE_ORDER = ["meds", "parts", "electronics", "gunparts", "carparts", "fuel", "ammo", "arrows", "metalsheet", "buildmat", "scrap", "jars", "wood"];
 export function thiefTurn(b, u) {
   const T = b.tier;
   if (!b.stores || !u.thief || !T || (T.walled && T.stage === "wall") || !active(u)) return false;
@@ -2312,7 +2312,7 @@ export function layoutAct(state, b, act) {
       holdAuto(state, base);
       const job = queueClear(state, base, list, { mode: act.mode === "strip" ? "strip" : "clear" });
       if (!job) return act.mode === "strip" ? "Already stripped, or queued." : "Already queued.";
-      L.msg = `${job.label} queued (${job.hours} work-hours${Object.keys(job.get).length ? `: ${Object.entries(job.get).map(([k, v]) => `+${v} ${k === "carparts" ? "car parts" : k}`).join(", ")}` : ""}): the builders do it from the construction queue.`;
+      L.msg = `${job.label} queued (${job.hours} work-hours${Object.keys(job.get).length ? `: ${Object.entries(job.get).map(([k, v]) => `+${v} ${k === "carparts" ? "car parts" : k === "metalsheet" ? "metal sheets" : k}`).join(", ")}` : ""}): the builders do it from the construction queue.`;
       refreshBaseMap(state);
       return "";
     }

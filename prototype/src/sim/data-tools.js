@@ -57,7 +57,7 @@ export const TOOL_MELEE = {
 export const TOOL_KINDS = {
   hammer: { name: "a hammer",            items: ["toolkit", "hammer", "scraphammer"] },
   saw:    { name: "a saw",               items: ["toolkit", "handsaw", "bowsaw", "scrapsaw"] },
-  axe:    { name: "an axe",              items: ["axe", "fireaxe", "hatchet", "tomahawk", "scrapaxe"] },
+  axe:    { name: "an axe",              items: ["axe", "fireaxe", "hatchet", "tomahawk", "sheethatchet", "scrapaxe"] },
   dig:    { name: "a shovel",            items: ["shovel", "etool", "pickaxe", "scrapshovel"] },
   wrench: { name: "wrenches",            items: ["toolkit", "pipewrench"] },
   drill:  { name: "a drill",             items: ["powerdrill", "handdrill"] },

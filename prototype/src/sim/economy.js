@@ -6,7 +6,7 @@
 import { TERRAIN, LOCATIONS, SUPPLIES, supplyFew, GEAR, supValue } from "./data.js";
 import { isCart, cartWorth, ROAD_CARTS } from "./carts.js"; // a cart left on a tile: stripped a thing at a time (deathSitesDaily)
 import { itemLoad } from "./inventory.js";
-import { sortParts, rollBuildmat } from "./loot.js"; // parts found by kind; building materials (their own dice)
+import { sortParts, rollBuildmat, rollSheets } from "./loot.js"; // parts found by kind; building materials (their own dice)
 import {
   log, addCard, day, hub, atBase, alive, skill, hurt, survivorById, factionById, makeSurvivor, residents, checkGameOver, localId,
 } from "./world.js";
@@ -206,6 +206,8 @@ export function scavTrip(state, base, s, tile, share, k = 0) {
   if (out.ammo) out.ammoQ = out.ammo.q;
   const bm = rollBuildmat(state, tile, 0.5, `bscav${localId(state, s.id)}${k ? `:${k}` : ""}`); // building materials around the base too (half a search hour's chance, once a trip)
   if (bm > 0) got.buildmat = (got.buildmat || 0) + bm;
+  const ms = rollSheets(state, tile, 0.5, `bscav${localId(state, s.id)}${k ? `:${k}` : ""}`); // metal sheets too (loot.js SHEET_FINDS; half a search hour's chance)
+  if (ms > 0) got.metalsheet = (got.metalsheet || 0) + ms;
   out.got = got;
   out.finds = n;
   return out;
@@ -221,7 +223,7 @@ export function scavCredit(state, base, s, find, stock = base.stock) {
   for (const [key, n] of Object.entries(all)) noteOutput(state, base, "scavenge", n, key);
   noteOutput(state, base, "scavenge", find.finds, "finds");
   const named = { ...find.got, ...rounds };
-  log(state, `${s.name.split(" ")[0]} turned up ${Object.entries(named).map(([key, n]) => (ROUND_SUPPLIES[key] ? roundsText({ [key]: n }) : FOODS[key] ? foodWord(key, n) : `${n} ${key === "buildmat" ? "building materials" : keyWord(key)}`)).join(", ")} around ${base.name}.`, "good");
+  log(state, `${s.name.split(" ")[0]} turned up ${Object.entries(named).map(([key, n]) => (ROUND_SUPPLIES[key] ? roundsText({ [key]: n }) : FOODS[key] ? foodWord(key, n) : `${n} ${key === "buildmat" ? "building materials" : key === "metalsheet" ? (n === 1 ? "metal sheet" : "metal sheets") : keyWord(key)}`)).join(", ")} around ${base.name}.`, "good");
 }
 // Daily: the Scavenge job's day is in (its trips brought any finds home, jobtrips.js); the ground round the base is
 // picked over for good by the people on it.

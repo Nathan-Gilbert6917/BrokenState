@@ -59,8 +59,9 @@ const YARD_W = { plain: { stump: 3, log: 2, crate: 2, barrel: 2, rock: 1 }, city
 export const SCATTER_KINDS = new Set(["tree", "bush", "fence", "rock", "boulder", "stump", "log", "hay", "crate", "barrel"]);
 // Clearing a piece (the builders' work-hours at a builder's pace, and what it gives into the stores). A tree is felled,
 // limbed and its stump dug out: without a cutting tool at the base (an axe, a machete…: woodcutting.js isChopTool) it
-// takes NO_TOOL times as long. A wreck: strip it (once) for its scrap and a car part, then drag it off; cleared without
-// stripping it gives both.
+// takes NO_TOOL times as long. A wreck: strip it (once) for its scrap, a car part and its roof and door skins as metal
+// sheets (the user's request 2026-10-21: metal sheets salvaged from cars), then drag it off; cleared without stripping
+// it gives both.
 export const CLEAR = {
   tree:    { hours: 4,   get: { wood: 120 }, word: "a tree", verb: "Fell" },
   stump:   { hours: 2,   get: { wood: 15 },  word: "a stump", verb: "Dig out" },
@@ -73,7 +74,7 @@ export const CLEAR = {
   crate:   { hours: 0.5, get: { scrap: 1 },  word: "a broken crate", verb: "Haul off" },
   barrel:  { hours: 0.5, get: { scrap: 1 },  word: "an old drum", verb: "Haul off" },
   wreck:   { hours: 6,   get: { scrap: 2 },  word: "a wreck", verb: "Drag off" },
-  strip:   { hours: 2,   get: { scrap: 6, carparts: 1 }, word: "a wreck", verb: "Strip" },
+  strip:   { hours: 2,   get: { scrap: 6, carparts: 1, metalsheet: 2 }, word: "a wreck", verb: "Strip" },
   NO_TOOL: 2.5, // a tree, a fallen log or a stump with no axe, saw or machete at the base (it was 1.5 until the tools, 2026-10-21)
 };
 export const profileOf = (terrain) => PROFILES[terrain] || PROFILES.plains;
@@ -271,7 +272,7 @@ export function clearOf(p, tool = true, mode = "clear") {
   if (!p || p.k === "water") return null;
   if (p.k === "wreck") {
     if (mode === "strip") return p.looted ? null : { hours: CLEAR.strip.hours, get: { ...CLEAR.strip.get }, mode };
-    return p.looted ? { hours: CLEAR.wreck.hours, get: { ...CLEAR.wreck.get }, mode } : { hours: CLEAR.wreck.hours + CLEAR.strip.hours, get: { scrap: CLEAR.wreck.get.scrap + CLEAR.strip.get.scrap, carparts: CLEAR.strip.get.carparts }, mode };
+    return p.looted ? { hours: CLEAR.wreck.hours, get: { ...CLEAR.wreck.get }, mode } : { hours: CLEAR.wreck.hours + CLEAR.strip.hours, get: { scrap: CLEAR.wreck.get.scrap + CLEAR.strip.get.scrap, carparts: CLEAR.strip.get.carparts, metalsheet: CLEAR.strip.get.metalsheet }, mode };
   }
   const c = CLEAR[p.k];
   if (!c) return null;

@@ -70,7 +70,7 @@ import { supplyName } from "../sim/itemnames.js"; // the stack's title: rounds s
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
 const kg = (x) => `${Math.round(x * 10) / 10}`;
-export const SUPPLY_ICON = { food: "🥫", preserved: "🫙", water: "💧", rawwater: "🪣", wood: "🪵", fuel: "⛽", meds: "✚", ammo: "⁍", arrows: "➶", parts: "⚙", scrap: "🔩", carparts: "🛞", gunparts: "🔧", electronics: "🔌", jars: "🫙" };
+export const SUPPLY_ICON = { food: "🥫", preserved: "🫙", water: "💧", rawwater: "🪣", wood: "🪵", fuel: "⛽", meds: "✚", ammo: "⁍", arrows: "➶", parts: "⚙", scrap: "🔩", carparts: "🛞", gunparts: "🔧", electronics: "🔌", jars: "🫙", buildmat: "🧱", metalsheet: "🛡" };
 export const supplyEmoji = (k) => SUPPLY_ICON[k] || (SUPPLIES[k] && SUPPLIES[k].icon) || (isRoundKey(k) ? "⁍" : "▪"); // a food item: its own icon (sim/foods.js); for plain text
 export const supplyIcon = (k) => itemArtIcon(k, "supply") || supplyEmoji(k); // HTML: the supply's own drawing (ui/itemart.js)
 

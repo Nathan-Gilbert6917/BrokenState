@@ -26,7 +26,7 @@
 //      scale through tripevents.js (the dead, the dead beasts, animals, an accident, getting lost, a stranger, a
 //      find; the attack card and the lone fight), a load dropped when they run (lost on the road).
 //   2. With nothing to move, local hauling (never idle while there is any): a stockpile of the base's with goods in it
-//      (fieldworks.js) fetched in; salvage on the base map beyond the ring (a wreck stripped: 6 scrap and a car part;
+//      (fieldworks.js) fetched in; salvage on the base map beyond the ring (a wreck stripped: 6 scrap, a car part and 2 metal sheets;
 //      a broken crate or an old drum: a scrap; a rock or a boulder broken for stone: building materials, as there is
 //      no stone supply; base.haulJobs, basemap.js queueClear / finishClear), at HAUL.salvage work-hours an hour; else
 //      scavenge-lite in the ruins round the base (a share of a scavenger's day, scrap and a little building material,
@@ -471,7 +471,7 @@ function salvagePieces(state, base, n = 1) {
   }
   return out.sort((a, b) => a.d - b.d || a.r - b.r || (a.p.g < b.p.g ? -1 : 1)).slice(0, n);
 }
-const SALVAGE_LABEL = { wreck: "Strip a wreck for scrap", crate: "Haul off a broken crate", barrel: "Haul off an old drum", rock: "Break a rock for stone", boulder: "Break up a boulder for stone" };
+const SALVAGE_LABEL = { wreck: "Strip a wreck for scrap and metal sheets", crate: "Haul off a broken crate", barrel: "Haul off an old drum", rock: "Break a rock for stone", boulder: "Break up a boulder for stone" };
 function queueSalvage(state, base) {
   const [c] = salvagePieces(state, base, 1);
   if (!c) return null;

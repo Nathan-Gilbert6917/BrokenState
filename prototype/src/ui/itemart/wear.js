@@ -194,6 +194,14 @@ function sawmachete(p) { // a circular-saw blade ground into a cleaver: a round 
   p.clear(10, 6); // the arbor hole
   line(p, 7, 7, 9, 4, "#c86a3a");
 }
+function sheetmachete(p) { // cut from a metal sheet: a dull grey blade with a nicked edge and a corrugation line, a taped grip
+  handle(p, -15, -7, "#6d7378");
+  area(p, (a, b) => a >= -15 && a <= -7 && b >= 15 && b <= 16 && ((a + 20) % 3) === 0, "#2a2c30");
+  area(p, (a, b) => a >= -6 && a <= 13 && b >= 14 && b <= 17 && a + (b - 14) <= 16, "#9aa1a8");
+  lit(p, "#9aa1a8");
+  area(p, (a, b) => a >= -4 && a <= 11 && b === 15 && (a % 3) !== 0, "#7d858c"); // the corrugation
+  for (const a of [-2, 4, 9]) at(p, a, 17, null); // nicks in the edge
+}
 function springmachete(p) { // a forged leaf spring: a dark scaled blade with a bright ground edge, cord-wrapped grip
   handle(p, -15, -7, "#4f5a3e");
   area(p, (a, b) => a >= -15 && a <= -7 && b >= 15 && b <= 16 && ((a + 20) % 3) === 0, "#2e3328");
@@ -363,6 +371,14 @@ function hatchet(p) { // a short wooden handle, a small steel head
   lit(p, "#8d959c");
   area(p, (a, b) => b === 9 && a >= 2 && a <= 11, "#d6dde2");
 }
+function sheethatchet(p) { // a head cut from a metal sheet, folded double and riveted to a wooden handle
+  handle(p, -11, 5, K.wood);
+  lit(p, K.wood);
+  axeHead(p, 5, 8, 9, "#9aa1a8");
+  lit(p, "#9aa1a8");
+  area(p, (a, b) => b === 9 && a >= 2 && a <= 11, "#c4cbd1");
+  for (const a of [5, 8]) at(p, a, 13, "#4a4f57"); // the rivets
+}
 function tomahawk(p) { // tactical: a black handle, a black narrow head with a bright edge and a long beard, a spike behind
   handle(p, -15, 6, K.poly);
   lit(p, K.poly);
@@ -510,6 +526,14 @@ function scrapvest(p) { // a brown work jacket with riveted steel plates
     p.set(x + 1, y + 1, "#e8eef2"); p.set(x + 3, y + 1, "#e8eef2"); p.set(x + 1, y + 2, shade(c, -0.25)); p.set(x + 3, y + 2, shade(c, -0.25));
   }
 }
+function sheetvest(p) { // a cuirass of corrugated sheet steel on leather straps, rows of rivets
+  rows(p, 1, VEST, "#8d959c");
+  lit(p, "#8d959c");
+  for (let y = 5; y <= 13; y += 2) H(p, 3, 12, y, "#7d858c"); // the corrugation
+  for (const [x, y] of [[3, 4], [12, 4], [3, 9], [12, 9], [7, 7], [8, 7]]) p.set(x, y, "#e8eef2"); // the rivets
+  for (const y of [1, 2]) { p.set(4, y, "#6e5a48"); p.set(11, y, "#6e5a48"); } // the shoulder straps
+  H(p, 2, 13, 11, "#6e5a48");
+}
 function sportspads(p) { // football shoulder pads: two big caps, the neck hole, the chest plates and laces
   rows(p, 2, [[2, 6, 9, 13], [1, 7, 8, 14], [0, 15], [0, 15], [0, 15], [1, 14], [2, 13], [3, 12], [3, 12], [3, 12], [4, 11]], "#e4ddcc");
   lit(p, "#e4ddcc");
@@ -536,6 +560,22 @@ function shinguards(p) { // cut plastic bottles taped round the shins
     lit(p, "#8fc4b8");
     V(p, x + 2, 2, 14, "#c8eae2");
     for (const y of [3, 8, 13]) { H(p, x, x + 5, y, "#b8bec4"); H(p, x, x + 5, y + 1, "#8a9096"); }
+  });
+}
+function sheetarms(p) { // forearm shells bent from a metal sheet, rivets and two straps
+  twin((x) => {
+    R(p, x, 1, x + 5, 13, "#8d959c"); R(p, x + 1, 14, x + 4, 14, "#8d959c");
+    lit(p, "#8d959c");
+    for (const y of [4, 10]) H(p, x, x + 5, y, "#6e5a48");
+    for (const y of [2, 7, 12]) p.set(x + 2, y, "#e8eef2");
+  });
+}
+function sheetlegs(p) { // shin plates bent from a metal sheet: a knee cap riveted on, straps
+  twin((x) => {
+    disc(p, x + 3, 2, 2, "#7d858c"); R(p, x, 4, x + 5, 15, "#8d959c");
+    lit(p, "#8d959c", "#7d858c");
+    for (const y of [6, 13]) H(p, x, x + 5, y, "#6e5a48");
+    for (const y of [8, 11]) p.set(x + 3, y, "#e8eef2");
   });
 }
 function kneeguards(p) { // dirt-bike plastic: a knee cup, a ridged shin plate, black straps
@@ -1030,10 +1070,10 @@ export const GEAR_ART = {
   wheelbarrow, handcart, // carts (sim/carts.js)
   knife: chef, steakknife: steak, filletknife: fillet, cleaver, huntknife: hunter, survivalknife: survival, bowie, bayonet,
   combatknife: combat, shiv, pocketknife: pocket, flipknife: flick, lockback, multitool, boxcutter, balisong,
-  machete, sawmachete, springmachete, kukri, katana, cutlass, sabre, broadsword,
-  bat, nailbat, spikedbat, baton, stunbaton, golfclub, hockeystick, prybar, hammer, sledge, fireaxe, hatchet, tomahawk, pickaxe, etool,
+  machete, sawmachete, springmachete, sheetmachete, kukri, katana, cutlass, sabre, broadsword,
+  bat, nailbat, spikedbat, baton, stunbaton, golfclub, hockeystick, prybar, hammer, sledge, fireaxe, hatchet, sheethatchet, tomahawk, pickaxe, etool,
   pipespear, spear, compbow, pulleybow, crossbow, xbow,
-  vest, plate, tacvest, tirevest, scrapvest, sportspads, padding, shinguards, kneeguards, riotarms, riotlegs,
+  vest, plate, tacvest, tirevest, scrapvest, sheetvest, sportspads, padding, shinguards, sheetarms, sheetlegs, kneeguards, riotarms, riotlegs,
   hardhat, footballhelmet, goaliemask, bikehelmet, riothelmet, milhelmet, rivethelmet, highcut, ballvisor, riotvisor, nvgmount,
   ceramicplate, steelplate, softinsert, kevlarkit,
   backpack, slingbag, assaultpack, hikingpack, rucksack, duffle, chestrig, makeshiftrig, riflecase, pistolcase, bicycle,

@@ -2190,9 +2190,11 @@ function investigate(state, p) {
       },
       {
         label: "Strip it for parts and fuel",
-        hint: "1–2 parts and a little fuel; the car is gone after",
+        hint: "1–2 parts, a little fuel and a metal sheet or two off its panels; the car is gone after",
         resolve: (st) => {
-          const got = `${addCargo(st, p, "parts", st.rng.int(1, 2))} parts, ${addCargo(st, p, "fuel", st.rng.int(2, 5))} fuel`;
+          const pf = `${addCargo(st, p, "parts", st.rng.int(1, 2))} parts, ${addCargo(st, p, "fuel", st.rng.int(2, 5))} fuel`;
+          const sheets = addCargo(st, p, "metalsheet", 1 + Math.floor(hash01(st.seed, "wrecksheet", tile, st.hour) * 2)); // its door skins and roof (its own dice: the rest of the stream unchanged)
+          const got = `${pf}${sheets > 0 ? `, ${sheets} metal sheet${sheets === 1 ? "" : "s"}` : ""}`;
           h.taken = true;
           spot(p, { key, type: "car", tile, hour: st.hour, label: "Wrecked car", info: { emptied: true } });
           awaitOrders(st, p, `Stripped the car: ${got}.`);
@@ -2250,7 +2252,7 @@ function recoverVehicle(state, p) {
   if (v.destroyed) { // blown up (launchers.js): no restart; what is left in it, then stripped where it lies
     const c = takeVehicleCargo(state, p, v);
     const y = stripYield(v), got = [];
-    for (const k of ["carparts", "scrap"]) { const q = addCargo(state, p, SUPPLIES[k] ? k : "parts", y[k] || 0); if (q > 0) got.push(`${q} ${SUPPLIES[SUPPLIES[k] ? k : "parts"].name.toLowerCase()}`); }
+    for (const k of ["carparts", "scrap", "metalsheet"]) { const q = addCargo(state, p, SUPPLIES[k] ? k : "parts", y[k] || 0); if (q > 0) got.push(`${q} ${SUPPLIES[SUPPLIES[k] ? k : "parts"].name.toLowerCase()}`); } // metal sheets: its panels and roof
     if (!vehicleCargo(v)) state.vehicles.splice(state.vehicles.indexOf(v), 1);
     spot(p, { key: `vehicle:${v.id}`, type: "vehicle", tile, hour: state.hour, label: v.name, remove: !vehicleCargo(v) });
     awaitOrders(state, p, `The ${v.name} is a burnt-out wreck past repair.${c.got.length ? ` The team took ${c.got.join(", ")} out of it.` : ""} Stripped for ${got.join(" and ") || "nothing they could carry"}.${vehicleCargo(v) ? ` Still inside: ${c.left.join(", ")}.` : " Nothing is left of it."}`);

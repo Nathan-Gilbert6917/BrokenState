@@ -465,7 +465,7 @@ KIT_LOOT.on = false; // the carry kit's finds and wares (carrykit.js SITE_KIT / 
   for (let i = 0; i < 60; i++) for (const kind of ["merchants", "explorers"]) {
     const v = V.spawnVisitor(w, kind);
     if (!v) continue;
-    (kind === "merchants" ? mk : vk).push(`${v.name}:${v.tile}:${kind === "merchants" ? Object.keys(v.stock).filter((k) => k !== "buildmat" && !FOODS[k]).length + 2 : keysOf(v.wares)}`); // buildmat: building materials (the base ladder, staging.js), a stock key added later; food by type (foods.js): their food and preserved food are items now, counted as the two keys they were
+    (kind === "merchants" ? mk : vk).push(`${v.name}:${v.tile}:${kind === "merchants" ? Object.keys(v.stock).filter((k) => k !== "buildmat" && k !== "metalsheet" && !FOODS[k]).length + 2 : keysOf(v.wares)}`); // buildmat: building materials (the base ladder, staging.js), a stock key added later; food by type (foods.js): their food and preserved food are items now, counted as the two keys they were
     w.visitors.length = 0;
   }
   check(h16(vk.join("|")) === BASE.visitors.keys, "travellers: the same wares");

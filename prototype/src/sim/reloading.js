@@ -38,6 +38,7 @@
 import { LOAD_CLASS, POWDER_PER10, loadRecipe, handKey, CALIBERS, ammoKey, RELOAD_FX } from "./data-ammo.js";
 import { SUPPLIES, supValue } from "./data.js";
 import { count, countAll } from "./buildings.js";
+import { withBuildmat, siteShort, payCost } from "./buildmats.js"; // the upgrade's building materials (made on site from scrap when short)
 import { atBase, skill, log, newId, day } from "./world.js";
 import { WEAPON_PLATFORM } from "./data-gunmods.js";
 import { baseCals, partyCals, calOf, nextHand, armoured, kindMix } from "./ammo.js";
@@ -49,7 +50,7 @@ import { relation, warsOf } from "./diplomacy.js";
 import { note } from "./ledger.js"; // the conservation test's ledger (off in play)
 
 export const RELOAD = {
-  UP: { cost: { parts: 1, gunparts: 3, scrap: 20 }, hours: 24, req: { mechanics: 3 } }, // the upgrade (buildings.js reload_bench)
+  UP: { cost: withBuildmat({ parts: 1, gunparts: 3, scrap: 20 }), hours: 24, req: { mechanics: 3 } }, // the upgrade (buildings.js reload_bench); its building materials made on site from scrap when short (buildmats.js)
   HEAT: 0.25,          // × a station's Heat while it runs
   RATE_PER: 0.04,      // + a day's rounds per Mechanics point
   LEAD: 20,            // bullets a scrap
@@ -127,7 +128,7 @@ export function canUpgradeAmmoBench(state, base, id) {
   if (!b) return { ok: false, reason: "That ammo bench is gone" };
   if (b.broken) return { ok: false, reason: "Repair it first (Repairs tab)" };
   if (base.construction.some((c) => c.target === id)) return { ok: false, reason: "It is being upgraded already" };
-  for (const [k, v] of Object.entries(RELOAD.UP.cost)) if ((base.stock[k] || 0) < v) return { ok: false, reason: `Needs ${v} ${SUPPLIES[k] ? SUPPLIES[k].name.toLowerCase() : k}` };
+  { const why = siteShort(base.stock, RELOAD.UP.cost, (k) => (SUPPLIES[k] ? SUPPLIES[k].name.toLowerCase() : k)); if (why) return { ok: false, reason: why }; }
   for (const [sk, lvl] of Object.entries(RELOAD.UP.req)) if (!atBase(state, base.id).some((s) => skill(s, sk) >= lvl)) return { ok: false, reason: `Needs a Mechanics ${lvl}+ survivor here` };
   const lock = buildLock(state, base, "reload_bench");
   if (lock) return { ok: false, reason: lock, locked: true };
@@ -138,8 +139,8 @@ export function canUpgradeAmmoBench(state, base, id) {
 export function queueReloadUpgrade(state, base, id) {
   const chk = canUpgradeAmmoBench(state, base, id);
   if (!chk.ok) return chk.reason;
-  for (const [k, v] of Object.entries(RELOAD.UP.cost)) base.stock[k] -= v;
-  base.construction.push({ id: newId(), type: "reload_bench", target: id, cost: { ...RELOAD.UP.cost }, progress: 0, hours: RELOAD.UP.hours });
+  const pay = payCost(base.stock, RELOAD.UP.cost);
+  base.construction.push({ id: newId(), type: "reload_bench", target: id, cost: pay.paid, progress: 0, hours: RELOAD.UP.hours + pay.hours });
   return `Ammo bench → reloading bench queued at ${base.name}.`;
 }
 

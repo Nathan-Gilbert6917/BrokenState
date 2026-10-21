@@ -96,8 +96,8 @@ export const WOOD = {
 export const WOOD_TERRAIN = { forest: 1, hills: 0.6, mountain: 0.35, plains: 0.25, suburb: 0.2, city: 0.05, water: 0 };
 // Cutting tools (a GEAR entry's own `chop` overrides): what each does for a woodcutter's output.
 // Axes far ahead of the rest (the tools, 2026-10-21): data-guns.js and data-tools.js set the hatchet's, tomahawk's,
-// kukri's, entrenching tool's, felling axe's, bow saw's and makeshift axe's own.
-export const CHOP = { fireaxe: 2, sledge: 1.1, machete: 1, sawmachete: 0.95, springmachete: 1 };
+// kukri's, entrenching tool's, felling axe's, bow saw's and makeshift axe's own. The metal-sheet ones on the same scale.
+export const CHOP = { fireaxe: 2, sledge: 1.1, machete: 1, sawmachete: 0.95, springmachete: 1, sheetmachete: 0.9, sheethatchet: 1.5 };
 const SITE_BONUS = (type) => (/cabin|lodge|camp|ranger/.test(type || "") ? 1.3 : /farm|ranch|barn|orchard/.test(type || "") ? 1.2 : 1);
 const r1 = (x) => Math.round(x * 10) / 10;
 const first = (s) => s.name.split(" ")[0];

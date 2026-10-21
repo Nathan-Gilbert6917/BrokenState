@@ -309,7 +309,8 @@ section("Firewood is Wood: fuel and a building material");
   h.stock.wood = 5000; h.stock.scrap = 200;
   const w0 = h.stock.wood, s0 = h.stock.scrap;
   const msg = queueBuild(st, h, "crates");
-  check(h.stock.wood === w0 - BUILDINGS.crates.cost.wood && h.stock.scrap === s0 - BUILDINGS.crates.cost.scrap, `storage crates queued: −${BUILDINGS.crates.cost.wood} wood, −${BUILDINGS.crates.cost.scrap} scrap (${msg})`);
+  const scrapUsed = (BUILDINGS.crates.cost.scrap || 0) + 3 * Math.max(0, (BUILDINGS.crates.cost.buildmat || 0) - (h.stock.buildmat || 0)); // its building materials made from scrap on site (buildmats.js)
+  check(h.stock.wood === w0 - BUILDINGS.crates.cost.wood && h.stock.scrap === s0 - scrapUsed, `storage crates queued: −${BUILDINGS.crates.cost.wood} wood, −${scrapUsed} scrap (${msg})`);
   // The fires still burn it.
   const camp = makeCamp(st, freeTile(st, () => true));
   people(st, camp, 3);

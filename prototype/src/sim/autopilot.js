@@ -57,6 +57,7 @@ import { KITCHEN, hasKitchen, cooksWanted, kitchenCold, kitchenCanLight, kitchen
 import { conditionsOf, CONDITIONS, treatCondition, treatConditionInfo, medsToTreatAll, autoWantsCondition } from "./health.js";
 import { govCookBills } from "./cooking.js"; // wave 2 cooking: the governor's and the stewards' bills
 import { canUpgradeKitchen, queueCannerUpgrade, canUpgradeGenerator, queueGenUpgrade, stationOperator, hasWall } from "./buildings.js"; // machines-2: the pressure canner; gen-tiers: a generator upgraded
+import { siteCost } from "./buildmats.js"; // a wish's cost as the stores pay it (building materials and sheets made on site from scrap)
 import { nextWallTier, wallTier, underAttack, campMaterialsWork } from "./buildings.js"; // WALL_TIERS: one wall, built up a tier at a time
 import { WOODWORK, queueChop, queuedChopWood, clearAhead } from "./woodwork.js"; // woodwork: felling for wood, clearing the next sites ahead (govWoodwork)
 import { fittingRoom } from "./basemap.js"; // base building: a general building with floor for a fitting (bedWishes, storageWish, stoveWish)
@@ -1161,7 +1162,9 @@ const buildWoodKeep = (wn) => (wn.soon ? wn.need : Math.max(wn.dailyKeep, wn.nee
 // fells for them (govWoodwork: their wood with the fires' days as the reserve). Their wood cost stays.
 const WOOD_FOOD = new Set(["canteen", "animal_pen"]);
 const keepsWood = (type, wood) => wood > WOOD_BUILD_SMALL && !BEDS[type] && !GENERAL.includes(type) && !WOOD_FOOD.has(type);
-const wishCost = (w) => (w.barrel != null ? w.cost : w.upgrade != null ? BARRACKS_UP.cost : w.wallCost || BUILDINGS[w.type].cost);
+// With a base: the cost as its stores pay it (buildmats.js siteCost: building materials and metal sheets they lack are
+// made on site from scrap, so the scrap to save up counts them).
+const wishCost = (w, base = null) => { const c = w.barrel != null ? w.cost : w.upgrade != null ? BARRACKS_UP.cost : w.wallCost || BUILDINGS[w.type].cost; return base ? siteCost(base.stock, c).take : c; };
 const wishQueue = (state, base, w) => (w.barrel != null ? queueBarrelUpgrade(state, base, w.barrel) : w.upgrade != null ? queueBunkhouseExpand(state, base, w.upgrade) : queueBuild(state, base, w.type));
 // The housing wish (nextHousing) for buildWishes, and a bunkhouse after a barracks while a plot is free and the
 // barracks waits on scrap or parts (planBuilds takes the first it can build). Empty when nothing more fits.
@@ -2769,7 +2772,7 @@ function planBuilds(state, base, areas = ALL_AREAS) {
     // A step up that gathers its materials as they come in (buildings.js gather: Build up into a base, Establish the
     // outpost): queued at once, nothing to save up for (it takes what its next hours of work need).
     if (def.gather) { const msg = wishQueue(state, base, w); g.stats.builds++; say(state, `${msg.replace(/\.$/, "")}: ${w.why}.`); return; }
-    const cost = wishCost(w);
+    const cost = wishCost(w, base);
     // Cautious: anything not urgent is built only from what is above the reserves (reserveStatus).
     const rs = persona(state).reserves && !w.save ? reserveStatus(state, base) : null;
     const reserve = rs ? rs.scrap.target : w.save || base.type !== "hub" ? 0 : 10;
@@ -2808,7 +2811,7 @@ function nextBuildScrap(state, base, areas = ALL_AREAS) {
     if (!chk.ok && !(short && w.save)) continue;
     const rs = persona(state).reserves && !w.save ? reserveStatus(state, base) : null;
     const reserve = rs ? rs.scrap.target : w.save || base.type !== "hub" ? 0 : 10;
-    const need = (wishCost(w).scrap || 0) + reserve;
+    const need = (wishCost(w, base).scrap || 0) + reserve;
     if (w.save || (base.stock.scrap || 0) >= need) return need;
   }
   return 0;
@@ -3157,7 +3160,7 @@ function buildWishes(state, base) {
   }
   if (!count(base, "garage") && carsAtBase(state, base.id).length && (st.parts || 0) >= 5) add("garage", "cheaper vehicle repairs");
   // Room for newcomers once the scrap is there (the housing's cost and HOUSING.scrapAhead more: 45 for a bunkhouse).
-  if (people + (homeFood ? 6 : 2) > beds) for (const w of housingWishes(state, base, homeFood ? "spare beds (a fire in the bunkhouse must not crowd the fortress)" : "room for newcomers", false)) if ((st.scrap || 0) >= (wishCost(w).scrap || 0) + HOUSING.scrapAhead) { out.push(w); break; }
+  if (people + (homeFood ? 6 : 2) > beds) for (const w of housingWishes(state, base, homeFood ? "spare beds (a fire in the bunkhouse must not crowd the fortress)" : "room for newcomers", false)) if ((st.scrap || 0) >= (wishCost(w, base).scrap || 0) + HOUSING.scrapAhead) { out.push(w); break; }
   if (wallTier(base) < 3 && !queued("walls") && (st.scrap || 0) >= 70) add("walls", "stronger defense"); // buildings.js WALL_TIERS: up to a scrap-metal wall when rich
   // Cautious (reserves): a med station as soon as meds run short (the surest source), and a radio station once
   // there are parts for it: scanning finds the groups in reach, and radio deals bring what runs short without a
@@ -3370,6 +3373,16 @@ export function planCrafts(state, base) {
       if (r.in.parts && (st.parts || 0) - r.in.parts < 2) continue;
       if (r.in.meds && (st.meds || 0) - r.in.meds < 3) continue;
       if (r.in.water && waterIn(st) - r.in.water < 15) continue;
+      // Metal sheets it lacks (crafting.js metalsheet, 4 scrap each at a workshop): one flattened first, the gear after.
+      const sheetsLack = Math.max(0, (r.in.metalsheet || 0) - (st.metalsheet || 0) - q.filter((j) => j.recipe === "metalsheet").length);
+      if (sheetsLack > 0) {
+        if ((st.scrap || 0) - (r.in.scrap || 0) - CRAFTS.metalsheet.in.scrap * sheetsLack - keep < Math.max(minScrap, floor, waterHold(state, base) + campHold(state, base))) continue;
+        if (!canCraft(state, base, "metalsheet").ok) continue;
+        queueCraft(state, base, "metalsheet");
+        gov(state).stats.crafts++;
+        say(state, `Queued a metal sheet at ${base.name}: for the ${(CRAFTS[k].name || GEAR[r.gear].name).toLowerCase()} (${why}).`);
+        return true;
+      }
       if (!canCraft(state, base, k).ok) continue;
       queueCraft(state, base, k);
       gov(state).stats.crafts++;
@@ -3388,7 +3401,7 @@ export function planCrafts(state, base) {
     say(state, `Queued building materials at ${base.name}: ${bmShort} still wanted for ${base.type === "hub" && !isShelter(base) ? "an outpost camp" : isShelter(base) ? (base.type === "outpost" ? "establishing the camp" : "building the shelter up into a base") : "a camp"}.`);
     return;
   }
-  if (lacking("weapon") > 0 && tryCraft(["springmachete", "pulleybow", "crossbow", "sawmachete", "spikedbat", "pipespear"], "someone has no usable weapon", 5)) return; // the special ones first once a craft book or blueprint has opened them (blueprints.js)
+  if (lacking("weapon") > 0 && tryCraft(["springmachete", "pulleybow", "crossbow", "sawmachete", "sheetmachete", "sheethatchet", "spikedbat", "pipespear"], "someone has no usable weapon", 5)) return; // the special ones first once a craft book or blueprint has opened them (blueprints.js)
   // Arrows: the bows and crossbows shoot them in every fight (and hunt with them): under half a dozen a bow, before
   // anything else (a bow with none fights with its fists; about half the arrows shot are picked up again after a win).
   const bows = people.filter((s) => hasBow([s])).length;
@@ -3414,7 +3427,7 @@ export function planCrafts(state, base) {
   }
   if (rs) floor = rs.scrap.target;
   keep = Math.max(buildKeep(state, base), kitchenKeep(state, base) + plotKeep(state, base)); // on priorities: the rest only from scrap past the next building's (and the floors); the kitchen's scrap held while it is saved for
-  if (lacking("armor") > 0 && tryCraft(["scrapvest", "tirevest"], "someone has no body armor", 35)) return;
+  if (lacking("armor") > 0 && tryCraft(["sheetvest", "scrapvest", "tirevest"], "someone has no body armor", 35)) return;
   if (lacking("head") > 0 && tryCraft(["rivethelmet"], "someone has no helmet", 40)) return; // only once Backyard Blacksmithing is read (blueprints.js)
   if (waterIn(st) < n * 6 && filters < (base.type === "hub" ? 2 : 1) && tryCraft([filterRecipe(base)], "the well cannot keep up (and purified water means less of the worm)", 15)) return;
   // A base by the water with nothing to fish with (hunting.js): a makeshift rod, so the Fish job can be worked.
@@ -3432,8 +3445,8 @@ export function planCrafts(state, base) {
   if ((st.fuel || 0) >= 20 && base.armory.some((it) => it.key === "bottle") && have("molotov") < 3 && hordeThreat(state, base).any && tryCraft(["molotov"], "Molotovs for when the dead come", 0)) return;
   // Field repair kits (repair.js): kept on hand for the teams, made at a workshop from spare gun and machine parts.
   if (have("repairkit") < (base.type === "hub" ? 2 : 1) && (st.gunparts || 0) >= 3 && tryCraft(["repairkit"], "a field repair kit for the teams", 30)) return;
-  if (lacking("arms") > 0 && tryCraft(["padding"], "cheap arm guards", 65)) return;
-  if (lacking("legs") > 0) tryCraft(["shinguards"], "cheap shin guards", 65);
+  if (lacking("arms") > 0 && tryCraft(["sheetarms", "padding"], "cheap arm guards", 65)) return;
+  if (lacking("legs") > 0) tryCraft(["sheetlegs", "shinguards"], "cheap shin guards", 65);
 }
 
 // ---------- gear from the armory ----------
@@ -5153,7 +5166,7 @@ function emergencyAt(state, h, keep = new Set()) {
 function bedsLost(state, h) {
   if (residents(state, h.id).length - baseBeds(h) - queuedBeds(h) < EMERGENCY.bedsOver) return false;
   const next = nextHousing(state, h);
-  return !!next && (h.stock.scrap || 0) < (wishCost(next).scrap || 0);
+  return !!next && (h.stock.scrap || 0) < (wishCost(next, h).scrap || 0);
 }
 // Known sites near home with scrap in them (siteScore with scrap wanted hard), for an emergency scrap trip: two go.
 function scrapSiteCands(state, h, need, P) {
@@ -5715,7 +5728,7 @@ function supplyRunTo(state, h, o, { moves = false, keep = new Set() } = {}) {
       why = `${names(crew)} move${crew.length === 1 ? "s" : ""} there: ${h.name} has outgrown its building plots (${residents(state, h.id).length} people for ${baseBeds(h)} beds), ${o.name} has ${outpostBedsFree(state, o)} free`;
     } else {
       const wish = buildWishes(state, o).find((w) => { if (!BUILDINGS[w.type]) return false; const c = wishCheck(state, o, w); return !c.noPlot && !/^Limit reached/.test(c.reason || ""); }); // no plot free: no scrap run for it
-      const scrap = wish ? wishCost(wish).scrap || 0 : 0;
+      const scrap = wish ? wishCost(wish, o).scrap || 0 : 0;
       // A well needs a part too, a barracks two, a radio relay 3; one more when it is not saved for (planBuilds keeps 1 back then).
       const parts = wish && wishCost(wish).parts ? wishCost(wish).parts + (wish.save ? 0 : 1) : 0;
       const partsShort = parts > 0 && (o.stock.parts || 0) < parts && (h.stock.parts || 0) >= parts + 2;

@@ -72,8 +72,9 @@ const noDice = (fn) => {
   console.log("The jail tiers");
   const fam = ["lockup", "cells", "jailhouse"].map((k) => BUILDINGS[k]);
   check(fam.every((d, i) => d.family === "jail" && d.tier === i + 1) && BUILDINGS.cells.upgrades === "lockup" && BUILDINGS.jailhouse.upgrades === "cells", "family jail: makeshift cells (1) → holding cells (2, the old key) → jailhouse (3)");
-  check(BUILDINGS.lockup.cost.scrap === 6 && !BUILDINGS.lockup.cost.parts && BUILDINGS.lockup.hours === 6 && !BUILDINGS.lockup.req && BUILDINGS.lockup.plot === "utility", "makeshift cells: 6 scrap, 6 hours, no skill, a utility plot");
-  check(BUILDINGS.jailhouse.cost.scrap === 30 && BUILDINGS.jailhouse.cost.parts === 2 && BUILDINGS.jailhouse.hours === 36 && BUILDINGS.jailhouse.req.mechanics === 2, "jailhouse: 30 scrap, 2 parts, 36 hours, Mechanics 2");
+  const worth = (c) => (c.scrap || 0) + 3 * (c.buildmat || 0) + 5 * (c.metalsheet || 0); // building materials and sheets stand for their scrap (buildmats.js, 2026-10-21)
+  check(worth(BUILDINGS.lockup.cost) === 6 && BUILDINGS.lockup.cost.buildmat >= 1 && !BUILDINGS.lockup.cost.parts && BUILDINGS.lockup.hours === 6 && !BUILDINGS.lockup.req && BUILDINGS.lockup.plot === "utility", "makeshift cells: 6 scrap's worth (a building material of it), 6 hours, no skill, a utility plot");
+  check(worth(BUILDINGS.jailhouse.cost) === 30 && BUILDINGS.jailhouse.cost.metalsheet >= 1 && BUILDINGS.jailhouse.cost.parts === 2 && BUILDINGS.jailhouse.hours === 36 && BUILDINGS.jailhouse.req.mechanics === 2, "jailhouse: 30 scrap's worth (building materials and metal sheets of it), 2 parts, 36 hours, Mechanics 2");
   check(JAIL.lockup.cap === 2 && JAIL.cells.cap === 3 && JAIL.jailhouse.cap === 8, "they hold 2, 3 and 8");
   check(SHELTER.build.lockup === 1 && !SHELTER.build.cells, "a shelter can put up makeshift cells (not the others)");
   const st = world();

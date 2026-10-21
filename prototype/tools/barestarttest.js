@@ -48,11 +48,14 @@ const answerCards = (st) => { while (st.cards.length) { const c = st.cards.shift
 {
   console.log("The crafting bench");
   const b = BUILDINGS.craftbench, wb = BUILDINGS.workbench, tb = BUILDINGS.toolbench;
-  check(b.cost.scrap === 10 && b.cost.parts === 1 && b.cost.wood === 100 && Object.keys(b.cost).length === 3, `10 scrap, a part and 100 wood for the table (woodwork) (${JSON.stringify(b.cost)})`);
+  // Scrap's worth: building materials and metal sheets stand for 3 and 5 scrap each (buildmats.js, 2026-10-21: building
+  // materials in every building; made from that scrap on site when the stores have none).
+  const worth = (c) => (c.scrap || 0) + 3 * (c.buildmat || 0) + 5 * (c.metalsheet || 0);
+  check(worth(b.cost) === 10 && b.cost.buildmat >= 1 && b.cost.parts === 1 && b.cost.wood === 100 && Object.keys(b.cost).length === 4, `10 scrap's worth (scrap and a building material), a part and 100 wood for the table (woodwork) (${JSON.stringify(b.cost)})`);
   check(b.hours === 12 && !b.req, `12 work-hours, no skill (${b.hours})`);
-  check(b.cost.scrap >= 10 && b.cost.scrap <= 12 && b.hours >= 8 && b.hours <= 12, "within the asked range (10–12 scrap, 8–12 hours)");
-  check(b.cost.scrap / HUB_START.scrap <= 0.3 && b.cost.scrap > BUILDINGS.farm_plot.cost.scrap, `a modest share of the starting scrap, more than a farm plot (${Math.round((b.cost.scrap / HUB_START.scrap) * 100)}%)`);
-  check(wb.cost.scrap > b.cost.scrap && tb.cost.scrap > wb.cost.scrap && wb.hours > b.hours && tb.hours > wb.hours, "each tier still costs more than the one below");
+  check(worth(b.cost) >= 10 && worth(b.cost) <= 12 && b.hours >= 8 && b.hours <= 12, "within the asked range (10–12 scrap's worth, 8–12 hours)");
+  check(worth(b.cost) / HUB_START.scrap <= 0.3 && worth(b.cost) > worth(BUILDINGS.farm_plot.cost), `a modest share of the starting scrap, more than a farm plot (${Math.round((worth(b.cost) / HUB_START.scrap) * 100)}%)`);
+  check(worth(wb.cost) > worth(b.cost) && worth(tb.cost) > worth(wb.cost) && wb.hours > b.hours && tb.hours > wb.hours, "each tier still costs more than the one below");
   const st = createWorld({ seed: seeds[0], factionCount: 4 });
   const h = hub(st);
   check(canBuild(st, h, "craftbench").ok, "a new hub can afford it on day 1");
@@ -72,7 +75,8 @@ const answerCards = (st) => { while (st.cards.length) { const c = st.cards.shift
   const q1 = queueBuild(st, h, "bunkhouse");
   const q2 = queueBuild(st, h, "craftbench");
   check(/queued/.test(q1) && /queued/.test(q2), `a bunkhouse and a crafting bench queued (${q1} ${q2})`);
-  check(h.stock.scrap === HUB_START.scrap - BUILDINGS.bunkhouse.cost.scrap - BUILDINGS.craftbench.cost.scrap && h.stock.parts === HUB_START.parts - 1, "paid from the starting stores");
+  const scrapOf = (c) => (c.scrap || 0) + 3 * (c.buildmat || 0) + 5 * (c.metalsheet || 0); // a new hub has no building materials or sheets: made from scrap on site
+  check(h.stock.scrap === HUB_START.scrap - scrapOf(BUILDINGS.bunkhouse.cost) - scrapOf(BUILDINGS.craftbench.cost) && h.stock.parts === HUB_START.parts - 1, `paid from the starting stores (${HUB_START.scrap - h.stock.scrap} scrap)`);
   tickHour(st);
   check(!st.cards.some((c) => c.crowdFor === h.id), "no Overcrowded card on the first hour");
   let bunkDay = null, benchDay = null;

@@ -14,8 +14,10 @@
 // of fuel or a bottle of water in the hand) unless it is bulky. A bulky one (building materials, car parts: big, heavy
 // things) is carried loose (the raid window's Carried), in the cargo or in storage only.
 // STACK: the most units in one slot; SMALL: fits a pocket; BULKY: neither pocket, pack nor hand. Keys not listed (the
-// foods) go by their unit weight (supItemSpec).
-/** @type {Record<string, { stack: number, small?: boolean, bulky?: boolean, word?: string }>} */
+// foods) go by their unit weight (supItemSpec). TWOHANDS (building materials, metal sheets; the user's call 2026-10-21:
+// "carried by the carried slot with two hands … stacked up to 4"): bulky, and carried only in both arms (the carry
+// slot, inventory.js isTwoHands), up to the stack a person (carry.js HOLD hands).
+/** @type {Record<string, { stack: number, small?: boolean, bulky?: boolean, twoHands?: boolean, word?: string }>} */
 export const SUP_ITEM = {
   water:        { stack: 4,   word: "litres of purified water" },  // a few bottles
   rawwater:     { stack: 4,   word: "litres of un-purified water" },
@@ -29,7 +31,8 @@ export const SUP_ITEM = {
   carparts:     { stack: 2,   bulky: true, word: "car parts" },
   gunparts:     { stack: 10,  small: true, word: "gun parts" },
   electronics:  { stack: 10,  small: true, word: "electronics" },
-  buildmat:     { stack: 5,   bulky: true, word: "building materials" },
+  buildmat:     { stack: 4,   bulky: true, twoHands: true, word: "building materials" },
+  metalsheet:   { stack: 4,   bulky: true, twoHands: true, word: "metal sheets" },
   blackpowder:  { stack: 100, small: true, word: "charges of black powder" },
   matchprimers: { stack: 100, small: true, word: "match-head primers" },
 };
@@ -42,9 +45,9 @@ export const supItemKey = (k) => `s_${k}`;
 /** @param {string} k @param {{ weight: number }} sup */
 export function supItemSpec(k, sup) {
   const own = SUP_ITEM[k];
-  if (own) return { stack: own.stack, small: !!own.small, bulky: !!own.bulky };
+  if (own) return { stack: own.stack, small: !!own.small, bulky: !!own.bulky || !!own.twoHands, twoHands: !!own.twoHands };
   const w = Math.max(0.001, Number(sup.weight) || 1);
-  return { stack: Math.max(1, Math.min(SUP_SLOT.MAX, Math.floor(SUP_SLOT.SLOT_KG / w + 1e-9))), small: w <= SUP_SLOT.SMALL_KG, bulky: false };
+  return { stack: Math.max(1, Math.min(SUP_SLOT.MAX, Math.floor(SUP_SLOT.SLOT_KG / w + 1e-9))), small: w <= SUP_SLOT.SMALL_KG, bulky: false, twoHands: false };
 }
 
 // The GEAR entries: one per supply that has no item of its own. gear: the GEAR built so far (a key there already, a
@@ -59,8 +62,8 @@ export function supItemGear(supplies, gear) {
     out[supItemKey(k)] = {
       name: s.name, slot: "pack", skill: null, power: 0, req: 0, noise: 0, count: true, dur: 1,
       weight: s.weight, value: s.value, cat: "supply", supKey: k, stack: sp.stack, hand: !sp.bulky,
-      ...(sp.small ? { small: true } : {}), ...(sp.bulky ? { bulky: true } : {}),
-      desc: `${s.name} out of the stores, to carry on you: up to ${sp.stack} in a ${sp.small ? "pocket, a pack slot or the off hand" : sp.bulky ? "pile: too big for a pocket, a pack or a hand (carry it, or put it in the cargo)" : "pack slot or the off hand (too big for a pocket)"}. Put it in a base's armory or a team's cargo and it goes back into the stock.`,
+      ...(sp.small ? { small: true } : {}), ...(sp.bulky ? { bulky: true } : {}), ...(sp.twoHands ? { twoHands: true } : {}),
+      desc: `${s.name} out of the stores, to carry on you: up to ${sp.stack} in a ${sp.small ? "pocket, a pack slot or the off hand" : sp.twoHands ? "stack carried in both arms (the Carried slot): never a pocket, a pack or one hand (or put it in the cargo)" : sp.bulky ? "pile: too big for a pocket, a pack or a hand (carry it, or put it in the cargo)" : "pack slot or the off hand (too big for a pocket)"}. Put it in a base's armory or a team's cargo and it goes back into the stock.`,
     };
   }
   return out;
