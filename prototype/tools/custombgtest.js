@@ -94,7 +94,8 @@ const lib = { c_1: MEDIC, c_2: { ...blankBackground("c_2"), name: "Walker", car:
     if (w.hardcore.start.carOwner !== w.survivors[0].id) continue;
     mine++;
     const q = roadTeam(w), car = partyVehicle(w, q);
-    if (!(car.type === "hummer" && q.cargo.supplies.fuel === 12 && q.cargo.supplies.meds === 3 && q.cargo.supplies.scrap === 5 && q.cargo.gear.map((g) => g.key).sort().join() === "fishrod,sandbags")) exact = false;
+    // (tent1: the hardcore start's tent bags in the trunk, tents.js hardcoreTents: not the background's)
+    if (!(car.type === "hummer" && q.cargo.supplies.fuel === 12 && q.cargo.supplies.meds === 3 && q.cargo.supplies.scrap === 5 && q.cargo.gear.map((g) => g.key).filter((k) => k !== "tent1").sort().join() === "fishrod,sandbags")) exact = false;
   }
   check(mine >= 6, `odds ${MEDIC.car.odds}: the car is theirs most of the time (${mine} of 10)`);
   check(mine > 0 && exact, "and then the kind and the back they set (a Hummer, 12 fuel, 3 meds, 5 scrap, sandbags and a rod)");

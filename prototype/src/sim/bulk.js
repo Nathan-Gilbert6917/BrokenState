@@ -14,6 +14,8 @@ import { baseById, combatPower, gearEffect, skill, newId, survivorById, factionB
 import { ensureInv, itemLoad, packSize, ensurePack } from "./inventory.js";
 import { wornLoad, maxLoad, feelFactor, LOAD_BANDS } from "./load.js";
 import { itemScore } from "./autopilot.js";
+import { inSlot } from "./equip.js";
+import { earSlotReason } from "./helmets.js";
 import { equipKit } from "./carrykit.js"; // carry kit: the best rig, plates into the carrier, spare magazines
 import { activeHospital, bedReason } from "./medical.js";
 import { conditionsOf } from "./health.js";
@@ -21,10 +23,9 @@ import { supplyRuns, dispatchSupplyRun, jobParty, planSupplyRun, deleteSupplyRun
 
 export const BULK = {
   KIT_FELT_MAX: LOAD_BANDS[1].upTo, // kg felt: worn kit stays at most Medium (room left for the trip's supplies)
-  ARMOR_SLOTS: ["weapon", "armor", "head", "arms", "legs", "backpack"],
+  ARMOR_SLOTS: ["weapon", "armor", "head", "arms", "legs", "backpack", "sidearm", "melee", "ears"], // the belt and Ear pro (holsters.js, helmets.js) last, out of what is left
 };
 const first = (s) => String(s.name || "").split(" ")[0];
-const slotOf = (key) => (GEAR[key] ? GEAR[key].slot : null);
 
 // Why someone cannot be handled at a base ("" when they are at one).
 export function awayReason(state, s) {
@@ -93,7 +94,7 @@ export function equipBest(state, people) {
     for (const s of crew) ensureInv(s);
     for (const slot of BULK.ARMOR_SLOTS) {
       for (const s of crew) {
-        const items = base.armory.filter((it) => slotOf(it.key) === slot && weightOk(s, slot, it));
+        const items = base.armory.filter((it) => inSlot(it, slot) && weightOk(s, slot, it) && !(slot === "ears" && earSlotReason(it, s))); // equip.js inSlot: a handgun for the side arm slot, a small blade for the melee slot
         if (!items.length) continue;
         const best = items.sort((a, b) => itemScore(s, b) - itemScore(s, a))[0];
         const cur = s.gear[slot];

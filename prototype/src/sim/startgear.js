@@ -60,7 +60,7 @@ import { stackMax, withCount } from "./itemstack.js"; // a stack picked: n of a 
 
 export const START_GEAR = {
   // Worn and held, in the order the editor lists them (inventory.js EQUIP_SLOTS but the arms' carried bag).
-  SLOTS: ["weapon", "tool", "armor", "head", "arms", "legs", "rig", "backpack"],
+  SLOTS: ["weapon", "tool", "armor", "head", "ears", "arms", "legs", "rig", "backpack"], // ears: Ear pro (helmets.js earGearOf: the only ear protection that works)
   POUCHES: 16, PACK: 24, // the most a rig's pouches and a pack's slots are kept for (the frame rucksack has 14)
   LOADS: 3, // a picked gun's rounds: its full load this many times (one in the gun, two spares)
   LAUNCH: 2, // a picked grenade launcher's or rocket launcher's rounds (a one-shot tube: none, its rocket is in it)

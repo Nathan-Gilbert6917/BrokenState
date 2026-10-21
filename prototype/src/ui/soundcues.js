@@ -180,6 +180,7 @@ export function battleCues(b, mem, now = 0, state = null) {
       out.push({ name: BIG.has(kind) ? "blast" : throwSound(as), at: f.to, delay: 0.05, blast: { kind, glass: glassNear(b, f.to[0], f.to[1]) } });
       blastAt(f.to, kind);
     } else if (f.type === "scream") out.push({ name: "scream", at: f.from });
+    else if (f.type === "draw") out.push({ name: "pickup", at: f.at, kind: f.key && WEAPONS[f.key] && WEAPONS[f.key].melee ? "blade" : "gun" }); // sim/holsters.js: a side arm or a blade drawn (ui/sfx-gear.js's click of a gun taken up)
   }
   // A vehicle wrecked by this frame's blasts: a fireball (combat.js vehicleBlast marks its cells wrecked).
   if (landed.length && mem.wrecked) {

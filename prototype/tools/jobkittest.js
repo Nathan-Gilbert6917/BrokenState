@@ -109,7 +109,8 @@ section("3. A way through the dead: decoys, Molotovs, flares, a blade beside the
   check(count(go, (k) => k === "flare") === Math.min(JOB.FLARES, 4), `${count(go, (k) => k === "flare")} road flares for the passages`);
   check(go.every((s) => allCarried(s).some((it) => it.key === "molotov")) || count(go, (k) => k === "molotov") >= 1, `Molotovs: ${count(go, (k) => k === "molotov")} on ${go.length} people`);
   const gunners = go.filter((s) => s.gear.weapon && GEAR[s.gear.weapon.key].cat !== "melee");
-  check(gunners.some((s) => s.gear.tool && GEAR[s.gear.tool.key].cat === "melee"), `a blade in the off hand of those holding a gun (${gunners.filter((s) => s.gear.tool && GEAR[s.gear.tool.key].cat === "melee").length} of ${gunners.length})`);
+  const bladed = (s) => [s.gear.melee, s.gear.tool].some((it) => it && GEAR[it.key].cat === "melee"); // the melee slot (holsters.js), else the off hand
+  check(gunners.some(bladed), `a blade on the belt (or in the off hand) of those holding a gun (${gunners.filter(bladed).length} of ${gunners.length})`);
   check(sameBooks(f, before) && A.groupRounds(f) === r0, "the same books, each piece in one place, the same rounds");
 }
 
