@@ -22,6 +22,7 @@ import { serializeState, deserializeState } from "../src/sim/save.js";
 import { seasonOfDay } from "../src/sim/weather.js";
 import { setFood, clearFood } from "./foodkit.js"; // food by type (sim/foods.js)
 import { setMech } from "./groupkit.js"; // a group's mechanic is one of its people
+import { siteCost } from "../src/sim/buildmats.js"; // what a cost takes from the stores (building materials made from scrap when short)
 
 const govDays = Number(process.argv[2] || 60);
 const seeds = process.argv.length > 3 ? process.argv.slice(3).map(Number) : [1];
@@ -85,8 +86,9 @@ const T = GEN_TIERS;
   chk = canUpgradeGenerator(st, h, g.id);
   check(chk.ok && chk.tier === 2, "Mechanics 4, the materials: ok");
   const used = plotsUsed(h, "utility"), s0 = h.stock.scrap, p0 = h.stock.parts;
+  const take = siteCost(h.stock, T[2].cost).take;
   const msg = queueGenUpgrade(st, h, g.id);
-  check(/Standby generator queued/.test(msg) && h.stock.scrap === s0 - T[2].cost.scrap && h.stock.parts === p0 - T[2].cost.parts, `queued and paid (${msg})`);
+  check(/Standby generator queued/.test(msg) && h.stock.scrap === s0 - take.scrap && h.stock.parts === p0 - T[2].cost.parts, `queued and paid (${msg})`);
   check(plotsUsed(h, "utility") === used && canBuild(st, h, "generator").ok, "no new plot, and it does not count against the generators' max");
   check(!canUpgradeGenerator(st, h, g.id).ok && /already queued/.test(canUpgradeGenerator(st, h, g.id).reason), "one upgrade at a time");
   check(!canDemolish(st, h, g.id).ok, "not pulled down with an upgrade queued");

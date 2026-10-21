@@ -10,6 +10,7 @@
 // alone, one log line a day, taking over keeps everything, nothing while the autopilot runs); the governor using
 // the orders; and 200 days with all of it on two seeds with no NaN or negative stock.
 // Usage: node tools/prodtest.js [days for the long runs] [seeds...]
+import { stockTools } from "./toolset.js"; // every tool a build or recipe can need (toolreqs.js)
 import { food, setFood, addDays, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { lotsOf } from "../src/sim/foods.js";
 import { setRounds, totalRounds } from "../src/sim/ammo.js"; // the bench makes rounds by calibre (ammo.js)
@@ -36,7 +37,7 @@ const seeds = process.argv.length > 3 ? process.argv.slice(3).map(Number) : [42,
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
 const near = (a, b, eps = 1e-6) => Math.abs(a - b) <= eps;
-const W = (seed = 42) => { const st = createWorld({ seed, factionCount: 6 }); st.started = true; return st; };
+const W = (seed = 42) => { const st = createWorld({ seed, factionCount: 6 }); st.started = true; stockTools(hub(st)); return st; }; // every tool (toolset.js)
 const plain = (s) => { s.traits = []; s.conditions = []; return s; };
 // A quiet hub: everyone resting, plenty of everything, no illness to make people unfit to work.
 function quietHub(st) {
@@ -173,6 +174,7 @@ const nextHour = (st) => { st.hour += 1; productionHour(st); };
   for (const s of people(st, h)) { s.skills.mechanics = 0; s.skills.crafting = 0; }
   c.role = "craft";
   h.armory.length = 0;
+  stockTools(h); // a hammer for the spiked bat (toolreqs.js)
   addCraftOrder(st, h, "spikedbat", 2, 0.8);
   const o = craftOrders(h)[0];
   // Expected quality 75% at Crafting 0 (crafting.js: quality comes from Crafting): below 80%, nothing is queued.

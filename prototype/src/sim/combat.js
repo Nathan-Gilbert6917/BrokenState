@@ -40,7 +40,7 @@ import { armorMult, enemyBody, allyBody, bodyEmpty, takeAllBodies, leaveBodies, 
 import { areaSource, kitSource, spend } from "./itemcond.js";
 import { foundFill } from "./gunrounds.js"; // a found gun's few rounds
 import { rollAreaGuns } from "./gunfinds.js"; // the arsenal of 2026-10-10 in a raid container (its own dice)
-import { rollAreaFind, rollAreaWood, rollAreaArrows, rollAreaGunmod, splitParts, rollAreaGrenades, rollAreaLaunchers, rollAreaReload } from "./loot.js";
+import { rollAreaFind, rollAreaWood, rollAreaSheets, rollAreaArrows, rollAreaGunmod, splitParts, rollAreaGrenades, rollAreaLaunchers, rollAreaReload } from "./loot.js";
 import { rollAreaTent } from "./tents.js"; // tent bags in a raid's containers (their own dice)
 import { buzzAim } from "./comforts.js";
 import { needsAim } from "./needs.js";
@@ -97,6 +97,8 @@ import { GUN_WEAPONS, KIT_PATCH, WEAPON_PATCH } from "./data-guns.js"; // the we
 import { withFactory } from "./factoryfit.js"; // a sniper rifle carried with its scope and bipod (section 22)
 import { throwLanding } from "./throwables.js"; // a thrown spear lands like any throw
 import { BLADE_WEAPONS, BLADE_KIT_PATCH } from "./data-blades.js"; // knives and swords (merged below)
+import { TOOL_MELEE } from "./data-tools.js"; // the felling axe, the shovel, the makeshift axe (merged below)
+import { rollAreaTool } from "./toolreqs.js"; // tools in a raid container and a car's trunk (their own dice)
 import { SURV_MELEE, SURV_KIT_PATCH } from "./data-survival.js"; // survival gear: the Halligan bar and the pipe wrench (merged below)
 import { NL_WEAPONS, NL_KIT_PATCH } from "./data-nonlethal.js"; // the stun baton; tasers and spray on guards (merged below)
 import { nlHit, nlDown, nlAfterHit, nlAimPen, nlNoOw, nlStrike, nlAct, nlSetup, nlEnemyPhase, nlTurnStart, nlAI, nlBreak, nlBattleEnd, nlRaidEnd, nlDropPiles, nlSpared, blinded, setTakeAlive } from "./nonlethal.js"; // non-lethal weapons, taking people alive, surrender
@@ -860,6 +862,8 @@ export const WEAPONS = {
   spikedbat:  { name: "Spiked bat",        melee: true, dmg: [16, 25] },
   pipespear:  { name: "Pipe spear",        melee: true, dmg: [15, 23] },
   sawmachete: { name: "Saw-blade machete", melee: true, dmg: [17, 27] },
+  sheetmachete: { name: "Sheet-metal machete", melee: true, dmg: [16, 26] }, // cut from a metal sheet (crafting.js; 2026-10-21)
+  sheethatchet: { name: "Sheet-metal hatchet", melee: true, dmg: [16, 25] },
   crossbow:   { name: "Scrap crossbow",    dmg: [18, 26], opt: 7, fall: 4, aim: -4, ammo: 0, arrows: 1, noise: 0 },
   pipegun:    { name: "Pipe shotgun",      dmg: [20, 32], opt: 3, fall: 8, aim: -6, ammo: 1, noise: 3, close: 8, cap: 1, cal: "12ga", rel: 1.2 }, // a single-shot zip gun: reloaded after every shot
   // Special crafted weapons (craft books and blueprints, blueprints.js): better than the makeshift ones above.
@@ -939,6 +943,7 @@ Object.assign(WEAPONS, BLADE_WEAPONS);
 for (const [kind, patch] of Object.entries(BLADE_KIT_PATCH)) for (const [k, list] of Object.entries(patch)) if (KITS[kind]) KITS[kind][k] = [...(KITS[kind][k] || []), ...list];
 // Survival gear (data-survival.js): the two tool weapons' battle numbers, and what the kits' bodies carry (loot lists only).
 Object.assign(WEAPONS, SURV_MELEE);
+Object.assign(WEAPONS, TOOL_MELEE); // data-tools.js
 for (const [kind, patch] of Object.entries(SURV_KIT_PATCH)) for (const [k, list] of Object.entries(patch)) if (KITS[kind]) KITS[kind][k] = [...(KITS[kind][k] || []), ...list];
 
 const idx = (x, y) => y * W + x;
@@ -7372,12 +7377,18 @@ export function searchBox(state, b, u, box, open = false, quick = false) {
       // Wood: a log basket, a shed's kindling, a broken chair (loot.js AREA_WOOD; its own dice too).
       const wood = rollAreaWood(state, b.tileId, R.areas[box.area].type, box.kind, `box${bid}`);
       if (wood > 0) sup.wood = (sup.wood || 0) + wood;
+      // Metal sheets: a wrecked car's panels and roof, a stack in a garage or a barn (loot.js AREA_SHEETS; its own dice too).
+      const sheets = rollAreaSheets(state, b.tileId, R.areas[box.area].type, box.kind, `box${bid}`);
+      if (sheets > 0) sup.metalsheet = (sup.metalsheet || 0) + sheets;
       // Arrows: a quiver in a cabin's locker, bolts on a shop shelf (loot.js AREA_ARROWS; its own dice too).
       const arrows = rollAreaArrows(state, b.tileId, R.areas[box.area].type, box.kind, `box${bid}`);
       if (arrows > 0) sup.arrows = (sup.arrows || 0) + arrows;
       // A tent bag: a campsite's, a garage's shelf, barracks stores (tents.js AREA_TENTS; its own dice too).
       const tent = rollAreaTent(state, b.tileId, R.areas[box.area].type, site, `box${bid}`);
       if (tent) gear.push(tent);
+      // A tool: a workshop's bench, a barn's wall, a car's trunk (toolreqs.js AREA_TOOLS / CAR_TOOLS; its own dice too).
+      const tool = rollAreaTool(state, b.tileId, R.areas[box.area].type, box.kind, `box${bid}`);
+      if (tool) gear.push(tool);
       if (def.alarm && box.kind === "car" && drng.chance(def.alarm) && !u.quiet) { // quiet: Quiet Hands never sets one off
         R.heat = Math.min(100, R.heat + 12);
         say(b, "A car alarm goes off! Heat jumps.", "danger");

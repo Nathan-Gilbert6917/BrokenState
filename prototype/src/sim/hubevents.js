@@ -55,7 +55,7 @@ export const RATS = { share: 0.05, min: 3, max: 20, scrap: 2 };
 export const FENCE = { shots: 3 }; // rounds a head of the dead, shooting from the wall
 // A cold snap: three days' extra heating (upkeep.js HEAT: about 15 wood or 0.1 fuel a head a day below freezing).
 export const COLD = { wood: 45, fuel: 0.3, frostbite: 0.3 };
-export const SALVAGE = { scrap: [6, 12], risk: 0.2 };
+export const SALVAGE = { scrap: [6, 12], risk: 0.2, sheets: 2 }; // sheets: off the pickup's bed and doors
 // Hardcore's first year (until the day a normal game would start), the first weeks most.
 const hcYear = (st) => isHardcore(st) && day(st) <= hardcoreEraOffset(st);
 const hcFade = (st, days) => Math.exp(-(day(st) - 1) / days);
@@ -592,14 +592,15 @@ export const HUB_EVENTS = {
         text: `A pickup truck came off the road in the night and lies on its roof in the ditch below ${c.base.name}. Nobody climbed out of it.`,
         choices: [
           {
-            label: "Strip it", hint: `${SALVAGE.scrap[0]}–${SALVAGE.scrap[1]} scrap and a car part, 50% some fuel left in the tank; ${pct(SALVAGE.risk)} the driver had the worm and gets up (4–14 health)`,
+            label: "Strip it", hint: `${SALVAGE.scrap[0]}–${SALVAGE.scrap[1]} scrap, a car part and ${SALVAGE.sheets} metal sheets off its bed and doors, 50% some fuel left in the tank; ${pct(SALVAGE.risk)} the driver had the worm and gets up (4–14 health)`,
             disabled: () => !ppl().length, ai: () => 4,
             resolve: (s2) => {
               const scrap = s2.rng.int(...SALVAGE.scrap), fuel = s2.rng.chance(0.5) ? s2.rng.int(2, 5) : 0;
               c.base.stock.scrap = (c.base.stock.scrap || 0) + scrap;
               c.base.stock.carparts = (c.base.stock.carparts || 0) + 1;
+              c.base.stock.metalsheet = (c.base.stock.metalsheet || 0) + SALVAGE.sheets; // its bed and door skins (2026-10-21)
               if (fuel) c.base.stock.fuel = (c.base.stock.fuel || 0) + fuel;
-              let txt = `Stripped to the frame: ${scrap} scrap, a car part${fuel ? ` and ${fuel} fuel` : ""}.`;
+              let txt = `Stripped to the frame: ${scrap} scrap, a car part, ${SALVAGE.sheets} metal sheets${fuel ? ` and ${fuel} fuel` : ""}.`;
               const hands = ppl();
               if (hands.length && s2.rng.chance(SALVAGE.risk)) {
                 const v = s2.rng.pick(hands);

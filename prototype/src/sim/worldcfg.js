@@ -173,7 +173,7 @@ export const cfgChance = (state, key, p) => Math.min(1, Math.max(0, p * cfgOf(st
 
 // Loot by kind: the dial a supply key falls under (jars and preserves are food, raw water is water, arrows are ammo;
 // anything else, wood among them, is not scaled).
-const LOOT_OF = { food: "lootFood", preserved: "lootFood", jars: "lootFood", water: "lootWater", rawwater: "lootWater", ammo: "lootAmmo", arrows: "lootAmmo", parts: "lootParts", scrap: "lootScrap", meds: "lootMeds", fuel: "lootFuel" };
+const LOOT_OF = { food: "lootFood", preserved: "lootFood", jars: "lootFood", water: "lootWater", rawwater: "lootWater", ammo: "lootAmmo", arrows: "lootAmmo", parts: "lootParts", scrap: "lootScrap", metalsheet: "lootScrap", meds: "lootMeds", fuel: "lootFuel" };
 export const lootKeyOf = (key) => LOOT_OF[key] || null;
 /** The loot dial for a supply key (1 for one with no dial). @param {any} state */
 export const lootMult = (state, key) => (LOOT_OF[key] ? cfgOf(state, LOOT_OF[key]) : 1);

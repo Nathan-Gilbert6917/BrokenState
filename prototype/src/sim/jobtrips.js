@@ -206,7 +206,7 @@ export function loadText(t) {
       const n = [c.deer ? `${c.deer} deer` : "", c.hog ? `${c.hog} hog${c.hog > 1 ? "s" : ""}` : "", c.small ? `${c.small} small game` : "", c.fish ? `${c.fish} fish` : ""].filter(Boolean).join(", ");
       return c.rations > 0.05 ? `${Math.round(c.rations)} kg ${t.job === "fish" ? "fish" : "meat"}${n ? ` (${n})` : ""}` : "";
     }
-    case "scavenge": return c.finds ? Object.entries({ ...c.got, ...(c.ammo ? { ammo: c.ammo.q } : {}) }).map(([k, n]) => `${n} ${k === "buildmat" ? "building materials" : k}`).join(", ") : "";
+    case "scavenge": return c.finds ? Object.entries({ ...c.got, ...(c.ammo ? { ammo: c.ammo.q } : {}) }).map(([k, n]) => `${n} ${k === "buildmat" ? "building materials" : k === "metalsheet" ? "metal sheets" : k}`).join(", ") : "";
     case "water": return c.water > 0 ? `${r1(c.water)} water (un-purified)` : "";
     default: return c.text || ""; // hauling.js: the load's own words
   }

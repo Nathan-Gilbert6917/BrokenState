@@ -16,6 +16,7 @@
 // - allianceVictory: a hostile group alive and outside does not block it with a member and over half the land; no
 //   member: no victory; goalsProgress blocks text
 // - save/load (sim/save.js): the claims and wells round-trip as plain data; an older save without claims loads
+import { stockTools } from "./toolset.js"; // every tool a build or recipe can need (toolreqs.js)
 import { createWorld, tickHour, hub, atBase, RADIO_RANGE, newId, makeSurvivor, day, radioBasesInRange } from "../src/sim/world.js";
 import { BUILDINGS, canBuild, queueBuild, addBuilding } from "../src/sim/buildings.js";
 import * as BP from "../src/sim/blueprints.js";
@@ -41,6 +42,7 @@ function mk(seed = SEED) {
   state.started = true;
   state.autoCombat = true;
   state.noWanderers = true;
+  stockTools(hub(state)); // every tool a build can need (toolset.js)
   Object.assign(hub(state).stock, { food: 300, water: 300, fuel: 100, meds: 20, ammo: 300, parts: 10, scrap: 100 });
   return state;
 }
@@ -381,6 +383,7 @@ section("Radio relays at any base: an outpost and the hub, none beside a station
   // An outpost 9-11 tiles out, with a mechanic and the materials: buildable, and queueBuild takes it.
   const oTile = tileNear(state, h.tile, 9, 11);
   const o = fakeOutpost(state, oTile);
+  stockTools(o); // a drill, wrenches and pliers for the relay (toolreqs.js)
   mech(o);
   Object.assign(o.stock, { scrap: 30, parts: 4 });
   check(canBuild(state, o, "relay").ok && /queued/.test(queueBuild(state, o, "relay")) && o.stock.parts === 1, "a relay at an outpost: queued, 15 scrap and 3 parts paid");

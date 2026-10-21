@@ -194,6 +194,14 @@ function sawmachete(p) { // a circular-saw blade ground into a cleaver: a round 
   p.clear(10, 6); // the arbor hole
   line(p, 7, 7, 9, 4, "#c86a3a");
 }
+function sheetmachete(p) { // cut from a metal sheet: a dull grey blade with a nicked edge and a corrugation line, a taped grip
+  handle(p, -15, -7, "#6d7378");
+  area(p, (a, b) => a >= -15 && a <= -7 && b >= 15 && b <= 16 && ((a + 20) % 3) === 0, "#2a2c30");
+  area(p, (a, b) => a >= -6 && a <= 13 && b >= 14 && b <= 17 && a + (b - 14) <= 16, "#9aa1a8");
+  lit(p, "#9aa1a8");
+  area(p, (a, b) => a >= -4 && a <= 11 && b === 15 && (a % 3) !== 0, "#7d858c"); // the corrugation
+  for (const a of [-2, 4, 9]) at(p, a, 17, null); // nicks in the edge
+}
 function springmachete(p) { // a forged leaf spring: a dark scaled blade with a bright ground edge, cord-wrapped grip
   handle(p, -15, -7, "#4f5a3e");
   area(p, (a, b) => a >= -15 && a <= -7 && b >= 15 && b <= 16 && ((a + 20) % 3) === 0, "#2e3328");
@@ -363,6 +371,14 @@ function hatchet(p) { // a short wooden handle, a small steel head
   lit(p, "#8d959c");
   area(p, (a, b) => b === 9 && a >= 2 && a <= 11, "#d6dde2");
 }
+function sheethatchet(p) { // a head cut from a metal sheet, folded double and riveted to a wooden handle
+  handle(p, -11, 5, K.wood);
+  lit(p, K.wood);
+  axeHead(p, 5, 8, 9, "#9aa1a8");
+  lit(p, "#9aa1a8");
+  area(p, (a, b) => b === 9 && a >= 2 && a <= 11, "#c4cbd1");
+  for (const a of [5, 8]) at(p, a, 13, "#4a4f57"); // the rivets
+}
 function tomahawk(p) { // tactical: a black handle, a black narrow head with a bright edge and a long beard, a spike behind
   handle(p, -15, 6, K.poly);
   lit(p, K.poly);
@@ -510,6 +526,14 @@ function scrapvest(p) { // a brown work jacket with riveted steel plates
     p.set(x + 1, y + 1, "#e8eef2"); p.set(x + 3, y + 1, "#e8eef2"); p.set(x + 1, y + 2, shade(c, -0.25)); p.set(x + 3, y + 2, shade(c, -0.25));
   }
 }
+function sheetvest(p) { // a cuirass of corrugated sheet steel on leather straps, rows of rivets
+  rows(p, 1, VEST, "#8d959c");
+  lit(p, "#8d959c");
+  for (let y = 5; y <= 13; y += 2) H(p, 3, 12, y, "#7d858c"); // the corrugation
+  for (const [x, y] of [[3, 4], [12, 4], [3, 9], [12, 9], [7, 7], [8, 7]]) p.set(x, y, "#e8eef2"); // the rivets
+  for (const y of [1, 2]) { p.set(4, y, "#6e5a48"); p.set(11, y, "#6e5a48"); } // the shoulder straps
+  H(p, 2, 13, 11, "#6e5a48");
+}
 function sportspads(p) { // football shoulder pads: two big caps, the neck hole, the chest plates and laces
   rows(p, 2, [[2, 6, 9, 13], [1, 7, 8, 14], [0, 15], [0, 15], [0, 15], [1, 14], [2, 13], [3, 12], [3, 12], [3, 12], [4, 11]], "#e4ddcc");
   lit(p, "#e4ddcc");
@@ -536,6 +560,22 @@ function shinguards(p) { // cut plastic bottles taped round the shins
     lit(p, "#8fc4b8");
     V(p, x + 2, 2, 14, "#c8eae2");
     for (const y of [3, 8, 13]) { H(p, x, x + 5, y, "#b8bec4"); H(p, x, x + 5, y + 1, "#8a9096"); }
+  });
+}
+function sheetarms(p) { // forearm shells bent from a metal sheet, rivets and two straps
+  twin((x) => {
+    R(p, x, 1, x + 5, 13, "#8d959c"); R(p, x + 1, 14, x + 4, 14, "#8d959c");
+    lit(p, "#8d959c");
+    for (const y of [4, 10]) H(p, x, x + 5, y, "#6e5a48");
+    for (const y of [2, 7, 12]) p.set(x + 2, y, "#e8eef2");
+  });
+}
+function sheetlegs(p) { // shin plates bent from a metal sheet: a knee cap riveted on, straps
+  twin((x) => {
+    disc(p, x + 3, 2, 2, "#7d858c"); R(p, x, 4, x + 5, 15, "#8d959c");
+    lit(p, "#8d959c", "#7d858c");
+    for (const y of [6, 13]) H(p, x, x + 5, y, "#6e5a48");
+    for (const y of [8, 11]) p.set(x + 3, y, "#e8eef2");
   });
 }
 function kneeguards(p) { // dirt-bike plastic: a knee cup, a ridged shin plate, black straps
@@ -931,16 +971,109 @@ function legrig(p) { // a thigh platform: two pistol mag pouches, an admin flap,
   for (const y of [8, 12]) { H(p, 0, 1, y, "#2e3238"); H(p, 14, 15, y, "#2e3238"); }
 }
 
+// ---------- tools for building and crafting (sim/data-tools.js) ----------
+function felling(p) { // the felling axe: a long hickory handle, a broad dark head with a bright edge and a flat poll
+  handle(p, -15, 7, K.hick);
+  lit(p, K.hick);
+  axeHead(p, 5, 9, 6, "#4a4f57");
+  band(p, 5, 9, 18, 19, "#4a4f57"); // the poll
+  lit(p, "#4a4f57");
+  area(p, (a, b) => b >= 6 && b <= 7 && a >= 5 - (13 - b) / 2 && a <= 9 + (13 - b) / 2, "#d6dde2"); // the edge, along the blade only
+}
+function scrapaxe(p) { // a rusty leaf-spring blade wedged in a crooked branch, bound with cord
+  handle(p, -13, 6, K.woodD);
+  at(p, -8, 14, K.woodD); at(p, -2, 17, K.woodD); // the branch's knots
+  lit(p, K.woodD);
+  axeHead(p, 4, 7, 10, "#9a5a2e");
+  lit(p, "#9a5a2e");
+  band(p, 2, 3, 13, 18, "#c9b07a"); band(p, 8, 9, 13, 18, "#c9b07a"); // the cord
+}
+function shovel(p) { // a round-point shovel: an ash handle with a D grip, a steel blade
+  handle(p, -12, 2, K.ash);
+  area(p, (a, b) => a >= -15 && a <= -13 && b >= 13 && b <= 18 && !(a === -14 && b >= 15 && b <= 16), K.blk); // the D grip
+  lit(p, K.ash, K.blk);
+  area(p, (a, b) => a >= 3 && a <= 15 && Math.abs(b - 15.5) <= Math.min(5.5, (16 - a) * 0.8 + 0.5), "#8d959c");
+  lit(p, "#8d959c");
+  area(p, (a, b) => a >= 4 && a <= 11 && b >= 15 && b <= 16, "#6d7378"); // the spine
+}
+function scrapshovel(p) { // a hubcap beaten flat and bolted to a length of pipe
+  handle(p, -15, 2, "#6d7378");
+  lit(p, "#6d7378");
+  area(p, (a, b) => (a - 8) ** 2 + (b - 15.5) ** 2 <= 30, "#c9ced3");
+  lit(p, "#c9ced3");
+  at(p, 8, 15, K.gun); at(p, 8, 16, K.gun); at(p, 5, 13, "#9aa1a8"); at(p, 11, 18, "#9aa1a8"); // the bolt and the dents
+}
+function scraphammer(p) { // a hex bolt-head lashed across the end of a stick
+  handle(p, -15, 4, K.woodL);
+  lit(p, K.woodL);
+  band(p, 4, 9, 11, 20, K.gun);
+  lit(p, K.gun);
+  band(p, 2, 3, 13, 18, "#c9b07a"); // the lashing
+  at(p, 6, 15, "#3a3e45"); at(p, 7, 16, "#3a3e45");
+}
+function handsaw(p) { // a carpenter's panel saw: a wooden handle with a grip hole, a long tapering blade, its teeth below
+  area(p, (a, b) => a >= -15 && a <= -9 && b >= 11 && b <= 20, K.wood);
+  area(p, (a, b) => a >= -13 && a <= -11 && b >= 14 && b <= 17, null); // the grip hole
+  lit(p, K.wood);
+  area(p, (a, b) => a >= -8 && a <= 14 && b >= 12 && b <= 20 - (a + 8) * 0.25, "#c9ced3");
+  lit(p, "#c9ced3");
+  area(p, (a, b) => a >= -8 && a <= 14 && Math.round(b) === Math.round(20 - (a + 8) * 0.25) && (a & 1) === 0, "#7d858c"); // the teeth
+  at(p, -6, 14, "#b89a4a"); // the brass screw
+}
+function bowsaw(p) { // a tubular orange bow over a straight coarse blade, the handle end taped
+  area(p, (a, b) => Math.abs(a) <= 13 && Math.abs(b - (19 - 10 * (1 - (a / 13) ** 2))) <= 0.8, "#e0672a");
+  area(p, (a, b) => Math.abs(a) <= 13 && b >= 19 && b <= 20, "#c9ced3");
+  area(p, (a, b) => Math.abs(a) <= 13 && b === 20 && (a & 1) === 0, "#7d858c"); // the teeth
+  lit(p, "#e0672a", "#c9ced3");
+  band(p, -14, -11, 17, 20, K.poly); // the grip end
+}
+function scrapsaw(p) { // a hacksaw blade in a frame of bent grey rod, a taped grip
+  band(p, -6, 11, 11, 11, "#6d7378"); band(p, -6, -6, 11, 18, "#6d7378"); band(p, 11, 11, 11, 18, "#6d7378"); // the frame
+  band(p, -5, 10, 17, 18, "#c9ced3"); // the blade
+  lit(p, "#6d7378", "#c9ced3");
+  band(p, -14, -7, 14, 17, K.tape);
+  lit(p, K.tape);
+}
+function toolkit(p) { // a blue hard case with a yellow latch, a black handle, a hammer and a spanner on its lid
+  R(p, 1, 6, 14, 14, "#2f5d8a"); H(p, 1, 14, 6, "#4a7ab0"); V(p, 1, 6, 14, "#4a7ab0"); H(p, 1, 14, 14, "#1f3f60"); V(p, 14, 7, 14, "#1f3f60");
+  H(p, 1, 14, 9, "#244a70"); // the lid's seam
+  R(p, 5, 3, 10, 4, K.blk); V(p, 5, 3, 6, K.blk); V(p, 10, 3, 6, K.blk); // the handle
+  R(p, 7, 8, 8, 10, "#e6c23a"); // the latch
+  H(p, 3, 6, 12, "#c9ced3"); V(p, 3, 11, 13, "#9aa1a8"); // a spanner
+  H(p, 10, 12, 11, "#55595e"); V(p, 11, 12, 13, "#a07a48"); // a hammer
+}
+function welder(p) { // a green inverter welder: a dial, two sockets, a coiled black lead and its electrode holder
+  R(p, 1, 4, 11, 13, "#2f6b4a"); H(p, 1, 11, 4, "#4a8a64"); V(p, 1, 4, 13, "#4a8a64"); H(p, 1, 11, 13, "#1f4a33"); V(p, 11, 5, 13, "#1f4a33");
+  R(p, 3, 2, 9, 3, K.blk); // the carry strap
+  disc(p, 5, 8, 2, "#d6dde2"); p.set(5, 7, "#c8362e"); // the dial
+  p.set(9, 7, "#e6c23a"); p.set(9, 10, K.blk); // the switch and a socket
+  ring(p, 13, 10, 2, K.blk); V(p, 13, 12, 14, K.blk); R(p, 12, 14, 15, 15, "#c8362e"); // the lead and the holder
+}
+function sewingkit(p) { // a round pink tin, a spool of red thread and a needle across it
+  disc(p, 8, 9, 6, "#d77a9a"); ring(p, 8, 9, 6, "#b05a7a");
+  R(p, 5, 6, 10, 11, "#c8362e"); H(p, 5, 10, 6, "#a07a48"); H(p, 5, 10, 11, "#a07a48"); H(p, 6, 9, 8, "#e2654f"); // the spool
+  line(p, 2, 14, 13, 3, "#c9ced3"); p.set(13, 3, "#eef0f2"); // the needle
+}
+function handdrill(p) { // a brace and bit: a wooden knob on top, the bent steel crank with a handle, the chuck and the bit
+  R(p, 6, 0, 9, 1, K.wood); // the head knob
+  V(p, 7, 2, 4, "#9aa1a8"); H(p, 7, 12, 4, "#9aa1a8"); V(p, 12, 4, 9, "#9aa1a8"); H(p, 7, 12, 9, "#9aa1a8"); // the crank
+  R(p, 13, 5, 14, 8, K.woodL); // the sweep's handle
+  R(p, 6, 10, 8, 11, K.gun); // the chuck
+  V(p, 7, 12, 15, "#c9ced3"); p.set(8, 13, "#7d858c"); p.set(6, 14, "#7d858c"); // the auger bit
+  lit(p, K.wood, K.woodL, "#9aa1a8");
+}
+
 export const GEAR_ART = {
   halligan, pipewrench, leatherjacket, chainsleeves, motopants, legrig, // survival gear
+  axe: felling, scrapaxe, shovel, scrapshovel, scraphammer, handsaw, bowsaw, scrapsaw, toolkit, welder, sewingkit, handdrill, // tools (sim/data-tools.js)
   cashbox, firebox, toolbox, gearcase, // lock boxes and equipment cases
   wheelbarrow, handcart, // carts (sim/carts.js)
   knife: chef, steakknife: steak, filletknife: fillet, cleaver, huntknife: hunter, survivalknife: survival, bowie, bayonet,
   combatknife: combat, shiv, pocketknife: pocket, flipknife: flick, lockback, multitool, boxcutter, balisong,
-  machete, sawmachete, springmachete, kukri, katana, cutlass, sabre, broadsword,
-  bat, nailbat, spikedbat, baton, stunbaton, golfclub, hockeystick, prybar, hammer, sledge, fireaxe, hatchet, tomahawk, pickaxe, etool,
+  machete, sawmachete, springmachete, sheetmachete, kukri, katana, cutlass, sabre, broadsword,
+  bat, nailbat, spikedbat, baton, stunbaton, golfclub, hockeystick, prybar, hammer, sledge, fireaxe, hatchet, sheethatchet, tomahawk, pickaxe, etool,
   pipespear, spear, compbow, pulleybow, crossbow, xbow,
-  vest, plate, tacvest, tirevest, scrapvest, sportspads, padding, shinguards, kneeguards, riotarms, riotlegs,
+  vest, plate, tacvest, tirevest, scrapvest, sheetvest, sportspads, padding, shinguards, sheetarms, sheetlegs, kneeguards, riotarms, riotlegs,
   hardhat, footballhelmet, goaliemask, bikehelmet, riothelmet, milhelmet, rivethelmet, highcut, ballvisor, riotvisor, nvgmount,
   ceramicplate, steelplate, softinsert, kevlarkit,
   backpack, slingbag, assaultpack, hikingpack, rucksack, duffle, chestrig, makeshiftrig, riflecase, pistolcase, bicycle,

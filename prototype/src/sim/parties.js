@@ -19,7 +19,7 @@ import { findPath } from "./hex.js";
 import { roadblockOnEnter, rollRoadblock } from "./roadblocks.js";
 import { partyEnter as fieldPartyEnter, teamEnter as fieldTeamEnter, fieldRaidArrive, teamActs as fieldActs } from "./fieldworks.js"; // field works: roadblocks, raids on them
 import { TERRAIN, ROAD_COST, GEAR, SUPPLIES, supValue, supWeight, FACTION_TYPES } from "./data.js";
-import { FOODS, foodIn, takeFood, moveFood, packPick, addFood, foodText, typedFood, addFoods, unitsOf, DAY_KG } from "./foods.js"; // food by type: packed with its lots, eaten the soonest to spoil first
+import { FOODS, foodIn, takeFood, moveFood, packPick, addFood, foodText, typedFood, unitsOf, DAY_KG } from "./foods.js"; // food by type: packed with its lots, eaten the soonest to spoil first
 import {
   newId, log, addCard, day, hub, baseById, survivorById, atBase, skill, combatPower, hurt,
   factionById, snapshot, mergeKnowledge, gearEffect, radioBasesInRange, isNight, archerCount, usesArrows, armedFactor, arrowsBack, ARROWS, localId,
@@ -69,6 +69,7 @@ import { openTrade, routeExchange } from "./trade.js";
 import { caravanArrive, caravanHour, caravanStop } from "./caravans.js";
 import { caravanGuarded } from "./jobs.js";
 import { caravanOrderChoices, gangAmbush, wouldRaid } from "./caravanraids.js"; // any caravan on the road can be robbed
+import { meetChoices, groupConvoyArrive, convoyMeetHour } from "./trademeet.js"; // trades met at a tile: their caravan waiting, the groups' convoys meeting halfway
 import { crashesHour, crashSurvey } from "./crashes.js";
 import { breakdownsHour } from "./breakdowns.js";
 import { travelFactor, travelEffects, travelHazard, thirstAt, thirstAhead, coldAt, riverFrozen, ICE } from "./weather.js";
@@ -1759,6 +1760,7 @@ export function ordersCard(state, p, text, doneLabel, title) {
       ...(queued ? [{ label: `Resume queued orders (${queued})`, hint: `Carry on with: ${queueText(state, p)}`, order: true, resolve: (st) => resumeQueue(st, p) }] : []),
       // caravanraids.js: a caravan in sight, attack it (within a tile) or go after it.
       ...caravanOrderChoices(state, p),
+      ...meetChoices(state, p), // trademeet.js: a group's caravan waiting here to trade
       ...opts.map((o) => ({
         label: o.mission === "sweep" ? `Sweep ${sweepOpts(p.sweepPlan || {}).radius} tiles around (${sweepOpts(p.sweepPlan || {}).hours}h)` : o.mission === "fullsurvey" ? `Survey this tile (${LOOK.hours}h)` : o.mission === "survey" ? `Quick look (${LOOK.quickHours}h)` : o.label, hint: o.disabled || o.desc, disabled: !!o.disabled, order: o.mission === "survey" || o.mission === "sweep" || o.mission === "fullsurvey",
         resolve: (st) => {
@@ -2188,9 +2190,11 @@ function investigate(state, p) {
       },
       {
         label: "Strip it for parts and fuel",
-        hint: "1–2 parts and a little fuel; the car is gone after",
+        hint: "1–2 parts, a little fuel and a metal sheet or two off its panels; the car is gone after",
         resolve: (st) => {
-          const got = `${addCargo(st, p, "parts", st.rng.int(1, 2))} parts, ${addCargo(st, p, "fuel", st.rng.int(2, 5))} fuel`;
+          const pf = `${addCargo(st, p, "parts", st.rng.int(1, 2))} parts, ${addCargo(st, p, "fuel", st.rng.int(2, 5))} fuel`;
+          const sheets = addCargo(st, p, "metalsheet", 1 + Math.floor(hash01(st.seed, "wrecksheet", tile, st.hour) * 2)); // its door skins and roof (its own dice: the rest of the stream unchanged)
+          const got = `${pf}${sheets > 0 ? `, ${sheets} metal sheet${sheets === 1 ? "" : "s"}` : ""}`;
           h.taken = true;
           spot(p, { key, type: "car", tile, hour: st.hour, label: "Wrecked car", info: { emptied: true } });
           awaitOrders(st, p, `Stripped the car: ${got}.`);
@@ -2248,7 +2252,7 @@ function recoverVehicle(state, p) {
   if (v.destroyed) { // blown up (launchers.js): no restart; what is left in it, then stripped where it lies
     const c = takeVehicleCargo(state, p, v);
     const y = stripYield(v), got = [];
-    for (const k of ["carparts", "scrap"]) { const q = addCargo(state, p, SUPPLIES[k] ? k : "parts", y[k] || 0); if (q > 0) got.push(`${q} ${SUPPLIES[SUPPLIES[k] ? k : "parts"].name.toLowerCase()}`); }
+    for (const k of ["carparts", "scrap", "metalsheet"]) { const q = addCargo(state, p, SUPPLIES[k] ? k : "parts", y[k] || 0); if (q > 0) got.push(`${q} ${SUPPLIES[SUPPLIES[k] ? k : "parts"].name.toLowerCase()}`); } // metal sheets: its panels and roof
     if (!vehicleCargo(v)) state.vehicles.splice(state.vehicles.indexOf(v), 1);
     spot(p, { key: `vehicle:${v.id}`, type: "vehicle", tile, hour: state.hour, label: v.name, remove: !vehicleCargo(v) });
     awaitOrders(state, p, `The ${v.name} is a burnt-out wreck past repair.${c.got.length ? ` The team took ${c.got.join(", ")} out of it.` : ""} Stripped for ${got.join(" and ") || "nothing they could carry"}.${vehicleCargo(v) ? ` Still inside: ${c.left.join(", ")}.` : " Nothing is left of it."}`);
@@ -2660,6 +2664,7 @@ function aiPartyHour(state, p) {
     return;
   }
   if (p.kind === "caravan" && p.phase !== "out") return caravanHour(state, p); // at your gates (caravans.js)
+  if (p.kind === "convoy" && p.phase === "meet") return convoyMeetHour(state, p); // trademeet.js: waiting halfway for the other group's convoy
   if (p.kind === "scav" && p.phase === "search") return scavSearchHour(state, p); // scavenging a site (aiscav.js)
   const entered = stepAlong(state, p, p.vehicle ? 1 : 0.9);
   const owner = entered.length && state.bases.length ? factionById(state, p.owner) : null;
@@ -2744,12 +2749,7 @@ function aiPartyHour(state, p) {
       haulConvoyArrive(state, p); // hauling.js: a group's haulers at its outpost
       removeParty(state, p);
     } else if (p.kind === "convoy") {
-      const to = factionById(state, p.targetFaction);
-      if (to && to.alive) {
-        addFoods(to, typedFood(state, "stores", 10));
-        to.stock.scrap += 10;
-      }
-      removeParty(state, p);
+      groupConvoyArrive(state, p); // trademeet.js: the swap at the partner's base or halfway, then home with the other's load
     } else if (p.kind === "caravan") {
       caravanArrive(state, p); // caravans.js: trade at your base, or home again
     } else if (p.kind === "scav") {

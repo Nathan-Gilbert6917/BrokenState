@@ -53,7 +53,7 @@ const paidText = (paid) => Object.entries(paid).map(([k, q]) => `${q} ${(SUPPLIE
 // The vehicles a group or merchant would sell you, and yours they would buy: { theirs: [{ rec, price }], mine: [{ v, price }] }.
 export function vehicleOffers(state, ctx) {
   const out = { theirs: [], mine: [] };
-  if (!ctx) return out;
+  if (!ctx || ctx.kind === "meet") return out; // a caravan met at a tile in the open (trademeet.js) has no motor pool along
   const sp = spread(ctx.f, ctx.speech);
   if (ctx.visitor) {
     const v = ctx.visitor;

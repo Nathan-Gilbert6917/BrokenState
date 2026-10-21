@@ -293,6 +293,7 @@ console.log("Blueprints: locks, finding, studying");
   addBuilding(h, "infirmary"); addBuilding(h, "field_hosp");
   check(canBuild(st, h, "clinic").locked, "the Clinic (tier 3) is locked; the field hospital was not");
   addBuilding(h, "ammo_bench");
+  h.stock.metalsheet = 5; // the scrap vest's sheet (2026-10-21): only the lock in the way
   for (const k of ["crossbow", "pipegun", "scrapvest"]) check(canCraft(st, h, k).locked, `${k}: locked until its blueprint is studied`);
   check(canCraft(st, h, "spikedbat").ok, "plain recipes are never locked");
   check(/Needs: Field Surgery Manual.*Look in:.*hospital/.test(BP.lockNote(st, h, "building", "clinic")), "the Construction line says what is needed and where it may be found");

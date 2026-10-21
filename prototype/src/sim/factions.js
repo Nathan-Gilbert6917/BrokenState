@@ -99,7 +99,7 @@ import { knowsOf } from "./groupworld.js"; // decoy outposts they believe in (in
 import { decoyRaid, heardPull, knownByRadio, INTEL } from "./intel.js"; // what they overheard of yours on the radio
 import { raidPrisoners } from "./nonlethal.js"; // groups that take people alive: some of the beaten are taken, not killed
 import { hash01 } from "./skills.js";
-import { escortParty } from "./caravans.js"; // a convoy's guards (escorts.js)
+import { sendGroupConvoy } from "./trademeet.js"; // trade convoys between groups: at a base, or meeting halfway
 import { noteGrievance, ceasefireWith, pwarRaidDone, pwarById, goalText } from "./playerwars.js"; // wars with you: what they hold against you, ceasefires, the score
 import { sameBloc, blocOf, blocHelpFor, blocHelpAfter, jointRaid, jointAfter, blocPlayerHelp } from "./blocs.js"; // AI blocs: help, joint raids
 import { flightDaily } from "./groupflight.js"; // groups leaving a base they cannot hold against the dead
@@ -398,6 +398,7 @@ export function factionsDaily(state) {
     f.stock.fuel = Math.min(f.pop * 3 * cap, f.stock.fuel + hands * 0.04 * mk); // fuel is scarce (economy rework)
     // (No meds from nothing either: theirs come from the sites they strip, trade and the fields they hold, as yours.)
     f.stock.buildmat = Math.min(f.pop * 2 * cap, (f.stock.buildmat || 0) + hands * 0.03 * mk); // building materials (data.js): salvaged lumber and blocks, for their outpost camps (groupworks.js CAMP)
+    f.stock.metalsheet = Math.min(f.pop * cap, (f.stock.metalsheet || 0) + hands * 0.015 * mk); // metal sheets (data.js): roofing and car panels pulled off, for their roofs, plating and sheet-metal gear
     groupWorksDaily(state, f); // groupworks.js: the base starts bare; water, fields, quarters, walls, by need
     arsenalDaily(state, f); // arsenal.js: newcomers' weapons, makeshift weapons and explosives from their scrap
     groupCareDaily(state, f); // groupcare.js: the wounded heal (meds, medics), repairs at a workshop, food bought when short, desertion
@@ -494,16 +495,9 @@ export function factionsDaily(state) {
       if (partners.length) {
         const mates = partners.filter((o) => sameBloc(state, f, o)); // blocs.js: trade first within the bloc
         const to = rng.pick(mates.length && hash01(state.seed, "convoy", f.name, today) < 0.6 ? mates : partners);
-        const q = spawnAiParty(state, f, "convoy", f.bases[0], to.bases[0], { strength: Math.max(2, f.pop * 0.1), targetFaction: to.id });
-        // caravans.js escortParty: what it carries is worth a token guard to them. Up to 10 food and 10 scrap, out of
-        // their own stores (docs/adr/0001-ai-parity.md: nothing from nowhere).
-        if (q) {
-          const food = takeFood(f.stock, Math.min(Math.max(0, foodIn(f.stock) - f.pop * 2), 10), { eggs: false, state });
-          const scrap = Math.max(0, Math.min(10, Math.floor((f.stock.scrap || 0) - f.pop)));
-          f.stock.scrap = (f.stock.scrap || 0) - scrap;
-          q.goods = { supplies: { ...food.items, scrap }, gear: [] };
-          escortParty(state, f, q, q.goods);
-        }
+        // trademeet.js: a swap both ways out of their own stores (docs/adr/0001-ai-parity.md: nothing from nowhere), at the
+        // partner's base when it is near, halfway between them when it is far (both send a convoy).
+        sendGroupConvoy(state, f, to);
       }
     }
 

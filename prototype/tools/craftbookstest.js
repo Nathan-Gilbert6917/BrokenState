@@ -6,6 +6,7 @@
 // old saves get it from Mechanics, quality is a deterministic roll that rises and narrows with Crafting, speed rises
 // with it, and every finished craft gives Crafting XP that grows with quality and with dearer materials.
 // Usage: node tools/craftbookstest.js [seed]
+import { stockTools } from "./toolset.js"; // every tool a build or recipe can need (toolreqs.js)
 import { setRounds, totalRounds } from "../src/sim/ammo.js"; // rounds by calibre
 import { createWorld, tickHour, hub, atBase, makeSurvivor, skill, day } from "../src/sim/world.js";
 import { GEAR, SKILLS, ROLLED_SKILLS } from "../src/sim/data.js";
@@ -29,7 +30,7 @@ const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FA
 const near = (a, b, e = 1e-6) => Math.abs(a - b) < e;
 // The hub starts bare (barestart: tools/barestarttest.js); these checks are about crafting at a base with a bench, so
 // the hub gets the crafting bench it used to start with (as in crafttest.js).
-const W = (s = seed) => { const st = createWorld({ seed: s, factionCount: 5 }); st.started = true; st.cards.length = 0; st.crashNext = 1e9; addBuilding(hub(st), "craftbench"); return st; };
+const W = (s = seed) => { const st = createWorld({ seed: s, factionCount: 5 }); st.started = true; st.cards.length = 0; st.crashNext = 1e9; addBuilding(hub(st), "craftbench"); stockTools(hub(st)); return st; }; // every tool (toolset.js)
 const addPerson = (st, base, role, skills = {}) => {
   const s = makeSurvivor(st, 1);
   s.traits = [];
@@ -77,7 +78,7 @@ console.log("Craft books unlock recipes");
   const h = hub(st);
   clearRoles(st, h);
   addBuilding(h, "machine_shop");
-  Object.assign(h.stock, { scrap: 200, parts: 30, meds: 20, wood: 300 });
+  Object.assign(h.stock, { scrap: 200, parts: 30, meds: 20, wood: 300, metalsheet: 5 });
   const smith = addPerson(st, h, "farm", { mechanics: 8, crafting: 8, stealth: 5, medicine: 6 });
   const chk = canCraft(st, h, "springmachete");
   check(!chk.ok && chk.locked && /Backyard Blacksmithing/.test(chk.reason), `a locked recipe is refused (${chk.reason})`);

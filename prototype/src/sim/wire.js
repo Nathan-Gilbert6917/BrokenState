@@ -31,6 +31,7 @@ export const CUTTERS = {
   multitool: "snips it with a multitool", repairkit: "cuts it with the repair kit's pliers",
   fireaxe: "hacks through it with the fire axe", hatchet: "chops through it with the hatchet",
   machete: "hacks through it with the machete", sawmachete: "hacks through it with the saw-blade machete",
+  sheetmachete: "hacks through it with the sheet-metal machete", sheethatchet: "chops through it with the sheet-metal hatchet",
 };
 export const CUTTER_NAMES = Object.keys(CUTTERS).map((k) => (GEAR[k] ? GEAR[k].name.toLowerCase() : k));
 const usable = (it) => !!it && !!CUTTERS[it.key] && !(Number.isFinite(it.dur) && it.dur <= 0);

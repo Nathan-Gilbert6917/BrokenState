@@ -18,6 +18,8 @@ import { ROSTER_TAGS } from "./data-guns.js";
 import { rollHeadFind, rollAreaHead, headWares } from "./helmets.js"; // helmets and ear protection (their own dice)
 import { BLADE_TAGS } from "./data-blades.js"; // knives and swords
 import { rollBladeFind, rollAreaBlade, bladeWares } from "./blades.js"; // their own tables and dice, last
+import { TOOL_TAGS } from "./data-tools.js"; // tools for building and crafting
+import { rollToolFind, toolWares } from "./toolreqs.js"; // their own tables and dice, last of all
 import { SURV_TAGS } from "./data-survival.js"; // survival gear
 import { rollSurvFind, rollAreaSurv, survWares } from "./survival.js"; // its own tables and dice, after everything else
 import { BOX_TAGS } from "./data-boxes.js"; // lockable boxes
@@ -79,13 +81,13 @@ export const ITEM_TAGS = {
   compbow: ["hunt", "sport", "mall", "outdoor"], xbow: ["hunt", "guns"], revolver: ["home", "guns", "farm", "travel", "crime", "police"],
   leverrifle: ["hunt", "farm", "guns", "outdoor"], carbine: ["police", "prison", "military"],
   spear: ["hunt", "outdoor", "camp"],
-  spikedbat: ["garage", "crime"], pipespear: ["camp", "crime"], sawmachete: ["crime", "tools"], crossbow: ["crime", "camp"], pipegun: ["crime"],
+  spikedbat: ["garage", "crime"], pipespear: ["camp", "crime"], sawmachete: ["crime", "tools"], sheetmachete: ["crime", "garage"], sheethatchet: ["crime", "garage"], crossbow: ["crime", "camp"], pipegun: ["crime"],
   // armor
   vest: ["police", "military", "guns", "prison", "crash", "crime"], plate: ["military", "crash"], bikehelmet: ["home", "garage", "fire", "sport", "crime"],
   riothelmet: ["police", "prison", "military", "crash"], milhelmet: ["military", "crash"], kneeguards: ["garage", "guns", "tools", "sport", "crime"],
   riotarms: ["police", "prison"], riotlegs: ["police", "prison"],
   padding: ["camp", "crime", "home"], shinguards: ["crime"], tirevest: ["crime", "garage"], sportspads: ["school", "sport", "home"],
-  footballhelmet: ["school", "sport"], goaliemask: ["sport", "school"], scrapvest: ["crime"],
+  footballhelmet: ["school", "sport"], goaliemask: ["sport", "school"], scrapvest: ["crime"], sheetvest: ["crime"], sheetarms: ["crime"], sheetlegs: ["crime"],
   // packs
   slingbag: ["home", "school", "mall", "office", "travel", "crash", "crime", "shop"], backpack: ["school", "home", "mall", "travel", "crime", "camp"],
   hikingpack: ["camp", "outdoor", "mall", "travel", "crash", "shop"], duffle: ["travel", "mall", "outdoor", "shop"], assaultpack: ["military", "crash", "camp"], rucksack: ["military", "camp", "crash", "outdoor"],
@@ -178,6 +180,7 @@ Object.assign(ITEM_TAGS, KIT_TAGS); // the carry kit (data-kit.js)
 for (const [k, i] of Object.entries(PART_INFO)) ITEM_TAGS[k] = [...i.tags]; // the parts catalogue (data-gunmods.js; budget clones at home, brands at the armoury)
 Object.assign(ITEM_TAGS, BLADE_TAGS); // knives and swords (data-blades.js)
 Object.assign(ITEM_TAGS, SURV_TAGS); // survival gear (data-survival.js)
+Object.assign(ITEM_TAGS, TOOL_TAGS); // tools for building and crafting (data-tools.js)
 Object.assign(ITEM_TAGS, BOX_TAGS); // lockable boxes (data-boxes.js)
 Object.assign(ITEM_TAGS, CART_TAGS); // carts (data-carts.js)
 Object.assign(ITEM_TAGS, BED_TAGS); // beds as furniture (data-beds.js)
@@ -269,7 +272,7 @@ export function rollGunmodFind(state, tileId, mult = 1, salt = "") {
   return key ? lootItem(key, siteSource(t.loc.type), hash01(state.seed, "moddur", tileId, state.hour, salt)) : null;
 }
 // rollGunmodFind, or when it found nothing the overhaul's table (SITE_MODS; its own dice). scavenge.js searchHour.
-export const rollAnyModFind = (state, tileId, mult = 1, salt = "") => rollGunmodFind(state, tileId, mult, salt) || rollSiteMod(state, tileId, mult, salt) || rollHeadFind(state, tileId, mult, salt) || rollSiteKit(state, tileId, mult, salt) || rollBladeFind(state, tileId, mult, salt) || rollPartFind(state, tileId, mult, salt) || rollSurvFind(state, tileId, mult, salt) || rollBoxFind(state, tileId, mult, salt); // helmets.js HEAD_FINDS, then carrykit.js SITE_KIT (magazines, rigs, plates), then blades.js BLADE_FINDS, each on its own dice
+export const rollAnyModFind = (state, tileId, mult = 1, salt = "") => rollGunmodFind(state, tileId, mult, salt) || rollSiteMod(state, tileId, mult, salt) || rollHeadFind(state, tileId, mult, salt) || rollSiteKit(state, tileId, mult, salt) || rollBladeFind(state, tileId, mult, salt) || rollPartFind(state, tileId, mult, salt) || rollSurvFind(state, tileId, mult, salt) || rollBoxFind(state, tileId, mult, salt) || rollToolFind(state, tileId, mult, salt); // helmets.js HEAD_FINDS, then carrykit.js SITE_KIT (magazines, rigs, plates), then blades.js BLADE_FINDS, each on its own dice
 export const AREA_GUNMODS = {
   armory: { p: 0.12, items: { reddot: 2, laser: 2, extmag: 2, holo: 1, foregrip: 1, tubeext: 1, scope4x: 0.5, riflecan: 0.3 } },
   gunshop: { p: 0.12, items: { reddot: 2, scope4x: 2, laser: 1.5, comp: 1.5, choke: 1.5, extmag: 1.5, bipod: 1, brake: 1, holo: 0.7, pistolcan: 0.3 } },
@@ -297,7 +300,7 @@ export const WARE_GUNMODS = {
 };
 export function gunmodWares(state, type, name, salt = "") {
   const w = WARE_GUNMODS[type];
-  const more = [...modWares(state, type, name, salt), ...headWares(state, type, name, salt), ...bladeWares(state, type, name, salt), ...partWares(state, type, name, salt), ...cartWares(state, type, name, salt), ...survWares(state, type, name, salt)]; // carts (CART_WARES, last) // partfinds.js: the parts catalogue // blades.js WARE_BLADES too // the overhaul's parts (WARE_MODS), helmets and ear protection (helmets.js WARE_HEAD); their own dice
+  const more = [...modWares(state, type, name, salt), ...headWares(state, type, name, salt), ...bladeWares(state, type, name, salt), ...partWares(state, type, name, salt), ...cartWares(state, type, name, salt), ...survWares(state, type, name, salt), ...toolWares(state, type, name, salt)]; // carts (CART_WARES, last) // partfinds.js: the parts catalogue // blades.js WARE_BLADES too // the overhaul's parts (WARE_MODS), helmets and ear protection (helmets.js WARE_HEAD); their own dice
   if (!w || hash01(state.seed, "modware", name, salt) >= w.p) return more;
   const key = pickWeighted(w.items, hash01(state.seed, "modwarepick", name, salt));
   return key ? [lootItem(key, traderSource(type), hash01(state.seed, "modwareq", name, salt)), ...more] : more;
@@ -632,7 +635,7 @@ export const AREA_WOOD = {
 };
 const FURNITURE = { cabinet: 1, shelf: 1, counter: 1 };
 // Wood found this search hour at a site, or 0.
-// Building materials (data.js buildmat: lumber, blocks, sheet metal; what a camp takes to become a base): a find of its
+// Building materials (data.js buildmat: lumber, blocks, nails and fixings; what a camp takes to become a base): a find of its
 // own each search hour, like SITE_WOOD (its own dice: nothing else a search finds changed). [chance, min, max].
 export const BUILDMAT_FINDS = {
   hardware: [0.55, 3, 7], quarry: [0.3, 2, 4], warehouse: [0.22, 1, 4], factory: [0.18, 1, 3], barn: [0.18, 1, 3], // hardware: shops.js, the builder's shop (was [0.35, 2, 5])
@@ -647,6 +650,41 @@ export function rollBuildmat(state, tileId, mult = 1, salt = "") {
   const loot = Math.max(0.1, Math.min(1, t.loot ?? 1));
   if (hash01(state.seed, "bmat", tileId, state.hour, salt) >= w[0] * loot * mult) return 0;
   return w[1] + Math.floor(hash01(state.seed, "bmatqty", tileId, state.hour, salt) * (w[2] - w[1] + 1));
+}
+// Metal sheets (data.js metalsheet; the user's request 2026-10-21: "lootable", and "items that can be salvaged for
+// metal sheets like cars"): stacks of roofing and siding where sheet steel is sold, stored or built into the place
+// (hardware stores, factories, warehouses, auto shops and garages, barns and sheds, a crash's torn skin, the dead cars
+// of a truck stop). A find of its own each search hour, like BUILDMAT_FINDS (its own dice: nothing else a search finds
+// changed), by the site and by the point of interest searched (a shed, a garage). [chance, min, max].
+export const SHEET_FINDS = {
+  hardware: [0.3, 1, 4], factory: [0.25, 1, 3], warehouse: [0.22, 1, 3], autoshop: [0.25, 1, 3], garage: [0.2, 1, 2],
+  barn: [0.22, 1, 3], shed: [0.2, 1, 2], farm: [0.12, 1, 2], ranch: [0.1, 1, 2], feedstore: [0.1, 1, 2], quarry: [0.15, 1, 2],
+  mineshack: [0.15, 1, 2], crashsite: [0.25, 1, 3], crash_cargo: [0.25, 1, 3], crash_mil: [0.15, 1, 2], airport: [0.12, 1, 3],
+  truckstop: [0.15, 1, 2], gas: [0.08, 1, 1], military: [0.1, 1, 2], dam: [0.1, 1, 2], prison: [0.06, 1, 1],
+  town: [0.06, 1, 1], city: [0.05, 1, 1], cabin: [0.05, 1, 1], house: [0.04, 1, 1], neighbourhood: [0.04, 1, 1],
+};
+/** Metal sheets found this search hour (kind: the point of interest searched, when it has its own row), or 0. */
+export function rollSheets(state, tileId, mult = 1, salt = "", kind = null) {
+  const t = state.tiles[tileId];
+  const w = (kind && SHEET_FINDS[kind]) || (t && t.loc ? SHEET_FINDS[t.loc.type] : null);
+  if (!w) return 0;
+  const loot = Math.max(0.1, Math.min(1, t ? t.loot ?? 1 : 1));
+  if (hash01(state.seed, "sheet", tileId, state.hour, salt) >= w[0] * loot * mult) return 0;
+  return w[1] + Math.floor(hash01(state.seed, "sheetqty", tileId, state.hour, salt) * (w[2] - w[1] + 1));
+}
+// Raid map containers (combat.js searchBox): the panels and roofing off a wrecked car (a door skin, a hood, a roof),
+// a stack in a garage, a workshop or a barn, the torn skin of a crashed aircraft. By the room's type × the container's
+// kind (a car: CAR_SHEETS). [chance, min, max]; its own dice.
+export const AREA_SHEETS = {
+  wreck: [0.3, 1, 2], roadcars: [0.15, 1, 1], garage: [0.15, 1, 2], workshop: [0.2, 1, 2], warehouse: [0.15, 1, 3],
+  barn: [0.15, 1, 2], hangar: [0.18, 1, 2], motorpool: [0.2, 1, 2], milwreck: [0.25, 1, 2], fuselage: [0.3, 1, 3], cargodrop: [0.1, 1, 1],
+};
+const CAR_SHEETS = { car: 1.3 };
+export function rollAreaSheets(state, tileId, areaType, boxKind, salt = "") {
+  const w = AREA_SHEETS[areaType];
+  if (!w) return 0;
+  if (hash01(state.seed, "areasheet", tileId, salt) >= Math.min(0.9, w[0] * (CAR_SHEETS[boxKind] || 1))) return 0;
+  return w[1] + Math.floor(hash01(state.seed, "areasheetqty", tileId, salt) * (w[2] - w[1] + 1));
 }
 export function rollSiteWood(state, tileId, mult = 1, salt = "") {
   const t = state.tiles[tileId];

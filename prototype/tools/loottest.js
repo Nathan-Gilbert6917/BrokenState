@@ -35,6 +35,7 @@ import { GUN_FINDS, SEARCH_TOOLS, GUN_STASH } from "../src/sim/gunsafes.js"; // 
 import { SITE_KIT, AREA_KIT, WARE_KIT } from "../src/sim/carrykit.js"; // carry kit: magazines, rigs, plates (their own dice)
 import { BLADE_FINDS, AREA_BLADES, WARE_BLADES } from "../src/sim/blades.js"; // knives and swords (their own dice)
 import { SURV_FINDS, AREA_SURV, WARE_SURV } from "../src/sim/survival.js"; // survival gear (its own dice)
+import { TOOL_FINDS, AREA_TOOLS, CAR_TOOLS, WARE_TOOLS } from "../src/sim/toolreqs.js"; // tools for building and crafting (their own dice)
 import { BOX_FINDS } from "../src/sim/data-boxes.js"; // lock boxes and cases (boxes.js, its own dice)
 import { ARSENAL_FINDS } from "../src/sim/data-guns.js"; // the arsenal of 2026-10-10 (gunfinds.js: their own dice)
 import { gunsFrom } from "../src/sim/gundist.js";
@@ -119,6 +120,10 @@ for (const [t, f] of Object.entries(WARE_BLADES)) addAll(Object.keys(f.items), `
 for (const [t, f] of Object.entries(SURV_FINDS)) addAll(Object.keys(f.items), `survfind:${t}`); // survival.js: survival gear
 for (const [a, f] of Object.entries(AREA_SURV)) addAll(Object.keys(f.items), `raid:${a}`);
 for (const [t, f] of Object.entries(WARE_SURV)) addAll(Object.keys(f.items), `sold:${t}`);
+for (const [t, f] of Object.entries(TOOL_FINDS)) addAll(Object.keys(f.items), `toolfind:${t}`); // toolreqs.js: tools for building and crafting
+for (const [a, f] of Object.entries(AREA_TOOLS)) addAll(Object.keys(f.items), `raid:${a}`);
+addAll(Object.keys(CAR_TOOLS.items), "raid:car");
+for (const [t, f] of Object.entries(WARE_TOOLS)) addAll(Object.keys(f.items), `sold:${t}`);
 for (const [t, f] of Object.entries(BOX_FINDS.site)) addAll(Object.keys(f.items), `boxfind:${t}`); // boxes.js: lock boxes
 for (const [a, f] of Object.entries(BOX_FINDS.area)) addAll(Object.keys(f.items), `raid:${a}`);
 // The extra guns (gunfinds.js) and the gun distribution (gundist.js): any gun a site's, a raid area's or a group's
@@ -164,6 +169,9 @@ for (const [t, f] of Object.entries(BLADE_FINDS)) for (const k of Object.keys(f.
 for (const [a, f] of Object.entries(AREA_BLADES)) for (const k of Object.keys(f.items)) if (!AREAS[a] || !fitsTags(k, AREA_TAGS[a] || [])) misfits.push(`${k} in raid area ${a} (blades)`);
 for (const [t, f] of Object.entries(SURV_FINDS)) for (const k of Object.keys(f.items)) if (!LOCATIONS[t] || !fitsTags(k, SITE_TAGS[t] || [])) misfits.push(`${k} at ${t} (survival)`);
 for (const [a, f] of Object.entries(AREA_SURV)) for (const k of Object.keys(f.items)) if (!AREAS[a] || !fitsTags(k, AREA_TAGS[a] || [])) misfits.push(`${k} in raid area ${a} (survival)`);
+for (const [t, f] of Object.entries(TOOL_FINDS)) for (const k of Object.keys(f.items)) if (!LOCATIONS[t] || !fitsTags(k, SITE_TAGS[t] || [])) misfits.push(`${k} at ${t} (tools)`);
+for (const [a, f] of Object.entries(AREA_TOOLS)) for (const k of Object.keys(f.items)) if (!AREAS[a] || !fitsTags(k, AREA_TAGS[a] || [])) misfits.push(`${k} in raid area ${a} (tools)`);
+for (const k of Object.keys(CAR_TOOLS.items)) if (!fitsTags(k, ["travel", "garage", "home"])) misfits.push(`${k} in a car's trunk (tools)`);
 for (const [t, f] of Object.entries(BOX_FINDS.site)) for (const k of Object.keys(f.items)) if (!LOCATIONS[t] || !fitsTags(k, SITE_TAGS[t] || [])) misfits.push(`${k} at ${t} (boxes)`);
 for (const [a, f] of Object.entries(BOX_FINDS.area)) for (const k of Object.keys(f.items)) if (!AREAS[a] || !fitsTags(k, AREA_TAGS[a] || [])) misfits.push(`${k} in raid area ${a} (boxes)`);
 check(!misfits.length, `everything a site or raid area holds fits its theme${misfits.length ? ` (misfits: ${misfits.join("; ")})` : ""}`);

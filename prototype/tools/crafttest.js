@@ -3,6 +3,7 @@
 // days), water filters and crowbars at a base, field crafting from a team's supplies, tactical battles with
 // makeshift weapons, and a short campaign with crafters to check nothing crashes.
 // Usage: node tools/crafttest.js [days] [seed]
+import { stockTools } from "./toolset.js"; // every tool a build or recipe can need (toolreqs.js)
 import { unlockAll } from "../src/sim/blueprints.js";
 import { createWorld, tickHour, hub, atBase, combatPower, makeSurvivor, newId } from "../src/sim/world.js";
 import { GEAR } from "../src/sim/data.js";
@@ -22,7 +23,7 @@ const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FA
 // Tech locks (blueprints.js) are tested in exploretest.js: here every manual is already studied.
 // The hub starts bare (barestart: tools/barestarttest.js); these checks are about crafting at a base with a bench, so
 // the hub gets the crafting bench it used to start with.
-const world = () => { const st = createWorld({ seed, factionCount: 5 }); unlockAll(st); addBuilding(hub(st), "craftbench"); return st; };
+const world = () => { const st = createWorld({ seed, factionCount: 5 }); unlockAll(st); addBuilding(hub(st), "craftbench"); stockTools(hub(st)); return st; }; // every tool (toolset.js)
 const runHours = (st, base, max = 400) => { let h = 0; while (craftQueue(base).length && h < max) { craftingHour(st); h++; } return h; };
 const setSkill = (people, k, v) => people.forEach((s) => (s.skills[k] = v, s.traits = s.traits.filter((t) => t !== "lucky" && t !== "medic")));
 
@@ -46,7 +47,7 @@ const setSkill = (people, k, v) => people.forEach((s) => (s.skills[k] = v, s.tra
   setSkill(ppl, "mechanics", 0);
   h.stock.scrap = 0;
   check(!canCraft(st, h, "spikedbat").ok && /scrap/.test(canCraft(st, h, "spikedbat").reason), "no scrap blocks a craft");
-  h.stock.scrap = 200; h.stock.parts = 20; h.stock.meds = 20; h.stock.water = 50;
+  h.stock.scrap = 200; h.stock.parts = 20; h.stock.meds = 20; h.stock.water = 50; h.stock.metalsheet = 5;
   check(canCraft(st, h, "spikedbat").ok, "spiked bat needs no skill");
   check(/Mechanics 3/.test(canCraft(st, h, "sawmachete").reason || ""), "saw-blade machete needs Mechanics 3");
   ppl[0].skills.mechanics = 8;

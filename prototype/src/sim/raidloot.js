@@ -60,7 +60,7 @@ import { partyVehicle, isBike, VEHICLE_TYPES } from "./vehicles.js";
 import { teamLoad, wornLoad, maxLoad } from "./load.js";
 import { ensureInv, packOf, ensurePack, itemLoad, itemKg, carryOf, fitReason, isBulky, isSmall, packSize, EQUIP_SLOTS, SLOT_NAMES, allCarried, isTwoHands } from "./inventory.js";
 import { gunLeavesTeam, unloadInto, teamGuns, returnStacks } from "./gunload.js";
-import { pileToArms, handsTakeRefusal } from "./carry.js"; // the team's loads off the ground: into the arms; two different things carried: nothing more taken (call-time only: safe in the import cycle)
+import { pileToArms, handsTakeRefusal, bothArms, armsCap } from "./carry.js"; // the team's loads off the ground: into the arms; two different things carried: nothing more taken (call-time only: safe in the import cycle)
 import { groundPile, settlePile } from "./ground.js"; // the pile a load is set down on (call-time only: safe in the import cycle)
 import { canStack, mergeInto, isSpent, stackLabel, isSupItem, roomIn, roundCap, amountOf, roundItems, isRoundItem } from "./itemstack.js"; // stacks merge in a slot (2026-10-10)
 import { isMag } from "./mags.js"; // rounds onto a spare magazine in the search window load it (call-time only: the import cycle)
@@ -406,7 +406,11 @@ function takeRule(state, b, from, to, fromStr) {
   if (giver === taker) return ""; // their own places: carried into the pack, out of the pack...
   // More of a kind already in hand (scrap onto their scrap, a second box of the same rounds) joins that armful.
   const h = taker.haul;
-  if (from.slot === "sup") { if (h && (h.sup[String(from.i)] || 0) > EPS) return ""; return handsTakeRefusal(taker, `the ${keyWord(String(from.i))}`); }
+  if (from.slot === "sup") { // an armful of building materials or metal sheets takes both hands (carry.js HOLD both)
+    const k = String(from.i);
+    if (h && (h.sup[k] || 0) > EPS) return "";
+    return handsTakeRefusal(taker, `the ${keyWord(k)}`, bothArms(k) && to.o === "haul" ? { key: `s_${k}`, name: keyWord(k) } : null);
+  }
   const item = raidItemAt(state, b, fromStr);
   if (item && h && to.o === "haul" && !isTwoHands(item) && h.gear.some((g) => g.key === item.key)) return ""; // a second fire safe is not one armful: each takes both hands
   return handsTakeRefusal(taker, `the ${item ? item.name : "that"}`, item);
@@ -462,6 +466,11 @@ function planSupply(state, b, u, from, to, qty) {
     if (fit < n) { n = fit; limit = key; }
   }
   if (n < 1) return { err: tooHeavy(state, b, limit || u.id, name), have };
+  if (to.o === "haul" && bothArms(k)) { // building materials, metal sheets: up to 4 in a person's arms
+    const room = Math.max(0, armsCap(k) - Math.floor((B.sup[k] || 0) + EPS));
+    if (room < 1) return { err: `An armful already: nobody carries more than ${armsCap(k)} ${name} at a time. Put them down, or in the vehicle.`, have };
+    n = Math.min(n, room);
+  }
   const w = supWeight(k);
   if (B.box && B.box.cart && !(A.box === B.box)) { // carts.js: a cart on the map takes up to its kg
     n = Math.min(n, Math.floor((boxFree(B.box) + 1e-6) / Math.max(1e-6, w)));

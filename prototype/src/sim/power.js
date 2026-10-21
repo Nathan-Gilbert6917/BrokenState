@@ -73,6 +73,7 @@
 // (production.js productionHour) and before the stations run each day, so storage, radio and defences read it
 // cheaply. A base that never refreshed has no power.
 import { BUILDINGS, RECIPES, stationOperator, assignStations } from "./buildings.js";
+import { withBuildmat } from "./buildmats.js"; // the upgrades' building materials
 import { day, log, atBase, hourOfDay, skill } from "./world.js";
 import { orderHold } from "./production.js";
 import { stockHas } from "./water.js"; // a recipe's "fresh" in days of fresh food
@@ -90,6 +91,7 @@ export const GEN_TIERS = [
   { name: "Industrial diesel set", out: 24, idle: 3, full: 6, tank: 9, heat: 8, cost: { scrap: 40, parts: 8, electronics: 2 }, hours: 48, req: { mechanics: 5 }, bp: "indpower",
     desc: "A skid-mounted diesel set out of a factory or a hospital basement, with its control panel: it burns 3 fuel a day idling, 6 at full load" },
 ];
+for (const T of GEN_TIERS) if (T && T.cost) T.cost = withBuildmat(T.cost); // building materials in every upgrade (buildmats.js; made on site from scrap when short)
 export const genTier = (b) => Math.max(1, Math.min(GEN_TIERS.length - 1, Math.floor(Number(b && b.tier) || 1)));
 export const genDef = (b) => GEN_TIERS[genTier(b)];
 export const genName = (b) => genDef(b).name;

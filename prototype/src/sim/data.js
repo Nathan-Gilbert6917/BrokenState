@@ -14,6 +14,7 @@ import { TENT_GEAR } from "./data-tents.js"; // tent bags: one-, two- and four-p
 import { HELMET_GEAR } from "./data-helmets.js"; // helmets, visors, helmet mounts, ear protection (helmets.js, hearing.js)
 import { BLADE_GEAR } from "./data-blades.js"; // knives and swords (blades.js: where they turn up)
 import { NL_GEAR } from "./data-nonlethal.js"; // tasers, cartridges, pepper spray, the stun baton (nonlethal.js)
+import { TOOL_ITEMS } from "./data-tools.js"; // tools for building and crafting: a tool kit, saws, a felling axe, a shovel, a drill, a welder, a sewing kit, the makeshift ones (toolreqs.js)
 import { SURV_ITEMS } from "./data-survival.js"; // survival gear: tools, armour against teeth, lights, a rig, a jump bag, a rangefinder (survival.js: where they turn up)
 import { BED_GEAR } from "./data-beds.js"; // beds as furniture: cots, beds, bunk beds, large beds (beds.js)
 import { BOX_GEAR, BOX_PATCH } from "./data-boxes.js"; // cash boxes, fire safes, toolboxes, equipment cases; the gun cases as boxes (boxes.js)
@@ -73,11 +74,20 @@ export const SUPPLIES = {
   gunparts:    { name: "Gun parts",   value: 10, weight: 0.5, cat: "gunmod" },
   electronics: { name: "Electronics", value: 12, weight: 0.3, cat: "electronics" },
   // Building materials (2026-10-09, user request: "Add something called building materials that can be scavenged and
-  // use this to establish bases"): lumber, cinder blocks, sheet metal, nails and fixings. Scavenged as a find of its own (loot.js
+  // use this to establish bases"): lumber, cinder blocks, nails and fixings. Scavenged as a find of its own (loot.js
   // BUILDMAT_FINDS: hardware stores and quarries most, warehouses, factories, barns, farms and towns; on top of the
   // site's usual loot, so nothing else got rarer), heavy and bulky; what a camp
-  // takes to become a base (buildings.js outpost_up). Traded with scrap.
+  // takes to become a base (buildings.js outpost_up), and some of every building (buildings.js BUILDMAT_SHARE). Traded
+  // with scrap. Carried in both arms only, up to 4 a person (data-supitems.js, carry.js HOLD: the user's call 2026-10-21).
   buildmat:    { name: "Building materials", value: 3, weight: 3, cat: "scrap" },
+  // Metal sheets (2026-10-21, user request: "Add metal sheets as a lootable items that can be carried by the carried
+  // slot with two hands. stacked up to 4"): corrugated roofing, steel siding and plate, 6 kg a sheet. Carried in both
+  // arms only, up to 4 a person (24 kg: just under HANDS_KG), or in a vehicle. Found where sheet steel is kept or
+  // built into things (loot.js SHEET_FINDS), salvaged from car wrecks, a stripped car and the base map's wrecks,
+  // flattened out of scrap at a workshop (crafting.js metalsheet). What roofs, metal walls and reinforced builds take
+  // (buildings.js), the metal-sheet armour and weapons (crafting.js), a vehicle's plating (vehicles.js PLATING) and
+  // the repairs of what is made of them (breakdowns.js, WALL_REPAIR).
+  metalsheet:  { name: "Metal sheets", value: 5, weight: 6, cat: "scrap" },
 };
 // Rounds by calibre and type (data-ammo.js ROUND_SUPPLIES: a_9mm_fmj, a_12ga_buck…; ammo.js): what your stocks hold.
 // "ammo" above stays as the abstract count (other groups' stores, what a plan or a deal asks for).
@@ -147,6 +157,13 @@ export const GEAR = {
   footballhelmet: { name: "Football helmet",      slot: "head",   skill: null,       power: 0.4, req: 0, value: 4,  noise: 0, makeshift: true, dur: 15, desc: "Found, not made: a football helmet from a school or a sporting goods store. Cracks eventually.", weight: 1.5, cat: "armor" },
   goaliemask: { name: "Goalie mask",              slot: "head",   skill: null,       power: 0.5, req: 0, value: 6,  noise: 0, makeshift: true, dur: 18, desc: "A hockey goalie's moulded mask with a cage over the eyes: light, stops a bite to the face. From a sporting goods store.", weight: 0.9, cat: "armor" }, // data-shops.js: the sporting goods store
   scrapvest:  { name: "Scrap plate vest",         slot: "armor",  skill: null,       power: 1.8, req: 0, value: 25, noise: 0, makeshift: true, dur: 60, desc: "Steel plates riveted onto a work jacket. Heavy but solid.", weight: 7, cat: "armor" },
+  // Sheet-metal gear (the user's request 2026-10-21: makeshift metal armour and weapons out of metal sheets; crafting.js
+  // sheetvest…, armour.js ARMOUR steel, combat.js WEAPONS). Mended with a sheet (repair.js "sheet").
+  sheetvest:  { name: "Sheet-metal cuirass",      slot: "armor",  skill: null,       power: 1.9, req: 0, value: 30, noise: 0, makeshift: true, sheet: true, dur: 70, desc: "Two metal sheets cut, bent to the chest and back and riveted on leather straps: AC 3 steel, tougher than a scrap plate vest and heavier. Mended with a metal sheet.", weight: 8.5, cat: "armor" },
+  sheetarms:  { name: "Sheet-metal vambraces",    slot: "arms",   skill: null,       power: 0.9, req: 0, value: 10, noise: 0, makeshift: true, sheet: true, dur: 24, desc: "Forearm shells bent from a metal sheet and strapped on: bites and blades skate off (AC 2 steel). Mended with a metal sheet.", weight: 1.4, cat: "armor" },
+  sheetlegs:  { name: "Sheet-metal greaves",      slot: "legs",   skill: null,       power: 0.8, req: 0, value: 10, noise: 0, makeshift: true, sheet: true, dur: 24, desc: "Shin plates bent from a metal sheet, a knee cap riveted on (AC 2 steel). Mended with a metal sheet.", weight: 1.6, cat: "armor" },
+  sheetmachete: { name: "Sheet-metal machete",    slot: "weapon", skill: "shooting", power: 1.6, req: 0, value: 6,  noise: 0, makeshift: true, dur: 14, desc: "A long blade cut from a metal sheet with a grinder, the edge filed, the grip taped: cuts that bleed (20%), and it chops wood and wire at a pinch.", weight: 1, cat: "melee" },
+  sheethatchet: { name: "Sheet-metal hatchet",    slot: "weapon", skill: "shooting", power: 1.5, req: 0, value: 5,  noise: 0, makeshift: true, dur: 14, desc: "A head cut from a metal sheet, folded double and riveted to a wooden handle: a chopping blow that can stagger (10%), and it cuts wood.", weight: 1.1, cat: "melee" },
   bandagekit: { name: "Bandage and splint kit",   slot: "tool",   skill: "medicine", power: 1,   req: 0, value: 8,  noise: 0, makeshift: true, dur: 5,  medKit: 2, small: true, desc: "Boiled rags, tape and splints: +2 Medicine when treating (at a base, in the field or in battle). Each treatment uses it up a little.", weight: 0.5, cat: "medical" },
   crowbar:    { name: "Crowbar and lockpicks",    slot: "tool",   skill: "scavenging", power: 1, req: 0, value: 6,  noise: 0, makeshift: true, dur: 30, bonus: { scavenging: 2 }, desc: "Opens locked doors and cabinets: +2 Scavenging for base scavenging.", weight: 2, cat: "tools" },
   // Makeshift picks (locks.js MAKESHIFT_PICK): bent wire for picking locks without the crowbar and lockpicks, a stack
@@ -734,6 +751,7 @@ Object.assign(GEAR, NL_GEAR); // non-lethal weapons (data-nonlethal.js)
 Object.assign(GEAR, HELMET_GEAR); // helmets, visors, helmet mounts, ear protection (data-helmets.js)
 Object.assign(GEAR, BLADE_GEAR); // knives and swords (data-blades.js)
 Object.assign(GEAR, SURV_ITEMS); // survival gear (data-survival.js)
+Object.assign(GEAR, TOOL_ITEMS); // tools for building and crafting (data-tools.js)
 Object.assign(GEAR, BOX_GEAR); // lockable boxes (data-boxes.js)
 for (const [k, p] of Object.entries(BOX_PATCH)) if (GEAR[k]) Object.assign(GEAR[k], p); // the gun cases are boxes too
 Object.assign(GEAR, CART_GEAR); // carts (data-carts.js, carts.js)

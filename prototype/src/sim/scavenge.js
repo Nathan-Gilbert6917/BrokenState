@@ -47,7 +47,7 @@ import { rollSiteGuns } from "./gunfinds.js"; // the arsenal of 2026-10-10 (its 
 import { rollShopShelves, rollShopSupplies } from "./shopshelves.js"; // a gun store's or a pawn shop's shelves as a POI (shops.js)
 import { swapGun } from "./gundist.js"; // the gun distribution: which gun a site's gear list yields
 import { rollTentFind } from "./tents.js"; // tent bags (their own dice)
-import { rollFind, rollHuntFind, rollLightFind, rollCartFind, rollSiteWood, rollBuildmat, rollSiteArrows, rollGunmodFind, rollAnyModFind, sortParts, rollSiteGrenades, rollSiteLaunchers, rollSiteReload } from "./loot.js";
+import { rollFind, rollHuntFind, rollLightFind, rollCartFind, rollSiteWood, rollBuildmat, rollSheets, rollSiteArrows, rollGunmodFind, rollAnyModFind, sortParts, rollSiteGrenades, rollSiteLaunchers, rollSiteReload } from "./loot.js";
 import { rollBedFind } from "./beds.js"; // beds as furniture: a loose cot or bed found (its own dice)
 import { searchHeatMult, noteGunfire } from "./fieldheat.js";
 import { lockedSearchHour } from "./locks.js";
@@ -391,6 +391,8 @@ export function searchHour(state) {
   if (wood > 0) { e.found.supplies.wood = (e.found.supplies.wood || 0) + wood; finds.push(`${wood} wood`); }
   const bm = rollBuildmat(state, e.tile, ap.loot * (1 + scav / 30), `h${e.hours}`); // lumber, blocks, sheet metal (loot.js BUILDMAT_FINDS; its own dice)
   if (bm > 0) { e.found.supplies.buildmat = (e.found.supplies.buildmat || 0) + bm; finds.push(`${bm} building materials`); }
+  const ms = rollSheets(state, e.tile, ap.loot * (1 + scav / 30), `h${e.hours}`, engKind(state, e)); // roofing, siding, a car's panels (loot.js SHEET_FINDS; its own dice)
+  if (ms > 0) { e.found.supplies.metalsheet = (e.found.supplies.metalsheet || 0) + ms; finds.push(`${ms} metal sheet${ms === 1 ? "" : "s"}`); }
   const arrows = rollSiteArrows(state, e.tile, ap.loot, `h${e.hours}`); // a quiver, a box of bolts (loot.js SITE_ARROWS; its own dice)
   if (arrows > 0) { e.found.supplies.arrows = (e.found.supplies.arrows || 0) + arrows; finds.push(`${arrows} arrows`); }
   // Locked things, keys and blueprints (locks.js; its own dice): adds finds and Heat.

@@ -155,6 +155,13 @@ export const SUPPLY_ART = {
     box(p, 3, 2, 15, 4, K.pine, "#e8c890", K.pineD); box(p, 1, 5, 14, 7, K.pine, "#e8c890", K.pineD);
     dots(p, 6, 13, 3, K.pineD, 3); dots(p, 4, 12, 6, K.pineD, 4); V(p, 1, 5, 7, "#c09050"); V(p, 3, 2, 4, "#c09050");
   },
+  metalsheet: (p) => { // a stack of corrugated metal sheets seen from the end and above: ridges, a rusty corner
+    for (const [y, c] of [[3, "#a9b0b6"], [7, "#8d959c"], [11, "#7d858c"]]) {
+      R(p, 0, y, 15, y + 2, c); H(p, 0, 15, y, shade(c, 0.3)); H(p, 0, 15, y + 2, shade(c, -0.3));
+      for (let x = 1; x < 16; x += 3) p.set(x, y + 1, shade(c, -0.2)); // the corrugation
+    }
+    p.set(14, 12, "#a0522d"); p.set(15, 12, "#8a4424"); p.set(15, 11, "#a0522d"); // rust
+  },
   brass: (p) => { // empty cases, open-mouthed, and a red shotgun hull
     round(p, 0, 3, null); round(p, 5, 6, null);
     R(p, 10, 2, 14, 10, K.shell); V(p, 10, 2, 10, "#d4504a"); V(p, 14, 2, 10, "#8a2420"); dots(p, 10, 14, 2, "#8a2420"); p.set(12, 3, "#8a2420");
