@@ -21,11 +21,11 @@ export const SITE_MAKE = { buildmat: { scrap: 3, hours: 3 }, metalsheet: { scrap
 export const BUILDMAT_SHARE = { per: 12, max: 10 };
 export const MADE_KEYS = Object.keys(SITE_MAKE);
 
-/** A cost's worth in scrap (the share's yardstick). @param {Record<string, number>} cost */
+/** A cost's worth in scrap (the share's yardstick). @param {any} cost */
 export const scrapWorth = (cost) => (cost.scrap || 0) + 4 * (cost.parts || 0) + 4 * (cost.electronics || 0) + (cost.wood || 0) / 40;
 
 /** A build's cost with its building materials (and `sheets` metal sheets), the scrap they stand for taken off.
- * @param {Record<string, number>} cost @param {number} [sheets] @returns {Record<string, number>} */
+ * @param {any} cost @param {number} [sheets] @returns {any} */
 export function withBuildmat(cost, sheets = 0) {
   const out = { ...cost };
   const bm = cost.buildmat > 0 ? 0 : Math.max(1, Math.min(BUILDMAT_SHARE.max, Math.round(scrapWorth(cost) / BUILDMAT_SHARE.per)));
@@ -41,7 +41,7 @@ export function withBuildmat(cost, sheets = 0) {
 /** What paying a cost from a stock takes: the stores' own building materials and sheets first, the rest made on site
  * from scrap. take: what comes out of the stock (its scrap raised by what is made), made: { key: n } made on site,
  * hours: the work-hours that adds.
- * @param {Record<string, number>} stock @param {Record<string, number>} cost */
+ * @param {any} stock @param {any} cost */
 export function siteCost(stock, cost) {
   /** @type {Record<string, number>} */
   const take = { ...cost };
@@ -65,7 +65,7 @@ export function siteCost(stock, cost) {
 
 /** What a stock lacks to pay a cost (building materials and sheets made on site from its scrap): "" when it has it,
  * else "Needs N <word>" (the scrap first when what is made is what it lacks).
- * @param {Record<string, number>} stock @param {Record<string, number>} cost @param {(k: string) => string} word */
+ * @param {any} stock @param {any} cost @param {(k: string) => string} word */
 export function siteShort(stock, cost, word) {
   const { take, made, extra } = siteCost(stock, cost);
   for (const [k, v] of Object.entries(take)) {
@@ -76,7 +76,7 @@ export function siteShort(stock, cost, word) {
   return "";
 }
 
-/** Pays a cost from a stock (siteShort first): returns { paid, made, hours }. @param {Record<string, number>} stock @param {Record<string, number>} cost */
+/** Pays a cost from a stock (siteShort first): returns { paid, made, hours }. @param {any} stock @param {any} cost */
 export function payCost(stock, cost) {
   const c = siteCost(stock, cost);
   for (const [k, v] of Object.entries(c.take)) stock[k] = (stock[k] || 0) - v;

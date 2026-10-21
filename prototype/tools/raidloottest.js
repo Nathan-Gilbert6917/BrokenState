@@ -156,6 +156,14 @@ console.log("On foot: each survivor carries their own share and finds");
   RL.raidTakeAll(st, u.id, boxB.id);
   check(u.haul.sup.buildmat === 1, "a bulky supply (building materials) is carried");
   check(/too big/.test(RL.raidMove(st, u.id, `haul:${u.id}:sup:buildmat`, `s:${s.id}:pocket:3`)), "and does not go in a pocket");
+  // An armful of building materials takes both hands (the user's call 2026-10-21; carry.js HOLD both): nothing else is
+  // taken until it is set down, and nobody carries more than 4.
+  const boxA = boxWith(b, u, { ammo: 5 });
+  check(/Both hands full/.test(RL.raidMove(st, u.id, `rbox:${boxA.id}:sup:ammo`, `haul:${u.id}:list`)), "an armful of building materials: both hands full, the ammo is not taken");
+  const boxC = boxWith(b, u, { buildmat: 6 });
+  RL.raidTakeAll(st, u.id, boxC.id);
+  check(u.haul.sup.buildmat === 4 && boxC.contents.sup.buildmat === 3, `up to 4 in the arms (${u.haul.sup.buildmat} carried, ${boxC.contents.sup.buildmat} left)`);
+  u.haul.sup.buildmat = 0; // set down
 
   // Found ammo can be used at once (the haul is one of the battle's pools).
   const ammoBefore = b.pools.reduce((a, o) => a + Math.floor(o.ammo || 0), 0);
@@ -200,16 +208,16 @@ console.log("A car: the team's things ride in it, the trunk is opened at the veh
   const space0 = RL.trunkSpace(st, b);
   check(Math.abs(space0 - (partyCapacity(st, p) - poolLoad(p))) < 0.01, `trunk space = what the team can carry with it less its load (${space0.toFixed(1)} kg)`);
   // Pick up far away, walk back, unload.
-  const box = boxWith(b, u, { buildmat: 5 }, [newItem("ar")]);
+  const box = boxWith(b, u, { scrap: 5 }, [newItem("ar")]); // scrap: building materials would take both hands (no rifle with them)
   RL.raidTakeAll(st, u.id, box.id);
   const carried = RL.haulLoad(u);
   check(carried > 0 && Math.abs(RL.trunkSpace(st, b) - (space0 - carried)) < 0.01, `what people carry counts against the car too (it takes it home): ${RL.trunkSpace(st, b).toFixed(1)} kg free`);
   u.x = b.w - 2; u.y = 1;
-  check(/at the vehicle/.test(RL.raidMove(st, u.id, `haul:${u.id}:sup:buildmat`, `trunk:${p.id}:list`)), "away from the vehicle the trunk cannot be reached");
+  check(/at the vehicle/.test(RL.raidMove(st, u.id, `haul:${u.id}:sup:scrap`, `trunk:${p.id}:list`)), "away from the vehicle the trunk cannot be reached");
   u.x = z.x0 + 1; u.y = z.y0 + 1;
-  const scrap0 = p.cargo.supplies.buildmat || 0;
+  const scrap0 = p.cargo.supplies.scrap || 0;
   const r = RL.stashAll(st, u.id);
-  check(r.put.length >= 1 && RL.haulLoad(u) < EPS && (p.cargo.supplies.buildmat || 0) - scrap0 === 5 && p.cargo.gear.some((g) => g.key === "ar"), `unloading puts what they carry in the car (${r.put.join(", ")})`);
+  check(r.put.length >= 1 && RL.haulLoad(u) < EPS && (p.cargo.supplies.scrap || 0) - scrap0 === 5 && p.cargo.gear.some((g) => g.key === "ar"), `unloading puts what they carry in the car (${r.put.join(", ")})`);
   check(Math.abs(RL.trunkSpace(st, b) - (space0 - carried)) < 0.01, "moving things from a person into the car does not change how much more the car takes");
   check(RL.personalRoom(st, u) > carried - EPS, "and frees the survivor");
   // Take something out of the car.
@@ -299,7 +307,7 @@ console.log("Hauling takes time: the first kg a turn are free, then kg an action
   const big = RL.raidMove(st, u.id, `rbox:${box3.id}:gear:0`, `haul:${u.id}:list`);
   check(!/No time/.test(big) && u.ap === 0 && u.haul.gear.some((g) => g.key === "ar"), `one heavy thing can always be lifted with what is left of the turn (${big})`);
   // Take all stops when time runs out, and says so.
-  fresh(b, u); u.ap = 0;
+  fresh(b, u); u.ap = 0; u.haul.gear = []; u.haul.sup = {}; // empty-handed: building materials take both arms
   const box4 = boxWith(b, u, { buildmat: 20 });
   const r = RL.raidTakeAll(st, u.id, box4.id);
   check((r.outOfTime || RL.haulBudget(b, u) < SUPPLIES.buildmat.weight) && box4.contents.sup.buildmat === 20 - Math.floor(RL.HAUL.free / SUPPLIES.buildmat.weight), `Take all with no actions left takes the free kg and stops (${r.got.join(", ")})`);
