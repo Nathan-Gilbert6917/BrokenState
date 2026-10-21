@@ -23,6 +23,7 @@
 // in a cart's bed (its kg allowing), in the team's cargo (a vehicle's trunk when it has one) or a base's armory. No
 // wear (no dur): a tent in a bag is a tent.
 /** S: the kg a one-person tent keeps out of the weather, the unit of every tent's storage. */
+import { ROWS, mergeRows } from "./data-shops.js";
 export const TENT_S = 15;
 /** @type {Record<string, { name: string, w: number, h: number, sleepers: number, storeKg: number, mood: number, bag: boolean, buildable?: boolean }>} */
 export const TENT_TYPES = {
@@ -132,3 +133,6 @@ export const BAND_TENTS = {
   preppers: { share: 1, bags: ["tent4", "tent2", "tent1"] },
   raiders: { share: 0.5, bags: ["tent2", "tent1"] },
 };
+
+// data-shops.js: the town's and the city's shops and services (their rows; this module's own rows win).
+mergeRows(TENT_FINDS, ROWS.TENT_FINDS); mergeRows(AREA_TENTS, ROWS.AREA_TENTS);

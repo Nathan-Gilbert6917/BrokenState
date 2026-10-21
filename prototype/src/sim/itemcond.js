@@ -18,6 +18,7 @@
 // (inventory.js START_DUR).
 import { GEAR } from "./data.js";
 import { YEAR_DAYS } from "./eras.js"; // the game year (112 days); eras.js imports nothing
+import { ROWS, mergeRows } from "./data-shops.js";
 
 // q: quality range; d: uses left as a share of full. name: what the source is (the report table, tools/itemcondtest.js).
 // boxed (optional): { p, q, d }: a share p of the finds roll from these ranges instead (a sealed box at the back).
@@ -203,3 +204,6 @@ export function qualityWord(q) {
   for (const [lim, w] of QUALITY_WORDS) if (v < lim) return w;
   return "excellent";
 }
+
+// data-shops.js: the town's and the city's shops and services (their rows; this module's own rows win).
+mergeRows(SITE_SOURCE, ROWS.SITE_SOURCE); mergeRows(AREA_SOURCE, ROWS.AREA_SOURCE);

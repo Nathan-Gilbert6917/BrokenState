@@ -34,7 +34,7 @@ import {
   poiPool, poiTake, poiLedger, poiThreat, tileHeat, addTileHeat, poiKnown, poiKnownTo, knownPois, morePoisHidden, revealPois, learnPois,
   mergePoiFinds, poiSnapshot, poiKnowledge, setPoiReveal, packPois, clearPois, permanentSite,
 } from "../src/sim/pois.js";
-import { SHOP, SHOP_KINDS } from "../src/sim/gunshops.js";
+import { SHOP, SHOP_KINDS, settingOf } from "../src/sim/shops.js";
 
 const args = process.argv.slice(2);
 const corpus = !args.includes("--nocorpus");
@@ -46,7 +46,7 @@ const W = (s = seed, size = "normal") => { const st = createWorld({ seed: s, fac
 const sig = (st) => JSON.stringify(st.tiles.map((t) => t.pois));
 const rich = (k) => LOCATIONS[k].richness;
 // A tile's list without the extras on their own dice after it (poi.extra: a campsite, campsite.js; a gun store or a
-// pawn shop or a hardware store, gunshops.js): the counts, the pools, the top and the hidden rules are the list's; section 4b checks them.
+// pawn shop, a hardware store or another shop or service, shops.js): the counts, the pools, the top and the hidden rules are the list's; section 4b checks them.
 const base = (t) => t.pois.filter((p) => !p.extra);
 
 // ---------- 1. determinism ----------
@@ -188,7 +188,7 @@ section("Extras on their own dice: a campsite, a gun store, a pawn shop or a har
         if (p.extra === "campsite") { camps++; if (p.kind !== "campsite" || t.terrain === "suburb" || t.terrain === "city") campWrong++; continue; }
         shops++;
         byKind[p.kind] = (byKind[p.kind] || 0) + 1;
-        if (p.extra !== "shop" || !SHOP_KINDS.includes(p.kind) || !SHOP.POI[t.terrain] || (t.loc && t.loc.type === p.kind)) wrong++;
+        if (p.extra !== "shop" || !SHOP_KINDS.includes(p.kind) || !settingOf(st, t) || (t.loc && t.loc.type === p.kind)) wrong++;
         if (t.pois.filter((q) => q.kind === p.kind).length > 1) twice++;
         if (permanentSite(t) && rich(p.kind) > rich(t.loc.type)) outranks++;
         const r = rich(p.kind) * (t.terrain === "city" ? SHOP.URBAN_RICH : 1);
@@ -197,8 +197,8 @@ section("Extras on their own dice: a campsite, a gun store, a pawn shop or a har
       }
     }
   }
-  check(shops > 0 && byKind.pawnshop > 0 && byKind.gunstore > 0 && byKind.hardware > 0, `gun stores, pawn shops and hardware stores stand on the suburbs and city blocks (${Object.entries(byKind).map(([k, n]) => `${k} ${n}`).join(", ")})`);
-  check(!wrong, `a shop extra is a gun store, a pawn shop or a hardware store on a suburb or city block, never the tile's own site's kind (${wrong})`);
+  check(shops > 0 && Object.keys(byKind).length >= 20, `the shops and services stand on the suburbs and city blocks (${Object.entries(byKind).map(([k, n]) => `${k} ${n}`).join(", ")})`);
+  check(!wrong, `a shop extra is a shop or a service on a suburb or city block, never the tile's own site's kind (${wrong})`);
   check(!twice, `never two of a kind on a tile (${twice})`);
   check(!outranks, `a shop never out-ranks the site it stands by (${outranks})`);
   check(!badPool, `a shop's pool comes from its kind's richness (${badPool} off)`);

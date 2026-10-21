@@ -61,6 +61,7 @@ import { studyBlueprint, blueprintWares, bookUnlocksPending, learnBook } from ".
 import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
 import { hasKitchen, cookedLately, jobShare } from "./kitchen.js"; // the Kitchen's cooks learn Cooking (full-day and part-time)
 import { lessonBond } from "./bonds.js"; // a friend learns faster from a friend, a rival hardly listens (call-time only)
+import { ROWS, mergeRows } from "./data-shops.js";
 
 export const MILESTONES = [5, 10, 15];
 export const SKILL_MAX = 20;
@@ -566,7 +567,7 @@ export const BOOK_SITES = {
   hardware: { p: 0.05, books: ["enginebook", "scavbook", "diybook", "forgebook"] },
   factory: { p: 0.05, books: ["enginebook", "scavbook", "forgebook"] },
   gunstore: { p: 0.07, books: ["gunbook", "prepbook"] },
-  pawnshop: { p: 0.06, books: ["gunbook", "prepbook", "survivalbook", "bushcraftbook", "novel"] }, // gunshops.js
+  pawnshop: { p: 0.06, books: ["gunbook", "prepbook", "survivalbook", "bushcraftbook", "novel"] }, // shops.js
   office: { p: 0.06, books: ["talkbook", "leadbook", "novel"] },
   mall: { p: 0.06, books: ["comic", "novel", "talkbook", "gardenbook", "diybook", "cookbook", "chefbook"] },
   church: { p: 0.04, books: ["novel"] },
@@ -935,3 +936,6 @@ export function planStudy(state, base, free, give, { foodDays = 0, urgent = fals
 export function lessonsAt(state, base) {
   return atBase(state, base.id).filter((s) => s.role === "teach").map((T) => ({ T, lesson: lessonOf(state, T) }));
 }
+
+// data-shops.js: the town's and the city's shops and services (their rows; this module's own rows win).
+mergeRows(BOOK_SITES, ROWS.BOOK_SITES);

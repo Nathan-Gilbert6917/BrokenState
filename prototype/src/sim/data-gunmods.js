@@ -50,6 +50,7 @@
 //   amr       sight, magazine, sling; its bipod and muzzle brake built in
 //   zip       a sling
 /** @type {string[]} */
+import { ROWS, mergeRows } from "./data-shops.js";
 export const SLOTS = ["mount", "rail", "optic", "magnifier", "muzzle", "mag", "under", "stock", "cuff", "grip", "pgrip", "tactical", "bipod", "sling", "receiver"];
 /** @type {Record<string, string>} */
 export const SLOT_NAMES = { optic: "Sight", mount: "Mount", muzzle: "Muzzle", mag: "Magazine", under: "Under the barrel", stock: "Stock", grip: "Foregrip", pgrip: "Pistol grip", rail: "Rail", tactical: "Light / laser", bipod: "Bipod", sling: "Sling", receiver: "Receiver", magnifier: "Magnifier", cuff: "Buttstock carrier" };
@@ -574,7 +575,7 @@ export const PART_FINDS = {
   FIND_W: { common: 1, uncommon: 0.5, scarce: 0.22, rare: 0.08, veryrare: 0.025 },
   site: { gunstore: 0.09, police: 0.04, prison: 0.015, military: 0.05, crash_mil: 0.03, convoy: 0.03, airdrop: 0.01, mall: 0.04, town: 0.012,
           city: 0.012, apartments: 0.008, motel: 0.006, truckstop: 0.006, gas: 0.004, farm: 0.01, ranch: 0.012, cabin: 0.015, lodge: 0.02,
-          feedstore: 0.008, hardware: 0.006, school: 0.003, pawnshop: 0.06 }, // pawnshop: gunshops.js
+          feedstore: 0.008, hardware: 0.006, school: 0.003, pawnshop: 0.06 }, // pawnshop: shops.js
   area: { gunshop: 0.08, armory: 0.06, barracks: 0.03, milwreck: 0.03, house: 0.008, farmhouse: 0.012, cabin: 0.02, store: 0.012, lockers: 0.006,
           roadcars: 0.004, garage: 0.004, pawnshop: 0.06 },
   wares: { traders: 0.4, military: 0.3, fortress: 0.15, expansionist: 0.2, raider: 0.25, commune: 0.15, zealot: 0.05, merchants: 0.45 },
@@ -589,3 +590,6 @@ export const BUDGET_MAGS = {
   mag_glock_17c:  { tier: "budget", rarity: "common", tags: ["home", "mall", "shop", "crime", "sport"], brandOf: "mag_glock_17" },
   mag_ak_75c:     { tier: "budget", rarity: "uncommon", tags: ["home", "mall", "shop", "crime"], brandOf: "mag_ak_75" },
 };
+
+// data-shops.js: the town's and the city's shops and services (their rows; this module's own rows win).
+mergeRows(PART_FINDS.site, ROWS.PART_SITE); mergeRows(PART_FINDS.area, ROWS.PART_AREA);

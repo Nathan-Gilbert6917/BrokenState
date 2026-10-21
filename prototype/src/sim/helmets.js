@@ -29,6 +29,7 @@ import { hash01 } from "./skills.js";
 import { lootItem, itemAt, removeAt, parseLoc, placeOfLoc, storageFor, stow, ensureInv, packOf, personPlace } from "./inventory.js";
 import { survivorById } from "./world.js";
 import { siteSource, areaSource, traderSource } from "./itemcond.js";
+import { ROWS, mergeRows } from "./data-shops.js";
 
 // face: the built-in cover ("builtin": bites and blows only; "riot": also AC 1 against shots; "cage": bites and blows
 // only, never fogs). mounts: the slots it has. muffle: tiles of hearing it costs (hearing.js).
@@ -36,6 +37,7 @@ import { siteSource, areaSource, traderSource } from "./itemcond.js";
 export const HELMETS = {
   hardhat:        { face: null,      mounts: ["face", "rail", "light"], muffle: 0 },
   footballhelmet: { face: "cage",    mounts: [], muffle: -1, fullShell: true },
+  goaliemask:     { face: "cage",    mounts: [], muffle: -1 },
   bikehelmet:     { face: "builtin", mounts: [], muffle: -2, fullShell: true },
   riothelmet:     { face: "riot",    mounts: ["light"], muffle: -2, fullShell: true },
   milhelmet:      { face: null,      mounts: ["nvg", "light"], muffle: 0 },
@@ -399,7 +401,7 @@ export const HEAD_FINDS = {
   quarry: { p: 0.05, items: { hardhat: 3, earmuffs: 2, earplugs: 1 } },
   warehouse: { p: 0.03, items: { hardhat: 2, earplugs: 1 } },
   gunstore: { p: 0.08, items: { earmuffs: 3, eardef: 2, earplugs: 3 } },
-  pawnshop: { p: 0.04, items: { earmuffs: 2, eardef: 1 } }, // gunshops.js
+  pawnshop: { p: 0.04, items: { earmuffs: 2, eardef: 1 } }, // shops.js
   police: { p: 0.05, items: { riotvisor: 2, eardef: 1, helmetlight: 1 } },
   military: { p: 0.05, items: { highcut: 0.6, commset: 1, ballvisor: 0.4, nvgmount: 0.3, helmetlight: 1, earplugs: 1 } },
   crash_mil: { p: 0.05, items: { highcut: 0.8, commset: 1, ballvisor: 0.4, helmetlight: 0.5 } },
@@ -408,7 +410,7 @@ export const HEAD_FINDS = {
 };
 export const AREA_HEAD = {
   workshop: { p: 0.04, items: { hardhat: 2, earmuffs: 1, earplugs: 1, helmetlight: 0.5 } },
-  hardware: { p: 0.05, items: { hardhat: 3, earmuffs: 1.5, earplugs: 1.5, helmetlight: 0.6 } }, // gunshops.js
+  hardware: { p: 0.05, items: { hardhat: 3, earmuffs: 1.5, earplugs: 1.5, helmetlight: 0.6 } }, // shops.js
   warehouse: { p: 0.03, items: { hardhat: 2, earplugs: 1 } },
   gunshop: { p: 0.06, items: { earmuffs: 2, eardef: 1, earplugs: 2 } },
   pawnshop: { p: 0.03, items: { earmuffs: 1.5, eardef: 1 } },
@@ -447,3 +449,6 @@ export function headWares(state, type, name, salt = "") {
   const key = pick(w.items, hash01(state.seed, "headwarepick", name, salt));
   return key ? [lootItem(key, traderSource(type), hash01(state.seed, "headwareq", name, salt))] : [];
 }
+
+// data-shops.js: the town's and the city's shops and services (their rows; this module's own rows win).
+mergeRows(HEAD_FINDS, ROWS.HEAD_FINDS); mergeRows(AREA_HEAD, ROWS.AREA_HEAD);

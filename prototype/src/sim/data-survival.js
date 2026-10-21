@@ -22,6 +22,7 @@
 //   rangefinder   a laser rangefinder (optics.js): a little better at finding hidden places, a tile further on a survey
 // Values are the hidden base barter values (valuation.js), weights in kg; dur: wear (fights for armour and weapons,
 // treatments for the jump bag).
+import { ROWS, mergeRows } from "./data-shops.js";
 
 const W = "weapon", ML = "melee";
 /** @type {Record<string, any>} */
@@ -110,8 +111,8 @@ export const SURV_FINDS = {
   police: { p: 0.04, items: { legrig: 2, anglelight: 1, halligan: 0.5, rangefinder: 0.3 } },
   military: { p: 0.04, items: { anglelight: 2, legrig: 1, rangefinder: 1 } },
   crash_mil: { p: 0.02, items: { anglelight: 1, rangefinder: 0.5 } },
-  gunstore: { p: 0.1, items: { rangefinder: 2, legrig: 2.5 } }, // gunshops.js: the gun and gear shops' racks (was 0.05, legrig 1)
-  pawnshop: { p: 0.1, items: { legrig: 1.5, rangefinder: 1, solarlantern: 2, anglelight: 1, leatherjacket: 2, motopants: 1, pipewrench: 1.5 } }, // gunshops.js: what was pawned
+  gunstore: { p: 0.1, items: { rangefinder: 2, legrig: 2.5 } }, // shops.js: the gun and gear shops' racks (was 0.05, legrig 1)
+  pawnshop: { p: 0.1, items: { legrig: 1.5, rangefinder: 1, solarlantern: 2, anglelight: 1, leatherjacket: 2, motopants: 1, pipewrench: 1.5 } }, // shops.js: what was pawned
   lodge: { p: 0.04, items: { rangefinder: 1, solarlantern: 1.5, anglelight: 0.5 } },
   campground: { p: 0.04, items: { solarlantern: 2, anglelight: 1 } },
   cabin: { p: 0.03, items: { solarlantern: 1, rangefinder: 0.5, leatherjacket: 0.5 } },
@@ -123,7 +124,7 @@ export const SURV_FINDS = {
 export const AREA_SURV = {
   house: { p: 0.02, items: { leatherjacket: 1, solarlantern: 0.6, pipewrench: 0.4 } },
   garage: { p: 0.04, items: { pipewrench: 2, leatherjacket: 0.6, motopants: 0.6 } },
-  hardware: { p: 0.05, items: { pipewrench: 3, solarlantern: 1, halligan: 0.3 } }, // gunshops.js
+  hardware: { p: 0.05, items: { pipewrench: 3, solarlantern: 1, halligan: 0.3 } }, // shops.js
   workshop: { p: 0.04, items: { pipewrench: 2, halligan: 0.2, chainsleeves: 0.4 } },
   kitchen: { p: 0.02, items: { chainsleeves: 1 } },
   store: { p: 0.02, items: { solarlantern: 1, leatherjacket: 0.6, chainsleeves: 0.3 } },
@@ -171,3 +172,6 @@ export const SURV_HELP = `<b>Survival guns.</b> The SKS carbine (7.62×39 like t
   motorcycle trousers), an angle-head flashlight (hands free, further than a headlamp), a solar camping lantern, a
   drop-leg rig, a paramedic's jump bag (+3 Medicine) and a laser rangefinder. Fire stations, hardware stores, garages,
   malls, kitchens, police and army sites, lodges and campgrounds keep them; traders sell them.`;
+
+// data-shops.js: the town's and the city's shops and services (their rows; this module's own rows win).
+mergeRows(SURV_FINDS, ROWS.SURV_FINDS); mergeRows(AREA_SURV, ROWS.AREA_SURV);

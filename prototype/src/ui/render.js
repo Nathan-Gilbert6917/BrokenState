@@ -693,14 +693,14 @@ function siteDesc(state, id, code, fb) {
   if (tier === 2 && F.zoom < 0.7) return { kind: 2, tier, zone, loc, dyn: false }; // zoomed out: a dot in the zone's color
   // The pip with the number of points of interest known on the tile (2 and up: one is the sprite itself), zoomed in.
   const pip = F.zoom >= 0.7 ? (code >> 8) & 15 : 0;
-  return { kind, tier, zone, loc, dyn: false, alpha: code & 4 ? 0.55 : 1, pip: pip >= 2 ? pip : 0, ...siteLook(loc, px, py, tier, (code >> 4) & 3) };
+  return { kind, tier, zone, loc, dyn: false, alpha: code & 4 ? 0.55 : 1, pip: pip >= 2 ? pip : 0, ...siteLook(loc, px, py, tier, (code >> 4) & 3, loc.poi ? loc.variant : t.pois && t.pois[0] && t.pois[0].site ? t.pois[0].v || "" : "") };
 }
 // What a site tile is drawn as: its site, or (bit 64 of the code) its top point of interest as a site of that
 // kind in the kind's zone (sim/pois.js: a bare tile never gets a tile.loc).
 function siteLocOf(t, code) {
   if (!(code & 64)) return t.loc;
   const top = poisOf(t)[0], def = top ? LOCATIONS[top.kind] : null;
-  return def ? { type: top.kind, name: def.name, zone: def.cat, poi: true } : t.loc;
+  return def ? { type: top.kind, name: def.name, zone: def.cat, poi: true, variant: top.v || "" } : t.loc; // variant: its franchise (sim/shops.js)
 }
 
 function paintSite(d, px, py) {
@@ -1793,9 +1793,10 @@ function besideBase(tile, px, py) {
 
 // Where a site's sprite goes on its zone plate, where its label goes (labelY), and the spot beside the plate (side)
 // that the danger skulls fall back to when there is no room under the name. faded: the loot band (0–3, aiscav.js).
-function siteLook(loc, px, py, tier, faded) {
+// variant: the place's franchise (sim/shops.js poi.v; a site's is its site POI's), its own look on the map.
+function siteLook(loc, px, py, tier, faded, variant = "") {
   const s = tier < 2 ? zoomBoost() : 1, def = LOCATIONS[loc.type];
-  const cv = poiSpriteCanvas(loc.type, loc.type === "military" && / depot$/i.test(loc.name) ? "depot" : "", faded);
+  const cv = poiSpriteCanvas(loc.type, loc.type === "military" && / depot$/i.test(loc.name) ? "depot" : variant, faded);
   const w = gridW(cv) * POI_PX * s * ((ZONE_K[loc.zone] || 1) / (ZONE_K[loc.type === "city" ? "urban" : def.cat] || 1));
   const h = spriteH(cv, w), foot = py + 7 * s, rx = Math.max(9 * s, w * 0.46), ry = (tier < 2 ? 4.5 : 3.6) * s;
   return { s, cv, w, h, foot, rx, ry, lw: tier < 2 ? 1.8 : 1.3, labelY: foot + ry + 6, side: [px + rx + 2 * s, foot] };

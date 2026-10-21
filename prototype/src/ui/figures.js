@@ -152,14 +152,14 @@ export function holdOf(key) {
   if (!key || key === "fists" || key === "claws" || key === "acid") return null;
   if (["pistol", "revolver", "pistol22", "compact9", "pistol45", "usp45", "magnum", "snub357", "snub38", "service38", "fiveseven", "revolver44"].includes(key)) return "pistol";
   if (["smg", "ump45", "p90", "vector"].includes(key)) return "smg";
-  if (["bat", "spikedbat", "nailbat", "sledge", "fireaxe", "pickaxe", "spear", "pipespear", "golfclub", "katana", "broadsword"].includes(key)) return "shoulder";
+  if (["bat", "spikedbat", "nailbat", "sledge", "fireaxe", "pickaxe", "spear", "pipespear", "golfclub", "hockeystick", "katana", "broadsword"].includes(key)) return "shoulder";
   if (["pulleybow", "compbow"].includes(key)) return "bow";
   if (["knife", "machete", "sawmachete", "springmachete", "prybar", "baton", "stunbaton", "combatknife", "hatchet", "tomahawk", "kukri", "hammer", "etool", "cleaver", "bowie", "cutlass", "sabre"].includes(key)) return "side";
   return "gun";
 }
 const GUN = "#4b5159", GUNL = "#6d747d", WOOD = "#8a5e36", STEEL = "#cdd5da", GLINT = "#e9eef1";
 const BONE = "#d8d0bc", WORM = "#f0e4c0", WORM_D = "#c4b48a"; // the hives' bone and worms (ui/hivesprites.js)
-const HELMET_COL = { hardhat: "#e6c23a", highcut: "#b89a62", milhelmet: "#55603b", rivethelmet: "#7d858c", footballhelmet: "#3a6fb0", bikehelmet: "#c8402f", riothelmet: "#202226" }; // sim/data-helmets.js, the icons' colours
+const HELMET_COL = { hardhat: "#e6c23a", highcut: "#b89a62", milhelmet: "#55603b", rivethelmet: "#7d858c", footballhelmet: "#3a6fb0", goaliemask: "#e8e4d8", bikehelmet: "#c8402f", riothelmet: "#202226" }; // sim/data-helmets.js, the icons' colours
 // every weapon: its top edge catches the light, so it reads at a glance (the rim below separates it from the body)
 const glint = (under, col = null) => (face, s, t) => (face === "top" ? (col ? shade(col, 0.45) : GLINT) : under ? under(face, s, t) : null);
 
@@ -339,7 +339,7 @@ export function figureLimbs(app, weaponKey = null, armorKey = null) {
   if (hs === "ponytail") F.push(limb([-headS / 2 - 0.4, 0, hz + headS - 1.4], [-headS / 2 - 1.2, 0, hz + 0.2], 0.9, 0.9, shade(hair, -0.2), { sides: 6, taper: 0.7 }));
   if (hs === "curly") F.push(limb([0, 0, hz + headS + 0.4], [0, 0, hz + headS - 2.2], headS / 2 + 0.7, headS / 2 + 0.7, hair, { taper: 1.0 }));
   if (app.helmet && HELMET_COL[app.helmet]) { // a worn helmet (the head slot; the soldier kit's): a shell over the crown, the full-face ones down to the jaw
-    const hc = HELMET_COL[app.helmet], full = app.helmet === "bikehelmet" || app.helmet === "riothelmet" || app.helmet === "footballhelmet";
+    const hc = HELMET_COL[app.helmet], full = app.helmet === "bikehelmet" || app.helmet === "riothelmet" || app.helmet === "footballhelmet" || app.helmet === "goaliemask";
     F.push(limb([0, 0, hz + headS + 0.9], [0, 0, hz + headS * (full ? 0.12 : 0.45)], headS / 2 + 0.55, headS / 2 + 0.6, hc, { taper: full ? 1.0 : 1.12, tex: (face, s, t) => (full && face === "front" && t > 0.45 && t < 0.8 ? "#383b41" : face === "top" ? shade(hc, 0.1) : null) }));
     if (app.helmet === "hardhat" || app.helmet === "milhelmet") F.push(limb([0, 0, hz + headS * 0.5], [0, 0, hz + headS * 0.38], headS / 2 + 1.3, headS / 2 + 1.3, shade(hc, -0.2), { sides: 8 })); // the brim
   } else if (app.accessory === "cap") { F.push(limb([0, 0, hz + headS + 1.4], [0, 0, hz + headS - 0.6], headS / 2 + 0.3, headS / 2 + 0.35, app.accent, { taper: 1.08 })); F.push(boxL([headS / 2 - 0.2, 0, hz + headS - 0.4], [headS / 2 + 2.6, 0, hz + headS - 0.7], 0.35, headS / 2 + 0.2, shade(app.accent, -0.3), { u: [0, 0, 1] })); }

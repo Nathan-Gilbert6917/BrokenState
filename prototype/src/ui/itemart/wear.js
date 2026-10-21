@@ -298,6 +298,16 @@ function golfclub(p) { // a thin steel shaft, a black grip, the driver's big rou
   area(p, (a, b) => a === 9 && b >= 17 && b <= 21, "#c9ced3"); // the face
   at(p, 11, 19, "#6a7484");
 }
+function hockeystick(p) { // the stick as it lies on the ice: the shaft down from the grip (top right), the flat blade along the bottom,
+  // bent forward at the heel, taped white, the toe turned up; black tape and a knob on the grip, a red maker's stripe
+  for (let i = 0; i <= 10; i++) { const x = 15 - Math.round(i * 0.8); R(p, x - 1, i, x, i, i <= 2 ? K.poly : "#c9a46a"); }
+  p.set(15, 0, "#4a4f57"); p.set(14, 2, "#4a4f57");
+  for (const i of [5, 6, 7]) p.set(15 - Math.round(i * 0.8), i, "#c8402f");
+  lit(p, "#c9a46a");
+  H(p, 1, 8, 11, "#2a2c30"); H(p, 0, 8, 12, "#2a2c30"); H(p, 1, 7, 13, "#2a2c30"); p.set(0, 10, "#2a2c30"); p.set(0, 11, "#2a2c30"); // the blade, the toe up
+  for (const x of [2, 3, 5, 6]) V(p, x, 11, 13, "#e8e4d8"); // the tape
+  H(p, 1, 7, 14, "#1d1f22");
+}
 function prybar(p) { // a forged bar: a hooked claw at the top, a bent chisel at the foot
   stamp(p, 0, 0, [
     "..........kkk...",
@@ -571,6 +581,16 @@ function footballhelmet(p) { // a blue shell with a white stripe, an ear hole, t
   p.set(6, 8, "#1c2026");
   V(p, 14, 5, 12, "#9aa1a8"); for (const y of [6, 9, 12]) H(p, 11, 14, y, "#9aa1a8"); V(p, 12, 6, 12, "#7d858c");
   R(p, 1, 12, 9, 13, "#284e7e");
+}
+function goaliemask(p) { // a hockey goalie's moulded mask from the front: off-white, eye holes behind a grey cage, a red stripe, breathing holes
+  area(p, (a, b, x, y) => ((x - 7.5) / 6.5) ** 2 + ((y - 7.5) / 7.8) ** 2 <= 1, "#e8e4d8");
+  lit(p, "#e8e4d8");
+  V(p, 7, 0, 3, "#c8402f"); V(p, 8, 0, 3, "#c8402f"); H(p, 4, 11, 1, "#c8402f"); // the painted stripe over the brow
+  R(p, 3, 5, 6, 7, "#2a2c30"); R(p, 9, 5, 12, 7, "#2a2c30"); // the eye holes
+  for (const x of [4, 6, 9, 11]) V(p, x, 4, 8, "#9aa1a8"); H(p, 3, 12, 6, "#b4bcc3"); // the cage over them
+  p.set(7, 10, "#9a9384"); p.set(8, 10, "#9a9384"); // the nose ridge
+  for (const [x, y] of [[5, 11], [7, 12], [9, 11], [6, 13], [8, 13], [10, 12]]) p.set(x, y, "#4a4f57"); // the breathing holes
+  for (const y of [5, 10]) { p.set(1, y, "#2e3238"); p.set(14, y, "#2e3238"); } // the strap rivets
 }
 function bikehelmet(p) { // a red full-face shell, a smoked visor, a chin bar, scratched
   oval(p, 1, 1, 14, 14, "#c8402f");
@@ -918,10 +938,10 @@ export const GEAR_ART = {
   knife: chef, steakknife: steak, filletknife: fillet, cleaver, huntknife: hunter, survivalknife: survival, bowie, bayonet,
   combatknife: combat, shiv, pocketknife: pocket, flipknife: flick, lockback, multitool, boxcutter, balisong,
   machete, sawmachete, springmachete, kukri, katana, cutlass, sabre, broadsword,
-  bat, nailbat, spikedbat, baton, stunbaton, golfclub, prybar, hammer, sledge, fireaxe, hatchet, tomahawk, pickaxe, etool,
+  bat, nailbat, spikedbat, baton, stunbaton, golfclub, hockeystick, prybar, hammer, sledge, fireaxe, hatchet, tomahawk, pickaxe, etool,
   pipespear, spear, compbow, pulleybow, crossbow, xbow,
   vest, plate, tacvest, tirevest, scrapvest, sportspads, padding, shinguards, kneeguards, riotarms, riotlegs,
-  hardhat, footballhelmet, bikehelmet, riothelmet, milhelmet, rivethelmet, highcut, ballvisor, riotvisor, nvgmount,
+  hardhat, footballhelmet, goaliemask, bikehelmet, riothelmet, milhelmet, rivethelmet, highcut, ballvisor, riotvisor, nvgmount,
   ceramicplate, steelplate, softinsert, kevlarkit,
   backpack, slingbag, assaultpack, hikingpack, rucksack, duffle, chestrig, makeshiftrig, riflecase, pistolcase, bicycle,
 };

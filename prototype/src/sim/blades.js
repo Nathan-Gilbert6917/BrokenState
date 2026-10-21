@@ -10,6 +10,7 @@
 import { hash01 } from "./skills.js";
 import { lootItem } from "./inventory.js";
 import { siteSource, areaSource, traderSource } from "./itemcond.js";
+import { ROWS, mergeRows } from "./data-shops.js";
 
 export const BLADE_FINDS = {
   town: { p: 0.05, items: { pocketknife: 3, flipknife: 1.5, lockback: 1.5, multitool: 1, boxcutter: 1, balisong: 0.6, steakknife: 2, cleaver: 0.8, bowie: 0.4, cutlass: 0.08, sabre: 0.06 } },
@@ -21,7 +22,7 @@ export const BLADE_FINDS = {
   diner: { p: 0.05, items: { steakknife: 3, cleaver: 2, filletknife: 1 } },
   hardware: { p: 0.05, items: { multitool: 2, boxcutter: 3, lockback: 1, pocketknife: 1 } },
   gunstore: { p: 0.07, items: { huntknife: 2, bowie: 1.5, survivalknife: 1, lockback: 1, bayonet: 0.6 } },
-  pawnshop: { p: 0.07, items: { huntknife: 1.5, bowie: 1, survivalknife: 1.5, lockback: 1.5, bayonet: 0.5 } }, // gunshops.js
+  pawnshop: { p: 0.07, items: { huntknife: 1.5, bowie: 1, survivalknife: 1.5, lockback: 1.5, bayonet: 0.5 } }, // shops.js
   police: { p: 0.03, items: { flipknife: 1.5, balisong: 1, shiv: 0.3 } }, // the evidence lockers
   prison: { p: 0.05, items: { shiv: 3, flipknife: 0.5 } },
   military: { p: 0.05, items: { bayonet: 2, survivalknife: 1 } },
@@ -45,7 +46,7 @@ export const AREA_BLADES = {
   farmhouse: { p: 0.04, items: { pocketknife: 2, huntknife: 1, steakknife: 1, bowie: 0.4, cleaver: 0.5 } },
   kitchen: { p: 0.08, items: { steakknife: 3, cleaver: 2, filletknife: 1 } },
   store: { p: 0.03, items: { pocketknife: 1, boxcutter: 2, multitool: 1, lockback: 0.5 } },
-  hardware: { p: 0.05, items: { multitool: 2, boxcutter: 3, lockback: 0.6, pocketknife: 1 } }, // gunshops.js
+  hardware: { p: 0.05, items: { multitool: 2, boxcutter: 3, lockback: 0.6, pocketknife: 1 } }, // shops.js
   garage: { p: 0.03, items: { multitool: 1.5, boxcutter: 1.5, pocketknife: 1 } },
   workshop: { p: 0.03, items: { boxcutter: 2, multitool: 1 } },
   warehouse: { p: 0.03, items: { boxcutter: 3 } },
@@ -112,3 +113,6 @@ export function scavBlade(siteType, tag) {
   if (!site || hash01(...tag, "blade") >= Math.min(1, site.p * BLADE_SCAV)) return null;
   return pick(site.items, hash01(...tag, "bladepick"));
 }
+
+// data-shops.js: the town's and the city's shops and services (their rows; this module's own rows win).
+mergeRows(BLADE_FINDS, ROWS.BLADE_FINDS); mergeRows(AREA_BLADES, ROWS.AREA_BLADES);

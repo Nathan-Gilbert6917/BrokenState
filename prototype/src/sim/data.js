@@ -17,6 +17,7 @@ import { NL_GEAR } from "./data-nonlethal.js"; // tasers, cartridges, pepper spr
 import { SURV_ITEMS } from "./data-survival.js"; // survival gear: tools, armour against teeth, lights, a rig, a jump bag, a rangefinder (survival.js: where they turn up)
 import { BED_GEAR } from "./data-beds.js"; // beds as furniture: cots, beds, bunk beds, large beds (beds.js)
 import { BOX_GEAR, BOX_PATCH } from "./data-boxes.js"; // cash boxes, fire safes, toolboxes, equipment cases; the gun cases as boxes (boxes.js)
+import { NEW_KINDS } from "./data-shops.js"; // the shops and services new as places (their LOCATIONS rows)
 
 // Travel time a tile, in hours (parties.js moveCost): on foot an hour a tile whatever the ground; a car half an hour
 // off-road and a quarter of an hour on a road or a bridge (ROAD_COST); mountains are closed to cars.
@@ -142,8 +143,9 @@ export const GEAR = {
   padding:    { burnShare: 0.9, name: "Magazine arm guards",      slot: "arms",   skill: null,       power: 0.6, req: 0, value: 3,  noise: 0, makeshift: true, dur: 12, desc: "Magazines and duct tape around the forearms. Stops a bite, barely.", weight: 0.8, cat: "armor" },
   shinguards: { name: "Duct-tape shin guards",    slot: "legs",   skill: null,       power: 0.4, req: 0, value: 2,  noise: 0, makeshift: true, dur: 12, desc: "Cut-up plastic bottles and tape around the shins.", weight: 0.6, cat: "armor" },
   tirevest:   { name: "Tire-rubber vest",         slot: "armor",  skill: null,       power: 1,   req: 0, value: 8,  noise: 0, makeshift: true, dur: 25, desc: "Strips of tire rubber laced into a vest.", weight: 5, cat: "armor" },
-  sportspads: { name: "Football pads",            slot: "armor",  skill: null,       power: 0.8, req: 0, value: 8,  noise: 0, makeshift: true, dur: 20, desc: "Found, not made: shoulder pads from a school locker (the helmet is a separate piece).", weight: 3, cat: "armor" },
-  footballhelmet: { name: "Football helmet",      slot: "head",   skill: null,       power: 0.4, req: 0, value: 4,  noise: 0, makeshift: true, dur: 15, desc: "Found, not made: a school football helmet. Cracks eventually.", weight: 1.5, cat: "armor" },
+  sportspads: { name: "Football pads",            slot: "armor",  skill: null,       power: 0.8, req: 0, value: 8,  noise: 0, makeshift: true, dur: 20, desc: "Found, not made: shoulder pads from a school locker or a sporting goods store (the helmet is a separate piece).", weight: 3, cat: "armor" },
+  footballhelmet: { name: "Football helmet",      slot: "head",   skill: null,       power: 0.4, req: 0, value: 4,  noise: 0, makeshift: true, dur: 15, desc: "Found, not made: a football helmet from a school or a sporting goods store. Cracks eventually.", weight: 1.5, cat: "armor" },
+  goaliemask: { name: "Goalie mask",              slot: "head",   skill: null,       power: 0.5, req: 0, value: 6,  noise: 0, makeshift: true, dur: 18, desc: "A hockey goalie's moulded mask with a cage over the eyes: light, stops a bite to the face. From a sporting goods store.", weight: 0.9, cat: "armor" }, // data-shops.js: the sporting goods store
   scrapvest:  { name: "Scrap plate vest",         slot: "armor",  skill: null,       power: 1.8, req: 0, value: 25, noise: 0, makeshift: true, dur: 60, desc: "Steel plates riveted onto a work jacket. Heavy but solid.", weight: 7, cat: "armor" },
   bandagekit: { name: "Bandage and splint kit",   slot: "tool",   skill: "medicine", power: 1,   req: 0, value: 8,  noise: 0, makeshift: true, dur: 5,  medKit: 2, small: true, desc: "Boiled rags, tape and splints: +2 Medicine when treating (at a base, in the field or in battle). Each treatment uses it up a little.", weight: 0.5, cat: "medical" },
   crowbar:    { name: "Crowbar and lockpicks",    slot: "tool",   skill: "scavenging", power: 1, req: 0, value: 6,  noise: 0, makeshift: true, dur: 30, bonus: { scavenging: 2 }, desc: "Opens locked doors and cabinets: +2 Scavenging for base scavenging.", weight: 2, cat: "tools" },
@@ -494,7 +496,7 @@ export const LOCATIONS = {
   pharmacy:    { name: "Pharmacy",           glyph: "Rx", cat: "urban", danger: 2, loot: { meds: 6, water: 1, food: 1 }, gear: ["bandagekit", "dewormer"], richness: 0.8, known: "public" },
   supermarket: { name: "Supermarket",        glyph: "S",  cat: "urban", danger: 2, loot: { food: 6, water: 4, meds: 0.4, scrap: 1, preserved: 1.5, jars: 0.5 }, gear: ["knife", "slingbag"], richness: 0.95, known: "public" },
   gunstore:    { name: "Gun store",          glyph: "Gu", cat: "urban", danger: 2, gearRate: 1.8, loot: { ammo: 6, scrap: 1 }, gear: ["pistol", "shotgun", "huntrifle", "vest", "kneeguards", "revolver", "leverrifle", "compbow", "xbow", "ghillie", "camonet", "binoculars", "spotscope", "monocular", "pistol22", "compact9", "pistol45", "rifle22", "dbshotgun", "combatknife", "tomahawk", "kukri"], richness: 0.85, known: "public" },
-  hardware:    { name: "Hardware store",     glyph: "H",  cat: "urban", danger: 2, loot: { scrap: 7, parts: 3, fuel: 0.3 }, gear: ["machete", "crowbar", "kneeguards", "flashlight", "bicycle", "prybar", "sledge", "fireaxe", "barbedwire", "beartrap", "sandbags", "binoculars", "hatchet", "hammer", "pickaxe", "boards", "toolbox"], richness: 0.8, known: "public" }, // gunshops.js: the builder's and the crafter's shop (was scrap 5, parts 2)
+  hardware:    { name: "Hardware store",     glyph: "H",  cat: "urban", danger: 2, loot: { scrap: 7, parts: 3, fuel: 0.3 }, gear: ["machete", "crowbar", "kneeguards", "flashlight", "bicycle", "prybar", "sledge", "fireaxe", "barbedwire", "beartrap", "sandbags", "binoculars", "hatchet", "hammer", "pickaxe", "boards", "toolbox"], richness: 0.8, known: "public" }, // shops.js: the builder's and the crafter's shop (was scrap 5, parts 2)
   apartments:  { name: "Apartment block",    glyph: "Ap", cat: "urban", danger: 2, loot: { food: 3, water: 2, meds: 0.5, scrap: 2, ammo: 1, jars: 0.5 }, gear: ["knife", "pistol", "bikehelmet", "backpack", "bicycle", "bat", "revolver", "slingbag", "compact9", "hammer", "golfclub"], richness: 0.8, known: "public" },
   office:      { name: "Office tower",       glyph: "O",  cat: "urban", danger: 2, loot: { scrap: 3, water: 2, parts: 1, meds: 0.4 }, gear: ["slingbag", "fireaxe"], richness: 0.6, known: "public" },
   school:      { name: "School",             glyph: "Sc", cat: "urban", danger: 2, loot: { food: 3, water: 2, meds: 0.5, scrap: 2, jars: 0.25 }, gear: ["sportspads", "footballhelmet", "backpack", "bicycle", "bat", "slingbag", "fireaxe"], richness: 0.6, known: "public" },
@@ -754,3 +756,6 @@ export const GEAR_DUR = {
   surgkit: 40, fishrod: 60, fishnet: 40, camonet: 60, stove: 80, ghillie: 20, ragboots: 14,
 };
 for (const [k, v] of Object.entries(GEAR_DUR)) if (GEAR[k] && !GEAR[k].dur) GEAR[k].dur = v;
+
+// data-shops.js: the town's and the city's shops and services (their rows; this module's own rows win).
+for (const [k, d] of Object.entries(NEW_KINDS)) if (!LOCATIONS[k]) LOCATIONS[k] = d.site;
