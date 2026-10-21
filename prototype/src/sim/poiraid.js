@@ -27,6 +27,7 @@ import {
   poisOf, poiAt, knownPois, poiName, poiPool, poiBand, poiBandName, poiVisitText, poiThreatEstimate, poiThreatText, raidingNow,
   bestKnownPoi, poiScore, permanentSite, morePoisHidden, isSitePoi,
 } from "./pois.js";
+import { franchiseName } from "./shops.js"; // a franchise's name (a POI's poi.v)
 
 /** Does a raid on this tile go into one of its points of interest (not a site that stands for a while, not open ground)? @param {any} t */
 export const poiTileRaid = (t) => !!t && poisOf(t).length > 0 && !(t.loc && !permanentSite(t));
@@ -147,7 +148,8 @@ export function poiPlace(t, i) {
   const list = entry ? (Array.isArray(entry) ? entry : entry.list) : null;
   if (!list || !list.length) return null;
   const [key, name] = Array.isArray(list[0]) ? list[0] : [list[0], null];
-  return { id: `poi${i}:${key}`, key, name: name || (BUILDINGS[key] ? BUILDINGS[key].name : LOCATIONS[poi.kind].name) };
+  // shops.js: a franchise's name and layout (variant; a POI saved before franchises keeps its old building)
+  return { id: `poi${i}:${key}`, key, name: poi.v ? franchiseName(poi.kind, poi.v) : name || (BUILDINGS[key] ? BUILDINGS[key].name : LOCATIONS[poi.kind].name), ...(poi.v ? { variant: poi.v, kind: poi.kind } : {}) };
 }
 
 // The tile's scavenge text for the panels: "3 places known, possibly more unknown" ("" off a POI tile).

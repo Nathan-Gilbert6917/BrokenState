@@ -32,6 +32,7 @@
 import { CELL, active, los, combatants } from "./combat.js";
 import { smokeScreens, SMOKE } from "./throwables.js"; // a smoke grenade's cloud screens someone running away
 import { raidRange, legacyRaids } from "./worldcfg.js"; // the run's dials: Raid map smallest / largest; an older save's old sizes
+import { NEW_KINDS } from "./data-shops.js"; // the shops and services new as places: their raid map sizes
 
 export const SIZE_CLASSES = {
   S: { w: 24, h: 18, name: "Small" },
@@ -382,3 +383,6 @@ export const raidHeatRate = (w, h) => clamp(Math.pow(1 / bigGrowth(w, h), BIG.HE
 export const raidLootShare = (w, h) => clamp(Math.pow(1 / bigGrowth(w, h), BIG.LOOT_EXP), BIG.LOOT_MIN, 1);
 // The containers a room of w × h holds.
 export const roomBoxes = (rng, w, h) => Math.max(2, Math.round(((w - 2) * (h - 2)) / RAID.BOX_AREA) + rng.int(0, 1));
+
+// data-shops.js: the town's and the city's shops and services (their rows; this module's own rows win).
+for (const [k, d] of Object.entries(NEW_KINDS)) if (SIZES.SITE[k] == null) SIZES.SITE[k] = d.size;

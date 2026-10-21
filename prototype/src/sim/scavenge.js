@@ -44,7 +44,7 @@ import { gunMags } from "./carrykit.js"; // a found gun's spare magazines
 import { siteSource } from "./itemcond.js";
 import { foundFill } from "./gunrounds.js";
 import { rollSiteGuns } from "./gunfinds.js"; // the arsenal of 2026-10-10 (its own dice)
-import { rollShopShelves, rollShopSupplies } from "./shopshelves.js"; // a gun store's or a pawn shop's shelves as a POI (gunshops.js)
+import { rollShopShelves, rollShopSupplies } from "./shopshelves.js"; // a gun store's or a pawn shop's shelves as a POI (shops.js)
 import { swapGun } from "./gundist.js"; // the gun distribution: which gun a site's gear list yields
 import { rollTentFind } from "./tents.js"; // tent bags (their own dice)
 import { rollFind, rollHuntFind, rollLightFind, rollCartFind, rollSiteWood, rollBuildmat, rollSiteArrows, rollGunmodFind, rollAnyModFind, sortParts, rollSiteGrenades, rollSiteLaunchers, rollSiteReload } from "./loot.js";

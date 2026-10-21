@@ -33,6 +33,7 @@
 // outbreak it can still be found), shopOnly (only shops have it: a new lot is as old as the outbreak), moodLift (a meal: wave 2's mood ladder), desc.
 import { Rng } from "./rng.js";
 import { cfgOf } from "./worldcfg.js"; // the run's dials: Food spoilage
+import { ROWS, mergeRows } from "./data-shops.js";
 
 export const DAY_KCAL = 2000;
 // Stable food (shelf ≥ STABLE_DAYS) needs no cold room: it sits in any dry corner (storage.js). The rest fills the
@@ -895,3 +896,6 @@ export function migrateFood(state) {
   for (const j of (state.jobs && state.jobs.list) || []) if (j.reward && j.reward.supplies) migrateHolder(j.reward.supplies, { freshMix: "stores", presMix: "keeps" });
   for (const r of state.abandoned || []) if (r.stock) migrateHolder(r.stock, { freshMix: "stores", presMix: "keeps" }); // groupworld.js: bases standing empty
 }
+
+// data-shops.js: the town's and the city's shops and services (their rows; this module's own rows win).
+mergeRows(SITE_MIX, ROWS.SITE_MIX); mergeRows(AREA_MIX, ROWS.AREA_MIX); mergeRows(SHOP_FOOD, ROWS.SHOP_FOOD);

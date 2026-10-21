@@ -55,6 +55,7 @@ export const ARMOUR = {
   riotlegs:       { ac: 2, dmax: 20, mat: "hard" },
   bikehelmet:     { ac: 1, dmax: 20, mat: "hard" },
   footballhelmet: { ac: 1, dmax: 15, mat: "hard" },
+  goaliemask:     { ac: 1, dmax: 14, mat: "hard" }, // data-shops.js: the sporting goods store
   riothelmet:     { ac: 2, dmax: 25, mat: "hard" },
   milhelmet:      { ac: 3, dmax: 30, mat: "hard" },
   rivethelmet:    { ac: 2, dmax: 16, mat: "steel" }, // a crafted riveted-plate helmet (craft books)
