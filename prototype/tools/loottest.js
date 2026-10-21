@@ -16,7 +16,7 @@ import { TRUCK_GEAR } from "../src/sim/data-guns.js"; // the new military weapon
 import { FLASH_KIT } from "../src/sim/throwables.js"; // the flashbangs and smoke grenades soldiers and guards carry (on their bodies after)
 import { TRUCK_FLASH } from "../src/sim/miltrucks.js";
 import { AREAS, AREA_SETS, KITS, WEAPONS } from "../src/sim/combat.js";
-import { ZOMBIE_FINDS, ZOMBIE_PACKS, ZOMBIE_PACK_STUFF, ZOMBIE_PACK, enemyBody } from "../src/sim/inventory.js";
+import { ZOMBIE_FINDS, ZOMBIE_PACKS, ZOMBIE_PACK_STUFF, ZOMBIE_PACK, ZSURV, enemyBody } from "../src/sim/inventory.js";
 import { WARES } from "../src/sim/trade.js";
 import { BOOK_SITES, WARE_BOOKS } from "../src/sim/skills.js";
 import { RARE_GEAR, TRAVEL_GEAR, MERCHANT_VALUABLES } from "../src/sim/visitors.js";
@@ -260,7 +260,8 @@ for (let i = 0; i < 4000; i++) {
   const body = enemyBody(rng, { kind: "zombie", name: "Z", id: i }, null);
   if (body.gear.backpack) { zpacks++; zitems += body.gear.backpack.contents.filter(Boolean).length; }
 }
-check(Math.abs(zpacks / 4000 - ZOMBIE_PACK) < 0.02, `about ${ZOMBIE_PACK * 100}% of the dead wear a bag (${((zpacks / 4000) * 100).toFixed(1)}%)`);
+const packShare = ZOMBIE_PACK + (1 - ZOMBIE_PACK) * ZSURV.chance * ZSURV.pack; // their own bag, or a former survivor's pack (inventory.js survivorDead)
+check(Math.abs(zpacks / 4000 - packShare) < 0.02, `about ${(packShare * 100).toFixed(1)}% of the dead wear a bag (${((zpacks / 4000) * 100).toFixed(1)}%)`);
 check(zpacks && zitems / zpacks >= 1 && zitems / zpacks <= 3, `with a few things inside (${(zitems / Math.max(1, zpacks)).toFixed(1)} on average)`);
 let rfinds = 0;
 for (let i = 0; i < 3000; i++) { const body = enemyBody(rng, { kind: "human", name: "R", id: i, weapon: "pistol", kit: "raiders" }, KITS.raiders); if (body.pockets.some((it) => it && KITS.raiders.finds.includes(it.key))) rfinds++; }

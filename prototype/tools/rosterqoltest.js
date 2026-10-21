@@ -81,7 +81,8 @@ const allItems = (st) => st.survivors.filter((s) => s.alive).reduce((a, s) => a 
   const best = [a, b, c].sort((x, y) => itemScore(y, y.gear.weapon) - itemScore(x, x.gear.weapon))[0];
   check(best.gear.weapon.key === "ar", `the assault rifle went to someone (${best.gear.weapon.key})`);
   check(res.changed.every((ch) => ch.got.every((g) => g.was == null || itemScore(ch.s, g.item) > itemScore(ch.s, g.was))), "every swap is an upgrade");
-  check(h.armory.filter((it) => it.key === "knife").length >= 2, "the old knives went back to the armory");
+  const belted = [a, b, c].filter((s) => s.gear.melee && s.gear.melee.key === "knife").length; // the melee slot (holsters.js): a knife off the hands is a belt blade now
+  check(h.armory.filter((it) => it.key === "knife").length + belted >= 2 && belted >= 1, `the old knives went back to the armory or onto the belt (${belted} on a belt)`);
   check(a.gear.tool && a.gear.tool.key === "crowbar", "the crowbar went to the scavenger");
   check([a, b, c].every((s) => wornLoad(s) * feelFactor(s) <= BULK.KIT_FELT_MAX + 1e-9), "everyone's kit stays within a Medium load");
   // Nothing better: an empty result for them.

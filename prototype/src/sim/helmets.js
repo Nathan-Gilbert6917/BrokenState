@@ -3,12 +3,16 @@
 //
 // - HELMETS: each helmet's face cover (built in: a motorcycle helmet's visor, a football helmet's cage, a riot helmet's
 //   riot visor), its mounts and how much it muffles your hearing (hearing.js hearRange). Full-shell helmets (motorcycle,
-//   riot, football) have no ear mount: with one on, only earplugs (a pocket item: foam, or the makeshift rag plugs a
-//   crafter makes from a scrap, data.js ragplugs) protect the ears.
+//   riot, football) leave no room over the ears: with one on, only earplugs (foam, or the makeshift rag plugs a crafter
+//   makes from a scrap, data.js ragplugs) protect them.
+// - Ear protection works only in the Ear pro slot (inventory.js EQUIP_SLOTS ears; the user's request 2026-10-21: "add
+//   ear pro slot to put ear plugs and such to prevent deaf. this is now the way to have ear protection work"): plugs,
+//   muffs, electronic defenders or a team headset there; in a pocket, the pack or on the head they do nothing. Helmets
+//   have no ear mount any more (an old save's muffs on one move into the slot: inventory.js ensureInv).
 // - Attachments live in item.mods on the helmet (the field gun parts use: itemLoad, itemValue and saves carry them):
 //   face (a ballistic or riot visor), nvg (night vision goggles, on a combat or high-cut helmet's shroud, or a hard
-//   hat's hobbyist mount), light (a helmet light: a hands-free flashlight, lights.js lightOf), ears (ear muffs,
-//   electronic defenders, a team headset), rail (a hard hat's NVG mount, which opens the nvg slot).
+//   hat's hobbyist mount), light (a helmet light: a hands-free flashlight, lights.js lightOf), rail (a hard hat's NVG
+//   mount, which opens the nvg slot).
 //   helmetFitReason / fitHelmetMod / removeHelmetMod on items; fitHelmetAt / stripHelmetAt / helmetChoices at
 //   inventory locations (no time; not in the middle of a fight).
 // - The face zone (armour.js armourHit): 35% of head hits land on the face. faceOf says what covers it there: nothing
@@ -30,12 +34,12 @@ import { siteSource, areaSource, traderSource } from "./itemcond.js";
 // only, never fogs). mounts: the slots it has. muffle: tiles of hearing it costs (hearing.js).
 /** @type {Record<string, { face: string | null, mounts: string[], muffle: number, fullShell?: boolean }>} */
 export const HELMETS = {
-  hardhat:        { face: null,      mounts: ["face", "rail", "light", "ears"], muffle: 0 },
+  hardhat:        { face: null,      mounts: ["face", "rail", "light"], muffle: 0 },
   footballhelmet: { face: "cage",    mounts: [], muffle: -1, fullShell: true },
   bikehelmet:     { face: "builtin", mounts: [], muffle: -2, fullShell: true },
   riothelmet:     { face: "riot",    mounts: ["light"], muffle: -2, fullShell: true },
-  milhelmet:      { face: null,      mounts: ["nvg", "light", "ears"], muffle: 0 },
-  highcut:        { face: null,      mounts: ["face", "nvg", "light", "ears"], muffle: 0 },
+  milhelmet:      { face: null,      mounts: ["nvg", "light"], muffle: 0 },
+  highcut:        { face: null,      mounts: ["face", "nvg", "light"], muffle: 0 },
   rivethelmet:    { face: null,      mounts: [], muffle: -1 },
 };
 export const MOUNT_NAMES = { face: "Face", nvg: "Night vision", light: "Light", ears: "Ears", rail: "Mount" };
@@ -48,10 +52,7 @@ export const HELMET_ATTACH = {
   nvgmount:    { mount: "rail", fits: ["hardhat"], adds: ["nvg"] },
   nvg:         { mount: "nvg", fits: null }, // the goggles themselves (a thermal monocular is handheld: never on a helmet)
   helmetlight: { mount: "light", fits: null },
-  earmuffs:    { mount: "ears", fits: null },
-  eardef:      { mount: "ears", fits: null },
-  commset:     { mount: "ears", fits: null },
-};
+}; // (ear protection goes in the Ear pro slot, not on a helmet: earSlotReason)
 // The face covers: × on bites and blows to the face; the fog (hearing.js / visorAim).
 export const FACE = {
   SHARE: 0.35, // of head hits, this share land on the face (the rest on the crown)
@@ -65,6 +66,16 @@ const nameOf = (k) => (GEAR[k] ? GEAR[k].name : k);
 export const isHelmet = (key) => !!HELMETS[key];
 export const isHelmetPart = (key) => !!HELMET_ATTACH[key];
 export const isEarKey = (key) => !!(GEAR[key] && GEAR[key].ears);
+// Earplugs (GEAR plugs: foam, rag): the ear protection that goes under any helmet, a pair used up a fight.
+export const isPlugs = (key) => !!(GEAR[key] && GEAR[key].ears && GEAR[key].plugs);
+// Why an item cannot go in the Ear pro slot of person h ("" when it can): ear protection only, and nothing over the
+// ears under a full-shell helmet (inventory.js fitReason). helm: the helmet to judge by instead of h's own.
+export function earSlotReason(item, h = null, helm = undefined) {
+  if (!item || !isEarKey(item.key)) return `Only ear protection goes in the Ear pro slot${item ? ` (not the ${item.name})` : ""}.`;
+  const head = helm !== undefined ? helm : h && h.gear ? h.gear.head : null;
+  if (!isPlugs(item.key) && head && HELMETS[head.key] && HELMETS[head.key].fullShell) return `The ${nameOf(head.key).toLowerCase()} is a full shell: no room for the ${item.name} over the ears (earplugs still fit).`;
+  return "";
+}
 const fitted = (item) => (item && item.mods ? Object.entries(item.mods).filter(([, m]) => m && HELMET_ATTACH[m.key]) : []);
 
 // ---------- what fits ----------
@@ -85,7 +96,6 @@ export function helmetFitReason(helmet, part) {
   if (!a) return `The ${part ? part.name : "that"} does not go on a helmet.`;
   if (a.fits && !a.fits.includes(helmet.key)) return `The ${part.name} does not fit a ${hn}.`;
   const H = HELMETS[helmet.key];
-  if (a.mount === "ears" && H.fullShell) return `The ${hn} is a full shell: no room for anything over the ears (earplugs still work).`;
   const open = new Set(H.mounts);
   for (const [slot, m] of fitted(helmet)) if (slot !== a.mount) for (const x of HELMET_ATTACH[m.key].adds || []) open.add(x);
   if (!open.has(a.mount)) {
@@ -231,33 +241,15 @@ export function helmetLight(s) {
   const h = helmetOf(s);
   return !!(h && h.mods && h.mods.light && h.mods.light.key === "helmetlight");
 }
-// Everything a person carries (worn, the helmet's parts, pockets, pack).
-function carried(s) {
-  const out = [];
-  if (!s || !s.gear) return out;
-  for (const it of Object.values(s.gear)) if (it) out.push(it);
-  const h = helmetOf(s);
-  if (h && h.mods) for (const m of Object.values(h.mods)) if (m) out.push(m);
-  for (const it of s.pockets || []) if (it) out.push(it);
-  for (const it of packOf(s) || []) if (it) out.push(it);
-  return out;
-}
-// The ear protection a person has working: on the head, on the helmet's ear mount, or earplugs carried (pockets or
-// pack). The best of them: { key, item, cut, hear, elec, link } or null.
+// The ear protection a person has working: what is in their Ear pro slot (muffs and headsets not under a full-shell
+// helmet put on over them; worn out, nothing). { key, item, cut, hear, elec, link } or null.
 export function earGearOf(s) {
-  let best = null;
-  const h = headOf(s);
+  const it = s && s.gear ? s.gear.ears : null;
+  const e = it && GEAR[it.key] && GEAR[it.key].ears;
+  if (!e || (it.dur != null && it.dur <= 0)) return null;
   const helm = helmetOf(s);
-  for (const it of carried(s)) {
-    const e = GEAR[it.key] && GEAR[it.key].ears;
-    if (!e || (it.dur != null && it.dur <= 0)) continue;
-    const plugs = !GEAR[it.key].slot || GEAR[it.key].slot === "pack";
-    const onHead = it === h || (helm && helm.mods && helm.mods.ears === it);
-    if (!plugs && !onHead) continue; // muffs and headsets only work worn
-    const v = { key: it.key, item: it, cut: e.cut || 0, hear: e.hear || 0, elec: !!e.elec, link: !!e.link };
-    if (!best || v.cut > best.cut || (v.cut === best.cut && v.hear > best.hear)) best = v;
-  }
-  return best;
+  if (!isPlugs(it.key) && helm && HELMETS[helm.key].fullShell) return null;
+  return { key: it.key, item: it, cut: e.cut || 0, hear: e.hear || 0, elec: !!e.elec, link: !!e.link };
 }
 export const earsOfKey = (key) => {
   const e = key && GEAR[key] && GEAR[key].ears;
@@ -330,7 +322,7 @@ export function rollHeadKit(kind, ...seed) {
   acc = 0;
   const r2 = hash01("earkit", kind, ...seed);
   for (const [k, p] of K.ears) { acc += p; if (r2 < acc) { ears = k; break; } }
-  if (ears && helm && HELMETS[helm].fullShell && GEAR[ears].slot !== "pack") ears = null;
+  if (ears && helm && HELMETS[helm].fullShell && !isPlugs(ears)) ears = null;
   return { helm, ears };
 }
 // combat.js enemyUnit: the unit's helmet (u.helmKey: armour.js enemyPieces makes the piece) and ears (u.earKey).
@@ -357,7 +349,7 @@ export function issueEars(b, f, u) {
   const head = (u.arsArmour || []).find((it) => it && isHelmet(it.key));
   if (head) u.helmKey = head.key;
   const used = (b.arsUsed = b.arsUsed || new Set());
-  const ok = (it) => it && isEarKey(it.key) && !used.has(it) && !(it.dur != null && it.dur <= 0) && !(head && HELMETS[head.key].fullShell && GEAR[it.key].slot !== "pack");
+  const ok = (it) => it && isEarKey(it.key) && !used.has(it) && !(it.dur != null && it.dur <= 0) && !(head && HELMETS[head.key].fullShell && !isPlugs(it.key));
   const it = ((f && f.arsenal && f.arsenal.items) || []).find(ok);
   if (it) { used.add(it); u.earKey = it.key; u.arsArmour = [...(u.arsArmour || []), it]; }
   setEnemyEars(u);
@@ -375,10 +367,8 @@ export function dropHeadgear(u, body, src) {
   }
   if (u.earKey && GEAR[u.earKey]) earsOnBody(body, lootItem(u.earKey, src, [u.id, "ears", u.name]));
 }
-// Ear protection onto a body: on its helmet's ear mount, else on its head, else in a pocket or the pack.
+// Ear protection onto a body: in its Ear pro slot (stow: its own slot first), else in a pocket or the pack.
 export function earsOnBody(body, e) {
-  const helm = body.gear.head;
-  if (helm && isHelmet(helm.key) && !helmetFitReason(helm, e)) { fitHelmetMod(helm, e); return true; }
   if (stow(body, e, "")) return true;
   const i = (body.pockets || []).indexOf(null);
   if (i >= 0) { body.pockets[i] = e; return true; }
