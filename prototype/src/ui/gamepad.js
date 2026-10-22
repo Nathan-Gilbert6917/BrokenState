@@ -38,10 +38,9 @@
 //   padAxes(): { lx, ly, rx, ry, lt, rt }: the sticks with the radial dead zone taken out (0 inside it, rising from
 //               0 at its edge to 1), the triggers 0–1.
 //   padHeld(name): is it down now.  padConnected(): a pad is there.  padGlyph(name): the button as HTML (pad.css).
-//   padList(id, { items, axis, legend, after, leave }): a row (axis "x") or column ("y") of buttons taken by the pad:
-//               the directions move a ring (.pad-focus) between items(), A clicks the one ringed, B (or the items
-//               going) gives the pad back to the layer under it. The battle's orders bar and the tile menu use it
-//               until the menus have focus of their own.
+//   onPadFrame(fn) → off(): fn(top) every frame while a pad is connected (top: the layer taking the pad, or null),
+//               whatever the mode; ui/padnav.js draws or hides its ring by it.
+// The windows, menus and panels (their focus ring, the tile menu, the orders bar) are ui/padnav.js, a layer on this.
 //   PAD: the tunables (dead zone, repeat timing, trigger threshold, hold time).
 import { setInputMode, inputMode, homeMode } from "./inputmode.js";
 
@@ -70,6 +69,9 @@ export const padConnected = () => known;
 export const padAxes = () => ({ ...axes });
 export const padHeld = (name) => { const i = BTN.indexOf(name); return i >= 0 ? down[i] : DIRS.has(name) ? dir.name === name : false; };
 export function onPad(fn) { watchers.add(fn); return () => watchers.delete(fn); }
+const framers = new Set();
+export function onPadFrame(fn) { framers.add(fn); return () => framers.delete(fn); }
+const framed = (T) => { for (const f of framers) try { f(T); } catch (e) { console.error(e); } };
 
 export function claimPad(id, o = {}) {
   const L = { id, on: o.on || null, frame: o.frame || null, legend: o.legend || null, dock: o.dock || null, when: o.when || null, transient: !!o.transient };
@@ -137,7 +139,7 @@ function poll(now) {
   // Back after a gap with no frames is the same: what changed meanwhile was not seen happen, so it is not acted on.
   const off = typeof document !== "undefined" && (document.hidden || (!!document.hasFocus && !document.hasFocus()));
   if (off || gap) {
-    for (let i = 0; i < BTN.length; i++) { if (b[i] && !down[i]) mute[i] = true; if (b[i] !== down[i]) held[i] = false; down[i] = b[i]; }
+    for (let i = 0; i < BTN.length; i++) { if (b[i] && !down[i]) mute[i] = true; if (!b[i]) mute[i] = false; if (b[i] !== down[i]) held[i] = false; down[i] = b[i]; } // let go meanwhile: the next press counts
     if (dir.dx || dir.dy || pushed(b, L)) dir = { dx: 0, dy: 0, at: 0, next: 0, name: "", stale: true };
     if (off) return;
   }
@@ -192,6 +194,7 @@ function poll(now) {
   }
   const T = top();
   if (T && T.frame && inputMode() === "pad") try { T.frame(dt, axes); } catch (e) { console.error(e); }
+  framed(T);
   legendFrame(T);
 }
 
@@ -211,6 +214,7 @@ function lost() {
   dir = { dx: 0, dy: 0, at: 0, next: 0, name: "" };
   axes = { lx: 0, ly: 0, rx: 0, ry: 0, lt: 0, rt: 0 };
   if (inputMode() === "pad") setInputMode(homeMode()); // the cursors and the legend go with it
+  framed(null);
   legendFrame(null);
   lookLater();
 }
@@ -255,63 +259,4 @@ function legendFrame(T) {
   legMeasure = false;
   const hh = html ? `${legEl.offsetHeight}px` : "0px";
   if (dock.style && dock.style.getPropertyValue("--padhints-h") !== hh) dock.style.setProperty("--padhints-h", hh);
-}
-
-// ---------- a row or column of buttons ----------
-// Until menus and windows have focus of their own: the directions move a ring between the buttons items() gives (in
-// their order on the page), A clicks the one ringed, B leaves. The DOM under it may be drawn again at any time (the
-// panels are rebuilt on a refresh), so the ring follows a button by what it does (its data-action and data), not by
-// the node, and is put back on each frame. after(el): called once A has clicked el; return true to keep the list
-// (a tray that opened), anything else gives the pad back. leave(): called when the list goes (B, or nothing left).
-const keyOf = (el) => `${el.dataset.action || ""}|${el.dataset.v || ""}|${el.dataset.g || ""}|${el.dataset.id || ""}|${el.dataset.tile || ""}|${el.dataset.mission || ""}|${el.textContent.trim().slice(0, 40)}`;
-// The ringed button brought into view in the list that scrolls it (a phone's one-row orders bar, a long tile menu),
-// and only there: scrollIntoView would also scroll the map's box (overflow: hidden) and shift the whole map.
-function reveal(el) {
-  for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) {
-    const cs = getComputedStyle(p), sx = /auto|scroll/.test(cs.overflowX) && p.scrollWidth > p.clientWidth, sy = /auto|scroll/.test(cs.overflowY) && p.scrollHeight > p.clientHeight;
-    if (!sx && !sy) continue;
-    const r = el.getBoundingClientRect(), q = p.getBoundingClientRect();
-    if (sx) p.scrollLeft += r.left < q.left ? r.left - q.left - 6 : r.right > q.right ? r.right - q.right + 6 : 0;
-    if (sy) p.scrollTop += r.top < q.top ? r.top - q.top - 6 : r.bottom > q.bottom ? r.bottom - q.bottom + 6 : 0;
-    return;
-  }
-}
-export function padList(id, o) {
-  const st = { key: "", i: 0, gone: false };
-  const items = () => { try { return (o.items() || []).filter((el) => el && el.isConnected); } catch { return []; } };
-  const cur = () => {
-    const xs = items();
-    if (!xs.length) return null;
-    let i = st.key ? xs.findIndex((el) => keyOf(el) === st.key) : -1;
-    if (i < 0) i = Math.max(0, Math.min(xs.length - 1, st.i));
-    st.i = i; st.key = keyOf(xs[i]);
-    return { xs, i, el: xs[i] };
-  };
-  const ring = () => {
-    const c = st.gone ? null : cur();
-    for (const el of Array.from(document.querySelectorAll(".pad-focus"))) if (!c || el !== c.el) el.classList.remove("pad-focus");
-    if (c && !c.el.classList.contains("pad-focus")) { c.el.classList.add("pad-focus"); reveal(c.el); }
-  };
-  const done = () => { if (st.gone) return; st.gone = true; release(); ring(); if (o.leave) o.leave(); };
-  if (o.start) { const xs = items(), i = xs.findIndex(o.start); if (i >= 0) { st.i = i; st.key = keyOf(xs[i]); } }
-  const release = claimPad(id, {
-    transient: true,
-    when: () => !st.gone && items().length > 0,
-    legend: o.legend || (() => [[o.axis === "y" ? "Up Down" : "Left Right", "Choose"], ["A", "Use"], ["B", "Back"]]),
-    dock: o.dock,
-    frame: () => ring(),
-    on: (ev) => {
-      if (ev.type === "up" || ev.type === "hold") return true;
-      const c = cur();
-      if (!c) { done(); return true; }
-      const step = o.axis === "y" ? ev.dy : ev.dx;
-      if (DIRS.has(ev.name) && step) { st.i = (c.i + step + c.xs.length) % c.xs.length; st.key = keyOf(c.xs[st.i]); ring(); return true; }
-      if (ev.type !== "down") return true;
-      if (ev.name === "A") { const el = c.el; el.click(); if (!(o.after && o.after(el) === true)) done(); else ring(); return true; }
-      if (ev.name === "B") { done(); return true; }
-      return o.pass && o.pass(ev) === false ? false : true; // the others: nothing, unless the list lets them through
-    },
-  });
-  ring();
-  return done;
 }

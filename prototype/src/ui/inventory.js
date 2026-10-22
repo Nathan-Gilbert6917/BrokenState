@@ -346,13 +346,13 @@ export const fingerHelp = (desk, extra = "") => (touchUI() && !padMode() ? `Tap 
 // move checks first. An item: sim/inventory.js fitReason (a pocket small things, a holster its gun, a pouch its kind,
 // the pack no pack); in a fight only what can change there (sim/combat.js INV_SLOTS, mirrored), on your side of the
 // hand-over. A stack from the stores: the places of the person it goes to that have room (the mover's own list). Not
-// the load or a swap's way back: a move there can still be refused, and says why. Nothing on a desktop, nor for the
-// ground of a State Map tile or the arms (their lists are the targets, outlined by CSS).
+// the load or a swap's way back: a move there can still be refused, and says why. Nothing on a desktop with a mouse, nor
+// for the ground of a State Map tile or the arms (their lists are the targets, outlined by CSS).
 const FIGHT_KINDS = ["pocket", "pack", "pouch", "weapon", "tool", "carry", "sidearm", "melee", "slung", "ears"];
 const supPlace = (T) => (T.o !== "s" ? null : T.slot === "pocket" ? "pocket" : T.slot === "rig" && T.i != null ? "rig" : T.slot === "pack" ? "pack" : T.slot === "tool" ? "hand" : null);
 function tgtCls(state, ui, loc) {
   const sel = ui.invSel;
-  if (!sel || sel === loc || !ui.inv || !touchUI()) return "";
+  if (!sel || sel === loc || !ui.inv || !(touchUI() || padMode())) return ""; // a controller's A picks and places too (pad.css outlines)
   const T = parseLoc(loc);
   if (T.o !== "s") return "";
   const F = parseLoc(sel);
