@@ -1980,3 +1980,51 @@ button.ppl-idle.on { background: #45380f; color: #ffd166; }
 .arow .atags { flex: none; }
 .acard.outside, .arow.outside { border-color: color-mix(in srgb, var(--danger) 55%, transparent); }
 .storecard .kbar { margin-bottom: 0.3rem; }
+
+/* The POI dialogue's tile map (ui/poipick.js, ui/poimap.js): the tile drawn large, the picked place beside it, the list of places folded at the side. */
+#modal .box.poipick { width: min(72rem, 97vw); }
+.pm-body { display: flex; gap: 0.8rem; align-items: flex-start; margin: 0.6rem 0; }
+.pm-map { position: relative; flex: none; background-size: 100% 100%; background-repeat: no-repeat; }
+.pm-svg { position: absolute; inset: 0; overflow: visible; }
+.pm-route { fill: none; stroke: #f4ead0; stroke-opacity: 0.45; stroke-width: 2; stroke-dasharray: 5 4; stroke-linejoin: round; pointer-events: none; }
+.pm-route.on { stroke: var(--accent); stroke-opacity: 1; stroke-width: 3; stroke-dasharray: none; }
+.pm-chip { opacity: 0.8; pointer-events: none; }
+.pm-chip rect { fill: rgba(20, 22, 26, 0.85); stroke: #f4ead0; stroke-opacity: 0.5; }
+.pm-chip text { fill: #f4ead0; font-size: 10.5px; font-weight: 600; text-anchor: middle; }
+.pm-chip.on { opacity: 1; }
+.pm-chip.on rect { stroke: var(--accent); stroke-opacity: 1; }
+.pm-poi { cursor: pointer; }
+.pm-poi .pm-plate { fill: rgba(0, 0, 0, 0.4); stroke-width: 1.6; }
+.pm-poi:hover .pm-plate, .pm-poi:focus .pm-plate { fill: rgba(224, 168, 79, 0.28); }
+.pm-poi.on .pm-plate { fill: rgba(224, 168, 79, 0.35); stroke: var(--accent) !important; stroke-width: 2.6; }
+.pm-poi.stripped { opacity: 0.6; }
+.pm-poi text { text-anchor: middle; paint-order: stroke; stroke: rgba(10, 10, 12, 0.85); stroke-width: 3px; stroke-linejoin: round; }
+.pm-name { fill: #fff3d6; font-size: 12px; font-weight: 700; }
+.pm-poi.on .pm-name { fill: var(--accent); }
+.pm-mins { fill: #e6e1d3; font-size: 10.5px; }
+.pm-alarm { fill: var(--danger); stroke: #fff; stroke-width: 1.2; }
+.pm-dot { fill: #7fd0ff; stroke: #fff; stroke-width: 2; }
+.pm-pulse { fill: none; stroke: #7fd0ff; stroke-width: 2; animation: pm-pulse 1.6s ease-out infinite; transform-box: fill-box; transform-origin: center; }
+@keyframes pm-pulse { from { transform: scale(0.8); opacity: 0.9; } to { transform: scale(2.2); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .pm-pulse { animation: none; } }
+.pm-youring { fill: none; stroke: #7fd0ff; stroke-width: 2.4; stroke-dasharray: 4 3; }
+.pm-youtxt { fill: #7fd0ff; font-size: 11px; font-weight: 700; text-anchor: middle; paint-order: stroke; stroke: rgba(10, 10, 12, 0.85); stroke-width: 3px; }
+.pm-side { flex: 1 1 14rem; min-width: 12rem; }
+.pm-detail { border: 1px solid var(--accent); border-radius: 8px; padding: 0.6rem 0.7rem; }
+.pm-gos { display: flex; flex-direction: column; gap: 0.35rem; margin-top: 0.6rem; }
+.pm-gos .pm-go { text-align: left; }
+.pm-hint { padding: 0.6rem 0.2rem; }
+.pm-list { flex: none; display: flex; flex-direction: column; gap: 0.35rem; }
+.pm-list.open { width: 19rem; }
+.pm-listbtn.pm-tab { writing-mode: vertical-rl; padding: 0.7rem 0.3rem; }
+.pm-rows { display: flex; flex-direction: column; gap: 0.35rem; max-height: 26rem; overflow-y: auto; }
+.pm-rows .poirow.on { border-color: var(--accent); }
+@media (max-width: 760px) { .pm-body { flex-wrap: wrap; } .pm-map { transform-origin: top left; } }
+.pm-exit { cursor: pointer; pointer-events: bounding-box; } /* the arrow and its minutes one button, the gap between them too */
+.pm-exit circle { fill: rgba(20, 22, 26, 0.75); stroke: #f4ead0; stroke-width: 1.5; }
+.pm-exit path { fill: none; stroke: #f4ead0; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.pm-exit text { fill: #f4ead0; font-size: 10px; font-weight: 600; text-anchor: middle; paint-order: stroke; stroke: rgba(10, 10, 12, 0.85); stroke-width: 3px; }
+.pm-exit:hover circle, .pm-exit:focus circle, .pm-exit.on circle { fill: rgba(224, 168, 79, 0.45); stroke: var(--accent); }
+.pm-poi.still { cursor: default; }
+.pm-bar { height: 0.6rem; background: #22262d; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; margin: 6px 0; }
+.pm-bar > div { height: 100%; background: var(--accent); }

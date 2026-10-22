@@ -28,6 +28,7 @@ import {
   bestKnownPoi, poiScore, permanentSite, morePoisHidden, isSitePoi,
 } from "./pois.js";
 import { franchiseName } from "./shops.js"; // a franchise's name (a POI's poi.v)
+import { poiWalkMins, walkText, startPoiWalk, startExitWalk, exitsOf } from "./poiwalk.js"; // the minutes on foot to each place, the walk there, and out to an edge
 
 /** Does a raid on this tile go into one of its points of interest (not a site that stands for a while, not open ground)? @param {any} t */
 export const poiTileRaid = (t) => !!t && poisOf(t).length > 0 && !(t.loc && !permanentSite(t));
@@ -81,14 +82,17 @@ export function poiRows(state, p, tile = partyTile(p)) {
       visits: poiVisitText(state, t, i), threat: est, threatText: poiThreatText(state, t, i),
       cont: poiContainerNote(state, t, i), raiding: raidingNow(state, t, i), score: poiScore(state, t, i), camp: campText(state, t, i),
       buildings: isSitePoi(t, i) ? buildingOptions(t, state) : null, // the site's buildings and the street (null: one building, or none)
+      mins: p ? poiWalkMins(state, p, i, tile) : 0, // poiwalk.js: on foot from where the team stands (0: it stands there)
     };
   });
 }
 // A row as one line (the card's hint).
-export const poiRowText = (r) => `${r.bandName.toLowerCase()}; ${r.visits}; ${r.threatText}${r.camp ? `; ${r.camp}` : ""}${r.cont ? `; ${r.cont}` : ""}${r.raiding ? "; being raided now by another group" : ""}`;
+export const poiRowText = (r) => `${walkText(r.mins)}; ${r.bandName.toLowerCase()}; ${r.visits}; ${r.threatText}${r.camp ? `; ${r.camp}` : ""}${r.cont ? `; ${r.cont}` : ""}${r.raiding ? "; being raided now by another group" : ""}`;
 
-// The dialogue: a card with a choice per known POI (the browser draws it with ui/poipick.js). Picking one sets p.poi
-// and gives the scavenge order again; "Not now" leaves the team waiting with its queue on hold.
+// The dialogue: a card with a choice per known POI (the browser draws it with ui/poipick.js), each with its minutes on
+// foot from where the team stands (poiwalk.js). Picking one starts the walk there (5–20 minutes on the clock, which
+// stays stopped until the player runs it) and the raid when the team gets there (p.poi set, the scavenge order given
+// again); the place it already stands at goes in at once. "Not now" leaves the team waiting with its queue on hold.
 export function poiPickCard(state, p) {
   const tile = partyTile(p);
   const t = state.tiles[tile];
@@ -96,6 +100,7 @@ export function poiPickCard(state, p) {
   const more = morePoisHidden(state, t, p);
   const go = (st, pick, building = null) => {
     if (!st.parties.includes(p)) return "";
+    if (typeof pick === "number") { const walk = startPoiWalk(st, p, pick, building); if (walk) return walk; } // poiwalk.js: on foot to the place first
     p.poi = pick;
     if (building) p.poiBuilding = building; else delete p.poiBuilding;
     const res = giveOrder(st, p, "scavenge");
@@ -103,7 +108,7 @@ export function poiPickCard(state, p) {
   };
   return {
     title: `Scavenge ${tileLabel(state, tile)}: which place?`,
-    text: `${rows.length === 1 ? "One place is known here" : `${rows.length} places are known here`}${more ? ", possibly more unknown" : ""}. The team goes into one at a time; the rest wait for another order.`,
+    text: `${rows.length === 1 ? "One place is known here" : `${rows.length} places are known here`}${more ? ", possibly more unknown" : ""}. The team goes into one at a time; the rest wait for another order. The minutes are on foot from where the team stands: it walks there, then goes in.`,
     partyId: p.id,
     isOrders: true, // one card per team: a newer orders card replaces it
     poiPick: { tile },
@@ -118,6 +123,13 @@ export function poiPickCard(state, p) {
         }));
       }),
       ...(crawlTile(t) ? [{ label: "Go in block by block (city crawl)", hint: "The block's street of buildings instead of one place: noise raises the Alert, lying low lets it fade.", crawl: true, order: true, ai: () => 0.5, resolve: (st) => go(st, "crawl") }] : []),
+      // Leaving (poiwalk.js): a side of the tile (its arrow on the tile map, ui/poimap.js), or any tile picked on the State
+      // Map (main.js move mode with leavePick: the side its way leaves by). The walk out to that edge comes first.
+      ...exitsOf(state, p, tile).map((x) => ({
+        label: `Leave toward ${tileLabel(state, x.via)}`, hint: x.mins ? `The team walks to this edge of the tile (${x.mins} min from where it stands), then on to ${tileLabel(state, x.via)}.` : `The team stands on this edge: it sets off for ${tileLabel(state, x.via)} at once.`,
+        exit: x.via, mins: x.mins, order: true, ai: () => -3, resolve: (st) => (st.parties.includes(p) ? startExitWalk(st, p, x.via, x.via) : ""),
+      })),
+      { label: "Leave for another tile…", hint: "Pick the tile on the map: the team first walks from where it stands to the edge of this tile on the side its way leaves by (the minutes over the ground here), then on.", leavePick: true, uiAction: { type: "move", partyId: p.id }, ai: () => -3, resolve: () => "" },
       { label: "Not now", hint: "The team waits here for another order (its queue on hold).", cancel: true, ai: () => -2, resolve: (st) => { if (st.parties.includes(p)) awaitOrders(st, p, "The team waits.", { hold: true }); return ""; } },
     ],
   };
