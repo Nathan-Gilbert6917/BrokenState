@@ -21,7 +21,8 @@ import { createWorld, tickHour, hub, atBase, day } from "../src/sim/world.js";
 import { BUILDINGS, CAMP, SHELTER, isCamp, isShelter, tierName, tierUpJob, canBuild, queueBuild, plotCap, baseBeds, farmSlots, gatherRows } from "../src/sim/buildings.js";
 import { partyMembers, partyTile, giveOrder, orderOptions, launchExpedition, planPath, carried } from "../src/sim/parties.js";
 import { roadTeam } from "../src/sim/hardcore-start.js";
-import { strikeCamp, strikeProblem, campOption, settleHub, STAGING } from "../src/sim/staging.js";
+import { strikeCamp, strikeProblem, campOption, settleHub, STAGING, pendingSite, pickSite } from "../src/sim/staging.js";
+import { siteYield, gridSize, landFor } from "../src/sim/basemap.js";
 import { formTeam, addMember, removeMember, setVehicles, editProblem } from "../src/sim/teamform.js";
 import { dropOff, loadFromBase, transferProblem } from "../src/sim/teaminv.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
@@ -41,7 +42,7 @@ const run = (st, h, stop = () => false) => { for (let i = 0; i < h && !stop(); i
 const item = (key) => ({ key, name: GEAR[key].name, quality: 1 });
 
 // ---------- Set up camp: anyone, anywhere; the window opens ----------
-section("Set up camp: a team anywhere sets up a camp (a base) in an hour; the base window opens");
+section("Set up camp: a team anywhere sets up a camp (a base) in three hours on the spot it picks; the base window opens");
 const st = createWorld({ seed: SEED, factionCount: 7, mode: "hardcore" });
 st.noWanderers = true;
 const p = roadTeam(st);
@@ -55,15 +56,24 @@ const opt = campOption(st, p);
 check(opt && opt.label === "Set up camp" && !opt.disabled && orderOptions(st, p).some((o) => o.mission === "camp"), "Set up camp is on the team's orders (and the right-click menu, the team panel)");
 st.cards.length = 0;
 giveOrder(st, p, "camp");
-check(p.phase === "task" && p.task.type === "pitch" && p.task.hours === TENTS.PITCH_FULL, `the work first, nothing carried needed: half the hour with the hardcore start's tent bags (tents.js; ${p.task && p.task.hours}h)`);
-run(st, 2, () => st.bases.length > 0);
+check(p.phase === "task" && p.task.type === "pitch" && p.task.hours === CAMP.setupHours && CAMP.setupHours === 3, `the work first, nothing carried needed: three hours, tent bags or none (clearing the camp's 10 × 10; ${p.task && p.task.hours}h)`);
+check(Array.isArray(st.siteAsk) && st.siteAsk.includes(p.id) && pendingSite(st) === p, "the team asks where on the tile's map the camp goes (state.siteAsk: the window, ui/campsite.js)");
+const spot = [12, -20];
+check(pickSite(st, p, [999, 0]) !== "" && pickSite(st, p, spot) === "" && !pendingSite(st) && p.campAt.join() === spot.join(), `a spot too near the edge is refused; one in reach is taken (${spot})`);
+const siteGet = siteYield(st, tile, spot).get;
+const stockBefore = { wood: p.cargo.supplies.wood || 0, scrap: p.cargo.supplies.scrap || 0 };
+run(st, 4, () => st.bases.length > 0);
 const camp = st.bases[0];
 check(!!camp && isCamp(camp) && camp.tile === tile && tierName(camp) === "Camp" && camp.type === "hub", `the camp stands: a base, your hub while it is your only one (${camp && tierName(camp)})`);
 check(st.campOpen === camp.id || st.log.some((l) => /set up camp/.test(l.text)), "the base window is asked to open (state.campOpen; main.js opens it on the Camp tab)");
 check(!st.parties.includes(p) && people.every((id) => atBase(st, camp.id).some((s) => s.id === id)), "the team moved in: its people are the camp's");
 check(car && car.loc.kind === "base" && car.loc.baseId === camp.id, "its vehicle is parked at the camp");
-check(camp.armory.some((it) => it.key === "crowbar") && camp.stock.scrap >= 9 && food(camp) >= 30, "what it carried is in the camp's stores and armory");
+check(camp.armory.some((it) => it.key === "crowbar") && camp.stock.scrap >= 9 && food(camp) >= 25, "what it carried is in the camp's stores and armory (less the meals of the three hours)");
 check(!tierUpJob(camp), "a plain camp: nothing building until you queue the step up");
+check(camp.plan && camp.plan.fresh && camp.plan.origin.join() === spot.join() && gridSize(camp) === 250, `the camp stands where it was put on its 250 × 250 map (${camp.plan && camp.plan.origin})`);
+const cl = camp.land && camp.land.cleared;
+check(!!cl && [[-5, -5], [4, 4], [0, 0], [-5, 4]].every(([x, y]) => cl[`${x},${y}`]) && !landFor(st, camp).list.some((q) => q.k !== "water" && q.cells.some(([x, y]) => x >= -5 && y >= -5 && x < 5 && y < 5)), "its 10 × 10 round the fire is cleared: nothing of the land left in it");
+check(Object.entries(siteGet).every(([k, v]) => (camp.stock[k] || 0) >= v + (stockBefore[k] || 0) - (k === "wood" ? 5 : 1e-9)), `what the land there gave is in its stores (${Object.entries(siteGet).map(([k, v]) => `${v} ${k}`).join(", ") || "nothing"})`);
 check(baseBeds(camp) === CAMP.beds + tentBeds(camp) && tentBeds(camp) === partyCount && farmSlots(camp) === 1 && plotCap(camp, "building") === 0 && plotCap(camp, "utility") === 2, "barebones: bedrolls, one crop plot, no building plot, two utility plot");
 let html = modal(st, { id: camp.id, tab: "camp" });
 check(/class="tabs"/.test(html) && /data-tab="camp"/.test(html) && /data-tab="construction"/.test(html) && !/data-tab="farming"/.test(html) && !/data-tab="defence"/.test(html), "the base window: a Camp tab and only the tabs a camp uses");
@@ -78,10 +88,11 @@ check(!f.error && f.party && partyTile(f.party) === camp.tile && f.party.phase =
 const q = f.party;
 check(atBase(st, camp.id).length === people.length - 2, "the others stay at the camp");
 const foodBefore = food(camp), packed = carried(q, "food"); // whole items: a little over 6 days
-let r = dropOff(st, q, { supplies: { food: 4 } });
-check(r.moved.length && Math.abs(food(camp) - foodBefore - 4) < 1e-6 && Math.abs(carried(q, "food") - (packed - 4)) < 1e-6, `supplies set down in the stores (${r.text})`);
+const give = Math.min(4, Math.floor(packed)); // what the packs took depends on the hour (the day's meals)
+let r = dropOff(st, q, { supplies: { food: give } });
+check(r.moved.length && Math.abs(food(camp) - foodBefore - give) < 1e-6 && Math.abs(carried(q, "food") - (packed - give)) < 1e-6, `supplies set down in the stores (${r.text})`);
 r = loadFromBase(st, q, { supplies: { food: 10 } });
-check(r.moved.length && carried(q, "food") >= 12, `and taken back (${r.text})`);
+check(r.moved.length && carried(q, "food") >= packed - give + 9, `and taken back (${r.text})`);
 const bar = camp.armory.find((it) => it.key === "crowbar");
 r = loadFromBase(st, q, { items: [bar] }, "cargo");
 check(!camp.armory.includes(bar) && q.cargo.gear.includes(bar), "an item taken from the camp's armory into the team's cargo");
@@ -127,7 +138,7 @@ check(!!transferProblem(st, lp.party), "a team away from the camp loads and sets
 // ---------- construction ----------
 section("Construction: the step up's materials and work; the rest greyed with when it opens; a barricade now");
 html = modal(st, { id: camp.id, tab: "construction" });
-check(/Build up into a shelter/.test(html) && /20 scrap|Scrap (\d+\/)?20\b/.test(plain(html)) && /2 building materials|2 buildmat|Building materials (\d+\/)?2\b/.test(plain(html)) && /20 work-hours/.test(html), "the next stage: Build up into a shelter, 20 scrap, 2 building materials, 20 work-hours");
+check(/shelter shack/i.test(html) && /20 scrap|Scrap (\d+\/)?20\b/.test(plain(html)) && /2 building materials|2 buildmat|Building materials (\d+\/)?2\b/.test(plain(html)) && /20 work-hours/.test(html), "the next stage: the Shelter shack, 20 scrap, 2 building materials, 20 work-hours");
 check(/Available once the shelter stands/.test(html) && /Available once it is a base/.test(html), "the later buildings, greyed with when they open (the shelter, the base)");
 check(canBuild(st, camp, "camp_up").ok && !canBuild(st, camp, "hub_up").ok && !canBuild(st, camp, "outpost_up").ok, "the camp's step up is buildable; the shelter's and an outpost's are not");
 camp.stock.scrap = (camp.stock.scrap || 0) + 30; camp.stock.wood = (camp.stock.wood || 0) + 600; // wood: the wooden builds (2026-10-20)

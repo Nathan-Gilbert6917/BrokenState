@@ -572,7 +572,7 @@ section("Losing the hub: with another base, and with none (the exiles)");
     check(B.isShelter(sh3) && B.tierName(sh3) === "Shelter" && B.baseWalls(sh3) === B.SHELTER.walls, "the exiles' camp becomes a shelter (tier 0): no wall strength");
     check(B.placeProblem(sh3, "walls") === "" && !B.canBuild(s3, sh3, "well").ok, "a shelter builds a wall (the Defenses tab: up to a timber palisade) but no well");
     Object.assign(sh3.stock, { scrap: 120, parts: 6, buildmat: 6 }); // hub_up: 100 scrap, 5 building materials (2026-10-09)
-    check(/queued/.test(B.queueBuild(s3, sh3, "hub_up")), "Build up into a base is queued at the shelter");
+    check(/queued/.test(B.queueBuild(s3, sh3, "hub_up")), "the Main house (its step up) is queued at the shelter");
     for (const s of atBase(s3, sh3.id)) s.role = "build";
     for (let i = 0; i < 24 * 8 && B.isShelter(sh3); i++) { tickHour(s3); s3.cards.length = 0; for (const s of atBase(s3, sh3.id)) s.role = "build"; }
     check(!B.isShelter(sh3) && B.tierName(sh3) === "Main hub" && B.baseWalls(sh3) === 0, `the builders build it up into a base, with no wall it did not build (day ${day(s3)})`);

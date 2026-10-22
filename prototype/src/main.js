@@ -78,6 +78,7 @@ import { TEAMFORM_ACTIONS, TEAMFORM_CHANGE, teamFormDrop, teamFormKey, teamFormE
 import { CARRY_ACTIONS, CARRY_CHANGE, carryHtml, askQty, carryKey } from "./ui/carry.js"; // supplies in pockets, packs and arms; the ground; how much to collect
 import { renameBase } from "./sim/basenames.js";
 import { BN_ACTIONS, BN_INPUT, bnKey, nameModalUp } from "./ui/basename.js"; // naming a base you found, renaming any base
+import { CS_ACTIONS, csKey, siteModalUp, siteHover } from "./ui/campsite.js"; // the camp's spot on its tile's 250 × 250 map
 import { stackKey, stackInput, stackWheel, dropPoint } from "./ui/stackmove.js"; // the stack mover: Enter / Esc, the slider live, the wheel, the drop popover
 import { GB_ACTIONS, GB_CHANGE } from "./ui/gunbuilder.js"; // the gun builder
 import { FARM_ACTIONS, FARM_CHANGE } from "./ui/farming.js";
@@ -286,7 +287,7 @@ function blocked() {
   // cardUp (ui/pacing.js): a card that stops the clock by the pause rules, or one opened from the tray.
   const pending = !state.autopilot && (cardUp(state, ui) || !!state.engagement || !!state.trade || !!activeCrawl(state) || !!activeHiveCrawl(state)); // activeCrawl: a city crawl's block card (sim/citycrawl.js); a hive crawl's window (sim/hivecrawl.js)
   return !ui.started || !!state.combat || state.gameOver || !!ui.cardResult || pending ||
-    !!ui.planner || !!ui.routeSetup || ui.radioWith != null || !!ui.caravanPlan || !!ui.survivor || !!ui.memorial || !!ui.baseView || !!ui.zombieLook || !!ui.wcOpen || !!ui.bgEditor || !!ui.inv || !!ui.meet || !!ui.gunb || !!ui.timelapse || !!ui.diary || !!ui.roster || !!ui.settings || !!ui.ledger || !!ui.ask || !!ui.codex || !!ui.carry || nameModalUp(state, ui) || unpackUp(state, ui);
+    !!ui.planner || !!ui.routeSetup || ui.radioWith != null || !!ui.caravanPlan || !!ui.survivor || !!ui.memorial || !!ui.baseView || !!ui.zombieLook || !!ui.wcOpen || !!ui.bgEditor || !!ui.inv || !!ui.meet || !!ui.gunb || !!ui.timelapse || !!ui.diary || !!ui.roster || !!ui.settings || !!ui.ledger || !!ui.ask || !!ui.codex || !!ui.carry || nameModalUp(state, ui) || siteModalUp(state, ui) || unpackUp(state, ui);
 }
 
 // An exception in a frame (a sim tick, the autopilot, drawing) stops the clock and opens the error screen (ui/crash.js),
@@ -946,6 +947,7 @@ const actions = {
     baseSay(deleteSupplyRun(state, j));
   },
   makemedic: (d) => { const s = survivorById(state, Number(d.id)); ui.baseMsg = makeMedic(state, s); if (s && s.location.kind === "base") assignStations(state, baseById(state, s.location.baseId)); }, // a graduated trainee (sim/training.js)
+  "tier-place": (d) => { const b = baseOf(d); if (b) openForJob(state, ui, b, d.type); }, // a step up (sim/buildings.js tierUp): the build map opens with it picked to place or move
   queuebuild: (d) => { const b = baseOf(d), n = b ? b.construction.length : 0; ui.baseMsg = queueBuild(state, b, d.type, { ...(d.mat ? { mat: Number(d.mat) } : {}), ...(d.kind ? { kind: d.kind } : {}) }); if (b && b.construction.length > n) openForJob(state, ui, b, d.type); }, // a building with a footprint: the base map opens to place its outline (ui/basemap.js)
   // Construction tab (sim/buildings.js): a water barrel's next tier, and pulling a building down (asks first: ui/confirm.js) to free its plot.
   "barrel-up": (d) => { ui.baseMsg = queueBarrelUpgrade(state, baseOf(d), Number(d.id)); },
@@ -1387,6 +1389,7 @@ for (const [k, fn] of Object.entries(SG_ACTIONS)) actions[k] = (d) => { if (fn(s
 for (const [k, fn] of Object.entries(BG_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 // Inventory and loot screens (ui/inventory.js).
 for (const [k, fn] of Object.entries(BN_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // ui/basename.js
+for (const [k, fn] of Object.entries(CS_ACTIONS)) actions[k] = (d, ev) => fn(state, ui, d, ev); // ui/campsite.js: the click's place on the picture
 for (const [k, fn] of Object.entries(INV_ACTIONS)) actions[k] = (d, ev) => fn(state, ui, d, ev); // ev: Shift+click on a supply stack (raid search window)
 for (const [k, fn] of Object.entries(TEAMINV_ACTIONS)) actions[k] = (d, ev) => fn(state, ui, d, ev); // ui/teaminv.js
 for (const [k, fn] of Object.entries(TEAMMEET_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // ui/teammeet.js
@@ -2016,6 +2019,7 @@ function showTip(el, e) {
   placeTip(e);
 }
 document.addEventListener("mousemove", (e) => {
+  if (ui.siteFor != null) siteHover(state, ui, e); // ui/campsite.js: the camp's square follows the mouse
   if (held && e.buttons === 0) releaseHold(); // the button was let go where we did not see it (a drop-down, another window)
   if (tipTarget && !touchRecent()) placeTip(e);
 });
@@ -2769,6 +2773,7 @@ window.addEventListener("keydown", (e) => {
   if (controlsKey(ui, e, settingsApi)) { e.preventDefault(); refresh(); return; }
   const t = e.target || {};
   if (stackKey(state, ui, e)) { e.preventDefault(); refresh(); return; } // the stack mover (ui/stackmove.js): Enter moves, Esc cancels, from its number box too
+  if (csKey(state, ui, e)) { e.preventDefault(); refresh(); return; } // the camp's spot (ui/campsite.js): Enter sets up camp there, Esc lets the game pick
   if (bnKey(state, ui, e)) { e.preventDefault(); refresh(); return; } // the naming window (ui/basename.js): Enter names it, Esc keeps the name
   if (t.tagName === "SELECT" || t.tagName === "TEXTAREA" || (t.tagName === "INPUT" && t.type !== "checkbox")) return;
   // A question before an order that cannot be undone (ui/confirm.js) takes the keyboard: Enter yes, Esc cancel.

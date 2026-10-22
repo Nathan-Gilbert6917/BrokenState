@@ -10,7 +10,7 @@
 // plainly, and a parked car that is storage is a container too.
 // moveCarButton: the Move button for a parked car (the base window's Vehicles tab): the map opens with the car picked.
 import { baseById } from "../sim/world.js";
-import { openBaseMap, layoutOf, itemByKey, unplaceItem, baseMapSummary, storeContents, gridOfCell, buildMenu, fittingsIn, hostedItems, neighboursOf, canLink, FOOT, GRID, STEAL, NO_BUILD, landPieceAt, chopToolAt, landWords, bagKindOf, pickFoot, pickName } from "../sim/basemap.js";
+import { openBaseMap, layoutOf, itemByKey, unplaceItem, baseMapSummary, storeContents, gridOfCell, buildMenu, fittingsIn, hostedItems, neighboursOf, canLink, FOOT, STEAL, NO_BUILD, landPieceAt, chopToolAt, landWords, bagKindOf, pickFoot, pickName } from "../sim/basemap.js";
 import { clearOf, pieceWord, CLEAR } from "../sim/basescatter.js"; // the land: a piece's clearing
 import { layoutDone } from "../sim/staging.js"; // Open the build map: the base's ask ends once its map is open
 import { BUILDINGS, demolishRefund, pieceName, ringMat, TENTS, tentKind } from "../sim/buildings.js";
@@ -47,10 +47,11 @@ const refundText = (rec) => { const r = demolishRefund(rec); const t = Object.en
 const PILE_NOTE = "Left outside (weathering, easy to steal)";
 const PILE_TIP = "Goods the base has no room for (sim/basestorage.js): they lie in the open, things wear a little every day (more in rain and snow), and raiders go for the piles first and grab twice as much a turn. Build storage (a storage box, crates, a shed, a storehouse) or park a vehicle here.";
 
+// "12 east and 30 north" of the map's middle (sim/basemap.js originOf: x east, y south).
+const placeWords = ([x, y]) => [x ? `${Math.abs(x)} ${x > 0 ? "east" : "west"}` : "", y ? `${Math.abs(y)} ${y > 0 ? "south" : "north"}` : ""].filter(Boolean).join(" and ");
 // ---------- the base window's tab ----------
 export function baseMapTab(state, b, ui) {
   const sm = baseMapSummary(state, b);
-  const g = GRID[sm.tier === "Camp" ? "camp" : sm.tier === "Shelter" || sm.tier === "Outpost camp" ? "shelter" : sm.tier === "Main hub" ? "hub" : "outpost"];
   const lay = layoutOf(state, b);
   const groups = new Map();
   for (const e of lay) { const k = groupOf(e.it.kind); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(e); }
@@ -58,9 +59,9 @@ export function baseMapTab(state, b, ui) {
     <span class="row"><button class="mini" data-action="bm-open" data-base="${b.id}" data-key="${e.it.key}"${tip(e.at && !e.auto ? "Open the map with it lifted: click where it goes" : "Open the map with it picked: click where it goes")}>${e.at && !e.auto ? "Move" : "Place"}</button>${e.at && !e.auto ? `<button class="mini" data-action="bm-reset" data-base="${b.id}" data-key="${e.it.key}"${tip("Let the game place it again")}>Auto</button>` : ""}</span></div>`;
   let html = `<div class="grid2"><div>
     <h3>The base map</h3>
-    <div class="card small"${tip("Every base has a square map of its own with the base itself in the middle. The map is what a horde or a raid fights over when it reaches the base: where things stand is where they are defended, and the attack comes from any side.")}>
-      <div class="kv"><div>Grid</div><div><b>${sm.grid} × ${sm.grid}</b> cells (${esc(sm.tier.toLowerCase())}: ${2 * g.yard + 4 + 2 * g.out} to ${Math.min(300, 2 * g.cap + 4 + 2 * g.out)})</div>
-      <div>Yard</div><div><b>${sm.yard} × ${sm.yard}</b> in the middle, ${sm.walled ? "walled in: the wall pieces close round the base" : sm.wall.walls + sm.wall.gates ? `<span class="warn">its wall is open</span> (${sm.wall.gap ? `a way in near ${sm.wall.gap[0]}, ${sm.wall.gap[1]}` : "a gap"})` : "with no wall round it yet"}</div>
+    <div class="card small"${tip("Every base has a square map of its own, the same size for a camp as for the main hub, with the base where its camp was set up. The map is what a horde or a raid fights over when it reaches the base: where things stand is where they are defended, and the attack comes from any side.")}>
+      <div class="kv"><div>Grid</div><div><b>${sm.grid} × ${sm.grid}</b> cells${sm.origin[0] || sm.origin[1] ? ` <span class="muted">(the camp fire ${placeWords(sm.origin)} of the middle)</span>` : ""}</div>
+      <div>Yard</div><div><b>${sm.yard} × ${sm.yard}</b> round the camp fire, ${sm.walled ? "walled in: the wall pieces close round the base" : sm.wall.walls + sm.wall.gates ? `<span class="warn">its wall is open</span> (${sm.wall.gap ? `a way in near ${sm.wall.gap[0]}, ${sm.wall.gap[1]}` : "a gap"})` : "with no wall round it yet"}</div>
       <div>On the map</div><div>${sm.items} things: ${sm.byHand} placed by hand, ${sm.items - sm.byHand - sm.off} by the game${sm.off ? `, <span class="danger">${sm.off} left off (no room)</span>` : ""}</div></div>
       <div class="row" style="margin-top:0.5rem"><button class="primary" data-action="bm-open" data-base="${b.id}"${tip("Open the map: the base as a battle would find it, with the buildings going up as outlines. Build anything from its Build list where you click, or pick anything from the lists and click where it goes.")}>Open the base map</button></div>
     </div>

@@ -219,7 +219,7 @@ section("BASE-01: the upgrades on the Overview");
   asShelter(h); rich(h);
   const t = plain(modal(st, h, "overview"));
   check(t.indexOf("⬆ Build up") >= 0 && t.indexOf("⬆ Build up") < t.indexOf("Stock"), "a shelter: Build up at the top of the Overview, before the stock");
-  check(/Build up into a base/.test(t) && /Opens up/.test(t), "the step up's button and what the base opens up");
+  check(/main house/i.test(t) && /Opens up/.test(t), "the step up's button and what the base opens up");
   const st2 = W(), b = hub(st2);
   rich(b); skilled(st2, b);
   addBuilding(b, "infirmary"); addBuilding(b, "bunkhouse");

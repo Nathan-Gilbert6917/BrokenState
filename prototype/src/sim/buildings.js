@@ -334,12 +334,15 @@ export const BUILDINGS = {
   shelves:      { name: "Storage shelves", fit: true, cost: { scrap: 2, wood: 150 }, hours: 4, max: 24, storeKg: STORE_KG.shelves, desc: "Shelving of planks and angle iron, 2 × 1 on the floor of a general building: holds 150 kg of the base's goods (Storage tab), kept under a roof. In a raid it is a store on the map that raiders go for once they are past the wall." },
   lockers:      { name: "Lockers",        fit: true, cost: { scrap: 5, wood: 40 }, hours: 5, max: 12, storeKg: STORE_KG.lockers, desc: "A steel locker on a plank plinth, 1 × 1 on the floor of a general building: holds 100 kg of the base's goods, where the gear goes first (Storage tab). In a raid it is a store on the map." },
   stove:        { name: "Wood stove",     fit: true, as: "cookhouse", cost: { scrap: 8 }, hours: 8, max: 4, desc: "A drum stove with a flue, 1 × 1 on the floor of a general building: a cook fire indoors. It counts as a cook fire (all the game and fish eaten here cooked through, the infected land's greens and roots boiled), so a base with one needs no fire pit in the yard." },
-  // Base tiers (staging.js): a shelter (tier 0) is built up into a base (the hub, tier 1) by its builders. Not a
-  // building: when it is done the shelter becomes a full hub (upgradeShelter).
+  // Base tiers (staging.js): a shelter (tier 0) is built up into a base (the hub, tier 1) by its builders. The step up
+  // is a building placed on the base map (the user's request 2026-10-22: "Remove base upgrade how it is and turn the
+  // next base upgrade into a building to place"; basemap.js FOOT): placed by hand from the Build list (or by the game
+  // where it is not), it goes up like any building, and when it stands the base is the next tier (upgradeShelter)
+  // with it standing where it was put (the base's middle stays the camp fire: basemap.js coreParts). Never pulled down.
   // gather (2026-10-09, user pick): as the outpost camp's, its materials are taken from the stores as they come in.
   // User numbers 2026-10-09: "Upgrading to base 60 hours 100 scrap 5 building materials".
-  hub_up:       { name: "Build up into a base", cost: { scrap: 100, buildmat: 5, wood: 800 }, hours: 60, max: 1, shelterOnly: true, hubOnly: true, tierUp: true, gather: true,
-                  desc: "Turn the shelter into a real base: a main house, a dug well (12 water a day), a cellar, beds for four, 16 building plots and 14 utility plots. A wall it keeps as it stands (Construction, Defenses: upgrade it there). Shelters only. The materials are taken from the stores as they come in; the builders here do the work, never more of it than the materials delivered allow." },
+  hub_up:       { name: "Main house", cost: { scrap: 100, buildmat: 5, wood: 800 }, hours: 60, max: 1, shelterOnly: true, hubOnly: true, tierUp: true, gather: true,
+                  desc: "The shelter's next step, a building you place on the build map (6 × 5, two storeys): when it stands the shelter is a real base: a dug well (12 water a day), a cellar, beds for four, 16 building plots and 14 utility plots. A wall it keeps as it stands (Construction, Defenses: upgrade it there). Shelters only. The materials are taken from the stores as they come in; the builders here do the work, never more of it than the materials delivered allow." },
   // An outpost camp (2026-10-09, user request: "When starting a base it should start as a camp with a progress bar with
   // needed items to upgrade to a more permanent base established"): Build outpost sets up a camp (tier 0, a shelter's
   // rules) and queues this at once. gather: the materials are not paid up front; the job takes them from the camp's
@@ -350,10 +353,10 @@ export const BUILDINGS = {
   // supplies but is the most barebones"; any team, anywhere: Set up camp, staging.js) built up into a shelter: the camp
   // that is your hub (your first home, the exiles' new one). The old staging camp's numbers (user numbers 2026-10-09,
   // "upgrading to shelter 20 hours 20 scrap 2 building materials"); 10 scrap less on ruins (job.cost, tierUpJobFor).
-  camp_up:      { name: "Build up into a shelter", cost: { scrap: 20, buildmat: 2, wood: 200 }, hours: 20, max: 1, campOnly: true, hubOnly: true, tierUp: true, gather: true,
-                  desc: "Turn the camp into a shelter: a shack with a roof behind a scrap barricade, beds for four, a building plot, three utility plots and two crop plots; later the shelter is built up into a base. The materials are taken from the camp's stores as they come in; the builders here do the work, never more of it than the materials delivered allow." },
-  outpost_up:   { name: "Establish the outpost", cost: { scrap: 20, buildmat: 2, wood: 200 }, hours: 20, max: 1, shelterOnly: true, outpostOnly: true, tierUp: true, gather: true,
-                  desc: "Turn the outpost camp into a real outpost: a shack with a roof, a dug spring (3 water a day), 6 building plots and 6 utility plots (walls are built on the Defenses tab). The materials are taken from the camp's stores as they come in (bring them with a team or a supply run); the builders here do the work, never more of it than the materials delivered allow." },
+  camp_up:      { name: "Shelter shack", cost: { scrap: 20, buildmat: 2, wood: 200 }, hours: 20, max: 1, campOnly: true, hubOnly: true, tierUp: true, gather: true,
+                  desc: "The camp's next step, a building you place on the build map (5 × 4): a shack with a roof. When it stands the camp is a shelter: beds for four, a building plot, three utility plots and two crop plots; later the shelter is built up into a base (its Main house). The materials are taken from the camp's stores as they come in; the builders here do the work, never more of it than the materials delivered allow." },
+  outpost_up:   { name: "Outpost house", cost: { scrap: 20, buildmat: 2, wood: 200 }, hours: 20, max: 1, shelterOnly: true, outpostOnly: true, tierUp: true, gather: true,
+                  desc: "The outpost camp's next step, a building you place on the build map (5 × 4): a house with a roof. When it stands the camp is a real outpost: a dug spring (3 water a day), 6 building plots and 6 utility plots (walls are built on the Defenses tab). The materials are taken from the camp's stores as they come in (bring them with a team or a supply run); the builders here do the work, never more of it than the materials delivered allow." },
 };
 Object.assign(BUILDINGS, BED_BUILDINGS); // beds as furniture (data-beds.js, beds.js): set from the stores inside a general building, never queued
 Object.assign(BUILDINGS, POWER_BUILDINGS); // the power grid (data-power.js, electric.js): pieces set from the stores (furniture + set), the panel, the press, the pump, the charger
@@ -546,6 +549,7 @@ export function canDemolish(state, base, id) {
   const b = base && base.buildings.find((x) => x.id === id);
   if (!b) return { ok: false, reason: "That building is gone" };
   if (underAttack(state, base)) return { ok: false, reason: "Not while the base is under attack" };
+  if (BUILDINGS[b.type] && BUILDINGS[b.type].tierUp) return { ok: false, reason: `The ${BUILDINGS[b.type].name.toLowerCase()} is what makes the base what it is: it stays` };
   if (base.construction.some((c) => c.target === id || (BUILDINGS[b.type].family && BUILDINGS[c.type].family === BUILDINGS[b.type].family))) return { ok: false, reason: "An upgrade of it is in the queue" };
   return { ok: true };
 }
@@ -635,7 +639,8 @@ export const baseTier = (base) => (isShelter(base) ? 0 : 1);
 export const CAMP = {
   name: "Camp",
   beds: 0, plots: 1, vision: 1, // plots: its crop plot (CROP_PLOTS.camp). beds: none of its own: its tents (TENTS, tentBeds); until one is up its people sleep rough (morale.js crowding)
-  setupHours: 1,     // Set up camp: an hour of work, no materials (the materials come with the step up)
+  setupHours: 3,     // Set up camp: three hours of work clearing the 10 × 10 round the fire and pitching it (the user's request 2026-10-22: "Increase the time to set up camp to 3 hr"), no materials (the materials come with the step up)
+  tarpHours: 1,      // the tarps and bedrolls on the road (tents.js pitchHours: a band's camp at the day's end, its tent bags quicker)
   // The yard things a camp may build (the most of each; they share its two utility plots). The crafting bench, the
   // water boiler, the cook fire and the drying rack (BASE-03, user request 2026-10-12): camps build them too. The camp's
   // defences (the Defenses tab, 2026-10-19): a stake fence (the wall's first tier), a spike pit, a line of barbed wire.
@@ -667,7 +672,7 @@ export function upgradeShelter(state, base) {
   if (isCamp(base) && base.type === "hub") {
     delete base.camp;
     base.shelterDay = Math.floor(state.hour / 24) + 1;
-    log(state, `${base.name} is a shelter now: a shack with a roof behind a scrap barricade where the camp stood.`, "good");
+    log(state, `${base.name} is a shelter now: its shelter shack stands, a roof over the camp.`, "good");
     campBecameShelter(state, base); // staging.js: hardcore's founding, or the new home's card
     return;
   }
@@ -675,7 +680,7 @@ export function upgradeShelter(state, base) {
   delete base.tier;
   base.fire = undefined;
   base.upgradedDay = Math.floor(state.hour / 24) + 1;
-  log(state, base.type === "outpost" ? `${base.name} is an established outpost now: a shack with a roof, a dug spring and a fence where the camp stood.` : `${base.name} is a real base now: a main house, a dug well, a cellar and a fence where the tarps stood.`, "good");
+  log(state, base.type === "outpost" ? `${base.name} is an established outpost now: its outpost house stands, with a dug spring.` : `${base.name} is a real base now: its main house stands, with a dug well and a cellar.`, "good");
   baseUpgraded(state, base); // staging.js: its card, with Open the build map
 }
 
@@ -1069,7 +1074,7 @@ export function placeProblem(base, type) {
   // A defence for bigger bases (BUILDINGS size, DEF_SIZE): as the base grows, more of them open up.
   if (def.size && !sizeFits(base, def.size)) return opensAt(def.size);
   if (isCamp(base)) {
-    if (!CAMP.build[type]) return type === "hub_up" ? "Build the camp up into a shelter first" : base.type === "outpost" ? "Available once the camp is an outpost (Establish the outpost)" : SHELTER.build[type] ? "Available once the shelter stands (build the camp up first)" : "Available once it is a base (camp → shelter → base)";
+    if (!CAMP.build[type]) return type === "hub_up" ? "Build the camp up into a shelter first (its shelter shack)" : base.type === "outpost" ? "Available once the camp is an outpost (its outpost house)" : SHELTER.build[type] ? "Available once the shelter stands (build the camp up first)" : "Available once it is a base (camp → shelter → base)";
   } else if (isShelter(base) && !SHELTER.build[type]) return "Not at a shelter: build it up into a base first";
   if (def.plot && !plotCap(base, def.plot)) return `A ${tierName(base).toLowerCase()} has no ${PLOT_NAMES[def.plot].toLowerCase()}s`;
   // A fitting (base building 2026-10-19) stands only inside a general building with room on its floor for it.
@@ -1358,7 +1363,6 @@ export function constructionHour(state) {
       noteOutput(state, base, "build", 1, "done");
       if (job.type === "clear") { finishClear(state, base, job); continue; } // basescatter.js: the land cleared, its yield into the stores
       if (job.type === "filltunnel") { finishFill(state, base, job); continue; } // tunnels.js: the tunnel under the walls filled in
-      if (BUILDINGS[job.type].tierUp) { upgradeShelter(state, base); continue; } // the shelter becomes a base
       if (job.target && job.type === "barracks") { // a bunkhouse expanded (BARRACKS_UP); nothing if it was lost meanwhile
         const b = base.buildings.find((x) => x.id === job.target && x.type === "bunkhouse");
         if (b) { b.type = "barracks"; log(state, `${base.name}: a bunkhouse is now a barracks (12 beds).`, "good"); }
@@ -1398,6 +1402,7 @@ export function constructionHour(state) {
       if (spot && nb && nb.id != null) { pinAuto(base, `b:${nb.id}`, spot); if (base.plan && base.plan.autoAt) delete base.plan.autoAt[`c:${job.id}`]; } // basemap.js: it stands where it went up
       carryPlacement(job, nb, base); // basemap.js: where it was placed while it went up, its host, and the doorway links that named the job
       clearUnder(state, base, `b:${nb.id}`); // basemap.js: its ground is cleared (siteWaits saw to it; a piece the game laid over the land)
+      if (BUILDINGS[job.type].tierUp) { upgradeShelter(state, base); continue; } // the step up stands: the camp or shelter is the next tier
       if (job.mat && isPiece(job.type)) nb.mat = job.mat; // a wall piece's material
       log(state, `${isPiece(job.type) ? pieceName(nb) : BUILDINGS[job.type].name} finished at ${base.name}.`, "good");
     }

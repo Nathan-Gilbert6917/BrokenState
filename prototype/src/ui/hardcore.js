@@ -101,7 +101,7 @@ export function campStatusCard(state, p) {
   const heading = p.mission === "establish" && (p.phase === "out" || p.phase === "back") && p.path && p.path.length ? p.path[p.path.length - 1] : null;
   const why = heading == null ? establishProblem(state, at) : null;
   const line = heading != null ? `On the way to set up camp ${esc(tileLabel(state, heading))}.`
-    : why ? `Not here: ${esc(why)}` : `Give the order <b>${ESTABLISH_LABEL}</b> (Orders, below) to set up camp right here (${STAGING.PITCH.hours} hour, nothing carried): a camp is the barest base, and your people live there from the start.`;
+    : why ? `Not here: ${esc(why)}` : `Give the order <b>${ESTABLISH_LABEL}</b> (Orders, below) to set up camp right here (${STAGING.PITCH.hours} hours on the spot you pick on its map, nothing carried): a camp is the barest base, and your people live there from the start.`;
   return `<div class="card small attn campcard">
     <div class="spread"><b>No base yet</b>${stageSteps(-1)}</div>
     <div style="margin-top:0.3rem">${line} Building it up into a shelter takes these brought in, then ${BUILDINGS.camp_up.hours} work-hours by its builders:</div>

@@ -54,9 +54,9 @@ section("The grid by tier");
 {
   const st = world();
   const h = hub(st);
-  check(BM.gridSize(h) === 2 * (BM.GRID.hub.yard + 2 + BM.GRID.hub.out) && BM.gridSize(h) === 168, `a bare hub's grid is ${BM.gridSize(h)} × ${BM.gridSize(h)} (yard ${2 * BM.yardHalf(h)})`);
+  check(BM.gridSize(h) === BM.BASE_GRID && BM.gridSize(h) === 250 && 2 * BM.yardHalf(h) === 2 * BM.GRID.hub.yard, `a bare hub's grid is ${BM.gridSize(h)} × ${BM.gridSize(h)} (yard ${2 * BM.yardHalf(h)})`);
   for (let i = 0; i < 30; i++) addBuilding(h, i % 2 ? "bunkhouse" : "common_room");
-  check(BM.gridSize(h) === 300 && 2 * BM.yardHalf(h) === 2 * BM.GRID.hub.cap, `with 30 buildings it grows to ${BM.gridSize(h)} × ${BM.gridSize(h)} (the yard ${2 * BM.yardHalf(h)}), never past 300`);
+  check(BM.gridSize(h) === 250 && 2 * BM.yardHalf(h) === 2 * BM.GRID.hub.cap, `with 30 buildings its yard grows to ${2 * BM.yardHalf(h)} on the same ${BM.gridSize(h)} × ${BM.gridSize(h)} grid`);
   const core = BM.coreParts(h);
   check(core.every((p) => Math.abs(p.x) <= BM.GRID.hub.core && Math.abs(p.y) <= BM.GRID.hub.core && p.x + p.w <= BM.GRID.hub.core && p.y + p.h <= BM.GRID.hub.core), "the base itself (main house, well, cellar, crates) stands in the middle within its core");
   // A camp (staging.js setupCamp): 40 × 40, the camp itself within 20 × 20.
@@ -67,7 +67,7 @@ section("The grid by tier");
   s2.bases.push(camp);
   check(BM.tierKey(camp) === "camp", "a camp (a tier-0 base with camp: true)");
   if (camp) {
-    check(BM.gridSize(camp) === 40, `a camp's grid is ${BM.gridSize(camp)} × ${BM.gridSize(camp)}`);
+    check(BM.gridSize(camp) === 250, `a camp's grid is ${BM.gridSize(camp)} × ${BM.gridSize(camp)}, as every base's`);
     check(2 * BM.yardHalf(camp) <= 20 && BM.coreParts(camp).every((p) => Math.abs(p.x) <= 4 && Math.abs(p.y) <= 4), `the camp itself (tents round a fire, the cache) within ${2 * BM.yardHalf(camp)} × ${2 * BM.yardHalf(camp)} in the middle`);
     const [W, H] = BM.baseMapSize(s2, camp);
     check(W <= 40 && H <= 40 && W >= 36, `its battle map ${W} × ${H} (the whole grid, less the corners nothing stands in)`);

@@ -131,19 +131,18 @@ console.log("Loot: searches, raid containers, AI raids");
 }
 
 // ---------- 4. setting up camp ----------
-console.log("Set up camp: quicker with bags, beds and storage from the tents");
+console.log("Set up camp: three hours whatever the bags; beds and storage from the tents");
 {
   const st = world();
   const { p, crew } = teamOut(st, 3);
-  check(T.campPitchHours(st, p) === CAMP.setupHours, `no bags: ${CAMP.setupHours} hour`);
+  check(T.campPitchHours(st, p) === CAMP.setupHours && CAMP.setupHours === 3, `no bags: ${CAMP.setupHours} hours`);
   p.cargo.gear.push(newItem("tent2"));
-  const part = T.campPitchHours(st, p);
-  check(part < CAMP.setupHours && part > TENTS.PITCH_FULL, `bags for 2 of 3: ${Math.round(part * 60)} minutes`);
   crew[2].gear.carry = newItem("tent1");
-  check(T.campPitchHours(st, p) === TENTS.PITCH_FULL, `bags for everyone: ${TENTS.PITCH_FULL * 60} minutes`);
+  check(T.campPitchHours(st, p) === CAMP.setupHours, "bags for everyone: still three hours (clearing the camp's 10 × 10 is the work)");
+  check(T.pitchHours(3, 3) === TENTS.PITCH_FULL && T.pitchHours(3, 2) < CAMP.tarpHours && T.pitchHours(3, 0) === CAMP.tarpHours, "on the road the bags still pitch quicker (a band's tarps: an hour down to half an hour)");
   p.mission = "camp";
   const txt = pitchArrive(st, p, "camp");
-  check(p.phase === "task" && p.task.type === "pitch" && p.task.hours === TENTS.PITCH_FULL, `the pitching task takes ${p.task && p.task.hours} hour (${txt})`);
+  check(p.phase === "task" && p.task.type === "pitch" && p.task.hours === CAMP.setupHours, `the pitching task takes ${p.task && p.task.hours} hours (${txt})`);
   p.pitched = true;
   pitchArrive(st, p, "camp");
   const base = st.bases.find((x) => x.tile === p.dest);
@@ -233,7 +232,7 @@ for (const n of [1, 3, 4]) {
   const p = roadTeam(st);
   const bags = T.teamTentBags(st, p);
   check(p && bags.length === TENTS.HARDCORE * partyMembers(st, p).length && bags.every((it) => it.key === "tent1") && (!p.vehicle || bags.every((it) => p.cargo.gear.includes(it))), `${n} on the road: ${bags.length} one-person tent bag${bags.length === 1 ? "" : "s"} (X = ${TENTS.HARDCORE} each)${p && p.vehicle ? ", in the car" : ""}`);
-  check(T.campPitchHours(st, p) === TENTS.PITCH_FULL, "their first camp goes up in half an hour");
+  check(T.campPitchHours(st, p) === CAMP.setupHours, "their first camp takes the three hours, bags or none");
 }
 
 // ---------- 8. AI bands ----------
@@ -259,7 +258,7 @@ console.log("Nomads and raiders: bags carried, pitched at camp");
   const fresh = { kit: "survivalists", wares: [newItem("tent2")], stock: {} };
   giveFood(st, fresh.stock, 20, { f_berries: 1, f_smallgame: 1 }, { rng: st.rng });
   check(T.bandSpoilMult(fresh, true) < 1 && T.bandSpoilMult(fresh, false) === 1 && T.bandSpoilMult({ wares: [], stock: fresh.stock }, true) === 1, `its fresh food keeps better in its pitched tents (×${Math.round(T.bandSpoilMult(fresh, true) * 100) / 100} of the spoiling), not on the road`);
-  check(T.bandPitchSaved(sv, sv.pop) === CAMP.setupHours - TENTS.PITCH_FULL && T.bandPitchSaved(dr, dr.pop) === 0, "a band with bags for everyone walks the half hour its camp saves");
+  check(T.bandPitchSaved(sv, sv.pop) === CAMP.tarpHours - TENTS.PITCH_FULL && T.bandPitchSaved(dr, dr.pop) === 0, "a band with bags for everyone walks the half hour its camp saves");
   check(T.bandTentKit(st, "raiders", "r1", 6).length > 0 && T.sleepersOf(T.bandTentKit(st, "raiders", "r1", 6)) >= Math.round(6 * BAND_TENTS.raiders.share), "raiders from beyond the border carry bags for some of them");
   const same = T.bandTentKit(st, "preppers", "n9", 7).map((i) => i.key).join(), again = T.bandTentKit(st, "preppers", "n9", 7).map((i) => i.key).join();
   check(same === again, "a band's bags come from its own dice (the same band, the same bags)");

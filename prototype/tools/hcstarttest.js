@@ -306,7 +306,7 @@ const campOf = (st) => st.bases.find((b) => b.camp === true) || null;
   const h = hub(st);
   check(!!h && h === camp && !h.camp && isShelter(h) && st.bases.length === 1, `the camp is built up into the shelter (after ${st.hour - t2}h more)`);
   check(h && /Holdout/.test(h.name), `named as a holdout (${h && h.name})`);
-  check(h && h.buildings.length === 0 && st.vehicles.length === 1 && st.vehicles[0].loc.baseId === h.id && st.vehicles[0].id === st.hardcore.start.car, "it starts bare: no buildings; the car they fled in is parked there");
+  check(h && h.buildings.length === 1 && h.buildings[0].type === "camp_up" && st.vehicles.length === 1 && st.vehicles[0].loc.baseId === h.id && st.vehicles[0].id === st.hardcore.start.car, "it starts bare: nothing but its shelter shack (the step up, standing where it went up); the car they fled in is parked there");
   check(!firstHubPending(st) && st.hardcore.start.foundedDay === day(st) && playerTile(st) === h.tile, "the first hub is done, playerTile is the hub");
   check(st.log.some((l) => /set up camp/.test(l.text) && l.kind === "good") && st.log.some((l) => /is a shelter now|camp is a shelter now/.test(l.text)), "the log (and so the timelapse) marks the camp and the founding");
   check(h && atBase(st, h.id).some((s) => s.role === "farm"), "jobs assigned by skill, as a normal start (someone farms)");
@@ -333,8 +333,8 @@ const campOf = (st) => st.bases.find((b) => b.camp === true) || null;
     h.construction.length = 0;
     st.cards.length = 0; st.nameAsk = [];
     const html = renderModal(st, { ...freshUi(), baseView: { id: h.id, tab: "overview" } }) || "";
-    check(/Shelter/.test(html) && /Build up into a base/.test(html) && /data-action="campfire"/.test(html) && /Water source/.test(html), "the base panel shows the stage, the step up (button), the water source and the fire");
-    check(/queued/.test(queueBuild(st, h, "hub_up")), "Build up into a base is queued");
+    check(/Shelter/.test(html) && /main house/i.test(html) && /data-action="campfire"/.test(html) && /Water source/.test(html), "the base panel shows the stage, the step up (button), the water source and the fire");
+    check(/queued/.test(queueBuild(st, h, "hub_up")), "the Main house is queued");
     const t0 = st.hour;
     run(st, 24 * 10, () => !isShelter(h), () => { for (const s of atBase(st, h.id)) s.role = "build"; });
     check(!isShelter(h) && tierName(h) === "Main hub" && baseWalls(h) === 0 && baseVision(h) === 3 && waterProduction(st, h).own > 0 && canBuild(st, h, "walls").ok && tierInfo(st).stage === 2, `the builders build it up into a base in ${((st.hour - t0) / 24).toFixed(1)} days: a well, vision, every building (walls from the Defenses tab)`);
@@ -597,7 +597,7 @@ function views(st, label) {
     for (const [where, html] of cv) if (html != null) probs.push(...scan(html, where));
     check(!probs.length, `with a camp: clean views (${probs.slice(0, 4).join(" | ")})`);
     const ah = cv.map(([, h]) => h || "").join("\n");
-    check(/Open camp/.test(ah) && /Strike camp/.test(ah) && /Build up into a shelter/.test(ah), "the tile panel and the Camp tab show the camp: its step up, Open camp, Strike camp");
+    check(/Open camp/.test(ah) && /Strike camp/.test(ah) && /shelter shack/i.test(ah), "the tile panel and the Camp tab show the camp: its step up, Open camp, Strike camp");
     const { tileTooltip } = await import("../src/ui/render.js");
     check(/\(camp\)/.test(tileTooltip(st, camp.tile)), "the map tooltip on the camp");
   }
