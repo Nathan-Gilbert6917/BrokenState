@@ -139,6 +139,7 @@ import {
 } from "./ui/layout.js";
 import { initPanels, applyLayout, setLogLine, setRailBadges, fitWindows, resetWindows, windowSizes, watchFloating } from "./ui/windows.js";
 import { initTouch, touchGestures, touchRecent } from "./ui/touch.js"; // a finger: tap, long press (a right-click), drag and pinch on the maps
+import { initResponsive } from "./ui/responsive.js"; // phones and tablets: the drawers, the dock, the ⋯ menu, a ✕ on windows (responsive.css)
 import { initLogWindow, syncLogWindow } from "./ui/logwindow.js"; // a raid's log as a small window over the battle map
 import { initOverlays, syncOverlays, resetOverlays } from "./ui/overlaydrag.js"; // the boxes over the map move (drag a header, Alt+arrows)
 import { keepFocusBefore, afterPanelWrite, PANEL_ACTIONS, PANEL_INPUT } from "./ui/panelfold.js"; // the side panels' folds, find box, scroll fades
@@ -255,6 +256,7 @@ initMinimap($("mapwrap"), canvas, options); // ui/minimap.js: the map's corner
 initEdgeFx($("mapwrap"), $("cbmapwrap"), () => refresh(false)); // ui/edgefx.js: the screen-edge warnings
 initOverlays({ refresh: () => { dirtyNow = true; } }); // ui/overlaydrag.js: the boxes over the map keep where the player put them
 initLogWindow($("cblogwin"), $("cbmapwrap"), { refresh: () => { dirtyNow = true; } }); // ui/logwindow.js: the raid's log window (drag, resize, fold)
+initResponsive(); // ui/responsive.js: only while a phone or tablet media query matches
 // The map follows its box whatever changes it (a panel folded or dragged wider, the UI size).
 if (typeof ResizeObserver !== "undefined") {
   new ResizeObserver(() => {
