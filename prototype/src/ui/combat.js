@@ -540,7 +540,7 @@ export function combatTap(state, px, py, always = false) {
   const a = tapProbe(state, px, py);
   if (!a) { // made: and a move's tile picked shows its cost and how to go on
     const u = selUnit(b), fp = cui.facePick;
-    if (cui.mode === "facemove" && fp && u) cui.tapFace = { ...tapAnchor(fp, px, py), key: tapKey(b), html: `<div class="tc-head"><b>Move here</b></div><div class="tc-body">${moveWord(b, u, view(b), fp.x, fp.y)} ${hintFor({ key: `Tap the tile again to go; elsewhere, the way ${esc(u.name.split(" ")[0])} should face there; ✕, another tile.`, pad: `Ⓐ on it again to go; the cursor elsewhere and Ⓐ, the way ${esc(u.name.split(" ")[0])} should face there; Ⓑ, another tile.` })}</div>` };
+    if (cui.mode === "facemove" && fp && u) cui.tapFace = { ...tapAnchor(fp, px, py), key: tapKey(b), html: `<div class="tc-head"><b>Move here</b></div><div class="tc-body">${moveWord(b, u, view(b), fp.x, fp.y)} ${padHtml(hintFor({ key: `Tap the tile again to go; elsewhere, the way ${esc(u.name.split(" ")[0])} should face there; ✕, another tile.`, pad: `Ⓐ on it again to go; the cursor elsewhere and Ⓐ, the way ${esc(u.name.split(" ")[0])} should face there; Ⓑ, another tile.` }))}</div>` };
     return;
   }
   // Attacking the third side already takes two clicks, the first one saying what it costs (sim/thirdside.js).
@@ -593,7 +593,7 @@ function tapFrame(b, cw, ch, bottom) {
   if (!tapEl) return;
   if (!q) { tapEl.hidden = true; tapEl.innerHTML = ""; tapShown = ""; return; }
   const ask = q === cui.tapAsk;
-  const html = `${q.html}<div class="tc-foot"><span class="tc-hint">${ask ? hintFor({ key: "Tap again to confirm", pad: "Ⓐ again to confirm · Ⓑ no" }) : ""}</span><button class="mini tc-no" data-action="cb-tap" data-v="no" data-tip="${ask ? "Not this" : "Pick another tile"}">✕</button><button class="mini tc-go" data-action="cb-tap" data-v="go">${ask ? "Confirm ✓" : "Go ✓"}</button></div>`;
+  const html = `${q.html}<div class="tc-foot"><span class="tc-hint">${ask ? padHtml(hintFor({ key: "Tap again to confirm", pad: "Ⓐ again to confirm · Ⓑ no" })) : ""}</span><button class="mini tc-no" data-action="cb-tap" data-v="no" data-tip="${ask ? "Not this" : "Pick another tile"}">✕</button><button class="mini tc-go" data-action="cb-tap" data-v="go">${ask ? "Confirm ✓" : "Go ✓"}</button></div>`;
   if (html !== tapShown) { tapEl.innerHTML = html; tapShown = html; tapEl.hidden = false; }
   const [X, Y] = tapPoint(q);
   if (ask && cui.hover && cui.hover.x === q.x && cui.hover.y === q.y) { cui.hover.px = X; cui.hover.py = Y; }
@@ -2300,7 +2300,7 @@ cui.barTray = null;
 export function setBarAll(on) { cui.barAll = !!on; try { if (typeof localStorage !== "undefined") localStorage.setItem(BAR_ALL_KEY, on ? "1" : "0"); } catch { /* private mode */ } }
 function endAskHtml(b) {
   const n = unitsWithActions(b);
-  return `<div class="small warn cbmsg cbconfirm"><b>${n} unit${n === 1 ? " still has" : "s still have"} actions</b> — ${hintFor({ key: `press ${esc(keyLabel("battle.endTurn", 1) || "Space")} again or ${esc(keyLabel("battle.confirm", 1) || "Enter")} to end the turn (Esc to keep playing)`, pad: "press Ⓨ again to end the turn (Ⓑ to keep playing)" })}.
+  return `<div class="small warn cbmsg cbconfirm"><b>${n} unit${n === 1 ? " still has" : "s still have"} actions</b> — ${padHtml(hintFor({ key: `press ${esc(keyLabel("battle.endTurn", 1) || "Space")} again or ${esc(keyLabel("battle.confirm", 1) || "Enter")} to end the turn (Esc to keep playing)`, touch: "tap End turn again to end the turn (✕ to keep playing)", pad: "press Ⓨ again to end the turn (Ⓑ to keep playing)" }))}.
     <div style="margin-top:0.3rem"><button data-action="cb-end" data-now="1" data-tip="End the turn now; units with actions left do nothing.">End turn now</button>
     <button data-action="cb-confirm" data-tip="Stop asking: Space and End turn end the turn at once (turn it back on with the checkbox below the log).">Don't ask again</button></div></div>`;
 }
