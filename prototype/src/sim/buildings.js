@@ -639,7 +639,7 @@ export const baseTier = (base) => (isShelter(base) ? 0 : 1);
 export const CAMP = {
   name: "Camp",
   beds: 0, plots: 1, vision: 1, // plots: its crop plot (CROP_PLOTS.camp). beds: none of its own: its tents (TENTS, tentBeds); until one is up its people sleep rough (morale.js crowding)
-  setupHours: 3,     // Set up camp: three hours of work clearing the 10 × 10 round the fire and pitching it (the user's request 2026-10-22: "Increase the time to set up camp to 3 hr"), no materials (the materials come with the step up)
+  fireHours: 1,      // Set up camp: the camp fire's build in work-hours (a ring of stones, a pit); with the clearing of the 5 × 5 round it, the setup's work (staging.js siteSetup; the user's request 2026-10-22: "the time to set up camp is based on build time for campfire and clearing all in the 5x5 zone"), no materials (the materials come with the step up)
   tarpHours: 1,      // the tarps and bedrolls on the road (tents.js pitchHours: a band's camp at the day's end, its tent bags quicker)
   // The yard things a camp may build (the most of each; they share its two utility plots). The crafting bench, the
   // water boiler, the cook fire and the drying rack (BASE-03, user request 2026-10-12): camps build them too. The camp's

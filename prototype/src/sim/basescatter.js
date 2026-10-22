@@ -23,11 +23,11 @@
 //     nothing at all.
 // The land is the tile's in map coordinates (the 250 × 250 map's middle at 0, 0: basemap.js BASE_GRID); a base stands
 // on it at its origin (spec.ox, spec.oy: basemap.js originOf), and landOf hands the pieces back in the base's grid
-// coordinates. A camp set up on a spot of its own (spec.fresh: the user's request 2026-10-22, "choose where in the
-// 250 x 250 with a highlighted 10x10 to start with a clearing at 10 x 10 area to set up camp with a camp fire. Then you
-// can build around that and clear out more as needed. Provide the resources of that area after the process to set up
-// camp is finished") has no yard swept for it and no clearing of its own: its setup clears the SITE square round the
-// fire like any clearing, the yield into its stores (basemap.js clearCampSite), and the rest is cleared as needed.
+// coordinates. A camp set up on a spot of its own (spec.fresh: the user's requests 2026-10-22, "choose where in the
+// 250 x 250 with a highlighted 10x10 to start ... Then you can build around that and clear out more as needed. Provide
+// the resources of that area after the process to set up camp is finished", the square since reduced to 5 × 5) has no
+// yard swept for it and no clearing of its own: its setup clears the SITE square round the fire like any clearing, the
+// yield into its stores (basemap.js clearCampSite), and the rest is cleared as needed.
 //
 // Every piece blocks building on its cells (basemap.js placeProblemAt: "clear it first") until it is cleared: a
 // clearing job (CLEAR: hours of the builders' work and what it gives: a tree its wood, a wreck its scrap and a car
@@ -51,9 +51,23 @@ export const SCATTER = {
 // The clearing in the middle of a new base map (half-size, the square [-h, h)) by tier: a camp's fits its fire, the
 // cache and its starter tents with room to walk; nothing of the land ever stands in it.
 export const CLEARING = { camp: 6, shelter: 8, outpost: 10, hub: 13 };
-// The camp's own spot (the user's request 2026-10-22): its setup clears the HALF × 2 square round the fire (10 × 10),
-// and the spot is picked on the map with that square highlighted (staging.js chooseSite, ui/campsite.js).
-export const SITE = { HALF: 5 };
+// The camp's own spot (the user's requests 2026-10-22: "reduce to 5x5 with camp site in the middle"): its setup clears
+// the SIZE × SIZE square with the fire in its middle cell (grid cells LO to LO + SIZE − 1 each way from the fire), and
+// the spot is picked on the map with that square highlighted (staging.js askSite, ui/campsite.js).
+// NO_TOOL_WOOD (the user's request 2026-10-22: "balance wood yield with and without an axe in the teams inventory when
+// setting up camp"): a team with no axe, saw or machete (staging.js teamChopTool) clears the trees, logs and stumps of
+// its site the slow way (CLEAR.NO_TOOL as long) and gets only this share of their wood: branches and deadfall broken by
+// hand, not logs.
+export const SITE = { SIZE: 5, LO: -2, NO_TOOL_WOOD: 0.25 };
+const WOODY = new Set(["tree", "log", "stump"]);
+/** What clearing a piece of a camp's site gives (clearOf's get, the wood of a tree, a log or a stump cut to NO_TOOL_WOOD with no cutting tool). @param {any} p @param {any} c clearOf(p) @param {boolean} tool */
+export function siteGet(p, c, tool) {
+  const get = { ...c.get };
+  if (!tool && WOODY.has(p.k) && get.wood) get.wood = Math.floor(get.wood * SITE.NO_TOOL_WOOD);
+  return get;
+}
+/** The SITE square round a fire at `at`: { x0, y0, x1, y1 } (half-open). @param {number[]} [at] */
+export const siteBox = (at = [0, 0]) => ({ x0: at[0] + SITE.LO, y0: at[1] + SITE.LO, x1: at[0] + SITE.LO + SITE.SIZE, y1: at[1] + SITE.LO + SITE.SIZE });
 // The land's dressing by terrain: n pieces a chunk (range) and the weights of what they are.
 export const PROFILES = {
   forest:   { n: [2, 4], w: { clump: 4, tree: 3, bush: 3, log: 2, stump: 1, rock: 1 } },

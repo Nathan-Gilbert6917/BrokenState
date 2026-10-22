@@ -28,7 +28,7 @@ let card = campStatusCard(st, p);
 check(/No base yet/.test(card), "no camp: 'No base yet'");
 check(/Establish base/.test(card), "no camp: points at the order");
 check(/Scrap/.test(card) && /Building materials/.test(card) && /Team has/.test(card), "no camp: the supplies and what the team has (the step up's scrap and building materials)");
-check(/3 hours on the spot you pick on its map, nothing carried/.test(card), "setting up takes three hours and nothing carried");
+check(/on the spot you pick on its map: the camp fire built and a 5 × 5 cleared round it/.test(card) && /nothing carried/.test(card), "setting up: the camp fire and a 5 × 5 cleared, nothing carried");
 check(renderExpedition(st, { xpQueue: false, expedition: p.id }, p).includes("campcard"), "the team panel carries the card");
 check(/data-mission="camp"/.test(renderExpedition(st, { xpQueue: false, expedition: p.id }, p)), "the team panel offers Set up camp");
 const was = { mission: p.mission, phase: p.phase, path: p.path };

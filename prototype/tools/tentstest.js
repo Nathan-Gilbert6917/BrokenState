@@ -23,7 +23,7 @@ import { GEAR } from "../src/sim/data.js";
 import { newItem, moveItem, isCarryable, isTwoHands, fitReason } from "../src/sim/inventory.js";
 import { launchExpedition, partyTile, partyMembers } from "../src/sim/parties.js";
 import { CAMP, baseBeds } from "../src/sim/buildings.js";
-import { pitchArrive, strikeCamp, removeCamp, campsHour } from "../src/sim/staging.js";
+import { pitchArrive, strikeCamp, removeCamp, campsHour, campPitchHours, siteSetup } from "../src/sim/staging.js";
 import { storageOf } from "../src/sim/basestorage.js";
 import { storeSpaces } from "../src/sim/storage.js";
 import { createVehicle } from "../src/sim/vehicles.js";
@@ -131,18 +131,18 @@ console.log("Loot: searches, raid containers, AI raids");
 }
 
 // ---------- 4. setting up camp ----------
-console.log("Set up camp: three hours whatever the bags; beds and storage from the tents");
+console.log("Set up camp: the fire and the clearing whatever the bags; beds and storage from the tents");
 {
   const st = world();
   const { p, crew } = teamOut(st, 3);
-  check(T.campPitchHours(st, p) === CAMP.setupHours && CAMP.setupHours === 3, `no bags: ${CAMP.setupHours} hours`);
+  const h0 = campPitchHours(st, p, partyTile(p));
   p.cargo.gear.push(newItem("tent2"));
   crew[2].gear.carry = newItem("tent1");
-  check(T.campPitchHours(st, p) === CAMP.setupHours, "bags for everyone: still three hours (clearing the camp's 10 × 10 is the work)");
+  check(campPitchHours(st, p, partyTile(p)) === h0, `bags for everyone: the same ${h0} hours (the camp fire and clearing its 5 × 5 are the work)`);
   check(T.pitchHours(3, 3) === TENTS.PITCH_FULL && T.pitchHours(3, 2) < CAMP.tarpHours && T.pitchHours(3, 0) === CAMP.tarpHours, "on the road the bags still pitch quicker (a band's tarps: an hour down to half an hour)");
   p.mission = "camp";
   const txt = pitchArrive(st, p, "camp");
-  check(p.phase === "task" && p.task.type === "pitch" && p.task.hours === CAMP.setupHours, `the pitching task takes ${p.task && p.task.hours} hours (${txt})`);
+  check(p.phase === "task" && p.task.type === "pitch" && p.task.hours === h0, `the pitching task takes ${p.task && p.task.hours} hours (${txt})`);
   p.pitched = true;
   pitchArrive(st, p, "camp");
   const base = st.bases.find((x) => x.tile === p.dest);
@@ -232,7 +232,7 @@ for (const n of [1, 3, 4]) {
   const p = roadTeam(st);
   const bags = T.teamTentBags(st, p);
   check(p && bags.length === TENTS.HARDCORE * partyMembers(st, p).length && bags.every((it) => it.key === "tent1") && (!p.vehicle || bags.every((it) => p.cargo.gear.includes(it))), `${n} on the road: ${bags.length} one-person tent bag${bags.length === 1 ? "" : "s"} (X = ${TENTS.HARDCORE} each)${p && p.vehicle ? ", in the car" : ""}`);
-  check(T.campPitchHours(st, p) === CAMP.setupHours, "their first camp takes the three hours, bags or none");
+  check(campPitchHours(st, p, partyTile(p)) === siteSetup(st, p, partyTile(p)).hours, "their first camp takes its fire and clearing, bags or none");
 }
 
 // ---------- 8. AI bands ----------

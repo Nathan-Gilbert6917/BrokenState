@@ -68,7 +68,7 @@ export function describeOrder(state, o) {
     case "wood": return `Cut wood ${huntHours(o)}h${qtyNote(o)}`; // woodcutting.js
     case "snare": return o.mode === "lift" ? "Check and lift the snares" : o.mode === "check" ? "Check the snares" : o.mode === "set" ? "Set snares" : "Snares: set, or check them";
     case "claim": return "Claim this tile"; // claims.js: a marker post, the land counts for the coalition
-    case "pitch": return o.mission === "outpost" ? "Set up the outpost camp" : "Set up camp"; // staging.js pitchArrive (buildings.js CAMP.setupHours); then the camp stands (pitchDone)
+    case "pitch": return o.mission === "outpost" ? "Set up the outpost camp" : "Set up camp"; // staging.js pitchArrive (siteSetup: the fire and the clearing); then the camp stands (pitchDone)
     case "well": return "Dig a well"; // claims.js: on a claim next to one of your bases
     case "fwork": return { load: "Load from the stockpile", unload: "Leave finds at the stockpile", destroy: "Wreck the field work", capture: "Take the field work", loot: "Take their stores there", draw: "Take supplies from the cache", stash: "Leave supplies in the cache", check: "Check the snare line", rob: "Rob their snare line" }[o.act] || "Field work"; // fieldworks.js
     case "listen": { const n = o.net != null ? networkById(state, o.net) : null; return `Listen in${n ? ` on ${n.name}` : ""}`; } // radiolisten.js
@@ -171,7 +171,7 @@ export function queueEstimate(state, p) {
     else if (o.type === "treat") hours = FIELD_TREAT_HOURS;
     else if (o.type === "mission" && o.mission === "survey") hours = SURVEY_HOURS;
     else if (o.type === "fullsurvey" || (o.type === "mission" && o.mission === "fullsurvey")) hours = LOOK.hours; // the POI survey (survey.js)
-    else if (o.type === "mission" && pitchHoursFor(state, o.mission)) hours = pitchHoursFor(state, o.mission, p); // pitching a camp (parties.js; quicker with tent bags: tents.js)
+    else if (o.type === "mission" && pitchHoursFor(state, o.mission)) hours = pitchHoursFor(state, o.mission, p, tile); // pitching a camp (parties.js: the fire and the clearing of the spot, staging.js siteSetup)
     else if (o.type === "sweep" || (o.type === "mission" && o.mission === "sweep")) {
       const sw = sweepEstimate(state, { ...sweepOpts(o.type === "sweep" ? o : p.sweepPlan || {}), center: tile, mode: vehicle, stance: p.stance, fuelMult: paceOpts(p).fuelMult });
       hours = sw.hours;

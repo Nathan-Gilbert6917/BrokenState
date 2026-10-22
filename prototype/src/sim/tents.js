@@ -7,9 +7,8 @@
 //   In arms only, or a cart's bed, the team's cargo (the trunk when it has a vehicle) or a base's armory (inventory.js
 //   isCarryable `arms`; the four-person tent's duffle takes both arms: twoHands).
 //
-// SET UP CAMP (staging.js pitchArrive; parties.js pitchHoursFor for the planner's estimates). campPitchHours: the
-//   three hours of clearing the camp's 10 × 10 and setting it up (buildings.js CAMP.setupHours; the user's request
-//   2026-10-22), bags or none: the clearing is the work. pitchHours: the hour of tarps and bedrolls on the road (a
+// SET UP CAMP (staging.js pitchArrive, siteSetup): the camp fire and the clearing of its 5 × 5, bags or none (the
+//   user's requests 2026-10-22). pitchHours: the hour of tarps and bedrolls on the road (a
 //   band's camp at the day's end, CAMP.tarpHours) comes down to TENTS.PITCH_FULL (30 minutes) when its bags
 //   (teamTentBags: the cargo, what each one carries in the arms, a cart's or a pack's contents) sleep everyone, by the
 //   share they sleep when they sleep only some.
@@ -287,8 +286,6 @@ export function pitchHours(heads, sleepers) {
   if (!(heads > 0) || !(sleepers > 0)) return full;
   return r2(full - (full - TENTS.PITCH_FULL) * Math.min(1, sleepers / heads));
 }
-/** Set up camp's hours for this team (staging.js pitchArrive, parties.js pitchHoursFor): CAMP.setupHours. @param {any} state @param {any} p */
-export const campPitchHours = (state, p) => CAMP.setupHours;
 /** "1 hour", "30 minutes". @param {number} h */
 export const hoursText = (h) => (h >= 1 - 1e-9 && Math.abs(h - Math.round(h)) < 1e-9 ? `${Math.round(h)} hour${Math.round(h) === 1 ? "" : "s"}` : `${Math.round(h * 60)} minutes`);
 // Make camp until dawn (nightmarch.js): the line for the card. "" without people.

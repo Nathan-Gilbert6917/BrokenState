@@ -127,7 +127,7 @@ section("Move a team out: from that base's people and stores, waiting outside, t
     check(opt && !opt.disabled, `Build outpost is on offer with the scrap they carry (${opt && opt.disabled})`);
     const n0 = st.bases.length;
     giveOrder(st, p, "outpost");
-    for (let i = 0; i < 8 && st.bases.length === n0; i++) { tickHour(st); st.cards.length = 0; } // pitching the camp takes 6 hours (parties.js PITCH_HOURS)
+    for (let i = 0; i < 48 && st.bases.length === n0; i++) { tickHour(st); st.cards.length = 0; } // pitching the camp: its fire and the clearing of its 5 × 5 (staging.js siteSetup)
     const ob = st.bases.find((b) => b.tile === site);
     check(st.bases.length === n0 + 1 && ob, "the outpost is founded");
     check(ob && crew.every((s) => s.location.kind === "base" && s.location.baseId === ob.id), "the three live there now");

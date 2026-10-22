@@ -38,8 +38,8 @@ export const TENT_BAGS = ["tent1", "tent2", "tent4"];
 // The rules (tents.js):
 //   PITCH_FULL   hours to pitch a camp on the road (a band's at the day's end, tents.js pitchHours) when its bags sleep
 //                everyone: 30 minutes against the hour of tarps and bedrolls (buildings.js CAMP.tarpHours). Bags that
-//                sleep only some of them: between the two by the share they sleep. (Set up camp is CAMP.setupHours
-//                whatever the bags: clearing its 10 × 10 is the work.)
+//                sleep only some of them: between the two by the share they sleep. (Set up camp is its fire and the
+//                clearing of its 5 × 5 whatever the bags: staging.js siteSetup.)
 //   (Sleeping rough at a base, a camp included, is beds.js's one rule: bedLine, data-beds.js BED_MOOD.rough and
 //                ROUGH_WEATHER. The road's is here.)
 //   ROAD_ROUGH   mood a night for whoever the team's bags do not sleep on the road (nightmarch.js Make camp, orders.js

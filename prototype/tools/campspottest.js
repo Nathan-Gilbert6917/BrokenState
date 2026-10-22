@@ -15,9 +15,10 @@ import { createWorld, tickHour } from "../src/sim/world.js";
 import { BUILDINGS, CAMP, isCamp, isShelter, tierUpJob, queueBuild, canDemolish, constructionHour } from "../src/sim/buildings.js";
 import { partyMembers, partyTile, giveOrder } from "../src/sim/parties.js";
 import { roadTeam } from "../src/sim/hardcore-start.js";
-import { pendingSite, pickSite, campSiteFor } from "../src/sim/staging.js";
+import { pendingSite, pickSite, campSiteFor, siteSetup } from "../src/sim/staging.js";
 import * as BM from "../src/sim/basemap.js";
-import { SITE } from "../src/sim/basescatter.js";
+import { SITE, siteBox, CLEAR, clearOf } from "../src/sim/basescatter.js";
+const clearOfFor = (q) => (clearOf(q, true, "clear") || { get: {} }).get;
 import { renderModal, renderRight } from "../src/ui/ui.js";
 import { CS_ACTIONS, siteModalUp } from "../src/ui/campsite.js";
 
@@ -28,6 +29,7 @@ const section = (t) => console.log(`\n${t}`);
 const t0 = Date.now();
 const ui = (extra = {}) => ({ started: true, speed: 0, tab: "bases", selected: -1, survivor: null, baseView: null, expedition: null, diary: null, roster: null, help: false, ...extra });
 const run = (st, h, stop = () => false) => { for (let i = 0; i < h && !stop(); i++) { st.hordes.length = 0; tickHour(st); st.cards.length = 0; if (st.engagement) st.engagement = null; } };
+const inSite = ([x, y], c = [0, 0]) => { const B = siteBox(c); return x >= B.x0 && y >= B.y0 && x < B.x1 && y < B.y1; }; // the 5 × 5, the fire in its middle
 const inSq = ([x, y], h, c = [0, 0]) => x >= c[0] - h && y >= c[1] - h && x < c[0] + h && y < c[1] + h;
 
 const st = createWorld({ seed: SEED, factionCount: 7, mode: "hardcore" });
@@ -44,21 +46,37 @@ section("The spot: picked on the tile's 250 × 250 map");
   const d = BM.defaultSite(st, tile);
   check(BM.siteProblem(st, tile, d) === "", `the game's own spot takes the camp (${d})`);
   const land = BM.siteLand(st, tile), y = BM.siteYield(st, tile, [0, 0]);
-  const inMid = new Set(land.list.filter((q) => q.k !== "water" && q.cells.some((c) => inSq(c, SITE.HALF))));
-  check(y.n === inMid.size, `what clearing the middle's 10 × 10 takes: ${y.n} things (${Object.entries(y.get).map(([k, v]) => `${v} ${k}`).join(", ") || "nothing"})`);
+  const inMid = new Set(land.list.filter((q) => q.k !== "water" && q.cells.some((c) => inSite(c))));
+  check(SITE.SIZE === 5 && String(Object.values(siteBox([0, 0]))) === "-2,-2,3,3", "the site is 5 × 5 with the fire in its middle cell");
+  check(y.n === inMid.size, `what clearing the middle's 5 × 5 takes: ${y.n} things, ${y.hours} work-hours (${Object.entries(y.get).map(([k, v]) => `${v} ${k}`).join(", ") || "nothing"})`);
+  const noTool = BM.siteYield(st, tile, [0, 0], false);
+  check(noTool.hours >= y.hours && (!inMid.size || [...inMid].every((q) => !["tree", "log", "stump"].includes(q.k)) || noTool.hours > y.hours), `without a cutting tool the trees take longer (${noTool.hours} work-hours against ${y.hours}; × ${CLEAR.NO_TOOL})`);
+  // The axe's balance (SITE.NO_TOOL_WOOD): a forest spot cleared with and without one.
+  const woody = (at) => BM.siteLand(st, tile).list.filter((q) => ["tree", "log", "stump"].includes(q.k) && q.cells.some((c) => inSite(c, at))).length;
+  let fs = null;
+  for (let d = 0; d < 100 && !fs; d += 3) for (const at of [[d, 0], [0, d], [-d, 0], [0, -d]]) if (!fs && !BM.siteProblem(st, tile, at) && woody(at) >= 2) fs = at;
+  if (fs) {
+    const w = BM.siteYield(st, tile, fs, true), wo = BM.siteYield(st, tile, fs, false);
+    const exp = BM.siteLand(st, tile).list.filter((q) => q.k !== "water" && q.cells.some((c) => inSite(c, fs))).reduce((a, q) => { const c = clearOfFor(q); return a + (["tree", "log", "stump"].includes(q.k) ? Math.floor((c.wood || 0) * SITE.NO_TOOL_WOOD) : c.wood || 0); }, 0);
+    check(SITE.NO_TOOL_WOOD === 0.25 && (wo.get.wood || 0) === exp && (wo.get.wood || 0) < (w.get.wood || 0) && wo.hours > w.hours, `with no axe, saw or machete on the team the trees give a quarter of their wood, and take longer (at ${fs}: ${w.get.wood} wood in ${w.hours} work-hours with one, ${wo.get.wood || 0} in ${wo.hours} without)`);
+    const s1 = siteSetup(st, p, tile, fs, true), s2 = siteSetup(st, p, tile, fs, false);
+    check(s1.tool && !s2.tool && s1.hours < s2.hours && (s1.get.wood || 0) > (s2.get.wood || 0), `the team's setup there: ${s1.hours} h for ${s1.get.wood} wood with a cutting tool, ${s2.hours} h for ${s2.get.wood || 0} without`);
+  } else check(true, "(no wooded spot on this tile)");
 }
 
 // ---------- 2. the setup ----------
-section("Setting up camp: three hours, the spot asked for, the 10 × 10 cleared and its yield in the stores");
+section("Setting up camp: the camp fire and the 5 × 5's clearing, the spot asked for, its yield in the stores");
 let camp;
 const spot = [-20, 14];
 {
   const before = { ...p.cargo.supplies };
   giveOrder(st, p, "camp");
-  check(p.task && p.task.type === "pitch" && p.task.hours === CAMP.setupHours && CAMP.setupHours === 3, `the setup takes ${p.task && p.task.hours} hours`);
+  const s0 = siteSetup(st, p, tile);
+  check(p.task && p.task.type === "pitch" && p.task.hours === s0.hours && s0.work === Math.round((CAMP.fireHours + s0.clear) * 10) / 10 && s0.hours === Math.max(0.25, Math.ceil((s0.work / s0.workers) * 4 - 1e-9) / 4), `the setup takes the camp fire (${CAMP.fireHours}) and the default spot's clearing (${s0.clear}) work-hours shared by ${s0.workers}: ${p.task && p.task.hours} hours`);
   check(pendingSite(st) === p && siteModalUp(st, ui()), "the team asks where the camp goes: the window is up (it holds the clock)");
   const html = renderModal(st, ui()) || "";
   check(/Where does/.test(html) && /250 × 250/.test(html) && /campsite-map/.test(html) && /data-action="cs-ok"/.test(html), "the window: the tile's map, the square, Set up camp here");
+  check(/id="cs-hoverinfo"/.test(html) && /Picked:.*to set up \(the camp fire.*shared by \d+ (person|people)\); gives/.test(html.replace(/\n/g, " ")), "it says how long the picked spot takes and what it gives (the hover line says the same for the spot under the mouse)");
   const u = ui();
   renderModal(st, u);
   u.siteSel = [BM.SITE_RANGE + 5, 0];
@@ -66,25 +84,26 @@ const spot = [-20, 14];
   check(pendingSite(st) === p && /edge/.test(u.siteMsg), `a spot off the camp's reach is refused in the window (${u.siteMsg})`);
   check(pickSite(st, p, spot) === "" && !pendingSite(st) && p.campAt.join() === spot.join(), `the spot picked (${spot})`);
   check(campSiteFor(st, p, tile).join() === spot.join(), "and that is where it goes");
-  const land0 = BM.siteLand(st, tile), y = BM.siteYield(st, tile, spot);
-  run(st, 2);
-  check(!st.bases.length, "not up after two hours");
-  run(st, 2, () => st.bases.length > 0);
+  const s1 = siteSetup(st, p, tile, spot);
+  check(p.task.hours === s1.hours, `the work set for that spot: ${s1.hours} hours (${s1.n} things to clear, ${s1.clear} work-hours)`);
+  const land0 = BM.siteLand(st, tile), y = BM.siteYield(st, tile, spot, s1.tool);
+  if (s1.hours >= 2) { run(st, Math.floor(s1.hours) - 1); check(!st.bases.length, `not up before its hours (${Math.floor(s1.hours) - 1}h in)`); }
+  run(st, Math.ceil(s1.hours) + 2, () => st.bases.length > 0);
   camp = st.bases[0];
   check(!!camp && isCamp(camp) && camp.plan.fresh && camp.plan.origin.join() === spot.join(), `the camp stands on its spot (${camp && camp.plan.origin})`);
   const B = BM.gridBox(camp);
   check(B.x1 - B.x0 === 250 && B.y1 - B.y0 === 250 && B.x0 === -125 - spot[0] && B.y1 === 125 - spot[1], `its map round it: ${B.x0}..${B.x1}, ${B.y0}..${B.y1}`);
   const land = BM.landFor(st, camp);
-  check(!land.list.some((q) => q.k !== "water" && q.cells.some((c) => inSq(c, SITE.HALF))), "nothing of the land left in its 10 × 10");
-  check([[-5, -5], [4, 4], [0, 0]].every(([x, yy]) => camp.land.cleared[`${x},${yy}`]), "its 10 × 10 is cleared ground");
+  check(!land.list.some((q) => q.k !== "water" && q.cells.some((c) => inSite(c))), "nothing of the land left in its 5 × 5");
+  check([[-2, -2], [2, 2], [0, 0], [-2, 2]].every(([x, yy]) => camp.land.cleared[`${x},${yy}`]) && !camp.land.cleared["3,3"] && !camp.land.cleared["-3,0"], "its 5 × 5 is cleared ground, the fire in the middle (no more)");
   check(Object.entries(y.get).every(([k, v]) => (camp.stock[k] || 0) + 6 >= v + (before[k] || 0)), `what the land there gave is in its stores (${Object.entries(y.get).map(([k, v]) => `${v} ${k}`).join(", ") || "nothing"}; wood ${Math.round(camp.stock.wood || 0)})`);
-  check(st.log.some((l) => /Clearing its 10 × 10 round the camp fire gave/.test(l.text)), "the log says what the clearing gave");
+  check(st.log.some((l) => /Clearing its 5 × 5 round the camp fire gave/.test(l.text)), "the log says what the clearing gave");
   // The rest of the land is the tile's, where it lies on the map: every piece of it outside the clearing, moved into the camp's grid.
-  const sample = land0.list.filter((q) => q.k !== "water" && q.k !== "wreck" && !q.cells.some((c) => inSq(c, SITE.HALF, spot))).slice(0, 400);
+  const sample = land0.list.filter((q) => q.k !== "water" && q.k !== "wreck" && !q.cells.some((c) => inSite(c, spot))).slice(0, 400);
   const moved = sample.filter((q) => { const [x, yy] = q.cells[0], r = land.pieces.get(`${x - spot[0]},${yy - spot[1]}`); return r && r.k === q.k; });
   check(sample.length > 50 && moved.length === sample.length, `the land round it is the tile's own (${moved.length} of ${sample.length} pieces where they lie on the map)`);
-  const yardLand = land.list.filter((q) => q.k !== "water" && q.cells.every((c) => inSq(c, BM.yardHalf(camp)) && !inSq(c, SITE.HALF)));
-  check(yardLand.length === land0.list.filter((q) => q.k !== "water" && q.cells.every((c) => inSq(c, BM.yardHalf(camp), spot) && !inSq(c, SITE.HALF, spot))).length, `no yard swept for it: the land in its yard beyond the clearing stands (${yardLand.length} things to clear as needed)`);
+  const yardLand = land.list.filter((q) => q.k !== "water" && q.cells.every((c) => inSq(c, BM.yardHalf(camp)) && !inSite(c)));
+  check(yardLand.length === land0.list.filter((q) => q.k !== "water" && q.cells.every((c) => inSq(c, BM.yardHalf(camp), spot) && !inSite(c, spot))).length, `no yard swept for it: the land in its yard beyond the clearing stands (${yardLand.length} things to clear as needed)`);
   check(String(BM.fireSpot(camp)) === "0,0,0" && BM.layoutOf(st, camp).some((e) => e.it.key === BM.FIRE.KEY && String(e.at) === "0,0,0" && !e.auto), "the camp fire in the middle of the clearing, an item on the map");
 }
 
@@ -92,7 +111,7 @@ const spot = [-20, 14];
 section("The camp fire moves in build mode");
 {
   check(!BM.coreParts(camp).some((q) => q.k === "firepit"), "it is not part of the fixed middle (the cache is)");
-  const to = [-3, 3, 0];
+  const to = [-1, 1, 0]; // in the cleared 5 × 5
   check(BM.placeItem(st, camp, BM.FIRE.KEY, to[0], to[1], to[2]) === "" && String(BM.fireSpot(camp)) === String(to), `moved to ${to}`);
   const occ = BM.occupancy(st, camp, null, null);
   check(BM.floorHostAt(occ, 0, 0) === null && BM.itemByKey(st, camp, BM.FIRE.KEY).at.join() === to.join() && BM.placeProblemAt(camp, { ...BM.FIRE.FOOT, key: "x" }, 0, 0, 0, occ) === "" && /Camp fire/.test(BM.placeProblemAt(camp, { ...BM.FIRE.FOOT, key: "x" }, to[0], to[1], 0, occ)), "it stands there now; its old cell is free ground");
@@ -147,7 +166,7 @@ section("Nobody to ask: the game's spot");
   const q = roadTeam(s2), t2 = partyTile(q);
   giveOrder(s2, q, "camp");
   check(!pendingSite(s2), "on autopilot no window asks");
-  run(s2, 4, () => s2.bases.length > 0);
+  run(s2, 48, () => s2.bases.length > 0);
   const c2 = s2.bases[0];
   check(!!c2 && String(c2.plan.origin) === String(BM.defaultSite(s2, t2)), `the camp goes on the game's spot (${c2 && c2.plan.origin})`);
 }

@@ -83,7 +83,7 @@ import { packRounds, addRecord, drawTeamShots, sortFind, suppliesText, findRound
 import { packLauncherRounds } from "./launchers.js"; // the rounds for the launchers the crew carries (section 13)
 import { loadoutRounds } from "./gunrounds.js"; // the rounds their guns and spare magazines leave loaded with (physical rounds)
 import { packMags, packShells } from "./carrykit.js"; // magazines as items (section 15): the spares go along; each gun's rounds at hand
-import { campPitchHours } from "./tents.js"; // the team's tent bags pitch a camp quicker (call-time only)
+import { campPitchHours } from "./staging.js"; // the camp fire and the clearing of the camp's spot (call-time only)
 import { SHELLS, usesInternal } from "./mags.js"; // a shotgun's shells at hand are its tube's load too
 import { noteTripHome } from "./trips.js"; // order templates and repeat trips
 import { prisonersHome } from "./prisoners.js";
@@ -126,7 +126,7 @@ export const MISSIONS = {
   move:        { name: "Move here",        desc: "Travel there and wait for orders." },
   scavenge:    { name: "Scavenge / raid",  desc: "Raid the site on its own map: search containers while Heat rises and more of the dead arrive, then leave by an extraction zone." },
   trade:       { name: "Trade visit",      desc: "Visit a group's base to barter, give gifts and sign pacts." },
-  outpost:     { name: "Build outpost",    desc: "Set up camp here and start establishing it as an outpost: a camp (the barest base: tarps, bedrolls and a fire, staging.js) that becomes an outpost once it is established (its Outpost house, a building on its build map: 20 scrap, 2 building materials and 200 wood brought in, then 20 work-hours by its builders). Three hours to set up on the spot you pick on the tile's map (a 10 × 10 cleared round its fire, what the land there gives into its stores), no materials; what the team carries goes into the camp's stores, and so straight into the step up. The team stays as its first staff, on building." },
+  outpost:     { name: "Build outpost",    desc: "Set up camp here and start establishing it as an outpost: a camp (the barest base: tarps, bedrolls and a fire, staging.js) that becomes an outpost once it is established (its Outpost house, a building on its build map: 20 scrap, 2 building materials and 200 wood brought in, then 20 work-hours by its builders). Set up on the spot you pick on the tile's map: the team builds its camp fire and clears the 5 × 5 round it (the hours by what stands there; what the land gives goes into its stores), no materials; what the team carries goes into the camp's stores, and so straight into the step up. The team stays as its first staff, on building." },
   camp:        { name: "Set up camp",      desc: "Stop and make camp here: the barest base (staging.js). The team's people live there while it stands, what it carries goes into the camp's stores, its vehicles park there; Strike camp packs everyone up again." },
   occupy:      { name: "Occupy abandoned base", desc: "Move into a base that stands empty (a group's that died out, gave it up or lost it, or an outpost of yours that was lost): clear out the dead or squatters inside (a fight; the planner shows who is there), and it is your outpost with the buildings still standing, their wear and damage, and the stores left there. No scrap needed. The team stays as its first staff. The group whose base it was, and any group whose claims round it you take, will not like it." },
   recover:     { name: "Recover bodies",   desc: "Collect what is left at a death site before scavengers strip it." },
@@ -858,7 +858,7 @@ export const outpostScrap = (state, tile) => 0;
 export const outpostKit = (state, tile) => ({ ...BUILDINGS.outpost_up.cost, scrap: Math.max(0, (BUILDINGS.outpost_up.cost.scrap || 0) - (state.tiles[tile] && state.tiles[tile].ruin ? CAMP.ruinScrap : 0)) });
 // Hours of work to set up a camp once the team is there (Set up camp, Establish base, Build outpost): the team works
 // on it (orders.js task "pitch"), then the camp stands (staging.js pitchArrive).
-export const PITCH_HOURS = 3; // = buildings.js CAMP.setupHours (a literal: the modules import each other)
+export const PITCH_HOURS = 1; // the least a camp takes to set up: buildings.js CAMP.fireHours (a literal: the modules import each other); the clearing of its spot on top (staging.js siteSetup)
 
 // Why a mission cannot be sent to a tile, from what is fixed or known about it (null = fine). The planner offers
 // every mission for any tile, so the sim checks too; what can change on the way is checked again on arrival.
@@ -1926,10 +1926,10 @@ export function pitchDone(state, p) {
   p.phase = "out"; // its mission (outpost, establish) is still on it
   return arrive(state, p) || "";
 }
-// Hours of pitching an order takes on arrival (the planner's and the queue's estimates): with the team (p), what its
-// tent bags make of it (tents.js campPitchHours).
-/** @param {State} state @param {string} mission @param {Party | null} [p] */
-export const pitchHoursFor = (state, mission, p = null) => (mission === "outpost" || mission === "establish" || mission === "camp" ? (p ? campPitchHours(state, p) : CAMP.setupHours) : 0);
+// Hours of pitching an order takes on arrival (the planner's and the queue's estimates): with the team (p) and the
+// tile, its camp fire and the clearing of the spot there (staging.js campPitchHours); else the camp fire's alone.
+/** @param {State} state @param {string} mission @param {Party | null} [p] @param {number | null} [tile] */
+export const pitchHoursFor = (state, mission, p = null, tile = null) => (mission === "outpost" || mission === "establish" || mission === "camp" ? (p ? campPitchHours(state, p, tile != null ? tile : undefined) : CAMP.fireHours) : 0);
 
 // ---------- arriving and acting ----------
 /** @param {State} state @param {Party} p */

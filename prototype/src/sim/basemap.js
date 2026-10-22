@@ -109,7 +109,7 @@ import { CELL, placeCar, say, fx, unitAt, active, distField, reachable, pathTo, 
 import { carsAtBase } from "./vehicles.js";
 import { DEPLOY } from "./deploy.js"; // the reinforced gate's hit points (call-time only)
 import { INTERIOR, layoutSeed } from "./interior.js";
-import { landSpec, landOf as landMapOf, layLand, scatterSeed, clearOf, pieceWord, CLEAR, SITE } from "./basescatter.js"; // the land of the base map: trees, bushes, fences, rocks, wrecks, a road, a river (fixed by the tile, the same in the view and in a fight); clearing it
+import { landSpec, landOf as landMapOf, layLand, scatterSeed, clearOf, pieceWord, CLEAR, siteBox, siteGet } from "./basescatter.js"; // the land of the base map: trees, bushes, fences, rocks, wrecks, a road, a river (fixed by the tile, the same in the view and in a fight); clearing it
 import { Rng } from "./rng.js";
 import { SUPPLIES } from "./data.js";
 import { FOODS } from "./foods.js";
@@ -845,22 +845,23 @@ export function siteLand(state, tile) {
 export function siteProblem(state, tile, at) {
   if (!Array.isArray(at) || at.length < 2 || !Number.isInteger(at[0]) || !Number.isInteger(at[1])) return "Pick a spot for the camp";
   if (Math.abs(at[0]) > SITE_RANGE || Math.abs(at[1]) > SITE_RANGE) return "Too near the edge of the map: the camp's yard and a wall round it would run off it";
-  const land = siteLand(state, tile), h = SITE.HALF;
-  for (let y = at[1] - h; y < at[1] + h; y++) for (let x = at[0] - h; x < at[0] + h; x++) { const p = land.pieces.get(`${x},${y}`); if (p && p.k === "water") return "On the river: pick dry ground"; }
+  const land = siteLand(state, tile), B = siteBox(at);
+  for (let y = B.y0; y < B.y1; y++) for (let x = B.x0; x < B.x1; x++) { const p = land.pieces.get(`${x},${y}`); if (p && p.k === "water") return "On the river: pick dry ground"; }
   return "";
 }
-// What clearing the spot would give and take ({ hours: work-hours at a builder's pace, get, n: pieces }; the picker's line).
-export function siteYield(state, tile, at) {
-  const land = siteLand(state, tile), h = SITE.HALF, seen = new Set(), get = {};
+// What clearing the spot would give and take ({ hours: work-hours at a builder's pace, get, n: pieces }; the picker's
+// line, staging.js siteSetup). tool: a cutting tool to hand (else a tree, a log or a stump takes CLEAR.NO_TOOL as long).
+export function siteYield(state, tile, at, tool = true) {
+  const land = siteLand(state, tile), B = siteBox(at), seen = new Set(), get = {};
   let hours = 0;
-  for (let y = at[1] - h; y < at[1] + h; y++) for (let x = at[0] - h; x < at[0] + h; x++) {
+  for (let y = B.y0; y < B.y1; y++) for (let x = B.x0; x < B.x1; x++) {
     const p = land.pieces.get(`${x},${y}`);
     if (!p || p.k === "water" || seen.has(p)) continue;
     seen.add(p);
-    const c = clearOf(p, true, "clear");
+    const c = clearOf(p, tool, "clear");
     if (!c) continue;
     hours += c.hours;
-    for (const [k, v] of Object.entries(c.get)) get[k] = (get[k] || 0) + v;
+    for (const [k, v] of Object.entries(siteGet(p, c, tool))) get[k] = (get[k] || 0) + v;
   }
   return { hours: Math.round(hours * 10) / 10, get, n: seen.size };
 }
@@ -876,19 +877,19 @@ export function defaultSite(state, tile) {
 // (every piece with a cell in it, a wreck whole; never the river) and what that gives (wood, scrap, car parts, metal
 // sheets) comes into its stores when the camp stands. The square's ground is cleared ground from then on. Returns
 // { got: { supply: n }, pieces: [...] } (nothing on a base with no land).
-export function clearCampSite(state, base, half = SITE.HALF) {
+export function clearCampSite(state, base) {
   const land = landFor(state, base);
   if (!land) return { got: {}, pieces: [] };
-  const tool = chopToolAt(state, base);
-  const inSite = (x, y) => x >= -half && y >= -half && x < half && y < half;
+  const tool = chopToolAt(state, base), B = siteBox();
+  const inSite = (x, y) => x >= B.x0 && y >= B.y0 && x < B.x1 && y < B.y1;
   const hit = land.list.filter((p) => p.k !== "water" && p.cells.some(([x, y]) => inSite(x, y)));
   const got = {};
   for (const p of hit) {
     const c = clearOf(p, tool, "clear");
-    if (c) for (const [k, v] of Object.entries(c.get)) got[k] = (got[k] || 0) + v;
+    if (c) for (const [k, v] of Object.entries(siteGet(p, c, tool))) got[k] = (got[k] || 0) + v;
     for (const [x, y] of p.cells) base.land.cleared[`${x},${y}`] = 1;
   }
-  for (let y = -half; y < half; y++) for (let x = -half; x < half; x++) { const p = land.pieces.get(`${x},${y}`); if (!p || p.k !== "water") base.land.cleared[`${x},${y}`] = 1; }
+  for (let y = B.y0; y < B.y1; y++) for (let x = B.x0; x < B.x1; x++) { const p = land.pieces.get(`${x},${y}`); if (!p || p.k !== "water") base.land.cleared[`${x},${y}`] = 1; }
   base.land.n = (base.land.n || 0) + 1;
   for (const [k, v] of Object.entries(got)) base.stock[k] = (base.stock[k] || 0) + v;
   return { got, pieces: hit };
