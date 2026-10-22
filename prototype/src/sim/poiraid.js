@@ -28,7 +28,7 @@ import {
   bestKnownPoi, poiScore, permanentSite, morePoisHidden, isSitePoi,
 } from "./pois.js";
 import { franchiseName } from "./shops.js"; // a franchise's name (a POI's poi.v)
-import { poiWalkMins, walkText, startPoiWalk } from "./poiwalk.js"; // the minutes on foot to each place, and the walk there
+import { poiWalkMins, walkText, startPoiWalk, startExitWalk, exitsOf } from "./poiwalk.js"; // the minutes on foot to each place, the walk there, and out to an edge
 
 /** Does a raid on this tile go into one of its points of interest (not a site that stands for a while, not open ground)? @param {any} t */
 export const poiTileRaid = (t) => !!t && poisOf(t).length > 0 && !(t.loc && !permanentSite(t));
@@ -123,6 +123,13 @@ export function poiPickCard(state, p) {
         }));
       }),
       ...(crawlTile(t) ? [{ label: "Go in block by block (city crawl)", hint: "The block's street of buildings instead of one place: noise raises the Alert, lying low lets it fade.", crawl: true, order: true, ai: () => 0.5, resolve: (st) => go(st, "crawl") }] : []),
+      // Leaving (poiwalk.js): a side of the tile (its arrow on the tile map, ui/poimap.js), or any tile picked on the State
+      // Map (main.js move mode with leavePick: the side its way leaves by). The walk out to that edge comes first.
+      ...exitsOf(state, p, tile).map((x) => ({
+        label: `Leave toward ${tileLabel(state, x.via)}`, hint: x.mins ? `The team walks to this edge of the tile (${x.mins} min from where it stands), then on to ${tileLabel(state, x.via)}.` : `The team stands on this edge: it sets off for ${tileLabel(state, x.via)} at once.`,
+        exit: x.via, mins: x.mins, order: true, ai: () => -3, resolve: (st) => (st.parties.includes(p) ? startExitWalk(st, p, x.via, x.via) : ""),
+      })),
+      { label: "Leave for another tile…", hint: "Pick the tile on the map: the team first walks from where it stands to the edge of this tile on the side its way leaves by (the minutes over the ground here), then on.", leavePick: true, uiAction: { type: "move", partyId: p.id }, ai: () => -3, resolve: () => "" },
       { label: "Not now", hint: "The team waits here for another order (its queue on hold).", cancel: true, ai: () => -2, resolve: (st) => { if (st.parties.includes(p)) awaitOrders(st, p, "The team waits.", { hold: true }); return ""; } },
     ],
   };

@@ -21,14 +21,22 @@
 //   player unpauses), the map draws the team walking from its spot to the place's (ui/render.js walkPos), and when the
 //   minutes are up (poiWalkDone, from orders.js finishTask) the team stands at the place and the raid starts there
 //   (parties.js giveOrder "scavenge" with the pick set). Stopped or cut short by a card, the team stays where it was.
+// - Leaving (startExitWalk): the dialogue's edges (a neighbour picked on the tile map) and "Leave for another tile…"
+//   (the State Map's move mode, the first step of the way deciding the side): the team walks from where it stands to
+//   that side's edge over the same weighted map (its minutes, 0 when it stands on that edge already; WALK.EXIT the
+//   edge itself), a task "poiwalk" with exit: { via, dest }; then it sets off (parties.js orderMove) with half of the
+//   first step already behind it (parties.js headStart: from the edge to the next tile's middle). The State Map draws
+//   the team in the middle of its tile while it walks to a place, and walking out from the middle to that edge while
+//   it leaves (walkPos exit), so the step on from there carries straight on.
 // - Only the player's own pick walks: the autopilot, a crew and the tools never see the card and go straight in.
 // Hash dice only (skills.js hash01), never state.rng: a card's minutes never change the run.
 /** @import { State, Tile, Party } from "./types" */
 import { hash01 } from "./skills.js";
 import { poisOf, poiAt, poiName } from "./pois.js";
-import { partyTile, giveOrder, tileLabel } from "./parties.js";
+import { partyTile, giveOrder, tileLabel, orderMove, headStart, planPath } from "./parties.js";
 import { startTask } from "./orders.js"; // call-time only (orders.js finishTask calls poiWalkDone)
 
+const SQ3 = Math.sqrt(3);
 export const WALK = {
   MIN: 5,        // minutes: the nearest place
   MAX: 20,       // minutes: the farthest
@@ -39,9 +47,9 @@ export const WALK = {
   NOISE: [0.8, 1.3], // a cell's own dice: open ground to a thicket
   TERRAIN: { plains: 1, suburb: 0.9, city: 1.15, forest: 1.45, hills: 1.5, mountain: 1.9 },
   EDGE: 0.84,    // where a team that came onto the tile stands: this far toward the edge it crossed (0.866: the edge)
+  EXIT: SQ3 / 2, // where a team leaving walks to: the edge itself (half way between the two tiles' middles)
 };
 
-const SQ3 = Math.sqrt(3);
 // Inside a pointy-top hex of radius 1 (hex.js toPixel's layout).
 const inHex = (x, y) => { const ax = Math.abs(x), ay = Math.abs(y); return ax <= SQ3 / 2 && ay <= 1 && ax * 0.5 + ay * (SQ3 / 2) <= SQ3 / 2; };
 
@@ -121,10 +129,10 @@ function walkRoute(cells, from, to) {
   return { cost: dist[b], route };
 }
 
-/** The spot on a tile's edge toward neighbour `from` (WALK.EDGE out): [x, y] in hex radii. @param {State} state @param {number} tile @param {number} from @returns {[number, number]} */
-export function edgeSpot(state, tile, from) {
+/** The spot on a tile's edge toward neighbour `from` (k: how far out, WALK.EDGE): [x, y] in hex radii. @param {State} state @param {number} tile @param {number} from @param {number} [k] @returns {[number, number]} */
+export function edgeSpot(state, tile, from, k = WALK.EDGE) {
   const [ax, ay] = state.grid.toPixel(tile, 1), [bx, by] = state.grid.toPixel(from, 1), d = Math.hypot(bx - ax, by - ay) || 1;
-  return [((bx - ax) / d) * WALK.EDGE, ((by - ay) / d) * WALK.EDGE];
+  return [((bx - ax) / d) * k, ((by - ay) / d) * k];
 }
 /** Where the team stands on its tile: { spot, poi, edge } (poi: the place it walked to; edge: the neighbour it came from; neither: the centre). @param {State} state @param {Party} p @param {number} [tile] */
 export function walkFrom(state, p, tile = partyTile(p)) {
@@ -147,6 +155,18 @@ export function poiWalk(state, p, i, tile = partyTile(p), cells = null) {
 }
 /** Minutes on foot from the team's spot to POI i of its tile (0: it stands there). @param {State} state @param {Party} p @param {number} i @param {number} [tile] */
 export const poiWalkMins = (state, p, i, tile = partyTile(p)) => poiWalk(state, p, i, tile).mins;
+/** The walk out to the tile's edge toward neighbour `via`: { mins (0: it stands on that edge), route }. @param {State} state @param {Party} p @param {number} via @param {number} [tile] */
+export function exitWalk(state, p, via, tile = partyTile(p), cells = null) {
+  const t = state.tiles[tile], from = walkFrom(state, p, tile);
+  if (from.poi == null && from.edge === via) return { mins: 0, route: [] };
+  const w = walkRoute(cells || walkGrid(state, t), from.spot, edgeSpot(state, tile, via, WALK.EXIT));
+  return { mins: minsOf(w.cost), route: w.route };
+}
+/** The sides a team can leave its tile by: [{ via, mins, route }] for each neighbour with a way onto it. @param {State} state @param {Party} p @param {number} [tile] */
+export function exitsOf(state, p, tile = partyTile(p)) {
+  const cells = walkGrid(state, state.tiles[tile]);
+  return state.grid.neighbors(tile).filter((m) => planPath(state, tile, m, p.vehicle)).map((via) => ({ via, ...exitWalk(state, p, via, tile, cells) }));
+}
 /** Every place of the tile with its spot and the walk to it (the dialogue's tile map, ui/poimap.js): { from, places: [{ i, spot, mins, route }] }. @param {State} state @param {Party} p @param {number[]} list @param {number} [tile] */
 export function walkMap(state, p, list, tile = partyTile(p)) {
   const t = state.tiles[tile], cells = walkGrid(state, t);
@@ -164,10 +184,31 @@ export function startPoiWalk(state, p, i, building = null) {
   startTask(state, p, { type: "poiwalk", hours: mins / 60, mins, poi: i, building, name: poiName(t, i), from: walkFrom(state, p, tile).spot, to: poiSpot(state, t, i), route: route.map(([x, y]) => [r2(x), r2(y)]) });
   return `The team sets off on foot for ${poiName(t, i).toLowerCase()} at ${tileLabel(state, tile)}: ${mins} minutes away. The raid starts when it gets there.`;
 }
-/** The walk is over (orders.js finishTask): the team stands at the place and goes in. @param {State} state @param {Party} p */
+/** Leave the tile for `dest`, by the side toward `via` (the first step of the way when null): the walk out to that edge first, then on. Returns the log line. @param {State} state @param {Party} p @param {number | null} via @param {number} dest */
+export function startExitWalk(state, p, via, dest) {
+  const tile = partyTile(p);
+  const way = planPath(state, tile, dest, p.vehicle);
+  if (!way || dest === tile) return orderMove(state, p, dest); // its own reason ("already there", no route)
+  const side = via != null && way.path[1] === via ? via : way.path[1];
+  const { mins, route } = exitWalk(state, p, side, tile);
+  if (!mins) return leaveNow(state, p, side, dest);
+  const r2 = (v) => Math.round(v * 1000) / 1000;
+  startTask(state, p, { type: "poiwalk", hours: mins / 60, mins, exit: { via: side, dest }, name: tileLabel(state, dest), from: walkFrom(state, p, tile).spot, to: edgeSpot(state, tile, side, WALK.EXIT), route: route.map(([x, y]) => [r2(x), r2(y)]) });
+  return `The team walks to the edge of ${tileLabel(state, tile)} toward ${tileLabel(state, side)} (${mins} minutes), then sets off for ${tileLabel(state, dest)}.`;
+}
+// At the edge: off to dest, half of the first step behind it when the way leaves by that side.
+function leaveNow(state, p, via, dest) {
+  delete p.atPoi;
+  const res = orderMove(state, p, dest);
+  if (p.phase === "out" && p.path[0] === partyTile(p) && p.path[1] === via) headStart(state, p, 0.5);
+  return res;
+}
+
+/** The walk is over (orders.js finishTask): the team stands at the place and goes in; or, at the edge, sets off. @param {State} state @param {Party} p */
 export function poiWalkDone(state, p) {
   const w = p.task;
   p.task = null;
+  if (w.exit) return leaveNow(state, p, w.exit.via, w.exit.dest);
   p.atPoi = { tile: partyTile(p), i: w.poi };
   p.poi = w.poi;
   if (w.building) p.poiBuilding = w.building; else delete p.poiBuilding;
@@ -180,7 +221,7 @@ export function walkPos(state, p, frac) {
   if (w) {
     const u = Math.max(0, Math.min(1, (w.done - (w.owed || 0) + frac) / w.hours));
     const [x, y, dx, dy] = alongRoute(w.route && w.route.length > 1 ? w.route : [w.from, w.to], u);
-    return { x, y, dx, dy, walking: true, from: w.from, to: w.to, route: w.route || [w.from, w.to], name: w.name, mins: Math.max(1, Math.ceil(w.mins * (1 - u))) };
+    return { x, y, dx, dy, u, walking: true, exit: w.exit || null, poi: w.poi ?? null, from: w.from, to: w.to, route: w.route || [w.from, w.to], name: w.name, mins: Math.max(1, Math.ceil(w.mins * (1 - u))) };
   }
   const at = walkFrom(state, p);
   if (at.poi == null) return null;

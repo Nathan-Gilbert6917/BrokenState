@@ -170,12 +170,26 @@ function midOf(pts) {
 }
 
 const BAND_COLOR = ["#8fd18f", "#e6e1d3", "#f0c060", "#e07070"];
+// An arrow on a side of the tile, pointing out (a way off the tile): at the side's middle, a little inside.
+function exitArrow(state, t, x, attrs, cls = "") {
+  const sd = sides(state, t).find((q) => q.m === x.via);
+  if (!sd) return "";
+  const ax = CX + sd.ux * PM.R * 0.78, ay = CY + sd.uy * PM.R * 0.78, deg = (Math.atan2(sd.uy, sd.ux) * 180) / Math.PI;
+  const side = sd.uy > 0.1 ? -1 : 1, lx = ax - sd.uy * 22 * side, ly = ay + sd.ux * 22 * side + 4; // along the edge, beside the arrow
+  return `<g class="pm-exit${cls}"${attrs}><circle cx="${ax.toFixed(1)}" cy="${ay.toFixed(1)}" r="11"/><path d="M-4,-6 L4,0 L-4,6" transform="translate(${ax.toFixed(1)},${ay.toFixed(1)}) rotate(${deg.toFixed(1)})"/>${x.mins != null ? `<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}">${x.mins}m</text>` : ""}</g>`;
+}
+
 /**
  * The map's overlay: routes, minutes, the team and the places as buttons. wm: sim/poiwalk.js walkMap; rows: poiraid.js
  * poiRows (the same places); sel: the selected place or null; tips: a place's hover text by index.
- * @param {any} state @param {any} t @param {any} wm @param {any[]} rows @param {number | null} sel @param {(i: number) => string} tips
+ * opts.exits: the ways off the tile as the card's choices ({ via, mins, i: the choice's index, tip }), an arrow on each side;
+ * opts.walk: the walk under way (sim/poiwalk.js walkPos): only its route, the team's dot where it is now (#pm-team,
+ * moved every frame by ui/poipick.js tileViewFrame), the places not clickable.
+ * @param {any} state @param {any} t @param {any} wm @param {any[]} rows @param {number | null} sel @param {(i: number) => string} tips @param {{ exits?: any[], walk?: any }} [opts]
  */
-export function poiMapSvg(state, t, wm, rows, sel, tips) {
+export function poiMapSvg(state, t, wm, rows, sel, tips, opts = {}) {
+  const walk = opts.walk || null;
+  if (walk) return walkSvg(state, t, wm, rows, tips, walk);
   const byI = new Map(rows.map((r) => [r.i, r]));
   const routes = [], chips = [], places = [], hov = [];
   // A route's minutes go at its middle, unless that falls on a place, its name or the team's dot (they show there anyway).
@@ -206,5 +220,23 @@ export function poiMapSvg(state, t, wm, rows, sel, tips) {
   const you = f.poi != null
     ? `<g class="pm-you"><ellipse cx="${ux.toFixed(1)}" cy="${(uy + 4).toFixed(1)}" rx="30" ry="12" class="pm-youring"/></g>`
     : `<g class="pm-you" data-tip="${esc(f.edge != null ? "Your team: where it came onto the tile. The minutes to each place are from here." : "Your team, in the middle of the tile. The minutes to each place are from here.")}"><circle class="pm-pulse" cx="${ux.toFixed(1)}" cy="${uy.toFixed(1)}" r="9"/><circle class="pm-dot" cx="${ux.toFixed(1)}" cy="${uy.toFixed(1)}" r="6"/><text class="pm-youtxt" x="${ux.toFixed(1)}" y="${(uy - 12).toFixed(1)}">You</text></g>`;
-  return `<svg class="pm-svg" viewBox="0 0 ${PM_W} ${PM_H}" width="${PM_W}" height="${PM_H}"><style>${hov.join("")}</style>${routes.join("")}${you}${places.join("")}${chips.join("")}</svg>`;
+  const exits = (opts.exits || []).map((x) => exitArrow(state, t, x, ` data-action="choice" data-i="${x.i}" data-tip="${esc(x.tip || "")}" role="button" tabindex="0"`)).join("");
+  return `<svg class="pm-svg" viewBox="0 0 ${PM_W} ${PM_H}" width="${PM_W}" height="${PM_H}"><style>${hov.join("")}</style>${routes.join("")}${you}${places.join("")}${chips.join("")}${exits}</svg>`;
+}
+
+// The map while the team walks (the tile view, ui/poipick.js tileViewModal): the places (not buttons), the walk's
+// route lit, an arrow on the side it leaves by, and the team's dot where it is at this minute.
+function walkSvg(state, t, wm, rows, tips, walk) {
+  const places = rows.map((r) => {
+    const pl = wm.places.find((x) => x.i === r.i);
+    if (!pl) return "";
+    const [x, y] = toMap(pl.spot), sp = spriteOf(r.kind, (poiAt(t, r.i) || {}).v, r.band), on = walk.poi === r.i;
+    const label = r.name.length > 22 ? `${r.name.slice(0, 21)}…` : r.name;
+    return `<g class="pm-poi still${on ? " on" : ""}${r.stripped ? " stripped" : ""}" data-tip="${esc(tips(r.i))}"><ellipse class="pm-plate" cx="${x.toFixed(1)}" cy="${(y + 4).toFixed(1)}" rx="24" ry="9" style="stroke:${BAND_COLOR[r.band]}"/>${sp.url ? `<image href="${sp.url}" x="${(x - sp.w / 2).toFixed(1)}" y="${(y + 6 - sp.h).toFixed(1)}" width="${sp.w}" height="${sp.h}" style="image-rendering:pixelated"/>` : ""}<text class="pm-name" x="${x.toFixed(1)}" y="${(y + 24).toFixed(1)}">${esc(label)}</text></g>`;
+  }).join("");
+  const pts = walk.route.map(toMap), [dx, dy] = toMap([walk.x, walk.y]);
+  const route = `<polyline class="pm-route on" points="${pts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" ")}"/>`;
+  const exit = walk.exit ? exitArrow(state, t, { via: walk.exit.via, mins: null }, "", " on") : "";
+  const team = `<g id="pm-team" class="pm-you" transform="translate(${dx.toFixed(1)},${dy.toFixed(1)})"><circle class="pm-pulse" r="9"/><circle class="pm-dot" r="6"/><text class="pm-youtxt" y="-12">You</text></g>`;
+  return `<svg class="pm-svg" viewBox="0 0 ${PM_W} ${PM_H}" width="${PM_W}" height="${PM_H}">${route}${exit}${places}${team}</svg>`;
 }

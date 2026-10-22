@@ -45,7 +45,7 @@ import { conditionChips, conditionTreatRow, illnessCard, isSick, bedChip, healPe
 import { APPROACHES, heatStage, foundLoad, engagementParty } from "../sim/scavenge.js";
 import { knownPois, poiName } from "../sim/pois.js"; // the tile's known places (the raid goes into one of them)
 import { poiTileRaid } from "../sim/poiraid.js";
-import { poiPickModal } from "./poipick.js"; // the dialogue: which place to raid
+import { poiPickModal, tileViewUp, tileViewModal } from "./poipick.js"; // the dialogue: which place to raid; the tile view while the team walks there
 import { engScoutChoices, hoursToNight, SCOUT, NIGHT_FROM } from "../sim/raidplan.js"; // before the search: a scout first, or the night
 import { planUp, kitUp, planModalHtml } from "./raidplan.js"; // before a raid: the Before you go in window over the battle screen
 import { activeCrawl } from "../sim/citycrawl.js";
@@ -855,6 +855,7 @@ function pickModal(state, ui) {
   if (!state.autopilot && activeHiveCrawl(state)) return ["hivecrawl", () => hiveCrawlModal(state, ui)]; // a hive crawl's chamber (ui/hivecrawl.js)
   if (state.engagement && !state.autopilot) return ["search", () => engagementModal(state)]; // on autopilot the governor searches (sim/autopilot.js)
   if (state.trade && !state.autopilot && !ui.meetPick) return ["trade", () => tradeWindow(state, ui)]; // ui/tradewindow.js (put aside while a meeting tile is picked on the map)
+  if (tileViewUp(state, ui)) return ["tileview", () => tileViewModal(state, ui)]; // ui/poipick.js: the team walking on its tile (the clock runs under it)
   if (ui.volPick) return ["volpick", () => volPickModal(state, ui)]; // ui/volunteers.js: a group's ask of you, choose who goes
   if (ui.volReq) return ["volreq", () => volRequestModal(state, ui)]; // ui/volunteers.js: ask a group for volunteers
   if (ui.diplo) return ["diplo", () => diplomacyModal(state, ui)]; // ui/diplomacy.js: jobs, market board, world affairs, coalition (over the radio panel)

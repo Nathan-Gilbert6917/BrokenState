@@ -11,11 +11,18 @@
 // the team's dot on the edge it came in by and the way on foot to each with its minutes; a place is picked on the
 // map (data-action "poisel", kept on the card: card.poiPick.sel) or in the list of places, a side panel folded away
 // by default (its button, data-action "poilist": card.poiPick.list). The picked place's details sit beside the map
-// with the button to walk there and raid it (a site's: one per building and the street).
-import { partyMembers, tileLabel } from "../sim/parties.js";
+// with the button to walk there and raid it (a site's: one per building and the street). The ways off the tile are
+// arrows on its sides (the card's exit choices) and "Leave for another tile…" (the State Map's move mode).
+//
+// The walk itself (tileViewModal, the user's request 2026-10-22: "In the POI map show the team move to the POI
+// selected when you unpause"): once a place or a side is picked, the same map stays up as the tile view (ui.tileView,
+// opened by main.js's choice; it never stops the clock) with the team's dot walking the route as the minutes go by
+// (tileViewFrame, every frame), a Run / Pause button, Stop and Close. It goes when the walk does: the raid's battle
+// screen, or the team off the tile.
+import { partyMembers, tileLabel, clockFrac } from "../sim/parties.js";
 import { poiRows, poiRowText } from "../sim/poiraid.js";
-import { walkMap } from "../sim/poiwalk.js";
-import { tileMapBg, poiMapSvg, PM_W, PM_H } from "./poimap.js";
+import { walkMap, walkPos } from "../sim/poiwalk.js";
+import { tileMapBg, poiMapSvg, PM_W, PM_H, toMap } from "./poimap.js";
 import { morePoisHidden, tileHeatEstimate } from "../sim/pois.js";
 import { LOCATIONS } from "../sim/data.js";
 
@@ -58,7 +65,8 @@ export function poiPickModal(state, card) {
   const wm = p ? walkMap(state, p, rows.map((r) => r.i), tile) : { from: { spot: [0, 0], poi: null, edge: null }, places: [] };
   const bg = tileMapBg(state, t, [...wm.places.map((x) => x.spot), wm.from.spot]);
   const tipOf = (i) => { const r = rows.find((x) => x.i === i); return r ? `${r.name}: ${poiRowText(r)}. ${likely(r)} Click to pick it.` : ""; };
-  const map = `<div class="pm-map" style="width:${PM_W}px;height:${PM_H}px${bg ? `;background-image:url(${bg})` : ""}">${poiMapSvg(state, t, wm, rows, sel, tipOf)}</div>`;
+  const exits = card.choices.map((c, i) => ({ c, i })).filter(({ c }) => c.exit != null).map(({ c, i }) => ({ via: c.exit, mins: c.mins, i, tip: `${c.label}: ${c.hint}` }));
+  const map = `<div class="pm-map" style="width:${PM_W}px;height:${PM_H}px${bg ? `;background-image:url(${bg})` : ""}">${poiMapSvg(state, t, wm, rows, sel, tipOf, { exits })}</div>`;
   // The picked place: what is known of it and the way in.
   const r = rows.find((x) => x.i === sel);
   let detail;
@@ -86,13 +94,68 @@ export function poiPickModal(state, card) {
   const list = open
     ? `<aside class="pm-list open"><button data-action="poilist" class="pm-listbtn"${tip("Fold the list of places away")}>▸ Places (${rows.length})</button><div class="pm-rows">${rows.map(rowHtml).join("")}</div></aside>`
     : `<aside class="pm-list"><button data-action="poilist" class="pm-listbtn pm-tab"${tip("Open the list of places: every place known here with its minutes, what is left, its visits and threat")}>◂ Places (${rows.length})</button></aside>`;
-  const rest = card.choices.map((c, i) => ({ c, i })).filter(({ c }) => c.poi == null);
+  const rest = card.choices.map((c, i) => ({ c, i })).filter(({ c }) => c.poi == null && c.exit == null);
   return `<div class="box wide poipick">
     <h1>${esc(card.title)}</h1>
     <div class="where">${esc(tileLabel(state, tile))}${who ? ` · ${esc(who)}` : ""}</div>
     ${heatLine(state, tile)}
-    <div class="text small">${rows.length === 1 ? "One place is known here" : `${rows.length} places are known here`}${more ? `, <span${tip("Something here may still be off your map: a Survey of the tile (8h) finds what hides, a Quick look (2h) has a chance at each. Never a count.")}>possibly more unknown</span>` : ""}. The team goes into one at a time, walking there first: pick a place, then run the clock.</div>
+    <div class="text small">${rows.length === 1 ? "One place is known here" : `${rows.length} places are known here`}${more ? `, <span${tip("Something here may still be off your map: a Survey of the tile (8h) finds what hides, a Quick look (2h) has a chance at each. Never a count.")}>possibly more unknown</span>` : ""}. The team goes into one at a time, walking there first: pick a place, then run the clock. The arrows on the sides leave the tile that way.</div>
     <div class="pm-body">${map}<div class="pm-side">${detail}</div>${list}</div>
     <div class="choices">${rest.map(({ c, i }) => `<button data-action="choice" data-i="${i}"${tip(c.hint)}>${esc(c.label)}${c.hint ? `<span class="hint">${esc(c.hint)}</span>` : ""}</button>`).join("")}</div>
   </div>`;
+}
+
+// ---------- the tile view: the walk under way ----------
+// The team the tile view follows, while it walks (a place or out to an edge), else null.
+function viewWalker(state, ui) {
+  const v = ui.tileView;
+  const p = v ? state.parties.find((x) => x.id === v.partyId) : null;
+  return p && p.phase === "task" && p.task && p.task.type === "poiwalk" ? p : null;
+}
+/** Is the tile view up (main.js and ui/ui.js pickModal)? Clears it once the walk is over. @param {any} state @param {any} ui */
+export function tileViewUp(state, ui) {
+  if (!ui.tileView) return false;
+  if (!viewWalker(state, ui)) { ui.tileView = null; return false; }
+  return true;
+}
+/** The tile view: the tile map with the team walking its route. @param {any} state @param {any} ui */
+export function tileViewModal(state, ui) {
+  const p = viewWalker(state, ui);
+  if (!p) return "";
+  const tile = p.path[p.idx], t = state.tiles[tile], w = p.task;
+  const rows = poiRows(state, p, tile);
+  const wm = walkMap(state, { ...p, atPoi: undefined }, rows.map((r) => r.i), tile);
+  const bg = tileMapBg(state, t, [...wm.places.map((x) => x.spot), wm.from.spot]);
+  const pos = walkPos(state, p, clockFrac(state));
+  const tipOf = (i) => { const r = rows.find((x) => x.i === i); return r ? `${r.name}: ${r.bandName.toLowerCase()}; ${r.visits}` : ""; };
+  const what = w.exit ? `Leaving ${tileLabel(state, tile)}: walking to its edge, then on to ${w.name}` : `Walking to ${w.name}`;
+  const then = w.exit ? "Then the team sets off across the map." : "Then the raid starts there.";
+  const running = ui.speed > 0;
+  return `<div class="box wide poipick tileview">
+    <h1>${esc(what)}</h1>
+    <div class="where">${esc(tileLabel(state, tile))} · ${esc(partyMembers(state, p).map((s) => s.name.split(" ")[0]).join(", "))}</div>
+    <div class="pm-body"><div class="pm-map" style="width:${PM_W}px;height:${PM_H}px${bg ? `;background-image:url(${bg})` : ""}">${poiMapSvg(state, t, wm, rows, null, tipOf, { walk: pos })}</div>
+      <div class="pm-side"><div class="pm-detail">
+        <div class="big"><span id="pm-left">${pos ? pos.mins : w.mins}</span> min left <span class="muted small">of ${w.mins}</span></div>
+        <div class="pm-bar"><div id="pm-bar" style="width:${Math.round((pos ? pos.u : 0) * 100)}%"></div></div>
+        <div class="small">${running ? "On the way." : "The clock is stopped: run it and the team walks."} ${esc(then)}</div>
+        <div class="pm-gos">
+          ${running ? `<button data-action="speed" data-speed="0"${tip("Pause (Space)")}>⏸ Pause</button>` : `<button class="primary" data-action="speed" data-speed="${ui.lastSpeed || 1}"${tip(`Run at ${ui.lastSpeed || 1}× (Space)`)}>▶ Run</button>`}
+          <button data-action="tv-stop"${tip("Stop the walk: the team stays where it was and waits for orders.")}>✋ Stop the walk</button>
+          <button data-action="tv-close"${tip("Close this view (Esc): the walk goes on; the State Map shows the team on its tile.")}>Close</button>
+        </div></div></div></div>
+  </div>`;
+}
+/** Every frame (main.js): the team's dot and the minutes left, moved as the clock's minutes pass. @param {any} state @param {any} ui */
+export function tileViewFrame(state, ui) {
+  if (!ui.tileView || typeof document === "undefined") return;
+  const p = viewWalker(state, ui), el = document.getElementById("pm-team");
+  if (!p || !el) return;
+  const pos = walkPos(state, p, clockFrac(state));
+  if (!pos) return;
+  const [x, y] = toMap([pos.x, pos.y]);
+  el.setAttribute("transform", `translate(${x.toFixed(1)},${y.toFixed(1)})`);
+  const left = document.getElementById("pm-left"), bar = document.getElementById("pm-bar");
+  if (left && left.textContent !== String(pos.mins)) left.textContent = String(pos.mins);
+  if (bar) bar.style.width = `${Math.round(pos.u * 100)}%`;
 }

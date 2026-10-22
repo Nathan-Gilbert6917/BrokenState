@@ -644,6 +644,15 @@ function setWay(state, p, w, moving) {
   if (!moving) delete p.hourUsed; // the minutes gone are owed instead (wayOn)
 }
 
+// A head start on the first step of a team's new way: share of the step already walked (poiwalk.js: a team that walked
+// to its tile's edge first, on the POI dialogue's tile map, starts the step from that edge, half way to the next tile).
+/** @param {State} state @param {Party} p @param {number} share */
+export function headStart(state, p, share) {
+  if (!p.path || p.idx !== 0 || p.path.length < 2) return;
+  const c = stepCost(state, p, 0, state.hour + 1);
+  if (isFinite(c) && c > 0) p.progress = (p.progress || 0) + c * share;
+}
+
 // What a move order to `tile` would take, worked out exactly as the team will then move (orderMove, hoursLeft):
 // { path, progress, ticks: hours the clock ticks before it is there, hours: to the minute it gets there from this
 // minute on the clock (arrivalsDue), arriveAt: that time (state.hour + a share of an hour) }, or null (no way there).

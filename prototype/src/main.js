@@ -42,6 +42,8 @@ import { threatSkeleton, initThreatBar, THREAT_ACTIONS } from "./ui/threatbar.js
 import { isCar, travelMode } from "./sim/vehicles.js";
 import { startCombat, combatAct, runEnemyPhase } from "./sim/combat.js";
 import { queueOrder, startOrder, stopTask, resumeQueue, removeQueued, reorderQueued, cancelMove, contactable, queueEndTile } from "./sim/orders.js";
+import { startExitWalk } from "./sim/poiwalk.js"; // the POI dialogue's "Leave for another tile…": the walk out to the tile's edge first
+import { tileViewFrame } from "./ui/poipick.js"; // the tile view: the team walking on its tile
 import { setNightPlan } from "./sim/nightmarch.js"; // the team panel's night plan
 import { strikeCamp, STRIKE_LABEL, layoutDone } from "./sim/staging.js"; // camps: Strike camp (the base window, the tile panel)
 import { setFire } from "./sim/fieldheat.js";
@@ -187,6 +189,7 @@ const freshUi = () => ({
   ledger: null, // ui/ledger.js: the Ledger window is open
   ask: null, // ui/confirm.js: the question up before an order that cannot be undone
   mapSel: null, selParty: null, // ui/mapselect.js: a party, band or outsiders selected on the map; selParty: your selected team's id
+  tileView: null, moveExit: null, // ui/poipick.js: the tile view of a team walking on its tile ({ partyId }); move mode from its "Leave for another tile…" (the team's id)
 });
 const ui = { title: false, scale: 1, factionCount: 7, worldSize: DEFAULT_SIZE, customW: BASE_W, customH: BASE_H, hiveCount: null, mode: "normal", startPeople: NORMAL_PEOPLE.DEF, ironman: false, freeEdit: false, pointsMax: CUSTOM_POINTS.DEF, crewEdited: false, crewRoll: null, startPick: null, ...freshUi() }; // mode: Normal or Hardcore (sim/hardcore.js); startPeople: the starting team (Normal 1–8, Hardcore 1–4); pointsMax: Customize's Points each
 // Each mode keeps its own Starting people and Points each (2026-10-19, user request): ui.startPeople and ui.pointsMax are the
@@ -358,6 +361,7 @@ function step(now) {
   audioFrame(state, ui, now); // battle and map cues, the ambience (ui/audio.js)
   if (dirtyNow || (dirty && (ui.speed <= MAX_SPEED || now - lastRefresh >= SLOW_REFRESH_MS))) refresh(false);
   else if (clockDirty && ui.speed <= MAX_SPEED) refreshClock(); // (at dev speeds the throttled refresh has them too)
+  tileViewFrame(state, ui); // ui/poipick.js: the team's dot walking on the tile view, by the clock's minutes
   if (ui.showFps) fpsFrame(now, gap, performance.now() - t0, ticks);
 }
 
@@ -820,6 +824,7 @@ function baseSay(msg) {
 }
 function endMoveMode() {
   ui.moveParty = null;
+  ui.moveExit = null;
   ui.moveQueue = false;
   ui.moveMsg = "";
   view.preview = null;
@@ -1183,15 +1188,19 @@ const actions = {
     const text = c.resolve(state);
     if (Parties.pruneCards) Parties.pruneCards(state); // cards about a team or person that is gone now (parties.js)
     // sim/poiwalk.js: a place picked on the POI dialogue is walked to first, and the clock stays stopped until you run it.
+    // The tile view (ui/poipick.js) follows the walk: the team's dot moves on the tile map as the clock runs.
     const walker = card.poiPick ? partyById(card.partyId) : null;
     if (walker && walker.phase === "task" && walker.task && walker.task.type === "poiwalk") {
       if (ui.speed > 0) { if (ui.speed <= MAX_SPEED) ui.lastSpeed = ui.speed; ui.speed = 0; }
-      ui.pauseWhy = `Ready to walk to ${String(walker.task.name).toLowerCase()} (${walker.task.mins} min), then raid it`;
+      const w = walker.task;
+      ui.pauseWhy = w.exit ? `Ready to walk to the tile's edge (${w.mins} min), then on to ${w.name}` : `Ready to walk to ${String(w.name).toLowerCase()} (${w.mins} min), then raid it`;
+      ui.tileView = { partyId: walker.id };
     }
     if (c.uiAction && c.uiAction.type === "saveFight") saveBeforeFight(state, ui, c.uiAction.name); // sim/loneattack.js: "Save and fight": the game saved as the fight opens
     if (c.uiAction && c.uiAction.type === "move") {
       endMoveMode();
       ui.moveParty = c.uiAction.partyId;
+      if (c.leavePick) ui.moveExit = c.uiAction.partyId; // the POI dialogue's "Leave for another tile…": the walk to the edge first (pickMove)
       const p = partyById(c.uiAction.partyId);
       if (p) centerOn(state, partyTile(p));
       return;
@@ -1230,6 +1239,9 @@ const actions = {
   // The POI dialogue (ui/poipick.js): a place picked on its tile map or in its list; the list of places opened or folded.
   poisel: (d) => { const c = state.cards[0]; if (c && c.poiPick) c.poiPick.sel = Number(d.poi); },
   poilist: () => { const c = state.cards[0]; if (c && c.poiPick) c.poiPick.list = !c.poiPick.list; },
+  // The tile view (ui/poipick.js): closed (the walk goes on), or the walk stopped (the team waits where it was).
+  "tv-close": () => { ui.tileView = null; },
+  "tv-stop": () => { const p = ui.tileView && partyById(ui.tileView.partyId); if (p) log(state, stopTask(state, p), "info"); ui.tileView = null; },
   // The card's "Retreat if it goes badly" buttons (breakoff.js): kept on the team for fights resolved by the numbers.
   "retreat-policy": (d) => { const card = state.cards[0]; const p = card && card.partyId != null ? partyById(card.partyId) : null; if (p) setTeamPolicy(state, p, d.v); },
   approach: (d) => { state.engagement.approach = d.v; },
@@ -2075,6 +2087,15 @@ function pickMove(p, id) {
     ok = id !== from && !!planPath(state, from, id, p.vehicle);
     msg = ok ? queueOrder(state, p, { type: "move", tile: id }) :
       id === from ? "The team will already be there." : p.vehicle ? "The vehicle cannot get there from the end of the queue." : "No route there over land from the end of the queue.";
+  } else if (ui.moveExit === p.id) { // from the POI dialogue: the walk out to this tile's edge on that side, then on (sim/poiwalk.js)
+    msg = startExitWalk(state, p, null, id);
+    const w = p.phase === "task" && p.task && p.task.type === "poiwalk" ? p.task : null;
+    ok = (p.phase === "out" && p.dest === id) || (!!w && w.exit && w.exit.dest === id);
+    if (ok && w) {
+      if (ui.speed > 0) { if (ui.speed <= MAX_SPEED) ui.lastSpeed = ui.speed; ui.speed = 0; }
+      ui.pauseWhy = `Ready to walk to the tile's edge (${w.mins} min), then on to ${w.name}`;
+      ui.tileView = { partyId: p.id };
+    }
   } else {
     msg = orderMove(state, p, id);
     ok = p.phase === "out" && p.dest === id;
@@ -2406,6 +2427,7 @@ function closeTopLayer() {
     else ui.survivor = null;
     return true;
   }
+  if (ui.tileView) { ui.tileView = null; return true; } // ui/poipick.js: the walk goes on
   if (ui.memorial) { ui.memorial = null; ui.memorialMsg = ""; return true; } // ui/relations.js
   if (ui.baseView) {
     if (ui.supplyForm) { ui.supplyForm = null; ui.supplyError = ""; }
@@ -2472,8 +2494,10 @@ window.addEventListener("keydown", (e) => {
   // Tabs, next waiting team, bases, camera spots, diary, roster and codex (ui/alerts.js); J, R and C also close their window.
   if (buildMapKey(state, ui, e, modalKind(state, ui))) { e.preventDefault(); refresh(); return; } // U: the selected base's build map (ui/buildmap.js)
   if (mapHotkey(state, ui, e, actions, modalKind(state, ui))) { e.preventDefault(); refresh(); return; }
-  // Map shortcuts do nothing behind a window (a card, the planner, a base, help) or on the new-run screen.
-  if (modalKind(state, ui)) return;
+  // Map shortcuts do nothing behind a window (a card, the planner, a base, help) or on the new-run screen. The tile
+  // view (a team walking on its tile, ui/poipick.js) lets Space and the speeds through: the clock runs under it.
+  const mk = modalKind(state, ui);
+  if (mk && !(mk === "tileview" && /^time\./.test(keyAction(e, "map") || ""))) return;
   // The rest of the map's keys, by the key table (ui/keymap.js; Menu → Controls rebinds them).
   const k = keyAction(e, "map");
   // Panels (ui/layout.js): [ left, ] right, L log, Shift+[ running orders, Shift+] alerts, \ map only. A panel's key

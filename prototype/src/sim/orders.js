@@ -61,7 +61,7 @@ export function describeOrder(state, o) {
     case "stage": return "Work on the camp"; // an old save's staging-camp work (staging.js migrateStaging clears it on load)
     case "searcharea": return "Search the area for the wreck";
     case "crewsearch": return "Scavenge"; // a crew's own search (crews.js)
-    case "poiwalk": return `Walk to ${String(o.name || "the place").toLowerCase()} (${o.mins} min), then raid it`; // poiwalk.js
+    case "poiwalk": return o.exit ? `Walk to the tile's edge (${o.mins} min), then on to ${o.name}` : `Walk to ${String(o.name || "the place").toLowerCase()} (${o.mins} min), then raid it`; // poiwalk.js
     case "hunt": return `Hunt ${huntHours(o)}h${qtyNote(o)}`;
     case "fish": return `Fish ${huntHours(o)}h${qtyNote(o)}`;
     case "forage": return `Forage ${huntHours(o)}h${qtyNote(o)}`; // foraging.js

@@ -13,7 +13,7 @@ import { launchExpedition, planPath, partyTile, orderMove } from "../src/sim/par
 import { startOrder, tasksDue, describeOrder, taskHour } from "../src/sim/orders.js";
 import { poisOf, knownPois } from "../src/sim/pois.js";
 import { poiPickCard, poiRows } from "../src/sim/poiraid.js";
-import { WALK, poiSpot, poiWalkMins, walkFrom, walkPos, walkText, walkMap, edgeSpot } from "../src/sim/poiwalk.js";
+import { WALK, poiSpot, poiWalkMins, walkFrom, walkPos, walkText, walkMap, edgeSpot, exitWalk, startExitWalk } from "../src/sim/poiwalk.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
 
 const seed = Number(process.argv[2] || 42);
@@ -165,7 +165,7 @@ section("Not for the headless paths; a save keeps it");
   startOrder(st, p, { type: "mission", mission: "scavenge" });
   check(!!st.engagement && !(p.task && p.task.type === "poiwalk"), "a pick made for the team (headless) goes straight in");
   st.engagement = null;
-  const q = teamAt(st, t.id);
+  const q = teamAt(st, t.id, 1);
   const i = knownPois(st, t, q)[2] ?? knownPois(st, t, q)[1];
   pick(st, q, i);
   q.atPoi = { tile: t.id, i: 0 };
@@ -191,6 +191,79 @@ section("Not for the headless paths; a save keeps it");
   check(new RegExp(`data-action="choice" data-i="${ci}" class="pm-go"`).test(h1) && /Walk there \(\d+ min\) and raid it/.test(h1), "a place picked: its button walks there and raids it");
   check(/pm-rows/.test(h1) && (h1.match(/class="poirow/g) || []).length === n && /▸ Places/.test(h1), "the list opened: a row a place");
   check(new RegExp(`class="pm-poi on" data-action="poisel" data-poi="${card.poiPick.sel}"`).test(h1) && /class="pm-route on"/.test(h1), "the picked place and its route stand out on the map");
+}
+
+section("Leaving the tile: the walk out to its edge, then on");
+{
+  const st = W();
+  const t = bareAllKnown(st)[0];
+  const p = teamAt(st, t.id);
+  st.hour = Math.floor(st.hour / 24) * 24 + 32;
+  const known = knownPois(st, t, p);
+  p.atPoi = { tile: t.id, i: known[1] }; // it stands at a place after a raid
+  st.poiPickAlways = true;
+  startOrder(st, p, { type: "mission", mission: "scavenge" });
+  const card = st.cards.find((c) => c.poiPick && c.partyId === p.id);
+  st.cards.length = 0;
+  const exits = card ? card.choices.filter((c) => c.exit != null) : [];
+  const land = st.grid.neighbors(t.id).filter((m) => planPath(st, t.id, m, false));
+  check(exits.length === land.length && exits.every((c) => land.includes(c.exit) && c.ai() < 0 && c.mins >= WALK.MIN && c.mins <= WALK.MAX), `a way off by each side a team can cross (${exits.length}), with its minutes, never picked for you`);
+  check(!!card && card.choices.some((c) => c.leavePick && c.uiAction && c.uiAction.type === "move"), "and Leave for another tile… (the State Map's move mode)");
+  const ex = exits[0];
+  const want = exitWalk(st, p, ex.exit);
+  const text = ex.resolve(st);
+  const w = p.task;
+  check(p.phase === "task" && w && w.type === "poiwalk" && w.exit && w.exit.via === ex.exit && w.exit.dest === ex.exit && w.mins === want.mins && w.mins === ex.mins, `picking a side walks out to its edge first (${w && w.mins} min from the place it stood at)`);
+  const edge = edgeSpot(st, t.id, ex.exit, WALK.EXIT), last = w.route[w.route.length - 1];
+  check(Math.hypot(last[0] - edge[0], last[1] - edge[1]) < 2e-3 && Math.abs(Math.hypot(...edge) - Math.sqrt(3) / 2) < 1e-9, "the route ends on the edge itself");
+  check(/edge/.test(text) && /Walk to the tile's edge \(\d+ min\), then on to/.test(describeOrder(st, w)), `the log and the panels say so: "${describeOrder(st, w)}"`);
+  const mid = walkPos(st, p, w.hours / 2);
+  check(mid.walking && mid.exit && Math.abs(mid.u - 0.5) < 1e-9, "the State Map draws it walking out from the middle (walkPos exit, half way)");
+  tasksDue(st, w.hours);
+  check(p.phase === "out" && p.dest === ex.exit && p.path[0] === t.id && p.path[1] === ex.exit && !p.atPoi, "at the edge it sets off for that tile");
+  check((p.progress || 0) > 0, `half the first step already behind it (progress ${(p.progress || 0).toFixed(2)})`);
+  // Compare: the same move given from the middle starts from nothing.
+  const q = teamAt(st, t.id, 1);
+  orderMove(st, q, ex.exit);
+  check((q.progress || 0) <= 0 && p.progress > (q.progress || 0), "a plain move from the middle has no head start");
+  // Standing on that edge already: no walk.
+  const r = teamAt(st, t.id, 1);
+  r.entered = { tile: t.id, from: ex.exit };
+  check(exitWalk(st, r, ex.exit).mins === 0, "a team on the edge it leaves by walks nothing");
+  startExitWalk(st, r, ex.exit, ex.exit);
+  check(r.phase === "out" && r.path[1] === ex.exit && (r.progress || 0) > 0, "and sets off at once, from the edge");
+  // Leave for another tile: the side is the first step of the way there.
+  const far = st.tiles.filter((x) => x.terrain !== "water" && st.grid.distance(x.id, t.id) === 3).map((x) => x.id).find((id) => planPath(st, t.id, id, false));
+  const s2 = teamAt(st, t.id, 1);
+  s2.atPoi = { tile: t.id, i: known[0] };
+  const way = planPath(st, t.id, far, false);
+  startExitWalk(st, s2, null, far);
+  check(s2.task && s2.task.type === "poiwalk" && s2.task.exit.via === way.path[1] && s2.task.exit.dest === far, "leaving for a tile further off walks to the side its way leaves by");
+  taskHour(st, s2);
+  check(s2.phase === "out" && s2.dest === far && s2.path[1] === way.path[1], "then goes on there");
+}
+
+section("The tile view: the walk on the tile map");
+{
+  const st = W();
+  const t = bareAllKnown(st)[0];
+  const p = teamAt(st, t.id);
+  globalThis.window = globalThis.window || { addEventListener() {}, devicePixelRatio: 1 };
+  const PICK = await import("../src/ui/poipick.js");
+  const ui = { tileView: { partyId: p.id }, speed: 0, lastSpeed: 1 };
+  check(!PICK.tileViewUp(st, ui) && ui.tileView === null, "nothing walking: no tile view (and it clears)");
+  pick(st, p, knownPois(st, t, p)[1]);
+  ui.tileView = { partyId: p.id };
+  check(PICK.tileViewUp(st, ui), "a team walking to a place: the tile view is up");
+  const html = PICK.tileViewModal(st, ui);
+  check(/id="pm-team"/.test(html) && /id="pm-left"/.test(html) && /class="pm-route on"/.test(html) && /▶ Run/.test(html) && /tv-stop/.test(html) && /tv-close/.test(html) && !/data-action="poisel"/.test(html) && !/undefined|NaN/.test(html), "its map: the walk's route, the team's dot, the minutes left, Run, Stop and Close (the places not buttons)");
+  const card = poiPickCard(st, { ...p, phase: "waiting", task: null });
+  check(/class="pm-exit" data-action="choice"/.test(PICK.poiPickModal(st, card)), "the dialogue's map has an arrow on each side to leave by");
+  ui.speed = 1;
+  check(/⏸ Pause/.test(PICK.tileViewModal(st, ui)), "running: Pause instead of Run");
+  tasksDue(st, 1);
+  check(!PICK.tileViewUp(st, ui) && ui.tileView === null, "the walk over (the raid starts): the tile view goes");
+  st.engagement = null;
 }
 
 console.log(`\n${passes} passed, ${fails} failed.`);
