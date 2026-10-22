@@ -17,6 +17,7 @@ import { NL_GEAR } from "./data-nonlethal.js"; // tasers, cartridges, pepper spr
 import { TOOL_ITEMS } from "./data-tools.js"; // tools for building and crafting: a tool kit, saws, a felling axe, a shovel, a drill, a welder, a sewing kit, the makeshift ones (toolreqs.js)
 import { SURV_ITEMS } from "./data-survival.js"; // survival gear: tools, armour against teeth, lights, a rig, a jump bag, a rangefinder (survival.js: where they turn up)
 import { BED_GEAR } from "./data-beds.js"; // beds as furniture: cots, beds, bunk beds, large beds (beds.js)
+import { POWER_GEAR } from "./data-power.js"; // the power grid: found generators, mounted spotlights, fridges (electric.js)
 import { BOX_GEAR, BOX_PATCH } from "./data-boxes.js"; // cash boxes, fire safes, toolboxes, equipment cases; the gun cases as boxes (boxes.js)
 import { NEW_KINDS } from "./data-shops.js"; // the shops and services new as places (their LOCATIONS rows)
 
@@ -757,6 +758,7 @@ for (const [k, p] of Object.entries(BOX_PATCH)) if (GEAR[k]) Object.assign(GEAR[
 Object.assign(GEAR, CART_GEAR); // carts (data-carts.js, carts.js)
 Object.assign(GEAR, BED_GEAR); // beds as furniture (data-beds.js, beds.js)
 Object.assign(GEAR, TENT_GEAR); // tent bags (data-tents.js, tents.js)
+Object.assign(GEAR, POWER_GEAR); // found generators, mounted spotlights, fridges (data-power.js, electric.js)
 Object.assign(GEAR, supItemGear(SUPPLIES, GEAR)); // supplies as items: s_<key> (data-supitems.js; rounds keep their boxes)
 // The Melee skill (world.js MELEE_SKILL): every melee weapon goes by Melee, not Shooting (its req, the skill-gap rule).
 for (const d of Object.values(GEAR)) if (d.slot === "weapon" && d.cat === "melee" && d.skill === "shooting") d.skill = "melee";

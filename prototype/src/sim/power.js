@@ -69,16 +69,28 @@
 // the log says why (no generator, the tank dry, no fuel above the reserve, not enough power, broken, switched off), at
 // most once a day, and again when it is cold once more (freezerSwitch: one line each per outage, none for a blip of
 // under two hours).
+// The power grid (2026-10-21, data-power.js and electric.js: found generators, spotlights, the breaker panel's
+// circuits, the ammo press, the well pump, the fence charger, the fridge):
+//   Found generators (GENSETS: an inverter set up to the Army's tactical set) are items carried in both arms and set on
+//     the base map from the stores; set, each is a generator here (isGen) with its kind's power, its burn by the hour
+//     (genDef: data-power.js gives fuel an hour, the tiers here fuel a day) and tank and Heat, refuelled by the same
+//     morning chore. Never upgraded (genToUpgrade: the built Generator only).
+//   New users (POWER_USERS, after the old ones in the serving order): the spotlight from dusk to dawn, the fence
+//     charger, the ammo press while its operator works it, the electric well pump while it serves a well, the fridge;
+//     then the building circuits (electric.js circuitNeed: a breaker panel standing, each wired building's lights and,
+//     on a hot or a cold day, its climate), each switched like any powered building (base.powerOff[id]).
 // The result is cached on the base (base.power: supply, demand, served building ids, running generators) every hour
 // (production.js productionHour) and before the stations run each day, so storage, radio and defences read it
 // cheaply. A base that never refreshed has no power.
 import { BUILDINGS, RECIPES, stationOperator, assignStations } from "./buildings.js";
 import { withBuildmat } from "./buildmats.js"; // the upgrades' building materials
-import { day, log, atBase, hourOfDay, skill } from "./world.js";
+import { day, log, atBase, hourOfDay, skill, isNight } from "./world.js";
 import { orderHold } from "./production.js";
 import { stockHas } from "./water.js"; // a recipe's "fresh" in days of fresh food
 import { workFactor } from "./health.js";
 import { sickRestWhy } from "./sickrest.js"; // the ill rest: they do no chores
+import { GENSETS, SPOT, FRIDGE, PRESS } from "./data-power.js"; // the power grid's pieces (found generators, spotlights, ...)
+import { circuitNeed, circuitWhat, gridWired, pumpServes } from "./electric.js"; // the breaker panel's circuits, the well pump (call-time only)
 
 export const POWER = { genOut: 6, genFuel: 2, genHeat: 4, tank: 3 }; // tier 1 (GEN_TIERS[1])
 // The generator's tiers (see the header): out (power), idle / full (fuel a day running at no load / at full load: genBurn),
@@ -93,7 +105,10 @@ export const GEN_TIERS = [
 ];
 for (const T of GEN_TIERS) if (T && T.cost) T.cost = withBuildmat(T.cost); // building materials in every upgrade (buildmats.js; made on site from scrap when short)
 export const genTier = (b) => Math.max(1, Math.min(GEN_TIERS.length - 1, Math.floor(Number(b && b.tier) || 1)));
-export const genDef = (b) => GEN_TIERS[genTier(b)];
+// A found generator's numbers in the tiers' shape (fuel a day: data-power.js gives it an hour).
+const GENSET_DEFS = Object.fromEntries(Object.entries(GENSETS).map(([k, g]) => [k, { name: g.name, out: g.out, idle: g.idle * 24, full: g.full * 24, tank: g.tank, heat: g.heat, desc: g.what, set: true }]));
+export const isGenset = (b) => !!b && !!GENSETS[b.type];
+export const genDef = (b) => (isGenset(b) ? GENSET_DEFS[b.type] : GEN_TIERS[genTier(b)]);
 export const genName = (b) => genDef(b).name;
 export const genTank = (b) => genDef(b).tank;
 // Fuel a day a generator of tier def burns while running with `load` power drawn from it (see the header).
@@ -108,13 +123,21 @@ export const POWER_USERS = {
   machine_shop: { need: 2, what: "power tools: 2 parts a day from 9 scrap (1 from 6 without)" },
   kitchen:      { need: 1, what: "an electric stove: half as much again a day (14 days of fresh food → 12 portions of jarred food)" },
   sealer:       { need: 1, what: "a vacuum sealer: packs cooked food into long-keeping survival meals" },
+  // The power grid (data-power.js, electric.js).
+  spotlamp:     { need: SPOT.need, what: `a mounted spotlight: lights ${SPOT.R} cells round it in a night fight here (${SPOT.STAND_R} from a wall stand); on from dusk to dawn` },
+  fence_charger:{ need: 2, what: "a charged fence: the wire shocks whatever reaches it, and the base holds back more of a horde" },
+  ammo_press:   { need: 2, what: `the ammo press: ${PRESS.in}× the scrap into ${PRESS.out}× the rounds, reloading orders ${PRESS.rate}× as fast; idle without power` },
+  elec_pump:    { need: 1, what: "an electric well pump: more water a day from the well it serves" },
+  fridge:       { need: FRIDGE.need, what: `a refrigerator: ${FRIDGE.room} days of food kept at a quarter of its shelf a day` },
 };
 // Powered stations: inputs and outputs multiplied (rounded) while they are served.
-export const POWER_BOOST = { machine_shop: { in: 1.5, out: 2 }, kitchen: { in: 1.5, out: 1.5 } };
+export const POWER_BOOST = { machine_shop: { in: 1.5, out: 2 }, kitchen: { in: 1.5, out: 1.5 }, ammo_press: { in: PRESS.in, out: PRESS.out } };
+// Stations that run only with power (electric.js: idle without it).
+export const NEEDS_POWER = new Set(["ammo_press"]);
 export const RADIO_BOOST = 2;
 const PRIORITY = Object.keys(POWER_USERS);
 
-export const isGen = (b) => !!b && b.type === "generator";
+export const isGen = (b) => !!b && (b.type === "generator" || !!GENSETS[b.type]);
 export const generators = (base) => base.buildings.filter(isGen);
 export const switchedOff = (base, b) => !!(base.powerOff && base.powerOff[b.id]);
 const tankOf = (b) => Math.max(0, Number(b.tank) || 0);
@@ -180,15 +203,29 @@ export const choreShare = (state, s) => (s && s.chore && s.chore.hour === state.
 // Supply, demand and who gets power, worked out from the base as it is now (no side effects).
 // gens: [{ b, def, off, burned, fueled, ok, running, tank, reason, load, burn }], users: [{ b, need, wants, served, off }].
 // load: the power drawn from a running generator; burn: its fuel a day at that load (genBurn).
+// A user's draw now: a station while its operator works it, a spotlight at night, a pump on a well (electric.js).
+function userWants(state, base, b) {
+  if (BUILDINGS[b.type].station) return stationWants(state, base, b);
+  if (b.type === "spotlamp") return isNight(state);
+  if (b.type === "elec_pump") return pumpServes(base, b);
+  return true;
+}
 export function powerStatus(state, base) {
   const users = [];
   for (const type of PRIORITY) {
     for (const b of base.buildings) {
       if (b.type !== type) continue;
       const off = switchedOff(base, b);
-      const wants = !off && !b.broken && (BUILDINGS[type].station ? stationWants(state, base, b) : true); // a broken one draws nothing (breakdowns.js)
-      users.push({ b, need: POWER_USERS[type].need, wants, served: false, off });
+      const wants = !off && !b.broken && userWants(state, base, b); // a broken one draws nothing (breakdowns.js)
+      users.push({ b, need: POWER_USERS[type].need, wants, served: false, off, what: POWER_USERS[type].what });
     }
+  }
+  // The breaker panel's circuits (electric.js): every wired building's lights and, on a hot or a cold day, its climate.
+  if (gridWired(base)) for (const b of base.buildings) {
+    const need = circuitNeed(state, base, b);
+    if (!need) continue;
+    const off = switchedOff(base, b);
+    users.push({ b, need, wants: !off && !b.broken, served: false, off, circuit: true, what: circuitWhat(state, base, b) });
   }
   const demand = users.reduce((a, u) => a + (u.wants ? u.need : 0), 0);
   const gens = generators(base).map((b) => {
@@ -245,7 +282,7 @@ export function dryWhy(state, base, b) {
 // The hour of power at a base: the refuelling chore, then the running generators burn their hour's fuel from the tank
 // (once an hour: b.burnHour), and the result is cached on the base (base.power). Safe to call more than once an hour.
 export function refreshPower(state, base) {
-  if (!base.buildings.some((b) => isGen(b) || POWER_USERS[b.type])) { base.power = null; if (base.freezerOn) base.freezerOn = false; return null; }
+  if (!base.buildings.some((b) => isGen(b) || POWER_USERS[b.type] || b.type === "breaker")) { base.power = null; if (base.freezerOn) base.freezerOn = false; return null; }
   refuelChore(state, base);
   const ps = powerStatus(state, base);
   for (const g of ps.gens) {
@@ -343,13 +380,13 @@ export const genTierText = (def, t) => `Tier ${t} of ${GEN_TIERS.length - 1}: ${
 // that is not broken, has no upgrade queued and has a tier above it), or null.
 export const genCapacity = (base) => generators(base).reduce((a, b) => a + genDef(b).out, 0);
 export function genToUpgrade(base) {
-  const list = generators(base).filter((b) => !b.broken && genTier(b) < GEN_TIERS.length - 1 && !base.construction.some((c) => c.target === b.id));
+  const list = generators(base).filter((b) => b.type === "generator" && !b.broken && genTier(b) < GEN_TIERS.length - 1 && !base.construction.some((c) => c.target === b.id));
   return list.sort((x, y) => genTier(x) - genTier(y) || x.id - y.id)[0] || null;
 }
 // The fuel a day the base's generators (not broken) would burn carrying `need` power, the biggest first: as they are,
 // or with `up` upgraded a tier.
 export function genFuelFor(base, need, up = null) {
-  const defs = generators(base).filter((b) => !b.broken).map((b) => (b === up ? GEN_TIERS[genTier(b) + 1] : genDef(b))).sort((x, y) => y.out - x.out);
+  const defs = generators(base).filter((b) => !b.broken).map((b) => (b === up && !isGenset(b) ? GEN_TIERS[genTier(b) + 1] : genDef(b))).sort((x, y) => y.out - x.out);
   let left = need, fuel = 0;
   for (const d of defs) { if (left <= 0) break; const load = Math.min(d.out, left); fuel += genBurn(d, load); left -= load; }
   return fuel;
@@ -376,11 +413,11 @@ export function genUpgradeFuelOk(base, need, up, floor = 0, flows = { income: 0,
 
 // One line for the Buildings tab and the base screens.
 export function powerLine(state, base) {
-  if (!generators(base).length && !base.buildings.some((b) => POWER_USERS[b.type])) return "No generator";
+  if (!generators(base).length && !base.buildings.some((b) => POWER_USERS[b.type] || b.type === "breaker")) return "No generator";
   const ps = powerStatus(state, base);
   if (!generators(base).length) return `No generator (${ps.demand} power wanted)`;
-  const tiers = generators(base).map((b) => genTier(b)).join(" + ");
-  return `${ps.supply} supply / ${ps.demand} demand · ${ps.running} of ${generators(base).length} generator${generators(base).length === 1 ? "" : "s"} running (tier ${tiers}; ${ps.fuelPerDay} fuel a day, +${ps.heat} Heat)`;
+  const tiers = generators(base).map((b) => (isGenset(b) ? genName(b).toLowerCase() : `tier ${genTier(b)}`)).join(" + ");
+  return `${ps.supply} supply / ${ps.demand} demand · ${ps.running} of ${generators(base).length} generator${generators(base).length === 1 ? "" : "s"} running (${tiers}; ${ps.fuelPerDay} fuel a day, +${ps.heat} Heat)`;
 }
 
 // What a base could draw if every powered building it has were at work (the governor's look-ahead).
@@ -392,13 +429,14 @@ export function powerWanted(state, base, staffed = () => false) {
     if (BUILDINGS[b.type].station && !staffed(b)) continue;
     need += u.need;
   }
+  if (gridWired(base)) for (const b of base.buildings) if (!switchedOff(base, b)) need += circuitNeed(state, base, b); // electric.js: the wired buildings
   return need;
 }
 
 // ---------- saves from before the tiers (save.js, once: state.genTiersV) ----------
 // Every generator standing is a portable set (tier 1), and an AI group's generator too (groupworks.js w.powerTier).
 export function migrateGenTiers(state) {
-  for (const base of state.bases || []) for (const b of generators(base)) if (!(b.tier >= 1)) b.tier = 1;
+  for (const base of state.bases || []) for (const b of generators(base)) if (b.type === "generator" && !(b.tier >= 1)) b.tier = 1;
   for (const f of state.factions || []) for (const w of Object.values(f.works || {})) if (w && w.power && !(w.powerTier >= 1)) w.powerTier = 1;
 }
 

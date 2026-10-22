@@ -36,6 +36,7 @@ import { GEAR } from "./data.js";
 import { allItems } from "./inventory.js";
 import { season, weatherOnDay } from "./weather.js";
 import { bedLine, roughColdDaily } from "./beds.js"; // beds as furniture: where someone sleeps (call-time only)
+import { powerMood } from "./electric.js"; // the breaker panel's circuits: lit or dark, cooled or heated (call-time only)
 import { crowdInfo, talker } from "./morale.js";
 import { partyMembers, tileLabel } from "./parties.js";
 import { farmOf } from "./farming.js";
@@ -363,6 +364,7 @@ export function moodFactors(state, s) {
       add(`Common room${rooms > 1 ? `s (${rooms})` : ""}${n > rooms * MOODF.commonCap ? ` (crowded: ${n} people)` : ""}`, MOODF.common * Math.min(1, (rooms * MOODF.commonCap) / n), true);
     }
     if (count(base, "chapel")) add("The chapel", MOODF.chapel, true);
+    if (!pl.route) for (const f of powerMood(state, s, base)) add(f.label, f.v, true, f.tip); // electric.js: a wired base's lights and climate, on or off
     // The Inspiring perk (skills.js PERK_TREE): +0.5 a day from each inspiring person at the base, up to two.
     const insp = pl.route ? [] : atBase(state, base.id).filter((o) => o !== s && hasPerk(o, "inspiring"));
     if (insp.length) add(`Inspired by ${listText(insp.slice(0, 2).map(first))}`, Math.min(MOODF.inspireMax, insp.length * MOODF.inspire), true);

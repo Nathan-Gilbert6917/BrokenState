@@ -31,6 +31,9 @@ import { BED_BUILDINGS } from "./data-beds.js"; // beds as furniture: the placed
 import { TENT_TYPES, TENT_S } from "./data-tents.js"; // the one tent table (TENTS below)
 import { strikeTentAtBase } from "./tents.js"; // a bag's tent pulled down: struck back into its bag (call-time only)
 import { furnitureBeds, furnitureProblem, canSetFurniture, setFurniture, pickUpFurniture, RETIRED_WHY, furnitureText } from "./beds.js"; // beds as furniture (call-time only)
+import { POWER_BUILDINGS } from "./data-power.js"; // the power grid: found generators, spotlights, fridges, the breaker panel, the ammo press, the well pump, the fence charger
+import { isSetPiece, placedProblem, canSetPlaced, setPlaced, pickUpPlaced } from "./electric.js"; // the pieces set from the stores (call-time only)
+import { NEEDS_POWER, isPowered as poweredNow } from "./power.js"; // the ammo press runs only on power
 
 export const RECIPES = {
   ammo:  { name: "Ammo",  in: { scrap: 3 },          out: { ammo: 8 },  skill: "mechanics", desc: "3 scrap → 8 rounds per day, the common rounds of the guns at the base (+4% per Mechanics point)" },
@@ -353,6 +356,7 @@ export const BUILDINGS = {
                   desc: "Turn the outpost camp into a real outpost: a shack with a roof, a dug spring (3 water a day), 6 building plots and 6 utility plots (walls are built on the Defenses tab). The materials are taken from the camp's stores as they come in (bring them with a team or a supply run); the builders here do the work, never more of it than the materials delivered allow." },
 };
 Object.assign(BUILDINGS, BED_BUILDINGS); // beds as furniture (data-beds.js, beds.js): set from the stores inside a general building, never queued
+Object.assign(BUILDINGS, POWER_BUILDINGS); // the power grid (data-power.js, electric.js): pieces set from the stores (furniture + set), the panel, the press, the pump, the charger
 
 // ---------- building materials and metal sheets (buildmats.js; the user's calls 2026-10-21) ----------
 // Every building, defence and upgrade takes building materials, by its size (buildmats.js withBuildmat: one for every
@@ -549,7 +553,7 @@ export function demolish(state, base, id) {
   const chk = canDemolish(state, base, id);
   if (!chk.ok) return chk.reason;
   const b = base.buildings.find((x) => x.id === id);
-  if (BUILDINGS[b.type].furniture) return pickUpFurniture(state, base, b); // beds.js: back into the stores whole
+  if (BUILDINGS[b.type].furniture) return isSetPiece(b.type) ? pickUpPlaced(state, base, b) : pickUpFurniture(state, base, b); // beds.js, electric.js: back into the stores whole
   if (b.type === "tent" && TENTS[tentKind(b)].bag) { // a tent from a bag (tents.js): struck back into it, the bag into the stores
     const name = tentOf(b).name, bag = strikeTentAtBase(state, base, id);
     if (bag) base.armory.push(bag);
@@ -567,7 +571,7 @@ export function demolish(state, base, id) {
     for (const f of fittingsIn(state, base, id)) { if (f.key.startsWith("c:")) cancelBuild(state, base, f.rec.id); else down.add(f.rec); }
     for (const x of base.buildings) if (x.host === id && BUILDINGS[x.type] && BUILDINGS[x.type].fit) down.add(x);
     for (const f of down) {
-      if (BUILDINGS[f.type].furniture) { pickUpFurniture(state, base, f); inside.push(`${BUILDINGS[f.type].name.toLowerCase()} (carried out into the stores)`); continue; } // beds.js: furniture is carried out, whole
+      if (BUILDINGS[f.type].furniture) { if (isSetPiece(f.type)) pickUpPlaced(state, base, f); else pickUpFurniture(state, base, f); inside.push(`${BUILDINGS[f.type].name.toLowerCase()} (carried out into the stores)`); continue; } // beds.js: furniture is carried out, whole
       for (const [k, v] of Object.entries(demolishRefund(f))) back[k] = (back[k] || 0) + v;
       base.buildings.splice(base.buildings.indexOf(f), 1);
       inside.push(BUILDINGS[f.type].name.toLowerCase());
@@ -1014,6 +1018,9 @@ export function stationStatus(state, base, st) {
   }
   // production.js: today's inputs and outputs (power, the still's mash) and the station's standing order.
   const hold = orderHold(state, base, st);
+  // A machine that runs only on power (power.js NEEDS_POWER: the ammo press): idle without it (switched off, too little
+  // power, the generators dry or broken). Its draw comes first (power.js stationWants: an operator, no order holding it).
+  if (NEEDS_POWER.has(st.type) && !poweredNow(base, st)) return { op, running: false, idle: true, reason: base.powerOff && base.powerOff[st.id] ? "Switched off (Power card)" : "No power: it runs only on electricity (Power card)", recipe, out: {}, in: r.in, powered: false };
   const rs = reloadStatus(state, base, st, op); // reloading.js: a reloading order to work today (its station order holds only the common rounds)
   if (rs) return rs;
   const io = stationIO(state, base, st, op);
@@ -1053,7 +1060,7 @@ export function placeProblem(base, type) {
   const def = BUILDINGS[type];
   if (!def) return "Unknown building";
   if (def.hidden) return "Queued from the base map (a piece of land's card)";
-  if (def.furniture) return furnitureProblem(base, type); // beds.js: inside a general building with room, at any base
+  if (def.furniture) return isSetPiece(type) ? placedProblem(null, base, type) : furnitureProblem(base, type); // beds.js: inside a general building with room, at any base; electric.js: the found generators, spotlights, fridges
   if (def.outpostOnly && base.type !== "outpost") return "Outposts only";
   if (def.hubOnly && base.type !== "hub") return "The main base only (an outpost camp is established instead)";
   // A shelter (tier 0) builds only a few survival buildings, and the step up into a base; a base never the step.
@@ -1149,7 +1156,7 @@ export function canBuildPiece(state, base, type, opts = {}) {
 
 export function canBuild(state, base, type, opts = {}) {
   const def = BUILDINGS[type];
-  if (def && def.furniture) return canSetFurniture(state, base, type); // beds.js: one in the stores and a building with room
+  if (def && def.furniture) return isSetPiece(type) ? canSetPlaced(state, base, type) : canSetFurniture(state, base, type); // beds.js, electric.js: one in the stores and room for it
   if (def && def.retired) return { ok: false, locked: true, reason: RETIRED_WHY(def) }; // superseded (the makeshift cots: craft a Cot)
   if (def && def.wall) return canBuildWall(state, base, opts);
   if (def && def.piece) return canBuildPiece(state, base, type, opts);
@@ -1184,6 +1191,9 @@ export function canBuild(state, base, type, opts = {}) {
     return { ok: false, noPlot: true, reason: cap ? `No free ${PLOT_NAMES[kind].toLowerCase()} (${plotsUsed(base, kind)}/${cap}): demolish something or build at a bigger base` : `A ${tierName(base).toLowerCase()} has no ${PLOT_NAMES[kind].toLowerCase()}s` };
   }
   if (type === "huntcabin" && cabinProblem(state, base)) return { ok: false, reason: `Hunting cabin: ${cabinProblem(state, base)}` };
+  // The power grid (electric.js): a pump goes down a well, a charger needs a wire to charge.
+  if (type === "elec_pump" && countAll(base, "elec_pump") + queued >= countAll(base, "well")) return { ok: false, reason: countAll(base, "well") ? "One pump a well: build another well first" : "Needs a well here first" };
+  if (type === "fence_charger" && !countAll(base, "barbed_wire") && !countAll(base, "razor_wire")) return { ok: false, reason: "Needs a barbed wire fence or concertina wire here to charge" };
   if (def.needsWall && !hasWall(base)) return { ok: false, reason: "Needs a wall closed round the base first (Walls, on this tab)" };
   if (!def.gather) { const why = siteShort(base.stock, def.cost, keyWord); if (why) return { ok: false, reason: why }; } // gather: taken as it comes in; building materials and sheets the stores lack made on site from scrap (buildmats.js)
   if (def.req) {
@@ -1202,7 +1212,7 @@ export function queueBuild(state, base, type, opts = {}) {
   /** @type {any} */
   const chk = canBuild(state, base, type, opts);
   if (!chk.ok) return chk.reason;
-  if (BUILDINGS[type].furniture) return setFurniture(state, base, type).msg; // beds.js: set from the stores (the game places it), no job
+  if (BUILDINGS[type].furniture) return isSetPiece(type) ? setPlaced(state, base, type).msg : setFurniture(state, base, type).msg; // beds.js, electric.js: set from the stores (the game places it), no job
   if (BUILDINGS[type].wall) { // the Ring wall: the pieces to close the ring (job.pieces), or the pieces to raise (job.ids); its materials gathered as they come in
     // The ring pegged out where its pieces were counted (basemap.js ensureRing; pt-int round 2): pegged only when the job
     // finished, the yard had grown meanwhile (each build queued after it widens a hub's yard), the pieces were laid on

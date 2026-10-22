@@ -114,6 +114,8 @@ export const BUILD_TOOLS = {
   spike_pits: ["dig"], barbed_wire: ["hammer", "pliers"], razor_wire: ["pliers"],
   sandbag_wall: ["dig"], sandbag1: ["dig"], trench: ["dig"], gate: ["drill", "welder"], floodlights: ["wrench", "pliers"],
   minefield: ["dig", "pliers"], guard_towers: ["hammer", "saw", "drill"],
+  // the power grid (data-power.js): wiring pliers, bolted machines wrenches and a drill
+  breaker: ["drill", "pliers"], ammo_press: ["wrench", "drill"], elec_pump: ["wrench", "pliers"], fence_charger: ["pliers"],
   // stepping up a tier
   hub_up: ["hammer", "saw"],
 };
@@ -130,7 +132,7 @@ export const CRAFT_TOOLS = {
   padding: ["sewing"], backpack: ["sewing"], slingbag: ["sewing"], makeshiftrig: ["sewing"], ghillie: ["sewing"], woodghillie: ["sewing"],
   scrapvest: ["drill", "pliers"], steelplate: ["hammer"], rivethelmet: ["hammer", "drill"],
   buildmat: ["hammer"], crowbar: ["hammer"], boards: ["saw"], ladder: ["hammer", "saw"], ram: ["saw", "wrench"],
-  flashlight: ["pliers"], headlamp: ["pliers"], windlight: ["pliers"], lantern: ["pliers"], spotlight: ["pliers", "drill"], repairkit: ["pliers"],
+  flashlight: ["pliers"], headlamp: ["pliers"], windlight: ["pliers"], lantern: ["pliers"], spotlight: ["pliers", "drill"], spotlamp: ["pliers", "drill"], repairkit: ["pliers"],
   bicycle: ["wrench"], wheelbarrow: ["hammer", "wrench"], handcart: ["hammer", "saw", "wrench"], cookpot: ["hammer"], recoilpad: ["saw"],
   cot: ["hammer", "saw"], bed: ["hammer", "saw"], bunkbed: ["hammer", "saw"], bigbed: ["hammer", "saw"],
 };

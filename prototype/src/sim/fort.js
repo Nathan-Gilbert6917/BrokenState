@@ -23,6 +23,7 @@ import { count, hasWall } from "./buildings.js";
 import { densify, COVER } from "./battlesize.js"; // cover over the margin
 import { landSpec, landOf, layLand } from "./basescatter.js"; // the land round their base, as round yours (ADR 0001)
 import { poweredType } from "./power.js";
+import { SPOT } from "./data-power.js"; // mounted spotlights (basemap.js F.spots): their light in a night fight
 import { isNight } from "./world.js";
 import { armoryDefence, bossUnit } from "./defences.js";
 import { layMines } from "./mines.js"; // the main base's minefield in the margin
@@ -289,8 +290,10 @@ export function fortDefence(b, ctx, base, c) {
   fortDefaults(b, F, side, okCell);
   const floodlit = c.floodlit ?? (count(base, "floodlights") > 0 && (poweredType(base, "floodlights") || (base.stock.fuel || 0) >= 2));
   const night = c.night ?? isNight(state);
-  b.floodAim = floodlit ? (night ? DEPLOY.FLOOD_NIGHT : DEPLOY.FLOOD_DAY) : 0;
-  finishFort(b, F, side, { attackers: "enemy", base, floodlit, night, deploy: !!b.setup.deploy });
+  // The mounted spotlights with power (electric.js spotOn, laid by basemap.js as F.spots): lit at night only.
+  const spots = night ? (F.spots || []).filter((sp) => sp.on) : [];
+  b.floodAim = floodlit ? (night ? DEPLOY.FLOOD_NIGHT : DEPLOY.FLOOD_DAY) : spots.length ? SPOT.aim : 0;
+  finishFort(b, F, side, { attackers: "enemy", base, floodlit, night, spots, deploy: !!b.setup.deploy });
   if (b.setup.deploy) {
     b.phase = "deploy";
     const from = (F.sides || [side]).length > 1 ? `The dead come from ${(F.sides).length} sides: ${F.sides.join(", ").replace(/, ([^,]*)$/, " and $1")}` : `The attack comes from the ${side}`;
@@ -376,11 +379,12 @@ function finishFort(b, F, side, o) {
   };
   b.deploy = {
     side, walled, fort: true, attackers: o.attackers === "player", zone, gate: F.gates[side] || [], breaches: F.breaches || [], towers: F.towers, walkway: F.walkway, ladders: F.ladders,
-    floodlit: !!o.floodlit, night: !!o.night, lit: "center", fixedLit: !!(o.floodlit && F.lights && F.lights.length), frame: { fort: true, w0: W, h0: H, fromX: 0 },
+    floodlit: !!o.floodlit, night: !!o.night, lit: "center", fixedLit: !!(o.floodlit && F.lights && F.lights.length) || !!(o.spots && o.spots.length), frame: { fort: true, w0: W, h0: H, fromX: 0 },
+    spots: (o.spots || []).map((sp) => [sp.x, sp.y, sp.r]), // the lit spotlights: [x, y, reach] (fixedLit)
     defaults: b.units.filter((u) => u.side === "player" && active(u)).map((u) => [u.id, u.x, u.y, u.post || null]),
   };
   b.holders = o.attackers === "player" ? "enemy" : "player";
-  if (o.floodlit && b.deploy.fixedLit) fixedLit(b, F);
+  if (b.deploy.fixedLit) fixedLit(b, F, !!o.floodlit);
   else if (o.floodlit) setFortLit(b, "center"); else b.lit = null;
 }
 // Floodlights on the fort: a third of the attack side's margin (left / center / right as the defenders face it).
@@ -402,11 +406,15 @@ export function setFortLit(b, zone) {
 }
 
 // Floodlights placed on the base map (basemap.js F.lights): each lights the cells within FLOOD.R of it, wherever it
-// stands, so where the lights go is part of the layout.
-function fixedLit(b, F) {
+// stands, so where the lights go is part of the layout. The mounted spotlights with power (b.deploy.spots, at night)
+// each light the cells within their own reach (SPOT.R, SPOT.STAND_R up on a wall stand) whether the floodlights burn
+// or not.
+function fixedLit(b, F, flood = true) {
   const W = b.w, H = b.h;
   const lit = new Uint8Array(W * H);
-  for (const [lx, ly] of F.lights) for (let y = Math.max(0, ly - FLOOD.R); y <= Math.min(H - 1, ly + FLOOD.R); y++) for (let x = Math.max(0, lx - FLOOD.R); x <= Math.min(W - 1, lx + FLOOD.R); x++) if (Math.hypot(x - lx, y - ly) <= FLOOD.R) lit[y * W + x] = 1;
+  const disc = (lx, ly, R) => { for (let y = Math.max(0, ly - R); y <= Math.min(H - 1, ly + R); y++) for (let x = Math.max(0, lx - R); x <= Math.min(W - 1, lx + R); x++) if (Math.hypot(x - lx, y - ly) <= R) lit[y * W + x] = 1; };
+  if (flood) for (const [lx, ly] of F.lights) disc(lx, ly, FLOOD.R);
+  for (const [lx, ly, R] of (b.deploy && b.deploy.spots) || []) disc(lx, ly, R);
   b.lit = lit;
   b.deploy.lit = "fixed";
 }

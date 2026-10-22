@@ -13,6 +13,7 @@ import {
 import { planPath, dispatchConvoy } from "./parties.js";
 import { attitude } from "./factions.js";
 import { count, countAll, baseBeds, runStations, assignStations, stations, stationStatus, RECIPES, BUILDINGS, isShelter, SHELTER, barrelRoom, isCamp, tierUpJob, gatherRows } from "./buildings.js";
+import { pumpWater } from "./electric.js"; // an electric pump down a well (call-time only)
 import { supplyReserve } from "./supply.js";
 import { medicalDaily, fieldInfectionDaily } from "./medical.js";
 import { toolBonus } from "./crafting.js";
@@ -310,7 +311,7 @@ export function waterProduction(state, base) {
   const factor = Weather.wellFactor ? Weather.wellFactor(state) : 1;
   const own = ownWell(base) * factor;
   const stream = byWater(state, base) ? streamWater(base) : 0;
-  const wells = count(base, "well") * WATER.well * factor;
+  const wells = (count(base, "well") * WATER.well + pumpWater(base)) * factor; // electric.js: a powered pump down a well
   const rain = count(base, "rain_catcher") * WATER.rainPerCatcher * (Weather.rainWater ? Weather.rainWater(state) : 0);
   const filters = filtersAt(base) * WATER.filter;
   // hauled: prisoners set to Fetch water (prisoners.js labour), and the wells on your claims next to the base

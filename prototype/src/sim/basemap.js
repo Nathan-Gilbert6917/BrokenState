@@ -124,6 +124,8 @@ import { cfgOf } from "./worldcfg.js"; // the run's dials: Base yard to start / 
 import { storageOf, coreStoreKg, vehicleStoreKg, woodpileOf } from "./basestorage.js"; // the base's room and what lies outside (call-time only)
 import { BED_FOOT } from "./data-beds.js"; // beds as furniture: a cot, bed or bunk bed 1 × 2, a large bed 2 × 2, on a general building's floor
 import { setFurnitureAt, furnitureInStores } from "./beds.js"; // beds as furniture: set from the stores where the ghost is (call-time only)
+import { POWER_FOOT, SPOT } from "./data-power.js"; // the power grid: found generators, spotlights (on a wall stand or the ground), fridges, the panel, the press, the pump, the charger
+import { isSetPiece, setPlacedAt, placedInStores, spotOn, fenceCharged } from "./electric.js"; // set from the stores; a spotlight lit, the wire charged (call-time only)
 
 // The grid by tier: core = the half-size of the middle structure's own ground, yard = the yard's half-size to start
 // with, per = yard growth a building with a footprint, cap = the yard's largest half-size, out = open ground beyond the
@@ -224,6 +226,7 @@ export const FOOT = {
   // in the open ground): barbed_wire, razor_wire, guard_towers, minefield.
 };
 Object.assign(FOOT, BED_FOOT); // beds as furniture (data-beds.js, beds.js): fittings set from the stores, drawn as bed cells
+Object.assign(FOOT, POWER_FOOT); // the power grid (data-power.js): a spotlight may stand on a wall stand's cell (mount), a fridge on a floor (fit)
 export const FIELD = { kind: "field", w: 3, h: 2 };
 // What holds the base's goods on the map (makeStores): a weight for the share of the stores each takes.
 const STORES = { warehouse: 4, storehouse: 3, cellar: 2, coldstore: 2, freezer: 2, shed: 1.5, crates: 1, storebox: 0.5, armory: 1, shelves: 1, lockers: 1 }; // the armory: two locked containers of its own kind (pushStore), no share of the rest; shelves and lockers: the fittings that keep goods (base building)
@@ -538,10 +541,14 @@ const K = (x, y) => (y + 2048) * 4096 + (x + 2048);
 const hostOf = (it) => !!it && !!it.general && it.built !== false;
 // A thing's cells into an occupancy: a standing general building's walls and doors in foot and its floor cells in
 // floor (cell → its key), anything else's whole footprint in foot; the cells outside and inside its doors in door.
+// A wall stand's cells also go in stand, a spotlight's (FOOT mount) in mount: a spotlight may stand on a stand's cell
+// (placeProblemAt), never two on one.
 function markOcc(occ, it, at, key) {
   const put = (m, x, y, v) => { if (!m.has(K(x, y))) m.set(K(x, y), v); };
   if (hostOf(it)) for (const c of cellsOf(it, at)) put(isFloor(c) ? occ.floor : occ.foot, c.x, c.y, key);
   else for (const [x, y] of rectCells(it, at)) put(occ.foot, x, y, key);
+  if (it.kind === "stand" && occ.stand) for (const [x, y] of rectCells(it, at)) occ.stand.add(K(x, y));
+  if (it.mount && occ.mount) for (const [x, y] of rectCells(it, at)) occ.mount.add(K(x, y));
   for (const [x, y] of doorCellsOf(it, at)) put(occ.door, x, y, key);
   for (const [x, y] of innCellsOf(it, at)) put(occ.door, x, y, key);
   if (it.label) occ.names.set(key, it.label);
@@ -552,7 +559,7 @@ function markOcc(occ, it, at, key) {
 export function occupancy(state, base, skip = null, auto = null) {
   stampGrid(state, base);
   const skips = skip instanceof Set ? skip : new Set(skip ? [skip] : []);
-  const occ = { foot: new Map(), door: new Map(), floor: new Map(), names: new Map(), land: landFor(state, base) }; // land: what has to be cleared before anything is built on it (basescatter.js)
+  const occ = { foot: new Map(), door: new Map(), floor: new Map(), names: new Map(), stand: new Set(), mount: new Set(), land: landFor(state, base) }; // land: what has to be cleared before anything is built on it (basescatter.js)
   for (const p of coreParts(base)) markOcc(occ, p, [p.x, p.y, 0], "core");
   const items = itemsOf(state, base), pos = new Map();
   for (const it of items) {
@@ -575,9 +582,12 @@ export function placeProblemAt(base, it, x, y, r, occ, dims = null) {
   if (rect.x0 < -G || rect.y0 < -G || rect.x0 + rect.w > G || rect.y0 + rect.h > G) return "Off the map";
   if (rect.x0 < -N || rect.y0 < -N || rect.x0 + rect.w > N || rect.y0 + rect.h > N) return NO_BUILD_WHY;
   const inner = !!(it.fit || it.indoor);
-  let host = null;
+  let host = null, mounted = false;
   for (let yy = rect.y0; yy < rect.y0 + rect.h; yy++) for (let xx = rect.x0; xx < rect.x0 + rect.w; xx++) {
     const k = K(xx, yy);
+    // A spotlight (FOOT mount) on a wall stand's cell: up on the stand, the ring's band too; never two on one cell.
+    if (it.mount && occ.mount && occ.mount.has(k)) return "There is a spotlight there already";
+    if (it.mount && occ.stand && occ.stand.has(k)) { mounted = true; continue; }
     if (!wallish && onBand(xx, yy, R)) return "That is where the wall stands";
     if (occ.foot.has(k)) return `On top of ${nameOf(occ, occ.foot.get(k))}`;
     if (occ.door.has(k)) return `In the doorway of ${nameOf(occ, occ.door.get(k))}`;
@@ -597,7 +607,7 @@ export function placeProblemAt(base, it, x, y, r, occ, dims = null) {
   }
   // The land (basescatter.js): every piece on its cells (and on the cells outside its doors) cleared first. Not inside a
   // standing building (a fitting, a bench on its floor): its ground was cleared when it went up.
-  if (occ.land && !(host != null)) {
+  if (occ.land && !(host != null) && !mounted) {
     const hit = landUnder(occ.land, it, at);
     if (hit.length) return landWhy(hit);
   }
@@ -898,6 +908,10 @@ export function autoLayout(state, base, except = null) {
     const edge = Math.min(C, R) - 2, out = R + 3; // inside the wall's ring, and in front of it
     if (k === "barricade") for (let i = 0; i < 12; i++) spots.push([rng.int(-edge + 1, edge - 4), rng.pick([-edge + 1, edge - 2, rng.int(-edge + 1, edge - 2)]), 0], [rng.pick([-edge + 1, edge - 2]), rng.int(-edge + 1, edge - 4), 1]);
     else if (k === "lamp") spots.push([edge, edge], [-edge, -edge], [edge, -edge], [-edge, edge]);
+    else if (k === "spot") { // a mounted spotlight (data-power.js): up on a wall stand first, else at the yard's corners and sides by the walls
+      for (const o of items) { const p = o !== it && o.kind === "stand" && (o.at || laid.get(o.key)); if (p) for (const [x, y] of rectCells(o, p)) spots.push([x, y, 0]); }
+      spots.push([edge, edge], [-edge, -edge], [edge, -edge], [-edge, edge], [0, edge], [0, -edge], [edge, 0], [-edge, 0]);
+    }
     else if (k === "tower") spots.push([edge - 1, edge - 1], [-edge, -edge], [edge - 1, -edge], [-edge, edge - 1]);
     else if (k === "spikes") spots.push([-1, out, 0], [-1, -out - 1, 0], [out, -1, 1], [-out - 1, -1, 1], [5, out, 0], [-7, out, 0], [5, -out - 1, 0], [-7, -out - 1, 0]);
     else if (k === "trench") spots.push([-5, out + 2, 0], [out + 2, -5, 1], [-5, -out - 3, 0], [-out - 3, -5, 1], [-5, out + 1, 0], [out + 1, -5, 1], [-5, -out - 2, 0], [-out - 2, -5, 1]); // the nearer line too: a camp's grid ends in the margin two cells out
@@ -1417,7 +1431,7 @@ export function buildBaseMap(state, base, rng, opts = {}) {
   const F = {
     W, H, cells, M: MARGIN, ox, oy, x0: -C + ox, y0: -C + oy, yw: 2 * C, yh: 2 * C, walled: false, view,
     wall: { x0: -R - 2 + ox, x1: R + 1 + ox, y0: -R - 2 + oy, y1: R + 1 + oy }, ring: [], walkway: [], gates: { north: [], east: [], south: [], west: [] }, towers: [], ladders: [], pieces: [],
-    buildings: [], lofts: [], roofs: [], doors: [], windows: [], outlines: [], stores: [], vehicles: [], lights: [], inside: null, indoor, lay: { W, H, G: null, buildings: [] },
+    buildings: [], lofts: [], roofs: [], doors: [], windows: [], outlines: [], stores: [], vehicles: [], lights: [], spots: [], inside: null, indoor, lay: { W, H, G: null, buildings: [] },
     noBuild: NO_BUILD, // the no-build margin round the grid (nothing stands within it; the view tints it: c.nb)
   };
   for (let y = -C; y < C; y++) for (let x = -C; x < C; x++) { const c = at(x + ox, y + oy); if (c) c.f = "dirt"; }
@@ -1469,6 +1483,22 @@ export function buildBaseMap(state, base, rng, opts = {}) {
     const piece = WALL_KINDS.has(it.kind) ? { bid: it.rec && key && key.startsWith("b:") ? it.rec.id : null, kind: it.kind, cells: [] } : null;
     const broken = !!(piece && it.rec && it.rec.broken);
     if (it.type === "sandbag1" && it.rec && it.rec.broken) return; // a burst Sandbags: open ground, no cover there until it is refilled
+    // A mounted spotlight (data-power.js SPOT): on a wall stand's cell the stand stays (its ladder, its walkway) with the
+    // light up on it (c.spot: drawn there); on the ground a lamp cell of its own. Either way one of F.spots: its cell,
+    // its reach (higher on a stand), and whether it has power now (electric.js spotOn: fort.js lights it at night).
+    if (it.mount) {
+      for (const c of cellsOf(it, atG)) {
+        const x = c.x + ox, y = c.y + oy, q = at(x, y);
+        if (!q) continue;
+        const stand = q.k === "stand";
+        if (!stand) { q.k = "spot"; delete q.h; delete q.t; }
+        q.spot = 1;
+        if (it.rec && it.rec.broken) q.spotBroken = 1;
+        used[y * W + x] = 1;
+        F.spots.push({ x, y, r: stand ? SPOT.STAND_R : SPOT.R, stand, on: !!(it.rec && spotOn(base, it.rec)), bid: it.rec ? it.rec.id : null });
+      }
+      return;
+    }
     for (const c of cellsOf(it, atG)) {
       const x = c.x + ox, y = c.y + oy, q = at(x, y);
       if (!q) continue;
@@ -1519,7 +1549,7 @@ export function buildBaseMap(state, base, rng, opts = {}) {
   // Everything placed, by hand or by the game: the buildings first, then the fittings and indoor props that stand
   // inside them (laid over their floor).
   const reinforced = count(base, "gate") ? DEPLOY.GATE_HP_REINFORCED : 0; // buildings.js gate: every gate stronger
-  const late = (e) => !!(e.it.fit || e.it.indoor);
+  const late = (e) => !!(e.it.fit || e.it.indoor || e.it.mount); // a spotlight after the wall stands it may stand on
   for (const e of [...lay.filter((e) => !late(e)), ...lay.filter(late)]) {
     const it = e.it;
     const store = STORES[it.type] || 0;
@@ -1623,6 +1653,7 @@ export function buildBaseMap(state, base, rng, opts = {}) {
   // A lane out from every gate (along its line, a cell either side) is kept clear of wire and mines: the way in.
   const gateRects = F.pieces.filter((p) => p.kind === "gate" && p.cells.length).map((p) => ({ x0: Math.min(...p.cells.map((c) => c[0])), x1: Math.max(...p.cells.map((c) => c[0])), y0: Math.min(...p.cells.map((c) => c[1])), y1: Math.max(...p.cells.map((c) => c[1])) }));
   const gateLane = (x, y) => gateRects.some((g) => (g.y0 === g.y1 ? x >= g.x0 - 1 && x <= g.x1 + 1 : y >= g.y0 - 1 && y <= g.y1 + 1));
+  const charged = fenceCharged(base);
   const ringAt = (d, razor) => {
     for (let y = w.y0 - d; y <= w.y1 + d; y++) for (let x = w.x0 - d; x <= w.x1 + d; x++) {
       if (x !== w.x0 - d && x !== w.x1 + d && y !== w.y0 - d && y !== w.y1 + d) continue;
@@ -1631,6 +1662,7 @@ export function buildBaseMap(state, base, rng, opts = {}) {
       if (!q || q.k !== "open" || used[y * W + x]) continue;
       q.k = "wire";
       if (razor) q.razor = true;
+      if (charged) q.shock = true; // electric.js: the fence charger powered (combat.js shocks what steps in)
       keep[y * W + x] = 1;
     }
     F.wireOut = Math.max(F.wireOut, d);
@@ -2328,7 +2360,7 @@ export function layoutAct(state, b, act) {
       if (!g) return "Nothing to build.";
       if (!g.ok && g.land) return clearSite(state, base, L, g.land);
       if (!g.ok) return g.why;
-      if (d && d.furniture) return setFurnitureAt(state, b, base, bt, g); // beds.js: set from the stores where it was clicked (no job)
+      if (d && d.furniture) return isSetPiece(bt) ? setPlacedAt(state, b, base, bt, g) : setFurnitureAt(state, b, base, bt, g); // beds.js, electric.js: set from the stores where it was clicked (no job)
       if (bagKindOf(bt)) { // tents.js: a tent bag from the stores pitched where it was clicked (no job, no cost)
         holdAuto(state, base);
         const kind = bagKindOf(bt), r = pitchStoredBag(state, base, kind, g.at);
@@ -2427,18 +2459,18 @@ export function layoutAct(state, b, act) {
 // A wall piece or gate built from the map is of the material the wall is mostly of (buildings.js ringMat: wood with
 // none); the Defenses tab picks another. A stand has no material.
 const pieceOpts = (base, bt) => (BUILDINGS[bt] && BUILDINGS[bt].piece && BUILDINGS[bt].piece !== "stand" ? { mat: ringMat(base) } : {});
-const MENU_GROUPS = ["Tents", "General buildings", "Fittings", "Furniture", "Buildings", "Yard things", "Defences"];
+const MENU_GROUPS = ["Tents", "General buildings", "Fittings", "Furniture", "Power", "Buildings", "Yard things", "Defences"];
 export function buildMenu(state, base) {
   const out = [];
   for (const [type, d] of Object.entries(BUILDINGS)) {
     const f = FOOT[type];
     if (!f || d.upgradeOnly) continue; // an upgrade in place (the reloading bench) is queued from the building it upgrades
-    const group = type === "tent" ? "Tents" : d.general ? "General buildings" : d.furniture ? "Furniture" : d.fit ? "Fittings" : f.kind === "defence" || WALL_KINDS.has(f.kind) ? "Defences" : f.kind === "prop" || f.kind === "pen" ? "Yard things" : "Buildings";
+    const group = type === "tent" ? "Tents" : d.general ? "General buildings" : d.grid ? "Power" : d.furniture ? "Furniture" : d.fit ? "Fittings" : f.kind === "defence" || WALL_KINDS.has(f.kind) ? "Defences" : f.kind === "prop" || f.kind === "pen" ? "Yard things" : "Buildings";
     const opts = pieceOpts(base, type);
     /** @type {any} */
     const chk = canBuild(state, base, type, opts);
     const piece = !!d.piece; // a wall piece, gate or stand: its material's name, cost and hours (buildings.js canBuildPiece)
-    out.push({ type, name: piece ? pieceName({ type, ...opts }) : d.name, group, w: f.w, h: f.h, cost: piece && chk.cost ? { ...chk.cost } : { ...d.cost }, hours: piece && chk.hours != null ? chk.hours : d.hours, ok: !!chk.ok, why: chk.ok ? "" : chk.reason || "", desc: d.desc || "", ...(d.furniture ? { furniture: true, have: furnitureInStores(base, type) } : {}) });
+    out.push({ type, name: piece ? pieceName({ type, ...opts }) : d.name, group, w: f.w, h: f.h, cost: piece && chk.cost ? { ...chk.cost } : { ...d.cost }, hours: piece && chk.hours != null ? chk.hours : d.hours, ok: !!chk.ok, why: chk.ok ? "" : chk.reason || "", desc: d.desc || "", ...(d.furniture ? { furniture: true, have: isSetPiece(type) ? placedInStores(base, type) : furnitureInStores(base, type) } : {}) });
   }
   // The tent bags in the stores (tents.js), pitched from the list: no cost, no builders (a click pitches one).
   for (const [k, T] of Object.entries(TENTS)) {

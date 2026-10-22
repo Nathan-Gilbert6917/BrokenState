@@ -469,6 +469,14 @@ function carPieces(car, r) {
   }
   return out;
 }
+// A spotlight's post and lamp head from z0 up (a stand's platform or a ground base): its glass lit pale yellow, dark
+// when it is smashed (broken).
+function spotHead(z0, broken = false) {
+  return [
+    { u0: 0.46, u1: 0.54, v0: 0.46, v1: 0.54, z0, z1: z0 + 14, m: tex(PAL.metalDk, 0.1) },
+    { u0: 0.3, u1: 0.7, v0: 0.36, v1: 0.64, z0: z0 + 13, z1: z0 + 21, m: (f) => (f === "top" ? PAL.metal : broken ? hex("#3a3a36") : hex("#f6eeb0")) },
+  ];
+}
 function prims(k, o) {
   const v = o.v || 0;
   if (o.car && (k === "car" || k === "truck" || k === "vehicle")) return carPieces(o.car, iso.rot);
@@ -587,8 +595,13 @@ function prims(k, o) {
         { u0: 0.42, u1: 0.58, v0: 0.92, v1: 0.98, z0: 0, z1: z, m: (f, s, t) => (Math.floor(t) % 5 < 1 ? PAL.woodLt : PAL.woodDk) }, // the ladder
         { u0: 0.84, u1: 0.96, v0: 0.84, v1: 0.96, z0: 0, z1: z, m: dk },
         { u0: 0, u1: 1, v0: 0, v1: 1, z0: z - 3, z1: z, m: (f, s, t) => (f === "top" ? mul(PAL.woodLt, (s | 0) % 4 < 1 ? 0.75 : 0.95 + n2(s, t, 8) * 0.1) : PAL.woodDk) },
+        ...(o.spot ? spotHead(z, o.spot === 2) : []), // a mounted spotlight up on the stand (sim/data-power.js)
       ];
     }
+    case "spot": return [ // a mounted spotlight on the ground (sim/data-power.js): a weighted base, a short post, the lamp head
+      { u0: 0.3, u1: 0.7, v0: 0.3, v1: 0.7, z0: 0, z1: 3, m: flatM(PAL.metalDk) },
+      ...spotHead(3, o.spot === 2),
+    ];
     case "walkway": case "loft": case "roof": {
       // Raised floors one level up: the wall's walkway (planks on a timber frame), an upper floor, a flat roof.
       const top = (f, s, t, X, Y) => (k === "roof" ? mul(PAL.tar, 0.9 + n2(X, Y, 3) * 0.25) : mul(k === "loft" ? PAL.wood : PAL.woodLt, (Math.floor(along(o) === "u" ? t : s) % 4 < 1 ? 0.72 : 0.92 + n2(X, Y, 8) * 0.12)));
@@ -852,7 +865,7 @@ function prims(k, o) {
 }
 const OUTLINED = new Set(["tree", "boulder", "rock", "car", "truck", "vehicle", "crate", "hay", "pump", "barrel", "well", "barricade", "sandbag", "hivewall",
   "table", "bed", "rack", "locker", "shelf", "cabinet", "counter", "gunsafe", "tanktrap", "spikes", "beartrap", "stairs", "ladder", "tower", "bars", "gate", "palisade",
-  "tent", "torn", "lamp", "firepit", "bush", "stump", "log"]); // props stand out with an outline (the base map's tent, floodlight and fire pit too: sim/basemap.js)
+  "tent", "torn", "lamp", "spot", "firepit", "bush", "stump", "log"]); // props stand out with an outline (the base map's tent, floodlight and fire pit too: sim/basemap.js)
 
 // The cells' block sprites by look (sprite, roofSprite, massSprite; null: nothing to draw): a key holds all the picture
 // depends on, so one never goes stale. Each entry keeps the frame it was last drawn in (iso.frames); past SPRITES
@@ -875,7 +888,7 @@ function spritePut(key, s) {
 }
 // A cached sprite for a cell's look.
 function sprite(k, o, fog) {
-  const key = `${iso.straight ? "s|" : ""}${k}|${o.v}|${o.alt}|${o.j}|${o.n}|${o.top}|${o.stub ? 1 : 0}|${o.mat}|${o.dmg}|${o.barred ? 1 : 0}|${o.dir}|${o.part || ""}|${o.vault ? 1 : 0}|${o.roll ? 1 : 0}|${o.lit ? 1 : 0}|${fog ? 1 : 0}|${o.car ? `${o.car.i},${o.car.j},${o.car.L},${o.car.ax},${o.car.kind},${o.car.v},${o.car.body || ""},${o.car.mil ? o.car.mil.cond : ""},${upKey(o.car.up)},${iso.rot & 3}` : ""}`;
+  const key = `${iso.straight ? "s|" : ""}${k}|${o.v}|${o.alt}|${o.j}|${o.n}|${o.top}|${o.stub ? 1 : 0}|${o.mat}|${o.dmg}|${o.barred ? 1 : 0}|${o.dir}|${o.part || ""}|${o.vault ? 1 : 0}|${o.roll ? 1 : 0}|${o.lit ? 1 : 0}|${o.spot || 0}|${fog ? 1 : 0}|${o.car ? `${o.car.i},${o.car.j},${o.car.L},${o.car.ax},${o.car.kind},${o.car.v},${o.car.body || ""},${o.car.mil ? o.car.mil.cond : ""},${upKey(o.car.up)},${iso.rot & 3}` : ""}`;
   let s = spriteGet(key);
   if (s === undefined) {
     const p = prims(k, o);
@@ -1177,6 +1190,7 @@ function lookOf(b, scene, x, y, cut, focus = null) {
   if (k === "door") { const d = ((b.raid ? b.raid.doors : b.doors) || []).find((q) => q.x === x && q.y === y); o.vault = !!(d && d.lock && d.lock.kind === "vault"); } // a raid's, a field map's houses' (sim/combat.js b.doors)
   if (c.roll) o.roll = true; // a roller door (sim/buildingmaps.js)
   if (k === "firepit" && c.lit) o.lit = true; // a fire pit burning (its flames: prims)
+  if (c.spot) o.spot = c.spotBroken ? 2 : 1; // a mounted spotlight, on the ground or up on a wall stand (sim/basemap.js)
   if (c.h > 0 && FURNITURE.has(k)) o.raise = c.h * LV; // furniture on an upper floor
   if (k === "ladder" || k === "stairs") {
     // Towards the higher neighbour (the walkway, the loft, the roof).
@@ -1222,7 +1236,7 @@ function blockTop0(k, o) {
     case "boulder": return 20; case "crate": return o.v >= 2 ? 22 : 13;
     case "fence": return 14; case "barricade": return 16; case "sandbag": return 13; case "hay": return 13; case "cabinet": return 14; case "counter": return 12; case "well": return 12; case "barrel": return 13;
     case "rock": return 10; case "wire": return 10; case "rail": return 13; case "tanktrap": return 12;
-    case "outline": return 9; case "tent": return 18; case "torn": return 5; case "firepit": return 7; case "lamp": return 38; // the base map (sim/basemap.js; torn: sim/softcover.js)
+    case "outline": return 9; case "tent": return 18; case "torn": return 5; case "firepit": return 7; case "lamp": return 38; case "spot": return 24; // the base map (sim/basemap.js; torn: sim/softcover.js)
     case "bush": return 12; case "stump": return 6; case "log": return 7; // its scatter (sim/basescatter.js)
     default: return 0;
   }

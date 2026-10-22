@@ -73,7 +73,7 @@ import { log, addCard, day, hourOfDay, atBase, survivorById, skill } from "./wor
 import { hash01, gainXp, buildMult, hasPerk, USE } from "./skills.js";
 import { workFactor } from "./health.js";
 import { stationStatus } from "./buildings.js";
-import { isPowered, generatorRanToday, POWER, REFUEL, GEN_TIERS, genTier, genName } from "./power.js"; // powered machines wear by the days they had power (freezer-parts); generators by the days they ran (machines-2)
+import { isPowered, generatorRanToday, POWER, REFUEL, GEN_TIERS, genTier, genName, isGen } from "./power.js"; // powered machines wear by the days they had power (freezer-parts); generators by the days they ran (machines-2)
 import { weatherOnDay } from "./weather.js";
 import { stewardOn } from "./steward.js";
 import { vehiclesAtBase, shelteredAt, frostWear } from "./vehicles.js";
@@ -83,6 +83,7 @@ import { cfgOf } from "./worldcfg.js"; // the run's dials: Failures
 import { mendTents } from "./softcover.js"; // a camp's tents slashed or burned in a fight, mended a day at a time
 import { siteCost, payCost, SITE_MAKE, MADE_KEYS } from "./buildmats.js"; // metal sheets in the repairs of what is clad or roofed in them (made on site from scrap when short)
 import { BED_FIXTURES } from "./data-beds.js"; // beds as furniture: their raid wear and repair
+import { POWER_FIXTURES } from "./data-power.js"; // the power grid: found generators by the days they ran, the powered machines by the days they had power
 
 export const WELL_WATER = 6; // the hub pump's share (hubevents.js WELL_DOWN.water)
 export const SCRAP_PER_PART = 4; // a repair short of scrap can use a part instead of this much
@@ -181,6 +182,7 @@ export const FIXTURES = {
   minefield:   { raidOnly: true, outer: true, repair: { hours: 6, cost: { scrap: 7, parts: 1 }, min: 1 }, rig: { hours: 2, cost: { scrap: 3 }, min: 0 }, what: "the mines dug up or set off: none left for the next attack" },
 };
 Object.assign(FIXTURES, BED_FIXTURES); // beds as furniture (data-beds.js): battered in a raid, a broken one sleeps nobody until it is repaired
+Object.assign(FIXTURES, POWER_FIXTURES); // the power grid (data-power.js): a found generator wears as the built one, by the days it ran
 // The wall pieces (buildings.js piece, the user's request 2026-10-19): each wears and breaks on its own, a little with
 // age and every horde attack (a share of the old single wall's, by its length), and the raids' outer line. A broken
 // wall piece or gate is a gap in the ring: no wall strength by the numbers until it is repaired (basemap.js wallInfo).
@@ -619,7 +621,7 @@ export function wearMult(state, base, fx) {
 export function machineRan(state, base, fx) {
   const def = fxDef(fx);
   if (!def || fx.broken) return false;
-  if (fx.type === "generator") return generatorRanToday(state, fx); // machines-2: no operator, it ran when it burned fuel
+  if (isGen(fx)) return generatorRanToday(state, fx); // machines-2: no operator, it ran when it burned fuel (a found generator too)
   if (BUILDINGS[fx.type] && BUILDINGS[fx.type].station) return !!stationStatus(state, base, fx).running;
   if (def.ranDay) return ranLately(state, fx); // wave 2 cooking: the grain mill, the meat grinder
   if (def.power) return isPowered(base, fx);
@@ -632,7 +634,7 @@ export function dailyWear(state, base, fx, wx) {
   const def = fxDef(fx);
   const age = Math.max(0, day(state) - (fx.built || day(state)));
   let use = 0;
-  if (fx.type === "generator") use = generatorRanToday(state, fx) ? def.use : def.idle || 0; // machines-2: by the days it ran
+  if (isGen(fx)) use = generatorRanToday(state, fx) ? def.use : def.idle || 0; // machines-2: by the days it ran (a found generator too)
   else if (BUILDINGS[fx.type] && BUILDINGS[fx.type].station) {
     const st = stationStatus(state, base, fx);
     use = st.running ? def.use : def.idle || 0;

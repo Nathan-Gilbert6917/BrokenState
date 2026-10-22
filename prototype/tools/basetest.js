@@ -483,6 +483,7 @@ const leaders = (st) => st.survivors.filter((s) => s.alive && s.leader);
     else if (r.gear === "boards") check(!/power|armor/.test(text) && /door/.test(text) && /window/.test(text) && /hit points/.test(text), `${key}: boards and nails say what they board up and how strong (${text})`); // sim/barricade.js
     else if (d.furniture) check(!/power|armor/.test(text) && /bed/.test(text) && /set inside/.test(text), `${key}: furniture says how many beds it sets and the mood (${text})`); // sim/beds.js
     else if (Object.values(TOOL_KINDS).some((k) => k.items.includes(r.gear))) check(!/power|armor/.test(text) && /for building and crafting/.test(text), `${key}: a tool says what it counts as (${text})`); // sim/toolreqs.js
+    else if (d.placed === "spotlamp") check(!/armor/.test(text) && /wall stand/.test(text) && /night fight/.test(text), `${key}: the mounted spotlight says where it is set and what it lights (${text})`); // sim/electric.js
     else check(/armor/.test(text) && !/power/.test(text), `${key}: armor lists its armor value (${text})`);
   }
   const h = hub(st);
