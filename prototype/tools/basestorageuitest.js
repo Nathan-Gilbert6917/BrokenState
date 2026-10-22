@@ -211,6 +211,7 @@ section("The autopilot's storage ladder by the size of base");
   check(w && w.type === "shed", `an outpost, ${storageOf(st, o).outsideKg} kg outside: a storage shed (${w && w.type})`);
   // The main base: a big overflow, the storehouse (a warehouse once a Mechanics 2+ survivor and its part are there).
   st = W(); h = hub(st);
+  h.buildings = h.buildings.filter((b) => b.type === "farm_plot"); // no general building: the start's Lodge (shelves and lockers first while one has floor)
   Object.assign(h.stock, { scrap: (h.stock.scrap || 0) + 1200, parts: 0, buildmat: 10 });
   w = storageWish(st, h);
   check(w && w.type === "storehouse", `the main base, ${Math.round(storageOf(st, h).outsideKg)} kg outside: the storehouse (${w && w.type})`);

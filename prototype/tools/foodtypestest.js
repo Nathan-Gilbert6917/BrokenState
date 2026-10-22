@@ -98,7 +98,7 @@ const W = (opts = {}) => { const st = createWorld({ seed, factionCount: 6, ...op
   check(storeFactor("cold", -3) < storeFactor("cold", 10) && storeFactor("cold", 10) < storeFactor("cold", 20), "an ice house is cold in winter, less so in summer");
   const st = W();
   const h = hub(st);
-  h.buildings = h.buildings.filter((b) => !["cellar", "storehouse", "coldstore", "crates", "freezer", "huntcabin"].includes(b.type));
+  h.buildings = h.buildings.filter((b) => !["cellar", "storehouse", "coldstore", "crates", "freezer", "huntcabin", "tent"].includes(b.type));
   clearFood(h);
   const sp = storeSpaces(h);
   check(sp.length === 1 && sp[0].kind === "cellar" && sp[0].cap === STORE.hubCellar, `the hub has its own cellar (${STORE.hubCellar} days)`);

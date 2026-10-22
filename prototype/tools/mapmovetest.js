@@ -678,6 +678,7 @@ section("Queued orders: the menu's 'after' and the queue's hours count from the 
       const w = waitingTeam(SEED + 90 + k * 2 + (vehicle ? 1 : 0), { vehicle });
       if (!w) continue;
       const { state, p } = w;
+      p.nightPlan = "push"; // through the night (no night card to hold it an hour: calm() clears cards unanswered), as etatest.js
       const a = tileNear(state, partyTile(p), 2, 3, p.vehicle);
       if (a == null) continue;
       const b = tileNear(state, a, 2, 3, p.vehicle, (path) => !path.includes(partyTile(p)));

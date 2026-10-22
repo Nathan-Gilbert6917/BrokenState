@@ -54,6 +54,7 @@ section("The grid by tier");
 {
   const st = world();
   const h = hub(st);
+  h.buildings = []; // bare: the start's Lodge, tent and crop plots (world.js HUB_LAYOUT) taken off
   check(BM.gridSize(h) === BM.BASE_GRID && BM.gridSize(h) === 250 && 2 * BM.yardHalf(h) === 2 * BM.GRID.hub.yard, `a bare hub's grid is ${BM.gridSize(h)} × ${BM.gridSize(h)} (yard ${2 * BM.yardHalf(h)})`);
   for (let i = 0; i < 30; i++) addBuilding(h, i % 2 ? "bunkhouse" : "common_room");
   check(BM.gridSize(h) === 250 && 2 * BM.yardHalf(h) === 2 * BM.GRID.hub.cap, `with 30 buildings its yard grows to ${2 * BM.yardHalf(h)} on the same ${BM.gridSize(h)} × ${BM.gridSize(h)} grid`);
@@ -79,8 +80,8 @@ section("Placement rules");
   const st = world();
   const h = fortHub(st, ["walls", "bunkhouse", "storehouse", "barricades", "spike_pits"]);
   const items = BM.itemsOf(st, h);
-  const bunk = items.find((it) => it.type === "bunkhouse"), store = items.find((it) => it.type === "storehouse"), bar = items.find((it) => it.type === "barricades"), pits = items.find((it) => it.type === "spike_pits"), plot = items.find((it) => it.key === "p:0");
-  check(!!bunk && !!store && !!bar && !!pits && !!plot && items.filter((it) => it.key.startsWith("p:")).length === 8, `the items: ${items.length} (a bunkhouse, a storehouse, a barricade, spike pits, 8 crop plots${items.some((it) => it.kind === "vehicle") ? ", the car" : ""})`);
+  const bunk = items.find((it) => it.type === "bunkhouse"), store = items.find((it) => it.type === "storehouse"), bar = items.find((it) => it.type === "barricades"), pits = items.find((it) => it.type === "spike_pits"), plot = items.find((it) => it.type === "farm_plot");
+  check(!!bunk && !!store && !!bar && !!pits && !!plot && items.filter((it) => it.type === "farm_plot").length === 8 && plot.w === 2 && plot.h === 2, `the items: ${items.length} (a bunkhouse, a storehouse, a barricade, spike pits, 8 crop plots${items.some((it) => it.kind === "vehicle") ? ", the car" : ""})`);
   const C = BM.yardHalf(h);
   check(!BM.placeItem(st, h, bunk.key, 10, 10, 0) && bunk.rec.at && bunk.rec.at[0] === 10, "a bunkhouse placed at 10, 10 (kept on the building record)");
   check(BM.placeItem(st, h, store.key, 10, 10, 0).startsWith("On top of"), `the storehouse on top of it: refused (${BM.placeItem(st, h, store.key, 10, 10, 0)})`);
@@ -96,7 +97,12 @@ section("Placement rules");
   check(/wall/i.test(BM.placeItem(st, h, store.key, 8, R, 0)), `a building on the ring where the wall stands: refused (${BM.placeItem(st, h, store.key, 8, R, 0)})`);
   BM.unplaceItem(st, h, store.key);
   check(/Off the map/.test(BM.placeItem(st, h, pits.key, 0, 1000, 0)), "off the map: refused");
-  check(!BM.placeItem(st, h, plot.key, -12, -12, 1) && h.plan.plots[0][2] === 1, "a crop plot placed and turned (base.plan.plots)");
+  check(!BM.placeItem(st, h, plot.key, -12, -12, 1) && plot.rec.at[2] === 1, "a crop plot (a Farm plot, 2 × 2) placed and turned (kept on its record)");
+  // Soil only (2026-10-22): never on the road, a paved lot or a ford (the land's floors).
+  const land = BM.landFor(st, h);
+  const paved = land && [...land.floors].find(([k, f]) => BM.NOT_SOIL.has(f) && (() => { const [x, y] = k.split(",").map(Number); return Math.max(Math.abs(x), Math.abs(y)) > 14 && Math.abs(x) < C - 3 && Math.abs(y) < C - 3 && !BM.placeProblemAt(h, { kind: "prop", w: 2, h: 2 }, x, y, 0, BM.occupancy(st, h, plot.key, BM.autoLayout(st, h, plot.key))); })());
+  if (paved) { const [x, y] = paved[0].split(",").map(Number); check(BM.placeItem(st, h, plot.key, x, y, 0) === BM.SOIL_WHY && plot.rec.at[0] === -12, `a crop plot on the ${paved[1]}: refused (${BM.SOIL_WHY})`); }
+  else console.log("  (no road or paved ground in the yard on this seed)");
   check(/base itself/.test(BM.placeItem(st, h, store.key, -3, -3, 0)), `on the base itself in the middle: refused (${BM.placeItem(st, h, store.key, -3, -3, 0)})`);
   const occ = BM.occupancy(st, h, bunk.key, BM.autoLayout(st, h, bunk.key));
   check(!BM.placeProblemAt(h, bunk, 2, 2, 0, occ) && !!BM.placeProblemAt(h, bunk, 2, 2, 1, occ) === false || true, "placeProblemAt agrees with placeItem");
@@ -106,7 +112,9 @@ section("Placement rules");
   check(lay.every((e, i) => again[i].at && e.at.join() === again[i].at.join()), "the auto layout is the same twice");
   // Nothing auto-placed overlaps anything else.
   let bad = 0;
-  for (const e of lay) { const o = BM.occupancy(st, h, e.it.key, BM.autoLayout(st, h)); if (BM.placeProblemAt(h, e.it, e.at[0], e.at[1], e.at[2], o)) bad++; }
+  // (A general building against the rest less what stands on its own floor: the start's Lodge has its beds inside.)
+  const inside = (e, o) => o.it.fit && lay.some((x) => x.it.key === e.it.key) && BM.fittingsIn(st, h, e.it.rec && e.it.rec.id).some((f) => f.key === o.it.key);
+  for (const e of lay) { const skip = lay.filter((o) => inside(e, o)).map((o) => o.it.key); const o = BM.occupancy(st, h, e.it.key, BM.autoLayout(st, h)); for (const k of skip) for (const m of [o.foot, o.door]) for (const [c, v] of m) if (v === k) m.delete(c); if (BM.placeProblemAt(h, e.it, e.at[0], e.at[1], e.at[2], o)) bad++; }
   check(bad === 0, `every placed thing passes the rules against the rest (${bad} do not)`);
 }
 
@@ -410,11 +418,11 @@ section("The Base map view, saving, jobs and upgrades");
   } finally { delete globalThis.window; }
   // Save / load keeps the plan.
   if (!job.at) job.at = [2, 2, 0];
-  const plot = BM.itemByKey(st, h, "p:0");
+  const plot = BM.itemsOf(st, h).find((it) => it.type === "farm_plot");
   check(!BM.placeItem(st, h, plot.key, 14, -14, 0), "a crop plot placed by hand");
   const s2 = loadFromString(saveToString(st));
   const h2 = hub(s2), job2 = h2.construction.find((c) => c.type === "infirmary");
-  check(job2 && job2.at && job2.at.join() === job.at.join() && h2.plan.plots[0] && h2.plan.plots[0].join() === "14,-14,0", "save / load keeps where the job and the crop plot were placed");
+  check(job2 && job2.at && job2.at.join() === job.at.join() && h2.buildings.find((b) => b.id === plot.rec.id).at.join() === "14,-14,0", "save / load keeps where the job and the crop plot were placed");
   // The job finished: the building keeps the spot.
   for (const s of atBase(st, h.id)) s.role = "build";
   for (let i = 0; i < 400 && h.construction.some((c) => c.type === "infirmary"); i++) constructionHour(st);

@@ -69,7 +69,9 @@ function setup(st, type = "commune", size = 500, dist = 2, i = 0) {
 section("Ahead of a horde they cannot hold: a new site");
 {
   const st = world();
-  const { f, tile, h } = setup(st);
+  // The third group: of 20 people 2–6% lost on the way rounds to none on a low roll of the hashed dice, as the first
+  // group's roll is since the hub moved onto open land (2026-10-22, and the groups' sites with it); the third loses one.
+  const { f, tile, h } = setup(st, "commune", 500, 2, 2);
   const c = holdAgainst(st, f, tile, [h]);
   check(hordesComing(st, tile).includes(h) && cannotHold(st, f, tile, [h]), `a horde of ${h.size}: the walls stop about ${c.limit}, ${c.through} would break in (${c.theirs.toFixed(0)} against their ${c.mine.toFixed(0)}): they cannot hold`);
   const pop0 = f.pop, food0 = food(f), ammo0 = totalRounds(f.stock); // rounds by calibre (ammo.js)

@@ -55,7 +55,7 @@
 // will count by time alone (landCentres(state, true)): it does not found outposts over a new member's land.
 // world.js checkGameOver ends the run with the coalition's victory (hives standing or not).
 import { moveFoodUnits } from "./foods.js"; // food sent in days
-import { day, log, hub, factionById, addCard, atBase, skill, snapshot, alive, RADIO_RANGE } from "./world.js";
+import { day, log, hub, factionById, addCard, atBase, skill, snapshot, alive, RADIO_RANGE, localId } from "./world.js";
 import { attitude, changeGoodwill, strength, baseDefense } from "./factions.js";
 import { tileLabel, partyTile } from "./parties.js";
 import { canRadioGroup, radioSpeech, radioDeal, dealQuote, radioGreet, radioPact, radioCooldown, radioScan, hasNetwork, canListen, relaySpotFor, groupHasSet, inRadioReach, GROUP_REACH, RELAY_RANGE } from "./radio.js";
@@ -222,7 +222,7 @@ export const NEWS_DAYS = 7;
 export function shareSightings(state, ms, carried = true) {
   if (!carried) {
     const far = ms.filter((f) => !canRadioGroup(state, f));
-    for (const f of far) if ((day(state) + f.id) % NEWS_DAYS === 0) newsFromMember(state, f);
+    for (const f of far) if ((day(state) + localId(state, f.id)) % NEWS_DAYS === 0) newsFromMember(state, f); // localId: the same days for the same seed, whatever ids came before this world
     ms = ms.filter((f) => !far.includes(f));
   }
   if (!ms.length) return;

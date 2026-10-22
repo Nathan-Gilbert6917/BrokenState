@@ -466,7 +466,8 @@ section("Spoilage: fresh game in the field and at a base; drying racks and the c
   const twin = (meat, build = []) => {
     const st = mk();
     const b = hub(st);
-    st.hour = dayIn(st, "summer") * 24 + 12;
+    // A dry summer day (the racks dry half on a wet one: storage.js; the weather is the hub's, wherever the start fell).
+    st.hour = dayIn(st, "summer", (w) => !(w.key === "rain" || w.key === "storm" || w.key === "fog" || (w.rain || 0) > 0)) * 24 + 12;
     for (const t of build) addBuilding(b, t);
     setFood(b, 150 - meat, "f_potatoes"); // food by type (foods.js): potatoes, and the game as venison
     if (meat) addDays(b, meat, "f_venison");
@@ -695,7 +696,8 @@ section("The hunting mix: traps, bows and guns (a base's setting, its hunters an
   // the dawn and dusk; a closer ground gives more), so 180 hunter-hours in 20 days, give or take where they went.
   const tot = (k) => H.HUNT_METHODS.reduce((a, m) => a + rows[k].hrs[m], 0);
   const share = (k, m) => rows[k].hrs[m] / Math.max(1e-9, tot(k));
-  check(["traps", "bows", "guns"].every((k) => tot(k) > 150 && tot(k) < 280 && share(k, k) > 0.999) && Math.abs(share("mixed", "guns") - 0.5) < 0.02 && Math.abs(share("mixed", "bows") - 0.5) < 0.02, `the hours by the mix (${["traps", "bows", "guns", "mixed"].map((k) => Math.round(tot(k))).join(", ")} hunter-hours in 20 days)`);
+  // (Up to 6 a day on game land at the hub's own door: the hub stands on open land since 2026-10-22, often in the woods.)
+  check(["traps", "bows", "guns"].every((k) => tot(k) > 150 && tot(k) < 360 && share(k, k) > 0.999) && Math.abs(share("mixed", "guns") - 0.5) < 0.02 && Math.abs(share("mixed", "bows") - 0.5) < 0.02, `the hours by the mix (${["traps", "bows", "guns", "mixed"].map((k) => Math.round(tot(k))).join(", ")} hunter-hours in 20 days)`);
   check(hr("quiet", "guns") === 0 && Math.abs(share("quiet", "traps") - 0.4) < 0.02 && Math.abs(share("quiet", "bows") - 0.6) < 0.02, `quiet (40% traps, 60% bows): ${hr("quiet", "traps")} trap and ${hr("quiet", "bows")} bow hours, no gun`);
   // Bows with no arrows go to the traps.
   H.setHuntMix(base, { traps: 0, bows: 100, guns: 0 });

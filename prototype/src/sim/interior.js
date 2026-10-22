@@ -320,7 +320,7 @@ function layInterior(base, opts, W, H, tight = false, wide = false) {
     scatter(Math.min(4, countAll(base, "rain_catcher")), "barrel", 3, I.WALL_X - 3, (x, y) => free(x, y));
     // The garage's car in the yard: 2 × 3–4 cells (combat.js placeCar), where it fits.
     if (countAll(base, "garage")) for (let t = 0; t < 16; t++) if (placeCar(cells, W, H, rng.int(I.YARD_X, I.WALL_X - 6), rng.int(0, H - 1), rng.chance(0.5) ? "x" : "y", rng.pick(CAR_LEN.car), "car", yardFree, rng.int(0, 1e6), { ring: false })) break;
-    const plots = Math.min(3, Math.ceil((count(base, "farm_plot") * 2 + (base.tier === 0 ? 2 : base.type === "hub" ? 6 : 2)) / 4));
+    const plots = Math.min(3, Math.ceil(count(base, "farm_plot") / 4)); // the crop plots dug (one a Farm plot)
     for (let i = 0; i < plots; i++) {
       for (let t = 0; t < 20; t++) {
         const x0 = rng.int(I.BUILD_X[0], I.WALL_X - 5), y0 = rng.int(0, H - 2);

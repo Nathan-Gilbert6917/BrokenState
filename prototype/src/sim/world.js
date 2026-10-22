@@ -6,7 +6,7 @@ import { syncAllMembers } from "./members.js"; // the AI groups' people (docs/ad
 import { typedFood, addFoodsTo, FOODS, foodIn } from "./foods.js"; // the hub's first food, by type
 import { keyWord } from "./water.js"; // supply names in log lines (call-time only: safe in the import cycle)
 import { Rng } from "./rng.js";
-import { pickStart, chosenStart } from "./startpick.js"; // the new-run screen's New start position and Pick start on map
+import { pickStart, chosenStart, startNear, isSettlementTile } from "./startpick.js"; // the new-run screen's New start position and Pick start on map
 import { generateMap } from "./mapgen.js";
 import { DEFAULT_SIZE, sizeDef, customDef, isCustom, clampHives } from "./worldsize.js";
 import { FIRST_NAMES, LAST_NAMES, SKILLS, ROLLED_SKILLS, TRAITS, BIRTH_TRAITS, clashIn, GEAR, SUPPLIES, SUPPLY_KEYS, supValue } from "./data.js";
@@ -33,7 +33,9 @@ import { mergeMix } from "./zombietypes.js";
 import { basesDaily, routesDaily, deathSitesDaily } from "./economy.js";
 import { storageDaily } from "./basestorage.js"; // base storage: the things left outside weather (call-time only)
 import { groundDaily } from "./carry.js"; // food left on the ground spoils
-import { addBuilding, constructionHour, assignStations } from "./buildings.js";
+import { addBuilding, constructionHour, assignStations, baseBeds } from "./buildings.js";
+import { setFurniture } from "./beds.js"; // the start's beds set in its Lodge (call-time only)
+import { pitchTentAtBase } from "./tents.js"; // the start's tent pitched from its bag (call-time only)
 import { createVehicle, vehiclesDaily, garageHour, factionVehiclesDaily } from "./vehicles.js";
 import { updateLiveMarkers, mergeSpots } from "./markers.js";
 import { captivesDaily, releaseStranded, contactHour } from "./conflicts.js";
@@ -113,7 +115,7 @@ export const HUB_VISION = 3;
 // little over; 3 parts are the bench's, a well's and one spare. It used to be 25 scrap and 2 parts with two farm plots,
 // a crafting bench, a bunkhouse and a wall section already standing (69 scrap of buildings). tools/barestarttest.js.
 export const HUB_START = { scrap: 50, parts: 3 };
-// The town hall's tool shelf (the tools, 2026-10-21: builds and recipes need tools at the base, toolreqs.js): a tool kit
+// The main house's tool shelf (the tools, 2026-10-21: builds and recipes need tools at the base, toolreqs.js): a tool kit
 // (a hammer, a saw, wrenches, pliers), a shovel and a hatchet in the hub's armory, so the first builds, the fields and
 // the first woodcutter go ahead; the drill, the welder, the sewing kit and the better axes are found or traded for.
 export const HUB_TOOLS = ["toolkit", "shovel", "hatchet"];
@@ -173,6 +175,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
     gunSlots: 1, attachV: 2, // (attachV: gunmods.js migrateParts, save.js) // a world with gun attachment slots (gunmods.js; save.js: older saves have their guns' parts moved on load)
     machinesV: 1, // machines-2: generators with no operator, the pressure canner fitted to a kitchen (save.js migrates older saves)
     genTiersV: 1, // gen-tiers: generators have tiers (power.js GEN_TIERS; save.js makes older saves' generators tier 1)
+    cropV: 1, // placeable crop plots and built beds (buildings.js migrateCropPlots is for older saves only)
     toolsV: 1, // the tools: a new world in either mode is born with them (toolreqs.js migrateTools is for older saves only)
     raidMaps: 1, // raid maps by the World… dials (worldcfg.js RAID_MAPS; save.js: an older save keeps its old raid map sizes)
     groupJails: 1, // jailhouse: the AI groups keep prisoners in jails they build, work them and trade them (groupjails.js); older saves: no limit
@@ -210,10 +213,15 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
     return state;
   }
 
-  // Player hub: a small town far from the outbreak origin, the cities and the National Guard bases, but not off in a
-  // corner of the state: within 30 tiles of a city and a few tiles from the map edge.
+  // Player hub: open land far from the outbreak origin, the cities and the National Guard bases, but not off in a
+  // corner of the state: within 30 tiles of a city and a few tiles from the map edge. Never in a town or a city, and
+  // START_CLEAR tiles or more from them and the hives (the user's requests 2026-10-22: startpick.js startNear; it was a
+  // town until then); bare land first (no site on the tile), then any.
   const g = state.grid;
-  const towns = state.tiles.filter((t) => t.loc && t.loc.type === "town");
+  const near = startNear(state);
+  const open = state.tiles.filter((t) => t.terrain !== "water" && t.terrain !== "mountain" && !t.hive && !isSettlementTile(t) && !near.has(t.id) && !state.militaryIds.includes(t.id));
+  const bare = open.filter((t) => !t.loc);
+  const land = bare.length ? bare : open;
   // The extra hot spots of Large and Huge maps (mapgen.js spotIds) count as the origin does.
   const farFrom = (t, origin, city, mil) => g.distance(t.id, state.originId) >= origin && map.spotIds.every((s) => g.distance(t.id, s) >= origin - 4) &&
     state.cityIds.every((c) => g.distance(t.id, c) >= city) && state.militaryIds.every((m) => g.distance(t.id, m) >= mil);
@@ -221,19 +229,22 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
   // Large and Huge maps (worldsize.js hiveClear): farther from the hives at first, so the early game is no harsher
   // than a Normal map's.
   const clear = sdef.hiveClear;
-  const clearCandidates = clear ? towns.filter((t) => farFrom(t, clear, 12, 12) && central(t)) : [];
-  const hubCandidates = clearCandidates.length ? clearCandidates : towns.filter((t) => farFrom(t, 16, 12, 12) && central(t));
-  const nearCandidates = towns.filter((t) => farFrom(t, 12, 8, 8));
-  const rolled = pickStart(rng, [() => hubCandidates, () => nearCandidates, () => towns], start); // startpick.js
-  const hubTile = chosenStart(state, start) || rolled; // a town picked on the map (the die above is cast all the same)
+  const clearCandidates = clear ? land.filter((t) => farFrom(t, clear, 12, 12) && central(t)) : [];
+  const hubCandidates = clearCandidates.length ? clearCandidates : land.filter((t) => farFrom(t, 16, 12, 12) && central(t));
+  const nearCandidates = land.filter((t) => farFrom(t, 12, 8, 8));
+  const anyLand = () => state.tiles.filter((t) => t.terrain !== "water" && t.terrain !== "mountain" && !t.hive && !isSettlementTile(t));
+  // On a road first (the truck's way out, as the towns' roads were), then anywhere that fits.
+  const rolled = pickStart(rng, [() => hubCandidates.filter((t) => t.road && !t.bridge), () => hubCandidates, () => nearCandidates, () => land, anyLand], start); // startpick.js
+  const hubTile = chosenStart(state, start) || rolled; // a tile picked on the map (the die above is cast all the same)
   state.bases.push({
-    id: newId(), tile: hubTile.id, type: "hub", name: `${hubTile.loc.name} Holdout`,
+    id: newId(), tile: hubTile.id, type: "hub", name: `${nearestTownName(state, hubTile.id)} Holdout`, // named for the nearest town
     // Fuel is scarce (economy rework). Food: two weeks for six plus a few shelves of canned and jarred food, in the
-    // town hall's cellar (storage.js); water for the first dry days while the sown fields get going; a woodpile
+    // main house's cellar (storage.js); water for the first dry days while the sown fields get going; a woodpile
     // (woodcutting.js: the winter's heating is cut later).
-    // Bare start (HUB_START): no buildings and every plot free; what the town hall gives (4 beds, 8 crop plots, the well,
-    // the cellar: buildings.js; no wall, which is built on the Defenses tab) is all there is. The scrap and parts are for the first builds, the
-    // player's (or the governor's) pick: a bunkhouse, a crafting bench, a farm plot and a rain catcher come to 45.
+    // Bare start (HUB_START): every building plot free; the main house gives the well and the cellar (buildings.js; no
+    // wall, which is built on the Defenses tab) and no beds or crop plots of its own: the start's are built on the base
+    // map (HUB_LAYOUT, below). The scrap and parts are for the first builds, the player's (or the governor's) pick: a
+    // bunkhouse, a crafting bench, a farm plot and a rain catcher.
     // Food by type (foods.js): 80 days of a town's stores (cans, rice, pasta, oats, a few sacks of potatoes and onions)
     // and 10 of food that keeps (jars, jerky, peanut butter).
     stock: { water: 50, rawwater: 0, fuel: 12, meds: 6, ammo: 80, arrows: 0, parts: HUB_START.parts, scrap: HUB_START.scrap, jars: 12, wood: 1000, buildmat: 0, metalsheet: 0, // wood: 300 for the fires and 700 more since it builds too (woodwork 2026-10-20: a bunkhouse 600 and a bench 200 or a farm plot 300; the governor fells trees for the rest)
@@ -241,11 +252,14 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
     radio: false, watchtower: false, buildings: [], construction: [], armory: [],
   });
   const hubBase = state.bases[0];
-  // Six people (by default) in the town hall's four beds from the first hour: the new-run screen and the first-week guide
-  // say so, so the Overcrowded card (moveout.js) waits its usual days before it asks (and is not shown at all once beds are up).
+  hubLayout(state, hubBase);
+  // Six people (by default) in the hub's six beds from the first hour (more sleep rough): the new-run screen and the
+  // first-week guide say so, so the Overcrowded card (moveout.js) waits its usual days before it asks (and is not shown
+  // at all once beds are up).
   const people = clampStartPeople(startPeople ?? NORMAL_PEOPLE.DEF, "normal");
   state.startPeople = people;
-  if (people > 4) hubBase.crowdNote = { hour: state.hour, over: people - 4 };
+  const startBeds = baseBeds(hubBase);
+  if (people > startBeds) hubBase.crowdNote = { hour: state.hour, over: people - startBeds };
   createVehicle(state, "truck", { kind: "base", baseId: hubBase.id }, { fuel: 20, condition: 75 });
 
   createFactions(state, factionCount);
@@ -286,6 +300,27 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
   log(state, `Day 1. ${state.bases[0].name} is all that is left. ${state.factions.length} other groups are out there somewhere.`, "info");
   startChronicle(state); // timelapse recording (sim/chronicle.js)
   return state;
+}
+
+// What the normal start's hub has built on its map (the user's request 2026-10-22: "Beds for hubs/bases are determined
+// by built beds in the base map so the normal mode base map should start with 6 beds in a building or some tents and
+// beds in a building"): a Lodge with HUB_LAYOUT.beds beds set in it and a two-person tent pitched from its bag (6 beds
+// in all), and HUB_LAYOUT.plots crop plots dug (sown before the fall: farming.js farmOf). Placed by the game (the auto
+// layout: the beds on the Lodge's floor, the plots on soil); moved, picked up and struck like any built thing.
+export const HUB_LAYOUT = { beds: 4, tents: ["tent2"], plots: 8 };
+function hubLayout(state, base) {
+  const startdur = (k, i) => hash01(state.seed, "startdur", `layout:${k}:${i}`); // hashed dice: the world's are untouched
+  addBuilding(base, "gen_lodge");
+  for (let i = 0; i < HUB_LAYOUT.beds; i++) { base.armory.push(newItem("bed", 1, startdur("bed", i), START_DUR)); setFurniture(state, base, "bed"); }
+  HUB_LAYOUT.tents.forEach((k, i) => pitchTentAtBase(state, base, k, newItem(k, 1, startdur(k, i), START_DUR)));
+  for (let i = 0; i < HUB_LAYOUT.plots; i++) addBuilding(base, "farm_plot");
+}
+
+// The town or city nearest a tile (the hub's name: "<town> Holdout"), by its centre.
+function nearestTownName(state, id) {
+  let best = null, bd = Infinity;
+  for (const t of state.tiles) if (t.loc && (t.loc.type === "town" || t.loc.type === "city")) { const d = state.grid.distance(id, t.id); if (d < bd) { bd = d; best = t; } }
+  return best ? best.loc.name : "Calder";
 }
 
 /** @param {State} state @returns {Survivor} */

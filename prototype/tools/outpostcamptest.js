@@ -18,6 +18,7 @@ import { serializeState, deserializeState } from "../src/sim/save.js";
 import { STAGING } from "../src/sim/staging.js";
 import { CRAFTS } from "../src/sim/crafting.js";
 import { assignedRole } from "../src/sim/noidle.js"; // noidle: a job with no work, its people helping elsewhere
+import { isSettlementTile } from "../src/sim/startpick.js"; // no base of yours in a town or a city (2026-10-22)
 const plain = (h) => String(h).replace(/<[^>]+>/g, ""); // the text without markup (cost chips split name and count into spans)
 
 const seed = Number(process.argv[2] || 42);
@@ -26,7 +27,7 @@ const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FA
 const section = (t) => console.log(`\n${t}`);
 const t0 = Date.now();
 const world = (s = seed) => { const st = createWorld({ seed: s, factionCount: 6 }); st.started = true; st.noNewGangs = true; st.erasOff = true; st.noWanderers = true; return st; };
-const free = (st, t) => st.tiles[t].terrain !== "water" && st.tiles[t].terrain !== "mountain" && st.tiles[t].owner == null && !st.factions.some((f) => f.bases.includes(t)) && !st.bases.some((b) => b.tile === t) && !st.hordes.some((h) => h.tile === t);
+const free = (st, t) => st.tiles[t].terrain !== "water" && st.tiles[t].terrain !== "mountain" && !isSettlementTile(st.tiles[t]) && st.tiles[t].owner == null && !st.factions.some((f) => f.bases.includes(t)) && !st.bases.some((b) => b.tile === t) && !st.hordes.some((h) => h.tile === t);
 const nearFree = (st, from, lo, hi) => st.grid.within(from, hi).find((t) => st.grid.distance(t, from) >= lo && free(st, t) && planPath(st, from, t, false));
 // A team of n from the hub, standing on tile, ordered to Build outpost there carrying supplies.
 function pitch(st, n, supplies) {

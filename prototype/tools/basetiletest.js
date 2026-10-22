@@ -165,7 +165,7 @@ section("Enter base: a team at its own base that waited outside (moved out with 
 section("Enter card: a team that ends a Move on its own home tile is asked; No leaves it waiting with Enter base");
 {
   // Ticks keeping only the team's own cards, until its Enter card or orders card is up (or done says stop).
-  const until = (st, p, done = () => false) => { for (let i = 0; i < 200 && !done() && !st.cards.some((c) => c.partyId === p.id && (c.enterBase != null || c.isOrders)); i++) { st.hordes.length = 0; tickHour(st); if (st.combat) st.combat = null; if (st.engagement) st.engagement = null; for (let j = st.cards.length - 1; j >= 0; j--) if (st.cards[j].partyId !== p.id) st.cards.splice(j, 1); } return st.cards.find((c) => c.partyId === p.id); };
+  const until = (st, p, done = () => false) => { for (let i = 0; i < 200 && !done() && !st.cards.some((c) => c.partyId === p.id && (c.enterBase != null || c.isOrders)); i++) { st.hordes.length = 0; tickHour(st); if (st.combat) st.combat = null; if (st.engagement) st.engagement = null; for (let j = st.cards.length - 1; j >= 0; j--) { const c = st.cards[j]; if (c.partyId !== p.id) st.cards.splice(j, 1); else if (c.enterBase == null && !c.isOrders) { st.cards.splice(j, 1); const ch = (c.choices || []).find((x) => !x.uiAction && !(typeof x.disabled === "function" ? x.disabled(st) : x.disabled)); if (ch) ch.resolve(st); } } } return st.cards.find((c) => c.partyId === p.id); }; // the road's own cards (a loner, a find) answered with their first choice
   for (const answer of ["No", "Yes"]) {
     const st = mk();
     const h = hub(st);

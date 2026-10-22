@@ -9,6 +9,8 @@ import { planPath, partyTile, partyMembers, orderMove, giveOrder, orderOptions, 
 import { baseBeds, addBuilding } from "../src/sim/buildings.js";
 import { CROWD_CARD, MOVE_OUT, crowdCardsHour, moveTeamOut, enterTarget, overBeds, freeBeds } from "../src/sim/moveout.js";
 import { crewAI } from "../src/sim/autopilot.js";
+import { isSettlementTile } from "../src/sim/startpick.js"; // no base of yours in a town or a city (2026-10-22)
+import { defaultChoice } from "../src/sim/cardrules.js"; // a road card's default answer
 
 const SEED = Number(process.argv[2] || 42);
 let fails = 0, passed = 0;
@@ -36,10 +38,11 @@ const mkOutpost = (st, tile) => {
   return b;
 };
 // A land tile d..d2 tiles from `from`, reachable on foot, not a base and not held by anyone.
+// Open ground first (plains, hills): a camp in the woods clears its 5 × 5 of trees first (staging.js siteSetup).
 function tileNear(st, from, d, d2) {
-  for (const t of st.tiles) {
+  for (const t of [...st.tiles].sort((a, b) => (["plains", "hills"].includes(b.terrain) ? 1 : 0) - (["plains", "hills"].includes(a.terrain) ? 1 : 0) || a.id - b.id)) {
     const dist = st.grid.distance(from, t.id);
-    if (dist < d || dist > d2 || t.terrain === "water" || t.owner != null && t.owner !== "player" || st.bases.some((b) => b.tile === t.id) || st.factions.some((f) => f.bases.includes(t.id))) continue;
+    if (dist < d || dist > d2 || t.terrain === "water" || isSettlementTile(t) || t.owner != null && t.owner !== "player" || st.bases.some((b) => b.tile === t.id) || st.factions.some((f) => f.bases.includes(t.id))) continue;
     if (planPath(st, from, t.id, false)) return t.id;
   }
   return null;
@@ -51,7 +54,8 @@ function tick(st, n, keep = () => false, until = null) {
     st.hordes.length = 0;
     tickHour(st);
     if (st.combat) st.combat = null;
-    for (let j = st.cards.length - 1; j >= 0; j--) if (!keep(st.cards[j])) st.cards.splice(j, 1);
+    // The rest cleared; a team's road card answered with its default (left unanswered it held the team up there).
+    for (let j = st.cards.length - 1; j >= 0; j--) { const c = st.cards[j]; if (keep(c)) continue; st.cards.splice(j, 1); const ch = c.partyId != null && !c.isOrders ? defaultChoice(st, c) : null; if (ch) ch.resolve(st); }
     if (until && until()) return true;
   }
   return !until;
@@ -120,14 +124,15 @@ section("Move a team out: from that base's people and stores, waiting outside, t
     // Sent to a free tile: Build outpost there founds a base with them.
     const site = tileNear(st, h.tile, 3, 5);
     check(site != null && /sets off/.test(orderMove(st, p, site)), "ordered to a tile 3-5 tiles out");
-    tick(st, 200, (c) => c.partyId === p.id && c.isOrders, () => p.phase === "waiting");
+    // (A fight on the way leaves it waiting where it was met: sent on again, as the player would.)
+    for (let k = 0; k < 4 && partyTile(p) !== site; k++) { if (k) orderMove(st, p, site); tick(st, 200, (c) => c.partyId === p.id && c.isOrders, () => p.phase === "waiting"); }
     check(partyTile(p) === site, "the team got there and waits for orders");
     check(!st.cards.some((c) => c.partyId === p.id && /Enter/.test(c.title || "")) && p.phase === "waiting", "a free tile: it waits for orders (no Enter card; orders reach it anywhere, so no arrival card is needed)");
     const opt = orderOptions(st, p).find((o) => o.mission === "outpost");
     check(opt && !opt.disabled, `Build outpost is on offer with the scrap they carry (${opt && opt.disabled})`);
     const n0 = st.bases.length;
     giveOrder(st, p, "outpost");
-    for (let i = 0; i < 48 && st.bases.length === n0; i++) { tickHour(st); st.cards.length = 0; } // pitching the camp: its fire and the clearing of its 5 × 5 (staging.js siteSetup)
+    for (let i = 0; i < 120 && st.bases.length === n0; i++) { tickHour(st); st.cards.length = 0; } // pitching the camp: its fire and the clearing of its 5 × 5 (staging.js siteSetup; in the woods, days)
     const ob = st.bases.find((b) => b.tile === site);
     check(st.bases.length === n0 + 1 && ob, "the outpost is founded");
     check(ob && crew.every((s) => s.location.kind === "base" && s.location.baseId === ob.id), "the three live there now");
@@ -162,6 +167,7 @@ section("Enter card: a team that ends a move on another of your bases");
   check(p && p.phase === "out" && p.joinBaseId === o.id, `sent straight to ${o.name} (${res.error || "on its way"})`);
   if (p) {
     p.cargo.supplies.scrap = 7; // found on the way
+    addBuilding(o, "tent").tent = "tent2"; // its 2 beds: a two-person tent pitched (no base has beds of its own since 2026-10-22)
     addPerson(st, o); // one there already: with the two it is one over its 2 beds
     const food0 = food(o);
     tick(st, 200, (c) => c.partyId === p.id && (c.enterBase != null || c.isOrders), () => st.cards.some((c) => c.partyId === p.id && (c.enterBase != null || c.isOrders)));

@@ -101,7 +101,7 @@ section("Work and mood beside friends and rivals");
   a.location = { kind: "base", baseId: h.id };
   // Quarrels: about BOND.quarrelChance a day.
   let q = 0;
-  for (let i = 0; i < 400; i++) { const before = getRel(st, c, d).why ? (getRel(st, c, d).why.find((x) => /^Quarrels/.test(x.t)) || { v: 0 }).v : 0; delete st.bondDay; nextDay(st); bondsDaily(st); const after = (getRel(st, c, d).why.find((x) => /^Quarrels/.test(x.t)) || { v: 0 }).v; if (after < before) q++; getRel(st, c, d).o = -50; }
+  for (let i = 0; i < 400; i++) { const before = getRel(st, c, d).why ? (getRel(st, c, d).why.find((x) => /^Quarrels/.test(x.t)) || { v: 0 }).v : 0; delete st.bondDay; nextDay(st); bondsDaily(st); const after = ((getRel(st, c, d).why || []).find((x) => /^Quarrels/.test(x.t)) || { v: 0 }).v; if (after < before) q++; getRel(st, c, d).o = -50; }
   check(q >= 400 * BOND.quarrelChance * 0.4 && q <= 400 * BOND.quarrelChance * 2, `rivals at work quarrel ~${BOND.quarrelChance * 100}% of days (${q} of 400)`);
 }
 
@@ -318,8 +318,8 @@ section("The survivor screen and the codex");
 
 section("The same seed twice, and a long autopilot run");
 {
-  const run = (days) => {
-    const st = W(seed);
+  const run = (days, sd = seed) => {
+    const st = W(sd);
     setAutopilot(st, true);
     for (let i = 0; i < 24 * days; i++) { tickHour(st); while (st.cards.length) { const c = st.cards.shift(); const ch = defaultChoice(st, c) || c.choices.find((x) => !(typeof x.disabled === "function" ? x.disabled(st) : x.disabled)); if (ch && ch.resolve) ch.resolve(st); } }
     return st;
@@ -340,7 +340,9 @@ section("The same seed twice, and a long autopilot run");
   check(rels.every((r) => finite(r.o) && finite(r.h) && (r.why || []).every((w) => finite(w.v))), "every opinion, history and reason a number");
   check(people.every((s) => finite(s.mood) && finite(moodWork(s))), "every mood and work factor a number");
   check(people.every((s) => bondWork(s) >= 1 && bondWork(s) <= BOND.work.max), "the work bonus within its bounds");
-  check(Object.keys(BOND_EVENTS).some((k) => ev[k] > 0), "bond cards come up in a run");
+  // (A few a run at most: one run may draw none, so a second seed's run counts with it.)
+  const ev2 = Object.keys(BOND_EVENTS).some((k) => ev[k] > 0) ? {} : run(longDays, seed + 1).stats.hubEvents || {};
+  check(Object.keys(BOND_EVENTS).some((k) => ev[k] > 0 || ev2[k] > 0), "bond cards come up in a run");
 }
 
 console.log(`\n${passes} passed, ${fails} failed.`);

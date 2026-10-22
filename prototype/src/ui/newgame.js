@@ -24,6 +24,7 @@ import {
 } from "./sprites.js";
 import { worldButton } from "./worldcfg.js"; // World…: the run's dials (sim/worldcfg.js), a preset or Custom
 import { keyHint } from "./hints.js"; // "then press Space" by the device in use
+import { START_CLEAR } from "../sim/startpick.js"; // Pick start on map: how far a start keeps from the towns, cities, hives and groups
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -232,7 +233,7 @@ function startPeopleSelect(state, ui) {
   for (let v = R.MIN; v <= R.MAX; v++) opts.push(`<option value="${v}" ${v === cur ? "selected" : ""}>${v}${v === R.DEF ? " (default)" : ""}</option>`);
   const t = hard
     ? `How many of you flee together on the day Calder falls, ${R.MIN}–${R.MAX} (${R.DEF} by default). Each one brings what they grabbed (1–3 days of food and water each; a farmer, a hunter or a trucker more food, a veteran, a nurse, a mechanic or a cop less), so fewer hands carry less, scavenge, build the first camp and fight slower; the car, what is in its back and a prepper's bag are one of each whatever the count, so a small team has more of those to share. One or two are the kind who can look after themselves (better Scouting, Stealth and Medicine), loaded the car's empty seats with food and water too, and meet fewer armed strangers on the road. Changing it builds the world again on the same seed`
-    : `How many survivors hold the hub at the start, ${R.MIN}–${R.MAX} (${R.DEF} by default). The town hall has four beds and the stores are the same whatever the count: more hands work, fight and scavenge, and eat more. Changing it builds the world again on the same seed (your edited colonists are kept, as many as fit)`;
+    : `How many survivors hold the hub at the start, ${R.MIN}–${R.MAX} (${R.DEF} by default). The hub has six beds (a lodge's four and a two-person tent) and the stores are the same whatever the count: more hands work, fight and scavenge, and eat more. Changing it builds the world again on the same seed (your edited colonists are kept, as many as fit)`;
   return `<label${tip(t)}>Starting people <select data-action="startpeople">${opts.join("")}</select></label>`;
 }
 
@@ -255,7 +256,7 @@ export function newRunScreen(state, ui) {
   const hard = isHardcore(state);
   const intro = hard
     ? `Hardcore. The day the State of Calder falls. ${people.length === 1 ? "You get out alone" : `${countWord(people.length).replace(/^./, (c) => c.toUpperCase())} of you get out`} with whatever you can grab: no hub, food and water for a day or three, and the outbreak just starting. Gather what a hub takes and found your own. ${state.factions.length} other groups are out there, starting out just like you.`
-    : `Six years after the outbreak. Your survivors hold a town in the State of Calder: the town hall (four beds, a well, a cellar, no wall yet) and nothing built yet. What to put up first, with a woodpile of ${startWood(state).toLocaleString("en-US")} wood, ${HUB_START.scrap} scrap and ${HUB_START.parts} parts, is yours to choose: beds, a crafting bench, fields, walls. ${state.factions.length} other groups are out there, starting bare as well, along with the hordes.`;
+    : `Six years after the outbreak. Your survivors hold a homestead out in the open in the State of Calder, well clear of the towns: a main house (a well, a cellar, no wall yet), a lodge with four beds, a two-person tent and eight crop plots dug, and nothing else built yet. What to put up first, with a woodpile of ${startWood(state).toLocaleString("en-US")} wood, ${HUB_START.scrap} scrap and ${HUB_START.parts} parts, is yours to choose: beds, a crafting bench, fields, walls. ${state.factions.length} other groups are out there, starting bare as well, along with the hordes.`;
   return `<div class="box wide">
     <div class="spread"><h1>Broken State — New run</h1><button data-action="nr-map"${tip("Put this screen aside and look at the world map: where you start, the groups, the roads (the banner's Back to setup, or Esc, brings it back)")}>🗺 View map</button></div>
     <div class="text small">${intro} Customize your starting colonists (name, skills, look) and choose your leader. The game starts paused: give your first orders, then ${keyHint({ key: "press Space", touch: "tap ▶ Run", pad: "press ☰" })}.</div>
@@ -273,7 +274,7 @@ export function newRunScreen(state, ui) {
       <button data-action="nr-newmap"${tip(`A new map on a new seed, your survivors kept as they are: names, looks, skills, traits, who they were and the leader${freeEdit(ui) ? ", and what they were built with" : hard ? " (what they grabbed and the car come with the map)" : ""}`)}>New map</button>
       <button data-action="reroll"${tip("A new map and new survivors")}>New map and survivors</button>
       <button data-action="nr-start"${tip(`Roll a new starting position on this same map and seed: ${hard ? "another roadside spot to flee from" : "another town for your hub"}, away from the hives and the cities as usual. The map, the hives and your colonists stay as they are (the groups settle around where you are). Look at it with View map; each click is a new spot`)}>📍 New start position</button>
-      <button data-action="nr-pick"${tip(`Pick where you start yourself: the map opens and the tile you click is your start (${hard ? "any open land that is not water, a mountain, a hive or another group's base" : "any town, for your hub"}). The map, the hives and your colonists stay as they are. New start position goes back to the dice`)}>🎯 Pick start on map</button>
+      <button data-action="nr-pick"${tip(`Pick where you start yourself: the map opens and the tile you click is your start (${hard ? "any open land that is not water, a mountain, a hive or another group's base" : `open land for your hub, not water or a mountain, at least ${START_CLEAR} tiles from the towns, the cities, the hives and the other groups`}). The map, the hives and your colonists stay as they are. New start position goes back to the dice`)}>🎯 Pick start on map</button>
       <button data-action="nr-allcrew"${tip(freeEdit(ui) ? "Every colonist: a new name, look and random build (traits, skills and what they wear, hold and carry, within their points; the vehicle's back stays). Build on a crew card does one colonist" : `Randomize every colonist's name, skills, traits, gear and look (skill totals stay the same; gear picked under Customize is cleared)${hard ? ". In Hardcore that is who they were, what they grabbed and whose car they fled in: the world is built again on the same seed" : ": the starting weapons and the vest are handed out again"}`)}>🎲 Randomize all</button>
       <button data-action="zlook-open"${tip("Change how the dead look in battle")}>Zombie look…</button>
       ${worldButton(ui)}

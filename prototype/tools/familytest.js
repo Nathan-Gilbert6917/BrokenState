@@ -38,7 +38,7 @@ const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FA
   FAMILY.enabled = true;
 }
 const section = (t) => console.log(t);
-// The hub starts bare (barestart: tools/barestarttest.js), six people in the town hall's four beds; these checks are
+// The hub starts bare (barestart: tools/barestarttest.js), six people in the start's six beds (world.js HUB_LAYOUT); these checks are
 // about a settled base (free beds for a child), so the hub gets the buildings it used to start with.
 const OLD_START = ["farm_plot", "farm_plot", "craftbench", "bunkhouse", "walls"];
 const W = (s = seed) => { const st = createWorld({ seed: s, factionCount: 6 }); st.cards.length = 0; st.started = true; for (const t of OLD_START) addBuilding(hub(st), t); return st; };

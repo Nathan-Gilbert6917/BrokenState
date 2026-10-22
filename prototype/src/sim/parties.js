@@ -113,6 +113,7 @@ import { nomadCampAt, nomadCampArrive } from "./nomads.js"; // a nomad camp you 
 import { unpackPerson } from "./supitems.js"; // supplies carried as items, unpacked at home (call-time only: safe in the import cycle)
 import { fightSides, fightersOf, applySide } from "./groupfight.js"; // fights nobody watches: your rules
 import { cfgOf } from "./worldcfg.js"; // the run's dials: Durability loss, Fuel use
+import { isSettlementTile, SETTLEMENT_WHY } from "./startpick.js"; // no base of yours in a town or a city
 const AI_KIND = { raider: "raiders", expansionist: "fighters", zealot: "zealots", military: "soldiers", fortress: "soldiers", traders: "guards", commune: "militia" };
 
 export const STANCES = {
@@ -872,11 +873,13 @@ export function missionProblem(state, tile, mission) {
     if (t.terrain === "water" && !t.bridge) return "An outpost cannot be built on open water. A bridge can be barricaded with one.";
     if (state.bases.some((b) => b.tile === tile)) return "You already have a base there.";
     if (theirs) return `${theirs.name} holds that place.`;
+    if (isSettlementTile(t)) return SETTLEMENT_WHY; // startpick.js: no base in a town or a city
   }
   if (mission === "camp" || mission === "establish") { // a camp (staging.js campProblem: checked again on arrival)
     if ((t.terrain === "water" && !t.bridge) || t.hive) return t.hive ? "Not on a hive." : "A camp cannot go on open water.";
     if (state.bases.some((b) => b.tile === tile)) return "You already have a base there.";
     if (theirs) return `${theirs.name} holds that place.`;
+    if (isSettlementTile(t)) return SETTLEMENT_WHY;
   }
   if (mission === "scavenge" && t.terrain === "water" && !t.bridge) return "There is nothing to search on the water.";
   if (mission === "assault" && !state.factions.some((f) => f.alive && f.bases.includes(tile))) return "No group holds that place.";

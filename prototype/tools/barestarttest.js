@@ -1,5 +1,6 @@
 // Headless checks for the bare start (barestart): no base starts with buildings, the player's hub (normal and
-// Hardcore) and every AI group's base alike, and every construction plot is free; the crafting bench is the first
+// Hardcore) and every AI group's base alike, and every construction plot is free (the normal hub's start layout aside:
+// world.js HUB_LAYOUT, a Lodge with its beds, a tent and the dug crop plots, none of them on a plot; 2026-10-22); the crafting bench is the first
 // bench and costs what buildings.js says it does (12 scrap and a part, 12 work-hours, no skill); a new run on an empty
 // hub works (the starting roles, a first build queued and finished, nobody hungry or thirsty in the first days, the
 // Overcrowded card not on the first hour); a save made on day 0 loads with the base still bare; the governor
@@ -7,7 +8,7 @@
 // (groupworks.js) put up water and fields first, then quarters and walls, and their walls grow toward the old fixed
 // walls; an old save's groups count as built up.
 // Usage: node tools/barestarttest.js [seeds...]
-import { createWorld, tickHour, day, hub, alive, atBase, assignStartingRoles, HUB_START } from "../src/sim/world.js";
+import { createWorld, tickHour, day, hub, alive, atBase, assignStartingRoles, HUB_START, HUB_LAYOUT } from "../src/sim/world.js";
 import { BUILDINGS, PLOTS, plotsUsed, plotsFree, plotCap, canBuild, queueBuild, baseBeds, count, countAll, benchTier } from "../src/sim/buildings.js";
 import { setAutopilot } from "../src/sim/autopilot.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
@@ -30,10 +31,11 @@ const answerCards = (st) => { while (st.cards.length) { const c = st.cards.shift
     const st = createWorld({ seed, factionCount: 8 });
     const h = hub(st);
     check(st.bases.length === 1 && h, `seed ${seed}: one base, the hub`);
-    check(st.bases.every((b) => b.buildings.length === 0 && b.construction.length === 0), `seed ${seed}: no buildings and nothing queued (${h.buildings.map((b) => b.type).join(", ")})`);
+    const layout = ["gen_lodge", ...Array(HUB_LAYOUT.beds).fill("bed"), ...HUB_LAYOUT.tents.map(() => "tent"), ...Array(HUB_LAYOUT.plots).fill("farm_plot")];
+    check(st.bases.every((b) => b.buildings.map((x) => x.type).sort().join() === layout.slice().sort().join() && b.construction.length === 0), `seed ${seed}: nothing but the start's layout and nothing queued (${h.buildings.map((b) => b.type).join(", ")})`);
     check(["building", "utility"].every((k) => plotsUsed(h, k) === 0 && plotsFree(h, k) === PLOTS.hub[k] && plotCap(h, k) === PLOTS.hub[k]), `seed ${seed}: every plot free (${plotsFree(h, "building")}/${plotsFree(h, "utility")})`);
     check(h.stock.scrap === HUB_START.scrap && h.stock.parts === HUB_START.parts, `seed ${seed}: the starting scrap and parts (${h.stock.scrap}, ${h.stock.parts})`);
-    check(baseBeds(h) === 4 && !benchTier(h), `seed ${seed}: the town hall's 4 beds, no bench`);
+    check(baseBeds(h) === 6 && !benchTier(h), `seed ${seed}: the start's 6 beds (the Lodge's 4 and a two-person tent), no bench (${baseBeds(h)})`);
     check(st.groupWorks === 1 && st.factions.length > 0 && st.factions.every((f) => groupsBuild(st, f) && built(f) === 0 && !f.job), `seed ${seed}: every group builds and has built nothing`);
     check(st.factions.every((f) => f.bases.every((t) => nativeWalls(f, t, st) === 0)), `seed ${seed}: no group has walls yet`);
     check(st.factions.every((f) => nextWork(st, f) && nextWork(st, f).type === "water"), `seed ${seed}: water is every group's first job`);
@@ -88,7 +90,7 @@ const answerCards = (st) => { while (st.cards.length) { const c = st.cards.shift
   }
   check(bunkDay != null && bunkDay <= 3, `the bunkhouse is up within 3 days (day ${bunkDay})`);
   check(benchDay != null && benchDay <= 4, `the crafting bench after it (day ${benchDay})`);
-  check(baseBeds(h) === 10, `10 beds now (${baseBeds(h)})`);
+  check(baseBeds(h) === 12, `12 beds now (${baseBeds(h)})`);
   check(alive(st).length >= 6 && alive(st).every((s) => (s.hunger ?? 100) > 30 && (s.thirst ?? 100) > 30), `everyone alive, fed and watered on day 5 (${alive(st).map((s) => `${Math.round(s.hunger)}/${Math.round(s.thirst)}`).join(" ")})`);
 }
 
@@ -100,7 +102,7 @@ const answerCards = (st) => { while (st.cards.length) { const c = st.cards.shift
   try { back = loadFromString(saveToString(st)); } catch (e) { err = e; }
   check(!err && back && hub(back), `it loads (${err ? err.message : "ok"})`);
   if (back) {
-    check(hub(back).buildings.length === 0 && hub(back).stock.scrap === HUB_START.scrap, "the hub is still bare");
+    check(hub(back).buildings.length === hub(st).buildings.length && !hub(back).buildings.some((b) => BUILDINGS[b.type].plot) && hub(back).stock.scrap === HUB_START.scrap, "the hub is still bare (its start layout only)");
     check(back.groupWorks === 1 && back.factions.every((f) => groupsBuild(back, f) && built(f) === 0), "the groups still build");
     for (let i = 0; i < 48; i++) tickHour(back);
     check(!back.gameOver && alive(back).length === 6, "and plays on for two days");

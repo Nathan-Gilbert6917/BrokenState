@@ -951,7 +951,59 @@ const FLOORC = {
   // A building's floors by room (sim/buildingmaps.js c.fl): tiles, concrete, carpet, a barn's dirt.
   tile: hex("#7a7668"), conc: hex("#5e5d5a"), carpet: hex("#4e3e44"), barn: hex("#5e5040"), straw: hex("#8a7440"),
 };
-function floorColor(c, k, x, y, lx, ly, mud) {
+// Which way the roads run on a map (the user's request 2026-10-22: "In base view and raids fix road tiles to look
+// better"): every road cell painted a lane dash of its own laid a hatching of dashes over the whole asphalt. Now each
+// road cell knows its road (roadRuns: the run of road cells through it along x and along y; the long one is the way the
+// road goes, the short one its width) and floorColor paints the road as one: a dashed centre line, a faded edge line
+// each side, worn shoulders, broad patches of older asphalt; a crossing (both runs long) and a road too wide to read
+// are bare asphalt. ax: 0 not a road, 1 along x, 2 along y, 3 a crossing; off: cells from the road's near edge; wid:
+// its width in cells.
+const ROAD = { MAXW: 12, EDGE: [0.2, 0.3], SHOULDER: 0.2, MID: 0.065, DASH: 3, GAP: 0.5, WORN: 0.18 };
+function roadRuns(cells, W, H) {
+  const N = W * H, ax = new Uint8Array(N), off = new Uint8Array(N), wid = new Uint8Array(N);
+  const hLen = new Uint16Array(N), hAt = new Uint16Array(N), vLen = new Uint16Array(N), vAt = new Uint16Array(N);
+  const road = (i) => cells[i] && cells[i].f === "road";
+  for (let y = 0; y < H; y++) for (let x = 0; x < W;) {
+    if (!road(y * W + x)) { x++; continue; }
+    let e = x;
+    while (e < W && road(y * W + e)) e++;
+    for (let i = x; i < e; i++) { hLen[y * W + i] = e - x; hAt[y * W + i] = x; }
+    x = e;
+  }
+  for (let x = 0; x < W; x++) for (let y = 0; y < H;) {
+    if (!road(y * W + x)) { y++; continue; }
+    let e = y;
+    while (e < H && road(e * W + x)) e++;
+    for (let i = y; i < e; i++) { vLen[i * W + x] = e - y; vAt[i * W + x] = y; }
+    y = e;
+  }
+  for (let i = 0; i < N; i++) {
+    if (!road(i)) continue;
+    const h = hLen[i], v = vLen[i];
+    if (h >= v * 2 && v <= ROAD.MAXW) { ax[i] = 1; off[i] = ((i / W) | 0) - vAt[i]; wid[i] = v; }
+    else if (v >= h * 2 && h <= ROAD.MAXW) { ax[i] = 2; off[i] = (i % W) - hAt[i]; wid[i] = h; }
+    else ax[i] = 3;
+  }
+  return { ax, off, wid, W };
+}
+// A road's asphalt at a point: s along the road, a across it (cells from its near edge), w its width; null R (no runs:
+// the ground beyond the map, battleedge.js) or a crossing: bare asphalt.
+function roadColor(x, y, tx, ty, lx, ly, R) {
+  const X = x * 16 + tx, Y = y * 16 + ty, q = hash3(X, Y, 1);
+  const i = R ? y * R.W + x : -1, ax = R ? R.ax[i] : 0;
+  const s = ax === 2 ? y + ly : x + lx, a = ax === 2 ? R.off[i] + lx : ax === 1 ? R.off[i] + ly : 0, w = ax === 1 || ax === 2 ? R.wid[i] : 0;
+  // Broad patches of older and newer asphalt (2 × 2 cells, eased between), fine grit, now and then a crack.
+  const patch = hash3(Math.floor((X + 8) / 40), Math.floor((Y + 8) / 40), 4);
+  let col = mul(FLOORC.road, 0.9 + patch * 0.12 + q * 0.07);
+  if (q > 0.985) col = mul(FLOORC.road, 0.68);
+  if (!w) return col;
+  const worn = hash3(X >> 1, Y >> 1, 6) < ROAD.WORN; // the paint flaked off here
+  if (a < ROAD.SHOULDER || a > w - ROAD.SHOULDER) return mix(col, hex("#55524a"), 0.35 + q * 0.3); // the shoulder: grit and dust
+  if (!worn && ((a >= ROAD.EDGE[0] && a < ROAD.EDGE[1]) || (a > w - ROAD.EDGE[1] && a <= w - ROAD.EDGE[0]))) return mix(col, hex("#9a978c"), 0.62); // an edge line
+  if (!worn && Math.abs(a - w / 2) < ROAD.MID && (s % ROAD.DASH) / ROAD.DASH < ROAD.GAP) return mix(col, hex("#a8924a"), 0.7); // the dashed centre line
+  return col;
+}
+function floorColor(c, k, x, y, lx, ly, mud, R = null) {
   const tx = Math.min(15, Math.floor(lx * 16)), ty = Math.min(15, Math.floor(ly * 16));
   const q = hash3(x * 16 + tx, y * 16 + ty, 1), v = hash3(x, y, 2);
   if (k === "water") {
@@ -971,8 +1023,7 @@ function floorColor(c, k, x, y, lx, ly, mud) {
         if (ty >= 7 && ty <= 8 && (x * 16 + tx) % 16 < 7 && v > 0.35) col = hex("#8a8262"); // faded paint
         break;
       }
-      col = q > 0.97 ? mul(FLOORC.road, 0.7) : mul(FLOORC.road, 0.92 + q * 0.1);
-      if (ty >= 7 && ty <= 8 && (x * 16 + tx) % 16 < 7 && v > 0.35) col = hex("#7a7254"); // faded paint
+      col = roadColor(x, y, tx, ty, lx, ly, R); // the paint follows the road (roadRuns)
       break;
     }
     case "floor":
@@ -1011,7 +1062,7 @@ function groundFor(b, scene) {
     for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) { const nx = x + dx, ny = y + dy; if (nx >= 0 && ny >= 0 && nx < b.w && ny < b.h) mud[ny * b.w + nx] = Math.max(mud[ny * b.w + nx], 1 - Math.hypot(dx, dy) / 3); }
   }
   const passes = lift ? [[b.floors[0].cells, 0, 0.55, false], [b.cells, lift, 1, true]] : [[b.cells, 0, 1, false]];
-  for (const [cells, up, dim, footOnly] of passes) for (let py = 0; py < gh; py++) for (let px = 0; px < gw; px++) {
+  for (const [cells, up, dim, footOnly] of passes) for (let py = 0, R = roadRuns(cells, b.w, b.h); py < gh; py++) for (let px = 0; px < gw; px++) {
     const [u, v] = artUV(px + 0.5 + ox, py + 0.5 - lift + up, st);
     if (u < 0 || v < 0 || u >= Wv || v >= Hv) continue;
     const iu = Math.floor(u), iv = Math.floor(v), fu = u - iu, fv = v - iv;
@@ -1019,7 +1070,7 @@ function groundFor(b, scene) {
     const [lx, ly] = ptWorld(fu, fv, r, 1, 1);
     const c = cells[y * b.w + x];
     if (footOnly && isVoid(c)) continue;
-    let col = floorColor(c, c.k, x, y, lx, ly, mud[y * b.w + x]);
+    let col = floorColor(c, c.k, x, y, lx, ly, mud[y * b.w + x], R);
     if (fu < 0.055 || fv < 0.055) col = mul(col, 0.86); // the grid, faintly
     if (dim < 1) col = mul(col, dim);
     const i = (py * gw + px) * 4;
@@ -1049,11 +1100,12 @@ function flatGroundFor(b, scene) {
     const x = i % b.w, y = (i / b.w) | 0;
     for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) { const nx = x + dx, ny = y + dy; if (nx >= 0 && ny >= 0 && nx < b.w && ny < b.h) mud[ny * b.w + nx] = Math.max(mud[ny * b.w + nx], 1 - Math.hypot(dx, dy) / 3); }
   }
+  const R = roadRuns(b.cells, b.w, b.h); // which way the roads run (the paint follows them)
   const cv = mkCanvas(tw, th), c = cv.getContext("2d"), img = c.createImageData(tw, th), buf = img.data;
   for (let y = 0; y < b.h; y++) for (let x = 0; x < b.w; x++) {
     const cell = b.cells[y * b.w + x], m = mud[y * b.w + x];
     for (let ty = 0; ty < TEX; ty++) for (let tx = 0; tx < TEX; tx++) {
-      let col = floorColor(cell, cell.k, x, y, (tx + 0.5) / TEX, (ty + 0.5) / TEX, m);
+      let col = floorColor(cell, cell.k, x, y, (tx + 0.5) / TEX, (ty + 0.5) / TEX, m, R);
       if (tx === 0 || ty === 0) col = mul(col, 0.86); // the grid, faintly
       const i = ((y * TEX + ty) * tw + x * TEX + tx) * 4;
       buf[i] = col[0]; buf[i + 1] = col[1]; buf[i + 2] = col[2]; buf[i + 3] = 255;

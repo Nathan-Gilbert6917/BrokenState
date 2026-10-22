@@ -133,7 +133,7 @@ function helpOpen(state, base, s, job, h, count) {
     case "wood": {
       if (underAttack(state, base) || !inTripHours("wood", h)) return false;
       if (hasChopWork(base)) return n < chopJobs(base).length * NOIDLE.chopEach;
-      return !woodWorkWhy(state, base) && woodNeed(state, base).short && n < 3;
+      return !woodWorkWhy(state, base) && !(state.governor && state.governor.noWood) && woodNeed(state, base).short && n < 3; // gov.noWood: the governor's test switch
     }
     case "water": return n < NOIDLE.waterMax && !underAttack(state, base) && inTripHours("water", h) && waterRunningShort(state, base) && !fetchWaterWhy(state, base);
     case "farm": { const fw = farmersWanted(state, base); return fw.active + fw.toSow > 0 && n < fw.ideal; }
@@ -251,7 +251,7 @@ export const fellFit = (small) => (x) => !x.inBed && (small || !x.leader) && (x.
 export function planNoIdle(state, base, list, roleOf, areas = null) {
   const needs = baseNeeds(state, base, roleOf).filter((n) => !areas || areas[ROLE_AREA[n.job]] !== false);
   const ppl = atBase(state, base.id);
-  if (!woodWorkWhy(state, base) && Math.max(0, base.stock.wood || 0) < NOIDLE.woodSpare && !needs.some((n) => n.job === "wood") && (!areas || areas.production !== false)) needs.push({ job: "wood", score: 0.6, cap: 3 - ppl.filter((x) => roleOf(x) === "wood").length, why: `wood ${Math.round(base.stock.wood || 0)}: the builds' material`, station: null });
+  if (!woodWorkWhy(state, base) && !(state.governor && state.governor.noWood) && Math.max(0, base.stock.wood || 0) < NOIDLE.woodSpare && !needs.some((n) => n.job === "wood") && (!areas || areas.production !== false)) needs.push({ job: "wood", score: 0.6, cap: 3 - ppl.filter((x) => roleOf(x) === "wood").length, why: `wood ${Math.round(base.stock.wood || 0)}: the builds' material`, station: null });
   if ((!areas || areas.production !== false) && localWork(state, base) && !needs.some((n) => n.job === "haul")) needs.push({ job: "haul", score: 0.3, cap: 2 - ppl.filter((x) => roleOf(x) === "haul").length, why: "local hauling: salvage and scrap near the base", station: null }); // hauling.js
   if (!areas || areas.defence !== false) needs.push({ job: "guard", score: 0.05, cap: 99, why: "a lookout on the walls", station: null });
   const plan = [];

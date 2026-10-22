@@ -79,7 +79,7 @@ const STEPS = {
     show: (state, ui, act) => { openHub(state, ui, act, "work"); return ['[data-action="weveryone"]', '[data-action="basetab"][data-tab="work"]']; },
   },
   build: {
-    title: "Queue a building", why: "Your hub starts bare: the town hall has four beds, eight crop plots and a well, no wall, and nothing else is built. Anyone without a bed sleeps rough (mood every night, worse in the wet and the cold, and a chance of a chest cold). What goes up first is your call: a bunkhouse (six beds) or makeshift tents, a crafting bench for gear, farm plots, walls on the Defenses tab. Wood pays for most of it (you start with 1,000), with a little scrap and a part or two; most builds open the base map to place them (R turns them), and your builders do the work.",
+    title: "Queue a building", why: "Your hub starts bare: the main house with its well, a lodge with four beds, a two-person tent and eight crop plots, no wall, and nothing else is built. Anyone without a bed sleeps rough (mood every night, worse in the wet and the cold, and a chance of a chest cold). What goes up first is your call: a bunkhouse (six beds) or makeshift tents, a crafting bench for gear, farm plots, walls on the Defenses tab. Wood pays for most of it (you start with 1,000), with a little scrap and a part or two; most builds open the base map to place them (R turns them), and your builders do the work.",
     done: (state, g) => state.bases.some((b) => (b.construction || []).length) || buildingCount(state) > g.b0,
     show: (state, ui, act) => { openHub(state, ui, act, "construction"); return ['[data-action="queuebuild"]:not([disabled])']; },
   },

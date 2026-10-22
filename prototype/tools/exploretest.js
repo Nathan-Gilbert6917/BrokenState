@@ -278,7 +278,7 @@ console.log("Blueprints: locks, finding, studying");
   Object.assign(h.stock, { scrap: 500, parts: 60, meds: 40, electronics: 10 }); // electronics: the walk-in freezer's (locked with the cold store, machines-2)
   addPerson(st, h, "build", { mechanics: 12, medicine: 12 });
   // Early buildings are open; the top tiers are locked.
-  for (const t of ["farm_plot", "bunkhouse", "walls", "well", "barricades", "infirmary", "ammo_bench", "med_station", "storehouse", "radio", "still", "greenhouse", "cellar", "kitchen"]) {
+  for (const t of ["farm_plot", "bunkhouse", "walls", "well", "barricades", "infirmary", "ammo_bench", "med_station", "storehouse", "still", "greenhouse", "cellar", "kitchen"]) {
     const chk = canBuild(st, h, t);
     check(!chk.locked, `${BUILDINGS[t].name}: never locked (${chk.ok ? "ok" : chk.reason})`);
   }
@@ -289,6 +289,8 @@ console.log("Blueprints: locks, finding, studying");
   }
   // A second preserving kitchen needs the canning guide; the first does not.
   addBuilding(h, "kitchen");
+  // Radios are mid game (blueprints.js ERA_OPEN): the station waits for its handbook, or year 5.
+  check(canBuild(st, h, "radio").locked, `the radio station waits for the Radio Engineering Handbook or the mid game (${canBuild(st, h, "radio").reason})`);
   check(canBuild(st, h, "kitchen").locked, "a second preserving kitchen needs the Commercial Canning Guide");
   addBuilding(h, "infirmary"); addBuilding(h, "field_hosp");
   check(canBuild(st, h, "clinic").locked, "the Clinic (tier 3) is locked; the field hospital was not");
@@ -308,6 +310,7 @@ console.log("Blueprints: locks, finding, studying");
   let days = 1;
   while (!BP.isKnown(st, "fieldsurgery") && days < 20) { st.hour += 24; skillsDaily(st); days++; }
   check(BP.isKnown(st, "fieldsurgery") && days === Math.ceil(BP.BLUEPRINTS.fieldsurgery.hours / READ_HOURS), `studied in ${days} days (${BP.BLUEPRINTS.fieldsurgery.hours}h at ${READ_HOURS}h a day), and known for good`);
+  h.armory.push(newItem("handdrill")); // the Clinic's bolted fittings want a drill (toolreqs.js BUILD_TOOLS clinic)
   check(canBuild(st, h, "clinic").ok, `once studied the Clinic can be built (${canBuild(st, h, "clinic").reason || "ok"})`);
   check(h.armory.some((i) => i.key === "bp_fieldsurgery") && !doc.studying, "the copy stays in the armory; the reader moves on");
   // Finds: only at fitting sites, never one already known or held, deterministic.

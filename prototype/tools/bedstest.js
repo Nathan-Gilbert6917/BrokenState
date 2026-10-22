@@ -35,7 +35,8 @@ let pass = 0, fail = 0;
 const check = (ok, what) => { if (ok) pass++; else fail++; console.log(`  ${ok ? "ok  " : "FAIL"} ${what}`); return ok; };
 const section = (t) => console.log(`\n${t}`);
 registerCombatHandler("bedst", () => {});
-const world = (s = seed) => { const st = createWorld({ seed: s, factionCount: 6 }); st.started = true; st.hour = 24 * 3 + 7; return st; };
+// The hub without its start's Lodge, beds and tent (world.js HUB_LAYOUT): the furniture here is the test's own.
+const world = (s = seed) => { const st = createWorld({ seed: s, factionCount: 6 }); st.started = true; st.hour = 24 * 3 + 7; st.bases[0].buildings = st.bases[0].buildings.filter((b) => b.type === "farm_plot"); return st; };
 const rich = (base) => Object.assign(base.stock, { scrap: 999, parts: 99, wood: 5000, buildmat: 99 });
 const keyOf = (b) => `b:${b.id}`;
 const openView = (st, base, pick = null) => { globalThis.window = {}; try { return BM.openBaseMap(st, base.id, pick); } finally { delete globalThis.window; } };
@@ -161,6 +162,7 @@ section("Mood by the bed");
   const h = hub(st);
   rich(h);
   h.buildings = h.buildings.filter((b) => b.type !== "bunkhouse" && b.type !== "barracks" && b.type !== "bunks");
+  h.oldBeds = 4; // four plain beds (a save's tier beds kept: buildings.js migrateCropPlots), for the plain-bed sleepers below
   for (let i = 0; i < 6; i++) { const s = makeSurvivor(st); s.location = { kind: "base", baseId: h.id }; st.survivors.push(s); } // more people than the large bed and the plain beds
   const people = residents(st, h.id).filter((s) => !s.inBed).sort((a, b) => (b.leader ? 1 : 0) - (a.leader ? 1 : 0) || a.id - b.id);
   check(people.length >= 6, `${people.length} people at the hub`);

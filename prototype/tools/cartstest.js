@@ -511,7 +511,8 @@ console.log("Found on the map: carts in the barns and garages of a raid, by the 
   // By a road: its own dice by the hour; the first hour it comes up.
   const st = world();
   const { p } = teamOut(st, 1, { food: 2, water: 2 });
-  const roadTile = st.tiles.find((t) => t.road && t.terrain !== "water" && !t.loc);
+  const roadTile = st.tiles.find((t) => t.road && t.terrain !== "water" && !t.loc && !st.bases.some((b) => b.tile === t.id)); // not a base's tile (the hub stands by a road)
+  p.path = [roadTile.id]; p.idx = 0; // the team out there (the fight is on the team's own tile)
   let bx = null;
   for (let hh = 0; hh < 400 && !bx; hh++) {
     st.hour = 500 + hh;
@@ -726,7 +727,9 @@ console.log("Raiders park their carts as cover, facing you");
   endPlayerTurn(st);
   const mine = bt.units.filter((x) => x.side === "player");
   const nearest = (x, y) => Math.min(...mine.map((m) => Math.hypot(m.x - x, m.y - y)));
-  const faced = ({ x, y }) => { const box = K.cartBoxes(bt).find((c) => c.aiParty === q.id && Math.abs(c.x - x) + Math.abs(c.y - y) === 1); return box && box.blocking && nearest(box.x, box.y) <= nearest(x, y); };
+  // Facing: the cart on the side cell nearest your people that was free (a tree or a wall on a nearer one: the next).
+  const open = (x, y) => { const c = bt.cells[y * bt.w + x]; return !!c && c.k === "open" && !bt.units.some((o) => !o.dead && o.x === x && o.y === y); };
+  const faced = ({ x, y }) => { const box = K.cartBoxes(bt).find((c) => c.aiParty === q.id && Math.abs(c.x - x) + Math.abs(c.y - y) === 1); return box && box.blocking && [[1, 0], [-1, 0], [0, 1], [0, -1]].every(([dx, dy]) => nearest(x + dx, y + dy) >= nearest(box.x, box.y) || !open(x + dx, y + dy)); };
   const under = ({ x, y }) => K.cartBoxes(bt).some((c) => c.aiParty === q.id && c.x === x && c.y === y && !c.blocking); // no free side cell: under their feet
   check(pushers.length === 2 && at.some(faced) && at.every((a) => faced(a) || under(a)), "they park on the side cell facing your people (a barricade between; under their feet when no side is free)");
   void p;

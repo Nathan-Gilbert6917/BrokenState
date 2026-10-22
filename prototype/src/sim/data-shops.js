@@ -88,7 +88,7 @@ export const NEW_KINDS = {
     areas: ["vet", "vet", "clinic", "office"], size: 0.5, storeys: [1, 1],
   },
   dealer: {
-    site: { name: "Car dealership", glyph: "Cd", cat: "town", danger: 1, loot: { fuel: 3, parts: 3, scrap: 2 },
+    site: { name: "Car dealership", glyph: "Cd", cat: "town", danger: 1, loot: { fuel: 0.8, parts: 3, scrap: 2 }, // fuel: a little in the lot's tanks, as an auto shop's (the real sources: gas stations, truck stops, airports, the military: farmtest.js)
       gear: ["crowbar", "prybar", "flashlight", "repairkit", "kneeguards", "sledge", "hammer", "spotlight"], richness: 0.65, known: "public" },
     tags: ["garage", "shop", "travel", "tools", "office"],
     areas: ["dealer", "garage", "garage", "office", "wreck"], size: 0.5, storeys: [1, 2],

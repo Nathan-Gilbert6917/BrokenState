@@ -51,6 +51,7 @@ import { fireDayBurn } from "./woodcutting.js"; // the fire's burn a day (fire-n
 import * as Weather from "./weather.js";
 import { partyMembers, partyTile, tileLabel, teamName, awaitOrders, outpostName, settleInto, carryCapacity } from "./parties.js";
 import { firstHubPending, hubFounded } from "./hardcore-start.js";
+import { isSettlementTile, SETTLEMENT_WHY } from "./startpick.js"; // a town's or a city's tile: no base there
 import { askBaseName } from "./basenames.js"; // the naming popup for a camp meant to grow
 import { keyWord, RAW } from "./water.js";
 import { formTeam, fleetPlan } from "./teamform.js";
@@ -129,6 +130,7 @@ export function campProblem(state, tile) {
   if (!t || (t.terrain === "water" && !t.bridge)) return "Not on open water.";
   if (t.hive) return "Not on a hive.";
   if (state.bases.some((b) => b.tile === tile)) return "You already have a base here.";
+  if (isSettlementTile(t)) return SETTLEMENT_WHY; // startpick.js: no base in a town or a city (2026-10-22)
   if (state.factions.some((f) => f.alive && f.bases.includes(tile)) || (t.owner != null && t.owner !== "player")) return "Another group holds this land.";
   return null;
 }
@@ -527,7 +529,7 @@ export const buildMapChoice = (base) => ({
 });
 
 // What a new shelter is (the founding cards).
-export const shelterText = () => `A shelter (tier 0): tarps and a shack behind a scrap barricade, the camp's stores, beds for ${SHELTER.beds}. No well: water from a river or lake beside it, rain catchers, or what you bring. Only a few buildings fit (a rain catcher, a drying rack, a barricade, a farm plot) until your builders build it up into a base (Construction: ${BUILDINGS.hub_up.name}, ${needText(BUILDINGS.hub_up.cost)} and ${BUILDINGS.hub_up.hours} work-hours) for a well, walls and everything else.`;
+export const shelterText = () => `A shelter (tier 0): tarps and a shack behind a scrap barricade, the camp's stores (beds are what you build or pitch on its map). No well: water from a river or lake beside it, rain catchers, or what you bring. Only a few buildings fit (a rain catcher, a drying rack, a barricade, a farm plot) until your builders build it up into a base (Construction: ${BUILDINGS.hub_up.name}, ${needText(BUILDINGS.hub_up.cost)} and ${BUILDINGS.hub_up.hours} work-hours) for a well, walls and everything else.`;
 
 // ---------- for the panels ----------
 // The stage a base is at and what the next one takes: { stage (0 camp, 1 shelter, 2 base), name, next, needs, queued }.

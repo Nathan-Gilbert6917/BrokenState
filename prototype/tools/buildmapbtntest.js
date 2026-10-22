@@ -37,6 +37,7 @@ import { BUILDMAP_ACTIONS, buildMapKey, selectedBase } from "../src/ui/buildmap.
 import { computeAlerts, ALERT_ACTIONS } from "../src/ui/alerts.js";
 import { KEYMAP, keyLabel } from "../src/ui/keymap.js";
 import { renderModal, helpText } from "../src/ui/ui.js";
+import { isSettlementTile } from "../src/sim/startpick.js"; // no base of yours in a town or a city (2026-10-22)
 
 const seed = Number(process.argv[2] || 42);
 let pass = 0, fail = 0;
@@ -44,7 +45,7 @@ const check = (ok, what) => { if (ok) pass++; else fail++; console.log(`  ${ok ?
 const section = (t) => console.log(`\n${t}`);
 const t0 = Date.now();
 const world = (opts = {}) => { const st = createWorld({ seed, factionCount: 6, ...opts }); st.started = true; st.noNewGangs = true; st.erasOff = true; st.noWanderers = true; return st; };
-const free = (st, t) => st.tiles[t].terrain !== "water" && st.tiles[t].terrain !== "mountain" && st.tiles[t].owner == null && !st.factions.some((f) => f.bases.includes(t)) && !st.bases.some((b) => b.tile === t) && !st.hordes.some((h) => h.tile === t) && !(st.abandoned || []).some((a) => a.tile === t);
+const free = (st, t) => st.tiles[t].terrain !== "water" && st.tiles[t].terrain !== "mountain" && !isSettlementTile(st.tiles[t]) && st.tiles[t].owner == null && !st.factions.some((f) => f.bases.includes(t)) && !st.bases.some((b) => b.tile === t) && !st.hordes.some((h) => h.tile === t) && !(st.abandoned || []).some((a) => a.tile === t);
 const nearFree = (st, from, lo, hi) => st.grid.within(from, hi).find((t) => st.grid.distance(t, from) >= lo && free(st, t) && planPath(st, from, t, false));
 const btnOf = (card) => (card && card.choices || []).find((c) => c.uiAction && c.uiAction.type === "basemap");
 const alertOf = (st, b) => computeAlerts(st, { all: true }).find((a) => a.kind === "layout" && a.go && a.go.baseId === b.id);
@@ -56,7 +57,8 @@ const key = (code, mods = {}) => ({ code, key: code.replace(/^Key/, "").toLowerC
 // A team from the hub sets up camp on a free tile near it; returns the camp.
 function setUpCamp(st, n = 2, lo = 3) {
   const h = hub(st);
-  const tile = nearFree(st, h.tile, lo, lo + 4);
+  // Open ground first: a camp in the woods clears its 5 × 5 of trees first (a day or more for one: staging.js siteSetup).
+  const tile = st.grid.within(h.tile, lo + 4).find((t) => st.grid.distance(t, h.tile) >= lo && ["plains", "hills"].includes(st.tiles[t].terrain) && free(st, t) && planPath(st, h.tile, t, false)) ?? nearFree(st, h.tile, lo, lo + 4);
   Object.assign(h.stock, { food: 200, water: 200 });
   const res = launchExpedition(st, { memberIds: atBase(st, h.id).slice(0, n).map((s) => s.id), dest: tile, mission: "camp", stance: "normal", supplies: { food: 4, water: 4 } });
   if (res.error) { check(false, `a team leaves to set up camp (${res.error})`); return null; }

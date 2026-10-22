@@ -33,7 +33,9 @@ const check = (ok, what) => { if (ok) pass++; else fail++; console.log(`  ${ok ?
 const section = (t) => console.log(`\n${t}`);
 const t0 = Date.now();
 registerCombatHandler("bbt", () => {});
-const world = (s = seed) => { const st = createWorld({ seed: s, factionCount: 6 }); st.started = true; st.hour = 24 * 3 + 12; st.landOff = true; return st; }; // landOff: the land (basescatter.js) is tools/baseviewtest.js's
+// landOff: the land (basescatter.js) is tools/baseviewtest.js's. The hub without its start's Lodge, beds and tent
+// (world.js HUB_LAYOUT): the general buildings here are the test's own.
+const world = (s = seed) => { const st = createWorld({ seed: s, factionCount: 6 }); st.started = true; st.hour = 24 * 3 + 12; st.landOff = true; st.bases[0].buildings = st.bases[0].buildings.filter((b) => b.type === "farm_plot"); return st; };
 const rich = (base) => Object.assign(base.stock, { scrap: 999, parts: 99, buildmat: 99, electronics: 9, meds: 20, wood: 99999 });
 const asCamp = (base) => { base.tier = 0; base.camp = true; base.buildings = []; base.construction = []; delete base.plan; return base; };
 // Finishes every job in the queue (as the builders would).
@@ -61,7 +63,8 @@ section("The no-build margin");
   // The camp: a 250 × 250 grid like every base's; everything a camp may build still finds a spot.
   const st2 = world(seed + 1), c2 = asCamp(hub(st2));
   rich(c2);
-  for (const t of Object.keys(CAMP.build)) if (BM.FOOT[t] && !BM.FOOT[t].fit && !BUILDINGS[t].piece) for (let i = 0; i < CAMP.build[t]; i++) addBuilding(c2, t);
+  // (Farm plots: as many as its soil takes, not its list's most: buildings.js canBuild soilRoom; four here.)
+  for (const t of Object.keys(CAMP.build)) if (BM.FOOT[t] && !BM.FOOT[t].fit && !BUILDINGS[t].piece) for (let i = 0; i < (t === "farm_plot" ? 4 : CAMP.build[t]); i++) addBuilding(c2, t);
   const hut = last(c2, "gen_hut");
   for (const t of ["bunks", "stove"]) addBuilding(c2, t);
   addBuilding(c2, "walls"); // a Ring wall's pieces (buildings.js addRing): the ring round the camp's yard lies inside the margin
@@ -438,7 +441,8 @@ section("A way in and out");
     check(again === auto, "the layout is cached by its key");
     // The camp and a shelter still place everything they can build.
     const stC = world(seed + 9), camp = asCamp(hub(stC));
-    for (const t of Object.keys(CAMP.build)) if (BM.FOOT[t] && !BM.FOOT[t].fit && !BUILDINGS[t].piece) for (let i = 0; i < CAMP.build[t]; i++) addBuilding(camp, t);
+    // (Farm plots: as many as its soil takes, not its list's most: buildings.js canBuild soilRoom; four here.)
+    for (const t of Object.keys(CAMP.build)) if (BM.FOOT[t] && !BM.FOOT[t].fit && !BUILDINGS[t].piece) for (let i = 0; i < (t === "farm_plot" ? 4 : CAMP.build[t]); i++) addBuilding(camp, t);
     for (const t of ["bunks", "stove", "walls"]) addBuilding(camp, t); // what the hut's 2 × 2 floor has room for; the Ring wall's pieces
     const layC = BM.layoutOf(stC, camp), autoC = BM.autoLayout(stC, camp);
     check(layC.length >= 12 && layC.every((e) => e.at) && layC.every((e) => BM.reachProblem(stC, camp, e.it, e.at, null, { auto: autoC }) === ""), `a camp with everything on its list: ${layC.length} things placed, all reachable`);

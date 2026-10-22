@@ -316,7 +316,9 @@ console.log("The fall: the splinters' stores are the fallen base's");
 {
   const supOf = (st) => Object.fromEntries(Object.entries(st || {}).filter(([k, q]) => SUPPLIES[k] && Number.isFinite(q) && q > 1e-9));
   const groundSup = (st, tile) => { const out = {}; const site = groundAt(st, tile); for (const i of (site && site.items) || []) if (i.kind === "supply") out[i.key] = (out[i.key] || 0) + i.qty; return out; };
-  const groundGear = (st, tile) => new Set(((groundAt(st, tile) || {}).items || []).filter((i) => i.kind === "gear").map((i) => i.item));
+  // What lies on the ground there, with what is packed inside it (a magazine in a rig or a pack left in the ruin).
+  const inside = (it) => [it, ...((it && it.contents) || []).filter(Boolean).flatMap(inside)];
+  const groundGear = (st, tile) => new Set(((groundAt(st, tile) || {}).items || []).filter((i) => i.kind === "gear").flatMap((i) => inside(i.item)));
   const add = (into, rec, k = 1) => { for (const [key, q] of Object.entries(rec || {})) into[key] = (into[key] || 0) + q * k; return into; };
   // Runs a hardcore world until the strike force is cut off, then brings the base down there and then.
   const fallNow = (seed, empty = false) => {

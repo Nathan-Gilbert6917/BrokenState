@@ -17,7 +17,7 @@
 // Usage: node tools/custompointstest.js
 import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { readFileSync } from "node:fs";
-import { createWorld, tickHour, day } from "../src/sim/world.js";
+import { createWorld, tickHour, day, HUB_TOOLS } from "../src/sim/world.js";
 import { GEAR, SKILLS, TRAITS, traitKind } from "../src/sim/data.js";
 import { CUSTOM_POINTS, skillCost, nextLevelCost, itemPoints, loosePoints, slotPoints, suppliesPoints, gunExtras, pricePerson, overBudget, overText, clampMax } from "../src/sim/custompoints.js";
 import { TRAIT_TIERS, traitPoints, traitTier, tierCount } from "../src/sim/traits.js";
@@ -85,7 +85,8 @@ section("A blank start, Start from the dice, Clear");
     const st = blankWorld(42, { mode });
     check(st.survivors.every((s) => s.startPoints && pricePerson(st, s).total === 0 && SKILLS.every((k) => s.skills[k] === 0) && !s.traits.length), `${mode}: everyone blank, 0 points spent`);
     check(st.survivors.every((s) => !allCarried(s).length && START_GEAR.SLOTS.every((k) => !s.gear[k])), `${mode}: nothing worn, held or carried`);
-    if (mode === "normal") check(st.bases[0].armory.length === 0 && !st.bases[0].armory.some((it) => GEAR[it.key].slot === "weapon"), "normal: the dice's weapons and vest are not handed to the armory on top");
+    // (the armory's own tool shelf aside: world.js HUB_TOOLS, every new hub's, since the tools of 2026-10-21)
+    if (mode === "normal") check(st.bases[0].armory.every((it) => HUB_TOOLS.includes(it.key)) && !st.bases[0].armory.some((it) => GEAR[it.key].slot === "weapon" && !HUB_TOOLS.includes(it.key)), "normal: the dice's weapons and vest are not handed to the armory on top");
     else check(backOf(st.parties[0]).length === 0 && totalRounds(st.parties[0].supplies) === 0, "Hardcore: nothing of the grab or the car's back on the team (the rolled guns' rounds neither)");
     // Start from the dice: what was rolled, priced.
     const ui = UI();
@@ -426,7 +427,7 @@ section("A normal start's crew: 1–8 at the hub (six by default)");
   for (const n of [1, 4, 7, 8]) {
     const w = createWorld({ seed: 42, factionCount: 5, startPeople: n });
     check(w.survivors.length === n && w.startPeople === n && w.survivors.every((s) => s.gear.weapon && s.location && s.location.kind === "base") && w.survivors.filter((s) => s.leader).length === 1, `${n} at the hub, each armed, one leader`);
-    check(n > 4 ? w.bases[0].crowdNote && w.bases[0].crowdNote.over === n - 4 : !w.bases[0].crowdNote, `${n}: the town hall's four beds (${n > 4 ? `${n - 4} over` : "room for all"})`);
+    check(n > 6 ? w.bases[0].crowdNote && w.bases[0].crowdNote.over === n - 6 : !w.bases[0].crowdNote, `${n}: the hub's six beds (${n > 6 ? `${n - 6} over` : "room for all"})`);
     assignStartingRoles(w);
     let err = null;
     try { for (let h = 0; h < 48; h++) tickHour(w); } catch (e) { err = e; }

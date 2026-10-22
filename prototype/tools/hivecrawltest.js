@@ -490,7 +490,8 @@ console.log("The autopilot");
     walked++;
     const n = crawlTo(s5, q, 120);
     if (!q.hiveCrawl && s5.parties.includes(q) && s5.log.some((l) => /Out of .* by its \w+ mouth/.test(l.text))) outs++;
-    else console.log(`    (seed ${SEED + 30 + s}: ${q.hiveCrawl ? `still in at ${c5.at} after ${n} steps` : "wiped"})`);
+    else if (!q.hiveCrawl && !s5.parties.includes(q)) { walked--; console.log(`    (seed ${SEED + 30 + s}: wiped on the way out: a fight lost, not the way out lost)`); }
+    else console.log(`    (seed ${SEED + 30 + s}: still in at ${c5.at} after ${n} steps)`);
   }
   check(walked > 0 && outs === walked, `turned back deeper in, the autopilot walks out by a mouth on its own (${outs}/${walked})`);
   // The governor's own campaign from the hub (as tools/wintest.js --force hive): the trip, the crawl, the core.

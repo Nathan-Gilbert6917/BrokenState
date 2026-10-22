@@ -219,21 +219,27 @@ export function settleTunnels(state, b) {
   return n;
 }
 // A record with no cells yet laid on a fort map: a bare cell inside the walls (by a hash of the seed, the base and its
-// id), and the bare cell outside nearest its length from it. null: no room.
+// id; deep in a big yard, out of a tunnel's reach of the bare ground outside, the next one on in the list that is
+// within it), and the bare cell outside nearest its length from it. null: no room.
 function placeTunnel(state, b, base, rec, ins) {
   const inner = [], outer = [];
   for (let i = 0; i < b.cells.length; i++) if (diggable(b.cells[i])) (ins[i] ? inner : outer).push(i);
   if (!inner.length || !outer.length) return null;
-  const k = Math.floor(hash01(state.seed, "tunnelat", base.id, rec.id) * inner.length) % inner.length;
-  const e = [inner[k] % b.w, (inner[k] / b.w) | 0];
-  let best = null;
-  for (const i of outer) {
-    const p = [i % b.w, (i / b.w) | 0], d = cheb(p, e);
-    if (d < 2 || d > DIG.RANGE) continue;
-    const sc = Math.abs(d - lenOf(rec));
-    if (!best || sc < best.sc) best = { p, sc, d };
+  const k0 = Math.floor(hash01(state.seed, "tunnelat", base.id, rec.id) * inner.length) % inner.length;
+  const step = Math.max(1, Math.floor(inner.length / 97)); // a few dozen tries spread over the yard
+  for (let t = 0; t * step < inner.length; t++) {
+    const k = (k0 + t * step) % inner.length;
+    const e = [inner[k] % b.w, (inner[k] / b.w) | 0];
+    let best = null;
+    for (const i of outer) {
+      const p = [i % b.w, (i / b.w) | 0], d = cheb(p, e);
+      if (d < 2 || d > DIG.RANGE) continue;
+      const sc = Math.abs(d - lenOf(rec));
+      if (!best || sc < best.sc) best = { p, sc, d };
+    }
+    if (best) return { a: best.p, b: e, len: best.d };
   }
-  return best ? { a: best.p, b: e, len: best.d } : null;
+  return null;
 }
 // A fight on the base's map begins (defences.js "baseDefence" layout, the units): the base's tunnels are on it, open
 // and known to your people. The base map's view shows them too (it places, but never saves, a record's cells).

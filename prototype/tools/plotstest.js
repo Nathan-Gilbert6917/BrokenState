@@ -206,15 +206,15 @@ const skilled = (st, b) => { const s = makeSurvivor(st, 1); s.location = { kind:
   const h = hub(st);
   bare(h); rich(h); skilled(st, h);
   check(BUILDINGS.barracks.plot === "building" && BEDS.barracks === 2 * BEDS.bunkhouse && BEDS.bunkhouse === 6, `a barracks sleeps ${BEDS.barracks} on a building plot (a bunkhouse ${BEDS.bunkhouse})`);
-  check(baseBeds(h) === 4, `a bare hub has 4 beds (${baseBeds(h)})`);
+  check(baseBeds(h) === 0, `a bare hub has no beds: only what is built (${baseBeds(h)})`);
   const bx = addBuilding(h, "barracks");
-  check(baseBeds(h) === 16, `a barracks adds 12 beds (${baseBeds(h)})`);
+  check(baseBeds(h) === 12, `a barracks adds 12 beds (${baseBeds(h)})`);
   bx.broken = true;
-  check(baseBeds(h) === 4, "a broken barracks sleeps nobody");
+  check(baseBeds(h) === 0, "a broken barracks sleeps nobody");
   bare(h);
   check(!!queueBuild(st, h, "barracks") && queuedBeds(h) === 12 && plotsUsed(h, "building") === 1, `a queued barracks holds a plot and 12 beds to come (${queuedBeds(h)})`);
   finishAll(st, h);
-  check(count(h, "barracks") === 1 && baseBeds(h) === 16 && queuedBeds(h) === 0, "built, it has its 12 beds");
+  check(count(h, "barracks") === 1 && baseBeds(h) === 12 && queuedBeds(h) === 0, "built, it has its 12 beds");
   // A shelter has no building plots.
   const st2 = W();
   const h2 = hub(st2); h2.tier = 0; bare(h2); rich(h2);
@@ -274,7 +274,7 @@ const skilled = (st, b) => { const s = makeSurvivor(st, 1); s.location = { kind:
   const o3 = mkOutpost(st3, h3.tile);
   rich(o3); Object.assign(o3.stock, { water: 300 }); setFood(h3, 2000); // the hub feeds 10 days a head and more
   addBuilding(o3, "bunkhouse"); addBuilding(o3, "well"); addBuilding(o3, "well"); addBuilding(o3, "cistern");
-  check(housingAI.bedsFree(st3, o3) === 8, `an empty outpost with a bunkhouse has 8 beds free (${housingAI.bedsFree(st3, o3)})`);
+  check(housingAI.bedsFree(st3, o3) === 6, `an empty outpost with a bunkhouse has its 6 beds free (${housingAI.bedsFree(st3, o3)})`);
   const mv = housingAI.movers(st3, o3);
   check(mv >= 1 && mv <= 3, `a cramped hub sends people to an outpost with beds, food and water (${mv})`);
   while (st3.survivors.filter((s) => s.alive && s.location.kind === "base" && s.location.baseId === o3.id).length < baseBeds(o3)) skilled(st3, o3);

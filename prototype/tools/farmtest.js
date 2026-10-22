@@ -97,12 +97,12 @@ has(Weather.growthFactor, "growthFactor"); has(Weather.cropDamage, "cropDamage")
     const c = CROPS[k];
     check(c.days > 0 && c.yield > c.seed && c.water >= 0 && c.spoil > 0 && c.climate && c.climate.seasons.length, `${k}: complete crop data`);
   }
-  // Plots per base type, and buildings add plots.
+  // A Farm plot dug is one crop plot (2026-10-22: a 2 × 2 of soil on the base map), a greenhouse 2 under glass.
   const st = W();
   const h = hub(st);
   const n0 = plotLimit(h);
   addBuilding(h, "farm_plot");
-  check(plotLimit(h) === n0 + 2 && farmOf(st, h).plots.length === n0 + 2, `a Farm plot adds 2 plots (${n0} → ${farmOf(st, h).plots.length})`);
+  check(n0 === 8 && plotLimit(h) === n0 + 1 && farmOf(st, h).plots.length === n0 + 1, `the hub's 8 dug plots, and a Farm plot adds 1 (${n0} → ${farmOf(st, h).plots.length})`);
   addBuilding(h, "greenhouse");
   check(farmOf(st, h).plots.filter((p) => p.gh).length === 2, "a Greenhouse adds 2 plots under glass");
   check(farmOf(st, h).plots.filter((p) => !p.gh && p.stage === "growing").length >= 8, "the hub starts with its fields sown");
@@ -378,6 +378,7 @@ has(Weather.growthFactor, "growthFactor"); has(Weather.cropDamage, "cropDamage")
   console.log("Food storage and spoilage");
   const st = W();
   const h = hub(st);
+  h.buildings = h.buildings.filter((b) => b.type !== "tent"); // the start's tent keeps food dry too (storage.js): the cellar alone here
   check(storeCapacity(h) === STORE.hubCellar, `the hub starts with a small cellar (${storeCapacity(h)})`);
   const op = { type: "outpost", stock: {}, buildings: [] };
   check(storeCapacity(op) === STORE.pantry, `an outpost has only a pantry (${storeCapacity(op)})`);

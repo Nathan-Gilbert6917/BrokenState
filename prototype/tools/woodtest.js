@@ -146,7 +146,7 @@ section("Woodcutters: tools, skill, the hurt, spare tools lent, diminishing hand
   const withTool = (key) => { s.gear.weapon = key ? newItem(key) : null; return Wd.chopCrew([s])[0].mult; };
   const none = withTool(null), fa = withTool("fireaxe"), sl = withTool("sledge"), ma = withTool("machete");
   note(`bare ${r2(none)}, machete ${r2(ma)}, sledgehammer ${r2(sl)}, fire axe ${r2(fa)}`);
-  check(fa > sl && sl > ma && ma > none && near(none, m0), "fire axe > sledgehammer > machete > bare hands");
+  check(fa > sl && sl > ma && ma > none && near(none, m0 * Wd.WOOD.hands), "fire axe > sledgehammer > machete > bare hands (bare: WOOD.hands of the person's own pace)");
   s.gear.weapon = null;
   const good = plain(makeSurvivor(state), { farming: 10, mechanics: 8 });
   check(Wd.woodcutterMult(good) > m0 * 1.2, `skill helps (Farming 10, Mechanics 8: ×${r2(Wd.woodcutterMult(good))} vs ×${r2(m0)})`);

@@ -15,7 +15,7 @@
 // Usage: node tools/campbasetest.js [seed]
 import { stockTools } from "./toolset.js"; // every tool a build or recipe can need (toolreqs.js)
 import { createWorld, hub, atBase, newId, tickHour } from "../src/sim/world.js";
-import { BUILDINGS, CAMP, SHELTER, CROP_PLOTS, addBuilding, canBuild, placeProblem, queueBuild, isCamp, isShelter, plotCap, farmSlots, baseBeds, queuedBeds, plotsUsed } from "../src/sim/buildings.js";
+import { BUILDINGS, CAMP, SHELTER, addBuilding, canBuild, placeProblem, queueBuild, isCamp, isShelter, plotCap, farmSlots, baseBeds, queuedBeds, plotsUsed } from "../src/sim/buildings.js";
 import { setAutopilot } from "../src/sim/autopilot.js";
 import { cropProgress, farmOf, CROPS, plotLimit } from "../src/sim/farming.js";
 import { huntLoans, cabinPlan, huntWeaponInfo, CABIN } from "../src/sim/hunting.js";
@@ -100,12 +100,13 @@ section("BASE-03: what each kind of base may build");
 }
 
 // ======================================================================
-section("Plots and crop plots by stage (user numbers 2026-10-12)");
+section("Plots by stage (user numbers 2026-10-12); crop plots are the Farm plots dug (2026-10-22), whatever the stage");
 {
   const st = W(), h = hub(st);
   const o = mkOutpost(st, h.tile);
   const row = (b) => [plotCap(b, "building"), plotCap(b, "utility"), farmSlots(b), plotLimit(b), farmOf(st, b).plots.length];
-  const want = { "main base": [16, 14, 8], outpost: [6, 6, 4], shelter: [1, 3, 2], camp: [0, 2, 1] };
+  // The hub's 8 are the start's dug plots (world.js HUB_LAYOUT); a new outpost, a bare shelter and a bare camp have dug none.
+  const want = { "main base": [16, 14, 8], outpost: [6, 6, 0], shelter: [1, 3, 0], camp: [0, 2, 0] };
   const got = { "main base": row(h), outpost: row(o) };
   asShelter(h); got.shelter = row(h);
   asCamp(h); got.camp = row(h);
@@ -113,7 +114,9 @@ section("Plots and crop plots by stage (user numbers 2026-10-12)");
     const g = got[k];
     check(g[0] === b && g[1] === u && g[2] === c && g[3] === c && g[4] === c, `${k}: ${b} building, ${u} utility, ${c} crop plots (the Construction tab, farmSlots and the farm agree: ${g.join(" / ")})`);
   }
-  check(CROP_PLOTS.camp === 1 && CROP_PLOTS.shelter === 2 && CROP_PLOTS.outpost === 4 && CROP_PLOTS.hub === 8 && CAMP.plots === 1 && SHELTER.plots === 2, "one table: CROP_PLOTS (CAMP.plots, SHELTER.plots the same)");
+  check(CAMP.plots === 0 && SHELTER.plots === 0 && CAMP.beds === 0 && SHELTER.beds === 0, "no stage has crop plots or beds of its own");
+  addBuilding(o, "farm_plot");
+  check(farmSlots(o) === 1 && plotLimit(o) === 1 && farmOf(st, o).plots.length === 1, `a Farm plot dug is one crop plot (${farmSlots(o)})`);
   asShelter(h); rich(h);
   // The cabin also needs game land within 2 tiles (hunting.js cabinProblem); seed 42's hub lies in a town's suburb ring
   // (mapgen.js, POI foundation), so the suburbs around it are made woods again for this check, then put back.

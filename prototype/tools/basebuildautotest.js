@@ -28,7 +28,9 @@ const section = (t) => console.log(`\n${t}`);
 const t0 = Date.now();
 registerCombatHandler("bbat", () => {});
 const GENERAL = ["gen_barn", "gen_hall", "gen_lodge", "gen_cabin", "gen_hut"];
-const world = (s = seed, factions = 6) => { const st = createWorld({ seed: s, factionCount: factions }); st.started = true; st.hour = 24 * 3 + 12; st.landOff = true; return st; }; // landOff: the land (basescatter.js) is tools/baseviewtest.js's
+// landOff: the land (basescatter.js) is tools/baseviewtest.js's. The hub without its start's Lodge, beds and tent
+// (world.js HUB_LAYOUT): the buildings and the beds here are the test's own.
+const world = (s = seed, factions = 6) => { const st = createWorld({ seed: s, factionCount: factions }); st.started = true; st.hour = 24 * 3 + 12; st.landOff = true; st.bases[0].buildings = st.bases[0].buildings.filter((b) => b.type === "farm_plot"); return st; };
 const rich = (base) => Object.assign(base.stock, { scrap: 400, parts: 30, wood: 4000 }); // wood: a barn is 2,250 (woodwork)
 const addPeople = (st, base, n) => { for (let i = 0; i < n; i++) { const s = makeSurvivor(st); s.location = { kind: "base", baseId: base.id }; st.survivors.push(s); } };
 const wishes = (st, base) => housingAI.wishes(st, base); // autopilot.js buildWishes
@@ -144,7 +146,8 @@ section("Storage when goods lie outside (storageWish)");
 section("The morning's tidy (tidyStores)");
 {
   // Put away: nothing left in no container but a part of a unit (a bin holds whole units: 0.9 of a bag of rice stays).
-  const tidyNow = (c) => !c.gear.length && Object.values(c.sup).every((q) => q < 1);
+  // (What came in after the tidy, the morning's hunt or catch, waits for the next one: only what lay there before counts.)
+  const tidyNow = (c, was = null) => !c.gear.length && Object.entries(c.sup).every(([k, q]) => q < 1 || (was && !(was.sup[k] >= 1)));
   const st = world(), h = hub(st);
   h.stock.scrap = 100;
   const before = containerByKey(st, h, LOOSE), sb = storageOf(st, h);
@@ -153,7 +156,7 @@ section("The morning's tidy (tidyStores)");
   let tidied = -1;
   for (let i = 0; i < 48 && tidied < 0; i++) { tickHour(st); if (autopilotStats(st).stored > 0) tidied = hourOfDay(st); }
   const after = containerByKey(st, h, LOOSE), ka = storageKg(st, h);
-  check(tidied >= 0 && tidyNow(after), `the governor's morning tidy put them away (at ${tidied}:00: ${r1(after.kg)} kg left put away nowhere, parts of a unit, ${autopilotStats(st).stored} kg stored, ${r1(ka.held)} of ${ka.cap} kg inside)`);
+  check(tidied >= 0 && tidyNow(after, before), `the governor's morning tidy put them away (at ${tidied}:00: ${r1(after.kg)} kg left put away nowhere, parts of a unit, ${autopilotStats(st).stored} kg stored, ${r1(ka.held)} of ${ka.cap} kg inside)`);
   // A day on, the goods that came in since are put away again.
   const s0 = autopilotStats(st).stored;
   for (let i = 0; i < 24; i++) tickHour(st);

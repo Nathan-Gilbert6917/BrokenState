@@ -28,6 +28,7 @@ import { raidEnemies } from "../src/sim/scavenge.js";
 import { startWar } from "../src/sim/diplomacy.js";
 import { newItem } from "../src/sim/inventory.js";
 import { makeItem, itemDurMax } from "../src/sim/crafting.js";
+import { intelDef } from "../src/sim/groupworld.js";
 
 const seed = Number(process.argv[2] || 7);
 let fails = 0, passes = 0;
@@ -660,7 +661,10 @@ const groupOf = (state, type) => {
   const h = hub(st);
   const f = groupOf(st, "raider");
   f.goodwill = -80; f.pop = 40; f.known = true;
-  h.alert = true; const prep = baseDefense(st, h); h.alert = false;
+  h.alert = true; let prep = baseDefense(st, h); h.alert = false;
+  // What their scouts saw of it when they know the base (groupworld.js intelDef, rounded): the hub on open land
+  // (2026-10-22) is 8 tiles from this group, in sight of their patrols from the start.
+  prep = intelDef(st, f, h) ?? prep;
   const sizes = Array.from({ length: 40 }, () => raidSize(st, f, h));
   const cap = strength(f) * RAIDS.CAP;
   check(sizes.every((s) => s <= cap + 1e-9 && (s >= Math.min(cap, prep * RAIDS.SIZE[0]) - 1e-9) && s <= prep * RAIDS.SIZE[1] + 1e-9),
