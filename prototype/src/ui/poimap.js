@@ -175,8 +175,8 @@ function exitArrow(state, t, x, attrs, cls = "") {
   const sd = sides(state, t).find((q) => q.m === x.via);
   if (!sd) return "";
   const out = PM.R * (SQ3 / 2) + PM.ARROW, ax = CX + sd.ux * out, ay = CY + sd.uy * out, deg = (Math.atan2(sd.uy, sd.ux) * 180) / Math.PI;
-  const side = sd.uy > 0.1 ? -1 : 1, lx = ax - sd.uy * 22 * side, ly = ay + sd.ux * 22 * side + 4; // along the edge, beside the arrow
-  return `<g class="pm-exit${cls}"${attrs}><circle cx="${ax.toFixed(1)}" cy="${ay.toFixed(1)}" r="11"/><path d="M-4,-6 L4,0 L-4,6" transform="translate(${ax.toFixed(1)},${ay.toFixed(1)}) rotate(${deg.toFixed(1)})"/>${x.mins != null ? `<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}">${x.mins}m</text>` : ""}</g>`;
+  const side = sd.uy > 0.1 ? -1 : 1, lx = ax - sd.uy * 32 * side, ly = ay + sd.ux * 32 * side + 4; // along the edge, beside the arrow
+  return `<g class="pm-exit${cls}"${attrs}><circle cx="${ax.toFixed(1)}" cy="${ay.toFixed(1)}" r="11"/><path d="M-4,-6 L4,0 L-4,6" transform="translate(${ax.toFixed(1)},${ay.toFixed(1)}) rotate(${deg.toFixed(1)})"/>${x.mins != null ? `<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}">${x.mins} min</text>` : ""}</g>`;
 }
 
 /**
@@ -201,7 +201,7 @@ export function poiMapSvg(state, t, wm, rows, sel, tips, opts = {}) {
     const pts = pl.route.map(toMap), on = sel === pl.i;
     if (pts.length > 1) {
       routes.push(`<polyline class="pm-route${on ? " on" : ""}" data-poi="${pl.i}" points="${pts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" ")}"/>`);
-      const [mx, my] = midOf(pts), txt = `${pl.mins}m`, w = 8 + txt.length * 6.4;
+      const [mx, my] = midOf(pts), txt = `${pl.mins} min`, w = 8 + txt.length * 6.2;
       if (free([mx, my])) chips.push(`<g class="pm-chip${on ? " on" : ""}" data-poi="${pl.i}" transform="translate(${mx.toFixed(1)},${my.toFixed(1)})"><rect x="${-w / 2}" y="-8" width="${w}" height="16" rx="8"/><text y="4">${txt}</text></g>`);
     }
     const [x, y] = toMap(pl.spot), sp = spriteOf(r.kind, (poiAt(t, pl.i) || {}).v, r.band);
