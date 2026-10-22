@@ -2098,7 +2098,7 @@ export function hiveCrawlAutoStep(state, p) {
     const creep = sneak && sneak.odds >= A.sneakOdds && !c.enc.spotted;
     const pick = spent && !outFight ? retreat : spent ? "numbers" : num && num.odds >= A.sureOdds ? "numbers" : creep ? "sneak" : num && num.odds >= A.fightOdds ? "numbers" : retreat;
     resolveHiveEnc(state, p, pick, { map: false });
-    if (pick !== "numbers" && pick !== "sneak") { const cc = p.hiveCrawl; if (cc && !cc.enc) cc.headOut = true; }
+    if (pick !== "numbers" && pick !== "sneak") { const cc = p.hiveCrawl; if (cc && !cc.enc) { if (!cc.headOut) say2(cc, spent ? "Too many hurt: the team turns back." : "Too many in the way: the team turns back.", "danger", state.hour); cc.headOut = true; } } // fallen back, it makes for a mouth, as turnBack says
     return;
   }
   const hive = crawlHive(state, c);
