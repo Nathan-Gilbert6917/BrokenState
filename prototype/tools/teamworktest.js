@@ -9,7 +9,7 @@
 //   - the same seed gives the same result twice
 //   - the AI groups: their crews, the felling bonus, fewer losses on the land
 // Usage: node tools/teamworktest.js
-import { createWorld, hub, atBase } from "../src/sim/world.js";
+import { createWorld, hub, atBase, localId } from "../src/sim/world.js";
 import { planTrip, tripState } from "../src/sim/jobtrips.js";
 import { armTripEvent, fireTripEvent } from "../src/sim/tripevents.js";
 import { TEAM, teamMult, crewAt, noteMates, shareLoot, crewDead, groupCrew } from "../src/sim/teamwork.js";
@@ -122,9 +122,9 @@ function loot(seed) {
   check(as > 5 && as < 35, `random between them (${as} of 40 to ${first(x.a)})`);
   const got = shareLoot(x.st, [x.a, x.c], x.it, 99);
   check(got === x.pick && x.it.tripFind, "stowed on the one the dice picked");
-  // The picked one full: no pack, pockets full, hands full.
+  // The picked one full: no pack, pockets full, hands full, the belt too (holsters.js: a knife goes on the belt).
   const full = x.pick, other = full === x.a ? x.c : x.a;
-  full.gear = { weapon: newItem("machete"), armor: newItem("vest"), tool: newItem("crowbar") };
+  full.gear = { weapon: newItem("machete"), armor: newItem("vest"), tool: newItem("crowbar"), melee: newItem("knife") };
   full.pockets = full.pockets.map(() => newItem("bandagekit"));
   const it2 = newItem("knife");
   const got2 = shareLoot(x.st, [x.a, x.c], it2, 99);
@@ -133,7 +133,9 @@ function loot(seed) {
 
 section("The same seed twice");
 {
-  const p = attack(75).res, q = attack(75).res;
+  // The ids world-local (world.js localId): the second world's ids run on from the first's.
+  const local = ({ st, res }) => ({ ...res, coveredBy: localId(st, res.coveredBy), mine: res.mine.map((id) => localId(st, id)) });
+  const p = local(attack(75)), q = local(attack(75));
   check(JSON.stringify(p) === JSON.stringify(q), "the same crew, the same roll, the same card and battle");
 }
 

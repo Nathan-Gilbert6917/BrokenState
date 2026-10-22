@@ -16,6 +16,7 @@ import { makeCandidate, recruitCard, recruitsDaily, baseOutlook, teamOutlook, au
 import { crowdInfo, crowding, baseMoraleDaily, desert, CROWD } from "../src/sim/morale.js";
 import { HUB_EVENT_IDS, hubEventCard, hubEventWeights, hubEventChance, hubEventsDaily, hubUpkeepDaily, FIRE, WELL_DOWN, DOG } from "../src/sim/hubevents.js";
 import { autopilotResolve } from "../src/sim/autopilot.js";
+import { BOND_EVENTS } from "../src/sim/bondevents.js";
 
 const seed = Number(process.argv[2] || 42);
 const longDays = Number(process.argv[3] || 200);
@@ -281,8 +282,10 @@ section("Hub events: weights, frequency and effects");
     return { s2, hb };
   };
   const snap = (s2, hb) => JSON.stringify({ stock: hb.stock, b: hb.buildings.map((b) => b.type), dog: hb.dog || null, well: hb.wellDown || null, lock: hb.storesLockedUntil || 0, easy: hb.theftEasyUntil || 0,
-    ppl: s2.survivors.map((s) => [s.alive, Math.round(s.mood * 100), Math.round(s.health * 100), s.location.kind, s.left || false]), walkers: (s2.walkers || []).length });
-  for (const id of HUB_EVENT_IDS) {
+    ppl: s2.survivors.map((s) => [s.alive, Math.round(s.mood * 100), Math.round(s.health * 100), s.location.kind, s.left || false, (s.conditions || []).map((x) => x.key).join()]), walkers: (s2.walkers || []).length }); // conditions: a sickness card's risk lands as an illness (disease.js)
+  // The bond cards are about a pair the hub already has (the card is the weight's pick, no dice): tools/bondstest.js
+  // gives each the bond it needs and tries every answer.
+  for (const id of HUB_EVENT_IDS.filter((x) => !BOND_EVENTS[x])) {
     const probe = fresh();
     const card0 = hubEventCard(probe.s2, id, probe.hb);
     check(card0.hubEvent === id && card0.choices.length >= 2, `${id}: a card with choices (${card0.title})`);
