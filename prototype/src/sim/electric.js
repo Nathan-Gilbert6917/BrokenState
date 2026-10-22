@@ -171,7 +171,7 @@ export function circuitState(state, base, ps = null) {
 const moodCache = new Map();
 export function powerMood(state, s, base) {
   if (!state || !base || !gridWired(base)) return [];
-  const k = `${base.id}|${state.hour}`;
+  const k = `${state.seed}|${base.id}|${state.hour}|${Object.keys(base.powerOff || {}).join(",")}|${base.buildings.length}`; // the world, the hour, the switches and what stands
   let lines = moodCache.get(k);
   if (lines) return lines;
   lines = [];
