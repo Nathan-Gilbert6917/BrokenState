@@ -56,7 +56,7 @@ export function baseMapTab(state, b, ui) {
   const groups = new Map();
   for (const e of lay) { const k = groupOf(e.it.kind); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(e); }
   const row = (e) => `<div class="spread small" style="margin-top:0.2rem"><span${tip(`${e.it.label}: ${sizeText(e.it)} cells. ${whereText(e)}.`)}>${esc(e.it.label)}${e.it.built ? "" : badge("Going up", "busy", "Under construction: its outline is on the map until it is finished")} ${e.at ? (e.auto ? badge("Auto", "muted", "Placed by the game: open the map to put it where you want") : badge("Placed", "good", `At ${e.at[0]}, ${e.at[1]}`)) : badge("Off the map", "bad", "Nowhere it fits: the yard is full. Place things closer together, or lift some.")}</span>
-    <span class="row"><button class="mini" data-action="bm-open" data-base="${b.id}" data-key="${e.it.key}"${tip(e.at && !e.auto ? "Open the map with it lifted: click where it goes" : "Open the map with it picked: click where it goes")}>${e.at && !e.auto ? "Move" : "Place"}</button>${e.at && !e.auto ? `<button class="mini" data-action="bm-reset" data-base="${b.id}" data-key="${e.it.key}"${tip("Let the game place it again")}>Auto</button>` : ""}</span></div>`;
+    <span class="row"><button class="mini" data-action="bm-open" data-base="${b.id}" data-key="${e.it.key}"${tip(e.at && !e.auto ? "Open the map with it lifted: click where it goes" : "Open the map with it picked: click where it goes")}>${e.at && !e.auto ? "Move" : "Place"}</button>${e.at && !e.auto && !e.it.fire ? `<button class="mini" data-action="bm-reset" data-base="${b.id}" data-key="${e.it.key}"${tip("Let the game place it again")}>Auto</button>` : ""}</span></div>`;
   let html = `<div class="grid2"><div>
     <h3>The base map</h3>
     <div class="card small"${tip("Every base has a square map of its own, the same size for a camp as for the main hub, with the base where its camp was set up. The map is what a horde or a raid fights over when it reaches the base: where things stand is where they are defended, and the attack comes from any side.")}>
@@ -169,7 +169,7 @@ function selectionCard(state, base, L, lay) {
   }
   const btns = [];
   if (e.at) btns.push(`<button data-action="cb-deploy" data-v="lift" data-k="${it.key}"${tip("Pick it up: its outline follows the mouse, click where it goes (R turns it, Esc leaves it where it is); or click it on the map again. Nothing else on the map moves.")}>Move</button>`);
-  if (e.at && !e.auto) btns.push(`<button data-action="cb-deploy" data-v="unplace" data-k="${it.key}"${tip("Let the game place it again")}>Auto</button>`);
+  if (e.at && !e.auto && !it.fire) btns.push(`<button data-action="cb-deploy" data-v="unplace" data-k="${it.key}"${tip("Let the game place it again")}>Auto</button>`);
   if (!e.at) btns.push(`<button data-action="cb-deploy" data-v="pick" data-k="${it.key}"${tip("Pick it and click where it goes")}>Place</button>`);
   if (isBld && it.type === "tent" && TENTS[tentKind(rec)].bag) btns.push(`<button data-action="cb-deploy" data-v="demolish" data-k="${it.key}"${tip("Strike it: packed back into its bag, the bag into the stores (sim/tents.js). Its beds and its room out of the weather go with it.")}>Strike</button>`);
   else if (isBld && BUILDINGS[it.type] && BUILDINGS[it.type].furniture) btns.push(`<button data-action="cb-deploy" data-v="demolish" data-k="${it.key}"${tip("Pick it up: back into the stores, whole (sim/beds.js, sim/electric.js)")}>Pick up</button>`);

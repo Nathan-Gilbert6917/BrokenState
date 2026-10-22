@@ -289,7 +289,14 @@ const CORE = {
 // camp's: its fire and its cache, with that building wherever it was placed.
 export const tierBuilt = (base) => !!base && (base.buildings || []).some((b) => BUILDINGS[b.type] && BUILDINGS[b.type].tierUp);
 const coreKey = (base) => (freshBase(base) || tierBuilt(base) ? "camp" : tierKey(base));
-export const coreParts = (base) => CORE[coreKey(base)];
+// A camp's middle is its fire and its cache; the fire itself is moved by hand in build mode (the user's request
+// 2026-10-22: "You can move the campfire around as well in the build mode"): it is an item of its own on the map (FIRE:
+// key k:fire, base.plan.fireSpot, [0, 0] until it is moved), so coreParts leaves it out where the camp's middle is kept.
+export const FIRE = { KEY: "k:fire", TYPE: "campfire", LABEL: "Camp fire", FOOT: { kind: "prop", k: "firepit", w: 1, h: 1 } };
+export const movableFire = (base) => !!base && base.id != null && base.id >= 0 && !base.group && coreKey(base) === "camp";
+export const coreParts = (base) => (movableFire(base) ? CORE.camp.filter((p) => p.k !== "firepit") : CORE[coreKey(base)]);
+// Where the camp fire stands (grid coordinates [x, y, r]); null where the fire is part of the middle (a shelter's, a base's).
+export const fireSpot = (base) => (!movableFire(base) ? null : base.plan && Array.isArray(base.plan.fireSpot) ? base.plan.fireSpot : [0, 0, 0]);
 // The land the base stands on, for its scatter (basescatter.js PROFILES): the tile's terrain, a farm's or a ranch's
 // fields as "farm".
 export function terrainOf(state, base) {
@@ -402,6 +409,8 @@ export function itemsOf(state, base) {
   const out = [];
   const seen = {};
   const n = (type) => (seen[type] = (seen[type] || 0) + 1);
+  const fs = fireSpot(base); // the camp fire, moved by hand (FIRE): always on the map, never placed by the game
+  if (fs) out.push({ key: FIRE.KEY, type: FIRE.TYPE, ...FIRE.FOOT, label: FIRE.LABEL, at: fs.slice(), rec: null, built: true, fire: true });
   for (const b of base.buildings) {
     const f = FOOT[b.type];
     if (!f) continue;
@@ -701,6 +710,7 @@ export function placeItem(state, base, key, x, y, r = 0) {
 export function unplaceItem(state, base, key) {
   const it = itemByKey(state, base, key);
   if (!it) return "That is not on this base any more.";
+  if (it.fire) return "The camp fire is moved by hand only (Move).";
   if (hostOf(it) && it.at) {
     const inside = hostedItems(state, base, it);
     if (inside.length) it.rec.carry = inside.map((o) => ({ key: o.key, dx: o.at[0] - it.at[0], dy: o.at[1] - it.at[1], r: o.at[2] || 0 }));
@@ -727,6 +737,7 @@ function carryInside(state, base, host, inside, was, at) {
   }
 }
 function setAt(base, it, at) {
+  if (it.key === FIRE.KEY) { if (at) planOf(base).fireSpot = at.slice(); else delete planOf(base).fireSpot; return; }
   if (it.key.startsWith("p:")) { const plots = planOf(base).plots, i = Number(it.key.slice(2)); while (plots.length <= i) plots.push(null); plots[i] = at; return; }
   if (at) it.rec.at = at; else { delete it.rec.at; delete it.rec.host; }
 }
@@ -1164,7 +1175,7 @@ const infoCache = new Map();
 // A cheap stamp of what the layout depends on (the buildings, the jobs, the plots, the ring, the cars), so the hourly
 // callers (the hold limit, raids by the numbers) do not lay the base out again while nothing has changed.
 const quick = new WeakMap();
-const stampOf = (state, base) => `${state ? "s" : "n"}|${base.buildings.map((b) => `${b.id}${b.at ? `@${b.at}` : ""}${b.broken ? "x" : ""}${b.mat || ""}${(b.wear || 0) >= 60 ? "d" : ""}`).join(",")}|${base.construction.map((c) => `${c.id}${c.at ? `@${c.at}` : ""}`).join(",")}|${base.plan ? `${base.plan.ring}|${(base.plan.plots || []).map(String).join(";")}|${originOf(base)}` : ""}|${base.tier}|${base.camp}|${base.type}|${state ? carsAtBase(state, base.id).map((v) => `${v.id}${v.at ? `@${v.at}` : ""}`).join(",") : ""}`;
+const stampOf = (state, base) => `${state ? "s" : "n"}|${base.buildings.map((b) => `${b.id}${b.at ? `@${b.at}` : ""}${b.broken ? "x" : ""}${b.mat || ""}${(b.wear || 0) >= 60 ? "d" : ""}`).join(",")}|${base.construction.map((c) => `${c.id}${c.at ? `@${c.at}` : ""}`).join(",")}|${base.plan ? `${base.plan.ring}|${(base.plan.plots || []).map(String).join(";")}|${originOf(base)}|${base.plan.fireSpot || ""}` : ""}|${base.tier}|${base.camp}|${base.type}|${state ? carsAtBase(state, base.id).map((v) => `${v.id}${v.at ? `@${v.at}` : ""}`).join(",") : ""}`;
 export function wallInfo(state, base) {
   stampGrid(state, base);
   const stamp = stampOf(state, base), slot = state ? "s" : "n", q = quick.get(base) || {};

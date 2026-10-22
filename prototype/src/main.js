@@ -497,9 +497,10 @@ function tidyUi() {
   if (state.combat && ui.gunb && !(ui.gunb.battle != null && !state.combat.over)) ui.gunb = null; // the gun builder: in a battle only on a fighter's gun (the item menu's Modify, ui/gunbuilder.js)
   // A defence drill closed (ui/defence.js, sim/defenceplan.js): back to the base's Defence tab it was opened from.
   if (ui.drillFrom != null && !(state.combat && state.combat.drill)) { if (!state.combat && baseById(state, ui.drillFrom)) ui.baseView = { id: ui.drillFrom, tab: "defence" }; ui.drillFrom = null; }
-  // The base map closed (ui/basemap.js, sim/basemap.js): back to the base's tab it was opened from.
+  // The base map closed (ui/basemap.js, sim/basemap.js): back to the base's tab it was opened from (tab "none": opened
+  // from the side panel, back to the map).
   if (state.combat && state.combat.layout) layoutDone(state, state.combat.layout.baseId); // Open the build map: its map is open, the ask is answered (sim/staging.js)
-  if (ui.mapFrom && !(state.combat && state.combat.layout)) { if (!state.combat && baseById(state, ui.mapFrom.id)) ui.baseView = { id: ui.mapFrom.id, tab: ui.mapFrom.tab }; ui.mapFrom = null; }
+  if (ui.mapFrom && !(state.combat && state.combat.layout)) { if (!state.combat && ui.mapFrom.tab !== "none" && baseById(state, ui.mapFrom.id)) ui.baseView = { id: ui.mapFrom.id, tab: ui.mapFrom.tab }; ui.mapFrom = null; }
 }
 
 // ---------- folded panels ----------

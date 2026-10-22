@@ -18,7 +18,7 @@ import { roadTeam } from "../src/sim/hardcore-start.js";
 import { pendingSite, pickSite, campSiteFor } from "../src/sim/staging.js";
 import * as BM from "../src/sim/basemap.js";
 import { SITE } from "../src/sim/basescatter.js";
-import { renderModal } from "../src/ui/ui.js";
+import { renderModal, renderRight } from "../src/ui/ui.js";
 import { CS_ACTIONS, siteModalUp } from "../src/ui/campsite.js";
 
 const SEED = Number(process.argv[2] || 42);
@@ -85,7 +85,29 @@ const spot = [-20, 14];
   check(sample.length > 50 && moved.length === sample.length, `the land round it is the tile's own (${moved.length} of ${sample.length} pieces where they lie on the map)`);
   const yardLand = land.list.filter((q) => q.k !== "water" && q.cells.every((c) => inSq(c, BM.yardHalf(camp)) && !inSq(c, SITE.HALF)));
   check(yardLand.length === land0.list.filter((q) => q.k !== "water" && q.cells.every((c) => inSq(c, BM.yardHalf(camp), spot) && !inSq(c, SITE.HALF, spot))).length, `no yard swept for it: the land in its yard beyond the clearing stands (${yardLand.length} things to clear as needed)`);
-  check(BM.coreParts(camp).some((q) => q.name === "Camp fire" && q.x === 0 && q.y === 0), "the camp fire in the middle of the clearing");
+  check(String(BM.fireSpot(camp)) === "0,0,0" && BM.layoutOf(st, camp).some((e) => e.it.key === BM.FIRE.KEY && String(e.at) === "0,0,0" && !e.auto), "the camp fire in the middle of the clearing, an item on the map");
+}
+
+// ---------- 2b. the camp fire moved by hand ----------
+section("The camp fire moves in build mode");
+{
+  check(!BM.coreParts(camp).some((q) => q.k === "firepit"), "it is not part of the fixed middle (the cache is)");
+  const to = [-3, 3, 0];
+  check(BM.placeItem(st, camp, BM.FIRE.KEY, to[0], to[1], to[2]) === "" && String(BM.fireSpot(camp)) === String(to), `moved to ${to}`);
+  const occ = BM.occupancy(st, camp, null, null);
+  check(BM.floorHostAt(occ, 0, 0) === null && BM.itemByKey(st, camp, BM.FIRE.KEY).at.join() === to.join() && BM.placeProblemAt(camp, { ...BM.FIRE.FOOT, key: "x" }, 0, 0, 0, occ) === "" && /Camp fire/.test(BM.placeProblemAt(camp, { ...BM.FIRE.FOOT, key: "x" }, to[0], to[1], 0, occ)), "it stands there now; its old cell is free ground");
+  check(/by hand/.test(BM.unplaceItem(st, camp, BM.FIRE.KEY)) && String(BM.fireSpot(camp)) === String(to), "never put back by the game (no Auto)");
+  // Through the view: Move it, put it down again where it started.
+  globalThis.window = {};
+  try {
+    check(!BM.openBaseMap(st, camp.id) && !!st.combat, "the build map opens");
+    const b = st.combat, F = b.deployPlan.fort;
+    check(!BM.layoutAct(st, b, { type: "lift", key: BM.FIRE.KEY }) && b.layout.pick === BM.FIRE.KEY, "Move picks the fire up");
+    check(!BM.layoutAct(st, b, { type: "put", x: F.ox, y: F.oy }) && String(BM.fireSpot(camp)) === "0,0,0", "and puts it down where it is clicked");
+    check(b.cells.some((c) => c.k === "firepit") || st.combat.cells.some((c) => c.k === "firepit"), "drawn as a fire pit on the map");
+  } finally { delete globalThis.window; st.combat = null; }
+  const html = renderRight(st, ui({ selected: camp.tile }));
+  check(/data-action="buildmap" data-base-id="\d+" data-tab="none"/.test(html) && /Base map/.test(html), "the side panel of the selected base has a Base map button");
 }
 
 // ---------- 3. the step up: a building to place ----------
@@ -110,7 +132,7 @@ section("The step up is a building placed on the map");
   check(isShelter(camp) && !isCamp(camp), "built: the camp is a shelter");
   const shack = camp.buildings.find((b) => b.type === "camp_up");
   check(!!shack && String(shack.at) === String(at), `the shelter shack stands where it was put (${shack && shack.at})`);
-  check(BM.coreParts(camp).some((q) => q.name === "Camp fire") && !BM.coreParts(camp).some((q) => q.kind === "house"), "the middle is still the camp fire (no shack drawn there)");
+  check(!!BM.fireSpot(camp) && BM.coreParts(camp).some((q) => q.name === "Camp cache") && !BM.coreParts(camp).some((q) => q.kind === "house"), "the middle is still the camp's: its fire (movable) and cache, no shack drawn there");
   check(!canDemolish(st, camp, shack.id).ok, `never pulled down (${canDemolish(st, camp, shack.id).reason})`);
   check(BM.layoutOf(st, camp).some((e) => e.it.key === `b:${shack.id}` && String(e.at) === String(at)), "on the map as a building of its own");
   check(BM.buildMenu(st, camp).some((m) => m.type === "hub_up"), "the shelter's next step, the Main house, is on its Build list");
