@@ -97,6 +97,7 @@ import { PRISON_ACTIONS, PRISON_CHANGE } from "./ui/prisoners.js";
 import { openNegotiation, sendHandover, dealsOf } from "./sim/ransom.js"; // ransoms for your captives (the People tab)
 import { setAutopilot, setPersonality, autopilotResolve } from "./sim/autopilot.js";
 import { playerTile } from "./sim/hardcore-start.js";
+import { startWhyNot } from "./sim/startpick.js"; // Pick start on map: can a tile be the start
 import { freshRng } from "./sim/appearance.js"; // Random run: dice of their own for the settings
 import { START_PEOPLE, NORMAL_PEOPLE, clampStartPeople } from "./sim/hardcore.js";
 import { setTeamPolicy } from "./sim/breakoff.js";
@@ -179,6 +180,7 @@ const freshUi = () => ({
   lookEdit: null, zombieLook: false, nrMsg: "", timelapse: null, bgEditor: null, // bgEditor: the custom backgrounds window (ui/backgrounds.js)
   gearEdit: null, // the new-run screen's starting gear window (ui/startgear.js): { i: the colonist's place in the crew }
   nrMap: false, // the new-run screen put aside to look at the map (ui/newgame.js View map; the banner or Esc brings it back)
+  nrPick: false, // with nrMap: a click on the map picks where you start (ui/newgame.js Pick start on map; main.js pickStartAt)
   wcOpen: false, wcWas: null, // the World… window (ui/worldcfg.js) and the dials as they were when it opened
   dev: false, showFps: false, armed: newArmed(),
   radioWith: null, radioMsg: "", radioDeal: null, radioBase: null, radioMeet: null, meetPick: null, meetMsg: "", caravanPlan: null, cvMsg: "", attackConfirm: null, // ui/tradewindow.js
@@ -685,7 +687,7 @@ function renderCombat(user) {
 // Banners at the top of the map: paused (with the orders waiting for the unpause) and move mode.
 function bannerHTML() {
   if (!ui.started && ui.nrMap && !ui.title) return `<div class="paused" data-tip="The new-run screen is put aside so you can look around the map: where you start, the groups, the roads. Nothing runs until you start.">` +
-    `<b class="big">Setting up</b> Looking at the map <button data-action="nr-start" data-tip="Roll a new starting position on this same map and seed (the map, the hives and your colonists stay)">📍 New start position</button> <button data-action="nr-map" data-tip="Back to the new-run screen (Esc)">◀ Back to setup</button>${ui.nrMsg ? ` <span class="small">${esc(ui.nrMsg)}</span>` : ""}</div>`;
+    `<b class="big">Setting up</b> ${ui.nrPick ? `Click ${state.mode === "hardcore" ? "open land" : "a town"} to start there` : "Looking at the map"} <button data-action="nr-start" data-tip="Roll a new starting position on this same map and seed (the map, the hives and your colonists stay)">📍 New start position</button> <button data-action="nr-pick"${ui.nrPick ? ` class="primary"` : ""} data-tip="${ui.nrPick ? "Stop picking: clicks on the map look around again" : "Pick where you start: click a tile on the map"}">🎯 Pick start${ui.nrPick ? ": on" : ""}</button> <button data-action="nr-map" data-tip="Back to the new-run screen (Esc)">◀ Back to setup</button>${ui.nrMsg ? ` <span class="small">${esc(ui.nrMsg)}</span>` : ""}</div>`;
   if (!ui.started || state.gameOver || state.combat || ui.timelapse) return "";
   let html = trayHTML(state, ui); // the card tray (ui/pacing.js)
   if (ui.speed === 0) {
@@ -1246,6 +1248,7 @@ const actions = {
     ui.crewEdited = true;
     newWorld(state.seed, true);
     ui.nrMap = onMap;
+    ui.nrPick = false; // the dice's start again
     const now = playerTile(state);
     ui.nrMsg = now === was ? "There is nowhere else to start on this map: try another seed or size."
       : `New start position: ${state.bases[0] ? state.bases[0].name : "another spot on the road"}, ${state.grid.distance(was, now)} hexes from the last one.${onMap ? "" : " View map to see it."}`;
@@ -2003,7 +2006,17 @@ window.addEventListener("mousemove", (e) => {
   }
   const inside = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
   const tip = $("tooltip");
-  if (inside && !drag && e.target === canvas && !ui.timelapse && ui.started) { // the timelapse shows no live tile info
+  if (inside && !drag && e.target === canvas && !ui.started && ui.nrMap && ui.nrPick && !ui.title) { // Pick start on map: can it be a start?
+    const id = screenToTile(state, e.clientX - r.left, e.clientY - r.top);
+    view.hover = id;
+    if (id >= 0) {
+      tip.innerHTML = startTipHTML(id);
+      tip.style.left = `${e.clientX - r.left + 16}px`;
+      tip.style.top = `${e.clientY - r.top + 16}px`;
+      tip.classList.remove("hidden");
+    } else tip.classList.add("hidden");
+    tipKey = "";
+  } else if (inside && !drag && e.target === canvas && !ui.timelapse && ui.started) { // the timelapse shows no live tile info
     const id = screenToTile(state, e.clientX - r.left, e.clientY - r.top);
     if (id !== view.hover && ui.moveParty) {
       // Preview the route the team would take.
@@ -2034,7 +2047,11 @@ window.addEventListener("mousemove", (e) => {
 });
 window.addEventListener("mouseup", (e) => {
   if (!drag) return;
-  if (!drag.moved && !ui.timelapse && ui.started) {
+  if (!drag.moved && !ui.started && ui.nrMap && ui.nrPick && !ui.title) { // Pick start on map (ui/newgame.js)
+    const r = canvas.getBoundingClientRect();
+    const id = screenToTile(state, e.clientX - r.left, e.clientY - r.top);
+    if (id >= 0) { act(() => pickStartAt(id)); dirtyNow = true; }
+  } else if (!drag.moved && !ui.timelapse && ui.started) {
     const r = canvas.getBoundingClientRect();
     const id = screenToTile(state, e.clientX - r.left, e.clientY - r.top);
     const p = ui.moveParty != null && id >= 0 ? partyById(ui.moveParty) : null;
@@ -2074,6 +2091,27 @@ function pickMove(p, id) {
   if (!ok) { ui.moveMsg = msg; return; }
   log(state, msg, "info");
   endMoveMode();
+}
+// Pick start on map (ui/newgame.js): the world built again on the same seed with its start at this tile, if it can be one
+// (sim/startpick.js startWhyNot); the crew on screen is carried over as edited, and the map stays where it is.
+function pickStartAt(id) {
+  const why = startWhyNot(state, id);
+  if (why) { ui.nrMsg = why; return; }
+  if (id === playerTile(state)) { ui.nrMsg = "You already start there."; return; }
+  const cam = { x: camera.x, y: camera.y, zoom: camera.zoom };
+  ui.startPick = { tile: id };
+  ui.crewEdited = true;
+  newWorld(state.seed, true);
+  Object.assign(camera, cam);
+  ui.nrMap = true;
+  ui.nrPick = true;
+  const now = playerTile(state);
+  ui.nrMsg = now === id ? `You start ${state.bases[0] ? `at ${state.bases[0].name}` : "here, on the road"}.` : "That tile cannot be a start on this map.";
+}
+function startTipHTML(id) {
+  const t = state.tiles[id], why = startWhyNot(state, id);
+  const name = t.loc ? `${esc(t.loc.name)} (${esc(t.loc.type)})` : esc(t.terrain);
+  return `<b>${name}</b><br>${id === playerTile(state) ? "You start here." : why ? `<span class="danger">${esc(why)}</span>` : "Click to start here."}`;
 }
 canvas.addEventListener("wheel", (e) => {
   e.preventDefault();

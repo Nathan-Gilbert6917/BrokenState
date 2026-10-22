@@ -5,13 +5,15 @@
 // it, so the map, the hives and every later draw follow the seed as before; with a start of its own
 // ({ roll, not }), dice of their own pick the tile instead, away from `not` (the one on screen) when there is anywhere
 // else to go, widening to the next list if the first offers nowhere new.
+// A start picked on the map ({ tile }, the new-run screen's Pick start on map, 2026-10-22, user request): that tile, if
+// it can be a start (startWhyNot); the world's die is cast all the same, so only where you start changes.
 import { Rng } from "./rng.js";
 
 /**
  * @template {{ id: number }} T
  * @param {Rng} rng the world's dice
  * @param {Array<() => T[]>} lists candidates, best first (worked out only when needed)
- * @param {{ roll: number, not?: number | null } | null} [start]
+ * @param {{ roll?: number | null, not?: number | null, tile?: number | null } | null} [start]
  * @returns {T}
  */
 export function pickStart(rng, lists, start = null) {
@@ -26,4 +28,32 @@ export function pickStart(rng, lists, start = null) {
     if (others.length) return own.pick(others);
   }
   return rolled;
+}
+
+// Why a tile cannot be picked as the start ("" when it can). A normal start's hub is a town; a Hardcore start is any
+// open land (no water, mountain or hive) that is not another group's base or the Guard's.
+/**
+ * @param {any} state
+ * @param {number} id
+ * @returns {string}
+ */
+export function startWhyNot(state, id) {
+  const t = state.tiles[id];
+  if (!t) return "That is off the map.";
+  if (t.terrain === "water") return "You cannot start on the water.";
+  if (t.terrain === "mountain") return "You cannot start in the mountains.";
+  if (t.hive) return "A hive is there.";
+  if (state.mode !== "hardcore") return t.loc && t.loc.type === "town" ? "" : "Your hub has to be in a town: pick one of the towns.";
+  if ((state.militaryIds || []).includes(id)) return "The National Guard holds that base.";
+  if (state.factions.some((f) => (f.bases || []).includes(id))) return "Another group's base is there.";
+  return "";
+}
+
+// The tile a start picked on the map names, when it can be one (else null: the dice's start stands).
+/**
+ * @param {any} state
+ * @param {{ tile?: number | null } | null} start
+ */
+export function chosenStart(state, start) {
+  return start && start.tile != null && !startWhyNot(state, start.tile) ? state.tiles[start.tile] : null;
 }
