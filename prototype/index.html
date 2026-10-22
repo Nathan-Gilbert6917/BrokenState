@@ -2,11 +2,28 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- viewport-fit=cover: on a phone with a notch the page fills the screen; responsive.css keeps the UI out of the
+       notch with the safe-area insets. A desktop browser and the desktop app have no insets: nothing changes there. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Broken State — State Map Prototype</title>
-  <link rel="icon" href="data:," /> <!-- no icon file: stops the browser asking for /favicon.ico (a 404) -->
+  <!-- The web app (Add to Home Screen; README "Play in a browser"): manifest.webmanifest, its icons (desktop/scripts/
+       make-icon.js draws them from the desktop icon's art) and iOS's own tags. Every path is relative, as the game is
+       served from a sub-folder on GitHub Pages. Read only when a browser offers to install; the desktop app ignores them. -->
+  <link rel="icon" href="icons/favicon.ico" sizes="any" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <meta name="theme-color" content="#1b1e23" /> <!-- --panel in styles.css: the phone's bar continues the top bar -->
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black" /> <!-- an opaque bar: the page starts below it -->
+  <meta name="apple-mobile-web-app-title" content="Broken State" />
   <link rel="stylesheet" href="styles.css" />
   <link rel="stylesheet" href="title.css" />
+  <link rel="stylesheet" href="touch.css" />
+  <link rel="stylesheet" href="responsive.css" />
+  <!-- The offline cache's service worker: does nothing in the desktop app, nor over http but on localhost (src/pwa.js).
+       Its own module, before main.js, so it runs first and a failure there can never stop the game. -->
+  <script type="module" src="src/pwa.js"></script>
 </head>
 <body>
   <div id="app">

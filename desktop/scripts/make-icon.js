@@ -1,5 +1,8 @@
 // Draws the app icon (a 16x16 pixel-art skull) and writes icons/icon.png (256 px) and icons/icon.ico
 // (16, 24, 32, 48, 64 and 256 px). No dependencies: PNG and ICO are written by hand with Node's zlib.
+// Also the web app's icons in ../prototype/icons (manifest.webmanifest, index.html), from the same art so the two never
+// drift: 192 and 512 as the desktop icon (transparent corners), a maskable 512 and the 180 px apple-touch-icon
+// (both opaque, see WEB below), and favicon.ico (the desktop .ico as is; its 16 px entry is the art pixel for pixel).
 //   node scripts/make-icon.js
 const fs = require("fs");
 const path = require("path");
@@ -34,13 +37,18 @@ const COLORS = {
 };
 const N = ART.length;
 
-// Nearest-neighbour scale to size x size RGBA (top row first).
-function raster(size) {
+// Nearest-neighbour scale to size x size RGBA (top row first). opts.cell: whole screen pixels per art pixel, the art
+// centred in the square (a size that is not a multiple of 16 stays crisp, every art pixel the same width); opts.bg:
+// what shows where the art is transparent or absent (an opaque icon). Without opts: the art fills the square, as before.
+function raster(size, opts) {
   const px = Buffer.alloc(size * size * 4);
+  const cell = opts && opts.cell, off = cell ? Math.floor((size - cell * N) / 2) : 0;
+  const bg = (opts && opts.bg) || COLORS["."];
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
-      const c = COLORS[ART[Math.floor((y * N) / size)][Math.floor((x * N) / size)]];
-      px.set(c, (y * size + x) * 4);
+      const ax = cell ? Math.floor((x - off) / cell) : Math.floor((x * N) / size), ay = cell ? Math.floor((y - off) / cell) : Math.floor((y * N) / size);
+      const c = ax >= 0 && ay >= 0 && ax < N && ay < N ? COLORS[ART[ay][ax]] : bg;
+      px.set(c[3] ? c : bg, (y * size + x) * 4);
     }
   }
   return px;
@@ -54,8 +62,8 @@ function chunk(type, data) {
   const crc = Buffer.alloc(4); crc.writeUInt32BE(crc32(body));
   return Buffer.concat([len, body, crc]);
 }
-function png(size) {
-  const px = raster(size);
+function png(size, opts) {
+  const px = raster(size, opts);
   const raw = Buffer.alloc(size * (size * 4 + 1));
   for (let y = 0; y < size; y++) px.copy(raw, y * (size * 4 + 1) + 1, y * size * 4, (y + 1) * size * 4); // filter byte 0 per row
   const ihdr = Buffer.alloc(13);
@@ -102,5 +110,23 @@ function ico(sizes) {
 const out = path.join(__dirname, "..", "icons");
 fs.mkdirSync(out, { recursive: true });
 fs.writeFileSync(path.join(out, "icon.png"), png(256));
-fs.writeFileSync(path.join(out, "icon.ico"), ico([16, 24, 32, 48, 64, 256]));
+const icoFile = ico([16, 24, 32, 48, 64, 256]);
+fs.writeFileSync(path.join(out, "icon.ico"), icoFile);
 console.log(`Wrote ${path.join(out, "icon.png")} and icon.ico`);
+
+// The web app's. The maskable one is cropped by the launcher to a circle, squircle or rounded square that only
+// promises the middle 80% (a circle of radius 205 in 512): on the panel colour edge to edge, the skull's bone (12 of
+// the 16 art pixels across) at 22 px an art pixel is 264 px square, its corners inside that circle. iOS fills a
+// transparent apple-touch-icon with black and rounds the corners itself: opaque, 10 px an art pixel with a margin.
+const PANEL = COLORS.k;
+const WEB = [
+  ["icon-192.png", 192],
+  ["icon-512.png", 512],
+  ["icon-maskable-512.png", 512, { cell: 22, bg: PANEL }],
+  ["apple-touch-icon.png", 180, { cell: 10, bg: PANEL }],
+];
+const web = path.join(__dirname, "..", "..", "prototype", "icons");
+fs.mkdirSync(web, { recursive: true });
+for (const [name, size, opts] of WEB) fs.writeFileSync(path.join(web, name), png(size, opts));
+fs.writeFileSync(path.join(web, "favicon.ico"), icoFile);
+console.log(`Wrote ${WEB.map(([n]) => n).join(", ")} and favicon.ico in ${web}`);

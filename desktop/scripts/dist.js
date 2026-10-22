@@ -26,7 +26,10 @@ const PUBLISH = process.argv.includes("--publish");
   // 1. A clean copy of what the game needs at runtime (not the tools, README or dev server).
   fs.rmSync(path.join(DESKTOP, "build"), { recursive: true, force: true });
   fs.mkdirSync(STAGE, { recursive: true });
-  for (const f of ["index.html", "styles.css", "title.css"]) if (fs.existsSync(path.join(GAME, f))) fs.copyFileSync(path.join(GAME, f), path.join(STAGE, f));
+  // Everything index.html links, so the bundled copy loads as the live one does (touch.css and responsive.css apply only
+  // to touch screens and small windows; the manifest and icons/ only matter to a browser installing the web app). Not
+  // sw.js: the web app's offline cache, which src/pwa.js never registers in the desktop app.
+  for (const f of ["index.html", "styles.css", "title.css", "touch.css", "responsive.css", "manifest.webmanifest"]) if (fs.existsSync(path.join(GAME, f))) fs.copyFileSync(path.join(GAME, f), path.join(STAGE, f));
   fs.cpSync(path.join(GAME, "src"), path.join(STAGE, "src"), { recursive: true });
   // The build's stamp: the commit the snapshot is from (the error screen's report, src/ui/crash.js).
   try {
@@ -34,7 +37,7 @@ const PUBLISH = process.argv.includes("--publish");
     const dirty = git("status", "--porcelain", "--", ".") ? "+changes" : "";
     fs.writeFileSync(path.join(STAGE, "build.json"), JSON.stringify({ commit: git("rev-parse", "--short", "HEAD") + dirty, date: new Date().toISOString().slice(0, 10) }));
   } catch { /* not a git checkout: no stamp */ }
-  for (const d of ["assets", "audio", "img", "fonts"]) if (fs.existsSync(path.join(GAME, d))) fs.cpSync(path.join(GAME, d), path.join(STAGE, d), { recursive: true });
+  for (const d of ["assets", "audio", "img", "fonts", "icons"]) if (fs.existsSync(path.join(GAME, d))) fs.cpSync(path.join(GAME, d), path.join(STAGE, d), { recursive: true });
 
   // 2. Package: the app code goes into resources/app.asar, the game into resources/prototype (main.js looks there).
   const pkg = require(path.join(DESKTOP, "package.json"));

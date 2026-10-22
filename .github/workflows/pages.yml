@@ -1,0 +1,55 @@
+# The browser build on GitHub Pages: https://nathan-gilbert6917.github.io/BrokenState/ (prototype/README.md "Play in a
+# browser"). Every push to dev publishes prototype/ as it is: no build step, the same files node server.cjs serves.
+# One-time repo setting: Settings → Pages → Source: GitHub Actions.
+name: Pages
+
+on:
+  push:
+    branches: [dev]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deploy at a time; a newer push supersedes one still waiting, never one already deploying.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # What the game loads at run time, nothing else: tools/ (tests, sims, previews, their logs), design/ (standalone
+      # mock-ups), the README and the dev server stay out; nothing under src/, index.html or the CSS refers to them.
+      - name: Stage the site
+        run: |
+          cp -r prototype _site
+          rm -rf _site/tools _site/design _site/README.md _site/server.cjs _site/package.json _site/jsconfig.json
+          find _site -name '*.log' -delete
+          find _site -name '*.d.ts' -delete
+          # The error screen's build stamp (src/ui/crash.js fetches build.json; server.cjs makes one on the fly
+          # locally, Pages only serves files).
+          printf '{"commit":"%s","date":"%s"}\n' "$(git rev-parse --short HEAD)" "$(git log -1 --format=%cd --date=short)" > _site/build.json
+          # Plain static files, no Jekyll pass (it drops files and folders that start with _ or .). A deploy from
+          # Actions runs none anyway; this says so for any other way the folder gets published.
+          touch _site/.nojekyll
+          ls -la _site
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+          include-hidden-files: true # .nojekyll (the only dotfile: tools/.testlogs is left out above)
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5
