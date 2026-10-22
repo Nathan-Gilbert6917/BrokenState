@@ -112,7 +112,11 @@ for (const seed of seeds) {
       // The map's estimated ("?") position reaches the destination on the arrival hour, not before or after.
       check(plannedTile(state, p) === partyTile(p), `seed ${row.seed}: map estimate not at the destination on arrival`);
       state.hour -= 1;
-      check(plannedTile(state, p) !== partyTile(p) || est.hoursOut === 0, `seed ${row.seed}: map estimate at the destination an hour early`);
+      // (Unless it gets there at the very top of its last hour, est.exactOut whole: a step made cheaper between hours, the
+      // weather easing, taken with what the hour before left over. With the clock by the minute it is there at minute 0
+      // of that hour (parties.js hourCourse), so the estimate is right; headless, the tick of that hour lands it.)
+      const topOfHour = Math.abs(est.exactOut - (est.hoursOut - 1)) < 1e-9;
+      check(plannedTile(state, p) !== partyTile(p) || est.hoursOut === 0 || topOfHour, `seed ${row.seed}: map estimate at the destination an hour early`);
       state.hour += 1;
     }
     if (leg1.gone || !state.parties.includes(p)) continue;
