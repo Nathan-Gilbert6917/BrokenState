@@ -11,7 +11,7 @@
 //   - AI parity: a group's new base from nothing is a camp (half defence, establishing it is the first job there).
 // Usage: node tools/outpostcamptest.js [seed]
 import { createWorld, tickHour, hub, atBase, day } from "../src/sim/world.js";
-import { BUILDINGS, isShelter, tierName, canBuild, queueBuild, cancelBuild, plotCap, baseWalls, gatherRows, gatherCap, gatherStalled, tierUpJob, constructionHour, GATHER_AHEAD } from "../src/sim/buildings.js";
+import { BUILDINGS, CAMP, isShelter, tierName, canBuild, queueBuild, cancelBuild, plotCap, baseWalls, gatherRows, gatherCap, gatherStalled, tierUpJob, constructionHour, GATHER_AHEAD } from "../src/sim/buildings.js";
 import { launchExpedition, giveOrder, planPath, outpostScrap, outpostKit, orderOptions, PITCH_HOURS } from "../src/sim/parties.js";
 import { GROUP_WORKS, nextWork, groupWorksDaily, groupBaseDefence, isCamp, pitchCamp, worksText } from "../src/sim/groupworks.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
@@ -38,11 +38,12 @@ function pitch(st, n, supplies) {
   if (!check(!res.error, `the team leaves (${res.error || "ok"})`)) return null;
   res.party.path = [tile]; res.party.idx = 0;
   giveOrder(st, res.party, "outpost");
-  // Setting up the camp takes PITCH_HOURS (1, buildings.js CAMP.setupHours) of work: no camp until it is done.
+  // Setting up the camp takes its fire and the clearing of its 5 × 5 (staging.js siteSetup): no camp until it is done.
   const early = st.bases.find((b) => b.tile === tile);
   check(!early && res.party.task && res.party.task.type === "pitch", "the team pitches the camp first (a task), no camp yet");
-  for (let i = 0; i < PITCH_HOURS + 2 && !st.bases.some((b) => b.tile === tile); i++) tickHour(st);
-  check(st.bases.some((b) => b.tile === tile), `the camp stands after ${PITCH_HOURS} hours of work`);
+  const hrs = res.party.task.hours;
+  for (let i = 0; i < Math.ceil(hrs) + 2 && !st.bases.some((b) => b.tile === tile); i++) tickHour(st);
+  check(st.bases.some((b) => b.tile === tile), `the camp stands after its ${hrs} hours of work`);
   return { tile, crew, base: st.bases.find((b) => b.tile === tile) };
 }
 const hours = (st, n, stop = () => false) => { for (let i = 0; i < n && !stop(); i++) tickHour(st); };
@@ -50,14 +51,14 @@ const hours = (st, n, stop = () => false) => { for (let i = 0; i < n && !stop();
 section("Build outpost pitches a camp");
 {
   const st = world();
-  // The user's numbers (2026-10-09); since camps are the barest base tier (staging.js), setting one up takes an hour and
+  // The user's numbers (2026-10-09); since camps are the barest base tier (staging.js), setting one up takes its fire and the clearing of its 5 × 5 (2026-10-22) and
   // nothing carried: the materials come with the step up.
   check(outpostScrap(st, 0) === 0, "setting up the camp takes no scrap");
   check(outpostKit(st, 0).scrap === (st.tiles[0].ruin ? 10 : 20) && !outpostKit(st, 0).parts && outpostKit(st, 0).buildmat === 2 && outpostKit(st, 0).wood === 200, `the kit to set up and establish in one trip: 20 scrap, 2 building materials, 200 wood (${JSON.stringify(outpostKit(st, 0))})`);
-  check(PITCH_HOURS === 1, "setting up takes an hour of work");
+  check(PITCH_HOURS === CAMP.fireHours, "setting up takes at least the camp fire's work (the clearing of its spot on top)");
   check(JSON.stringify(BUILDINGS.outpost_up.cost) === JSON.stringify({ scrap: 20, buildmat: 2, wood: 200 }) && BUILDINGS.outpost_up.hours === 20, "establishing: 20 scrap, 2 building materials, 200 wood (the user's pick 2026-10-20), 20 work-hours");
   check(JSON.stringify(BUILDINGS.hub_up.cost) === JSON.stringify({ scrap: 100, buildmat: 5, wood: 800 }) && BUILDINGS.hub_up.hours === 60 && BUILDINGS.hub_up.gather, "shelter to base: 100 scrap, 5 building materials, 800 wood, 60 work-hours, gathered as they come in");
-  check(JSON.stringify(STAGING.HARDCORE.needs) === JSON.stringify({ scrap: 20, buildmat: 2, wood: 200 }) && STAGING.HARDCORE.work === 20 && STAGING.PITCH.scrap === 0 && STAGING.PITCH.hours === 1 && BUILDINGS.camp_up.hours === 20, "a camp: an hour and nothing carried to set up; to a shelter (camp_up) 20 scrap, 2 building materials, 200 wood, 20 work-hours");
+  check(JSON.stringify(STAGING.HARDCORE.needs) === JSON.stringify({ scrap: 20, buildmat: 2, wood: 200 }) && STAGING.HARDCORE.work === 20 && STAGING.PITCH.scrap === 0 && STAGING.PITCH.hours === CAMP.fireHours && BUILDINGS.camp_up.hours === 20, "a camp: its fire and the clearing of its spot, nothing carried, to set up; to a shelter (camp_up) 20 scrap, 2 building materials, 200 wood, 20 work-hours");
   check(CRAFTS.buildmat && CRAFTS.buildmat.in.scrap === 3 && CRAFTS.buildmat.supplies.buildmat === 1 && CRAFTS.buildmat.field, "building materials are crafted from scrap (3 for 1, anywhere)");
   const at = { path: [nearFree(st, hub(st).tile, 3, 6)], idx: 0, supplies: { scrap: 11 }, cargo: { supplies: {}, gear: [] } };
   const opt = orderOptions(st, at).find((x) => x.mission === "outpost");
@@ -124,7 +125,7 @@ section("Brought in one trip; cancel; save");
     const s0 = b2.stock.scrap || 0, m0 = b2.stock.buildmat || 0, paid = { ...job2.paid };
     cancelBuild(back, b2, job2.id);
     check((b2.stock.scrap || 0) === s0 + (paid.scrap || 0) && (b2.stock.buildmat || 0) === m0 + (paid.buildmat || 0), `cancelled: what it took back (${JSON.stringify(paid)})`);
-    check(canBuild(back, b2, "outpost_up").ok, "and it can be queued again (Establish the outpost)");
+    check(canBuild(back, b2, "outpost_up").ok, "and it can be queued again (its Outpost house)");
     check(!canBuild(back, hub(back), "outpost_up").ok, "never at the hub");
     // Three builders: done in about two days of work hours.
     const d0 = day(st);
@@ -147,7 +148,7 @@ section("The panels and the map");
     check(/Scrap 4\/20/.test(plain(html)) && /Building materials 0\/2/.test(plain(html)), "and each material against its need");
     check(/% built/.test(html), "and the bar");
     const con = UI.renderModal(st, { started: true, baseView: { id: b.id, tab: "construction" } }) || "";
-    check(/Establish the outpost/.test(con) && /scrap 4\/20/i.test(plain(con)) && /building materials 0\/2/i.test(plain(con)), "the construction queue shows its materials");
+    check(/Outpost house/.test(con) && /scrap 4\/20/i.test(plain(con)) && /building materials 0\/2/i.test(plain(con)), "the construction queue shows its materials");
     const left = UI.renderLeft ? UI.renderLeft(st, { started: true, tab: "bases" }) : "";
     check(!left || /Outpost camp/.test(left), "the bases list calls it an outpost camp");
   }

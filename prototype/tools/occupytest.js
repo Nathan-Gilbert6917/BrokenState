@@ -349,7 +349,7 @@ section("Build outpost takes the groups' claims round it, as a group's new base 
   res.party.path = [tile]; res.party.idx = 0;
   const g0 = o.goodwill;
   giveOrder(st, res.party, "outpost");
-  for (let i = 0; i < 8 && !st.bases.some((b) => b.tile === tile); i++) tickHour(st); // pitching the camp takes 6 hours (parties.js PITCH_HOURS)
+  for (let i = 0; i < 48 && !st.bases.some((b) => b.tile === tile); i++) tickHour(st); // pitching the camp: its fire and the clearing of its 5 × 5 (staging.js siteSetup)
   check(st.bases.some((b) => b.tile === tile), "the outpost stands");
   check(near.every((t) => st.claims[t].owner === "player"), "their claims round it are yours");
   check(Math.abs(o.goodwill - (g0 + 2 * CLAIM.TAKEN)) < 1e-6, `${o.name} goodwill ${g0} → ${o.goodwill} (${CLAIM.TAKEN} a claim)`);

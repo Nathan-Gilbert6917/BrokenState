@@ -62,7 +62,7 @@ function setUpCamp(st, n = 2, lo = 3) {
   if (res.error) { check(false, `a team leaves to set up camp (${res.error})`); return null; }
   res.party.path = [tile]; res.party.idx = 0;
   giveOrder(st, res.party, "camp");
-  for (let i = 0; i < PITCH_HOURS + 2 && !st.bases.some((b) => b.tile === tile); i++) tickHour(st);
+  for (let i = 0; i < Math.ceil(res.party.task ? res.party.task.hours : PITCH_HOURS) + 2 && !st.bases.some((b) => b.tile === tile); i++) tickHour(st);
   return st.bases.find((b) => b.tile === tile) || null;
 }
 // A card's own checks: the button, the default, the tray.

@@ -148,8 +148,15 @@ section("The land: by the tile, fixed by it");
   if (camps.river) {
     const land = BM.landFor(st, camps.river), water = land.list.filter((p) => p.k === "water").length, fords = [...land.floors.values()].filter((f) => f === "gravel").length;
     check(water > 40 && fords >= 6, `a tile by a river: the river along its side (${water} cells of water) with fords across (${fords} cells)`);
+    // The river runs along the map's side (the map is 250 × 250): a camp set up near it has it on its view.
+    const ws = land.list.filter((p) => p.k === "water").map((p) => p.cells[0]), spread = (i) => Math.max(...ws.map((c) => c[i])) - Math.min(...ws.map((c) => c[i]));
+    const ax = spread(0) < spread(1) ? 0 : 1, w = ws[0]; // the band runs along the other axis
+    const o = [0, 0];
+    o[ax] = Math.max(-BM.SITE_RANGE, Math.min(BM.SITE_RANGE, w[ax] - Math.sign(w[ax]) * 12));
+    BM.planOf(camps.river).origin = o;
     const v = view(camps.river);
-    check(v.cells.filter((c) => c.k === "water").length > 30, "the river on the view");
+    check(v.cells.filter((c) => c.k === "water").length > 30, `the river on the view of a camp set up near it (${o})`);
+    delete camps.river.plan.origin;
   } else check(true, "(no free river tile in this world)");
   if (camps.farm) { const k = kinds(landOn(view(camps.farm))); check((k.fence || 0) > 10 && (k.bush || 0) > 5, `farmland: hedgerows and fence lines (${fmt(k)})`); }
   if (camps.town) { const v = view(camps.town); check(v.cells.some((c) => c.f === "gravel"), `a town: paved lots, fences and wrecks (${fmt(kinds(landOn(v)))})`); }

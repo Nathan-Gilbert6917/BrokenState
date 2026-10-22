@@ -7,10 +7,11 @@
 //   In arms only, or a cart's bed, the team's cargo (the trunk when it has a vehicle) or a base's armory (inventory.js
 //   isCarryable `arms`; the four-person tent's duffle takes both arms: twoHands).
 //
-// SET UP CAMP (staging.js pitchArrive; parties.js pitchHoursFor for the planner's estimates). campPitchHours: the hour
-//   of tarps and bedrolls (buildings.js CAMP.setupHours) comes down to TENTS.PITCH_FULL (30 minutes) when the team's
-//   bags (teamTentBags: the cargo, what each one carries in the arms, a cart's or a pack's contents) sleep everyone,
-//   by the share they sleep when they sleep only some.
+// SET UP CAMP (staging.js pitchArrive, siteSetup): the camp fire and the clearing of its 5 × 5, bags or none (the
+//   user's requests 2026-10-22). pitchHours: the hour of tarps and bedrolls on the road (a
+//   band's camp at the day's end, CAMP.tarpHours) comes down to TENTS.PITCH_FULL (30 minutes) when its bags
+//   (teamTentBags: the cargo, what each one carries in the arms, a cart's or a pack's contents) sleep everyone, by the
+//   share they sleep when they sleep only some.
 //
 // AT A BASE (a camp: staging.js makeCamp; any base: the base map, the governor). Every bag the team brought to a new
 //   camp is pitched (pitchArmoryBags, after settleInto put it in the camp's armory). A pitched tent is a BASE MAP PIECE
@@ -279,14 +280,12 @@ export function teamTentBags(state, p) {
 }
 /** @param {any} state @param {any} p */
 export const teamTentSleepers = (state, p) => sleepersOf(teamTentBags(state, p));
-/** Hours to pitch for `heads` people whose bags sleep `sleepers` (CAMP.setupHours down to TENTS.PITCH_FULL). @param {number} heads @param {number} sleepers */
+/** Hours to pitch on the road for `heads` people whose bags sleep `sleepers` (CAMP.tarpHours down to TENTS.PITCH_FULL). @param {number} heads @param {number} sleepers */
 export function pitchHours(heads, sleepers) {
-  const full = CAMP.setupHours;
+  const full = CAMP.tarpHours;
   if (!(heads > 0) || !(sleepers > 0)) return full;
   return r2(full - (full - TENTS.PITCH_FULL) * Math.min(1, sleepers / heads));
 }
-/** Set up camp's hours for this team (staging.js pitchArrive, parties.js pitchHoursFor). @param {any} state @param {any} p */
-export const campPitchHours = (state, p) => pitchHours(partyMembers(state, p).length, teamTentSleepers(state, p));
 /** "1 hour", "30 minutes". @param {number} h */
 export const hoursText = (h) => (h >= 1 - 1e-9 && Math.abs(h - Math.round(h)) < 1e-9 ? `${Math.round(h)} hour${Math.round(h) === 1 ? "" : "s"}` : `${Math.round(h * 60)} minutes`);
 // Make camp until dawn (nightmarch.js): the line for the card. "" without people.
@@ -401,8 +400,8 @@ export function bandTentKit(state, kit, serial, heads) {
   }
   return out;
 }
-/** Hours of walking a band's bags save it at the day's end (CAMP.setupHours less its pitching). @param {any} b @param {number} heads */
-export const bandPitchSaved = (b, heads) => r2(CAMP.setupHours - pitchHours(heads, sleepersOf(bandTentBags(b))));
+/** Hours of walking a band's bags save it at the day's end (CAMP.tarpHours less its pitching). @param {any} b @param {number} heads */
+export const bandPitchSaved = (b, heads) => r2(CAMP.tarpHours - pitchHours(heads, sleepersOf(bandTentBags(b))));
 /**
  * A band's camp, coarse and daily (nomads.js bandDay, visitors.js raiderDay): its bags pitched, the share of its heads
  * they sleep, the rest sleeping rough. A drifters' band builds makeshift shelters (no bag, no storage) for everyone.

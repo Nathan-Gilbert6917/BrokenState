@@ -41,7 +41,7 @@ const finishAll = (st, base) => { for (let i = 0; i < 40 && base.construction.le
 const byType = (base, type) => base.buildings.filter((b) => b.type === type);
 const last = (base, type) => byType(base, type)[byType(base, type).length - 1];
 const keyOf = (b) => `b:${b.id}`;
-const inMargin = (base, it, at) => { const G = BM.gridHalf(base), N = G - BM.NO_BUILD, r = BM.rectOf(it, at); return r.x0 < -N || r.y0 < -N || r.x0 + r.w > N || r.y0 + r.h > N; };
+const inMargin = (base, it, at) => { const B = BM.gridBox(base), N = BM.NO_BUILD, r = BM.rectOf(it, at); return r.x0 < B.x0 + N || r.y0 < B.y0 + N || r.x0 + r.w > B.x1 - N || r.y0 + r.h > B.y1 - N; };
 const openView = (st, base, pick = null) => { globalThis.window = {}; try { return BM.openBaseMap(st, base.id, pick); } finally { delete globalThis.window; } };
 const cellAt = (b, gx, gy) => { const F = b.deployPlan.fort; return b.cells[(gy + F.oy) * b.w + gx + F.ox]; };
 
@@ -58,7 +58,7 @@ section("The no-build margin");
   check(BM.placeItem(st, h, keyOf(bunk), -N, -N, 0) === "" && bunk.at && bunk.at[0] === -N, `right up against the margin: fine (at ${bunk.at})`);
   check(/Off the map/.test(BM.placeItem(st, h, keyOf(bunk), -G - 1, 0, 0)), "off the map is still off the map");
   BM.unplaceItem(st, h, keyOf(bunk));
-  // The camp: a 40 × 40 grid, 30 × 30 to build on; everything a camp may build still finds a spot.
+  // The camp: a 250 × 250 grid like every base's; everything a camp may build still finds a spot.
   const st2 = world(seed + 1), c2 = asCamp(hub(st2));
   rich(c2);
   for (const t of Object.keys(CAMP.build)) if (BM.FOOT[t] && !BM.FOOT[t].fit && !BUILDINGS[t].piece) for (let i = 0; i < CAMP.build[t]; i++) addBuilding(c2, t);
@@ -76,9 +76,16 @@ section("The no-build margin");
   check(!openView(st2, c2) && st2.combat && st2.combat.deployPlan.fort.noBuild === BM.NO_BUILD, "the camp's map opens; the fort record carries noBuild");
   const b = st2.combat, F = b.deployPlan.fort;
   const Gc = BM.gridHalf(c2);
-  check(cellAt(b, -Gc, -Gc).nb === 1 && cellAt(b, Gc - 1, 0).nb === 1 && cellAt(b, Gc - 5, 0).nb === 1 && !cellAt(b, Gc - 6, 0).nb && !cellAt(b, 0, 0).nb, "the view marks the margin's five cells (c.nb) and nothing nearer the middle");
-  check(F.W === 2 * Gc && F.H === 2 * Gc, `the camp's view is its whole grid (${F.W} × ${F.H})`);
+  check(Gc === 125 && F.W < 2 * Gc && F.W >= 2 * (BM.yardHalf(c2) + 2), `the camp's grid is 250 × 250; its view the yard and what stands round it (${F.W} × ${F.H})`);
   st2.combat = null;
+  // Set up near the map's edge (base.plan.origin, the camp's own spot): the view stops at the edge, its five cells tinted.
+  c2.plan.origin = [BM.SITE_RANGE, 0];
+  check(!openView(st2, c2) && !!st2.combat, "a camp near the east edge opens its map");
+  const E = BM.gridBox(c2).x1, b3 = st2.combat;
+  check(cellAt(b3, E - 1, 0).nb === 1 && cellAt(b3, E - 5, 0).nb === 1 && !cellAt(b3, E - 6, 0).nb && !cellAt(b3, 0, 0).nb, "the view marks the margin's five cells (c.nb) and nothing nearer the camp");
+  check(BM.gridOf(c2).cap <= BM.edgeRoom(c2) && BM.yardHalf(c2) + 2 + BM.NO_BUILD <= E, "its yard and the wall's band stop short of the margin");
+  st2.combat = null;
+  delete c2.plan.origin;
 }
 
 section("General buildings and fittings");
@@ -436,12 +443,12 @@ section("A way in and out");
     const layC = BM.layoutOf(stC, camp), autoC = BM.autoLayout(stC, camp);
     check(layC.length >= 12 && layC.every((e) => e.at) && layC.every((e) => BM.reachProblem(stC, camp, e.it, e.at, null, { auto: autoC }) === ""), `a camp with everything on its list: ${layC.length} things placed, all reachable`);
   }
-  // Performance: the check on the biggest grid (300 × 300).
+  // Performance: the check on a big hub (every base's grid is 250 × 250).
   {
     const st = world(seed + 10), h = hub(st);
     for (let i = 0; i < 30; i++) addBuilding(h, i % 2 ? "bunkhouse" : "common_room");
     addBuilding(h, "walls");
-    check(BM.gridSize(h) === 300, `a hub with 30 buildings: a ${BM.gridSize(h)} × ${BM.gridSize(h)} grid`);
+    check(BM.gridSize(h) === 250, `a hub with 30 buildings: a ${BM.gridSize(h)} × ${BM.gridSize(h)} grid`);
     const it = { ...BM.FOOT.gen_hut, key: null, type: "gen_hut", label: "Hut", built: true };
     const occ = BM.occupancy(st, h, null, null);
     const tp = Date.now();

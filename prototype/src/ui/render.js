@@ -1057,6 +1057,7 @@ function moverHash(state) {
   for (const b of hcMapBands(state)) h = (h * 31 + b.tile * 11 + b.pop) % 2147483647; // hardcore bands and the strike force (sim/hardcore-groups.js)
   for (const b of nomadMapBands(state)) h = (h * 31 + b.tile * 13 + b.pop + (b.camp ? 7 : 0)) % 2147483647; // nomad bands (sim/nomads.js)
   for (const b of state.bases) h = (h * 31 + b.buildings.length + (b.alert ? 5 : 0) + b.tile + (b.tier === 0 ? campStage(b) * 7 + (b.fire === false ? 3 : 0) : 0)) % 2147483647; // a camp's or shelter's look (its step up, its fire)
+  for (const p of state.parties) if (p.owner === "player" && p.task && p.task.type === "pitch") h = (h * 31 + p.id + Math.round(pitchPct(p) * 100)) % 2147483647; // a camp going up: its bar (the parties' pitching)
   if (state.staging) h = (h * 31 + state.staging.tile * 3 + Math.round(oldCampPct(state.staging) * 50)) % 2147483647; // a timelapse frame's camp (sim/chronicle.js)
   // Hidden sites found (sim/discovery.js), also while paused (intel bought, a prisoner questioned).
   if (state.knowledge && !state.timelapse) for (const id of hiddenSites(state)) if (state.knowledge[id]) h = (h * 31 + id) % 2147483647;
@@ -1354,6 +1355,15 @@ export function render(state) {
     ctx.strokeStyle = "rgba(255,209,102,0.8)"; ctx.lineWidth = 1.5 * s; ctx.setLineDash([3 * s, 3 * s]);
     ctx.beginPath(); ctx.arc(px, py, 13 * s, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
     labels.push({ text: "Camp site", x: px, y: py + 13 * s + 7, pri: -1, screen: true, color: "#ffd166", size: 9 });
+  }
+  // A team of yours setting up camp (sim/staging.js pitchArrive: the camp fire and the clearing of its 5 × 5, the user's
+  // request 2026-10-22: "after selecting and confirming show a progress bar over the tile until done"): the work's bar
+  // over its tile until the camp stands.
+  for (const p of state.parties) {
+    if (p.owner !== "player" || p.phase !== "task" || !p.task || p.task.type !== "pitch" || p.dest == null || !inView(p.dest)) continue;
+    const px = G.x[p.dest], py = G.y[p.dest], s = zoomBoost(), f = pitchPct(p);
+    buildBarOnMap(px, py - 24 * s, s, f, f);
+    labels.push({ text: `Setting up camp ${Math.round(f * 100)}%`, x: px, y: py - 30 * s, pri: -1, screen: true, color: "#ffd166", size: 9 });
   }
   // Player bases: a walled town for the hub, a cabin for outposts, showing walls and notable buildings.
   const nodes = radioNodes(state);
@@ -1925,6 +1935,8 @@ function blocRing(x, y, color, s) {
 }
 // A construction bar under a sprite, centered at x with its top at y: the work done (amber, green once full) and,
 // lighter, as far as the materials allow (cap). Returns the y of its bottom edge.
+// How far a team's camp setup is (its pitching task: the hours worked of the hours it takes).
+const pitchPct = (p) => Math.max(0, Math.min(1, ((p.task.done || 0) - (p.task.owed || 0)) / Math.max(1e-9, p.task.hours || 1)));
 function buildBarOnMap(x, y, s, f, cap = f) {
   const bw = 30 * s, bh = 4 * s, bx = x - bw / 2;
   ctx.fillStyle = "rgba(13,15,18,0.85)";

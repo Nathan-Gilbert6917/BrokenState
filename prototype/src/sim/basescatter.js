@@ -19,7 +19,15 @@
 //     with abandoned cars and debris on it, a river tile's river (tile.river, not a bridge: a band of water off the
 //     middle with two fords and bushes on its banks; water is never cleared nor built on);
 //   - the yard's leavings: in the yard round the clearing only stumps, logs, crates, barrels and a rock;
-//   - the clearing (CLEARING by tier: a camp's 12 × 12 round its fire, where its setup hour went): nothing at all.
+//   - the clearing (CLEARING by tier: a base from before the camp's spot was picked, or one taken or handed over):
+//     nothing at all.
+// The land is the tile's in map coordinates (the 250 × 250 map's middle at 0, 0: basemap.js BASE_GRID); a base stands
+// on it at its origin (spec.ox, spec.oy: basemap.js originOf), and landOf hands the pieces back in the base's grid
+// coordinates. A camp set up on a spot of its own (spec.fresh: the user's requests 2026-10-22, "choose where in the
+// 250 x 250 with a highlighted 10x10 to start ... Then you can build around that and clear out more as needed. Provide
+// the resources of that area after the process to set up camp is finished", the square since reduced to 5 × 5) has no
+// yard swept for it and no clearing of its own: its setup clears the SITE square round the fire like any clearing, the
+// yield into its stores (basemap.js clearCampSite), and the rest is cleared as needed.
 //
 // Every piece blocks building on its cells (basemap.js placeProblemAt: "clear it first") until it is cleared: a
 // clearing job (CLEAR: hours of the builders' work and what it gives: a tree its wood, a wreck its scrap and a car
@@ -43,6 +51,23 @@ export const SCATTER = {
 // The clearing in the middle of a new base map (half-size, the square [-h, h)) by tier: a camp's fits its fire, the
 // cache and its starter tents with room to walk; nothing of the land ever stands in it.
 export const CLEARING = { camp: 6, shelter: 8, outpost: 10, hub: 13 };
+// The camp's own spot (the user's requests 2026-10-22: "reduce to 5x5 with camp site in the middle"): its setup clears
+// the SIZE × SIZE square with the fire in its middle cell (grid cells LO to LO + SIZE − 1 each way from the fire), and
+// the spot is picked on the map with that square highlighted (staging.js askSite, ui/campsite.js).
+// NO_TOOL_WOOD (the user's request 2026-10-22: "balance wood yield with and without an axe in the teams inventory when
+// setting up camp"): a team with no axe, saw or machete (staging.js teamChopTool) clears the trees, logs and stumps of
+// its site the slow way (CLEAR.NO_TOOL as long) and gets only this share of their wood: branches and deadfall broken by
+// hand, not logs.
+export const SITE = { SIZE: 5, LO: -2, NO_TOOL_WOOD: 0.25 };
+const WOODY = new Set(["tree", "log", "stump"]);
+/** What clearing a piece of a camp's site gives (clearOf's get, the wood of a tree, a log or a stump cut to NO_TOOL_WOOD with no cutting tool). @param {any} p @param {any} c clearOf(p) @param {boolean} tool */
+export function siteGet(p, c, tool) {
+  const get = { ...c.get };
+  if (!tool && WOODY.has(p.k) && get.wood) get.wood = Math.floor(get.wood * SITE.NO_TOOL_WOOD);
+  return get;
+}
+/** The SITE square round a fire at `at`: { x0, y0, x1, y1 } (half-open). @param {number[]} [at] */
+export const siteBox = (at = [0, 0]) => ({ x0: at[0] + SITE.LO, y0: at[1] + SITE.LO, x1: at[0] + SITE.LO + SITE.SIZE, y1: at[1] + SITE.LO + SITE.SIZE });
 // The land's dressing by terrain: n pieces a chunk (range) and the weights of what they are.
 export const PROFILES = {
   forest:   { n: [2, 4], w: { clump: 4, tree: 3, bush: 3, log: 2, stump: 1, rock: 1 } },
@@ -167,7 +192,7 @@ export function scatterLayer(seed, terrain, G) {
 // ---------- the land of one base ----------
 // What the land is made from: the tile's dice, terrain (a farm's fields as "farm"), the grid, the yard, the clearing,
 // the road's axes and the river's (spec.road: "x" | "y" | "xy" | ""; spec.river: "x" | "y" | "").
-/** @param {any} state @param {any} base @param {{ G: number, C: number, tier: string, terrain: string }} dims */
+/** @param {any} state @param {any} base @param {{ G: number, C: number, tier: string, terrain: string, origin?: number[], fresh?: boolean }} dims */
 export function landSpec(state, base, dims) {
   const t = state && state.tiles && base ? state.tiles[base.tile] : null;
   const seed = scatterSeed(base ? base.tile : 0);
@@ -190,7 +215,8 @@ export function landSpec(state, base, dims) {
     const n = state.grid.neighbors(t.id).map((id) => state.tiles[id]).find((q) => q && q.river);
     if (n) { const p1 = state.grid.toPixel(n.id, 1), dx = p1[0] - p0[0], dy = p1[1] - p0[1]; if (Math.abs(dx) >= Math.abs(dy)) { river = "y"; riverSide = dx > 0 ? 1 : -1; } else { river = "x"; riverSide = dy > 0 ? 1 : -1; } }
   }
-  return { seed, terrain: dims.terrain, G: dims.G, C: dims.C, clear: CLEARING[dims.tier] ?? CLEARING.camp, road, river, riverSide, town: !!(t && (t.terrain === "suburb" || t.terrain === "city")) };
+  const [ox, oy] = dims.origin || [0, 0];
+  return { seed, terrain: dims.terrain, G: dims.G, C: dims.fresh ? 0 : dims.C, clear: dims.fresh ? 0 : CLEARING[dims.tier] ?? CLEARING.camp, road, river, riverSide, town: !!(t && (t.terrain === "suburb" || t.terrain === "city")), ox, oy };
 }
 const inSq = (x, y, h) => x >= -h && x < h && y >= -h && y < h;
 // The road's cells (a band SCATTER.ROAD_W wide through the middle along each axis) and the river's (a band RIVER_W
@@ -214,17 +240,21 @@ const landCache = new Map();
  * @param {any} spec landSpec @param {any} land base.land
  */
 export function landOf(spec, land) {
-  const key = `${spec.seed}|${spec.terrain}|${spec.G}|${spec.C}|${spec.clear}|${spec.road}|${spec.river}${spec.riverSide || ""}|${land ? `${land.n}` : "-"}`;
+  const tx = spec.ox || 0, ty = spec.oy || 0; // the base on the map: map (x, y) is grid (x - tx, y - ty)
+  const key = `${spec.seed}|${spec.terrain}|${spec.G}|${spec.C}|${spec.clear}|${spec.road}|${spec.river}${spec.riverSide || ""}|${tx},${ty}|${land ? `${land.n}` : "-"}`;
   let out = landCache.get(key);
   if (out && out.land === land) return out.v;
   const cleared = (land && land.cleared) || {}, looted = (land && land.looted) || {};
   const pieces = new Map(), floors = new Map(), list = [];
-  const free = (x, y) => !inSq(x, y, spec.clear) && x >= -spec.G && y >= -spec.G && x < spec.G && y < spec.G && !pieces.has(`${x},${y}`) && !cleared[`${x},${y}`];
+  // Worked out in map coordinates; the yard and the clearing are round the base itself, what is cleared in grid cells.
+  const nearBase = (x, y, h) => inSq(x - tx, y - ty, h);
+  const gone = (x, y) => !!cleared[`${x - tx},${y - ty}`];
+  const free = (x, y) => !nearBase(x, y, spec.clear) && x >= -spec.G && y >= -spec.G && x < spec.G && y < spec.G && !pieces.has(`${x},${y}`) && !gone(x, y);
   const put = (p) => { list.push(p); for (const [x, y] of p.cells) pieces.set(`${x},${y}`, p); };
   // The river first (nothing else on the water), then the road and what was left on it, then the terrain.
   if (spec.river) for (let a = -spec.G; a < spec.G; a++) for (let b = -spec.G; b < spec.G; b++) {
     const x = spec.river === "y" ? a : b, y = spec.river === "y" ? b : a, r = onRiver(spec, x, y);
-    if (r === 1 && !inSq(x, y, spec.clear) && !cleared[`${x},${y}`]) put({ k: "water", g: `w${x},${y}`, cells: [[x, y]] });
+    if (r === 1 && !nearBase(x, y, spec.clear) && !gone(x, y)) put({ k: "water", g: `w${x},${y}`, cells: [[x, y]] });
     else if (r === 3) floors.set(`${x},${y}`, "gravel");
   }
   if (spec.road) {
@@ -243,8 +273,8 @@ export function landOf(spec, land) {
     }
   }
   for (const p of scatterLayer(spec.seed, spec.terrain, spec.G)) {
-    if (p.floor) { if (!inSq(p.x, p.y, spec.clear) && !floors.has(`${p.x},${p.y}`)) floors.set(`${p.x},${p.y}`, p.floor); continue; }
-    const yard = inSq(p.x, p.y, spec.C);
+    if (p.floor) { if (!nearBase(p.x, p.y, spec.clear) && !floors.has(`${p.x},${p.y}`)) floors.set(`${p.x},${p.y}`, p.floor); continue; }
+    const yard = nearBase(p.x, p.y, spec.C);
     if (p.k === "wreck") {
       if (yard) continue;
       const cells = [];
@@ -259,6 +289,15 @@ export function landOf(spec, land) {
   }
   // Bushes along the river's banks.
   if (spec.river) { const rng = new Rng(spec.seed ^ 0x77e1); for (let a = -spec.G; a < spec.G; a++) for (let b = -spec.G; b < spec.G; b++) { const x = spec.river === "y" ? a : b, y = spec.river === "y" ? b : a; if (onRiver(spec, x, y) === 2 && rng.chance(0.3) && free(x, y)) put({ k: "bush", g: `b${x},${y}`, cells: [[x, y]] }); } }
+  // Into the base's grid coordinates (the pieces were made here, so they are moved in place).
+  if (tx || ty) {
+    for (const p of list) for (const c of p.cells) { c[0] -= tx; c[1] -= ty; }
+    pieces.clear();
+    for (const p of list) for (const [x, y] of p.cells) pieces.set(`${x},${y}`, p);
+    const fl = [...floors];
+    floors.clear();
+    for (const [k, f] of fl) { const [x, y] = k.split(",").map(Number); floors.set(`${x - tx},${y - ty}`, f); }
+  }
   const water = list.filter((p) => p.k === "water");
   const v = { pieces, floors, list, waterOnly: { pieces: new Map(water.flatMap((p) => p.cells.map(([x, y]) => [`${x},${y}`, p]))), list: water, floors } };
   if (landCache.size > 48) landCache.clear();

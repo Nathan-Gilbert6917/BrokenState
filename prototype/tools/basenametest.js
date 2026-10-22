@@ -60,7 +60,7 @@ section("Build outpost (a normal game): asked again; duplicates refused; Keep cl
   check(p && partyTile(p) === dest, "the team got there");
   const n0 = st.bases.length;
   giveOrder(st, p, "outpost");
-  for (let i = 0; i < 8 && st.bases.length === n0; i++) { tickHour(st); st.cards.length = 0; } // setting up the camp takes an hour (buildings.js CAMP.setupHours)
+  for (let i = 0; i < 48 && st.bases.length === n0; i++) { tickHour(st); st.cards.length = 0; } // setting up the camp: its fire and the clearing of its 5 × 5 (staging.js siteSetup)
   const o = st.bases[n0];
   check(st.bases.length === n0 + 1 && !!o, "the outpost stands");
   check(pendingName(st) === o, "the outpost waits for a name");

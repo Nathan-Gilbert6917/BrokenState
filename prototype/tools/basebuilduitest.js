@@ -133,15 +133,16 @@ section("The layout panel: the Build list");
   act(st, { type: "endLayout" });
 }
 
-section("The no-build margin on a camp's map (its view is the whole grid)");
+section("The no-build margin on a camp's map (a camp set up near the west edge of its 250 × 250 map: its view reaches it)");
 {
   const st = world(seed + 1);
   const h = asCamp(hub(st));
   rich(h);
+  BM.planOf(h).origin = [-BM.SITE_RANGE, 0]; // the camp's own spot (sim/staging.js pickSite)
   check(!openView(st, h), "the camp's map opens");
   check(!act(st, { type: "pickType", bt: "gen_hut" }) && st.combat.layout.pickType === "gen_hut", "a hut picked (a camp may build one)");
   const b = st.combat, F = b.deployPlan.fort;
-  const mx = 3 + F.ox - BM.gridHalf(h), my = F.oy; // (the ghost is centred on the mouse: a hut over this cell stays on the map, in the margin)
+  const mx = 3 + F.ox + BM.gridBox(h).x0, my = F.oy; // (the ghost is centred on the mouse: a hut over this cell stays on the map, in the margin)
   check(b.cells[my * b.w + mx].nb === 1 && !b.cells[F.oy * b.w + F.ox].nb, "a margin cell is marked in the view (c.nb), the middle is not");
   const g = BM.ghostAt(st, b, mx, my);
   check(g && !g.ok && g.why === BM.NO_BUILD_WHY, `the ghost over the margin is red: ${g && g.why}`);

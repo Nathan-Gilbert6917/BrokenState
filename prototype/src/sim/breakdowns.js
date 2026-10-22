@@ -148,6 +148,11 @@ export const FIXTURES = {
   greenhouse:  { raidOnly: true, repair: { hours: 9, cost: { scrap: 7, parts: 1 }, min: 1 }, rig: { hours: 3, cost: { scrap: 3 }, min: 0 }, what: "broken glass: no sheltered plots" },
   jailhouse:   { raidOnly: true, repair: { hours: 9, cost: { scrap: 10, parts: 1 }, min: 1 }, rig: { hours: 3, cost: { scrap: 4 }, min: 0 }, what: "a breached cell block: 8 fewer places for prisoners" },
   lockup:      { raidOnly: true, repair: { hours: 2, cost: { scrap: 2 }, min: 0 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "a torn cage: 2 fewer places for prisoners" },
+  // The step ups (buildings.js tierUp: the user's request 2026-10-22, placed on the base map): battered in a raid like any
+  // house. The base stays its tier; the building wants mending.
+  camp_up:     { raidOnly: true, repair: { hours: 5, cost: { scrap: 7 }, min: 0 }, rig: { hours: 2, cost: { scrap: 3 }, min: 0 }, what: "a wrecked shelter shack: its roof and walls holed" },
+  outpost_up:  { raidOnly: true, repair: { hours: 5, cost: { scrap: 7 }, min: 0 }, rig: { hours: 2, cost: { scrap: 3 }, min: 0 }, what: "a wrecked outpost house: its roof and walls holed" },
+  hub_up:      { raidOnly: true, repair: { hours: 15, cost: { scrap: 35 }, min: 0 }, rig: { hours: 5, cost: { scrap: 14 }, min: 0 }, what: "a wrecked main house: its roof and walls holed" },
   // General buildings (basemap.js, buildings.js gen_*) and the fittings inside them.
   gen_hut:     { raidOnly: true, repair: { hours: 4, cost: { scrap: 3 }, min: 0 }, rig: { hours: 2, cost: { scrap: 1 }, min: 0 }, what: "a wrecked hut: no shelter in it" },
   gen_cabin:   { raidOnly: true, repair: { hours: 5, cost: { scrap: 5 }, min: 0 }, rig: { hours: 2, cost: { scrap: 2 }, min: 0 }, what: "a wrecked cabin: no shelter in it" },

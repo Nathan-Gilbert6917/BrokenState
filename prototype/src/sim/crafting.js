@@ -80,7 +80,7 @@ export const CRAFTS = {
   // Building materials (data.js buildmat; user request 2026-10-09: "Building materials can be crafted with scraps"):
   // scrap hammered, bolted and nailed into panels, beams and blocks. Anywhere, a team too.
   buildmat:    { name: "Building materials", supplies: { buildmat: 1 }, in: { scrap: 3 }, hours: 3, skill: "mechanics", min: 0, field: true,
-                 desc: "Scrap hammered, bolted and nailed into panels, beams and blocks: 1 building material from 3 scrap. What a camp takes to become a base (with scrap): Establish the outpost, Build up into a shelter, Build up into a base." },
+                 desc: "Scrap hammered, bolted and nailed into panels, beams and blocks: 1 building material from 3 scrap. What a camp takes to become a base (with scrap): the Outpost house, the Shelter shack, the Main house." },
   // Metal sheets (data.js metalsheet; the user's request 2026-10-21): scrap cut, hammered flat and riveted into a sheet
   // at a workshop (the welding, the brake). Found and salvaged too: this is what a base short of them falls back on.
   metalsheet:  { name: "Metal sheet", supplies: { metalsheet: 1 }, in: { scrap: 4 }, hours: 4, skill: "mechanics", min: 1, needs: "workshop",

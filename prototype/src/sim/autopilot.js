@@ -2779,8 +2779,8 @@ function planBuilds(state, base, areas = ALL_AREAS) {
       if (w.save && /^Needs \d+ scrap/.test(chk.reason)) return; // save up for it rather than spend on less
       continue;
     }
-    // A step up that gathers its materials as they come in (buildings.js gather: Build up into a base, Establish the
-    // outpost): queued at once, nothing to save up for (it takes what its next hours of work need).
+    // A step up that gathers its materials as they come in (buildings.js gather: the Main house, the Outpost house,
+    // the Shelter shack): queued at once, nothing to save up for (it takes what its next hours of work need).
     if (def.gather) { const msg = wishQueue(state, base, w); g.stats.builds++; say(state, `${msg.replace(/\.$/, "")}: ${w.why}.`); return; }
     const cost = wishCost(w, base);
     // Cautious: anything not urgent is built only from what is above the reserves (reserveStatus).
