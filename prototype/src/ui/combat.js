@@ -175,6 +175,7 @@ function sync(b) {
   cui.msg = "";
   cui.hover = null;
   cui.allyAsk = null;
+  cui.tapAsk = null; cui.tapFace = null; // a finger's held order (combatTap) was the last battle's
   cui.anim.clear();
   cui.movesSeen = b.fxSeq || 0; // what was logged before is not walked again (stampMoves)
   cui.walkUntil = 0;
@@ -452,6 +453,155 @@ export function combatWheel(state, px, py, dy) {
   isoZoom(b, dy < 0 ? 1 : -1, px, py);
   return true;
 }
+
+// ---------- a finger's tap: first the preview, then the order (main.js touchGestures; never the mouse) ----------
+// A mouse sees what a click would do before it clicks (the hover: the path and its cost, the hit chance, a grenade's
+// blast); a finger only lands. So a tap that would send an order (anything combatClick hands to act: a move, a shot,
+// a throw, a search, a door, an ally's order...) is tried first with act() catching the order (dry), the screen put
+// back as it was, and the order held in cui.tapAsk: the hover's preview stays on the map and a chip over it names the
+// order (the hover card's own words). The same cell again, or the chip's ✓, sends it as the mouse's click would; another
+// cell moves the preview there; ✕, a long press, another unit or mode, or anything happening (b.rev) drops it. A tap that
+// sends nothing (selecting one of yours, picking a mode's target step, opening a searched container) is made at once.
+// Options → "Battles: confirm taps" (touch screens only) turns it off.
+const TAP_KEY = "bs.battle.tapConfirm";
+try { cui.tapConfirm = typeof localStorage === "undefined" || localStorage.getItem(TAP_KEY) !== "0"; } catch { cui.tapConfirm = true; }
+export function setTapConfirm(on) { cui.tapConfirm = !!on; cui.tapAsk = null; cui.tapFace = null; try { localStorage.setItem(TAP_KEY, on ? "1" : "0"); } catch { /* private mode */ } }
+cui.tapAsk = null;  // { x, y, ox, oy, a, html, key }: the order a tap holds; ox / oy: the finger off the cell's foot, art px
+cui.tapFace = null; // { x, y, ox, oy, html, key }: a move's tile picked by a tap, its facing still to pick (facemove)
+// Free and harmless: made at once. checkwindow learns how a window opens (sim/windows.js: no action, nothing heard).
+const TAP_NOW = new Set(["checkwindow"]);
+const TAP_VERB = { move: "Move", shoot: "Shoot", melee: "Strike", throw: "Throw", suppress: "Suppress", throwspear: "Throw spear", launch: "Fire", pepper: "Pepper spray", drag: "Drag", dragAlly: "Drag", tie: "Tie up", doubletap: "Double tap", pickup: "Pick up body", crush: "Crush skull", heal: "Heal", revive: "Revive", finish: "Finish", meds: "Meds for", parkCart: "Park the cart", drive: "Drive", search: "Search", searchBody: "Search the body", lights: "Flip the lights", keylock: "Lock", keyunlock: "Unlock", open: "Open", peek: "Peek", close: "Close the door", brace: "Brace the door", openwindow: "Open the window", closewindow: "Close the window", breakwindow: "Break the window", climb: "Climb through", boardup: "Board up", teardown: "Tear down", cutwire: "Cut the wire", strike: "Strike", slashtent: "Slash the tent", shove: "Shove", shoveFoe: "Shove", callout: "Call out to", allyorder: "Ally order", overwatch: "Overwatch this way", face: "Face this way", taser: "Taser", subdue: "Subdue", place: "Place" };
+// What a held preview depends on: any of it changing drops it (the chip would name another order).
+const tapKey = (b) => [b.setup && b.setup.tile, cui.sel, cui.mode, b.rev, b.turn, b.phase, !!b.over, floorNo(b), iso.rot, iso.straight, cui.throwKey, cui.dragId, cui.facePick ? `${cui.facePick.x},${cui.facePick.y}` : "", cui.allyAsk ? JSON.stringify(cui.allyAsk) : "", cui.shoveAsk ? `${cui.shoveAsk.x},${cui.shoveAsk.y}` : ""].join("|");
+// An order compared with the one previewed (a facing angle within a hundredth: the view may have moved a pixel).
+const tapSig = (a) => JSON.stringify(a, (k, v) => (typeof v === "number" ? Math.round(v * 100) / 100 : v));
+// The tapped point, kept on the map: art px off the cell's foot, and back to screen px with the view as it is now.
+function tapAnchor(c, px, py) {
+  const S = ISO_ZOOMS[iso.zoom] || 2, [X, Y] = project(c.x + 0.5, c.y + 0.5, 0);
+  return { x: c.x, y: c.y, ox: (px - X) / S, oy: (py - Y) / S };
+}
+function tapPoint(q) {
+  const S = ISO_ZOOMS[iso.zoom] || 2, [X, Y] = project(q.x + 0.5, q.y + 0.5, 0);
+  return [X + q.ox * S, Y + q.oy * S];
+}
+// combatClick with act() catching the order: the order it would send, the screen put back as it was before; or null:
+// it sends none, and the click is made (a unit selected, a mode's next step, a window opened).
+function tapProbe(state, px, py) {
+  const keep = { ...cui };
+  dry = { a: null };
+  let a = null;
+  try { combatClick(state, px, py); } finally { a = dry.a; dry = null; }
+  if (!a) return null;
+  for (const k of Object.keys(cui)) if (!(k in keep)) delete cui[k];
+  for (const k of Object.keys(keep)) if (k !== "cache") cui[k] = keep[k];
+  return a;
+}
+// The chip's words: the order and whom or where (its first line), the hit chance or the cost (the hover card's own).
+function tapHtml(state, b, a) {
+  const u = unitById(b, a.unit), t = a.target != null && typeof a.target === "number" ? unitById(b, a.target) : null, v = view(b);
+  const who = t ? ` ${esc(t.name)}` : "";
+  let head = `<b>${esc(TAP_VERB[a.type] || cap1(String(a.type)))}${who}</b>`, body = "";
+  if (t && u && t.side !== "player" && ["shoot", "melee", "taser", "subdue", "shoveFoe", "finish"].includes(a.type)) {
+    const o = odds(b, u, t);
+    if (o && o.ok && o.chance != null) head += ` <b class="cbbig ${hitTone(o.chance)}">${o.chance}%</b>`;
+    body = o ? esc(o.ok && o.chance != null ? String(o.label).replace(`${o.chance}% `, "") : o.label) : ""; // "to hit, 15–22 damage, …": the number is in the head
+  } else if (a.type === "move" && u) {
+    if (a.face != null) head = "<b>Move, then face this way</b>";
+    body = moveWord(b, u, v, a.x, a.y) || "Out of reach.";
+  } else if (a.type === "face") body = "Free (it needs an action left): the cone shows what they will watch.";
+  else if (a.type === "overwatch") body = esc(OVERWATCH_TIP.split(". ")[0] + ".") + " Only what moves in the cone draws a reaction.";
+  else if (a.type === "throw" && u && THROWABLES[a.item]) {
+    const T = THROWABLES[a.item], tp = throwPreview(b, u), area = new Set(tp ? tp.cells.filter((c) => c[2]).map(([x, y]) => y * W + x) : []);
+    const inIt = b.units.filter((o) => active(o) && !o.off && (area.has(o.y * W + o.x) || (tp && tp.caught.includes(o))) && (o.side === "player" || v.seen.has(o.id)));
+    const mine = inIt.filter((o) => o.side === "player").length, theirs = inIt.length - mine;
+    head = `<b>Throw ${esc(T.label || (GEAR[a.item] || {}).name || a.item)}</b>`;
+    body = Math.hypot(a.x - u.x, a.y - u.y) > T.range + 0.01 ? `<span class="warn">Out of reach: ${T.range} tiles at most.</span>` : area.size || (tp && tp.caught.length) ? `${theirs ? `catches ${theirs} of them` : "nobody of theirs in it"}${mine ? ` · <span class="danger">and ${mine} of yours!</span>` : ""}` : `lands ${Math.round(Math.hypot(a.x - u.x, a.y - u.y))} tiles off`;
+  } else body = String(previewHtml(b, state)).split("<br>")[0]; // the hover card's first line: the aim, the ally's order, the door...
+  if (a.type === "search" || a.type === "searchBody") head += ` <span class="muted">${a.quick ? "a quick rummage: no action, heard nearby" : `${SEARCH.ap} action`}</span>`;
+  return `<div class="tc-head">${head}</div>${body ? `<div class="tc-body">${body}</div>` : ""}`;
+}
+// main.js: a finger's tap on the battle map (after combatMouse put the hover there).
+export function combatTap(state, px, py) {
+  const b = state.combat;
+  if (!b) return;
+  sync(b);
+  const c = cellFromPx(px, py), p = cui.tapAsk, f = cui.tapFace;
+  cui.tapAsk = null; cui.tapFace = null;
+  if (!cui.tapConfirm || b.over || b.layout || b.phase !== "player" || !c) return void combatClick(state, px, py); // the base map's layout and the deploy step place things, and take them back
+  if (p && p.key === tapKey(b) && c.x === p.x && c.y === p.y) return void tapGo(state, b, p, px, py);
+  // A move's tile tapped again: they go, facing the way they walk (the mouse's second click on the tile itself).
+  if (cui.mode === "facemove" && cui.facePick && c.x === cui.facePick.x && c.y === cui.facePick.y) return void combatClick(state, px, py);
+  const third = cui.thirdAsk;
+  const a = tapProbe(state, px, py);
+  if (!a) { // made: and a move's tile picked shows its cost and how to go on
+    const u = selUnit(b), fp = cui.facePick;
+    if (cui.mode === "facemove" && fp && u) cui.tapFace = { ...tapAnchor(fp, px, py), key: tapKey(b), html: `<div class="tc-head"><b>Move here</b></div><div class="tc-body">${moveWord(b, u, view(b), fp.x, fp.y)} Tap the tile again to go; elsewhere, the way ${esc(u.name.split(" ")[0])} should face there; ✕, another tile.</div>` };
+    return;
+  }
+  // Attacking the third side already takes two clicks, the first one saying what it costs (sim/thirdside.js).
+  if (TAP_NOW.has(a.type) || (third != null && a.target === third)) return void combatClick(state, px, py);
+  cui.tapAsk = { ...tapAnchor(c, px, py), a: tapSig(a), html: tapHtml(state, b, a), key: tapKey(b) };
+  if (f && cui.mode === "facemove") cui.tapFace = f; // the way to face previewed: ✕ goes back to the move's own chip
+  cui.msg = "";
+}
+// The order held, sent: the click made again at the tapped point (where it is now: the view may have moved), as long as
+// it still sends the order previewed; else that one is previewed instead.
+function tapGo(state, b, p, px, py) {
+  const [X, Y] = tapPoint(p), c = cellFromPx(X, Y);
+  if (c && c.x === p.x && c.y === p.y) { px = X; py = Y; }
+  const a = tapProbe(state, px, py);
+  if (!a) return;
+  if (tapSig(a) !== p.a) { cui.tapAsk = { ...p, a: tapSig(a), html: tapHtml(state, b, a), key: tapKey(b) }; return; }
+  combatClick(state, px, py);
+}
+// The chip's buttons (main.js "cb-tap"): go (✓) or no (✕).
+export function combatTapChip(state, v) {
+  const b = state.combat;
+  if (!b) return;
+  sync(b);
+  const p = cui.tapAsk, f = cui.tapFace;
+  cui.tapAsk = null;
+  if (p && p.key === tapKey(b)) {
+    if (v === "go") { cui.tapFace = null; const [X, Y] = tapPoint(p); tapGo(state, b, p, X, Y); }
+    else cui.hover = null;
+    return;
+  }
+  cui.tapFace = null;
+  if (f && f.key === tapKey(b) && cui.mode === "facemove") {
+    const u = selUnit(b), fp = cui.facePick;
+    cui.mode = "move"; cui.facePick = null; cui.msg = "";
+    if (v === "go" && u && fp) act(state, { type: "move", unit: u.id, x: fp.x, y: fp.y }); // the tile itself: the way they walk
+  }
+}
+// Each frame (hudFrame): the chip over the tapped point, inside the map between the top and the orders bar; the
+// preview drawn from the hover kept on that point while the view moves. Dropped once what it showed has changed.
+let tapEl, tapShown = "";
+function tapFrame(b, cw, ch, bottom) {
+  if (cui.tapAsk && cui.tapAsk.key !== tapKey(b)) cui.tapAsk = null;
+  if (cui.tapFace && cui.tapFace.key !== tapKey(b)) cui.tapFace = null;
+  const q = cui.tapAsk || cui.tapFace;
+  if (!q && !tapShown) return;
+  if (tapEl === undefined || (tapEl && !tapEl.isConnected)) {
+    const wrap = typeof document !== "undefined" && document.getElementById ? document.getElementById("cbmapwrap") : null;
+    tapEl = wrap ? document.getElementById("cbtapask") || wrap.appendChild(Object.assign(document.createElement("div"), { id: "cbtapask" })) : null;
+  }
+  if (!tapEl) return;
+  if (!q) { tapEl.hidden = true; tapEl.innerHTML = ""; tapShown = ""; return; }
+  const ask = q === cui.tapAsk;
+  const html = `${q.html}<div class="tc-foot"><span class="tc-hint">${ask ? "Tap again to confirm" : ""}</span><button class="mini tc-no" data-action="cb-tap" data-v="no" data-tip="${ask ? "Not this" : "Pick another tile"}">✕</button><button class="mini tc-go" data-action="cb-tap" data-v="go">${ask ? "Confirm ✓" : "Go ✓"}</button></div>`;
+  if (html !== tapShown) { tapEl.innerHTML = html; tapShown = html; tapEl.hidden = false; }
+  const [X, Y] = tapPoint(q);
+  if (ask && cui.hover && cui.hover.x === q.x && cui.hover.y === q.y) { cui.hover.px = X; cui.hover.py = Y; }
+  // On the far side of the tapped point from the unit (the path, the line of fire or the cone between them stays in
+  // sight), over it when that is a tie; the other side if there is no room; never off the map's visible part.
+  const w = tapEl.offsetWidth, h = tapEl.offsetHeight, m = 8, gap = 30, u = selUnit(b);
+  const uy = u ? project(u.x + 0.5, u.y + 0.5, 0)[1] : Y + 1;
+  const up = Y - gap - h, down = Y + gap, fitsUp = up >= m, fitsDown = down + h <= ch - bottom - m;
+  const top = uy < Y - 4 ? (fitsDown || !fitsUp ? down : up) : (fitsUp || !fitsDown ? up : down);
+  tapEl.style.left = `${Math.round(Math.max(m, Math.min(cw - w - m, X - w / 2)))}px`;
+  tapEl.style.top = `${Math.round(Math.max(m, Math.min(ch - bottom - h - m, top)))}px`;
+}
+
 // Selecting a unit that is off screen brings the camera to it.
 function follow(b) {
   const u = selUnit(b);
@@ -459,7 +609,9 @@ function follow(b) {
   if (u && !isoOnScreen(b, u.x, u.y)) isoCenterOn(b, u.x, u.y);
 }
 
+let dry = null; // tapProbe: { a } while a finger's tap is tried out; the order a click would send is caught here, not sent
 function act(state, a) {
+  if (dry) { dry.a = a; return false; } // "refused": what the click does after a sent order (a window opened) is not done
   const b = state.combat;
   const err = combatAct(state, a);
   if (b) ingestMarks(b, performance.now());
@@ -3112,6 +3264,15 @@ function odds(b, u, t) {
 }
 
 
+// What a move to (x, y) costs, for the hover card and a finger's confirm chip (combatTap): "Move: 1 action, …." ("" out
+// of reach). Half cover vaulted on the way there (sim/combat.js VAULT): "Vault" in the title, the cost and the scuff.
+function moveWord(b, u, v, x, y) {
+  const d = v.reach ? v.reach.dist[y * W + x] : Infinity;
+  if (!(isFinite(d) && d > 0)) return "";
+  const vaults = pathTo(v.reach, x, y).filter(([px, py]) => !CELL[b.cells[py * W + px].k].walk && SIM.vaultable(b, b.cells[py * W + px])).length;
+  return `${vaults ? "Vault and " : ""}${d <= SIM.moveMob(u) ? `${vaults ? "move" : "Move"}: 1 action${u.sneaking ? ", silent (sneaking)" : vaults ? ", a scuff heard nearby" : ", a small chance of a scuff heard nearby"}` : `${vaults ? "dash" : "Dash"}: 2 actions${u.sneaking ? ", silent (sneaking)" : `, loud: heard ${VISION.DASH_NOISE} tiles off`}`}${vaults ? ` (over half cover: +${SIM.VAULT.COST * vaults} tiles, and ${SIM.VAULT.COST * vaults} less of movement for the rest of the turn)` : ""}.`;
+}
+
 function previewHtml(b, state = null) {
   const h = cui.hover;
   const u = selUnit(b);
@@ -3263,9 +3424,8 @@ function previewHtml(b, state = null) {
   let s = best === 2 ? "Full cover next to this tile." : best === 1 ? "Half cover next to this tile." : "No cover here.";
   if (v.reach && u) {
     const d = v.reach.dist[h.y * W + h.x];
-    // Half cover vaulted on the way there (sim/combat.js VAULT): "Vault" in the title, the cost and the scuff.
-    const vaults = isFinite(d) && d > 0 ? pathTo(v.reach, h.x, h.y).filter(([x, y]) => !CELL[b.cells[y * W + x].k].walk && SIM.vaultable(b, b.cells[y * W + x])).length : 0;
-    if (isFinite(d) && d > 0) s = `${vaults ? "Vault and " : ""}${d <= SIM.moveMob(u) ? `${vaults ? "move" : "Move"}: 1 action${u.sneaking ? ", silent (sneaking)" : vaults ? ", a scuff heard nearby" : ", a small chance of a scuff heard nearby"}` : `${vaults ? "dash" : "Dash"}: 2 actions${u.sneaking ? ", silent (sneaking)" : `, loud: heard ${VISION.DASH_NOISE} tiles off`}`}${vaults ? ` (over half cover: +${SIM.VAULT.COST * vaults} tiles, and ${SIM.VAULT.COST * vaults} less of movement for the rest of the turn)` : ""}. ${s}`;
+    const mw = moveWord(b, u, v, h.x, h.y);
+    if (mw) s = `${mw} ${s}`;
     // A spitter's acid (sim/acid.js) on the way there.
     if (isFinite(d) && d > 0 && !acidAt(b, h.x, h.y) && pathTo(v.reach, h.x, h.y).some(([x, y]) => acidAt(b, x, y)) && u.acidT !== b.turn) s += ` <span class="danger">The way there crosses acid: ${ACID.pool[0]}–${ACID.pool[1]} damage.</span>`;
   }
@@ -3327,6 +3487,7 @@ function hudFrame(state, b, cw, ch, hold = false) {
   const bottom = barInset();
   const avoid = hudSync(hudEl, { state, b, list, sel, salt: cui.salt, cw, ch, hoverT, hoverO, mode: cui.mode });
   hudPaint(ctx, b, { cw, ch, hits: hitLabels(b, v), hoverT, hoverO, mode: cui.mode, list, sel, avoid, bottom });
+  tapFrame(b, cw, ch, bottom); // a finger's tap held for a confirm: its chip (combatTap)
 }
 // The bottom bar's height over the map (ui/battlebar.js, #cbbar): the compass, the edge arrows, the squad strip and the
 // target card keep clear of it (iso.bottomInset, the CSS variable --cbbar-h on the map's box).

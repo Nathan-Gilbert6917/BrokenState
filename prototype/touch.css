@@ -32,3 +32,17 @@
 .wpick-f { display: flex; align-items: center; gap: 0.4rem; }
 .wpick-f button { min-height: 2.5rem; }
 .wpick-f button:last-child { margin-left: auto; min-width: 2.75rem; }
+
+/* The battle's confirm chip (ui/combat.js combatTap): a finger's tap that would send an order (a move, a shot, a throw)
+   shows the hover's preview and this chip over the tapped point; the same cell again or ✓ sends it, ✕ drops it. Only
+   a finger's tap makes one, so a mouse never sees it and it needs no media query. Kept inside the map's visible part
+   by the code (between the top and the orders bar), above the map's HUD, strip, cards and toggles. */
+#cbtapask { position: absolute; z-index: 7; width: max-content; max-width: min(19rem, calc(100% - 16px)); padding: 0.45rem 0.55rem 0.4rem; background: rgba(20,22,26,0.96); border: 1px solid var(--accent); border-radius: 10px; box-shadow: 0 6px 20px rgba(0,0,0,0.6); font-size: 0.85rem; line-height: 1.35; pointer-events: auto; }
+#cbtapask[hidden] { display: none; }
+#cbtapask .tc-head { display: flex; align-items: baseline; gap: 0.45rem; flex-wrap: wrap; }
+#cbtapask .tc-head .cbbig { font-size: 1.2rem; }
+#cbtapask .tc-body { margin-top: 0.15rem; font-size: 0.78rem; color: var(--muted, #9aa3ad); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden; }
+#cbtapask .tc-foot { display: flex; align-items: center; gap: 0.4rem; margin-top: 0.4rem; }
+#cbtapask .tc-hint { flex: 1; font-size: 0.72rem; color: var(--muted, #9aa3ad); white-space: nowrap; }
+#cbtapask button { min-height: 2.5rem; min-width: 2.75rem; font-size: 0.9rem; }
+#cbtapask .tc-go { background: #4a3816; border-color: var(--accent); font-weight: 600; padding: 0 0.8rem; }

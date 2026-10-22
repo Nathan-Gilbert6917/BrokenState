@@ -54,7 +54,7 @@ import { fishSpot, gameAbundance } from "./sim/hunting.js";
 import { forageAbundance } from "./sim/foraging.js";
 import { woodAbundance } from "./sim/woodcutting.js";
 import { canClaim, wellProblem, CLAIM } from "./sim/claims.js"; // land claims and wells (the right-click menu)
-import { initCombatUI, drawCombat, renderCombatPanel, renderCombatBar, raidLayout, renderRaidTop, renderRaidCards, renderRaidLog, renderRaidLogFoot, combatTick, combatMouse, combatClick, combatKey, combatKeyUp, combatAction, combatPress, combatRelease, combatWheel, combatPan, combatLeave, cui } from "./ui/combat.js";
+import { initCombatUI, drawCombat, renderCombatPanel, renderCombatBar, raidLayout, renderRaidTop, renderRaidCards, renderRaidLog, renderRaidLogFoot, combatTick, combatMouse, combatClick, combatKey, combatKeyUp, combatAction, combatPress, combatRelease, combatWheel, combatPan, combatLeave, combatTap, combatTapChip, cui } from "./ui/combat.js";
 import { LOOK_ACTIONS, LOOK_CHANGE_ACTIONS, crewSnapshot, randomizeAllCrew, randomizeEverything, randomizeGear, randomizeOne, randomBackground, rollRandomRun, ironmanCrew, crewCustomized, crewWithBackground, crewWithBackgrounds, blankCrew, backToSetup } from "./ui/newgame.js";
 import { CUSTOM_POINTS, clampMax, overText } from "./sim/custompoints.js"; // Customize: everything costs points
 import { BG_ACTIONS, BG_CHANGE, BG_INPUT, customLibrary } from "./ui/backgrounds.js"; // custom backgrounds (sim/custombg.js), not in Ironman
@@ -2409,21 +2409,26 @@ touchGestures(cbCanvas, {
     if (state.combat) combatWheel(state, px, py, cbPinch > 1 ? -1 : 1);
     cbPinch = 1;
   },
+  // A tap that would send an order (move, shoot, throw, search...) previews it first, with a chip to confirm; the same
+  // cell again or the chip's ✓ sends it (ui/combat.js combatTap, "cb-tap"). One that only selects is made at once.
   tap: (x, y) => {
     if (!state.combat) return;
     const [px, py] = cbPos({ clientX: x, clientY: y });
     combatMouse(state, px, py, false);
     combatPress(state, px, py, 0);
-    if (combatRelease(state, px, py) === "click") { combatClick(state, px, py); refresh(); }
+    if (combatRelease(state, px, py) === "click") { combatTap(state, px, py); refresh(); }
   },
   hold: (x, y) => {
     if (!state.combat) return;
+    if (cui.tapAsk) cui.hover = null; // the preview a tap held goes with the cancel (and its path, cone or blast)
+    cui.tapAsk = null; cui.tapFace = null;
     const [px, py] = cbPos({ clientX: x, clientY: y });
     combatPress(state, px, py, 2);
     if (combatRelease(state, px, py) === "cancel") cancelAction();
     else refresh();
   },
 });
+actions["cb-tap"] = (d) => combatTapChip(state, d.v); // the confirm chip a tap leaves on the battle map: ✓ or ✕
 
 // ---------- keyboard ----------
 // Esc closes one layer per press, the topmost first. Returns false when there was nothing of ours to close.
