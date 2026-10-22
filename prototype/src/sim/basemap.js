@@ -100,7 +100,7 @@
 // anything else (its length by type: carLen, an Army truck 5), in the yard or beyond the wall. Hordes and raiders batter what
 // stands in their way: doors, windows, walls, barricades and parked cars (combat.js bash); when the fight is over the
 // buildings battered on the map wear as fixtures (breakdowns.js) and the cars lose condition (settleBaseBattle).
-import { BUILDINGS, STORE_KG, CAMP, TENTS, tentKind, tentOf, count, isCamp, isShelter, farmSlots, tierName, canBuild, queueBuild, cancelBuild, canDemolish, demolish, pieceName, pieceHp, matOf, ringMat, WALL_TIERS, WALL_DAMAGED } from "./buildings.js"; // (call-time only: the modules load in a circle) canBuild…demolish: the view's Build, Demolish; pieceName…: the wall pieces
+import { BUILDINGS, STORE_KG, CAMP, TENTS, tentKind, tentOf, count, isCamp, isShelter, tierName, canBuild, queueBuild, cancelBuild, canDemolish, demolish, pieceName, pieceHp, matOf, ringMat, WALL_TIERS, WALL_DAMAGED } from "./buildings.js"; // (call-time only: the modules load in a circle) canBuild…demolish: the view's Build, Demolish; pieceName…: the wall pieces
 import { CELL, placeCar, say, fx, unitAt, active, distField, reachable, pathTo, moveAlong, bash, siegeTarget, foesOf, nearRect, createBattle, barredCell, WEAPONS, structureName } from "./combat.js";
 import { carsAtBase } from "./vehicles.js";
 import { DEPLOY } from "./deploy.js"; // the reinforced gate's hit points (call-time only)
@@ -216,6 +216,7 @@ export const FOOT = {
   meatgrinder: PROP("table"), craftbench: PROP("counter", 2, 1), workbench: PROP("counter", 2, 1), toolbench: PROP("counter", 2, 1), ammo_bench: PROP("counter", 2, 1),
   reload_bench: PROP("counter", 2, 1), med_station: PROP("counter", 2, 1), lockup: PROP("bars", 2, 2), relay: PROP("locker"),
   animal_pen: { kind: "pen", w: 4, h: 3 },
+  farm_plot: { kind: "field", w: 2, h: 2 }, // a crop plot (buildings.js farm_plot): 2 × 2 of tilled soil, only on soil (SOIL)
   barricades: DEF("barricade", 3, 1), spike_pits: DEF("spikes", 3, 2), trench: DEF("trench", 16, 1), floodlights: DEF("lamp", 1, 1), watchtower: DEF("tower", 2, 2),
   sandbag_wall: DEF("sandbag", 4, 1), // the Defenses tab's sandbag positions: 4 cells, placed like a barricade
   sandbag1: DEF("sandbag", 1, 1), // Sandbags (buildings.js sandbag1): one cell; side by side they are drawn as one wall (ui/isoview.js)
@@ -227,7 +228,12 @@ export const FOOT = {
 };
 Object.assign(FOOT, BED_FOOT); // beds as furniture (data-beds.js, beds.js): fittings set from the stores, drawn as bed cells
 Object.assign(FOOT, POWER_FOOT); // the power grid (data-power.js): a spotlight may stand on a wall stand's cell (mount), a fridge on a floor (fit)
-export const FIELD = { kind: "field", w: 3, h: 2 };
+export const FIELD = FOOT.farm_plot; // a crop plot's footprint
+// Soil (the user's request 2026-10-22: "Farm plots can only be set on soil tiles in a base map"): a crop plot (a field)
+// goes only on bare ground, the grass and dirt of the land; never the road, a paved lot or a ford (the land's floors:
+// basescatter.js landOf), the water, or a building's floor.
+export const NOT_SOIL = new Set(["road", "gravel", "rubble", "floor", "roof", "deck"]);
+export const SOIL_WHY = "Crop plots go on soil only: not on the road or paved ground";
 // What holds the base's goods on the map (makeStores): a weight for the share of the stores each takes.
 const STORES = { warehouse: 4, storehouse: 3, cellar: 2, coldstore: 2, freezer: 2, shed: 1.5, crates: 1, storebox: 0.5, armory: 1, shelves: 1, lockers: 1 }; // the armory: two locked containers of its own kind (pushStore), no share of the rest; shelves and lockers: the fittings that keep goods (base building)
 const BUILD_KINDS = new Set(["house", "roof", "prop", "pen", "field", "vehicle"]); // the kinds the yard grows for (footCount) and the cover props keep off
@@ -311,8 +317,9 @@ export function strikeTent(state, base, id) {
 
 // ---------- sizes ----------
 // How many buildings with a footprint stand or are queued (the yard grows with them; not the fittings: they stand
-// inside a building that already counts; not the wall pieces: they stand round it).
-const grows = (type) => { const f = FOOT[type]; return !!f && f.kind !== "defence" && !f.fit && !WALL_KINDS.has(f.kind); };
+// inside a building that already counts; not the wall pieces: they stand round it; not the crop plots, 2 × 2 of soil
+// each, as the old free plots never did).
+const grows = (type) => { const f = FOOT[type]; return !!f && f.kind !== "defence" && f.kind !== "field" && !f.fit && !WALL_KINDS.has(f.kind); };
 const footCount = (base) => base.buildings.filter((b) => grows(b.type)).length + base.construction.filter((c) => !c.target && grows(c.type)).length;
 // The yard's half-size: by tier and buildings, and never smaller than what is placed inside it needs.
 export function yardHalf(base, raw = false) {
@@ -365,7 +372,7 @@ export function rectOf(it, at) {
   return { x0: at[0], y0: at[1], w, h };
 }
 const label = (type, n) => `${BUILDINGS[type] ? BUILDINGS[type].name : type}${n ? ` ${n}` : ""}`;
-export const planOf = (base) => base.plan || (base.plan = { plots: [] });
+export const planOf = (base) => base.plan || (base.plan = {});
 // Every item that goes on the map, in a fixed order (the auto layout fills them in this order): standing buildings
 // (b:id), queued ones with a footprint (c:id), the crop plots (p:i) and the cars parked here (v:id). at: where it was
 // placed by hand, else null. built: false for a queued job (an outline in the view, open ground in a raid).
@@ -385,8 +392,6 @@ export function itemsOf(state, base) {
     if (!f || c.target) continue; // an upgrade in place keeps the standing building's spot
     out.push({ key: `c:${c.id}`, type: c.type, ...f, label: `${WALL_KINDS.has(f.kind) ? pieceName(c) : label(c.type, 0)} (building)`, at: c.at || null, rec: c, built: false, ...(c.mat ? { mat: c.mat } : {}) });
   }
-  const plots = planOf(base).plots;
-  for (let i = 0; i < farmSlots(base); i++) out.push({ key: `p:${i}`, type: "plot", ...FIELD, label: `Crop plot ${i + 1}`, at: plots[i] || null, built: true });
   if (state) for (const v of carsAtBase(state, base.id)) {
     const L = carLen(v);
     out.push({ key: `v:${v.id}`, type: "vehicle", kind: "vehicle", w: L, h: 2, label: v.name, at: v.at || null, rec: v, built: true, veh: v });
@@ -402,7 +407,6 @@ function placedItems(base) {
   const out = [];
   for (const b of base.buildings) if (FOOT[b.type] && b.at && !WALL_KINDS.has(FOOT[b.type].kind)) out.push({ ...FOOT[b.type], at: b.at });
   for (const c of base.construction) if (FOOT[c.type] && !c.target && c.at && !WALL_KINDS.has(FOOT[c.type].kind)) out.push({ ...FOOT[c.type], at: c.at });
-  for (const p of planOf(base).plots) if (p) out.push({ ...FIELD, at: p });
   return out;
 }
 export const itemByKey = (state, base, key) => itemsOf(state, base).find((it) => it.key === key) || null;
@@ -611,9 +615,11 @@ export function placeProblemAt(base, it, x, y, r, occ, dims = null) {
     const hit = landUnder(occ.land, it, at);
     if (hit.length) return landWhy(hit);
   }
+  // A crop plot only on soil (NOT_SOIL: the land's road, paved lots and fords).
+  if (it.kind === "field" && occ.land && occ.land.floors) for (const [cx, cy] of rectCells(it, at)) if (NOT_SOIL.has(occ.land.floors.get(`${cx},${cy}`))) return SOIL_WHY;
   return "";
 }
-const nameOf = (occ, key) => (key === "core" ? "the base itself" : key.startsWith("p:") ? "a crop plot" :  key.startsWith("v:") ? "a parked car" : key.startsWith("w:") ? "the wall" : occ && occ.names && occ.names.get(key) ? occ.names.get(key) : key.startsWith("c:") ? "a building going up" : "a building");
+const nameOf = (occ, key) => (key === "core" ? "the base itself" : key.startsWith("v:") ? "a parked car" : key.startsWith("w:") ? "the wall" : occ && occ.names && occ.names.get(key) ? occ.names.get(key) : key.startsWith("c:") ? "a building going up" : "a building");
 // The host (a general building's item key) under a cell of an occupancy, or null.
 export const floorHostAt = (occ, x, y) => (occ && occ.floor && occ.floor.get(K(x, y))) || null;
 // What stands inside a general building at its spot: the fittings and indoor props whose cells are all on its floor.
@@ -639,6 +645,24 @@ export function fittingRoom(state, base, type) {
   }
   return null;
 }
+// Room on the base map for one more crop plot (buildings.js canBuild farm_plot: the map's soil is the limit): a free
+// 2 × 2 of soil anywhere on it, against everything placed by hand or by the game and the queued plots too; the land in
+// the way counts as room (the game places over it and queues the clearing: autoLayout), the river and the road do
+// not. Nearest the middle first, so a base with room answers at once. Without a state (no land to read): room.
+export function soilRoom(state, base) {
+  if (!state) return true;
+  const auto = autoLayout(state, base);
+  const occ = occupancy(state, base, null, auto);
+  if (occ.land) occ.land = occ.land.waterOnly; // the land is cleared for it; the soil's floors stay (waterOnly keeps them)
+  const probe = { ...FIELD, type: "farm_plot", key: null, label: BUILDINGS.farm_plot.name };
+  const N = gridHalf(base) - NO_BUILD;
+  for (let d = 0; d <= N; d++) for (let y = -d; y <= d; y++) for (let x = -d; x <= d; x++) {
+    if (Math.max(Math.abs(x), Math.abs(y)) !== d) continue;
+    if (!placeProblemAt(base, probe, x, y, 0, occ)) return true;
+  }
+  return false;
+}
+export const SOIL_FULL = "No free soil on the base map for another 2 × 2 crop plot: clear land, or move or pull down something";
 // The fittings standing inside a general building (by its id), placed there by hand or by the game: the items
 // (b:<id> standing, c:<id> queued). buildings.js demolish pulls them down with it.
 export function fittingsIn(state, base, id) {
@@ -699,7 +723,6 @@ function carryInside(state, base, host, inside, was, at) {
   }
 }
 function setAt(base, it, at) {
-  if (it.key.startsWith("p:")) { const plots = planOf(base).plots, i = Number(it.key.slice(2)); while (plots.length <= i) plots.push(null); plots[i] = at; return; }
   if (at) it.rec.at = at; else { delete it.rec.at; delete it.rec.host; }
 }
 // A finished job's building takes the job's spot and its host (buildings.js constructionHour); an upgrade in place

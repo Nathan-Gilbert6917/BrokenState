@@ -41,7 +41,7 @@ import { migrateStaging } from "./staging.js"; // the old staging camp becomes a
 import { migrateStacks } from "./itemstack.js"; // stacks in a slot (2026-10-10)
 import { SICK_REST_MODES } from "./sickrest.js"; // the Work tab's "Sick people rest" (old saves: on)
 import { migrateGenerators, migrateGenTiers } from "./power.js"; // machines-2: generators without operators; gen-tiers: every old generator a tier-1 set
-import { migrateCanners, migrateWalls, legacyCampTents, BUILDINGS } from "./buildings.js"; // machines-2: the pressure canner fitted to a preserving room
+import { migrateCanners, migrateWalls, legacyCampTents, migrateCropPlots, BUILDINGS } from "./buildings.js"; // machines-2: the pressure canner fitted to a preserving room
 import { migrateTentList } from "./tents.js"; // the tentkit branch's base.tents list: map pieces now
 import { migrateTools } from "./toolreqs.js"; // the tools: an older save's hub gets the tool shelf
 import { migrateCots } from "./beds.js"; // beds as furniture: the retired makeshift cots become Cots set at the base
@@ -288,6 +288,9 @@ export function deserializeState(save) {
   // The tools (toolreqs.js, 2026-10-21): builds and recipes need tools at the base; the main hub gets a new hub's tool
   // shelf (world.js HUB_TOOLS) where it has nothing of a kind. Once.
   if (!(state.toolsV >= 1)) { migrateTools(state, HUB_TOOLS); state.toolsV = 1; }
+  // Placeable crop plots and built beds (buildings.js migrateCropPlots, 2026-10-22): a save's crop plots (its tiers' free
+  // ones and 2 a Farm plot) become Farm plots dug on each base's map, its tiers' beds kept. Once.
+  if (!(state.cropV >= 1)) { for (const b of state.bases) migrateCropPlots(b); state.cropV = 1; }
   // gen-tiers (2026-10-10): generator tiers (power.js GEN_TIERS); every generator standing (yours and the groups') is tier 1. Once.
   if (!(state.genTiersV >= 1)) { migrateGenTiers(state); state.genTiersV = 1; }
   // pois.js (2026-10-15): points of interest on the tiles. A save from before gets every tile's list from its seed (hash

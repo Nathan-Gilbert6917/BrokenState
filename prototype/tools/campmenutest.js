@@ -64,7 +64,7 @@ check(!st.parties.includes(p) && people.every((id) => atBase(st, camp.id).some((
 check(car && car.loc.kind === "base" && car.loc.baseId === camp.id, "its vehicle is parked at the camp");
 check(camp.armory.some((it) => it.key === "crowbar") && camp.stock.scrap >= 9 && food(camp) >= 30, "what it carried is in the camp's stores and armory");
 check(!tierUpJob(camp), "a plain camp: nothing building until you queue the step up");
-check(baseBeds(camp) === CAMP.beds + tentBeds(camp) && tentBeds(camp) === partyCount && farmSlots(camp) === 1 && plotCap(camp, "building") === 0 && plotCap(camp, "utility") === 2, "barebones: bedrolls, one crop plot, no building plot, two utility plot");
+check(baseBeds(camp) === CAMP.beds + tentBeds(camp) && tentBeds(camp) === partyCount && farmSlots(camp) === 0 && plotCap(camp, "building") === 0 && plotCap(camp, "utility") === 2, "barebones: its tents for beds, no crop plot until one is dug, no building plot, two utility plots");
 let html = modal(st, { id: camp.id, tab: "camp" });
 check(/class="tabs"/.test(html) && /data-tab="camp"/.test(html) && /data-tab="construction"/.test(html) && !/data-tab="farming"/.test(html) && !/data-tab="defence"/.test(html), "the base window: a Camp tab and only the tabs a camp uses");
 check(/Strike camp/.test(html) && /Form a team/.test(html) && /People here/.test(html) && /Stores/.test(html) && /Vehicles \(1\)/.test(html), "the Camp tab: people, form a team, stores, vehicles, Strike camp");
@@ -165,14 +165,21 @@ check(st.hardcore.start.foundedDay != null, "hardcore: the first home founded wi
 // ---------- strike ----------
 section("Strike camp: everyone a team with what they can carry, the rest a cache; an empty camp just goes");
 {
-  const s2 = createWorld({ seed: SEED + 1, factionCount: 7 });
-  s2.noWanderers = true;
-  const h = hub(s2);
-  const tileC = s2.grid.within(h.tile, 4).find((t) => s2.grid.distance(t, h.tile) >= 3 && !campProblemAt(s2, t) && planPath(s2, h.tile, t, false));
-  const crew = atBase(s2, h.id).slice(0, 2).map((s) => s.id);
-  const res = launchExpedition(s2, { memberIds: crew, dest: tileC, mission: "camp", stance: "normal", supplies: { food: 8, water: 8, scrap: 10 } });
-  check(!res.error, `a team from the hub sets out to set up camp (${res.error || "ok"})`);
-  run(s2, 72, () => s2.bases.some((b) => b.tile === tileC));
+  // A tile 3–4 out from the hub; the first one the team reaches (the run clears the cards, so a team met on the way by a
+  // card is left waiting there: the next tile, on a fresh world).
+  let s2, h, tileC, res, crew;
+  for (let k = 0; k < 8; k++) {
+    s2 = createWorld({ seed: SEED + 1, factionCount: 7 });
+    s2.noWanderers = true;
+    h = hub(s2);
+    tileC = s2.grid.within(h.tile, 4).filter((t) => s2.grid.distance(t, h.tile) >= 3 && !campProblemAt(s2, t) && planPath(s2, h.tile, t, false))[k];
+    if (tileC == null) break;
+    crew = atBase(s2, h.id).slice(0, 2).map((s) => s.id);
+    res = launchExpedition(s2, { memberIds: crew, dest: tileC, mission: "camp", stance: "normal", supplies: { food: 8, water: 8, scrap: 10 } });
+    run(s2, 72, () => s2.bases.some((b) => b.tile === tileC));
+    if (s2.bases.some((b) => b.tile === tileC)) break;
+  }
+  check(res && !res.error, `a team from the hub sets out to set up camp (${(res && res.error) || "ok"})`);
   const c2 = s2.bases.find((b) => b.tile === tileC);
   check(c2 && isCamp(c2) && c2.type === "outpost" && tierName(c2) === "Outpost camp", "beside a hub a camp is an outpost camp");
   check(c2 && s2.tiles[tileC].owner === "player" && s2.grid.neighbors(tileC).every((n) => s2.tiles[n].owner !== "player" || s2.bases.some((b) => s2.grid.distance(b.tile, n) <= 2 && b !== c2)), "a camp holds only its own tile");

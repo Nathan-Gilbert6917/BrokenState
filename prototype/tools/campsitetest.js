@@ -325,7 +325,9 @@ function campRaid(st0, outcome) {
 // ---------- 7. Nomad and raider camps ----------
 section("Nomad and raider camps fight on the campsite layout");
 {
-  const b0 = spawnNomads(st, { tier: 2, tile: hub(st).tile });
+  // On open plains by the hub (the hub's own tile is wherever the start fell: woods and a road can crowd a camp's tents).
+  const camp0 = st.grid.within(hub(st).tile, 3).map((id) => st.tiles[id]).find((t) => t.terrain === "plains" && !t.road && !t.loc && !t.hive && !st.bases.some((b) => b.tile === t.id)) || st.tiles[hub(st).tile];
+  const b0 = spawnNomads(st, { tier: 2, tile: camp0.id });
   b0.phase = "camp";
   b0.wares = [...b0.wares.filter((it) => !(TENT_TYPES[it.key] && TENT_TYPES[it.key].bag)), newItem("tent2"), newItem("tent1"), newItem("tent1"), newItem("lantern")];
   b0.stock.water = 20; b0.stock.ammo = 30;

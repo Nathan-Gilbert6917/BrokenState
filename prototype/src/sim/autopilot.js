@@ -64,7 +64,7 @@ import { fittingRoom } from "./basemap.js"; // base building: a general building
 import { governBeds } from "./beds.js"; // beds as furniture: set from the stores, crafted when beds are short (call-time only)
 import { governPower } from "./electric.js"; // the power grid: found generators, spotlights and fridges set from the stores (call-time only)
 import { autoStore } from "./containers.js"; // the stores tidied daily (tidyStores)
-import { BUILDINGS, RECIPES, canDemolish, demolish, canBuild, queueBuild, count, countAll, stations, baseBeds, baseWalls, farmSlots, assignStations, isShelter, plotsFree, plotCap, BEDS, queuedBeds, BARRACKS_UP, canExpandBunkhouse, queueBunkhouseExpand, benchTier, tierUpType, tierUpJob, gatherRows, gatherStalled, isCamp, CAMP as CAMP_TIER, WATER_BARREL, canUpgradeBarrel, queueBarrelUpgrade, barrelTier, barrels, barrelName } from "./buildings.js";
+import { BUILDINGS, RECIPES, plotSize, canDemolish, demolish, canBuild, queueBuild, count, countAll, stations, baseBeds, baseWalls, farmSlots, assignStations, isShelter, plotsFree, plotCap, BEDS, queuedBeds, BARRACKS_UP, canExpandBunkhouse, queueBunkhouseExpand, benchTier, tierUpType, tierUpJob, gatherRows, gatherStalled, isCamp, CAMP as CAMP_TIER, WATER_BARREL, canUpgradeBarrel, queueBarrelUpgrade, barrelTier, barrels, barrelName } from "./buildings.js";
 import { fireWanted } from "./fieldheat.js";
 import { storageOf, isStoreBuilding } from "./basestorage.js"; // base storage limits: storage when goods lie outside (storageWish)
 import { isHurt, hospitalDef, nextHospitalType, treatAtBase, treatAtBaseInfo, fieldTreatInfo, careNeed, treaters } from "./medical.js";
@@ -2123,6 +2123,9 @@ function threatAt(state, base) {
 // day food was not plentiful); share = the most of the people here on the plots while the food is comfortable;
 // winterMargin = the winter outlook's safety margin (15% of the hungry gap's food) times this left over to count as
 // comfortable.
+// The crop plots the governor digs at a base of each kind before anything else asks for them (the old free plots by
+// tier: a camp 1, a shelter 2, an outpost 4, the main base 8), and the most at an outpost while its farmers are short.
+export const GOV_PLOTS = { camp: 1, shelter: 2, outpost: 4, hub: 8, outpostMax: 10 };
 export const FARM_AP = { extra: 1.6, share: 0.35, winterMargin: 2, plotHands: 1.0 }; // plotHands: planRoles farmShort
 // The farmers short of plots (planRoles g.farmShort) is held this many hours once seen; plotsShort reads it.
 const FARM_SHORT_HOLD = 72;
@@ -3039,7 +3042,10 @@ function buildWishes(state, base) {
   if (waterIn(st) >= waterCapacity(base) * 0.85 && waterCapacity(base) < people * 10 && count(base, "cistern") + queued("cistern") < BUILDINGS.cistern.max) add("cistern", "room to store more water");
   // No building plot for a cistern (buildings.js PLOTS): a water barrel on a utility plot instead.
   if (waterIn(st) >= waterCapacity(base) * 0.85 && waterCapacity(base) < people * 10 && !plotsFree(base, "building") && countAll(base, "water_barrel") + queued("water_barrel") < BUILDINGS.water_barrel.max) add("water_barrel", "room to store more water (no building plot for a cistern)");
-  if (g.farmShort[base.id] && count(base, "farm_plot") + queued("farm_plot") < (isHub ? BUILDINGS.farm_plot.max : 3)) add("farm_plot", "the farmers need more plots", true);
+  // Crop plots are dug on the map, one a Farm plot (2026-10-22: no base has free plots): the governor digs its tier's
+  // first few (GOV_PLOTS) before anything else wants them, then more while the farmers are short of plots.
+  if (count(base, "farm_plot") + queued("farm_plot") < GOV_PLOTS[plotSize(base)]) add("farm_plot", "crop plots to grow food on", true);
+  else if (g.farmShort[base.id] && count(base, "farm_plot") + queued("farm_plot") < (isHub ? BUILDINGS.farm_plot.max : GOV_PLOTS.outpostMax)) add("farm_plot", "the farmers need more plots", true);
   for (const w of foodStoreWishes(state, base, people, queued)) out.push(w);
   // A hunting cabin (hunting.js) where its wider grounds pay (cabinGain: the best hunt 2 tiles out against the tiles
   // next to the base, walking counted; trips-plus #5), before the winter or while food is short.
@@ -3059,7 +3065,6 @@ function buildWishes(state, base) {
     const wantPens = homeFood ? (pop >= 9 ? 2 : pop >= 5 ? 1 : 0) : here.length >= 8 && (winterShort(state, base) > 0 || g.farmShort[base.id]) ? 1 : 0;
     if (pens < wantPens) add("animal_pen", homeFood ? "food from its own land, winter too (eggs and milk)" : "food every day through the winter (eggs and milk)", homeFood);
   }
-  if (!isHub && count(base, "farm_plot") + queued("farm_plot") < 1) add("farm_plot", "an outpost should feed itself", true);
   // An outpost's pantry holds 40 (storage.js): a root cellar once four or more live there and the food fills most of it.
   if (!isHub && here.length >= 4 && foodSplit(st).fresh > storeCapacity(base) * 0.8 && countAll(base, "cellar") + queued("cellar") < 1) add("cellar", "room for the outpost's food");
   if (Math.max(threat.urgent, threat.standing) > baseDefense(state, base) * 0.9) add("walls", "raiders or hordes nearby", true);
@@ -3339,7 +3344,7 @@ function kitchenKeep(state, base) {
 }
 // The farm plot the farmers are short of (buildWishes, saved for): its scrap held the same way (ap-food: seed 5021 wished
 // for one from day 30 and built it on day 104, its scrap gone to whatever came first each time a run brought some in).
-const plotKeep = (state, base) => (plotsShort(state, base) && !base.construction.some((c) => c.type === "farm_plot") && count(base, "farm_plot") < (base.type === "hub" ? BUILDINGS.farm_plot.max : 3) ? BUILDINGS.farm_plot.cost.scrap || 0 : 0);
+const plotKeep = (state, base) => (plotsShort(state, base) && !base.construction.some((c) => c.type === "farm_plot") && count(base, "farm_plot") < (base.type === "hub" ? BUILDINGS.farm_plot.max : GOV_PLOTS.outpostMax) ? BUILDINGS.farm_plot.cost.scrap || 0 : 0);
 export function planCrafts(state, base) {
   const q = craftQueue(base);
   const people = atBase(state, base.id);

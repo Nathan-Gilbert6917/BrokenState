@@ -24,7 +24,7 @@ import { MINES } from "./mines.js"; // a minefield's mines (call-time only)
 import { baseCarts, CART_JOB } from "./carts.js"; // a cart at the base: a builder hauls the materials faster (call-time only)
 import { woodNeed } from "./woodcutting.js"; // the Ring wall leaves the wood for heating (call-time only)
 import { finishFill } from "./tunnels.js"; // a tunnel under the walls filled (call-time only)
-import { carryPlacement, fittingRoom, fittingsIn, wallInfo, ringPlan, ensureRing, siteWaits, finishClear, clearUnder, autoLayout, pinAuto, FOOT } from "./basemap.js"; // the base map (call-time only): a finished job's building keeps the spot it was placed on; a general building with room for a fitting; the fittings inside one; the wall pieces' ring
+import { carryPlacement, fittingRoom, fittingsIn, wallInfo, ringPlan, ensureRing, siteWaits, finishClear, clearUnder, autoLayout, pinAuto, FOOT, soilRoom, SOIL_FULL } from "./basemap.js"; // the base map (call-time only): a finished job's building keeps the spot it was placed on; a general building with room for a fitting; the fittings inside one; the wall pieces' ring
 import { buildTools, buildToolProblem, wearBaseTools } from "./toolreqs.js"; // the tools a build needs (data-tools.js BUILD_TOOLS, WALL_TOOLS)
 import { withBuildmat, siteShort, payCost, siteCost, SITE_MAKE, MADE_KEYS, madeText } from "./buildmats.js"; // building materials in every build, metal sheets in the roofed and reinforced ones (made on site from scrap when short)
 import { BED_BUILDINGS } from "./data-beds.js"; // beds as furniture: the placed cot, bed, bunk bed and large bed (beds.js)
@@ -95,7 +95,11 @@ export const STORE_KG = { storebox: 60, crates: 150, shed: 600, storehouse: 2000
 // the infirmary). The governor fells the nearest trees outside the walls when the woodpile is short of the fires'
 // reserve and its next builds (autopilot.js govWoodwork, woodwork.js).
 export const BUILDINGS = {
-  farm_plot:    { name: "Farm plot",      cost: { scrap: 3, wood: 300 },             hours: 12, max: 10, desc: "+2 crop plots (Farming tab). Every base starts with some plots: a camp 1, a shelter 2, an outpost 4, the main base 8." },
+  // A crop plot (the user's request 2026-10-22: "Farm plots are placeable remove the hardcoded number of plots per base
+  // level. The player sets them up with 2x2 tiles for each plot on soil tiles"): each is one 2 × 2 bed of tilled soil
+  // on the base map (basemap.js FOOT farm_plot, a field), only on soil (never the road, a paved lot or a ford: basemap.js
+  // placeProblemAt SOIL_WHY). No base has plots it did not dig (farmSlots); the map's soil is the limit (FARM_MAX).
+  farm_plot:    { name: "Farm plot",      cost: { scrap: 2, wood: 150 },             hours: 6,  max: 40, desc: "1 crop plot (Farming tab): a 2 × 2 bed of tilled soil, placed on the base map on soil (not on the road or paved ground). No base has crop plots it did not dig." },
   craftbench:   { name: "Crafting bench", plot: "utility", family: "bench", tier: 1, cost: { scrap: 10, parts: 1, wood: 100 }, hours: 12, max: 1, craft: BENCH.craftbench, // BENCH: why it costs this
                   desc: `A heavy table with a vise and hand tools in the yard. ${BENCH_GATE}: with this one ${benchText("craftbench")}. Upgrade it into a workbench for the workshop recipes and an ammo bench.` },
   workbench:    { name: "Workbench",      plot: "utility", family: "bench", tier: 2, upgrades: "craftbench", cost: { scrap: 12, parts: 1, wood: 200 }, hours: 18, max: 1, req: { mechanics: 2 }, craft: BENCH.workbench,
@@ -339,7 +343,7 @@ export const BUILDINGS = {
   // gather (2026-10-09, user pick): as the outpost camp's, its materials are taken from the stores as they come in.
   // User numbers 2026-10-09: "Upgrading to base 60 hours 100 scrap 5 building materials".
   hub_up:       { name: "Build up into a base", cost: { scrap: 100, buildmat: 5, wood: 800 }, hours: 60, max: 1, shelterOnly: true, hubOnly: true, tierUp: true, gather: true,
-                  desc: "Turn the shelter into a real base: a main house, a dug well (12 water a day), a cellar, beds for four, 16 building plots and 14 utility plots. A wall it keeps as it stands (Construction, Defenses: upgrade it there). Shelters only. The materials are taken from the stores as they come in; the builders here do the work, never more of it than the materials delivered allow." },
+                  desc: "Turn the shelter into a real base: a main house, a dug well (12 water a day), a cellar, 16 building plots and 14 utility plots. A wall it keeps as it stands (Construction, Defenses: upgrade it there). Shelters only. The materials are taken from the stores as they come in; the builders here do the work, never more of it than the materials delivered allow." },
   // An outpost camp (2026-10-09, user request: "When starting a base it should start as a camp with a progress bar with
   // needed items to upgrade to a more permanent base established"): Build outpost sets up a camp (tier 0, a shelter's
   // rules) and queues this at once. gather: the materials are not paid up front; the job takes them from the camp's
@@ -351,7 +355,7 @@ export const BUILDINGS = {
   // that is your hub (your first home, the exiles' new one). The old staging camp's numbers (user numbers 2026-10-09,
   // "upgrading to shelter 20 hours 20 scrap 2 building materials"); 10 scrap less on ruins (job.cost, tierUpJobFor).
   camp_up:      { name: "Build up into a shelter", cost: { scrap: 20, buildmat: 2, wood: 200 }, hours: 20, max: 1, campOnly: true, hubOnly: true, tierUp: true, gather: true,
-                  desc: "Turn the camp into a shelter: a shack with a roof behind a scrap barricade, beds for four, a building plot, three utility plots and two crop plots; later the shelter is built up into a base. The materials are taken from the camp's stores as they come in; the builders here do the work, never more of it than the materials delivered allow." },
+                  desc: "Turn the camp into a shelter: a shack with a roof behind a scrap barricade, a building plot and three utility plots (beds and crop plots: what is built and dug on its map); later the shelter is built up into a base. The materials are taken from the camp's stores as they come in; the builders here do the work, never more of it than the materials delivered allow." },
   outpost_up:   { name: "Establish the outpost", cost: { scrap: 20, buildmat: 2, wood: 200 }, hours: 20, max: 1, shelterOnly: true, outpostOnly: true, tierUp: true, gather: true,
                   desc: "Turn the outpost camp into a real outpost: a shack with a roof, a dug spring (3 water a day), 6 building plots and 6 utility plots (walls are built on the Defenses tab). The materials are taken from the camp's stores as they come in (bring them with a team or a supply run); the builders here do the work, never more of it than the materials delivered allow." },
 };
@@ -391,9 +395,13 @@ export const PLOTS = {
 export const PLOT_NAMES = { building: "Building plot", utility: "Utility plot" };
 export const plotSize = (base) => (isCamp(base) ? "camp" : isShelter(base) ? "shelter" : base.type === "hub" ? "hub" : "outpost");
 export const plotCap = (base, kind) => PLOTS[plotSize(base)][kind] || 0;
-// Crop plots each kind of base starts with (user numbers 2026-10-12): a camp 1, a shelter 2, an outpost 4, the main
-// base 8; +2 per Farm plot building, less the animal pens' pasture (farmSlots). The one table for farming.js too.
-export const CROP_PLOTS = { camp: 1, shelter: 2, outpost: 4, hub: 8 };
+// Crop plots: one a Farm plot dug on the base map (2 × 2 of soil), less the animal pens' pasture (farmSlots). No
+// base starts with any of its own (the user's request 2026-10-22: the old free plots by tier, a camp 1, a shelter 2,
+// an outpost 4, the main base 8, are gone; a save from before them has them dug: migrateCropPlots). The most a base
+// may dig: FARM_MAX (the map's soil is the real limit).
+export const FARM_MAX = BUILDINGS.farm_plot.max;
+/** The crop plots a save from before placeable plots had by tier (migrateCropPlots only). */
+const OLD_CROP_PLOTS = { camp: 1, shelter: 2, outpost: 4, hub: 8 };
 // Plots in use: buildings standing (broken ones too) and new buildings in the queue. A hospital upgrade or a barrel
 // upgrade in the queue takes no new plot.
 export function plotsUsed(base, kind) {
@@ -596,8 +604,8 @@ export function demolish(state, base, id) {
 // ---------- base tiers ----------
 // Your bases grow in three stages: a camp (tier 0 with camp: true, below) → a shelter (tier 0) → a base (tier 1,
 // the hub as it always was; outposts are tier 1 too). A shelter is a base you can live at (stores, rest and healing,
-// the armory, people with jobs), but small: tarps and a shack behind a scrap barricade, no wall strength, beds for
-// four under the tarps, two crop plots, one tile of vision, no well of its own (water from a river or lake beside it, rain catchers,
+// the armory, people with jobs), but small: tarps and a shack behind a scrap barricade, no wall strength, no beds
+// or crop plots of its own (what is built and dug on its map), one tile of vision, no well of its own (water from a river or lake beside it, rain catchers,
 // or what is brought in), and only a few survival buildings (SHELTER.build: max of each) on its three utility plots
 // and one building plot (PLOTS.shelter). Its Heat comes from what it
 // does (fieldheat.js shelterHeat: its fire, people, vehicles parked, shooting nearby) instead of the hub's flat 3.
@@ -606,12 +614,12 @@ export function demolish(state, base, id) {
 const PIECE_CAPS = { wall1: 400, wall2: 400, wall4: 400, gate4: 8, stand1: 60, stand2: 60, stand4: 60 };
 export const SHELTER = {
   name: "Shelter",
-  walls: 0, beds: 4, plots: 2, vision: 1, waterCap: 40, // plots: its crop plots (CROP_PLOTS.shelter)
+  walls: 0, beds: 0, plots: 0, vision: 1, waterCap: 40, // beds, plots: none of its own (the user's requests 2026-10-22): the beds built and set on its map, the Farm plots dug there
   river: 10,          // water a day hauled from a river or lake beside it (no well yet; the people carry it)
   // What a shelter may build (the most of each): yard things on its 3 utility plots (PLOTS.shelter), one roofed
   // building on its building plot (a bunkhouse, a root cellar, a makeshift infirmary or a hunting cabin), a barricade,
   // a farm plot, the shelter's defences (the Defenses tab) and the step up.
-  build: { rain_catcher: 2, smoker: 1, boiler: 1, cookhouse: 1, water_barrel: 2, crates: 2, storebox: 6, watchtower: 1, barricades: 2, trench: 1, farm_plot: 1, hub_up: 1, outpost_up: 1, craftbench: 1, lockup: 1, bunkhouse: 1, cellar: 1, infirmary: 1, huntcabin: 1, cots: 2,
+  build: { rain_catcher: 2, smoker: 1, boiler: 1, cookhouse: 1, water_barrel: 2, crates: 2, storebox: 6, watchtower: 1, barricades: 2, trench: 1, farm_plot: FARM_MAX, hub_up: 1, outpost_up: 1, craftbench: 1, lockup: 1, bunkhouse: 1, cellar: 1, infirmary: 1, huntcabin: 1, cots: 2,
     walls: 1, ...PIECE_CAPS, spike_pits: 2, barbed_wire: 2, sandbag_wall: 2, sandbag1: 60, // the Defenses tab: walls, gates and stands up to a log palisade (WALL_TIERS), wire, pits, sandbags (positions and the 1×1 pieces)
     gen_hut: 2, gen_cabin: 1, bunks: 4, shelves: 4, stove: 1, tent: 8 }, // base building (2026-10-19): two huts or a cabin on the map, bunks, shelves and a stove inside them
 };
@@ -622,7 +630,7 @@ export const baseTier = (base) => (isShelter(base) ? 0 : 1);
 // everything a shelter is (isShelter: no well, no wall strength, a shelter's Heat and fire, base healing and needs),
 // only barer. isCamp is the one test (keep camp checks to it). What it changes from a shelter:
 //   beds       none of its own: its tents (TENTS, tentBeds; a Makeshift tent built, tents pitched from bags)
-//   plots      PLOTS.camp: no building plot, two utility plots; one crop plot (CAMP.plots)
+//   plots      PLOTS.camp: no building plot, two utility plots; no crop plot until a Farm plot is dug (as every base)
 //   build      CAMP.build: a barricade, a rain catcher, crates or a barrel, a crafting bench, a water boiler, a cook
 //              fire or a drying rack on its two plots, and the step up
 //   step up    camp_up (the camp that is your hub → a shelter) or outpost_up (a camp beside a hub → an outpost);
@@ -634,12 +642,12 @@ export const baseTier = (base) => (isShelter(base) ? 0 : 1);
 //   strike     Strike camp: its people form a team with what they can carry, the rest is left as a cache (staging.js)
 export const CAMP = {
   name: "Camp",
-  beds: 0, plots: 1, vision: 1, // plots: its crop plot (CROP_PLOTS.camp). beds: none of its own: its tents (TENTS, tentBeds); until one is up its people sleep rough (morale.js crowding)
+  beds: 0, plots: 0, vision: 1, // beds: none of its own: its tents (TENTS, tentBeds) and the beds set in its buildings; until one is up its people sleep rough (morale.js crowding). No crop plots of its own: the Farm plots dug on its map
   setupHours: 1,     // Set up camp: an hour of work, no materials (the materials come with the step up)
   // The yard things a camp may build (the most of each; they share its two utility plots). The crafting bench, the
   // water boiler, the cook fire and the drying rack (BASE-03, user request 2026-10-12): camps build them too. The camp's
   // defences (the Defenses tab, 2026-10-19): a stake fence (the wall's first tier), a spike pit, a line of barbed wire.
-  build: { barricades: 1, rain_catcher: 1, crates: 1, storebox: 4, water_barrel: 1, craftbench: 1, boiler: 1, cookhouse: 1, smoker: 1, camp_up: 1, outpost_up: 1, walls: 1, ...PIECE_CAPS, spike_pits: 1, barbed_wire: 1, trench: 1, sandbag1: 40, // the Defenses tab: a stake fence, a pit, a line of wire, a trench, sandbags
+  build: { barricades: 1, rain_catcher: 1, crates: 1, storebox: 4, water_barrel: 1, craftbench: 1, boiler: 1, cookhouse: 1, smoker: 1, camp_up: 1, outpost_up: 1, walls: 1, farm_plot: FARM_MAX, ...PIECE_CAPS, spike_pits: 1, barbed_wire: 1, trench: 1, sandbag1: 40, // the Defenses tab: a stake fence, a pit, a line of wire, a trench, sandbags
     gen_hut: 1, bunks: 2, shelves: 2, stove: 1, tent: 8 }, // base building (2026-10-19): one hut on the map, bunks, shelves and a stove inside it
   ruinScrap: 10,     // on the ruins of a burned base: 10 scrap less for the step up (salvage)
   matScrap: 3, matHours: 3, // its builders make building materials for the step up from scrap (= crafting.js buildmat)
@@ -832,8 +840,10 @@ export function nextWallTier(base) {
 export const underAttack = (state, base) => !!base.alert ||
   state.parties.some((q) => q.phase === "siege" && q.target && q.target.kind === "player" && q.target.baseId === base.id) ||
   (state.visitors || []).some((v) => v.phase === "siege" && v.goal && v.goal.kind === "base" && v.goal.baseId === base.id);
-// Beds: the hub 4, an outpost 2, a shelter SHELTER.beds, plus BEDS for each working bunkhouse or barracks (a broken one
-// sleeps nobody until it is repaired) and each pair of bunk beds built inside a general building (base building 2026-10-19).
+// Beds: only what is built on the base map (the user's requests 2026-10-22: "Beds for hubs/bases are determined by built
+// beds in the base map", "When you upgrade your base it does not update the beds only building them does"): BEDS for
+// each working bunkhouse or barracks (a broken one sleeps nobody until it is repaired) and each pair of bunk beds built
+// inside a general building (base building 2026-10-19); no tier has beds of its own (the old hub 4, outpost 2, shelter 4).
 export const BEDS = { bunkhouse: 6, barracks: 12, cots: 2, bunks: 2 };
 // Tents (the user's rules 2026-10-20): one kind of map piece (BUILDINGS.tent, a record { type: "tent", tent: kind })
 // in sizes, pitched from tent bags (tents.js) or the Makeshift tent built: its footprint, the people it sleeps, the kg
@@ -851,7 +861,7 @@ export const tentBeds = (base) => (base.buildings || []).reduce((a, b) => a + (b
 // plainBeds: the tier's own and the built bed buildings (before the children's), which sleep as a plain bed (beds.js bedSlots);
 // plus the furniture set inside the base's buildings (beds.js furnitureBeds: a cot 1, a bed 1, a bunk bed 2, a large bed 2)
 // and the standing tents, once (tentBeds: pitched from a bag or the built Makeshift tent).
-export const plainBeds = (base) => (isCamp(base) ? CAMP.beds : isShelter(base) ? SHELTER.beds : base.type === "hub" ? 4 : 2) + Object.entries(BEDS).reduce((a, [t, n]) => a + count(base, t) * n, 0);
+export const plainBeds = (base) => (base.oldBeds || 0) + Object.entries(BEDS).reduce((a, [t, n]) => a + count(base, t) * n, 0);
 export const baseBeds = (base) => plainBeds(base) + furnitureBeds(base) + tentBeds(base) - (base.kidBeds || 0);
 // A camp of a save from before tents (it slept six on bedrolls round the fire): three two-person tents where it stood
 // (save.js on load; base.tentsSet marks a camp done, makeCamp sets it on a new camp, which starts with none).
@@ -865,8 +875,24 @@ export function legacyCampTents(base) {
 // Beds the construction queue adds when it is done: new bunkhouses and barracks, and a bunkhouse expanded into a
 // barracks (the difference). The autopilot counts them as beds to come (autopilot.js buildWishes, roomFor).
 export const queuedBeds = (base) => base.construction.reduce((a, c) => a + (c.type === "tent" ? TENTS.makeshift.sleepers : !BEDS[c.type] ? 0 : c.target ? BEDS[c.type] - BEDS[BUILDINGS[c.type].from] : BEDS[c.type]), 0); // a tent queued: a makeshift one
-// Crop plots (farming.js plotLimit is this): CROP_PLOTS by the base's size, +2 per Farm plot building.
-export const farmSlots = (base) => Math.max(0, CROP_PLOTS[plotSize(base)] + count(base, "farm_plot") * 2 - count(base, "animal_pen") * PEN.pasture); // the pens' pasture (farming.js)
+// Crop plots (farming.js plotLimit is this): one a Farm plot dug on the base map, less the pens' pasture (farming.js).
+export const farmSlots = (base) => Math.max(0, count(base, "farm_plot") - count(base, "animal_pen") * PEN.pasture);
+// A save from before placeable crop plots and built beds (2026-10-22; save.js, once: state.cropV): the plots each base
+// had (its tier's free ones, OLD_CROP_PLOTS, and 2 a Farm plot building) become that many Farm plots dug on its map,
+// where its old plots stood (base.plan.plots) while there are spots, else placed by the game; the beds its tier gave
+// it (OLD_TIER_BEDS) stay as base.oldBeds (plainBeds), so nobody is put out of bed by the load.
+const OLD_TIER_BEDS = { camp: 0, shelter: 4, outpost: 2, hub: 4 };
+export function migrateCropPlots(base) {
+  if (!base || base.id == null || base.id < 0) return;
+  const tierBeds = OLD_TIER_BEDS[plotSize(base)] || 0;
+  if (tierBeds) base.oldBeds = tierBeds;
+  const old = (base.buildings || []).filter((b) => b.type === "farm_plot");
+  const n = (OLD_CROP_PLOTS[plotSize(base)] || 0) + old.length * 2;
+  base.buildings = base.buildings.filter((b) => b.type !== "farm_plot");
+  const spots = (base.plan && base.plan.plots) || [];
+  for (let i = 0; i < n; i++) { const b = { id: newId(), type: "farm_plot" }; if (spots[i]) b.at = spots[i].slice(0, 2).concat([0]); base.buildings.push(b); }
+  if (base.plan) delete base.plan.plots;
+}
 export const stations = (base) => base.buildings.filter((b) => BUILDINGS[b.type].station);
 // The crafting bench here (BENCH): the highest tier standing, 0 for none. Broken ones count only with any (a build
 // gate: it is repaired); benchOf is what the crafters get from the working one (null: none, so no bonus; old saves).
@@ -1205,6 +1231,9 @@ export function canBuild(state, base, type, opts = {}) {
   if (lock) return { ok: false, reason: lock, locked: true };
   const tools = buildToolProblem(state, base, type); // toolreqs.js: a hammer and a saw, a shovel, a welding kit…
   if (tools) return { ok: false, tools: true, reason: tools };
+  // A crop plot needs free soil for its 2 × 2 on the base map (basemap.js soilRoom: the map is the limit, 2026-10-22).
+  // Last: the dearest check, only once everything else would let it go up.
+  if (type === "farm_plot" && !soilRoom(state, base)) return { ok: false, noSoil: true, reason: SOIL_FULL };
   return { ok: true };
 }
 

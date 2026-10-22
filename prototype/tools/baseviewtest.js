@@ -73,7 +73,7 @@ const people = (st, base, n, role = null) => { for (let i = 0; i < n; i++) { con
 // The first spot on the view (map coords of the ghost's middle) whose ghost answers `ok` (true: fits; "land": only the land in the way).
 function spotFor(st, b, want, from = 0) {
   const F = b.deployPlan.fort;
-  for (let d = from; d < 40; d++) for (let y = -d; y <= d; y++) for (let x = -d; x <= d; x++) {
+  for (let d = from; d < from + 40; d++) for (let y = -d; y <= d; y++) for (let x = -d; x <= d; x++) {
     if (Math.max(Math.abs(x), Math.abs(y)) !== d) continue;
     const g = BM.ghostAt(st, b, x + F.ox, y + F.oy);
     if (g && (want === true ? g.ok : !g.ok && !!g.land)) return { mx: x + F.ox, my: y + F.oy, g };

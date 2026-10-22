@@ -11,7 +11,7 @@ import { totalRounds, foldRounds } from "../src/sim/ammo.js"; // rounds by calib
 // A record with its rounds counted together as "ammo" (the archetypes give ammo as one figure); no "ammo" key with none.
 const asGeneric = (rec) => { const r = { ...rec }; foldRounds(r); if (!r.ammo) delete r.ammo; return r; };
 import { createWorld, tickHour, hub, day, alive, atBase, hurt, makeSurvivor, newId, baseVision } from "../src/sim/world.js";
-import { isShelter, tierName, SHELTER, CAMP, baseWalls, baseBeds, farmSlots, canBuild, queueBuild, addBuilding, plotCap, tierUpJob, gatherRows, gatherStalled } from "../src/sim/buildings.js";
+import { BUILDINGS, isShelter, tierName, SHELTER, CAMP, baseWalls, baseBeds, farmSlots, canBuild, queueBuild, addBuilding, plotCap, tierUpJob, gatherRows, gatherStalled } from "../src/sim/buildings.js";
 import { waterProduction, waterNeed } from "../src/sim/economy.js";
 import { foodUse, mouthsAt, useText } from "../src/sim/upkeep.js";
 import { structuresOf } from "../src/sim/interior.js";
@@ -238,7 +238,7 @@ section("Who they were: three backgrounds, no two alike; one car between them wi
   const sig = (st) => JSON.stringify(st.survivors.map((s) => [s.name, s.gear, s.pockets])) + JSON.stringify(roadTeam(st).supplies) + partyTile(roadTeam(st));
   check(sig(a) === sig(b), "same seed, same start (spawn, gear and supplies)");
   const n = createWorld({ seed: 4242, factionCount: 7 });
-  check(n.mode === "normal" && n.bases.length === 1 && n.survivors.length === 6 && hub(n) && n.bases[0].buildings.length === 0 && n.bases[0].stock.scrap > 0, "a normal world still starts with its hub and six survivors, bare (barestart: no buildings, scrap for the first ones)");
+  check(n.mode === "normal" && n.bases.length === 1 && n.survivors.length === 6 && hub(n) && !n.bases[0].buildings.some((b) => BUILDINGS[b.type].plot) && n.bases[0].stock.scrap > 0, "a normal world still starts with its hub and six survivors, bare (barestart: nothing on a plot, only its start layout; scrap for the first ones)");
   // New-game crew edits: the first three colonists' names and the leader carry into a hardcore start.
   const crew = [{ name: "Ada Vance", skills: { scavenging: 12 } }, { name: "Bo Reyes", leader: true }, { name: "Cy Moss" }, { name: "Dee Six", leader: false }];
   const c = hc(4242, { crew });
@@ -290,7 +290,7 @@ const campOf = (st) => st.bases.find((b) => b.camp === true) || null;
   const needScrap = st.tiles[tile0].ruin ? STAGING.HARDCORE.needs.scrap - STAGING.RUIN_SCRAP : STAGING.HARDCORE.needs.scrap;
   check(job && job.type === "camp_up" && gatherRows(job).find((r) => r.key === "scrap").need === needScrap && gatherRows(job).find((r) => r.key === "buildmat").need === STAGING.HARDCORE.needs.buildmat && job.hours === STAGING.HARDCORE.work, `its step up is queued: ${needText(STAGING.HARDCORE.needs)}, ${job && job.hours} work-hours`);
   check(atBase(st, camp.id).every((s) => assignedRole(s) === "build"), `everyone on Build (${atBase(st, camp.id).map((s) => s.role).join(", ")} this hour: noidle.js, no materials yet)`); // their own job; with nothing to build they help elsewhere for the hour
-  check(baseWalls(camp) === 0 && baseBeds(camp) === CAMP.beds && farmSlots(camp) === 1 && plotCap(camp, "building") === 0 && plotCap(camp, "utility") === 2, `a camp is barer than a shelter: walls 0, beds ${baseBeds(camp)}, one crop plot, two utility plots`);
+  check(baseWalls(camp) === 0 && baseBeds(camp) === CAMP.beds && farmSlots(camp) === 0 && plotCap(camp, "building") === 0 && plotCap(camp, "utility") === 2, `a camp is barer than a shelter: walls 0, beds ${baseBeds(camp)}, no crop plot until one is dug, two utility plots`);
   // (BASE-03, 2026-10-12: the drying rack, bench, boiler and cook fire are camp buildings now; the watchtower still waits.)
   check(!canBuild(st, camp, "hub_up").ok && !canBuild(st, camp, "watchtower").ok && /shelter/.test(canBuild(st, camp, "watchtower").reason) && /once it is a base/.test(canBuild(st, camp, "well").reason), "the rest waits for the shelter or the base (and says so)");
   check(establishOption(st, null, landNear(st, tile0, 2).id) === null, "with a base (the camp): no Establish base");
@@ -309,7 +309,7 @@ const campOf = (st) => st.bases.find((b) => b.camp === true) || null;
   check(h && h.buildings.length === 0 && st.vehicles.length === 1 && st.vehicles[0].loc.baseId === h.id && st.vehicles[0].id === st.hardcore.start.car, "it starts bare: no buildings; the car they fled in is parked there");
   check(!firstHubPending(st) && st.hardcore.start.foundedDay === day(st) && playerTile(st) === h.tile, "the first hub is done, playerTile is the hub");
   check(st.log.some((l) => /set up camp/.test(l.text) && l.kind === "good") && st.log.some((l) => /is a shelter now|camp is a shelter now/.test(l.text)), "the log (and so the timelapse) marks the camp and the founding");
-  check(h && atBase(st, h.id).some((s) => s.role === "farm"), "jobs assigned by skill, as a normal start (someone farms)");
+  check(h && atBase(st, h.id).some((s) => assignedRole(s) === "farm"), "jobs assigned by skill, as a normal start (someone farms, helping elsewhere until a plot is dug)");
   check(establishOption(st, null, landNear(st, tile0, 2).id) === null, "with a base: no Establish base; later camps are outpost camps");
   try { for (let i = 0; i < 48; i++) tickHour(st); check(true, "the new hub runs"); } catch (e) { check(false, `the new hub runs: ${e.stack.split("\n").slice(0, 3).join(" | ")}`); }
   // ---------- shelter → base ----------
@@ -329,7 +329,7 @@ const campOf = (st) => st.bases.find((b) => b.camp === true) || null;
     check(ok("bunkhouse") && ok("infirmary"), "its one building plot (2026-10-12) takes a bunkhouse or an infirmary");
     check(ok("watchtower") && ok("boiler") && ok("water_barrel") && ok("crates") && ok("cookhouse"), "a shelter's two utility plots take the yard things");
     queueBuild(st, h, "farm_plot");
-    check(!canBuild(st, h, "farm_plot").ok && /room for 1/.test(canBuild(st, h, "farm_plot").reason), "one farm plot at most");
+    check(canBuild(st, h, "farm_plot").ok && SHELTER.build.farm_plot === BUILDINGS.farm_plot.max, "as many farm plots as a base's soil takes (2026-10-22: no count by stage)");
     h.construction.length = 0;
     st.cards.length = 0; st.nameAsk = [];
     const html = renderModal(st, { ...freshUi(), baseView: { id: h.id, tab: "overview" } }) || "";

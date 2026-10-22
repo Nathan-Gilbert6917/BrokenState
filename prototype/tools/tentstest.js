@@ -196,17 +196,17 @@ console.log("The seam for the base map: pitchTentAtBase / strikeTentAtBase");
 {
   const st = world();
   const h = hub(st);
-  const beds0 = baseBeds(h), cap0 = storageOf(st, h).cap;
+  const beds0 = baseBeds(h), cap0 = storageOf(st, h).cap, tents0 = T.tentsOf(h).length; // the start's own tent (world.js HUB_LAYOUT) among them
   const rec = T.pitchTentAtBase(st, h, "tent4");
   const mk = T.pitchTentAtBase(st, h, "makeshift");
   check(rec && mk && baseBeds(h) === beds0 + 5 && near(storageOf(st, h).cap, cap0 + 4 * TENT_S), `a four-person and a makeshift tent at the hub: +5 beds, +${4 * TENT_S} kg (the makeshift none)`);
   const bag = T.strikeTentAtBase(st, h, rec.id), none = T.strikeTentAtBase(st, h, mk.id);
-  check(bag && bag.key === "tent4" && none === null && baseBeds(h) === beds0 && T.tentsOf(h).length === 0, "struck: the four-person tent is a bag again, the makeshift one nothing");
+  check(bag && bag.key === "tent4" && none === null && baseBeds(h) === beds0 && T.tentsOf(h).length === tents0, "struck: the four-person tent is a bag again, the makeshift one nothing");
   check(T.pitchTentAtBase(st, h, "nosuch") === null, "an unknown type is refused");
   T.pitchTentAtBase(st, h, "tent2", newItem("tent2"));
   const back = loadFromString(saveToString(st));
   const h2 = hub(back);
-  check(T.tentsOf(h2).length === 1 && T.tentsOf(h2)[0].item.key === "tent2" && baseBeds(h2) === beds0 + 2, "a save and load keeps the pitched tents and their beds");
+  check(T.tentsOf(h2).length === tents0 + 1 && T.tentsOf(h2).every((t) => t.item && t.item.key === "tent2") && baseBeds(h2) === beds0 + 2, "a save and load keeps the pitched tents and their beds");
 }
 
 // ---------- 6. night on the road ----------
