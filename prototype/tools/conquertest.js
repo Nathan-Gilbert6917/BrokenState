@@ -685,14 +685,17 @@ section("Base battles: a way out on the side away from the attack, and what pull
   check(s2.bases.includes(h2) && atBase(s2, h2.id).length === n2 && food(h2) < food0, `pulling out of a horde fight: the hub stays yours, everyone back, food ${food0} → ${food(h2)}`);
 }
 
-section("The autopilot conquers (Aggressive, up to 400 days, seeds 3-6)");
+section("The autopilot conquers (Aggressive, up to 400 days, seeds 3-8)");
 {
   // Four worlds, each played until its first base is taken (or day 400): one world's course turns on chance (a
   // starving first winter ended seed 3 on day 99 once the AI groups' pens changed their food rolls, 2026-10-09), so
-  // the check is that most of them storm and take bases, and that none crashes.
+  // the check is that most of them storm and take bases, and that none crashes. Six worlds since the camp's own spot
+  // (2026-10-22: its clearing's wood and scrap, the dead cleared off a town's spot first, change every world's dice from
+  // the first outpost on: seed 4 took a base on day 62 before, seed 6 fell on day 74; across seeds 3-10 the bases are
+  // taken in 6 worlds of 8 against 7, a month or so later): four worlds were too few to tell "most" from chance.
   let took = 0, errs = 0;
   const lines = [];
-  for (const sd of [3, 4, 5, 6]) {
+  for (const sd of [3, 4, 5, 6, 7, 8]) {
     const st = world(sd);
     st.noNewGangs = false;
     setAutopilot(st, true, "aggressive");
@@ -705,7 +708,7 @@ section("The autopilot conquers (Aggressive, up to 400 days, seeds 3-6)");
   }
   console.log(`  ${lines.join("; ")}`);
   check(!errs, `no crash (${errs})`);
-  check(took >= 3, `it storms bases and takes some in most worlds (${took} of 4)`);
+  check(took >= 4, `it storms bases and takes some in most worlds (${took} of 6)`);
 }
 
 // Storming a group's base on its map with the AI playing your side (the battle's Auto, or a turn handed over): your

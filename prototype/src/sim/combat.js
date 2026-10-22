@@ -816,6 +816,10 @@ export const CELL = {
   // A siege ladder set against a wall section (siege.js): the wall cell becomes a climb up to height 1, onto the
   // walkway behind it; whoever is on it stands exposed. Its wall stays a wall for sight from the ground (c.t).
   siegeladder: { walk: true, cover: 0, los: false, name: "Siege ladder", h: 1, climb: true },
+  // The high ground of a hills or mountain base map (basescatter.js highLayer): a level up, its edge a drop nobody walks
+  // up or down but by a slope (a climb, like stairs).
+  rise:      { walk: true,  cover: 0, los: false, name: "High ground", h: 1 },
+  slope:     { walk: true,  cover: 0, los: false, name: "Slope", climb: true },
 };
 
 // Verticality (base battles): a unit on higher ground sees SIGHT tiles further a level, aims AIM better a level at

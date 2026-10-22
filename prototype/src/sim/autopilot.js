@@ -134,6 +134,7 @@ import { WORM, baseWater, baseFilter, baseTabCount, baseCooks, armoryTabs, TABS_
 import { gunWant, pickGunToBuy, noteGunBought, radioGunDeal } from "./govguns.js"; // the governor buys guns for the unarmed
 import { carriedRec } from "./ammo.js"; // the loose rounds people carry
 import { sumRecs } from "./rounds.js"; // a team's rounds: its bags and what its people carry
+import { siteThreat } from "./siteclear.js"; // the dead at a camp's spot (outpostSite)
 
 // Play styles. range = max tiles from the hub for a trip, maxHoursOut = longest way out, cooldown = days between
 // launches, homeFrac = share of the hub that stays home, risk = lowest success chance worth a gamble,
@@ -4651,7 +4652,8 @@ function outpostSite(state) {
     const farm = t.loc && t.loc.type === "farm" ? 1.3 : t.terrain === "plains" ? 1.3 : t.terrain === "forest" ? 0.8 : t.terrain === "hills" ? 0.7 : 1;
     // Wood land within reach (woodcutting.js): the winter's wood cut at the door, not hauled from afar.
     const woodLand = g.within(id, WOOD.base.radius).reduce((a, x) => a + woodAbundance(state, x), 0);
-    const score = farm + (t.loc ? 0.5 : 0) + (t.road ? 0.4 : 0) + Math.min(0.4, woodLand * 0.08) - d * 0.05 - k.infection;
+    // The dead to clear off the camp's spot first (siteclear.js: a town's streets, a city's): a fight before the camp.
+    const score = farm + (t.loc ? 0.5 : 0) + (t.road ? 0.4 : 0) + Math.min(0.4, woodLand * 0.08) - d * 0.05 - k.infection - siteThreat(state, id).count * 0.15;
     if (!best || score > best.score) best = { id, score };
   }
   return best ? best.id : null;

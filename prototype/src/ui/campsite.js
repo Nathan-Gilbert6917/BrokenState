@@ -15,6 +15,7 @@
 import { pendingSite, pickSite, autoSite, siteSetup, durText } from "../sim/staging.js";
 import { siteProblem, openSiteView, BASE_GRID } from "../sim/basemap.js";
 import { SITE } from "../sim/basescatter.js";
+import { siteThreat } from "../sim/siteclear.js"; // the dead to clear first in a town, a city, an infected tile
 import { tileLabel, teamName } from "../sim/parties.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -64,6 +65,12 @@ export function siteHoverText(state, b, h) {
   return `<b>Here:</b> ${esc(w.text)}; gives <b>${esc(w.gives)}</b>.${w.axe ? ` <span class="muted">${esc(w.axe)}</span>` : ""} <span class="muted">Click to pick it.</span>`;
 }
 
+// The dead to clear first (sim/siteclear.js siteThreat): a town's, a city's or an infected tile's spot.
+function deadCard(state, tile) {
+  const th = siteThreat(state, tile);
+  if (!th.count) return `<div class="card small" style="margin-top:0.4rem"><b>The dead</b>: ${th.place === "land" ? "few about, none in the way" : "none in the way"}: the team sets up camp at once.</div>`;
+  return `<div class="card small" style="margin-top:0.4rem"><b class="danger">The dead: about ${th.count} here</b> (${th.place === "city" ? "a city" : th.place === "town" ? "a town" : "infected land"}). The team clears them first: a fight on this map round the spot, your people coming in from the west, none drawn in from further off. Win it and the camp goes up; pull back and the spot stays theirs.</div>`;
+}
 // The side panel: what this is, the spot picked with its time and yield, Set up camp here, Let the game pick.
 export function sitePanel(state, b, cui, preview = "") {
   const p = viewTeam(state);
@@ -77,23 +84,24 @@ export function sitePanel(state, b, cui, preview = "") {
     <div class="card small" style="margin-top:0.4rem"><div class="spread"><b>Camp site</b><span class="muted">${at ? esc(placeWords(at)) : ""}</span></div>
       ${why ? `<div class="danger">${esc(why)}</div>` : `<div><b>${esc(w.time)}</b> to set up: ${esc(w.text.replace(/^.*? to set up \(/, "").replace(/\)$/, ""))}.</div><div>Gives <b>${esc(w.gives)}</b>.</div>${w.axe ? `<div class="muted">${esc(w.axe)}</div>` : ""}`}
     </div>
+    ${deadCard(state, tile)}
     ${cui && cui.msg ? `<div class="small danger" style="margin-top:0.3rem">${esc(cui.msg)}</div>` : ""}
     ${preview}
     <div class="cbfoot"><button data-action="cs-auto"${tip("Let the game pick: the middle of the map, or the nearest open spot to it (Esc)")}>Let the game pick <span class="key">Esc</span></button><button class="primary" data-action="cs-ok" ${why ? "disabled" : ""}${tip("Set up camp with its fire in the middle of the gold square (Enter)")}>Set up camp here <span class="key">Enter</span></button></div>`;
 }
 
+// The view closes first: a spot with the dead about it opens their fight at once (sim/siteclear.js clearSiteFirst).
 export const CS_ACTIONS = {
   "cs-ok": (state) => {
     const p = viewTeam(state), b = state.combat;
-    if (!p || !b.site.sel) return;
-    const why = pickSite(state, p, b.site.sel);
-    if (why) return;
+    if (!p || !b.site.sel || siteProblem(state, b.site.tile, b.site.sel)) return;
     state.combat = null;
+    pickSite(state, p, b.site.sel);
   },
   "cs-auto": (state) => {
     const p = viewTeam(state);
-    if (p) autoSite(state, p);
     state.combat = null;
+    if (p) autoSite(state, p);
   },
 };
 // Enter sets up camp on the spot picked, Esc lets the game pick. True when the key was used.

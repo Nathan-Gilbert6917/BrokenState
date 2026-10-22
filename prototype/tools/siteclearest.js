@@ -1,0 +1,174 @@
+// The base maps' towns, cities and hills, and clearing the camp's spot of the dead (the user's request 2026-10-22: "Add
+// more variety to the bare base maps with elevations in hill tiles, houses, roads and stores in town tiles and similar
+// but more city like for city tiles. If it is a safe area you can build with no problem typically out of city etc. but
+// if it is in a city tile or town tile or higher infection rate you will need to clear the zombies first before
+// establishing the base ... do not have reinforcements come due to heat just spawn a decent amount of zombies based on
+// the era and infection rate ... Farmland and far from town and city tiles should have very few if any zombies").
+//   1. the land: a town's streets and houses, a city's blocks and stores, the hills' high ground (sim/basescatter.js
+//      townLayer, highLayer), laid cell by cell on a map (layLand), cleared whole (CLEAR);
+//   2. the dead at the spot (sim/siteclear.js siteThreat): by the place, the infection and the year;
+//   3. the fight (layout "siteClear"): the tile's land round the spot, the dead round it, none drawn in; won, the camp
+//      goes up; pulled back, the team waits for orders.
+// Usage: node tools/siteclearest.js [seed]
+import { createWorld } from "../src/sim/world.js";
+import { giveOrder, awaitOrders } from "../src/sim/parties.js";
+import { roadTeam } from "../src/sim/hardcore-start.js";
+import { pendingSite, pickSite } from "../src/sim/staging.js";
+import * as BM from "../src/sim/basemap.js";
+import { townLayer, highLayer, layLand, CLEAR, clearOf, TOWN } from "../src/sim/basescatter.js";
+import { CELL, finishCombat } from "../src/sim/combat.js";
+import { siteThreat, SITE_CLEAR } from "../src/sim/siteclear.js";
+import { CS_ACTIONS, sitePanel } from "../src/ui/campsite.js";
+
+const SEED = Number(process.argv[2] || 42);
+let fails = 0, passes = 0;
+const check = (ok, msg) => { if (ok) { passes++; console.log(`  ok   ${msg}`); } else { fails++; console.log(`  FAIL ${msg}`); } return !!ok; };
+const section = (t) => console.log(`\n${t}`);
+const t0 = Date.now();
+const ORTHO = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+
+// ---------- 1. the land ----------
+section("The land: a town's streets and houses, a city's blocks, the hills' high ground");
+{
+  const town = townLayer(1234, "town", 125), city = townLayer(1234, "city", 125);
+  const n = (L, k) => L.pieces.filter((p) => p.k === k).length;
+  check(n(town, "house") > 60 && n(town, "store") >= 3 && n(town, "wreck") > 20 && town.floors.some((f) => f[2] === "road"), `a town: ${n(town, "house")} houses, ${n(town, "store")} stores, ${n(town, "wreck")} wrecks, streets`);
+  check(n(city, "block") > 30 && n(city, "store") > 10 && city.floors.some((f) => f[2] === "deck") && n(city, "house") === 0, `a city: ${n(city, "block")} city buildings, ${n(city, "store")} stores, sidewalks, no houses`);
+  check(TOWN.city.BLOCK < TOWN.town.BLOCK && TOWN.city.STREET_CAR_P > TOWN.town.STREET_CAR_P, "the city's blocks are tighter and its streets fuller of wrecks");
+  // Every building: walled, a door on the street, every bit of floor walked to from its front door.
+  let bad = 0, rooms = 0, furn = 0;
+  for (const b of [...town.pieces, ...city.pieces].filter((p) => p.parts)) {
+    const K = new Map(b.cells.map(([x, y], i) => [`${x},${y}`, b.parts[i].k]));
+    const doors = b.cells.filter((_, i) => b.parts[i].k === "doorway");
+    const open = [...K].filter(([, v]) => v === "open").map(([k]) => k);
+    const seen = new Set(), q = [];
+    for (const [x, y] of doors) { seen.add(`${x},${y}`); q.push([x, y]); }
+    while (q.length) { const [x, y] = q.pop(); for (const [dx, dy] of ORTHO) { const k = `${x + dx},${y + dy}`, v = K.get(k); if (!seen.has(k) && (v === "open" || v === "doorway")) { seen.add(k); q.push([x + dx, y + dy]); } } }
+    if (!doors.length || open.some((k) => !seen.has(k)) || !b.parts.every((p) => p.f === "floor") || !b.parts.every((p) => CELL[p.k])) bad++;
+    const xs = b.cells.map((c) => c[0]), ys = b.cells.map((c) => c[1]), X0 = Math.min(...xs), X1 = Math.max(...xs), Y0 = Math.min(...ys), Y1 = Math.max(...ys);
+    if (b.cells.some(([x, y], i) => b.parts[i].k === "wall" && x > X0 && x < X1 && y > Y0 && y < Y1)) rooms++; // a wall inside: rooms
+    if (b.parts.some((p) => ["bed", "table", "shelf", "counter", "cabinet", "rack"].includes(p.k))) furn++;
+  }
+  const all = [...town.pieces, ...city.pieces].filter((p) => p.parts).length;
+  check(!bad, `every building has a door and every bit of its floor is walked to from one (${all} buildings, ${bad} not)`);
+  check(rooms > all / 3 && furn > all * 0.8, `inside: rooms walled off (${rooms}), furniture (${furn} of ${all})`);
+  // The hills: high ground a level up with slopes onto it.
+  const hills = highLayer(99, "hills", 125), mtn = highLayer(99, "mountain", 125), plains = highLayer(99, "plains", 125);
+  const rise = new Set(hills.pieces.filter((p) => p.k === "rise").map((p) => `${p.cells[0]}`)), slopes = hills.pieces.filter((p) => p.k === "slope");
+  check(rise.size > 500 && slopes.length > 20 && !plains.pieces.length && mtn.pieces.filter((p) => p.k === "rise").length > rise.size, `the hills: ${rise.size} cells of high ground, ${slopes.length} of slope (the mountains more, the plains none)`);
+  check(slopes.every((p) => { const [x, y] = p.cells[0]; return !rise.has(`${x},${y}`) && ORTHO.some(([dx, dy]) => rise.has(`${x + dx},${y + dy}`)); }), "every slope stands at the foot of the high ground, beside it");
+  check(CELL.rise.h === 1 && CELL.rise.walk && !CELL.rise.climb && CELL.slope.climb && !CELL.slope.h, "high ground is a level up, walked on; a slope is the climb onto it");
+  // Cleared whole: what a building gives.
+  check(clearOf({ k: "house" }).hours === CLEAR.house.hours && CLEAR.house.get.wood > 0 && CLEAR.store.get.metalsheet > 0 && CLEAR.block.get.buildmat > 0 && clearOf({ k: "rise" }).hours === CLEAR.rise.hours, "a house, a store and a city building are pulled down whole for wood, scrap, building materials, metal sheets; high ground is dug down");
+  // Laid on a map: each cell its own kind and floor.
+  const W = 60, H = 60, cells = Array.from({ length: W * H }, () => ({ k: "open" }));
+  const h = town.pieces.find((p) => p.k === "house");
+  const land = { list: [h], floors: new Map(), pieces: new Map() };
+  const ox = 30 - h.cells[0][0], oy = 30 - h.cells[0][1];
+  layLand({ cells, W, H, ox, oy, land, ok: () => true });
+  const laid = h.cells.map(([x, y]) => cells[(y + oy) * W + x + ox]);
+  check(laid.every((c, i) => c.k === h.parts[i].k && c.f === "floor"), `a house laid on a map: walls, windows, its door, furniture, floorboards (${[...new Set(laid.map((c) => c.k))].join(", ")})`);
+}
+
+// ---------- 2. the dead at the spot ----------
+section("The dead at the spot: by the place, the infection, the year");
+const st = createWorld({ seed: SEED, factionCount: 7, mode: "hardcore" });
+st.noWanderers = true;
+const tiles = Object.values(st.tiles).filter((t) => t.terrain !== "water" && !t.hive && !st.bases.some((b) => b.tile === t.id) && t.owner == null);
+const city = tiles.find((t) => t.terrain === "city"), suburb = tiles.find((t) => t.terrain === "suburb");
+const calm = tiles.find((t) => (t.terrain === "plains" || t.terrain === "forest") && (t.infection || 0) < SITE_CLEAR.INF);
+{
+  const tc = siteThreat(st, city.id), ts = siteThreat(st, suburb.id), tq = siteThreat(st, calm.id);
+  check(tc.count >= SITE_CLEAR.BASE.city && ts.count >= SITE_CLEAR.BASE.town && tc.count > ts.count, `a city's spot holds more of the dead (${tc.count}) than a town's (${ts.count})`);
+  check(tq.count === 0, `quiet land (${calm.terrain}, infection ${(calm.infection || 0).toFixed(2)}): nothing to clear`);
+  // Farmland and land far from any town: a few at most, even badly infected.
+  const far = tiles.find((t) => t.terrain === "plains" && !st.grid.within(t.id, SITE_CLEAR.NEAR).some((id) => ["city", "suburb"].includes(st.tiles[id].terrain)));
+  const inf0 = far.infection;
+  far.infection = 0.9;
+  const tf = siteThreat(st, far.id);
+  far.infection = inf0;
+  check(tf.count > 0 && tf.count <= Math.ceil((SITE_CLEAR.BASE.land + 0.9 * SITE_CLEAR.INF_N) * SITE_CLEAR.FAR) && tf.count < ts.count, `farmland far from any town, badly infected: a few (${tf.count})`);
+  // More by the year (eras.js hordeGrowth).
+  const h0 = st.hour;
+  st.hour += 24 * 365 * 5;
+  const late = siteThreat(st, suburb.id);
+  st.hour = h0;
+  check(late.count > ts.count, `years on, more of the dead in the town (${ts.count} → ${late.count})`);
+  check(tc.count <= SITE_CLEAR.MAX && tc.power >= 2, `at most ${SITE_CLEAR.MAX}, power ${tc.power}`);
+}
+
+// ---------- 3. the fight ----------
+section("The fight: on the tile's map round the spot, the dead round it, none drawn in");
+{
+  const p = roadTeam(st);
+  const goTo = (t) => { p.path = [t.id]; p.idx = 0; p.dest = t.id; p.progress = 0; delete p.siteClear; delete p.campAt; }; // asked again where the camp goes
+  goTo(suburb);
+  giveOrder(st, p, "camp");
+  check(pendingSite(st) === p && p.task && p.task.type === "pitch", "on a town's tile the team asks where the camp goes first");
+  st.combat = { site: { partyId: p.id, tile: suburb.id, sel: null } };
+  const panel = sitePanel(st, st.combat, null);
+  st.combat = null;
+  check(/The dead: about \d+ here/.test(panel), "the spot's panel says how many of the dead are to be cleared first");
+  // Picked: the fight on a map (a window: played, not by the numbers).
+  globalThis.window = {};
+  let b;
+  try {
+    st.combat = { site: { partyId: p.id, tile: suburb.id, sel: BM.defaultSite(st, suburb.id) } };
+    CS_ACTIONS["cs-ok"](st);
+    b = st.combat;
+  } finally { delete globalThis.window; }
+  check(!!b && b.setup && b.setup.layout === "siteClear" && p.phase === "engaged" && p.task && p.task.type === "pitch", "picked: the view closes and the fight opens; the setup waits");
+  if (b) {
+    const foes = b.units.filter((u) => u.side === "enemy"), [cx, cy] = b.siteSpot;
+    check(b.reinfMax === 0, "no more of the dead drawn in by the noise");
+    check(foes.length === siteThreat(st, suburb.id).count && foes.every((u) => Math.hypot(u.x - cx, u.y - cy) <= SITE_CLEAR.SPREAD + 0.01), `${foes.length} of the dead, all round the spot`);
+    check(b.cells.some((c) => c.f === "floor" && c.k === "wall") && b.cells.some((c) => c.f === "road"), "the town's houses and streets are on the fight's map");
+    // Pulled back: no camp, the team waits for orders.
+    const bases0 = st.bases.length;
+    finishCombat(st, b.setup, { outcome: "retreat", enemiesKilled: 1, enemiesLeft: foes.length - 1, survivorsHurt: [], survivorsDead: [], ammoUsed: 0, loot: { supplies: {}, gear: [] }, tactical: true, worn: true });
+    check(st.bases.length === bases0 && p.phase !== "task" && p.siteClear == null, "pulled back: no camp, the team waits for orders");
+  }
+  // Again, won: the camp goes up.
+  goTo(suburb);
+  giveOrder(st, p, "camp");
+  globalThis.window = {};
+  try {
+    st.combat = { site: { partyId: p.id, tile: suburb.id, sel: BM.defaultSite(st, suburb.id) } };
+    CS_ACTIONS["cs-ok"](st);
+    b = st.combat;
+  } finally { delete globalThis.window; }
+  if (b && b.setup) finishCombat(st, b.setup, { outcome: "victory", enemiesKilled: 9, enemiesLeft: 0, survivorsHurt: [], survivorsDead: [], ammoUsed: 0, loot: { supplies: {}, gear: [] }, tactical: true, worn: true });
+  check(p.siteClear === suburb.id && p.phase === "task" && p.task && p.task.type === "pitch", "won: the spot is clear and the setup goes on");
+  // Quiet land: no fight at all.
+  awaitOrders(st, p, "");
+  goTo(calm);
+  giveOrder(st, p, "camp");
+  if (pendingSite(st) === p) pickSite(st, p, BM.defaultSite(st, calm.id));
+  check(!st.combat && p.phase === "task" && p.task && p.task.type === "pitch", `on quiet land the camp goes up with no fight (${p.phase}, ${p.task && p.task.type}, ${!!st.combat})`);
+}
+// Nobody to ask (a spot already picked; the autopilot): the fight by the numbers at once, then the camp or the orders.
+{
+  const w = createWorld({ seed: SEED + 1, factionCount: 7, mode: "hardcore" });
+  w.noWanderers = true;
+  const c = Object.values(w.tiles).find((t) => t.terrain === "city" && !t.hive && !w.bases.some((b) => b.tile === t.id) && t.owner == null);
+  const p = roadTeam(w);
+  p.path = [c.id]; p.idx = 0; p.dest = c.id; p.progress = 0;
+  p.campAt = BM.defaultSite(w, c.id);
+  const n0 = w.log.length;
+  giveOrder(w, p, "camp");
+  const said = w.log.slice(0, w.log.length - n0).map((l) => l.text).join(" | "); // the newest first
+  const gone = !w.parties.includes(p);
+  const won = !gone && p.siteClear === c.id && p.phase === "task" && p.task && p.task.type === "pitch";
+  const lost = !gone && p.siteClear == null && !(p.task && p.task.type === "pitch");
+  check(!w.combat && (won || lost || gone) && /of the dead between the team and its camp's spot/.test(said), `by the numbers at once (${siteThreat(w, c.id).count} of the dead in the city): ${won ? "won, the setup goes on" : lost ? "lost, the team waits for orders" : "the team died there"}`);
+}
+// The game's own spot keeps off buildings and high ground.
+{
+  const d = BM.defaultSite(st, suburb.id), land = BM.siteLand(st, suburb.id);
+  let big = 0;
+  for (let y = d[1] - 2; y <= d[1] + 2; y++) for (let x = d[0] - 2; x <= d[0] + 2; x++) { const q = land.pieces.get(`${x},${y}`); if (q && ["house", "store", "block", "rise", "slope"].includes(q.k)) big++; }
+  check(!big, `the game's own spot in a town keeps off the houses (${d})`);
+}
+
+console.log(`\n${passes} passed, ${fails} failed (${((Date.now() - t0) / 1000).toFixed(1)} s)`);
+process.exit(fails ? 1 : 0);

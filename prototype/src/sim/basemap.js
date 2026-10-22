@@ -303,6 +303,7 @@ export function terrainOf(state, base) {
   const t = state && state.tiles && base ? state.tiles[base.tile] : null;
   if (!t) return "plains";
   if (t.loc && ["farm", "ranch", "barn"].includes(t.loc.type)) return "farm";
+  if (t.loc && t.loc.type === "town" && t.terrain !== "city") return "suburb"; // a town's own tile: its streets and houses (basescatter.js townLayer)
   return t.terrain || "plains";
 }
 export const coreName = (base) => tierName(base);
@@ -786,7 +787,7 @@ export function landUnder(land, it, at) {
   for (const [x, y] of [...rectCells(it, at), ...doorCellsOf(it, at)]) { const p = land.pieces.get(`${x},${y}`); if (p) out.add(p); }
   return [...out];
 }
-const PLURAL = { bush: "bushes", "fence panel": "fence panels", "hay bale": "hay bales", "broken crate": "broken crates", "old drum": "old drums", "fallen log": "fallen logs", "wrecked car": "wrecked cars", "wrecked truck": "wrecked trucks" };
+const PLURAL = { bush: "bushes", "fence panel": "fence panels", "hay bale": "hay bales", "broken crate": "broken crates", "old drum": "old drums", "fallen log": "fallen logs", "wrecked car": "wrecked cars", "wrecked truck": "wrecked trucks", "patch of high ground": "patches of high ground", "store": "stores" };
 // "2 trees, a bush and a wrecked car".
 export function landWords(pieces) {
   const n = new Map();
@@ -865,13 +866,26 @@ export function siteYield(state, tile, at, tool = true) {
   }
   return { hours: Math.round(hours * 10) / 10, get, n: seen.size };
 }
-// The game's spot: the map's middle, else the nearest spot out from it that takes the camp.
+// The game's spot: the map's middle, else the nearest spot out from it that takes the camp, and of those the nearest
+// with no building and no high ground in its square (pulling a house down or digging a hill away to pitch a camp is
+// days of work: the user's request 2026-10-22, the towns, the cities and the hills of the base maps); within BIG_NEAR
+// of the middle, else the nearest that takes it at all.
+const BIG = new Set(["house", "store", "block", "rise", "slope"]);
+const BIG_NEAR = 60;
 export function defaultSite(state, tile) {
+  const land = siteLand(state, tile);
+  let first = null;
   for (let d = 0; d <= SITE_RANGE; d++) for (let y = -d; y <= d; y++) for (let x = -d; x <= d; x++) {
     if (Math.max(Math.abs(x), Math.abs(y)) !== d) continue;
-    if (!siteProblem(state, tile, [x, y])) return [x, y];
+    if (siteProblem(state, tile, [x, y])) continue;
+    if (!first) first = [x, y];
+    const B = siteBox([x, y]);
+    let big = false;
+    for (let yy = B.y0; yy < B.y1 && !big; yy++) for (let xx = B.x0; xx < B.x1 && !big; xx++) { const p = land.pieces.get(`${xx},${yy}`); if (p && BIG.has(p.k)) big = true; }
+    if (!big) return [x, y];
+    if (d > BIG_NEAR) return first;
   }
-  return [0, 0];
+  return first || [0, 0];
 }
 // A camp set up on its own spot (staging.js makeCamp; basescatter.js SITE): its setup clears the square round the fire
 // (every piece with a cell in it, a wreck whole; never the river) and what that gives (wood, scrap, car parts, metal
@@ -936,7 +950,7 @@ export function landPieceAt(state, base, gx, gy, clump = false) {
   const land = landFor(state, base);
   const p = land ? land.pieces.get(`${gx},${gy}`) || null : null;
   if (!p) return [];
-  if (!clump || !["tree", "bush", "fence", "stump", "rock"].includes(p.k)) return [p];
+  if (!clump || !["tree", "bush", "fence", "stump", "rock", "rise", "slope"].includes(p.k)) return [p];
   const out = [p], seen = new Set([p.g]);
   for (let i = 0; i < out.length && out.length < 40; i++) for (const [x, y] of out[i].cells) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
     const q = land.pieces.get(`${x + dx},${y + dy}`);
@@ -1420,7 +1434,10 @@ function landBlocks(land, GB, waterOnly) {
   const k = waterOnly ? "w" : "a";
   if (c[k]) return c[k];
   const W = GB.x1 - GB.x0, H = GB.y1 - GB.y0, out = new Uint8Array(W * H);
-  for (const p of waterOnly ? land.waterOnly.list : land.list) if (!walks(landCellKind(p))) for (const [x, y] of p.cells) if (onGrid(GB, x, y)) out[(y - GB.y0) * W + (x - GB.x0)] = 1;
+  for (const p of waterOnly ? land.waterOnly.list : land.list) {
+    if (p.parts) { p.cells.forEach(([x, y], i) => { if (!walks(p.parts[i].k) && onGrid(GB, x, y)) out[(y - GB.y0) * W + (x - GB.x0)] = 1; }); continue; } // a building: its walls, not its rooms
+    if (!walks(landCellKind(p))) for (const [x, y] of p.cells) if (onGrid(GB, x, y)) out[(y - GB.y0) * W + (x - GB.x0)] = 1;
+  }
   return (c[k] = out);
 } // the path's least width in cells. Only 1 is implemented: a 4-neighbour flood fill, where one open cell joins two; a wider path would fill over the cells a WIDTH × WIDTH block of open cells fits on. The constant is here so the rule reads as one number.
 export const REACH_WHY = "Nothing could walk to it from outside the base: leave a way in (a path at least one cell wide, a door or a gate)";
