@@ -48,7 +48,7 @@
 // (remember, noteAnswer) waits in a sink until its envoy is home (withSink, replaySink), and the goods you send ride
 // with the envoy (sendGoods; takeGoods takes theirs out of what the envoy brought).
 // Dice: hash01 (skills.js) on the seed, the day and the groups' names, so the world's other streams are not shifted.
-import { day, log, hub, factionById, addCard, atBase, skill } from "./world.js";
+import { day, log, hub, factionById, addCard, atBase, skill, localId } from "./world.js";
 import { changeGoodwill } from "./factions.js";
 import { goodwillMult } from "./traits.js";
 import { hash01, gainXp, USE } from "./skills.js";
@@ -399,8 +399,8 @@ function disputeCard(state, ms, focus = null) {
   const speech = radioSpeech(state);
   const mend = BAL.GAIN.splitPair + Math.round(speech / 2);
   const side = (st, win, lose) => {
-    accepted(st, win, `backed${lose.id}`, `Backed them over ${lose.name}`, BAL.GAIN.side, "sided");
-    refused(st, lose, `sided${win.id}`, `Sided with ${win.name}`, BAL.GAIN.sideLoss);
+    accepted(st, win, `backed${localId(st, lose.id)}`, `Backed them over ${lose.name}`, BAL.GAIN.side, "sided");
+    refused(st, lose, `sided${localId(st, win.id)}`, `Sided with ${win.name}`, BAL.GAIN.sideLoss);
     remember(st, win, lose, "ruling", `Your ruling over ${what}`, BAL.GAIN.sidePair, "sided");
     return `You back ${win.name}. ${lose.name} will remember it.`;
   };
@@ -444,7 +444,7 @@ function favourCard(state, ms, focus = null) {
     text: `${a.name} ask for ${F.ask(b.name)}. It would please them and sting ${b.name}. (${a.name}: ${bandHint(state, a)}. ${b.name}: ${bandHint(state, b)}.)`,
     choices: [
       { label: "Grant it", hint: `${sign(BAL.GAIN.favour)} with ${a.name}, ${sign(BAL.GAIN.favourLoss)} with ${b.name}, ${sign(BAL.GAIN.favourPair)} between them`, ai: (st) => (standing(st, a) < standing(st, b) ? 1 + worry(st, a) : 0.3),
-        resolve: (st) => { accepted(st, a, "favour", F.did, BAL.GAIN.favour, "favour"); remember(st, b, "you", `favoured${a.id}`, `Favoured ${a.name} over them`, BAL.GAIN.favourLoss, "favour"); remember(st, a, b, "favour", `You favoured ${a.name}`, BAL.GAIN.favourPair, "favour"); return `You grant ${a.name}'s request. ${b.name} hear of it.`; } },
+        resolve: (st) => { accepted(st, a, "favour", F.did, BAL.GAIN.favour, "favour"); remember(st, b, "you", `favoured${localId(st, a.id)}`, `Favoured ${a.name} over them`, BAL.GAIN.favourLoss, "favour"); remember(st, a, b, "favour", `You favoured ${a.name}`, BAL.GAIN.favourPair, "favour"); return `You grant ${a.name}'s request. ${b.name} hear of it.`; } },
       { label: "Refuse", hint: `${sign(BAL.GAIN.refuse.favour * fatigue(state, a))} with ${a.name}${fatHint(state, a)}, ${sign(BAL.GAIN.favourStood)} with ${b.name}`, ai: (st) => 1 - worry(st, a) * 0.4,
         resolve: (st) => { refused(st, a, "nofavour", "Refused them a favour", BAL.GAIN.refuse.favour); remember(st, b, "you", "stood", "Stood by them", BAL.GAIN.favourStood, "favour"); return `You refuse ${a.name}.`; } },
     ],
@@ -603,7 +603,7 @@ export function expelCard(state, a, b) {
           ensureBalance(st).stats.expelled++;
           forget(st, b);
           accepted(st, a, "expelled", `You threw out ${b.name}`, BAL.GAIN.expelGain, "expel");
-          for (const m of fr) remember(st, m, "you", `expelled${b.id}`, `Threw out their friend ${b.name}`, BAL.GAIN.expelFriend, "expel");
+          for (const m of fr) remember(st, m, "you", `expelled${localId(st, b.id)}`, `Threw out their friend ${b.name}`, BAL.GAIN.expelFriend, "expel");
           delete ensureBalance(st).demands[key];
           return t;
         } },
@@ -623,7 +623,7 @@ export function expelCard(state, a, b) {
         resolve: (st) => {
           if (!isMember(st, a)) return `${a.name} are no longer in the coalition.`;
           const Bs = ensureBalance(st);
-          refused(st, a, `kept${b.id}`, `Kept ${b.name} in the coalition`, BAL.GAIN.refuse.expel);
+          refused(st, a, `kept${localId(st, b.id)}`, `Kept ${b.name} in the coalition`, BAL.GAIN.refuse.expel);
           Bs.demands[key] = (Bs.demands[key] || 0) + 1;
           if (Bs.demands[key] >= BAL.DEMAND_MAX || pairStanding(st, a, b) < band(st, a).quit) {
             breakAway(st, a, `you kept ${b.name} in`, standing(st, a) < band(st, a).hostile);
