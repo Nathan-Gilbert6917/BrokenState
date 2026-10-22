@@ -10,6 +10,7 @@ import { setRounds } from "../src/sim/ammo.js";
 import { createWorld, tickHour, hub, makeSurvivor } from "../src/sim/world.js";
 import { addBuilding } from "../src/sim/buildings.js";
 import { planPath, partyTile, startReturn } from "../src/sim/parties.js";
+import { worksAt } from "../src/sim/groupworks.js"; // envoys.js: a radio link needs a set of their own too
 import { foodIn } from "../src/sim/foods.js";
 import { tradeContext, tradeVerdict, executeTrade, endTrade, setQty, balanceWith } from "../src/sim/trade.js";
 import { canRadioGroup, radioRequestCaravan, offerCard } from "../src/sim/radio.js";
@@ -34,7 +35,9 @@ function setup(s, minDist = 8) {
     .sort((a, b) => Math.abs(st.grid.distance(a.bases[0], h.tile) - minDist) - Math.abs(st.grid.distance(b.bases[0], h.tile) - minDist))[0];
   Object.assign(f, { type: "traders", goodwill: 60, known: true, pop: Math.max(f.pop, 24), atWar: false });
   f.bases = [f.bases[0]];
+  worksAt(f, f.bases[0]).radio = 1; // a station of their own: a radio link both ways (envoys.js)
   if (!canRadioGroup(st, f)) f.bases = [st.grid.within(h.tile, 10).find((t) => land(st, t) && st.grid.distance(t, h.tile) >= 7 && !st.bases.some((b) => b.tile === t) && planPath(st, t, h.tile, false))];
+  worksAt(f, f.bases[0]).radio = 1; // (the base may have moved)
   Object.assign(f.stock, { ammo: 600, meds: 60, fuel: 60, parts: 10, scrap: 120, water: 150 }); setFood(f, 300);
   for (const x of st.factions) if (x !== f) x.goodwill = Math.max(x.goodwill, -20);
   st.hordes = [];
@@ -203,7 +206,7 @@ function ask(st, f, where) {
   for (let k = 0; k < 8 && !card; k++) {
     const { st, h, f } = setup(seed + 10 + k);
     const far = st.grid.within(h.tile, 18).filter((t) => land(st, t) && st.grid.distance(t, h.tile) >= 12 && !st.bases.some((b) => b.tile === t) && !st.factions.some((x) => x.bases.includes(t)) && planPath(st, t, h.tile, false))
-      .find((t) => { f.bases = [t]; return deliveryHours(st, f, h) > MEET.OFFER_HOURS && canRadioGroup(st, f); });
+      .find((t) => { f.bases = [t]; worksAt(f, t).radio = 1; return deliveryHours(st, f, h) > MEET.OFFER_HOURS && canRadioGroup(st, f); });
     if (far == null) continue;
     if (!canRadioGroup(st, f)) continue;
     for (let i = 0; i < 30 && !card; i++) {
