@@ -42,7 +42,7 @@
 //   land, now and then): a card by radio, or by their envoy (envoys.js "propose"); your answer goes back the same way,
 //   and their party sets out once they have it.
 // Dice: hash01 (the proposals), never the world's.
-import { day, log, hub, baseById, factionById, newId, combatPower } from "./world.js";
+import { day, log, hub, baseById, factionById, newId, localId, combatPower } from "./world.js";
 import { attitude, changeGoodwill } from "./factions.js";
 import { planPath, partyTile, removeParty, tileLabel, partyMembers } from "./parties.js";
 import { hash01 } from "./skills.js";
@@ -232,7 +232,7 @@ export function loanFell(state, s, tileId, cause) {
   const v = agreed ? LOAN.DEATH.op : fight ? LOAN.DEATH.fight : LOAN.DEATH.other;
   if (f && f.alive) {
     (f.volFallen || (f.volFallen = [])).push({ name: s.name, day: day(state), how: fight ? "fight" : "other" });
-    credit(state, f, `lost${s.id}`, agreed ? `${s.name} fell on a mission they agreed to` : fight ? `${s.name} fell in your fight` : `${s.name} died in your care`, v, "fight");
+    credit(state, f, `lost${localId(state, s.id)}`, agreed ? `${s.name} fell on a mission they agreed to` : fight ? `${s.name} fell in your fight` : `${s.name} died in your care`, v, "fight");
     log(state, agreed ? `${f.name} mourn ${s.name}, who fell on the work they came for.` : fight ? `${f.name} mourn ${s.name}, who fell fighting for you.` : `${f.name} blame you for ${s.name}'s death ${cause}.`, "danger");
   }
   const loan = loansOf(state).find((l) => l.id === s.loan.id);

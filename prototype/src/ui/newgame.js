@@ -272,6 +272,7 @@ export function newRunScreen(state, ui) {
       <button data-action="nr-newmap"${tip(`A new map on a new seed, your survivors kept as they are: names, looks, skills, traits, who they were and the leader${freeEdit(ui) ? ", and what they were built with" : hard ? " (what they grabbed and the car come with the map)" : ""}`)}>New map</button>
       <button data-action="reroll"${tip("A new map and new survivors")}>New map and survivors</button>
       <button data-action="nr-start"${tip(`Roll a new starting position on this same map and seed: ${hard ? "another roadside spot to flee from" : "another town for your hub"}, away from the hives and the cities as usual. The map, the hives and your colonists stay as they are (the groups settle around where you are). Look at it with View map; each click is a new spot`)}>📍 New start position</button>
+      <button data-action="nr-pick"${tip(`Pick where you start yourself: the map opens and the tile you click is your start (${hard ? "any open land that is not water, a mountain, a hive or another group's base" : "any town, for your hub"}). The map, the hives and your colonists stay as they are. New start position goes back to the dice`)}>🎯 Pick start on map</button>
       <button data-action="nr-allcrew"${tip(freeEdit(ui) ? "Every colonist: a new name, look and random build (traits, skills and what they wear, hold and carry, within their points; the vehicle's back stays). Build on a crew card does one colonist" : `Randomize every colonist's name, skills, traits, gear and look (skill totals stay the same; gear picked under Customize is cleared)${hard ? ". In Hardcore that is who they were, what they grabbed and whose car they fled in: the world is built again on the same seed" : ": the starting weapons and the vest are handed out again"}`)}>🎲 Randomize all</button>
       <button data-action="zlook-open"${tip("Change how the dead look in battle")}>Zombie look…</button>
       ${worldButton(ui)}
@@ -538,6 +539,7 @@ export function zombieLookModal(ui) {
 const MAP_WINDOWS = ["baseView", "survivor", "roster", "diary", "codex", "ledger", "inv", "planner", "routeSetup", "caravanPlan", "gunb", "diplo", "volPick", "volReq", "memorial", "radioWith"];
 export function backToSetup(ui) {
   ui.nrMap = false;
+  ui.nrPick = false; // Pick start on map ends with the map
   for (const k of MAP_WINDOWS) if (ui[k] != null && ui[k] !== false) ui[k] = null;
 }
 
@@ -561,6 +563,8 @@ const withSurvivor = (what) => (state, ui, d) => { const s = survivorById(state,
 export const LOOK_ACTIONS = {
   // The new-run screen put aside to look at the map, or back (main.js bannerHTML; Esc).
   "nr-map": (state, ui) => { if (ui.started) return; if (ui.nrMap) backToSetup(ui); else ui.nrMap = true; },
+  // Pick start on map (sim/startpick.js): the map opens, and a click on it picks the start (main.js pickStartAt).
+  "nr-pick": (state, ui) => { if (ui.started) return; ui.nrPick = !ui.nrPick; if (ui.nrPick) { ui.nrMap = true; ui.nrMsg = ""; } },
   "look-edit": (state, ui, d) => { ui.lookEdit = ui.lookEdit === Number(d.id) ? null : Number(d.id); },
   "look-done": (state, ui) => { ui.lookEdit = null; },
   "look-set": (state, ui, d) => setLook(state, ui, d.id, d.k, d.v),

@@ -55,7 +55,7 @@ const roundsOnly = (rec) => Object.fromEntries(Object.entries(rec || {}).filter(
 // What someone has with them at the start, looked after but worn (inventory.js START_DUR).
 const startItem = (rng, key, q) => newItem(key, q, rng, START_DUR);
 import { Rng } from "./rng.js";
-import { pickStart } from "./startpick.js"; // where you start, rolled again on the same map
+import { pickStart, chosenStart } from "./startpick.js"; // where you start, rolled again on the same map or picked on it
 import { meleeBump, cookingBump } from "./appearance.js"; // a background's Melee bump: its own die
 import { sightRadius, partyMembers, partyTile, weighTeam } from "./parties.js";
 import { isHardcore } from "./hardcore.js";
@@ -286,9 +286,11 @@ function spawnTile(state, start = null) {
     if (!waterSource(state, t.id, S.water[i])) return false; // somewhere to drink within a few days' walk
     return sitesOk(t.id, S.poi[i]);
   };
-  // start: a start of its own on the same map (startpick.js; the new-run screen's New start position).
+  // start: a start of its own on the same map (startpick.js; the new-run screen's New start position), or a tile picked
+  // on it (Pick start on map: the die is cast all the same).
   const land = () => state.tiles.filter((t) => t.terrain !== "water" && t.terrain !== "mountain" && !t.hive);
-  return pickStart(rng, [() => state.tiles.filter(okFor(true)), () => state.tiles.filter(okFor(false)), land], start);
+  const rolled = pickStart(rng, [() => state.tiles.filter(okFor(true)), () => state.tiles.filter(okFor(false)), land], start);
+  return chosenStart(state, start) || rolled;
 }
 
 // ---------- what they grabbed ----------

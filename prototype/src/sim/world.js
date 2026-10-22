@@ -6,7 +6,7 @@ import { syncAllMembers } from "./members.js"; // the AI groups' people (docs/ad
 import { typedFood, addFoodsTo, FOODS, foodIn } from "./foods.js"; // the hub's first food, by type
 import { keyWord } from "./water.js"; // supply names in log lines (call-time only: safe in the import cycle)
 import { Rng } from "./rng.js";
-import { pickStart } from "./startpick.js"; // the new-run screen's New start position
+import { pickStart, chosenStart } from "./startpick.js"; // the new-run screen's New start position and Pick start on map
 import { generateMap } from "./mapgen.js";
 import { DEFAULT_SIZE, sizeDef, customDef, isCustom, clampHives } from "./worldsize.js";
 import { FIRST_NAMES, LAST_NAMES, SKILLS, ROLLED_SKILLS, TRAITS, BIRTH_TRAITS, clashIn, GEAR, SUPPLIES, SUPPLY_KEYS, supValue } from "./data.js";
@@ -145,11 +145,12 @@ export const localId = (state, id) => (typeof id === "number" ? id - (state.idBa
 // startPeople (optional): Hardcore, how many flee together on day 1, 1–4 (hardcore.js START_PEOPLE; 3 when left out); a
 // normal start, how many hold the hub, 1–8 (NORMAL_PEOPLE; 6 when left out). Kept as state.startPeople.
 // start (optional): { roll, not } where you start drawn with dice of their own on the same map (the new-run screen's
-// New start position; startpick.js): the hub's town, or the Hardcore roadside tile. Kept as state.startRoll.
+// New start position; startpick.js): the hub's town, or the Hardcore roadside tile. Kept as state.startRoll. Or
+// { tile }: the start picked on the map (Pick start on map), used when it can be one (startpick.js startWhyNot); kept as state.startTile.
 /**
  * @param {{ seed: number, factionCount: number, crew?: any[] | null, size?: string, mode?: string, customW?: number | null,
  *   customH?: number | null, hives?: number | null, crewRoll?: number | null, startPeople?: number | null, customBackgrounds?: any,
- *   start?: { roll: number, not?: number | null } | null, worldCfg?: any }} opts
+ *   start?: { roll?: number | null, not?: number | null, tile?: number | null } | null, worldCfg?: any }} opts
  * @returns {State}
  */
 export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SIZE, mode = "normal", customW = null, customH = null, hives = null, crewRoll = null, startPeople = null, customBackgrounds = null, start = null, worldCfg = null }) {
@@ -190,6 +191,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
   const bgs = customBackgrounds ? sanitizeLibrary(customBackgrounds) : {};
   if (Object.keys(bgs).length) state.customBackgrounds = bgs;
   if (start && start.roll != null) state.startRoll = start.roll; // startpick.js: a start of its own on this map
+  if (start && start.tile != null) state.startTile = start.tile; // startpick.js: the start picked on the map
   setWorldCfg(state, worldCfg); // worldcfg.js: the run's dials (the new-run screen's World… window), before the groups and hives are made
   noteLootAge(state); // itemcond.js: the loot rolled from here on is as old as this world (a new world: year 1)
   ensurePois(state); // pois.js: every tile's points of interest (hash dice from the seed: the map's dice are untouched)
@@ -221,7 +223,8 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
   const clearCandidates = clear ? towns.filter((t) => farFrom(t, clear, 12, 12) && central(t)) : [];
   const hubCandidates = clearCandidates.length ? clearCandidates : towns.filter((t) => farFrom(t, 16, 12, 12) && central(t));
   const nearCandidates = towns.filter((t) => farFrom(t, 12, 8, 8));
-  const hubTile = pickStart(rng, [() => hubCandidates, () => nearCandidates, () => towns], start); // startpick.js
+  const rolled = pickStart(rng, [() => hubCandidates, () => nearCandidates, () => towns], start); // startpick.js
+  const hubTile = chosenStart(state, start) || rolled; // a town picked on the map (the die above is cast all the same)
   state.bases.push({
     id: newId(), tile: hubTile.id, type: "hub", name: `${hubTile.loc.name} Holdout`,
     // Fuel is scarce (economy rework). Food: two weeks for six plus a few shelves of canned and jarred food, in the
