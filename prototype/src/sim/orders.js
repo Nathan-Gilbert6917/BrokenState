@@ -31,6 +31,7 @@ import { teamActProblem, teamActHours, teamActDone } from "./fieldworks.js"; // 
 import { capTask, holdName, COLLECT } from "./carry.js"; // a quantity to collect (o.qty: the team panel asks)
 import { roadTentsHour } from "./tents.js"; // the tents on a night's rest on the road (call-time only)
 import { envoyLocked, ENVOY_LOCKED } from "./envoys.js"; // an envoy takes no orders (call-time only)
+import { poiWalkDone } from "./poiwalk.js"; // the walk to a place on the tile, then its raid (call-time only)
 
 export const REPAIR_HOURS = 3;   // a roadside repair
 export const FETCH_WATER_HOURS = 2; // Fetch water: filling containers at a river or lake
@@ -60,6 +61,7 @@ export function describeOrder(state, o) {
     case "stage": return "Work on the camp"; // an old save's staging-camp work (staging.js migrateStaging clears it on load)
     case "searcharea": return "Search the area for the wreck";
     case "crewsearch": return "Scavenge"; // a crew's own search (crews.js)
+    case "poiwalk": return `Walk to ${String(o.name || "the place").toLowerCase()} (${o.mins} min), then raid it`; // poiwalk.js
     case "hunt": return `Hunt ${huntHours(o)}h${qtyNote(o)}`;
     case "fish": return `Fish ${huntHours(o)}h${qtyNote(o)}`;
     case "forage": return `Forage ${huntHours(o)}h${qtyNote(o)}`; // foraging.js
@@ -552,7 +554,7 @@ export function tasksDue(state, frac) {
   for (const p of [...state.parties]) {
     const t = p.phase === "task" ? p.task : null;
     if (!t || (!t.owed && !(t.hours < 1)) || t.hours == null || t.afloat || p.owner !== "player" || !state.parties.includes(p)) continue; // a job under an hour (tents.js: a camp pitched with tent bags) ends at its minute too
-    if (t.done - t.owed + frac < t.hours - 1e-9) continue;
+    if (t.done - (t.owed || 0) + frac < t.hours - 1e-9) continue; // owed is left off a job started on the hour
     finishTask(state, p);
     any = true;
   }
@@ -576,6 +578,7 @@ function finishTask(state, p) {
   const t = p.task;
   let text = "";
   if (t.type === "pitch") { p.task = null; pitchDone(state, p); return ""; } // parties.js: the camp stands (or the card says why not)
+  if (t.type === "poiwalk") return poiWalkDone(state, p); // poiwalk.js: at the place, the raid starts
   if (t.type === "survey") text = survey(state, p, 0.25, false);
   else if (t.type === "fullsurvey") text = fullSurveyDone(state, p); // survey.js: the POI survey's rolls and stamps
   else if (t.type === "sweep") text = sweepDone(state, p);

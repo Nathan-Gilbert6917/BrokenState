@@ -19,7 +19,7 @@
 import { createWorld, tickHour, hub, day, atBase, mergeKnowledge } from "../src/sim/world.js";
 import { LOCATIONS } from "../src/sim/data.js";
 import { launchExpedition, partyTile, orderOptions, planPath, partyMembers, giveOrder, PICKED_OVER } from "../src/sim/parties.js";
-import { startOrder } from "../src/sim/orders.js";
+import { startOrder, tasksDue } from "../src/sim/orders.js";
 import { stationaryActivity } from "../src/sim/fieldheat.js";
 import { searchHour, extract, engagementParty } from "../src/sim/scavenge.js";
 import { newItem, stow } from "../src/sim/inventory.js";
@@ -93,9 +93,12 @@ section("The dialogue: which place to raid");
     check(!/\d+ hidden|\d+ unknown/.test(card.text + picks.map((c) => c.hint).join(" ")), "no count of what is hidden");
     const rows = poiRows(st, p, t.id);
     check(rows.every((r) => r.visits === "never visited" && r.threatText === "threat unknown" && POI_BANDS.includes(r.bandName)), "never visited, threat unknown, a band each");
-    // The pick: the second place; the search opens on it.
+    // The pick: the second place; the team walks there (poiwalk.js), then the search opens on it.
     const choice = picks[1] || picks[0];
     choice.resolve(st);
+    const w = p.task;
+    check(p.phase === "task" && w && w.type === "poiwalk" && w.poi === choice.poi && w.mins >= 5 && w.mins <= 20 && !st.engagement, `picking a place starts the walk there first (${w && w.mins} min)`);
+    tasksDue(st, 1);
     const e = st.engagement;
     check(!!e && e.partyId === p.id && e.poi === choice.poi, `picking a place starts the search in it (place ${choice.poi})`);
     check(p.poi === undefined, "the pick is cleared once used");
@@ -195,6 +198,7 @@ section("The headless path: one place at a time");
     const raid = createRaid(st, { mode: "raid", tile: m.id, partyId: q.id, canRetreat: true, handler: "scavenge", enemy: { kind: "zombies", count: 0, power: 3, name: "nobody", groups: [] }, raid: { heat0: 0, choose: false, poi: 0, kind: rb.kind, place: null, building: b0.id } });
     check(!!raid && raid.raid.interior && raid.raid.interior.id === b0.id && !raid.raid.choose, `the battle map opens inside ${b0.name}, no building question`);
     site[0].resolve(st);
+    if (q.phase === "task" && q.task && q.task.type === "poiwalk") { check(q.task.building === site[0].building, "the walk carries the building picked"); tasksDue(st, 1); }
     check(q.poi === undefined && q.poiBuilding === undefined, "the pick (place and building) is cleared once used");
     if (st.engagement) { st.engagement.approach = "normal"; st.engagement = null; }
     st.cards.length = 0;

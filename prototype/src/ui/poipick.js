@@ -4,7 +4,8 @@
 // right now, and the threat you make of it (a word with skulls, the look's age, "stale" past two weeks; "threat
 // unknown" until a survey or a visit). Never a count of what is still hidden: "possibly more unknown" at most. The
 // buttons are the card's own choices (data-action="choice"), so main.js handles them as any card's. A site with
-// several buildings (a farm, a military base) is one row with a button per building and the street under it.
+// several buildings (a farm, a military base) is one row with a button per building and the street under it. Each row
+// says how far it is on foot from where the team stands (sim/poiwalk.js: 5–20 minutes; "you are here").
 import { partyMembers, tileLabel } from "../sim/parties.js";
 import { poiRows } from "../sim/poiraid.js";
 import { morePoisHidden, tileHeatEstimate } from "../sim/pois.js";
@@ -41,7 +42,8 @@ export function poiPickModal(state, card) {
   const rowHtml = (r) => {
     const def = LOCATIONS[r.kind];
     const likely = `${def ? def.name : r.kind}: likely ${Object.keys((def && def.loot) || {}).slice(0, 4).join(", ") || "little"}.`;
-    const body = `<div class="spread"><b>${esc(r.name)}</b><span style="color:${BAND_COLOR[r.band]}"${tip("What is left against what the place held untouched: rich (60%+), some (30%+), little (10%+), picked clean. Each place has its own loot, and nothing grows back.")}>${esc(r.bandName)}</span></div>
+    const walk = `<span class="${r.mins ? "" : "muted"}"${tip(r.mins ? "Minutes on foot from where the team stands on the tile (the place it last went into, else the middle of the tile), over the ground between: brush, slopes, rubble, a road. Picking it starts the walk when the clock runs, then the raid." : "The team stands at this place: it goes straight in.")}>${r.mins ? `🚶 ${r.mins} min` : "📍 here"}</span>`;
+    const body = `<div class="spread"><b>${esc(r.name)}</b>${walk}<span style="color:${BAND_COLOR[r.band]}"${tip("What is left against what the place held untouched: rich (60%+), some (30%+), little (10%+), picked clean. Each place has its own loot, and nothing grows back.")}>${esc(r.bandName)}</span></div>
       <div class="small"><span class="muted">${esc(r.visits)}</span> · ${threatHtml(r.threat)}${r.camp ? `<br><span${tip("A campsite: abandoned (a few of the dead about, the best loot left), overrun (a pack of the dead among the tents) or an active raider camp (a band round a lit fire; at night some asleep in the tents). As your people last saw it: a survey or a visit looks again. Tents can be taken down and carried off.")}>${esc(r.camp)}</span>` : ""}${r.cont ? `<br><span class="muted">${esc(r.cont)}</span>` : ""}${r.raiding ? `<br><span class="danger">Another group is raiding it right now.</span>` : ""}</div>`;
     const subs = byBuilding(r.i);
     if (!subs.length) return `<button data-action="choice" data-i="${byPoi.get(r.i)}" class="poirow" style="display:block;width:100%;text-align:left"${tip(likely)}>${body}</button>`;
@@ -60,7 +62,7 @@ export function poiPickModal(state, card) {
     <h1>${esc(card.title)}</h1>
     <div class="where">${esc(tileLabel(state, tile))}${who ? ` · ${esc(who)}` : ""}</div>
     ${heatLine(state, tile)}
-    <div class="text small">${rows.length === 1 ? "One place is known here" : `${rows.length} places are known here`}${more ? `, <span${tip("Something here may still be off your map: a Survey of the tile (8h) finds what hides, a Quick look (2h) has a chance at each. Never a count.")}>possibly more unknown</span>` : ""}. The team goes into one at a time.</div>
+    <div class="text small">${rows.length === 1 ? "One place is known here" : `${rows.length} places are known here`}${more ? `, <span${tip("Something here may still be off your map: a Survey of the tile (8h) finds what hides, a Quick look (2h) has a chance at each. Never a count.")}>possibly more unknown</span>` : ""}. The team goes into one at a time, walking there first: pick a place, then run the clock.</div>
     <div class="choices">${rows.map(rowHtml).join("")}
       ${rest.map(({ c, i }) => `<button data-action="choice" data-i="${i}"${tip(c.hint)}>${esc(c.label)}${c.hint ? `<span class="hint">${esc(c.hint)}</span>` : ""}</button>`).join("")}</div>
   </div>`;

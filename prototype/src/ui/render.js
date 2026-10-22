@@ -6,6 +6,7 @@ import { setPoiReveal, poisOf, poiKnown, knownPois, poiLootBand, POI } from "../
 import { poiHeading, poiTipLines } from "./poiview.js"; // the hover text's lines on a tile's POIs
 import { partyTile, plannedPos, outpostScrap, glideAt, partyMembers, clockText, reportsLive } from "../sim/parties.js";
 import { contactable } from "../sim/orders.js";
+import { walkPos } from "../sim/poiwalk.js"; // a team walking to a place on its tile, or standing at it
 import { LIGHTS, lightOf } from "../sim/lights.js"; // a team's lights glow at night
 import { holdsNextHour } from "./pacing.js"; // a team holding for a tray card does not glide
 import { heldUp } from "../sim/roadblocks.js"; // "Road blocked" over a team held up on the road
@@ -2275,6 +2276,32 @@ function drawPlayerParty(state, p) {
       py = ay + (by - ay) * glide.t;
       k2 = ka + (kb - ka) * glide.t;
     } else [px, py, k2] = besideBase(partyTile(p), px, py); // on a base's tile: beside the base, not on top of it
+    // sim/poiwalk.js: walking to a place on its tile before the raid (from its spot to the place's, by the minutes gone),
+    // or standing at the place it last went into. A dashed line to the place and a ring on it while it walks.
+    const wk = !glide && !state.timelapse ? walkPos(state, p, hourFrac()) : null;
+    if (wk) {
+      const [cx, cy] = g.toPixel(partyTile(p), HEX);
+      px = cx + wk.x * HEX;
+      py = cy + wk.y * HEX;
+      k2 = 1;
+      if (wk.walking) {
+        const tx = cx + wk.to[0] * HEX, ty = cy + wk.to[1] * HEX, s = zoomBoost();
+        ctx.strokeStyle = PAL.task + "cc";
+        ctx.lineWidth = 1.6;
+        ctx.setLineDash([3, 3]);
+        ctx.beginPath();
+        ctx.moveTo(px, py);
+        ctx.lineTo(tx, ty);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.ellipse(tx, ty + 2 * s, 4.5 * s, 2.4 * s, 0, 0, Math.PI * 2);
+        ctx.stroke();
+        const fx = cx + wk.from[0] * HEX, fy = cy + wk.from[1] * HEX;
+        if (Math.hypot(tx - fx, ty - fy) > 0.5) { hd = headingTo(fx, fy, tx, ty); lastHeading.set(p, hd); }
+        glidingNow = true; // drawn again as the minutes go by
+      }
+    }
     const camping = p.phase === "task" && p.task && p.task.type === "camp";
     if (camping) { // tent and campfire behind the team
       const s = zoomBoost();
@@ -2288,7 +2315,7 @@ function drawPlayerParty(state, p) {
     groundRing(px, py, ring, false);
     if (view.pick === `team:${p.id}` || view.pick === `convoy:${p.id}`) pickRing(px, py); // selected (ui/mapselect.js)
     // On the move: people bob in step, a cart a little slower; a vehicle rumbles and raises dust.
-    const onWay = (p.phase === "out" || p.phase === "back") && p.path && p.idx < p.path.length - 1;
+    const onWay = ((p.phase === "out" || p.phase === "back") && p.path && p.idx < p.path.length - 1) || !!(wk && wk.walking);
     const [cvp, u1, bob] = teamCanvas(state, p, look, onWay, hd.yaw, isNight(state)), up = u1 * k2, sz = zoomBoost(), fy = py + GROUND * sz; // fy: where the figures stand
     const wp = pieceBox(cvp, px, fy, up)[2];
     if (onWay && MOTOR.has(look.kind)) dustTrail(p.id, px, fy, sz, hd.dir, wp * 0.6);
@@ -2298,7 +2325,7 @@ function drawPlayerParty(state, p) {
     notePiece(cvp, px, fy, up);
     if (p.kind !== "convoy" && (p.heat || 0) >= 5 && !state.timelapse) heatBar(px, py, p.heat); // fieldheat.js: standing still draws attention
     if (p.phase === "waiting") badge(px, py, "alert", "#ffd166");
-    else if (p.phase === "task" && !camping) badge(px, py, "work");
+    else if (p.phase === "task" && !camping && !(wk && wk.walking)) badge(px, py, "work"); // walking to a place: its pill says so
     else if (p.kind !== "convoy" && p.radioLive && !state.timelapse) badge(px, py, "radio"); // timelapse: everything is live
     // A wait on the way, with the minutes left of it (sim/parties.js glideAt: the same course the hour will take):
     // a road blockage being cleared, a repair, another delay. Above a crew's name.
@@ -2307,6 +2334,7 @@ function drawPlayerParty(state, p) {
     const wait = sit ? sit : !gl && heldUp(state, p) ? { kind: "road", mins: 0 } : null;
     if (wait && !state.timelapse) glidingNow = true; // its minutes count down: drawn again as the clock moves
     if (wait) pill(px, py - (p.crewName ? 34 : 22) * zoomBoost(), `${SIT_LABEL[wait.kind] || "Held up"}${wait.mins ? ` ${clockText(wait.mins / 60)}` : ""}`, "#8a5a1c", zoomBoost());
+    else if (wk && wk.walking) pill(px, py - (p.crewName ? 34 : 22) * zoomBoost(), `To ${String(wk.name).toLowerCase()} ${wk.mins}m`, "#3c5a7a", zoomBoost());
     crewTag(p, px, py);
     return;
   }

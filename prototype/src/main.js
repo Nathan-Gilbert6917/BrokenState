@@ -1182,6 +1182,12 @@ const actions = {
     if (card.partyId != null) { const cp = partyById(card.partyId); if (cp) cp.contactHour = state.hour; }
     const text = c.resolve(state);
     if (Parties.pruneCards) Parties.pruneCards(state); // cards about a team or person that is gone now (parties.js)
+    // sim/poiwalk.js: a place picked on the POI dialogue is walked to first, and the clock stays stopped until you run it.
+    const walker = card.poiPick ? partyById(card.partyId) : null;
+    if (walker && walker.phase === "task" && walker.task && walker.task.type === "poiwalk") {
+      if (ui.speed > 0) { if (ui.speed <= MAX_SPEED) ui.lastSpeed = ui.speed; ui.speed = 0; }
+      ui.pauseWhy = `Ready to walk to ${String(walker.task.name).toLowerCase()} (${walker.task.mins} min), then raid it`;
+    }
     if (c.uiAction && c.uiAction.type === "saveFight") saveBeforeFight(state, ui, c.uiAction.name); // sim/loneattack.js: "Save and fight": the game saved as the fight opens
     if (c.uiAction && c.uiAction.type === "move") {
       endMoveMode();
