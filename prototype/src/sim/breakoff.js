@@ -27,7 +27,7 @@
 import { woundMult, fleetEscape } from "./traits.js"; // Tough, Frail, Fleet-Footed
 import { RETREAT, downChance, loadPenalty, KITS } from "./combat.js";
 import { battleKg } from "./carrykit.js"; // the kit carried (kg): the escape check's load penalty
-import { hurt, isNight, skill, log, factionById, survivorById, localId } from "./world.js";
+import { hurt, isNight, skill, log, factionById, survivorById } from "./world.js";
 import { armorMult } from "./inventory.js";
 import { absorbOffscreen } from "./armour.js"; // per-hit armour: what a wound by the numbers wears off the armour worn
 import { Rng } from "./rng.js";
@@ -35,7 +35,7 @@ import { woundTrauma } from "./health.js";
 import { fightXp, hash01 } from "./skills.js";
 import { takeCaptive } from "./conflicts.js";
 import { memberMedic, MEDIC } from "./medics.js";
-import { groupFighters } from "./members.js"; // a group's people who fought (their XP) // a medic's kit: the carried and the fallen pull through more often
+import { groupFighters, personKey } from "./members.js"; // a group's people who fought (their XP) // a medic's kit: the carried and the fallen pull through more often
 
 export const RETREAT_POLICIES = {
   never:  { name: "Never",              short: "never",                desc: "Fight it out to the end, win or lose." },
@@ -494,7 +494,7 @@ export function fightForecast(state, p, people, { odds, enemy, ambush = null }, 
   if (!members.length) return null;
   const pol = validPolicy(policy) || "never";
   const model = fightModel(state, members, { win: odds, enemy, ambush, party: p, capture: 0 });
-  const seed = (members.reduce((a, s) => (a * 31 + localId(state, s.id)) >>> 0, 7) /* localId: ids are process-wide */ ^ Math.round(odds * 1000) ^ (enemy.count * 7919)) >>> 0;
+  const seed = (members.reduce((a, s) => (a * 31 + personKey(state, s.id)) >>> 0, 7) /* personKey: ids are process-wide, a member who joined keeps their own */ ^ Math.round(odds * 1000) ^ (enemy.count * 7919)) >>> 0;
   const tally = (pl) => {
     const rng = new Rng(seed);
     const t = { win: 0, retreat: 0, lost: 0, home: 0, deaths: 0 };

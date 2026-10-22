@@ -51,6 +51,7 @@ import { keepItem } from "./arsenal.js"; // a group that loots a death site keep
 import { lootQty } from "./worldcfg.js"; // the run's dials: the loot by kind (the base's scavengers)
 import { winterScavFood } from "./winter.js"; // winter: less food in a find (call-time only)
 import { note, goodsRounds } from "./ledger.js"; // the conservation test's ledger (off in play): rounds off the ground
+import { personKey } from "./members.js"; // a person's id for the dice: a member who joined keeps their own (call-time only)
 
 export const ROLES = {
   farm:     { name: "Farm",     desc: "Tends, plants and harvests the crop plots (Farming tab). Crops take days to ripen; more farmers per plot and better Farming give a bigger harvest from the same days. Ripe crops left unharvested rot." },
@@ -197,16 +198,16 @@ export function scavTrip(state, base, s, tile, share, k = 0) {
     let q = lootQty(state, key0, rng.int(SCAV_FIND[key0][0], SCAV_FIND[key0][1])); // worldcfg.js: the run's loot dial for this kind
     if (key0 === "food") q = winterScavFood(state, q); // winter.js
     if (!(q > 0)) continue;
-    const tag = `scav${localId(state, s.id)}${k ? `:${k}` : ""}${i ? `/${i}` : ""}`; // (a world-local id: tools/sameseedtest.js)
+    const tag = `scav${personKey(state, s.id)}${k ? `:${k}` : ""}${i ? `/${i}` : ""}`; // (a world-local id: tools/sameseedtest.js; a member who joined keeps theirs, members.js personKey)
     if (key0 === "ammo") out.ammo = { type, q: (out.ammo ? out.ammo.q : 0) + q, tile };
     else if (key0 === "food" || key0 === "preserved") addFoodFind(state, got, type, q, { tile, preserved: key0 === "preserved" }); // foods.js: the food a place like this holds, as its shelves have it left
     else if (key0 === "parts" && t && t.loc) for (const [pk, pq] of Object.entries(sortParts(state, t.loc.type, q, tag))) got[pk] = (got[pk] || 0) + pq; // loot.js: parts by kind (their own dice)
     else got[key0] = (got[key0] || 0) + q;
   }
   if (out.ammo) out.ammoQ = out.ammo.q;
-  const bm = rollBuildmat(state, tile, 0.5, `bscav${localId(state, s.id)}${k ? `:${k}` : ""}`); // building materials around the base too (half a search hour's chance, once a trip)
+  const bm = rollBuildmat(state, tile, 0.5, `bscav${personKey(state, s.id)}${k ? `:${k}` : ""}`); // building materials around the base too (half a search hour's chance, once a trip)
   if (bm > 0) got.buildmat = (got.buildmat || 0) + bm;
-  const ms = rollSheets(state, tile, 0.5, `bscav${localId(state, s.id)}${k ? `:${k}` : ""}`); // metal sheets too (loot.js SHEET_FINDS; half a search hour's chance)
+  const ms = rollSheets(state, tile, 0.5, `bscav${personKey(state, s.id)}${k ? `:${k}` : ""}`); // metal sheets too (loot.js SHEET_FINDS; half a search hour's chance)
   if (ms > 0) got.metalsheet = (got.metalsheet || 0) + ms;
   out.got = got;
   out.finds = n;

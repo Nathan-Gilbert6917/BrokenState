@@ -62,6 +62,7 @@ import { pitchArmoryBags, tentsText } from "./tents.js"; // (call-time only) the
 import { fittingRoom, placeItem, refreshBaseMap } from "./basemap.js"; // (call-time only)
 import { makeItem, canCraft, queueCraft, craftQueue } from "./crafting.js"; // (call-time only)
 import { residents } from "./world.js";
+import { personKey } from "./members.js"; // (call-time only) a person's id for the dice: a member who joined keeps their own
 import { tentKind } from "./buildings.js"; // (call-time only) a pitched tent's kind
 import { TENT_TYPES } from "./data-tents.js"; // the one tent table: a pitched tent's sleepers and mood
 import { weatherAt } from "./weather.js"; // (call-time only) a wet or freezing night for the rough sleepers
@@ -195,9 +196,10 @@ export function roughColdDaily(state, base) {
   for (const [id, slot] of a) {
     if (slot) continue;
     const s = state.survivors.find((x) => x.id === id);
-    if (!s || !s.alive || hash01(state.seed, "roughcold", id, d) >= ROUGH_WEATHER.coldIll) continue;
+    const k = personKey(state, id); // ids are process-wide (tools/sameseedtest.js): the world's own, a member who joined keeps theirs
+    if (!s || !s.alive || hash01(state.seed, "roughcold", k, d) >= ROUGH_WEATHER.coldIll) continue;
     const C = CONDITIONS.chestcold;
-    if (addCondition(state, s, "chestcold", `sleeping rough on a freezing night at ${base.name}`, { sev: C.sev[0] + Math.floor(hash01(state.seed, "roughcoldsev", id, d) * (C.sev[1] - C.sev[0] + 1)), cause: "weather" })) got.push(s);
+    if (addCondition(state, s, "chestcold", `sleeping rough on a freezing night at ${base.name}`, { sev: C.sev[0] + Math.floor(hash01(state.seed, "roughcoldsev", k, d) * (C.sev[1] - C.sev[0] + 1)), cause: "weather" })) got.push(s);
   }
   return got;
 }

@@ -285,8 +285,9 @@ export function traitSkill(s, k) {
 export function stomachShrugs(state, s, how) {
   if (!hasTrait(s, "ironstomach") || !FX.STOMACH_HOW.includes(how)) return false;
   // The person's world-local id (world.js localId, written out here to keep this module free of world.js): ids are
-  // process-wide, and the same seed must roll the same in a second world.
-  const local = (s.id | 0) - ((state && state.idBase) || 0);
+  // process-wide, and the same seed must roll the same in a second world. One who joined from an AI group keeps their
+  // member id (members.js personKey, MEMBER.ID0 = 1e9 up): already the world's own, so nothing comes off it.
+  const local = (s.id | 0) >= 1e9 ? s.id | 0 : (s.id | 0) - ((state && state.idBase) || 0);
   return traitHash((state && state.seed) || 1, local, (state && state.hour) | 0, FX.STOMACH_HOW.indexOf(how)) < traitFx(s, "ironstomach", "shrug");
 }
 
