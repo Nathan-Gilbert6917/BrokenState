@@ -17,6 +17,7 @@ import { GROUP_WORKS, nextWork, groupWorksDaily, groupBaseDefence, isCamp, pitch
 import { serializeState, deserializeState } from "../src/sim/save.js";
 import { STAGING } from "../src/sim/staging.js";
 import { CRAFTS } from "../src/sim/crafting.js";
+import { assignedRole } from "../src/sim/noidle.js"; // noidle: a job with no work, its people helping elsewhere
 const plain = (h) => String(h).replace(/<[^>]+>/g, ""); // the text without markup (cost chips split name and count into spans)
 
 const seed = Number(process.argv[2] || 42);
@@ -70,7 +71,7 @@ section("Build outpost pitches a camp");
     const job = tierUpJob(b);
     b.stock.wood = (b.stock.wood || 0) + 600; // its 200 wood (the user's pick 2026-10-20), the fire's days kept back, its burn meanwhile: here, so only the building materials hold it up below
     check(job && job.type === "outpost_up" && job.paid, "its step up is queued at once, gathering its materials");
-    check(atBase(st, b.id).length === 2 && atBase(st, b.id).every((s) => s.role === "build"), "the team is its staff, on Build");
+    check(atBase(st, b.id).length === 2 && atBase(st, b.id).every((s) => assignedRole(s) === "build"), `the team is its staff, on Build (${atBase(st, b.id).map((s) => s.role).join(", ")} this hour: noidle.js, no materials yet)`); // their own job; with nothing to build they help elsewhere for the hour
     check(st.log.some((l) => /set up camp/.test(l.text)), "the log says so");
     // Carried 16: all into the stores (setting up takes none); the job takes what its next GATHER_AHEAD hours need (12).
     tickHour(st);

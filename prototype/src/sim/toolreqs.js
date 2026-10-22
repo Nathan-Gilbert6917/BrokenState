@@ -94,6 +94,8 @@ export function basicToolWanted(state, base) {
   }
   return null;
 }
+/** Is a craft job one of those basic tools (made first, and staffed first: autopilot.js planCrafts, planRoles)? @param {any} job */
+export const isBasicToolJob = (job) => !!job && BASIC_KINDS.some((k) => TOOL_MAKESHIFT[k] === job.recipe);
 
 // A save from before the tools (save.js, once): the main hub gets the tool shelf a new hub starts with (world.js
 // HUB_TOOLS), each one it has nothing of that kind for, so its builds do not stop the day it loads. Hardcore: nothing.

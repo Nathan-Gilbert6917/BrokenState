@@ -12,7 +12,7 @@
 // It only uses the same calls as the UI (canBuild / queueBuild, queueCraft, treatAtBase, launchExpedition,
 // startOrder, saveSupplyRun ...), plays by what the player knows of the map (knowledge snapshots, markers,
 // known groups), and never draws from state.rng. Turning it off hands everything back as it is.
-import { basicToolWanted, TOOL_KINDS } from "./toolreqs.js"; // the tools a base keeps for building and crafting (planCrafts)
+import { basicToolWanted, isBasicToolJob, TOOL_KINDS } from "./toolreqs.js"; // the tools a base keeps for building and crafting (planCrafts)
 import { HAUL, govHauling, haulersWanted, haulScore, onHaulTrip } from "./hauling.js"; // hauling: haul orders and haulers (call-time only)
 import { isChopJob } from "./woodwork.js"; // noidle: the felling in the queue
 import { fellCrew, fellUrgent, fellScore, fellFit, noWorkFor, planNoIdle } from "./noidle.js"; // noidle: a woodcutter on the felling, nobody in a role with no work (call-time only)
@@ -2201,6 +2201,14 @@ function planRoles(state, base, areas = ALL_AREAS) {
       if (c) give(c, "craft");
     }
   }
+  // 1b''. A basic tool queued (planCrafts: a makeshift hammer, saw, shovel or axe nothing here covers) gets its crafter
+  // ahead of the food: a few hours' work that the builds and recipes needing it wait on (hcstarttest: a shelter's
+  // makeshift hammer sat 27 days behind the fields with 150 scrap in store, its step up into a base never queued).
+  if (areas.production && ![...want.values()].some((w) => w.role === "craft")) {
+    const tj = craftQueue(base).find(isBasicToolJob);
+    const c = tj && ranked("craft", (x) => craftSkill(x), (x) => !x.inBed && canAttempt(x, CRAFTS[tj.recipe]))[0];
+    if (c) give(c, "craft");
+  }
 
   // 1b'. Fetch water (economy.js, jobtrips.js): the water running short, a river or lake tile in the base's own land and a
   // water boiler or a water filter here to make it safe: water carriers bring it in by the bucket (un-purified) until the
@@ -3355,6 +3363,7 @@ export function planCrafts(state, base) {
   const tw = isCamp(base) ? null : basicToolWanted(state, base);
   if (tw && canCraft(state, base, tw.recipe).ok) {
     queueCraft(state, base, tw.recipe);
+    q.unshift(q.pop()); // first in the queue: the crafters work the first job they can (crafting.js craftingHour)
     gov(state).stats.crafts++;
     say(state, `Queued a ${GEAR[CRAFTS[tw.recipe].gear].name.toLowerCase()} at ${base.name}: nothing there serves as ${TOOL_KINDS[tw.kind].name} for building and crafting.`);
     return;

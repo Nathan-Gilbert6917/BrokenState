@@ -19,6 +19,7 @@
 //   the Coalition tab's "out of radio reach" line, Construction (offered at an outpost, greyed out beside a station)
 // - every rendered screen: no undefined / NaN / null, balanced tags, and every data-action has a handler
 import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
+import { stockTools } from "./toolset.js"; // every tool a build or recipe can need (toolreqs.js)
 import { readFileSync } from "node:fs";
 import v8 from "node:v8";
 import vm from "node:vm";
@@ -1722,6 +1723,7 @@ section("Radio relays on screen: the radio header, a group's radio panel, the Co
     const fT = w.tiles.find((u) => free(u, 9, 12, oT.id, far));
     const o = { id: newId(), tile: oT.id, type: "outpost", name: "Signal Rock", stock: { scrap: 30, parts: 4 }, buildings: [], construction: [], armory: [], radio: false, watchtower: false };
     w.bases.push(o);
+    stockTools(o); // a drill, wrenches and pliers (toolreqs.js): the relay needs them, and this outpost is made by hand
     const s = makeSurvivor(w); s.skills.mechanics = 5; s.location = { kind: "base", baseId: o.id }; w.survivors.push(s);
     const f = w.factions.find((x) => x.alive && x.bases.length);
     f.bases = [fT.id]; f.known = true; f.goodwill = 60; f.pact = "trade";
