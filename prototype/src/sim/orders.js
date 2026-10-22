@@ -30,6 +30,7 @@ import { networkById } from "./radio.js";
 import { teamActProblem, teamActHours, teamActDone } from "./fieldworks.js"; // field works: load, unload, wreck, take
 import { capTask, holdName, COLLECT } from "./carry.js"; // a quantity to collect (o.qty: the team panel asks)
 import { roadTentsHour } from "./tents.js"; // the tents on a night's rest on the road (call-time only)
+import { envoyLocked, ENVOY_LOCKED } from "./envoys.js"; // an envoy takes no orders (call-time only)
 
 export const REPAIR_HOURS = 3;   // a roadside repair
 export const FETCH_WATER_HOURS = 2; // Fetch water: filling containers at a river or lake
@@ -223,6 +224,7 @@ export function queueEndTile(state, p) {
 // ---------- giving orders ----------
 // Start now if the team is waiting for orders, otherwise add it to the end of the queue.
 export function queueOrder(state, p, o) {
+  if (envoyLocked(p)) return ENVOY_LOCKED; // envoys.js: an envoy is locked to its errand
   p.orders = p.orders || [];
   if (p.phase === "waiting") return startOrder(state, p, o);
   // A queued job on the spot remembers the tile it was planned for (where the queue leaves the team): if the
@@ -270,6 +272,7 @@ function reseatQueue(state, p) {
 // has reached and carries on with its queue from there (a job planned for the old destination fails with a
 // message and holds the rest), or waits for orders. Unlike a stop on the way (a card), the trip is not put back.
 export function cancelMove(state, p) {
+  if (envoyLocked(p)) return ENVOY_LOCKED; // envoys.js: an envoy is locked to its errand
   if (p.phase !== "out" && p.phase !== "back") return "The team is not on the move.";
   const was = orderLabel(state, p);
   const tile = partyTile(p);
@@ -302,6 +305,7 @@ export const huntHours = (o) => Math.max(HUNT.minHours, Math.min(HUNT.maxHours, 
 
 // Starts an order right away. If it cannot start, the team reports back (and the queue moves on).
 export function startOrder(state, p, o) {
+  if (envoyLocked(p)) return ENVOY_LOCKED; // envoys.js: an envoy is locked to its errand
   // An orders card still open for this team is out of date now.
   for (let i = state.cards.length - 1; i >= 0; i--) if (state.cards[i].isOrders && state.cards[i].partyId === p.id) state.cards.splice(i, 1);
   // hold: the rest of the queue waits too (the team is in the wrong place for it).

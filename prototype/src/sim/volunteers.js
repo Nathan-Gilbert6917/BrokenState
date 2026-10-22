@@ -63,6 +63,7 @@ import { battlePending, startCombat, registerCombatHandler } from "./combat.js";
 import { calOf, payAmmoKeys, payWord, roundsText } from "./ammo.js"; // an offer in rounds: by calibre, the ones the guns need least
 import { lightOf } from "./lights.js";
 import { baseKey, supplyAmt } from "./rounds.js";
+import { reneged } from "./loans.js"; // a share not paid (call-time only)
 
 
 export const VOL = {
@@ -162,11 +163,12 @@ export function missionOf(state, p) {
 export function askableGroups(state) {
   return state.factions.filter((f) => f.alive && f.known).map((f) => ({ f, why: groupProblem(state, f) }));
 }
-export function groupProblem(state, f) {
+// inPerson: the ask came by envoy or radio (envoys.js, loans.js): no reach needed.
+export function groupProblem(state, f, inPerson = false) {
   if (!f || !f.alive) return "They are gone.";
   if (!f.known) return "You have not met them.";
   if (attitude(f) === "Hostile") return `${f.name} is hostile.`;
-  if (!reachVia(state, f)) return `${f.name} is out of reach: radio range, a team at their gates, a base near theirs or a coalition member near them.`;
+  if (!inPerson && !reachVia(state, f)) return `${f.name} is out of reach: radio range, a team at their gates, a base near theirs or a coalition member near them.`;
   if (f.goodwill < VOL.GW_MIN) return `${f.name} would not lend people below goodwill ${VOL.GW_MIN} (now ${Math.round(f.goodwill)}).`;
   const V = ensureVols(state);
   const wait = V.refused[f.id] != null ? V.refused[f.id] + VOL.REFUSED_WAIT - day(state) : 0;
@@ -189,7 +191,7 @@ export function askQuote(state, f, p, opts = {}) {
   const days = clamp(Math.round(opts.days || VOL.SPAN.def), VOL.SPAN.min, VOL.SPAN.max);
   const P = VOL.P;
   const out = { yes: false, points: 0, parts: [], refuse: "", n, days };
-  out.refuse = groupProblem(state, f) || (p && state.parties.includes(p) ? teamProblem(state, p) : ""); // p may be the planner's trip before it leaves
+  out.refuse = groupProblem(state, f, !!opts.inPerson) || (p && state.parties.includes(p) ? teamProblem(state, p) : ""); // p may be the planner's trip before it leaves
   if (!out.refuse && f.pop - n < VOL.HOME_MIN) out.refuse = `${f.name} cannot spare ${n}: they keep at least ${VOL.HOME_MIN} at home (${Math.round(f.pop)} people).`;
   if (!out.refuse && p && volunteersWith(state, p).length + volunteersComing(state, p).length + n > VOL.TEAM_MAX) out.refuse = `At most ${VOL.TEAM_MAX} volunteers with one team.`;
   if (out.refuse) return out;
@@ -482,9 +484,10 @@ function settleShare(state, reqId) {
   const from = p ? p.cargo.supplies : (baseById(state, req.homeBaseId) || hub(state) || {}).stock;
   if (!from) return;
   const got = [];
-  let value = 0;
+  let value = 0, due = 0;
   for (const [k, q] of Object.entries(req.cargoLast || {})) {
     const gain = Math.max(0, q - ((req.cargoStart || {})[k] || 0));
+    due += supplyValue(k, Math.floor(gain * req.share));
     const give = Math.min(Math.floor(gain * req.share), Math.floor(from[k] || 0));
     if (give < 1) continue;
     from[k] -= give;
@@ -493,6 +496,7 @@ function settleShare(state, reqId) {
     got.push(`${give} ${keyWord(k)}`);
   }
   V.stats.shared = (V.stats.shared || 0) + value;
+  if (due > 0 && value < due * 0.5) reneged(state, f, req); // loans.js: the haul spent before their share was paid: reneged
   if (!got.length) return;
   changeGoodwill(state, f, Math.min(VOL.SHARE.gwMax, 1 + value / VOL.SHARE.gwPer), "their share of the haul");
   log(state, `${f.name}'s share of the haul (${Math.round(req.share * 100)}%): ${got.join(", ")}.`, "info");

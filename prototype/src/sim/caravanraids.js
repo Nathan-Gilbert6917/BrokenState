@@ -165,16 +165,16 @@ export function roadCaravans(state, { player = false } = {}) {
     });
   }
   for (const q of state.parties) {
-    if (!q.path || !q.path.length || q.phase !== "out" && !(q.owner === "player" && q.phase === "back")) continue;
+    if (!q.path || !q.path.length || q.phase !== "out" && !(q.phase === "back" && (q.owner === "player" || q.kind === "envoy" || q.kind === "loan"))) continue; // envoys.js, loans.js: a group's envoy or volunteers on their way home too
     if (q.owner === "player") {
       if (!player || q.kind !== "convoy") continue;
       const g = q.cargo || { supplies: {}, gear: [] };
       out.push({ key: pKey(state, q), type: "convoy", ref: q, tile: partyTile(q), owner: "player", name: "your convoy", strength: 0, value: cargoValue(g.supplies, g.gear), escort: null, vehicle: q.vehicle ? "truck" : null });
       continue;
     }
-    if (q.kind !== "caravan" && q.kind !== "convoy") continue;
+    if (!["caravan", "convoy", "envoy", "loan", "opparty"].includes(q.kind)) continue; // envoys.js, loans.js: their envoys, volunteers and joint-op parties can be intercepted
     const f = factionById(state, q.owner);
-    const c = { key: pKey(state, q), type: q.kind, ref: q, tile: partyTile(q), owner: q.owner, name: `the ${f ? f.name.replace(/^The /, "") : "group's"} ${q.kind}`, strength: q.strength || 2, escort: q.escort || null, vehicle: q.escort && q.escort.vehicle ? q.escort.vehicle : q.vehicle ? "truck" : null };
+    const c = { key: pKey(state, q), type: q.kind, ref: q, tile: partyTile(q), owner: q.owner, name: `the ${f ? f.name.replace(/^The /, "") : "group's"} ${{ loan: "volunteers", opparty: "war party" }[q.kind] || q.kind}`, strength: q.strength || 2, escort: q.escort || null, vehicle: q.escort && q.escort.vehicle ? q.escort.vehicle : q.vehicle ? "truck" : null };
     const g = goodsOf(c);
     c.value = cargoValue(g.supplies, g.gear);
     out.push(c);

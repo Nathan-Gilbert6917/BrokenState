@@ -1632,6 +1632,13 @@ export function render(state) {
     }
     piece(cv, x, gy + dy, uk);
     notePiece(cv, x, gy, uk);
+    if (p.kind === "envoy" || p.kind === "loan" || p.kind === "opparty") pill(x, y - 24 * s, `${p.errand || "✉ envoy"}`, "#6b5f2e", s); // sim/envoys.js, sim/loans.js: a group's envoy, volunteers or joint-op party and its errand
+  }
+  // Joint operations' rendezvous (sim/loans.js): a flag with the day, while one is planned or under way.
+  if (on("teams")) for (const o of (state.vols && state.vols.ops) || []) {
+    if (o.status !== "planned" && o.status !== "met") continue;
+    const [rx, ry] = g.toPixel(o.tile, HEX);
+    pill(rx, ry - 30 * zoomBoost(), `⚑ rendezvous day ${o.day}`, "#7a3b2e", zoomBoost());
   }
   // Hardcore mode (sim/hardcore-groups.js): bands on the road that will found a group, in that group's colors, where
   // you can see them; the military's strike force on its way to the city hive as its convoy of trucks.
@@ -2354,8 +2361,10 @@ function drawPlayerParty(state, p) {
 }
 
 // A crew's team (sim/crews.js) carries its role's name above the sprite.
+// A crew's name, or an envoy's errand (sim/envoys.js p.envoyTag: "✉ aid · Northgate"), over the team.
 function crewTag(p, x, y) {
-  if (!p.crewName) return;
+  const label = p.crewName || (p.envoy != null ? p.envoyTag : "");
+  if (!label) return;
   const s = zoomBoost();
   const size = 10 * s * readable.text;
   ctx.save();
@@ -2364,11 +2373,12 @@ function crewTag(p, x, y) {
   ctx.textBaseline = "middle";
   ctx.lineWidth = size * 0.3;
   ctx.strokeStyle = "rgba(13,15,18,0.85)";
-  ctx.strokeText(p.crewName, x, y - 22 * s);
-  ctx.fillStyle = "#e0a84f";
-  ctx.fillText(p.crewName, x, y - 22 * s);
+  ctx.strokeText(label, x, y - 22 * s);
+  ctx.fillStyle = p.crewName ? "#e0a84f" : ENVOY_COLOR;
+  ctx.fillText(label, x, y - 22 * s);
   ctx.restore();
 }
+const ENVOY_COLOR = "#f2e6a0"; // envoys on the map: yours and theirs, a pale parchment tag
 
 export function tileTooltip(state, id) {
   const t = state.tiles[id];

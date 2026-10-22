@@ -898,6 +898,8 @@ export function unlistFromSites(state, item) {
 export function moveItem(state, fromStr, toStr, { across = false } = {}) {
   if (fromStr === toStr) return "";
   const from = parseLoc(fromStr), to = parseLoc(toStr);
+  const lent = from.o === "s" ? survivorById(state, from.id) : null; // loans.js: someone on loan keeps their kit
+  if (lent && lent.loan && !(to.o === "s" && to.id === from.id)) return `${lent.name} is on loan from ${lent.loan.group}: their kit is their own.`;
   const A = ref(state, from), B = ref(state, to);
   if (!A || !B) return "That slot is not there any more.";
   const place = placeOf(state, from) || (across ? placeOf(state, to) : null);

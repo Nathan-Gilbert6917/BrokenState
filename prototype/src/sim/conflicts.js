@@ -472,7 +472,7 @@ export const CONTACT = { AGAIN: 3, HORDE_MIN: 5 };
 // Is this party an enemy to your teams? A group at war with you (Hostile), or raiders and expansionists you have no
 // pact or alliance with; a raid is always an enemy. Sieges are fought at the walls, not here.
 export function enemyParty(state, q) {
-  if (!q || q.owner === "player" || q.phase === "siege") return null;
+  if (!q || q.owner === "player" || q.phase === "siege" || q.kind === "envoy") return null; // envoys.js: an envoy starts no fights (you may still fall on it)
   const f = factionById(state, q.owner);
   if (!f || !f.alive) return null;
   const att = attitude(f);

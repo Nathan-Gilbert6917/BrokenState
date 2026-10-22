@@ -25,6 +25,7 @@ import {
 } from "../sim/alliance.js";
 import { bandsOf, knownBands, bandInfo, militaryStatus } from "../sim/hardcore-groups.js";
 import { coalitionStandingTab } from "./coalition.js"; // the Coalition standing tab (sim/coalition.js)
+import { envoysTab, commsButton, loanButtons, ENVOY_ACTIONS, ENVOY_CHANGE } from "./envoys.js"; // the Envoys tab (sim/envoys.js)
 import { ask } from "./confirm.js";
 import { volAskButton } from "./volunteers.js"; // ask a group for volunteers (sim/volunteers.js) // joining or leaving a war, expelling a member, giving up a job ask first
 import { ensureBlocs, blocOf, blocMembers, blocTitle, foeText, leaveBlocSide, BLOC, previewVote, voteText, blocCarrier } from "../sim/blocs.js"; // AI blocs
@@ -59,6 +60,7 @@ export function groupsDiploHeader(state) {
       <button data-action="dp-open" data-tab="market"${tip("What every group in radio reach wants and has spare, best price first, with arrows against last week")}>Market board</button>
       <button data-action="dp-open" data-tab="affairs"${tip("Wars, pacts and how the groups feel about each other; broker a ceasefire or join a war")}>World affairs${wars ? ` (${wars} war${wars === 1 ? "" : "s"})` : ""}</button>
       <button data-action="dp-open" data-tab="coalition"${tip(`${ALLIANCE.NAME}: members, invitations, the council`)}>Coalition</button>
+      <button data-action="dp-open" data-tab="envoys"${tip("How word reaches each group (radio or envoy), messages to send, and the ones in flight")}>Envoys</button>
     </div>
     ${blocsAndWarsBlock(state)}
     ${jobsBlock(state, true)}`;
@@ -213,7 +215,7 @@ export function groupCardExtras(state, f) {
     ${marketLine(m)}
     ${jobs.length ? `<div>${jobs.map((j) => `${JOB_TYPES[j.type].icon} ${esc(JOB_TYPES[j.type].name)} (${j.status === "offered" ? "offered" : "under way"})`).join(" · ")}</div>` : ""}
   </div>
-  <div class="row" style="margin-top:0.25rem">${member ? "" : `<button class="mini" data-action="al-invite" data-id="${f.id}" ${inv ? "disabled" : ""}${tip(inviteTip(state, f, inv))}>Invite to the coalition</button>`}${declareRow(state, f)}</div>`;
+  <div class="row" style="margin-top:0.25rem">${commsButton(state, f)}${loanButtons(state, f)}${member ? "" : `<button class="mini" data-action="al-invite" data-id="${f.id}" ${inv ? "disabled" : ""}${tip(inviteTip(state, f, inv))}>Invite to the coalition</button>`}${declareRow(state, f)}</div>`;
 }
 // Their bloc (sim/blocs.js): its colour, the members, its foe; leave it if you stand with it.
 function blocLine(state, f) {
@@ -332,10 +334,10 @@ export function radioDiploBlock(state, f) {
 }
 
 // ---------- the Diplomacy window ----------
-const TABS = [["jobs", "Jobs"], ["market", "Market board"], ["affairs", "World affairs"], ["coalition", "Coalition & goals"], ["standing", "Coalition standing"]];
+const TABS = [["jobs", "Jobs"], ["market", "Market board"], ["affairs", "World affairs"], ["coalition", "Coalition & goals"], ["standing", "Coalition standing"], ["envoys", "Envoys"]];
 export function diplomacyModal(state, ui) {
   const d = ui.diplo || { tab: "jobs" };
-  const body = d.tab === "market" ? marketTab(state, ui) : d.tab === "affairs" ? affairsTab(state) : d.tab === "coalition" ? coalitionTab(state) : d.tab === "standing" ? coalitionStandingTab(state) : jobsBlock(state, false);
+  const body = d.tab === "market" ? marketTab(state, ui) : d.tab === "affairs" ? affairsTab(state) : d.tab === "coalition" ? coalitionTab(state) : d.tab === "standing" ? coalitionStandingTab(state) : d.tab === "envoys" ? envoysTab(state, ui) : jobsBlock(state, false);
   return `<div class="box wide"><h1>🤝 Diplomacy</h1>
     <div class="tabs">${TABS.map(([k, l]) => `<button data-action="dp-tab" data-tab="${k}" class="${d.tab === k ? "active" : ""}">${l}</button>`).join("")}</div>
     ${ui.diploMsg ? `<div class="result">${esc(ui.diploMsg)}</div>` : ""}
@@ -456,6 +458,7 @@ function blocsToInvite(state) {
 
 // ---------- handlers (main.js registers them) ----------
 export const DIPLO_ACTIONS = {
+  ...ENVOY_ACTIONS, // ui/envoys.js: the Envoys tab
   "dp-open": (state, ui, d) => { ui.diplo = { tab: d.tab || "jobs" }; ui.diploMsg = ""; },
   "dp-tab": (state, ui, d) => { ui.diplo = { tab: d.tab || "jobs" }; ui.diploMsg = ""; },
   "dp-close": (state, ui) => { ui.diplo = null; ui.diploMsg = ""; },
@@ -502,6 +505,7 @@ export const DIPLO_ACTIONS = {
   },
 };
 export const DIPLO_CHANGE = {
+  ...ENVOY_CHANGE,
   "mk-good": (state, ui, el) => { if (SUPPLIES[el.value]) ui.marketKey = el.value; },
   "pw-goal": (state, ui, el) => { const id = Number(el.dataset && el.dataset.id); if (Number.isFinite(id) && ["tribute", "land", "break"].includes(el.value)) declareGoal[id] = el.value; },
 };

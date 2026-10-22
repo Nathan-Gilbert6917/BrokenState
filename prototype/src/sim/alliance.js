@@ -28,7 +28,9 @@
 //   of the brood, at least 6 left) (hives.js assaultHive).
 // - No member raids you or another member, and members do not go to war with each other.
 //
-// The council meets at the start of every season (days 15, 43, 71, ...) once you have a member. It asks one thing:
+// The council meets at the start of every season (days 15, 43, 71, ...) once you have a member; a member without a
+// radio link to you sends a delegate to your hub and the council sits when they are in (envoys.js councilByDelegates:
+// a delegate lost on the way is not heard; their goodwill moves at the table, they were there). It asks one thing:
 // supplies for a member that is short (send: +6 with them, +3 with the others; refuse: −4 with all), a job from a
 // member (a job offer from the council: accept or refuse, −3 with all), or a ruling between two members who quarrel
 // over land or water (side with one: +6 with it, −8 with the other and −10 between them; or a compromise: a Speech
@@ -56,7 +58,7 @@ import { moveFoodUnits } from "./foods.js"; // food sent in days
 import { day, log, hub, factionById, addCard, atBase, skill, snapshot, alive, RADIO_RANGE } from "./world.js";
 import { attitude, changeGoodwill, strength, baseDefense } from "./factions.js";
 import { tileLabel, partyTile } from "./parties.js";
-import { canRadioGroup, radioSpeech, radioDeal, dealQuote, radioGreet, radioPact, radioCooldown, radioScan, hasNetwork, canListen, relaySpotFor, GROUP_REACH, RELAY_RANGE } from "./radio.js";
+import { canRadioGroup, radioSpeech, radioDeal, dealQuote, radioGreet, radioPact, radioCooldown, radioScan, hasNetwork, canListen, relaySpotFor, groupHasSet, inRadioReach, GROUP_REACH, RELAY_RANGE } from "./radio.js";
 import { available, need, dealRoundKey } from "./trade.js";
 import { hivesSecured, hiveStats } from "./hives.js";
 import { count, isCamp, hasWall } from "./buildings.js"; // a camp (staging.js) holds no land and wins nothing
@@ -74,6 +76,7 @@ import { volunteerGroupsAt, councilWar, councilVolCard } from "./volunteers.js";
 import { blocOf, blocById, blocMembers, blocTitle, blocJoinsCoalition, blocCarrier, blocVoteWait } from "./blocs.js"; // AI blocs vote on joining together
 import { atWarWithYou } from "./playerwars.js";
 import { toleranceCheck, coalitionDaily, noteAnswer } from "./coalition.js"; // standing, asks and tolerance bands
+import { councilByDelegates } from "./envoys.js"; // the council without radios: delegates travel (call-time only)
 
 export const ALLIANCE = {
   NAME: "The Calder Coalition", GOODWILL: 50, LEAVE_GOODWILL: 20, VOTE_REL: 10, ASK_CHANCE: 0.03,
@@ -111,10 +114,11 @@ const reachable = (state, f) => reachVia(state, f) !== "";
 // The "out of radio reach" line: every way in, and the base where a relay would do it when there is one.
 function outOfReach(state, f) {
   const spot = relaySpotFor(state, f);
-  const radio = spot ? `build a radio relay at ${spot.name} (it would bring them into your coverage)`
+  const radio = !groupHasSet(state, f) && inRadioReach(state, f) ? "they have no radio of their own to answer on" // radio.js: a two-way link needs their set too
+    : spot ? `build a radio relay at ${spot.name} (it would bring them into your coverage)`
     : hasNetwork(state) ? `bring their base within ${GROUP_REACH} tiles of your radio coverage (a station reaches ${RADIO_RANGE} tiles, each linked relay ${RELAY_RANGE} more around its base)`
     : `build a radio station (${RADIO_RANGE} tiles, +${GROUP_REACH} for their own sets; relays at your other bases chain it ${RELAY_RANGE} tiles further each)`;
-  return `${f.name} is out of radio reach (${radio}, send a team to their gates, hold a base within ${ALLIANCE.NEIGHBOUR} tiles of theirs, or win a member within ${ALLIANCE.MEMBER_RELAY} tiles of them).`;
+  return `${f.name} is out of radio reach (${radio}, send a team to their gates, hold a base within ${ALLIANCE.NEIGHBOUR} tiles of theirs, or win a member within ${ALLIANCE.MEMBER_RELAY} tiles of them). Or send an envoy with the invitation (Diplomacy → Envoys).`;
 }
 // The council's vote on a candidate: { yes, no, passes } (no members: no vote).
 export function councilVote(state, f) {
@@ -122,13 +126,14 @@ export function councilVote(state, f) {
   const yes = ms.filter((m) => relation(state, m, f) >= ALLIANCE.VOTE_REL).length;
   return { yes, no: ms.length - yes, passes: ms.length > 0 && yes * 2 > ms.length };
 }
-// Why this group cannot join now ("" = it can). Each condition, in the order the player meets them.
-export function inviteProblem(state, f) {
+// Why this group cannot join now ("" = it can). Each condition, in the order the player meets them. byEnvoy: the
+// invitation came in person (envoys.js): no need to be in reach.
+export function inviteProblem(state, f, byEnvoy = false) {
   if (!f || !f.alive) return "They are gone.";
   if (f.outsider || f.nomad) return `${f.name} are not one of the state's groups: they join nothing.`; // outsiders and nomads (visitors.js, nomads.js) never join the coalition
   if (isMember(state, f)) return `${f.name} is already in the coalition.`;
   if (!f.known) return "You have not met them.";
-  if (!reachable(state, f)) return outOfReach(state, f);
+  if (!byEnvoy && !reachable(state, f)) return outOfReach(state, f);
   if (attitude(f) === "Hostile") return `${f.name} is hostile.`;
   const want = inviteGoodwill(state, f, ALLIANCE.GOODWILL); // conquest.js: peaceful groups want more from a conqueror
   if (f.goodwill < want) return `${f.name} needs goodwill ${want}${want > ALLIANCE.GOODWILL ? ` (${ALLIANCE.GOODWILL}, more because of the groups you have conquered)` : ""} (now ${Math.round(f.goodwill)}).`;
@@ -145,8 +150,8 @@ export function inviteProblem(state, f) {
 }
 // An invitation to a member of an AI bloc goes to the whole bloc (blocs.js blocJoinsCoalition: it votes, and joins
 // together, or the invited group joins alone, or nobody does).
-export function inviteToAlliance(state, f) {
-  const why = inviteProblem(state, f);
+export function inviteToAlliance(state, f, byEnvoy = false) {
+  const why = inviteProblem(state, f, byEnvoy);
   if (why) return why;
   const bloc = state.noBlocs ? null : blocOf(state, f);
   if (bloc && blocMembers(state, bloc).length > 1) return blocJoinsCoalition(state, bloc, f);
@@ -327,15 +332,22 @@ function council(state, ms) {
   if (A.lastCouncil === d) return;
   A.lastCouncil = d;
   A.stats.councils++;
+  if (councilByDelegates(state, ms)) return; // envoys.js: members without a radio link send delegates; it sits when they are in
+  holdCouncil(state, ms);
+}
+// The council sits (today, or when the delegates are in: envoys.js): its one ask of you.
+export function holdCouncil(state, ms) {
+  const A = ensureAlliance(state), d = day(state);
   const rng = diploRng(state);
   const kinds = ["supplies", "job"];
   if (ms.length >= 2) kinds.push("ruling", "ruling");
   if (ms.length >= 2 && councilWar(state, ms)) kinds.push("volunteers"); // volunteers.js: a member at war asks for fighters
   for (let i = 0; i < 4; i++) {
     const card = councilCard(state, rng.pick(kinds), ms);
-    if (card) { addCard(state, card); return; }
+    if (card) { addCard(state, card); return card; }
   }
   A.history.unshift({ day: d, text: "The council met. Nothing was asked of you." });
+  return null;
 }
 
 const everyone = (state, ms, n, why) => { for (const m of ms) changeGoodwill(state, m, n, why); };

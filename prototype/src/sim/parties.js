@@ -67,6 +67,8 @@ import { cartSupOf, cartToArms, cartLotsIn } from "./carry.js"; // carts.js: the
 import { isCart, cartWearStep, cartRouteWear } from "./carts.js";
 import { openTrade, routeExchange } from "./trade.js";
 import { caravanArrive, caravanHour, caravanStop } from "./caravans.js";
+import { envoyArrive, envoyHome, envoyCarryOn, envoyLocked, envoyAiWait, envoyAiArrive, envoysHour, ENVOY_LOCKED } from "./envoys.js"; // messages carried in person (call-time only)
+import { loanPartyArrive } from "./loans.js"; // volunteers on loan, joint operations (call-time only)
 import { caravanGuarded } from "./jobs.js";
 import { caravanOrderChoices, gangAmbush, wouldRaid } from "./caravanraids.js"; // any caravan on the road can be robbed
 import { meetChoices, groupConvoyArrive, convoyMeetHour } from "./trademeet.js"; // trades met at a tile: their caravan waiting, the groups' convoys meeting halfway
@@ -155,6 +157,7 @@ export const MISSIONS = {
   fish:        { name: "Fishing",          desc: "A fishing trip (hunting.js): the team's name while its plan fishes.", hidden: true },
   wood:        { name: "Woodcutting",      desc: "A woodcutting trip (woodcutting.js): the team's name while its plan cuts wood.", hidden: true },
   caravan:     { name: "Trade caravan",    desc: "Caravan stop: trade here, unload, stay a day, go on to the next destination or return home (caravans.js).", hidden: true },
+  envoy:       { name: "Envoy",            desc: "Carries a message in person to a group with no radio link to you, and its answer home (envoys.js). Locked to its errand: no other orders.", hidden: true },
 };
 
 // vehicle: false (on foot), true (a car) or "bike". Bikes: roads at BIKE_ROAD (half an hour a tile, twice walking
@@ -1106,6 +1109,7 @@ export function movePartiesHour(state) {
     if (p.owner === "player") { playerPartyHour(state, p); repairWaitHour(state, p); } // repairwait.js: a breakdown's repair done, the team moving on
     else aiPartyHour(state, p);
   }
+  envoysHour(state); // envoys.js: messages lost or overdue, envoys stuck on the way, the council's delegates
   convoysHour(state); // miltrucks.js: the abandoned Army convoys (before crashesHour: their salvage parties are its own)
   crashesHour(state); // crashes.js: crash sites (new ones, the search, the race, burning out)
   breakdownsHour(state); // breakdowns.js: repair work at the bases, attack damage
@@ -1805,6 +1809,7 @@ function quietArrival(state, p) {
 export function awaitOrders(state, p, text, opts = {}) {
   if (!state.parties.includes(p)) return;
   if (wipeIfEmpty(state, p)) return;
+  if (p.envoy != null && envoyCarryOn(state, p, text)) return; // envoys.js: an envoy never waits for orders: on with its errand
   const tile = partyTile(p);
   // Finished where it was sent (not stopped on the way): the next queued order starts by itself.
   const finished = tile === p.dest;
@@ -1850,6 +1855,7 @@ function requeueInterrupted(state, p) {
 
 /** @param {State} state @param {Party} p @param {string} mission */
 export function giveOrder(state, p, mission) {
+  if (envoyLocked(p)) return ENVOY_LOCKED; // envoys.js: locked to its errand
   p.mission = mission;
   p.dest = partyTile(p);
   p.phase = "out";
@@ -1858,6 +1864,7 @@ export function giveOrder(state, p, mission) {
 
 /** @param {State} state @param {Party} p @param {number} tile */
 export function orderMove(state, p, tile) {
+  if (envoyLocked(p)) return ENVOY_LOCKED; // envoys.js: locked to its errand
   if (tile === partyTile(p) && !(onTheMove(p) && (p.progress || 0) > 0)) return "The team is already there."; // part-way along a step: it walks back
   if (p.phase === "task" && p.task?.afloat) return "The team is out on the water. Give the order once it lands.";
   if (!planPath(state, partyTile(p), tile, p.vehicle)) return p.vehicle ? "The vehicle cannot get there. Leave it or pick another tile." : "No route there over land. Water in the way? Build a boat from the shore (team panel).";
@@ -2108,6 +2115,8 @@ function arrive(state, p) {
       return "";
     case "caravan":
       return caravanStop(state, p) || ""; // caravans.js: the stop card
+    case "envoy":
+      return envoyArrive(state, p) || ""; // envoys.js: the message delivered, the answer given, home again
   }
   return "";
 }
@@ -2361,6 +2370,7 @@ function cullCard(state, p, horde) {
 /** @param {State} state @param {Party} p */
 export function startReturn(state, p) {
   if (wipeIfEmpty(state, p)) return "That team is gone.";
+  if (envoyLocked(p) && !p.envoyBack) return ENVOY_LOCKED; // envoys.js: it turns for home only with the answer
   const known = reportsLive(p) || p.phase === "waiting" || p.phase === "task"; // ordered home by you, not on its own
   const home = baseById(state, p.homeBaseId) || hub(state);
   if (!home) { // no base left at all (conquest.js): the team stays on the road until it founds or takes one
@@ -2423,7 +2433,7 @@ function unloadAt(state, p, base, members) {
   addStock(base, p.supplies);
   addStock(base, p.cargo.supplies);
   base.armory.push(...p.cargo.gear);
-  for (const m of members) unpackPerson(state, m, base); // supitems.js: the water, meds, food… they carry as items, into the stores
+  for (const m of members) if (!m.loan) unpackPerson(state, m, base); // supitems.js: the water, meds, food… they carry as items, into the stores (loans.js: not what someone on loan carries: theirs)
   bodiesHome(state, p, base); // carriers.js
   const vs = partyVehicles(state, p); // every one it has (vehicles.js fleets)
   for (const x of vs) x.loc = { kind: "base", baseId: base.id };
@@ -2474,6 +2484,7 @@ const r1 = (x) => Math.round(x * 10) / 10;
 function returnHome(state, p) {
   const home = baseById(state, p.homeBaseId) || hub(state);
   if (!home) { awaitOrders(state, p, "There is no base to go home to.", { failed: true, hold: true }); return; }
+  if (p.envoy != null) envoyHome(state, p, home); // envoys.js: the answer it brings is known now
   const members = partyMembers(state, p);
   const loot = Object.entries(p.cargo.supplies).filter(([, val]) => val >= 1).map(([k, val]) => `${Math.floor(val)} ${keyWord(k)}`); // "un-purified water", not the key (before the food goes into the stores)
   const stockBefore = { ...home.stock }, armoryBefore = new Set(home.armory);
@@ -2665,6 +2676,8 @@ function aiPartyHour(state, p) {
   }
   if (p.kind === "caravan" && p.phase !== "out") return caravanHour(state, p); // at your gates (caravans.js)
   if (p.kind === "convoy" && p.phase === "meet") return convoyMeetHour(state, p); // trademeet.js: waiting halfway for the other group's convoy
+  if (p.kind === "envoy" && p.phase === "wait") return envoyAiWait(state, p); // envoys.js: at the gates, waiting for the answer
+  if (p.kind === "opparty" && p.phase === "wait") return; // loans.js: at the rendezvous, waiting for your team (loansHour)
   if (p.kind === "scav" && p.phase === "search") return scavSearchHour(state, p); // scavenging a site (aiscav.js)
   const entered = stepAlong(state, p, p.vehicle ? 1 : 0.9);
   const owner = entered.length && state.bases.length ? factionById(state, p.owner) : null;
@@ -2694,7 +2707,7 @@ function aiPartyHour(state, p) {
       }
       if (horde.size < 5) state.hordes.splice(state.hordes.indexOf(horde), 1); // too few left to be a horde
     }
-    if ((p.kind === "convoy" || p.kind === "caravan") && !caravanGuarded(state, p)) { // jobs.js: raiders leave a caravan you escort alone
+    if ((p.kind === "convoy" || p.kind === "caravan" || p.kind === "envoy" || p.kind === "loan" || p.kind === "opparty") && !caravanGuarded(state, p)) { // jobs.js: raiders leave a caravan you escort alone; envoys.js: an envoy on the road is fair game too
       for (const r of state.factions) {
         // Raider gangs (not a group they have a pact with), and aggressive groups at war with its group (caravanraids.js wouldRaid).
         if (!r.alive || r.id === p.owner || !isAggressiveType(r)) continue;
@@ -2752,6 +2765,10 @@ function aiPartyHour(state, p) {
       groupConvoyArrive(state, p); // trademeet.js: the swap at the partner's base or halfway, then home with the other's load
     } else if (p.kind === "caravan") {
       caravanArrive(state, p); // caravans.js: trade at your base, or home again
+    } else if (p.kind === "envoy") {
+      envoyAiArrive(state, p); // envoys.js: at the other end (the message delivered) or home (the answer known)
+    } else if (p.kind === "loan" || p.kind === "opparty") {
+      loanPartyArrive(state, p); // loans.js: volunteers at your base or home; a joint operation's party at the rendezvous
     } else if (p.kind === "scav") {
       scavArrived(state, p); // aiscav.js: at the site (search) or home (the haul into their stock)
     } else if (p.kind === "fwraid") {

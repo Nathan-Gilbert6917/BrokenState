@@ -211,6 +211,9 @@ export function createFactions(state, count) {
       stock: { ammo: pop * 10 * def.arms * cfgOf(state, "aiGear"), fuel: pop * 1, meds: pop, parts: 2, scrap: pop * 3, jars: 0, wood: pop * GROUP_WOOD.start, arrows: pop * 2, brass: 0, powder: 0, primers: 0, blackpowder: 0, matchprimers: 0, ...groupStartFood(state, type, pop) }, // food: foods.js (6.5 days a head of its kind's food); jars: storage.js; wood: woodcutting.js; brass..primers: reloading.js
       lootedGear: [], raidCooldown: rng.int(4, 10),
     });
+    // envoys.js (2026-10-21: "Only military bases start with radios"): a group settled on a military site starts with
+    // its radio room as a station (the military's own army sets are stations wherever it is: radio.js groupNetwork).
+    if (state.groupWorks && type !== "military" && site.loc.type === "military") { const nf = state.factions[state.factions.length - 1]; (nf.works = nf.works || {})[site.id] = { ...(nf.works[site.id] || {}), radio: 1 }; }
     factionVehicles(state.factions[state.factions.length - 1]); // vehicles.js: a military group starts with an Army truck and a Humvee (M2 turret)
     ensureArsenal(state, state.factions[state.factions.length - 1]); // arsenal.js: its weapons, armour and explosives (hashed: the world's dice stay put)
     peopleUp(state, state.factions[state.factions.length - 1]); // members.js, loadouts.js: its people, each carrying their share of that kit

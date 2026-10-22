@@ -86,6 +86,8 @@ const BUILT = { water: 9, farms: 9, beds: 9, walls: 7, bench: 1, store: 1, pens:
   const st = W();
   const f = G(st, "traders", { works: { ...BUILT, shop: 1 }, knows: ["machinist"] });
   check(groupNetwork(st, f) === null, "no station: no network (nothing to hear, nothing heard)");
+  check(/Radio Engineering Handbook/.test(workLock(st, f, "radio")), `no station before the Radio Engineering Handbook (envoys.js: radios are mid game): ${workLock(st, f, "radio")}`);
+  f.tech.known.push("radioeng");
   check((nextWork(st, f) || {}).type === "radio", `traders (Mechanics 4), ${f.pop} people: a radio station next (${JSON.stringify(nextWork(st, f))})`);
   worksAt(f, f.bases[0]).radio = 1;
   let net = groupNetwork(st, f);

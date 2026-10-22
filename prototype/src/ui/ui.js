@@ -125,6 +125,7 @@ import { buildMapRow } from "./buildmap.js"; // Open the build map on the Camp t
 import { groupsDiploHeader, groupCardExtras, diplomacyModal, plannerJobNote, bandsSection } from "./diplomacy.js";
 import { volRequestModal, volPickModal, volAskButton, teamVolLine, plannerVolRow } from "./volunteers.js"; // volunteers (sim/volunteers.js)
 import { lentLine } from "../sim/volunteers.js";
+import { loanBadge } from "./envoys.js"; // people on loan (sim/loans.js)
 import { ALLIANCE, goalsProgress } from "../sim/alliance.js";
 import { claimText, wellText, CLAIM, WELL_SHORE, WELL_YIELD } from "../sim/claims.js"; // land claims and wells (the tile panel, the help)
 import { MIL_RADIO_RANGE, GROUP_REACH, GROUP_NET_RANGE } from "../sim/radio.js";
@@ -202,7 +203,7 @@ function inContact(state, s) {
   return !!p && (p.kind === "convoy" || contactable(p));
 }
 // The status icons next to a name, for someone you are in touch with (ui/status.js).
-const stIcons = (state, s) => (s && s.alive && inContact(state, s) ? statusIcons(state, s) : "");
+const stIcons = (state, s) => `${s && s.alive && inContact(state, s) ? statusIcons(state, s) : ""}${loanBadge(state, s)}`; // ui/envoys.js: someone on loan from a group
 // The role drop-down: work roles (priorities) and fixed jobs (Manual), with what they do now (ui/work.js).
 const roleSelect = (state, s, extra = "") => `${workRoleSelect(state, s, extra)}${taskChip(state, s)}`;
 
