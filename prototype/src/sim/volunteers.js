@@ -63,7 +63,9 @@ import { battlePending, startCombat, registerCombatHandler } from "./combat.js";
 import { calOf, payAmmoKeys, payWord, roundsText } from "./ammo.js"; // an offer in rounds: by calibre, the ones the guns need least
 import { lightOf } from "./lights.js";
 import { baseKey, supplyAmt } from "./rounds.js";
-import { reneged } from "./loans.js"; // a share not paid (call-time only)
+import { reneged, opTeamHome } from "./loans.js"; // a share not paid; a joint operation's people walking home (call-time only)
+import { cardFromGroup } from "./envoys.js"; // their asks carried in person without a radio link (call-time only)
+import { canRadioGroup } from "./radio.js";
 
 
 export const VOL = {
@@ -388,6 +390,7 @@ function sendHomeAll(state, list) {
   const V = ensureVols(state);
   const byKey = new Map();
   const teams = new Set();
+  const walkers = new Map(); // loans.js: a joint operation's people leave the team together and walk home (opTeamHome)
   for (const [s, why] of list) {
     const vol = s.vol; // noteVet takes it off
     const f = factionById(state, vol.fid);
@@ -405,13 +408,22 @@ function sendHomeAll(state, list) {
     }
     const reqId = vol.req;
     V.people = V.people.filter((x) => x !== s);
-    settleShare(state, reqId);
+    if (vol.op != null && f && f.alive && p && state.parties.includes(p)) { // the user's rule 2026-10-22: "formed into a team and move back to a base of their choosing"
+      const k = `${f.id}|${p.id}`;
+      if (!walkers.has(k)) walkers.set(k, { f, p, op: vol.op, people: [], reqs: new Set() });
+      walkers.get(k).people.push(s);
+      walkers.get(k).reqs.add(reqId);
+    } else settleShare(state, reqId);
     V.stats.home++;
     const k = `${vol.group}|${why}`;
     if (!byKey.has(k)) byKey.set(k, { group: vol.group, why, names: [] });
     byKey.get(k).names.push(first(s));
   }
   for (const g of byKey.values()) log(state, `${listNames(g.names)} (${g.group}) went home: ${g.why}.`, "info");
+  for (const w of walkers.values()) { // their party, then their share into what it carries home
+    const party = opTeamHome(state, w.f, w.people, w.p, w.op);
+    for (const r of w.reqs) settleShare(state, r, party ? party.goods.supplies : null);
+  }
   for (const p of teams) { if (state.parties.includes(p)) { wipeIfEmpty(state, p); if (state.parties.includes(p)) try { weighTeam(state, p); } catch { /* */ } } }
 }
 // ---------- old hands (VOL.VET) ----------
@@ -472,7 +484,9 @@ export function welcomeVet(state, f, v) {
 // it (the last look, req.cargoLast, against the team's cargo when you asked) × the share, from the team's cargo (or
 // its home base when the team is home already), when the last of them leaves; goodwill for it.
 const supplyOf = (p) => { const out = {}; for (const [k, v] of Object.entries((p.cargo && p.cargo.supplies) || {})) if (Number.isFinite(v) && v > 0 && SUPPLIES[k]) out[k] = v; return out; };
-function settleShare(state, reqId) {
+// into: where their share goes (a joint operation's party walking home carries it: loans.js opTeamHome), else
+// their group's stock.
+function settleShare(state, reqId, into = null) {
   const V = ensureVols(state);
   const req = (V.reqs || []).find((r) => r.id === reqId);
   if (!req || V.people.some((s) => s.alive && s.vol && s.vol.req === reqId)) return;
@@ -480,7 +494,7 @@ function settleShare(state, reqId) {
   const f = factionById(state, req.fid);
   if (!req.share || !f || !f.alive) return;
   const p = state.parties.find((x) => x.id === req.partyId);
-  if (p) req.cargoLast = supplyOf(p);
+  if (p) req.cargoLast = peakOf(req.cargoLast, supplyOf(p));
   const from = p ? p.cargo.supplies : (baseById(state, req.homeBaseId) || hub(state) || {}).stock;
   if (!from) return;
   const got = [];
@@ -491,7 +505,8 @@ function settleShare(state, reqId) {
     const give = Math.min(Math.floor(gain * req.share), Math.floor(from[k] || 0));
     if (give < 1) continue;
     from[k] -= give;
-    f.stock[k] = (f.stock[k] || 0) + give;
+    const to = into || f.stock;
+    to[k] = (to[k] || 0) + give;
     value += supplyValue(k, give);
     got.push(`${give} ${keyWord(k)}`);
   }
@@ -501,10 +516,12 @@ function settleShare(state, reqId) {
   changeGoodwill(state, f, Math.min(VOL.SHARE.gwMax, 1 + value / VOL.SHARE.gwPer), "their share of the haul");
   log(state, `${f.name}'s share of the haul (${Math.round(req.share * 100)}%): ${got.join(", ")}.`, "info");
 }
-// The hourly look at a team's cargo for the share.
+// The hourly look at a team's cargo for the share: the most it held of each (what was taken is owed, even once spent:
+// paying much less than that is reneging, loans.js reneged).
+const peakOf = (was, now) => { const out = { ...(was || {}) }; for (const [k, v] of Object.entries(now)) out[k] = Math.max(out[k] || 0, v); return out; };
 function noteHaul(state) {
   const V = ensureVols(state);
-  for (const r of V.reqs || []) { const p = state.parties.find((x) => x.id === r.partyId); if (p) { r.cargoLast = supplyOf(p); r.homeBaseId = p.homeBaseId; } }
+  for (const r of V.reqs || []) { const p = state.parties.find((x) => x.id === r.partyId); if (p) { r.cargoLast = peakOf(r.cargoLast, supplyOf(p)); r.homeBaseId = p.homeBaseId; } }
 }
 
 // world.js killSurvivor: a volunteer died. In a fight: they knew the risk; otherwise you let them die.
@@ -559,7 +576,7 @@ function aiAsksDaily(state) {
   const rng = volRng(state);
   const d = day(state);
   for (const f of state.factions) {
-    if (!f.alive || !f.known || attitude(f) === "Hostile" || f.goodwill < VOL.AI.gw || !reachVia(state, f)) continue;
+    if (!f.alive || !f.known || attitude(f) === "Hostile" || f.goodwill < VOL.AI.gw) continue; // envoys.js: no radio reach, they ask by envoy
     const owed = !!f.volFavour;
     const last = V.lastAsk[f.id];
     if (last != null && d - last < (owed ? VOL.AI.favourGap : VOL.AI.gap)) continue;
@@ -577,7 +594,9 @@ export function makeAsk(state, f, need, n, days) {
   const ask = { id: V.nextAsk++, fid: f.id, kind: need.kind, label: need.label, n, days, expires: state.hour + VOL.AI.expire, owed: !!f.volFavour };
   V.asks.push(ask);
   V.stats.aiAsks++;
-  addCard(state, askCard(state, ask));
+  if (canRadioGroup(state, f)) addCard(state, askCard(state, ask));
+  else if (cardFromGroup(state, f, "volask", { askId: ask.id }) === "envoy") ask.expires = state.hour + 24 * 60; // envoys.js: its envoy carries it (the clock starts when it arrives)
+  else { V.asks = V.asks.filter((a) => a !== ask); return null; }
   return ask;
 }
 export const askById = (state, id) => (state.vols ? state.vols.asks.find((a) => a.id === id) : null) || null;

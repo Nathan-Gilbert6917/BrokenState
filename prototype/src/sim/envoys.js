@@ -25,6 +25,12 @@
 //   they answered and what happened at their table stands (goods handed over, their feelings); what they gave is lost
 //   with the envoy (its death site), the agreement lapses (the signed word never got home) and you never learn the
 //   answer. Either way, once the trip is OVERDUE × the planned time + OVERDUE_H hours late, "No word from our envoy".
+// - Lost out of your radio coverage (decided 2026-10-22: "Fix the envoy message for lost team"): nothing is said when
+//   it happens (parties.js unheardEnvoy: no death lines, no "whole team was lost", no death site or vehicle marked on
+//   the map: envoyLostQuiet keeps the names on the message). "No word from our envoy" at the overdue hour is the first
+//   you hear of it and gives them up for lost by name (noteOverdue). In your radio coverage its radio reports at once,
+//   as any team's (p.radioLive). Your memorial wall and the grief of their friends still come when they die (the
+//   people at home do not hear it, but the game keeps one record of a death).
 //
 // Their messages
 // - A coalition ask (coalition.js) from a member with no radio link: its envoy (an AI party, kind "envoy", on the map
@@ -48,9 +54,9 @@
 // for aid, how much they have spare and need it; military aid, the coalition, a pact, their own war or a horde. A
 // gift is always taken, a pact signed by the radio's rules (trade.js proposePact), an invitation accepted when they
 // would join (alliance.js inviteProblem, in person). A hostile group hears nothing.
-import { day, log, hub, baseById, factionById, snapshot, survivorById, addCard } from "./world.js";
+import { day, log, hub, baseById, factionById, snapshot, survivorById, addCard, atBase } from "./world.js";
 import { attitude, changeGoodwill } from "./factions.js";
-import { canRadioGroup, groupNetwork, netCovers, tradeBase } from "./radio.js";
+import { canRadioGroup, groupNetwork, netCovers, tradeBase, refusal, offerCard, inCoverage } from "./radio.js";
 import { launchExpedition, estimateTrip, spawnAiParty, removeParty, partyTile, partyMembers, planPath, startReturn, tileLabel, carryCapacity, supplyLoad, teamName } from "./parties.js";
 import { vehicleById, travelMode, isCar } from "./vehicles.js";
 import { hash01 } from "./skills.js";
@@ -59,14 +65,20 @@ import { supValue, SUPPLIES, FACTION_TYPES } from "./data.js";
 import { moveFoodUnits, foodIn, addFood, FOODS } from "./foods.js";
 import { useSupply, supplyAmt, isRoundKey } from "./rounds.js";
 import { payRoundsOf, suppliesText } from "./ammo.js";
-import { isMember, allianceMembers, inviteProblem, inviteToAlliance, holdCouncil, ensureAlliance } from "./alliance.js";
+import { isMember, allianceMembers, inviteProblem, inviteToAlliance, holdCouncil, ensureAlliance, joinAskCard, shareSightings } from "./alliance.js";
 import { standing, remember, withSink, replaySink, askCard, raiseArrived, noteTheirAnswer } from "./coalition.js";
-import { warsOf } from "./diplomacy.js";
+import { warsOf, warById, enemyIn, warCard, pactBetween, warBetween, ensureDiplo, knownAs, news as diploNews, startWar, makePeace } from "./diplomacy.js";
 import { sendCaravan } from "./caravans.js";
 import { note } from "./ledger.js";
 import { RAW } from "./water.js";
 import { loanQuote, sendLoan, opQuote, joinOp, noteOpAnswer, planOp, opById, proposalCard, loansHour, OPS } from "./loans.js"; // volunteers on loan, joint operations
-import { ensureVols } from "./volunteers.js";
+import { ensureVols, askById, askCard as volAskCard, VOL } from "./volunteers.js";
+import { jobById, jobArrived, offerCard as jobOfferCard } from "./jobs.js";
+import { blocById, blocInviteCard } from "./blocs.js";
+import { pwarById, sueCard, demandCard, declareOnPlayer, offerTerms } from "./playerwars.js";
+import { withTalk } from "./talk.js"; // the sending group's side waits for its envoy home
+import { negotiationCard } from "./ransom.js"; // a ransom's price, once the envoy is home
+import { keepAnswer, keepDelivered, keepHome } from "./loans.js"; // loaned people who want to stay
 
 export const ENVOY = {
   PACK: 1.3, PACK_MIN: 1,      // food and water packed: the round trip's (estimateTrip) × PACK, at least PACK_MIN day a head more
@@ -93,6 +105,11 @@ export const KINDS = {
   news: { label: "Send news or a warning", desc: "What you know of the dead near them: a warning of a horde near their land helps standing a little; they tell you what they see in return." },
   volunteers: { label: "Request volunteers", desc: "Some of their people to live and work at a base of yours for a span of days (loans.js): at work, on your teams, in your fights. They weigh it by standing, their kind, their own headcount and trouble, the purpose and what you offer." },
   jointop: { label: "Propose a joint operation", desc: "A hive, a crawl, a group's base, a horde or a place to raid, together: their fighters meet your team at a rendezvous on a day and join it (loans.js). A share of the loot makes them likelier to come." },
+  // Sent from elsewhere (hidden from the composer): peace terms (playerwars.js offerTerms), a ransom's price (ransom.js),
+  // keeping loaned people who want to stay (loans.js askToKeep).
+  terms: { label: "Offer peace terms", hidden: true, war: true, desc: "Your terms, under a white flag." },
+  ransom: { label: "Ask their price for your people", hidden: true, war: true, desc: "What they want for the people they hold." },
+  keep: { label: "Ask to keep their people", hidden: true, desc: "Some of their people on loan want to stay with you." },
 };
 export const GOODS = ["food", "water", "meds", "ammo", "fuel", "scrap", "parts"];
 export const GET_GOODS = ["food", "water", "meds", "fuel", "scrap", "parts"];
@@ -142,7 +159,9 @@ const hordeNear = (state, f, r = 12) => state.hordes.find((h) => f.bases.some((b
 // { yes, p, why }: p the chance (null: a rule, no dice).
 export function aiAnswer(state, f, kind, payload = {}, salt = 0) {
   if (!f || !f.alive) return { yes: false, p: null, why: "nobody is left to answer" };
-  if (attitude(f) === "Hostile") return { yes: false, p: null, why: `${f.name} would not hear you` };
+  if (attitude(f) === "Hostile" && !(KINDS[kind] && KINDS[kind].war)) return { yes: false, p: null, why: `${f.name} would not hear you` };
+  if (kind === "terms" || kind === "ransom") return { yes: true, p: null, why: "" }; // heard: the answer is theirs at the table (deliver)
+  if (kind === "keep") return keepAnswer(state, f, payload); // loans.js: by standing and their kind
   if (kind === "aid" || kind === "news") return { yes: true, p: null, why: "" };
   if (kind === "pact") {
     const k = payload.pact === "trade" ? "trade" : "nonaggression";
@@ -262,6 +281,13 @@ function deliver(state, msg, f, p) {
     if (o && !party) noteOpAnswer(state, f, o, false);
     noteTheirAnswer(state, f, !!party);
     text = party ? `${f.name} join the operation: ${o.groups.find((g) => g.fid === f.id).n} of theirs at ${tileLabel(state, o.tile)} on day ${o.day}.` : `${f.name} will not join the operation (${msg.answer.why}).`;
+  } else if (msg.kind === "terms") { // playerwars.js: they weigh your terms at their table; a peace there is made
+    text = offerTerms(state, P.warId, P.key, true);
+    msg.answer.yes = /accepted/.test(text);
+  } else if (msg.kind === "ransom") { // ransom.js: their price, to haggle over when the envoy is home
+    text = `${f.name} named their price for your people.`;
+  } else if (msg.kind === "keep") { // loans.js: may their people stay with you?
+    text = keepDelivered(state, f, P, msg.answer.yes);
   } else if (msg.kind === "news") {
     if (yes) {
       const h = hordeNear(state, f);
@@ -280,6 +306,11 @@ function sealHome(state, msg, f) {
   let extra = "";
   if (a.yes && msg.kind === "pact") extra = ` ${proposePact(state, f, msg.payload.pact === "trade" ? "trade" : "nonaggression")}`;
   if (a.yes && msg.kind === "invite") extra = ` ${inviteToAlliance(state, f, true)}`;
+  if (msg.kind === "ransom" && hub(state)) { // the price comes home: the talks' card (ransom.js)
+    const ids = (msg.payload.ids || []).filter((id) => { const s = survivorById(state, id); return s && s.alive && s.location && s.location.kind === "captive" && s.location.factionId === f.id; });
+    if (ids.length) addCard(state, negotiationCard(state, f, ids, { channel: "envoy" }));
+  }
+  if (msg.kind === "keep") extra = ` ${keepHome(state, f, msg.payload, a.yes)}`;
   if (a.yes && msg.kind === "news") {
     const g = state.grid, tiles = new Set();
     for (const b of f.bases) for (const id of g.within(b, 3)) tiles.add(id);
@@ -296,7 +327,7 @@ export function messageProblem(state, f, kind, payload = {}, base = hub(state)) 
   if (!f || !f.alive || !f.bases.length) return "They are gone.";
   if (!f.known) return "You have not met them.";
   if (!KINDS[kind]) return "Pick what to send.";
-  if (attitude(f) === "Hostile") return `${f.name} are hostile: they would not hear an envoy.`;
+  if (attitude(f) === "Hostile" && !(KINDS[kind] && KINDS[kind].war)) return `${f.name} are hostile: they would not hear an envoy.`;
   if (!base) return "You have no base to send from.";
   const has = (k, q) => (k === "food" ? foodIn(base.stock) : k === "ammo" ? supplyAmt(base.stock, "ammo") : k === "water" ? base.stock.water || 0 : base.stock[k] || 0) >= q;
   const pos = (g) => Object.entries(g || {}).filter(([, q]) => q > 0);
@@ -497,7 +528,7 @@ function sendAiEnvoy(state, f, msg, toTile, goods = null) {
   p.envoy = msg.id;
   p.homeTile = from;
   p.goods = goods || { supplies: {}, gear: [] };
-  p.errand = msg.kind === "ask" ? `✉ ${msg.ask}` : msg.kind === "council" ? "✉ council" : msg.kind === "propose" ? "✉ joint op" : "✉ word";
+  p.errand = msg.kind === "ask" ? `✉ ${msg.ask}` : msg.kind === "council" ? "✉ council" : msg.kind === "propose" ? "✉ joint op" : msg.kind === "card" ? `✉ ${CARD_TAG[msg.card] || "word"}` : msg.kind === "talk" ? `✉ ${msg.act}` : msg.kind === "news" ? "✉ news" : "✉ word";
   msg.partyId = p.id;
   return p;
 }
@@ -538,6 +569,12 @@ export function envoyAiArrive(state, p) {
     if (to && to.alive && to.bases.includes(partyTile(p))) replaySink(state, msg.calls);
     return goHome(state, p);
   }
+  if (msg.kind === "talk") { // between two groups (groupWord): a pact, a war, a peace, applied as it is read
+    msg.status = "delivered";
+    const to = factionById(state, msg.to);
+    if (f && f.alive && to && to.alive && to.bases.includes(partyTile(p)) && WORDS[msg.act]) WORDS[msg.act](state, f, to, msg.args || {});
+    return goHome(state, p);
+  }
   if (msg.kind === "council") { // a delegate at your hub
     msg.status = "delivered";
     const C = ensureEnvoys(state).council;
@@ -556,6 +593,27 @@ export function envoyAiArrive(state, p) {
     p.phase = "wait";
     return;
   }
+  if (msg.kind === "card") { // any other word from them (cardFromGroup): the card, built again now
+    msg.status = "delivered";
+    if (msg.card === "declare") { msg.answered = true; if (f && f.alive) declareOnPlayer(state, f, (msg.args && msg.args.goal) || null, true); return goHome(state, p); } // a declaration: the war begins as it is read
+    const build = CARDS[msg.card];
+    const card = f && f.alive && hub(state) && build ? withTalk({ calls: [], goods: {}, from: null, fid: null, inPerson: true }, () => build(state, f, msg.args || {})) : null;
+    if (!card) { msg.answered = true; msg.settled = true; return goHome(state, p); }
+    card.envoyMsg = msg.id;
+    card.envoyFrom = f.id;
+    card.title = card.title.replace(/^On the radio: /, "Envoy from ");
+    card.text = `${f.name}'s envoy has come to ${hub(state).name}. ${card.text.replace(/ call you on the radio with a job\./, " send an envoy with a job.").replace(/ call you\./, " send word.")} Their envoy takes your answer home: they hear it only when it gets there.`;
+    for (const ch of card.choices) wrapChoice(state, ch, msg, p);
+    addCard(state, card);
+    p.phase = "wait";
+    log(state, `${f.name}'s envoy reached ${hub(state).name}.`, "info");
+    return;
+  }
+  if (msg.kind === "news") { // a member's sightings, carried (alliance.js shareSightings)
+    msg.status = "delivered"; msg.answered = true;
+    if (f && f.alive && isMember(state, f)) shareSightings(state, [f]);
+    return goHome(state, p);
+  }
   // An ask at your gates: the card, built again for its asker now.
   msg.status = "delivered";
   const ms = allianceMembers(state);
@@ -571,13 +629,18 @@ export function envoyAiArrive(state, p) {
 }
 // A choice on a card their envoy brought: the asker's books wait for the envoy to get home (coalition.js withSink); the
 // goods you give go with it, theirs come out of what it brought.
+// Their goodwill (factions.js changeGoodwill on the sender) waits too, and whatever parties of theirs your answer sets
+// moving (a caravan, fighters) are held until the envoy is home (msg.held), then set out (talk.js).
 function wrapChoice(state, ch, msg, p) {
   const res = ch.resolve, dis = ch.disabled, ai = ch.ai;
-  const sinkOf = () => ({ calls: [], goods: {}, from: p.goods.supplies });
+  const sinkOf = () => ({ calls: [], goods: {}, from: p.goods.supplies, fid: p.owner, inPerson: true });
   ch.resolve = (st) => {
     const sink = sinkOf();
+    const before = new Set(st.parties.map((q) => q.id));
     const t = withSink(sink, () => res(st));
-    msg.calls = sink.calls;
+    msg.calls = [...(msg.calls || []), ...sink.calls];
+    const held = st.parties.filter((q) => q.owner === p.owner && !before.has(q.id));
+    if (held.length) { st.parties = st.parties.filter((q) => !held.includes(q)); msg.held = [...(msg.held || []), ...held]; }
     for (const [k, q] of Object.entries(sink.goods)) if (q > 0) p.goods.supplies[k] = (p.goods.supplies[k] || 0) + q;
     msg.answered = true;
     msg.answerLabel = ch.label;
@@ -614,7 +677,8 @@ function aiHome(state, p, msg, f) {
     msg.status = "returned";
     msg.returned = state.hour;
     ensureEnvoys(state).stats.returned++;
-    if ((msg.kind === "ask" || msg.kind === "propose") && msg.calls && f && f.alive) wordHome(state, f, msg.calls);
+    if (msg.calls && f && f.alive) wordHome(state, f, msg.calls);
+    if (msg.held && f && f.alive) { for (const q of msg.held) state.parties.push(q); msg.held = null; } // what your answer set moving sets out now
     if (msg.kind === "propose" && msg.accepted && f && f.alive) { const o = opById(state, msg.opId); if (o) joinOp(state, f, o); } // they heard your yes: their fighters set out
   }
   removeParty(state, p);
@@ -647,6 +711,75 @@ export function proposeRoute(state, f, prop) {
   const msg = newMsg(state, { from: f.id, to: "you", kind: "propose", prop, title: `${f.name} propose a joint operation` });
   if (!sendAiEnvoy(state, f, msg, h.tile)) { msg.status = "lost"; msg.noRoute = true; return false; }
   return true;
+}
+
+// ---------- every other word from a group (the user's rule 2026-10-22: "All communication regardless if radios have not
+// been established between the groups has to come by envoy regardless if it is a player or AI group") ----------
+// A card a group sends you: with a radio link at once (as before), else carried by its envoy and built again when it
+// arrives (the args are data: a save holds them). card: built now for the radio. Returns "radio", "envoy", "held" (one
+// of the same already on its way), or null (no way to send it).
+export const CARDS = {
+  join: (st, f) => joinAskCard(st, f), // alliance.js: asking to join the coalition
+  volask: (st, f, a) => { const ask = askById(st, a.askId); if (!ask) return null; ask.expires = st.hour + VOL.AI.expire; return volAskCard(st, ask); }, // volunteers.js: their call for your people
+  offer: (st, f) => (refusal(st, f, true) ? null : offerCard(st, f)), // radio.js: a trade offer or request (a caravan, bring yours, meet halfway)
+  job: (st, f, a) => { const j = jobArrived(st, jobById(st, a.jobId)); return j && j.status === "offered" ? jobOfferCard(st, j) : null; }, // jobs.js
+  warjoin: (st, f, a) => { const w = warById(st, a.warId), foe = w ? factionById(st, enemyIn(w, f)) : null; return w && foe && w.playerSide == null ? warCard(st, w, f, foe) : null; }, // diplomacy.js: join their war
+  bloc: (st, f, a) => { const b = blocById(st, a.blocId); return b && !b.player ? blocInviteCard(st, b) : null; }, // blocs.js: stand with their bloc
+  sue: (st, f, a) => { const w = pwarById(st, a.warId); return w ? sueCard(st, w) : null; }, // playerwars.js: they sue for peace
+  demand: (st, f, a) => { const w = pwarById(st, a.warId); return w ? demandCard(st, w) : null; }, // playerwars.js: peace on their terms
+};
+const CARD_TAG = { join: "joining", volask: "volunteers", offer: "trade", job: "a job", warjoin: "their war", bloc: "their bloc", sue: "peace", demand: "terms", declare: "war" };
+export function cardFromGroup(state, f, key, args = {}, card = null) {
+  const h = hub(state);
+  if (!f || !f.alive || !h) return null;
+  if (canRadioGroup(state, f)) { const c = card || (CARDS[key] ? CARDS[key](state, f, args) : null); if (c) addCard(state, c); return "radio"; }
+  const same = (m) => m.kind === "card" && m.from === f.id && m.card === key && m.status === "travelling" && JSON.stringify(m.args || {}) === JSON.stringify(args);
+  if (state.envoys && state.envoys.msgs.some(same)) return "held";
+  const msg = newMsg(state, { from: f.id, to: "you", kind: "card", card: key, args, title: card ? card.title : `${f.name}: ${CARD_TAG[key] || "word"}` });
+  if (!sendAiEnvoy(state, f, msg, h.tile)) { msg.status = "lost"; msg.noRoute = true; return null; }
+  return "envoy";
+}
+// Is word of this kind from them on its way, or at your gates unanswered (the callers' "one at a time")?
+export const cardInFlight = (state, f, key) => !!state.envoys && state.envoys.msgs.some((m) => m.kind === "card" && m.from === f.id && m.card === key && (m.status === "travelling" || (m.status === "delivered" && !m.answered)));
+// A war declared on you without a link (playerwars.js declareOnPlayer): carried, the war begins when it arrives.
+export const carryDeclaration = (state, f, goal = null) => cardFromGroup(state, f, "declare", { goal });
+// A member's sightings without a link (alliance.js shareSightings): a courier now and then.
+export function newsFromMember(state, f) {
+  if (!hub(state) || (state.envoys && state.envoys.msgs.some((m) => m.kind === "news" && m.from === f.id && m.status === "travelling"))) return;
+  const msg = newMsg(state, { from: f.id, to: "you", kind: "news" });
+  if (!sendAiEnvoy(state, f, msg, hub(state).tile)) { msg.status = "lost"; msg.noRoute = true; }
+}
+// Between two groups (AI ↔ AI): a pact, a war, a peace. With a link between them it happens now, else a courier from a
+// to b carries it and it happens as it is read (coarse). True: done or under way (false: the same on its way already).
+export const WORDS = {
+  pact: (st, a, b) => {
+    if (pactBetween(st, a, b) || warBetween(st, a, b)) return;
+    const d = ensureDiplo(st);
+    d.pacts.push({ a: Math.min(a.id, b.id), b: Math.max(a.id, b.id), since: day(st) });
+    d.stats.pacts++;
+    const an = knownAs(st, a);
+    diploNews(st, `${an[0].toUpperCase()}${an.slice(1)} and ${knownAs(st, b)} signed a pact.`, "info", [a, b]);
+  },
+  war: (st, a, b, x) => { if (!warBetween(st, a, b) && !pactBetween(st, a, b)) startWar(st, a, b, x.reason || "land"); },
+  peace: (st, a, b, x) => { const w = warById(st, x.warId); if (w) makePeace(st, w); },
+};
+export function groupWord(state, a, b, act, args = {}) {
+  if (!a || !b || !WORDS[act]) return false;
+  if (groupsLinked(state, a, b)) { WORDS[act](state, a, b, args); return true; }
+  const pair = (m) => m.kind === "talk" && m.act === act && m.status === "travelling" && ((m.from === a.id && m.to === b.id) || (m.from === b.id && m.to === a.id));
+  if (state.envoys && state.envoys.msgs.some(pair)) return false;
+  const msg = newMsg(state, { from: a.id, to: b.id, kind: "talk", act, args });
+  if (!sendAiEnvoy(state, a, msg, destOf(state, b, { tile: a.bases[0] }))) { msg.status = "lost"; msg.noRoute = true; return false; }
+  return true;
+}
+// One of your people sent at once with a message (a ransom's price, peace terms): the best talker at the hub, on foot.
+export function quickEnvoy(state, f, kind, payload) {
+  const h = hub(state);
+  if (!h) return { ok: false, text: "You have no base to send from." };
+  const radio = commsWith(state, f) === "radio"; // by radio nobody goes (communicate answers at once)
+  const who = radio ? null : [...atBase(state, h.id)].filter((s) => !s.loan && !s.vol && s.health >= 50).sort((x, y) => (y.skills.speech || 0) - (x.skills.speech || 0) || x.id - y.id)[0];
+  if (!radio && !who) return { ok: false, text: `Nobody at ${h.name} fit to carry it.` };
+  return communicate(state, { fid: f.id, kind, payload, memberIds: who ? [who.id] : [], fromBaseId: h.id });
 }
 
 // ---------- the council (alliance.js council) ----------
@@ -689,7 +822,7 @@ export function envoysHour(state) {
   for (const m of E.msgs) {
     if (m.status === "returned" || m.status === "lost") { noteOverdue(state, m); continue; }
     const p = m.partyId != null ? state.parties.find((q) => q.id === m.partyId) : null;
-    if (!p) { m.status = "lost"; m.lostAt = state.hour; E.stats.lost++; continue; } // killed, robbed, lost on the road: the message (or the answer) with it
+    if (!p) { m.status = "lost"; m.lostAt = state.hour; E.stats.lost++; noteOverdue(state, m); continue; } // killed, robbed, lost on the road: the message (or the answer) with it
     if (m.from === "you" && p.owner === "player" && (p.phase === "waiting") && !state.cards.some((c) => c.partyId === p.id)) envoyCarryOn(state, p, ""); // nothing holds it: on
     noteOverdue(state, m);
   }
@@ -707,11 +840,22 @@ export function envoysHour(state) {
   }
   if (E.msgs.length > ENVOY.KEEP * 2) { const keep = E.msgs.filter((m) => m.status === "travelling" || m.status === "delivered"); const done = E.msgs.filter((m) => !keep.includes(m)).slice(-ENVOY.KEEP); E.msgs = [...done, ...keep].sort((a, b) => a.id - b.id); }
 }
-// "No word from our envoy": your message not home by its overdue hour, said once.
+// "No word from our envoy": your message not home by its overdue hour, said once. One killed out of your radio
+// coverage (envoyLostQuiet: no word of it then) is given up for lost now: the first you hear of it.
 function noteOverdue(state, m) {
   if (m.from !== "you" || m.via === "radio" && m.partyId == null || m.noted || m.status === "returned" || m.overdueAt == null || state.hour < m.overdueAt) return;
   m.noted = true;
-  log(state, `No word from our envoy to ${nameOf(state, m.to)}. ${m.status === "lost" ? "They should have been back long ago." : "They are long overdue."}`, "danger");
+  const dead = (m.quietDead || []).map((n) => String(n).split(" ")[0]);
+  const who = dead.length <= 1 ? dead.join("") : `${dead.slice(0, -1).join(", ")} and ${dead[dead.length - 1]}`;
+  log(state, `No word from our envoy to ${nameOf(state, m.to)}. ${m.status === "lost" ? `They should have been back long ago${m.quiet ? `: ${who || "the envoy"} ${dead.length > 1 ? "are" : "is"} given up for lost` : ""}.` : "They are long overdue."}`, "danger");
+}
+// parties.js wipeParty, world.js killSurvivor: your envoy (or one of it) died out of your radio coverage. Nothing is
+// said now; the message remembers it for its overdue hour (noteOverdue).
+export function envoyLostQuiet(state, p, s = null) {
+  const m = p && p.envoy != null ? msgById(state, p.envoy) : null;
+  if (!m) return;
+  if (s) (m.quietDead || (m.quietDead = [])).push(s.name);
+  else m.quiet = true;
 }
 
 // ---------- what the player sees ----------

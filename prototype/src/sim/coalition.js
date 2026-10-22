@@ -66,6 +66,7 @@ import { supValue } from "./data.js";
 import { playerClaims } from "./claims.js";
 import { note } from "./ledger.js";
 import { foodIn } from "./foods.js";
+import { talkSink, withTalk } from "./talk.js"; // an answer carried home by an envoy
 import { envoyAsk, askInFlight } from "./envoys.js"; // asks carried in person without a radio link (call-time only)
 
 export const BAL = {
@@ -112,31 +113,29 @@ function addMod(state, aId, bId, key, label, v, days) {
   return m;
 }
 // ---------- an answer carried by an envoy (envoys.js) ----------
-// sink: { calls: [], goods: { key: q } (what you send rides with their envoy), from: { key: q } | null (what their
-// envoy brought) }. Inside withSink, remember and noteAnswer are kept as calls for replaySink.
-let SINK = null;
-export function withSink(sink, fn) {
-  const was = SINK;
-  SINK = sink;
-  try { return fn(); } finally { SINK = was; }
-}
+// sink (talk.js): { calls: [], goods: { key: q } (what you send rides with their envoy), from: { key: q } | null (what
+// their envoy brought), fid, inPerson }. Inside withSink, remember and noteAnswer (and factions.js changeGoodwill on the
+// sending group) are kept as calls for replaySink.
+export const withSink = withTalk;
 // The calls kept, made now. who(id): the group for an id (gone: the call is dropped).
 export function replaySink(state, calls, who = (id) => factionById(state, id)) {
   for (const c of calls || []) {
     const f = who(c.f);
     if (!f || !f.alive) continue;
     if (c.op === "note") { noteAnswer(state, f, c.accepted); continue; }
+    if (c.op === "gw") { changeGoodwill(state, f, c.amount, c.reason, c.exact); continue; } // factions.js: their goodwill, now they hear it
     const o = c.other === "you" ? "you" : who(c.other);
     if (o && (o === "you" || o.alive)) remember(state, f, o, c.key, c.label, c.v, c.kind);
   }
 }
 // What a group can hand over: out of what its envoy brought while answering at your gates, else its stores.
-const spareOf = (st, f, k) => (SINK && SINK.from ? (k === "food" ? foodIn(SINK.from) : SINK.from[groupStockKey(k, f)] || 0) : available(f, k));
+const spareOf = (st, f, k) => (talkSink() && talkSink().from ? (k === "food" ? foodIn(talkSink().from) : talkSink().from[groupStockKey(k, f)] || 0) : available(f, k));
 
 // An act remembered: other is "you" or a member. LAST of v for good (goodwill or the relation), the rest fading over
 // the kind's days. Returns the immediate change.
 export function remember(state, f, other, key, label, v, kind = key) {
   if (!f || !v) return 0;
+  const SINK = talkSink();
   if (SINK) { SINK.calls.push({ op: "remember", f: f.id, other: other === "you" ? "you" : other.id, key, label, v, kind }); return v; } // envoys.js: when the envoy is home
   const days = BAL.DAYS[kind] || 40;
   if (other === "you") {
@@ -184,6 +183,7 @@ export function noteTheirAnswer(state, f, yes) {
 // One answer to a member's ask (any: these cards, the council's, a call for volunteers). Not a member: nothing.
 export function noteAnswer(state, f, accepted) {
   if (!f || !isMember(state, f)) return;
+  const SINK = talkSink();
   if (SINK) { SINK.calls.push({ op: "note", f: f.id, accepted: !!accepted }); return; } // envoys.js: tallied when the envoy is home
   const B = ensureBalance(state), r = recOf(state, f);
   if (accepted) { r.acc++; r.nAcc++; B.all.acc++; B.all.nAcc++; B.stats.accepted++; } else { r.ref++; r.nRef++; B.all.ref++; B.all.nRef++; B.stats.refused++; }
@@ -455,6 +455,7 @@ function favourCard(state, ms, focus = null) {
 function sendGoods(state, f, k, qty) {
   const h = hub(state);
   const rec = k === "ammo" ? payRoundsOf(state, h, qty) : { [k]: qty };
+  const SINK = talkSink();
   const to = SINK ? SINK.goods : null; // envoys.js: onto their envoy, into their stores when it is home
   for (const [kk, q] of Object.entries(rec)) {
     if (kk === "food") { moveFoodUnits(h, to || f, q, { state }); continue; }
@@ -468,6 +469,7 @@ function sendGoods(state, f, k, qty) {
 }
 function takeGoods(state, f, k, qty) {
   const h = hub(state);
+  const SINK = talkSink();
   const from = SINK && SINK.from ? SINK.from : null; // envoys.js: out of what their envoy brought
   if (k === "food") { moveFoodUnits(from || f, h, qty, { state }); return; }
   const tk = groupStockKey(k, f);

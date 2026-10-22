@@ -66,6 +66,7 @@ import { prisonersOf, tradeBack } from "./prisoners.js";
 import { captivesOf } from "./conflicts.js";
 import { captureBase, occupyPlayerBase, ensureConquest, CONQUEST } from "./conquest.js";
 import { canRadioGroup } from "./radio.js";
+import { cardFromGroup, cardInFlight, carryDeclaration, quickEnvoy } from "./envoys.js"; // declarations and peace offers carried without a radio link (call-time only)
 import { raidPrep } from "./eras.js";
 import { hcGroupRaidsQuiet } from "./hardcore-groups.js";
 import { tileLabel } from "./parties.js";
@@ -277,9 +278,12 @@ function callAllies(state, w, f) {
   }
   return out;
 }
-export function declareOnPlayer(state, f, goalOverride = null) {
+// now: the declaration is read (by radio, or its envoy arrived: envoys.js). Without a link it is carried first: the war
+// begins when it reaches your hub (the user's rule 2026-10-22: "A war declaration, though, should be carried").
+export function declareOnPlayer(state, f, goalOverride = null, now = false) {
   if (!f || !f.alive || atWarWithYou(state, f)) return null;
   const d = ensurePwars(state);
+  if (!now && !canRadioGroup(state, f) && hub(state)) { d.lastPwar = day(state); carryDeclaration(state, f, goalOverride); return null; }
   const g = warGoalFor(state, f);
   if (goalOverride) g.goal = goalOverride;
   const w = newWar(state, f, "them", g.goal, g.cb, g.goal === "territory" ? g.target ?? outpostNearest(state, f)?.tile ?? null : null, g.richTile);
@@ -367,9 +371,12 @@ function warDay(state, w) {
   const age = today - w.start;
   const lead = w.score.them - w.score.you;
   if (age >= PW.OFFER_FROM && today - w.lastOffer >= PW.OFFER_GAP && hub(state) && !state.cards.some((c) => c.pwarId === w.id)) {
-    if (w.exh.them >= PW.TIRED && lead <= 3) { w.lastOffer = today; w.offers++; ensurePwars(state).pwarStats.offers++; addCard(state, sueCard(state, w)); }
-    else if (w.by === "them" && (w.goalMet || w.exh.you >= PW.TIRED || lead >= PW.LEAD)) { w.lastOffer = today; w.offers++; ensurePwars(state).pwarStats.offers++; addCard(state, demandCard(state, w)); }
-    else if (w.by === "you" && lead >= PW.LEAD) { w.lastOffer = today; w.offers++; ensurePwars(state).pwarStats.offers++; addCard(state, sueCard(state, w)); }
+    // envoys.js: by radio now, else carried by their envoy (the card when it arrives).
+    const say = (key) => { w.lastOffer = today; w.offers++; ensurePwars(state).pwarStats.offers++; cardFromGroup(state, f, key, { warId: w.id }, canRadioGroup(state, f) ? (key === "sue" ? sueCard(state, w) : demandCard(state, w)) : null); };
+    if (cardInFlight(state, f, "sue") || cardInFlight(state, f, "demand")) { /* word already on its way */ }
+    else if (w.exh.them >= PW.TIRED && lead <= 3) say("sue");
+    else if (w.by === "them" && (w.goalMet || w.exh.you >= PW.TIRED || lead >= PW.LEAD)) say("demand");
+    else if (w.by === "you" && lead >= PW.LEAD) say("sue");
   }
   // Worn out, or too long.
   if (w.exh.them >= PW.BROKEN || f.pop <= DIPLO.SUE_POP) return endPwar(state, w, "weary", `${f.name} is worn out by the war and pulls back: a ceasefire.`, [{ kind: "ceasefire", days: PW.WHITE_CEASEFIRE }]);
@@ -560,7 +567,8 @@ export function termOptions(state, w) {
 export const talkVia = (state, f) => (f && canRadioGroup(state, f) ? "radio" : "envoy");
 export function talkWait(state, w) { return Math.max(0, PW.TALK_GAP - (day(state) - w.lastTalk)); }
 // You put terms to them (the group's card). Returns the outcome text.
-export function offerTerms(state, warId, key) {
+// inPersonNow: your envoy is at their table (envoys.js deliver). Without a radio link the terms go by envoy first.
+export function offerTerms(state, warId, key, inPersonNow = false) {
   const w = pwarById(state, warId);
   if (!w) return "That war is over.";
   const f = mainOf(state, w);
@@ -568,8 +576,12 @@ export function offerTerms(state, warId, key) {
   if (!opt) return "They will not hear that.";
   if (opt.why) return opt.why;
   const wait = talkWait(state, w);
-  if (wait > 0) return `${f.name} will not hear another offer for ${wait} day${wait === 1 ? "" : "s"}.`;
+  if (wait > 0 && !inPersonNow) return `${f.name} will not hear another offer for ${wait} day${wait === 1 ? "" : "s"}.`;
   w.lastTalk = day(state);
+  if (!inPersonNow && talkVia(state, f) === "envoy") { // envoys.js: carried by one of yours; their answer comes home with them
+    const r = quickEnvoy(state, f, "terms", { warId: w.id, key });
+    return r.ok ? `An envoy under a white flag sets out for ${f.name} with your terms (${opt.text}); their answer comes home with them.` : r.text;
+  }
   const via = talkVia(state, f) === "radio" ? "by radio" : "by an envoy under a white flag";
   if (h(state, w.id, day(state), key, "talk") >= opt.chance) {
     ensurePwars(state).pwarStats.refused++;

@@ -45,6 +45,7 @@ import { siteKnown } from "./discovery.js";
 import { attitude, changeGoodwill, isAggressiveType, recomputeOwnership } from "./factions.js";
 import { partyMembers, partyTile, tileLabel, carried, takeSupply, planPath, spawnAiParty, awaitOrders, outpostName } from "./parties.js";
 import { canRadioGroup, tradeBase } from "./radio.js";
+import { cardFromGroup, cardInFlight } from "./envoys.js"; // jobs carried in person without a radio link (call-time only)
 import { available, marketOf } from "./trade.js";
 import { sendCaravan, guardPower, escortParty } from "./caravans.js";
 import { makeCandidate, offerRecruits } from "./recruits.js";
@@ -56,7 +57,7 @@ import { startCombat, registerCombatHandler } from "./combat.js";
 import { guardsFor } from "./conflicts.js";
 import { heldFrom, freeHeld, capturePeople, groupRoom } from "./groupjails.js"; // a rescue job's captives: people in the holders' jail
 import { captivesFrom } from "./members.js";
-import { gainXp, USE } from "./skills.js";
+import { gainXp, USE, hash01 } from "./skills.js";
 import { diploRng, ensureDiplo, warsOf, enemyIn, warById, relation } from "./diplomacy.js";
 import { blueprintReward } from "./blueprints.js";
 import { askBaseName } from "./basenames.js"; // name an outpost handed to you
@@ -303,7 +304,7 @@ export function makeJob(state, f, via = "radio", onlyType = null) {
 
 export function offerCard(state, job) {
   const f = factionById(state, job.fid);
-  const how = job.via === "gate" ? `At the gates of ${f.name}, they ask your team for help.` : job.via === "council" ? "The coalition council asks this of you." : `${f.name} call you on the radio with a job.`;
+  const how = job.via === "gate" ? `At the gates of ${f.name}, they ask your team for help.` : job.via === "council" ? "The coalition council asks this of you." : job.via === "envoy" ? `${f.name} send an envoy with a job.` : `${f.name} call you on the radio with a job.`;
   return {
     title: `Job offer: ${f.name}`, jobId: job.id,
     text: `${how} ${JOB_TYPES[job.type].icon} ${JOB_TYPES[job.type].name}: ${job.desc} Time: ${JOB_TYPES[job.type].days} days once accepted. Reward: ${rewardText(state, job.reward)}.`,
@@ -314,6 +315,11 @@ export function offerCard(state, job) {
       { label: "Decline", hint: `−${JOBS.DECLINE_GW} goodwill`, ai: () => 0, resolve: (st) => declineJob(st, job.id) },
     ],
   };
+}
+// Their envoy is at your gates with it (envoys.js CARDS.job): the offer's days start now.
+export function jobArrived(state, job) {
+  if (job && job.status === "carried") { job.status = "offered"; job.offered = day(state); job.expires = day(state) + JOBS.OFFER_DAYS; }
+  return job;
 }
 function postOffer(state, job) {
   addCard(state, offerCard(state, job));
@@ -488,6 +494,19 @@ export function jobsDaily(state) {
     if (!rng.chance(chance)) continue;
     const job = makeJob(state, f, "radio");
     if (job) postOffer(state, job);
+  }
+  // envoys.js (2026-10-22: every word without radio comes by envoy): the groups no radio reaches post their jobs by envoy,
+  // on hash dice (the world's dice untouched); the offer's days start when it arrives (CARDS.job).
+  for (const f of state.factions) {
+    if (!f.alive || !f.known || !f.bases.length || attitude(f) === "Hostile" || canRadioGroup(state, f) || cardInFlight(state, f, "job")) continue;
+    if (!canOffer(state, f, JOBS.OFFER_GAP)) continue;
+    const chance = f.type === "traders" || f.type === "commune" ? JOBS.FRIENDLY_CHANCE : JOBS.RADIO_CHANCE;
+    if (hash01(state.seed || 1, "envoyjob", f.name, today) >= chance) continue;
+    const job = makeJob(state, f, "envoy");
+    if (!job) continue;
+    job.status = "carried"; // on its way: not on your list until it arrives (jobArrived)
+    job.expires = today + 20; // an envoy that never comes: the offer leaves the list
+    if (cardFromGroup(state, f, "job", { jobId: job.id }) !== "envoy") voidJob(state, job, "it never reached you");
   }
 }
 function canOffer(state, f, gap) {

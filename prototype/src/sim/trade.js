@@ -299,7 +299,7 @@ export function roundNeeds(state, ctx, needs) {
 const ARMOR_SLOTS_ALL = ["armor", "head", "arms", "legs"];
 export function autoGearOffer(state, ctx, max = 3) {
   if (!ctx || !ctx.base) return [];
-  const pool = ctx.myGear || [];
+  const pool = (ctx.myGear || []).filter((g) => g && g.loanOwn == null); // loans.js: never what someone on loan came with
   const keep = Math.max(2, Math.ceil(atBase(state, ctx.base.id).length / 3));
   const out = [];
   const mult = (g) => gearInfo(state, ctx.f, g).mult;
@@ -797,6 +797,7 @@ export function toggleGear(state, side, index) {
   const pool = side === "mine" ? ctx.myGear : ctx.theirGear;
   const item = pool[Number(index)];
   if (!item) return;
+  if (side === "mine" && item.loanOwn != null) return; // loans.js: what someone on loan came with is theirs, never yours to sell
   const list = side === "mine" ? (ctx.t.offerGear = liveGear(ctx.t.offerGear, pool)) : (ctx.t.askGear = liveGear(ctx.t.askGear, pool));
   const i = list.indexOf(item);
   if (i >= 0) list.splice(i, 1);

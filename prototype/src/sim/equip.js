@@ -13,7 +13,7 @@
 // The armory is a plain list, changed in place. Returns [{ s, item }] of what was handed out.
 import { GEAR } from "./data.js";
 import { gearEffect, meleeDmgMult, skill } from "./world.js";
-import { ensureInv } from "./inventory.js";
+import { ensureInv, ownKit } from "./inventory.js";
 import { fitFromPool } from "./gunmods.js";
 import { equipKit } from "./carrykit.js";
 import { HOLSTERS, holsterOf } from "./holsters.js";
@@ -57,6 +57,7 @@ export function equipPeople(armory, people, opts = {}) {
         const sc = itemScore(s, items[i]);
         if (sc > top || (Number.isNaN(top) && !Number.isNaN(sc))) { best = items[i]; top = sc; }
       }
+      if (ownKit(s, s.gear[slot])) continue; // loans.js: someone on loan keeps what they came with (an empty slot of theirs the base may fill)
       if (top < itemScore(s, s.gear[slot]) + (s.gear[slot] ? 0.3 : 0.05)) continue; // only real upgrades
       if ((slot === "weapon" || HOLSTERS.includes(slot)) && opts.weaponOk && !opts.weaponOk(s, best)) continue;
       if (slot === "ears" && earSlotReason(best, s)) continue; // muffs under a full-shell helmet: no

@@ -22,7 +22,7 @@ import { keyWord } from "./water.js"; // supplies as words: "9mm FMJ", "rounds"
 import { LOCATIONS, FACTION_TYPES, GEAR } from "./data.js";
 import { log, addCard, day, hub, skill, isNight, factionById, combatPower, snapshot, armedFactor, localId } from "./world.js";
 import {
-  partyMembers, partyTile, bestSkill, tileLabel, carried, takeSupply, wipeParty, partySpeed, addGearToCargo,
+  partyMembers, partyTile, bestSkill, tileLabel, carried, takeSupply, wipeParty, partySpeed, addGearToCargo, unheardEnvoy,
 } from "./parties.js";
 import { attitude, changeGoodwill } from "./factions.js";
 import { registerCombatHandler, startCombat, winOdds, KITS, WEAPONS } from "./combat.js";
@@ -681,8 +681,9 @@ function onWandererCombat(state, result, setup) {
   if (c.type === "attackSquad" && f && result.enemiesKilled) f.pop = Math.max(0, f.pop - Math.ceil(result.enemiesKilled * 0.6));
   const dead = (result.survivorsDead || []).length;
   if (p && state.parties.includes(p) && !partyMembers(state, p).length) {
+    const quiet = unheardEnvoy(p); // parties.js: an envoy out of radio coverage: heard of only when overdue (envoys.js)
     wipeParty(state, p);
-    log(state, `The whole team was lost fighting ${c.enemy.name}.`, "death");
+    if (!quiet) log(state, `The whole team was lost fighting ${c.enemy.name}.`, "death");
     return;
   }
   if (!p || !state.parties.includes(p)) return;

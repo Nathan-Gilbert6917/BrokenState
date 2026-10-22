@@ -60,7 +60,7 @@ import { packOf } from "./inventory.js";
 import { teamKit } from "./fieldheat.js";
 import { sellPrice, buyPrice, available, need, maxBuyable, minSellable, proposePact, ensureWares } from "./trade.js";
 import { sendCaravan, caravanEnRoute, caravanSurplus } from "./caravans.js";
-import { tradeSpeech, gainXp, USE } from "./skills.js";
+import { tradeSpeech, gainXp, USE, hash01 } from "./skills.js";
 import { marketOf, dealRoundKey } from "./trade.js"; // a deal's rounds by calibre
 import { keyWord } from "./water.js"; // "9mm FMJ", "rounds"
 import { diplomacyDaily, knownAs } from "./diplomacy.js";
@@ -75,6 +75,8 @@ import { supplyAmt } from "./rounds.js"; // "ammo": every round there, any calib
 import { payoutSpare, payoutBreaks } from "./upkeep.js"; // food and water: never paid out of the base's reserve
 import { deliveryFee, deliveryHours, deliveryRefusal, bookDeal, radioDealsDaily, pendingDeal, counterOk } from "./radiotrade.js"; // trades over the radio
 import { meetRefusal, halfwayTile, meetHours, MEET } from "./trademeet.js"; // a trade met halfway or at a tile you pick
+import { inPerson } from "./talk.js"; // face to face with their envoy: no radio needed
+import { cardFromGroup, cardInFlight } from "./envoys.js"; // offers carried in person without a link (call-time only)
 
 export const RELAY_RANGE = 6;
 export const RELAY_UPKEEP_DAYS = 10;
@@ -323,7 +325,7 @@ function note(state, f, text) {
 // Why a group will not take your call or your business (null = they will).
 export function refusal(state, f, forTrade = false) {
   if (!f || !f.alive) return "Nobody answers on that channel any more.";
-  if (!canRadioGroup(state, f)) return inRadioReach(state, f) && !groupHasSet(state, f) ? `${f.name} have no radio of their own: send them an envoy (Diplomacy → Envoys).` : `${f.name} is out of radio reach.`;
+  if (!canRadioGroup(state, f) && !inPerson()) return inRadioReach(state, f) && !groupHasSet(state, f) ? `${f.name} have no radio of their own: send them an envoy (Diplomacy → Envoys).` : `${f.name} is out of radio reach.`;
   if (attitude(f) === "Hostile") return `${f.name} curse at you and go silent.`;
   if (forTrade && f.goodwill < (isAggressiveType(f) ? 0 : -15)) return `${f.name} do not trust you enough to deal. (Goodwill ${isAggressiveType(f) ? 0 : -15} needed.)`;
   return null;
@@ -519,6 +521,7 @@ export function radioDaily(state) {
   diplomacyDaily(state); // diplomacy.js: relations, pacts and wars between groups, market lists, jobs, the coalition
   listenDaily(state); // radiolisten.js: the groups' channel traffic, and what your tuned receivers pick up of it
   intelDaily(state); // intel.js: what the groups overhear of yours and of each other's (hiding.js: hidden bases)
+  envoyOffers(state); // envoys.js: the groups no radio of yours reaches send their offers by envoy
   if (!hasNetwork(state)) return;
   for (const f of state.factions) {
     if (!f.alive || !f.known || refusal(state, f, true) || caravanEnRoute(state, f)) continue;
@@ -527,6 +530,22 @@ export function radioDaily(state) {
     if (!rng.chance(chance)) continue;
     const card = offerCard(state, f);
     if (card) { addCard(state, card); mark(state, f, "offer"); }
+  }
+}
+// Offers from groups with no radio link to you (the user's rule 2026-10-22: every word without radio comes by envoy):
+// the same odds × ENVOY_OFFER on hash dice (the world's dice untouched), carried by their envoy (envoys.js
+// cardFromGroup "offer"): the card is built when it reaches your gates.
+export const ENVOY_OFFER = 0.5;
+function envoyOffers(state) {
+  if (!hub(state)) return;
+  const today = day(state);
+  for (const f of state.factions) {
+    if (!f.alive || !f.known || !f.bases.length || canRadioGroup(state, f) || caravanEnRoute(state, f)) continue;
+    if (attitude(f) === "Hostile" || f.goodwill < (isAggressiveType(f) ? 0 : -15)) continue;
+    if (since(state, f, "offer") < COOLDOWN.offer || pendingDeal(state, f) || cardInFlight(state, f, "offer")) continue;
+    const chance = (f.type === "traders" ? 0.15 : f.type === "commune" ? 0.1 : 0.06) * ENVOY_OFFER;
+    if (hash01(state.seed || 1, "envoffer", f.name, today) >= chance) continue;
+    if (cardFromGroup(state, f, "offer") === "envoy") mark(state, f, "offer");
   }
 }
 

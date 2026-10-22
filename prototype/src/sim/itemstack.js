@@ -83,6 +83,7 @@ export function withCount(it, n) {
 /** @param {any} a @param {any} b */
 export function canStack(a, b) {
   if (!a || !b || a === b || a.key !== b.key) return false;
+  if ((a.loanOwn ?? null) !== (b.loanOwn ?? null)) return false; // loans.js: what someone on loan came with keeps apart from the base's
   if (isRoundItem(a)) return !!a.loose === !!b.loose && !a.loaded && !b.loaded;
   if (isSupItem(a)) return !!a.egg === !!b.egg; // a food with the worm's eggs keeps apart from a clean one
   if (!isStackable(a.key)) return false;

@@ -48,6 +48,7 @@ import { itemValue } from "./valuation.js";
 import { thirstAhead } from "./weather.js";
 import { groupJailGuards } from "./groupjails.js"; // the guards on the jail a raid would meet
 import { payoutFloor, payoutBreaks } from "./upkeep.js"; // the pay-out reserve: food and water are never paid below it
+import { quickEnvoy } from "./envoys.js"; // the envoy that asks their price (call-time only)
 
 export const RANSOM = {
   BASE: 40, PER_SKILL: 3, LEADER: 1.5, ZEALOT: 1.3,
@@ -264,7 +265,8 @@ export function openNegotiation(state, sid) {
     title: `Ransom: ${f.name}`, factionId: f.id,
     text: `Your radio does not reach ${f.name}. An envoy could ride out to ask their price for ${names(ids.map((id) => survivorById(state, id)))}: an answer in about ${hours} hours.`,
     choices: [
-      { label: "Send an envoy", hint: `Their demands come back in about ${hours} hours`, ai: () => 3, resolve: (st) => { talksOf(st).push({ factionId: f.id, captiveIds: ids, due: st.hour + hours }); log(st, `An envoy rides out to ${f.name} about ${names(ids.map((id) => survivorById(st, id)))}.`, "info"); return "The envoy rides out."; } },
+      // envoys.js: one of yours carries it (your best talker at the hub, on foot); their price comes home with them.
+      { label: "Send an envoy", hint: `Your best talker at the hub goes; their demands come back with them (about ${hours} hours there and back)`, ai: () => 3, resolve: (st) => { const r = quickEnvoy(st, f, "ransom", { ids }); return r.ok ? `An envoy sets out for ${f.name} about ${names(ids.map((id) => survivorById(st, id)))}.` : r.text; } },
       { label: "Not now", hint: "", ai: () => 0, resolve: () => "" },
     ],
   });

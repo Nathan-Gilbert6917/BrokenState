@@ -75,7 +75,7 @@ import { LOAD_BANDS, wornLoad, poolAtBand } from "./load.js";
 import { saveSupplyRun, dispatchSupplyRun, supplyRuns, jobParty, deleteSupplyRun, planSupplyRun, linesText } from "./supply.js";
 import { autoPlayerTurn, runEnemyPhase, closeCombat, endBattleNow, WEAPONS } from "./combat.js";
 import { allCaptives, ransomValue, isCaptive } from "./conflicts.js";
-import { ensureInv, armorMult, itemLoad, salvageAt, allCarried } from "./inventory.js";
+import { ensureInv, armorMult, itemLoad, salvageAt, allCarried, ownKit } from "./inventory.js";
 import { weather as wxNow, severeSoon, season as wxSeason, thirstAhead, thirstAt, THIRST, seasonOfDay, foodNeedFactor, coldAhead } from "./weather.js";
 import { teamCold } from "./needs.js"; // tune-winter: a team's food in the cold (×1.1 / ×1.2 without a lit camp fire)
 import { autoRecruitPick } from "./recruits.js";
@@ -4530,6 +4530,7 @@ const ROAD_KEEP = { parts: 2, scrap: 6, ammo: 80, fuel: 2, jars: 0 };
 function roadKit(state, p) {
   const members = partyMembers(state, p);
   for (const it of [...p.cargo.gear]) {
+    if (it.loanOwn != null) continue; // loans.js: theirs, put back on them (loans.js ownKitHour)
     const slot = slotOf(it.key);
     const who = (slot === "backpack" || slot === "weapon") && members.find((s) => !s.gear[slot] && (slot !== "weapon" || gearEffect(s, it).usable));
     if (!who) continue;
@@ -4867,7 +4868,7 @@ function launchTrip(state, c, pool, spareHands) {
     for (const s of [...crew].sort((a, b) => wornLoad(b) - wornLoad(a))) {
       if (worstBand(estimateTrip(state, tripOpts(roughSupplies(n, days)))) < 2) break;
       const a = s.gear.armor;
-      if (a && (GEAR[a.key]?.weight || 0) >= 7) { s.gear.armor = null; h.armory.push(a); stashed.push([s, a]); }
+      if (a && (GEAR[a.key]?.weight || 0) >= 7 && !ownKit(s, a)) { s.gear.armor = null; h.armory.push(a); stashed.push([s, a]); } // loans.js: not armour someone on loan came with
     }
   }
   // On foot the team keeps its loot to a band (parties.js cargoRoom): Medium for the cautious, Heavy otherwise, so the

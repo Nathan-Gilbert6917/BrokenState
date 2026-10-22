@@ -268,7 +268,7 @@ console.log("A group asks you");
   const { st, f } = world();
   const str0 = strength(f);
   const ask = V.makeAsk(st, f, { kind: "war", label: "their war with Red Hand" }, 2, 5);
-  const card = st.cards.find((c) => c.volAsk === ask.id);
+  const card = st.cards.find((c) => c.volAsk === ask.id) || V.askCard(st, ask); // no radio link here: their envoy carries it (envoys.js); the card it brings
   check(!!card && card.choices.some((c) => /^Send 2/.test(c.label)) && card.choices.some((c) => /Choose who/.test(c.label)) && card.choices.some((c) => c.label === "Decline"), `the card: ${card && card.choices.map((c) => c.label).join(" / ")}`);
   const pick = V.lendable(st).slice(0, 2);
   const gw = f.goodwill;
@@ -373,7 +373,7 @@ console.log("The governor");
   const { st, f } = world();
   for (let i = 0; i < 8; i++) { const s = makeSurvivor(st, 1); s.location = { kind: "base", baseId: hub(st).id }; st.survivors.push(s); }
   const ask = V.makeAsk(st, f, { kind: "war", label: "their war" }, 2, 5);
-  const card = st.cards.find((c) => c.volAsk === ask.id);
+  const card = st.cards.find((c) => c.volAsk === ask.id) || V.askCard(st, ask); // no radio link here: their envoy carries it (envoys.js); the card it brings
   const best = (style) => { st.governor = { personality: "balanced", style }; return [...card.choices].filter((c) => !c.uiAction && !(typeof c.disabled === "function" && c.disabled(st))).sort((a, b) => b.ai(st) - a.ai(st))[0].label; };
   const home = V.lendable(st).length;
   const dip = best("diplomat"), tur = best("turtle");

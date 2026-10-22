@@ -352,14 +352,16 @@ export const isHeldSupply = (it) => isSupItem(it) || isRoundItem(it);
 // A person home with a team (parties.js unloadAt): the supply items on them (pockets, rig pouches, the pack, the off
 // hand, a bag in the arms) are unpacked into the base's stores, as the team's cargo is. Rounds stay on them (their
 // boxes are their own kit, as before). Returns the units put back.
-/** @param {any} state @param {any} s @param {any} holder */
-export function unpackPerson(state, s, holder) {
+// keep(it): true leaves that one on them (loans.js: what someone on loan came with is theirs).
+/** @param {any} state @param {any} s @param {any} holder @param {{ keep?: (it: any) => boolean }} [opts] */
+export function unpackPerson(state, s, holder, opts = {}) {
   if (!s || !s.gear || !holder) return 0;
   ensureInv(s);
   let n = 0;
+  const out = (it) => isSupItem(it) && !(opts.keep && opts.keep(it));
   const lists = [s.pockets, rigPouches(s), packOf(s), s.gear.carry && Array.isArray(s.gear.carry.contents) ? s.gear.carry.contents : null];
-  for (const list of lists) (list || []).forEach((it, i) => { if (isSupItem(it)) { n += putBack(state, holder, it); list[i] = null; } });
-  if (isSupItem(s.gear.tool)) { n += putBack(state, holder, s.gear.tool); s.gear.tool = null; }
+  for (const list of lists) (list || []).forEach((it, i) => { if (out(it)) { n += putBack(state, holder, it); list[i] = null; } });
+  if (out(s.gear.tool)) { n += putBack(state, holder, s.gear.tool); s.gear.tool = null; }
   return n;
 }
 

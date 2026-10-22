@@ -62,12 +62,12 @@ import { packSiegeKit } from "./kit.js";
 import { siegeGearHome } from "./arsenal.js"; // a group's raid brings its ladders and ram home
 import { packLights, unpackLights } from "./lights.js"; // a light each from the armory on the way out
 import { crossingsFrom } from "./crossing.js";
-import { carryBonus, itemLoad } from "./inventory.js";
+import { carryBonus, itemLoad, ownKit } from "./inventory.js";
 import { cartSupOf, cartToArms, cartLotsIn } from "./carry.js"; // carts.js: the supplies in the carts (the weight), a cart fetched into someone's arms (call-time only)
 import { isCart, cartWearStep, cartRouteWear } from "./carts.js";
 import { openTrade, routeExchange } from "./trade.js";
 import { caravanArrive, caravanHour, caravanStop } from "./caravans.js";
-import { envoyArrive, envoyHome, envoyCarryOn, envoyLocked, envoyAiWait, envoyAiArrive, envoysHour, ENVOY_LOCKED } from "./envoys.js"; // messages carried in person (call-time only)
+import { envoyArrive, envoyHome, envoyCarryOn, envoyLocked, envoyAiWait, envoyAiArrive, envoysHour, envoyLostQuiet, ENVOY_LOCKED } from "./envoys.js"; // messages carried in person (call-time only)
 import { loanPartyArrive } from "./loans.js"; // volunteers on loan, joint operations (call-time only)
 import { caravanGuarded } from "./jobs.js";
 import { caravanOrderChoices, gangAmbush, wouldRaid } from "./caravanraids.js"; // any caravan on the road can be robbed
@@ -1386,6 +1386,10 @@ const hourUsed = (p, hour) => (p.hourUsed && p.hourUsed.hour === hour ? p.hourUs
 export const TEAM_INTEL_EVERYWHERE = true;
 /** @param {Party | null | undefined} p */
 export const reportsLive = (p) => !!p && (!!p.radioLive || (TEAM_INTEL_EVERYWHERE && p.owner === "player" && p.kind !== "convoy"));
+// envoys.js (the user's rule 2026-10-22): an envoy of yours out of your radio coverage reports nothing live, its loss
+// above all. Killed out there, nobody hears of it until it is overdue ("No word from our envoy to …": envoys.js
+// noteOverdue, which then gives it up for lost). In coverage (p.radioLive) its radio reports as any team's.
+export const unheardEnvoy = (p) => !!p && p.owner === "player" && p.envoy != null && !p.radioLive;
 
 /** @param {State} state @param {Party} p */
 function updateRadio(state, p) {
@@ -2444,7 +2448,7 @@ function unloadAt(state, p, base, members) {
   addStock(base, p.supplies);
   addStock(base, p.cargo.supplies);
   base.armory.push(...p.cargo.gear);
-  for (const m of members) if (!m.loan) unpackPerson(state, m, base); // supitems.js: the water, meds, food… they carry as items, into the stores (loans.js: not what someone on loan carries: theirs)
+  for (const m of members) unpackPerson(state, m, base, m.loan ? { keep: (it) => ownKit(m, it) } : {}); // supitems.js: the water, meds, food… they carry as items, into the stores (loans.js: not what someone on loan came with: theirs)
   bodiesHome(state, p, base); // carriers.js
   const vs = partyVehicles(state, p); // every one it has (vehicles.js fleets)
   for (const x of vs) x.loc = { kind: "base", baseId: base.id };
@@ -2462,7 +2466,7 @@ export function settleInto(state, p, base) {
   for (const m of members) {
     m.location = { kind: "base", baseId: base.id };
     m.role = "scavenge";
-    if (m.gear && m.gear.carry) { base.armory.push(m.gear.carry); m.gear.carry = null; } // carry.js: a bag carried home goes in the armory
+    if (m.gear && m.gear.carry && !ownKit(m, m.gear.carry)) { base.armory.push(m.gear.carry); m.gear.carry = null; } // carry.js: a bag carried home goes in the armory (loans.js: not one someone on loan came with)
   }
   mergeKnowledge(state, p.seen, p.spotted, p);
   removeParty(state, p);
@@ -2587,12 +2591,14 @@ export function wipeParty(state, p) {
       site = { id: newId(), tile, items, day: day(state), names: ["the lost team"], lastConfirmed: day(state) };
       state.deathSites.push(site);
     }
-    if (site && site.items.length) markDeathSite(state, site);
+    const quiet = unheardEnvoy(p); // envoys.js: out of radio coverage nobody hears of it (no report, no marks on the map)
+    if (site && site.items.length && !quiet) markDeathSite(state, site);
     for (const x of vs) {
       x.loc = { kind: "abandoned", tile, since: state.hour };
-      markAbandonedVehicle(state, x, "its team was lost");
+      if (!quiet) markAbandonedVehicle(state, x, "its team was lost");
     }
-    log(state, `A whole team was lost near ${tileLabel(state, tile)}. ${site && site.items.length ? "What it carried lies there" : "Nothing it carried is left"}${vs.length > 1 ? `, and its ${vs.length} vehicles stand abandoned` : v ? `, and the ${v.name} stands abandoned` : ""}: marked on the map.`, "death");
+    if (quiet) envoyLostQuiet(state, p);
+    else log(state, `A whole team was lost near ${tileLabel(state, tile)}. ${site && site.items.length ? "What it carried lies there" : "Nothing it carried is left"}${vs.length > 1 ? `, and its ${vs.length} vehicles stand abandoned` : v ? `, and the ${v.name} stands abandoned` : ""}: marked on the map.`, "death");
   }
   p.cargo = { supplies: {}, gear: [] };
   p.supplies = {};

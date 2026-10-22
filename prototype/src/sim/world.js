@@ -23,7 +23,8 @@ function radioBasesInRange(state, tileId, extra = 0) {
   return coverNodes(state, tileId, extra).map((n) => n.base);
 }
 import { createFactions, factionsDaily, recomputeOwnership } from "./factions.js";
-import { movePartiesHour, clockFrac, setClockFrac, reportsLive } from "./parties.js";
+import { movePartiesHour, clockFrac, setClockFrac, reportsLive, unheardEnvoy } from "./parties.js";
+import { envoyLostQuiet } from "./envoys.js"; // an envoy dying out of radio coverage: heard of only when overdue (call-time only)
 import { fieldSight, fieldworksHour, fieldworksDaily } from "./fieldworks.js"; // field works outside the bases
 import { hordesHour, hordesDaily } from "./hordes.js";
 import { ensureHives, hivesSecured } from "./hives.js";
@@ -659,7 +660,11 @@ export function killSurvivor(state, s, tileId, cause, extraItems = []) {
   s.health = 0;
   s.station = null;
   s.inBed = false;
-  log(state, `${s.name} died ${cause}.`, "death");
+  // envoys.js: on an envoy out of your radio coverage (and not in a fight you watch on the battle map), nobody hears it.
+  const onParty = s.location && s.location.kind === "party" ? state.parties.find((p) => p.id === s.location.partyId) : null;
+  const unheard = unheardEnvoy(onParty) && !(state.combat && state.combat.setup && state.combat.setup.partyId === onParty.id);
+  if (unheard) envoyLostQuiet(state, onParty, s);
+  else log(state, `${s.name} died ${cause}.`, "death");
   if (s.vol) volunteerFell(state, s, tileId, cause); // volunteers.js: another group's person: their group mourns, not your memorial wall
   else if (s.loan) loanFell(state, s, tileId, cause); // loans.js: on loan to you: their group mourns (standing), not your memorial wall
   else {
@@ -700,7 +705,7 @@ export function killSurvivor(state, s, tileId, cause, extraItems = []) {
     }
     // Teammates know where their friend fell.
     const party = s.location.kind === "party" && state.parties.find((p) => p.id === s.location.partyId);
-    if (party && party.spotted) {
+    if (party && party.spotted && !unheard) {
       const key = `death:${tileId}`;
       party.spotted.set(key, { key, type: "death", tile: tileId, hour: state.hour, label: `Death site: ${site.names.join(", ")}`, info: { items: site.items.length } });
     }

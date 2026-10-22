@@ -82,6 +82,7 @@ import { BOSS_NAMES } from "./hiveconst.js";
 import { reduceHorde } from "./hordes.js";
 import { broodGrowth } from "./eras.js";
 import { canRadioGroup } from "./radio.js";
+import { talkSink } from "./talk.js"; // an answer carried home by an envoy
 import { keyWord } from "./water.js"; // "un-purified water" in texts
 import { totalRounds } from "./rounds.js"; // rounds by calibre ("ammo": every round there)
 import { payAmmo, payAmmoKeys, payWord, roundsText } from "./ammo.js"; // rounds by calibre
@@ -236,6 +237,8 @@ export function attitude(f) {
 // Diplomatic (traits.js goodwillMult): your best Diplomatic among the free makes gains bigger and losses smaller. exact:
 // the change sets goodwill to a value (the peace's floor, a war's hostility, the tribute fading as it was bought), left as it is.
 export function changeGoodwill(state, f, amount, reason, exact = false) {
+  const sk = talkSink(); // talk.js: your answer to their envoy: they feel it when the envoy is home (envoys.js)
+  if (sk && sk.fid != null && f && sk.fid === f.id) { sk.calls.push({ op: "gw", f: f.id, amount, reason, exact }); return; }
   if (!exact && amount) amount *= goodwillMult(state, amount);
   const before = attitude(f);
   f.goodwill = Math.max(-100, Math.min(100, f.goodwill + amount));
