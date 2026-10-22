@@ -9,6 +9,7 @@ import { SUPPLIES } from "../sim/data.js";
 import { tileLabel } from "../sim/parties.js";
 import { healthRest } from "../sim/work.js";
 import { pickCancel } from "./responsive.js"; // ✕ Cancel on the placing banner on a phone or tablet (no Esc key)
+import { pickWord, escCancels, keyHint, kh } from "./hints.js"; // the banner's "click" and "Esc" by the device in use
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -44,7 +45,7 @@ export function fieldWorksTab(state, b, ui) {
     const why = anyTile ? FW.placeProblem(state, b, k, anyTile.tile) : (tiles[0] ? tiles[0].why : "No land of this base's to build on.");
     const reqs = d.req ? Object.entries(d.req).map(([sk, lv]) => `${sk[0].toUpperCase() + sk.slice(1)} ${lv}+`).join(", ") : "";
     return `<div class="card small"${tip(d.desc)}>
-      <div class="spread"><b>${d.icon} ${esc(d.name)}</b><button class="mini" data-action="fw-place" data-base="${b.id}" data-kind="${k}" ${!why && ok ? "" : "disabled"}${tip(!why && ok ? `Pick a highlighted tile on the map (${ok} possible). Esc cancels.` : why)}>${ui.fwPlace && ui.fwPlace.kind === k ? "Click a tile…" : "Place on map…"}</button></div>
+      <div class="spread"><b>${d.icon} ${esc(d.name)}</b><button class="mini" data-action="fw-place" data-base="${b.id}" data-kind="${k}" ${!why && ok ? "" : "disabled"}${tip(!why && ok ? `Pick a highlighted tile on the map (${ok} possible). Esc cancels.` : why)}>${ui.fwPlace && ui.fwPlace.kind === k ? keyHint({ key: "Click a tile…", touch: "Tap a tile…", pad: `${kh("A")} on a tile…` }) : "Place on map…"}</button></div>
       <div>${costChips(b, d.cost)}<span class="muted small"> · ${d.craft ? `a team walks out and sets it (${d.hours} h there)` : `${d.hours} work-hours + the walk`} · ${d.hp} condition${reqs ? ` · ${reqs}` : ""}</span></div>
       ${why && ok ? `<div class="small warn">${esc(why)}</div>` : !ok ? `<div class="small muted">${esc(tiles[0] ? tiles[0].why : "No land of this base's to build on.")}</div>` : ""}
     </div>`;
@@ -153,7 +154,7 @@ export function fwPlaceBanner(state, ui) {
   if (!ui.fwPlace) return "";
   const b = baseById(state, ui.fwPlace.baseId);
   const d = FW.FIELD.KINDS[ui.fwPlace.kind];
-  return `<div class="movemode" data-tip="The clock waits until you pick a tile.">${d.icon} ${esc(d.name)} for ${esc(b ? b.name : "the base")}: <b>click a green tile</b> · <b>Esc</b> cancels` + pickCancel("fw") +
+  return `<div class="movemode" data-tip="The clock waits until you pick a tile.">${d.icon} ${esc(d.name)} for ${esc(b ? b.name : "the base")}: <b>${pickWord()} a green tile</b>${escCancels()}` + pickCancel("fw") +
     (ui.fwMsg ? `<br><span class="danger">${esc(ui.fwMsg)}</span>` : "") + `</div>`;
 }
 // A tile clicked while placing: planned (the base window comes back on its Field works tab), or why not (the mode stays on).

@@ -41,6 +41,7 @@ import { TENT_TAKE } from "../sim/data-tents.js"; // Take down, Slash at a tent 
 import { MEDIC } from "../sim/medics.js";
 import { PLATE_AP } from "../sim/carrykit.js";
 import { ALLY_ORDER } from "../sim/allyorders.js"; // Ally orders' reach (sim/allyorders.js)
+import { devText, keyHint, padHtml, PAD } from "./hints.js"; // the notes by the device in use; the keycaps are touch.css's (data-pad: the controller's button)
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const plain = (h) => String(h || "").replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"');
@@ -240,7 +241,7 @@ export function cardChips(state, b, u) {
 }
 // look: the look-only buttons (Inventory, Cones), small in the card's corner.
 function cardHtml(state, b, u, n, salt, head, look = "") {
-  if (!u) return `<div class="bb-card empty"><span class="muted">Select one of your people (1–9 or Tab).</span>${look ? `<div class="bb-look">${look}</div>` : ""}</div>`;
+  if (!u) return `<div class="bb-card empty"><span class="muted">${padHtml(keyHint({ key: "Select one of your people (1–9 or Tab).", touch: "Select one of your people: tap them or their tab.", pad: "Select one of your people (LB RB)." }))}</span>${look ? `<div class="bb-look">${look}</div>` : ""}</div>`;
   const f = Math.max(0, Math.min(1, u.hp / u.maxHp));
   const max = Math.max(2, u.ap || 0);
   const acting = b.phase === "player" && !u.dead && !u.left;
@@ -290,8 +291,8 @@ export function barHtml(d) {
   let note = "";
   if (b.phase === "enemy") note = "Enemy turn: watch the map. Your turn comes next.";
   else if (b.phase === "deploy") note = b.layout ? "The base map: pick something in the panel and click where it goes (R turns it); click a placed thing to move it." : b.drill ? "A drill: place your people (the panel), then Save as plan." : `Deploy: click one of your people, then a green cell. Start the fight in the panel (${keyLabel("battle.confirm", 1) || "Enter"}).`;
-  else if (d.autoPlay) note = `The AI is playing your side (${keyLabel("battle.autoplay", 1) || "Shift+A"} or Take back control to play again).`;
-  else if (!sel) note = "Select one of your people: click them, their tab, or press 1–9 or Tab.";
+  else if (d.autoPlay) note = keyHint({ key: `The AI is playing your side (${keyLabel("battle.autoplay", 1) || "Shift+A"} or Take back control to play again).`, touch: "The AI is playing your side (Take back control to play again).", pad: "The AI is playing your side (Take back control to play again)." });
+  else if (!sel) note = keyHint({ key: "Select one of your people: click them, their tab, or press 1–9 or Tab.", touch: "Select one of your people: tap them or their tab.", pad: `Select one of your people: LB RB, or ${PAD.A} on them.` });
   else if (sel.dead || sel.left || sel.fled) note = `${first(sel)} is out of the fight: select someone else (Tab).`;
   else if (canAct && !shown.some((o) => rankOf(o.v)[0] !== VIEW)) note = `${first(sel)} has nothing to do now${sel.ap < 1 ? " (no actions left)" : ""}: select someone else (Tab) or end the turn.`;
   const layout = barLayout(shown.filter((o) => rankOf(o.v)[0] !== VIEW), { flat: d.flat });
@@ -301,14 +302,14 @@ export function barHtml(d) {
   const open = d.flat ? null : d.tray;
   const allBtn = canAct && !d.flat && (hidden || d.all) ? `<i class="bb-sep"></i><button class="bb-btn bb-allbtn${d.all ? " active" : ""}" data-action="cb-bar" data-v="all" data-tip="${esc(d.all ? "Ready only: show just the orders that can be given now (all of them are shown now)." : `All orders: the ${hidden} that cannot be given now too, greyed, each saying why or when it applies.`)}" data-tip-pre><span class="bb-lbl">${d.all ? "Ready only" : "All"}</span><i class="bb-ic">${ICON.more}</i>${d.all ? "" : `<i class="bb-ap">+${hidden}</i>`}</button>` : "";
   const float = `${acting && d.extra ? `<div class="bb-extra">${d.extra}</div>` : ""}${trayHtml(layout, sel, open)}`;
-  const mid = `<div class="bb-mid">${note ? `<div class="bb-note">${esc(note)}</div>` : ""}${float ? `<div class="bb-float${all ? "" : " ready"}">${float}</div>` : ""}<div class="bb-orders">${ordersHtml(layout, sel, open)}${allBtn}</div></div>`;
+  const mid = `<div class="bb-mid">${note ? `<div class="bb-note">${padHtml(esc(devText(note, "battle")))}</div>` : ""}${float ? `<div class="bb-float${all ? "" : " ready"}">${float}</div>` : ""}<div class="bb-orders">${ordersHtml(layout, sel, open)}${allBtn}</div></div>`;
   // Right: the turn, the weapon, the turn controls (and their question above them).
   const phase = b.phase === "player" ? `<b class="good">Your turn</b>` : b.phase === "enemy" ? `<b class="danger">Enemy turn</b>` : `<b class="warn">Deploy</b>`;
   const ready = b.phase === "player" ? team.filter((p) => !p.dead && !p.left && !p.fled && !p.down && p.ap > 0).length : 0;
   const weapon = sel && !sel.dead ? weaponPanelHtml(state, b, sel) : "";
   const ctl = controls.map((c) => {
     const tip = `${c.label}${c.key ? ` (${c.key})` : ""}${!c.ok && c.why ? `\nNot now: ${c.why}` : ""}${c.tip ? `\n${c.tip}` : ""}`;
-    return `<button class="${["bb-ctl", c.primary ? "primary bb-end" : "", c.on ? "active" : "", c.wide ? "wide" : ""].filter(Boolean).join(" ")}" data-action="${c.act}"${c.v ? ` data-v="${c.v}"` : ""} ${c.ok ? "" : "disabled"} data-tip="${esc(tip)}" data-tip-pre><i class="bb-ic">${c.ic}</i><span class="bb-cl">${esc(c.label)}</span>${c.key ? `<span class="key">${esc(shortKey(c.key))}</span>` : ""}</button>`;
+    return `<button class="${["bb-ctl", c.primary ? "primary bb-end" : "", c.on ? "active" : "", c.wide ? "wide" : ""].filter(Boolean).join(" ")}" data-action="${c.act}"${c.v ? ` data-v="${c.v}"` : ""} ${c.ok ? "" : "disabled"} data-tip="${esc(tip)}" data-tip-pre><i class="bb-ic">${c.ic}</i><span class="bb-cl">${esc(c.label)}</span>${c.key ? `<span class="key"${c.pad ? ` data-pad="${c.pad}"` : ""}>${esc(shortKey(c.key))}</span>` : ""}</button>`;
   }).join("");
   const right = `<div class="bb-right">${ask ? `<div class="bb-ask">${ask}</div>` : ""}<div class="bb-turn"><span>Turn <b>${b.turn}</b></span>${phase}${b.phase === "player" ? `<span class="muted" data-tip="Your people with actions left this turn.">${ready}/${team.filter((p) => !p.dead && !p.left && !p.fled).length} ready</span>` : ""}</div>${weapon ? `<div class="bb-weapon">${weapon}</div>` : ""}<div class="bb-ctls">${ctl}</div></div>`;
   return `<div class="bb">${left}${mid}${right}</div>`;

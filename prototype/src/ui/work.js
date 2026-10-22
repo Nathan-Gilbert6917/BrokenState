@@ -26,6 +26,7 @@ import { LUNCH_HOURS, lunchHour, setLunchHour } from "../sim/meals.js"; // the l
 import { statusIcons } from "./status.js"; // low mood, starving, thirsty, low health, infected, sick
 import { undoBtn } from "./undo.js"; // ↶ Undo (and Ctrl+Z) for the edits on this tab
 import { ask } from "./confirm.js"; // deleting a role asks first (one confirmation style)
+import { keyHint, PAD } from "./hints.js"; // a cell's tip by the device in use: a finger's long press opens the picker
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -114,7 +115,7 @@ function cellHtml(c, attrs, title, extra = "") {
   const cls = `wcell p${c.p}${c.over ? " over" : ""}${c.watch ? " watch" : ""}${extra}`;
   return `<button class="${cls}" ${attrs}${tip(title)}>${c.p || ""}</button>`;
 }
-const cellTip = (T, c, who, role) => `${T.name} for ${who}: ${c.p ? `priority ${PNAME[c.p]}` : "never"}${c.watch ? ` (moved up from ${c.watch} by the watchtower's alarm: a horde is near; back to ${c.watch} when it has gone, or set it yourself to end that)` : c.over ? ` (their own; ${role.name}: ${c.def ? c.def : "never"})` : ` (${role.name}'s default)`}. ${T.desc} Left-click up, right-click down, Shift+click: the whole role, 1–5 / 0 / R on the keyboard.`;
+const cellTip = (T, c, who, role) => `${T.name} for ${who}: ${c.p ? `priority ${PNAME[c.p]}` : "never"}${c.watch ? ` (moved up from ${c.watch} by the watchtower's alarm: a horde is near; back to ${c.watch} when it has gone, or set it yourself to end that)` : c.over ? ` (their own; ${role.name}: ${c.def ? c.def : "never"})` : ` (${role.name}'s default)`}. ${T.desc} ${keyHint({ key: "Left-click up, right-click down, Shift+click: the whole role, 1–5 / 0 / R on the keyboard.", touch: "Tap: up. Hold: the picker (1–5, never, the role's default).", pad: `${PAD.A}: up.` })}`;
 
 // ---------- the picker (a finger) ----------
 // ui.workPick = { action, id | role, k, base, x, top | bottom }: under the finger's cell, or over it near the screen's

@@ -178,6 +178,7 @@ import { roundsLine, baseAmmo, baseAmmoBreakdown, teamAmmoBreakdown, breakdownTe
 import { panelHead, panelTab } from "./layout.js"; // the boxes over the map share one header and folded tab
 import { fold, peopleQuery, peopleIsCompact } from "./panelfold.js"; // side-panel folds; the People tab's find box
 import { fieldWorksTab, survivorPostText } from "./fieldworks.js"; // the base window's Field works tab and view
+import { keyHint, devText, padHtml, kh } from "./hints.js"; // the map's hints in the words of the device in use (a finger, a controller)
 // The tools a build or a recipe needs, a chip each: ok when something at the base covers it (toolreqs.js).
 const toolChips = (state, b, kinds) => { if (!kinds.length) return ""; const items = baseToolItems(state, b); return kinds.map((k) => { const ok = !!toolFor(items, k); return chip({ icon: "🔨", name: TOOL_KINDS[k].name.replace(/^an? /, ""), ok, t: `${ok ? "At the base" : "Missing: needed in the armory or on someone here when it is queued"}: ${kindHelp(k)}` }); }).join(""); };
 
@@ -505,7 +506,7 @@ function renderGroups(state) {
 const tmStat = (k, v) => `<span class="tm-stat"><span class="muted">${k}</span> ${v}</span>`;
 function renderTeams(state, ui) {
   const mine = state.parties.filter((p) => p.owner === "player");
-  if (!mine.length) return `${formTeamRow(state)}<div class="muted small">No teams out. Form one at a base, select a tile on the map and choose an action, or right-click a tile.</div>${teamsTrips(state, ui)}`;
+  if (!mine.length) return `${formTeamRow(state)}<div class="muted small">${padHtml(devText("No teams out. Form one at a base, select a tile on the map and choose an action, or right-click a tile."))}</div>${teamsTrips(state, ui)}`;
   return formTeamRow(state) + mine.map((p) => {
     const members = partyMembers(state, p);
     const v = partyFleet(state, p); // one vehicle, or several together (sim/vehicles.js fleets)
@@ -534,7 +535,7 @@ function renderTeams(state, ui) {
       ${teamRadioLine(state, p)}
       ${canOrder && p.kind !== "convoy" && commandable(state, p) ? `<div class="row" style="margin-top:0.35rem">
         ${waiting ? `<button class="primary" data-action="orders" data-id="${p.id}"${tip("Choose what the team does here")}>Orders</button>` : ""}
-        <button data-action="movemode" data-id="${p.id}"${tip("Then click any tile on the map. The team goes there and waits for orders.")}>${ui.moveParty === p.id ? "Click a tile…" : waiting ? "Move…" : "Redirect…"}</button>
+        <button data-action="movemode" data-id="${p.id}"${tip("Then click any tile on the map. The team goes there and waits for orders.")}>${ui.moveParty === p.id ? keyHint({ key: "Click a tile…", touch: "Tap a tile…", pad: `${kh("A")} on a tile…` }) : waiting ? "Move…" : "Redirect…"}</button>
         <button data-action="gohome" data-id="${p.id}"${tip("Head back home now. This drops the team's queue.")}>Return home</button>
         ${enterButton(state, p)}${editTeamButton(state, p, "")}
       </div>` : ""}
@@ -617,9 +618,11 @@ export function renderRight(state, ui) {
   const id = ui.selected;
   if (id < 0) {
     return `<h2>State of Calder</h2>
-      <div class="small hints"><div><b>Click</b> a tile to inspect it · <b>right-click</b> for actions</div>
+      <div class="small hints">${keyHint({ key: `<div><b>Click</b> a tile to inspect it · <b>right-click</b> for actions</div>
       <div><b>Drag</b> or <b>W A S D</b> to pan · <b>wheel</b> to zoom · <b>Space</b> run / pause</div>
-      <div class="muted">Hover anything for a description.</div>
+      <div class="muted">Hover anything for a description.</div>`,
+      touch: `<div><b>Tap</b> a tile to inspect it · <b>long-press</b> for actions</div><div><b>Drag</b> to pan · <b>pinch</b> to zoom · <b>▶ Run</b> on the banner runs</div><div class="muted">Long-press anything for a description.</div>`,
+      pad: `<div>${kh("A")} inspects the tile under the cursor · ${kh("X")} for actions</div><div><b>Left stick</b> or <b>D-pad</b> moves the cursor · <b>right stick</b> pans · ${kh("LT")}${kh("RT")} zoom · ${kh("Menu")} run / pause</div><div class="muted">The cursor's tile shows its description.</div>` })}
       <button class="mini" data-action="help-open" data-sec="map"${tip("Help: the map, what the bright, dim and dark tiles mean, the keys")}>? How the map works</button></div>`;
   }
   const t = state.tiles[id];
@@ -669,7 +672,7 @@ export function renderRight(state, ui) {
     <div class="small muted">${loc ? LOCATIONS[loc.type].name + " · " : ""}${TERRAIN[t.terrain].name}${t.road ? " · road" : ""}${t.bridge ? " · bridge" : ""}</div>
     ${sloc ? `<div class="small muted"${tip("Danger: how many of the dead the site holds on top of its infection (city blocks and big sites are worse, the countryside is quiet). Likely: what searching here tends to turn up.")}>${SITE_ZONES[sloc.zone || LOCATIONS[sloc.type].cat]?.name || "Site"} · danger ${DANGER_NAMES[siteDanger(sloc)].toLowerCase()} · likely ${Object.entries(LOCATIONS[sloc.type].loot).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k]) => (k === "food" ? "food" : k === "preserved" ? "food that keeps" : SUPPLIES[k] ? SUPPLIES[k].name.toLowerCase() : k)).join(", ")}${LOCATIONS[sloc.type].gear.length ? ", maybe gear" : ""}</div>` : ""}
     ${pickBar(state, ui)}
-    ${ui.moveParty ? `<div class="card attn small" style="margin-top:0.5rem">Move mode: left-click this or another tile to send the team. Esc cancels.</div>` : ""}
+    ${ui.moveParty ? `<div class="card attn small" style="margin-top:0.5rem">${padHtml(devText("Move mode: left-click this or another tile to send the team. Esc cancels."))}</div>` : ""}
     ${stagingTileCard(state, id)}
     <div class="card" style="margin-top:0.6rem">
       <div class="pk small">
@@ -1337,7 +1340,7 @@ function moveOutModal(state, ui) {
       <div>
         <h3>Where to</h3>
         <div class="choices">
-          <button data-action="pl-dest" data-tile="" class="${pl.dest == null ? "active" : ""}"${tip("They leave and wait just outside; the map goes to move mode so you can click where they go: a spot for a new outpost, or anywhere.")}>Pick a place on the map<span class="hint">a new outpost, or anywhere: click it once they are out</span></button>
+          <button data-action="pl-dest" data-tile="" class="${pl.dest == null ? "active" : ""}"${tip("They leave and wait just outside; the map goes to move mode so you can click where they go: a spot for a new outpost, or anywhere.")}>Pick a place on the map<span class="hint">${padHtml(devText("a new outpost, or anywhere: click it once they are out"))}</span></button>
           ${others.map(destBtn).join("")}
         </div>
         <h3>Transport</h3>

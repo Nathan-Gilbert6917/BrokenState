@@ -34,6 +34,7 @@ import { queueCraft, cancelCraft, craftQueue } from "./sim/crafting.js";
 import { initRenderer, render, resize, centerOn, screenToTile, zoomAt, camera, view, tileTooltip, resetView, mapLoc, HEX } from "./ui/render.js";
 import { setPoiReveal } from "./sim/pois.js"; // the dev tools' Reveal map shows every point of interest
 import { workerAt } from "./ui/workermap.js"; // the base workers on the map: their tooltip, a click opens the person
+import { keyHint, devText, pickWord, escCancels, kh } from "./ui/hints.js"; // the key hints in the words of the device in use: the banners, the tips
 import { fieldworksActions, fieldworksChange, fwPlaceTiles, fwPlaceBanner, fwPlaceClick, fwPlaceCancel, teamFieldItems } from "./ui/fieldworks.js";
 import { fwAt as fieldWorkAt, FIELD, placeProblem, planFieldWork } from "./sim/fieldworks.js"; // field works: the base tab, the tile picker
 import { topbarParts, renderLeft, renderRight, renderLog, renderModal, modalKind, renderLegend, tileActions, plannerLoad, plannerVehicle, routeCheck } from "./ui/ui.js";
@@ -704,7 +705,7 @@ function bannerHTML() {
     const waiting = armedList(state, ui);
     const n = waiting.length;
     // One short line; the rest is a hover description and Help → Time ("?").
-    html += `<div class="paused" data-tip="The clock is stopped. Orders you give now start when you unpause."><b class="big">Paused</b>${pauseWhyHTML(ui)} <b>Space</b> to run` +
+    html += `<div class="paused" data-tip="The clock is stopped. Orders you give now start when you unpause."><b class="big">Paused</b>${pauseWhyHTML(ui)} ${keyHint({ key: "<b>Space</b> to run", touch: "tap", pad: `${kh("Menu")} to run` })}` +
       `<button data-action="speed" data-speed="${ui.lastSpeed || 1}" data-tip="Run at ${ui.lastSpeed || 1}× (Space)">▶ Run</button>` +
       `<button class="mini" data-action="help-open" data-sec="time" data-tip="Help: time, pausing and speeds">?</button>` +
       (n ? `<span class="armed" data-tip="${esc(waiting.join(" · "))}">${n} order${n === 1 ? "" : "s"} will start when you unpause</span>` : "") + `</div>`;
@@ -712,7 +713,7 @@ function bannerHTML() {
   html += fwPlaceBanner(state, ui); // ui/fieldworks.js: placing a field work
   html += meetPickBanner(state, ui); // ui/tradewindow.js: a tile to meet a group's caravan at
   if (ui.moveParty) {
-    html += `<div class="movemode" data-tip="The clock waits until you pick a tile.">Move: <b>click a tile</b> to ${ui.moveQueue ? "queue a move" : "send the team"} · <b>Esc</b> cancels` + pickCancel("move") +
+    html += `<div class="movemode" data-tip="The clock waits until you pick a tile.">Move: <b>${pickWord()} a tile</b> to ${ui.moveQueue ? "queue a move" : "send the team"}${escCancels()}` + pickCancel("move") +
       (ui.moveMsg ? `<br><span class="danger">${esc(ui.moveMsg)}</span>` : "") + `</div>`;
   }
   return html;
@@ -1984,7 +1985,7 @@ document.addEventListener("mouseover", (e) => {
 function showTip(el, e) {
   tipTarget = el;
   if (showTipText(el, e.shiftKey)) { tipEl.classList.remove("hidden"); placeTip(e); return; } // an item row: short, Shift the whole (ui/itemlabels.js)
-  tipEl.textContent = el.dataset.tip;
+  tipEl.textContent = devText(el.dataset.tip, state.combat ? "battle" : "map"); // a finger's or a pad's words for the keys and clicks (ui/hints.js)
   tipEl.classList.toggle("pre", el.hasAttribute("data-tip-pre")); // multi-line tips (the weather report)
   if (el.dataset.tipSpark) tipEl.appendChild(sparkNode(el.dataset.tipSpark)); // a stock's last 14 days (ui/ledger.js)
   tipEl.classList.remove("hidden");
@@ -1998,7 +1999,7 @@ document.addEventListener("mousemove", (e) => {
 // Returns false for any other tip.
 function showTipText(el, full) {
   if (!el || !el.dataset.tipFull) return false;
-  tipEl.textContent = full ? el.dataset.tipFull : el.dataset.tip;
+  tipEl.textContent = devText(full ? el.dataset.tipFull : el.dataset.tip);
   tipEl.classList.toggle("pre", !full);
   return true;
 }

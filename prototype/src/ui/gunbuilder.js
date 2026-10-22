@@ -32,6 +32,7 @@ import { itemDur, itemDurMax } from "../sim/crafting.js"; // condition: item.dur
 import { repairInfoAt, repairAt } from "../sim/repair.js"; // the Repair button: the base's bench queue, or a field kit on the road
 import { gunURL, anchorOf, platformOf, isGunKey, ART_W, ART_H } from "./gunart.js";
 import { magazineText } from "../sim/gunrounds.js"; // the magazine slot with none fitted: the gun's own standard magazine, never "empty"
+import { devText, padHtml } from "./hints.js"; // the help lines in the words of the device in use (a finger, a controller)
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -342,7 +343,7 @@ export function gunBuilderModal(state, ui) {
   const relAfter = after ? reliabilityText(gun, after) : "";
   const loads = loadChoices(gun);
   const loadSel = loads.length ? `<div class="row small" style="margin-top:0.4rem;gap:0.4rem"${tip(bu ? "In a fight the round is changed by Reload (the battle panel, or right-click the gun: Reload with)." : "The round this gun is loaded with (item.load): its damage, penetration, noise and reliability. In battle Reload can switch it when another kind of this calibre is to hand. 'Best to hand' takes the best kind the team carries.")}><span class="muted">Ammo</span><select data-action="gb-load" data-search="1"${bu ? " disabled" : ""}>${loads.map(([v, l]) => `<option value="${v}"${(gun.load || "") === v ? " selected" : ""}>${esc(l)}</option>`).join("")}</select></div>` : "";
-  const statsHtml = `<div><div class="spread"><b>Stats</b><span class="small muted">${after ? `now → ${esc(afterWhat)}` : "hover a part to compare"}</span></div>
+  const statsHtml = `<div><div class="spread"><b>Stats</b><span class="small muted">${after ? `now → ${esc(afterWhat)}` : padHtml(devText("hover a part to compare"))}</span></div>
     <table class="gbstats">${conditionHtml(gun)}${statRows}<tr${tip("How often a shot jams (gas and magazine-fed guns: Unjam clears it) or misfires (revolvers, bolt, lever, pump and double guns: the round is lost). Worse with wear, dirty guns, cheap rounds, bad weather and some parts.")}><td>Reliability</td><td class="n" data-stat="jam" data-v="${r2(now.jam)}">${esc(rel)}</td>${after ? `<td class="n ${after.jam < now.jam ? "up" : after.jam > now.jam ? "down" : ""}">${relAfter !== rel ? `→ ${esc(relAfter)}` : ""}</td>` : ""}</tr></table>
     ${loadSel}</div>`;
   // The parts for the picked slot.
@@ -360,7 +361,7 @@ export function gunBuilderModal(state, ui) {
     listHtml = `<div><div class="spread"><b>${esc(SLOT_NAMES[g.slot] || g.slot)}</b><button class="mini" data-action="gb-slot" data-slot=""${tip("Close the list")}>✕</button></div>
       ${removeRow}${rowsHtml || bu && `<div class="small muted" style="margin:0.3rem 0">Nothing on ${esc(whereText(state, g.loc).replace(/'s .*$/, ""))} fits this socket. In a fight only the parts they carry (a pocket, the rig or the pack) can go on: pick them up in the search window first.</div>` || `<div class="small muted" style="margin:0.3rem 0">No part within reach fits this socket. Parts must be on someone here (a pocket or the pack) or in ${parseLoc(g.loc).o === "cargo" || (placeOfLoc(state, g.loc) || "").startsWith("party") ? "the team's cargo" : "the armory"}. Gun stores, police stations, the National Guard and soldiers' guns have them; traders sell some.</div>`}</div>`;
   } else {
-    listHtml = `<div class="small muted">Click a slot on the gun to see the parts within reach that fit it, with what each one changes. Hover a part to compare the stats. ${bu ? `In the fight each part fitted or taken off takes ${MOD_AP} action (${bu.ap} left), from what the fighter carries.` : "Fitting and taking parts off takes no time."}${slots.length ? "" : " This gun takes no parts."}</div>`;
+    listHtml = `<div class="small muted">${padHtml(devText("Click a slot on the gun to see the parts within reach that fit it, with what each one changes. Hover a part to compare the stats."))} ${bu ? `In the fight each part fitted or taken off takes ${MOD_AP} action (${bu.ap} left), from what the fighter carries.` : "Fitting and taking parts off takes no time."}${slots.length ? "" : " This gun takes no parts."}</div>`;
   }
   const plat = platformOf(gun.key);
   const platName = DGM.PLATFORMS && DGM.PLATFORMS[plat] && DGM.PLATFORMS[plat].name;

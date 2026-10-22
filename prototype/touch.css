@@ -46,3 +46,52 @@
 #cbtapask .tc-hint { flex: 1; font-size: 0.72rem; color: var(--muted, #9aa3ad); white-space: nowrap; }
 #cbtapask button { min-height: 2.5rem; min-width: 2.75rem; font-size: 0.9rem; }
 #cbtapask .tc-go { background: #4a3816; border-color: var(--accent); font-weight: 600; padding: 0 0.8rem; }
+
+/* ---------- the key hints by the device in use ----------
+   The keycaps on buttons and a controller's buttons in a line (src/ui/inputmode.js: <html> carries input-mouse,
+   input-touch or input-pad; the words of the hints are src/ui/hints.js's). Every rule is under input-touch or
+   input-pad: a desktop played with the mouse and the keyboard shows every keycap as it always has. Here and not in a
+   stylesheet of its own: one more file to load changed a desktop's first paint by a pixel. */
+
+/* A finger taps the button itself: no keycaps. The battle's orders and turn controls (ui/battlebar.js .key), the
+   base map's Turn R (ui/basemap.js), a folded panel's strip ([ ] L, ui/windows.js), the stack mover's Enter ↵ · Esc. */
+.input-touch :is(.key, .gut kbd, .smkeys) { display: none; }
+
+/* A controller: a keycap that names its button (data-pad: End turn's Y, ui/combat.js renderCombatBar) shows that
+   button as an Xbox pad draws it, as pad.css draws the legend's (.pb); the rest go, since no button gives those
+   orders (they are the orders bar's: X takes it, ui/gamepad.js padList). :is(body, #cbbar) weighs as an id, so this
+   wins over the bar's own keycap rules (styles.css #cbbar .bb-ctl .key) without !important. */
+.input-pad :is(.key:not([data-pad]), .gut kbd, .smkeys) { display: none; }
+.input-pad :is(body, #cbbar) .key[data-pad] {
+  display: inline-grid; place-items: center; width: auto; height: auto; padding: 0; border: 0; background: none;
+  font-size: 0; line-height: 0; color: transparent;
+}
+.input-pad .key[data-pad]::after {
+  content: attr(data-pad); display: inline-grid; place-items: center; box-sizing: border-box;
+  min-width: 1.25rem; height: 1.25rem; padding: 0 0.25rem; border-radius: 999px;
+  background: #3a3f47; color: #f2f4f6; font: 700 0.72rem/1 system-ui, sans-serif; letter-spacing: 0.02em;
+}
+.input-pad .key:is([data-pad="A"], [data-pad="B"], [data-pad="X"], [data-pad="Y"])::after { width: 1.25rem; padding: 0; }
+.input-pad .key[data-pad="A"]::after { background: #3f9b2f; }
+.input-pad .key[data-pad="B"]::after { background: #c7362d; }
+.input-pad .key[data-pad="X"]::after { background: #2f6fd0; }
+.input-pad .key[data-pad="Y"]::after { background: #d9a91a; color: #1b1e23; }
+.input-pad .key:is([data-pad="LB"], [data-pad="RB"], [data-pad="LT"], [data-pad="RT"])::after { border-radius: 0.3rem; font-size: 0.62rem; }
+.input-pad .key[data-pad="Menu"]::after { content: "☰"; }
+.input-pad .key[data-pad="View"]::after { content: "⧉"; }
+
+/* A controller's button named in a line (src/ui/hints.js kh, padHtml: the pick banners, PAUSED, the battle's prompts,
+   the guide's notes): the same round, coloured buttons, sized to the text around them. hints.js writes them only in
+   "pad" mode, and they are drawn only under .input-pad. */
+.input-pad .kh {
+  display: inline-grid; place-items: center; box-sizing: border-box; vertical-align: 0.05em;
+  min-width: 1.6em; height: 1.6em; padding: 0 0.3em; margin: 0 0.08em; border-radius: 999px;
+  background: #3a3f47; color: #f2f4f6; font: 700 0.74em/1 system-ui, sans-serif; letter-spacing: 0.02em;
+}
+.input-pad :is(.kh-A, .kh-B, .kh-X, .kh-Y) { width: 1.6em; padding: 0; }
+.input-pad .kh-A { background: #3f9b2f; }
+.input-pad .kh-B { background: #c7362d; }
+.input-pad .kh-X { background: #2f6fd0; }
+.input-pad .kh-Y { background: #d9a91a; color: #1b1e23; }
+.input-pad :is(.kh-LB, .kh-RB, .kh-LT, .kh-RT) { border-radius: 0.35em; font-size: 0.64em; height: 1.7em; }
+.input-pad :is(.kh-Menu, .kh-View) { font-size: 0.8em; }

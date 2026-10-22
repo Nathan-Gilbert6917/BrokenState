@@ -29,6 +29,7 @@ import { knownLoc } from "../sim/discovery.js";
 import { openDiary } from "./diary.js";
 import { openRoster } from "./roster.js";
 import { keyAction, keyLabel } from "./keymap.js"; // the key table (Menu → Controls)
+import { keyHint } from "./hints.js"; // the camera spots' flash by the device in use: a finger's (and a pad's) way back is 📷 Spots
 import { openCodex } from "./codex.js";
 import { visitorAlerts } from "./visitors.js";
 import { roadAlerts } from "./hardcore.js";
@@ -416,11 +417,11 @@ export function nextWaitingTeam(state, ui, act, back = false) {
 export function camSpot(state, ui, n, save) {
   if (save) {
     (ui.camSpots || (ui.camSpots = {}))[n] = { x: camera.x, y: camera.y, zoom: camera.zoom, seed: state.seed };
-    ui.flash = { text: `Camera spot ${n} saved. ${keyLabel(`cam.go${n}`, 1) || "Its key"} brings you back here.`, at: performance.now() };
+    ui.flash = { text: `Camera spot ${n} saved. ${keyHint({ key: keyLabel(`cam.go${n}`, 1) || "Its key", touch: "📷 Spots", pad: "📷 Spots" })} brings you back here.`, at: performance.now() };
     return;
   }
   const spot = ui.camSpots && ui.camSpots[n];
-  if (!spot || spot.seed !== state.seed) { ui.flash = { text: `No camera spot ${n} yet: ${keyLabel(`cam.save${n}`) || "its key"} saves the current view.`, at: performance.now() }; return; }
+  if (!spot || spot.seed !== state.seed) { ui.flash = { text: `No camera spot ${n} yet: ${keyHint({ key: keyLabel(`cam.save${n}`) || "its key", touch: "📷 Spots → Save here…", pad: "📷 Spots → Save here…" })} saves the current view.`, at: performance.now() }; return; }
   camera.x = spot.x; camera.y = spot.y; camera.zoom = spot.zoom;
 }
 

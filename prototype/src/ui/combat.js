@@ -84,6 +84,7 @@ import { planAsideHtml, planAction, planChip, planUI } from "./raidplan.js"; // 
 import { planOpen, botPlan } from "../sim/raidplan.js";
 import { hudPaint, hudSync, toggleHud, hitBreakdown, breakdownHtml, hitTone } from "./battlehud.js"; // the weapon panel, the squad strip, the big hit chances (user requests 2026-10-09)
 import { barHtml } from "./battlebar.js"; // the bottom bar: the selected one's card, the orders, the turn controls (user request 2026-10-12)
+import { devText, keyHint as say, padHtml, kh } from "./hints.js"; // the prompts and hints in the words of the device in use (a finger, a controller)
 import { softWord } from "../sim/softcover.js"; // bushes and tents: what they hide, that they stop no bullets
 import { watchCanvas } from "./pictures.js"; // the battle canvas reports a lost GPU context (the kept pictures would be blank)
 import { planOf, moveAt } from "./moveanim.js"; // walking: each move walked out at the mover's pace, a unit's moves one after the other
@@ -2267,7 +2268,7 @@ export function renderCombatPanel(state) {
   // question), are on the bottom bar (renderCombatBar, ui/battlebar.js).
 
   html += `<div id="cbprev" class="cbprev">${previewHtml(b, state)}</div>`;
-  if (cui.msg) html += `<div class="small warn cbmsg">${esc(cui.msg)}</div>`;
+  if (cui.msg) html += `<div class="small warn cbmsg">${padHtml(esc(devText(cui.msg, "battle")))}</div>`;
 
   const v = view(b);
   const seen = [...b.units.filter((t) => v.seen.has(t.id)), ...b.units.filter((t) => t.side === "enemy" && t.down && !t.dead && !t.off && playerSees(b, t))]; // sim/medics.js: the downed too (Finish)
@@ -2316,7 +2317,7 @@ export function renderCombatBar(state, { flat = false } = {}) {
   const wallMap = !!(b.tier && b.tier.map === "wall");
   const noRetreat = b.evacCols && !b.raid && !wallMap ? retreatRefusal(b) : null;
   const deploy = b.phase === "deploy";
-  const controls = [{ act: "cb-end", ic: "⏭️", label: "End turn", primary: true, ok: b.phase === "player" && !cui.autoPlay, key: k("battle.endTurn", "Space"), why: cui.autoPlay ? "The AI is playing your side." : b.phase === "enemy" ? "The enemy is moving." : deploy ? "Start the fight first (the panel)." : "",
+  const controls = [{ act: "cb-end", ic: "⏭️", label: "End turn", primary: true, ok: b.phase === "player" && !cui.autoPlay, key: k("battle.endTurn", "Space"), pad: "Y", why: cui.autoPlay ? "The AI is playing your side." : b.phase === "enemy" ? "The enemy is moving." : deploy ? "Start the fight first (the panel)." : "",
     tip: `End your turn. Units with actions left do nothing.${cui.confirmEnd ? " While any unit still has actions, the first press asks; press again (or Enter) to end." : ""}` }];
   if (wallMap && !deploy) controls.push({ act: "cb-fallback", v: "ask", ic: "🏃", label: "Fall back to the yard", wide: true, ok: !retreatRefusal(b), why: retreatRefusal(b), on: fallAskOpen(b), key: k("battle.retreatAll"), tip: "Everyone climbs down off the wall and falls back into the yard and the buildings (the second map). The attackers get the next turn and pour in through the openings." });
   if (noRetreat != null && !deploy) controls.push({ act: "cb-retreat", v: "ask", ic: "🏳️", label: "Sound the retreat", ok: !noRetreat, why: noRetreat, on: retreatAskOpen(b), key: k("battle.retreatAll"), tip: "Everyone still standing runs for the evac strip at once (shows each one's odds first). Those on the strip get out safely; the others make an escape check; downed teammates next to someone are carried." });
@@ -2438,7 +2439,7 @@ export function renderRaidCards(state) {
   if (b.raid.choose) html += `<div class="cbcard">${chooseHtml(b)}</div>`;
   if (kitWarnDue(state, b)) html += `<div class="cbcard">${kitWarnHtml(state, b)}</div>`; // sim/kitcheck.js: empty guns, no healing, the hurt, before anyone goes in
   html += allyCard(state, b); // Ally orders (sim/allyorders.js): the orders for the ally picked
-  if (cui.msg) html += `<div class="cbcard ct-toast small warn">${esc(cui.msg)}</div>`;
+  if (cui.msg) html += `<div class="cbcard ct-toast small warn">${padHtml(esc(devText(cui.msg, "battle")))}</div>`;
   if (u && alive(u) && floorsOf(b) && u.f != null && u.f !== floorNo(b)) {
     html += `<div class="cbcard small muted">Showing ${floorLabel(b, floorNo(b)).toLowerCase()}; ${esc(u.name.split(" ")[0])} is on ${floorLabel(b, u.f).toLowerCase()}. <button class="mini" data-action="cb-view" data-v="fgo" data-tip="Back to the selected unit's floor (Home also centers on them).">Go to ${esc(u.name.split(" ")[0])}</button></div>`;
   }
@@ -2473,7 +2474,7 @@ function raidCardsCompact(state, b, u) {
     if (!min) html += `<div class="rs-sheetb">${cards.map((c) => (c[2] ? c[1] : `<div class="cbcard">${c[1]}</div>`)).join("")}</div>`;
     html += `</div>`;
   }
-  if (cui.msg && !b.over) html += `<div class="cbcard ct-toast small warn">${esc(cui.msg)}</div>`;
+  if (cui.msg && !b.over) html += `<div class="cbcard ct-toast small warn">${padHtml(esc(devText(cui.msg, "battle")))}</div>`;
   if (!b.over && (!planOpen(b) || planUI.map)) html += `<div id="cbprev" class="cbprev${cui.hover ? "" : " empty"}">${previewHtml(b, state)}</div>`;
   return html;
 }
@@ -3184,10 +3185,10 @@ function deployPanel(state, b, u) {
   if (D.interior) return interiorDeployPanel(state, b, u, D);
   if (D.attackers) { // the fort map (sim/fort.js): staging an assault on their walls
     let html = `<h3>Stage the assault</h3>
-      <div class="small muted">Click one of your people, then a green cell: anywhere in the open ground round their walls, on any side. The gates are in the middle of each wall (barred: the ram, or batter them); ladders go up the wall sections; grenades over it. Your vehicle can be driven up to the wall and rammed through light obstacles.</div>
+      <div class="small muted">${say({ key: "Click", touch: "Tap", pad: `${kh("A")} on` })} one of your people, then a green cell: anywhere in the open ground round their walls, on any side. The gates are in the middle of each wall (barred: the ram, or batter them); ladders go up the wall sections; grenades over it. Your vehicle can be driven up to the wall and rammed through light obstacles.</div>
       <div class="cbactions" style="margin-top:0.4rem"><button data-action="cb-deploy" data-v="defaults" data-tip="Back to where they started: the west side.">Default positions</button></div>`;
     html += `<div id="cbprev" class="cbprev">${previewHtml(b)}</div>`;
-    if (cui.msg) html += `<div class="small warn cbmsg">${esc(cui.msg)}</div>`;
+    if (cui.msg) html += `<div class="small warn cbmsg">${padHtml(esc(devText(cui.msg, "battle")))}</div>`;
     html += `<h3>Log</h3><div class="cblog" id="cblog">${b.log.slice(-20).map((l) => `<div class="k-${l.k}"><span class="t">T${l.turn}</span>${esc(l.text)}</div>`).join("")}</div>`;
     html += `<div class="cbfoot"><button class="primary" data-action="cb-deploy" data-v="start" data-tip="Everyone is in place: the assault begins. (Enter)">Start the assault</button>
       ${!b.acted && b.turn === 1 ? `<button data-action="cb-auto" data-tip="Skip the tactical battle and resolve it instantly by the numbers.">Auto-resolve</button>` : ""}</div>`;
@@ -3196,7 +3197,7 @@ function deployPanel(state, b, u) {
   const holders = players(b).filter((p) => p.post === "gate").map((p) => p.name);
   const towers = players(b).filter((p) => p.post === "tower").map((p) => p.name);
   let html = `<h3>${b.drill ? `Drill · ${D.fort ? "the plan holds from any side" : "facing an attack from the east (it turns with the attack)"}` : `Deploy · the attack comes from the ${esc(D.side || "east")}`}</h3>
-    <div class="small muted">Click a defender, then a green cell to place them: on a wall stand or the walkway behind the wall (▲ height 1: shoot down over the wall, +5 aim, half cover; up the ladders), on a tower (▲▲ height 2: full cover, +10 aim, the widest view), in the gate or a breach (orange: whoever stands there holds it and blocks the way), or anywhere inside. The attackers batter the wall and the gate (hit points) and come through the openings.</div>
+    <div class="small muted">${say({ key: "Click", touch: "Tap", pad: `${kh("A")} on` })} a defender, then a green cell to place them: on a wall stand or the walkway behind the wall (▲ height 1: shoot down over the wall, +5 aim, half cover; up the ladders), on a tower (▲▲ height 2: full cover, +10 aim, the widest view), in the gate or a breach (orange: whoever stands there holds it and blocks the way), or anywhere inside. The attackers batter the wall and the gate (hit points) and come through the openings.</div>
     ${startLine(state, b)}<div class="small" style="margin-top:0.3rem">${D.walled ? `Holding the gate: <b>${holders.length ? esc(holders.join(", ")) : "nobody"}</b>${towers.length ? ` · On the towers: <b>${esc(towers.join(", "))}</b>` : ""}` : "No walls built here: defenders stand in the yard behind the barricades."}</div>
     <div class="cbactions" style="margin-top:0.4rem">
       <button data-action="cb-deploy" data-v="gate" ${u && D.walled ? "" : "disabled"} data-tip="${esc(u ? `Put ${u.name} in the gate (or a breach) to hold it.` : "Pick a defender first.")}">Hold the gate${u ? `: ${esc(u.name.split(" ")[0])}` : ""}</button>
@@ -3209,7 +3210,7 @@ function deployPanel(state, b, u) {
       ${Object.entries(LIT_ZONES).map(([z, name]) => `<button class="${D.lit === z ? "active" : ""}" data-action="cb-deploy" data-v="flood" data-z="${z}" data-tip="Aim the floodlights ${name.toLowerCase()} (as the defenders see it).">${name}</button>`).join("")}</div>`;
   }
   html += `<div id="cbprev" class="cbprev">${previewHtml(b, state)}</div>`;
-  if (cui.msg) html += `<div class="small warn cbmsg">${esc(cui.msg)}</div>`;
+  if (cui.msg) html += `<div class="small warn cbmsg">${padHtml(esc(devText(cui.msg, "battle")))}</div>`;
   html += storesHtml(b, cui); // the stores on the base map (sim/basemap.js)
   html += `<h3>Log</h3><div class="cblog" id="cblog">${b.log.slice(-20).map((l) => `<div class="k-${l.k}"><span class="t">T${l.turn}</span>${esc(l.text)}</div>`).join("")}</div>`;
   html += b.drill ? drillFoot(state, b) : `<div class="cbfoot"><button class="primary" data-action="cb-deploy" data-v="start" data-tip="Everyone is in place: the fight begins. (Enter)">Start the fight</button>
@@ -3330,7 +3331,7 @@ function interiorDeployPanel(state, b, u, D) {
       ${Object.entries(LIT_ZONES).map(([z, name]) => `<button class="${D.lit === z ? "active" : ""}" data-action="cb-deploy" data-v="flood" data-z="${z}" data-tip="Aim the floodlights ${name.toLowerCase()} (as the defenders see it).">${name}</button>`).join("")}</div>`;
   }
   html += `<div id="cbprev" class="cbprev">${previewHtml(b, state)}</div>`;
-  if (cui.msg) html += `<div class="small warn cbmsg">${esc(cui.msg)}</div>`;
+  if (cui.msg) html += `<div class="small warn cbmsg">${padHtml(esc(devText(cui.msg, "battle")))}</div>`;
   html += `<h3>Log</h3><div class="cblog" id="cblog">${b.log.slice(-20).map((l) => `<div class="k-${l.k}"><span class="t">T${l.turn}</span>${esc(l.text)}</div>`).join("")}</div>`;
   html += b.drill ? drillFoot(state, b) : `<div class="cbfoot"><button class="primary" data-action="cb-deploy" data-v="start" data-tip="Everyone is in place: the fight goes on. (Enter)">${after ? "Hold the yard" : "Start the fight"}</button>
     ${!b.acted && b.turn === 1 ? `<button data-action="cb-auto" data-tip="Skip the tactical battle and resolve it instantly by the numbers.">Auto-resolve</button>` : ""}</div>`;
@@ -3466,10 +3467,15 @@ function moveWord(b, u, v, x, y) {
   return `${vaults ? "Vault and " : ""}${d <= SIM.moveMob(u) ? `${vaults ? "move" : "Move"}: 1 action${u.sneaking ? ", silent (sneaking)" : vaults ? ", a scuff heard nearby" : ", a small chance of a scuff heard nearby"}` : `${vaults ? "dash" : "Dash"}: 2 actions${u.sneaking ? ", silent (sneaking)" : `, loud: heard ${VISION.DASH_NOISE} tiles off`}`}${vaults ? ` (over half cover: +${SIM.VAULT.COST * vaults} tiles, and ${SIM.VAULT.COST * vaults} less of movement for the rest of the turn)` : ""}.`;
 }
 
+// The hover details in the words of the device in use (ui/hints.js: "Click or press Shift+S to search" → a finger's
+// tap, a controller's Ⓐ); the very same HTML with the mouse.
 function previewHtml(b, state = null) {
+  return padHtml(devText(previewText(b, state), "battle"));
+}
+function previewText(b, state = null) {
   const h = cui.hover;
   const u = selUnit(b);
-  if (!h) return `<span class="muted">Hover a tile or enemy for details.</span>`;
+  if (!h) return `<span class="muted">${say({ key: "Hover a tile or enemy for details.", touch: "Tap a tile or enemy for details.", pad: "Move the cursor onto a tile or enemy for details." })}</span>`;
   if (b.layout && state) return layoutHover(state, b, h, ghostAt(state, b, h.x, h.y)); // the base map (ui/basemap.js)
   if (b.stores && !unitAt(b, h.x, h.y)) { const sc = storeAt(b, h.x, h.y); if (sc && (b.phase === "deploy" || !CDEF(b.cells[h.y * W + h.x]).walk)) return storeHover(sc); } // a store on the base map
   if (u && (cui.mode === "suppress" || cui.mode === "throwspear" || cui.mode === "launch")) return aimPreview(b, u, h); // the weapons overhaul's targeting

@@ -60,6 +60,7 @@ import { armoryView, storageTags } from "./armoryview.js"; // the storage box's 
 import { itemShortTip, tipAttrs, roundsBadge } from "./itemlabels.js"; // the short hover tip (Shift: the full one), the rounds badge on a gun
 import { rowName, rowCount, supplyName, supplyCount } from "../sim/itemnames.js"; // row names: "magazine", rounds "— loose", the count on the right
 import { touchUI } from "./responsive.js"; // a phone or tablet: the picked item's strip with Cancel stays in sight (no Esc key)
+import { devText, padHtml, padMode } from "./hints.js"; // the Selected strip's "click" for a finger or a controller; a pad on a phone reads the desktop's help line in its words
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -340,7 +341,7 @@ const invPin = (name, stk = false) => (touchUI() ? `<div class="invpin small${st
 // The help line under an inventory window on a phone or tablet (fingerHelp(desk) on a desktop: desk, its own line): a
 // tap picks, a tap places, a second tap or ✕ drops the pick, a long press is the item menu (no drag, no right-click,
 // no second click to send it across).
-export const fingerHelp = (desk, extra = "") => (touchUI() ? `Tap a thing, then where it goes: the outlined cells take it (a full one swaps). Tap it again, or ✕ on the strip, to leave it. A stack: pick how many in the panel under the window (− + or the slider), then tap the place. Hold a thing for what can be done with it (take, equip, put away, reload, use...).${extra}` : desk);
+export const fingerHelp = (desk, extra = "") => (touchUI() && !padMode() ? `Tap a thing, then where it goes: the outlined cells take it (a full one swaps). Tap it again, or ✕ on the strip, to leave it. A stack: pick how many in the panel under the window (− + or the slider), then tap the place. Hold a thing for what can be done with it (take, equip, put away, reload, use...).${extra}` : padHtml(devText(desk)));
 // A finger's pick and the cells that would take it: a faint outline on each (responsive.css .tgt), from the rule a
 // move checks first. An item: sim/inventory.js fitReason (a pocket small things, a holster its gun, a pouch its kind,
 // the pack no pack); in a fight only what can change there (sim/combat.js INV_SLOTS, mirrored), on your side of the
@@ -383,7 +384,7 @@ export function selBar(state, ui, place) {
   if (!item) return "";
   const from = parseLoc(ui.invSel);
   const st = storageFor(state, place);
-  return `${invPin(rowName(item))}<div class="invsel small">Selected: <b>${esc(rowName(item))}${rowCount(item) ? ` ${rowCount(item)}` : ""}</b>. Click a slot, pocket or pack cell to move it there${countOf(item) > 1 || isRoundItem(item) ? " (onto the same thing: the stacks merge)" : ""}.
+  return `${invPin(rowName(item))}<div class="invsel small">Selected: <b>${esc(rowName(item))}${rowCount(item) ? ` ${rowCount(item)}` : ""}</b>. ${padHtml(devText(`Click a slot, pocket or pack cell to move it there${countOf(item) > 1 || isRoundItem(item) ? " (onto the same thing: the stacks merge)" : ""}.`))}
     ${stackButtons(item, from)}
     ${st && from.o !== "armory" && from.o !== "cargo" ? `<button class="mini" data-action="inv-store"${tip(`Put it in ${st.name}`)}>${from.o === "body" ? "Take" : st.o === "armory" ? "Unequip to armory" : "Put in cargo"}</button>` : ""}
     ${GEAR[item.key] && GEAR[item.key].use && from.o !== "body" && ui.inv && !ui.inv.loot ? `<button class="mini" data-action="inv-use"${tip(`${survivorById(state, ui.inv.sid)?.name.split(" ")[0] || "They"} ${GEAR[item.key].useVerb || "use"} it now: ${useText(item.key)}. Used up.`)}>Use</button>` : ""}
@@ -588,7 +589,7 @@ function peekBar(state, ui, ok, mate = null) {
   const from = parseLoc(ui.invSel);
   const own = from.o === "s" && from.id === ui.inv.sid;
   const who = mate ? (own ? `${esc(mate.name.split(" ")[0])}'s` : "their own") : "";
-  return `${invPin(rowName(item))}<div class="invsel small">Selected: <b>${esc(rowName(item))}${rowCount(item) ? ` ${rowCount(item)}` : ""}</b>${mate && !own ? ` (${esc(mate.name.split(" ")[0])}'s)` : ""}. ${ok ? `Click ${mate ? `${who} ` : "a "}pocket, pack cell, rig pouch, the hands or the off hand to move it there (${mate ? HANDOVER_AP : INV_AP} action${mate ? `, ${esc(survivorById(state, ui.inv.sid).name.split(" ")[0])}'s` : ""})${countOf(item) > 1 || isRoundItem(item) ? "; onto the same thing: the stacks merge" : ""}${isRoundItem(item) && item.loose ? "; onto a spare magazine of the gun: it is loaded with them (1 action from a pocket or the rig, both from the pack)" : ""}.` : ""}
+  return `${invPin(rowName(item))}<div class="invsel small">Selected: <b>${esc(rowName(item))}${rowCount(item) ? ` ${rowCount(item)}` : ""}</b>${mate && !own ? ` (${esc(mate.name.split(" ")[0])}'s)` : ""}. ${ok ? padHtml(devText(`Click ${mate ? `${who} ` : "a "}pocket, pack cell, rig pouch, the hands or the off hand to move it there (${mate ? HANDOVER_AP : INV_AP} action${mate ? `, ${esc(survivorById(state, ui.inv.sid).name.split(" ")[0])}'s` : ""})${countOf(item) > 1 || isRoundItem(item) ? "; onto the same thing: the stacks merge" : ""}${isRoundItem(item) && item.loose ? "; onto a spare magazine of the gun: it is loaded with them (1 action from a pocket or the rig, both from the pack)" : ""}.`)) : ""}
     ${ok && own ? stackButtons(item, from) : ""}
     ${detailsButton(ui, item)}<button class="mini" data-action="inv-cancel">Cancel</button>${detailsBlock(state, ui, item)}</div>`;
 }
@@ -831,7 +832,7 @@ function raidModal(state, ui) {
     <div class="spread"><h1>${box ? (box.cart ? esc(box.cart.name) : box.kind === "ground" ? "On the ground" : "Search") : trunk ? "Vehicle" : "On the ground"}: ${esc(s.name)}</h1><span class="muted">${esc(b.place)}</span></div>
     <div class="result small"${ui.invMsg ? "" : ' style="visibility:hidden"'}>${ui.invMsg ? esc(ui.invMsg) : "&nbsp;"}</div>
     <div class="invcols${cols.length > 2 ? " three" : ""}">${cols.join("")}</div>
-    ${sel ? invPin(sel) : ""}${SL && SL.slot === "sup" ? stackPanel(state, ui, "raid") || selLine(sel) : sel ? `<div class="invsel small">Selected: <b>${esc(sel)}</b>. Click where it should go: a slot, a pocket or pack cell, Carried${mates.length ? ", a teammate" : ""}${box ? ", the container" : ""}, the ground${trunk ? ", the vehicle" : ""}.${armsBtn} <button class="mini" data-action="inv-cancel">Cancel</button></div>` : ""}
+    ${sel ? invPin(sel) : ""}${SL && SL.slot === "sup" ? stackPanel(state, ui, "raid") || selLine(sel) : sel ? `<div class="invsel small">Selected: <b>${esc(sel)}</b>. ${padHtml(devText(`Click where it should go: a slot, a pocket or pack cell, Carried${mates.length ? ", a teammate" : ""}${box ? ", the container" : ""}, the ground${trunk ? ", the vehicle" : ""}.`))}${armsBtn} <button class="mini" data-action="inv-cancel">Cancel</button></div>` : ""}
     ${armsSelLine(state, ui)}
     <div class="small muted" style="margin-top:0.5rem">${fingerHelp(`Drag things where they should go (or click one, then where). Click a thing twice to send it across. The first ${HAUL.free} kg a turn are free to haul, then ${HAUL.per} kg an action; handing things to a teammate next to you is free.`)}${found.length ? ` Found so far: ${esc(found.join(", "))}.` : ""}</div>
     <div class="row" style="margin-top:0.8rem;justify-content:flex-end"><button class="primary" data-action="inv-close">Done</button></div>
@@ -974,7 +975,7 @@ function armsSelLine(state, ui) {
   const u = state.combat.units.find((x) => x.id === A.id);
   const q = u && u.hands ? u.hands[A.i] || 0 : 0;
   if (!(q > EPSU)) { ui.invArms = null; return ""; }
-  return `${invPin(stackText(A.i, q))}<div class="invsel small">Selected: <b>${esc(stackText(A.i, q))}</b> in ${esc(u.name.split(" ")[0])}'s arms. Click the ground to set it down (free). <button class="mini" data-action="inv-armsdown"${tip("Set all of it down where they stand (free)")}>Set down</button> <button class="mini" data-action="inv-cancel">Cancel</button></div>`;
+  return `${invPin(stackText(A.i, q))}<div class="invsel small">Selected: <b>${esc(stackText(A.i, q))}</b> in ${esc(u.name.split(" ")[0])}'s arms. ${padHtml(devText("Click the ground to set it down (free)."))} <button class="mini" data-action="inv-armsdown"${tip("Set all of it down where they stand (free)")}>Set down</button> <button class="mini" data-action="inv-cancel">Cancel</button></div>`;
 }
 // The line under the fight's Inventory window for a thing picked on the ground or in the Carried list.
 function fightSelLine(state, ui, b) {
@@ -982,7 +983,7 @@ function fightSelLine(state, ui, b) {
   const F = parseRaidLoc(ui.invSel);
   const name = F.slot === "sup" ? (SUPPLIES[F.i] || { name: F.i }).name : (raidItemAt(state, b, ui.invSel) || {}).name;
   if (!name) return "";
-  return `${invPin(name)}<div class="invsel small">Selected: <b>${esc(name)}</b> (${F.o === "haul" ? "carried" : "on the ground"}). Click a slot, a pocket or pack cell, Carried or the ground to move it there; click it again to send it across. <button class="mini" data-action="inv-cancel">Cancel</button></div>`;
+  return `${invPin(name)}<div class="invsel small">Selected: <b>${esc(name)}</b> (${F.o === "haul" ? "carried" : "on the ground"}). ${padHtml(devText("Click a slot, a pocket or pack cell, Carried or the ground to move it there; click it again to send it across."))} <button class="mini" data-action="inv-cancel">Cancel</button></div>`;
 }
 
 // ---------- the ground in the State Map's inventory windows ----------
@@ -1016,7 +1017,7 @@ export function groundBox(state, ui, s) {
   const selIt = G && G.pid === p.id && G.i != null ? items[G.i] : null;
   return `<div style="margin-top:0.8rem"><div class="spread"><b${tip("The ground of the tile the team stands on: put down by a team, or left after a fight. Any team here can pick it up; scavengers find what is left, food spoils.")}>On the ground here</b><span class="small muted">${items.length} thing${items.length === 1 ? "" : "s"}${items.length ? ` <button class="mini" data-action="carry-pick" data-pid="${p.id}"${tip("Pick up part of a stack, or everything that fits")}>Pick up…</button>` : ""}</span></div>
     <div class="istore" data-action="inv-click" data-loc="${drop}" data-drop="${drop}"${tip("Drop here to put it on the ground of this tile")}>${tiles || `<span class="small muted">Nothing. Drag things here to put them down.</span>`}</div>
-    ${selIt ? `${invPin(groundItemText(selIt))}<div class="invsel small">Selected on the ground: <b>${esc(groundItemText(selIt))}</b>. Click ${esc(s.name.split(" ")[0])}'s slot, pocket or pack cell to pick it up there${selIt.kind === "gear" && selIt.item && isCarryable(selIt.item) ? " (In arms: carried whole)" : ""}, or click it again. <button class="mini" data-action="inv-cancel">Cancel</button></div>` : ""}</div>`;
+    ${selIt ? `${invPin(groundItemText(selIt))}<div class="invsel small">Selected on the ground: <b>${esc(groundItemText(selIt))}</b>. ${padHtml(devText(`Click ${esc(s.name.split(" ")[0])}'s slot, pocket or pack cell to pick it up there${selIt.kind === "gear" && selIt.item && isCarryable(selIt.item) ? " (In arms: carried whole)" : ""}, or click it again.`))} <button class="mini" data-action="inv-cancel">Cancel</button></div>` : ""}</div>`;
 }
 // A click in a State Map inventory window that touches the ground box. Returns true when it was one.
 function mapGroundClick(state, ui, loc) {

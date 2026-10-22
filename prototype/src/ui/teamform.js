@@ -44,6 +44,7 @@ import { statusIcons } from "./status.js";
 import { sickRestWhy } from "../sim/sickrest.js"; // the sick rest at the base (the Fit filter, a warning when picked)
 import { survivorURL, spriteImg } from "./sprites.js";
 import { shortName } from "./names.js";
+import { devText, padHtml } from "./hints.js"; // the help line in the words of the device in use (a finger, a controller)
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -280,7 +281,7 @@ function gearTab(state, ui, F, b, p, crew) {
   const cargo = p ? `<div style="margin-top:0.6rem">${storageBox(state, ui, `party:${p.id}`, s)}</div>` : "";
   const html = `${who}${quick}<div class="invcols"><div class="invcol">${doll(state, ui, s, `s:${s.id}`, spriteImg(survivorURL(s, state.seed), 6), { user: s })}</div><div class="invcol">${armory}${cargo}</div></div>
     ${selBar(state, ui, placeOfLoc(state, parseLoc(ui.invSel || `s:${s.id}:weapon`)) || place)}
-    <div class="small muted" style="margin-top:0.4rem">Click an item, then where it goes (a slot, pocket, pouch or pack cell, or the armory${p ? " or the cargo" : ""}), or drag it. Click it twice: off ${esc(shortName(s))} into ${p ? "the cargo" : "the armory"}, or from the armory onto ${esc(shortName(s))}. ${p ? "Between the team and the armory the team's carry limit counts." : "They are still at the base: what you change here is changed now."}</div>`;
+    <div class="small muted" style="margin-top:0.4rem">${padHtml(devText(`Click an item, then where it goes (a slot, pocket, pouch or pack cell, or the armory${p ? " or the cargo" : ""}), or drag it. Click it twice: off ${esc(shortName(s))} into ${p ? "the cargo" : "the armory"}, or from the armory onto ${esc(shortName(s))}. ${p ? "Between the team and the armory the team's carry limit counts." : "They are still at the base: what you change here is changed now."}`))}</div>`;
   return html.replace(/data-action="inv-click"/g, 'data-action="tf-click"');
 }
 

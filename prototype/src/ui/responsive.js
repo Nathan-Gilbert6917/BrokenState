@@ -76,6 +76,8 @@ export function initResponsive() {
   const check = () => setMode(qs[0].matches ? "phone" : qs[1].matches ? "tight" : qs[2].matches ? "tablet" : "");
   for (const q of qs) q.addEventListener("change", check);
   setTimeout(check, 0); // after main.js has finished loading: the folds go through its click listener and actions
+  // Another device picked up (ui/inputmode.js): the panels again, so the key hints say what it presses (ui/hints.js).
+  window.addEventListener("inputmode", redraw);
 }
 
 function setMode(m) {
