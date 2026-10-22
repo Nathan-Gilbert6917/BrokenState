@@ -262,3 +262,30 @@
   #tb-tools { margin-left: 0; }
   #alerts { width: min(22rem, 48%); }
 }
+
+/* ================= inventory on a phone or tablet: tap to pick, tap to place ================= */
+/* ui/inventory.js and ui/expedition.js draw the classes below only while a phone or tablet layout is up (touchUI):
+   .tgt on the cells that would take the picked thing (tgtCls) and on the queue's lines, the strip (.invpin) naming the
+   pick. The same queries as touch at the top, so a desktop window with a mouse matches none of it. */
+@media (max-width: 759px), (pointer: coarse) and (min-width: 760px) {
+  /* The pick: a ring a finger's eye finds again (no hover). */
+  #modal .islot.sel { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent) inset; background: #2e2a20; }
+  /* The cells that would take it: a faint green dashed edge. A move there can still be refused (the load, a swap's
+     way back), and says why. */
+  #modal .islot.tgt { border: 1px dashed color-mix(in srgb, var(--good) 75%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--good) 30%, transparent) inset; }
+  /* The boxes that take it as a list (the armory, the cargo, the ground, Carried, a container, the vehicle): edged the
+     same while a strip is up, except the one it came from; a stack from the stores goes onto a person only (.stk). */
+  #modal .invbox:has(.invpin:not(.stk)) .istore[data-drop]:not(:has(.sel)) { border-color: color-mix(in srgb, var(--good) 75%, transparent); }
+  /* How many of a stack (ui/stackmove.js): − + and the slider's thumb a finger's size, the chips taller. */
+  #modal .smove .smstep { width: 2.6rem; min-height: 2.4rem; font-size: 1.1rem; }
+  #modal .smove .smrange { height: 0.8rem; }
+  #modal .smove .smrange::-webkit-slider-thumb { width: 1.75rem; height: 1.75rem; }
+  #modal .smove .smrange::-moz-range-thumb { width: 1.6rem; height: 1.6rem; }
+  #modal .smove .smchip, #modal .smove .smdest { min-height: 2.2rem; }
+  #modal .smove .smnum { min-height: 2.4rem; }
+  /* A team's order queue: a line picked, a tap on another puts it there (dashed: where it can go); bigger targets. */
+  .xpqueue .qlabel { min-height: 2.2rem; display: flex; align-items: center; gap: 0.3rem; }
+  .xpqueue .qbtns button.mini { min-width: 2.2rem; min-height: 2.2rem; }
+  .xpqueue li.tgt .qrow { border: 1px dashed color-mix(in srgb, var(--good) 75%, transparent); }
+  .xpqueue .qgrip { display: none; } /* the drag grip: a finger moves a line by tap and tap */
+}

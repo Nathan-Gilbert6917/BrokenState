@@ -36,6 +36,7 @@ import { supRoom, suppliesHeld, SUP_PLACES, PLACE_WORDS, itemKeyOf } from "../si
 import { isRoundKey } from "../sim/rounds.js";
 import { formTeam, formPreview, editBase, editProblem, addMember, removeMember, setVehicles, toggleVehicle, setSupply, teamHas, gearSnapshot, gearChanged, restoreGear, loadoutCount } from "../sim/teamform.js";
 import { doll, storageBox, selBar, tile, INV_ACTIONS, invDrop } from "./inventory.js";
+import { touchUI } from "./responsive.js"; // a phone or tablet: a second tap on the picked item drops the pick
 import { supplyIcon } from "./stackmove.js"; // a supply's own drawing (ui/itemart.js)
 import { fleetPicker, toggleFleetIds } from "./fleetpick.js"; // the vehicle picker the planners share
 import { loadWarnings, paceLine, carLine } from "./loadview.js";
@@ -459,7 +460,7 @@ export const TEAMFORM_ACTIONS = {
       const m = crossMove(state, ui, sel, (L.o === "armory" || L.o === "cargo") ? `${L.o}:${L.id}:list` : d.loc);
       if (m != null) { ui.invMsg = m; ui.invSel = null; return; }
     }
-    if (sel && sel === d.loc) {
+    if (sel && sel === d.loc && !touchUI()) { // a finger's second tap drops the pick (inventory.js inv-click)
       // Twice on an armory item while editing: onto the person shown.
       const p = partyOf(state, formOf(ui));
       if (p && L.o === "armory" && p.members.includes(ui.inv.sid)) { ui.invMsg = loadFromBase(state, p, { items: [sel] }, ui.inv.sid).text; ui.invSel = null; return; }

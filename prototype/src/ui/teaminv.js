@@ -15,7 +15,7 @@ import { SLOT_NAMES, parseLoc, itemLoad } from "../sim/inventory.js";
 import { teamBase, transferProblem, teamsAtBase, teamHoldings, baseHoldings, dropOff, dropAllCargo, dropAllSupplies, loadFromBase, isPlayerTeam, dropHeldOff, pendingUnpack, unpackSpots, unpackHome } from "../sim/teaminv.js";
 import { recText, HANDS_KG } from "../sim/carry.js"; // the supplies each member holds (pockets, pack, arms)
 import { holdSection } from "./carry.js"; // under each paper doll: the supplies they carry, moved about as in their own inventory
-import { doll, storageBox, selBar, tile, INV_ACTIONS, groundBox } from "./inventory.js";
+import { doll, storageBox, selBar, tile, INV_ACTIONS, groundBox, fingerHelp } from "./inventory.js"; // fingerHelp: the help line on a phone or tablet
 import { supplyIcon, stackPanel } from "./stackmove.js"; // a supply's own drawing (ui/itemart.js); the stack mover under the team tab
 import { survivorURL, spriteImg } from "./sprites.js";
 import { shortName } from "./names.js";
@@ -127,7 +127,7 @@ function teamTab(state, ui, p, members) {
   const cargo = `<div class="invcol" style="flex:1 0 17rem;min-width:17rem">${storageBox(state, ui, `party:${p.id}`, user)}${fleetLine(state, p, members)}${groundBox(state, ui, user)}</div>`; // the tile's ground too (ui/inventory.js groundBox)
   const html = `${memberStrip(state, ui, members, open)}<div class="row" style="align-items:flex-start;gap:1rem;overflow-x:auto;padding-bottom:0.4rem">${cols}${cargo}</div>
     ${selBar(state, ui, `party:${p.id}`)}${stackPanel(state, ui, "inv")}
-    <div class="small muted" style="margin-top:0.5rem">Click an item, then where it should go (another member's slot, pocket or pack cell, or the cargo), or drag it. Click an item twice: off a person into the cargo, or out of the cargo onto the person marked "receives" (the last one you clicked). A stack of supplies (rounds, water, meds…) dragged onto a member's pocket, rig pouch or pack cell asks how many; dropped on the cargo it goes back into the team's supplies. The strip opens or folds each member.</div>`;
+    <div class="small muted" style="margin-top:0.5rem">${fingerHelp(`Click an item, then where it should go (another member's slot, pocket or pack cell, or the cargo), or drag it. Click an item twice: off a person into the cargo, or out of the cargo onto the person marked "receives" (the last one you clicked). A stack of supplies (rounds, water, meds…) dragged onto a member's pocket, rig pouch or pack cell asks how many; dropped on the cargo it goes back into the team's supplies. The strip opens or folds each member.`, " The strip opens or folds each member.")}</div>`;
   return html.replace(/data-action="inv-click"/g, 'data-action="ti-click"');
 }
 

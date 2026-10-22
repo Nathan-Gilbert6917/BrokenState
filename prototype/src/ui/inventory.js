@@ -40,6 +40,7 @@ import { isGunKey, gunIconHtml } from "./gunart.js"; // a gun (not a bow or a bl
 import { gunTipText, slotOfPart, SLOT_NAMES as PART_SLOT_NAMES } from "./gunbuilder.js"; // the gun builder (ui/gunbuilder.js)
 import { isHelmet, isHelmetPart, helmetSlots, helmetChoices, helmetFitReason, fitHelmetAt, stripHelmetAt, helmetLabel, HELMET_ATTACH, MOUNT_NAMES as HELM_MOUNTS } from "../sim/helmets.js"; // helmet mounts: visors, night vision, a light, ear protection
 import { rigOf, pouchesOf, isCarrier, insertsOf } from "../sim/inventory.js"; // rigs and plate carriers (section 16)
+import { fitReason, slotKind } from "../sim/inventory.js"; // a finger's pick: the cells that would take it (tgtCls)
 import { POUCH_NAMES, POUCH_ICON, MAGAZINES } from "../sim/data-kit.js";
 import { battleKg, bandFor } from "../sim/carrykit.js"; // the battle load band (R17)
 import { roundName, calName } from "../sim/rounds.js";
@@ -123,13 +124,19 @@ export function itemTip(item, s = null) {
 }
 
 const pouchText = (P) => { const n = {}; for (const k of P || []) n[k] = (n[k] || 0) + 1; return Object.entries(n).map(([k, c]) => `${c} ${String(POUCH_NAMES[k] || k).toLowerCase()}${c > 1 ? "s" : ""}`).join(", ") || "no pouches"; };
+// A screen with no mouse at all (a phone, a tablet without a trackpad): tiles are not draggable="true", so a long
+// press is the item menu and nothing else (Android's drag would start under it, iOS has none); data-drag stays (it
+// names the tile). Any mouse or trackpad keeps the drag, and main.js cancels one a finger starts (dragstart).
+let fineQ = null;
+const noMouse = () => { try { fineQ = fineQ || (typeof matchMedia === "function" ? matchMedia("(any-pointer: fine)") : null); return !!fineQ && !fineQ.matches; } catch { return false; } };
+export const dragAttr = (loc, attr = "data-drag") => `${noMouse() ? "" : ' draggable="true"'} ${attr}="${loc}"`;
 export function tile(item, loc, s, drag = true) {
   const d = GEAR[item.key];
   const dur = itemDur(item);
   const frac = dur != null ? dur / itemDurMax(item) : item.quality || 1;
   const col = frac > 0.6 ? "var(--good)" : frac > 0.3 ? "var(--accent)" : "var(--danger)";
   const unusable = s && d.skill && d.req && !gearEffect(s, item).usable;
-  return `<div class="itile${unusable ? " bad" : ""}"${drag ? ` draggable="true" data-drag="${loc}"` : ""}${tipAttrs(itemShortTip(item, loc, s), itemTip(item, s))}>
+  return `<div class="itile${unusable ? " bad" : ""}"${drag ? dragAttr(loc) : ""}${tipAttrs(itemShortTip(item, loc, s), itemTip(item, s))}>
     ${gunTile(item) || `<span class="iico">${itemArtHtml(item.key) || icon(item.key)}</span>`}<span class="iname">${esc(rowName(item))}</span>${roundsBadge(item, loc)}<span class="ikg">${Math.round(itemLoad(item) * 10) / 10}</span>
     ${isBox(item) ? `<span class="icount">${isSealed(item) ? (item.locked ? "🔒" : "?") : item.contents.filter(Boolean).length + Object.values(item.sup || {}).filter((v) => v > 0).length}</span>` : item.contents ? `<span class="icount">${item.contents.filter(Boolean).length}/${item.contents.length}</span>` : rowCount(item) ? `<span class="icount">${rowCount(item)}</span>` : ""}
     <i class="idur"><b style="width:${Math.round(Math.max(0.05, Math.min(1, frac)) * 100)}%;background:${col}"></b></i></div>`;
@@ -145,8 +152,9 @@ const SLOT_HINT = {
 function slotBox(state, ui, loc, label, s, readonly) {
   const item = itemAt(state, loc);
   const hint = SLOT_HINT[String(loc).split(":")[2]];
-  if (!item && hint) return `<div class="islot${ui.invSel === loc ? " sel" : ""} empty"${readonly ? "" : ` data-action="inv-click" data-loc="${loc}" data-drop="${loc}"`}${tip(`${label}: empty. Takes ${hint}.`)}><span class="islab">${label}</span></div>`;
-  const sel = ui.invSel === loc ? " sel" : "";
+  const tg = readonly ? "" : tgtCls(state, ui, loc); // a finger's pick: would this cell take it
+  if (!item && hint) return `<div class="islot${ui.invSel === loc ? " sel" : ""} empty${tg}"${readonly ? "" : ` data-action="inv-click" data-loc="${loc}" data-drop="${loc}"`}${tip(`${label}: empty. Takes ${hint}.`)}><span class="islab">${label}</span></div>`;
+  const sel = (ui.invSel === loc ? " sel" : "") + tg;
   const act = readonly ? (item ? ` data-loc="${loc}"` : "") : ` data-action="inv-click" data-loc="${loc}" data-drop="${loc}"`; // read-only: still right-clicked for the item menu (ui/itemmenu.js)
   return `<div class="islot${sel}${item ? "" : " empty"}"${act}${item ? "" : tip(`${label}: empty`)}><span class="islab">${label}</span>${item ? tile(item, loc, s, !readonly) : ""}${!readonly && /:weapon$/.test(loc) ? gearCog(state, ui, item, loc) : ""}</div>`;
 }
@@ -302,7 +310,7 @@ function storageGroups(state, ui, st, loc, user) {
   const entries = st.list.map((item, i) => ({ item, loc: `${loc}:${i}`, bad: !!(user && GEAR[item.key] && GEAR[item.key].skill && GEAR[item.key].req && !gearEffect(user, item).usable), tags: stored ? stored.tagsOf(i) : [], outside: !!(stored && stored.outside.has(i)) }));
   const labels = base && invStoreOf(ui, st.id) ? Object.fromEntries(containersOf(state, base).map((c) => [c.key, c.label])) : null;
   const kept = (item) => (labels && item.store != null && labels[item.store] ? `<span class="chip ikept"${tip(`Kept in ${labels[item.store]}`)}>${esc(labels[item.store])}</span>` : "");
-  const cell = (e, inner, cls) => `<div class="islot store ${cls}${ui.invSel === e.loc ? " sel" : ""}" data-action="inv-click" data-loc="${e.loc}" data-drop="${loc}"${tip(`Weighs ${Math.round(itemLoad(e.item) * 10) / 10} kg`)}><div class="ain" draggable="true" data-drag="${e.loc}"${tipAttrs(itemShortTip(e.item, e.loc, user, state), itemTip(e.item, user))}>${inner}</div>${gearCog(state, ui, e.item, e.loc)}${kept(e.item)}</div>`;
+  const cell = (e, inner, cls) => `<div class="islot store ${cls}${ui.invSel === e.loc ? " sel" : ""}" data-action="inv-click" data-loc="${e.loc}" data-drop="${loc}"${tip(`Weighs ${Math.round(itemLoad(e.item) * 10) / 10} kg`)}><div class="ain"${dragAttr(e.loc)}${tipAttrs(itemShortTip(e.item, e.loc, user, state), itemTip(e.item, user))}>${inner}</div>${gearCog(state, ui, e.item, e.loc)}${kept(e.item)}</div>`;
   const wrap = (inner) => `<div class="istore agroups" data-action="inv-click" data-loc="${loc}" data-drop="${loc}"${tip(`Drop or click here to put the selected item in ${st.name}`)}>${inner}</div>`;
   return armoryView(entries, { ns: "store", cell, wrap, state, empty: "Empty. Drop items here." });
 }
@@ -327,13 +335,51 @@ function stackButtons(item, from) {
 // A phone or tablet: the picked item's name and ✕ Cancel on one strip that sticks to the window's foot while it
 // scrolls (responsive.css), so the pick can be dropped wherever the item is to go (Esc on a keyboard); the bar
 // under it has the rest. A desktop draws none.
-const invPin = (name) => (touchUI() ? `<div class="invpin small"><span>Selected: <b>${esc(name)}</b></span><button class="mini" data-action="inv-cancel" data-tip="Drop the selection (Esc)">✕ Cancel</button></div>` : "");
+// stk: a stack out of the stores, which goes only onto a person (no list box takes it: responsive.css outlines none).
+const invPin = (name, stk = false) => (touchUI() ? `<div class="invpin small${stk ? " stk" : ""}"><span>Selected: <b>${esc(name)}</b></span><button class="mini" data-action="inv-cancel" data-tip="Drop the selection (Esc)">✕ Cancel</button></div>` : "");
+// The help line under an inventory window on a phone or tablet (fingerHelp(desk) on a desktop: desk, its own line): a
+// tap picks, a tap places, a second tap or ✕ drops the pick, a long press is the item menu (no drag, no right-click,
+// no second click to send it across).
+export const fingerHelp = (desk, extra = "") => (touchUI() ? `Tap a thing, then where it goes: the outlined cells take it (a full one swaps). Tap it again, or ✕ on the strip, to leave it. A stack: pick how many in the panel under the window (− + or the slider), then tap the place. Hold a thing for what can be done with it (take, equip, put away, reload, use...).${extra}` : desk);
+// A finger's pick and the cells that would take it: a faint outline on each (responsive.css .tgt), from the rule a
+// move checks first. An item: sim/inventory.js fitReason (a pocket small things, a holster its gun, a pouch its kind,
+// the pack no pack); in a fight only what can change there (sim/combat.js INV_SLOTS, mirrored), on your side of the
+// hand-over. A stack from the stores: the places of the person it goes to that have room (the mover's own list). Not
+// the load or a swap's way back: a move there can still be refused, and says why. Nothing on a desktop, nor for the
+// ground of a State Map tile or the arms (their lists are the targets, outlined by CSS).
+const FIGHT_KINDS = ["pocket", "pack", "pouch", "weapon", "tool", "carry", "sidearm", "melee", "slung", "ears"];
+const supPlace = (T) => (T.o !== "s" ? null : T.slot === "pocket" ? "pocket" : T.slot === "rig" && T.i != null ? "rig" : T.slot === "pack" ? "pack" : T.slot === "tool" ? "hand" : null);
+function tgtCls(state, ui, loc) {
+  const sel = ui.invSel;
+  if (!sel || sel === loc || !ui.inv || !touchUI()) return "";
+  const T = parseLoc(loc);
+  if (T.o !== "s") return "";
+  const F = parseLoc(sel);
+  if (F.slot === "sup") {
+    if ((F.o !== "armory" && F.o !== "cargo") || T.id !== ui.inv.sid) return "";
+    const w = supPlace(T);
+    return w && invDests(state, ui, sel).some((d) => d.id === w && d.fit >= 1) ? " tgt" : "";
+  }
+  const b = state.combat;
+  const item = fightLoc(sel) ? (b ? raidItemAt(state, b, sel) : null) : F.o === "s" || F.o === "body" || F.o === "armory" || F.o === "cargo" ? itemAt(state, sel) : null;
+  const h = survivorById(state, T.id);
+  if (!item || !h) return "";
+  const kind = slotKind(T);
+  if (ui.inv.peek && (!FIGHT_KINDS.includes(kind) || (ui.inv.mate != null && F.o === "s" && T.id === F.id && F.id !== ui.inv.sid))) return "";
+  if (T.slot === "backpack" && F.o === "s" && F.id === T.id && F.slot === "pack") return "";
+  const owner = T.slot === "pack" ? h.gear && h.gear.backpack : T.slot === "rig" ? rigOf(h) : T.slot === "bag" ? h.gear && h.gear.carry : null;
+  if (owner && owner === item) return "";
+  const pouch = T.slot === "rig" && T.i != null && rigOf(h) ? pouchesOf(rigOf(h))[T.i] : null;
+  return fitReason(item, kind, h, pouch) ? "" : " tgt";
+}
 // ⓘ Details: the selected item's whole description (the hover tip is short; Shift over it shows this too).
 const detailsButton = (ui, item) => `<button class="mini${ui.invDetails === ui.invSel ? " active" : ""}" data-action="inv-details"${tip("The whole description of the selected item (or hold Shift while hovering it)")}>ⓘ Details</button> `;
 const detailsBlock = (state, ui, item) => (ui.invDetails && ui.invDetails === ui.invSel ? `<div class="invdetails small muted">${esc(itemTip(item, ui.inv && ui.inv.sid != null ? survivorById(state, ui.inv.sid) : null))}</div>` : "");
 export function selBar(state, ui, place) {
   if (!ui.invSel) return "";
   const item = itemAt(state, ui.invSel);
+  const S = item ? null : parseLoc(ui.invSel);
+  if (S && S.slot === "sup") return invPin(supplyName(S.i), S.o !== "body"); // a stack: its strip over the mover (the bar is the mover)
   if (!item) return "";
   const from = parseLoc(ui.invSel);
   const st = storageFor(state, place);
@@ -477,7 +523,7 @@ export function inventoryModal(state, ui) {
       <div class="invcol">${readonly ? "" : storageBox(state, ui, place, s)}${readonly ? "" : groundBox(state, ui, s)}</div>
     </div>
     ${selBar(state, ui, place)}${stackPanel(state, ui, "inv")}
-    <div class="small muted" style="margin-top:0.5rem">Click an item, then click where it should go (or drag it). Click a selected item again to send it across: onto ${esc(s.name.split(" ")[0])}, or into storage. A full slot swaps. Drag the figure (or roll the wheel over it) to turn it by hand; ↻ Spin lets it turn by itself again. Right-click an item for what can be done with it (equip, reload, unload, modify, repair, eat, drink, use...).</div>
+    <div class="small muted" style="margin-top:0.5rem">${fingerHelp(`Click an item, then click where it should go (or drag it). Click a selected item again to send it across: onto ${esc(s.name.split(" ")[0])}, or into storage. A full slot swaps. Drag the figure (or roll the wheel over it) to turn it by hand; ↻ Spin lets it turn by itself again. Right-click an item for what can be done with it (equip, reload, unload, modify, repair, eat, drink, use...).`)}</div>
     <div class="row" style="margin-top:0.8rem;justify-content:flex-end"><button class="primary" data-action="inv-close">Close</button></div>
   </div>`;
 }
@@ -650,7 +696,7 @@ function lootModal(state, ui) {
       <div class="invcol">${storageBox(state, ui, place, s)}<div class="small muted" style="margin-top:0.5rem">Taken so far: ${got.length ? esc(got.join(", ")) : "nothing"}</div></div>
     </div>
     ${selBar(state, ui, place)}${stackPanel(state, ui, "loot")}
-    <div class="small muted" style="margin-top:0.5rem">Click an item on a body, then a slot on your survivor or the cargo box (or drag it). Click it twice to take it straight away. Everything taken adds its weight to the team, on a person or in the cargo. Whatever you leave stays where they fell: a death site that scavengers strip over the next days.</div>
+    <div class="small muted" style="margin-top:0.5rem">${fingerHelp(`Click an item on a body, then a slot on your survivor or the cargo box (or drag it). Click it twice to take it straight away. Everything taken adds its weight to the team, on a person or in the cargo. Whatever you leave stays where they fell: a death site that scavengers strip over the next days.`)}</div>
     <div class="row" style="margin-top:0.8rem;justify-content:flex-end">
       <button data-action="loot-takeall"${tip("Take everything that fits from every body")}>Take everything</button>
       <button class="primary" data-action="loot-done"${tip("Back to the battle result")}>Done</button></div>
@@ -694,7 +740,7 @@ function supTile(ui, loc, k, n, extra = "", movable = true) {
   const how = movable ? " Click it to choose how many (1 to all) and where (the mouse wheel over it: one more or fewer, Shift: ten); Shift+click: all that fit, straight across. Drag it where it goes and say how many (Shift when you drop: half, Ctrl: one)." : "";
   const ns = ui.inv && ui.inv.raid ? "raid" : loc.startsWith("body:") ? "loot" : "inv"; // its stack mover screen (the wheel)
   return `<div class="islot store stack${ui.invSel === loc ? " sel" : ""}${movable ? "" : " still"}"${movable ? ` data-action="inv-click" data-loc="${loc}" data-stack="${loc}" data-smns="${ns}"` : ""}${tip(`${Math.floor(n)} ${sup.name.toLowerCase()}, ${kg(sup.weight * n)} kg (${sup.weight} kg each).${how}${extra}`)}>
-    <div class="itile"${movable ? ` draggable="true" data-drag="${loc}"` : ""}><span class="iico">${supplyIcon(k)}</span><span class="iname">${esc(supplyName(k))}</span><span class="icount">${supCount(ui, loc, n)}</span><span class="ikg">${kg(sup.weight * n)}</span></div></div>`;
+    <div class="itile"${movable ? dragAttr(loc) : ""}><span class="iico">${supplyIcon(k)}</span><span class="iname">${esc(supplyName(k))}</span><span class="icount">${supCount(ui, loc, n)}</span><span class="ikg">${kg(sup.weight * n)}</span></div></div>`;
 }
 function gearTiles(ui, list, prefix, user) {
   return list.map((it, i) => {
@@ -785,9 +831,9 @@ function raidModal(state, ui) {
     <div class="spread"><h1>${box ? (box.cart ? esc(box.cart.name) : box.kind === "ground" ? "On the ground" : "Search") : trunk ? "Vehicle" : "On the ground"}: ${esc(s.name)}</h1><span class="muted">${esc(b.place)}</span></div>
     <div class="result small"${ui.invMsg ? "" : ' style="visibility:hidden"'}>${ui.invMsg ? esc(ui.invMsg) : "&nbsp;"}</div>
     <div class="invcols${cols.length > 2 ? " three" : ""}">${cols.join("")}</div>
-    ${SL && SL.slot === "sup" ? stackPanel(state, ui, "raid") || selLine(sel) : sel ? `<div class="invsel small">Selected: <b>${esc(sel)}</b>. Click where it should go: a slot, a pocket or pack cell, Carried${mates.length ? ", a teammate" : ""}${box ? ", the container" : ""}, the ground${trunk ? ", the vehicle" : ""}.${armsBtn} <button class="mini" data-action="inv-cancel">Cancel</button></div>` : ""}
+    ${sel ? invPin(sel) : ""}${SL && SL.slot === "sup" ? stackPanel(state, ui, "raid") || selLine(sel) : sel ? `<div class="invsel small">Selected: <b>${esc(sel)}</b>. Click where it should go: a slot, a pocket or pack cell, Carried${mates.length ? ", a teammate" : ""}${box ? ", the container" : ""}, the ground${trunk ? ", the vehicle" : ""}.${armsBtn} <button class="mini" data-action="inv-cancel">Cancel</button></div>` : ""}
     ${armsSelLine(state, ui)}
-    <div class="small muted" style="margin-top:0.5rem">Drag things where they should go (or click one, then where). Click a thing twice to send it across. The first ${HAUL.free} kg a turn are free to haul, then ${HAUL.per} kg an action; handing things to a teammate next to you is free.${found.length ? ` Found so far: ${esc(found.join(", "))}.` : ""}</div>
+    <div class="small muted" style="margin-top:0.5rem">${fingerHelp(`Drag things where they should go (or click one, then where). Click a thing twice to send it across. The first ${HAUL.free} kg a turn are free to haul, then ${HAUL.per} kg an action; handing things to a teammate next to you is free.`)}${found.length ? ` Found so far: ${esc(found.join(", "))}.` : ""}</div>
     <div class="row" style="margin-top:0.8rem;justify-content:flex-end"><button class="primary" data-action="inv-close">Done</button></div>
   </div>`;
 }
@@ -815,7 +861,7 @@ const armsLoc = (u, k) => `arms:${u.id}:sup:${k}`;
 const isArmsLoc = (x) => /^arms:\d+:sup:/.test(String(x || ""));
 function stackTileHtml(loc, icon, name, count, kgv, tipText, movable, sel) {
   return `<div class="islot store stack${sel ? " sel" : ""}${movable ? "" : " still"}"${movable ? ` data-action="inv-click" data-loc="${loc}"` : ""}${tip(tipText)}>
-    <div class="itile"${movable ? ` draggable="true" data-drag="${loc}"` : ""}><span class="iico">${icon}</span><span class="iname">${esc(name)}</span><span class="icount">${esc(count)}</span><span class="ikg">${kg(kgv)}</span></div></div>`;
+    <div class="itile"${movable ? dragAttr(loc) : ""}><span class="iico">${icon}</span><span class="iname">${esc(name)}</span><span class="icount">${esc(count)}</span><span class="ikg">${kg(kgv)}</span></div></div>`;
 }
 function carriedList(state, ui, b, u, s, { movable = true } = {}) {
   const first = esc(s.name.split(" ")[0]);
@@ -970,7 +1016,7 @@ export function groundBox(state, ui, s) {
   const selIt = G && G.pid === p.id && G.i != null ? items[G.i] : null;
   return `<div style="margin-top:0.8rem"><div class="spread"><b${tip("The ground of the tile the team stands on: put down by a team, or left after a fight. Any team here can pick it up; scavengers find what is left, food spoils.")}>On the ground here</b><span class="small muted">${items.length} thing${items.length === 1 ? "" : "s"}${items.length ? ` <button class="mini" data-action="carry-pick" data-pid="${p.id}"${tip("Pick up part of a stack, or everything that fits")}>Pick up…</button>` : ""}</span></div>
     <div class="istore" data-action="inv-click" data-loc="${drop}" data-drop="${drop}"${tip("Drop here to put it on the ground of this tile")}>${tiles || `<span class="small muted">Nothing. Drag things here to put them down.</span>`}</div>
-    ${selIt ? `<div class="invsel small">Selected on the ground: <b>${esc(groundItemText(selIt))}</b>. Click ${esc(s.name.split(" ")[0])}'s slot, pocket or pack cell to pick it up there${selIt.kind === "gear" && selIt.item && isCarryable(selIt.item) ? " (In arms: carried whole)" : ""}, or click it again. <button class="mini" data-action="inv-cancel">Cancel</button></div>` : ""}</div>`;
+    ${selIt ? `${invPin(groundItemText(selIt))}<div class="invsel small">Selected on the ground: <b>${esc(groundItemText(selIt))}</b>. Click ${esc(s.name.split(" ")[0])}'s slot, pocket or pack cell to pick it up there${selIt.kind === "gear" && selIt.item && isCarryable(selIt.item) ? " (In arms: carried whole)" : ""}, or click it again. <button class="mini" data-action="inv-cancel">Cancel</button></div>` : ""}</div>`;
 }
 // A click in a State Map inventory window that touches the ground box. Returns true when it was one.
 function mapGroundClick(state, ui, loc) {
@@ -1214,6 +1260,7 @@ function clickLoc(state, ui, loc, ev = null) {
   const sel = ui.invSel;
   const to = parseLoc(loc);
   if (to.slot === "sup") return supClick(state, ui, loc, ev); // a supply stack: the stack mover
+  if (sel && touchUI() && stackOnto(state, ui, sel, loc)) return; // a finger: a stack from the stores onto a person's place
   if (sel && parseLoc(sel).slot === "sup") {
     // A stack picked, then a place clicked: a body's stack is taken (the amount chosen), another item is picked instead.
     const F = parseLoc(sel);
@@ -1241,6 +1288,26 @@ function clickLoc(state, ui, loc, ev = null) {
   const target = (to.o === "armory" || to.o === "cargo") ? `${to.o}:${to.id}:list` : loc;
   ui.invMsg = keptWhere(state, ui, () => moveItem(state, sel, target));
   ui.invSel = null;
+}
+
+// A finger, a stack from the stores or the team's supplies picked (its mover open under the window), then one of a
+// person's slots tapped: the drop's move onto that place of theirs (their pockets, a rig pouch, the pack, the off hand),
+// at once with the amount the mover shows for it (a drop asks how many in a popover; a pick has asked already). That
+// person becomes the one whose places the mover lists, as a drop makes them. Returns true when it was this; a slot
+// that is none of those places (a holster, the head) leaves the pick as it is, the mover on that person.
+function stackOnto(state, ui, from, to) {
+  const F = parseLoc(from), T = parseLoc(to);
+  if (F.slot !== "sup" || (F.o !== "armory" && F.o !== "cargo") || T.o !== "s" || !ui.inv || ui.inv.loot || !survivorById(state, T.id)) return false;
+  ui.inv.sid = T.id;
+  const w = supPlace(T);
+  const d = w ? invDests(state, ui, from).find((x) => x.id === w) : null;
+  const qty = ui.stack && ui.stack.ns === "inv" ? ui.stack.qty : null; // the amount chosen stays; none: what fits there
+  if (!d) { ui.invMsg = "Supplies go in a pocket, a rig pouch, the pack or the off hand."; openStack(ui, "inv", { qty }); return true; }
+  openStack(ui, "inv", { to: w, qty });
+  ui.invMsg = d.move(state, ui, chosenQty(state, ui, "inv"));
+  ui.invSel = null;
+  closeStack(ui);
+  return true;
 }
 
 // A supply stack dropped: a popover at the drop asks how many (ui/stackmove.js; Enter moves, Esc cancels), unless
@@ -1290,7 +1357,7 @@ export function invDrop(state, ui, from, to, half = false, one = false, at = nul
       // rig pouch, the pack, the off hand); elsewhere, on the first place with room.
       const T = parseLoc(to);
       if (T.o === "s" && ui.inv && !ui.inv.loot && survivorById(state, T.id)) ui.inv.sid = T.id;
-      const where = T.o !== "s" ? null : T.slot === "pocket" ? "pocket" : T.slot === "rig" && T.i != null ? "rig" : T.slot === "pack" ? "pack" : T.slot === "tool" ? "hand" : null;
+      const where = supPlace(T);
       if (invDests(state, ui, from).length) { ui.invSel = from; openStack(ui, "inv", { pop, to: where }); }
       return;
     }
@@ -1314,7 +1381,9 @@ export const INV_ACTIONS = {
   "inv-details": (state, ui) => { ui.invDetails = ui.invDetails === ui.invSel ? null : ui.invSel; }, // ⓘ Details on the selected item (itemlabels.js: the hover tip is short)
   "inv-who": (state, ui, d) => { ui.inv.sid = Number(d.id); ui.invSel = null; },
   "inv-mate": (state, ui, d) => { if (!ui.inv || !ui.inv.peek) return; if (d.id === "" || d.id == null) delete ui.inv.mate; else ui.inv.mate = Number(d.id); ui.invSel = null; ui.invMsg = ""; }, // the hand-over window: another mate in reach, or the acting one's own kit alone
-  "inv-click": (state, ui, d, ev) => clickLoc(state, ui, d.loc, ev),
+  // A finger tapping what is picked drops the pick (✕ on the strip too): a mouse's second click sends it across, which
+  // the item menu's long press still offers (Take, Unequip, Put in cargo...).
+  "inv-click": (state, ui, d, ev) => { if (touchUI() && d.loc && (d.loc === ui.invSel || d.loc === ui.invArms)) { ui.invSel = null; ui.invArms = null; closeStack(ui); return; } clickLoc(state, ui, d.loc, ev); },
   "inv-cancel": (state, ui) => { ui.invSel = null; ui.invArms = null; closeStack(ui); },
   "inv-loose": (state, ui, d) => { ui.invLoose = d.v === "1"; if (ui.stack) ui.stack.qty = null; }, // rounds out of the stores onto a person: boxed or loose (the mover's chips)
   "inv-store": (state, ui) => { if (ui.invSel) ui.invMsg = keptWhere(state, ui, () => toStorage(state, ui.invSel)); ui.invSel = null; },

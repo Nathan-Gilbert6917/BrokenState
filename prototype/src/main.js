@@ -1432,8 +1432,15 @@ for (const [k, fn] of Object.entries(STORAGE_ACTIONS)) actions[k] = (d) => fn(st
 // dropping one on another puts it in that place (xp-qdrop). The dragged line is dimmed, the target underlined.
 const QDRAG = "queue:"; // the queue's dataTransfer payload: queue:<party id>:<index>
 const clearQueueDrag = () => { for (const li of document.querySelectorAll(".xpqueue li.over, .xpqueue li.dragging")) li.classList.remove("over", "dragging"); };
+// A finger never drags a tile or a line: a tap picks it and a tap on the place moves it (inv-click, xp-qsel), a long
+// press is the item menu (ui/touch.js). Where a mouse or trackpad is also there the tiles stay draggable="true"
+// (ui/inventory.js dragAttr), so the drag a finger's press would start (Android, iPadOS) is cancelled here; a mouse's,
+// or a pen's, goes on as before.
+let fingerDown = false;
+document.addEventListener("pointerdown", (ev) => { fingerDown = ev.pointerType === "touch"; }, true);
 document.addEventListener("dragstart", (ev) => {
   const q = ev.target.closest && ev.target.closest("[data-qdrag]");
+  if (fingerDown && (q || (ev.target.closest && ev.target.closest("[data-drag]")))) { ev.preventDefault(); return; }
   if (q) {
     ev.dataTransfer.setData("text/plain", `${QDRAG}${q.dataset.id}:${q.dataset.qdrag}`);
     ev.dataTransfer.effectAllowed = "move";
