@@ -74,6 +74,7 @@ const cutter = people[0];
 cutter.role = "wood"; cutter.station = null; cutter.pinned = true; // Manual and pinned: nothing moves them off it
 cutter.health = 100; cutter.inBed = false; cutter.conditions = [];
 base.armory.push(newItem("fireaxe"));
+cutter.gear.backpack = cutter.gear.backpack || newItem("backpack"); // a pack to carry it out in (jobtrips.js checkOutTool): a pistol in the hands and no belt for a fire axe, else the hub's start hatchet (world.js HUB_TOOLS) goes on the belt instead
 tickTo(state, 10);
 let a = describeActivity(state, cutter);
 note(`${cutter.name} at 10:00: ${a.icon} ${a.text} (${a.kind})`);

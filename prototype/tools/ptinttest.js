@@ -438,7 +438,7 @@ section("Round 2: a light handed out is in one place");
 // ---------- the user's picks of 2026-10-20, after round 2 ----------
 section("Picks: wood in the tents, beds and furniture; wood in the step ups; the woodpile apart");
 {
-  const want = { tent: { wood: 80, scrap: 1 }, bunks: { scrap: 2, wood: 200 }, shelves: { scrap: 2, wood: 150 }, lockers: { scrap: 5, wood: 40 }, crates: { scrap: 1, wood: 120 }, storebox: { scrap: 1, wood: 80 } };
+  const want = { tent: { wood: 80, scrap: 1 }, bunks: { scrap: 2, wood: 200 }, shelves: { scrap: 2, wood: 150 }, lockers: { scrap: 5, wood: 40 }, crates: { wood: 120, buildmat: 1 }, storebox: { wood: 80, buildmat: 1 } }; // the crates' and the box's scrap a building material since 2026-10-21 (buildmats.js withBuildmat: every build but the tent, the fittings and the beds)
   check(Object.entries(want).every(([k, c]) => JSON.stringify(BUILDINGS[k].cost) === JSON.stringify(c)), `fittings and the Makeshift tent: ${Object.keys(want).map((k) => `${k} ${JSON.stringify(BUILDINGS[k].cost)}`).join(", ")}`);
   const beds = { cot: { wood: 60, scrap: 2 }, bed: { wood: 150, scrap: 2 }, bunkbed: { wood: 250, scrap: 3 }, bigbed: { wood: 300, scrap: 3, parts: 1 } };
   check(Object.entries(beds).every(([k, c]) => JSON.stringify(CRAFTS[k].in) === JSON.stringify(c)), "the beds' recipes: cot 60 wood + 2 scrap, bed 150 + 2, bunk bed 250 + 3, large bed 300 + 3 + a part");
