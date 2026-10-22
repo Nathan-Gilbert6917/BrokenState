@@ -22,7 +22,7 @@ import { poiAt } from "../sim/pois.js";
 import { drawDecal, decalSize, SEASON_LOOK } from "./terraindeco.js";
 import { poiSpriteCanvas } from "./mapsprites.js";
 
-export const PM = { R: 190, PAD: 14, DPR: 2, DECAL: 2 }; // hex radius and margin (css px), canvas px per css px, css px a decal px
+export const PM = { R: 190, PAD: 36, DPR: 2, DECAL: 2, ARROW: 20 }; // hex radius and margin (css px: room for the edge arrows outside the hex), canvas px per css px, css px a decal px, an edge arrow's distance out past its side
 const SQ3 = Math.sqrt(3);
 export const PM_W = Math.round(SQ3 * PM.R + PM.PAD * 2), PM_H = Math.round(2 * PM.R + PM.PAD * 2);
 const CX = PM_W / 2, CY = PM_H / 2;
@@ -170,11 +170,11 @@ function midOf(pts) {
 }
 
 const BAND_COLOR = ["#8fd18f", "#e6e1d3", "#f0c060", "#e07070"];
-// An arrow on a side of the tile, pointing out (a way off the tile): at the side's middle, a little inside.
+// An arrow on a side of the tile, pointing out (a way off the tile): just outside the side's middle, clear of the map.
 function exitArrow(state, t, x, attrs, cls = "") {
   const sd = sides(state, t).find((q) => q.m === x.via);
   if (!sd) return "";
-  const ax = CX + sd.ux * PM.R * 0.78, ay = CY + sd.uy * PM.R * 0.78, deg = (Math.atan2(sd.uy, sd.ux) * 180) / Math.PI;
+  const out = PM.R * (SQ3 / 2) + PM.ARROW, ax = CX + sd.ux * out, ay = CY + sd.uy * out, deg = (Math.atan2(sd.uy, sd.ux) * 180) / Math.PI;
   const side = sd.uy > 0.1 ? -1 : 1, lx = ax - sd.uy * 22 * side, ly = ay + sd.ux * 22 * side + 4; // along the edge, beside the arrow
   return `<g class="pm-exit${cls}"${attrs}><circle cx="${ax.toFixed(1)}" cy="${ay.toFixed(1)}" r="11"/><path d="M-4,-6 L4,0 L-4,6" transform="translate(${ax.toFixed(1)},${ay.toFixed(1)}) rotate(${deg.toFixed(1)})"/>${x.mins != null ? `<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}">${x.mins}m</text>` : ""}</g>`;
 }
