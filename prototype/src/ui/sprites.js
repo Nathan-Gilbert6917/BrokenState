@@ -291,6 +291,12 @@ function drawWeapon(p, look, R) {
     case "pipewrench": p.rect(hx + 1, hy - 5, hx + 1, hy + 2, "#c8362e"); p.rect(hx, hy - 7, hx + 2, hy - 6, "#55595e"); p.set(hx + 3, hy - 7, "#55595e"); break; // a red handle, the jaws (sim/data-survival.js)
     case "fireaxe": p.rect(hx + 1, hy - 7, hx + 1, hy + 2, "#b08a5a"); p.rect(hx + 2, hy - 8, hx + 3, hy - 5, "#c8362e"); p.set(hx + 4, hy - 7, metal); p.set(hx + 4, hy - 6, metal); break;
     case "sledge": p.rect(hx + 1, hy - 6, hx + 1, hy + 2, wood); p.rect(hx - 1, hy - 9, hx + 3, hy - 7, "#55595e"); break;
+    // Tools for building and crafting (sim/data-tools.js).
+    case "axe": p.rect(hx + 1, hy - 8, hx + 1, hy + 2, "#b08a5a"); p.rect(hx + 2, hy - 9, hx + 4, hy - 6, "#4a4f57"); p.set(hx + 4, hy - 9, "#d6dde2"); p.set(hx + 4, hy - 6, "#d6dde2"); break; // a long handle, a broad dark head
+    case "shovel": p.rect(hx + 1, hy - 5, hx + 1, hy + 2, "#9a7a52"); p.rect(hx, hy - 9, hx + 2, hy - 6, "#8d959c"); p.set(hx + 1, hy - 10, "#8d959c"); break; // an ash handle, a round-point blade
+    case "sheethatchet": drawWeapon(p, "hatchet", R); p.rect(hx + 2, hy - 6, hx + 3, hy - 4, "#a9b0b6"); break; // a bright cut sheet for a head (the metal sheets' gear)
+    case "sheetmachete": drawWeapon(p, "machete", R); p.rect(hx + 1, hy - 7, hx + 2, hy - 2, "#a9b0b6"); break;
+    case "scrapaxe": p.rect(hx + 1, hy - 5, hx + 1, hy + 2, "#4a3324"); p.rect(hx + 2, hy - 6, hx + 3, hy - 4, "#9a5a2e"); p.set(hx + 1, hy - 3, "#c9b07a"); break; // a branch, a rusty blade, the cord
     case "baton": p.rect(hx + 1, hy - 5, hx + 1, hy + 2, "#1a1c20"); p.set(hx + 1, hy - 6, "#3a3d40"); break;
     case "stunbaton": drawWeapon(p, "baton", R); p.set(hx + 1, hy - 6, "#ffd23f"); p.set(hx + 1, hy - 5, "#c9a227"); break; // data-nonlethal.js: the contacts at its tip
     default: if (BLADE_LOOK[key]) drawBlade(p, BLADE_LOOK[key], hx, hy); else if (GUN_SPRITE[key] && GUN_SPRITE[key] !== key) drawWeapon(p, GUN_SPRITE[key], R); break; // knives and swords (sim/data-blades.js); a gun with no spec as its look-alike

@@ -155,6 +155,11 @@ export const TOOL_TAGS = {
 // stores and the industrial sites.
 /** @type {Record<string, { p: number, items: Record<string, number> }>} */
 export const TOOL_FINDS = {
+  // The shops as places (shops.js; a shop POI's search hour rolls this table by its own kind: shopshelves.js).
+  pawnshop: { p: 0.06, items: { toolkit: 2, handdrill: 1, axe: 0.5, welder: 0.3, sewingkit: 0.5 } }, // pawned tools on the back shelf
+  garden: { p: 0.12, items: { shovel: 3, axe: 2, handsaw: 1.5, bowsaw: 2 } }, // a garden centre's tool wall
+  dealer: { p: 0.06, items: { toolkit: 3, welder: 0.6, shovel: 1 } }, // a car dealer's service bay
+  radioshop: { p: 0.05, items: { toolkit: 2, handdrill: 1, sewingkit: 0.5 } }, // the repair bench
   hardware: { p: 0.16, items: { toolkit: 3, handsaw: 3, bowsaw: 2, axe: 2, shovel: 3, handdrill: 1.5, sewingkit: 1, hammer: 2, welder: 0.4, hatchet: 1, pipewrench: 1 } },
   farm: { p: 0.14, items: { toolkit: 2, handsaw: 2, bowsaw: 1.5, axe: 3, shovel: 3, handdrill: 1, welder: 0.6, sewingkit: 1, pickaxe: 1, hammer: 1 } },
   barn: { p: 0.1, items: { axe: 2, shovel: 3, handsaw: 1.5, bowsaw: 1, toolkit: 1, welder: 0.3, pickaxe: 1, hammer: 1 } },
@@ -186,6 +191,10 @@ export const TOOL_FINDS = {
 };
 /** @type {Record<string, { p: number, items: Record<string, number> }>} */
 export const AREA_TOOLS = {
+  hardware: { p: 0.18, items: { toolkit: 3, handsaw: 3, bowsaw: 2, axe: 2, shovel: 3, handdrill: 1.5, welder: 0.4, sewingkit: 0.6 } }, // a hardware store's aisles (combat.js AREAS.hardware)
+  pawnshop: { p: 0.05, items: { toolkit: 2, handdrill: 1, axe: 0.5 } },
+  garden: { p: 0.1, items: { shovel: 3, axe: 2, bowsaw: 2, handsaw: 1 } },
+  dealer: { p: 0.06, items: { toolkit: 3, welder: 0.6 } },
   workshop: { p: 0.1, items: { toolkit: 3, handsaw: 2, handdrill: 1.5, welder: 0.6, shovel: 0.6 } },
   garage: { p: 0.08, items: { toolkit: 3, shovel: 1.5, handsaw: 1, welder: 0.5, handdrill: 0.5 } },
   barn: { p: 0.1, items: { axe: 2, shovel: 3, handsaw: 1.5, bowsaw: 1, toolkit: 1, welder: 0.3 } },

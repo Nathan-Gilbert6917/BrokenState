@@ -13,6 +13,7 @@ import { lootItem } from "./inventory.js";
 import { siteSource } from "./itemcond.js";
 import { SITE_KIT, gunMags } from "./carrykit.js";
 import { SURV_FINDS } from "./data-survival.js";
+import { TOOL_FINDS } from "./data-tools.js"; // tools for building and crafting: a hardware store's aisles most of all
 import { SITE_FINDS, SITE_MODS, GUNMOD_FINDS, HUNT_FINDS, LIGHT_FINDS, CART_FINDS, BUILDMAT_FINDS, SITE_WOOD } from "./loot.js";
 import { HEAD_FINDS } from "./helmets.js";
 import { BLADE_FINDS } from "./blades.js";
@@ -44,7 +45,7 @@ export function rollShopShelves(state, tileId, kind, left, mult = 1, salt = "") 
   const out = [];
   /** @type {[string, Record<string, { p: number, items: Record<string, number> }>][]} */
   const rows = [["kit", SITE_KIT], ["surv", SURV_FINDS], ["find", SITE_FINDS], ["mod", SITE_MODS], ["gunmod", GUNMOD_FINDS], ["blade", BLADE_FINDS],
-    ["hunt", HUNT_FINDS], ["light", LIGHT_FINDS], ["cart", CART_FINDS], ["head", HEAD_FINDS]];
+    ["hunt", HUNT_FINDS], ["light", LIGHT_FINDS], ["cart", CART_FINDS], ["head", HEAD_FINDS], ["tool", TOOL_FINDS]]; // tools last: the rows before roll as they did
   for (const [name, table] of rows) {
     const tab = table[kind];
     if (!tab || hash01(state.seed, `shop${name}`, tileId, state.hour, salt) >= tab.p * L * mult) continue;
