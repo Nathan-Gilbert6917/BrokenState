@@ -33,7 +33,8 @@ const check = (ok, what) => { if (ok) pass++; else fail++; console.log(`  ${ok ?
 const section = (t) => console.log(`\n${t}`);
 const t0 = Date.now();
 registerCombatHandler("dt", () => {});
-const world = (s = seed) => { const st = createWorld({ seed: s, factionCount: 6 }); st.started = true; return st; };
+// The hub without its start's Lodge, beds and tent (world.js HUB_LAYOUT: the tent is a container of its own).
+const world = (s = seed) => { const st = createWorld({ seed: s, factionCount: 6 }); st.started = true; st.bases[0].buildings = st.bases[0].buildings.filter((b) => b.type === "farm_plot"); return st; };
 const EPS = 1e-6;
 const r1 = (v) => Math.round(v * 10) / 10;
 const byType = (h, type, n = 0) => h.buildings.filter((b) => b.type === type)[n];

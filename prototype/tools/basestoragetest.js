@@ -27,7 +27,8 @@ const SEED = Number(process.argv[2] || 42);
 let pass = 0, fail = 0;
 const check = (ok, what) => { if (ok) pass++; else { fail++; console.log(`  FAIL: ${what}`); } return !!ok; };
 const section = (t) => console.log(t);
-const W = () => { const st = createWorld({ seed: SEED, factionCount: 6 }); st.visitorsOff = true; return st; };
+// The hub without its start's Lodge, beds and tent (world.js HUB_LAYOUT: the tent keeps 30 kg dry): the core's room alone.
+const W = () => { const st = createWorld({ seed: SEED, factionCount: 6 }); st.visitorsOff = true; st.bases[0].buildings = st.bases[0].buildings.filter((b) => b.type === "farm_plot"); return st; };
 const asCamp = (b) => { b.tier = 0; b.camp = true; b.buildings = []; b.construction = []; };
 const asShelter = (b) => { b.tier = 0; delete b.camp; b.buildings = []; b.construction = []; };
 const mkOutpost = (st, tile) => { const o = { id: newId(), tile, type: "outpost", name: "Test Outpost", stock: {}, radio: false, watchtower: false, buildings: [], construction: [], armory: [] }; st.bases.push(o); return o; };

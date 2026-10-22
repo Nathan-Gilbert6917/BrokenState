@@ -21,7 +21,8 @@ const since = (top) => { const out = []; for (let i = 0; i < state.log.length &&
 const lineCount = (fresh) => fresh.filter((l) => l.kind === "death" && / died /.test(l.text)).length; // the old way
 
 console.log("The worm kills someone at the hub: they get up again (two death lines), one death");
-const [a, b, c, d] = atBase(state, h.id);
+const [a, b0, c0, d0] = atBase(state, h.id);
+let b = b0, c = c0, d = d0; // (the living ones after a turns: a's rising may have killed one of them)
 let top = state.log[0];
 catchWorm(state, a, "drinking un-purified water at the test", "water");
 hurt(state, a, 999, h.tile, "of the worm", { raw: true });
@@ -32,8 +33,11 @@ check(got.length === 1 && got[0].s === a, "counted once");
 check(got[0] && got[0].cause === "worm", `as the worm (${got[0] && got[0].cause}: "${got[0] && got[0].text}")`);
 
 console.log("A carrier killed by a horde: one horde death, not a worm death too");
+[b, c, d] = atBase(state, h.id).filter((x) => x.alive && x !== a);
 top = state.log[0];
-catchWorm(state, b, "drinking un-purified water at the test", "water");
+// (someone who catches it: an Iron Stomach shrugs eggs off now and then, by its own dice)
+b = [b, c, d, ...atBase(state, h.id)].find((x) => x && x.alive && x !== a && catchWorm(state, x, "drinking un-purified water at the test", "water"));
+[c, d] = atBase(state, h.id).filter((x) => x.alive && x !== a && x !== b);
 hurt(state, b, 999, h.tile, "when the horde broke through");
 fresh = since(top);
 got = count(fresh);
