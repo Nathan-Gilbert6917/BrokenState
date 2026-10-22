@@ -364,7 +364,10 @@ section("Summer and heat waves: a plan's water at each day's thirst matches what
           state.cards.splice(k, 1);
           if (c.isOrders || c.planCard) continue;
           const b = p.progress;
-          const ch = c.choices.find((x) => !x.uiAction && choiceOk(state, x));
+          // Road cards: a choice that costs no hours on the road first (not "… (2 hours)", not a fight), so the trip
+          // can be compared: since the hub moved out of the towns (2026-10-22) the first choices held up 5 of 6 trips.
+          const open = c.choices.filter((x) => !x.uiAction && choiceOk(state, x));
+          const ch = open.find((x) => !/\(\d+ hours?\)|^Fight\b/.test(x.label || "")) || open[0];
           if (ch) ch.resolve(state);
           if (p.progress < b) delay += b - p.progress;
         }

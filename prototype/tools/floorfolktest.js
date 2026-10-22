@@ -71,7 +71,9 @@ const turn = (st) => { const b = st.combat; for (const u of b.units) if (u.side 
 const sure = (st, v, fn) => { const was = st.rng.chance; st.rng.chance = () => v; try { return fn(); } finally { delete st.rng.chance; void was; } };
 const inRoom = (r, u) => u.x > r.x0 && u.x < r.x0 + r.w - 1 && u.y > r.y0 && u.y < r.y0 + r.h - 1;
 const survivors = (b) => b.units.filter((u) => u.folk === "survivors");
-const raidersOf = (b) => b.units.filter((u) => u.side === "enemy" && u.kind === "human" && u.kit === "raiders" && !u.occupant);
+// The place's own raiders: not another group's party passing through (parley.js u.party, which floorfolk.js leaves where
+// they are; with the hub on open land since 2026-10-22 one of this seed's groups is passing through this block).
+const raidersOf = (b) => b.units.filter((u) => u.side === "enemy" && u.kind === "human" && u.kit === "raiders" && !u.occupant && !u.party);
 const nesters = (b) => b.units.filter((u) => u.nesting);
 const battleCard = (st) => st.cards.find((x) => x && x.battle);
 const pct = (v) => `${Math.round(v * 100)}%`;

@@ -9,7 +9,7 @@
 //     left for you to recover
 // Usage: node tools/evactest.js [seed]
 import { createWorld, hub, atBase } from "../src/sim/world.js";
-import { launchExpedition, spawnAiParty } from "../src/sim/parties.js";
+import { launchExpedition, spawnAiParty, planPath } from "../src/sim/parties.js";
 import { createBattle, registerCombatHandler, combatAct, runEnemyPhase, CELL, aboardCount, zoneAt, vehicleExit } from "../src/sim/combat.js";
 import { raidEnemies } from "../src/sim/scavenge.js";
 import { createVehicle } from "../src/sim/vehicles.js";
@@ -202,11 +202,14 @@ console.log("A horde from 1 to 4 sides");
 console.log("Their vehicles");
 {
   const state = createWorld({ seed: seed0 + 300, factionCount: 6 });
-  const f = state.factions.find((x) => x.alive && x.bases.length);
+  // A site their party can walk to: groups are placed without a check that their base is joined to the rest by land, and
+  // since the hub moved off the towns (2026-10-22) this seed's first group sits on a small island (no site in reach).
+  const reachable = (g, t) => t.loc && t.terrain !== "water" && state.grid.distance(t.id, g.bases[0]) <= 8 && t.id !== g.bases[0] && !!planPath(state, g.bases[0], t.id, false, g.id);
+  const f = state.factions.find((x) => x.alive && x.bases.length && state.tiles.some((t) => reachable(x, t)));
   let drove = 0, walked = 0;
   for (let i = 0; i < 20; i++) {
     f.stock.fuel = 30;
-    const site = state.tiles.find((t, j) => j > i * 37 && t.loc && t.terrain !== "water" && state.grid.distance(t.id, f.bases[0]) <= 8 && t.id !== f.bases[0]);
+    const site = state.tiles.find((t, j) => j > i * 37 && reachable(f, t));
     if (!site) continue;
     const q = sendParty(state, f, f.bases[0], site.id);
     if (!q) continue;
@@ -216,7 +219,7 @@ console.log("Their vehicles");
   check(drove > 0 && walked > 0, `with fuel in stock some parties drive out, some walk (${drove} drove, ${walked} walked)`);
   f.stock.fuel = 0;
   let dry = 0;
-  for (let i = 0; i < 6; i++) { const site = state.tiles.find((t) => t.loc && t.terrain !== "water" && state.grid.distance(t.id, f.bases[0]) <= 8 && t.id !== f.bases[0]); const q = site && sendParty(state, f, f.bases[0], site.id); if (q) { if (q.vehicleType) dry++; state.parties.splice(state.parties.indexOf(q), 1); } }
+  for (let i = 0; i < 6; i++) { const site = state.tiles.find((t) => reachable(f, t)); const q = site && sendParty(state, f, f.bases[0], site.id); if (q) { if (q.vehicleType) dry++; state.parties.splice(state.parties.indexOf(q), 1); } }
   check(dry === 0, "without fuel nobody drives");
   // Their vehicle on the battle map; beat them and it is left on the field.
   const b = fieldOn(state, landTile(state).id, null, { kind: "raiders", count: 4, power: 3, factionId: f.id, vehicle: "truck", vehiclePartyId: null }, 3);

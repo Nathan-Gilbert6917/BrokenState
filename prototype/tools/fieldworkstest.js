@@ -627,7 +627,12 @@ section("Snare line (WORLD-02): a team sets it; it catches day by day; only a te
   const h = hub(state);
   const at = spot(state, "snares", 2, (id) => ["forest", "hills"].includes(state.tiles[id].terrain)) || spot(state, "snares", 2) || spot(state, "snares", 1);
   if (check(!!at, "a tile for a snare line on forest, hills or farmland")) {
-    const city = FW.placeTiles(state, h, "snares").find((x) => !["forest", "hills", "plains"].includes(state.tiles[x.tile].terrain));
+    // Land that is not game land (a town, a suburb): open water, refused for being water, is not the case. The hub is
+    // on open land since 2026-10-22 and may have no such tile in reach: then one of its snare tiles is made suburbs
+    // for the question (and put back).
+    let city = FW.placeTiles(state, h, "snares").find((x) => !["forest", "hills", "plains", "water"].includes(state.tiles[x.tile].terrain));
+    const ok0 = !city && FW.placeTiles(state, h, "snares").find((x) => !x.why);
+    if (ok0) { const t = state.tiles[ok0.tile], was = t.terrain; t.terrain = "suburb"; city = { tile: t.id, why: FW.placeProblem(state, h, "snares", t.id, false) }; t.terrain = was; }
     if (city) check(/forest, hills or farmland/.test(city.why), `refused off game land: "${city.why}"`);
     for (const s of atBase(state, h.id)) Object.assign(s, { health: 100, conditions: [], inBed: false });
     const r = FW.planFieldWork(state, h, "snares", at.tile);
@@ -644,6 +649,10 @@ section("Snare line (WORLD-02): a team sets it; it catches day by day; only a te
     FW.FIELD.SNARES.theft = 0; FW.FIELD.SNARES.near = 0; SNARE.zombie = 0; SNARE.zombieNear = 0;
     for (let i = 0; i < 4; i++) { state.hour += 24; FW.fieldworksDaily(state); }
     check(fw.caught > 0, `4 days: ${fw.caught} caught (about ${FW.snareExpect(state, fw)} a day expected), ${FW.snareHeld(fw)} still in the snares, ${fw.rotted || 0} rotted`);
+    // Past midnight first: the night's catch and rot (fieldworksDaily) are in before the count, so the morning below
+    // changes nothing on its own (with the hub on open land since 2026-10-22 the clock stood at 13:00 here, and the
+    // night between rotted one of the catch).
+    toHour(state, 1);
     if (!FW.snareHeld(fw)) fw.held = [{ day: day(state), n: 3 }];
     // Nobody at home checks it, hunter or not, and the base does not know what it holds.
     const hunter = atBase(state, h.id).find((x) => !x.leader);
