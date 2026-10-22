@@ -2130,7 +2130,8 @@ function onOutsiderFight(state, result, setup) {
     const quiet = Parties.unheardEnvoy(p); // an envoy out of radio coverage: heard of only when overdue (envoys.js)
     Parties.wipeParty(state, p);
     if (!quiet) log(state, `The whole team was lost fighting ${name}.`, "death");
-    if (v) { v.phase = "travel"; nextGoal(state, v); }
+    if (v && v.size <= 0) leaveMap(state, v, "broken", { tile: v.tile }); // both sides down to the last: they are gone too
+    else if (v) { v.phase = "travel"; nextGoal(state, v); }
     // The fight still ends with its result card (as every other outcome does): the team is gone, not the news.
     if (!quiet) addCard(state, { title: `The fight with ${name}`, text: `The whole team was lost fighting ${name} near ${where}. Where they fell is marked on the map.`, where, choices: [{ label: "OK", resolve: () => "" }] });
     return;
