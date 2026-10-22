@@ -58,6 +58,7 @@ import { lootFit } from "../sim/stacks.js";
 import { armoryView, storageTags } from "./armoryview.js"; // the storage box's items grouped by type, cards or compact rows
 import { itemShortTip, tipAttrs, roundsBadge } from "./itemlabels.js"; // the short hover tip (Shift: the full one), the rounds badge on a gun
 import { rowName, rowCount, supplyName, supplyCount } from "../sim/itemnames.js"; // row names: "magazine", rounds "— loose", the count on the right
+import { touchUI } from "./responsive.js"; // a phone or tablet: the picked item's strip with Cancel stays in sight (no Esc key)
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -323,6 +324,10 @@ function stackButtons(item, from) {
   if (isBulk(item) && Object.keys(bulkRecord(item)).length) out.push(`<button class="mini" data-action="inv-openbox"${tip(`Take a handful out (up to ${roundCap({ loose: true })} loose rounds) into a spot beside it`)}>Take out a handful</button>`);
   return out.join(" ");
 }
+// A phone or tablet: the picked item's name and ✕ Cancel on one strip that sticks to the window's foot while it
+// scrolls (responsive.css), so the pick can be dropped wherever the item is to go (Esc on a keyboard); the bar
+// under it has the rest. A desktop draws none.
+const invPin = (name) => (touchUI() ? `<div class="invpin small"><span>Selected: <b>${esc(name)}</b></span><button class="mini" data-action="inv-cancel" data-tip="Drop the selection (Esc)">✕ Cancel</button></div>` : "");
 // ⓘ Details: the selected item's whole description (the hover tip is short; Shift over it shows this too).
 const detailsButton = (ui, item) => `<button class="mini${ui.invDetails === ui.invSel ? " active" : ""}" data-action="inv-details"${tip("The whole description of the selected item (or hold Shift while hovering it)")}>ⓘ Details</button> `;
 const detailsBlock = (state, ui, item) => (ui.invDetails && ui.invDetails === ui.invSel ? `<div class="invdetails small muted">${esc(itemTip(item, ui.inv && ui.inv.sid != null ? survivorById(state, ui.inv.sid) : null))}</div>` : "");
@@ -332,7 +337,7 @@ export function selBar(state, ui, place) {
   if (!item) return "";
   const from = parseLoc(ui.invSel);
   const st = storageFor(state, place);
-  return `<div class="invsel small">Selected: <b>${esc(rowName(item))}${rowCount(item) ? ` ${rowCount(item)}` : ""}</b>. Click a slot, pocket or pack cell to move it there${countOf(item) > 1 || isRoundItem(item) ? " (onto the same thing: the stacks merge)" : ""}.
+  return `${invPin(rowName(item))}<div class="invsel small">Selected: <b>${esc(rowName(item))}${rowCount(item) ? ` ${rowCount(item)}` : ""}</b>. Click a slot, pocket or pack cell to move it there${countOf(item) > 1 || isRoundItem(item) ? " (onto the same thing: the stacks merge)" : ""}.
     ${stackButtons(item, from)}
     ${st && from.o !== "armory" && from.o !== "cargo" ? `<button class="mini" data-action="inv-store"${tip(`Put it in ${st.name}`)}>${from.o === "body" ? "Take" : st.o === "armory" ? "Unequip to armory" : "Put in cargo"}</button>` : ""}
     ${GEAR[item.key] && GEAR[item.key].use && from.o !== "body" && ui.inv && !ui.inv.loot ? `<button class="mini" data-action="inv-use"${tip(`${survivorById(state, ui.inv.sid)?.name.split(" ")[0] || "They"} ${GEAR[item.key].useVerb || "use"} it now: ${useText(item.key)}. Used up.`)}>Use</button>` : ""}
@@ -537,7 +542,7 @@ function peekBar(state, ui, ok, mate = null) {
   const from = parseLoc(ui.invSel);
   const own = from.o === "s" && from.id === ui.inv.sid;
   const who = mate ? (own ? `${esc(mate.name.split(" ")[0])}'s` : "their own") : "";
-  return `<div class="invsel small">Selected: <b>${esc(rowName(item))}${rowCount(item) ? ` ${rowCount(item)}` : ""}</b>${mate && !own ? ` (${esc(mate.name.split(" ")[0])}'s)` : ""}. ${ok ? `Click ${mate ? `${who} ` : "a "}pocket, pack cell, rig pouch, the hands or the off hand to move it there (${mate ? HANDOVER_AP : INV_AP} action${mate ? `, ${esc(survivorById(state, ui.inv.sid).name.split(" ")[0])}'s` : ""})${countOf(item) > 1 || isRoundItem(item) ? "; onto the same thing: the stacks merge" : ""}${isRoundItem(item) && item.loose ? "; onto a spare magazine of the gun: it is loaded with them (1 action from a pocket or the rig, both from the pack)" : ""}.` : ""}
+  return `${invPin(rowName(item))}<div class="invsel small">Selected: <b>${esc(rowName(item))}${rowCount(item) ? ` ${rowCount(item)}` : ""}</b>${mate && !own ? ` (${esc(mate.name.split(" ")[0])}'s)` : ""}. ${ok ? `Click ${mate ? `${who} ` : "a "}pocket, pack cell, rig pouch, the hands or the off hand to move it there (${mate ? HANDOVER_AP : INV_AP} action${mate ? `, ${esc(survivorById(state, ui.inv.sid).name.split(" ")[0])}'s` : ""})${countOf(item) > 1 || isRoundItem(item) ? "; onto the same thing: the stacks merge" : ""}${isRoundItem(item) && item.loose ? "; onto a spare magazine of the gun: it is loaded with them (1 action from a pocket or the rig, both from the pack)" : ""}.` : ""}
     ${ok && own ? stackButtons(item, from) : ""}
     ${detailsButton(ui, item)}<button class="mini" data-action="inv-cancel">Cancel</button>${detailsBlock(state, ui, item)}</div>`;
 }
@@ -923,7 +928,7 @@ function armsSelLine(state, ui) {
   const u = state.combat.units.find((x) => x.id === A.id);
   const q = u && u.hands ? u.hands[A.i] || 0 : 0;
   if (!(q > EPSU)) { ui.invArms = null; return ""; }
-  return `<div class="invsel small">Selected: <b>${esc(stackText(A.i, q))}</b> in ${esc(u.name.split(" ")[0])}'s arms. Click the ground to set it down (free). <button class="mini" data-action="inv-armsdown"${tip("Set all of it down where they stand (free)")}>Set down</button> <button class="mini" data-action="inv-cancel">Cancel</button></div>`;
+  return `${invPin(stackText(A.i, q))}<div class="invsel small">Selected: <b>${esc(stackText(A.i, q))}</b> in ${esc(u.name.split(" ")[0])}'s arms. Click the ground to set it down (free). <button class="mini" data-action="inv-armsdown"${tip("Set all of it down where they stand (free)")}>Set down</button> <button class="mini" data-action="inv-cancel">Cancel</button></div>`;
 }
 // The line under the fight's Inventory window for a thing picked on the ground or in the Carried list.
 function fightSelLine(state, ui, b) {
@@ -931,7 +936,7 @@ function fightSelLine(state, ui, b) {
   const F = parseRaidLoc(ui.invSel);
   const name = F.slot === "sup" ? (SUPPLIES[F.i] || { name: F.i }).name : (raidItemAt(state, b, ui.invSel) || {}).name;
   if (!name) return "";
-  return `<div class="invsel small">Selected: <b>${esc(name)}</b> (${F.o === "haul" ? "carried" : "on the ground"}). Click a slot, a pocket or pack cell, Carried or the ground to move it there; click it again to send it across. <button class="mini" data-action="inv-cancel">Cancel</button></div>`;
+  return `${invPin(name)}<div class="invsel small">Selected: <b>${esc(name)}</b> (${F.o === "haul" ? "carried" : "on the ground"}). Click a slot, a pocket or pack cell, Carried or the ground to move it there; click it again to send it across. <button class="mini" data-action="inv-cancel">Cancel</button></div>`;
 }
 
 // ---------- the ground in the State Map's inventory windows ----------

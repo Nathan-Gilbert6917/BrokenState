@@ -29,13 +29,13 @@ const LABELS = {
   "pl-preset": "plan preset", "pl-step": "plan step", "pl-add": "added step", "pl-addmove": "added move", "pl-cond": "condition",
   "pl-condv": "condition", "pl-days": "days", "pl-addv": "step setting", "pl-sweep-r": "survey radius", "pl-sweep-h": "survey hours",
   "tpl-use": "template", queuebuild: "queued build", cancelbuild: "cancelled build", "barrel-up": "barrel upgrade", "bq-move": "queue order",
-  wc: "priority", wrc: "role priority", wfc: "field priority", wsched: "schedule", wreset: "reset to role", weveryone: "everyone on priorities",
+  wc: "priority", wpick: "priority", wrc: "role priority", wfc: "field priority", wsched: "schedule", wreset: "reset to role", weveryone: "everyone on priorities",
   "wrole-new": "new role", "wrole-new-crew": "new crew", "wrole-dup": "duplicated role", "wrole-del": "deleted role", "wcrew-pause": "crew pause",
   "wcrew-all": "handle everything", "wcrew-cargo": "cargo rule", wnew: "newcomers", wsick: "sick people rest", wlunch: "lunch hour", "wrole-name": "role name", wmin: "minimum",
   "wsched-preset": "schedule preset", "wcrew-set": "crew setting", role: "role", key: "priority",
 };
 const BUILD_KEYS = new Set(["queuebuild", "cancelbuild", "barrel-up", "bq-move"]);
-const WORK_KEYS = new Set(["wc", "wrc", "wfc", "wsched", "wreset", "weveryone", "wrole-new", "wrole-new-crew", "wrole-dup", "wrole-del", "wcrew-pause", "wcrew-all", "wcrew-cargo", "wnew", "wsick", "wlunch", "wrole-name", "wmin", "wsched-preset", "wcrew-set"]);
+const WORK_KEYS = new Set(["wc", "wrc", "wfc", "wpick", "wsched", "wreset", "weveryone", "wrole-new", "wrole-new-crew", "wrole-dup", "wrole-del", "wcrew-pause", "wcrew-all", "wcrew-cargo", "wnew", "wsick", "wlunch", "wrole-name", "wmin", "wsched-preset", "wcrew-set"]);
 const PLAN_SKIP = new Set(["pl-launch", "pl-cancel"]); // sending the team is final; cancelling closes the planner
 
 // ---------- the stacks ----------

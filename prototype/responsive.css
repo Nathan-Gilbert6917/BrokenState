@@ -15,6 +15,27 @@
   #rs-close { position: fixed; z-index: 11; width: 2.75rem; height: 2.75rem; padding: 0; display: flex; align-items: center; justify-content: center; font-size: 1.15rem; line-height: 1; background: var(--panel-2); border: 1px solid var(--accent); border-radius: 50%; box-shadow: 0 4px 14px rgba(0,0,0,0.55); }
   #rs-close.over-combat { z-index: 31; } /* a window over a battle (#modal.over-combat 30) */
   #rs-cbtools { display: none; }
+  /* The map's keys as buttons (responsive.js buildKeys): ◀ ❗ Next team (N) and 📷 Spots (camera spots, Shift / Ctrl
+     + 1–9). In the top bar on a tablet, the spots dropping down under 📷; the phone's ⋯ drop-down lays them out below. */
+  #rs-keys { gap: 0.35rem; align-items: center; flex-wrap: nowrap; }
+  #rs-keys button { position: relative; min-height: 2.6rem; white-space: nowrap; }
+  #rs-keys .rs-team { display: inline-flex; gap: 0.2rem; }
+  #rs-keys .rs-team button:first-child { min-width: 2.6rem; }
+  #rs-keys .rs-badge { position: absolute; top: -0.35rem; right: -0.35rem; min-width: 1.2rem; padding: 0 0.3rem; border-radius: 99px; font-size: 0.72rem; line-height: 1.2rem; color: #15171a; background: #ffd166; }
+  #rs-keys .rs-spots { position: relative; display: inline-flex; }
+  #rs-cams { display: none; position: absolute; z-index: 9; top: calc(100% + 0.35rem); right: 0; width: 13.5rem; padding: 0.55rem; flex-direction: column; gap: 0.45rem; background: var(--panel); border: 1px solid var(--accent); border-radius: 8px; box-shadow: 0 12px 30px rgba(0,0,0,0.6); }
+  body.rs-cams #rs-cams { display: flex; }
+  body.rs-cams #rs-cambtn, #rs-camsave.active { background: #4a3816; border-color: var(--accent); }
+  #rs-cams .rs-camh { font-size: 0.85rem; color: var(--muted); }
+  #rs-cams .rs-camgrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.3rem; }
+  #rs-cams .rs-cam { min-height: 2.75rem; padding: 0; font-weight: 700; }
+  #rs-cams .rs-cam.on { background: #2e4a2a; border-color: #5d8a4f; color: #e2f5d5; } /* a saved spot: a tap goes there */
+  /* An item picked in an inventory: a strip with ✕ Cancel (ui/inventory.js selBar; Esc on a keyboard) stays in sight
+     at the window's foot while the window scrolls, above the slots it is to go to. */
+  #modal .invpin { position: sticky; bottom: 0; z-index: 2; display: flex; align-items: center; gap: 0.5rem; margin-top: 0.6rem; padding: 0.3rem 0.4rem 0.3rem 0.7rem; background: #3a2e17; border: 1px solid var(--accent); border-radius: 8px; box-shadow: 0 -6px 16px rgba(0,0,0,0.5); }
+  #modal .invpin > span { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* The pick banners' ✕ Cancel (Esc): a finger's size. */
+  #banner .movemode button { min-height: 2.4rem; margin-left: 0.35rem; padding: 0 0.75rem; }
 }
 
 /* ================= tablet: the desktop arrangement for a finger ================= */
@@ -105,6 +126,7 @@
   #rs-menu { grid-area: menu; } #rs-morebtn { grid-area: more; }
   #rs-menu, #rs-morebtn { width: 2.75rem; min-height: 2.75rem; padding: 0; font-size: 1.15rem; line-height: 1; }
   body.rs-more #rs-morebtn { background: #4a3816; border-color: var(--accent); }
+  body.rs-more #rs-dx { display: none; } /* the open drawer's ✕ would sit over the drop-down */
   /* Needs and the threat forecast drop down across the screen. */
   #topbar .nb-panel, #rs-more .tf-panel { position: fixed; left: calc(0.5rem + env(safe-area-inset-left)); right: calc(0.5rem + env(safe-area-inset-right)); top: var(--rs-top, 6rem); width: auto; max-width: none; margin-top: 0.25rem; }
   #topbar .nb-list, #rs-more .tf-list { max-height: calc(100dvh - var(--rs-top, 6rem) - 6rem); }
@@ -116,6 +138,14 @@
   #rs-more #tb-people { padding: 0 0.2rem; }
   #rs-more #tb-tools { display: grid; grid-template-columns: 1fr 1fr; gap: 0.35rem; margin: 0; font-size: 0.95rem; }
   #rs-more #tb-tools button { text-align: left; padding: 0.3rem 0.6rem; }
+  /* The map's keys: ◀ and Next team on one row, the nine camera spots open under it. */
+  #rs-more #rs-keys { display: flex; flex-direction: column; align-items: stretch; gap: 0.45rem; padding-top: 0.45rem; border-top: 1px solid var(--line); }
+  #rs-more #rs-keys .rs-team { display: grid; grid-template-columns: 2.75rem minmax(0, 1fr); }
+  #rs-more #rs-keys .rs-spots { display: block; }
+  #rs-more #rs-cambtn { display: none; }
+  #rs-more #rs-cams { display: flex; position: static; width: auto; padding: 0; background: none; border: none; box-shadow: none; }
+  #rs-more #rs-cams .rs-camgrid { grid-template-columns: repeat(9, minmax(0, 1fr)); gap: 0.2rem; }
+  #rs-more #rs-camsave { width: 100%; }
 
   /* The panels: a little tighter, the tabs full width. */
   #left, #right { padding: 0.6rem 0.7rem; }

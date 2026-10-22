@@ -103,7 +103,7 @@ import { setTeamPolicy } from "./sim/breakoff.js";
 import { noteNames } from "./ui/names.js";
 import { renderLogPanel, DIARY_ACTIONS, DIARY_CHANGE } from "./ui/diary.js";
 import { WHY_ACTIONS } from "./ui/causes.js"; // "Why?" on deaths and lost bases
-import { renderAlerts, ALERT_ACTIONS, mapHotkey, initAlerts } from "./ui/alerts.js";
+import { renderAlerts, ALERT_ACTIONS, mapHotkey, initAlerts, camSpot, nextWaitingTeam } from "./ui/alerts.js";
 import { ROSTER_ACTIONS, ROSTER_CHANGE } from "./ui/roster.js";
 import { GUIDE_ACTIONS, guideCheck, renderGuide, renderGuideTip, guidePulse, startGuide, guideDefault } from "./ui/guide.js"; // the first-week guide under the alerts; its notes over new windows
 import { LEDGER_ACTIONS, ledgerKey, drawCharts, sparkNode } from "./ui/ledger.js"; // the Ledger, the run summary, the stock trends
@@ -139,7 +139,7 @@ import {
 } from "./ui/layout.js";
 import { initPanels, applyLayout, setLogLine, setRailBadges, fitWindows, resetWindows, windowSizes, watchFloating } from "./ui/windows.js";
 import { initTouch, touchGestures, touchRecent } from "./ui/touch.js"; // a finger: tap, long press (a right-click), drag and pinch on the maps
-import { initResponsive } from "./ui/responsive.js"; // phones and tablets: the drawers, the dock, the ⋯ menu, a ✕ on windows (responsive.css)
+import { initResponsive, pickCancel, touchUI, setKeysBadge } from "./ui/responsive.js"; // phones and tablets: the drawers, the dock, the ⋯ menu, a ✕ on windows (responsive.css)
 import { initLogWindow, syncLogWindow } from "./ui/logwindow.js"; // a raid's log as a small window over the battle map
 import { initOverlays, syncOverlays, resetOverlays } from "./ui/overlaydrag.js"; // the boxes over the map move (drag a header, Alt+arrows)
 import { keepFocusBefore, afterPanelWrite, PANEL_ACTIONS, PANEL_INPUT } from "./ui/panelfold.js"; // the side panels' folds, find box, scroll fades
@@ -564,7 +564,9 @@ function refresh(user = true) {
   }
   if (!layout.log) setHTML("log", renderLogPanel(state, ui), user); // filters and links (ui/diary.js)
   else setLogLine(state.log && state.log[0] ? String(state.log[0].text || "") : "");
-  if (layout.left) setRailBadges({ teams: ui.started ? state.parties.filter((p) => p.owner === "player" && p.phase === "waiting").length : 0, tab: ui.tab }); // the folded left panel's rail
+  const waitingTeams = () => (ui.started ? state.parties.filter((p) => p.owner === "player" && p.phase === "waiting").length : 0);
+  if (layout.left) setRailBadges({ teams: waitingTeams(), tab: ui.tab }); // the folded left panel's rail
+  if (touchUI()) setKeysBadge(waitingTeams()); // ❗ Next team on a phone or tablet (ui/responsive.js)
   refreshModal(user);
   setHTML("legend", renderLegend(view, ui, ui.started ? state : null), user);
   if (ui.started) devSample(state);
@@ -707,7 +709,7 @@ function bannerHTML() {
   html += fwPlaceBanner(state, ui); // ui/fieldworks.js: placing a field work
   html += meetPickBanner(state, ui); // ui/tradewindow.js: a tile to meet a group's caravan at
   if (ui.moveParty) {
-    html += `<div class="movemode" data-tip="The clock waits until you pick a tile.">Move: <b>click a tile</b> to ${ui.moveQueue ? "queue a move" : "send the team"} · <b>Esc</b> cancels` +
+    html += `<div class="movemode" data-tip="The clock waits until you pick a tile.">Move: <b>click a tile</b> to ${ui.moveQueue ? "queue a move" : "send the team"} · <b>Esc</b> cancels` + pickCancel("move") +
       (ui.moveMsg ? `<br><span class="danger">${esc(ui.moveMsg)}</span>` : "") + `</div>`;
   }
   return html;
@@ -998,6 +1000,10 @@ const actions = {
     const p = partyById(d.id);
     if (p && !state.cards.some((c) => c.partyId === p.id)) addCard(state, ordersCard(state, p, ""));
   },
+  "pick-cancel": (d) => { if (d.what === "move") endMoveMode(); else if (d.what === "fw") fwPlaceCancel(ui); else meetPickCancel(ui); },
+  // The map's keys as buttons on a phone or tablet (ui/responsive.js): N / Shift+N, Shift+1–9 / Ctrl+1–9.
+  "team-next": (d) => { nextWaitingTeam(state, ui, actions, d.back === "1"); },
+  "cam-spot": (d) => { camSpot(state, ui, d.n, d.save === "1"); },
   movemode: (d) => {
     const on = ui.moveParty !== Number(d.id);
     endMoveMode();
@@ -1913,7 +1919,9 @@ document.addEventListener("contextmenu", (ev) => {
   const fn = actions[el.dataset.action];
   if (!fn) return;
   releaseHold();
-  act(() => fn(el.dataset, { button: 2, shiftKey: ev.shiftKey }));
+  // A finger's long press (ui/touch.js sends it, untrusted): the Work tab opens its picker there instead (ui/work.js).
+  const finger = !ev.isTrusted && touchRecent();
+  act(() => fn(el.dataset, finger ? { button: 2, shiftKey: false, finger, x: ev.clientX, y: ev.clientY } : { button: 2, shiftKey: ev.shiftKey }));
   refresh();
 });
 // The gun builder's part row under the mouse: the stats panel shows before → after (ui/gunbuilder.js).
@@ -2416,6 +2424,7 @@ function closeTopLayer() {
   if (closeItemMenu(ui)) return true; // ui/itemmenu.js
   if (ui.box) { ui.box = null; return true; } // ui/boxview.js
   if (!$("ctxmenu").classList.contains("hidden")) { hideCtx(); return true; }
+  if (ui.workPick) { ui.workPick = null; return true; } // the Work tab's picker (a long press, ui/work.js)
   if (ui.zombieLook) { ui.zombieLook = false; return true; }
   if (ui.wcOpen) { actions["wc-close"](); return true; } // the World… window (ui/worldcfg.js): the world again if a dial moved
   if (ui.bgEditor) { closeBackgrounds(); return true; }

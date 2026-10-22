@@ -6,6 +6,7 @@ import {
 } from "./layout.js";
 import { swallowTap, HOLD_MS } from "./touch.js"; // a bar tapped or a window dragged by a finger: no mouse events or click after it
 
+const coarse = () => typeof matchMedia !== "undefined" && matchMedia("(pointer: coarse)").matches; // a finger: its own hints
 const remPx = () => parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
 let ctx = null;  // { layout, relayout(fn), refresh() } from main.js
 let wins = {};   // window kind -> { w, h (rem), x, y (px) }
@@ -37,7 +38,7 @@ export function applyLayout(L) {
     else root.style.removeProperty(`--${p}-size`);
     const g = document.getElementById(GUTTERS[p].id);
     if (g) {
-      g.dataset.tip = L[p] ? `Show the ${p === "log" ? "log" : `${p} panel`} (${GUTTERS[p].key})` : `Click: fold the ${p === "log" ? "log" : `${p} panel`} away (${GUTTERS[p].key}). Drag: resize it`;
+      g.dataset.tip = L[p] ? `Show the ${p === "log" ? "log" : `${p} panel`} (${GUTTERS[p].key})` : `Click: fold the ${p === "log" ? "log" : `${p} panel`} away (${GUTTERS[p].key}). Drag: resize it${coarse() ? ". Long press: its usual size" : ""}`;
       if (g.setAttribute) { g.setAttribute("aria-expanded", String(!L[p])); g.setAttribute("aria-label", L[p] ? `Show the ${GUTTERS[p].name}` : `Fold the ${GUTTERS[p].name} away; arrow keys resize it`); }
     }
   }
@@ -120,10 +121,12 @@ export function initPanels(api) {
   window.addEventListener("pointermove", (e) => { if (drag && drag.pid === e.pointerId) onMove(e); }, true);
   for (const k of ["pointerup", "pointercancel"]) window.addEventListener(k, (e) => {
     if (!drag || drag.pid !== e.pointerId) return;
+    const d = drag, held = k === "pointerup" && !d.moved && performance.now() - d.t0 >= HOLD_MS;
     // The browser took the finger (a scroll), or it was a long press (its tip, ui/touch.js): no fold, nothing pressed.
     if (k === "pointercancel" || performance.now() - drag.t0 >= HOLD_MS) drag.moved = true;
     onUp();
     swallowTap();
+    if (k === "pointerup") fingerReset(d, held);
   }, true);
   document.addEventListener("dblclick", onDbl, true);
   window.addEventListener("resize", () => { fitWindows(); });
@@ -319,6 +322,20 @@ function onUp() {
   saveWindows(wins);
 }
 
+// A finger has no Home key and its double tap is no dblclick (the drag above swallows the tap): a long press on an
+// open bar puts its panel back to its usual size, and a double tap on a window's title puts the window back to its
+// usual size and place (as Home and the double-click do for a mouse; Options → Reset window sizes does them all).
+let lastTap = null; // { key, t }: a window's title tapped once
+function fingerReset(d, held) {
+  if (d.kind === "gut") {
+    if (held && !d.folded && setPanelSize(ctx.layout, d.p, null)) { ctx.relayout(() => applyLayout(ctx.layout)); saveLayout(ctx.layout); }
+    return;
+  }
+  if (d.dir !== "move" || d.moved) { lastTap = null; return; }
+  const t = performance.now();
+  if (lastTap && lastTap.key === d.key && t - lastTap.t < 500) { lastTap = null; resetWindows(d.key); }
+  else lastTap = { key: d.key, t };
+}
 // Double-click on a window's title: back to its usual size and place.
 function onDbl(e) {
   const t = e.target;

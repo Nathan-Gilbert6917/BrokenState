@@ -11,6 +11,9 @@
 //             and a ✕ beside the open drawer or sheet
 //   battle    on a phone: the battle's side panel becomes a drawer from the left (☰), and the orders bar folds
 //             to End turn (▾)
+//   keys      what only a key did on the map: ◀ ❗ Next team (Shift+N / N) and the camera spots (Shift+1–9 go,
+//             Ctrl+1–9 save), in the ⋯ drop-down on a phone and in the top bar on a tablet. Other modules ask
+//             touchUI() to add their own (Cancel on the pick banners, main.js; the Work tab's picker, ui/work.js)
 // Gestures (pan, pinch, long press) are ui/touch.js's.
 
 export const PHONE = "(max-width: 759px)";
@@ -26,6 +29,11 @@ const MOVED = ["tb-threat", "tb-people", "tb-tools"]; // into the phone's ⋯ dr
 const $ = (id) => document.getElementById(id);
 const body = () => document.body;
 let mode = "";       // "phone" | "tight" | "tablet" | ""
+// A phone or tablet layout is up: the controls that stand in for keys are drawn (a desktop window never draws them).
+export const touchUI = () => mode !== "";
+// The pick banners' Cancel (a team's move, a field work's tile, a meeting tile; main.js "pick-cancel"): Esc, where
+// there is no Esc key.
+export const pickCancel = (what) => (touchUI() ? ` <button class="mini" data-action="pick-cancel" data-what="${what}" data-tip="Cancel (Esc)">✕ Cancel</button>` : "");
 let drawers = false; // the dock and the drawers are up
 let saved = null;    // which drawers were folded before (put back when the window grows again)
 let legendFolded = false; // the phone folded the Layers box (opened again when it grows)
@@ -71,6 +79,9 @@ function setMode(m) {
   if (m !== "phone" && was === "phone") leavePhone();
   if (m && !was) enterTouch();
   if (!m && was) leaveTouch();
+  placeKeys();
+  const g = window.game;
+  if (g && g.refresh) g.refresh(); // the banners' Cancel (touchUI) comes or goes
 }
 
 // ---------- drawers ----------
@@ -185,6 +196,8 @@ function enterPhone() {
     panel.appendChild(n);
     parked.push([n, ph]);
   }
+  // The map's keys (enterTouch builds them; placeKeys moves them in here).
+  panel.appendChild(el("div", { id: "rs-keyslot" }));
   // The Layers box is a third of a phone's map: folded to its tab (the player opens it as on a desktop).
   const lg = $("legend");
   legendFolded = !!(lg && lg.dataset.fold !== "1");
@@ -202,6 +215,8 @@ function enterPhone() {
 function leavePhone() {
   setMore(false);
   for (const [n, ph] of parked.splice(0)) { if (ph.parentNode) { ph.parentNode.insertBefore(n, ph); ph.remove(); } }
+  const k = $("rs-keys");
+  if (k) body().appendChild(k); // out of the drop-down before it goes (placeKeys puts it in the top bar)
   drop("rs-menu");
   drop("rs-morebtn");
   drop("rs-more");
@@ -212,6 +227,7 @@ function leavePhone() {
 }
 function setMore(on) {
   body().classList.toggle("rs-more", !!on);
+  if (on) syncKeys();
   const b = $("rs-morebtn");
   if (b) b.setAttribute("aria-expanded", String(!!on));
 }
@@ -232,6 +248,7 @@ function enterTouch() {
   cb.querySelector("#rs-cbpanel").addEventListener("click", () => { body().classList.toggle("rs-cbpanel"); syncCb(); });
   cb.querySelector("#rs-cbmin").addEventListener("click", () => { body().classList.toggle("rs-cbmin"); syncCb(); });
   ($("cbmapwrap") || body()).appendChild(cb); // over the battle map, above its orders bar (--cbbar-h, ui/combat.js)
+  buildKeys();
   const modal = $("modal");
   modalObs = new MutationObserver(queueClose);
   if (modal) modalObs.observe(modal, { attributes: true, attributeFilter: ["class"], childList: true, subtree: true });
@@ -247,6 +264,9 @@ function leaveTouch() {
   window.removeEventListener("pointerup", queueClose, true);
   drop("rs-close");
   drop("rs-cbtools");
+  drop("rs-keys");
+  document.removeEventListener("pointerdown", outsideCams, true);
+  body().classList.remove("rs-cams");
   body().classList.remove("rs-cbpanel", "rs-cbmin");
 }
 function syncCb() {
@@ -288,4 +308,79 @@ function closeTop() {
   document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true, cancelable: true }));
   if (u && !had && u.settings) { u.settings = null; if (g.refresh) g.refresh(); }
   queueClose();
+}
+
+// ---------- the map's keys, as buttons ----------
+// ◀ ❗ Next team: the teams waiting for orders, one after another (main.js "team-next", ui/alerts.js nextWaitingTeam;
+// the count as on the dock's Lists). 📷 Spots: camera spots 1–9 (main.js "cam-spot", ui/alerts.js camSpot): a tap
+// goes to a saved spot or saves the view on an empty one; with "Save here" lit, a tap saves the view on any number.
+// On a phone the spots sit open in the ⋯ drop-down; on a tablet 📷 drops them down under the top bar.
+function buildKeys() {
+  if ($("rs-keys")) return;
+  const nums = Array.from({ length: 9 }, (_, i) => `<button class="rs-cam" data-action="cam-spot" data-n="${i + 1}" aria-label="Camera spot ${i + 1}">${i + 1}</button>`).join("");
+  const k = el("div", { id: "rs-keys", class: "row" },
+    `<span class="rs-team"><button data-action="team-next" data-back="1" aria-label="Previous team waiting for orders" data-tip="The team before, of those waiting for orders (Shift+N)">◀</button>` +
+    `<button data-action="team-next" aria-label="Next team waiting for orders" data-tip="The next team waiting for orders: the map goes to it and its panel opens (N)">❗ Next team<b class="rs-badge hidden"></b></button></span>` +
+    `<span class="rs-spots"><button id="rs-cambtn" aria-expanded="false" aria-controls="rs-cams" data-tip="Camera spots: views of the map to come back to (Shift+1–9 go, Ctrl+1–9 save)">📷 Spots</button>` +
+    `<span id="rs-cams" role="group" aria-label="Camera spots"><span class="rs-camh">Camera spots</span><span class="rs-camgrid">${nums}</span>` +
+    `<button id="rs-camsave" aria-pressed="false" data-tip="Then tap a number: this view is saved there">Save here…</button></span></span>`);
+  k.querySelector("#rs-cambtn").addEventListener("click", (e) => { e.stopPropagation(); setCams(!body().classList.contains("rs-cams")); });
+  k.querySelector("#rs-camsave").addEventListener("click", (e) => { e.stopPropagation(); setSave(!saving); });
+  // Before main.js's click listener (on the document): the number says save or go. After it: the lit numbers.
+  k.addEventListener("click", (e) => {
+    const b = e.target.closest && e.target.closest(".rs-cam");
+    if (!b) return;
+    b.dataset.save = saving || !spotSaved(b.dataset.n) ? "1" : "";
+    setTimeout(() => { setSave(false); if (mode !== "phone") setCams(false); }, 0);
+  });
+  body().appendChild(k);
+  document.addEventListener("pointerdown", outsideCams, true);
+  syncKeys();
+}
+let saving = false;
+function setSave(on) {
+  saving = !!on;
+  const b = $("rs-camsave");
+  if (b) { b.classList.toggle("active", saving); b.setAttribute("aria-pressed", String(saving)); b.textContent = saving ? "Tap a number to save" : "Save here…"; }
+}
+function spotSaved(n) {
+  const g = window.game, sp = g && g.ui && g.ui.camSpots && g.ui.camSpots[n];
+  return !!(sp && g.state && sp.seed === g.state.seed);
+}
+function setCams(on) {
+  body().classList.toggle("rs-cams", !!on);
+  const b = $("rs-cambtn");
+  if (b) b.setAttribute("aria-expanded", String(!!on));
+  if (!on) setSave(false);
+  syncKeys();
+}
+function outsideCams(e) {
+  if (!body().classList.contains("rs-cams")) return;
+  if (e.target.closest && e.target.closest("#rs-cams, #rs-cambtn")) return;
+  setCams(false);
+}
+// The count of teams waiting for orders on ❗ Next team: main.js, each redraw while touchUI().
+let waitingN = 0;
+export function setKeysBadge(n) {
+  if (n === waitingN) return;
+  waitingN = n;
+  syncKeys();
+}
+// The saved spots lit, the count of teams waiting.
+function syncKeys() {
+  const k = $("rs-keys");
+  if (!k) return;
+  for (const b of k.querySelectorAll(".rs-cam")) b.classList.toggle("on", spotSaved(b.dataset.n));
+  const t = waitingN > 0 ? String(waitingN) : "";
+  const bd = k.querySelector(".rs-badge");
+  if (bd && bd.textContent !== t) bd.textContent = t;
+  if (bd) bd.classList.toggle("hidden", !t);
+}
+// In the ⋯ drop-down on a phone, else at the end of the top bar.
+function placeKeys() {
+  const k = $("rs-keys");
+  if (!k) return;
+  const slot = mode === "phone" ? $("rs-keyslot") : $("topbar");
+  if (slot && k.parentNode !== slot) slot.appendChild(k);
+  setCams(false);
 }

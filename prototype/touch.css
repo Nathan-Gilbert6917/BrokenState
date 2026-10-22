@@ -19,3 +19,16 @@
   #tip, #tip.pre { max-width: min(22rem, calc(100vw - 16px)); }
   img { -webkit-user-drag: none; }
 }
+
+/* The Work tab's picker (ui/work.js workPicker): a finger's long press on a cell opens it (there are no number keys
+   and no R under a finger); a mouse never does, so it needs no media query. Over the window, its backdrop catches a
+   tap outside it. */
+.wpick-bg { position: fixed; inset: 0; z-index: 40; }
+.wpick { position: fixed; z-index: 41; width: min(17rem, calc(100vw - 1rem)); padding: 0.55rem; display: flex; flex-direction: column; gap: 0.45rem; background: var(--panel); border: 1px solid var(--accent); border-radius: 10px; box-shadow: 0 10px 28px rgba(0,0,0,0.6); }
+.wpick-h { display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem; font-size: 0.92rem; }
+.wpick-n { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 0.3rem; }
+.wpick-n button.wcell { width: auto; height: 2.75rem; }
+.wpick-n button.wcell.on { outline: 2px solid var(--accent); outline-offset: 1px; }
+.wpick-f { display: flex; align-items: center; gap: 0.4rem; }
+.wpick-f button { min-height: 2.5rem; }
+.wpick-f button:last-child { margin-left: auto; min-width: 2.75rem; }

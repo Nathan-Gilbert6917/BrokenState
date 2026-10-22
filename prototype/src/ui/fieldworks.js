@@ -8,6 +8,7 @@ import { buildRate } from "../sim/buildings.js";
 import { SUPPLIES } from "../sim/data.js";
 import { tileLabel } from "../sim/parties.js";
 import { healthRest } from "../sim/work.js";
+import { pickCancel } from "./responsive.js"; // ✕ Cancel on the placing banner on a phone or tablet (no Esc key)
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -152,7 +153,7 @@ export function fwPlaceBanner(state, ui) {
   if (!ui.fwPlace) return "";
   const b = baseById(state, ui.fwPlace.baseId);
   const d = FW.FIELD.KINDS[ui.fwPlace.kind];
-  return `<div class="movemode" data-tip="The clock waits until you pick a tile.">${d.icon} ${esc(d.name)} for ${esc(b ? b.name : "the base")}: <b>click a green tile</b> · <b>Esc</b> cancels` +
+  return `<div class="movemode" data-tip="The clock waits until you pick a tile.">${d.icon} ${esc(d.name)} for ${esc(b ? b.name : "the base")}: <b>click a green tile</b> · <b>Esc</b> cancels` + pickCancel("fw") +
     (ui.fwMsg ? `<br><span class="danger">${esc(ui.fwMsg)}</span>` : "") + `</div>`;
 }
 // A tile clicked while placing: planned (the base window comes back on its Field works tab), or why not (the mode stays on).
