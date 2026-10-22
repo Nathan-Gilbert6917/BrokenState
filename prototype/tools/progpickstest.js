@@ -11,6 +11,7 @@
 // 3. The buildings the governor never built (autopilot.js buildWishes): the chapel, the Master workbench, storage
 //    crates and the radio relay (and the radio station it chains from), each in a scenario that calls for it, and
 //    queued by the governor (planBuilds).
+import { stockTools } from "./toolset.js"; // every tool a build or recipe can need (toolreqs.js)
 import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, tickHour, hub, makeSurvivor, newId, day, alive, atBase } from "../src/sim/world.js";
 import { BUILDINGS, addBuilding, canBuild, runStations, farmSlots, plotsFree, plotCap, assignStations } from "../src/sim/buildings.js";
@@ -35,7 +36,7 @@ const LONG = process.argv.includes("--long");
 let passed = 0, failed = 0;
 const check = (ok, msg) => { if (ok) passed++; else failed++; console.log(`  ${ok ? "ok  " : "FAIL"} ${msg}`); return !!ok; };
 const section = (name) => console.log(name);
-const mk = (seed = SEED, groups = 8) => { const st = createWorld({ seed, factionCount: groups }); st.started = true; st.autoCombat = true; return st; };
+const mk = (seed = SEED, groups = 8) => { const st = createWorld({ seed, factionCount: groups }); st.started = true; st.autoCombat = true; stockTools(hub(st)); return st; }; // every tool (toolset.js)
 const at = (st, d) => { st.hour = (d - 1) * 24 + 6; return st; };
 const person = (st, base, skills = {}) => { const s = makeSurvivor(st); Object.assign(s.skills, skills); s.location = { kind: "base", baseId: base.id }; st.survivors.push(s); return s; };
 const tileNear = (st, from, d, d2, filter = () => true) => {
@@ -352,6 +353,7 @@ section("3d. The radio station when groups are out of reach, then the relay that
   // An outpost 9-11 tiles out and a group 9-12 past it, out of the station's reach: the relay at the outpost.
   const oTile = tileNear(st, h.tile, 9, 11);
   const o = fakeOutpost(st, oTile);
+  stockTools(o); // a drill, wrenches and pliers for the relay (toolreqs.js)
   person(st, o, { mechanics: 5 });
   Object.assign(o.stock, { scrap: 40, parts: 6 });
   const f = st.factions.find((x) => x.alive && x.bases.length);

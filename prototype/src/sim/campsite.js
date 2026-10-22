@@ -114,7 +114,7 @@ export function campsiteExtra(state, t, list, knownZone) {
   const water = !!t.river || !!(g && g.neighbors && g.neighbors(t.id).some((n) => state.tiles[n] && (state.tiles[n].terrain === "water" || state.tiles[n].river)));
   const p = ground + (t.road ? G.road : 0) + (water ? G.water : 0);
   if (hash01(state.seed, "campsite", t.id) >= p) return null;
-  const def = { kind: "campsite", hidden: true, pool: null, visits: 0, lastDay: null, cont: null, threatStamp: null, stripped: false };
+  const def = { kind: "campsite", hidden: true, pool: null, visits: 0, lastDay: null, cont: null, threatStamp: null, stripped: false, extra: "campsite" }; // extra: on its own dice after the list (pois.js)
   def.pool = Math.min(1, 0.25 * (0.7 + 0.5 * hash01(state.seed, "campsitepool", t.id)));
   def.hidden = !(knownZone && hash01(state.seed, "campsiteknown", t.id) < CAMPSITE.KNOWN);
   return def;

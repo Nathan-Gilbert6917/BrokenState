@@ -32,6 +32,7 @@ import { itemOnKg, cartOf, CART_FIGHT } from "./carts.js"; // a cart pushed in a
 import { kitSource, siteSource, areaSource, traderSource } from "./itemcond.js";
 import { armourSpec, armourBroken } from "./armour.js";
 import { itemDur, itemDurMax } from "./crafting.js";
+import { ROWS, mergeRows } from "./data-shops.js";
 
 export const CARRY = {
   // Battle mob by kg (light / medium / heavy / overloaded: load.js LOAD_BANDS' limits): Medium keeps 5 tiles an action
@@ -370,10 +371,13 @@ export const SITE_KIT = {
   lodge: { p: 0.03, items: { mag_22_10: 1, mag_bolt_5: 1, mag_bolt_10: 0.4, stripper308: 1 } },
   cabin: { p: 0.02, items: { mag_22_10: 1, stripper308: 1 } },
   town: { p: 0.008, items: { mag_glock_15: 1, mag_22_10: 1 } },
+  // A pawn shop (shops.js): pawned magazines, the budget clones and the rigs people traded for cash.
+  pawnshop: { p: 0.1, items: { mag_glock_15: 1.5, mag_glock_17c: 1, mag_22_10: 1.5, mag_1911_7: 1, mag_stanag_30c: 1, mag_ak_75c: 0.3, mag_ak_30: 0.6, mag_bolt_5: 0.6, speedloader: 1, chestrig: 2, tacvest: 1, makeshiftrig: 1.5, steelplate: 0.6 } },
 };
 export const AREA_KIT = {
   armory: { p: 0.1, items: { mag_glock_15: 2, mag_stanag_30: 2, speedloader: 1, tacvest: 0.5, softinsert: 1, chestrig: 0.5, mag_battle_20: 0.3, mag_ump_25: 0.3, mag_poly45_12: 0.5 } },
   gunshop: { p: 0.1, items: { mag_glock_15: 2, mag_glock_17: 1, mag_stanag_30: 1.5, mag_22_10: 1.5, mag_1911_7: 1, speedloader: 1.5, stripper308: 1, steelplate: 0.4 } },
+  pawnshop: { p: 0.1, items: { mag_glock_15: 1, mag_glock_17c: 1, mag_22_10: 1, mag_stanag_30c: 0.8, speedloader: 0.8, chestrig: 1.5, tacvest: 0.8, makeshiftrig: 1.2, steelplate: 0.5 } },
   barracks: { p: 0.08, items: { mag_stanag_30: 3, chestrig: 1, ceramicplate: 0.8, mag_m249_100: 0.3 } },
   milwreck: { p: 0.06, items: { mag_stanag_30: 2, chestrig: 0.6, ceramicplate: 0.6 } },
 };
@@ -415,6 +419,12 @@ const SURV_KIT = [
   [WARE_KIT.merchants, { mag_uzi_32: 0.2, stripper762: 0.4 }],
 ];
 for (const [row, add] of SURV_KIT) Object.assign(row.items, add);
+// The gun and gear shops (shops.js, the user's request 2026-10-21: "increased loot chances for guns, rigs and other
+// survival gear"): a gun store's racks and its gun counter hold rigs and carriers as often as a magazine of a kind.
+SITE_KIT.gunstore.p = 0.14;
+Object.assign(SITE_KIT.gunstore.items, { chestrig: 2.5, tacvest: 1.5, steelplate: 1 });
+AREA_KIT.gunshop.p = 0.13;
+Object.assign(AREA_KIT.gunshop.items, { chestrig: 1.5, tacvest: 1, steelplate: 0.6 });
 function pickW(items, r) {
   const keys = Object.keys(items).filter((k) => GEAR[k]).sort();
   const tot = keys.reduce((a, k) => a + items[k], 0);
@@ -629,3 +639,6 @@ export const KIT_HELP = `<b>Magazines</b> are items: a 9mm pistol magazine, a 30
   <br><b>Weight in a fight:</b> what someone wears and carries (the rounds in their magazines too) sets how they move:
   Light up to 18 kg 5 tiles an action, Medium up to 28 still 5 but a dash 9, Heavy up to 38 4, Overloaded 3. Enemies
   in full kit are slowed the same way. Heavy kit also makes escaping harder.`;
+
+// data-shops.js: the town's and the city's shops and services (their rows; this module's own rows win).
+mergeRows(SITE_KIT, ROWS.SITE_KIT); mergeRows(AREA_KIT, ROWS.AREA_KIT);

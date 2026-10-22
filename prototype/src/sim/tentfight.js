@@ -40,7 +40,7 @@ import { GEAR, SUPPLIES } from "./data.js";
 import { CELL, active, say, fx, alertNear, foesOf, canSee, playerSees, unitById } from "./combat.js"; // call-time only (the import cycle)
 import { slashTent, TENT_FIGHT } from "./softcover.js"; // call-time only
 import { survivorById, factionById, log } from "./world.js"; // call-time only
-import { lootItem, newItem } from "./inventory.js"; // call-time only
+import { lootItem } from "./inventory.js"; // call-time only
 import { groundAt, groundPile, pickUpFromGround, fieldReady, settlePile } from "./ground.js"; // call-time only
 import { lootLayer } from "./raidloot.js"; // call-time only
 import { strikeTent } from "./basemap.js"; // call-time only
@@ -151,7 +151,7 @@ export function takeResult(b, t) {
   if (!T || !T.bag) return { kind: "poles", item: null, gear: [], sup: { ...TENT_TAKE.MAKESHIFT } };
   if (w.burned > 0 || w.share <= TENT_TAKE.WRECKED) {
     const gear = [];
-    for (let i = 0; i < (TENT_TAKE.CANVAS[t.kind] || 1); i++) gear.push(newItem("canvas"));
+    for (let i = 0; i < (TENT_TAKE.CANVAS[t.kind] || 1); i++) gear.push(lootItem("canvas", "site", [b.turn || 0, "tentcanvas", t.id, i, b.tileId ?? 0])); // torn canvas: worn, its own dice
     return { kind: "rags", item: null, gear, sup: { scrap: TENT_TAKE.SCRAP[t.kind] || 1 } };
   }
   const item = t.item && typeof t.item === "object" && GEAR[t.item.key] ? t.item : lootItem(t.kind, "site", [b.turn || 0, "tentbag", t.id, b.tileId ?? 0]);

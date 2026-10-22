@@ -16,14 +16,17 @@
 //   town footprint (radius 2: the suburb ring mapgen.js lays round every town). There a tile's POIs start known
 //   except 0–2 of the non-top ones (poi.hidden); so the top POI always shows. In the unknown zone every POI of a bare
 //   tile is hidden. The site of a site tile keeps its discovery class (discovery.js: public, road, secret), its extras
-//   follow the zone. A hidden POI is found by a survey (survey.js, revealPois): the team keeps its finds (p.poiFinds)
+//   follow the zone. (Extras on their own dice after the list, marked poi.extra: a campsite, campsite.js; a gun store
+//   or a pawn shop, a bar, a bank, any shop or service of shops.js.) A POI of a kind with franchises (data-shops.js)
+//   is one of them (poi.v, shops.js franchiseFor by its own dice and the tile's setting): its name (poiName), its
+//   sprite and its building's layout. A hidden POI is found by a survey (survey.js, revealPois): the team keeps its finds (p.poiFinds)
 //   until its report reaches the hub (world.js mergeKnowledge → mergePoiFinds → state.poiKnow, the hub's record per
 //   tile: the indices found and when the tile was surveyed or looked at). The UI never says how many are hidden.
 // - Pools: a POI's loot pool (0–1, the share of its original loot still there) is set from its kind's richness and
 //   never grows. The site POI of a site tile keeps using tile.loot (poiPool / poiTake route to it), so every writer
 //   of tile.loot (scavenge.js, aiscav.js, visitors.js, citycrawl.js, hardcore-*) works as it did; extras and bare
 //   tiles' POIs keep poi.pool. poi.stripped marks a pool run down to POI.STRIPPED.
-// - Per POI (saved with the tile): { kind, hidden, pool, visits, lastDay, cont, threatStamp, stripped, site? }:
+// - Per POI (saved with the tile): { kind, hidden, pool, visits, lastDay, cont, threatStamp, stripped, site?, extra?, v? }:
 //   cont is the container ledger (poiLedger makes it; poicont.js keeps it: which containers were looted and by whom,
 //   what the player opened and left in them), threatStamp the perceived threat recorded by a survey or a visit,
 //   visits / lastDay the player's visit history; site marks the site POI.
@@ -51,6 +54,7 @@ import { isPublicSite, siteKnown, nearRoad } from "./discovery.js";
 import { localId } from "./world.js";
 import { zombieToughness } from "./hives.js"; // hive land: the dead are more and tougher there (the threat's hive bonus)
 import { campsiteExtra, campDanger, noteCampSeen } from "./campsite.js"; // call-time only: the extra campsite a tile may hold, its state in the threat, a look at it
+import { shopExtras, franchiseFor, franchiseName, settingOf } from "./shops.js"; // call-time only: the shops a suburb or city block may hold, a place's franchise
 
 export const POI = {
   MAX: 4,                 // POIs a tile can hold, the site among them
@@ -122,7 +126,8 @@ export function inKnownZone(state, tile) {
 function makePoi(state, t, kind, site, slot) {
   const def = LOCATIONS[kind];
   const pool = site ? null : def.richness * (t.terrain === "city" ? POI.URBAN_RICH : 1) * (POI.POOL[0] + (POI.POOL[1] - POI.POOL[0]) * hash01(state.seed, "poipool", t.id, slot));
-  return { kind, hidden: false, pool: pool == null ? null : Math.min(1, pool), visits: 0, lastDay: null, cont: null, threatStamp: null, stripped: false, ...(site ? { site: true } : {}) };
+  const v = franchiseFor(kind, settingOf(state, t), hash01(state.seed, "poifr", t.id, slot)); // shops.js: the franchise (a kind with none: null)
+  return { kind, hidden: false, pool: pool == null ? null : Math.min(1, pool), visits: 0, lastDay: null, cont: null, threatStamp: null, stripped: false, ...(site ? { site: true } : {}), ...(v ? { v } : {}) };
 }
 // The tile's list from the world seed and the tile (no state.rng: the same for a world made before POIs existed).
 /** @param {State} state @param {Tile} t */
@@ -166,6 +171,8 @@ export function generatePois(state, t) {
   // own dice after the list above, so the list before it (and a save's changes to it) stays as it was.
   const camp = campsiteExtra(state, t, out, inKnownZone(state, t));
   if (camp) out.push(camp);
+  // shops.js: up to two shops or services on a suburb or a city block, on their own dice after everything above.
+  out.push(...shopExtras(state, t, out, inKnownZone(state, t), POI.MAX));
   return out;
 }
 
@@ -238,7 +245,7 @@ export const poiDef = (poi) => (poi ? LOCATIONS[poi.kind] : null);
 export function poiName(t, i) {
   const p = poiAt(t, i);
   if (!p) return "";
-  return isSitePoi(t, i) ? t.loc.name : LOCATIONS[p.kind].name;
+  return isSitePoi(t, i) ? t.loc.name : p.v ? franchiseName(p.kind, p.v) : LOCATIONS[p.kind].name; // shops.js: a franchise's name
 }
 
 // ---------- pools ----------

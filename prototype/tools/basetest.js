@@ -23,6 +23,7 @@ import { randomName, skillTotal } from "../src/sim/appearance.js";
 import { Rng } from "../src/sim/rng.js";
 import { needsHour } from "../src/sim/needs.js";
 import { emptyPack } from "../src/sim/eating.js";
+import { TOOL_KINDS } from "../src/sim/data-tools.js"; // tools for building and crafting (what each counts as)
 
 const seed = Number(process.argv[2] || 42);
 let fails = 0, passes = 0;
@@ -481,6 +482,7 @@ const leaders = (st) => st.survivors.filter((s) => s.alive && s.leader);
     else if (r.gear === "makeshiftpick") check(!/power|armor/.test(text) && /picks locks/.test(text) && /3 a craft/.test(text), `${key}: makeshift picks say what they pick and how many a craft (${text})`); // sim/locks.js
     else if (r.gear === "boards") check(!/power|armor/.test(text) && /door/.test(text) && /window/.test(text) && /hit points/.test(text), `${key}: boards and nails say what they board up and how strong (${text})`); // sim/barricade.js
     else if (d.furniture) check(!/power|armor/.test(text) && /bed/.test(text) && /set inside/.test(text), `${key}: furniture says how many beds it sets and the mood (${text})`); // sim/beds.js
+    else if (Object.values(TOOL_KINDS).some((k) => k.items.includes(r.gear))) check(!/power|armor/.test(text) && /for building and crafting/.test(text), `${key}: a tool says what it counts as (${text})`); // sim/toolreqs.js
     else check(/armor/.test(text) && !/power/.test(text), `${key}: armor lists its armor value (${text})`);
   }
   const h = hub(st);

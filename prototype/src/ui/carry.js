@@ -21,7 +21,7 @@ const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
 const first = (s) => esc(String(s.name).split(" ")[0]);
 const kg = (x) => Math.round(x * 10) / 10;
-export const HOLD_ICON = { water: "💧", rawwater: "🪣", food: "🥫", meat: "🍖", fuel: "⛽", jars: "🫙", wood: "🪵", parts: "⚙", scrap: "🔩", carparts: "🛞" };
+export const HOLD_ICON = { water: "💧", rawwater: "🪣", food: "🥫", meat: "🍖", fuel: "⛽", jars: "🫙", wood: "🪵", parts: "⚙", scrap: "🔩", carparts: "🛞", buildmat: "🧱", metalsheet: "🛡" };
 const ICON = HOLD_ICON; // the team's supplies in a chip (ui/inventory.js: the Carried list in a fight too)
 const partyOfSurvivor = (state, s) => (s && s.location && s.location.kind === "party" ? state.parties.find((x) => x.id === s.location.partyId && x.owner === "player") : null);
 

@@ -18,6 +18,7 @@
 // (inventory.js START_DUR).
 import { GEAR } from "./data.js";
 import { YEAR_DAYS } from "./eras.js"; // the game year (112 days); eras.js imports nothing
+import { ROWS, mergeRows } from "./data-shops.js";
 
 // q: quality range; d: uses left as a share of full. name: what the source is (the report table, tools/itemcondtest.js).
 // boxed (optional): { p, q, d }: a share p of the finds roll from these ranges instead (a sealed box at the back).
@@ -103,13 +104,13 @@ export const SITE_SOURCE = {
   police: "police", prison: "police",
   gunstore: "shop", hardware: "shop", mall: "shop", pharmacy: "shop", supermarket: "shop", grocery: "shop", feedstore: "shop",
   town: "home", city: "home", apartments: "home", motel: "home", farm: "home", ranch: "home", cabin: "home",
-  house: "home", neighbourhood: "home", corner: "shop", pizza: "shop", farmstand: "shop", // points of interest (pois.js)
+  house: "home", neighbourhood: "home", corner: "shop", pizza: "shop", farmstand: "shop", pawnshop: "shop", // points of interest (pois.js)
   crashsite: "wreck", crash_mil: "wreck", crash_cargo: "wreck", crash_med: "wreck", crash_news: "wreck",
 };
 // A raid container's area type (combat.js AREAS); an armoury goes by its site (a police or a military one).
 export const AREA_SOURCE = {
   house: "home", farmhouse: "home", kitchen: "home", lockers: "home", cabin: "home",
-  store: "shop", pharmacy: "shop", gunshop: "shop",
+  store: "shop", pharmacy: "shop", gunshop: "shop", pawnshop: "shop", hardware: "shop",
   barracks: "military", motorpool: "military", cargodrop: "military",
   cellblock: "police", control: "police",
   wreck: "wreck", roadcars: "wreck", milwreck: "wreck", medwreck: "wreck", newswreck: "wreck", fuselage: "wreck",
@@ -203,3 +204,6 @@ export function qualityWord(q) {
   for (const [lim, w] of QUALITY_WORDS) if (v < lim) return w;
   return "excellent";
 }
+
+// data-shops.js: the town's and the city's shops and services (their rows; this module's own rows win).
+mergeRows(SITE_SOURCE, ROWS.SITE_SOURCE); mergeRows(AREA_SOURCE, ROWS.AREA_SOURCE);

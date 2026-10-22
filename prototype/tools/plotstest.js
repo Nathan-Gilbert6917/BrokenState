@@ -7,12 +7,13 @@ import { createWorld, hub, newId, makeSurvivor } from "../src/sim/world.js";
 import {
   BUILDINGS, PLOTS, addBuilding, canBuild, queueBuild, cancelBuild, constructionHour, plotCap, plotsUsed, plotsFree,
   barrels, barrelCap, barrelTier, barrelRoom, queueBarrelUpgrade, canUpgradeBarrel, setBarrelHolds, demolish, demolishRefund, SHELTER,
-  BEDS, BARRACKS_UP, baseBeds, queuedBeds, count, canExpandBunkhouse, queueBunkhouseExpand, canDemolish, jobName,
+  BEDS, BARRACKS_UP, WATER_BARREL, baseBeds, queuedBeds, count, canExpandBunkhouse, queueBunkhouseExpand, canDemolish, jobName,
 } from "../src/sim/buildings.js";
 import { housingAI } from "../src/sim/autopilot.js";
 import { waterCapacity, tankCapacity, rawRoom, waterLayout, basesDaily } from "../src/sim/economy.js";
 import { storeCapacity } from "../src/sim/storage.js";
 import { RAW } from "../src/sim/water.js";
+import { siteCost } from "../src/sim/buildmats.js"; // what a cost takes from the stores (building materials and sheets made from scrap when short)
 
 const seed = Number(process.argv[2] || 42);
 let fails = 0, passes = 0;
@@ -89,7 +90,7 @@ const skilled = (st, b) => { const s = makeSurvivor(st, 1); s.location = { kind:
   check(plotsUsed(h, "building") === 1, "one plot in use");
   const msg = demolish(st, h, b.id);
   check(!h.buildings.length && plotsUsed(h, "building") === 0, `the storehouse is gone and its plot free (${msg})`);
-  check(h.stock.scrap === Math.floor(BUILDINGS.storehouse.cost.scrap / 2), `half the scrap comes back (${h.stock.scrap})`);
+  check(h.stock.scrap === Math.floor((BUILDINGS.storehouse.cost.scrap || 0) / 2) && (h.stock.metalsheet || 0) === Math.floor(BUILDINGS.storehouse.cost.metalsheet / 2), `half the scrap and metal sheets come back (${h.stock.scrap} scrap, ${h.stock.metalsheet} sheets)`);
   const t = addBuilding(h, "watchtower");
   check(h.watchtower, "a watchtower flags the base");
   demolish(st, h, t.id);
@@ -134,9 +135,9 @@ const skilled = (st, b) => { const s = makeSurvivor(st, 1); s.location = { kind:
   check(barrels(h).length === 4 && barrels(h).every((b) => barrelTier(b) === 1 && b.holds === RAW), "4 tier-1 barrels holding un-purified water");
   check(waterCapacity(h) === tanks + 4 * 25, `4 barrels add 100 room (${waterCapacity(h)})`);
   const [b1, b2] = barrels(h);
-  const scrap = h.stock.scrap;
+  const scrap = h.stock.scrap, rackTake = siteCost(h.stock, WATER_BARREL.tiers[2].cost).take; // its building material made from scrap when the stores have none
   check(/queued/.test(queueBarrelUpgrade(st, h, b1.id)), "a barrel's upgrade is queued");
-  check(h.stock.scrap === scrap - 8, "paid for");
+  check(h.stock.scrap === scrap - rackTake.scrap, "paid for");
   check(!canUpgradeBarrel(st, h, b1.id).ok, "one upgrade at a time per barrel");
   check(plotsUsed(h, "utility") === 4, "the upgrade takes no plot");
   check(!canBuild(st, h, "water_barrel").ok && /Limit/.test(canBuild(st, h, "water_barrel").reason), "and does not count as a fifth barrel");
@@ -151,7 +152,7 @@ const skilled = (st, b) => { const s = makeSurvivor(st, 1); s.location = { kind:
   const job = h.construction[0];
   const s0 = h.stock.scrap;
   cancelBuild(st, h, job.id);
-  check(h.stock.scrap === s0 + 8 && barrelTier(b2) === 1, "a cancelled upgrade refunds its cost");
+  check(h.stock.scrap === s0 + (job.cost.scrap || 0) && job.cost.scrap > 0 && barrelTier(b2) === 1, "a cancelled upgrade refunds its cost (what it paid)");
   // Purified or un-purified.
   setBarrelHolds(h, b1.id, "water");
   check(barrelRoom(h, "water") === 100 && barrelRoom(h, RAW) === 75, "one tank set to purified");
@@ -169,7 +170,8 @@ const skilled = (st, b) => { const s = makeSurvivor(st, 1); s.location = { kind:
   check((h.stock[RAW] || 0) <= tanks + 75 + 1e-6, `the well stops at the un-purified room (${h.stock[RAW]})`);
   // Demolishing a tank gives half of everything it cost back.
   const back = demolishRefund(b1);
-  check(back.scrap === Math.floor((4 + 8 + 12) / 2) && back.parts === 0, `a water tank salvages half its scrap (${JSON.stringify(back)})`);
+  const tierScrap = (BUILDINGS.water_barrel.cost.scrap || 0) + (WATER_BARREL.tiers[2].cost.scrap || 0) + (WATER_BARREL.tiers[3].cost.scrap || 0);
+  check(back.scrap === Math.floor(tierScrap / 2) && back.parts === 0, `a water tank salvages half its scrap (${JSON.stringify(back)})`);
 }
 
 // 6. Storage crates.
@@ -226,15 +228,15 @@ const skilled = (st, b) => { const s = makeSurvivor(st, 1); s.location = { kind:
   const beds0 = baseBeds(h);
   check(canBuild(st, h, "barracks").noPlot, "no plot for a new barracks");
   check(canExpandBunkhouse(st, h, bunks[0].id).ok, "a standing bunkhouse can be expanded with every plot taken");
-  const sc = h.stock.scrap, pa = h.stock.parts;
+  const sc = h.stock.scrap, pa = h.stock.parts, upTake = siteCost(h.stock, BARRACKS_UP.cost).take; // its building materials and sheets made from scrap when the stores have none
   queueBunkhouseExpand(st, h, bunks[0].id);
-  check(h.stock.scrap === sc - BARRACKS_UP.cost.scrap && h.stock.parts === pa - BARRACKS_UP.cost.parts, `it costs ${BARRACKS_UP.cost.scrap} scrap and ${BARRACKS_UP.cost.parts} parts`);
+  check(h.stock.scrap === sc - upTake.scrap && h.stock.parts === pa - BARRACKS_UP.cost.parts, `it costs ${upTake.scrap} scrap and ${BARRACKS_UP.cost.parts} parts`);
   check(plotsUsed(h, "building") === PLOTS.hub.building && queuedBeds(h) === 6 && baseBeds(h) === beds0, `no new plot, 6 beds to come, the 6 in use meanwhile (${queuedBeds(h)}, ${baseBeds(h)})`);
   check(jobName(h.construction[0]) === "Expand a bunkhouse into a barracks", `the queue names it (${jobName(h.construction[0])})`);
   check(!canExpandBunkhouse(st, h, bunks[0].id).ok && !canDemolish(st, h, bunks[0].id).ok, "not expanded twice, not pulled down while it is");
   const sc1 = h.stock.scrap;
   cancelBuild(st, h, h.construction[0].id);
-  check(h.stock.scrap === sc1 + BARRACKS_UP.cost.scrap && !h.construction.length, "cancelled untouched: everything back");
+  check(h.stock.scrap === sc1 + upTake.scrap && !h.construction.length, "cancelled untouched: everything back");
   queueBunkhouseExpand(st, h, bunks[0].id);
   finishAll(st, h);
   check(bunks[0].type === "barracks" && baseBeds(h) === beds0 + 6 && plotsUsed(h, "building") === PLOTS.hub.building, `done: the bunkhouse is a barracks on its own plot (${baseBeds(h)} beds)`);

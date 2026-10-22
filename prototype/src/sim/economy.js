@@ -6,7 +6,7 @@
 import { TERRAIN, LOCATIONS, SUPPLIES, supplyFew, GEAR, supValue } from "./data.js";
 import { isCart, cartWorth, ROAD_CARTS } from "./carts.js"; // a cart left on a tile: stripped a thing at a time (deathSitesDaily)
 import { itemLoad } from "./inventory.js";
-import { sortParts, rollBuildmat } from "./loot.js"; // parts found by kind; building materials (their own dice)
+import { sortParts, rollBuildmat, rollSheets } from "./loot.js"; // parts found by kind; building materials (their own dice)
 import {
   log, addCard, day, hub, atBase, alive, skill, hurt, survivorById, factionById, makeSurvivor, residents, checkGameOver, localId,
 } from "./world.js";
@@ -51,6 +51,7 @@ import { keepItem } from "./arsenal.js"; // a group that loots a death site keep
 import { lootQty } from "./worldcfg.js"; // the run's dials: the loot by kind (the base's scavengers)
 import { winterScavFood } from "./winter.js"; // winter: less food in a find (call-time only)
 import { note, goodsRounds } from "./ledger.js"; // the conservation test's ledger (off in play): rounds off the ground
+import { personKey } from "./members.js"; // a person's id for the dice: a member who joined keeps their own (call-time only)
 
 export const ROLES = {
   farm:     { name: "Farm",     desc: "Tends, plants and harvests the crop plots (Farming tab). Crops take days to ripen; more farmers per plot and better Farming give a bigger harvest from the same days. Ripe crops left unharvested rot." },
@@ -66,7 +67,7 @@ export const ROLES = {
   hunt:     { name: "Hunt",     desc: "Hunts the base's hunting grounds at dawn and dusk (its own tile and the tiles next to it; with a Hunting cabin the land within 2 tiles), walking out to the best ground and home with the catch, by the base's hunting mix (Farming tab): traps (silent, small game), bows (silent, the base's arrows) or guns (the base's ammo; shots add Heat and can draw the dead); no weapon: snares. Brings in fresh game, which spoils fast unless it is eaten, dried or smoked. Hunted hard, the land runs out of game for weeks." },
   fish:     { name: "Fish",     desc: "Fishes the river or lake by a base 3 hours a day, with a fishing rod, a net or a spear (carried, or in the armory: one each, a net for two). Brings in fresh fish, which spoils fast. The tools wear a use a day." },
   forage:   { name: "Forage",   desc: "Gathers wild food within 2 tiles of the base 6 hours a day (foraging.js): berries, nuts, mushrooms, greens, roots, apples, now and then herbs (meds) or honey. About a ration a day each in summer, more in autumn, little in spring, next to nothing in winter; Farming and Scouting help. The land picked hard grows back over weeks." },
-  wood:     { name: "Cut wood", desc: "Cuts wood within 2 tiles of the base 6 hours a day (woodcutting.js): the heating (a base burns wood before fuel: 15, 1.5 kg, a head a day below freezing, 4.5 for the night's fire on a cool night under 8°C) and a camp's fire (its people's warmth, the water boiled and the pot). Forest gives most (about 140 a day each with an axe), hills fair, farmland and suburbs little, a city next to nothing. An axe (their own or one from the armory), a machete or a sledgehammer cuts much faster than bare hands; Farming and Mechanics help. Loud (base Heat), and axes slip. The land cut hard grows back over seasons." },
+  wood:     { name: "Cut wood", desc: "Cuts wood within 2 tiles of the base 6 hours a day (woodcutting.js): the heating (a base burns wood before fuel: 15, 1.5 kg, a head a day below freezing, 4.5 for the night's fire on a cool night under 8°C) and a camp's fire (its people's warmth, the water boiled and the pot). Forest gives most (about 175 a day each with a fire axe, 60 by hand), hills fair, farmland and suburbs little, a city next to nothing. An axe (their own or one from the armory) cuts about three times as much as bare hands (a felling axe ×2.2, a fire axe ×2, a hatchet ×1.6, bare hands ×0.7); a bow saw, a machete or a sledgehammer helps less; Farming and Mechanics help. Loud (base Heat), and axes slip. The land cut hard grows back over seasons." },
   water:    { name: "Fetch water", desc: "Carries water from the nearest water in the base's own land (a river or lake tile the base holds, or one right next to it that nobody holds: a camp's river bank) in two buckets: out, filling them, back, a few trips a day (fewer the further the water). River and lake water is un-purified: it goes into the base's un-purified water (the worm's eggs; a water boiler or filters make it safe), up to the barrels' room. Needs a water tile in the base's land." },
   // kitchen.js: the Kitchen's cooks (one per 12 people living here).
   cook:     { name: "Cook",     desc: "Cooks the base's meals in the Kitchen (Construction: a building plot), one cook for every 12 people living here: cooks only in the cooking hours (05:00–06:00, 16:00–20:00) with a second job the rest of the day (Cook + Farm …), or the kitchen all day (plain Cook). Hot meals stretch the food (everyone fed at the kitchen eats 10% less a day, up to 13% with a good cook: Cooking 5+), lift spirits (+1 mood a day, +1.5 with Cooking 6+) and boil a quarter of the day's drinking water; the stove burns wood (28 a day for 12 people). Trains Cooking. Without a kitchen there is nothing to cook." },
@@ -197,15 +198,17 @@ export function scavTrip(state, base, s, tile, share, k = 0) {
     let q = lootQty(state, key0, rng.int(SCAV_FIND[key0][0], SCAV_FIND[key0][1])); // worldcfg.js: the run's loot dial for this kind
     if (key0 === "food") q = winterScavFood(state, q); // winter.js
     if (!(q > 0)) continue;
-    const tag = `scav${localId(state, s.id)}${k ? `:${k}` : ""}${i ? `/${i}` : ""}`; // (a world-local id: tools/sameseedtest.js)
+    const tag = `scav${personKey(state, s.id)}${k ? `:${k}` : ""}${i ? `/${i}` : ""}`; // (a world-local id: tools/sameseedtest.js; a member who joined keeps theirs, members.js personKey)
     if (key0 === "ammo") out.ammo = { type, q: (out.ammo ? out.ammo.q : 0) + q, tile };
     else if (key0 === "food" || key0 === "preserved") addFoodFind(state, got, type, q, { tile, preserved: key0 === "preserved" }); // foods.js: the food a place like this holds, as its shelves have it left
     else if (key0 === "parts" && t && t.loc) for (const [pk, pq] of Object.entries(sortParts(state, t.loc.type, q, tag))) got[pk] = (got[pk] || 0) + pq; // loot.js: parts by kind (their own dice)
     else got[key0] = (got[key0] || 0) + q;
   }
   if (out.ammo) out.ammoQ = out.ammo.q;
-  const bm = rollBuildmat(state, tile, 0.5, `bscav${localId(state, s.id)}${k ? `:${k}` : ""}`); // building materials around the base too (half a search hour's chance, once a trip)
+  const bm = rollBuildmat(state, tile, 0.5, `bscav${personKey(state, s.id)}${k ? `:${k}` : ""}`); // building materials around the base too (half a search hour's chance, once a trip)
   if (bm > 0) got.buildmat = (got.buildmat || 0) + bm;
+  const ms = rollSheets(state, tile, 0.5, `bscav${personKey(state, s.id)}${k ? `:${k}` : ""}`); // metal sheets too (loot.js SHEET_FINDS; half a search hour's chance)
+  if (ms > 0) got.metalsheet = (got.metalsheet || 0) + ms;
   out.got = got;
   out.finds = n;
   return out;
@@ -221,7 +224,7 @@ export function scavCredit(state, base, s, find, stock = base.stock) {
   for (const [key, n] of Object.entries(all)) noteOutput(state, base, "scavenge", n, key);
   noteOutput(state, base, "scavenge", find.finds, "finds");
   const named = { ...find.got, ...rounds };
-  log(state, `${s.name.split(" ")[0]} turned up ${Object.entries(named).map(([key, n]) => (ROUND_SUPPLIES[key] ? roundsText({ [key]: n }) : FOODS[key] ? foodWord(key, n) : `${n} ${key === "buildmat" ? "building materials" : keyWord(key)}`)).join(", ")} around ${base.name}.`, "good");
+  log(state, `${s.name.split(" ")[0]} turned up ${Object.entries(named).map(([key, n]) => (ROUND_SUPPLIES[key] ? roundsText({ [key]: n }) : FOODS[key] ? foodWord(key, n) : `${n} ${key === "buildmat" ? "building materials" : key === "metalsheet" ? (n === 1 ? "metal sheet" : "metal sheets") : keyWord(key)}`)).join(", ")} around ${base.name}.`, "good");
 }
 // Daily: the Scavenge job's day is in (its trips brought any finds home, jobtrips.js); the ground round the base is
 // picked over for good by the people on it.

@@ -7,7 +7,7 @@
 //   wear.js       melee weapons, bows, armour, helmets, plates, bags, rigs, cases, the bicycle, the carts
 //   tools.js      books, manuals, tools, lights, optics, radios, medical kits, throwables, camp gear, defences
 //   valuables.js  trade goods and comforts: jewellery, smokes, liquor, treats, toiletries, gadgets, collectibles
-//   tents.js      the tent bags (sim/tents.js)
+//   tents.js      the tent bags (sim/tents.js), a torn tent's canvas, the beds as furniture (sim/beds.js)
 // Each drawing is a 16 × 16 grid, outlined by toCanvas into an 18 × 18 picture, 3 canvas pixels a grid pixel; cached by
 // key. GEAR and SUPPLIES share some keys (a box of .223 and loose .223), so the two are asked for apart.
 // tools/itemarttest.js: every item has its drawing and no two look the same; tools/itemartpreview.html shows them all.

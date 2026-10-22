@@ -50,6 +50,7 @@ import { cookFireRedundant, governBase, safetyAI } from "../src/sim/autopilot.js
 import { groupKitchenWood, groupKitchenDaily, groupKitchenGrowth, groupKitchenMorale, groupKitchenText } from "../src/sim/groupworks.js";
 import { desertPressure } from "../src/sim/groupcare.js";
 import { groupCardExtras } from "../src/ui/diplomacy.js";
+import { siteCost } from "../src/sim/buildmats.js"; // building materials and sheets in every build (2026-10-21): costs read in scrap's worth
 
 const SEED = Number(process.argv[2] || 42);
 let fails = 0, passed = 0;
@@ -77,14 +78,14 @@ const cook = (s, cooking = 3) => { s.role = "cook"; s.skills.cooking = cooking; 
 section("The building");
 {
   const d = BUILDINGS.canteen;
-  check(d && d.name === "Kitchen" && d.plot === "building" && d.max === 1 && d.cost.scrap === 14 && d.cost.parts === 1 && d.cost.wood === 300 && d.hours === 24, `the Kitchen: building plot, 14 scrap, a part and 300 wood (woodwork), 24 hours (${JSON.stringify(d && d.cost)} ${d && d.hours}h)`);
+  check(d && d.name === "Kitchen" && d.plot === "building" && d.max === 1 && (d.cost.scrap || 0) + 3 * (d.cost.buildmat || 0) + 5 * (d.cost.metalsheet || 0) === 14 && d.cost.metalsheet >= 1 && d.cost.parts === 1 && d.cost.wood === 300 && d.hours === 24, `the Kitchen: building plot, 14 scrap's worth (building materials and a metal sheet of it: 2026-10-21), a part and 300 wood (woodwork), 24 hours (${JSON.stringify(d && d.cost)} ${d && d.hours}h)`);
   check(BUILDINGS.kitchen.name === "Preserving room" && BUILDINGS.kitchen.station === "preserve", "the old key `kitchen` is the Preserving room and still jars food");
   check(BUILDINGS.cookhouse.name === "Cook fire" && BUILDINGS.cookhouse.plot === "utility", "the cook fire unchanged");
   const { st, h } = mk(10);
   check(canBuild(st, h, "canteen").ok, `can be built at the hub (${canBuild(st, h, "canteen").reason || "ok"})`);
-  const before = h.stock.scrap;
+  const before = h.stock.scrap, take = siteCost(h.stock, BUILDINGS.canteen.cost).take;
   queueBuild(st, h, "canteen");
-  check(h.construction.some((c) => c.type === "canteen") && h.stock.scrap === before - BUILDINGS.canteen.cost.scrap, "queued and paid");
+  check(h.construction.some((c) => c.type === "canteen") && h.stock.scrap === before - take.scrap, "queued and paid");
   check(!canBuild(st, h, "canteen").ok, "only one");
   const b = atBase(st, h.id).slice(0, 3);
   for (const s of b) { s.role = "build"; s.pinned = true; }

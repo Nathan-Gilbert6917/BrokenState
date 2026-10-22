@@ -5,6 +5,7 @@
 // every automatic dose, medic treatment capacity and surgery time; the admit line for beds and an understaffed
 // upgrade running as a lower tier (B-10); the Medical tab's rate against the real change (P-21); 200 days, no NaN.
 // Usage: node tools/medtest.js [days] [seed]
+import { stockTools } from "./toolset.js"; // every tool a build or recipe can need (toolreqs.js)
 import { food, addDays } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { unlockAll } from "../src/sim/blueprints.js";
 import { createWorld, tickHour, hub, atBase, alive, residents, makeSurvivor, day } from "../src/sim/world.js";
@@ -23,7 +24,7 @@ const seed = Number(process.argv[3] || 42);
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
 // Tech locks (blueprints.js) are tested in exploretest.js: here every manual is already studied.
-const world = () => { const st = createWorld({ seed, factionCount: 5 }); unlockAll(st); return st; };
+const world = () => { const st = createWorld({ seed, factionCount: 5 }); unlockAll(st); stockTools(hub(st)); return st; }; // every tool (toolset.js)
 const setHospital = (base, type) => { addBuilding(base, type); };
 const plenty = (b) => Object.assign(b.stock, { scrap: 500, parts: 50, meds: 100 });
 const nextDay = (st) => { st.hour += 24; };

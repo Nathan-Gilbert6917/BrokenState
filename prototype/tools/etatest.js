@@ -8,8 +8,8 @@
 // re-estimates the remaining time every hour: arrival must match the last re-estimate exactly.
 // Usage: node tools/etatest.js [cases per seed] [seeds...]
 import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
-import { createWorld, tickHour, hub, atBase, survivorById } from "../src/sim/world.js";
-import { launchExpedition, estimateTrip, planPath, hoursLeft, orderMove, partyTile, plannedTile, STANCES, cargoLoad, travelHours, paceOpts } from "../src/sim/parties.js";
+import { createWorld, tickHour, hub, atBase } from "../src/sim/world.js";
+import { launchExpedition, estimateTrip, planPath, hoursLeft, orderMove, partyTile, plannedTile, STANCES, cargoLoad, travelHours, paceOpts, partyMembers } from "../src/sim/parties.js";
 import { queueOrder, queueEstimate } from "../src/sim/orders.js";
 import { vehiclesAtBase, partyFuel } from "../src/sim/vehicles.js";
 import { crossingsFrom, boatPlan, boatOrder } from "../src/sim/crossing.js";
@@ -134,7 +134,7 @@ for (const seed of seeds) {
     if (leg2.gone || !state.parties.includes(p)) continue;
 
     // Queue: move → camp 4h → treat → move, all given while the team waits. One estimate for the lot.
-    const m = survivorById(state, p.members[0]);
+    const m = partyMembers(state, p)[0]; // a living one: one lost on the road (loneattack.js straggler) stays in p.members
     m.health = 60;
     const here3 = partyTile(p);
     const near = state.tiles.filter((t) => t.terrain !== "water" && state.grid.distance(t.id, here3) >= 2 && state.grid.distance(t.id, here3) <= 4 && planPath(state, here3, t.id, p.vehicle));

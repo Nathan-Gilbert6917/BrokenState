@@ -149,6 +149,7 @@ export function helpRestore(state) {
     const w = s.helpWas;
     delete s.helpWas;
     if (s.alive && s.role === w.as) { s.role = w.role; s.station = w.role === "operate" ? w.station : null; }
+    else if (s.restPrev === w.as) s.restPrev = w.role; // sent to rest while helping (a break, a card, the festival: s.restPrev = s.role): their own job after it, not the hour's help
   }
 }
 // Every hour after every role is set (world.js, after sickrest.js sickRestHour): a Manual person whose job has no

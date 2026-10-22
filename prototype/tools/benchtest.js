@@ -6,6 +6,7 @@
 // working, and the governor (autopilot.js) builds a bench, upgrades it and puts up the ammo bench.
 // Usage: node tools/benchtest.js [seed]
 import { unlockAll } from "../src/sim/blueprints.js";
+import { stockTools } from "./toolset.js";
 import { createWorld, hub, newId, makeSurvivor, atBase } from "../src/sim/world.js";
 import {
   BUILDINGS, BENCH, addBuilding, canBuild, queueBuild, constructionHour, plotsUsed, plotsFree, count, countAll, benchTier, benchOf, SHELTER,
@@ -20,10 +21,11 @@ import { setAutopilot, governBase, housingAI } from "../src/sim/autopilot.js";
 const seed = Number(process.argv[2] || 42);
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
-const W = () => { const st = createWorld({ seed, factionCount: 6 }); unlockAll(st); return st; };
-const rich = (b) => Object.assign(b.stock, { scrap: 9999, parts: 999, meds: 999, food: 500, water: 200, wood: 99999 });
+const W = () => { const st = createWorld({ seed, factionCount: 6 }); unlockAll(st); stockTools(hub(st)); return st; }; // every tool (toolset.js): the benches are the subject here
+const rich = (b) => Object.assign(b.stock, { scrap: 9999, parts: 999, meds: 999, food: 500, water: 200, wood: 99999, metalsheet: 99 });
 const mkOutpost = (st, tile) => {
   const b = { id: newId(), tile, type: "outpost", name: "Test Outpost", stock: { food: 0, water: 0, fuel: 0, meds: 0, ammo: 0, parts: 0, scrap: 0 }, radio: false, watchtower: false, buildings: [], construction: [], armory: [] };
+  stockTools(b); // every tool a build or recipe can need (toolreqs.js): the tests here are about the benches
   st.bases.push(b);
   return b;
 };
@@ -38,7 +40,7 @@ const benches = Object.keys(BENCH);
   check(benches.every((k) => BUILDINGS[k].plot === "utility" && BUILDINGS[k].max === 1 && BUILDINGS[k].craft === BENCH[k]), "each on a utility plot, one a base, its numbers from BENCH");
   check(BUILDINGS.workbench.upgrades === "craftbench" && BUILDINGS.toolbench.upgrades === "workbench", "each tier upgrades the one below");
   // barestart: no base starts with one, so the first bench is an early but real choice (buildings.js BENCH).
-  check(!BUILDINGS.craftbench.req && BUILDINGS.craftbench.cost.scrap === 12 && BUILDINGS.craftbench.cost.parts === 1 && BUILDINGS.craftbench.hours === 12, "the crafting bench: 12 scrap and a part, 12 work-hours, no skill");
+  check(!BUILDINGS.craftbench.req && BUILDINGS.craftbench.cost.scrap === 10 && BUILDINGS.craftbench.cost.parts === 1 && BUILDINGS.craftbench.cost.wood === 100 && BUILDINGS.craftbench.hours === 12, "the crafting bench: 10 scrap, a part and 100 wood (woodwork), 12 work-hours, no skill");
   check(BENCH.craftbench.rate > 1 && BENCH.workbench.rate > BENCH.craftbench.rate && BENCH.toolbench.rate > BENCH.workbench.rate, "each tier crafts faster");
   check(BENCH.craftbench.quality > 0 && BENCH.workbench.quality > BENCH.craftbench.quality && BENCH.toolbench.quality > BENCH.workbench.quality, "each tier crafts better");
   check(!BENCH.craftbench.workshop && BENCH.workbench.workshop && BENCH.toolbench.workshop, "the workbench and up are workshops, the crafting bench is not");

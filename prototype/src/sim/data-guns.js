@@ -31,6 +31,7 @@
 // living person bleeds them 5 at the start of each of their next 2 turns; reach: 2 = strikes 2 tiles off in a straight
 // line with nobody between; throw = a spear thrown that many tiles (combat.js "throwspear"); takedown = + to a
 // takedown with it (stealth.js); stab = finds a dead soldier's gap like a knife (deadsoldiers.js STAB).
+import { ROWS, mergeRows } from "./data-shops.js";
 
 const W = "weapon", SH = "shooting";
 /** @type {Record<string, any>} */
@@ -68,11 +69,11 @@ export const GUN_GEAR = {
   // ---------- melee ----------
   combatknife: { name: "Combat knife",           slot: W, skill: SH, power: 1.7, req: 0,  value: 18,  noise: 0, small: true, weight: 0.35, cat: "melee",
                  desc: "A military fighting knife: quick (strike and still move), +5 to hit, and its point finds the gap in a dead soldier's armour. Good for takedowns (+15)." },
-  hatchet:     { name: "Hatchet",                slot: W, skill: SH, power: 1.8, req: 0,  value: 10,  noise: 0, weight: 0.8, cat: "melee", chop: 1.4,
+  hatchet:     { name: "Hatchet",                slot: W, skill: SH, power: 1.8, req: 0,  value: 10,  noise: 0, weight: 0.8, cat: "melee", chop: 1.6,
                  desc: "A camp hatchet: quick (strike and still move), and it cuts wood and an ice hole." },
-  tomahawk:    { name: "Tomahawk",               slot: W, skill: SH, power: 2.1, req: 0,  value: 30,  noise: 0, pry: true, weight: 0.7, cat: "melee", chop: 1.3,
+  tomahawk:    { name: "Tomahawk",               slot: W, skill: SH, power: 2.1, req: 0,  value: 30,  noise: 0, pry: true, weight: 0.7, cat: "melee", chop: 1.5,
                  desc: "A steel tactical tomahawk with a spike: quick (strike and still move), cuts wood, and pries locks open in a raid." },
-  kukri:       { name: "Kukri",                  slot: W, skill: SH, power: 2.1, req: 0,  value: 20,  noise: 0, weight: 0.6, cat: "melee", chop: 1.2,
+  kukri:       { name: "Kukri",                  slot: W, skill: SH, power: 2.1, req: 0,  value: 20,  noise: 0, weight: 0.6, cat: "melee", chop: 1.1,
                  desc: "A heavy curved blade: deep cuts that bleed people (35% a hit: 5 a turn for two turns)." },
   katana:      { name: "Katana",                 slot: W, skill: SH, power: 2.8, req: 3,  value: 45,  noise: 0, weight: 1.2, cat: "melee",
                  desc: "A collector's sword, sharper than it has any right to be: +5 to hit, hard hits that bleed people (30%). Needs Shooting 3 to use well." },
@@ -80,17 +81,19 @@ export const GUN_GEAR = {
                  desc: "A miner's pick: slow (−8 to hit) but it punches through skulls and helmets, staggers (20%), and pries locks open in a raid." },
   hammer:      { name: "Claw hammer",            slot: W, skill: SH, power: 1.1, req: 0,  value: 4,   noise: 0, small: true, weight: 0.6, cat: "melee",
                  desc: "A framing hammer from a toolbox: quick (strike and still move), fits a pocket, and a decent club for a takedown (+15)." },
-  etool:       { name: "Entrenching tool",       slot: W, skill: SH, power: 1.8, req: 0,  value: 10,  noise: 0, weight: 1.1, cat: "melee", chop: 1.1,
+  etool:       { name: "Entrenching tool",       slot: W, skill: SH, power: 1.8, req: 0,  value: 10,  noise: 0, weight: 1.1, cat: "melee", chop: 0.85,
                  desc: "An army folding shovel with a sharpened edge: chops like an axe and staggers (20%)." },
   golfclub:    { name: "Golf club",              slot: W, skill: SH, power: 1.4, req: 0,  value: 6,   noise: 0, weight: 0.5, cat: "melee",
                  desc: "A steel driver from a garage or a locker: light, staggers (20%), good for a takedown (+15)." },
+  hockeystick: { name: "Hockey stick",           slot: W, skill: SH, power: 1.3, req: 0,  value: 5,   noise: 0, weight: 0.6, cat: "melee",
+                 desc: "A composite hockey stick from a sporting goods store: light and long, it knocks the dead back (staggers 25%) but hits softer than a bat." },
 };
 // Durability (data.js GEAR_DUR, crafting.js wear): fights before it breaks. Guns 50–90 (the AK and the double-barrel
 // last longest, the compact and the .22s the least), melee 30–70 (steel tools outlast a golf club or a sword).
 const ROSTER_DUR = {
   pistol22: 55, compact9: 50, pistol45: 70, smg: 60, ak: 90, lmg: 60, dbshotgun: 80, sawnoff: 70, semishotgun: 60,
   rifle22: 65, dmr: 60, sniper: 80, amr: 70,
-  combatknife: 50, hatchet: 50, tomahawk: 60, kukri: 55, katana: 40, pickaxe: 70, hammer: 60, etool: 50, golfclub: 30,
+  combatknife: 50, hatchet: 50, tomahawk: 60, kukri: 55, katana: 40, pickaxe: 70, hammer: 60, etool: 50, golfclub: 30, hockeystick: 30,
 };
 for (const [k, v] of Object.entries(ROSTER_DUR)) if (GUN_GEAR[k]) GUN_GEAR[k].dur = v;
 
@@ -137,6 +140,7 @@ export const GUN_WEAPONS = {
   hammer:      { name: "Claw hammer",        melee: true, dmg: [11, 17], mclass: "blunt", quick: true, takedown: 15 },
   etool:       { name: "Entrenching tool",   melee: true, dmg: [17, 26], mclass: "chop", stagger: 0.2, takedown: 10 },
   golfclub:    { name: "Golf club",          melee: true, dmg: [14, 22], mclass: "blunt", stagger: 0.2, takedown: 15 },
+  hockeystick: { name: "Hockey stick",       melee: true, dmg: [12, 19], mclass: "blunt", stagger: 0.25, takedown: 10 },
 };
 
 // Fields for weapons that were already in combat.js WEAPONS (merged in after GUN_WEAPONS). Takedown values are the
@@ -151,6 +155,8 @@ export const WEAPON_PATCH = {
   spear:      { mclass: "pierce", reach: 2, throw: 5, takedown: 5 }, // the steel spear (data.js, fishing too)
   springmachete: { mclass: "blade", bleed: 0.3, takedown: 10 },
   sawmachete: { mclass: "blade", bleed: 0.3, takedown: 10 },
+  sheetmachete: { mclass: "blade", bleed: 0.2, takedown: 10 }, // metal-sheet weapons (crafting.js, 2026-10-21)
+  sheethatchet: { mclass: "chop", stagger: 0.1, takedown: 10 },
   bat:        { mclass: "blunt", stagger: 0.25, takedown: 20 },
   nailbat:    { mclass: "blunt", stagger: 0.2, bleed: 0.2, takedown: 15 },
   prybar:     { mclass: "blunt", takedown: 15 },
@@ -228,7 +234,7 @@ export const ROSTER_TAGS = {
   dmr: ["military", "crash"], sniper: ["military", "police"], amr: ["military", "crash"],
   combatknife: ["military", "guns", "crash"], hatchet: ["tools", "outdoor", "camp", "hunt", "garage"], tomahawk: ["military", "guns"],
   kukri: ["guns", "home", "crime", "mall"], katana: ["mall", "home", "shop"],   pickaxe: ["industry", "tools", "farm"], hammer: ["tools", "garage", "home", "industry"], etool: ["military", "camp"],
-  golfclub: ["home", "sport", "garage", "mall", "shop"],
+  golfclub: ["home", "sport", "garage", "mall", "shop"], hockeystick: ["sport", "school", "home"],
   // the launchers and the M2 (wave 2): army stock; a rocket launcher in a gang's armoury now and then
   m79: ["military", "crash"], m32: ["military"], at4: ["military", "crash"], rpg: ["military", "crime"],
 };
@@ -449,9 +455,10 @@ Object.assign(GUN_RARITY, SURV_RARITY);
 export const ARSENAL_FINDS = {
   FIND_W: { common: 1, uncommon: 0.5, scarce: 0.22, rare: 0.08, veryrare: 0.025 },
   site: { gunstore: 0.06, police: 0.03, prison: 0.02, military: 0.03, crash_mil: 0.02, convoy: 0.02, airdrop: 0.01, farm: 0.02, ranch: 0.025,
-          barn: 0.01, feedstore: 0.008, cabin: 0.025, lodge: 0.02, town: 0.006, city: 0.006, motel: 0.005, apartments: 0.005, truckstop: 0.004 },
+          barn: 0.01, feedstore: 0.008, cabin: 0.025, lodge: 0.02, town: 0.006, city: 0.006, motel: 0.005, apartments: 0.005, truckstop: 0.004,
+          pawnshop: 0.05 }, // shops.js: a pawn shop's guns behind the counter
   area: { gunshop: 0.08, armory: 0.07, barracks: 0.03, milwreck: 0.04, motorpool: 0.015, cabin: 0.04, farmhouse: 0.03, barn: 0.015, house: 0.006,
-          cellblock: 0.008, roadcars: 0.005 },
+          cellblock: 0.008, roadcars: 0.005, pawnshop: 0.07 },
   wares: { traders: 0.45, military: 0.35, fortress: 0.25, expansionist: 0.3, raider: 0.2, commune: 0.2, zealot: 0.08, merchants: 0.5 },
   scav: 0.25,
   stash: { cheap: 0.15, mid: 0.35, high: 0.35, highMil: 0.4, pistolcase: 0.12, riflecase: 0.15 },
@@ -535,6 +542,7 @@ export const GUN_DRAWS = {
   farm: { hunting: 1, civilian: 0.5 },
   woods: { hunting: 1, civilian: 0.3 },
   gunshop: { civilian: 1, hunting: 1, police: 0.3, surplus: 0.5, special: 0.06 },
+  pawnshop: { civilian: 1, hunting: 0.8, surplus: 0.5, makeshift: 0.1, police: 0.1 }, // shops.js: what people pawned
   army: { military: 1, special: 0.15 },
   raiders: { civilian: 1, makeshift: 0.8, hunting: 0.6, surplus: 0.6, police: 0.15, military: 0.1 },
   soldiers: { military: 1, special: 0.25, police: 0.1 },
@@ -548,7 +556,7 @@ export const GUN_DRAWS = {
 };
 /** @type {Record<string, Record<string, number> | string>} */
 export const PLACE_DRAWS = {
-  "site:gunstore": "gunshop", "site:police": { police: 1, civilian: 0.25 }, "site:prison": { police: 1 },
+  "site:gunstore": "gunshop", "site:pawnshop": "pawnshop", "area:pawnshop": "pawnshop", "site:police": { police: 1, civilian: 0.25 }, "site:prison": { police: 1 },
   "site:military": { military: 1, special: 0.2, police: 0.15 }, "site:crash_mil": { military: 1, special: 0.3 }, "site:convoy": { military: 1, special: 0.1 },
   "site:airdrop": { military: 1, special: 0.3 },
   "site:farm": "farm", "site:ranch": "farm", "site:barn": "farm", "site:feedstore": "farm",
@@ -833,3 +841,6 @@ export const ROSTER_HELP = `<b>Guns.</b> Pistols: the .22 target pistol (quiet, 
   blow landed, a melee kill; takedowns and thrown spears too) and from fights by the numbers with a melee weapon in hand,
   and has perks at 5, 10 and 15 like every skill (Heavy Hands or Parry, Butcher or Knockout Artist, Bonebreaker or Pit
   Fighter). Volunteers from other groups have it too, by their group's ways.`;
+
+// data-shops.js: the town's and the city's shops and services (their rows; this module's own rows win).
+mergeRows(ARSENAL_FINDS.site, ROWS.ARSENAL_SITE); mergeRows(ARSENAL_FINDS.area, ROWS.ARSENAL_AREA);

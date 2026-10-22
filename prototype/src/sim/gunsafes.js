@@ -29,6 +29,7 @@ import { stashGun } from "./gunfinds.js"; // one of the newer guns now and then 
 import { swapGun } from "./gundist.js"; // the gun distribution: which gun a safe or a case holds
 import { GUN_SOURCES } from "./data-guns.js";
 import { makeBox, isSealed, boxText, openBoxAt } from "./boxes.js"; // a case is a box (call-time only)
+import { ROWS, mergeRows } from "./data-shops.js";
 
 // ---------- what is inside ----------
 // guns: weights (existing GEAR keys); n: [lo, hi] guns, more: the chance of one more; q: a quality range of the
@@ -228,8 +229,8 @@ export function openCaseDump(state, str) {
 // A raid container of this area type (locks.js lockedLoot, its own dice): { item: chance } each its own roll.
 export const GUN_FINDS = {
   house: { pistolcase: 0.012, riflecase: 0.008 }, farmhouse: { riflecase: 0.03, pistolcase: 0.01 }, cabin: { riflecase: 0.035, pistolcase: 0.015 },
-  gunshop: { riflecase: 0.04, pistolcase: 0.04 }, hangar: { pistolcase: 0.005, riflecase: 0.005, anglegrinder: 0.02 },
-  garage: { powerdrill: 0.04, anglegrinder: 0.015 }, workshop: { powerdrill: 0.05, anglegrinder: 0.03 }, warehouse: { powerdrill: 0.015 },
+  gunshop: { riflecase: 0.04, pistolcase: 0.04 }, pawnshop: { pistolcase: 0.05, riflecase: 0.04, powerdrill: 0.03 }, // shops.js: pawned in their cases hangar: { pistolcase: 0.005, riflecase: 0.005, anglegrinder: 0.02 },
+  garage: { powerdrill: 0.04, anglegrinder: 0.015 }, hardware: { powerdrill: 0.06, anglegrinder: 0.03 }, workshop: { powerdrill: 0.05, anglegrinder: 0.03 }, warehouse: { powerdrill: 0.015 },
   motorpool: { anglegrinder: 0.02 },
 };
 // A locked car's trunk (LOCK_LOOT.car): a case 4% of the time. TODO: miltrucks cargo 0.15 (its branch calls rollGunCase).
@@ -252,3 +253,6 @@ export function rollAreaGunFinds(roll, areaType, siteType) {
   }
   return out;
 }
+
+// data-shops.js: the town's and the city's shops and services (their rows; this module's own rows win).
+mergeRows(SEARCH_TOOLS, ROWS.SEARCH_TOOLS); mergeRows(GUN_FINDS, ROWS.GUN_FINDS);

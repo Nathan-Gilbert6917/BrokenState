@@ -178,7 +178,7 @@ export function makeCamp(state, p, tile, { up = false } = {}) {
   const people = partyMembers(state, p);
   const base = {
     id: newId(), tile, type: hubNow ? "outpost" : "hub", name: campName(state, tile),
-    stock: { water: 0, fuel: 0, meds: 0, ammo: 0, arrows: 0, parts: 0, scrap: 0, jars: 0, wood: 0, buildmat: 0, [RAW]: 0 }, // arrows, wood: every base keeps the count (a camp read arrows = undefined: farmtest 43)
+    stock: { water: 0, fuel: 0, meds: 0, ammo: 0, arrows: 0, parts: 0, scrap: 0, jars: 0, wood: 0, buildmat: 0, metalsheet: 0, [RAW]: 0 }, // arrows, wood: every base keeps the count (a camp read arrows = undefined: farmtest 43)
     radio: false, watchtower: false, buildings: [], construction: [], armory: [],
     tier: 0, camp: true, fire: true, campDay: day(state), lastPresent: state.hour, first: firstHubPending(state) && !hubNow, tentsSet: true, // tentsSet: a new camp has no tents (no beds) until one is put up (buildings.js TENTS)
   };
@@ -218,7 +218,7 @@ export function strikeProblem(state, base) {
   return "";
 }
 // What the team packs, best first: water and food, meds, ammo, fuel, then the rest.
-const PACK_ORDER = ["water", RAW, "food", "preserved", "meds", "ammo", "fuel", "parts", "buildmat", "scrap", "jars"];
+const PACK_ORDER = ["water", RAW, "food", "preserved", "meds", "ammo", "fuel", "parts", "buildmat", "metalsheet", "scrap", "jars"];
 // Strike camp: its people form a team on the tile with what they can carry; the rest is a cache; the camp is gone.
 // Returns { party (or null: nobody there), text } or { error }.
 export function strikeCamp(state, base) {
@@ -251,6 +251,7 @@ export function strikeCamp(state, base) {
       if (have < 1 || !SUPPLIES[k]) continue;
       const q = w > 0 ? Math.min(have, Math.floor((room + 1e-9) / w)) : have;
       if (q < 1) continue;
+      if (q === have) base.stock[k] = Math.max(base.stock[k], q); // n0 counts 0.9999… as 1: the stores hold it whole (launchExpedition checks to the last digit)
       supplies[k] = q;
       room -= q * w;
     }
@@ -500,7 +501,7 @@ export function migrateStaging(state) {
   const hubNow = hub(state);
   const base = {
     id: old.id || newId(), tile: old.tile, type: hubNow ? "outpost" : "hub", name: campName(state, old.tile),
-    stock: { water: 0, fuel: 0, meds: 0, ammo: 0, arrows: 0, parts: 0, scrap: 0, jars: 0, wood: 0, buildmat: 0, [RAW]: 0 }, // arrows, wood: every base keeps the count (a camp read arrows = undefined: farmtest 43)
+    stock: { water: 0, fuel: 0, meds: 0, ammo: 0, arrows: 0, parts: 0, scrap: 0, jars: 0, wood: 0, buildmat: 0, metalsheet: 0, [RAW]: 0 }, // arrows, wood: every base keeps the count (a camp read arrows = undefined: farmtest 43)
     radio: false, watchtower: false, buildings: [], construction: [], armory: [],
     tier: 0, camp: true, fire: old.fire !== false, campDay: old.started || day(state), lastPresent: old.lastPresent ?? state.hour, first: !!old.first,
   };

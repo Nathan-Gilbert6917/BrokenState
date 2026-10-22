@@ -24,7 +24,7 @@ import { createWorld, tickHour, hub, day, atBase, snapshot, survivorById, baseVi
 import { appetite } from "../src/sim/traits.js";
 import { NEEDS, teamCold } from "../src/sim/needs.js";
 import { personRation } from "../src/sim/load.js";
-import { thirstAt, coldAt } from "../src/sim/weather.js";
+import { thirstAt, coldAt, travelFactor } from "../src/sim/weather.js";
 import { teamFire } from "../src/sim/fieldheat.js";
 import { GEAR, LOCATIONS, CATEGORIES, TRADE_PREFS } from "../src/sim/data.js";
 import { hiddenSites, siteKnown, siteKnownTo, isPublicSite } from "../src/sim/discovery.js";
@@ -382,8 +382,8 @@ console.log("Estimates: hours, rations and fuel");
 
 // ---------- 4b. winter estimates: the cold's appetite and the camp fire ----------
 // The same trips in deep winter (weather is fixed ahead, so the planner knows each hour's cold): a survey trip eats
-// ×1.1 / ×1.2 on days below 0 / −8°C (needs.js teamCold), a camp by a lit fire does not, a camp with the fire kept out
-// does. Packs and gauges together are the planner's foodExact to the hour.
+// ×1.1 / ×1.2 on days below 0 / −8°C (needs.js teamCold), a camp by a lit fire (wood packed for it) does not, a camp
+// with the fire kept out does. Packs and gauges together are the planner's foodExact to the hour.
 console.log("Estimates in winter: the cold and the camp fire");
 {
   const WINTER_DAY = 80; // campaign day index 80: mid-winter (weather.js: day 1 = spring 15, winter from index 70)
@@ -392,7 +392,7 @@ console.log("Estimates in winter: the cold and the camp fire");
     const st = W(500 + c);
     st.hour = (WINTER_DAY + (c % 6)) * 24 + 7;
     const h = hub(st);
-    Object.assign(h.stock, { water: 500, fuel: 200 }); setFood(h, 500);
+    Object.assign(h.stock, { water: 500, fuel: 200, wood: 500 }); setFood(h, 500);
     const kind = c % 3 === 0 ? "survey" : c % 3 === 1 ? "camp" : "cold camp"; // cold camp: the fire kept out
     const mode = kind === "survey" && c % 2 ? "bike" : "foot";
     const crew = atBase(st, h.id).slice(0, 2);
@@ -402,7 +402,7 @@ console.log("Estimates in winter: the cold and the camp fire");
     const dist = kind === "survey" ? 3 + (c % 2) : 2 + (c % 2);
     const target = st.tiles.filter((t) => land(st, t.id) && st.grid.distance(t.id, h.tile) === dist && planPath(st, h.tile, t.id, vm)).sort((a, b) => a.id - b.id)[c % 4];
     if (!target) continue;
-    const supplies = { food: 20, water: 20, fuel: 0 };
+    const supplies = { food: 20, water: 20, fuel: 0, ...(kind === "camp" ? { wood: 80 } : {}) }; // a lit camp fire burns the wood the team carries (woodcutting.js campFireHour): none, and it is out after an hour
     const sweep = kind === "survey" ? { radius: 2, hours: 12 + 4 * (c % 3) } : null;
     const mission = kind === "survey" ? "sweep" : "move";
     const steps = kind === "survey" ? [{ kind: "home" }] : [{ kind: "camp", hours: 14 + (c % 4) * 3, ...(kind === "cold camp" ? { fire: false } : {}) }, { kind: "home" }];
@@ -431,8 +431,12 @@ console.log("Estimates in winter: the cold and the camp fire");
       last = rateNow();
       if (last.warm) warmH++;
       if (last.cold) coldH++;
+      const path0 = p.path, idx0 = p.idx;
       tickHour(st);
       if (p.roadblock && p.roadblock.hour === st.hour) delay += 1; // a road blockage (sim/roadblocks.js)
+      // A weather front that came in after the plan, over a step walked this hour: the planner counts only the fronts on
+      // the map when it plans (weather.js known), so it is a delay like a card's (as in etatest).
+      for (let j = p.path === path0 ? idx0 : 0; j <= p.idx && j < p.path.length - 1; j++) { const q = { vehicle: vm, tileId: p.path[j + 1], from: p.path[j], hour: st.hour }; if (travelFactor(st, { ...q, known: start }) !== travelFactor(st, q)) { delay += 1; break; } }
       for (let k = st.cards.length - 1; k >= 0; k--) {
         const card = st.cards[k];
         st.cards.splice(k, 1);

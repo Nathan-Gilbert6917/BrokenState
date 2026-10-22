@@ -47,7 +47,7 @@ import { season, dayIndex } from "./weather.js";
 import { cfgOf } from "./worldcfg.js"; // the run's dials: Sickness
 import { waterIn, drawWater } from "./water.js";
 import { makeCandidate, recruitCard } from "./recruits.js";
-import { homeMembers, removeMember, personKey } from "./members.js"; // personKey: a person's id as this world's dice read it (a member's own range, else localId)
+import { homeMembers, removeMember, personKey } from "./members.js"; // personKey: a person's id for the dice (a member who joined keeps their own)
 
 export const HEAD = { free: 6, per: 0.04, cap: 2.2, ref: 12 };
 export const FLU = { winter: 0.002, edge: 0.001 };

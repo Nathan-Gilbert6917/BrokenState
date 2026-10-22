@@ -17,7 +17,7 @@ import { panOfX } from "./sfx-out.js";
 // Sound class by weapon key, then by its melee class (data-guns.js mclass: blade | pierce | chop | blunt | heavy).
 const BY_KEY = {
   fists: "punch", claws: "claws",
-  bat: "wood", spikedbat: "wood", nailbat: "wood", golfclub: "metal",
+  bat: "wood", spikedbat: "wood", nailbat: "wood", golfclub: "metal", hockeystick: "wood",
   prybar: "metal", baton: "metal", stunbaton: "metal", hammer: "metal", pipespear: "stab", spear: "stab", combatknife: "stab",
   sledge: "heavy", pickaxe: "heavy", etool: "chop",
 };

@@ -175,8 +175,10 @@ if (!SAMPLE) {
     // SICK.common, about 0.6% a head a day: a 10-day run of six catches one about a third of the time, by seed) and the
     // night's care then treats it: that is need, not a drain. So the drain is meds spent in an hour that ends with
     // everyone still well; meds spent on someone who fell ill or hurt within the hour are counted apart, a dose a head.
+    // (Dosed this hour counts too: a deep cut from the day's work accident, health.js baseOnsets, can be gone after the
+    // night's one dose, autoCare, leaving nobody unwell; medsHour is set only by a treatment.)
     let spent = 0, spentHours = [], onNeed = 0, needOk = true;
-    const unwell = () => alive(st).filter((s) => s.health < 100 || (s.conditions && s.conditions.length) || s.woundInfected);
+    const unwell = () => alive(st).filter((s) => s.health < 100 || (s.conditions && s.conditions.length) || s.woundInfected || s.medsHour === st.hour);
     for (let i = 0; i < 24 * 10; i++) {
       for (const s of alive(st)) { s.health = 100; s.conditions = []; s.woundInfected = false; }
       st.cards = [];

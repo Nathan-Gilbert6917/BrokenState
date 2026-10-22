@@ -83,7 +83,8 @@ console.log("The bags: sleepers, storage, weights, art");
   check(["tent1", "tent2", "tent4"].every((k) => ITEM_TAGS[k] && ITEM_TAGS[k] === TENT_TAGS[k]), "each bag has theme tags (loot.js ITEM_TAGS)");
   const misfit = [...Object.entries(TENT_FINDS).flatMap(([t, f]) => Object.keys(f.items).filter((k) => !fitsTags(k, SITE_TAGS[t] || [])).map((k) => `${k}@${t}`)), ...Object.entries(AREA_TENTS).flatMap(([a, f]) => Object.keys(f.items).filter((k) => !fitsTags(k, AREA_TAGS[a] || [])).map((k) => `${k}@${a}`))];
   check(!misfit.length, `every place a bag turns up fits its theme${misfit.length ? ` (${misfit.join(", ")})` : ""}`);
-  check(Object.values(TENT_FINDS).every((f) => f.items.tent4 < f.items.tent1 && f.items.tent4 < f.items.tent2) && Object.values(AREA_TENTS).every((f) => f.items.tent4 < f.items.tent1 && f.items.tent4 < f.items.tent2), "the four-person tent is the rarest everywhere");
+  const rarest = (f) => f.items.tent4 == null || (f.items.tent4 < f.items.tent1 && f.items.tent4 < f.items.tent2); // a place with no four-person tent at all (a garden centre's two-person ones: the shops, 2026-10-21) keeps it rarest too
+  check(Object.values(TENT_FINDS).every(rarest) && Object.values(AREA_TENTS).every(rarest), "the four-person tent is the rarest everywhere");
 }
 
 // ---------- 2. carrying ----------

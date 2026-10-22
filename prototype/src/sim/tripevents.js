@@ -315,8 +315,9 @@ function buildEvent(state, base, s, t, rng, phase, h, sk = null) {
       return { kind, animal: a, n: rng.int(A.n[0], A.n[1]) };
     }
     case "injury": {
-      const pool = phase === "work" ? TRIP_INJURY[t.job] || TRIP_INJURY.walk : TRIP_INJURY.walk;
-      return { kind, inj: pool.indexOf(wpick(rng, pool)), pool: phase === "work" ? t.job : "walk" };
+      const key = phase === "work" && TRIP_INJURY[t.job] ? t.job : "walk"; // a job with no list of its own (haul) gets the road's
+      const pool = TRIP_INJURY[key];
+      return { kind, inj: pool.indexOf(wpick(rng, pool)), pool: key };
     }
     case "lost": return { kind, hours: r1(clamp(1 + 2 * rng.next() - 0.06 * (sk ? sk("scouting") : skill(s, "scouting")), 0.5, 3) * (h >= 19 || h < 6 ? 1.3 : 1)) };
     case "stranger": {

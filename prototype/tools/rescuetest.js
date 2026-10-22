@@ -17,6 +17,7 @@ import { serializeState, deserializeState } from "../src/sim/save.js";
 import { setAutopilot, autopilotDaily, autopilotResolve } from "../src/sim/autopilot.js";
 import { defaultChoice } from "../src/sim/cardrules.js";
 import { newItem } from "../src/sim/inventory.js";
+import { addToArsenal } from "../src/sim/arsenal.js";
 
 const seed = Number(process.argv[2] || 11);
 let fails = 0, passes = 0;
@@ -33,6 +34,9 @@ function raiders(st) {
   f.type = "raider"; f.known = true; f.pop = Math.max(f.pop, 12);
   return f;
 }
+// Spare kit on their rack: since the belt's Side arm and Melee slots (bb14ac8) their people carry the spare handguns and
+// blades too, and these seeds' raiders own no more than they carry. A few pieces on their books that nobody carries.
+const spares = (st, f) => { for (const k of ["pistol", "revolver", "machete"]) addToArsenal(st, f, newItem(k), "own"); };
 function captive(st, f, o = {}) {
   const s = makeSurvivor(st, 1);
   s.traits = []; s.health = o.health ?? 70;
@@ -86,6 +90,7 @@ section("The rescue raid's map: the cell, its lock, the jailer, the armory, your
 {
   const st = world();
   const f = raiders(st);
+  spares(st, f);
   const a = captive(st, f), c2 = captive(st, f);
   const p = teamAt(st, f, 4);
   browser(true);
@@ -203,6 +208,7 @@ section("Weapons: off a downed guard's body, and out of their armory (gone from 
 {
   const st = world(seed + 3);
   const f = raiders(st);
+  spares(st, f);
   captive(st, f);
   const p = teamAt(st, f, 2);
   browser(true);
@@ -273,6 +279,7 @@ section("Guards: the alarm, retaking the armory, recapturing a downed or cornere
 {
   const st = world(seed + 5);
   const f = raiders(st);
+  spares(st, f);
   captive(st, f);
   const p = teamAt(st, f, 3);
   browser(true);

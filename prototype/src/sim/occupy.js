@@ -56,7 +56,7 @@ export const OCCUPY = {
   DOOM_DAYS: 14, DOOM_LINE: 0.5, DOOM_EVERY: 30,
 };
 const cap1 = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
-const emptyStock = () => ({ water: 0, rawwater: 0, fuel: 0, meds: 0, ammo: 0, arrows: 0, parts: 0, scrap: 0, jars: 0, wood: 0, buildmat: 0 }); // arrows, wood: every base keeps the count (farmtest 43: an outpost moved into read arrows = undefined)
+const emptyStock = () => ({ water: 0, rawwater: 0, fuel: 0, meds: 0, ammo: 0, arrows: 0, parts: 0, scrap: 0, jars: 0, wood: 0, buildmat: 0, metalsheet: 0 }); // arrows, wood: every base keeps the count (farmtest 43: an outpost moved into read arrows = undefined)
 
 // ---------- what is there ----------
 // Why a team cannot occupy this tile ("" = it can). The sim's truth: the planner offers the mission where your map

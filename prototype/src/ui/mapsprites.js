@@ -11,6 +11,7 @@
 // (ui/mapfigures.js); their flat painters here stay for the sprite catalogue, the headless tools and as fallbacks.
 import { zombieLook } from "./sprites.js";
 import { onForgetPictures } from "./pictures.js";
+import { FRANCHISES } from "../sim/data-shops.js"; // the shops' chains and their looks (pure data)
 
 const UP = 4;             // pre-upscale factor for the cached canvas
 const OUTLINE = "#0b0c0e";
@@ -791,21 +792,30 @@ function tires(p, x, yb, n) {
 }
 
 // ---- city blocks ----
-function paintPolice() {
-  const p = painter(22, 20);
+function paintPolice(arg) {
+  const L = lookOf(arg), s = L ? L.style | 0 : 0, p = painter(22, 20);
+  // With a look (sim/data-shops.js FRANCHISES: a precinct, a sheriff's substation, a state patrol post): its wall, its
+  // name on the band (0), on a board on the roof over the light bar (1), on a monument sign by the flag (2) or over a
+  // tall glass entrance (3); the star in the accent when it is bright.
+  const wall = L ? L.wall : "#a3a9b1";
   flag(p, 0, 3, POLICE_BLUE, 15, 3);
-  block(p, 2, 8, 17, 18, "#a3a9b1");
-  p.rect(2, 9, 17, 10, POLICE_BLUE); p.rect(2, 10, 17, 10, shade(POLICE_BLUE, -0.3));
+  block(p, 2, 8, 17, 18, wall);
+  if (!L) { p.rect(2, 9, 17, 10, POLICE_BLUE); p.rect(2, 10, 17, 10, shade(POLICE_BLUE, -0.3)); }
+  else if (s === 0 || s === 3) signBoard(p, L, 2, 9, 17, 10);
+  else { p.rect(2, 9, 17, 9, L.trim); p.rect(2, 10, 17, 10, shade(L.trim, -0.3)); }
+  if (s === 1) roofSign(p, L, 3, 1, 16, 3, 8);
   lightBar(p, 7, 6);
   for (const x of [3, 14]) { p.rect(x, 12, x + 1, 13, DARK_WIN); p.set(x, 12, shade(DARK_WIN, 0.4)); }
-  star(p, 7, 11, GOLD);
-  p.rect(7, 15, 11, 18, GLASS); p.rect(9, 15, 9, 18, shade(GLASS, -0.4)); p.rect(6, 14, 12, 14, shade("#a3a9b1", -0.35));
+  star(p, 7, 11, L && lum(L.accent) > 150 ? L.accent : GOLD);
+  if (s === 3) { glassFront(p, L, 5, 15, 13, 18, 2); p.rect(4, 14, 14, 14, L.trim); p.rect(9, 16, 9, 18, shade(GLASS, -0.4)); }
+  else { p.rect(7, 15, 11, 18, GLASS); p.rect(9, 15, 9, 18, shade(GLASS, -0.4)); p.rect(6, 14, 12, 14, L ? L.trim : shade("#a3a9b1", -0.35)); }
   // Black-and-white cruiser at the curb.
   p.set(16, 13, SIREN_BLUE); p.set(17, 13, SIREN_RED);
   p.rect(15, 14, 18, 14, "#1d1f24"); p.rect(16, 14, 18, 14, GLASS);
   p.rect(13, 15, 20, 16, "#1d1f24"); p.rect(15, 15, 18, 16, WHITE);
   p.rect(13, 17, 20, 17, shade("#1d1f24", 0.2)); p.rect(14, 18, 15, 18, TIRE); p.rect(18, 18, 19, 18, TIRE);
   p.set(20, 15, "#ffe28a");
+  if (s === 2) { signBoard(p, L, 1, 14, 6, 16); p.rect(3, 17, 4, 18, STONE); p.rect(1, 16, 6, 16, L.accent); }
   return p;
 }
 
@@ -858,35 +868,58 @@ function paintSupermarket() {
   return p;
 }
 
-function paintGunStore() {
-  const p = painter(22, 20);
-  const wall = "#5e4a3e";
-  block(p, 2, 9, 19, 18, wall);
-  for (let y = 11; y <= 18; y += 2) for (let x = 3 + (y % 4 ? 0 : 1); x <= 18; x += 3) p.set(x, y, shade(wall, -0.18));
-  // Sign board with a rifle on it.
-  p.rect(4, 3, 4, 8, METAL); p.rect(17, 3, 17, 8, METAL);
-  p.rect(2, 1, 19, 6, ORANGE); p.rect(3, 2, 18, 5, "#1f1c1a");
-  p.rect(4, 3, 14, 3, STEEL);                                     // barrel and receiver
-  p.rect(9, 4, 15, 4, STEEL); p.rect(15, 3, 17, 5, "#a2713f");     // stock
-  p.rect(9, 2, 11, 2, STEEL);                                     // scope
-  p.set(12, 5, STEEL); p.set(10, 5, STEEL);
+function paintGunStore(arg) {
+  const L = lookOf(arg), s = L ? L.style | 0 : 1, p = painter(22, 20);
+  // With a look: the rifle board in the sign colour (its face dark), standing on the roof (1, as it always was),
+  // flush on a taller front over an awning (0) or over barred plate glass (3), or a target on a pylon by a narrower
+  // shop (2).
+  const wall = L ? L.wall : "#5e4a3e", frame = L ? L.sign : ORANGE, face = !L ? "#1f1c1a" : lum(L.text) < 110 ? L.text : shade(L.sign, -0.6);
+  const bx1 = s === 2 ? 15 : 19, bx0 = s === 2 ? 0 : 2, top = s === 0 || s === 3 ? 2 : 9;
+  block(p, bx0, top, bx1, 18, wall);
+  for (let y = top + 2; y <= 18; y += 2) for (let x = bx0 + 1 + (y % 4 ? 0 : 1); x <= bx1 - 1; x += 3) p.set(x, y, shade(wall, -0.18));
+  if (s !== 2) {
+    const oy = s === 1 ? 0 : 2;                                   // the sign board with a rifle on it
+    if (s === 1) { p.rect(4, 3, 4, 8, METAL); p.rect(17, 3, 17, 8, METAL); }
+    p.rect(2, 1 + oy, 19, 6 + oy, frame); p.rect(3, 2 + oy, 18, 5 + oy, face);
+    p.rect(4, 3 + oy, 14, 3 + oy, STEEL);                         // barrel and receiver
+    p.rect(9, 4 + oy, 15, 4 + oy, STEEL); p.rect(15, 3 + oy, 17, 5 + oy, "#a2713f"); // stock
+    p.rect(9, 2 + oy, 11, 2 + oy, STEEL);                         // scope
+    p.set(12, 5 + oy, STEEL); p.set(10, 5 + oy, STEEL);
+  } else {
+    p.rect(19, 8, 19, 18, METAL);                                 // the pylon: a target on it
+    p.rect(16, 1, 21, 7, frame); p.rect(17, 2, 20, 6, face);
+    p.rect(17, 3, 20, 5, WHITE); p.rect(18, 2, 19, 6, WHITE); p.rect(18, 3, 19, 5, L.accent); p.rect(18, 4, 19, 4, face);
+    p.rect(16, 7, 21, 7, L.accent);
+  }
+  if (s === 0) awning(p, 2, 19, 9, L.accent);
   // Barred windows and a steel door.
-  for (const x0 of [3, 14]) { p.rect(x0, 11, x0 + 3, 14, GLASS); for (let x = x0; x <= x0 + 3; x += 1) if ((x - x0) % 2 === 0) p.rect(x, 11, x, 14, "#2a2a2a"); }
-  p.rect(9, 13, 12, 18, METAL); p.rect(9, 13, 12, 13, shade(METAL, 0.3)); p.set(11, 16, OUTLINE);
+  const wins = s === 2 ? [1, 11] : [3, 14], dx = s === 2 ? 6 : 9;
+  if (s === 3) { glassFront(p, L, 3, 11, 18, 16, 5); for (let x = 3; x <= 18; x += 2) p.rect(x, 11, x, 16, "#2a2a2a"); }
+  else for (const x0 of wins) { p.rect(x0, 11, x0 + 3, 14, GLASS); for (let x = x0; x <= x0 + 3; x += 1) if ((x - x0) % 2 === 0) p.rect(x, 11, x, 14, "#2a2a2a"); }
+  p.rect(dx, 13, dx + 3, 18, METAL); p.rect(dx, 13, dx + 3, 13, shade(METAL, 0.3)); p.set(dx + 2, 16, OUTLINE);
   return p;
 }
 
-function paintHardware() {
-  const p = painter(22, 20);
-  const wall = "#a7adb3";
-  block(p, 1, 7, 20, 18, wall);
-  p.rect(1, 8, 20, 10, ORANGE); p.rect(1, 10, 20, 10, shade(ORANGE, -0.3));
-  // Hammer on the sign.
-  p.rect(13, 8, 16, 9, WHITE); p.rect(14, 8, 14, 10, WOOD_LIT); p.rect(14, 10, 14, 10, WOOD_LIT);
-  for (let x = 3; x <= 11; x += 2) p.set(x, 9, WHITE);
-  p.rect(7, 12, 13, 18, shade(ORANGE, -0.45)); p.rect(7, 12, 13, 12, shade(ORANGE, -0.2)); // big door
-  for (let y = 13; y <= 18; y += 2) p.rect(8, y, 12, y, shade(ORANGE, -0.6));
-  p.rect(16, 12, 19, 14, GLASS);
+function paintHardware(arg) {
+  const L = lookOf(arg), s = L ? L.style | 0 : 0, p = painter(22, 20);
+  // With a look: the band and the hammer in the chain's colours, the big door in its accent; the name on the band (0),
+  // on a board on the roof (1), on a pylon by a narrower store (2) or over sliding glass doors (3).
+  const wall = L ? L.wall : "#a7adb3", band = L ? L.sign : ORANGE, mark = L ? L.text : WHITE, door = L ? L.accent : ORANGE;
+  const bx1 = s === 2 ? 16 : 20;
+  if (s === 2) pylon(p, L, 17, 0, 5, 5, 18);
+  block(p, 1, 7, bx1, 18, wall);
+  const hammer = (x, y) => { p.rect(x, y, x + 3, y + 1, mark); p.rect(x + 1, y, x + 1, y + 2, WOOD_LIT); };
+  if (s === 1) { roofSign(p, L, 2, 1, 19, 4, 7); hammer(15, 2); p.rect(1, 8, bx1, 8, L.trim); p.rect(1, 9, bx1, 9, L.accent); }
+  else {
+    p.rect(1, 8, bx1, 10, band); p.rect(1, 10, bx1, 10, shade(band, -0.3));
+    // Hammer on the sign.
+    if (s !== 2) { p.rect(13, 8, 16, 9, mark); p.rect(14, 8, 14, 10, WOOD_LIT); p.rect(14, 10, 14, 10, WOOD_LIT); }
+    if (L) signText(p, 3, s === 2 ? 15 : 11, 9, mark, L); else for (let x = 3; x <= 11; x += 2) p.set(x, 9, WHITE);
+  }
+  if (s === 2) hammer(18, 1);
+  if (s === 3) { glassFront(p, L, 7, 12, 13, 18, 2); p.rect(10, 12, 10, 18, L.trim); }
+  else { p.rect(7, 12, 13, 18, shade(door, -0.45)); p.rect(7, 12, 13, 12, shade(door, -0.2)); for (let y = 13; y <= 18; y += 2) p.rect(8, y, 12, y, shade(door, -0.6)); } // big door
+  if (s === 3) glassFront(p, L, 15, 12, 19, 16, 2); else p.rect(s === 2 ? 12 : 16, 12, s === 2 ? 15 : 19, 14, GLASS);
   // Lumber stack and a wheelbarrow out front.
   for (let i = 0; i < 3; i++) { p.rect(0, 16 - i * 1, 5 - (i === 2 ? 1 : 0), 16 - i * 1, i % 2 ? "#c9a46a" : "#d8b47a"); }
   p.rect(0, 17, 5, 18, "#b08a52"); for (let x = 0; x <= 5; x += 2) p.set(x, 17, "#8a6838");
@@ -894,20 +927,31 @@ function paintHardware() {
   return p;
 }
 
-function paintAutoShop() {
-  const p = painter(22, 20);
-  const wall = "#7f8790";
-  // Sign board with a double-ended wrench.
-  p.rect(5, 6, 5, 8, METAL); p.rect(13, 6, 13, 8, METAL);
-  p.rect(2, 1, 16, 6, RED); p.rect(2, 1, 16, 1, shade(RED, 0.3)); p.rect(2, 6, 16, 6, shade(RED, -0.35));
-  p.rect(5, 3, 13, 4, WHITE); p.rect(3, 2, 4, 2, WHITE); p.rect(3, 5, 4, 5, WHITE); p.rect(14, 2, 15, 2, WHITE); p.rect(14, 5, 15, 5, WHITE);
-  block(p, 0, 8, 18, 18, wall);
-  // Closed bay (ribbed roll-up door) and an open one with a car on the lift.
-  p.rect(1, 11, 7, 18, "#9aa0a6"); for (let y = 12; y <= 18; y += 2) p.rect(1, y, 7, y, "#7a8086");
+function paintAutoShop(arg) {
+  const L = lookOf(arg), s = L ? L.style | 0 : 1, p = painter(22, 20);
+  // With a look: the wrench board in the chain's sign and text colours, the car on the lift in its accent; the board
+  // on posts over the roof (1, as it always was), flush on a taller front (0), the name on a band with a pylon by the
+  // tires (2), or a band over a glass office in place of the shut bay (3).
+  const wall = L ? L.wall : "#7f8790", board = L ? L.sign : RED, mark = L ? L.text : WHITE, body = L ? L.accent : "#3a68a8";
+  const top = s === 0 ? 3 : s === 3 ? 5 : 8;
+  if (s === 2) pylon(p, L, 17, 1, 5, 5, 18);
+  if (s === 0 || s === 1) {
+    const oy = s === 0 ? 3 : 0;                                  // the sign board with a double-ended wrench
+    if (s === 1) { p.rect(5, 6, 5, 8, METAL); p.rect(13, 6, 13, 8, METAL); }
+    else block(p, 0, top, 18, 18, wall);
+    p.rect(2, 1 + oy, 16, 6 + oy, board); p.rect(2, 1 + oy, 16, 1 + oy, shade(board, 0.3)); p.rect(2, 6 + oy, 16, 6 + oy, shade(board, -0.35));
+    p.rect(5, 3 + oy, 13, 4 + oy, mark); p.rect(3, 2 + oy, 4, 2 + oy, mark); p.rect(3, 5 + oy, 4, 5 + oy, mark); p.rect(14, 2 + oy, 15, 2 + oy, mark); p.rect(14, 5 + oy, 15, 5 + oy, mark);
+  }
+  if (s !== 0) block(p, 0, top, 18, 18, wall);
+  if (s === 2) signBoard(p, L, 0, 9, 18, 10);
+  if (s === 3) { signBoard(p, L, 0, 6, 18, 8); p.rect(0, 9, 18, 9, L.accent); }
+  // Closed bay (ribbed roll-up door) and an open one with a car on the lift; the glass office for the glass fronts.
+  if (s === 3) glassFront(p, L, 1, 11, 7, 18, 3);
+  else { p.rect(1, 11, 7, 18, "#9aa0a6"); for (let y = 12; y <= 18; y += 2) p.rect(1, y, 7, y, "#7a8086"); }
   p.rect(10, 11, 16, 18, "#1e2024");
-  p.rect(10, 14, 16, 15, "#3a68a8"); p.rect(11, 13, 15, 13, shade("#3a68a8", 0.3)); p.set(16, 15, "#ffe28a");
+  p.rect(10, 14, 16, 15, body); p.rect(11, 13, 15, 13, shade(body, 0.3)); p.set(16, 15, "#ffe28a");
   p.rect(11, 16, 11, 18, METAL); p.rect(15, 16, 15, 18, METAL);
-  tires(p, 19, 18, 4);
+  tires(p, 19, 18, s === 2 ? 2 : 4);
   return p;
 }
 
@@ -957,21 +1001,28 @@ function paintSchool() {
   return p;
 }
 
-function paintFireStation() {
-  const p = painter(22, 20);
-  const wall = "#9a4a3a";
+function paintFireStation(arg) {
+  const L = lookOf(arg), s = L ? L.style | 0 : 0, p = painter(22, 20);
+  // With a look: the station's brick or block, its name on the band (0), on a board on the roof (1) or on a sign on a
+  // post by the tower (2), glass bay doors for the glass fronts (3); the bays' header in its accent.
+  const wall = L ? L.wall : "#9a4a3a";
   block(p, 14, 1, 19, 18, shade(wall, -0.1));                     // hose tower
   windows(p, 16, 3, 17, 9, 2, 3, DARK_WIN);
   block(p, 0, 7, 16, 18, wall);
-  p.rect(0, 8, 16, 8, WHITE);
+  if (!L) p.rect(0, 8, 16, 8, WHITE);
+  else if (s === 1 || s === 2) p.rect(0, 8, 16, 8, L.trim);
+  else signBoard(p, L, 0, 8, 16, 8);
+  if (s === 1) roofSign(p, L, 1, 2, 12, 4, 7);
+  const head = L ? L.accent : WHITE;
   // Two bays: one with the engine nosing out, one shut.
-  p.rect(1, 10, 7, 18, "#1e2024"); p.rect(1, 10, 7, 10, WHITE);
+  p.rect(1, 10, 7, 18, "#1e2024"); p.rect(1, 10, 7, 10, head);
   p.rect(1, 12, 7, 17, RED); p.rect(2, 12, 6, 13, GLASS); p.rect(1, 15, 7, 15, WHITE);
   p.rect(1, 11, 7, 11, METAL); p.set(1, 16, "#ffe28a"); p.set(7, 16, "#ffe28a"); p.rect(3, 16, 5, 16, STEEL);
   p.rect(2, 18, 3, 18, TIRE); p.rect(5, 18, 6, 18, TIRE);
-  p.rect(9, 10, 15, 18, "#d6d2c8"); p.rect(9, 10, 15, 10, WHITE);
-  for (let y = 12; y <= 18; y += 2) p.rect(9, y, 15, y, "#a8a49a");
+  if (s === 3) { glassFront(p, L, 9, 11, 15, 18, 2); p.rect(9, 10, 15, 10, head); }
+  else { p.rect(9, 10, 15, 18, "#d6d2c8"); p.rect(9, 10, 15, 10, head); for (let y = 12; y <= 18; y += 2) p.rect(9, y, 15, y, "#a8a49a"); }
   p.set(15, 1, RED); p.set(18, 1, RED);
+  if (s === 2) { p.rect(20, 14, 20, 18, METAL); signBoard(p, L, 18, 11, 21, 13); }
   return p;
 }
 
@@ -1029,30 +1080,48 @@ function paintUniversity() {
 }
 
 // ---- small-town shops and services ----
-function paintGrocery() {
-  const p = painter(20, 17);
-  const wall = "#9a6248";
+function paintGrocery(arg) {
+  const L = lookOf(arg), s = L ? L.style | 0 : 0, p = painter(20, 17);
+  // With a look: the chain's wall, its name on the false front (0), on a board on the roof (1), on a pylon by the
+  // door (2) or over a plate-glass front (3); the awning in its accent.
+  const wall = L ? L.wall : "#9a6248";
   block(p, 1, 4, 18, 15, wall);
-  p.rect(1, 4, 18, 6, shade(wall, 0.1)); p.rect(5, 2, 14, 4, shade(wall, 0.1)); p.rect(5, 2, 14, 2, shade(wall, 0.3)); // false front
-  p.rect(6, 3, 13, 3, WHITE);
-  // Striped awning over the window.
-  for (let x = 1; x <= 18; x++) p.rect(x, 7, x, 8, Math.floor((x - 1) / 2) % 2 ? WHITE : "#3e8a4a");
-  for (let x = 1; x <= 18; x += 2) p.set(x, 9, "#3e8a4a");
-  p.rect(2, 10, 12, 13, GLASS); p.rect(2, 10, 12, 10, GLASS_LIT);
-  p.rect(14, 10, 16, 15, OUTLINE);
+  p.rect(1, 4, 18, 6, shade(wall, 0.1));
+  if (s === 0) {
+    p.rect(5, 2, 14, 4, shade(wall, 0.1)); p.rect(5, 2, 14, 2, shade(wall, 0.3)); // false front
+    if (L) signBoard(p, L, 6, 3, 13, 3); else p.rect(6, 3, 13, 3, WHITE);
+  }
+  if (s === 1) roofSign(p, L, 3, 0, 14, 2, 4);
+  if (s === 3) {
+    signBoard(p, L, 1, 5, 18, 7); p.rect(1, 8, 18, 8, L.accent);
+    glassFront(p, L, 2, 9, 16, 15); p.rect(13, 10, 15, 15, shade(GLASS, -0.4));
+  } else {
+    // Striped awning over the window.
+    awning(p, 1, 18, 7, L ? L.accent : "#3e8a4a");
+    p.rect(2, 10, 12, 13, GLASS); p.rect(2, 10, 12, 10, GLASS_LIT);
+    p.rect(14, 10, 16, 15, OUTLINE);
+  }
+  if (s === 2) pylon(p, L, 15, 0, 5, 4, 15);
   // Produce crates out front.
   for (const [x, c] of [[1, RED], [5, ORANGE], [9, CROP_LIT]]) { p.rect(x, 14, x + 3, 15, WOOD_LIT); p.rect(x, 13, x + 3, 13, c); p.set(x + 1, 13, shade(c, 0.3)); }
   return p;
 }
 
-function paintClinic() {
-  const p = painter(20, 17);
-  block(p, 0, 7, 11, 15, WHITE);
-  p.rect(0, 9, 11, 9, "#3a68a8");
-  p.rect(3, 2, 7, 6, WHITE); p.rect(3, 2, 7, 2, shade(WHITE, 0.3)); p.rect(4, 6, 6, 6, shade(WHITE, -0.25)); // sign on the roof
-  plus(p, 5, 4, 1, 1, RED);
-  p.rect(4, 11, 6, 15, GLASS); p.rect(5, 11, 5, 15, shade(GLASS, -0.4));
-  p.rect(1, 11, 2, 12, GLASS_BLUE); p.rect(8, 11, 10, 12, GLASS_BLUE);
+function paintClinic(arg) {
+  const L = lookOf(arg), s = L ? L.style | 0 : 1, p = painter(20, 17);
+  // With a look: the wall, the band in its trim, the cross in the sign's colours: on a sign on the roof (1, as it
+  // always was), on the band (0), on a sign on a post by the door (2), or over a glass front (3).
+  const wall = L ? L.wall : WHITE, board = L ? L.sign : WHITE, cross = L ? L.text : RED;
+  block(p, 0, 7, 11, 15, wall);
+  p.rect(0, 9, 11, 9, L ? L.trim : "#3a68a8");
+  if (s === 1) { p.rect(3, 2, 7, 6, board); p.rect(3, 2, 7, 2, shade(board, 0.3)); p.rect(4, 6, 6, 6, shade(board, -0.25)); plus(p, 5, 4, 1, 1, cross); } // sign on the roof
+  if (s === 0 || s === 3) { signBoard(p, L, 0, 8, 11, 9); p.rect(0, 7, 3, 9, L.sign); plus(p, 1, 8, 1, 1, cross); }
+  if (s === 3) { glassFront(p, L, 1, 10, 10, 15, 3); p.rect(4, 11, 6, 15, shade(GLASS, -0.35)); p.rect(5, 11, 5, 15, shade(GLASS, -0.5)); }
+  else {
+    p.rect(4, 11, 6, 15, GLASS); p.rect(5, 11, 5, 15, shade(GLASS, -0.4));
+    p.rect(1, 11, 2, 12, GLASS_BLUE); p.rect(8, 11, 10, 12, GLASS_BLUE);
+  }
+  if (s === 2) { p.rect(0, 10, 3, 12, board); p.rect(0, 10, 3, 10, shade(board, 0.25)); plus(p, 1, 11, 1, 1, cross); p.set(3, 11, cross); p.rect(1, 13, 2, 15, METAL); }
   // Ambulance parked beside it.
   p.set(12, 7, SIREN_RED); p.set(13, 7, SIREN_BLUE);
   p.rect(12, 8, 16, 14, WHITE); p.rect(17, 10, 19, 14, WHITE); p.rect(18, 10, 19, 11, GLASS);
@@ -1062,71 +1131,113 @@ function paintClinic() {
   return p;
 }
 
-function paintGas() {
-  const p = painter(20, 17);
+function paintGas(arg) {
+  const L = lookOf(arg), s = L ? L.style | 0 : 2, p = painter(20, 17);
+  // With a look: the canopy's stripe in the trim, the pumps in the sign colour with an accent band; the price sign on
+  // its pole (2, as it always was), the name along the canopy (0), a board on the store's roof (1), or the name on the
+  // canopy over a store of plate glass (3).
+  const store = L ? L.wall : PLASTER, stripe = L ? L.trim : RED, pump = L ? L.sign : RED, band = L ? L.accent : WHITE;
   // Price sign on a pole.
-  p.rect(18, 4, 18, 15, METAL);
-  p.rect(16, 0, 19, 4, WHITE); p.rect(16, 0, 19, 0, RED); p.set(17, 2, OUTLINE); p.set(18, 2, OUTLINE); p.set(17, 3, OUTLINE);
+  if (s === 2) {
+    p.rect(18, 4, 18, 15, METAL);
+    if (L) { signBoard(p, L, 16, 0, 19, 3); p.rect(16, 4, 19, 4, L.accent); }
+    else { p.rect(16, 0, 19, 4, WHITE); p.rect(16, 0, 19, 0, RED); p.set(17, 2, OUTLINE); p.set(18, 2, OUTLINE); p.set(17, 3, OUTLINE); }
+  }
+  if (s === 1) roofSign(p, L, 14, 2, 19, 4, 8);
   // Store behind.
-  block(p, 10, 8, 16, 15, PLASTER); p.rect(11, 10, 13, 12, GLASS); p.rect(14, 11, 15, 15, OUTLINE);
+  block(p, 10, 8, 16, 15, store);
+  if (s === 3) { glassFront(p, L, 11, 9, 15, 15, 2); p.rect(14, 11, 15, 15, shade(GLASS, -0.4)); }
+  else { p.rect(11, 10, 13, 12, GLASS); p.rect(14, 11, 15, 15, OUTLINE); }
   // Canopy on two posts over the pumps.
-  p.rect(0, 4, 13, 6, WHITE); p.rect(0, 5, 13, 5, RED); p.rect(0, 6, 13, 6, shade(WHITE, -0.35));
+  if (s === 0 || s === 3) { p.rect(0, 4, 13, 6, L.sign); p.rect(0, 4, 13, 4, shade(L.sign, 0.22)); signText(p, 1, 12, 5, L.text, L); p.rect(0, 6, 13, 6, shade(L.sign, -0.35)); }
+  else { p.rect(0, 4, 13, 6, L ? L.wall : WHITE); p.rect(0, 5, 13, 5, stripe); p.rect(0, 6, 13, 6, shade(L ? L.wall : WHITE, -0.35)); }
   p.rect(1, 7, 1, 15, STEEL); p.rect(11, 7, 11, 15, STEEL);
-  for (const x of [3, 7]) { p.rect(x, 11, x + 1, 15, RED); p.rect(x, 12, x + 1, 12, WHITE); p.set(x + 2, 12, "#2a2a2e"); p.set(x + 2, 13, "#2a2a2e"); }
+  for (const x of [3, 7]) { p.rect(x, 11, x + 1, 15, pump); p.rect(x, 12, x + 1, 12, band); p.set(x + 2, 12, "#2a2a2e"); p.set(x + 2, 13, "#2a2a2e"); }
   p.rect(0, 16, 15, 16, ASPHALT);
   return p;
 }
 
-function paintDiner() {
-  const p = painter(20, 17);
+function paintDiner(arg) {
+  const L = lookOf(arg), s = L ? L.style | 0 : 2, p = painter(20, 17);
+  // With a look: the car's skin in the wall colour, its stripe in the trim, the neon in the sign's colours; the neon
+  // sign on its pole (2, as it always was), the name along the roof over a little awning (0) or over a long glass
+  // front (3), a board on posts on the roof (1); without the pole sign a car is parked at the end.
+  const skin = L ? L.wall : STEEL, stripe = L ? L.trim : RED;
   // Stainless-steel diner car with rounded ends.
-  p.rect(1, 7, 14, 14, STEEL); p.clear(1, 7); p.clear(14, 7);
-  p.rect(2, 6, 13, 6, shade(STEEL, 0.25));
-  for (let y = 8; y <= 13; y += 2) p.rect(1, y, 14, y, shade(STEEL, 0.15));
-  p.rect(2, 9, 13, 10, "#f0d890"); for (let x = 4; x <= 13; x += 3) p.rect(x, 9, x, 10, shade(STEEL, -0.2));
-  p.rect(1, 13, 14, 14, RED); p.rect(1, 14, 14, 14, shade(RED, -0.35));
-  p.rect(6, 9, 7, 14, shade(STEEL, -0.45));
-  // Neon sign on a pole.
-  p.rect(17, 7, 17, 15, METAL);
-  p.rect(15, 0, 19, 6, "#20202a");
-  p.rect(16, 1, 18, 1, NEON_PINK); p.rect(16, 3, 18, 3, NEON_CYAN); p.rect(16, 5, 18, 5, NEON_PINK);
-  for (const [x, y] of [[14, 1], [14, 5], [17, -1], [17, 7]]) p.set(x, y, NEON_PINK + "66");
+  p.rect(1, 7, 14, 14, skin); p.clear(1, 7); p.clear(14, 7);
+  p.rect(2, 6, 13, 6, shade(skin, 0.25));
+  for (let y = 8; y <= 13; y += 2) p.rect(1, y, 14, y, shade(skin, 0.15));
+  if (s === 3) { p.rect(2, 8, 13, 11, "#f0d890"); p.rect(2, 8, 13, 8, LIT_WIN); for (let x = 4; x <= 13; x += 3) p.rect(x, 8, x, 11, L.trim); }
+  else { p.rect(2, 9, 13, 10, "#f0d890"); for (let x = 4; x <= 13; x += 3) p.rect(x, 9, x, 10, shade(skin, -0.2)); }
+  p.rect(1, 13, 14, 14, stripe); p.rect(1, 14, 14, 14, shade(stripe, -0.35));
+  p.rect(6, 9, 7, 14, shade(skin, -0.45));
+  if (s === 2) {
+    // Neon sign on a pole.
+    const board = L ? L.sign : "#20202a", n1 = L ? L.text : NEON_PINK, n2 = L ? L.accent : NEON_CYAN;
+    p.rect(17, 7, 17, 15, METAL);
+    p.rect(15, 0, 19, 6, board);
+    p.rect(16, 1, 18, 1, n1); p.rect(16, 3, 18, 3, n2); p.rect(16, 5, 18, 5, n1);
+    for (const [x, y] of [[14, 1], [14, 5], [17, -1], [17, 7]]) p.set(x, y, n1 + "66");
+  } else {
+    if (s === 1) roofSign(p, L, 2, 1, 13, 3, 6);
+    else { signBoard(p, L, 3, 4, 12, 5); for (const x of [4, 11]) p.set(x, 6, METAL); }
+    if (s === 0) awning(p, 5, 8, 7, L.accent);
+    car(p, 12, 11, L.accent === L.wall ? RED : L.accent);
+  }
   p.rect(0, 15, 15, 15, ASPHALT);
   return p;
 }
 
-function paintMotel() {
-  const p = painter(20, 17);
-  const wall = "#d8c4a8";
-  p.rect(0, 8, 15, 8, ROOF_RUST); p.rect(0, 7, 15, 7, shade(ROOF_RUST, 0.3));
+function paintMotel(arg) {
+  const L = lookOf(arg), s = L ? L.style | 0 : 2, p = painter(20, 17);
+  // With a look: the wall, the roof in the trim, the room doors in the accent and the sign colour; the roadside sign
+  // with its bulbs and arrow (2, as it always was), the name along the fascia with an office at the end (0, 3: the
+  // office of glass), a board with bulbs on the roof (1).
+  const wall = L ? L.wall : "#d8c4a8", roof = L ? L.trim : ROOF_RUST;
+  if (L && (s === 0 || s === 3)) { p.rect(0, 7, 15, 8, L.sign); p.rect(0, 7, 15, 7, shade(L.sign, 0.25)); signText(p, 1, 14, 7, L.text, L); p.rect(0, 8, 15, 8, shade(L.sign, -0.3)); }
+  else { p.rect(0, 8, 15, 8, roof); p.rect(0, 7, 15, 7, shade(roof, 0.3)); }
   block(p, 0, 9, 15, 15, wall);
   for (let i = 0; i < 4; i++) {
     const x = 1 + i * 4;
-    p.rect(x, 11, x, 15, i % 2 ? "#3f8a8a" : "#a84a3a");          // room doors
+    p.rect(x, 11, x, 15, i % 2 ? (L ? L.accent : "#3f8a8a") : (L ? L.sign : "#a84a3a")); // room doors
     p.rect(x + 1, 11, x + 2, 12, i === 2 ? DARK_WIN : LIT_WIN);
   }
-  // Roadside sign with bulbs and an arrow pointing in.
-  p.rect(18, 5, 18, 15, METAL);
-  p.rect(15, 0, 19, 4, RED); p.rect(16, 2, 18, 2, WHITE);
-  for (let x = 15; x <= 19; x += 2) { p.set(x, 0, GOLD); p.set(x, 4, GOLD); }
-  p.rect(13, 6, 17, 6, GOLD); p.set(12, 6, GOLD); p.set(13, 5, GOLD); p.set(13, 7, GOLD);
-  for (const [x, y] of [[11, 6], [14, -1], [20, 2]]) p.set(x, y, "#ffd06a66");
+  if (s === 2) {
+    // Roadside sign with bulbs and an arrow pointing in.
+    p.rect(18, 5, 18, 15, METAL);
+    if (L) signBoard(p, L, 15, 0, 19, 4); else { p.rect(15, 0, 19, 4, RED); p.rect(16, 2, 18, 2, WHITE); }
+    for (let x = 15; x <= 19; x += 2) { p.set(x, 0, GOLD); p.set(x, 4, GOLD); }
+    p.rect(13, 6, 17, 6, GOLD); p.set(12, 6, GOLD); p.set(13, 5, GOLD); p.set(13, 7, GOLD);
+    for (const [x, y] of [[11, 6], [14, -1], [20, 2]]) p.set(x, y, "#ffd06a66");
+  } else {
+    if (s === 1) { roofSign(p, L, 2, 1, 13, 4, 7); for (let x = 2; x <= 13; x += 2) { p.set(x, 1, GOLD); p.set(x, 4, GOLD); } }
+    block(p, 16, 9, 19, 15, shade(wall, -0.08)); p.rect(16, 8, 19, 8, roof);         // the office
+    if (s === 3) glassFront(p, L, 16, 10, 19, 15, 2);
+    else { p.rect(17, 11, 18, 12, LIT_WIN); p.rect(17, 13, 18, 15, shade(L.accent, -0.3)); }
+  }
   return p;
 }
 
-function paintChurch() {
-  const p = painter(20, 17);
-  const wall = "#e2ddd0";
+function paintChurch(arg) {
+  const L = lookOf(arg), s = L ? L.style | 0 : 0, p = painter(20, 17);
+  // With a look: the wall, the roofs in the trim, the door in the accent, the windows' glass in the sign colours; a
+  // round window in the tower in place of the belfry (1), a letter board on posts on the lawn (2), tall stained glass
+  // down the nave and over the door (3).
+  const wall = L ? L.wall : "#e2ddd0", roof = L ? L.trim : ROOF_GRAY, door = L ? shade(L.accent, -0.3) : shade(WOOD, -0.3);
+  const g1 = L ? L.sign : "#5a7ac8", g2 = L ? (L.accent === L.sign ? GOLD : L.accent) : "#c85a7a";
   // Steeple with a cross.
   p.rect(9, 0, 9, 2, GOLD); p.rect(8, 1, 10, 1, GOLD);
-  for (let r = 0; r < 4; r++) p.rect(9 - Math.floor(r / 2), 3 + r, 9 + Math.floor((r + 1) / 2), 3 + r, r === 0 ? shade(ROOF_GRAY, 0.3) : ROOF_GRAY);
+  for (let r = 0; r < 4; r++) p.rect(9 - Math.floor(r / 2), 3 + r, 9 + Math.floor((r + 1) / 2), 3 + r, r === 0 ? shade(roof, 0.3) : roof);
   p.rect(7, 7, 11, 15, wall); p.rect(7, 7, 7, 15, shade(wall, 0.2));
-  p.rect(8, 8, 10, 9, OUTLINE); p.set(9, 9, GOLD);                // belfry and bell
+  if (s === 1) { p.rect(8, 8, 10, 9, g1); p.set(9, 8, shade(g1, 0.4)); p.set(9, 9, g2); }        // the rose window
+  else { p.rect(8, 8, 10, 9, OUTLINE); p.set(9, 9, GOLD); }                // belfry and bell
   // Nave.
-  house(p, 2, 10, 16, 6, wall, ROOF_GRAY, { rh: 3, door: false, win: false });
+  house(p, 2, 10, 16, 6, wall, roof, { rh: 3, door: false, win: false });
   p.rect(7, 10, 11, 15, wall);
-  p.rect(8, 12, 10, 15, shade(WOOD, -0.3)); p.set(9, 11, shade(WOOD, -0.3));
-  for (const x of [4, 14]) { p.rect(x, 12, x, 13, "#5a7ac8"); p.set(x, 12, "#c85a7a"); }
+  p.rect(8, 12, 10, 15, door); p.set(9, 11, door);
+  if (s === 3) { p.set(8, 11, g1); p.set(10, 11, g2); for (const x of [3, 5, 13, 15]) { p.rect(x, 11, x, 14, x % 4 === 1 ? g1 : g2); p.set(x, 11, shade(g1, 0.3)); } }
+  else for (const x of [4, 14]) { p.rect(x, 12, x, 13, g1); p.set(x, 12, g2); }
+  if (s === 2) { signBoard(p, L, 15, 11, 19, 13); p.rect(16, 14, 16, 15, WOOD); p.rect(18, 14, 18, 15, WOOD); p.rect(15, 13, 19, 13, shade(L.sign, -0.3)); }
   return p;
 }
 
@@ -1593,38 +1704,89 @@ function paintGarage() {
   return p;
 }
 
-function paintCorner() {
-  const p = painter(20, 17);
+function paintCorner(arg) {
+  const L = lookOf(arg), s = L ? L.style | 0 : 0, p = painter(20, 17);
   // Brick corner shop: a striped awning over a tall window, an open sign, a newspaper rack and a crate by the door.
-  block(p, 2, 3, 17, 15, BRICK);
-  p.rect(2, 3, 17, 5, shade(BRICK, 0.12)); p.rect(3, 4, 16, 4, WHITE); for (let x = 5; x <= 14; x += 3) p.set(x, 4, RED); // the name board
-  for (let x = 2; x <= 17; x++) p.rect(x, 6, x, 7, Math.floor((x - 2) / 2) % 2 ? WHITE : RED);
-  for (let x = 2; x <= 17; x += 2) p.set(x, 8, RED);
-  p.rect(3, 9, 10, 13, GLASS); p.rect(3, 9, 10, 9, GLASS_LIT); p.rect(6, 10, 7, 11, NEON_PINK); // the window and the open sign
+  // With a look: the wall, the awning in the accent, the name on the board (0), on a board on the roof (1), on a pylon
+  // over the crate (2), or over plate glass (3).
+  const wall = L ? L.wall : BRICK;
+  block(p, 2, 3, 17, 15, wall);
+  p.rect(2, 3, 17, 5, shade(wall, 0.12));
+  if (!L) { p.rect(3, 4, 16, 4, WHITE); for (let x = 5; x <= 14; x += 3) p.set(x, 4, RED); } // the name board
+  else if (s === 0) signBoard(p, L, 3, 4, 16, 4);
+  else if (s === 3) signBoard(p, L, 2, 3, 17, 5);
+  else p.rect(2, 4, 17, 4, L.trim);
+  if (s === 1) roofSign(p, L, 3, 0, 16, 1, 3);
+  if (s === 3) { glassFront(p, L, 3, 6, 11, 15, 4); p.rect(6, 10, 7, 11, NEON_PINK); p.rect(12, 6, 16, 6, L.accent); }
+  else {
+    awning(p, 2, 17, 6, L ? L.accent : RED);
+    p.rect(3, 9, 10, 13, GLASS); p.rect(3, 9, 10, 9, GLASS_LIT); p.rect(6, 10, 7, 11, NEON_PINK); // the window and the open sign
+  }
   p.rect(12, 9, 15, 15, "#2a2a2e"); p.set(15, 12, GOLD);                       // the door
   p.rect(0, 12, 1, 15, METAL); p.rect(0, 13, 1, 13, WHITE); p.rect(0, 15, 1, 15, shade(METAL, -0.3)); // the paper rack
+  if (s === 2) pylon(p, L, 15, 0, 5, 4, 12);
   p.rect(17, 13, 19, 15, WOOD_LIT); p.rect(17, 12, 19, 12, ORANGE); p.set(18, 12, shade(ORANGE, 0.3)); // a crate of oranges
   p.rect(2, 16, 17, 16, ASPHALT);
   return p;
 }
 
-function paintPizza() {
-  const p = painter(20, 17);
+function paintPizza(arg) {
+  const L = lookOf(arg), s = L ? L.style | 0 : 0, p = painter(20, 17);
   // Pizza place: a shopfront under a red-and-white chequered awning, a round pizza sign on the roof with a slice gone.
-  const wall = "#d9b98a";
+  // With a look: the wall, the chequers in the accent, the name along the parapet (0, 2), on a board on the roof
+  // beside the pizza (1), or over plate glass (3); the pizza up on its own pylon by the door (2).
+  const wall = L ? L.wall : "#d9b98a", chk = L ? (lum(L.accent) > 200 ? L.sign : L.accent) : RED;
   block(p, 2, 7, 17, 15, wall);
-  for (let y = 8; y <= 9; y++) for (let x = 2; x <= 17; x++) p.set(x, y, (Math.floor(x / 2) + y) % 2 ? WHITE : RED);
-  p.rect(3, 11, 9, 14, GLASS); p.rect(3, 11, 9, 11, GLASS_LIT); p.rect(5, 12, 7, 13, "#f0d890");   // the window, the counter lit
-  p.rect(12, 11, 15, 15, "#2a2a2e"); p.set(15, 13, GOLD);                                           // the door
+  if (L && s !== 1) signBoard(p, L, 2, 7, 17, 7);
+  if (s === 3) {
+    signBoard(p, L, 2, 7, 17, 9); p.rect(2, 10, 17, 10, chk);
+    glassFront(p, L, 3, 11, 16, 15); p.rect(5, 12, 7, 13, "#f0d890"); p.rect(12, 11, 15, 15, shade(GLASS, -0.4));
+  } else {
+    for (let y = 8; y <= 9; y++) for (let x = 2; x <= 17; x++) p.set(x, y, (Math.floor(x / 2) + y) % 2 ? WHITE : chk);
+    p.rect(3, 11, 9, 14, GLASS); p.rect(3, 11, 9, 11, GLASS_LIT); p.rect(5, 12, 7, 13, "#f0d890");   // the window, the counter lit
+    p.rect(12, 11, 15, 15, "#2a2a2e"); p.set(15, 13, GOLD);                                           // the door
+  }
+  if (s === 1) roofSign(p, L, 14, 1, 19, 3, 7);
   // The sign: a pizza on a pole, cheese and pepperoni, one slice cut out at the top right.
-  p.rect(10, 5, 10, 6, METAL);
+  const cx = s === 2 ? 16 : 10;
+  if (s === 2) p.rect(cx, 7, cx, 15, METAL); else p.rect(cx, 5, cx, 6, METAL);
   for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) {
     if (dx * dx + dy * dy > 11) continue;
     if (dx > 0 && dy < 0 && dx >= -dy) continue;
     const rim = dx * dx + dy * dy > 6;
-    p.set(10 + dx, 3 + dy, rim ? "#c9873c" : "#f0d070");
+    p.set(cx + dx, 3 + dy, rim ? "#c9873c" : "#f0d070");
   }
-  for (const [x, y] of [[9, 2], [11, 4], [8, 4], [10, 5]]) p.set(x, y, RED);
+  for (const [x, y] of [[9, 2], [11, 4], [8, 4], [10, 5]]) p.set(x - 10 + cx, y, RED);
+  p.rect(2, 16, 17, 16, ASPHALT);
+  return p;
+}
+
+function paintPawnShop(arg) {
+  const L = lookOf(arg), s = L ? L.style | 0 : 0, p = painter(20, 17);
+  // Pawn shop (sim/shops.js): a brick shopfront with barred windows, the three gold balls hung over the door, a
+  // guitar and a rifle in the window. With a look: the wall, the board in the trim with the name in the sign colour
+  // (0), a board on the roof (1), the balls hung from a pylon (2), a deep band over a wider window (3); the balls in
+  // the accent.
+  const wall = L ? L.wall : BRICK, balls = L ? L.accent : GOLD;
+  block(p, 2, 6, 17, 15, wall);
+  for (let y = 8; y <= 14; y += 2) for (let x = 3 + (y % 4 ? 0 : 1); x <= 16; x += 3) p.set(x, y, shade(wall, -0.2));
+  if (!L) { p.rect(2, 6, 17, 7, "#3c3a36"); p.rect(4, 6, 13, 6, GOLD); }                             // the sign board
+  else if (s === 3) signBoard(p, L, 2, 5, 17, 7);
+  else { p.rect(2, 6, 17, 7, L.trim); if (s === 0) signBoard(p, L, 4, 6, 13, 6); }
+  if (s === 1) roofSign(p, L, 3, 0, 12, 2, 6);
+  const wx1 = s === 3 ? 11 : 10;
+  p.rect(3, 9, wx1, 13, GLASS); p.rect(3, 9, wx1, 9, GLASS_LIT);                                     // the window
+  p.rect(4, 10, 4, 13, WOOD_LIT); p.rect(4, 12, 5, 13, WOOD);                                         // a guitar
+  p.rect(6, 11, 10, 11, STEEL); p.rect(9, 12, 10, 12, WOOD_LIT);                                      // a rifle on the rack
+  for (let x = 3; x <= wx1; x += 2) p.rect(x, 9, x, 13, "#2a2a2a");                                   // the bars
+  p.rect(12, 10, 15, 15, METAL); p.rect(12, 10, 15, 10, shade(METAL, 0.3)); p.set(14, 13, OUTLINE);  // a steel door
+  if (s === 2) {
+    pylon(p, L, 15, 0, 5, 4, 15);
+    for (const [x, y] of [[15, 5], [18, 5], [16, 7]]) { p.rect(x, y, x + 1, y + 1, balls); p.set(x, y, shade(balls, 0.3)); } // the balls under it
+  } else {
+    p.rect(16, 3, 16, 6, METAL); p.rect(15, 3, 17, 3, METAL);                                         // the bracket
+    for (const [x, y] of [[14, 4], [17, 4], [15, 1]]) { p.rect(x, y, x + 1, y + 1, balls); p.set(x, y, shade(balls, 0.3)); } // the three balls
+  }
   p.rect(2, 16, 17, 16, ASPHALT);
   return p;
 }
@@ -1711,7 +1873,420 @@ function paintMineshack() {
   return p;
 }
 
-// Type → painter; the variant (only "depot" for now) and picked-over fading are applied by poiSpriteCanvas.
+// ---- shops and services by franchise (sim/data-shops.js FRANCHISES) ----
+// A kind with franchises is painted in its franchise's look (poiSpriteCanvas: the place's own by its variant, else the
+// kind's first): { wall, trim, sign, text, accent, style }. The wall; the trim (the footing, the sills, the mullions);
+// the sign board and the name on it (a row of letters in the text colour, its words drawn from the look, so two chains
+// never spell alike); the accent (the awning's stripes, the door, the kind's own touches). style is the front's shape:
+// 0 a flat front, its name band over a striped awning; 1 a sign board standing on the roof on two posts; 2 a pylon
+// sign on a pole by the door (the building a little narrower); 3 a big glass front under a deep name band. Each kind
+// adds its emblem (the goods in the window, a mast, columns and steps, a lot of cars) so the kinds read apart at a
+// glance and the chains apart by colour and shape. The old shops' painters take the same look (with none, or a kind
+// without franchises, they draw as they always did).
+const lookOf = (v) => (v && typeof v === "object" && v.wall ? v : null);
+const firstLook = (kind) => FRANCHISES[kind][0].look;
+const lum = (c) => { const [r, g, b] = rgb(c); return r * 0.3 + g * 0.59 + b * 0.11; };
+// Draws only inside the box [x0, y0, x1, y1] (a window's goods).
+const clipTo = (p, [x0, y0, x1, y1]) => (x, y, c) => { if (x >= x0 && x <= x1 && y >= y0 && y <= y1) p.set(x, y, c); };
+
+// The name on a sign: letters as runs of 1–3 pixels in the text colour from x0 to x1 on row y, a gap between words,
+// the runs from a hash of the look's colours.
+function signText(p, x0, x1, y, c, L) {
+  let h = 7;
+  for (const ch of L.wall + L.sign + L.text + L.accent + L.trim) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  for (let x = x0; x <= x1;) {
+    h = (h * 1103515245 + 12345) >>> 0;
+    const n = 1 + ((h >>> 16) % 3);
+    for (let i = 0; i < n && x <= x1; i++, x++) p.set(x, y, c);
+    x++;
+  }
+}
+// A sign board from (x0, y0) to (x1, y1) in the sign colour: lit along the top, shaded along the bottom, the name across.
+function signBoard(p, L, x0, y0, x1, y1, text = true) {
+  p.rect(x0, y0, x1, y1, L.sign);
+  if (y1 > y0) { p.rect(x0, y0, x1, y0, shade(L.sign, 0.22)); p.rect(x0, y1, x1, y1, shade(L.sign, -0.3)); }
+  if (text) signText(p, x0 + 1, x1 - 1, y0 + Math.floor((y1 - y0) / 2), L.text, L);
+}
+// A striped awning from x0 to x1, rows y and y + 1, its scallops on y + 2: the accent and white (a dark stripe when
+// the accent is pale itself).
+function awning(p, x0, x1, y, c) {
+  const c2 = lum(c) > 200 ? shade(c, -0.45) : WHITE;
+  for (let x = x0; x <= x1; x++) p.rect(x, y, x, y + 1, Math.floor((x - x0) / 2) % 2 ? c2 : c);
+  for (let x = x0; x <= x1; x += 2) p.set(x, y + 2, c);
+}
+// A board x0..x1, y0..y1 standing on two posts down to the roof row.
+function roofSign(p, L, x0, y0, x1, y1, roof) {
+  for (const x of [x0 + 1, x1 - 1]) p.rect(x, y1 + 1, x, roof - 1, METAL);
+  signBoard(p, L, x0, y0, x1, y1);
+}
+// A pylon sign w × h from (x0, y0): the board, an accent band under it, the pole down to row yb.
+function pylon(p, L, x0, y0, w, h, yb) {
+  const px = x0 + (w >> 1);
+  p.rect(px, y0 + h, px, yb, METAL); p.set(px, y0 + h, shade(METAL, -0.3));
+  signBoard(p, L, x0, y0, x0 + w - 1, y0 + h - 2);
+  p.rect(x0, y0 + h - 1, x0 + w - 1, y0 + h - 1, L.accent);
+}
+// Plate glass from (x0, y0) to (x1, y1): mullions in the trim every step columns, a lit head, a streak of reflection.
+function glassFront(p, L, x0, y0, x1, y1, step = 4) {
+  p.rect(x0, y0, x1, y1, GLASS); p.rect(x0, y0, x1, y0, GLASS_LIT);
+  for (let x = x0 + step; x < x1; x += step) p.rect(x, y0, x, y1, L.trim);
+  for (let i = 0; i < 3 && y1 - 1 - i > y0; i++) p.set(x0 + 1 + i, y1 - 1 - i, GLASS_LIT);
+}
+
+// A franchise's shopfront from x0 to x1 standing on row yb (the footing): the wall, the sign by style, a window and a
+// door (in the accent). Gives where things went: { s, x0, xr (the building's right end), top (its roof row), yb, sign,
+// win, door } (boxes [x0, y0, x1, y1]), so the kind can fill the window and put its emblem on the sign.
+function shopFront(p, L, x0, x1, yb) {
+  const s = L.style | 0, xr = s === 2 ? x1 - 5 : x1;
+  const top = yb - (s === 1 ? 8 : s === 3 ? 11 : 10), dx = xr - 4;
+  block(p, x0, top, xr, yb, L.wall);
+  p.rect(x0, yb, xr, yb, L.trim);                                            // the footing
+  let sign, wy;
+  if (s === 0) {                                                             // the name band over a striped awning
+    sign = [x0, top + 1, xr, top + 2]; signBoard(p, L, ...sign);
+    awning(p, x0, xr, top + 3, L.accent); wy = top + 6;
+  } else if (s === 1) {                                                      // a board on the roof
+    sign = [x0 + 1, top - 6, xr - 1, top - 3]; roofSign(p, L, ...sign, top);
+    p.rect(x0, top + 1, xr, top + 1, L.trim); p.rect(x0, top + 2, xr, top + 2, L.accent); wy = top + 3;
+  } else if (s === 2) {                                                      // a pylon by the door
+    sign = [x1 - 4, top - 5, x1, top - 2]; pylon(p, L, x1 - 4, top - 5, 5, 5, yb);
+    p.rect(x0, top + 1, xr, top + 1, L.trim); p.rect(x0, top + 2, xr, top + 2, L.accent); wy = top + 4;
+  } else {                                                                   // a deep name band over plate glass
+    sign = [x0, top + 1, xr, top + 3]; signBoard(p, L, ...sign);
+    p.rect(x0, top + 4, xr, top + 4, L.accent); wy = top + 5;
+  }
+  let win;
+  if (s === 3) {
+    glassFront(p, L, x0 + 1, wy, xr - 1, yb - 1);
+    win = [x0 + 1, wy + 1, dx - 2, yb - 1];
+    p.rect(dx - 1, wy, dx + 3, yb - 1, L.trim); p.rect(dx, wy + 1, dx + 2, yb - 1, shade(GLASS, -0.35)); p.rect(dx + 1, wy + 1, dx + 1, yb - 1, shade(GLASS, -0.5));
+  } else {
+    win = [x0 + 1, wy, dx - 2, yb - 2];
+    p.rect(win[0], wy, win[2], yb - 2, GLASS); p.rect(win[0], wy, win[2], wy, GLASS_LIT);
+    p.rect(win[0], yb - 1, win[2], yb - 1, L.trim);                          // the sill
+    p.rect(dx, wy, dx + 2, yb - 1, L.accent); p.rect(dx + 1, wy + 1, dx + 1, wy + 2, GLASS); p.set(dx + 2, yb - 3, shade(L.accent, -0.5));
+  }
+  return { s, x0, xr, top, yb, sign, win, door: [dx, wy, dx + 2, yb - 1] };
+}
+// Where an icon w × h sits on the sign: its left end, centred on the board's rows (a two-row band: the icon stands a
+// row proud of it); the text under it cleared.
+function signIcon(p, L, g, w, h) {
+  const [x0, y0, , y1] = g.sign, x = x0 + 1, y = Math.floor((y0 + y1) / 2) - Math.floor((h - 1) / 2);
+  p.rect(x, y0, Math.min(g.sign[2], x + w), y1, L.sign);
+  if (y1 > y0) p.rect(x, y0, Math.min(g.sign[2], x + w), y0, shade(L.sign, 0.22));
+  return [x, y];
+}
+// Icons: an open book, a burger, a bottle, a coat hanger, a paw (5 × 3), a cross.
+function bookIcon(p, x, y) {
+  p.rect(x, y, x + 1, y + 1, WHITE); p.rect(x + 3, y, x + 4, y + 1, WHITE); p.rect(x + 2, y, x + 2, y + 2, "#5a3a20");
+  p.rect(x, y + 2, x + 4, y + 2, shade(WHITE, -0.3)); p.set(x + 2, y + 2, "#5a3a20");
+}
+function burgerIcon(p, x, y) {
+  p.rect(x + 1, y, x + 3, y, "#e0a050"); p.set(x, y, shade("#e0a050", -0.15)); p.set(x + 4, y, shade("#e0a050", -0.15));
+  p.rect(x, y + 1, x + 4, y + 1, "#6a3a20"); p.set(x, y + 1, CROP_LIT); p.set(x + 4, y + 1, GOLD);
+  p.rect(x, y + 2, x + 4, y + 2, "#c98a44");
+}
+function bottleIcon(p, x, y, c) { p.set(x + 1, y, shade(c, 0.3)); p.rect(x, y + 1, x + 2, y + 2, c); p.set(x, y + 1, shade(c, 0.3)); }
+function hangerIcon(p, x, y, c) { p.set(x + 2, y, c); p.rect(x + 1, y + 1, x + 3, y + 1, c); p.rect(x, y + 2, x + 4, y + 2, c); p.clear(x + 2, y + 1); }
+function pawIcon(p, x, y, c) { p.set(x, y, c); p.set(x + 2, y, c); p.set(x + 4, y, c); p.rect(x + 1, y + 1, x + 3, y + 2, c); }
+// A small satellite dish facing up and left, its foot on (x + 1, y).
+function dish(p, x, y) { p.rect(x, y - 1, x + 1, y - 1, STEEL); p.set(x - 1, y - 2, STEEL); p.set(x, y - 2, shade(STEEL, 0.25)); p.set(x + 2, y - 2, METAL); p.set(x + 1, y, METAL); }
+
+function paintSportShop(arg) {
+  const L = lookOf(arg) || firstLook("sportshop"), p = painter(20, 17);
+  // Sporting goods: the chain's front, a basketball hoop on a pole by the wall, a tent, a ball and a bat in the window,
+  // a canoe racked on the roof (when the roof is free).
+  const g = shopFront(p, L, 4, 19, 15);
+  p.rect(1, 4, 1, 15, METAL); p.rect(0, 1, 3, 3, WHITE); p.rect(0, 1, 3, 1, shade(WHITE, 0.2)); p.rect(1, 3, 2, 3, RED); // the hoop's pole and board
+  p.rect(2, 4, 3, 4, ORANGE); p.set(2, 5, "#e8e4da99"); p.set(3, 5, "#e8e4da99"); p.set(3, 6, "#e8e4da66");            // the rim and net
+  p.rect(2, 14, 3, 15, ORANGE); p.set(3, 14, shade(ORANGE, -0.45));                                                     // a ball under it
+  const put = clipTo(p, g.win), [wx0, , , wy1] = g.win;
+  for (let r = 0; r < 3; r++) for (let x = wx0 + 2 - r; x <= wx0 + 2 + r; x++) put(x, wy1 - 2 + r, r === 2 && x === wx0 + 2 ? DARK_WIN : x > wx0 + 2 ? shade(L.accent, -0.25) : L.accent); // a tent
+  put(wx0 + 6, wy1, ORANGE); put(wx0 + 7, wy1, ORANGE); put(wx0 + 6, wy1 - 1, ORANGE); put(wx0 + 7, wy1 - 1, shade(ORANGE, -0.4)); // a ball
+  put(wx0 + 9, wy1, WOOD); put(wx0 + 10, wy1 - 1, WOOD_LIT); put(wx0 + 10, wy1 - 2, WOOD_LIT); put(wx0 + 11, wy1 - 3, WOOD_LIT); // a bat
+  if (g.s !== 1) { const c = L.sign, y = g.top - 2; p.rect(g.x0 + 4, y - 1, g.xr - 4, y, c); p.rect(g.x0 + 5, y - 1, g.xr - 5, y - 1, shade(c, 0.25)); p.set(g.x0 + 3, y - 2, c); p.set(g.xr - 3, y - 2, c); p.set(g.x0 + 5, y + 1, METAL); p.set(g.xr - 5, y + 1, METAL); } // the canoe
+  p.rect(0, 16, 19, 16, ASPHALT);
+  return p;
+}
+
+function paintElectronics(arg) {
+  const L = lookOf(arg) || firstLook("electronics"), p = painter(22, 20);
+  // Electronics store (a city block): the chain's front with an upper storey, rows of TVs glowing in the window, a
+  // satellite dish on the roof.
+  const g = shopFront(p, L, 1, 20, 18);
+  if (g.s !== 1) { block(p, g.x0 + 2, g.top - 4, g.xr - 2, g.top, shade(L.wall, -0.08)); windows(p, g.x0 + 4, g.top - 2, g.xr - 4, g.top - 1, 3, 2, DARK_WIN, 2, 1); }
+  dish(p, g.s === 2 ? g.x0 + 4 : g.s === 1 ? g.x0 + 5 : g.xr - 5, g.s === 1 ? g.top - 1 : g.top - 5);
+  const put = clipTo(p, g.win), [wx0, wy0, wx1, wy1] = g.win, th = Math.min(4, wy1 - wy0 + 1), glow = [L.accent, NEON_CYAN, "#9ad0ff"];
+  for (let x = wx0 + 1, i = 0; x + 3 <= wx1 + 1; x += 5, i++) {
+    const y = wy1 - th + 1, c = glow[i % 3];
+    for (let yy = y; yy <= wy1; yy++) for (let xx = x; xx <= x + 3; xx++) put(xx, yy, "#1c1f24");
+    for (let yy = y + 1; yy < wy1 || yy === y + 1; yy++) { put(x + 1, yy, c); put(x + 2, yy, shade(c, 0.3)); }
+    if (y - 1 >= wy0) { put(x + 1, y - 1, c + "55"); put(x + 2, y - 1, c + "55"); }
+  }
+  p.rect(0, 19, 21, 19, ASPHALT);
+  return p;
+}
+
+function paintRadioShop(arg) {
+  const L = lookOf(arg) || firstLook("radioshop"), p = painter(20, 17);
+  // Radio shop: the chain's front, a lattice antenna mast beside it with a red light on top and a beam on its arm,
+  // radios on the shelf in the window.
+  const g = shopFront(p, L, 5, 19, 15);
+  for (let y = 2; y <= 15; y++) {                                                              // the mast, banded red and white
+    const w = Math.round(((y - 2) * 2) / 13), c = Math.floor(y / 3) % 2 ? RED : WHITE;
+    for (let x = 2 - w; x <= 2 + w; x++) p.set(x, y, (x + y) % 2 ? c : shade(c, -0.35));     // the lattice
+  }
+  p.rect(2, 1, 2, 1, METAL); p.set(2, 0, RED); p.set(1, 0, "#ff6a5a55"); p.set(3, 0, "#ff6a5a55");
+  p.rect(0, 5, 4, 5, STEEL); for (const x of [0, 4]) p.set(x, 4, STEEL);                        // the beam
+  p.set(3, 8, "#c9c9c955"); p.set(4, 10, "#c9c9c955");                                          // a guy wire to the wall
+  const put = clipTo(p, g.win), [wx0, , wx1, wy1] = g.win;
+  for (let x = wx0, i = 0; x + 2 <= wx1; x += 4, i++) {
+    const c = i % 2 ? WOOD_LIT : "#3a3d44";
+    for (let xx = x; xx <= x + 2; xx++) { put(xx, wy1, c); put(xx, wy1 - 1, c); }
+    put(x, wy1 - 1, GOLD); put(x + 2, wy1, shade(c, -0.4)); put(x + 2, wy1 - 2, METAL); put(x + 2, wy1 - 3, METAL); // the dial, a knob, the aerial
+  }
+  p.rect(0, 16, 19, 16, ASPHALT);
+  return p;
+}
+
+const SPINES = ["#c8402f", "#3a6fb0", "#e8c04a", "#3f6b3a", "#5b3a7a", "#e8e4d8", "#a2713f", "#2d4a5e"];
+function shelfOfBooks(p, box, seed = 0) { // spines of every colour standing on shelves, a shelf every 3 rows from the bottom
+  const put = clipTo(p, box), [x0, y0, x1, y1] = box;
+  for (let sy = y1; sy >= y0; sy -= 3) {
+    for (let x = x0; x <= x1; x++) put(x, sy, WOOD);
+    for (let x = x0; x <= x1; x++) {
+      const k = (x * 5 + sy * 3 + seed) % 7, h = k === 0 ? 0 : k < 4 ? 2 : 1;
+      for (let i = 1; i <= h; i++) put(x, sy - i, SPINES[(x * 3 + sy + seed) % SPINES.length]);
+    }
+  }
+}
+function paintBookstore(arg) {
+  const L = lookOf(arg) || firstLook("bookstore"), p = painter(20, 17);
+  // Bookstore: the chain's front, the window full of books on their shelves, an open book on the sign, a cart of
+  // bargain books by the door.
+  const g = shopFront(p, L, 1, 18, 15);
+  shelfOfBooks(p, g.win, lum(L.wall) | 0);
+  const [ix, iy] = signIcon(p, L, g, 5, 3); bookIcon(p, ix, iy);
+  p.rect(16, 13, 19, 14, WOOD_LIT); p.rect(16, 15, 16, 15, WOOD); p.rect(19, 15, 19, 15, WOOD);   // the cart
+  for (const [x, c] of [[16, RED], [17, "#3a6fb0"], [18, GOLD], [19, "#3f6b3a"]]) p.set(x, 12, c);
+  p.rect(0, 16, 19, 16, ASPHALT);
+  return p;
+}
+
+function paintLibrary(arg) {
+  const L = lookOf(arg) || firstLook("library"), s = L.style | 0, p = painter(24, 17);
+  // Library: a pedimented portico on columns over wide steps, two wings with tall windows full of books (glass
+  // wings for the modern ones), the door in the accent; the name on the frieze, on a board on a wing's roof or on a
+  // monument sign on the lawn.
+  const wall = L.wall, col = shade(L.trim, 0.25);
+  block(p, 1, 6, 22, 14, wall);
+  for (const [y, x0, x1] of [[2, 11, 12], [3, 9, 14], [4, 7, 16], [5, 6, 17]]) p.rect(x0, y, x1, y, y === 2 ? shade(L.trim, 0.3) : y === 5 ? shade(L.trim, -0.2) : L.trim); // the pediment
+  p.set(11, 3, L.accent); p.set(12, 3, L.accent);                                               // the roundel in the pediment
+  p.rect(6, 6, 17, 6, s === 0 ? L.sign : L.trim);
+  if (s === 0) signText(p, 7, 16, 6, L.text, L);                                                // the name on the frieze
+  p.rect(6, 7, 17, 13, shade(wall, -0.35));                                                     // the portico's shade
+  for (const x of [7, 9, 14, 16]) { p.rect(x, 7, x, 13, col); p.set(x, 7, shade(col, 0.3)); }
+  p.rect(11, 9, 12, 13, L.accent); p.rect(11, 8, 12, 8, GLASS_LIT); p.set(12, 11, GOLD);        // the door and its fanlight
+  for (const x0 of [2, 18]) {                                                                   // the wings
+    if (s === 3) { glassFront(p, L, x0, 7, x0 + 3, 13, 2); shelfOfBooks(p, [x0, 9, x0 + 3, 13], x0); }
+    else for (const x of [x0, x0 + 2]) { p.rect(x, 8, x + 1, 12, DARK_WIN); p.set(x, 8, shade(DARK_WIN, 0.4)); shelfOfBooks(p, [x, 9, x + 1, 12], x); }
+  }
+  if (s === 3) { p.rect(1, 6, 5, 6, L.sign); p.rect(18, 6, 22, 6, L.sign); signText(p, 2, 4, 6, L.text, L); signText(p, 19, 21, 6, L.text, L); }
+  p.rect(1, 14, 22, 14, L.accent === wall ? shade(wall, -0.3) : shade(L.accent, -0.2));         // the base course
+  p.rect(5, 14, 18, 14, shade(STONE, 0.15)); p.rect(4, 15, 19, 15, STONE); p.rect(3, 16, 20, 16, shade(STONE, -0.15)); // the steps
+  p.rect(0, 16, 2, 16, GRASS); p.rect(21, 16, 23, 16, GRASS); p.rect(0, 15, 3, 15, GRASS); p.rect(20, 15, 23, 15, GRASS);
+  if (s === 1) roofSign(p, L, 1, 1, 6, 3, 6);                                                   // a board on the left wing
+  if (s === 2) { p.rect(20, 14, 22, 15, STONE); p.rect(20, 14, 22, 14, shade(STONE, 0.2)); signBoard(p, L, 19, 11, 23, 13); } // the monument sign
+  return p;
+}
+
+function paintPetStore(arg) {
+  const L = lookOf(arg) || firstLook("petstore"), p = painter(20, 17);
+  // Pet store: the chain's front, a paw print on the glass, a fish tank in the window (fish, weed and bubbles), a
+  // paw on the board, a dog house by the door.
+  const g = shopFront(p, L, 1, 17, 15);
+  const put = clipTo(p, g.win), [wx0, wy0, wx1, wy1] = g.win;
+  for (const [dx, dy] of [[0, 0], [2, 0], [4, 0], [1, 1], [2, 1], [3, 1], [1, 2], [2, 2], [3, 2]]) put(wx0 + dx, wy0 + dy, L.accent);
+  const tx0 = wx1 - 4;
+  for (let y = wy1 - 2; y <= wy1; y++) for (let x = tx0; x <= wx1; x++) put(x, y, y === wy1 - 2 ? shade(WATER_BLUE, 0.35) : WATER_BLUE);
+  put(tx0 + 1, wy1 - 1, ORANGE); put(tx0 + 3, wy1, GOLD); put(tx0, wy1, CROP); put(tx0, wy1 - 1, CROP); put(tx0 + 2, wy1 - 3, "#d8ecf499");
+  if (g.s === 1 || g.s === 2) { const [ix, iy] = signIcon(p, L, g, 5, 3); pawIcon(p, ix, iy, L.text); }
+  p.rect(18, 12, 19, 15, "#a84a3a"); p.set(18, 11, shade("#a84a3a", 0.3)); p.set(19, 11, shade("#a84a3a", 0.3)); p.set(19, 10, shade("#a84a3a", 0.3)); // the dog house
+  p.rect(18, 14, 18, 15, OUTLINE);
+  p.rect(0, 16, 19, 16, ASPHALT);
+  return p;
+}
+
+function paintGarden(arg) {
+  const L = lookOf(arg) || firstLook("garden"), s = L.style | 0, p = painter(20, 17);
+  // Garden center: a gabled greenhouse of glass, green rows inside, the shop beside it in the chain's colours (its
+  // name by style; all glass for the glass-front chains), potted plants and flowers along the front.
+  for (let r = 0; r < 4; r++) p.rect(5 - r * 2 + (r ? 1 : 0), 4 + r, 6 + r * 2 - (r ? 1 : 0), 4 + r, r === 0 ? GLASS_LIT : GLASS);
+  p.rect(0, 7, 11, 7, L.trim); p.rect(5, 4, 6, 4, L.trim);                                      // the eave and the ridge
+  glassFront(p, L, 0, 8, 11, 14, 3);
+  for (let x = 1; x <= 10; x++) { p.set(x, 13, (x % 2) ? CROP : CROP_LIT); p.set(x, 12, x % 3 ? CROP_LIT : GLASS); } // rows of seedlings inside
+  p.set(3, 9, CROP); p.set(8, 9, CROP);                                                         // hanging baskets
+  const sx0 = 12, sx1 = s === 2 ? 16 : 19, top = s === 1 ? 8 : 6;
+  if (s === 3) { block(p, sx0, top, sx1, 15, L.wall); glassFront(p, L, sx0 + 1, top + 4, sx1 - 1, 15, 3); signBoard(p, L, sx0, top + 1, sx1, top + 3); }
+  else {
+    block(p, sx0, top, sx1, 15, L.wall);
+    if (s === 0) { signBoard(p, L, sx0, top + 1, sx1, top + 2); awning(p, sx0, sx1, top + 3, L.accent); }
+    if (s === 1) { roofSign(p, L, sx0, 2, sx1, 5, top); p.rect(sx0, top + 1, sx1, top + 1, L.accent); }
+    if (s === 2) { p.rect(sx0, top + 1, sx1, top + 1, L.accent); pylon(p, L, 17, 2, 3, 5, 15); }
+    const dy = s === 0 ? top + 6 : top + 3;
+    p.rect(sx0 + 1, dy, sx0 + 3, 15, L.accent); p.rect(sx0 + 2, dy + 1, sx0 + 2, dy + 2, GLASS);
+  }
+  for (const x of [1, 4, 7, 10, 14, 17]) {                                                      // the pots along the front
+    p.rect(x, 15, x + 1, 15, "#b06a46"); p.set(x + 1, 15, shade("#b06a46", -0.25));
+    p.set(x, 14, CROP); p.set(x + 1, 14, CROP_LIT); p.set(x + (x % 2), 13, x % 3 ? L.accent : "#e88aa0");
+  }
+  p.rect(0, 16, 19, 16, shade(DIRT, 0.15));
+  return p;
+}
+
+function paintClothing(arg) {
+  const L = lookOf(arg) || firstLook("clothing"), p = painter(20, 17);
+  // Clothing store: the chain's front, mannequins dressed in the window, a hanger on the board, a rail of clothes
+  // wheeled out by the door.
+  const g = shopFront(p, L, 1, 17, 15);
+  const put = clipTo(p, g.win), [wx0, wy0, wx1, wy1] = g.win, cloth = [L.accent, L.sign, "#3a5f8e", "#c8402f"];
+  for (let x = wx0, i = 0; x + 2 <= wx1; x += 4, i++) {
+    const c = cloth[i % cloth.length];
+    put(x + 1, wy0, SKIN);
+    put(x, wy0 + 1, c); put(x + 1, wy0 + 1, c); put(x + 2, wy0 + 1, shade(c, -0.25));
+    for (let y = wy0 + 2; y <= wy1; y++) { if (y === wy0 + 2 && i % 2) { put(x, y, c); put(x + 1, y, c); put(x + 2, y, c); } else { put(x, y, PANTS); put(x + 2, y, PANTS); } }
+    put(x + 1, wy1, METAL);
+  }
+  if (g.s === 1 || g.s === 2) { const [ix, iy] = signIcon(p, L, g, 5, 3); hangerIcon(p, ix, iy, L.text); }
+  p.rect(18, 10, 18, 15, METAL); p.rect(18, 10, 19, 10, METAL);                                 // the rail
+  for (const [y, c] of [[11, RED], [12, "#3a5f8e"]]) p.rect(19, y, 19, y + 1, c);
+  p.rect(0, 16, 19, 16, ASPHALT);
+  return p;
+}
+
+function paintVet(arg) {
+  const L = lookOf(arg) || firstLook("vet"), p = painter(20, 17);
+  // Veterinary clinic: the chain's front, a cross and a paw on the sign (a plaque on the parapet for the flat
+  // fronts), a dog on its lead waiting by the door.
+  const g = shopFront(p, L, 1, 15, 15);
+  if (g.s === 1 || g.s === 2) {
+    const [ix, iy] = signIcon(p, L, g, 3, 3); plus(p, ix + 1, iy + 1, 1, 1, L.text);
+  } else {
+    const x = g.x0 + 1, y = g.top - 3;
+    p.rect(x, y, x + 4, y + 3, L.sign); p.rect(x, y, x + 4, y, shade(L.sign, 0.25)); plus(p, x + 2, y + 1, 1, 1, L.text); // the plaque
+  }
+  const put = clipTo(p, g.win), [wx0, wy0] = g.win;
+  for (const [dx, dy] of [[0, 0], [2, 0], [4, 0], [1, 1], [2, 1], [3, 1], [1, 2], [2, 2], [3, 2]]) put(wx0 + 1 + dx, wy0 + dy, L.accent); // a paw on the glass
+  const dog = "#8b6a48";                                                                        // the dog
+  p.rect(16, 13, 18, 14, dog); p.rect(19, 12, 19, 13, dog); p.set(19, 11, shade(dog, -0.3)); p.set(16, 12, shade(dog, -0.2));
+  p.set(16, 15, shade(dog, -0.3)); p.set(18, 15, shade(dog, -0.3)); p.set(19, 13, OUTLINE);
+  p.set(17, 12, RED); p.set(15, 11, "#c9c9c9"); p.set(16, 11, "#c9c9c9");                      // its collar and lead
+  p.rect(0, 16, 19, 16, ASPHALT);
+  return p;
+}
+
+function paintDealer(arg) {
+  const L = lookOf(arg) || firstLook("dealer"), p = painter(24, 17);
+  // Car dealership: the showroom in the chain's front with a new car behind the glass, a car on the lot with its
+  // price on the windshield, a string of pennants from the roof to a pole, the lot's lines on the asphalt.
+  p.rect(0, 15, 23, 16, ASPHALT); for (let x = 14; x <= 23; x += 4) p.set(x, 16, "#d8d4c8");
+  const g = shopFront(p, L, 0, 13, 14);
+  const put = clipTo(p, g.win), [wx0, , , wy1] = g.win, show = L.accent === L.wall ? RED : L.accent;
+  for (let x = wx0 + 1; x <= wx0 + 6; x++) put(x, wy1, show);
+  for (let x = wx0 + 2; x <= wx0 + 5; x++) put(x, wy1 - 1, x > wx0 + 3 ? GLASS_LIT : shade(show, 0.15));
+  put(wx0 + 2, wy1, TIRE); put(wx0 + 5, wy1, TIRE);
+  p.rect(23, 2, 23, 15, METAL); p.set(23, 1, shade(METAL, 0.3));                                // the pennants' pole
+  const x0 = g.xr + 1, y0 = g.top + 1, cols = [L.accent, WHITE, L.sign === L.accent ? GOLD : L.sign];
+  for (let x = x0; x <= 22; x++) {
+    const t = (x - x0) / (22 - x0), y = Math.round(y0 + (2 - y0) * t + Math.sin(t * Math.PI) * 1.5);
+    p.set(x, y, "#d8d8d8aa");                                                                    // the string (see-through: no outline)
+    if ((x - x0) % 2 === 1) p.set(x, y + 1, cols[((x - x0) >> 1) % 3]);
+  }
+  car(p, 14, 10, L.sign === L.wall ? "#3a68a8" : L.sign); p.set(18, 11, WHITE);                 // the car on the lot, its price
+  return p;
+}
+
+function paintRestaurant(arg) {
+  const L = lookOf(arg) || firstLook("restaurant"), p = painter(20, 17);
+  // Restaurant: the chain's front, a burger on the sign, tables laid in the window under warm lamps, a patio table
+  // under an umbrella in the accent by the door.
+  const g = shopFront(p, L, 1, 16, 15);
+  const [ix, iy] = signIcon(p, L, g, 5, 3); burgerIcon(p, ix, iy);
+  const put = clipTo(p, g.win), [wx0, wy0, wx1, wy1] = g.win;
+  for (let x = wx0; x <= wx1; x++) put(x, wy0, "#f0d89066");
+  for (let x = wx0 + 1; x + 1 <= wx1; x += 4) { put(x, wy1, WOOD); put(x + 1, wy1, WOOD); put(x, wy1 - 1, WHITE); put(x + 1, wy1 - 1, METAL); put(x + 1, wy0, LIT_WIN); }
+  const uc = lum(L.accent) > 200 ? L.sign : L.accent;                                          // the patio umbrella
+  p.rect(17, 9, 19, 9, shade(uc, 0.25)); p.rect(16, 10, 19, 10, uc); p.set(17, 10, WHITE); p.set(19, 10, WHITE);
+  p.rect(18, 11, 18, 15, METAL); p.rect(17, 13, 19, 13, WOOD_LIT); p.set(17, 14, WOOD); p.set(19, 14, WOOD);
+  p.rect(0, 16, 19, 16, ASPHALT);
+  return p;
+}
+
+function paintBank(arg) {
+  const L = lookOf(arg) || firstLook("bank"), s = L.style | 0, p = painter(22, 17);
+  // Bank: a heavy cornice over four thick columns, the round steel vault door shining between the middle ones, a gold
+  // coin in the pediment, an ATM in the wall, steps; the name on the frieze, a board on the roof, a monument sign by
+  // the steps or a band over glass bays (the modern ones).
+  const wall = L.wall, col = shade(wall, 0.18), gold = L.accent;
+  block(p, 1, 5, 20, 14, wall);
+  if (s !== 1 && s !== 3) { for (let r = 0; r < 3; r++) p.rect(9 - r * 2, 1 + r, 12 + r * 2, 1 + r, r === 0 ? shade(L.trim, 0.3) : L.trim); p.rect(10, 2, 11, 3, gold); p.set(10, 2, shade(gold, 0.35)); }
+  p.rect(0, 4, 21, 5, L.trim); p.rect(0, 4, 21, 4, shade(L.trim, 0.25));                       // the cornice
+  p.rect(1, 6, 20, 6, s === 0 || s === 3 ? L.sign : shade(wall, -0.15));
+  if (s === 0 || s === 3) signText(p, 3, 18, 6, L.text, L);                                    // the name on the frieze
+  p.rect(5, 7, 16, 13, shade(wall, -0.4));
+  for (const x of [5, 15]) { if (s === 3) glassFront(p, L, x, 8, x + 1, 13, 2); else { p.rect(x, 8, x + 1, 12, DARK_WIN); p.set(x, 8, shade(DARK_WIN, 0.4)); } }
+  for (const x of [3, 7, 13, 17]) { p.rect(x, 7, x + 1, 13, col); p.rect(x, 7, x + 1, 7, shade(col, 0.3)); p.set(x + 1, 10, shade(col, -0.15)); }
+  for (const [y, x0, x1] of [[8, 10, 11], [9, 9, 12], [10, 9, 12], [11, 9, 12], [12, 10, 11]]) p.rect(x0, y, x1, y, STEEL); // the vault door
+  p.set(9, 9, shade(STEEL, 0.3)); p.rect(10, 10, 11, 10, gold); p.set(12, 11, METAL); p.set(10, 12, METAL); p.set(9, 13, METAL);
+  p.rect(1, 9, 2, 11, "#2a2c30"); p.set(1, 9, NEON_CYAN); p.set(2, 9, NEON_CYAN); p.set(1, 11, METAL);  // the ATM
+  p.rect(1, 13, 20, 13, shade(wall, -0.25)); p.rect(3, 14, 18, 14, shade(L.trim, 0.1));
+  p.rect(2, 15, 19, 15, STONE); p.rect(1, 16, 20, 16, shade(STONE, -0.15));                     // the steps
+  if (s === 1) roofSign(p, L, 3, 0, 18, 2, 4);
+  if (s === 2) { p.rect(21, 13, 21, 16, METAL); signBoard(p, L, 18, 10, 21, 12); p.set(20, 13, gold); }
+  return p;
+}
+
+function paintBar(arg) {
+  const L = lookOf(arg) || firstLook("bar"), p = painter(20, 17);
+  // Bar: the chain's front with the window dimmed, a neon cocktail glass and a neon bottle glowing in it, a dark
+  // wooden door, a keg out front.
+  const g = shopFront(p, L, 1, 18, 15);
+  const [wx0, wy0, wx1, wy1] = g.win, put = clipTo(p, g.win);
+  for (let y = wy0; y <= wy1; y++) for (let x = wx0; x <= wx1; x++) put(x, y, y === wy0 ? "#3a3440" : "#24202a");
+  const neon = lum(L.accent) > 90 ? L.accent : NEON_PINK, neon2 = lum(L.text) > 120 && L.text !== neon ? L.text : NEON_CYAN;
+  const gx = wx0 + 1;
+  for (let x = gx; x <= gx + 4; x++) put(x, wy0, neon);
+  put(gx + 1, wy0 + 1, neon); put(gx + 3, wy0 + 1, neon); put(gx + 2, wy0 + 1, shade(neon, 0.4)); put(gx + 2, wy0 + 2, neon);
+  if (wy1 > wy0 + 2) { put(gx + 1, wy0 + 3, neon); put(gx + 2, wy0 + 3, neon); put(gx + 3, wy0 + 3, neon); }
+  put(gx - 1, wy0, neon + "66"); put(gx + 5, wy0, neon + "66");
+  const bx = gx + 7;
+  if (bx <= wx1) { put(bx, wy0, neon2); for (let y = wy0 + 1; y <= wy1; y++) { put(bx, y, neon2); put(bx + 1, y, neon2); } put(bx + 2, wy0 + 1, neon2 + "55"); }
+  const [dx, dy, , dyb] = g.door;
+  p.rect(dx, dy, dx + 2, dyb, shade(WOOD, -0.25)); p.set(dx + 1, dy + 1, "#f0c86099"); p.set(dx + 2, dyb - 2, GOLD);
+  p.rect(18, 13, 19, 15, METAL); p.rect(18, 14, 19, 14, shade(METAL, -0.35)); p.set(18, 13, shade(METAL, 0.3)); // the keg
+  p.rect(0, 16, 19, 16, ASPHALT);
+  return p;
+}
+
+const BOTTLES = ["#3f6b3a", "#a8642a", "#c9e2ec", "#7a1c2a", "#d9a520", "#5f9e8a"];
+function paintLiquor(arg) {
+  const L = lookOf(arg) || firstLook("liquor"), p = painter(20, 17);
+  // Liquor store: the chain's front, the window lined with bottles on shelves (green, amber, clear, red), bars over
+  // it for the flat fronts, a bottle on the sign, cases stacked by the door.
+  const g = shopFront(p, L, 1, 17, 15);
+  const [wx0, wy0, wx1, wy1] = g.win, put = clipTo(p, g.win);
+  for (let sy = wy1; sy >= wy0 + 1; sy -= 3) {
+    for (let x = wx0; x <= wx1; x++) put(x, sy, WOOD);
+    for (let x = wx0, i = 0; x <= wx1; x += 2, i++) { const c = BOTTLES[(i + sy) % BOTTLES.length]; put(x, sy - 1, c); put(x, sy - 2, shade(c, 0.3)); }
+  }
+  if (g.s === 0 || g.s === 2) for (let x = wx0 + 1; x <= wx1; x += 3) for (let y = wy0; y <= wy1; y++) put(x, y, "#2a2a2a");
+  const [ix, iy] = signIcon(p, L, g, 3, 3); bottleIcon(p, ix, iy, lum(L.text) > 150 ? "#3f6b3a" : L.text);
+  crate(p, 18, 12, 2, 2, "#8a6838"); crate(p, 18, 14, 2, 2, WOOD_LIT);                         // the cases
+  p.rect(0, 16, 19, 16, ASPHALT);
+  return p;
+}
+
+// Type → painter; the variant (a franchise's id for the kinds with franchises, else only "depot") and picked-over fading are applied by poiSpriteCanvas.
 const POI_PAINT = {
   city: paintCityCenter, town: paintTownCenter, police: paintPolice, hospital: paintHospital, pharmacy: paintPharmacy,
   supermarket: paintSupermarket, gunstore: paintGunStore, hardware: paintHardware, autoshop: paintAutoShop, apartments: paintApartments,
@@ -1726,6 +2301,11 @@ const POI_PAINT = {
   // Points of interest (sim/pois.js): the small places a tile holds besides its site.
   house: paintHouse, neighbourhood: paintNeighbourhood, garage: paintGarage, corner: paintCorner, pizza: paintPizza,
   farmstand: paintFarmstand, shed: paintShed, blind: paintBlind, campsite: paintCampsite, hikercamp: paintHikercamp, mineshack: paintMineshack,
+  pawnshop: paintPawnShop, // sim/shops.js
+  // The shops and services (sim/data-shops.js NEW_KINDS), each painted in its franchise's look.
+  sportshop: paintSportShop, electronics: paintElectronics, radioshop: paintRadioShop, bookstore: paintBookstore, library: paintLibrary,
+  petstore: paintPetStore, garden: paintGarden, clothing: paintClothing, vet: paintVet, dealer: paintDealer, restaurant: paintRestaurant,
+  bank: paintBank, bar: paintBar, liquor: paintLiquor,
 };
 
 // A kind with no painter of its own (a point of interest added without one, pois.js): a plain small building on a
@@ -2676,14 +3256,17 @@ export function factionBaseCanvas(type, color) {
   return cached(`fbase:${type}:${color}`, () => (FACTION_PAINT[type] || paintFortressBase)(color));
 }
 
-// A map site by LOCATIONS type. variant: "depot" (the Army depot look of a military site); faded: how picked over it
-// is, the loot band (aiscav.js lootBand: 0 rich, 1 some, 2 little, 3 picked clean; true = 2).
+// A map site by LOCATIONS type. variant: a franchise's id for a kind with franchises (sim/data-shops.js FRANCHISES: the
+// painter gets that franchise's look, or the kind's first one's for no or an unknown id), else "depot" (the Army depot
+// look of a military site); faded: how picked over it is, the loot band (aiscav.js lootBand: 0 rich, 1 some, 2 little,
+// 3 picked clean; true = 2).
 const FADES = [null, [0.3, 0.06], [0.7, 0.18], [0.95, 0.42]];
 export function poiSpriteCanvas(type, variant = "", faded = 0) {
   const lvl = faded === true ? 2 : Math.max(0, Math.min(3, +faded || 0));
   return cached(`poi:${type}:${variant}:${lvl}`, () => {
     const paint = POI_PAINT[type] || paintGenericPoi; // a kind without a painter yet (pois.js kinds): the plain building
-    const p = paint(variant === "depot");
+    const fr = Object.prototype.hasOwnProperty.call(FRANCHISES, type) ? FRANCHISES[type] : null;
+    const p = paint(fr && fr.length ? (fr.find((f) => f.id === variant) || fr[0]).look : variant === "depot");
     return lvl ? fade(p, ...FADES[lvl]) : p;
   });
 }

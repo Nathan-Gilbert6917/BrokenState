@@ -260,8 +260,10 @@ function holeUpRaiders(state, b, n, up) {
     cand.sort((a, c) => (a.f || 0) - (c.f || 0) || area(c) - area(a));
     room = cand[0] || null;
   }
+  let stash = null;
   if (room) {
     const f = room.f || 0;
+    stash = makeStash(state, b, room, n); // before the raiders take its cells: a wall spot for the crate (with them on it a small room had none)
     const home = [room.x0 + Math.floor(room.w / 2), room.y0 + Math.floor(room.h / 2)];
     for (const u of raiders) {
       const c = rng.pick(freeCells(b, room));
@@ -277,7 +279,7 @@ function holeUpRaiders(state, b, n, up) {
   }
   const lead = raiders[0];
   const stashRoom = room || roomAt(b, lead.f || 0, lead.home ? lead.home[0] : lead.x, lead.home ? lead.home[1] : lead.y) || roomAt(b, lead.f || 0, lead.x, lead.y);
-  const stash = stashRoom ? makeStash(state, b, stashRoom, n) : null;
+  if (!room && stashRoom) stash = makeStash(state, b, stashRoom, n);
   squattersUp(state, b, n, stashRoom);
   return { room: stashRoom ? stashRoom.id : null, f: stashRoom ? stashRoom.f || 0 : 0, up: !!room, watcher, stash: stash ? stash.id : null, count: raiders.length };
 }

@@ -46,6 +46,9 @@ export const ARMOUR = {
   ceramicplate:   { ac: 5, dmax: 45, mat: "ceramic" },
   plate:          { ac: 2, dmax: 40, mat: "soft", carrier: true },
   scrapvest:      { ac: 3, dmax: 60, mat: "steel" },
+  sheetvest:      { ac: 3, dmax: 70, mat: "steel" }, // metal-sheet armour (crafting.js, 2026-10-21)
+  sheetarms:      { ac: 2, dmax: 24, mat: "steel" },
+  sheetlegs:      { ac: 2, dmax: 24, mat: "steel" },
   tirevest:       { ac: 1, dmax: 25, mat: "padding" },
   sportspads:     { ac: 1, dmax: 20, mat: "padding" },
   padding:        { ac: 1, dmax: 12, mat: "padding" },
@@ -55,6 +58,7 @@ export const ARMOUR = {
   riotlegs:       { ac: 2, dmax: 20, mat: "hard" },
   bikehelmet:     { ac: 1, dmax: 20, mat: "hard" },
   footballhelmet: { ac: 1, dmax: 15, mat: "hard" },
+  goaliemask:     { ac: 1, dmax: 14, mat: "hard" }, // data-shops.js: the sporting goods store
   riothelmet:     { ac: 2, dmax: 25, mat: "hard" },
   milhelmet:      { ac: 3, dmax: 30, mat: "hard" },
   rivethelmet:    { ac: 2, dmax: 16, mat: "steel" }, // a crafted riveted-plate helmet (craft books)
@@ -76,7 +80,7 @@ export const AR = {
   // Penetration of what is not a bullet: arrows and bolts, blows by melee class (w.mclass, else MELEE_CLASS), a gun
   // butt, teeth and nails.
   PEN: { arrow: 12, blade: 12, pierce: 20, chop: 16, blunt: 4, heavy: 10, bash: 4, claws: 6, fists: 0 },
-  MELEE_CLASS: { knife: "blade", machete: "blade", sawmachete: "blade", springmachete: "blade", pipespear: "pierce", spear: "pierce", fireaxe: "chop", bat: "blunt", spikedbat: "blunt", nailbat: "blunt", prybar: "blunt", baton: "blunt", sledge: "heavy", fists: "fists", claws: "claws" },
+  MELEE_CLASS: { knife: "blade", machete: "blade", sawmachete: "blade", springmachete: "blade", sheetmachete: "blade", sheethatchet: "chop", pipespear: "pierce", spear: "pierce", fireaxe: "chop", bat: "blunt", spikedbat: "blunt", nailbat: "blunt", prybar: "blunt", baton: "blunt", sledge: "heavy", fists: "fists", claws: "claws" },
   RIFLE: ["556", "762x39", "308", "3030", "50bmg", "223", "300blk"], // calibres whose stopped round spalls off steel
   TOUGH: TRAIT_FX.TOUGH, // the Tough trait (traits.js)
   // By the numbers: a wound wears what is worn by dmg × OFFSCREEN × the enemy kind's typical round ad, by location.

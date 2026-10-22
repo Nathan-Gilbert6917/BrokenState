@@ -32,6 +32,7 @@
 import { CELL, active, los, combatants } from "./combat.js";
 import { smokeScreens, SMOKE } from "./throwables.js"; // a smoke grenade's cloud screens someone running away
 import { raidRange, legacyRaids } from "./worldcfg.js"; // the run's dials: Raid map smallest / largest; an older save's old sizes
+import { NEW_KINDS } from "./data-shops.js"; // the shops and services new as places: their raid map sizes
 
 export const SIZE_CLASSES = {
   S: { w: 24, h: 18, name: "Small" },
@@ -48,7 +49,7 @@ export const SIZES = {
   SITE: {
     hospital: L, univ: L, prison: L, military: L, mall: L, factory: L, airport: L, warehouse: L, city: L, dam: L,
     town: 1.5, supermarket: M, school: M, police: M, firestation: M, apartments: M, office: M, motel: M, church: M, truckstop: M, quarry: M,
-    gas: 0.5, diner: 0.5, grocery: 0.5, pharmacy: 0.5, clinic: 0.5, cabin: 0.5, barn: 0.5, gunstore: 0.5, hardware: 0.5,
+    gas: 0.5, diner: 0.5, grocery: 0.5, pharmacy: 0.5, clinic: 0.5, cabin: 0.5, barn: 0.5, gunstore: 0.5, pawnshop: 0.5, hardware: 0.5,
     autoshop: 0.5, feedstore: 0.5, ranger: 0.5, radiotower: 0.5, airdrop: 0.5,
     farm: M, ranch: M, lodge: M, campground: M, crashsite: M, crash_mil: M, crash_cargo: M, crash_med: M, crash_news: M, convoy: M, // convoy: miltrucks.js
     // Points of interest (pois.js): small places, the neighbourhood a street of houses.
@@ -382,3 +383,6 @@ export const raidHeatRate = (w, h) => clamp(Math.pow(1 / bigGrowth(w, h), BIG.HE
 export const raidLootShare = (w, h) => clamp(Math.pow(1 / bigGrowth(w, h), BIG.LOOT_EXP), BIG.LOOT_MIN, 1);
 // The containers a room of w × h holds.
 export const roomBoxes = (rng, w, h) => Math.max(2, Math.round(((w - 2) * (h - 2)) / RAID.BOX_AREA) + rng.int(0, 1));
+
+// data-shops.js: the town's and the city's shops and services (their rows; this module's own rows win).
+for (const [k, d] of Object.entries(NEW_KINDS)) if (SIZES.SITE[k] == null) SIZES.SITE[k] = d.size;

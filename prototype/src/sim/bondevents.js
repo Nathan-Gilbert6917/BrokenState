@@ -25,6 +25,7 @@ import { getRel, bumpPair, addMood, addMoment, temper, REL } from "./relations.j
 import { BOND, levelOf, bondReason, reasonText, cliquesAt, jobOf } from "./bonds.js";
 import { isManaged, setCell, WORK_TYPES } from "./work.js";
 import { moveTeamOut } from "./moveout.js";
+import { personKey } from "./members.js"; // (call-time only) a person's id for the dice: a member who joined keeps their own
 
 export const BOND_EV = { cooldown: 20, newDays: 10, lessonGap: 2, theft: ["a hidden ration bar", "a keepsake from before", "their last pack of cigarettes", "a good pair of socks", "a little bottle of whisky", "a photograph in a tin"] };
 const JOIN_JOBS = ["farm", "build", "craft", "scavenge", "hunt", "fish", "forage", "wood", "water", "guard"];
@@ -344,7 +345,7 @@ export const BOND_EVENTS = {
     card: (st, c) => {
       const { x, y } = betrayalPair(st, c);
       mark(st, x, y);
-      const thing = BOND_EV.theft[(x.id * 7 + y.id * 3 + day(st)) % BOND_EV.theft.length];
+      const thing = BOND_EV.theft[(personKey(st, x.id) * 7 + personKey(st, y.id) * 3 + day(st)) % BOND_EV.theft.length]; // personKey: ids are process-wide (tools/sameseedtest.js)
       const both = () => here(x, c.base) && here(y, c.base);
       return {
         title: `${first(x)} stole from ${first(y)}`,

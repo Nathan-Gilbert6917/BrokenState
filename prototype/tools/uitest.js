@@ -19,6 +19,7 @@
 //   the Coalition tab's "out of radio reach" line, Construction (offered at an outpost, greyed out beside a station)
 // - every rendered screen: no undefined / NaN / null, balanced tags, and every data-action has a handler
 import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
+import { stockTools } from "./toolset.js"; // every tool a build or recipe can need (toolreqs.js)
 import { readFileSync } from "node:fs";
 import v8 from "node:v8";
 import vm from "node:vm";
@@ -1361,8 +1362,8 @@ section("Battle view: the isometric renderer (ui/isoview.js), the view toggle, t
     check(list.length === 11 && ["field-town", "raid", "raid-building", "hive", "growth", "base-assault", "base-wall-night", "base-yard", "base-open"].every((n) => sizes[n]), `a battle of every layout (${Object.entries(sizes).map(([n, s]) => `${n} ${s}`).join(", ")})`);
     const BS = await import("../src/sim/battlesize.js");
     const cls = (n) => BS.sizeClass(...sizes[n].split("×").map(Number));
-    check(cls("field-town") === "M" && cls("field-forest") === "M" && sizes.hive === `${C.HIVE_W}×${C.HIVE_H}` && C.HIVE_W === 40 && cls("raid") === "M" && Number(sizes["base-yard"].split("×")[0]) >= BS.BASE_TIER.hub[0] && cls("base-open") !== "S", // the hub's yard: by its tier (BASE_TIER), 64–100 square
-      `map sizes by context (sim/battlesize.js): fights in the open Medium (${sizes["field-town"]}, ${sizes["field-forest"]}), a hive assault Large (${sizes.hive}), a town raid ${sizes.raid}, a fully built hub's yard Extra-large (${sizes["base-yard"]}), a smaller one without walls Large (${sizes["base-open"]})`);
+    check(cls("field-town") === "M" && cls("field-forest") === "M" && sizes.hive === `${C.HIVE_W}×${C.HIVE_H}` && C.HIVE_W === 40 && sizes.raid === BS.raidMaxDims(list.find((x) => x.name === "raid").st).join("×") && Number(sizes["base-yard"].split("×")[0]) >= BS.BASE_TIER.hub[0] && cls("base-open") !== "S", // a town's raid: the run's largest raid map (raidMax); the hub's yard: by its tier (BASE_TIER), 64–100 square
+      `map sizes by context (sim/battlesize.js): fights in the open Medium (${sizes["field-town"]}, ${sizes["field-forest"]}), a hive assault Large (${sizes.hive}), a town raid the largest raid map (${sizes.raid}), a fully built hub's yard Extra-large (${sizes["base-yard"]}), a smaller one without walls Large (${sizes["base-open"]})`);
     const wall = list.find((x) => x.name === "base-wall-night"), yard = list.find((x) => x.name === "base-yard");
     const hb = wall.st.bases[0];
     check(wall.b.tier.map === "wall" && yard.b.tier.map === "interior" && wall.b.h === yard.b.tier.h0 - INTERIOR.WALL_ROWS && hb && wall.b.h === wallMapRows(hb), `a base with many buildings: the yard map grows to ${yard.b.tier.w0}×${yard.b.tier.h0} to hold them and the wall map is as long (${wall.b.w}×${wall.b.h})`);
@@ -1722,6 +1723,7 @@ section("Radio relays on screen: the radio header, a group's radio panel, the Co
     const fT = w.tiles.find((u) => free(u, 9, 12, oT.id, far));
     const o = { id: newId(), tile: oT.id, type: "outpost", name: "Signal Rock", stock: { scrap: 30, parts: 4 }, buildings: [], construction: [], armory: [], radio: false, watchtower: false };
     w.bases.push(o);
+    stockTools(o); // a drill, wrenches and pliers (toolreqs.js): the relay needs them, and this outpost is made by hand
     const s = makeSurvivor(w); s.skills.mechanics = 5; s.location = { kind: "base", baseId: o.id }; w.survivors.push(s);
     const f = w.factions.find((x) => x.alive && x.bases.length);
     f.bases = [fT.id]; f.known = true; f.goodwill = 60; f.pact = "trade";

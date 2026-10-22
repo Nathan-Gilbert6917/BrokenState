@@ -230,7 +230,7 @@ function fixedJobActivity(state, base, s, job, h) {
       if (!base.construction.length) return act("stalled", "Builder – nothing to build", "The construction queue is empty and nothing is worn: queue a building (Construction tab) or give them another job.", job);
       if (underAttack(state, base)) return act("stalled", "Building stopped – on alert", "Nobody builds while the base is on alert or under siege.", job);
       const j = base.construction.find((c) => !gatherStalled(c));
-      if (!j && campMaterialsWork(base)) return act("work", "Making building materials for the step up", "The camp's step up waits for building materials: the builders make them from the scrap here.", job);
+      if (!j && campMaterialsWork(base)) return act("work", `Making building materials${campMaterialsWork(base).type === "walls" ? " or metal sheets" : ""} for ${buildName(campMaterialsWork(base)).toLowerCase()}`, "The build waits for building materials or metal sheets the stores lack: the builders make them from the scrap here.", job);
       if (!j) return act("stalled", "Builder – waiting for materials", "The queued builds wait for their materials to be gathered or brought in.", job);
       return act("work", `${(j.type === "clear" || j.type === "filltunnel") && j.label ? j.label : `Building ${buildName(j)}`} (${pct(j.progress / Math.max(1, j.hours))})`, "", job); // a clearing job by its label ("Fell a tree for wood (40%)")
     }
@@ -321,6 +321,7 @@ export function amountText(unit, n) {
   if (unit === "items") return `${n0(v)} made`;
   if (unit === "finds") return `${n0(v)} find${n0(v) === 1 ? "" : "s"}`;
   if (unit === "buildmat") return `${v} building materials`;
+  if (unit === "metalsheet") return `${v} metal sheets`;
   if (unit === "xp") return `${r1(v)} XP`;
   if (unit === "readh") return `${r1(v)} hours read`;
   if (unit === "heal") return `${r1(v)} health healed`;

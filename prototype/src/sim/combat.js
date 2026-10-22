@@ -40,7 +40,7 @@ import { armorMult, enemyBody, allyBody, bodyEmpty, takeAllBodies, leaveBodies, 
 import { areaSource, kitSource, spend } from "./itemcond.js";
 import { foundFill } from "./gunrounds.js"; // a found gun's few rounds
 import { rollAreaGuns } from "./gunfinds.js"; // the arsenal of 2026-10-10 in a raid container (its own dice)
-import { rollAreaFind, rollAreaWood, rollAreaArrows, rollAreaGunmod, splitParts, rollAreaGrenades, rollAreaLaunchers, rollAreaReload } from "./loot.js";
+import { rollAreaFind, rollAreaWood, rollAreaSheets, rollAreaArrows, rollAreaGunmod, splitParts, rollAreaGrenades, rollAreaLaunchers, rollAreaReload } from "./loot.js";
 import { rollAreaTent } from "./tents.js"; // tent bags in a raid's containers (their own dice)
 import { buzzAim } from "./comforts.js";
 import { needsAim } from "./needs.js";
@@ -97,6 +97,8 @@ import { GUN_WEAPONS, KIT_PATCH, WEAPON_PATCH } from "./data-guns.js"; // the we
 import { withFactory } from "./factoryfit.js"; // a sniper rifle carried with its scope and bipod (section 22)
 import { throwLanding } from "./throwables.js"; // a thrown spear lands like any throw
 import { BLADE_WEAPONS, BLADE_KIT_PATCH } from "./data-blades.js"; // knives and swords (merged below)
+import { TOOL_MELEE } from "./data-tools.js"; // the felling axe, the shovel, the makeshift axe (merged below)
+import { rollAreaTool } from "./toolreqs.js"; // tools in a raid container and a car's trunk (their own dice)
 import { SURV_MELEE, SURV_KIT_PATCH } from "./data-survival.js"; // survival gear: the Halligan bar and the pipe wrench (merged below)
 import { NL_WEAPONS, NL_KIT_PATCH } from "./data-nonlethal.js"; // the stun baton; tasers and spray on guards (merged below)
 import { nlHit, nlDown, nlAfterHit, nlAimPen, nlNoOw, nlStrike, nlAct, nlSetup, nlEnemyPhase, nlTurnStart, nlAI, nlBreak, nlBattleEnd, nlRaidEnd, nlDropPiles, nlSpared, blinded, setTakeAlive } from "./nonlethal.js"; // non-lethal weapons, taking people alive, surrender
@@ -150,6 +152,7 @@ import { cfgOf, lootQty, battleDials, legacyRaids } from "./worldcfg.js";
 import { concealHidden, concealAim, concealScore, softOn, softCost, markShot, tentStep, tentAI, tearTent, softSetup, settleTents } from "./softcover.js"; // bushes and tents: they hide people, stop no bullets; tents slashed, burned and worn (the user's picks 2026-10-20) // the run's dials (World… on the new-run screen): the battle carries its own
 import { strikeAct, slashAct, settleTentsDown } from "./tentfight.js"; // tents taken down (and carried off) and slashed in a fight (the user's request 2026-10-20)
 import { campRaidMap, campRaidUnits, campSleeperTurn, tentBoxLoot, campAfter } from "./campsite.js"; // the campsite raid: its clearing, its tents and their loot, its campers (the user's request 2026-10-20)
+import { NEW_KINDS, AREA_DEFS } from "./data-shops.js"; // the shops and services new as places: their raid rooms
 
 // Result handlers by key. Other modules register theirs while they load (conflicts.js, scavenge.js), which can be
 // before this module's own body has run (the imports are circular), so the map is made on first use: a `var`
@@ -859,6 +862,8 @@ export const WEAPONS = {
   spikedbat:  { name: "Spiked bat",        melee: true, dmg: [16, 25] },
   pipespear:  { name: "Pipe spear",        melee: true, dmg: [15, 23] },
   sawmachete: { name: "Saw-blade machete", melee: true, dmg: [17, 27] },
+  sheetmachete: { name: "Sheet-metal machete", melee: true, dmg: [16, 26] }, // cut from a metal sheet (crafting.js; 2026-10-21)
+  sheethatchet: { name: "Sheet-metal hatchet", melee: true, dmg: [16, 25] },
   crossbow:   { name: "Scrap crossbow",    dmg: [18, 26], opt: 7, fall: 4, aim: -4, ammo: 0, arrows: 1, noise: 0 },
   pipegun:    { name: "Pipe shotgun",      dmg: [20, 32], opt: 3, fall: 8, aim: -6, ammo: 1, noise: 3, close: 8, cap: 1, cal: "12ga", rel: 1.2 }, // a single-shot zip gun: reloaded after every shot
   // Special crafted weapons (craft books and blueprints, blueprints.js): better than the makeshift ones above.
@@ -938,6 +943,7 @@ Object.assign(WEAPONS, BLADE_WEAPONS);
 for (const [kind, patch] of Object.entries(BLADE_KIT_PATCH)) for (const [k, list] of Object.entries(patch)) if (KITS[kind]) KITS[kind][k] = [...(KITS[kind][k] || []), ...list];
 // Survival gear (data-survival.js): the two tool weapons' battle numbers, and what the kits' bodies carry (loot lists only).
 Object.assign(WEAPONS, SURV_MELEE);
+Object.assign(WEAPONS, TOOL_MELEE); // data-tools.js
 for (const [kind, patch] of Object.entries(SURV_KIT_PATCH)) for (const [k, list] of Object.entries(patch)) if (KITS[kind]) KITS[kind][k] = [...(KITS[kind][k] || []), ...list];
 
 const idx = (x, y) => y * W + x;
@@ -2319,9 +2325,10 @@ function genMap(rng, tile, opts = {}) {
     case "quarry": scatter("boulder", 6); scatter("rock", 8); for (const c of cells) if (c.f === floor) c.f = "dirt"; break;
     // Map site types (mapgen.js): big city blocks, small shops, garages, farms, cabins, open-air sites.
     case "apartments": case "office": case "supermarket": case "school": case "warehouse": case "hardware": building(7, 5); scatter("car", 3); scatter("crate", 3); break;
-    case "pharmacy": case "gunstore": case "grocery": case "diner": case "motel": case "church": case "clinic": case "feedstore":
+    case "pharmacy": case "gunstore": case "pawnshop": case "grocery": case "diner": case "motel": case "church": case "clinic": case "feedstore":
+    case "sportshop": case "electronics": case "radioshop": case "bookstore": case "petstore": case "clothing": case "vet": case "restaurant": case "bar": case "liquor": case "bank": case "library": case "garden": // data-shops.js
       building(5, 4); building(4, 3); scatter("car", 2); fenceLine(rx(), rng.int(1, H - 2), X(4), true); break;
-    case "autoshop": case "firestation": case "truckstop": building(5, 4); scatter("truck", 2); scatter("car", 3); scatter("crate", 2); break;
+    case "autoshop": case "firestation": case "truckstop": case "dealer": building(5, 4); scatter("truck", 2); scatter("car", 3); scatter("crate", 2); break;
     case "ranch": case "barn": building(6, 4); fenceLine(rx(X(3), X(6)), rng.int(1, Y(3)), X(8), true); fenceLine(rx(X(3), X(6)), rng.int(Y(9), Y(11)), X(8), true); scatter("hay", 5); break;
     case "cabin": case "lodge": case "ranger": building(4, 3); scatter("crate", 2); break;
     case "campground": case "crashsite": scatter("crate", 4); scatter(type === "crashsite" ? "truck" : "car", 2); break;
@@ -6575,6 +6582,10 @@ export const AREAS = {
   roadcars:  { name: "Cars on the road", outdoor: true, road: true, boxes: ["car", "car", "car"], loot: { fuel: [0.35, 1, 3], food: [0.3, 1, 3], water: [0.3, 1, 2], scrap: [0.35, 1, 3], ammo: [0.12, 4, 10], meds: [0.06, 1, 1] }, gear: [["pistol", 0.03], ["flashlight", 0.04], ["bottle", 0.06], ["slingbag", 0.03], ["backpack", 0.02], ["prybar", 0.02], ["binoculars", 0.01], ["compact9", 0.02]], alarm: 0.15 },
   pumps:     { name: "Fuel pumps",     outdoor: true, boxes: ["pump", "pump"], loot: { fuel: [0.7, 3, 8] }, gear: [] },
   gunshop:   { name: "Gun counter",    boxes: ["locker", "counter", "shelf"],  loot: { ammo: [0.85, 12, 35], scrap: [0.2, 1, 2] }, gear: [["pistol", 0.12], ["shotgun", 0.1], ["huntrifle", 0.1], ["vest", 0.05], ["kneeguards", 0.05], ["revolver", 0.08], ["leverrifle", 0.06], ["compbow", 0.04], ["xbow", 0.04], ["ghillie", 0.03], ["camonet", 0.03], ["binoculars", 0.06], ["spotscope", 0.03], ["monocular", 0.04], ["pistol22", 0.06], ["pistol45", 0.06], ["compact9", 0.06], ["rifle22", 0.06], ["dbshotgun", 0.05], ["semishotgun", 0.02], ["combatknife", 0.04], ["tomahawk", 0.03], ["kukri", 0.03], ["ak", 0.01]] },
+  // A pawn shop's counter and cases (shops.js): pawned guns, rigs and camping gear among the jewellery and the tools.
+  pawnshop:  { name: "Pawn counter",   boxes: ["counter", "cabinet", "shelf"], loot: { ammo: [0.45, 6, 20], scrap: [0.4, 1, 4], parts: [0.2, 1, 2] }, gear: [["pistol", 0.08], ["revolver", 0.07], ["shotgun", 0.06], ["huntrifle", 0.05], ["rifle22", 0.06], ["compact9", 0.06], ["leverrifle", 0.03], ["dbshotgun", 0.03], ["compbow", 0.03], ["xbow", 0.02], ["binoculars", 0.05], ["monocular", 0.03], ["hikingpack", 0.05], ["backpack", 0.04], ["duffle", 0.03], ["waterfilter", 0.04], ["stove", 0.04], ["headlamp", 0.04], ["lantern", 0.03], ["handradio", 0.04], ["vest", 0.03], ["kneeguards", 0.03], ["machete", 0.04], ["hatchet", 0.03], ["kukri", 0.02], ["katana", 0.01], ["golfclub", 0.03], ["bicycle", 0.02], ["repairkit", 0.02]] },
+  // A hardware store's aisles and its yard stock (shops.js): lumber, blocks and fixings, wire, scrap and parts, the tools.
+  hardware:  { name: "Hardware aisles", boxes: ["shelf", "shelf", "crate"], loot: { scrap: [0.85, 4, 12], parts: [0.55, 1, 3], buildmat: [0.45, 1, 3], wood: [0.3, 20, 60], fuel: [0.1, 1, 2] }, gear: [["hammer", 0.08], ["crowbar", 0.05], ["prybar", 0.05], ["sledge", 0.04], ["hatchet", 0.04], ["pickaxe", 0.03], ["machete", 0.03], ["boards", 0.08], ["barbedwire", 0.05], ["sandbags", 0.04], ["beartrap", 0.02], ["flashlight", 0.05], ["headlamp", 0.03], ["kneeguards", 0.03], ["toolbox", 0.04], ["repairkit", 0.02]] },
   lockers:   { name: "Locker room",    boxes: ["locker", "locker", "shelf"],   loot: { water: [0.4, 1, 3], meds: [0.06, 1, 1], scrap: [0.3, 1, 3] }, gear: [["sportspads", 0.1], ["footballhelmet", 0.08], ["backpack", 0.06], ["kneeguards", 0.04], ["bat", 0.1], ["golfclub", 0.04]] },
   chapel:    { name: "Chapel",         boxes: ["cabinet", "shelf", "counter"], loot: { food: [0.5, 2, 6], water: [0.5, 2, 5], meds: [0.07, 1, 1] }, gear: [["bandagekit", 0.05]] },
   // First aid on hand: a school nurse, a fire station's first-aid room, a barracks' medical store (medfinds.js).
@@ -6602,8 +6613,8 @@ export const AREA_SETS = {
   road: ["roadcars", "roadcars", "wreck", "campsite"], bridge: ["roadcars", "roadcars", "roadcars", "campsite"],
   // City blocks.
   autoshop: ["garage", "garage", "workshop", "wreck"], pharmacy: ["pharmacy", "pharmacy", "store", "office"],
-  supermarket: ["store", "store", "kitchen", "warehouse", "wreck"], gunstore: ["gunshop", "store", "office", "wreck"],
-  hardware: ["workshop", "store", "garage", "warehouse"], apartments: ["house", "house", "house", "kitchen", "garage"],
+  supermarket: ["store", "store", "kitchen", "warehouse", "wreck"], gunstore: ["gunshop", "store", "office", "wreck"], pawnshop: ["pawnshop", "pawnshop", "gunshop", "store", "office"],
+  hardware: ["hardware", "hardware", "workshop", "garage", "warehouse"], apartments: ["house", "house", "house", "kitchen", "garage"],
   office: ["office", "office", "office", "kitchen"], school: ["lockers", "office", "kitchen", "nurse", "lockers"],
   firestation: ["garage", "nurse", "kitchen", "motorpool"], warehouse: ["warehouse", "warehouse", "warehouse", "office", "wreck"],
   // Small-town shops.
@@ -7366,12 +7377,18 @@ export function searchBox(state, b, u, box, open = false, quick = false) {
       // Wood: a log basket, a shed's kindling, a broken chair (loot.js AREA_WOOD; its own dice too).
       const wood = rollAreaWood(state, b.tileId, R.areas[box.area].type, box.kind, `box${bid}`);
       if (wood > 0) sup.wood = (sup.wood || 0) + wood;
+      // Metal sheets: a wrecked car's panels and roof, a stack in a garage or a barn (loot.js AREA_SHEETS; its own dice too).
+      const sheets = rollAreaSheets(state, b.tileId, R.areas[box.area].type, box.kind, `box${bid}`);
+      if (sheets > 0) sup.metalsheet = (sup.metalsheet || 0) + sheets;
       // Arrows: a quiver in a cabin's locker, bolts on a shop shelf (loot.js AREA_ARROWS; its own dice too).
       const arrows = rollAreaArrows(state, b.tileId, R.areas[box.area].type, box.kind, `box${bid}`);
       if (arrows > 0) sup.arrows = (sup.arrows || 0) + arrows;
       // A tent bag: a campsite's, a garage's shelf, barracks stores (tents.js AREA_TENTS; its own dice too).
       const tent = rollAreaTent(state, b.tileId, R.areas[box.area].type, site, `box${bid}`);
       if (tent) gear.push(tent);
+      // A tool: a workshop's bench, a barn's wall, a car's trunk (toolreqs.js AREA_TOOLS / CAR_TOOLS; its own dice too).
+      const tool = rollAreaTool(state, b.tileId, R.areas[box.area].type, box.kind, `box${bid}`);
+      if (tool) gear.push(tool);
       if (def.alarm && box.kind === "car" && drng.chance(def.alarm) && !u.quiet) { // quiet: Quiet Hands never sets one off
         R.heat = Math.min(100, R.heat + 12);
         say(b, "A car alarm goes off! Heat jumps.", "danger");
@@ -7731,3 +7748,7 @@ export { survivorById, alive, log };
 
 // medics.js: the internals it needs (the meds pool, a round out of the gun, the alarm, whom a unit fights, plain meds).
 MED.setMedicHooks({ take, spendRounds, medsOf, spendMed, alertAll, foesOf, heal, fireRefusal, evacAt: (b, x, y) => evacAt(b, x, y) });
+
+// data-shops.js: the town's and the city's shops and services (their rows; this module's own rows win).
+for (const [k, d] of Object.entries(AREA_DEFS)) if (!AREAS[k]) AREAS[k] = d.def;
+for (const [k, d] of Object.entries(NEW_KINDS)) if (!AREA_SETS[k]) AREA_SETS[k] = d.areas;

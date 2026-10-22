@@ -81,12 +81,16 @@ import { isManaged, prio } from "./work.js";
 import { prisonLabour } from "./prisoners.js"; // prisoners-tab: prisoners set to Clean and mend (breakdownsDaily upkeep)
 import { cfgOf } from "./worldcfg.js"; // the run's dials: Failures
 import { mendTents } from "./softcover.js"; // a camp's tents slashed or burned in a fight, mended a day at a time
+import { siteCost, payCost, SITE_MAKE, MADE_KEYS } from "./buildmats.js"; // metal sheets in the repairs of what is clad or roofed in them (made on site from scrap when short)
 import { BED_FIXTURES } from "./data-beds.js"; // beds as furniture: their raid wear and repair
 
 export const WELL_WATER = 6; // the hub pump's share (hubevents.js WELL_DOWN.water)
 export const SCRAP_PER_PART = 4; // a repair short of scrap can use a part instead of this much
 // use: wear a day of use; age: a day standing; frost / storm / rain: extra on such a day; attack: wear per attack.
-// repair / rig: { hours, cost, min (Mechanics) }; what: what breaking does.
+// repair / rig: { hours, cost, min (Mechanics) }; what: what breaking does. What is roofed, clad or plated in metal
+// sheets (buildings.js SHEETS: the storehouse's leaking roof, the garage, the shed, the warehouse's roller door, the
+// reinforced gate, the towers, the bunkhouses) is mended with a sheet (the user's call 2026-10-21: metal sheets "used
+// in repairs"), 5 scrap less; a sheet the stores lack is made on site from scrap (repairPlan: buildmats.js SITE_MAKE).
 export const FIXTURES = {
   pump:        { name: "Well pump", use: 0.9, frost: 2.5, storm: 4, repair: { hours: 6, cost: { scrap: 3, parts: 1 }, min: 1 }, rig: { hours: 2, cost: { scrap: 1 }, min: 0 }, what: `the hub's well gives ${WELL_WATER} less water a day` },
   well:        { use: 0.9, frost: 2.5, storm: 4, repair: { hours: 6, cost: { scrap: 3, parts: 1 }, min: 1 }, rig: { hours: 2, cost: { scrap: 1 }, min: 0 }, what: "no water from this well" },
@@ -105,19 +109,19 @@ export const FIXTURES = {
   canner:      { use: 1.0, idle: 0.05, spares: 30, repair: { hours: 5, cost: { scrap: 2, parts: 1 }, min: 2 }, rig: { hours: 2, cost: { scrap: 1 }, min: 1 }, what: "no preserving (the kitchen and its pressure canner)" },
   radio:       { use: 0.7, storm: 6, spares: 20, repair: { hours: 10, cost: { scrap: 4, parts: 2 }, min: 4 }, rig: { hours: 3, cost: { scrap: 2 }, min: 2 }, what: "the radio station is off the air" },
   walls:       { age: 0.05, attack: 18, repair: { hours: 12, cost: { scrap: 10 }, min: 0 }, rig: { hours: 4, cost: { scrap: 4 }, min: 0 }, what: "no wall strength" },
-  gate:        { age: 0.05, attack: 22, repair: { hours: 8, cost: { scrap: 6, parts: 1 }, min: 1 }, rig: { hours: 3, cost: { scrap: 3 }, min: 0 }, what: "the gate no longer holds hordes back" },
-  storehouse:  { age: 0.1, storm: 8, rain: 1, repair: { hours: 6, cost: { scrap: 4 }, min: 0 }, rig: { hours: 2, cost: { scrap: 2 }, min: 0 }, what: "a leaking roof: no food room and no protection from raiders" },
+  gate:        { age: 0.05, attack: 22, repair: { hours: 8, cost: { scrap: 1, metalsheet: 1, parts: 1 }, min: 1 }, rig: { hours: 3, cost: { scrap: 3 }, min: 0 }, what: "the gate no longer holds hordes back" },
+  storehouse:  { age: 0.1, storm: 8, rain: 1, repair: { hours: 6, cost: { metalsheet: 1 }, min: 0 }, rig: { hours: 2, cost: { scrap: 2 }, min: 0 }, what: "a leaking roof: no food room and no protection from raiders" },
   // Raid damage only (raidOnly: no wear from use, age or weather; outer: the defensive line raiders hit first).
   barricades:  { raidOnly: true, outer: true, repair: { hours: 4, cost: { scrap: 4 }, min: 0 }, rig: { hours: 2, cost: { scrap: 2 }, min: 0 }, what: "a gap in the barricades: 12% less of a horde held back, no cover there on the battle map" },
   floodlights: { raidOnly: true, outer: true, attack: 4, repair: { hours: 5, cost: { scrap: 3, parts: 1 }, min: 1 }, rig: { hours: 2, cost: { scrap: 2 }, min: 0 }, what: "dark walls: no floodlight bonus" },
-  watchtower:  { raidOnly: true, outer: true, repair: { hours: 6, cost: { scrap: 6 }, min: 0 }, rig: { hours: 2, cost: { scrap: 3 }, min: 0 }, what: "no lookout post: 2 tiles less vision and later warnings" },
-  bunkhouse:   { raidOnly: true, repair: { hours: 8, cost: { scrap: 8 }, min: 0 }, rig: { hours: 3, cost: { scrap: 4 }, min: 0 }, what: "6 fewer beds" },
-  barracks:    { raidOnly: true, repair: { hours: 12, cost: { scrap: 14 }, min: 0 }, rig: { hours: 4, cost: { scrap: 6 }, min: 0 }, what: "12 fewer beds" },
+  watchtower:  { raidOnly: true, outer: true, repair: { hours: 6, cost: { scrap: 1, metalsheet: 1 }, min: 0 }, rig: { hours: 2, cost: { scrap: 3 }, min: 0 }, what: "no lookout post: 2 tiles less vision and later warnings" },
+  bunkhouse:   { raidOnly: true, repair: { hours: 8, cost: { scrap: 3, metalsheet: 1 }, min: 0 }, rig: { hours: 3, cost: { scrap: 4 }, min: 0 }, what: "6 fewer beds" },
+  barracks:    { raidOnly: true, repair: { hours: 12, cost: { scrap: 9, metalsheet: 1 }, min: 0 }, rig: { hours: 4, cost: { scrap: 6 }, min: 0 }, what: "12 fewer beds" },
   cistern:     { raidOnly: true, repair: { hours: 8, cost: { scrap: 8 }, min: 0 }, rig: { hours: 3, cost: { scrap: 4 }, min: 0 }, what: "a holed tank: 150 less water room" },
   cellar:      { raidOnly: true, repair: { hours: 6, cost: { scrap: 5 }, min: 0 }, rig: { hours: 2, cost: { scrap: 2 }, min: 0 }, what: "a caved-in cellar: 200 less food room" },
   coldstore:   { raidOnly: true, repair: { hours: 6, cost: { scrap: 6 }, min: 0 }, rig: { hours: 2, cost: { scrap: 3 }, min: 0 }, what: "a smashed ice house: 150 less food room" },
   armory:      { raidOnly: true, repair: { hours: 5, cost: { scrap: 4, parts: 1 }, min: 0 }, rig: { hours: 2, cost: { scrap: 2 }, min: 0 }, what: "a smashed door and locks: an ordinary door, the gun cage and the ammo lockers open to raiders" }, // basemap.js: the door (MAP_WEAR.door) or a lock (MAP_WEAR.lock) battered open in a raid // an ice house again (machines-2: no power)
-  garage:      { age: 0.12, repair: { hours: 8, cost: { scrap: 6, parts: 1 }, min: 1 }, rig: { hours: 3, cost: { scrap: 3 }, min: 0 }, what: "vehicle repairs at the field rate" },
+  garage:      { age: 0.12, repair: { hours: 8, cost: { scrap: 1, metalsheet: 1, parts: 1 }, min: 1 }, rig: { hours: 3, cost: { scrap: 3 }, min: 0 }, what: "vehicle repairs at the field rate" },
   cells:       { raidOnly: true, repair: { hours: 6, cost: { scrap: 5, parts: 1 }, min: 0 }, rig: { hours: 2, cost: { scrap: 3 }, min: 0 }, what: "broken bars: 3 fewer places for prisoners" },
   common_room: { raidOnly: true, repair: { hours: 6, cost: { scrap: 6 }, min: 0 }, rig: { hours: 2, cost: { scrap: 3 }, min: 0 }, what: "no mood from the common room" },
   chapel:      { raidOnly: true, repair: { hours: 5, cost: { scrap: 5 }, min: 0 }, rig: { hours: 2, cost: { scrap: 2 }, min: 0 }, what: "no mood from the chapel" },
@@ -158,8 +162,8 @@ export const FIXTURES = {
   crates:      { raidOnly: true, repair: { hours: 1, cost: { scrap: 1 }, min: 0 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "smashed crates: 30 days less food room" },
   // The storage ladder (base storage limits, basestorage.js): raid damage only, about a third of the building's scrap.
   storebox:    { raidOnly: true, repair: { hours: 1, cost: { scrap: 1 }, min: 0 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "a smashed storage box: no room in it" },
-  shed:        { raidOnly: true, repair: { hours: 4, cost: { scrap: 4 }, min: 0 }, rig: { hours: 2, cost: { scrap: 2 }, min: 0 }, what: "a battered storage shed: its door hanging, the rain in" },
-  warehouse:   { raidOnly: true, repair: { hours: 12, cost: { scrap: 13, parts: 1 }, min: 0 }, rig: { hours: 4, cost: { scrap: 5 }, min: 0 }, what: "a warehouse with its roller door battered in" },
+  shed:        { raidOnly: true, repair: { hours: 4, cost: { metalsheet: 1 }, min: 0 }, rig: { hours: 2, cost: { scrap: 2 }, min: 0 }, what: "a battered storage shed: its door hanging, the rain in" },
+  warehouse:   { raidOnly: true, repair: { hours: 12, cost: { scrap: 3, metalsheet: 2, parts: 1 }, min: 0 }, rig: { hours: 4, cost: { scrap: 5 }, min: 0 }, what: "a warehouse with its roller door battered in" },
   cookhouse:   { raidOnly: true, repair: { hours: 2, cost: { scrap: 2 }, min: 0 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "no cook fire: the game and fish are eaten as they come" },
   boiler:      { raidOnly: true, repair: { hours: 3, cost: { scrap: 3 }, min: 0 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "no boiling: the ground water is drunk as it comes" },
   water_barrel:{ raidOnly: true, repair: { hours: 2, cost: { scrap: 1 }, min: 0 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "a holed barrel: 25 less water room" },
@@ -173,7 +177,7 @@ export const FIXTURES = {
   sandbag1:    { raidOnly: true, outer: true, repair: { hours: 1, cost: { scrap: 1 }, min: 0 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "burst sandbags: no cover on that cell" }, // a 1×1 Sandbags: refilled at what it took to fill (basemap.js MAP_WEAR.sandbag)
   barbed_wire: { raidOnly: true, outer: true, repair: { hours: 2, cost: { scrap: 2 }, min: 0 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "cut wire: 6% less of a horde held back" },
   razor_wire:  { raidOnly: true, outer: true, repair: { hours: 3, cost: { scrap: 4, parts: 1 }, min: 1 }, rig: { hours: 1, cost: { scrap: 2 }, min: 0 }, what: "cut coils: 10% less of a horde held back" },
-  guard_towers:{ raidOnly: true, outer: true, repair: { hours: 9, cost: { scrap: 10, parts: 1 }, min: 1 }, rig: { hours: 3, cost: { scrap: 4 }, min: 0 }, what: "a tower down: 8% less of a horde held back" },
+  guard_towers:{ raidOnly: true, outer: true, repair: { hours: 9, cost: { scrap: 5, metalsheet: 1, parts: 1 }, min: 1 }, rig: { hours: 3, cost: { scrap: 4 }, min: 0 }, what: "a tower down: 8% less of a horde held back" },
   minefield:   { raidOnly: true, outer: true, repair: { hours: 6, cost: { scrap: 7, parts: 1 }, min: 1 }, rig: { hours: 2, cost: { scrap: 3 }, min: 0 }, what: "the mines dug up or set off: none left for the next attack" },
 };
 Object.assign(FIXTURES, BED_FIXTURES); // beds as furniture (data-beds.js): battered in a raid, a broken one sleeps nobody until it is repaired
@@ -290,15 +294,24 @@ export function repairPlan(state, base, fx, method = "repair", whoId = null) {
   const full = {};
   for (const [k, v] of Object.entries(r.cost)) { const n = k === "scrap" ? Math.max(1, Math.ceil(v * share)) : Math.round(v * share); if (n > 0) full[k] = n; }
   const cost = { ...full };
+  let made = 0; // a metal sheet (or building materials) the stores lack: made on site from scrap (buildmats.js), its hours on the repair
+  for (const k of MADE_KEYS) {
+    const lackK = Math.max(0, (cost[k] || 0) - Math.floor(base.stock[k] || 0));
+    if (!lackK) continue;
+    cost[k] -= lackK; if (!cost[k]) delete cost[k];
+    cost.scrap = (cost.scrap || 0) + lackK * SITE_MAKE[k].scrap;
+    made += lackK * SITE_MAKE[k].hours;
+  }
   const lack = Math.max(0, (cost.scrap || 0) - Math.floor(base.stock.scrap || 0));
   if (lack > 0) { cost.scrap -= lack; cost.parts = (cost.parts || 0) + Math.ceil(lack / SCRAP_PER_PART); if (!cost.scrap) delete cost.scrap; }
   const short = Object.entries(cost).filter(([k, v]) => (base.stock[k] || 0) < v);
   const why = method === "rig" && !fx.broken ? "Not broken." : !fx.broken && share <= 0 ? "Nothing to repair." : jobFor(base, fx) ? "Already being worked on." :
     !who ? (whoId != null ? "They cannot do it (not here, busy, unwell or short of Mechanics)." : r.min ? `Needs a free survivor with Mechanics ${r.min}+ here.` : "Nobody here is free and well enough.") :
     short.length ? `Needs ${costText(full)} (short scrap can be made up with parts, 1 for ${SCRAP_PER_PART}).` : "";
-  return { ok: !why, why, who, hours, cost, method, min: r.min, share };
+  return { ok: !why, why, who, hours: hours + Math.ceil(made), cost, method, min: r.min, share };
 }
-export const costText = (cost) => Object.entries(cost).map(([k, v]) => `${v} ${k === "parts" && v === 1 ? "part" : k}`).join(", ");
+const COST_WORD = { buildmat: ["building material", "building materials"], metalsheet: ["metal sheet", "metal sheets"], parts: ["part", "parts"] };
+export const costText = (cost) => Object.entries(cost).map(([k, v]) => `${v} ${COST_WORD[k] ? COST_WORD[k][v === 1 ? 0 : 1] : k}`).join(", ");
 
 export function startRepair(state, base, fx, method = "repair", whoId = null) {
   const plan = repairPlan(state, base, fx, method, whoId);
@@ -424,10 +437,11 @@ function wallRepairHour(state, base, h, onWalls) {
       const next = wallToMend(base)[0];
       if (!next) break;
       const cost = wallSegCost(next);
-      const short = Object.entries(cost).find(([k, v]) => (base.stock[k] || 0) < v);
+      const take = siteCost(base.stock, cost).take; // a metal sheet or building materials the stores lack: made on site from scrap (buildmats.js)
+      const short = Object.entries(take).find(([k, v]) => (base.stock[k] || 0) < v);
       if (short) { if (!o.stalled) log(state, `🔧 The wall's repair at ${base.name} waits: the next segment needs ${costText(cost)}.`, "danger"); o.stalled = `Needs ${costText(cost)}`; return; }
-      for (const [k, v] of Object.entries(cost)) base.stock[k] -= v;
-      o.cur = next.id; o.paid = cost; o.done = 0; o.stalled = null; cur = next;
+      const pay = payCost(base.stock, cost);
+      o.cur = next.id; o.paid = pay.paid; o.done = -pay.hours; o.stalled = null; cur = next; // the sheets made first: their hours before the segment's
     }
     const need = wallSegHours(cur) - o.done, use = Math.min(budget, need);
     o.done += use; budget -= use;

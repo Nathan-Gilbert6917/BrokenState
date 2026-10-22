@@ -26,7 +26,7 @@
 //      scale through tripevents.js (the dead, the dead beasts, animals, an accident, getting lost, a stranger, a
 //      find; the attack card and the lone fight), a load dropped when they run (lost on the road).
 //   2. With nothing to move, local hauling (never idle while there is any): a stockpile of the base's with goods in it
-//      (fieldworks.js) fetched in; salvage on the base map beyond the ring (a wreck stripped: 6 scrap and a car part;
+//      (fieldworks.js) fetched in; salvage on the base map beyond the ring (a wreck stripped: 6 scrap, a car part and 2 metal sheets;
 //      a broken crate or an old drum: a scrap; a rock or a boulder broken for stone: building materials, as there is
 //      no stone supply; base.haulJobs, basemap.js queueClear / finishClear), at HAUL.salvage work-hours an hour; else
 //      scavenge-lite in the ruins round the base (a share of a scavenger's day, scrap and a little building material,
@@ -54,7 +54,7 @@
 // (gatherStores, the day's work at the main base), their local salvage, and goods under AI_HAUL.minKg.
 // tools/haultest.js.
 import { atBase, baseById, hourOfDay, day, log, newId, hub, skill } from "./world.js";
-import { SUPPLIES, GEAR, supWeight, supplyFew } from "./data.js";
+import { SUPPLIES, GEAR, CATEGORIES, supWeight, supplyFew } from "./data.js";
 import { ROUND_SUPPLIES } from "./data-ammo.js";
 import { FOODS, foodIn, takeItem, addFood, packPick, DAY_KG } from "./foods.js";
 import { foodUse, mouthsAt } from "./upkeep.js";
@@ -111,14 +111,14 @@ const EPS = 1e-9;
 // ---------- orders ----------
 export const haulOrders = (state) => state.haulOrders || (state.haulOrders = []);
 export const WHAT_SPECIAL = { food: "Food (days)", surplus: "Surplus (the outpost shipping's rule)", outside: "What lies outside (no room)", all: "Everything (but food, water and rounds)" };
-export const CATS = ["scrap", "parts", "medical", "fuel", "firewood", "vehicle", "gunmod", "electronics", "containers", "bow", "water"];
+export const CATS = ["scrap", "parts", "medical", "fuel", SUPPLIES.wood.cat, "vehicle", "gunmod", "electronics", "containers", "bow", "water"]; // (wood: its old category key, named "wood" in data.js CATEGORIES)
 const isRound = (k) => !!ROUND_SUPPLIES[k] || k === "ammo";
 /** The supply keys a base can haul one by one (no food items: "food" is days; no rounds). */
 export const haulKeys = () => Object.keys(SUPPLIES).filter((k) => !FOODS[k] && !isRound(k) && supWeight(k) > 0);
-/** "Food", "Scrap", "Category: parts" … */
+/** "Food", "Scrap", "All spare parts" (a category by its name, data.js CATEGORIES) … */
 export function whatName(what) {
   if (WHAT_SPECIAL[what]) return WHAT_SPECIAL[what];
-  if (String(what).startsWith("cat:")) return `All ${what.slice(4)}`;
+  if (String(what).startsWith("cat:")) { const c = what.slice(4); return `All ${CATEGORIES[c] ? CATEGORIES[c].name : c}`; }
   return SUPPLIES[what] ? SUPPLIES[what].name : what;
 }
 /** Adds a standing order. o: { from, to, what, mode, qty }. Returns { order } or { error }. */
@@ -349,8 +349,10 @@ function legHours(state, path, s, cap, kg, startHour) {
 }
 
 // ---------- the route trips ----------
-const pathCache = new Map();
+const pathCaches = new WeakMap(); // state -> its own paths: tile ids repeat across worlds (a new game, a load, the tools)
 function routePath(state, a, b, vehicle) {
+  let pathCache = pathCaches.get(state);
+  if (!pathCache) pathCaches.set(state, (pathCache = new Map()));
   const k = `${a}:${b}:${vehicle ? 1 : 0}:${state.hour >> 5}`;
   if (pathCache.has(k)) return pathCache.get(k);
   if (pathCache.size > 400) pathCache.clear();
@@ -469,7 +471,7 @@ function salvagePieces(state, base, n = 1) {
   }
   return out.sort((a, b) => a.d - b.d || a.r - b.r || (a.p.g < b.p.g ? -1 : 1)).slice(0, n);
 }
-const SALVAGE_LABEL = { wreck: "Strip a wreck for scrap", crate: "Haul off a broken crate", barrel: "Haul off an old drum", rock: "Break a rock for stone", boulder: "Break up a boulder for stone" };
+const SALVAGE_LABEL = { wreck: "Strip a wreck for scrap and metal sheets", crate: "Haul off a broken crate", barrel: "Haul off an old drum", rock: "Break a rock for stone", boulder: "Break up a boulder for stone" };
 function queueSalvage(state, base) {
   const [c] = salvagePieces(state, base, 1);
   if (!c) return null;

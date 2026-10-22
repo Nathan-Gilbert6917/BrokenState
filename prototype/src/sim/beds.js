@@ -55,12 +55,14 @@
 // the mean a head × BEDS_AI.morale off their desertion pressure, groupcare.js desertPressure, as hot meals' is).
 // Their bases' map (groupbases.js WORKS_BUILDING: the hall a Lodge, each piece itself) is laid out by the same auto
 // layout, the furniture on the Lodge's floor.
+import { siteCost } from "./buildmats.js"; // the Lodge's building materials and sheets made from scrap when short
 import { BED_SPEC, BED_KINDS, BED_MOOD, BED_FINDS, BED_CRAFTS, BEDS_AI, ROUGH_WEATHER } from "./data-beds.js";
 import { BUILDINGS, BEDS, addBuilding, count, plainBeds, baseBeds, queuedBeds, isShelter, canBuild } from "./buildings.js"; // (call-time only: the modules load in a circle)
 import { pitchArmoryBags, tentsText } from "./tents.js"; // (call-time only) the governor pitches spare bags first
 import { fittingRoom, placeItem, refreshBaseMap } from "./basemap.js"; // (call-time only)
 import { makeItem, canCraft, queueCraft, craftQueue } from "./crafting.js"; // (call-time only)
 import { residents } from "./world.js";
+import { personKey } from "./members.js"; // (call-time only) a person's id for the dice: a member who joined keeps their own
 import { tentKind } from "./buildings.js"; // (call-time only) a pitched tent's kind
 import { TENT_TYPES } from "./data-tents.js"; // the one tent table: a pitched tent's sleepers and mood
 import { weatherAt } from "./weather.js"; // (call-time only) a wet or freezing night for the rough sleepers
@@ -194,9 +196,10 @@ export function roughColdDaily(state, base) {
   for (const [id, slot] of a) {
     if (slot) continue;
     const s = state.survivors.find((x) => x.id === id);
-    if (!s || !s.alive || hash01(state.seed, "roughcold", id, d) >= ROUGH_WEATHER.coldIll) continue;
+    const k = personKey(state, id); // ids are process-wide (tools/sameseedtest.js): the world's own, a member who joined keeps theirs
+    if (!s || !s.alive || hash01(state.seed, "roughcold", k, d) >= ROUGH_WEATHER.coldIll) continue;
     const C = CONDITIONS.chestcold;
-    if (addCondition(state, s, "chestcold", `sleeping rough on a freezing night at ${base.name}`, { sev: C.sev[0] + Math.floor(hash01(state.seed, "roughcoldsev", id, d) * (C.sev[1] - C.sev[0] + 1)), cause: "weather" })) got.push(s);
+    if (addCondition(state, s, "chestcold", `sleeping rough on a freezing night at ${base.name}`, { sev: C.sev[0] + Math.floor(hash01(state.seed, "roughcoldsev", k, d) * (C.sev[1] - C.sev[0] + 1)), cause: "weather" })) got.push(s);
   }
   return got;
 }
@@ -308,7 +311,7 @@ export function hallWork(state, f, tile) {
   const w = f.works && f.works[tile];
   if (nW(w, "hall") || nW(w, "camp")) return null;
   const def = hallDef();
-  if (!canPay(f, def.cost, { scrap: BEDS_AI.keep * f.pop })) return null;
+  if (!canPay(f, siteCost(f.stock || {}, def.cost).take, { scrap: BEDS_AI.keep * f.pop })) return null; // its building materials and sheets: from their scrap when short (groupworks.js startWork)
   return { tile, type: "hall", why: "a lodge to set beds in", def };
 }
 // A day's furniture for one group: at most one piece, at the first base with a hall and floor left for it (your rule:

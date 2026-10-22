@@ -85,7 +85,7 @@ import { queueCannerUpgrade, queueGenUpgrade } from "./sim/buildings.js";
 import { widenRing, refreshBaseMap } from "./sim/basemap.js"; // the Defenses tab's Widen the ring (the wall pieces the game places) // machines-2: the pressure canner fitted to a preserving room; gen-tiers: a generator upgraded
 import { HEALTH_ACTIONS, HEALTH_CHANGE } from "./ui/health.js";
 import { SKILL_ACTIONS, SKILL_CHANGE } from "./ui/skills.js";
-import { TRADE_ACTIONS, TRADE_CHANGE_ACTIONS } from "./ui/tradewindow.js";
+import { TRADE_ACTIONS, TRADE_CHANGE_ACTIONS, meetPickBanner, meetPickClick, meetPickCancel, openMeetPlan } from "./ui/tradewindow.js";
 import { radioDeals } from "./sim/radiotrade.js"; // radio deals your caravan fetches
 import { VISITOR_ACTIONS } from "./ui/visitors.js";
 import { DIPLO_ACTIONS, DIPLO_CHANGE } from "./ui/diplomacy.js";
@@ -181,7 +181,7 @@ const freshUi = () => ({
   nrMap: false, // the new-run screen put aside to look at the map (ui/newgame.js View map; the banner or Esc brings it back)
   wcOpen: false, wcWas: null, // the World… window (ui/worldcfg.js) and the dials as they were when it opened
   dev: false, showFps: false, armed: newArmed(),
-  radioWith: null, radioMsg: "", radioDeal: null, radioBase: null, caravanPlan: null, cvMsg: "", attackConfirm: null, // ui/tradewindow.js
+  radioWith: null, radioMsg: "", radioDeal: null, radioBase: null, radioMeet: null, meetPick: null, meetMsg: "", caravanPlan: null, cvMsg: "", attackConfirm: null, // ui/tradewindow.js
   settings: null, slot: null, savedMark: null, // ui/settings.js: the menu, the save slot this game uses, when it was last saved
   codex: null, paletteRecent: [], palFocus: null, // ui/codex.js window; ui/cmdpalette.js recent picks and a build button to light up
   ledger: null, // ui/ledger.js: the Ledger window is open
@@ -308,7 +308,7 @@ function step(now) {
     if (ui.speed <= MAX_SPEED) ui.lastSpeed = ui.speed;
     ui.speed = 0;
   }
-  if (!blocked() && ui.speed > 0 && !ui.moveParty && !ui.fwPlace) { // ui/fieldworks.js: the clock waits for a field work's tile
+  if (!blocked() && ui.speed > 0 && !ui.moveParty && !ui.fwPlace && !ui.meetPick) { // ui/fieldworks.js: the clock waits for a field work's tile
     acc += dt * ui.speed * HOURS_PER_SECOND;
     while (acc >= 1 && ticks < 12) {
       setClockFrac(0); // the hour's end: what the tick and its tray rules start, starts on the hour (sim/parties.js)
@@ -698,6 +698,7 @@ function bannerHTML() {
       (n ? `<span class="armed" data-tip="${esc(waiting.join(" · "))}">${n} order${n === 1 ? "" : "s"} will start when you unpause</span>` : "") + `</div>`;
   }
   html += fwPlaceBanner(state, ui); // ui/fieldworks.js: placing a field work
+  html += meetPickBanner(state, ui); // ui/tradewindow.js: a tile to meet a group's caravan at
   if (ui.moveParty) {
     html += `<div class="movemode" data-tip="The clock waits until you pick a tile.">Move: <b>click a tile</b> to ${ui.moveQueue ? "queue a move" : "send the team"} · <b>Esc</b> cancels` +
       (ui.moveMsg ? `<br><span class="danger">${esc(ui.moveMsg)}</span>` : "") + `</div>`;
@@ -1201,6 +1202,10 @@ const actions = {
     if (c.uiAction && c.uiAction.type === "volpick") { openVolPick(ui, c.uiAction.askId); return; } // sim/volunteers.js: a group's ask, choose who goes
     if (c.uiAction && c.uiAction.type === "moveout") { openMoveOut(c.uiAction.baseId); return; } // the Overcrowded card (sim/moveout.js)
     if (c.uiAction && c.uiAction.type === "basemap") { const why = openBuildMap(state, ui, c.uiAction.baseId); if (why) ui.cardResult = { title: card.title, text: why }; return; } // sim/staging.js: Open the build map (a camp set up, a base gone up a tier)
+    if (c.uiAction && c.uiAction.type === "meetCaravan") { // a group asked to meet halfway (sim/trademeet.js): the planner aimed at the tile
+      if (!openMeetPlan(state, ui, c.uiAction.factionId) && text) ui.cardResult = { title: card.title, text };
+      return;
+    }
     if (c.uiAction && c.uiAction.type === "radioCaravan") { // a group asked you to bring your side (sim/radiotrade.js): the planner for that deal
       const deal = radioDeals(state).find((x) => x.factionId === c.uiAction.factionId);
       if (deal) TRADE_ACTIONS["rd-dealcaravan"](state, ui, { id: deal.id });
@@ -2033,8 +2038,9 @@ window.addEventListener("mouseup", (e) => {
     const r = canvas.getBoundingClientRect();
     const id = screenToTile(state, e.clientX - r.left, e.clientY - r.top);
     const p = ui.moveParty != null && id >= 0 ? partyById(ui.moveParty) : null;
-    const wk = !ui.fwPlace && !p && ui.moveParty == null && !e.shiftKey ? workerAt((e.clientX - r.left) / camera.zoom + camera.x, (e.clientY - r.top) / camera.zoom + camera.y) : null;
-    if (ui.fwPlace && id >= 0) act(() => fwPlaceClick(state, ui, id)); // ui/fieldworks.js: a field work placed here (or why not)
+    const wk = !ui.fwPlace && !ui.meetPick && !p && ui.moveParty == null && !e.shiftKey ? workerAt((e.clientX - r.left) / camera.zoom + camera.x, (e.clientY - r.top) / camera.zoom + camera.y) : null;
+    if (ui.meetPick && id >= 0) act(() => meetPickClick(state, ui, id)); // ui/tradewindow.js: the meeting tile (or why not)
+    else if (ui.fwPlace && id >= 0) act(() => fwPlaceClick(state, ui, id)); // ui/fieldworks.js: a field work placed here (or why not)
     else if (p) act(() => pickMove(p, id));
     else if (wk && wk.sid != null) { ui.survivor = wk.sid; mapClicked = true; } // a base worker out on the map: their survivor screen (ui/workermap.js)
     else if (id >= 0 && ui.moveParty == null) {
@@ -2378,6 +2384,7 @@ function closeTopLayer() {
   if (state.gameOver) return false;
   if (ui.cardResult) { ui.cardResult = null; return true; }
   if (trayEsc(state, ui)) return true; // a card opened from the tray goes back to it (ui/pacing.js)
+  if (meetPickCancel(ui)) return true; // ui/tradewindow.js: picking a meeting tile: back to the radio (or its trade window)
   if (!state.autopilot && (cardUp(state, ui) || state.engagement || state.trade || activeCrawl(state))) return false; // these need an answer
   if (ui.planner) { ui.planner = null; view.preview = null; return true; }
   if (ui.routeSetup) { ui.routeSetup = null; return true; }

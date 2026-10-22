@@ -18,6 +18,8 @@ import { ROSTER_TAGS } from "./data-guns.js";
 import { rollHeadFind, rollAreaHead, headWares } from "./helmets.js"; // helmets and ear protection (their own dice)
 import { BLADE_TAGS } from "./data-blades.js"; // knives and swords
 import { rollBladeFind, rollAreaBlade, bladeWares } from "./blades.js"; // their own tables and dice, last
+import { TOOL_TAGS } from "./data-tools.js"; // tools for building and crafting
+import { rollToolFind, toolWares } from "./toolreqs.js"; // their own tables and dice, last of all
 import { SURV_TAGS } from "./data-survival.js"; // survival gear
 import { rollSurvFind, rollAreaSurv, survWares } from "./survival.js"; // its own tables and dice, after everything else
 import { BOX_TAGS } from "./data-boxes.js"; // lockable boxes
@@ -29,6 +31,7 @@ import { TENT_TAGS } from "./data-tents.js"; // tent bags (tents.js: TENT_FINDS,
 import { rollSiteKit, rollAreaKit, kitWares } from "./carrykit.js"; // their own tables and dice, after the attachments
 import { rollPartFind, rollAreaPart, partWares } from "./partfinds.js"; // the parts catalogue (2026-10-10): by tags and rarity, its own dice, last
 import { PART_INFO } from "./data-gunmods.js"; // the catalogue's parts: where each is kept
+import { NEW_KINDS, AREA_DEFS, ROWS, mergeRows } from "./data-shops.js"; // the shops and services new as places
 
 // ---------- theme tags ----------
 export const SITE_TAGS = {
@@ -52,6 +55,8 @@ export const SITE_TAGS = {
   house: ["home", "kitchen"], neighbourhood: ["home", "kitchen", "garage"], garage: ["garage", "tools"], corner: ["shop", "kitchen"],
   pizza: ["kitchen", "shop"], farmstand: ["farm", "shop", "kitchen"], shed: ["tools", "farm", "garage"], blind: ["hunt", "outdoor"],
   campsite: ["camp", "outdoor"], hikercamp: ["camp", "outdoor"], mineshack: ["industry", "tools", "outdoor"],
+  // A pawn shop (pois.js shopExtra, the city crawl): whatever people pawned, guns and camping gear behind the counter.
+  pawnshop: ["shop", "guns", "hunt", "crime", "home", "outdoor", "camp", "tools", "sport", "tech", "travel"],
 };
 export const AREA_TAGS = {
   house: ["home", "kitchen"], farmhouse: ["home", "farm", "hunt"], store: ["shop"], kitchen: ["kitchen"], pharmacy: ["medical", "shop"],
@@ -59,7 +64,7 @@ export const AREA_TAGS = {
   office: ["office", "tech"], armory: ["police", "military", "guns"], barracks: ["military", "camp"], motorpool: ["military", "garage"],
   barn: ["farm", "tools"], lab: ["school", "tech", "medical"], cabin: ["hunt", "outdoor", "home"], hangar: ["travel", "industry", "garage"],
   cellblock: ["prison", "crime"], control: ["tech", "industry"], campsite: ["camp", "outdoor"], wreck: ["travel", "garage"],
-  pumps: ["travel"], gunshop: ["guns", "hunt"], lockers: ["school", "sport"], chapel: ["church"],
+  pumps: ["travel"], gunshop: ["guns", "hunt"], hardware: ["tools", "shop", "farm", "industry", "garage"], pawnshop: ["shop", "guns", "hunt", "crime", "home", "outdoor", "camp", "tools", "sport", "tech", "travel"], lockers: ["school", "sport"], chapel: ["church"],
   milwreck: ["military", "crash"], medwreck: ["medical", "crash"], newswreck: ["tech", "crash"], fuselage: ["crash", "travel"],
   cargodrop: ["crash", "camp", "military"],
   roadcars: ["travel", "home", "garage"], // the cars people fled in (combat.js AREAS.roadcars)
@@ -76,13 +81,13 @@ export const ITEM_TAGS = {
   compbow: ["hunt", "sport", "mall", "outdoor"], xbow: ["hunt", "guns"], revolver: ["home", "guns", "farm", "travel", "crime", "police"],
   leverrifle: ["hunt", "farm", "guns", "outdoor"], carbine: ["police", "prison", "military"],
   spear: ["hunt", "outdoor", "camp"],
-  spikedbat: ["garage", "crime"], pipespear: ["camp", "crime"], sawmachete: ["crime", "tools"], crossbow: ["crime", "camp"], pipegun: ["crime"],
+  spikedbat: ["garage", "crime"], pipespear: ["camp", "crime"], sawmachete: ["crime", "tools"], sheetmachete: ["crime", "garage"], sheethatchet: ["crime", "garage"], crossbow: ["crime", "camp"], pipegun: ["crime"],
   // armor
   vest: ["police", "military", "guns", "prison", "crash", "crime"], plate: ["military", "crash"], bikehelmet: ["home", "garage", "fire", "sport", "crime"],
   riothelmet: ["police", "prison", "military", "crash"], milhelmet: ["military", "crash"], kneeguards: ["garage", "guns", "tools", "sport", "crime"],
   riotarms: ["police", "prison"], riotlegs: ["police", "prison"],
   padding: ["camp", "crime", "home"], shinguards: ["crime"], tirevest: ["crime", "garage"], sportspads: ["school", "sport", "home"],
-  footballhelmet: ["school", "sport"], scrapvest: ["crime"],
+  footballhelmet: ["school", "sport"], goaliemask: ["sport", "school"], scrapvest: ["crime"], sheetvest: ["crime"], sheetarms: ["crime"], sheetlegs: ["crime"],
   // packs
   slingbag: ["home", "school", "mall", "office", "travel", "crash", "crime", "shop"], backpack: ["school", "home", "mall", "travel", "crime", "camp"],
   hikingpack: ["camp", "outdoor", "mall", "travel", "crash", "shop"], duffle: ["travel", "mall", "outdoor", "shop"], assaultpack: ["military", "crash", "camp"], rucksack: ["military", "camp", "crash", "outdoor"],
@@ -175,6 +180,7 @@ Object.assign(ITEM_TAGS, KIT_TAGS); // the carry kit (data-kit.js)
 for (const [k, i] of Object.entries(PART_INFO)) ITEM_TAGS[k] = [...i.tags]; // the parts catalogue (data-gunmods.js; budget clones at home, brands at the armoury)
 Object.assign(ITEM_TAGS, BLADE_TAGS); // knives and swords (data-blades.js)
 Object.assign(ITEM_TAGS, SURV_TAGS); // survival gear (data-survival.js)
+Object.assign(ITEM_TAGS, TOOL_TAGS); // tools for building and crafting (data-tools.js)
 Object.assign(ITEM_TAGS, BOX_TAGS); // lockable boxes (data-boxes.js)
 Object.assign(ITEM_TAGS, CART_TAGS); // carts (data-carts.js)
 Object.assign(ITEM_TAGS, BED_TAGS); // beds as furniture (data-beds.js)
@@ -201,6 +207,7 @@ export const SITE_FINDS = {
   pharmacy: { p: 0.285, items: { razors: 2, soap: 2, toiletpaper: 2, candy: 2, chocolate: 1, batteries: 1, smokes: 1, puritabs: 2, deodorant: 3, toothpaste: 3, shampoo: 2, wetwipes: 2, lipbalm: 2, makeup: 1, perfume: 0.5 } },
   supermarket: { p: 0.216, items: { chocolate: 3, instcoffee: 2, candy: 2, tea: 2, honey: 1, smokes: 2, cigarettes: 1, vodka: 1, wine: 2, whiskey: 0.5, coffee: 0.5, toiletpaper: 2, soap: 1, candles: 1, batteries: 1, lighters: 1, deodorant: 2, toothpaste: 2, shampoo: 2, wetwipes: 1, lipbalm: 1 } },
   gunstore: { p: 0.08, items: { gamecall: 2, scentmask: 1, monocular: 1 } },
+  pawnshop: { p: 0.22, items: { goldring: 3, goldchain: 2, watch: 3, diamond: 0.5, pearls: 1, coins: 2, stamps: 1, silverware: 1, vinyl: 1, tcards: 1, guitar: 1, harmonica: 1, camera: 2, laptop: 1.5, console: 1.5, phone: 2, batteries: 1, lighters: 1, gamecall: 0.5, handradio: 0.5 } },
   hardware: { p: 0.1, items: { batteries: 3, lighters: 2, tripwire: 1, candles: 1, toiletpaper: 1, handradio: 0.5 } },
   apartments: { p: 0.18, items: { goldring: 2, watch: 1, pearls: 1, silverware: 0.5, coins: 1, stamps: 0.5, vinyl: 1, phone: 2, laptop: 1, console: 1, photos: 3, cards: 1, guitar: 0.5, harmonica: 0.5, vodka: 1, wine: 1, smokes: 1, chocolate: 1, candles: 1, deodorant: 2, toothpaste: 1, shampoo: 1, makeup: 1, perfume: 0.5, lipbalm: 0.5 } },
   office: { p: 0.125, items: { phone: 3, laptop: 2, watch: 1, instcoffee: 2, coffee: 0.5, photos: 2, scotch: 0.5, cigars: 0.5, stamps: 0.5, toiletpaper: 1, makeup: 0.5 } },
@@ -253,6 +260,7 @@ export const GUNMOD_FINDS = {
   ranch: { p: 0.025, items: { choke: 1, scope4x: 1, bipod: 0.5 } },
   mall: { p: 0.02, items: { reddot: 1, laser: 1, comp: 1, choke: 1 } },
   town: { p: 0.01, items: { reddot: 1, laser: 1, choke: 1 } },
+  pawnshop: { p: 0.06, items: { reddot: 2, scope4x: 1.5, laser: 1.5, comp: 1, choke: 1, extmag: 1, bipod: 0.6 } }, // shops.js
 };
 export function rollGunmodFind(state, tileId, mult = 1, salt = "") {
   const t = state.tiles[tileId];
@@ -264,10 +272,11 @@ export function rollGunmodFind(state, tileId, mult = 1, salt = "") {
   return key ? lootItem(key, siteSource(t.loc.type), hash01(state.seed, "moddur", tileId, state.hour, salt)) : null;
 }
 // rollGunmodFind, or when it found nothing the overhaul's table (SITE_MODS; its own dice). scavenge.js searchHour.
-export const rollAnyModFind = (state, tileId, mult = 1, salt = "") => rollGunmodFind(state, tileId, mult, salt) || rollSiteMod(state, tileId, mult, salt) || rollHeadFind(state, tileId, mult, salt) || rollSiteKit(state, tileId, mult, salt) || rollBladeFind(state, tileId, mult, salt) || rollPartFind(state, tileId, mult, salt) || rollSurvFind(state, tileId, mult, salt) || rollBoxFind(state, tileId, mult, salt); // helmets.js HEAD_FINDS, then carrykit.js SITE_KIT (magazines, rigs, plates), then blades.js BLADE_FINDS, each on its own dice
+export const rollAnyModFind = (state, tileId, mult = 1, salt = "") => rollGunmodFind(state, tileId, mult, salt) || rollSiteMod(state, tileId, mult, salt) || rollHeadFind(state, tileId, mult, salt) || rollSiteKit(state, tileId, mult, salt) || rollBladeFind(state, tileId, mult, salt) || rollPartFind(state, tileId, mult, salt) || rollSurvFind(state, tileId, mult, salt) || rollBoxFind(state, tileId, mult, salt) || rollToolFind(state, tileId, mult, salt); // helmets.js HEAD_FINDS, then carrykit.js SITE_KIT (magazines, rigs, plates), then blades.js BLADE_FINDS, each on its own dice
 export const AREA_GUNMODS = {
   armory: { p: 0.12, items: { reddot: 2, laser: 2, extmag: 2, holo: 1, foregrip: 1, tubeext: 1, scope4x: 0.5, riflecan: 0.3 } },
   gunshop: { p: 0.12, items: { reddot: 2, scope4x: 2, laser: 1.5, comp: 1.5, choke: 1.5, extmag: 1.5, bipod: 1, brake: 1, holo: 0.7, pistolcan: 0.3 } },
+  pawnshop: { p: 0.06, items: { reddot: 1.5, scope4x: 1, laser: 1, comp: 0.6, choke: 0.6, extmag: 0.8 } },
   barracks: { p: 0.05, items: { reddot: 1, holo: 1, foregrip: 1, drum: 0.3 } },
   milwreck: { p: 0.06, items: { holo: 1, reddot: 1, drum: 0.4, riflecan: 0.3 } },
   cabin: { p: 0.03, items: { scope4x: 1, bipod: 1, choke: 1 } },
@@ -291,7 +300,7 @@ export const WARE_GUNMODS = {
 };
 export function gunmodWares(state, type, name, salt = "") {
   const w = WARE_GUNMODS[type];
-  const more = [...modWares(state, type, name, salt), ...headWares(state, type, name, salt), ...bladeWares(state, type, name, salt), ...partWares(state, type, name, salt), ...cartWares(state, type, name, salt), ...survWares(state, type, name, salt)]; // carts (CART_WARES, last) // partfinds.js: the parts catalogue // blades.js WARE_BLADES too // the overhaul's parts (WARE_MODS), helmets and ear protection (helmets.js WARE_HEAD); their own dice
+  const more = [...modWares(state, type, name, salt), ...headWares(state, type, name, salt), ...bladeWares(state, type, name, salt), ...partWares(state, type, name, salt), ...cartWares(state, type, name, salt), ...survWares(state, type, name, salt), ...toolWares(state, type, name, salt)]; // carts (CART_WARES, last) // partfinds.js: the parts catalogue // blades.js WARE_BLADES too // the overhaul's parts (WARE_MODS), helmets and ear protection (helmets.js WARE_HEAD); their own dice
   if (!w || hash01(state.seed, "modware", name, salt) >= w.p) return more;
   const key = pickWeighted(w.items, hash01(state.seed, "modwarepick", name, salt));
   return key ? [lootItem(key, traderSource(type), hash01(state.seed, "modwareq", name, salt)), ...more] : more;
@@ -320,15 +329,18 @@ export const SITE_MODS = {
   farm: { p: 0.01, items: { recoilpad: 1, sling: 1 } },
   hardware: { p: 0.02, items: { repairkit: 1 } },
   autoshop: { p: 0.02, items: { repairkit: 1 } },
+  pawnshop: { p: 0.05, items: { scopemount: 1.5, recoilpad: 1.5, sling: 2, revgrip: 1, foldstock: 0.6, repairkit: 1 } }, // shops.js
 };
 export const AREA_MODS = {
   armory: { p: 0.08, items: { tritium: 1, rmr: 1, weaponlight: 2, collapsible: 1, acog: 0.6, can9: 0.3, kevlarkit: 2, sling: 1 } },
   gunshop: { p: 0.08, items: { scopemount: 2, sidemount: 0.6, recoilpad: 2, revgrip: 1.5, flashhider: 1.5, sling: 2, tritium: 1, can22: 0.5, foldstock: 0.6, repairkit: 0.5 } },
+  pawnshop: { p: 0.05, items: { scopemount: 1, recoilpad: 1, sling: 1.5, revgrip: 0.8, foldstock: 0.5, repairkit: 0.8 } },
   barracks: { p: 0.05, items: { acog: 1, quadrail: 0.6, weaponlight: 1, sling: 1, kevlarkit: 1, peq: 0.15 } },
   milwreck: { p: 0.05, items: { acog: 1, weaponlight: 1, can556: 0.2, kevlarkit: 0.6 } },
   motorpool: { p: 0.03, items: { repairkit: 1 } },
   cabin: { p: 0.02, items: { scopemount: 1, recoilpad: 1, sling: 1 } },
   workshop: { p: 0.02, items: { repairkit: 1 } },
+  hardware: { p: 0.03, items: { repairkit: 1 } }, // shops.js
   garage: { p: 0.015, items: { repairkit: 1 } },
 };
 export function rollSiteMod(state, tileId, mult = 1, salt = "") {
@@ -364,6 +376,7 @@ export const PARTS_MIX = {};
 for (const t of ["autoshop", "gas", "truckstop", "crashsite", "convoy", "wreck", "roadcars", "garage", "motorpool", "pumps"]) PARTS_MIX[t] = { carparts: 0.6 };
 for (const t of ["factory", "dam", "workshop", "warehouse", "quarry"]) PARTS_MIX[t] = { carparts: 0.1, electronics: 0.1 }; // machine parts 0.8
 for (const t of ["gunstore", "gunshop", "armory", "barracks", "milwreck", "crash_mil"]) PARTS_MIX[t] = { gunparts: 0.6 };
+PARTS_MIX.pawnshop = { gunparts: 0.4 }; // shops.js
 for (const t of ["radiotower", "univ", "lab", "office", "control", "airport", "hangar", "newswreck", "crash_news", "mall"]) PARTS_MIX[t] = { electronics: 0.6 };
 PARTS_MIX.military = { gunparts: 0.4, electronics: 0.2, carparts: 0.2 };
 PARTS_MIX.police = { gunparts: 0.3, electronics: 0.1, carparts: 0.1 };
@@ -506,6 +519,8 @@ export const AREA_FINDS = {
   wreck: { p: 0.066, items: { phone: 2, photos: 2, smokes: 1, flare: 2, watch: 0.5, goldring: 0.3, cigarettes: 0.5, wetwipes: 0.5, perfume: 0.3 } },
   roadcars: { p: 0.08, items: { phone: 2, photos: 2, smokes: 1, flare: 1, watch: 0.5, goldring: 0.2, cigarettes: 1, chocolate: 1 } },
   gunshop: { p: 0.04, items: { gamecall: 1, scentmask: 1, monocular: 1 } },
+  hardware: { p: 0.12, items: { batteries: 3, lighters: 2, tripwire: 1.5, candles: 1, handradio: 0.5 } }, // shops.js
+  pawnshop: { p: 0.16, items: { goldring: 2, goldchain: 1.5, watch: 2, diamond: 0.3, pearls: 0.6, coins: 1.5, silverware: 0.6, vinyl: 1, guitar: 0.6, camera: 1.5, laptop: 1, console: 1, phone: 1.5, batteries: 1, handradio: 0.4 } },
   lockers: { p: 0.133, items: { phone: 2, console: 1, tcards: 1, candy: 1, guitar: 0.3, deodorant: 2, shampoo: 1, lipbalm: 0.5 } },
   chapel: { p: 0.08, items: { candles: 3, wine: 1, coins: 1, silverware: 0.5 } },
   milwreck: { p: 0.06, items: { frag: 1, smokegren: 2, flare: 1, chocolate: 1, cigarettes: 1 } },
@@ -610,20 +625,20 @@ export function rollAreaFind(rng, areaType, rich = 1, scav = 0, site = null) {
 // Site searches (scavenge.js searchHour), a roll each search hour × the site's loot left:
 export const SITE_WOOD = {
   farm: [0.3, 60, 150], barn: [0.35, 60, 180], ranch: [0.3, 60, 150], cabin: [0.4, 60, 180], lodge: [0.35, 60, 150], campground: [0.4, 60, 150],
-  ranger: [0.35, 60, 150], hardware: [0.25, 30, 120], feedstore: [0.2, 30, 90], town: [0.15, 30, 90], church: [0.1, 30, 90], motel: [0.08, 30, 60],
+  ranger: [0.35, 60, 150], hardware: [0.4, 60, 180], feedstore: [0.2, 30, 90], town: [0.15, 30, 90], church: [0.1, 30, 90], motel: [0.08, 30, 60],
 };
 // Raid map containers (combat.js, a building's rooms too): by the room's type, × FURNITURE for wooden furniture
 // (cabinets, shelves, a counter; anything else half): a living room's log basket, a shed's kindling, a barn's woodpile.
 export const AREA_WOOD = {
   house: [0.12, 30, 90], farmhouse: [0.2, 30, 120], barn: [0.3, 60, 150], cabin: [0.3, 60, 150], campsite: [0.35, 30, 120],
-  garage: [0.1, 30, 90], workshop: [0.15, 30, 90], chapel: [0.08, 30, 60],
+  garage: [0.1, 30, 90], workshop: [0.15, 30, 90], chapel: [0.08, 30, 60], hardware: [0.25, 30, 90],
 };
 const FURNITURE = { cabinet: 1, shelf: 1, counter: 1 };
 // Wood found this search hour at a site, or 0.
-// Building materials (data.js buildmat: lumber, blocks, sheet metal; what a camp takes to become a base): a find of its
+// Building materials (data.js buildmat: lumber, blocks, nails and fixings; what a camp takes to become a base): a find of its
 // own each search hour, like SITE_WOOD (its own dice: nothing else a search finds changed). [chance, min, max].
 export const BUILDMAT_FINDS = {
-  hardware: [0.35, 2, 5], quarry: [0.3, 2, 4], warehouse: [0.22, 1, 4], factory: [0.18, 1, 3], barn: [0.18, 1, 3],
+  hardware: [0.55, 3, 7], quarry: [0.3, 2, 4], warehouse: [0.22, 1, 4], factory: [0.18, 1, 3], barn: [0.18, 1, 3], // hardware: shops.js, the builder's shop (was [0.35, 2, 5])
   farm: [0.12, 1, 2], feedstore: [0.12, 1, 2], ranch: [0.08, 1, 2], town: [0.1, 1, 2], city: [0.08, 1, 2],
   apartments: [0.06, 1, 2], office: [0.06, 1, 2], school: [0.06, 1, 2], motel: [0.06, 1, 2], church: [0.06, 1, 2],
   mall: [0.06, 1, 2], prison: [0.06, 1, 2], campground: [0.05, 1, 1], cabin: [0.05, 1, 1], dam: [0.08, 1, 2],
@@ -635,6 +650,41 @@ export function rollBuildmat(state, tileId, mult = 1, salt = "") {
   const loot = Math.max(0.1, Math.min(1, t.loot ?? 1));
   if (hash01(state.seed, "bmat", tileId, state.hour, salt) >= w[0] * loot * mult) return 0;
   return w[1] + Math.floor(hash01(state.seed, "bmatqty", tileId, state.hour, salt) * (w[2] - w[1] + 1));
+}
+// Metal sheets (data.js metalsheet; the user's request 2026-10-21: "lootable", and "items that can be salvaged for
+// metal sheets like cars"): stacks of roofing and siding where sheet steel is sold, stored or built into the place
+// (hardware stores, factories, warehouses, auto shops and garages, barns and sheds, a crash's torn skin, the dead cars
+// of a truck stop). A find of its own each search hour, like BUILDMAT_FINDS (its own dice: nothing else a search finds
+// changed), by the site and by the point of interest searched (a shed, a garage). [chance, min, max].
+export const SHEET_FINDS = {
+  hardware: [0.3, 1, 4], factory: [0.25, 1, 3], warehouse: [0.22, 1, 3], autoshop: [0.25, 1, 3], garage: [0.2, 1, 2],
+  barn: [0.22, 1, 3], shed: [0.2, 1, 2], farm: [0.12, 1, 2], ranch: [0.1, 1, 2], feedstore: [0.1, 1, 2], quarry: [0.15, 1, 2],
+  mineshack: [0.15, 1, 2], crashsite: [0.25, 1, 3], crash_cargo: [0.25, 1, 3], crash_mil: [0.15, 1, 2], airport: [0.12, 1, 3],
+  truckstop: [0.15, 1, 2], gas: [0.08, 1, 1], military: [0.1, 1, 2], dam: [0.1, 1, 2], prison: [0.06, 1, 1],
+  town: [0.06, 1, 1], city: [0.05, 1, 1], cabin: [0.05, 1, 1], house: [0.04, 1, 1], neighbourhood: [0.04, 1, 1],
+};
+/** Metal sheets found this search hour (kind: the point of interest searched, when it has its own row), or 0. */
+export function rollSheets(state, tileId, mult = 1, salt = "", kind = null) {
+  const t = state.tiles[tileId];
+  const w = (kind && SHEET_FINDS[kind]) || (t && t.loc ? SHEET_FINDS[t.loc.type] : null);
+  if (!w) return 0;
+  const loot = Math.max(0.1, Math.min(1, t ? t.loot ?? 1 : 1));
+  if (hash01(state.seed, "sheet", tileId, state.hour, salt) >= w[0] * loot * mult) return 0;
+  return w[1] + Math.floor(hash01(state.seed, "sheetqty", tileId, state.hour, salt) * (w[2] - w[1] + 1));
+}
+// Raid map containers (combat.js searchBox): the panels and roofing off a wrecked car (a door skin, a hood, a roof),
+// a stack in a garage, a workshop or a barn, the torn skin of a crashed aircraft. By the room's type × the container's
+// kind (a car: CAR_SHEETS). [chance, min, max]; its own dice.
+export const AREA_SHEETS = {
+  wreck: [0.3, 1, 2], roadcars: [0.15, 1, 1], garage: [0.15, 1, 2], workshop: [0.2, 1, 2], warehouse: [0.15, 1, 3],
+  barn: [0.15, 1, 2], hangar: [0.18, 1, 2], motorpool: [0.2, 1, 2], milwreck: [0.25, 1, 2], fuselage: [0.3, 1, 3], cargodrop: [0.1, 1, 1],
+};
+const CAR_SHEETS = { car: 1.3 };
+export function rollAreaSheets(state, tileId, areaType, boxKind, salt = "") {
+  const w = AREA_SHEETS[areaType];
+  if (!w) return 0;
+  if (hash01(state.seed, "areasheet", tileId, salt) >= Math.min(0.9, w[0] * (CAR_SHEETS[boxKind] || 1))) return 0;
+  return w[1] + Math.floor(hash01(state.seed, "areasheetqty", tileId, salt) * (w[2] - w[1] + 1));
 }
 export function rollSiteWood(state, tileId, mult = 1, salt = "") {
   const t = state.tiles[tileId];
@@ -657,7 +707,7 @@ export function rollAreaWood(state, tileId, areaType, boxKind, salt = "") {
 // up where bows are kept. Their own dice (hash01), so the rest of a search or a raid is unchanged. [chance, min, max].
 // Site searches (scavenge.js searchHour), a roll each search hour × the site's loot left:
 export const SITE_ARROWS = {
-  lodge: [0.3, 6, 18], gunstore: [0.25, 6, 24], mall: [0.08, 6, 12], campground: [0.12, 4, 12], cabin: [0.12, 3, 10],
+  lodge: [0.3, 6, 18], gunstore: [0.25, 6, 24], pawnshop: [0.08, 4, 12], mall: [0.08, 6, 12], campground: [0.12, 4, 12], cabin: [0.12, 3, 10],
   ranger: [0.1, 4, 12], hardware: [0.05, 4, 10], farm: [0.04, 3, 8], ranch: [0.05, 3, 8],
 };
 // Raid map containers (combat.js, a building's rooms too): by the room's type (lockers, shelves and crates in full,
@@ -713,6 +763,7 @@ for (const [where, n] of [[SITE_FINDS.hospital, 3], [SITE_FINDS.clinic, 2], [SIT
 // powder and primers as supplies (reloading.js: arms dealers, the traders' and soldiers' groups).
 export const SITE_RELOAD = {
   gunstore: { p: 0.2, items: { brass: 3, powder: 3, primers: 4 } },
+  pawnshop: { p: 0.04, items: { brass: 2, powder: 1 } }, // shops.js
   lodge: { p: 0.08, items: { brass: 2, powder: 2, primers: 0.5 } },
   ranch: { p: 0.05, items: { brass: 1, powder: 2 } },
   military: { p: 0.05, items: { brass: 2, primers: 1 } },
@@ -722,6 +773,7 @@ export const SITE_RELOAD = {
 };
 export const AREA_RELOAD = {
   gunshop: { p: 0.1, items: { brass: 2, powder: 2, primers: 1.5 } },
+  pawnshop: { p: 0.03, items: { brass: 1.5, powder: 1 } },
   armory: { p: 0.06, items: { brass: 2, primers: 1 } },
   barracks: { p: 0.04, items: { brass: 2, primers: 0.5 } },
   cabin: { p: 0.03, items: { brass: 1, powder: 1 } },
@@ -748,3 +800,10 @@ export function rollAreaReload(state, tileId, areaType, salt = "") {
   const t = state.tiles[tileId];
   return key ? partUsed(lootItem(key, areaSource(areaType, t && t.loc ? t.loc.type : null), hash01(state.seed, "areareloaddur", tileId, salt)), hash01(state.seed, "areareloadleft", tileId, salt)) : null;
 }
+
+// data-shops.js: the town's and the city's shops and services (their rows; this module's own rows win).
+for (const [k, d] of Object.entries(NEW_KINDS)) if (!SITE_TAGS[k]) SITE_TAGS[k] = d.tags;
+for (const [k, d] of Object.entries(AREA_DEFS)) if (!AREA_TAGS[k]) AREA_TAGS[k] = d.tags;
+mergeRows(SITE_FINDS, ROWS.SITE_FINDS); mergeRows(AREA_FINDS, ROWS.AREA_FINDS); mergeRows(LIGHT_FINDS, ROWS.LIGHT_FINDS); mergeRows(CART_FINDS, ROWS.CART_FINDS);
+mergeRows(HUNT_FINDS, ROWS.HUNT_FINDS); mergeRows(BUILDMAT_FINDS, ROWS.BUILDMAT_FINDS); mergeRows(SITE_WOOD, ROWS.SITE_WOOD); mergeRows(AREA_WOOD, ROWS.AREA_WOOD);
+mergeRows(SITE_ARROWS, ROWS.SITE_ARROWS); mergeRows(AREA_ARROWS, ROWS.AREA_ARROWS); mergeRows(PARTS_MIX, ROWS.PARTS_MIX);

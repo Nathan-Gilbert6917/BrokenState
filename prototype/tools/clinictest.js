@@ -377,9 +377,14 @@ console.log("Doctor on duty, career, graduation");
   const gv = world(SEED, "clinic"); setFood(gv.h, 400);
   const gd = person(gv.st, 12, "medic"); gd.pinned = true;
   const grad = person(gv.st, 7, "trainee");
-  [1, 2, 3].forEach((m) => person(gv.st, m, "farm"));
+  const farmers = [1, 2, 3].map((m) => person(gv.st, m, "farm"));
+  // noidle (activity.js jobCheck): a Medic with nobody hurt or ill and nobody training on the ward has no work, so on a
+  // quiet ward the graduate helps elsewhere; with someone to look after they go to Medic.
   governRoles(gv.st, gv.h);
-  check(grad.role === "medic", `the clinic needs 2 medics: the governor moves the graduate to Medic (${grad.role})`);
+  check(grad.role !== "medic", `a quiet ward: the graduate is not left idle on Medic (${grad.role})`);
+  farmers[0].health = 70;
+  governRoles(gv.st, gv.h);
+  check(grad.role === "medic", `the clinic needs 2 medics and someone is hurt: the governor moves the graduate to Medic (${grad.role})`);
 }
 
 // ---------- 7. save and load, and a short run ----------

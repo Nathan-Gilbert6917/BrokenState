@@ -547,7 +547,9 @@ section("The hunting cabin, the Hunt and Fish jobs");
   note(`two hunters (rifle, crossbow) at a cabin through autumn: ${got0} days of food in 28 days (first week ${daily.slice(0, 7).reduce((a, b) => a + b, 0)}, last week ${daily.slice(21).reduce((a, b) => a + b, 0)}); ${ammo0 - totalRounds(base.stock)} ammo; the land down to ${Math.round(lvl * 100)}% on average`);
   check(got0 > 0 && totalRounds(base.stock) < ammo0, "the cabin's hunters bring in game and use the base's ammo");
   check(lvl < 0.95, "the land around the cabin is hunted down");
-  check(got0 / 28 < 20, `about ${r1(got0 / 28)} food a day for two hunters: a help, not a farm's worth of the land`);
+  // teamwork.js: the two of them are a crew, each one's hours ×1.05 (TEAM: +15% a pair, −10% for the noise): 20 before
+  // the crews (this world 19.7 → 21.1; a world's 28 days run 9–25 a day by the dice, the mean over 11 worlds 17.4 → 17.2).
+  check(got0 / 28 < 22, `about ${r1(got0 / 28)} food a day for two hunters: a help, not a farm's worth of the land`);
   // Fish job: an outpost on a river with a rod in the armory.
   const river = state.tiles.find((t) => t.terrain !== "water" && !t.loc && !state.bases.some((b) => b.tile === t.id) && H.fishSpot(state, t.id));
   const out = { id: newId(), tile: river.id, type: "outpost", name: "Test Landing", stock: { food: 20, water: 20, ammo: 0, scrap: 0, preserved: 0 }, radio: false, watchtower: false, buildings: [], construction: [], armory: [] };

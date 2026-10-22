@@ -17,7 +17,7 @@ import { FOODS } from "./foods.js";
 
 export const DEEP = {
   from: 3, bulkVk: 3, fineVk: 10, bulk: 0.2, bulkMin: 0.35, fine: 0.25,
-  cache: 0.12, cacheMax: 0.5, cacheAreas: ["pharmacy", "gunshop", "armory", "lockers", "clinic"], cacheRich: 1.5,
+  cache: 0.12, cacheMax: 0.5, cacheAreas: ["pharmacy", "gunshop", "pawnshop", "armory", "lockers", "clinic"], cacheRich: 1.5,
   swapMargin: 0.25,
 };
 

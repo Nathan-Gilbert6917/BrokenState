@@ -34,6 +34,7 @@ import {
   poiPool, poiTake, poiLedger, poiThreat, tileHeat, addTileHeat, poiKnown, poiKnownTo, knownPois, morePoisHidden, revealPois, learnPois,
   mergePoiFinds, poiSnapshot, poiKnowledge, setPoiReveal, packPois, clearPois, permanentSite,
 } from "../src/sim/pois.js";
+import { SHOP, SHOP_KINDS, settingOf } from "../src/sim/shops.js";
 
 const args = process.argv.slice(2);
 const corpus = !args.includes("--nocorpus");
@@ -44,6 +45,9 @@ const section = (t) => console.log(`\n${t}`);
 const W = (s = seed, size = "normal") => { const st = createWorld({ seed: s, factionCount: 8, size }); st.started = true; st.cards.length = 0; return st; };
 const sig = (st) => JSON.stringify(st.tiles.map((t) => t.pois));
 const rich = (k) => LOCATIONS[k].richness;
+// A tile's list without the extras on their own dice after it (poi.extra: a campsite, campsite.js; a gun store or a
+// pawn shop, a hardware store or another shop or service, shops.js): the counts, the pools, the top and the hidden rules are the list's; section 4b checks them.
+const base = (t) => t.pois.filter((p) => !p.extra);
 
 // ---------- 1. determinism ----------
 section("Determinism: the seed makes the lists");
@@ -95,7 +99,7 @@ for (const size of SIZE_KEYS) {
   const byT = {};
   const perT = {};
   for (const t of st.tiles) {
-    const list = t.pois;
+    const list = base(t);
     const centre = t.loc && (t.loc.type === "city" || t.loc.type === "town");
     if (t.terrain === "water" || centre || t.hive) { if (list.length) onBad++; continue; }
     if (!COUNTS[t.terrain]) { if (list.length) onBad++; continue; }
@@ -104,7 +108,7 @@ for (const size of SIZE_KEYS) {
     const extras = list.length - (site ? 1 : 0);
     const [lo, hi] = site ? [eMin, eMax] : [bMin, bMax];
     if (extras < lo || extras > hi) bad++;
-    if (list.length > POI.MAX) over++;
+    if (t.pois.length > POI.MAX) over++;
     for (const [i, p] of list.entries()) {
       if (i === 0 && site) { if (!p.site || p.kind !== t.loc.type) badKind++; continue; }
       if (!POI_KINDS[t.terrain].includes(p.kind) || p.site) badKind++;
@@ -132,7 +136,7 @@ section("The top POI and the pools");
   const st = W();
   let notTop = 0, siteBelow = 0;
   for (const t of st.tiles) {
-    const list = t.pois;
+    const list = base(t);
     if (!list.length) continue;
     const top = topPoi(t);
     check(top === list[0], "topPoi is index 0");
@@ -169,13 +173,50 @@ section("The top POI and the pools");
   check(poiAt(st.tiles[0], 99) === null && poiPool(st.tiles[0], 99) === 0 && poiTake(st.tiles[0], 99, 1) === 0, "a missing index is harmless");
 }
 
+// ---------- 4b. the extras on their own dice ----------
+section("Extras on their own dice: a campsite, a gun store, a pawn shop or a hardware store after the list");
+{
+  let shops = 0, wrong = 0, twice = 0, outranks = 0, badPool = 0, shownOut = 0, notLast = 0, camps = 0, campWrong = 0;
+  const byKind = {};
+  for (const size of SIZE_KEYS) {
+    const st = W(seed, size);
+    for (const t of st.tiles) {
+      const ex = t.pois.filter((p) => p.extra);
+      if (!ex.length) continue;
+      if (t.pois.findIndex((p) => p.extra) !== t.pois.length - ex.length) notLast++; // the extras come after the list
+      for (const p of ex) {
+        if (p.extra === "campsite") { camps++; if (p.kind !== "campsite" || t.terrain === "suburb" || t.terrain === "city") campWrong++; continue; }
+        shops++;
+        byKind[p.kind] = (byKind[p.kind] || 0) + 1;
+        if (p.extra !== "shop" || !SHOP_KINDS.includes(p.kind) || !settingOf(st, t) || (t.loc && t.loc.type === p.kind)) wrong++;
+        if (t.pois.filter((q) => q.kind === p.kind).length > 1) twice++;
+        if (permanentSite(t) && rich(p.kind) > rich(t.loc.type)) outranks++;
+        const r = rich(p.kind) * (t.terrain === "city" ? SHOP.URBAN_RICH : 1);
+        if (!(p.pool >= r * SHOP.POOL[0] - 1e-9 && p.pool <= Math.min(1, r * SHOP.POOL[1]) + 1e-9)) badPool++;
+        if (!inKnownZone(st, t) && !p.hidden) shownOut++;
+      }
+    }
+  }
+  check(shops > 0 && Object.keys(byKind).length >= 20, `the shops and services stand on the suburbs and city blocks (${Object.entries(byKind).map(([k, n]) => `${k} ${n}`).join(", ")})`);
+  check(!wrong, `a shop extra is a shop or a service on a suburb or city block, never the tile's own site's kind (${wrong})`);
+  check(!twice, `never two of a kind on a tile (${twice})`);
+  check(!outranks, `a shop never out-ranks the site it stands by (${outranks})`);
+  check(!badPool, `a shop's pool comes from its kind's richness (${badPool} off)`);
+  check(!shownOut, `in the unknown zone a shop is hidden (${shownOut} shown)`);
+  check(!notLast, `the extras come after the tile's own list (${notLast})`);
+  check(!campWrong, `a campsite extra is a campsite off the suburbs and city blocks (${campWrong} of ${camps})`);
+  for (const k of SHOP_KINDS) check(!!SITES[k] && !!BUILDINGS[k] && Array.isArray(AREA_SETS[k]) && !!SITE_TAGS[k] && SIZES.SITE[k] != null, `${k}: a building, a raid area set, theme tags and a map size`);
+  check(AREAS.pawnshop && AREA_SETS.pawnshop.includes("pawnshop") && AREA_SETS.pawnshop.includes("gunshop"), "a pawn shop's raid map has its counter and a gun case");
+  check((LOCATIONS.pawnshop.gearRate || 1) > 1 && (LOCATIONS.gunstore.gearRate || 1) > 1, "the shops' shelves turn up gear more often (gearRate)");
+}
+
 // ---------- 5. hidden by zone ----------
 section("Hidden by the zone");
 {
   const st = W();
   let knownTopHidden = 0, tooMany = 0, unknownShown = 0, siteClass = 0, inZone = 0, outZone = 0;
   for (const t of st.tiles) {
-    const list = t.pois;
+    const list = base(t);
     if (!list.length) continue;
     const site = permanentSite(t), zone = inKnownZone(st, t);
     if (zone) inZone++; else outZone++;

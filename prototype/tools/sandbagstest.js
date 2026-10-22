@@ -30,7 +30,7 @@ section("The build and its cost");
   check(d && d.name === "Sandbags" && d.tab === "defenses" && d.size === "camp" && d.defence, "Sandbags on the Defenses tab, from a camp");
   check(d.cost.scrap === 1 && Object.keys(d.cost).length === 1 && d.hours === 1, `1 scrap and a work-hour a cell (${JSON.stringify(d.cost)}, ${d.hours} h)`);
   const pos = BUILDINGS.sandbag_wall;
-  check(d.cost.scrap * 4 < pos.cost.scrap && d.hours > BUILDINGS.wall1.hours, "four of them less scrap than the 4-cell Sandbag positions, more work a cell than a wooden wall 1×1");
+  check(d.cost.scrap * 4 < pos.cost.scrap + 3 * (pos.cost.buildmat || 0) && d.hours > BUILDINGS.wall1.hours, "four of them less scrap than the 4-cell Sandbag positions (their building materials 3 scrap each), more work a cell than a wooden wall 1×1");
   check(CAMP.build.sandbag1 > 0 && SHELTER.build.sandbag1 > CAMP.build.sandbag1 && d.max > SHELTER.build.sandbag1, `a camp ${CAMP.build.sandbag1}, a shelter ${SHELTER.build.sandbag1}, a base ${d.max}`);
   const st = world(), c = asCamp(hub(st));
   rich(c);

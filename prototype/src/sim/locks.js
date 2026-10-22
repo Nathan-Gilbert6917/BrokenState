@@ -43,6 +43,7 @@ import { rollGunStash, TIER_STASH, blastContents, rollAreaGunFinds, CAR_CASE, ro
 import { haulOf } from "./raidloot.js";
 import { isBox, boxTool, boxCost, openBox, lockWords } from "./boxes.js"; // lock boxes and cases: the tools for their locks (2026-10-19)
 import { swapGun } from "./gundist.js"; // the gun distribution: which gun a locked container holds
+import { ROWS, mergeRows } from "./data-shops.js";
 // What rounds a locked thing holds (ammo.js themes), by its loot kind.
 const LOCK_AMMO = { guns: "guns", evidence: "police", miltruck: "military", crash: "military", safe: "home", cash: "home", gear: "home", car: "home" };
 
@@ -79,7 +80,7 @@ const RULES = {
   lockers: [["locker"], "locker", 0.3], barracks: [["locker"], "locker", 0.35], garage: [["locker"], "locker", 0.15], workshop: [["locker"], "locker", 0.15],
   pharmacy: [["cabinet"], "drugs", 0.35], clinic: [["cabinet", "locker"], "drugs", 0.3], lab: [["cabinet"], "drugs", 0.25],
   office: [["cabinet"], "safe", 0.08], control: [["cabinet"], "safe", 0.12], cellblock: [["locker", "cabinet"], "evidence", 0.3],
-  armory: [["locker", "crate"], "cage", 0.45], gunshop: [["locker", "counter"], "cage", 0.4],
+  armory: [["locker", "crate"], "cage", 0.45], gunshop: [["locker", "counter"], "cage", 0.4], pawnshop: [["counter", "cabinet"], "cage", 0.35], // a pawn shop's locked cases (shops.js)
   warehouse: [["crate"], "crate", 0.12], hangar: [["crate", "locker"], "crate", 0.2], motorpool: [["crate", "locker"], "crate", 0.2],
   milwreck: [["crate"], "case", 0.45], medwreck: [["crate"], "case", 0.4], newswreck: [["crate"], "case", 0.35],
   fuselage: [["crate", "locker"], "case", 0.4], cargodrop: [["crate"], "case", 0.25],
@@ -88,7 +89,7 @@ const RULES = {
 };
 // Chance of a locked room at a site (one building with every door locked), by site type.
 const ROOM = {
-  police: 0.6, pharmacy: 0.5, gunstore: 0.5, military: 0.6, hospital: 0.4, clinic: 0.3, prison: 0.5, warehouse: 0.3, factory: 0.3,
+  police: 0.6, pharmacy: 0.5, gunstore: 0.5, pawnshop: 0.35, military: 0.6, hospital: 0.4, clinic: 0.3, prison: 0.5, warehouse: 0.3, factory: 0.3,
   univ: 0.35, office: 0.3, airport: 0.3, dam: 0.35, autoshop: 0.2, supermarket: 0.2, hardware: 0.25, firestation: 0.25, crash_cargo: 0.5,
 };
 const VAULT_AREAS = ["armory", "gunshop"];
@@ -506,11 +507,11 @@ export const botDone = (c) => c.searched || !!c.botSkip;
 // ---------- the hour-by-hour search (scavenge.js searchHour) ----------
 // How often a search hour turns up something locked, by site type (× loot left).
 const SEARCH_LOCK = {
-  police: 0.35, gunstore: 0.3, pharmacy: 0.3, military: 0.4, hospital: 0.3, clinic: 0.2, prison: 0.3, univ: 0.25, office: 0.2,
+  police: 0.35, gunstore: 0.3, pawnshop: 0.2, pharmacy: 0.3, military: 0.4, hospital: 0.3, clinic: 0.2, prison: 0.3, univ: 0.25, office: 0.2,
   warehouse: 0.2, factory: 0.2, airport: 0.2, dam: 0.2, crash_mil: 0.5, crash_med: 0.5, crash_cargo: 0.5, crash_news: 0.4, airdrop: 0.4,
 };
 const SEARCH_KIND = {
-  police: "evidence", gunstore: "cage", pharmacy: "drugs", military: "cage", hospital: "drugs", clinic: "drugs", prison: "evidence",
+  police: "evidence", gunstore: "cage", pawnshop: "cage", pharmacy: "drugs", military: "cage", hospital: "drugs", clinic: "drugs", prison: "evidence",
   univ: "safe", office: "safe", warehouse: "crate", factory: "safe", airport: "crate", dam: "safe", crash_mil: "case", crash_med: "case",
   crash_cargo: "case", crash_news: "case", airdrop: "case",
 };
@@ -636,7 +637,7 @@ const SAFE_RULES = {
   farmhouse: (site) => [["gunsafe2", site === "ranch" ? 0.12 : 0], ["gunsafe1", 0.15]],
   cabin: (site) => [["gunsafe2", site === "lodge" ? 0.12 : 0.08], ["gunsafe1", 0.2]],
   armory: (site) => [["gunsafe3", site === "police" ? 0.3 : site === "prison" ? 0.25 : site === "military" ? 0.35 : 0]],
-  office: (site) => [["gunsafe2", site === "gunstore" ? 0.5 : site === "police" ? 0.3 : 0]],
+  office: (site) => [["gunsafe2", site === "gunstore" ? 0.5 : site === "police" ? 0.3 : site === "pawnshop" ? 0.3 : 0]],
   milwreck: () => [["gunsafe3", 0.1]],
 };
 export const safeRules = (areaType, site) => (SAFE_RULES[areaType] ? SAFE_RULES[areaType](site).filter(([, p]) => p > 0) : []);
@@ -998,7 +999,7 @@ export const SEARCH_SAFE = {
   town: [["gunsafe1", 0.02]], motel: [["gunsafe1", 0.01]], city: [["gunsafe1", 0.006]], apartments: [["gunsafe1", 0.006]],
   farm: [["gunsafe1", 0.05]], ranch: [["gunsafe2", 0.03], ["gunsafe1", 0.05]], cabin: [["gunsafe2", 0.02], ["gunsafe1", 0.06]],
   lodge: [["gunsafe2", 0.04], ["gunsafe1", 0.04]], ranger: [["gunsafe1", 0.03]],
-  gunstore: [["gunsafe2", 0.08]], police: [["gunsafe3", 0.04], ["gunsafe2", 0.03]], prison: [["gunsafe3", 0.04]], military: [["gunsafe3", 0.05]], crash_mil: [["gunsafe3", 0.03]],
+  gunstore: [["gunsafe2", 0.08]], pawnshop: [["gunsafe2", 0.03], ["gunsafe1", 0.04]], police: [["gunsafe3", 0.04], ["gunsafe2", 0.03]], prison: [["gunsafe3", 0.04]], military: [["gunsafe3", 0.05]], crash_mil: [["gunsafe3", 0.03]],
 };
 // Tools on a workbench and a gun safe now and then (their own dice). The team picks its best way into a safe: a key
 // (cheap, mid), a crowbar (cheap), a drill or a grinder (Heat +8, an armoury safe +15), a safecracker on a dial (Heat
@@ -1047,3 +1048,6 @@ function searchSafe(state, e, members, kind, roll, site) {
   const verb = { key: "Unlocked", force: "Pried open (loud)", drill: "Drilled open (loud)", grind: "Cut open (loud)", crack: "Cracked", blow: "Blew open (loud)" }[how];
   return ` ${verb} ${A.toLowerCase()} ${lower}: ${bits.length ? bits.join(", ") : "nothing inside"}.`;
 }
+
+// data-shops.js: the town's and the city's shops and services (their rows; this module's own rows win).
+mergeRows(RULES, ROWS.LOCK_RULES); mergeRows(ROOM, ROWS.LOCK_ROOM); mergeRows(SEARCH_LOCK, ROWS.SEARCH_LOCK); mergeRows(SEARCH_KIND, ROWS.SEARCH_KIND);

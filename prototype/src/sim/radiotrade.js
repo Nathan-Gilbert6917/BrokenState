@@ -13,6 +13,11 @@
 //   (1 per 10 over, at most 3). They may also say no (deliveryRefusal: too few of them, the dead at their walls, at war, no trust, too far); then you can
 //   fetch it yourself. If they agree, their caravan (caravans.js) brings their side to your base and the trade window
 //   opens there with the deal filled in.
+// - "meet": both sides carry their own goods to a meeting tile (trademeet.js): halfway along their road to the base
+//   you trade from (t.meetHalf), or any tile you pick on the map (t.meetTile). No fee: each walks its own leg. They
+//   may say no (meetRefusal: the delivery rule, the hours one way). If they agree, their caravan sets out with their
+//   side and waits two days at the tile; the trade caravan planner opens from your base with your side loaded and the
+//   tile as its stop, and the trade window opens there with the deal filled in.
 // Groups call you the same way (radio.js offerCard): mostly they bring their side themselves; sometimes (more often
 // when they cannot send a caravan) they ask you to bring yours and add a fee to what they pay. You may agree at their
 // fee, ask for half as much again (they agree with goodwill 25+ or when short of what you bring: counterOk; else the
@@ -23,7 +28,7 @@
 // group at a time. Gear is matched by what it is (key, condition, uses, contents), so a save and load keeps a deal.
 import { SUPPLIES, SUPPLY_KEYS } from "./data.js";
 import { log, day, factionById, baseById, atBase, skill } from "./world.js";
-import { planPath, travelHours, partyMembers, cargoRoom } from "./parties.js";
+import { planPath, travelHours, partyMembers, cargoRoom, tileLabel } from "./parties.js";
 import { attitude, changeGoodwill } from "./factions.js";
 import { available, poolKey, ensureWares, need } from "./trade.js";
 import { keepItem } from "./arsenal.js"; // what comes back to a group: its books or its shelf
@@ -31,6 +36,7 @@ import { refusal } from "./radio.js";
 import { sendCaravan, caravanEnRoute, caravanCapacity, CARAVAN_SPEED } from "./caravans.js";
 import { tradeSpeech, gainXp, USE } from "./skills.js";
 import { feeCut } from "./traits.js"; // Diplomatic: a lower delivery fee
+import { halfwayTile, meetProblem, meetRefusal } from "./trademeet.js"; // "meet": a tile in the open
 import { itemLoad } from "./inventory.js";
 import { keyWord } from "./water.js";
 import { totalRounds, spendAmmo } from "./rounds.js"; // rounds by calibre ("ammo": any of them)
@@ -83,7 +89,7 @@ export function minFee(state, f, base) {
   return Math.ceil(fee * Math.max(0.6 - cut, 1 - Math.max(0, f.goodwill) / 200 - (f.type === "traders" ? 0.1 : 0) - cut));
 }
 // The fee on the table for a radio trade: your offer, else theirs.
-export const feeOf = (state, f, base, t) => (t.delivery !== "deliver" ? 0 : t.feeOffer != null ? t.feeOffer : deliveryFee(state, f, base));
+export const feeOf = (state, f, base, t) => (t.delivery !== "deliver" ? 0 : t.feeOffer != null ? t.feeOffer : deliveryFee(state, f, base)); // "meet": no fee
 // Your own offer (null: their fee).
 export function setFeeOffer(state, v) {
   const t = state.trade;
@@ -118,9 +124,11 @@ export function openRadioTrade(state, f, baseId, delivery = "fetch") {
   const base = baseById(state, baseId) || state.bases[0];
   if (!base) return "You have no base to trade from.";
   ensureWares(state, f);
-  state.trade = { radio: true, factionId: f.id, baseId: base.id, delivery: delivery === "deliver" ? "deliver" : "fetch", offer: {}, ask: {}, offerGear: [], askGear: [], intel: { area: "", sightings: false, sell: false } };
+  state.trade = { radio: true, factionId: f.id, baseId: base.id, delivery: "fetch", offer: {}, ask: {}, offerGear: [], askGear: [], intel: { area: "", sightings: false, sell: false } };
+  setDelivery(state, delivery);
   return "";
 }
+const DELIVERY = ["fetch", "deliver", "meet"];
 // Another base's stores on your side (what is in the deal is cleared: it was counted from the old base).
 export function setRadioBase(state, baseId) {
   const t = state.trade;
@@ -129,10 +137,21 @@ export function setRadioBase(state, baseId) {
   t.baseId = b.id;
   t.offer = {};
   t.offerGear = [];
+  if (t.delivery === "meet" && t.meetHalf) setMeetTile(state, null); // halfway to the new base
 }
 export function setDelivery(state, v) {
   const t = state.trade;
-  if (t && t.radio) t.delivery = v === "deliver" ? "deliver" : "fetch";
+  if (!t || !t.radio) return;
+  t.delivery = DELIVERY.includes(v) ? v : "fetch";
+  if (t.delivery === "meet" && t.meetTile == null) setMeetTile(state, null);
+}
+// The meeting tile of a "meet" radio trade: a tile you picked, or (null) halfway along their road to your base.
+export function setMeetTile(state, tile) {
+  const t = state.trade;
+  if (!t || !t.radio) return;
+  const f = factionById(state, t.factionId), base = baseById(state, t.baseId);
+  t.meetHalf = tile == null;
+  t.meetTile = tile != null ? Number(tile) : f && base ? halfwayTile(state, f.bases[0], base.tile, f.id) : null;
 }
 // trade.js tradeContext for a radio trade.
 export function radioTradeContext(state, t) {
@@ -146,7 +165,7 @@ export function radioTradeContext(state, t) {
   }
   have.ammo = theirHave.ammo = 0; // rounds change hands by calibre and type (ammo.js)
   const fee = feeOf(state, f, base, t);
-  return { kind: "radio", t, f, base, p: null, caravan: null, speech: tradeSpeech(atBase(state, base.id)), have, theirHave, myGear: base.armory, theirGear: (f.wares = f.wares || []), center: f.bases[0], fee, theirFee: t.delivery === "deliver" ? deliveryFee(state, f, base) : 0, delivery: t.delivery };
+  return { kind: "radio", t, f, base, p: null, caravan: null, speech: tradeSpeech(atBase(state, base.id)), have, theirHave, myGear: base.armory, theirGear: (f.wares = f.wares || []), center: f.bases[0], fee, theirFee: t.delivery === "deliver" ? deliveryFee(state, f, base) : 0, delivery: t.delivery, meetTile: t.delivery === "meet" ? t.meetTile ?? null : null };
 }
 // trade.js tradeVerdict: what only a radio trade can fail on (null: nothing).
 export function radioTradeProblem(state, ctx, offerGear, askGear) {
@@ -154,13 +173,14 @@ export function radioTradeProblem(state, ctx, offerGear, askGear) {
   const why = refusal(state, f, true);
   if (why) return why;
   if (pendingDeal(state, f)) return `A radio deal with ${f.name} is still waiting for your caravan: complete it or call it off first.`;
-  if (t.delivery === "deliver") {
+  if (t.delivery === "deliver" || t.delivery === "meet") {
     if (caravanEnRoute(state, f)) return "Their caravan is already on the road.";
+    if (t.delivery === "meet") { const no = meetProblem(state, f, t.meetTile); if (no) return no; }
     const cap = caravanCapacity(f);
     const out = weigh(t.ask) + askGear.reduce((s, g) => s + itemLoad(g), 0);
     const back = weigh(t.offer) + offerGear.reduce((s, g) => s + itemLoad(g), 0);
     if (Math.max(out, back) > cap + 1e-9) return `Their caravan carries at most ${cap}: ${out > back ? "what you ask for" : "your side"} weighs ${Math.ceil(Math.max(out, back))}.`;
-    if (deliveryHours(state, f, base) == null) return `They have no way to reach ${base.name} over land.`;
+    if (t.delivery === "deliver" && deliveryHours(state, f, base) == null) return `They have no way to reach ${base.name} over land.`;
   }
   return null;
 }
@@ -174,6 +194,18 @@ export function bookRadioTrade(state, v) {
   const offer = Object.fromEntries(Object.entries(t.offer).filter(([, q]) => q > 0));
   const ask = Object.fromEntries(Object.entries(t.ask).filter(([, q]) => q > 0));
   const talker = [...atBase(state, base.id)].sort((a, b) => skill(b, "speech") - skill(a, "speech") || a.id - b.id)[0];
+  if (t.delivery === "meet") {
+    const no = meetRefusal(state, f, t.meetTile, caravanEnRoute(state, f));
+    if (no) return `${f.name} will not meet you there: ${no} Pick another tile, or another way to carry it.`;
+    const c = sendCaravan(state, f, base, { goods: { supplies: ask, gear: askGear }, deal: { offer, ask, offerGear, askGear, fee: 0 }, meetTile: t.meetTile });
+    if (!c) return `${f.name} cannot get a caravan to ${tileLabel(state, t.meetTile)}.`;
+    f.lastDiplomacy = day(state);
+    gainXp(state, talker, "speech", USE.radio);
+    state.trade = null;
+    const text = `Deal over the radio: ${goodsText({ supplies: offer, gear: offerGear })} for ${goodsText({ supplies: ask, gear: askGear })}, met at ${tileLabel(state, t.meetTile)}. Their caravan sets out (about ${c.eta}h) and waits there two days; send your side with a team from ${base.name}.`;
+    log(state, text, "good");
+    return text;
+  }
   if (t.delivery === "deliver") {
     const no = deliveryRefusal(state, f, base);
     if (no) return `${f.name} will not bring it: ${no} Pick "We fetch it" to send a caravan of your own.`;

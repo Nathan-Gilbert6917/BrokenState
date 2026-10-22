@@ -13,6 +13,7 @@
 // (item.opened): the inventory shows only its weight, which is the box's own plus everything inside (inventory.js
 // itemLoad), so a heavy one has something in it and a rifle case that weighs a rifle more than its own 3.5 kg most
 // likely holds one.
+import { ROWS, mergeRows } from "./data-shops.js";
 
 /** @type {Record<string, any>} */
 export const BOX_GEAR = {
@@ -70,7 +71,7 @@ export const BOX_HOLDS = {
   },
   tools: {
     kinds: { empty: 2, items: 8 },
-    items: { hammer: 3, pipewrench: 2, multitool: 2, boxcutter: 3, batteries: 1.5, lighters: 1, repairkit: 0.4, powerdrill: 0.3, headlamp: 1, flashlight: 1, makeshiftpick: 0.5 }, n: [2, 3],
+    items: { hammer: 3, pipewrench: 2, multitool: 2, boxcutter: 3, batteries: 1.5, lighters: 1, repairkit: 0.4, powerdrill: 0.3, headlamp: 1, flashlight: 1, makeshiftpick: 0.5, handsaw: 1.5, handdrill: 0.6, sewingkit: 0.6 }, n: [2, 3],
   },
   gear: {
     kinds: { empty: 3, items: 5, gun: 1.5 },
@@ -118,6 +119,7 @@ export const BOX_FINDS = {
     store: { p: 0.04, items: { cashbox: 3 } },
     office: { p: 0.04, items: { cashbox: 3, firebox: 0.8, gearcase: 0.8 } },
     garage: { p: 0.04, items: { toolbox: 3 } },
+    hardware: { p: 0.05, items: { toolbox: 3, cashbox: 0.5 } }, // shops.js: a hardware store's aisles
     workshop: { p: 0.04, items: { toolbox: 3 } },
     warehouse: { p: 0.02, items: { toolbox: 1, cashbox: 1 } },
     cabin: { p: 0.02, items: { firebox: 1, gearcase: 0.6, toolbox: 0.6 } },
@@ -148,3 +150,6 @@ export const BOX_HELP = `<b>Boxes and cases.</b> Cash boxes, fireproof lock boxe
   (the steel lock two) and is loud in a raid; at a base or a camp it is free. An opened box shows a window of what was
   inside: take things one at a time or all at once. Gun cases hold a gun and its rounds most often, sometimes rounds
   alone, a camera, optics or a fishing rod, or nothing.`;
+
+// data-shops.js: the town's and the city's shops and services (their rows; this module's own rows win).
+mergeRows(BOX_FINDS.site, ROWS.BOX_SITE); mergeRows(BOX_FINDS.area, ROWS.BOX_AREA);
