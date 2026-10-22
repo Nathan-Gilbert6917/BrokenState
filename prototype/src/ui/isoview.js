@@ -965,6 +965,51 @@ const FLOORC = {
   // A building's floors by room (sim/buildingmaps.js c.fl): tiles, concrete, carpet, a barn's dirt.
   tile: hex("#7a7668"), conc: hex("#5e5d5a"), carpet: hex("#4e3e44"), barn: hex("#5e5040"), straw: hex("#8a7440"),
 };
+// A road's centre line (the playtest 2026-10-22: "one line in the middle going parallel to the direction and none in
+// the middle of a cross section"): each road cell's run of road across it each way, worked out once a ground (roadLines);
+// a cell in a road at most ROADLINE.MAX wide (at least MIN) one way and longer the other has the dashes down the
+// road's middle along it; a crossing (wide both ways) and a paved lot none.
+const ROADLINE = { MIN: 3, MAX: 12, DASH: 10, EVERY: 16, PAINT: hex("#8a7f56") };
+let roadLineMap = null; // { cells, w, h, axis: Uint8Array (1 along x, 2 along y), pos: Float32Array (the line's middle across the cell, texels) }
+function roadLines(b) {
+  const cells = b.floors && b.floors.length > 1 ? b.floors[0].cells : b.cells; // a building's storeys: the ground floor's roads
+  if (roadLineMap && roadLineMap.cells === cells && roadLineMap.w === b.w) return roadLineMap;
+  const w = b.w, h = b.h, n = w * h, isRoad = (i) => cells[i].f === "road"; // a bridge's deck is the road too
+  const runX = new Int16Array(n), idxX = new Int16Array(n), runY = new Int16Array(n), idxY = new Int16Array(n);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w;) {
+    if (!isRoad(y * w + x)) { x++; continue; }
+    let e = x;
+    while (e < w && isRoad(y * w + e)) e++;
+    for (let i = x; i < e; i++) { runX[y * w + i] = e - x; idxX[y * w + i] = i - x; }
+    x = e;
+  }
+  for (let x = 0; x < w; x++) for (let y = 0; y < h;) {
+    if (!isRoad(y * w + x)) { y++; continue; }
+    let e = y;
+    while (e < h && isRoad(e * w + x)) e++;
+    for (let i = y; i < e; i++) { runY[i * w + x] = e - y; idxY[i * w + x] = i - y; }
+    y = e;
+  }
+  const axis = new Uint8Array(n), pos = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const a = runX[i], c = runY[i];
+    if (!a) continue;
+    if (c >= ROADLINE.MIN && c <= ROADLINE.MAX && a > c) { axis[i] = 1; pos[i] = (c * 16) / 2 - idxY[i] * 16; } // a road along x: the line across y
+    else if (a >= ROADLINE.MIN && a <= ROADLINE.MAX && c > a) { axis[i] = 2; pos[i] = (a * 16) / 2 - idxX[i] * 16; } // along y: across x
+  }
+  return (roadLineMap = { cells, w, h, axis, pos });
+}
+// Paint on this texel of the road cell at x, y?
+function onRoadLine(x, y, tx, ty) {
+  const L = roadLineMap;
+  if (!L) return false;
+  // Past the map's edge (ui/battleedge.js: the ground runs on into the fog): the edge cell's line, carried on along it.
+  const cx = Math.max(0, Math.min(L.w - 1, x)), cy = Math.max(0, Math.min(L.h - 1, y));
+  const i = cy * L.w + cx, a = L.axis[i];
+  if (!a || (a === 1 && cy !== y) || (a === 2 && cx !== x)) return false;
+  const across = a === 1 ? ty : tx, along = a === 1 ? x * 16 + tx : y * 16 + ty;
+  return Math.abs(across + 0.5 - L.pos[i]) <= 1 && along % ROADLINE.EVERY < ROADLINE.DASH;
+}
 function floorColor(c, k, x, y, lx, ly, mud) {
   const tx = Math.min(15, Math.floor(lx * 16)), ty = Math.min(15, Math.floor(ly * 16));
   const q = hash3(x * 16 + tx, y * 16 + ty, 1), v = hash3(x, y, 2);
@@ -982,11 +1027,11 @@ function floorColor(c, k, x, y, lx, ly, mud) {
     case "road": {
       if (c.deck) { // a bridge's deck (sim/combat.js layRoad): weathered concrete slabs with their joints, paler than the asphalt
         col = (tx === 0 || ty === 0) ? mul(FLOORC.deck, 0.72) : q > 0.95 ? mul(FLOORC.deck, 0.82) : mul(FLOORC.deck, 0.94 + q * 0.1 + v * 0.04);
-        if (ty >= 7 && ty <= 8 && (x * 16 + tx) % 16 < 7 && v > 0.35) col = hex("#8a8262"); // faded paint
+        if (q < 0.93 && onRoadLine(x, y, tx, ty)) col = mul(hex("#8a8262"), 0.9 + q * 0.12); // the centre line (roadLines)
         break;
       }
       col = q > 0.97 ? mul(FLOORC.road, 0.7) : mul(FLOORC.road, 0.92 + q * 0.1);
-      if (ty >= 7 && ty <= 8 && (x * 16 + tx) % 16 < 7 && v > 0.35) col = hex("#7a7254"); // faded paint
+      if (q < 0.93 && onRoadLine(x, y, tx, ty)) col = mul(ROADLINE.PAINT, 0.9 + q * 0.12); // the centre line, worn in places (roadLines)
       break;
     }
     case "floor":
@@ -1011,6 +1056,7 @@ function groundFor(b, scene) {
   const r = iso.rot, st = iso.straight, key = `${viewKey()}:${scene.groundKey}`;
   const hit = groundCaches.get(key);
   if (hit && hit.b === b) { groundCaches.delete(key); groundCaches.set(key, hit); return hit; }
+  roadLineMap = null; roadLines(b); // the roads' centre lines (worked out again: the ground changed)
   for (const [k, g] of groundCaches) if (g.b !== b) groundCaches.delete(k);
   const [Wv, Hv] = viewDims(b, r);
   // An upper floor (floorsOf): the canvas grows by the lift at the top (oy rows) and is painted twice: the ground
@@ -1057,6 +1103,7 @@ const TEX = 16;
 function flatGroundFor(b, scene) {
   const key = scene.groundKey;
   if (flatGroundCache && flatGroundCache.b === b && flatGroundCache.key === key) return flatGroundCache;
+  roadLineMap = null; roadLines(b); // the roads' centre lines (worked out again: the ground changed)
   const tw = b.w * TEX, th = b.h * TEX;
   const mud = new Float32Array(b.w * b.h);
   for (let i = 0; i < b.cells.length; i++) if (b.cells[i].k === "hivewall") {
@@ -1720,6 +1767,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   const lift = liftOf(b), F = floorsOf(b); // an upper floor of a building with storeys: the footprint raised `lift`
   const gx = (-Hv * HW - iso.cx) * S + cw / 2, gy = (0 - iso.cy) * S + ch / 2;
   const gxf = groundXform(b, iso.rot, TEX, S, gx, gy, Hv);
+  roadLines(b); // this battle's road lines for the skirt's roads (kept while its ground is)
   const skirt = skirtFor(b, fog, floorColor, scene.groundKey); // the ground running on past the edges into the fog
   if (skirt) { ctx.save(); ctx.imageSmoothingEnabled = false; ctx.transform(...gxf); ctx.drawImage(skirt.cv, -skirt.K * TEX, -skirt.K * TEX); ctx.restore(); }
   let g = null;
