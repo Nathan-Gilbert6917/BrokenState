@@ -11,6 +11,7 @@
 // - determinism: the same seed plays the same with the same discoveries
 // - autopilot campaigns ([days] in each style, [runs] seeds): no team is ever sent to scavenge a site the player has
 //   not found; how fast the hidden sites near the hub are found
+import { worksAt } from "../src/sim/groupworks.js"; // envoys.js: a radio link needs a set at their end too
 import { TEAM_INTEL_EVERYWHERE } from "../src/sim/parties.js";
 import { createWorld, tickHour, hub, day, atBase, snapshot, updateVision, mergeKnowledge } from "../src/sim/world.js";
 import { recomputeOwnership } from "../src/sim/factions.js";
@@ -212,6 +213,7 @@ route("radio news", () => {
   const spot = id != null ? st.grid.within(id, 1).find((t) => free(st, t) && planPath(st, t, h.tile, false)) : null;
   if (spot == null) return null;
   f.bases.unshift(spot);
+  worksAt(f, spot).radio = 1; // a set of their own to answer on (envoys.js)
   recomputeOwnership(st);
   if (!canRadioGroup(st, f)) return null;
   const m = new Set(st.log);
