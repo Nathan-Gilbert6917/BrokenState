@@ -290,7 +290,7 @@ export function barHtml(d) {
   const hidden = list.length + more.length - list.filter(canGive).length;
   let note = "";
   if (b.phase === "enemy") note = "Enemy turn: watch the map. Your turn comes next.";
-  else if (b.phase === "deploy") note = b.layout ? "The base map: pick something in the panel and click where it goes (R turns it); click a placed thing to move it." : b.drill ? "A drill: place your people (the panel), then Save as plan." : `Deploy: click one of your people, then a green cell. Start the fight in the panel (${keyLabel("battle.confirm", 1) || "Enter"}).`;
+  else if (b.phase === "deploy") note = b.site ? "The camp's spot: hover the map for how long the camp takes there and what it gives; click to pick it, then Set up camp here." : b.layout ? "The base map: pick something in the panel and click where it goes (R turns it); click a placed thing to move it." : b.drill ? "A drill: place your people (the panel), then Save as plan." : `Deploy: click one of your people, then a green cell. Start the fight in the panel (${keyLabel("battle.confirm", 1) || "Enter"}).`;
   else if (d.autoPlay) note = keyHint({ key: `The AI is playing your side (${keyLabel("battle.autoplay", 1) || "Shift+A"} or Take back control to play again).`, touch: "The AI is playing your side (Take back control to play again).", pad: "The AI is playing your side (Take back control to play again)." });
   else if (!sel) note = keyHint({ key: "Select one of your people: click them, their tab, or press 1–9 or Tab.", touch: "Select one of your people: tap them or their tab.", pad: `Select one of your people: LB RB, or ${PAD.A} on them.` });
   else if (sel.dead || sel.left || sel.fled) note = `${first(sel)} is out of the fight: select someone else (Tab).`;

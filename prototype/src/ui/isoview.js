@@ -1317,6 +1317,8 @@ function newBattleCamera(b, cw, ch) {
 // The part of the map a battle opens on (world tiles x0, y0, x1, y1): your people on the map (in a base battle's deploy
 // step, its deploy area), and two thirds of the way from them toward the enemy's middle, with 3 tiles around.
 export function actionBox(b) {
+  // The camp's spot (sim/basemap.js openSiteView): the game's own spot and the ground round it.
+  if (b.site && b.site.focus && b.deployPlan && b.deployPlan.fort) { const F = b.deployPlan.fort, x = b.site.focus[0] + F.ox, y = b.site.focus[1] + F.oy; return [x - 14, y - 14, x + 15, y + 15]; }
   const mine = b.units.filter((u) => u.side === "player" && !u.dead && !u.left && u.x >= 0 && u.y >= 0);
   const pts = mine.map((u) => [u.x + 0.5, u.y + 0.5]);
   if (b.phase === "deploy" && b.deploy && b.deploy.zone) {
@@ -1771,8 +1773,8 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     ctx.setLineDash([]);
   }
   const deploying = b.deploy && b.phase === "deploy";
-  const ok = deploying && !b.layout ? deployMask(b) : null;
-  if (deploying && !b.layout) {
+  const ok = deploying && !b.layout && !b.site ? deployMask(b) : null;
+  if (deploying && !b.layout && !b.site) {
     fillCells(ctx, b, (i) => ok[i], `rgba(${COL.goodRgb},0.16)`);
     outlineCells(ctx, b, (i) => ok[i], `rgba(${COL.goodRgb},0.8)`, 1.5);
   }
@@ -1804,6 +1806,12 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     ctx.setLineDash([5, 4]);
     outlineCells(ctx, b, (i) => inF.has(i), "rgba(230,216,184,0.7)", 1.5);
     ctx.setLineDash([]);
+  }
+  // The camp's spot (sim/basemap.js siteGhostAt): the 5 × 5 picked, in gold, under the one the mouse is over.
+  if (H.ghost && H.ghost.picked) {
+    const inP = new Set(H.ghost.picked.map(([x, y]) => y * b.w + x));
+    fillCells(ctx, b, (i) => inP.has(i), "rgba(255,209,102,0.3)");
+    outlineCells(ctx, b, (i) => inP.has(i), "rgba(255,209,102,0.95)", 2.5);
   }
   if (H.ghost) {
     const inG = new Set(H.ghost.cells.map(([x, y]) => y * b.w + x)), inD = new Set(H.ghost.doors.map(([x, y]) => y * b.w + x));
@@ -2221,11 +2229,12 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     const [X, Y] = project((Math.min(...xs) + Math.max(...xs) + 1) / 2, (Math.min(...ys) + Math.max(...ys) + 1) / 2, 34);
     tag(ctx, `${c.who && c.who.length ? `${c.who.slice(0, 3).join(", ")}${c.who.length > 3 ? ` +${c.who.length - 3}` : ""}: ` : ""}Clearing ${c.pct}%`, X, Y, "#f0c060", Math.max(10, 3.6 * S)); // woodwork: who is felling it (sim/woodwork.js chopHands)
   }
+  if (H.ghost && H.ghost.pickedAt) { const [X, Y] = project(H.ghost.pickedAt[0] + 0.5, H.ghost.pickedAt[1] + 0.5, 34); tag(ctx, "Camp fire here", X, Y, "#ffd166", Math.max(10, 3.6 * S)); } // the camp's spot picked (sim/basemap.js siteGhostAt)
   if (H.ghost && H.ghost.from) for (const [x, y] of H.ghost.from) { ctx.fillStyle = "rgba(12,14,18,0.42)"; ctx.beginPath(); diamond(ctx, x, y, 14); ctx.fill(); }
   // The stores on a base map (sim/basemap.js): a crate marker over each building that holds goods, with its weight.
   if (b.stores) for (const c0 of b.stores.containers) {
     const ci = c0.y * b.w + c0.x;
-    let seen = !!b.deploy || !!b.layout;
+    let seen = !!b.deploy || !!b.layout || !!b.site;
     for (let yy = c0.y; yy < c0.y + c0.h && !seen; yy++) for (let xx = c0.x; xx < c0.x + c0.w; xx++) if (vis[yy * b.w + xx]) { seen = true; break; }
     if (!seen) continue;
     const L = looks[ci], top = Math.max(L ? L.top : 4, WALL1) + liftAt(b, ci);
@@ -2246,7 +2255,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     ctx.fillStyle = f > 0.6 ? COL.good : f > 0.3 ? COL.mid : COL.bad; ctx.fillRect(X - w / 2, Y - 3, w * f, 4);
   }
   // The deploy step: the gate and breaches, the side the attack comes from (not on the base map: nothing attacks).
-  if (deploying && !b.layout) {
+  if (deploying && !b.layout && !b.site) {
     const D = b.deploy;
     ctx.strokeStyle = "#e0a84f"; ctx.lineWidth = 2.5;
     ctx.beginPath();

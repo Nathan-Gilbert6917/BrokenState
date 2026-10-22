@@ -47,7 +47,8 @@ import { earStatus, visorState } from "../sim/hearing.js"; // deaf and dazed chi
 import { noiseGhosts } from "../sim/crossfire.js"; // shots and blasts heard out of sight: markers in the fog with a guess of the sound
 import { canPlace, LIT_ZONES } from "../sim/deploy.js";
 import { layoutPanel, layoutHover, storeHover, storesHtml } from "./basemap.js"; // the base map's layout mode, the stores on the map
-import { ghostAt, itemAtCell, storeAt, FOOT, keyOptions, keyTargets, KEY_AP, landPieceAt, gridOfCell } from "../sim/basemap.js"; // keyOptions: the defenders' keys (Lock, Unlock)
+import { ghostAt, itemAtCell, storeAt, FOOT, keyOptions, keyTargets, KEY_AP, landPieceAt, gridOfCell, siteGhostAt, siteClickAt } from "../sim/basemap.js";
+import { sitePanel, siteHoverText, siteKey } from "./campsite.js"; // the camp's spot picked on the tile's map (sim/basemap.js openSiteView) // keyOptions: the defenders' keys (Lock, Unlock)
 import { BUILDINGS, demolishRefund, TENTS, tentKind } from "../sim/buildings.js"; // layout mode's Demolish: the question names the building and the refund
 import { ask } from "./confirm.js"; // one confirmation style (the base map's Demolish asks as the Construction tab's does)
 const refundWords = (rec) => { const t = Object.entries(demolishRefund(rec) || {}).filter(([, q]) => q > 0).map(([k, q]) => `${q} ${k}`).join(", "); return t ? ` (${t})` : ""; };
@@ -532,7 +533,7 @@ export function combatTap(state, px, py, always = false) {
   sync(b);
   const c = cellFromPx(px, py), p = cui.tapAsk, f = cui.tapFace;
   cui.tapAsk = null; cui.tapFace = null;
-  if (!(cui.tapConfirm || always) || b.over || b.layout || b.phase !== "player" || !c) return void combatClick(state, px, py); // the base map's layout and the deploy step place things, and take them back
+  if (!(cui.tapConfirm || always) || b.over || b.layout || b.site || b.phase !== "player" || !c) return void combatClick(state, px, py); // the base map's layout and the deploy step place things, and take them back
   if (p && p.key === tapKey(b) && c.x === p.x && c.y === p.y) return void tapGo(state, b, p, px, py);
   // A move's tile tapped again: they go, facing the way they walk (the mouse's second click on the tile itself).
   if (cui.mode === "facemove" && cui.facePick && c.x === cui.facePick.x && c.y === cui.facePick.y) return void combatClick(state, px, py);
@@ -710,7 +711,7 @@ export function combatPadEnd(state) {
   sync(b);
   if (holding(b) && !(selUnit(b) && selUnit(b).captive)) return;
   if (b.over) return void closeCombat(state);
-  if (b.phase === "deploy") { if (!b.layout && !b.drill) act(state, { type: "start" }); return; }
+  if (b.phase === "deploy") { if (!b.layout && !b.site && !b.drill) act(state, { type: "start" }); return; }
   requestEndTurn(state, "button");
 }
 // LT / RT: a zoom step about the cursor.
@@ -766,6 +767,7 @@ export function combatClick(state, px, py) {
       return;
     }
   }
+  if (b.site) { const c = cellFromPx(px, py); if (c) cui.msg = siteClickAt(state, b, c.x, c.y); return; } // the camp's spot (sim/basemap.js openSiteView): the 5 × 5 there picked
   if (b.layout) return void layoutClick(state, b, px, py); // the base map (sim/basemap.js): placing things
   if (b.phase === "deploy") return void deployClick(state, b, px, py);
   if (b.phase !== "player") { cui.msg = "Wait for the enemy turn to finish."; return; }
@@ -1735,6 +1737,7 @@ export function combatKey(state, e) {
   }
   // Deploy step: Enter starts the fight (Space only says so: it is too easy to press by habit here).
   if (b.phase === "deploy") {
+    if (b.site) return siteKey(state, e, confirm); // the camp's spot (ui/campsite.js): Enter sets up camp on the spot picked, Esc lets the game pick
     if (b.layout) { // the base map (sim/basemap.js): R turns the pick, Esc puts it down (then deselects)
       if (e.code === "KeyR") { act(state, { type: "rotate" }); return true; }
       if (e.code === "Escape") { if (b.layout.pickType) act(state, { type: "pickType", bt: null }); else if (b.layout.pick) act(state, { type: "pick", key: null }); else if (b.layout.sel) act(state, { type: "select", key: null }); cui.storeView = null; cui.msg = ""; return true; }
@@ -2207,6 +2210,7 @@ export function renderCombatPanel(state) {
     b.phase === "deploy" ? `<b class="warn">Deploy</b>` : b.phase === "player" ? `<b class="good">Your turn</b>` : `<b class="danger">Enemy turn</b>`;
   // The menu (ui/settings.js): save the battle as it stands, load, options. The battle waits while it is open.
   let html = `<button class="mini cbmenu" data-action="set-open" data-tip="Menu: save the battle as it stands, load, options">⚙ Menu</button>${viewBar(b)}`;
+  if (b.site) return html + sitePanel(state, b, cui, `<div id="cbprev" class="cbprev">${previewHtml(b, state)}</div>`); // the camp's spot (ui/campsite.js)
   if (b.layout) return html + layoutPanel(state, b, cui, `<div id="cbprev" class="cbprev">${previewHtml(b, state)}</div>`); // the base map (sim/basemap.js, ui/basemap.js)
   html += b.drill ? `<div class="cbhead"><div class="cbtitle">Defence drill at ${esc(((state.bases.find((x) => x.id === b.setup.baseId)) || {}).name || b.place)}</div>
     <div class="small muted">Nobody to fight: place your people where they should stand when this base is attacked, then Save as plan. The clock stands still.</div></div>` : b.raid ? raidHead(state, b, phase) : `<div class="cbhead">
@@ -3476,6 +3480,7 @@ function previewText(b, state = null) {
   const h = cui.hover;
   const u = selUnit(b);
   if (!h) return `<span class="muted">${say({ key: "Hover a tile or enemy for details.", touch: "Tap a tile or enemy for details.", pad: "Move the cursor onto a tile or enemy for details." })}</span>`;
+  if (b.site && state) return siteHoverText(state, b, h); // the camp's spot (ui/campsite.js): how long the 5 × 5 there takes and what it gives
   if (b.layout && state) return layoutHover(state, b, h, ghostAt(state, b, h.x, h.y)); // the base map (ui/basemap.js)
   if (b.stores && !unitAt(b, h.x, h.y)) { const sc = storeAt(b, h.x, h.y); if (sc && (b.phase === "deploy" || !CDEF(b.cells[h.y * W + h.x]).walk)) return storeHover(sc); } // a store on the base map
   if (u && (cui.mode === "suppress" || cui.mode === "throwspear" || cui.mode === "launch")) return aimPreview(b, u, h); // the weapons overhaul's targeting
@@ -3868,7 +3873,7 @@ function drawIsoView(state, b, now, cw, ch) {
     allyMarks: b.raid && !hold ? allyMarks(state, b, v) : null, // Ally orders (sim/allyorders.js): the markers you set, the allies in reach while picking
     cone: nlConeMask(b, v.u, cui), // the pepper spray's cone toward the hovered tile (ui/nonlethal.js)
     throwMarks: throwPreview(b, v.u), // throw mode: the range and the reach of the hovered spot (sim/throwables.js)
-    ghost: b.layout && cui.hover ? ghostAt(state, b, cui.hover.x, cui.hover.y) : null, // the base map: the pick's footprint under the mouse (sim/basemap.js)
+    ghost: b.site ? siteGhostAt(state, b, cui.hover ? cui.hover.x : null, cui.hover ? cui.hover.y : null) : b.layout && cui.hover ? ghostAt(state, b, cui.hover.x, cui.hover.y) : null, // the base map: the pick's footprint under the mouse; the camp's spot: the 5 × 5 under it and the one picked (sim/basemap.js)
   });
   if (!b.over && b.phase !== "deploy" && !hold) drawCones(b, v); // sim/vision.js: the view cones (the selected one's, the toggle's, the way being picked)
   if (b.raid && !b.over && !hold) drawAllyCones(b); // Ally orders: an ally's overwatch cone, the way being picked for one
@@ -3914,7 +3919,7 @@ function drawBanner(b, cw, cs) {
   const tierTag = b.tier ? (b.tier.map === "wall" ? " · THE WALLS" : b.tier.stage === "buildings" ? " · LAST STAND" : " · THE YARD") : "";
   const floorTag = floorsOf(b) ? ` · ${floorLabel(b, floorNo(b)).toUpperCase()}` : "";
   const label = b.over ? (b.result.outcome === "victory" ? "VICTORY" : b.result.outcome === "extracted" ? "GOT OUT" : b.result.outcome === "retreat" ? "RETREATED" : "DEFEAT") :
-    b.phase === "deploy" ? (b.layout ? "BASE MAP · PLACE YOUR BUILDINGS AND DEFENCES" : b.drill ? `DEFENCE DRILL · ${planKey(b) === "fort" ? "PLAN YOUR POSTS" : "FACING AN ATTACK FROM THE EAST"}` : b.deploy && b.deploy.attackers ? "STAGE THE ASSAULT · ANY SIDE OF THEIR WALLS" : b.tier && b.tier.fellBackTurn != null ? "REDEPLOY · FALL BACK TO THE YARD" : `DEPLOY · THEY COME FROM THE ${String((b.deploy && b.deploy.side) || "east").toUpperCase()}`) :
+    b.phase === "deploy" ? (b.site ? "CAMP SITE · CLICK WHERE THE CAMP GOES" : b.layout ? "BASE MAP · PLACE YOUR BUILDINGS AND DEFENCES" : b.drill ? `DEFENCE DRILL · ${planKey(b) === "fort" ? "PLAN YOUR POSTS" : "FACING AN ATTACK FROM THE EAST"}` : b.deploy && b.deploy.attackers ? "STAGE THE ASSAULT · ANY SIDE OF THEIR WALLS" : b.tier && b.tier.fellBackTurn != null ? "REDEPLOY · FALL BACK TO THE YARD" : `DEPLOY · THEY COME FROM THE ${String((b.deploy && b.deploy.side) || "east").toUpperCase()}`) :
     b.phase === "player" ? `YOUR TURN · ${b.turn}${heatTag}${tierTag}${nightTag}${floorTag}` : `ENEMY TURN${heatTag}${tierTag}${nightTag}${floorTag}`;
   const col = b.over ? (b.result.outcome === "victory" || b.result.outcome === "extracted" ? PAL.good : PAL.bad) : b.phase === "deploy" ? "#e0a84f" : b.phase === "player" ? "#8fb4e0" : PAL.bad;
   ctx.font = `700 ${Math.max(13, Math.round(cs * 0.36))}px Segoe UI, sans-serif`;

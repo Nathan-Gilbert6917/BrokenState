@@ -109,7 +109,7 @@ import { CELL, placeCar, say, fx, unitAt, active, distField, reachable, pathTo, 
 import { carsAtBase } from "./vehicles.js";
 import { DEPLOY } from "./deploy.js"; // the reinforced gate's hit points (call-time only)
 import { INTERIOR, layoutSeed } from "./interior.js";
-import { landSpec, landOf as landMapOf, layLand, scatterSeed, clearOf, pieceWord, CLEAR, siteBox, siteGet } from "./basescatter.js"; // the land of the base map: trees, bushes, fences, rocks, wrecks, a road, a river (fixed by the tile, the same in the view and in a fight); clearing it
+import { landSpec, landOf as landMapOf, layLand, scatterSeed, clearOf, pieceWord, CLEAR, SITE, siteBox, siteGet } from "./basescatter.js"; // the land of the base map: trees, bushes, fences, rocks, wrecks, a road, a river (fixed by the tile, the same in the view and in a fight); clearing it
 import { Rng } from "./rng.js";
 import { SUPPLIES } from "./data.js";
 import { FOODS } from "./foods.js";
@@ -1547,9 +1547,10 @@ export function reachProblem(state, base, it, at, occ, opts = {}) {
 // buildings, plus ox/oy (grid → map), stores (where the goods are), vehicles (the cars and their cells), lights.
 export function buildBaseMap(state, base, rng, opts = {}) {
   stampGrid(state, base);
-  const view = !!opts.view;
+  const site = !!opts.site; // the camp's spot (openSiteView): the tile's whole map, its land and nothing built
+  const view = !!opts.view || site;
   const C = yardHalf(base), GB = gridBox(base), R = ringHalf(base), Bh = Math.max(C, R);
-  const lay = layoutOf(state, base).filter((e) => e.at && (view || e.it.built));
+  const lay = site ? [] : layoutOf(state, base).filter((e) => e.at && (view || e.it.built));
   const cleared = Object.keys((base.land && base.land.cleared) || {}).map((k) => k.split(",").map(Number)); // the ground cleared so far (basescatter.js)
   // The crop: the yard, the ring and everything on the map, plus the margin (and the view's pad), within the grid.
   let x0 = -Bh - 2, y0 = -Bh - 2, x1 = Bh + 2, y1 = Bh + 2; // half-open
@@ -1562,6 +1563,7 @@ export function buildBaseMap(state, base, rng, opts = {}) {
   }
   const pad = MARGIN + (view ? VIEW_PAD : 0);
   x0 = Math.max(GB.x0, x0 - pad); y0 = Math.max(GB.y0, y0 - pad); x1 = Math.min(GB.x1, x1 + pad); y1 = Math.min(GB.y1, y1 + pad);
+  if (site) ({ x0, y0, x1, y1 } = GB);
   const W = x1 - x0, H = y1 - y0, ox = -x0, oy = -y0; // grid (gx, gy) → map (gx + ox, gy + oy)
   const cells = Array.from({ length: W * H }, () => ({ k: "open", f: "grass" }));
   const inside = (x, y) => x >= 0 && y >= 0 && x < W && y < H;
@@ -1576,7 +1578,9 @@ export function buildBaseMap(state, base, rng, opts = {}) {
   // The yard's trodden ground; a base set up on its own spot (freshBase): the ground cleared so far, the camp's clearing first.
   if (freshBase(base)) { for (const [x, y] of cleared) { const c = at(x + ox, y + oy); if (c) c.f = "dirt"; } }
   else for (let y = -C; y < C; y++) for (let x = -C; x < C; x++) { const c = at(x + ox, y + oy); if (c) c.f = "dirt"; }
-  if (view) for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const gx = x - ox, gy = y - oy; if (gx < GB.x0 + NO_BUILD || gy < GB.y0 + NO_BUILD || gx >= GB.x1 - NO_BUILD || gy >= GB.y1 - NO_BUILD) cells[y * W + x].nb = 1; }
+  // The tint: the no-build margin; on the camp's spot (site) the ground too near the edge for the camp (SITE_RANGE).
+  const reach = SITE_RANGE - SITE.LO;
+  if (view) for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const gx = x - ox, gy = y - oy; if (site ? Math.abs(gx) > reach || Math.abs(gy) > reach : gx < GB.x0 + NO_BUILD || gy < GB.y0 + NO_BUILD || gx >= GB.x1 - NO_BUILD || gy >= GB.y1 - NO_BUILD) cells[y * W + x].nb = 1; }
   // A container of the stores (makeStores), with its container's key (containers.js: "core", b:<id>, v:<id>). The
   // armory (ARMORY_LOCK): two locked containers inside it in place of one, the gun cage (holds "gear") and the ammo
   // lockers (holds "ammo"), each over its own cells (boxes: the map cells armoryCells tagged, turned with the
@@ -1686,7 +1690,7 @@ export function buildBaseMap(state, base, rng, opts = {}) {
   // The middle: the camp, the shelter or the base itself.
   // room: the kg it holds (basestorage.js: the core's room shared over its stores, a storage building's STORE_KG).
   const coreW = coreParts(base).reduce((a, p) => a + (p.store || 0), 0) || 1;
-  for (const p of coreParts(base)) lay1({ ...p, key0: p.key || p.k, room: p.store ? (coreStoreKg(base) * p.store) / coreW : 0 }, [p.x, p.y, 0], "core", true, p.name || coreName(base));
+  if (!site) for (const p of coreParts(base)) lay1({ ...p, key0: p.key || p.k, room: p.store ? (coreStoreKg(base) * p.store) / coreW : 0 }, [p.x, p.y, 0], "core", true, p.name || coreName(base));
   // Everything placed, by hand or by the game: the buildings first, then the fittings and indoor props that stand
   // inside them (laid over their floor).
   const reinforced = count(base, "gate") ? DEPLOY.GATE_HP_REINFORCED : 0; // buildings.js gate: every gate stronger
@@ -1729,7 +1733,7 @@ export function buildBaseMap(state, base, rng, opts = {}) {
   // cannot reach round the base (its yard, its houses, the stands), the wall's rect its bounds; else the yard and the
   // ring round it as on an open base (the pieces stand on it as they are: a gap is a way in).
   const coreCells = [];
-  for (const p of coreParts(base)) for (let y = p.y; y < p.y + p.h; y++) for (let x = p.x; x < p.x + p.w; x++) if (inside(x + ox, y + oy)) coreCells.push([x + ox, y + oy]);
+  if (!site) for (const p of coreParts(base)) for (let y = p.y; y < p.y + p.h; y++) for (let x = p.x; x < p.x + p.w; x++) if (inside(x + ox, y + oy)) coreCells.push([x + ox, y + oy]);
   const reached = new Uint8Array(W * H), q0 = [];
   const pass = (i) => CELL[cells[i].k].walk && !barredCell(cells[i]);
   for (let x = 0; x < W; x++) for (const y of [0, H - 1]) if (pass(y * W + x) && !reached[y * W + x]) { reached[y * W + x] = 1; q0.push(y * W + x); }
@@ -1836,6 +1840,7 @@ export function buildBaseMap(state, base, rng, opts = {}) {
 }
 // The battle map's size without building it (combat.js battleSize).
 export function baseMapSize(state, base, opts = {}) {
+  if (opts.site) return [BASE_GRID, BASE_GRID]; // the camp's spot: the tile's whole map
   stampGrid(state, base);
   const F = buildBaseMap(state, base, new Rng(1), opts);
   return [F.W, F.H];
@@ -2367,10 +2372,10 @@ export function openBaseMap(state, baseId, pick = null) {
   state.combat = b;
   return "";
 }
-function viewBattle(state, base, prev = null) {
+function viewBattle(state, base, prev = null, site = false) {
   const setup = {
     mode: "battle", layout: "baseDefence", deploy: true, drill: true, baseId: base.id, canRetreat: false, handler: null,
-    enemy: { kind: "zombies", count: 1, power: 1, types: { runner: 1 }, name: "nobody (the base map)" }, context: { baseId: base.id, drill: true, view: true, noPlan: true },
+    enemy: { kind: "zombies", count: 1, power: 1, types: { runner: 1 }, name: "nobody (the base map)" }, context: { baseId: base.id, drill: true, view: true, noPlan: true, ...(site ? { site: true } : {}) },
   };
   // The view's own dice (the base's, fixed): the same view every time it is made again (a building put down, a doorway
   // opened), and the game's dice left where they were (looking at the map changes nothing to come).
@@ -2388,6 +2393,54 @@ function viewBattle(state, base, prev = null) {
   b.acted = true;
   if (prev) { b.keepCam = true; b.layout = prev.layout; } // the same layout record: the pick and the last message carry over; keepCam: the view stays where it was (ui/isoview.js)
   return b;
+}
+// The camp's spot picked on the tile's own map, in the same isometric view (the user's request 2026-10-22: "For the
+// campsite selection I was thinking keep the isometric view just have a isometric highlight of the 5x5 area"): the
+// tile's whole 250 × 250 map with its land and nothing built (buildBaseMap site), made from a stand-in camp that is on
+// the books only while the view is made, and b.site = { partyId, tile, sel (the spot clicked: map coordinates of the
+// fire), focus (where the view opens: the game's own spot) }. No units, no layout record: the clicks pick the spot
+// (ui/combat.js siteClick), the 5 × 5 under the mouse is drawn as the view's ghost (siteGhostAt), the panel is
+// ui/campsite.js sitePanel. Returns "" or why not.
+export function openSiteView(state, p) {
+  if (state.combat) return "Finish the battle first.";
+  if (!p) return "That team is gone.";
+  const tile = p.dest != null ? p.dest : p.path && p.path.length ? p.path[p.idx || 0] : null;
+  if (tile == null || !state.tiles[tile]) return "No tile to camp on.";
+  const probe = {
+    id: SITE_PROBE, tile, type: "outpost", name: "The camp's spot", stock: {}, buildings: [], construction: [], armory: [], radio: false, watchtower: false,
+    tier: 0, camp: true, fire: true, plan: { plots: [], origin: [0, 0], fresh: true }, land: { v: 2, n: 1, cleared: {}, looted: {} },
+  };
+  state.bases.push(probe);
+  let b;
+  try { b = viewBattle(state, probe, null, true); } finally { state.bases.splice(state.bases.indexOf(probe), 1); }
+  const focus = p.campAt && !siteProblem(state, tile, p.campAt) ? p.campAt.slice(0, 2) : defaultSite(state, tile);
+  b.site = { partyId: p.id, tile, sel: focus, focus };
+  state.combat = b;
+  return "";
+}
+const SITE_PROBE = 2 ** 31 - 7; // the stand-in camp's id while the spot's view is made (never a real base's)
+// The 5 × 5 under the mouse (view cell x, y; null: no mouse over the map) and the one picked: { cells (view cells under
+// the mouse), ok, why, at (that fire, map coordinates), picked (the picked 5 × 5's view cells), pickedAt (its fire's
+// view cell) } (ui/isoview.js draws them: the one under the mouse green or red, the picked one gold).
+export function siteGhostAt(state, b, x = null, y = null) {
+  if (!b || !b.site) return null;
+  const F = b.deployPlan && b.deployPlan.fort;
+  if (!F) return null;
+  const cellsOf5 = (at) => { const B = siteBox(at), out = []; for (let yy = B.y0; yy < B.y1; yy++) for (let xx = B.x0; xx < B.x1; xx++) out.push([xx + F.ox, yy + F.oy]); return out; };
+  const sel = b.site.sel;
+  const out = { cells: [], doors: [], ok: true, why: "", at: null, picked: sel ? cellsOf5(sel) : null, pickedAt: sel ? [sel[0] + F.ox, sel[1] + F.oy] : null };
+  if (x == null || y == null) return out;
+  const at = [x - F.ox, y - F.oy];
+  const why = siteProblem(state, b.site.tile, at);
+  return { ...out, cells: cellsOf5(at), ok: !why, why, at };
+}
+// A click on the spot's view (ui/combat.js): the 5 × 5 there picked (not yet set up: Set up camp here), or why not.
+export function siteClickAt(state, b, x, y) {
+  const g = siteGhostAt(state, b, x, y);
+  if (!g) return "";
+  if (!g.ok) return g.why;
+  b.site.sel = g.at;
+  return "";
 }
 // The view made again after a change (the map is laid out again; the camera stays: ui/isoview.js keepCam).
 export function refreshBaseMap(state) {

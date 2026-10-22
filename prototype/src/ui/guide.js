@@ -371,6 +371,7 @@ export function popupOf(state, ui) {
   if (kind === "card") { const c = state.cards[0]; const id = cardTip(state, c); return id ? { id, ref: c } : null; }
   if (kind === "unpack" || kind === "crawl") return { id: kind, ref: kind };
   if (kind || !b || b.over) return null;
+  if (b.site) return null; // the camp's spot (sim/basemap.js openSiteView): its own panel says it all
   if (b.layout) return { id: "buildmap", ref };
   if (b.setup && b.setup.layout === "baseDefence" && !b.setup.drill) return { id: "defence", ref };
   return { id: b.raid && !b.drill ? "raid" : "battle", ref };
