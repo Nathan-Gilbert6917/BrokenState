@@ -3,7 +3,8 @@
 // the one before; the same roll always gives the same spot; with no start the world is exactly the seed's as before;
 // the new spot still keeps the usual distance from the outbreak origin; and the world still ticks. Pick start on map
 // ({ tile }): a tile that can be a start is where you start, the map and the groups' dice as before; one that cannot
-// (water, a hive, a town or a city, within START_CLEAR tiles of one, a hive or a group's base) leaves the dice's start.
+// (water, a hive, a group's base; in a normal start also a town or a city, or within START_CLEAR tiles of one, a hive
+// or a group's base) leaves the dice's start.
 // The normal start's hub is out in the open (2026-10-22): never in a town or a city, START_CLEAR tiles or more from them
 // and the hives, named for the nearest town.
 // Usage: node tools/startpicktest.js [seeds...]
@@ -50,7 +51,12 @@ for (const mode of ["normal", "hardcore"]) {
       check(!!startWhyNot(base, water.id), `seed ${seed}: water cannot be a start`);
       check(playerTile(createWorld({ seed, factionCount: 7, mode, start: { tile: water.id } })) === was, `seed ${seed}: a pick on water leaves the dice's start`);
     }
-    // No start in a town or a city, nor within START_CLEAR tiles of one, a hive or another group's base.
+    // Normal mode: no start in a town or a city, nor within START_CLEAR tiles of one, a hive or another group's base.
+    // Hardcore keeps its own rule (any open land but a hive or a group's base).
+    if (mode === "hardcore") {
+      const nearHive = base.tiles.find((t) => t.hive) && base.grid.within(base.tiles.find((t) => t.hive).id, 2).map((id) => base.tiles[id]).find((t) => !t.hive && t.terrain !== "water" && t.terrain !== "mountain" && !base.factions.some((f) => f.bases.includes(t.id)) && !(base.militaryIds || []).includes(t.id));
+      if (nearHive) check(!startWhyNot(base, nearHive.id), `seed ${seed}: hardcore: open land beside a hive can still be a start`);
+    } else {
     const town = base.tiles.find((t) => t.loc && t.loc.type === "town");
     if (town) {
       check(!!startWhyNot(base, town.id), `seed ${seed}: a town cannot be a start`);
@@ -62,6 +68,7 @@ for (const mode of ["normal", "hardcore"]) {
     const theirs = base.factions.flatMap((f) => f.bases || []);
     check(theirs.every((b) => base.grid.within(b, START_CLEAR - 1).every((id) => !!startWhyNot(base, id))), `seed ${seed}: nothing within ${START_CLEAR - 1} tiles of a group's base`);
     check(pickable.every((t) => !startNear(base).has(t.id) && !isSettlementTile(t)), `seed ${seed}: every pickable tile is ${START_CLEAR}+ tiles clear`);
+    }
     let ok = true;
     try { for (let h = 0; h < 48; h++) tickHour(picked); for (let h = 0; h < 48; h++) tickHour(moved); } catch (e) { ok = false; console.log(e); }
     check(ok, `seed ${seed}: two days run`);

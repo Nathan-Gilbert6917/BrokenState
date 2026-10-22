@@ -42,7 +42,7 @@ export function pickStart(rng, lists, start = null) {
 
 // How far a start keeps from the towns, the cities, the hives, the Guard's bases and the other groups' bases (the user's
 // request 2026-10-22: "When you select your start on the map make it so you can only select 5 tiles away from cities,
-// towns, hives etc"): at least this many tiles. The normal start's hub is out in the open, never in a town (no base is:
+// towns, hives etc"; normal mode only): at least this many tiles. The normal start's hub is out in the open, never in a town (no base is:
 // isSettlementTile), and world.js rolls its own start by the same rule (startNear).
 export const START_CLEAR = 5;
 // What is too near each tile for a start: Map id → { what, d } (the nearest of them), worked out once a map and its
@@ -74,9 +74,10 @@ export function startNear(state) {
   return near;
 }
 
-// Why a tile cannot be picked as the start ("" when it can): open land (no water, mountain or hive), outside every town
-// and city and START_CLEAR tiles or more from them, the hives, the Guard's bases and the other groups' (startNear). The
-// same in both modes: a normal start's hub stands there, a Hardcore start's crew sets out from there.
+// Why a tile cannot be picked as the start ("" when it can). A normal start's hub: open land (no water, mountain or
+// hive), outside every town and city and START_CLEAR tiles or more from them, the hives, the Guard's bases and the
+// other groups' (startNear; the user's request 2026-10-22, for normal mode). A Hardcore start (as it was): any open land
+// that is not a hive or another group's base or the Guard's.
 /**
  * @param {any} state
  * @param {number} id
@@ -90,7 +91,8 @@ export function startWhyNot(state, id) {
   if (t.hive) return "A hive is there.";
   if ((state.militaryIds || []).includes(id)) return "The National Guard holds that base.";
   if (state.factions.some((f) => (f.bases || []).includes(id))) return "Another group's base is there.";
-  if (isSettlementTile(t)) return state.mode === "hardcore" ? `You cannot start in a town or a city: pick open land at least ${START_CLEAR} tiles out.` : `Your hub cannot be in a town or a city: pick open land at least ${START_CLEAR} tiles out.`;
+  if (state.mode === "hardcore") return "";
+  if (isSettlementTile(t)) return `Your hub cannot be in a town or a city: pick open land at least ${START_CLEAR} tiles out.`;
   const n = startNear(state).get(id);
   if (n) return `Too close to ${n.what} (${n.d} tile${n.d === 1 ? "" : "s"}): a start has to be at least ${START_CLEAR} tiles from the towns, the cities, the hives and the other groups.`;
   return "";
