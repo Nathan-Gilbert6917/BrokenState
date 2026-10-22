@@ -386,6 +386,8 @@ export function carriedSpots(s) {
   (pk || []).forEach((it, i) => { if (it) out.push({ item: it, where: "pack", loc: `${pre}:pack:${i}`, take: () => { pk[i] = null; } }); });
   return out;
 }
+// loans.js: one of theirs on loan (s.loan), and a piece they came with (it.loanOwn: their id). It stays on them.
+export const ownKit = (s, it) => !!(s && s.loan && it && it.loanOwn != null && it.loanOwn === s.id);
 // Takes everything off a person (captured, for example) and returns it.
 export function stripAll(s) {
   const items = allItems(s);
@@ -898,8 +900,6 @@ export function unlistFromSites(state, item) {
 export function moveItem(state, fromStr, toStr, { across = false } = {}) {
   if (fromStr === toStr) return "";
   const from = parseLoc(fromStr), to = parseLoc(toStr);
-  const lent = from.o === "s" ? survivorById(state, from.id) : null; // loans.js: someone on loan keeps their kit
-  if (lent && lent.loan && !(to.o === "s" && to.id === from.id)) return `${lent.name} is on loan from ${lent.loan.group}: their kit is their own.`;
   const A = ref(state, from), B = ref(state, to);
   if (!A || !B) return "That slot is not there any more.";
   const place = placeOf(state, from) || (across ? placeOf(state, to) : null);
@@ -907,6 +907,13 @@ export function moveItem(state, fromStr, toStr, { across = false } = {}) {
   if (to.o === "body") return "Bodies are only for taking from.";
   const item = A.get();
   if (!item) return "Nothing there.";
+  // loans.js: someone on loan keeps what they came with (it moves only about on them); what the base gave them moves
+  // as anyone's, and the base may add to their kit.
+  const lent = from.o === "s" ? survivorById(state, from.id) : null;
+  if (ownKit(lent, item) && !(to.o === "s" && to.id === from.id)) return `${lent.name} is on loan from ${lent.loan.group}: the ${item.name} is their own.`;
+  const onto = to.o === "s" && !(from.o === "s" && from.id === to.id) ? survivorById(state, to.id) : null;
+  const there = onto && !B.list && B.get ? B.get() : null;
+  if (ownKit(onto, there)) return `${onto.name} is on loan from ${onto.loan.group}: the ${there.name} there is their own.`;
   const store = storageFor(state, place);
   const fk = slotKind(from), tk = slotKind(to);
   const equipped = (k) => EQUIP_SLOTS.includes(k) && k !== "carry"; // a pack, a rig, a carrier: what it adds to the max load (one carried in the arms adds nothing)

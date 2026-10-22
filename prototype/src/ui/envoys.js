@@ -33,7 +33,7 @@ const payloadOf = (e, state) => (e.kind === "aid" ? { goods: { ...e.goods } } : 
   : e.kind === "jointop" ? (e.opId != null && opById(state, e.opId) ? { opId: e.opId } : { op: e.op, target: e.target, share: e.share, n: e.opN, dayAt: day(state) + Math.max(1, e.dayIn) }) : {});
 // A badge for someone on loan (the roster, the survivor panel): their group and the days left.
 export function loanBadge(state, s) {
-  return s && s.loan ? ` <span class="vol-tag"${tip(`${loanLine(state, s)}. Their kit is their own; they go home when the loan ends or their group calls them back.`)}>on loan · ${esc(s.loan.group)} · ${Math.max(0, Math.ceil((s.loan.until - state.hour) / 24))}d</span>` : "";
+  return s && s.loan ? ` <span class="vol-tag"${tip(`${loanLine(state, s)}. What they came with is their own (it goes home with them); what the base gives them stays. They go home when the loan ends or their group calls them back.`)}>on loan · ${esc(s.loan.group)} · ${Math.max(0, Math.ceil((s.loan.until - state.hour) / 24))}d</span>` : "";
 }
 // Targets for a joint operation by its kind: [{ tile, name }] you know of, nearest the hub first.
 function opTargets(state, op) {
@@ -136,7 +136,7 @@ function composer(state, ui, e) {
   const block = why || (needsEnvoy ? e.planWhy : "");
   return `<div class="card small" style="margin-top:0.5rem">
     <div class="spread"><b>${swatch(f.color)}To ${esc(f.name)}</b><span class="${via === "radio" ? "good" : "muted"}">${via === "radio" ? "📻 by radio: the answer at once" : "✉ by envoy: the answer when it is home"}</span></div>
-    <div class="row small"><select class="mini" data-action="ev-kind">${Object.keys(KINDS).map(opt).join("")}</select> <span class="muted">${esc(KINDS[e.kind].desc)}</span></div>
+    <div class="row small"><select class="mini" data-action="ev-kind">${Object.keys(KINDS).filter((k) => !KINDS[k].hidden).map(opt).join("")}</select> <span class="muted">${esc(KINDS[e.kind].desc)}</span></div>
     ${what}${envoy}
     ${why ? `<div class="danger small">${esc(why)}</div>` : ""}
     ${e.msg ? `<div class="result">${esc(e.msg)}</div>` : ""}

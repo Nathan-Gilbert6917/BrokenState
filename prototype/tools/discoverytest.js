@@ -263,6 +263,8 @@ route("the coalition's reports", () => {
   const m = new Set(st.log);
   st.hour += 24;
   A.allianceDaily(st);
+  // envoys.js (2026-10-22): a member with no radio link of its own reports by courier; its reports as they arrive.
+  if (!canRadioGroup(st, f)) A.shareSightings(st, [f]);
   st.cards.length = 0;
   return { st, id, m, word: /Word reached you|Reports mapped/ };
 });

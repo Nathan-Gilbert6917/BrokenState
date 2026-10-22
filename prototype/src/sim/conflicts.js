@@ -1245,8 +1245,9 @@ function onConflictCombat(state, result, setup) {
   if (f && c.goodwillHit) changeGoodwill(state, f, -c.goodwillHit, "you attacked their people");
   const dead = (result.survivorsDead || []).map((id) => survivorById(state, id)).filter(Boolean);
   if (p && state.parties.includes(p) && !partyMembers(state, p).length) {
+    const quiet = Parties.unheardEnvoy(p); // an envoy out of radio coverage: heard of only when overdue (envoys.js)
     wipeParty(state, p);
-    log(state, `The whole team was lost fighting ${c.enemy.name}.`, "death");
+    if (!quiet) log(state, `The whole team was lost fighting ${c.enemy.name}.`, "death");
     if (f && groupBroken(f)) collapseFaction(state, f);
     return;
   }

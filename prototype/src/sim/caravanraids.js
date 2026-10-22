@@ -165,7 +165,7 @@ export function roadCaravans(state, { player = false } = {}) {
     });
   }
   for (const q of state.parties) {
-    if (!q.path || !q.path.length || q.phase !== "out" && !(q.phase === "back" && (q.owner === "player" || q.kind === "envoy" || q.kind === "loan"))) continue; // envoys.js, loans.js: a group's envoy or volunteers on their way home too
+    if (!q.path || !q.path.length || q.phase !== "out" && !(q.phase === "back" && (q.owner === "player" || q.kind === "envoy" || q.kind === "loan" || q.kind === "opparty"))) continue; // envoys.js, loans.js: a group's envoy, volunteers or joint-op party on their way home too (the op's share with it)
     if (q.owner === "player") {
       if (!player || q.kind !== "convoy") continue;
       const g = q.cargo || { supplies: {}, gear: [] };

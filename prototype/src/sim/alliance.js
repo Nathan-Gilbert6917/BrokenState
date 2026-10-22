@@ -3,8 +3,8 @@
 //
 // Joining
 // - A group can be invited (Groups tab or the radio panel) when it is alive, known, in radio reach (reachVia: a base
-//   of theirs within your radio coverage + 6, stations and linked relays at any of your bases; or one of your teams
-//   at its gates, a base of yours within NEIGHBOUR 8 tiles, a member's within MEMBER_RELAY 12), not at war with a
+//   of theirs within your radio coverage + 6, stations and linked relays at any of your bases, and a set of their own;
+//   or one of your teams at its gates; else the invitation goes by envoy: envoys.js), not at war with a
 //   member, its goodwill toward you is 50+ and it has a pact with you, and either you have done a job for it or the
 //   council votes it in (with members, each member votes yes when its relations with the group are 10+; a majority
 //   carries it).
@@ -76,7 +76,7 @@ import { volunteerGroupsAt, councilWar, councilVolCard } from "./volunteers.js";
 import { blocOf, blocById, blocMembers, blocTitle, blocJoinsCoalition, blocCarrier, blocVoteWait } from "./blocs.js"; // AI blocs vote on joining together
 import { atWarWithYou } from "./playerwars.js";
 import { toleranceCheck, coalitionDaily, noteAnswer } from "./coalition.js"; // standing, asks and tolerance bands
-import { councilByDelegates } from "./envoys.js"; // the council without radios: delegates travel (call-time only)
+import { councilByDelegates, cardFromGroup, cardInFlight, newsFromMember } from "./envoys.js"; // the council without radios: delegates travel (call-time only)
 
 export const ALLIANCE = {
   NAME: "The Calder Coalition", GOODWILL: 50, LEAVE_GOODWILL: 20, VOTE_REL: 10, ASK_CHANCE: 0.03,
@@ -99,15 +99,15 @@ export const allianceMembers = (state) => (state.alliance ? state.alliance.membe
 // - "radio": one of its bases lies within your radio coverage + GROUP_REACH (radio.js canRadioGroup: the stations'
 //   range and RELAY_RANGE around every linked relay, at any of your bases, plus 6 for their own sets). A relay that
 //   brings a group's base into that reach makes it invitable (radio.js relaySpotFor names the base for one);
-// - "gates": one of your teams waits or trades at one of its bases;
-// - "member": a member has a base within MEMBER_RELAY tiles of one of theirs (the member's radio carries it);
-// - "neighbour": a base of yours within NEIGHBOUR tiles of one of theirs (you talk over the fence).
+// - "gates": one of your teams waits or trades at one of its bases.
+// (A member's base near theirs or a base of yours next door carried it once; since 2026-10-22 every word without
+// radio goes in person: envoys.js.)
 export function reachVia(state, f) {
   if (!f || !f.alive) return "";
   if (canRadioGroup(state, f)) return "radio";
   if (state.parties.some((p) => p.owner === "player" && f.bases.includes(partyTile(p)) && (p.phase === "waiting" || p.phase === "engaged"))) return "gates";
-  if (allianceMembers(state).some((m) => m !== f && m.bases.some((b) => f.bases.some((x) => state.grid.distance(b, x) <= ALLIANCE.MEMBER_RELAY)))) return "member";
-  if (state.bases.some((b) => f.bases.some((x) => state.grid.distance(b.tile, x) <= ALLIANCE.NEIGHBOUR))) return "neighbour";
+  // envoys.js (2026-10-22: "All communication ... has to come by envoy"): a member's radio or a base next door no longer
+  // carries word; without radio or a team at their gates, send an envoy (Diplomacy → Envoys).
   return "";
 }
 const reachable = (state, f) => reachVia(state, f) !== "";
@@ -118,7 +118,7 @@ function outOfReach(state, f) {
     : spot ? `build a radio relay at ${spot.name} (it would bring them into your coverage)`
     : hasNetwork(state) ? `bring their base within ${GROUP_REACH} tiles of your radio coverage (a station reaches ${RADIO_RANGE} tiles, each linked relay ${RELAY_RANGE} more around its base)`
     : `build a radio station (${RADIO_RANGE} tiles, +${GROUP_REACH} for their own sets; relays at your other bases chain it ${RELAY_RANGE} tiles further each)`;
-  return `${f.name} is out of radio reach (${radio}, send a team to their gates, hold a base within ${ALLIANCE.NEIGHBOUR} tiles of theirs, or win a member within ${ALLIANCE.MEMBER_RELAY} tiles of them). Or send an envoy with the invitation (Diplomacy → Envoys).`;
+  return `${f.name} is out of radio reach (${radio}, or send a team to their gates). Or send an envoy with the invitation (Diplomacy → Envoys).`;
 }
 // The council's vote on a candidate: { yes, no, passes } (no members: no vote).
 export function councilVote(state, f) {
@@ -210,14 +210,21 @@ export function allianceDaily(state) {
     else if (allianceMembers(state).some((m) => m !== f && warsOf(state, f).some((w) => w.a === f.id && enemyIn(w, f) === m.id))) leave(state, f, "it attacked another member");
   }
   const ms = allianceMembers(state);
-  shareSightings(state, ms);
+  shareSightings(state, ms, false); // envoys.js: the members without a radio link by courier
   hordeHelp(state, ms);
   askToJoin(state);
   council(state, ms);
   coalitionDaily(state, allianceMembers(state)); // coalition.js: memories fade, members drift, their asks
 }
 
-function shareSightings(state, ms) {
+// envoys.js: a member with no radio link reports by courier every NEWS_DAYS days (its sightings when it arrives).
+export const NEWS_DAYS = 7;
+export function shareSightings(state, ms, carried = true) {
+  if (!carried) {
+    const far = ms.filter((f) => !canRadioGroup(state, f));
+    for (const f of far) if ((day(state) + f.id) % NEWS_DAYS === 0) newsFromMember(state, f);
+    ms = ms.filter((f) => !far.includes(f));
+  }
   if (!ms.length) return;
   const g = state.grid;
   const tiles = new Set();
@@ -305,22 +312,28 @@ function askToJoin(state) {
   const A = ensureAlliance(state);
   const rng = diploRng(state);
   for (const f of state.factions) {
-    if (!f.alive || isMember(state, f) || inviteProblem(state, f)) continue;
-    if (state.cards.some((c) => c.allianceAsk === f.id)) continue;
+    if (!f.alive || isMember(state, f) || inviteProblem(state, f, true)) continue; // they ask in person if no radio reaches them (envoys.js)
+    if (state.cards.some((c) => c.allianceAsk === f.id) || cardInFlight(state, f, "join")) continue;
     if (A.lastAsk[f.id] != null && day(state) - A.lastAsk[f.id] < 20) continue;
     if (!rng.chance(ALLIANCE.ASK_CHANCE)) continue;
     A.lastAsk[f.id] = day(state);
-    const bloc = state.noBlocs ? null : blocOf(state, f);
-    const mates = bloc ? blocMembers(state, bloc).filter((m) => m !== f) : [];
-    addCard(state, {
-      title: `${f.name} asks to join the coalition`, allianceAsk: f.id,
-      text: `${f.name} (${attitude(f).toLowerCase()}, goodwill ${Math.round(f.goodwill)}) want to join ${A.name}. Members share what they see, send fighters against raids and hordes coming for your bases, join your hive assaults, and sit in the seasonal council.${mates.length ? ` They stand in ${blocTitle(bloc)} with ${mates.map((m) => m.name).join(" and ")}: the bloc votes on it, and may come in together.` : ""}`,
-      choices: [
-        { label: "Welcome them", hint: mates.length ? `Their bloc votes: most agrees and the bloc joins together, else ${f.name} may join alone` : "They join the coalition", ai: () => 5, resolve: (st) => inviteToAlliance(st, f) },
-        { label: "Not now", hint: "They may ask again in a few weeks", ai: () => 0, resolve: () => `You keep ${f.name} waiting.` },
-      ],
-    });
+    cardFromGroup(state, f, "join", {}, canRadioGroup(state, f) ? joinAskCard(state, f) : null); // envoys.js: by radio now, else their envoy carries it
   }
+}
+// The card a group sends to ask to join (askToJoin; envoys.js builds it again when their envoy arrives).
+export function joinAskCard(state, f) {
+  if (!f || !f.alive || isMember(state, f) || inviteProblem(state, f, true)) return null;
+  const A = ensureAlliance(state);
+  const bloc = state.noBlocs ? null : blocOf(state, f);
+  const mates = bloc ? blocMembers(state, bloc).filter((m) => m !== f) : [];
+  return {
+    title: `${f.name} asks to join the coalition`, allianceAsk: f.id,
+    text: `${f.name} (${attitude(f).toLowerCase()}, goodwill ${Math.round(f.goodwill)}) want to join ${A.name}. Members share what they see, send fighters against raids and hordes coming for your bases, join your hive assaults, and sit in the seasonal council.${mates.length ? ` They stand in ${blocTitle(bloc)} with ${mates.map((m) => m.name).join(" and ")}: the bloc votes on it, and may come in together.` : ""}`,
+    choices: [
+      { label: "Welcome them", hint: mates.length ? `Their bloc votes: most agrees and the bloc joins together, else ${f.name} may join alone` : "They join the coalition", ai: () => 5, resolve: (st) => inviteToAlliance(st, f, true) }, // they asked: no reach needed
+      { label: "Not now", hint: "They may ask again in a few weeks", ai: () => 0, resolve: () => `You keep ${f.name} waiting.` },
+    ],
+  };
 }
 
 // ---------- the council ----------

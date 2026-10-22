@@ -11,7 +11,7 @@
 //   people who need a bed; "Send to the hospital" walks the ones at a base without one to the nearest that has one.
 import { GEAR } from "./data.js";
 import { baseById, combatPower, gearEffect, skill, newId, survivorById, factionById } from "./world.js";
-import { ensureInv, itemLoad, packSize, ensurePack } from "./inventory.js";
+import { ensureInv, itemLoad, packSize, ensurePack, ownKit } from "./inventory.js";
 import { wornLoad, maxLoad, feelFactor, LOAD_BANDS } from "./load.js";
 import { itemScore } from "./autopilot.js";
 import { inSlot } from "./equip.js";
@@ -98,6 +98,7 @@ export function equipBest(state, people) {
         if (!items.length) continue;
         const best = items.sort((a, b) => itemScore(s, b) - itemScore(s, a))[0];
         const cur = s.gear[slot];
+        if (ownKit(s, cur)) continue; // loans.js: someone on loan keeps what they came with
         if (itemScore(s, best) < itemScore(s, cur) + (cur ? 0.3 : 0.05)) continue; // only real upgrades (the autopilot's margin)
         if (slot === "backpack" && cur && !movePackContents(cur, best)) continue; // their things would not fit the new pack
         base.armory.splice(base.armory.indexOf(best), 1);

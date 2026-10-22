@@ -18,7 +18,7 @@ import { GEAR } from "./data.js";
 import { MAGAZINES, CLIPS, KIT_LOOT } from "./data-kit.js";
 import { WEAPONS, KITS } from "./combat.js";
 import { hash01 } from "./skills.js";
-import { lootItem, newItem, stow, ensureInv, rigOf, rigPouches, pouchesOf, pouchReason, isCarrier, insertsOf, INSERT_SIDES, itemLoad, itemKg, allItems, storageFor, personPlace, carriedSpots, ensureRig, migrateCarrier, packOf } from "./inventory.js";
+import { lootItem, newItem, stow, ensureInv, rigOf, rigPouches, pouchesOf, pouchReason, isCarrier, insertsOf, INSERT_SIDES, itemLoad, itemKg, allItems, storageFor, personPlace, carriedSpots, ensureRig, migrateCarrier, packOf, ownKit } from "./inventory.js";
 import { fittedKg, gunMods } from "./gunmods.js";
 import { calOf, roundsOf } from "./ammo.js";
 import { CALIBERS } from "./data-ammo.js";
@@ -468,7 +468,7 @@ export function equipKit(list, people) {
     ensureInv(s);
     const g = s.gear;
     // A chest rig when the body armour has no pouches (one over a pouched vest goes back, its contents into the vest's).
-    if (g.rig && g.armor && pouchesOf(g.armor)) {
+    if (g.rig && g.armor && pouchesOf(g.armor) && !ownKit(s, g.rig)) { // loans.js: not a rig someone on loan came with
       const rig = g.rig, into = ensureRig(g.armor), kinds = pouchesOf(g.armor);
       g.rig = null;
       for (const [i, it] of (rig.contents || []).entries()) {
@@ -486,7 +486,7 @@ export function equipKit(list, people) {
     if (isCarrier(g.armor)) {
       const ins = insertsOf(g.armor);
       for (const side of INSERT_SIDES) {
-        if (ins[side] && !armourBroken(ins[side])) continue;
+        if (ins[side] && (!armourBroken(ins[side]) || ownKit(s, ins[side]))) continue; // loans.js: a plate someone on loan came with stays
         const plates = list.filter((it) => GEAR[it.key] && GEAR[it.key].slot === "insert" && !armourBroken(it)).sort((a, b) => plateScore(b) - plateScore(a));
         if (!plates.length) break;
         const p = plates[0];
@@ -578,6 +578,7 @@ export function governPlates(state, base, people, repair) {
     for (const side of INSERT_SIDES) {
       const cur = ins[side];
       if (cur && !armourBroken(cur) && cond(cur) >= PLATE_SWAP) continue;
+      if (ownKit(s, cur)) continue; // loans.js: a plate someone on loan came with stays in their carrier
       const best = base.armory.filter(spareOk).sort((a, b) => score(b) - score(a))[0];
       if (!best) continue;
       base.armory.splice(base.armory.indexOf(best), 1);

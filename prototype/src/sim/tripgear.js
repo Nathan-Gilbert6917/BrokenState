@@ -20,7 +20,7 @@ import { GEAR } from "./data.js";
 import { atBase, gearEffect, combatPower, usesArrows } from "./world.js";
 import { calOf, drawShots } from "./ammo.js";
 import { isRoundKey } from "./rounds.js";
-import { armorPower, allCarried, stow, isSmall, itemArmor } from "./inventory.js";
+import { armorPower, allCarried, stow, isSmall, itemArmor, ownKit } from "./inventory.js";
 import { lightOf, packLights, LIGHTS, LIGHT_KEYS } from "./lights.js";
 import { TRIP_JOBS } from "./tripland.js";
 import { isChopTool } from "./woodcutting.js";
@@ -106,7 +106,7 @@ export function gearOutdoorWorkers(state, base, opts = {}) {
     const k = tripKit(state, base, s);
     let handFree = !s.gear.tool;
     // A weapon: someone with none they can use (or a gun with nothing to shoot), from the armory.
-    if (!k.weapon || !k.ready) {
+    if ((!k.weapon || !k.ready) && !ownKit(s, s.gear.weapon)) { // loans.js: a weapon someone on loan came with stays in their hands
       const cur = k.weapon && k.ready ? weaponScore(base, s, k.weapon) : 0;
       const best = pool.filter((it) => GEAR[it.key] && GEAR[it.key].slot === "weapon").map((it) => ({ it, v: weaponScore(base, s, it) })).filter((x) => x.v > cur).sort((a, b) => b.v - a.v || a.it.key.localeCompare(b.it.key))[0];
       if (best) {

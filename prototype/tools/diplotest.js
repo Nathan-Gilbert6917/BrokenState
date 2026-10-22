@@ -641,7 +641,7 @@ section("The coalition");
 }
 
 // ======================================================================================
-section("Radio reach for the coalition (alliance.js reachVia): radio, a team at the gates, a member, a base next door");
+section("Radio reach for the coalition (alliance.js reachVia): radio, a team at the gates, no longer a member or a base next door (envoys)");
 {
   const st = setup();
   const h = hub(st);
@@ -663,12 +663,12 @@ section("Radio reach for the coalition (alliance.js reachVia): radio, a team at 
     const mSaved = m.bases.slice();
     m.bases.push(g.within(far, 10).find((t) => g.distance(t, far) >= 9 && free(st, t)));
     A.ensureAlliance(st).members.push(m.id);
-    check(A.reachVia(st, f) === "member", "a member with a base within 12 tiles of theirs: in reach");
+    check(A.reachVia(st, f) === "", "a member with a base within 12 tiles of theirs: no longer in reach (envoys.js 2026-10-22: every word without radio goes in person)");
     st.alliance.members = st.alliance.members.filter((id) => id !== m.id);
     m.bases.length = 0; m.bases.push(...mSaved);
     const o = { id: newId(), tile: g.within(far, 8).find((t) => g.distance(t, far) >= 6 && free(st, t)), type: "outpost", name: "Fence Post", stock: {}, buildings: [], construction: [], armory: [], radio: false, watchtower: false };
     st.bases.push(o);
-    check(A.reachVia(st, f) === "neighbour", "a base of yours within 8 tiles of theirs: in reach (over the fence)");
+    check(A.reachVia(st, f) === "", "a base of yours within 8 tiles of theirs: no longer in reach either (send an envoy)");
     st.bases.splice(st.bases.indexOf(o), 1);
     f.bases.length = 0; f.bases.push(...saved);
   }

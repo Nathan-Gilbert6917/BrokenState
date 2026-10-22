@@ -85,6 +85,7 @@ import { weightOf, woundedOf } from "./groupcare.js";
 import { knowsOf, knownBase } from "./groupworld.js";
 import { isMember, allianceMembers, controlledLand, admitToAlliance, ensureAlliance, ALLIANCE } from "./alliance.js";
 import { canRadioGroup } from "./radio.js";
+import { cardFromGroup, cardInFlight } from "./envoys.js"; // the bloc's invitation carried without a radio link (call-time only)
 import { spawnAiParty } from "./parties.js";
 import { atWarWithYou, pwarOf } from "./playerwars.js";
 
@@ -685,13 +686,13 @@ function inviteYou(state, bloc, today) {
   if (!ms.length || ms.some((m) => !m.known || attitude(m) === "Hostile" || atWarWithYou(state, m))) return;
   if (ms.reduce((a, m) => a + m.goodwill, 0) / ms.length < BLOC.INVITE_GW) return;
   if (bloc.foe.kind === "group") { const c = factionById(state, bloc.foe.id); if (!c || !c.alive || (attitude(c) !== "Hostile" && !atWarWithYou(state, c))) return; }
-  const g = state.grid;
-  if (!ms.some((m) => canRadioGroup(state, m) || state.bases.some((b) => m.bases.some((x) => g.distance(x, b.tile) <= 8)))) return;
-  if (state.cards.some((c) => c.blocInvite === bloc.id)) return;
+  if (state.cards.some((c) => c.blocInvite === bloc.id) || ms.some((m) => cardInFlight(state, m, "bloc"))) return;
   if (h(state, bloc.name, today, "invite") >= BLOC.INVITE) return;
   bloc.lastInvite = today;
   ensureBlocs(state).blocStats.invites++;
-  addCard(state, blocInviteCard(state, bloc));
+  // envoys.js (2026-10-22): by radio from the member it reaches, else carried by the nearest member's envoy.
+  const by = ms.find((m) => canRadioGroup(state, m)) || [...ms].sort((x, y) => Math.min(...x.bases.map((t) => state.grid.distance(t, hub(state).tile))) - Math.min(...y.bases.map((t) => state.grid.distance(t, hub(state).tile))) || x.id - y.id)[0];
+  cardFromGroup(state, by, "bloc", { blocId: bloc.id }, canRadioGroup(state, by) ? blocInviteCard(state, bloc) : null);
 }
 export function blocInviteCard(state, bloc) {
   const ms = blocMembers(state, bloc);

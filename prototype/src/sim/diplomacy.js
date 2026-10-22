@@ -60,6 +60,7 @@ import { attitude, changeGoodwill, isAggressiveType, strength, recomputeOwnershi
 import { clashKit, raidCount, smokeCover } from "./arsenal.js"; // group arsenals: a war raid's dead lose their kit, the side holding the field picks some up
 import { spawnAiParty, tileLabel } from "./parties.js";
 import { hasNetwork, canListen, canRadioGroup, radioSpeech } from "./radio.js";
+import { groupWord, cardFromGroup } from "./envoys.js"; // word carried in person between groups and to you (call-time only)
 import { available, need, buyPrice, refreshMarkets, refreshMarket } from "./trade.js";
 import { season } from "./weather.js";
 import { gainXp, USE } from "./skills.js";
@@ -266,9 +267,7 @@ function pactsDaily(state) {
   for (const a of live) for (const b of live) {
     if (a.id >= b.id || pactBetween(state, a, b) || warBetween(state, a, b)) continue;
     if (relation(state, a, b) < DIPLO.PACT_REL || !rng.chance(DIPLO.PACT_CHANCE)) continue;
-    d.pacts.push({ a: a.id, b: b.id, since: day(state) });
-    d.stats.pacts++;
-    news(state, `${cap(knownAs(state, a))} and ${knownAs(state, b)} signed a pact.`, "info", [a, b]);
+    groupWord(state, a, b, "pact"); // envoys.js: signed now if a radio links them, else when a's courier reaches b
   }
 }
 
@@ -299,7 +298,7 @@ function declareWars(state) {
     const last = d.lastPeace[key(a, b)];
     if (last != null && today - last < DIPLO.PEACE_COOLDOWN) continue;
     if (!rng.chance(DIPLO.WAR_BASE * temper(a))) continue;
-    startWar(state, a, b, warReason(state, a, b));
+    groupWord(state, a, b, "war", { reason: warReason(state, a, b) }); // envoys.js: a declaration is carried: the war begins when it is read
   }
 }
 
@@ -365,7 +364,10 @@ function warsDaily(state) {
     const age = today - w.start;
     const worn = Math.max(w.exh[a.id] || 0, w.exh[b.id] || 0);
     const broken = Math.min(a.pop, b.pop) <= DIPLO.SUE_POP;
-    if (broken || (age >= 10 && worn >= DIPLO.EXHAUSTED && rng.chance(0.25)) || (age >= DIPLO.LONG_WAR && rng.chance(0.1)) || (age >= 10 && rng.chance(0.01))) makePeace(state, w);
+    if (broken || (age >= 10 && worn >= DIPLO.EXHAUSTED && rng.chance(0.25)) || (age >= DIPLO.LONG_WAR && rng.chance(0.1)) || (age >= 10 && rng.chance(0.01))) {
+      const [x, y] = (w.exh[a.id] || 0) >= (w.exh[b.id] || 0) ? [a, b] : [b, a]; // the wearier side sends word
+      if (broken) makePeace(state, w); else groupWord(state, x, y, "peace", { warId: w.id }); // envoys.js: the peace when its courier arrives
+    }
   }
 }
 
@@ -552,9 +554,8 @@ function askPlayerToJoin(state, w) {
     const f = factionById(state, id), foe = factionById(state, enemyIn(w, f));
     if (!f || !foe || !f.known || attitude(f) === "Hostile") continue;
     if (!(f.goodwill >= 40 || f.pact || isMember(state, f))) continue;
-    if (!canRadioGroup(state, f)) continue;
     w.asked = true;
-    if (hub(state)) addCard(state, warCard(state, w, f, foe)); // no base left (conquest.js exiles): nobody to ask
+    if (hub(state)) cardFromGroup(state, f, "warjoin", { warId: w.id }, canRadioGroup(state, f) ? warCard(state, w, f, foe) : null); // envoys.js: by radio now, else their envoy; no base left: nobody to ask
     return;
   }
 }

@@ -59,7 +59,7 @@ import { SUPPLIES, SUPPLY_KEYS, STOCK_KEYS, supValue } from "./data.js";
 import { newId, log, addCard, day, combatPower, skill, snapshot, hourOfDay } from "./world.js";
 import {
   planPath, moveCost, partyTile, partyMembers, tileLabel, carried, takeSupply, awaitOrders, cargoRoom, unitsThatFit, addGearToCargo, wipeParty,
-  carryCapacity, supplyLoad,
+  carryCapacity, supplyLoad, unheardEnvoy,
 } from "./parties.js";
 import { syncBand, bandCount, bandNewcomer, bandRef } from "./bands.js"; // the band's people as records (what they carry, their wounds); newcomers
 import { touchMembers, isWounded } from "./members.js";
@@ -925,9 +925,10 @@ function onNomadFight(state, result, setup) {
   if (b) { b.pop -= result.enemiesKilled || 0; if (b.phase === "battle") b.phase = b.camp != null ? "camp" : "travel"; nomads(state).stats.killed += result.enemiesKilled || 0; }
   if (p && state.parties.includes(p) && !partyMembers(state, p).length) {
     const where = tileLabel(state, partyTile(p));
+    const quiet = unheardEnvoy(p); // parties.js: an envoy out of radio coverage: heard of only when overdue (envoys.js)
     wipeParty(state, p);
-    log(state, `The whole team was lost fighting ${name}.`, "death");
-    addCard(state, { title: `The fight with ${name}`, text: `The whole team was lost fighting ${name} near ${where}. Where they fell is marked on the map.`, where, choices: [{ label: "OK", resolve: () => "" }] });
+    if (!quiet) log(state, `The whole team was lost fighting ${name}.`, "death");
+    if (!quiet) addCard(state, { title: `The fight with ${name}`, text: `The whole team was lost fighting ${name} near ${where}. Where they fell is marked on the map.`, where, choices: [{ label: "OK", resolve: () => "" }] });
     if (b && b.pop < N.MIN_POP) breakUp(state, b, "beaten");
     return;
   }

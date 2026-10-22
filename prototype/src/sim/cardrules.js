@@ -43,7 +43,7 @@ const RAID_RE = /^(Raiders heading for |Outsider raiders heading for |Heard on t
 const HORDE_RE = /^Horde heading for /;
 const HOSTILE_RE = /^(.+ asks you to join their war$|.+ asks for help$|A call for help|.+ goes on the attack$|The strike on .+ has failed$)/;
 const COMBAT_RE = /^(Horde of \d|A horde of \d|Raiders ahead|Raiders from outside|Robbers on the road|Strangers ahead|Armed strangers|A robbery$|Squatters with guns$|A military squad$|Soldiers (in|fighting)|Assault: |Rescue at |Held at |After the fight$|The fight with |The hive: |Hive growth: |.+ fighters lay down their arms$)/;
-const TRADE_RE = /^(Trade caravan at |Traders on |On the radio: |A peddler at the gate$|Travellers at |Travellers from outside: )/;
+const TRADE_RE = /^(Trade caravan at |Traders on |On the radio: |Envoy from |A peddler at the gate$|Travellers at |Travellers from outside: )/; // envoys.js: a group's card carried by its envoy
 
 // Choices the player can take without the map (a choice that opens a screen or asks for a tile cannot be auto-picked).
 export const choiceOff = (state, c) => !c || (typeof c.disabled === "function" ? !!c.disabled(state) : !!c.disabled);
