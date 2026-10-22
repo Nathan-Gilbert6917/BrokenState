@@ -1,0 +1,97 @@
+/* Touch input (src/ui/touch.js): only rules a touch screen needs; nothing here may change a desktop with a mouse. */
+
+/* The surfaces with gestures of their own (ui/touch.js touchGestures, the minimap, the bars and windows dragged by
+   ui/windows.js): the browser neither scrolls nor zooms the page under a finger there. touch-action only ever applies
+   to touch and pens, so it holds on a touch laptop with a mouse too and a mouse never notices. */
+#map, #combatmap, #minimap canvas, .gut, .wgrip,
+#modal .win > .box > h1, #modal .win > .box > h2:first-child, #modal .win > .box > :first-child:has(h1, h2, .basename) { touch-action: none; }
+/* No grey flash where a tap lands on a map (iOS, Android), and no callout (save image, open link) on a long press:
+   that press is a right-click (ui/touch.js). Neither exists for a mouse. */
+#map, #combatmap, #minimap canvas { -webkit-tap-highlight-color: transparent; }
+#app, #modal, #combat, #title, #tip, #ctxmenu, #itemmenu { -webkit-touch-callout: none; }
+
+/* A screen with no mouse at all: a long press would select text (and its handles cover the menu it opens), so the
+   game's surfaces are not selectable; what is typed into still is. The tip shown by a long press sits over the finger
+   and never runs off a phone. */
+@media (hover: none) and (pointer: coarse) {
+  body { -webkit-user-select: none; user-select: none; }
+  input, textarea, [contenteditable], [contenteditable] * { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
+  #tip, #tip.pre { max-width: min(22rem, calc(100vw - 16px)); }
+  img { -webkit-user-drag: none; }
+}
+
+/* The Work tab's picker (ui/work.js workPicker): a finger's long press on a cell opens it (there are no number keys
+   and no R under a finger); a mouse never does, so it needs no media query. Over the window, its backdrop catches a
+   tap outside it. */
+.wpick-bg { position: fixed; inset: 0; z-index: 40; }
+.wpick { position: fixed; z-index: 41; width: min(17rem, calc(100vw - 1rem)); padding: 0.55rem; display: flex; flex-direction: column; gap: 0.45rem; background: var(--panel); border: 1px solid var(--accent); border-radius: 10px; box-shadow: 0 10px 28px rgba(0,0,0,0.6); }
+.wpick-h { display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem; font-size: 0.92rem; }
+.wpick-n { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 0.3rem; }
+.wpick-n button.wcell { width: auto; height: 2.75rem; }
+.wpick-n button.wcell.on { outline: 2px solid var(--accent); outline-offset: 1px; }
+.wpick-f { display: flex; align-items: center; gap: 0.4rem; }
+.wpick-f button { min-height: 2.5rem; }
+.wpick-f button:last-child { margin-left: auto; min-width: 2.75rem; }
+
+/* The battle's confirm chip (ui/combat.js combatTap): a finger's tap that would send an order (a move, a shot, a throw)
+   shows the hover's preview and this chip over the tapped point; the same cell again or ✓ sends it, ✕ drops it. Only
+   a finger's tap makes one, so a mouse never sees it and it needs no media query. Kept inside the map's visible part
+   by the code (between the top and the orders bar), above the map's HUD, strip, cards and toggles. */
+#cbtapask { position: absolute; z-index: 7; width: max-content; max-width: min(19rem, calc(100% - 16px)); padding: 0.45rem 0.55rem 0.4rem; background: rgba(20,22,26,0.96); border: 1px solid var(--accent); border-radius: 10px; box-shadow: 0 6px 20px rgba(0,0,0,0.6); font-size: 0.85rem; line-height: 1.35; pointer-events: auto; }
+#cbtapask[hidden] { display: none; }
+#cbtapask .tc-head { display: flex; align-items: baseline; gap: 0.45rem; flex-wrap: wrap; }
+#cbtapask .tc-head .cbbig { font-size: 1.2rem; }
+#cbtapask .tc-body { margin-top: 0.15rem; font-size: 0.78rem; color: var(--muted, #9aa3ad); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden; }
+#cbtapask .tc-foot { display: flex; align-items: center; gap: 0.4rem; margin-top: 0.4rem; }
+#cbtapask .tc-hint { flex: 1; font-size: 0.72rem; color: var(--muted, #9aa3ad); white-space: nowrap; }
+#cbtapask button { min-height: 2.5rem; min-width: 2.75rem; font-size: 0.9rem; }
+#cbtapask .tc-go { background: #4a3816; border-color: var(--accent); font-weight: 600; padding: 0 0.8rem; }
+
+/* ---------- the key hints by the device in use ----------
+   The keycaps on buttons and a controller's buttons in a line (src/ui/inputmode.js: <html> carries input-mouse,
+   input-touch or input-pad; the words of the hints are src/ui/hints.js's). Every rule is under input-touch or
+   input-pad: a desktop played with the mouse and the keyboard shows every keycap as it always has. Here and not in a
+   stylesheet of its own: one more file to load changed a desktop's first paint by a pixel. */
+
+/* A finger taps the button itself: no keycaps. The battle's orders and turn controls (ui/battlebar.js .key), the
+   base map's Turn R (ui/basemap.js), a folded panel's strip ([ ] L, ui/windows.js), the stack mover's Enter ↵ · Esc. */
+.input-touch :is(.key, .gut kbd, .smkeys) { display: none; }
+
+/* A controller: a keycap that names its button (data-pad: End turn's Y, ui/combat.js renderCombatBar) shows that
+   button as an Xbox pad draws it, as pad.css draws the legend's (.pb); the rest go, since no button gives those
+   orders (they are the orders bar's: X takes it, ui/gamepad.js padList). :is(body, #cbbar) weighs as an id, so this
+   wins over the bar's own keycap rules (styles.css #cbbar .bb-ctl .key) without !important. */
+.input-pad :is(.key:not([data-pad]), .gut kbd, .smkeys) { display: none; }
+.input-pad :is(body, #cbbar) .key[data-pad] {
+  display: inline-grid; place-items: center; width: auto; height: auto; padding: 0; border: 0; background: none;
+  font-size: 0; line-height: 0; color: transparent;
+}
+.input-pad .key[data-pad]::after {
+  content: attr(data-pad); display: inline-grid; place-items: center; box-sizing: border-box;
+  min-width: 1.25rem; height: 1.25rem; padding: 0 0.25rem; border-radius: 999px;
+  background: #3a3f47; color: #f2f4f6; font: 700 0.72rem/1 system-ui, sans-serif; letter-spacing: 0.02em;
+}
+.input-pad .key:is([data-pad="A"], [data-pad="B"], [data-pad="X"], [data-pad="Y"])::after { width: 1.25rem; padding: 0; }
+.input-pad .key[data-pad="A"]::after { background: #3f9b2f; }
+.input-pad .key[data-pad="B"]::after { background: #c7362d; }
+.input-pad .key[data-pad="X"]::after { background: #2f6fd0; }
+.input-pad .key[data-pad="Y"]::after { background: #d9a91a; color: #1b1e23; }
+.input-pad .key:is([data-pad="LB"], [data-pad="RB"], [data-pad="LT"], [data-pad="RT"])::after { border-radius: 0.3rem; font-size: 0.62rem; }
+.input-pad .key[data-pad="Menu"]::after { content: "☰"; }
+.input-pad .key[data-pad="View"]::after { content: "⧉"; }
+
+/* A controller's button named in a line (src/ui/hints.js kh, padHtml: the pick banners, PAUSED, the battle's prompts,
+   the guide's notes): the same round, coloured buttons, sized to the text around them. hints.js writes them only in
+   "pad" mode, and they are drawn only under .input-pad. */
+.input-pad .kh {
+  display: inline-grid; place-items: center; box-sizing: border-box; vertical-align: 0.05em;
+  min-width: 1.6em; height: 1.6em; padding: 0 0.3em; margin: 0 0.08em; border-radius: 999px;
+  background: #3a3f47; color: #f2f4f6; font: 700 0.74em/1 system-ui, sans-serif; letter-spacing: 0.02em;
+}
+.input-pad :is(.kh-A, .kh-B, .kh-X, .kh-Y) { width: 1.6em; padding: 0; }
+.input-pad .kh-A { background: #3f9b2f; }
+.input-pad .kh-B { background: #c7362d; }
+.input-pad .kh-X { background: #2f6fd0; }
+.input-pad .kh-Y { background: #d9a91a; color: #1b1e23; }
+.input-pad :is(.kh-LB, .kh-RB, .kh-LT, .kh-RT) { border-radius: 0.35em; font-size: 0.64em; height: 1.7em; }
+.input-pad :is(.kh-Menu, .kh-View) { font-size: 0.8em; }

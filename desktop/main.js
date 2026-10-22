@@ -43,6 +43,7 @@ const TYPES = {
   ".webp": "image/webp",
   ".svg": "image/svg+xml",
   ".ico": "image/x-icon",
+  ".webmanifest": "application/manifest+json", // index.html links the web app's; served right, though nothing here reads it
   ".txt": "text/plain; charset=utf-8",
   ".wav": "audio/wav",
   ".mp3": "audio/mpeg",

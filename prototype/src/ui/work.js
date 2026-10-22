@@ -3,7 +3,8 @@
 // 1–5 or blank (never). A plain number is the role's default; a bold number with a ring is this person's own
 // setting. Left-click counts up (blank → 1 → 2 … 5 → blank), right-click counts down, Shift+click changes the
 // role's default for everyone in it, the number keys 1–5 set the cell under the mouse, 0 / Backspace / Delete
-// clear it, R puts it back to the role's default.
+// clear it, R puts it back to the role's default. A finger has no keys and no Shift: its long press (the right-click,
+// ui/touch.js) opens a small picker on the cell instead, with –, 1–5 and the role's default (workPicker).
 import { atBase, survivorById, baseById, skill, hub } from "../sim/world.js";
 import { ROLES } from "../sim/economy.js";
 import { SKILL_NAMES } from "../sim/data.js";
@@ -25,6 +26,7 @@ import { LUNCH_HOURS, lunchHour, setLunchHour } from "../sim/meals.js"; // the l
 import { statusIcons } from "./status.js"; // low mood, starving, thirsty, low health, infected, sick
 import { undoBtn } from "./undo.js"; // ↶ Undo (and Ctrl+Z) for the edits on this tab
 import { ask } from "./confirm.js"; // deleting a role asks first (one confirmation style)
+import { keyHint, PAD } from "./hints.js"; // a cell's tip by the device in use: a finger's long press opens the picker
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -113,7 +115,33 @@ function cellHtml(c, attrs, title, extra = "") {
   const cls = `wcell p${c.p}${c.over ? " over" : ""}${c.watch ? " watch" : ""}${extra}`;
   return `<button class="${cls}" ${attrs}${tip(title)}>${c.p || ""}</button>`;
 }
-const cellTip = (T, c, who, role) => `${T.name} for ${who}: ${c.p ? `priority ${PNAME[c.p]}` : "never"}${c.watch ? ` (moved up from ${c.watch} by the watchtower's alarm: a horde is near; back to ${c.watch} when it has gone, or set it yourself to end that)` : c.over ? ` (their own; ${role.name}: ${c.def ? c.def : "never"})` : ` (${role.name}'s default)`}. ${T.desc} Left-click up, right-click down, Shift+click: the whole role, 1–5 / 0 / R on the keyboard.`;
+const cellTip = (T, c, who, role) => `${T.name} for ${who}: ${c.p ? `priority ${PNAME[c.p]}` : "never"}${c.watch ? ` (moved up from ${c.watch} by the watchtower's alarm: a horde is near; back to ${c.watch} when it has gone, or set it yourself to end that)` : c.over ? ` (their own; ${role.name}: ${c.def ? c.def : "never"})` : ` (${role.name}'s default)`}. ${T.desc} ${keyHint({ key: "Left-click up, right-click down, Shift+click: the whole role, 1–5 / 0 / R on the keyboard.", touch: "Tap: up. Hold: the picker (1–5, never, the role's default).", pad: `${PAD.A}: up.` })}`;
+
+// ---------- the picker (a finger) ----------
+// ui.workPick = { action, id | role, k, base, x, top | bottom }: under the finger's cell, or over it near the screen's
+// foot. A tap outside it (its backdrop), the window's ✕ or Esc closes it.
+function openPick(ui, d, ev) {
+  const vh = typeof window !== "undefined" ? window.innerHeight : 800;
+  const y = Number(ev.y) || 0, gap = 28;
+  ui.workPick = { action: d.action, id: d.id, role: d.role, k: d.k, base: ui.baseView ? ui.baseView.id : null, x: Number(ev.x) || 0, ...(y > vh * 0.55 ? { bottom: Math.round(vh - y + gap) } : { top: Math.round(y + gap) }) };
+}
+function workPicker(state, ui, b) {
+  const pk = ui.workPick;
+  if (!pk || pk.base !== b.id) return "";
+  const s = pk.action === "wc" ? survivorById(state, Number(pk.id)) : null;
+  const role = s ? roleOf(state, s) : roleById(state, pk.role);
+  const T = (pk.action === "wfc" ? FIELD_TYPES : WORK_TYPES)[pk.k];
+  if (!T || !role || (pk.action === "wc" && !s) || (pk.action === "wfc" && !role.crew)) { ui.workPick = null; return ""; }
+  const c = s ? cellOf(state, s, pk.k) : { p: pk.action === "wfc" ? (role.crew.field && role.crew.field[pk.k]) || 0 : role.pri[pk.k] || 0, over: false, def: 0 };
+  const btn = (v, label, t) => `<button class="wcell p${v}${c.p === v ? " on" : ""}" data-action="wpick" data-v="${v}"${tip(t)}>${label}</button>`;
+  const nums = [1, 2, 3, 4, 5].map((v) => btn(v, v, `Priority ${PNAME[v]}`)).join("") + btn(0, "–", "Never");
+  const back = s ? `<button class="mini" data-action="wpick" data-v="r" ${c.over ? "" : "disabled"}${tip(`Back to ${role.name}'s default (R)`)}>↺ ${esc(role.name)}: ${c.def || "–"}</button>` : "";
+  const pos = `left:clamp(0.5rem, ${pk.x}px - 8.5rem, 100vw - 17.5rem);${pk.top != null ? `top:min(${pk.top}px, 100dvh - 9.5rem)` : `bottom:min(${pk.bottom}px, 100dvh - 9.5rem)`}`;
+  return `<div class="wpick-bg" data-action="wpick-close" aria-hidden="true"></div><div class="wpick" role="dialog" aria-label="Priority" style="${pos}">
+    <div class="wpick-h"><span><b>${esc(T.name)}</b> for ${esc(s ? first(s) : `${role.name} (the role)`)}</span><span class="muted">${c.p ? `now ${c.p}` : "now never"}</span></div>
+    <div class="wpick-n">${nums}</div>
+    <div class="wpick-f">${back}<button class="mini" data-action="wpick-close" aria-label="Close">✕</button></div></div>`;
+}
 
 // ---------- the tab ----------
 export function workTab(state, b, ui) {
@@ -159,6 +187,7 @@ export function workTab(state, b, ui) {
     <div class="small muted whelp">Every hour each person does the first work type, priority 1 first, that has work and room for more hands; at the same priority the most urgent work and the best skilled go first. Nothing at 1: they try 2, and so on; nothing at all: they rest. Before that: the badly hurt and the sick rest; a raid or horde warning sends everyone with Guard set to the walls; while a watchtower sees a horde near, Guard counts as priority 1 for anyone who has it lower (a backup job: the cell turns red) and the walls take more lookouts, until it has gone; the role's schedule (guard watch, free time, sleep); mood below ${MOOD_LOW} means free time until ${MOOD_BACK}. Manual people keep their fixed job and pinned people theirs; stewards only move Manual people. Stations follow their standing orders (Workshops tab).</div>
     ${roleEditor(state, ui, b)}
     ${crewsSection(state, ui)}
+    ${workPicker(state, ui, b)}
   </div>`;
 }
 
@@ -293,10 +322,14 @@ function schedCell(state, d, dir) {
 }
 
 // Click actions get (state, ui, dataset, event); right-click arrives with ev.button === 2 (main.js).
+// A finger's long press (ev.finger, main.js) opens the picker on the cell instead of counting down.
 export const WORK_ACTIONS = {
-  wc: (state, ui, d, ev) => cellClick(state, ui, d, ev && ev.button === 2 ? -1 : 1, !!(ev && ev.shiftKey)),
-  wrc: (state, ui, d, ev) => roleCell(state, ui, d, ev && ev.button === 2 ? -1 : 1),
-  wfc: (state, ui, d, ev) => fieldCell(state, d, ev && ev.button === 2 ? -1 : 1),
+  wc: (state, ui, d, ev) => (ev && ev.finger ? openPick(ui, d, ev) : cellClick(state, ui, d, ev && ev.button === 2 ? -1 : 1, !!(ev && ev.shiftKey))),
+  wrc: (state, ui, d, ev) => (ev && ev.finger ? openPick(ui, d, ev) : roleCell(state, ui, d, ev && ev.button === 2 ? -1 : 1)),
+  wfc: (state, ui, d, ev) => (ev && ev.finger ? openPick(ui, d, ev) : fieldCell(state, d, ev && ev.button === 2 ? -1 : 1)),
+  // The picker's buttons: a priority (0 never) or "r" the role's default, then it closes; its ✕ and backdrop close it.
+  wpick: (state, ui, d) => { const hv = ui.workPick; ui.workPick = null; if (hv) workSet(state, hv, d.v === "r" ? 0 : Number(d.v), d.v === "r"); },
+  "wpick-close": (state, ui) => { ui.workPick = null; },
   wsched: (state, ui, d, ev) => schedCell(state, d, ev && ev.button === 2 ? -1 : 1),
   wreset: (state, ui, d) => { const s = survivorById(state, Number(d.id)); if (s && s.work) { s.work.over = {}; replan(state, s); say(ui, `${first(s)} follows the role's defaults again.`); } },
   weveryone: (state, ui, d) => { const b = baseById(state, Number(d.base)); if (b) { say(ui, everyoneOnPriorities(state, b)); planBase(state, b); } },
@@ -349,7 +382,11 @@ export function workKey(state, ui, e) {
   const clear = e.code === "Backspace" || e.code === "Delete";
   const reset = e.code === "KeyR";
   if (!m && !clear && !reset) return false;
-  const v = m ? Number(m[2]) : 0;
+  return workSet(state, hv, m ? Number(m[2]) : 0, reset);
+}
+// One cell (a dataset: action wc / wrc / wfc, id or role, k) set to v (0 never), or back to the role's default (a
+// person's cell only). The keys (workKey) and the picker (wpick).
+function workSet(state, hv, v, reset) {
   if (hv.action === "wc") {
     const s = survivorById(state, Number(hv.id));
     if (!s || !roleOf(state, s)) return false;

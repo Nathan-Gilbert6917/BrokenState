@@ -16,6 +16,7 @@
 // finds the new one by its data- attributes.
 //
 // The pure parts (wantsSearch, selectEntries, filterEntries) are tested by tools/selectsearchtest.js with a small DOM.
+import { touchRecent } from "./touch.js";
 export const MIN_OPTIONS = 8;
 
 let D = null, W = null;           // the document and window (install)
@@ -94,6 +95,7 @@ function onDocMouseDown(e) {
     if (same) { e.preventDefault(); return; } // a second click on the select closes it, as a native one
   }
   if (!sel || (e.button || 0) !== 0 || !wantsSearch(sel)) return;
+  if (touchRecent()) return; // a tap: the phone's own picker scrolls and fits better than a box that brings up the keyboard (ui/touch.js)
   e.preventDefault(); // no native list (and no focus: the filter box takes it)
   openBox(sel, "", false);
 }

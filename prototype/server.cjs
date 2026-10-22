@@ -24,6 +24,8 @@ const TYPES = {
   ".json": "application/json; charset=utf-8",
   ".png": "image/png",
   ".svg": "image/svg+xml",
+  ".ico": "image/x-icon",
+  ".webmanifest": "application/manifest+json", // the web app's manifest (index.html)
 };
 
 http

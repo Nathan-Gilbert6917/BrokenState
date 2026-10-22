@@ -15,6 +15,7 @@ import { supplyName } from "../sim/itemnames.js";
 import { shortName } from "./names.js";
 import { supRoom, SUP_PLACES, PLACE_WORDS, itemKeyOf } from "../sim/supitems.js"; // supplies onto a member of the other team: pockets, pack or rig (2026-10-17 rounds boxed or loose, 2026-10-18 any supply)
 import { isRoundKey } from "../sim/rounds.js";
+import { devText, padHtml } from "./hints.js"; // the help line in the words of the device in use (a finger, a controller)
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -119,7 +120,7 @@ function goodsTab(state, m, A, B, why) {
   return `<div class="invcols"><div class="invcol"><div class="invlabel">From</div>${teamHead(state, A)}${people}${cargo}</div>
     <div class="invcol"><div class="invlabel">To</div>${teamHead(state, B)}<div class="row small" style="margin-top:0.4rem;gap:0.25rem;flex-wrap:wrap">${targets}</div>${roundsTo}
     <div class="small muted" style="margin-top:0.4rem">Supplies go as they were: packed supplies into its packed supplies, found cargo into its cargo${who ? ", or onto the member picked above as items in the place picked" : ""}. Only what it can carry moves; nobody gives away a pack or rig their team needs to carry its load.</div></div></div>
-    <div class="invsel small" style="margin-top:0.6rem">${any ? `Picked: ${Object.keys(m.items).length ? `<b>${Object.keys(m.items).length} item(s)</b> ` : ""}${supRows}` : "Click the left team's items and supplies to pick them."}
+    <div class="invsel small" style="margin-top:0.6rem">${any ? `Picked: ${Object.keys(m.items).length ? `<b>${Object.keys(m.items).length} item(s)</b> ` : ""}${supRows}` : padHtml(devText("Click the left team's items and supplies to pick them."))}
     <div class="row" style="margin-top:0.4rem;gap:0.3rem"><button class="primary" data-action="tm-give" ${any && !why ? "" : "disabled"}${tip(why || `Hand what is picked to ${teamName(state, B)}`)}>Give picked →</button>${any ? `<button class="mini" data-action="tm-clear">Clear</button>` : ""}</div></div>`;
 }
 

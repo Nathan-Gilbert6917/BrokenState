@@ -29,6 +29,7 @@ import { knownLoc } from "../sim/discovery.js";
 import { openDiary } from "./diary.js";
 import { openRoster } from "./roster.js";
 import { keyAction, keyLabel } from "./keymap.js"; // the key table (Menu → Controls)
+import { keyHint } from "./hints.js"; // the camera spots' flash by the device in use: a finger's (and a pad's) way back is 📷 Spots
 import { openCodex } from "./codex.js";
 import { visitorAlerts } from "./visitors.js";
 import { roadAlerts } from "./hardcore.js";
@@ -411,6 +412,19 @@ export function nextWaitingTeam(state, ui, act, back = false) {
   return p;
 }
 
+// Camera spot n (1–9): save the view there, or go back to it. The keys (mapHotkey) and, on a phone or tablet, the
+// 📷 Spots buttons (ui/responsive.js, main.js "cam-spot").
+export function camSpot(state, ui, n, save) {
+  if (save) {
+    (ui.camSpots || (ui.camSpots = {}))[n] = { x: camera.x, y: camera.y, zoom: camera.zoom, seed: state.seed };
+    ui.flash = { text: `Camera spot ${n} saved. ${keyHint({ key: keyLabel(`cam.go${n}`, 1) || "Its key", touch: "📷 Spots", pad: "📷 Spots" })} brings you back here.`, at: performance.now() };
+    return;
+  }
+  const spot = ui.camSpots && ui.camSpots[n];
+  if (!spot || spot.seed !== state.seed) { ui.flash = { text: `No camera spot ${n} yet: ${keyHint({ key: keyLabel(`cam.save${n}`) || "its key", touch: "📷 Spots → Save here…", pad: "📷 Spots → Save here…" })} saves the current view.`, at: performance.now() }; return; }
+  camera.x = spot.x; camera.y = spot.y; camera.zoom = spot.zoom;
+}
+
 // Map keys added with the alerts (README controls), matched through the key table (ui/keymap.js: Menu → Controls
 // rebinds them). Returns true when the key was used. modal: what window is up (ui.js modalKind); only the diary,
 // roster and codex keys work with a window open, and only over one of those three (they close it, or switch).
@@ -427,18 +441,8 @@ export function mapHotkey(state, ui, e, act, modal) {
   }
   if (!ui.started) return false;
   ui.flash = null;
-  let m = /^cam\.save([1-9])$/.exec(k || "");
-  if (m) { // save a camera spot (Alt as well: some browsers keep Ctrl+1–9 for their tabs)
-    (ui.camSpots || (ui.camSpots = {}))[m[1]] = { x: camera.x, y: camera.y, zoom: camera.zoom, seed: state.seed };
-    ui.flash = { text: `Camera spot ${m[1]} saved. ${keyLabel(`cam.go${m[1]}`, 1) || "Its key"} brings you back here.`, at: performance.now() };
-    return true;
-  }
-  if ((m = /^cam\.go([1-9])$/.exec(k || ""))) {
-    const spot = ui.camSpots && ui.camSpots[m[1]];
-    if (!spot || spot.seed !== state.seed) { ui.flash = { text: `No camera spot ${m[1]} yet: ${keyLabel(`cam.save${m[1]}`) || "its key"} saves the current view.`, at: performance.now() }; return true; }
-    camera.x = spot.x; camera.y = spot.y; camera.zoom = spot.zoom;
-    return true;
-  }
+  let m = /^cam\.(save|go)([1-9])$/.exec(k || "");
+  if (m) { camSpot(state, ui, m[2], m[1] === "save"); return true; } // (Alt saves as well: some browsers keep Ctrl+1–9 for their tabs)
   if ((m = /^base\.([1-9])$/.exec(k || ""))) {
     const b = state.bases[Number(m[1]) - 1];
     if (!b) { ui.flash = { text: `You have ${state.bases.length} base${state.bases.length === 1 ? "" : "s"}: ${keyLabel("base.1", 1)}–${keyLabel(`base.${Math.max(1, Math.min(9, state.bases.length))}`, 1)}.`, at: performance.now() }; return true; }

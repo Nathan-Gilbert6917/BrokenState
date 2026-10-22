@@ -14,7 +14,7 @@ import { savesByCampaign, storageWarning } from "./savelist.js"; // the save lis
 import { saveBlocker, saveToString, SAVE_VERSION, GAME_VERSION, SaveError } from "../sim/save.js";
 import { day, hub, alive } from "../sim/world.js";
 import { WORLD_SIZES, stateSizeDef } from "../sim/worldsize.js";
-import { cui, setConfirmEnd, setAutoRedeploy } from "./combat.js";
+import { cui, setConfirmEnd, setAutoRedeploy, setTapConfirm } from "./combat.js";
 import { barkMode, setBarkMode, BARK_MODES } from "./barks.js"; // Combat barks: speech bubbles in battle
 import { helpTab } from "./help.js";
 import { controlsTab } from "./controls.js"; // the Controls tab: every key, rebindable (ui/keymap.js)
@@ -165,6 +165,8 @@ const MOUSE = [
   ["Header of a box over the map", "Drag to move it anywhere over the map (a folded box by its tab, the minimap by its ✥ grip); with the header focused, Alt+arrow keys nudge it, Alt+Home puts it back"],
 ];
 
+// A touch screen (a phone, a tablet, a touch laptop): the options only a finger needs (Battles: confirm taps).
+const fingers = () => { try { return typeof matchMedia !== "undefined" && matchMedia("(any-pointer: coarse)").matches; } catch { return false; } };
 function optionsTab(state, ui, api) {
   const o = api.options;
   const box = (k, on, label, t) => `<button class="setopt ${on ? "active" : ""}" data-action="set-opt" data-k="${k}"${tip(t)}>${on ? "✔" : "✗"} ${label}</button>`;
@@ -177,6 +179,7 @@ function optionsTab(state, ui, api) {
     <h3>Play</h3><div class="setrow">
       ${box("pauseOnBlur", o.pauseOnBlur, "Pause when the window loses focus", "Switching to another window or tab pauses the clock")}
       ${box("confirmEnd", !!cui.confirmEnd, "Battles: ask before ending a turn with actions left", "Space or End turn asks once while units still have actions (Enter always ends at once)")}
+      ${fingers() ? box("tapConfirm", !!cui.tapConfirm, "Battles: confirm taps", "A tap on the battle map that would move, shoot, throw or spend an action first shows what it does (the path and its cost, the hit chance, the blast) with a chip: tap the same spot again or ✓ to do it, ✕ or a long press to drop it. Selecting is never asked. Touch screens only: a mouse sees this by hovering") : ""}
       ${box("autoRedeploy", !!cui.autoRedeploy, "Base battles: skip the redeploy after falling back", "When your people fall back from the walls to the yard and the buildings, keep the default posts and fight on at once instead of placing them again")}
       <label${tip("Short speech bubbles over heads in battle (Reloading!, I'm hit!, Man down!). Important only: just someone of yours going down and the shout that they are (with a short chirp). Enemies are heard only while your people see them.")}>Combat barks <select data-action="set-barks">${BARK_MODES.map(([v, l]) => `<option value="${v}" ${barkMode() === v ? "selected" : ""}>${l}</option>`).join("")}</select></label>
       ${ui.started && state ? `<label${tip(`This game's outdoor workers (wood, foraging, hunting, fishing, scavenging, fetching water: their job trips): how fast they walk out to the land and back. Saved with this game. ${PACE_KEYS.map((k) => `${PACES[k].name}: ${PACES[k].desc}.`).join(" ")}`)}>Outdoor work pace <select data-action="set-trippace">${PACE_KEYS.map((k) => `<option value="${k}" ${paceOf(state).key === k ? "selected" : ""}>${PACES[k].name}</option>`).join("")}</select></label>` : ""}
@@ -402,6 +405,7 @@ export const SETTINGS_ACTIONS = {
   "set-opt": (state, ui, d, api) => {
     if (d.k === "confirmEnd") { setConfirmEnd(!cui.confirmEnd); return; }
     if (d.k === "autoRedeploy") { setAutoRedeploy(!cui.autoRedeploy); return; }
+    if (d.k === "tapConfirm") { setTapConfirm(!cui.tapConfirm); return; }
     if (!(d.k in api.options) || typeof api.options[d.k] !== "boolean") return;
     api.options[d.k] = !api.options[d.k];
     saveOptions(api.options);

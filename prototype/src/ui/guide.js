@@ -32,6 +32,7 @@ import { roadTeam } from "../sim/hardcore-start.js";
 import { tileActions, modalKind } from "./ui.js";
 import { cardKind } from "../sim/cardrules.js";
 import { listSaves } from "./saves.js";
+import { sayFor, padHtml, PAD } from "./hints.js"; // a step's or a note's words for a finger or a controller (touch, pad: else devText)
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -89,11 +90,14 @@ const STEPS = {
   },
   scavenge: {
     title: "Send a team to scavenge", why: "Scrap, parts, meds and ammo come from the ruins. Click a site, pick Scavenge / raid, choose who goes and launch: the planner packs their supplies. When they get there you pick the place to go into (one not found yet needs a survey first) and play the raid on its map.",
+    pad: `Scrap, parts, meds and ammo come from the ruins. ${PAD.X} on a site opens its menu: pick Scavenge / raid, choose who goes and launch, and the planner packs their supplies. When they get there you pick the place to go into (one not found yet needs a survey first) and play the raid on its map.`,
     done: (state, g) => g.sent.length > 0,
     show: (state, ui, act) => showSite(state, ui, act),
   },
   clock: {
     title: "Start the clock", why: "A new game waits paused while you look around and give orders. Space (or ▶ Run on the banner) runs it; 0–5 pick the speed.",
+    touch: "A new game waits paused while you look around and give orders. ▶ Run on the banner runs it; the speeds in the top bar pick how fast.",
+    pad: `A new game waits paused while you look around and give orders. ${PAD.Menu} (or ▶ Run on the banner) runs it; LB RB pick the speed.`,
     done: (state, g) => state.hour > g.h0,
     show: (state, ui) => { closeWindows(ui); return ['#tb-speed [data-action="speed"][data-speed="1"]', '#banner [data-action="speed"]']; },
   },
@@ -123,6 +127,8 @@ const STEPS = {
   },
   diary: {
     title: "Read the diary", why: "Every day of the run is written down: what happened while you looked away, who did what. J opens it.",
+    touch: "Every day of the run is written down: what happened while you looked away, who did what. 📖 Diary in the top bar (⋯ on a phone) opens it.",
+    pad: "Every day of the run is written down: what happened while you looked away, who did what. 📖 Diary in the top bar opens it.",
     done: (state, g, ui) => !!ui.diary,
     show: (state, ui) => { closeWindows(ui); return ['[data-action="dy-open"]']; },
   },
@@ -274,10 +280,18 @@ function endGuide(state, ui, why, text) {
 const CARD_TIP = "Cards that stop the clock wait for your answer; the rest go to the tray at the top of the map while the clock runs and take their safest answer if left 8 hours.";
 export const POPUP_TIPS = {
   raidplan: { icon: "🗺", title: "Before you go in", text: "Your team has reached the site. Pick the side to go in from (a scout sent first tells you more; waiting for night makes you harder to see, and harder for you to see), or Leave to call it off. Team inventory sorts their kit before they go.", help: "choices-before-a-raid" },
-  raid: { icon: "🔦", title: "The raid map", text: "Turn by turn: click one of your people, then a cell to move or a container to search (Shift+S); Space ends the turn. Every turn and every noise raises Heat, and Heat brings more of the dead. Leave from a green exit (X) with what you carry. Shift+A lets the AI play your side.", help: "raids-scavenging-a-site" },
-  battle: { icon: "⚔", title: "A fight", text: "Turn by turn: click one of your people, then move, shoot or strike; Space ends the turn. Shift+A lets the AI play your side; Shift+R sounds the retreat.", help: "battles" },
-  defence: { icon: "🛡", title: "Your base is attacked", text: "The fight is at your base: place your people, then start the fight (Enter). Keep the gaps covered and the wounded back. Shift+A lets the AI play your side; Shift+R falls back to the yard.", help: "defending-your-base" },
-  buildmap: { icon: "📐", title: "The base map", text: "Your base from above: place what is queued (R turns it), mark trees for the woodcutters to fell, move tents and storage. Builders work where things are placed.", help: "bases-manage" },
+  raid: { icon: "🔦", title: "The raid map", text: "Turn by turn: click one of your people, then a cell to move or a container to search (Shift+S); Space ends the turn. Every turn and every noise raises Heat, and Heat brings more of the dead. Leave from a green exit (X) with what you carry. Shift+A lets the AI play your side.", help: "raids-scavenging-a-site",
+    touch: "Turn by turn: tap one of your people, then a cell to move or a container to search; End turn ends the turn. Every turn and every noise raises Heat, and Heat brings more of the dead. Leave from a green exit (Extract) with what you carry. AI plays my side lets the AI play your side.",
+    pad: `Turn by turn: LB RB pick one of your people, ${PAD.A} on a cell moves or searches the container there, ${PAD.X} takes the orders bar; ${PAD.Y} ends the turn. Every turn and every noise raises Heat, and Heat brings more of the dead. Leave from a green exit (Extract) with what you carry.` },
+  battle: { icon: "⚔", title: "A fight", text: "Turn by turn: click one of your people, then move, shoot or strike; Space ends the turn. Shift+A lets the AI play your side; Shift+R sounds the retreat.", help: "battles",
+    touch: "Turn by turn: tap one of your people, then move, shoot or strike; End turn ends the turn. AI plays my side lets the AI play your side; Sound the retreat (🏳️) pulls everyone out.",
+    pad: `Turn by turn: LB RB pick one of your people, ${PAD.A} moves, shoots or strikes at the cursor, ${PAD.X} takes the orders bar; ${PAD.Y} ends the turn.` },
+  defence: { icon: "🛡", title: "Your base is attacked", text: "The fight is at your base: place your people, then start the fight (Enter). Keep the gaps covered and the wounded back. Shift+A lets the AI play your side; Shift+R falls back to the yard.", help: "defending-your-base",
+    touch: "The fight is at your base: place your people, then Start the fight. Keep the gaps covered and the wounded back. AI plays my side lets the AI play your side; Fall back to the yard falls back.",
+    pad: `The fight is at your base: place your people (${PAD.A} on one, then on a green cell), then ${PAD.Y} starts the fight. Keep the gaps covered and the wounded back.` },
+  buildmap: { icon: "📐", title: "The base map", text: "Your base from above: place what is queued (R turns it), mark trees for the woodcutters to fell, move tents and storage. Builders work where things are placed.", help: "bases-manage",
+    touch: "Your base from above: place what is queued (Turn turns it), mark trees for the woodcutters to fell, move tents and storage. Builders work where things are placed.",
+    pad: "Your base from above: place what is queued (Turn turns it), mark trees for the woodcutters to fell, move tents and storage. Builders work where things are placed." },
   crawl: { icon: "🏙", title: "A city crawl", text: "A city is too big for one raid: pick the block to go in at, then go block by block. Each block's card shows its places and the ways on; slip away or walk out at the rim.", help: "raids-scavenging-a-site" },
   unpack: { icon: "🎒", title: "A team is home", text: "Put what they carried away into the base's stores and armory, or let them keep everything for the next trip.", help: "inventory" },
   poipick: { icon: "📍", title: "Which place?", text: "A tile can hold several places. Pick the one to go into; one not found yet needs a survey of the tile first.", help: "places-on-a-tile-surveys-and-raids" },
@@ -301,11 +315,15 @@ export const POPUP_TIPS = {
 };
 // The first alert of each kind: one line at the top of the guide's card. kinds: the alert kinds it covers (ui/alerts.js).
 export const ALERT_TIPS = [
-  { id: "a-wait", kinds: ["wait", "plan"], title: "A team waits for orders", text: "Click the alert (or press Tab) to open its panel: search, move on, camp or Return home.", help: "team-panel" },
+  { id: "a-wait", kinds: ["wait", "plan"], title: "A team waits for orders", text: "Click the alert (or press Tab) to open its panel: search, move on, camp or Return home.", help: "team-panel",
+    touch: "Tap the alert (or ❗ Next team) to open its panel: search, move on, camp or Return home.",
+    pad: `${PAD.Y} goes to it and opens its panel: search, move on, camp or Return home.` },
   { id: "a-cards", kinds: ["cards"], title: "Cards in the tray", text: "Cards that do not stop the clock wait in the tray at the top of the map. Open them when you like; left 8 hours they take their safest answer.", help: "pause-rules-and-the-card-tray" },
   { id: "a-nowork", kinds: ["nowork"], title: "No work for some roles", text: "They help elsewhere for the hour. Queue something for them, give them another job, or put them on work priorities.", help: "bases-manage" },
   { id: "a-stalled", kinds: ["stalled"], title: "A job cannot go on", text: "Something has kept a job from working for two days (no trees in reach, nothing to build…). Hover the alert to see why.", help: "bases-manage" },
-  { id: "a-layout", kinds: ["layout"], title: "Open the build map", text: "A base new to you or just grown: lay out where things go on its map. U opens the selected base's map.", help: "bases-manage" },
+  { id: "a-layout", kinds: ["layout"], title: "Open the build map", text: "A base new to you or just grown: lay out where things go on its map. U opens the selected base's map.", help: "bases-manage",
+    touch: "A base new to you or just grown: lay out where things go on its map. The base window's Base map tab opens it.",
+    pad: "A base new to you or just grown: lay out where things go on its map. The base window's Base map tab opens it." },
   { id: "a-food", kinds: ["food", "starve", "teamfood", "roadfood"], title: "Food is running low", text: "Farm, forage, hunt, or scavenge a grocery or a farm. The Food tab shows what you have by kind and how long it keeps.", help: "food-and-the-winter" },
   { id: "a-water", kinds: ["water", "thirst", "roadwater"], title: "Water is running low", text: "Thirst kills faster than hunger. Wells, rain catchers and filters keep it coming; a team can fetch it from a river or lake.", help: "water-and-the-summer" },
   { id: "a-needs", kinds: ["needs"], title: "Hungry or thirsty", text: "People who go without lose health every day and nobody heals. Hover the alert for who, and bring them food and water.", help: "hunger-thirst-and-mood" },
@@ -375,7 +393,7 @@ export function renderGuideTip(state, ui) {
   if (ui.guideTip.hide) return "";
   const t = POPUP_TIPS[p.id];
   const onMap = !modalKind(state, ui) && !!state.combat; // a battle's own map: the note goes top middle, clear of the squad list
-  return `<div class="gdtip${onMap ? " onmap" : ""}"><div class="gd-head"><span class="gd-title">🧭 New: ${t.icon} ${esc(t.title)}</span>${helpBtn(t.help)}<button class="gd-btn" data-action="gd-tip-ok"${tip("Got it: hide this note")}>✕</button></div><div class="gd-why">${esc(t.text)}</div></div>`;
+  return `<div class="gdtip${onMap ? " onmap" : ""}"><div class="gd-head"><span class="gd-title">🧭 New: ${t.icon} ${esc(t.title)}</span>${helpBtn(t.help)}<button class="gd-btn" data-action="gd-tip-ok"${tip("Got it: hide this note")}>✕</button></div><div class="gd-why">${padHtml(esc(sayFor(t)))}</div></div>`;
 }
 
 // The first alert of a kind not told yet becomes the card's note (guideCheck; ui.alertList is the stack as last shown).
@@ -391,7 +409,7 @@ function noteAlert(state, ui, g) {
 function noteHTML(g, ui) {
   const t = ui.guideNote && ALERT_TIP.get(ui.guideNote);
   if (!t) return "";
-  return `<div class="gd-note"><div class="gd-head"><span class="gd-name"><b>New:</b> ${esc(t.title)}</span>${helpBtn(t.help)}<button class="gd-btn" data-action="gd-note-ok"${tip("Got it")}>✕</button></div><div class="gd-why">${esc(t.text)}</div></div>`;
+  return `<div class="gd-note"><div class="gd-head"><span class="gd-name"><b>New:</b> ${esc(t.title)}</span>${helpBtn(t.help)}<button class="gd-btn" data-action="gd-note-ok"${tip("Got it")}>✕</button></div><div class="gd-why">${padHtml(esc(sayFor(t)))}</div></div>`;
 }
 
 // ---------- the card under the alerts ----------
@@ -411,11 +429,11 @@ export function renderGuide(state, ui) {
     <button class="gd-btn" data-action="gd-close"${tip("Hide the guide (⚙ Menu → Game brings it back)")}>✕</button></div>`;
   if (g.fold) return `<div class="guide folded">${head}${note}${cur ? `<div class="gd-next small">Next: ${esc(cur.title)}</div>` : ""}</div>`;
   const rows = steps.map((st) => {
-    if (g.done[st.id] != null) return `<div class="gd-step done"${tip(st.why)}><span class="gd-mark">✔</span><span class="gd-name">${esc(st.title)}</span></div>`;
+    if (g.done[st.id] != null) return `<div class="gd-step done"${tip(sayFor(st, "why"))}><span class="gd-mark">✔</span><span class="gd-name">${esc(st.title)}</span></div>`;
     const on = cur && st.id === cur.id;
-    return `<div class="gd-step${on ? " cur" : ""}"><button class="gd-go" data-action="gd-pick" data-id="${st.id}"${tip(st.why)}><span class="gd-mark">${on ? "▶" : "○"}</span>${esc(st.title)}</button>` +
+    return `<div class="gd-step${on ? " cur" : ""}"><button class="gd-go" data-action="gd-pick" data-id="${st.id}"${tip(sayFor(st, "why"))}><span class="gd-mark">${on ? "▶" : "○"}</span>${esc(st.title)}</button>` +
       `<button class="gd-show" data-action="gd-show" data-id="${st.id}"${tip("Open the screen for this step and point at the button to press")}>Show me</button></div>` +
-      (on ? `<div class="gd-why">${esc(st.why)}</div>` : "");
+      (on ? `<div class="gd-why">${padHtml(esc(sayFor(st, "why")))}</div>` : "");
   }).join("");
   return `<div class="guide">${head}${note}${rows}</div>`;
 }
