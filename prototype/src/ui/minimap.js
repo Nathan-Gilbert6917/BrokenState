@@ -61,6 +61,19 @@ export function initMinimap(wrap, mapCanvas, options) {
   cv.addEventListener("mousedown", (e) => { if (e.button !== 0) return; e.preventDefault(); dragging = true; look(e); });
   window.addEventListener("mousemove", (e) => { if (dragging) { if (e.buttons === 0) dragging = false; else look(e); } });
   window.addEventListener("mouseup", () => { dragging = false; });
+  // A finger (or a pen) drags the same way, by its own pointer (the mouse keeps the listeners above). Cancelling the
+  // press keeps the browser from scrolling and from sending the mouse events of a tap.
+  let fing = null;
+  cv.addEventListener("pointerdown", (e) => {
+    if (e.pointerType === "mouse" || !e.isPrimary) return;
+    e.preventDefault();
+    fing = e.pointerId;
+    try { cv.setPointerCapture(e.pointerId); } catch { /* the canvas still hears it while the finger is on it */ }
+    look(e);
+  });
+  cv.addEventListener("pointermove", (e) => { if (e.pointerId === fing) look(e); });
+  for (const k of ["pointerup", "pointercancel"]) cv.addEventListener(k, (e) => { if (e.pointerId === fing) fing = null; });
+  cv.addEventListener("touchstart", (e) => { if (e.cancelable) e.preventDefault(); }, { passive: false });
 }
 
 // The canvas's pixels follow its box (the minimap size, the UI size, the screen's pixel ratio), and the map's size

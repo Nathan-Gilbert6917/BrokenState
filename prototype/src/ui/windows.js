@@ -4,6 +4,7 @@
 import {
   PANEL_SIZE, SHUT_KEYS, PANEL_NAMES, RAIL_TABS, isShut, shutTip, setFolded, setPanelSize, saveLayout, loadWindows, saveWindows, dragRect, clampRect,
 } from "./layout.js";
+import { swallowTap, HOLD_MS } from "./touch.js"; // a bar tapped or a window dragged by a finger: no mouse events or click after it
 
 const remPx = () => parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
 let ctx = null;  // { layout, relayout(fn), refresh() } from main.js
@@ -114,6 +115,16 @@ export function initPanels(api) {
   document.addEventListener("mousedown", onDown, true);
   window.addEventListener("mousemove", onMove, true);
   window.addEventListener("mouseup", onUp, true);
+  // A finger (or a pen) drags the bars and windows by Pointer Events, the mouse by the listeners above (unchanged).
+  document.addEventListener("pointerdown", (e) => { if (e.pointerType !== "mouse" && e.isPrimary && !drag) { onDown(e); if (drag) { drag.pid = e.pointerId; drag.t0 = performance.now(); } } }, true);
+  window.addEventListener("pointermove", (e) => { if (drag && drag.pid === e.pointerId) onMove(e); }, true);
+  for (const k of ["pointerup", "pointercancel"]) window.addEventListener(k, (e) => {
+    if (!drag || drag.pid !== e.pointerId) return;
+    // The browser took the finger (a scroll), or it was a long press (its tip, ui/touch.js): no fold, nothing pressed.
+    if (k === "pointercancel" || performance.now() - drag.t0 >= HOLD_MS) drag.moved = true;
+    onUp();
+    swallowTap();
+  }, true);
   document.addEventListener("dblclick", onDbl, true);
   window.addEventListener("resize", () => { fitWindows(); });
   watchFolds();

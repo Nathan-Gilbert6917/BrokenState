@@ -54,7 +54,7 @@ import { fishSpot, gameAbundance } from "./sim/hunting.js";
 import { forageAbundance } from "./sim/foraging.js";
 import { woodAbundance } from "./sim/woodcutting.js";
 import { canClaim, wellProblem, CLAIM } from "./sim/claims.js"; // land claims and wells (the right-click menu)
-import { initCombatUI, drawCombat, renderCombatPanel, renderCombatBar, raidLayout, renderRaidTop, renderRaidCards, renderRaidLog, renderRaidLogFoot, combatTick, combatMouse, combatClick, combatKey, combatKeyUp, combatAction, combatPress, combatRelease, combatWheel, combatLeave, cui } from "./ui/combat.js";
+import { initCombatUI, drawCombat, renderCombatPanel, renderCombatBar, raidLayout, renderRaidTop, renderRaidCards, renderRaidLog, renderRaidLogFoot, combatTick, combatMouse, combatClick, combatKey, combatKeyUp, combatAction, combatPress, combatRelease, combatWheel, combatPan, combatLeave, cui } from "./ui/combat.js";
 import { LOOK_ACTIONS, LOOK_CHANGE_ACTIONS, crewSnapshot, randomizeAllCrew, randomizeEverything, randomizeGear, randomizeOne, randomBackground, rollRandomRun, ironmanCrew, crewCustomized, crewWithBackground, crewWithBackgrounds, blankCrew, backToSetup } from "./ui/newgame.js";
 import { CUSTOM_POINTS, clampMax, overText } from "./sim/custompoints.js"; // Customize: everything costs points
 import { BG_ACTIONS, BG_CHANGE, BG_INPUT, customLibrary } from "./ui/backgrounds.js"; // custom backgrounds (sim/custombg.js), not in Ironman
@@ -138,6 +138,7 @@ import {
   loadLayout, saveLayout, setFolded, setShut, toggleAll, resetLayout, autoReveal, newDangerAlerts, alertsPill, alertsFoldButton, windowFrame,
 } from "./ui/layout.js";
 import { initPanels, applyLayout, setLogLine, setRailBadges, fitWindows, resetWindows, windowSizes, watchFloating } from "./ui/windows.js";
+import { initTouch, touchGestures, touchRecent } from "./ui/touch.js"; // a finger: tap, long press (a right-click), drag and pinch on the maps
 import { initLogWindow, syncLogWindow } from "./ui/logwindow.js"; // a raid's log as a small window over the battle map
 import { initOverlays, syncOverlays, resetOverlays } from "./ui/overlaydrag.js"; // the boxes over the map move (drag a header, Alt+arrows)
 import { keepFocusBefore, afterPanelWrite, PANEL_ACTIONS, PANEL_INPUT } from "./ui/panelfold.js"; // the side panels' folds, find box, scroll fades
@@ -437,6 +438,10 @@ document.addEventListener("mousedown", (e) => {
   held = e.button === 0 && !(t && (t.tagName === "SELECT" || t.tagName === "OPTION")) ? panelOf(t) : null;
 }, true);
 document.addEventListener("mouseup", releaseHold, true); // the click that follows redraws
+// A finger holds its panel too (its mouse events only come once it lifts): let go when it lifts or the browser takes it
+// for a scroll (ui/touch.js).
+document.addEventListener("pointerdown", (e) => { if (e.pointerType !== "mouse" && e.isPrimary) { const t = /** @type {Element} */ (e.target); held = t && t.tagName !== "SELECT" && t.tagName !== "OPTION" ? panelOf(t) : null; } }, true);
+for (const k of ["pointerup", "pointercancel"]) document.addEventListener(k, (e) => { if (e.pointerType !== "mouse") releaseHold(); }, true);
 document.addEventListener("dragend", releaseHold, true);
 document.addEventListener("focusin", (e) => { if (e.target && e.target.tagName === "SELECT") selectFocusAt = performance.now(); });
 window.addEventListener("blur", releaseHold);
@@ -1950,8 +1955,13 @@ function hideTip() {
   tipTarget = null;
 }
 document.addEventListener("mouseover", (e) => {
+  if (touchRecent()) return; // the mouse events after a tap: a finger shows a tip by a long press (ui/touch.js)
   const el = e.target.closest("[data-tip]");
   if (!el || !el.dataset.tip) return hideTip();
+  showTip(el, e);
+});
+// The tip of el at e's clientX / clientY (the mouse over it; a long press, e.touch: above the finger, ui/touch.js).
+function showTip(el, e) {
   tipTarget = el;
   if (showTipText(el, e.shiftKey)) { tipEl.classList.remove("hidden"); placeTip(e); return; } // an item row: short, Shift the whole (ui/itemlabels.js)
   tipEl.textContent = el.dataset.tip;
@@ -1959,10 +1969,10 @@ document.addEventListener("mouseover", (e) => {
   if (el.dataset.tipSpark) tipEl.appendChild(sparkNode(el.dataset.tipSpark)); // a stock's last 14 days (ui/ledger.js)
   tipEl.classList.remove("hidden");
   placeTip(e);
-});
+}
 document.addEventListener("mousemove", (e) => {
   if (held && e.buttons === 0) releaseHold(); // the button was let go where we did not see it (a drop-down, another window)
-  if (tipTarget) placeTip(e);
+  if (tipTarget && !touchRecent()) placeTip(e);
 });
 // An item row's tip (data-tip-full: ui/itemlabels.js tipAttrs): the short one, the whole one while Shift is held.
 // Returns false for any other tip.
@@ -1975,12 +1985,23 @@ function showTipText(el, full) {
 for (const ev of ["keydown", "keyup"]) document.addEventListener(ev, (e) => { if (e.key === "Shift" && tipTarget && document.contains(tipTarget)) showTipText(tipTarget, ev === "keydown"); });
 function placeTip(e) {
   const w = tipEl.offsetWidth, h = tipEl.offsetHeight;
+  if (e.touch) { // over the finger, not under it
+    const x = Math.max(8, Math.min(window.innerWidth - w - 8, e.clientX - w / 2)), y = e.clientY - h - 28;
+    tipEl.style.left = `${x}px`;
+    tipEl.style.top = `${y >= 8 ? y : Math.min(window.innerHeight - h - 8, e.clientY + 28)}px`;
+    return;
+  }
   let x = e.clientX + 14, y = e.clientY + 16;
   if (x + w > window.innerWidth - 8) x = e.clientX - w - 14;
   if (y + h > window.innerHeight - 8) y = e.clientY - h - 12;
   tipEl.style.left = `${x}px`;
   tipEl.style.top = `${y}px`;
 }
+
+// A finger (ui/touch.js): a long press is a right-click (the contextmenu listeners above), else it shows the data-tip
+// under it until the next touch (an item row's whole tip: there is no Shift to hold). The maps and the minimap have
+// gestures of their own.
+initTouch({ showTip: (el, x, y) => showTip(el, { clientX: x, clientY: y, touch: true, shiftKey: true }), hideTip, tipShown: () => !tipEl.classList.contains("hidden"), skip: "#map, #combatmap, #minimap canvas" });
 
 // ---------- map input ----------
 let drag = null;
@@ -2034,28 +2055,31 @@ window.addEventListener("mousemove", (e) => {
 });
 window.addEventListener("mouseup", (e) => {
   if (!drag) return;
-  if (!drag.moved && !ui.timelapse && ui.started) {
-    const r = canvas.getBoundingClientRect();
-    const id = screenToTile(state, e.clientX - r.left, e.clientY - r.top);
-    const p = ui.moveParty != null && id >= 0 ? partyById(ui.moveParty) : null;
-    const wk = !ui.fwPlace && !ui.meetPick && !p && ui.moveParty == null && !e.shiftKey ? workerAt((e.clientX - r.left) / camera.zoom + camera.x, (e.clientY - r.top) / camera.zoom + camera.y) : null;
-    if (ui.meetPick && id >= 0) act(() => meetPickClick(state, ui, id)); // ui/tradewindow.js: the meeting tile (or why not)
-    else if (ui.fwPlace && id >= 0) act(() => fwPlaceClick(state, ui, id)); // ui/fieldworks.js: a field work placed here (or why not)
-    else if (p) act(() => pickMove(p, id));
-    else if (wk && wk.sid != null) { ui.survivor = wk.sid; mapClicked = true; } // a base worker out on the map: their survivor screen (ui/workermap.js)
-    else if (id >= 0 && ui.moveParty == null) {
-      // A team, another group's party, a band or outsiders on the tile are selected first (a team opens its panel),
-      // the same tile again goes on to the next and then the tile; Shift+click picks the tile (ui/mapselect.js).
-      clickPick(state, ui, id, e.shiftKey);
-      mapClicked = true; // its info is in the right panel: a folded one opens (autoShow)
-    }
-    ui.selected = id;
-    view.selected = id;
-    dirtyNow = true;
-  }
+  if (!drag.moved) mapClick(e.clientX, e.clientY, e.shiftKey);
   drag = null;
   canvas.style.cursor = "grab";
 });
+// A left click on the map at a page point (x, y: clientX / clientY): the mouse's release, a tap (touchGestures below).
+function mapClick(x, y, shift) {
+  if (ui.timelapse || !ui.started) return;
+  const r = canvas.getBoundingClientRect();
+  const id = screenToTile(state, x - r.left, y - r.top);
+  const p = ui.moveParty != null && id >= 0 ? partyById(ui.moveParty) : null;
+  const wk = !ui.fwPlace && !ui.meetPick && !p && ui.moveParty == null && !shift ? workerAt((x - r.left) / camera.zoom + camera.x, (y - r.top) / camera.zoom + camera.y) : null;
+  if (ui.meetPick && id >= 0) act(() => meetPickClick(state, ui, id)); // ui/tradewindow.js: the meeting tile (or why not)
+  else if (ui.fwPlace && id >= 0) act(() => fwPlaceClick(state, ui, id)); // ui/fieldworks.js: a field work placed here (or why not)
+  else if (p) act(() => pickMove(p, id));
+  else if (wk && wk.sid != null) { ui.survivor = wk.sid; mapClicked = true; } // a base worker out on the map: their survivor screen (ui/workermap.js)
+  else if (id >= 0 && ui.moveParty == null) {
+    // A team, another group's party, a band or outsiders on the tile are selected first (a team opens its panel),
+    // the same tile again goes on to the next and then the tile; Shift+click picks the tile (ui/mapselect.js).
+    clickPick(state, ui, id, shift);
+    mapClicked = true; // its info is in the right panel: a folded one opens (autoShow)
+  }
+  ui.selected = id;
+  view.selected = id;
+  dirtyNow = true;
+}
 // Move mode: a tile was picked. A pick that cannot work (water, no route, the team's own tile) says why and
 // keeps the mode on, so the team is not left standing with the clock running.
 function pickMove(p, id) {
@@ -2086,14 +2110,27 @@ canvas.addEventListener("wheel", (e) => {
 let ctxAt = null; // { tile, x, y }: where the menu was opened (its toggles redraw it in place)
 canvas.addEventListener("contextmenu", (e) => {
   e.preventDefault();
+  mapMenu(e.clientX, e.clientY, e.shiftKey);
+});
+// The tile menu at a page point: a right-click, a long press (touchGestures below).
+function mapMenu(x, y, shift) {
   const r = canvas.getBoundingClientRect();
-  const id = screenToTile(state, e.clientX - r.left, e.clientY - r.top);
+  const id = screenToTile(state, x - r.left, y - r.top);
   if (id < 0 || ui.timelapse || !ui.started) return;
   ui.selected = id;
   view.selected = id;
-  ctxAt = { tile: id, x: e.clientX - r.left, y: e.clientY - r.top };
-  ui.tcAppend = !!e.shiftKey;
+  ctxAt = { tile: id, x: x - r.left, y: y - r.top };
+  ui.tcAppend = !!shift;
   showCtx();
+}
+// A finger on the map (ui/touch.js): a drag pans, two fingers pinch the zoom about their midpoint, a tap is the left
+// click and a long press the right one. No hover: the tile's tooltip stays away (its info is in the right panel).
+touchGestures(canvas, {
+  down: () => { hideCtx(); $("tooltip").classList.add("hidden"); view.hover = -1; },
+  pan: (dx, dy) => { camera.x -= dx / camera.zoom; camera.y -= dy / camera.zoom; },
+  pinch: (f, x, y) => { const r = canvas.getBoundingClientRect(); zoomAt(x - r.left, y - r.top, f); },
+  tap: (x, y) => mapClick(x, y, false),
+  hold: (x, y) => mapMenu(x, y, false),
 });
 function showCtx() {
   if (!ctxAt) return;
@@ -2341,6 +2378,35 @@ window.addEventListener("mouseup", (e) => {
 });
 cbCanvas.addEventListener("wheel", (e) => { if (state.combat && combatWheel(state, ...cbPos(e), e.deltaY)) e.preventDefault(); }, { passive: false });
 cbCanvas.addEventListener("contextmenu", (e) => e.preventDefault()); // right click cancels on the release (combatRelease)
+// A finger on the battle map (ui/touch.js): a drag pans; a pinch steps the zoom (its steps are the wheel's, one each
+// time the fingers spread or close by a fifth); a tap is the left click (what is under it shown first, as the mouse's
+// hover would); a long press is the right click (cancel the current action, or Ally orders back a step).
+let cbPinch = 1;
+touchGestures(cbCanvas, {
+  down: () => { cbPinch = 1; },
+  pan: (dx, dy) => { if (state.combat) combatPan(state, dx, dy); },
+  pinch: (f, x, y) => {
+    cbPinch *= f;
+    if (cbPinch > 0.8 && cbPinch < 1.25) return;
+    const [px, py] = cbPos({ clientX: x, clientY: y });
+    if (state.combat) combatWheel(state, px, py, cbPinch > 1 ? -1 : 1);
+    cbPinch = 1;
+  },
+  tap: (x, y) => {
+    if (!state.combat) return;
+    const [px, py] = cbPos({ clientX: x, clientY: y });
+    combatMouse(state, px, py, false);
+    combatPress(state, px, py, 0);
+    if (combatRelease(state, px, py) === "click") { combatClick(state, px, py); refresh(); }
+  },
+  hold: (x, y) => {
+    if (!state.combat) return;
+    const [px, py] = cbPos({ clientX: x, clientY: y });
+    combatPress(state, px, py, 2);
+    if (combatRelease(state, px, py) === "cancel") cancelAction();
+    else refresh();
+  },
+});
 
 // ---------- keyboard ----------
 // Esc closes one layer per press, the topmost first. Returns false when there was nothing of ours to close.

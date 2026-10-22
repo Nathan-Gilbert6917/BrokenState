@@ -1,0 +1,21 @@
+/* Touch input (src/ui/touch.js): only rules a touch screen needs; nothing here may change a desktop with a mouse. */
+
+/* The surfaces with gestures of their own (ui/touch.js touchGestures, the minimap, the bars and windows dragged by
+   ui/windows.js): the browser neither scrolls nor zooms the page under a finger there. touch-action only ever applies
+   to touch and pens, so it holds on a touch laptop with a mouse too and a mouse never notices. */
+#map, #combatmap, #minimap canvas, .gut, .wgrip,
+#modal .win > .box > h1, #modal .win > .box > h2:first-child, #modal .win > .box > :first-child:has(h1, h2, .basename) { touch-action: none; }
+/* No grey flash where a tap lands on a map (iOS, Android), and no callout (save image, open link) on a long press:
+   that press is a right-click (ui/touch.js). Neither exists for a mouse. */
+#map, #combatmap, #minimap canvas { -webkit-tap-highlight-color: transparent; }
+#app, #modal, #combat, #title, #tip, #ctxmenu, #itemmenu { -webkit-touch-callout: none; }
+
+/* A screen with no mouse at all: a long press would select text (and its handles cover the menu it opens), so the
+   game's surfaces are not selectable; what is typed into still is. The tip shown by a long press sits over the finger
+   and never runs off a phone. */
+@media (hover: none) and (pointer: coarse) {
+  body { -webkit-user-select: none; user-select: none; }
+  input, textarea, [contenteditable], [contenteditable] * { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
+  #tip, #tip.pre { max-width: min(22rem, calc(100vw - 16px)); }
+  img { -webkit-user-drag: none; }
+}

@@ -404,7 +404,8 @@ function cellFromPx(px, py) {
   return c ? { x: c.x, y: c.y } : null;
 }
 
-export function combatMouse(state, px, py) {
+// edge false: a tap (main.js touchGestures) shows what is under the finger, but a finger near the edge does not pan.
+export function combatMouse(state, px, py, edge = true) {
   const b = state.combat;
   if (!b) return;
   sync(b);
@@ -414,7 +415,7 @@ export function combatMouse(state, px, py) {
     if (!d.moved && Math.hypot(px - d.x0, py - d.y0) > 6) d.moved = true;
     if (d.moved) { isoPan(b, px - d.px, py - d.py); d.px = px; d.py = py; return; }
   }
-  if (canvas) isoEdge(px, py, canvas.clientWidth, canvas.clientHeight, performance.now());
+  if (canvas && edge) isoEdge(px, py, canvas.clientWidth, canvas.clientHeight, performance.now());
   const c = cellFromPx(px, py);
   cui.hover = c ? { ...c, px, py } : null;
   const el = typeof document !== "undefined" && document.getElementById("cbprev");
@@ -436,6 +437,13 @@ export function combatRelease(state, px, py) {
   if (!state.combat || !d) return null;
   if (!d.moved && d.button === 2 && allyBack()) { cui.redraw = true; return null; } // Ally orders: back a step, not out (main.js cancelAction would drop it all)
   return d.moved ? "drag" : d.button === 0 ? "click" : d.button === 2 ? "cancel" : null;
+}
+// A finger dragging the battle map (main.js touchGestures): the view goes with it, as a mouse drag pans it.
+export function combatPan(state, dx, dy) {
+  const b = state.combat;
+  if (!b) return;
+  sync(b);
+  isoPan(b, dx, dy);
 }
 export function combatWheel(state, px, py, dy) {
   const b = state.combat;
