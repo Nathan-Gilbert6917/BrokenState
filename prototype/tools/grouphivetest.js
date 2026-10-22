@@ -15,6 +15,7 @@ import { ensureHives, newHive, hiveGuard, hiveStats } from "../src/sim/hives.js"
 import { FACTION_TYPES } from "../src/sim/data.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
 import { takeSize } from "./sizearg.js";
+import { worksAt } from "../src/sim/groupworks.js"; // a group's radio set (the link needs both ends)
 
 const size = takeSize();
 let pass = 0, fail = 0;
@@ -145,6 +146,7 @@ function warDays(st, f, days, onDay = null) {
   // In radio reach (a radio station at the hub, the group's base within its range): the line.
   const { st: s4, f: f4 } = setup(9, "fortress", 40, { guard: 5000, fromHub: RADIO_RANGE - 2 });
   hub(s4).radio = true;
+  worksAt(f4, f4.bases[0]).radio = 1; // and a set of their own: a link needs both ends (radio.js canRadioGroup, groupHasSet)
   const r4 = warDays(s4, f4, 120);
   check(r4.length >= 1 && lines(s4, RE) === r4.length, `the group in radio reach (its base ${RADIO_RANGE - 2} tiles from your radio): ${lines(s4, RE)} line${lines(s4, RE) === 1 ? "" : "s"} for ${r4.length} part${r4.length === 1 ? "y" : "ies"}`);
   // A burned-out hive: the line says so and how many stand; destroyHive's own line is not written twice.
