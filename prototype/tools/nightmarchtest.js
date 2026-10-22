@@ -23,7 +23,8 @@ function team(st, dist = 9, mission = "move") {
   // Plains if there are any that far out; the tiles next to the hub are its town's suburb ring (mapgen.js), so a bare
   // suburb block does there.
   const ok = (t) => !t.loc && st.grid.distance(t.id, h.tile) === dist && planPath(st, h.tile, t.id, false);
-  const dest = (st.tiles.find((t) => t.terrain === "plains" && ok(t)) || st.tiles.find((t) => t.terrain === "suburb" && ok(t))).id;
+  // (The hub stands on open land since 2026-10-22: any open tile that far will do when neither is there.)
+  const dest = (st.tiles.find((t) => t.terrain === "plains" && ok(t)) || st.tiles.find((t) => t.terrain === "suburb" && ok(t)) || st.tiles.find((t) => t.terrain !== "water" && t.terrain !== "mountain" && ok(t))).id;
   const res = launchExpedition(st, { memberIds: crew.map((s) => s.id), dest, mission, stance: "normal", supplies: { food: 12, water: 12 }, vehicleId: null });
   if (res.error) throw new Error(res.error);
   for (const s of crew) s.tired = 0;
@@ -31,7 +32,8 @@ function team(st, dist = 9, mission = "move") {
 }
 const nightCards = (st, p) => st.cards.filter((c) => c.nightCard && c.partyId === p.id);
 // Answers every other card for the team with its default (a road event must not stop the test), drops the rest.
-const clearOthers = (st) => { for (const c of [...st.cards]) if (!c.nightCard) { st.cards.splice(st.cards.indexOf(c), 1); } };
+// The other cards answered with their first choice (a road card left unanswered held the team up where it was met).
+const clearOthers = (st) => { for (const c of [...st.cards]) if (!c.nightCard) { st.cards.splice(st.cards.indexOf(c), 1); const ch = (c.choices || []).find((x) => !x.uiAction && !(typeof x.disabled === "function" ? x.disabled(st) : x.disabled)); if (ch && c.partyId != null) ch.resolve(st); } };
 const answer = (st, card, re) => { st.cards.splice(st.cards.indexOf(card), 1); return card.choices.find((c) => re.test(c.label)).resolve(st); };
 
 console.log("The card");

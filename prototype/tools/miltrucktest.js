@@ -19,7 +19,7 @@
 //     hours, fails (wasting parts) or works; drive it home; save / load of the vehicle and the car records
 //   - the autopilot plays 40 days with a convoy and a found vehicle on its map without crashing
 // Usage: node tools/miltrucktest.js [seed = 7]
-import { FOODS } from "../src/sim/foods.js";
+import { FOODS, foodRng } from "../src/sim/foods.js";
 import { TRUCK_GEAR } from "../src/sim/data-guns.js";
 import { totalRounds, isRoundKey } from "../src/sim/ammo.js"; // rounds by calibre
 import { createWorld, hub, atBase, tickHour, day } from "../src/sim/world.js";
@@ -388,7 +388,11 @@ section("The convoy's guard (miltrucks.js CONVOY_GUARD: more dead soldiers and m
     const lost = convoyAiLosses(st, c, f, 6);
     // AI parity: the trucks' cargo goes home with it (convoyHaul: truckLoot, its condition by itemcond.js; into the
     // group's stock and arsenal through caravanraids.js takeInto / arsenal.js addToArsenal).
+    // (The food dice rewound after the preview: the trucks' food is typed by them, foods.js typeFind, and the strip below
+    // would type it again from where the preview left them.)
+    const foodDice = foodRng(st).state;
     const plan = convoyHaul(st, c), ars0 = f.arsenal ? f.arsenal.items.length : 0, ammo0 = f.stock.ammo || 0;
+    foodRng(st).state = foodDice;
     const outs = () => (f.arsenal && f.arsenal.stats ? Object.values(f.arsenal.stats.out).reduce((a, n) => a + n, 0) : 0), out0 = outs(); // the fallen's kit leaves it (arsenal.js partyLost)
     const worthy = plan.gear.filter((it) => arsenalWorthy(it)).length, rich0 = unopenedTrucks(st, c.tile).map((x) => x.rich);
     convoysHour(st);
