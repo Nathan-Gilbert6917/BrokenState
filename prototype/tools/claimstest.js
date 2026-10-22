@@ -27,6 +27,7 @@ import * as C from "../src/sim/claims.js";
 import { controlledLand, allianceVictory, accordHolds, goalsProgress, ensureAlliance, ALLIANCE, coalitionMask, inviteProblem, reachVia } from "../src/sim/alliance.js";
 import { radioNodes, canRadioGroup, GROUP_REACH, MIL_RADIO_RANGE, hasMilRadio, RELAY_RANGE, relayReach, relaySpotFor, radioSummary, radioDaily } from "../src/sim/radio.js";
 import { waterProduction } from "../src/sim/economy.js";
+import { worksAt } from "../src/sim/groupworks.js"; // envoys.js: a radio link needs a set at their end too
 import { newItem } from "../src/sim/inventory.js";
 import { recomputeOwnership } from "../src/sim/factions.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
@@ -329,6 +330,7 @@ section("Radio reach: 12, 24 with a Military encrypted radio, groups' sets +6, a
   const spot = tileNear(state, h.tile, 20, 20);
   const saved = f.bases.slice();
   f.bases.length = 0; f.bases.push(spot);
+  worksAt(f, spot).radio = 1; // a set of their own to answer on (envoys.js)
   check(!canRadioGroup(state, f), "a group 20 tiles out: out of reach with a 12-tile station");
   h.armory.push(newItem("milradio"));
   const mil = radioNodes(state).find((n) => n.base === h);
@@ -399,6 +401,7 @@ section("Radio relays at any base: an outpost and the hub, none beside a station
   const fTile = tileNear(state, oTile, 9, 12, (t) => g.distance(t.id, h.tile) > RADIO_RANGE + 2 + GROUP_REACH && g.distance(t.id, h.tile) > ALLIANCE.NEIGHBOUR + 2);
   if (check(fTile != null, "a spot for the group past the outpost")) {
     f.bases.length = 0; f.bases.push(fTile);
+    worksAt(f, fTile).radio = 1; // a set of their own to answer on (envoys.js)
     f.known = true; f.goodwill = 70; f.pact = "trade";
     ensureJobs(state).list.push({ id: 9901, fid: f.id, type: "scout", status: "done", endDay: day(state), data: {}, reward: { goodwill: 0, supplies: {}, gear: [] }, title: "x", desc: "", target: fTile });
     state.bases.push(o);

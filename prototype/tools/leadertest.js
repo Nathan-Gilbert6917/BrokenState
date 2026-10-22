@@ -7,6 +7,7 @@
 // Leadership and a weak leader slow to act; a caravan at the gates traded with and a radio deal for water; a supply run
 // from a led hub to a thirsty outpost; a hunting, fishing or firewood trip; a raid warning answered.
 // Usage: node tools/leadertest.js [seed]
+import { worksAt } from "../src/sim/groupworks.js"; // envoys.js: a radio link needs a set at their end too
 import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, tickHour, hub, atBase, newId, hourOfDay, makeSurvivor, day } from "../src/sim/world.js";
 import { stewardOf, setSteward, setStewardArea, setLeader, leaderOf, leaderStatus, leaderChoices, stewardHour, actingLeader, actsShare, LEADER } from "../src/sim/steward.js";
@@ -248,8 +249,10 @@ const logged = (st, re, from) => st.log.slice(0, st.log.length - from).some((l) 
   Object.assign(f, { type: "traders", goodwill: 45, known: true, pop: Math.max(f.pop, 24) });
   Object.assign(f.stock, { ammo: 600, meds: 60, fuel: 60, parts: 10, scrap: 120, water: 150 }); setFood(f, 300);
   f.bases = [f.bases[0]];
+  worksAt(f, f.bases[0]).radio = 1; // a set of their own to answer on (envoys.js)
   for (const x of st.factions) if (x !== f) { x.goodwill = Math.max(x.goodwill, -20); x.known = false; }
   if (!canRadioGroup(st, f)) f.bases = [st.grid.within(h.tile, 10).find((t) => land(t) && st.grid.distance(t, h.tile) >= 6 && !st.bases.some((b) => b.tile === t) && planPath(st, t, h.tile, false))];
+  worksAt(f, f.bases[0]).radio = 1; // (the base may have moved)
   for (const s of atBase(st, h.id)) s.skills.leadership = 8;
   h.stock.ammo = 600;
   h.stock.meds = 0; // out of meds: a radio deal for them

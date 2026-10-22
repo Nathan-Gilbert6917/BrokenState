@@ -45,6 +45,7 @@ import { planPath } from "../src/sim/parties.js";
 import * as TR from "../src/sim/trade.js";
 import * as RT from "../src/sim/radiotrade.js";
 import * as RA from "../src/sim/radio.js";
+import { worksAt } from "../src/sim/groupworks.js"; // envoys.js: a radio link needs a set at their end too
 import { caravanEnRoute } from "../src/sim/caravans.js";
 import { radioGunDeal } from "../src/sim/govguns.js";
 
@@ -364,7 +365,9 @@ console.log("The governor buys guns");
     const f = st2.factions.filter((x) => x.alive && x.bases.length && planPath(st2, x.bases[0], h2.tile, false)).sort((a, b) => st2.grid.distance(a.bases[0], h2.tile) - st2.grid.distance(b.bases[0], h2.tile))[0];
     Object.assign(f, { type: "traders", goodwill: 45, known: true });
     f.bases = [f.bases[0]];
+    worksAt(f, f.bases[0]).radio = 1; // a set of their own to answer on (envoys.js)
     if (!RA.canRadioGroup(st2, f)) f.bases = [st2.grid.within(h2.tile, 10).find((t) => st2.tiles[t].terrain !== "water" && st2.grid.distance(t, h2.tile) >= 6 && !st2.bases.some((b) => b.tile === t) && planPath(st2, t, h2.tile, false))];
+    worksAt(f, f.bases[0]).radio = 1; // (the base may have moved)
     for (const x of st2.factions) if (x !== f) x.known = false;
     h2.armory = h2.armory.filter((it) => !isGun(it.key));
     for (const s of atBase(st2, h2.id).slice(0, 2)) s.gear.weapon = null;
