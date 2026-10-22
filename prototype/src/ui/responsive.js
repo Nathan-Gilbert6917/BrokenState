@@ -11,10 +11,14 @@
 //             and a ✕ beside the open drawer or sheet
 //   battle    on a phone: the battle's side panel becomes a drawer from the left (☰), and the orders bar folds
 //             to End turn (▾)
+//   raid      on a phone and an upright tablet: the raid's strip one row (ui/combat.js raidTopCompact), its cards a
+//             sheet that folds (raidCardsCompact), the log a drawer that starts closed, the first-week guide's note
+//             folded to its title (a tap opens it). RAIDUI holds what is open; a tap on a data-rs button toggles it
 //   keys      what only a key did on the map: ◀ ❗ Next team (Shift+N / N) and the camera spots (Shift+1–9 go,
 //             Ctrl+1–9 save), in the ⋯ drop-down on a phone and in the top bar on a tablet. Other modules ask
 //             touchUI() to add their own (Cancel on the pick banners, main.js; the Work tab's picker, ui/work.js)
 // Gestures (pan, pinch, long press) are ui/touch.js's.
+import { LOGWIN } from "./logwindow.js"; // the raid's log window: a drawer, closed when a phone layout comes up
 
 export const PHONE = "(max-width: 759px)";
 // A phone on its side (844×390 and the like) is wider than that: a touch screen this short is a phone too.
@@ -33,6 +37,12 @@ let mode = "";       // "phone" | "tight" | "tablet" | ""
 export const touchUI = () => mode !== "";
 // The pick banners' Cancel (a team's move, a field work's tile, a meeting tile; main.js "pick-cancel"): Esc, where
 // there is no Esc key.
+// A raid on a phone or a tablet held upright (the drawers layouts): ui/combat.js draws its strip and cards compact.
+export const raidCompact = () => mode === "phone" || mode === "tight";
+// What is open on a compact raid screen: the strip's drop-downs (info: what is carried and the rest; view: the Menu
+// and the view's buttons), the cards' sheet folded (cardsKey: the cards it held, a new one opens it), the log lines
+// seen (logSeen of the battle logOf: 📜 counts the rest), the battle whose end closed the log once (overOf).
+export const RAIDUI = { info: false, view: false, cardsMin: false, cardsKey: "", logOf: null, logSeen: 0, overOf: null };
 export const pickCancel = (what) => (touchUI() ? ` <button class="mini" data-action="pick-cancel" data-what="${what}" data-tip="Cancel (Esc)">✕ Cancel</button>` : "");
 let drawers = false; // the dock and the drawers are up
 let saved = null;    // which drawers were folded before (put back when the window grows again)
@@ -79,6 +89,9 @@ function setMode(m) {
   if (m !== "phone" && was === "phone") leavePhone();
   if (m && !was) enterTouch();
   if (!m && was) leaveTouch();
+  const rc = m === "phone" || m === "tight", wasRc = was === "phone" || was === "tight";
+  if (rc && !wasRc) enterRaid();
+  if (!rc && wasRc) leaveRaid();
   placeKeys();
   const g = window.game;
   if (g && g.refresh) g.refresh(); // the banners' Cancel (touchUI) comes or goes
@@ -308,6 +321,68 @@ function closeTop() {
   document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true, cancelable: true }));
   if (u && !had && u.settings) { u.settings = null; if (g.refresh) g.refresh(); }
   queueClose();
+}
+
+// ---------- a raid on a phone or an upright tablet ----------
+let logWas = null; // the log window was open on the larger screen (put back when it grows again)
+let raidObs = null, guideObs = null;
+function enterRaid() {
+  // The log is a drawer here: closed until 📜 opens it (not saved: the desktop's window keeps its own state).
+  logWas = LOGWIN.open;
+  LOGWIN.open = false;
+  document.addEventListener("click", onRaidTap);
+  document.addEventListener("pointerdown", outsideRaid, true);
+  // The strip's and the orders bar's heights for what sits outside the battle's box (the guide's note).
+  if (typeof ResizeObserver !== "undefined") {
+    raidObs = new ResizeObserver(syncRaidVars);
+    for (const id of ["cbtop", "cbbar"]) if ($(id)) raidObs.observe($(id));
+  }
+  // A new guide note comes folded.
+  const gt = $("guidetip");
+  if (gt) { guideObs = new MutationObserver(() => { const t = gt.querySelector(".gd-title"), s = t ? t.textContent : ""; if (s !== gt.dataset.rsTip) { gt.dataset.rsTip = s; gt.classList.remove("rs-gdopen"); } }); guideObs.observe(gt, { childList: true }); }
+}
+function leaveRaid() {
+  if (logWas && !LOGWIN.open) LOGWIN.open = true;
+  logWas = null;
+  document.removeEventListener("click", onRaidTap);
+  document.removeEventListener("pointerdown", outsideRaid, true);
+  if (raidObs) raidObs.disconnect();
+  if (guideObs) guideObs.disconnect();
+  raidObs = guideObs = null;
+  for (const v of ["--rs-cbtop", "--rs-cbbar"]) document.documentElement.style.removeProperty(v);
+  const gt = $("guidetip");
+  if (gt) gt.classList.remove("rs-gdopen");
+  Object.assign(RAIDUI, { info: false, view: false, cardsMin: false });
+}
+function syncRaidVars() {
+  const t = $("cbtop"), bar = $("cbbar"), root = document.documentElement.style;
+  const r = t && t.firstElementChild ? t.firstElementChild.getBoundingClientRect() : null;
+  root.setProperty("--rs-cbtop", `${r && r.height ? Math.round(r.bottom) : 0}px`);
+  root.setProperty("--rs-cbbar", `${bar ? Math.round(bar.offsetHeight) : 0}px`);
+}
+const redraw = () => { const g = window.game; if (g && g.refresh) g.refresh(); };
+// The strip's ⋯ and its status button, the sheet's handle (data-rs: no main.js action), the guide note's title.
+function onRaidTap(e) {
+  const t = e.target;
+  if (!t || !t.closest) return;
+  const b = t.closest("[data-rs]");
+  if (b) {
+    const k = b.dataset.rs;
+    if (k === "info") { RAIDUI.info = !RAIDUI.info; RAIDUI.view = false; }
+    else if (k === "view") { RAIDUI.view = !RAIDUI.view; RAIDUI.info = false; }
+    else if (k === "sheet") RAIDUI.cardsMin = !RAIDUI.cardsMin;
+    redraw();
+    return;
+  }
+  const gh = t.closest("#guidetip .gd-head");
+  if (gh && !t.closest("button, a")) $("guidetip").classList.toggle("rs-gdopen");
+}
+// A tap anywhere but the open drop-down (or its button) closes it.
+function outsideRaid(e) {
+  if (!RAIDUI.info && !RAIDUI.view) return;
+  if (e.target.closest && e.target.closest(".rs-ctdrop, [data-rs=info], [data-rs=view]")) return;
+  RAIDUI.info = RAIDUI.view = false;
+  redraw();
 }
 
 // ---------- the map's keys, as buttons ----------

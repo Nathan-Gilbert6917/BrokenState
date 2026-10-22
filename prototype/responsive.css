@@ -7,7 +7,8 @@
      drawers   phone, a short touch screen (a phone on its side) and a tablet held upright (760–1023px): the panels
                become drawers and sheets opened from the dock (Lists · Info · Log)
      compact   phone and a phone on its side: the small top bar, windows full screen, the battle's own controls
-     tablet    (pointer: coarse) and (min-width: 760px): the desktop arrangement, narrower panels, bigger targets */
+     tablet    (pointer: coarse) and (min-width: 760px): the desktop arrangement, narrower panels, bigger targets
+     raid      as drawers: a raid's strip one row, its cards a sheet that folds, its log a drawer (at the end) */
 
 /* ================= touch: phones and tablets ================= */
 @media (max-width: 759px), (pointer: coarse) and (min-width: 760px) {
@@ -56,6 +57,24 @@
   #tb-panels button, #tb-maponly { min-width: 2.6rem; }
   #cbhud .bh-row { min-height: 2.6rem; }
   #cbtop .ct-right button, #cbpanel .cbview button { min-height: 2.6rem; min-width: 2.6rem; }
+  /* The orders bar in one row (on a 1024×768 tablet beside the battle panel it wrapped to three, a third of the map
+     left): the orders scroll sideways as on a phone, the turn controls one row under End turn, each its icon (the name
+     is its tip, a long press). Beside the panel the weapon box goes: the panel's team list has each one's gun and
+     rounds. A raid, with no panel, keeps it. */
+  #cbbar .bb { flex-wrap: nowrap; align-items: flex-end; }
+  #cbbar .bb-mid { order: 0; flex: 1 1 0; min-width: 0; }
+  #cbbar .bb-left, #cbbar .bb-right { flex: 0 1 12rem; min-width: 0; }
+  #cbbar .bb-turn { white-space: nowrap; gap: 0.35em; font-size: 0.8em; }
+  #cbbar .bb-orders { flex-wrap: nowrap; justify-content: flex-start; overflow-x: auto; overscroll-behavior: contain; scrollbar-width: none; }
+  #cbbar .bb-orders .bb-btn { flex: none; }
+  #cbbar .bb-ctls { display: flex; flex-wrap: wrap; gap: 0.3em; }
+  #cbbar .bb-ctl.bb-end { flex: 1 1 100%; }
+  #cbbar .bb-ctl:not(.bb-end) { flex: 1 1 0; min-width: 2.75rem; min-height: 2.75rem; padding: 0.2em; justify-content: center; }
+  #cbbar .bb-ctl:not(.bb-end) .bb-cl, #cbbar .bb-ctl:not(.bb-end) .key { display: none; }
+  #cbbar .bb-ctl:not(.bb-end) .bb-ic { font-size: 1.35rem; }
+  #combat:not(.noside) #cbbar .bb-weapon { display: none; }
+  /* A raid's squad list under its strip (the strip spans the top of a 1024px map). */
+  #combat.noside #cbhud .bh-roster { top: var(--cbtop-h, 3.4rem); max-height: calc(100% - var(--cbtop-h, 3.4rem) - var(--cbbar-h, 0px) - 0.5rem); }
 }
 
 /* ================= drawers: phones, a phone on its side, a tablet held upright ================= */
@@ -170,7 +189,12 @@
   #modal .box h1 { font-size: 1.2rem; }
   #modal .basename { width: 100%; }
   #modal table { max-width: none; }
-  #boxview .boxwin { top: 10vh; max-height: 80vh; width: calc(100vw - 1rem); }
+  /* An opened box (ui/boxview.js, over the search or inventory window): a sheet from the bottom, in the thumb's reach;
+     a phone on its side has it at the right (below). */
+  #boxview .boxwin { top: auto; bottom: 0; left: 0; right: 0; transform: none; width: auto; max-height: min(72dvh, 34rem); padding: 0.55rem 0.75rem calc(0.55rem + env(safe-area-inset-bottom)); border-radius: 12px 12px 0 0; border-bottom: none; box-shadow: 0 -10px 30px rgba(0,0,0,0.6); }
+  #boxview .bwrow { grid-template-columns: 2.4rem minmax(0, 1fr) auto auto auto; gap: 0.4rem; }
+  #boxview .bwname { min-width: 0; overflow-wrap: anywhere; }
+  #boxview .bwfoot button { flex: 1 1 0; }
 
   /* The ✕ on a window: the top right corner of the screen. */
   #rs-close { width: 2.6rem; height: 2.6rem; }
@@ -202,30 +226,18 @@
   /* Folded: End turn alone. */
   body.rs-cbmin #cbbar .bb-mid, body.rs-cbmin #cbbar .bb-left, body.rs-cbmin #cbbar .bb-turn, body.rs-cbmin #cbbar .bb-ctl:not(.bb-end) { display: none; }
   body.rs-cbmin #cbbar .bb-right { flex: 1 1 100%; }
-  /* The squad list (top left), the raid's strip (top) and its cards keep to a narrow screen. */
+  /* The squad list (top left) keeps to a narrow screen (a raid's strip, cards and log: the raid section below). */
   #cbhud .bh-roster { width: 11.5rem; top: calc(0.5rem + env(safe-area-inset-top)); }
   #cbhud .bh-row .bh-sub { display: none; }
   :is(#cbhud, #cbbar) .bh-bottom { max-width: calc(100% - 1rem); }
-  #cbtop { left: 0.4rem; right: 0.4rem; top: calc(0.4rem + env(safe-area-inset-top)); display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.3rem; }
-  #cbtop .ct-mid { order: 2; flex: 1 1 100%; align-items: stretch; }
-  #cbtop .ct-right { flex: 0 1 auto; max-width: 100%; }
-  #cbtop .ct-right .ct-box { flex-wrap: wrap; justify-content: flex-end; }
-  #cbtop .ct-box { gap: 0.2rem 0.5rem; }
-  #cbcards { left: 0.4rem; right: 0.4rem; width: auto; transform: none; padding-top: var(--cbtop-h, 6rem); }
   #combat button { min-height: 2.4rem; }
   #combat #cbbar .bb-btn, #combat #cbbar .bb-tab, #combat #cbbar .bb-look .bb-btn { min-height: 0; }
-  #cblogwin { max-width: calc(100% - 4rem); max-height: 40%; }
-  #cblogwin .lw-btns button { min-width: 2.4rem; }
 }
 
 /* An upright phone: the speeds keep their row; the weather chip by the clock goes (the ⋯ menu's forecast has it). */
 @media (max-width: 759px) and (orientation: portrait) {
   #tb-clock .wx { display: none; }
   #cbhud .bh-roster { width: 9rem; }
-  /* The raid's log window: under the map's top, over the orders at the left (the ☰ ▾ toggles keep the right); it
-     still folds to its title bar (–) or closes (✕, the Log button brings it back). */
-  #cblogwin { left: 0.4rem !important; top: auto !important; bottom: calc(var(--cbbar-h, 0px) + 0.5rem); width: calc(100% - 4.2rem) !important; height: min(24vh, 12rem) !important; }
-  #cblogwin.min { height: auto !important; }
 }
 
 /* A phone on its side: one row (clock, speeds, Needs, ⚙, ⋯); the battle's orders get the narrower tiles. */
@@ -244,16 +256,11 @@
   /* The minimap smaller, the alerts above it. */
   #minimap { max-width: calc(30% - 1rem); }
   #mapwrap:has(#minimap:not(.hidden)) #alerts { max-height: calc(100% - 10rem); }
+  #boxview .boxwin { top: calc(0.4rem + env(safe-area-inset-top)); bottom: calc(0.4rem + env(safe-area-inset-bottom)); left: auto; right: calc(0.4rem + env(safe-area-inset-right)); width: min(26rem, 62vw); max-height: none; border-radius: 12px; border-bottom: 1px solid var(--accent); padding-bottom: 0.55rem; }
   #ctxmenu { left: auto !important; right: var(--rs-dockr, 0px); top: var(--rs-top, 3rem) !important; bottom: 0; width: min(24rem, 55vw); max-height: none !important; border-radius: 12px 0 0 0; }
-  /* The raid's cards and log window keep to the right of the squad list. */
-  #cbcards { left: auto; width: min(26rem, calc(100% - 13rem)); }
-  #cblogwin { left: auto !important; right: 3.6rem; top: auto !important; bottom: calc(var(--cbbar-h, 0px) + 0.4rem); width: min(19rem, 42%) !important; height: 6rem !important; }
-  #cblogwin.min { height: auto !important; }
   /* The title screen: the logo to the right of the menu, not over it. */
   #title .tt-logo { left: auto; right: 4vw; translate: 0 0; top: 8vh; width: min(46vw, 30rem); }
   #title .tt-menu { bottom: 8vh; }
-  #cbtop { left: 12.5rem; }
-  #cbtop .ct-mid { align-items: flex-end; }
 }
 
 /* ================= a tablet held upright (760–1023px): drawers, the top bar as on a desktop ================= */
@@ -261,6 +268,110 @@
   #topbar { gap: 0.45rem; padding-left: 0.6rem; padding-right: 0.6rem; }
   #tb-tools { margin-left: 0; }
   #alerts { width: min(22rem, 48%); }
+}
+
+/* ================= a raid: phones, a phone on its side, a tablet held upright ================= */
+/* The map is the screen (the layout agent's 2026-10-22 note: the strip, the Where do you go in card, the log window and
+   the guide's note left a phone about 230px of map). ui/combat.js draws the compact strip and the cards' sheet while
+   responsive.js raidCompact() (these same queries); responsive.js keeps what is open (RAIDUI) and the log closed. */
+@media (max-width: 759px), (pointer: coarse) and (min-width: 760px) and (max-width: 1023px), (pointer: coarse) and (min-width: 760px) and (max-height: 500px) {
+  /* The strip (raidTopCompact): the place, the turn and Heat on one button (a tap drops down the rest), the floor, 📜, ⋯.
+     Over the log drawer and the sheet, so its drop-downs are too. */
+  #cbtop { display: block; left: 0.4rem; right: 0.4rem; top: calc(0.35rem + env(safe-area-inset-top)); z-index: 7; }
+  #cbtop .rs-ct { display: flex; flex-direction: row; align-items: stretch; gap: 0.3rem; }
+  #cbtop .rs-ct > * { pointer-events: auto; }
+  #cbtop .rs-ct button { min-height: 2.75rem; min-width: 2.75rem; padding: 0 0.4rem; background: rgba(20,22,26,0.92); border: 1px solid var(--line); border-radius: 9px; box-shadow: 0 2px 8px rgba(0,0,0,0.4); }
+  #cbtop .rs-ct button.active { background: #4a3816; border-color: var(--accent); }
+  #cbtop .rs-ctstat { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 0.1rem; padding: 0.15rem 0.6rem !important; text-align: left; line-height: 1.2; font-weight: 400; }
+  #cbtop .rs-ctstat .ct-title { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.8rem; }
+  #cbtop .rs-ctline { display: flex; align-items: center; gap: 0.45rem; max-width: 100%; overflow: hidden; white-space: nowrap; font-size: 0.78rem; }
+  #cbtop .rs-ctline .ct-heat { gap: 0.3rem; }
+  #cbtop .rs-ctline .ct-heat .heat { width: 3rem; height: 0.55rem; flex: none; }
+  #cbtop .rs-ctgr { font-style: normal; color: #ffd166; }
+  #cbtop .rs-ctfloor { display: flex; align-items: center; gap: 0.2rem; padding: 0 0.15rem 0 0.45rem; background: rgba(20,22,26,0.92); border: 1px solid var(--line); border-radius: 9px; }
+  #cbtop .rs-ctfloor button { min-width: 2.4rem; padding: 0; }
+  #cbtop .rs-ctlog { position: relative; font-size: 1.1rem; }
+  #cbtop .rs-ctlog .rs-badge { position: absolute; top: -0.35rem; right: -0.35rem; min-width: 1.2rem; padding: 0 0.3rem; border-radius: 99px; font-size: 0.72rem; line-height: 1.2rem; color: #15171a; background: #ffd166; }
+  #cbtop .rs-ctmore { font-size: 1.25rem; line-height: 1; }
+  /* The drop-downs under it: the rest of the strip (full width), the Menu and the view (at the right). */
+  #cbtop .rs-ctdrop { pointer-events: auto; margin-top: 0.3rem; max-height: min(60dvh, calc(100dvh - 8rem)); overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 0.35rem; padding: 0.45rem 0.5rem; background: var(--panel); border: 1px solid var(--accent); border-radius: 9px; box-shadow: 0 12px 30px rgba(0,0,0,0.6); font-size: 0.85rem; }
+  #cbtop .rs-ctdrop .ct-box { background: none; border: none; padding: 0; }
+  #cbtop .rs-ctdrop .cbgroups { justify-content: flex-start; }
+  #cbtop .rs-ctview { margin-left: auto; width: 14.5rem; max-width: 100%; }
+  #cbtop .rs-ctview .ct-box { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.35rem; }
+  #cbtop .rs-ctview .cbview { display: contents; }
+  #cbtop .rs-ctview button { min-height: 2.75rem; min-width: 0; padding: 0 0.2rem; }
+  #cbtop .rs-ctview .cbmenu { order: 1; grid-column: span 2; } /* ⟲ ⟳ − + / ◎ Roofs / Cones ⚙ Menu */
+  #cbtop .rs-ctview .cbview button:nth-last-child(-n+3) { grid-column: span 2; } /* ◎, Roofs, Cones: wider */
+
+  /* The squad list under the strip. */
+  #cbhud .bh-roster { top: var(--cbtop-h, 3.6rem); max-height: calc(100% - var(--cbtop-h, 3.6rem) - var(--cbbar-h, 0px) - 0.5rem); }
+
+  /* The cards (raidCardsCompact): one sheet between the strip and the orders, its handle folding it to a line; the toast
+     and the details of what the finger is on (#cbprev) under it. Upright it sits at the bottom, the map above it. */
+  #cbcards { top: var(--cbtop-h, 3.6rem); bottom: calc(var(--cbbar-h, 0px) + 0.4rem); left: 0.4rem; right: 0.4rem; width: auto; max-height: none; transform: none; padding: 0; overflow: visible; justify-content: flex-end; gap: 0.35rem; }
+  #cbcards .rs-sheet { display: flex; flex-direction: column; min-height: 0; max-height: min(46dvh, 100%); flex: 0 1 auto; background: rgba(20,22,26,0.96); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 6px 24px rgba(0,0,0,0.55); overflow: hidden; }
+  #cbcards .rs-sheet.rs-over { max-height: 100%; } /* the result: no orders bar any more, the map is done with */
+  #cbcards .rs-sheeth { position: relative; flex: none; display: flex; align-items: center; gap: 0.5rem; width: 100%; min-height: 2.75rem; padding: 0.35rem 0.75rem 0.15rem; background: none; border: none; border-radius: 0; text-align: left; font-weight: 700; color: var(--accent); }
+  #cbcards .rs-grab { position: absolute; top: 0.3rem; left: 50%; width: 2.6rem; height: 0.25rem; margin-left: -1.3rem; border-radius: 99px; background: var(--line); }
+  #cbcards .rs-sheett { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #cbcards .rs-sheetc { flex: none; color: var(--muted); }
+  #cbcards .rs-sheetb { min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 0.35rem; padding: 0 0.4rem 0.4rem; scrollbar-width: thin; }
+  #cbcards .rs-sheetb .cbcard { flex: none; }
+  #cbcards .cbactions { display: flex; flex-direction: column; gap: 0.3rem; }
+  #cbcards .cbactions button { width: 100%; min-height: 2.75rem; text-align: left; }
+  #cbcards .ct-toast, #cbcards .cbprev { flex: none; max-height: 30%; overflow-y: auto; }
+
+  /* The log: a drawer under the strip (📜 opens and closes it; ui/logwindow.js's place and size do not apply). */
+  #cblogwin { left: 0.4rem !important; right: 0.4rem; top: var(--cbtop-h, 3.6rem) !important; width: auto !important; height: min(42%, 20rem) !important; min-width: 0; z-index: 6; border-color: var(--accent); border-radius: 12px; box-shadow: 0 12px 30px rgba(0,0,0,0.6); }
+  #cblogwin .lw-head { cursor: default; min-height: 2.75rem; padding-left: 0.75rem; }
+  #cblogwin .lw-btns button { min-width: 2.75rem; min-height: 2.5rem; }
+  #cblogwin .lw-btns button[data-v="min"], #cblogwin .lw-grip { display: none; }
+  #cblogwin.min .lw-body { display: block; }
+  #cblogwin.min .lw-foot:not(:empty) { display: block; }
+  #cblogwin .lw-body { padding: 0.35rem 0.65rem; font-size: 0.86rem; }
+  #cblogwin .lw-foot { padding: 0.3rem 0.5rem calc(0.3rem + env(safe-area-inset-bottom)); }
+
+  /* The first-week guide's note in a raid: its title only, a tap opens it (responsive.js; ? and ✕ as before). Over the
+     plan window it waits at the bottom of the screen; on the map, under the strip at the right. */
+  body:has(#combat.noside:not(.hidden)) #guidetip { top: auto; bottom: calc(0.5rem + env(safe-area-inset-bottom)); left: calc(0.5rem + env(safe-area-inset-left)); right: calc(0.5rem + env(safe-area-inset-right)); width: auto; transform: none; }
+  body:has(#combat.noside:not(.hidden)) #guidetip:has(.onmap) { top: calc(var(--rs-cbtop, 3.5rem) + 0.4rem); bottom: auto; left: auto; width: auto; max-width: min(21rem, calc(100vw - 10.5rem)); } /* clear of the squad list */
+  body:has(#combat.noside:not(.hidden)) #guidetip.rs-gdopen:has(.onmap) { left: calc(0.5rem + env(safe-area-inset-left)); max-width: none; }
+  body:has(#combat.noside:not(.hidden)) #guidetip .gd-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  body:has(#combat.noside:not(.hidden)) #guidetip.rs-gdopen .gd-title { white-space: normal; }
+  body:has(#combat.noside:not(.hidden)) #guidetip:not(.rs-gdopen) .gd-why { display: none; }
+  body:has(#combat.noside:not(.hidden)) #guidetip .gd-head { cursor: pointer; align-items: center; }
+  body:has(#combat.noside:not(.hidden)) #guidetip .gd-title::after { content: " ▸"; color: var(--muted); }
+  body:has(#combat.noside:not(.hidden)) #guidetip.rs-gdopen .gd-title::after { content: " ▾"; }
+  body:has(#combat.noside:not(.hidden)) #guidetip .gd-head button { min-width: 2.5rem; min-height: 2.5rem; }
+
+  /* The plan before going in (ui/raidplan.js, a window): its title over the place and the time on a narrow screen. */
+  #modal .rplanbox > .spread:first-child { flex-wrap: wrap; row-gap: 0.15rem; }
+}
+/* A phone (the orders bar's ☰ ▾ at the map's right edge): the sheet and the log keep clear of them. With the fight
+   over there is no bar to fold. */
+@media (max-width: 759px), (pointer: coarse) and (min-width: 760px) and (max-height: 500px) {
+  #cbcards { right: 3.6rem; }
+  #combat.noside #cbbar:empty ~ #rs-cbtools { display: none; }
+  #combat.noside #cbbar:empty ~ #cbcards { right: 0.4rem; }
+}
+/* The turn controls in one row beside the selected one's card (a short screen keeps the map ~45px more): End turn the
+   wide one, the others their icon (the name is their tip: a long press); no keycaps without a keyboard. */
+@media (max-width: 759px), (pointer: coarse) and (min-width: 760px) and (max-height: 500px) {
+  #cbbar .bb-ctls { display: flex; flex-wrap: wrap; gap: 0.3em; }
+  #cbbar .bb-ctl.bb-end { flex: 1 1 6rem; padding: 0.3em 0.4em; }
+  #cbbar .bb-ctl:not(.bb-end) { flex: none; width: 2.75rem; min-height: 2.75rem; padding: 0.2em; justify-content: center; }
+  #cbbar .bb-ctl:not(.bb-end) .bb-cl, #cbbar .bb-ctl .key { display: none; }
+  #cbbar .bb-ctl:not(.bb-end) .bb-ic { font-size: 1.35rem; }
+}
+/* On its side: the sheet and the log stand at the right, from the strip down to the orders, the squad list at the left
+   and the map between; the guide's note waits above the orders at the left. */
+@media (max-width: 759px) and (orientation: landscape), (pointer: coarse) and (min-width: 760px) and (max-height: 500px) {
+  #cbcards { left: auto; width: min(21rem, 46%); justify-content: flex-start; }
+  #cbcards .rs-sheet { max-height: 100%; }
+  #cbcards:has(.rs-over) { width: min(30rem, 62%); } /* the result: wider, so Continue needs less scrolling */
+  #cblogwin { left: auto !important; right: 3.6rem; width: min(22rem, 48%) !important; height: auto !important; bottom: calc(var(--cbbar-h, 0px) + 0.4rem); }
+  body:has(#combat.noside:not(.hidden)) #guidetip:has(.onmap) { top: auto; bottom: calc(var(--rs-cbbar, 6rem) + 0.4rem); left: calc(0.5rem + env(safe-area-inset-left)); right: auto; width: min(20rem, 45vw); }
 }
 
 /* ================= inventory on a phone or tablet: tap to pick, tap to place ================= */

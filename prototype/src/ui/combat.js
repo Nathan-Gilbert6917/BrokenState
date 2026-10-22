@@ -78,6 +78,7 @@ import { isMedic, healRefusal, healAmount, reviveRefusal, reviveOdds, liftRefusa
 import { groundButtons, groundCbAct, groundClick } from "./ground.js"; // bodies searched where they fell, things on the ground (sim/ground.js)
 import { nlButtons, nlAskHtml, nlCbAct, nlMapClick, nlOdds, nlConeMask, nlPreview, nlTags, nlStatus } from "./nonlethal.js"; // tasers, pepper spray, pulled blows, surrender (sim/nonlethal.js)
 import { LOGWIN, logAction } from "./logwindow.js"; // the raid's log as a small window over the map (shown, folded, moved, resized)
+import { raidCompact, RAIDUI } from "./responsive.js"; // a phone or an upright tablet: the raid's strip as one row, its cards a sheet (never on a desktop)
 import { planAsideHtml, planAction, planChip, planUI } from "./raidplan.js"; // the plan put aside to look at the site: the card over the map and the chip in the strip (the window itself: ui.js pickModal)
 import { planOpen, botPlan } from "../sim/raidplan.js";
 import { hudPaint, hudSync, toggleHud, hitBreakdown, breakdownHtml, hitTone } from "./battlehud.js"; // the weapon panel, the squad strip, the big hit chances (user requests 2026-10-09)
@@ -2241,7 +2242,7 @@ export function renderRaidTop(state) {
   }
   mid += `</div>`;
   // The second line: what is carried, the ammo and meds, what is left, the finds, the ways out, the vehicle, the night, the keys.
-  mid += `<div class="ct-box cbsupply" style="gap:0.2rem 0.75rem;margin:0">
+  const supply = `<div class="ct-box cbsupply" style="gap:0.2rem 0.75rem;margin:0">
     ${me ? `<span data-tip="${esc(`What ${sel.name.split(" ")[0]} carries: worn and held ${Math.round(me.worn)} kg${me.share ? `, their share of the team's supplies ${Math.round(me.share)} kg` : ""}, finds carried loose ${Math.round(me.haul)} kg. Each survivor carries their own finds; anything that does not fit stays in the container.${trunk ? " Unload at the vehicle (N) to free them up." : ""}`)}">${esc(sel.name.split(" ")[0])} <b class="${me.room < 2 ? "warn" : ""}">${Math.round(me.load)}/${Math.round(me.max)} kg</b></span>` : ""}
     ${trunk ? `<span data-tip="${esc(`${trunk.name}: what is in it (the team's supplies and cargo) and how much more it takes${trunk.bike ? "" : ", counting everything your people carry, because the car takes all of it home"}.`)}">${trunk.bike ? "Racks" : "Vehicle"} <b>${Math.max(0, Math.round(trunk.space))} kg free</b></span>` : ""}
     <span data-tip="Rounds carried, every calibre: each gun fires only rounds of its own calibre and loaded type (Reload with another type switches it). Each shot uses 1 (assault rifle bursts use 2). Reload (1 action) fills a gun's magazine from this. Bows and crossbows shoot arrows instead.">Ammo <b>${Math.floor(ammoLeft(b))}</b></span>
@@ -2256,10 +2257,43 @@ export function renderRaidTop(state) {
     ${sel && sel.side === "player" && active(sel) && quickable(searchableNear(b, sel)).length ? `<span class="ct-sub" data-tip="${esc(`Shift+Q, no action (once a turn): heard ${quickRadius(b, sel)} tiles off, Heat +${SEARCH.quick.heat}. Only ${Math.round(SEARCH.quick.reveal[0] * 100)}–${Math.round(SEARCH.quick.reveal[1] * 100)}% of what is inside turns up; ${quickHurtPct(state, b, sel)} chance of cutting yourself (less likely with Scavenging or Stealth, more in the dark without a light).`)}">Quick search: loud, ${quickHurtPct(state, b, sel)} cut</span>` : ""}
     ${planOpen(b) && !b.over && planUI.map ? planChip(b) : ""}
   </div>`;
-  if (!b.over) mid += groupChips(b); // sim/parley.js: the other groups seen, hostile or not
+  mid += supply;
+  const groups = b.over ? "" : groupChips(b); // sim/parley.js: the other groups seen, hostile or not
+  mid += groups;
+  if (raidCompact()) return raidTopCompact(b, { phase, stage, F, supply, groups });
   // The right: the Menu, the view, the Log.
   const right = `<div class="ct-box"><button class="mini cbmenu" data-action="set-open" data-tip="Menu: save the battle as it stands, load, options">⚙ Menu</button>${viewBar(b, { floor: false })}<button class="mini${LOGWIN.open ? " active" : ""}" data-action="cb-log" data-v="toggle" data-tip="${esc(`Show or hide the log (${keyLabel("bview.log") || "Shift+M"}). It is a small window: drag its title to move it, its corner to resize it, – to fold it to the title.`)}">📜 Log</button></div>`;
   return `<div class="ct-mid">${mid}</div><div class="ct-right">${right}</div>`;
+}
+
+// The strip on a phone or a tablet held upright (ui/responsive.js raidCompact; a desktop never comes here): one row of
+// finger-sized buttons so the map keeps the screen. The place, the turn and Heat on one button that drops down the
+// rest (what is carried, the ammo, what is left, the ways out, the groups seen: the desktop's second line); the floor
+// ▲ ▼ in a building with storeys (the turn and whose it is are on the orders bar under the map); 📜 the log, a drawer, with how many lines came in since it was last open; ⋯ the
+// Menu and the view (turn, zoom, center, Roofs, Cones), which a finger needs less often (it pans and pinches).
+// The drop-downs open from RAIDUI (responsive.js toggles it on a tap, data-rs, and closes it on a tap elsewhere).
+function raidTopCompact(b, { phase, stage, F, supply, groups }) {
+  const R = b.raid, I = R.interior;
+  const nGroups = (groups.match(/class="ct-group/g) || []).length;
+  if (RAIDUI.logOf !== b.setup) { RAIDUI.logOf = b.setup; RAIDUI.logSeen = b.log.length; } // a new raid: nothing new yet
+  if (b.over && RAIDUI.overOf !== b.setup) { RAIDUI.overOf = b.setup; if (LOGWIN.open) LOGWIN.open = false; } // the result's sheet, not the log over it (not saved)
+  if (LOGWIN.open) RAIDUI.logSeen = b.log.length;
+  const fresh = Math.max(0, b.log.length - RAIDUI.logSeen);
+  const time = `Turn ${b.turn} · ${Math.floor((b.turn - 1) / 6)}h ${((b.turn - 1) % 6) * 10}m in`;
+  let row = `<button class="rs-ctstat${RAIDUI.info ? " active" : ""}" data-rs="info" aria-expanded="${RAIDUI.info}" aria-controls="rs-ctinfo" data-tip="The raid: what is carried, the ammo and meds, what is left to search, the ways out, the groups seen">
+    <span class="ct-title">${I ? `${esc(I.name)} · ` : ""}${esc(b.place)}</span>
+    <span class="rs-ctline">${b.over ? `${phase} ` : ""}<span class="ct-heat">Heat <b>${HEAT_NAMES[stage]}</b><span class="heat"><i style="left:${Math.min(100, R.heat)}%"></i></span></span>${nGroups ? `<i class="rs-ctgr">👥 ${nGroups}</i>` : ""}</span></button>`;
+  if (F) {
+    const f = floorNo(b);
+    const fb = (v, label, tip, on) => `<button data-action="cb-view" data-v="${v}" ${on ? "" : "disabled"} aria-label="${esc(tip)}" data-tip="${esc(tip)}">${label}</button>`;
+    row += `<span class="ct-floor rs-ctfloor" data-tip="${esc(`${floorLabel(b, f)}: the floor shown.`)}"><b>F${f + 1}</b>${fb("fup", "▲", f < F.length - 1 ? `Show the floor above: ${floorLabel(b, f + 1).toLowerCase()}.` : "This is the top floor.", f < F.length - 1)}${fb("fdown", "▼", f > 0 ? `Show the floor below: ${floorLabel(b, f - 1).toLowerCase()}.` : "This is the ground floor.", f > 0)}</span>`;
+  }
+  row += `<button class="rs-ctlog${LOGWIN.open ? " active" : ""}" data-action="cb-log" data-v="${LOGWIN.open ? "close" : "show"}" aria-label="Log" aria-expanded="${LOGWIN.open}" data-tip="The log: what happened, turn by turn">📜${fresh && !LOGWIN.open ? `<b class="rs-badge">${fresh > 99 ? "99+" : fresh}</b>` : ""}</button>`;
+  row += `<button class="rs-ctmore${RAIDUI.view ? " active" : ""}" data-rs="view" aria-label="Menu and view" aria-expanded="${RAIDUI.view}" aria-controls="rs-ctview" data-tip="The Menu and the view: turn, zoom, center, Roofs, Cones">⋯</button>`;
+  let html = `<div class="ct-mid rs-ct">${row}</div>`;
+  if (RAIDUI.info) html += `<div class="rs-ctdrop" id="rs-ctinfo"><div class="ct-box"><span class="ct-sub">${time}</span>${phase}</div>${supply}${groups}</div>`;
+  if (RAIDUI.view) html += `<div class="rs-ctdrop rs-ctview" id="rs-ctview"><div class="ct-box"><button class="cbmenu" data-action="set-open" data-tip="Menu: save the battle as it stands, load, options">⚙ Menu</button>${viewBar(b, { floor: false })}</div></div>`;
+  return html;
 }
 
 // The cards over the map (#cbcards), in the middle under the strip: the dialogue before you go in (unless put aside),
@@ -2270,6 +2304,7 @@ export function renderRaidCards(state) {
   sync(b);
   autoSelect(b);
   const u = selUnit(b);
+  if (raidCompact()) return raidCardsCompact(state, b, u);
   let html = "";
   if (b.over) return `<div class="cbcard">${raidResultCard(state, b)}</div>`;
   if (planOpen(b) && planUI.map) html += `<div class="cbcard">${planAsideHtml(state, b)}</div>`; // ui/raidplan.js: the window put aside to look at the site (the window itself: ui.js pickModal)
@@ -2282,6 +2317,37 @@ export function renderRaidCards(state) {
   }
   // The hover details, written straight into the box as the mouse moves (combatMouse): hidden while nothing is hovered.
   if (!planOpen(b) || planUI.map) html += `<div id="cbprev" class="cbprev${cui.hover ? "" : " empty"}">${previewHtml(b, state)}</div>`;
+  return html;
+}
+// The cards on a phone or a tablet held upright (ui/responsive.js raidCompact): one sheet, from the bottom of the map
+// (upright) or its right edge (a phone on its side), with a handle that folds it to one line naming what is in it,
+// so the map can be looked at with a choice still open. A card that was not there before opens it again. The
+// warning toast and the details of what a finger is on (#cbprev, the tap's preview) stay outside it, always shown.
+function raidCardsCompact(state, b, u) {
+  const cards = []; // [title, html, its own .cbcard already]
+  if (b.over) {
+    const r = b.result;
+    cards.push([r.raid && r.raid.calledOff ? "Called off" : r.outcome === "extracted" ? "Got out" : "Nobody made it out", raidResultCard(state, b)]);
+  } else {
+    if (planOpen(b) && planUI.map) cards.push(["Looking at the site", planAsideHtml(state, b)]);
+    if (b.raid.choose) cards.push(["Where do you go in?", chooseHtml(b)]);
+    if (kitWarnDue(state, b)) cards.push(["Before you go in", kitWarnHtml(state, b)]);
+    const ally = allyCard(state, b);
+    if (ally) cards.push(["Ally orders", ally, true]); // its own card already (.cbcard.cbally)
+    if (u && alive(u) && floorsOf(b) && u.f != null && u.f !== floorNo(b)) cards.push([`${u.name.split(" ")[0]} is on another floor`, `<div class="small muted">Showing ${floorLabel(b, floorNo(b)).toLowerCase()}; ${esc(u.name.split(" ")[0])} is on ${floorLabel(b, u.f).toLowerCase()}. <button class="mini" data-action="cb-view" data-v="fgo" data-tip="Back to the selected unit's floor.">Go to ${esc(u.name.split(" ")[0])}</button></div>`]);
+  }
+  const key = cards.map((c) => c[0]).join("|");
+  if (key !== RAIDUI.cardsKey) { if (cards.some((c) => !RAIDUI.cardsKey.split("|").includes(c[0]))) RAIDUI.cardsMin = false; RAIDUI.cardsKey = key; }
+  const min = RAIDUI.cardsMin;
+  let html = "";
+  if (cards.length) {
+    const label = `${esc(cards[0][0])}${cards.length > 1 ? ` <span class="muted">+${cards.length - 1}</span>` : ""}`;
+    html += `<div class="rs-sheet${min ? " min" : ""}${b.over ? " rs-over" : ""}"><button class="rs-sheeth" data-rs="sheet" aria-expanded="${!min}" data-tip="${min ? "Open the cards" : "Fold the cards to look at the map"}"><span class="rs-grab" aria-hidden="true"></span><span class="rs-sheett">${label}</span><span class="rs-sheetc" aria-hidden="true">${min ? "▴" : "▾"}</span></button>`;
+    if (!min) html += `<div class="rs-sheetb">${cards.map((c) => (c[2] ? c[1] : `<div class="cbcard">${c[1]}</div>`)).join("")}</div>`;
+    html += `</div>`;
+  }
+  if (cui.msg && !b.over) html += `<div class="cbcard ct-toast small warn">${esc(cui.msg)}</div>`;
+  if (!b.over && (!planOpen(b) || planUI.map)) html += `<div id="cbprev" class="cbprev${cui.hover ? "" : " empty"}">${previewHtml(b, state)}</div>`;
   return html;
 }
 
