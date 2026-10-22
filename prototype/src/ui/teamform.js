@@ -36,6 +36,7 @@ import { supRoom, suppliesHeld, SUP_PLACES, PLACE_WORDS, itemKeyOf } from "../si
 import { isRoundKey } from "../sim/rounds.js";
 import { formTeam, formPreview, editBase, editProblem, addMember, removeMember, setVehicles, toggleVehicle, setSupply, teamHas, gearSnapshot, gearChanged, restoreGear, loadoutCount } from "../sim/teamform.js";
 import { doll, storageBox, selBar, tile, INV_ACTIONS, invDrop } from "./inventory.js";
+import { touchUI } from "./responsive.js"; // a phone or tablet: a second tap on the picked item drops the pick
 import { supplyIcon } from "./stackmove.js"; // a supply's own drawing (ui/itemart.js)
 import { fleetPicker, toggleFleetIds } from "./fleetpick.js"; // the vehicle picker the planners share
 import { loadWarnings, paceLine, carLine } from "./loadview.js";
@@ -43,6 +44,7 @@ import { statusIcons } from "./status.js";
 import { sickRestWhy } from "../sim/sickrest.js"; // the sick rest at the base (the Fit filter, a warning when picked)
 import { survivorURL, spriteImg } from "./sprites.js";
 import { shortName } from "./names.js";
+import { devText, padHtml } from "./hints.js"; // the help line in the words of the device in use (a finger, a controller)
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -279,7 +281,7 @@ function gearTab(state, ui, F, b, p, crew) {
   const cargo = p ? `<div style="margin-top:0.6rem">${storageBox(state, ui, `party:${p.id}`, s)}</div>` : "";
   const html = `${who}${quick}<div class="invcols"><div class="invcol">${doll(state, ui, s, `s:${s.id}`, spriteImg(survivorURL(s, state.seed), 6), { user: s })}</div><div class="invcol">${armory}${cargo}</div></div>
     ${selBar(state, ui, placeOfLoc(state, parseLoc(ui.invSel || `s:${s.id}:weapon`)) || place)}
-    <div class="small muted" style="margin-top:0.4rem">Click an item, then where it goes (a slot, pocket, pouch or pack cell, or the armory${p ? " or the cargo" : ""}), or drag it. Click it twice: off ${esc(shortName(s))} into ${p ? "the cargo" : "the armory"}, or from the armory onto ${esc(shortName(s))}. ${p ? "Between the team and the armory the team's carry limit counts." : "They are still at the base: what you change here is changed now."}</div>`;
+    <div class="small muted" style="margin-top:0.4rem">${padHtml(devText(`Click an item, then where it goes (a slot, pocket, pouch or pack cell, or the armory${p ? " or the cargo" : ""}), or drag it. Click it twice: off ${esc(shortName(s))} into ${p ? "the cargo" : "the armory"}, or from the armory onto ${esc(shortName(s))}. ${p ? "Between the team and the armory the team's carry limit counts." : "They are still at the base: what you change here is changed now."}`))}</div>`;
   return html.replace(/data-action="inv-click"/g, 'data-action="tf-click"');
 }
 
@@ -459,7 +461,7 @@ export const TEAMFORM_ACTIONS = {
       const m = crossMove(state, ui, sel, (L.o === "armory" || L.o === "cargo") ? `${L.o}:${L.id}:list` : d.loc);
       if (m != null) { ui.invMsg = m; ui.invSel = null; return; }
     }
-    if (sel && sel === d.loc) {
+    if (sel && sel === d.loc && !touchUI()) { // a finger's second tap drops the pick (inventory.js inv-click)
       // Twice on an armory item while editing: onto the person shown.
       const p = partyOf(state, formOf(ui));
       if (p && L.o === "armory" && p.members.includes(ui.inv.sid)) { ui.invMsg = loadFromBase(state, p, { items: [sel] }, ui.inv.sid).text; ui.invSel = null; return; }

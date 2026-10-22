@@ -21,6 +21,7 @@ import { nearRect, active } from "../sim/combat.js"; // who of yours stands next
 import { HAUL } from "../sim/raidloot.js";
 import { badge, hint, costChips, chip } from "./uikit.js";
 import { fold } from "./panelfold.js"; // the Build list's groups fold, and remember it (the toggle listener)
+import { devText, padHtml } from "./hints.js"; // the map's line in the words of the device in use (a finger, a controller)
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -99,7 +100,7 @@ export function layoutPanel(state, b, cui, preview = "") {
   html += tunnelList(state, base);
   html += preview; // what is under the mouse (ui/combat.js previewHtml: the pick's fit, a placed thing, a store)
   const msg = cui.msg || L.msg; // the last order's refusal first (ui/combat.js act), else what the map said it did
-  if (msg) html += `<div class="small ${cui.msg ? "warn" : "good"} cbmsg">${esc(msg)}</div>`;
+  if (msg) html += `<div class="small ${cui.msg ? "warn" : "good"} cbmsg">${padHtml(esc(devText(msg, "battle")))}</div>`;
   html += buildHtml(state, base, L);
   const groups = new Map();
   for (const e of lay) { const k = groupOf(e.it.kind); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(e); }

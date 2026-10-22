@@ -40,6 +40,8 @@ import { watchlistPin } from "./watchlist.js"; // 📌 pin the team to the Watch
 import { totalRounds, sumRecs } from "../sim/rounds.js"; // rounds by calibre
 import { roundsLine } from "../sim/ammo.js";
 import { teamInvBar } from "./teaminv.js"; // 🎒 Team inventory; Drop off / Load at a base
+import { dragAttr } from "./inventory.js"; // a queue line is draggable="true" only where there is a mouse
+import { touchUI } from "./responsive.js"; // a finger: a tap on another line puts the picked one there
 import { editTeamButton } from "./teamform.js"; // Edit team… while it waits on one of your bases
 import { teamCarryCard } from "./carry.js"; // who carries what (pockets, packs, arms, vehicle), the ground here
 import { panelHead, panelTab } from "./layout.js";
@@ -332,12 +334,18 @@ function queueBlock(state, p, live, ui) {
     now = `<li class="now"><div class="qrow"><span class="qlabel"${tip("The order under way. ✕ cancels it: the team stops where it is and goes on with the queue from there, or waits for orders.")}><b>Now:</b> ${esc(st.label)} <span class="muted">${st.left != null && st.left > 0 ? leftText(state, st.left) : st.left == null && working ? "until you stop it" : ""}</span></span>` +
       `<span class="qbtns"><button class="mini" data-action="${moving ? "xp-cancelmove" : "xp-stop"}" data-id="${p.id}"${tip(hint)}>✕</button></span></div></li>`;
   }
+  // A finger (ui/responsive.js touchUI): with a line picked, a tap on another line puts it in that place, as a drop
+  // there does (xp-qdrop); those lines are outlined (responsive.css). A tap on the picked line drops the pick. A mouse
+  // clicks another line to pick that one instead, as before.
+  const finger = sel != null && touchUI();
   const rows = q.map((x, i) => {
     const label = `${esc(x.label)} <span class="muted">${x.hours != null ? `~${hrs(x.hours)}` : "time varies"}</span>`;
     if (!live) return `<li${i === 0 ? ' value="1"' : ""}><div class="qrow"><span class="qlabel">${label}</span></div></li>`;
-    return `<li class="${sel === i ? "sel" : ""}"${i === 0 ? ' value="1"' : ""} draggable="true" data-qdrag="${i}" data-qdrop="${i}" data-id="${p.id}">
+    const to = finger && sel !== i;
+    const pick = to ? `data-action="xp-qdrop" data-id="${p.id}" data-from="${sel}" data-to="${i}"${tip(`Put the picked order here: number ${i + 1} in the queue`)}` : `data-action="xp-qsel" data-id="${p.id}" data-i="${i}"${tip(sel === i ? "Selected: ↑ ↓ move it in the queue, Delete removes it, Esc drops the selection. Click to unselect." : "Click to select, then ↑ ↓ move it in the queue (or drag the line).")}`;
+    return `<li class="${sel === i ? "sel" : to ? "tgt" : ""}"${i === 0 ? ' value="1"' : ""}${dragAttr(i, "data-qdrag")} data-qdrop="${i}" data-id="${p.id}">
       <div class="qrow"><span class="qgrip"${tip("Drag onto another line to reorder the queue")}>⋮⋮</span>
-      <span class="qlabel" data-action="xp-qsel" data-id="${p.id}" data-i="${i}"${tip(sel === i ? "Selected: ↑ ↓ move it in the queue, Delete removes it, Esc drops the selection. Click to unselect." : "Click to select, then ↑ ↓ move it in the queue (or drag the line).")}>${label}</span>
+      <span class="qlabel" ${pick}>${label}</span>
       <span class="qbtns"><button class="mini" data-action="xp-qmove" data-id="${p.id}" data-i="${i}" data-dir="-1" ${i === 0 ? "disabled" : ""}${tip("Earlier in the queue")}>▲</button>` +
       `<button class="mini" data-action="xp-qmove" data-id="${p.id}" data-i="${i}" data-dir="1" ${i === q.length - 1 ? "disabled" : ""}${tip("Later in the queue")}>▼</button>` +
       `<button class="mini" data-action="xp-unqueue" data-id="${p.id}" data-i="${i}"${tip("Remove from the queue")}>✕</button></span></div></li>`;

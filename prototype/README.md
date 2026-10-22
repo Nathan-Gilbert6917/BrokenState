@@ -2,6 +2,18 @@
 
 A browser prototype of the design doc, built to answer one question: *is running a hub, sending teams across a dangerous state and dealing with other groups fun?* Scavenging and hub building are abstracted; fights play out as XCOM-style tactical battles.
 
+## Play in a browser / on your phone
+
+**https://nathan-gilbert6917.github.io/BrokenState/**: the game as it is on `dev`, published by `.github/workflows/pages.yml` on every push to `dev` (or by hand: Actions → Pages → Run workflow). It is `prototype/` as is, minus `tools/`, `design/` and the dev server, plus `build.json` (the commit, for the error screen's report). Saves and options stay in that browser's storage, as on localhost; *Export* a save to move it to another device. One-time setting on GitHub before the first deploy: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
+
+Add it to the home screen to play it as an app (its own icon and window, no browser bar), which then also opens offline once it has been loaded once:
+
+- **iPhone / iPad (Safari):** open the link, Share (the square with the arrow) → *Add to Home Screen* → Add. It has to be Safari on older iOS; from iOS 16.4 Chrome and Edge offer the same in their Share menu.
+- **Android (Chrome):** open the link, ⋮ → *Add to Home screen* (or *Install app*) → Install. Samsung Internet: ☰ → *Add page to* → *Home screen*.
+- **Desktop Chrome / Edge:** the install icon at the right of the address bar, if you want a window of its own; the desktop app (below) remains the way to play on a PC.
+
+How it works: `manifest.webmanifest` (name, icons, dark colours, standalone so the phone's status bar stays visible, any orientation) and the Apple tags in `index.html`; the icons in `icons/` are drawn by `desktop/scripts/make-icon.js` from the desktop icon's art (run it again after changing the art). `sw.js` is a network-first service worker, registered by `src/pwa.js` on https and `http://localhost` only, never in the desktop app: online every file comes from the server as before (a reload shows the latest deploy, or on localhost the files on disk), and each answer is copied into the cache, which is used only when the network fails or takes over 4 s. `build.json` is never cached. Every URL the game loads is relative, as the site lives under `/BrokenState/`; keep it that way (no `/src/...`).
+
 ## Run it
 
 ```bash

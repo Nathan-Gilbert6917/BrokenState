@@ -41,6 +41,8 @@ import { ask } from "./confirm.js"; // attacking a caravan asks first (one confi
 import { supplyAmt } from "../sim/rounds.js"; // "ammo": every round, any calibre
 import { stackLabel, isRoundItem, isBulk, countOf } from "../sim/itemstack.js"; // stacks in the trade lists (2026-10-10)
 import { meetPlaces, meetHours, meetProblem, meetCaravans, meetCaravanForm, caravanWhere } from "../sim/trademeet.js"; // where to meet: a base, halfway, a tile you pick
+import { pickCancel } from "./responsive.js"; // ✕ Cancel on the meeting-tile banner on a phone or tablet (no Esc key)
+import { pickWord, escCancels } from "./hints.js"; // the banner's "click" and "Esc" by the device in use
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -290,7 +292,7 @@ function meetPicker(state, ui, f, tb, meetAt) {
 export function meetPickBanner(state, ui) {
   if (!ui.meetPick) return "";
   const f = factionById(state, ui.meetPick.factionId);
-  return `<div class="movemode" data-tip="The clock waits until you pick a tile.">🤝 A tile to meet ${esc(f ? f.name : "them")} at: <b>click a tile</b> · <b>Esc</b> cancels` +
+  return `<div class="movemode" data-tip="The clock waits until you pick a tile.">🤝 A tile to meet ${esc(f ? f.name : "them")} at: <b>${pickWord()} a tile</b>${escCancels()}` + pickCancel("meet") +
     (ui.meetMsg ? `<br><span class="danger">${esc(ui.meetMsg)}</span>` : "") + `</div>`;
 }
 export function meetPickClick(state, ui, tile) {

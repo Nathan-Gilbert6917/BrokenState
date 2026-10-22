@@ -23,6 +23,7 @@ import {
   appearanceURL, survivorURL, zombieURL, spriteImg, ZOMBIE_LOOK_OPTIONS, ZOMBIE_VARIANTS, zombieLook, setZombieLook, resetZombieLook,
 } from "./sprites.js";
 import { worldButton } from "./worldcfg.js"; // World…: the run's dials (sim/worldcfg.js), a preset or Custom
+import { keyHint } from "./hints.js"; // "then press Space" by the device in use
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -257,7 +258,7 @@ export function newRunScreen(state, ui) {
     : `Six years after the outbreak. Your survivors hold a town in the State of Calder: the town hall (four beds, a well, a cellar, no wall yet) and nothing built yet. What to put up first, with a woodpile of ${startWood(state).toLocaleString("en-US")} wood, ${HUB_START.scrap} scrap and ${HUB_START.parts} parts, is yours to choose: beds, a crafting bench, fields, walls. ${state.factions.length} other groups are out there, starting bare as well, along with the hordes.`;
   return `<div class="box wide">
     <div class="spread"><h1>Broken State — New run</h1><button data-action="nr-map"${tip("Put this screen aside and look at the world map: where you start, the groups, the roads (the banner's Back to setup, or Esc, brings it back)")}>🗺 View map</button></div>
-    <div class="text small">${intro} Customize your starting colonists (name, skills, look) and choose your leader. The game starts paused: give your first orders, then press Space.</div>
+    <div class="text small">${intro} Customize your starting colonists (name, skills, look) and choose your leader. The game starts paused: give your first orders, then ${keyHint({ key: "press Space", touch: "tap ▶ Run", pad: "press ☰" })}.</div>
     <div class="row" style="margin-bottom:0.8rem">
       ${modeSelect(state)}
       ${startPeopleSelect(state, ui)}
