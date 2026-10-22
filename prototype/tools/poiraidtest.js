@@ -405,6 +405,7 @@ section("On screen: the right-click actions and the dialogue");
   if (m) {
     const q = teamAt(st, m.id, 2);
     const mc = poiPickCard(st, q);
+    mc.poiPick.sel = 0; // the site picked on the tile map (ui/poipick.js): its buildings' buttons show
     let mh = "", merr = "";
     try { mh = PICK.poiPickModal(st, mc); } catch (e) { merr = e.stack.split("\n").slice(0, 2).join(" | "); }
     const sub = mc.choices.map((c, i) => [c, i]).filter(([c]) => c.poi === 0 && c.building);

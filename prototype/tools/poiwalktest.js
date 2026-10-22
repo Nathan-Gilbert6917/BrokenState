@@ -13,7 +13,7 @@ import { launchExpedition, planPath, partyTile, orderMove } from "../src/sim/par
 import { startOrder, tasksDue, describeOrder, taskHour } from "../src/sim/orders.js";
 import { poisOf, knownPois } from "../src/sim/pois.js";
 import { poiPickCard, poiRows } from "../src/sim/poiraid.js";
-import { WALK, poiSpot, poiWalkMins, walkFrom, walkPos, walkText } from "../src/sim/poiwalk.js";
+import { WALK, poiSpot, poiWalkMins, walkFrom, walkPos, walkText, walkMap, edgeSpot } from "../src/sim/poiwalk.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
 
 const seed = Number(process.argv[2] || 42);
@@ -87,10 +87,12 @@ section("The walk, then the raid; raid again from there");
   check(p.phase === "task" && w && w.type === "poiwalk" && w.mins === mins && Math.abs(w.hours - mins / 60) < 1e-9 && !st.engagement, `picking a place starts the walk (${mins} min), no search yet`);
   check(/on foot/.test(text || "") && /minutes away/.test(text || ""), `the log line: "${text}"`);
   check(/Walk to .* \(\d+ min\), then raid it/.test(describeOrder(st, w)), `the panels call it "${describeOrder(st, w)}"`);
-  // The map: from the middle to the place, by the minutes gone.
+  // The map: from the middle to the place along the route over the weighted map, by the minutes gone.
   const a = walkPos(st, p, 0), b = walkPos(st, p, w.hours * 0.5), c = walkPos(st, p, w.hours);
-  const to = poiSpot(st, t, first);
-  check(a.walking && Math.hypot(a.x, a.y) < 1e-9 && Math.abs(c.x - to[0]) < 1e-9 && Math.abs(c.y - to[1]) < 1e-9 && Math.abs(b.x - to[0] / 2) < 1e-9, "the map draws it gliding from its spot to the place's");
+  const to = poiSpot(st, t, first), near = (q, [x, y]) => Math.hypot(q.x - x, q.y - y) < 2e-3;
+  check(a.walking && near(a, [0, 0]) && near(c, to), "the map draws it walking from its spot to the place's");
+  check(Array.isArray(w.route) && w.route.length >= 2 && near({ x: w.route[0][0], y: w.route[0][1] }, [0, 0]) && near({ x: w.route[w.route.length - 1][0], y: w.route[w.route.length - 1][1] }, to), `along the route over the weighted map (${w.route.length} points)`);
+  check(w.route.some(([x, y]) => near(b, [x, y])) || w.route.some((q, k) => k > 0 && Math.abs((b.x - w.route[k - 1][0]) * (q[1] - w.route[k - 1][1]) - (b.y - w.route[k - 1][1]) * (q[0] - w.route[k - 1][0])) < 1e-6 && b.x >= Math.min(q[0], w.route[k - 1][0]) - 1e-9 && b.x <= Math.max(q[0], w.route[k - 1][0]) + 1e-9), "half way it is on the route");
   check(a.mins === mins && c.mins >= 1 && b.mins <= Math.ceil(mins / 2) + 1, `the pill counts the minutes down (${a.mins} → ${b.mins} → ${c.mins})`);
   tasksDue(st, w.hours * 0.5);
   check(p.task === w && !st.engagement, "half way there: still walking");
@@ -127,6 +129,33 @@ section("The walk, then the raid; raid again from there");
   check(partyTile(p) !== t.id && !p.atPoi, "stepping off the tile forgets the place it stood at");
 }
 
+section("Where the team came onto the tile from");
+{
+  const st = W();
+  const t = bareAllKnown(st)[0];
+  const p = teamAt(st, t.id);
+  const nb = st.grid.neighbors(t.id).find((id) => st.tiles[id].terrain !== "water" && planPath(st, id, t.id, false));
+  // Walk it in from that neighbour (the real move: parties.js stepAlong notes the edge).
+  p.path = [nb]; p.idx = 0; p.dest = nb; p.phase = "waiting";
+  orderMove(st, p, t.id);
+  for (let k = 0; k < 8 && partyTile(p) !== t.id; k++) { tickHour(st); st.cards.length = 0; }
+  check(partyTile(p) === t.id && p.entered && p.entered.tile === t.id && p.entered.from === nb, "stepping onto the tile notes the tile it came from");
+  const f = walkFrom(st, p);
+  const [ax, ay] = st.grid.toPixel(t.id, 1), [bx, by] = st.grid.toPixel(nb, 1), d = Math.hypot(bx - ax, by - ay);
+  check(f.edge === nb && f.poi === null && Math.abs(Math.hypot(...f.spot) - WALK.EDGE) < 1e-9 && Math.abs(f.spot[0] - ((bx - ax) / d) * WALK.EDGE) < 1e-9, "it stands on that edge of the hex");
+  const known = knownPois(st, t, p), fromEdge = known.map((i) => poiWalkMins(st, p, i)), fromMid = known.map((i) => poiWalkMins(st, { ...p, entered: undefined }, i));
+  check(fromEdge.every((m) => m >= WALK.MIN && m <= WALK.MAX) && fromEdge.some((m, k) => m !== fromMid[k]), `the minutes are from the edge (${fromEdge.join(", ")}; from the middle ${fromMid.join(", ")})`);
+  const wm = walkMap(st, p, known);
+  check(wm.from.edge === nb && wm.places.length === known.length && wm.places.every((x, k) => x.mins === fromEdge[k] && x.route.length >= 2 && Math.hypot(x.route[0][0] - f.spot[0], x.route[0][1] - f.spot[1]) < 1e-9), "the tile map's places carry the same minutes and a route from the edge");
+  // Another edge, other minutes (for some place).
+  const nb2 = st.grid.neighbors(t.id).find((id) => id !== nb && Math.hypot(...edgeSpot(st, t.id, id).map((v, k) => v - f.spot[k])) > 1);
+  const other = known.map((i) => poiWalkMins(st, { ...p, entered: { tile: t.id, from: nb2 } }, i));
+  check(other.some((m, k) => m !== fromEdge[k]), `from the opposite side the minutes differ (${other.join(", ")})`);
+  // After a raid the place it went into counts, not the edge.
+  p.atPoi = { tile: t.id, i: known[0] };
+  check(walkFrom(st, p).poi === known[0] && poiWalkMins(st, p, known[0]) === 0, "once at a place, the minutes are from there");
+}
+
 section("Not for the headless paths; a save keeps it");
 {
   const st = W();
@@ -148,6 +177,20 @@ section("Not for the headless paths; a save keeps it");
   q.task = null; q.phase = "waiting";
   const html = PICK.poiPickModal(st, poiPickCard(st, q));
   check(/🚶 \d+ min/.test(html) && /📍 here/.test(html) && !/undefined|NaN/.test(html), "the dialogue's screen shows the minutes, and \"here\"");
+  const card = poiPickCard(st, q);
+  const h0 = PICK.poiPickModal(st, card);
+  const n = knownPois(st, t, q).length;
+  check(/<svg class="pm-svg"/.test(h0) && (h0.match(/class="pm-poi[^"]*" data-action="poisel"/g) || []).length === n, `the tile map: a place to click for each known one (${n})`);
+  check((h0.match(/class="pm-route/g) || []).length >= n - 1 && /class="pm-you"/.test(h0), "the routes and where the team stands");
+  check(/◂ Places \(\d+\)/.test(h0) && !/pm-rows/.test(h0) && /data-action="poilist"/.test(h0), "the list of places is folded away, with a button to open it");
+  check(!/data-action="choice" data-i="\d+" class="pm-go"/.test(h0) && /Pick a place on the map/.test(h0), "nothing picked yet: no walk button, a hint");
+  card.poiPick.sel = knownPois(st, t, q)[1];
+  card.poiPick.list = true;
+  const h1 = PICK.poiPickModal(st, card);
+  const ci = card.choices.findIndex((c) => c.poi === card.poiPick.sel && c.building == null);
+  check(new RegExp(`data-action="choice" data-i="${ci}" class="pm-go"`).test(h1) && /Walk there \(\d+ min\) and raid it/.test(h1), "a place picked: its button walks there and raids it");
+  check(/pm-rows/.test(h1) && (h1.match(/class="poirow/g) || []).length === n && /▸ Places/.test(h1), "the list opened: a row a place");
+  check(new RegExp(`class="pm-poi on" data-action="poisel" data-poi="${card.poiPick.sel}"`).test(h1) && /class="pm-route on"/.test(h1), "the picked place and its route stand out on the map");
 }
 
 console.log(`\n${passes} passed, ${fails} failed.`);

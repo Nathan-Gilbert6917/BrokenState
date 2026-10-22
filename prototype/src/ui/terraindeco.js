@@ -531,4 +531,16 @@ export function drawDecor(ctx, D, list, n, key, clr, at, snow, alpha, look = SEA
   ctx.globalAlpha = a0;
   return drawn;
 }
+// One decal on its own (ui/poimap.js: the POI dialogue's tile map): sprite k (mod the set's count) of a set
+// (DECO_SETS), its feet at (x, y), `scale` device px a sprite px, from the 1× atlas in full light; look: the
+// season's (SEASON_LOOK), snow: its snowy version. Returns [w, h] drawn, or null without an atlas.
+export function drawDecal(ctx, set, k, x, y, scale, { snow = false, look = SEASON_LOOK.spring } = {}) {
+  const S = SET[set], at = decoAtlas(1);
+  if (!S || !at || !at.cv) return null;
+  const cell = look[S.at + (((k % S.n) + S.n) % S.n)], sp = SPR[cell], o = (cell * 2 + (snow ? 1 : 0)) * 4, w = sp.w * scale, h = sp.h * scale;
+  ctx.drawImage(at.cv, at.src[o], at.src[o + 1], at.src[o + 2], at.src[o + 3], Math.round(x - w / 2), Math.round(y - h), w, h);
+  return [w, h];
+}
+/** A decal's size in sprite px: [w, h]. @param {string} set @param {number} [k] */
+export const decalSize = (set, k = 0) => { const S = SET[set]; if (!S) return [0, 0]; const sp = SPR[S.at + (((k % S.n) + S.n) % S.n)]; return [sp.w, sp.h]; };
 onForgetPictures(() => { atlases.clear(); waters.clear(); }); // ui/pictures.js: drawn again after a lost GPU context

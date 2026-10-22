@@ -6,8 +6,16 @@
 // buttons are the card's own choices (data-action="choice"), so main.js handles them as any card's. A site with
 // several buildings (a farm, a military base) is one row with a button per building and the street under it. Each row
 // says how far it is on foot from where the team stands (sim/poiwalk.js: 5–20 minutes; "you are here").
+//
+// The screen (the user's request 2026-10-22): the tile drawn large (ui/poimap.js) with the places where they stand,
+// the team's dot on the edge it came in by and the way on foot to each with its minutes; a place is picked on the
+// map (data-action "poisel", kept on the card: card.poiPick.sel) or in the list of places, a side panel folded away
+// by default (its button, data-action "poilist": card.poiPick.list). The picked place's details sit beside the map
+// with the button to walk there and raid it (a site's: one per building and the street).
 import { partyMembers, tileLabel } from "../sim/parties.js";
-import { poiRows } from "../sim/poiraid.js";
+import { poiRows, poiRowText } from "../sim/poiraid.js";
+import { walkMap } from "../sim/poiwalk.js";
+import { tileMapBg, poiMapSvg, PM_W, PM_H } from "./poimap.js";
 import { morePoisHidden, tileHeatEstimate } from "../sim/pois.js";
 import { LOCATIONS } from "../sim/data.js";
 
@@ -30,40 +38,61 @@ export function heatLine(state, tile) {
   return `<div class="text small"><span${tip("Tile heat: how stirred up this tile is by raids on its places (going in, coming out, the noise and shots; others' raids too). It fades about 10% a day. A hot tile draws more of the dead, and when very hot a horde or a wandering band may turn up. As last seen: new heat since is not known.")}>Tile heat: <span style="color:${THREAT_COLOR[h.band]}">${esc(h.word)}</span></span> <span class="muted">(seen ${h.age < 1 ? "today" : `${Math.floor(h.age)}d ago`}${h.stale ? ", stale" : ""})</span></div>`;
 }
 
-// The card's screen: a row per known place, each a button of the card's choices (the crawl and "Not now" after them).
+// The card's screen: the tile map, the picked place's details and its buttons, the list of places folded at the side.
 export function poiPickModal(state, card) {
   const p = state.parties.find((x) => x.id === card.partyId);
-  const tile = card.poiPick.tile;
+  const tile = card.poiPick.tile, t = state.tiles[tile];
   const rows = p ? poiRows(state, p, tile) : [];
   const byPoi = new Map(card.choices.map((c, i) => [c.poi, i]).filter(([poi, i]) => poi != null && card.choices[i].building == null));
   const byBuilding = (poi) => card.choices.map((c, i) => ({ c, i })).filter(({ c }) => c.poi === poi && c.building != null);
   const more = p ? morePoisHidden(state, tile, p) : false;
   const who = p ? partyMembers(state, p).map((s) => s.name.split(" ")[0]).join(", ") : "";
-  const rowHtml = (r) => {
-    const def = LOCATIONS[r.kind];
-    const likely = `${def ? def.name : r.kind}: likely ${Object.keys((def && def.loot) || {}).slice(0, 4).join(", ") || "little"}.`;
-    const walk = `<span class="${r.mins ? "" : "muted"}"${tip(r.mins ? "Minutes on foot from where the team stands on the tile (the place it last went into, else the middle of the tile), over the ground between: brush, slopes, rubble, a road. Picking it starts the walk when the clock runs, then the raid." : "The team stands at this place: it goes straight in.")}>${r.mins ? `🚶 ${r.mins} min` : "📍 here"}</span>`;
-    const body = `<div class="spread"><b>${esc(r.name)}</b>${walk}<span style="color:${BAND_COLOR[r.band]}"${tip("What is left against what the place held untouched: rich (60%+), some (30%+), little (10%+), picked clean. Each place has its own loot, and nothing grows back.")}>${esc(r.bandName)}</span></div>
-      <div class="small"><span class="muted">${esc(r.visits)}</span> · ${threatHtml(r.threat)}${r.camp ? `<br><span${tip("A campsite: abandoned (a few of the dead about, the best loot left), overrun (a pack of the dead among the tents) or an active raider camp (a band round a lit fire; at night some asleep in the tents). As your people last saw it: a survey or a visit looks again. Tents can be taken down and carried off.")}>${esc(r.camp)}</span>` : ""}${r.cont ? `<br><span class="muted">${esc(r.cont)}</span>` : ""}${r.raiding ? `<br><span class="danger">Another group is raiding it right now.</span>` : ""}</div>`;
+  const sel = rows.some((r) => r.i === card.poiPick.sel) ? card.poiPick.sel : null;
+  const open = !!card.poiPick.list;
+  const likely = (r) => { const def = LOCATIONS[r.kind]; return `${def ? def.name : r.kind}: likely ${Object.keys((def && def.loot) || {}).slice(0, 4).join(", ") || "little"}.`; };
+  const walk = (r) => `<span class="${r.mins ? "" : "muted"}"${tip(r.mins ? "Minutes on foot from where the team stands on the tile (the place it last went into, else the edge it came onto the tile by), over the ground between: brush, slopes, rubble, a road. Picking it starts the walk when the clock runs, then the raid." : "The team stands at this place: it goes straight in.")}>${r.mins ? `🚶 ${r.mins} min` : "📍 here"}</span>`;
+  // What is known of a place: its visits and threat, then the campsite, the containers, another group in it now.
+  const facts = (r) => `<span class="muted">${esc(r.visits)}</span> · ${threatHtml(r.threat)}${r.camp ? `<br><span${tip("A campsite: abandoned (a few of the dead about, the best loot left), overrun (a pack of the dead among the tents) or an active raider camp (a band round a lit fire; at night some asleep in the tents). As your people last saw it: a survey or a visit looks again. Tents can be taken down and carried off.")}>${esc(r.camp)}</span>` : ""}${r.cont ? `<br><span class="muted">${esc(r.cont)}</span>` : ""}${r.raiding ? `<br><span class="danger">Another group is raiding it right now.</span>` : ""}`;
+  const bandHtml = (r) => `<span style="color:${BAND_COLOR[r.band]}"${tip("What is left against what the place held untouched: rich (60%+), some (30%+), little (10%+), picked clean. Each place has its own loot, and nothing grows back.")}>${esc(r.bandName)}</span>`;
+  // The map.
+  const wm = p ? walkMap(state, p, rows.map((r) => r.i), tile) : { from: { spot: [0, 0], poi: null, edge: null }, places: [] };
+  const bg = tileMapBg(state, t, [...wm.places.map((x) => x.spot), wm.from.spot]);
+  const tipOf = (i) => { const r = rows.find((x) => x.i === i); return r ? `${r.name}: ${poiRowText(r)}. ${likely(r)} Click to pick it.` : ""; };
+  const map = `<div class="pm-map" style="width:${PM_W}px;height:${PM_H}px${bg ? `;background-image:url(${bg})` : ""}">${poiMapSvg(state, t, wm, rows, sel, tipOf)}</div>`;
+  // The picked place: what is known of it and the way in.
+  const r = rows.find((x) => x.i === sel);
+  let detail;
+  if (!r) detail = `<div class="pm-hint muted">Pick a place on the map${rows.length > 1 ? " (or in the list of places)" : ""} to see what is known of it and send the team there. The dashed lines are the ways on foot from where your team stands, with their minutes.</div>`;
+  else {
     const subs = byBuilding(r.i);
-    if (!subs.length) return `<button data-action="choice" data-i="${byPoi.get(r.i)}" class="poirow" style="display:block;width:100%;text-align:left"${tip(likely)}>${body}</button>`;
-    // The site's buildings: the place's line once, a button per building (what it likely holds, its size) and the street.
-    const sub = ({ c, i }) => {
-      const o = (r.buildings || []).find((x) => x.id === c.building) || {};
-      const size = [o.size, o.rooms ? `${o.rooms} rooms` : "", o.map ? `map ${o.map}` : ""].filter(Boolean).join(", ");
-      return `<button data-action="choice" data-i="${i}" class="small" style="text-align:left"${tip(o.hint)}>${esc(o.id === "street" ? "The street" : o.name || c.building)}${size ? ` <span class="muted">${esc(size)}</span>` : ""}</button>`;
-    };
-    return `<div class="poirow"${tip(`${likely} Several buildings stand here: pick the one to go into, or the street around them.`)}>${body}
-      <div class="poibldg" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px">${subs.map(sub).join("")}</div>
-    </div>`;
-  };
+    const go = (i, label, hint) => `<button data-action="choice" data-i="${i}" class="pm-go"${tip(hint)}>${esc(label)}</button>`;
+    const verb = r.mins ? `Walk there (${r.mins} min) and raid it` : "Go in";
+    const btns = !subs.length ? (byPoi.has(r.i) ? go(byPoi.get(r.i), verb, `${likely(r)} ${r.mins ? "The team walks there when you run the clock, then the raid starts." : "The team is here: the raid starts at once."}`) : "")
+      : subs.map(({ c, i }) => {
+        const o = (r.buildings || []).find((x) => x.id === c.building) || {};
+        const size = [o.size, o.rooms ? `${o.rooms} rooms` : "", o.map ? `map ${o.map}` : ""].filter(Boolean).join(", ");
+        return `<button data-action="choice" data-i="${i}" class="small pm-go"${tip(o.hint)}>${esc(o.id === "street" ? "The street" : o.name || c.building)}${size ? ` <span class="muted">${esc(size)}</span>` : ""}</button>`;
+      }).join("");
+    detail = `<div class="pm-detail"><div class="spread"><b>${esc(r.name)}</b>${bandHtml(r)}</div>
+      <div class="small">${walk(r)}${r.desc ? ` · <span class="muted">${esc(r.desc)}</span>` : ""}</div>
+      <div class="small" style="margin-top:4px">${facts(r)}</div>
+      <div class="small muted" style="margin-top:4px">${esc(likely(r))}</div>
+      ${subs.length ? `<div class="small" style="margin-top:6px">Several buildings stand here: ${r.mins ? `walk there (${r.mins} min) and ` : ""}go into one, or the street around them.</div>` : ""}
+      <div class="pm-gos">${btns}</div></div>`;
+  }
+  // The list of places: folded away by default, a button to open it.
+  const rowHtml = (x) => `<button data-action="poisel" data-poi="${x.i}" class="poirow${x.i === sel ? " on" : ""}" style="display:block;width:100%;text-align:left"${tip(likely(x))}>
+      <div class="spread"><b>${esc(x.name)}</b>${walk(x)}${bandHtml(x)}</div><div class="small">${facts(x)}</div></button>`;
+  const list = open
+    ? `<aside class="pm-list open"><button data-action="poilist" class="pm-listbtn"${tip("Fold the list of places away")}>▸ Places (${rows.length})</button><div class="pm-rows">${rows.map(rowHtml).join("")}</div></aside>`
+    : `<aside class="pm-list"><button data-action="poilist" class="pm-listbtn pm-tab"${tip("Open the list of places: every place known here with its minutes, what is left, its visits and threat")}>◂ Places (${rows.length})</button></aside>`;
   const rest = card.choices.map((c, i) => ({ c, i })).filter(({ c }) => c.poi == null);
-  return `<div class="box">
+  return `<div class="box wide poipick">
     <h1>${esc(card.title)}</h1>
     <div class="where">${esc(tileLabel(state, tile))}${who ? ` · ${esc(who)}` : ""}</div>
     ${heatLine(state, tile)}
     <div class="text small">${rows.length === 1 ? "One place is known here" : `${rows.length} places are known here`}${more ? `, <span${tip("Something here may still be off your map: a Survey of the tile (8h) finds what hides, a Quick look (2h) has a chance at each. Never a count.")}>possibly more unknown</span>` : ""}. The team goes into one at a time, walking there first: pick a place, then run the clock.</div>
-    <div class="choices">${rows.map(rowHtml).join("")}
-      ${rest.map(({ c, i }) => `<button data-action="choice" data-i="${i}"${tip(c.hint)}>${esc(c.label)}${c.hint ? `<span class="hint">${esc(c.hint)}</span>` : ""}</button>`).join("")}</div>
+    <div class="pm-body">${map}<div class="pm-side">${detail}</div>${list}</div>
+    <div class="choices">${rest.map(({ c, i }) => `<button data-action="choice" data-i="${i}"${tip(c.hint)}>${esc(c.label)}${c.hint ? `<span class="hint">${esc(c.hint)}</span>` : ""}</button>`).join("")}</div>
   </div>`;
 }

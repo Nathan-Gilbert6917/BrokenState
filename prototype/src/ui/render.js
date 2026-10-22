@@ -2290,15 +2290,13 @@ function drawPlayerParty(state, p) {
         ctx.lineWidth = 1.6;
         ctx.setLineDash([3, 3]);
         ctx.beginPath();
-        ctx.moveTo(px, py);
-        ctx.lineTo(tx, ty);
+        wk.route.forEach(([rx, ry], k) => (k ? ctx.lineTo(cx + rx * HEX, cy + ry * HEX) : ctx.moveTo(cx + rx * HEX, cy + ry * HEX))); // the way over the tile's weighted map
         ctx.stroke();
         ctx.setLineDash([]);
         ctx.beginPath();
         ctx.ellipse(tx, ty + 2 * s, 4.5 * s, 2.4 * s, 0, 0, Math.PI * 2);
         ctx.stroke();
-        const fx = cx + wk.from[0] * HEX, fy = cy + wk.from[1] * HEX;
-        if (Math.hypot(tx - fx, ty - fy) > 0.5) { hd = headingTo(fx, fy, tx, ty); lastHeading.set(p, hd); }
+        if (Math.hypot(wk.dx, wk.dy) > 1e-6) { hd = headingTo(0, 0, wk.dx * HEX, wk.dy * HEX); lastHeading.set(p, hd); }
         glidingNow = true; // drawn again as the minutes go by
       }
     }

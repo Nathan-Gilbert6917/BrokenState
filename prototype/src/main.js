@@ -1227,6 +1227,9 @@ const actions = {
     if (text) ui.cardResult = { title: card.title, text };
   },
   cardok: () => { ui.cardResult = null; },
+  // The POI dialogue (ui/poipick.js): a place picked on its tile map or in its list; the list of places opened or folded.
+  poisel: (d) => { const c = state.cards[0]; if (c && c.poiPick) c.poiPick.sel = Number(d.poi); },
+  poilist: () => { const c = state.cards[0]; if (c && c.poiPick) c.poiPick.list = !c.poiPick.list; },
   // The card's "Retreat if it goes badly" buttons (breakoff.js): kept on the team for fights resolved by the numbers.
   "retreat-policy": (d) => { const card = state.cards[0]; const p = card && card.partyId != null ? partyById(card.partyId) : null; if (p) setTeamPolicy(state, p, d.v); },
   approach: (d) => { state.engagement.approach = d.v; },

@@ -1170,6 +1170,7 @@ function stepAlong(state, p, speed, hour = state.hour, known = Infinity) {
     p.progress -= cost;
     p.idx += 1;
     if (p.atPoi) delete p.atPoi; // poiwalk.js: off the tile, no longer standing at one of its places
+    p.entered = { tile: p.path[p.idx], from: p.path[p.idx - 1] }; // poiwalk.js: the edge it came onto this tile by
     entered.push(p.path[p.idx]);
   }
   return entered;
