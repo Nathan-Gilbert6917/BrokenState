@@ -66,7 +66,7 @@ const finishAll = (st, b) => { for (let i = 0; i < 50 && b.construction.length; 
   console.log("Data");
   const d = BUILDINGS.reload_bench;
   check(d && d.from === "ammo_bench" && d.upgradeOnly && d.station === "ammo" && d.heat === RELOAD.HEAT && d.req.mechanics === 3, "the reloading bench: an ammo station, upgraded from an ammo bench only, Mechanics 3, quiet");
-  check(d.cost.parts === 1 && d.cost.gunparts === 3 && d.cost.scrap === 20 && d.hours === 24 && RELOAD.UP.hours === 24 && RELOAD.UP.cost.gunparts === 3, "it costs a machine part, 3 gun parts, 20 scrap and 24 work-hours");
+  check(d.cost.parts === 1 && d.cost.gunparts === 3 && d.cost.scrap + 3 * d.cost.buildmat === 20 && d.cost.buildmat >= 1 && d.hours === 24 && RELOAD.UP.hours === 24 && RELOAD.UP.cost.gunparts === 3 && RELOAD.UP.cost.scrap + 3 * RELOAD.UP.cost.buildmat === 20, "it costs a machine part, 3 gun parts, 20 scrap's worth (building materials of it: buildmats.js) and 24 work-hours");
   const hk = Object.keys(HAND_SUPPLIES);
   check(hk.length === 39 && hk.every((k) => SUPPLIES[k] && GEAR[k] && GEAR[k].count && SUPPLIES[k].round.hand && isHandKey(k)), `every loadable round has a handload supply and box (${hk.length}: 25, 20 gauge buckshot, birdshot and slugs, then .223, .300 BLK and .38 Special (ar-platform), 5.7 and .44 Magnum (calibres-more))`);
   check(!hk.some((k) => /50bmg|22lr|tracer|rubber|beanbag|plusp/.test(k)), "no .50 BMG, no rimfire, no tracers, +P or less-lethal handloads");

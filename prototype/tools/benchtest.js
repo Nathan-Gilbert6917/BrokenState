@@ -40,7 +40,7 @@ const benches = Object.keys(BENCH);
   check(benches.every((k) => BUILDINGS[k].plot === "utility" && BUILDINGS[k].max === 1 && BUILDINGS[k].craft === BENCH[k]), "each on a utility plot, one a base, its numbers from BENCH");
   check(BUILDINGS.workbench.upgrades === "craftbench" && BUILDINGS.toolbench.upgrades === "workbench", "each tier upgrades the one below");
   // barestart: no base starts with one, so the first bench is an early but real choice (buildings.js BENCH).
-  check(!BUILDINGS.craftbench.req && BUILDINGS.craftbench.cost.scrap === 10 && BUILDINGS.craftbench.cost.parts === 1 && BUILDINGS.craftbench.cost.wood === 100 && BUILDINGS.craftbench.hours === 12, "the crafting bench: 10 scrap, a part and 100 wood (woodwork), 12 work-hours, no skill");
+  check(!BUILDINGS.craftbench.req && BUILDINGS.craftbench.cost.scrap + 3 * BUILDINGS.craftbench.cost.buildmat === 10 && BUILDINGS.craftbench.cost.buildmat >= 1 && BUILDINGS.craftbench.cost.parts === 1 && BUILDINGS.craftbench.cost.wood === 100 && BUILDINGS.craftbench.hours === 12, "the crafting bench: 10 scrap's worth (a building material of it: buildmats.js), a part and 100 wood (woodwork), 12 work-hours, no skill");
   check(BENCH.craftbench.rate > 1 && BENCH.workbench.rate > BENCH.craftbench.rate && BENCH.toolbench.rate > BENCH.workbench.rate, "each tier crafts faster");
   check(BENCH.craftbench.quality > 0 && BENCH.workbench.quality > BENCH.craftbench.quality && BENCH.toolbench.quality > BENCH.workbench.quality, "each tier crafts better");
   check(!BENCH.craftbench.workshop && BENCH.workbench.workshop && BENCH.toolbench.workshop, "the workbench and up are workshops, the crafting bench is not");
