@@ -176,7 +176,7 @@ section("Not for the headless paths; a save keeps it");
   const PICK = await import("../src/ui/poipick.js");
   q.task = null; q.phase = "waiting";
   const html = PICK.poiPickModal(st, poiPickCard(st, q));
-  check(/🚶 \d+ min/.test(html) && /📍 here/.test(html) && !/undefined|NaN/.test(html), "the dialogue's screen shows the minutes, and \"here\"");
+  check(/🚶 \d+ min/.test(html) && /📍 You are here/.test(html) && !/undefined|NaN/.test(html), "the dialogue's screen shows the minutes, and \"You are here\"");
   const card = poiPickCard(st, q);
   const h0 = PICK.poiPickModal(st, card);
   const n = knownPois(st, t, q).length;
