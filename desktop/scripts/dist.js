@@ -27,9 +27,9 @@ const PUBLISH = process.argv.includes("--publish");
   fs.rmSync(path.join(DESKTOP, "build"), { recursive: true, force: true });
   fs.mkdirSync(STAGE, { recursive: true });
   // Everything index.html links, so the bundled copy loads as the live one does (touch.css and responsive.css apply only
-  // to touch screens and small windows; the manifest and icons/ only matter to a browser installing the web app). Not
-  // sw.js: the web app's offline cache, which src/pwa.js never registers in the desktop app.
-  for (const f of ["index.html", "styles.css", "title.css", "touch.css", "responsive.css", "manifest.webmanifest"]) if (fs.existsSync(path.join(GAME, f))) fs.copyFileSync(path.join(GAME, f), path.join(STAGE, f));
+  // to touch screens and small windows, pad.css only while a controller is in use; the manifest and icons/ only matter
+  // to a browser installing the web app). Not sw.js: the web app's offline cache, which src/pwa.js never registers in the desktop app.
+  for (const f of ["index.html", "styles.css", "title.css", "touch.css", "responsive.css", "pad.css", "manifest.webmanifest"]) if (fs.existsSync(path.join(GAME, f))) fs.copyFileSync(path.join(GAME, f), path.join(STAGE, f));
   fs.cpSync(path.join(GAME, "src"), path.join(STAGE, "src"), { recursive: true });
   // The build's stamp: the commit the snapshot is from (the error screen's report, src/ui/crash.js).
   try {

@@ -63,7 +63,7 @@ const BRIDGE_W = Math.round(HEX * Math.sqrt(3)); // a bridge's deck spans the he
 export const camera = { x: 0, y: 0, zoom: 1 };
 const DEFAULT_LAYERS = ["pois", "territory", "teams", "workers", "hordes", "deaths", "vehicles", "finds", "weather"];
 // hourFrac: how much of the coming hour has gone by (main.js): your moving teams glide between tiles by it.
-export const view = { selected: -1, hover: -1, preview: null, devReveal: false, layers: new Set(DEFAULT_LAYERS), hourFrac: 0, clockSpeed: 1, pick: null, workerHover: null }; // pick: "kind:id" ringed in gold (ui/mapselect.js)
+export const view = { selected: -1, hover: -1, preview: null, devReveal: false, layers: new Set(DEFAULT_LAYERS), hourFrac: 0, clockSpeed: 1, pick: null, workerHover: null, cursor: -1 }; // pick: "kind:id" ringed in gold (ui/mapselect.js); cursor: a controller's tile (main.js, ui/gamepad.js), -1 without one
 const on = (k) => view.layers.has(k);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
@@ -1074,10 +1074,10 @@ function unchanged(state, now) {
   const fk = last.glide ? Math.floor(hourFrac() * glideSteps()) : 0;
   const same = !forceDraw && last.canvas === canvas && last.cw === canvas.width && last.ch === canvas.height && last.state === state &&
     last.live === live && last.know === state.knowledge && last.hour === state.hour && last.x === camera.x && last.y === camera.y &&
-    last.zoom === camera.zoom && last.dpr === dpr && last.hover === view.hover && last.wh === view.workerHover && last.sel === view.selected && last.preview === view.preview &&
+    last.zoom === camera.zoom && last.dpr === dpr && last.hover === view.hover && last.wh === view.workerHover && last.sel === view.selected && last.preview === view.preview && last.cur === view.cursor &&
     last.plen === plen && last.reveal === view.devReveal && last.layers === layers && last.hash === hash && last.detail === deco.detail && last.fk === fk;
   if (same && now - last.at < (last.anim ? ANIM_MS : Math.min(IDLE_MS, last.animMs ?? Infinity))) return true; // last.animMs: the slower animations (wantFrames)
-  Object.assign(last, { canvas, cw: canvas.width, ch: canvas.height, state, live, know: state.knowledge, hour: state.hour, x: camera.x, y: camera.y, zoom: camera.zoom, dpr, hover: view.hover, wh: view.workerHover, sel: view.selected, preview: view.preview, plen, reveal: view.devReveal, layers, hash, at: now, anim: false, detail: deco.detail, fk });
+  Object.assign(last, { canvas, cw: canvas.width, ch: canvas.height, state, live, know: state.knowledge, hour: state.hour, x: camera.x, y: camera.y, zoom: camera.zoom, dpr, hover: view.hover, wh: view.workerHover, sel: view.selected, preview: view.preview, cur: view.cursor, plen, reveal: view.devReveal, layers, hash, at: now, anim: false, detail: deco.detail, fk });
   forceDraw = false;
   return false;
 }
@@ -1721,6 +1721,18 @@ export function render(state) {
     hexPath(px, py, HEX - 1);
     ctx.strokeStyle = color;
     ctx.lineWidth = w;
+    ctx.stroke();
+  }
+  // A controller's cursor (main.js, only while the pad is the device in use): a bright ring with a dark edge, readable
+  // on snow and on water, and drawn over the selection's gold so a tile both picked and pointed at shows both.
+  if (view.cursor >= 0) {
+    const [px, py] = g.toPixel(view.cursor, HEX), k = Math.max(1, 1 / Math.max(0.35, camera.zoom));
+    hexPath(px, py, HEX - 2);
+    ctx.strokeStyle = "rgba(0,0,0,0.75)";
+    ctx.lineWidth = 5 * k;
+    ctx.stroke();
+    ctx.strokeStyle = "#6fe3ff";
+    ctx.lineWidth = 2.5 * k;
     ctx.stroke();
   }
   last.anim = animating || glidingNow;

@@ -1,0 +1,42 @@
+/* A game controller (src/ui/gamepad.js): every rule is under .input-pad, the class <html> carries only while the pad
+   is the device in use (src/ui/inputmode.js), so a desktop played with the mouse, or a phone played by finger, never
+   matches any of it. The mouse moved or a key pressed takes the class away again. */
+
+/* The button legend: a small strip at the bottom of the map (the State Map's box, or the battle map's above its orders
+   bar), out of the way of the clicks (it takes none). Made by gamepad.js the first time a pad is used. */
+#padhints { display: none; }
+.input-pad #padhints:not([hidden]) {
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 0.15rem 0.7rem;
+  position: absolute; left: 50%; transform: translateX(-50%); z-index: 30; pointer-events: none;
+  bottom: calc(0.4rem + env(safe-area-inset-bottom, 0px)); max-width: calc(100% - 1rem); width: max-content;
+  padding: 0.22rem 0.65rem; border-radius: 999px; background: rgba(14,16,20,0.78); border: 1px solid #ffffff1c;
+  font-size: 0.78rem; line-height: 1.35; color: #d8dde3; white-space: nowrap; box-shadow: 0 2px 10px rgba(0,0,0,0.45);
+}
+body > #padhints { position: fixed; }
+.input-pad #cbmapwrap > #padhints { bottom: calc(var(--cbbar-h, 0px) + 0.4rem); }
+/* What stands at the bottom of the battle map stands above the legend (gamepad.js sets --padhints-h on its box). */
+.input-pad #cbmapwrap :is(#cbhud, #cbbar) .bh-bottom { bottom: calc(var(--cbbar-h, 0px) + var(--padhints-h, 0px) + 0.8rem); }
+.input-pad #padhints .ph { display: inline-flex; align-items: center; gap: 0.25rem; }
+.input-pad #padhints i { font-style: normal; }
+
+/* The buttons as an Xbox pad shows them: A green, B red, X blue, Y yellow, round; the bumpers and triggers as small
+   pills; View and Menu as their marks. padGlyph(name) writes them, so any text can use them. */
+.input-pad .pb {
+  display: inline-grid; place-items: center; min-width: 1.15rem; height: 1.15rem; padding: 0 0.22rem; box-sizing: border-box;
+  border-radius: 999px; background: #3a3f47; color: #f2f4f6; font: 700 0.68rem/1 system-ui, sans-serif; letter-spacing: 0.02em;
+}
+.input-pad .pb + .pb { margin-left: 0.12rem; }
+.input-pad .pb-A { background: #3f9b2f; }
+.input-pad .pb-B { background: #c7362d; }
+.input-pad .pb-X { background: #2f6fd0; }
+.input-pad .pb-Y { background: #d9a91a; color: #1b1e23; }
+.input-pad .pb-A, .input-pad .pb-B, .input-pad .pb-X, .input-pad .pb-Y { width: 1.15rem; padding: 0; }
+.input-pad .pb-LB, .input-pad .pb-RB, .input-pad .pb-LT, .input-pad .pb-RT { border-radius: 0.3rem; font-size: 0.6rem; }
+.input-pad .pb-View, .input-pad .pb-Menu { font-size: 0.75rem; }
+
+/* The button the pad points at in a row or a list it has taken (gamepad.js padList: the battle's orders bar, the
+   tile menu): a ring that reads on any background. */
+.input-pad .pad-focus { outline: 3px solid #6fe3ff !important; outline-offset: 1px; box-shadow: 0 0 0 5px rgba(0,0,0,0.55) !important; position: relative; z-index: 2; }
+
+/* No mouse arrow over the maps while the pad plays: the cursor is the map's own. */
+.input-pad #map, .input-pad #combatmap { cursor: none; }

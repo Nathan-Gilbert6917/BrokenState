@@ -31,7 +31,7 @@ import {
 import { treatAtBase } from "./sim/medical.js";
 import { makeMedic } from "./sim/training.js"; // "Make medic" for a graduated trainee
 import { queueCraft, cancelCraft, craftQueue } from "./sim/crafting.js";
-import { initRenderer, render, resize, centerOn, screenToTile, zoomAt, camera, view, tileTooltip, resetView, mapLoc } from "./ui/render.js";
+import { initRenderer, render, resize, centerOn, screenToTile, zoomAt, camera, view, tileTooltip, resetView, mapLoc, HEX } from "./ui/render.js";
 import { setPoiReveal } from "./sim/pois.js"; // the dev tools' Reveal map shows every point of interest
 import { workerAt } from "./ui/workermap.js"; // the base workers on the map: their tooltip, a click opens the person
 import { fieldworksActions, fieldworksChange, fwPlaceTiles, fwPlaceBanner, fwPlaceClick, fwPlaceCancel, teamFieldItems } from "./ui/fieldworks.js";
@@ -54,7 +54,7 @@ import { fishSpot, gameAbundance } from "./sim/hunting.js";
 import { forageAbundance } from "./sim/foraging.js";
 import { woodAbundance } from "./sim/woodcutting.js";
 import { canClaim, wellProblem, CLAIM } from "./sim/claims.js"; // land claims and wells (the right-click menu)
-import { initCombatUI, drawCombat, renderCombatPanel, renderCombatBar, raidLayout, renderRaidTop, renderRaidCards, renderRaidLog, renderRaidLogFoot, combatTick, combatMouse, combatClick, combatKey, combatKeyUp, combatAction, combatPress, combatRelease, combatWheel, combatPan, combatLeave, combatTap, combatTapChip, cui } from "./ui/combat.js";
+import { initCombatUI, drawCombat, renderCombatPanel, renderCombatBar, raidLayout, renderRaidTop, renderRaidCards, renderRaidLog, renderRaidLogFoot, combatTick, combatMouse, combatClick, combatKey, combatKeyUp, combatAction, combatPress, combatRelease, combatWheel, combatPan, combatLeave, combatTap, combatTapChip, cui, padCur, combatPadOn, combatPadOff, combatPadMove, combatPadFrame, combatPadA, combatPadB, combatPadCycle, combatPadEnd, combatPadZoom } from "./ui/combat.js";
 import { LOOK_ACTIONS, LOOK_CHANGE_ACTIONS, crewSnapshot, randomizeAllCrew, randomizeEverything, randomizeGear, randomizeOne, randomBackground, rollRandomRun, ironmanCrew, crewCustomized, crewWithBackground, crewWithBackgrounds, blankCrew, backToSetup } from "./ui/newgame.js";
 import { CUSTOM_POINTS, clampMax, overText } from "./sim/custompoints.js"; // Customize: everything costs points
 import { BG_ACTIONS, BG_CHANGE, BG_INPUT, customLibrary } from "./ui/backgrounds.js"; // custom backgrounds (sim/custombg.js), not in Ironman
@@ -139,7 +139,9 @@ import {
 } from "./ui/layout.js";
 import { initPanels, applyLayout, setLogLine, setRailBadges, fitWindows, resetWindows, windowSizes, watchFloating } from "./ui/windows.js";
 import { initTouch, touchGestures, touchRecent } from "./ui/touch.js"; // a finger: tap, long press (a right-click), drag and pinch on the maps
-import { initResponsive, pickCancel, touchUI, setKeysBadge } from "./ui/responsive.js"; // phones and tablets: the drawers, the dock, the ⋯ menu, a ✕ on windows (responsive.css)
+import { initResponsive, pickCancel, touchUI, setKeysBadge } from "./ui/responsive.js";
+import { initInputMode } from "./ui/inputmode.js"; // the device used last (mouse, finger, controller): <html class="input-…">, the key hints
+import { initGamepad, claimPad, padList } from "./ui/gamepad.js"; // a controller: the map's and the battle's layers below (map input, combat input) // phones and tablets: the drawers, the dock, the ⋯ menu, a ✕ on windows (responsive.css)
 import { initLogWindow, syncLogWindow } from "./ui/logwindow.js"; // a raid's log as a small window over the battle map
 import { initOverlays, syncOverlays, resetOverlays } from "./ui/overlaydrag.js"; // the boxes over the map move (drag a header, Alt+arrows)
 import { keepFocusBefore, afterPanelWrite, PANEL_ACTIONS, PANEL_INPUT } from "./ui/panelfold.js"; // the side panels' folds, find box, scroll fades
@@ -257,6 +259,7 @@ initEdgeFx($("mapwrap"), $("cbmapwrap"), () => refresh(false)); // ui/edgefx.js:
 initOverlays({ refresh: () => { dirtyNow = true; } }); // ui/overlaydrag.js: the boxes over the map keep where the player put them
 initLogWindow($("cblogwin"), $("cbmapwrap"), { refresh: () => { dirtyNow = true; } }); // ui/logwindow.js: the raid's log window (drag, resize, fold)
 initResponsive(); // ui/responsive.js: only while a phone or tablet media query matches
+initInputMode(); // ui/inputmode.js: the pointer, the keyboard and the controller say which device is in use
 // The map follows its box whatever changes it (a panel folded or dragged wider, the UI size).
 if (typeof ResizeObserver !== "undefined") {
   new ResizeObserver(() => {
@@ -2042,27 +2045,7 @@ window.addEventListener("mousemove", (e) => {
   const inside = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
   const tip = $("tooltip");
   if (inside && !drag && e.target === canvas && !ui.timelapse && ui.started) { // the timelapse shows no live tile info
-    const id = screenToTile(state, e.clientX - r.left, e.clientY - r.top);
-    if (id !== view.hover && ui.moveParty) {
-      // Preview the route the team would take.
-      const p = partyById(ui.moveParty);
-      const res = p && id >= 0 ? planPath(state, ui.moveQueue ? queueEndTile(state, p) : partyTile(p), id, p.vehicle) : null;
-      view.preview = res ? res.path : null;
-    }
-    view.hover = id;
-    if (id >= 0) {
-      const wk = workerAt((e.clientX - r.left) / camera.zoom + camera.x, (e.clientY - r.top) / camera.zoom + camera.y); // ui/workermap.js: a base worker out on a job trip
-      view.workerHover = wk && wk.sid != null ? wk.sid : null; // ui/workermap.js: their route drawn faintly
-      // The same tile and worker since the last redraw of the panels (nothing on it has changed): the text stays.
-      const key = `${id}|${wk ? wk.sid : ""}|${drawn}`;
-      if (key !== tipKey) {
-        tipKey = key;
-        tip.innerHTML = wk ? `${wk.html}<hr style="border:0;border-top:1px solid #ffffff22;margin:4px 0">${tileTooltip(state, id)}` : tileTooltip(state, id);
-      }
-      tip.style.left = `${e.clientX - r.left + 16}px`;
-      tip.style.top = `${e.clientY - r.top + 16}px`;
-      tip.classList.remove("hidden");
-    } else tip.classList.add("hidden");
+    hoverAt(e.clientX - r.left, e.clientY - r.top);
   } else {
     view.hover = -1;
     view.workerHover = null;
@@ -2070,6 +2053,39 @@ window.addEventListener("mousemove", (e) => {
     tipKey = "";
   }
 });
+// What is under a point of the map (sx, sy: px in the map's box): the hover ring, a move's route, the tile's tooltip
+// beside it. The mouse's, and a controller's cursor (pad: the tooltip kept inside the map).
+function hoverAt(sx, sy, pad = false) {
+  const tip = $("tooltip");
+  const id = screenToTile(state, sx, sy);
+  if (id !== view.hover && ui.moveParty) {
+    // Preview the route the team would take.
+    const p = partyById(ui.moveParty);
+    const res = p && id >= 0 ? planPath(state, ui.moveQueue ? queueEndTile(state, p) : partyTile(p), id, p.vehicle) : null;
+    view.preview = res ? res.path : null;
+  }
+  view.hover = id;
+  if (id >= 0) {
+    const wk = workerAt(sx / camera.zoom + camera.x, sy / camera.zoom + camera.y); // ui/workermap.js: a base worker out on a job trip
+    view.workerHover = wk && wk.sid != null ? wk.sid : null; // ui/workermap.js: their route drawn faintly
+    // The same tile and worker since the last redraw of the panels (nothing on it has changed): the text stays.
+    const key = `${id}|${wk ? wk.sid : ""}|${drawn}`;
+    if (key !== tipKey) {
+      tipKey = key;
+      tip.innerHTML = wk ? `${wk.html}<hr style="border:0;border-top:1px solid #ffffff22;margin:4px 0">${tileTooltip(state, id)}` : tileTooltip(state, id);
+    }
+    let x = sx + 16, y = sy + 16;
+    if (pad) { // beside the tile, flipped to stay on the map (a mouse's tooltip goes where the mouse is)
+      tip.classList.remove("hidden"); // measured shown
+      const W = canvas.clientWidth, H = canvas.clientHeight, w = tip.offsetWidth, h = tip.offsetHeight;
+      x = sx + 24 + w > W - 4 ? Math.max(4, sx - 24 - w) : sx + 24;
+      y = sy + 18 + h > H - 4 ? Math.max(4, sy - 18 - h) : sy + 18;
+    }
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+    tip.classList.remove("hidden");
+  } else tip.classList.add("hidden");
+}
 window.addEventListener("mouseup", (e) => {
   if (!drag) return;
   if (!drag.moved) mapClick(e.clientX, e.clientY, e.shiftKey);
@@ -2148,6 +2164,125 @@ touchGestures(canvas, {
   pinch: (f, x, y) => { const r = canvas.getBoundingClientRect(); zoomAt(x - r.left, y - r.top, f); },
   tap: (x, y) => mapClick(x, y, false),
   hold: (x, y) => mapMenu(x, y, false),
+});
+
+// ---------- a controller on the State Map (ui/gamepad.js) ----------
+// A cursor (render.js view.cursor) the left stick or the D-pad moves a tile at a time, with repeat; the camera follows
+// it near the edges, and its tile's hover shows as under the mouse (the ring, a move's route, the tooltip beside it).
+// A clicks it (mapClick: select, a move's tile, a field work's or a meeting's tile), X opens its menu (mapMenu, then
+// ▲ ▼ and A in it), Y the next team waiting (N), B is Esc (closeTopLayer), ☰ pauses and runs (Space; held, the game
+// menu), LB / RB slower and faster, ⧉ the panels (a phone's or tablet's drawers in turn; a desktop's map only, \), the
+// right stick pans, LT / RT zoom about the cursor, R3 centres on it. With a window up only B (and ☰) work: the windows
+// are the menu layer's. None of it shows or runs until the controller is the device in use (ui/inputmode.js "pad").
+const padMap = { tile: -1, vx: 0, follow: false };
+const tilePx = (id) => { const [x, y] = state.grid.toPixel(id, HEX); return [(x - camera.x) * camera.zoom, (y - camera.y) * camera.zoom]; };
+const mapPadOn = () => ui.started && !ui.title && !state.combat && !ui.timelapse;
+const mapWinUp = () => !!ui.ask || !!ui.imenu || !!ui.box || !!modalKind(state, ui);
+const inMap = (id) => { const [x, y] = tilePx(id); return x >= 0 && y >= 0 && x <= canvas.clientWidth && y <= canvas.clientHeight; };
+// The cursor put down: on the tile picked if it is in view, else the one in the middle of the map.
+function padSeat() {
+  const id = view.selected >= 0 && inMap(view.selected) ? view.selected : screenToTile(state, canvas.clientWidth / 2, canvas.clientHeight / 2);
+  padMap.tile = id;
+  padMap.vx = id >= 0 ? state.grid.toPixel(id, HEX)[0] : 0;
+  padShow();
+}
+function padShow() {
+  view.cursor = padMap.tile;
+  if (padMap.tile < 0) return;
+  if (!$("ctxmenu").classList.contains("hidden") || mapWinUp() || !inMap(padMap.tile)) { $("tooltip").classList.add("hidden"); return; } // panned away from it: no tooltip at the map's edge
+  hoverAt(...tilePx(padMap.tile), true);
+}
+// One tile toward (dx, dy). Straight up or down zigzags about the column it started in (the rows are offset half a
+// tile), so it keeps going straight instead of drifting to one side.
+function padStep(dx, dy) {
+  const id = padMap.tile;
+  if (id < 0 || !inMap(id)) return padSeat(); // panned away from it: back in view first
+  const [wx, wy] = state.grid.toPixel(id, HEX), h = (HEX * Math.sqrt(3)) / 2;
+  const nx = dy && !dx ? padMap.vx + (wx <= padMap.vx ? 0.1 : -0.1) * HEX : wx + dx * h * (dy ? 1 : 2);
+  const to = state.grid.fromPixel(nx, wy + dy * HEX * 1.5, HEX);
+  if (to < 0 || to === id) return;
+  padMap.tile = to;
+  if (dx) padMap.vx = state.grid.toPixel(to, HEX)[0];
+  padMap.follow = true;
+  padShow();
+}
+// The point on the page of the cursor's tile (what a click there would be).
+const padClient = () => { const r = canvas.getBoundingClientRect(), [x, y] = tilePx(padMap.tile); return [r.left + x, r.top + y]; };
+function padPause() {
+  if (ui.speed > 0) { if (ui.speed <= MAX_SPEED) ui.lastSpeed = ui.speed; ui.speed = 0; } else ui.speed = ui.lastSpeed || 1; // Space (time.pause)
+}
+// LB / RB: one speed slower or faster (0.25× … 5×, the keys 0–5). Paused, the speed it will run at changes and the
+// clock stays stopped (☰ runs it).
+function padSpeed(d) {
+  const steps = [SLOWEST_SPEED, ...SPEEDS], cur = ui.speed > 0 ? ui.speed : ui.lastSpeed || 1;
+  let i = 0;
+  steps.forEach((v, k) => { if (Math.abs(v - cur) < Math.abs(steps[i] - cur)) i = k; });
+  const v = steps[Math.max(0, Math.min(steps.length - 1, i + d))];
+  ui.lastSpeed = v;
+  if (ui.speed > 0) ui.speed = v;
+  else ui.flash = { text: `Runs at ${v}× when you unpause (☰).`, at: performance.now() };
+}
+// ⧉: on a phone or upright tablet the dock's Lists, Info and Log in turn, then none; elsewhere map only and back.
+function padPanels() {
+  if (!$("rs-dock")) return void actions["panel-all"]();
+  const order = ["left", "right", "log"], open = order.findIndex((p) => !document.body.classList.contains(`fold-${p}`));
+  if (open >= 0) actions["panel-toggle"]({ p: order[open], v: "1" });
+  if (open + 1 < order.length) actions["panel-toggle"]({ p: order[open + 1], v: "0" });
+}
+const padDo = (fn) => { act(fn); refresh(); };
+claimPad("map", {
+  when: mapPadOn,
+  dock: () => $("mapwrap"),
+  legend: () => {
+    if (mapWinUp()) return [["B", "Close"]];
+    const pick = ui.moveParty != null ? "Move here" : ui.fwPlace ? "Place here" : ui.meetPick ? "Meet here" : "Select";
+    const back = ui.moveParty != null || ui.fwPlace || ui.meetPick ? "Cancel" : "Back";
+    return [["A", pick], ["B", back], ["X", "Menu"], ["Y", "Next team"], ["Menu", ui.speed > 0 ? "Pause" : "Run"], ["LB RB", "Speed"], ["View", "Panels"]];
+  },
+  frame: (dt, a) => {
+    if (padMap.tile < 0) padSeat();
+    if (a.rx || a.ry) { const sp = (900 * dt) / camera.zoom; camera.x += a.rx * sp; camera.y += a.ry * sp; padMap.follow = false; }
+    const z = a.rt - a.lt;
+    if (Math.abs(z) > 0.1) { const [x, y] = padMap.tile >= 0 && inMap(padMap.tile) ? tilePx(padMap.tile) : [canvas.clientWidth / 2, canvas.clientHeight / 2]; zoomAt(x, y, Math.exp(z * 1.6 * dt)); }
+    if (padMap.follow && padMap.tile >= 0) { // the camera after the cursor, smoothly, until it is well inside the map again
+      const [x, y] = tilePx(padMap.tile), W = canvas.clientWidth, H = canvas.clientHeight, m = Math.min(140, W * 0.18, H * 0.2);
+      const ex = x < m ? x - m : x > W - m ? x - (W - m) : 0, ey = y < m ? y - m : y > H - m ? y - (H - m) : 0;
+      if (!ex && !ey) padMap.follow = false;
+      else { const k = Math.min(1, dt * 10); camera.x += (ex * k) / camera.zoom; camera.y += (ey * k) / camera.zoom; }
+    }
+    padShow();
+  },
+  on: (ev) => {
+    const n = ev.name, seen = view.cursor >= 0;
+    if (ev.type === "hold") { if (n === "Menu") { openSettings(ui); refresh(); } return true; } // ☰ held: the game menu (Esc)
+    if (ev.type === "up") { if (n === "Menu" && !ev.long && !mapWinUp()) { padPause(); refresh(); } return true; }
+    if (n === "B" && ev.type === "down") { if (closeTopLayer()) refresh(); return true; }
+    if (mapWinUp() || n === "Menu") return true;
+    if (["Up", "Down", "Left", "Right"].includes(n)) { padStep(ev.dx, ev.dy); return true; }
+    if (ev.type !== "down") return true;
+    if (!seen && (n === "A" || n === "X")) { padSeat(); return true; } // the first press shows the cursor: nothing is clicked unseen
+    if (n === "A" && padMap.tile >= 0) { hideCtx(); mapClick(...padClient(), false); refresh(); }
+    else if (n === "X" && padMap.tile >= 0) {
+      mapMenu(...padClient(), false);
+      $("tooltip").classList.add("hidden"); // the menu's list takes the pad now (the map's frame waits under it)
+      const menu = $("ctxmenu");
+      padList("ctxmenu", { axis: "y", dock: () => $("mapwrap"), items: () => (menu.classList.contains("hidden") ? [] : [...menu.querySelectorAll("button:not([disabled])")]), leave: () => { hideCtx(); refresh(); } });
+      refresh();
+    } else if (n === "Y") padDo(() => { actions["team-next"]({}); if (ui.selected >= 0) { padMap.tile = ui.selected; padMap.vx = state.grid.toPixel(ui.selected, HEX)[0]; } });
+    else if (n === "LB" || n === "RB") padDo(() => padSpeed(n === "LB" ? -1 : 1));
+    else if (n === "View") padDo(padPanels);
+    else if (n === "RS" && padMap.tile >= 0) centerOn(state, padMap.tile);
+    return true;
+  },
+});
+// The mouse, a key or a finger used again: the cursors, the hover they kept and the focus ring go (the mouse's own
+// hover comes back as soon as it moves over the map).
+window.addEventListener("inputmode", (e) => {
+  if (e.detail === "pad") return;
+  if (view.cursor >= 0) { view.cursor = -1; view.hover = -1; view.workerHover = null; $("tooltip").classList.add("hidden"); tipKey = ""; }
+  padMap.tile = -1;
+  if (padCur.on) { combatPadOff(); dirtyNow = true; }
+  for (const el of document.querySelectorAll(".pad-focus")) el.classList.remove("pad-focus");
 });
 function showCtx() {
   if (!ctxAt) return;
@@ -2430,6 +2565,62 @@ touchGestures(cbCanvas, {
 });
 actions["cb-tap"] = (d) => combatTapChip(state, d.v); // the confirm chip a tap leaves on the battle map: ✓ or ✕
 
+// A controller in a battle or a raid (ui/gamepad.js; the cursor and its moves are ui/combat.js combatPad…): the left
+// stick or the D-pad moves a cell cursor with the hover's preview on it (the path and its cost, the hit chance); A acts
+// on the cell as a finger's tap with the confirm always on (the first A previews with the chip, the second sends; one
+// that only selects is made at once); B drops the preview or the mode (Esc); LB / RB the previous or next unit, the
+// cursor with them; Y End turn as its button (it asks while anyone has actions: Y again); X takes the orders bar (◀ ▶,
+// A, B back; a tray's button opens the tray and stays in the bar); the right stick pans, LT / RT zoom steps about the
+// cursor, R3 centres on the selected unit; ☰ the game menu. With a window over the battle (a search's loot, a kit, the
+// plan before a raid) only B works: the windows are the menu layer's.
+const battleWinUp = () => !!(ui.ask || ui.imenu || ui.box) || !!modalKind(state, ui);
+const barItems = () => [...document.querySelectorAll("#cbbar button:not([disabled])")].filter((el) => el.offsetParent !== null);
+claimPad("battle", {
+  when: () => !!state.combat && !ui.timelapse,
+  dock: () => $("cbmapwrap"),
+  legend: () => {
+    const b = state.combat;
+    if (battleWinUp()) return [["B", "Close"]];
+    if (b.over) return [["Y", "Close"], ["Menu", "Menu"]];
+    const asked = !!cui.tapAsk || !!cui.tapFace;
+    return [["A", asked ? "Confirm" : "Act"], ["B", asked || cui.mode !== "move" ? "Cancel" : "Back"], ["X", "Orders"], ["Y", b.phase === "deploy" ? "Start" : "End turn"], ["LB RB", "Unit"], ["Menu", "Menu"]];
+  },
+  frame: (dt, a) => {
+    if (battleWinUp()) return;
+    combatPadOn(state); // the first time (a no-op after)
+    if (a.rx || a.ry) combatPan(state, -a.rx * 900 * dt, -a.ry * 900 * dt);
+    combatPadFrame(state);
+  },
+  on: (ev) => {
+    const n = ev.name;
+    if (ev.type === "up" || ev.type === "hold") return true;
+    if (n === "B" && ev.type === "down") { if (closeTopLayer() || combatPadB(state)) refresh(); return true; }
+    if (battleWinUp()) return true;
+    if (["Up", "Down", "Left", "Right"].includes(n)) { if (!combatPadOn(state)) combatPadMove(state, ev.dx, ev.dy); refresh(false); return true; }
+    if (n === "LT" || n === "RT") { combatPadZoom(state, n === "RT" ? -1 : 1); return true; } // held: a step every repeat
+    if (ev.type !== "down") return true;
+    if (combatPadOn(state) && (n === "A" || n === "X")) { refresh(); return true; } // the first press shows the cursor: nothing is done unseen
+    if (n === "A") { act(() => combatPadA(state)); refresh(); }
+    else if (n === "Y") { act(() => combatPadEnd(state)); refresh(); }
+    else if (n === "LB" || n === "RB") { combatPadCycle(state, n === "LB" ? -1 : 1); refresh(); }
+    else if (n === "X" && barItems().length) {
+      const tray = (el) => el.dataset.action === "cb-bar" && el.dataset.v === "tray";
+      padList("cbbar", { axis: "x", dock: () => $("cbmapwrap"), items: barItems, start: (el) => el.classList.contains("bb-btn") && el.dataset.action === "cb-act",
+        after: (el) => { refresh(); return tray(el) || (el.dataset.action === "cb-bar" && el.dataset.v === "all"); }, leave: () => refresh() });
+      refresh();
+    } else if (n === "RS") { combatAction(state, "cb-view", { v: "center" }); refresh(); }
+    else if (n === "Menu") { openSettings(ui); refresh(); }
+    return true;
+  },
+});
+// A question over anything (ui/confirm.js): A says yes, B cancels, as Enter and Esc. Claimed after the map and the
+// battle, so it is above them.
+claimPad("ask", {
+  when: () => !!ui.ask,
+  legend: () => [["A", "Yes"], ["B", "Cancel"]],
+  on: (ev) => { if (ev.type === "down" && (ev.name === "A" || ev.name === "B")) { act(() => askKey(ui, { code: ev.name === "A" ? "Enter" : "Escape" }, actions)); refresh(); } return true; },
+});
+
 // ---------- keyboard ----------
 // Esc closes one layer per press, the topmost first. Returns false when there was nothing of ours to close.
 function closeTopLayer() {
@@ -2598,6 +2789,7 @@ window.addEventListener("keyup", (e) => {
 
 initPalette({ getState: () => state, ui, actions, options, refresh: () => refresh() }); // the search box (ui/cmdpalette.js)
 installSelectSearch(); // long drop-downs open a box you can type in to filter (ui/selectsearch.js)
+initGamepad(); // ui/gamepad.js: a controller, once one is connected (its layers: map input, combat input)
 
 // Expose for debugging in the console.
 window.game = {

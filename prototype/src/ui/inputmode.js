@@ -8,8 +8,11 @@
 
 /** @typedef {"mouse" | "touch" | "pad"} InputMode */
 const mq = (q) => typeof matchMedia === "function" && matchMedia(q).matches;
+// The mode a screen starts in, and goes back to when the last controller is unplugged (ui/gamepad.js).
+/** @returns {InputMode} */
+export const homeMode = () => (mq("(hover: none) and (pointer: coarse)") ? "touch" : "mouse");
 /** @type {InputMode} */
-let mode = mq("(hover: none) and (pointer: coarse)") ? "touch" : "mouse";
+let mode = homeMode();
 
 /** @returns {InputMode} */
 export const inputMode = () => mode;

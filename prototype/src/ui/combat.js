@@ -41,6 +41,7 @@ import { LIGHTS } from "../sim/lights.js";
 import { VISION, viewWedges, faceAng, hasFront, setFacing, nightWord, darkSight, activeLight, nvgOn, nvgSight, facesBox, faceRefusal } from "../sim/vision.js"; // facing, view cones, sneaking (the user's request 2026-10-12)
 import { noticeRange, earshot } from "../sim/stealth.js";
 import { switchOptions, switchAt, roomAt, roomLit, INDOOR } from "../sim/indoorlight.js"; // a raid's dark rooms and light switches
+import { keyHint as hintFor } from "./inputmode.js"; // the chip's words by the device in use (a finger, a controller)
 import { LISTEN } from "./soundcues.js"; // deafened: the battle is heard muffled through the selected unit's ears
 import { earStatus, visorState } from "../sim/hearing.js"; // deaf and dazed chips, the Visor toggle (sim/helmets.js)
 import { noiseGhosts } from "../sim/crossfire.js"; // shots and blasts heard out of sight: markers in the fog with a guess of the sound
@@ -402,6 +403,7 @@ function threatHtml(b, v, x, y, who = "") {
 
 // ---------- input ----------
 function cellFromPx(px, py) {
+  if (padForce) return { x: padForce.x, y: padForce.y }; // a controller's press: its cursor's cell, whatever stands in front of it on the screen
   const c = cui.battle ? isoPick(cui.battle, px, py) : null;
   return c ? { x: c.x, y: c.y } : null;
 }
@@ -521,14 +523,15 @@ function tapHtml(state, b, a) {
   if (a.type === "search" || a.type === "searchBody") head += ` <span class="muted">${a.quick ? "a quick rummage: no action, heard nearby" : `${SEARCH.ap} action`}</span>`;
   return `<div class="tc-head">${head}</div>${body ? `<div class="tc-body">${body}</div>` : ""}`;
 }
-// main.js: a finger's tap on the battle map (after combatMouse put the hover there).
-export function combatTap(state, px, py) {
+// main.js: a finger's tap on the battle map (after combatMouse put the hover there). always: confirm whatever Options
+// say (a controller's A: combatPadA).
+export function combatTap(state, px, py, always = false) {
   const b = state.combat;
   if (!b) return;
   sync(b);
   const c = cellFromPx(px, py), p = cui.tapAsk, f = cui.tapFace;
   cui.tapAsk = null; cui.tapFace = null;
-  if (!cui.tapConfirm || b.over || b.layout || b.phase !== "player" || !c) return void combatClick(state, px, py); // the base map's layout and the deploy step place things, and take them back
+  if (!(cui.tapConfirm || always) || b.over || b.layout || b.phase !== "player" || !c) return void combatClick(state, px, py); // the base map's layout and the deploy step place things, and take them back
   if (p && p.key === tapKey(b) && c.x === p.x && c.y === p.y) return void tapGo(state, b, p, px, py);
   // A move's tile tapped again: they go, facing the way they walk (the mouse's second click on the tile itself).
   if (cui.mode === "facemove" && cui.facePick && c.x === cui.facePick.x && c.y === cui.facePick.y) return void combatClick(state, px, py);
@@ -536,7 +539,7 @@ export function combatTap(state, px, py) {
   const a = tapProbe(state, px, py);
   if (!a) { // made: and a move's tile picked shows its cost and how to go on
     const u = selUnit(b), fp = cui.facePick;
-    if (cui.mode === "facemove" && fp && u) cui.tapFace = { ...tapAnchor(fp, px, py), key: tapKey(b), html: `<div class="tc-head"><b>Move here</b></div><div class="tc-body">${moveWord(b, u, view(b), fp.x, fp.y)} Tap the tile again to go; elsewhere, the way ${esc(u.name.split(" ")[0])} should face there; ✕, another tile.</div>` };
+    if (cui.mode === "facemove" && fp && u) cui.tapFace = { ...tapAnchor(fp, px, py), key: tapKey(b), html: `<div class="tc-head"><b>Move here</b></div><div class="tc-body">${moveWord(b, u, view(b), fp.x, fp.y)} ${hintFor({ key: `Tap the tile again to go; elsewhere, the way ${esc(u.name.split(" ")[0])} should face there; ✕, another tile.`, pad: `Ⓐ on it again to go; the cursor elsewhere and Ⓐ, the way ${esc(u.name.split(" ")[0])} should face there; Ⓑ, another tile.` })}</div>` };
     return;
   }
   // Attacking the third side already takes two clicks, the first one saying what it costs (sim/thirdside.js).
@@ -589,7 +592,7 @@ function tapFrame(b, cw, ch, bottom) {
   if (!tapEl) return;
   if (!q) { tapEl.hidden = true; tapEl.innerHTML = ""; tapShown = ""; return; }
   const ask = q === cui.tapAsk;
-  const html = `${q.html}<div class="tc-foot"><span class="tc-hint">${ask ? "Tap again to confirm" : ""}</span><button class="mini tc-no" data-action="cb-tap" data-v="no" data-tip="${ask ? "Not this" : "Pick another tile"}">✕</button><button class="mini tc-go" data-action="cb-tap" data-v="go">${ask ? "Confirm ✓" : "Go ✓"}</button></div>`;
+  const html = `${q.html}<div class="tc-foot"><span class="tc-hint">${ask ? hintFor({ key: "Tap again to confirm", pad: "Ⓐ again to confirm · Ⓑ no" }) : ""}</span><button class="mini tc-no" data-action="cb-tap" data-v="no" data-tip="${ask ? "Not this" : "Pick another tile"}">✕</button><button class="mini tc-go" data-action="cb-tap" data-v="go">${ask ? "Confirm ✓" : "Go ✓"}</button></div>`;
   if (html !== tapShown) { tapEl.innerHTML = html; tapShown = html; tapEl.hidden = false; }
   const [X, Y] = tapPoint(q);
   if (ask && cui.hover && cui.hover.x === q.x && cui.hover.y === q.y) { cui.hover.px = X; cui.hover.py = Y; }
@@ -601,6 +604,120 @@ function tapFrame(b, cw, ch, bottom) {
   const top = uy < Y - 4 ? (fitsDown || !fitsUp ? down : up) : (fitsUp || !fitsDown ? up : down);
   tapEl.style.left = `${Math.round(Math.max(m, Math.min(cw - w - m, X - w / 2)))}px`;
   tapEl.style.top = `${Math.round(Math.max(m, Math.min(ch - bottom - h - m, top)))}px`;
+}
+
+// ---------- a controller (main.js's battle layer; ui/gamepad.js) ----------
+// A cell cursor the left stick or the D-pad moves a cell at a time, the way the screen goes (up is up the screen however
+// the view is turned). The hover a mouse would give is kept on it, so the path and its cost, the hit chance, the cone
+// and the blast show for that cell as under the mouse. A is a finger's tap that always asks first (combatTap, always:
+// the first A previews with the chip, the second sends), B steps back as Esc does, LB / RB go through your people as
+// Shift+Tab / Tab. All of it only while the controller is the device in use (ui/inputmode.js): main.js turns the cursor
+// off (combatPadOff) as soon as the mouse, a key or a finger is used.
+export const padCur = { on: false, x: -1, y: -1, b: null, shown: "" };
+let padForce = null; // { x, y }: the cell a controller's press is for (cellFromPx)
+const padPt = (b, x, y) => project(x + 0.5, y + 0.5, hz(b, x, y) * LV + liftOf(b));
+function padHover(state, b) {
+  const [px, py] = padPt(b, padCur.x, padCur.y);
+  cui.hover = { x: padCur.x, y: padCur.y, px, py };
+  const key = `${padCur.x},${padCur.y}|${b.rev}|${cui.sel}|${cui.mode}`;
+  if (key === padCur.shown) return;
+  padCur.shown = key;
+  const el = typeof document !== "undefined" && document.getElementById("cbprev");
+  if (el) { el.innerHTML = previewHtml(b, state); el.classList.toggle("empty", false); } // as combatMouse writes it
+}
+// The cursor on: on the selected one of yours, else the cell in the middle of the screen.
+export function combatPadOn(state) {
+  const b = state.combat;
+  if (!b || !canvas) return false;
+  sync(b);
+  if (padCur.on && padCur.b === b) return false;
+  const u = selUnit(b), mid = isoPick(b, canvas.clientWidth / 2, canvas.clientHeight / 2, { noUnits: true });
+  const at = u && !u.off && onFloor(b, u) ? u : mid || { x: b.w >> 1, y: b.h >> 1 };
+  Object.assign(padCur, { on: true, x: at.x, y: at.y, b, shown: "" });
+  padHover(state, b);
+  return true;
+}
+export function combatPadOff() {
+  if (!padCur.on) return;
+  padCur.on = false; padCur.b = null;
+  cui.hover = null;
+  cui.tapAsk = null; cui.tapFace = null; // the chips are a pad's and a finger's: a mouse never sees one
+}
+// One step of the cursor toward screen direction (dx, dy): the neighbouring cell whose middle lies most that way.
+// Near the edge of what is in view (or under the orders bar) the camera goes to it.
+export function combatPadMove(state, dx, dy) {
+  const b = state.combat;
+  if (!b || !padCur.on || !canvas) return;
+  sync(b);
+  const [X0, Y0] = project(padCur.x + 0.5, padCur.y + 0.5, 0), n = Math.hypot(dx, dy) || 1;
+  let best = null, bd = 0.55;
+  for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) {
+    const x = padCur.x + i, y = padCur.y + j;
+    if ((!i && !j) || x < 0 || y < 0 || x >= b.w || y >= b.h) continue;
+    const [X, Y] = project(x + 0.5, y + 0.5, 0), ox = X - X0, oy = Y - Y0, d = (ox * dx + oy * dy) / ((Math.hypot(ox, oy) || 1) * n);
+    if (d > bd + 1e-6) { bd = d; best = [x, y]; }
+  }
+  if (!best) return;
+  [padCur.x, padCur.y] = best;
+  cui.tapAsk = null; // the preview held was for the cell left (a move's tile picked keeps its chip: the facing is picked next)
+  padHover(state, b);
+  const [X, Y] = padPt(b, padCur.x, padCur.y), m = 70, cw = canvas.clientWidth, ch = canvas.clientHeight - (iso.bottomInset || 0);
+  if (X < m || Y < m || X > cw - m || Y > ch - m) isoCenterOn(b, padCur.x, padCur.y);
+}
+// Each frame: the hover stays on the cursor while the view moves under it (a pan, a zoom, the camera following).
+export function combatPadFrame(state) {
+  const b = state.combat;
+  if (!b || !padCur.on) return;
+  if (padCur.b !== b) { padCur.on = false; combatPadOn(state); return; } // another battle (the same fight made again)
+  padHover(state, b);
+}
+// A: what a click on the cursor's cell would do, asked first when it sends an order.
+export function combatPadA(state) {
+  const b = state.combat;
+  if (!b || !padCur.on) return;
+  sync(b);
+  padHover(state, b);
+  const [px, py] = padPt(b, padCur.x, padCur.y);
+  padForce = { x: padCur.x, y: padCur.y };
+  try { combatTap(state, px, py, true); } finally { padForce = null; }
+  padCur.shown = "";
+}
+// B: the order asked about dropped, a move's tile let go, else Esc. True when something was dropped.
+export function combatPadB(state) {
+  const b = state.combat;
+  if (!b) return false;
+  sync(b);
+  if (cui.tapAsk) { cui.tapAsk = null; return true; }
+  if (cui.tapFace) { combatTapChip(state, "no"); return true; }
+  return battleEsc();
+}
+// LB / RB: the previous or next of yours with actions left; the cursor goes to them.
+export function combatPadCycle(state, d) {
+  const b = state.combat;
+  if (!b || b.over) return;
+  sync(b);
+  if (holding(b) && !(selUnit(b) && selUnit(b).captive)) return;
+  cycleUnit(b, d);
+  const u = selUnit(b);
+  if (u && !u.off && padCur.on) { padCur.x = u.x; padCur.y = u.y; cui.tapAsk = null; padHover(state, b); }
+}
+// Y: End turn as its button (asks while anyone has actions; again ends it), Start the fight on the deploy step, Close
+// on the result.
+export function combatPadEnd(state) {
+  const b = state.combat;
+  if (!b) return;
+  sync(b);
+  if (holding(b) && !(selUnit(b) && selUnit(b).captive)) return;
+  if (b.over) return void closeCombat(state);
+  if (b.phase === "deploy") { if (!b.layout && !b.drill) act(state, { type: "start" }); return; }
+  requestEndTurn(state, "button");
+}
+// LT / RT: a zoom step about the cursor.
+export function combatPadZoom(state, d) {
+  const b = state.combat;
+  if (!b) return;
+  const [px, py] = padCur.on ? padPt(b, padCur.x, padCur.y) : [canvas ? canvas.clientWidth / 2 : 0, canvas ? canvas.clientHeight / 2 : 0];
+  combatWheel(state, px, py, d);
 }
 
 // Selecting a unit that is off screen brings the camera to it.
@@ -1626,16 +1743,7 @@ export function combatKey(state, e) {
     if (confirm) { act(state, { type: "start" }); return true; }
     if (space) { cui.msg = `Place your defenders, then press ${keyLabel("battle.confirm", 1) || "Enter"} or Start the fight.`; return true; }
   }
-  const team = players(b).filter((u) => alive(u)); // on any floor: the view follows (followFloor)
-  if (k === "battle.next" || k === "battle.prev") {
-    const ready = team.filter((u) => u.ap > 0);
-    const list = ready.length ? ready : team;
-    const i = list.findIndex((u) => u.id === cui.sel);
-    if (list.length) cui.sel = list[(i + (k === "battle.prev" ? list.length - 1 : 1)) % list.length].id;
-    cui.mode = "move";
-    follow(b);
-    return true;
-  }
+  if (k === "battle.next" || k === "battle.prev") { cycleUnit(b, k === "battle.prev" ? -1 : 1); return true; }
   const un = /^battle\.unit([1-9])$/.exec(k || "");
   if (un) {
     const u = players(b)[Number(un[1]) - 1];
@@ -1647,7 +1755,7 @@ export function combatKey(state, e) {
   if (retreatAskOpen(b) && space) { cui.msg = `Press ${keyLabel("battle.confirm", 1) || "Enter"} or Sound the retreat to give the order, Esc to keep fighting.`; return true; }
   if (fallAskOpen(b) && confirm) { combatAction(state, "cb-fallback", { v: "go" }); return true; }
   if (space || confirm) { requestEndTurn(state, space ? "space" : "enter"); return true; }
-  if (e.code === "Escape") { if (cui.barTray != null) { cui.barTray = null; return true; } if (allyBack()) return true; cui.allyAsk = null; cui.mode = "move"; cui.msg = ""; cui.endAsk = null; cui.retreatAsk = null; cui.fallAsk = null; cui.dragId = null; cui.handAsk = null; cui.shoveAsk = null; return true; }
+  if (e.code === "Escape") return battleEsc();
   if (k === "battle.autoplay") { combatAction(state, "cb-autoplay", {}); return true; } // the AI plays your side
   if (k === "battle.inventory") { combatAction(state, "cb-inv", {}); return true; } // the selected survivor's kit (read-only)
   if (b.phase === "deploy") return false;
@@ -1657,6 +1765,25 @@ export function combatKey(state, e) {
   const o = k && KEY_BY_ID.get(k);
   if (o && o.v && (o.v !== "quick" || b.raid)) { combatAction(state, "cb-act", { v: o.v }); return true; }
   return false;
+}
+
+// Tab / Shift+Tab (and a controller's RB / LB): the next or previous of yours with actions left (everyone, when
+// nobody has any), on any floor: the view follows (followFloor).
+function cycleUnit(b, d) {
+  const team = players(b).filter((u) => alive(u));
+  const ready = team.filter((u) => u.ap > 0);
+  const list = ready.length ? ready : team;
+  const i = list.findIndex((u) => u.id === cui.sel);
+  if (list.length) cui.sel = list[(i + (d < 0 ? list.length - 1 : 1)) % list.length].id;
+  cui.mode = "move";
+  follow(b);
+}
+// Esc in a battle (and a controller's B): a tray shut, Ally orders back a step, else whatever was being picked dropped.
+function battleEsc() {
+  if (cui.barTray != null) { cui.barTray = null; return true; }
+  if (allyBack()) return true;
+  cui.allyAsk = null; cui.mode = "move"; cui.msg = ""; cui.endAsk = null; cui.retreatAsk = null; cui.fallAsk = null; cui.dragId = null; cui.handAsk = null; cui.shoveAsk = null;
+  return true;
 }
 
 // Panel buttons (data-action="cb-…").
@@ -2172,7 +2299,7 @@ cui.barTray = null;
 export function setBarAll(on) { cui.barAll = !!on; try { if (typeof localStorage !== "undefined") localStorage.setItem(BAR_ALL_KEY, on ? "1" : "0"); } catch { /* private mode */ } }
 function endAskHtml(b) {
   const n = unitsWithActions(b);
-  return `<div class="small warn cbmsg cbconfirm"><b>${n} unit${n === 1 ? " still has" : "s still have"} actions</b> — press ${esc(keyLabel("battle.endTurn", 1) || "Space")} again or ${esc(keyLabel("battle.confirm", 1) || "Enter")} to end the turn (Esc to keep playing).
+  return `<div class="small warn cbmsg cbconfirm"><b>${n} unit${n === 1 ? " still has" : "s still have"} actions</b> — ${hintFor({ key: `press ${esc(keyLabel("battle.endTurn", 1) || "Space")} again or ${esc(keyLabel("battle.confirm", 1) || "Enter")} to end the turn (Esc to keep playing)`, pad: "press Ⓨ again to end the turn (Ⓑ to keep playing)" })}.
     <div style="margin-top:0.3rem"><button data-action="cb-end" data-now="1" data-tip="End the turn now; units with actions left do nothing.">End turn now</button>
     <button data-action="cb-confirm" data-tip="Stop asking: Space and End turn end the turn at once (turn it back on with the checkbox below the log).">Don't ask again</button></div></div>`;
 }
