@@ -17,6 +17,7 @@ import {
   rollToolFind, rollAreaTool, toolWares, migrateTools,
 } from "../src/sim/toolreqs.js";
 import { TOOL_ITEMS, TOOL_MAKESHIFT, TOOL_HELP } from "../src/sim/data-tools.js";
+import { rollShopShelves } from "../src/sim/shopshelves.js";
 
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
@@ -164,6 +165,14 @@ console.log("Where tools turn up");
   let cars = 0, houses = 0;
   for (let i = 0; i < 2000; i++) { if (rollAreaTool(st, t.id, "roadcars", "car", `c${i}`)) cars++; if (rollAreaTool(st, t.id, "house", "crate", `h${i}`)) houses++; }
   check(cars > houses * 3, `cars' trunks (${cars}) hold more tools than houses' crates (${houses})`);
+  // A hardware store that is a POI (shops.js) rolls its own kind's table on its shelves (shopshelves.js).
+  const plain = Object.values(st.tiles).find((x) => !x.loc || x.loc.type !== "hardware");
+  let shelf = 0;
+  for (let h = 0; h < 2000; h++) { st.hour = h; shelf += rollShopShelves(st, plain.id, "hardware", 1, 1, "t").filter((it) => TOOL_FINDS.hardware.items[it.key]).length; }
+  check(shelf > 2000 * TOOL_FINDS.hardware.p * 0.6, `a hardware store POI's shelves hold tools (${shelf} in 2000 hours)`);
+  let aisles = 0;
+  for (let i = 0; i < 2000; i++) if (rollAreaTool(st, t.id, "hardware", "shelf", `a${i}`)) aisles++;
+  check(aisles > houses * 4, `a hardware store's aisles on a raid map hold far more tools (${aisles}) than houses (${houses})`);
   let w = 0;
   for (let i = 0; i < 400; i++) w += toolWares(st, "traders", `T${i}`).length;
   check(w > 40, `traders sell tools now and then (${w} of 400 tables)`);
