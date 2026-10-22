@@ -344,7 +344,10 @@ const BASE = {
   // on the belt. The same items rolled on the same dice (the rng position holds), the dead's own finds unchanged.
   // groupWares.keys: re-baselined for the parity pass (trade.js ensureWares: nobody's shelf rolls on from week to
   // week any more, so each restock is a fresh shelf of the same draws, with no carry-over of the last 12).
-  siteFinds: "edc8e9c7fdaab752", groupWares: { keys: "dcbb48f4247749e8", rng: 2670422955354 }, visitors: { keys: "c6ac67fed2276a9e", merchants: "bf202c687fe737a0", rng: 12799878338062 },
+  // visitors: re-baselined for the hub out in the open (2026-10-22: world.js createWorld, startpick.js START_CLEAR; was
+  // c6ac67fed2276a9e / bf202c687fe737a0 / 12799878338062): travellers and caravans come from the edges toward your hub,
+  // so where it stands moves where they are met and what their dice draw on the way.
+  siteFinds: "edc8e9c7fdaab752", groupWares: { keys: "dcbb48f4247749e8", rng: 2670422955354 }, visitors: { keys: "c643e509c194a1f5", merchants: "f7404c882ec78521", rng: 12728447271355 },
 };
 // The flashbang branch's extras (deadsoldiers.js MILDEAD.BODY_EXTRA, miltrucks.js TRUCK_LOOT_HOOKS) roll dice of their
 // own and only add: off for these samples, like the commune's extras below, so the old baselines hold.

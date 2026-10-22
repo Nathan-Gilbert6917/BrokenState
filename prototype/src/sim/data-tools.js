@@ -22,7 +22,7 @@ export const TOOL_ITEMS = {
   handsaw:     { name: "Hand saw",              slot: "pack", skill: null, power: 0, req: 0, value: 6,  noise: 0, weight: 0.7, cat: "tools",
                  desc: "A carpenter's panel saw: planks, beams and joints. Counts as a saw for building and crafting." },
   bowsaw:      { name: "Bow saw",               slot: "pack", skill: null, power: 0, req: 0, value: 10, noise: 0, weight: 1.1, cat: "tools", chop: 1.6,
-                 desc: "A tubular steel bow with a coarse pruning blade: a saw for building and crafting, and it cuts firewood far faster than bare hands (×1.6, an axe more)." },
+                 desc: "A tubular steel bow with a coarse pruning blade: a saw for building and crafting, and it cuts wood far faster than bare hands (×1.6, an axe more)." },
   axe:         { name: "Felling axe",           slot: W, skill: ML, power: 2.3, req: 1, value: 18, noise: 0, pry: true, weight: 2.6, dur: 60, cat: "melee", chop: 2.2,
                  desc: "A long hickory handle and a heavy forged head: the best tool there is for cutting wood (×2.2, three times bare hands), an axe for building and crafting, and a brutal slow weapon that can stagger (20%; −4 to hit, Melee 1 to use well). Farms, hardware stores, cabins." },
   shovel:      { name: "Shovel",                slot: W, skill: ML, power: 1.6, req: 0, value: 6,  noise: 0, weight: 2, dur: 80, cat: "melee",

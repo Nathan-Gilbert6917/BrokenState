@@ -309,10 +309,10 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
 // layout: the beds on the Lodge's floor, the plots on soil); moved, picked up and struck like any built thing.
 export const HUB_LAYOUT = { beds: 4, tents: ["tent2"], plots: 8 };
 function hubLayout(state, base) {
-  const dur = (k, i) => hash01(state.seed, "startdur", `layout:${k}:${i}`); // hashed dice: the world's are untouched
+  const startdur = (k, i) => hash01(state.seed, "startdur", `layout:${k}:${i}`); // hashed dice: the world's are untouched
   addBuilding(base, "gen_lodge");
-  for (let i = 0; i < HUB_LAYOUT.beds; i++) { base.armory.push(newItem("bed", 1, dur("bed", i), START_DUR)); setFurniture(state, base, "bed"); }
-  HUB_LAYOUT.tents.forEach((k, i) => pitchTentAtBase(state, base, k, newItem(k, 1, dur(k, i), START_DUR)));
+  for (let i = 0; i < HUB_LAYOUT.beds; i++) { base.armory.push(newItem("bed", 1, startdur("bed", i), START_DUR)); setFurniture(state, base, "bed"); }
+  HUB_LAYOUT.tents.forEach((k, i) => pitchTentAtBase(state, base, k, newItem(k, 1, startdur(k, i), START_DUR)));
   for (let i = 0; i < HUB_LAYOUT.plots; i++) addBuilding(base, "farm_plot");
 }
 
