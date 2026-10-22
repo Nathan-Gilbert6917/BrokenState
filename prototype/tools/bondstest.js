@@ -101,7 +101,7 @@ section("Work and mood beside friends and rivals");
   a.location = { kind: "base", baseId: h.id };
   // Quarrels: about BOND.quarrelChance a day.
   let q = 0;
-  for (let i = 0; i < 400; i++) { const before = getRel(st, c, d).why ? (getRel(st, c, d).why.find((x) => /^Quarrels/.test(x.t)) || { v: 0 }).v : 0; delete st.bondDay; nextDay(st); bondsDaily(st); const after = (getRel(st, c, d).why.find((x) => /^Quarrels/.test(x.t)) || { v: 0 }).v; if (after < before) q++; getRel(st, c, d).o = -50; }
+  for (let i = 0; i < 400; i++) { const before = getRel(st, c, d).why ? (getRel(st, c, d).why.find((x) => /^Quarrels/.test(x.t)) || { v: 0 }).v : 0; delete st.bondDay; nextDay(st); bondsDaily(st); const after = ((getRel(st, c, d).why || []).find((x) => /^Quarrels/.test(x.t)) || { v: 0 }).v; if (after < before) q++; getRel(st, c, d).o = -50; }
   check(q >= 400 * BOND.quarrelChance * 0.4 && q <= 400 * BOND.quarrelChance * 2, `rivals at work quarrel ~${BOND.quarrelChance * 100}% of days (${q} of 400)`);
 }
 

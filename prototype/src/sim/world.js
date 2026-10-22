@@ -115,7 +115,7 @@ export const HUB_VISION = 3;
 // little over; 3 parts are the bench's, a well's and one spare. It used to be 25 scrap and 2 parts with two farm plots,
 // a crafting bench, a bunkhouse and a wall section already standing (69 scrap of buildings). tools/barestarttest.js.
 export const HUB_START = { scrap: 50, parts: 3 };
-// The town hall's tool shelf (the tools, 2026-10-21: builds and recipes need tools at the base, toolreqs.js): a tool kit
+// The main house's tool shelf (the tools, 2026-10-21: builds and recipes need tools at the base, toolreqs.js): a tool kit
 // (a hammer, a saw, wrenches, pliers), a shovel and a hatchet in the hub's armory, so the first builds, the fields and
 // the first woodcutter go ahead; the drill, the welder, the sewing kit and the better axes are found or traded for.
 export const HUB_TOOLS = ["toolkit", "shovel", "hatchet"];
@@ -239,7 +239,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
   state.bases.push({
     id: newId(), tile: hubTile.id, type: "hub", name: `${nearestTownName(state, hubTile.id)} Holdout`, // named for the nearest town
     // Fuel is scarce (economy rework). Food: two weeks for six plus a few shelves of canned and jarred food, in the
-    // town hall's cellar (storage.js); water for the first dry days while the sown fields get going; a woodpile
+    // main house's cellar (storage.js); water for the first dry days while the sown fields get going; a woodpile
     // (woodcutting.js: the winter's heating is cut later).
     // Bare start (HUB_START): every building plot free; the main house gives the well and the cellar (buildings.js; no
     // wall, which is built on the Defenses tab) and no beds or crop plots of its own: the start's are built on the base

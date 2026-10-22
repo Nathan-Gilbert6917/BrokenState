@@ -439,7 +439,7 @@ function scene(type = null, medics = 0, others = 4, med = 0) {
     addCondition(s4, p4[4], "dysentery", "test", { sev: 60, quiet: true });
     addCondition(s4, p4[5], "cut", "test", { sev: 40, quiet: true });
     let low = Infinity;
-    // Spirits kept up: nine people in a bare hub's four beds (barestart) lose hope, and a deserter takes meds with
+    // Spirits kept up: nine people in a hub's six start beds (barestart) lose hope, and a deserter takes meds with
     // them (morale.js), which is not a dose; this check is about automatic care keeping the reserve.
     for (let i = 0; i < 5 * 24; i++) { for (const s of alive(s4)) s.mood = Math.max(s.mood, 60); tickHour(s4); s4.cards.length = 0; low = Math.min(low, h4.stock.meds); }
     check(low >= reserve && (reserve > 0 || h4.stock.meds < 8), `reserve ${reserve}: meds never below it over 5 nights (lowest ${low}, now ${h4.stock.meds})`);

@@ -70,7 +70,9 @@ function arena(seed = 7, team = false, opts = {}) {
   const h = hub(st);
   h.stock.ammo = 60;
   const people = atBase(st, h.id).slice(0, 3);
-  let setup = { tile: h.tile, baseId: h.id, fighterIds: people.map((s) => s.id) };
+  // On a town's ground (a 34 × 24 field: the positions below are laid out for it), as when the hub stood in a town.
+  const town = st.tiles.find((t) => t.loc && t.loc.type === "town");
+  let setup = { tile: town.id, baseId: h.id, fighterIds: people.map((s) => s.id) };
   let p = null;
   if (team) {
     const tile = st.tiles.find((t) => t.loc && t.loc.type === "town" && t.id !== h.tile).id;

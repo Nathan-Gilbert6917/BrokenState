@@ -426,7 +426,7 @@ section("A normal start's crew: 1–8 at the hub (six by default)");
   for (const n of [1, 4, 7, 8]) {
     const w = createWorld({ seed: 42, factionCount: 5, startPeople: n });
     check(w.survivors.length === n && w.startPeople === n && w.survivors.every((s) => s.gear.weapon && s.location && s.location.kind === "base") && w.survivors.filter((s) => s.leader).length === 1, `${n} at the hub, each armed, one leader`);
-    check(n > 4 ? w.bases[0].crowdNote && w.bases[0].crowdNote.over === n - 4 : !w.bases[0].crowdNote, `${n}: the town hall's four beds (${n > 4 ? `${n - 4} over` : "room for all"})`);
+    check(n > 6 ? w.bases[0].crowdNote && w.bases[0].crowdNote.over === n - 6 : !w.bases[0].crowdNote, `${n}: the hub's six beds (${n > 6 ? `${n - 6} over` : "room for all"})`);
     assignStartingRoles(w);
     let err = null;
     try { for (let h = 0; h < 48; h++) tickHour(w); } catch (e) { err = e; }

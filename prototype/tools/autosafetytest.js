@@ -153,7 +153,7 @@ const grow = (st, base, n) => { while (residents(st, base.id).length < n) addPer
   check(!onUpkeep(st, h, m) && buildRate(st, h) > rate, "with the autopilot off the mark is ignored");
   // Nothing worn: no upkeep hand.
   setAutopilot(st, true, "balanced");
-  for (const fx of fixtures(h)) fx.wear = 5;
+  for (const fx of fixtures(h)) { fx.wear = 5; delete fx.broken; } // (the day above may have broken the worn storehouse: its dice go by its place in the list)
   safetyAI.planRoles(st, h);
   check(!atBase(st, h.id).some((s) => s.upkeep), "nothing worn: nobody kept on upkeep");
 }
