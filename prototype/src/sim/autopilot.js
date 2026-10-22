@@ -2944,17 +2944,22 @@ export const STORE_WISH = { minKg: 5, ladder: { camp: ["storebox"], shelter: ["s
 export function storageWish(state, base) {
   if (base.construction.some((c) => (isStoreBuilding(c.type) || GENERAL.includes(c.type)) && !c.target)) return null; // one at a time
   const st = storageOf(state, base);
-  if (st.outsideKg < STORE_WISH.minKg && !st.outside.gear.length) return null;
-  const why = (t) => `${Math.round(st.outsideKg)} kg of the base's goods lie outside, weathering (room for ${BUILDINGS[t].storeKg} kg)`;
+  // A parked car's load space is room only while it is parked: past a camp, the governor builds for the goods as if
+  // the cars were out (the hub's truck away on a trip left 800 kg lying outside, basebuildautotest's 60-day run).
+  const carKg = isCamp(base) ? 0 : st.containers.filter((c) => c.kind === "vehicle").reduce((a, c) => a + c.cap, 0);
+  const own = st.cap - carKg;
+  const shortKg = Math.max(st.outsideKg, st.used - own);
+  if (shortKg < STORE_WISH.minKg && !st.outside.gear.length) return null;
+  const why = (t) => `${st.outsideKg >= STORE_WISH.minKg ? `${Math.round(st.outsideKg)} kg of the base's goods lie outside, weathering` : `${Math.round(st.used - own)} kg of the base's goods would lie outside with the cars away`} (room for ${BUILDINGS[t].storeKg} kg)`;
   for (const t of STORE_WISH.fittings) if (BUILDINGS[t] && countAll(base, t) < BUILDINGS[t].max && fittingRoom(state, base, t) && canBuild(state, base, t).ok) return { type: t, why: `${why(t)}: ${BUILDINGS[t].name.toLowerCase()} inside a general building`, save: false };
   const size = isCamp(base) ? "camp" : isShelter(base) ? "shelter" : base.type === "hub" ? "hub" : "outpost";
   const ok = STORE_WISH.ladder[size].filter((t) => BUILDINGS[t] && canBuild(state, base, t).ok);
   if (ok.length) {
-    const type = ok.find((t) => BUILDINGS[t].storeKg >= st.outsideKg) || ok[ok.length - 1];
+    const type = ok.find((t) => BUILDINGS[t].storeKg >= shortKg) || ok[ok.length - 1];
     return { type, why: why(type), save: false };
   }
   const gb = generalWish(state, base);
-  if (gb && canBuild(state, base, gb).ok) return { type: gb, why: `${Math.round(st.outsideKg)} kg of the base's goods lie outside, weathering: a ${BUILDINGS[gb].name.toLowerCase()} for shelves and lockers`, save: false };
+  if (gb && canBuild(state, base, gb).ok) return { type: gb, why: `${Math.round(shortKg)} kg of the base's goods lie outside, weathering: a ${BUILDINGS[gb].name.toLowerCase()} for shelves and lockers`, save: false };
   return null;
 }
 function buildWishes(state, base) {

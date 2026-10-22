@@ -20,6 +20,7 @@ import { breakFixture, fixtures } from "../src/sim/breakdowns.js";
 import * as A from "../src/sim/alliance.js";
 import * as C from "../src/sim/conquest.js";
 import * as D from "../src/sim/diplomacy.js";
+import { stockTools } from "./toolset.js"; // every tool a build can need (toolreqs.js)
 
 // Setting up a camp takes an hour (staging.js STAGING.PITCH): skipped here, the camp (a base) stands at once.
 const establishNow = (st, p) => { p.pitched = true; return giveOrderP(st, p, "establish"); };
@@ -571,7 +572,8 @@ section("Losing the hub: with another base, and with none (the exiles)");
   if (sh3) {
     check(B.isShelter(sh3) && B.tierName(sh3) === "Shelter" && B.baseWalls(sh3) === B.SHELTER.walls, "the exiles' camp becomes a shelter (tier 0): no wall strength");
     check(B.placeProblem(sh3, "walls") === "" && !B.canBuild(s3, sh3, "well").ok, "a shelter builds a wall (the Defenses tab: up to a timber palisade) but no well");
-    Object.assign(sh3.stock, { scrap: 120, parts: 6, buildmat: 6 }); // hub_up: 100 scrap, 5 building materials (2026-10-09)
+    Object.assign(sh3.stock, { scrap: 120, parts: 6, buildmat: 6, wood: (sh3.stock.wood || 0) + 1200 }); // hub_up: 100 scrap, 5 building materials (2026-10-09), 800 wood (2026-10-20)
+    stockTools(sh3); // a hammer and a saw (data-tools.js BUILD_TOOLS.hub_up, 2026-10-21): the exiles carried none
     check(/queued/.test(B.queueBuild(s3, sh3, "hub_up")), "the Main house (its step up) is queued at the shelter");
     for (const s of atBase(s3, sh3.id)) s.role = "build";
     for (let i = 0; i < 24 * 8 && B.isShelter(sh3); i++) { tickHour(s3); s3.cards.length = 0; for (const s of atBase(s3, sh3.id)) s.role = "build"; }

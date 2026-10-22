@@ -75,7 +75,7 @@ section("1. The costs: raised for the wooden builds, wood added where it makes s
     const c = costOf(k);
     check((c.wood || 0) / 50 >= (c.scrap || 0) || k === "craftbench", `${BUILDINGS[k].name}: wood is the main material (${c.wood} wood ≈ ${Math.round((c.wood || 0) / 50)} scrap of worth against ${c.scrap || 0} scrap)`);
   }
-  check(WALL_TIERS[1].cost.wood === 40 && WALL_TIERS[2].cost.wood === 64 && WALL_TIERS[1].gate.wood === 60 && WALL_TIERS[1].gate.scrap === 1 && STAND.cost.wood === 50, `the wooden wall 40 a 1×4 (was 8), the palisade 64, the gate 60 + a scrap, a stand 50 + a scrap`);
+  check(WALL_TIERS[1].cost.wood === 40 && WALL_TIERS[2].cost.wood === 64 && WALL_TIERS[1].gate.wood === 60 && WALL_TIERS[1].gate.buildmat === 1 && STAND.cost.wood === 50 && STAND.cost.buildmat === 1, `the wooden wall 40 a 1×4 (was 8), the palisade 64, the gate 60 + a building material, a stand 50 + a building material (the building materials of 2026-10-21 in place of their scrap)`);
   check(pieceCost("wall1", 1).wood === 10 && pieceCost("wall2", 2).wood === 32, `a 1×1 pays its share (10), a palisade 1×2 32`);
   check(!WALL_TIERS[3].cost.wood && !WALL_TIERS[3].gate.wood && !WALL_TIERS[4].cost.wood && !WALL_TIERS[4].gate.wood, "the scrap-metal and metal-sheet walls take no wood");
   for (const k of NO_WOOD) check(BUILDINGS[k] && !(BUILDINGS[k].cost.wood > 0), `${BUILDINGS[k] ? BUILDINGS[k].name : k}: no wood (${BUILDINGS[k] ? txt(BUILDINGS[k].cost) : "?"})`);
@@ -102,19 +102,21 @@ section("2. The raised costs come out of the stores (yours and the groups')");
   const st = world();
   const h = hub(st);
   BM.clearAllLand(st, h);
-  Object.assign(h.stock, { wood: 5000, scrap: 200, parts: 10, buildmat: 4, meds: 10 });
+  Object.assign(h.stock, { wood: 5000, scrap: 200, parts: 10, buildmat: 40, metalsheet: 20, meds: 10 }); // building materials and metal sheets in store: none made from scrap
+  const took = (k, v0, c) => v0 - (h.stock[k] || 0) === (c[k] || 0);
   for (const type of ["bunkhouse", "farm_plot", "craftbench", "barricades", "watchtower", "shed", "smoker", "gen_hut"]) {
-    const w0 = h.stock.wood, s0 = h.stock.scrap;
+    const v0 = { ...h.stock };
     const chk = canBuild(st, h, type);
     if (!chk.ok) { check(false, `${type}: ${chk.reason}`); continue; }
     queueBuild(st, h, type);
-    check(w0 - h.stock.wood === BUILDINGS[type].cost.wood && s0 - h.stock.scrap === (BUILDINGS[type].cost.scrap || 0), `${BUILDINGS[type].name}: −${w0 - h.stock.wood} wood, −${s0 - h.stock.scrap} scrap`);
+    const c = BUILDINGS[type].cost;
+    check(["wood", "scrap", "buildmat", "metalsheet"].every((k) => took(k, v0[k] || 0, c)), `${BUILDINGS[type].name}: −${v0.wood - h.stock.wood} wood, −${v0.scrap - h.stock.scrap} scrap, −${v0.buildmat - h.stock.buildmat} building materials, −${v0.metalsheet - h.stock.metalsheet} metal sheets`);
   }
   for (const [type, mat] of [["wall4", 1], ["gate4", 1], ["wall4", 2], ["stand4", 0]]) {
-    const w0 = h.stock.wood, s0 = h.stock.scrap;
+    const v0 = { ...h.stock };
     const r = queueBuild(st, h, type, { mat });
     const c = pieceCost(type, mat || 1);
-    check(/queued/.test(r) && w0 - h.stock.wood === c.wood && s0 - h.stock.scrap === (c.scrap || 0), `${type} (${mat ? WALL_TIERS[mat].mat : "stand"}): −${w0 - h.stock.wood} wood, −${s0 - h.stock.scrap} scrap (${r})`);
+    check(/queued/.test(r) && ["wood", "scrap", "buildmat"].every((k) => took(k, v0[k] || 0, c)), `${type} (${mat ? WALL_TIERS[mat].mat : "stand"}): −${v0.wood - h.stock.wood} wood, −${v0.scrap - h.stock.scrap} scrap, −${v0.buildmat - h.stock.buildmat} building materials (${r})`);
   }
   h.stock.wood = 50;
   check(/Needs 600 wood/.test(canBuild(st, h, "bunkhouse").reason || ""), `short of wood a bunkhouse waits: "${canBuild(st, h, "bunkhouse").reason}"`);
