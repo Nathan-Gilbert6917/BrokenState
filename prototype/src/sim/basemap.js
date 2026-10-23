@@ -803,7 +803,7 @@ function ensureLand(state, base) {
   } finally { delete base.land.off; base.land.n = 1; }
 }
 // The cell kind a piece is laid as on the battle map.
-export const landCellKind = (p) => (p.k === "wreck" ? (p.body === "truck" ? "truck" : "car") : p.k);
+export const landCellKind = (p) => (p.k === "wreck" ? (p.body === "truck" ? "truck" : "car") : p.k === "rise" || p.k === "dip" ? "open" : p.k); // a hill's or a hollow's cell is open ground at its height (basescatter.js layLand)
 // The pieces under a thing at `at` (its footprint and the cells outside its doors), once each.
 export function landUnder(land, it, at) {
   const out = new Set();
@@ -870,7 +870,7 @@ export function siteProblem(state, tile, at) {
   if (!Array.isArray(at) || at.length < 2 || !Number.isInteger(at[0]) || !Number.isInteger(at[1])) return "Pick a spot for the camp";
   if (Math.abs(at[0]) > SITE_RANGE || Math.abs(at[1]) > SITE_RANGE) return "Too near the edge of the map: the camp's yard and a wall round it would run off it";
   const land = siteLand(state, tile), B = siteBox(at);
-  for (let y = B.y0; y < B.y1; y++) for (let x = B.x0; x < B.x1; x++) { const p = land.pieces.get(`${x},${y}`); if (p && p.k === "water") return "On the river: pick dry ground"; }
+  for (let y = B.y0; y < B.y1; y++) for (let x = B.x0; x < B.x1; x++) { const p = land.pieces.get(`${x},${y}`); if (p && p.k === "water") return "On the river: pick dry ground"; if (p && p.k === "crag") return "On the mountainside: pick open ground"; }
   return "";
 }
 // What clearing the spot would give and take ({ hours: work-hours at a builder's pace, get, n: pieces }; the picker's
@@ -893,7 +893,7 @@ export function siteYield(state, tile, at, tool = true) {
 // with no building and no high ground in its square (pulling a house down or digging a hill away to pitch a camp is
 // days of work: the user's request 2026-10-22, the towns, the cities and the hills of the base maps); within BIG_NEAR
 // of the middle, else the nearest that takes it at all.
-const BIG = new Set(["house", "store", "block", "rise", "slope"]);
+const BIG = new Set(["house", "store", "block", "rise", "slope", "dip", "crag"]);
 const BIG_NEAR = 60;
 export function defaultSite(state, tile) {
   const land = siteLand(state, tile);
@@ -973,7 +973,7 @@ export function landPieceAt(state, base, gx, gy, clump = false) {
   const land = landFor(state, base);
   const p = land ? land.pieces.get(`${gx},${gy}`) || null : null;
   if (!p) return [];
-  if (!clump || !["tree", "bush", "fence", "stump", "rock", "rise", "slope"].includes(p.k)) return [p];
+  if (!clump || !["tree", "bush", "fence", "stump", "rock", "rise", "slope", "dip"].includes(p.k)) return [p];
   const out = [p], seen = new Set([p.g]);
   for (let i = 0; i < out.length && out.length < 40; i++) for (const [x, y] of out[i].cells) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
     const q = land.pieces.get(`${x + dx},${y + dy}`);

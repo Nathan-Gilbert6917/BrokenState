@@ -477,7 +477,75 @@ function spotHead(z0, broken = false) {
     { u0: 0.3, u1: 0.7, v0: 0.36, v1: 0.64, z0: z0 + 13, z1: z0 + 21, m: (f) => (f === "top" ? PAL.metal : broken ? hex("#3a3a36") : hex("#f6eeb0")) },
   ];
 }
+// What a cell draws: the ground's own height under it first (terrainPrims: a column of earth, banks to lower ground),
+// then its own look raised onto it; trees and bushes drawn larger (the playtest 2026-10-23: "Make trees and bushes
+// larger they now seem small in comparison to survivors and hills": GROWN).
+const GROWN = { tree: [1.45, 1.18], bush: [1.6, 1.3] }; // [height ×, spread ×]
 function prims(k, o) {
+  let own = k === "open" ? [] : primsOf(k, o);
+  if (GROWN[k]) own = scalePrims(own, GROWN[k][0], GROWN[k][1]);
+  if (!o.ter) return own;
+  return [...terrainPrims(o.ter, o), ...raisePrims(own, o.ter.e * LV)];
+}
+const raisePrims = (list, dz) => (!dz ? list : list.map((p) => (p.blob ? { ...p, blob: [p.blob[0], p.blob[1], p.blob[2] + dz] } : { ...p, z0: (p.z0 || 0) + dz, z1: (p.z1 || 0) + dz })));
+// Taller by sz, wider by sr about the cell's middle.
+function scalePrims(list, sz, sr) {
+  const at = (q) => 0.5 + (q - 0.5) * sr;
+  return list.map((p) => {
+    if (p.blob) return { ...p, blob: [at(p.blob[0]), at(p.blob[1]), p.blob[2] * sz], ru: p.ru * sr, rz: p.rz * sz };
+    if (p.cyl) return { ...p, cyl: [at(p.cyl[0]), at(p.cyl[1]), p.cyl[2] * sr], z0: p.z0 * sz, z1: p.z1 * sz };
+    return { ...p, z0: p.z0 * sz, z1: p.z1 * sz };
+  });
+}
+// The ground's height at a cell (sim/basescatter.js reliefLayer, sim/relief.js; sim/combat.js c.h with c.ter): a column
+// of earth from the lowest ground beside it up to its own level, its top the floor it has (grass, a road, gravel), and on
+// each side where the ground beside it is lower a bank falling away to that level (RISE: the band, its foot), a rounded
+// shoulder where two such sides meet. T: { e (its level), bottom (the lowest beside it), falls: [+u, −u, +v, −v] the
+// ground's level that way }.
+function terrainPrims(T, o) {
+  const f = o.f || "grass", zt = T.e * LV;
+  const topC = (X, Y, k = 1) => {
+    const q = n2(X, Y, 6);
+    const c = f === "road" ? mul(FLOORC.road, 0.9 + q * 0.12) : f === "gravel" || f === "deck" ? mul(FLOORC.gravel, 0.8 + q * 0.35) : f === "dirt" ? mul(FLOORC.dirt, 0.88 + q * 0.2) : f === "field" ? mul(FLOORC.field, 0.9 + q * 0.12) : q > 0.9 ? mul(PAL.leaf2, 0.9) : mul(FLOORC.grass, 0.88 + q * 0.2);
+    return mul(c, k * (1 + 0.07 * T.e)); // the higher, the lighter: the levels read apart
+  };
+  const side = (f2, s, t, X, Y) => { const q = n2(X, Y, 4); return Math.floor(t + q * 4) % 7 < 1 ? mul(PAL.stone, 0.72) : mul(FLOORC.dirt, 0.78 + q * 0.22); };
+  const [fu, fnu, fv, fnv] = T.falls, B = RISE.BANK;
+  const pu = fu < T.e, nu = fnu < T.e, pv = fv < T.e, nv = fnv < T.e;
+  const u0 = nu ? B : 0, u1 = pu ? 1 - B : 1, v0 = nv ? B : 0, v1 = pv ? 1 - B : 1;
+  // The column's faces go down only as far as the ground in front of them (a face below its neighbour's ground would be
+  // drawn over that ground: the rim of a hollow read as a box): the south face (+v) to the +v neighbour's level, the
+  // east face (+u) to the +u one's, each from a box of its own (the other face left out: m gives null).
+  const zS = Math.min(T.e, fv) * LV, zE = Math.min(T.e, fu) * LV, zf = Math.max(zS, zE);
+  const out = [
+    { u0, u1, v0, v1, z0: zS, z1: zt, flat: true, m: (f2, s, t, X, Y) => (f2 === "top" ? topC(X, Y) : f2 === "east" ? null : side(f2, s, t, X, Y)) },
+    { u0, u1, v0, v1, z0: zE, z1: zt, flat: true, m: (f2, s, t, X, Y) => (f2 === "top" ? topC(X, Y) : f2 === "south" ? null : side(f2, s, t, X, Y)) },
+  ];
+  // A bank down to `lo` (a level): h 0 at the top's edge, 1 at the cell's.
+  const zAt = (h, lo) => zt - (zt - (lo * LV + RISE.FOOT * LV)) * Math.pow(h, 1.4);
+  // A bank in grass, a little darker the further down, its faces in part shade (the slopes facing away read darker).
+  const bankM = (h) => halfLit((f2, s, t, X, Y) => (f2 === "top" ? topC(X, Y, 1 - 0.2 * h) : t < 1.5 ? mul(FLOORC.dirt, 0.8) : topC(X, Y, 0.9 - 0.2 * h)));
+  const N = RISE.SLICES;
+  for (let i = 0; i < N; i++) {
+    const h = (i + 0.5) / N, a = (i * B) / N, b = ((i + 1) * B) / N, m = bankM(h);
+    if (pu) out.push({ u0: 1 - B + a, u1: 1 - B + b, v0, v1, z0: Math.min(zf, zAt(h, fu)), z1: zAt(h, fu), flat: true, m });
+    if (nu) out.push({ u0: B - b, u1: B - a, v0, v1, z0: Math.min(zf, zAt(h, fnu)), z1: zAt(h, fnu), flat: true, m });
+    if (pv) out.push({ u0, u1, v0: 1 - B + a, v1: 1 - B + b, z0: Math.min(zf, zAt(h, fv)), z1: zAt(h, fv), flat: true, m });
+    if (nv) out.push({ u0, u1, v0: B - b, v1: B - a, z0: Math.min(zf, zAt(h, fnv)), z1: zAt(h, fnv), flat: true, m });
+  }
+  for (const [cu, cv, lo] of [[pu && pv && [1 - B, 1], [1 - B, 1], Math.max(fu, fv)], [pu && nv && [1 - B, 1], [0, B], Math.max(fu, fnv)], [nu && pv && [0, B], [1 - B, 1], Math.max(fnu, fv)], [nu && nv && [0, B], [0, B], Math.max(fnu, fnv)]]) {
+    if (!cu) continue;
+    const M = 4;
+    for (let i = 0; i < M; i++) for (let k = 0; k < M; k++) {
+      const a0 = cu[0] + (i * B) / M, b0 = cv[0] + (k * B) / M;
+      const du = cu[0] === 0 ? (M - 1 - i + 0.5) / M : (i + 0.5) / M, dv = cv[0] === 0 ? (M - 1 - k + 0.5) / M : (k + 0.5) / M;
+      const h = Math.min(1, Math.hypot(du, dv));
+      out.push({ u0: a0, u1: a0 + B / M, v0: b0, v1: b0 + B / M, z0: Math.min(zf, zAt(h, lo)), z1: zAt(h, lo), flat: true, m: bankM(h) });
+    }
+  }
+  return out.sort((p, q) => p.u0 + p.v0 - q.u0 - q.v0);
+}
+function primsOf(k, o) {
   const v = o.v || 0;
   if (o.car && (k === "car" || k === "truck" || k === "vehicle")) return carPieces(o.car, iso.rot);
   switch (k) {
@@ -607,6 +675,19 @@ function prims(k, o) {
       const top = (f, s, t, X, Y) => (k === "roof" ? mul(PAL.tar, 0.9 + n2(X, Y, 3) * 0.25) : mul(k === "loft" ? PAL.wood : PAL.woodLt, (Math.floor(along(o) === "u" ? t : s) % 4 < 1 ? 0.72 : 0.92 + n2(X, Y, 8) * 0.12)));
       const side = k === "roof" ? wallFace(3, 0) : (f, s, t) => (Math.floor(t) % 10 < 2 || Math.floor(s) % 8 < 2 ? PAL.woodDk : mul(PAL.wood, 0.75));
       return [{ u0: 0, u1: 1, v0: 0, v1: 1, z0: 0, z1: LV, flat: k === "loft", m: (f, s, t, X, Y, a, c) => (f === "top" ? top(f, s, t, X, Y) : side(f, s, t, X, Y, a, c)) }];
+    }
+    case "crag": { // a mountain's ridge (sim/basescatter.js reliefLayer): one mass of rock three levels up and more, its
+      // faces banded and cracked, its top broken a little cell to cell, the highest snow-capped; a side with no crag
+      // beside it (o.j, JOINS.crag) steps in as it rises, so the ridge's flanks are steep but not walls.
+      const q0 = hash3(v, o.alt, 23), hh = 3 * LV + Math.round((q0 - 0.3) * 10), snow = q0 > 0.72;
+      const rock = (f, s2, t, X, Y) => {
+        const q = n2(X, Y, 8), crack = n2(Math.floor(X / 3), Math.floor(Y / 2), 13) > 0.9;
+        if (f === "top") return snow && q > 0.25 ? mul(hex("#d9dde0"), 0.9 + q * 0.1) : mul(PAL.stone, 1.02 + q * 0.16);
+        return crack ? mul(PAL.stone, 0.5) : mul(PAL.stone, (Math.floor((t + q * 5) / 6) % 2 ? 0.74 : 0.84) + q * 0.1);
+      };
+      const open = (d) => !(o.j & (1 << d)), I = 0.16;
+      const tier = (z0, z1, k) => ({ u0: open(1) ? I * k : 0, u1: open(0) ? 1 - I * k : 1, v0: open(3) ? I * k : 0, v1: open(2) ? 1 - I * k : 1, z0, z1, flat: true, m: rock });
+      return [tier(0, hh * 0.45, 0), tier(hh * 0.45, hh * 0.8, 1), tier(hh * 0.8, hh, 2)];
     }
     case "rise": { // high ground (sim/basescatter.js highLayer): a block of earth a level up, grass on its top
       // Its open sides (no high ground or slope beside it: o.j, JOINS.rise) fall away in a grassy bank (the playtest
@@ -935,11 +1016,11 @@ function spritePut(key, s) {
 }
 // A cached sprite for a cell's look.
 function sprite(k, o, fog) {
-  const key = `${iso.straight ? "s|" : ""}${k}|${o.v}|${o.alt}|${o.j}|${o.n}|${o.top}|${o.stub ? 1 : 0}|${o.mat}|${o.dmg}|${o.barred ? 1 : 0}|${o.dir}|${o.part || ""}|${o.vault ? 1 : 0}|${o.roll ? 1 : 0}|${o.lit ? 1 : 0}|${o.spot || 0}|${fog ? 1 : 0}|${o.car ? `${o.car.i},${o.car.j},${o.car.L},${o.car.ax},${o.car.kind},${o.car.v},${o.car.body || ""},${o.car.mil ? o.car.mil.cond : ""},${upKey(o.car.up)},${iso.rot & 3}` : ""}`;
+  const key = `${iso.straight ? "s|" : ""}${k}|${o.v}|${o.alt}|${o.j}|${o.n}|${o.top}|${o.stub ? 1 : 0}|${o.mat}|${o.dmg}|${o.barred ? 1 : 0}|${o.dir}|${o.part || ""}|${o.vault ? 1 : 0}|${o.roll ? 1 : 0}|${o.lit ? 1 : 0}|${o.spot || 0}|${fog ? 1 : 0}|${o.ter ? `${o.ter.key}${o.f}` : ""}|${o.car ? `${o.car.i},${o.car.j},${o.car.L},${o.car.ax},${o.car.kind},${o.car.v},${o.car.body || ""},${o.car.mil ? o.car.mil.cond : ""},${upKey(o.car.up)},${iso.rot & 3}` : ""}`;
   let s = spriteGet(key);
   if (s === undefined) {
     const p = prims(k, o);
-    s = p.length ? paint(p, { fog, outline: OUTLINED.has(k) && !(k === "sandbag" && o.j) }) : null; // joined sandbags: no outline, or each cell's would cross the wall at the join
+    s = p.length ? paint(p, { fog, outline: OUTLINED.has(k) && !(k === "sandbag" && o.j) && !o.ter }) : null; // !o.ter: on a hill the outline would trace the ground's column and banks too // joined sandbags: no outline, or each cell's would cross the wall at the join
     iso.builds.sprites++;
     spritePut(key, s);
   }
@@ -1235,9 +1316,11 @@ function fogMaskFor(b, vis) {
 // ---------- per-cell looks ----------
 // The high ground's look (prims "rise", "slope"): the band its open sides fall away across, how far down the bank goes
 // at the cell's edge (a share of the height), and the slices a bank or a ramp is drawn in (smooth at this scale).
-const RISE = { BANK: 0.34, FOOT: 0.12, SLICES: 6 };
+const RISE = { BANK: 0.44, FOOT: 0.1, SLICES: 7 };
 // A slope drawn in thin slices: each slice's faces lit as a top is (the painter shades a south face LIGHT.south and an
 // east face LIGHT.east), so the slices read as one smooth surface, not a flight of steps.
+// Half way: the faces of a terrain bank keep some of their shade (a slope away from the light reads darker).
+const halfLit = (m) => (f, s, t, X, Y, a, c) => { const col = m(f, s, t, X, Y, a, c); return !col || f === "top" ? col : mul(col, (1 + LIGHT.top / (f === "east" ? LIGHT.east : LIGHT.south)) / 2); };
 const rampLit = (m) => (f, s, t, X, Y, a, c) => { const col = m(f, s, t, X, Y, a, c); return !col || f === "top" ? col : mul(col, LIGHT.top / (f === "east" ? LIGHT.east : LIGHT.south)); };
 const JOINS = {
   wall: WALLISH, window: WALLISH, door: WALLISH, bdoor: WALLISH, doorway: WALLISH, smashed: WALLISH, idoor: WALLISH, odoor: WALLISH, boarded: WALLISH,
@@ -1246,6 +1329,7 @@ const JOINS = {
   fence: new Set(["fence"]), wire: new Set(["wire"]), rail: new Set(["rail"]), sandbag: new Set(["sandbag", "barricade"]), barricade: new Set(["barricade", "sandbag"]),
   walkway: new Set(["walkway", "tower", "stand"]), stand: new Set(["stand", "walkway", "tower"]), trench: new Set(["trench"]), shelf: WALLISH, locker: WALLISH, cabinet: WALLISH, counter: WALLISH,
   rise: new Set(["rise", "slope"]), // high ground: its banks fall away on the sides with none beside it (prims rise)
+  crag: new Set(["crag"]), // a mountain's ridge: one mass of rock (prims crag)
   outline: new Set(["outline"]), // the base map: a building's outline joins along its sides (sim/basemap.js)
   tent: new Set(["tent"]), log: new Set(["log"]), // a camp's 2 × 1 ridge tent, a fallen log two cells long (sim/basemap.js, basescatter.js)
 };
@@ -1253,10 +1337,24 @@ const JOINS = {
 // own map (sim/buildingmaps.js) the cutaway lowers only the walls within CUT_R tiles of these points (your people, the
 // mouse, enemies you see), so the rest of a big building keeps its walls standing.
 const CUT_R = 6;
+// The ground's level at a cell (sim/combat.js c.h with c.ter; 0 level ground; a raised floor or a wall: 0, it is not the
+// ground's), and the look under the cell: null when it and everything round it is level ground.
+const groundLv = (c) => (c && c.ter ? c.h || 0 : 0);
+function terrainOf(b, x, y) {
+  const c = b.cells[y * b.w + x], e = groundLv(c), r = iso.rot;
+  let bottom = e;
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const nx = x + dx, ny = y + dy; if (nx >= 0 && ny >= 0 && nx < b.w && ny < b.h) bottom = Math.min(bottom, groundLv(b.cells[ny * b.w + nx])); }
+  if (!e && bottom === 0) return null;
+  const falls = [e, e, e, e];
+  VD.forEach(([dx, dy]) => { const nx = x + dx, ny = y + dy; if (nx >= 0 && ny >= 0 && nx < b.w && ny < b.h) falls[viewDir(dx, dy, r)] = groundLv(b.cells[ny * b.w + nx]); });
+  return { e, bottom, falls, key: `${e}${bottom}${falls.join("")}` };
+}
 function lookOf(b, scene, x, y, cut, focus = null) {
   const i = y * b.w + x, c = b.cells[i], k = c.k === "siegeladder" ? "palisade" : c.k; // a siege ladder leans on its wall (drawn on top: drawSiegeIso)
-  if (k === "open" || k === "water" || k === "void") return null; // void: outside the footprint on an upper floor
-  const r = iso.rot, o = { v: Math.floor(hash3(x, y, 17) * 4), alt: hash3(x, y, 99) < 0.35 ? 1 : 0, j: 0, n: null, top: WALL1, mat: 0, dmg: 0, dir: null };
+  if (k === "water" || k === "void") return null; // void: outside the footprint on an upper floor
+  const ter = terrainOf(b, x, y); // the ground's height here (a hill, a hollow, a rim): drawn under the cell's own look
+  if (k === "open" && !ter) return null;
+  const r = iso.rot, o = { v: Math.floor(hash3(x, y, 17) * 4), alt: hash3(x, y, 99) < 0.35 ? 1 : 0, j: 0, n: null, top: WALL1, mat: 0, dmg: 0, dir: null, ter, f: ter ? c.f || "" : "" };
   const js = JOINS[k];
   if (js) for (const [dx, dy] of VD) {
     const nx = x + dx, ny = y + dy;
@@ -1297,7 +1395,7 @@ function lookOf(b, scene, x, y, cut, focus = null) {
   if (c.roll) o.roll = true; // a roller door (sim/buildingmaps.js)
   if (k === "firepit" && c.lit) o.lit = true; // a fire pit burning (its flames: prims)
   if (c.spot) o.spot = c.spotBroken ? 2 : 1; // a mounted spotlight, on the ground or up on a wall stand (sim/basemap.js)
-  if (c.h > 0 && FURNITURE.has(k)) o.raise = c.h * LV; // furniture on an upper floor
+  if (c.h > 0 && FURNITURE.has(k) && !c.ter) o.raise = c.h * LV; // furniture on an upper floor (on a hill: raised with the ground, prims)
   if (k === "ladder" || k === "stairs" || k === "slope") {
     // Towards the higher neighbour (the walkway, the loft, the roof).
     let best = -1, bh = hAt(b, x, y);
@@ -1321,7 +1419,7 @@ function lookOf(b, scene, x, y, cut, focus = null) {
 const SPLIT = new Set(["bdoor", "doorway", "smashed", "gate", "tower", "odoor"]); // drawn in two parts around who stands there
 // How tall a cell's block stands (art px), for picking and fading.
 function blockTop(k, o) {
-  return blockTop0(k, o) + (o.raise || 0);
+  return blockTop0(k, o) * (GROWN[k] ? GROWN[k][0] : 1) + (o.raise || 0) + (o.ter ? Math.max(0, o.ter.e) * LV : 0);
 }
 function blockTop0(k, o) {
   switch (k) {
@@ -1332,6 +1430,7 @@ function blockTop0(k, o) {
     case "walkway": case "loft": case "roof": case "stand": return LV;
     case "stairs": case "slope": return LV / 2;
     case "rise": return LV;
+    case "crag": return 3 * LV + 4;
     case "ladder": return LV;
     case "tree": return o.v === 3 && o.alt ? 30 : 40;
     case "hivewall": return 30;
@@ -2336,9 +2435,9 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     const [X, Y] = project((Math.min(...xs) + Math.max(...xs) + 1) / 2, (Math.min(...ys) + Math.max(...ys) + 1) / 2, 34);
     tag(ctx, `${c.who && c.who.length ? `${c.who.slice(0, 3).join(", ")}${c.who.length > 3 ? ` +${c.who.length - 3}` : ""}: ` : ""}Clearing ${c.pct}%`, X, Y, "#f0c060", Math.max(10, 3.6 * S)); // woodwork: who is felling it (sim/woodwork.js chopHands)
   }
-  // The camp's spot on high ground (sim/basescatter.js highLayer): its raised cells again over the blocks painted on them.
+  // The camp's spot on high ground or in a hollow (sim/basescatter.js reliefLayer): its raised and sunk cells again over the blocks painted on them.
   if (H.ghost && b.site) {
-    const up = (cells) => new Set(cells.filter(([x, y]) => tileTop(b, x, y) > 0).map(([x, y]) => y * b.w + x));
+    const up = (cells) => new Set(cells.filter(([x, y]) => tileTop(b, x, y) !== 0).map(([x, y]) => y * b.w + x)); // raised or sunk (a hollow's floor is drawn over the ground)
     const inP = up(H.ghost.picked || []), inG = up(H.ghost.cells || []);
     if (inP.size) { fillCells(ctx, b, (i) => inP.has(i), "rgba(255,209,102,0.3)"); outlineCells(ctx, b, (i) => inP.has(i), "rgba(255,209,102,0.95)", 2.5); }
     if (inG.size) { fillCells(ctx, b, (i) => inG.has(i), H.ghost.ok ? `rgba(${COL.goodRgb},0.35)` : "rgba(220,70,60,0.35)"); outlineCells(ctx, b, (i) => inG.has(i), H.ghost.ok ? `rgba(${COL.goodRgb},0.95)` : "rgba(240,90,80,0.95)", 2); }
