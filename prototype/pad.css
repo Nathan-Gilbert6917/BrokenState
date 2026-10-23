@@ -62,3 +62,14 @@ body > #padhints { position: fixed; }
 
 /* No mouse arrow over the maps while the pad plays: the cursor is the map's own. */
 .input-pad #map, .input-pad #combatmap { cursor: none; }
+
+/* The pointer in a picture only the mouse reads (padnav.js pointIn: the Ledger's charts, anything marked data-padpoint):
+   a cross where the mouse would be, the D-pad moving it (the user's request 2026-10-23: the whole game by pad). */
+#padptr { display: none; }
+.input-pad #padptr:not([hidden]) {
+  display: block; position: fixed; z-index: 2147483001; pointer-events: none; width: 22px; height: 22px; margin: -11px 0 0 -11px;
+  border-radius: 50%; border: 2px solid #6fe3ff; box-shadow: 0 0 0 2px rgba(0,0,0,0.7), 0 0 10px 2px rgba(111,227,255,0.6);
+  background: linear-gradient(#6fe3ff, #6fe3ff) center / 2px 100% no-repeat, linear-gradient(#6fe3ff, #6fe3ff) center / 100% 2px no-repeat;
+}
+/* A map's place the ring rests on (an SVG button: the POI map's, a crawl's) stands out as under the mouse. */
+.input-pad svg .pad-focus { filter: drop-shadow(0 0 4px #6fe3ff) drop-shadow(0 0 2px #6fe3ff); }

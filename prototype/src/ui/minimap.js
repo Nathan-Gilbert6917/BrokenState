@@ -2,7 +2,7 @@
 // bottom-right corner. Shows only what you know, like the map (render.js liveSet: the dev tools' Reveal map shows
 // everything): the land shaded live / reported / unknown, water and roads, the Territory, Infection and Coalition
 // layers when they are on, then your bases and teams, the hordes and hives you know of, other groups' bases you know
-// (Territory layer), and the part of the map on screen as a frame. Click or drag on it to look there.
+// (Territory layer), and the part of the map on screen as a frame. Click or drag on it to look there; a controller points in it (data-padpoint: ui/padnav.js, the ring on it, A, the D-pad, A; 2026-10-23).
 //
 // Cheap by design (the desktop app runs the map at 120 fps at 4K): the land is one small image, a pixel block per
 // tile, worked out again only when the hour, the fog, the layers or the colours change (at most twice a second),
@@ -44,7 +44,7 @@ export function initMinimap(wrap, mapCanvas, options) {
   box = document.createElement("div");
   box.id = "minimap";
   box.className = "hidden";
-  box.innerHTML = `<canvas></canvas><button class="mm-hide" data-action="mm-toggle" data-tip="Hide the minimap (M). Click or drag on it to look at that part of the map.">–</button>`;
+  box.innerHTML = `<canvas data-padpoint></canvas><button class="mm-hide" data-action="mm-toggle" data-tip="Hide the minimap (M). Click or drag on it to look at that part of the map.">–</button>`;
   wrap.appendChild(box);
   showBtn = document.createElement("button");
   showBtn.id = "mm-show";

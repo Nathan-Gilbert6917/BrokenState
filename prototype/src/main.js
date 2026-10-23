@@ -708,7 +708,7 @@ function renderCombat(user) {
 // Banners at the top of the map: paused (with the orders waiting for the unpause) and move mode.
 function bannerHTML() {
   if (!ui.started && ui.nrMap && !ui.title) return `<div class="paused" data-tip="The new-run screen is put aside so you can look around the map: where you start, the groups, the roads. Nothing runs until you start.">` +
-    `<b class="big">Setting up</b> ${ui.nrPick ? `Click ${state.mode === "hardcore" ? "open land" : "a town"} to start there` : "Looking at the map"} <button data-action="nr-start" data-tip="Roll a new starting position on this same map and seed (the map, the hives and your colonists stay)">📍 New start position</button> <button data-action="nr-pick"${ui.nrPick ? ` class="primary"` : ""} data-tip="${ui.nrPick ? "Stop picking: clicks on the map look around again" : "Pick where you start: click a tile on the map"}">🎯 Pick start${ui.nrPick ? ": on" : ""}</button> <button data-action="nr-map" data-tip="Back to the new-run screen (Esc)">◀ Back to setup</button>${ui.nrMsg ? ` <span class="small">${esc(ui.nrMsg)}</span>` : ""}</div>`;
+    `<b class="big">Setting up</b> ${ui.nrPick ? `${keyHint({ key: "Click", touch: "Tap", pad: `${kh("A")} on` })} ${state.mode === "hardcore" ? "open land" : "a town"} to start there` : `Looking at the map${keyHint({ key: "", touch: "", pad: ` · ${kh("Y")} to pick the start` })}`} <button data-action="nr-start" data-tip="Roll a new starting position on this same map and seed (the map, the hives and your colonists stay)">📍 New start position</button> <button data-action="nr-pick"${ui.nrPick ? ` class="primary"` : ""} data-tip="${ui.nrPick ? "Stop picking: clicks on the map look around again" : "Pick where you start: click a tile on the map"}">🎯 Pick start${ui.nrPick ? ": on" : ""}</button> <button data-action="nr-map" data-tip="Back to the new-run screen (Esc)">◀ Back to setup</button>${ui.nrMsg ? ` <span class="small">${esc(ui.nrMsg)}</span>` : ""}</div>`;
   if (!ui.started || state.gameOver || state.combat || ui.timelapse) return "";
   let html = trayHTML(state, ui); // the card tray (ui/pacing.js)
   if (ui.speed === 0) {
@@ -2252,9 +2252,13 @@ touchGestures(canvas, {
 // in turn), ⧉ held map only (\, a desktop), the right stick pans, LT / RT zoom about the cursor, R3 centres on it. A
 // window, the tile menu and the panels are ui/padnav.js's layer, above this one. None of it shows or runs until the
 // controller is the device in use (ui/inputmode.js "pad").
+// Before the run starts (the user's request 2026-10-23: the whole game by pad), the new-run screen's View map and Pick
+// start on map: the same cursor; Y turns Pick start on and off, A picks the start there (pickStartAt; its hover line
+// beside the cursor, as the mouse's), B goes back to the setup, ⧉ the banner's buttons (ui/padnav.js).
 const padMap = { tile: -1, vx: 0, follow: false };
 const tilePx = (id) => { const [x, y] = state.grid.toPixel(id, HEX); return [(x - camera.x) * camera.zoom, (y - camera.y) * camera.zoom]; };
-const mapPadOn = () => ui.started && !ui.title && !state.combat && !ui.timelapse;
+const nrMapOn = () => !ui.started && ui.nrMap && !ui.title; // the new-run screen put aside: its map
+const mapPadOn = () => (ui.started || nrMapOn()) && !ui.title && !state.combat && !ui.timelapse;
 const mapWinUp = () => !!ui.ask || !!ui.imenu || !!ui.box || !!modalKind(state, ui);
 const inMap = (id) => { const [x, y] = tilePx(id); return x >= 0 && y >= 0 && x <= canvas.clientWidth && y <= canvas.clientHeight; };
 // The cursor put down: on the tile picked if it is in view, else the one in the middle of the map.
@@ -2268,7 +2272,21 @@ function padShow() {
   view.cursor = padMap.tile;
   if (padMap.tile < 0) return;
   if (!$("ctxmenu").classList.contains("hidden") || mapWinUp() || !inMap(padMap.tile)) { $("tooltip").classList.add("hidden"); return; } // panned away from it: no tooltip at the map's edge
+  if (!ui.started) { startTipAt(padMap.tile, ...tilePx(padMap.tile)); return; } // the new-run screen's map
   hoverAt(...tilePx(padMap.tile), true);
+}
+// Before the run: the start's line beside the cursor while picking (startTipHTML, as under the mouse), else nothing.
+function startTipAt(id, sx, sy) {
+  const tip = $("tooltip");
+  view.hover = id;
+  if (!ui.nrPick || id < 0) { tip.classList.add("hidden"); return; }
+  const html = startTipHTML(id);
+  if (tip.innerHTML !== html) tip.innerHTML = html;
+  tipKey = "";
+  tip.classList.remove("hidden");
+  const W = canvas.clientWidth, H = canvas.clientHeight, w = tip.offsetWidth, h = tip.offsetHeight;
+  tip.style.left = `${sx + 24 + w > W - 4 ? Math.max(4, sx - 24 - w) : sx + 24}px`;
+  tip.style.top = `${sy + 18 + h > H - 4 ? Math.max(4, sy - 18 - h) : sy + 18}px`;
 }
 // One tile toward (dx, dy). Straight up or down zigzags about the column it started in (the rows are offset half a
 // tile), so it keeps going straight instead of drifting to one side.
@@ -2306,6 +2324,7 @@ claimPad("map", {
   dock: () => $("mapwrap"),
   legend: () => {
     if (mapWinUp()) return [["B", "Close"]];
+    if (!ui.started) return [...(ui.nrPick ? [["A", "Start here"]] : []), ["Y", ui.nrPick ? "Stop picking" : "Pick start"], ["B", "Back to setup"], ["LT RT", "Zoom"], ["View", "Banner"]];
     const pick = ui.moveParty != null ? "Move here" : ui.fwPlace ? "Place here" : ui.meetPick ? "Meet here" : "Select";
     const back = ui.moveParty != null || ui.fwPlace || ui.meetPick ? "Cancel" : "Back";
     return [["A", pick], ["B", back], ["X", "Menu"], ["Y", "Next team"], ["Menu", ui.speed > 0 ? "Pause" : "Run"], ["LB RB", "Speed"], ["View", "Panels"]];
@@ -2325,6 +2344,7 @@ claimPad("map", {
   },
   on: (ev) => {
     const n = ev.name, seen = view.cursor >= 0;
+    if (!ui.started) return padStartOn(ev); // the new-run screen's map
     if (ev.type === "hold") { if (n === "Menu") { openSettings(ui); refresh(); } else if (n === "View" && !mapWinUp() && !$("rs-dock")) padDo(() => actions["panel-all"]()); return true; } // ☰ held: the game menu (Esc); ⧉ held: map only
     if (ev.type === "up") { if (n === "Menu" && !ev.long && !mapWinUp()) { padPause(); refresh(); } else if (n === "View" && !ev.long && !mapWinUp()) navPanels(); return true; }
     if (n === "B" && ev.type === "down") { if (closeTopLayer()) refresh(); return true; }
@@ -2343,6 +2363,24 @@ claimPad("map", {
     return true;
   },
 });
+// The new-run screen's map by pad: ◀ ▶ ▲ ▼ the cursor, A picks the start there (with Pick start on), Y turns Pick start
+// on and off, B back to the setup, ⧉ the banner's buttons (ui/padnav.js), R3 centres on the cursor.
+function padStartOn(ev) {
+  const n = ev.name;
+  if (ev.type === "up") { if (n === "View" && !ev.long && !mapWinUp()) navPanels(); return true; }
+  if (n === "B" && ev.type === "down") { if (closeTopLayer()) refresh(); return true; }
+  if (mapWinUp()) return true;
+  if (["Up", "Down", "Left", "Right"].includes(n)) { padStep(ev.dx, ev.dy); return true; }
+  if (ev.type !== "down") return true;
+  if (view.cursor < 0 && n === "A") { padSeat(); return true; } // the first press shows the cursor
+  if (n === "A" && padMap.tile >= 0) {
+    if (ui.nrPick) mapClick(...padClient(), false);
+    else ui.nrMsg = "Press Y to pick where you start, then A on a tile.";
+    refresh();
+  } else if (n === "Y") padDo(() => actions["nr-pick"]({}));
+  else if (n === "RS" && padMap.tile >= 0) centerOn(state, padMap.tile);
+  return true;
+}
 // The mouse, a key or a finger used again: the cursors, the hover they kept and the focus ring go (the mouse's own
 // hover comes back as soon as it moves over the map).
 window.addEventListener("inputmode", (e) => {
@@ -2642,6 +2680,14 @@ actions["cb-tap"] = (d) => combatTapChip(state, d.v); // the confirm chip a tap 
 // cursor, R3 centres on the selected unit; ☰ the game menu; ⧉ the battle panel and the raid's strip (ui/padnav.js). A
 // window over the battle (a search's loot, a kit, the plan before a raid), the orders bar and a battle's question
 // (the retreat, the fall back, End turn's) are ui/padnav.js's layer, above this one.
+// The same screen with nobody on it (the user's request 2026-10-23: the whole game by pad): the camp's spot (b.site,
+// ui/campsite.js) and the base map (b.layout, ui/basemap.js). The cursor is the mouse there too: its 5 × 5 or the
+// pick's ghost, green or red, and the hover line in the panel; A clicks the cell (picks the spot; builds or puts the
+// pick down, selects a placed thing, again lifts it to move, a piece of the land's card to clear it); Y sets up camp on
+// the spot picked, or turns the pick (R); B puts the pick down, then lets the selection go (Esc; the camp's spot: no
+// back, Let the game pick is its button); LB / RB turn the view (no units to go through); ⧉ the panel (the Build list,
+// the lists, the selected thing's card: Demolish, Move, Clear), and a thing picked there to build or place gives the
+// pad back to the cursor (ui/padnav.js).
 const battleWinUp = () => !!(ui.ask || ui.imenu || ui.box) || !!modalKind(state, ui);
 const barItems = () => [...document.querySelectorAll("#cbbar button:not([disabled])")].filter((el) => el.offsetParent !== null);
 claimPad("battle", {
@@ -2651,6 +2697,11 @@ claimPad("battle", {
     const b = state.combat;
     if (battleWinUp()) return [["B", "Close"]];
     if (b.over) return [["Y", "Close"], ["Menu", "Menu"]];
+    if (b.site) return [["A", "Pick spot"], ["Y", "Set up camp"], ["LB RB", "Turn view"], ["LT RT", "Zoom"], ["View", "Panel"], ["Menu", "Menu"]];
+    if (b.layout && b.phase === "deploy") {
+      const L = b.layout, held = !!(L.pickType || L.pick);
+      return [["A", L.pickType ? "Build here" : L.pick ? "Put here" : "Select"], ...(held ? [["Y", "Rotate"]] : []), ...(held || L.sel ? [["B", held ? "Put back" : "Deselect"]] : []), ["LB RB", "Turn view"], ["LT RT", "Zoom"], ["View", L.sel || L.land ? "Card" : "Build list"], ["Menu", "Menu"]];
+    }
     const asked = !!cui.tapAsk || !!cui.tapFace;
     return [["A", asked ? "Confirm" : "Act"], ["B", asked || cui.mode !== "move" ? "Cancel" : "Back"], ["X", "Orders"], ["Y", b.phase === "deploy" ? "Start" : "End turn"], ["LB RB", "Unit"], ["Menu", "Menu"]];
   },
@@ -2672,6 +2723,7 @@ claimPad("battle", {
     if (combatPadOn(state) && (n === "A" || n === "X")) { refresh(); return true; } // the first press shows the cursor: nothing is done unseen
     if (n === "A") { act(() => combatPadA(state)); refresh(); }
     else if (n === "Y") { act(() => combatPadEnd(state)); refresh(); }
+    else if ((n === "LB" || n === "RB") && (state.combat.site || state.combat.layout)) { combatAction(state, "cb-view", { v: n === "LB" ? "rotl" : "rotr" }); refresh(); } // nobody on the map: the view turns
     else if (n === "LB" || n === "RB") { combatPadCycle(state, n === "LB" ? -1 : 1); refresh(); }
     else if (n === "X" && barItems().length) { navBar(); refresh(); } // the orders bar (ui/padnav.js: A gives one and comes back, a tray stays)
     else if (n === "RS") { combatAction(state, "cb-view", { v: "center" }); refresh(); }
@@ -2680,7 +2732,14 @@ claimPad("battle", {
   },
 });
 // The windows, menus and panels (ui/padnav.js), above the map and the battle.
-initPadNav({ ui, state: () => state, actions, refresh: () => refresh(), mapPick: () => ui.moveParty != null || !!ui.fwPlace || !!ui.meetPick });
+// mapPick: what is being picked on a map now ("" for nothing): a team's move, a field work's or a meeting's tile; the
+// base map's thing to build or place (a new one hands the pad from its panel back to the cursor).
+const padPickKey = () => {
+  const L = state.combat && state.combat.layout;
+  if (L) return L.pickType || L.pick ? `bm:${L.pickType || ""}:${L.pick || ""}` : "";
+  return ui.moveParty != null ? `move:${ui.moveParty}` : ui.fwPlace ? "fw" : ui.meetPick ? "meet" : "";
+};
+initPadNav({ ui, state: () => state, actions, refresh: () => refresh(), mapPick: padPickKey });
 // A question over anything (ui/confirm.js): A says yes, B cancels, as Enter and Esc. Claimed after the map, the
 // battle and the windows, so it is above them.
 claimPad("ask", {

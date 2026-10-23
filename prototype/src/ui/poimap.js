@@ -15,7 +15,7 @@
 //   dot ("You"), and
 //   each place as its map sprite (ui/mapsprites.js poiSpriteCanvas: its kind, its franchise, faded by how picked
 //   over it is) with its name and minutes under it. A place is a button (data-action "poisel"): it selects it, and
-//   the dialogue shows what is known of it and the button to walk there. Hovering one lights its route.
+//   the dialogue shows what is known of it and the button to walk there. Hovering one lights its route (so does a controller's ring resting on it, .pad-focus: ui/padnav.js, 2026-10-23).
 import { TERRAIN } from "../sim/data.js";
 import { hash01 } from "../sim/skills.js";
 import { season } from "../sim/weather.js";
@@ -237,7 +237,7 @@ export function poiMapSvg(state, t, wm, rows, sel, tips, opts = {}) {
       <text class="pm-name" x="${x.toFixed(1)}" y="${(y + 24).toFixed(1)}">${esc(label)}</text>
       <text class="pm-mins" x="${x.toFixed(1)}" y="${(y + 37).toFixed(1)}">${pl.mins ? `${r.drive ? "🚗" : "🚶"} ${pl.mins} min` : "📍 You are here"}</text>
     </g>`);
-    hov.push(`.pm-svg:has(.pm-poi[data-poi="${pl.i}"]:hover) .pm-route[data-poi="${pl.i}"],.pm-svg:has(.pm-poi[data-poi="${pl.i}"]:hover) .pm-chip[data-poi="${pl.i}"]{stroke-opacity:1;opacity:1}`);
+    hov.push(`.pm-svg:has(.pm-poi[data-poi="${pl.i}"]:is(:hover,.pad-focus)) .pm-route[data-poi="${pl.i}"],.pm-svg:has(.pm-poi[data-poi="${pl.i}"]:is(:hover,.pad-focus)) .pm-chip[data-poi="${pl.i}"]{stroke-opacity:1;opacity:1}`);
   }
   // The team: at a place (a ring under it), else its dot on the edge it came in by, or in the middle.
   const f = wm.from, [ux, uy] = toMap(f.spot);

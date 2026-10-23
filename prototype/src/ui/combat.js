@@ -48,7 +48,7 @@ import { noiseGhosts } from "../sim/crossfire.js"; // shots and blasts heard out
 import { canPlace, LIT_ZONES } from "../sim/deploy.js";
 import { layoutPanel, layoutHover, storeHover, storesHtml } from "./basemap.js"; // the base map's layout mode, the stores on the map
 import { ghostAt, itemAtCell, storeAt, FOOT, keyOptions, keyTargets, KEY_AP, landPieceAt, gridOfCell, siteGhostAt, siteClickAt } from "../sim/basemap.js";
-import { sitePanel, siteHoverText, siteKey } from "./campsite.js"; // the camp's spot picked on the tile's map (sim/basemap.js openSiteView) // keyOptions: the defenders' keys (Lock, Unlock)
+import { sitePanel, siteHoverText, siteKey, CS_ACTIONS } from "./campsite.js"; // the camp's spot picked on the tile's map (sim/basemap.js openSiteView) // keyOptions: the defenders' keys (Lock, Unlock)
 import { BUILDINGS, demolishRefund, TENTS, tentKind } from "../sim/buildings.js"; // layout mode's Demolish: the question names the building and the refund
 import { ask } from "./confirm.js"; // one confirmation style (the base map's Demolish asks as the Construction tab's does)
 const refundWords = (rec) => { const t = Object.entries(demolishRefund(rec) || {}).filter(([, q]) => q > 0).map(([k, q]) => `${q} ${k}`).join(", "); return t ? ` (${t})` : ""; };
@@ -684,11 +684,19 @@ export function combatPadA(state) {
   try { combatTap(state, px, py, true); } finally { padForce = null; }
   padCur.shown = "";
 }
-// B: the order asked about dropped, a move's tile let go, else Esc. True when something was dropped.
+// B: the order asked about dropped, a move's tile let go, else Esc. True when something was dropped. The base map: the
+// pick put down, then the selection let go, as its Esc (layoutEsc); the camp's spot: nothing (its Esc lets the game
+// pick, which is Let the game pick's button, not a back).
 export function combatPadB(state) {
   const b = state.combat;
   if (!b) return false;
   sync(b);
+  if (b.layout && b.phase === "deploy") {
+    if (layoutEsc(state, b)) return true;
+    if (b.layout.land != null || b.layout.tunnel != null) { b.layout.land = null; b.layout.tunnel = null; return true; } // a piece of the land's card, a tunnel's
+    return false;
+  }
+  if (b.site) return false;
   if (cui.tapAsk) { cui.tapAsk = null; return true; }
   if (cui.tapFace) { combatTapChip(state, "no"); return true; }
   return battleEsc();
@@ -704,13 +712,16 @@ export function combatPadCycle(state, d) {
   if (u && !u.off && padCur.on) { padCur.x = u.x; padCur.y = u.y; cui.tapAsk = null; padHover(state, b); }
 }
 // Y: End turn as its button (asks while anyone has actions; again ends it), Start the fight on the deploy step, Close
-// on the result.
+// on the result. The camp's spot: Set up camp here (Enter); the base map: R, the pick turned (the user's request
+// 2026-10-23: the whole game by pad).
 export function combatPadEnd(state) {
   const b = state.combat;
   if (!b) return;
   sync(b);
   if (holding(b) && !(selUnit(b) && selUnit(b).captive)) return;
   if (b.over) return void closeCombat(state);
+  if (b.site) { CS_ACTIONS["cs-ok"](state); return; }
+  if (b.layout && b.phase === "deploy") { act(state, { type: "rotate" }); return; }
   if (b.phase === "deploy") { if (!b.layout && !b.site && !b.drill) act(state, { type: "start" }); return; }
   requestEndTurn(state, "button");
 }
@@ -1740,7 +1751,7 @@ export function combatKey(state, e) {
     if (b.site) return siteKey(state, e, confirm); // the camp's spot (ui/campsite.js): Enter sets up camp on the spot picked, Esc lets the game pick
     if (b.layout) { // the base map (sim/basemap.js): R turns the pick, Esc puts it down (then deselects)
       if (e.code === "KeyR") { act(state, { type: "rotate" }); return true; }
-      if (e.code === "Escape") { if (b.layout.pickType) act(state, { type: "pickType", bt: null }); else if (b.layout.pick) act(state, { type: "pick", key: null }); else if (b.layout.sel) act(state, { type: "select", key: null }); cui.storeView = null; cui.msg = ""; return true; }
+      if (e.code === "Escape") { layoutEsc(state, b); return true; }
       if (confirm || space) { cui.msg = "The base map: pick something and click where it goes, or Close the map."; return true; }
     }
     if (b.drill) { if (confirm || space) cui.msg = "A drill: place your people, then Save as plan, or Close the drill."; return confirm || space; } // a base drill (no fight to start)
@@ -1783,6 +1794,14 @@ function cycleUnit(b, d) {
   follow(b);
 }
 // Esc in a battle (and a controller's B): a tray shut, Ally orders back a step, else whatever was being picked dropped.
+// The base map's Esc (and a controller's B): the pick put down, else the selection let go; the store looked into closes.
+// True when there was something to let go.
+function layoutEsc(state, b) {
+  const L = b.layout, had = !!(L.pickType || L.pick || L.sel || cui.storeView != null);
+  if (L.pickType) act(state, { type: "pickType", bt: null }); else if (L.pick) act(state, { type: "pick", key: null }); else if (L.sel) act(state, { type: "select", key: null });
+  cui.storeView = null; cui.msg = "";
+  return had;
+}
 function battleEsc() {
   if (cui.barTray != null) { cui.barTray = null; return true; }
   if (allyBack()) return true;

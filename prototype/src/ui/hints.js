@@ -117,6 +117,7 @@ function padRules(where) {
     [/(?<![\w-])([Cc])lick(s|ing)?(?![\w-]) ?([^\s<]*)/g, (m, c, s, next) => padClick(m, c, s || "", next)],
     [/(?<![\w-])([Hh])over (for|to)\b/g, (m, h, w) => `${cap(h, "point at")} it ${w}`],
     [/(?<![\w-])([Hh])over(s|ing)?(?![\w-])/g, (m, h, s) => cap(h, s === "ing" ? "pointing at" : s ? "points at" : "point at")],
+    [/(?<![\w+-])R (turns|to turn)\b/g, (m, w) => (battle ? `${PAD.Y} ${w}` : m)], // the base map: R turns the pick, the pad's Ⓨ (main.js battle layer; 2026-10-23)
     [/\bShift\+Tab\b/g, battle ? PAD.LB : "Shift+Tab"],
     [/\bTab or N\b/g, PAD.Y],
     [/\bTab\b/g, battle ? PAD.RB : PAD.Y],
