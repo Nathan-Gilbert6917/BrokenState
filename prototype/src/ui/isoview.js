@@ -220,6 +220,9 @@ export const floorNo = (b) => (floorsOf(b) ? Math.max(0, Math.min(b.floors.lengt
 export const liftOf = (b) => floorNo(b) * LV; // art px the active floor is raised
 const isVoid = (c) => c.k === "void";
 const liftAt = (b, i) => (floorNo(b) && !isVoid(b.cells[i]) ? floorNo(b) * LV : 0);
+// The ground a building's cell stands on (sim/basemap.js groundBuilt: a hut up on a hill, or down on the plain below a
+// camp on a hilltop): its roof and its top that much higher or lower than the building's own (scene.blds top).
+const bldGround = (b, i) => groundLv(b.cells[i]) * LV;
 // Something (a unit, a container, a room, a ghost, an effect) on the active floor: its f, 0 when it has none, as
 // sim/combat.js counts it. Always true when the battle has no floors.
 export const onFloor = (b, t) => !floorsOf(b) || (t.f || 0) === floorNo(b);
@@ -2061,7 +2064,7 @@ function coverOf(b, x, y, looks, scene, cut, roofs) {
     if (i === last) continue;
     last = i;
     const L = looks[i], bid = scene.comp[i];
-    const top = Math.max(L ? L.top : 0, roofs && bid >= 0 && !cut.has(bid) ? scene.blds[bid].top : 0) + liftAt(b, i);
+    const top = Math.max(L ? L.top : 0, roofs && bid >= 0 && !cut.has(bid) ? scene.blds[bid].top + bldGround(b, i) : 0) + liftAt(b, i);
     if (top - z0 >= COVER_MIN && z <= top) out.push(i);
   }
   return out;
@@ -2155,7 +2158,7 @@ function drawDoorMarks(ctx, b, scene, cut, looks, vis, S, topFloor) {
     const out = VD.some(([dx, dy]) => { const nx = x + dx, ny = y + dy; return nx < 0 || ny < 0 || nx >= b.w || ny >= b.h || b.cells[ny * b.w + nx].f !== "floor"; });
     const lock = locked.has(i);
     if (!lock && !(roofed && out)) continue;
-    const L = looks[i], top = (roofed ? scene.blds[bid].top + 4 : L ? L.top : WALL1) + liftAt(b, i);
+    const L = looks[i], top = (roofed ? scene.blds[bid].top + 4 + bldGround(b, i) : L ? L.top : WALL1) + liftAt(b, i);
     const [X, Y] = project(x + 0.5, y + 0.5, top + 3);
     ctx.globalAlpha = vis[i] ? 1 : 0.6;
     ctx.lineWidth = Math.max(1, S * 0.45); ctx.strokeStyle = "#141414";
@@ -2501,7 +2504,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
       const [x, y] = fromView(nu, nv, r, b.w, b.h);
       const L = looks[y * b.w + x];
       const bid = scene.comp[y * b.w + x];
-      const top = Math.max(L ? L.top : 0, bid >= 0 && !cut.has(bid) ? scene.blds[bid].top : 0) + liftAt(b, y * b.w + x);
+      const top = Math.max(L ? L.top : 0, bid >= 0 && !cut.has(bid) ? scene.blds[bid].top + bldGround(b, y * b.w + x) : 0) + liftAt(b, y * b.w + x);
       if (top - pz > artY(du, dv, st) - 6) fade.add(y * b.w + x);
     }
   }
@@ -2618,7 +2621,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
       const vv = st ? d : d - uu;
       const [x, y] = fromView(uu, vv, r, b.w, b.h), i = y * b.w + x, bid = scene.comp[i];
       if (bid < 0 || cut.has(bid)) continue;
-      const sx = artX(uu, vv, st) * S + FR.X0, sy = artY(uu, vv, st) * S + FR.Y0 - liftAt(b, i) * S;
+      const sx = artX(uu, vv, st) * S + FR.X0, sy = artY(uu, vv, st) * S + FR.Y0 - (liftAt(b, i) + bldGround(b, i)) * S; // on the ground it stands on
       if (sx < -margin || sx > cw + margin || sy < -margin || sy > ch + margin * 2) continue;
       let edges = 0;
       VD.forEach(([du, dv], k) => { const nu = uu + du, nv = vv + dv; if (nu < 0 || nv < 0 || nu >= Wv || nv >= Hv) { edges |= 1 << k; return; } const [nx, ny] = fromView(nu, nv, r, b.w, b.h); if (scene.comp[ny * b.w + nx] !== bid) edges |= 1 << k; });
@@ -2767,7 +2770,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
       // top floor of a building with storeys: low).
       const ai = (a.y0 + 1) * b.w + a.x0 + 1, bid = a.outdoor ? -1 : scene.comp[ai];
       const low = !a.outdoor && b.raid.interior && bid >= 0 && (cut.has(bid) || !topFloor);
-      const [X, Y] = project(a.x0 + a.w / 2, a.y0 + a.h / 2, (a.outdoor ? 6 : low ? (a.up ? LV : 0) + 14 : (scene.blds[bid] ? scene.blds[bid].top : WALL1) + 12) + (a.outdoor ? 0 : liftAt(b, ai)));
+      const [X, Y] = project(a.x0 + a.w / 2, a.y0 + a.h / 2, (a.outdoor ? 6 : low ? (a.up ? LV : 0) + 14 : (scene.blds[bid] ? scene.blds[bid].top + bldGround(b, ai) : WALL1) + 12) + (a.outdoor ? 0 : liftAt(b, ai)));
       tag(ctx, a.locked && !(b.raid.doors || []).some((d) => d.area === a.id && d.lock.open) ? `🔒 ${a.name}` : a.name, X, Y, low ? "#c9bfa6" : "#e6d8b8", Math.max(10, (low ? 3.4 : 4.2) * S));
     }
     for (const c0 of b.raid.containers) {
