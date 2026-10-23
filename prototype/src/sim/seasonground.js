@@ -94,6 +94,7 @@ export function seasonGround(state, b, tileId) {
   if (lie > 0) {
     if (!b.snowLie) b.snowLie = lie;
     for (const c of b.cells) {
+      if (c.plot) continue; // a crop plot is built: it keeps its own surface, never under the season's snow or mud (the user's word 2026-10-23: builds are the top layer)
       if (c.wet || !SNOW.FLOORS.has(c.f) || SNOW.RAISED.has(c.k)) continue; // under a fence or a car too (its look), walked or not
       c.gnd = "snow"; c.sd = lie; n++;
     }
@@ -107,6 +108,7 @@ export function seasonGround(state, b, tileId) {
   const cut = below(share), seed = (tileId * 7919 + (s.year || 1) * 104729) | 0; // this year's spring
   for (let i = 0; i < b.cells.length; i++) {
     const c = b.cells[i];
+    if (c.plot) continue; // as above: a built plot's soil is not the season's mud
     if (c.wet || !MUD.FLOORS.has(c.f) || !MUD.KINDS.has(c.k)) continue;
     if (noise(i % b.w, (i / b.w) | 0, seed) >= cut) continue;
     c.gnd = "mud"; n++;

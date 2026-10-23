@@ -1363,7 +1363,22 @@ function roadColor(x, y, tx, ty, lx, ly, R) {
   if (!worn && Math.abs(a - w / 2) < ROAD.MID && (s % ROAD.DASH) / ROAD.DASH < ROAD.GAP) return mix(col, hex("#a8924a"), 0.7); // the dashed centre line
   return col;
 }
-function floorColor(c, k, x, y, lx, ly, mud, R = null, lf = 0) { // lf: autumn's leaves here (ui/groundlook.js leafField)
+// A crop plot's wood border (the user's request 2026-10-23: "a small wood border around the 2x2 plot ... when putting a plot
+// next to each other remove the wood border between to have the plots merge seamlessly"): per cell, a bit for each side
+// with no plot cell beside it (1 north, 2 south, 4 west, 8 east); null when the map has no plots. The border is drawn
+// in floorColor on those sides only, so two plots side by side read as one bed.
+const PLOT_EDGE = { W: 0.14, WOOD: hex("#a37a45") };
+export function plotEdges(cells, w, h) {
+  let out = null;
+  for (let i = 0; i < cells.length; i++) {
+    if (!cells[i].plot) continue;
+    out = out || new Uint8Array(w * h);
+    const x = i % w, y = (i / w) | 0, no = (xx, yy) => xx < 0 || yy < 0 || xx >= w || yy >= h || !cells[yy * w + xx].plot;
+    out[i] = (no(x, y - 1) ? 1 : 0) | (no(x, y + 1) ? 2 : 0) | (no(x - 1, y) ? 4 : 0) | (no(x + 1, y) ? 8 : 0);
+  }
+  return out;
+}
+function floorColor(c, k, x, y, lx, ly, mud, R = null, lf = 0, pe = 0) { // lf: autumn's leaves here (ui/groundlook.js leafField)
   const tx = Math.min(15, Math.floor(lx * 16)), ty = Math.min(15, Math.floor(ly * 16));
   const q = hash3(x * 16 + tx, y * 16 + ty, 1), v = hash3(x, y, 2);
   if (k === "water" && !c.ter) { // a pond's deep middle (c.ter, sim/ponds.js): its ground's floor here, the water drawn at its level (wetPrims)
@@ -1397,7 +1412,8 @@ function floorColor(c, k, x, y, lx, ly, mud, R = null, lf = 0) { // lf: autumn's
     case "roof": col = mul(FLOORC.roof, 0.86 + q * 0.2); break;
     default: col = mul(FLOORC.grass, 0.92 + q * 0.12);
   }
-  if (c.gnd || lf) col = groundTexel(col, c, x * 16 + tx, y * 16 + ty, lf, Math.min(tx, 15 - tx, ty, 15 - ty) / 7.5); // the season on the ground (ui/groundlook.js)
+  if (pe && c.plot) { const W = PLOT_EDGE.W; if (((pe & 1) && ly < W) || ((pe & 2) && ly > 1 - W) || ((pe & 4) && lx < W) || ((pe & 8) && lx > 1 - W)) col = mul(PLOT_EDGE.WOOD, 0.88 + (((tx >> 1) + (ty >> 1)) % 2) * 0.12 + q * 0.08); } // the plot's wood edge: planks
+  if (!c.plot && (c.gnd || lf)) col = groundTexel(col, c, x * 16 + tx, y * 16 + ty, lf, Math.min(tx, 15 - tx, ty, 15 - ty) / 7.5); // the season on the ground (ui/groundlook.js)
   if (mud) { const m = clamp01(mud - hash3(x * 16 + tx, y * 16 + ty, 9) * 0.6); if (m > 0) col = mix(col, q > 0.7 ? hex("#5a1a1c") : hex("#3e2a22"), m * 0.85); }
   return col;
 }
@@ -1424,7 +1440,7 @@ function groundFor(b, scene) {
   }
   const passes = lift ? [[b.floors[0].cells, 0, 0.55, false], [b.cells, lift, 1, true]] : [[b.cells, 0, 1, false]];
   const lfF = leafField(b, treeLook, scene.key, groundCells(b)); // autumn's leaves (ui/groundlook.js)
-  for (const [cells, up, dim, footOnly] of passes) for (let py = 0, R = roadRuns(cells, b.w, b.h); py < gh; py++) for (let px = 0; px < gw; px++) {
+  for (const [cells, up, dim, footOnly] of passes) for (let py = 0, R = roadRuns(cells, b.w, b.h), PE = plotEdges(cells, b.w, b.h); py < gh; py++) for (let px = 0; px < gw; px++) {
     const [u, v] = artUV(px + 0.5 + ox, py + 0.5 - lift + up, st);
     if (u < 0 || v < 0 || u >= Wv || v >= Hv) continue;
     const iu = Math.floor(u), iv = Math.floor(v), fu = u - iu, fv = v - iv;
@@ -1432,7 +1448,7 @@ function groundFor(b, scene) {
     const [lx, ly] = ptWorld(fu, fv, r, 1, 1);
     const c = cells[y * b.w + x];
     if (footOnly && isVoid(c)) continue;
-    let col = floorColor(c, c.k, x, y, lx, ly, mud[y * b.w + x], R, lfF && !up ? lfF[y * b.w + x] : 0);
+    let col = floorColor(c, c.k, x, y, lx, ly, mud[y * b.w + x], R, lfF && !up ? lfF[y * b.w + x] : 0, PE ? PE[y * b.w + x] : 0);
     if (fu < 0.055 || fv < 0.055) col = mul(col, 0.86); // the grid, faintly
     if (dim < 1) col = mul(col, dim);
     const i = (py * gw + px) * 4;
@@ -1481,12 +1497,13 @@ function flatGroundFor(b, scene) {
     for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) { const nx = x + dx, ny = y + dy; if (nx >= 0 && ny >= 0 && nx < b.w && ny < b.h) mud[ny * b.w + nx] = Math.max(mud[ny * b.w + nx], 1 - Math.hypot(dx, dy) / 3); }
   }
   const R = roadRuns(b.cells, b.w, b.h); // which way the roads run (the paint follows them)
+  const PE = plotEdges(b.cells, b.w, b.h); // the crop plots' wood edges
   const lfF = leafField(b, treeLook, scene.key, groundCells(b)); // autumn's leaves (ui/groundlook.js)
   const cv = mkCanvas(tw, th), c = cv.getContext("2d"), img = c.createImageData(tw, th), buf = img.data;
   for (let y = 0; y < b.h; y++) for (let x = 0; x < b.w; x++) {
     const cell = b.cells[y * b.w + x], m = mud[y * b.w + x], lf = lfF ? lfF[y * b.w + x] : 0;
     for (let ty = 0; ty < TEX; ty++) for (let tx = 0; tx < TEX; tx++) {
-      let col = floorColor(cell, cell.k, x, y, (tx + 0.5) / TEX, (ty + 0.5) / TEX, m, R, lf);
+      let col = floorColor(cell, cell.k, x, y, (tx + 0.5) / TEX, (ty + 0.5) / TEX, m, R, lf, PE ? PE[y * b.w + x] : 0);
       if (tx === 0 || ty === 0) col = mul(col, 0.86); // the grid, faintly
       const i = ((y * TEX + ty) * tw + x * TEX + tx) * 4;
       buf[i] = col[0]; buf[i + 1] = col[1]; buf[i + 2] = col[2]; buf[i + 3] = 255;

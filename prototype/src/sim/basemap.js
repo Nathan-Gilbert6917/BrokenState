@@ -1704,6 +1704,7 @@ export function buildBaseMap(state, base, rng, opts = {}) {
         continue;
       }
       q.k = c.k; if (c.f) q.f = c.f;
+      if (it.kind === "field") q.plot = 1; // a crop plot's cell: the view edges the plot with wood, the sides with no plot beside it (ui/isoview.js plotEdges)
       if (c.dk && !weak) q.dk = c.dk; else delete q.dk;
       if (c.lockDoor) { q.lockDoor = true; if (weak) c.hp = INTERIOR.DOOR_HP; }
       if (c.t) q.t = c.t; else delete q.t;
