@@ -38,6 +38,7 @@ const inSq = ([x, y], h, c = [0, 0]) => x >= c[0] - h && y >= c[1] - h && x < c[
 const st = createWorld({ seed: SEED, factionCount: 7, mode: "hardcore" });
 st.noWanderers = true;
 const p = roadTeam(st);
+Object.assign(p.supplies, { wood: 20, stone: 8 }); // the camp fire's wood and stone (buildings.js CAMP.fireCost, the user's request 2026-10-23)
 const tile = partyTile(p);
 
 // ---------- 1. the spot ----------
@@ -205,6 +206,7 @@ section("Nobody to ask: the game's spot");
   s2.noWanderers = true;
   s2.autopilot = { on: true };
   const q = roadTeam(s2), t2 = partyTile(q);
+  Object.assign(q.supplies, { wood: 20, stone: 8 });
   giveOrder(s2, q, "camp");
   check(!pendingSite(s2), "on autopilot no window asks");
   run(s2, 48, () => s2.bases.length > 0);
@@ -219,6 +221,7 @@ section("What a spot is like (siteInfo) and the game's pick weighed on it (bestS
   const s3 = createWorld({ seed: SEED + 2, factionCount: 7, mode: "hardcore" });
   s3.noWanderers = true;
   const q = roadTeam(s3), t3 = partyTile(q);
+  Object.assign(q.supplies, { wood: 20, stone: 8 }); // the camp fire's (CAMP.fireCost, 2026-10-23)
   const d = BM.defaultSite(s3, t3), info = siteInfo(s3, q, t3, d), s = siteSetup(s3, q, t3, d);
   check(info.ok && info.picked && String(info.at) === String(d) && info.setup.hours === s.hours && info.setup.workers === s.workers && String(Object.entries(info.setup.get)) === String(Object.entries(s.get)), `the game's spot (${d}): the team's setup as siteSetup has it (${info.setup.hours} h), and it says it is the game's pick`);
   const keys = ["ground", "lie", "sight", "room", "roomClear", "yard", "wood", "trees", "places", "dead", "score"];

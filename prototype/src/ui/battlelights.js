@@ -104,7 +104,7 @@ let lastNow = 0;
 
 // Paint the lights into the light canvas. xf: the map → screen affine for the ground (tile units: isoview.js
 // groundXform with 1 px a tile). Returns the number of lights, 0 when there is nothing to draw (by day).
-export function paintLights(b, v, xf, cw, ch, now = 0, pos) {
+export function paintLights(b, v, xf, cw, ch, now = 0, pos, pits = []) {
   LIGHTS_DRAWN.n = 0;
   LIGHTS_DRAWN.shade = null;
   const day = !b.night && !b.dark;
@@ -159,6 +159,16 @@ export function paintLights(b, v, xf, cw, ch, now = 0, pos) {
     const r = 2.2 * (1 + 0.07 * Math.sin(now / 71 + f.x * 3 + f.y));
     c.setTransform(...base); c.translate(f.x + 0.5, f.y + 0.5); c.scale(r, r);
     c.globalAlpha = 0.9; c.fillStyle = grad(c, "255,140,50", 0.9, true); c.beginPath(); c.arc(0, 0, 1, 0, Math.PI * 2); c.fill();
+    n++;
+  }
+  // Lit fire pits (ui/isoview.js scene.pits: a camp's fire, a cook fire): a flickering warm pool; a campsite's fire has
+  // its own flare (f.camp, below), so it is not lit twice.
+  for (const i of day ? [] : pits) {
+    const x = i % b.w, y = (i / b.w) | 0;
+    if ((b.flares || []).some((f) => f.camp && f.x === x && f.y === y)) continue;
+    const r = 3.2 * (1 + 0.05 * Math.sin(now / 83 + x * 3) + 0.03 * Math.sin(now / 37 + y));
+    c.setTransform(...base); c.translate(x + 0.5, y + 0.5); c.scale(r, r);
+    c.globalAlpha = 0.9; c.fillStyle = grad(c, "255,150,60", 0.85, true); c.beginPath(); c.arc(0, 0, 1, 0, Math.PI * 2); c.fill();
     n++;
   }
   for (const f of day ? [] : b.flares || []) {

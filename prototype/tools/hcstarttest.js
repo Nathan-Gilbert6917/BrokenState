@@ -11,7 +11,7 @@ import { totalRounds, foldRounds } from "../src/sim/ammo.js"; // rounds by calib
 // A record with its rounds counted together as "ammo" (the archetypes give ammo as one figure); no "ammo" key with none.
 const asGeneric = (rec) => { const r = { ...rec }; foldRounds(r); if (!r.ammo) delete r.ammo; return r; };
 import { createWorld, tickHour, hub, day, alive, atBase, hurt, makeSurvivor, newId, baseVision } from "../src/sim/world.js";
-import { BUILDINGS, isShelter, tierName, SHELTER, CAMP, baseWalls, baseBeds, farmSlots, canBuild, queueBuild, addBuilding, plotCap, tierUpJob, gatherRows, gatherStalled } from "../src/sim/buildings.js";
+import { BUILDINGS, isShelter, tierName, SHELTER, CAMP, baseWalls, baseBeds, farmSlots, canBuild, queueBuild, addBuilding, plotCap, tierUpJob, tierUpType, gatherRows, gatherStalled } from "../src/sim/buildings.js";
 import { waterProduction, waterNeed } from "../src/sim/economy.js";
 import { foodUse, mouthsAt, useText } from "../src/sim/upkeep.js";
 import { structuresOf } from "../src/sim/interior.js";
@@ -42,8 +42,9 @@ import { isTentBag, TENTS } from "../src/sim/tents.js"; // the hardcore start's 
 import { assignedRole } from "../src/sim/noidle.js"; // noidle: a job with no work, its people helping elsewhere
 
 // Setting up a camp takes an hour (staging.js STAGING.PITCH): skipped here, the camp (a base) stands at once.
-// Establish base, then the Camp tab's Place the shelter shack at once (none is placed by itself: the user's request 2026-10-23).
-const establishNow = (st, p) => { p.pitched = true; const r = giveOrder(st, p, "establish"); const c = st.bases.find((b) => b.camp && b.type === "hub"); if (c && !tierUpJob(c)) queueBuild(st, c, "camp_up"); return r; };
+// Establish base at once, and the player places its shelter shack from the Build list (the user's request 2026-10-23:
+// the step up is not queued for you).
+const establishNow = (st, p) => { p.pitched = true; const r = giveOrder(st, p, "establish"); for (const c of st.bases) if (c.camp && !tierUpJob(c)) queueBuild(st, c, tierUpType(c)); return r; };
 
 const apGames = Number(process.argv[2] || 8), apDays = Number(process.argv[3] || 40);
 let fails = 0, passes = 0;
@@ -267,8 +268,10 @@ const campOf = (st) => st.bases.find((b) => b.camp === true) || null;
   const p = roadTeam(st);
   p.cargo = { supplies: {}, gear: [] }; // the car's trunk emptied: this section counts the materials itself
   const opt = () => orderOptions(st, p).find((o) => o.mission === "establish");
-  p.supplies.scrap = 0;
-  check(opt() && opt().label === ESTABLISH_LABEL && !opt().disabled, `the order ${ESTABLISH_LABEL} is offered on open land with nothing carried (${opt() && opt().disabled})`);
+  p.supplies.scrap = 0; p.supplies.wood = 0; p.supplies.stone = 0;
+  check(opt() && opt().label === ESTABLISH_LABEL && /camp fire needs/.test(opt().disabled || ""), `the first camp's fire takes wood and stone carried (the user's request 2026-10-23): greyed out without (${opt() && opt().disabled})`);
+  Object.assign(p.supplies, { wood: CAMP.fireCost.wood, stone: CAMP.fireCost.stone });
+  check(opt() && opt().label === ESTABLISH_LABEL && !opt().disabled, `the order ${ESTABLISH_LABEL} is offered on open land carrying only the fire's wood and stone (${opt() && opt().disabled})`);
   check(orderOptions(st, p).some((o) => o.mission === "camp" && !o.disabled), "Set up camp is offered too (any team, anywhere)");
   check(!orderOptions(st, p).some((o) => o.mission === "outpost"), "no Build outpost with no base");
   check(/camp/.test(opt().desc) && opt().desc.includes(needText(STAGING.HARDCORE.needs)), "it says what the step up takes");
@@ -287,13 +290,11 @@ const campOf = (st) => st.bases.find((b) => b.camp === true) || null;
   check(!st.parties.includes(p) && people.every((id) => atBase(st, camp.id).some((s) => s.id === id)), "the team moved in: its people live at the camp");
   check(camp && camp.armory.some((it) => it.key === "crowbar") && food(camp) + jarred(camp) >= 30 && st.vehicles[0].loc.kind === "base" && st.vehicles[0].loc.baseId === camp.id, "its cargo is the camp's stores and armory, the car parked there");
   check(firstHubPending(st) && tierName(camp) === "Camp" && tierInfo(st).stage === 0 && tierInfo(st).next === "Shelter", "not founded yet: a camp, the next stage the shelter");
-  // Nothing placed for the player (the user's request 2026-10-23: "Remove the shelter that gets auto set when you
-  // establish a camp"): the Camp tab's Place the shelter shack queues it.
-  check(!tierUpJob(camp), "no step up queued by itself: the shelter shack is placed by the player");
-  queueBuild(st, camp, "camp_up");
+  check(!tierUpJob(camp) && st.log.some((l) => /Build list/.test(l.text)), "nothing queued on setting up: the log says to place the step up from the Build list (the user's request 2026-10-23)");
+  queueBuild(st, camp, tierUpType(camp)); // the player picks the shelter shack from the Build list (ui/basemap.js openToPlace)
   const job = tierUpJob(camp);
   const needScrap = st.tiles[tile0].ruin ? STAGING.HARDCORE.needs.scrap - STAGING.RUIN_SCRAP : STAGING.HARDCORE.needs.scrap;
-  check(job && job.type === "camp_up" && gatherRows(job).find((r) => r.key === "scrap").need === needScrap && gatherRows(job).find((r) => r.key === "buildmat").need === STAGING.HARDCORE.needs.buildmat && job.hours === STAGING.HARDCORE.work, `its step up, once placed: ${needText(STAGING.HARDCORE.needs)}, ${job && job.hours} work-hours`);
+  check(job && job.type === "camp_up" && gatherRows(job).find((r) => r.key === "scrap").need === needScrap && gatherRows(job).find((r) => r.key === "buildmat").need === STAGING.HARDCORE.needs.buildmat && job.hours === STAGING.HARDCORE.work, `its step up, placed, is queued: ${needText(STAGING.HARDCORE.needs)}, ${job && job.hours} work-hours`);
   check(atBase(st, camp.id).every((s) => assignedRole(s) === "build"), `everyone on Build (${atBase(st, camp.id).map((s) => s.role).join(", ")} this hour: noidle.js, no materials yet)`); // their own job; with nothing to build they help elsewhere for the hour
   check(baseWalls(camp) === 0 && baseBeds(camp) === CAMP.beds && farmSlots(camp) === 0 && plotCap(camp, "building") === 0 && plotCap(camp, "utility") === 2, `a camp is barer than a shelter: walls 0, beds ${baseBeds(camp)}, no crop plot until one is dug, two utility plots`);
   // (BASE-03, 2026-10-12: the drying rack, bench, boiler and cook fire are camp buildings now; the watchtower still waits.)
@@ -326,7 +327,7 @@ const campOf = (st) => st.bases.find((b) => b.camp === true) || null;
   check(h && structuresOf(h).map((s) => s.key).join() === "shack" && baseWalls(h) === 0 && wallHold(h) === wallHold({ ...h, tier: undefined }), `base battles: only a shack, and no wall it did not build (${h && structuresOf(h).map((s) => s.key).join()}; buildings.js WALL_TIERS)`);
   if (h) {
     h.construction.length = 0;
-    Object.assign(h.stock, { scrap: 200, parts: 20, meds: 10, buildmat: 10, wood: 2000 });
+    Object.assign(h.stock, { scrap: 200, parts: 20, meds: 10, buildmat: 10, wood: 2000, stone: 100 }); // stone: the boiler's and the cook fire's (2026-10-23)
     stockTools(h); // a hammer, a saw, a shovel… (toolreqs.js): what a shelter may build is the subject here
     const ok = (k) => canBuild(st, h, k).ok;
     check(ok("rain_catcher") && ok("smoker") && ok("barricades") && ok("farm_plot") && ok("hub_up"), "a shelter builds a rain catcher, a drying rack, a barricade, a farm plot, and the step up into a base");

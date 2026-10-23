@@ -141,7 +141,7 @@ section("The Ring wall: closing the ring, raising it a material");
   check(canBuild(st, h, "walls").tier === 3, "else scrap metal at the main base (what it gathers anyway)");
   h.stock.buildmat = 999; h.stock.scrap = scrap0;
   const c = canBuild(st, h, "walls", { mat: 1 });
-  check(c.ok && c.kind === "ring" && c.tier === 1 && c.cost.wood > 1500 && c.cost.wood < 3000, `close it in wood: ${c.cost.wood} wood, ${c.hours} work-hours`);
+  check(c.ok && c.kind === "ring" && c.tier === 1 && c.cost.wood > 1500 && c.cost.wood < 5000, `close it in wood (the 76 × 76 yard's ring, 2026-10-23): ${c.cost.wood} wood, ${c.hours} work-hours`);
   const wood0 = h.stock.wood;
   queueBuild(st, h, "walls", { mat: 1 });
   check(h.stock.wood === wood0 && h.construction[0].paid && Object.keys(h.construction[0].paid).length === 0, "queued without paying: its materials are gathered as the work goes");

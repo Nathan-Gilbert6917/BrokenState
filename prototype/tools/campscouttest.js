@@ -53,7 +53,7 @@ function deadTile(st) {
 function teamOn(st, tile, n = 4) {
   const h = hub(st);
   Object.assign(h.stock, { food: 300, water: 300, ammo: 400 });
-  const res = launchExpedition(st, { memberIds: atBase(st, h.id).slice(0, n).map((s) => s.id), dest: tile, mission: "move", stance: "normal", supplies: { food: 6, water: 6, ammo: 60 } });
+  const res = launchExpedition(st, { memberIds: atBase(st, h.id).slice(0, n).map((s) => s.id), dest: tile, mission: "move", stance: "normal", supplies: { food: 6, water: 6, ammo: 60, wood: 20, stone: 8 } });
   if (res.error) throw new Error(res.error);
   const p = res.party;
   p.path = [tile]; p.idx = 0; p.dest = tile; p.progress = 0; p.phase = "waiting"; p.mission = "move";

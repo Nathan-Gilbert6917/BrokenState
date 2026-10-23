@@ -111,7 +111,7 @@ section("Move a team out: from that base's people and stores, waiting outside, t
   const before = residents(st, h.id).length;
   const crew = atBase(st, h.id).filter((s) => !s.leader).slice(0, 3);
   const food0 = food(h), scrap0 = h.stock.scrap;
-  const res = moveTeamOut(st, { baseId: h.id, memberIds: crew.map((s) => s.id), supplies: { food: 9, water: 9, scrap: MOVE_OUT.scrap, ammo: 30 } });
+  const res = moveTeamOut(st, { baseId: h.id, memberIds: crew.map((s) => s.id), supplies: { food: 9, water: 9, scrap: MOVE_OUT.scrap, ammo: 30, wood: 20, stone: 8 } });
   const p = res.party;
   check(p && !res.error, `the team leaves (${res.error || "ok"})`);
   if (p) {
@@ -197,7 +197,7 @@ section("Enter card: a team that ends a move on another of your bases");
   if (q) {
     tick(st, 200, (c) => c.partyId === q.id && (c.enterBase != null || c.isOrders), () => st.cards.some((c) => c.partyId === q.id && (c.enterBase != null || c.isOrders)));
     const card = st.cards.find((c) => c.partyId === q.id);
-    check(card && card.enterBase === h.id, "at the hub (not its home): the Enter card");
+    check(card && card.enterBase === h.id, `at the hub (not its home): the Enter card (${card && card.title} ${card && String(card.text).slice(0, 160)})`);
     st.cards.length = 0;
     card.choices.find((c) => /^No/.test(c.label)).resolve(st);
     check(st.parties.includes(q) && q.phase === "waiting" && partyTile(q) === h.tile, "no: still a team, waiting at the hub's tile");

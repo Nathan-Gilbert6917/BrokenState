@@ -33,6 +33,7 @@ import { foodUse, mouthsAt, prisonersAt, guestsAt, crewAt } from "./upkeep.js";
 import { takeEatAcc } from "./eating.js"; // people eat by the hour (meal breaks): the day's eating counted here
 import { rationKey, RATION_LEVELS } from "./meals.js"; // the ration levels (lean, a feast day)
 import { heatDaily, starvingDaily } from "./needs.js";
+import { stoneDaily } from "./stone.js"; // the Gather stone job (the user's request 2026-10-23)
 import { woodDaily, fireDayBurn, WOOD } from "./woodcutting.js"; // fireDayBurn, WOOD: a camp's fire's pile kept (shipFromOutposts)
 import { prisonWater } from "./prisoners.js"; // prisoners-tab: water hauled by prisoners (waterProduction)
 import { fieldWellWater, drawFieldWells } from "./fieldworks.js"; // field wells on the base's land (waterProduction field)
@@ -69,6 +70,7 @@ export const ROLES = {
   fish:     { name: "Fish",     desc: "Fishes the river or lake by a base 3 hours a day, with a fishing rod, a net or a spear (carried, or in the armory: one each, a net for two). Brings in fresh fish, which spoils fast. The tools wear a use a day." },
   forage:   { name: "Forage",   desc: "Gathers wild food within 2 tiles of the base 6 hours a day (foraging.js): berries, nuts, mushrooms, greens, roots, apples, now and then herbs (meds) or honey. About a ration a day each in summer, more in autumn, little in spring, next to nothing in winter; Farming and Scouting help. The land picked hard grows back over weeks." },
   wood:     { name: "Cut wood", desc: "Cuts wood within 2 tiles of the base 6 hours a day (woodcutting.js): the heating (a base burns wood before fuel: 15, 1.5 kg, a head a day below freezing, 4.5 for the night's fire on a cool night under 8°C) and a camp's fire (its people's warmth, the water boiled and the pot). Forest gives most (about 175 a day each with a fire axe, 60 by hand), hills fair, farmland and suburbs little, a city next to nothing. An axe (their own or one from the armory) cuts about three times as much as bare hands (a felling axe ×2.2, a fire axe ×2, a hatchet ×1.6, bare hands ×0.7); a bow saw, a machete or a sledgehammer helps less; Farming and Mechanics help. Loud (base Heat), and axes slip. The land cut hard grows back over seasons." },
+  stone:    { name: "Gather stone", desc: "Gathers field stone round the base 6 hours a day (stone.js): a camp's fire ring, a cook fire, a water boiler, a kitchen's hearth, a well's or a cistern's lining, a root cellar's walls. Mountains and hills give most (about 20 a day each by hand on hills), a town's rubble fair, farmland, plains and forest some; by a river more. A pickaxe ×2 or a sledgehammer ×1.8 (their own or the armory's) helps most; a crowbar, a shovel less. Clearing rocks and boulders on the build map gives stone too." },
   water:    { name: "Fetch water", desc: "Carries water from the nearest water in the base's own land (a river or lake tile the base holds, or one right next to it that nobody holds: a camp's river bank) in two buckets: out, filling them, back, a few trips a day (fewer the further the water). River and lake water is un-purified: it goes into the base's un-purified water (the worm's eggs; a water boiler or filters make it safe), up to the barrels' room. Needs a water tile in the base's land." },
   // kitchen.js: the Kitchen's cooks (one per 12 people living here).
   cook:     { name: "Cook",     desc: "Cooks the base's meals in the Kitchen (Construction: a building plot), one cook for every 12 people living here: cooks only in the cooking hours (05:00–06:00, 16:00–20:00) with a second job the rest of the day (Cook + Farm …), or the kitchen all day (plain Cook). Hot meals stretch the food (everyone fed at the kitchen eats 10% less a day, up to 13% with a good cook: Cooking 5+), lift spirits (+1 mood a day, +1.5 with Cooking 6+) and boil a quarter of the day's drinking water; the stove burns wood (28 a day for 12 people). Trains Cooking. Without a kitchen there is nothing to cook." },
@@ -584,6 +586,7 @@ function baseDaily(state, base) {
   tripEventsDaily(state, base); // tripevents.js: the day's gunshots out on the land (base.tripNoise, hordes drawn)
   kitchenFireDaily(state, base); // kitchen.js: the stove's day of wood (after the boiler's and the heating's), or cold meals
   woodDaily(state, base); // woodcutting.js: the Cut wood job
+  stoneDaily(state, base); // stone.js: the Gather stone job
   for (const s of people) if (s.role === "rest" || s.inBed) s.mood = Math.min(100, s.mood + (s.role === "rest" ? 6 : 3));
   assignStations(state, base);
   runStations(state, base);
@@ -723,7 +726,7 @@ function shipFromOutposts(state) {
   const h = hub(state);
   for (const base of state.bases) {
     if (base.type !== "outpost") continue;
-    if (isCamp(base) && !tierUpJob(base)) continue; // a plain camp (staging.js) is off the supply network: it lives on what it holds
+    if (isCamp(base) && !tierUpJob(base) && !base.grow) continue; // a plain camp (staging.js) is off the supply network: it lives on what it holds; Build outpost's (base.grow) is on it before its house is placed
     const staff = atBase(state, base.id);
     const line = supplyLine(state, base);
     base.supplyLine = { hours: line.hours, strength: line.strength, hostile: line.hostile, horde: line.horde };

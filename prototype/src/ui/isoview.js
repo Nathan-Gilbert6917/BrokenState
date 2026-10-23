@@ -204,7 +204,9 @@ function sceneFor(b) {
     }
   }
   // Single wall cells (no floor: a raid's locked doors in the open) stand alone.
-  sceneCache = { b, key, comp, blds, ext, sig, groundKey: `${b.w}x${b.h}:${fl}:${fsig}` };
+  const pits = []; // the fire pits: their flames, sparks, smoke and glow drawn each frame while lit (drawCampfireIso)
+  for (let i = 0; i < n; i++) if (b.cells[i].k === "firepit") pits.push(i);
+  sceneCache = { b, key, comp, blds, ext, sig, pits, groundKey: `${b.w}x${b.h}:${fl}:${fsig}` };
   iso.builds.scene++;
   return sceneCache;
 }
@@ -1101,16 +1103,43 @@ function primsOf(k, o) {
       for (const [e, end] of [[lo, !(ax === "u" ? o.j & 2 : o.j & 8)], [hi, !(ax === "u" ? o.j & 1 : o.j & 4)]]) if (end) out.push(run(ax, 0.34, 0.66, 0, 6, flatM(PAL.woodLt), e === lo ? lo : hi - 0.02, e === lo ? lo + 0.02 : hi)); // the cut ends
       return out;
     }
-    // A fire pit: a ring of stones; lit (o.lit: the cell's c.lit, sim/campsite.js and sim/basemap.js), flames over embers;
-    // cold, grey ash and two charred logs, no flame and no glow.
+    // A fire pit (the user's request 2026-10-23: "Improve campfire look"): a ring of field stones, each its own lump in
+    // its own grey, round a bed of ash. Lit (o.lit: the cell's c.lit, sim/campsite.js and sim/basemap.js): a log-cabin
+    // lay of four split logs, charred and cracked with glowing seams, over a bed of embers; its flames, sparks, smoke
+    // and the glow on the ground are drawn each frame (drawCampfireIso). Cold: grey ash and two charred logs.
     case "firepit": {
-      if (o.lit) return [
-        { cyl: [0.5, 0.5, 0.36], z0: 0, z1: 4, m: (f, s, t, X, Y) => (f === "top" && Math.hypot(s, t * 2) < 5 ? mul(hex("#3a2a1c"), 0.9 + n2(X, Y, 2) * 0.2) : mul(PAL.stone, 0.85 + n2(X, Y, 3) * 0.2)) },
-        { blob: [0.5, 0.5, 2], ru: 0.1, rz: 5, m: flatM(hex("#e07a2a")) }, { blob: [0.44, 0.56, 2], ru: 0.08, rz: 7, m: flatM(hex("#f5b640")) },
+      const lit = !!o.lit;
+      const stones = [];
+      for (let i = 0; i < 9; i++) {
+        const a = (i / 9) * Math.PI * 2 + hash3(v, i, 51) * 0.3, rr = 0.32 + hash3(v, i, 52) * 0.04;
+        const col = mul(i % 3 === 0 ? hex("#9a958b") : i % 3 === 1 ? hex("#7d786f") : hex("#625e57"), 0.9 + hash3(v, i, 53) * 0.2);
+        stones.push({ blob: [0.5 + Math.cos(a) * rr, 0.5 + Math.sin(a) * rr, 0.9], ru: 0.06 + hash3(v, i, 54) * 0.02, rz: 1 + hash3(v, i, 55) * 0.6, m: (f, nx, ny, X, Y) => { const g = 0.92 + n2(X, Y, 56 + i) * 0.16; return lit ? [col[0] * g * 1.1, col[1] * g, col[2] * g * 0.9] : mul(col, g); } }); // lit: warmed by the fire
+      }
+      const back = stones.filter((p) => p.blob[0] + p.blob[1] < 1).sort((p, q) => p.blob[0] + p.blob[1] - q.blob[0] - q.blob[1]);
+      const front = stones.filter((p) => p.blob[0] + p.blob[1] >= 1).sort((p, q) => p.blob[0] + p.blob[1] - q.blob[0] - q.blob[1]);
+      const bed = { cyl: [0.5, 0.5, 0.29], z0: 0, z1: 0.6, m: (f, s, t, X, Y) => {
+        const d = Math.hypot(s, t * 2), q = n2(X, Y, 2);
+        if (f !== "top") return mul(hex("#3a332c"), 0.9);
+        if (!lit) return mul(hex("#6b6862"), 0.8 + q * 0.35);
+        return d < 3.2 ? (q > 0.55 ? hex("#ffb347") : hex("#e0602a")) : d < 5.2 ? (q > 0.72 ? hex("#ff8a2a") : q > 0.4 ? hex("#a8381c") : hex("#2f2420")) : mul(hex("#4a423a"), 0.8 + q * 0.3);
+      } };
+      if (!lit) return [
+        bed, ...back,
+        { u0: 0.34, u1: 0.64, v0: 0.46, v1: 0.53, z0: 0.6, z1: 2, m: tex(hex("#2b2622"), 0.15, 57) }, { u0: 0.46, u1: 0.53, v0: 0.35, v1: 0.62, z0: 2, z1: 3.2, m: tex(hex("#33302b"), 0.15, 58) },
+        ...front,
       ];
+      // A split log: bark on its sides, a pale cut end, charred toward the middle where it burns, seams glowing.
+      const logM = (k) => (f, s, t, X, Y) => {
+        const q = n2(X, Y, k);
+        if (q > 0.86) return q > 0.94 ? hex("#ffc04a") : hex("#f07a2a");
+        const char = clamp01(1 - Math.abs(s - 2.6) / 3);
+        return mul(f === "top" ? PAL.woodLt : PAL.bark, (1 - char * 0.62) * (0.88 + q * 0.2));
+      };
       return [
-        { cyl: [0.5, 0.5, 0.36], z0: 0, z1: 4, m: (f, s, t, X, Y) => (f === "top" && Math.hypot(s, t * 2) < 5 ? mul(hex("#6b6862"), 0.85 + n2(X, Y, 2) * 0.3) : mul(PAL.stone, 0.85 + n2(X, Y, 3) * 0.2)) },
-        { u0: 0.36, u1: 0.62, v0: 0.46, v1: 0.53, z0: 4, z1: 5, m: flatM(hex("#2b2622")) }, { u0: 0.47, u1: 0.54, v0: 0.36, v1: 0.6, z0: 4, z1: 5, m: flatM(hex("#33302b")) },
+        bed, ...back,
+        { u0: 0.33, u1: 0.67, v0: 0.37, v1: 0.44, z0: 0.6, z1: 2.4, m: logM(60) }, { u0: 0.33, u1: 0.67, v0: 0.56, v1: 0.63, z0: 0.6, z1: 2.4, m: logM(61) },
+        { u0: 0.37, u1: 0.44, v0: 0.33, v1: 0.67, z0: 2.4, z1: 4.2, m: logM(62) }, { u0: 0.56, u1: 0.63, v0: 0.33, v1: 0.67, z0: 2.4, z1: 4.2, m: logM(63) },
+        ...front,
       ];
     }
     case "lamp": return [
@@ -1643,13 +1672,16 @@ const CUT_R = 6;
 // The ground's level at a cell (sim/combat.js c.h with c.ter; 0 level ground; a raised floor or a wall: 0, it is not the
 // ground's), and the look under the cell: null when it and everything round it is level ground.
 const groundLv = (c) => (c && c.k === "crag" ? c.ch || 3 : c && c.ter ? c.h || 0 : (c && c.gh) || 0); // a mountain's rock: its own height (sim/basescatter.js reliefLayer); gh: the hill under a loft, a wall stand, a watchtower (sim/basemap.js groundBuilt)
+// Past the map's edge: the land beyond (beyondBoard) where a base map has it, else level ground (a hill the edge cuts
+// banks down to it there).
 function terrainOf(b, x, y) {
   const c = b.cells[y * b.w + x], e = groundLv(c), r = iso.rot;
+  const at = (nx, ny) => (nx >= 0 && ny >= 0 && nx < b.w && ny < b.h ? groundLv(b.cells[ny * b.w + nx]) : offLv(b, nx, ny));
   let bottom = e;
-  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const nx = x + dx, ny = y + dy; if (nx >= 0 && ny >= 0 && nx < b.w && ny < b.h) bottom = Math.min(bottom, groundLv(b.cells[ny * b.w + nx])); }
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) bottom = Math.min(bottom, at(x + dx, y + dy));
   if (!e && bottom === 0) return null;
   const falls = [e, e, e, e];
-  VD.forEach(([dx, dy]) => { const nx = x + dx, ny = y + dy; if (nx >= 0 && ny >= 0 && nx < b.w && ny < b.h) falls[viewDir(dx, dy, r)] = groundLv(b.cells[ny * b.w + nx]); });
+  VD.forEach(([dx, dy]) => { falls[viewDir(dx, dy, r)] = at(x + dx, y + dy); });
   // A mountain's rock: its neighbours' heights all round in view space (g[v + 1][u + 1]: the surface runs through them).
   let g = null;
   if (c.k === "crag") {
@@ -1663,6 +1695,70 @@ function terrainOf(b, x, y) {
     }
   }
   return { e, bottom, falls, g, key: `${e}${bottom}${falls.join("")}${g ? g.flat().join("") : ""}` };
+}
+// ---------- the land past the edge ----------
+// The user's request 2026-10-23: "The outer margin of the base should not just terminate a terrain it should continue
+// the terrain so it does not just terminate at the border". A base map's land runs on past its edge (sim/basescatter.js
+// landBeyond: F.beyond, BEYOND_R cells all round): a board that much bigger, the map's own cells in its middle and the
+// land's round them, so the looks of the cells outside (lookOf on the board: a hill's banks against the map's ground,
+// trees, rocks, the crag) are worked out as the map's are; drawn in the painter's pass at their depth, fading with the
+// distance from the map into the skirt's fog (battleedge.js). Scenery only: no hover, no clicks.
+const beyondBoards = new WeakMap();
+function beyondBoard(b) {
+  const F = b.deployPlan && b.deployPlan.fort, BY = F && F.beyond;
+  if (!BY || !BY.cells || !BY.cells.length || floorsOf(b)) return null;
+  let bd = beyondBoards.get(BY);
+  if (bd && bd.b === b && bd.cells0 === b.cells) return bd;
+  const R = BY.R, w = b.w + 2 * R, h = b.h + 2 * R, OPEN = { k: "open" }, cells = new Array(w * h).fill(OPEN);
+  for (let y = 0; y < b.h; y++) for (let x = 0; x < b.w; x++) cells[(y + R) * w + x + R] = b.cells[y * b.w + x];
+  for (const [x, y, k, f, hh, ch] of BY.cells) { const c = { k, f: f || "" }; if (hh) { c.h = hh; c.ter = 1; } if (ch) c.ch = ch; cells[(y + R) * w + x + R] = c; }
+  bd = { b, cells0: b.cells, R, board: { w, h, cells, snowLie: 0 }, scene: { comp: new Int16Array(w * h).fill(-1), blds: [] }, list: BY.cells, looks: null, key: "" };
+  beyondBoards.set(BY, bd);
+  return bd;
+}
+// A sprite drawn into the fog: solid (a see-through tree reads as a ghost), its colours a share t of the way to the
+// fog's (FOG_STEPS of them, each made once a sprite and a fog colour).
+const FOG_STEPS = 6, fogTints = new WeakMap();
+function fogTinted(spr, fogC, t) {
+  if (t <= 0) return spr.cv;
+  let m = fogTints.get(spr);
+  if (!m) { m = new Map(); fogTints.set(spr, m); }
+  const key = `${fogC.join(",")}|${t}`;
+  let cv = m.get(key);
+  if (!cv) {
+    cv = mkCanvas(spr.cv.width, spr.cv.height);
+    const c = cv.getContext("2d");
+    c.drawImage(spr.cv, 0, 0);
+    c.globalCompositeOperation = "source-atop";
+    c.fillStyle = fogCss(fogC, t);
+    c.fillRect(0, 0, cv.width, cv.height);
+    m.set(key, cv);
+  }
+  return cv;
+}
+// The ground's level at (x, y) off the map (map coordinates): the land beyond, else level ground.
+function offLv(b, x, y) {
+  const bd = beyondBoard(b);
+  if (!bd) return 0;
+  const X = x + bd.R, Y = y + bd.R;
+  return X < 0 || Y < 0 || X >= bd.board.w || Y >= bd.board.h ? 0 : groundLv(bd.board.cells[Y * bd.board.w + X]);
+}
+// The outside cells' looks ({ x, y, L } in map coordinates), again when the view turns or the season changes.
+function beyondLooks(b, bd) {
+  const key = `${viewKey()}:${treeLook}:${snowLook}:${b.snowLie || 0}`;
+  if (bd.looks && bd.key === key) return bd.looks;
+  const keep = leafNow;
+  leafNow = null; // the autumn leaves are the map's, by its cells
+  bd.board.snowLie = b.snowLie || 0;
+  const out = [];
+  try {
+    for (const [x, y] of bd.list) {
+      const L = lookOf(bd.board, bd.scene, x + bd.R, y + bd.R, null);
+      if (L) out.push({ x, y, L: { k: L.k, o: L.o, top: blockTop(L.k, L.o), spr: [undefined, undefined], fspr: [undefined, undefined] } });
+    }
+  } finally { leafNow = keep; }
+  bd.looks = out; bd.key = key;
+  return out;
 }
 function lookOf(b, scene, x, y, cut, focus = null) {
   const i = y * b.w + x, c = b.cells[i], k = c.k === "siegeladder" ? "palisade" : c.k; // a siege ladder leans on its wall (drawn on top: drawSiegeIso)
@@ -2100,6 +2196,26 @@ function diamond(ctx, x, y, z, inset = 0, close = true) {
   ctx.moveTo(cx, cy - h); ctx.lineTo(cx + w, cy); ctx.lineTo(cx, cy + h); ctx.lineTo(cx - w, cy);
   if (close) ctx.closePath();
 }
+// The no-build margin on a cell of the base map (sim/basemap.js c.nb; the user's request 2026-10-23: "make sure the
+// buildable line limit shows on all surfaces mountains, hills and hollows and decor"): a dark red wash over the cell at
+// its ground's height (a hill's top, a hollow's floor, the rock's), drawn after the cell's own sprite so a hill, the
+// crag or what stands there does not hide it, and the line where the margin ends (toward the cells that take things).
+const NB = { FILL: "rgba(150,40,40,0.26)", LINE: "rgba(232,96,80,0.9)" };
+function nbMark(ctx, b, x, y) {
+  const c = b.cells[y * b.w + x], z = c.k === "crag" ? (c.ch || 3) * LV : tileTop(b, x, y);
+  ctx.fillStyle = NB.FILL;
+  ctx.beginPath(); diamond(ctx, x, y, z, 0, false); ctx.fill();
+  const free = (nx, ny) => nx >= 0 && ny >= 0 && nx < b.w && ny < b.h && !b.cells[ny * b.w + nx].nb;
+  const P = (wx, wy) => project(wx, wy, z);
+  ctx.strokeStyle = NB.LINE; ctx.lineWidth = Math.max(1.5, 0.9 * FR.S);
+  ctx.beginPath();
+  const seg = (a, e) => { ctx.moveTo(...a); ctx.lineTo(...e); };
+  if (free(x, y - 1)) seg(P(x, y), P(x + 1, y));
+  if (free(x, y + 1)) seg(P(x, y + 1), P(x + 1, y + 1));
+  if (free(x - 1, y)) seg(P(x, y), P(x, y + 1));
+  if (free(x + 1, y)) seg(P(x + 1, y), P(x + 1, y + 1));
+  ctx.stroke();
+}
 // Fill the cells of a mask on the ground (and on raised floors at their height when `raised`).
 function fillCells(ctx, b, test, fill, raised = true) {
   ctx.fillStyle = fill;
@@ -2329,10 +2445,9 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     fillCells(ctx, b, (i) => ok[i], `rgba(${COL.goodRgb},0.16)`);
     outlineCells(ctx, b, (i) => ok[i], `rgba(${COL.goodRgb},0.8)`, 1.5);
   }
-  // The base map's layout mode (sim/basemap.js): the no-build margin (c.nb: the cells within NO_BUILD of the grid's
-  // edge, a dark red wash under everything else) and the pick's footprint under the mouse (green where it fits, red
-  // where not), with the cells outside its doors. The yard's edge has no dashed line (the user's request 2026-10-23).
-  if (b.layout && b.deployPlan && b.deployPlan.fort) fillCells(ctx, b, (i) => !!b.cells[i].nb, "rgba(150,40,40,0.22)", false);
+  // The base map's layout mode (sim/basemap.js): the pick's footprint under the mouse (green where it fits, red where
+  // not), with the cells outside its doors. The yard's edge has no dashed line (the user's request 2026-10-23); the
+  // no-build margin (c.nb) is drawn cell by cell in the painter's pass (nbMark), on whatever ground the cell has.
   // The land being cleared (sim/basemap.js F.clearing: the construction queue's clearing jobs): an amber wash over the
   // pieces and a dashed edge; how far each is goes over it with the tags (below).
   const FmL = b.layout && b.deployPlan && b.deployPlan.fort;
@@ -2463,10 +2578,15 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   const siegeOver = new Map();
   for (const m of OV.rams) if (m.x >= 0 && vis[m.y * b.w + m.x]) { const [uu, vv] = toView(m.x, m.y, r, b.w, b.h); const d = depth(uu, vv, st) + 1; const a = siegeOver.get(d); if (a) a.push(() => drawRamIso(ctx, b, m, S)); else siegeOver.set(d, [() => drawRamIso(ctx, b, m, S)]); }
   for (const f of OV.fires) if (vis[f.y * b.w + f.x]) atD(f.x, f.y, () => drawFlamesIso(ctx, b, f, S, ph));
+  // Lit fire pits (a camp's fire, a cook fire, a campsite's): a warm glow on the ground round them now, their flames,
+  // sparks and smoke in the painter's pass.
+  const pitsLit = scene.pits.filter((i) => b.cells[i].lit && vis[i]);
+  for (const i of pitsLit) campfireGlow(ctx, b, i % b.w, (i / b.w) | 0, S, now, st, !!(b.night || b.dark));
+  for (const i of pitsLit) atD(i % b.w, (i / b.w) | 0, () => drawCampfireIso(ctx, b, i % b.w, (i / b.w) | 0, S, now));
 
   // Night: the lights (ui/battlelights.js), a glow on the ground under the units. By day in a raid's building: the
   // dark rooms' floors shaded (a barn, a storeroom: sim/indoorlight.js), a light switched on there cut out of it.
-  if ((b.night || b.dark || b.indoor) && paintLights(b, v, groundXform(b, iso.rot, 1, S, gx, gy, Hv), cw, ch, now, (t) => H.animPos(t, now))) drawGlow(ctx, cw, ch);
+  if ((b.night || b.dark || b.indoor) && paintLights(b, v, groundXform(b, iso.rot, 1, S, gx, gy, Hv), cw, ch, now, (t) => H.animPos(t, now), pitsLit)) drawGlow(ctx, cw, ch);
   if (b.indoor && !b.night && !b.dark) drawShade(ctx, b, cw, ch);
 
   // ---------- the painter's pass: every cell from the back to the front ----------
@@ -2555,8 +2675,32 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   };
   const dMax = st ? Hv - 1 : Wv + Hv - 2;
   for (const [, list] of [...offFence].filter(([d]) => d < 0).sort((a, c) => a[0] - c[0])) drawOffFence(list); // behind the map
+  // The land past the edge (beyondBoard), by depth, fading out with its distance from the map; not where the map is
+  // unknown round a camp set up blind (b.knownMask), nor with the map's edge off (Display: battleedge.js).
+  const beyond = new Map(), bdb = !b.knownMask && skirtTiles() > 0 ? beyondBoard(b) : null;
+  if (bdb) for (const e of beyondLooks(b, bdb)) {
+    const [bu, bv] = toView(e.x, e.y, r, b.w, b.h), d = depth(bu, bv, st);
+    const out = Math.max(-bu, bu - (Wv - 1), -bv, bv - (Hv - 1));
+    const t = Math.round(clamp01((out - 0.5) / (bdb.R + 0.5)) * FOG_STEPS) / FOG_STEPS; // how far into the fog (fogTinted)
+    if (t >= 1) continue;
+    const q = { e, bu, bv, t, fog: !vis[Math.max(0, Math.min(b.h - 1, e.y)) * b.w + Math.max(0, Math.min(b.w - 1, e.x))] };
+    const l = beyond.get(d); if (l) l.push(q); else beyond.set(d, [q]);
+  }
+  const drawBeyond = (d) => {
+    for (const q of beyond.get(d) || []) {
+      const sx = artX(q.bu, q.bv, st) * S + FR.X0, sy = artY(q.bu, q.bv, st) * S + FR.Y0;
+      if (sx < -margin || sx > cw + margin || sy < -margin || sy > ch + margin * 2) continue;
+      const spr = sprOf(q.e.L, q.fog);
+      if (!spr) continue;
+      ctx.drawImage(fogTinted(spr, fog, q.t), Math.round(sx + spr.ox * S), Math.round(sy + spr.oy * S), Math.ceil(spr.w * S), Math.ceil(spr.h * S));
+    }
+  };
+  const lastD = dMax;
+  const nbOn = !!(b.layout && b.deployPlan && b.deployPlan.fort); // the base map's layout mode: its no-build margin (nbMark)
+  if (bdb) for (const d of [...beyond.keys()].filter((k) => k < 0).sort((p, q) => p - q)) drawBeyond(d);
   // By diagonal (u + v) from the back; in a straight view by row (v).
-  for (let d = 0; d <= dMax; d++) {
+  for (let d = 0; d <= lastD; d++) {
+    drawBeyond(d);
     const uLo = st ? 0 : Math.max(0, d - (Hv - 1)), uHi = st ? Wv - 1 : Math.min(Wv - 1, d);
     const fronts = [];
     for (let uu = uLo; uu <= uHi; uu++) {
@@ -2586,6 +2730,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
         }
         if (SPLIT.has(L.k)) fronts.push([L, x, y, sx, sy, fog, faded]);
       }
+      if (nbOn && b.cells[i].nb) nbMark(ctx, b, x, y); // the no-build margin, on the cell's own ground (over its sprite)
       // Highlights on a raised floor sit on top of it.
       const zt = tileTop(b, x, y);
       if (zt) {
@@ -2624,6 +2769,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
       ctx.globalAlpha = 1;
     }
   }
+  if (bdb) for (const d of [...beyond.keys()].filter((k) => k > lastD).sort((p, q) => p - q)) drawBeyond(d); // the land in front of the map's near edges
 
   for (const [, list] of [...offFence].filter(([d]) => d > dMax).sort((a, c) => a[0] - c[0])) drawOffFence(list); // in front of it
   // A building with storeys (floorsOf): units on other floors are not drawn; a faint marker at their x, y says
@@ -3055,6 +3201,50 @@ function drawFlamesIso(ctx, b, c, S, ph) {
     const hgt = (7 + 6 * Math.sin(fl * Math.PI)) * S * (c.turns > 1 ? 1 : 0.7), w = 2.4 * S;
     ctx.fillStyle = k % 2 ? "rgba(255,196,70,0.9)" : "rgba(255,104,36,0.88)";
     ctx.beginPath(); ctx.moveTo(X - w, Y); ctx.quadraticCurveTo(X - w * 0.6, Y - hgt * 0.6, X + Math.sin(fl * 6) * w * 0.5, Y - hgt); ctx.quadraticCurveTo(X + w * 0.6, Y - hgt * 0.6, X + w, Y); ctx.closePath(); ctx.fill();
+  }
+}
+// A lit fire pit's glow (the user's request 2026-10-23: "Improve campfire look"): warm light on the ground round it,
+// breathing with the flames; brighter at night.
+function campfireGlow(ctx, b, x, y, S, now, st, dark) {
+  const [X, Y] = project(x + 0.5, y + 0.5, tileTop(b, x, y)), t = (now || 0) / 1000;
+  const fl = 1 + 0.06 * Math.sin(t * 7.3 + x) + 0.04 * Math.sin(t * 13.1 + y);
+  ctx.save();
+  ctx.translate(X, Y); ctx.scale(RX(st) * S * 1.6 * fl, RY(st) * S * 1.6 * fl);
+  const g = ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
+  g.addColorStop(0, `rgba(255,150,60,${dark ? 0.42 : 0.24})`); g.addColorStop(0.45, `rgba(255,120,40,${dark ? 0.16 : 0.08})`); g.addColorStop(1, "rgba(255,110,40,0)");
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(0, 0, 1, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+// A lit fire pit's fire over its logs: tongues of flame in three layers (deep orange outside, gold, a pale core), each
+// swaying and flickering on its own; sparks rising and winking out; a thin smoke drifting up and spreading.
+function drawCampfireIso(ctx, b, x, y, S, now) {
+  const t = (now || 0) / 1000, seed = x * 1.7 + y * 2.3;
+  const [X, Y] = project(x + 0.5, y + 0.5, tileTop(b, x, y) + 3);
+  const tongue = (dx, w, h, sway, col) => {
+    const bx = X + dx * S, tip = bx + sway * S;
+    ctx.fillStyle = col;
+    ctx.beginPath(); ctx.moveTo(bx - w * S, Y);
+    ctx.bezierCurveTo(bx - w * S, Y - h * 0.45 * S, tip - w * 0.35 * S, Y - h * 0.7 * S, tip, Y - h * S);
+    ctx.bezierCurveTo(tip + w * 0.35 * S, Y - h * 0.7 * S, bx + w * S, Y - h * 0.45 * S, bx + w * S, Y);
+    ctx.closePath(); ctx.fill();
+  };
+  const fl = (k, sp) => Math.sin(t * sp + seed + k * 2.1) * 0.5 + Math.sin(t * sp * 2.3 + k * 1.3) * 0.25;
+  // Smoke first: behind the flames.
+  for (let k = 0; k < 3; k++) {
+    const p = (t * 0.22 + k / 3 + seed * 0.01) % 1;
+    ctx.fillStyle = `rgba(150,146,140,${0.2 * Math.sin(p * Math.PI)})`;
+    ctx.beginPath(); ctx.arc(X + (Math.sin(p * 4 + k + seed) * 3 + p * 4) * S, Y - (12 + p * 30) * S, (1.6 + p * 4.5) * S, 0, Math.PI * 2); ctx.fill();
+  }
+  for (const [dx, k] of [[-2.4, 0], [2.4, 1], [-0.8, 2], [1.2, 3]]) tongue(dx, 1.9, 8 + 3 * fl(k, 9), fl(k + 4, 5) * 2, "rgba(226,86,32,0.88)");
+  for (const [dx, k] of [[-1.3, 5], [1.3, 6], [0, 7]]) tongue(dx, 1.6, 6.5 + 2.5 * fl(k, 11), fl(k + 4, 6) * 1.6, "rgba(255,158,46,0.92)");
+  for (const [dx, k] of [[-0.5, 8], [0.7, 9]]) tongue(dx, 1, 4 + 1.5 * fl(k, 14), fl(k + 4, 7), "rgba(255,236,160,0.95)");
+  // Sparks.
+  for (let k = 0; k < 5; k++) {
+    const p = (t * (0.7 + k * 0.09) + k * 0.31 + seed * 0.05) % 1;
+    ctx.fillStyle = `rgba(255,${190 + k * 10},90,${1 - p})`;
+    const r = Math.max(0.6, 0.9 * S);
+    ctx.fillRect(X + Math.sin(p * 7 + k * 2 + seed) * 3.5 * S - r / 2, Y - (6 + p * 24) * S - r / 2, r, r);
   }
 }
 function arrow(ctx, x0, y0, x1, y1, col, w) {

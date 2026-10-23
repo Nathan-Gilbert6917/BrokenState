@@ -269,6 +269,7 @@ section("Doing it: replace, Shift appends, a job here starts now, asks before dr
   check(p.dest === other && p.orders.length === 0, `Yes: the team heads for the new tile, the queue dropped (${msg})`);
   // A job on the team's own tile starts at once.
   const q = team(state, 2, { tile: forest });
+  Object.assign(q.supplies, { wood: 20, stone: 8 }); // the camp fire's wood and stone (buildings.js CAMP.fireCost, the user's request 2026-10-23)
   msg = runTeamAction(state, {}, { id: q.id, tile: forest, key: "setcamp", mode: "replace" });
   check(q.phase === "task" && q.task && q.task.type === "pitch", `set up camp here: starts now, an hour's work (${msg})`);
   startOrder(state, q, { type: "camp", hours: 8 }); // the internal rest (the governor's night stops, plans' rest steps)

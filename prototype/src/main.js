@@ -134,7 +134,7 @@ import { loadOptions, saveOptions } from "./ui/saves.js";
 import { initTitle, showTitle, syncTitle, titleFrame, titleKey, titleCovers, TITLE_ACTIONS } from "./ui/title.js"; // the title screen the game opens on
 import { WORK_ACTIONS, WORK_CHANGE, workKey, applyRoleChoice } from "./ui/work.js";
 import { DEFENCE_ACTIONS, DEFENCE_CHANGE } from "./ui/defence.js";
-import { BASEMAP_ACTIONS, openForJob, openBuildMap } from "./ui/basemap.js"; // the base map tab; Build opens the map to place the new building
+import { BASEMAP_ACTIONS, openForJob, openToPlace, openBuildMap } from "./ui/basemap.js"; // the base map tab; Build opens the map to place the new building
 import { BUILDMAP_ACTIONS, buildMapKey } from "./ui/buildmap.js"; // Open the build map: the alert's click and the key (U)
 import { STORAGE_ACTIONS, STORAGE_CHANGE } from "./ui/storage.js"; // the base window's Storage tab: the containers (sim/containers.js)
 import { INTEL_ACTIONS, INTEL_CHANGE } from "./ui/intel.js"; // hidden bases (Run silent) and radio security (sim/hiding.js, sim/intel.js)
@@ -951,6 +951,7 @@ const actions = {
   },
   makemedic: (d) => { const s = survivorById(state, Number(d.id)); ui.baseMsg = makeMedic(state, s); if (s && s.location.kind === "base") assignStations(state, baseById(state, s.location.baseId)); }, // a graduated trainee (sim/training.js)
   "tier-place": (d) => { const b = baseOf(d); if (b) openForJob(state, ui, b, d.type); }, // a step up (sim/buildings.js tierUp): the build map opens with it picked to place or move
+  "tier-pick": (d) => { const b = baseOf(d); if (b && !openToPlace(state, ui, b, d.type)) ui.baseMsg = "The build map cannot open now."; }, // a step up not queued yet: the build map opens with it picked from the Build list, queued where it is clicked (ui/basemap.js openToPlace)
   queuebuild: (d) => { const b = baseOf(d), n = b ? b.construction.length : 0; ui.baseMsg = queueBuild(state, b, d.type, { ...(d.mat ? { mat: Number(d.mat) } : {}), ...(d.kind ? { kind: d.kind } : {}) }); if (b && b.construction.length > n) openForJob(state, ui, b, d.type); }, // a building with a footprint: the base map opens to place its outline (ui/basemap.js)
   // Construction tab (sim/buildings.js): a water barrel's next tier, and pulling a building down (asks first: ui/confirm.js) to free its plot.
   "barrel-up": (d) => { ui.baseMsg = queueBarrelUpgrade(state, baseOf(d), Number(d.id)); },

@@ -1,7 +1,7 @@
 // Outpost camps (2026-10-09, user request: "When starting a base it should start as a camp with a progress bar with
 // needed items to upgrade to a more permanent base established"). sim/buildings.js outpost_up, sim/parties.js Build
 // outpost, sim/groupworks.js CAMP.
-//   - Build outpost pitches a camp: tier 0 (a shelter's rules), 5 scrap carried (2 on ruins), its step up queued at once,
+//   - Build outpost pitches a camp: tier 0 (a shelter's rules), 5 scrap carried (2 on ruins), its step up placed by hand (2026-10-23),
 //     the team its staff on Build; what else they carry goes into the stores and straight into the step up;
 //   - the step up gathers its materials from the stores as they come in, never works ahead of them, waits (and lets the
 //     next job go on) while they are short, and when done the camp is an outpost (no tier: spring, wall 1, 6 + 6 plots);
@@ -11,7 +11,7 @@
 //   - AI parity: a group's new base from nothing is a camp (half defence, establishing it is the first job there).
 // Usage: node tools/outpostcamptest.js [seed]
 import { createWorld, tickHour, hub, atBase, day } from "../src/sim/world.js";
-import { BUILDINGS, CAMP, isShelter, tierName, canBuild, queueBuild, cancelBuild, plotCap, baseWalls, gatherRows, gatherCap, gatherStalled, tierUpJob, constructionHour, GATHER_AHEAD } from "../src/sim/buildings.js";
+import { BUILDINGS, CAMP, isShelter, tierName, canBuild, queueBuild, cancelBuild, plotCap, baseWalls, gatherRows, gatherCap, gatherStalled, tierUpJob, tierUpType, constructionHour, GATHER_AHEAD } from "../src/sim/buildings.js";
 import { launchExpedition, giveOrder, planPath, outpostScrap, outpostKit, orderOptions, PITCH_HOURS } from "../src/sim/parties.js";
 import { GROUP_WORKS, nextWork, groupWorksDaily, groupBaseDefence, isCamp, pitchCamp, worksText } from "../src/sim/groupworks.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
@@ -37,7 +37,7 @@ function pitch(st, n, supplies) {
   poiKnowledge(st, tile, true).surveyed = day(st); // scouted (sim/campscout.js): the camp on the game's own spot, as this test's numbers expect
   Object.assign(h.stock, { scrap: 80, parts: 6, buildmat: 20, food: 200, water: 200, wood: 2000 });
   const crew = atBase(st, h.id).slice(0, n).map((s) => s.id);
-  const res = launchExpedition(st, { memberIds: crew, dest: tile, mission: "outpost", stance: "normal", supplies: { food: 6, water: 6, ...supplies } });
+  const res = launchExpedition(st, { memberIds: crew, dest: tile, mission: "outpost", stance: "normal", supplies: { food: 6, water: 6, wood: 20, stone: 8, ...supplies } }); // wood: 20, stone: 8: the camp fire's (CAMP.fireCost)
   if (!check(!res.error, `the team leaves (${res.error || "ok"})`)) return null;
   res.party.path = [tile]; res.party.idx = 0;
   giveOrder(st, res.party, "outpost");
@@ -47,7 +47,10 @@ function pitch(st, n, supplies) {
   const hrs = res.party.task.hours;
   for (let i = 0; i < Math.ceil(hrs) + 2 && !st.bases.some((b) => b.tile === tile); i++) tickHour(st);
   check(st.bases.some((b) => b.tile === tile), `the camp stands after its ${hrs} hours of work`);
-  return { tile, crew, base: st.bases.find((b) => b.tile === tile) };
+  const base = st.bases.find((b) => b.tile === tile);
+  // The player places its Outpost house from the Build list (the user's request 2026-10-23: nothing queued for you).
+  if (base && check(!tierUpJob(base), "nothing queued on setting up: the step up is placed by hand")) queueBuild(st, base, tierUpType(base));
+  return { tile, crew, base };
 }
 const hours = (st, n, stop = () => false) => { for (let i = 0; i < n && !stop(); i++) tickHour(st); };
 
@@ -63,7 +66,7 @@ section("Build outpost pitches a camp");
   check(JSON.stringify(BUILDINGS.hub_up.cost) === JSON.stringify({ scrap: 100, buildmat: 5, wood: 800 }) && BUILDINGS.hub_up.hours === 60 && BUILDINGS.hub_up.gather, "shelter to base: 100 scrap, 5 building materials, 800 wood, 60 work-hours, gathered as they come in");
   check(JSON.stringify(STAGING.HARDCORE.needs) === JSON.stringify({ scrap: 20, buildmat: 2, wood: 200 }) && STAGING.HARDCORE.work === 20 && STAGING.PITCH.scrap === 0 && STAGING.PITCH.hours === CAMP.fireHours && BUILDINGS.camp_up.hours === 20, "a camp: its fire and the clearing of its spot, nothing carried, to set up; to a shelter (camp_up) 20 scrap, 2 building materials, 200 wood, 20 work-hours");
   check(CRAFTS.buildmat && CRAFTS.buildmat.in.scrap === 3 && CRAFTS.buildmat.supplies.buildmat === 1 && CRAFTS.buildmat.field, "building materials are crafted from scrap (3 for 1, anywhere)");
-  const at = { path: [nearFree(st, hub(st).tile, 3, 6)], idx: 0, supplies: { scrap: 11 }, cargo: { supplies: {}, gear: [] } };
+  const at = { path: [nearFree(st, hub(st).tile, 3, 6)], idx: 0, supplies: { scrap: 11, wood: 20, stone: 8 }, cargo: { supplies: {}, gear: [] } };
   const opt = orderOptions(st, at).find((x) => x.mission === "outpost");
   check(opt && !opt.disabled, `Build outpost is open with no scrap carried (${opt && JSON.stringify(opt).slice(0, 120)})`);
   const P = pitch(st, 2, { scrap: 16 });
@@ -74,7 +77,7 @@ section("Build outpost pitches a camp");
     check(baseWalls(b) === 0 && plotCap(b, "building") === 0 && plotCap(b, "utility") === 2, "a camp's rules: no walls, no building plots, 2 utility plots");
     const job = tierUpJob(b);
     b.stock.wood = (b.stock.wood || 0) + 600; // its 200 wood (the user's pick 2026-10-20), the fire's days kept back, its burn meanwhile: here, so only the building materials hold it up below
-    check(job && job.type === "outpost_up" && job.paid, "its step up is queued at once, gathering its materials");
+    check(job && job.type === "outpost_up" && job.paid, "its step up, once placed, is queued, gathering its materials");
     check(atBase(st, b.id).length === 2 && atBase(st, b.id).every((s) => assignedRole(s) === "build"), `the team is its staff, on Build (${atBase(st, b.id).map((s) => s.role).join(", ")} this hour: noidle.js, no materials yet)`); // their own job; with nothing to build they help elsewhere for the hour
     check(st.log.some((l) => /set up camp/.test(l.text)), "the log says so");
     // Carried 16: all into the stores (setting up takes none); the job takes what its next GATHER_AHEAD hours need (12).

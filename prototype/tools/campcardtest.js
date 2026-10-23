@@ -8,7 +8,7 @@ import { stockTools } from "./toolset.js"; // every tool a build or recipe can n
 import { createWorld, tickHour } from "../src/sim/world.js";
 import { roadTeam } from "../src/sim/hardcore-start.js";
 import { establishArrive, tierInfo } from "../src/sim/staging.js";
-import { BUILDINGS, queueBuild, tierUpJob } from "../src/sim/buildings.js";
+import { BUILDINGS, queueBuild, tierUpJob, tierUpType } from "../src/sim/buildings.js";
 import { campStatusCard, buildBar, stageSteps, stageRows, stagingTileCard } from "../src/ui/hardcore.js";
 import { renderExpedition } from "../src/ui/expedition.js";
 import { renderRight } from "../src/ui/ui.js";
@@ -43,8 +43,8 @@ establishArriveNow(st, p);
 const camp = st.bases[0];
 check(!!camp && camp.camp === true, "the camp stands (a base)");
 check(campStatusCard(st, p) === "", "no road card once there is a base");
-check(!tierUpJob(camp), "no shelter placed by itself (the user's request 2026-10-23)");
-queueBuild(st, camp, "camp_up"); // the Camp tab's Place the shelter shack
+check(!tierUpJob(camp), "nothing building yet: the step up is placed by hand (the user's request 2026-10-23)");
+queueBuild(st, camp, tierUpType(camp)); // the player picks the shelter shack from the Build list (ui/basemap.js openToPlace)
 card = stagingTileCard(st, camp.tile);
 check(/class="buildbar/.test(card) && /Shelter shack: 0%/.test(text(card)), "a labelled build bar for the step up");
 check(/class="now">Camp</.test(card), "the Camp stage is lit");
@@ -69,7 +69,7 @@ const q = roadTeam(st2);
 q.supplies.scrap = 30; q.supplies.parts = 4; q.supplies.food = 30; q.supplies.water = 30; q.supplies.buildmat = 2; q.supplies.wood = 600; // the step up's 200 wood, the fire's (the user's pick 2026-10-20)
 establishArriveNow(st2, q);
 const base = st2.bases[0];
-queueBuild(st2, base, "camp_up"); // the Camp tab's Place the shelter shack
+queueBuild(st2, base, tierUpType(base)); // the player places the shelter shack (the user's request 2026-10-23)
 for (let i = 0; i < 24 * 6 && base.camp; i++) { tickHour(st2); st2.cards.length = 0; }
 check(!base.camp && base.tier === 0, `the camp's builders build it up into the shelter (${base.camp ? "still a camp" : "a shelter"})`);
 if (!base.camp) {

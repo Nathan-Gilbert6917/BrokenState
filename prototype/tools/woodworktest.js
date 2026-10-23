@@ -265,6 +265,7 @@ section("4. The governor fells for wood when short, a few trees at a time beyond
   const st3 = world(SEED + 9);
   const c3 = makeCamp(st3, freeTile(st3, (t) => t.terrain === "forest"));
   people(st3, c3, 2, "build");
+  c3.gridCfg = { min: 10 / BM.YARD, max: 10 / BM.YARD }; // a 20 × 20 yard (the Base yard dials, worldcfg.js): its open ground runs out (76 × 76 since 2026-10-23 by default)
   BM.landFor(st3, c3);
   for (let i = 0; i < 14; i++) c3.construction.push({ id: 81000 + i, type: "tent", progress: 0, hours: 3 });
   for (let i = 0; i < 10; i++) c3.construction.push({ id: 81020 + i, type: "gen_hut", progress: 0, hours: 14 });

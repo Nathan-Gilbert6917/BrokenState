@@ -22,7 +22,7 @@ section("Establish base: the camp (the barest base, staging.js) stands at once a
 {
   const st = createWorld({ seed: 11, factionCount: 7, mode: "hardcore" });
   const p = roadTeam(st);
-  Object.assign(p.supplies, { scrap: 30, parts: 4, food: 30, water: 30, buildmat: 2 }); // the shelter takes building materials (staging.js)
+  Object.assign(p.supplies, { scrap: 30, parts: 4, food: 30, water: 30, buildmat: 2, wood: 20, stone: 8 }); // the shelter takes building materials (staging.js)
   establishArriveNow(st, p);
   const b = st.bases[0];
   check(!!b && b.camp === true, "the camp stands (a base)");
@@ -53,7 +53,7 @@ section("Build outpost (a normal game): asked again; duplicates refused; Keep cl
   const g = st.grid;
   const dest = [...g.within(h.tile, 4)].find((id) => g.distance(id, h.tile) >= 3 && st.tiles[id].terrain !== "water" && st.tiles[id].owner == null && !st.factions.some((f) => f.bases.includes(id)) && !st.tiles[id].hive);
   check(dest != null, "a free tile 3–4 away");
-  const r = launchExpedition(st, { dest, mission: "move", stance: Object.keys(STANCES)[0], memberIds: ids, supplies: { scrap: 20, food: 10, water: 10 } });
+  const r = launchExpedition(st, { dest, mission: "move", stance: Object.keys(STANCES)[0], memberIds: ids, supplies: { scrap: 20, food: 6, water: 6, wood: 20, stone: 8 } }); // food, water: room for the camp fire's wood and stone
   check(!r.error, `the team set out (${r.error || "ok"})`);
   const p = r.party;
   for (let i = 0; i < 96 && p && p.phase !== "waiting"; i++) { tickHour(st); st.cards.length = 0; }

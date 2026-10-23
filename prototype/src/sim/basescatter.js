@@ -108,8 +108,8 @@ export const CLEAR = {
   wirefence: { hours: 0.5, get: { wood: 6, scrap: 1 }, word: "a wire fence panel", verb: "Pull down" }, // a field's (fieldLayer): its post for wood, its wire and staples for scrap
   fieldgate: { hours: 0.5, get: { wood: 15 }, word: "a field gate", verb: "Take down" }, // its two cells (fieldLayer)
   hay:     { hours: 0.5, get: {},            word: "a hay bale", verb: "Shift" },
-  rock:    { hours: 1,   get: {},            word: "a rock", verb: "Roll away" },
-  boulder: { hours: 3,   get: {},            word: "a boulder", verb: "Break up" },
+  rock:    { hours: 1,   get: { stone: 12 }, word: "a rock", verb: "Roll away" },   // stone (stone.js, the user's request 2026-10-23)
+  boulder: { hours: 3,   get: { stone: 40 }, word: "a boulder", verb: "Break up" },
   crate:   { hours: 0.5, get: { scrap: 1 },  word: "a broken crate", verb: "Haul off" },
   barrel:  { hours: 0.5, get: { scrap: 1 },  word: "an old drum", verb: "Haul off" },
   wreck:   { hours: 6,   get: { scrap: 2 },  word: "a wreck", verb: "Drag off" },
@@ -1035,11 +1035,35 @@ export function clearOf(p, tool = true, mode = "clear") {
 }
 
 // ---------- laying the land on a map ----------
+// The land past a map's edge (the user's request 2026-10-23: "The outer margin of the base should not just terminate a
+// terrain it should continue the terrain so it does not just terminate at the border"): the cells within R of the
+// W × H map (map = grid + ox, oy) and outside it where the land has something to draw (a height, a tree, a bush, a
+// hedge, a fence, a rock, a boulder, a stump, a log, a hay bale, the crag; a floor), each [x, y, k, f, h, ch?] in map
+// coordinates; inGrid(gx, gy): on the tile's own map (nothing past it). The view draws them running on into the fog
+// (ui/isoview.js beyondBoard); scenery only, nothing in the sim stands there.
+export const BEYOND_R = 6;
+/** @param {any} land @param {number} W @param {number} H @param {number} ox @param {number} oy @param {number} R @param {(gx: number, gy: number) => boolean} inGrid */
+export function landBeyond(land, W, H, ox, oy, R, inGrid, lift = 0) { // lift: the map's datum (layLand m.lift): heights as the map's
+  const out = [];
+  if (!land) return out;
+  for (let y = -R; y < H + R; y++) for (let x = -R; x < W + R; x++) {
+    if (x === 0 && y >= 0 && y < H) x = W; // the map itself: skip across it
+    const gx = x - ox, gy = y - oy;
+    if (!inGrid(gx, gy)) continue;
+    const key = `${gx},${gy}`, h = ((land.heights && land.heights.get(key)) || 0) - lift, p = land.pieces.get(key), f = land.floors.get(key) || "";
+    const field = p && FIELD_FENCE.has(p.k) && typeof p.g === "string" && p.g.startsWith("fd"); // a field's fence: drawn off the edge as fences (ui/isoview.js offEdgeFences)
+    const k = p && !field && (SCATTER_KINDS.has(p.k) || p.k === "crag") ? p.k : "open";
+    if (!h && k === "open" && !f) continue;
+    out.push(k === "crag" ? [x, y, k, f, h, p.h || HIGH.CRAG_LV[0]] : [x, y, k, f, h]);
+  }
+  return out;
+}
 /**
  * Lays the land on a map (basemap.js buildBaseMap; fort.js for an AI group's margin). m: { cells, W, H, ox, oy (grid →
  * map), land (landOf), ok(x, y) → the map cell may take a piece (open ground, nothing standing), floor(x, y) → it may
  * take a floor }. Never on the map's outermost cells (the attackers' ground, an open ring round the map, so wherever a
- * battle floods its reach from on the edge it reaches all of it) but for a farmland field's fence (fieldLayer: the
+ * battle floods its reach from on the edge it reaches all of it; the heights go there too, a level a step: relief.js
+ * cragWays) but for a farmland field's fence (fieldLayer: the
  * user's word 2026-10-23, "Fill in the gap"), run right out to the edge: a fence is climbed over by the living and
  * crawled over by the dead (combat.js vaultable), so the ring is still crossed all the way round. Returns { kinds: { k: n } }.
  * @param {any} m
@@ -1057,15 +1081,17 @@ export function layLand(m) {
   // or a hollow, walked up and down a level at a step: combat.js climbCost). A base on a hill or in a hollow (land.level,
   // the user's request 2026-10-23): its map is laid from its own level (m.lift, the map's datum: combat.js mapLv), so
   // the yard and all that stands in it are level ground and the land round it rises or falls away from it; the plain is
-  // laid -lift, the river's water at its level too.
-  const lift = m.lift || 0, lays = (x, y) => inner(x, y) && (!m.floor || m.floor(x, y)) && (!m.ok || m.ok(x, y));
+  // laid -lift, the river's water at its level too. The map's outer row too (the user's request 2026-10-23: "The outer
+  // margin of the base should not just terminate a terrain it should continue the terrain"): a hill the map's edge cuts
+  // runs on to it at its own height (landBeyond carries it on past the edge in the view).
+  const lift = m.lift || 0, lays = (x, y) => onMap(x, y) && (!m.floor || m.floor(x, y)) && (!m.ok || m.ok(x, y));
   if (land.heights) for (const [key, h] of land.heights) {
     const [gx, gy] = key.split(",").map(Number), x = gx + ox, y = gy + oy;
     if (lays(x, y)) { const c = cells[y * W + x]; c.h = h - lift; c.ter = 1; if (land.springs && land.springs.has(key)) c.spring = 1; } // c.spring: a pond tile's spring-fed hollow (ponds.js)
   }
-  if (lift) for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { // the map's edge too: level with the plain beside it
+  if (lift) for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { // the rest of the map: level with the plain
     const key = `${x - ox},${y - oy}`, p = land.pieces.get(key);
-    if ((inner(x, y) && land.heights && land.heights.has(key)) || (p && p.k === "crag") || (m.floor && !m.floor(x, y)) || (m.ok && !m.ok(x, y))) continue;
+    if ((land.heights && land.heights.has(key)) || (p && p.k === "crag") || (m.floor && !m.floor(x, y)) || (m.ok && !m.ok(x, y))) continue;
     const c = cells[y * W + x];
     c.h = -lift; c.ter = 1;
     if (p && p.k === "water") { c.wet = "deep"; c.wl = 0.05 - lift; } // the river's water sheet on the plain's level (ui/isoview.js wetPrims; flat at 0 on a level base's map)
