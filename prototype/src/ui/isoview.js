@@ -35,6 +35,7 @@ import { endangered, imminent } from "../sim/carriers.js"; // a body in danger f
 import { isMedic } from "../sim/medics.js"; // a med kit makes a medic: the cross tag
 import { nlTags } from "./nonlethal.js"; // status tags of the non-lethal kit (sim/nonlethal.js)
 import { battleWeather, fogColour, fogCss, skirtFor, drawVignette, setEdgeCanvas } from "./battleedge.js"; // the map's edge: ground fading into fog
+import { drawBattleWx, setWxCanvas } from "./battlewx.js"; // rain, fog and snow over the view: the State Map's weather over the battle's tile
 import { paintLights, drawGlow, drawDarkness, drawShade, setLightsCanvas } from "./battlelights.js"; // night: flashlight beams, lantern pools, the darkness; by day a dark room's shade
 import { ingestMarks, revealMarks, drawMarks, knownBody, setMarksCanvas } from "./battlemarks.js"; // blood, brass, scorch, glass that stay
 import { drawGroundIso, drawPileIso, drawCartIso, drawCartBoxIso } from "./ground.js";
@@ -76,7 +77,7 @@ export function setRoofs(on) {
 
 // Canvas factory (the tools hand in a stub).
 let mkCanvas = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
-export function setIsoCanvas(fn) { mkCanvas = fn; clearIsoCache(); setEdgeCanvas(fn); setLightsCanvas(fn); setMarksCanvas(fn); }
+export function setIsoCanvas(fn) { mkCanvas = fn; clearIsoCache(); setEdgeCanvas(fn); setLightsCanvas(fn); setMarksCanvas(fn); setWxCanvas(fn); }
 const spriteCache = new Map();
 const groundCaches = new Map(), GROUNDS = 6; // groundFor: key -> picture, of one battle (dropped with a new one), least recently used first
 let fogCache = null, sceneCache = null, fogMaskCache = null, flatGroundCache = null;
@@ -2529,6 +2530,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   // Night: the whole scene darker, the lights cut out of it (ui/battlelights.js); the fog's vignette on the edges.
   drawDarkness(ctx, b, cw, ch);
   drawVignette(ctx, cw, ch, fog);
+  { const [ax, ay] = project(b.w / 2, b.h / 2, 0); drawBattleWx(ctx, cw, ch, state, b, now, ax, ay); } // ui/battlewx.js: the rain, fog or snow (screen space; the labels, bars and cursor stay on top)
   for (const c of OV.smoke) {
     if (c.thick) {
       // A fire's smoke: a dark column rising and drifting (it blocks sight through it).
