@@ -32,7 +32,7 @@ export const LAYERS = {
   known:     { name: "Known area",       desc: "Hatched where your people searched for hidden places" },
   coalition: { name: "Coalition land",   desc: "Land you and the coalition's members hold (goal: 50%)" },
   towersight: { name: "Tower sight",     desc: "Rings round your manned watch towers: what they see" }, // sim/fieldworks.js
-  radio:     { name: "Radio coverage",   desc: "Rings round your radios: how far they reach, in tiles" }, // sim/radio.js; the help has the long version
+  radio:     { name: "Radio coverage",   desc: "How far your radios and your allies' reach, in tiles" }, // sim/radio.js, sim/radioallies.js; the help has the long version
 };
 export const LAYER_OF = { vehicle: "vehicles", death: "deaths", cache: "finds", car: "finds", camp: "finds", miltruck: "finds", nomadcamp: "finds" };
 

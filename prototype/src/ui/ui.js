@@ -138,6 +138,7 @@ import { repairsTab, blueprintsCard, keyRingCard } from "./explore.js";
 import { prisonTab } from "./prisoners.js";
 import { settingsModal } from "./settings.js";
 import { swatch } from "./help.js";
+import { radioLegend, radioLegendTip } from "../sim/radioallies.js"; // the Radio coverage line: your reach and your allies'
 import { outsidersSection } from "./visitors.js";
 import { workTab, roleSelect as workRoleSelect, taskChip, sickTip } from "./work.js";
 import { sickRestLabel } from "../sim/sickrest.js"; // "Resting: sick (Flu)" for Manual and pinned people
@@ -821,7 +822,12 @@ export function renderLegend(view, ui, state = null) {
   const box = { icon: "🗺", title: "Layers", badges: [{ text: on, tip: `${on} of ${Object.keys(LAYERS).length} layers on` }], action: "legendtoggle" };
   if (ui.legendCollapsed) return panelTab({ ...box, tip: `Show the map layers (${on} on)` });
   const land = state && state.tiles && view.layers.has("coalition") ? coalitionLand(state) : null;
-  const extra = (k) => (k === "coalition" && land ? ` <span class="muted"${tip(`${land.held} of ${land.land} land tiles; victory needs over ${Math.round(land.goal * 100)}%`)}>${Math.round(land.pct * 100)}%/${Math.round(land.goal * 100)}%</span>` : "");
+  // Radio coverage (sim/radioallies.js; 2026-10-23: "Radio layer shows your radio distance and when allied you can see
+  // their radio distance"): while it is on, your reach in your colour and each ally's in theirs after the name, with
+  // its own tooltip "Your radio: 12 tiles", "Allied: <Group> radio, 9 tiles (linked …)" (the line keeps its short one).
+  const radio = state && state.tiles && view.layers.has("radio") ? radioLegend(state) : null;
+  const radioExtra = () => ` <span class="muted"${tip(radioLegendTip(state))} data-tip-pre>${radio.mine ? `<b style="color:#8fbcef">${radio.mine.range}</b>` : "–"}${radio.allies.map((a) => ` <span style="color:${a.color}">●${a.range}</span>`).join("")}</span>`;
+  const extra = (k) => (k === "coalition" && land ? ` <span class="muted"${tip(`${land.held} of ${land.land} land tiles; victory needs over ${Math.round(land.goal * 100)}%`)}>${Math.round(land.pct * 100)}%/${Math.round(land.goal * 100)}%</span>` : k === "radio" && radio ? radioExtra() : "");
   return `${panelHead({ ...box, tip: "Fold this box away", extra: `<button data-action="help-open" data-sec="map-layers" class="mini"${tip("What the layers and map symbols mean (Help)")}>?</button>` })}
     <div class="fp-body">${Object.entries(LAYERS).map(([k, l]) => `<label class="layer"${tip(LAYER_TIPS[k] || l.desc)}><input type="checkbox" data-action="layer" data-k="${k}" ${view.layers.has(k) ? "checked" : ""}>${swatch(k)}${esc(l.name)}${extra(k)}</label>`).join("")}</div>`;
 }
