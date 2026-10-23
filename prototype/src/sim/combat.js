@@ -111,6 +111,7 @@ import { calOf, calName, roundsOf, takeBattleRounds, sideRounds, chooseLoad, ene
 import { loadFx, unitRound, loadRefusal, gunTakes } from "./ammo.js"; // calibre compatibility (2026-10-10): the round loaded, a 5.56 gun's .223
 import { trucksAt, TRUCK_KINDS, truckLoot, truckRng, markOpened, truckName, MILTRUCK, CONVOY_GUARD, guardedTrucks } from "./miltrucks.js"; // Army trucks on the map, their cargo and crews (a convoy's guard)
 import { carAct, settleClaims } from "./foundcars.js"; // any car on a map: get in, keys or hotwire, inspect, claim
+import { carOfBox, soundAlarm, searchChance } from "./caralarms.js"; // a car alarm set off by a search
 import { armFromArsenal, settleArsenal, settleThird } from "./arsenal.js";
 import { personFromLegacy } from "./fighters.js"; // every human on the map is a person (docs/adr/0001-ai-parity.md)
 import { bandize, settleBand } from "./bands.js"; // nomad bands and visitors: their own people // group arsenals: their units armed from what the group holds
@@ -5274,7 +5275,7 @@ export function enemyStep(state) {
     // Storeys (buildingmaps.js): the AI runs on the unit's own floor, and the player's view floor comes back after.
     const view = b.floors ? b.floor || 0 : null;
     if (b.floors && (u.f || 0) !== view) setFloor(b, u.f || 0);
-    if (!(b.rescue && u.side === "enemy" && guardTurn(state, b, u))) aiUnit(b, u); // rescueraid.js: the alarm, the armory, recapturing captives
+    if (!(b.rescue && u.side === "enemy" && guardTurn(state, b, u))) aiUnit(b, u, state); // rescueraid.js: the alarm, the armory, recapturing captives
     if (b.floors && (b.floor || 0) !== view) setFloor(b, view);
   }
   checkEnd(state, b);
@@ -5500,15 +5501,15 @@ function crushAct(b, u, t) {
 // carried into the fight (u.who: stealth.js throwablesOf), taken off them as they throw it. Yours are offered both by
 // autoPlayerTurn in its own order (the volunteers with you, played by aiUnit, take them here). Returns true when the
 // unit's turn is spent.
-function aiRepertoire(b, u) {
+function aiRepertoire(b, u, state = null) { // state: for a car's dice (caralarms.js: a bottle at an armed car)
   if (u.kind !== "human" || !u.who || u.sid != null) return false;
-  if (botDecoy(null, b, u) && (u.ap < 1 || !active(u))) return true;
+  if (botDecoy(state, b, u) && (u.ap < 1 || !active(u))) return true;
   const skull = botCrush(b, u);
   if (skull) crushAct(b, u, unitById(b, skull.target));
   return u.ap < 1 || !active(u);
 }
 
-function aiUnit(b, u) {
+function aiUnit(b, u, state = null) {
   if (!active(u)) return;
   if (u.gunner) return gunnerAI(b, u); // a turret's gunner (either side): stays on the gun
   if (u.dormant) { u.ap = 0; return; } // a Sleeper lies where it is (sleepers.js)
@@ -5550,7 +5551,7 @@ function aiUnit(b, u) {
   // raiders finishing (or taking) your downed. The rest of the turn goes on as usual.
   if (u.kind === "human" && MED.rescueTurn(b, u, flees) && (u.ap < 1 || !active(u))) return;
   if (flees) { if (aiBreakOut(b, u) && (u.ap < 1 || !active(u))) return; return flee(b, u); } // shoving.js: ringed by foes, one is shoved aside first
-  if (aiRepertoire(b, u)) return; // decoys.js, carriers.js: a decoy on the dead pressing them, a body in danger crushed (as your bots do)
+  if (aiRepertoire(b, u, state)) return; // decoys.js, carriers.js: a decoy on the dead pressing them, a body in danger crushed (as your bots do)
   if (u.side === "enemy" && u.kind === "human" && thiefTurn(b, u)) return; // basemap.js: a raider going for the stores, or off the map with the loot
   if (u.kind === "human" && (u.side === "enemy" || (u.side === "player" && b.takeAlive)) && nlAI(b, u)) return; // nonlethal.js: tie up, spray, tase, club down the weak
   if (u.side === "enemy" && u.kind === "human" && siegeAI(b, u)) return; // siege.js: the ram, a ladder, storming, a grenade
@@ -6340,7 +6341,7 @@ function autoPlayerTurnNow(state, opts) {
     const skull = botCrush(b, u); // carriers.js: a body in danger next to them (a Carrier near, the worm in it), crushed before it gets up
     if (skull) combatAct(state, skull);
     if (active(u) && u.ap > 0 && !u.jam) botDraw(state, b, u); // holsters.js: dry with no Reload, the side arm or the melee weapon
-    if (active(u) && u.ap > 0) aiUnit(b, u);
+    if (active(u) && u.ap > 0) aiUnit(b, u, state);
     checkEnd(state, b);
   }
   bump(b);
@@ -6384,7 +6385,7 @@ export function volunteerTurn(state, b) {
       const lead = order === "follow" ? unitById(b, u.volLead) : null;
       if (order === "hold") volHold(b, u, hot);
       else if (order === "follow" && lead && activeAny(lead)) { if (!(hot && volShotHere(b, u))) volFollow(b, u, lead); }
-      else if (hot) aiUnit(b, u);
+      else if (hot) aiUnit(b, u, state);
       else volFollow(b, u);
       if (b.floors && (b.floor || 0) !== view) setFloor(b, view);
       bindDims(b);
@@ -7499,7 +7500,13 @@ export function searchBox(state, b, u, box, open = false, quick = false) {
       // A generator, a spotlight, a fridge: a garage's, a hardware store's, the motor pool's (electric.js AREA_POWER; its own dice too).
       const pw = rollAreaPower(state, b.tileId, R.areas[box.area].type, site, `box${bid}`);
       if (pw) gear.push(pw);
-      if (def.alarm && box.kind === "car" && drng.chance(def.alarm) && !u.quiet) { // quiet: Quiet Hands never sets one off
+      // A car alarm (caralarms.js): the same one draw as ever; on the car's own record only an armed one goes off (at
+      // searchChance, so about as often over all cars), ringing and pulling the dead to it. A box with no car under it:
+      // the old one-shot. quiet: Quiet Hands never sets one off.
+      const alarmDraw = def.alarm && box.kind === "car" ? drng.next() : 1;
+      const car = alarmDraw < 1 && !u.quiet ? carOfBox(state, b, box) : null;
+      if (car) { if (alarmDraw < searchChance(def.alarm)) soundAlarm(state, b, car, { say, fx }, `${u.name} rummages through the ${car.name.toLowerCase()}.`); }
+      else if (alarmDraw < def.alarm && !u.quiet) {
         R.heat = Math.min(100, R.heat + 12);
         say(b, "A car alarm goes off! Heat jumps.", "danger");
         alertNear(b, box.x, box.y, 12, "The alarm wakes everything nearby.");

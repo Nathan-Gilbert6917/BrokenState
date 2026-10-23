@@ -141,6 +141,7 @@ Detail: [combat.md](../features/combat.md).
 - **Side arm and melee slots**: draw a holstered handgun or belt blade for 1 action [holsters, combat, equip] `tools/holstertest.js`. [details](../features/combat.md#side-arm-and-melee-slots)
 - **Non-lethal weapons and taking people alive** (taser, stun baton, pepper spray) [nonlethal].
 - **Throwables**: Molotovs, pipe bombs, flares, smoke [throwables]; **decoys and fire**, what the dead follow [decoys].
+- **Car alarms**: set one off by hand or with a bottle through the window to pull the dead off you; smashing the glass, prying a door or hotwiring can set one off [caralarms, foundcars, stealth, decoys, locks, ui/carpanel, ui/sfx-vehicles] `tools/caralarmtest.js`. [details](../features/combat.md#car-alarms)
 - **Things on the ground** and searching bodies [ground]; the ground in a survivor's inventory window [ui/inventory, carry]. [details](../features/combat.md#the-ground-in-a-survivors-inventory)
 - **Retreat**: "Sound the retreat" and break-off policies for auto-resolved fights [combat soundRetreat, breakoff].
 - **Third side**: neutrals and soldiers who are neither your team nor its enemies [thirdside].

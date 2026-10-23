@@ -12,6 +12,9 @@
 //   inspect  the engine, the tyres, the battery and the fuel: it runs, it can be fixed (parts, scrap, a Mechanics level
 //            and hours: repairOf), or it is scrap. Most are dead (COND); a few run.
 //   siphon   the fuel in its tank: into your vehicle on the map, else into the team's cans.
+//   alarm    "Set it off": an armed car alarm (caralarms.js: about one car in five), banged and rocked; it rings for
+//            ALARM.TURNS enemy turns and pulls the dead to the car. silence: from inside a ringing one, pull the fuse.
+//            Breaking the glass (ALARM.SMASH a try), prying the door (FORCE) and hotwiring (HOTWIRE) can set it off too.
 //   claim    one that runs or can be fixed, once it can be started (keys, hotwired or a start switch): it becomes a
 //            vehicle record (vehicles.js createVehicle) parked on the tile, with a map marker. When the battle ends
 //            (settleClaims) one that runs joins the team if it has no vehicle (or the base, defending it); otherwise
@@ -32,6 +35,7 @@ import { partyMembers, partyTile, carried, takeSupply, cargoRoom, unitsThatFit, 
 import { startTask } from "./orders.js";
 import { SUPPLIES } from "./data.js";
 import { reseat } from "./walkers.js"; // seats for walkers when a car joins
+import { ALARM, fitAlarm, alarmOf, soundAlarm, tripAlarm, silenceAlarm, breakGlass } from "./caralarms.js"; // car alarms: set off, tripped, silenced
 
 export const CARS = {
   // Doors locked, keys left in it (visor, glovebox), by model; BODY_KEYS more with one of the dead lying near.
@@ -73,10 +77,12 @@ function modelOf(car) {
   return car.L <= 3 ? "sedan" : car.v % 2 ? "van" : "pickup";
 }
 const roll = (state, b, id, ...k) => hash01(state.seed, "car", b.tileId, b.carSalt ?? (b.carSalt = state.hour), id, ...k);
+export const carRoll = roll; // caralarms.js: the same dice for a car's alarm
+
 // The record of a car on this battle's map (made the first time someone looks at it), or null.
 export function carRecord(state, b, id) {
   b.cars = b.cars || {};
-  if (b.cars[id]) return b.cars[id];
+  if (b.cars[id]) { const old = b.cars[id]; if (old.alarm === undefined) old.alarm = fitAlarm(old, (...k) => roll(state, b, id, ...k)); return old; } // a save from before car alarms (caralarms.js)
   const cells = carCells(b, id);
   if (!cells.length) return null;
   const W = b.w;
@@ -100,6 +106,7 @@ export function carRecord(state, b, id) {
     inspected: false, cond: { engine, tyres: !ready && r("tyres") < C.tyres ? "flat" : "ok", battery: !ready && r("battery") < C.battery ? "flat" : "ok", fuel }, condition: Math.round(C.condition[0] + r("cq") * (C.condition[1] - C.condition[0])),
     claimed: null,
   };
+  rec.alarm = fitAlarm(rec, r); // caralarms.js: its own die (the rest above do not move)
   b.cars[id] = rec;
   return rec;
 }
@@ -110,13 +117,15 @@ function ownedRecord(state, b, id, car, xs, ys) {
   const o = car.owned;
   const model = OWNED_MODEL[o.type] || "pickup";
   const M = MODELS[model];
-  return {
+  const rec = {
     id, x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs) + 1, h: Math.max(...ys) - Math.min(...ys) + 1,
     model, name: o.name || M.name, mil: M.mil ? { kind: model, cond: "intact", runs: true } : null, owned: { ...o },
     locked: roll(state, b, id, "lock") < (CARS.LOCKED[model] ?? 0.4), open: false, keys: M.mil ? true : false, hot: false, tries: 0,
     inspected: false, cond: { engine: o.condition > 0 ? "ok" : "dead", tyres: "ok", battery: "ok", fuel: Math.round(o.fuel || 0) }, condition: Math.round(o.condition || 0),
     claimed: null,
   };
+  rec.alarm = fitAlarm(rec, (...k) => roll(state, b, id, ...k)); // caralarms.js: a group's car is armed as often as any
+  return rec;
 }
 const gap = (rec, x, y) => Math.max(rec.x - x, x - (rec.x + rec.w - 1), rec.y - y, y - (rec.y + rec.h - 1), 0);
 // The cars next to a unit (any of their cells within a step): ids, nearest first.
@@ -133,7 +142,7 @@ export function carsNear(b, u) {
 }
 // A raid container on the same car (a car in a wreck pile or on the road, an Army truck's cargo bed): its lock is the doors'.
 const boxOf = (b, rec) => (b.raid ? b.raid.containers.find((c) => c.x === rec.x && c.y === rec.y && (c.w || 1) === rec.w && (c.h || 1) === rec.h && c.kind === "car") : null);
-export const isOpen = (b, rec) => rec.open || !rec.locked || !!(boxOf(b, rec)?.lock?.open);
+export const isOpen = (b, rec) => rec.open || !rec.locked || !!rec.glass || !!(boxOf(b, rec)?.lock?.open); // glass: a broken window, reached in through (caralarms.js)
 export const canStart = (rec) => !!(rec.keys || rec.hot || rec.mil);
 // What getting it running needs: { parts, scrap, hours, mech, what: [] } (nothing: it runs), or null (scrap).
 export function repairOf(rec) {
@@ -171,6 +180,10 @@ export function carOptions(state, b, u, rec) {
     o.hotwire = { ok: inside && !canStart(rec), ap: 1, chance: hotwireChance(rec, mech), why: needIn || (canStart(rec) ? "It can already be started." : "") };
   }
   o.inspect = { ok: inside && !rec.inspected, ap: 1, why: needIn || (rec.inspected ? "Already inspected." : "") };
+  // Its alarm (caralarms.js): set off from next to it; silenced from inside while it rings. The dash light says if it has one.
+  const al = alarmOf(rec);
+  o.alarm = { ok: al === "armed", ap: 1, armed: al === "armed", why: al === "armed" ? "" : al === "ringing" ? "It is going off already." : al === "off" ? "Its alarm has rung out." : rec.mil ? "An Army vehicle has no alarm." : rec.model === "boxtruck" ? "A burnt-out shell: no alarm." : "No alarm: no light blinks on the dash." };
+  if (al) o.silence = { ok: inside && al === "ringing", ap: 1, why: al !== "ringing" ? "It is not going off." : needIn };
   o.siphon = { ok: inside && rec.inspected && rec.cond.fuel > 0, ap: 1, why: needIn || (!rec.inspected ? "Inspect it first (is there any fuel?)." : rec.cond.fuel > 0 ? "" : "The tank is dry.") };
   const r = repairOf(rec);
   const owner = b.setup.partyId != null || b.setup.baseId != null;
@@ -189,7 +202,7 @@ function bodyNear(b, rec) {
 export const hotwireChance = (rec, mech) => Math.max(0.05, Math.min(CARS.HOTWIRE.max, CARS.HOTWIRE.base + CARS.HOTWIRE.perMech * mech + (MODELS[rec.model].old ? CARS.HOTWIRE.old : 0)));
 
 // ---------- the action (combat.js combatAct "car") ----------
-// act: { unit, car: id (default: the nearest), op: "enter" | "pick" | "force" | "keys" | "hotwire" | "inspect" | "siphon" | "claim" }.
+// act: { unit, car: id (default: the nearest), op: "enter" | "pick" | "force" | "keys" | "hotwire" | "inspect" | "siphon" | "claim" | "alarm" | "silence" }.
 // H: { say, alertNear, fx } from combat.js. Returns an error ("" when the action happened, success or not).
 export function carAct(state, b, u, act, H) {
   const id = act.car != null ? Number(act.car) : carsNear(b, u)[0];
@@ -228,6 +241,8 @@ export function carAct(state, b, u, act, H) {
         H.say(b, o.glass ? (ok ? `${u.name} smashes a window of the ${name} and reaches in for the lock (${Math.round(o.chance * 100)}%).` : `${u.name} hits the ${name}'s window; it cracks and holds (${Math.round(o.chance * 100)}%).`)
           : ok ? `${u.name} jimmies the door of the ${name} open with a crunch (${Math.round(o.chance * 100)}%).` : `${u.name} heaves on the ${name}'s door, but it holds (${Math.round(o.chance * 100)}%).`, ok ? "good" : "danger");
         H.alertNear(b, at[0], at[1], P.radius, o.glass ? "Breaking glass carries: the dead nearby turn toward it." : "The noise wakes everything nearby.");
+        if (ok && o.glass) breakGlass(b, rec); // caralarms.js: the window is gone
+        tripAlarm(state, b, rec, o.crowbar ? ALARM.FORCE : ALARM.SMASH, r("alarm", "force", rec.tries, u.id), H); // caralarms.js: open or not
       }
       if (ok) {
         rec.open = true;
@@ -252,8 +267,15 @@ export function carAct(state, b, u, act, H) {
       if (s) gainXp(state, s, "mechanics", ok ? 4 : 1);
       H.say(b, ok ? `${u.name} pulls the wires under the ${name}'s dash and twists the right two together (${Math.round(o.chance * 100)}%): it can be started now.` : `${u.name} fumbles with the wires under the dash of the ${name}: nothing (${Math.round(o.chance * 100)}%). Try again.`, ok ? "good" : "info");
       H.fx(b, { type: "loot", to: at, text: ok ? "wired" : "nothing" });
+      tripAlarm(state, b, rec, ALARM.HOTWIRE, r("alarm", "hot", rec.tries, u.id), H, `Something under the ${name}'s dash clicks.`); // caralarms.js: a try at the wires
       break;
     }
+    case "alarm": // caralarms.js: banged and rocked; the dead come here
+      soundAlarm(state, b, rec, H, `${u.name} bangs on the ${name}'s door and rocks it on its springs.`);
+      break;
+    case "silence":
+      silenceAlarm(b, rec, u, H);
+      break;
     case "inspect":
       rec.inspected = true;
       if (s) gainXp(state, s, "mechanics", 1);

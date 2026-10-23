@@ -5,15 +5,17 @@
 //   screamers: nothing (they shriek and call others instead) · Shepherds, Wallbreakers, Broodmothers: nothing.
 // What makes it (stealth.js THROWABLES sense): a bottle, a noise maker, firecrackers, an alarm clock, a pocket radio:
 // noise; hand warmers, a heat pack: heat; a road flare: light and heat; a fire (a Molotov's flames, throwables.js):
-// light and heat, within FIRE.lure (7) tiles of a burning cell.
+// light and heat, within FIRE.lure (7) tiles of a burning cell; a car alarm ringing (caralarms.js): noise, RADIUS 16.
 // The unaware dead go to look at any lure they sense (stealth.js pull). A decoy (THROWABLES decoy: a noise maker,
 // firecrackers, an alarm clock, a radio, hand warmers, a heat pack, a flare) and a fire also pull the dead that have
 // seen you: each of the enemy's turns, one of the dead that senses a decoy or a fire within its radius, and has
 // nobody living it is after within PULL_FREE tiles, walks to it instead of coming for them (lureTurn): to the spot,
 // or into the flames. Whoever threw it: a decoy pulls the dead off the raiders as it pulls them off you. People are
-// never fooled: a guard who hears a decoy looks to where it was thrown from (stealth.js).
+// never fooled: a guard who hears a decoy looks to where it was thrown from (stealth.js). A car alarm ringing is a
+// decoy too (its lure's own decoy flag: it is not one of THROWABLES): the dead walk to the car.
 // Who throws one (botDecoy): your bots, and every other side's people on their own turn (combat.js aiUnit), by one
-// rule: only a decoy they hold, once a turn for the side, when the dead press on its people (docs/adr/0001-ai-parity.md).
+// rule: only a decoy they hold, once a turn for the side, when the dead press on its people (docs/adr/0001-ai-parity.md);
+// with none, a bottle or an empty magazine through the window of an armed car whose light they see (caralarms.js).
 //
 // The Shepherd (zombietypes.js, hiveconst.js SHEPHERD): every one of the dead within its aura (4 tiles) of a living
 // Shepherd senses nothing (herded): no decoy or fire pulls it, it comes for the living and the breaches, it does not
@@ -26,6 +28,7 @@ import { ZTYPES, SENSES, SHEPHERD } from "./hiveconst.js";
 import { THROWABLES, DECOY_KEYS, throwablesOf, stealthAct } from "./stealth.js";
 import { FIRE } from "./throwables.js";
 import { active, reachable, pathTo, distField, moveAlong, say, foesOf } from "./combat.js";
+import { alarmThrowSpot } from "./caralarms.js"; // a car alarm set off by a throw (call-time only)
 
 export const LURE = { PULL_FREE: 2.5, PER: 0.02, MAX: 0.08, AI_MIN: 3, AI_KEEP: 5 };
 const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
@@ -55,8 +58,9 @@ export function stimuli(b) {
   const out = [];
   for (const l of b.lures || []) {
     const T = THROWABLES[l.key];
-    if (!T || !T.decoy || l.turns <= 0) continue;
-    out.push({ x: l.x, y: l.y, radius: l.radius, sense: l.sense || T.sense, key: l.key, fire: false });
+    const alarm = l.key === "caralarm"; // caralarms.js: kept while it rings (alarmTurn drops it), its own sense and flag
+    if (!(T ? T.decoy : alarm && l.decoy) || (!alarm && l.turns <= 0)) continue;
+    out.push({ x: l.x, y: l.y, radius: l.radius, sense: l.sense || (T && T.sense) || ["noise"], key: l.key, fire: false });
   }
   for (const f of b.fires || []) out.push({ x: f.x, y: f.y, radius: FIRE.lure, sense: ["light", "heat"], key: "fire", fire: true });
   return out;
@@ -122,13 +126,16 @@ export function shepherdTurn(b) {
 // people (and sense it) are within 4 tiles of them (at a breach, the gate, around the team, at a raiders' post the dead
 // found: crossfire.js), a spot AI_KEEP+ tiles from all of them, within range, that pulls the most. Only a decoy the
 // unit holds (stealth.js throwablesOf: one of yours from what they carry or the team's cargo, anyone else's from what
-// they carried into the fight), taken off them as they throw it (1 action).
+// they carried into the fight), taken off them as they throw it (1 action). With no decoy (or no spot for one): a bottle
+// or an empty magazine at an armed car whose dash light the unit sees (caralarms.js alarmThrowSpot: AI_KEEP+ tiles from
+// all of them, AI_MIN+ of those dead in its RADIUS), the window broken at its odds. Never set off by hand: that pulls
+// the dead onto whoever does it.
 const decoyTurns = (b) => b.decoyTurn || (b.decoyTurn = {});
 export function botDecoy(state, b, u) {
   if (decoyTurns(b)[u.side] === b.turn || !active(u) || u.ap < 1) return false;
   const have = throwablesOf(state, b, u);
   const keys = DECOY_KEYS.filter((k) => have[k]).concat(have.flare ? ["flare"] : []);
-  if (!keys.length) return false;
+  if (!keys.length && !have.bottle && !have.emptymag) return false;
   // The side's living people (on a raid's map the dead share the raiders' side: crossfire.js), and the dead after
   // them: any of another side, and those of their own side in contact with them (combat.js foesOf).
   const mine = b.units.filter((o) => o.side === u.side && o.kind !== "zombie" && active(o));
@@ -150,6 +157,7 @@ export function botDecoy(state, b, u) {
       if (n >= LURE.AI_MIN && (!best || sc > best.sc)) best = { key, x, y, sc, n };
     }
   }
+  if (!best) best = alarmThrowSpot(state, b, u, have, dead, mine, LURE.AI_KEEP, LURE.AI_MIN, (o) => sensesAny(b, o, ["noise"])); // caralarms.js
   if (!best) return false;
   decoyTurns(b)[u.side] = b.turn;
   return !stealthAct(state, b, u, null, { type: "throw", item: best.key, x: best.x, y: best.y });
