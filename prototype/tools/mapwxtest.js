@@ -1,8 +1,9 @@
 // Headless check of rain and fog on the State Map (ui/wxmap.js drawWeatherFx; the user's request 2026-10-23) and of
 // fog cutting sight on the map (sim/weather.js sightCut):
 //  1. Which tiles get rain and fog: a tile under a fog bank gets fog (a blizzard a whiteout), under a rain belt rain,
-//     under a thunderstorm heavy rain, a tile of the day's rain everywhere rain; a clear or grey sky nothing. The
-//     hour's grid (wxFxGrid) is the tiles' own weather (wxFxAt, skyAt) and the same however often it is asked.
+//     under a thunderstorm heavy rain; a rain day rains only under its belts, never the whole map (weather.js WAVE);
+//     a clear or grey sky nothing. The hour's grid (wxFxGrid) is the tiles' own weather (wxFxAt, skyAt) and the
+//     same however often it is asked.
 //  2. Drawing (stub canvas): the rainy tiles in view filled in at most 2 × RAIN.LEVELS fills, at most FOG.MAX_DRAWS
 //     fog puffs (zoomed out over a big bank too); an hour with no rain or fog on the map draws nothing and asks for
 //     no frames; with the Weather layer's view off the map, nothing.
@@ -81,13 +82,21 @@ for (const [ex, code] of [[rain, 1], [storm, 2]]) {
   check(wxFxAt(st, ex.id).rain === code && wxFxAt(st, ex.id).fog === 0, `${ex.f.k} front's middle tile shows rain ${code} (${JSON.stringify(wxFxAt(st, ex.id))})`);
   check(wxFxGrid(st, st.hour)[ex.id] === code, `${ex.f.k}: code ${code} in the grid`);
 }
-// A day of rain everywhere (the background sky): every tile with no stronger front rains.
+// A rain day: the rain comes in belts (weather WAVE), never over the whole map: rain only under a rain belt or a
+// storm, and some of the map dry.
 {
   let h0 = -1;
-  for (let d = 2; d < 224 && h0 < 0; d++) { const h = d * 24 + 12; const c = clearTile(h); if (c >= 0) continue; if (W.skyAt(st, home.tile, h) === "rain" && !W.frontAt(st, home.tile, h)) h0 = h; }
-  if (check(h0 >= 0, "a day of rain over the whole map")) {
+  for (let d = 2; d < 224 && h0 < 0; d++) {
+    const h = d * 24 + 12;
+    W.weatherAt(st, home.tile, h); // the day made
+    const day = st.weather.days[d];
+    if (day.wave && day.k === "rain" && W.visibleFronts({ ...st, hour: h }).some((f) => f.sh)) h0 = h;
+  }
+  if (check(h0 >= 0, "a rain day with rain belts on the map")) {
     const grid = wxFxGrid(st, h0);
-    check(grid.every((v, id) => v > 0 || W.skyAt(st, id, h0) === "snow"), "every tile has rain (or a stronger front) that day");
+    const wet = grid.filter((v) => v > 0).length;
+    check(wet > 0 && wet < grid.length * 0.9, `a rain day: rain on ${wet} of ${grid.length} tiles, not the whole map`);
+    check(grid.every((v, id) => !v || (W.frontAt(st, id, h0) && ["rain", "storm"].includes(W.skyAt(st, id, h0)))), "every raining tile is under a rain belt or a storm");
   }
 }
 // Clear and grey skies, snow, heat: nothing.

@@ -7,9 +7,10 @@
 // touched here), and kept in state.weather.days. A day's record is the region's weather: its storms, blizzards
 // and fog do not cover the whole state but come as FRONTS (state.weather.fronts): seeded systems with a position,
 // a heading and speed in tiles an hour, a radius and a lifetime, that come in at a map edge and cross the map over
-// hours to a couple of days. Away from the fronts a tile has the day's background sky (bgKind: a storm day is rain
-// there, a blizzard day snow, a foggy day overcast). Fronts come from their own RNG stream, a day at a time, so
-// they too are fixed ahead for a seed. Movement uses the real fronts; estimates (travelHours) use only the fronts
+// hours to a couple of days. Away from the fronts a tile has the day's background sky (bgKind: a blizzard day is
+// snow there, a foggy day overcast). Rain comes in waves (WAVE): on a rain or storm day the sky between the fronts is
+// grey, and the rain is rain belts, long bands across their way that sweep over the map from any edge. Fronts come
+// from their own RNG stream, a day at a time, so they too are fixed ahead for a seed. Movement uses the real fronts; estimates (travelHours) use only the fronts
 // already on the map when the estimate is made (`known`): a front that forms later can still slow a team down.
 // What the PLAYER is told about the coming days (forecast) is a separate, deliberately imperfect view of the
 // day records: the regional outlook ("storms about"), not where the fronts will go.
@@ -186,6 +187,7 @@ function genDay(w, i) {
   const dry = rain || snow ? 0 : (prev ? prev.dry : 0) + 1;
   const frozen = (hi + lo) / 2 < -2; // frozen ground carries no mud
   const d = { k, hi, lo, rain, snow, wind, an, cover: r2(cover), mud: r2(mud), soil: r2(soil), dry, frozen };
+  if (WAVE_BG[k]) d.wave = 1; // its rain comes in belts (WAVE; a day made before them keeps its statewide rain)
   d.tf = travelTable(d);
   d.ice = nextIce(prev ? prev.ice : 0, d);
   w.days[i] = d;
@@ -202,7 +204,7 @@ const KIND_TF = {
 const NO_TF = [0, 0, 0, 0];
 // Movement-cost multipliers for one day, from the ground (mud, snow cover) and the background sky.
 function travelTable(d) {
-  const m = d.frozen ? 0 : d.mud, c = d.cover, x = KIND_TF[bgKind(d.k)] || NO_TF;
+  const m = d.frozen ? 0 : d.mud, c = d.cover, x = KIND_TF[bgOf(d)] || NO_TF;
   const fr = 1 + 0.05 * m + 0.25 * c + x[0];
   const fo = 1 + 0.45 * m + 0.6 * c + x[1];
   const vr = 1 + 0.08 * m + 0.4 * c + x[2];
@@ -225,7 +227,7 @@ function rec(state, dayIdx) {
 // they travel (tiles an hour) and how they look on the map (ui/wxmap.js).
 export const FRONT_KINDS = {
   storm:    { name: "Thunderstorm", r: [5, 8],  speed: [0.9, 1.5] },
-  rain:     { name: "Rain belt",    r: [7, 12], speed: [0.7, 1.2] },
+  rain:     { name: "Rain belt",    r: [7, 12], speed: [0.9, 1.5] },
   blizzard: { name: "Blizzard",     r: [7, 11], speed: [0.6, 1.0] },
   snow:     { name: "Snow squall",  r: [6, 10], speed: [0.7, 1.2] },
   fog:      { name: "Fog bank",     r: [6, 10], speed: [0.2, 0.45] },
@@ -235,6 +237,26 @@ const RANK = { clear: 0, heat: 0, drought: 0, frost: 0, overcast: 1, fog: 2, rai
 // The background sky of a day: its storms, blizzards and fog are fronts, so between them it is rain, snow, grey.
 const BG = { storm: "rain", blizzard: "snow", fog: "overcast" };
 export const bgKind = (k) => BG[k] || k;
+// Rain in waves (the user's request 2026-10-23: "Change the rain on the world map to move like a wave across the map
+// in different directions not covering the whole state kinda like how it works in real life"): a rain or storm day
+// (d.wave, from genDay) has a grey sky between its fronts (WAVE_BG), and its rain comes as rain belts: WAVE.belts
+// [n, the chance of one more] a day, in over its first WAVE.at hours, each from any map edge (WAVE.edges, near even)
+// heading for a point inside, so they cross the map in different directions. A belt (f.sh) is a band: WAVE.across ×
+// its radius across its way, WAVE.along × along it (frontIn), so it sweeps over a tile in some hours and moves on.
+export const WAVE = { across: 1.8, along: 0.65, belts: { rain: [3, 0.5], storm: [2, 0.5] }, at: 14, edges: { w: 3, n: 2, s: 2, e: 2 } };
+const WAVE_BG = { rain: "overcast", storm: "overcast" };
+/** @param {any} d a day record */
+const bgOf = (d) => (d.wave && WAVE_BG[d.k]) || BG[d.k] || d.k;
+// How far into a front a point (ux, uy) is, the front at (x, y) with radius r: under 1 inside. A circle, or a rain
+// belt's band (WAVE) lying across its heading.
+/** @param {any} f */
+function frontIn(f, x, y, r, ux, uy) {
+  const dx = ux - x, dy = uy - y;
+  if (!f.sh) return (dx * dx + dy * dy) / (r * r);
+  const v = Math.hypot(f.vx, f.vy) || 1, ax = f.vx / v, ay = f.vy / v;
+  const al = (dx * ax + dy * ay) / (r * WAVE.along), ac = (dy * ax - dx * ay) / (r * WAVE.across);
+  return al * al + ac * ac;
+}
 // Fronts a day brings: a stormy, blizzard or foggy day 1-2 of them (FRONT.second: the chance of a second), plus
 // these by season (the chance of each a day).
 export const FRONT = { second: 0.45, maxLife: 72, fadeHours: 6, growHours: 3 };
@@ -266,16 +288,19 @@ export function tileUnits(state, id) {
 function makeFronts(state, w, upTo) {
   const D = dims(state), size = Math.max(0.8, Math.min(1.4, Math.sqrt((D.W * D.H) / (64 * 42))));
   for (let i = w.fd; i <= upTo; i++) {
-    const d = w.days[i], s = seasonOfDay(i).key, mean = (d.hi + d.lo) / 2, bg = bgKind(d.k);
+    const d = w.days[i], s = seasonOfDay(i).key, mean = (d.hi + d.lo) / 2, bg = bgOf(d);
     const rng = new Rng(w.fs);
     const kinds = [];
     if (i >= 2) { // the calm first two days of a campaign stay calm
       if (BG[d.k]) for (let n = rng.chance(FRONT.second) ? 2 : 1; n > 0; n--) kinds.push([d.k, rng.int(0, d.k === "fog" ? 4 : 9)]); // fog before dawn
+      const wv = d.wave && WAVE.belts[d.k]; // the day's rain in belts (WAVE)
+      if (wv) for (let n = wv[0] + (rng.chance(wv[1]) ? 1 : 0); n > 0; n--) kinds.push(["rain", rng.int(0, WAVE.at)]);
       for (const [k, c] of Object.entries(EXTRA[s])) if (rng.chance(c)) kinds.push([k, rng.int(0, 20)]);
     }
     const made = [];
     for (const [k0, at] of kinds) {
-      const f = makeFront(rng, precip(k0, mean), i * 24 + at, D, size, EDGES[s]);
+      const f = makeFront(rng, precip(k0, mean), i * 24 + at, D, size, k0 === "rain" ? WAVE.edges : EDGES[s]);
+      if (k0 === "rain") f.sh = 1; // a band (frontIn), snow too where the cold turns it
       if (RANK[f.k] > RANK[bg]) made.push(f); // a rain belt on a rainy day changes nothing
     }
     made.sort((a, b) => a.t0 - b.t0);
@@ -354,8 +379,7 @@ export function frontAt(state, tileId, hour = state.hour, known = Infinity) {
   const [ux, uy] = tileUnits(state, tileId);
   let best = null;
   for (const a of list) {
-    const dx = ux - a.x, dy = uy - a.y;
-    if (dx * dx + dy * dy <= a.r * a.r && (!best || RANK[a.f.k] > RANK[best.f.k])) best = a;
+    if (frontIn(a.f, a.x, a.y, a.r, ux, uy) <= 1 && (!best || RANK[a.f.k] > RANK[best.f.k])) best = a;
   }
   return best;
 }
@@ -365,11 +389,12 @@ export function frontAt(state, tileId, hour = state.hour, known = Infinity) {
 let bgCache = new WeakMap();
 // A day a tool forced to one weather for the whole state (d.all: true) has no background of its own.
 function bgRec(d) {
-  if (!BG[d.k] || d.all) return d;
+  if (d.all) return d;
+  const k = bgOf(d);
+  if (k === d.k) return d;
   let b = bgCache.get(d);
   if (b) return b;
-  const k = BG[d.k];
-  b = { ...d, k, rk: d.k, rain: d.k === "storm" ? r2(d.rain * 0.5) : d.rain, snow: d.k === "blizzard" ? r2(d.snow * 0.55) : d.snow, wind: d.k === "fog" ? d.wind : r2(d.wind * 0.5) };
+  b = { ...d, k, rk: d.k, rain: k === "overcast" ? 0 : d.k === "storm" ? r2(d.rain * 0.5) : d.rain, snow: d.k === "blizzard" ? r2(d.snow * 0.55) : d.snow, wind: d.k === "fog" ? d.wind : r2(d.wind * 0.5) };
   bgCache.set(d, b);
   return b;
 }
@@ -964,7 +989,7 @@ function frontLeaves(state, tileId, f, hour = state.hour) {
   for (let t = hour + 1; t <= hour + 72; t++) {
     if (t >= f.t1) return ` (clears in about ${t - hour} h)`;
     const x = f.x + f.vx * (t - f.t0), y = f.y + f.vy * (t - f.t0), r = frontRadius(f, t);
-    if ((ux - x) ** 2 + (uy - y) ** 2 > r * r) return ` (clears in about ${t - hour} h)`;
+    if (!(r > 0) || frontIn(f, x, y, r, ux, uy) > 1) return ` (clears in about ${t - hour} h)`;
   }
   return "";
 }
@@ -980,14 +1005,14 @@ export function frontsApproaching(state, tileId = homeTile(state), horizon = 48)
   for (const a of activeFronts(state, now, now)) {
     const f = a.f, k = precip(f.k, (b.hi + b.lo) / 2);
     if (RANK[k] <= RANK[b.k]) continue; // a rain belt on a rainy day: nothing to see
-    const dist = Math.hypot(ux - a.x, uy - a.y), over = dist <= a.r;
+    const q = frontIn(f, a.x, a.y, a.r, ux, uy), over = q <= 1, d0 = Math.hypot(ux - a.x, uy - a.y), dist = d0 * (1 - 1 / Math.sqrt(Math.max(q, 1e-9))); // to its edge on the way in
     let eta = null;
     if (!over) for (let h = 1; h <= horizon && now + h < f.t1; h++) {
       const t = now + h, x = f.x + f.vx * (t - f.t0), y = f.y + f.vy * (t - f.t0), r = frontRadius(f, t);
-      if ((ux - x) ** 2 + (uy - y) ** 2 <= r * r) { eta = h; break; }
+      if (r > 0 && frontIn(f, x, y, r, ux, uy) <= 1) { eta = h; break; }
     }
     const def = WEATHER[k];
-    out.push({ f, k, name: FRONT_KINDS[k]?.name || def.name, icon: def.icon, severe: !!def.severe, dist: Math.max(0, Math.round(dist - a.r)), dir: compass(a.x - ux, a.y - uy), heading: compass(f.vx, f.vy), over, eta });
+    out.push({ f, k, name: FRONT_KINDS[k]?.name || def.name, icon: def.icon, severe: !!def.severe, dist: Math.max(0, Math.round(dist)), dir: compass(a.x - ux, a.y - uy), heading: compass(f.vx, f.vy), over, eta });
   }
   return out.sort((x, y) => (+y.over - +x.over) || ((x.eta ?? 999) - (y.eta ?? 999)) || x.dist - y.dist);
 }
@@ -1002,7 +1027,7 @@ export function visibleFronts(state, frac = 0) {
   for (const a of activeFronts(state, now, now)) {
     const f = a.f, k = precip(f.k, (b.hi + b.lo) / 2), t = now + frac;
     if (RANK[k] <= RANK[b.k]) continue;
-    out.push({ id: f.id, k, name: FRONT_KINDS[k]?.name || WEATHER[k].name, x: f.x + f.vx * (t - f.t0), y: f.y + f.vy * (t - f.t0), r: Math.max(0, frontRadius(f, t)), vx: f.vx, vy: f.vy });
+    out.push({ id: f.id, k, name: FRONT_KINDS[k]?.name || WEATHER[k].name, x: f.x + f.vx * (t - f.t0), y: f.y + f.vy * (t - f.t0), r: Math.max(0, frontRadius(f, t)), vx: f.vx, vy: f.vy, sh: f.sh ? 1 : 0 });
   }
   return out;
 }

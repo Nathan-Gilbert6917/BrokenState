@@ -110,6 +110,10 @@ let wetTile = null, wetDay = null, deepSeen = 0, maps = 0, cut = 0;
     for (const t of hilly) {
       const w = W.weatherOnDay(st, d + 1, t.id);
       if (w.key !== "rain" && w.key !== "storm") continue;
+      // an hour of that day it rains on the tile (the rain comes in belts that pass: weather.js WAVE)
+      const hr = Array.from({ length: 24 }, (_, k) => d * 24 + k).find((x) => /rain|storm/.test(W.skyAt(st, t.id, x)));
+      if (hr == null) continue;
+      st.hour = hr;
       const b = fight(st, t.id);
       if (!b.cells.some((c) => c.wet === "deep")) continue;
       wetTile = t.id; wetDay = d;
