@@ -2330,16 +2330,9 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     outlineCells(ctx, b, (i) => ok[i], `rgba(${COL.goodRgb},0.8)`, 1.5);
   }
   // The base map's layout mode (sim/basemap.js): the no-build margin (c.nb: the cells within NO_BUILD of the grid's
-  // edge, a dark red wash under everything else), the yard's edge, and the pick's footprint under the mouse (green
-  // where it fits, red where not), with the cells outside its doors.
-  if (b.layout && b.deployPlan && b.deployPlan.fort) {
-    const Fm = b.deployPlan.fort, w = Fm.wall;
-    fillCells(ctx, b, (i) => !!b.cells[i].nb, "rgba(150,40,40,0.22)", false);
-    const yard = (i) => { const x = i % b.w, y = (i / b.w) | 0; return x >= w.x0 && x <= w.x1 && y >= w.y0 && y <= w.y1 && (x === w.x0 || x === w.x1 || y === w.y0 || y === w.y1); };
-    ctx.setLineDash([5, 4]);
-    outlineCells(ctx, b, yard, Fm.walled ? "rgba(200,170,110,0.55)" : "rgba(230,216,184,0.5)", 1.5);
-    ctx.setLineDash([]);
-  }
+  // edge, a dark red wash under everything else) and the pick's footprint under the mouse (green where it fits, red
+  // where not), with the cells outside its doors. The yard's edge has no dashed line (the user's request 2026-10-23).
+  if (b.layout && b.deployPlan && b.deployPlan.fort) fillCells(ctx, b, (i) => !!b.cells[i].nb, "rgba(150,40,40,0.22)", false);
   // The land being cleared (sim/basemap.js F.clearing: the construction queue's clearing jobs): an amber wash over the
   // pieces and a dashed edge; how far each is goes over it with the tags (below).
   const FmL = b.layout && b.deployPlan && b.deployPlan.fort;
