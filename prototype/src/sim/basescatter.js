@@ -93,7 +93,7 @@ export const CLEAR = {
   log:     { hours: 1.5, get: { wood: 40 },  word: "a fallen log", verb: "Saw up" },
   bush:    { hours: 0.5, get: { wood: 5 },   word: "a bush", verb: "Grub out" },
   fence:   { hours: 0.5, get: { wood: 10 },  word: "a fence panel", verb: "Pull down" },
-  wirefence: { hours: 0.5, get: { scrap: 1 }, word: "a wire fence panel", verb: "Pull down" }, // a field's (fieldLayer): its wire and staples
+  wirefence: { hours: 0.5, get: { wood: 6, scrap: 1 }, word: "a wire fence panel", verb: "Pull down" }, // a field's (fieldLayer): its post for wood, its wire and staples for scrap
   fieldgate: { hours: 0.5, get: { wood: 15 }, word: "a field gate", verb: "Take down" }, // its two cells (fieldLayer)
   hay:     { hours: 0.5, get: {},            word: "a hay bale", verb: "Shift" },
   rock:    { hours: 1,   get: {},            word: "a rock", verb: "Roll away" },
