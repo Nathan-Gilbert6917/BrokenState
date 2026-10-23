@@ -37,7 +37,6 @@ export const KEYMAP = [
   { id: "map.panRight", label: "Pan right", group: "Map", ctx: "map", keys: ["KeyD", "ArrowRight"] },
   { id: "map.hub", label: "Center on the hub", group: "Map", ctx: "map", keys: ["KeyH"] },
   { id: "map.infection", label: "Infection overlay", group: "Map", ctx: "map", keys: ["KeyI"] },
-  { id: "map.fronts", label: "Weather fronts overlay", group: "Map", ctx: "map", keys: ["Shift+KeyW"] }, // ui/wxmap.js
   { id: "map.minimap", label: "Minimap: show or hide", group: "Map", ctx: "map", keys: ["KeyM"] }, // ui/display.js displayKey
   { id: "tab.bases", label: "Bases tab", group: "Panels", ctx: "map", keys: ["KeyB"] },
   { id: "tab.people", label: "People tab", group: "Panels", ctx: "map", keys: ["KeyP"] },

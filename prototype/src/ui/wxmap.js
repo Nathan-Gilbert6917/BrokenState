@@ -1,9 +1,9 @@
 // Weather on the State Map (sim/weather.js): the fronts as soft clouds drifting over the land, and the lines a
-// tile's tooltip gets (the front over it, frozen river). Drawn by render.js on the moving layer above the cached
-// ground, every frame, so they cost a few image draws a front and nothing when there are none:
-// - Weather layer (on by default): faint clouds, so the land stays readable.
-// - Weather fronts layer: the clouds stronger, with the front's edge, its name and where it is heading (an arrow to
-//   where it will be in FRONT_AHEAD hours).
+// tile's tooltip gets (its weather on a tile seen live, frozen river). The fronts are not shown to players (the user's
+// word 2026-10-23: "Weather fronts are not shown to players and rain only shows in live coverage tiles in the world
+// map"): drawFronts is the dev tools' Reveal map's only (render.js), drawn strong with each front's edge, its name and
+// where it is heading (an arrow to where it will be in FRONT_AHEAD hours); players see the rain and fog on the tiles
+// they see live (drawWeatherFx, live).
 // Each front is one cached cloud image (a handful of radial-gradient puffs, made once per kind and front) drawn
 // scaled: one image draw a front a frame. They glide between hours as the clock runs; with Map animations off they
 // still move, but only when the map is drawn anyway.
@@ -17,10 +17,10 @@
 // filled over the rainy tiles in a few fills a frame, the fog two cached puff images a fogged tile (FOG.MAX_DRAWS a
 // frame at most: zoomed out, every other tile's puffs, twice the size). Frames: FX.RAIN_MS / FX.FOG_MS while some is on
 // screen and Map animations are on (none with Reduce motion: they stand still); nothing on screen, nothing asked.
-import { visibleFronts, frontAt, riverFrozen, thinIce, ICE, WEATHER, skyAt, sightCut, WAVE } from "../sim/weather.js";
+import { visibleFronts, riverFrozen, thinIce, ICE, WEATHER, skyAt, sightCut, WAVE } from "../sim/weather.js";
 import { onForgetPictures } from "./pictures.js";
 
-// Puff colour per kind (r, g, b) and its strength on the Weather layer (alpha); the Weather fronts layer shows them
+// Puff colour per kind (r, g, b) and its strength on the Weather layer (alpha); drawFronts (dev tools only) shows them
 // FRONT_STRONG times as strong.
 export const FRONT_LOOK = {
   storm:    { rgb: [34, 44, 78],    alpha: 0.42 },
@@ -69,7 +69,8 @@ function cloudCanvas(k, id) {
 
 // Draws the fronts in world coordinates (the caller has set the map transform). hex: the map's hex size in world
 // px; view: { minX, maxX, minY, maxY } world rectangle on screen; frac: how far into the coming hour the clock is;
-// strong: the Weather fronts layer; zoom: the camera zoom (labels). Returns the number of fronts drawn.
+// strong: drawn strong (render.js: always, under the dev tools' Reveal map); zoom: the camera zoom (labels).
+// Returns the number of fronts drawn.
 export const frontStats = { drawn: 0, ms: 0 };
 export function drawFronts(ctx, state, { hex, view, frac = 0, strong = false, zoom = 1 }) {
   if (typeof document === "undefined") return 0;
@@ -100,7 +101,8 @@ export function drawFronts(ctx, state, { hex, view, frac = 0, strong = false, zo
   return n;
 }
 
-// The Weather fronts layer: the front's edge (dashed), an arrow to where it will be in FRONT_AHEAD hours, its name.
+// Drawn strong (the dev tools' Reveal map): the front's edge (dashed), an arrow to where it will be in FRONT_AHEAD
+// hours, its name.
 function frontMarks(ctx, f, cx, cy, R, U, zoom) {
   const light = f.k === "blizzard" || f.k === "snow" || f.k === "fog";
   ctx.save();
@@ -233,7 +235,10 @@ const hash01 = (id) => ((Math.imul(id + 1, 2654435761) >>> 0) % 4096) / 4096;
 // (0: standing still); zoom: the camera zoom (the streaks keep their size on screen); night: dimmer. Returns how many
 // tiles on screen got rain and fog this frame (0, 0: nothing drawn, no frames wanted).
 export const fxStats = { rain: 0, fog: 0, fills: 0, puffs: 0, ms: 0 };
-export function drawWeatherFx(ctx, state, { hex, view, frac = 0, t = 0, zoom = 1, night = false }) {
+// live: the tiles you see live (render.js liveSet: state.live; every tile under the dev tools' Reveal map); rain and
+// fog show only there (the user's word 2026-10-23: "rain only shows in live coverage tiles in the world map"). null:
+// every tile (the tools).
+export function drawWeatherFx(ctx, state, { hex, view, frac = 0, t = 0, zoom = 1, night = false, live = null }) {
   fxStats.rain = fxStats.fog = fxStats.fills = fxStats.puffs = 0;
   if (!state.weather || !state.grid || !state.tiles) return fxStats;
   const t0 = typeof performance !== "undefined" ? performance.now() : 0;
@@ -248,7 +253,7 @@ export function drawWeatherFx(ctx, state, { hex, view, frac = 0, t = 0, zoom = 1
     const c0 = Math.max(0, Math.ceil((view.minX - pad) / colW - off)), c1 = Math.min(cols - 1, Math.floor((view.maxX + pad) / colW - off));
     for (let c = c0; c <= c1; c++) {
       const id = r * cols + c, a = g0[id], b = g1[id];
-      if (!a && !b) continue;
+      if ((!a && !b) || (live && !live.has(id))) continue;
       const wr = (a === 1 || a === 2 ? 1 - frac : 0) + (b === 1 || b === 2 ? frac : 0);
       const ws = (a === 2 ? 1 - frac : 0) + (b === 2 ? frac : 0);
       const wf = (a >= 3 ? 1 - frac : 0) + (b >= 3 ? frac : 0);
@@ -320,14 +325,14 @@ export function drawWeatherFx(ctx, state, { hex, view, frac = 0, t = 0, zoom = 1
 
 // Lines for a tile's tooltip: the front over it now (else the rain or snow of the day's sky over it), what fog or a
 // blizzard does to sight there (weather.js sightCut), and frozen river (thin ice).
-export function weatherTipLines(state, id) {
+// The weather lines of a tile's tooltip. The weather over it only on a tile you see live (live: as drawWeatherFx; null
+// every tile), and never the front by name: the fronts are not shown to players (the user's word 2026-10-23).
+export function weatherTipLines(state, id, live = null) {
   const out = [];
-  const a = frontAt(state, id, state.hour, state.hour);
-  const v = a ? visibleFronts(state, 0).find((f) => f.id === a.f.id) : null;
-  if (v) out.push(`${WEATHER[v.k]?.icon || ""} ${v.name} over this tile`);
-  const k = state.weather ? skyAt(state, id) : null;
-  if (!v && k && (FX_RAIN[k] || FX_FOG[k] || k === "snow")) out.push(`${WEATHER[k].icon} ${WEATHER[k].name} here`);
-  const cut = state.weather ? sightCut(state, id) : 0;
+  const seen = !live || live.has(id);
+  const k = state.weather && seen ? skyAt(state, id) : null;
+  if (k && (FX_RAIN[k] || FX_FOG[k] || k === "snow")) out.push(`${WEATHER[k].icon} ${WEATHER[k].name} here`);
+  const cut = state.weather && seen ? sightCut(state, id) : 0;
   if (cut < 0) out.push(`${WEATHER[k]?.icon || "🌫️"} ${k === "blizzard" ? "Whiteout" : "Fog"}: whoever is here sees ${-cut} tile less on the map (your teams, a base's lookouts, a watch tower, the groups' parties), and what is here is seen only from closer`);
   if (riverFrozen(state, id)) out.push(`❄️ Frozen river: walkable on foot (${ICE.walk} h a tile), no vehicles${thinIce(state, id) ? "; the ice is thin" : ""}`);
   return out;

@@ -2897,7 +2897,6 @@ window.addEventListener("keydown", (e) => {
     ui.lastSpeed = ui.speed;
   } else if (k === "map.hub") centerOn(state, playerTile(state));
   else if (k === "map.infection") view.layers.has("infection") ? view.layers.delete("infection") : view.layers.add("infection");
-  else if (k === "map.fronts") view.layers.has("fronts") ? view.layers.delete("fronts") : view.layers.add("fronts"); // ui/wxmap.js
   else {
     const pan = 40 / camera.zoom;
     if (k === "map.panUp") camera.y -= pan;
