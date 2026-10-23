@@ -339,7 +339,7 @@ function sightRings(state, o) {
     if (nb == null) continue;
     const step = Math.hypot(G.x[nb] - G.x[fw.tile], G.y[nb] - G.y[fw.tile]);
     const on = FW.manned(state, fw);
-    const R = (FW.towerRadius(state) + 0.5) * step;
+    const R = (FW.towerRadius(state, fw.tile) + 0.5) * step; // fog over the tower: a tile less (weather.js sightCut)
     ctx.save();
     ctx.beginPath(); ctx.arc(G.x[fw.tile], G.y[fw.tile], R, 0, Math.PI * 2);
     ctx.fillStyle = on ? "rgba(255,209,102,0.08)" : "rgba(160,166,172,0.06)"; ctx.fill();

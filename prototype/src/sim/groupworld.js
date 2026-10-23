@@ -12,7 +12,8 @@
 // KNOW.RANGE: every base in the new ring is found) or looks again at the least known base within reach (one not yet
 // seen first: a base you built there since). It also learns by its parties on the road (parties.js aiPartyHour: raids,
 // scavengers, convoys and caravans see your bases within KNOW.PASS of their way, and the one they visit), its
-// scavenging parties (bases within KNOW.SEE of the site they worked), questioning the people of yours it holds (all
+// scavenging parties (bases within KNOW.SEE of the site they worked; both a tile less in fog or a blizzard, as your
+// teams' sight: weather.js sightCut), questioning the people of yours it holds (all
 // your bases, every KNOW.QUESTION days), its bloc (blocs.js shareIntel) and the radio (radioGossip: every
 // KNOW.RADIO.EVERY days a group hears what a friend of its knows of your bases: a pact or relations KNOW.RADIO.REL+,
 // bases within KNOW.RADIO.RANGE, KNOW.RADIO.CHANCE a friend, and one of them on the air where the other is: a radio
@@ -69,6 +70,7 @@ import { HIDE, missesBase, forgetDaily } from "./hiding.js"; // hidden bases: mi
 import { scoutFalse, scoutKilled, falseOdds, INTEL } from "./intel.js"; // counter-intel at the walls
 import { surrenderPrisoners } from "./prisoners.js"; // a captured scout goes to the cells
 import { groupNetwork, netCovers } from "./radio.js"; // ai-locks: radio gossip needs a station on the air
+import { sightCut } from "./weather.js"; // fog and blizzards: their parties see your bases from a tile less far
 
 export const KNOW = {
   START: 18, WATCH: 12, WATCH_DAYS: 10, RANGE: 30, SCOUT: 0.06, SEE: 3, QUESTION: 7, AVOID: 1.5,
@@ -177,12 +179,14 @@ export function scoutDaily(state, f, d = day(state)) {
   return { tile };
 }
 // One of their parties on the road (parties.js aiPartyHour, each tile it enters): your bases within KNOW.PASS of it,
-// when they did not know them or have not seen them for KNOW.FRESH days.
+// when they did not know them or have not seen them for KNOW.FRESH days. Fog or a blizzard over the party cuts that by
+// a tile (weather.js sightCut), as it cuts your teams' sight (AI parity).
 export function partySaw(state, f, tile) {
   if (!f || !f.alive || f.outsider || !f.bases) return 0;
   let n = 0;
+  const pass = state.bases.length ? KNOW.PASS + sightCut(state, tile) : KNOW.PASS;
   for (const b of state.bases) {
-    if (dist(state, b.tile, tile) > KNOW.PASS) continue;
+    if (dist(state, b.tile, tile) > pass) continue;
     const k = knowsOf(state, f).bases[b.tile];
     if (k && day(state) - k.day < KNOW.FRESH) continue;
     if (missesBase(state, f, b.tile, HIDE.PASS, "pass")) continue; // hiding.js: one look a day, and a hidden base may be missed
@@ -593,9 +597,11 @@ export function groupWorldDaily(state, f) {
   groupAbandonDaily(state, f, d);
 }
 export function groupWorldWorld(state) { decayAbandoned(state, day(state)); vehicleDeliveriesDaily(state); }
-// A scavenging party's look around the site (aiscav.js): the bases within KNOW.SEE.
+// A scavenging party's look around the site (aiscav.js): the bases within KNOW.SEE (a tile less in fog or a blizzard
+// over the site: weather.js sightCut).
 export function scavSaw(state, f, site) {
   knowsOf(state, f);
-  for (const b of state.bases) if (dist(state, b.tile, site) <= KNOW.SEE) learnBase(state, f, b.tile);
-  for (const o of state.factions) if (o !== f && o.alive) for (const t of o.bases) if (dist(state, t, site) <= KNOW.SEE) learnBase(state, f, t);
+  const see = KNOW.SEE + sightCut(state, site);
+  for (const b of state.bases) if (dist(state, b.tile, site) <= see) learnBase(state, f, b.tile);
+  for (const o of state.factions) if (o !== f && o.alive) for (const t of o.bases) if (dist(state, t, site) <= see) learnBase(state, f, t);
 }

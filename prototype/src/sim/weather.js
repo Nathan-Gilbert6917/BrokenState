@@ -31,6 +31,8 @@
 //   forecastRange(state)                  -> days the hub can forecast (3; 4 with a watchtower; 5 with a radio station)
 //   travelFactor(state, { vehicle, tileId, from, hour, known })  -> multiplier on movement cost (1 = normal, more = slower)
 //   travelEffects(state, hour, tileId)    -> { footRoad, footOff, vehRoad, vehOff, sight, ambush, injury, events, boat, lines }
+//   sightCut(state, tileId, hour)         -> 0 or -1 (WX_SIGHT: fog, a blizzard): tiles of sight lost on the State Map;
+//                                            skyAt(state, tileId, hour) the weather's kind over a tile (ui/wxmap.js)
 //   iceRow(state, hour), riverFrozen(state, tileId, hour), thinIce(state, tileId, hour)  -> frozen rivers (ICE)
 //   growthFactor(state, crop)             -> 0..1.3 growth multiplier for today
 //   cropDamage(state, crop)               -> { kill, rot, reason } chances for today (0..1)
@@ -72,7 +74,7 @@ export const WEATHER = {
   overcast: { name: "Overcast",    icon: "☁️", desc: "Grey skies, no effect on travel." },
   rain:     { name: "Rain",        icon: "🌧️", desc: "Ground turns to mud: off-road travel slows, vehicles most of all. Fills rain barrels." },
   storm:    { name: "Storm",       icon: "⛈️", severe: true, desc: "Heavy rain and wind: slow going everywhere, a small injury risk on the road, risky boat crossings, crops can be flattened." },
-  fog:      { name: "Fog",         icon: "🌫️", desc: "Teams see one tile less and are a little easier to ambush; driving is slower." },
+  fog:      { name: "Fog",         icon: "🌫️", desc: "Teams, bases' lookouts and watch towers see one tile less on the map (the groups' parties too), teams are a little easier to ambush; driving is slower." },
   heat:     { name: "Heat wave",   icon: "🥵", desc: "Walking is slower, soil dries fast, heat sickness risk for people working outside." },
   drought:  { name: "Dry spell",   icon: "🏜️", desc: "No rain, soil drying out: crops wither without water, wells give less." },
   snow:     { name: "Snow",        icon: "🌨️", desc: "Snow builds up: everything slows, off-road most of all. Tender crops die." },
@@ -587,7 +589,7 @@ export function travelEffects(state, hour = state.hour, tileId = homeTile(state)
   const d = localRec(state, tileId, hour);
   const [footRoad, footOff, vehRoad, vehOff] = localTable(state, tileId, hour);
   const k = d.k;
-  const sight = k === "fog" || k === "blizzard" ? -1 : 0;
+  const sight = WX_SIGHT[k] || 0;
   const ambush = k === "fog" ? 0.08 : k === "blizzard" ? 0.05 : k === "storm" ? 0.03 : 0;
   const injury = k === "blizzard" ? 0.025 : k === "storm" ? 0.015 : 0; // per hour on the move, on foot (half in a vehicle)
   const events = k === "storm" || k === "blizzard" ? 1.15 : 1;
@@ -601,7 +603,7 @@ export function travelEffects(state, hour = state.hour, tileId = homeTile(state)
   } else lines.push("Travel: normal pace");
   if (!d.frozen && d.mud >= 0.15) lines.push(`Mud ${Math.round(d.mud * 100)}% (off-road, worst for vehicles)`);
   if (d.cover >= 0.05) lines.push(`Snow cover ${Math.round(d.cover * 100)}%`);
-  if (sight) lines.push("Teams see 1 tile less");
+  if (sight) lines.push(`Teams, bases' lookouts and watch towers see ${-sight} tile less`);
   if (k === "fog") lines.push("Fog: everyone in a fight here sees 4 tiles less (far less at night)"); // wxsight.js WX_SIGHT
   else if ((k === "rain" || k === "storm") && rainFog(state, tileId, hour)) lines.push("Rain fog: everyone in a fight here sees 4 tiles less (far less at night)"); // wxsight.js WX_SIGHT
   if (k === "rain" || k === "storm") lines.push("Rain: sounds carry less in a fight, noise lures drowned out"); // seasonfx.js HEAR
@@ -610,6 +612,20 @@ export function travelEffects(state, hour = state.hour, tileId = homeTile(state)
   if (boat > 1) lines.push(`Boat mishaps ${boat}× as likely`);
   return { footRoad, footOff, vehRoad, vehOff, sight, ambush, injury, events, boat, lines };
 }
+
+// Sight on the State Map: fog and a blizzard over a tile cut how far anyone there sees by WX_SIGHT tiles, the same for
+// you and the groups (docs/adr/0001): your teams (parties.js sightRadius, never below their own tile), your bases'
+// lookouts (world.js baseVision, by day; never below 1) and manned watch towers (fieldworks.js towerRadius), and the
+// groups' parties on the road and scavenging (groupworld.js partySaw, scavSaw: the bases they see in passing). Only
+// tiles in sight are live on your map (world.js liveTiles), so in fog the dead, the groups and their markers show
+// only within the shorter reach; ui/wxmap.js draws the fog banks over those tiles.
+export const WX_SIGHT = { fog: -1, blizzard: -1 };
+// The sky over a tile at an hour (the weather's kind: "rain", "fog"...): the front over it, else the day's background.
+/** @param {State} state @param {number | null} tileId @param {number} [hour] */
+export const skyAt = (state, tileId, hour = state.hour) => localRec(state, tileId, hour).k;
+// The tiles of sight the weather takes away on a tile now (0, or WX_SIGHT's -1 in fog or a blizzard).
+/** @param {State} state @param {number | null} tileId @param {number} [hour] */
+export const sightCut = (state, tileId, hour = state.hour) => WX_SIGHT[skyAt(state, tileId, hour)] || 0;
 
 // Called by parties.js once an hour for a player team that moved: storms and blizzards can hurt someone.
 // Returns the survivor who was hurt, or null. Uses the play RNG only in severe weather.

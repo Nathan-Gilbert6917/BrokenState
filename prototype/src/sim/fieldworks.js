@@ -701,11 +701,12 @@ export function guards(state, fw) {
   return fw.owner === "player" ? onDuty(state, fw).length : groupDuty(state, fw);
 }
 export const manned = (state, fw) => fw.kind === "tower" && fw.built && lookouts(state, fw) > 0;
-export const towerRadius = (state) => (isNight(state) ? FIELD.TOWER.night : FIELD.TOWER.day);
+// tile: the tower's; by day fog or a blizzard over it takes a tile off its view (weather.js sightCut), never below 1.
+export const towerRadius = (state, tile = null) => (isNight(state) ? FIELD.TOWER.night : tile == null ? FIELD.TOWER.day : Math.max(1, FIELD.TOWER.day + Weather.sightCut(state, tile)));
 // The tiles your manned towers show live on the map (world.js liveTiles).
 export function fieldSight(state) {
   const out = [];
-  for (const fw of fwList(state)) if (fw.owner === "player" && manned(state, fw)) for (const id of state.grid.within(fw.tile, towerRadius(state))) out.push(id);
+  for (const fw of fwList(state)) if (fw.owner === "player" && manned(state, fw)) for (const id of state.grid.within(fw.tile, towerRadius(state, fw.tile))) out.push(id);
   return out;
 }
 // A manned tower of this base (or within TOWER.warnBase tiles of it) sees this tile (watch.js lookoutsSpot).
@@ -714,7 +715,7 @@ export function towerSees(state, base, tile) {
   for (const fw of fwList(state)) {
     if (fw.owner !== "player" || !manned(state, fw)) continue;
     if (fw.baseId !== base.id && state.grid.distance(fw.tile, base.tile) > FIELD.TOWER.warnBase) continue;
-    if (state.grid.distance(fw.tile, tile) <= towerRadius(state)) return fw;
+    if (state.grid.distance(fw.tile, tile) <= towerRadius(state, fw.tile)) return fw;
   }
   return null;
 }
