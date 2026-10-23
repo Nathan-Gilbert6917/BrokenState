@@ -15,6 +15,7 @@
 // climate table below), so they stop sowing tender crops that the first frosts would kill and sow hardy ones
 // (kale, winter roots, winter wheat) for the winter and the hungry gap before the first spring harvest.
 import * as Weather from "./weather.js";
+import { YEAR_DAYS, START_OFFSET } from "./eras.js"; // weather.js's calendar, read at load time: eras.js imports nothing, and weather.js may still be loading (an import cycle through world.js)
 import { log, atBase, skill, day, residents } from "./world.js";
 import { count, farmSlots, hasWall } from "./buildings.js";
 import { workFactor } from "./health.js";
@@ -156,9 +157,9 @@ const todayWeather = (state) => (Weather.weather ? Weather.weather(state) : { hi
 // tolerance, watered plots riding out a dry spell) and the food people need, over CLIMATE_SEEDS years of the same
 // weather model. The years are other seeds on their own weather streams (fake worlds): the live world's weather
 // and state.rng are never touched. Computed once per crop (and per greenhouse) and cached.
-const YEAR = Weather.YEAR_DAYS || 112;
-const SEASON = Weather.SEASON_DAYS || 28;
-const OFFSET = Weather.START_OFFSET ?? 14;
+const YEAR = YEAR_DAYS;
+const SEASON = YEAR_DAYS / 4;
+const OFFSET = START_OFFSET;
 const CLIMATE_SEEDS = 12;
 let climateYears = null;
 const climateCache = new Map();

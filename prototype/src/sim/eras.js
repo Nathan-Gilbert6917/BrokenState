@@ -49,7 +49,7 @@
 //   whenever fewer than 2 stand, 1 from year 8), and the state then kept clear for CONTAIN.DAYS days (a season): a
 //   hive that rises again in that time (from a build site the hordes start) sets the count back to zero.
 export const YEAR_DAYS = 112; // weather.js YEAR_DAYS (eras.js imports nothing: it is read at load time)
-const START_OFFSET = 14; // weather.js START_OFFSET
+export const START_OFFSET = 14; // weather.js START_OFFSET
 export const yearOfDay = (d) => Math.floor((Math.max(1, d) - 1 + START_OFFSET) / YEAR_DAYS) + 1;
 export const yearStartDay = (y) => (y <= 1 ? 1 : YEAR_DAYS * (y - 1) - START_OFFSET + 1);
 const dayOf = (state) => Math.floor(state.hour / 24) + 1;
