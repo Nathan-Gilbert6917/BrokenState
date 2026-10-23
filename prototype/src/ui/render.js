@@ -14,7 +14,8 @@ import { MARKER_TYPES, LAYER_OF } from "../sim/markers.js";
 import { vehicleById, partyVehicles, raidHumvees } from "../sim/vehicles.js";
 import { conditionsOf, CONDITIONS } from "../sim/health.js"; // a lone walker's limp
 import { BUILDINGS, count, tierUpJob, gatherCap, isCamp, CAMP, wallTier } from "../sim/buildings.js";
-import { weatherTint, season, iceRow } from "../sim/weather.js";
+import { weatherTint, iceRow } from "../sim/weather.js";
+import { mapSeasonOf, FOREST_FLAT } from "./seasontrees.js"; // the trees by the season: the decals' look, the forests' flat colour
 import { drawFronts, weatherTipLines } from "./wxmap.js"; // weather fronts over the land, frozen rivers in the tooltip
 import { radioNodes } from "../sim/radio.js";
 import { tunedNetworks } from "../sim/radiolisten.js"; // a channel you listen in on: its coverage in the group's colour
@@ -425,7 +426,8 @@ function tilesIn(G, x0, y0, x1, y1, out) {
 
 // This frame's switches for the cached layers.
 // deco: how much terrain detail shows (0 flat .. 1, ui/terraindeco.js decoAlpha), dsc its atlas scale, snow: the
-// snow-capped decals (the weather's snow-cover wash is on); season: broadleaf trees green, turning or bare.
+// snow-capped decals (the weather's snow-cover wash is on); season: broadleaf trees green, turning or bare (a
+// SEASON_LOOK key, ui/seasontrees.js mapSeason).
 const F = { zoom: 1, tint: null, iceRow: -1, infOn: false, terrOn: false, hordesOn: false, poisOn: false, knownOn: false, coalOn: false, ringSkulls: false, deco: 0, dsc: null, snow: false, season: "spring" };
 const WATER_RGB = [1, 3, 5].map((k) => parseInt(TERRAIN.water.color.slice(k, k + 2), 16));
 const ICE_FILL = ["rgba(214,232,244,0.88)", "rgba(170,188,200,0.7)", "rgba(110,122,132,0.5)"]; // frozen river: live, reported, unknown
@@ -811,6 +813,17 @@ function paintChunk(state, L, ch, i, j) {
   }
 }
 
+// The forests' flat colour by the season (ui/seasontrees.js FOREST_FLAT, the user's request 2026-10-23: "In fall the
+// trees should be red orange and brown in winter the trees are leaf less"): G.terrColors with the forest's three
+// shades swapped, made once a season.
+let seaCols = { G: null, sea: "", cols: null };
+function seasonColors(G, sea) {
+  if (seaCols.G === G && seaCols.sea === sea) return seaCols.cols;
+  const cols = G.terrColors.slice(), fi = Object.keys(TERRAIN).indexOf("forest"), c = FOREST_FLAT[sea];
+  if (c && fi >= 0) SHADES.forEach((f, k) => { cols[fi * 3 + k] = shade(c, f); });
+  seaCols = { G, sea, cols };
+  return cols;
+}
 // The ground of the tiles in geo.list (and the roads of those in geo.roads), into the current context; x0..y1: the
 // world rectangle being drawn (the Known area's hatching is laid across it).
 function drawGround(state, n, nr, x0, y0, x1, y1) {
@@ -818,11 +831,12 @@ function drawGround(state, n, nr, x0, y0, x1, y1) {
   // Terrain. Geography is known from pre-war maps; current conditions are not. Batched by color (one fill each).
   for (const b of G.buckets) b.length = 0;
   for (let a = 0; a < n; a++) { const id = list[a]; G.buckets[G.color[id] + (G.key[id] & 3)].push(id); }
+  const TC = seasonColors(G, F.season);
   G.buckets.forEach((b, ci) => {
     if (!b.length) return;
     ctx.beginPath();
     for (const id of b) hexSub(X[id], Y[id], HEX + 0.5);
-    ctx.fillStyle = G.terrColors[ci];
+    ctx.fillStyle = TC[ci];
     ctx.fill();
   });
   // Terrain detail (ui/terraindeco.js), fading in as you zoom in: rippled water in rivers and lakes, then the decals
@@ -1139,7 +1153,7 @@ export function render(state) {
   F.deco = decoAlpha(zoom);
   F.dsc = decoScale(S);
   F.snow = !!F.tint && F.tint.startsWith("rgba(235,240,248,");
-  F.season = season(state).key;
+  F.season = mapSeasonOf(state); // the trees' season (ui/seasontrees.js): early autumn, autumn and winter look their own
   if (F.deco > 0 && (!G.deco || G.deco.tiles !== state.tiles)) G.deco = placeDecor(state, HEX);
   const key = `${F.tint}|${F.infOn}|${F.terrOn}|${F.hordesOn}|${F.poisOn}|${F.knownOn}|${F.coalOn}|${!!state.timelapse}|${state.factions.length}|${deco.detail}|${F.season}`;
   if (dpr !== cacheDpr) { cacheDpr = dpr; dropCache(); }
