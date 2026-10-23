@@ -13,7 +13,7 @@
 //   - Ice (ICE): freezing (the hour's temperature at or below 0 °C, frozen ground, or the hollows' ponds iced over) and
 //     wet (snow lying, mud, rain or snow falling, a pond in the hollows): a frozen pond (ponds.js c.wet "ice"), ROAD of a
 //     road's cells and PUDDLE of open ground's (frozen puddles: c.ice, by the tile, the day and the cell, no dice of the
-//     battle's; the ground's snow gives way to the ice there) are ice. A step onto ice costs COST more and SLIP to slip (careful: sneaking ×CAREFUL, Light Step
+//     battle's; under the ground's snow there: both costs) are ice. A step onto ice costs COST more and SLIP to slip (careful: sneaking ×CAREFUL, Light Step
 //     ×LIGHT): the move ends there, the rest of the turn is spent getting up (u.ap 0) and the fall hurts HURT
 //     (slipStep, from combat.js moveAlong; the battle's own dice: armour.js battleDice "slip", so a replay is the same).
 //   - Rain (b.sfx.rain "rain" | "storm"): noise carries HEAR[rain] as far (muffle: combat.js alertNear, stealth.js
@@ -78,7 +78,7 @@ export function seasonBattle(state, b, tileId) {
       if (c.wet === "ice") { n++; continue; }
       if (c.k !== "open" || c.wet) continue;
       const p = c.f === "road" ? ICE.ROAD : PUDDLE_ON.has(c.f) ? ICE.PUDDLE : 0;
-      if (p && hash01("ice", tileId, day, i) < p) { c.ice = true; delete c.gnd; delete c.sd; n++; }
+      if (p && hash01("ice", tileId, day, i) < p) { c.ice = true; n++; }
     }
     if (n) fx.ice = n;
   }

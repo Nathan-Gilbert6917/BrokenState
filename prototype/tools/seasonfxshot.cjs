@@ -53,7 +53,7 @@ const port = 5300 + Math.floor(Math.random() * 600);
           if (want.fog && !WX.rainFog(st, tile, hour)) continue;
           st.hour = hour;
           const b = C.createBattle(st, { tile, baseId: hub.id, fighterIds: ids, enemy: { kind: "zombies", count: 4, power: 3, name: "the dead" }, ambush: null, canRetreat: true, handler: "sfxshot", context: {} });
-          if (!b.sfx || (want.ice && !(b.sfx.ice >= 6)) || (want.fog && !b.sfx.fog) || (want.night != null && !!b.night !== want.night)) continue;
+          if ((want.needSnow && !(b.ground && b.ground.snow)) || !b.sfx || (want.ice && !(b.sfx.ice >= 6)) || (want.fog && !b.sfx.fog) || (want.night != null && !!b.night !== want.night)) continue;
           b.phase = "player";
           st.combat = b;
           const me = b.units.find((u) => u.side === "player");
@@ -89,12 +89,12 @@ const port = 5300 + Math.floor(Math.random() * 600);
       return null;
     }, want);
     const keepHover = async (xy) => page.evaluate(async (xy) => { const UC = await import("/src/ui/combat.js"); UC.cui.hover = { x: xy[0], y: xy[1] }; game.refresh(); }, xy);
-    let s = await setup({ season: "winter", hours: [7, 9, 11], ice: true });
+    let s = await setup({ season: "winter", hours: [7, 9, 11], needSnow: true, ice: true });
     console.log("winter:", JSON.stringify(s));
     if (s) {
       await page.waitForTimeout(700); await keepHover(s.hover); await page.waitForTimeout(300);
       await shot("season-winter-ice.png");
-      s = await setup({ season: "winter", hours: [7, 9, 11], ice: true, snow: true });
+      s = await setup({ season: "winter", hours: [7, 9, 11], needSnow: true, ice: true, snow: true });
       await page.waitForTimeout(700); await keepHover(s.hover); await page.waitForTimeout(300);
       await shot("season-winter-snow.png");
     }
