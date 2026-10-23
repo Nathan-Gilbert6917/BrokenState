@@ -17,7 +17,8 @@
 //          on a list an item is picked for (the inventory's boxes)
 //   LB RB  the tab before or after, in the window's (or the panel's) row of tabs
 //   right stick  scrolls what the ring is in
-//   View   the panels: map → panels → map (a desktop); the drawers in turn on a phone or upright tablet
+//   View   the panels: map → the left panel → the right one → the top bar → map on a desktop, each stop on the button
+//          the ring had there last; the drawers in turn on a phone or upright tablet (Lists, Info, Log, then the map)
 //
 // Where the ring goes: every visible, enabled button, link, box, drop-down and clickable row in the layer, scored by
 // how far it is that way plus three times how far off to the side (the edges, so a row of buttons stays a row), the
@@ -27,6 +28,10 @@
 // last button it was on (closing a window gives the ring back where it was); a new one starts on its row of tabs, its
 // first choice, its main button in sight or its first button, in that order.
 //
+// A box in front with nothing to press (a note over a raid's deploy screen) leaves the pad to the layer under it, and
+// is looked at again every quarter second for a button that came.
+//
+// Checked in the real game by tools/padnavtest.cjs (headless Chromium, a made-up pad; a desktop and a phone).
 // Nothing without a pad: no listener of its own but "inputmode", no DOM until a pad is the device in use (the ring,
 // the drop-down list); the ring and the legend are drawn only under html.input-pad (pad.css) and go when the mouse, a
 // key or a finger is used.
@@ -86,7 +91,7 @@ function scope() {
   const tt = $("title");
   if (ui.title && shown(tt) && !tt.classList.contains("covered")) return S("title", [$("tt-menu") || tt]);
   if (st && st.combat && shown($("combat"))) {
-    const ask = Array.from(document.querySelectorAll("#combat .cbconfirm")).find(shown); // the retreat, the fall back, End turn's "actions left"
+    const ask = Array.from(document.querySelectorAll("#combat .cbconfirm")).find((e) => shown(e) && e.querySelector("button:not([disabled])")); // the retreat, the fall back, End turn's "actions left" (not a note with nothing to press: the kit warning before a raid)
     if (ask) return S("cbask", [/** @type {HTMLElement} */ (ask)], { y: "pass", dock: () => $("cbmapwrap") });
     if (nav.cb === "cbbar") return S("cbbar", [$("cbbar")], { mode: "cb", dock: () => $("cbmapwrap") });
     if (nav.cb === "cbui") return S("cbui", [$("combat")], { mode: "cb", dock: () => $("cbmapwrap") });
@@ -94,6 +99,19 @@ function scope() {
   }
   if (nav.mode === "panels" || (!ui.started && !ui.title)) return S("panels", [$("app"), $("rs-keys"), shown($("guidetip")) ? $("guidetip") : null], { mode: nav.mode }); // the new-run screen's View map: its banner
   return null;
+}
+// The layer takes the pad while something is in front with a button to point at. A box with none (a note over the
+// deploy screen, a window of words) is left to the layer under it, and looked at again now and then for a button
+// that came (sync marks it empty: the full look at every button is not for every frame).
+const empty = { k: "", at: 0 };
+function when() {
+  const sc = scope();
+  if (!sc) return false;
+  if (empty.k !== sc.k) return true;
+  if (performance.now() - empty.at < 250) return false;
+  if (!cands(sc).length) { empty.at = performance.now(); return false; }
+  empty.k = "";
+  return true;
 }
 // A layer of our own (the panels, the orders bar) that went: its mode ends.
 function modeOk() {
@@ -187,10 +205,10 @@ function start(sc, cs) {
   const inView = (el) => { const r = el.getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth; };
   if (sc.k === "cbbar") { const o = cs.find((el) => el.classList.contains("bb-btn") && el.dataset.action === "cb-act"); if (o) return o; }
   if (sc.k === "wpick") { const o = cs.find((el) => el.classList.contains("on")); if (o) return o; } // the Work picker: on the cell's value
-  if (sc.mode === "panels") {
-    const p = drawers() ? DRAWERS.find(isOpen) : ["left", "right"].find((q) => { const e = $(q); return e && e.getBoundingClientRect().width > 40; });
-    const inP = p ? cs.filter((el) => $(p).contains(el)) : [];
-    if (inP.length) return firstOf(inP);
+  if (sc.mode === "panels") { // a phone: the open drawer; a desktop: the first stop (the left panel), on the button it had there
+    const p = drawers() ? DRAWERS.find(isOpen) : stops()[0];
+    const inP = p ? cs.filter((el) => $(p).contains(el)) : [], m = p && !drawers() ? mem.get(`panels:${p}`) : null;
+    if (inP.length) return (m && inP.find((e) => keyOf(e) === m.key)) || firstOf(inP);
   }
   const g = tabsFor(sc, null), t = g && g.find(lit);
   if (t && cs.includes(t)) return t;
@@ -241,6 +259,7 @@ function sync() {
   // A battle's question under the phone's battle panel: the panel goes, so the question is in sight.
   if (!el && sc.k === "cbask" && document.body.classList.contains("rs-cbpanel") && $("rs-cbpanel")) { $("rs-cbpanel").click(); return sc; }
   if (!el && sc.mode) { if (sc.mode === "cb") nav.cb = ""; else nav.mode = ""; nav.sk = ""; nav.base = ""; setEl(null); return null; } // the orders bar or the panels with nothing in them: back to the map
+  if (!el) { empty.k = sc.k; empty.at = performance.now(); nav.sk = ""; nav.base = ""; setEl(null); return null; } // nothing to point at: the layer under this one has the pad (when)
   setEl(el, sc);
   if (el) reveal(el);
   return sc;
@@ -402,17 +421,20 @@ const short = (el) => { const t = (el.textContent || "").trim().replace(/\s+/g, 
 // ---------- the panels and the orders bar ----------
 function leaveMode(sc) {
   if (sc.mode === "cb") { if (nav.cb === "cbui") cbPanelBack(); nav.cb = ""; }
-  else { if (drawers()) for (const p of DRAWERS) if (isOpen(p)) api.actions["panel-toggle"]({ p, v: "1" }); nav.mode = ""; }
+  else {
+    if (drawers()) for (const p of DRAWERS) if (isOpen(p)) api.actions["panel-toggle"]({ p, v: "1" });
+    else rememberStop(); // the button it was on in its panel, for the next ⧉
+    nav.mode = "";
+  }
   hideTip();
   api.refresh();
 }
-// ⧉ on the map: into the panels (a desktop: all of them, the ring where it was; a phone: the Lists drawer first).
+// ⧉ on the map: into the panels (a desktop: the left panel first, on the button the ring had there; a phone: the
+// Lists drawer first).
 export function navPanels() {
   if (!api) return;
-  if (drawers()) {
-    if (!DRAWERS.some(isOpen)) api.actions["panel-toggle"]({ p: "left", v: "0" });
-    mem.delete("panels"); // the drawer just opened
-  }
+  if (drawers() && !DRAWERS.some(isOpen)) api.actions["panel-toggle"]({ p: "left", v: "0" });
+  mem.delete("panels"); // the first stop (start), not wherever the ring was last
   nav.mode = "panels";
   const t = $("tooltip");
   if (t) t.classList.add("hidden"); // the map cursor's tooltip waits with it
@@ -424,13 +446,13 @@ export function navPanels() {
 const STOPS = ["left", "right", "topbar"];
 const stops = () => STOPS.filter((id) => { const e = $(id), r = e && e.getBoundingClientRect(); return !!r && r.width > 40 && r.height > 10; });
 const stopAfter = () => { const xs = stops(), i = xs.findIndex((id) => nav.el && $(id).contains(nav.el)); return xs[i + 1] || null; };
+const rememberStop = () => { const from = STOPS.find((id) => nav.el && $(id).contains(nav.el)); if (from) mem.set(`panels:${from}`, { key: nav.key, cx: nav.cx, cy: nav.cy }); };
 function nextPanel(cur) {
   const sc = { mode: "panels" };
   if (!drawers()) {
     const to = stopAfter();
     if (!to) { leaveMode(sc); return; }
-    const from = STOPS.find((id) => nav.el && $(id).contains(nav.el));
-    if (from && nav.el) mem.set(`panels:${from}`, { key: nav.key, cx: nav.cx, cy: nav.cy });
+    rememberStop();
     const cs = cands(cur).filter((e) => $(to).contains(e)), m = mem.get(`panels:${to}`);
     const el = (m && cs.find((e) => keyOf(e) === m.key)) || firstOf(cs);
     if (!el) { leaveMode(sc); return; }
@@ -561,7 +583,7 @@ export const navState = () => ({ mode: nav.mode, cb: nav.cb, scope: nav.sk, vis:
 
 export function initPadNav(o) {
   api = o;
-  claimPad("nav", { when: () => !!scope(), on, frame, legend, dock: () => (legendSc && legendSc.dock ? legendSc.dock() : null) });
+  claimPad("nav", { when, on, frame, legend, dock: () => (legendSc && legendSc.dock ? legendSc.dock() : null) });
   // Every frame while a pad is connected: the ring only while this layer is the one taking the pad, in pad mode.
   onPadFrame((T) => {
     const mine = !!T && T.id === "nav" && inputMode() === "pad";
@@ -569,6 +591,7 @@ export function initPadNav(o) {
       if (nav.top) { nav.top = false; hideTip(); }
       if (nav.el) nav.el.classList.remove("pad-focus"); // the map's or the battle's turn (sync puts it back)
       if (pick && inputMode() !== "pad") closePick();
+      if (nav.sk && !scope()) { nav.sk = ""; nav.base = ""; setEl(null); } // what was in front went (B closed it): the next layer starts afresh, from its memory
     }
     drawRing(mine);
   });
