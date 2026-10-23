@@ -20,6 +20,19 @@
 //   View   the panels: map → the left panel → the right one → the top bar → map on a desktop, each stop on the button
 //          the ring had there last; the drawers in turn on a phone or upright tablet (Lists, Info, Log, then the map)
 //
+// The whole game by pad (the user's request 2026-10-23: "I want the whole game to be playable via controller so make
+// other UI and maps like the POI one work with controllers"):
+//   - a map drawn as buttons in SVG (the POI map's places and the arrows off its tile, the city crawl's rim blocks, the
+//     hive crawl's chambers) takes the ring as any button: A sends the click an SVG element has no click() for, the
+//     ring resting on one shows its hover text and lights what its :hover lights (.pad-focus)
+//   - a picture only the mouse reads (a canvas marked data-chart, the Ledger's charts, or anything marked
+//     data-padpoint): A puts a pointer in it (a cross, #padptr) the D-pad moves, sending mousemove where it stands, so
+//     the hover the mouse would give shows; A clicks there, X right-clicks there, B gives the ring back
+//   - the battle screen's panel (⧉): a button that hands a pick to the map (a building or a thing to place picked in
+//     the base map's Build list or lists, its Move) gives the pad back to the map's cursor, as the panels do for a
+//     team's move (api.mapPick: a key that changes with the pick)
+//   - the new-run screen's View map / Pick start on map: the map's own cursor has the pad (main.js), ⧉ the banner
+//
 // Where the ring goes: every visible, enabled button, link, box, drop-down and clickable row in the layer, scored by
 // how far it is that way plus three times how far off to the side (the edges, so a row of buttons stays a row), the
 // side offset of the middles breaking ties. Something scrolled out of its list counts (it is scrolled into view);
@@ -31,21 +44,23 @@
 // A box in front with nothing to press (a note over a raid's deploy screen) leaves the pad to the layer under it, and
 // is looked at again every quarter second for a button that came.
 //
-// Checked in the real game by tools/padnavtest.cjs (headless Chromium, a made-up pad; a desktop and a phone).
+// Checked in the real game by tools/padnavtest.cjs (headless Chromium, a made-up pad; a desktop and a phone) and
+// tools/padmaptest.cjs (the title, Pick start on map, the POI map, the camp-site picker, the base map, a chart).
 // Nothing without a pad: no listener of its own but "inputmode", no DOM until a pad is the device in use (the ring,
 // the drop-down list); the ring and the legend are drawn only under html.input-pad (pad.css) and go when the mouse, a
 // key or a finger is used.
 import { claimPad, onPadFrame } from "./gamepad.js";
 import { inputMode } from "./inputmode.js";
 
-let api = null; // main.js: { ui, state(), actions, refresh(), mapPick() }
+let api = null; // main.js: { ui, state(), actions, refresh(), mapPick() } (mapPick: "" or a key for what is being picked on a map)
 const nav = { mode: "", cb: "", cbPanel: false, sk: "", base: "", el: null, key: "", cx: -1, cy: -1, tip: null, tipAt: 0, top: false, vis: false }; // vis: the ring was drawn last frame
 const mem = new Map(); // a layer's key → { key, cx, cy }: the button it was on
 let pick = null;       // a drop-down's list: { sel, box }
 let ringEl = null, legendSc = null;
 const $ = (id) => (typeof document === "undefined" ? null : document.getElementById(id));
 const DIRS = new Set(["Up", "Down", "Left", "Right"]);
-const SEL = "button, [data-action], a[href], input:not([type=hidden]), select, textarea, summary, [tabindex]:not([tabindex='-1']), [role=button]";
+const POINT = "canvas[data-chart], [data-padpoint]"; // a picture only the mouse reads: the pointer goes in it (A)
+const SEL = `button, [data-action], a[href], input:not([type=hidden]), select, textarea, summary, [tabindex]:not([tabindex='-1']), [role=button], ${POINT}`;
 const CONTROL = new Set(["BUTTON", "A", "INPUT", "SELECT", "TEXTAREA", "SUMMARY", "LABEL"]);
 const shown = (el) => !!el && !el.classList.contains("hidden") && !el.hidden && el.getClientRects().length > 0;
 const isText = (el) => !!el && (el.tagName === "TEXTAREA" || (el.tagName === "INPUT" && !["checkbox", "radio", "range", "button", "submit", "color", "file"].includes(el.type)));
@@ -97,6 +112,7 @@ function scope() {
     if (nav.cb === "cbui") return S("cbui", [$("combat")], { mode: "cb", dock: () => $("cbmapwrap") });
     return null;
   }
+  if (!ui.started && !ui.title && ui.nrMap && nav.mode !== "panels") return null; // View map / Pick start on map: the map's cursor (main.js), ⧉ the banner
   if (nav.mode === "panels" || (!ui.started && !ui.title)) return S("panels", [$("app"), $("rs-keys"), shown($("guidetip")) ? $("guidetip") : null], { mode: nav.mode }); // the new-run screen's View map: its banner
   return null;
 }
@@ -117,7 +133,7 @@ function when() {
 function modeOk() {
   if (!api) return;
   const st = api.state();
-  if (nav.mode && !api.ui.started) nav.mode = ""; // the panels wait under a battle (the base map) and come back after it
+  if (nav.mode && !api.ui.started && !(api.ui.nrMap && !api.ui.title)) nav.mode = ""; // the panels wait under a battle (the base map) and come back after it; the new-run screen's map has its banner
   if (nav.cb && !(st && st.combat)) { nav.cb = ""; cbPanelBack(); }
 }
 
@@ -152,7 +168,7 @@ function cands(sc) {
   const out = [], seenEls = new Set();
   for (const R of sc.roots) for (const raw of R.querySelectorAll(SEL)) {
     let el = /** @type {HTMLElement} */ (raw);
-    if (el.tagName === "CANVAS" || el.tagName === "OPTION" || el.matches(":disabled") || el.getAttribute("aria-disabled") === "true") continue;
+    if ((el.tagName === "CANVAS" && !el.matches(POINT)) || el.tagName === "OPTION" || el.matches(":disabled") || el.getAttribute("aria-disabled") === "true") continue;
     if (el.closest('[aria-hidden="true"], [inert], .hidden')) continue;
     // A checkbox in its label: the label (a bigger target, its text in the ring).
     const ty = /** @type {HTMLInputElement} */ (el).type;
@@ -205,6 +221,7 @@ function start(sc, cs) {
   const inView = (el) => { const r = el.getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth; };
   if (sc.k === "cbbar") { const o = cs.find((el) => el.classList.contains("bb-btn") && el.dataset.action === "cb-act"); if (o) return o; }
   if (sc.k === "wpick") { const o = cs.find((el) => el.classList.contains("on")); if (o) return o; } // the Work picker: on the cell's value
+  if (sc.mode === "panels" && !api.ui.started) { const bn = $("banner"), inB = bn ? cs.filter((el) => bn.contains(el)) : []; if (inB.length) return firstOf(inB); } // the new-run screen's map: its banner (Pick start, Back to setup)
   if (sc.mode === "panels") { // a phone: the open drawer; a desktop: the first stop (the left panel), on the button it had there
     const p = drawers() ? DRAWERS.find(isOpen) : stops()[0];
     const inP = p ? cs.filter((el) => $(p).contains(el)) : [], m = p && !drawers() ? mem.get(`panels:${p}`) : null;
@@ -389,13 +406,56 @@ function press(sc, el) {
   if (el.tagName === "SELECT") { openPick(el); return; }
   if (isText(el)) { el.focus(); if (el.select) try { el.select(); } catch { /* a number box */ } return; }
   if (el.tagName === "INPUT" && el.type === "range") return;
+  if (el.matches(POINT)) { pointIn(el); return; }
   const keep = sc.k === "cbbar" && el.dataset.action === "cb-bar" && (el.dataset.v === "tray" || el.dataset.v === "all"); // a tray opened: stay in the bar
+  const was = api.mapPick();
   if (!CONTROL.has(el.tagName) && !el.dataset.action && el.getAttribute("role") === "button") { // a bar that folds a panel (ui/windows.js): its keys
     el.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true, cancelable: true }));
-  } else el.click();
+  } else if (typeof el.click === "function") el.click();
+  else { const [x, y] = mid(el.getBoundingClientRect()); el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, clientX: x, clientY: y })); } // SVG (a map's places): no click() of its own
   if (sc.k === "cbbar" && !keep) leaveMode(sc);
-  if (sc.mode === "panels" && api.mapPick()) leaveMode(sc); // a team's move, a field work's tile, a meeting tile: picked on the map
+  const now = api.mapPick();
+  if (sc.mode === "panels" && now) leaveMode(sc); // a team's move, a field work's tile, a meeting tile: picked on the map
+  else if (sc.mode === "cb" && now && now !== was) leaveMode(sc); // the base map: a thing to build or place picked (its ghost under the cursor)
   api.refresh();
+}
+
+// ---------- the pointer: a picture only the mouse reads ----------
+// The ring on a chart (or anything marked data-padpoint), A: a cross in it the D-pad moves, the mouse's events sent
+// where it stands (mousemove: the hover; A a click, X a right-click), B leaves it.
+let ptr = null; // { el, x, y } (x, y: in the element, css px)
+let ptrEl = null;
+function ptrSend(type, o = {}) {
+  if (!ptr || !ptr.el.isConnected) return;
+  const r = ptr.el.getBoundingClientRect(), x = r.left + ptr.x, y = r.top + ptr.y;
+  const hit = document.elementFromPoint(x, y), to = hit && ptr.el.contains(hit) ? hit : ptr.el; // what is under it (an SVG's part), else the picture
+  to.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, ...o }));
+}
+function pointIn(el) {
+  const r = el.getBoundingClientRect();
+  ptr = { el, x: r.width / 2, y: r.height / 2 };
+  ptrSend("mouseover"); ptrSend("mousemove");
+}
+function pointOut() {
+  if (!ptr) return;
+  ptrSend("mouseout"); ptr.el.dispatchEvent(new MouseEvent("mouseleave", { bubbles: false }));
+  ptr = null;
+  drawPtr();
+}
+function pointMove(dx, dy) {
+  const r = ptr.el.getBoundingClientRect(); // a step a twenty-fourth of the picture that way (6 px at least)
+  ptr.x = Math.max(1, Math.min(r.width - 1, ptr.x + dx * Math.max(6, r.width / 24)));
+  ptr.y = Math.max(1, Math.min(r.height - 1, ptr.y + dy * Math.max(6, r.height / 24)));
+  ptrSend("mousemove");
+}
+function drawPtr() {
+  const on = !!ptr && ptr.el.isConnected && inputMode() === "pad";
+  if (!on && !ptrEl) return;
+  if (!ptrEl) { ptrEl = document.createElement("div"); ptrEl.id = "padptr"; ptrEl.setAttribute("aria-hidden", "true"); document.body.appendChild(ptrEl); }
+  ptrEl.hidden = !on;
+  if (!on) return;
+  const r = ptr.el.getBoundingClientRect();
+  ptrEl.style.left = `${Math.round(r.left + ptr.x)}px`; ptrEl.style.top = `${Math.round(r.top + ptr.y)}px`;
 }
 // X: the right-click at its middle (the item menu, the Work tab's picker: main.js's contextmenu listener).
 const ctxOf = (el) => (el ? /** @type {HTMLElement} */ (el.closest("[data-imenu], [data-loc], [data-rc]")) : null);
@@ -495,6 +555,16 @@ function on(ev) {
     return true;
   }
   if (ev.type === "up" || ev.type === "hold") return true;
+  if (ptr && (!ptr.el.isConnected || !inRoots(sc, ptr.el))) pointOut(); // redrawn or gone: the ring has it again
+  if (ptr) { // the pointer in a picture: the D-pad moves it, A clicks, X right-clicks, B leaves
+    if (DIRS.has(n)) { pointMove(ev.dx, ev.dy); return true; }
+    if (ev.type !== "down") return true;
+    if (n === "A") { ptrSend("mousedown", { button: 0 }); ptrSend("mouseup", { button: 0 }); ptrSend("click", { button: 0 }); api.refresh(); return true; }
+    if (n === "X") { ptrSend("contextmenu", { button: 2 }); api.refresh(); return true; }
+    if (n === "B") { pointOut(); return true; }
+    if (n === "Y") return true;
+    pointOut(); // the tabs and the rest: as with the ring
+  }
   // The ring not in sight yet (the mouse or a finger was used last): the first press only shows it.
   if (!nav.vis && n !== "B" && !(ev.type === "repeat")) { nav.vis = true; return true; }
   const el = nav.el, a = document.activeElement;
@@ -560,11 +630,12 @@ function legend() {
   const sc = legendSc = sync();
   if (!sc) return null;
   if (pick) return [["Up Down", "Choose"], ["A", "Set"], ["B", "Cancel"]];
+  if (ptr) return [["Up Down Left Right", "Point"], ["A", "Click"], ["X", "Right-click"], ["B", "Done"]];
   const el = nav.el, a = document.activeElement, out = [];
   if (a && isText(a) && inRoots(sc, a)) return [...(isNum(a) ? [["Left Right", "Change"]] : []), ["A", "Done"], ["B", "Done"]];
   if (el) {
     if (isStep(el)) out.push(["Left Right", "Change"]);
-    const t = el.tagName === "SELECT" ? "Choose…" : isNum(el) ? "Change" : isText(el) ? "Type" : el.tagName === "INPUT" && el.type === "range" ? "" : el.tagName === "LABEL" || (el.tagName === "INPUT" && el.type === "checkbox") ? "Toggle" : "Select";
+    const t = el.matches(POINT) ? "Point in it" : el.tagName === "SELECT" ? "Choose…" : isNum(el) ? "Change" : isText(el) ? "Type" : el.tagName === "INPUT" && el.type === "range" ? "" : el.tagName === "LABEL" || (el.tagName === "INPUT" && el.type === "checkbox") ? "Toggle" : "Select";
     if (t) out.push(["A", t]);
   }
   out.push(["B", sc.mode === "panels" ? "Map" : "Back"]);
@@ -579,7 +650,9 @@ function legend() {
 }
 
 // For the tools: the layer in front and the mode.
-export const navState = () => ({ mode: nav.mode, cb: nav.cb, scope: nav.sk, vis: nav.vis, el: nav.el ? nav.el.outerHTML.slice(0, 90) : null, conn: !!(nav.el && nav.el.isConnected) });
+export const navState = () => ({ mode: nav.mode, cb: nav.cb, scope: nav.sk, vis: nav.vis, el: nav.el ? nav.el.outerHTML.slice(0, 90) : null, conn: !!(nav.el && nav.el.isConnected), ptr: ptr ? { x: Math.round(ptr.x), y: Math.round(ptr.y) } : null });
+// For the tools (tools/padmaptest.cjs): what the ring can go to in the layer in front now (its tag, action and words).
+export const navTargets = () => { const sc = scope(); return sc ? cands(sc).map((el) => ({ tag: el.tagName, action: el.dataset.action || "", text: (el.textContent || el.getAttribute("aria-label") || "").trim().replace(/\s+/g, " ").slice(0, 40) })) : []; };
 
 export function initPadNav(o) {
   api = o;
@@ -594,9 +667,11 @@ export function initPadNav(o) {
       if (nav.sk && !scope()) { nav.sk = ""; nav.base = ""; setEl(null); } // what was in front went (B closed it): the next layer starts afresh, from its memory
     }
     drawRing(mine);
+    if (ptr && !mine && inputMode() !== "pad") pointOut();
+    drawPtr();
   });
   if (typeof window !== "undefined") window.addEventListener("inputmode", (e) => {
     if (/** @type {CustomEvent} */ (e).detail === "pad") return;
-    closePick(); drawRing(false); hideTip();
+    closePick(); pointOut(); drawRing(false); hideTip();
   });
 }
