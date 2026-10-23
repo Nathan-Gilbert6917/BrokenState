@@ -612,6 +612,42 @@ function rockPrims(T) {
   }
   return out.sort((p, q) => p.u0 + p.v0 - q.u0 - q.v0);
 }
+// A rock and a boulder (the user's request 2026-10-23: "Fix the way boulders and rocks look in raids they are too
+// circular make them similar to how the hills taper but make them grey or so for rocks and make some that are shorter
+// for half cover and tall ones for tall cover"): a heap of grey stone in little columns, as the mountain's rock
+// (rockPrims), with a flat top whose sides taper down as the hills' banks do (rounded at the shoulder, steep at the
+// foot: STONE.TAPER, STONE.FLAT), its outline uneven (lobes by the cell's variant) and a lower shelf off one side. A
+// rock is knee high (half cover, sim/combat.js CELL.rock), a boulder head high (full cover, blocks sight:
+// CELL.boulder), STONE.H by its variant. Grey faces in strata STONE.BAND px deep, level across the heap.
+const STONE = { GRID: 8, H: { tall: [24, 29], short: [8, 11] }, R: { tall: 0.47, short: 0.42 }, TAPER: 1.6, FLAT: 1.45, BAND: 4 };
+const STONEC = hex("#808285"); // a cool grey: the mountain's PAL.stone is warmer
+function stonePrims(o, tall) {
+  const v = o.v || 0, sd = v * 2 + (o.alt ? 1 : 0), r3 = (i) => hash3(sd, i, 41);
+  const [h0, h1] = tall ? STONE.H.tall : STONE.H.short, H = h0 + (h1 - h0) * r3(1), R = tall ? STONE.R.tall : STONE.R.short;
+  const pu = 0.5 + (r3(2) - 0.5) * 0.12, pv = 0.5 + (r3(3) - 0.5) * 0.12, ph = r3(4) * 6.3, ph2 = r3(5) * 6.3;
+  const sa = r3(6) * 6.3, su = 0.5 + Math.cos(sa) * 0.22, sv = 0.5 + Math.sin(sa) * 0.22; // the shelf's middle
+  const lobe = (u, w) => { const a = Math.atan2(w, u); return 0.84 + 0.11 * Math.sin(3 * a + ph) + 0.07 * Math.sin(5 * a + ph2); };
+  const mound = (u, w, h, r) => { const d = Math.hypot(u, w) / (r * lobe(u, w)); return d >= 1 ? 0 : h * Math.min(1, STONE.FLAT * (1 - Math.pow(d, STONE.TAPER))) * (0.94 + 0.06 * (1 - d)); };
+  const zAt = (u, w) => Math.max(mound(u - pu, w - pv, H, R), mound(u - su, w - sv, H * 0.55, R * 0.6));
+  const K = STONE.GRID, z = [];
+  for (let j = 0; j < K; j++) { z.push([]); for (let i = 0; i < K; i++) z[j].push(Math.round(zAt((i + 0.5) / K, (j + 0.5) / K))); }
+  // A column's faces by their height above the ground (z0 + t), so the strata run level round the heap.
+  const m = (z0) => (f, s, t, X, Y) => {
+    const q = n2(X, Y, 23);
+    if (f === "top") return q > 0.96 ? hex("#7f8a5e") : mul(STONEC, 1.04 + q * 0.08);
+    if (n2(Math.floor(X / 3), Math.floor(Y / 2), 24) > 0.92) return mul(STONEC, 0.55);
+    return mul(STONEC, (Math.floor((z0 + t + q * 1.5) / STONE.BAND) % 2 ? 0.84 : 0.94) + q * 0.05);
+  };
+  // Each column down to the lower of the next ones toward the camera (+u, +v), or the ground at the heap's edge.
+  const out = [];
+  for (let j = 0; j < K; j++) for (let i = 0; i < K; i++) {
+    const zt = z[j][i];
+    if (zt < 1) continue;
+    const z0 = Math.min(zt, i + 1 < K ? z[j][i + 1] : 0, j + 1 < K ? z[j + 1][i] : 0);
+    out.push({ u0: i / K, u1: (i + 1) / K, v0: j / K, v1: (j + 1) / K, z0, z1: zt, flat: true, m: m(z0) });
+  }
+  return out.sort((p, q) => p.u0 + p.v0 - q.u0 - q.v0);
+}
 function primsOf(k, o) {
   const v = o.v || 0;
   if (o.car && (k === "car" || k === "truck" || k === "vehicle")) return carPieces(o.car, iso.rot);
@@ -832,11 +868,8 @@ function primsOf(k, o) {
       }
       return out;
     }
-    case "boulder": return [
-      { blob: [0.42, 0.45, 7], ru: 0.42, rz: 9, m: tex(PAL.stone, 0.16, 4) }, { blob: [0.64, 0.6, 5], ru: 0.3, rz: 7, m: tex(mul(PAL.stone, 0.9), 0.16, 5) },
-      { blob: [0.35, 0.7, 3], ru: 0.2, rz: 4, m: tex(mul(PAL.stone, 1.05), 0.16, 6) },
-    ];
-    case "rock": return [{ blob: [0.45, 0.48, 3], ru: 0.3, rz: 4.5, m: tex(mul(PAL.stone, 1.06), 0.16, 4) }, { blob: [0.62, 0.62, 2], ru: 0.17, rz: 3, m: tex(mul(PAL.stone, 0.9), 0.16, 5) }];
+    case "boulder": return stonePrims(o, true);
+    case "rock": return stonePrims(o, false);
     case "car": case "truck": case "vehicle": {
       const ax = v & 1 ? "v" : "u", big = k === "truck";
       const body = k === "vehicle" ? PAL.blue : big ? mul(PAL.rust, 0.8) : CAR_COLORS[(v * 7 + (o.j || 0)) % CAR_COLORS.length];
@@ -1674,9 +1707,9 @@ function blockTop0(k, o) {
     case "car": return o.car ? (o.car.i > 0 && o.car.i < o.car.L - 1 ? VEH_TOP : Math.round(9 * vehZ(VEH_ROOF.car))) : VEH_TOP; // a multi-cell car: its cabin cells stand taller than the hood and the trunk
     case "vehicle": return o.car ? (o.car.body === "bike" ? 11 : o.car.body === "truck" || MIL_TOPS[o.car.body] ? VEH_TOP : o.car.i > 0 && o.car.i < o.car.L - 1 ? VEH_TOP : Math.round(9 * vehZ(VEH_ROOF.car))) : VEH_TOP;
     case "locker": return 26; case "shelf": return 24; case "pump": return 22; case "gunsafe": return 22;
-    case "boulder": return 20; case "crate": return o.v >= 2 ? 22 : 13;
+    case "boulder": return STONE.H.tall[1]; case "crate": return o.v >= 2 ? 22 : 13;
     case "fence": return 14; case "barricade": return 16; case "sandbag": return 13; case "hay": return 13; case "cabinet": return 14; case "counter": return 12; case "well": return 12; case "barrel": return 13;
-    case "rock": return 10; case "wire": return 10; case "rail": return 13; case "tanktrap": return 12;
+    case "rock": return STONE.H.short[1]; case "wire": return 10; case "rail": return 13; case "tanktrap": return 12;
     case "outline": return 9; case "tent": return 18; case "torn": return 5; case "firepit": return 7; case "lamp": return 38; case "spot": return 24; // the base map (sim/basemap.js; torn: sim/softcover.js)
     case "bush": return 12; case "stump": return 6; case "log": return 7; // its scatter (sim/basescatter.js)
     default: return 0;
