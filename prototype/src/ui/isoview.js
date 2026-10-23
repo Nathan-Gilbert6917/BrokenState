@@ -2479,10 +2479,14 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     if (!c.cells.length) continue;
     const xs = c.cells.map((q) => q[0]), ys = c.cells.map((q) => q[1]);
     const [X, Y] = project((Math.min(...xs) + Math.max(...xs) + 1) / 2, (Math.min(...ys) + Math.max(...ys) + 1) / 2, 34);
-    tag(ctx, `${c.who && c.who.length ? `${c.who.slice(0, 3).join(", ")}${c.who.length > 3 ? ` +${c.who.length - 3}` : ""}: ` : ""}Clearing ${c.pct}%`, X, Y, "#f0c060", Math.max(10, 3.6 * S)); // woodwork: who is felling it (sim/woodwork.js chopHands)
+    // A hollow being dug or a hill raised (sim/terraform.js: c.terra): its wash again over the raised and sunk cells, whose
+    // own earth is painted over the ground's wash.
+    if (c.terra) { const inT = new Set(c.cells.filter(([x, y]) => tileTop(b, x, y) !== 0).map(([x, y]) => y * b.w + x)); if (inT.size) fillCells(ctx, b, (i) => inT.has(i), "rgba(230,170,60,0.28)"); }
+    tag(ctx, `${c.who && c.who.length ? `${c.who.slice(0, 3).join(", ")}${c.who.length > 3 ? ` +${c.who.length - 3}` : ""}: ` : ""}${c.verb || "Clearing"} ${c.pct}%`, X, Y, "#f0c060", Math.max(10, 3.6 * S)); // woodwork: who is felling it (sim/woodwork.js chopHands); verb: terraform.js "Digging", "Raising"
   }
-  // The camp's spot on high ground or in a hollow (sim/basescatter.js reliefLayer): its raised and sunk cells again over the blocks painted on them.
-  if (H.ghost && b.site) {
+  // The camp's spot on high ground or in a hollow (sim/basescatter.js reliefLayer): its raised and sunk cells again over the blocks painted on them;
+  // so too the terraforming pick's area (sim/basemap.js terraGhost).
+  if (H.ghost && (b.site || H.ghost.terraPick)) {
     const up = (cells) => new Set(cells.filter(([x, y]) => tileTop(b, x, y) !== 0).map(([x, y]) => y * b.w + x)); // raised or sunk (a hollow's floor is drawn over the ground)
     const inP = up(H.ghost.picked || []), inG = up(H.ghost.cells || []);
     if (inP.size) { fillCells(ctx, b, (i) => inP.has(i), "rgba(255,209,102,0.3)"); outlineCells(ctx, b, (i) => inP.has(i), "rgba(255,209,102,0.95)", 2.5); }
