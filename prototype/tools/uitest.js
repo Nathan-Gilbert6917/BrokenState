@@ -1169,8 +1169,10 @@ section("Map overlays: Known area, ruins, Coalition land (render.js, help.js, si
 
   // Layers box, Help, defaults.
   check(LAYERS.known && LAYERS.coalition, "the Known area and Coalition land layers exist");
+  check(LAYERS.radio && /Radio coverage/.test(LAYERS.radio.name) && /tiles/.test(LAYERS.radio.desc), "a Radio coverage layer, with the distance in tiles");
   R.resetView();
   check(!R.view.layers.has("known") && !R.view.layers.has("coalition") && R.view.layers.has("pois"), "both are off by default (Locations, with the ruins, on)");
+  check(R.view.layers.has("radio"), "Radio coverage is on by default (the rings were always drawn before it was a layer)");
   const w = createWorld({ seed: seed + 11, factionCount: 6 });
   const lgOff = renderLegend(R.view, { legendCollapsed: false }, w);
   check(/data-k="known"/.test(lgOff) && /data-k="coalition"/.test(lgOff) && !/%\/50%/.test(lgOff), "the Layers box has a line for each, the share only while Coalition land is on");

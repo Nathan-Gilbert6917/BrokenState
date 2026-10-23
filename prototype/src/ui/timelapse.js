@@ -13,7 +13,7 @@ import { keyAction } from "./keymap.js"; // the key table (Menu → Controls)
 export const TL_SPEEDS = [1, 2, 5, 10]; // in-game days per second
 const PLAYER_COLOR = "#4f8fd6";
 const KIND_COLOR = { death: "#ff4d4d", danger: "#e2685f", good: "#6cc48a", info: "#8fb4e0", world: "#c9b98a" };
-const LAYER_KEYS = ["pois", "territory", "teams", "hordes", "infection", "weather"];
+const LAYER_KEYS = ["pois", "territory", "teams", "hordes", "infection", "weather", "radio"];
 const CHART_W = 300, CHART_H = 54;
 const HOT = Math.ceil(0.6 * INF_Q); // hotzone tiles (same 0.6 line as the dev panel)
 const CAPTIONS = 7;                 // captions shown at once

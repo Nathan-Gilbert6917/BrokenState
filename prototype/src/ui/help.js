@@ -65,6 +65,7 @@ export const LAYER_SWATCH = {
   known: { bg: "repeating-linear-gradient(135deg,rgba(165,240,230,0.85) 0 2px,rgba(30,60,58,0.9) 2px 5px)" },
   coalition: { bg: "linear-gradient(90deg,rgba(79,143,214,0.55) 0 50%,rgba(150,200,110,0.55) 50%)", border: "#f3d27a" },
   towersight: { bg: "radial-gradient(circle,rgba(255,209,102,0.15) 0 55%,rgba(255,209,102,0.9) 58% 66%,transparent 70%)" },
+  radio: { bg: "radial-gradient(circle,transparent 0 52%,rgba(127,179,230,0.9) 56% 68%,transparent 72%)" },
 };
 export function swatch(k) {
   const s = LAYER_SWATCH[k];
@@ -75,6 +76,7 @@ export function swatch(k) {
 // What each layer shows, in full (the popup keeps one short line per layer). A layer added later without an entry
 // here shows its own description from sim/markers.js.
 const LAYER_HELP = {
+  radio: "Dashed rings round your radio stations and relays (sim/radio.js): how far each one's radio reaches, with the distance written on the ring (Radio 12 tiles; 24 with a Military encrypted radio in the base's armory; Relay 6 tiles for a linked relay). Red for a relay that is not linked or off the air. Dotted rings in a group's colour: that group's network, drawn while one of your teams or bases listens in on it. On by default; untick it to clear the rings from a crowded map (the station's line in the base panel still gives its reach).",
   towersight: "A faint gold ring round each of your watch towers with a lookout on duty now: the tiles it shows live on the map (3 by day, 1 at night; sim/fieldworks.js). Without the layer, hover or select a tower to see its ring. Off by default.",
   pois: "Towns and sites with their names. A site is a building for its type on a plate colored by its zone; the more faded, the less loot was left when you last saw it. Skulls under a name show its danger when zoomed in; small sites become dots when zoomed out. The ruins of a razed base (yours or a group's) stand in its place, named \"Ruins of …\". Points of interest: most land tiles hold up to four small places (a house, a shed, a hunting blind, a corner shop…) with loot of their own; a tile with no site draws its best one once you know it, and a pip at the sprite's corner counts the places known on the tile (two and up). The tile panel's Places rows list them; what is hidden is never counted (\"possibly more unknown\"): a Survey finds them. Below them, Tile heat: how stirred up the tile is by raids on its places (cold, warm, hot, very hot) as your people last saw it; it fades about 10% a day, and a hot tile is more dangerous to raid.",
   territory: "Land held by you and by the groups you know, tinted in their color. Their bases are compounds in that color. Tiles your teams claimed (Claim this tile) are a lighter blue; hover one for Claimed by you (day N) and its well.",
@@ -108,7 +110,7 @@ const LEGEND = [
   [`<i class="sw" style="background:transparent;box-shadow:inset 0 0 0 2px #ffd166"></i>`, "Blocs", "A dashed ring in a bloc's colour round a group's base: it belongs to that bloc (Groups tab: Blocs and wars; Help: Blocs and wars)."],
   [`<i class="sw" style="background:#c8ccd2">✝</i>`, "Markers", "On a ring: a grave = death site, your vehicle (red can = needs fuel, smoke = damaged), a wreck, a cache, a camp. Dots when zoomed out."],
   [`<i class="sw" style="background:#c8ccd2">▲</i>`, "Siege", "Tents and a banner by a base."],
-  [`<i class="sw ring"></i>`, "Radio coverage", "Dashed circles: a station reaches 12 tiles (24 with a Military encrypted radio in the base's armory), a linked relay 6 (a relay goes up at any base without a station, and chains coverage outward; groups whose base lies within coverage + 6 can be called and invited into the coalition). Red = a relay not linked or off the air. Dotted circles in a group's colour: that group's radio network, drawn while one of your teams or bases is tuned to it (Listen in on radio traffic)."],
+  [`<i class="sw ring"></i>`, "Radio coverage", "Dashed circles (the Radio coverage layer, the distance written on each): a station reaches 12 tiles (24 with a Military encrypted radio in the base's armory), a linked relay 6 (a relay goes up at any base without a station, and chains coverage outward; groups whose base lies within coverage + 6 can be called and invited into the coalition). Red = a relay not linked or off the air. Dotted circles in a group's colour: that group's radio network, drawn while one of your teams or bases is tuned to it (Listen in on radio traffic)."],
   [`<i class="sw" style="background:#ffd166">!</i>`, "Waiting", "A team waiting for orders."],
   [`<i class="sw" style="background:#c8ccd2">?</i>`, "Estimated", "A team's estimated position (out of radio contact)."],
   [`<i class="sw" style="background:linear-gradient(90deg,#d8dee8 0 33%,#7b8494 33% 66%,#1b1e23 66%)"></i>`, "Bright, dim, dark", "Bright tiles are live (around your bases, near a team in radio range); dim tiles show the last report with its age; dark tiles have no intel."],

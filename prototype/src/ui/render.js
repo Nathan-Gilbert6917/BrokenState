@@ -62,7 +62,7 @@ export const HEX = 26;
 const BRIDGE_W = Math.round(HEX * Math.sqrt(3)); // a bridge's deck spans the hex edge to edge along the road (ui/mapsprites.js paintBridge)
 
 export const camera = { x: 0, y: 0, zoom: 1 };
-const DEFAULT_LAYERS = ["pois", "territory", "teams", "workers", "hordes", "deaths", "vehicles", "finds", "weather"];
+const DEFAULT_LAYERS = ["pois", "territory", "teams", "workers", "hordes", "deaths", "vehicles", "finds", "weather", "radio"];
 // hourFrac: how much of the coming hour has gone by (main.js): your moving teams glide between tiles by it.
 export const view = { selected: -1, hover: -1, preview: null, devReveal: false, layers: new Set(DEFAULT_LAYERS), hourFrac: 0, clockSpeed: 1, pick: null, workerHover: null, cursor: -1 }; // pick: "kind:id" ringed in gold (ui/mapselect.js); cursor: a controller's tile (main.js, ui/gamepad.js), -1 without one
 const on = (k) => view.layers.has(k);
@@ -1408,20 +1408,23 @@ export function render(state) {
     if (up) buildBarOnMap(px, cy - h / 2 - 7 * s, s, up.hours ? up.progress / up.hours : 0, up.paid ? gatherCap(up) : undefined);
     const upPct = up ? Math.round((up.hours ? up.progress / up.hours : 0) * 100) : 0;
     labels.push({ text: b.tier === 0 ? `${b.name} (${b.type === "outpost" ? (up ? `camp: establishing ${upPct}%` : "camp") : up ? `building a base: ${upPct}%` : "shelter"})` : b.name, x: px, y: crowded(b.tile) ? py + BESIDE_LABEL_Y * Math.min(s, BESIDE_MAX) : cy + h / 2 + 6, pri: -1, screen: true, color: "#cfe2f7", size: 10, bold: isHub });
-    // Radio coverage (radio.js): a station's circle, and a relay's when it is linked (red when it is not, or offline).
-    const node = nodes.find((n) => n.base === b && !n.field); // a relay mast out on its land (sim/fieldworks.js) is not the base's own
+    // Radio coverage (radio.js; the Radio coverage layer): a station's circle, and a relay's when it is linked (red
+    // when it is not, or offline), with the distance it reaches written on the ring's top.
+    const node = on("radio") ? nodes.find((n) => n.base === b && !n.field) : null; // a relay mast out on its land (sim/fieldworks.js) is not the base's own
     if (node) {
+      const r = node.range * HEX * Math.sqrt(3);
       ctx.strokeStyle = node.linked ? "rgba(143,180,224,0.18)" : "rgba(224,120,110,0.3)";
       ctx.lineWidth = 1.5;
       ctx.setLineDash([4, 6]);
       ctx.beginPath();
-      ctx.arc(px, py, node.range * HEX * Math.sqrt(3), 0, Math.PI * 2);
+      ctx.arc(px, py, r, 0, Math.PI * 2);
       ctx.stroke();
       ctx.setLineDash([]);
+      labels.push({ text: `${node.kind === "relay" ? "Relay" : "Radio"} ${node.range} tiles${node.linked ? "" : node.offline ? " (off the air)" : " (not linked)"}`, x: px, y: py - r, pri: 4, screen: true, color: node.linked ? "rgba(170,200,235,0.75)" : "rgba(230,150,140,0.85)", size: 9 });
     }
   }
   // A group's channel one of your receivers is tuned to (sim/radiolisten.js): its coverage, dotted, in its colour.
-  for (const net of state.timelapse ? [] : tunedNetworks(state)) {
+  for (const net of state.timelapse || !on("radio") ? [] : tunedNetworks(state)) {
     ctx.strokeStyle = net.color || "#aaa";
     ctx.globalAlpha = 0.4;
     ctx.lineWidth = 1.5;
