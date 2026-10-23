@@ -12,7 +12,7 @@
 import { createWorld, hub, atBase } from "../src/sim/world.js";
 import { createBattle, registerCombatHandler, sightRange } from "../src/sim/combat.js";
 import { stealthTurn } from "../src/sim/stealth.js";
-import { weatherAt } from "../src/sim/weather.js";
+import { weatherAt, rainFog } from "../src/sim/weather.js";
 import { WX_SIGHT, WX_SIGHT_MIN, wxSightWord, fogEyes, battleTile } from "../src/sim/wxsight.js";
 import { openBaseMap } from "../src/sim/basemap.js";
 import * as WX from "../src/ui/battlewx.js";
@@ -23,12 +23,12 @@ const check = (ok, what) => { if (ok) pass++; else fail++; console.log(`  ${ok ?
 registerCombatHandler("bwx", () => {});
 const world = () => { const st = createWorld({ seed: SEED, factionCount: 6 }); st.started = true; st.hour = 24 * 3 + 12; return st; };
 
-// The first daytime hour (08:00–16:00) and land tile with this weather.
-function findWx(st, key, days = 120) {
+// The first daytime hour (08:00–16:00) and land tile with this weather (ok: a further test of the tile and hour).
+function findWx(st, key, days = 120, ok = () => true) {
   const land = st.tiles.filter((t) => t.terrain !== "water" && t.terrain !== "lake");
   for (let d = 2; d < days; d++) for (const hr of [10, 12, 14]) {
     st.hour = d * 24 + hr;
-    for (const t of land) if (weatherAt(st, t.id).key === key) return { tile: t.id, hour: st.hour };
+    for (const t of land) if (weatherAt(st, t.id).key === key && ok(t.id, st.hour)) return { tile: t.id, hour: st.hour };
   }
   return null;
 }
@@ -45,7 +45,7 @@ const sides = (b) => new Set(b.units.map((u) => u.side));
 // ---------- 1. fog cuts everyone's sight; clear does not ----------
 console.log("Fog cuts sight for every side; clear weather does not");
 const st = world();
-const fogAt = findWx(st, "fog"), clearAt = findWx(st, "clear"), rainAt = findWx(st, "rain");
+const fogAt = findWx(st, "fog"), clearAt = findWx(st, "clear"), rainAt = findWx(st, "rain", 120, (t, hr) => !rainFog(st, t, hr)); // rain with no rain fog (seasonfx.js: that cuts sight)
 check(fogAt && clearAt && rainAt, `found fog (${fogAt && `tile ${fogAt.tile} hour ${fogAt.hour}`}), clear and rain by day on seed ${SEED}`);
 const at = (w) => { st.hour = w.hour; return w.tile; };
 {
