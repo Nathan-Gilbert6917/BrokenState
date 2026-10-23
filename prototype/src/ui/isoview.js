@@ -47,7 +47,8 @@ import { strideOf } from "./moveanim.js"; // walking: the step of the walk cycle
 import { treeLookFor, treeStyle, styleKey, FALL } from "./seasontrees.js"; // trees and bushes by the season (seasonTree, seasonBush)
 import { snowOnFor } from "./roofsnow.js"; // snow on the buildings in winter (roofSprite, snowPrims)
 import { ringingCars } from "../sim/caralarms.js"; // a car alarm ringing (2026-10-23): its hazard lights blinking, how far it is heard
-import { groundTexel, leafField, leafBase, groundLookKey, snowShare } from "./groundlook.js"; // spring's mud, autumn's leaves, winter's snow on the ground (sim/seasonground.js)
+import { groundTexel, leafField, leafBase, groundLookKey, snowShare, puddleField, puddleAt, puddleTexel } from "./groundlook.js"; // spring's mud, autumn's leaves, winter's snow on the ground (sim/seasonground.js); puddles after rain (sim/puddles.js)
+import { puddleGround } from "../sim/puddles.js"; // where a puddle may run onto (ui/groundlook.js puddleField)
 
 // ---------- constants ----------
 const HW = 16, HH = 8;          // half a tile in art px (a tile: 32 × 16)
@@ -1378,7 +1379,8 @@ export function plotEdges(cells, w, h) {
   }
   return out;
 }
-function floorColor(c, k, x, y, lx, ly, mud, R = null, lf = 0, pe = 0) { // lf: autumn's leaves here (ui/groundlook.js leafField)
+function floorColor(c, k, x, y, lx, ly, mud, R = null, lf = 0, pd = 0, pe = 0) { // lf: autumn's leaves here (ui/groundlook.js leafField); pd: a puddle's depth here (puddleAt); pe: a crop plot's sides with no plot beside it (plotEdges)
+
   const tx = Math.min(15, Math.floor(lx * 16)), ty = Math.min(15, Math.floor(ly * 16));
   const q = hash3(x * 16 + tx, y * 16 + ty, 1), v = hash3(x, y, 2);
   if (k === "water" && !c.ter) { // a pond's deep middle (c.ter, sim/ponds.js): its ground's floor here, the water drawn at its level (wetPrims)
@@ -1413,7 +1415,8 @@ function floorColor(c, k, x, y, lx, ly, mud, R = null, lf = 0, pe = 0) { // lf: 
     default: col = mul(FLOORC.grass, 0.92 + q * 0.12);
   }
   if (pe && c.plot) { const W = PLOT_EDGE.W; if (((pe & 1) && ly < W) || ((pe & 2) && ly > 1 - W) || ((pe & 4) && lx < W) || ((pe & 8) && lx > 1 - W)) col = mul(PLOT_EDGE.WOOD, 0.88 + (((tx >> 1) + (ty >> 1)) % 2) * 0.12 + q * 0.08); } // the plot's wood edge: planks
-  if (!c.plot && (c.gnd || lf)) col = groundTexel(col, c, x * 16 + tx, y * 16 + ty, lf, Math.min(tx, 15 - tx, ty, 15 - ty) / 7.5); // the season on the ground (ui/groundlook.js)
+  if (!c.plot && (c.gnd || lf)) col = groundTexel(col, c, x * 16 + tx, y * 16 + ty, lf, Math.min(tx, 15 - tx, ty, 15 - ty) / 7.5); // the season on the ground (ui/groundlook.js); a built plot is the top layer: none on it
+  if (pd > 0 && !c.plot) col = puddleTexel(col, c, x * 16 + tx, y * 16 + ty, pd); // rain water standing on it (ui/groundlook.js, sim/puddles.js); not on a plot
   if (mud) { const m = clamp01(mud - hash3(x * 16 + tx, y * 16 + ty, 9) * 0.6); if (m > 0) col = mix(col, q > 0.7 ? hex("#5a1a1c") : hex("#3e2a22"), m * 0.85); }
   return col;
 }
@@ -1440,6 +1443,7 @@ function groundFor(b, scene) {
   }
   const passes = lift ? [[b.floors[0].cells, 0, 0.55, false], [b.cells, lift, 1, true]] : [[b.cells, 0, 1, false]];
   const lfF = leafField(b, treeLook, scene.key, groundCells(b)); // autumn's leaves (ui/groundlook.js)
+  const pF = puddleField(b, puddleGround, groundCells(b)); // puddles after rain (ui/groundlook.js, sim/puddles.js)
   for (const [cells, up, dim, footOnly] of passes) for (let py = 0, R = roadRuns(cells, b.w, b.h), PE = plotEdges(cells, b.w, b.h); py < gh; py++) for (let px = 0; px < gw; px++) {
     const [u, v] = artUV(px + 0.5 + ox, py + 0.5 - lift + up, st);
     if (u < 0 || v < 0 || u >= Wv || v >= Hv) continue;
@@ -1448,7 +1452,8 @@ function groundFor(b, scene) {
     const [lx, ly] = ptWorld(fu, fv, r, 1, 1);
     const c = cells[y * b.w + x];
     if (footOnly && isVoid(c)) continue;
-    let col = floorColor(c, c.k, x, y, lx, ly, mud[y * b.w + x], R, lfF && !up ? lfF[y * b.w + x] : 0, PE ? PE[y * b.w + x] : 0);
+    const pd = pF && !up && pF.ok[y * b.w + x] ? puddleAt(pF, x, y, lx, ly) : 0;
+    let col = floorColor(c, c.k, x, y, lx, ly, mud[y * b.w + x], R, lfF && !up ? lfF[y * b.w + x] : 0, pd, PE ? PE[y * b.w + x] : 0);
     if (fu < 0.055 || fv < 0.055) col = mul(col, 0.86); // the grid, faintly
     if (dim < 1) col = mul(col, dim);
     const i = (py * gw + px) * 4;
@@ -1499,11 +1504,13 @@ function flatGroundFor(b, scene) {
   const R = roadRuns(b.cells, b.w, b.h); // which way the roads run (the paint follows them)
   const PE = plotEdges(b.cells, b.w, b.h); // the crop plots' wood edges
   const lfF = leafField(b, treeLook, scene.key, groundCells(b)); // autumn's leaves (ui/groundlook.js)
+  const pF = b.cells === groundCells(b) ? puddleField(b, puddleGround) : null; // puddles after rain (ui/groundlook.js, sim/puddles.js)
   const cv = mkCanvas(tw, th), c = cv.getContext("2d"), img = c.createImageData(tw, th), buf = img.data;
   for (let y = 0; y < b.h; y++) for (let x = 0; x < b.w; x++) {
-    const cell = b.cells[y * b.w + x], m = mud[y * b.w + x], lf = lfF ? lfF[y * b.w + x] : 0;
+    const cell = b.cells[y * b.w + x], m = mud[y * b.w + x], lf = lfF ? lfF[y * b.w + x] : 0, wet = pF && pF.ok[y * b.w + x];
     for (let ty = 0; ty < TEX; ty++) for (let tx = 0; tx < TEX; tx++) {
-      let col = floorColor(cell, cell.k, x, y, (tx + 0.5) / TEX, (ty + 0.5) / TEX, m, R, lf, PE ? PE[y * b.w + x] : 0);
+      const lx = (tx + 0.5) / TEX, ly = (ty + 0.5) / TEX;
+      let col = floorColor(cell, cell.k, x, y, lx, ly, m, R, lf, wet ? puddleAt(pF, x, y, lx, ly) : 0, PE ? PE[y * b.w + x] : 0);
       if (tx === 0 || ty === 0) col = mul(col, 0.86); // the grid, faintly
       const i = ((y * TEX + ty) * tw + x * TEX + tx) * 4;
       buf[i] = col[0]; buf[i + 1] = col[1]; buf[i + 2] = col[2]; buf[i + 3] = 255;
@@ -2612,7 +2619,11 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   // Night: the whole scene darker, the lights cut out of it (ui/battlelights.js); the fog's vignette on the edges.
   drawDarkness(ctx, b, cw, ch);
   drawVignette(ctx, cw, ch, fog);
-  { const [ax, ay] = project(b.w / 2, b.h / 2, 0); drawBattleWx(ctx, cw, ch, state, b, now, ax, ay); } // ui/battlewx.js: the rain, fog or snow (screen space; the labels, bars and cursor stay on top)
+  { // ui/battlewx.js: the rain, fog or snow (screen space; the labels, bars and cursor stay on top); rings on the puddles in sight (sim/puddles.js)
+    const [ax, ay] = project(b.w / 2, b.h / 2, 0), [p0x, p0y] = project(0, 0, 0), [p1x, p1y] = project(1, 0, 0);
+    const spot = b.puddles && b.cells === groundCells(b) ? (x, y) => (vis[y * b.w + x] ? project(x + 0.5, y + 0.5, 0) : null) : null;
+    drawBattleWx(ctx, cw, ch, state, b, now, ax, ay, spot, Math.hypot(p1x - p0x, p1y - p0y));
+  }
   for (const c of OV.smoke) {
     if (c.thick) {
       // A fire's smoke: a dark column rising and drifting (it blocks sight through it).

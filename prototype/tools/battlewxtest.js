@@ -12,8 +12,9 @@
 import { createWorld, hub, atBase } from "../src/sim/world.js";
 import { createBattle, registerCombatHandler, sightRange } from "../src/sim/combat.js";
 import { stealthTurn } from "../src/sim/stealth.js";
-import { weatherAt } from "../src/sim/weather.js";
-import { WX_SIGHT, WX_SIGHT_MIN, wxSightWord, fogEyes } from "../src/sim/wxsight.js";
+import { weatherAt, rainFog } from "../src/sim/weather.js";
+import { WX_SIGHT, WX_SIGHT_MIN, wxSightWord, fogEyes, battleTile } from "../src/sim/wxsight.js";
+import { openBaseMap } from "../src/sim/basemap.js";
 import * as WX from "../src/ui/battlewx.js";
 
 const SEED = Number(process.argv[2] || 7);
@@ -22,12 +23,12 @@ const check = (ok, what) => { if (ok) pass++; else fail++; console.log(`  ${ok ?
 registerCombatHandler("bwx", () => {});
 const world = () => { const st = createWorld({ seed: SEED, factionCount: 6 }); st.started = true; st.hour = 24 * 3 + 12; return st; };
 
-// The first daytime hour (08:00–16:00) and land tile with this weather.
-function findWx(st, key, days = 120) {
+// The first daytime hour (08:00–16:00) and land tile with this weather (ok: a further test of the tile and hour).
+function findWx(st, key, days = 120, ok = () => true) {
   const land = st.tiles.filter((t) => t.terrain !== "water" && t.terrain !== "lake");
   for (let d = 2; d < days; d++) for (const hr of [10, 12, 14]) {
     st.hour = d * 24 + hr;
-    for (const t of land) if (weatherAt(st, t.id).key === key) return { tile: t.id, hour: st.hour };
+    for (const t of land) if (weatherAt(st, t.id).key === key && ok(t.id, st.hour)) return { tile: t.id, hour: st.hour };
   }
   return null;
 }
@@ -44,7 +45,7 @@ const sides = (b) => new Set(b.units.map((u) => u.side));
 // ---------- 1. fog cuts everyone's sight; clear does not ----------
 console.log("Fog cuts sight for every side; clear weather does not");
 const st = world();
-const fogAt = findWx(st, "fog"), clearAt = findWx(st, "clear"), rainAt = findWx(st, "rain");
+const fogAt = findWx(st, "fog"), clearAt = findWx(st, "clear"), rainAt = findWx(st, "rain", 120, (t, hr) => !rainFog(st, t, hr)); // rain with no rain fog (seasonfx.js: that cuts sight)
 check(fogAt && clearAt && rainAt, `found fog (${fogAt && `tile ${fogAt.tile} hour ${fogAt.hour}`}), clear and rain by day on seed ${SEED}`);
 const at = (w) => { st.hour = w.hour; return w.tile; };
 {
@@ -173,6 +174,60 @@ console.log("The overlay");
   UI.cui.hover = { x: me.x, y: me.y };
   const html = String(UI.renderCombatPanel(st) || "") + String(UI.renderRaidCards(st) || "");
   check(html.includes(`(Fog: sight −${WX_SIGHT.fog})`), `the hover card over ${me.name}: "sees ${Math.round(sightRange(bf, me))} tiles (Fog: sight −${WX_SIGHT.fog})"`);
+}
+
+// ---------- rain in a raid is the world tile's rain (the rain comes in belts: weather.js WAVE) ----------
+console.log("Rain in a raid: only when the world tile under it is raining");
+{
+  const s2 = world();
+  const wet = (t, h) => /rain|storm/.test(weatherAt(s2, t, h).key);
+  const land = s2.tiles.filter((t) => t.terrain !== "water" && t.terrain !== "lake");
+  // An hour when one tile is under a rain belt and another is dry, and a later hour the belt has left the first.
+  let pick = null;
+  for (let d = 3; d < 120 && !pick; d++) for (const hr of [10, 12, 14]) {
+    const h = d * 24 + hr;
+    const a = land.find((t) => wet(t.id, h));
+    if (!a) continue;
+    const dry = land.find((t) => !wet(t.id, h) && /overcast|clear/.test(weatherAt(s2, t.id, h).key));
+    const later = [4, 6, 8, 10, 12].map((k) => h + k).find((x) => !wet(a.id, x));
+    if (dry && later != null) { pick = { h, a: a.id, dry: dry.id, later }; break; }
+  }
+  if (check(!!pick, `an hour with rain on one tile and none on another (${pick && `hour ${pick.h}: tile ${pick.a} wet, ${pick.dry} dry; ${pick.a} dry again at ${pick.later}`})`)) {
+    s2.hour = pick.h;
+    const r1 = raid(s2, pick.a);
+    check(WX.wxFxFor(s2, r1).kind === "rain" && /rain|storm/.test(r1.wx), `a raid on the raining tile: rain over it (b.wx ${r1.wx})`);
+    s2.combat = null;
+    const r2 = raid(s2, pick.dry);
+    check(WX.wxFxFor(s2, r2).kind == null && !/rain|storm/.test(r2.wx), `a raid on a dry tile the same hour: no rain (b.wx ${r2.wx})`);
+    s2.combat = null;
+    s2.hour = pick.later;
+    const r3 = raid(s2, pick.a);
+    check(WX.wxFxFor(s2, r3).kind !== "rain" && !/rain|storm/.test(r3.wx), `the same tile once the belt has passed (hour ${pick.later}): no rain (b.wx ${r3.wx})`);
+    s2.combat = null;
+  }
+}
+
+// ---------- the base map view: its base's tile's weather (made with no tile of its own) ----------
+console.log("The base map view: rain when the base's tile is raining, none when it is dry");
+{
+  const s3 = world(), home = hub(s3).tile;
+  const wetH = [], dryH = [];
+  for (let h = 3 * 24 + 8; h < 120 * 24 && (!wetH.length || !dryH.length); h++) {
+    if (h % 24 < 8 || h % 24 > 16) continue;
+    const k = weatherAt(s3, home, h).key;
+    if (/rain|storm/.test(k)) wetH.push(h); else if (/clear|overcast/.test(k)) dryH.push(h);
+  }
+  if (check(wetH.length && dryH.length, `a rainy and a dry daytime hour over the hub (${wetH[0]}, ${dryH[0]})`)) {
+    s3.hour = wetH[0];
+    openBaseMap(s3, hub(s3).id);
+    const bw = s3.combat;
+    check(bw && bw.tileId == null && battleTile(s3, bw) === home && WX.wxFxFor(s3, bw).kind === "rain", `raining over the hub: rain over its base map (made with no tile; the hub's tile ${home})`);
+    s3.combat = null;
+    s3.hour = dryH[0];
+    openBaseMap(s3, hub(s3).id);
+    check(WX.wxFxFor(s3, s3.combat).kind == null, "dry over the hub: no rain over its base map");
+    s3.combat = null;
+  }
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

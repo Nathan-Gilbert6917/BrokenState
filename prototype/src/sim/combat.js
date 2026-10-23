@@ -33,6 +33,7 @@ import { applyRelief } from "./relief.js"; // hills, hollows and crag on a hills
 import { pondsBattle, wetCost, wadeAim } from "./ponds.js"; // the hollows' ponds, mud and ice, the slopes in the rain and in winter
 import { seasonBattle, iceCost, slipStep, muffle, fogSight } from "./seasonfx.js"; // snow and ice underfoot, rain muffling sounds, fog cutting sight (the user's request 2026-10-23)
 import { seasonGround, groundCost } from "./seasonground.js"; // spring's mud and winter's snow on the ground (call-time only)
+import { puddlesBattle } from "./puddles.js"; // rain water standing on the ground after rain (decor only; call-time only)
 import { hollowShut, acrossFloors, windowSees, windowSeen, windowFoes, standH, floorCover, shootable, terrainScore } from "./highground.js"; // the lie of the land in a fight: hollows, hills into upper floors, the AI on the high ground
 import { typeFind, AREA_MIX } from "./foods.js"; // the food in a container as items
 import { survivorById, factionById, alive, atBase, homeAt, combatPower, hurt, log, skill, gearEffect, isNight, usesArrows, armedFactor, arrowsBack, meleeAimBonus, meleeDmgMult } from "./world.js";
@@ -3959,6 +3960,7 @@ export function createBattle(state, setup) {
   }
   pondsBattle(state, b, b.tileId ?? (base ? base.tile : null)); // ponds.js: the hollows' water, mud or ice by the tile's weather (a base's map: its tile); the slopes in the rain or in winter
   seasonGround(state, b, b.tileId ?? (base ? base.tile : null)); // seasonground.js: spring's mud on the dirt, winter's snow on the ground (after the ponds: not on them)
+  puddlesBattle(state, b, b.tileId ?? (base ? base.tile : null)); // puddles.js: rain water standing on the level ground after hours of rain (decor only)
   seasonBattle(state, b, b.tileId ?? (base ? base.tile : null)); // seasonfx.js: snow underfoot, ice, rain and fog on the map
   if (b.doors) b.doors = b.doors.filter((d) => b.cells[idx(d.x, d.y)].k === "door");
   // The team's car or truck on the field (placeVehicle): by the west edge, on the road when there is one. It can be
@@ -7110,6 +7112,7 @@ export function createRaid(state, setup) {
   if (b.vehicle) { b.vehicle.seats = SEATS[b.vehicle.kind === "bike" ? "bike" : (pv && pv.type) || "sedan"] ?? 4; fitMapVehicle(b, pv); } // who can ride in it (boardVehicle); its upgrades
   pondsBattle(state, b, b.tileId); // ponds.js: the hollows' water, mud or ice by the tile's weather; the slopes in the rain or in winter
   seasonGround(state, b, b.tileId); // seasonground.js: spring's mud on the dirt, winter's snow on the ground
+  puddlesBattle(state, b, b.tileId); // puddles.js: rain water standing on the level ground after hours of rain (decor only)
   seasonBattle(state, b, b.tileId); // seasonfx.js: snow underfoot, ice, rain and fog on the map
   b.reinfMax = 0;
   b.zmix = (() => { const m = ((setup.enemy.groups || []).find((g) => g.kind === "zombies") || setup.enemy).mix; return maxMix(armoredOf(m), beastsOf(m)); })(); // the dead drawn in by the Heat: the armoured dead, the dead beasts of the land (deadbeasts.js)

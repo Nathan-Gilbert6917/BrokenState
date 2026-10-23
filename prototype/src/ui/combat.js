@@ -29,6 +29,7 @@ import { wetWord, climbWord } from "../sim/ponds.js"; // a hollow's pond, mud or
 import { conditions, cellWord, pathWord, drownWhy, SEASONFX } from "../sim/seasonfx.js"; // snow, ice, rain and fog on the map (the user's request 2026-10-23)
 import { wxSightWord } from "../sim/wxsight.js"; // fog and a blizzard: everyone's sight cut ("Fog: sight −4")
 import { groundWord } from "../sim/seasonground.js"; // spring's mud, winter's snow on the ground
+import { puddleWord } from "../sim/puddles.js"; // rain water standing on the ground (decor)
 import { PARLEY, parleyStatus, parleyGroupsSeen, callOutRefusal, callOutTargets } from "../sim/parley.js"; // other groups on a raid's map: Call out, hostile or not (the user's request 2026-10-20)
 import * as PARLEY_SIM from "../sim/parley.js"; // the exports that may not be there yet (shoutCost), looked up when present
 import { ALLY_ORDER, ALLY_ORDERS, allyOrderTargets, allyOrderRefusal, allyOdds, allyOrderOf, allyOrdersShown } from "../sim/allyorders.js"; // orders to allies on a raid's map (the user's request 2026-10-21)
@@ -3698,6 +3699,7 @@ function previewText(b, state = null) {
   // A hollow's pond, mud or ice by the weather (sim/ponds.js), and the climb up and down the ground in the rain or in winter.
   if (cobj.wet) s += ` ${wetWord(cobj)}`;
   if (cobj.gnd) s += ` ${groundWord(cobj)}`; // the season on the ground (sim/seasonground.js)
+  if (cobj.pud) s += ` ${puddleWord(cobj)}`; // rain water standing on the ground (sim/puddles.js; decor)
   { const sw = cellWord(b, cobj, u); if (sw) s += ` <span class="warn">${sw}</span>`; } // sim/seasonfx.js: snow underfoot, ice and its slip
   if (cobj.ter && hh && climbWord(b)) s += ` <span class="warn">${climbWord(b)}</span>`;
   if (cobj.k === "wire") s += ` <b>${cobj.razor ? "Razor wire" : "Barbed wire"}</b><span class="muted">: the dead stop for the turn${cobj.razor ? " and are cut" : ""}; the living are snagged (the rest of the turn, a few cuts) unless they carry a cutter (Cut wire).</span>`; // sim/wire.js

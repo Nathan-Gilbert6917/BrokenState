@@ -11,6 +11,7 @@
 // Display → Battle map edge (ui/displayopts.js battleEdge): full (5 tiles, the scattered things, the vignette); light
 // (3 tiles of plain ground, no vignette); off (the fog colour behind the map, nothing else).
 import { weatherAt } from "../sim/weather.js";
+import { battleTile } from "../sim/wxsight.js"; // the tile whose weather a battle has (a base map: its base's)
 import { onForgetPictures } from "./pictures.js";
 
 export const EDGE_LEVELS = { full: 2, low: 1, off: 0 };
@@ -46,7 +47,8 @@ export function battleWeather(state, b) {
   const hour = state ? state.hour : 0;
   if (wxMemo.b === b && wxMemo.hour === hour) return wxMemo;
   let key = "clear", snow = 0;
-  try { if (state && state.tiles && b.tileId != null) { const w = weatherAt(state, b.tileId); key = w.key; snow = w.snowCover || 0; } } catch { /* no weather: a clear day */ }
+  const tile = battleTile(state, b); // its own tile, or a base map's base's (sim/wxsight.js)
+  try { if (state && state.tiles && tile != null) { const w = weatherAt(state, tile); key = w.key; snow = w.snowCover || 0; } } catch { /* no weather: a clear day */ }
   wxMemo = { b, hour, key: WX_FOG[key] ? key : "clear", snow };
   return wxMemo;
 }
