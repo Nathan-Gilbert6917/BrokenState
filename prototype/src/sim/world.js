@@ -64,7 +64,7 @@ import { sickRestHour } from "./sickrest.js"; // sick people rest: Manual and pi
 import { tiredHour } from "./sleep.js";
 import { crewHour } from "./crews.js";
 import { woundTrauma } from "./health.js";
-import { weatherHour, weatherDaily } from "./weather.js";
+import { weatherHour, weatherDaily, sightCut } from "./weather.js"; // sightCut: fog and blizzards cut a base's view
 import { riversHour } from "./rivers.js"; // frozen rivers: freeze and thaw (who is on the ice, ways over it)
 import { pondsDaily } from "./ponds.js"; // the hollows round your bases: ponds, mud, ice by the weather
 import { coverNodes, radioDaily } from "./radio.js";
@@ -907,12 +907,14 @@ export function supplyValue(stock) {
 
 // ---------- vision and knowledge ----------
 // How far a base sees on the map. state given: at night (20:00–06:00) only NIGHT_BASE_VISION tiles round, whatever its
-// watchtower or telescope (a team in the field sees only its own tile: parties.js sightRadius).
+// watchtower or telescope (a team in the field sees only its own tile: parties.js sightRadius); by day fog or a
+// blizzard over the base takes a tile off (weather.js sightCut), never below 1. Without state: its clear-day view.
 export const NIGHT_BASE_VISION = 1;
 /** @param {Base} base @param {State | null} [state] @returns {number} */
 export function baseVision(base, state = null) {
   if (state && isNight(state)) return NIGHT_BASE_VISION;
-  return (base.tier === 0 ? 1 : base.type === "hub" ? HUB_VISION : OUTPOST_VISION) + (base.watchtower ? 2 : 0) + baseOpticsSight(base); // a telescope in the armory (optics.js); a shelter (buildings.js SHELTER, tier 0) sees 1 tile
+  const r = (base.tier === 0 ? 1 : base.type === "hub" ? HUB_VISION : OUTPOST_VISION) + (base.watchtower ? 2 : 0) + baseOpticsSight(base); // a telescope in the armory (optics.js); a shelter (buildings.js SHELTER, tier 0) sees 1 tile
+  return state ? Math.max(1, r + sightCut(state, base.tile)) : r;
 }
 
 // ix: tileIndex(state), when many tiles are looked at in a row (updateVision); without it each list is searched.

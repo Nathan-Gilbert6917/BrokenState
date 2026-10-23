@@ -18,6 +18,7 @@ Older design docs: [docs/base-building/plan.md](../base-building/plan.md), [docs
 - **Procedural State of Calder**: hex map with terrain, rivers, cities, towns, countryside sites, roads and infection; world sizes Small, Normal, Large and Huge, each with its own AI group count [mapgen, hex, worldsize].
 - **Hourly and daily simulation tick**, seeded and deterministic [world, rng].
 - **Seasons and weather**: four 28-day seasons, regional weather fronts, frozen rivers in winter that people and the dead can cross [weather, rivers].
+- **Rain and fog on the State Map**: falling rain and drifting fog banks over the tiles where it rains or is foggy; fog and blizzards cut sight there by a tile for your teams, bases, watch towers and the groups' parties [ui/wxmap, ui/render, weather, world, parties, fieldworks, groupworld] `tools/mapwxtest.js`. [details](../features/campaign.md#rain-and-fog-on-the-state-map)
 - **Ponds in the hollows**: rain fills hollows into ponds, dry days turn them to mud then dry, winter freezes them; the climb ×1.5 in rain, ×2.5 in winter [ponds, combat, basemap, ui/isoview] `tools/terrainweathertest.js`. [details](../features/campaign.md#ponds-in-the-hollows)
 - **Eras**: early game (years 1–4), mid (5–9) and late (10+), threats growing each year [eras].
 - **Two victories**: destroy every hive, or win with the Calder Coalition (over half the land); "Keep playing" after either [world, alliance].
