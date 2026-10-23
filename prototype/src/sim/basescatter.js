@@ -242,6 +242,7 @@ export const HIGH = {
   // level a cell in from its edge (CRAG_LV: 3 at the edge up to the peak), so it climbs to the core and to a crest
   // along each arm; FOOT cells a level for the foothills round it.
   ARMS: [3, 5], ARM_LEN: [35, 75], ARM_W: [4, 6], CORE_R: [8, 11], CRAG_LV: [3, 13], FOOT: 2,
+  HOLE: 8, PASS: 2,                                    // the massif never shuts ground in (openCrag): a hole this small is rock, a pass this wide
 };
 export const TOWN = {
   town: { BLOCK: 36, STREET: 5, LOT: [10, 13], STORE_P: 0.12, EMPTY_P: 0.1, DRIVE_CAR_P: 0.35, STREET_CAR_P: 0.3 },
@@ -302,6 +303,7 @@ export function reliefLayer(seed, terrain, G) {
           if (!inMap(Math.round(x), Math.round(y))) break;
         }
       }
+      openCrag(crag, G); // never a pocket of ground the massif walls in: walked to from the map's edge
       // The height: a level a cell in from the edge (eight ways), from CRAG_LV[0] up to CRAG_LV[1].
       const cq = [];
       for (const k of crag) {
@@ -331,6 +333,92 @@ export function reliefLayer(seed, terrain, G) {
     for (const k of crag) H.delete(k);
     return { heights: [...H].map(([k, h]) => { const [x, y] = k.split(",").map(Number); return [x, y, h]; }), crags: [...crag].map((k) => { const [x, y] = k.split(",").map(Number); return [x, y, cragLv.get(k) || HIGH.CRAG_LV[0]]; }) };
   });
+}
+// The massif never shuts ground in (the user's words 2026-10-23: "Blocking base due to ridge"; tools/mapreachtest.js):
+// a hole in the rock HIGH.HOLE cells or smaller is rock too, and a bigger pocket of ground its arms wall in gets a
+// pass carved through them (cragPasses). The crag as "x,y" keys over [-G, G), in place.
+function openCrag(crag, G) {
+  const N = 2 * G, rock = new Uint8Array(N * N);
+  for (const k of crag) { const [x, y] = k.split(",").map(Number); rock[(y + G) * N + x + G] = 1; }
+  const { carved, filled } = cragPasses(rock, null, N, N, { hole: HIGH.HOLE });
+  for (const i of carved) crag.delete(ck((i % N) - G, Math.floor(i / N) - G));
+  for (const i of filled) crag.add(ck((i % N) - G, Math.floor(i / N) - G));
+}
+/**
+ * The crag on a grid never shuts off ground the map's edges reach without it (the user's words 2026-10-23: "Blocking
+ * base due to ridge"): each pocket it walls in, the first in the grid's order first, gets a pass HIGH.PASS cells wide
+ * carved through the rock the shortest way (the fewest cells of rock) out to ground the edges reach, or, no bigger
+ * than opts.hole cells and walled in by rock alone, is filled with rock (a hole in the rock). Walked four ways.
+ * rock: 1 for crag (carved here, in place); block: 1 for what else stops a walk (never carved) or null.
+ * Returns { carved, filled }: the cells taken out of the rock and put into it.
+ * @param {Uint8Array} rock @param {Uint8Array | null} block @param {number} W @param {number} H @param {{ hole?: number }} [opts]
+ */
+export function cragPasses(rock, block, W, H, opts = {}) {
+  const N = W * H, hole = opts.hole || 0, carved = [], filled = [];
+  const stop = (i, withRock) => (block && block[i]) || (withRock && rock[i]);
+  const flood = (withRock) => {
+    const seen = new Uint8Array(N), q = new Int32Array(N);
+    let qt = 0;
+    const add = (i) => { if (!seen[i] && !stop(i, withRock)) { seen[i] = 1; q[qt++] = i; } };
+    for (let x = 0; x < W; x++) { add(x); add((H - 1) * W + x); }
+    for (let y = 0; y < H; y++) { add(y * W); add(y * W + W - 1); }
+    for (let qh = 0; qh < qt; qh++) {
+      const i = q[qh], x = i % W;
+      if (x > 0) add(i - 1);
+      if (x < W - 1) add(i + 1);
+      if (i >= W) add(i - W);
+      if (i < N - W) add(i + W);
+    }
+    return seen;
+  };
+  const free = block ? flood(false) : null; // what the edges reach with no crag at all
+  for (let round = 0; round < 256; round++) {
+    const seen = flood(true);
+    let start = -1;
+    for (let i = 0; i < N && start < 0; i++) if (!seen[i] && !stop(i, true) && (!free || free[i])) start = i;
+    if (start < 0) break;
+    // The pocket: the ground walled in with it.
+    const pocket = [start], inP = new Uint8Array(N);
+    inP[start] = 1;
+    let rockOnly = true;
+    for (let h = 0; h < pocket.length; h++) {
+      const i = pocket[h], x = i % W;
+      for (const j of [x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1, i - W, i + W]) {
+        if (j < 0 || j >= N || inP[j]) continue;
+        if (block && block[j]) { rockOnly = false; continue; }
+        if (rock[j]) continue;
+        inP[j] = 1; pocket.push(j);
+      }
+    }
+    if (pocket.length <= hole && rockOnly) { for (const i of pocket) { rock[i] = 1; filled.push(i); } continue; }
+    // The shortest way out through the rock (a search level by level: a cell of rock costs 1, open ground 0).
+    const done = new Uint8Array(N), from = new Int32Array(N).fill(-1);
+    let cur = pocket.slice(), out = -1;
+    for (const i of pocket) done[i] = 1;
+    while (cur.length && out < 0) {
+      const next = [];
+      for (let h = 0; h < cur.length; h++) {
+        const i = cur[h], x = i % W;
+        if (seen[i]) { out = i; break; }
+        for (const j of [x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1, i - W, i + W]) {
+          if (j < 0 || j >= N || done[j] || (block && block[j])) continue;
+          if (rock[j]) { if (from[j] < 0) { from[j] = i; next.push(j); } continue; } // the next level: a cell more of rock
+          done[j] = 1; from[j] = i; cur.push(j);
+        }
+      }
+      cur = next.filter((j) => !done[j]);
+      for (const j of cur) done[j] = 1;
+    }
+    if (out < 0) break; // nothing to carve to (cannot happen: the pocket was reached with the crag taken away)
+    for (let i = out; i >= 0 && !inP[i]; i = from[i]) {
+      const x = i % W, y = Math.floor(i / W);
+      for (let dy = 0; dy < HIGH.PASS; dy++) for (let dx = 0; dx < HIGH.PASS; dx++) {
+        const nx = Math.min(W - 1, x + dx), ny = Math.min(H - 1, y + dy), j = ny * W + nx;
+        if (rock[j]) { rock[j] = 0; carved.push(j); }
+      }
+    }
+  }
+  return { carved, filled };
 }
 /**
  * A level at most between neighbours (eight ways): a hill only ever lowered and a hollow only ever raised toward its
@@ -555,7 +643,7 @@ export function townLayer(seed, style, G) {
                 pieces.push(building(rng, "store", x0, y0, w, h, row, `${g}st`));
                 // The gravel lot in front, a car left on it now and then.
                 for (let y = row === "n" ? ry0 : y0 + h; y < (row === "n" ? y0 : ry1 + 1); y++) for (let x = x0; x < x0 + w; x++) floors.push([x, y, "gravel"]);
-                if (rng.chance(0.5)) car(x0 + rng.int(1, Math.max(1, w - 4)), row === "n" ? ry0 + 1 : ry1 - 2, 0, `${g}pc`, rng);
+                if (rng.chance(0.5)) car(x0 + rng.int(1, Math.max(1, w - 4)), row === "n" ? ry0 + 1 : ry1 - 1, 0, `${g}pc`, rng); // a row clear in front of the doors (on a south row it stood right against them: tools/mapreachtest.js)
               }
             } else {
               const w = Math.min(lw - 3, rng.int(7, 9)), h = rng.int(6, 8), left = rng.chance(0.5);
@@ -564,7 +652,7 @@ export function townLayer(seed, style, G) {
                 const hb = building(rng, "house", x0, y0, w, h, row, `${g}h`);
                 pieces.push(hb);
                 // The path from the front door to the street, and a driveway beside the house with a car on it now and then.
-                const fd = hb.parts.findIndex((p) => p.k === "doorway"), [dx] = hb.cells[fd];
+                const fd = hb.parts.findIndex((p, i) => p.k === "doorway" && hb.cells[i][1] === (row === "n" ? y0 : y0 + h - 1)), [dx] = hb.cells[fd]; // the front door (on a south row a back door came first: the path led to the wall beside it, tools/mapreachtest.js)
                 for (let y = row === "n" ? ry0 : y0 + h; y < (row === "n" ? y0 : ry1 + 1); y++) floors.push([dx, y, "gravel"]);
                 const dx0 = left ? lx + 1 : x0 + w + 1;
                 if ((left ? x0 - lx - 1 : lx + lw - (x0 + w) - 1) >= 2) {
@@ -711,10 +799,17 @@ export function landOf(spec, land) {
   // The lie of the land (reliefLayer): the mountains' crag first (never on a road: a pass through the ridge), the
   // heights under whatever stands there (trees, bushes, a road), flat in the yard and the clearing and on the river.
   const relief = reliefLayer(spec.seed, spec.terrain, spec.G), heights = new Map();
-  for (const [x, y, lv] of relief.crags) if (free(x, y) && !nearBase(x, y, spec.C) && !street(x, y) && !(spec.river && onRiver(spec, x, y))) put({ k: "crag", g: `c${x},${y}`, cells: [[x, y]], h: lv });
+  // The ground is eased (relaxHeights) against the crag laid here only: where a road, the yard, the clearing, the river
+  // or what is cleared keeps it off, the ground is level and the hills beside come down to it a level a step (it was
+  // eased against all of the massif's rock, leaving a road's pass a trench three levels deep: tools/mapreachtest.js).
+  const rock = new Set();
+  for (const [x, y, lv] of relief.crags) if (free(x, y) && !nearBase(x, y, spec.C) && !street(x, y) && !(spec.river && onRiver(spec, x, y))) { put({ k: "crag", g: `c${x},${y}`, cells: [[x, y]], h: lv }); rock.add(`${x},${y}`); }
   for (const [x, y, h] of relief.heights) if (!nearBase(x, y, Math.max(spec.C, spec.clear)) && !gone(x, y) && !pieces.has(`${x},${y}`) && !(spec.river && onRiver(spec, x, y))) heights.set(`${x},${y}`, h);
-  relaxHeights(heights, new Set(relief.crags.map(([x, y]) => `${x},${y}`))); // the yard, the clearing and what is cleared are level: the ground eased down to them
+  relaxHeights(heights, rock); // the yard, the clearing and what is cleared are level: the ground eased down to them
   dropNarrowHollows(heights); // a hollow cut narrow by them filled in
+  // Nothing of the scatter on the ground paved before it (a road, a ford, a town's paths, driveways, lots and
+  // sidewalks): a tree on a house's path or a fence across a ford shut the way in (tools/mapreachtest.js).
+  const paved = new Set(floors.keys());
   for (const p of scatterLayer(spec.seed, spec.terrain, spec.G)) {
     if (p.floor) { if (!nearBase(p.x, p.y, spec.clear) && !floors.has(`${p.x},${p.y}`)) floors.set(`${p.x},${p.y}`, p.floor); continue; }
     const yard = nearBase(p.x, p.y, spec.C);
@@ -722,19 +817,19 @@ export function landOf(spec, land) {
       if (yard) continue;
       const cells = [];
       for (let i = 0; i < p.len; i++) for (let j = 0; j < 2; j++) cells.push(p.ax ? [p.x + j, p.y + i] : [p.x + i, p.y + j]);
-      if (cells.every(([cx, cy]) => free(cx, cy) && !onRoad(spec, cx, cy) && !street(cx, cy))) put({ k: "wreck", g: p.g, cells, body: p.body, ax: p.ax, len: p.len, looted: !!looted[p.g] });
+      if (cells.every(([cx, cy]) => free(cx, cy) && !onRoad(spec, cx, cy) && !street(cx, cy) && !paved.has(`${cx},${cy}`))) put({ k: "wreck", g: p.g, cells, body: p.body, ax: p.ax, len: p.len, looted: !!looted[p.g] });
       continue;
     }
     let k = p.k;
     if (yard !== !!p.yard) { if (yard && k === "tree" && p.stump) k = "stump"; else continue; } // the yard: cleared ground (a tree's stump); outside: no yard leavings
-    if (!free(p.x, p.y) || (spec.road && onRoad(spec, p.x, p.y)) || street(p.x, p.y)) continue;
+    if (!free(p.x, p.y) || (spec.road && onRoad(spec, p.x, p.y)) || street(p.x, p.y) || paved.has(`${p.x},${p.y}`)) continue;
     put({ k, g: p.g, cells: [[p.x, p.y]] });
   }
   // Uneven ground with nothing else on it is a piece of the land too (dug down or filled in before anything is built
   // there: CLEAR rise, dip); under a tree or a bush the height goes with it when it is cleared.
   // A wreck lies on level ground (a vehicle's cells on the one level: combat.js levelRect).
   for (const p of list) if (p.k === "wreck") for (const [x, y] of p.cells) heights.delete(`${x},${y}`);
-  relaxHeights(heights, new Set(relief.crags.map(([x, y]) => `${x},${y}`)));
+  relaxHeights(heights, rock);
   dropNarrowHollows(heights);
   // The ground terraformed (terraform.js, the user's request 2026-10-23: hollows dug and hills raised; land.heightEdits,
   // grid "x,y" → the level, 0 levelled): laid over the tile's own once its narrow hollows are filled in (a hollow dug
@@ -758,7 +853,9 @@ export function landOf(spec, land) {
     heights.clear();
     for (const [k, h] of hs) { const [x, y] = k.split(",").map(Number); heights.set(`${x - tx},${y - ty}`, h); }
   }
-  const water = list.filter((p) => p.k === "water");
+  // waterOnly: the land never cleared nor built on, the river and the mountainside (the crag: the game's second pass
+  // over the land placed things on it and their clearing never came, basemap.js siteWaits; tools/mapreachtest.js).
+  const water = list.filter((p) => p.k === "water" || p.k === "crag");
   const v = { pieces, floors, list, heights, waterOnly: { pieces: new Map(water.flatMap((p) => p.cells.map(([x, y]) => [`${x},${y}`, p]))), list: water, floors, heights: new Map() } };
   if (landCache.size > 48) landCache.clear();
   landCache.set(key, { land, v });

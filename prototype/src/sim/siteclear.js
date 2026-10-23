@@ -22,6 +22,7 @@
 import { startCombat, registerCombatHandler, registerBattleLayout, registerBattleSize } from "./combat.js";
 import { siteLand, terrainOf } from "./basemap.js";
 import { layLand } from "./basescatter.js";
+import { cragWays } from "./relief.js";
 import { partyMembers, partyTile, tileLabel, awaitOrders, wipeIfEmpty } from "./parties.js";
 import { log } from "./world.js";
 import { hordeGrowth } from "./eras.js";
@@ -122,6 +123,7 @@ registerBattleLayout("siteClear", (b, ctx) => {
     for (let i = 0; i < b.cells.length; i++) b.cells[i] = { k: "open" };
     const land = siteLand(ctx.state, c.tile);
     layLand({ cells: b.cells, W: ctx.W, H: ctx.H, ox: cx - c.at[0], oy: cy - c.at[1], land, ok: (x, y) => b.cells[y * ctx.W + x].k === "open", floor: (x, y) => b.cells[y * ctx.W + x].k === "open" });
+    cragWays(b.cells, ctx.W, ctx.H); // relief.js: the crag in the map's crop never shuts the spot off from the west edge (tools/mapreachtest.js)
     b.reinfMax = 0; // no more of the dead drawn in by the noise: these are all of them
     b.siteSpot = [cx, cy];
     return;

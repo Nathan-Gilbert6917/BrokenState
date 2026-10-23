@@ -5,11 +5,15 @@
 // under whatever natural stands there (open ground, trees, bushes, rocks: RELIEF.NATURAL); a building's floor and the
 // cells round it, the map's edges (the ways in and out) and the raid's entry zones stay level, and the ground steps a
 // level at most between neighbours, so everything walked to before is walked to still (combat.js climbCost). Crag
-// that would cut the map in two (no way from the west edge to the east) is left out.
+// never shuts off ground the map's edges reached without it (the user's words 2026-10-23: "Blocking base due to
+// ridge"): a pass is carved through it (basescatter.js cragPasses; it was left out whole when it cut the west edge from
+// the east, and the foothills either side of where it stood were left three levels over the ground: a trench).
+// cragWays(cells, W, H): the same for a map the land was laid on (basescatter.js layLand: a base's map, the camp's
+// spot, an AI group's margin), its ground eased a level a step.
 //   applyRelief(cells, W, H, tile, opts) → the cells raised or lowered. opts.crags: the ridges too (an open fight);
 //   opts.keep(x, y): cells to keep level (a raid's zones).
-import { reliefLayer, scatterSeed, HIGH } from "./basescatter.js";
-import { CELL } from "./combat.js"; // call-time only
+import { reliefLayer, scatterSeed, HIGH, cragPasses } from "./basescatter.js";
+import { CELL, groundH } from "./combat.js"; // call-time only
 
 export const RELIEF = {
   TERRAIN: new Set(["hills", "mountain"]),
@@ -50,6 +54,13 @@ export function applyRelief(cells, W, H, tile, opts = {}) {
     const key = `${x + best.ox},${y + best.oy}`;
     if (crag.has(key) && cells[i].k === "open") { isCrag[i] = 1; cragH[i] = crag.get(key); }
     else h[i] = hm.get(key) || 0;
+  }
+  // The crag leaves every way open: a pass through it, the shortest way, where it would shut ground off from the edges
+  // (its cells level ground: the foothills ease down into it below).
+  if (isCrag.some((v) => v)) {
+    const block = new Uint8Array(N);
+    for (let i = 0; i < N; i++) if (!isCrag[i] && !(CELL[cells[i].k] && CELL[cells[i].k].walk)) block[i] = 1;
+    cragPasses(isCrag, block, W, H);
   }
   // Smoothed as the base map's land is (basescatter.js relaxHeights): a raised cell in a 2 × 2 as high or higher (a sunk
   // one as deep), else a level less; then a level at most between neighbours (eight ways); the fixed cells level, the
@@ -101,19 +112,6 @@ export function applyRelief(cells, W, H, tile, opts = {}) {
       if (x1 - x0 + 1 < HIGH.DIP_MIN || y1 - y0 + 1 < HIGH.DIP_MIN) for (const j of comp) h[j] = 0;
     }
   }
-  // The crag must leave a way across: from the west edge to the east one, else none of it.
-  if (isCrag.some((v) => v)) {
-    const walk = (i) => !isCrag[i] && !!CELL[cells[i].k] && !!CELL[cells[i].k].walk;
-    const seen = new Uint8Array(N), q = [];
-    for (let y = 0; y < H; y++) if (walk(y * W)) { seen[y * W] = 1; q.push(y * W); }
-    for (let k = 0; k < q.length; k++) {
-      const i = q[k], x = i % W, y = (i / W) | 0;
-      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = x + dx, ny = y + dy; if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue; const j = ny * W + nx; if (!seen[j] && walk(j)) { seen[j] = 1; q.push(j); } }
-    }
-    let across = false;
-    for (let y = 0; y < H && !across; y++) if (seen[y * W + W - 1]) across = true;
-    if (!across) isCrag.fill(0);
-  }
   let n = 0;
   for (let i = 0; i < N; i++) {
     const c = cells[i];
@@ -121,4 +119,49 @@ export function applyRelief(cells, W, H, tile, opts = {}) {
     if (h[i]) { c.h = h[i]; c.ter = 1; n++; }
   }
   return n;
+}
+
+/**
+ * A map the land was laid on (basescatter.js layLand: a base's map, the camp's spot, an AI group's margin) left open
+ * and walked up and down anywhere (the user's words 2026-10-23: "Blocking base due to ridge"; tools/mapreachtest.js):
+ * where the crag the map's crop takes in shuts off ground the edges reach without it, a pass is carved through it
+ * (basescatter.js cragPasses: level ground), and the ground's heights (c.h with c.ter) are eased a level a step down
+ * (a hollow up) to what is level beside them: the map's outermost ring and what stands there (no land laid), a pass.
+ * In place; returns the crag cells carved away.
+ * @param {any[]} cells @param {number} W @param {number} H
+ */
+export function cragWays(cells, W, H) {
+  const N = W * H, rock = new Uint8Array(N);
+  let any = false;
+  for (let i = 0; i < N; i++) if (cells[i].k === "crag") { rock[i] = 1; any = true; }
+  let carved = [];
+  if (any) {
+    const block = new Uint8Array(N);
+    for (let i = 0; i < N; i++) if (!rock[i] && !(CELL[cells[i].k] && CELL[cells[i].k].walk)) block[i] = 1;
+    carved = cragPasses(rock, block, W, H).carved;
+    for (const i of carved) { const c = cells[i]; c.k = "open"; delete c.ch; delete c.h; delete c.ter; }
+  }
+  // The ground a level a step (eight ways): a hill lowered, a hollow raised, toward the ground beside it (a raised
+  // floor of its own, a walkway or a roof, and the crag left out).
+  const gh = (c) => (c.k === "crag" ? null : groundH(c));
+  for (let pass = 0, changed = true; changed && pass < 16; pass++) {
+    changed = false;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const c = cells[y * W + x];
+      if (!c.ter || !c.h || c.k === "crag") continue;
+      let lo = Infinity, hi = -Infinity;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        if ((!dx && !dy) || x + dx < 0 || y + dy < 0 || x + dx >= W || y + dy >= H) continue;
+        const v = gh(cells[(y + dy) * W + x + dx]);
+        if (v == null) continue;
+        lo = Math.min(lo, v); hi = Math.max(hi, v);
+      }
+      if (lo === Infinity) continue;
+      const v = c.h > 0 ? Math.min(c.h, lo + 1) : Math.max(c.h, hi - 1);
+      if (v === c.h) continue;
+      changed = true;
+      if (v) c.h = v; else { delete c.h; delete c.ter; }
+    }
+  }
+  return carved.length;
 }
