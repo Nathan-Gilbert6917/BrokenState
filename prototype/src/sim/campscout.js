@@ -18,7 +18,7 @@
 // ON ARRIVAL (scoutOrBlind, staging.js pitchArrive): scouted, today's flow (the spot asked for on the tile's map, the
 // dead at the spot cleared first: siteclear.js). Scout first: the Survey's task first, the camp's order queued after
 // it (on the same tile), so it comes back here scouted. Neither: BLIND, the camp's spot one of the game's dice on
-// the 250 × 250 map (blindSite: a valid spot, off the buildings and the high ground where one is found, the same for
+// the 500 × 500 map (blindSite: a valid spot, off the buildings and the high ground where one is found, the same for
 // the same world and tile; staging.js campSiteFor reads it too, so the planner's hours are the setup's), nobody asked
 // and nothing fought first.
 // A BLIND CAMP (blindCamp, after staging.js makeCamp): base.grounds = { dead (the map's dead: GROUNDS.MAP × the dead at

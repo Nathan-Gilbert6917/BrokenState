@@ -21,7 +21,7 @@
 //   - the yard's leavings: in the yard round the clearing only stumps, logs, crates, barrels and a rock;
 //   - the clearing (CLEARING by tier: a base from before the camp's spot was picked, or one taken or handed over):
 //     nothing at all.
-// The land is the tile's in map coordinates (the 250 × 250 map's middle at 0, 0: basemap.js BASE_GRID); a base stands
+// The land is the tile's in map coordinates (the 500 × 500 map's middle at 0, 0: basemap.js BASE_GRID); a base stands
 // on it at its origin (spec.ox, spec.oy: basemap.js originOf), and landOf hands the pieces back in the base's grid
 // coordinates. A camp set up on a spot of its own (spec.fresh: the user's requests 2026-10-22, "choose where in the
 // 250 x 250 with a highlighted 10x10 to start ... Then you can build around that and clear out more as needed. Provide

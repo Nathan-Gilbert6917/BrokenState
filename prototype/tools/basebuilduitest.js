@@ -134,7 +134,7 @@ section("The layout panel: the Build list");
   act(st, { type: "endLayout" });
 }
 
-section("The no-build margin on a camp's map (a camp set up near the west edge of its 250 × 250 map: its view reaches it)");
+section("The no-build margin on a camp's map (a camp set up near the west edge of its 500 × 500 map: its view reaches it)");
 {
   const st = world(seed + 1);
   const h = asCamp(hub(st));

@@ -60,7 +60,7 @@ section("The no-build margin");
   check(BM.placeItem(st, h, keyOf(bunk), -N, -N, 0) === "" && bunk.at && bunk.at[0] === -N, `right up against the margin: fine (at ${bunk.at})`);
   check(/Off the map/.test(BM.placeItem(st, h, keyOf(bunk), -G - 1, 0, 0)), "off the map is still off the map");
   BM.unplaceItem(st, h, keyOf(bunk));
-  // The camp: a 250 × 250 grid like every base's; everything a camp may build still finds a spot.
+  // The camp: a 500 × 500 grid like every base's; everything a camp may build still finds a spot.
   const st2 = world(seed + 1), c2 = asCamp(hub(st2));
   rich(c2);
   // (Farm plots: as many as its soil takes, not its list's most: buildings.js canBuild soilRoom; four here.)
@@ -79,7 +79,8 @@ section("The no-build margin");
   check(!openView(st2, c2) && st2.combat && st2.combat.deployPlan.fort.noBuild === BM.NO_BUILD, "the camp's map opens; the fort record carries noBuild");
   const b = st2.combat, F = b.deployPlan.fort;
   const Gc = BM.gridHalf(c2);
-  check(Gc === 125 && F.W < 2 * Gc && F.W >= 2 * (BM.yardHalf(c2) + 2), `the camp's grid is 250 × 250; its view the yard and what stands round it (${F.W} × ${F.H})`);
+  check(Gc === BM.GRID_MAX && F.W < 2 * Gc && F.W >= 2 * (BM.yardHalf(c2) + 2), `the camp's grid is 500 × 500; its view the yard and what stands round it (${F.W} × ${F.H})`);
+  check(F.W === BM.VIEW_MIN && F.H === BM.VIEW_MIN && F.ox === BM.VIEW_MIN / 2 && F.oy === BM.VIEW_MIN / 2, `the view is never less than ${BM.VIEW_MIN} × ${BM.VIEW_MIN}, the camp in its middle (the user's request 2026-10-23; ${F.W} × ${F.H}, the camp at ${F.ox}, ${F.oy})`);
   st2.combat = null;
   // Set up near the map's edge (base.plan.origin, the camp's own spot): the view stops at the edge, its five cells tinted.
   c2.plan.origin = [BM.SITE_RANGE, 0];
@@ -87,6 +88,8 @@ section("The no-build margin");
   const E = BM.gridBox(c2).x1, b3 = st2.combat;
   check(cellAt(b3, E - 1, 0).nb === 1 && cellAt(b3, E - 5, 0).nb === 1 && !cellAt(b3, E - 6, 0).nb && !cellAt(b3, 0, 0).nb, "the view marks the margin's five cells (c.nb) and nothing nearer the camp");
   check(BM.gridOf(c2).cap <= BM.edgeRoom(c2) && BM.yardHalf(c2) + 2 + BM.NO_BUILD <= E, "its yard and the wall's band stop short of the margin");
+  const F3 = b3.deployPlan.fort;
+  check(F3.W === BM.VIEW_MIN && F3.H === BM.VIEW_MIN && E + F3.ox === F3.W, `by the edge the view is still ${BM.VIEW_MIN} × ${BM.VIEW_MIN}, slid back onto the map (${F3.W} × ${F3.H}, its east side the map's edge)`);
   st2.combat = null;
   delete c2.plan.origin;
 }
@@ -447,12 +450,12 @@ section("A way in and out");
     const layC = BM.layoutOf(stC, camp), autoC = BM.autoLayout(stC, camp);
     check(layC.length >= 12 && layC.every((e) => e.at) && layC.every((e) => BM.reachProblem(stC, camp, e.it, e.at, null, { auto: autoC }) === ""), `a camp with everything on its list: ${layC.length} things placed, all reachable`);
   }
-  // Performance: the check on a big hub (every base's grid is 250 × 250).
+  // Performance: the check on a big hub (every base's grid is 500 × 500).
   {
     const st = world(seed + 10), h = hub(st);
     for (let i = 0; i < 30; i++) addBuilding(h, i % 2 ? "bunkhouse" : "common_room");
     addBuilding(h, "walls");
-    check(BM.gridSize(h) === 250, `a hub with 30 buildings: a ${BM.gridSize(h)} × ${BM.gridSize(h)} grid`);
+    check(BM.gridSize(h) === BM.BASE_GRID, `a hub with 30 buildings: a ${BM.gridSize(h)} × ${BM.gridSize(h)} grid`);
     const it = { ...BM.FOOT.gen_hut, key: null, type: "gen_hut", label: "Hut", built: true };
     const occ = BM.occupancy(st, h, null, null);
     const tp = Date.now();

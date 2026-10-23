@@ -7,7 +7,7 @@
 // - Tents (tents.js): every bag the team brought is pitched (beds under cover, storage out of the weather); Strike camp
 //   packs them back into bags first, a camp removed any other way leaves them in its cache; bags in its armory go up
 //   daily while someone sleeps rough.
-// - Set up camp (team order, any land tile you could build on, any time): no materials. Where on the tile's 250 × 250
+// - Set up camp (team order, any land tile you could build on, any time): no materials. Where on the tile's 500 × 500
 //   map it goes is picked when the team gets there (the user's requests 2026-10-22: "choose where in the 250 x 250
 //   with a highlighted 10x10 to start ... set up camp with a camp fire", then "reduce to 5x5 with camp site in the
 //   middle"; askSite, ui/campsite.js; the game's own spot for the governor: basemap.js defaultSite). The work is the
@@ -60,7 +60,7 @@ import { keyWord, RAW } from "./water.js";
 import { formTeam, fleetPlan } from "./teamform.js";
 import { isBike, isCar, MAX_VEHICLES } from "./vehicles.js";
 import { itemLoad } from "./inventory.js";
-import { defaultSite, siteProblem, siteYield, clearCampSite, BASE_GRID } from "./basemap.js"; // the camp's own spot on its 250 × 250 map, its 5 × 5 cleared (call-time only)
+import { defaultSite, siteProblem, siteYield, clearCampSite, BASE_GRID } from "./basemap.js"; // the camp's own spot on its 500 × 500 map, its 5 × 5 cleared (call-time only)
 import { SITE } from "./basescatter.js";
 import { siteInfo, pickWords } from "./siteinfo.js"; // the spot's facts: why the game picked its own (call-time only)
 import { clearSiteFirst, threatWords } from "./siteclear.js"; // the dead at a town's, a city's or an infected tile's camp spot cleared first
@@ -200,7 +200,7 @@ export function pitchArrive(state, p, mission) {
 export const establishArrive = (state, p) => pitchArrive(state, p, "establish");
 
 // ---------- the camp's spot (the user's request 2026-10-22) ----------
-// A team of yours about to set up camp asks where on the tile's 250 × 250 map (state.siteAsk: party ids, the window
+// A team of yours about to set up camp asks where on the tile's 500 × 500 map (state.siteAsk: party ids, the window
 // ui/campsite.js; it holds the clock). The answer is p.campAt ([x, y] from the map's middle: the fire in the middle of
 // the 5 × 5; the pitching's hours set again for it: setHours); a team with nobody to ask (the governor's, a pick put off, a spot that no longer takes the camp) gets the
 // game's own (basemap.js defaultSite).
@@ -291,7 +291,7 @@ export function makeCamp(state, p, tile, { up = false } = {}) {
     stock: { water: 0, fuel: 0, meds: 0, ammo: 0, arrows: 0, parts: 0, scrap: 0, jars: 0, wood: 0, buildmat: 0, metalsheet: 0, [RAW]: 0 }, // arrows, wood: every base keeps the count (a camp read arrows = undefined: farmtest 43)
     radio: false, watchtower: false, buildings: [], construction: [], armory: [],
     tier: 0, camp: true, fire: true, campDay: day(state), lastPresent: state.hour, first: firstHubPending(state) && !hubNow, tentsSet: true, // tentsSet: a new camp has no tents (no beds) until one is put up (buildings.js TENTS)
-    plan: { plots: [], origin: campSiteFor(state, p, tile), fresh: true }, // its spot on the tile's 250 × 250 map (basemap.js originOf, freshBase)
+    plan: { plots: [], origin: campSiteFor(state, p, tile), fresh: true }, // its spot on the tile's 500 × 500 map (basemap.js originOf, freshBase)
     land: { v: 2, n: 1, cleared: {}, looted: {} }, // the land read from the start (basemap.js ensureLand would clear the ground under what the game places)
   };
   delete p.campAt;

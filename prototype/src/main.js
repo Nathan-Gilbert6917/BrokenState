@@ -78,7 +78,7 @@ import { TEAMFORM_ACTIONS, TEAMFORM_CHANGE, teamFormDrop, teamFormKey, teamFormE
 import { CARRY_ACTIONS, CARRY_CHANGE, carryHtml, askQty, carryKey } from "./ui/carry.js"; // supplies in pockets, packs and arms; the ground; how much to collect
 import { renameBase } from "./sim/basenames.js";
 import { BN_ACTIONS, BN_INPUT, bnKey, nameModalUp } from "./ui/basename.js"; // naming a base you found, renaming any base
-import { CS_ACTIONS, siteViewDue } from "./ui/campsite.js"; // the camp's spot on its tile's 250 × 250 map, in the isometric view
+import { CS_ACTIONS, siteViewDue } from "./ui/campsite.js"; // the camp's spot on its tile's 500 × 500 map, in the isometric view
 import { stackKey, stackInput, stackWheel, dropPoint } from "./ui/stackmove.js"; // the stack mover: Enter / Esc, the slider live, the wheel, the drop popover
 import { GB_ACTIONS, GB_CHANGE } from "./ui/gunbuilder.js"; // the gun builder
 import { FARM_ACTIONS, FARM_CHANGE } from "./ui/farming.js";

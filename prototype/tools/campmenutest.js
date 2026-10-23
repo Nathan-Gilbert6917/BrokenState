@@ -71,7 +71,7 @@ check(!st.parties.includes(p) && people.every((id) => atBase(st, camp.id).some((
 check(car && car.loc.kind === "base" && car.loc.baseId === camp.id, "its vehicle is parked at the camp");
 check(camp.armory.some((it) => it.key === "crowbar") && camp.stock.scrap >= 9 && food(camp) >= 20, "what it carried is in the camp's stores and armory (less the meals of the setup)");
 check(!tierUpJob(camp), "a plain camp: nothing building until you queue the step up");
-check(camp.plan && camp.plan.fresh && camp.plan.origin.join() === spot.join() && gridSize(camp) === 250, `the camp stands where it was put on its 250 × 250 map (${camp.plan && camp.plan.origin})`);
+check(camp.plan && camp.plan.fresh && camp.plan.origin.join() === spot.join() && gridSize(camp) === 500, `the camp stands where it was put on its 500 × 500 map (${camp.plan && camp.plan.origin})`);
 const cl = camp.land && camp.land.cleared;
 check(!!cl && [[-2, -2], [2, 2], [0, 0], [-2, 2]].every(([x, y]) => cl[`${x},${y}`]) && !landFor(st, camp).list.some((q) => q.k !== "water" && q.cells.some(([x, y]) => x >= -2 && y >= -2 && x < 3 && y < 3)), "its 5 × 5 round the fire is cleared: nothing of the land left in it");
 check(Object.entries(siteGet).every(([k, v]) => (camp.stock[k] || 0) >= v + (stockBefore[k] || 0) - (k === "wood" ? 5 : 1e-9)), `what the land there gave is in its stores (${Object.entries(siteGet).map(([k, v]) => `${v} ${k}`).join(", ") || "nothing"})`);

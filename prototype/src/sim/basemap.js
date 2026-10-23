@@ -4,7 +4,7 @@
 // (fort.js builds the battle from it), so where things stand is where they are defended.
 //
 // The grid (BASE_GRID, the user's request 2026-10-22: "Increase the Base map sizes to be all the same 250x250 base
-// size"): every base's map is 250 × 250, a camp's as a hub's. Within it the yard grows by tier (GRID: a camp's 20 × 20
+// size"): every base's map is 500 × 500, a camp's as a hub's. Within it the yard grows by tier (GRID: a camp's 20 × 20
 // round the camp itself, a shelter's 24, an outpost's 32 growing to 100 and the main hub's 48 growing to 180 as
 // buildings go up: "scale up and down": the yard half-size grows GRID.per cells a building with a footprint, up to
 // GRID.cap, never past the map's edge (gridOf) and never below what is placed). Coordinates are relative to the base
@@ -22,7 +22,9 @@
 // The battle map (fort.js buildFort) is the grid cropped to what stands on it (the band, every defence and car) plus
 // FORT.MARGIN of open ground all round, so attackers come at it from the north, east, south or west edge as they did
 // on the fort map; the Base map tab's view (openBaseMap) shows VIEW_PAD cells more, so there is room to place things
-// further out, and the view grows as they are placed.
+// further out, and the view grows as they are placed. The view is never less than VIEW_MIN (150 × 150) round the base
+// (the user's request 2026-10-23: "Increase base size from 56x56 to 150x150 selected from a 500x500 map from 250x250":
+// a new camp's view was 56 × 56, the tile's map 250 × 250 before BASE_GRID went to 500).
 //
 // Placement (placeItem / placeProblemAt): every building, construction job, crop plot and car is an item (itemsOf)
 // with a footprint (FOOT: w × h cells and what it is on the map, turned by r = 0–3 quarter turns) and a position: the
@@ -145,10 +147,11 @@ export const GRID = {
   outpost: { core: 6, yard: 16, per: 2, cap: 50 },  // 32 growing to 100
   hub:     { core: 8, yard: 24, per: 3, cap: 90 },  // 48 growing to 180
 };
-export const BASE_GRID = 250; // every base's map: 250 × 250 cells
+export const BASE_GRID = 500; // every base's map: 500 × 500 cells
 export const GRID_MAX = BASE_GRID / 2; // the grid's half-size
 export const MARGIN = 8;     // open ground round what stands on the battle map (fort.js FORT.MARGIN)
 export const VIEW_PAD = 8;   // the Base map view shows this much more than the battle map
+export const VIEW_MIN = 150; // the Base map view is never smaller than 150 × 150 round the base (the user's request 2026-10-23)
 // The no-build margin (the user's request 2026-10-19, "a 5 tile margin around the edge of the map as a no build
 // section"): the cells within this many of the grid's edge take nothing, by hand or by the game (placeProblemAt).
 export const NO_BUILD = 5;
@@ -869,7 +872,7 @@ export function finishClear(state, base, job) {
 }
 // ---------- the camp's spot (the user's request 2026-10-22) ----------
 // "When you establish a base choose where in the 250 x 250 with a highlighted 10x10 to start": the land of a tile on
-// its 250 × 250 map before any base stands on it (map coordinates, the middle 0, 0: the picker, ui/campsite.js), why a
+// its 500 × 500 map before any base stands on it (map coordinates, the middle 0, 0: the picker, ui/campsite.js), why a
 // spot cannot take the camp, and the game's own spot (the governor, a team with nobody to ask, a pick put off).
 // SITE_RANGE: the farthest the camp's middle may be from the map's middle, so its yard, the wall's band round it and
 // the no-build margin stay on the map (gridOf: the yard grows only as far as the edge allows).
@@ -1491,7 +1494,7 @@ export function reachProblem(state, base, it, at, occ, opts = {}) {
   const core = coreParts(base);
   if (it && at && it.key) pos.set(it.key, at);
   // The walk is worked out over what stands (the core, everything counted, the candidate) and REACH_PAD cells round it,
-  // within the map: beyond that is the base's open land, walked round anything in it (every base's map is 250 × 250,
+  // within the map: beyond that is the base's open land, walked round anything in it (every base's map is 500 × 500,
   // and a flood over all of it for each spot the game tries made a camp's layout eight times slower).
   const GB = gridBox(base);
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
@@ -1606,6 +1609,12 @@ export function buildBaseMap(state, base, rng, opts = {}) {
   }
   const pad = MARGIN + (view ? VIEW_PAD : 0);
   x0 = Math.max(GB.x0, x0 - pad); y0 = Math.max(GB.y0, y0 - pad); x1 = Math.min(GB.x1, x1 + pad); y1 = Math.min(GB.y1, y1 + pad);
+  // The view is at least VIEW_MIN across each way round the base, slid back onto the map by its edge.
+  if (view && !site) {
+    const h = VIEW_MIN / 2;
+    const fit = (a0, a1, g0, g1) => { a0 = Math.min(a0, -h); a1 = Math.max(a1, h); if (a0 < g0) { a1 = Math.min(g1, a1 + g0 - a0); a0 = g0; } if (a1 > g1) { a0 = Math.max(g0, a0 - (a1 - g1)); a1 = g1; } return [a0, a1]; };
+    [x0, x1] = fit(x0, x1, GB.x0, GB.x1); [y0, y1] = fit(y0, y1, GB.y0, GB.y1);
+  }
   if (site) ({ x0, y0, x1, y1 } = GB);
   const W = x1 - x0, H = y1 - y0, ox = -x0, oy = -y0; // grid (gx, gy) → map (gx + ox, gy + oy)
   const cells = Array.from({ length: W * H }, () => ({ k: "open", f: "grass" }));
@@ -2448,7 +2457,7 @@ function viewBattle(state, base, prev = null, site = false) {
 }
 // The camp's spot picked on the tile's own map, in the same isometric view (the user's request 2026-10-22: "For the
 // campsite selection I was thinking keep the isometric view just have a isometric highlight of the 5x5 area"): the
-// tile's whole 250 × 250 map with its land and nothing built (buildBaseMap site), made from a stand-in camp that is on
+// tile's whole 500 × 500 map with its land and nothing built (buildBaseMap site), made from a stand-in camp that is on
 // the books only while the view is made, and b.site = { partyId, tile, sel (the spot clicked: map coordinates of the
 // fire), focus (where the view opens: the game's own spot) }. No units, no layout record: the clicks pick the spot
 // (ui/combat.js siteClick), the 5 × 5 under the mouse is drawn as the view's ghost (siteGhostAt), the panel is

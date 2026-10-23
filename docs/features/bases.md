@@ -16,7 +16,7 @@ Camp, shelter, outpost and hub. Camps can be set up, struck and upgraded [stagin
 ### Your base's tile keeps its places
 - The user's word 2026-10-23: "When you set up a base you can raid the other POIs on the same tile and show the base on the POI map".
 - A team sent from the base raids them: ui tileActions on a base tile (Raid a place on this tile, Survey this tile); ui/teamctx (Raid a place here).
-- The team walks over from the base: poiwalk baseSpot (where its camp stands on the 250 × 250 map, scaled into the hex and kept off the places; walkFrom).
+- The team walks over from the base: poiwalk baseSpot (where its camp stands on the 500 × 500 map, scaled into the hex and kept off the places; walkFrom).
 - The POI map draws the base with its State Map sprite and name (ui/poimap baseSvg). The POI map is larger (PM.R 250); the hint box beside it is gone until a place is picked (ui/poipick).
 
 ### Picking the camp's spot
@@ -27,7 +27,7 @@ The user's requests 2026-10-22:
 - "keep the isometric view just have a isometric highlight of the 5x5 area"
 
 Rules:
-- On arrival the team asks **where on the tile's 250 × 250 map** the camp goes (staging askSite / pendingSite / pickSite / autoSite / campSiteFor).
+- On arrival the team asks **where on the tile's 500 × 500 map** the camp goes (staging askSite / pendingSite / pickSite / autoSite / campSiteFor).
 - **Isometric site view**: the tile's whole map with its land and nothing built (basemap openSiteView: buildBaseMap site, from a stand-in camp on the books only while it is made; b.site). Opened by main.js tidyUi through ui/campsite.js siteViewDue; the clock is held as by any battle screen.
 - The **5 × 5** under the mouse is drawn with the fire in its middle cell, green where it can go, red where not, the picked one gold with "Camp fire here" (siteGhostAt, ui/isoview.js). A click picks (siteClickAt).
 - Hover line and panel say how long the spot takes this team and what it gives, with the axe's difference (ui/campsite.js siteHoverText / sitePanel). Set up camp here (Enter) or Let the game pick (Esc).
@@ -108,9 +108,9 @@ The user's request 2026-10-19.
 Modules: [basemap, ui/basemap, ui/combat]. Screens: [docs/map-layers/](../map-layers/).
 
 ### The grid
-- Every base's own map, 250 × 250 for every base (basemap BASE_GRID). The yard round the base grows by tier, a camp's 20 × 20 up to a hub's 180 × 180, never past the edge (gridOf edgeRoom).
+- Every base's own map, 500 × 500 for every base (basemap BASE_GRID; 250 × 250 until the user's request 2026-10-23: "Increase base size from 56x56 to 150x150 selected from a 500x500 map from 250x250"). The yard round the base grows by tier, a camp's 20 × 20 up to a hub's 180 × 180, never past the edge (gridOf edgeRoom).
 - The camp, shelter or base stands where its camp was set up (base.plan.origin). An older base, or one occupied, taken or handed over, sits in the middle; gridBox is the map's extent round it.
-- The Base map view shows the yard and what stands or is cleared round it. Buildings, crop plots, defences, wall pieces and parked cars are placed by hand or by the game: anywhere, right against anything, never on top of something else, on the wall's ring (wall pieces may), in a doorway or within the no-build margin.
+- The Base map view shows the yard and what stands or is cleared round it, never less than **150 × 150** round the base (basemap VIEW_MIN; a new camp's view was 56 × 56), slid back onto the map by its edge; the battle map a raid or horde fights on is still cropped to what stands. The camp's spot is picked on the tile's whole 500 × 500 map. Buildings, crop plots, defences, wall pieces and parked cars are placed by hand or by the game: anywhere, right against anything, never on top of something else, on the wall's ring (wall pieces may), in a doorway or within the no-build margin.
 - Always a way in and out on foot (basemap reachProblem: everything reachable from the map's edge, gates and doors counting).
 - Outlines for buildings going up; it is the map a horde or raid fights over.
 - Building from the map: the Build list (wall pieces under Defences); a ghost follows the mouse; a click queues and places. The selected thing's card shows its fittings, neighbours and their doorways, Move, Demolish.
@@ -156,7 +156,7 @@ Modules: [basemap, ui/basemap, ui/combat]. Screens: [docs/map-layers/](../map-la
 
 ### Farmland's fenced fields
 - The user's request 2026-10-23: "Fix fences for farmland tiles to not be random singular fences make them square, go off screen and have a gate to enter the inside of the fenced area".
-- On farmland (plains) and a farm's fields (basemap terrainOf "farm") the old fence runs are gone; the fences are fields (basescatter fieldLayer, FIELD): at most one to a 48-cell REGION of the map (chance P: farm 0.85, plains 0.45), a square of fence 22–42 cells a side (S), 3 or more cells in from its region's edge (GAP: a lane between fields). The regions' grid is shifted by the tile's dice (laid on the map's middle it lined up with a hub's 96-cell view, whose edges then always fell in the lanes) and runs on past the map, so the ring of them round the 250 × 250 map runs off its edge: those fields are cut by it, and by a base view's edge.
+- On farmland (plains) and a farm's fields (basemap terrainOf "farm") the old fence runs are gone; the fences are fields (basescatter fieldLayer, FIELD): at most one to a 48-cell REGION of the map (chance P: farm 0.85, plains 0.45), a square of fence 22–42 cells a side (S), 3 or more cells in from its region's edge (GAP: a lane between fields). The regions' grid is shifted by the tile's dice (laid on the map's middle it lined up with a hub's 96-cell view, whose edges then always fell in the lanes) and runs on past the map, so the ring of them round the 500 × 500 map runs off its edge: those fields are cut by it, and by a base view's edge.
 - **Over the fences** (the user's word 2026-10-23: "allow vaulting over fences"): both kinds are climbed over in a fight (combat vaultable: +VAULT.COST tiles, a scuff, winded after), the dead crawl over them (+CRAWL.COST), nobody ends a move on one; the field gate is walked through.
 - **Wood and wire** (the user's word 2026-10-23: "Add wire fences and wood fences"): a field's fence is post and rail (`fence`, half cover, 10 wood to pull down a panel) or, FIELD.WIRE of the fields (farm 0.4, plains 0.55), post and wire (CELL `wirefence` "Wire fence": no cover, seen through, climbed over by the living and crawled over by the dead like half cover: combat vaultable OVER; smashed open by a brute; torn down for 6 wood (its post) and 1 scrap a panel, worked by the woodcutters like the wooden ones); drawn as a weathered post and three strands of plain wire (ui/isoview). The gate is wooden either way.
 - **Off the map** (the user's words 2026-10-23: "Show it going off the map and not just terminating", then "Fill in the gap"): a field's fence is the one piece of the land laid right out to the map's edge cell (basescatter layLand; everything else keeps off the outermost ring, the attackers' open ground, and the fence is climbed and crawled over, so the ring is still crossed all the way round). Where a fence line meets the edge (its edge cell and the one in from it), the view runs it on straight out across the edge's skirt (ui/battleedge) into the fog, fading with it (ui/isoview offEdgeFences, drawn by depth with the cells). Scenery only, like the skirt.
