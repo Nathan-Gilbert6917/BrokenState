@@ -131,6 +131,7 @@ import { BED_FOOT } from "./data-beds.js"; // beds as furniture: a cot, bed or b
 import { setFurnitureAt, furnitureInStores } from "./beds.js"; // beds as furniture: set from the stores where the ghost is (call-time only)
 import { POWER_FOOT, SPOT } from "./data-power.js"; // the power grid: found generators, spotlights (on a wall stand or the ground), fridges, the panel, the press, the pump, the charger
 import { isSetPiece, setPlacedAt, placedInStores, spotOn, fenceCharged } from "./electric.js"; // set from the stores; a spotlight lit, the wire charged (call-time only)
+import { pondsOn, pondWhy, pondWaits } from "./ponds.js"; // the hollows' ponds and mud: nothing built on them or filled in until dry
 
 // The grid by tier: core = the half-size of the middle structure's own ground, yard = the yard's half-size to start
 // with, per = yard growth a building with a footprint, cap = the yard's largest half-size (never past the map's edge,
@@ -604,6 +605,7 @@ export function occupancy(state, base, skip = null, auto = null) {
   const skips = skip instanceof Set ? skip : new Set(skip ? [skip] : []);
   const occ = { foot: new Map(), door: new Map(), floor: new Map(), names: new Map(), stand: new Set(), mount: new Set(), land: landFor(state, base), work: new Map() }; // land: what has to be cleared before anything is built on it (basescatter.js); work: the ground being terraformed (terraform.js)
   for (const [k, j] of terraBusy(base)) { const [x, y] = k.split(",").map(Number); occ.work.set(K(x, y), j); }
+  if (occ.land && occ.land.heights && occ.land.heights.size) occ.ponds = pondsOn(state, base.tile); // ponds.js: the hollows wet or dry today (placeProblemAt)
   for (const p of coreParts(base)) markOcc(occ, p, [p.x, p.y, 0], "core");
   const items = itemsOf(state, base), pos = new Map();
   for (const it of items) {
@@ -653,6 +655,8 @@ export function placeProblemAt(base, it, x, y, r, occ, dims = null) {
   // The land (basescatter.js): every piece on its cells (and on the cells outside its doors) cleared first. Not inside a
   // standing building (a fitting, a bench on its floor): its ground was cleared when it went up.
   if (occ.land && !(host != null) && !mounted) {
+    const wet = occ.ponds ? pondWhy(occ.ponds, occ.land.heights, rectCells(it, at)) : ""; // ponds.js: a pond or mud in a hollow, until it dries
+    if (wet) return wet;
     const hit = landUnder(occ.land, it, at);
     if (hit.length) return landWhy(hit);
   }
@@ -938,6 +942,7 @@ export function clearCampSite(state, base) {
 // Does this construction job wait for its site to be cleared (the game placed it over the land: autoLayout's second
 // pass)? Its clearing is queued just before it the first time it is asked. (buildings.js constructionHour.)
 export function siteWaits(state, base, job) {
+  if (job && job.type === "clear") { const land = job.pieces && job.pieces.some((p) => p.k === "dip") ? landFor(state, base) : null; return !!land && pondWaits(state, base, job, land.heights); } // ponds.js: a wet hollow is filled in once it is dry
   if (!job || job.type === "clear" || job.target || !FOOT[job.type]) return false;
   const land = landFor(state, base);
   if (!land) return false;

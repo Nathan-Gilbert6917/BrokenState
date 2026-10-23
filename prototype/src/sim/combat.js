@@ -30,6 +30,7 @@
 //   turns?, medsUsed?, extraKilled?    // optional extras from the tactical engine
 // }
 import { applyRelief } from "./relief.js"; // hills, hollows and crag on a hills or mountain tile
+import { pondsBattle, wetCost, wadeAim } from "./ponds.js"; // the hollows' ponds, mud and ice, the slopes in the rain and in winter
 import { typeFind, AREA_MIX } from "./foods.js"; // the food in a container as items
 import { survivorById, factionById, alive, atBase, homeAt, combatPower, hurt, log, skill, gearEffect, isNight, usesArrows, armedFactor, arrowsBack, meleeAimBonus, meleeDmgMult } from "./world.js";
 import { partyMembers, partyTile, partyCapacity, cargoLoad, cargoRoom, unitsThatFit, wipeParty, leaveVehicle } from "./parties.js";
@@ -2582,7 +2583,7 @@ function climbCost(b, x, y, nx, ny, diag, per, h = hAt) {
   const dh = Math.abs(h(b, nx, ny) - h(b, x, y));
   if (!dh) return 0;
   // Over the ground (a hill, a hollow): a level at a step, any way.
-  if (h === hAt) { const g0 = groundH(b.cells[idx(x, y)]), g1 = groundH(b.cells[idx(nx, ny)]); if (g0 != null && g1 != null && dh <= TERRAIN_STEP) return dh * per; }
+  if (h === hAt) { const g0 = groundH(b.cells[idx(x, y)]), g1 = groundH(b.cells[idx(nx, ny)]); if (g0 != null && g1 != null && dh <= TERRAIN_STEP) return dh * per * (b.climbX || 1); } // climbX: harder in the rain, harder still in winter (ponds.js climbWx)
   if (diag || !(climbAt(b, x, y) || climbAt(b, nx, ny))) return Infinity;
   return dh * per;
 }
@@ -2646,7 +2647,7 @@ export function reachable(b, u, maxCost, opts = {}) {
       if (avoid && avoid.has(j)) continue;
       const climb = climber ? Math.abs(hAt(b, nx, ny) - hAt(b, x, y)) + (cellAt(b, nx, ny).walk && !barredCell(b.cells[j]) ? 0 : MIDDEAD.CLIMBER.COST) : climbCost(b, x, y, nx, ny, diag, per);
       if (climb === Infinity) continue;
-      const step = (diag ? 1.5 : 1) + climb + (vault ? overCost(b, u, b.cells[j]) : 0) + (soft ? softCost(b.cells[j]) : 0); // a vault, a clamber through a window, the dead's crawl (barricade.js); into a bush or a tent (softcover.js)
+      const step = (diag ? 1.5 : 1) + climb + (vault ? overCost(b, u, b.cells[j]) : 0) + (soft ? softCost(b.cells[j]) : 0) + wetCost(b.cells[j]); // a vault, a clamber through a window, the dead's crawl (barricade.js); into a bush or a tent (softcover.js); into water, mud or ice (ponds.js)
       const nr = real[cur] + step, nd = aw ? d[cur] + step + aw[j] : nr;
       if (nr <= maxCost + 1e-6 && nd < d[j]) {
         if (d[j] === Infinity) { open.push(j); reached.push(j); }
@@ -2722,7 +2723,7 @@ export function distField(b, sources, walker = null) {
     sideA[i] = cellAt(b, x, y).walk || ov ? 1 : 0; // a vaulted cell is no corner to cut either (as reachable)
     climbA[i] = climbAt(b, x, y) ? 1 : 0;
     hA[i] = h(b, x, y);
-    overA[i] = ov ? MIDDEAD.CLIMBER.COST : vl ? (vaulter ? vaultCost(b, c, walker) : windowOpen(c) ? VAULT.COST : CRAWL.COST) : soft ? softCost(c) : 0; // a Climber's wall, a person's vault (a window crashed through dearer), the dead through a window, the dead's crawl over half cover; into a bush or a tent (softcover.js)
+    overA[i] = (ov ? MIDDEAD.CLIMBER.COST : vl ? (vaulter ? vaultCost(b, c, walker) : windowOpen(c) ? VAULT.COST : CRAWL.COST) : soft ? softCost(c) : 0) + wetCost(c); // a Climber's wall, a person's vault (a window crashed through dearer), the dead through a window, the dead's crawl over half cover; into a bush or a tent (softcover.js); into water, mud or ice (ponds.js)
     bashA[i] = !ov && !vl && siege && (breakable(c) && (!CELL[c.k].walk || (barredCell(c) && !doorOpens(b, walker, c)))) ? SIEGE.COST + c.hp * SIEGE.PER_HP : 0;
   }
   // A binary heap of (distance, cell), stale entries skipped: the same field as scanning for the nearest open cell,
@@ -2915,6 +2916,10 @@ export function shotOdds(b, a, t, ax = a.x, ay = a.y, opts = {}) {
   // Smoke and flares (throwables.js): a shot into or out of a cloud, anyone at a target in a flare's light at night.
   if (b.smoke && b.smoke.length && (smokeAt(b, tx, ty) || smokeAt(b, ax, ay))) aim -= SMOKE.aim;
   P && mark("Smoke");
+  // Standing in a pond (ponds.js): up to the waist in water, no footing to shoot from.
+  const wade = inside(ax, ay) ? wadeAim(b.cells[idx(ax, ay)]) : 0;
+  if (wade) { aim -= wade; notes.push(`wading −${wade}`); }
+  P && mark("Shooting from the water");
   // In a bush or a tent, or right next to one (softcover.js): hard to make out from more than a tile off; no cover.
   const hid = softOn(b) ? concealAim(b, t, tx, ty, ax, ay) : null;
   if (hid) { aim -= hid.aim; notes.push(`concealed ${hid.why} −${hid.aim}`); }
@@ -3915,6 +3920,7 @@ export function createBattle(state, setup) {
     layout(b, layoutCtx("map"));
     b.reach = flood(b.cells, 0, Math.floor(H / 2));
   }
+  pondsBattle(state, b, b.tileId ?? (base ? base.tile : null)); // ponds.js: the hollows' water, mud or ice by the tile's weather (a base's map: its tile); the slopes in the rain or in winter
   if (b.doors) b.doors = b.doors.filter((d) => b.cells[idx(d.x, d.y)].k === "door");
   // The team's car or truck on the field (placeVehicle): by the west edge, on the road when there is one. It can be
   // driven (DRIVE) and the siege ram rides in it (siege.js), so nobody has to carry it to the wall.
@@ -7060,6 +7066,7 @@ export function createRaid(state, setup) {
     b.raid.stairs = map.stairs.map((s) => s.slice());
   } else if (pick) { b.raid.storeys = 1; b.raid.stairs = []; }
   if (b.vehicle) { b.vehicle.seats = SEATS[b.vehicle.kind === "bike" ? "bike" : (pv && pv.type) || "sedan"] ?? 4; fitMapVehicle(b, pv); } // who can ride in it (boardVehicle); its upgrades
+  pondsBattle(state, b, b.tileId); // ponds.js: the hollows' water, mud or ice by the tile's weather; the slopes in the rain or in winter
   b.reinfMax = 0;
   b.zmix = (() => { const m = ((setup.enemy.groups || []).find((g) => g.kind === "zombies") || setup.enemy).mix; return maxMix(armoredOf(m), beastsOf(m)); })(); // the dead drawn in by the Heat: the armoured dead, the dead beasts of the land (deadbeasts.js)
   const occupied = (x, y) => !!unitAt(b, x, y);

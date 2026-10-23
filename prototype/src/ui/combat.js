@@ -25,6 +25,7 @@ import { WINDOW, windowsBy, windowState, windowWord, openRefusal, isWindow, wind
 import { WIRE, cutTargets, cutRefusal, cutterOf } from "../sim/wire.js"; // Cut wire (the user's request 2026-10-19)
 import { SHOVE, BOARD, CRAWL, shoveTargets, shoveDests, shoveRefusal, shovePlan, tallPiece, canShove, shoveable, pieceName, boardTargets, boardRefusal, boardsOf, tearTargets, isBoarded, boardedName, boardedUnder, targetWord } from "../sim/barricade.js"; // furniture shoved in the way, doors and windows boarded up (the user's request 2026-10-18)
 import { INTERIOR } from "../sim/interior.js";
+import { wetWord, climbWord } from "../sim/ponds.js"; // a hollow's pond, mud or ice; the climb in the rain or in winter
 import { PARLEY, parleyStatus, parleyGroupsSeen, callOutRefusal, callOutTargets } from "../sim/parley.js"; // other groups on a raid's map: Call out, hostile or not (the user's request 2026-10-20)
 import * as PARLEY_SIM from "../sim/parley.js"; // the exports that may not be there yet (shoutCost), looked up when present
 import { ALLY_ORDER, ALLY_ORDERS, allyOrderTargets, allyOrderRefusal, allyOdds, allyOrderOf, allyOrdersShown } from "../sim/allyorders.js"; // orders to allies on a raid's map (the user's request 2026-10-21)
@@ -3622,6 +3623,7 @@ function previewText(b, state = null) {
   const vaultWord = !cell.walk && SIM.vaultable(b, cobj) ? (u && !SIM.canVault(u) ? ` <span class="muted">Could be vaulted, not by ${esc(u.name.split(" ")[0])} now (pushing a cart, carrying or dragging a body, or down; and not the dead).</span>` : ` <span class="muted">Can be vaulted: a move may go over it at +${u && handsBusy(u) ? `${2 + 2 * SIM.VAULT.COST} tiles (twice the movement with the hands full)` : `${SIM.VAULT.COST} tiles`} (never end on it), a scuff heard nearby, and ${SIM.VAULT.COST} tiles less of movement for the rest of the turn.${cell.cover === 1 && cobj.k !== "window" ? ` The dead crawl over it at +${CRAWL.COST} tiles.` : ""}</span>`) : "";
   // A piece of furniture that can be shoved (sim/barricade.js): from right next to it, both actions.
   const shoveWord = shoveable(cobj) ? ` <span class="muted">Can be shoved a tile (Shove, ${SHOVE.AP} actions alone or ${SHOVE.HELP_AP} each with a helper${tallPiece(cobj) ? `; two people, or a Strong back or Melee ${SHOVE.STRONG_MELEE}+` : ""}, from right next to it${cobj.moved ? "; moved already" : ""}${cobj.frame ? "; standing in a door frame" : ""}): in a doorway it blocks the way${cell.cover === 2 ? ": the dead batter it (its hit points) or go round" : ""}.</span>` : "";
+  if (!cell.walk && cobj.wet) return `${wetWord(cobj)}`; // a pond's deep middle (sim/ponds.js)
   if (!cell.walk) return `<b>${cobj.mhp ? structureName(cobj) : cell.name}</b>: ${cell.cover === 2 ? "full cover" : cell.cover === 1 ? "half cover" : "no cover"}${cell.los || cobj.t ? ", blocks sight from the ground" : ""}. Cannot stand here.${struct}${vaultWord}${shoveWord}`;
   const sides = coverSides(b, h.x, h.y);
   const best = Math.max(...sides);
@@ -3649,6 +3651,9 @@ function previewText(b, state = null) {
   if (cobj.k === "spikes") s += ` <b>Spike pit</b><span class="muted">: the dead are impaled and blunder on; raiders and anyone else not of yours fall in, hurt, and stop there. Your people know where the pits are.</span>`; // sim/combat.js SPIKES
   const soft = softWord(cobj); // sim/softcover.js
   if (soft) s += ` <span class="muted">${soft}</span>`;
+  // A hollow's pond, mud or ice by the weather (sim/ponds.js), and the climb up and down the ground in the rain or in winter.
+  if (cobj.wet) s += ` ${wetWord(cobj)}`;
+  if (cobj.ter && hh && climbWord(b)) s += ` <span class="warn">${climbWord(b)}</span>`;
   if (cobj.k === "wire") s += ` <b>${cobj.razor ? "Razor wire" : "Barbed wire"}</b><span class="muted">: the dead stop for the turn${cobj.razor ? " and are cut" : ""}; the living are snagged (the rest of the turn, a few cuts) unless they carry a cutter (Cut wire).</span>`; // sim/wire.js
   if (b.tier && b.tier.indoor && b.tier.indoor[h.y * W + h.x]) s += ` Inside ${esc((b.tier.buildings || []).find((x) => x.cells.some(([cx, cy]) => cx === h.x && cy === h.y))?.name || "a building")}.`;
   if (room) s += ` ${esc(room.name)}${room.type ? ` (${esc(areaHint(room.type).replace(/^Likely: /, "likely ").toLowerCase())})` : ""}.`;

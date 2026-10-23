@@ -66,6 +66,7 @@ import { crewHour } from "./crews.js";
 import { woundTrauma } from "./health.js";
 import { weatherHour, weatherDaily } from "./weather.js";
 import { riversHour } from "./rivers.js"; // frozen rivers: freeze and thaw (who is on the ice, ways over it)
+import { pondsDaily } from "./ponds.js"; // the hollows round your bases: ponds, mud, ice by the weather
 import { coverNodes, radioDaily } from "./radio.js";
 import { diaryRecord } from "./diary.js";
 import { onDeath } from "./relations.js";
@@ -1063,6 +1064,7 @@ function hourOfWorld(state) {
     watchDayRoles(state); // watch.js: Manual people on watch likewise
     helpDayRoles(state); // noidle.js: a Manual person whose job had no work counts at the job they helped with
     weatherDaily(state); // first, so the day's farming, water and sickness read today's weather
+    pondsDaily(state); // ponds.js: your bases' hollows a day on (filled by the rain, drained, dried, frozen)
     basesDaily(state);
     storageDaily(state); // basestorage.js: items left outside past a base's storage wear (rain and snow double it)
     craftingDaily(state);
