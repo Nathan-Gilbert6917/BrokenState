@@ -51,7 +51,8 @@ import { fireDayBurn } from "./woodcutting.js"; // the fire's burn a day (fire-n
 import * as Weather from "./weather.js";
 import { partyMembers, partyTile, tileLabel, teamName, awaitOrders, outpostName, settleInto, carryCapacity } from "./parties.js";
 import { firstHubPending, hubFounded } from "./hardcore-start.js";
-import { isSettlementTile, SETTLEMENT_WHY } from "./startpick.js"; // a town's or a city's tile: no base there
+import { CRAWL_WHY } from "./startpick.js"; // a town's or a city's crawl tile: no base there
+import { crawlTile } from "./citycrawl.js"; // (call-time only)
 import { askBaseName } from "./basenames.js"; // the naming popup for a camp meant to grow
 import { keyWord, RAW } from "./water.js";
 import { formTeam, fleetPlan } from "./teamform.js";
@@ -131,7 +132,7 @@ export function campProblem(state, tile) {
   if (!t || (t.terrain === "water" && !t.bridge)) return "Not on open water.";
   if (t.hive) return "Not on a hive.";
   if (state.bases.some((b) => b.tile === tile)) return "You already have a base here.";
-  if (isSettlementTile(t)) return SETTLEMENT_WHY; // startpick.js: no base in a town or a city (2026-10-22)
+  if (crawlTile(t)) return CRAWL_WHY; // citycrawl.js: no base on a town's or a city's crawl tile (2026-10-23; elsewhere in a town the dead are cleared first: siteclear.js)
   if (state.factions.some((f) => f.alive && f.bases.includes(tile)) || (t.owner != null && t.owner !== "player")) return "Another group holds this land.";
   return null;
 }

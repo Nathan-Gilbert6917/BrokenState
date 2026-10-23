@@ -19,6 +19,7 @@
 //     the selected base's map (its window open, or its tile selected), says why with nothing selected, and does
 //     nothing behind another window.
 // Usage: node tools/buildmapbtntest.js [seed]
+import { siteThreat } from "../src/sim/siteclear.js";
 import { readFileSync } from "node:fs";
 import { createWorld, tickHour, hub, atBase, day } from "../src/sim/world.js";
 import { launchExpedition, giveOrder, planPath, PITCH_HOURS } from "../src/sim/parties.js";
@@ -58,7 +59,9 @@ const key = (code, mods = {}) => ({ code, key: code.replace(/^Key/, "").toLowerC
 function setUpCamp(st, n = 2, lo = 3) {
   const h = hub(st);
   // Open ground first: a camp in the woods clears its 5 × 5 of trees first (a day or more for one: staging.js siteSetup).
-  const tile = st.grid.within(h.tile, lo + 4).find((t) => st.grid.distance(t, h.tile) >= lo && ["plains", "hills"].includes(st.tiles[t].terrain) && free(st, t) && planPath(st, h.tile, t, false)) ?? nearFree(st, h.tile, lo, lo + 4);
+  // No dead to clear off the spot first (sim/siteclear.js: a badly infected tile is a fight before the camp).
+  const quiet = (r, kinds) => st.grid.within(h.tile, r).find((t) => st.grid.distance(t, h.tile) >= lo && (!kinds || kinds.includes(st.tiles[t].terrain)) && free(st, t) && !siteThreat(st, t).count && planPath(st, h.tile, t, false));
+  const tile = quiet(lo + 4, ["plains", "hills"]) ?? quiet(lo + 9, ["plains", "hills"]) ?? quiet(lo + 9, null) ?? nearFree(st, h.tile, lo, lo + 4);
   Object.assign(h.stock, { food: 200, water: 200 });
   const res = launchExpedition(st, { memberIds: atBase(st, h.id).slice(0, n).map((s) => s.id), dest: tile, mission: "camp", stance: "normal", supplies: { food: 4, water: 4 } });
   if (res.error) { check(false, `a team leaves to set up camp (${res.error})`); return null; }

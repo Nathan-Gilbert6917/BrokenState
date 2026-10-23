@@ -11,7 +11,12 @@
 //   cost in cells turned to minutes: WALK.MIN + cost × WALK.PER, never under WALK.MIN (5) or over WALK.MAX (20).
 // - From where (walkFrom): the place the team last walked to on this tile (p.atPoi, kept until it steps off the tile:
 //   parties.js stepAlong), else the edge it came onto the tile by (p.entered, the tile it stepped in from: parties.js
-//   stepAlong; WALK.EDGE out toward that neighbour), else the tile's centre (a team that set out from a base here).
+//   stepAlong; WALK.EDGE out toward that neighbour), else your base on the tile (baseSpot: a team that set out from
+//   it), else the tile's centre.
+// - Your base on the tile (baseSpot, the user's word 2026-10-23: "When you set up a base you can raid the other POIs
+//   on the same tile and show the base on the POI map"): where its camp stands on the tile's 250 × 250 map
+//   (base.plan.origin, basemap.js originOf) scaled into the hex (BASE_SPOT.SCALE of a radius at the map's edge), kept
+//   BASE_SPOT.CLEAR off every place's spot; the POI map draws it there (ui/poimap.js).
 //   Raid one place, then another: the minutes are from the first place to the second. The place it stands at is
 //   "here" (no walk).
 // - The route (walkRoute): the cells the cheapest way goes through, as points from the team's spot to the place's;
@@ -51,6 +56,22 @@ export const WALK = {
 };
 
 // Inside a pointy-top hex of radius 1 (hex.js toPixel's layout).
+export const BASE_SPOT = { SCALE: 0.7, CLEAR: 0.36, HALF: 125 }; // HALF: the base map's half-size (basemap.js GRID_MAX)
+/** Your base on tile t and its spot in hex radii, or null. @param {any} state @param {any} t */
+export function baseSpot(state, t) {
+  const b = t && state.bases ? state.bases.find((x) => x.tile === t.id) : null;
+  if (!b) return null;
+  const o = (b.plan && b.plan.origin) || [0, 0];
+  let x = (o[0] / BASE_SPOT.HALF) * BASE_SPOT.SCALE, y = (o[1] / BASE_SPOT.HALF) * BASE_SPOT.SCALE;
+  const spots = poisOf(t).map((_, i) => poiSpot(state, t, i));
+  // Off the places: stepped out round a ring until clear (the first spot clear, or the base's own).
+  for (let k = 0; k < 24 && spots.some(([px, py]) => Math.hypot(px - x, py - y) < BASE_SPOT.CLEAR); k++) {
+    const a = (k * Math.PI * 2) / 8 + hash01(state.seed, "basespot", t.id, k), r = 0.2 + 0.12 * Math.floor(k / 8);
+    x = Math.cos(a) * r; y = Math.sin(a) * r;
+  }
+  if (!inHex(x / 0.9, y / 0.9)) { const d = Math.hypot(x, y) || 1; x = (x / d) * 0.7; y = (y / d) * 0.7; }
+  return { base: b, spot: /** @type {[number, number]} */ ([x, y]) };
+}
 const inHex = (x, y) => { const ax = Math.abs(x), ay = Math.abs(y); return ax <= SQ3 / 2 && ay <= 1 && ax * 0.5 + ay * (SQ3 / 2) <= SQ3 / 2; };
 
 /** Where POI i stands on its tile: [x, y] in hex radii from the centre. @param {State} state @param {Tile} t @param {number} i @returns {[number, number]} */
@@ -140,6 +161,8 @@ export function walkFrom(state, p, tile = partyTile(p)) {
   const at = p && p.atPoi, en = p && p.entered;
   if (at && at.tile === tile && poiAt(t, at.i)) return { spot: poiSpot(state, t, at.i), poi: at.i, edge: null };
   if (en && en.tile === tile && en.from != null && state.grid.neighbors(tile).includes(en.from)) return { spot: edgeSpot(state, tile, en.from), poi: null, edge: en.from };
+  const home = baseSpot(state, t);
+  if (home) return { spot: home.spot, poi: null, edge: null, base: home.base.id }; // set out from your base here
   return { spot: /** @type {[number, number]} */ ([0, 0]), poi: null, edge: null };
 }
 const minsOf = (cost) => Math.max(WALK.MIN, Math.min(WALK.MAX, Math.round(WALK.MIN + cost * WALK.PER)));

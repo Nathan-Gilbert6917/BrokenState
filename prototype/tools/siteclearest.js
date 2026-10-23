@@ -19,6 +19,9 @@ import { townLayer, highLayer, layLand, CLEAR, clearOf, TOWN } from "../src/sim/
 import { CELL, finishCombat } from "../src/sim/combat.js";
 import { siteThreat, SITE_CLEAR } from "../src/sim/siteclear.js";
 import { CS_ACTIONS, sitePanel } from "../src/ui/campsite.js";
+import { campProblem } from "../src/sim/staging.js";
+import { missionProblem } from "../src/sim/parties.js";
+import { crawlTile } from "../src/sim/citycrawl.js";
 
 const SEED = Number(process.argv[2] || 42);
 let fails = 0, passes = 0;
@@ -97,6 +100,14 @@ const calm = tiles.find((t) => (t.terrain === "plains" || t.terrain === "forest"
   check(tc.count <= SITE_CLEAR.MAX && tc.power >= 2, `at most ${SITE_CLEAR.MAX}, power ${tc.power}`);
 }
 
+// The ban is on the crawl tiles only (the user's word 2026-10-23): a town's or a city's centre is gone through block by
+// block, never settled; the suburbs and a city tile with a place of its own take a camp once cleared.
+{
+  const crawl = Object.values(st.tiles).find((t) => crawlTile(t) && !t.hive);
+  check(!!campProblem(st, crawl.id) && /crawl/.test(missionProblem(st, crawl.id, "outpost") || "") && /crawl/.test(missionProblem(st, crawl.id, "camp") || ""), `no base on a crawl tile (${crawl.loc ? crawl.loc.type : crawl.terrain}): ${campProblem(st, crawl.id)}`);
+  check(!campProblem(st, suburb.id) && !missionProblem(st, suburb.id, "outpost") && !missionProblem(st, suburb.id, "camp"), "a camp, a home or an outpost may go up in the suburbs (the dead cleared first)");
+}
+
 // ---------- 3. the fight ----------
 section("The fight: on the tile's map round the spot, the dead round it, none drawn in");
 {
@@ -150,7 +161,7 @@ section("The fight: on the tile's map round the spot, the dead round it, none dr
 {
   const w = createWorld({ seed: SEED + 1, factionCount: 7, mode: "hardcore" });
   w.noWanderers = true;
-  const c = Object.values(w.tiles).find((t) => t.terrain === "city" && !t.hive && !w.bases.some((b) => b.tile === t.id) && t.owner == null);
+  const c = Object.values(w.tiles).find((t) => t.terrain === "city" && !crawlTile(t) && !t.hive && !w.bases.some((b) => b.tile === t.id) && t.owner == null); // a city tile with a place of its own (not the crawl)
   const p = roadTeam(w);
   p.path = [c.id]; p.idx = 0; p.dest = c.id; p.progress = 0;
   p.campAt = BM.defaultSite(w, c.id);

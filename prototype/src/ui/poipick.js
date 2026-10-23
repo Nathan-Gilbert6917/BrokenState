@@ -9,9 +9,9 @@
 //
 // The screen (the user's request 2026-10-22): the tile drawn large (ui/poimap.js) with the places where they stand,
 // the team's dot on the edge it came in by and the way on foot to each with its minutes; a place is picked on the
-// map (data-action "poisel", kept on the card: card.poiPick.sel) or in the list of places, a side panel folded away
-// by default (its button, data-action "poilist": card.poiPick.list). The picked place's details sit beside the map
-// with the button to walk there and raid it (a site's: one per building and the street). The ways off the tile are
+// map (data-action "poisel", kept on the card: card.poiPick.sel) or in the list of places, always open on the right of
+// the map (2026-10-23; it was a panel folded away). The picked place's details sit under the list with the button to
+// walk there and raid it (a site's: one per building and the street). The ways off the tile are
 // arrows on its sides (the card's exit choices) and "Leave for another tile…" (the State Map's move mode).
 //
 // The walk itself (tileViewModal, the user's request 2026-10-22: "In the POI map show the team move to the POI
@@ -21,7 +21,7 @@
 // screen, or the team off the tile.
 import { partyMembers, tileLabel, clockFrac } from "../sim/parties.js";
 import { poiRows, poiRowText } from "../sim/poiraid.js";
-import { walkMap, walkPos } from "../sim/poiwalk.js";
+import { baseSpot, walkMap, walkPos } from "../sim/poiwalk.js";
 import { tileMapBg, poiMapSvg, PM_W, PM_H, toMap } from "./poimap.js";
 import { morePoisHidden, tileHeatEstimate } from "../sim/pois.js";
 import { LOCATIONS } from "../sim/data.js";
@@ -55,7 +55,6 @@ export function poiPickModal(state, card) {
   const more = p ? morePoisHidden(state, tile, p) : false;
   const who = p ? partyMembers(state, p).map((s) => s.name.split(" ")[0]).join(", ") : "";
   const sel = rows.some((r) => r.i === card.poiPick.sel) ? card.poiPick.sel : null;
-  const open = !!card.poiPick.list;
   const likely = (r) => { const def = LOCATIONS[r.kind]; return `${def ? def.name : r.kind}: likely ${Object.keys((def && def.loot) || {}).slice(0, 4).join(", ") || "little"}.`; };
   const walk = (r) => `<span class="${r.mins ? "" : "muted"}"${tip(r.mins ? "Minutes on foot from where the team stands on the tile (the place it last went into, else the edge it came onto the tile by), over the ground between: brush, slopes, rubble, a road. Picking it starts the walk when the clock runs, then the raid." : "The team stands at this place: it goes straight in.")}>${r.mins ? `🚶 ${r.mins} min` : "📍 You are here"}</span>`;
   // What is known of a place: its visits and threat, then the campsite, the containers, another group in it now.
@@ -63,14 +62,14 @@ export function poiPickModal(state, card) {
   const bandHtml = (r) => `<span style="color:${BAND_COLOR[r.band]}"${tip("What is left against what the place held untouched: rich (60%+), some (30%+), little (10%+), picked clean. Each place has its own loot, and nothing grows back.")}>${esc(r.bandName)}</span>`;
   // The map.
   const wm = p ? walkMap(state, p, rows.map((r) => r.i), tile) : { from: { spot: [0, 0], poi: null, edge: null }, places: [] };
-  const bg = tileMapBg(state, t, [...wm.places.map((x) => x.spot), wm.from.spot]);
+  const bg = tileMapBg(state, t, [...wm.places.map((x) => x.spot), wm.from.spot, ...(baseSpot(state, t) ? [baseSpot(state, t).spot] : [])]);
   const tipOf = (i) => { const r = rows.find((x) => x.i === i); return r ? `${r.name}: ${poiRowText(r)}. ${likely(r)} Click to pick it.` : ""; };
   const exits = card.choices.map((c, i) => ({ c, i })).filter(({ c }) => c.exit != null).map(({ c, i }) => ({ via: c.exit, mins: c.mins, i, tip: `${c.label}: ${c.hint}` }));
   const map = `<div class="pm-map" style="width:${PM_W}px;height:${PM_H}px${bg ? `;background-image:url(${bg})` : ""}">${poiMapSvg(state, t, wm, rows, sel, tipOf, { exits })}</div>`;
   // The picked place: what is known of it and the way in.
   const r = rows.find((x) => x.i === sel);
   let detail;
-  if (!r) detail = `<div class="pm-hint muted">Pick a place on the map${rows.length > 1 ? " (or in the list of places)" : ""} to see what is known of it and send the team there. The dashed lines are the ways on foot from where your team stands, with their minutes.</div>`;
+  if (!r) detail = ""; // nothing picked: the map alone (the user's word 2026-10-23: "Make the map larger remove the text box to the right not needed"; the line over the map says to pick a place)
   else {
     const subs = byBuilding(r.i);
     const go = (i, label, hint) => `<button data-action="choice" data-i="${i}" class="pm-go"${tip(hint)}>${esc(label)}</button>`;
@@ -81,26 +80,25 @@ export function poiPickModal(state, card) {
         const size = [o.size, o.rooms ? `${o.rooms} rooms` : "", o.map ? `map ${o.map}` : ""].filter(Boolean).join(", ");
         return `<button data-action="choice" data-i="${i}" class="small pm-go"${tip(o.hint)}>${esc(o.id === "street" ? "The street" : o.name || c.building)}${size ? ` <span class="muted">${esc(size)}</span>` : ""}</button>`;
       }).join("");
-    detail = `<div class="pm-detail"><div class="spread"><b>${esc(r.name)}</b>${bandHtml(r)}</div>
+    detail = `<div class="pm-detail" style="margin-top:0.5rem"><div class="spread"><b>${esc(r.name)}</b>${bandHtml(r)}</div>
       <div class="small">${walk(r)}${r.desc ? ` · <span class="muted">${esc(r.desc)}</span>` : ""}</div>
       <div class="small" style="margin-top:4px">${facts(r)}</div>
       <div class="small muted" style="margin-top:4px">${esc(likely(r))}</div>
       ${subs.length ? `<div class="small" style="margin-top:6px">Several buildings stand here: ${r.mins ? `walk there (${r.mins} min) and ` : ""}go into one, or the street around them.</div>` : ""}
       <div class="pm-gos">${btns}</div></div>`;
   }
-  // The list of places: folded away by default, a button to open it.
+  // The list of places: always open on the right, beside the map (the user's word 2026-10-23: "Have the places listed
+  // out on the right next to the large map"), the picked place's details and its buttons under it.
   const rowHtml = (x) => `<button data-action="poisel" data-poi="${x.i}" class="poirow${x.i === sel ? " on" : ""}" style="display:block;width:100%;text-align:left"${tip(likely(x))}>
       <div class="spread"><b>${esc(x.name)}</b>${walk(x)}${bandHtml(x)}</div><div class="small">${facts(x)}</div></button>`;
-  const list = open
-    ? `<aside class="pm-list open"><button data-action="poilist" class="pm-listbtn"${tip("Fold the list of places away")}>▸ Places (${rows.length})</button><div class="pm-rows">${rows.map(rowHtml).join("")}</div></aside>`
-    : `<aside class="pm-list"><button data-action="poilist" class="pm-listbtn pm-tab"${tip("Open the list of places: every place known here with its minutes, what is left, its visits and threat")}>◂ Places (${rows.length})</button></aside>`;
+  const list = `<aside class="pm-list open"><div class="pm-listhead"><b>Places here (${rows.length})</b> <span class="small muted">click one, here or on the map</span></div><div class="pm-rows">${rows.map(rowHtml).join("")}</div>${detail}</aside>`;
   const rest = card.choices.map((c, i) => ({ c, i })).filter(({ c }) => c.poi == null && c.exit == null);
   return `<div class="box wide poipick">
     <h1>${esc(card.title)}</h1>
     <div class="where">${esc(tileLabel(state, tile))}${who ? ` · ${esc(who)}` : ""}</div>
     ${heatLine(state, tile)}
-    <div class="text small">${rows.length === 1 ? "One place is known here" : `${rows.length} places are known here`}${more ? `, <span${tip("Something here may still be off your map: a Survey of the tile (8h) finds what hides, a Quick look (2h) has a chance at each. Never a count.")}>possibly more unknown</span>` : ""}. The team goes into one at a time, walking there first: pick a place, then run the clock. The arrows on the sides leave the tile that way.</div>
-    <div class="pm-body">${map}<div class="pm-side">${detail}</div>${list}</div>
+    <div class="text small">${rows.length === 1 ? "One place is known here" : `${rows.length} places are known here`}${more ? `, <span${tip("Something here may still be off your map: a Survey of the tile (8h) finds what hides, a Quick look (2h) has a chance at each. Never a count.")}>possibly more unknown</span>` : ""}. The team goes into one at a time, walking there first: pick a place on the map${rows.length > 1 ? " (or in the list of places)" : ""}, then run the clock. The dashed lines are the ways on foot from where your team stands; the arrows on the sides leave the tile that way.</div>
+    <div class="pm-body">${map}${list}</div>
     <div class="choices">${rest.map(({ c, i }) => `<button data-action="choice" data-i="${i}"${tip(c.hint)}>${esc(c.label)}${c.hint ? `<span class="hint">${esc(c.hint)}</span>` : ""}</button>`).join("")}</div>
   </div>`;
 }
@@ -125,7 +123,7 @@ export function tileViewModal(state, ui) {
   const tile = p.path[p.idx], t = state.tiles[tile], w = p.task;
   const rows = poiRows(state, p, tile);
   const wm = walkMap(state, { ...p, atPoi: undefined }, rows.map((r) => r.i), tile);
-  const bg = tileMapBg(state, t, [...wm.places.map((x) => x.spot), wm.from.spot]);
+  const bg = tileMapBg(state, t, [...wm.places.map((x) => x.spot), wm.from.spot, ...(baseSpot(state, t) ? [baseSpot(state, t).spot] : [])]);
   const pos = walkPos(state, p, clockFrac(state));
   const tipOf = (i) => { const r = rows.find((x) => x.i === i); return r ? `${r.name}: ${r.bandName.toLowerCase()}; ${r.visits}` : ""; };
   const what = w.exit ? `Leaving ${tileLabel(state, tile)}: walking to its edge, then on to ${w.name}` : `Walking to ${w.name}`;

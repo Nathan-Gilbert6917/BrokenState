@@ -11,7 +11,8 @@
 //   one picture of the land. Placed by the tile's own dice (never state.rng); painted once per tile, season and snow
 //   into a canvas kept as a data URL.
 // - Over it (poiMapSvg): every route as a dashed line with its minutes at the middle (where that is clear of the
-//   places), the team's dot ("You"), and
+//   places), your base when one stands on the tile (baseSvg: where it stands, sim/poiwalk.js baseSpot), the team's
+//   dot ("You"), and
 //   each place as its map sprite (ui/mapsprites.js poiSpriteCanvas: its kind, its franchise, faded by how picked
 //   over it is) with its name and minutes under it. A place is a button (data-action "poisel"): it selects it, and
 //   the dialogue shows what is known of it and the button to walk there. Hovering one lights its route.
@@ -20,9 +21,12 @@ import { hash01 } from "../sim/skills.js";
 import { season } from "../sim/weather.js";
 import { poiAt } from "../sim/pois.js";
 import { drawDecal, decalSize, SEASON_LOOK } from "./terraindeco.js";
-import { poiSpriteCanvas } from "./mapsprites.js";
+import { poiSpriteCanvas, baseSpriteCanvas, stagingSpriteCanvas } from "./mapsprites.js";
+import { baseSpot } from "../sim/poiwalk.js"; // your base on the tile: where it stands on the POI map
+import { campStage, baseLook } from "./render.js"; // its look as on the State Map
+import { isCamp } from "../sim/buildings.js";
 
-export const PM = { R: 190, PAD: 36, DPR: 2, DECAL: 2, ARROW: 20 }; // hex radius and margin (css px: room for the edge arrows outside the hex), canvas px per css px, css px a decal px, an edge arrow's distance out past its side
+export const PM = { R: 250, PAD: 36, DPR: 2, DECAL: 2, ARROW: 20 }; // hex radius and margin (css px: room for the edge arrows outside the hex), canvas px per css px, css px a decal px, an edge arrow's distance out past its side
 const SQ3 = Math.sqrt(3);
 export const PM_W = Math.round(SQ3 * PM.R + PM.PAD * 2), PM_H = Math.round(2 * PM.R + PM.PAD * 2);
 const CX = PM_W / 2, CY = PM_H / 2;
@@ -156,6 +160,26 @@ function spriteOf(kind, variant, band) {
   return out;
 }
 
+// Your base on the tile (the user's word 2026-10-23: "show the base on the POI map"): its State Map sprite (a camp's
+// stage, a shelter's, an outpost's or the hub's look) on your blue plate where it stands (sim/poiwalk.js baseSpot), its
+// name under it. The walks from it start there (walkFrom).
+function baseSvg(state, t) {
+  const h = baseSpot(state, t);
+  if (!h) return "";
+  const b = h.base, [x, y] = toMap(h.spot);
+  let sp = { url: "", w: 46, h: 38 };
+  try {
+    const cv = isCamp(b) ? stagingSpriteCanvas(campStage(b), "#4f8fd6", b.fire !== false) : baseSpriteCanvas(baseLook(b));
+    if (cv && typeof cv.toDataURL === "function") { const w = 50, hh = Math.round((w * cv.height) / cv.width); sp = { url: cv.toDataURL("image/png"), w, h: hh }; }
+  } catch { /* headless: no canvas */ }
+  const label = b.name.length > 24 ? `${b.name.slice(0, 23)}…` : b.name;
+  return `<g class="pm-base" data-tip="${esc(`${b.name}: your ${isCamp(b) ? "camp" : b.type === "hub" ? "home" : "outpost"} on this tile. A team sent from it walks over from here to the place it raids.`)}">
+    <ellipse cx="${x.toFixed(1)}" cy="${(y + 4).toFixed(1)}" rx="27" ry="10" style="fill:rgba(79,143,214,0.28);stroke:#4f8fd6;stroke-width:2"/>
+    ${sp.url ? `<image href="${sp.url}" x="${(x - sp.w / 2).toFixed(1)}" y="${(y + 6 - sp.h).toFixed(1)}" width="${sp.w}" height="${sp.h}" style="image-rendering:pixelated"/>` : `<rect x="${(x - 10).toFixed(1)}" y="${(y - 16).toFixed(1)}" width="20" height="16" fill="#4f8fd6"/>`}
+    <text class="pm-name" x="${x.toFixed(1)}" y="${(y + 24).toFixed(1)}" style="fill:#cfe2f7">${esc(label)}</text>
+  </g>`;
+}
+
 // A point halfway along a route by its length.
 function midOf(pts) {
   let tot = 0;
@@ -221,7 +245,7 @@ export function poiMapSvg(state, t, wm, rows, sel, tips, opts = {}) {
     ? `<g class="pm-you"><ellipse cx="${ux.toFixed(1)}" cy="${(uy + 4).toFixed(1)}" rx="30" ry="12" class="pm-youring"/></g>`
     : `<g class="pm-you" data-tip="${esc(f.edge != null ? "Your team: where it came onto the tile. The minutes to each place are from here." : "Your team, in the middle of the tile. The minutes to each place are from here.")}"><circle class="pm-pulse" cx="${ux.toFixed(1)}" cy="${uy.toFixed(1)}" r="9"/><circle class="pm-dot" cx="${ux.toFixed(1)}" cy="${uy.toFixed(1)}" r="6"/><text class="pm-youtxt" x="${ux.toFixed(1)}" y="${(uy - 12).toFixed(1)}">You</text></g>`;
   const exits = (opts.exits || []).map((x) => exitArrow(state, t, x, ` data-action="choice" data-i="${x.i}" data-tip="${esc(x.tip || "")}" role="button" tabindex="0"`)).join("");
-  return `<svg class="pm-svg" viewBox="0 0 ${PM_W} ${PM_H}" width="${PM_W}" height="${PM_H}"><style>${hov.join("")}</style>${routes.join("")}${you}${places.join("")}${chips.join("")}${exits}</svg>`;
+  return `<svg class="pm-svg" viewBox="0 0 ${PM_W} ${PM_H}" width="${PM_W}" height="${PM_H}"><style>${hov.join("")}</style>${routes.join("")}${baseSvg(state, t)}${you}${places.join("")}${chips.join("")}${exits}</svg>`;
 }
 
 // The map while the team walks (the tile view, ui/poipick.js tileViewModal): the places (not buttons), the walk's
@@ -238,5 +262,5 @@ function walkSvg(state, t, wm, rows, tips, walk) {
   const route = `<polyline class="pm-route on" points="${pts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" ")}"/>`;
   const exit = walk.exit ? exitArrow(state, t, { via: walk.exit.via, mins: null }, "", " on") : "";
   const team = `<g id="pm-team" class="pm-you" transform="translate(${dx.toFixed(1)},${dy.toFixed(1)})"><circle class="pm-pulse" r="9"/><circle class="pm-dot" r="6"/><text class="pm-youtxt" y="-12">You</text></g>`;
-  return `<svg class="pm-svg" viewBox="0 0 ${PM_W} ${PM_H}" width="${PM_W}" height="${PM_H}">${route}${exit}${places}${team}</svg>`;
+  return `<svg class="pm-svg" viewBox="0 0 ${PM_W} ${PM_H}" width="${PM_W}" height="${PM_H}">${route}${exit}${baseSvg(state, t)}${places}${team}</svg>`;
 }

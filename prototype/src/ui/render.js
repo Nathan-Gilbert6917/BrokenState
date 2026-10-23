@@ -1901,13 +1901,13 @@ const hordeFigures = (size) => (size < 15 ? 2 : size < 25 ? 3 : size < 40 ? 4 : 
 // What one of your bases looks like on the map (also the cache key for its sprite).
 // A camp's stage on the map (mapsprites.js paintStaging 0-3) by how far its step up is built: 0 tarps and crates, 1 the
 // first stakes, 2 a frame and half a barricade, 3 nearly done. A plain camp (nothing building): 0.
-function campStage(b) {
+export function campStage(b) { // (ui/poimap.js too: your base on the POI map)
   const up = tierUpJob(b);
   const f = up && up.hours ? up.progress / up.hours : 0;
   return f >= 0.85 ? 3 : f >= 0.5 ? 2 : f >= 0.2 ? 1 : 0;
 }
 const oldCampPct = (c) => (c.work > 0 ? Math.max(0, Math.min(1, c.progress / c.work)) : 1);
-function baseLook(b) {
+export function baseLook(b) {
   const def = (x) => BUILDINGS[x.type] || {};
   const hosp = Math.max(0, ...b.buildings.map((x) => (def(x).family === "hospital" ? def(x).tier : 0)));
   const farms = count(b, "farm_plot");

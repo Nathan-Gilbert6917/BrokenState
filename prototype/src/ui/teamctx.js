@@ -172,6 +172,11 @@ export function teamTileMenu(state, ui, p, tile, { append = false } = {}) {
     add("Base", "resupply", `Resupply: ${RESUPPLY_DAYS} days of food and water`, [], { special: "resupply", why: why || want.why, hint: `Top the team's packed food and water up to ${RESUPPLY_DAYS} days for ${partyMembers(state, p).length} from ${base.name}'s stores${want.text ? `: ${want.text}` : ""}. As much as the team can carry.` });
   }
 
+  // On your own base's tile, its other places can still be raided (the user's word 2026-10-23).
+  if (base && !water) {
+    const own = orderOptions(state, p, tile).find((o) => o.mission === "scavenge"), sum = poiRaidSummary(state, tile, p);
+    if (own && sum) add("Site", "mission:scavenge", `Raid a place here (${sum})`, [{ type: "mission", mission: "scavenge" }], { why: own.disabled || "", hint: `The places on ${base.name}'s tile: the team walks over from the base to the one picked (the POI map) and raids it.` });
+  }
   // What the site offers, as far as you know (not on your own base: that is the Base group above).
   let theirs = false; // another group's base you know of: no camping, foraging or claiming on their doorstep
   if (!water && !base) {

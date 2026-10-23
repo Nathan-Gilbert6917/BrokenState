@@ -182,14 +182,14 @@ section("Not for the headless paths; a save keeps it");
   const n = knownPois(st, t, q).length;
   check(/<svg class="pm-svg"/.test(h0) && (h0.match(/class="pm-poi[^"]*" data-action="poisel"/g) || []).length === n, `the tile map: a place to click for each known one (${n})`);
   check((h0.match(/class="pm-route/g) || []).length >= n - 1 && /class="pm-you"/.test(h0), "the routes and where the team stands");
-  check(/◂ Places \(\d+\)/.test(h0) && !/pm-rows/.test(h0) && /data-action="poilist"/.test(h0), "the list of places is folded away, with a button to open it");
-  check(!/data-action="choice" data-i="\d+" class="pm-go"/.test(h0) && /Pick a place on the map/.test(h0), "nothing picked yet: no walk button, a hint");
+  check(/Places here \(\d+\)/.test(h0) && /pm-rows/.test(h0) && (h0.match(/class="poirow/g) || []).length === n, "the list of places beside the map, a row a place (always open: the user's word 2026-10-23)");
+  check(!/data-action="choice" data-i="\d+" class="pm-go"/.test(h0) && !/pm-hint/.test(h0) && /pick a place on the map/.test(h0), "nothing picked yet: no walk button, no hint box (the line over the map says it)");
   card.poiPick.sel = knownPois(st, t, q)[1];
   card.poiPick.list = true;
   const h1 = PICK.poiPickModal(st, card);
   const ci = card.choices.findIndex((c) => c.poi === card.poiPick.sel && c.building == null);
   check(new RegExp(`data-action="choice" data-i="${ci}" class="pm-go"`).test(h1) && /Walk there \(\d+ min\) and raid it/.test(h1), "a place picked: its button walks there and raids it");
-  check(/pm-rows/.test(h1) && (h1.match(/class="poirow/g) || []).length === n && /▸ Places/.test(h1), "the list opened: a row a place");
+  check(/pm-rows/.test(h1) && (h1.match(/class="poirow/g) || []).length === n && /class="poirow on"/.test(h1), "the list: a row a place, the picked one lit");
   check(new RegExp(`class="pm-poi on" data-action="poisel" data-poi="${card.poiPick.sel}"`).test(h1) && /class="pm-route on"/.test(h1), "the picked place and its route stand out on the map");
 }
 

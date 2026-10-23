@@ -565,7 +565,16 @@ export function tileActions(state, id) {
   const t = state.tiles[id];
   const actions = [];
   if (t.terrain === "water" && !t.bridge) return actions;
-  if (state.bases.some((b) => b.tile === id) || !hub(state)) return actions; // no hub (conquest.js exiles): nothing to send from
+  if (!hub(state)) return actions; // no hub (conquest.js exiles): nothing to send from
+  // Your own base's tile (the user's word 2026-10-23: "When you set up a base you can raid the other POIs on the same
+  // tile"): its places raided by a team sent from home (a walk over the tile from the base: sim/poiwalk.js walkFrom),
+  // and a survey for the ones it hides; nothing else to send there.
+  if (state.bases.some((b) => b.tile === id)) {
+    const raid = siteMissions(state, id).find(([m]) => m === "scavenge");
+    if (raid) actions.push(["scavenge", "Raid a place on this tile"]);
+    if (poiTileRaid(t)) actions.push(["fullsurvey", "Survey this tile"]);
+    return actions;
+  }
   actions.push(["recon", "Send recon"]);
   actions.push(["move", "Send a team here"]);
   actions.push(["fullsurvey", "Survey this tile"]); // the POI survey (sim/survey.js): the places the tile hides (offered everywhere: no peeking at the lists)

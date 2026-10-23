@@ -14,10 +14,15 @@ import { Rng } from "./rng.js";
 // city's blocks and suburbs (terrain city, suburb), a town's centre (loc town) and its shops and services round it (a
 // site with the settlement it belongs to; a farm out by a town is countryside, not the town). staging.js campProblem
 // and parties.js missionProblem keep every new base of yours off them; the start keeps START_CLEAR tiles away.
+// Since the user's word 2026-10-23 ("The ban should be on the tiles for town and city crawls. When you set up a base
+// you can raid the other POIs on the same tile and show the base on the POI map") the ban on a new base is only the
+// crawl tiles (citycrawl.js crawlTile: a town's or a city's centre, a bare city block): the suburbs and a city tile
+// with a place of its own take a camp once the dead there are cleared (siteclear.js). The start's rule stays this one.
 /** @param {any} t */
 export const isSettlementTile = (t) => !!t && (t.terrain === "city" || t.terrain === "suburb" ||
   (!!t.loc && (t.loc.type === "town" || t.loc.type === "city" || (t.loc.settlement != null && t.loc.zone !== "rural"))));
 export const SETTLEMENT_WHY = "Not in a town or a city: a base has to go up outside them.";
+export const CRAWL_WHY = "Not on a town's or a city's crawl tile (its blocks are gone through block by block): a base goes up in the suburbs or beyond.";
 
 /**
  * @template {{ id: number }} T
