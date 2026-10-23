@@ -215,7 +215,7 @@ section("The base map: nothing built on a pond or on mud, nor a wet hollow fille
 {
   const s2 = world(SEED + 1), b = hub(s2);
   const land = BM.landFor(s2, b);
-  const dip = land ? [...new Set(land.pieces.values())].filter((p) => p.k === "dip" && p.h === -1).sort((p, q) => Math.hypot(...p.cells[0]) - Math.hypot(...q.cells[0]))[0] : null; // the hollow nearest the base (well off the map's no-build edge)
+  const dip = land ? [...new Set(land.pieces.values())].filter((p) => p.k === "dip" && p.h === -1 && p.cells.every(([x, y]) => Math.max(Math.abs(x), Math.abs(y)) > BM.ringHalf(b) + 3)).sort((p, q) => Math.hypot(...p.cells[0]) - Math.hypot(...q.cells[0]))[0] : null; // the hollow nearest the base outside its wall's ring (well off the map's no-build edge)
   if (check(!!dip, `the hub's land has a hollow (${land ? [...land.heights.values()].filter((v) => v < 0).length : 0} cells down)`)) {
     const [x, y] = dip.cells[0], D = W.dayIndex(s2);
     const probe = { kind: "prop", w: 1, h: 1 };
