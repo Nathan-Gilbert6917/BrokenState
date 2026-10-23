@@ -33,6 +33,7 @@ import {
 import { buildingOptions } from "../src/sim/buildingmaps.js";
 import { createRaid } from "../src/sim/combat.js";
 import { poiTileRaid, scavengeProblem, pickedOverAt, poiPickWanted, poiPickFor, poiRows, poiPickCard, poiRaidSetup, poiPlace, poiRaidSummary, poiContainerNote } from "../src/sim/poiraid.js";
+import { walkPace } from "../src/sim/poiwalk.js";
 import { LOOK, lookOdds, lookContext, lookPreview, fullSurveyDone, quickLook, surveying, lookStatus, poiSurveyTarget, poiSurveyCandidate } from "../src/sim/survey.js";
 
 const args = process.argv.slice(2);
@@ -64,6 +65,11 @@ const reachable = (st, id) => land(st, id) && !!planPath(st, hub(st).tile, id, f
 const bareAllKnown = (st, min = 2) => st.tiles.filter((t) => !t.loc && poisOf(t).length >= min && knownPois(st, t).length === poisOf(t).length && reachable(st, t.id)).sort((a, b) => st.grid.distance(a.id, hub(st).tile) - st.grid.distance(b.id, hub(st).tile));
 const bareNoneKnown = (st) => st.tiles.filter((t) => !t.loc && poisOf(t).length >= 1 && knownPois(st, t).length === 0 && reachable(st, t.id)).sort((a, b) => st.grid.distance(a.id, hub(st).tile) - st.grid.distance(b.id, hub(st).tile));
 const hiddenSome = (st, terrain = null) => st.tiles.filter((t) => !t.loc && (!terrain || t.terrain === terrain) && poisOf(t).length >= 2 && morePoisHidden(st, t) && knownPois(st, t).length >= 1 && reachable(st, t.id)).sort((a, b) => st.grid.distance(a.id, hub(st).tile) - st.grid.distance(b.id, hub(st).tile));
+// Places rich enough for the pool's checks (0.4 or more full): a fifth of one is still above the picked-clean floor
+// (pois.js poiLootBand: POI.STRIPPED + 0.02), and three hours' search (0.05 an hour) leave something in it. Since the hub
+// starts on open land 5 tiles from the towns (startpick.js START_CLEAR, 7302413) the nearest tiles are forest sheds
+// and hunting blinds (0.2 and 0.15 full).
+const bareRich = (st) => bareAllKnown(st).filter((t) => poisOf(t).every((_, i) => poiFull(t, i) >= 0.4));
 const siteWithExtras = (st) => st.tiles.filter((t) => t.loc && isPublicSite(st, t.id) && poisOf(t).length >= 2 && poisOf(t)[0].site && reachable(st, t.id) && !["city", "town"].includes(t.loc.type)).sort((a, b) => st.grid.distance(a.id, hub(st).tile) - st.grid.distance(b.id, hub(st).tile));
 const multiSite = (st) => st.tiles.filter((t) => t.loc && isPublicSite(st, t.id) && poisOf(t).length && isSitePoi(t, 0) && buildingOptions(t) && reachable(st, t.id)).sort((a, b) => st.grid.distance(a.id, hub(st).tile) - st.grid.distance(b.id, hub(st).tile))[0];
 
@@ -97,7 +103,7 @@ section("The dialogue: which place to raid");
     const choice = picks[1] || picks[0];
     choice.resolve(st);
     const w = p.task;
-    check(p.phase === "task" && w && w.type === "poiwalk" && w.poi === choice.poi && w.mins >= 5 && w.mins <= 20 && !st.engagement, `picking a place starts the walk there first (${w && w.mins} min)`);
+    check(p.phase === "task" && w && w.type === "poiwalk" && w.poi === choice.poi && w.mins >= walkPace(p).MIN && w.mins <= walkPace(p).MAX && !st.engagement, `picking a place starts the walk there first (${w && w.mins} min)`); // on foot 10-60 min since the walk went by pace (poiwalk.js walkPace, 95ab983)
     tasksDue(st, 1);
     const e = st.engagement;
     check(!!e && e.partyId === p.id && e.poi === choice.poi, `picking a place starts the search in it (place ${choice.poi})`);
@@ -131,7 +137,7 @@ section("The dialogue: which place to raid");
 section("The headless path: one place at a time");
 {
   const st = W();
-  const t = bareAllKnown(st)[0];
+  const t = bareRich(st)[0];
   const p = teamAt(st, t.id, 3);
   const pools0 = poisOf(t).map((_, i) => poiPool(t, i));
   const best = bestKnownPoi(st, t, p);
@@ -212,7 +218,7 @@ section("The headless path: one place at a time");
 section("Threat: the true value and the estimate");
 {
   const st = W();
-  const t = bareAllKnown(st)[0];
+  const t = bareRich(st)[0];
   const i = 0, poi = poiAt(t, i);
   check(Math.abs(poiThreat(st, t, i) - ((LOCATIONS[poi.kind].danger || 0) + (t.infection || 0))) < 1e-9 || poiThreat(st, t, i) > (LOCATIONS[poi.kind].danger || 0) + (t.infection || 0), "true threat = the kind's danger + the infection (+ hive land)");
   check(threatBand(0).word === "quiet" && threatBand(1).word === "some risk" && threatBand(2).word === "dangerous" && threatBand(3).word === "very dangerous" && threatBand(3).skulls === "☠☠☠", "the bands: quiet, some risk, dangerous, very dangerous with skulls");
