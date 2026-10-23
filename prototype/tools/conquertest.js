@@ -555,7 +555,8 @@ section("Losing the hub: with another base, and with none (the exiles)");
   Object.assign(ex3.cargo.supplies, { scrap: 25, parts: 3, water: 40, buildmat: 3 }); setFood(ex3.cargo, 40);
   const { giveOrder } = await import("../src/sim/parties.js");
   const est = orderOptions(s3, ex3).find((o) => o.mission === "establish");
-  check(!!est && est.label === S.ESTABLISH_LABEL && !est.disabled, `the exiles get the order ${S.ESTABLISH_LABEL} (${est && est.disabled})`);
+  // The label reads "(unscouted: blind spot)" after it since the camp scouting (a8f56a2, 2026-10-23): the exiles stand on a tile nobody surveyed.
+  check(!!est && est.label.startsWith(S.ESTABLISH_LABEL) && !est.disabled, `the exiles get the order ${S.ESTABLISH_LABEL} (${est && est.label}; ${est && est.disabled})`);
   if (ex3.phase === "waiting") establishNow(s3, ex3);
   const B0 = await import("../src/sim/buildings.js");
   const camp3 = s3.bases.find((b) => B0.isCamp(b));

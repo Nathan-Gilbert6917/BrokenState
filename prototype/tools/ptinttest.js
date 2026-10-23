@@ -214,13 +214,14 @@ section("Bed moods: tents and furniture in one best-first list, one line a sleep
   const st = world(seed + 3);
   const h = hub(st);
   const add = (type, extra = {}) => { const r = { id: newId(), type, ...extra }; h.buildings.push(r); return r; };
-  // Clear the hub's other beds out of the way: its own 4 are plain beds (mood 0).
-  add("tent", { tent: "makeshift" }); add("tent", { tent: "tent2" }); add("cot"); add("bigbed"); add("bunkbed");
+  // The hub's own beds: no tier has plain beds of its own since built beds only (the user's requests 2026-10-22, merge
+  // 845ba49); the normal hub starts with four beds (mood 0) set in its Lodge. A bunkhouse's six are plain beds (mood 0).
+  add("tent", { tent: "makeshift" }); add("tent", { tent: "tent2" }); add("cot"); add("bigbed"); add("bunkbed"); add("bunkhouse");
   const slots = BD.bedSlots(h);
   const moods = slots.map((s) => s.mood);
   check(moods.every((m, i) => !i || moods[i - 1] >= m), `best first: ${slots.map((s) => `${s.kind} ${s.mood}`).join(", ")}`);
   const kindMood = (k) => slots.find((s) => s.kind === k).mood;
-  check(kindMood("tent:makeshift") === -1 && kindMood("tent:tent2") === 0 && kindMood("cot") === BED_SPEC.cot.mood && kindMood("bunkbed") === -0.5 && kindMood("bigbed") === 1 && kindMood("plain") === 0 && BED_SPEC.cot.mood === -1, "makeshift −1, tent 0, cot −1, bunk −0.5, large bed +1, plain 0");
+  check(kindMood("tent:makeshift") === -1 && kindMood("tent:tent2") === 0 && kindMood("cot") === BED_SPEC.cot.mood && kindMood("bunkbed") === -0.5 && kindMood("bigbed") === 1 && kindMood("bed") === 0 && kindMood("plain") === 0 && BED_SPEC.cot.mood === -1, "makeshift −1, tent 0, cot −1, bunk −0.5, large bed +1, bed 0, plain 0");
   check(slots.length === baseBeds(h), `every bed once: ${slots.length} slots = ${baseBeds(h)} beds`);
   // Fill every bed: each sleeper one bed line at most (none for a mood-0 bed), the worst beds last.
   const want = baseBeds(h);
@@ -271,11 +272,12 @@ section("The governor: spare bags, then Makeshift tents, then furniture");
   // A tier-1 base short of beds with no bag: the furniture (bunk bed or cot) when there is a building with room.
   const h = hub(st);
   const n0 = h.armory.filter(T.isTentBag).length;
+  const p0 = T.tentsOf(h).length; // the normal hub starts with a two-person tent pitched (the user's request 2026-10-22: world HUB_LAYOUT)
   h.armory.push(newItem("tent2"));
   while (residents(st, h.id).length <= baseBeds(h)) { const s = makeSurvivor(st); s.location = { kind: "base", baseId: h.id }; st.survivors.push(s); }
   const short = residents(st, h.id).length - baseBeds(h);
   BD.governBeds(st, h);
-  check(h.armory.filter(T.isTentBag).length === n0 && T.tentsOf(h).length === 1, `the hub ${short} short: its bag pitched before anything is crafted`);
+  check(h.armory.filter(T.isTentBag).length === n0 && T.tentsOf(h).length === p0 + 1, `the hub ${short} short: its bag pitched before anything is crafted`);
 }
 
 // ---------- 8. hardcore: the bags go up at the first home ----------

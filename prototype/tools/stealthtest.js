@@ -155,7 +155,7 @@ function clearMap(b) { for (const c of b.cells) c.k = "open"; b.losCache.fill(0)
   const before = { food: food(p) + (food(p.cargo) || 0) };
   st.hour = Math.ceil(st.hour / 24) * 24 - 1;
   startReturn(st, p);
-  for (let i = 0; i < 24 * 6 && st.parties.includes(p); i++) tickHour(st);
+  for (let i = 0; i < 24 * 10 && st.parties.includes(p); i++) tickHour(st); // 10 days: the rain and the snow (a wetter spring, weather.js 2026-10-23) slow the walk home; it was 6
   const home = prisonersAt(st, h.id);
   check(!st.parties.includes(p) && (home.length === 1 || st.prisoners.length === 0), `home: the prisoner is in the cells at ${h.name} (${home.length} there${st.prisoners.length ? "" : ", or slipped away on the road"})`);
   void before;

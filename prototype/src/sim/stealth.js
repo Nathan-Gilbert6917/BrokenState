@@ -55,6 +55,7 @@ import { RELOAD_FX } from "./data-ammo.js"; // black-powder handloads are louder
 import { nightLight } from "./fighters.js"; // a light for someone made for this fight, at night
 import { wxSightSetup, fogEyes, wxSightWord } from "./wxsight.js"; // fog and a blizzard cut everyone's sight (the battle tile's weather)
 import { noticeMult, concealSneak } from "./softcover.js"; // bushes and tents: noticed from closer, sneaking there unheard
+import { lureReach, muffle, drownWhy, rainHear, fogNotice } from "./seasonfx.js"; // the rain drowns sounds and noise lures, the fog cuts how far a guard notices you (the user's request 2026-10-23)
 import { throwAtCar, alarmsNear, alarmTurn, carIdAt } from "./caralarms.js"; // a car alarm: a window broken by a throw, a blast, the ringing (call-time only)
 
 export const STEALTH = {
@@ -243,6 +244,7 @@ export function detectRange(b, e, mover, perks = true) {
   // In a bush or a tent, or beside one (softcover.js): sneaking there counts as behind half cover.
   const unseen = !near && ((e.kind === "human" && !inArc(e, mover.x, mover.y, VISION.HALF)) || coverAgainst(b, mover.x, mover.y, e.x, e.y).level >= (mover.sneaking ? 1 : 2) || concealSneak(b, e, mover));
   if (unseen) r = earshot(e, mover, r);
+  if (unseen && r > 1 && b.sfx) r = Math.max(1, Math.round(r * rainHear(b, mover.x, mover.y))); // seasonfx.js: feet heard less far in the rain
   if (perks && mover.ghost) r = Math.min(r, 2);
   return r;
 }
@@ -261,6 +263,7 @@ export function noticeRange(b, e, mover, perks = true) {
   if (b.night && el && LIGHTS[el] && !LIGHTS[el].round && inArc(e, mover.x, mover.y, (LIGHTS[el].beam || 20) * Math.PI / 180)) r = Math.max(r, Math.min(range, LIGHTS[el].sight));
   // In a bush or a tent, or beside one (softcover.js CONCEAL: × notice), noticed only from closer.
   { const m = noticeMult(b, e, mover); if (m < 1) r = Math.max(1, Math.round(r * m)); }
+  if (b.sfx) r = fogNotice(b, e, mover, r); // seasonfx.js: no further than the fog lets anyone see (at night in fog, less still)
   if (perks && mover.ghost) r = Math.min(r, 2);
   return r;
 }
@@ -467,7 +470,8 @@ export function throwAt(b, u, key, x, y, blind = false, state = null) {
   if (T.heat && b.raid) b.raid.heat = Math.min(100, b.raid.heat + T.heat);
   const extra = T.fx ? landEffect(b, u, T, lx, ly) : "";
   const onCar = !T.fx && !T.self && carIdAt(b, lx, ly) != null; // caralarms.js throwAtCar says what it did
-  const heard = T.radius ? (n ? ` ${n} of them turn toward it.` : T.fx || onCar ? "" : " Nothing seems to notice.") : ""; // fx: the bang or the flare says it
+  const drown = T.radius && b.sfx ? drownWhy(b, T, lx, ly) : ""; // seasonfx.js: a noise lure in the rain
+  const heard = T.radius ? (n ? ` ${n} of them turn toward it.` : drown ? ` ${drown}: nothing turns toward it.` : T.fx || onCar ? "" : " Nothing seems to notice.") : ""; // fx: the bang or the flare says it
   const where = off ? " It lands a tile off." : blind ? " Thrown blind over cover." : "";
   say(b, `${u.name} ${T.self ? "blows" : "throws"} ${T.label}.${where}${heard}${extra ? ` ${extra}` : ""}${T.heat && b.raid ? " Heat rises." : ""}`, u.side === "enemy" ? "danger" : n || extra ? "good" : "info");
   if (!T.self && !b.over) {
@@ -533,11 +537,14 @@ export function pull(b, lure, first = false) {
   const T = THROWABLES[lure.key] || {};
   let n = 0;
   const inside = !!(b.raid && b.raid.interior);
+  // seasonfx.js: in the rain a noise carries less (a quiet one not at all) and a noise lure may be drowned out.
+  const reach = !b.sfx ? lure.radius : THROWABLES[lure.key] ? lureReach(b, lure, T) : muffle(b, lure.x, lure.y, lure.radius);
+  if (!reach) return 0;
   for (const e of b.units) {
     if (e.side === lure.side || e.side === "player" || !active(e)) continue;
     if (e.reinforcement && !inside) continue;
     const d = dist(e.x, e.y, lure.x, lure.y) + (inside ? noiseDamp(b, e.x, e.y, lure.x, lure.y) : 0);
-    if (d > lure.radius) continue;
+    if (d > reach) continue;
     if (e.kind === "human") {
       if (e.aware || T.people === "none") continue;
       const [tx, ty] = T.people === "thrower" && lure.from ? lure.from : [lure.x, lure.y];
@@ -666,7 +673,7 @@ export function botStealth(state, b, u, combatAct) {
   let best = null;
   for (let y = 0; y < b.h; y++) for (let x = 0; x < b.w; x++) {
     const d = dist(u.x, u.y, x, y);
-    if (d < 4 || d > T.range || !walk(b, x, y)) continue;
+    if (d < 4 || d > T.range || !walk(b, x, y) || (b.sfx && drownWhy(b, T, x, y))) continue; // seasonfx.js: not where the rain drowns it out
     let pulled = 0;
     for (const e of near) if (dist(e.x, e.y, x, y) <= T.radius && d > dist(u.x, u.y, e.x, e.y) + 2) pulled++;
     const sc = pulled + d * 0.05;

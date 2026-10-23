@@ -33,7 +33,7 @@ function battle(st, { count = 1, kind = "raiders", fighters = 2, ambush = "playe
   st.combat = createBattle(st, { tile: h.tile, baseId: h.id, fighterIds: ids, enemy: { kind, count, power: 3, name: "Test" }, ambush, canRetreat: false, handler: "vt", context: {} });
   const b = st.combat;
   for (const c of b.cells) { c.k = "open"; delete c.h; delete c.t; }
-  b.lit = null; b.floodAim = null; b.flares = [];
+  b.lit = null; b.floodAim = null; b.flares = []; delete b.sfx; // fair weather: the rain would muffle the noises and the fog cap the sight (seasonfx.js)
   b.losCache.fill(0); b.reach.fill(1);
   b.phase = "player";
   return b;

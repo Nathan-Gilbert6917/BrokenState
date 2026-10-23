@@ -28,6 +28,7 @@ import { unitMods } from "./gunmods.js";
 import { earGearOf, faceOf, HELMETS, syncVisorSight, helmetOf } from "./helmets.js";
 import { GEAR } from "./data.js"; // isPlugsKey: which ear protection is a strip of earplugs
 import { weather } from "./weather.js";
+import { rainHear } from "./seasonfx.js"; // the rain: the unseen heard less far (the user's request 2026-10-23)
 import { wear } from "./crafting.js";
 import { registerHearing } from "./launchers.js"; // launcher blasts and rocket launches deafen through hearing.js (registered below, at load)
 import { registerHearing as registerThrowHearing } from "./throwables.js"; // the same registry, re-exported by throwables.js
@@ -134,7 +135,7 @@ export function heardGhosts(b) {
     if (e.side !== "enemy" || !active(e)) continue;
     if (e.movedT !== b.turn && e.shotT !== b.turn) continue;
     if (playerSees(b, e)) continue;
-    if (!ears.some((u) => (u.f || 0) === (e.f || 0) && dist(u.x, u.y, e.x, e.y) <= hearRange(u))) continue;
+    if (!ears.some((u) => (u.f || 0) === (e.f || 0) && dist(u.x, u.y, e.x, e.y) <= hearRange(u) * (b.sfx ? rainHear(b, e.x, e.y) : 1))) continue; // seasonfx.js: less far in the rain
     g[e.id] = [e.x, e.y, b.turn, e.f || 0, 1]; // [x, y, turn, floor, heard]
     out.push(e);
   }
