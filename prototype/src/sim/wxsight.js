@@ -42,4 +42,4 @@ export function fogEyes(b, u) {
   u.sight = Math.min(u.sight, day);
 }
 // "Fog: sight −4" (the battle log, a unit's hover line), or "".
-export const wxSightWord = (b) => (b && b.wxSight ? `${NAMES[b.wx] || "Weather"}: sight −${b.wxSight}` : "");
+export const wxSightWord = (b) => (b && b.wxSight ? `${b.wxFog || NAMES[b.wx] || "Weather"}: sight −${b.wxSight}` : ""); // wxFog: rain fog (seasonfx.js)

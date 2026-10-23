@@ -31,6 +31,7 @@
 // }
 import { applyRelief } from "./relief.js"; // hills, hollows and crag on a hills or mountain tile
 import { pondsBattle, wetCost, wadeAim } from "./ponds.js"; // the hollows' ponds, mud and ice, the slopes in the rain and in winter
+import { seasonBattle, iceCost, slipStep, muffle, fogSight } from "./seasonfx.js"; // snow and ice underfoot, rain muffling sounds, fog cutting sight (the user's request 2026-10-23)
 import { seasonGround, groundCost } from "./seasonground.js"; // spring's mud and winter's snow on the ground (call-time only)
 import { hollowShut, acrossFloors, windowSees, windowSeen, windowFoes, standH, floorCover, shootable, terrainScore } from "./highground.js"; // the lie of the land in a fight: hollows, hills into upper floors, the AI on the high ground
 import { typeFind, AREA_MIX } from "./foods.js"; // the food in a container as items
@@ -2514,7 +2515,7 @@ export function los(b, x0, y0, x1, y1) {
 
 // How far a unit sees from where it stands: its sight (night, a flashlight, night vision: stealth.js), +HEIGHT.SIGHT
 // a level up, + optics (binoculars, a thermal at night: u.optic, stealth.js).
-export const sightRange = (b, a, x = a.x, y = a.y) => a.sight + HEIGHT.SIGHT * hAt(b, x, y) + (a.optic || 0) + (a.vsight || 0); // vsight: a ballistic visor down (helmets.js)
+export const sightRange = (b, a, x = a.x, y = a.y) => fogSight(b, a, a.sight + HEIGHT.SIGHT * hAt(b, x, y) + (a.optic || 0) + (a.vsight || 0), x, y); // vsight: a ballistic visor down (helmets.js); fogSight: a fog bank or rain fog caps it (seasonfx.js)
 // Can a unit see a cell? Light shows your people what stands in it out to the full daylight range, however dark: a
 // flare (throwables.js) and, at night, a floodlit cell (deploy.js). Inside a raid's building the room's own light
 // (indoorlight.js): a lit room is seen as by day (at night too, by either side), a dark one (a barn, a storeroom, any
@@ -2668,7 +2669,7 @@ export function reachable(b, u, maxCost, opts = {}) {
       if (avoid && avoid.has(j)) continue;
       const climb = climber ? Math.abs(hAt(b, nx, ny) - hAt(b, x, y)) + (cellAt(b, nx, ny).walk && !barredCell(b.cells[j]) ? 0 : MIDDEAD.CLIMBER.COST) : climbCost(b, x, y, nx, ny, diag, per);
       if (climb === Infinity) continue;
-      const step = (diag ? 1.5 : 1) + climb + (vault ? overCost(b, u, b.cells[j]) : 0) + (soft ? softCost(b.cells[j]) : 0) + wetCost(b.cells[j]) + groundCost(b.cells[j]); // a vault, a clamber through a window, the dead's crawl (barricade.js); into a bush or a tent (softcover.js); into water, mud or ice (ponds.js); spring's mud, winter's snow (seasonground.js)
+      const step = (diag ? 1.5 : 1) + climb + (vault ? overCost(b, u, b.cells[j]) : 0) + (soft ? softCost(b.cells[j]) : 0) + wetCost(b.cells[j]) + groundCost(b.cells[j]) + iceCost(b, b.cells[j]); // a vault, a clamber through a window, the dead's crawl (barricade.js); into a bush or a tent (softcover.js); into water, mud or ice (ponds.js); spring's mud, winter's snow (seasonground.js)
       const nr = real[cur] + step, nd = aw ? d[cur] + step + aw[j] : nr;
       if (nr <= maxCost + 1e-6 && nd < d[j]) {
         if (d[j] === Infinity) { open.push(j); reached.push(j); }
@@ -2748,7 +2749,7 @@ export function distField(b, sources, walker = null) {
     climbA[i] = climbAt(b, x, y) ? 1 : 0;
     groundA[i] = groundH(c) != null ? 1 : 0;
     hA[i] = h(b, x, y);
-    overA[i] = (ov ? MIDDEAD.CLIMBER.COST : vl ? (vaulter ? vaultCost(b, c, walker) : windowOpen(c) ? VAULT.COST : CRAWL.COST) : soft ? softCost(c) : 0) + wetCost(c) + groundCost(c); // spring's mud, winter's snow (seasonground.js); a Climber's wall, a person's vault (a window crashed through dearer), the dead through a window, the dead's crawl over half cover; into a bush or a tent (softcover.js); into water, mud or ice (ponds.js)
+    overA[i] = (ov ? MIDDEAD.CLIMBER.COST : vl ? (vaulter ? vaultCost(b, c, walker) : windowOpen(c) ? VAULT.COST : CRAWL.COST) : soft ? softCost(c) : 0) + wetCost(c) + groundCost(c) + iceCost(b, c); // onto ice (seasonfx.js); spring's mud, winter's snow (seasonground.js); a Climber's wall, a person's vault (a window crashed through dearer), the dead through a window, the dead's crawl over half cover; into a bush or a tent (softcover.js); into water, mud or ice (ponds.js)
     bashA[i] = !ov && !vl && siege && (breakable(c) && (!CELL[c.k].walk || (barredCell(c) && !doorOpens(b, walker, c)))) ? SIEGE.COST + c.hp * SIEGE.PER_HP : 0;
   }
   // A binary heap of (distance, cell), stale entries skipped: the same field as scanning for the nearest open cell,
@@ -3958,6 +3959,7 @@ export function createBattle(state, setup) {
   }
   pondsBattle(state, b, b.tileId ?? (base ? base.tile : null)); // ponds.js: the hollows' water, mud or ice by the tile's weather (a base's map: its tile); the slopes in the rain or in winter
   seasonGround(state, b, b.tileId ?? (base ? base.tile : null)); // seasonground.js: spring's mud on the dirt, winter's snow on the ground (after the ponds: not on them)
+  seasonBattle(state, b, b.tileId ?? (base ? base.tile : null)); // seasonfx.js: snow underfoot, ice, rain and fog on the map
   if (b.doors) b.doors = b.doors.filter((d) => b.cells[idx(d.x, d.y)].k === "door");
   // The team's car or truck on the field (placeVehicle): by the west edge, on the road when there is one. It can be
   // driven (DRIVE) and the siege ram rides in it (siege.js), so nobody has to carry it to the wall.
@@ -4145,7 +4147,7 @@ export function foesOf(b, u) {
 const personHit = (t, hit) => t.kind === "human" && !t.ztype && locatedHit(hit);
 export function hitMult(t, by, hit) {
   if (hit && hit.how === "acid") return acidArmor(t);
-  if (hit && hit.how === "glass") return 1; // the cuts of a vault through a closed window (windows.js): no armour against them
+  if (hit && (hit.how === "glass" || hit.how === "ice")) return 1; // the cuts of a vault through a closed window (windows.js), a fall on the ice (seasonfx.js): no armour against them
   if (t.ztype === "boneback") return bonebackMult(t, by, hit) * t.armor;
   if (t.ztype === "tripper" && hit && hit.how === "blast") return COUNTER.BLAST * t.armor; // counterdead.js: it walks onto the mines
   if (t.ztype && (ARMORED.includes(t.ztype) || t.ztype === "swarm")) return armorVs(t, by, hit);
@@ -4335,6 +4337,7 @@ export function moveAlong(b, u, path) {
     }
     if (trap === "wire" && u.kind !== "zombie" && wireStep(null, b, u, x, y, { say, damage, fx })) break; // wire.js: the living snagged, or cutting through
     if (b.cells[idx(x, y)].mine && mineStep(b, u, x, y, { say })) break; // mines.js: a mine underfoot (never one of yours)
+    if (b.sfx && slipStep(b, u, x, y, { damage, say, fx, seen: playerSees })) break; // seasonfx.js: a slip on the ice ends the move, the turn spent getting up
     // A spike pit (buildings.js spike_pits, the user's request 2026-10-19: they hurt raiders too): anyone not of yours
     // drops through the cover onto the stakes (SPIKES.LIVING) and the move ends there; yours know where the pits are.
     if (trap === "spikes" && u.kind !== "zombie" && u.side !== "player") {
@@ -7107,6 +7110,7 @@ export function createRaid(state, setup) {
   if (b.vehicle) { b.vehicle.seats = SEATS[b.vehicle.kind === "bike" ? "bike" : (pv && pv.type) || "sedan"] ?? 4; fitMapVehicle(b, pv); } // who can ride in it (boardVehicle); its upgrades
   pondsBattle(state, b, b.tileId); // ponds.js: the hollows' water, mud or ice by the tile's weather; the slopes in the rain or in winter
   seasonGround(state, b, b.tileId); // seasonground.js: spring's mud on the dirt, winter's snow on the ground
+  seasonBattle(state, b, b.tileId); // seasonfx.js: snow underfoot, ice, rain and fog on the map
   b.reinfMax = 0;
   b.zmix = (() => { const m = ((setup.enemy.groups || []).find((g) => g.kind === "zombies") || setup.enemy).mix; return maxMix(armoredOf(m), beastsOf(m)); })(); // the dead drawn in by the Heat: the armoured dead, the dead beasts of the land (deadbeasts.js)
   const occupied = (x, y) => !!unitAt(b, x, y);
@@ -7275,6 +7279,7 @@ export function notice(b, e) {
 // src: who made it (crossfire.js: one of theirs while you are still unseen draws the unaware to the spot, nobody wakes).
 export function alertNear(b, x, y, radius, why, src = null) {
   bindDims(b);
+  if (b.sfx) { radius = muffle(b, x, y, radius); if (!radius) return; } // seasonfx.js: the rain drowns it out (×0.6, a storm ×0.45; a quiet one not heard at all)
   if (src && crossDraw(b, x, y, radius, src, why)) return;
   const heard = (u) => (u.kind === "human" && u.deaf > 0 ? 1.5 : radius); // hearing.js: the deaf hear nothing past arm's length, as yours do (docs/adr/0001-ai-parity.md)
   const near = b.units.filter((u) => u.side === "enemy" && !u.aware && active(u) && dist(u.x, u.y, x, y) <= heard(u));

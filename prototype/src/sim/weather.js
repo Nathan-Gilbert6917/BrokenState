@@ -84,7 +84,8 @@ export const WEATHER = {
 
 // Chance weights per season (rolled once a day; yesterday's weather tends to stay, see PERSIST).
 const WEIGHTS = {
-  spring: { clear: 30, overcast: 22, rain: 24, storm: 6, fog: 10, frost: 8 },
+  // Spring rains more often (the user's request 2026-10-23: "In spring it rains more often"): rain 24 → 30, from clear and grey skies.
+  spring: { clear: 27, overcast: 19, rain: 30, storm: 6, fog: 10, frost: 8 },
   summer: { clear: 46, overcast: 16, rain: 14, storm: 8, fog: 2, heat: 9, drought: 6 },
   autumn: { clear: 24, overcast: 26, rain: 24, storm: 8, fog: 12, frost: 12 },
   winter: { clear: 16, overcast: 22, rain: 4, snow: 28, blizzard: 8, fog: 6, frost: 16 },
@@ -239,7 +240,7 @@ export const bgKind = (k) => BG[k] || k;
 // these by season (the chance of each a day).
 export const FRONT = { second: 0.45, maxLife: 72, fadeHours: 6, growHours: 3 };
 const EXTRA = {
-  spring: { rain: 0.3, storm: 0.06 }, summer: { storm: 0.14, rain: 0.12 },
+  spring: { rain: 0.36, storm: 0.06 }, summer: { storm: 0.14, rain: 0.12 },
   autumn: { rain: 0.3, storm: 0.05, fog: 0.1 }, winter: { snow: 0.3, blizzard: 0.04, fog: 0.05 },
 };
 // The map edge a front comes in from (weights): mostly the west, more from the north in winter and the south in summer.
@@ -479,6 +480,20 @@ export const weatherOnDay = (state, dayNumber, tileId = homeTile(state)) => desc
 /** @param {State} state @param {number} dayNumber */
 export const regionOnDay = (state, dayNumber) => describe(rec(state, dayNumber - 1), 12);
 
+// Rain fog (seasonfx.js, the user's request 2026-10-23: "show rain fog can occur to that limit visibility range"): a
+// mist off the rain over a tile under rain or a storm, one roll a day for each weather system (the front over the tile,
+// or the day's sky): RAIN_FOG.chance, ×spring in spring, +dawn from dawnH[0] to dawnH[1] o'clock (the same roll, so the
+// fog of a dawn lifts later in the day). Its own hash of the seed: no RNG stream is touched.
+export const RAIN_FOG = { chance: 0.15, spring: 2, dawn: 0.2, dawnH: [4, 9] };
+/** @param {State} state @param {number | null} tileId @param {number} [hour] */
+export function rainFog(state, tileId, hour = state.hour) {
+  const d = localRec(state, tileId, hour);
+  if (!(d.k === "rain" || d.k === "storm") || !(d.rain > 0)) return false;
+  const day = Math.floor(hour / 24), h = ((hour % 24) + 24) % 24;
+  const p = RAIN_FOG.chance * (seasonOfDay(day).key === "spring" ? RAIN_FOG.spring : 1) + (h >= RAIN_FOG.dawnH[0] && h < RAIN_FOG.dawnH[1] ? RAIN_FOG.dawn : 0);
+  return new Rng(hash(ensure(state).seed ^ 0x6f9a, day, d.front ? d.front.id : 0xfff)).next() < p;
+}
+
 // ---------- forecast (what the player is told) ----------
 function hash(a, b, c) {
   let h = Math.imul((a >>> 0) ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul((b + 1) >>> 0, 0xc2b2ae35) ^ Math.imul((c + 7) >>> 0, 0x27d4eb2f);
@@ -589,6 +604,9 @@ export function travelEffects(state, hour = state.hour, tileId = homeTile(state)
   if (!d.frozen && d.mud >= 0.15) lines.push(`Mud ${Math.round(d.mud * 100)}% (off-road, worst for vehicles)`);
   if (d.cover >= 0.05) lines.push(`Snow cover ${Math.round(d.cover * 100)}%`);
   if (sight) lines.push(`Teams, bases' lookouts and watch towers see ${-sight} tile less`);
+  if (k === "fog") lines.push("Fog: everyone in a fight here sees 4 tiles less (far less at night)"); // wxsight.js WX_SIGHT
+  else if ((k === "rain" || k === "storm") && rainFog(state, tileId, hour)) lines.push("Rain fog: everyone in a fight here sees 4 tiles less (far less at night)"); // wxsight.js WX_SIGHT
+  if (k === "rain" || k === "storm") lines.push("Rain: sounds carry less in a fight, noise lures drowned out"); // seasonfx.js HEAR
   if (ambush) lines.push("Easier to be ambushed");
   if (injury) lines.push(`Injury risk on the road (${(injury * 100).toFixed(1)}% an hour on foot)`);
   if (boat > 1) lines.push(`Boat mishaps ${boat}× as likely`);
