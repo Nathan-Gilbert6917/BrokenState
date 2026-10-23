@@ -34,7 +34,7 @@ import { parleyStatus } from "../sim/parley.js"; // another group's people on a 
 import { endangered, imminent } from "../sim/carriers.js"; // a body in danger from the worm
 import { isMedic } from "../sim/medics.js"; // a med kit makes a medic: the cross tag
 import { nlTags } from "./nonlethal.js"; // status tags of the non-lethal kit (sim/nonlethal.js)
-import { battleWeather, fogColour, fogCss, skirtFor, drawVignette, setEdgeCanvas } from "./battleedge.js"; // the map's edge: ground fading into fog
+import { battleWeather, fogColour, fogCss, skirtFor, skirtTiles, drawVignette, setEdgeCanvas } from "./battleedge.js"; // the map's edge: ground fading into fog
 import { drawBattleWx, setWxCanvas } from "./battlewx.js"; // rain, fog and snow over the view: the State Map's weather over the battle's tile
 import { paintLights, drawGlow, drawDarkness, drawShade, setLightsCanvas } from "./battlelights.js"; // night: flashlight beams, lantern pools, the darkness; by day a dark room's shade
 import { ingestMarks, revealMarks, drawMarks, knownBody, setMarksCanvas } from "./battlemarks.js"; // blood, brass, scorch, glass that stay
@@ -1646,13 +1646,16 @@ const CUT_R = 6;
 // The ground's level at a cell (sim/combat.js c.h with c.ter; 0 level ground; a raised floor or a wall: 0, it is not the
 // ground's), and the look under the cell: null when it and everything round it is level ground.
 const groundLv = (c) => (c && c.k === "crag" ? c.ch || 3 : c && c.ter ? c.h || 0 : 0); // a mountain's rock: its own height (sim/basescatter.js reliefLayer)
+// Past the map's edge: the land beyond (beyondBoard) where a base map has it, else level ground (a hill the edge cuts
+// banks down to it there).
 function terrainOf(b, x, y) {
   const c = b.cells[y * b.w + x], e = groundLv(c), r = iso.rot;
+  const at = (nx, ny) => (nx >= 0 && ny >= 0 && nx < b.w && ny < b.h ? groundLv(b.cells[ny * b.w + nx]) : offLv(b, nx, ny));
   let bottom = e;
-  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const nx = x + dx, ny = y + dy; if (nx >= 0 && ny >= 0 && nx < b.w && ny < b.h) bottom = Math.min(bottom, groundLv(b.cells[ny * b.w + nx])); }
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) bottom = Math.min(bottom, at(x + dx, y + dy));
   if (!e && bottom === 0) return null;
   const falls = [e, e, e, e];
-  VD.forEach(([dx, dy]) => { const nx = x + dx, ny = y + dy; if (nx >= 0 && ny >= 0 && nx < b.w && ny < b.h) falls[viewDir(dx, dy, r)] = groundLv(b.cells[ny * b.w + nx]); });
+  VD.forEach(([dx, dy]) => { falls[viewDir(dx, dy, r)] = at(x + dx, y + dy); });
   // A mountain's rock: its neighbours' heights all round in view space (g[v + 1][u + 1]: the surface runs through them).
   let g = null;
   if (c.k === "crag") {
@@ -1666,6 +1669,70 @@ function terrainOf(b, x, y) {
     }
   }
   return { e, bottom, falls, g, key: `${e}${bottom}${falls.join("")}${g ? g.flat().join("") : ""}` };
+}
+// ---------- the land past the edge ----------
+// The user's request 2026-10-23: "The outer margin of the base should not just terminate a terrain it should continue
+// the terrain so it does not just terminate at the border". A base map's land runs on past its edge (sim/basescatter.js
+// landBeyond: F.beyond, BEYOND_R cells all round): a board that much bigger, the map's own cells in its middle and the
+// land's round them, so the looks of the cells outside (lookOf on the board: a hill's banks against the map's ground,
+// trees, rocks, the crag) are worked out as the map's are; drawn in the painter's pass at their depth, fading with the
+// distance from the map into the skirt's fog (battleedge.js). Scenery only: no hover, no clicks.
+const beyondBoards = new WeakMap();
+function beyondBoard(b) {
+  const F = b.deployPlan && b.deployPlan.fort, BY = F && F.beyond;
+  if (!BY || !BY.cells || !BY.cells.length || floorsOf(b)) return null;
+  let bd = beyondBoards.get(BY);
+  if (bd && bd.b === b && bd.cells0 === b.cells) return bd;
+  const R = BY.R, w = b.w + 2 * R, h = b.h + 2 * R, OPEN = { k: "open" }, cells = new Array(w * h).fill(OPEN);
+  for (let y = 0; y < b.h; y++) for (let x = 0; x < b.w; x++) cells[(y + R) * w + x + R] = b.cells[y * b.w + x];
+  for (const [x, y, k, f, hh, ch] of BY.cells) { const c = { k, f: f || "" }; if (hh) { c.h = hh; c.ter = 1; } if (ch) c.ch = ch; cells[(y + R) * w + x + R] = c; }
+  bd = { b, cells0: b.cells, R, board: { w, h, cells, snowLie: 0 }, scene: { comp: new Int16Array(w * h).fill(-1), blds: [] }, list: BY.cells, looks: null, key: "" };
+  beyondBoards.set(BY, bd);
+  return bd;
+}
+// A sprite drawn into the fog: solid (a see-through tree reads as a ghost), its colours a share t of the way to the
+// fog's (FOG_STEPS of them, each made once a sprite and a fog colour).
+const FOG_STEPS = 6, fogTints = new WeakMap();
+function fogTinted(spr, fogC, t) {
+  if (t <= 0) return spr.cv;
+  let m = fogTints.get(spr);
+  if (!m) { m = new Map(); fogTints.set(spr, m); }
+  const key = `${fogC.join(",")}|${t}`;
+  let cv = m.get(key);
+  if (!cv) {
+    cv = mkCanvas(spr.cv.width, spr.cv.height);
+    const c = cv.getContext("2d");
+    c.drawImage(spr.cv, 0, 0);
+    c.globalCompositeOperation = "source-atop";
+    c.fillStyle = fogCss(fogC, t);
+    c.fillRect(0, 0, cv.width, cv.height);
+    m.set(key, cv);
+  }
+  return cv;
+}
+// The ground's level at (x, y) off the map (map coordinates): the land beyond, else level ground.
+function offLv(b, x, y) {
+  const bd = beyondBoard(b);
+  if (!bd) return 0;
+  const X = x + bd.R, Y = y + bd.R;
+  return X < 0 || Y < 0 || X >= bd.board.w || Y >= bd.board.h ? 0 : groundLv(bd.board.cells[Y * bd.board.w + X]);
+}
+// The outside cells' looks ({ x, y, L } in map coordinates), again when the view turns or the season changes.
+function beyondLooks(b, bd) {
+  const key = `${viewKey()}:${treeLook}:${snowLook}:${b.snowLie || 0}`;
+  if (bd.looks && bd.key === key) return bd.looks;
+  const keep = leafNow;
+  leafNow = null; // the autumn leaves are the map's, by its cells
+  bd.board.snowLie = b.snowLie || 0;
+  const out = [];
+  try {
+    for (const [x, y] of bd.list) {
+      const L = lookOf(bd.board, bd.scene, x + bd.R, y + bd.R, null);
+      if (L) out.push({ x, y, L: { k: L.k, o: L.o, top: blockTop(L.k, L.o), spr: [undefined, undefined], fspr: [undefined, undefined] } });
+    }
+  } finally { leafNow = keep; }
+  bd.looks = out; bd.key = key;
+  return out;
 }
 function lookOf(b, scene, x, y, cut, focus = null) {
   const i = y * b.w + x, c = b.cells[i], k = c.k === "siegeladder" ? "palisade" : c.k; // a siege ladder leans on its wall (drawn on top: drawSiegeIso)
@@ -2525,8 +2592,31 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   // on its top floor you want to see the floor, not the roof (the fog still hides what nobody has seen).
   const topFloor = !F;
   iso.rects = [];
+  // The land past the edge (beyondBoard), by depth, fading out with its distance from the map; not where the map is
+  // unknown round a camp set up blind (b.knownMask), nor with the map's edge off (Display: battleedge.js).
+  const beyond = new Map(), bdb = !b.knownMask && skirtTiles() > 0 ? beyondBoard(b) : null;
+  if (bdb) for (const e of beyondLooks(b, bdb)) {
+    const [bu, bv] = toView(e.x, e.y, r, b.w, b.h), d = depth(bu, bv, st);
+    const out = Math.max(-bu, bu - (Wv - 1), -bv, bv - (Hv - 1));
+    const t = Math.round(clamp01((out - 0.5) / (bdb.R + 0.5)) * FOG_STEPS) / FOG_STEPS; // how far into the fog (fogTinted)
+    if (t >= 1) continue;
+    const q = { e, bu, bv, t, fog: !vis[Math.max(0, Math.min(b.h - 1, e.y)) * b.w + Math.max(0, Math.min(b.w - 1, e.x))] };
+    const l = beyond.get(d); if (l) l.push(q); else beyond.set(d, [q]);
+  }
+  const drawBeyond = (d) => {
+    for (const q of beyond.get(d) || []) {
+      const sx = artX(q.bu, q.bv, st) * S + FR.X0, sy = artY(q.bu, q.bv, st) * S + FR.Y0;
+      if (sx < -margin || sx > cw + margin || sy < -margin || sy > ch + margin * 2) continue;
+      const spr = sprOf(q.e.L, q.fog);
+      if (!spr) continue;
+      ctx.drawImage(fogTinted(spr, fog, q.t), Math.round(sx + spr.ox * S), Math.round(sy + spr.oy * S), Math.ceil(spr.w * S), Math.ceil(spr.h * S));
+    }
+  };
+  const lastD = st ? Hv - 1 : Wv + Hv - 2;
+  if (bdb) for (const d of [...beyond.keys()].filter((k) => k < 0).sort((p, q) => p - q)) drawBeyond(d);
   // By diagonal (u + v) from the back; in a straight view by row (v).
-  for (let d = 0; d <= (st ? Hv - 1 : Wv + Hv - 2); d++) {
+  for (let d = 0; d <= lastD; d++) {
+    drawBeyond(d);
     const uLo = st ? 0 : Math.max(0, d - (Hv - 1)), uHi = st ? Wv - 1 : Math.min(Wv - 1, d);
     const fronts = [];
     for (let uu = uLo; uu <= uHi; uu++) {
@@ -2593,6 +2683,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
       ctx.globalAlpha = 1;
     }
   }
+  if (bdb) for (const d of [...beyond.keys()].filter((k) => k > lastD).sort((p, q) => p - q)) drawBeyond(d); // the land in front of the map's near edges
 
   // A building with storeys (floorsOf): units on other floors are not drawn; a faint marker at their x, y says
   // ▲ / ▼ and the floor (clicking it jumps to that floor: iso.rects). The stairwells carry an arrow for the way

@@ -937,11 +937,34 @@ export function clearOf(p, tool = true, mode = "clear") {
 }
 
 // ---------- laying the land on a map ----------
+// The land past a map's edge (the user's request 2026-10-23: "The outer margin of the base should not just terminate a
+// terrain it should continue the terrain so it does not just terminate at the border"): the cells within R of the
+// W × H map (map = grid + ox, oy) and outside it where the land has something to draw (a height, a tree, a bush, a
+// hedge, a fence, a rock, a boulder, a stump, a log, a hay bale, the crag; a floor), each [x, y, k, f, h, ch?] in map
+// coordinates; inGrid(gx, gy): on the tile's own map (nothing past it). The view draws them running on into the fog
+// (ui/isoview.js beyondBoard); scenery only, nothing in the sim stands there.
+export const BEYOND_R = 6;
+/** @param {any} land @param {number} W @param {number} H @param {number} ox @param {number} oy @param {number} R @param {(gx: number, gy: number) => boolean} inGrid */
+export function landBeyond(land, W, H, ox, oy, R, inGrid) {
+  const out = [];
+  if (!land) return out;
+  for (let y = -R; y < H + R; y++) for (let x = -R; x < W + R; x++) {
+    if (x === 0 && y >= 0 && y < H) x = W; // the map itself: skip across it
+    const gx = x - ox, gy = y - oy;
+    if (!inGrid(gx, gy)) continue;
+    const key = `${gx},${gy}`, h = (land.heights && land.heights.get(key)) || 0, p = land.pieces.get(key), f = land.floors.get(key) || "";
+    const k = p && (SCATTER_KINDS.has(p.k) || p.k === "crag") ? p.k : "open";
+    if (!h && k === "open" && !f) continue;
+    out.push(k === "crag" ? [x, y, k, f, h, p.h || HIGH.CRAG_LV[0]] : [x, y, k, f, h]);
+  }
+  return out;
+}
 /**
  * Lays the land on a map (basemap.js buildBaseMap; fort.js for an AI group's margin). m: { cells, W, H, ox, oy (grid →
  * map), land (landOf), ok(x, y) → the map cell may take a piece (open ground, nothing standing), floor(x, y) → it may
- * take a floor }. Never on the map's outermost cells (the attackers' ground, an open ring round the map, so wherever a
- * battle floods its reach from on the edge it reaches all of it). Returns { kinds: { k: n } }.
+ * take a floor }. No piece on the map's outermost cells (the attackers' ground, an open ring round the map, so wherever a
+ * battle floods its reach from on the edge it reaches all of it); the heights go there too (a level a step: relief.js
+ * cragWays). Returns { kinds: { k: n } }.
  * @param {any} m
  */
 export function layLand(m) {
@@ -952,10 +975,13 @@ export function layLand(m) {
     if (x >= 0 && y >= 0 && x < W && y < H && (!m.floor || m.floor(x, y))) cells[y * W + x].f = f;
   }
   // The lie of the land under it all (reliefLayer): c.h the cell's height in levels, c.ter: it is the ground's (a hill
-  // or a hollow, walked up and down a level at a step: combat.js climbCost).
+  // or a hollow, walked up and down a level at a step: combat.js climbCost). The map's outer row too (the user's request
+  // 2026-10-23: "The outer margin of the base should not just terminate a terrain it should continue the terrain"): a
+  // hill the map's edge cuts runs on to it at its own height, no longer stepped down to level ground there (landBeyond
+  // carries it on past the edge in the view).
   if (land.heights) for (const [key, h] of land.heights) {
     const [gx, gy] = key.split(",").map(Number), x = gx + ox, y = gy + oy;
-    if (inner(x, y) && (!m.floor || m.floor(x, y)) && (!m.ok || m.ok(x, y))) { const c = cells[y * W + x]; c.h = h; c.ter = 1; if (land.springs && land.springs.has(key)) c.spring = 1; } // c.spring: a pond tile's spring-fed hollow (ponds.js)
+    if (x >= 0 && y >= 0 && x < W && y < H && (!m.floor || m.floor(x, y)) && (!m.ok || m.ok(x, y))) { const c = cells[y * W + x]; c.h = h; c.ter = 1; if (land.springs && land.springs.has(key)) c.spring = 1; } // c.spring: a pond tile's spring-fed hollow (ponds.js)
   }
   const kinds = {};
   for (const p of land.list) {
