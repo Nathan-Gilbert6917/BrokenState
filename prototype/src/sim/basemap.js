@@ -886,10 +886,12 @@ export function siteProblem(state, tile, at) {
   for (let y = B.y0; y < B.y1; y++) for (let x = B.x0; x < B.x1; x++) { const p = land.pieces.get(`${x},${y}`); if (p && p.k === "water") return "On the river: pick dry ground"; if (p && p.k === "crag") return "On the mountainside: pick open ground"; if (p && p.spring) return "In the pond: pick dry ground"; }
   return "";
 }
-// What clearing the spot would give and take ({ hours: work-hours at a builder's pace, get, n: pieces }; the picker's
-// line, staging.js siteSetup). tool: a cutting tool to hand (else a tree, a log or a stump takes CLEAR.NO_TOOL as long).
+// What clearing the spot would give and take ({ hours: work-hours at a builder's pace, get, n: pieces; dig: { hours,
+// up, down }: the part of it levelling the ground, cells of high ground dug down and of hollow filled in, so an open
+// spot on a hill reads as the dig it is, not "clearing 25 things": the user's report 2026-10-23 }; the picker's line,
+// staging.js siteSetup). tool: a cutting tool to hand (else a tree, a log or a stump takes CLEAR.NO_TOOL as long).
 export function siteYield(state, tile, at, tool = true) {
-  const land = siteLand(state, tile), B = siteBox(at), seen = new Set(), get = {};
+  const land = siteLand(state, tile), B = siteBox(at), seen = new Set(), get = {}, dig = { hours: 0, up: 0, down: 0 };
   let hours = 0;
   for (let y = B.y0; y < B.y1; y++) for (let x = B.x0; x < B.x1; x++) {
     const p = land.pieces.get(`${x},${y}`);
@@ -898,9 +900,11 @@ export function siteYield(state, tile, at, tool = true) {
     const c = clearOf(p, tool, "clear");
     if (!c) continue;
     hours += c.hours;
+    if (p.k === "rise" || p.k === "slope" || p.k === "dip") { dig.hours += c.hours; dig[p.k === "dip" ? "down" : "up"]++; }
     for (const [k, v] of Object.entries(siteGet(p, c, tool))) get[k] = (get[k] || 0) + v;
   }
-  return { hours: Math.round(hours * 10) / 10, get, n: seen.size };
+  dig.hours = Math.round(dig.hours * 10) / 10;
+  return { hours: Math.round(hours * 10) / 10, get, n: seen.size, dig };
 }
 // The game's spot (the governor, a team with nobody to ask, a pick put off, Let the game pick): the best spot in reach
 // by its facts (siteinfo.js bestSite, the user's words 2026-10-23: "Update let the game pick": the setup's time, the

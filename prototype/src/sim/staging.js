@@ -151,7 +151,7 @@ export function campOption(state, p, tile = partyTile(p)) {
   const w = waterSource(state, tile);
   return {
     mission: "camp", label: SETUP_LABEL, disabled: campProblem(state, tile),
-    desc: `Stop and make camp here (no materials: on getting there you pick its spot on the tile's ${BASE_GRID} × ${BASE_GRID} map; the team builds its camp fire and clears the ${SITE.SIZE} × ${SITE.SIZE} round it, about ${durText(campPitchHours(state, p, tile))} on the middle of this tile, and what the land there gives goes into its stores): a camp is the barest base, tarps, bedrolls and a fire, and the tents the team carries (beds under cover, storage out of the weather).${threatWords(state, tile) && tileScouted(state, tile, p) ? ` The dead: ${threatWords(state, tile)}.` : ""} The team's people live there while it stands (the hurt heal twice as fast as at a base without a hospital, they eat and drink from the camp's stores), what the team carries goes into the stores and its vehicles park there. Manage it in its base window; ${STRIKE_LABEL} there packs everyone up again as a team. It can be built up with time and materials (Construction: into ${hub(state) ? "an outpost" : "a shelter, then a base"}). Water: ${w ? waterText(state, tile) : "no river or lake nearby, only what is carried in"}. Its fire, its people and vehicles parked there draw the dead and raiders.`,
+    desc: `Stop and make camp here (no materials: on getting there you pick its spot on the tile's ${BASE_GRID} × ${BASE_GRID} map; the team builds its camp fire and clears the ${SITE.SIZE} × ${SITE.SIZE} round it, about ${durText(campPitchHours(state, p, tile))} on the game's pick of spot (longer on a hill, in a hollow or among trees: each spot's time shows as you pick it), and what the land there gives goes into its stores): a camp is the barest base, tarps, bedrolls and a fire, and the tents the team carries (beds under cover, storage out of the weather).${threatWords(state, tile) && tileScouted(state, tile, p) ? ` The dead: ${threatWords(state, tile)}.` : ""} The team's people live there while it stands (the hurt heal twice as fast as at a base without a hospital, they eat and drink from the camp's stores), what the team carries goes into the stores and its vehicles park there. Manage it in its base window; ${STRIKE_LABEL} there packs everyone up again as a team. It can be built up with time and materials (Construction: into ${hub(state) ? "an outpost" : "a shelter, then a base"}). Water: ${w ? waterText(state, tile) : "no river or lake nearby, only what is carried in"}. Its fire, its people and vehicles parked there draw the dead and raiders.`,
   };
 }
 // Establish base (no base at all: hardcore's first home, the exiles): a camp with its step up queued.
@@ -187,7 +187,11 @@ export function pitchArrive(state, p, mission) {
     startTask(state, p, { type: "pitch", hours, mission });
     // Nobody to ask (the autopilot, a spot already picked): the dead at the spot cleared first (siteclear.js).
     const fight = !blind && !(state.siteAsk || []).includes(p.id) && clearSiteFirst(state, p, campSiteFor(state, p, tile));
-    return fight && !(p.task && p.task.type === "pitch" && p.phase === "task") ? "" : `Setting up camp${blind ? " blind" : ""} (${durText(hours)}: the camp fire and clearing the ${SITE.SIZE} × ${SITE.SIZE} round it).`;
+    if (fight && !(p.task && p.task.type === "pitch" && p.phase === "task")) return "";
+    // Asked: the hours are the game's pick's until a spot is picked (pickSite logs the spot's own: the user's report
+    // 2026-10-23, "it said 30 minutes and it did not finish for 9 in game hours" on an open hilltop picked by hand).
+    if ((state.siteAsk || []).includes(p.id)) return `Setting up camp: pick its spot on the tile's map (the game's pick takes ${durText(hours)}; a spot on a hill, in a hollow or among trees takes longer).`;
+    return `Setting up camp${blind ? " blind" : ""}: ${setupLine(state, p)}.`;
   }
   delete p.pitched;
   const blind = p.campBlind === tile;
@@ -224,6 +228,7 @@ export function pickSite(state, p, at) {
   p.campAt = [at[0], at[1]];
   siteDone(state, p);
   setHours(state, p);
+  log(state, `${teamName(state, p)} sets up camp on its spot at ${tileLabel(state, partyTile(p))}: ${setupLine(state, p)}.`, "info");
   clearSiteFirst(state, p, p.campAt); // siteclear.js: the dead there cleared first
   return "";
 }
@@ -234,7 +239,7 @@ export function autoSite(state, p) {
   siteDone(state, p);
   setHours(state, p);
   const tile = partyTile(p), info = siteInfo(state, p, tile, campSiteFor(state, p, tile));
-  if (info.ok) log(state, `${teamName(state, p)} at ${tileLabel(state, tile)}: ${pickWords(info)}`, "info");
+  if (info.ok) log(state, `${teamName(state, p)} at ${tileLabel(state, tile)}: ${pickWords(info)} Setting up camp: ${setupLine(state, p)}.`, "info");
   clearSiteFirst(state, p, campSiteFor(state, p, partyTile(p)));
 }
 // The pitching under way takes the hours of the spot it is for.
@@ -255,8 +260,21 @@ export function siteSetup(state, p, tile, at = null, withTool = null) {
   const y = siteYield(state, tile, spot, tool);
   const workers = Math.max(1, p ? partyMembers(state, p).length : 1);
   const work = CAMP.fireHours + y.hours;
-  return { at: spot, work: r1(work), workers, hours: Math.max(0.25, Math.ceil((work / workers) * 4 - 1e-9) / 4), clear: y.hours, get: y.get, n: y.n, tool };
+  return { at: spot, work: r1(work), workers, hours: Math.max(0.25, Math.ceil((work / workers) * 4 - 1e-9) / 4), clear: y.hours, get: y.get, n: y.n, tool, dig: y.dig };
 }
+// The setup's work in words (siteSetup): "the camp fire, digging 25 cells of a hill down level and clearing 3 things".
+export function setupWhat(s) {
+  const d = s.dig || { up: 0, down: 0 }, rest = s.n - d.up - d.down;
+  const parts = [levelWords(d), rest > 0 ? `clearing ${rest} thing${rest === 1 ? "" : "s"}` : ""].filter(Boolean);
+  return `the camp fire${parts.length ? `, ${parts.join(" and ")}` : ""}`;
+}
+// The ground's levelling (siteSetup dig): "digging 25 cells of a hill down level", or "".
+export function levelWords(d) {
+  const cells = (n) => `${n} cell${n === 1 ? "" : "s"}`;
+  return !d ? "" : d.up && d.down ? `levelling ${cells(d.up + d.down)} of a hill and a hollow` : d.up ? `digging ${cells(d.up)} of a hill down level` : d.down ? `filling ${cells(d.down)} of a hollow in level` : "";
+}
+// The time and the work of the camp's spot as the team will set it up, for the log: "8 h 45 min (the camp fire, ...)".
+const setupLine = (state, p) => { const s = siteSetup(state, p, partyTile(p)); return `${durText(s.hours)} (${setupWhat(s)})`; };
 // Hours the team takes to set up camp on its tile (its spot picked, else the game's own). The planner's estimates
 // (parties.js pitchHoursFor) read it for the tile the team is going to.
 export const campPitchHours = (state, p, tile = p ? (p.dest != null ? p.dest : partyTile(p)) : null) => (tile == null ? CAMP.fireHours : siteSetup(state, p, tile).hours);

@@ -15,12 +15,12 @@ import { createWorld, tickHour } from "../src/sim/world.js";
 import { BUILDINGS, CAMP, isCamp, isShelter, tierUpJob, queueBuild, canDemolish, constructionHour } from "../src/sim/buildings.js";
 import { partyMembers, partyTile, giveOrder } from "../src/sim/parties.js";
 import { roadTeam } from "../src/sim/hardcore-start.js";
-import { pendingSite, pickSite, campSiteFor, siteSetup } from "../src/sim/staging.js";
+import { pendingSite, pickSite, campSiteFor, siteSetup, setupWhat, durText } from "../src/sim/staging.js";
 import * as BM from "../src/sim/basemap.js";
 import { SITE, siteBox, CLEAR, clearOf } from "../src/sim/basescatter.js";
 const clearOfFor = (q) => (clearOf(q, true, "clear") || { get: {} }).get;
 import { renderRight } from "../src/ui/ui.js";
-import { CS_ACTIONS, siteViewDue, sitePanel, siteHoverText } from "../src/ui/campsite.js";
+import { CS_ACTIONS, siteViewDue, sitePanel, siteHoverText, setupWords } from "../src/ui/campsite.js";
 import { siteInfo, siteScore, bestSite, bestSiteOn, landFacts, pickWords, pickReasons, SITE_SCORE } from "../src/sim/siteinfo.js";
 
 const SEED = Number(process.argv[2] || 42);
@@ -63,6 +63,22 @@ section("The spot: picked on the tile's 250 × 250 map");
     const s1 = siteSetup(st, p, tile, fs, true), s2 = siteSetup(st, p, tile, fs, false);
     check(s1.tool && !s2.tool && s1.hours < s2.hours && (s1.get.wood || 0) > (s2.get.wood || 0), `the team's setup there: ${s1.hours} h for ${s1.get.wood} wood with a cutting tool, ${s2.hours} h for ${s2.get.wood || 0} without`);
   } else check(true, "(no wooded spot on this tile)");
+  // An open spot on a hill (the user's report 2026-10-23: "it said 30 minutes and it did not finish for 9 in game hours
+  // there was no trees or rocks just and open 5x5 on a hill"): its time is the dig, and it says so.
+  const hl = BM.siteLand(st, tile);
+  let hill = null;
+  for (let r = 0; r < 120 && !hill; r++) for (let x = -r; x <= r && !hill; x++) for (const yy of [-r, r]) {
+    const at = [x, yy], B = siteBox(at);
+    if (hill || BM.siteProblem(st, tile, at)) continue;
+    let ok = true;
+    for (let cy = B.y0; cy < B.y1; cy++) for (let cx = B.x0; cx < B.x1; cx++) { const q = hl.pieces.get(`${cx},${cy}`); if (!q || q.k !== "rise") ok = false; }
+    if (ok) hill = at;
+  }
+  if (hill) {
+    const s = siteSetup(st, p, tile, hill), w = setupWords(st, p, tile, hill);
+    check(s.dig.up === 25 && !s.dig.down && s.dig.hours === s.clear && s.work === Math.round((CAMP.fireHours + s.clear) * 10) / 10, `an open hilltop at ${hill}: ${s.dig.hours} work-hours digging its 25 cells down level, its whole clearing`);
+    check(/digging 25 cells of a hill down level/.test(setupWhat(s)) && !/clearing/.test(setupWhat(s)) && /work-hours digging 25 cells of a hill down level/.test(w.text) && !/clearing \d+ thing/.test(w.text), `named as the dig, not "clearing 25 things" (${w.text})`);
+  } else check(true, "(no open hilltop on this tile)");
 }
 
 // ---------- 2. the setup ----------
@@ -99,6 +115,7 @@ const spot = [-20, 14];
   check(campSiteFor(st, p, tile).join() === spot.join(), "and that is where it goes");
   const s1 = siteSetup(st, p, tile, spot);
   check(p.task.hours === s1.hours, `the work set for that spot: ${s1.hours} hours (${s1.n} things to clear, ${s1.clear} work-hours)`);
+  check(st.log.some((l) => l.text.includes(`sets up camp on its spot`) && l.text.includes(durText(s1.hours))), `the log gives the picked spot's own time (${durText(s1.hours)}), not the game's pick's`);
   const land0 = BM.siteLand(st, tile), y = BM.siteYield(st, tile, spot, s1.tool);
   if (s1.hours >= 2) { run(st, Math.floor(s1.hours) - 1); check(!st.bases.length, `not up before its hours (${Math.floor(s1.hours) - 1}h in)`); }
   run(st, Math.ceil(s1.hours) + 2, () => st.bases.length > 0);

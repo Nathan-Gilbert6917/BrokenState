@@ -239,7 +239,7 @@ export function siteInfo(state, p, tile, at) {
   const th = siteThreat(state, tile);
   const dead = { count: th.count, place: th.place, kinds: th.count && th.mix ? mixText(th.mix, th.count) : "" };
   const w = waterSource(state, tile);
-  const info = { ok: true, why: "", ...f, setup: { hours: s.hours, work: s.work, workers: s.workers, clear: s.clear, n: s.n, get: s.get, tool: s.tool }, other, roomClear: Math.round(roomClear * 10) / 10, places, dead, waterTile: w ? { kind: w.kind, dist: w.dist } : null };
+  const info = { ok: true, why: "", ...f, setup: { hours: s.hours, work: s.work, workers: s.workers, clear: s.clear, n: s.n, get: s.get, tool: s.tool, dig: s.dig }, other, roomClear: Math.round(roomClear * 10) / 10, places, dead, waterTile: w ? { kind: w.kind, dist: w.dist } : null };
   const best = bestSite(state, tile);
   return { ...info, score: siteScore(info), picked: best[0] === at[0] && best[1] === at[1] };
 }

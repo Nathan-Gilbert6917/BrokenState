@@ -20,7 +20,7 @@
 //   siteHoverText(state, b, h)      the hover line (ui/combat.js previewText)
 //   siteKey(state, e, confirm)      Enter sets up camp on the spot picked, Esc lets the game pick
 //   CS_ACTIONS                      cs-ok sets up camp on the spot picked, cs-auto lets the game pick (sim/basemap.js defaultSite)
-import { pendingSite, pickSite, autoSite, durText } from "../sim/staging.js";
+import { pendingSite, pickSite, autoSite, durText, levelWords } from "../sim/staging.js";
 import { siteProblem, openSiteView, defaultSite, BASE_GRID, GRID } from "../sim/basemap.js";
 import { SITE } from "../sim/basescatter.js";
 import { siteInfo, pickWords, SITE_INFO } from "../sim/siteinfo.js"; // the spot's facts (the dead to clear first among them: sim/siteclear.js siteThreat)
@@ -54,10 +54,13 @@ const num = (v) => Math.round(v).toLocaleString("en-US");
 const hrs = (h) => { const v = h >= 10 ? Math.round(h) : h; return `${v} work-hour${v === 1 ? "" : "s"}`; };
 const cells = (d) => `${d} cell${d === 1 ? "" : "s"}`;
 // What the spot takes and gives this team: "4 h 30 min to set up (the camp fire, 1 work-hour, and 8 work-hours clearing
-// 3 things, shared by 2 people)", "+375 wood", and what an axe changes (sim/siteinfo.js siteInfo: setup, other).
+// 3 things, shared by 2 people)", the ground's levelling named as such ("25 work-hours digging 25 cells of a hill down
+// level": an open hilltop is no quick spot, the user's report 2026-10-23), "+375 wood", and what an axe changes
+// (sim/siteinfo.js siteInfo: setup, other).
 export function setupWords(state, p, tile, at, info = siteInfo(state, p, tile, at)) {
-  const s = info.setup, o = info.other;
-  const clear = s.n ? `${hrs(s.clear)} clearing ${s.n} thing${s.n === 1 ? "" : "s"}` : "nothing to clear";
+  const s = info.setup, o = info.other, d = s.dig || { hours: 0, up: 0, down: 0 }, rest = s.n - d.up - d.down;
+  const level = levelWords(d);
+  const clear = [level ? `${hrs(d.hours)} ${level}` : "", rest > 0 ? `${hrs(Math.round((s.clear - d.hours) * 10) / 10)} clearing ${rest} thing${rest === 1 ? "" : "s"}` : ""].filter(Boolean).join(" and ") || "nothing to clear";
   const fire = Math.round((s.work - s.clear) * 10) / 10;
   // The axe's difference (sim/basescatter.js SITE.NO_TOOL_WOOD): the same spot with or without a cutting tool.
   const axe = !o ? "" : s.tool ? `Without the team's axe, saw or machete: ${durText(o.hours)}, ${o.wood} wood.` : `No axe, saw or machete on the team: the trees are cleared the slow way for a quarter of their wood (with one: ${durText(o.hours)}, ${o.wood} wood).`;
