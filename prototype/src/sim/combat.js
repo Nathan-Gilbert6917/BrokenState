@@ -3410,7 +3410,7 @@ export function playerSees(b, t) {
 export function playerVision(b) {
   bindDims(b);
   const vis = new Uint8Array(W * H).fill(b.over || b.layout || b.site ? 1 : 0);
-  if (b.over || b.layout || b.site) return vis; // the Base map view (basemap.js): nobody on it, the whole base in plain view (it was all fog)
+  if (b.over || b.layout || b.site) { if (b.knownMask) vis.set(b.knownMask); return vis; } // the Base map view (basemap.js): nobody on it, the whole base in plain view (it was all fog); a camp set up blind only round its fire until surveyed (campscout.js knownMask)
   const eyes = b.units.filter((u) => u.side === "player" && active(u));
   for (const e of eyes) {
     const r = Math.ceil(sightBound(b, e)) + 1, R = r >= 0 ? r : Infinity; // NaN: the whole map

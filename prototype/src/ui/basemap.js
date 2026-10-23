@@ -13,6 +13,7 @@ import { baseById } from "../sim/world.js";
 import { openBaseMap, layoutOf, itemByKey, unplaceItem, baseMapSummary, storeContents, gridOfCell, buildMenu, fittingsIn, hostedItems, neighboursOf, canLink, FOOT, STEAL, NO_BUILD, landPieceAt, chopToolAt, landWords, bagKindOf, pickFoot, pickName } from "../sim/basemap.js";
 import { clearOf, pieceWord, CLEAR } from "../sim/basescatter.js"; // the land: a piece's clearing
 import { layoutDone } from "../sim/staging.js"; // Open the build map: the base's ask ends once its map is open
+import { groundsFogged, deadText, GROUNDS_LABEL } from "../sim/campscout.js"; // a camp set up blind: its map known round the fire only (2026-10-23)
 import { BUILDINGS, demolishRefund, pieceName, ringMat, TENTS, tentKind } from "../sim/buildings.js";
 import { chopHands } from "../sim/woodwork.js"; // woodwork: who is felling a clearing
 import { fillJobOf, fillHours } from "../sim/tunnels.js"; // the tunnels the dead dug: Fill tunnel
@@ -97,6 +98,8 @@ export function layoutPanel(state, b, cui, preview = "") {
   else if (picked) html += `<div class="card small" style="margin-top:0.4rem"><div class="spread"><b>${esc(picked.label)}</b><span class="muted">${sizeText(picked)}${L.rot & 1 ? " (turned)" : ""}</span></div>
     <div class="muted">${picked.fit ? `A fitting: on the floor inside ${HOSTS}.` : picked.kind === "wall" ? "A wall piece: anywhere on the map, the ring round the yard too. R turns it. Walls only hold where they close round the base (a house's walls count): leave no gap, and put a gate in before the ring closes (always a way in and out)." : picked.kind === "gate" ? "A gate (1×4): your people walk through it, attackers batter it. The cell either side of it stays open. R turns it." : picked.kind === "stand" ? "A wall stand: a platform a level up. Put it right behind a wall so whoever climbs it sees and shoots over it. R turns it." : picked.kind === "defence" ? "A defence: anywhere on the map, right next to anything, inside the yard or out in front of the wall." : picked.kind === "field" ? "A crop plot: anywhere on the map, right next to anything else." : picked.kind === "vehicle" ? "A parked car: anywhere on the map, right next to anything else; raiders and the dead batter it if it stands in their way." : picked.general ? "A general building: anywhere on the map, right next to anything else, the cell outside its door kept open; what stands inside moves with it." : "A building: anywhere on the map, right next to anything else, only the cell outside its door kept open."}</div>
     <div class="cbactions" style="margin-top:0.3rem"><button data-action="cb-deploy" data-v="rotate" data-tip="Turn it a quarter (R)">Turn <span class="key">R</span></button><button data-action="cb-deploy" data-v="pick" data-k="" data-tip="Put the pick down without placing it (Esc)">Cancel <span class="key">Esc</span></button>${["wall", "gate", "stand"].includes(picked.kind) && picked.key.startsWith("b:") ? `<button data-action="demolish" data-base="${base.id}" data-id="${picked.rec.id}" data-ok="1" data-tip="Pull this piece down for good: half its scrap and parts come back. A gap it leaves in the wall is a way in.">Pull it down</button>` : ""}</div></div>`;
+  // A camp set up blind (sim/campscout.js): the map past the fire under the fog, the dead out there uncounted.
+  if (groundsFogged(base)) html += `<div class="card small warn" style="margin-top:0.4rem"><b>Set up blind</b>: past the camp the ground is unknown (the fog) and so is how many of the dead are out on it (${esc(deadText(base))}). Survey this tile to know it all; ${GROUNDS_LABEL} with a team on the tile, or fight them off as they come.</div>`;
   html += selectionCard(state, base, L, lay);
   html += landCard(state, base, L);
   html += tunnelCard(state, base, L);
@@ -246,6 +249,7 @@ export function layoutHover(state, b, h, ghost) {
   if (!base) return "";
   const [gx, gy] = gridOfCell(b, h.x, h.y);
   if (ghost && ghost.terraPick) return terraHover(ghost); // sim/terraform.js: the area, its cost and time
+  if (!ghost && b.knownMask && !b.knownMask[h.y * b.w + h.x]) return `<span class="muted">Unknown ground: the camp went up blind. Survey this tile to know what lies out here.</span>`; // sim/campscout.js
   if (ghost) return ghost.ok ? `<span class="good">Fits here.</span> Click to ${L.pickType ? "build" : "place"} it at ${gx}, ${gy}${ghost.host ? " (inside)" : ""}.` : ghost.land ? `<span class="warn">${esc(ghost.why)}.</span>` : `<span class="danger">${esc(ghost.why)}.</span>`;
   const picked = L.pick ? itemByKey(state, base, L.pick) : null;
   if (picked) return `Click where ${esc(picked.label)} goes.`;

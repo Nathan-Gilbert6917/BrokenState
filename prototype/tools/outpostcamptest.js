@@ -19,6 +19,7 @@ import { STAGING } from "../src/sim/staging.js";
 import { CRAFTS } from "../src/sim/crafting.js";
 import { assignedRole } from "../src/sim/noidle.js"; // noidle: a job with no work, its people helping elsewhere
 import { isSettlementTile } from "../src/sim/startpick.js"; // no base of yours in a town or a city (2026-10-22)
+import { poiKnowledge } from "../src/sim/pois.js"; // a Survey's stamp: the tile scouted (sim/campscout.js)
 const plain = (h) => String(h).replace(/<[^>]+>/g, ""); // the text without markup (cost chips split name and count into spans)
 
 const seed = Number(process.argv[2] || 42);
@@ -33,6 +34,7 @@ const nearFree = (st, from, lo, hi) => st.grid.within(from, hi).find((t) => st.g
 function pitch(st, n, supplies) {
   const h = hub(st);
   const tile = nearFree(st, h.tile, 3, 6);
+  poiKnowledge(st, tile, true).surveyed = day(st); // scouted (sim/campscout.js): the camp on the game's own spot, as this test's numbers expect
   Object.assign(h.stock, { scrap: 80, parts: 6, buildmat: 20, food: 200, water: 200, wood: 2000 });
   const crew = atBase(st, h.id).slice(0, n).map((s) => s.id);
   const res = launchExpedition(st, { memberIds: crew, dest: tile, mission: "outpost", stance: "normal", supplies: { food: 6, water: 6, ...supplies } });

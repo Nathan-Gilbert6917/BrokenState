@@ -125,7 +125,7 @@ import { woodNeed, woodWorkWhy, woodHandsWanted, woodCrowd, handsForDay, woodcut
 import { siteKnown } from "./discovery.js";
 import { packTripKit, HIVE_KIT } from "./kit.js";
 import { openCasesIn } from "./gunsafes.js";
-import { surveyCandidate, surveySent, SURVEY, poiSurveyCandidate, poiSurveySent } from "./survey.js";
+import { surveyCandidate, surveySent, SURVEY, poiSurveyCandidate, poiSurveySent, LOOK } from "./survey.js";
 import { autoTreats } from "./comforts.js";
 import { firstHubPending, hubSites } from "./hardcore-start.js";
 import { stagingNeeds, establishProblem, STAGING, besideWaterSource } from "./staging.js"; // no base: Establish base (a camp with its step up)
@@ -135,6 +135,7 @@ import { gunWant, pickGunToBuy, noteGunBought, radioGunDeal } from "./govguns.js
 import { carriedRec } from "./ammo.js"; // the loose rounds people carry
 import { sumRecs } from "./rounds.js"; // a team's rounds: its bags and what its people carry
 import { siteThreat } from "./siteclear.js"; // the dead at a camp's spot (outpostSite)
+import { tileScouted } from "./campscout.js"; // a camp's tile scouted first when time allows (2026-10-23)
 
 // Play styles. range = max tiles from the hub for a trip, maxHoursOut = longest way out, cooldown = days between
 // launches, homeFrac = share of the hub that stays home, risk = lowest success chance worth a gamble,
@@ -3651,7 +3652,10 @@ function planTrip(state) {
     const land = push && outposts >= P.outposts ? landOutpostSite(state) : null;
     const site = land ? land.id : outpostSite(state);
     const crowded = cramped || alive(state).length > baseBeds(h) + 2;
-    if (site != null) cands.push({ mission: "outpost", tile: site, score: land ? 3 : crowded ? 3.5 : 2.2, crew: spareHands >= 4 ? 3 : 2, reach: land ? 1.6 : 1,
+    // Scout first (campscout.js) unless the hub is crowded or the land push is on: else the camp goes up blind and its
+    // people fight off the dead on its grounds as they come.
+    const scout = site != null && !land && !crowded && !tileScouted(state, site);
+    if (site != null) cands.push({ mission: "outpost", tile: site, score: land ? 3 : crowded ? 3.5 : 2.2, crew: spareHands >= 4 ? 3 : 2, reach: land ? 1.6 : 1, ...(scout ? { scoutFirst: true, onSite: LOOK.hours } : {}),
       why: land ? `land for the coalition (+${land.gain} tiles)` : cramped ? "the hub has outgrown its plots: a new outpost for its people" : crowded ? "the hub is crowded: a new outpost" : "a new outpost", supplies: { scrap: 32, buildmat: 2 }, min: { scrap: 12 } }); // parties.js outpostKit: the camp's 12 scrap and its step up's 20 scrap, 2 building materials
   }
   // Your people held by another group.
@@ -4421,6 +4425,7 @@ function campAct(state, p) {
   if (!best) return false;
   if (best.id === here || (atHere && atHere.sc >= best.sc - 0.5)) {
     say(state, `${teamName(state, p)} sets up camp at ${tileLabel(state, here)} for the ${firstHubPending(state) ? "first" : "new"} home.`, "good");
+    if (carried(p, "food") >= 3 * partyMembers(state, p).length) p.scoutFirst = true; // campscout.js: the tile scouted first with three days of food in hand (else blind)
     giveOrder(state, p, "establish");
     return true;
   }
@@ -4972,6 +4977,7 @@ function launchTrip(state, c, pool, spareHands) {
   if (c.crawlTrip) res.party.apCrawlTrip = true; // the campaign's crawl trip (hiveChoice: in, as deep as it can)
   if (c.emergency) res.party.apEmergency = true; // emergencyTrips: outside the style's team limit
   if (c.claim) res.party.apClaim = true; // claimCandidate: claims the tile on arrival (teamAct)
+  if (c.scoutFirst) res.party.scoutFirst = true; // campscout.js: the outpost's tile surveyed before the camp goes up
   if (c.well) res.party.apWell = true; // wellCandidate: digs a well on arrival (teamAct)
   if (c.haul || c.emergency) res.party.apHaulWatch = true; // trackHauls: what it brings home, for the Water / Food line
   if (c.mission === "hive") { g.stats.hiveTrips = (g.stats.hiveTrips || 0) + 1; if (g.campaign && g.campaign.tile === c.tile) g.campaign.trips++; if (c.crawlTrip) g.stats.crawlTrips = (g.stats.crawlTrips || 0) + 1; else g.stats.stormTrips = (g.stats.stormTrips || 0) + 1; }

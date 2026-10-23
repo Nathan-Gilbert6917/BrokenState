@@ -162,6 +162,7 @@ import { roleOf, isManaged, taskLabel, taskWhy, priorityCount } from "../sim/wor
 import { nameModalUp, nameBaseModal, renameButton } from "./basename.js"; // naming and renaming bases
 import { firstHubCard, fromTeamRow, stagingTileCard, fireButton, stageSteps } from "./hardcore.js";
 import { stagingView, needText, ESTABLISH_LABEL, STAGING, shelterView, STRIKE_LABEL } from "../sim/staging.js";
+import { tileScouted, blindText, groundsFogged, deadText, GROUNDS_LABEL } from "../sim/campscout.js"; // an unscouted tile: a blind camp; the dead on its grounds (2026-10-23)
 import { campSleep, tentsText, TENT_TYPES } from "../sim/tents.js"; // the camp's tents: beds under cover, storage out of the weather
 import { BED_MOOD, ROUGH_WEATHER } from "../sim/data-beds.js"; // the one rough-sleeping rule (sim/beds.js bedLine)
 import { gaugeRows, treatsRow, needsEffectText, foodOnThem, rationRow } from "./needs.js";
@@ -573,7 +574,8 @@ export function tileActions(state, id) {
   if (state.bases.some((b) => b.tile === id)) {
     const raid = siteMissions(state, id).find(([m]) => m === "scavenge");
     if (raid) actions.push(["scavenge", "Raid a place on this tile"]);
-    if (poiTileRaid(t)) actions.push(["fullsurvey", "Survey this tile"]);
+    const blind = state.bases.find((b) => b.tile === id && groundsFogged(b)); // sim/campscout.js: a camp set up blind, its grounds unknown
+    if (poiTileRaid(t) || blind) actions.push(["fullsurvey", blind ? "Survey this tile (the base's grounds)" : "Survey this tile"]);
     return actions;
   }
   actions.push(["recon", "Send recon"]);
@@ -1268,6 +1270,7 @@ function plannerModal(state, ui) {
   warn.push(...loadWarnings(carry.t));
   if (pl.mission === "outpost" && (pl.supplies.scrap || 0) < Parties.outpostScrap(state, pl.dest)) warn.push(`Outposts need ${Parties.outpostScrap(state, pl.dest)} scrap carried`);
   if (pl.mission === "getvehicle" && (pl.supplies.fuel || 0) < 2) warn.push("Bring fuel cans to restart the vehicle");
+  if (["camp", "outpost", "establish"].includes(pl.mission) && !tileScouted(state, pl.dest)) warn.push(`Not scouted: ${blindText()} (Survey the tile first, or Scout first in the team's orders there.)`); // sim/campscout.js
   if (carry.over) warn.push(carry.why);
   const missions = Object.entries(MISSIONS).filter(([, m]) => !m.hidden);
   return `<div class="box wide">
@@ -1858,12 +1861,18 @@ function fireBurnText(v) {
   const land = f.land < 1 ? `; half of it where deadfall lies about` : "";
   return `<span class="muted"${tip(`What the fire burns a day while lit, by the hour from the woodpile: ${parts.join(", ")}${land}. It goes out with the woodpile.`)}>· ${r1(f.total)} wood a day</span>`;
 }
+// A camp set up blind (sim/campscout.js): the dead out on its grounds ("?" until the tile is surveyed).
+function groundsRow(b) {
+  const g = b.grounds;
+  if (!g || (!g.dead && (g.known || g.clearDay))) return ""; // none left, and you know it
+  return `<div${tip(`The camp went up blind on a tile never scouted: the dead out on its grounds come at it now and then until all are killed. ${g.known ? "Surveyed: counted." : "How many: unknown until the tile is surveyed (Survey this tile on its menu)."} Or clear them yourself: a team on the tile, ${GROUNDS_LABEL} (its orders, or the POI map).`)}>The grounds</div><div class="${g.dead || !g.known ? "warn" : "good"}">${esc(g.dead || !g.known ? `The dead out there: ${deadText(b)}` : "clear")}</div>`;
+}
 function shelterRows(state, b) {
   const v = shelterView(state, b);
   if (!v) return "";
-  if (b.type === "outpost") return `<div${tip("A camp has no well: water from a river or lake beside it (its people haul it), rain catchers, or what teams and the hub bring in.")}>Water source</div><div class="${v.riverside ? "good" : "warn"}">${esc(v.water)}</div>
+  if (b.type === "outpost") return `${groundsRow(b)}<div${tip("A camp has no well: water from a river or lake beside it (its people haul it), rain catchers, or what teams and the hub bring in.")}>Water source</div><div class="${v.riverside ? "good" : "warn"}">${esc(v.water)}</div>
     <div${tip("The camp's fire: warmth, boiled water, better spirits. It burns wood by the hour: more for every person here, on a cool night and in the frost. Its light and smoke add to the Heat, most at night.")}>Fire</div><div>${v.fire ? "Lit" : "Out"} ${fireButton(v.fire, `data-base="${b.id}"`)} ${v.fire ? fireBurnText(v) : ""}</div>`;
-  return `<div${tip("A shelter has no well: water from a river or lake beside it (its people haul it), rain catchers, or what teams bring in.")}>Water source</div><div class="${v.riverside ? "good" : "warn"}">${esc(v.water)}</div>
+  return `${groundsRow(b)}<div${tip("A shelter has no well: water from a river or lake beside it (its people haul it), rain catchers, or what teams bring in.")}>Water source</div><div class="${v.riverside ? "good" : "warn"}">${esc(v.water)}</div>
     <div${tip("A shelter's Heat in place of the hub's flat 3: its fire (most at night), vehicles parked here and shooting nearby lately; its people count as at any base.")}>Heat from</div><div>${esc(v.heat.text || "nothing but its people")}</div>
     <div${tip("The shelter's fire: warmth (the tarps are as cold as outside without it), boiled water, better spirits (+0.5 mood a day; cold nights without it cost 1). It burns wood by the hour: more for every person here, on a cool night and in the frost. Its light and smoke add to the Heat, most at night.")}>Fire</div><div>${v.fire ? "Lit" : "Out"} ${fireButton(v.fire, `data-base="${b.id}"`)} ${v.fire ? fireBurnText(v) : ""}</div>`;
 }
