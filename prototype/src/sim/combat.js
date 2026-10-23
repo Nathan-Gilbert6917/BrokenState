@@ -31,6 +31,7 @@
 // }
 import { applyRelief } from "./relief.js"; // hills, hollows and crag on a hills or mountain tile
 import { pondsBattle, wetCost, wadeAim } from "./ponds.js"; // the hollows' ponds, mud and ice, the slopes in the rain and in winter
+import { hollowShut, acrossFloors, windowSees, windowSeen, windowFoes, standH, floorCover, shootable, terrainScore } from "./highground.js"; // the lie of the land in a fight: hollows, hills into upper floors, the AI on the high ground
 import { typeFind, AREA_MIX } from "./foods.js"; // the food in a container as items
 import { survivorById, factionById, alive, atBase, homeAt, combatPower, hurt, log, skill, gearEffect, isNight, usesArrows, armedFactor, arrowsBack, meleeAimBonus, meleeDmgMult } from "./world.js";
 import { partyMembers, partyTile, partyCapacity, cargoLoad, cargoRoom, unitsThatFit, wipeParty, leaveVehicle } from "./parties.js";
@@ -835,11 +836,16 @@ export const TERRAIN_STEP = 1;
 // (a walkway, a roof, stairs: CELL h or a structure's c.h).
 export const groundH = (c) => (c.ter ? c.h || 0 : c.h == null && CELL[c.k] && CELL[c.k].h == null ? 0 : null);
 
-// Verticality (base battles): a unit on higher ground sees SIGHT tiles further a level, aims AIM better a level at
-// anything lower (at most MAX_AIM) and has at least half cover against shooters below it that are not right next to
-// it. Climbing a level (only on a ladder, stairs or a tower's own ladder, never diagonally) costs CLIMB moves, the
-// dead CLIMB_DEAD. A blow struck up at someone higher is MELEE_UP harder. EYE: eye height over the floor (sight lines).
-export const HEIGHT = { SIGHT: 2, AIM: 5, MAX_AIM: 10, COVER: 1, CLIMB: 1, CLIMB_DEAD: 2, MELEE_UP: 10, EYE: 0.6 };
+// Verticality (base battles, and the hills and hollows of a hills or mountain tile: relief.js): a unit on higher ground
+// sees SIGHT tiles further a level, aims AIM better a level at anything lower (at most MAX_AIM) and UPHILL worse a level
+// at anything higher (at most MAX_UPHILL), and has half cover (COVER) against shooters a level below it and full cover
+// against shooters FULL_UP levels or more below (the user's word 2026-10-23: "High ground acts as half cover if one
+// layer high and can see the survivor and full cover if two layers high"), unless they are right next to it; it stays
+// in sight either way where the line reaches it (a hill hides only what is behind its crest: los). Climbing a level
+// (only on a ladder, stairs or a tower's own ladder, never diagonally; the ground's own hills a level a step, any way)
+// costs CLIMB moves, the dead CLIMB_DEAD. A blow struck up at someone higher is MELEE_UP harder. EYE: eye height over
+// the floor (sight lines).
+export const HEIGHT = { SIGHT: 2, AIM: 5, MAX_AIM: 15, UPHILL: 5, MAX_UPHILL: 15, COVER: 1, FULL_UP: 2, CLIMB: 1, CLIMB_DEAD: 2, MELEE_UP: 10, EYE: 0.6 };
 // Battering a door, a window, the gate or a wall section (base battles): the cost in tiles the AI weighs it at.
 export const SIEGE = { COST: 2, PER_HP: 0.4 };
 // A field map's houses (genMap building): real doors, never a gap in the wall. The first door of a house is closed
@@ -2461,7 +2467,7 @@ const losGet = (cache, i) => (cache instanceof Map ? cache.get(i) || 0 : cache[i
 const losSet = (cache, i, v) => { if (cache instanceof Map) cache.set(i, v); else cache[i] = v; };
 // How high a cell blocks a sight line (levels): a wall's own top (c.t), a blocking cell's tall, a raised floor's height,
 // all on top of the ground's height under it (a tree on a hill; c.ter); level ground 0 (only seen from below: a hollow).
-function losTop(cell, C) {
+export function losTop(cell, C) {
   const g = cell.ter ? cell.h || 0 : 0;
   if (cell.t) return cell.t + g;
   if (C.los && !doorSees(cell)) return (cell.ch || C.tall || 1) + g; // ch: a mountain's rock, its own height (basescatter.js reliefLayer)
@@ -2472,6 +2478,9 @@ export function los(b, x0, y0, x1, y1) {
   const a = idx(x0, y0), c = idx(x1, y1);
   const v = losGet(b.losCache, a * W * H + c);
   if (v) return v === 1;
+  // A hollow (highground.js, the user's word 2026-10-23: "can't see beyond the first tiles around a hollow"): from in
+  // it only the hollow and the first cells round its rim are seen, and nothing past the rim sees into it.
+  if (hollowShut(b, x0, y0, x1, y1)) { losSet(b.losCache, a * W * H + c, 2); losSet(b.losCache, c * W * H + a, 2); return false; }
   const dx = x1 - x0, dy = y1 - y0;
   const n = Math.ceil(Math.max(Math.abs(dx), Math.abs(dy)) * 4);
   const e0 = hAt(b, x0, y0) + HEIGHT.EYE, e1 = hAt(b, x1, y1) + HEIGHT.EYE;
@@ -2525,7 +2534,8 @@ export function canSeeAt(b, a, x, y) {
 // further than a tile), unless they have a light switched on at night: it shows over the cover. A light switched on at
 // night (vision.js activeLight) is seen from the daylight range by anyone facing it; night vision shows nothing.
 // Someone in a bush or a tent, or right next to one, is seen only from closer (softcover.js concealHidden).
-export const canSee = (b, a, t) => !(t.low && a.side === "player" && !zRevealed(b, t)) && !sneakHidden(b, a, t) && !(softOn(b) && concealHidden(b, a, t)) && ((t.size > 1 ? unitCells(t).some(([x, y]) => canSeeAt(b, a, x, y)) : canSeeAt(b, a, t.x, t.y)) || litFrom(b, a, t));
+// On another floor (a building with storeys): only through a window from a hill or back at it (highground.js windowSees).
+export const canSee = (b, a, t) => (acrossFloors(b, a, t) ? !(t.low && a.side === "player" && !zRevealed(b, t)) && windowSees(b, a, t) : !(t.low && a.side === "player" && !zRevealed(b, t)) && !sneakHidden(b, a, t) && !(softOn(b) && concealHidden(b, a, t)) && ((t.size > 1 ? unitCells(t).some(([x, y]) => canSeeAt(b, a, x, y)) : canSeeAt(b, a, t.x, t.y)) || litFrom(b, a, t)));
 export function sneakHidden(b, a, t) {
   if (!t.sneaking || t.side === a.side) return false; // anyone sneaking, from the other sides
   if (b.night && activeLight(t)) return false; // the light gives them away
@@ -2549,7 +2559,9 @@ function sideCover(b, x, y, nx, ny) {
   return C.cover;
 }
 
-export function coverAgainst(b, x, y, ax, ay) {
+// rise: the target's height over the shooter's when they stand on different floors (highground.js floorCover); else
+// the two cells' heights on this one. high: the cover is the height's ("hill": a hill's ground, "height": a raised floor).
+export function coverAgainst(b, x, y, ax, ay, rise = null) {
   bindDims(b);
   // On a siege ladder or carrying a ram (siege.js): no cover at all.
   if (inside(x, y) && (b.cells[idx(x, y)].k === "siegeladder" || (b.rams && b.rams.length && b.units.some((o) => o.x === x && o.y === y && active(o) && isCrew(b, o))))) return { level: 0, any: false, flanked: false };
@@ -2565,9 +2577,16 @@ export function coverAgainst(b, x, y, ax, ay) {
   // Up on a watchtower (deploy.js): full cover from anyone not right next to it.
   const perch = inside(x, y) ? cellAt(b, x, y).perch : 0;
   if (perch && d > 1.5) { level = Math.max(level, perch); any = true; }
-  // Higher ground: at least half cover against a shooter below who is not right next to them.
-  if (d > 1.5 && inside(x, y) && inside(ax, ay) && hAt(b, x, y) > hAt(b, ax, ay)) { level = Math.max(level, HEIGHT.COVER); any = true; }
-  return { level, any, flanked: any && level === 0 };
+  // Higher ground against a shooter below who is not right next to them: half cover a level up, full cover FULL_UP
+  // levels or more (the user's word 2026-10-23: "half cover if one layer high ... full cover if two layers high").
+  const up = rise != null ? rise : inside(x, y) && inside(ax, ay) ? hAt(b, x, y) - hAt(b, ax, ay) : 0;
+  let high = null;
+  if (d > 1.5 && up > 0) {
+    const hl = up >= HEIGHT.FULL_UP ? 2 : HEIGHT.COVER;
+    if (hl > level) { level = hl; high = inside(x, y) && b.cells[idx(x, y)].ter ? "hill" : "height"; }
+    any = true;
+  }
+  return high ? { level, any, flanked: false, high } : { level, any, flanked: any && level === 0 };
 }
 
 // Cover on each side of a cell, for the shield icons: [east, west, south, north].
@@ -2716,12 +2735,16 @@ export function distField(b, sources, walker = null) {
   // walkable for the corner rule, its height (climbCost's h), a ladder or stairs, the cost of battering it. The same
   // sums as asking each cell again for each of its eight neighbours, which was most of a siege's enemy turn (sizetest).
   const N = W * H, h = climber ? hAt : siege ? hSiege : hAt, soft = softOn(b);
-  const okA = new Uint8Array(N), sideA = new Uint8Array(N), climbA = new Uint8Array(N), hA = new Float64Array(N), overA = new Float64Array(N), bashA = new Float64Array(N);
+  // groundA: the cell is the ground's own (groundH: level ground, a hill or a hollow), climbed a level a step any way
+  // (climbCost: the user's word 2026-10-23, "Update AI pathing": the dead and every walker go round a tall hill when
+  // that is cheaper than over it).
+  const okA = new Uint8Array(N), sideA = new Uint8Array(N), climbA = new Uint8Array(N), groundA = new Uint8Array(N), hA = new Float64Array(N), overA = new Float64Array(N), bashA = new Float64Array(N);
   for (let y = 0, i = 0; y < H; y++) for (let x = 0; x < W; x++, i++) {
     const c = b.cells[i], ov = over(x, y), vl = !CELL[c.k].walk && vault(x, y);
     okA[i] = pass(x, y) ? 1 : 0;
     sideA[i] = cellAt(b, x, y).walk || ov ? 1 : 0; // a vaulted cell is no corner to cut either (as reachable)
     climbA[i] = climbAt(b, x, y) ? 1 : 0;
+    groundA[i] = groundH(c) != null ? 1 : 0;
     hA[i] = h(b, x, y);
     overA[i] = (ov ? MIDDEAD.CLIMBER.COST : vl ? (vaulter ? vaultCost(b, c, walker) : windowOpen(c) ? VAULT.COST : CRAWL.COST) : soft ? softCost(c) : 0) + wetCost(c); // a Climber's wall, a person's vault (a window crashed through dearer), the dead through a window, the dead's crawl over half cover; into a bush or a tent (softcover.js); into water, mud or ice (ponds.js)
     bashA[i] = !ov && !vl && siege && (breakable(c) && (!CELL[c.k].walk || (barredCell(c) && !doorOpens(b, walker, c)))) ? SIEGE.COST + c.hp * SIEGE.PER_HP : 0;
@@ -2743,7 +2766,7 @@ export function distField(b, sources, walker = null) {
       if (diag && (!sideA[cur + dx] || !sideA[cur + dy * W])) continue; // no corner cutting (as reachable)
       // climbCost (a Climber: the height either way, and its cost over a wall)
       const dh = Math.abs(hA[j] - hA[cur]);
-      const climb = climber ? dh + overA[j] : !dh ? 0 : diag || !(climbA[cur] || climbA[j]) ? Infinity : dh * per;
+      const climb = climber ? dh + overA[j] : !dh ? 0 : groundA[cur] && groundA[j] && dh <= TERRAIN_STEP ? climbCost(b, x, y, nx, ny, diag, per) : diag || !(climbA[cur] || climbA[j]) ? Infinity : dh * per; // the ground's own step: climbCost's (its cost, whatever weighs on it)
       if (climb === Infinity) continue;
       const nd = d[cur] + (diag ? 1.5 : 1) + climb + (climber ? 0 : overA[j]) + bashA[j] + (aw ? aw[j] : 0); // aw: acid.js; overA here: a vault
       if (nd < d[j]) { d[j] = nd; heap.push(d[j], j); }
@@ -2883,9 +2906,13 @@ export function shotOdds(b, a, t, ax = a.x, ay = a.y, opts = {}) {
   if (gm !== NO_MODS) aim += situationalAim(b, a, d, gm, !!rest); // gunmods.js: a bipod rested, a sling on the move, night sights and lights
   P && mark(rest ? "Bipod rested (attachments now)" : "Attachments now (moved, night)");
   const flat = t.surprised || !t.aware; // any side caught unaware (your people are always aware unless surprised: docs/adr/0001-ai-parity.md)
-  const cov = t.kind === "zombie" || flat ? { level: 0, any: false, flanked: false } : t.gunner ? gunnerCover(b, t) : coverAgainst(b, tx, ty, ax, ay); // a turret's gunner: half cover (full behind plate x2)
+  // The shooter's height over the target's (verticality): on this floor the cells' heights; across the floors of a
+  // building with storeys (highground.js: from a hill through a window, or back) each one's floor and cell.
+  const xf = acrossFloors(b, a, t);
+  const up = xf ? standH(b, a, ax, ay) - standH(b, t, tx, ty) : inside(ax, ay) ? hAt(b, ax, ay) - hAt(b, tx, ty) : 0;
+  const cov = t.kind === "zombie" || flat ? { level: 0, any: false, flanked: false } : t.gunner ? gunnerCover(b, t) : xf ? floorCover(b, t, tx, ty, ax, ay, -up) : coverAgainst(b, tx, ty, ax, ay); // a turret's gunner: half cover (full behind plate x2)
   aim -= COVER_DEF[Math.max(0, cov.level - (w.pierce || 0) - (opts.pierce || 0))]; // pierce: a spitter's acid (zombietypes.js); opts.pierce: an over-penetrating round through light cover (gunfire.js)
-  P && mark(cov.level === 2 ? "Target in full cover" : "Target in half cover");
+  P && mark(cov.high ? `${cov.level === 2 ? "Full" : "Half"} cover: ${cov.high === "hill" ? "hill" : "higher ground"}` : cov.level === 2 ? "Target in full cover" : "Target in half cover"); // the user's word 2026-10-23: "Half cover: hill"
   if (t.hunker && cov.level) aim -= HUNKER_DEF;
   P && mark("Target hunkered down");
   if (b.tact) aim += tactAim(b, a, t, ax, ay, cov, notes); // Tactical (traits.js): a flank, cover used well, an ally's eye
@@ -2935,10 +2962,15 @@ export function shotOdds(b, a, t, ax = a.x, ay = a.y, opts = {}) {
   if (visor) notes.push(`visor ${visor > 0 ? "+" : ""}${Math.round(visor)}`);
   if (link) notes.push(`headset callout ${link > 0 ? "+" : ""}${Math.round(link)}`);
   if (dazed) notes.push(`dazed by a bang −${Math.round(dazed)}`);
-  // Shooting down from higher ground (a walkway, a roof, a watchtower: verticality).
-  const up = inside(ax, ay) ? hAt(b, ax, ay) - hAt(b, tx, ty) : 0;
-  if (up > 0) aim += Math.min(HEIGHT.MAX_AIM, up * HEIGHT.AIM);
-  P && mark("Higher ground");
+  // Shooting down from higher ground (a walkway, a roof, a watchtower, a hill: verticality), or up from lower (the user's
+  // word 2026-10-23: "improve high ground accuracy ... low ground inaccuracy"): AIM a level better, UPHILL a level worse.
+  const highAim = up > 0 ? Math.min(HEIGHT.MAX_AIM, up * HEIGHT.AIM) : 0, lowAim = up < 0 ? Math.min(HEIGHT.MAX_UPHILL, -up * HEIGHT.UPHILL) : 0;
+  aim += highAim;
+  P && mark("High ground");
+  aim -= lowAim;
+  P && mark("Uphill");
+  if (highAim) notes.push(`high ground +${highAim}`);
+  if (lowAim) notes.push(`uphill −${lowAim}`);
   // Clinging to a siege ladder, or hauling a ram (siege.js): easy to hit.
   if (inside(tx, ty) && b.cells[idx(tx, ty)].k === "siegeladder") aim += CLIMB_AIM;
   else if (t.ram != null && b.rams && isCrew(b, t)) aim += CREW_AIM;
@@ -2946,7 +2978,7 @@ export function shotOdds(b, a, t, ax = a.x, ay = a.y, opts = {}) {
   const chance = Math.max(5, Math.min(95, Math.round(aim)));
   const crit = opts.reaction ? 0 : (cov.level === 0 ? (t.kind === "zombie" ? CRIT.DEAD : CRIT.EXPOSED) : CRIT.COVER) + (a.critBonus || 0); // critBonus: Deadeye
   const ad = (af.dmg ?? 1) * slow * spread; // the loaded type's damage, buckshot's spread at range, a light round's past its reach (ROUND_REACH dmg) (hollow points' soft-target bonus: damage, ammo.js softMult)
-  return { chance, crit, dmg: [Math.round(w.dmg[0] * a.dmgMult * gm.dmg * ad), Math.round(w.dmg[1] * a.dmgMult * gm.dmg * ad)], cover: cov.level, flanked: cov.flanked, exposed: !cov.any && t.kind !== "zombie", dist: d, height: up, notes, conceal: hid ? hid.why : null, ...(P ? { parts: P, aim } : {}) };
+  return { chance, crit, dmg: [Math.round(w.dmg[0] * a.dmgMult * gm.dmg * ad), Math.round(w.dmg[1] * a.dmgMult * gm.dmg * ad)], cover: cov.level, flanked: cov.flanked, exposed: !cov.any && t.kind !== "zombie", dist: d, height: up, notes, conceal: hid ? hid.why : null, ...(cov.high ? { high: cov.high } : {}), ...(P ? { parts: P, aim } : {}) };
 }
 
 // Tactical (traits.js, u.tact from playerUnit): a Tactical shooter's bonus on a flanked target, a Tactical target in
@@ -3358,14 +3390,16 @@ export function fireRefusal(b, u) {
 // Who a side can see now (aiReload's choice of load: what is in front of that side, not of yours).
 export function sideSees(b, side, t) {
   if (side === "player") return playerSees(b, t);
-  if (t.off || (b.floors && (t.f || 0) !== (b.floor || 0) && b.units.every((u) => u.side !== side || (u.f || 0) !== (t.f || 0)))) return false;
-  return b.units.some((u) => u.side === side && active(u) && (u.f || 0) === (t.f || 0) && (canSee(b, u, t) || adjacent(u, t)));
+  if (t.off) return false;
+  if (b.floors && (t.f || 0) !== (b.floor || 0) && b.units.every((u) => u.side !== side || (u.f || 0) !== (t.f || 0))) return windowSeen(b, side, t); // highground.js: from a hill through a window
+  return b.units.some((u) => u.side === side && active(u) && (u.f || 0) === (t.f || 0) && (canSee(b, u, t) || adjacent(u, t))) || windowSeen(b, side, t);
 }
 // Enemies the player side can currently see.
 export function playerSees(b, t) {
   bindDims(b);
-  if (t.off || (b.floors && (t.f || 0) !== (b.floor || 0))) return false; // another storey: out of sight whatever the x, y
-  return b.units.some((u) => u.side === "player" && active(u) && (canSee(b, u, t) || adjacent(u, t))) || (!!b.peeks && peekSees(b, t.x, t.y));
+  if (t.off) return false;
+  if (b.floors && (t.f || 0) !== (b.floor || 0)) return windowSeen(b, "player", t); // another storey: out of sight whatever the x, y, but through a window from a hill (highground.js)
+  return b.units.some((u) => u.side === "player" && active(u) && (canSee(b, u, t) || adjacent(u, t))) || (!!b.peeks && peekSees(b, t.x, t.y)) || windowSeen(b, "player", t);
 }
 
 // ---------- fog of war ----------
@@ -4461,7 +4495,7 @@ export function fire(b, a, t, opts = {}) {
   const line = sayFirst(b);
   let hits = 0, crits = 0, total = 0, first = null, hull = 0;
   for (let k = 0; k < rolls; k++) {
-    if (k > 0 && !active(t)) break; // the rest of the burst goes past where they stood
+    if (k > 0 && !shootable(b, a, t)) break; // the rest of the burst goes past where they stood
     const o = shotOdds(b, a, t, a.x, a.y, moded ? { ...opts, modeAim: modeAim(mode, k, w) } : opts);
     if (!first) first = o;
     const hit = k === 0 ? rng.chance(o.chance / 100) : battleDice(b, "burst") < o.chance / 100;
@@ -4474,7 +4508,7 @@ export function fire(b, a, t, opts = {}) {
     hits++;
     if (crit) crits++;
     if (a.xpT) { a.xpT.hits++; if (t.dead) a.xpT.kills++; } // skills.js: Shooting XP when the battle ends
-    if (w.cal && !opts.onHit) overpenetrate(b, a, t, raw, info, moded ? modeAim(mode, k, w) : 0, opts);
+    if (w.cal && !opts.onHit && !acrossFloors(b, a, t)) overpenetrate(b, a, t, raw, info, moded ? modeAim(mode, k, w) : 0, opts); // not through a window into another floor's grid
   }
   const eff = Math.round(total);
   const pct = first ? first.chance : 0;
@@ -4714,7 +4748,7 @@ export function combatAct(state, act) {
     }
     case "shoot": {
       if (t && t.side === "enemy" && t.down && !t.dead) return `${t.name} is down: Finish them (Shift+K) to kill them for good, or leave them${t.ko ? "" : " to bleed"}.`; // medics.js: never by default
-      if (!t || t.side === "player" || !active(t)) return "No target.";
+      if (!t || t.side === "player" || !shootable(b, u, t)) return "No target."; // highground.js: on another floor, through a window
       if (!isRanged(u)) return "No gun.";
       if (!canFire(b, u)) return fireRefusal(b, u);
       if (!canSee(b, u, t)) return "No line of sight.";
@@ -5423,6 +5457,7 @@ function scoreCell(b, u, x, y, foes, cost, field, facts = scoreFacts(b, u, foes)
   // conquertest's stalled assault).
   if (!best) s -= 8 + (field ? Math.min(field[idx(u.x, u.y)] > 40 ? 120 : 40, field[idx(x, y)]) : nearest);
   if (u.kind !== "zombie" && b.acid && b.acid.length && acidAt(b, x, y)) s -= ACID.stand; // a spitter's acid (acid.js)
+  if (facts.fire && u.kind === "human" && !u.ztype) s += terrainScore(b, x, y); // highground.js: a gun on the high ground, out of a hollow (either side: one brain)
   // The last stand (interior.js): once the yard is lost your people keep to the buildings.
   if (u.side === "player" && b.tier && b.tier.stage === "buildings" && b.tier.indoor) s += b.tier.indoor[idx(x, y)] ? 6 : -15;
   return s;
@@ -5537,8 +5572,9 @@ function aiUnit(b, u) {
   if (!canFire(b, u)) return aiMelee(b, u);
   for (let step = 0; step < 3 && u.ap > 0 && active(u); step++) {
     const foes = foesOf(b, u);
-    if (!foes.length) { const cab = aiCab(b, u); if (cab) { fireCab(b, u, cab); u.ap = 0; } return; } // nobody on foot: the other side's vehicle with them inside
-    const shot = bestShot(b, u, foes);
+    // highground.js: a foe on another floor seen through a window (from a hill, or back at it) is shot at too.
+    if (!foes.length) { const ws = bestShot(b, u, windowFoes(b, u)); if (ws) { fire(b, u, ws.t); u.ap = 0; return; } const cab = aiCab(b, u); if (cab) { fireCab(b, u, cab); u.ap = 0; } return; } // nobody on foot: the other side's vehicle with them inside
+    const shot = bestShot(b, u, foes) || bestShot(b, u, windowFoes(b, u));
     const cab = shot ? null : aiCab(b, u); // nobody in sight to shoot: the other side's vehicle (its cab, its hull)
     if (cab) { fireCab(b, u, cab); u.ap = 0; return; }
     // Nothing to shoot and the magazine low: top it up while nobody is in reach.

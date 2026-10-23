@@ -257,7 +257,7 @@ section("Verticality: sight, aim, cover, climbing");
   check(shotOdds(b, p, e).chance === Math.min(95, a0 + HEIGHT.AIM), `aim down at a lower target: ${a0}% → ${shotOdds(b, p, e).chance}%`);
   check(coverAgainst(b, 4, 6, 12, 6).level === HEIGHT.COVER && coverAgainst(b, 4, 6, 5, 6).level === 0, "half cover against a shooter below, none against one right next to them");
   setH(b, 4, 6, "tower", 2);
-  check(sightRange(b, p) === s0 + 2 * HEIGHT.SIGHT && shotOdds(b, p, e).chance === Math.min(95, a0 + HEIGHT.MAX_AIM) && coverAgainst(b, 4, 6, 12, 6).level === 2, `a watchtower (height 2): sight ${sightRange(b, p)}, +${HEIGHT.MAX_AIM} aim, full cover`);
+  check(sightRange(b, p) === s0 + 2 * HEIGHT.SIGHT && shotOdds(b, p, e).chance === Math.min(95, a0 + Math.min(HEIGHT.MAX_AIM, 2 * HEIGHT.AIM)) && coverAgainst(b, 4, 6, 12, 6).level === 2, `a watchtower (height 2): sight ${sightRange(b, p)}, +${Math.min(HEIGHT.MAX_AIM, 2 * HEIGHT.AIM)} aim, full cover`);
   // Line of sight over a wall: from the ground a wall blocks; from a walkway (height 1) a wall right in front does not.
   setH(b, 4, 6, "open", 0); delete cellAt(b, 4, 6).h;
   setH(b, 5, 6, "wall");
