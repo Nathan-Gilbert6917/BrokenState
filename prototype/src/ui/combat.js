@@ -26,6 +26,7 @@ import { WIRE, cutTargets, cutRefusal, cutterOf } from "../sim/wire.js"; // Cut 
 import { SHOVE, BOARD, CRAWL, shoveTargets, shoveDests, shoveRefusal, shovePlan, tallPiece, canShove, shoveable, pieceName, boardTargets, boardRefusal, boardsOf, tearTargets, isBoarded, boardedName, boardedUnder, targetWord } from "../sim/barricade.js"; // furniture shoved in the way, doors and windows boarded up (the user's request 2026-10-18)
 import { INTERIOR } from "../sim/interior.js";
 import { wetWord, climbWord } from "../sim/ponds.js"; // a hollow's pond, mud or ice; the climb in the rain or in winter
+import { conditions, cellWord, pathWord, drownWhy } from "../sim/seasonfx.js"; // snow, ice, rain and fog on the map (the user's request 2026-10-23)
 import { PARLEY, parleyStatus, parleyGroupsSeen, callOutRefusal, callOutTargets } from "../sim/parley.js"; // other groups on a raid's map: Call out, hostile or not (the user's request 2026-10-20)
 import * as PARLEY_SIM from "../sim/parley.js"; // the exports that may not be there yet (shoutCost), looked up when present
 import { ALLY_ORDER, ALLY_ORDERS, allyOrderTargets, allyOrderRefusal, allyOdds, allyOrderOf, allyOrdersShown } from "../sim/allyorders.js"; // orders to allies on a raid's map (the user's request 2026-10-21)
@@ -2058,7 +2059,8 @@ export function combatAction(state, key, d, ui = null) { // ui: main.js's screen
     if (THROWABLES[k].self) return void act(state, { type: "throw", unit: u.id, item: k, x: u.x, y: u.y }); // the deer call: blown where they stand
     cui.mode = "throw";
     cui.throwKey = k;
-    cui.msg = `Click a tile up to ${THROWABLES[k].range} away to throw ${THROWABLES[k].label}.${k === "flashbang" ? " The lit cells are the ones its flash reaches (bright: within a tile, two actions lost)." : ""}`;
+    const drown = b.sfx ? drownWhy(b, THROWABLES[k], u.x, u.y) : ""; // sim/seasonfx.js
+    cui.msg = `Click a tile up to ${THROWABLES[k].range} away to throw ${THROWABLES[k].label}.${k === "flashbang" ? " The lit cells are the ones its flash reaches (bright: within a tile, two actions lost)." : ""}${drown ? ` ${drown}: outdoors nothing will turn toward it.` : ""}`;
     return;
   }
   if (v === "drag") {
@@ -2287,6 +2289,7 @@ export function renderCombatPanel(state) {
   if (b.raid && b.raid.choose) html += chooseHtml(b);
   if (kitWarnDue(state, b)) html += kitWarnHtml(state, b); // sim/kitcheck.js: empty guns, no healing, the hurt, before the first move
   if (b.night && !b.raid && b.phase !== "deploy") html += nightHtml(b); // sim/vision.js: the dark, by the hour
+  if (b.sfx && !b.raid && b.phase !== "deploy") html += wxHtml(b); // sim/seasonfx.js: snow, ice, rain, fog
   if (b.stores) html += storesHtml(b, cui, u); // the stores on the base map (sim/basemap.js); an assault's: Take, Force lock (sim/assaultstores.js)
   // Looking at another floor than the selected unit's (PageUp / PageDown, the Floor control): say so, with the way back.
   if (u && alive(u) && floorsOf(b) && u.f != null && u.f !== floorNo(b)) {
@@ -2410,6 +2413,7 @@ export function renderRaidTop(state) {
     ${I ? `<span class="ct-sub" data-tip="${esc(`Ways out: ${exits.join(", ")}. ${street ? "Both ends of the street and the back gardens are green extraction zones. Each house has its own doors and stairs; locked doors (padlocks) open like any lock, from either side." : "Every way out has a green extraction zone outside it. Locked doors (padlocks) open like any lock, from either side."}`)}">Ways out <b>${exits.length}</b></span>${waiting ? `<span class="warn" data-tip="People inside who have not shown themselves yet.">${waiting} other people inside</span>` : ""}` : ""}
     ${(R.hasVehicle ?? R.vehicleZone >= 0) ? `<span class="warn" data-tip="Leave from another zone and the vehicle stays here, marked on the map. It can be driven (Drive) and extracts with whoever leaves from the zone it stands at.">${R.vehicleZone >= 0 ? "Vehicle at a zone" : "Vehicle away from the zones"}</span>` : ""}
     ${b.night ? `<span class="warn" data-tip="${esc(`Night (${nightWord(b)}): everyone on foot sees down a cone the way they face, ${darkSight(b)} tiles ahead in the dark and only the cells right around them; a light is a beam the way its carrier faces, seen from far off. ${keyLabel("battle.light", 1) || "Light on / off"}, ${keyLabel("battle.nvg", 1) || "NVG on / off"}.`)}">Night, ${esc(nightWord(b))}: ${darkSight(b)} tiles</span>` : ""}
+    ${conditions(b).map((c) => `<span class="${c.cls}" data-tip="${esc(c.tip)}">${esc(c.text)}</span>`).join("")}
     ${raidKeyLine(state, b, { inline: true })}
     ${sel && sel.side === "player" && active(sel) && quickable(searchableNear(b, sel)).length ? `<span class="ct-sub" data-tip="${esc(`Shift+Q, no action (once a turn): heard ${quickRadius(b, sel)} tiles off, Heat +${SEARCH.quick.heat}. Only ${Math.round(SEARCH.quick.reveal[0] * 100)}–${Math.round(SEARCH.quick.reveal[1] * 100)}% of what is inside turns up; ${quickHurtPct(state, b, sel)} chance of cutting yourself (less likely with Scavenging or Stealth, more in the dark without a light).`)}">Quick search: loud, ${quickHurtPct(state, b, sel)} cut</span>` : ""}
     ${planOpen(b) && !b.over && planUI.map ? planChip(b) : ""}
@@ -2586,6 +2590,7 @@ function raidHead(state, b, phase) {
     ${sel && sel.side === "player" && active(sel) && quickable(searchableNear(b, sel)).length ? `<div class="small muted" style="margin-top:0.25rem" data-tip="${esc(`Shift+Q, no action (once a turn): heard ${quickRadius(b, sel)} tiles off, Heat +${SEARCH.quick.heat}. The cut costs a few health and needs dressing (meds); less likely with Scavenging or Stealth, more in the dark without a light.`)}">Quick search: shows ${Math.round(SEARCH.quick.reveal[0] * 100)}–${Math.round(SEARCH.quick.reveal[1] * 100)}%, loud, ${quickHurtPct(state, b, sel)} chance of cutting yourself</div>` : ""}
     ${(R.hasVehicle ?? R.vehicleZone >= 0) ? `<div class="small warn" style="margin-top:0.25rem" data-tip="Leave from another zone and the vehicle stays here, marked on the map. It can be driven (Drive) and extracts with whoever leaves from the zone it stands at.">${R.vehicleZone >= 0 ? "Your vehicle stands at an extraction zone. Extract there to keep it." : "Your vehicle stands away from the zones: drive it back to one before extracting, or it stays behind."}</div>` : ""}
     ${b.night ? nightHtml(b) : ""}
+    ${b.sfx ? wxHtml(b) : ""}
     ${raidKeyLine(state, b)}
   </div>`;
 }
@@ -3182,7 +3187,8 @@ function stealthButtons(state, b, u, btn) {
       : `1 action: throw ${T.label} up to ${T.range} tiles. Unaware guards and the dead within ${T.radius} tiles go to look (3 turns)${T.turns > 1 ? `; it keeps ringing for ${T.turns} turns` : ""}${T.heat ? `; Heat +${T.heat} in a raid` : ""}.${b.raid ? " The dead that find raiders where it landed fall on them: land one next to their group while nobody of theirs has seen you, and let them fight it out." : ""}`;
     const label = k === "emptymag" ? "empty magazine" : GEAR[k].name.toLowerCase();
     const text = k === "emptymag" ? `1 action: throw an empty spare magazine up to ${T.range} tiles: it clatters where it lands, and unaware guards and the dead within ${T.radius} tiles go to look. The magazine lies there; after a won fight it is picked up again.` : what;
-    html += btn("throw", `${T.self ? "Blow" : "Throw"} ${esc(label)}${T.keep ? "" : ` (${have[k]})`}`, `${text} ${T.keep ? "" : `${have[k]} left.`}`, ap > 0, k === kinds[0] ? "G" : "", { k, on: cui.mode === "throw" && cui.throwKey === k, why: ap > 0 ? "" : NO_AP });
+    const drown = b.sfx ? drownWhy(b, T, u.x, u.y) : ""; // sim/seasonfx.js: a noise lure in the rain
+    html += btn("throw", `${T.self ? "Blow" : "Throw"} ${esc(label)}${T.keep ? "" : ` (${have[k]})`}`, `${text} ${T.keep ? "" : `${have[k]} left.`}${drown ? ` ${drown}: outdoors it pulls nobody now${T.fx ? " (its own effect still works)" : ""}.` : ""}`, ap > 0, k === kinds[0] ? "G" : "", { k, on: cui.mode === "throw" && cui.throwKey === k, why: ap > 0 ? "" : NO_AP });
   }
   return html;
 }
@@ -3495,7 +3501,8 @@ function moveWord(b, u, v, x, y) {
   const d = v.reach ? v.reach.dist[y * W + x] : Infinity;
   if (!(isFinite(d) && d > 0)) return "";
   const vaults = pathTo(v.reach, x, y).filter(([px, py]) => !CELL[b.cells[py * W + px].k].walk && SIM.vaultable(b, b.cells[py * W + px])).length;
-  return `${vaults ? "Vault and " : ""}${d <= SIM.moveMob(u) ? `${vaults ? "move" : "Move"}: 1 action${u.sneaking ? ", silent (sneaking)" : vaults ? ", a scuff heard nearby" : ", a small chance of a scuff heard nearby"}` : `${vaults ? "dash" : "Dash"}: 2 actions${u.sneaking ? ", silent (sneaking)" : `, loud: heard ${VISION.DASH_NOISE} tiles off`}`}${vaults ? ` (over half cover: +${SIM.VAULT.COST * vaults} tiles, and ${SIM.VAULT.COST * vaults} less of movement for the rest of the turn)` : ""}.`;
+  const wx = b.sfx ? pathWord(b, u, pathTo(v.reach, x, y)) : ""; // sim/seasonfx.js: the snow waded, the ice crossed
+  return `${vaults ? "Vault and " : ""}${d <= SIM.moveMob(u) ? `${vaults ? "move" : "Move"}: 1 action${u.sneaking ? ", silent (sneaking)" : vaults ? ", a scuff heard nearby" : ", a small chance of a scuff heard nearby"}` : `${vaults ? "dash" : "Dash"}: 2 actions${u.sneaking ? ", silent (sneaking)" : `, loud: heard ${VISION.DASH_NOISE} tiles off`}`}${vaults ? ` (over half cover: +${SIM.VAULT.COST * vaults} tiles, and ${SIM.VAULT.COST * vaults} less of movement for the rest of the turn)` : ""}${wx ? ` <span class="warn">(${wx})</span>` : ""}.`;
 }
 
 // The hover details in the words of the device in use (ui/hints.js: "Click or press Shift+S to search" → a finger's
@@ -3684,6 +3691,7 @@ function previewText(b, state = null) {
   if (soft) s += ` <span class="muted">${soft}</span>`;
   // A hollow's pond, mud or ice by the weather (sim/ponds.js), and the climb up and down the ground in the rain or in winter.
   if (cobj.wet) s += ` ${wetWord(cobj)}`;
+  { const sw = cellWord(b, cobj, u); if (sw) s += ` <span class="warn">${sw}</span>`; } // sim/seasonfx.js: snow underfoot, ice and its slip
   if (cobj.ter && hh && climbWord(b)) s += ` <span class="warn">${climbWord(b)}</span>`;
   if (cobj.k === "wire") s += ` <b>${cobj.razor ? "Razor wire" : "Barbed wire"}</b><span class="muted">: the dead stop for the turn${cobj.razor ? " and are cut" : ""}; the living are snagged (the rest of the turn, a few cuts) unless they carry a cutter (Cut wire).</span>`; // sim/wire.js
   if (b.tier && b.tier.indoor && b.tier.indoor[h.y * W + h.x]) s += ` Inside ${esc((b.tier.buildings || []).find((x) => x.cells.some(([cx, cy]) => cx === h.x && cy === h.y))?.name || "a building")}.`;
@@ -3790,6 +3798,12 @@ function throwPreview(b, u) {
 }
 const cap1 = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
 
+// The conditions line (sim/seasonfx.js): the snow underfoot, the ice, the fog and the rain, each with its rule.
+function wxHtml(b) {
+  const cs = conditions(b);
+  if (!cs.length) return "";
+  return `<div class="small cbwx" style="margin-top:0.25rem">${cs.map((c) => `<span class="${c.cls}" data-tip="${esc(c.tip)}">${esc(c.text)}</span>`).join(" · ")}</div>`;
+}
 // The night line (sim/vision.js): how far anyone sees ahead in the dark at this hour, the lights.
 function nightHtml(b) {
   const lit = players(b).filter((p) => activeLight(p) || nvgOn(p)).length;

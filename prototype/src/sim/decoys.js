@@ -26,6 +26,7 @@ import { ZTYPES, SENSES, SHEPHERD } from "./hiveconst.js";
 import { THROWABLES, DECOY_KEYS, throwablesOf, stealthAct } from "./stealth.js";
 import { FIRE } from "./throwables.js";
 import { active, reachable, pathTo, distField, moveAlong, say, foesOf } from "./combat.js";
+import { drowned, drownWhy } from "./seasonfx.js"; // the rain drowns out a noise lure (the user's request 2026-10-23)
 
 export const LURE = { PULL_FREE: 2.5, PER: 0.02, MAX: 0.08, AI_MIN: 3, AI_KEEP: 5 };
 const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
@@ -56,6 +57,7 @@ export function stimuli(b) {
   for (const l of b.lures || []) {
     const T = THROWABLES[l.key];
     if (!T || !T.decoy || l.turns <= 0) continue;
+    if (b.sfx && drowned(b, l, T)) continue; // seasonfx.js: the rain drowns it out
     out.push({ x: l.x, y: l.y, radius: l.radius, sense: l.sense || T.sense, key: l.key, fire: false });
   }
   for (const f of b.fires || []) out.push({ x: f.x, y: f.y, radius: FIRE.lure, sense: ["light", "heat"], key: "fire", fire: true });
@@ -144,6 +146,7 @@ export function botDecoy(state, b, u) {
     for (let y = 0; y < b.h; y++) for (let x = 0; x < b.w; x++) {
       const d = dist(u.x, u.y, x, y);
       if (d > T.range || d < 2) continue;
+      if (b.sfx && drownWhy(b, T, x, y)) continue; // seasonfx.js: no noise lure where the rain drowns it out (a flare still works)
       if (mine.some((m) => dist(m.x, m.y, x, y) < LURE.AI_KEEP)) continue;
       const n = pulled.filter((o) => dist(o.x, o.y, x, y) <= T.radius).length;
       const sc = n * 10 + Math.min(...mine.map((m) => dist(m.x, m.y, x, y))) * 0.1 + T.turns * 0.2;
