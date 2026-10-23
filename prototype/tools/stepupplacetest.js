@@ -6,7 +6,7 @@
 //   - the build map opened with the step up picked queues nothing; a click where it fits queues it there, placed;
 //   - the camp meant to grow is on the supply network before its house is placed;
 //   - the governor's camp still has its step up queued at once;
-//   - the build map is twice the size round the base (VIEW_SCALE), nothing placed within VIEW_EDGE cells of its edge
+//   - the build map is twice the size round the base (VIEW_HALF), nothing placed within VIEW_EDGE cells of its edge
 //     (the user's requests 2026-10-23), tinted; the yard keeps its size.
 // Usage: node tools/stepupplacetest.js [seed]
 import { createWorld, tickHour, hub, atBase, day } from "../src/sim/world.js";
@@ -29,7 +29,7 @@ function outpostCamp(st) {
   const tile = st.grid.within(h.tile, 6).find((t) => st.grid.distance(t, h.tile) >= 3 && free(st, t) && planPath(st, h.tile, t, false));
   poiKnowledge(st, tile, true).surveyed = day(st);
   Object.assign(h.stock, { scrap: 80, buildmat: 20, food: 200, water: 200, wood: 2000 });
-  const res = launchExpedition(st, { memberIds: atBase(st, h.id).slice(0, 2).map((s) => s.id), dest: tile, mission: "outpost", stance: "normal", supplies: { food: 6, water: 6, scrap: 20 } });
+  const res = launchExpedition(st, { memberIds: atBase(st, h.id).slice(0, 2).map((s) => s.id), dest: tile, mission: "outpost", stance: "normal", supplies: { food: 6, water: 6, scrap: 20, wood: 20, stone: 8 } });
   if (!check(!res.error, `the team leaves (${res.error || "ok"})`)) return null;
   res.party.path = [tile]; res.party.idx = 0;
   giveOrder(st, res.party, "outpost");

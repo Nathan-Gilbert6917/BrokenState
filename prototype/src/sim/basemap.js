@@ -4,9 +4,9 @@
 // (fort.js builds the battle from it), so where things stand is where they are defended.
 //
 // The grid (BASE_GRID, the user's request 2026-10-22: "Increase the Base map sizes to be all the same 250x250 base
-// size"): every base's map is 250 × 250, a camp's as a hub's. Within it the yard grows by tier (GRID: a camp's 20 × 20
-// round the camp itself, a shelter's 24, an outpost's 32 growing to 100 and the main hub's 48 growing to 180 as
-// buildings go up: "scale up and down": the yard half-size grows GRID.per cells a building with a footprint, up to
+// size"): every base's map is 250 × 250, a camp's as a hub's. Within it the yard grows by tier (GRID: 76 × 76 round the
+// camp, shelter or base itself since 2026-10-23 (YARD), a camp's and a shelter's staying so, an outpost's growing to 100
+// and the main hub's to 180 as buildings go up: "scale up and down": the yard half-size grows GRID.per cells a building with a footprint, up to
 // GRID.cap, never past the map's edge (gridOf) and never below what is placed). Coordinates are relative to the base
 // itself (0, 0), so a base that grows keeps every placement. Where the base stands on its map (base.plan.origin: the
 // cells from the map's middle to it) is picked when its camp is set up (the camp's spot: chooseSite, staging.js; the
@@ -139,11 +139,15 @@ import { pondsOn, pondWhy, pondWaits } from "./ponds.js"; // the hollows' ponds 
 // The grid by tier: core = the half-size of the middle structure's own ground, yard = the yard's half-size to start
 // with, per = yard growth a building with a footprint, cap = the yard's largest half-size (never past the map's edge,
 // less the band and the no-build margin: gridOf).
+// The user's request 2026-10-23: "The yard for bases should be 75 x 75": every tier's yard starts at YARD (76 × 76: the
+// yard is square round the base itself, so an even number of cells; 75 would need a half cell); a camp's and a
+// shelter's stay there, an outpost's grows to 100 and the main hub's to 180 as before.
+export const YARD = 38;
 export const GRID = {
-  camp:    { core: 4, yard: 10, per: 0, cap: 10 },  // the camp itself within 20 × 20
-  shelter: { core: 6, yard: 12, per: 0, cap: 12 },  // 24 × 24
-  outpost: { core: 6, yard: 16, per: 2, cap: 50 },  // 32 growing to 100
-  hub:     { core: 8, yard: 24, per: 3, cap: 90 },  // 48 growing to 180
+  camp:    { core: 4, yard: YARD, per: 0, cap: YARD },  // the camp itself within 76 × 76
+  shelter: { core: 6, yard: YARD, per: 0, cap: YARD },  // 76 × 76
+  outpost: { core: 6, yard: YARD, per: 2, cap: 50 },    // 76 growing to 100
+  hub:     { core: 8, yard: YARD, per: 3, cap: 90 },    // 76 growing to 180
 };
 export const BASE_GRID = 250; // every base's map: 250 × 250 cells
 export const GRID_MAX = BASE_GRID / 2; // the grid's half-size
@@ -151,11 +155,12 @@ export const MARGIN = 8;     // open ground round what stands on the battle map 
 export const VIEW_PAD = 8;   // the Base map view shows this much more than the battle map
 // The build map's size (the user's request 2026-10-23: "Increase the base map size double the size after selecting your
 // base location"; "Increase the base building area even when it's a campsite to be a margin of 3 tiles away from the
-// map border"): the view (openBaseMap) is at least VIEW_SCALE times what it was round the base (a camp's 56 × 56 is
-// 112 × 112), every tier alike; the yard and its wall ring keep their size, and the battle maps theirs. Anything goes
-// anywhere on it but the VIEW_EDGE cells nearest its edge (tinted, c.nb: viewEdgeWhy); it still grows past that as
-// things are placed further out. The camp's spot (the site view, the tile's whole map) is not scaled.
-export const VIEW_SCALE = 2, VIEW_EDGE = 3;
+// map border"): the view (openBaseMap) is at least VIEW_HALF (half-size, by tier) round the base, twice what it was
+// round the old yards (a camp's 56 × 56 is 112 × 112), and always the yard, its ring and VIEW_PAD more; the battle maps
+// keep their own crop. Anything goes anywhere on it but the VIEW_EDGE cells nearest its edge (tinted, c.nb:
+// viewEdgeWhy); it still grows past that as things are placed further out. The camp's spot (the site view, the tile's
+// whole map) is not scaled.
+export const VIEW_HALF = { camp: 56, shelter: 60, outpost: 68, hub: 84 }, VIEW_EDGE = 3;
 export const VIEW_EDGE_WHY = `Within ${VIEW_EDGE} cells of the map's edge (nothing is built there)`;
 // The no-build margin (the user's request 2026-10-19, "a 5 tile margin around the edge of the map as a no build
 // section"): the cells within this many of the grid's edge take nothing, by hand or by the game (placeProblemAt).
@@ -1614,7 +1619,7 @@ export function buildBaseMap(state, base, rng, opts = {}) {
   }
   const pad = MARGIN + (view ? VIEW_PAD : 0);
   x0 -= pad; y0 -= pad; x1 += pad; y1 += pad;
-  if (view && !site) { const m = VIEW_SCALE * (Bh + 2 + pad); x0 = Math.min(x0, -m); y0 = Math.min(y0, -m); x1 = Math.max(x1, m); y1 = Math.max(y1, m); } // VIEW_SCALE: the build map doubled round the base
+  if (view && !site) { const m = VIEW_HALF[tierKey(base)]; x0 = Math.min(x0, -m); y0 = Math.min(y0, -m); x1 = Math.max(x1, m); y1 = Math.max(y1, m); } // VIEW_HALF: the build map twice what it was round the base
   x0 = Math.max(GB.x0, x0); y0 = Math.max(GB.y0, y0); x1 = Math.min(GB.x1, x1); y1 = Math.min(GB.y1, y1);
   if (site) ({ x0, y0, x1, y1 } = GB);
   const W = x1 - x0, H = y1 - y0, ox = -x0, oy = -y0; // grid (gx, gy) → map (gx + ox, gy + oy)

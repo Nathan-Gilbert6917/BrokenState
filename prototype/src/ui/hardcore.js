@@ -8,7 +8,7 @@ import { partyMembers, partyTile, carried, planPath, partySpeed, tileLabel, team
 import { teamUpkeep } from "./needs.js"; // what the team has, uses a day and how long it lasts
 import { roadTeam, hubSites } from "../sim/hardcore-start.js";
 import { stagingView, needText, ESTABLISH_LABEL, STAGING, STAGES, waterText, establishProblem, strikeProblem } from "../sim/staging.js";
-import { BUILDINGS, isCamp, tierUpJob, tierUpType, gatherCap } from "../sim/buildings.js";
+import { BUILDINGS, CAMP, isCamp, tierUpJob, tierUpType, gatherCap } from "../sim/buildings.js";
 import { atBase } from "../sim/world.js";
 import { fireLit } from "../sim/fieldheat.js";
 import { RAW } from "../sim/water.js";
@@ -74,7 +74,7 @@ export function roadNeeds(state) {
   const head = v.first ? `Hardcore: no hub yet. Your ${v.people} survivors are a team on the road; you are with them, so they always take orders.` : "You have no base left: your people are on the road.";
   return {
     status: { cls: v.first ? "warn" : "danger", text: "On the road", tip: `${head} ${ESTABLISH_LABEL} sets up a camp you build up into your hub.` },
-    camp: { text: "No camp yet", tip: `Give a team the order ${ESTABLISH_LABEL} where your home should stand: a camp (the barest base); then place its ${BUILDINGS.camp_up.name.toLowerCase()} from the Build list to build it up into a shelter (${needText(v.needs)} brought in, then ${BUILDINGS.camp_up.hours} work-hours by its builders).` },
+    camp: { text: "No camp yet", tip: `Give a team the order ${ESTABLISH_LABEL} where your home should stand (its camp fire takes ${needText(CAMP.fireCost)} carried: Cut wood and Gather stone first): a camp (the barest base); then place its ${BUILDINGS.camp_up.name.toLowerCase()} from the Build list to build it up into a shelter (${needText(v.needs)} brought in, then ${BUILDINGS.camp_up.hours} work-hours by its builders).` },
     rows: [
       row("food", `${n0(d.u.food.have)} days of food (one person's day each, packs included); the ${heads} of them eat about ${r1(d.u.food.perDay)} a day: it lasts about ${r1(d.food)} days.`, { amt: n0(d.u.food.have), level: lvl(d.food, 1, 3), note: `${r1(d.food)}d` }),
       row("water", `${n0(d.u.water.have)} water, purified and un-purified (packs included); the ${heads} of them drink about ${r1(d.u.water.perDay)} a day at today's thirst: it lasts about ${r1(d.water)} days.`, { amt: n0(d.u.water.have), level: lvl(d.water, 1, 2), note: `${r1(d.water)}d` }),
@@ -125,7 +125,7 @@ export function firstHubCard(state) {
   const d = v.p ? teamDays(state, v.p) : null;
   const spots = v.tile != null ? hubSites(state, v.tile, 4).slice(0, 3) : [];
   const spotRows = spots.map((s) => `<div class="row small"><a class="link" data-action="center" data-tile="${s.id}"${tip("Center the map here")}>${esc(tileLabel(state, s.id))}</a><span class="muted">water: ${esc(waterText(state, s.id))} · ${s.sites} site${s.sites === 1 ? "" : "s"} around</span></div>`).join("");
-  const intro = `No base ${v.first ? "yet" : "left"}: your ${v.people || ""} survivors are on the road. Pick a good spot (beside a river or lake: there is no spring; sites around, few of the dead) and give a team the order <b>${ESTABLISH_LABEL}</b>: a camp (the barest base: your people live there from the start); then pick its ${esc(BUILDINGS.camp_up.name.toLowerCase())} from the Build list and place it on the build map to build it up into a shelter: ${esc(needText(v.needs))} brought in, then ${BUILDINGS.camp_up.hours} work-hours by its builders (Camp → Shelter → Base).`;
+  const intro = `No base ${v.first ? "yet" : "left"}: your ${v.people || ""} survivors are on the road. Pick a good spot (beside a river or lake: there is no spring; sites around, few of the dead) and give a team the order <b>${ESTABLISH_LABEL}</b> carrying ${esc(needText(CAMP.fireCost))} for its camp fire (Cut wood and Gather stone on the way): a camp (the barest base: your people live there from the start); then pick its ${esc(BUILDINGS.camp_up.name.toLowerCase())} from the Build list and place it on the build map to build it up into a shelter: ${esc(needText(v.needs))} brought in, then ${BUILDINGS.camp_up.hours} work-hours by its builders (Camp → Shelter → Base).`;
   return `<div class="card attn">
     <div class="spread"><h2 style="margin:0">${v.title}</h2><span class="muted small">${v.first ? "Hardcore" : "On the road"}</span></div>
     <div class="small" style="margin-top:0.3rem">${intro}</div>

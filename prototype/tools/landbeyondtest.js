@@ -50,7 +50,7 @@ section("A camp's map keeps the land past its edge (F.beyond)");
   const h = hub(st);
   const tile = st.grid.within(h.tile, 6).find((t) => st.grid.distance(t, h.tile) >= 3 && free(t) && planPath(st, h.tile, t, false));
   poiKnowledge(st, tile, true).surveyed = day(st);
-  const res = launchExpedition(st, { memberIds: atBase(st, h.id).slice(0, 2).map((s) => s.id), dest: tile, mission: "camp", stance: "normal", supplies: { food: 6, water: 6 } });
+  const res = launchExpedition(st, { memberIds: atBase(st, h.id).slice(0, 2).map((s) => s.id), dest: tile, mission: "camp", stance: "normal", supplies: { food: 6, water: 6, wood: 20, stone: 8 } });
   res.party.path = [tile]; res.party.idx = 0; giveOrder(st, res.party, "camp");
   for (let i = 0; i < 40 && !st.bases.some((b) => b.tile === tile); i++) tickHour(st);
   const b = st.bases.find((x) => x.tile === tile);

@@ -27,6 +27,7 @@ import { partyVehicle } from "../sim/vehicles.js";
 import { HUNT, SNARE, gameAbundance, fishSpot, huntProblem, fishProblem, snareLine, snareProblem } from "../sim/hunting.js";
 import { forageAbundance, forageProblem } from "../sim/foraging.js";
 import { woodAbundance, woodProblem, canLight } from "../sim/woodcutting.js";
+import { stoneAbundance, stoneProblem } from "../sim/stone.js"; // Gather stone (the user's request 2026-10-23)
 import { CLAIM, canClaim, wellProblem, claimOwner } from "../sim/claims.js";
 import { teamFieldItems } from "./fieldworks.js"; // field works: load, unload, wreck, take
 import { LISTEN } from "../sim/radiolisten.js";
@@ -35,7 +36,8 @@ import { crossingsFrom, boatPlan, boatOrder } from "../sim/crossing.js";
 import { setFire, fireLit } from "../sim/fieldheat.js";
 import { sweepOpts, LOOK } from "../sim/survey.js";
 import { poiRaidSummary } from "../sim/poiraid.js"; // "3 places known, possibly more unknown"
-import { campProblem } from "../sim/staging.js"; // Set up camp: where a camp may stand
+import { campProblem, fireCostProblem, needText } from "../sim/staging.js"; // Set up camp: where a camp may stand; its camp fire's wood and stone carried
+import { CAMP } from "../sim/buildings.js";
 import { tileScouted, blindText, BLIND_NOTE, SCOUT_LABEL, groundsBase, groundsProblem, deadText, GROUNDS_LABEL } from "../sim/campscout.js"; // an unscouted tile: blind, or Scout first; a blind camp's grounds
 import { crawlTile } from "../sim/citycrawl.js";
 import { transferProblem, loadFromBase, isPlayerTeam } from "../sim/teaminv.js";
@@ -213,7 +215,7 @@ export function teamTileMenu(state, ui, p, tile, { append = false } = {}) {
     }
   }
 
-  // Food, wood and water from the land
+  // Food, wood, stone and water from the land
   if (!water && !theirs) {
     const job = (type, extra = {}) => [{ type, hours: LAND_HOURS, ...extra }];
     if (forageAbundance(state, tile) >= 0.05) add("Land", "forage", `Forage ${LAND_HOURS}h`, job("forage"), { why: cap(forageProblem(state, p, tile)), hint: "Wild food: berries, nuts, mushrooms, greens, roots. Quiet; best in forest, summer and autumn." });
@@ -226,6 +228,7 @@ export function teamTileMenu(state, ui, p, tile, { append = false } = {}) {
     const fs = fishSpot(state, tile);
     if (fs) add("Land", "fish", `Fish ${LAND_HOURS}h`, job("fish"), { why: cap(fishProblem(state, p, tile)), hint: `Fish in ${fs.name}. Quiet. Needs a rod, a net or a spear.` });
     if (woodAbundance(state, tile) >= 0.1) add("Land", "wood", `Cut wood ${LAND_HOURS}h`, job("wood"), { why: cap(woodProblem(state, p, tile)), hint: "Wood for the winter (daylight only). Loud: Heat; an axe makes it far quicker." });
+    if (stoneAbundance(state, tile) >= 0.1) add("Land", "stone", `Gather stone ${LAND_HOURS}h`, job("stone"), { why: cap(stoneProblem(state, p, tile)), hint: "Field stone for a camp's fire ring and the stone buildings (daylight only; 1 kg a stone, so mind the load). Mountains and hills are best; a pickaxe or a sledgehammer doubles it." });
     if (besideWater(state, tile)) {
       const room = Math.floor(cargoRoom(state, p));
       add("Land", "water", `Fetch water (${FETCH_WATER_HOURS}h)`, [{ type: "water" }], { why: room < 1 ? "No room left to carry any water." : "", hint: `Fill every free container from the river or lake (room for about ${room}): un-purified water to boil, filter or bring home.` });
@@ -242,7 +245,7 @@ export function teamTileMenu(state, ui, p, tile, { append = false } = {}) {
     if (p.owner === "player" && p.kind === "expedition" && !p.caravan && p.crewRole == null) {
       // An unscouted tile (sim/campscout.js, the user's request 2026-10-23): the camp goes up blind, or Scout first.
       const scouted = tileScouted(state, tile, p);
-      add("Camp", "setcamp", `Set up camp here${scouted ? "" : BLIND_NOTE}`, [{ type: "mission", mission: "camp" }], { why: cap(campProblem(state, tile) || ""), hint: `${scouted ? "" : `${blindText()} `}Make camp (1 hour, no materials): the team's people live there while it stands, what it carries goes into the camp's stores, its vehicles park there. Manage it in its base window; Strike camp packs everyone up again.` });
+      add("Camp", "setcamp", `Set up camp here${scouted ? "" : BLIND_NOTE}`, [{ type: "mission", mission: "camp" }], { why: cap(campProblem(state, tile) || fireCostProblem(state, p) || ""), hint: `${scouted ? "" : `${blindText()} `}Make camp (its camp fire takes ${needText(CAMP.fireCost)} carried): the team's people live there while it stands, what it carries goes into the camp's stores, its vehicles park there. Manage it in its base window; Strike camp packs everyone up again.` });
       if (!scouted) add("Camp", "mission:scoutcamp", `${SCOUT_LABEL}: survey (${LOOK.hours}h), then set up camp`, [{ type: "mission", mission: "scoutcamp" }], { why: cap(campProblem(state, tile) || ""), hint: MISSIONS.scoutcamp.desc });
     }
     if (camping) add("Camp", lit ? "fireout" : "fire", lit ? "Put the camp fire out" : "Light a camp fire", [], { special: lit ? "fireout" : "fire", why: lit ? "" : noFire, hint: lit ? "Darker and quieter, but cold food, unboiled water and cold nights." : "Warmth, hot food and boiled water, better spirits; its light and smoke carry, most at night." });
@@ -322,7 +325,7 @@ const GROUP_TIP = {
   Go: "Travel, look, survey, cross water",
   Base: "Your base: move in, drop off, load, resupply",
   Site: "What you know is here: from the live view, the last report, markers and the groups you know",
-  Land: "Food, wood and water from the land",
+  Land: "Food, wood, stone and water from the land",
   Camp: "Rest on the spot",
   Team: "The team's own gear and the land you hold",
   "Field work": "A field work here: your stockpile (load, leave finds), or a group's structure (wreck, take, loot)",

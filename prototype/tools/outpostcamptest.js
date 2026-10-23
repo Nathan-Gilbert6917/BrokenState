@@ -37,7 +37,7 @@ function pitch(st, n, supplies) {
   poiKnowledge(st, tile, true).surveyed = day(st); // scouted (sim/campscout.js): the camp on the game's own spot, as this test's numbers expect
   Object.assign(h.stock, { scrap: 80, parts: 6, buildmat: 20, food: 200, water: 200, wood: 2000 });
   const crew = atBase(st, h.id).slice(0, n).map((s) => s.id);
-  const res = launchExpedition(st, { memberIds: crew, dest: tile, mission: "outpost", stance: "normal", supplies: { food: 6, water: 6, ...supplies } });
+  const res = launchExpedition(st, { memberIds: crew, dest: tile, mission: "outpost", stance: "normal", supplies: { food: 6, water: 6, wood: 20, stone: 8, ...supplies } }); // wood: 20, stone: 8: the camp fire's (CAMP.fireCost)
   if (!check(!res.error, `the team leaves (${res.error || "ok"})`)) return null;
   res.party.path = [tile]; res.party.idx = 0;
   giveOrder(st, res.party, "outpost");
@@ -66,7 +66,7 @@ section("Build outpost pitches a camp");
   check(JSON.stringify(BUILDINGS.hub_up.cost) === JSON.stringify({ scrap: 100, buildmat: 5, wood: 800 }) && BUILDINGS.hub_up.hours === 60 && BUILDINGS.hub_up.gather, "shelter to base: 100 scrap, 5 building materials, 800 wood, 60 work-hours, gathered as they come in");
   check(JSON.stringify(STAGING.HARDCORE.needs) === JSON.stringify({ scrap: 20, buildmat: 2, wood: 200 }) && STAGING.HARDCORE.work === 20 && STAGING.PITCH.scrap === 0 && STAGING.PITCH.hours === CAMP.fireHours && BUILDINGS.camp_up.hours === 20, "a camp: its fire and the clearing of its spot, nothing carried, to set up; to a shelter (camp_up) 20 scrap, 2 building materials, 200 wood, 20 work-hours");
   check(CRAFTS.buildmat && CRAFTS.buildmat.in.scrap === 3 && CRAFTS.buildmat.supplies.buildmat === 1 && CRAFTS.buildmat.field, "building materials are crafted from scrap (3 for 1, anywhere)");
-  const at = { path: [nearFree(st, hub(st).tile, 3, 6)], idx: 0, supplies: { scrap: 11 }, cargo: { supplies: {}, gear: [] } };
+  const at = { path: [nearFree(st, hub(st).tile, 3, 6)], idx: 0, supplies: { scrap: 11, wood: 20, stone: 8 }, cargo: { supplies: {}, gear: [] } };
   const opt = orderOptions(st, at).find((x) => x.mission === "outpost");
   check(opt && !opt.disabled, `Build outpost is open with no scrap carried (${opt && JSON.stringify(opt).slice(0, 120)})`);
   const P = pitch(st, 2, { scrap: 16 });

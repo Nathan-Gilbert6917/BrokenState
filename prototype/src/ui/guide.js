@@ -150,7 +150,7 @@ const STEPS = {
     },
   },
   camp: {
-    title: `Set up your camp (${ESTABLISH_LABEL})`, why: "Your hub starts as a camp, the barest base: pick a spot beside a river or lake, with sites and trees around and few of the dead, and give the team the order there. Your people live there from the start, in their tents; the alert that follows opens its build map to lay it out.",
+    title: `Set up your camp (${ESTABLISH_LABEL})`, why: `Your hub starts as a camp, the barest base: pick a spot beside a river or lake, with sites and trees around and few of the dead, and give the team the order there. Its camp fire takes ${CAMP.fireCost.wood} wood and ${CAMP.fireCost.stone} stone carried: give the team Cut wood and Gather stone first (its right-click menu, Land). Your people live there from the start, in their tents; the alert that follows opens its build map to lay it out.`,
     done: (state) => state.bases.length > 0,
     show: (state, ui, act) => (openTeam(state, ui, act) ? ['[data-action="xp-order"][data-mission="establish"]', '[data-action="xp-move"]'] : []),
   },

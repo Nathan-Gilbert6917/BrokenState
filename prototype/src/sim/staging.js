@@ -7,7 +7,7 @@
 // - Tents (tents.js): every bag the team brought is pitched (beds under cover, storage out of the weather); Strike camp
 //   packs them back into bags first, a camp removed any other way leaves them in its cache; bags in its armory go up
 //   daily while someone sleeps rough.
-// - Set up camp (team order, any land tile you could build on, any time): no materials. Where on the tile's 250 × 250
+// - Set up camp (team order, any land tile you could build on, any time): its camp fire takes CAMP.fireCost (wood and stone) carried (fireCostProblem; the user's request 2026-10-23). Where on the tile's 250 × 250
 //   map it goes is picked when the team gets there (the user's requests 2026-10-22: "choose where in the 250 x 250
 //   with a highlighted 10x10 to start ... set up camp with a camp fire", then "reduce to 5x5 with camp site in the
 //   middle"; askSite, ui/campsite.js; the game's own spot for the governor: basemap.js defaultSite). The work is the
@@ -52,7 +52,7 @@ import { BUILDINGS, SHELTER, CAMP, isShelter, isCamp, tierUpJob, tierUpJobFor, r
 import { fireLit, FIRE, shelterHeat } from "./fieldheat.js";
 import { fireDayBurn } from "./woodcutting.js"; // the fire's burn a day (fire-nights): the base window's Fire row
 import * as Weather from "./weather.js";
-import { partyMembers, partyTile, tileLabel, teamName, awaitOrders, outpostName, settleInto, carryCapacity } from "./parties.js";
+import { partyMembers, partyTile, tileLabel, teamName, awaitOrders, outpostName, settleInto, carryCapacity, carried, takeSupply } from "./parties.js";
 import { firstHubPending, hubFounded } from "./hardcore-start.js";
 import { CRAWL_WHY } from "./startpick.js"; // a town's or a city's crawl tile: no base there
 import { crawlTile } from "./citycrawl.js"; // (call-time only)
@@ -92,7 +92,7 @@ export const STAGES = ["Camp", "Shelter", "Base"];
 export const ESTABLISH_LABEL = "Establish base";
 export const SETUP_LABEL = "Set up camp";
 export const STRIKE_LABEL = "Strike camp";
-const NEED_KEYS = ["scrap", "parts", "buildmat", "food", "water"];
+const NEED_KEYS = ["scrap", "parts", "buildmat", "wood", "stone", "food", "water"]; // wood, stone: the step up's wood and the camp fire's (CAMP.fireCost)
 const needWord = (k) => (k === "buildmat" ? "building materials" : k);
 const r1 = (v) => Math.round(v * 10) / 10;
 const n0 = (v) => Math.floor((v || 0) + 1e-9);
@@ -151,8 +151,8 @@ export function campOption(state, p, tile = partyTile(p)) {
   if (!t || (t.terrain === "water" && !t.bridge) || state.bases.some((b) => b.tile === tile)) return null;
   const w = waterSource(state, tile);
   return {
-    mission: "camp", label: SETUP_LABEL, disabled: campProblem(state, tile),
-    desc: `Stop and make camp here (no materials: on getting there you pick its spot on the tile's ${BASE_GRID} × ${BASE_GRID} map; the team builds its camp fire and clears the ${SITE.SIZE} × ${SITE.SIZE} round it, about ${durText(campPitchHours(state, p, tile))} on the middle of this tile, and what the land there gives goes into its stores): a camp is the barest base, tarps, bedrolls and a fire, and the tents the team carries (beds under cover, storage out of the weather).${threatWords(state, tile) && tileScouted(state, tile, p) ? ` The dead: ${threatWords(state, tile)}.` : ""} The team's people live there while it stands (the hurt heal twice as fast as at a base without a hospital, they eat and drink from the camp's stores), what the team carries goes into the stores and its vehicles park there. Manage it in its base window; ${STRIKE_LABEL} there packs everyone up again as a team. It can be built up with time and materials (Construction: into ${hub(state) ? "an outpost" : "a shelter, then a base"}). Water: ${w ? waterText(state, tile) : "no river or lake nearby, only what is carried in"}. Its fire, its people and vehicles parked there draw the dead and raiders.`,
+    mission: "camp", label: SETUP_LABEL, disabled: campProblem(state, tile) || fireCostProblem(state, p),
+    desc: `Stop and make camp here (its camp fire takes ${needText(CAMP.fireCost)} carried; on getting there you pick its spot on the tile's ${BASE_GRID} × ${BASE_GRID} map; the team builds its camp fire and clears the ${SITE.SIZE} × ${SITE.SIZE} round it, about ${durText(campPitchHours(state, p, tile))} on the middle of this tile, and what the land there gives goes into its stores): a camp is the barest base, tarps, bedrolls and a fire, and the tents the team carries (beds under cover, storage out of the weather).${threatWords(state, tile) && tileScouted(state, tile, p) ? ` The dead: ${threatWords(state, tile)}.` : ""} The team's people live there while it stands (the hurt heal twice as fast as at a base without a hospital, they eat and drink from the camp's stores), what the team carries goes into the stores and its vehicles park there. Manage it in its base window; ${STRIKE_LABEL} there packs everyone up again as a team. It can be built up with time and materials (Construction: into ${hub(state) ? "an outpost" : "a shelter, then a base"}). Water: ${w ? waterText(state, tile) : "no river or lake nearby, only what is carried in"}. Its fire, its people and vehicles parked there draw the dead and raiders.`,
   };
 }
 // Establish base (no base at all: hardcore's first home, the exiles): a camp meant to grow (its step up placed by hand).
@@ -160,12 +160,12 @@ export function establishOption(state, p, tile = partyTile(p)) {
   if (!noBase(state) || !p || p.owner !== "player") return null;
   const t = state.tiles[tile];
   if (!t || t.terrain === "water") return null;
-  return { mission: "establish", label: ESTABLISH_LABEL, desc: establishDesc(state, tile, p), disabled: establishProblem(state, tile) };
+  return { mission: "establish", label: ESTABLISH_LABEL, desc: establishDesc(state, tile, p), disabled: establishProblem(state, tile) || fireCostProblem(state, p) };
 }
 function establishDesc(state, tile, p = null) {
   const needs = stagingNeeds(state, tile);
   const w = waterSource(state, tile);
-  return `Set up camp here for your ${firstHubPending(state) ? "first" : "new"} home (no materials: you pick its spot on the tile's map; the team builds the camp fire and clears the ${SITE.SIZE} × ${SITE.SIZE} round it, its wood and scrap into the stores, the time by what stands there) and start building it up: Camp → Shelter → Base. The camp is a base from the start (its people live there, the team's load goes into its stores); to become a shelter it needs its ${BUILDINGS.camp_up.name.toLowerCase()} (pick it from the Build list and place it on the build map), ${needText(needs)} brought in and ${BUILDINGS.camp_up.hours} work-hours by its builders (Construction), and later the shelter is built up into a base (${needText(BUILDINGS.hub_up.cost)}). There is no spring: water: ${w ? `${waterText(state, tile)}${w.dist <= 1 ? ", its people haul it" : ""}` : "no water source nearby, every drop carried in"}. Pick a place beside a river or lake, with sites to scavenge around and few of the dead.${threatWords(state, tile) && tileScouted(state, tile, p) ? ` Here: ${threatWords(state, tile)}.` : ""}${state.tiles[tile] && state.tiles[tile].ruin ? ` On these ruins: ${CAMP.ruinScrap} scrap less (salvage).` : ""}`;
+  return `Set up camp here for your ${firstHubPending(state) ? "first" : "new"} home (its camp fire takes ${needText(CAMP.fireCost)} carried; you pick its spot on the tile's map; the team builds the camp fire and clears the ${SITE.SIZE} × ${SITE.SIZE} round it, its wood and scrap into the stores, the time by what stands there) and start building it up: Camp → Shelter → Base. The camp is a base from the start (its people live there, the team's load goes into its stores); to become a shelter it needs its ${BUILDINGS.camp_up.name.toLowerCase()} (pick it from the Build list and place it on the build map), ${needText(needs)} brought in and ${BUILDINGS.camp_up.hours} work-hours by its builders (Construction), and later the shelter is built up into a base (${needText(BUILDINGS.hub_up.cost)}). There is no spring: water: ${w ? `${waterText(state, tile)}${w.dist <= 1 ? ", its people haul it" : ""}` : "no water source nearby, every drop carried in"}. Pick a place beside a river or lake, with sites to scavenge around and few of the dead.${threatWords(state, tile) && tileScouted(state, tile, p) ? ` Here: ${threatWords(state, tile)}.` : ""}${state.tiles[tile] && state.tiles[tile].ruin ? ` On these ruins: ${CAMP.ruinScrap} scrap less (salvage).` : ""}`;
 }
 
 // The orders' arrival (parties.js arrive, missions "camp", "establish", "outpost"): the camp's spot asked for (askSite:
@@ -176,6 +176,8 @@ export function pitchArrive(state, p, mission) {
   const why = campProblem(state, tile);
   const label = mission === "outpost" ? "Build outpost" : mission === "establish" ? ESTABLISH_LABEL : SETUP_LABEL;
   if (why) { delete p.pitched; awaitOrders(state, p, `${label}: ${why}`, { failed: true }); return ""; }
+  const fire = !p.pitched && fireCostProblem(state, p);
+  if (fire) { awaitOrders(state, p, `${label}: ${fire}.`, { failed: true }); return ""; }
   if (!p.pitched) {
     // campscout.js (the user's request 2026-10-23): an unscouted tile is surveyed first (Scout first) or the camp goes
     // up blind (the game's dice for its spot, nobody asked, nothing fought first: the dead stay out on its grounds).
@@ -277,6 +279,14 @@ export function siteDone(state, p) {
 // An unscouted tile (campscout.js): the blind spot the camp will go on, so the estimates and the setup agree.
 export const campSiteFor = (state, p, tile) => (p && p.campAt && !siteProblem(state, tile, p.campAt) ? p.campAt.slice(0, 2) : p && p.owner === "player" && !tileScouted(state, tile, p) ? blindSite(state, tile) : defaultSite(state, tile));
 
+// The camp fire's cost (CAMP.fireCost: wood and stone; the user's request 2026-10-23): what a team of yours setting up a
+// camp (Set up camp, Establish base, Build outpost; hardcore's first home too) must carry, or why not ("" when it does).
+// The governor's teams (state.autopilot) pay it if they carry it and are never held up by it.
+export function fireCostProblem(state, p) {
+  if (!p || p.owner !== "player" || state.autopilot) return "";
+  const short = Object.entries(CAMP.fireCost).filter(([k, n]) => carried(p, k) < n);
+  return short.length ? `The camp fire needs ${needText(CAMP.fireCost)} carried (short ${short.map(([k, n]) => `${Math.ceil(n - carried(p, k))} ${k}`).join(", ")}): Cut wood and Gather stone, or bring some` : "";
+}
 // The camp: a tier-0 base with camp: true on the team's tile, on its spot (campSiteFor: base.plan.origin, fresh: the
 // land all round is the tile's own, basemap.js freshBase); the team moves in (parties.js settleInto: its people
 // residents, its vehicles parked, its supplies and cargo in the stores and armory) and is disbanded; the 5 × 5 round
@@ -306,6 +316,7 @@ export function makeCamp(state, p, tile, { up = false } = {}) {
   state.bases.push(base);
   if (up) askBaseName(state, base);
   const name = teamName(state, p);
+  for (const [k, n] of Object.entries(CAMP.fireCost)) takeSupply(p, k, n); // the camp fire's ring of stones and its first wood (fireCostProblem)
   settleInto(state, p, base);
   const site = clearCampSite(state, base); // basemap.js: the 5 × 5 round the fire, what it gave into the stores
   const tents = pitchArmoryBags(state, base); // tents.js: every tent bag the team brought goes up (beds under cover, storage out of the weather)
@@ -348,6 +359,7 @@ export function strikeCamp(state, base) {
   // What the step up has taken so far comes back into the stores (it is packed with the rest).
   for (const job of base.construction) for (const [k, q] of Object.entries(job.paid || {})) base.stock[k] = (base.stock[k] || 0) + q;
   base.armory.push(...strikeTents(state, base)); // tents.js: the tents come down into their bags (packed first, below)
+  if (base.fire !== undefined || isCamp(base)) base.stock.stone = (base.stock.stone || 0) + CAMP.fireCost.stone; // the camp fire's ring of stones picked up again (its wood is burnt)
   base.construction = [];
   const people = atBase(state, base.id);
   let party = null;
@@ -363,17 +375,22 @@ export function strikeCamp(state, base) {
     const plan = fleetPlan(state, base, null, ids, people.length);
     let room = carryCapacity(state, people, plan.fleet || null);
     const supplies = {};
+    // The camp fire's wood and stone first (CAMP.fireCost, 2026-10-23): the team can set up camp again wherever it goes.
+    for (const [k, n] of Object.entries(CAMP.fireCost)) {
+      const q = Math.min(n, n0(base.stock[k]), Math.floor((room + 1e-9) / SUPPLIES[k].weight));
+      if (q >= 1) { supplies[k] = q; room -= q * SUPPLIES[k].weight; }
+    }
     const rounds = Object.keys(base.stock).filter((k) => ROUND_SUPPLIES[k] && !PACK_ORDER.includes(k)).sort((a, b) => (base.stock[b] || 0) - (base.stock[a] || 0) || (a < b ? -1 : 1)); // rounds by calibre (ammo.js) where "ammo" stands, most first
     const foodOrder = Object.keys(packPick(state, base, foodIn(base.stock), { days: 7 })); // foods.js: what keeps and weighs least first
     const order = PACK_ORDER.flatMap((k) => (k === "ammo" ? [k, ...rounds] : k === "food" ? foodOrder : k === "preserved" ? [] : [k]));
     for (const k of [...order, ...Object.keys(base.stock).filter((k) => !order.includes(k))]) {
       const w = SUPPLIES[k] ? SUPPLIES[k].weight : 0;
-      const have = n0(base.stock[k]);
+      const have = n0(base.stock[k]) - (supplies[k] || 0); // less the camp fire's, packed first
       if (have < 1 || !SUPPLIES[k]) continue;
       const q = w > 0 ? Math.min(have, Math.floor((room + 1e-9) / w)) : have;
       if (q < 1) continue;
-      if (q === have) base.stock[k] = Math.max(base.stock[k], q); // n0 counts 0.9999… as 1: the stores hold it whole (launchExpedition checks to the last digit)
-      supplies[k] = q;
+      if (q === have) base.stock[k] = Math.max(base.stock[k], q + (supplies[k] || 0)); // n0 counts 0.9999… as 1: the stores hold it whole (launchExpedition checks to the last digit)
+      supplies[k] = (supplies[k] || 0) + q;
       room -= q * w;
     }
     const items = [];

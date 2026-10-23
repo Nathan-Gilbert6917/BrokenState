@@ -64,6 +64,7 @@ import { huntWorkWhy, fishWorkWhy, fishWorkHands, huntWorkCap, hunterMult, bestH
 import { forageWorkWhy, forageWorkCap, foragerMult, FORAGE_SHORT } from "./foraging.js";
 import { foodUse, HEAT, woodFor } from "./upkeep.js";
 import { woodWorkWhy, woodHandsWanted, woodNeed, woodcutterMult, bestChop } from "./woodcutting.js";
+import { stoneWorkWhy, stoneShort, stoneDayEach, STONE } from "./stone.js"; // the Gather stone job (the user's request 2026-10-23)
 import { chopJobs } from "./woodwork.js"; // woodwork: the felling marked on the base map
 import { waterIn, stockHas } from "./water.js"; // purified and un-purified water count together
 import { watchShift, shiftText } from "./watch.js"; // the base's watch roster (Defence tab)
@@ -417,6 +418,22 @@ export const WORK_TYPES = {
     },
     rank: (s) => (s.health ?? 100) / 10 + skill(s, "scouting") * 0.2,
   },
+  // Field stone round the base (stone.js; the user's request 2026-10-23: "add a gathering job"): while the stores hold
+  // less than the queued buildings wait for, or less than STONE.keep.
+  stone: {
+    name: "Gather stone", ing: "Gathering stone", short: "Stne", role: "stone", skill: "farming",
+    desc: "Gathers field stone round the base 6 hours a day while the stores are short of what the queued buildings wait for (up to three people), or of 30 (one): a camp's fire ring, a cook fire, a boiler, a hearth, a well's or a cistern's lining, a root cellar's walls. Mountains and hills give most, a town's rubble fair, farmland and forest some, more by a river. A pickaxe or a sledgehammer (their own or the armory's) about doubles it. Clearing rocks and boulders on the build map gives stone too.",
+    open(ctx) {
+      const why = stoneWorkWhy(ctx.state, ctx.base);
+      if (why) return { cap: 0, why };
+      const short = stoneShort(ctx.state, ctx.base);
+      if (!short) return { cap: 0, why: `enough stone (${Math.floor(ctx.base.stock.stone || 0)})` };
+      const each = Math.max(1, ...ctx.people.map((s) => stoneDayEach(ctx.state, ctx.base, s)));
+      const queued = short > STONE.keep || (short > 0 && ctx.people.length < STONE.keepPeople); // queued buildings wait for more than the stores' keep
+      return { cap: queued ? Math.max(1, Math.min(3, Math.ceil(short / (each * 5)))) : 1, urg: queued ? 2 : 1 }; // one to keep a little in; for the queued builds, the shortfall in within about five days
+    },
+    rank: (s) => woodcutterMult(s) * 10,
+  },
 };
 export const WORK_KEYS = Object.keys(WORK_TYPES);
 
@@ -551,9 +568,9 @@ function studyFor(ctx, s) {
 // ---------- roles ----------
 const P = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v > 0));
 export const DEFAULT_ROLES = () => [
-  { name: "Generalist", pri: P({ doctor: 3, guard: 4, farm: 2, cook: 3, meals: 3, workshop: 3, craft: 4, build: 2, repair: 2, hunt: 4, fish: 4, forage: 4, wood: 3, water: 2, teach: 4, study: 4, scavenge: 4 }) },
+  { name: "Generalist", pri: P({ doctor: 3, guard: 4, farm: 2, cook: 3, meals: 3, workshop: 3, craft: 4, build: 2, repair: 2, hunt: 4, fish: 4, forage: 4, wood: 3, stone: 4, water: 2, teach: 4, study: 4, scavenge: 4 }) },
   { name: "Farmer", pri: P({ farm: 1, cook: 2, meals: 2, hunt: 3, fish: 3, forage: 3, wood: 3, water: 3, repair: 3, build: 3, study: 4, scavenge: 4 }) },
-  { name: "Builder", pri: P({ build: 1, repair: 1, workshop: 2, craft: 3, farm: 3, wood: 3, study: 4, scavenge: 4 }) },
+  { name: "Builder", pri: P({ build: 1, repair: 1, workshop: 2, craft: 3, farm: 3, wood: 3, stone: 3, study: 4, scavenge: 4 }) },
   { name: "Guard", pri: P({ guard: 1, repair: 3, build: 3, farm: 4 }), sched: SCHED_PRESETS.guard.sched },
   { name: "Medic", pri: P({ doctor: 1, trainee: 2, study: 2, teach: 3, craft: 3, farm: 4, scavenge: 4 }), min: { doctor: 2 } },
   { name: "Crafter", pri: P({ craft: 1, workshop: 1, cook: 2, repair: 3, build: 3, farm: 4, study: 4 }) },

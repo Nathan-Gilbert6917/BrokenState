@@ -2146,6 +2146,26 @@ function diamond(ctx, x, y, z, inset = 0, close = true) {
   ctx.moveTo(cx, cy - h); ctx.lineTo(cx + w, cy); ctx.lineTo(cx, cy + h); ctx.lineTo(cx - w, cy);
   if (close) ctx.closePath();
 }
+// The no-build margin on a cell of the base map (sim/basemap.js c.nb; the user's request 2026-10-23: "make sure the
+// buildable line limit shows on all surfaces mountains, hills and hollows and decor"): a dark red wash over the cell at
+// its ground's height (a hill's top, a hollow's floor, the rock's), drawn after the cell's own sprite so a hill, the
+// crag or what stands there does not hide it, and the line where the margin ends (toward the cells that take things).
+const NB = { FILL: "rgba(150,40,40,0.26)", LINE: "rgba(232,96,80,0.9)" };
+function nbMark(ctx, b, x, y) {
+  const c = b.cells[y * b.w + x], z = c.k === "crag" ? (c.ch || 3) * LV : tileTop(b, x, y);
+  ctx.fillStyle = NB.FILL;
+  ctx.beginPath(); diamond(ctx, x, y, z, 0, false); ctx.fill();
+  const free = (nx, ny) => nx >= 0 && ny >= 0 && nx < b.w && ny < b.h && !b.cells[ny * b.w + nx].nb;
+  const P = (wx, wy) => project(wx, wy, z);
+  ctx.strokeStyle = NB.LINE; ctx.lineWidth = Math.max(1.5, 0.9 * FR.S);
+  ctx.beginPath();
+  const seg = (a, e) => { ctx.moveTo(...a); ctx.lineTo(...e); };
+  if (free(x, y - 1)) seg(P(x, y), P(x + 1, y));
+  if (free(x, y + 1)) seg(P(x, y + 1), P(x + 1, y + 1));
+  if (free(x - 1, y)) seg(P(x, y), P(x, y + 1));
+  if (free(x + 1, y)) seg(P(x + 1, y), P(x + 1, y + 1));
+  ctx.stroke();
+}
 // Fill the cells of a mask on the ground (and on raised floors at their height when `raised`).
 function fillCells(ctx, b, test, fill, raised = true) {
   ctx.fillStyle = fill;
@@ -2375,12 +2395,11 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     fillCells(ctx, b, (i) => ok[i], `rgba(${COL.goodRgb},0.16)`);
     outlineCells(ctx, b, (i) => ok[i], `rgba(${COL.goodRgb},0.8)`, 1.5);
   }
-  // The base map's layout mode (sim/basemap.js): the no-build margin (c.nb: the cells within NO_BUILD of the grid's
-  // edge, a dark red wash under everything else), the yard's edge, and the pick's footprint under the mouse (green
-  // where it fits, red where not), with the cells outside its doors.
+  // The base map's layout mode (sim/basemap.js): the yard's edge, and the pick's footprint under the mouse (green
+  // where it fits, red where not), with the cells outside its doors. The no-build margin (c.nb) is drawn cell by cell
+  // in the painter's pass (nbMark), on whatever ground the cell has.
   if (b.layout && b.deployPlan && b.deployPlan.fort) {
     const Fm = b.deployPlan.fort, w = Fm.wall;
-    fillCells(ctx, b, (i) => !!b.cells[i].nb, "rgba(150,40,40,0.22)", false);
     const yard = (i) => { const x = i % b.w, y = (i / b.w) | 0; return x >= w.x0 && x <= w.x1 && y >= w.y0 && y <= w.y1 && (x === w.x0 || x === w.x1 || y === w.y0 || y === w.y1); };
     ctx.setLineDash([5, 4]);
     outlineCells(ctx, b, yard, Fm.walled ? "rgba(200,170,110,0.55)" : "rgba(230,216,184,0.5)", 1.5);
@@ -2613,6 +2632,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     }
   };
   const lastD = st ? Hv - 1 : Wv + Hv - 2;
+  const nbOn = !!(b.layout && b.deployPlan && b.deployPlan.fort); // the base map's layout mode: its no-build margin (nbMark)
   if (bdb) for (const d of [...beyond.keys()].filter((k) => k < 0).sort((p, q) => p - q)) drawBeyond(d);
   // By diagonal (u + v) from the back; in a straight view by row (v).
   for (let d = 0; d <= lastD; d++) {
@@ -2646,6 +2666,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
         }
         if (SPLIT.has(L.k)) fronts.push([L, x, y, sx, sy, fog, faded]);
       }
+      if (nbOn && b.cells[i].nb) nbMark(ctx, b, x, y); // the no-build margin, on the cell's own ground (over its sprite)
       // Highlights on a raised floor sit on top of it.
       const zt = tileTop(b, x, y);
       if (zt) {

@@ -94,8 +94,8 @@ export const CLEAR = {
   bush:    { hours: 0.5, get: { wood: 5 },   word: "a bush", verb: "Grub out" },
   fence:   { hours: 0.5, get: { wood: 10 },  word: "a fence panel", verb: "Pull down" },
   hay:     { hours: 0.5, get: {},            word: "a hay bale", verb: "Shift" },
-  rock:    { hours: 1,   get: {},            word: "a rock", verb: "Roll away" },
-  boulder: { hours: 3,   get: {},            word: "a boulder", verb: "Break up" },
+  rock:    { hours: 1,   get: { stone: 12 }, word: "a rock", verb: "Roll away" },   // stone (stone.js, the user's request 2026-10-23)
+  boulder: { hours: 3,   get: { stone: 40 }, word: "a boulder", verb: "Break up" },
   crate:   { hours: 0.5, get: { scrap: 1 },  word: "a broken crate", verb: "Haul off" },
   barrel:  { hours: 0.5, get: { scrap: 1 },  word: "an old drum", verb: "Haul off" },
   wreck:   { hours: 6,   get: { scrap: 2 },  word: "a wreck", verb: "Drag off" },
