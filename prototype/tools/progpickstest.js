@@ -149,7 +149,7 @@ section("2a. The animal pen: its food, the pasture, the station, the winter outl
   const h = hub(st);
   Object.assign(h.stock, { scrap: 200, parts: 10, water: 200 }); setFood(h, 100);
   const def = BUILDINGS.animal_pen;
-  check(def && def.plot === "building" && def.station === "livestock" && def.cost.scrap === 4 && def.cost.wood === 500 && !def.cost.parts && def.max === 2, "the animal pen: a building plot, 4 scrap and 500 wood (woodwork), a livestock station, at most 2");
+  check(def && def.plot === "building" && def.station === "livestock" && def.cost.scrap === 1 && def.cost.wood === 500 && def.cost.buildmat === 1 && !def.cost.parts && def.max === 2, "the animal pen: a building plot, 1 scrap, 500 wood (woodwork) and 1 building material (buildmats.js turns the scrap into them), a livestock station, at most 2");
   const p0 = plotLimit(h), s0 = farmSlots(h);
   const pen = addBuilding(h, "animal_pen") || h.buildings.find((b) => b.type === "animal_pen");
   check(plotLimit(h) === p0 - PEN.pasture && farmSlots(h) === s0 - PEN.pasture, `it grazes ${PEN.pasture} of the outdoor crop plots (${p0} → ${plotLimit(h)})`);
@@ -191,7 +191,7 @@ section("2b. The AI groups' pens (groupworks.js PENS)");
   st.groupWorks = st.groupWorks || 1;
   const nw0 = nextWork(st, f);
   check(!nw0 || nw0.type !== "pens", `no walls: no pen (${nw0 ? nw0.type : "nothing"} next)`);
-  f.works[t].walls = 1;
+  f.works[t].walls = 99; // the walls built and past their goal: a threatened group would build walls before a pen
   const nw = nextWork(st, f);
   check(nw && nw.type === "pens", `walls and fields: a pen next (${nw ? nw.type : "nothing"})`);
   check(penFood(st, f) === 0, "no pen yet: no pen food");
