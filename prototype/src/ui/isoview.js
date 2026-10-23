@@ -43,6 +43,7 @@ import { groundPiles, pileCount } from "../sim/ground.js"; // things on the grou
 import { planOpen } from "../sim/raidplan.js"; // before a raid: while the plan is open the team is not on the map yet (not drawn)
 import { onForgetPictures } from "./pictures.js"; // the pictures kept here are dropped when the GPU context comes back (they would be blank)
 import { strideOf } from "./moveanim.js"; // walking: the step of the walk cycle and the bob
+import { treeLookFor, treeStyle, styleKey, FALL } from "./seasontrees.js"; // trees and bushes by the season (seasonTree, seasonBush)
 
 // ---------- constants ----------
 const HW = 16, HH = 8;          // half a tile in art px (a tile: 32 × 16)
@@ -811,6 +812,7 @@ function primsOf(k, o) {
       return d < 2 ? [{ u0: at[0], u1: at[1], v0: 0.25, v1: 0.75, z0: 0, z1: LV + 2, m }] : [{ u0: 0.25, u1: 0.75, v0: at[0], v1: at[1], z0: 0, z1: LV + 2, m }];
     }
     case "tree": {
+      if (o.sea) return seasonTree(o, v); // autumn's colours, winter's bare branches (seasonTree)
       // A broad crown of leaves on a short trunk (olive in some; one in a few a dead, bare tree).
       const dead = v === 3 && o.alt, lc = v === 1 ? PAL.leaf2 : v === 2 ? mul(PAL.leaf, 0.85) : PAL.leaf;
       const leaf = (f, s, t, X, Y) => { const q = n2(X, Y, 12); return q > 0.84 ? mul(lc, 1.4) : q < 0.14 ? mul(lc, 0.58) : mul(lc, 0.92 + q * 0.12); };
@@ -1015,6 +1017,7 @@ function primsOf(k, o) {
     }
     // The base map's scatter (sim/basescatter.js): bushes, a tree stump, a fallen log (joined along its length).
     case "bush": {
+      if (o.sea) return seasonBush(o, v);
       const lc = v === 1 ? PAL.leaf2 : mul(PAL.leaf, 0.9 + (v & 2) * 0.05);
       const leaf = (f, s, t, X, Y) => { const q = n2(X, Y, 19); return q > 0.88 ? mul(lc, 1.35) : q < 0.18 ? mul(lc, 0.6) : mul(lc, 0.9 + q * 0.15); };
       const a = (hash3(v, 5, 7) - 0.5) * 0.16;
@@ -1050,6 +1053,65 @@ function primsOf(k, o) {
     default: return [];
   }
 }
+// Trees and bushes by the season (ui/seasontrees.js; the user's request 2026-10-23: "In fall the trees should be red
+// orange and brown in winter the trees are leaf less and have snow on them."). o.sea (lookOf, from the cell's hash):
+// "f0".."f3" the crown in that FALL colour, a few leaves of another among them; "b" bare: the trunk, its limbs and a
+// see-through crown of twigs; "bs" bare with snow on the limbs and the twigs' tops. The dead tree keeps its own look
+// (snow on its limbs in winter). Same places and sizes as the green ones (GROWN): only the look changes.
+let treeLook = "green"; // this frame's (drawIso: treeLookFor)
+const BARE = /^b/; // o.sea of a bare tree or bush: drawn with no outline (sprite)
+const SNOWY = hex("#e9eef3"), TWIG = hex("#5b4b3d");
+const snowy = (X, Y) => mul(SNOWY, 0.93 + n2(X, Y, 5) * 0.07);
+// A crown of bare twigs: branches fanning out from the blob's middle (spokes that bend a little on the way out), holes
+// between them (null); snow lying along the top of each, in the upper part of the crown. rz: the blob's height in px.
+const twigs = (snow, k = 37, rz = 10) => {
+  const on = (nx, ny) => {
+    const r = Math.hypot(nx, ny), a = Math.atan2(ny, nx) / (2 * Math.PI) + 0.5 + 0.05 * Math.sin(r * 7 + k);
+    const n = r < 0.45 ? 7 : 13, d = Math.abs(((a * n + hash3(k, Math.floor(a * n), 3) * 0.3) % 1) - 0.5); // 7 boughs, forking to 13 twigs
+    return d >= 0.5 - Math.min(0.25, 0.09 / (r + 0.05)); // about a pixel wide all the way out
+  };
+  return (f, nx, ny, X, Y) => {
+    if (!on(nx, ny)) return null;
+    if (snow && ny < 0.05 && n2(X, Y, k + 9) < 0.35 - ny * 0.4 && !on(nx, ny - 1 / rz)) return snowy(X, Y); // nothing above it: snow on it, more higher up
+    return mul(TWIG, 0.85 + n2(X, Y, k) * 0.3);
+  };
+};
+function seasonTree(o, v) {
+  const dead = v === 3 && o.alt, bare = o.sea[0] === "b", snow = o.sea === "bs", bark = tex(PAL.bark, 0.2);
+  const limb = snow ? (f, s, t, X, Y) => (f === "top" ? snowy(X, Y) : bark(f, s, t, X, Y)) : bark; // snow along its top
+  if (dead) return [{ cyl: [0.5, 0.5, 0.08], z0: 0, z1: 30, m: limb }, { u0: 0.25, u1: 0.5, v0: 0.47, v1: 0.53, z0: 20, z1: 22, m: limb }, { u0: 0.47, u1: 0.53, v0: 0.5, v1: 0.8, z0: 24, z1: 26, m: limb }, { u0: 0.5, u1: 0.72, v0: 0.47, v1: 0.53, z0: 27, z1: 29, m: limb }];
+  const a = (hash3(v, 1, 3) - 0.5) * 0.2, c = (hash3(v, 2, 3) - 0.5) * 0.2;
+  const crown = [[0.36 + a, 0.42, 22, 0.55], [0.6, 0.38 + c, 25, 0.5], [0.52, 0.62, 21, 0.55], [0.5 + a, 0.5 + c, 31, 0.45]];
+  if (!bare) {
+    const i = Number(o.sea.slice(1)) % FALL.length, lc = FALL[i], lc2 = FALL[(i + 1 + (v & 1)) % FALL.length];
+    const leaf = (f, s, t, X, Y) => { const q = n2(X, Y, 12); return q > 0.86 ? mul(lc, 1.25) : q < 0.12 ? mul(lc, 0.55) : n2(X / 2, Y / 2, 29) > 0.8 ? mul(lc2, 0.95) : mul(lc, 0.88 + q * 0.14); };
+    return [{ cyl: [0.5, 0.5, 0.08], z0: 0, z1: 16, m: bark }, ...crown.map(([u, w, z, r]) => ({ blob: [u, w, z], ru: r, rz: 9, m: leaf }))];
+  }
+  // Bare: a taller trunk, four limbs rising out from it (each a few short steps, up a little at each), the twigs'
+  // crown round where the leaves were.
+  const out = [], L = 0.24 + hash3(v, 3, 3) * 0.08, N = 4;
+  const limbOut = (du, dv, z) => {
+    for (let i = 0; i < N; i++) {
+      const a = 0.5 + ((du || dv) * L * i) / N, b = 0.5 + ((du || dv) * L * (i + 1)) / N, lo = Math.min(a, b), hi = Math.max(a, b), zi = z + i * 3, w = 0.04 - i * 0.005;
+      out.push(du ? { u0: lo, u1: hi, v0: 0.5 - w, v1: 0.5 + w, z0: zi, z1: zi + 2.5, m: limb } : { u0: 0.5 - w, u1: 0.5 + w, v0: lo, v1: hi, z0: zi, z1: zi + 2.5, m: limb });
+    }
+  };
+  limbOut(-1, 0, 15); limbOut(0, -1, 24); // behind the trunk first
+  out.push({ cyl: [0.5, 0.5, 0.075], z0: 0, z1: 32, m: limb });
+  limbOut(1, 0, 21); limbOut(0, 1, 18);
+  for (const [u, w, z, r] of crown) out.push({ blob: [u, w, z + 2], ru: r, rz: 10, m: twigs(snow, 37 + v, 10 * GROWN.tree[0]) });
+  return out;
+}
+function seasonBush(o, v) {
+  const a = (hash3(v, 5, 7) - 0.5) * 0.16;
+  const parts = [[0.38 + a, 0.42, 6, 0.32, 6], [0.64, 0.56 - a, 5, 0.27, 5], [0.46, 0.7, 4, 0.22, 4]];
+  let m = null;
+  if (o.sea[0] === "f") { // autumn: the bush's leaves turned, browner than the trees' (FALL's brown and rust most)
+    const i = Number(o.sea.slice(1)) % FALL.length, lc = mix(FALL[i], FALL[2], 0.35);
+    m = (f, s, t, X, Y) => { const q = n2(X, Y, 19); return q > 0.88 ? mul(lc, 1.3) : q < 0.18 ? mul(lc, 0.6) : mul(lc, 0.88 + q * 0.15); };
+  } // winter (m null): bare twigs, snow on their tops
+  return parts.map(([u, w, z, ru, rz]) => ({ blob: [u, w, z], ru, rz, m: m || twigs(o.sea === "bs", 43 + z, rz * GROWN.bush[0]) })).sort((p, q) => p.blob[0] + p.blob[1] - q.blob[0] - q.blob[1]);
+}
 const OUTLINED = new Set(["tree", "boulder", "rock", "car", "truck", "vehicle", "crate", "hay", "pump", "barrel", "well", "barricade", "sandbag", "hivewall",
   "table", "bed", "rack", "locker", "shelf", "cabinet", "counter", "gunsafe", "tanktrap", "spikes", "beartrap", "stairs", "ladder", "tower", "bars", "gate", "palisade",
   "tent", "torn", "lamp", "spot", "firepit", "bush", "stump", "log"]); // props stand out with an outline (the base map's tent, floodlight and fire pit too: sim/basemap.js)
@@ -1075,11 +1137,11 @@ function spritePut(key, s) {
 }
 // A cached sprite for a cell's look.
 function sprite(k, o, fog) {
-  const key = `${iso.straight ? "s|" : ""}${k}|${o.v}|${o.alt}|${o.j}|${o.n}|${o.top}|${o.stub ? 1 : 0}|${o.mat}|${o.dmg}|${o.barred ? 1 : 0}|${o.dir}|${o.part || ""}|${o.vault ? 1 : 0}|${o.roll ? 1 : 0}|${o.lit ? 1 : 0}|${o.spot || 0}|${fog ? 1 : 0}|${o.ter ? `${o.ter.key}${o.f}${o.wet ? `${o.wet}${o.wl}` : ""}${o.snow || ""}` : ""}|${o.car ? `${o.car.i},${o.car.j},${o.car.L},${o.car.ax},${o.car.kind},${o.car.v},${o.car.body || ""},${o.car.mil ? o.car.mil.cond : ""},${upKey(o.car.up)},${iso.rot & 3}` : ""}`;
+  const key = `${iso.straight ? "s|" : ""}${o.sea ? `${o.sea}|` : ""}${k}|${o.v}|${o.alt}|${o.j}|${o.n}|${o.top}|${o.stub ? 1 : 0}|${o.mat}|${o.dmg}|${o.barred ? 1 : 0}|${o.dir}|${o.part || ""}|${o.vault ? 1 : 0}|${o.roll ? 1 : 0}|${o.lit ? 1 : 0}|${o.spot || 0}|${fog ? 1 : 0}|${o.ter ? `${o.ter.key}${o.f}${o.wet ? `${o.wet}${o.wl}` : ""}${o.snow || ""}` : ""}|${o.car ? `${o.car.i},${o.car.j},${o.car.L},${o.car.ax},${o.car.kind},${o.car.v},${o.car.body || ""},${o.car.mil ? o.car.mil.cond : ""},${upKey(o.car.up)},${iso.rot & 3}` : ""}`;
   let s = spriteGet(key);
   if (s === undefined) {
     const p = prims(k, o);
-    s = p.length ? paint(p, { fog, outline: OUTLINED.has(k) && !(k === "sandbag" && o.j) && !o.ter }) : null; // !o.ter: on a hill the outline would trace the ground's column and banks too // joined sandbags: no outline, or each cell's would cross the wall at the join
+    s = p.length ? paint(p, { fog, outline: OUTLINED.has(k) && !(k === "sandbag" && o.j) && !o.ter && !BARE.test(o.sea || "") }) : null; // BARE: a bare tree's twigs outlined would be a black mass // !o.ter: on a hill the outline would trace the ground's column and banks too // joined sandbags: no outline, or each cell's would cross the wall at the join
     iso.builds.sprites++;
     spritePut(key, s);
   }
@@ -1426,6 +1488,7 @@ function lookOf(b, scene, x, y, cut, focus = null) {
   const ter = terrainOf(b, x, y); // the ground's height here (a hill, a hollow, a rim): drawn under the cell's own look
   if (k === "open" && !ter) return null;
   const r = iso.rot, o = { v: Math.floor(hash3(x, y, 17) * 4), alt: hash3(x, y, 99) < 0.35 ? 1 : 0, j: 0, n: null, top: WALL1, mat: 0, dmg: 0, dir: null, ter, f: ter ? c.f || "" : "", wet: ter && c.wet ? c.wet : "", wl: c.wl || 0, snow: ter ? b.snowLie || 0 : 0 }; // wet, wl: a hollow's pond, mud or ice (sim/ponds.js); snow: the snow lying
+  if (k === "tree" || k === "bush") { const sea = styleKey(treeStyle(treeLook, x, y)); if (sea) o.sea = sea; } // the season's look (ui/seasontrees.js)
   const js = JOINS[k];
   if (js) for (const [dx, dy] of VD) {
     const nx = x + dx, ny = y + dy;
@@ -1523,7 +1586,7 @@ function blockTop0(k, o) {
 const looksCache = {}; // by use: "draw" (this frame's cutaway), "pick" (none)
 function looksFor(b, scene, cut, slot = "draw", focus = null) {
   const ck = [...cut].sort((a, c) => a - c).join(",");
-  const key = `${scene.key}:${viewKey()}:${ck}:${focus ? focus.map((p) => p.join(".")).join(",") : ""}`, lc = looksCache[slot];
+  const key = `${scene.key}:${viewKey()}:${treeLook}:${ck}:${focus ? focus.map((p) => p.join(".")).join(",") : ""}`, lc = looksCache[slot];
   if (lc && lc.b === b && lc.key === key) return lc.list;
   const list = new Array(b.w * b.h);
   for (let i = 0; i < list.length; i++) {
@@ -1968,6 +2031,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     if (H.hover) focus.push([H.hover.x, H.hover.y]);
     for (const p of peeks) focus.push([p.x, p.y]);
   }
+  treeLook = treeLookFor(state, b); // the trees' season (ui/seasontrees.js): a new look draws them again (looksFor's key)
   const looks = looksFor(b, scene, cut, "draw", focus);
   const seenB = new Set(); // buildings any of whose cells your people see: their roof is not fogged
   for (const B of scene.blds) for (const j of B.cells) if (v.vis[j]) { seenB.add(B.id); break; }
