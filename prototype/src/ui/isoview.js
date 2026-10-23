@@ -35,6 +35,7 @@ import { endangered, imminent } from "../sim/carriers.js"; // a body in danger f
 import { isMedic } from "../sim/medics.js"; // a med kit makes a medic: the cross tag
 import { nlTags } from "./nonlethal.js"; // status tags of the non-lethal kit (sim/nonlethal.js)
 import { battleWeather, fogColour, fogCss, skirtFor, drawVignette, setEdgeCanvas } from "./battleedge.js"; // the map's edge: ground fading into fog
+import { drawBattleWx, setWxCanvas } from "./battlewx.js"; // rain, fog and snow over the view: the State Map's weather over the battle's tile
 import { paintLights, drawGlow, drawDarkness, drawShade, setLightsCanvas } from "./battlelights.js"; // night: flashlight beams, lantern pools, the darkness; by day a dark room's shade
 import { ingestMarks, revealMarks, drawMarks, knownBody, setMarksCanvas } from "./battlemarks.js"; // blood, brass, scorch, glass that stay
 import { drawGroundIso, drawPileIso, drawCartIso, drawCartBoxIso } from "./ground.js";
@@ -44,6 +45,7 @@ import { planOpen } from "../sim/raidplan.js"; // before a raid: while the plan 
 import { onForgetPictures } from "./pictures.js"; // the pictures kept here are dropped when the GPU context comes back (they would be blank)
 import { strideOf } from "./moveanim.js"; // walking: the step of the walk cycle and the bob
 import { treeLookFor, treeStyle, styleKey, FALL } from "./seasontrees.js"; // trees and bushes by the season (seasonTree, seasonBush)
+import { snowOnFor } from "./roofsnow.js"; // snow on the buildings in winter (roofSprite, snowPrims)
 
 // ---------- constants ----------
 const HW = 16, HH = 8;          // half a tile in art px (a tile: 32 × 16)
@@ -75,7 +77,7 @@ export function setRoofs(on) {
 
 // Canvas factory (the tools hand in a stub).
 let mkCanvas = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
-export function setIsoCanvas(fn) { mkCanvas = fn; clearIsoCache(); setEdgeCanvas(fn); setLightsCanvas(fn); setMarksCanvas(fn); }
+export function setIsoCanvas(fn) { mkCanvas = fn; clearIsoCache(); setEdgeCanvas(fn); setLightsCanvas(fn); setMarksCanvas(fn); setWxCanvas(fn); }
 const spriteCache = new Map();
 const groundCaches = new Map(), GROUNDS = 6; // groundFor: key -> picture, of one battle (dropped with a new one), least recently used first
 let fogCache = null, sceneCache = null, fogMaskCache = null, flatGroundCache = null;
@@ -486,6 +488,7 @@ function prims(k, o) {
   if (k === "crag" && o.ter) return rockPrims(o.ter); // a mountain's rock: its own height, one mass with its neighbours
   let own = k === "open" || k === "water" ? [] : primsOf(k, o); // water: a pond's deep middle (sim/ponds.js), drawn by wetPrims
   if (GROWN[k]) own = scalePrims(own, GROWN[k][0], GROWN[k][1]);
+  if (o.sn) own = snowPrims(own, o.sn); // snow on its tops (lookOf: SNOW_ON)
   if (!o.ter) return own;
   return [...terrainPrims(o.ter, o), ...wetPrims(o), ...raisePrims(own, o.ter.e * LV)];
 }
@@ -1059,6 +1062,7 @@ function primsOf(k, o) {
 // see-through crown of twigs; "bs" bare with snow on the limbs and the twigs' tops. The dead tree keeps its own look
 // (snow on its limbs in winter). Same places and sizes as the green ones (GROWN): only the look changes.
 let treeLook = "green"; // this frame's (drawIso: treeLookFor)
+let snowLook = 0; // the snow lying on the buildings this frame (drawIso: ui/roofsnow.js snowOnFor; roofSprite, snowPrims)
 const BARE = /^b/; // o.sea of a bare tree or bush: drawn with no outline (sprite)
 const SNOWY = hex("#e9eef3"), TWIG = hex("#5b4b3d");
 const snowy = (X, Y) => mul(SNOWY, 0.93 + n2(X, Y, 5) * 0.07);
@@ -1137,7 +1141,7 @@ function spritePut(key, s) {
 }
 // A cached sprite for a cell's look.
 function sprite(k, o, fog) {
-  const key = `${iso.straight ? "s|" : ""}${o.sea ? `${o.sea}|` : ""}${k}|${o.v}|${o.alt}|${o.j}|${o.n}|${o.top}|${o.stub ? 1 : 0}|${o.mat}|${o.dmg}|${o.barred ? 1 : 0}|${o.dir}|${o.part || ""}|${o.vault ? 1 : 0}|${o.roll ? 1 : 0}|${o.lit ? 1 : 0}|${o.spot || 0}|${fog ? 1 : 0}|${o.ter ? `${o.ter.key}${o.f}${o.wet ? `${o.wet}${o.wl}` : ""}${o.snow || ""}` : ""}|${o.car ? `${o.car.i},${o.car.j},${o.car.L},${o.car.ax},${o.car.kind},${o.car.v},${o.car.body || ""},${o.car.mil ? o.car.mil.cond : ""},${upKey(o.car.up)},${iso.rot & 3}` : ""}`;
+  const key = `${iso.straight ? "s|" : ""}${o.sea ? `${o.sea}|` : ""}${k}|${o.v}|${o.alt}|${o.j}|${o.n}|${o.top}|${o.stub ? 1 : 0}|${o.mat}|${o.dmg}|${o.barred ? 1 : 0}|${o.dir}|${o.part || ""}|${o.vault ? 1 : 0}|${o.roll ? 1 : 0}|${o.lit ? 1 : 0}|${o.spot || 0}|${fog ? 1 : 0}|${o.ter ? `${o.ter.key}${o.f}${o.wet ? `${o.wet}${o.wl}` : ""}${o.snow || ""}` : ""}|${o.car ? `${o.car.i},${o.car.j},${o.car.L},${o.car.ax},${o.car.kind},${o.car.v},${o.car.body || ""},${o.car.mil ? o.car.mil.cond : ""},${upKey(o.car.up)},${iso.rot & 3}` : ""}${o.sn ? `|n${o.sn}` : ""}`;
   let s = spriteGet(key);
   if (s === undefined) {
     const p = prims(k, o);
@@ -1147,9 +1151,76 @@ function sprite(k, o, fog) {
   }
   return s;
 }
-// A roof piece over one cell of a building: a flat slab at the walls' height with a lip on the outside edges.
-function roofSprite(mat, top, edges, fog) {
-  const key = `${iso.straight ? "s|" : ""}roof|${mat}|${top}|${edges}|${fog ? 1 : 0}`;
+// Snow on the buildings (the user's request 2026-10-23: "In raid and base view: Winter has snow on buildings."), by
+// the snow lying (ui/roofsnow.js snowOnFor: quarters, 0 none; this frame's snowLook), in the sprites' cache keys only
+// (roofSprite's sn and v, o.sn in sprite's), so a frame costs nothing new and no snow changes nothing.
+//   - Roofs (roofSnow): a layer of snow over the slab, ROOF_SNOW.DEPTH px deep, in drifts: patchy at a dusting, whole
+//     from about half; thinner toward the roof's outside edges (ROOF_SNOW.EDGE px), where the roof shows a little; the
+//     lips' tops white, a lip of snow over their outer faces (snowLip). How much a roof holds goes by its pitch (HOLD:
+//     tar and concrete flat; corrugated metal a low pitch, its ridges show through; shingles pitched, their courses
+//     show, one px of snow at most). v (0..3, from the cell) moves the drifts, so roof cells side by side differ.
+//   - Walls, fences, sandbags, tents and the rest out in the open (lookOf: SNOW_ON, no building's inside): snowPrims
+//     whitens the tops of their pieces in drifts, a px of snow over the top edge of their sides from half deep, the
+//     upper cap of the round ones (rocks, rubble, a torn tent).
+const ROOF_SNOW = { HOLD: [1, 0.72, 0.55, 1], EDGE: 4, DEPTH: [1, 1, 2, 2] }; // HOLD by roof material (tar, metal, shingles, concrete); DEPTH by the quarter
+const SNOWC = hex("#e7ecf1"), SNOW_SH = hex("#bcc8d4"); // snow; its cool shade in the drifts' hollows
+const snowC = (X, Y, k) => mul(SNOWC, 0.93 + n2(X, Y, k) * 0.07);
+// Snow's drifts: patches a few px across with a little grain; under `cover` (0..1+) it lies.
+const snowQ = (X, Y, k) => (n2(Math.floor(X / 6), Math.floor(Y / 3), k) + n2(Math.floor((X + 3) / 6), Math.floor((Y + 1.5) / 3), k + 5)) * 0.37 + n2(X, Y, k + 1) * 0.26; // two offset grids of patches: softer shapes than one
+const snowShade = (X, Y, k) => { const dr = n2(Math.floor(X / 7), Math.floor(Y / 4), k + 4); return dr < 0.2 ? mix(snowC(X, Y, k), SNOW_SH, 0.4) : mul(snowC(X, Y, k), 0.97 + dr * 0.04); };
+function roofSnow(mat, z, edges, sn, v) {
+  const hold = ROOF_SNOW.HOLD[mat], cover = 0.2 + sn * hold * 1.2, E = ROOF_SNOW.EDGE;
+  const dz = hold < 1 ? 1 : ROOF_SNOW.DEPTH[Math.max(0, Math.min(3, Math.round(sn * 4) - 1))];
+  const ox = v * 5, oy = v * 3, k = 61 + v;
+  const m = (f, s, t, X, Y) => {
+    const X2 = X + ox, Y2 = Y + oy;
+    if (f !== "top") return n2(X2, Y2, k + 3) < 0.3 + sn * 0.6 ? mul(snowC(X2, Y2, k), 0.92) : null; // its edge, ragged: the roof's slab shows where it is not
+    const d = Math.min(edges & 2 ? s : 99, edges & 1 ? 16 - s : 99, edges & 8 ? t : 99, edges & 4 ? 16 - t : 99); // px in from the roof's outside edge
+    let q = snowQ(X2, Y2, k);
+    if (d < E) q += (1 - d / E) * 0.45 * (1.25 - sn); // thinner toward the edge (less so when deep)
+    if (q > cover) return null;
+    if (mat === 2 && Math.floor(t) % 3 < 1 && n2(X2, Y2, k + 2) > sn * 1.1) return null; // the shingles' courses
+    if (mat === 1 && Math.floor(s) % 3 < 1 && n2(X2, Y2, k + 2) > sn * 1.1) return null; // the metal's ridges
+    return snowShade(X2, Y2, k);
+  };
+  return { u0: 0, u1: 1, v0: 0, v1: 1, z0: z, z1: z + dz, flat: true, m };
+}
+const snowLip = (lip, sn, v) => (f, s, t, X, Y, a, h) => {
+  const X2 = X + v * 5, Y2 = Y + v * 3;
+  if (f === "top") return n2(X2, Y2, 67) < 0.25 + sn ? snowC(X2, Y2, 67) : lip;
+  return sn >= 0.5 && t >= h - 1 && n2(X2, Y2, 68) < 0.3 + sn * 0.5 ? mul(snowC(X2, Y2, 67), 0.9) : lip;
+};
+// The pieces of a prop out in the open with snow on them (see above): each piece's top whitened in drifts.
+function snowPrims(list, sn) {
+  const cover = 0.25 + sn;
+  return list.map((p, i) => {
+    const m = p.m, k = 71 + i * 3;
+    if (!m) return p;
+    if (p.blob) { // a round thing: snow on its upper cap, further down the deeper it lies
+      const lim = -0.85 + sn * 0.75;
+      return { ...p, m: (f, nx, ny, X, Y, a, c) => { const col = m(f, nx, ny, X, Y, a, c); return col && ny < lim + (n2(X, Y, k) - 0.5) * 0.3 ? snowC(X, Y, k) : col; } };
+    }
+    const h = (p.z1 || 0) - (p.z0 || 0);
+    return { ...p, m: (f, s, t, X, Y, a, c) => {
+      const col = m(f, s, t, X, Y, a, c);
+      if (!col) return col;
+      if (f === "top") return snowQ(X, Y, k) < cover ? snowShade(X, Y, k) : col;
+      if (!p.cyl && sn >= 0.5 && h >= 3 && t >= h - 1 && n2(X, Y, k + 2) < 0.3 + sn * 0.5) return mul(snowC(X, Y, k), 0.9); // over the top edge
+      return col;
+    } };
+  });
+}
+// What carries snow out in the open (lookOf: not inside a building, whose roof carries it): the walls and what stands
+// in the yard or the street. Not the trees and bushes (ui/seasontrees.js), the ground and its hills, a fire, a well's
+// mouth, the hive's warm flesh, furniture, stairs and ladders.
+const SNOW_ON = new Set(["wall", "window", "door", "idoor", "boarded", "bdoor", "doorway", "smashed", "odoor", "palisade", "gate", "tower", "stand", "walkway", "roof",
+  "fence", "wire", "rail", "sandbag", "barricade", "tanktrap", "crate", "hay", "barrel", "pump", "car", "truck", "vehicle", "boulder", "rock", "rubble", "breach",
+  "tent", "torn", "log", "stump"]);
+export const snowProbe = { roofSprite: (...a) => roofSprite(...a), sprite: (...a) => sprite(...a), SNOW_ON }; // tools/roofsnowtest.js
+// A roof piece over one cell of a building: a flat slab at the walls' height with a lip on the outside edges. sn: the
+// snow lying on it (0 none), v: its drifts' variant (0..3, from the cell).
+function roofSprite(mat, top, edges, fog, sn = 0, v = 0) {
+  const key = `${iso.straight ? "s|" : ""}roof|${mat}|${top}|${edges}|${fog ? 1 : 0}${sn ? `|n${sn}${v}` : ""}`;
   let s = spriteGet(key);
   if (s === undefined) {
     const base = [PAL.tar, PAL.rust, PAL.shingle, PAL.conc][mat & 3];
@@ -1160,7 +1231,8 @@ function roofSprite(mat, top, edges, fog) {
       return mul(base, 0.88 + n2(X, Y, 3) * 0.22);
     };
     const p = [{ u0: 0, u1: 1, v0: 0, v1: 1, z0: top, z1: top + 3, flat: true, m }];
-    const lip = mul(base, 0.8), lm = () => lip;
+    if (sn) p.push(roofSnow(mat & 3, top + 3, edges, sn, v)); // snow on it (above)
+    const lip = mul(base, 0.8), lm = sn ? snowLip(lip, sn, v) : () => lip;
     if (edges & 2) p.push({ u0: 0, u1: 0.08, v0: 0, v1: 1, z0: top + 3, z1: top + 5, m: lm });
     if (edges & 8) p.push({ u0: 0, u1: 1, v0: 0, v1: 0.08, z0: top + 3, z1: top + 5, m: lm });
     if (edges & 1) p.push({ u0: 0.92, u1: 1, v0: 0, v1: 1, z0: top + 3, z1: top + 5, m: lm });
@@ -1541,6 +1613,7 @@ function lookOf(b, scene, x, y, cut, focus = null) {
     });
     o.dir = best < 0 ? 0 : best;
   }
+  if (snowLook && SNOW_ON.has(k) && bid < 0 && !(c.h > 0 && FURNITURE.has(k))) o.sn = snowLook; // snow on it out in the open (snowPrims; a building's roof carries its own: roofSprite)
   if (c.car && (k === "car" || k === "truck" || k === "vehicle")) o.car = c.car; // one piece of a 2 × 3–4 cell car (sim/combat.js placeCar): carPieces draws its share
   else if (k === "car" || k === "truck" || k === "vehicle") {
     // Cars lie along the road, or as their dice say; the axis turns with the view.
@@ -1586,7 +1659,7 @@ function blockTop0(k, o) {
 const looksCache = {}; // by use: "draw" (this frame's cutaway), "pick" (none)
 function looksFor(b, scene, cut, slot = "draw", focus = null) {
   const ck = [...cut].sort((a, c) => a - c).join(",");
-  const key = `${scene.key}:${viewKey()}:${treeLook}:${ck}:${focus ? focus.map((p) => p.join(".")).join(",") : ""}`, lc = looksCache[slot];
+  const key = `${scene.key}:${viewKey()}:${treeLook}:${snowLook}:${ck}:${focus ? focus.map((p) => p.join(".")).join(",") : ""}`, lc = looksCache[slot];
   if (lc && lc.b === b && lc.key === key) return lc.list;
   const list = new Array(b.w * b.h);
   for (let i = 0; i < list.length; i++) {
@@ -2032,6 +2105,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     for (const p of peeks) focus.push([p.x, p.y]);
   }
   treeLook = treeLookFor(state, b); // the trees' season (ui/seasontrees.js): a new look draws them again (looksFor's key)
+  snowLook = snowOnFor(state, b); // the snow on the buildings (ui/roofsnow.js): in looksFor's key and the sprites' keys
   const looks = looksFor(b, scene, cut, "draw", focus);
   const seenB = new Set(); // buildings any of whose cells your people see: their roof is not fogged
   for (const B of scene.blds) for (const j of B.cells) if (v.vis[j]) { seenB.add(B.id); break; }
@@ -2390,7 +2464,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
       if (sx < -margin || sx > cw + margin || sy < -margin || sy > ch + margin * 2) continue;
       let edges = 0;
       VD.forEach(([du, dv], k) => { const nu = uu + du, nv = vv + dv; if (nu < 0 || nv < 0 || nu >= Wv || nv >= Hv) { edges |= 1 << k; return; } const [nx, ny] = fromView(nu, nv, r, b.w, b.h); if (scene.comp[ny * b.w + nx] !== bid) edges |= 1 << k; });
-      const B = scene.blds[bid], spr = roofSprite(B.mat, B.top, edges, !seenB.has(bid));
+      const B = scene.blds[bid], spr = roofSprite(B.mat, B.top, edges, !seenB.has(bid), snowLook, snowLook ? Math.floor(hash3(x, y, 61) * 4) : 0); // snow on it, its drifts by the cell
       if (fade.has(i)) ctx.globalAlpha = 0.35;
       ctx.drawImage(spr.cv, Math.round(sx + spr.ox * S), Math.round(sy + spr.oy * S), Math.ceil(spr.w * S), Math.ceil(spr.h * S));
       ctx.globalAlpha = 1;
@@ -2456,6 +2530,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   // Night: the whole scene darker, the lights cut out of it (ui/battlelights.js); the fog's vignette on the edges.
   drawDarkness(ctx, b, cw, ch);
   drawVignette(ctx, cw, ch, fog);
+  { const [ax, ay] = project(b.w / 2, b.h / 2, 0); drawBattleWx(ctx, cw, ch, state, b, now, ax, ay); } // ui/battlewx.js: the rain, fog or snow (screen space; the labels, bars and cursor stay on top)
   for (const c of OV.smoke) {
     if (c.thick) {
       // A fire's smoke: a dark column rising and drifting (it blocks sight through it).
