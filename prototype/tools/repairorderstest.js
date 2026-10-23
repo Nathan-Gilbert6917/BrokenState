@@ -55,14 +55,17 @@ const workHours = (st, n) => { for (let i = 0; i < n; i++) { breakdownsHour(st);
   check(outer.every((k) => FIXTURES[k] && FIXTURES[k].outer), "the outer line: spike pits, trench, sandbag positions, the wires, guard towers and minefield, with the walls, gate, barricades, tower and lights");
   const inner = ["gen_hut", "gen_barn", "bunks", "shelves", "lockers", "stove", "infirmary", "hospital", "greenhouse", "jailhouse", "lockup", "crates", "cookhouse", "boiler", "water_barrel", "craftbench", "toolbench"];
   check(inner.every((k) => FIXTURES[k] && FIXTURES[k].raidOnly && !FIXTURES[k].outer), "the buildings inside are raid-only and not outer");
-  const sane = Object.entries(FIXTURES).every(([, d]) => d.repair && d.repair.hours >= 1 && (d.repair.cost.scrap || 0) >= 1 && d.rig && d.rig.hours >= 1 && typeof d.what === "string" && d.what.length);
-  check(sane, "every entry: repair hours and scrap at least 1, a rig, a what");
+  // A repair takes material (scrap, or the metal sheets a shed's or a storehouse's roof is mended with: 2026-10-21).
+  const mats = (c) => (c.scrap || 0) + (c.metalsheet || 0) + (c.buildmat || 0) + (c.wood || 0);
+  const insane = Object.entries(FIXTURES).filter(([, d]) => !(d.repair && d.repair.hours >= 1 && mats(d.repair.cost) >= 1 && d.rig && d.rig.hours >= 1 && typeof d.what === "string" && d.what.length)).map(([k]) => k);
+  check(!insane.length, `every entry: repair hours and material at least 1, a rig, a what (off: ${insane.join(", ") || "none"})`);
   const NEW = ["infirmary", "field_hosp", "clinic", "hospital", "greenhouse", "jailhouse", "lockup", "gen_hut", "gen_cabin", "gen_lodge", "gen_hall", "gen_barn", "bunks", "shelves", "lockers", "stove", "crates", "cookhouse", "boiler", "water_barrel", "craftbench", "workbench", "toolbench", "spike_pits", "trench", "sandbag_wall", "barbed_wire", "razor_wire", "guard_towers", "minefield"];
-  // The building's materials in scrap (woodwork 2026-10-20 moved the wooden builds' cost from scrap to wood: wood counts
-  // at its worth, data.js supValue, so a hut of 3 scrap and 350 wood is worth 10 scrap of materials).
-  const matScrap = (b) => (b.cost.scrap || 0) + ((b.cost.wood || 0) * supValue("wood")) / supValue("scrap");
-  const off = NEW.filter((k) => { const d = FIXTURES[k].repair, b = BUILDINGS[k], m = matScrap(b); return !(d.cost.scrap <= Math.max(1, Math.ceil(m / 2)) && d.cost.scrap >= Math.max(1, Math.floor(m / 4)) && d.hours <= Math.max(1, Math.ceil(b.hours / 3)) && d.hours >= Math.max(1, Math.floor(b.hours / 6)) && (!b.cost.parts || d.cost.parts) && (d.cost.parts ? d.min >= 1 : d.min === 0)); });
-  check(!off.length, `the new entries' costs in proportion: a quarter to a half of the building's materials in scrap (wood at its worth), a sixth to a third of its hours, a part (and Mechanics 1) where it took parts, Mechanics 0 for plain structures (off: ${off.join(", ") || "none"})`);
+  // The building's materials in scrap (woodwork 2026-10-20 moved the wooden builds' cost from scrap to wood, and the
+  // building materials and metal sheets of 2026-10-21 took more of it: each counts at its worth, data.js supValue, so a
+  // hut of 3 scrap and 350 wood is worth 10 scrap of materials, a building material 3, a metal sheet 5).
+  const matScrap = (b) => ["scrap", "wood", "buildmat", "metalsheet"].reduce((a, k) => a + ((b.cost[k] || 0) * supValue(k)) / supValue("scrap"), 0);
+  const off = NEW.filter((k) => { const d = FIXTURES[k].repair, b = BUILDINGS[k], m = matScrap(b), rm = matScrap(d); return !(rm <= Math.max(1, Math.ceil(m / 2)) && rm >= Math.max(1, Math.floor(m / 4)) && d.hours <= Math.max(1, Math.ceil(b.hours / 3)) && d.hours >= Math.max(1, Math.floor(b.hours / 6)) && (!b.cost.parts || d.cost.parts) && (d.cost.parts ? d.min >= 1 : d.min === 0)); });
+  check(!off.length, `the new entries' costs in proportion: a quarter to a half of the building's materials in scrap (each at its worth), a sixth to a third of its hours, a part (and Mechanics 1) where it took parts, Mechanics 0 for plain structures (off: ${off.join(", ") || "none"})`);
 }
 
 // 2. The list, most damaged first; the partial plan.

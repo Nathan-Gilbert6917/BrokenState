@@ -20,6 +20,7 @@ import { breakFixture, fixtures } from "../src/sim/breakdowns.js";
 import * as A from "../src/sim/alliance.js";
 import * as C from "../src/sim/conquest.js";
 import * as D from "../src/sim/diplomacy.js";
+import { stockTools } from "./toolset.js"; // every tool a build can need (toolreqs.js)
 
 // Setting up a camp takes an hour (staging.js STAGING.PITCH): skipped here, the camp (a base) stands at once.
 const establishNow = (st, p) => { p.pitched = true; return giveOrderP(st, p, "establish"); };
@@ -571,8 +572,8 @@ section("Losing the hub: with another base, and with none (the exiles)");
   if (sh3) {
     check(B.isShelter(sh3) && B.tierName(sh3) === "Shelter" && B.baseWalls(sh3) === B.SHELTER.walls, "the exiles' camp becomes a shelter (tier 0): no wall strength");
     check(B.placeProblem(sh3, "walls") === "" && !B.canBuild(s3, sh3, "well").ok, "a shelter builds a wall (the Defenses tab: up to a timber palisade) but no well");
-    Object.assign(sh3.stock, { scrap: 120, parts: 6, buildmat: 6 }); // hub_up: 100 scrap, 5 building materials (2026-10-09)
-    if (!sh3.armory.some((it) => it && it.key === "toolkit")) sh3.armory.push((await import("../src/sim/inventory.js")).newItem("toolkit")); // its hammer and saw (toolreqs.js: the exiles left the old hub's tools behind)
+    Object.assign(sh3.stock, { scrap: 120, parts: 6, buildmat: 6, wood: (sh3.stock.wood || 0) + 1200 }); // hub_up: 100 scrap, 5 building materials (2026-10-09), 800 wood (2026-10-20)
+    stockTools(sh3); // a hammer and a saw (data-tools.js BUILD_TOOLS.hub_up, 2026-10-21): the exiles carried none
     check(/queued/.test(B.queueBuild(s3, sh3, "hub_up")), "the Main house (its step up) is queued at the shelter");
     for (const s of atBase(s3, sh3.id)) s.role = "build";
     for (let i = 0; i < 24 * 8 && B.isShelter(sh3); i++) { tickHour(s3); s3.cards.length = 0; for (const s of atBase(s3, sh3.id)) s.role = "build"; }
@@ -684,14 +685,17 @@ section("Base battles: a way out on the side away from the attack, and what pull
   check(s2.bases.includes(h2) && atBase(s2, h2.id).length === n2 && food(h2) < food0, `pulling out of a horde fight: the hub stays yours, everyone back, food ${food0} → ${food(h2)}`);
 }
 
-section("The autopilot conquers (Aggressive, up to 400 days, seeds 3-6)");
+section("The autopilot conquers (Aggressive, up to 400 days, seeds 3-8)");
 {
   // Four worlds, each played until its first base is taken (or day 400): one world's course turns on chance (a
   // starving first winter ended seed 3 on day 99 once the AI groups' pens changed their food rolls, 2026-10-09), so
-  // the check is that most of them storm and take bases, and that none crashes.
+  // the check is that most of them storm and take bases, and that none crashes. Six worlds since the camp's own spot
+  // (2026-10-22: its clearing's wood and scrap, the dead cleared off a town's spot first, change every world's dice from
+  // the first outpost on: seed 4 took a base on day 62 before, seed 6 fell on day 74; across seeds 3-10 the bases are
+  // taken in 6 worlds of 8 against 7, a month or so later): four worlds were too few to tell "most" from chance.
   let took = 0, errs = 0;
   const lines = [];
-  for (const sd of [3, 4, 5, 6]) {
+  for (const sd of [3, 4, 5, 6, 7, 8]) {
     const st = world(sd);
     st.noNewGangs = false;
     setAutopilot(st, true, "aggressive");
@@ -704,7 +708,7 @@ section("The autopilot conquers (Aggressive, up to 400 days, seeds 3-6)");
   }
   console.log(`  ${lines.join("; ")}`);
   check(!errs, `no crash (${errs})`);
-  check(took >= 3, `it storms bases and takes some in most worlds (${took} of 4)`);
+  check(took >= 4, `it storms bases and takes some in most worlds (${took} of 6)`);
 }
 
 // Storming a group's base on its map with the AI playing your side (the battle's Auto, or a turn handed over): your

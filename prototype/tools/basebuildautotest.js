@@ -196,6 +196,10 @@ section(`A ${DAYS}-day autopilot run (seed ${seed})`);
     // On to the morning's tidy (the goods that came in since are put away nowhere until it).
     const s0 = autopilotStats(st).stored;
     for (let i = 0; i < 30 && !st.gameOver && autopilotStats(st).stored === s0; i++) tickHour(st);
+    // With the hub's own vehicles home: a truck out on a trip takes its load space with it for a day or two (where it
+    // happened to be on day 60 decided the check: 2026-10-22), the goods it held lie outside till it is back.
+    const away = () => { const h0 = hub(st); return !!h0 && st.vehicles.some((v) => v.loc.kind === "party" && st.parties.some((p) => p.id === v.loc.partyId && p.owner === "player" && p.homeBaseId === h0.id)); };
+    for (let i = 0; i < 72 && !st.gameOver && away(); i++) tickHour(st);
   } catch (e) { crash = e; }
   check(!crash, `no crash (${crash ? crash.stack.split("\n").slice(0, 3).join(" | ") : "ok"})`);
   const h = hub(st);

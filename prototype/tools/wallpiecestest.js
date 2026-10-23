@@ -20,6 +20,7 @@ import { holdLimit } from "../src/sim/defences.js";
 import { createBattle, registerCombatHandler, los, CELL, combatAct, moveAlong } from "../src/sim/combat.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
 import { renderModal } from "../src/ui/ui.js";
+import { stockTools } from "./toolset.js";
 
 const seed = Number(process.argv[2] || 7);
 let pass = 0, fail = 0;
@@ -27,7 +28,7 @@ const check = (ok, what) => { if (ok) pass++; else fail++; console.log(`  ${ok ?
 const section = (t) => console.log(`\n${t}`);
 registerCombatHandler("wptest", () => {});
 const world = () => { const st = createWorld({ seed, factionCount: 6 }); st.started = true; st.hour = 24 * 3 + 12; st.landOff = true; return st; }; // landOff: the land (basescatter.js) is tools/baseviewtest.js's
-const rich = (base) => Object.assign(base.stock, { scrap: 9999, parts: 99, buildmat: 999, wood: 99999 });
+const rich = (base) => { Object.assign(base.stock, { scrap: 9999, parts: 99, buildmat: 999, wood: 99999 }); stockTools(base); }; // stockTools: the drill and the welding kit the metal walls want (data-tools.js WALL_TOOLS)
 const asCamp = (base) => { base.tier = 0; base.camp = true; return base; };
 const finishAll = (st, base) => { for (let i = 0; i < 400 && base.construction.length; i++) { for (const j of base.construction) j.progress = j.hours; constructionHour(st); } };
 const skilled = (st, base, sk, n) => { for (const s of atBase(st, base.id)) s.skills[sk] = n; };

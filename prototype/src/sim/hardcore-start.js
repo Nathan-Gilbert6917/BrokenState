@@ -64,6 +64,7 @@ import { hardcoreTents } from "./tents.js"; // a one-person tent bag each (tents
 import { grabStartGear, addPickedSupplies, trunkFromPicks, loadGun, pickOf } from "./startgear.js"; // gear picked on the new-run screen (Customize)
 import { hcOutbreakCity } from "./hardcore-outbreak.js";
 import { STAGING, ESTABLISH_LABEL, needText, shelterText, waterSource, buildMapChoice } from "./staging.js";
+import { siteThreat } from "./siteclear.js"; // the dead at a camp's spot (call-time only)
 import { swapGun } from "./gundist.js"; // the gun distribution: which gun they grabbed
 
 export const HC_START = {
@@ -814,6 +815,7 @@ export function hardcoreStartDaily(state) {
 // low infection, water beside or near, sites around. Best first. HUB_WATER: the score for the nearest river or lake
 // (beside it, 2 or 3 tiles away, none within 3).
 export const HUB_WATER = { beside: 6, two: 1.5, three: 0.5, none: -2 };
+const HUB_SITE_DEAD = 0.6; // hubSites: the score off a spot for each of the dead to clear off it first
 export function hubSites(state, from, radius = 6) {
   const g = state.grid;
   const out = [];
@@ -828,7 +830,8 @@ export function hubSites(state, from, radius = 6) {
     const wScore = !ws ? HUB_WATER.none : ws.dist <= 1 ? HUB_WATER.beside : ws.dist === 2 ? HUB_WATER.two : HUB_WATER.three;
     const sites = g.within(id, 4).filter((n) => state.tiles[n].loc && state.tiles[n].loc.type !== "city").length;
     const kind = t.loc ? ({ farm: 2.5, ranch: 2, town: 1.5, church: 1.5, school: 1.2, motel: 1, barn: 1, feedstore: 1, prison: 1.5, cabin: 1, lodge: 1, ranger: 1 }[t.loc.type] ?? 0.5) : 0;
-    const danger = (t.infection || 0) * 8 + (g.within(id, 3).some((n) => state.tiles[n].hive) ? 6 : 0);
+    // The dead to clear off the camp's spot first (siteclear.js: a town, an infected tile): a fight before the camp.
+    const danger = (t.infection || 0) * 8 + (g.within(id, 3).some((n) => state.tiles[n].hive) ? 6 : 0) + siteThreat(state, id).count * HUB_SITE_DEAD;
     const sc = wScore + Math.min(4, sites * 0.6) + kind - danger - g.distance(from, id) * 0.35;
     out.push({ id, sc: r1(sc), water, waterDist: ws ? ws.dist : null, waterKind: ws ? ws.kind : null, sites });
   }

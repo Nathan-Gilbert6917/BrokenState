@@ -608,6 +608,20 @@ function prims(k, o) {
       const side = k === "roof" ? wallFace(3, 0) : (f, s, t) => (Math.floor(t) % 10 < 2 || Math.floor(s) % 8 < 2 ? PAL.woodDk : mul(PAL.wood, 0.75));
       return [{ u0: 0, u1: 1, v0: 0, v1: 1, z0: 0, z1: LV, flat: k === "loft", m: (f, s, t, X, Y, a, c) => (f === "top" ? top(f, s, t, X, Y) : side(f, s, t, X, Y, a, c)) }];
     }
+    case "rise": { // high ground (sim/basescatter.js highLayer): a block of earth a level up, grass on its top
+      const top = (X, Y) => { const q = n2(X, Y, 6); return q > 0.9 ? mul(PAL.leaf2, 0.9) : mul(FLOORC.grass, 0.88 + q * 0.2); };
+      const side = (f, s, t, X, Y) => { const q = n2(X, Y, 4); return t > LV - 3 ? mul(FLOORC.grass, 0.7) : Math.floor(t + q * 4) % 6 < 1 ? mul(PAL.stone, 0.7) : mul(FLOORC.dirt, 0.8 + q * 0.25); };
+      return [{ u0: 0, u1: 1, v0: 0, v1: 1, z0: 0, z1: LV, m: (f, s, t, X, Y) => (f === "top" ? top(X, Y) : side(f, s, t, X, Y)) }];
+    }
+    case "slope": { // the way up onto it: earth in four steps rising towards the high ground (as the stairs)
+      const out = [], d = o.dir ?? 0;
+      const m = (f, s, t, X, Y) => (f === "top" ? mul(FLOORC.dirt, 0.95 + n2(X, Y, 5) * 0.2) : mul(FLOORC.dirt, 0.72 + n2(X, Y, 4) * 0.15));
+      for (let i = 0; i < 4; i++) {
+        const a0 = d === 0 || d === 2 ? i / 4 : 1 - (i + 1) / 4, a1 = a0 + 0.25, z1 = (i + 1) * (LV / 4);
+        out.push(d < 2 ? { u0: a0, u1: a1, v0: 0, v1: 1, z0: 0, z1, m } : { u0: 0, u1: 1, v0: a0, v1: a1, z0: 0, z1, m });
+      }
+      return out.sort((p, q) => p.u0 + p.v0 - q.u0 - q.v0);
+    }
     case "stairs": {
       // Four steps rising towards the higher neighbour; separate boxes, drawn from the back to the front.
       const out = [], d = o.dir ?? 0;
@@ -1244,7 +1258,7 @@ function lookOf(b, scene, x, y, cut, focus = null) {
   if (k === "firepit" && c.lit) o.lit = true; // a fire pit burning (its flames: prims)
   if (c.spot) o.spot = c.spotBroken ? 2 : 1; // a mounted spotlight, on the ground or up on a wall stand (sim/basemap.js)
   if (c.h > 0 && FURNITURE.has(k)) o.raise = c.h * LV; // furniture on an upper floor
-  if (k === "ladder" || k === "stairs") {
+  if (k === "ladder" || k === "stairs" || k === "slope") {
     // Towards the higher neighbour (the walkway, the loft, the roof).
     let best = -1, bh = hAt(b, x, y);
     VD.forEach(([dx, dy]) => {
@@ -1276,7 +1290,8 @@ function blockTop0(k, o) {
     case "palisade": case "gate": return PALISADE;
     case "tower": return 2 * LV + 7;
     case "walkway": case "loft": case "roof": case "stand": return LV;
-    case "stairs": return LV / 2;
+    case "stairs": case "slope": return LV / 2;
+    case "rise": return LV;
     case "ladder": return LV;
     case "tree": return o.v === 3 && o.alt ? 30 : 40;
     case "hivewall": return 30;
@@ -1369,6 +1384,8 @@ function newBattleCamera(b, cw, ch) {
 // The part of the map a battle opens on (world tiles x0, y0, x1, y1): your people on the map (in a base battle's deploy
 // step, its deploy area), and two thirds of the way from them toward the enemy's middle, with 3 tiles around.
 export function actionBox(b) {
+  // The camp's spot (sim/basemap.js openSiteView): the game's own spot and the ground round it.
+  if (b.site && b.site.focus && b.deployPlan && b.deployPlan.fort) { const F = b.deployPlan.fort, x = b.site.focus[0] + F.ox, y = b.site.focus[1] + F.oy; return [x - 14, y - 14, x + 15, y + 15]; }
   const mine = b.units.filter((u) => u.side === "player" && !u.dead && !u.left && u.x >= 0 && u.y >= 0);
   const pts = mine.map((u) => [u.x + 0.5, u.y + 0.5]);
   if (b.phase === "deploy" && b.deploy && b.deploy.zone) {
@@ -1538,7 +1555,7 @@ export function isoPick(b, px, py, opts = {}) {
   }
   return best;
 }
-const SOLIDWALK = new Set(["walkway", "tower", "loft", "roof", "stairs", "stand"]);
+const SOLIDWALK = new Set(["walkway", "tower", "loft", "roof", "stairs", "stand", "rise", "slope"]);
 const NOCUT = new Set();
 
 // ---------- what hides a cell ----------
@@ -1823,8 +1840,8 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     ctx.setLineDash([]);
   }
   const deploying = b.deploy && b.phase === "deploy";
-  const ok = deploying && !b.layout ? deployMask(b) : null;
-  if (deploying && !b.layout) {
+  const ok = deploying && !b.layout && !b.site ? deployMask(b) : null;
+  if (deploying && !b.layout && !b.site) {
     fillCells(ctx, b, (i) => ok[i], `rgba(${COL.goodRgb},0.16)`);
     outlineCells(ctx, b, (i) => ok[i], `rgba(${COL.goodRgb},0.8)`, 1.5);
   }
@@ -1856,6 +1873,12 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     ctx.setLineDash([5, 4]);
     outlineCells(ctx, b, (i) => inF.has(i), "rgba(230,216,184,0.7)", 1.5);
     ctx.setLineDash([]);
+  }
+  // The camp's spot (sim/basemap.js siteGhostAt): the 5 × 5 picked, in gold, under the one the mouse is over.
+  if (H.ghost && H.ghost.picked) {
+    const inP = new Set(H.ghost.picked.map(([x, y]) => y * b.w + x));
+    fillCells(ctx, b, (i) => inP.has(i), "rgba(255,209,102,0.3)");
+    outlineCells(ctx, b, (i) => inP.has(i), "rgba(255,209,102,0.95)", 2.5);
   }
   if (H.ghost) {
     const inG = new Set(H.ghost.cells.map(([x, y]) => y * b.w + x)), inD = new Set(H.ghost.doors.map(([x, y]) => y * b.w + x));
@@ -2273,11 +2296,19 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     const [X, Y] = project((Math.min(...xs) + Math.max(...xs) + 1) / 2, (Math.min(...ys) + Math.max(...ys) + 1) / 2, 34);
     tag(ctx, `${c.who && c.who.length ? `${c.who.slice(0, 3).join(", ")}${c.who.length > 3 ? ` +${c.who.length - 3}` : ""}: ` : ""}Clearing ${c.pct}%`, X, Y, "#f0c060", Math.max(10, 3.6 * S)); // woodwork: who is felling it (sim/woodwork.js chopHands)
   }
+  // The camp's spot on high ground (sim/basescatter.js highLayer): its raised cells again over the blocks painted on them.
+  if (H.ghost && b.site) {
+    const up = (cells) => new Set(cells.filter(([x, y]) => tileTop(b, x, y) > 0).map(([x, y]) => y * b.w + x));
+    const inP = up(H.ghost.picked || []), inG = up(H.ghost.cells || []);
+    if (inP.size) { fillCells(ctx, b, (i) => inP.has(i), "rgba(255,209,102,0.3)"); outlineCells(ctx, b, (i) => inP.has(i), "rgba(255,209,102,0.95)", 2.5); }
+    if (inG.size) { fillCells(ctx, b, (i) => inG.has(i), H.ghost.ok ? `rgba(${COL.goodRgb},0.35)` : "rgba(220,70,60,0.35)"); outlineCells(ctx, b, (i) => inG.has(i), H.ghost.ok ? `rgba(${COL.goodRgb},0.95)` : "rgba(240,90,80,0.95)", 2); }
+  }
+  if (H.ghost && H.ghost.pickedAt) { const [X, Y] = project(H.ghost.pickedAt[0] + 0.5, H.ghost.pickedAt[1] + 0.5, 34); tag(ctx, "Camp fire here", X, Y, "#ffd166", Math.max(10, 3.6 * S)); } // the camp's spot picked (sim/basemap.js siteGhostAt)
   if (H.ghost && H.ghost.from) for (const [x, y] of H.ghost.from) { ctx.fillStyle = "rgba(12,14,18,0.42)"; ctx.beginPath(); diamond(ctx, x, y, 14); ctx.fill(); }
   // The stores on a base map (sim/basemap.js): a crate marker over each building that holds goods, with its weight.
   if (b.stores) for (const c0 of b.stores.containers) {
     const ci = c0.y * b.w + c0.x;
-    let seen = !!b.deploy || !!b.layout;
+    let seen = !!b.deploy || !!b.layout || !!b.site;
     for (let yy = c0.y; yy < c0.y + c0.h && !seen; yy++) for (let xx = c0.x; xx < c0.x + c0.w; xx++) if (vis[yy * b.w + xx]) { seen = true; break; }
     if (!seen) continue;
     const L = looks[ci], top = Math.max(L ? L.top : 4, WALL1) + liftAt(b, ci);
@@ -2298,7 +2329,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     ctx.fillStyle = f > 0.6 ? COL.good : f > 0.3 ? COL.mid : COL.bad; ctx.fillRect(X - w / 2, Y - 3, w * f, 4);
   }
   // The deploy step: the gate and breaches, the side the attack comes from (not on the base map: nothing attacks).
-  if (deploying && !b.layout) {
+  if (deploying && !b.layout && !b.site) {
     const D = b.deploy;
     ctx.strokeStyle = "#e0a84f"; ctx.lineWidth = 2.5;
     ctx.beginPath();

@@ -134,6 +134,7 @@ import { WORM, baseWater, baseFilter, baseTabCount, baseCooks, armoryTabs, TABS_
 import { gunWant, pickGunToBuy, noteGunBought, radioGunDeal } from "./govguns.js"; // the governor buys guns for the unarmed
 import { carriedRec } from "./ammo.js"; // the loose rounds people carry
 import { sumRecs } from "./rounds.js"; // a team's rounds: its bags and what its people carry
+import { siteThreat } from "./siteclear.js"; // the dead at a camp's spot (outpostSite)
 
 // Play styles. range = max tiles from the hub for a trip, maxHoursOut = longest way out, cooldown = days between
 // launches, homeFrac = share of the hub that stays home, risk = lowest success chance worth a gamble,
@@ -2947,17 +2948,22 @@ export const STORE_WISH = { minKg: 5, ladder: { camp: ["storebox"], shelter: ["s
 export function storageWish(state, base) {
   if (base.construction.some((c) => (isStoreBuilding(c.type) || GENERAL.includes(c.type)) && !c.target)) return null; // one at a time
   const st = storageOf(state, base);
-  if (st.outsideKg < STORE_WISH.minKg && !st.outside.gear.length) return null;
-  const why = (t) => `${Math.round(st.outsideKg)} kg of the base's goods lie outside, weathering (room for ${BUILDINGS[t].storeKg} kg)`;
+  // A parked car's load space is room only while it is parked: past a camp, the governor builds for the goods as if
+  // the cars were out (the hub's truck away on a trip left 800 kg lying outside, basebuildautotest's 60-day run).
+  const carKg = isCamp(base) ? 0 : st.containers.filter((c) => c.kind === "vehicle").reduce((a, c) => a + c.cap, 0);
+  const own = st.cap - carKg;
+  const shortKg = Math.max(st.outsideKg, st.used - own);
+  if (shortKg < STORE_WISH.minKg && !st.outside.gear.length) return null;
+  const why = (t) => `${st.outsideKg >= STORE_WISH.minKg ? `${Math.round(st.outsideKg)} kg of the base's goods lie outside, weathering` : `${Math.round(st.used - own)} kg of the base's goods would lie outside with the cars away`} (room for ${BUILDINGS[t].storeKg} kg)`;
   for (const t of STORE_WISH.fittings) if (BUILDINGS[t] && countAll(base, t) < BUILDINGS[t].max && fittingRoom(state, base, t) && canBuild(state, base, t).ok) return { type: t, why: `${why(t)}: ${BUILDINGS[t].name.toLowerCase()} inside a general building`, save: false };
   const size = isCamp(base) ? "camp" : isShelter(base) ? "shelter" : base.type === "hub" ? "hub" : "outpost";
   const ok = STORE_WISH.ladder[size].filter((t) => BUILDINGS[t] && canBuild(state, base, t).ok);
   if (ok.length) {
-    const type = ok.find((t) => BUILDINGS[t].storeKg >= st.outsideKg) || ok[ok.length - 1];
+    const type = ok.find((t) => BUILDINGS[t].storeKg >= shortKg) || ok[ok.length - 1];
     return { type, why: why(type), save: false };
   }
   const gb = generalWish(state, base);
-  if (gb && canBuild(state, base, gb).ok) return { type: gb, why: `${Math.round(st.outsideKg)} kg of the base's goods lie outside, weathering: a ${BUILDINGS[gb].name.toLowerCase()} for shelves and lockers`, save: false };
+  if (gb && canBuild(state, base, gb).ok) return { type: gb, why: `${Math.round(shortKg)} kg of the base's goods lie outside, weathering: a ${BUILDINGS[gb].name.toLowerCase()} for shelves and lockers`, save: false };
   return null;
 }
 function buildWishes(state, base) {
@@ -4651,7 +4657,8 @@ function outpostSite(state) {
     const farm = t.loc && t.loc.type === "farm" ? 1.3 : t.terrain === "plains" ? 1.3 : t.terrain === "forest" ? 0.8 : t.terrain === "hills" ? 0.7 : 1;
     // Wood land within reach (woodcutting.js): the winter's wood cut at the door, not hauled from afar.
     const woodLand = g.within(id, WOOD.base.radius).reduce((a, x) => a + woodAbundance(state, x), 0);
-    const score = farm + (t.loc ? 0.5 : 0) + (t.road ? 0.4 : 0) + Math.min(0.4, woodLand * 0.08) - d * 0.05 - k.infection;
+    // The dead to clear off the camp's spot first (siteclear.js: a town's streets, a city's): a fight before the camp.
+    const score = farm + (t.loc ? 0.5 : 0) + (t.road ? 0.4 : 0) + Math.min(0.4, woodLand * 0.08) - d * 0.05 - k.infection - siteThreat(state, id).count * 0.15;
     if (!best || score > best.score) best = { id, score };
   }
   return best ? best.id : null;
