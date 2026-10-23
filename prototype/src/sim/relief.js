@@ -85,6 +85,22 @@ export function applyRelief(cells, W, H, tile, opts = {}) {
       }
     }
   }
+  // A hollow cut narrower than HIGH.DIP_MIN either way (by the level edges, a building, a zone) is filled in.
+  {
+    const seen = new Uint8Array(N);
+    for (let i = 0; i < N; i++) {
+      if (h[i] >= 0 || seen[i]) continue;
+      const comp = [i];
+      seen[i] = 1;
+      let x0 = W, x1 = 0, y0 = H, y1 = 0;
+      for (let k = 0; k < comp.length; k++) {
+        const j = comp[k], x = j % W, y = (j / W) | 0;
+        x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = x + dx, ny = y + dy; if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue; const n = ny * W + nx; if (!seen[n] && h[n] < 0) { seen[n] = 1; comp.push(n); } }
+      }
+      if (x1 - x0 + 1 < HIGH.DIP_MIN || y1 - y0 + 1 < HIGH.DIP_MIN) for (const j of comp) h[j] = 0;
+    }
+  }
   // The crag must leave a way across: from the west edge to the east one, else none of it.
   if (isCrag.some((v) => v)) {
     const walk = (i) => !isCrag[i] && !!CELL[cells[i].k] && !!CELL[cells[i].k].walk;

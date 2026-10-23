@@ -15,7 +15,7 @@ import { giveOrder, awaitOrders } from "../src/sim/parties.js";
 import { roadTeam } from "../src/sim/hardcore-start.js";
 import { pendingSite, pickSite } from "../src/sim/staging.js";
 import * as BM from "../src/sim/basemap.js";
-import { townLayer, reliefLayer, layLand, CLEAR, clearOf, TOWN } from "../src/sim/basescatter.js";
+import { townLayer, reliefLayer, layLand, CLEAR, clearOf, TOWN, HIGH } from "../src/sim/basescatter.js";
 import { applyRelief } from "../src/sim/relief.js";
 import { CELL, finishCombat } from "../src/sim/combat.js";
 import { siteThreat, SITE_CLEAR } from "../src/sim/siteclear.js";
@@ -56,11 +56,26 @@ section("The land: a town's streets and houses, a city's blocks, the hills' high
   const all = [...town.pieces, ...city.pieces].filter((p) => p.parts).length;
   check(!bad, `every building has a door and every bit of its floor is walked to from one (${all} buildings, ${bad} not)`);
   check(rooms > all / 3 && furn > all * 0.8, `inside: rooms walled off (${rooms}), furniture (${furn} of ${all})`);
-  // The lie of the land (the user's word 2026-10-23): hills up to three levels, a mountain's crag; no hollows.
+  // The lie of the land (the user's word 2026-10-23): hills up to three levels, hollows a level down, a mountain's crag.
   const hills = reliefLayer(99, "hills", 125), mtn = reliefLayer(99, "mountain", 125), farm = reliefLayer(99, "farm", 125);
   const lv = (r) => { const c = {}; for (const [, , h] of r.heights) c[h] = (c[h] || 0) + 1; return c; };
   const hc = lv(hills);
-  check(hc[1] > 500 && hc[2] > 50 && hc[3] > 10 && !hc[4] && hills.heights.every(([, , h]) => h > 0) && mtn.heights.every(([, , h]) => h > 0), `the hills: ${JSON.stringify(hc)} cells by level (1 to 3 up; nothing below the ground: the playtest 2026-10-23)`);
+  check(hc[1] > 500 && hc[2] > 50 && hc[3] > 10 && hc[-1] > 100 && !hc[4] && !hc[-2], `the hills: ${JSON.stringify(hc)} cells by level (1 to 3 up, hollows 1 down)`);
+  // Every hollow at least DIP_MIN across either way (the playtest 2026-10-23: "minimum width of 8 tiles").
+  {
+    const sunk = new Set(hills.heights.filter(([, , h]) => h < 0).map(([x, y]) => `${x},${y}`)), seen = new Set();
+    let n = 0, narrow = 0;
+    for (const k of sunk) {
+      if (seen.has(k)) continue;
+      const comp = [k.split(",").map(Number)];
+      seen.add(k);
+      let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+      for (let i = 0; i < comp.length; i++) { const [x, y] = comp[i]; x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); for (const [dx, dy] of ORTHO) { const q = `${x + dx},${y + dy}`; if (sunk.has(q) && !seen.has(q)) { seen.add(q); comp.push([x + dx, y + dy]); } } }
+      n++;
+      if (x1 - x0 + 1 < HIGH.DIP_MIN || y1 - y0 + 1 < HIGH.DIP_MIN) narrow++;
+    }
+    check(n >= 5 && !narrow, `${n} hollows, none narrower than ${HIGH.DIP_MIN} cells either way`);
+  }
   check(mtn.crags.length > 200 && !hills.crags.length && (lv(farm)[1] || 0) < hc[1] && !lv(farm)[2], `a mountain's crag (${mtn.crags.length} cells of ridge), none in the hills; farmland near flat`);
   const HM = new Map(hills.heights.map(([x, y, h]) => [`${x},${y}`, h]));
   check(hills.heights.every(([x, y, h]) => [-1, 0, 1].every((dy) => [-1, 0, 1].every((dx) => Math.abs((HM.get(`${x + dx},${y + dy}`) || 0) - h) <= 1))), "never more than a level between neighbours: walked up and down anywhere");

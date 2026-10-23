@@ -222,13 +222,16 @@ export function scatterLayer(seed, terrain, G) {
 //   - hills: one at most to a REGION of the map, lobes joined; a short one a level high, a tall one up to TALL[1],
 //     the levels nested inside each other with a ragged edge (EDGE_NOISE); the ground never steps more than a level
 //     between neighbours (relaxed), so it is walked up and down anywhere (combat.js climbCost).
-//   - no hollows: the ground never goes below level (the playtest 2026-10-23: "Remove the tiles that go into the
-//     ground"; the rules and the drawing still take a height below 0).
+//   - hollows (the playtest 2026-10-23: "keep the sunken hollows have it go down max 1 layer depth and make it
+//     sizeable minimum width of 8 tiles"): a level down, round, DIP_R across, smooth-edged; one narrower than DIP_MIN
+//     cells either way (cut by the yard, a road, the map) is filled in (dropNarrowHollows).
 //   - a mountain tile: RIDGES chains of crag (a ridge line wandering across the map, CORE cells wide) with foothills
 //     falling away from them a level every FOOT cells, and some hills between.
 export const HIGH = {
   REGION: 36,                                          // cells a side of a region of the map: a hill in it at most
   P: { hills: 0.8, mountain: 0.55, forest: 0.12, plains: 0.08, farm: 0.05 }, // the chance a region has a hill
+  DIP_P: { hills: 0.3, mountain: 0.25, forest: 0.18, plains: 0.12, farm: 0.08 }, // the chance a region has a hollow
+  DIP_R: [5, 9], DIP_MIN: 8,                           // its half-size range; the least it may be across either way
   TALL: { hills: [0.55, 3], mountain: [0.7, 3], forest: [0.2, 2], plains: [0.1, 2], farm: [0, 1] }, // [share tall, its levels]
   R: [5, 11],                                          // a lobe's half-size range
   LOBES: [2, 4],
@@ -273,6 +276,11 @@ export function reliefLayer(seed, terrain, G) {
         const [tallP, tallTop] = HIGH.TALL[terrain] || [0, 1], top = rng.chance(tallP) ? rng.int(2, tallTop) : 1;
         const [lo, hi] = HIGH.R, cx = rx * R + rng.int(hi, R - hi), cy = ry * R + rng.int(hi, R - hi);
         for (let i = rng.int(HIGH.LOBES[0], HIGH.LOBES[1]), first = true; i > 0; i--, first = false) lobe(rng, cx + (first ? 0 : rng.int(-lo, lo)), cy + (first ? 0 : rng.int(-lo, lo)), rng.int(lo, hi), rng.int(lo, hi), first ? top : Math.max(1, top - rng.int(0, 1)));
+      }
+      // A hollow: a level down, an ellipse DIP_R across with a smooth edge (no ragged noise: it stays wide).
+      if (rng.chance(HIGH.DIP_P[terrain] || 0)) {
+        const [lo, hi] = HIGH.DIP_R, ax = rng.int(lo, hi), ay = rng.int(lo, hi), cx = rx * R + rng.int(hi, R - hi), cy = ry * R + rng.int(hi, R - hi);
+        for (let y = cy - ay; y <= cy + ay; y++) for (let x = cx - ax; x <= cx + ax; x++) if (((x - cx) / ax) ** 2 + ((y - cy) / ay) ** 2 <= 1) raise(x, y, -1);
       }
     }
     // A mountain tile's massif: the core, the arms reaching out from it (they taper and wander), the height by the
@@ -319,6 +327,7 @@ export function reliefLayer(seed, terrain, G) {
     }
     // Never more than a level between neighbours (eight ways): a hill walked up and down anywhere.
     relaxHeights(H, crag);
+    dropNarrowHollows(H);
     for (const k of crag) H.delete(k);
     return { heights: [...H].map(([k, h]) => { const [x, y] = k.split(",").map(Number); return [x, y, h]; }), crags: [...crag].map((k) => { const [x, y] = k.split(",").map(Number); return [x, y, cragLv.get(k) || HIGH.CRAG_LV[0]]; }) };
   });
@@ -359,6 +368,27 @@ export function relaxHeights(H, apart = new Set()) {
         if (v !== h) { changed = any = true; if (v) H.set(k, v); else H.delete(k); }
       }
     }
+  }
+  return H;
+}
+/**
+ * Hollows a level down at most, and none narrower than HIGH.DIP_MIN cells either way (its cells joined four ways, its
+ * extent): the rest filled in. In place. @param {Map<string, number>} H "x,y" → h
+ */
+export function dropNarrowHollows(H) {
+  for (const [k, h] of H) if (h < -1) H.set(k, -1);
+  const seen = new Set();
+  for (const [k, h] of [...H]) {
+    if (h >= 0 || seen.has(k)) continue;
+    const comp = [k], [sx, sy] = k.split(",").map(Number);
+    let x0 = sx, x1 = sx, y0 = sy, y1 = sy;
+    seen.add(k);
+    for (let i = 0; i < comp.length; i++) {
+      const [x, y] = comp[i].split(",").map(Number);
+      x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
+      for (const [dx, dy] of ORTHO) { const n = ck(x + dx, y + dy); if (!seen.has(n) && (H.get(n) || 0) < 0) { seen.add(n); comp.push(n); } }
+    }
+    if (x1 - x0 + 1 < HIGH.DIP_MIN || y1 - y0 + 1 < HIGH.DIP_MIN) for (const c of comp) H.delete(c);
   }
   return H;
 }
@@ -682,6 +712,7 @@ export function landOf(spec, land) {
   for (const [x, y, lv] of relief.crags) if (free(x, y) && !nearBase(x, y, spec.C) && !street(x, y) && !(spec.river && onRiver(spec, x, y))) put({ k: "crag", g: `c${x},${y}`, cells: [[x, y]], h: lv });
   for (const [x, y, h] of relief.heights) if (!nearBase(x, y, Math.max(spec.C, spec.clear)) && !gone(x, y) && !pieces.has(`${x},${y}`) && !(spec.river && onRiver(spec, x, y))) heights.set(`${x},${y}`, h);
   relaxHeights(heights, new Set(relief.crags.map(([x, y]) => `${x},${y}`))); // the yard, the clearing and what is cleared are level: the ground eased down to them
+  dropNarrowHollows(heights); // a hollow cut narrow by them filled in
   for (const p of scatterLayer(spec.seed, spec.terrain, spec.G)) {
     if (p.floor) { if (!nearBase(p.x, p.y, spec.clear) && !floors.has(`${p.x},${p.y}`)) floors.set(`${p.x},${p.y}`, p.floor); continue; }
     const yard = nearBase(p.x, p.y, spec.C);
@@ -702,6 +733,7 @@ export function landOf(spec, land) {
   // A wreck lies on level ground (a vehicle's cells on the one level: combat.js levelRect).
   for (const p of list) if (p.k === "wreck") for (const [x, y] of p.cells) heights.delete(`${x},${y}`);
   relaxHeights(heights, new Set(relief.crags.map(([x, y]) => `${x},${y}`)));
+  dropNarrowHollows(heights);
   for (const [k, h] of heights) if (!pieces.has(k)) { const [x, y] = k.split(",").map(Number); put({ k: h > 0 ? "rise" : "dip", g: `h${x},${y}`, cells: [[x, y]], h }); }
   // Bushes along the river's banks.
   if (spec.river) { const rng = new Rng(spec.seed ^ 0x77e1); for (let a = -spec.G; a < spec.G; a++) for (let b = -spec.G; b < spec.G; b++) { const x = spec.river === "y" ? a : b, y = spec.river === "y" ? b : a; if (onRiver(spec, x, y) === 2 && rng.chance(0.3) && free(x, y)) put({ k: "bush", g: `b${x},${y}`, cells: [[x, y]] }); } }
