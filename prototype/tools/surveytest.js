@@ -319,7 +319,7 @@ console.log("Estimates: hours, rations and fuel");
     const drunk = () => water0 - carried(p, "water") + (thirst0 - gauge("thirst")) / NEEDS.water;
     // The team's rate for the coming hour (needs.js teamNeedsHour), to add the arrival hour, when the packs are
     // already unloaded and the gauges are the base's.
-    const rateNow = () => { const mv = onTheMove(p) || sweeping(p); const r = partyMembers(st, p).reduce((a, s) => a + personRation(p.burden, s, p.vehicle, mv), 0) / 24; return { food: r * teamCold(st, p), water: r * thirstAt(st, st.hour + 1) }; }; // the coming hour's day
+    const rateNow = () => { const mv = onTheMove(p) || sweeping(p); const r = partyMembers(st, p).reduce((a, s) => a + personRation(p.burden, s, p.vehicle, mv), 0) / 24, rf = partyMembers(st, p).reduce((a, s) => a + personRation(p.burden, s, p.vehicle, mv) * appetite(s), 0) / 24; return { food: rf * teamCold(st, p), water: r * thirstAt(st, st.hour + 1) }; }; // the coming hour's day; a Glutton eats more (traits.js), as in the winter trips
     let delay = 0, start = st.hour, queueSeen = false, cardsSeen = 0;
     let foodHome = null, waterHome = null, fuelHome = null, eatenOut = 0, drunkOut = 0, lastRate = { food: 0, water: 0 }, gulps = true;
     for (let i = 0; i < 24 * 12 && st.parties.includes(p); i++) {
@@ -361,15 +361,18 @@ console.log("Estimates: hours, rations and fuel");
       else console.log(`    case ${c} (${mode}, ${stance}, r${sweep.radius} ${sweep.hours}h): estimate ${est.total}h, took ${actual}h`);
       // The whole trip's rations: the gauges' count at the last hour out plus the arrival hour (the team eats before
       // it moves). Packs and gauges together are the planner's exact figure, to the hour (food as water: no season
-      // or cold in these spring trips); the packs alone never over it (a pack can be under it by a gulp a head, which
-      // the people bring home as hunger); nobody was let fall under 70 while the packs held food.
+      // or cold in these spring trips, but a Glutton's appetite, which the planner counts in food: plans.js fsegs); the
+      // packs alone never over it (a pack can be under it by a gulp a head, which the people bring home as hunger);
+      // nobody was let fall under 70 while the packs held food. (Since the hub starts on open land, startpick.js
+      // START_CLEAR in 7302413, a clean trip has a Glutton in it: case 20's car survey.)
       const used = food0 - foodHome, wused = water0 - waterHome;
       const foodTrip = eatenOut + lastRate.food, waterTrip = drunkOut + lastRate.water;
-      const toTheHour = Math.abs(waterTrip - est.waterExact) < 1e-6 && Math.abs(foodTrip - waterTrip) < 1e-6 && est.food === Math.ceil(est.waterExact - 1e-9);
+      const glutton = crew.some((s) => appetite(s) !== 1);
+      const toTheHour = Math.abs(waterTrip - est.waterExact) < 1e-6 && Math.abs(foodTrip - est.foodExact) < 1e-6 && (glutton || Math.abs(est.foodExact - est.waterExact) < 1e-6) && est.food === Math.ceil(est.foodExact - 1e-9);
       // (The packs are read the hour before arrival, so the gulp bound is against the gauges' count at that hour.)
       const packs = used <= est.food + 1e-6 && wused <= est.water + 1e-6 && used >= eatenOut - crew.length * (NEEDS.eat.full[1] - NEEDS.eat.full[0]) / NEEDS.food - 1e-6 && wused >= drunkOut - crew.length * (NEEDS.drink[1] - NEEDS.drink[0]) / NEEDS.water - 1e-6;
       if (toTheHour && packs && gulps) foodOk++;
-      else console.log(`    case ${c}: rations ${foodTrip.toFixed(3)} (packs ${used.toFixed(2)}), water ${waterTrip.toFixed(3)} (packs ${wused.toFixed(2)}), planner ${est.waterExact.toFixed(3)} → ${est.food} food, ${est.water} water${gulps ? "" : "; someone fell under 70"}`);
+      else console.log(`    case ${c}: rations ${foodTrip.toFixed(3)} (packs ${used.toFixed(2)}), water ${waterTrip.toFixed(3)} (packs ${wused.toFixed(2)}), planner ${est.foodExact.toFixed(3)} / ${est.waterExact.toFixed(3)} → ${est.food} food, ${est.water} water${gulps ? "" : "; someone fell under 70"}`);
       if (mode === "car") { fuelN++; const burned = fuel0 - fuelHome; if (Math.abs(burned - est.fuel) < 1.01 || burned <= est.fuel + 1e-6) fuelOk++; else console.log(`    case ${c}: fuel ${burned.toFixed(2)}, estimate ${est.fuel}`); }
     }
   }
