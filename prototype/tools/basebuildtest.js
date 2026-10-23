@@ -80,7 +80,7 @@ section("The no-build margin");
   const b = st2.combat, F = b.deployPlan.fort;
   const Gc = BM.gridHalf(c2);
   check(Gc === BM.GRID_MAX && F.W < 2 * Gc && F.W >= 2 * (BM.yardHalf(c2) + 2), `the camp's grid is 500 × 500; its view the yard and what stands round it (${F.W} × ${F.H})`);
-  check(F.W === BM.VIEW_MIN && F.H === BM.VIEW_MIN && F.ox === BM.VIEW_MIN / 2 && F.oy === BM.VIEW_MIN / 2, `the view is never less than ${BM.VIEW_MIN} × ${BM.VIEW_MIN}, the camp in its middle (the user's request 2026-10-23; ${F.W} × ${F.H}, the camp at ${F.ox}, ${F.oy})`);
+  check(F.W === (2 * BM.VIEW_HALF.camp) && F.H === (2 * BM.VIEW_HALF.camp) && F.ox === BM.VIEW_HALF.camp && F.oy === BM.VIEW_HALF.camp, `the view is never less than ${(2 * BM.VIEW_HALF.camp)} × ${(2 * BM.VIEW_HALF.camp)}, the camp in its middle (the user's request 2026-10-23; ${F.W} × ${F.H}, the camp at ${F.ox}, ${F.oy})`);
   st2.combat = null;
   // Set up near the map's edge (base.plan.origin, the camp's own spot): the view stops at the edge, its five cells tinted.
   c2.plan.origin = [BM.SITE_RANGE, 0];
@@ -89,7 +89,7 @@ section("The no-build margin");
   check(cellAt(b3, E - 1, 0).nb === 1 && cellAt(b3, E - 5, 0).nb === 1 && !cellAt(b3, E - 6, 0).nb && !cellAt(b3, 0, 0).nb, "the view marks the margin's five cells (c.nb) and nothing nearer the camp");
   check(BM.gridOf(c2).cap <= BM.edgeRoom(c2) && BM.yardHalf(c2) + 2 + BM.NO_BUILD <= E, "its yard and the wall's band stop short of the margin");
   const F3 = b3.deployPlan.fort;
-  check(F3.W === BM.VIEW_MIN && F3.H === BM.VIEW_MIN && E + F3.ox === F3.W, `by the edge the view is still ${BM.VIEW_MIN} × ${BM.VIEW_MIN}, slid back onto the map (${F3.W} × ${F3.H}, its east side the map's edge)`);
+  check(F3.W === (2 * BM.VIEW_HALF.camp) && F3.H === (2 * BM.VIEW_HALF.camp) && E + F3.ox === F3.W, `by the edge the view is still ${(2 * BM.VIEW_HALF.camp)} × ${(2 * BM.VIEW_HALF.camp)}, slid back onto the map (${F3.W} × ${F3.H}, its east side the map's edge)`);
   st2.combat = null;
   delete c2.plan.origin;
 }

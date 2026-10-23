@@ -125,7 +125,7 @@ section("An outpost on a bridge barricades it (T-15, changed: parties.js bridgeC
     if (!bridge) continue;
     done = true;
     const crew = crewOf(state, 2);
-    const p = send(state, crew.map((s) => s.id), bridge.id, "move", { grant: { scrap: 20 } });
+    const p = send(state, crew.map((s) => s.id), bridge.id, "move", { grant: { scrap: 20, wood: 20, stone: 8 } });
     arriveAt(state, p);
     if (!check(state.parties.includes(p) && partyTile(p) === bridge.id, "test setup: the team did not reach the bridge")) break;
     check(orderOptions(state, p).some((o) => o.mission === "outpost"), "Build outpost is not offered on a bridge");
@@ -290,7 +290,7 @@ section("Order queue: an interrupted trip resumes to the right tile (T-4, T-20)"
   const state = mk();
   const h = hub(state);
   const crew = crewOf(state, 2);
-  const p = send(state, crew.map((s) => s.id), tileNear(state, h.tile, 3, 3), "move", { grant: { scrap: 20, food: 20, water: 20 } });
+  const p = send(state, crew.map((s) => s.id), tileNear(state, h.tile, 3, 3), "move", { grant: { scrap: 20, food: 20, water: 20, wood: 20, stone: 8 } });
   arriveAt(state, p);
   state.cards.length = 0;
   const A = tileNear(state, partyTile(p), 6, 7, { filter: (t) => t.owner == null && !state.factions.some((f) => f.bases.includes(t.id)) });
@@ -689,8 +689,8 @@ section("Supply runs: an edit changes the next run only; held convoys drink (T-1
   const h = hub(state);
   const crew = crewOf(state, 4);
   const spot = tileNear(state, h.tile, 4, 5, { filter: (t) => t.owner == null && !state.factions.some((f) => f.bases.includes(t.id)) });
-  const founders = send(state, [crew[0].id], spot, "outpost", { supplies: { food: 0, water: 0, scrap: 15 } });
-  tick(state, 24 * 3, founders, () => !state.parties.includes(founders));
+  const founders = send(state, [crew[0].id], spot, "outpost", { supplies: { food: 0, water: 0, scrap: 15 }, grant: { wood: 20, stone: 8 } }); // wood, stone: the camp fire's (CAMP.fireCost, 2026-10-23)
+  tick(state, 24 * 6, founders, () => !state.parties.includes(founders)); // one founder clearing a blind spot alone: up to four days (the 76 × 76 yard keeps the spot further in, 2026-10-23)
   const op = state.bases.find((b) => b.type === "outpost");
   if (check(!!op, "test setup: no outpost")) {
     Object.assign(op.stock, { water: 0 }); setFood(op, 50);

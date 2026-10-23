@@ -74,7 +74,7 @@ const TOOL_ICON = { bandagekit: "✚", surgkit: "✚", milradio: "📻", nvg: "�
 // By trade category (data.js CATEGORIES): valuables and treats at a glance.
 const CAT_ICON = { jewelry: "💍", smokes: "🚬", liquor: "🍾", treats: "🍫", gadgets: "📱", collectibles: "🪙", household: "🧻", defence: "🚧", bow: "🏹" };
 const SLOT_ICON = { weapon: "🗡", tool: "🧰", head: "⛑", armor: "🦺", arms: "🧤", legs: "🦵", backpack: "🎒", rig: "🦺", insert: "▭" };
-export const SUPPLY_ICON = { food: "🥫", water: "💧", rawwater: "🪣", wood: "🪵", fuel: "⛽", meds: "✚", ammo: "⁍", parts: "⚙", scrap: "🔩", carparts: "🛞", gunparts: "🔧", electronics: "🔌", buildmat: "🧱", metalsheet: "🛡" };
+export const SUPPLY_ICON = { food: "🥫", water: "💧", rawwater: "🪣", wood: "🪵", fuel: "⛽", meds: "✚", ammo: "⁍", parts: "⚙", scrap: "🔩", carparts: "🛞", gunparts: "🔧", electronics: "🔌", buildmat: "🧱", metalsheet: "🛡", stone: "🪨" };
 // A gun's tile shows the gun itself (ui/gunart.js gunThumb: as fitted, in its finish), a row of its own over its name.
 const gunTile = (item) => (isGunKey(item.key) ? (() => { const h = gunIconHtml(item, 1.05); return h ? `<span class="iico igunrow">${h}</span>` : ""; })() : "");
 function icon(key) {

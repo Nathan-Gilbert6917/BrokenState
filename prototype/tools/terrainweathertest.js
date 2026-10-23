@@ -230,7 +230,7 @@ section("The base map: nothing built on a pond or on mud, nor a wet hollow fille
     check(/pond in the hollow/.test(pond) && /dries out/.test(pond) && !pond.startsWith(BM.LAND_WHY), `a pond: "${pond}"`);
     check(/Mud in the hollow/.test(mud) && /\d day/.test(mud), `mud: "${mud}"`);
     check(/frozen pond/.test(ice), `ice: "${ice}"`);
-    check(dryW.startsWith(BM.LAND_WHY), `dry: the hollow is land to fill in first, as before ("${dryW}")`);
+    check(dryW === "", `dry: the hollow's floor is ground to build on as it is (the user's request 2026-10-23: "${dryW}")`);
     // Filling it in waits while it is wet.
     const job = BM.queueClear(s2, b, [dip]);
     b.ponds = { d: D, dry: 0, ice: false };

@@ -63,7 +63,7 @@ function setUpCamp(st, n = 2, lo = 3) {
   const quiet = (r, kinds) => st.grid.within(h.tile, r).find((t) => st.grid.distance(t, h.tile) >= lo && (!kinds || kinds.includes(st.tiles[t].terrain)) && free(st, t) && !siteThreat(st, t).count && planPath(st, h.tile, t, false));
   const tile = quiet(lo + 4, ["plains", "hills"]) ?? quiet(lo + 9, ["plains", "hills"]) ?? quiet(lo + 9, null) ?? nearFree(st, h.tile, lo, lo + 4);
   Object.assign(h.stock, { food: 200, water: 200 });
-  const res = launchExpedition(st, { memberIds: atBase(st, h.id).slice(0, n).map((s) => s.id), dest: tile, mission: "camp", stance: "normal", supplies: { food: 4, water: 4 } });
+  const res = launchExpedition(st, { memberIds: atBase(st, h.id).slice(0, n).map((s) => s.id), dest: tile, mission: "camp", stance: "normal", supplies: { food: 4, water: 4, wood: 20, stone: 8 } });
   if (res.error) { check(false, `a team leaves to set up camp (${res.error})`); return null; }
   res.party.path = [tile]; res.party.idx = 0;
   giveOrder(st, res.party, "camp");
@@ -165,6 +165,7 @@ section("Gained bases ask too");
 section("Establish base (hardcore): asks; 'A place of your own' keeps its button; the base: an alert");
 st = world({ mode: "hardcore" });
 const p = roadTeam(st);
+Object.assign(p.supplies, { wood: 20, stone: 8 }); // the camp fire's wood and stone (buildings.js CAMP.fireCost, the user's request 2026-10-23)
 p.pitched = true;
 establishArrive(st, p);
 const home = st.bases[0];

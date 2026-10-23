@@ -69,9 +69,9 @@ section("The grid by tier");
   check(BM.tierKey(camp) === "camp", "a camp (a tier-0 base with camp: true)");
   if (camp) {
     check(BM.gridSize(camp) === BM.BASE_GRID, `a camp's grid is ${BM.gridSize(camp)} × ${BM.gridSize(camp)}, as every base's`);
-    check(2 * BM.yardHalf(camp) <= 20 && BM.coreParts(camp).every((p) => Math.abs(p.x) <= 4 && Math.abs(p.y) <= 4), `the camp itself (tents round a fire, the cache) within ${2 * BM.yardHalf(camp)} × ${2 * BM.yardHalf(camp)} in the middle`);
+    check(2 * BM.yardHalf(camp) === 2 * BM.YARD && BM.coreParts(camp).every((p) => Math.abs(p.x) <= 4 && Math.abs(p.y) <= 4), `the camp itself (tents round a fire, the cache) within ${2 * BM.yardHalf(camp)} × ${2 * BM.yardHalf(camp)} in the middle`);
     const [W, H] = BM.baseMapSize(s2, camp);
-    check(W <= 40 && H <= 40 && W >= 36, `its battle map ${W} × ${H} (the whole grid, less the corners nothing stands in)`);
+    check(W <= 2 * BM.YARD + 24 && H <= 2 * BM.YARD + 24 && W >= 2 * BM.YARD + 16, `its battle map ${W} × ${H} (the whole grid, less the corners nothing stands in)`);
   }
 }
 

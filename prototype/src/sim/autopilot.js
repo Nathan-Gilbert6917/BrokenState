@@ -121,6 +121,7 @@ import {
   hasBow, autoHuntMix, setHuntMix, huntMixOf, huntArrowsFor, huntMixText, huntYield,
 } from "./hunting.js";
 import { landFoodOptions, forageWorkWhy, forageWorkCap, foragerMult, baseForageDay } from "./foraging.js";
+import { stoneShort, stoneWorkWhy } from "./stone.js"; // the governor's stone gatherer (planRoles 4d)
 import { woodNeed, woodWorkWhy, woodHandsWanted, woodCrowd, handsForDay, woodcutterMult, bestChop, baseWoodDay, woodAbundance, woodLevel, expectWood, chopCrew, chopPower, isChopTool, woodTime, canLight, WOOD } from "./woodcutting.js";
 import { siteKnown } from "./discovery.js";
 import { packTripKit, HIVE_KIT } from "./kit.js";
@@ -2144,7 +2145,7 @@ export function farmCrewLimits(state, base, foodDays, heads) {
   const comfy = foodDays >= target && wp.short <= 0 && wp.end >= wp.margin * FARM_AP.winterMargin * (P && P.homeFood ? 1.5 : 1);
   return { hungry: foodDays < target || winterShort(state, base) > 0, comfy, cap: comfy ? Math.max(1, Math.ceil(heads * FARM_AP.share)) : Infinity };
 }
-export const ROLE_AREA = { water: "food", cook: "food", hunt: "food", fish: "food", forage: "food", farm: "food", wood: "production", medic: "medical", trainee: "medical", guard: "defence", operate: "production", craft: "production", build: "building", rest: "roles", scavenge: "roles", teach: "roles", read: "roles", haul: "production" };
+export const ROLE_AREA = { water: "food", cook: "food", hunt: "food", fish: "food", forage: "food", farm: "food", wood: "production", stone: "production", medic: "medical", trainee: "medical", guard: "defence", operate: "production", craft: "production", build: "building", rest: "roles", scavenge: "roles", teach: "roles", read: "roles", haul: "production" };
 
 function planRoles(state, base, areas = ALL_AREAS) {
   const people = atBase(state, base.id);
@@ -2443,6 +2444,13 @@ function planRoles(state, base, areas = ALL_AREAS) {
 
   // 4c. A manual or blueprint in the armory: the best qualified free person studies it (blueprints.js; the Read role).
   if (!threat.urgent && foodDays >= 4) planBlueprintStudy(state, base, free, give);
+  // 4d. Stone (stone.js, 2026-10-23): while the base is short (a camp's or a shelter's first boiler and cook fire, what
+  // the queued builds wait for, a big base's keep) one gatherer, food not down to days and nothing at the door. The
+  // camp's yard waits for its boiler and cook fire before the step up (campYard), and they take stone. Not while the
+  // woodpile is low: the fires' wood comes first.
+  const woodLow = () => { const wn = woodNeed(state, base); return Math.max(0, st.wood || 0) < (wn.dailyKeep || 0) + 3 * (wn.daily || 0) + 150; }; // the fires' wood first
+  if (!threat.urgent && foodDays >= 3 && !stoneWorkWhy(state, base) && stoneShort(state, base) > 0 && ![...want.values()].some((w) => w.role === "stone") && !woodLow())
+    for (const s of ranked("stone", (x) => woodcutterMult(x), (x) => !x.inBed && !x.leader && (x.health ?? 100) >= 50).slice(0, 1)) give(s, "stone");
 
   // 5. Builders while something is queued: more for big jobs. The field works planned from here (fieldworks.js: a
   // tower, a well …) are built by the same builders (buildings.js constructionHour → fieldBuildHour), so they count.

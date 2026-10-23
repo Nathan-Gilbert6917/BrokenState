@@ -24,6 +24,7 @@ import { forageProblem, forageHour, forageSummary, campForageHour, campForageNot
 import { healMult } from "./traits.js"; // Quick Healer
 import { sourceEggs, addWormWater, teamWaterHow, wormHealMult } from "./worm.js";
 import { woodProblem, woodHour, woodSummary, campFireHour } from "./woodcutting.js";
+import { stoneProblem, stoneHour, stoneSummary } from "./stone.js"; // the Gather stone order (the user's request 2026-10-23)
 import { CLAIM, canClaim, claimTile, wellProblem, digWell } from "./claims.js"; // land claims and wells on them
 import { LISTEN, listenProblem, listenIn } from "./radiolisten.js"; // Listen in: tune a receiver to a radio network
 import { networkById } from "./radio.js";
@@ -66,6 +67,7 @@ export function describeOrder(state, o) {
     case "fish": return `Fish ${huntHours(o)}h${qtyNote(o)}`;
     case "forage": return `Forage ${huntHours(o)}h${qtyNote(o)}`; // foraging.js
     case "wood": return `Cut wood ${huntHours(o)}h${qtyNote(o)}`; // woodcutting.js
+    case "stone": return `Gather stone ${huntHours(o)}h${qtyNote(o)}`; // stone.js
     case "snare": return o.mode === "lift" ? "Check and lift the snares" : o.mode === "check" ? "Check the snares" : o.mode === "set" ? "Set snares" : "Snares: set, or check them";
     case "claim": return "Claim this tile"; // claims.js: a marker post, the land counts for the coalition
     case "pitch": return o.mission === "outpost" ? "Set up the outpost camp" : "Set up camp"; // staging.js pitchArrive (siteSetup: the fire and the clearing); then the camp stands (pitchDone)
@@ -179,7 +181,7 @@ export function queueEstimate(state, p) {
     }
     else if (o.type === "gather") hours = GATHER_HOURS;
     else if (o.type === "water") hours = FETCH_WATER_HOURS;
-    else if (o.type === "hunt" || o.type === "fish" || o.type === "forage" || o.type === "wood") hours = huntHours(o);
+    else if (o.type === "hunt" || o.type === "fish" || o.type === "forage" || o.type === "wood" || o.type === "stone") hours = huntHours(o);
     else if (o.type === "snare") hours = snareHours(state, o.at ?? tile, o.mode);
     else if (o.type === "claim") hours = CLAIM.HOURS;
     else if (o.type === "well") hours = CLAIM.WELL_HOURS;
@@ -301,7 +303,7 @@ export function continueQueue(state, p, text) {
   return true;
 }
 
-const PLACED = ["mission", "survey", "fullsurvey", "gather", "water", "hunt", "fish", "forage", "wood", "snare", "claim", "well", "fwork"]; // order types tied to the tile they were queued for
+const PLACED = ["mission", "survey", "fullsurvey", "gather", "water", "hunt", "fish", "forage", "wood", "stone", "snare", "claim", "well", "fwork"]; // order types tied to the tile they were queued for
 // Hours of a hunt, fishing or foraging order: as given, within 2–24 (8 if none).
 export const huntHours = (o) => Math.max(HUNT.minHours, Math.min(HUNT.maxHours, Math.round(o.hours || HUNT.defHours)));
 
@@ -431,6 +433,13 @@ export function startOrder(state, p, o) {
       startTask(state, p, { type: "wood", hours: huntHours(o), qty: o.qty });
       return `The team cuts wood (${huntHours(o)}h).`;
     }
+    case "stone": {
+      // Field stone (stone.js): by the land, the tools and the people.
+      const why = stoneProblem(state, p);
+      if (why) return fail(`Gather stone: ${why}`);
+      startTask(state, p, { type: "stone", hours: huntHours(o), qty: o.qty });
+      return `The team gathers stone (${huntHours(o)}h).`;
+    }
     case "snare": {
       const mode = snareMode(state, partyTile(p), o.mode);
       const why = snareProblem(state, p, partyTile(p), mode);
@@ -534,7 +543,7 @@ export function taskHour(state, p) {
   if (t.type === "sweep") sweepHour(state, p); // survey.js: move on, look, roll for finds
   if (!state.parties.includes(p) || p.task !== t) return;
   // Hunting, fishing and foraging roll every hour (hunting.js, foraging.js); with nothing left to do it with, the job ends early.
-  if ((t.type === "hunt" && !huntHour(state, p)) || (t.type === "fish" && !fishHour(state, p)) || (t.type === "forage" && !forageHour(state, p)) || (t.type === "wood" && !woodHour(state, p))) {
+  if ((t.type === "hunt" && !huntHour(state, p)) || (t.type === "fish" && !fishHour(state, p)) || (t.type === "forage" && !forageHour(state, p)) || (t.type === "wood" && !woodHour(state, p)) || (t.type === "stone" && !stoneHour(state, p))) {
     if (state.parties.includes(p)) finishTask(state, p);
     return;
   }
@@ -595,6 +604,7 @@ function finishTask(state, p) {
   else if (t.type === "fish") text = fishSummary(state, p, t);
   else if (t.type === "forage") text = forageSummary(state, p, t);
   else if (t.type === "wood") text = woodSummary(state, p, t);
+  else if (t.type === "stone") text = stoneSummary(state, p, t);
   else if (t.type === "snare") text = snareWork(state, p, t.mode);
   else if (t.type === "claim") text = claimTile(state, p, partyTile(p)); // claims.js (checked again now: it may have been taken meanwhile)
   else if (t.type === "well") text = digWell(state, p, partyTile(p));

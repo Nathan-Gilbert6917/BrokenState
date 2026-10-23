@@ -150,14 +150,14 @@ const STEPS = {
     },
   },
   camp: {
-    title: `Set up your camp (${ESTABLISH_LABEL})`, why: "Your hub starts as a camp, the barest base: pick a spot beside a river or lake, with sites and trees around and few of the dead, and give the team the order there. Your people live there from the start, in their tents; the alert that follows opens its build map to lay it out.",
+    title: `Set up your camp (${ESTABLISH_LABEL})`, why: `Your hub starts as a camp, the barest base: pick a spot beside a river or lake, with sites and trees around and few of the dead, and give the team the order there. Its camp fire takes ${CAMP.fireCost.wood} wood and ${CAMP.fireCost.stone} stone carried: give the team Cut wood and Gather stone first (its right-click menu, Land). Your people live there from the start, in their tents; the alert that follows opens its build map to lay it out.`,
     done: (state) => state.bases.length > 0,
     show: (state, ui, act) => (openTeam(state, ui, act) ? ['[data-action="xp-order"][data-mission="establish"]', '[data-action="xp-move"]'] : []),
   },
   needs: {
-    title: "Bring in what the camp needs", why: `Building the camp up into a shelter takes ${costText(BUILDINGS.camp_up.cost)} (its builders make the building materials from scrap, ${CAMP.matScrap} each; the Camp tab lists what is in). Send teams out from the camp to scavenge the sites around it and to cut wood (a team's Cut wood order, or trees marked on the build map); what comes home goes into its stores and the step up takes it as it comes in.`,
+    title: "Place the shelter, and bring in what it needs", why: `The camp grows into a shelter when its Shelter shack stands: put it down where you want it (the Camp tab's Place the shelter shack, or the build map's Build list; nothing is placed for you). It takes ${costText(BUILDINGS.camp_up.cost)} (its builders make the building materials from scrap, ${CAMP.matScrap} each; the Camp tab lists what is in). Send teams out from the camp to scavenge the sites around it and to cut wood (a team's Cut wood order, or trees marked on the build map); what comes home goes into its stores and the step up takes it as it comes in.`,
     done: (state) => { const h = hub(state); if (!h) return false; const job = isCamp(h) ? tierUpJob(h) : null; return !isCamp(h) || (!!job && gatherRows(job).every((r) => r.have + (h.stock[r.key] || 0) >= r.need - 1e-9)); }, // taken by the step up or waiting in the stores
-    show: (state, ui, act) => { const h = hub(state); if (h && isCamp(h)) { closeWindows(ui); act.openbase({ id: h.id, tab: "camp" }); return ['[data-action="tf-open"]', '[data-action="basetab"][data-tab="camp"]']; } return openTeam(state, ui, act) ? ['[data-action="xp-order"][data-mission="establish"]'] : []; },
+    show: (state, ui, act) => { const h = hub(state); if (h && isCamp(h)) { closeWindows(ui); act.openbase({ id: h.id, tab: "camp" }); return [...(tierUpJob(h) ? [] : ['[data-action="tier-pick"]:not([disabled])']), '[data-action="tf-open"]', '[data-action="basetab"][data-tab="camp"]']; } return openTeam(state, ui, act) ? ['[data-action="xp-order"][data-mission="establish"]'] : []; },
   },
   found: {
     title: "Found your shelter", why: "With everything in, the camp's builders build it up (more hands and Mechanics go faster). Done, it becomes a shelter you can live at and build up.",

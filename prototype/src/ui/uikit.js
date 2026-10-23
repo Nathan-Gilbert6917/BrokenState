@@ -13,7 +13,7 @@ const n0 = (v) => Math.floor((v || 0) + 1e-9);
 
 // A supply's display name and icon ("Scrap", 🔩); keys that are not supplies keep their key.
 export const supName = (k) => (SUPPLIES[k] ? SUPPLIES[k].name : k === "ammo" ? "Rounds" : k === "food" ? "Food (days)" : String(k)); // food: days of it, every kind (sim/foods.js)
-const EXTRA_ICON = { buildmat: "🧱", metalsheet: "🛡", food: "🥫" }; // supplies the stack mover has no icon for
+const EXTRA_ICON = { buildmat: "🧱", metalsheet: "🛡", stone: "🪨", food: "🥫" }; // supplies the stack mover has no icon for
 export const supIcon = (k) => (SUPPLIES[k] ? supplyIcon(k) : EXTRA_ICON[k] || supplyIcon(k)); // a supply: its own drawing (ui/itemart.js)
 
 // One requirement chip. have: what there is (omit for a plain cost); need: what it takes; ok: met (by default

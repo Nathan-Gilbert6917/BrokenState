@@ -15,12 +15,14 @@ import { createWorld, tickHour } from "../src/sim/world.js";
 import { BUILDINGS, CAMP, isCamp, isShelter, tierUpJob, queueBuild, canDemolish, constructionHour } from "../src/sim/buildings.js";
 import { partyMembers, partyTile, giveOrder } from "../src/sim/parties.js";
 import { roadTeam } from "../src/sim/hardcore-start.js";
-import { pendingSite, pickSite, campSiteFor, siteSetup } from "../src/sim/staging.js";
+import { pendingSite, pickSite, campSiteFor, siteSetup, setupWhat, durText, levelWords } from "../src/sim/staging.js";
 import * as BM from "../src/sim/basemap.js";
-import { SITE, siteBox, CLEAR, clearOf } from "../src/sim/basescatter.js";
+import { mapLv, sightH } from "../src/sim/combat.js";
+import { inHollow } from "../src/sim/highground.js";
+import { SITE, siteBox, CLEAR, clearOf, siteLevel } from "../src/sim/basescatter.js";
 const clearOfFor = (q) => (clearOf(q, true, "clear") || { get: {} }).get;
 import { renderRight } from "../src/ui/ui.js";
-import { CS_ACTIONS, siteViewDue, sitePanel, siteHoverText } from "../src/ui/campsite.js";
+import { CS_ACTIONS, siteViewDue, sitePanel, siteHoverText, setupWords } from "../src/ui/campsite.js";
 import { siteInfo, siteScore, bestSite, bestSiteOn, landFacts, pickWords, pickReasons, SITE_SCORE } from "../src/sim/siteinfo.js";
 
 const SEED = Number(process.argv[2] || 42);
@@ -36,6 +38,7 @@ const inSq = ([x, y], h, c = [0, 0]) => x >= c[0] - h && y >= c[1] - h && x < c[
 const st = createWorld({ seed: SEED, factionCount: 7, mode: "hardcore" });
 st.noWanderers = true;
 const p = roadTeam(st);
+Object.assign(p.supplies, { wood: 20, stone: 8 }); // the camp fire's wood and stone (buildings.js CAMP.fireCost, the user's request 2026-10-23)
 const tile = partyTile(p);
 
 // ---------- 1. the spot ----------
@@ -63,6 +66,31 @@ section("The spot: picked on the tile's 500 × 500 map");
     const s1 = siteSetup(st, p, tile, fs, true), s2 = siteSetup(st, p, tile, fs, false);
     check(s1.tool && !s2.tool && s1.hours < s2.hours && (s1.get.wood || 0) > (s2.get.wood || 0), `the team's setup there: ${s1.hours} h for ${s1.get.wood} wood with a cutting tool, ${s2.hours} h for ${s2.get.wood || 0} without`);
   } else check(true, "(no wooded spot on this tile)");
+  // An open spot on a hill (the user's report and request 2026-10-23: "it said 30 minutes and it did not finish for 9 in
+  // game hours there was no trees or rocks just and open 5x5 on a hill", "Allow building on a hill setting up a camp on
+  // a hill burrowed down into the hill"): level at its own height, nothing to dig; one over a hill's edge digs the least.
+  const hl = BM.siteLand(st, tile);
+  const hAt = (x, y) => hl.heights.get(`${x},${y}`) || 0;
+  let hill = null, edge = null;
+  for (let r = 0; r < 120 && !(hill && edge); r++) for (let x = -r; x <= r; x++) for (const yy of [-r, r]) {
+    const at = [x, yy], B = siteBox(at), pr = BM.siteProblem(st, tile, at);
+    if (pr && !/hill's edge/.test(pr)) continue;
+    const hs = [];
+    let bare = true;
+    for (let cy = B.y0; cy < B.y1; cy++) for (let cx = B.x0; cx < B.x1; cx++) { const q = hl.pieces.get(`${cx},${cy}`); if (q && q.k !== "rise" && q.k !== "dip") bare = false; hs.push(hAt(cx, cy)); }
+    if (!bare) continue;
+    if (!hill && hs.every((h) => h === hs[0] && h > 0)) hill = at;
+    if (!edge && new Set(hs).size > 1) edge = at;
+  }
+  if (hill) {
+    const s = siteSetup(st, p, tile, hill), w = setupWords(st, p, tile, hill), f = landFacts(hl, hill);
+    check(siteLevel(hl, hill) === hAt(...hill) && s.dig.hours === 0 && !s.n && s.work === CAMP.fireHours, `an open hilltop at ${hill}, ${hAt(...hill)} up: nothing to dig, the camp fire's ${s.work} work-hour alone (${s.hours} h)`);
+    check(/nothing to clear/.test(w.text) && f.ground.level && f.ground.at === hAt(...hill) && !f.ground.dig, `the picker: ${w.text}; the ground level, on the hill`);
+  } else check(true, "(no open hilltop on this tile)");
+  if (edge) {
+    // The user's request 2026-10-23: "only allow building the camp if the 5x5 fits on the hill in whole otherwise set it to red".
+    check(/hill's edge/.test(BM.siteProblem(st, tile, edge)), `a spot over a hill's edge at ${edge} is refused (red): ${BM.siteProblem(st, tile, edge)}`);
+  } else check(true, "(no hill's edge on this tile)");
 }
 
 // ---------- 2. the setup ----------
@@ -99,6 +127,7 @@ const spot = [-20, 14];
   check(campSiteFor(st, p, tile).join() === spot.join(), "and that is where it goes");
   const s1 = siteSetup(st, p, tile, spot);
   check(p.task.hours === s1.hours, `the work set for that spot: ${s1.hours} hours (${s1.n} things to clear, ${s1.clear} work-hours)`);
+  check(st.log.some((l) => l.text.includes(`sets up camp on its spot`) && l.text.includes(durText(s1.hours))), `the log gives the picked spot's own time (${durText(s1.hours)}), not the game's pick's`);
   const land0 = BM.siteLand(st, tile), y = BM.siteYield(st, tile, spot, s1.tool);
   if (s1.hours >= 2) { run(st, Math.floor(s1.hours) - 1); check(!st.bases.length, `not up before its hours (${Math.floor(s1.hours) - 1}h in)`); }
   run(st, Math.ceil(s1.hours) + 2, () => st.bases.length > 0);
@@ -177,6 +206,7 @@ section("Nobody to ask: the game's spot");
   s2.noWanderers = true;
   s2.autopilot = { on: true };
   const q = roadTeam(s2), t2 = partyTile(q);
+  Object.assign(q.supplies, { wood: 20, stone: 8 });
   giveOrder(s2, q, "camp");
   check(!pendingSite(s2), "on autopilot no window asks");
   run(s2, 48, () => s2.bases.length > 0);
@@ -191,6 +221,7 @@ section("What a spot is like (siteInfo) and the game's pick weighed on it (bestS
   const s3 = createWorld({ seed: SEED + 2, factionCount: 7, mode: "hardcore" });
   s3.noWanderers = true;
   const q = roadTeam(s3), t3 = partyTile(q);
+  Object.assign(q.supplies, { wood: 20, stone: 8 }); // the camp fire's (CAMP.fireCost, 2026-10-23)
   const d = BM.defaultSite(s3, t3), info = siteInfo(s3, q, t3, d), s = siteSetup(s3, q, t3, d);
   check(info.ok && info.picked && String(info.at) === String(d) && info.setup.hours === s.hours && info.setup.workers === s.workers && String(Object.entries(info.setup.get)) === String(Object.entries(s.get)), `the game's spot (${d}): the team's setup as siteSetup has it (${info.setup.hours} h), and it says it is the game's pick`);
   const keys = ["ground", "lie", "sight", "room", "roomClear", "yard", "wood", "trees", "places", "dead", "score"];
@@ -264,6 +295,64 @@ section("What a spot is like (siteInfo) and the game's pick weighed on it (bestS
     CS_ACTIONS["cs-auto"](s3);
     check(!s3.combat && s3.log.some((l) => /The game picked this spot because/.test(l.text)), `Let the game pick: the log says why (${(s3.log.find((l) => /The game picked/.test(l.text)) || { text: "" }).text.slice(0, 90)}…)`);
   } finally { delete globalThis.window; }
+}
+
+// ---------- 6. a camp on a hilltop ----------
+// The user's request 2026-10-23: "Allow building on a hill setting up a camp on a hill burrowed down into the hill": the
+// camp stands up on the hill (its level: base.plan.level), its map laid from that level (the plain round it below), and
+// level ground of the hill builds as level ground does.
+section("A camp on a hilltop stands on it, and builds on it");
+{
+  const s6 = createWorld({ seed: SEED, factionCount: 7, mode: "hardcore" });
+  s6.noWanderers = true;
+  const q6 = roadTeam(s6), t6 = partyTile(q6), l6 = BM.siteLand(s6, t6), hh = (x, y) => l6.heights.get(`${x},${y}`) || 0;
+  let top = null;
+  for (let r = 0; r < 120 && !top; r++) for (let x = -r; x <= r && !top; x++) for (const yy of [-r, r]) {
+    const at = [x, yy], B = siteBox(at);
+    if (top || BM.siteProblem(s6, t6, at) || !(hh(...at) > 0)) continue;
+    let ok = true;
+    for (let cy = B.y0 - 3; cy < B.y1 + 3; cy++) for (let cx = B.x0 - 3; cx < B.x1 + 3; cx++) if (hh(cx, cy) !== hh(...at)) ok = false; // room on the hill round it
+    for (let cy = B.y0; cy < B.y1; cy++) for (let cx = B.x0; cx < B.x1; cx++) { const pc = l6.pieces.get(`${cx},${cy}`); if (pc && pc.k !== "rise") ok = false; } // open: nothing standing on it
+    if (ok) top = at;
+  }
+  if (!top) check(true, "(no hilltop on this tile)");
+  else {
+    const L = hh(...top);
+    giveOrder(s6, q6, "camp");
+    check(pickSite(s6, q6, top) === "" && q6.task.hours === 0.5, `a hilltop ${L} up at ${top}: 30 minutes to set up (the camp fire)`);
+    run(s6, 4, () => s6.bases.length > 0);
+    const c6 = s6.bases[0];
+    check(!!c6 && c6.plan.level === L && BM.levelOf(c6) === L, `the camp stands at the hill's level (${c6 && c6.plan.level})`);
+    const land = BM.landFor(s6, c6);
+    // Built on: the hill's own ground takes a building as level ground does, and so does the plain below; never one over
+    // the hill's edge (the user's request 2026-10-23: "It should not be trying to burrow just build on the hill as if it
+    // was the ground floor").
+    const occ = BM.occupancy(s6, c6, null, null), foot = { ...BM.FIRE.FOOT, key: "x" }, plot = { ...BM.FOOT.farm_plot, key: "y" };
+    const free = [[4, 4], [-4, 4], [4, -4], [-4, -4], [5, 0], [0, 5]].find(([x, y]) => { const q = land.pieces.get(`${x},${y}`); return !q || q.k === "rise"; });
+    check(land.level === L && land.heights.get("0,0") === L && !!free && !BM.landUnder(land, plot, [free[0], free[1], 0]).length && BM.placeProblemAt(c6, plot, free[0], free[1], 0, occ) === "", `a crop plot on the hilltop beside the camp goes down there, nothing to dig (${free})`);
+    let pl = null, edge = null;
+    for (let r = 3; r < 60 && !(pl && edge); r++) for (let x = -r; x <= r; x++) for (const y of [-r, r]) {
+      const g = (a, b) => land.heights.get(`${a},${b}`) || 0, q = land.pieces.get(`${x},${y}`);
+      if (!pl && !g(x, y) && !g(x + 1, y) && !g(x, y + 1) && !g(x + 1, y + 1) && !q && !BM.placeProblemAt(c6, foot, x, y, 0, occ)) pl = [x, y];
+      if (!edge && g(x, y) === L && !g(x + 1, y) && !BM.landUnder(land, plot, [x, y, 0]).length) edge = [x, y];
+    }
+    check(!!pl && BM.placeProblemAt(c6, plot, pl[0], pl[1], 0, occ) === "", `and on the plain below, as it is (${pl}): nothing filled in`);
+    check(!!edge && BM.placeProblemAt(c6, plot, edge[0], edge[1], 0, occ) === BM.UNEVEN_WHY, `over the hill's edge (${edge}): ${edge && BM.placeProblemAt(c6, plot, edge[0], edge[1], 0, occ)}`);
+    check(BM.placeProblemAt(c6, { ...BM.FOOT.wall2, key: "w" }, edge[0], edge[1], 0, occ) !== BM.UNEVEN_WHY, "a wall piece follows the ground over it");
+    // Its map: laid from its level (the camp on level ground, the plain below it), what stands on the plain on the plain.
+    check(BM.placeItem(s6, c6, BM.FIRE.KEY, pl[0], pl[1], 0) === "", `the camp fire moved down onto the plain (${pl})`);
+    globalThis.window = {};
+    try {
+      check(!BM.openBaseMap(s6, c6.id) && !!s6.combat, "its base map opens");
+      const b = s6.combat, F = b.deployPlan.fort, cell = (x, y) => b.cells[(y + F.oy) * b.w + x + F.ox];
+      const yard = cell(free[0], free[1]), fire = cell(pl[0], pl[1]), by = cell(pl[0] + 1, pl[1]);
+      check(mapLv(b) === L && (yard.h || 0) === 0 && by.ter && by.h === -L, `laid from the camp's level (datum ${mapLv(b)}): the camp's ground 0, the plain ${-L}`);
+      check(fire.k === "firepit" && fire.ter && fire.bld && fire.h === -L, `the fire stands on the plain's ground, not dug in nor on a pillar (${fire.k}: ${fire.h})`);
+      const ys = (free[1] + F.oy), xs = (free[0] + F.ox);
+      check(!inHollow(b, xs, ys) && !inHollow(b, pl[0] + 1 + F.ox, pl[1] + F.oy), "neither the camp's ground nor the plain is a hollow");
+      check(sightH(b, xs, ys) === L, `the camp's people see from the hill's height (${sightH(b, xs, ys)} levels up)`);
+    } finally { delete globalThis.window; s6.combat = null; }
+  }
 }
 
 console.log(`\n${passes} passed, ${fails} failed (${((Date.now() - t0) / 1000).toFixed(1)} s)`);

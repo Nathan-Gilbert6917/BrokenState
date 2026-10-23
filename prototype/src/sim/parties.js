@@ -46,7 +46,7 @@ import { handoverArrive } from "./ransom.js";
 import { assaultArrive } from "./conquest.js";
 import { occupyArrive, occupyProblem } from "./occupy.js"; // Occupy: move into an abandoned base
 import { abandonedAt } from "./groupworld.js"; // a base standing empty on a tile (Occupy instead of Build outpost there)
-import { BUILDINGS, CAMP } from "./buildings.js"; // a new outpost is a camp first, its step up queued (outpost_up)
+import { BUILDINGS, CAMP } from "./buildings.js"; // a new outpost is a camp first, its step up (outpost_up) placed from its Build list
 import { hiveAt, hiveArrive, zombieToughness, BOSS_NAMES } from "./hives.js";
 import { noteUnpack } from "./teaminv.js"; // home from a trip: what the people carry, put away or kept
 import { bodiesHome } from "./carriers.js"; // bodies carried home in the car (bury or burn them at the base)
@@ -99,7 +99,7 @@ import { scavengeProblem, pickedOverAt, poiPickWanted, poiPickCard } from "./poi
 import { opticsFor } from "./optics.js";
 import { withYou } from "./hardcore-start.js";
 import { teamReceives, networksAt } from "./radio.js"; // a team's receiver: hears a network inside its coverage, cannot call (updateRadio)
-import { establishOption, campOption, pitchArrive } from "./staging.js"; // camps: Set up camp, Establish base, Build outpost (a camp with its step up)
+import { establishOption, campOption, pitchArrive, fireCostProblem } from "./staging.js"; // camps: Set up camp, Establish base, Build outpost (a camp with its step up)
 import { scoutOptions, SCOUT_MISSIONS, groundsBase, groundsProblem, groundsRaid, GROUNDS_LABEL, deadText } from "./campscout.js"; // an unscouted tile: Scout first or a blind camp; the dead on its grounds
 import { canClaim, CLAIM, claimsTaken, takeGroupClaims, claimsTakenText } from "./claims.js"; // the orders card: Claim this tile where the land borders yours; a new outpost takes the groups' claims round it
 import { askBaseName } from "./basenames.js"; // the naming popup for a base you found
@@ -128,7 +128,7 @@ export const MISSIONS = {
   move:        { name: "Move here",        desc: "Travel there and wait for orders." },
   scavenge:    { name: "Scavenge / raid",  desc: "Raid the site on its own map: search containers while Heat rises and more of the dead arrive, then leave by an extraction zone." },
   trade:       { name: "Trade visit",      desc: "Visit a group's base to barter, give gifts and sign pacts." },
-  outpost:     { name: "Build outpost",    desc: "Set up camp here and start establishing it as an outpost: a camp (the barest base: tarps, bedrolls and a fire, staging.js) that becomes an outpost once it is established (its Outpost house, a building on its build map: 20 scrap, 2 building materials and 200 wood brought in, then 20 work-hours by its builders). Set up on the spot you pick on the tile's map: the team builds its camp fire and clears the 5 × 5 round it (the hours by what stands there; what the land gives goes into its stores), no materials; what the team carries goes into the camp's stores, and so straight into the step up. The team stays as its first staff, on building." },
+  outpost:     { name: "Build outpost",    desc: "Set up camp here and start establishing it as an outpost: a camp (the barest base: tarps, bedrolls and a fire, staging.js) that becomes an outpost once it is established (its Outpost house, a building you pick from its Build list and place on its build map: 20 scrap, 2 building materials and 200 wood brought in, then 20 work-hours by its builders). Set up on the spot you pick on the tile's map: the team builds its camp fire (20 wood and 8 stone carried) and clears the 5 × 5 round it (the hours by what stands there; what the land gives goes into its stores); what the team carries goes into the camp's stores, and so straight into the step up. The team stays as its first staff, on building." },
   camp:        { name: "Set up camp",      desc: "Stop and make camp here: the barest base (staging.js). The team's people live there while it stands, what it carries goes into the camp's stores, its vehicles park there; Strike camp packs everyone up again." },
   occupy:      { name: "Occupy abandoned base", desc: "Move into a base that stands empty (a group's that died out, gave it up or lost it, or an outpost of yours that was lost): clear out the dead or squatters inside (a fight; the planner shows who is there), and it is your outpost with the buildings still standing, their wear and damage, and the stores left there. No scrap needed. The team stays as its first staff. The group whose base it was, and any group whose claims round it you take, will not like it." },
   recover:     { name: "Recover bodies",   desc: "Collect what is left at a death site before scavengers strip it." },
@@ -1743,7 +1743,7 @@ export function orderOptions(state, p, tile = partyTile(p)) {
     const est = establishOption(state, p, tile);
     if (est) out.push(est);
   } else if (!left && !state.bases.some((b) => b.tile === tile) && !ownedByOther && (t.terrain !== "water" || t.bridge)) { // a bridge: the outpost barricades it (bridgeClosedTo)
-    add("outpost", null);
+    add("outpost", fireCostProblem(state, p) || null); // staging.js: the camp fire's wood and stone carried
     const taken = claimsTaken(state, tile); // claims.js: the groups' claims round it become yours
     if (taken.length) out[out.length - 1].desc += ` Building here takes claims round it and angers ${claimsTakenText(taken)}.`;
   }
@@ -2054,7 +2054,7 @@ function arrive(state, p) {
         awaitOrders(state, p, t.terrain === "water" && !t.bridge ? "An outpost cannot be built on open water." : mine ? "You already have a base here." : `Someone else holds ${tileLabel(state, p.dest)}.`, { failed: true });
         return "";
       }
-      // A camp with its Outpost house queued (staging.js makeCamp; 2026-10-09: the camp is the barest base tier, an
+      // A camp whose Outpost house is placed from its Build list (staging.js makeCamp; 2026-10-09: the camp is the barest base tier, an
       // hour to set up, the materials taken by the step up as they come in). The team moves in as its first staff.
       const pitching = !!p.pitched;
       const text = pitchArrive(state, p, "outpost");

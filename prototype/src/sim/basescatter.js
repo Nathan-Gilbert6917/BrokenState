@@ -68,6 +68,18 @@ export function siteGet(p, c, tool) {
 }
 /** The SITE square round a fire at `at`: { x0, y0, x1, y1 } (half-open). @param {number[]} [at] */
 export const siteBox = (at = [0, 0]) => ({ x0: at[0] + SITE.LO, y0: at[1] + SITE.LO, x1: at[0] + SITE.LO + SITE.SIZE, y1: at[1] + SITE.LO + SITE.SIZE });
+/**
+ * The level a camp's square is levelled to (the user's request 2026-10-23: "Allow building on a hill setting up a camp
+ * on a hill burrowed down into the hill"): the middle of its cells' ground heights (land.heights, the tile's land with
+ * no base on it), so an open hilltop is level already and a spot over a hill's edge is dug down or filled in the least.
+ * The camp stands at it (basemap.js levelOf: base.plan.level). @param {any} land @param {number[]} at
+ */
+export function siteLevel(land, at) {
+  const B = siteBox(at), hs = [];
+  for (let y = B.y0; y < B.y1; y++) for (let x = B.x0; x < B.x1; x++) hs.push((land.heights && land.heights.get(`${x},${y}`)) || 0);
+  hs.sort((a, b) => a - b);
+  return hs[(hs.length - 1) >> 1];
+}
 // The land's dressing by terrain: n pieces a chunk (range) and the weights of what they are.
 export const PROFILES = {
   forest:   { n: [2, 4], w: { clump: 4, tree: 3, bush: 3, log: 2, stump: 1, rock: 1 } },
@@ -96,8 +108,8 @@ export const CLEAR = {
   wirefence: { hours: 0.5, get: { wood: 6, scrap: 1 }, word: "a wire fence panel", verb: "Pull down" }, // a field's (fieldLayer): its post for wood, its wire and staples for scrap
   fieldgate: { hours: 0.5, get: { wood: 15 }, word: "a field gate", verb: "Take down" }, // its two cells (fieldLayer)
   hay:     { hours: 0.5, get: {},            word: "a hay bale", verb: "Shift" },
-  rock:    { hours: 1,   get: {},            word: "a rock", verb: "Roll away" },
-  boulder: { hours: 3,   get: {},            word: "a boulder", verb: "Break up" },
+  rock:    { hours: 1,   get: { stone: 12 }, word: "a rock", verb: "Roll away" },   // stone (stone.js, the user's request 2026-10-23)
+  boulder: { hours: 3,   get: { stone: 40 }, word: "a boulder", verb: "Break up" },
   crate:   { hours: 0.5, get: { scrap: 1 },  word: "a broken crate", verb: "Haul off" },
   barrel:  { hours: 0.5, get: { scrap: 1 },  word: "an old drum", verb: "Haul off" },
   wreck:   { hours: 6,   get: { scrap: 2 },  word: "a wreck", verb: "Drag off" },
@@ -208,8 +220,9 @@ export function scatterLayer(seed, terrain, G) {
 // base view's) cuts those fields. Each field has a
 // gate (GATE cells of combat.js CELL fieldgate, walked through) in the side facing the map's middle, on the map and
 // never at a corner; landOf keeps the ground APRON cells deep either side of it clear of the scatter, so the way in
-// stays open, and lays no field the river runs through (its far part would be shut in). Its fence is broken where a
-// road, a town's paving, the yard or the clearing crosses it (the road runs on through). Its fence (the user's word
+// stays open, and lays no field the river (its far part would be shut in) or a road (the user's word 2026-10-23: "Roads
+// interrupt the fences") runs through. Its fence is broken where a town's paving, the yard or the clearing crosses
+// it. Its fence (the user's word
 // 2026-10-23: "Add wire fences and wood fences"): post and rail (k "fence", half cover) or, a WIRE share of the
 // fields by the terrain, post and wire (k "wirefence": no cover, seen through, climbed over like half cover:
 // combat.js vaultable); the gate a wooden one either way. Where its fence meets the map's edge the view runs it on
@@ -805,14 +818,18 @@ export function townLayer(seed, style, G) {
         });
       }
     }
-    return { floors, pieces };
+    // A car left in the street never parks across a driveway or a lot (gravel): the way from a door out onto the street
+    // stays open (tools/mapreachtest.js; on the 500 × 500 map one now and then shut a house in).
+    const gravel = new Set(floors.filter((f) => f[2] === "gravel").map(([x, y]) => `${x},${y}`));
+    const across = (p) => p.k === "wreck" && p.g.startsWith("tc") && p.cells.some(([x, y]) => gravel.has(`${x},${y - 1}`) || gravel.has(`${x},${y + 1}`) || gravel.has(`${x - 1},${y}`) || gravel.has(`${x + 1},${y}`));
+    return { floors, pieces: pieces.filter((p) => !across(p)) };
   });
 }
 
 // ---------- the land of one base ----------
 // What the land is made from: the tile's dice, terrain (a farm's fields as "farm"), the grid, the yard, the clearing,
 // the road's axes and the river's (spec.road: "x" | "y" | "xy" | ""; spec.river: "x" | "y" | "").
-/** @param {any} state @param {any} base @param {{ G: number, C: number, tier: string, terrain: string, origin?: number[], fresh?: boolean }} dims */
+/** @param {any} state @param {any} base @param {{ G: number, C: number, tier: string, terrain: string, origin?: number[], fresh?: boolean, level?: number }} dims */
 export function landSpec(state, base, dims) {
   const t = state && state.tiles && base ? state.tiles[base.tile] : null;
   const seed = scatterSeed(base ? base.tile : 0);
@@ -840,7 +857,9 @@ export function landSpec(state, base, dims) {
   // ground of hills and mountains.
   const style = dims.terrain === "city" ? "city" : dims.terrain === "suburb" ? "town" : "";
   // A pond tile (mapgen.js tile.pond): its spring-fed hollow (reliefLayer SPRING).
-  return { seed, terrain: dims.terrain, G: dims.G, C: dims.fresh ? 0 : dims.C, clear: dims.fresh ? 0 : CLEARING[dims.tier] ?? CLEARING.camp, road, river, riverSide, style, ox, oy, pond: !!(t && t.pond) };
+  // level: the base's own ground level (basemap.js levelOf: a camp set up on a hill stands on it, the user's request
+  // 2026-10-23), 0 for level ground and the tile's land with no base on it.
+  return { seed, terrain: dims.terrain, G: dims.G, C: dims.fresh ? 0 : dims.C, clear: dims.fresh ? 0 : CLEARING[dims.tier] ?? CLEARING.camp, road, river, riverSide, style, ox, oy, pond: !!(t && t.pond), level: dims.level || 0 };
 }
 const inSq = (x, y, h) => x >= -h && x < h && y >= -h && y < h;
 // The road's cells (a band SCATTER.ROAD_W wide through the middle along each axis) and the river's (a band RIVER_W
@@ -866,7 +885,7 @@ const byCell = (a, b) => { const [ax, ay] = a.split(",").map(Number), [bx, by] =
  */
 export function landOf(spec, land) {
   const tx = spec.ox || 0, ty = spec.oy || 0; // the base on the map: map (x, y) is grid (x - tx, y - ty)
-  const key = `${spec.seed}|${spec.terrain}|${spec.G}|${spec.C}|${spec.clear}|${spec.road}|${spec.river}${spec.riverSide || ""}|${tx},${ty}|${land ? `${land.n}` : "-"}${spec.pond ? "|p" : ""}`;
+  const key = `${spec.seed}|${spec.terrain}|${spec.G}|${spec.C}|${spec.clear}|${spec.road}|${spec.river}${spec.riverSide || ""}|${tx},${ty}|${land ? `${land.n}` : "-"}${spec.pond ? "|p" : ""}${spec.level ? `|L${spec.level}` : ""}`;
   let out = landCache.get(key);
   if (out && out.land === land) return out.v;
   const cleared = (land && land.cleared) || {}, looted = (land && land.looted) || {};
@@ -919,7 +938,11 @@ export function landOf(spec, land) {
   // eased against all of the massif's rock, leaving a road's pass a trench three levels deep: tools/mapreachtest.js).
   const rock = new Set();
   for (const [x, y, lv] of relief.crags) if (free(x, y) && !nearBase(x, y, spec.C) && !street(x, y) && !(spec.river && onRiver(spec, x, y))) { put({ k: "crag", g: `c${x},${y}`, cells: [[x, y]], h: lv }); rock.add(`${x},${y}`); }
-  for (const [x, y, h] of relief.heights) if (!nearBase(x, y, spring.has(`${x},${y}`) ? spec.clear : Math.max(spec.C, spec.clear)) && !gone(x, y) && !pieces.has(`${x},${y}`) && !(spec.river && onRiver(spec, x, y))) heights.set(`${x},${y}`, h);
+  // land.keepH (a camp set up since the user's request 2026-10-23: "It should not be trying to burrow just build on the
+  // hill as if it was the ground floor"): what is cleared keeps the ground's own height (a tree felled on a hill leaves
+  // the hill); before, the ground went with it, dug down to the plain's.
+  const keepH = !!(land && land.keepH), L = spec.level || 0;
+  for (const [x, y, h] of relief.heights) if (!nearBase(x, y, spring.has(`${x},${y}`) ? spec.clear : Math.max(spec.C, spec.clear)) && (keepH || !gone(x, y)) && !pieces.has(`${x},${y}`) && !(spec.river && onRiver(spec, x, y))) heights.set(`${x},${y}`, h);
   relaxHeights(heights, rock); // the yard, the clearing and what is cleared are level: the ground eased down to them
   dropNarrowHollows(heights); // a hollow cut narrow by them filled in
   // Nothing of the scatter on the ground paved before it (a road, a ford, a town's paths, driveways, lots and
@@ -927,12 +950,13 @@ export function landOf(spec, land) {
   const paved = new Set(floors.keys());
   // Farmland's fenced fields (fieldLayer): before the scatter, so nothing of it stands on a fence line; a gate's apron
   // (FIELD.APRON cells either side of it, a cell past each end) kept clear of the scatter. None in the yard, the
-  // clearing, on a road or the paving (gaps in the fence there), and no field the river runs through.
+  // clearing or on the paving (gaps in the fence there), and no field the river or a road runs through (the user's
+  // word 2026-10-23: "Roads interrupt the fences": a field cut in two by the road, its fence broken either side).
   const apron = new Set();
   const fieldOk = (x, y) => free(x, y) && !nearBase(x, y, spec.C) && !(spec.road && onRoad(spec, x, y)) && !street(x, y) && !paved.has(`${x},${y}`) && !spring.has(`${x},${y}`);
-  const wet = (f) => { for (let y = f.y0 - 1; y <= f.y0 + f.s; y++) for (let x = f.x0 - 1; x <= f.x0 + f.s; x++) if (onRiver(spec, x, y)) return true; return false; };
+  const across = (f, on) => { for (let y = f.y0 - 1; y <= f.y0 + f.s; y++) for (let x = f.x0 - 1; x <= f.x0 + f.s; x++) if (on(spec, x, y)) return true; return false; };
   for (const f of fieldLayer(spec.seed, spec.terrain, spec.G)) {
-    if (spec.river && wet(f)) continue;
+    if ((spec.river && across(f, onRiver)) || (spec.road && across(f, onRoad))) continue;
     for (const [x, y] of f.fence) if (fieldOk(x, y)) put({ k: f.k, g: `fd${f.id}@${x},${y}`, cells: [[x, y]] });
     if (!f.gate.length) continue;
     const [dx, dy] = f.out, [ax, ay] = [Math.abs(dy), Math.abs(dx)]; // out of the field; along its side
@@ -969,6 +993,8 @@ export function landOf(spec, land) {
   if (editKeys.length) relaxHeights(heights, new Set(relief.crags.map(([x, y]) => `${x},${y}`)));
   // The spring's hollow as it lies now (what of it is still a level down): never filled in nor built on (clearOf).
   const springs = new Set([...spring].filter((k) => heights.get(k) < 0));
+  // The hills and hollows with nothing on them are pieces of the land too (rise, dip): the ground, never in the way of
+  // a building (basemap.js landUnder: one stands on level ground of any height, its ground floor there).
   for (const [k, h] of heights) if (!pieces.has(k)) { const [x, y] = k.split(",").map(Number); put({ k: h > 0 ? "rise" : "dip", g: `h${x},${y}`, cells: [[x, y]], h, ...(springs.has(k) ? { spring: 1 } : {}) }); }
   // Bushes along the river's banks.
   if (spec.river) { const rng = new Rng(spec.seed ^ 0x77e1); for (let a = -spec.G; a < spec.G; a++) for (let b = -spec.G; b < spec.G; b++) { const x = spec.river === "y" ? a : b, y = spec.river === "y" ? b : a; if (onRiver(spec, x, y) === 2 && rng.chance(0.3) && free(x, y)) put({ k: "bush", g: `b${x},${y}`, cells: [[x, y]] }); } }
@@ -991,7 +1017,9 @@ export function landOf(spec, land) {
   // over the land placed things on it and their clearing never came, basemap.js siteWaits; tools/mapreachtest.js), a
   // pond tile's spring-fed pond. springs: its cells (grid "x,y"; layLand marks them c.spring for ponds.js).
   const water = list.filter((p) => p.k === "water" || p.k === "crag" || p.spring);
-  const v = { pieces, floors, list, heights, springs, waterOnly: { pieces: new Map(water.flatMap((p) => p.cells.map(([x, y]) => [`${x},${y}`, p]))), list: water, floors, heights: new Map() } };
+  // ground: the ground's height by cell (the same in waterOnly, whose heights are left out for its ponds): what a
+  // building stands on (basemap.js placeProblemAt: all of it on one level).
+  const v = { pieces, floors, list, heights, springs, level: L, ground: heights, waterOnly: { pieces: new Map(water.flatMap((p) => p.cells.map(([x, y]) => [`${x},${y}`, p]))), list: water, floors, heights: new Map(), ground: heights } };
   if (landCache.size > 48) landCache.clear();
   landCache.set(key, { land, v });
   return v;
@@ -1011,11 +1039,35 @@ export function clearOf(p, tool = true, mode = "clear") {
 }
 
 // ---------- laying the land on a map ----------
+// The land past a map's edge (the user's request 2026-10-23: "The outer margin of the base should not just terminate a
+// terrain it should continue the terrain so it does not just terminate at the border"): the cells within R of the
+// W × H map (map = grid + ox, oy) and outside it where the land has something to draw (a height, a tree, a bush, a
+// hedge, a fence, a rock, a boulder, a stump, a log, a hay bale, the crag; a floor), each [x, y, k, f, h, ch?] in map
+// coordinates; inGrid(gx, gy): on the tile's own map (nothing past it). The view draws them running on into the fog
+// (ui/isoview.js beyondBoard); scenery only, nothing in the sim stands there.
+export const BEYOND_R = 6;
+/** @param {any} land @param {number} W @param {number} H @param {number} ox @param {number} oy @param {number} R @param {(gx: number, gy: number) => boolean} inGrid */
+export function landBeyond(land, W, H, ox, oy, R, inGrid, lift = 0) { // lift: the map's datum (layLand m.lift): heights as the map's
+  const out = [];
+  if (!land) return out;
+  for (let y = -R; y < H + R; y++) for (let x = -R; x < W + R; x++) {
+    if (x === 0 && y >= 0 && y < H) x = W; // the map itself: skip across it
+    const gx = x - ox, gy = y - oy;
+    if (!inGrid(gx, gy)) continue;
+    const key = `${gx},${gy}`, h = ((land.heights && land.heights.get(key)) || 0) - lift, p = land.pieces.get(key), f = land.floors.get(key) || "";
+    const field = p && FIELD_FENCE.has(p.k) && typeof p.g === "string" && p.g.startsWith("fd"); // a field's fence: drawn off the edge as fences (ui/isoview.js offEdgeFences)
+    const k = p && !field && (SCATTER_KINDS.has(p.k) || p.k === "crag") ? p.k : "open";
+    if (!h && k === "open" && !f) continue;
+    out.push(k === "crag" ? [x, y, k, f, h, p.h || HIGH.CRAG_LV[0]] : [x, y, k, f, h]);
+  }
+  return out;
+}
 /**
  * Lays the land on a map (basemap.js buildBaseMap; fort.js for an AI group's margin). m: { cells, W, H, ox, oy (grid →
  * map), land (landOf), ok(x, y) → the map cell may take a piece (open ground, nothing standing), floor(x, y) → it may
  * take a floor }. Never on the map's outermost cells (the attackers' ground, an open ring round the map, so wherever a
- * battle floods its reach from on the edge it reaches all of it) but for a farmland field's fence (fieldLayer: the
+ * battle floods its reach from on the edge it reaches all of it; the heights go there too, a level a step: relief.js
+ * cragWays) but for a farmland field's fence (fieldLayer: the
  * user's word 2026-10-23, "Fill in the gap"), run right out to the edge: a fence is climbed over by the living and
  * crawled over by the dead (combat.js vaultable), so the ring is still crossed all the way round. Returns { kinds: { k: n } }.
  * @param {any} m
@@ -1030,10 +1082,23 @@ export function layLand(m) {
     if (x >= 0 && y >= 0 && x < W && y < H && (!m.floor || m.floor(x, y))) cells[y * W + x].f = f;
   }
   // The lie of the land under it all (reliefLayer): c.h the cell's height in levels, c.ter: it is the ground's (a hill
-  // or a hollow, walked up and down a level at a step: combat.js climbCost).
+  // or a hollow, walked up and down a level at a step: combat.js climbCost). A base on a hill or in a hollow (land.level,
+  // the user's request 2026-10-23): its map is laid from its own level (m.lift, the map's datum: combat.js mapLv), so
+  // the yard and all that stands in it are level ground and the land round it rises or falls away from it; the plain is
+  // laid -lift, the river's water at its level too. The map's outer row too (the user's request 2026-10-23: "The outer
+  // margin of the base should not just terminate a terrain it should continue the terrain"): a hill the map's edge cuts
+  // runs on to it at its own height (landBeyond carries it on past the edge in the view).
+  const lift = m.lift || 0, lays = (x, y) => onMap(x, y) && (!m.floor || m.floor(x, y)) && (!m.ok || m.ok(x, y));
   if (land.heights) for (const [key, h] of land.heights) {
     const [gx, gy] = key.split(",").map(Number), x = gx + ox, y = gy + oy;
-    if (inner(x, y) && (!m.floor || m.floor(x, y)) && (!m.ok || m.ok(x, y))) { const c = cells[y * W + x]; c.h = h; c.ter = 1; if (land.springs && land.springs.has(key)) c.spring = 1; } // c.spring: a pond tile's spring-fed hollow (ponds.js)
+    if (lays(x, y)) { const c = cells[y * W + x]; c.h = h - lift; c.ter = 1; if (land.springs && land.springs.has(key)) c.spring = 1; } // c.spring: a pond tile's spring-fed hollow (ponds.js)
+  }
+  if (lift) for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { // the rest of the map: level with the plain
+    const key = `${x - ox},${y - oy}`, p = land.pieces.get(key);
+    if ((land.heights && land.heights.has(key)) || (p && p.k === "crag") || (m.floor && !m.floor(x, y)) || (m.ok && !m.ok(x, y))) continue;
+    const c = cells[y * W + x];
+    c.h = -lift; c.ter = 1;
+    if (p && p.k === "water") { c.wet = "deep"; c.wl = 0.05 - lift; } // the river's water sheet on the plain's level (ui/isoview.js wetPrims; flat at 0 on a level base's map)
   }
   const kinds = {};
   for (const p of land.list) {
@@ -1045,7 +1110,7 @@ export function layLand(m) {
       const id = y0 * W + x0 + 1;
       for (const [x, y] of at) { const c = cells[y * W + x]; c.k = kind; c.car = { id, i: p.ax ? y - y0 : x - x0, j: p.ax ? x - x0 : y - y0, L: p.len, ax: p.ax ? "y" : "x", kind, v: (id * 7) % 1000, body: kind }; c.wreck = 1; }
     } else if (p.parts) at.forEach(([x, y], i) => { const c = cells[y * W + x], q = p.parts[i]; c.k = q.k; c.f = q.f; if (q.fl) c.fl = q.fl; if (q.t) c.t = q.t; }); // a building: each cell its own
-    else if (p.k === "crag") for (const [x, y] of at) { const c = cells[y * W + x]; c.k = "crag"; c.ch = p.h || HIGH.CRAG_LV[0]; } // the rock's height (levels): drawn and seen over by it
+    else if (p.k === "crag") for (const [x, y] of at) { const c = cells[y * W + x]; c.k = "crag"; c.ch = (p.h || HIGH.CRAG_LV[0]) - lift; } // the rock's height (levels): drawn and seen over by it
     else for (const [x, y] of at) cells[y * W + x].k = p.k;
     kinds[p.k] = (kinds[p.k] || 0) + 1;
   }
