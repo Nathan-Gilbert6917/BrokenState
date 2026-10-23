@@ -734,6 +734,7 @@ export const CELL = {
   rock:    { walk: false, cover: 1, los: false, name: "Rock" },
   car:     { walk: false, cover: 1, los: false, name: "Car" },
   fence:   { walk: false, cover: 1, los: false, name: "Fence" },
+  fieldgate: { walk: true, cover: 0, los: false, name: "Field gate" }, // a farmland field's gate (basescatter.js fieldLayer): swung open and walked through
   hay:     { walk: false, cover: 1, los: false, name: "Hay bales" },
   crate:   { walk: false, cover: 1, los: false, name: "Crates" },
   sandbag: { walk: false, cover: 1, los: false, name: "Sandbags" },

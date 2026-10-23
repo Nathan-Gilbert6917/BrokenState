@@ -919,6 +919,18 @@ function primsOf(k, o) {
       if (wire) for (let i = 0; i < 3; i++) out.push({ cyl: [0.25 + i * 0.25, 0.5, 0.1], z0: 4, z1: 5, m: flatM(hex("#8a8a82")) });
       return out;
     }
+    case "fieldgate": {
+      // A farmland field's gate (sim/basescatter.js fieldLayer), two cells of it: a five-bar gate of pale boards along
+      // the fence's line with a diagonal brace, a stout post where it meets the fence (o.dir: those joins' bits).
+      const ax = along(o), rail = flatM(PAL.woodLt), stile = flatM(mul(PAL.woodLt, 0.86)), brace = flatM(mul(PAL.woodLt, 0.78)), post = tex(PAL.woodDk, 0.12, 22), out = [];
+      for (const a of [0.08, 0.86]) out.push(run(ax, 0.47, 0.53, 3, 13, stile, a, a + 0.06)); // the stiles
+      for (const [z0, z1] of [[4, 5], [7.5, 8.5], [11, 12.5]]) out.push(run(ax, 0.47, 0.53, z0, z1, rail, 0.14, 0.86)); // the bars
+      for (let i = 0; i < 6; i++) { const a = 0.14 + i * 0.12; out.push(run(ax, 0.53, 0.57, 4.5 + i * 1.3, 6 + i * 1.3, brace, a, a + 0.12)); } // the brace on its face, low end to high
+      const [p0, p1] = ax === "u" ? [2, 1] : [8, 4]; // the joins at the leaf's two ends (−, +)
+      if (o.dir & p0) out.push(run(ax, 0.42, 0.58, 0, 15, post, 0, 0.08));
+      if (o.dir & p1) out.push(run(ax, 0.42, 0.58, 0, 15, post, 0.92, 1));
+      return out;
+    }
     case "sandbag": {
       // Three courses of bags, each narrower than the one below, laid like bricks: a bag half a tile long, each course's
       // seams half a bag over from the one below, counted from the tile's edge so they carry on into the next cell.
@@ -1253,7 +1265,7 @@ function snowPrims(list, sn) {
 // in the yard or the street. Not the trees and bushes (ui/seasontrees.js), the ground and its hills, a fire, a well's
 // mouth, the hive's warm flesh, furniture, stairs and ladders.
 const SNOW_ON = new Set(["wall", "window", "door", "idoor", "boarded", "bdoor", "doorway", "smashed", "odoor", "palisade", "gate", "tower", "stand", "walkway", "roof",
-  "fence", "wire", "rail", "sandbag", "barricade", "tanktrap", "crate", "hay", "barrel", "pump", "car", "truck", "vehicle", "boulder", "rock", "rubble", "breach",
+  "fence", "fieldgate", "wire", "rail", "sandbag", "barricade", "tanktrap", "crate", "hay", "barrel", "pump", "car", "truck", "vehicle", "boulder", "rock", "rubble", "breach",
   "tent", "torn", "log", "stump"]);
 export const snowProbe = { roofSprite: (...a) => roofSprite(...a), sprite: (...a) => sprite(...a), SNOW_ON }; // tools/roofsnowtest.js
 // A roof piece over one cell of a building: a flat slab at the walls' height with a lip on the outside edges. sn: the
@@ -1579,7 +1591,7 @@ const JOINS = {
   wall: WALLISH, window: WALLISH, door: WALLISH, bdoor: WALLISH, doorway: WALLISH, smashed: WALLISH, idoor: WALLISH, odoor: WALLISH, boarded: WALLISH,
   rack: new Set(["rack", "shelf"]), bed: new Set(["bed"]), bars: new Set(["bars", "wall", "idoor", "odoor"]), table: new Set(["table"]),
   palisade: new Set(["palisade", "gate", "breach", "siegeladder"]), gate: new Set(["palisade", "gate", "breach", "siegeladder"]),
-  fence: new Set(["fence"]), wire: new Set(["wire"]), rail: new Set(["rail"]), sandbag: new Set(["sandbag", "barricade"]), barricade: new Set(["barricade", "sandbag"]),
+  fence: new Set(["fence", "fieldgate"]), fieldgate: new Set(["fence", "fieldgate"]), wire: new Set(["wire"]), rail: new Set(["rail"]), sandbag: new Set(["sandbag", "barricade"]), barricade: new Set(["barricade", "sandbag"]),
   walkway: new Set(["walkway", "tower", "stand"]), stand: new Set(["stand", "walkway", "tower"]), trench: new Set(["trench"]), shelf: WALLISH, locker: WALLISH, cabinet: WALLISH, counter: WALLISH,
   rise: new Set(["rise", "slope"]), // high ground: its banks fall away on the sides with none beside it (prims rise)
   crag: new Set(["crag"]), // a mountain's ridge: one mass of rock (prims crag)
@@ -1627,6 +1639,7 @@ function lookOf(b, scene, x, y, cut, focus = null) {
     const nx = x + dx, ny = y + dy;
     if (nx < 0 || ny < 0 || nx >= b.w || ny >= b.h) continue;
     if (js.has(b.cells[ny * b.w + nx].k)) o.j |= 1 << viewDir(dx, dy, r);
+    if (k === "fieldgate" && b.cells[ny * b.w + nx].k === "fence") o.dir = (o.dir || 0) | (1 << viewDir(dx, dy, r)); // a field gate's posts: where it meets the fence (prims)
   }
   const bid = scene.comp[i];
   if (bid >= 0) {
@@ -1708,7 +1721,7 @@ function blockTop0(k, o) {
     case "vehicle": return o.car ? (o.car.body === "bike" ? 11 : o.car.body === "truck" || MIL_TOPS[o.car.body] ? VEH_TOP : o.car.i > 0 && o.car.i < o.car.L - 1 ? VEH_TOP : Math.round(9 * vehZ(VEH_ROOF.car))) : VEH_TOP;
     case "locker": return 26; case "shelf": return 24; case "pump": return 22; case "gunsafe": return 22;
     case "boulder": return STONE.H.tall[1]; case "crate": return o.v >= 2 ? 22 : 13;
-    case "fence": return 14; case "barricade": return 16; case "sandbag": return 13; case "hay": return 13; case "cabinet": return 14; case "counter": return 12; case "well": return 12; case "barrel": return 13;
+    case "fence": return 14; case "fieldgate": return 13; case "barricade": return 16; case "sandbag": return 13; case "hay": return 13; case "cabinet": return 14; case "counter": return 12; case "well": return 12; case "barrel": return 13;
     case "rock": return STONE.H.short[1]; case "wire": return 10; case "rail": return 13; case "tanktrap": return 12;
     case "outline": return 9; case "tent": return 18; case "torn": return 5; case "firepit": return 7; case "lamp": return 38; case "spot": return 24; // the base map (sim/basemap.js; torn: sim/softcover.js)
     case "bush": return 12; case "stump": return 6; case "log": return 7; // its scatter (sim/basescatter.js)

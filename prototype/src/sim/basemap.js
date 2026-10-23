@@ -820,7 +820,7 @@ export function landUnder(land, it, at) {
   for (const [x, y] of [...rectCells(it, at), ...doorCellsOf(it, at)]) { const p = land.pieces.get(`${x},${y}`); if (p) out.add(p); }
   return [...out];
 }
-const PLURAL = { bush: "bushes", "fence panel": "fence panels", "hay bale": "hay bales", "broken crate": "broken crates", "old drum": "old drums", "fallen log": "fallen logs", "wrecked car": "wrecked cars", "wrecked truck": "wrecked trucks", "patch of high ground": "patches of high ground", "store": "stores" };
+const PLURAL = { bush: "bushes", "fence panel": "fence panels", "field gate": "field gates", "hay bale": "hay bales", "broken crate": "broken crates", "old drum": "old drums", "fallen log": "fallen logs", "wrecked car": "wrecked cars", "wrecked truck": "wrecked trucks", "patch of high ground": "patches of high ground", "store": "stores" };
 // "2 trees, a bush and a wrecked car".
 export function landWords(pieces) {
   const n = new Map();
@@ -967,7 +967,7 @@ export function clearAllLand(state, base) {
   base.land.n++;
 }
 // The piece of land at a grid cell, as a list (empty: none); with `clump`, the pieces of its kind joined to it (a stand
-// of trees, a hedgerow, a fence run).
+// of trees, a hedgerow, a fence run or a field's fence: basescatter.js fieldLayer).
 export function landPieceAt(state, base, gx, gy, clump = false) {
   const land = landFor(state, base);
   const p = land ? land.pieces.get(`${gx},${gy}`) || null : null;

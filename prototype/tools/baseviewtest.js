@@ -121,10 +121,11 @@ section("Move does not make the map again");
 // ---------- 2. The land, by the tile ----------
 section("The land: by the tile, fixed by it");
 {
-  const want = { forest: ["tree", "bush", "log"], plains: ["fence", "tree", "bush"], farm: ["fence", "hay", "bush"], hills: ["rock", "boulder"], mountain: ["boulder", "rock"], suburb: ["fence", "tree", "bush", "wreck"], city: ["wreck", "crate", "barrel"] };
+  const want = { forest: ["tree", "bush", "log"], plains: ["fence", "fieldgate", "tree", "bush"], farm: ["fence", "fieldgate", "hay", "bush"], hills: ["rock", "boulder"], mountain: ["boulder", "rock"], suburb: ["fence", "tree", "bush", "wreck"], city: ["wreck", "crate", "barrel"] };
   for (const [terrain, ks] of Object.entries(want)) {
     const L = SC.scatterLayer(SC.scatterSeed(1234), terrain, 40), k = {};
     for (const p of L) if (p.k) k[p.k] = (k[p.k] || 0) + 1;
+    for (const f of SC.fieldLayer(SC.scatterSeed(1234), terrain, BM.GRID_MAX)) { k.fence = (k.fence || 0) + f.fence.length; if (f.gate.length) k.fieldgate = (k.fieldgate || 0) + 1; } // farmland's fences: its fields
     check(ks.every((x) => k[x] > 0), `${terrain}: ${fmt(k)}`);
   }
   const a = JSON.stringify(SC.scatterLayer(SC.scatterSeed(77), "forest", 30));

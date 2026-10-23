@@ -12,9 +12,9 @@
 // square, each from dice of its own: scatterLayer), the same in the Base map view and on the battle map of a raid or a
 // horde, and the margin of an AI group's walled base wears it too (fort.js). What it holds, by the tile:
 //   - the terrain's dressing (PROFILES): forest: tree clumps, trees, bushes, fallen logs, stumps; farmland: hedgerows
-//     (lines of bushes), old fence runs with gaps and corners, lone trees, rocks, hay; a farm's fields more fence and
-//     hay; hills and mountains: rocks and boulders with bushes and trees; the suburbs and the city: fences, wrecked cars,
-//     crates and barrels, with paved lots (gravel floor: built on freely);
+//     (lines of bushes), lone trees, rocks, hay and its fenced fields (fieldLayer: squares of fence with a gate); a
+//     farm's more fields and hay; hills and mountains: rocks and boulders with bushes and trees; the suburbs and the
+//     city: fences, wrecked cars, crates and barrels, with paved lots (gravel floor: built on freely);
 //   - a road tile's road (tile.road: a band of asphalt across the map along the roads it links to, through the middle)
 //     with abandoned cars and debris on it, a river tile's river (tile.river, not a bridge: a band of water off the
 //     middle with two fords and bushes on its banks; water is never cleared nor built on);
@@ -71,8 +71,8 @@ export const siteBox = (at = [0, 0]) => ({ x0: at[0] + SITE.LO, y0: at[1] + SITE
 // The land's dressing by terrain: n pieces a chunk (range) and the weights of what they are.
 export const PROFILES = {
   forest:   { n: [2, 4], w: { clump: 4, tree: 3, bush: 3, log: 2, stump: 1, rock: 1 } },
-  plains:   { n: [2, 3], w: { fence: 3, hedge: 2, tree: 2, bush: 2, clump: 1, rock: 1, hay: 1, stump: 1 } },
-  farm:     { n: [2, 3], w: { fence: 4, hedge: 2, hay: 2, tree: 2, bush: 1, clump: 1, stump: 1 } },
+  plains:   { n: [2, 3], w: { hedge: 2, tree: 2, bush: 2, clump: 1, rock: 1, hay: 1, stump: 1 } }, // its fences: fieldLayer
+  farm:     { n: [2, 3], w: { hedge: 2, hay: 3, tree: 2, bush: 1, clump: 1, stump: 1 } },
   hills:    { n: [2, 4], w: { rock: 4, boulder: 3, bush: 2, tree: 2, clump: 1, stump: 1, hedge: 1 } },
   mountain: { n: [2, 4], w: { boulder: 4, rock: 4, tree: 1, bush: 1, log: 1 } },
   suburb:   { n: [1, 2], w: { fence: 2, tree: 3, bush: 3, wreck: 1, clump: 1, crate: 1 } }, // round the houses (townLayer)
@@ -81,7 +81,7 @@ export const PROFILES = {
 // What lies about the yard.
 const YARD_W = { plain: { stump: 3, log: 2, crate: 2, barrel: 2, rock: 1 }, city: { crate: 3, barrel: 3, rock: 1, log: 1, stump: 1 } };
 // The cell kinds of the land (wrecks are laid as cars: combat.js car cells; water is the river).
-export const SCATTER_KINDS = new Set(["tree", "bush", "fence", "rock", "boulder", "stump", "log", "hay", "crate", "barrel"]);
+export const SCATTER_KINDS = new Set(["tree", "bush", "fence", "fieldgate", "rock", "boulder", "stump", "log", "hay", "crate", "barrel"]);
 // Clearing a piece (the builders' work-hours at a builder's pace, and what it gives into the stores). A tree is felled,
 // limbed and its stump dug out: without a cutting tool at the base (an axe, a machete…: woodcutting.js isChopTool) it
 // takes NO_TOOL times as long. A wreck: strip it (once) for its scrap, a car part and its roof and door skins as metal
@@ -93,6 +93,7 @@ export const CLEAR = {
   log:     { hours: 1.5, get: { wood: 40 },  word: "a fallen log", verb: "Saw up" },
   bush:    { hours: 0.5, get: { wood: 5 },   word: "a bush", verb: "Grub out" },
   fence:   { hours: 0.5, get: { wood: 10 },  word: "a fence panel", verb: "Pull down" },
+  fieldgate: { hours: 0.5, get: { wood: 15 }, word: "a field gate", verb: "Take down" }, // its two cells (fieldLayer)
   hay:     { hours: 0.5, get: {},            word: "a hay bale", verb: "Shift" },
   rock:    { hours: 1,   get: {},            word: "a rock", verb: "Roll away" },
   boulder: { hours: 3,   get: {},            word: "a boulder", verb: "Break up" },
@@ -195,6 +196,53 @@ export function scatterLayer(seed, terrain, G) {
   if (layerCache.size > 64) layerCache.clear();
   layerCache.set(key, out);
   return out;
+}
+
+// ---------- farmland's fenced fields ----------
+// The user's request 2026-10-23: "Fix fences for farmland tiles to not be random singular fences make them square, go
+// off screen and have a gate to enter the inside of the fenced area". On farmland (plains) and a farm's fields the
+// fence runs are fields now: at most one to a REGION of the map (the chance P by the terrain), a square of fence S
+// cells a side, GAP cells or more in from its region's edge (a lane between neighbours). The regions are laid from
+// the map's middle, so the ring of them round its edge runs off it: the map's edge cuts those fields. Each field has a
+// gate (GATE cells of combat.js CELL fieldgate, walked through) in the side facing the map's middle, on the map and
+// never at a corner; landOf keeps the ground APRON cells deep either side of it clear of the scatter, so the way in
+// stays open, and lays no field the river runs through (its far part would be shut in). Its fence is broken where a
+// road, a town's paving, the yard or the clearing crosses it (the road runs on through).
+export const FIELD = { REGION: 48, S: [22, 42], GAP: 3, GATE: 2, APRON: 2, P: { farm: 0.85, plains: 0.45 } };
+/**
+ * The fields over [-G, G) (map coordinates): [{ id, x0, y0, s (the square [x0, x0 + s) each way), fence: [[x, y]…]
+ * (on the map, the gate's cells left out), gate: [[x, y]…] (none when its side has no room on the map), out: [dx, dy]
+ * (the way out through the gate) }]. The same for the same tile, terrain and grid; none off farmland.
+ * @param {number} seed @param {string} terrain @param {number} G
+ */
+export function fieldLayer(seed, terrain, G) {
+  const P = FIELD.P[terrain] || 0;
+  if (!P) return [];
+  return cached(`f|${seed}|${terrain}|${G}`, () => {
+    const R = FIELD.REGION, out = [];
+    const on = (x, y) => x >= -G && y >= -G && x < G && y < G;
+    for (let ry = Math.floor(-G / R); ry * R < G; ry++) for (let rx = Math.floor(-G / R); rx * R < G; rx++) {
+      const rng = new Rng(chunkSeed(seed ^ 0x6f1e, rx, ry));
+      if (!rng.chance(P)) continue;
+      const s = rng.int(FIELD.S[0], FIELD.S[1]), x0 = rx * R + rng.int(FIELD.GAP, R - FIELD.GAP - s), y0 = ry * R + rng.int(FIELD.GAP, R - FIELD.GAP - s);
+      const x1 = x0 + s - 1, y1 = y0 + s - 1;
+      if (x1 < -G || y1 < -G || x0 >= G || y0 >= G) continue;
+      // The gate: in the side facing the map's middle (the longer way to it), its cells on the map, two or more cells
+      // from either corner.
+      const cx = x0 + s / 2, cy = y0 + s / 2, alongX = Math.abs(cy) > Math.abs(cx); // the gate's side runs along x
+      const side = alongX ? (cy > 0 ? y0 : y1) : (cx > 0 ? x0 : x1);
+      const dir = alongX ? [0, cy > 0 ? -1 : 1] : [cx > 0 ? -1 : 1, 0];
+      const a0 = alongX ? x0 : y0, lo = Math.max(a0 + 2, -G + 2), hi = Math.min(a0 + s - 3, G - 3) - (FIELD.GATE - 1);
+      const gate = [];
+      if (hi >= lo && side >= -G + 1 && side < G - 1) { const t = rng.int(lo, hi); for (let i = 0; i < FIELD.GATE; i++) gate.push(alongX ? [t + i, side] : [side, t + i]); }
+      const isGate = new Set(gate.map(([x, y]) => ck(x, y))), fence = [];
+      const edge = (x, y) => { if (on(x, y) && !isGate.has(ck(x, y))) fence.push([x, y]); };
+      for (let x = x0; x <= x1; x++) { edge(x, y0); edge(x, y1); }
+      for (let y = y0 + 1; y < y1; y++) { edge(x0, y); edge(x1, y); }
+      out.push({ id: `${rx},${ry}`, x0, y0, s, fence, gate, out: dir });
+    }
+    return out;
+  });
 }
 
 // ---------- high ground, streets and buildings (the user's request 2026-10-22) ----------
@@ -865,6 +913,20 @@ export function landOf(spec, land) {
   // Nothing of the scatter on the ground paved before it (a road, a ford, a town's paths, driveways, lots and
   // sidewalks): a tree on a house's path or a fence across a ford shut the way in (tools/mapreachtest.js).
   const paved = new Set(floors.keys());
+  // Farmland's fenced fields (fieldLayer): before the scatter, so nothing of it stands on a fence line; a gate's apron
+  // (FIELD.APRON cells either side of it, a cell past each end) kept clear of the scatter. None in the yard, the
+  // clearing, on a road or the paving (gaps in the fence there), and no field the river runs through.
+  const apron = new Set();
+  const fieldOk = (x, y) => free(x, y) && !nearBase(x, y, spec.C) && !(spec.road && onRoad(spec, x, y)) && !street(x, y) && !paved.has(`${x},${y}`) && !spring.has(`${x},${y}`);
+  const wet = (f) => { for (let y = f.y0 - 1; y <= f.y0 + f.s; y++) for (let x = f.x0 - 1; x <= f.x0 + f.s; x++) if (onRiver(spec, x, y)) return true; return false; };
+  for (const f of fieldLayer(spec.seed, spec.terrain, spec.G)) {
+    if (spec.river && wet(f)) continue;
+    for (const [x, y] of f.fence) if (fieldOk(x, y)) put({ k: "fence", g: `fd${f.id}@${x},${y}`, cells: [[x, y]] });
+    if (!f.gate.length) continue;
+    const [dx, dy] = f.out, [ax, ay] = [Math.abs(dy), Math.abs(dx)]; // out of the field; along its side
+    for (const [x, y] of f.gate) for (let i = -1; i <= 1; i++) for (let d = -FIELD.APRON; d <= FIELD.APRON; d++) if (d) apron.add(`${x + ax * i + dx * d},${y + ay * i + dy * d}`);
+    if (f.gate.every(([x, y]) => fieldOk(x, y))) put({ k: "fieldgate", g: `fg${f.id}`, cells: f.gate.map((c) => c.slice()) });
+  }
   for (const p of scatterLayer(spec.seed, spec.terrain, spec.G)) {
     if (p.floor) { if (!nearBase(p.x, p.y, spec.clear) && !floors.has(`${p.x},${p.y}`)) floors.set(`${p.x},${p.y}`, p.floor); continue; }
     const yard = nearBase(p.x, p.y, spec.C);
@@ -877,7 +939,7 @@ export function landOf(spec, land) {
     }
     let k = p.k;
     if (yard !== !!p.yard) { if (yard && k === "tree" && p.stump) k = "stump"; else continue; } // the yard: cleared ground (a tree's stump); outside: no yard leavings
-    if (!free(p.x, p.y) || (spec.road && onRoad(spec, p.x, p.y)) || street(p.x, p.y) || paved.has(`${p.x},${p.y}`) || spring.has(`${p.x},${p.y}`)) continue;
+    if (!free(p.x, p.y) || (spec.road && onRoad(spec, p.x, p.y)) || street(p.x, p.y) || paved.has(`${p.x},${p.y}`) || spring.has(`${p.x},${p.y}`) || apron.has(`${p.x},${p.y}`)) continue;
     put({ k, g: p.g, cells: [[p.x, p.y]] });
   }
   // Uneven ground with nothing else on it is a piece of the land too (dug down or filled in before anything is built

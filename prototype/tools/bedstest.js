@@ -44,7 +44,9 @@ const inArmory = (base, k) => base.armory.filter((it) => it && it.key === k).len
 // A hub with a standing lodge placed by hand at (x, y): its floor cells.
 function withLodge(st, base, x = -14, y = 6) {
   const lodge = addBuilding(base, "gen_lodge");
-  check(BM.placeItem(st, base, keyOf(lodge), x, y, 0) === "", `a lodge placed at ${x}, ${y}`);
+  BM.clearAllLand(st, base); // the beds here, not the land (tools/baseviewtest.js)
+  const why = BM.placeItem(st, base, keyOf(lodge), x, y, 0);
+  check(why === "", `a lodge placed at ${x}, ${y}${why ? `: ${why}` : ""}`);
   return lodge;
 }
 
