@@ -34,7 +34,7 @@ import { parleyStatus } from "../sim/parley.js"; // another group's people on a 
 import { endangered, imminent } from "../sim/carriers.js"; // a body in danger from the worm
 import { isMedic } from "../sim/medics.js"; // a med kit makes a medic: the cross tag
 import { nlTags } from "./nonlethal.js"; // status tags of the non-lethal kit (sim/nonlethal.js)
-import { battleWeather, fogColour, fogCss, skirtFor, drawVignette, setEdgeCanvas } from "./battleedge.js"; // the map's edge: ground fading into fog
+import { battleWeather, fogColour, fogCss, skirtFor, skirtTiles, drawVignette, setEdgeCanvas } from "./battleedge.js"; // the map's edge: ground fading into fog
 import { drawBattleWx, setWxCanvas } from "./battlewx.js"; // rain, fog and snow over the view: the State Map's weather over the battle's tile
 import { paintLights, drawGlow, drawDarkness, drawShade, setLightsCanvas } from "./battlelights.js"; // night: flashlight beams, lantern pools, the darkness; by day a dark room's shade
 import { ingestMarks, revealMarks, drawMarks, knownBody, setMarksCanvas } from "./battlemarks.js"; // blood, brass, scorch, glass that stay
@@ -919,6 +919,17 @@ function primsOf(k, o) {
       if (wire) for (let i = 0; i < 3; i++) out.push({ cyl: [0.25 + i * 0.25, 0.5, 0.1], z0: 4, z1: 5, m: flatM(hex("#8a8a82")) });
       return out;
     }
+    case "wirefence": {
+      // A farmland field's post-and-wire fence (sim/basescatter.js fieldLayer): a weathered post in the middle of the
+      // tile and three taut strands of plain wire along the line (towards the neighbours in it; across the tile alone).
+      const post = tex(PAL.woodDk, 0.14, 23), strand = flatM(hex("#a4a69e")), out = [];
+      const j = o.j & 15 || (along(o) === "u" ? 3 : 12);
+      const arm = (d, z) => { const [du, dv] = VD[d]; const a0 = du ? Math.min(0.5, 0.5 + du * 0.5) : 0.485, a1 = du ? Math.max(0.5, 0.5 + du * 0.5) : 0.515, c0 = dv ? Math.min(0.5, 0.5 + dv * 0.5) : 0.485, c1 = dv ? Math.max(0.5, 0.5 + dv * 0.5) : 0.515; return { u0: a0, u1: a1, v0: c0, v1: c1, z0: z, z1: z + 0.6, m: strand }; };
+      for (const d of [3, 1]) if (j & (1 << d)) for (const z of [5, 8.5, 12]) out.push(arm(d, z));
+      out.push({ u0: 0.455, u1: 0.545, v0: 0.455, v1: 0.545, z0: 0, z1: 13, m: post });
+      for (const d of [0, 2]) if (j & (1 << d)) for (const z of [5, 8.5, 12]) out.push(arm(d, z));
+      return out;
+    }
     case "fieldgate": {
       // A farmland field's gate (sim/basescatter.js fieldLayer), two cells of it: a five-bar gate of pale boards along
       // the fence's line with a diagonal brace, a stout post where it meets the fence (o.dir: those joins' bits).
@@ -1265,7 +1276,7 @@ function snowPrims(list, sn) {
 // in the yard or the street. Not the trees and bushes (ui/seasontrees.js), the ground and its hills, a fire, a well's
 // mouth, the hive's warm flesh, furniture, stairs and ladders.
 const SNOW_ON = new Set(["wall", "window", "door", "idoor", "boarded", "bdoor", "doorway", "smashed", "odoor", "palisade", "gate", "tower", "stand", "walkway", "roof",
-  "fence", "fieldgate", "wire", "rail", "sandbag", "barricade", "tanktrap", "crate", "hay", "barrel", "pump", "car", "truck", "vehicle", "boulder", "rock", "rubble", "breach",
+  "fence", "wirefence", "fieldgate", "wire", "rail", "sandbag", "barricade", "tanktrap", "crate", "hay", "barrel", "pump", "car", "truck", "vehicle", "boulder", "rock", "rubble", "breach",
   "tent", "torn", "log", "stump"]);
 export const snowProbe = { roofSprite: (...a) => roofSprite(...a), sprite: (...a) => sprite(...a), SNOW_ON }; // tools/roofsnowtest.js
 // A roof piece over one cell of a building: a flat slab at the walls' height with a lip on the outside edges. sn: the
@@ -1591,7 +1602,7 @@ const JOINS = {
   wall: WALLISH, window: WALLISH, door: WALLISH, bdoor: WALLISH, doorway: WALLISH, smashed: WALLISH, idoor: WALLISH, odoor: WALLISH, boarded: WALLISH,
   rack: new Set(["rack", "shelf"]), bed: new Set(["bed"]), bars: new Set(["bars", "wall", "idoor", "odoor"]), table: new Set(["table"]),
   palisade: new Set(["palisade", "gate", "breach", "siegeladder"]), gate: new Set(["palisade", "gate", "breach", "siegeladder"]),
-  fence: new Set(["fence", "fieldgate"]), fieldgate: new Set(["fence", "fieldgate"]), wire: new Set(["wire"]), rail: new Set(["rail"]), sandbag: new Set(["sandbag", "barricade"]), barricade: new Set(["barricade", "sandbag"]),
+  fence: new Set(["fence", "fieldgate"]), fieldgate: new Set(["fence", "wirefence", "fieldgate"]), wirefence: new Set(["wirefence", "fieldgate"]), wire: new Set(["wire"]), rail: new Set(["rail"]), sandbag: new Set(["sandbag", "barricade"]), barricade: new Set(["barricade", "sandbag"]),
   walkway: new Set(["walkway", "tower", "stand"]), stand: new Set(["stand", "walkway", "tower"]), trench: new Set(["trench"]), shelf: WALLISH, locker: WALLISH, cabinet: WALLISH, counter: WALLISH,
   rise: new Set(["rise", "slope"]), // high ground: its banks fall away on the sides with none beside it (prims rise)
   crag: new Set(["crag"]), // a mountain's ridge: one mass of rock (prims crag)
@@ -1639,7 +1650,7 @@ function lookOf(b, scene, x, y, cut, focus = null) {
     const nx = x + dx, ny = y + dy;
     if (nx < 0 || ny < 0 || nx >= b.w || ny >= b.h) continue;
     if (js.has(b.cells[ny * b.w + nx].k)) o.j |= 1 << viewDir(dx, dy, r);
-    if (k === "fieldgate" && b.cells[ny * b.w + nx].k === "fence") o.dir = (o.dir || 0) | (1 << viewDir(dx, dy, r)); // a field gate's posts: where it meets the fence (prims)
+    if (k === "fieldgate" && FIELD_FENCE.has(b.cells[ny * b.w + nx].k)) o.dir = (o.dir || 0) | (1 << viewDir(dx, dy, r)); // a field gate's posts: where it meets the fence (prims)
   }
   const bid = scene.comp[i];
   if (bid >= 0) {
@@ -1697,6 +1708,30 @@ function lookOf(b, scene, x, y, cut, focus = null) {
   }
   return { k, o };
 }
+// Farmland's field fences (sim/basescatter.js fieldLayer) and where they run off the map (the user's word 2026-10-23:
+// "Show it going off the map and not just terminating"): a fence line that meets the map's edge (its cells one and two
+// in from the edge, the outermost ring is the attackers' open ground: sim/basescatter.js layLand) goes on straight out
+// across the skirt (ui/battleedge.js) into the fog, fading with it. Scenery only, like the skirt: nothing in the sim
+// knows of it. [{ x, y (outside the map), k, dx, dy (the way out), t (tiles out from the edge) }].
+const FIELD_FENCE = new Set(["fence", "wirefence"]);
+export function offEdgeFences(b, K = skirtTiles()) {
+  const out = [];
+  if (!K || b.w < 4 || b.h < 4) return out;
+  const at = (x, y) => b.cells[y * b.w + x].k;
+  const side = (n, cell, dx, dy) => {
+    for (let a = 1; a < n - 1; a++) {
+      const [x1, y1] = cell(a, 1), k = at(x1, y1), [x2, y2] = cell(a, 2);
+      if (!FIELD_FENCE.has(k) || at(x2, y2) !== k) continue;
+      const [x0, y0] = cell(a, 0);
+      for (let t = 1; t <= K; t++) out.push({ x: x0 + dx * t, y: y0 + dy * t, k, dx, dy, t });
+    }
+  };
+  side(b.w, (a, i) => [a, i], 0, -1);
+  side(b.w, (a, i) => [a, b.h - 1 - i], 0, 1);
+  side(b.h, (a, i) => [i, a], -1, 0);
+  side(b.h, (a, i) => [b.w - 1 - i, a], 1, 0);
+  return out;
+}
 const SPLIT = new Set(["bdoor", "doorway", "smashed", "gate", "tower", "odoor"]); // drawn in two parts around who stands there
 // How tall a cell's block stands (art px), for picking and fading.
 function blockTop(k, o) {
@@ -1721,7 +1756,7 @@ function blockTop0(k, o) {
     case "vehicle": return o.car ? (o.car.body === "bike" ? 11 : o.car.body === "truck" || MIL_TOPS[o.car.body] ? VEH_TOP : o.car.i > 0 && o.car.i < o.car.L - 1 ? VEH_TOP : Math.round(9 * vehZ(VEH_ROOF.car))) : VEH_TOP;
     case "locker": return 26; case "shelf": return 24; case "pump": return 22; case "gunsafe": return 22;
     case "boulder": return STONE.H.tall[1]; case "crate": return o.v >= 2 ? 22 : 13;
-    case "fence": return 14; case "fieldgate": return 13; case "barricade": return 16; case "sandbag": return 13; case "hay": return 13; case "cabinet": return 14; case "counter": return 12; case "well": return 12; case "barrel": return 13;
+    case "fence": return 14; case "fieldgate": return 13; case "wirefence": return 13; case "barricade": return 16; case "sandbag": return 13; case "hay": return 13; case "cabinet": return 14; case "counter": return 12; case "well": return 12; case "barrel": return 13;
     case "rock": return STONE.H.short[1]; case "wire": return 10; case "rail": return 13; case "tanktrap": return 12;
     case "outline": return 9; case "tent": return 18; case "torn": return 5; case "firepit": return 7; case "lamp": return 38; case "spot": return 24; // the base map (sim/basemap.js; torn: sim/softcover.js)
     case "bush": return 12; case "stump": return 6; case "log": return 7; // its scatter (sim/basescatter.js)
@@ -2480,8 +2515,29 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   // on its top floor you want to see the floor, not the roof (the fog still hides what nobody has seen).
   const topFloor = !F;
   iso.rects = [];
+  // The field fences running off the map (offEdgeFences), by depth like the cells: fading out across the skirt.
+  const offFence = new Map();
+  if (skirt && !lift) for (const q of offEdgeFences(b, skirt.K)) {
+    const [qu, qv] = toView(q.x, q.y, r, b.w, b.h), d = depth(qu, qv, st), a = offFence.get(d);
+    const s = { ...q, sx: artX(qu, qv, st) * S + FR.X0, sy: artY(qu, qv, st) * S + FR.Y0 };
+    if (a) a.push(s); else offFence.set(d, [s]);
+  }
+  const drawOffFence = (list) => {
+    for (const q of list || []) {
+      if (q.sx < -margin || q.sx > cw + margin || q.sy < -margin || q.sy > ch + margin * 2) continue;
+      const vd = viewDir(q.dx, q.dy, r), j = (1 << vd) | (1 << (vd ^ 1)); // joined both ways along the line (VD pairs: 0/1, 2/3)
+      const spr = sprite(q.k, { v: 0, alt: 0, j, n: null, top: WALL1, mat: 0, dmg: 0, dir: null, ...(snowLook ? { sn: snowLook } : {}) }, false);
+      if (!spr) continue;
+      const f = Math.max(0, Math.min(1, (q.t - 0.6) / (skirt.K - 0.6)));
+      ctx.globalAlpha = 1 - f * f * (3 - 2 * f);
+      ctx.drawImage(spr.cv, Math.round(q.sx + spr.ox * S), Math.round(q.sy + spr.oy * S), Math.ceil(spr.w * S), Math.ceil(spr.h * S));
+      ctx.globalAlpha = 1;
+    }
+  };
+  const dMax = st ? Hv - 1 : Wv + Hv - 2;
+  for (const [, list] of [...offFence].filter(([d]) => d < 0).sort((a, c) => a[0] - c[0])) drawOffFence(list); // behind the map
   // By diagonal (u + v) from the back; in a straight view by row (v).
-  for (let d = 0; d <= (st ? Hv - 1 : Wv + Hv - 2); d++) {
+  for (let d = 0; d <= dMax; d++) {
     const uLo = st ? 0 : Math.max(0, d - (Hv - 1)), uHi = st ? Wv - 1 : Math.min(Wv - 1, d);
     const fronts = [];
     for (let uu = uLo; uu <= uHi; uu++) {
@@ -2518,6 +2574,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
         if (ok && ok[i]) { ctx.fillStyle = `rgba(${COL.goodRgb},0.28)`; ctx.beginPath(); diamond(ctx, x, y, zt); ctx.fill(); }
       }
     }
+    drawOffFence(offFence.get(d));
     for (const c of bodies.get(d) || []) drawCorpseIso(ctx, b, c, !vis[c.y * b.w + c.x]);
     for (const p of piles.get(d) || []) if (!unknownCell(p.y * b.w + p.x)) { if (p.cart) drawCartBoxIso(ctx, p, project, (x, y) => standZ(b, x, y), S, { yaw: parkedYaw(b, p), fog: !vis[p.y * b.w + p.x] }); else drawPileIso(ctx, p, project, (x, y) => standZ(b, x, y), S); } // ui/ground.js (a cart: its own model, ui/cartmodel.js)
     for (const q of gh.get(d) || []) drawGhost(ctx, state, b, q, H);
@@ -2549,6 +2606,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     }
   }
 
+  for (const [, list] of [...offFence].filter(([d]) => d > dMax).sort((a, c) => a[0] - c[0])) drawOffFence(list); // in front of it
   // A building with storeys (floorsOf): units on other floors are not drawn; a faint marker at their x, y says
   // ▲ / ▼ and the floor (clicking it jumps to that floor: iso.rects). The stairwells carry an arrow for the way
   // up or down, lit when the selected unit stands on them.

@@ -81,7 +81,7 @@ export const PROFILES = {
 // What lies about the yard.
 const YARD_W = { plain: { stump: 3, log: 2, crate: 2, barrel: 2, rock: 1 }, city: { crate: 3, barrel: 3, rock: 1, log: 1, stump: 1 } };
 // The cell kinds of the land (wrecks are laid as cars: combat.js car cells; water is the river).
-export const SCATTER_KINDS = new Set(["tree", "bush", "fence", "fieldgate", "rock", "boulder", "stump", "log", "hay", "crate", "barrel"]);
+export const SCATTER_KINDS = new Set(["tree", "bush", "fence", "wirefence", "fieldgate", "rock", "boulder", "stump", "log", "hay", "crate", "barrel"]);
 // Clearing a piece (the builders' work-hours at a builder's pace, and what it gives into the stores). A tree is felled,
 // limbed and its stump dug out: without a cutting tool at the base (an axe, a machete…: woodcutting.js isChopTool) it
 // takes NO_TOOL times as long. A wreck: strip it (once) for its scrap, a car part and its roof and door skins as metal
@@ -93,6 +93,7 @@ export const CLEAR = {
   log:     { hours: 1.5, get: { wood: 40 },  word: "a fallen log", verb: "Saw up" },
   bush:    { hours: 0.5, get: { wood: 5 },   word: "a bush", verb: "Grub out" },
   fence:   { hours: 0.5, get: { wood: 10 },  word: "a fence panel", verb: "Pull down" },
+  wirefence: { hours: 0.5, get: { scrap: 1 }, word: "a wire fence panel", verb: "Pull down" }, // a field's (fieldLayer): its wire and staples
   fieldgate: { hours: 0.5, get: { wood: 15 }, word: "a field gate", verb: "Take down" }, // its two cells (fieldLayer)
   hay:     { hours: 0.5, get: {},            word: "a hay bale", verb: "Shift" },
   rock:    { hours: 1,   get: {},            word: "a rock", verb: "Roll away" },
@@ -202,15 +203,21 @@ export function scatterLayer(seed, terrain, G) {
 // The user's request 2026-10-23: "Fix fences for farmland tiles to not be random singular fences make them square, go
 // off screen and have a gate to enter the inside of the fenced area". On farmland (plains) and a farm's fields the
 // fence runs are fields now: at most one to a REGION of the map (the chance P by the terrain), a square of fence S
-// cells a side, GAP cells or more in from its region's edge (a lane between neighbours). The regions are laid from
-// the map's middle, so the ring of them round its edge runs off it: the map's edge cuts those fields. Each field has a
+// cells a side, GAP cells or more in from its region's edge (a lane between neighbours). The regions' grid is shifted
+// by the tile's dice and runs on past the map, so the ring of them round its edge runs off it: the map's edge (and a
+// base view's) cuts those fields. Each field has a
 // gate (GATE cells of combat.js CELL fieldgate, walked through) in the side facing the map's middle, on the map and
 // never at a corner; landOf keeps the ground APRON cells deep either side of it clear of the scatter, so the way in
 // stays open, and lays no field the river runs through (its far part would be shut in). Its fence is broken where a
-// road, a town's paving, the yard or the clearing crosses it (the road runs on through).
-export const FIELD = { REGION: 48, S: [22, 42], GAP: 3, GATE: 2, APRON: 2, P: { farm: 0.85, plains: 0.45 } };
+// road, a town's paving, the yard or the clearing crosses it (the road runs on through). Its fence (the user's word
+// 2026-10-23: "Add wire fences and wood fences"): post and rail (k "fence", half cover) or, a WIRE share of the
+// fields by the terrain, post and wire (k "wirefence": no cover, seen through, climbed over like half cover:
+// combat.js vaultable); the gate a wooden one either way. Where its fence meets the map's edge the view runs it on
+// past the edge into the fog (ui/isoview.js offEdgeFences).
+export const FIELD = { REGION: 48, S: [22, 42], GAP: 3, GATE: 2, APRON: 2, P: { farm: 0.85, plains: 0.45 }, WIRE: { farm: 0.4, plains: 0.55 } };
 /**
- * The fields over [-G, G) (map coordinates): [{ id, x0, y0, s (the square [x0, x0 + s) each way), fence: [[x, y]…]
+ * The fields over [-G, G) (map coordinates): [{ id, x0, y0, s (the square [x0, x0 + s) each way), k (its fence's
+ * kind: "fence" or "wirefence"), fence: [[x, y]…]
  * (on the map, the gate's cells left out), gate: [[x, y]…] (none when its side has no room on the map), out: [dx, dy]
  * (the way out through the gate) }]. The same for the same tile, terrain and grid; none off farmland.
  * @param {number} seed @param {string} terrain @param {number} G
@@ -221,10 +228,13 @@ export function fieldLayer(seed, terrain, G) {
   return cached(`f|${seed}|${terrain}|${G}`, () => {
     const R = FIELD.REGION, out = [];
     const on = (x, y) => x >= -G && y >= -G && x < G && y < G;
-    for (let ry = Math.floor(-G / R); ry * R < G; ry++) for (let rx = Math.floor(-G / R); rx * R < G; rx++) {
+    // The regions' grid, shifted by the tile's dice: laid on the map's middle it lined up with a base's view (its crop
+    // round the middle a whole number of regions across), whose edges then always fell in the lanes between fields.
+    const sh = new Rng(seed ^ 0x2b7d), ox = sh.int(0, R - 1), oy = sh.int(0, R - 1);
+    for (let ry = Math.floor((-G - oy) / R); ry * R + oy < G; ry++) for (let rx = Math.floor((-G - ox) / R); rx * R + ox < G; rx++) {
       const rng = new Rng(chunkSeed(seed ^ 0x6f1e, rx, ry));
       if (!rng.chance(P)) continue;
-      const s = rng.int(FIELD.S[0], FIELD.S[1]), x0 = rx * R + rng.int(FIELD.GAP, R - FIELD.GAP - s), y0 = ry * R + rng.int(FIELD.GAP, R - FIELD.GAP - s);
+      const s = rng.int(FIELD.S[0], FIELD.S[1]), x0 = ox + rx * R + rng.int(FIELD.GAP, R - FIELD.GAP - s), y0 = oy + ry * R + rng.int(FIELD.GAP, R - FIELD.GAP - s);
       const x1 = x0 + s - 1, y1 = y0 + s - 1;
       if (x1 < -G || y1 < -G || x0 >= G || y0 >= G) continue;
       // The gate: in the side facing the map's middle (the longer way to it), its cells on the map, two or more cells
@@ -239,7 +249,8 @@ export function fieldLayer(seed, terrain, G) {
       const edge = (x, y) => { if (on(x, y) && !isGate.has(ck(x, y))) fence.push([x, y]); };
       for (let x = x0; x <= x1; x++) { edge(x, y0); edge(x, y1); }
       for (let y = y0 + 1; y < y1; y++) { edge(x0, y); edge(x1, y); }
-      out.push({ id: `${rx},${ry}`, x0, y0, s, fence, gate, out: dir });
+      const k = rng.chance(FIELD.WIRE[terrain] || 0) ? "wirefence" : "fence";
+      out.push({ id: `${rx},${ry}`, x0, y0, s, k, fence, gate, out: dir });
     }
     return out;
   });
@@ -921,7 +932,7 @@ export function landOf(spec, land) {
   const wet = (f) => { for (let y = f.y0 - 1; y <= f.y0 + f.s; y++) for (let x = f.x0 - 1; x <= f.x0 + f.s; x++) if (onRiver(spec, x, y)) return true; return false; };
   for (const f of fieldLayer(spec.seed, spec.terrain, spec.G)) {
     if (spec.river && wet(f)) continue;
-    for (const [x, y] of f.fence) if (fieldOk(x, y)) put({ k: "fence", g: `fd${f.id}@${x},${y}`, cells: [[x, y]] });
+    for (const [x, y] of f.fence) if (fieldOk(x, y)) put({ k: f.k, g: `fd${f.id}@${x},${y}`, cells: [[x, y]] });
     if (!f.gate.length) continue;
     const [dx, dy] = f.out, [ax, ay] = [Math.abs(dy), Math.abs(dx)]; // out of the field; along its side
     for (const [x, y] of f.gate) for (let i = -1; i <= 1; i++) for (let d = -FIELD.APRON; d <= FIELD.APRON; d++) if (d) apron.add(`${x + ax * i + dx * d},${y + ay * i + dy * d}`);

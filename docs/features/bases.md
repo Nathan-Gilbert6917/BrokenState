@@ -141,6 +141,7 @@ Modules: [basemap, ui/basemap, ui/combat]. Screens: [docs/map-layers/](../map-la
   | fallen log | 1.5 | 40 wood |
   | bush | 0.5 | 5 wood |
   | fence panel | 0.5 | 10 wood |
+  | wire fence panel | 0.5 | 1 scrap |
   | field gate (its two cells) | 0.5 | 15 wood |
   | hay bale | 0.5 | |
   | rock / boulder | 1 / 3 | |
@@ -154,10 +155,12 @@ Modules: [basemap, ui/basemap, ui/combat]. Screens: [docs/map-layers/](../map-la
 
 ### Farmland's fenced fields
 - The user's request 2026-10-23: "Fix fences for farmland tiles to not be random singular fences make them square, go off screen and have a gate to enter the inside of the fenced area".
-- On farmland (plains) and a farm's fields (basemap terrainOf "farm") the old fence runs are gone; the fences are fields (basescatter fieldLayer, FIELD): at most one to a 48-cell REGION of the map (chance P: farm 0.85, plains 0.45), a square of fence 22–42 cells a side (S), 3 or more cells in from its region's edge (GAP: a lane between fields). The regions are laid from the map's middle, so the ring of them round the 250 × 250 map runs off its edge: those fields are cut by it.
+- On farmland (plains) and a farm's fields (basemap terrainOf "farm") the old fence runs are gone; the fences are fields (basescatter fieldLayer, FIELD): at most one to a 48-cell REGION of the map (chance P: farm 0.85, plains 0.45), a square of fence 22–42 cells a side (S), 3 or more cells in from its region's edge (GAP: a lane between fields). The regions' grid is shifted by the tile's dice (laid on the map's middle it lined up with a hub's 96-cell view, whose edges then always fell in the lanes) and runs on past the map, so the ring of them round the 250 × 250 map runs off its edge: those fields are cut by it, and by a base view's edge.
+- **Wood and wire** (the user's word 2026-10-23: "Add wire fences and wood fences"): a field's fence is post and rail (`fence`, half cover, 10 wood to pull down a panel) or, FIELD.WIRE of the fields (farm 0.4, plains 0.55), post and wire (CELL `wirefence` "Wire fence": no cover, seen through, climbed over by the living and crawled over by the dead like half cover: combat vaultable OVER; smashed open by a brute; 1 scrap a panel); drawn as a weathered post and three strands of plain wire (ui/isoview). The gate is wooden either way.
+- **Off the map** (the user's word 2026-10-23: "Show it going off the map and not just terminating"): where a fence line meets the map's edge (its cells one and two in: the outermost ring stays the attackers' open ground), the view runs it on straight out across the edge's skirt (ui/battleedge) into the fog, fading with it (ui/isoview offEdgeFences, drawn by depth with the cells). Scenery only, like the skirt.
 - Each field has a **gate**: two cells of CELL `fieldgate` ("Field gate": walked through, no cover; drawn as a pale five-bar gate with a brace and posts where it meets the fence, ui/isoview) in the side facing the map's middle, on the map and two or more cells from a corner. landOf keeps the ground FIELD.APRON (2) cells deep either side of it clear of the scatter, so the way in stays open.
 - The fields go down before the scatter (nothing stands on a fence line); the fence is broken where a road, the paving, the yard or the clearing crosses it, and no field is laid where the river runs (its far part would be shut in). A fence panel or the gate is cleared for its wood like any piece (CLEAR; "All" takes a run of up to 40 panels: basemap landPieceAt).
-- Modules: [basescatter fieldLayer / landOf, combat CELL fieldgate, ui/isoview prims, throwables (it burns)]; test `tools/farmfieldstest.js` (squares, gates facing the middle, apart, off the edge, no loose fences, clear aprons, every field walked into through its gate); `tools/mapreachtest.js` covers farmland and a farm's fields.
+- Modules: [basescatter fieldLayer / landOf, combat CELL fieldgate / wirefence / vaultable, ui/isoview prims / offEdgeFences, throwables (it burns), zombietypes SMASH]; test `tools/farmfieldstest.js` (squares, gates facing the middle, apart, off the edge, no loose fences, clear aprons, every field walked into through its gate, wood and wire, the lines run on past the edge); `tools/mapreachtest.js` covers farmland and a farm's fields.
 
 ### Towns and cities
 - The user's request 2026-10-22: "Add more variety to the bare base maps with elevations in hill tiles, houses, roads and stores in town tiles and similar but more city like for city tiles".
