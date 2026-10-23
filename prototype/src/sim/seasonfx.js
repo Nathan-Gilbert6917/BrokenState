@@ -5,17 +5,15 @@
 // null"; and, the same day, "when night and foggy the vision is really reduced").
 // The weather of the battle's tile at the hour it starts (weather.js weatherAt; it holds for the fight: a fight is
 // minutes) is noted once, as the map is made (seasonBattle, from combat.js createBattle / createRaid right after
-// ponds.js pondsBattle): b.sfx { snow, snowStep, ice, rain, fog, fogWhy }. Everyone obeys the same rules: your people,
+// ponds.js pondsBattle): b.sfx { ice, rain, fog, fogWhy }. Everyone obeys the same rules: your people,
 // raiders, soldiers, the third side and the dead (docs/adr/0001-ai-parity.md).
-//   - Snow (SNOW): in winter (WINTER deep at least), under falling snow (FALLING) or wherever the tile's snow cover
-//     lies (weather.js snowCover), open ground is snow: a step into it costs snowStep more moves (COST × the depth over
-//     FULL, MIN to MAX of it: half cover or a winter's day +0.5, a blizzard's drifts +0.75), a road ROAD of that (worn
-//     down), nothing on a floor indoors, a roof, a pond (its own cost: ponds.js wetCost) or ice (groundCost: combat.js
-//     reachable and distField, the dead's way round as everyone's).
+//   - Snow slowing people is seasonground.js's (the season-ground work: c.gnd "snow" on the outdoor ground while snow lies,
+//     SNOW.COST +0.25 a step, +0.5 in deep snow, every side alike, in the step cost of combat.js reachable and distField);
+//     not repeated here. This file adds the words (the conditions line "Snow: moves +25%", the move preview's snow total).
 //   - Ice (ICE): freezing (the hour's temperature at or below 0 °C, frozen ground, or the hollows' ponds iced over) and
 //     wet (snow lying, mud, rain or snow falling, a pond in the hollows): a frozen pond (ponds.js c.wet "ice"), ROAD of a
 //     road's cells and PUDDLE of open ground's (frozen puddles: c.ice, by the tile, the day and the cell, no dice of the
-//     battle's) are ice. A step onto ice costs COST more and SLIP to slip (careful: sneaking ×CAREFUL, Light Step
+//     battle's; the ground's snow gives way to the ice there) are ice. A step onto ice costs COST more and SLIP to slip (careful: sneaking ×CAREFUL, Light Step
 //     ×LIGHT): the move ends there, the rest of the turn is spent getting up (u.ap 0) and the fall hurts HURT
 //     (slipStep, from combat.js moveAlong; the battle's own dice: armour.js battleDice "slip", so a replay is the same).
 //   - Rain (b.sfx.rain "rain" | "storm"): noise carries HEAR[rain] as far (muffle: combat.js alertNear, stealth.js
@@ -31,9 +29,10 @@
 //     vision LIGHT of their reach (the beam scatters in the murk), never less than NIGHT. One place: fogSight (combat.js
 //     sightRange: those with no front), nightFogEyes (vision.js nightEyes) and the guards' noticing range (stealth.js
 //     noticeRange: fogNotice). Indoors (a floor) the fog changes nothing.
-// UI: the battle's conditions line (conditions: "Snow: moves +50%", "Ice", "Rain fog: sight 7", "Night fog: sight 3",
+// UI: the battle's conditions line (conditions: "Snow: moves +25%", "Ice: 10% to slip", "Rain fog: sight 7", "Night fog: sight 3",
 // "Rain: sounds carry less"), the hover (cellWord) and the move preview (pathWord) in ui/combat.js.
-import { weatherAt, season, rainFog } from "./weather.js";
+import { weatherAt, rainFog } from "./weather.js";
+import { SNOW, groundCost } from "./seasonground.js"; // the ground's snow (its cost and depth: the words here)
 import { WX_SIGHT, WX_SIGHT_MIN } from "./wxsight.js"; // the day's fog cut to sight (the battle's fog: everyone alike)
 import { hash01 } from "./skills.js";
 import { battleDice } from "./armour.js";
@@ -42,15 +41,14 @@ import { LIGHTS } from "./lights.js";
 /** @import { State } from "./types" */
 
 export const SEASONFX = {
-  SNOW: { COST: 0.5, FULL: 0.5, MIN: 0.5, MAX: 1.5, WINTER: 0.5, FALLING: 0.3, LEAST: 0.05, ROAD: 0.5 },
   ICE: { SLIP: 0.1, CAREFUL: 0.5, LIGHT: 0.75, HURT: [1, 3], COST: 0.25, ROAD: 0.3, PUDDLE: 0.03 },
   HEAR: { rain: 0.6, storm: 0.45, QUIET: 3, LURE: 6.5 },
   FOG: { NIGHT: 3, LIGHT: 0.5 }, // by day the cut is wxsight.js WX_SIGHT.fog
 };
-const { SNOW, ICE, HEAR, FOG } = SEASONFX;
+const { ICE, HEAR, FOG } = SEASONFX;
 const r2 = (v) => Math.round(v * 100) / 100;
-// The ground snow lies on (c.f): its share of the step's cost. A floor, a roof, the air: none.
-const SNOW_ON = { grass: 1, dirt: 1, field: 1, road: SNOW.ROAD };
+// The outdoor ground a frozen puddle can lie on (c.f). A floor, a roof, the air: none.
+const PUDDLE_ON = new Set(["grass", "dirt", "field"]);
 const cellOf = (b, x, y) => (b && b.cells && b.w && x >= 0 && y >= 0 && x < b.w ? b.cells[y * b.w + x] : null);
 // Inside a building: a floor (building maps, a raid's interiors, the base's buildings).
 const indoorCell = (b, x, y) => { const c = cellOf(b, x, y); return !!(c && (c.f === "floor" || c.indoor)); };
@@ -67,12 +65,8 @@ export function seasonBattle(state, b, tileId) {
   let w;
   try { w = weatherAt(state, tileId, state.hour); } catch { return null; }
   if (!w) return null;
-  const winter = season(state).key === "winter";
   /** @type {any} */
   const fx = {};
-  // Snow lying on open ground.
-  const depth = Math.max(w.snowCover || 0, winter ? SNOW.WINTER : 0, (w.snow || 0) > 0 ? SNOW.FALLING : 0);
-  if (depth >= SNOW.LEAST) { fx.snow = r2(Math.min(1, depth)); fx.snowStep = r2(SNOW.COST * Math.min(SNOW.MAX, Math.max(SNOW.MIN, depth / SNOW.FULL))); }
   // Ice: freezing and wet.
   const freezing = (w.temp ?? 99) <= 0 || !!w.frozen || !!(b.ponds && b.ponds.ice);
   const wet = (w.snowCover || 0) >= 0.05 || (w.mud || 0) >= 0.1 || (w.rain || 0) > 0 || (w.snow || 0) > 0 || !!b.ponds;
@@ -83,8 +77,8 @@ export function seasonBattle(state, b, tileId) {
       const c = b.cells[i];
       if (c.wet === "ice") { n++; continue; }
       if (c.k !== "open" || c.wet) continue;
-      const p = c.f === "road" ? ICE.ROAD : SNOW_ON[c.f] ? ICE.PUDDLE : 0;
-      if (p && hash01("ice", tileId, day, i) < p) { c.ice = true; n++; }
+      const p = c.f === "road" ? ICE.ROAD : PUDDLE_ON.has(c.f) ? ICE.PUDDLE : 0;
+      if (p && hash01("ice", tileId, day, i) < p) { c.ice = true; delete c.gnd; delete c.sd; n++; }
     }
     if (n) fx.ice = n;
   }
@@ -106,17 +100,12 @@ export function seasonBattle(state, b, tileId) {
   return fx;
 }
 
-// ---------- snow and ice: moving ----------
+// ---------- ice: moving ----------
 export const isIce = (c) => !!c && (c.wet === "ice" || !!c.ice);
-// The moves a step into a cell costs more for the snow or the ice (combat.js reachable, distField; a pond's own cost
-// is ponds.js wetCost: a frozen pond is its ice, not snow).
-export function groundCost(b, c) {
-  const f = b && b.sfx;
-  if (!f || !c) return 0;
-  if (c.ice && !c.wet) return ICE.COST;
-  if (!f.snowStep || c.wet || c.indoor) return 0;
-  const m = SNOW_ON[c.f];
-  return m ? f.snowStep * m : 0;
+// The moves a step onto ice costs more (combat.js reachable, distField; a pond's own cost is ponds.js wetCost: a frozen
+// pond is its ice; the ground's snow is seasonground.js groundCost).
+export function iceCost(b, c) {
+  return b && b.sfx && c && c.ice && !c.wet ? ICE.COST : 0;
 }
 // The chance a step onto ice slips: careful feet (sneaking) and Light Step (skills.js: u.sneak) less. The dead too.
 export function slipChance(u) {
@@ -206,29 +195,27 @@ export function fogNotice(b, e, mover, r) {
 // ---------- words ----------
 // The battle's conditions: [{ text, tip, cls }] (ui/combat.js conditions line).
 export function conditions(b) {
-  const f = b && b.sfx;
-  if (!f) return [];
+  const f = (b && b.sfx) || {};
   const out = [];
-  if (f.snowStep) out.push({ text: `Snow: moves +${Math.round(f.snowStep * 100)}%`, cls: "warn", tip: `Snow lies on the open ground (${Math.round(f.snow * 100)}% cover): every step into it costs +${f.snowStep} moves (a road +${r2(f.snowStep * SNOW.ROAD)}; floors indoors nothing). Everyone wades through it, the dead too.` });
+  const snow = b && b.ground && b.ground.snow;
+  if (snow > 0) { const deep = snow >= SNOW.DEEP; out.push({ text: `${deep ? "Deep snow" : "Snow"}: moves +${Math.round((deep ? SNOW.DEEP_COST : SNOW.COST) * 100)}%`, cls: "warn", tip: `Snow lies on the outdoor ground (${Math.round(snow * 100)}% cover): every step into it costs +${deep ? SNOW.DEEP_COST : SNOW.COST} moves (+${SNOW.DEEP_COST} in deep snow). Everyone wades through it, the dead too (seasonground.js).` }); }
   if (f.ice) out.push({ text: `Ice: ${Math.round(ICE.SLIP * 100)}% to slip`, cls: "warn", tip: `It is freezing: frozen puddles, icy road and frozen ponds. A step onto ice costs +${ICE.COST} moves and has a ${Math.round(ICE.SLIP * 100)}% chance to slip (${Math.round(ICE.SLIP * ICE.CAREFUL * 100)}% sneaking, less with Light Step): the move ends there, the rest of the turn is spent getting up, ${ICE.HURT[0]}–${ICE.HURT[1]} damage. The enemy and the dead slip too.` });
   if (f.fog && b.night) out.push({ text: `Night fog: sight ${FOG.NIGHT}`, cls: "danger", tip: `${f.fogWhy} in the dark: everyone sees ${FOG.NIGHT} tiles ahead at most; a light's beam or pool and night vision reach half as far as in a clear night (the beam scatters in the murk), never less than ${FOG.NIGHT}. Guards notice you only that close.` });
   else if (f.fog) { const me = (b.units || []).find((u) => u.side === "player" && u.daySight != null); const day = me ? me.daySight : Math.max(WX_SIGHT_MIN, 13 - WX_SIGHT.fog); out.push({ text: `${f.fogWhy}: sight ${Math.round(day)}`, cls: "warn", tip: `${f.fogWhy}: everyone on the map, on every side and the dead too, sees ${WX_SIGHT.fog} tiles less by day (never under ${WX_SIGHT_MIN}); at night it is far worse. Indoors it changes nothing.` }); }
   if (f.rain) out.push({ text: `${f.rain === "storm" ? "Storm" : "Rain"}: sounds carry less`, cls: "muted", tip: `The ${f.rain === "storm" ? "storm" : "rain"} drowns out sounds made outdoors: gunshots and footsteps are heard ×${HEAR[f.rain]} as far, anything heard less than ${HEAR.QUIET} tiles off not at all; noise lures (a bottle, a noise maker, an alarm clock...) that would carry less than ${HEAR.LURE} tiles do nothing. A flare and heat lures still work. Indoors nothing changes.` });
   return out;
 }
-// The hover's words for a cell: the snow on it, the ice and its risk (ui/combat.js previewText).
+// The hover's words for a cell: the ice and its risk (the snow's are seasonground.js groundWord) (ui/combat.js previewText).
 export function cellWord(b, c, u = null) {
-  const f = b && b.sfx;
-  if (!f || !c) return "";
+  if (!b || !b.sfx || !c) return "";
   if (isIce(c)) return `<b>Ice</b>: ${Math.round(slipChance(u && u.kind ? u : {}) * 100)}% to slip${u && u.sneaking ? " (sneaking)" : ""} stepping onto it (the move ends, the turn spent getting up, ${ICE.HURT[0]}–${ICE.HURT[1]} damage)${c.wet ? "" : `, +${ICE.COST} moves`}.`;
-  const g = groundCost(b, c);
-  return g ? `<b>Snow</b>: +${r2(g)} moves a step in${c.f === "road" ? " (the road, worn down)" : ""}.` : "";
+  return "";
 }
 // The move preview's words for a path (ui/combat.js moveWord): the snow it wades and the ice it crosses.
 export function pathWord(b, u, path) {
-  if (!b || !b.sfx || !path || !path.length) return "";
+  if (!b || !path || !path.length || !(b.sfx || b.ground)) return "";
   let snow = 0, ice = 0;
-  for (const [x, y] of path) { const c = cellOf(b, x, y); if (isIce(c)) ice++; else snow += groundCost(b, c); }
+  for (const [x, y] of path) { const c = cellOf(b, x, y); if (isIce(c)) ice++; else if (c && c.gnd === "snow") snow += groundCost(c); }
   const p = slipChance(u);
   const bits = [];
   if (snow > 0) bits.push(`snow +${r2(snow)} tiles`);

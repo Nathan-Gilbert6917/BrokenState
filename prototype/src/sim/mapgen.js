@@ -36,6 +36,27 @@ const PLACE_NAMES = ["Elk Ridge", "Bear Lake", "Pine Hollow", "Cedar Hollow", "E
   "Granite Peak", "Hawk Hill", "Silver Creek", "Juniper Flats", "Bitterroot", "Lone Pine", "Deer Run", "Owl Canyon", "Raven Point",
   "Spring Meadow", "Black Rock", "Willow Bend"];
 
+// Ponds (the user's words 2026-10-23: "add pond decor to the world map when a tile has a pond in the world map generate
+// a pond in the battle map"): tile.pond, a spring-fed pond on the tile (drawn on the State Map: ui/terraindeco.js; a
+// hollow of water on its base, fight and raid maps: basescatter.js SPRING, relief.js, ponds.js). Open land only
+// (pondLand: farmland, countryside, forest, hills; never water or a river, a mountain, a city, the suburbs or a town's
+// site; a countryside site, a farm or a cabin, may have one), P[terrain] of it by hash dice of the world's seed and the
+// tile (skills.js hash01: the map's own dice untouched, so a seed builds the same map under them), laid last, on the
+// ground the town rings left. About 1 tile in 20 of open land: some 100 on a Normal 64 × 42 map. A save from before ponds gets
+// them from its seed on load (save.js, state.worldPonds).
+export const WORLD_PONDS = { P: { plains: 0.06, forest: 0.05, hills: 0.04 } };
+/** Open land a pond may lie on. @param {any} t */
+export const pondLand = (t) => !!t && !t.river && (WORLD_PONDS.P[t.terrain] || 0) > 0 && (!t.loc || t.loc.zone === "rural");
+/** A pond on the tile by the world's dice (pondLand first). @param {number | null | undefined} seed @param {any} t */
+export const pondDice = (seed, t) => pondLand(t) && hash01(seed == null ? 0 : seed, "pond", t.id) < WORLD_PONDS.P[t.terrain];
+/** Marks the map's pond tiles (tile.pond), in place. skip(t): a tile left as it is (save.js: one holding a base). @param {any[]} tiles @param {number | null | undefined} seed @param {(t: any) => boolean} [skip] */
+export function pondsOnMap(tiles, seed, skip = null) {
+  for (const t of tiles) {
+    if (skip && skip(t)) continue;
+    if (pondDice(seed, t)) t.pond = true; else delete t.pond;
+  }
+}
+
 // Urban sites per city, in placement order (the first rounds are the basics every city gets while there is room):
 // [type, count in Calder City, count in the second city, where]. where: core = city tiles, ring = suburbs,
 // edge = the outer suburbs, any.
@@ -520,6 +541,8 @@ export function generateMap(rng, size = "normal", { hives = null, seed = null } 
       if (!t.loc) t.loot = Math.max(t.loot, 0.3);
     }
   }
+
+  pondsOnMap(tiles, seed);
 
   return {
     grid, tiles, cityId: main.id, originId: origin.id,

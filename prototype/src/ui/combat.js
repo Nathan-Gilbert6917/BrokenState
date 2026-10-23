@@ -28,6 +28,7 @@ import { INTERIOR } from "../sim/interior.js";
 import { wetWord, climbWord } from "../sim/ponds.js"; // a hollow's pond, mud or ice; the climb in the rain or in winter
 import { conditions, cellWord, pathWord, drownWhy, SEASONFX } from "../sim/seasonfx.js"; // snow, ice, rain and fog on the map (the user's request 2026-10-23)
 import { wxSightWord } from "../sim/wxsight.js"; // fog and a blizzard: everyone's sight cut ("Fog: sight −4")
+import { groundWord } from "../sim/seasonground.js"; // spring's mud, winter's snow on the ground
 import { PARLEY, parleyStatus, parleyGroupsSeen, callOutRefusal, callOutTargets } from "../sim/parley.js"; // other groups on a raid's map: Call out, hostile or not (the user's request 2026-10-20)
 import * as PARLEY_SIM from "../sim/parley.js"; // the exports that may not be there yet (shoutCost), looked up when present
 import { ALLY_ORDER, ALLY_ORDERS, allyOrderTargets, allyOrderRefusal, allyOdds, allyOrderOf, allyOrdersShown } from "../sim/allyorders.js"; // orders to allies on a raid's map (the user's request 2026-10-21)
@@ -66,7 +67,7 @@ export const QUICK_MARK = "#7fb8e6"; // a container rummaged through but not sea
 import { unitCanvas, canvasURL, spriteImg } from "./sprites.js";
 import { lockPanel, raidKeyLine, lockPreview } from "./locks.js";
 import { lockAt, openOdds } from "../sim/locks.js"; // a click on a locked door (lockedDoorClick)
-import { carPanel, carPreview } from "./carpanel.js"; // cars on the map: get in, keys, hotwire, inspect, claim (sim/foundcars.js)
+import { carPanel, carPreview, carThrowPreview } from "./carpanel.js"; // cars on the map: get in, keys, hotwire, inspect, claim, its alarm (sim/foundcars.js, sim/caralarms.js)
 import { ZTYPES } from "../sim/hiveconst.js";
 import { ACID, acidAt } from "../sim/acid.js";
 import { ladderTargets, pushable, pushChance, ramTargets, ramOf, dropTargets, RAM, LADDER, DROP } from "../sim/siege.js";
@@ -525,6 +526,8 @@ function tapHtml(state, b, a) {
     const mine = inIt.filter((o) => o.side === "player").length, theirs = inIt.length - mine;
     head = `<b>Throw ${esc(T.label || (GEAR[a.item] || {}).name || a.item)}</b>`;
     body = Math.hypot(a.x - u.x, a.y - u.y) > T.range + 0.01 ? `<span class="warn">Out of reach: ${T.range} tiles at most.</span>` : area.size || (tp && tp.caught.length) ? `${theirs ? `catches ${theirs} of them` : "nobody of theirs in it"}${mine ? ` · <span class="danger">and ${mine} of yours!</span>` : ""}` : `lands ${Math.round(Math.hypot(a.x - u.x, a.y - u.y))} tiles off`;
+    const win = Math.hypot(a.x - u.x, a.y - u.y) > T.range + 0.01 ? "" : carThrowPreview(b, a.item, a.x, a.y); // at a car: through its window, its alarm (ui/carpanel.js)
+    if (win) body += ` · ${win}`;
   } else body = String(previewHtml(b, state)).split("<br>")[0]; // the hover card's first line: the aim, the ally's order, the door...
   if (a.type === "search" || a.type === "searchBody") head += ` <span class="muted">${a.quick ? "a quick rummage: no action, heard nearby" : `${SEARCH.ap} action`}</span>`;
   return `<div class="tc-head">${head}</div>${body ? `<div class="tc-body">${body}</div>` : ""}`;
@@ -2290,7 +2293,7 @@ export function renderCombatPanel(state) {
   if (b.raid && b.raid.choose) html += chooseHtml(b);
   if (kitWarnDue(state, b)) html += kitWarnHtml(state, b); // sim/kitcheck.js: empty guns, no healing, the hurt, before the first move
   if (b.night && !b.raid && b.phase !== "deploy") html += nightHtml(b); // sim/vision.js: the dark, by the hour
-  if (b.sfx && !b.raid && b.phase !== "deploy") html += wxHtml(b); // sim/seasonfx.js: snow, ice, rain, fog
+  if ((b.sfx || b.ground) && !b.raid && b.phase !== "deploy") html += wxHtml(b); // sim/seasonfx.js: snow, ice, rain, fog
   if (b.stores) html += storesHtml(b, cui, u); // the stores on the base map (sim/basemap.js); an assault's: Take, Force lock (sim/assaultstores.js)
   // Looking at another floor than the selected unit's (PageUp / PageDown, the Floor control): say so, with the way back.
   if (u && alive(u) && floorsOf(b) && u.f != null && u.f !== floorNo(b)) {
@@ -2591,7 +2594,7 @@ function raidHead(state, b, phase) {
     ${sel && sel.side === "player" && active(sel) && quickable(searchableNear(b, sel)).length ? `<div class="small muted" style="margin-top:0.25rem" data-tip="${esc(`Shift+Q, no action (once a turn): heard ${quickRadius(b, sel)} tiles off, Heat +${SEARCH.quick.heat}. The cut costs a few health and needs dressing (meds); less likely with Scavenging or Stealth, more in the dark without a light.`)}">Quick search: shows ${Math.round(SEARCH.quick.reveal[0] * 100)}–${Math.round(SEARCH.quick.reveal[1] * 100)}%, loud, ${quickHurtPct(state, b, sel)} chance of cutting yourself</div>` : ""}
     ${(R.hasVehicle ?? R.vehicleZone >= 0) ? `<div class="small warn" style="margin-top:0.25rem" data-tip="Leave from another zone and the vehicle stays here, marked on the map. It can be driven (Drive) and extracts with whoever leaves from the zone it stands at.">${R.vehicleZone >= 0 ? "Your vehicle stands at an extraction zone. Extract there to keep it." : "Your vehicle stands away from the zones: drive it back to one before extracting, or it stays behind."}</div>` : ""}
     ${b.night ? nightHtml(b) : ""}
-    ${b.sfx ? wxHtml(b) : ""}
+    ${b.sfx || b.ground ? wxHtml(b) : ""}
     ${raidKeyLine(state, b)}
   </div>`;
 }
@@ -3502,7 +3505,7 @@ function moveWord(b, u, v, x, y) {
   const d = v.reach ? v.reach.dist[y * W + x] : Infinity;
   if (!(isFinite(d) && d > 0)) return "";
   const vaults = pathTo(v.reach, x, y).filter(([px, py]) => !CELL[b.cells[py * W + px].k].walk && SIM.vaultable(b, b.cells[py * W + px])).length;
-  const wx = b.sfx ? pathWord(b, u, pathTo(v.reach, x, y)) : ""; // sim/seasonfx.js: the snow waded, the ice crossed
+  const wx = b.sfx || b.ground ? pathWord(b, u, pathTo(v.reach, x, y)) : ""; // sim/seasonfx.js: the snow waded, the ice crossed
   return `${vaults ? "Vault and " : ""}${d <= SIM.moveMob(u) ? `${vaults ? "move" : "Move"}: 1 action${u.sneaking ? ", silent (sneaking)" : vaults ? ", a scuff heard nearby" : ", a small chance of a scuff heard nearby"}` : `${vaults ? "dash" : "Dash"}: 2 actions${u.sneaking ? ", silent (sneaking)" : `, loud: heard ${VISION.DASH_NOISE} tiles off`}`}${vaults ? ` (over half cover: +${SIM.VAULT.COST * vaults} tiles, and ${SIM.VAULT.COST * vaults} less of movement for the rest of the turn)` : ""}${wx ? ` <span class="warn">(${wx})</span>` : ""}.`;
 }
 
@@ -3519,6 +3522,7 @@ function previewText(b, state = null) {
   if (b.layout && state) return layoutHover(state, b, h, ghostAt(state, b, h.x, h.y)); // the base map (ui/basemap.js)
   if (b.stores && !unitAt(b, h.x, h.y)) { const sc = storeAt(b, h.x, h.y); if (sc && (b.phase === "deploy" || !CDEF(b.cells[h.y * W + h.x]).walk)) return storeHover(sc); } // a store on the base map
   if (u && (cui.mode === "suppress" || cui.mode === "throwspear" || cui.mode === "launch")) return aimPreview(b, u, h); // the weapons overhaul's targeting
+  if (u && cui.mode === "throw" && cui.throwKey) { const win = carThrowPreview(b, cui.throwKey, h.x, h.y); if (win) { const car = state ? carPreview(state, b, h.x, h.y) : ""; return car ? car.replace("<br>", `<br>${win}<br>`) : win; } } // a bottle at a car: through the window, its alarm (ui/carpanel.js)
   const ap = allyMode() ? allyPreview(state, b, h) : ""; // Ally orders: the tile, the way or the enemy picked, the odds they heed it
   if (ap) return ap;
   const ih = allyIntelHover(b, view(b), h.x, h.y); // Tell me what you see: what an ally told your people is there
@@ -3581,7 +3585,8 @@ function previewText(b, state = null) {
     if (b.lit && b.lit[h.y * W + h.x]) return "Floodlit: shots at anything here get the light's bonus.";
   }
   const lure = (b.lures || []).find((l) => l.x === h.x && l.y === h.y);
-  if (lure) return `<b>${esc(GEAR[lure.key].name)}</b>: ${lure.key === "noisemaker" ? `still ringing (${lure.turns} turn${lure.turns === 1 ? "" : "s"})` : "where it landed"}. Guards and the dead nearby come to look.`;
+  if (lure && lure.key === "caralarm") { const car = state ? carPreview(state, b, h.x, h.y) : ""; return `<b>Car alarm (${lure.turns} turn${lure.turns === 1 ? "" : "s"})</b>: whooping. The dead within ${lure.radius} tiles go to it, away from you.${car ? `<br>${car}` : ""}`; } // sim/caralarms.js: a ringing car's lure
+  if (lure) return `<b>${esc((GEAR[lure.key] || {}).name || "Something thrown")}</b>: ${lure.key === "noisemaker" ? `still ringing (${lure.turns} turn${lure.turns === 1 ? "" : "s"})` : "where it landed"}. Guards and the dead nearby come to look.`;
   if (state && !(b.raid && boxAt(b, h.x, h.y))) { const carText = carPreview(state, b, h.x, h.y); if (carText) return carText; } // ui/carpanel.js: a car or Army truck (not a raid container: that has its own line)
   if (b.raid) {
     const lockText = lockPreview(b, u, h.x, h.y); // ui/locks.js: a locked container or door
@@ -3692,6 +3697,7 @@ function previewText(b, state = null) {
   if (soft) s += ` <span class="muted">${soft}</span>`;
   // A hollow's pond, mud or ice by the weather (sim/ponds.js), and the climb up and down the ground in the rain or in winter.
   if (cobj.wet) s += ` ${wetWord(cobj)}`;
+  if (cobj.gnd) s += ` ${groundWord(cobj)}`; // the season on the ground (sim/seasonground.js)
   { const sw = cellWord(b, cobj, u); if (sw) s += ` <span class="warn">${sw}</span>`; } // sim/seasonfx.js: snow underfoot, ice and its slip
   if (cobj.ter && hh && climbWord(b)) s += ` <span class="warn">${climbWord(b)}</span>`;
   if (cobj.k === "wire") s += ` <b>${cobj.razor ? "Razor wire" : "Barbed wire"}</b><span class="muted">: the dead stop for the turn${cobj.razor ? " and are cut" : ""}; the living are snagged (the rest of the turn, a few cuts) unless they carry a cutter (Cut wire).</span>`; // sim/wire.js

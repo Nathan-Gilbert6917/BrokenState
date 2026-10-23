@@ -30,6 +30,7 @@ import { hiveName } from "../src/sim/hives.js";
 import * as J from "../src/sim/jobs.js";
 import * as A from "../src/sim/alliance.js";
 import * as D from "../src/sim/diplomacy.js";
+import { defaultChoice } from "../src/sim/cardrules.js"; // a road card's default answer
 
 const seed = Number(process.argv[2] || 42);
 const days = Number(process.argv[3] || 120);
@@ -40,6 +41,10 @@ const W = (s = seed) => { const st = createWorld({ seed: s, factionCount: 8 }); 
 const unknownHidden = (st) => hiddenSites(st).filter((id) => !siteKnown(st, id));
 const land = (st, t) => st.tiles[t].terrain !== "water" && st.tiles[t].terrain !== "mountain";
 const free = (st, t) => land(st, t) && !st.tiles[t].loc && !st.factions.some((f) => f.bases.includes(t)) && !st.bases.some((b) => b.tile === t);
+// The hour's cards cleared; a team's road card answered with its default, as the tray would (cardrules.js). Dropped
+// unanswered it stranded the team short of the place, regrouped and waiting for orders (conflicts.js releaseStranded):
+// since the hub starts 5 tiles clear of the towns (startpick.js START_CLEAR, 7302413) the way meets a survivor.
+const clearCards = (st) => { for (let j = st.cards.length - 1; j >= 0; j--) { const c = st.cards[j]; st.cards.splice(j, 1); const ch = c.partyId != null && !c.isOrders ? defaultChoice(st, c) : null; if (ch) ch.resolve(st); } };
 
 // ---------- 1. classification ----------
 console.log("Classification");
@@ -182,7 +187,7 @@ route("a team's sight, radioed in", () => {
   const res = launchExpedition(st, { memberIds: atBase(st, h.id).slice(0, 2).map((s) => s.id), dest: id, mission: "move", stance: "normal", supplies: { food: 10, water: 10 } });
   if (res.error) return null;
   const m = new Set(st.log);
-  for (let i = 0; i < 24 * 6 && !siteKnown(st, id); i++) { tickHour(st); st.cards.length = 0; }
+  for (let i = 0; i < 24 * 6 && !siteKnown(st, id); i++) { tickHour(st); clearCards(st); }
   return { st, id, m, word: /team \(.*\) (found|brought word of)/ };
 });
 route(TEAM_INTEL_EVERYWHERE ? "a team's sight, out of radio range (live intel)" : "a team's sight, brought home", () => {
@@ -195,10 +200,10 @@ route(TEAM_INTEL_EVERYWHERE ? "a team's sight, out of radio range (live intel)" 
   const p = res.party;
   if (TEAM_INTEL_EVERYWHERE) { // parties.js: every team reports live, out of radio range too: it goes on the map as they see it
     const m = new Set(st.log);
-    for (let i = 0; i < 24 * 8 && !siteKnown(st, id); i++) { tickHour(st); st.cards.length = 0; }
+    for (let i = 0; i < 24 * 8 && !siteKnown(st, id); i++) { tickHour(st); clearCards(st); }
     return { st, id, m, word: /team \(.*\) (found|brought word of)/ };
   }
-  for (let i = 0; i < 24 * 8 && !(p.seen.has(id)); i++) { tickHour(st); st.cards.length = 0; }
+  for (let i = 0; i < 24 * 8 && !(p.seen.has(id)); i++) { tickHour(st); clearCards(st); }
   if (!check(p.seen.has(id) && !siteKnown(st, id), "out of radio range the team has seen it but the hub's map does not show it yet")) return null;
   const m = new Set(st.log);
   p.path = [partyTile(p), h.tile]; p.idx = 1; // home now: the report comes with it

@@ -2,8 +2,8 @@
 // snow and slows people. ice can form and has a chance to trip people. In spring it rains more often and show rain fog
 // can occur to that limit visibility range and rain obscures some sounds and renders some distractions null"; and the
 // same day "when night and foggy the vision is really reduced"):
-//   1. snow: a winter battle's open ground costs +snowStep a step (a road half, a floor nothing), the dead's too, the
-//      AI's distances too; the hover and the move preview say so;
+//   1. snow: a winter battle's ground (seasonground.js) costs more a step, the dead's too, the AI's distances too; the
+//      conditions line and the move preview say so;
 //   2. ice: laid on a freezing, wet map; a step onto it slips at about SLIP (sneaking about half), the dead too, a fall
 //      ends the move and the turn; the same dice give the same slips;
 //   3. spring rains more often than before (the weather stream: rain or storm days by season);
@@ -15,6 +15,7 @@
 import { createWorld, hub, atBase } from "../src/sim/world.js";
 import { createBattle, registerCombatHandler, reachable, distField, moveAlong, alertNear, sightRange, canSeeAt } from "../src/sim/combat.js";
 import * as S from "../src/sim/seasonfx.js";
+import { SNOW } from "../src/sim/seasonground.js";
 import * as W from "../src/sim/weather.js";
 import { nightEyes, darkSight } from "../src/sim/vision.js";
 import { throwAt } from "../src/sim/stealth.js";
@@ -35,7 +36,7 @@ const people = atBase(st, h.id).slice(0, 2).map((s) => s.id);
 const fight = (tile = h.tile) => createBattle(st, { tile, baseId: h.id, fighterIds: people, enemy: { kind: "zombies", count: 2, power: 3, name: "T" }, ambush: null, canRetreat: false, handler: "sfx", context: {} });
 // A flat open field on the battle's own map (its weather kept): nothing in the way.
 function flatten(b) {
-  for (const c of b.cells) { c.k = "open"; c.f = "grass"; delete c.h; delete c.t; delete c.hp; delete c.mhp; delete c.ter; delete c.wet; delete c.wl; delete c.ice; delete c.indoor; }
+  for (const c of b.cells) { c.k = "open"; c.f = "grass"; delete c.h; delete c.t; delete c.hp; delete c.mhp; delete c.ter; delete c.wet; delete c.wl; delete c.ice; delete c.indoor; delete c.gnd; delete c.sd; }
   b.reach.fill(1); b.losCache.fill(0); b.fires = []; b.smoke = []; b.flares = []; b.soft = undefined; delete b.climbX; b.lures = [];
   const u = b.units.find((x) => x.side === "player"), z = b.units.find((x) => x.side === "enemy");
   b.units.filter((x) => x !== u && x !== z).forEach((o, i) => { o.x = 0; o.y = b.h - 1 - i; o.off = true; });
@@ -45,31 +46,35 @@ function flatten(b) {
 const dayOf = (key) => { for (let d = 1; d < 400; d++) if (W.seasonOfDay(d).key === key && W.seasonOfDay(d).dayOfSeason === 10) return d; return 0; };
 
 // ---------- 1. snow ----------
-section("Snow: open ground slows everyone in winter; roads less, floors not at all");
+section("Snow: slows everyone (seasonground.js's cost), the words are ours; a frozen step is ice's");
 {
   st.hour = dayOf("winter") * 24 + 13;
-  const b = fight();
-  check(!!(b.sfx && b.sfx.snowStep >= 0.5), `a winter battle has snow underfoot (b.sfx ${JSON.stringify(b.sfx)})`);
+  let b = null;
+  for (let d = dayOf("winter"); d < dayOf("winter") + 20 && !(b && b.ground && b.ground.snow); d++) { st.hour = d * 24 + 13; b = fight(); }
+  check(!!(b && b.ground && b.ground.snow > 0 && b.cells.some((c) => c.gnd === "snow")), `a winter battle has snow on the ground (b.ground ${JSON.stringify(b && b.ground)}: seasonground.js)`);
+  const keep = b.cells.map((c) => ({ gnd: c.gnd, sd: c.sd }));
   const { u, z, cell } = flatten(b);
-  const step = b.sfx.snowStep;
+  void keep;
+  const lie = (x, y, sd = 0.5) => { Object.assign(cell(x, y), { gnd: "snow", sd }); };
+  lie(6, 10); lie(16, 3);
   const cost = (who, x, y) => reachable(b, who, 20).dist[y * b.w + x];
-  check(Math.abs(cost(u, 6, 10) - (1 + step)) < 1e-6, `a step into snow: 1 + ${step} (moves +${Math.round(step * 100)}%)`);
-  check(Math.abs(cost(z, 16, 3) - (1 + step)) < 1e-6, "the dead wade it too");
-  cell(6, 10).f = "road";
-  check(Math.abs(cost(u, 6, 10) - (1 + step * S.SEASONFX.SNOW.ROAD)) < 1e-6, `a road: 1 + ${step * S.SEASONFX.SNOW.ROAD} (worn down)`);
-  cell(6, 10).f = "floor";
-  check(cost(u, 6, 10) === 1, "a floor indoors: 1");
-  cell(6, 10).f = "grass";
+  check(Math.abs(cost(u, 6, 10) - (1 + SNOW.COST)) < 1e-6, `a step into snow: 1 + ${SNOW.COST} (moves +${Math.round(SNOW.COST * 100)}%)`);
+  check(Math.abs(cost(z, 16, 3) - (1 + SNOW.COST)) < 1e-6, "the dead wade it too");
+  lie(6, 10, 0.9);
+  check(Math.abs(cost(u, 6, 10) - (1 + SNOW.DEEP_COST)) < 1e-6, `deep snow: 1 + ${SNOW.DEEP_COST}`);
+  delete cell(6, 10).gnd;
+  check(cost(u, 6, 10) === 1, "no snow on the cell: 1");
+  lie(6, 10);
   b._fields = null;
-  const field = distField(b, [[u.x, u.y]], u)[10 * b.w + 8];
-  check(Math.abs(field - 3 * (1 + step)) < 1e-6, `the AI's distances count it: 3 steps ${field}`);
-  check(/Snow/.test(S.cellWord(b, cell(6, 10), u)) && /snow \+/.test(S.pathWord(b, u, [[6, 10], [7, 10]])), `the hover "${S.cellWord(b, cell(6, 10), u)}" and the move preview "${S.pathWord(b, u, [[6, 10], [7, 10]])}"`);
-  check(S.conditions(b).some((c) => c.text === `Snow: moves +${Math.round(step * 100)}%`), `the conditions line: ${S.conditions(b).map((c) => c.text).join(" · ")}`);
-  // A spring battle with no snow lying: no snow cost.
+  const field = distField(b, [[u.x, u.y]], u)[10 * b.w + 6];
+  check(Math.abs(field - (1 + SNOW.COST)) < 1e-6, `the AI's distances count it: ${field}`);
+  check(/snow \+/.test(S.pathWord(b, u, [[6, 10], [7, 10]])), `the move preview "${S.pathWord(b, u, [[6, 10], [7, 10]])}"`);
+  check(S.conditions(b).some((c) => /^(Deep snow|Snow): moves \+\d+%$/.test(c.text)), `the conditions line: ${S.conditions(b).map((c) => c.text).join(" · ")}`);
+  // Summer: no snow, a step is 1.
   st.hour = dayOf("summer") * 24 + 13;
   const b2 = fight();
   const f2 = flatten(b2);
-  check(!(b2.sfx && b2.sfx.snowStep) && reachable(b2, f2.u, 20).dist[10 * b2.w + 6] === 1, "summer: no snow, a step is 1");
+  check(!(b2.ground && b2.ground.snow) && reachable(b2, f2.u, 20).dist[10 * b2.w + 6] === 1, "summer: no snow, a step is 1");
 }
 
 // ---------- 2. ice ----------

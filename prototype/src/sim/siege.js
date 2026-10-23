@@ -735,7 +735,8 @@ export function battleOverlays(b) {
     acid: (b.acid || []).map((p) => ({ x: p.x, y: p.y, turns: p.turns, fade: Math.max(0.25, Math.min(1, p.turns / ACID.turns)) })),
     smoke: (b.smoke || []).map((s) => ({ x: s.x, y: s.y, r: s.r, turns: s.turns, thick: !!s.thick })),
     flares: (b.flares || []).map((f) => ({ x: f.x, y: f.y, r: f.r, turns: f.turns })),
-    decoys: (b.lures || []).filter((l) => l.turns > 0).map((l) => ({ x: l.x, y: l.y, key: l.key, radius: l.radius, turns: l.turns, sense: l.sense || (THROWABLES[l.key] && THROWABLES[l.key].sense) || ["noise"], decoy: !!(THROWABLES[l.key] && THROWABLES[l.key].decoy) })),
+    // A car alarm's lure (caralarms.js: not one of THROWABLES) carries its own sense and decoy flag; alarm: the car's id.
+    decoys: (b.lures || []).filter((l) => l.turns > 0 || l.key === "caralarm").map((l) => ({ x: l.x, y: l.y, key: l.key, radius: l.radius, turns: l.turns, sense: l.sense || (THROWABLES[l.key] && THROWABLES[l.key].sense) || ["noise"], decoy: THROWABLES[l.key] ? !!THROWABLES[l.key].decoy : !!l.decoy, ...(l.alarm != null ? { alarm: l.alarm } : {}) })),
     ladders: (b.ladders || []).map((l) => ({ id: l.id, side: l.side, up: l.up, x: l.up ? l.x : l.fx, y: l.up ? l.y : l.fy, fx: l.fx, fy: l.fy, wx: l.x, wy: l.y, dir: [l.x - l.fx, l.y - l.fy], climber: l.up && unitAt(b, l.x, l.y) ? unitAt(b, l.x, l.y).id : null })),
     rams: (b.rams || []).map((r) => { const L = lead(r); return { id: r.id, side: r.side, x: r.inVehicle ? -1 : L ? L.x : r.x, y: r.inVehicle ? -1 : L ? L.y : r.y, inVehicle: !!r.inVehicle, lead: r.lead, crew: r.crew.slice(), dropped: !!r.dropped, target: r.target || null, face: L && L.face ? L.face.slice() : [1, 0] }; }),
     carried: b.units.filter((u) => active(u) && u.ladder > 0).map((u) => ({ unit: u.id, x: u.x, y: u.y, item: "ladder" })),

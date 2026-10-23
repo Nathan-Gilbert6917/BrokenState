@@ -1080,7 +1080,9 @@ section("Map terrain detail: decals and rippled water (ui/terraindeco.js, render
     for (const id of clear) { const [x, y] = g.toPixel(id, R.HEX); for (const z of T.CLEAR_ZONE) zones.push([x + z[0], y + z[1], x + z[2], y + z[3]]); }
     const segs = [];
     for (const t of st.tiles) for (const m of t.roadLinks || []) if (m > t.id) { const [x0, y0] = g.toPixel(t.id, R.HEX), [x1, y1] = g.toPixel(m, R.HEX); segs.push([x0, y0, x1, y1, t.bridge || st.tiles[m].bridge ? 6.5 : 2.6]); }
-    const hitZone = decals.filter(([x, y, w, h]) => zones.some((z) => x < z[2] - 0.01 && z[0] < x + w - 0.01 && y < z[3] - 0.01 && z[1] < y + h - 0.01)).length;
+    // A pond tile's pond (sim/mapgen.js tile.pond, 2026-10-23) lies flat under a site's sprite and name: not over them.
+    const flat = T.decorRows(D).filter((r) => T.flatDecal(r[1])).map((r) => { const [x, y] = g.toPixel(r[0], R.HEX); return [x + r[2], y + r[3]]; });
+    const hitZone = decals.filter(([x, y]) => !flat.some(([fx, fy]) => Math.abs(fx - x) < 0.01 && Math.abs(fy - y) < 0.01)).filter(([x, y, w, h]) => zones.some((z) => x < z[2] - 0.01 && z[0] < x + w - 0.01 && y < z[3] - 0.01 && z[1] < y + h - 0.01)).length;
     const distSeg = (px, py, s) => { const dx = s[2] - s[0], dy = s[3] - s[1], l = dx * dx + dy * dy, t = Math.max(0, Math.min(1, ((px - s[0]) * dx + (py - s[1]) * dy) / l)); return Math.hypot(s[0] + dx * t - px, s[1] + dy * t - py); };
     const onRoad = decals.filter(([x, y, w, h]) => segs.some((s) => { // sample the decal's box against the road's band
       for (let i = 0; i <= 4; i++) for (let j = 0; j <= 4; j++) if (distSeg(x + (w * i) / 4, y + (h * j) / 4, s) < s[4] / 2) return true;

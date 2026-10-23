@@ -19,7 +19,9 @@ Older design docs: [docs/base-building/plan.md](../base-building/plan.md), [docs
 - **Hourly and daily simulation tick**, seeded and deterministic [world, rng].
 - **Seasons and weather**: four 28-day seasons, regional weather fronts, frozen rivers in winter that people and the dead can cross [weather, rivers].
 - **Ponds in the hollows**: rain fills hollows into ponds, dry days turn them to mud then dry, winter freezes them; the climb ×1.5 in rain, ×2.5 in winter [ponds, combat, basemap, ui/isoview] `tools/terrainweathertest.js`. [details](../features/campaign.md#ponds-in-the-hollows)
-- **Seasonal weather in play**: in battle, snow slows everyone in winter, ice slips, rain muffles sounds and drowns noise lures, rain fog cuts sight like a fog bank (night fog far more); spring rains more often [seasonfx, weather, combat, stealth, vision] `tools/seasonfxtest.js`. [details](../features/campaign.md#seasonal-weather-in-play)
+- **Seasonal weather in play**: in battle, ice slips (snow's slowing is the ground by the season's), rain muffles sounds and drowns noise lures, rain fog cuts sight like a fog bank (night fog far more); spring rains more often [seasonfx, weather, combat, stealth, vision, wxsight] `tools/seasonfxtest.js`. [details](../features/campaign.md#seasonal-weather-in-play)
+- **The ground by the season**: spring mud in patches on dirt (+0.5 a step), autumn's red, orange and brown leaves on the ground, winter snow on all the outdoor ground (+0.25 a step, deep snow +0.5), on fight, raid and base maps, every side alike [seasonground, combat, ui/groundlook, ui/isoview] `tools/seasongroundtest.js`. [details](../features/campaign.md#the-ground-by-the-season)
+- **Ponds on the map**: about one open tile in twenty has a spring-fed pond, drawn on the State Map (frozen when the ponds ice over) and a hollow of water on its base, fight and raid maps that never dries [mapgen, ponds, basescatter, relief, ui/terraindeco, ui/render] `tools/worldpondtest.js`. [details](../features/campaign.md#ponds-on-the-map)
 - **Eras**: early game (years 1–4), mid (5–9) and late (10+), threats growing each year [eras].
 - **Two victories**: destroy every hive, or win with the Calder Coalition (over half the land); "Keep playing" after either [world, alliance].
 - **Hardcore mode**: start the day Calder falls with 1–4 survivors on the road, no hub, half-looted sites and the outbreak year's own cards [hardcore*, hardcore-start, hardcore-loot, hardcore-outbreak, hardcore-groups]. [details](../features/campaign.md#hardcore-mode)
@@ -141,6 +143,7 @@ Detail: [combat.md](../features/combat.md).
 - **Side arm and melee slots**: draw a holstered handgun or belt blade for 1 action [holsters, combat, equip] `tools/holstertest.js`. [details](../features/combat.md#side-arm-and-melee-slots)
 - **Non-lethal weapons and taking people alive** (taser, stun baton, pepper spray) [nonlethal].
 - **Throwables**: Molotovs, pipe bombs, flares, smoke [throwables]; **decoys and fire**, what the dead follow [decoys].
+- **Car alarms**: set one off by hand or with a bottle through the window to pull the dead off you; smashing the glass, prying a door or hotwiring can set one off [caralarms, foundcars, stealth, decoys, locks, ui/carpanel, ui/sfx-vehicles] `tools/caralarmtest.js`. [details](../features/combat.md#car-alarms)
 - **Things on the ground** and searching bodies [ground]; the ground in a survivor's inventory window [ui/inventory, carry]. [details](../features/combat.md#the-ground-in-a-survivors-inventory)
 - **Retreat**: "Sound the retreat" and break-off policies for auto-resolved fights [combat soundRetreat, breakoff].
 - **Third side**: neutrals and soldiers who are neither your team nor its enemies [thirdside].
