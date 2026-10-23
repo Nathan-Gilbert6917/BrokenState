@@ -609,16 +609,49 @@ function prims(k, o) {
       return [{ u0: 0, u1: 1, v0: 0, v1: 1, z0: 0, z1: LV, flat: k === "loft", m: (f, s, t, X, Y, a, c) => (f === "top" ? top(f, s, t, X, Y) : side(f, s, t, X, Y, a, c)) }];
     }
     case "rise": { // high ground (sim/basescatter.js highLayer): a block of earth a level up, grass on its top
-      const top = (X, Y) => { const q = n2(X, Y, 6); return q > 0.9 ? mul(PAL.leaf2, 0.9) : mul(FLOORC.grass, 0.88 + q * 0.2); };
+      // Its open sides (no high ground or slope beside it: o.j, JOINS.rise) fall away in a grassy bank (the playtest
+      // 2026-10-23: the hills' edges read as staircases): the top is drawn RISE.BANK in from each, the bank slopes down
+      // across that band to RISE.FOOT of the height, a rounded shoulder where two open sides meet. The rules are the
+      // block's (a drop at the edge, sim/combat.js CELL.rise): only the look is softened.
+      const top = (X, Y, k = 1) => { const q = n2(X, Y, 6); return q > 0.9 ? mul(PAL.leaf2, 0.9 * k) : mul(FLOORC.grass, (0.88 + q * 0.2) * k); };
       const side = (f, s, t, X, Y) => { const q = n2(X, Y, 4); return t > LV - 3 ? mul(FLOORC.grass, 0.7) : Math.floor(t + q * 4) % 6 < 1 ? mul(PAL.stone, 0.7) : mul(FLOORC.dirt, 0.8 + q * 0.25); };
-      return [{ u0: 0, u1: 1, v0: 0, v1: 1, z0: 0, z1: LV, m: (f, s, t, X, Y) => (f === "top" ? top(X, Y) : side(f, s, t, X, Y)) }];
+      const open = (d) => !(o.j & (1 << d)), B = RISE.BANK;
+      const [pu, nu, pv, nv] = [open(0), open(1), open(2), open(3)]; // the +u, −u, +v, −v sides fall away
+      const u0 = nu ? B : 0, u1 = pu ? 1 - B : 1, v0 = nv ? B : 0, v1 = pv ? 1 - B : 1;
+      const out = [{ u0, u1, v0, v1, z0: 0, z1: LV, flat: true, m: (f, s, t, X, Y) => (f === "top" ? top(X, Y) : side(f, s, t, X, Y)) }];
+      // The banks: thin slices, each lower toward the open side (h: 0 at the top's edge, 1 at the cell's).
+      const zAt = (h) => LV * (1 - (1 - RISE.FOOT) * Math.pow(h, 1.5));
+      // A bank's slices are grass on their faces too (a grassy slope, not terraces of earth), earth only at the very foot.
+      // Its faces lit as its top is (rampLit: the slices blend into one slope, no stripes), the shade by how far down.
+      const bankM = (h) => rampLit((f, s, t, X, Y) => (f === "top" ? top(X, Y, 1 - 0.18 * h) : t < 2 ? mul(FLOORC.dirt, 0.75 + n2(X, Y, 4) * 0.2) : top(X, Y, (f === "east" ? 0.86 : 0.94) - 0.18 * h)));
+      const N = RISE.SLICES;
+      for (let i = 0; i < N; i++) {
+        const h = (i + 0.5) / N, a = (i * B) / N, b = ((i + 1) * B) / N, z1 = zAt(h), m = bankM(h);
+        if (pu) out.push({ u0: 1 - B + a, u1: 1 - B + b, v0, v1, z0: 0, z1, flat: true, m });
+        if (nu) out.push({ u0: B - b, u1: B - a, v0, v1, z0: 0, z1, flat: true, m });
+        if (pv) out.push({ u0, u1, v0: 1 - B + a, v1: 1 - B + b, z0: 0, z1, flat: true, m });
+        if (nv) out.push({ u0, u1, v0: B - b, v1: B - a, z0: 0, z1, flat: true, m });
+      }
+      // The corners where two open sides meet: a rounded shoulder (by the distance out from the top's corner).
+      for (const [cu, cv] of [[pu && pv && [1 - B, 1], [1 - B, 1]], [pu && nv && [1 - B, 1], [0, B]], [nu && pv && [0, B], [1 - B, 1]], [nu && nv && [0, B], [0, B]]]) {
+        if (!cu) continue;
+        const M = 4;
+        for (let i = 0; i < M; i++) for (let k = 0; k < M; k++) {
+          const a0 = cu[0] + (i * B) / M, a1 = a0 + B / M, b0 = cv[0] + (k * B) / M, b1 = b0 + B / M;
+          const du = cu[0] === 0 ? (M - 1 - i + 0.5) / M : (i + 0.5) / M, dv = cv[0] === 0 ? (M - 1 - k + 0.5) / M : (k + 0.5) / M;
+          const h = Math.min(1, Math.hypot(du, dv));
+          out.push({ u0: a0, u1: a1, v0: b0, v1: b1, z0: 0, z1: zAt(h), flat: true, m: bankM(h) });
+        }
+      }
+      return out.sort((p, q) => p.u0 + p.v0 - q.u0 - q.v0);
     }
-    case "slope": { // the way up onto it: earth in four steps rising towards the high ground (as the stairs)
-      const out = [], d = o.dir ?? 0;
-      const m = (f, s, t, X, Y) => (f === "top" ? mul(FLOORC.dirt, 0.95 + n2(X, Y, 5) * 0.2) : mul(FLOORC.dirt, 0.72 + n2(X, Y, 4) * 0.15));
-      for (let i = 0; i < 4; i++) {
-        const a0 = d === 0 || d === 2 ? i / 4 : 1 - (i + 1) / 4, a1 = a0 + 0.25, z1 = (i + 1) * (LV / 4);
-        out.push(d < 2 ? { u0: a0, u1: a1, v0: 0, v1: 1, z0: 0, z1, m } : { u0: 0, u1: 1, v0: a0, v1: a1, z0: 0, z1, m });
+    case "slope": { // the way up onto it: a smooth ramp of earth and trodden grass rising towards the high ground
+      const out = [], d = o.dir ?? 0, N = RISE.SLICES * 4;
+      const tread = (X, Y, k) => mul(mix(mul(FLOORC.dirt, 0.95 + n2(X, Y, 5) * 0.2), FLOORC.grass, n2(X, Y, 7) * 0.45), k);
+      const m = rampLit((f, s, t, X, Y) => (f === "top" ? tread(X, Y, 1) : tread(X, Y, f === "east" ? 0.86 : 0.94)));
+      for (let i = 0; i < N; i++) {
+        const a0 = d === 0 || d === 2 ? i / N : 1 - (i + 1) / N, a1 = a0 + 1 / N, z1 = Math.max(1, ((i + 1) / N) * LV);
+        out.push(d < 2 ? { u0: a0, u1: a1, v0: 0, v1: 1, z0: 0, z1, flat: true, m } : { u0: 0, u1: 1, v0: a0, v1: a1, z0: 0, z1, flat: true, m });
       }
       return out.sort((p, q) => p.u0 + p.v0 - q.u0 - q.v0);
     }
@@ -1200,12 +1233,19 @@ function fogMaskFor(b, vis) {
 }
 
 // ---------- per-cell looks ----------
+// The high ground's look (prims "rise", "slope"): the band its open sides fall away across, how far down the bank goes
+// at the cell's edge (a share of the height), and the slices a bank or a ramp is drawn in (smooth at this scale).
+const RISE = { BANK: 0.34, FOOT: 0.12, SLICES: 6 };
+// A slope drawn in thin slices: each slice's faces lit as a top is (the painter shades a south face LIGHT.south and an
+// east face LIGHT.east), so the slices read as one smooth surface, not a flight of steps.
+const rampLit = (m) => (f, s, t, X, Y, a, c) => { const col = m(f, s, t, X, Y, a, c); return !col || f === "top" ? col : mul(col, LIGHT.top / (f === "east" ? LIGHT.east : LIGHT.south)); };
 const JOINS = {
   wall: WALLISH, window: WALLISH, door: WALLISH, bdoor: WALLISH, doorway: WALLISH, smashed: WALLISH, idoor: WALLISH, odoor: WALLISH, boarded: WALLISH,
   rack: new Set(["rack", "shelf"]), bed: new Set(["bed"]), bars: new Set(["bars", "wall", "idoor", "odoor"]), table: new Set(["table"]),
   palisade: new Set(["palisade", "gate", "breach", "siegeladder"]), gate: new Set(["palisade", "gate", "breach", "siegeladder"]),
   fence: new Set(["fence"]), wire: new Set(["wire"]), rail: new Set(["rail"]), sandbag: new Set(["sandbag", "barricade"]), barricade: new Set(["barricade", "sandbag"]),
   walkway: new Set(["walkway", "tower", "stand"]), stand: new Set(["stand", "walkway", "tower"]), trench: new Set(["trench"]), shelf: WALLISH, locker: WALLISH, cabinet: WALLISH, counter: WALLISH,
+  rise: new Set(["rise", "slope"]), // high ground: its banks fall away on the sides with none beside it (prims rise)
   outline: new Set(["outline"]), // the base map: a building's outline joins along its sides (sim/basemap.js)
   tent: new Set(["tent"]), log: new Set(["log"]), // a camp's 2 × 1 ridge tent, a fallen log two cells long (sim/basemap.js, basescatter.js)
 };

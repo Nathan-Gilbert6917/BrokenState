@@ -235,7 +235,7 @@ export function poiMapSvg(state, t, wm, rows, sel, tips, opts = {}) {
       ${sp.url ? `<image href="${sp.url}" x="${(x - sp.w / 2).toFixed(1)}" y="${(y + 6 - sp.h).toFixed(1)}" width="${sp.w}" height="${sp.h}" style="image-rendering:pixelated"/>` : `<circle cx="${x}" cy="${y - 8}" r="10" fill="#bbb"/>`}
       ${r.raiding ? `<circle class="pm-alarm" cx="${(x + 20).toFixed(1)}" cy="${(y - sp.h + 8).toFixed(1)}" r="5"/>` : ""}
       <text class="pm-name" x="${x.toFixed(1)}" y="${(y + 24).toFixed(1)}">${esc(label)}</text>
-      <text class="pm-mins" x="${x.toFixed(1)}" y="${(y + 37).toFixed(1)}">${pl.mins ? `🚶 ${pl.mins} min` : "📍 You are here"}</text>
+      <text class="pm-mins" x="${x.toFixed(1)}" y="${(y + 37).toFixed(1)}">${pl.mins ? `${r.drive ? "🚗" : "🚶"} ${pl.mins} min` : "📍 You are here"}</text>
     </g>`);
     hov.push(`.pm-svg:has(.pm-poi[data-poi="${pl.i}"]:hover) .pm-route[data-poi="${pl.i}"],.pm-svg:has(.pm-poi[data-poi="${pl.i}"]:hover) .pm-chip[data-poi="${pl.i}"]{stroke-opacity:1;opacity:1}`);
   }

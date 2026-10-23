@@ -82,12 +82,13 @@ export function poiRows(state, p, tile = partyTile(p)) {
       visits: poiVisitText(state, t, i), threat: est, threatText: poiThreatText(state, t, i),
       cont: poiContainerNote(state, t, i), raiding: raidingNow(state, t, i), score: poiScore(state, t, i), camp: campText(state, t, i),
       buildings: isSitePoi(t, i) ? buildingOptions(t, state) : null, // the site's buildings and the street (null: one building, or none)
-      mins: p ? poiWalkMins(state, p, i, tile) : 0, // poiwalk.js: on foot from where the team stands (0: it stands there)
+      mins: p ? poiWalkMins(state, p, i, tile) : 0, // poiwalk.js: from where the team stands, on foot or by its vehicle (0: it stands there)
+      drive: !!(p && p.vehicle), // poiwalk.js walkPace: the minutes by vehicle
     };
   });
 }
 // A row as one line (the card's hint).
-export const poiRowText = (r) => `${walkText(r.mins)}; ${r.bandName.toLowerCase()}; ${r.visits}; ${r.threatText}${r.camp ? `; ${r.camp}` : ""}${r.cont ? `; ${r.cont}` : ""}${r.raiding ? "; being raided now by another group" : ""}`;
+export const poiRowText = (r) => `${walkText(r.mins, r.drive ? { vehicle: true } : null)}; ${r.bandName.toLowerCase()}; ${r.visits}; ${r.threatText}${r.camp ? `; ${r.camp}` : ""}${r.cont ? `; ${r.cont}` : ""}${r.raiding ? "; being raided now by another group" : ""}`;
 
 // The dialogue: a card with a choice per known POI (the browser draws it with ui/poipick.js), each with its minutes on
 // foot from where the team stands (poiwalk.js). Picking one starts the walk there (5–20 minutes on the clock, which

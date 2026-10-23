@@ -8,7 +8,10 @@
 // - The weighted map (walkGrid): an 11 × 11 grid over the hex, a cost a cell by the tile's terrain (WALK.TERRAIN:
 //   brush, slopes, rubble) × its own hash dice (thickets, fences, gullies), a road across the tile (its roadLinks'
 //   directions from the centre) cheaper. The walk is the cheapest way through it (Dijkstra, 8 ways, diagonals √2), its
-//   cost in cells turned to minutes: WALK.MIN + cost × WALK.PER, never under WALK.MIN (5) or over WALK.MAX (20).
+//   cost in cells turned to minutes by the team's pace (walkPace, the user's word 2026-10-23: "The current distance time
+//   is assuming the team is using a vehicle Rebalance the time for walking teams"): on foot WALK.FOOT, MIN + cost ×
+//   PER between 10 and 60 minutes (a tile is an hour across on foot on the State Map: data.js TERRAIN walk); a team
+//   with a vehicle WALK.CAR, between 5 and 20 (half an hour across off the road).
 // - From where (walkFrom): the place the team last walked to on this tile (p.atPoi, kept until it steps off the tile:
 //   parties.js stepAlong), else the edge it came onto the tile by (p.entered, the tile it stepped in from: parties.js
 //   stepAlong; WALK.EDGE out toward that neighbour), else your base on the tile (baseSpot: a team that set out from
@@ -43,9 +46,9 @@ import { startTask } from "./orders.js"; // call-time only (orders.js finishTask
 
 const SQ3 = Math.sqrt(3);
 export const WALK = {
-  MIN: 5,        // minutes: the nearest place
-  MAX: 20,       // minutes: the farthest
-  PER: 1.25,     // minutes a cell of cost (a cell is 2/11 of the hex's width)
+  // Minutes by pace: MIN the nearest place, MAX the farthest, PER a cell of cost (a cell is 2/11 of the hex's width).
+  FOOT: { MIN: 10, MAX: 60, PER: 4.5 }, // on foot: about an hour from edge to edge, as the State Map has it
+  CAR: { MIN: 5, MAX: 20, PER: 1.25 },  // driven: a team with a vehicle
   N: 11,         // the grid's cells a side
   ROAD: 0.55,    // a cell on the road
   ROAD_W: 0.14,  // the road's half width, hex radii
@@ -165,7 +168,9 @@ export function walkFrom(state, p, tile = partyTile(p)) {
   if (home) return { spot: home.spot, poi: null, edge: null, base: home.base.id }; // set out from your base here
   return { spot: /** @type {[number, number]} */ ([0, 0]), poi: null, edge: null };
 }
-const minsOf = (cost) => Math.max(WALK.MIN, Math.min(WALK.MAX, Math.round(WALK.MIN + cost * WALK.PER)));
+/** The team's pace over the tile: WALK.CAR with a vehicle, else WALK.FOOT. @param {any} p */
+export const walkPace = (p) => (p && p.vehicle ? WALK.CAR : WALK.FOOT);
+const minsOf = (cost, p) => { const P = walkPace(p); return Math.max(P.MIN, Math.min(P.MAX, Math.round(P.MIN + cost * P.PER))); };
 
 /** The walk to POI i of the team's tile: { mins (0: it stands there), route ([x, y] points from its spot to the place's) }. @param {State} state @param {Party} p @param {number} i @param {number} [tile] */
 export function poiWalk(state, p, i, tile = partyTile(p), cells = null) {
@@ -174,7 +179,7 @@ export function poiWalk(state, p, i, tile = partyTile(p), cells = null) {
   const from = walkFrom(state, p, tile);
   if (from.poi === i) return { mins: 0, route: [] };
   const w = walkRoute(cells || walkGrid(state, t), from.spot, poiSpot(state, t, i));
-  return { mins: minsOf(w.cost), route: w.route };
+  return { mins: minsOf(w.cost, p), route: w.route };
 }
 /** Minutes on foot from the team's spot to POI i of its tile (0: it stands there). @param {State} state @param {Party} p @param {number} i @param {number} [tile] */
 export const poiWalkMins = (state, p, i, tile = partyTile(p)) => poiWalk(state, p, i, tile).mins;
@@ -183,7 +188,7 @@ export function exitWalk(state, p, via, tile = partyTile(p), cells = null) {
   const t = state.tiles[tile], from = walkFrom(state, p, tile);
   if (from.poi == null && from.edge === via) return { mins: 0, route: [] };
   const w = walkRoute(cells || walkGrid(state, t), from.spot, edgeSpot(state, tile, via, WALK.EXIT));
-  return { mins: minsOf(w.cost), route: w.route };
+  return { mins: minsOf(w.cost, p), route: w.route };
 }
 /** The sides a team can leave its tile by: [{ via, mins, route }] for each neighbour with a way onto it. @param {State} state @param {Party} p @param {number} [tile] */
 export function exitsOf(state, p, tile = partyTile(p)) {
@@ -195,8 +200,8 @@ export function walkMap(state, p, list, tile = partyTile(p)) {
   const t = state.tiles[tile], cells = walkGrid(state, t);
   return { from: walkFrom(state, p, tile), places: list.map((i) => ({ i, spot: poiSpot(state, t, i), ...poiWalk(state, p, i, tile, cells) })) };
 }
-// "12 min on foot" / "you are here".
-export const walkText = (mins) => (mins > 0 ? `${mins} min on foot` : "you are here");
+// "12 min on foot" / "6 min by vehicle" / "you are here".
+export const walkText = (mins, p = null) => (mins > 0 ? `${mins} min ${p && p.vehicle ? "by vehicle" : "on foot"}` : "you are here");
 
 /** Start the walk to POI i (the dialogue's pick); the raid starts when it is done. Returns the log line, or null with no walk (it stands there). @param {State} state @param {Party} p @param {number} i @param {string | null} [building] */
 export function startPoiWalk(state, p, i, building = null) {
