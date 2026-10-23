@@ -8,7 +8,12 @@
 // - What goes where depends on the terrain and what is around it: farmland near a farm gets crop rows, hay and
 //   fences, open farmland grass tufts, bushes and the odd tree; forests dense trees (broadleaf ones turn in autumn
 //   and stand bare in winter); hills mounds and rocks; mountains peaks; suburbs houses (some burnt), yards and cars;
-//   the city blocks, ruins and rubble; wrecked cars along roads; reeds on the banks. Decals keep off the roads, off
+//   the city blocks, ruins and rubble; wrecked cars along roads; reeds on the banks; a pond on a pond tile (the user's
+//   words 2026-10-23: "add pond decor to the world map when a tile has a pond in the world map generate a pond in the
+//   battle map"; sim/mapgen.js tile.pond): a small body of the rivers' and lakes' water with a muddy bank and reeds,
+//   placed first to one side and kept clear of the tile's other decals, drawn under them (and under a site's sprite,
+//   never hidden by its clear zone); frozen (ICE_LOOK: pale ice, cracks) while
+//   the ponds are ice (sim/ponds.js pondIce, render.js). Decals keep off the roads, off
 //   the map's edge, and (when a tile shows a site, a base or a hive) out of the clear zone around its icon and name:
 //   each decal is marked with the clear zones it touches and render.js skips it while that zone is in use.
 // - Every decal sprite, in three shades (live, reported, unknown) and with a snow-capped twin, is drawn once into a
@@ -178,6 +183,29 @@ function makeSprites() {
       p.set(x, y, s > 0.6 ? [154, 142, 104, 0.9] : s > 0.2 ? [138, 128, 92, 0.85] : dx > 0.3 ? [92, 84, 60, 0.85] : [122, 113, 82, 0.6]);
     }
   }));
+  // A pond (sim/mapgen.js tile.pond): the rivers' water (TERRAIN.water) in a muddy bank, a ripple's light, reeds at one
+  // end; its frozen twin pale ice with cracks. The water and the ice never take the snow caps (noSnow).
+  const pond = (v, ice) => sprite(22, 12, (p) => {
+    const cx = 10.5, cy = 5.6, rx = 10.4 - v * 1.2, ry = 5.3;
+    for (let y = 0; y < 12; y++) for (let x = 0; x < 22; x++) {
+      const d = ((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2;
+      if (d > 1) continue;
+      if (d > 0.7) { p.set(x, y, y < cy ? [80, 86, 52, 0.95] : [98, 86, 60, 0.95]); continue; } // the bank: grass behind, mud in front
+      const q = 1 - d;
+      if (ice) { // pale blue ice, a sheen at the back, cracks across it
+        const crack = ((x + 2 * y + v * 3) % 9 === 0 || (x - y + 40 + v) % 11 === 0) && d < 0.5;
+        p.set(x, y, crack ? [120, 150, 174, 1, "noSnow"] : y < cy - 1.5 && x < cx + 2 ? [214, 230, 242, 1, "noSnow"] : [150 + q * 40, 182 + q * 30, 206 + q * 20, 1, "noSnow"]);
+      } else { // the rivers' water, deeper in the middle, a ripple's light
+        const ripple = (y === 4 && x >= 6 && x <= 10) || (y === 7 && x >= 12 - v && x <= 15 - v);
+        const f = 0.8 + (1 - q) * 0.35;
+        p.set(x, y, ripple ? [128, 164, 186, 1, "noSnow"] : [44 * f, 79 * f, 107 * f, 1, "noSnow"]);
+      }
+    }
+    const rx0 = v ? 18 : 2; // reeds at one end, standing out of the bank
+    for (const [dx, h] of [[0, 3], [1, 5], [2, 3], [3, 2]]) for (let k = 0; k < h; k++) p.set(rx0 + (v ? -dx : dx), 6 - k, k === h - 1 ? [110, 84, 50] : ice ? [128, 118, 84] : [92, 112, 60]);
+  });
+  D.pond = [0, 1].map((v) => pond(v, false));
+  D.pondice = [0, 1].map((v) => pond(v, true));
   D.reeds = [sprite(6, 6, (p) => { for (const x of [1, 3, 4]) for (let y = 1 + (x & 1); y < 6; y++) p.set(x, y, y < 3 ? [120, 128, 70] : [76, 96, 54]); p.set(3, 0, [110, 84, 50]); })];
   return D;
 }
@@ -219,6 +247,8 @@ const SPR = [], SET = {};
   for (const [k, list] of Object.entries(D)) { SET[k] = { at: SPR.length, n: list.length }; SPR.push(...list); }
 }
 export const DECO_SETS = Object.keys(SET);
+// A decal that lies flat on the ground (a pond: placeTile draws it under a site's sprite, never in a clear zone).
+export const flatDecal = (cell) => (cell >= SET.pond.at && cell < SET.pond.at + SET.pond.n) || (cell >= SET.pondice.at && cell < SET.pondice.at + SET.pondice.n);
 // The broadleaf trees and bushes by the season (render.js and poimap.js pick it: seasontrees.js mapSeason):
 // SEASON_LOOK[key]: sprite -> the sprite drawn. Spring and summer green (the autumn decals too); early autumn
 // ("autumn0") two greens of three turned, a bush in two; autumn every tree red, orange, brown or rust and the bushes
@@ -233,6 +263,8 @@ export const SEASON_LOOK = {
   winter: lookOf((set) => { for (const k of ["tree", "autumn"]) set(k, (i) => SET.bare.at + (i % SET.bare.n)); set("bush", () => SET.barebush.at); }),
 };
 SEASON_LOOK.summer = SEASON_LOOK.spring;
+// The same with the ponds frozen (sim/ponds.js pondIce): ICE_LOOK[season key].
+export const ICE_LOOK = Object.fromEntries(Object.entries(SEASON_LOOK).map(([k, m]) => { const c = Int32Array.from(m); for (let i = 0; i < SET.pond.n; i++) c[SET.pond.at + i] = SET.pondice.at + i; return [k, c]; }));
 // Atlas layout in sprite px: [x, y] of each cell's plain and snowy version (1 px apart), and the atlas size.
 const LAYOUT = (() => {
   const W = 128, cells = [];
@@ -392,11 +424,11 @@ const ruleObjs = (list) => list.map(([set, lo, hi, p = 1]) => ({ set: SET[set].a
 for (const terrain of ["forest", "plains", "hills", "mountain", "suburb", "city"]) RULES[terrain] = ruleObjs(rulesFor({ terrain }, { farm: 0 }));
 RULES.farm = ruleObjs(rulesFor({ terrain: "plains" }, { farm: 1 }));
 const NONE = [];
-const CAR = { set: SET.car.at, n: SET.car.n }, WRECK = { set: SET.wreck.at, n: SET.wreck.n }, REEDS = { set: SET.reeds.at, n: SET.reeds.n };
+const CAR = { set: SET.car.at, n: SET.car.n }, WRECK = { set: SET.wreck.at, n: SET.wreck.n }, REEDS = { set: SET.reeds.at, n: SET.reeds.n }, POND = { set: SET.pond.at, n: SET.pond.n };
 const MAXW = 48;
 const wSet = new Int32Array(MAXW), wN = new Int32Array(MAXW), wKind = new Uint8Array(MAXW), wDx = new Float64Array(MAXW), wDy = new Float64Array(MAXW);
 const road = new Float64Array(5 * 64), ownV = new Float64Array(2 * 16);
-const pX = new Float64Array(MAXW), pY = new Float64Array(MAXW), pYc = new Float64Array(MAXW), pW = new Float64Array(MAXW), pH = new Float64Array(MAXW), pCell = new Int32Array(MAXW), order = new Int32Array(MAXW);
+const pX = new Float64Array(MAXW), pY = new Float64Array(MAXW), pYc = new Float64Array(MAXW), pW = new Float64Array(MAXW), pH = new Float64Array(MAXW), pCell = new Int32Array(MAXW), pFlat = new Uint8Array(MAXW), order = new Int32Array(MAXW);
 const nbTmp = new Int32Array(6);
 
 // The decals of one tile, appended to D.items (D.start / D.len say where); returns how far they reach from its center.
@@ -427,6 +459,8 @@ function placeTile(D, id) {
   }
   const water = t.terrain === "water";
   let nw = 0;
+  // A pond tile's pond (sim/mapgen.js tile.pond): first, so the rest keep clear of it.
+  if (t.pond && !water) { wSet[nw] = POND.set; wN[nw] = POND.n; wKind[nw] = 3; nw++; }
   const rules = water ? NONE : t.terrain === "plains" && farm[id] ? RULES.farm : RULES[t.terrain] || NONE;
   for (let i = 0; i < rules.length; i++) {
     const R = rules[i];
@@ -458,12 +492,16 @@ function placeTile(D, id) {
       } else if (kind === 1 && k < 10) { // beside the road
         const o = Math.floor(r() * no) * 2, vx = ownV[o], vy = ownV[o + 1], l = Math.hypot(vx, vy), u = 0.3 + r() * 0.6, side = r() < 0.5 ? -1 : 1, off = 3.5 + bh / 2 + r() * 3;
         x = vx * u - (vy / l) * off * side; y = vy * u + (vx / l) * off * side + bh / 2;
+      } else if (kind === 3) { // the pond: to one side of the middle, where a site's sprite on the tile leaves it showing
+        const a = (r() < 0.5 ? 0 : Math.PI) + (r() - 0.5) * 0.9, d = 9 + r() * 5;
+        x = Math.cos(a) * d; y = Math.sin(a) * d * 0.7 + bh / 2 + 2;
       } else {
         const a = r() * Math.PI * 2, d = Math.sqrt(r()) * 18;
         x = Math.cos(a) * d; y = Math.sin(a) * d * 0.95 + bh / 2;
       }
       const x0 = x - bw / 2, y0 = y - bh, x1 = x + bw / 2, y1 = y;
       if (-x0 > MAX_REACH || x1 > MAX_REACH || -y0 > MAX_REACH || y1 > MAX_REACH) continue;
+      if (np && pFlat[0] && kind !== 3 && x0 < pX[0] + pW[0] / 2 && pX[0] - pW[0] / 2 < x1 && y0 < pY[0] && pY[0] - pH[0] < y1 - 1) continue; // nothing standing in the pond
       // Off the roads, and inside the map at its edge.
       let ok = true;
       for (let q = 0; ok && q < nr; q++) { const o = q * 5; if (segNear(road[o], road[o + 1], road[o + 2], road[o + 3], x0, y0, x1, y1, road[o + 4] / 2 + 1.2)) ok = false; }
@@ -476,17 +514,18 @@ function placeTile(D, id) {
       if (sp2 > 9) break;
     }
     if (!found) continue;
-    pX[np] = bx; pY[np] = by; pYc[np] = by - bh / 2; pW[np] = bw; pH[np] = bh; pCell[np] = cell; order[np] = np; np++;
+    pX[np] = bx; pY[np] = by; pYc[np] = by - bh / 2; pW[np] = bw; pH[np] = bh; pCell[np] = cell; pFlat[np] = kind === 3 ? 1 : 0; order[np] = np; np++;
   }
-  // Farther back first (insertion sort: a handful).
-  for (let i = 1; i < np; i++) { const v = order[i]; let j = i - 1; while (j >= 0 && pY[order[j]] > pY[v]) { order[j + 1] = order[j]; j--; } order[j + 1] = v; }
+  // Farther back first (insertion sort: a handful); the pond, flat on the ground, under everything.
+  const yKey = (q) => (pFlat[q] ? -1e9 : pY[q]);
+  for (let i = 1; i < np; i++) { const v = order[i]; let j = i - 1; while (j >= 0 && yKey(order[j]) > yKey(v)) { order[j + 1] = order[j]; j--; } order[j + 1] = v; }
   let reach = 0;
   D.start[id] = D.used / 6;
   D.len[id] = np;
   for (let i = 0; i < np; i++) {
     const q = order[i], x0 = pX[q] - pW[q] / 2, y0 = pY[q] - pH[q], x1 = pX[q] + pW[q] / 2, y1 = pY[q];
     let f = 0;
-    for (let k = -1; k < 6; k++) {
+    for (let k = -1; k < 6 && !pFlat[q]; k++) { // the pond lies flat under a site's sprite and name: never in a clear zone
       const m = k < 0 ? id : nb[id * 6 + k];
       if (m < 0) continue;
       const dx = X[m] - cx, dy = Y[m] - cy;

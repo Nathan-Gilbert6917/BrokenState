@@ -173,6 +173,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
     foodTypes: 1, // a world with food by type (foods.js; save.js migrateFood: older saves are typed on load)
     sickRest: "all", // sickrest.js: the Work tab's "Sick people rest" (all, serious, off; save.js: older saves get "all")
     groupWorks: 1, // barestart: the AI groups' bases start bare and they build (groupworks.js); an older save has them built up
+    worldPonds: 1, // ponds on the land (mapgen.js tile.pond, laid by generateMap); save.js: an older save gets them from its seed
     gunSlots: 1, attachV: 2, // (attachV: gunmods.js migrateParts, save.js) // a world with gun attachment slots (gunmods.js; save.js: older saves have their guns' parts moved on load)
     machinesV: 1, // machines-2: generators with no operator, the pressure canner fitted to a kitchen (save.js migrates older saves)
     genTiersV: 1, // gen-tiers: generators have tiers (power.js GEN_TIERS; save.js makes older saves' generators tier 1)

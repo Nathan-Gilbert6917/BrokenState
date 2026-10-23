@@ -52,7 +52,8 @@ import {
   upsCode, drawMapSprite, baseSpriteCanvas, factionBaseCanvas, campSpriteCanvas, markerSpriteCanvas, poiSpriteCanvas, skullCanvas, stagingSpriteCanvas,
   siegeCampCanvas, hiveSpriteCanvas, iconCanvas, wakeCanvas, bridgeCanvas, gridW, searchSmokeCanvas,
 } from "./mapsprites.js";
-import { deco, decoAlpha, decoAtlas, decoScale, waterTexture, waterPattern, placeDecor, drawDecor, SEASON_LOOK } from "./terraindeco.js";
+import { deco, decoAlpha, decoAtlas, decoScale, waterTexture, waterPattern, placeDecor, drawDecor, SEASON_LOOK, ICE_LOOK } from "./terraindeco.js";
+import { pondIce, pondTileWord } from "../sim/ponds.js"; // the pond tiles' ponds frozen or not (the decor, the tooltip)
 import { drawMapNotes, noteTip, notesHash } from "./mapnotes.js"; // the player's own notes on the map (sim/mapnotes.js)
 import { blocOf, blocColorOf } from "../sim/blocs.js"; // AI blocs: a ring in the bloc's colour round its members' bases
 import { drawWorkers } from "./workermap.js"; // your bases' people out on job trips (sim/jobtrips.js), the groups' walkers
@@ -427,8 +428,9 @@ function tilesIn(G, x0, y0, x1, y1, out) {
 // This frame's switches for the cached layers.
 // deco: how much terrain detail shows (0 flat .. 1, ui/terraindeco.js decoAlpha), dsc its atlas scale, snow: the
 // snow-capped decals (the weather's snow-cover wash is on); season: broadleaf trees green, turning or bare (a
-// SEASON_LOOK key, ui/seasontrees.js mapSeason).
-const F = { zoom: 1, tint: null, iceRow: -1, infOn: false, terrOn: false, hordesOn: false, poisOn: false, knownOn: false, coalOn: false, ringSkulls: false, deco: 0, dsc: null, snow: false, season: "spring" };
+// SEASON_LOOK key, ui/seasontrees.js mapSeason); pondIce: the pond tiles' ponds frozen (sim/ponds.js pondIce:
+// ui/terraindeco.js ICE_LOOK).
+const F = { zoom: 1, tint: null, iceRow: -1, infOn: false, terrOn: false, hordesOn: false, poisOn: false, knownOn: false, coalOn: false, ringSkulls: false, deco: 0, dsc: null, snow: false, season: "spring", pondIce: false };
 const WATER_RGB = [1, 3, 5].map((k) => parseInt(TERRAIN.water.color.slice(k, k + 2), 16));
 const ICE_FILL = ["rgba(214,232,244,0.88)", "rgba(170,188,200,0.7)", "rgba(110,122,132,0.5)"]; // frozen river: live, reported, unknown
 const DECO_REACH = 35; // a tile's decals reach at most this far from its center (terraindeco.js MAX_REACH + 1)
@@ -855,7 +857,7 @@ function drawGround(state, n, nr, x0, y0, x1, y1) {
       ctx.fill();
       ctx.globalAlpha = 1;
     }
-    drawDecor(ctx, G.deco, list, n, G.key, G.clr, decoAtlas(F.dsc.R), F.snow, F.deco, SEASON_LOOK[F.season]);
+    drawDecor(ctx, G.deco, list, n, G.key, G.clr, decoAtlas(F.dsc.R), F.snow, F.deco, (F.pondIce ? ICE_LOOK : SEASON_LOOK)[F.season]);
     ctx.imageSmoothingEnabled = sm0;
   }
   // Frozen rivers (sim/weather.js ICE: the rows down to F.iceRow): pale ice over the water, as bright as the land
@@ -1154,8 +1156,9 @@ export function render(state) {
   F.dsc = decoScale(S);
   F.snow = !!F.tint && F.tint.startsWith("rgba(235,240,248,");
   F.season = mapSeasonOf(state); // the trees' season (ui/seasontrees.js): early autumn, autumn and winter look their own
+  F.pondIce = !state.timelapse && !!state.weather && pondIce(state); // the ponds ice over (sim/ponds.js: the freezing index, as in a fight)
   if (F.deco > 0 && (!G.deco || G.deco.tiles !== state.tiles)) G.deco = placeDecor(state, HEX);
-  const key = `${F.tint}|${F.infOn}|${F.terrOn}|${F.hordesOn}|${F.poisOn}|${F.knownOn}|${F.coalOn}|${!!state.timelapse}|${state.factions.length}|${deco.detail}|${F.season}`;
+  const key = `${F.tint}|${F.infOn}|${F.terrOn}|${F.hordesOn}|${F.poisOn}|${F.knownOn}|${F.coalOn}|${!!state.timelapse}|${state.factions.length}|${deco.detail}|${F.season}|${F.pondIce}`;
   if (dpr !== cacheDpr) { cacheDpr = dpr; dropCache(); }
   else if (key !== cacheKey) dirtyAll();
   cacheKey = key;
@@ -2548,6 +2551,8 @@ export function tileTooltip(state, id) {
   }
   const ru = ownHere ? null : ruinInfo(state, id);
   if (ru) lines.push(`<span style="color:${RUIN_LABEL}">${esc(ru.title)}: salvage ${ru.salvage.toLowerCase()}${ru.salvageLive ? "" : " (then)"} · danger ${ru.dangerName.toLowerCase()}</span>`);
+  const pw = pondTileWord(state, id); // sim/ponds.js: a pond tile's pond, frozen or not
+  if (pw) lines.push(`<span style="color:#9cc7e4">${esc(pw)}</span>`);
   for (const line of weatherTipLines(state, id)) lines.push(`<span style="color:#b9d3ee">${esc(line)}</span>`); // ui/wxmap.js: a front over it, ice
   if (on("radio")) for (const o of radioTipLines(state, id)) lines.push(`<span style="color:${o.color}">${esc(o.text)}</span>`); // sim/radioallies.js: your radio and your allies' over this tile
   const sd = searchedDay(state, id);
