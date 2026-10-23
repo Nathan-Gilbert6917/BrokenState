@@ -15,7 +15,7 @@ const jobs = Number(opt("--jobs", Math.max(1, cpus().length)));
 const timeout = Number(opt("--timeout", 600)) * 1000;
 // Tests that run a year of 12 seeds twice in child processes (about 20 minutes alone on 4 cores, twice that while
 // other tests share them): this many times the timeout.
-const SLOW = { "depletetest.js": 4, "diplotest.js": 4, "worktest.js": 2, "savetest.js": 3, "sameseedtest.js": 3 }; // worktest: about 32 minutes alone; savetest about 15 and sameseedtest about 13 (2026-10-22), over the 10-minute limit even alone
+const SLOW = { "depletetest.js": 4, "diplotest.js": 4, "worktest.js": 2, "savetest.js": 3, "sameseedtest.js": 3, "conquertest.js": 4 }; // worktest: about 32 minutes alone; savetest about 15 and sameseedtest about 13 (2026-10-22), over the 10-minute limit even alone; conquertest: six 400-day autopilot worlds played to their first taken base (days 61-163, about 2-3 s a game day like autotest's) is 25-35 minutes (2026-10-23)
 const skip = (opt("--skip", "") || "").split(",").filter(Boolean);
 const jsonOut = opt("--json", null);
 const patterns = args;
