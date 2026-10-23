@@ -8,7 +8,9 @@
 //                 "Team panel…", Locate in the Watching panel), in contact or not (the menu then says why not)
 //   ui.moveParty  move mode is on for it (the team panel's Move…)
 // Only your own teams count (not convoys, not another group's party), and only while they still exist.
+// With none selected, a right-click on the tile one of your teams stands on gives that team's menu (teamOnTile).
 import { commandable } from "../sim/plans.js";
+import { partyTile } from "../sim/parties.js";
 
 /** @param {any} p */
 const ownTeam = (p) => !!p && p.owner === "player" && p.kind !== "convoy";
@@ -30,4 +32,11 @@ export function selectedTeam(state, ui) {
     if (ownTeam(p)) return p;
   }
   return null;
+}
+
+// No team selected: your team standing on the tile right-clicked, so the menu shows every order it can do there (the
+// user's request 2026-10-23). The first one in contact; null when none stands there.
+/** @param {State} state @param {number} tile @returns {Party | null} */
+export function teamOnTile(state, tile) {
+  return state.parties.find((p) => ownTeam(p) && commandable(state, p) && partyTile(p) === tile) || null;
 }

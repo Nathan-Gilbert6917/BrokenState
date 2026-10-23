@@ -13,6 +13,15 @@ Modules: [teamform, teaminv, teammeet].
 - **Rounds onto a named member** in the same places: a round key with a person target becomes boxed or loose items within their room and max load [supitems roundsOnto / roundRoom / parseTarget, teaminv loadFromBase / dropRounds, teammeet giveGoods, teamform formTeam opts.rounds].
 - **Guns and magazines leave loaded**: a team forming at a base (and a person joining one there) takes the rounds its guns and spare magazines show in the rounds badge out of the base's stock as the team's own, so a fight starts as full as the window showed. The preview weighs them and says how many; one going back in takes theirs back [gunrounds `loadoutRounds`; teamform `teamLoadout`, `loadoutCount`, formPreview `loadout`, formTeam, addMember, removeMember; ui/teamform summary].
 
+## The map's right-click team menu
+Modules: [ui/teamctx teamTileMenu / teamCtxHtml / runTeamAction / spotOrders, ui/teamsel selectedTeam / teamOnTile; main.js showCtx]; test `tools/teamctxtest.js`.
+
+- With a team selected (picked on the map, its panel open, move mode), a right-click on a tile gives that team's orders for it in groups (Go, Base, Site, Land, Camp, Team, Field work), each with its travel and job hours and, greyed out, the reason it cannot be done now. Plain right-click replaces its plan (asking first when orders under way would go); Shift+right-click or the menu's toggle adds to its queue.
+- "All orders" (folded elsewhere, ui.ctxAll) lists every order the team can be given for the tile that the groups above do not show (sim/parties.js orderOptions) and opens the team panel.
+- **On the team's own tile, every order it can do there** (the user's request 2026-10-23: "When you right click on the tile your team is on show all the orders you can do"):
+  - No team needs to be selected: with none, the right-click on a tile one of your teams stands on gives that team's menu (teamOnTile); the other teams and the hub's options stay in the fold below.
+  - "All orders" is always open there (no fold toggle), and adds the team panel's orders on the spot (spotOrders): the other sweeps (2 tiles 12h, 3 tiles 24h, 4 tiles 48h), forage and hunt 4h and 12h, fish and cut wood 4h, field crafting (only what the team can make now), gathering a boat's materials on a shore, treating each hurt member with the team's meds, and stopping the job under way (Stop resting / Stop: …).
+
 ## The hands in a fight
 Modules: [load, carry, carrykit].
 

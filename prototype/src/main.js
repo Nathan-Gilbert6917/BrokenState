@@ -164,7 +164,7 @@ import { initDisplay, DISPLAY_ACTIONS, DISPLAY_CHANGE, displayKey } from "./ui/d
 import { initMinimap, minimapFrame } from "./ui/minimap.js";
 import { initEdgeFx, edgeFrame } from "./ui/edgefx.js"; // red pulses at the screen edge for an attack off screen (map and battle)
 import { initConfirm, askHtml, askKey, ASK_ACTIONS, ask } from "./ui/confirm.js";
-import { selectedTeam } from "./ui/teamsel.js"; // the selected team (its panel open, or picked on the map)
+import { selectedTeam, teamOnTile } from "./ui/teamsel.js"; // the selected team (its panel open, or picked on the map)
 import { teamTileMenu, teamCtxHtml, runTeamAction } from "./ui/teamctx.js"; // its right-click menu: actions for the tile
 import { clickPick, syncPick, MAPSEL_ACTIONS } from "./ui/mapselect.js"; // selecting teams, parties and bands on the map like tiles
 
@@ -2401,7 +2401,7 @@ function showCtx() {
   const menu = $("ctxmenu");
   const loc = mapLoc(state, id); // a hidden site nobody has found (sim/discovery.js) is just a tile
   const hubHtml = acts.map(([m, l, pre]) => `<button data-action="plan" data-tile="${id}" data-mission="${m}"${pre ? ` data-preset="${pre}"` : ""}>${l} (from hub)</button>`).join("");
-  const sel = selectedTeam(state, ui);
+  const sel = selectedTeam(state, ui) || teamOnTile(state, id); // none selected: your team on the tile (ui/teamsel.js)
   if (!sel) {
     menu.innerHTML = `<div class="head">${esc(loc ? loc.name : `Tile ${t.x},${t.y}`)}</div>` + ctxTeams(waiting, id) +
       ctxWatchlist(state, id) + formTeamCtx(state, id) + // 📌 watch, map notes (ui/watchlist.js); Form a team at your base (ui/teamform.js)
