@@ -16,4 +16,4 @@ Single-context: one `CONTEXT.md` plus `docs/adr/` at the repo root. See `docs/ag
 
 ### Feature map
 
-Every major game feature, grouped by area, with the modules behind it: `docs/agents/features.md`. Read it first to find where a system lives.
+Every major game feature, grouped by area, one line each with the modules and tests behind it: `docs/agents/features.md`. Read it first to find where a system lives. The detail (the user's requests and dates, rules, numbers, function names) is in `docs/features/<area>.md`, linked from each line; add new features in the same format (see the note at the top of the index).
