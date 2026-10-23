@@ -7,7 +7,7 @@
 //   2. ice: laid on a freezing, wet map; a step onto it slips at about SLIP (sneaking about half), the dead too, a fall
 //      ends the move and the turn; the same dice give the same slips;
 //   3. spring rains more often than before (the weather stream: rain or storm days by season);
-//   4. fog: rain fog on some rain days (more in spring and at dawn), a battle in it sees FOG.RAIN at most; at night in
+//   4. fog: rain fog on some rain days (more in spring and at dawn), a battle in it is cut by wxsight.js like a fog bank; at night in
 //      fog sight is below both the night and the fog alone, and a light helps, but less than in a clear night;
 //   5. rain: a gunshot is heard less far, a quiet noise not at all;
 //   6. a noise lure is drowned out in the rain (a flare still works), and the decoys the dead follow skip it.
@@ -20,6 +20,7 @@ import { nightEyes, darkSight } from "../src/sim/vision.js";
 import { throwAt } from "../src/sim/stealth.js";
 import { stimuli } from "../src/sim/decoys.js";
 import { LIGHTS } from "../src/sim/lights.js";
+import { WX_SIGHT, WX_SIGHT_MIN, wxSightWord } from "../src/sim/wxsight.js";
 
 const SEED = Number(process.argv[2] || 7);
 let passes = 0, fails = 0;
@@ -161,19 +162,18 @@ let fogB = null;
     fogB = fight();
     break;
   }
-  check(!!(fogB && fogB.sfx && fogB.sfx.fog === S.SEASONFX.FOG.RAIN && fogB.sfx.fogWhy === "Rain fog"), `a battle in rain fog: ${fogB ? JSON.stringify(fogB.sfx) : "none found"}`);
+  check(!!(fogB && fogB.sfx && fogB.sfx.fog && fogB.sfx.fogWhy === "Rain fog" && fogB.wxSight === WX_SIGHT.fog && fogB.wx === "rain"), `a battle in rain fog (the rain's weather, wxsight.js's cut ${fogB ? fogB.wxSight : "?"}): ${fogB ? JSON.stringify(fogB.sfx) : "none found"}`);
   const b = fogB;
   const { u } = flatten(b);
   b.night = false;
   u.face = [1, 0];
-  check(sightRange(b, u) === S.SEASONFX.FOG.RAIN, `by day in rain fog everyone sees ${sightRange(b, u)} tiles (${u.sight} in the clear)`);
-  check(canSeeAt(b, u, 5 + S.SEASONFX.FOG.RAIN, 10) && !canSeeAt(b, u, 5 + S.SEASONFX.FOG.RAIN + 2, 10), "a cell 7 off is seen, 9 off is not");
+  const cut = u.sight;
+  check(u.fogCut === WX_SIGHT.fog && sightRange(b, u) === cut && cut === u.daySight, `by day in rain fog everyone sees ${cut} tiles: wxsight.js's cut of ${u.fogCut}, the same code as a fog bank (${cut + u.fogCut} in the clear)`);
+  check(canSeeAt(b, u, 5 + cut, 10) && !canSeeAt(b, u, 5 + cut + 2, 10), `a cell ${cut} off is seen, ${cut + 2} off is not`);
+  check(b.units.filter((x) => x.side !== "player" && x.sight != null).every((x) => x.fogCut != null || x.daySight <= WX_SIGHT_MIN), "the enemy and the dead are cut the same");
   const fog = b.sfx.fog;
-  delete b.sfx.fog;
-  const clear = sightRange(b, u);
-  b.sfx.fog = fog;
-  check(clear > S.SEASONFX.FOG.RAIN, `without the fog: ${clear}`);
-  check(S.conditions(b).some((c) => c.text === `Rain fog: sight ${S.SEASONFX.FOG.RAIN}`), `the conditions line: ${S.conditions(b).map((c) => c.text).join(" · ")}`);
+  check(wxSightWord(b) === `Rain fog: sight −${WX_SIGHT.fog}`, `the hover word: "${wxSightWord(b)}"`);
+  check(S.conditions(b).some((c) => c.text === `Rain fog: sight ${cut}`), `the conditions line: ${S.conditions(b).map((c) => c.text).join(" · ")}`);
   // Night in fog.
   b.night = true; b.hour = 23;
   u.light = null; u.nvg = false;
@@ -182,7 +182,7 @@ let fogB = null;
   delete b.sfx.fog;
   const nightOnly = reach();
   b.sfx.fog = fog;
-  check(nightFog < nightOnly && nightFog < S.SEASONFX.FOG.RAIN && nightFog === S.SEASONFX.FOG.NIGHT, `the dark ahead: ${nightFog} in night fog, below the night alone (${nightOnly}, ${darkSight(b)} at 23:00) and the fog alone (${S.SEASONFX.FOG.RAIN})`);
+  check(nightFog < nightOnly && nightFog < cut && nightFog === S.SEASONFX.FOG.NIGHT, `the dark ahead: ${nightFog} in night fog, below the night alone (${nightOnly}, ${darkSight(b)} at 23:00) and the fog alone (${cut})`);
   check(canSeeAt(b, u, 5 + S.SEASONFX.FOG.NIGHT, 10) && !canSeeAt(b, u, 5 + S.SEASONFX.FOG.NIGHT + 1, 10), `down the cone: ${S.SEASONFX.FOG.NIGHT} tiles seen, ${S.SEASONFX.FOG.NIGHT + 1} not`);
   u.light = "flashlight"; u.lightOff = false;
   const litFog = reach();

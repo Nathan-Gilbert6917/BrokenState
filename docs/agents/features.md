@@ -19,7 +19,7 @@ Older design docs: [docs/base-building/plan.md](../base-building/plan.md), [docs
 - **Hourly and daily simulation tick**, seeded and deterministic [world, rng].
 - **Seasons and weather**: four 28-day seasons, regional weather fronts, frozen rivers in winter that people and the dead can cross [weather, rivers].
 - **Ponds in the hollows**: rain fills hollows into ponds, dry days turn them to mud then dry, winter freezes them; the climb ×1.5 in rain, ×2.5 in winter [ponds, combat, basemap, ui/isoview] `tools/terrainweathertest.js`. [details](../features/campaign.md#ponds-in-the-hollows)
-- **Seasonal weather in play**: in battle, snow slows everyone in winter, ice slips, rain muffles sounds and drowns noise lures, rain fog caps sight (night fog far more); spring rains more often [seasonfx, weather, combat, stealth, vision] `tools/seasonfxtest.js`. [details](../features/campaign.md#seasonal-weather-in-play)
+- **Seasonal weather in play**: in battle, snow slows everyone in winter, ice slips, rain muffles sounds and drowns noise lures, rain fog cuts sight like a fog bank (night fog far more); spring rains more often [seasonfx, weather, combat, stealth, vision] `tools/seasonfxtest.js`. [details](../features/campaign.md#seasonal-weather-in-play)
 - **Eras**: early game (years 1–4), mid (5–9) and late (10+), threats growing each year [eras].
 - **Two victories**: destroy every hive, or win with the Calder Coalition (over half the land); "Keep playing" after either [world, alliance].
 - **Hardcore mode**: start the day Calder falls with 1–4 survivors on the road, no hub, half-looted sites and the outbreak year's own cards [hardcore*, hardcore-start, hardcore-loot, hardcore-outbreak, hardcore-groups]. [details](../features/campaign.md#hardcore-mode)
@@ -121,6 +121,7 @@ Detail: [travel.md](../features/travel.md).
 ## 6. Tactical combat (XCOM-style)
 Detail: [combat.md](../features/combat.md).
 - **Terrain in combat**: high ground aims +5 a level (to +15) and sees further, uphill −5 a level, a hill half cover a level up and full two up, a hollow sees only its rim, a hill sees into an upper floor through a window, the AI paths and stands by the land [combat, highground, ui/combat, ui/battlehud] `tools/terraincombattest.js`. [details](../features/combat.md#terrain-in-combat)
+- **Weather in battle**: the State Map's weather over the fight's tile drawn over raids and battles (rain and storms, fog banks, snow), and fog or a blizzard cutting every side's sight [wxsight, stealth, ui/battlewx, ui/isoview, ui/display] `tools/battlewxtest.js`. [details](../features/combat.md#weather-in-battle-rain-fog-and-snow)
 - **Turn-based tactical battles** with an isometric view [combat, ui/isoview].
 - **Walking on the battle map**: moves animated cell by cell at each mover's pace [ui/moveanim, ui/combat, ui/figures] `tools/moveanimtest.js`. [details](../features/combat.md#walking-on-the-battle-map)
 - **Lost pictures drawn again**: every cached picture redrawn after a GPU context loss [ui/pictures]. [details](../features/combat.md#lost-pictures-drawn-again)
@@ -232,5 +233,7 @@ Detail: [ui.md](../features/ui.md).
 - **Game controller**: any standard-mapping pad drives menus, the State Map and battles [ui/gamepad, ui/padnav, ui/inputmode] `tools/padnavtest.cjs`. [details](../features/ui.md#game-controller)
 - **The whole game by pad**: the POI map's and crawls' SVG places take the ring, a pointer for charts and the minimap, Pick start on map, the camp-site picker and the base build map by cursor [ui/padnav, main, ui/combat, ui/poimap] `tools/padmaptest.cjs`. [details](../features/ui.md#the-whole-game-by-pad)
 - **Key hints by device**: hints and tooltips worded for mouse, finger or pad [ui/hints, ui/inputmode]. [details](../features/ui.md#key-hints-by-device)
+- **Seasonal trees**: red, orange and brown leaves in autumn, bare trees and bushes with snow on them in winter, on the battle, raid and base maps and the State Map [ui/seasontrees, ui/isoview, ui/terraindeco, ui/render] `tools/seasontreestest.js`. [details](../features/ui.md#seasonal-trees)
+- **Snow on buildings**: while snow lies (winter), roofs white with drifts by its depth (flat roofs most, shingles and metal showing through), snow along wall tops, fences, sandbags, tents, cars and the rest out in the open, on the battle, raid and base maps [ui/roofsnow, ui/isoview] `tools/roofsnowtest.js`. [details](../features/ui.md#snow-on-buildings)
 - **Audio**: adaptive music director and synth score, ambience, SFX for guns, melee, zombies, doors, vehicles [ui/music*, ui/amb*, ui/sfx*].
 - **Dev tools**: reveal the map; headless balance and test tools in `prototype/tools`.

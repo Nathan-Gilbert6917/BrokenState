@@ -23,18 +23,21 @@
 //     a noise that would carry less than QUIET tiles is not heard at all; a noise lure (a bottle, a noise maker, an
 //     alarm clock...) that would carry less than LURE tiles is drowned out (drowned: thrown, it pulls nobody; the AI
 //     does not throw it). A flare (light) and heat lures work as ever. Indoors (a floor) the rain changes nothing.
-//   - Fog (FOG): a fog bank over the tile (weather.js "fog") caps sight at BANK tiles; rain fog (weather.js rainFog: on
-//     some rain days, more in spring and at dawn) at RAIN. At night in fog (the user's word: "really reduced") the dark
-//     ahead is NIGHT tiles (below the darkest night's 4 and the fog's 6–7: the fog takes what little light there is), a
-//     light's beam or pool and night vision LIGHT of their reach (the beam scatters in the murk), never less than NIGHT.
-//     One place: fogSight (combat.js sightRange) and fogEyes (vision.js nightEyes), and the guards' noticing range
-//     (stealth.js noticeRange: fogNotice). Indoors (a floor) the fog changes nothing.
+//   - Fog (FOG): by day a fog bank (weather.js "fog") is wxsight.js's (everyone's day sight WX_SIGHT.fog less, every
+//     side: the raid-weatherfx work); rain fog (weather.js rainFog: on some rain days, more in spring and at dawn) takes
+//     the same cut through the same code (b.wxSight, wxsight.js fogEyes (the weather stays the rain's). This file adds
+//     the night: at night in fog (the user's word: "really reduced") the dark ahead is NIGHT tiles (below the darkest
+//     night's 4 and the day's fog cut: the fog takes what little light there is), a light's beam or pool and night
+//     vision LIGHT of their reach (the beam scatters in the murk), never less than NIGHT. One place: fogSight (combat.js
+//     sightRange: those with no front), nightFogEyes (vision.js nightEyes) and the guards' noticing range (stealth.js
+//     noticeRange: fogNotice). Indoors (a floor) the fog changes nothing.
 // UI: the battle's conditions line (conditions: "Snow: moves +50%", "Ice", "Rain fog: sight 7", "Night fog: sight 3",
 // "Rain: sounds carry less"), the hover (cellWord) and the move preview (pathWord) in ui/combat.js.
 import { weatherAt, season, rainFog } from "./weather.js";
+import { WX_SIGHT, WX_SIGHT_MIN } from "./wxsight.js"; // the day's fog cut to sight (the battle's fog: everyone alike)
 import { hash01 } from "./skills.js";
 import { battleDice } from "./armour.js";
-import { coned, activeLight, nvgOn, nvgSight, VISION } from "./vision.js"; // call-time only (vision.js calls fogEyes)
+import { coned, activeLight, nvgOn, nvgSight, VISION } from "./vision.js"; // call-time only (vision.js calls nightFogEyes)
 import { LIGHTS } from "./lights.js";
 /** @import { State } from "./types" */
 
@@ -42,7 +45,7 @@ export const SEASONFX = {
   SNOW: { COST: 0.5, FULL: 0.5, MIN: 0.5, MAX: 1.5, WINTER: 0.5, FALLING: 0.3, LEAST: 0.05, ROAD: 0.5 },
   ICE: { SLIP: 0.1, CAREFUL: 0.5, LIGHT: 0.75, HURT: [1, 3], COST: 0.25, ROAD: 0.3, PUDDLE: 0.03 },
   HEAR: { rain: 0.6, storm: 0.45, QUIET: 3, LURE: 6.5 },
-  FOG: { RAIN: 7, BANK: 6, NIGHT: 3, LIGHT: 0.5 },
+  FOG: { NIGHT: 3, LIGHT: 0.5 }, // by day the cut is wxsight.js WX_SIGHT.fog
 };
 const { SNOW, ICE, HEAR, FOG } = SEASONFX;
 const r2 = (v) => Math.round(v * 100) / 100;
@@ -88,8 +91,16 @@ export function seasonBattle(state, b, tileId) {
   // Rain: sounds carry less.
   if ((w.rain || 0) > 0 && (w.key === "rain" || w.key === "storm")) fx.rain = w.key;
   // Fog: a fog bank, or rain fog.
-  if (w.key === "fog") { fx.fog = FOG.BANK; fx.fogWhy = "Fog"; }
-  else if (fx.rain) { let rf = false; try { rf = rainFog(state, tileId, state.hour); } catch { rf = false; } if (rf) { fx.fog = FOG.RAIN; fx.fogWhy = "Rain fog"; } }
+  if (w.key === "fog") { fx.fog = true; fx.fogWhy = "Fog"; } // its day cut is wxsight.js's, noted as the battle is set up
+  else if (fx.rain) {
+    let rf = false;
+    try { rf = rainFog(state, tileId, state.hour); } catch { rf = false; }
+    if (rf) { // the same cut as a fog bank, through wxsight.js (stealthSetup applies it to every unit, newcomers too)
+      fx.fog = true; fx.fogWhy = "Rain fog";
+      if (b.wx == null) { b.wx = w.key; b.wxSight = WX_SIGHT.fog; }
+      b.wxFog = "Rain fog";
+    }
+  }
   if (!Object.keys(fx).length) return null;
   b.sfx = fx;
   return fx;
@@ -166,10 +177,10 @@ export function drownWhy(b, T, x, y) {
 }
 
 // ---------- fog: sight ----------
-// The fog's cap on sight now: by day the fog's own, at night NIGHT (0: no fog).
-export const fogCap = (b) => (b && b.sfx && b.sfx.fog ? (b.night ? FOG.NIGHT : b.sfx.fog) : 0);
-// combat.js sightRange through the fog: capped at fogCap, unless they stand indoors. At night a person on foot sees down
-// cones (vision.js): the fog is on the cones (fogEyes), not here.
+// The fog's cap on sight at night (0: none, or by day: the day's fog is wxsight.js's cut).
+export const fogCap = (b) => (b && b.sfx && b.sfx.fog && b.night ? FOG.NIGHT : 0);
+// combat.js sightRange through the fog at night: capped at FOG.NIGHT, unless they stand indoors. A person on foot sees
+// down cones (vision.js): the fog is on the cones (nightFogEyes), not here; this is the dead's and anyone with no front.
 export function fogSight(b, a, r, x = a.x, y = a.y) {
   const cap = fogCap(b);
   if (!cap || indoorCell(b, x, y) || (b.night && coned(b, a))) return r;
@@ -177,7 +188,7 @@ export function fogSight(b, a, r, x = a.x, y = a.y) {
 }
 // vision.js nightEyes in fog: the dark ahead NIGHT, a light's beam or pool and night vision LIGHT of their own reach
 // (never under NIGHT, never over what they were).
-export function fogEyes(b, u, e) {
+export function nightFogEyes(b, u, e) {
   if (!b || !b.night || !fogCap(b) || indoorCell(b, u.x, u.y)) return e;
   const L = activeLight(u) ? LIGHTS[activeLight(u)] : null;
   const dim = (r) => Math.max(FOG.NIGHT, r * FOG.LIGHT);
@@ -201,7 +212,7 @@ export function conditions(b) {
   if (f.snowStep) out.push({ text: `Snow: moves +${Math.round(f.snowStep * 100)}%`, cls: "warn", tip: `Snow lies on the open ground (${Math.round(f.snow * 100)}% cover): every step into it costs +${f.snowStep} moves (a road +${r2(f.snowStep * SNOW.ROAD)}; floors indoors nothing). Everyone wades through it, the dead too.` });
   if (f.ice) out.push({ text: `Ice: ${Math.round(ICE.SLIP * 100)}% to slip`, cls: "warn", tip: `It is freezing: frozen puddles, icy road and frozen ponds. A step onto ice costs +${ICE.COST} moves and has a ${Math.round(ICE.SLIP * 100)}% chance to slip (${Math.round(ICE.SLIP * ICE.CAREFUL * 100)}% sneaking, less with Light Step): the move ends there, the rest of the turn is spent getting up, ${ICE.HURT[0]}–${ICE.HURT[1]} damage. The enemy and the dead slip too.` });
   if (f.fog && b.night) out.push({ text: `Night fog: sight ${FOG.NIGHT}`, cls: "danger", tip: `${f.fogWhy} in the dark: everyone sees ${FOG.NIGHT} tiles ahead at most; a light's beam or pool and night vision reach half as far as in a clear night (the beam scatters in the murk), never less than ${FOG.NIGHT}. Guards notice you only that close.` });
-  else if (f.fog) out.push({ text: `${f.fogWhy}: sight ${f.fog}`, cls: "warn", tip: `${f.fogWhy}: nobody sees further than ${f.fog} tiles outdoors (height and optics do not help), nor do guards notice you from further off. Indoors it changes nothing.` });
+  else if (f.fog) { const me = (b.units || []).find((u) => u.side === "player" && u.daySight != null); const day = me ? me.daySight : Math.max(WX_SIGHT_MIN, 13 - WX_SIGHT.fog); out.push({ text: `${f.fogWhy}: sight ${Math.round(day)}`, cls: "warn", tip: `${f.fogWhy}: everyone on the map, on every side and the dead too, sees ${WX_SIGHT.fog} tiles less by day (never under ${WX_SIGHT_MIN}); at night it is far worse. Indoors it changes nothing.` }); }
   if (f.rain) out.push({ text: `${f.rain === "storm" ? "Storm" : "Rain"}: sounds carry less`, cls: "muted", tip: `The ${f.rain === "storm" ? "storm" : "rain"} drowns out sounds made outdoors: gunshots and footsteps are heard ×${HEAR[f.rain]} as far, anything heard less than ${HEAR.QUIET} tiles off not at all; noise lures (a bottle, a noise maker, an alarm clock...) that would carry less than ${HEAR.LURE} tiles do nothing. A flare and heat lures still work. Indoors nothing changes.` });
   return out;
 }

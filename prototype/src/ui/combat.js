@@ -27,6 +27,7 @@ import { SHOVE, BOARD, CRAWL, shoveTargets, shoveDests, shoveRefusal, shovePlan,
 import { INTERIOR } from "../sim/interior.js";
 import { wetWord, climbWord } from "../sim/ponds.js"; // a hollow's pond, mud or ice; the climb in the rain or in winter
 import { conditions, cellWord, pathWord, drownWhy, SEASONFX } from "../sim/seasonfx.js"; // snow, ice, rain and fog on the map (the user's request 2026-10-23)
+import { wxSightWord } from "../sim/wxsight.js"; // fog and a blizzard: everyone's sight cut ("Fog: sight −4")
 import { PARLEY, parleyStatus, parleyGroupsSeen, callOutRefusal, callOutTargets } from "../sim/parley.js"; // other groups on a raid's map: Call out, hostile or not (the user's request 2026-10-20)
 import * as PARLEY_SIM from "../sim/parley.js"; // the exports that may not be there yet (shoutCost), looked up when present
 import { ALLY_ORDER, ALLY_ORDERS, allyOrderTargets, allyOrderRefusal, allyOdds, allyOrderOf, allyOrdersShown } from "../sim/allyorders.js"; // orders to allies on a raid's map (the user's request 2026-10-21)
@@ -3558,7 +3559,7 @@ function previewText(b, state = null) {
     // On high ground or down in a hollow (sim/highground.js): what it does for them.
     const hline = hh > 0 ? `<br><span class="good">${"▲".repeat(hh)} On high ground (height ${hh}): +${HEIGHT.SIGHT * hh} sight, +${Math.min(HEIGHT.MAX_AIM, HEIGHT.AIM * hh)} aim at anything lower, ${hh >= HEIGHT.FULL_UP ? "full" : "half"} cover against shooters ${hh >= HEIGHT.FULL_UP ? `${hh} levels` : "a level"} below${hh >= HEIGHT.FULL_UP ? " (half against those a level below)" : ""}.</span>`
       : hh < 0 ? `<br><span class="warn">${"▼".repeat(-hh)} Down in a hollow (${-hh} level${hh === -1 ? "" : "s"}): ${HEIGHT.SIGHT * -hh} sight less, sees only the hollow and the first tiles round its rim (and only those see them), −${Math.min(HEIGHT.MAX_UPHILL, HEIGHT.UPHILL * -hh)} aim at anything up on level ground.</span>` : "";
-    return `<b>${esc(t.name)}</b> <span class="muted">${Math.round(t.hp)} hp · ${gunText(b, t)}${t.light ? ` · ${LIGHTS[t.light]?.name || "light"}${activeLight(t) ? "" : " (off)"}` : ""}${t.nvg ? ` · night vision${nvgOn(t) ? "" : " (off)"}` : ""}${t.optic ? ` · optics +${t.optic}` : ""}${t.suppressor ? ` · ${t.supFitted ? "" : "carried "}suppressor${GEAR[t.suppressor.key] && GEAR[t.suppressor.key].dur ? ` (${t.suppressor.dur ?? GEAR[t.suppressor.key].dur} shots)` : ""}` : ""} · sees ${Math.round(sightRange(b, t))} tiles</span>${hline}${thr}`;
+    return `<b>${esc(t.name)}</b> <span class="muted">${Math.round(t.hp)} hp · ${gunText(b, t)}${t.light ? ` · ${LIGHTS[t.light]?.name || "light"}${activeLight(t) ? "" : " (off)"}` : ""}${t.nvg ? ` · night vision${nvgOn(t) ? "" : " (off)"}` : ""}${t.optic ? ` · optics +${t.optic}` : ""}${t.suppressor ? ` · ${t.supFitted ? "" : "carried "}suppressor${GEAR[t.suppressor.key] && GEAR[t.suppressor.key].dur ? ` (${t.suppressor.dur ?? GEAR[t.suppressor.key].dur} shots)` : ""}` : ""} · sees ${Math.round(sightRange(b, t))} tiles${t.fogCut ? ` (${esc(wxSightWord(b))})` : ""}</span>${hline}${thr}`;
   }
   // A human body (sim/carriers.js): its state, and what can be done with it.
   const body = v.vis[h.y * W + h.x] ? humanBodyAt(b, h.x, h.y) : null;

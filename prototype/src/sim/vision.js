@@ -39,7 +39,7 @@
 // Dice: none of the battle's (hash01: footsteps' scuffs, a guard's glance), so a battle's other dice are unchanged.
 import { LIGHTS } from "./lights.js";
 import { hash01 } from "./skills.js";
-import { fogEyes } from "./seasonfx.js"; // night in fog: the dark ahead, a light and night vision cut short (the user's request 2026-10-23)
+import { nightFogEyes } from "./seasonfx.js"; // night in fog: the dark ahead, a light and night vision cut short (the user's request 2026-10-23)
 
 const D = Math.PI / 180;
 export const VISION = {
@@ -106,7 +106,7 @@ export function nightEyes(b, u, extra = 0) {
   const cones = [{ r: (nvgOn(u) ? nvgSight(u) : darkSight(b)) + extra, half: VISION.NIGHT_HALF }];
   const L = beamOf(u);
   if (L) cones.push({ r: L.sight + extra, half: (L.beam || 20) * D });
-  return fogEyes(b, u, { cones, near: Math.max(VISION.NEAR, poolOf(u)) }); // seasonfx.js: a fog bank or rain fog at night
+  return nightFogEyes(b, u, { cones, near: Math.max(VISION.NEAR, poolOf(u)) }); // seasonfx.js: a fog bank or rain fog at night
 }
 // How far someone sees at night at most (u.sight at night: anything that reads a unit's sight as one number).
 export function nightReach(b, u) {

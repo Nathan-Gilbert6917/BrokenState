@@ -53,6 +53,7 @@ import { LIGHTS, lightOf } from "./lights.js"; // headlamps, flashlights, torche
 import { loadNoise } from "./ammo.js"; // a round's noise (subsonic, +P)
 import { RELOAD_FX } from "./data-ammo.js"; // black-powder handloads are louder (reloading.js)
 import { nightLight } from "./fighters.js"; // a light for someone made for this fight, at night
+import { wxSightSetup, fogEyes, wxSightWord } from "./wxsight.js"; // fog and a blizzard cut everyone's sight (the battle tile's weather)
 import { noticeMult, concealSneak } from "./softcover.js"; // bushes and tents: noticed from closer, sneaking there unheard
 import { lureReach, muffle, drownWhy, rainHear, fogNotice } from "./seasonfx.js"; // the rain drowns sounds and noise lures, the fog cuts how far a guard notices you (the user's request 2026-10-23)
 
@@ -205,6 +206,8 @@ export function stealthSetup(state, b) {
       nightEyes(b, u);
     }
   }
+  const firstWx = b.wx == null;
+  if (wxSightSetup(state, b) && firstWx) say(b, `${b.wx === "fog" ? "Fog" : "A blizzard"} over the fight: everyone on the map, on every side and the dead too, sees ${b.wxSight} tiles less (${wxSightWord(b)}).`, "info"); // wxsight.js
 }
 // The light a unit carries (lights.js): u.light is its key (or null); switched on or off by u.lightOff (vision.js
 // activeLight: what the night sight, detection, the dark rummage (search.js) and the battle views' beams read).
@@ -494,7 +497,7 @@ function moveBody(b, t, x, y) {
 // ---------- the enemy turn ----------
 // Throwables still making noise pull again, and the knocked out who were not tied up come to.
 export function stealthTurn(b) {
-  for (const u of b.units) nightEyes(b, u);
+  for (const u of b.units) { fogEyes(b, u); nightEyes(b, u); } // wxsight.js: the fog on newcomers too (before the night's cap)
   for (const lure of [...(b.lures || [])]) {
     lure.turns -= 1;
     if (lure.turns <= 0) b.lures.splice(b.lures.indexOf(lure), 1);

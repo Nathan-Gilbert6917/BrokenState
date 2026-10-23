@@ -602,8 +602,8 @@ export function travelEffects(state, hour = state.hour, tileId = homeTile(state)
   if (!d.frozen && d.mud >= 0.15) lines.push(`Mud ${Math.round(d.mud * 100)}% (off-road, worst for vehicles)`);
   if (d.cover >= 0.05) lines.push(`Snow cover ${Math.round(d.cover * 100)}%`);
   if (sight) lines.push("Teams see 1 tile less");
-  if (k === "fog") lines.push("Fog: a fight here sees 6 tiles at most"); // seasonfx.js FOG.BANK
-  else if ((k === "rain" || k === "storm") && rainFog(state, tileId, hour)) lines.push("Rain fog: a fight here sees 7 tiles at most"); // seasonfx.js FOG.RAIN
+  if (k === "fog") lines.push("Fog: everyone in a fight here sees 4 tiles less (far less at night)"); // wxsight.js WX_SIGHT
+  else if ((k === "rain" || k === "storm") && rainFog(state, tileId, hour)) lines.push("Rain fog: everyone in a fight here sees 4 tiles less (far less at night)"); // wxsight.js WX_SIGHT
   if (k === "rain" || k === "storm") lines.push("Rain: sounds carry less in a fight, noise lures drowned out"); // seasonfx.js HEAR
   if (ambush) lines.push("Easier to be ambushed");
   if (injury) lines.push(`Injury risk on the road (${(injury * 100).toFixed(1)}% an hour on foot)`);
