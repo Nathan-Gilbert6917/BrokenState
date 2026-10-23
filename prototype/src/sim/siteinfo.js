@@ -1,6 +1,6 @@
 // @ts-check
 // What a camp's spot is like (the user's words 2026-10-23: "add valuable information to setting up camp. Update let
-// the game pick"). One set of facts for a 5 × 5 on the tile's 250 × 250 map (map coordinates of the fire, the middle
+// the game pick"). One set of facts for a 5 × 5 on the tile's 500 × 500 map (map coordinates of the fire, the middle
 // 0, 0), read by the picker's side panel and hover line (ui/campsite.js) and by the game's own pick (bestSite, under
 // basemap.js defaultSite: the governor, a team with nobody to ask, Let the game pick):
 //   - the setup: how long this team takes (the camp fire and the clearing, staging.js siteSetup) and what the land

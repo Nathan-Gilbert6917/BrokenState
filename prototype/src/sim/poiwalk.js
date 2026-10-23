@@ -17,7 +17,7 @@
 //   stepAlong; WALK.EDGE out toward that neighbour), else your base on the tile (baseSpot: a team that set out from
 //   it), else the tile's centre.
 // - Your base on the tile (baseSpot, the user's word 2026-10-23: "When you set up a base you can raid the other POIs
-//   on the same tile and show the base on the POI map"): where its camp stands on the tile's 250 × 250 map
+//   on the same tile and show the base on the POI map"): where its camp stands on the tile's 500 × 500 map
 //   (base.plan.origin, basemap.js originOf) scaled into the hex (BASE_SPOT.SCALE of a radius at the map's edge), kept
 //   BASE_SPOT.CLEAR off every place's spot; the POI map draws it there (ui/poimap.js).
 //   Raid one place, then another: the minutes are from the first place to the second. The place it stands at is
@@ -59,7 +59,7 @@ export const WALK = {
 };
 
 // Inside a pointy-top hex of radius 1 (hex.js toPixel's layout).
-export const BASE_SPOT = { SCALE: 0.7, CLEAR: 0.36, HALF: 125 }; // HALF: the base map's half-size (basemap.js GRID_MAX)
+export const BASE_SPOT = { SCALE: 0.7, CLEAR: 0.36, HALF: 250 }; // HALF: the base map's half-size (basemap.js GRID_MAX)
 /** Your base on tile t and its spot in hex radii, or null. @param {any} state @param {any} t */
 export function baseSpot(state, t) {
   const b = t && state.bases ? state.bases.find((x) => x.tile === t.id) : null;

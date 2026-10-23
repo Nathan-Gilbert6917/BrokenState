@@ -2,7 +2,7 @@
 // highlighted 10x10 to start ...", then "reduce to 5x5 with camp site in the middle ... when hovering to set site
 // location say how long and what the yield will be", and "keep the isometric view just have a isometric highlight of
 // the 5x5 area"): a team of yours that has reached its tile to Set up camp, Establish base or Build outpost asks where
-// on the tile's 250 × 250 map the camp goes (sim/staging.js askSite / pendingSite / pickSite). The tile's whole map
+// on the tile's 500 × 500 map the camp goes (sim/staging.js askSite / pendingSite / pickSite). The tile's whole map
 // opens in the isometric view (sim/basemap.js openSiteView: its land, nothing built), the 5 × 5 under the mouse drawn
 // on the ground green where the camp can go and red where not, the one picked in gold (siteGhostAt); the hover line
 // and this panel say how long the camp fire and the clearing take this team there and what the land gives, the axe's

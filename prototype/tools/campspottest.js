@@ -3,7 +3,7 @@
 // place. When you establish a base choose where in the 250 x 250 with a highlighted 10x10 to start with a clearing at
 // 10 x 10 area to set up camp with a camp fire. Then you can build around that and clear out more as needed. Provide
 // the resources of that area after the process to set up camp is finished. Increase the time to set up camp to 3 hr").
-//   1. every base's map is 250 × 250 (sim/basemap.js BASE_GRID), its extent round the base where it stands (gridBox);
+//   1. every base's map is 500 × 500 (sim/basemap.js BASE_GRID; 250 × 250 until the user's request 2026-10-23), its extent round the base where it stands (gridBox);
 //   2. the spot: picked on the tile's map (sim/staging.js askSite / pickSite, sim/basemap.js siteProblem: not too near
 //      the edge, not on the river), the game's own when nobody picks (defaultSite), the window (ui/campsite.js);
 //   3. the setup: three hours, then the camp stands on its spot, its 10 × 10 cleared and what the land there gave in
@@ -42,9 +42,9 @@ Object.assign(p.supplies, { wood: 20, stone: 8 }); // the camp fire's wood and s
 const tile = partyTile(p);
 
 // ---------- 1. the spot ----------
-section("The spot: picked on the tile's 250 × 250 map");
+section("The spot: picked on the tile's 500 × 500 map");
 {
-  check(BM.BASE_GRID === 250 && BM.SITE_RANGE === 125 - BM.NO_BUILD - 2 - BM.GRID.camp.yard, `the map is ${BM.BASE_GRID} × ${BM.BASE_GRID}; the fire within ${BM.SITE_RANGE} of its middle`);
+  check(BM.BASE_GRID === 500 && BM.SITE_RANGE === 250 - BM.NO_BUILD - 2 - BM.GRID.camp.yard, `the map is ${BM.BASE_GRID} × ${BM.BASE_GRID}; the fire within ${BM.SITE_RANGE} of its middle`);
   check(/edge/.test(BM.siteProblem(st, tile, [BM.SITE_RANGE + 1, 0])) && /edge/.test(BM.siteProblem(st, tile, [0, -BM.SITE_RANGE - 1])) && BM.siteProblem(st, tile, [BM.SITE_RANGE, -BM.SITE_RANGE]) === "" || BM.siteLand(st, tile).list.some((q) => q.k === "water"), "too near the edge is refused; the farthest corner in reach is taken (off the river)");
   check(!!BM.siteProblem(st, tile, null) && !!BM.siteProblem(st, tile, [1.5, 0]), "no spot, or not a cell: refused");
   const d = BM.defaultSite(st, tile);
@@ -107,7 +107,7 @@ const spot = [-20, 14];
   globalThis.window = {};
   try { siteViewDue(st, ui()); } finally { delete globalThis.window; }
   const b = st.combat, F = b && b.deployPlan && b.deployPlan.fort;
-  check(!!b && !!b.site && b.site.partyId === p.id && b.w === 250 && b.h === 250 && !b.units.length && F, `the tile's whole map opens in the isometric view, nobody on it, the clock held (${b && b.w} × ${b && b.h})`);
+  check(!!b && !!b.site && b.site.partyId === p.id && b.w === BM.BASE_GRID && b.h === BM.BASE_GRID && !b.units.length && F, `the tile's whole map opens in the isometric view, nobody on it, the clock held (${b && b.w} × ${b && b.h})`);
   check(!st.bases.some((x) => x.name === "The camp's spot") && b.cells.some((c) => ["tree", "bush", "rock", "fence", "boulder", "stump", "log"].includes(c.k)), "its land on it; the stand-in camp gone from the books");
   check(String(b.site.sel) === String(BM.defaultSite(st, tile)), `the game's own spot picked to start (${b.site.sel})`);
   const g0 = BM.siteGhostAt(st, b);
@@ -121,7 +121,7 @@ const spot = [-20, 14];
   check(/edge/.test(BM.siteClickAt(st, b, F.ox + BM.SITE_RANGE + 3, F.oy)) && String(b.site.sel) !== String(spot), "a click too near the edge picks nothing");
   check(BM.siteClickAt(st, b, hx, hy) === "" && String(b.site.sel) === String(spot), `a click picks the 5 × 5 there (${spot})`);
   const panel = sitePanel(st, b, {});
-  check(/Where does/.test(panel) && /250 × 250/.test(panel) && /to set up/.test(panel) && /Gives/.test(panel) && /data-action="cs-ok"/.test(panel) && /data-action="cs-auto"/.test(panel), "the panel: the spot picked, its time and yield, Set up camp here, Let the game pick");
+  check(/Where does/.test(panel) && /500 × 500/.test(panel) && /to set up/.test(panel) && /Gives/.test(panel) && /data-action="cs-ok"/.test(panel) && /data-action="cs-auto"/.test(panel), "the panel: the spot picked, its time and yield, Set up camp here, Let the game pick");
   CS_ACTIONS["cs-ok"](st);
   check(!st.combat && !pendingSite(st) && p.campAt.join() === spot.join(), `Set up camp here: the spot taken, the view closed (${spot})`);
   check(campSiteFor(st, p, tile).join() === spot.join(), "and that is where it goes");
@@ -134,7 +134,7 @@ const spot = [-20, 14];
   camp = st.bases[0];
   check(!!camp && isCamp(camp) && camp.plan.fresh && camp.plan.origin.join() === spot.join(), `the camp stands on its spot (${camp && camp.plan.origin})`);
   const B = BM.gridBox(camp);
-  check(B.x1 - B.x0 === 250 && B.y1 - B.y0 === 250 && B.x0 === -125 - spot[0] && B.y1 === 125 - spot[1], `its map round it: ${B.x0}..${B.x1}, ${B.y0}..${B.y1}`);
+  check(B.x1 - B.x0 === BM.BASE_GRID && B.y1 - B.y0 === BM.BASE_GRID && B.x0 === -BM.GRID_MAX - spot[0] && B.y1 === BM.GRID_MAX - spot[1], `its map round it: ${B.x0}..${B.x1}, ${B.y0}..${B.y1}`);
   const land = BM.landFor(st, camp);
   check(!land.list.some((q) => q.k !== "water" && q.cells.some((c) => inSite(c))), "nothing of the land left in its 5 × 5");
   check([[-2, -2], [2, 2], [0, 0], [-2, 2]].every(([x, yy]) => camp.land.cleared[`${x},${yy}`]) && !camp.land.cleared["3,3"] && !camp.land.cleared["-3,0"], "its 5 × 5 is cleared ground, the fire in the middle (no more)");
@@ -264,7 +264,7 @@ section("What a spot is like (siteInfo) and the game's pick weighed on it (bestS
   // Built by hand: an obviously better spot is the one picked.
   const synth = (fill) => {
     const pieces = new Map(), list = [], heights = new Map();
-    for (let y = -125; y < 125; y++) for (let x = -125; x < 125; x++) { const r = fill(x, y); if (r === "tree") { const p = { k: "tree", g: `t${x},${y}`, cells: [[x, y]] }; list.push(p); pieces.set(`${x},${y}`, p); } else if (typeof r === "number") heights.set(`${x},${y}`, r); }
+    for (let y = -BM.GRID_MAX; y < BM.GRID_MAX; y++) for (let x = -BM.GRID_MAX; x < BM.GRID_MAX; x++) { const r = fill(x, y); if (r === "tree") { const p = { k: "tree", g: `t${x},${y}`, cells: [[x, y]] }; list.push(p); pieces.set(`${x},${y}`, p); } else if (typeof r === "number") heights.set(`${x},${y}`, r); }
     return { pieces, list, floors: new Map(), heights };
   };
   const cheb = (x, y, c) => Math.max(Math.abs(x - c[0]), Math.abs(y - c[1]));

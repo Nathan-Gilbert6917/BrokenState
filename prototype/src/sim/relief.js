@@ -28,7 +28,7 @@ export const RELIEF = {
   EDGE: 3,        // columns kept level at the west and east edges (where each side comes in and goes out)
   NEAR_FLOOR: 2,  // cells kept level round a building's floor
   TRIES: 10,      // windows of the tile's land tried; the one with the most relief taken
-  G: 125,         // the land's half-size (basemap.js GRID_MAX)
+  G: 125,         // the land's half-size a fight's window is taken from (the 250 × 250 base map's, kept for fights and raids when the base map went to 500 × 500 on 2026-10-23)
 };
 export const SPRING_FIGHT = { R: [5, 7], MIN: 5, RIM: 2, MID: 0.4, TRIES: 64, CUT: 0.3 };
 const hashN = (a, b, c) => { let h = Math.imul(a ^ 0x9e3779b1, 0x85ebca6b) ^ Math.imul(b + 0x632b, 0xc2b2ae35) ^ Math.imul(c + 0x27d4, 0x165667b1); h ^= h >>> 15; return (h >>> 0) / 4294967296; };

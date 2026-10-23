@@ -21,7 +21,7 @@
 //   - the yard's leavings: in the yard round the clearing only stumps, logs, crates, barrels and a rock;
 //   - the clearing (CLEARING by tier: a base from before the camp's spot was picked, or one taken or handed over):
 //     nothing at all.
-// The land is the tile's in map coordinates (the 250 × 250 map's middle at 0, 0: basemap.js BASE_GRID); a base stands
+// The land is the tile's in map coordinates (the 500 × 500 map's middle at 0, 0: basemap.js BASE_GRID); a base stands
 // on it at its origin (spec.ox, spec.oy: basemap.js originOf), and landOf hands the pieces back in the base's grid
 // coordinates. A camp set up on a spot of its own (spec.fresh: the user's requests 2026-10-22, "choose where in the
 // 250 x 250 with a highlighted 10x10 to start ... Then you can build around that and clear out more as needed. Provide
@@ -818,7 +818,11 @@ export function townLayer(seed, style, G) {
         });
       }
     }
-    return { floors, pieces };
+    // A car left in the street never parks across a driveway or a lot (gravel): the way from a door out onto the street
+    // stays open (tools/mapreachtest.js; on the 500 × 500 map one now and then shut a house in).
+    const gravel = new Set(floors.filter((f) => f[2] === "gravel").map(([x, y]) => `${x},${y}`));
+    const across = (p) => p.k === "wreck" && p.g.startsWith("tc") && p.cells.some(([x, y]) => gravel.has(`${x},${y - 1}`) || gravel.has(`${x},${y + 1}`) || gravel.has(`${x - 1},${y}`) || gravel.has(`${x + 1},${y}`));
+    return { floors, pieces: pieces.filter((p) => !across(p)) };
   });
 }
 
