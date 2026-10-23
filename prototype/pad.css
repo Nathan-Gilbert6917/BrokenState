@@ -34,9 +34,31 @@ body > #padhints { position: fixed; }
 .input-pad .pb-LB, .input-pad .pb-RB, .input-pad .pb-LT, .input-pad .pb-RT { border-radius: 0.3rem; font-size: 0.6rem; }
 .input-pad .pb-View, .input-pad .pb-Menu { font-size: 0.75rem; }
 
-/* The button the pad points at in a row or a list it has taken (gamepad.js padList: the battle's orders bar, the
-   tile menu): a ring that reads on any background. */
-.input-pad .pad-focus { outline: 3px solid #6fe3ff !important; outline-offset: 1px; box-shadow: 0 0 0 5px rgba(0,0,0,0.55) !important; position: relative; z-index: 2; }
+/* The ring on the button the pad points at in a window, a menu or a panel (src/ui/padnav.js): one box over everything,
+   moved onto the button each frame, so no window's edge clips it and the button's own layout is never touched. */
+#padring { display: none; }
+.input-pad #padring:not([hidden]) {
+  display: block; position: fixed; z-index: 2147483000; pointer-events: none; box-sizing: border-box; border-radius: 7px;
+  border: 3px solid #6fe3ff; box-shadow: 0 0 0 2px rgba(0,0,0,0.7), 0 0 14px 3px rgba(111,227,255,0.65), inset 0 0 0 1px rgba(0,0,0,0.5);
+  transition: left 70ms ease-out, top 70ms ease-out, width 70ms ease-out, height 70ms ease-out;
+}
+@media (prefers-reduced-motion: reduce) { .input-pad #padring { transition: none; } }
+/* Over the windows: the legend docked at the page (body) stands above them. */
+.input-pad body > #padhints { z-index: 2147482000; }
+
+/* A drop-down's choices as a list the pad goes up and down (padnav.js openPick): A sets one, B leaves it. */
+#padpick { display: none; }
+.input-pad #padpick {
+  display: flex; flex-direction: column; position: fixed; z-index: 2147481000; max-height: min(60vh, 26rem); overflow-y: auto;
+  padding: 0.25rem; border-radius: 8px; background: var(--panel, #1b1e23); border: 1px solid var(--accent, #6fe3ff); box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+}
+.input-pad #padpick .pp-opt { text-align: left; white-space: nowrap; margin: 1px 0; }
+.input-pad #padpick .pp-opt.on { border-color: var(--accent, #6fe3ff); }
+
+/* The inventory by pad (A picks, A places), as by touch: the pick ringed and the cells that would take it outlined
+   (ui/inventory.js tgtCls draws .tgt for a controller too; responsive.css has the same for a finger). */
+.input-pad #modal .islot.sel { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent) inset; background: #2e2a20; }
+.input-pad #modal .islot.tgt { border: 1px dashed color-mix(in srgb, var(--good) 75%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--good) 30%, transparent) inset; }
 
 /* No mouse arrow over the maps while the pad plays: the cursor is the map's own. */
 .input-pad #map, .input-pad #combatmap { cursor: none; }

@@ -40,7 +40,7 @@ export function initInputMode() {
     if (mx >= 0 && Math.abs(e.clientX - mx) + Math.abs(e.clientY - my) > 24) setInputMode("mouse");
     mx = e.clientX; my = e.clientY;
   }, { capture: true, passive: true });
-  addEventListener("keydown", () => setInputMode("mouse"), { capture: true, passive: true });
+  addEventListener("keydown", (e) => { if (e.isTrusted) setInputMode("mouse"); }, { capture: true, passive: true }); // not the Esc a ✕ or a pad's B sends (ui/responsive.js, ui/padnav.js)
 }
 
 // The hint for one action in the current mode: keyHint({ key: "Esc", touch: "✕", pad: "Ⓑ" }). A mode left out
