@@ -55,6 +55,7 @@ import { RELOAD_FX } from "./data-ammo.js"; // black-powder handloads are louder
 import { nightLight } from "./fighters.js"; // a light for someone made for this fight, at night
 import { wxSightSetup, fogEyes, wxSightWord } from "./wxsight.js"; // fog and a blizzard cut everyone's sight (the battle tile's weather)
 import { noticeMult, concealSneak } from "./softcover.js"; // bushes and tents: noticed from closer, sneaking there unheard
+import { throwAtCar, alarmsNear, alarmTurn, carIdAt } from "./caralarms.js"; // a car alarm: a window broken by a throw, a blast, the ringing (call-time only)
 
 export const STEALTH = {
   NIGHT_SIGHT: 7, NIGHT_ZOMBIE_SIGHT: 5, LIGHT_SIGHT: 9, NIGHT_DETECT: 0.6, LIGHT_DETECT: 3, // LIGHT_*: a flashlight's (each light's own: lights.js LIGHTS)
@@ -422,7 +423,7 @@ export function stealthAct(state, b, u, t, act) {
       u.ap -= 1;
       u.hunker = false;
       if (short) say(b, `${u.name}'s throw hits a wall and drops short.`, "info");
-      throwAt(b, u, key, x, y, blind);
+      throwAt(b, u, key, x, y, blind, state);
       return "";
     }
     case "drag": {
@@ -450,7 +451,9 @@ export function stealthAct(state, b, u, t, act) {
 // A throw that is allowed and paid for (the item taken, the action spent): where it lands (a tile off now and then
 // for anything with fx), the lure it leaves (b.lures, the ones that sense it go to look), what it does there.
 // Shared by your people and the enemy (siege.js enemyThrow). Returns [x, y] where it came down.
-export function throwAt(b, u, key, x, y, blind = false) {
+// On a car (caralarms.js): a thing without fx may break a window and set off an armed alarm (throwAtCar: state, for the
+// car's dice); a blast nearby shakes an armed one off (alarmsNear: without the state, only the cars already looked at).
+export function throwAt(b, u, key, x, y, blind = false, state = null) {
   const T = THROWABLES[key];
   let lx = x, ly = y, off = false;
   if (T.fx && !T.self) [lx, ly, off] = throwLanding(b, u, T, x, y, blind);
@@ -463,9 +466,14 @@ export function throwAt(b, u, key, x, y, blind = false) {
   if (!T.self) fx(b, { type: "throw", from: [u.x, u.y], to: [lx, ly], item: key });
   if (T.heat && b.raid) b.raid.heat = Math.min(100, b.raid.heat + T.heat);
   const extra = T.fx ? landEffect(b, u, T, lx, ly) : "";
-  const heard = T.radius ? (n ? ` ${n} of them turn toward it.` : T.fx ? "" : " Nothing seems to notice.") : ""; // fx: the bang or the flare says it
+  const onCar = !T.fx && !T.self && carIdAt(b, lx, ly) != null; // caralarms.js throwAtCar says what it did
+  const heard = T.radius ? (n ? ` ${n} of them turn toward it.` : T.fx || onCar ? "" : " Nothing seems to notice.") : ""; // fx: the bang or the flare says it
   const where = off ? " It lands a tile off." : blind ? " Thrown blind over cover." : "";
   say(b, `${u.name} ${T.self ? "blows" : "throws"} ${T.label}.${where}${heard}${extra ? ` ${extra}` : ""}${T.heat && b.raid ? " Heat rises." : ""}`, u.side === "enemy" ? "danger" : n || extra ? "good" : "info");
+  if (!T.self && !b.over) {
+    if (T.fx) alarmsNear(state, b, lx, ly, T.fx);
+    else if (onCar) throwAtCar(state, b, u, key, lx, ly, { say, fx });
+  }
   return [lx, ly];
 }
 
@@ -491,10 +499,13 @@ function moveBody(b, t, x, y) {
 }
 
 // ---------- the enemy turn ----------
-// Throwables still making noise pull again, and the knocked out who were not tied up come to.
+// Throwables still making noise pull again (a car alarm: caralarms.js alarmTurn, its own count), and the knocked out
+// who were not tied up come to.
 export function stealthTurn(b) {
   for (const u of b.units) { fogEyes(b, u); nightEyes(b, u); } // wxsight.js: the fog on newcomers too (before the night's cap)
+  alarmTurn(b);
   for (const lure of [...(b.lures || [])]) {
+    if (lure.key === "caralarm") continue;
     lure.turns -= 1;
     if (lure.turns <= 0) b.lures.splice(b.lures.indexOf(lure), 1);
     else pull(b, lure);
@@ -517,7 +528,8 @@ export function stealthTurn(b) {
 // Inside a building (buildingmaps.js) walls and closed doors muffle the noise (each one between counts as
 // BMAP.WALL_DAMP tiles more), and the dead already after you turn to the noise too unless one of your people is close
 // and in their sight (BMAP.DIVERT_NEAR): break off, shut a door and throw something, and they go.
-function pull(b, lure, first = false) {
+// A lure not of THROWABLES (a car alarm, caralarms.js: people go to look where it is) carries its own sense and decoy.
+export function pull(b, lure, first = false) {
   const T = THROWABLES[lure.key] || {};
   let n = 0;
   const inside = !!(b.raid && b.raid.interior);

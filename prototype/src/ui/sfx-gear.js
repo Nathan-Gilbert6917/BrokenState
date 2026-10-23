@@ -13,7 +13,7 @@ import { itemAt } from "../sim/inventory.js";
 import { GEAR } from "../sim/data.js";
 import { panOfX } from "./sfx-out.js";
 import { doorCues, doorLoot } from "./sfx-doors.js"; // doors and gates in battle
-import { vehicleCues, carLoot, mapCues } from "./sfx-vehicles.js"; // engines, car doors, the map's teams and gates
+import { vehicleCues, carLoot, carAlarmCue, mapCues } from "./sfx-vehicles.js"; // engines, car doors, car alarms, the map's teams and gates
 
 // ---------- battle ----------
 export function lootSound(text) {
@@ -47,7 +47,8 @@ export function gearCues(state, mem) {
       if (own) { out.push(...own); continue; }
       const s = lootSound(f.text);
       if (s) out.push({ ...s, at: f.to, pan: panOfX(b, f.to && f.to[0]) });
-    } else if (f.type === "heal") out.push({ name: f.self ? "tourniquet" : "bandage", at: f.to, pan: panOfX(b, f.to && f.to[0]), ...(f.self ? { ok: f.ok !== false } : {}) }); // f.self: a downed one's own tourniquet or trauma kit (sim/medics.js selfStabilize)
+    } else if (f.type === "alarm" || f.type === "alarmoff") out.push(...(carAlarmCue(b, f) || [])); // a car alarm going off, stopping (sfx-vehicles.js; the siren is its loop)
+    else if (f.type === "heal") out.push({ name: f.self ? "tourniquet" : "bandage", at: f.to, pan: panOfX(b, f.to && f.to[0]), ...(f.self ? { ok: f.ok !== false } : {}) }); // f.self: a downed one's own tourniquet or trauma kit (sim/medics.js selfStabilize)
   }
   // Doors opened, closed, broken, crossed (sfx-doors.js); people getting in and out of the vehicle, its engine, the
   // drive, found cars (sfx-vehicles.js).

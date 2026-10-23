@@ -16,7 +16,7 @@ import { conditionsOf, CONDITIONS } from "../sim/health.js"; // a lone walker's 
 import { BUILDINGS, count, tierUpJob, gatherCap, isCamp, CAMP, wallTier } from "../sim/buildings.js";
 import { weatherTint, iceRow } from "../sim/weather.js";
 import { mapSeasonOf, FOREST_FLAT } from "./seasontrees.js"; // the trees by the season: the decals' look, the forests' flat colour
-import { drawFronts, weatherTipLines } from "./wxmap.js"; // weather fronts over the land, frozen rivers in the tooltip
+import { drawFronts, weatherTipLines, drawWeatherFx, FX as WX_FX } from "./wxmap.js"; // weather fronts over the land, rain and fog on the tiles, fog's sight and frozen rivers in the tooltip
 import { radioNodes } from "../sim/radio.js";
 import { tunedNetworks } from "../sim/radiolisten.js"; // a channel you listen in on: its coverage in the group's colour
 import { alliedRadioNetworks, radioTipLines, yourLabel } from "../sim/radioallies.js"; // the Radio coverage layer: yours and your allies'
@@ -1763,6 +1763,15 @@ export function render(state) {
     else piece(cv, x, gy + (onWay ? stepBob(k0, 0.8 * s, period) : 0), u, { alpha: heard ? 0.55 : 1 });
     notePiece(cv, x, gy, u);
     if (v.phase === "siege") sprite(iconCanvas("siege"), x, y - 26 * s, ICON_W * s);
+  }
+  // Rain and fog over the tiles where it rains or is foggy now (ui/wxmap.js, Weather layer): over the land, the sites,
+  // the dead and the groups (fog veils them), under your people, notes and labels. They move while Map animations are
+  // on (not with Reduce motion), asking for frames only while some is on screen.
+  if (!state.timelapse && on("weather") && state.weather) {
+    const moves = animOn() && !readable.still;
+    const fx = drawWeatherFx(ctx, state, { hex: HEX, view: { minX, maxX, minY, maxY }, frac: hourFrac(), t: moves ? now : 0, zoom, night: isNight(state) });
+    if (moves && fx.rain) wantFrames(WX_FX.RAIN_MS);
+    else if (moves && fx.fog) wantFrames(WX_FX.FOG_MS);
   }
   // Your bases' people out on job trips (ui/workermap.js, sim/jobtrips.js): walking out over the base's land, at work
   // with a ring filling over them, home with the load and a "+18 meat" over the base; the groups' walkers in view.

@@ -74,7 +74,7 @@ import { caravanOrderChoices, gangAmbush, wouldRaid } from "./caravanraids.js"; 
 import { meetChoices, groupConvoyArrive, convoyMeetHour } from "./trademeet.js"; // trades met at a tile: their caravan waiting, the groups' convoys meeting halfway
 import { crashesHour, crashSurvey } from "./crashes.js";
 import { breakdownsHour } from "./breakdowns.js";
-import { travelFactor, travelEffects, travelHazard, thirstAt, thirstAhead, coldAt, riverFrozen, ICE } from "./weather.js";
+import { travelFactor, travelHazard, thirstAt, thirstAhead, coldAt, riverFrozen, ICE, sightCut } from "./weather.js";
 import { thinIceStep } from "./rivers.js"; // frozen rivers: thin ice early and late in the freeze
 import { hasPerk, checkBonus, gainXpAll, USE, hash01 } from "./skills.js";
 import { tripDone } from "./relations.js";
@@ -371,7 +371,7 @@ export const nightEyesOn = (members) => members.some((s) => s.gear && s.gear.too
 /** @param {State} state @param {Party} p */
 export function sightRadius(state, p) {
   const m = partyMembers(state, p);
-  const fx = travelEffects(state, state.hour, partyTile(p)); // fog or a blizzard where the team is (weather.js)
+  const fx = { sight: sightCut(state, partyTile(p)) }; // fog or a blizzard where the team is (weather.js WX_SIGHT)
   if (isNight(state)) return Math.max(0, (nightEyesOn(m) ? NIGHT_SIGHT.goggles : NIGHT_SIGHT.dark) + Math.min(0, fx.sight));
   let r = 1;
   if (bestSkill(state, p, "scouting") >= 10) r += 1;

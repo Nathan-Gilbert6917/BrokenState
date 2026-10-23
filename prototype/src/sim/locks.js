@@ -16,7 +16,8 @@
 //   force   with the crowbar (or a pry weapon: a crowbar, fire axe or sledgehammer, barOf): 85% + 1.5% a
 //           Mechanics point − 20% a step, 1 action, loud: Heat +6 and it wakes
 //           everything within 8 tiles. Without one (kick, smash): 50% − 20% a step, both actions, Heat +10, wakes
-//           everything within 11; only difficulty 1–2.
+//           everything within 11; only difficulty 1–2. A locked car's (glass or crowbar) can set off its alarm
+//           (caralarms.js ALARM.SMASH / FORCE a try); picking never does.
 // Keys are named for a site ("Dunmore Police Station key") and open every lock there. They turn up on human bodies
 // (12%), in containers (3%), locked ones (by kind, up to 30%) and in hour-by-hour searches; they are for a site
 // near where they were found. A key found in a raid joins the hub's key ring when someone gets out; it is never cargo.
@@ -37,6 +38,8 @@ import { CELL, nearBox, inBox } from "./combat.js"; // nearBox / inBox: a contai
 import { addFindVia } from "./ammo.js"; // rounds by calibre
 import { say as sayB, fx as fxB, setFloor } from "./combat.js"; // gun safes: a charge that goes off at the start of a turn (safeTurn)
 import { THROWABLES } from "./stealth.js";
+import { ALARM, carOfBox, tripAlarm, breakGlass } from "./caralarms.js"; // a locked car's alarm, tripped by the glass or a crowbar (call-time only)
+import { carRoll } from "./foundcars.js"; // the car's own dice (call-time only)
 import { landEffect } from "./throwables.js";
 import { toolSource } from "./gunsafes.js";
 import { rollGunStash, TIER_STASH, blastContents, rollAreaGunFinds, CAR_CASE, rollGunCase, SEARCH_TOOLS, isGunCase, openCase, CASE } from "./gunsafes.js";
@@ -374,6 +377,13 @@ export function openLock(state, b, u, act, H) {
     if (o.glass) H.say(b, ok ? `${u.name} shatters the car's window with a crash and reaches in (${Math.round(o.chance * 100)}%).` : `${u.name} hits the car's window; it cracks and holds (${Math.round(o.chance * 100)}%).`, ok ? "good" : "danger");
     else H.say(b, ok ? `${u.name} ${smash ? "smashes" : "forces"} the ${lower} open with a crash (${Math.round(o.chance * 100)}%).` : `${u.name} ${smash ? "kicks at" : "heaves on"} the ${lower}, but it holds (${Math.round(o.chance * 100)}%).`, ok ? "good" : "danger");
     H.alertNear(b, t.x, t.y, P.radius, o.glass ? "Breaking glass carries down the road: the dead nearby turn toward it." : "The noise wakes everything nearby.");
+    // A locked car's box (caralarms.js): the car's own record, its alarm tripped at ALARM.SMASH (the glass) or FORCE
+    // (a crowbar) a try, open or not; a window broken stays broken.
+    const car = t.box && t.box.kind === "car" ? carOfBox(state, b, t.box) : null;
+    if (car) {
+      if (ok && o.glass) breakGlass(b, car);
+      tripAlarm(state, b, car, o.crowbar ? ALARM.FORCE : ALARM.SMASH, carRoll(state, b, car.id, "alarm", "lock", t.lock.tries, u.id), H);
+    }
   } else {
     H.say(b, `${u.name} unlocks the ${lower} with the ${keyName(state, b.tileId)}.`, "good");
   }

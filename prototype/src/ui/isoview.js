@@ -46,6 +46,8 @@ import { onForgetPictures } from "./pictures.js"; // the pictures kept here are 
 import { strideOf } from "./moveanim.js"; // walking: the step of the walk cycle and the bob
 import { treeLookFor, treeStyle, styleKey, FALL } from "./seasontrees.js"; // trees and bushes by the season (seasonTree, seasonBush)
 import { snowOnFor } from "./roofsnow.js"; // snow on the buildings in winter (roofSprite, snowPrims)
+import { ringingCars } from "../sim/caralarms.js"; // a car alarm ringing (2026-10-23): its hazard lights blinking, how far it is heard
+import { groundTexel, leafField, leafBase, groundLookKey, snowShare } from "./groundlook.js"; // spring's mud, autumn's leaves, winter's snow on the ground (sim/seasonground.js)
 
 // ---------- constants ----------
 const HW = 16, HH = 8;          // half a tile in art px (a tile: 32 × 16)
@@ -533,10 +535,12 @@ function terrainPrims(T, o) {
   const topC = (X, Y, k = 1) => {
     const q = n2(X, Y, 6);
     // A hollow's mud (sim/ponds.js): dark and wet, a puddle's sheen here and there; snow lying (o.snow, the battle's
-    // b.snowLie) on the hills' tops and banks in drifts (only up on a hill: the level ground round it is drawn flat).
+    // b.snowLie) on the hills' tops and banks in drifts; the season on the ground (o.gt: spring's mud, winter's snow,
+    // autumn's leaves o.lf, as on the level ground: ui/groundlook.js groundTexel).
     if (o.wet === "mud") return mul(drift(X, Y, 29) > 0.86 ? hex("#3e4048") : MUD_C, k * (0.86 + q * 0.2));
-    if (o.snow && T.e > 0 && drift(X, Y, 31) < o.snow * 0.8) return mul(SNOW_C, k * (0.92 + q * 0.08));
+    if (o.snow && T.e > 0 && !o.gt && drift(X, Y, 31) < snowShare(o.snow)) return mul(SNOW_C, k * (0.92 + q * 0.08));
     const c = f === "road" ? mul(FLOORC.road, 0.9 + q * 0.12) : f === "gravel" || f === "deck" ? mul(FLOORC.gravel, 0.8 + q * 0.35) : f === "dirt" ? mul(FLOORC.dirt, 0.88 + q * 0.2) : f === "field" ? mul(FLOORC.field, 0.9 + q * 0.12) : q > 0.9 ? mul(PAL.leaf2, 0.9) : mul(FLOORC.grass, 0.88 + q * 0.2);
+    if (o.gt) { const g = groundTexel(c, o.gt, X, Y, o.lf || 0); if (g !== c) return mul(g, k); }
     return mul(c, k * (1 + 0.07 * T.e)); // the higher, the lighter: the levels read apart
   };
   const side = (f2, s, t, X, Y) => { const q = n2(X, Y, 4); return Math.floor(t + q * 4) % 7 < 1 ? mul(PAL.stone, 0.72) : mul(FLOORC.dirt, 0.78 + q * 0.22); };
@@ -1063,6 +1067,8 @@ function primsOf(k, o) {
 // (snow on its limbs in winter). Same places and sizes as the green ones (GROWN): only the look changes.
 let treeLook = "green"; // this frame's (drawIso: treeLookFor)
 let snowLook = 0; // the snow lying on the buildings this frame (drawIso: ui/roofsnow.js snowOnFor; roofSprite, snowPrims)
+let leafNow = null; // autumn's leaves, per cell (ui/groundlook.js leafField), while looksFor builds the looks
+const groundCells = (b) => (floorsOf(b) ? b.floors[0].cells : b.cells); // the ground floor's (where the trees stand)
 const BARE = /^b/; // o.sea of a bare tree or bush: drawn with no outline (sprite)
 const SNOWY = hex("#e9eef3"), TWIG = hex("#5b4b3d");
 const snowy = (X, Y) => mul(SNOWY, 0.93 + n2(X, Y, 5) * 0.07);
@@ -1141,7 +1147,7 @@ function spritePut(key, s) {
 }
 // A cached sprite for a cell's look.
 function sprite(k, o, fog) {
-  const key = `${iso.straight ? "s|" : ""}${o.sea ? `${o.sea}|` : ""}${k}|${o.v}|${o.alt}|${o.j}|${o.n}|${o.top}|${o.stub ? 1 : 0}|${o.mat}|${o.dmg}|${o.barred ? 1 : 0}|${o.dir}|${o.part || ""}|${o.vault ? 1 : 0}|${o.roll ? 1 : 0}|${o.lit ? 1 : 0}|${o.spot || 0}|${fog ? 1 : 0}|${o.ter ? `${o.ter.key}${o.f}${o.wet ? `${o.wet}${o.wl}` : ""}${o.snow || ""}` : ""}|${o.car ? `${o.car.i},${o.car.j},${o.car.L},${o.car.ax},${o.car.kind},${o.car.v},${o.car.body || ""},${o.car.mil ? o.car.mil.cond : ""},${upKey(o.car.up)},${iso.rot & 3}` : ""}${o.sn ? `|n${o.sn}` : ""}`;
+  const key = `${iso.straight ? "s|" : ""}${o.sea ? `${o.sea}|` : ""}${k}|${o.v}|${o.alt}|${o.j}|${o.n}|${o.top}|${o.stub ? 1 : 0}|${o.mat}|${o.dmg}|${o.barred ? 1 : 0}|${o.dir}|${o.part || ""}|${o.vault ? 1 : 0}|${o.roll ? 1 : 0}|${o.lit ? 1 : 0}|${o.spot || 0}|${fog ? 1 : 0}|${o.ter ? `${o.ter.key}${o.f}${o.wet ? `${o.wet}${o.wl}` : ""}${o.snow || ""}${o.gt ? `${o.gnd}${o.lf}` : ""}` : ""}|${o.car ? `${o.car.i},${o.car.j},${o.car.L},${o.car.ax},${o.car.kind},${o.car.v},${o.car.body || ""},${o.car.mil ? o.car.mil.cond : ""},${upKey(o.car.up)},${iso.rot & 3}` : ""}${o.sn ? `|n${o.sn}` : ""}`;
   let s = spriteGet(key);
   if (s === undefined) {
     const p = prims(k, o);
@@ -1324,7 +1330,7 @@ function roadColor(x, y, tx, ty, lx, ly, R) {
   if (!worn && Math.abs(a - w / 2) < ROAD.MID && (s % ROAD.DASH) / ROAD.DASH < ROAD.GAP) return mix(col, hex("#a8924a"), 0.7); // the dashed centre line
   return col;
 }
-function floorColor(c, k, x, y, lx, ly, mud, R = null) {
+function floorColor(c, k, x, y, lx, ly, mud, R = null, lf = 0) { // lf: autumn's leaves here (ui/groundlook.js leafField)
   const tx = Math.min(15, Math.floor(lx * 16)), ty = Math.min(15, Math.floor(ly * 16));
   const q = hash3(x * 16 + tx, y * 16 + ty, 1), v = hash3(x, y, 2);
   if (k === "water" && !c.ter) { // a pond's deep middle (c.ter, sim/ponds.js): its ground's floor here, the water drawn at its level (wetPrims)
@@ -1358,6 +1364,7 @@ function floorColor(c, k, x, y, lx, ly, mud, R = null) {
     case "roof": col = mul(FLOORC.roof, 0.86 + q * 0.2); break;
     default: col = mul(FLOORC.grass, 0.92 + q * 0.12);
   }
+  if (c.gnd || lf) col = groundTexel(col, c, x * 16 + tx, y * 16 + ty, lf, Math.min(tx, 15 - tx, ty, 15 - ty) / 7.5); // the season on the ground (ui/groundlook.js)
   if (mud) { const m = clamp01(mud - hash3(x * 16 + tx, y * 16 + ty, 9) * 0.6); if (m > 0) col = mix(col, q > 0.7 ? hex("#5a1a1c") : hex("#3e2a22"), m * 0.85); }
   return col;
 }
@@ -1366,7 +1373,7 @@ function floorColor(c, k, x, y, lx, ly, mud, R = null) {
 // Kept for a few floors and views (groundCaches: the key as the one-slot cache had, the view and the floor's ground
 // key, of this battle only), so going up and down the storeys does not paint each floor again (76-250 ms a switch).
 function groundFor(b, scene) {
-  const r = iso.rot, st = iso.straight, key = `${viewKey()}:${scene.groundKey}`;
+  const r = iso.rot, st = iso.straight, key = `${viewKey()}:${groundKeyOf(b, scene)}`;
   const hit = groundCaches.get(key);
   if (hit && hit.b === b) { groundCaches.delete(key); groundCaches.set(key, hit); return hit; }
   for (const [k, g] of groundCaches) if (g.b !== b) groundCaches.delete(k);
@@ -1383,6 +1390,7 @@ function groundFor(b, scene) {
     for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) { const nx = x + dx, ny = y + dy; if (nx >= 0 && ny >= 0 && nx < b.w && ny < b.h) mud[ny * b.w + nx] = Math.max(mud[ny * b.w + nx], 1 - Math.hypot(dx, dy) / 3); }
   }
   const passes = lift ? [[b.floors[0].cells, 0, 0.55, false], [b.cells, lift, 1, true]] : [[b.cells, 0, 1, false]];
+  const lfF = leafField(b, treeLook, scene.key, groundCells(b)); // autumn's leaves (ui/groundlook.js)
   for (const [cells, up, dim, footOnly] of passes) for (let py = 0, R = roadRuns(cells, b.w, b.h); py < gh; py++) for (let px = 0; px < gw; px++) {
     const [u, v] = artUV(px + 0.5 + ox, py + 0.5 - lift + up, st);
     if (u < 0 || v < 0 || u >= Wv || v >= Hv) continue;
@@ -1391,7 +1399,7 @@ function groundFor(b, scene) {
     const [lx, ly] = ptWorld(fu, fv, r, 1, 1);
     const c = cells[y * b.w + x];
     if (footOnly && isVoid(c)) continue;
-    let col = floorColor(c, c.k, x, y, lx, ly, mud[y * b.w + x], R);
+    let col = floorColor(c, c.k, x, y, lx, ly, mud[y * b.w + x], R, lfF && !up ? lfF[y * b.w + x] : 0);
     if (fu < 0.055 || fv < 0.055) col = mul(col, 0.86); // the grid, faintly
     if (dim < 1) col = mul(col, dim);
     const i = (py * gw + px) * 4;
@@ -1412,8 +1420,26 @@ function groundFor(b, scene) {
 // transform for the view's rotation (groundXform). Half the pixels of the view-space picture and no repaint when the
 // view turns (groundFor took about 300 ms on a 72 × 72 fort, at the open and on every turn of the view).
 const TEX = 16;
+// The ground's pictures' key: the cells' floors (sceneFor groundKey) and the season on them (ui/groundlook.js: the
+// mud or snow, sim/seasonground.js b.ground; autumn's leaves by the look).
+const groundKeyOf = (b, scene) => `${scene.groundKey}:${groundLookKey(b, treeLook)}`;
+// The skirt's colours (battleedge.js skirtFor: the edge cells' floors running on past the map): the map's snow on it,
+// autumn's leaves at their open-ground density; with neither, floorColor itself. Made again only for a new look.
+const SKIRT_SNOW = new Set(["grass", "field", "dirt", "gravel", "road", "rubble"]);
+let skirtFn = { b: null, key: "", fn: floorColor };
+function skirtColor(b) {
+  const snow = b.ground && b.ground.snow ? b.ground.snow : 0, lf = leafBase(treeLook);
+  if (!snow && !lf) return floorColor;
+  const key = `${snow}|${lf}`;
+  if (skirtFn.b === b && skirtFn.key === key) return skirtFn.fn;
+  const snowy = new WeakMap(); // a skirt tile's ground (one object a tile) with the snow on it
+  const onIt = (g) => { let o = snowy.get(g); if (!o) snowy.set(g, (o = { ...g, gnd: "snow", sd: snow })); return o; };
+  const fn = (g, k, x, y, lx, ly, m) => floorColor(snow && k !== "water" && SKIRT_SNOW.has(g.f) ? onIt(g) : g, k, x, y, lx, ly, m, null, lf);
+  skirtFn = { b, key, fn };
+  return fn;
+}
 function flatGroundFor(b, scene) {
-  const key = scene.groundKey;
+  const key = groundKeyOf(b, scene);
   if (flatGroundCache && flatGroundCache.b === b && flatGroundCache.key === key) return flatGroundCache;
   const tw = b.w * TEX, th = b.h * TEX;
   const mud = new Float32Array(b.w * b.h);
@@ -1422,11 +1448,12 @@ function flatGroundFor(b, scene) {
     for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) { const nx = x + dx, ny = y + dy; if (nx >= 0 && ny >= 0 && nx < b.w && ny < b.h) mud[ny * b.w + nx] = Math.max(mud[ny * b.w + nx], 1 - Math.hypot(dx, dy) / 3); }
   }
   const R = roadRuns(b.cells, b.w, b.h); // which way the roads run (the paint follows them)
+  const lfF = leafField(b, treeLook, scene.key, groundCells(b)); // autumn's leaves (ui/groundlook.js)
   const cv = mkCanvas(tw, th), c = cv.getContext("2d"), img = c.createImageData(tw, th), buf = img.data;
   for (let y = 0; y < b.h; y++) for (let x = 0; x < b.w; x++) {
-    const cell = b.cells[y * b.w + x], m = mud[y * b.w + x];
+    const cell = b.cells[y * b.w + x], m = mud[y * b.w + x], lf = lfF ? lfF[y * b.w + x] : 0;
     for (let ty = 0; ty < TEX; ty++) for (let tx = 0; tx < TEX; tx++) {
-      let col = floorColor(cell, cell.k, x, y, (tx + 0.5) / TEX, (ty + 0.5) / TEX, m, R);
+      let col = floorColor(cell, cell.k, x, y, (tx + 0.5) / TEX, (ty + 0.5) / TEX, m, R, lf);
       if (tx === 0 || ty === 0) col = mul(col, 0.86); // the grid, faintly
       const i = ((y * TEX + ty) * tw + x * TEX + tx) * 4;
       buf[i] = col[0]; buf[i + 1] = col[1]; buf[i + 2] = col[2]; buf[i + 3] = 255;
@@ -1560,6 +1587,7 @@ function lookOf(b, scene, x, y, cut, focus = null) {
   const ter = terrainOf(b, x, y); // the ground's height here (a hill, a hollow, a rim): drawn under the cell's own look
   if (k === "open" && !ter) return null;
   const r = iso.rot, o = { v: Math.floor(hash3(x, y, 17) * 4), alt: hash3(x, y, 99) < 0.35 ? 1 : 0, j: 0, n: null, top: WALL1, mat: 0, dmg: 0, dir: null, ter, f: ter ? c.f || "" : "", wet: ter && c.wet ? c.wet : "", wl: c.wl || 0, snow: ter ? b.snowLie || 0 : 0 }; // wet, wl: a hollow's pond, mud or ice (sim/ponds.js); snow: the snow lying
+  if (ter && (c.gnd || (leafNow && leafNow[i]))) { o.gnd = c.gnd || ""; o.lf = leafNow ? Math.round(leafNow[i] * 4) / 4 : 0; o.gt = { gnd: o.gnd, sd: c.sd || 0, f: c.f, wet: c.wet }; } // the season on a hill's ground (ui/groundlook.js; sprite key: gnd, lf)
   if (k === "tree" || k === "bush") { const sea = styleKey(treeStyle(treeLook, x, y)); if (sea) o.sea = sea; } // the season's look (ui/seasontrees.js)
   const js = JOINS[k];
   if (js) for (const [dx, dy] of VD) {
@@ -1661,6 +1689,7 @@ function looksFor(b, scene, cut, slot = "draw", focus = null) {
   const ck = [...cut].sort((a, c) => a - c).join(",");
   const key = `${scene.key}:${viewKey()}:${treeLook}:${snowLook}:${ck}:${focus ? focus.map((p) => p.join(".")).join(",") : ""}`, lc = looksCache[slot];
   if (lc && lc.b === b && lc.key === key) return lc.list;
+  leafNow = leafField(b, treeLook, scene.key, groundCells(b)); // autumn's leaves on the hills (lookOf o.lf)
   const list = new Array(b.w * b.h);
   for (let i = 0; i < list.length; i++) {
     const L = lookOf(b, scene, i % b.w, (i / b.w) | 0, cut, focus);
@@ -2120,7 +2149,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   const lift = liftOf(b), F = floorsOf(b); // an upper floor of a building with storeys: the footprint raised `lift`
   const gx = (-Hv * HW - iso.cx) * S + cw / 2, gy = (0 - iso.cy) * S + ch / 2;
   const gxf = groundXform(b, iso.rot, TEX, S, gx, gy, Hv);
-  const skirt = skirtFor(b, fog, floorColor, scene.groundKey); // the ground running on past the edges into the fog
+  const skirt = skirtFor(b, fog, skirtColor(b), groundKeyOf(b, scene)); // the ground running on past the edges into the fog (the season on it too)
   if (skirt) { ctx.save(); ctx.imageSmoothingEnabled = false; ctx.transform(...gxf); ctx.drawImage(skirt.cv, -skirt.K * TEX, -skirt.K * TEX); ctx.restore(); }
   let g = null;
   if (!lift) { // painted in map space, stretched onto the diamonds (flatGroundFor)
@@ -2319,6 +2348,9 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     ctx.strokeStyle = col.replace("A", "0.32"); ctx.lineWidth = 1; ctx.setLineDash([3, 6]);
     ctx.beginPath(); ctx.ellipse(X, Y, l.radius * RX(st) * S, l.radius * RY(st) * S, 0, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
   }
+  // A car alarm ringing (sim/caralarms.js ringingCars): its lure is a decoy (siege.js battleOverlays), so the ring
+  // above shows how far it is heard; its lights and tag after the painter's pass.
+  const alarms = floorNo(b) ? [] : ringingCars(b);
   // Ladders and rams in the painter's pass, by the diagonal they stand on (drawSiegeIso).
   const siegeAt = new Map();
   const atD = (x, y, f) => { const [uu, vv] = toView(x, y, r, b.w, b.h); const d = depth(uu, vv, st); const a = siegeAt.get(d); if (a) a.push(f); else siegeAt.set(d, [f]); };
@@ -2546,12 +2578,37 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   }
   // Thrown things where they landed: a ring while the noise lasts (sim/stealth.js).
   for (const l of OV.decoys) {
+    if (l.key === "caralarm") continue; // a car alarm: its own lights and tag below
     const [X, Y] = project(l.x + 0.5, l.y + 0.5, 0), q = ((now || 0) % 1200) / 1200;
     const kind = l.sense.includes("heat") && !l.sense.includes("light") ? "heat" : l.sense.includes("light") ? "light" : "noise";
     ctx.strokeStyle = SENSE_COL[kind].replace("A", String(0.65 * (1 - q))); ctx.lineWidth = 2;
     ctx.beginPath(); ctx.ellipse(X, Y, (0.4 + q * 1.4) * RX(st) * S, (0.4 + q * 1.4) * RY(st) * S, 0, 0, Math.PI * 2); ctx.stroke();
     ctx.fillStyle = kind === "heat" ? "#ff7a4a" : kind === "light" ? "#fff2c0" : "#e0b048"; ctx.beginPath(); ctx.arc(X, Y - 2 * S, 2.2 * S, 0, Math.PI * 2); ctx.fill();
     if (l.decoy) tag(ctx, kind === "heat" ? "HEAT" : kind === "light" ? "LIGHT" : "NOISE", X, Y - 9 * S, kind === "heat" ? "#ff9a6a" : kind === "light" ? "#fff2c0" : "#ffd166", Math.max(9, 2.8 * S));
+  }
+  // A ringing car alarm: the hazard lights at its four corners blinking orange and white (about twice a second), a soft
+  // halo round each while lit, a ring pulsing out from it and an ALARM tag with the turns left over its roof. The
+  // lights only where your people see the car; the ring and the tag always (everyone hears it).
+  for (const a of alarms) {
+    const q = ((now || 0) % 1100) / 1100, on = ((now || 0) % 520) < 300, white = ((now || 0) % 1040) < 520;
+    const mid = (a.y + Math.floor(a.h / 2)) * b.w + a.x + Math.floor(a.w / 2), L = looks[mid], top = (L ? L.top : VEH_TOP) + liftAt(b, mid);
+    let seen = false;
+    for (let yy = a.y; yy < a.y + a.h && !seen; yy++) for (let xx = a.x; xx < a.x + a.w; xx++) if (vis[yy * b.w + xx]) { seen = true; break; }
+    const [GX, GY] = project(a.x + a.w / 2, a.y + a.h / 2, 0);
+    ctx.strokeStyle = `rgba(255,170,60,${0.7 * (1 - q)})`; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.ellipse(GX, GY, (Math.max(a.w, a.h) / 2 + q * 2.2) * RX(st) * S, (Math.max(a.w, a.h) / 2 + q * 2.2) * RY(st) * S, 0, 0, Math.PI * 2); ctx.stroke();
+    if (seen && on) {
+      const col = white ? "255,250,230" : "255,150,40";
+      for (const [cx, cy] of [[a.x + 0.15, a.y + 0.15], [a.x + a.w - 0.15, a.y + 0.15], [a.x + 0.15, a.y + a.h - 0.15], [a.x + a.w - 0.15, a.y + a.h - 0.15]]) {
+        const [X, Y] = project(cx, cy, top * 0.45);
+        const g = ctx.createRadialGradient(X, Y, 0, X, Y, 7 * S);
+        g.addColorStop(0, `rgba(${col},0.75)`); g.addColorStop(1, `rgba(${col},0)`);
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(X, Y, 7 * S, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = `rgb(${col})`; ctx.beginPath(); ctx.arc(X, Y, 1.6 * S, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+    const [TX, TY] = project(a.x + a.w / 2, a.y + a.h / 2, top + 12);
+    tag(ctx, `ALARM · ${a.left}`, TX, TY, on ? "#ffb347" : "#ffe0b0", Math.max(9, 2.8 * S));
   }
   for (const c of b.flares || []) { const [X, Y] = project(c.x + 0.5, c.y + 0.5, 2); ctx.fillStyle = "#ffe08a"; ctx.beginPath(); ctx.arc(X, Y, 2.5 * S, 0, Math.PI * 2); ctx.fill(); }
   // Thrown spears where they lie (sim/combat.js b.spears): yours always, theirs where seen.
@@ -3407,10 +3464,11 @@ function drawFxIso(ctx, b, now, H, state = null, shown = []) {
     }
     if (!f.to) continue;
     const a = Math.max(0, 1 - el / 1400);
-    const text = f.text ? f.text : f.type === "heal" ? "+" : f.hit ? `${f.crit ? "CRIT " : ""}-${f.dmg}` : "MISS";
+    // sim/caralarms.js: a car alarm going off ("alarm"), stopping ("alarmoff"): no text of their own, not a miss.
+    const text = f.text ? f.text : f.type === "alarm" ? "ALARM!" : f.type === "alarmoff" ? "quiet" : f.type === "heal" ? "+" : f.hit ? `${f.crit ? "CRIT " : ""}-${f.dmg}` : "MISS";
     ctx.font = `800 ${Math.round(Math.max(12, (f.crit ? 5.4 : 4.6) * S))}px Segoe UI, sans-serif`;
     ctx.textAlign = "center";
-    ctx.fillStyle = f.type === "loot" ? `rgba(255,209,102,${a})` : f.type === "heal" ? `rgba(${COL.goodRgb},${a})` : f.acid ? `rgba(170,230,70,${a})` : f.hit ? `rgba(255,${f.crit ? 210 : 110},90,${a})` : `rgba(210,210,210,${a})`;
+    ctx.fillStyle = f.type === "alarm" || f.type === "alarmoff" ? `rgba(255,170,60,${a})` : f.type === "loot" ? `rgba(255,209,102,${a})` : f.type === "heal" ? `rgba(${COL.goodRgb},${a})` : f.acid ? `rgba(170,230,70,${a})` : f.hit ? `rgba(255,${f.crit ? 210 : 110},90,${a})` : `rgba(210,210,210,${a})`;
     ctx.strokeStyle = `rgba(0,0,0,${a})`; ctx.lineWidth = 3;
     const y = ty - UNIT_H * 0.7 * S - (el / 1400) * 14 * S;
     ctx.strokeText(text, tx, y); ctx.fillText(text, tx, y);
