@@ -15,7 +15,8 @@ import { giveOrder, awaitOrders } from "../src/sim/parties.js";
 import { roadTeam } from "../src/sim/hardcore-start.js";
 import { pendingSite, pickSite } from "../src/sim/staging.js";
 import * as BM from "../src/sim/basemap.js";
-import { townLayer, highLayer, layLand, CLEAR, clearOf, TOWN } from "../src/sim/basescatter.js";
+import { townLayer, reliefLayer, layLand, CLEAR, clearOf, TOWN } from "../src/sim/basescatter.js";
+import { applyRelief } from "../src/sim/relief.js";
 import { CELL, finishCombat } from "../src/sim/combat.js";
 import { siteThreat, SITE_CLEAR } from "../src/sim/siteclear.js";
 import { CS_ACTIONS, sitePanel } from "../src/ui/campsite.js";
@@ -55,14 +56,29 @@ section("The land: a town's streets and houses, a city's blocks, the hills' high
   const all = [...town.pieces, ...city.pieces].filter((p) => p.parts).length;
   check(!bad, `every building has a door and every bit of its floor is walked to from one (${all} buildings, ${bad} not)`);
   check(rooms > all / 3 && furn > all * 0.8, `inside: rooms walled off (${rooms}), furniture (${furn} of ${all})`);
-  // The hills: high ground a level up with slopes onto it.
-  const hills = highLayer(99, "hills", 125), mtn = highLayer(99, "mountain", 125), plains = highLayer(99, "plains", 125);
-  const rise = new Set(hills.pieces.filter((p) => p.k === "rise").map((p) => `${p.cells[0]}`)), slopes = hills.pieces.filter((p) => p.k === "slope");
-  check(rise.size > 500 && slopes.length > 20 && !plains.pieces.length && mtn.pieces.filter((p) => p.k === "rise").length > rise.size, `the hills: ${rise.size} cells of high ground, ${slopes.length} of slope (the mountains more, the plains none)`);
-  check(slopes.every((p) => { const [x, y] = p.cells[0]; return !rise.has(`${x},${y}`) && ORTHO.some(([dx, dy]) => rise.has(`${x + dx},${y + dy}`)); }), "every slope stands at the foot of the high ground, beside it");
-  check(CELL.rise.h === 1 && CELL.rise.walk && !CELL.rise.climb && CELL.slope.climb && !CELL.slope.h, "high ground is a level up, walked on; a slope is the climb onto it");
+  // The lie of the land (the user's word 2026-10-23): hills up to three levels, hollows down two, a mountain's crag.
+  const hills = reliefLayer(99, "hills", 125), mtn = reliefLayer(99, "mountain", 125), farm = reliefLayer(99, "farm", 125);
+  const lv = (r) => { const c = {}; for (const [, , h] of r.heights) c[h] = (c[h] || 0) + 1; return c; };
+  const hc = lv(hills);
+  check(hc[1] > 500 && hc[2] > 50 && hc[3] > 10 && hc[-1] > 50 && hc[-2] > 5 && !hc[4] && !hc[-3], `the hills: ${JSON.stringify(hc)} cells by level (1 to 3 up, 1 to 2 down)`);
+  check(mtn.crags.length > 200 && !hills.crags.length && (lv(farm)[1] || 0) < hc[1] && !lv(farm)[2], `a mountain's crag (${mtn.crags.length} cells of ridge), none in the hills; farmland near flat`);
+  const HM = new Map(hills.heights.map(([x, y, h]) => [`${x},${y}`, h]));
+  check(hills.heights.every(([x, y, h]) => [-1, 0, 1].every((dy) => [-1, 0, 1].every((dx) => Math.abs((HM.get(`${x + dx},${y + dy}`) || 0) - h) <= 1))), "never more than a level between neighbours: walked up and down anywhere");
+  // No spur or finger a cell wide (the playtest 2026-10-23): every raised cell in a 2 × 2 as high or higher, every sunk one as deep.
+  const cragS = new Set(mtn.crags.map(([x, y]) => `${x},${y}`)), MH = new Map(mtn.heights.map(([x, y, h]) => [`${x},${y}`, h]));
+  const wide = (r, M, cr) => r.heights.every(([x, y, h]) => [[0, 0], [-1, 0], [0, -1], [-1, -1]].some(([ox, oy]) => [[0, 0], [1, 0], [0, 1], [1, 1]].every(([dx, dy]) => { const k = `${x + ox + dx},${y + oy + dy}`, v = cr.has(k) ? (h > 0 ? 9 : -9) : M.get(k) || 0; return h > 0 ? v >= h : v <= h; })));
+  check(wide(hills, HM, new Set()) && wide(mtn, MH, cragS), "no spur a cell wide: every hill and hollow at least two cells across at each level");
+  check(CELL.crag && !CELL.crag.walk && CELL.crag.los && CELL.crag.tall >= 3, "crag: no way over it, no sight through it");
+{
+  // Laid on a fight's map: the heights under the trees and the open ground, level round the floors and at the edges.
+  const fc = Array.from({ length: 40 * 30 }, (_, i) => ({ k: i % 7 === 0 ? "tree" : "open" }));
+  for (let y = 12; y < 18; y++) for (let x = 18; x < 24; x++) fc[y * 40 + x].f = "floor";
+  const nr = applyRelief(fc, 40, 30, { id: 4, terrain: "hills" });
+  const fat = (x, y) => fc[y * 40 + x];
+  check(nr > 30 && fc.some((c) => c.ter && c.k === "tree") && [0, 1, 2, 37, 38, 39].every((x) => [...Array(30).keys()].every((y) => !fat(x, y).ter)) && fc.every((c) => !(c.f === "floor" && c.ter)), `a fight on a hills tile: ${nr} cells raised or sunk, trees on them, the edges and round the floors level`);
+}
   // Cleared whole: what a building gives.
-  check(clearOf({ k: "house" }).hours === CLEAR.house.hours && CLEAR.house.get.wood > 0 && CLEAR.store.get.metalsheet > 0 && CLEAR.block.get.buildmat > 0 && clearOf({ k: "rise" }).hours === CLEAR.rise.hours, "a house, a store and a city building are pulled down whole for wood, scrap, building materials, metal sheets; high ground is dug down");
+  check(clearOf({ k: "house" }).hours === CLEAR.house.hours && CLEAR.house.get.wood > 0 && CLEAR.store.get.metalsheet > 0 && CLEAR.block.get.buildmat > 0 && clearOf({ k: "rise", h: 3 }).hours === CLEAR.rise.hours * 3 && clearOf({ k: "dip", h: -2 }).hours === CLEAR.dip.hours * 2 && !clearOf({ k: "crag" }), "a house, a store and a city building are pulled down whole for wood, scrap, building materials, metal sheets; high ground dug down and a hollow filled in a level at a time; the mountainside never");
   // Laid on a map: each cell its own kind and floor.
   const W = 60, H = 60, cells = Array.from({ length: W * H }, () => ({ k: "open" }));
   const h = town.pieces.find((p) => p.k === "house");
@@ -177,7 +193,7 @@ section("The fight: on the tile's map round the spot, the dead round it, none dr
 {
   const d = BM.defaultSite(st, suburb.id), land = BM.siteLand(st, suburb.id);
   let big = 0;
-  for (let y = d[1] - 2; y <= d[1] + 2; y++) for (let x = d[0] - 2; x <= d[0] + 2; x++) { const q = land.pieces.get(`${x},${y}`); if (q && ["house", "store", "block", "rise", "slope"].includes(q.k)) big++; }
+  for (let y = d[1] - 2; y <= d[1] + 2; y++) for (let x = d[0] - 2; x <= d[0] + 2; x++) { const q = land.pieces.get(`${x},${y}`); if (q && ["house", "store", "block", "rise", "slope", "dip", "crag"].includes(q.k)) big++; }
   check(!big, `the game's own spot in a town keeps off the houses (${d})`);
 }
 

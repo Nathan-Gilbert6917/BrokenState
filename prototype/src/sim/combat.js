@@ -29,6 +29,7 @@
 //   loot: { supplies: {}, gear: [] },  // dropped by dead enemies, already added to the party cargo / base stock
 //   turns?, medsUsed?, extraKilled?    // optional extras from the tactical engine
 // }
+import { applyRelief } from "./relief.js"; // hills, hollows and crag on a hills or mountain tile
 import { typeFind, AREA_MIX } from "./foods.js"; // the food in a container as items
 import { survivorById, factionById, alive, atBase, homeAt, combatPower, hurt, log, skill, gearEffect, isNight, usesArrows, armedFactor, arrowsBack, meleeAimBonus, meleeDmgMult } from "./world.js";
 import { partyMembers, partyTile, partyCapacity, cargoLoad, cargoRoom, unitsThatFit, wipeParty, leaveVehicle } from "./parties.js";
@@ -820,7 +821,18 @@ export const CELL = {
   // up or down but by a slope (a climb, like stairs).
   rise:      { walk: true,  cover: 0, los: false, name: "High ground", h: 1 },
   slope:     { walk: true,  cover: 0, los: false, name: "Slope", climb: true },
+  // A mountain's ridge (basescatter.js reliefLayer, the user's word 2026-10-23: "steep hills that cannot be traversed
+  // and blocks line of sight"): sheer rock three levels up, no way over it, nothing seen through it.
+  crag:      { walk: false, cover: 2, los: true,  name: "Mountainside", tall: 3 },
 };
+// The ground's own height (basescatter.js reliefLayer: c.h with c.ter, −2 to 3 levels): hills and hollows walked up and
+// down a level at a step (climbCost: TERRAIN_STEP levels at most, any way, CLIMB moves a level), the height under
+// whatever stands there (a tree on a hill is a hill's height taller: LOS); a vehicle drives over it with all its cells
+// on the one level (carSteps, the turn), a level up or down from one place to the next.
+export const TERRAIN_STEP = 1;
+// The ground a cell stands on, in levels (its terrain height; 0 for level ground), or null: a raised floor of its own
+// (a walkway, a roof, stairs: CELL h or a structure's c.h).
+export const groundH = (c) => (c.ter ? c.h || 0 : c.h == null && CELL[c.k] && CELL[c.k].h == null ? 0 : null);
 
 // Verticality (base battles): a unit on higher ground sees SIGHT tiles further a level, aims AIM better a level at
 // anything lower (at most MAX_AIM) and has at least half cover against shooters below it that are not right next to
@@ -1306,6 +1318,7 @@ export function turnVehicle(b, u) {
     const o = unitAt(b, cx, cy); // the turret's gunner up on the roof turns with it (aboard: it refused every turn while manned)
     if (!(c.k === "open" || (c.k === "vehicle" && inVehicle(v, cx, cy))) || (o && !o.aboard)) return "No room to turn here: open ground with nobody on it on all its cells.";
   }
+  if (levelRect(b, tx, ty, nw, nh) == null) return "No room to turn here: the ground is not level under it."; // all its wheels on the one level
   const car = b.cells[idx(v.x, v.y)].car;
   for (const [cx, cy] of vehicleCells(v)) { const c = b.cells[idx(cx, cy)]; c.k = "open"; delete c.car; }
   v.x = tx; v.y = ty; v.w = nw; v.h = nh; v.ax = v.ax === "x" ? "y" : "x";
@@ -1323,6 +1336,22 @@ export function turnVehicle(b, u) {
   bump(b);
   return "";
 }
+// Is the ground under a vehicle's rect all on one level (the user's word 2026-10-23: "vehicles can travel on but the
+// whole vehicle must be on the layer")? Returns that level, or null.
+// How many levels the ground under a rect spans (0: level).
+export function rectSpan(b, x0, y0, w, h) {
+  let lo = Infinity, hi = -Infinity;
+  for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) { const c = b.cells[y * b.w + x], g = c.ter ? c.h || 0 : 0; lo = Math.min(lo, g); hi = Math.max(hi, g); }
+  return hi - lo;
+}
+export function levelRect(b, x0, y0, w, h) {
+  let lv = null;
+  for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) {
+    const c = b.cells[y * b.w + x], g = c.ter ? c.h || 0 : 0;
+    if (lv == null) lv = g; else if (g !== lv) return null;
+  }
+  return lv;
+}
 // Where a vehicle can get to this turn: every position of its rect (top-left x, y) within DRIVE.RANGE 4-way steps over
 // open ground, through people and light obstacles when it can ram (RAMMING; not a bike, not noRam: the attackers' Humvee
 // keeps to open ground, carTurn; a Set: only those obstacles). Returns { seen: Map(key → steps), parent: Map(key → key), key }.
@@ -1333,6 +1362,7 @@ export function carSteps(b, v, u, noRam = false) {
   const own = v.cell || "vehicle"; // the cells it stands on: "vehicle" (yours) or "truck" (their Humvee)
   const passable = (px, py) => {
     if (px < 0 || py < 0 || px + v.w > W || py + v.h > H) return false;
+    if (rectSpan(b, px, py, v.w, v.h) > TERRAIN_STEP) return false; // over a step of the ground at most (it stops on one level: driveTo)
     for (let cy = py; cy < py + v.h; cy++) for (let cx = px; cx < px + v.w; cx++) {
       const c = b.cells[idx(cx, cy)];
       if (!(c.k === "open" || (c.k === own && inVehicle(v, cx, cy)) || ((canRam || (only && only.has(c.k))) && rammable(c)))) return false;
@@ -1369,6 +1399,7 @@ export function driveTo(b, u, x, y, opts = {}) {
   const { seen, parent, key } = carSteps(b, v, u, opts.noRam || false);
   if (u.aboard) v.driver = u.id; // at the wheel: the one a shot through the windscreen hits (cabSeat)
   if (!seen.has(key(tx, ty))) return `The vehicle cannot get there: open ground, people and light obstacles only, within ${DRIVE.RANGE} cells.`;
+  if (levelRect(b, tx, ty, v.w, v.h) == null) return "Not there: the vehicle has to stop with all its wheels on the one level (it climbs a hill a step at a time).";
   // The way: every position from the first step to the last; the cells swept are rammed.
   const way = [];
   for (let k = key(tx, ty); k !== key(v.x, v.y); k = parent.get(k)) way.unshift([k % W, Math.floor(k / W)]);
@@ -2427,6 +2458,14 @@ export function makeLosCache(w, h) {
 }
 const losGet = (cache, i) => (cache instanceof Map ? cache.get(i) || 0 : cache[i]);
 const losSet = (cache, i, v) => { if (cache instanceof Map) cache.set(i, v); else cache[i] = v; };
+// How high a cell blocks a sight line (levels): a wall's own top (c.t), a blocking cell's tall, a raised floor's height,
+// all on top of the ground's height under it (a tree on a hill; c.ter); level ground 0 (only seen from below: a hollow).
+function losTop(cell, C) {
+  const g = cell.ter ? cell.h || 0 : 0;
+  if (cell.t) return cell.t + g;
+  if (C.los && !doorSees(cell)) return (C.tall || 1) + g;
+  return C.walk ? cell.h ?? C.h ?? 0 : g;
+}
 export function los(b, x0, y0, x1, y1) {
   bindDims(b);
   const a = idx(x0, y0), c = idx(x1, y1);
@@ -2441,9 +2480,9 @@ export function los(b, x0, y0, x1, y1) {
     const cx = Math.floor(px), cy = Math.floor(py);
     if ((cx === x0 && cy === y0) || (cx === x1 && cy === y1)) continue;
     const cell = b.cells[idx(cx, cy)], C = CELL[cell.k];
-    const top = cell.t || (C.los && !doorSees(cell) ? C.tall || 1 : C.walk ? cell.h ?? C.h ?? 0 : 0); // doorSees: a closed glass or screen door is seen through (buildingmaps.js DOOR_KINDS)
+    const top = losTop(cell, C); // doorSees: a closed glass or screen door is seen through (buildingmaps.js DOOR_KINDS)
     const eye = e0 + ((e1 - e0) * i) / n;
-    if (!top || eye > top) continue;
+    if (eye > top) continue;
     const fx = px - cx, fy = py - cy;
     if (fx > 0.12 && fx < 0.88 && fy > 0.12 && fy < 0.88) { clear = false; continue; }
     // Grazing this cell's edge: a corner glimpsed past, unless the cell across that edge blocks too (a sight line
@@ -2452,8 +2491,7 @@ export function los(b, x0, y0, x1, y1) {
     const across = (x, y) => {
       if ((x === cx && y === cy) || !inside(x, y) || (x === x0 && y === y0) || (x === x1 && y === y1)) return false;
       const c2 = b.cells[idx(x, y)], C2 = CELL[c2.k];
-      const t2 = c2.t || (C2.los && !doorSees(c2) ? C2.tall || 1 : C2.walk ? c2.h ?? C2.h ?? 0 : 0);
-      return !!t2 && eye <= t2;
+      return eye <= losTop(c2, C2);
     };
     if ((nx !== cx && ny === cy && across(nx, cy)) || (ny !== cy && nx === cx && across(cx, ny))) clear = false;
   }
@@ -2543,6 +2581,8 @@ export function coverSides(b, x, y) {
 function climbCost(b, x, y, nx, ny, diag, per, h = hAt) {
   const dh = Math.abs(h(b, nx, ny) - h(b, x, y));
   if (!dh) return 0;
+  // Over the ground (a hill, a hollow): a level at a step, any way.
+  if (h === hAt) { const g0 = groundH(b.cells[idx(x, y)]), g1 = groundH(b.cells[idx(nx, ny)]); if (g0 != null && g1 != null && dh <= TERRAIN_STEP) return dh * per; }
   if (diag || !(climbAt(b, x, y) || climbAt(b, nx, ny))) return Infinity;
   return dh * per;
 }
@@ -3846,6 +3886,9 @@ export function createBattle(state, setup) {
   // A base's wall map (deploy.js: the wall at column 12 of an 18-wide map): on a bridge the river starts 3 columns before
   // it, so the wall, its walkway and ladders and the tank traps in front all stand on the deck.
   const map = genMap(rng, tile, { densify: setup.layout !== "baseDefence", bridgeC0: setup.layout === "baseDefence" ? 9 : undefined, trucks: setup.layout ? [] : trucksAt(state, tileId), locks: !setup.layout }); // Army trucks (miltrucks.js), not on a base's wall map; locked doors only on an open field
+  // The lie of the land (relief.js, the user's word 2026-10-23): an open fight on a hills or mountain tile has the tile's
+  // hills, hollows and crag; a layout lays its own (a base's map, the camp's spot: basescatter.js layLand).
+  if (!setup.layout && applyRelief(map.cells, W, H, tile, { crags: true })) map.reach = flood(map.cells, 0, Math.floor(H / 2));
   const b = {
     setup, tileId: party ? partyTile(party) : tileId, w: W, h: H, cells: map.cells, reach: map.reach,
     place: placeName(tile),
@@ -6973,6 +7016,9 @@ export function createRaid(state, setup) {
     if (entryFrom(map, entrySide, withVehicle)) { const z = map.zones[0]; map.reach = flood(map.cells, z.x0 + 1, z.y0 + 1); }
     if (campPoi) { campRaidMap(state, tileId, poiI, map, W, H, mrng); map.reach = flood(map.cells, map.zones[0].x0 + 1, map.zones[0].y0 + 1); } // campsite.js: the clearing, the fire and the tents round it
   }
+  // The lie of the land on a raid on a hills or mountain tile (relief.js): its hills and hollows round the buildings,
+  // the entry zones level; no crag (the ways in stay open).
+  { const zs = map.zones || []; applyRelief(map.cells, W, H, tile, { keep: (x, y) => zs.some((z) => x >= z.x0 - 2 && y >= z.y0 - 2 && x < z.x0 + z.w + 2 && y < z.y0 + z.h + 2) }); }
   const big = raidBig(state, W, H); // battlesize.js: the big-map scales (past the old Large, a world made since the raid map dials)
   const b = {
     setup, tileId: party ? partyTile(party) : tileId, w: W, h: H, cells: map.cells, reach: map.reach,

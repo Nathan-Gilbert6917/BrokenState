@@ -3638,7 +3638,11 @@ function previewText(b, state = null) {
   if (pool) s = `<b class="danger">Acid</b> <span class="muted">(${pool.turns} turn${pool.turns === 1 ? "" : "s"} left)</span>: ${ACID.pool[0]}–${ACID.pool[1]} damage to the living who step in or start their turn in it (once a turn; armour stops only half as much). The dead walk through it unharmed.${u && u.acidT === b.turn ? " <span class=\"muted\">Already burned this turn.</span>" : ""} ${s}`;
   if (evacAt(b, h.x, h.y)) s += b.tier ? (b.tier.map === "wall" ? " The back gate: one person can slip away from here (the team falls back to the yard instead: Shift+R)." : " The back gate: leaving from here abandons the base.") : " Evac zone: you can retreat from here (a downed teammate dragged here goes with the last one out).";
   const hh = heightAt(b, h.x, h.y);
-  if (hh) s += ` ${"▲".repeat(hh)} ${cell.name}, height ${hh}: +${HEIGHT.SIGHT * hh} sight, +${Math.min(HEIGHT.MAX_AIM, HEIGHT.AIM * hh)} aim at anything lower, half cover against shooters below.`;
+  // The ground's own height (sim/basescatter.js reliefLayer, sim/relief.js): a hill or a hollow, walked up and down a
+  // level at a step.
+  if (cobj.ter && hh > 0) s += ` ${"▲".repeat(hh)} A hill, level ${hh}: +${HEIGHT.SIGHT * hh} sight, +${Math.min(HEIGHT.MAX_AIM, HEIGHT.AIM * hh)} aim at anything lower, half cover against shooters below; it hides what is behind it from lower ground. Up or down a level a step (${HEIGHT.CLIMB} move a level, the dead ${HEIGHT.CLIMB_DEAD}); a vehicle stops only with all its wheels on one level.`;
+  else if (cobj.ter && hh < 0) s += ` ${"▼".repeat(-hh)} A hollow, ${-hh} level${hh === -1 ? "" : "s"} down: the ground round it hides it (and hides the rest from it); ${HEIGHT.SIGHT * -hh} sight less. Down or up a level a step.`;
+  else if (hh) s += ` ${"▲".repeat(hh)} ${cell.name}, height ${hh}: +${HEIGHT.SIGHT * hh} sight, +${Math.min(HEIGHT.MAX_AIM, HEIGHT.AIM * hh)} aim at anything lower, half cover against shooters below.`;
   else if (cell.climb) s += ` ${cell.name}: the way up (climbing costs ${HEIGHT.CLIMB} move a level, the dead ${HEIGHT.CLIMB_DEAD}).`;
   if (cobj.mhp) s += ` ${structureName(cobj)}:${struct}`;
   if (cobj.mine) s += ` <span class="warn">One of your mines</span><span class="muted">: your people step round it; a raider or one of the dead who steps here sets it off (a pipe bomb's blast).</span>`; // sim/mines.js

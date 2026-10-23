@@ -1,0 +1,108 @@
+// @ts-check
+// The lie of the land on a fight's or a raid's map (the user's word 2026-10-23: "These hills occur on hill raids as
+// well"): the hills, hollows and, in an open fight, the mountains' crag of the tile's own land (basescatter.js
+// reliefLayer, the base map's dice: the same hills) laid on a battle map of a hills or mountain tile. The heights go
+// under whatever natural stands there (open ground, trees, bushes, rocks: RELIEF.NATURAL); a building's floor and the
+// cells round it, the map's edges (the ways in and out) and the raid's entry zones stay level, and the ground steps a
+// level at most between neighbours, so everything walked to before is walked to still (combat.js climbCost). Crag
+// that would cut the map in two (no way from the west edge to the east) is left out.
+//   applyRelief(cells, W, H, tile, opts) → the cells raised or lowered. opts.crags: the ridges too (an open fight);
+//   opts.keep(x, y): cells to keep level (a raid's zones).
+import { reliefLayer, scatterSeed, HIGH } from "./basescatter.js";
+import { CELL } from "./combat.js"; // call-time only
+
+export const RELIEF = {
+  TERRAIN: new Set(["hills", "mountain"]),
+  NATURAL: new Set(["open", "tree", "bush", "rock", "boulder", "stump", "log", "hay"]),
+  EDGE: 3,        // columns kept level at the west and east edges (where each side comes in and goes out)
+  NEAR_FLOOR: 2,  // cells kept level round a building's floor
+  TRIES: 10,      // windows of the tile's land tried; the one with the most relief taken
+  G: 125,         // the land's half-size (basemap.js GRID_MAX)
+};
+const hashN = (a, b, c) => { let h = Math.imul(a ^ 0x9e3779b1, 0x85ebca6b) ^ Math.imul(b + 0x632b, 0xc2b2ae35) ^ Math.imul(c + 0x27d4, 0x165667b1); h ^= h >>> 15; return (h >>> 0) / 4294967296; };
+
+/** @param {any[]} cells @param {number} W @param {number} H @param {any} tile @param {{ crags?: boolean, keep?: (x: number, y: number) => boolean }} [opts] */
+export function applyRelief(cells, W, H, tile, opts = {}) {
+  if (!tile || !RELIEF.TERRAIN.has(tile.terrain) || !HIGH) return 0;
+  const R = reliefLayer(scatterSeed(tile.id), tile.terrain, RELIEF.G);
+  const hm = new Map(R.heights.map(([x, y, h]) => [`${x},${y}`, h])), crag = new Set(opts.crags ? R.crags.map(([x, y]) => `${x},${y}`) : []);
+  // The window of the tile's land the map shows: the one with the most relief of a few.
+  const span = RELIEF.G * 2 - Math.max(W, H) - 4;
+  let best = null;
+  for (let k = 0; k < RELIEF.TRIES; k++) {
+    const ox = Math.floor(-RELIEF.G + 2 + hashN(tile.id, k, 1) * span), oy = Math.floor(-RELIEF.G + 2 + hashN(tile.id, k, 2) * Math.max(1, RELIEF.G * 2 - H - 4));
+    let n = 0;
+    for (let y = 0; y < H; y += 2) for (let x = 0; x < W; x += 2) if (hm.has(`${x + ox},${y + oy}`) || crag.has(`${x + ox},${y + oy}`)) n++;
+    if (!best || n > best.n) best = { ox, oy, n };
+  }
+  if (!best || !best.n) return 0;
+  // What stays level: the edges, what is not natural ground, round a building's floor, what the caller keeps.
+  const N = W * H, fixed = new Uint8Array(N);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const c = cells[y * W + x];
+    if (x < RELIEF.EDGE || x >= W - RELIEF.EDGE || y < 1 || y >= H - 1 || !RELIEF.NATURAL.has(c.k) || c.f === "floor" || c.car || (opts.keep && opts.keep(x, y))) fixed[y * W + x] = 1;
+    if (c.f === "floor") for (let dy = -RELIEF.NEAR_FLOOR; dy <= RELIEF.NEAR_FLOOR; dy++) for (let dx = -RELIEF.NEAR_FLOOR; dx <= RELIEF.NEAR_FLOOR; dx++) { const nx = x + dx, ny = y + dy; if (nx >= 0 && ny >= 0 && nx < W && ny < H) fixed[ny * W + nx] = 1; }
+  }
+  const h = new Int8Array(N), isCrag = new Uint8Array(N);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = y * W + x;
+    if (fixed[i]) continue;
+    const key = `${x + best.ox},${y + best.oy}`;
+    if (crag.has(key) && cells[i].k === "open") isCrag[i] = 1;
+    else h[i] = hm.get(key) || 0;
+  }
+  // Smoothed as the base map's land is (basescatter.js relaxHeights): a raised cell in a 2 × 2 as high or higher (a sunk
+  // one as deep), else a level less; then a level at most between neighbours (eight ways); the fixed cells level, the
+  // crag as high as any hill beside it.
+  const lvAt = (x, y, s) => (x < 0 || y < 0 || x >= W || y >= H ? 0 : isCrag[y * W + x] ? (s > 0 ? 9 : -9) : h[y * W + x]);
+  for (let round = 0, any = true; any && round < 8; round++) {
+    any = false;
+    for (let pass = 0, changed = true; changed && pass < 12; pass++) {
+      changed = false;
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        const i = y * W + x, v0 = h[i];
+        if (!v0 || isCrag[i]) continue;
+        const ok = [[0, 0], [-1, 0], [0, -1], [-1, -1]].some(([ox, oy]) => [[0, 0], [1, 0], [0, 1], [1, 1]].every(([dx, dy]) => { const v = lvAt(x + ox + dx, y + oy + dy, v0); return v0 > 0 ? v >= v0 : v <= v0; }));
+        if (!ok) { h[i] = v0 > 0 ? v0 - 1 : v0 + 1; changed = any = true; }
+      }
+    }
+    for (let pass = 0, changed = true; changed && pass < 12; pass++) {
+      changed = false;
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        const i = y * W + x;
+        if (!h[i] || isCrag[i]) continue;
+        let lo = Infinity, hi = -Infinity;
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+          if (!dx && !dy) continue;
+          const nx = x + dx, ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+          const j = ny * W + nx;
+          if (isCrag[j]) continue;
+          lo = Math.min(lo, h[j]); hi = Math.max(hi, h[j]);
+        }
+        const v = h[i] > 0 ? Math.min(h[i], lo + 1) : Math.max(h[i], hi - 1);
+        if (v !== h[i]) { h[i] = v; changed = any = true; }
+      }
+    }
+  }
+  // The crag must leave a way across: from the west edge to the east one, else none of it.
+  if (isCrag.some((v) => v)) {
+    const walk = (i) => !isCrag[i] && !!CELL[cells[i].k] && !!CELL[cells[i].k].walk;
+    const seen = new Uint8Array(N), q = [];
+    for (let y = 0; y < H; y++) if (walk(y * W)) { seen[y * W] = 1; q.push(y * W); }
+    for (let k = 0; k < q.length; k++) {
+      const i = q[k], x = i % W, y = (i / W) | 0;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = x + dx, ny = y + dy; if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue; const j = ny * W + nx; if (!seen[j] && walk(j)) { seen[j] = 1; q.push(j); } }
+    }
+    let across = false;
+    for (let y = 0; y < H && !across; y++) if (seen[y * W + W - 1]) across = true;
+    if (!across) isCrag.fill(0);
+  }
+  let n = 0;
+  for (let i = 0; i < N; i++) {
+    const c = cells[i];
+    if (isCrag[i]) { c.k = "crag"; n++; continue; }
+    if (h[i]) { c.h = h[i]; c.ter = 1; n++; }
+  }
+  return n;
+}

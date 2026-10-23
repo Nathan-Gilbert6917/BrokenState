@@ -189,7 +189,8 @@ console.log("Tiles behind trees");
         const [x, y] = ISO.fromView(u, v, rot, b.w, b.h);
         if (!walk(x, y) || C.unitAt(b, x, y)) continue;
         let clear = true;
-        for (let k = 1; k <= 3 && clear; k++) { const [ax, ay] = ISO.fromView(u + k, v + k, rot, b.w, b.h); if (!walk(ax, ay)) clear = false; }
+        // Five cells: the trees are drawn taller (isoview GROWN), one further in front hides a tile.
+        for (let k = 1; k <= 5 && clear; k++) { const [ax, ay] = ISO.fromView(u + k, v + k, rot, b.w, b.h); if (!walk(ax, ay)) clear = false; }
         if (clear) return [x, y];
       }
       return null;
