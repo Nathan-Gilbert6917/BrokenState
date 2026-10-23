@@ -94,7 +94,7 @@ section("The build map: twice the size round the base, nothing within 3 cells of
     check(yardHalf(b) === GRID.camp.yard, `the yard keeps its size (${yardHalf(b)} half)`);
     openBaseMap(st, b.id);
     const B = st.combat;
-    check(B.w === 112 && B.h === 112, `a camp's build map is 112 × 112, twice the 56 × 56 (${B.w} × ${B.h})`);
+    check(B.w === 150 && B.h === 150, `a camp's build map is 150 × 150 (the user's request 2026-10-23: from 56 × 56 to 150 × 150; ${B.w} × ${B.h})`);
     layoutAct(st, B, { type: "pickType", bt: "crates" });
     let near = Infinity, edgeWhy = 0;
     for (let y = 0; y < B.h; y++) for (let x = 0; x < B.w; x++) {
