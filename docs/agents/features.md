@@ -18,6 +18,7 @@ Older design docs: [docs/base-building/plan.md](../base-building/plan.md), [docs
 - **Procedural State of Calder**: hex map with terrain, rivers, cities, towns, countryside sites, roads and infection; world sizes Small, Normal, Large and Huge, each with its own AI group count [mapgen, hex, worldsize].
 - **Hourly and daily simulation tick**, seeded and deterministic [world, rng].
 - **Seasons and weather**: four 28-day seasons, regional weather fronts, frozen rivers in winter that people and the dead can cross [weather, rivers].
+- **Ponds in the hollows**: rain fills hollows into ponds, dry days turn them to mud then dry, winter freezes them; the climb ×1.5 in rain, ×2.5 in winter [ponds, combat, basemap, ui/isoview] `tools/terrainweathertest.js`. [details](../features/campaign.md#ponds-in-the-hollows)
 - **Eras**: early game (years 1–4), mid (5–9) and late (10+), threats growing each year [eras].
 - **Two victories**: destroy every hive, or win with the Calder Coalition (over half the land); "Keep playing" after either [world, alliance].
 - **Hardcore mode**: start the day Calder falls with 1–4 survivors on the road, no hub, half-looted sites and the outbreak year's own cards [hardcore*, hardcore-start, hardcore-loot, hardcore-outbreak, hardcore-groups]. [details](../features/campaign.md#hardcore-mode)
@@ -211,6 +212,7 @@ Detail: [groups.md](../features/groups.md).
 
 ## 11. Radio and intel
 - **Radio network**: stations and relays, talking to groups, radio deals and trades; radios are mid game; coverage is a map layer [radio, radiotrade]. [details](../features/groups.md#radio-network)
+- **Your radio and your allies' on the Radio layer**: your rings in blue, each Calder Coalition member's in its colour with its reach and link; groups outside the coalition never shown [radioallies, ui/render, ui/ui renderLegend] `tools/radioalliestest.js`. [details](../features/groups.md#your-radio-and-your-allies-on-the-radio-layer)
 - **Listening in** on group channels [radiolisten].
 - **Intel**: what groups overhear, radio discipline, decoys, captured scouts [intel]; notes on enemy bases and strength estimates [intelnotes, intelest].
 

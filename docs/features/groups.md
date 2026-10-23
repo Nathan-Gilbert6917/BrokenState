@@ -125,3 +125,10 @@ Modules: [radio, radiotrade]. Stations and relays, talking to groups, radio deal
 - **Radio coverage is a map layer** (the user's request 2026-10-23: "Add to layers radio distance"): the Layers box's Radio coverage (markers LAYERS.radio, on by default; render DEFAULT_LAYERS, the timelapse's LAYER_KEYS).
   - Draws the dashed ring round each of your stations and relays with its reach on the ring's top: Radio 12 tiles, 24 with the military set, Relay 6 tiles; red and "not linked" or "off the air" for a relay not on the net.
   - While you listen in, a tuned group's network dotted in its colour. Unticked, no rings are drawn (ui/render.js; the help's Map layers topic in ui/help.js).
+
+## Your radio and your allies' on the Radio layer
+- The user's request 2026-10-23: "Radio layer shows your radio distance and when allied you can see their radio distance".
+- Your rings in your blue (PLAYER_COLOR), dashed over a faint wash, "Your radio: 12 tiles" / "Your relay: 6 tiles", "(not linked)" / "(off the air)" when so (radioallies yourRadioRings, yourLabel).
+- Allies are Calder Coalition members (alliance isMember / allianceMembers; a pact alone is not). Each with a network of its own (radio groupNetwork: stations at 12, a military group's army sets at 24, linked relay masts at 6, by your rules: ADR 0001; hidden outposts off the air) is drawn dash-dotted in its colour with "<Group> radio: 12 tiles" at the ring's foot (alliedRadioNetworks). Groups outside the coalition are never shown; a tuned channel stays dotted unless it is an ally's.
+- One wash per network over the union of its rings; labels moved round the ring to a free spot on screen (ui/render ringLabel, drawLabels alt); rings keep their screen width zoomed out.
+- The Layers line shows your reach and each ally's ●N in its colour, its tooltip "Allied: <Group> radio, 12 tiles (linked: you talk by radio | no link to yours: word comes by envoy)" (radioLegend, radioLegendTip; radio canRadioGroup); the tile tooltip names whose radio covers it (radioTipLines; ui/render tileTooltip). ui/help LAYER_HELP, LEGEND, swatch. `tools/radioalliestest.js`.

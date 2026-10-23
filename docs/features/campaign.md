@@ -31,3 +31,12 @@ Detail for section 1 of [docs/agents/features.md](../agents/features.md). `[name
   - wear, failures, fuel.
 - Presets Gentle, Standard, Harsh, Nightmare; they turn to Custom once a dial moves.
 - Kept on the world (`state.worldCfg`, saved) and read where each rate is applied.
+
+## Ponds in the hollows
+- The user's request 2026-10-23: "Update weather effects for the new terrain with hollows turning into ponds (after x days of no more rain the water goes away and it turns to mud filled hollow and if the water still exists and winter sets in it turns into a frozen pond and hills are harder to climb in rain and very hard in winter".
+- One state per tile, stepped a day at a time from the tile's own weather (ponds pondStep, weatherOnDay, iceIndex): a rain day (FILL 0.25) or a thaw (MELT 0.1 of snow cover gone) fills the hollows; DRAIN 4 dry days and they are mud, MUD 4 more and dry; a heat wave or dry spell counts HOT 2 days; at a freezing index of FREEZE 3 degree-days the ponds are ice and hold, the mud frozen hard; a thaw makes ice a pond again.
+- Your bases keep theirs (base.ponds, ticked at midnight after weatherDaily: world pondsDaily); any other tile's is worked out from its last LOOK 30 days (pondsOn, memoised).
+- On a fight's, a raid's or a base's map (pondsBattle, from createBattle and createRaid; nothing on maps without relief): c.wet wade at a pond's edge, deep from DEEP_IN 3 cells in (CELL.water, no way through, unless that would cut ground off: then waded); water level c.wl 0.6 of a level above the floor. Move costs (combat reachable, distField: wetCost): wading +1, deep wading +2, mud +0.5, ice +0.25; a shot from the water −15 aim (shotOdds, wadeAim).
+- The climb (climbCost × b.climbX: climbWx) ×1.5 in rain or storm, ×2.5 in winter, snow, a blizzard or snow cover 0.25+; ladders as before; shown in the battle hover (climbWord, wetWord).
+- Nothing built on a pond or mud, nor a wet hollow filled in, until it dries (basemap placeProblemAt via pondWhy on the land's heights, so dug hollows fill too; siteWaits / pondWaits).
+- Drawn as the river's water at the pond's level, darker where deep; ice with snow drifts; mud with puddles; snow on the hills in winter (ui/isoview wetPrims, terrainPrims). `tools/terrainweathertest.js`, `tools/pondshot.cjs`.

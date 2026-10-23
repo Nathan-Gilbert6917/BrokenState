@@ -406,6 +406,7 @@ function building(rng, k, x0, y0, w, h, face, g) {
   const set = (x, y, v) => K.set(ck(x, y), v);
   for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) set(x, y, x === x0 || x === x1 || y === y0 || y === y1 ? "wall" : "open");
   // The sides: [cells along it (no corners), the inward step].
+  /** @type {(s: string) => [number[][], number[]]} */
   const side = (s) => s === "n" ? [Array.from({ length: w - 2 }, (_, i) => [x0 + 1 + i, y0]), [0, 1]] : s === "s" ? [Array.from({ length: w - 2 }, (_, i) => [x0 + 1 + i, y1]), [0, -1]] : s === "w" ? [Array.from({ length: h - 2 }, (_, i) => [x0, y0 + 1 + i]), [1, 0]] : [Array.from({ length: h - 2 }, (_, i) => [x1, y0 + 1 + i]), [-1, 0]];
   const back = { n: "s", s: "n", e: "w", w: "e" }[face];
   for (const s of ["n", "s", "e", "w"]) {
