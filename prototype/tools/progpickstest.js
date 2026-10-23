@@ -21,7 +21,7 @@ import { startWar, warBetween, ensureDiplo } from "../src/sim/diplomacy.js";
 import { ensurePwars, atWarWithYou } from "../src/sim/playerwars.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
 import { setAutopilot, housingAI, governBase, governRoles, PERSONALITIES } from "../src/sim/autopilot.js";
-import { GROUP_WORKS, penFood, nextWork } from "../src/sim/groupworks.js";
+import { GROUP_WORKS, penFood, nextWork, worksAt } from "../src/sim/groupworks.js";
 import { yearStartDay, YEAR_DAYS } from "../src/sim/eras.js";
 import * as BP from "../src/sim/blueprints.js";
 import { outpostName } from "../src/sim/parties.js";
@@ -361,6 +361,7 @@ section("3d. The radio station when groups are out of reach, then the relay that
   if (check(fTile != null, "a spot for a group past the outpost")) {
     f.bases.length = 0; f.bases.push(fTile);
     f.known = true; f.goodwill = 70; f.pact = "trade";
+    worksAt(f, fTile).radio = 1; // a station of their own: a link needs a set on both sides (radio.js groupHasSet, envoys 5feada9)
     check(!canRadioGroup(st, f) && wishes(st, o).includes("relay"), `${f.name} out of radio reach past the outpost: a radio relay there`);
     o.construction.length = 0;
     const qr = queueUntil(st, o, "relay", 20, { scrap: 40, parts: 6 });
