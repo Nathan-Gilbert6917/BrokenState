@@ -97,7 +97,7 @@ const FAKE_PAD = `
     // The ring steered to the first element in sight that sel matches: each press the way it lies (the longer way first,
     // the other when that does not move the ring), as a player would.
     const goTo = async (sel, n = 60) => {
-      let tried = "";
+      const tried = new Set(); // "where|which way" already pressed: never the same press from the same place twice (no going round in a loop)
       for (let i = 0; i < n; i++) {
         const d = await page.evaluate((sel) => {
           const cur = document.querySelector(".pad-focus"), all = [...document.querySelectorAll(sel)].filter((e) => e.getClientRects().length);
@@ -112,8 +112,8 @@ const FAKE_PAD = `
         }, sel);
         if (d.done) break;
         if (d.none) { if (process.env.GOTO_DEBUG) console.log("   goTo none", sel, JSON.stringify(await look()).slice(0, 400)); return look(); }
-        const dir = d.first && `${d.key}|${d.first}` !== tried ? d.first : d.second || d.first;
-        tried = `${d.key}|${dir}`;
+        const dir = [d.first, d.second, "Right", "Down", "Left", "Up"].find((x) => x && !tried.has(`${d.key}|${x}`)) || d.first;
+        tried.add(`${d.key}|${dir}`);
         if (process.env.GOTO_DEBUG) console.log("   goTo", sel, dir, d.key.slice(0, 60));
         await press(dir);
       }
@@ -334,6 +334,7 @@ const FAKE_PAD = `
     await press("A");
     const sel = await page.evaluate(() => { const c = game.state.cards[0]; return c && c.poiPick ? c.poiPick.sel : "no card"; });
     check(sel === picked, "A picks it (as a click on it)", `${sel} / ${picked}`);
+    await page.waitForFunction(() => [...document.querySelectorAll("#modal .pm-go")].some((e) => e.getClientRects().length), null, { timeout: 5000 }).catch(() => {}); // the card drawn again with its buttons after the pick
     L = await goTo("#modal .pm-go");
     if (!(L.el && L.el.action === "choice")) console.log(await page.evaluate(async () => [...document.querySelectorAll(".pad-focus")].map((e) => e.outerHTML.slice(0, 80)).join(" || ") + " NAV " + JSON.stringify((await import("/src/ui/padnav.js")).navState())));
     check(L.el && L.el.action === "choice", `the ring on its button (${L.el && L.el.text})`, JSON.stringify(L.el));
@@ -357,6 +358,8 @@ const FAKE_PAD = `
       const P = await import("/src/sim/parties.js"), S = await import("/src/sim/staging.js"), BM = await import("/src/sim/basemap.js");
       const st = game.state, p = st.parties.find((x) => x.id === pid);
       if (!p) return { error: "no team" };
+      const POIS = await import("/src/sim/pois.js"), W = await import("/src/sim/world.js");
+      POIS.poiKnowledge(st, P.partyTile(p), true).surveyed = W.day(st); // scouted (sim/campscout.js): an unscouted tile sets up blind, with no spot to pick
       P.giveOrder(st, p, "camp");
       if (S.pendingSite(st) !== p) return { error: `no spot asked: ${JSON.stringify(p.task || p.phase)}` };
       const err = BM.openSiteView(st, p);
