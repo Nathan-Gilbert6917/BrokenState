@@ -17,9 +17,11 @@
 //      walked to from your people.
 // WALK_SHARE: trees, fences, rocks, wrecks and a house's walls make small pockets of their own (a cell ringed by a
 // stand of trees, a back yard fenced all round); clearing opens them, so they are no way in that is lost for good.
-// The measured least was 99.1% (2026-10-23, forest); 98% leaves room for the dice while any real cut (a ridge round a
-// valley shuts off hundreds of cells, a twentieth of the map) still fails. The crag and the river are held to 100%.
-// Usage: node tools/mapreachtest.js [seed]   (about a minute)
+// The measured least was 99.1% (2026-10-23, forest), so 98% leaves room for the dice and still fails a land whose
+// clutter cuts off more than a fiftieth of the map (1250 cells: a forest grown shut, a town walled in by its fences).
+// What is never cleared, the crag and the river, is held to 100% (the massif walled in up to 538 cells on a tile, a
+// hundredth of the map, before openCrag: the share alone would not see it).
+// Usage: node tools/mapreachtest.js [seed]   (about a minute of one CPU)
 import { createWorld } from "../src/sim/world.js";
 import { HexGrid } from "../src/sim/hex.js";
 import { roadTeam } from "../src/sim/hardcore-start.js";

@@ -334,8 +334,8 @@ export function reliefLayer(seed, terrain, G) {
     return { heights: [...H].map(([k, h]) => { const [x, y] = k.split(",").map(Number); return [x, y, h]; }), crags: [...crag].map((k) => { const [x, y] = k.split(",").map(Number); return [x, y, cragLv.get(k) || HIGH.CRAG_LV[0]]; }) };
   });
 }
-// The ridges never shut ground in (the user's words 2026-10-23: "Blocking base due to ridge"; tools/mapreachtest.js):
-// a hole in the rock HIGH.HOLE cells or smaller is rock too, and a bigger pocket of ground the ridges wall in gets a
+// The massif never shuts ground in (the user's words 2026-10-23: "Blocking base due to ridge"; tools/mapreachtest.js):
+// a hole in the rock HIGH.HOLE cells or smaller is rock too, and a bigger pocket of ground its arms wall in gets a
 // pass carved through them (cragPasses). The crag as "x,y" keys over [-G, G), in place.
 function openCrag(crag, G) {
   const N = 2 * G, rock = new Uint8Array(N * N);
@@ -348,7 +348,7 @@ function openCrag(crag, G) {
  * The crag on a grid never shuts off ground the map's edges reach without it (the user's words 2026-10-23: "Blocking
  * base due to ridge"): each pocket it walls in, the first in the grid's order first, gets a pass HIGH.PASS cells wide
  * carved through the rock the shortest way (the fewest cells of rock) out to ground the edges reach, or, no bigger
- * than opts.hole cells and walled in by rock alone, is filled with rock (a hole in a ridge). Walked four ways.
+ * than opts.hole cells and walled in by rock alone, is filled with rock (a hole in the rock). Walked four ways.
  * rock: 1 for crag (carved here, in place); block: 1 for what else stops a walk (never carved) or null.
  * Returns { carved, filled }: the cells taken out of the rock and put into it.
  * @param {Uint8Array} rock @param {Uint8Array | null} block @param {number} W @param {number} H @param {{ hole?: number }} [opts]
