@@ -658,7 +658,7 @@ export function placeProblemAt(base, it, x, y, r, occ, dims = null) {
   // The land (basescatter.js): every piece on its cells (and on the cells outside its doors) cleared first. Not inside a
   // standing building (a fitting, a bench on its floor): its ground was cleared when it went up.
   if (occ.land && !(host != null) && !mounted) {
-    const wet = occ.ponds ? pondWhy(occ.ponds, occ.land.heights, rectCells(it, at)) : ""; // ponds.js: a pond or mud in a hollow, until it dries
+    const wet = occ.ponds ? pondWhy(occ.ponds, occ.land.heights, rectCells(it, at), occ.land.springs) : ""; // ponds.js: a pond or mud in a hollow, until it dries (a spring's pond never)
     if (wet) return wet;
     const hit = landUnder(occ.land, it, at);
     if (hit.length) return landWhy(hit);
@@ -831,6 +831,7 @@ export function landWords(pieces) {
 export function landWhy(pieces) {
   if (pieces.some((p) => p.k === "water")) return "On the river: nothing is built on the water";
   if (pieces.some((p) => p.k === "crag")) return "On the mountainside: nothing is built on the rock"; // never cleared (basescatter.js CLEAR)
+  if (pieces.some((p) => p.spring)) return "In the pond: nothing is built on its spring-fed water, and it is never filled in"; // basescatter.js SPRING
   return `${LAND_WHY}: ${landWords(pieces)} (click the red site to queue the clearing)`;
 }
 // A cutting tool at the base (the armory's, or carried by someone there): a tree is felled faster with one (CLEAR.NO_TOOL).
@@ -882,7 +883,7 @@ export function siteProblem(state, tile, at) {
   if (!Array.isArray(at) || at.length < 2 || !Number.isInteger(at[0]) || !Number.isInteger(at[1])) return "Pick a spot for the camp";
   if (Math.abs(at[0]) > SITE_RANGE || Math.abs(at[1]) > SITE_RANGE) return "Too near the edge of the map: the camp's yard and a wall round it would run off it";
   const land = siteLand(state, tile), B = siteBox(at);
-  for (let y = B.y0; y < B.y1; y++) for (let x = B.x0; x < B.x1; x++) { const p = land.pieces.get(`${x},${y}`); if (p && p.k === "water") return "On the river: pick dry ground"; if (p && p.k === "crag") return "On the mountainside: pick open ground"; }
+  for (let y = B.y0; y < B.y1; y++) for (let x = B.x0; x < B.x1; x++) { const p = land.pieces.get(`${x},${y}`); if (p && p.k === "water") return "On the river: pick dry ground"; if (p && p.k === "crag") return "On the mountainside: pick open ground"; if (p && p.spring) return "In the pond: pick dry ground"; }
   return "";
 }
 // What clearing the spot would give and take ({ hours: work-hours at a builder's pace, get, n: pieces }; the picker's
@@ -931,7 +932,7 @@ export function clearCampSite(state, base) {
 // Does this construction job wait for its site to be cleared (the game placed it over the land: autoLayout's second
 // pass)? Its clearing is queued just before it the first time it is asked. (buildings.js constructionHour.)
 export function siteWaits(state, base, job) {
-  if (job && job.type === "clear") { const land = job.pieces && job.pieces.some((p) => p.k === "dip") ? landFor(state, base) : null; return !!land && pondWaits(state, base, job, land.heights); } // ponds.js: a wet hollow is filled in once it is dry
+  if (job && job.type === "clear") { const land = job.pieces && job.pieces.some((p) => p.k === "dip") ? landFor(state, base) : null; return !!land && pondWaits(state, base, job, land.heights, land.springs); } // ponds.js: a wet hollow is filled in once it is dry
   if (!job || job.type === "clear" || job.target || !FOOT[job.type]) return false;
   const land = landFor(state, base);
   if (!land) return false;

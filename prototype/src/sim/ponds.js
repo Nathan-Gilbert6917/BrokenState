@@ -25,6 +25,11 @@
 //     placeProblemAt; pondWaits: the clearing job waits).
 //   - Climbing (climbWx): the ground's climb (combat.js climbCost) × CLIMB.rain in the rain, × CLIMB.winter in winter
 //     or in snow (b.climbX on the battle; ladders and stairs as they were).
+// Ponds on the State Map (the user's words 2026-10-23: "add pond decor to the world map when a tile has a pond in the
+// world map generate a pond in the battle map"): a pond tile (mapgen.js tile.pond) has one hollow fed by a spring
+// (basescatter.js SPRING on its base map, relief.js on a fight's or a raid's: c.spring): water whatever the rain, never
+// mud nor dry (springSt), ice while the freezing index is past FREEZE like the rest (pondIce: the same for every tile,
+// as the freezing index is), and otherwise a pond like any other (wading, deep water, the aim, nothing built on it).
 import { weatherOnDay, weatherAt, iceIndex, dayIndex, season } from "./weather.js";
 import { CELL } from "./combat.js"; // call-time only
 /** @import { State } from "./types" */
@@ -43,6 +48,12 @@ export const PONDS = {
   SHOOT_WADE: 15,     // aim off a shot fired standing in water
 };
 const DRY = PONDS.DRAIN + PONDS.MUD; // dry through
+// A spring-fed hollow's state under the tile's hollows `st`: full whatever the rain, frozen when they are.
+export const springSt = (st) => ({ d: st ? st.d : 0, dry: 0, ice: !!(st && st.ice) });
+// Are the ponds frozen on day D (the freezing index past FREEZE at its noon, as pondStep reads it)? The same on every
+// tile (weather.js iceIndex is the state's): the State Map's pond decor (ui/terraindeco.js) and its tooltip.
+/** @param {State} state @param {number} [D] */
+export const pondIce = (state, D = dayIndex(state)) => { try { return iceIndex(state, D * 24 + 12) >= PONDS.FREEZE; } catch { return false; } };
 export const CLIMB = { rain: 1.5, winter: 2.5 };
 
 // The tile's weather that day, as the hollows feel it (dayIdx 0: the campaign's first day).
@@ -142,8 +153,8 @@ export function pondsBattle(state, b, tileId) {
   if (cw.x !== 1) { b.climbX = cw.x; b.climbWhy = cw.why; }
   try { const wx = weatherAt(state, tileId); if ((wx.snowCover || 0) >= 0.15) b.snowLie = Math.round(Math.min(1, wx.snowCover) * 4) / 4; } catch { /* no weather */ }
   if (!cells.some((c) => c.ter && c.h < 0)) return 0;
-  const st = pondsOn(state, tileId);
-  if (!cellWet(st, 1)) return 0;
+  const st = pondsOn(state, tileId), sp = springSt(st);
+  if (!cellWet(st, 1) && !cells.some((c) => c.spring && c.ter && c.h < 0)) return 0; // a pond tile's spring is never dry
   // How far in from its rim each hollow cell is (eight ways; the map's edge is no rim): its middle is deep.
   const inner = new Uint16Array(W * H), q = [];
   for (let i = 0; i < W * H; i++) if (cells[i].ter && cells[i].h < 0) inner[i] = 0xffff; else q.push(i);
@@ -156,12 +167,12 @@ export function pondsBattle(state, b, tileId) {
   for (let i = 0; i < W * H; i++) {
     const c = cells[i];
     if (!c.ter || !(c.h < 0)) continue;
-    const wet = cellWet(st, -c.h, inner[i]);
+    const wet = cellWet(c.spring ? sp : st, -c.h, inner[i]);
     if (!wet) continue;
     c.wet = wet.s; c.wl = wet.wl; n++;
     if (wet.s === "deep" && c.k === "open") deep.push(i);
   }
-  if (n) b.ponds = { dry: st.dry, ice: st.ice };
+  if (n) b.ponds = { dry: st.dry, ice: st.ice, ...(cells.some((c) => c.spring && c.wet) ? { spring: true } : {}) };
   if (!deep.length) return n;
   // Deep water: no way through, unless that cuts some of the map off (then waded, all of it, or each pond that can be).
   const lab0 = comps(cells, W, H);
@@ -203,6 +214,12 @@ export function climbWx(state, tileId, hour = state.hour) {
 export function wetWord(c) {
   if (!c || !c.wet) return "";
   const days = (n) => `${n} day${n === 1 ? "" : "s"}`;
+  if (c.spring) { // a pond tile's spring-fed pond: it never drains
+    if (c.wet === "deep" && c.k === "water") return `<b>Deep water</b>: a spring-fed pond, over a person's head in the middle. No way through (as a river); round it, or wade the shallows at its edge.`;
+    if (c.wet === "deep") return `<b>Deep water</b>: the middle of a spring-fed pond, up to the chest: wading, +${PONDS.COST.deep} moves a step in, −${PONDS.SHOOT_WADE} aim to shoot from it. It never dries.`;
+    if (c.wet === "wade") return `<b>A pond</b>: spring water in the hollow, up to the knees: wading, +${PONDS.COST.wade} move a step in, −${PONDS.SHOOT_WADE} aim to shoot from it. It never dries.`;
+    if (c.wet === "ice") return `<b>A frozen pond</b>: spring-fed, frozen over: walked across, slippery (+${PONDS.COST.ice} moves a step in). Water again when it thaws.`;
+  }
   if (c.wet === "deep" && c.k === "water") return `<b>Deep water</b>: a pond filled by the rain, over a person's head in the middle of the hollow. No way through (as a river); round it, or wade the shallows at its edge.`;
   if (c.wet === "deep") return `<b>Deep water</b>: the middle of a pond filled by the rain, up to the chest: wading, +${PONDS.COST.deep} moves a step in, −${PONDS.SHOOT_WADE} aim to shoot from it. It drains to mud after ${days(PONDS.DRAIN)} with no rain.`;
   if (c.wet === "wade") return `<b>A pond</b>: rain water in the hollow, up to the knees: wading, +${PONDS.COST.wade} move a step in, −${PONDS.SHOOT_WADE} aim to shoot from it. It drains to mud after ${days(PONDS.DRAIN)} with no rain.`;
@@ -216,13 +233,15 @@ export const climbWord = (b) => (b && b.climbX > 1 ? `The climb costs ×${b.clim
 // ---------- the base map ----------
 // Why nothing can stand on these cells (grid coordinates) while the hollows under them are wet, or "". st: the base's
 // hollows (pondsOn), heights: its land's ground (basescatter.js landOf heights, "x,y" → h; what layLand lays).
-/** @param {{ dry: number, ice: boolean } | null} st @param {Map<string, number> | null | undefined} heights @param {number[][]} cells */
-export function pondWhy(st, heights, cells) {
+// springs: the cells of a pond tile's spring-fed hollow (landOf springs): never dry, never built on nor filled in.
+/** @param {{ dry: number, ice: boolean } | null} st @param {Map<string, number> | null | undefined} heights @param {number[][]} cells @param {Set<string> | null} [springs] */
+export function pondWhy(st, heights, cells, springs = null) {
   if (!st || !heights || !heights.size) return "";
   let worst = null;
   for (const [x, y] of cells) {
     const h = heights.get(`${x},${y}`);
     if (!(h < 0)) continue;
+    if (springs && springs.has(`${x},${y}`)) return st.ice ? "A frozen pond, spring-fed: nothing is built on it or filled in, ever" : "A spring-fed pond: it never dries out, and nothing is built on it or filled in";
     const w = cellWet(st, -h);
     if (w) { worst = w; break; }
   }
@@ -232,9 +251,18 @@ export function pondWhy(st, heights, cells) {
   return `${worst.s === "mud" ? "Mud in the hollow" : "A pond in the hollow"}: nothing is built on it or filled in until it dries out (${left} day${left === 1 ? "" : "s"} with no rain)`;
 }
 // A clearing job that fills in a hollow still wet waits for it to dry (basemap.js siteWaits).
-/** @param {State} state @param {any} base @param {any} job @param {Map<string, number> | null | undefined} heights */
-export function pondWaits(state, base, job, heights) {
+/** @param {State} state @param {any} base @param {any} job @param {Map<string, number> | null | undefined} heights @param {Set<string> | null} [springs] */
+export function pondWaits(state, base, job, heights, springs = null) {
   if (!job || !job.pieces || !heights || !heights.size || !job.pieces.some((p) => p.k === "dip")) return false;
   const st = pondsOn(state, base.tile);
-  return !!pondWhy(st, heights, job.pieces.filter((p) => p.k === "dip").flatMap((p) => p.cells));
+  return !!pondWhy(st, heights, job.pieces.filter((p) => p.k === "dip").flatMap((p) => p.cells), springs);
+}
+
+// ---------- the State Map ----------
+// A pond tile's line in the map's tooltip (ui/render.js tileTooltip), or "".
+/** @param {State} state @param {number} tileId */
+export function pondTileWord(state, tileId) {
+  const t = state && state.tiles ? state.tiles[tileId] : null;
+  if (!t || !t.pond) return "";
+  return pondIce(state) ? "A pond (spring-fed): frozen over, walked across in a fight" : "A pond (spring-fed): open water that never dries; waded at its edge in a fight";
 }

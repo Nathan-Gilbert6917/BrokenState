@@ -244,6 +244,14 @@ export const HIGH = {
   ARMS: [3, 5], ARM_LEN: [35, 75], ARM_W: [4, 6], CORE_R: [8, 11], CRAG_LV: [3, 13], FOOT: 2,
   HOLE: 8, PASS: 2,                                    // the massif never shuts ground in (openCrag): a hole this small is rock, a pass this wide
 };
+// A pond tile's spring (the user's words 2026-10-23: "add pond decor to the world map when a tile has a pond in the
+// world map generate a pond in the battle map"; mapgen.js tile.pond): one hollow of its land holds water whatever the
+// weather (ponds.js: spring-fed, frozen when it freezes). reliefLayer(…, pond): a hollow of the seed's lying wholly in
+// the ring NEAR to FAR cells out from the map's middle (Chebyshev: clear of the biggest clearing round a base there,
+// CLEARING.hub, and in its fight map's crop) and OFF cells or more off the middle's row and column (the roads), else
+// one made in a diagonal quarter (the dice pick which) D cells out each way, R half-sizes across (at least 9 cells
+// once its tips are smoothed off: HIGH.DIP_MIN), the ground RIM cells round it made level (a hill cut back to it).
+export const SPRING = { NEAR: 16, FAR: 31, OFF: 4, D: 24, R: [5, 7], RIM: 2 };
 export const TOWN = {
   town: { BLOCK: 36, STREET: 5, LOT: [10, 13], STORE_P: 0.12, EMPTY_P: 0.1, DRIVE_CAR_P: 0.35, STREET_CAR_P: 0.3 },
   city: { BLOCK: 30, STREET: 6, STORE_P: 0.3, PARK_P: 0.1, LOT_P: 0.14, STREET_CAR_P: 0.5 },
@@ -255,10 +263,12 @@ const cached = (key, make) => { let v = tlCache.get(key); if (v) return v; v = m
 /**
  * The lie of the land over [-G, G) (map coordinates): { heights: [[x, y, h]…] (h −2 to 3, never 0), crags: [[x, y, lv]…]
  * (lv: the rock's height in levels, 3 at its edge up to the peak) }.
- * The same for the same tile, terrain and grid. @param {number} seed @param {string} terrain @param {number} G
+ * The same for the same tile, terrain and grid. pond (a pond tile, mapgen.js tile.pond): springs: [[x, y]…] too, the
+ * cells of its spring-fed hollow (SPRING); without it the layer is what it always was.
+ * @param {number} seed @param {string} terrain @param {number} G @param {boolean} [pond]
  */
-export function reliefLayer(seed, terrain, G) {
-  return cached(`r|${seed}|${terrain}|${G}`, () => {
+export function reliefLayer(seed, terrain, G, pond = false) {
+  return cached(`r|${seed}|${terrain}|${G}${pond ? "|p" : ""}`, () => {
     const R = HIGH.REGION, H = new Map(), crag = new Set();
     const inMap = (x, y) => x >= -G + 1 && y >= -G + 1 && x < G - 1 && y < G - 1;
     const raise = (x, y, h) => { if (!inMap(x, y)) return; const k = ck(x, y), o = H.get(k) || 0; if (h > 0 ? h > o : h < 0 && o <= 0 && h < o) H.set(k, h); };
@@ -330,9 +340,51 @@ export function reliefLayer(seed, terrain, G) {
     // Never more than a level between neighbours (eight ways): a hill walked up and down anywhere.
     relaxHeights(H, crag);
     dropNarrowHollows(H);
+    const springs = pond ? springHollow(seed, H, crag, G) : null;
     for (const k of crag) H.delete(k);
-    return { heights: [...H].map(([k, h]) => { const [x, y] = k.split(",").map(Number); return [x, y, h]; }), crags: [...crag].map((k) => { const [x, y] = k.split(",").map(Number); return [x, y, cragLv.get(k) || HIGH.CRAG_LV[0]]; }) };
+    const out = { heights: [...H].map(([k, h]) => { const [x, y] = k.split(",").map(Number); return [x, y, h]; }), crags: [...crag].map((k) => { const [x, y] = k.split(",").map(Number); return [x, y, cragLv.get(k) || HIGH.CRAG_LV[0]]; }) };
+    if (springs) out.springs = springs;
+    return out;
   });
+}
+// A pond tile's spring-fed hollow (SPRING) in the relaxed heights H ("x,y" → h, in place): a hollow of the seed's in the
+// ring, the one nearest the quarter's mark, else one made there and the ground eased round it again. Its cells
+// [[x, y]…] (none when the map is too small to hold it: an AI group's margin, fort.js).
+function springHollow(seed, H, crag, G) {
+  const S = SPRING, sx = hash01s(seed ^ 0x5b1e, 3, 5) < 0.5 ? -1 : 1, sy = hash01s(seed ^ 0x5b1e, 7, 11) < 0.5 ? -1 : 1;
+  const mx = sx * S.D, my = sy * S.D;
+  const ring = (x, y) => Math.min(Math.abs(x), Math.abs(y)) >= S.OFF && Math.max(Math.abs(x), Math.abs(y)) >= S.NEAR && Math.max(Math.abs(x), Math.abs(y)) <= S.FAR;
+  // The seed's own: each hollow (cells joined four ways) wholly in the ring and off the crag.
+  const seen = new Set();
+  let best = null, bd = Infinity;
+  for (const [k, h] of H) {
+    if (h >= 0 || seen.has(k)) continue;
+    const comp = [k];
+    seen.add(k);
+    let ok = true, cx = 0, cy = 0;
+    for (let i = 0; i < comp.length; i++) {
+      const [x, y] = comp[i].split(",").map(Number);
+      cx += x; cy += y;
+      if (!ring(x, y) || crag.has(comp[i])) ok = false;
+      for (const [dx, dy] of ORTHO) { const n = ck(x + dx, y + dy); if (!seen.has(n) && (H.get(n) || 0) < 0) { seen.add(n); comp.push(n); } }
+    }
+    if (!ok) continue;
+    const d = Math.hypot(cx / comp.length - mx, cy / comp.length - my);
+    if (d < bd) { bd = d; best = comp; }
+  }
+  if (best) return best.map((k) => k.split(",").map(Number));
+  // None: one made at the mark, the ground round it level, then eased in.
+  const ax = S.R[0] + Math.floor(hash01s(seed ^ 0x5b1e, 13, 17) * (S.R[1] - S.R[0] + 1)), ay = S.R[0] + Math.floor(hash01s(seed ^ 0x5b1e, 19, 23) * (S.R[1] - S.R[0] + 1));
+  if (S.D + Math.max(ax, ay) + S.RIM + 2 >= G) return [];
+  const cells = [];
+  for (let y = my - ay - S.RIM; y <= my + ay + S.RIM; y++) for (let x = mx - ax - S.RIM; x <= mx + ax + S.RIM; x++) {
+    const k = ck(x, y);
+    if (((x - mx) / ax) ** 2 + ((y - my) / ay) ** 2 <= 1) { H.set(k, -1); cells.push(k); }
+    else if (((x - mx) / (ax + S.RIM)) ** 2 + ((y - my) / (ay + S.RIM)) ** 2 <= 1) H.delete(k);
+  }
+  relaxHeights(H, crag);
+  dropNarrowHollows(H);
+  return cells.filter((k) => (H.get(k) || 0) < 0).map((k) => k.split(",").map(Number));
 }
 // The massif never shuts ground in (the user's words 2026-10-23: "Blocking base due to ridge"; tools/mapreachtest.js):
 // a hole in the rock HIGH.HOLE cells or smaller is rock too, and a bigger pocket of ground its arms wall in gets a
@@ -727,7 +779,8 @@ export function landSpec(state, base, dims) {
   // A town's streets and houses (the suburbs and a town's own tile: basemap.js terrainOf), a city's blocks; the high
   // ground of hills and mountains.
   const style = dims.terrain === "city" ? "city" : dims.terrain === "suburb" ? "town" : "";
-  return { seed, terrain: dims.terrain, G: dims.G, C: dims.fresh ? 0 : dims.C, clear: dims.fresh ? 0 : CLEARING[dims.tier] ?? CLEARING.camp, road, river, riverSide, style, ox, oy };
+  // A pond tile (mapgen.js tile.pond): its spring-fed hollow (reliefLayer SPRING).
+  return { seed, terrain: dims.terrain, G: dims.G, C: dims.fresh ? 0 : dims.C, clear: dims.fresh ? 0 : CLEARING[dims.tier] ?? CLEARING.camp, road, river, riverSide, style, ox, oy, pond: !!(t && t.pond) };
 }
 const inSq = (x, y, h) => x >= -h && x < h && y >= -h && y < h;
 // The road's cells (a band SCATTER.ROAD_W wide through the middle along each axis) and the river's (a band RIVER_W
@@ -753,7 +806,7 @@ const byCell = (a, b) => { const [ax, ay] = a.split(",").map(Number), [bx, by] =
  */
 export function landOf(spec, land) {
   const tx = spec.ox || 0, ty = spec.oy || 0; // the base on the map: map (x, y) is grid (x - tx, y - ty)
-  const key = `${spec.seed}|${spec.terrain}|${spec.G}|${spec.C}|${spec.clear}|${spec.road}|${spec.river}${spec.riverSide || ""}|${tx},${ty}|${land ? `${land.n}` : "-"}`;
+  const key = `${spec.seed}|${spec.terrain}|${spec.G}|${spec.C}|${spec.clear}|${spec.road}|${spec.river}${spec.riverSide || ""}|${tx},${ty}|${land ? `${land.n}` : "-"}${spec.pond ? "|p" : ""}`;
   let out = landCache.get(key);
   if (out && out.land === land) return out.v;
   const cleared = (land && land.cleared) || {}, looted = (land && land.looted) || {};
@@ -798,13 +851,15 @@ export function landOf(spec, land) {
   }
   // The lie of the land (reliefLayer): the mountains' crag first (never on a road: a pass through the ridge), the
   // heights under whatever stands there (trees, bushes, a road), flat in the yard and the clearing and on the river.
-  const relief = reliefLayer(spec.seed, spec.terrain, spec.G), heights = new Map();
+  // A pond tile's spring (SPRING): its hollow kept in the yard too (never in the clearing), nothing of the scatter on it.
+  const relief = reliefLayer(spec.seed, spec.terrain, spec.G, !!spec.pond), heights = new Map();
+  const spring = new Set((relief.springs || []).map(([x, y]) => `${x},${y}`));
   // The ground is eased (relaxHeights) against the crag laid here only: where a road, the yard, the clearing, the river
   // or what is cleared keeps it off, the ground is level and the hills beside come down to it a level a step (it was
   // eased against all of the massif's rock, leaving a road's pass a trench three levels deep: tools/mapreachtest.js).
   const rock = new Set();
   for (const [x, y, lv] of relief.crags) if (free(x, y) && !nearBase(x, y, spec.C) && !street(x, y) && !(spec.river && onRiver(spec, x, y))) { put({ k: "crag", g: `c${x},${y}`, cells: [[x, y]], h: lv }); rock.add(`${x},${y}`); }
-  for (const [x, y, h] of relief.heights) if (!nearBase(x, y, Math.max(spec.C, spec.clear)) && !gone(x, y) && !pieces.has(`${x},${y}`) && !(spec.river && onRiver(spec, x, y))) heights.set(`${x},${y}`, h);
+  for (const [x, y, h] of relief.heights) if (!nearBase(x, y, spring.has(`${x},${y}`) ? spec.clear : Math.max(spec.C, spec.clear)) && !gone(x, y) && !pieces.has(`${x},${y}`) && !(spec.river && onRiver(spec, x, y))) heights.set(`${x},${y}`, h);
   relaxHeights(heights, rock); // the yard, the clearing and what is cleared are level: the ground eased down to them
   dropNarrowHollows(heights); // a hollow cut narrow by them filled in
   // Nothing of the scatter on the ground paved before it (a road, a ford, a town's paths, driveways, lots and
@@ -817,12 +872,12 @@ export function landOf(spec, land) {
       if (yard) continue;
       const cells = [];
       for (let i = 0; i < p.len; i++) for (let j = 0; j < 2; j++) cells.push(p.ax ? [p.x + j, p.y + i] : [p.x + i, p.y + j]);
-      if (cells.every(([cx, cy]) => free(cx, cy) && !onRoad(spec, cx, cy) && !street(cx, cy) && !paved.has(`${cx},${cy}`))) put({ k: "wreck", g: p.g, cells, body: p.body, ax: p.ax, len: p.len, looted: !!looted[p.g] });
+      if (cells.every(([cx, cy]) => free(cx, cy) && !onRoad(spec, cx, cy) && !street(cx, cy) && !paved.has(`${cx},${cy}`) && !spring.has(`${cx},${cy}`))) put({ k: "wreck", g: p.g, cells, body: p.body, ax: p.ax, len: p.len, looted: !!looted[p.g] });
       continue;
     }
     let k = p.k;
     if (yard !== !!p.yard) { if (yard && k === "tree" && p.stump) k = "stump"; else continue; } // the yard: cleared ground (a tree's stump); outside: no yard leavings
-    if (!free(p.x, p.y) || (spec.road && onRoad(spec, p.x, p.y)) || street(p.x, p.y) || paved.has(`${p.x},${p.y}`)) continue;
+    if (!free(p.x, p.y) || (spec.road && onRoad(spec, p.x, p.y)) || street(p.x, p.y) || paved.has(`${p.x},${p.y}`) || spring.has(`${p.x},${p.y}`)) continue;
     put({ k, g: p.g, cells: [[p.x, p.y]] });
   }
   // Uneven ground with nothing else on it is a piece of the land too (dug down or filled in before anything is built
@@ -838,7 +893,9 @@ export function landOf(spec, land) {
   const edits = (land && land.heightEdits) || null, editKeys = edits ? Object.keys(edits).sort(byCell) : [];
   for (const k of editKeys) { const [x, y] = k.split(",").map(Number), mk = `${x + tx},${y + ty}`, h = edits[k]; if (h) heights.set(mk, h); else heights.delete(mk); }
   if (editKeys.length) relaxHeights(heights, new Set(relief.crags.map(([x, y]) => `${x},${y}`)));
-  for (const [k, h] of heights) if (!pieces.has(k)) { const [x, y] = k.split(",").map(Number); put({ k: h > 0 ? "rise" : "dip", g: `h${x},${y}`, cells: [[x, y]], h }); }
+  // The spring's hollow as it lies now (what of it is still a level down): never filled in nor built on (clearOf).
+  const springs = new Set([...spring].filter((k) => heights.get(k) < 0));
+  for (const [k, h] of heights) if (!pieces.has(k)) { const [x, y] = k.split(",").map(Number); put({ k: h > 0 ? "rise" : "dip", g: `h${x},${y}`, cells: [[x, y]], h, ...(springs.has(k) ? { spring: 1 } : {}) }); }
   // Bushes along the river's banks.
   if (spec.river) { const rng = new Rng(spec.seed ^ 0x77e1); for (let a = -spec.G; a < spec.G; a++) for (let b = -spec.G; b < spec.G; b++) { const x = spec.river === "y" ? a : b, y = spec.river === "y" ? b : a; if (onRiver(spec, x, y) === 2 && rng.chance(0.3) && free(x, y)) put({ k: "bush", g: `b${x},${y}`, cells: [[x, y]] }); } }
   // Into the base's grid coordinates (the pieces were made here, so they are moved in place).
@@ -852,20 +909,24 @@ export function landOf(spec, land) {
     const hs = [...heights];
     heights.clear();
     for (const [k, h] of hs) { const [x, y] = k.split(",").map(Number); heights.set(`${x - tx},${y - ty}`, h); }
+    const sp = [...springs];
+    springs.clear();
+    for (const k of sp) { const [x, y] = k.split(",").map(Number); springs.add(`${x - tx},${y - ty}`); }
   }
   // waterOnly: the land never cleared nor built on, the river and the mountainside (the crag: the game's second pass
-  // over the land placed things on it and their clearing never came, basemap.js siteWaits; tools/mapreachtest.js).
-  const water = list.filter((p) => p.k === "water" || p.k === "crag");
-  const v = { pieces, floors, list, heights, waterOnly: { pieces: new Map(water.flatMap((p) => p.cells.map(([x, y]) => [`${x},${y}`, p]))), list: water, floors, heights: new Map() } };
+  // over the land placed things on it and their clearing never came, basemap.js siteWaits; tools/mapreachtest.js), a
+  // pond tile's spring-fed pond. springs: its cells (grid "x,y"; layLand marks them c.spring for ponds.js).
+  const water = list.filter((p) => p.k === "water" || p.k === "crag" || p.spring);
+  const v = { pieces, floors, list, heights, springs, waterOnly: { pieces: new Map(water.flatMap((p) => p.cells.map(([x, y]) => [`${x},${y}`, p]))), list: water, floors, heights: new Map() } };
   if (landCache.size > 48) landCache.clear();
   landCache.set(key, { land, v });
   return v;
 }
 // A piece's name and its clearing (CLEAR).
-export const pieceWord = (p) => (p.k === "water" ? "the river" : p.k === "crag" ? "the mountainside" : p.k === "wreck" ? `a wrecked ${p.body === "truck" ? "truck" : "car"}` : (CLEAR[p.k] || { word: p.k }).word);
+export const pieceWord = (p) => (p.k === "water" ? "the river" : p.spring ? "the pond" : p.k === "crag" ? "the mountainside" : p.k === "wreck" ? `a wrecked ${p.body === "truck" ? "truck" : "car"}` : (CLEAR[p.k] || { word: p.k }).word);
 /** The clearing of a piece: { hours, get, mode } (mode "strip": a wreck not yet stripped, stripped only). @param {any} p @param {boolean} tool @param {string} mode */
 export function clearOf(p, tool = true, mode = "clear") {
-  if (!p || p.k === "water") return null;
+  if (!p || p.k === "water" || p.spring) return null; // the river and a spring's pond: never cleared
   if (p.k === "wreck") {
     if (mode === "strip") return p.looted ? null : { hours: CLEAR.strip.hours, get: { ...CLEAR.strip.get }, mode };
     return p.looted ? { hours: CLEAR.wreck.hours, get: { ...CLEAR.wreck.get }, mode } : { hours: CLEAR.wreck.hours + CLEAR.strip.hours, get: { scrap: CLEAR.wreck.get.scrap + CLEAR.strip.get.scrap, carparts: CLEAR.strip.get.carparts, metalsheet: CLEAR.strip.get.metalsheet }, mode };
@@ -894,7 +955,7 @@ export function layLand(m) {
   // or a hollow, walked up and down a level at a step: combat.js climbCost).
   if (land.heights) for (const [key, h] of land.heights) {
     const [gx, gy] = key.split(",").map(Number), x = gx + ox, y = gy + oy;
-    if (inner(x, y) && (!m.floor || m.floor(x, y)) && (!m.ok || m.ok(x, y))) { const c = cells[y * W + x]; c.h = h; c.ter = 1; }
+    if (inner(x, y) && (!m.floor || m.floor(x, y)) && (!m.ok || m.ok(x, y))) { const c = cells[y * W + x]; c.h = h; c.ter = 1; if (land.springs && land.springs.has(key)) c.spring = 1; } // c.spring: a pond tile's spring-fed hollow (ponds.js)
   }
   const kinds = {};
   for (const p of land.list) {
