@@ -9,7 +9,8 @@
 // (a raider's flashlight is a tell only once he is in sight; an unseen one shows nothing), and every light is clipped
 // to the cells your people see, so no light falls where you do not see and nothing hidden is lit or drawn. The sim's
 // rules are untouched: a light's `seen` (detection range, sim/stealth.js detectRange) is what the beam shows, nothing
-// more. No vehicle has lights in the sim, so none are drawn.
+// more. No vehicle has lights in the sim, so none are drawn, but for a car alarm ringing (sim/caralarms.js ringingCars):
+// its hazard lights blink an orange and white pool round the car, as the battle map's corner lights do (ui/isoview.js).
 // Cheap: the lights are painted at half the screen's resolution into one reused canvas (gradients cached, unit radius,
 // placed by the transform), clipped with a one-pixel-a-tile mask of the cells not seen, then used twice: added as a
 // warm glow on the ground before the units are drawn, and cut out of the night's darkness laid over the whole scene.
@@ -21,6 +22,7 @@ import { FLARE } from "../sim/throwables.js";
 import { activeLight } from "../sim/vision.js"; // the light a unit has switched on
 import { roomCells, darkAt } from "../sim/indoorlight.js";
 import { onForgetPictures } from "./pictures.js";
+import { ringingCars } from "../sim/caralarms.js"; // a ringing car alarm's blinking hazard lights
 
 export const LIGHT_SCALE = 0.5;               // the light canvas's resolution, of the screen's
 export const DARK = { night: 0.5, dusk: 0.26, room: 0.55 }; // the darkness over what no light reaches (was 0.34 / 0.18); room: a dark room's floor by day
@@ -163,6 +165,12 @@ export function paintLights(b, v, xf, cw, ch, now = 0, pos) {
     const r = (f.r || FLARE.r) * (1 + 0.03 * Math.sin(now / 47 + f.x));
     c.setTransform(...base); c.translate(f.x + 0.5, f.y + 0.5); c.scale(r, r);
     c.globalAlpha = f.camp ? 0.85 : 1; c.fillStyle = grad(c, f.camp ? "255,150,60" : "255,96,76", 0.8, true); c.beginPath(); c.arc(0, 0, 1, 0, Math.PI * 2); c.fill(); // f.camp: a campsite's fire (sim/campsite.js), warmer than a road flare
+    n++;
+  }
+  if (!day && ((now || 0) % 520) < 300) for (const a of b.floors && b.floor ? [] : ringingCars(b)) { // lit: the same blink as the map's corner lights
+    const r = Math.max(a.w, a.h) * 0.9 + 1;
+    c.setTransform(...base); c.translate(a.x + a.w / 2, a.y + a.h / 2); c.scale(r, r);
+    c.globalAlpha = 0.8; c.fillStyle = grad(c, ((now || 0) % 1040) < 520 ? "255,240,210" : "255,150,50", 0.7, true); c.beginPath(); c.arc(0, 0, 1, 0, Math.PI * 2); c.fill();
     n++;
   }
   if (!day && b.lit && b.floodAim) {

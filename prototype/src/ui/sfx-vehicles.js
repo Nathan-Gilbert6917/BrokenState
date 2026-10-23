@@ -7,6 +7,8 @@
 // (the revs, a gear change on a longer drive, the tyres on the ground), idling while someone sits in it; the car doors
 // as people get in and out, the tailgate when cargo goes in; on the State Map the team's doors and engine when it sets
 // off or stops, the base's gate as it leaves or comes home, and a quiet convoy hum for the team you are watching.
+// Car alarms (sim/caralarms.js, 2026-10-23): a found car's alarm set off (by hand, a smashed window, the wires, a bottle
+// through the glass) chirps and then whoops, yelps and beeps where it stands until it runs down or is silenced.
 // Pure functions until a voice plays: node tools import it. UI only: nothing here touches the sim's dice.
 //
 //   VEHICLE_SOUNDS / VEHICLE_LOOPS   the voices and the loops of this file (the mixer: People → Vehicles, ui/soundgroups.js)
@@ -14,10 +16,13 @@
 //   bakeEngine(sr, E, seed)          an engine's firing pulses at idle, one seamless loop (sample array; ui/sfxdsp.js)
 //   vehicleCues(state, mem, fresh)   the battle's: doors and engines as people board and leave, the drive, found cars
 //   carLoot(b, f)                    a found car's fx (sim/foundcars.js: wired, open, locked): its sounds (null: not a car)
+//   carAlarmCue(b, f)                a car alarm's fx (sim/caralarms.js "alarm" / "alarmoff"): its chirp (null: neither)
 //   mapCues(state, ui, mem, cam)     the map's: teams setting off and stopping, gates, breakdowns, repairs, crawl doors,
 //                                    the tailgate as the team inventory loads or drops off cargo
-//   loopWants(state, ui, cam)        the engine loops wanted now: your vehicle idling in battle, the convoy hum on the map
-//   engineLoops(c, dests, wants, t, L)  makes, moves and lets go of those loops (at most 2 in battle, 1 on the map)
+//   loopWants(state, ui, cam)        the loops wanted now: your vehicle idling in battle, car alarms ringing (ringingCars),
+//                                    the convoy hum on the map
+//   engineLoops(c, dests, wants, t, L)  makes, moves and lets go of those loops (at most 2 engines and 2 alarms in battle,
+//                                    1 on the map)
 //   vehicleVoices(K)                 the voices, on audio.js's building blocks K
 import * as VEH from "../sim/vehicles.js";
 import { onTheMove, partyMembers } from "../sim/parties.js";
@@ -30,9 +35,10 @@ import { surfaceAt, groundOf } from "./sfx-steps.js";
 import { camera, HEX } from "./render.js";
 import { selectedTeam } from "./teamsel.js";
 import { assignGroup, groupBus } from "./soundgroups.js"; // the mixer: People → Vehicles
+import { ringingCars } from "../sim/caralarms.js"; // the car alarms ringing now (their loops)
 
-export const VEHICLE_SOUNDS = ["engineStart", "engineNoStart", "engineStop", "breakdown", "drive", "carDoor", "tailgate", "hotwire", "horn"];
-export const VEHICLE_LOOPS = ["engineIdle", "convoyHum"];
+export const VEHICLE_SOUNDS = ["engineStart", "engineNoStart", "engineStop", "breakdown", "drive", "carDoor", "tailgate", "hotwire", "horn", "carAlarmOn", "carAlarmOff"];
+export const VEHICLE_LOOPS = ["engineIdle", "convoyHum", "carAlarm"];
 export const VEHICLE_GROUP = assignGroup([...VEHICLE_SOUNDS, ...VEHICLE_LOOPS], "people.vehicles"); // the loops follow it live (groupBus)
 
 // ---------- the engines ----------
@@ -300,7 +306,8 @@ export function vehicleCues(state, mem, fresh = []) {
 }
 const isOpenCar = (b, r) => !!r.open;
 // A found car's lock fx (sim/foundcars.js carAct: "wired", "open", "locked" with f.how): the hotwire's sparks; the lock
-// picked, the door pried or the glass smashed, and the door opening. Null when the fx is not at a car.
+// picked, the door pried or the glass smashed, and the door opening; a window broken by a throw ("smash", glass:
+// sim/caralarms.js throwAtCar). Null when the fx is not at a car.
 export function carLoot(b, f) {
   if (!b || !f || f.type !== "loot" || !f.to) return null;
   const [x, y] = f.to, c = b.cells && x >= 0 && y >= 0 && x < b.w && y < b.h ? b.cells[y * b.w + x] : null;
@@ -310,6 +317,7 @@ export function carLoot(b, f) {
   const heavy = doorOf(rec ? BY_MODEL[rec.model] || "sedan" : "sedan");
   if (t === "wired") return [{ name: "hotwire", ...base, ok: true }];
   if (t === "nothing") return [{ name: "hotwire", ...base, ok: false }];
+  if (t === "smash" && f.how === "glass") return [{ name: "glassBreak", ...base, dk: "glass" }]; // sim/caralarms.js throwAtCar: a thrown thing through a side window (ui/sfx-doors.js)
   if (t !== "open" && t !== "locked") return null;
   const ok = t === "open", how = f.how || null;
   const out = [];
@@ -318,6 +326,15 @@ export function carLoot(b, f) {
   else if (!ok) out.push({ name: "doorRattle", ...base, dk: "metal" });
   if (ok) out.push({ name: "carDoor", ...base, heavy, only: "open", delay: 0.4 });
   return out;
+}
+
+// A car alarm's fx (sim/caralarms.js: { type: "alarm" | "alarmoff", to, car }): the chirp as it goes off (and the glass
+// when the sim says a window went: f.glass), the chirp as it stops; the siren itself is the loop (loopWants). Null for
+// any other fx.
+export function carAlarmCue(b, f) {
+  if (!b || !f || !f.to || (f.type !== "alarm" && f.type !== "alarmoff")) return null;
+  const base = { at: f.to, pan: panOfX(b, f.to[0]), enemy: false };
+  return [{ name: f.type === "alarm" ? "carAlarmOn" : "carAlarmOff", ...base, ...(f.glass ? { glass: true } : null) }];
 }
 
 // ---------- the State Map ----------
@@ -463,7 +480,7 @@ export function mapCues(state, ui, mem, cam = null) {
 }
 
 // ---------- the loops ----------
-export const MAX_BATTLE_LOOPS = 2, MAX_MAP_LOOPS = 1;
+export const MAX_BATTLE_LOOPS = 2, MAX_MAP_LOOPS = 1, MAX_ALARM_LOOPS = 2; // engines in battle, the map's hum, car alarms (the nearest two)
 export const LOOP_LEVEL = { battle: 0.9, map: 0.26 }; // × the engine at idle (under the one-shots)
 export const HUM = { zoomOff: 0.55, zoomFull: 1.5, road: 1.9, offroad: 2.3 };
 // The convoy hum's wish on the map: the team you selected, else the one nearest the middle of the view, moving with an
@@ -519,7 +536,15 @@ export function loopWants(state, ui, cam = null) {
         out.push({ id: "veh", battle: true, keys: [info.key], at: vehAt(V), level: 1, delay: m.loopDelay || 0, rev: m.rev || null });
       }
     }
-    return out.slice(0, MAX_BATTLE_LOOPS);
+    const eng = out.slice(0, MAX_BATTLE_LOOPS);
+    // Car alarms ringing (sim/caralarms.js ringingCars): one loop each where the car stands, while the fight lasts; the
+    // first MAX_ALARM_LOOPS of them are heard (any more are not stacked: a third siren adds nothing but mud).
+    if (!b.over) {
+      let rc = [];
+      try { rc = ringingCars(b) || []; } catch { rc = []; }
+      for (const r of rc.slice(0, MAX_ALARM_LOOPS)) eng.push({ id: `alarm${r.id}`, battle: true, alarm: true, keys: ["alarm"], at: [r.x + Math.floor((r.w || 1) / 2), r.y + Math.floor((r.h || 1) / 2)], level: 1, car: r.id });
+    }
+    return eng;
   }
   if (!ui || !ui.started || ui.title) return out;
   const w = mapHumWant(state, ui, cam || mapCam(state));
@@ -534,7 +559,7 @@ export function engineLoops(c, dests, wants, t = c.currentTime, L = null, K = KI
   let m = LOOPS.get(c);
   if (!m) LOOPS.set(c, (m = new Map()));
   const keep = new Set();
-  const list = [...wants.filter((w) => w.battle).slice(0, MAX_BATTLE_LOOPS), ...wants.filter((w) => !w.battle).slice(0, MAX_MAP_LOOPS)];
+  const list = [...wants.filter((w) => w.battle && !w.alarm).slice(0, MAX_BATTLE_LOOPS), ...wants.filter((w) => w.alarm).slice(0, MAX_ALARM_LOOPS), ...wants.filter((w) => !w.battle).slice(0, MAX_MAP_LOOPS)];
   for (const w of list) {
     const bus = w.battle ? dests && dests.battle : dests && dests.map;
     if (!bus || !K) continue;
@@ -543,7 +568,7 @@ export function engineLoops(c, dests, wants, t = c.currentTime, L = null, K = KI
     let lp = m.get(w.id);
     const sig = `${w.keys.join("+")}|${w.battle ? "b" : "m"}`;
     if (lp && (lp.sig !== sig || lp.dest !== dest)) { lp.stop(t); m.delete(w.id); lp = null; }
-    if (!lp) { lp = makeLoop(c, dest, w, t + Math.max(0, w.delay || 0), K); lp.sig = sig; lp.dest = dest; m.set(w.id, lp); }
+    if (!lp) { lp = (w.alarm ? makeAlarmLoop : makeLoop)(c, dest, w, t + Math.max(0, w.delay || 0), K); lp.sig = sig; lp.dest = dest; m.set(w.id, lp); }
     lp.update(w, t, L);
   }
   for (const [id, lp] of m) if (!keep.has(id)) { lp.stop(t); m.delete(id); }
@@ -615,6 +640,74 @@ function makeLoop(c, dest, w, t0, K) {
       this.stopped = true;
       eng.g.gain.setTargetAtTime(0.0001, t, 0.12);
       eng.stop(t + 0.8); wob.stop(t + 0.8); bl.stop(t + 0.8); if (tyre) tyre.stop(t + 0.8);
+    },
+  };
+}
+
+// ---------- the car alarm's siren ----------
+// A car alarm's horn speaker: a square and a detuned saw through the horn's band, its pitch swept by a sawtooth (the
+// whoop: up from lo to hi and snapping back), then fast (the yelp), then held and chopped on and off (the beeps); round
+// and round, each segment SIREN.seg seconds, scheduled one ahead from update() (about every 100 ms: ui/audio.js).
+// base, depth: the pitch's middle and its sweep either way (Hz); rate: the sweep's (Hz); beep: the chop's (Hz, 0 none).
+export const SIREN = {
+  seg: [
+    { base: 1250, depth: 520, rate: 1.7, beep: 0, dur: 3.2 }, // whoop-whoop
+    { base: 1450, depth: 330, rate: 7.5, beep: 0, dur: 2.4 }, // the yelp
+    { base: 1650, depth: 0, rate: 0.5, beep: 4, dur: 2.2 },   // beep-beep-beep
+    { base: 1100, depth: 260, rate: 2.6, beep: 0, dur: 2.4 }, // a lower warble
+  ],
+  band: [2100, 0.9], level: 0.22, fadeIn: 0.12, start: 0.45, // start: after the chirp (carAlarmOn)
+};
+function makeAlarmLoop(c, dest, w, t0, K) {
+  const start = t0 + SIREN.start;
+  // Placement (as the engine loop's): level → highs → pan → the bus.
+  const pg = c.createGain(); pg.gain.value = 1;
+  const plp = c.createBiquadFilter(); plp.type = "lowpass"; plp.frequency.value = Math.min(16000, c.sampleRate * 0.45); plp.Q.value = 0.6;
+  const pn = c.createStereoPanner ? c.createStereoPanner() : null;
+  pg.connect(plp);
+  if (pn) { plp.connect(pn); pn.connect(dest); } else plp.connect(dest);
+  // The speaker: the level (faded in after the chirp), the chop, the horn's band and a cut of the lows.
+  const lv = c.createGain(); lv.gain.value = 0.0001; lv.connect(pg);
+  lv.gain.setValueAtTime(0.0001, start); lv.gain.linearRampToValueAtTime(SIREN.level, start + SIREN.fadeIn);
+  const am = c.createGain(); am.gain.value = 1; am.connect(lv);
+  const hp = K.filt(c, "highpass", 420, 0.7, am);
+  const bp = K.filt(c, "bandpass", SIREN.band[0], SIREN.band[1], hp);
+  const o1 = c.createOscillator(); o1.type = "square"; o1.frequency.value = SIREN.seg[0].base;
+  const o2 = c.createOscillator(); o2.type = "sawtooth"; o2.frequency.value = SIREN.seg[0].base * 1.006;
+  const g2 = c.createGain(); g2.gain.value = 0.45; o1.connect(bp); o2.connect(g2); g2.connect(bp);
+  // The sweep: a sawtooth into both pitches; the chop: a square into the chop's gain.
+  const fm = c.createOscillator(); fm.type = "sawtooth"; fm.frequency.value = SIREN.seg[0].rate;
+  const fmg = c.createGain(); fmg.gain.value = SIREN.seg[0].depth; fm.connect(fmg); fmg.connect(o1.frequency); fmg.connect(o2.frequency);
+  const ch = c.createOscillator(); ch.type = "square"; ch.frequency.value = 4;
+  const chg = c.createGain(); chg.gain.value = 0; ch.connect(chg); chg.connect(am.gain);
+  for (const o of [o1, o2, fm, ch]) o.start(start);
+  const seg = (i, at) => { // the segment i from at: its pitch, sweep and chop (the chop's square swings the gain 0..1)
+    const S = SIREN.seg[i % SIREN.seg.length];
+    o1.frequency.setValueAtTime(S.base, at); o2.frequency.setValueAtTime(S.base * 1.006, at);
+    fm.frequency.setValueAtTime(S.rate, at); fmg.gain.setValueAtTime(S.depth, at);
+    ch.frequency.setValueAtTime(S.beep || 4, at); chg.gain.setValueAtTime(S.beep ? 0.5 : 0, at); am.gain.setValueAtTime(S.beep ? 0.5 : 1, at);
+    return at + S.dur;
+  };
+  const Q = { i: 0, next: seg(0, start) };
+  const last = {};
+  const moved = (k, v) => { const o = last[k]; if (o != null && Math.abs(v - o) <= Math.max(0.005, Math.abs(o) * 0.01)) return false; last[k] = v; return true; };
+  return {
+    stopped: false,
+    update(wt, t, Lr) {
+      if (this.stopped) return;
+      const sp = wt.at && Lr ? spatial(Lr, wt.at[0], wt.at[1], {}) : place({ pan: wt.pan || 0, dist: 0 });
+      const gain = sp.gain * (wt.level ?? 1);
+      if (moved("g", gain)) pg.gain.setTargetAtTime(gain, t, 0.1);
+      const f = Math.min(16000, c.sampleRate * 0.45, sp.lp);
+      if (moved("lp", f)) plp.frequency.setTargetAtTime(f, t, 0.1);
+      if (pn && moved("pan", sp.pan)) pn.pan.setTargetAtTime(sp.pan, t, 0.15);
+      while (Q.next < t + 0.6) Q.next = seg(++Q.i, Math.max(Q.next, t)); // the next segment, scheduled ahead of time
+    },
+    stop(t) { // cut off as a real one is (the wires pulled, the battery out): a few milliseconds' fade
+      if (this.stopped) return;
+      this.stopped = true;
+      lv.gain.cancelScheduledValues(t); lv.gain.setTargetAtTime(0.0001, t, 0.02);
+      for (const o of [o1, o2, fm, ch]) o.stop(Math.max(t, start) + 0.3);
     },
   };
 }
@@ -860,6 +953,24 @@ export function vehicleVoices(K) {
     } },
     // Hotwiring a found car (sim/foundcars.js "hotwire"): the wires buzzing and sparking; o.ok: it takes.
     hotwire: { dur: 0.6, play(c, out, t, o) { sparks(c, out, t, gv(o) * 5, o.ok !== false); } },
+    // A car alarm going off (sim/caralarms.js "alarm"): the module's chirp-chirp (two short squawks through the horn's
+    // band), glass first when a window went (o.glass); the siren loop takes over after it (makeAlarmLoop, SIREN.start).
+    carAlarmOn: { dur: 0.6, play(c, out, t, o) {
+      const g = gv(o);
+      let t1 = t;
+      if (o.glass && K.shards) { K.shards(c, out, t, 8, 0.25 * g); t1 = t + 0.08; }
+      for (let i = 0; i < 2; i++) {
+        const tt = t1 + i * 0.16;
+        const bp = filt(c, "bandpass", SIREN.band[0], SIREN.band[1], env(c, out, tt, 0.3 * g, 0.05, 0.004, 0.05));
+        tone(c, "square", 2300, 2150, tt, 0.1, bp); tone(c, "sawtooth", 2316, 2165, tt, 0.1, bp);
+      }
+    } },
+    // ... and stopping (silenced or run down: "alarmoff"): one low chirp, a relay's click.
+    carAlarmOff: { dur: 0.3, play(c, out, t, o) {
+      const g = gv(o);
+      tick(c, out, t, 1400, 0.12 * g, 0.012, 3);
+      tone(c, "square", 1600, 900, t + 0.03, 0.12, filt(c, "bandpass", SIREN.band[0], SIREN.band[1], env(c, out, t + 0.03, 0.22 * g, 0.1, 0.004, 0.02)));
+    } },
     // The horn as a team sets off (the map): beep beep, two tones about a minor third apart, detuned, through a band;
     // by vehicle (HORNS: a car's high, a pickup's or a van's middle, the Army truck's and the Humvee's deep blat).
     // A bicycle rings its bell twice.
@@ -883,9 +994,11 @@ export function vehicleVoices(K) {
 export const VEHICLE_LABELS = {
   engineStart: "Engine starting", engineNoStart: "Engine that will not start", engineStop: "Engine off", breakdown: "Breakdown on the road", drive: "A vehicle driven in battle",
   carDoor: "Car doors", tailgate: "Tailgate or rear doors", hotwire: "Hotwiring a car", horn: "Horn (a team sets off)",
+  carAlarmOn: "A car alarm going off (the siren follows)", carAlarmOff: "A car alarm stopping",
 };
 // The throttle's limits (ui/audio.js LIMITS): gap in seconds between two starts, how many at once.
 export const VEHICLE_LIMITS = {
   engineStart: { gap: 1.5, max: 1 }, engineNoStart: { gap: 1.5, max: 1 }, engineStop: { gap: 1.5, max: 1 }, breakdown: { gap: 2, max: 1 }, drive: { gap: 0.8, max: 1 },
   carDoor: { gap: 0.12, max: 3 }, tailgate: { gap: 1, max: 1 }, hotwire: { gap: 0.4, max: 1 }, horn: { gap: 2, max: 1 },
+  carAlarmOn: { gap: 0.3, max: 2 }, carAlarmOff: { gap: 0.3, max: 2 },
 };

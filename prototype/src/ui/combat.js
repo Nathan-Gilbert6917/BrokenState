@@ -64,7 +64,7 @@ export const QUICK_MARK = "#7fb8e6"; // a container rummaged through but not sea
 import { unitCanvas, canvasURL, spriteImg } from "./sprites.js";
 import { lockPanel, raidKeyLine, lockPreview } from "./locks.js";
 import { lockAt, openOdds } from "../sim/locks.js"; // a click on a locked door (lockedDoorClick)
-import { carPanel, carPreview } from "./carpanel.js"; // cars on the map: get in, keys, hotwire, inspect, claim (sim/foundcars.js)
+import { carPanel, carPreview, carThrowPreview } from "./carpanel.js"; // cars on the map: get in, keys, hotwire, inspect, claim, its alarm (sim/foundcars.js, sim/caralarms.js)
 import { ZTYPES } from "../sim/hiveconst.js";
 import { ACID, acidAt } from "../sim/acid.js";
 import { ladderTargets, pushable, pushChance, ramTargets, ramOf, dropTargets, RAM, LADDER, DROP } from "../sim/siege.js";
@@ -523,6 +523,8 @@ function tapHtml(state, b, a) {
     const mine = inIt.filter((o) => o.side === "player").length, theirs = inIt.length - mine;
     head = `<b>Throw ${esc(T.label || (GEAR[a.item] || {}).name || a.item)}</b>`;
     body = Math.hypot(a.x - u.x, a.y - u.y) > T.range + 0.01 ? `<span class="warn">Out of reach: ${T.range} tiles at most.</span>` : area.size || (tp && tp.caught.length) ? `${theirs ? `catches ${theirs} of them` : "nobody of theirs in it"}${mine ? ` · <span class="danger">and ${mine} of yours!</span>` : ""}` : `lands ${Math.round(Math.hypot(a.x - u.x, a.y - u.y))} tiles off`;
+    const win = Math.hypot(a.x - u.x, a.y - u.y) > T.range + 0.01 ? "" : carThrowPreview(b, a.item, a.x, a.y); // at a car: through its window, its alarm (ui/carpanel.js)
+    if (win) body += ` · ${win}`;
   } else body = String(previewHtml(b, state)).split("<br>")[0]; // the hover card's first line: the aim, the ally's order, the door...
   if (a.type === "search" || a.type === "searchBody") head += ` <span class="muted">${a.quick ? "a quick rummage: no action, heard nearby" : `${SEARCH.ap} action`}</span>`;
   return `<div class="tc-head">${head}</div>${body ? `<div class="tc-body">${body}</div>` : ""}`;
@@ -3511,6 +3513,7 @@ function previewText(b, state = null) {
   if (b.layout && state) return layoutHover(state, b, h, ghostAt(state, b, h.x, h.y)); // the base map (ui/basemap.js)
   if (b.stores && !unitAt(b, h.x, h.y)) { const sc = storeAt(b, h.x, h.y); if (sc && (b.phase === "deploy" || !CDEF(b.cells[h.y * W + h.x]).walk)) return storeHover(sc); } // a store on the base map
   if (u && (cui.mode === "suppress" || cui.mode === "throwspear" || cui.mode === "launch")) return aimPreview(b, u, h); // the weapons overhaul's targeting
+  if (u && cui.mode === "throw" && cui.throwKey) { const win = carThrowPreview(b, cui.throwKey, h.x, h.y); if (win) { const car = state ? carPreview(state, b, h.x, h.y) : ""; return car ? car.replace("<br>", `<br>${win}<br>`) : win; } } // a bottle at a car: through the window, its alarm (ui/carpanel.js)
   const ap = allyMode() ? allyPreview(state, b, h) : ""; // Ally orders: the tile, the way or the enemy picked, the odds they heed it
   if (ap) return ap;
   const ih = allyIntelHover(b, view(b), h.x, h.y); // Tell me what you see: what an ally told your people is there
@@ -3573,7 +3576,8 @@ function previewText(b, state = null) {
     if (b.lit && b.lit[h.y * W + h.x]) return "Floodlit: shots at anything here get the light's bonus.";
   }
   const lure = (b.lures || []).find((l) => l.x === h.x && l.y === h.y);
-  if (lure) return `<b>${esc(GEAR[lure.key].name)}</b>: ${lure.key === "noisemaker" ? `still ringing (${lure.turns} turn${lure.turns === 1 ? "" : "s"})` : "where it landed"}. Guards and the dead nearby come to look.`;
+  if (lure && lure.key === "caralarm") { const car = state ? carPreview(state, b, h.x, h.y) : ""; return `<b>Car alarm (${lure.turns} turn${lure.turns === 1 ? "" : "s"})</b>: whooping. The dead within ${lure.radius} tiles go to it, away from you.${car ? `<br>${car}` : ""}`; } // sim/caralarms.js: a ringing car's lure
+  if (lure) return `<b>${esc((GEAR[lure.key] || {}).name || "Something thrown")}</b>: ${lure.key === "noisemaker" ? `still ringing (${lure.turns} turn${lure.turns === 1 ? "" : "s"})` : "where it landed"}. Guards and the dead nearby come to look.`;
   if (state && !(b.raid && boxAt(b, h.x, h.y))) { const carText = carPreview(state, b, h.x, h.y); if (carText) return carText; } // ui/carpanel.js: a car or Army truck (not a raid container: that has its own line)
   if (b.raid) {
     const lockText = lockPreview(b, u, h.x, h.y); // ui/locks.js: a locked container or door

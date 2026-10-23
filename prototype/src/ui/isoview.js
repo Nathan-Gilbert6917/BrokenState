@@ -43,6 +43,7 @@ import { groundPiles, pileCount } from "../sim/ground.js"; // things on the grou
 import { planOpen } from "../sim/raidplan.js"; // before a raid: while the plan is open the team is not on the map yet (not drawn)
 import { onForgetPictures } from "./pictures.js"; // the pictures kept here are dropped when the GPU context comes back (they would be blank)
 import { strideOf } from "./moveanim.js"; // walking: the step of the walk cycle and the bob
+import { ringingCars } from "../sim/caralarms.js"; // a car alarm ringing (2026-10-23): its hazard lights blinking, how far it is heard
 
 // ---------- constants ----------
 const HW = 16, HH = 8;          // half a tile in art px (a tile: 32 × 16)
@@ -2181,6 +2182,9 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     ctx.strokeStyle = col.replace("A", "0.32"); ctx.lineWidth = 1; ctx.setLineDash([3, 6]);
     ctx.beginPath(); ctx.ellipse(X, Y, l.radius * RX(st) * S, l.radius * RY(st) * S, 0, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
   }
+  // A car alarm ringing (sim/caralarms.js ringingCars): its lure is a decoy (siege.js battleOverlays), so the ring
+  // above shows how far it is heard; its lights and tag after the painter's pass.
+  const alarms = floorNo(b) ? [] : ringingCars(b);
   // Ladders and rams in the painter's pass, by the diagonal they stand on (drawSiegeIso).
   const siegeAt = new Map();
   const atD = (x, y, f) => { const [uu, vv] = toView(x, y, r, b.w, b.h); const d = depth(uu, vv, st); const a = siegeAt.get(d); if (a) a.push(f); else siegeAt.set(d, [f]); };
@@ -2407,12 +2411,37 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   }
   // Thrown things where they landed: a ring while the noise lasts (sim/stealth.js).
   for (const l of OV.decoys) {
+    if (l.key === "caralarm") continue; // a car alarm: its own lights and tag below
     const [X, Y] = project(l.x + 0.5, l.y + 0.5, 0), q = ((now || 0) % 1200) / 1200;
     const kind = l.sense.includes("heat") && !l.sense.includes("light") ? "heat" : l.sense.includes("light") ? "light" : "noise";
     ctx.strokeStyle = SENSE_COL[kind].replace("A", String(0.65 * (1 - q))); ctx.lineWidth = 2;
     ctx.beginPath(); ctx.ellipse(X, Y, (0.4 + q * 1.4) * RX(st) * S, (0.4 + q * 1.4) * RY(st) * S, 0, 0, Math.PI * 2); ctx.stroke();
     ctx.fillStyle = kind === "heat" ? "#ff7a4a" : kind === "light" ? "#fff2c0" : "#e0b048"; ctx.beginPath(); ctx.arc(X, Y - 2 * S, 2.2 * S, 0, Math.PI * 2); ctx.fill();
     if (l.decoy) tag(ctx, kind === "heat" ? "HEAT" : kind === "light" ? "LIGHT" : "NOISE", X, Y - 9 * S, kind === "heat" ? "#ff9a6a" : kind === "light" ? "#fff2c0" : "#ffd166", Math.max(9, 2.8 * S));
+  }
+  // A ringing car alarm: the hazard lights at its four corners blinking orange and white (about twice a second), a soft
+  // halo round each while lit, a ring pulsing out from it and an ALARM tag with the turns left over its roof. The
+  // lights only where your people see the car; the ring and the tag always (everyone hears it).
+  for (const a of alarms) {
+    const q = ((now || 0) % 1100) / 1100, on = ((now || 0) % 520) < 300, white = ((now || 0) % 1040) < 520;
+    const mid = (a.y + Math.floor(a.h / 2)) * b.w + a.x + Math.floor(a.w / 2), L = looks[mid], top = (L ? L.top : VEH_TOP) + liftAt(b, mid);
+    let seen = false;
+    for (let yy = a.y; yy < a.y + a.h && !seen; yy++) for (let xx = a.x; xx < a.x + a.w; xx++) if (vis[yy * b.w + xx]) { seen = true; break; }
+    const [GX, GY] = project(a.x + a.w / 2, a.y + a.h / 2, 0);
+    ctx.strokeStyle = `rgba(255,170,60,${0.7 * (1 - q)})`; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.ellipse(GX, GY, (Math.max(a.w, a.h) / 2 + q * 2.2) * RX(st) * S, (Math.max(a.w, a.h) / 2 + q * 2.2) * RY(st) * S, 0, 0, Math.PI * 2); ctx.stroke();
+    if (seen && on) {
+      const col = white ? "255,250,230" : "255,150,40";
+      for (const [cx, cy] of [[a.x + 0.15, a.y + 0.15], [a.x + a.w - 0.15, a.y + 0.15], [a.x + 0.15, a.y + a.h - 0.15], [a.x + a.w - 0.15, a.y + a.h - 0.15]]) {
+        const [X, Y] = project(cx, cy, top * 0.45);
+        const g = ctx.createRadialGradient(X, Y, 0, X, Y, 7 * S);
+        g.addColorStop(0, `rgba(${col},0.75)`); g.addColorStop(1, `rgba(${col},0)`);
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(X, Y, 7 * S, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = `rgb(${col})`; ctx.beginPath(); ctx.arc(X, Y, 1.6 * S, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+    const [TX, TY] = project(a.x + a.w / 2, a.y + a.h / 2, top + 12);
+    tag(ctx, `ALARM · ${a.left}`, TX, TY, on ? "#ffb347" : "#ffe0b0", Math.max(9, 2.8 * S));
   }
   for (const c of b.flares || []) { const [X, Y] = project(c.x + 0.5, c.y + 0.5, 2); ctx.fillStyle = "#ffe08a"; ctx.beginPath(); ctx.arc(X, Y, 2.5 * S, 0, Math.PI * 2); ctx.fill(); }
   // Thrown spears where they lie (sim/combat.js b.spears): yours always, theirs where seen.
@@ -3268,10 +3297,11 @@ function drawFxIso(ctx, b, now, H, state = null, shown = []) {
     }
     if (!f.to) continue;
     const a = Math.max(0, 1 - el / 1400);
-    const text = f.text ? f.text : f.type === "heal" ? "+" : f.hit ? `${f.crit ? "CRIT " : ""}-${f.dmg}` : "MISS";
+    // sim/caralarms.js: a car alarm going off ("alarm"), stopping ("alarmoff"): no text of their own, not a miss.
+    const text = f.text ? f.text : f.type === "alarm" ? "ALARM!" : f.type === "alarmoff" ? "quiet" : f.type === "heal" ? "+" : f.hit ? `${f.crit ? "CRIT " : ""}-${f.dmg}` : "MISS";
     ctx.font = `800 ${Math.round(Math.max(12, (f.crit ? 5.4 : 4.6) * S))}px Segoe UI, sans-serif`;
     ctx.textAlign = "center";
-    ctx.fillStyle = f.type === "loot" ? `rgba(255,209,102,${a})` : f.type === "heal" ? `rgba(${COL.goodRgb},${a})` : f.acid ? `rgba(170,230,70,${a})` : f.hit ? `rgba(255,${f.crit ? 210 : 110},90,${a})` : `rgba(210,210,210,${a})`;
+    ctx.fillStyle = f.type === "alarm" || f.type === "alarmoff" ? `rgba(255,170,60,${a})` : f.type === "loot" ? `rgba(255,209,102,${a})` : f.type === "heal" ? `rgba(${COL.goodRgb},${a})` : f.acid ? `rgba(170,230,70,${a})` : f.hit ? `rgba(255,${f.crit ? 210 : 110},90,${a})` : `rgba(210,210,210,${a})`;
     ctx.strokeStyle = `rgba(0,0,0,${a})`; ctx.lineWidth = 3;
     const y = ty - UNIT_H * 0.7 * S - (el / 1400) * 14 * S;
     ctx.strokeText(text, tx, y); ctx.fillText(text, tx, y);
