@@ -21,6 +21,7 @@ import { SITE, siteBox, CLEAR, clearOf } from "../src/sim/basescatter.js";
 const clearOfFor = (q) => (clearOf(q, true, "clear") || { get: {} }).get;
 import { renderRight } from "../src/ui/ui.js";
 import { CS_ACTIONS, siteViewDue, sitePanel, siteHoverText } from "../src/ui/campsite.js";
+import { siteInfo, siteScore, bestSite, bestSiteOn, landFacts, pickWords, pickReasons, SITE_SCORE } from "../src/sim/siteinfo.js";
 
 const SEED = Number(process.argv[2] || 42);
 let fails = 0, passes = 0;
@@ -181,6 +182,88 @@ section("Nobody to ask: the game's spot");
   run(s2, 48, () => s2.bases.length > 0);
   const c2 = s2.bases[0];
   check(!!c2 && String(c2.plan.origin) === String(BM.defaultSite(s2, t2)), `the camp goes on the game's spot (${c2 && c2.plan.origin})`);
+}
+
+// ---------- 5. what a spot is like, and the game's pick ----------
+// The user's words 2026-10-23: "add valuable information to setting up camp. Update let the game pick".
+section("What a spot is like (siteInfo) and the game's pick weighed on it (bestSite)");
+{
+  const s3 = createWorld({ seed: SEED + 2, factionCount: 7, mode: "hardcore" });
+  s3.noWanderers = true;
+  const q = roadTeam(s3), t3 = partyTile(q);
+  const d = BM.defaultSite(s3, t3), info = siteInfo(s3, q, t3, d), s = siteSetup(s3, q, t3, d);
+  check(info.ok && info.picked && String(info.at) === String(d) && info.setup.hours === s.hours && info.setup.workers === s.workers && String(Object.entries(info.setup.get)) === String(Object.entries(s.get)), `the game's spot (${d}): the team's setup as siteSetup has it (${info.setup.hours} h), and it says it is the game's pick`);
+  const keys = ["ground", "lie", "sight", "room", "roomClear", "yard", "wood", "trees", "places", "dead", "score"];
+  check(keys.every((k) => k in info) && typeof info.ground.level === "boolean" && ["high", "low", "flat", "uneven"].includes(info.lie.kind) && info.sight >= 0 && info.sight <= 1 && info.room >= 0 && info.room <= 1 && (info.water === null || info.water >= 0) && (info.road === null || info.road >= 0) && typeof info.dead.count === "number", `its facts: ${info.ground.level ? "level" : "uneven"}, ${info.lie.kind} round it, sight ${info.sight}, room ${info.room}, wood ${info.wood}, river ${info.water}, road ${info.road}, ${info.places.length} places known, ${info.dead.count} dead`);
+  check(info.score.total === siteScore(info).total && Object.keys(info.score.parts).length >= 8 && info.score.parts.time === -SITE_SCORE.TIME * info.work, `its score ${info.score.total} from its parts (${Object.entries(info.score.parts).map(([k, v]) => `${k} ${Math.round(v * 10) / 10}`).join(", ")})`);
+  const bad = siteInfo(s3, q, t3, [BM.SITE_RANGE + 4, 0]);
+  check(!bad.ok && /edge/.test(bad.why), "a spot that cannot take the camp: only why");
+  check(/^The game picked this spot because .+\.$/.test(pickWords(info)) && pickReasons(info).length >= 1, `why: "${pickWords(info)}"`);
+  // Deterministic: the same twice, in another world from the same seed, and on the land alone.
+  const again = createWorld({ seed: SEED + 2, factionCount: 7, mode: "hardcore" });
+  check(String(BM.defaultSite(s3, t3)) === String(d) && String(bestSite(again, t3)) === String(d) && String(bestSiteOn(BM.siteLand(s3, t3))) === String(d), "deterministic: the same spot every time, in a world made again, and from the land alone");
+  // Never a spot that cannot take the camp; off buildings and high ground; no worse than the plain search's spot.
+  const BIG = new Set(["house", "store", "block", "rise", "slope", "dip", "crag"]);
+  const kinds = new Map();
+  for (const t of s3.tiles) { if (t.terrain === "water") continue; const k = `${BM.terrainOf(s3, { tile: t.id })}${t.road ? "+road" : ""}${s3.grid.neighbors(t.id).some((n) => s3.tiles[n].river) ? "+river" : ""}`; if (!kinds.has(k)) kinds.set(k, t.id); }
+  let okAll = true, cleanAll = true, worse = 0;
+  const ms = [];
+  for (const [k, id] of [...kinds].slice(0, 12)) {
+    BM.siteLand(s3, id);
+    const at0 = Date.now(), at = BM.defaultSite(s3, id), at1 = Date.now();
+    BM.defaultSite(s3, id);
+    ms.push([at1 - at0, Date.now() - at1]);
+    if (BM.siteProblem(s3, id, at)) { okAll = false; console.log(`    ${k}: ${at} ${BM.siteProblem(s3, id, at)}`); }
+    const land = BM.siteLand(s3, id), B = siteBox(at);
+    for (let y = B.y0; y < B.y1; y++) for (let x = B.x0; x < B.x1; x++) { const p = land.pieces.get(`${x},${y}`); if (p && BIG.has(p.k)) cleanAll = false; }
+    // The old search's spot (the nearest to the middle that takes the camp off buildings and high ground) scores no better.
+    let old = null;
+    for (let r = 0; r <= BM.SITE_RANGE && !old; r++) for (let y = -r; y <= r && !old; y++) for (let x = -r; x <= r && !old; x++) {
+      if (Math.max(Math.abs(x), Math.abs(y)) !== r || BM.siteProblem(s3, id, [x, y])) continue;
+      const B2 = siteBox([x, y]);
+      let big = false;
+      for (let yy = B2.y0; yy < B2.y1; yy++) for (let xx = B2.x0; xx < B2.x1; xx++) { const p = land.pieces.get(`${xx},${yy}`); if (p && BIG.has(p.k)) big = true; }
+      if (!big) old = [x, y];
+    }
+    if (old && siteScore(landFacts(land, old)).total > siteScore(landFacts(land, at)).total + 1e-9) worse++;
+  }
+  check(okAll && cleanAll, `on every kind of tile (${kinds.size} kinds, ${Math.min(12, kinds.size)} tried) the game's spot takes the camp, off buildings and high ground`);
+  check(!worse, "and never scores below the nearest open spot to the middle (the old pick)");
+  check(ms.every(([, c]) => c < 50), `weighed once a land (${Math.min(...ms.map((m) => m[0]))}–${Math.max(...ms.map((m) => m[0]))} ms on this machine), then kept: asked again ${Math.max(...ms.map((m) => m[1]))} ms at most`);
+  // Built by hand: an obviously better spot is the one picked.
+  const synth = (fill) => {
+    const pieces = new Map(), list = [], heights = new Map();
+    for (let y = -125; y < 125; y++) for (let x = -125; x < 125; x++) { const r = fill(x, y); if (r === "tree") { const p = { k: "tree", g: `t${x},${y}`, cells: [[x, y]] }; list.push(p); pieces.set(`${x},${y}`, p); } else if (typeof r === "number") heights.set(`${x},${y}`, r); }
+    return { pieces, list, floors: new Map(), heights };
+  };
+  const cheb = (x, y, c) => Math.max(Math.abs(x - c[0]), Math.abs(y - c[1]));
+  const glade = [50, -30], woods = synth((x, y) => (cheb(x, y, glade) <= 15 ? null : "tree"));
+  const gp = bestSiteOn(woods), gf = landFacts(woods, gp);
+  check(cheb(gp[0], gp[1], glade) <= 13 && gf.work === CAMP.fireHours && gf.room > 0.9, `woods all round, one glade at ${glade}: the camp goes in the glade (${gp}: nothing to clear, room ${gf.room})`);
+  const rise = [20, 20], hollow = synth((x, y) => { const c = cheb(x, y, rise); return c >= 4 && c <= 10 ? -1 : null; });
+  const hp = bestSiteOn(hollow), hf = landFacts(hollow, hp);
+  check(String(hp) === String(rise) && hf.lie.kind === "high" && hf.lie.lower === 1, `open land with one knoll (lower ground all round ${rise}): the knoll is picked (${hp}, ${hf.lie.kind}: looks down on it)`);
+  const pit = synth((x, y) => { const c = cheb(x, y, [0, 0]); return c >= 4 && c <= 10 ? 1 : null; });
+  const pp = bestSiteOn(pit), pf = landFacts(pit, pp);
+  check(String(pp) !== "0,0" && pf.lie.higher === 0 && pf.sight === 1, `high ground ringing the map's middle: the camp keeps out from under it (${pp}, nothing higher round it)`);
+  check(String(bestSiteOn(woods)) === String(gp) && String(bestSiteOn(hollow)) === String(hp), "the same land, the same spot");
+  // The picker shows it: the panel's facts, the hover line, why the game's spot; Let the game pick says why in the log.
+  giveOrder(s3, q, "camp");
+  globalThis.window = {};
+  try {
+    siteViewDue(s3, ui());
+    const b = s3.combat, F = b && b.deployPlan && b.deployPlan.fort;
+    const panel = sitePanel(s3, b, {});
+    check(["Ground", "Round it", "Sight", "Room", "Wood", "Water", "Road", "Places"].every((w) => panel.includes(`>${w}</div>`)) && /The game picked this spot because/.test(panel) && /data-action="cs-auto"/.test(panel), "the panel: the spot's facts in rows, and why the game picked the spot shown");
+    const other = [d[0] + 9, d[1]];
+    const hover = siteHoverText(s3, b, { x: other[0] + F.ox, y: other[1] + F.oy }), plain = hover.replace(/<[^>]+>/g, "");
+    check(/to set up/.test(plain) && /sight \d+%/.test(plain) && /room \d+%/.test(plain) && /class="(good|danger|warn)"/.test(hover), `the hover line: time, yield and the facts, coloured (${plain.slice(plain.indexOf("Click") - 70, plain.indexOf("Click")).trim()})`);
+    BM.siteClickAt(s3, b, other[0] + F.ox, other[1] + F.oy);
+    const g = BM.siteGhostAt(s3, b);
+    check(!BM.siteProblem(s3, t3, other) ? !/The game picked/.test(sitePanel(s3, b, {})) && String(g.gameAt) === String([d[0] + F.ox, d[1] + F.oy]) : true, "another spot picked: no reason line, and the game's own spot tagged on the map");
+    CS_ACTIONS["cs-auto"](s3);
+    check(!s3.combat && s3.log.some((l) => /The game picked this spot because/.test(l.text)), `Let the game pick: the log says why (${(s3.log.find((l) => /The game picked/.test(l.text)) || { text: "" }).text.slice(0, 90)}…)`);
+  } finally { delete globalThis.window; }
 }
 
 console.log(`\n${passes} passed, ${fails} failed (${((Date.now() - t0) / 1000).toFixed(1)} s)`);
