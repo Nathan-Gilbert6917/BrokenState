@@ -18,6 +18,7 @@ import { weatherTint, season, iceRow } from "../sim/weather.js";
 import { drawFronts, weatherTipLines } from "./wxmap.js"; // weather fronts over the land, frozen rivers in the tooltip
 import { radioNodes } from "../sim/radio.js";
 import { tunedNetworks } from "../sim/radiolisten.js"; // a channel you listen in on: its coverage in the group's colour
+import { alliedRadioNetworks, radioTipLines, yourLabel } from "../sim/radioallies.js"; // the Radio coverage layer: yours and your allies'
 import { heatInfo } from "../sim/fieldheat.js";
 import { HIVE } from "../sim/hiveconst.js";
 import { buildSiteLabel, isMarked } from "../sim/hivebirth.js"; // a build site's days to a hive, a marked gathering
@@ -1367,6 +1368,34 @@ export function render(state) {
   }
   // Player bases: a walled town for the hub, a cabin for outposts, showing walls and notable buildings.
   const nodes = radioNodes(state);
+  // The Radio coverage layer, yours and your allies' (sim/radioallies.js; the user's request 2026-10-23: "Radio layer
+  // shows your radio distance and when allied you can see their radio distance"): each network's coverage a faint wash
+  // in its colour, laid once over the union of its rings (one path, filled once: rings of one network that overlap do
+  // not darken), under the bases; the rings and their distances are drawn with the bases and after them.
+  const allies = on("radio") && !state.timelapse ? alliedRadioNetworks(state) : [];
+  if (on("radio")) {
+    const wash = (list, color, alpha) => {
+      if (!list.length) return;
+      ctx.beginPath();
+      for (const n of list) { const [x, y] = g.toPixel(n.tile, HEX), r = n.range * HEX * Math.sqrt(3); ctx.moveTo(x + r, y); ctx.arc(x, y, r, 0, Math.PI * 2); }
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = color;
+      ctx.fill("nonzero");
+      ctx.globalAlpha = 1;
+    };
+    wash(nodes.filter((n) => !n.field && n.linked && !n.offline), PLAYER_COLOR, 0.06);
+    for (const a of allies) wash(a.nodes, a.color, 0.05);
+  }
+  const ringPx = 1 / Math.min(1, camera.zoom); // the rings keep their width on screen when zoomed out
+  // A ring's label: at `ang` (radians) on the ring, else round it to either side by turns (drawLabels alt), the spots on
+  // screen first, so a ring whose top or foot is off the map still says what it is.
+  const ringLabel = (text, px, py, r, ang, more) => {
+    const all = [0, 0.3, -0.3, 0.6, -0.6, 1, -1, 1.5, -1.5, 2.1, -2.1, 2.7, -2.7, Math.PI].map((d) => [px + Math.cos(ang + d) * r, py + Math.sin(ang + d) * r]);
+    const padX = 90 / camera.zoom, padY = 24 / camera.zoom;
+    const seen = all.filter(([x, y]) => x > minX + padX && x < maxX - padX && y > minY + padY && y < maxY - padY);
+    const spots = seen.length ? seen : all;
+    labels.push({ text, x: spots[0][0], y: spots[0][1], alt: spots.slice(1), screen: true, size: 10, ...more });
+  };
   for (const b of state.bases) {
     const [px, py] = g.toPixel(b.tile, HEX);
     const s = zoomBoost(), isHub = b.type === "hub" && b.tier !== 0; // a shelter (tier 0): its own smaller sprite
@@ -1409,22 +1438,43 @@ export function render(state) {
     const upPct = up ? Math.round((up.hours ? up.progress / up.hours : 0) * 100) : 0;
     labels.push({ text: b.tier === 0 ? `${b.name} (${b.type === "outpost" ? (up ? `camp: establishing ${upPct}%` : "camp") : up ? `building a base: ${upPct}%` : "shelter"})` : b.name, x: px, y: crowded(b.tile) ? py + BESIDE_LABEL_Y * Math.min(s, BESIDE_MAX) : cy + h / 2 + 6, pri: -1, screen: true, color: "#cfe2f7", size: 10, bold: isHub });
     // Radio coverage (radio.js; the Radio coverage layer): a station's circle, and a relay's when it is linked (red
-    // when it is not, or offline), with the distance it reaches written on the ring's top.
+    // when it is not, or offline), in your colour, dashed, with "Your radio: 12 tiles" written on the ring's top
+    // (sim/radioallies.js yourLabel; 2026-10-23: plainly yours beside your allies' rings).
     const node = on("radio") ? nodes.find((n) => n.base === b && !n.field) : null; // a relay mast out on its land (sim/fieldworks.js) is not the base's own
     if (node) {
       const r = node.range * HEX * Math.sqrt(3);
-      ctx.strokeStyle = node.linked ? "rgba(143,180,224,0.18)" : "rgba(224,120,110,0.3)";
-      ctx.lineWidth = 1.5;
-      ctx.setLineDash([4, 6]);
+      ctx.strokeStyle = node.linked ? "rgba(79,143,214,0.7)" : "rgba(224,120,110,0.55)"; // PLAYER_COLOR
+      ctx.lineWidth = 1.75 * ringPx;
+      ctx.setLineDash([6 * ringPx, 5 * ringPx]);
       ctx.beginPath();
       ctx.arc(px, py, r, 0, Math.PI * 2);
       ctx.stroke();
       ctx.setLineDash([]);
-      labels.push({ text: `${node.kind === "relay" ? "Relay" : "Radio"} ${node.range} tiles${node.linked ? "" : node.offline ? " (off the air)" : " (not linked)"}`, x: px, y: py - r, pri: 4, screen: true, color: node.linked ? "rgba(170,200,235,0.75)" : "rgba(230,150,140,0.85)", size: 9 });
+      ringLabel(yourLabel(node), px, py, r, -Math.PI / 2, { pri: 4, color: node.linked ? "#8fbcef" : "rgba(230,150,140,0.9)" });
     }
   }
-  // A group's channel one of your receivers is tuned to (sim/radiolisten.js): its coverage, dotted, in its colour.
-  for (const net of state.timelapse || !on("radio") ? [] : tunedNetworks(state)) {
+  // Your allies' radios (sim/radioallies.js: the coalition's members, their networks by your rules): each ring in the
+  // group's colour, dash-dotted (yours are dashed), with "<Group> radio: 12 tiles" at its foot; several allies' labels
+  // take turns round the foot, so rings that overlap keep their words apart.
+  const FOOT = [0, -0.45, 0.45, -0.9, 0.9];
+  allies.forEach((a, k) => {
+    ctx.strokeStyle = a.color;
+    ctx.globalAlpha = 0.75;
+    ctx.lineWidth = 1.75 * ringPx;
+    ctx.setLineDash([10 * ringPx, 4 * ringPx, 2 * ringPx, 4 * ringPx]);
+    for (const n of a.nodes) {
+      const [px, py] = g.toPixel(n.tile, HEX), r = n.range * HEX * Math.sqrt(3);
+      ctx.beginPath();
+      ctx.arc(px, py, r, 0, Math.PI * 2);
+      ctx.stroke();
+      ringLabel(n.label, px, py, r, Math.PI / 2 + FOOT[k % FOOT.length], { pri: 4.5, color: a.color });
+    }
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
+  });
+  // A group's channel one of your receivers is tuned to (sim/radiolisten.js): its coverage, dotted, in its colour (an
+  // ally's is drawn above already).
+  for (const net of state.timelapse || !on("radio") ? [] : tunedNetworks(state).filter((n) => !allies.some((a) => a.id === n.id))) {
     ctx.strokeStyle = net.color || "#aaa";
     ctx.globalAlpha = 0.4;
     ctx.lineWidth = 1.5;
@@ -1983,15 +2033,18 @@ function drawLabels(labels, avoid = []) {
       const size = (l.screen && camera.zoom < 1 ? l.size / camera.zoom : l.size) * readable.text;
       ctx.font = `${l.bold ? "bold " : ""}${size.toFixed(1)}px Segoe UI`;
       const w = ctx.measureText(l.text).width + size * 0.4, h = size * 1.2;
-      const x0 = l.x - w / 2, y0 = l.y - h / 2;
+      // alt: other spots to try, in order, when its own is taken (a radio ring's label round its ring, 2026-10-23).
+      const free = ([ax, ay]) => !hits(boxes, ax - w / 2, ay - h / 2, w, h);
+      const [lx, ly] = !l.alt || free([l.x, l.y]) ? [l.x, l.y] : l.alt.find(free) || [l.x, l.y];
+      const x0 = lx - w / 2, y0 = ly - h / 2;
       top = y0;
       if (!hits(boxes, x0, y0, w, h)) {
         boxes.push([x0 - size * 0.3, y0, w + size * 0.6, h]); // a little air between names on one line
         ctx.lineWidth = size * 0.3;
         ctx.strokeStyle = "rgba(13,15,18,0.75)";
-        ctx.strokeText(l.text, l.x, l.y);
+        ctx.strokeText(l.text, lx, ly);
         ctx.fillStyle = l.color || "rgba(230,226,216,0.9)";
-        ctx.fillText(l.text, l.x, l.y);
+        ctx.fillText(l.text, lx, ly);
         top = y0 + h + 0.5;
       }
     }
@@ -2482,6 +2535,7 @@ export function tileTooltip(state, id) {
   const ru = ownHere ? null : ruinInfo(state, id);
   if (ru) lines.push(`<span style="color:${RUIN_LABEL}">${esc(ru.title)}: salvage ${ru.salvage.toLowerCase()}${ru.salvageLive ? "" : " (then)"} · danger ${ru.dangerName.toLowerCase()}</span>`);
   for (const line of weatherTipLines(state, id)) lines.push(`<span style="color:#b9d3ee">${esc(line)}</span>`); // ui/wxmap.js: a front over it, ice
+  if (on("radio")) for (const o of radioTipLines(state, id)) lines.push(`<span style="color:${o.color}">${esc(o.text)}</span>`); // sim/radioallies.js: your radio and your allies' over this tile
   const sd = searchedDay(state, id);
   if (sd) lines.push(`<span style="color:#8fd8cf">Searched by your people on day ${sd}</span>`); // sim/discovery.js (Known area layer)
   const nt = noteTip(state, id); // your map notes here (ui/mapnotes.js)
