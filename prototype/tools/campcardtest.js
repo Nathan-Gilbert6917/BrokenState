@@ -43,6 +43,8 @@ establishArriveNow(st, p);
 const camp = st.bases[0];
 check(!!camp && camp.camp === true, "the camp stands (a base)");
 check(campStatusCard(st, p) === "", "no road card once there is a base");
+check(!tierUpJob(camp), "no shelter placed by itself (the user's request 2026-10-23)");
+queueBuild(st, camp, "camp_up"); // the Camp tab's Place the shelter shack
 card = stagingTileCard(st, camp.tile);
 check(/class="buildbar/.test(card) && /Shelter shack: 0%/.test(text(card)), "a labelled build bar for the step up");
 check(/class="now">Camp</.test(card), "the Camp stage is lit");
@@ -67,6 +69,7 @@ const q = roadTeam(st2);
 q.supplies.scrap = 30; q.supplies.parts = 4; q.supplies.food = 30; q.supplies.water = 30; q.supplies.buildmat = 2; q.supplies.wood = 600; // the step up's 200 wood, the fire's (the user's pick 2026-10-20)
 establishArriveNow(st2, q);
 const base = st2.bases[0];
+queueBuild(st2, base, "camp_up"); // the Camp tab's Place the shelter shack
 for (let i = 0; i < 24 * 6 && base.camp; i++) { tickHour(st2); st2.cards.length = 0; }
 check(!base.camp && base.tier === 0, `the camp's builders build it up into the shelter (${base.camp ? "still a camp" : "a shelter"})`);
 if (!base.camp) {

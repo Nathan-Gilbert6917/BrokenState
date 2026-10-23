@@ -153,7 +153,7 @@ export function pondsBattle(state, b, tileId) {
   if (cw.x !== 1) { b.climbX = cw.x; b.climbWhy = cw.why; }
   try { const wx = weatherAt(state, tileId); if ((wx.snowCover || 0) >= 0.15) b.snowLie = Math.round(Math.min(1, wx.snowCover) * 4) / 4; } catch { /* no weather */ }
   // Sunk ground: below level ground (a base's map on a hill is laid from its own level: combat.js mapLv; its c.h, wl too).
-  const lv = mapLv(b), sunk = (c) => c.ter && c.h + lv < 0;
+  const lv = mapLv(b), sunk = (c) => c.ter && !c.bld && c.h + lv < 0; // c.bld: a building's floor in a hollow stays dry (basemap.js groundBuilt)
   if (!cells.some(sunk)) return 0;
   const st = pondsOn(state, tileId), sp = springSt(st);
   if (!cellWet(st, 1) && !cells.some((c) => c.spring && sunk(c))) return 0; // a pond tile's spring is never dry

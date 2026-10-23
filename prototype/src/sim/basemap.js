@@ -662,6 +662,8 @@ export function placeProblemAt(base, it, x, y, r, occ, dims = null) {
     if (wet) return wet;
     const hit = landUnder(occ.land, it, at);
     if (hit.length) return landWhy(hit);
+    const uneven = groundWhy(occ.land, it, at);
+    if (uneven) return uneven;
   }
   // A crop plot only on soil (NOT_SOIL: the land's road, paved lots and fords).
   if (it.kind === "field" && occ.land && occ.land.floors) for (const [cx, cy] of rectCells(it, at)) if (NOT_SOIL.has(occ.land.floors.get(`${cx},${cy}`))) return SOIL_WHY;
@@ -800,6 +802,25 @@ export function landFor(state, base) {
   const spec = landSpec(state, base, { G: gridHalf(base), C: yardHalf(base), tier: tierKey(base), terrain: terrainOf(state, base), origin: originOf(base), fresh: freshBase(base), level: levelOf(base) });
   return landMapOf(spec, base.land);
 }
+// What stands on the map on the ground's own height (the user's request 2026-10-23: "just build on the hill as if it was
+// the ground floor"): a cell laid by the base (a building, the wire, a parked car) where the land is higher or lower
+// than the map's datum is on that ground, c.ter and c.h its level as the land's own cells (drawn on its column, walked
+// and seen over as a hill: combat.js losTop); one with a height of its own (a loft, a wall stand, a watchtower) keeps
+// it over the ground (c.gh: the ground under it; c.h the two). c.bld: built, no pond in it (ponds.js).
+function groundBuilt(cells, W, H, ox, oy, land, lift) {
+  const G = land.ground || land.heights;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const c = cells[y * W + x];
+    if (c.ter || c.k === "crag" || c.k === "water") continue;
+    const p = land.pieces.get(`${x - ox},${y - oy}`);
+    if (p && (p.k === "water" || p.k === "crag")) continue;
+    const g = (G.get(`${x - ox},${y - oy}`) || 0) - lift;
+    if (!g) continue;
+    const own = c.h ?? (CELL[c.k] && CELL[c.k].h);
+    if (own != null && c.k !== "open") { c.gh = g; c.h = own + g; } else { c.ter = 1; c.h = g; }
+    c.bld = 1;
+  }
+}
 // The base's own ground level (base.plan.level: the camp's 5 × 5 levelled to its own ground, siteLevel; a camp on a hill
 // stands on it, the user's request 2026-10-23); 0 for level ground and a base laid out before it.
 export const levelOf = (base) => (base && base.plan && base.plan.fresh && base.plan.level) || 0;
@@ -818,10 +839,23 @@ function ensureLand(state, base) {
 // The cell kind a piece is laid as on the battle map.
 export const landCellKind = (p) => (p.k === "wreck" ? (p.body === "truck" ? "truck" : "car") : p.k === "rise" || p.k === "dip" ? "open" : p.k); // a hill's or a hollow's cell is open ground at its height (basescatter.js layLand)
 // The pieces under a thing at `at` (its footprint and the cells outside its doors), once each.
+// The hills and hollows themselves are not in the way (the user's request 2026-10-23: "It should not be trying to burrow
+// just build on the hill as if it was the ground floor"): a building stands on level ground at any height (groundWhy);
+// a spring's pond is never built on.
 export function landUnder(land, it, at) {
   const out = new Set();
-  for (const [x, y] of [...rectCells(it, at), ...doorCellsOf(it, at)]) { const p = land.pieces.get(`${x},${y}`); if (p) out.add(p); }
+  for (const [x, y] of [...rectCells(it, at), ...doorCellsOf(it, at)]) { const p = land.pieces.get(`${x},${y}`); if (p && !((p.k === "rise" || p.k === "dip") && !p.spring)) out.add(p); }
   return [...out];
+}
+export const UNEVEN_WHY = "Over a hill's edge: it has to stand whole on one level (all of it up on the hill, or all of it off it)";
+// Why `it` at `at` would not stand on one level of the ground (its cells and the cells outside its doors), or "". A wall,
+// a gate, a wall stand and the defences follow the ground a cell at a time (WALL_KINDS).
+export function groundWhy(land, it, at) {
+  const G = land && (land.ground || land.heights);
+  if (!G || WALL_KINDS.has(it.kind) || it.kind === "defence") return "";
+  let h0 = null;
+  for (const [x, y] of [...rectCells(it, at), ...doorCellsOf(it, at)]) { const h = G.get(`${x},${y}`) || 0; if (h0 == null) h0 = h; else if (h !== h0) return UNEVEN_WHY; }
+  return "";
 }
 const PLURAL = { bush: "bushes", "fence panel": "fence panels", "field gate": "field gates", "wire fence panel": "wire fence panels", "hay bale": "hay bales", "broken crate": "broken crates", "old drum": "old drums", "fallen log": "fallen logs", "wrecked car": "wrecked cars", "wrecked truck": "wrecked trucks", "patch of high ground": "patches of high ground", "store": "stores" };
 // "2 trees, a bush and a wrecked car".
@@ -887,6 +921,10 @@ export function siteProblem(state, tile, at) {
   if (Math.abs(at[0]) > SITE_RANGE || Math.abs(at[1]) > SITE_RANGE) return "Too near the edge of the map: the camp's yard and a wall round it would run off it";
   const land = siteLand(state, tile), B = siteBox(at);
   for (let y = B.y0; y < B.y1; y++) for (let x = B.x0; x < B.x1; x++) { const p = land.pieces.get(`${x},${y}`); if (p && p.k === "water") return "On the river: pick dry ground"; if (p && p.k === "crag") return "On the mountainside: pick open ground"; if (p && p.spring) return "In the pond: pick dry ground"; }
+  // Whole on one level (the user's request 2026-10-23: "only allow building the camp if the 5x5 fits on the hill in
+  // whole otherwise set it to red"): never dug into a hill's edge nor half down a hollow; on a hill it stands on it.
+  const h0 = land.heights.get(`${B.x0},${B.y0}`) || 0;
+  for (let y = B.y0; y < B.y1; y++) for (let x = B.x0; x < B.x1; x++) if ((land.heights.get(`${x},${y}`) || 0) !== h0) return "Over a hill's edge: the camp's square has to stand whole on one level (all of it up on the hill, or all of it off it)";
   return "";
 }
 // What clearing the spot would give and take ({ hours: work-hours at a builder's pace, get, n: pieces and cells
@@ -1886,6 +1924,7 @@ export function buildBaseMap(state, base, rng, opts = {}) {
   const land = landFor(state, base);
   F.lv = land ? land.level || 0 : 0; // the map's datum (combat.js mapLv): laid from the base's own level
   F.scatter = land ? layLand({ cells, W, H, ox, oy, land, lift: F.lv, ok: (x, y) => cells[y * W + x].k === "open" && !used[y * W + x], floor: (x, y) => cells[y * W + x].k === "open" && !used[y * W + x] && !indoor[y * W + x] }).kinds : {};
+  if (land) groundBuilt(cells, W, H, ox, oy, land, F.lv);
   if (land) F.passes = cragWays(cells, W, H); // relief.js: the crag the crop takes in never shuts the base off from the map's edge; the ground a level a step to the edge and what stands
   // The clearing under way (the construction queue's clearing jobs: basescatter.js CLEAR), for the view: the cells, how far,
   // and who is on it this hour (woodwork.js chopHands: the woodcutters felling it, the builders working it).

@@ -2481,7 +2481,7 @@ const losSet = (cache, i, v) => { if (cache instanceof Map) cache.set(i, v); els
 // How high a cell blocks a sight line (levels): a wall's own top (c.t), a blocking cell's tall, a raised floor's height,
 // all on top of the ground's height under it (a tree on a hill; c.ter); level ground 0 (only seen from below: a hollow).
 export function losTop(cell, C) {
-  const g = cell.ter ? cell.h || 0 : 0;
+  const g = cell.ter ? cell.h || 0 : cell.gh || 0; // gh: the ground under a raised floor of its own on a hill (basemap.js groundBuilt)
   if (cell.t) return cell.t + g;
   if (C.los && !doorSees(cell)) return (cell.ch || C.tall || 1) + g; // ch: a mountain's rock, its own height (basescatter.js reliefLayer)
   return C.walk ? cell.h ?? C.h ?? 0 : g;

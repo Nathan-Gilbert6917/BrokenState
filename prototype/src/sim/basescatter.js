@@ -933,17 +933,11 @@ export function landOf(spec, land) {
   // eased against all of the massif's rock, leaving a road's pass a trench three levels deep: tools/mapreachtest.js).
   const rock = new Set();
   for (const [x, y, lv] of relief.crags) if (free(x, y) && !nearBase(x, y, spec.C) && !street(x, y) && !(spec.river && onRiver(spec, x, y))) { put({ k: "crag", g: `c${x},${y}`, cells: [[x, y]], h: lv }); rock.add(`${x},${y}`); }
-  for (const [x, y, h] of relief.heights) if (!nearBase(x, y, spring.has(`${x},${y}`) ? spec.clear : Math.max(spec.C, spec.clear)) && !gone(x, y) && !pieces.has(`${x},${y}`) && !(spec.river && onRiver(spec, x, y))) heights.set(`${x},${y}`, h);
-  // A base on a hill or in a hollow (spec.level, the user's request 2026-10-23: "Allow building on a hill setting up a
-  // camp on a hill burrowed down into the hill"): its yard, its clearing and what is cleared are level at the base's
-  // own level, not dug down to the plain's (a cell cleared alone out on lower ground is eased back to it: relaxHeights).
-  const L = spec.level || 0;
-  if (L) {
-    const lay = (x, y) => { if (x >= -spec.G && y >= -spec.G && x < spec.G && y < spec.G && !pieces.has(`${x},${y}`) && !(spec.river && onRiver(spec, x, y))) heights.set(`${x},${y}`, L); };
-    const Y = Math.max(spec.C, spec.clear);
-    for (let y = -Y; y < Y; y++) for (let x = -Y; x < Y; x++) lay(x + tx, y + ty);
-    for (const k of Object.keys(cleared)) { const [x, y] = k.split(",").map(Number); lay(x + tx, y + ty); }
-  }
+  // land.keepH (a camp set up since the user's request 2026-10-23: "It should not be trying to burrow just build on the
+  // hill as if it was the ground floor"): what is cleared keeps the ground's own height (a tree felled on a hill leaves
+  // the hill); before, the ground went with it, dug down to the plain's.
+  const keepH = !!(land && land.keepH), L = spec.level || 0;
+  for (const [x, y, h] of relief.heights) if (!nearBase(x, y, spring.has(`${x},${y}`) ? spec.clear : Math.max(spec.C, spec.clear)) && (keepH || !gone(x, y)) && !pieces.has(`${x},${y}`) && !(spec.river && onRiver(spec, x, y))) heights.set(`${x},${y}`, h);
   relaxHeights(heights, rock); // the yard, the clearing and what is cleared are level: the ground eased down to them
   dropNarrowHollows(heights); // a hollow cut narrow by them filled in
   // Nothing of the scatter on the ground paved before it (a road, a ford, a town's paths, driveways, lots and
@@ -993,11 +987,9 @@ export function landOf(spec, land) {
   if (editKeys.length) relaxHeights(heights, new Set(relief.crags.map(([x, y]) => `${x},${y}`)));
   // The spring's hollow as it lies now (what of it is still a level down): never filled in nor built on (clearOf).
   const springs = new Set([...spring].filter((k) => heights.get(k) < 0));
-  // Ground off the base's level (spec.level: 0 but for a base on a hill or in a hollow) is a piece of the land, h its
-  // levels above (rise) or below (dip) the base's: dug down or filled in to it before anything is built there.
-  // off: not a hill nor a hollow of the land's, only off the base's level (the plain below a camp on a hill: pieceWord).
-  for (const [k, h] of heights) if (h !== L && !pieces.has(k)) { const [x, y] = k.split(",").map(Number); put({ k: h > L ? "rise" : "dip", g: `h${x},${y}`, cells: [[x, y]], h: h - L, ...(springs.has(k) ? { spring: 1 } : {}), ...((h > L ? h <= 0 : h >= 0) ? { off: 1 } : {}) }); }
-  if (L) for (let y = -spec.G; y < spec.G; y++) for (let x = -spec.G; x < spec.G; x++) { const k = `${x},${y}`; if (!heights.has(k) && !pieces.has(k) && !(spec.river && onRiver(spec, x, y) === 1)) put({ k: L > 0 ? "dip" : "rise", g: `h${x},${y}`, cells: [[x, y]], h: -L, off: 1 }); }
+  // The hills and hollows with nothing on them are pieces of the land too (rise, dip): the ground, never in the way of
+  // a building (basemap.js landUnder: one stands on level ground of any height, its ground floor there).
+  for (const [k, h] of heights) if (!pieces.has(k)) { const [x, y] = k.split(",").map(Number); put({ k: h > 0 ? "rise" : "dip", g: `h${x},${y}`, cells: [[x, y]], h, ...(springs.has(k) ? { spring: 1 } : {}) }); }
   // Bushes along the river's banks.
   if (spec.river) { const rng = new Rng(spec.seed ^ 0x77e1); for (let a = -spec.G; a < spec.G; a++) for (let b = -spec.G; b < spec.G; b++) { const x = spec.river === "y" ? a : b, y = spec.river === "y" ? b : a; if (onRiver(spec, x, y) === 2 && rng.chance(0.3) && free(x, y)) put({ k: "bush", g: `b${x},${y}`, cells: [[x, y]] }); } }
   // Into the base's grid coordinates (the pieces were made here, so they are moved in place).
@@ -1019,13 +1011,15 @@ export function landOf(spec, land) {
   // over the land placed things on it and their clearing never came, basemap.js siteWaits; tools/mapreachtest.js), a
   // pond tile's spring-fed pond. springs: its cells (grid "x,y"; layLand marks them c.spring for ponds.js).
   const water = list.filter((p) => p.k === "water" || p.k === "crag" || p.spring);
-  const v = { pieces, floors, list, heights, springs, level: L, waterOnly: { pieces: new Map(water.flatMap((p) => p.cells.map(([x, y]) => [`${x},${y}`, p]))), list: water, floors, heights: new Map() } };
+  // ground: the ground's height by cell (the same in waterOnly, whose heights are left out for its ponds): what a
+  // building stands on (basemap.js placeProblemAt: all of it on one level).
+  const v = { pieces, floors, list, heights, springs, level: L, ground: heights, waterOnly: { pieces: new Map(water.flatMap((p) => p.cells.map(([x, y]) => [`${x},${y}`, p]))), list: water, floors, heights: new Map(), ground: heights } };
   if (landCache.size > 48) landCache.clear();
   landCache.set(key, { land, v });
   return v;
 }
 // A piece's name and its clearing (CLEAR).
-export const pieceWord = (p) => (p.k === "water" ? "the river" : p.spring ? "the pond" : p.k === "crag" ? "the mountainside" : p.k === "wreck" ? `a wrecked ${p.body === "truck" ? "truck" : "car"}` : p.off ? (p.k === "dip" ? "ground below the base's level" : "ground above the base's level") : (CLEAR[p.k] || { word: p.k }).word);
+export const pieceWord = (p) => (p.k === "water" ? "the river" : p.spring ? "the pond" : p.k === "crag" ? "the mountainside" : p.k === "wreck" ? `a wrecked ${p.body === "truck" ? "truck" : "car"}` : (CLEAR[p.k] || { word: p.k }).word);
 /** The clearing of a piece: { hours, get, mode } (mode "strip": a wreck not yet stripped, stripped only). @param {any} p @param {boolean} tool @param {string} mode */
 export function clearOf(p, tool = true, mode = "clear") {
   if (!p || p.k === "water" || p.spring) return null; // the river and a spring's pond: never cleared

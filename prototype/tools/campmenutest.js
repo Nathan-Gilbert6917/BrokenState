@@ -22,7 +22,7 @@ import { BUILDINGS, CAMP, SHELTER, isCamp, isShelter, tierName, tierUpJob, canBu
 import { partyMembers, partyTile, giveOrder, orderOptions, launchExpedition, planPath, carried } from "../src/sim/parties.js";
 import { roadTeam } from "../src/sim/hardcore-start.js";
 import { strikeCamp, strikeProblem, campOption, settleHub, STAGING, pendingSite, pickSite, siteSetup } from "../src/sim/staging.js";
-import { gridSize, landFor } from "../src/sim/basemap.js";
+import { gridSize, landFor, siteProblem } from "../src/sim/basemap.js";
 import { formTeam, addMember, removeMember, setVehicles, editProblem } from "../src/sim/teamform.js";
 import { dropOff, loadFromBase, transferProblem } from "../src/sim/teaminv.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
@@ -58,7 +58,8 @@ st.cards.length = 0;
 giveOrder(st, p, "camp");
 check(p.phase === "task" && p.task.type === "pitch" && p.task.hours === siteSetup(st, p, tile).hours && p.task.hours >= 0.25, `the work first, nothing carried needed: the camp fire and the clearing of its 5 × 5, tent bags or none (${p.task && p.task.hours}h)`);
 check(Array.isArray(st.siteAsk) && st.siteAsk.includes(p.id) && pendingSite(st) === p, "the team asks where on the tile's map the camp goes (state.siteAsk: the window, ui/campsite.js)");
-const spot = [12, -20];
+// A spot whole on one level near [12, -20] (one over a hill's edge is refused: the user's request 2026-10-23).
+const spot = (() => { for (let d = 0; d < 60; d++) for (const at of [[12 + d, -20], [12, -20 + d], [12 - d, -20], [12, -20 - d]]) if (!siteProblem(st, tile, at)) return at; return [12, -20]; })();
 check(pickSite(st, p, [999, 0]) !== "" && pickSite(st, p, spot) === "" && !pendingSite(st) && p.campAt.join() === spot.join(), `a spot too near the edge is refused; one in reach is taken (${spot})`);
 const siteGet = siteSetup(st, p, tile, spot).get; // with or without a cutting tool on the team (a quarter of the trees' wood without)
 const stockBefore = { wood: p.cargo.supplies.wood || 0, scrap: p.cargo.supplies.scrap || 0 };
@@ -73,7 +74,7 @@ check(camp.armory.some((it) => it.key === "crowbar") && camp.stock.scrap >= 9 &&
 check(!tierUpJob(camp), "a plain camp: nothing building until you queue the step up");
 check(camp.plan && camp.plan.fresh && camp.plan.origin.join() === spot.join() && gridSize(camp) === 250, `the camp stands where it was put on its 250 × 250 map (${camp.plan && camp.plan.origin})`);
 const cl = camp.land && camp.land.cleared;
-check(!!cl && [[-2, -2], [2, 2], [0, 0], [-2, 2]].every(([x, y]) => cl[`${x},${y}`]) && !landFor(st, camp).list.some((q) => q.k !== "water" && q.cells.some(([x, y]) => x >= -2 && y >= -2 && x < 3 && y < 3)), "its 5 × 5 round the fire is cleared: nothing of the land left in it");
+check(!!cl && [[-2, -2], [2, 2], [0, 0], [-2, 2]].every(([x, y]) => cl[`${x},${y}`]) && !landFor(st, camp).list.some((q) => q.k !== "water" && q.k !== "rise" && q.k !== "dip" && q.cells.some(([x, y]) => x >= -2 && y >= -2 && x < 3 && y < 3)), "its 5 × 5 round the fire is cleared: nothing of the land left in it (the ground's own height stays: a camp on a hill stands on it)");
 check(Object.entries(siteGet).every(([k, v]) => (camp.stock[k] || 0) >= v + (stockBefore[k] || 0) - (k === "wood" ? 5 : 1e-9)), `what the land there gave is in its stores (${Object.entries(siteGet).map(([k, v]) => `${v} ${k}`).join(", ") || "nothing"})`);
 check(baseBeds(camp) === CAMP.beds + tentBeds(camp) && tentBeds(camp) === partyCount && farmSlots(camp) === 0 && plotCap(camp, "building") === 0 && plotCap(camp, "utility") === 2, "barebones: its tents for beds, no crop plot until one is dug, no building plot, two utility plots");
 let html = modal(st, { id: camp.id, tab: "camp" });
@@ -220,7 +221,9 @@ section("The hub among camps: a real base takes the hub's place; the camp become
   const p3 = roadTeam(s3);
   giveOrder(s3, p3, "establish"); p3.pitched = true; giveOrder(s3, p3, "establish");
   const c = s3.bases[0];
-  check(isCamp(c) && c.type === "hub" && tierUpJob(c).type === "camp_up", "the only base: the camp is the hub, building up into a shelter");
+  check(isCamp(c) && c.type === "hub" && !tierUpJob(c), "the only base: the camp is the hub, nothing placed for the player (the user's request 2026-10-23)");
+  queueBuild(s3, c, "camp_up"); // the Camp tab's Place the shelter shack
+  check(tierUpJob(c).type === "camp_up", "placed: building up into a shelter");
   const t2 = s3.grid.within(c.tile, 5).find((t) => s3.grid.distance(t, c.tile) >= 4 && s3.tiles[t].terrain !== "water");
   const real = { id: 990001, tile: t2, type: "outpost", name: "Retaken", stock: { food: 0, water: 0 }, radio: false, watchtower: false, buildings: [], construction: [], armory: [] };
   s3.bases.push(real);

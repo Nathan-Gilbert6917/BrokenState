@@ -139,6 +139,11 @@ function distField(N, src) {
 const distAt = (g, field, at) => (field ? field[(at[1] + g.G) * g.N + (at[0] + g.G)] : null);
 
 // ---------- the facts ----------
+// Is the box all on one level (gt<t>: the cells higher than t; at level t: those over t-1 and not over t)?
+const onOneLevel = (g, x0, y0, x1, y1) => {
+  const n = (x1 - x0) * (y1 - y0), gt = (t) => (t < LEVELS[0] ? n : g.sum(`gt${t}`, x0, y0, x1, y1));
+  return LEVELS.some((t) => gt(t - 1) - gt(t) === n);
+};
 const lvOf = (t) => Math.max(LEVELS[0], Math.min(LEVELS[LEVELS.length - 1], t));
 const ringLv = (g, kind, t, at, r0, r1) => (kind === "lt" && lvOf(t) === LEVELS[0] ? 0 : ring(g, `${kind}${lvOf(t)}`, at, r0, r1));
 const ring = (g, layer, at, r0, r1) => { const [x, y] = at; return g.sum(layer, x - r1, y - r1, x + r1 + 1, y + r1 + 1) - g.sum(layer, x - r0 + 1, y - r0 + 1, x + r0, y + r0); };
@@ -299,6 +304,7 @@ export function bestSiteOn(land, ok = () => true) {
   for (let y = -Rg; y <= Rg; y++) for (let x = -Rg; x <= Rg; x++) {
     const sx0 = x + lo, sy0 = y + lo, sx1 = x + hi, sy1 = y + hi;
     if (g.sum("bad", sx0, sy0, sx1, sy1)) continue;
+    if (!onOneLevel(g, sx0, sy0, sx1, sy1)) continue; // basemap.js siteProblem: the square whole on one level
     const big = g.sum("big", sx0, sy0, sx1, sy1) > 0;
     const rn = Math.max(1, g.area(x - L1, y - L1, x + L1 + 1, y + L1 + 1) - g.area(x - L0 + 1, y - L0 + 1, x + L0, y + L0));
     const up = ring(g, "gt0", [x, y], L0, L1), down = ring(g, "lt0", [x, y], L0, L1); // the quick score on level ground (the full one at the spot's level: landFacts)

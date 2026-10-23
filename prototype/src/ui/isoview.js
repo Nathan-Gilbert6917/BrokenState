@@ -540,7 +540,7 @@ function terrainPrims(T, o) {
     // autumn's leaves o.lf, as on the level ground: ui/groundlook.js groundTexel).
     if (o.wet === "mud") return mul(drift(X, Y, 29) > 0.86 ? hex("#3e4048") : MUD_C, k * (0.86 + q * 0.2));
     if (o.snow && T.e > 0 && !o.gt && drift(X, Y, 31) < snowShare(o.snow)) return mul(SNOW_C, k * (0.92 + q * 0.08));
-    const c = f === "road" ? mul(FLOORC.road, 0.9 + q * 0.12) : f === "gravel" || f === "deck" ? mul(FLOORC.gravel, 0.8 + q * 0.35) : f === "dirt" ? mul(FLOORC.dirt, 0.88 + q * 0.2) : f === "field" ? mul(FLOORC.field, 0.9 + q * 0.12) : q > 0.9 ? mul(PAL.leaf2, 0.9) : mul(FLOORC.grass, 0.88 + q * 0.2);
+    const c = f === "road" ? mul(FLOORC.road, 0.9 + q * 0.12) : f === "gravel" || f === "deck" ? mul(FLOORC.gravel, 0.8 + q * 0.35) : f === "dirt" ? mul(FLOORC.dirt, 0.88 + q * 0.2) : f === "field" ? mul(FLOORC.field, 0.9 + q * 0.12) : f && f !== "grass" && FLOORC[f] ? mul(FLOORC[f], 0.9 + q * 0.12) : q > 0.9 ? mul(PAL.leaf2, 0.9) : mul(FLOORC.grass, 0.88 + q * 0.2); // a building's floor on a hill (sim/basemap.js groundBuilt)
     if (o.gt) { const g = groundTexel(c, o.gt, X, Y, o.lf || 0); if (g !== c) return mul(g, k); }
     return mul(c, k * (1 + 0.07 * T.e)); // the higher, the lighter: the levels read apart
   };
@@ -1639,7 +1639,7 @@ const JOINS = {
 const CUT_R = 6;
 // The ground's level at a cell (sim/combat.js c.h with c.ter; 0 level ground; a raised floor or a wall: 0, it is not the
 // ground's), and the look under the cell: null when it and everything round it is level ground.
-const groundLv = (c) => (c && c.k === "crag" ? c.ch || 3 : c && c.ter ? c.h || 0 : 0); // a mountain's rock: its own height (sim/basescatter.js reliefLayer)
+const groundLv = (c) => (c && c.k === "crag" ? c.ch || 3 : c && c.ter ? c.h || 0 : (c && c.gh) || 0); // a mountain's rock: its own height (sim/basescatter.js reliefLayer); gh: the hill under a loft, a wall stand, a watchtower (sim/basemap.js groundBuilt)
 function terrainOf(b, x, y) {
   const c = b.cells[y * b.w + x], e = groundLv(c), r = iso.rot;
   let bottom = e;
@@ -1710,7 +1710,7 @@ function lookOf(b, scene, x, y, cut, focus = null) {
   if (c.roll) o.roll = true; // a roller door (sim/buildingmaps.js)
   if (k === "firepit" && c.lit) o.lit = true; // a fire pit burning (its flames: prims)
   if (c.spot) o.spot = c.spotBroken ? 2 : 1; // a mounted spotlight, on the ground or up on a wall stand (sim/basemap.js)
-  if (c.h > 0 && FURNITURE.has(k) && !c.ter) o.raise = c.h * LV; // furniture on an upper floor (on a hill: raised with the ground, prims)
+  if (c.h - (c.gh || 0) > 0 && FURNITURE.has(k) && !c.ter) o.raise = (c.h - (c.gh || 0)) * LV; // furniture on an upper floor (on a hill: raised with the ground, prims)
   if (k === "ladder" || k === "stairs" || k === "slope") {
     // Towards the higher neighbour (the walkway, the loft, the roof).
     let best = -1, bh = hAt(b, x, y);

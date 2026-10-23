@@ -72,8 +72,8 @@ section("The spot: picked on the tile's 250 × 250 map");
   const hAt = (x, y) => hl.heights.get(`${x},${y}`) || 0;
   let hill = null, edge = null;
   for (let r = 0; r < 120 && !(hill && edge); r++) for (let x = -r; x <= r; x++) for (const yy of [-r, r]) {
-    const at = [x, yy], B = siteBox(at);
-    if (BM.siteProblem(st, tile, at)) continue;
+    const at = [x, yy], B = siteBox(at), pr = BM.siteProblem(st, tile, at);
+    if (pr && !/hill's edge/.test(pr)) continue;
     const hs = [];
     let bare = true;
     for (let cy = B.y0; cy < B.y1; cy++) for (let cx = B.x0; cx < B.x1; cx++) { const q = hl.pieces.get(`${cx},${cy}`); if (q && q.k !== "rise" && q.k !== "dip") bare = false; hs.push(hAt(cx, cy)); }
@@ -87,11 +87,8 @@ section("The spot: picked on the tile's 250 × 250 map");
     check(/nothing to clear/.test(w.text) && f.ground.level && f.ground.at === hAt(...hill) && !f.ground.dig, `the picker: ${w.text}; the ground level, on the hill`);
   } else check(true, "(no open hilltop on this tile)");
   if (edge) {
-    const B = siteBox(edge), hs = [];
-    for (let cy = B.y0; cy < B.y1; cy++) for (let cx = B.x0; cx < B.x1; cx++) hs.push(hAt(cx, cy));
-    const lv = siteLevel(hl, edge), cost = hs.reduce((a, h) => a + Math.abs(h - lv), 0), s = siteSetup(st, p, tile, edge);
-    check([...new Set(hs)].every((t) => hs.reduce((a, h) => a + Math.abs(h - t), 0) >= cost) && s.dig.hours === cost && s.dig.up === hs.filter((h) => h > lv).length && s.dig.down === hs.filter((h) => h < lv).length, `a bare spot over a hill's edge at ${edge}: levelled at ${lv}, the least digging and filling (${cost} work-hours: ${s.dig.up} cells dug down, ${s.dig.down} filled in)`);
-    check(new RegExp(levelWords(s.dig).replace(/[()]/g, "\\$&")).test(setupWhat(s)) && !/clearing/.test(setupWhat(s)), `named as the levelling, not "clearing ${s.n} things" (${setupWhat(s)})`);
+    // The user's request 2026-10-23: "only allow building the camp if the 5x5 fits on the hill in whole otherwise set it to red".
+    check(/hill's edge/.test(BM.siteProblem(st, tile, edge)), `a spot over a hill's edge at ${edge} is refused (red): ${BM.siteProblem(st, tile, edge)}`);
   } else check(true, "(no hill's edge on this tile)");
 }
 
@@ -324,28 +321,32 @@ section("A camp on a hilltop stands on it, and builds on it");
     const c6 = s6.bases[0];
     check(!!c6 && c6.plan.level === L && BM.levelOf(c6) === L, `the camp stands at the hill's level (${c6 && c6.plan.level})`);
     const land = BM.landFor(s6, c6);
-    const near = [];
-    for (let y = -5; y <= 5; y++) for (let x = -5; x <= 5; x++) near.push(land.pieces.get(`${x},${y}`));
-    check(land.level === L && !near.some((q) => q && (q.k === "rise" || q.k === "dip")) && [[0, 0], [2, 2], [5, -5]].every(([x, y]) => land.heights.get(`${x},${y}`) === L), "its land: the hilltop round it is level ground for it, nothing to dig (no high ground, no hollow)");
-    const plain = land.list.filter((q) => q.k === "dip" && q.h === -L).sort((a, b) => Math.max(Math.abs(a.cells[0][0]), Math.abs(a.cells[0][1])) - Math.max(Math.abs(b.cells[0][0]), Math.abs(b.cells[0][1])))[0]; // the nearest
-    check(!!plain, `the plain below is ground ${L} down from it, filled in before anything is built there (dip, ${plain && plain.cells[0]})`);
-    // Built on: the hill's own ground takes a building as level ground does; the plain wants filling first.
-    const occ = BM.occupancy(s6, c6, null, null), foot = { ...BM.FIRE.FOOT, key: "x" };
-    const free = [[4, 4], [-4, 4], [4, -4], [-4, -4], [5, 0], [0, 5]].find(([x, y]) => !land.pieces.get(`${x},${y}`));
-    check(!!free && BM.placeProblemAt(c6, foot, free[0], free[1], 0, occ) === "", `a thing placed on the hilltop beside the camp goes up there (${free})`);
-    const pc = plain && plain.cells[0];
-    const pr = pc && BM.placeProblemAt(c6, foot, pc[0], pc[1], 0, occ);
-    check(!!pr, `on the plain below: ${pr}`);
-    // Its map: laid from its level (the camp on level ground, the plain below it), the hollows still the true ones.
+    // Built on: the hill's own ground takes a building as level ground does, and so does the plain below; never one over
+    // the hill's edge (the user's request 2026-10-23: "It should not be trying to burrow just build on the hill as if it
+    // was the ground floor").
+    const occ = BM.occupancy(s6, c6, null, null), foot = { ...BM.FIRE.FOOT, key: "x" }, plot = { ...BM.FOOT.farm_plot, key: "y" };
+    const free = [[4, 4], [-4, 4], [4, -4], [-4, -4], [5, 0], [0, 5]].find(([x, y]) => { const q = land.pieces.get(`${x},${y}`); return !q || q.k === "rise"; });
+    check(land.level === L && land.heights.get("0,0") === L && !!free && !BM.landUnder(land, plot, [free[0], free[1], 0]).length && BM.placeProblemAt(c6, plot, free[0], free[1], 0, occ) === "", `a crop plot on the hilltop beside the camp goes down there, nothing to dig (${free})`);
+    let pl = null, edge = null;
+    for (let r = 3; r < 60 && !(pl && edge); r++) for (let x = -r; x <= r; x++) for (const y of [-r, r]) {
+      const g = (a, b) => land.heights.get(`${a},${b}`) || 0, q = land.pieces.get(`${x},${y}`);
+      if (!pl && !g(x, y) && !g(x + 1, y) && !g(x, y + 1) && !g(x + 1, y + 1) && !q && !BM.placeProblemAt(c6, foot, x, y, 0, occ)) pl = [x, y];
+      if (!edge && g(x, y) === L && !g(x + 1, y) && !BM.landUnder(land, plot, [x, y, 0]).length) edge = [x, y];
+    }
+    check(!!pl && BM.placeProblemAt(c6, plot, pl[0], pl[1], 0, occ) === "", `and on the plain below, as it is (${pl}): nothing filled in`);
+    check(!!edge && BM.placeProblemAt(c6, plot, edge[0], edge[1], 0, occ) === BM.UNEVEN_WHY, `over the hill's edge (${edge}): ${edge && BM.placeProblemAt(c6, plot, edge[0], edge[1], 0, occ)}`);
+    check(BM.placeProblemAt(c6, { ...BM.FOOT.wall2, key: "w" }, edge[0], edge[1], 0, occ) !== BM.UNEVEN_WHY, "a wall piece follows the ground over it");
+    // Its map: laid from its level (the camp on level ground, the plain below it), what stands on the plain on the plain.
+    check(BM.placeItem(s6, c6, BM.FIRE.KEY, pl[0], pl[1], 0) === "", `the camp fire moved down onto the plain (${pl})`);
     globalThis.window = {};
     try {
       check(!BM.openBaseMap(s6, c6.id) && !!s6.combat, "its base map opens");
       const b = s6.combat, F = b.deployPlan.fort, cell = (x, y) => b.cells[(y + F.oy) * b.w + x + F.ox];
-      const pl = plain.cells[0], pcell = cell(pl[0] - 0, pl[1] - 0);
-      const yard = cell(free[0], free[1]);
-      check(mapLv(b) === L && (yard.h || 0) === 0 && !!pcell && pcell.ter && pcell.h === -L, `laid from the camp's level (datum ${mapLv(b)}): the camp's ground 0, the plain ${-L} (${pl})`);
+      const yard = cell(free[0], free[1]), fire = cell(pl[0], pl[1]), by = cell(pl[0] + 1, pl[1]);
+      check(mapLv(b) === L && (yard.h || 0) === 0 && by.ter && by.h === -L, `laid from the camp's level (datum ${mapLv(b)}): the camp's ground 0, the plain ${-L}`);
+      check(fire.k === "firepit" && fire.ter && fire.bld && fire.h === -L, `the fire stands on the plain's ground, not dug in nor on a pillar (${fire.k}: ${fire.h})`);
       const ys = (free[1] + F.oy), xs = (free[0] + F.ox);
-      check(!inHollow(b, xs, ys) && !inHollow(b, pl[0] + F.ox, pl[1] + F.oy), "neither the camp's ground nor the plain is a hollow");
+      check(!inHollow(b, xs, ys) && !inHollow(b, pl[0] + 1 + F.ox, pl[1] + F.oy), "neither the camp's ground nor the plain is a hollow");
       check(sightH(b, xs, ys) === L, `the camp's people see from the hill's height (${sightH(b, xs, ys)} levels up)`);
     } finally { delete globalThis.window; s6.combat = null; }
   }

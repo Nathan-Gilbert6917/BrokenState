@@ -164,7 +164,7 @@ export function establishOption(state, p, tile = partyTile(p)) {
 function establishDesc(state, tile, p = null) {
   const needs = stagingNeeds(state, tile);
   const w = waterSource(state, tile);
-  return `Set up camp here for your ${firstHubPending(state) ? "first" : "new"} home (no materials: you pick its spot on the tile's map; the team builds the camp fire and clears the ${SITE.SIZE} × ${SITE.SIZE} round it, its wood and scrap into the stores, the time by what stands there) and start building it up: Camp → Shelter → Base. The camp is a base from the start (its people live there, the team's load goes into its stores); to become a shelter it needs ${needText(needs)} brought in and ${BUILDINGS.camp_up.hours} work-hours by its builders (Construction), and later the shelter is built up into a base (${needText(BUILDINGS.hub_up.cost)}). There is no spring: water: ${w ? `${waterText(state, tile)}${w.dist <= 1 ? ", its people haul it" : ""}` : "no water source nearby, every drop carried in"}. Pick a place beside a river or lake, with sites to scavenge around and few of the dead.${threatWords(state, tile) && tileScouted(state, tile, p) ? ` Here: ${threatWords(state, tile)}.` : ""}${state.tiles[tile] && state.tiles[tile].ruin ? ` On these ruins: ${CAMP.ruinScrap} scrap less (salvage).` : ""}`;
+  return `Set up camp here for your ${firstHubPending(state) ? "first" : "new"} home (no materials: you pick its spot on the tile's map; the team builds the camp fire and clears the ${SITE.SIZE} × ${SITE.SIZE} round it, its wood and scrap into the stores, the time by what stands there) and build it up from there: Camp → Shelter → Base (the Shelter shack is on its Build list, put down on the map where you want it). The camp is a base from the start (its people live there, the team's load goes into its stores); to become a shelter it needs ${needText(needs)} brought in and ${BUILDINGS.camp_up.hours} work-hours by its builders (Construction), and later the shelter is built up into a base (${needText(BUILDINGS.hub_up.cost)}). There is no spring: water: ${w ? `${waterText(state, tile)}${w.dist <= 1 ? ", its people haul it" : ""}` : "no water source nearby, every drop carried in"}. Pick a place beside a river or lake, with sites to scavenge around and few of the dead.${threatWords(state, tile) && tileScouted(state, tile, p) ? ` Here: ${threatWords(state, tile)}.` : ""}${state.tiles[tile] && state.tiles[tile].ruin ? ` On these ruins: ${CAMP.ruinScrap} scrap less (salvage).` : ""}`;
 }
 
 // The orders' arrival (parties.js arrive, missions "camp", "establish", "outpost"): the camp's spot asked for (askSite:
@@ -196,7 +196,10 @@ export function pitchArrive(state, p, mission) {
   delete p.pitched;
   const blind = p.campBlind === tile;
   delete p.campBlind;
-  const base = makeCamp(state, p, tile, { up: mission !== "camp" });
+  // Establish base queues no step up (the user's request 2026-10-23: "Remove the shelter that gets auto set when you
+  // establish a camp"): the Shelter shack is on the Build list, put down where you want it (the governor queues its own:
+  // autopilot.js campYard). Build outpost keeps its outpost house queued: it puts the camp on the supply runs.
+  const base = makeCamp(state, p, tile, { up: mission !== "camp", queueUp: mission === "outpost" });
   if (blind) blindCamp(state, base); // campscout.js: the dead on its grounds, the map past the camp unknown
   return `${base.name}: camp set up.`;
 }
@@ -299,9 +302,9 @@ export const campSiteFor = (state, p, tile) => (p && p.campAt && !siteProblem(st
 // The camp: a tier-0 base with camp: true on the team's tile, on its spot (campSiteFor: base.plan.origin, fresh: the
 // land all round is the tile's own, basemap.js freshBase); the team moves in (parties.js settleInto: its people
 // residents, its vehicles parked, its supplies and cargo in the stores and armory) and is disbanded; the 5 × 5 round
-// the fire is cleared and what it gave goes into the stores (basemap.js clearCampSite). up: its step up queued
-// (camp_up for your hub's camp, outpost_up beside a hub: a building placed on the map) and the naming popup. Returns the base.
-export function makeCamp(state, p, tile, { up = false } = {}) {
+// the fire is cleared and what it gave goes into the stores (basemap.js clearCampSite). up: a camp meant to grow (the
+// naming popup); queueUp: its step up queued (outpost_up beside a hub: a building placed on the map). Returns the base.
+export function makeCamp(state, p, tile, { up = false, queueUp = up } = {}) {
   const t = state.tiles[tile];
   const hubNow = hub(state);
   const people = partyMembers(state, p);
@@ -311,7 +314,7 @@ export function makeCamp(state, p, tile, { up = false } = {}) {
     radio: false, watchtower: false, buildings: [], construction: [], armory: [],
     tier: 0, camp: true, fire: true, campDay: day(state), lastPresent: state.hour, first: firstHubPending(state) && !hubNow, tentsSet: true, // tentsSet: a new camp has no tents (no beds) until one is put up (buildings.js TENTS)
     plan: { plots: [], origin: campSiteFor(state, p, tile), fresh: true }, // its spot on the tile's 250 × 250 map (basemap.js originOf, freshBase); level: below
-    land: { v: 2, n: 1, cleared: {}, looted: {} }, // the land read from the start (basemap.js ensureLand would clear the ground under what the game places)
+    land: { v: 2, n: 1, cleared: {}, looted: {}, keepH: 1 }, // the land read from the start (basemap.js ensureLand would clear the ground under what the game places); keepH: what is cleared keeps the ground's height (basescatter.js landOf: built on the hill as on the ground floor)
   };
   // The camp stands at its 5 × 5's own level (basescatter.js siteLevel: on a hill, up on it; the user's request
   // 2026-10-23), its map laid from it (basemap.js levelOf).
@@ -320,14 +323,14 @@ export function makeCamp(state, p, tile, { up = false } = {}) {
   delete p.campAt;
   siteDone(state, p);
   if (t.ruin) { base.ruinSalvage = true; log(state, `The camp went up on the ruins of ${t.ruin.name}.`, "info"); delete t.ruin; }
-  if (up) base.construction.push(tierUpJobFor(base));
+  if (queueUp) base.construction.push(tierUpJobFor(base));
   state.bases.push(base);
   if (up) askBaseName(state, base);
   const name = teamName(state, p);
   settleInto(state, p, base);
   const site = clearCampSite(state, base); // basemap.js: the 5 × 5 round the fire, what it gave into the stores
   const tents = pitchArmoryBags(state, base); // tents.js: every tent bag the team brought goes up (beds under cover, storage out of the weather)
-  for (const s of people) s.role = up ? "build" : "scavenge"; // a camp meant to grow: its first job is its own step up
+  for (const s of people) s.role = up ? "build" : "scavenge"; // a camp meant to grow: its first job is its own step up once it is placed (they scavenge meanwhile: noidle.js)
   recomputeOwnership(state);
   if (p.owner === "player") state.campOpen = base.id; // main.js opens its base window (once)
   const w = waterSource(state, tile);
