@@ -2463,7 +2463,7 @@ const losSet = (cache, i, v) => { if (cache instanceof Map) cache.set(i, v); els
 function losTop(cell, C) {
   const g = cell.ter ? cell.h || 0 : 0;
   if (cell.t) return cell.t + g;
-  if (C.los && !doorSees(cell)) return (C.tall || 1) + g;
+  if (C.los && !doorSees(cell)) return (cell.ch || C.tall || 1) + g; // ch: a mountain's rock, its own height (basescatter.js reliefLayer)
   return C.walk ? cell.h ?? C.h ?? 0 : g;
 }
 export function los(b, x0, y0, x1, y1) {

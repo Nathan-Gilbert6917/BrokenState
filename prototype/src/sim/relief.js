@@ -25,7 +25,7 @@ const hashN = (a, b, c) => { let h = Math.imul(a ^ 0x9e3779b1, 0x85ebca6b) ^ Mat
 export function applyRelief(cells, W, H, tile, opts = {}) {
   if (!tile || !RELIEF.TERRAIN.has(tile.terrain) || !HIGH) return 0;
   const R = reliefLayer(scatterSeed(tile.id), tile.terrain, RELIEF.G);
-  const hm = new Map(R.heights.map(([x, y, h]) => [`${x},${y}`, h])), crag = new Set(opts.crags ? R.crags.map(([x, y]) => `${x},${y}`) : []);
+  const hm = new Map(R.heights.map(([x, y, h]) => [`${x},${y}`, h])), crag = new Map(opts.crags ? R.crags.map(([x, y, lv]) => [`${x},${y}`, lv]) : []); // the rock's height by cell
   // The window of the tile's land the map shows: the one with the most relief of a few.
   const span = RELIEF.G * 2 - Math.max(W, H) - 4;
   let best = null;
@@ -43,12 +43,12 @@ export function applyRelief(cells, W, H, tile, opts = {}) {
     if (x < RELIEF.EDGE || x >= W - RELIEF.EDGE || y < 1 || y >= H - 1 || !RELIEF.NATURAL.has(c.k) || c.f === "floor" || c.car || (opts.keep && opts.keep(x, y))) fixed[y * W + x] = 1;
     if (c.f === "floor") for (let dy = -RELIEF.NEAR_FLOOR; dy <= RELIEF.NEAR_FLOOR; dy++) for (let dx = -RELIEF.NEAR_FLOOR; dx <= RELIEF.NEAR_FLOOR; dx++) { const nx = x + dx, ny = y + dy; if (nx >= 0 && ny >= 0 && nx < W && ny < H) fixed[ny * W + nx] = 1; }
   }
-  const h = new Int8Array(N), isCrag = new Uint8Array(N);
+  const h = new Int8Array(N), isCrag = new Uint8Array(N), cragH = new Uint8Array(N);
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     const i = y * W + x;
     if (fixed[i]) continue;
     const key = `${x + best.ox},${y + best.oy}`;
-    if (crag.has(key) && cells[i].k === "open") isCrag[i] = 1;
+    if (crag.has(key) && cells[i].k === "open") { isCrag[i] = 1; cragH[i] = crag.get(key); }
     else h[i] = hm.get(key) || 0;
   }
   // Smoothed as the base map's land is (basescatter.js relaxHeights): a raised cell in a 2 × 2 as high or higher (a sunk
@@ -85,6 +85,22 @@ export function applyRelief(cells, W, H, tile, opts = {}) {
       }
     }
   }
+  // A hollow cut narrower than HIGH.DIP_MIN either way (by the level edges, a building, a zone) is filled in.
+  {
+    const seen = new Uint8Array(N);
+    for (let i = 0; i < N; i++) {
+      if (h[i] >= 0 || seen[i]) continue;
+      const comp = [i];
+      seen[i] = 1;
+      let x0 = W, x1 = 0, y0 = H, y1 = 0;
+      for (let k = 0; k < comp.length; k++) {
+        const j = comp[k], x = j % W, y = (j / W) | 0;
+        x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = x + dx, ny = y + dy; if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue; const n = ny * W + nx; if (!seen[n] && h[n] < 0) { seen[n] = 1; comp.push(n); } }
+      }
+      if (x1 - x0 + 1 < HIGH.DIP_MIN || y1 - y0 + 1 < HIGH.DIP_MIN) for (const j of comp) h[j] = 0;
+    }
+  }
   // The crag must leave a way across: from the west edge to the east one, else none of it.
   if (isCrag.some((v) => v)) {
     const walk = (i) => !isCrag[i] && !!CELL[cells[i].k] && !!CELL[cells[i].k].walk;
@@ -101,7 +117,7 @@ export function applyRelief(cells, W, H, tile, opts = {}) {
   let n = 0;
   for (let i = 0; i < N; i++) {
     const c = cells[i];
-    if (isCrag[i]) { c.k = "crag"; n++; continue; }
+    if (isCrag[i]) { c.k = "crag"; c.ch = cragH[i]; n++; continue; }
     if (h[i]) { c.h = h[i]; c.ter = 1; n++; }
   }
   return n;
