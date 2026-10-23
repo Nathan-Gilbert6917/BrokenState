@@ -1229,12 +1229,13 @@ export function render(state) {
   ctx.lineCap = "round";
   const minX = camera.x - HEX * 2, minY = camera.y - HEX * 2;
   const maxX = camera.x + W / camera.zoom + HEX * 2, maxY = camera.y + H / camera.zoom + HEX * 2;
-  // Weather fronts drifting over the land (ui/wxmap.js): faint on the Weather layer, strong with Weather fronts.
-  if (!state.timelapse && (on("weather") || on("fronts"))) {
+  // Weather fronts drifting over the land (ui/wxmap.js): the dev tools' Reveal map only, drawn strong: the fronts are
+  // not shown to players (the user's word 2026-10-23); they see the rain and fog on the tiles they see live.
+  if (!state.timelapse && view.devReveal && on("weather")) {
     // They glide while the clock runs (Reduce motion: they jump an hour at a time, nothing asks for frames).
     const moving = view.hourFrac !== lastFrac;
     lastFrac = view.hourFrac;
-    if (drawFronts(ctx, state, { hex: HEX, view: { minX, maxX, minY, maxY }, frac: hourFrac(), strong: on("fronts"), zoom: zoom / (readable.text || 1) }) && animOn() && !readable.still && moving) wantFrames(150);
+    if (drawFronts(ctx, state, { hex: HEX, view: { minX, maxX, minY, maxY }, frac: hourFrac(), strong: true, zoom: zoom / (readable.text || 1) }) && animOn() && !readable.still && moving) wantFrames(150);
   }
   // Night (ui/nightfx.js): the shade over the ground and the cached sites, the lights cutting through it; what is drawn
   // after it (bases, teams, hordes, labels, icons, selection) stays at full brightness.
@@ -1764,12 +1765,12 @@ export function render(state) {
     notePiece(cv, x, gy, u);
     if (v.phase === "siege") sprite(iconCanvas("siege"), x, y - 26 * s, ICON_W * s);
   }
-  // Rain and fog over the tiles where it rains or is foggy now (ui/wxmap.js, Weather layer): over the land, the sites,
+  // Rain and fog over the tiles you see live where it rains or is foggy now (ui/wxmap.js, Weather layer): over the land, the sites,
   // the dead and the groups (fog veils them), under your people, notes and labels. They move while Map animations are
   // on (not with Reduce motion), asking for frames only while some is on screen.
   if (!state.timelapse && on("weather") && state.weather) {
     const moves = animOn() && !readable.still;
-    const fx = drawWeatherFx(ctx, state, { hex: HEX, view: { minX, maxX, minY, maxY }, frac: hourFrac(), t: moves ? now : 0, zoom, night: isNight(state) });
+    const fx = drawWeatherFx(ctx, state, { hex: HEX, view: { minX, maxX, minY, maxY }, frac: hourFrac(), t: moves ? now : 0, zoom, night: isNight(state), live: liveSet(state) }); // only the tiles seen live
     if (moves && fx.rain) wantFrames(WX_FX.RAIN_MS);
     else if (moves && fx.fog) wantFrames(WX_FX.FOG_MS);
   }
@@ -2562,7 +2563,7 @@ export function tileTooltip(state, id) {
   if (ru) lines.push(`<span style="color:${RUIN_LABEL}">${esc(ru.title)}: salvage ${ru.salvage.toLowerCase()}${ru.salvageLive ? "" : " (then)"} · danger ${ru.dangerName.toLowerCase()}</span>`);
   const pw = pondTileWord(state, id); // sim/ponds.js: a pond tile's pond, frozen or not
   if (pw) lines.push(`<span style="color:#9cc7e4">${esc(pw)}</span>`);
-  for (const line of weatherTipLines(state, id)) lines.push(`<span style="color:#b9d3ee">${esc(line)}</span>`); // ui/wxmap.js: a front over it, ice
+  for (const line of weatherTipLines(state, id, liveSet(state))) lines.push(`<span style="color:#b9d3ee">${esc(line)}</span>`); // ui/wxmap.js: the weather on a tile seen live, ice
   if (on("radio")) for (const o of radioTipLines(state, id)) lines.push(`<span style="color:${o.color}">${esc(o.text)}</span>`); // sim/radioallies.js: your radio and your allies' over this tile
   const sd = searchedDay(state, id);
   if (sd) lines.push(`<span style="color:#8fd8cf">Searched by your people on day ${sd}</span>`); // sim/discovery.js (Known area layer)

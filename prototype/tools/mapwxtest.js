@@ -18,6 +18,7 @@ import { opticsCarried } from "../src/sim/optics.js";
 import { towerRadius, FIELD } from "../src/sim/fieldworks.js";
 import { partySaw, scavSaw, knowsOf, KNOW } from "../src/sim/groupworld.js";
 import * as W from "../src/sim/weather.js";
+import { LAYERS } from "../src/sim/markers.js";
 import { wxFxGrid, wxFxAt, wxCode, drawWeatherFx, weatherTipLines, fxStats, RAIN, FOG, dropWxFx } from "../src/ui/wxmap.js";
 
 const seed = Number(process.argv[2] || 11);
@@ -224,6 +225,27 @@ if (fog) {
     check(W.sightCut(st, bz.id) === -1 && wxFxAt(st, bz.id).fog === 2, "a blizzard: sight -1, a whiteout drawn");
   } else console.log("  (no blizzard front in two years on this seed)");
 }
+
+// Live coverage only, and no fronts for players (the user's word 2026-10-23: "Weather fronts are not shown to players
+// and rain only shows in live coverage tiles in the world map").
+console.log("Rain and fog only on the tiles seen live; the fronts are not shown");
+if (rain) {
+  st.hour = rain.h;
+  const HEX = 26, whole = { minX: -HEX * 2, minY: -HEX * 2, maxX: HEX * Math.sqrt(3) * (st.grid.width + 1), maxY: HEX * 1.5 * st.grid.height + HEX * 2 };
+  const grid = wxFxGrid(st, st.hour), wet = [];
+  grid.forEach((v, id) => { if (v === 1 || v === 2) wet.push(id); });
+  const half = new Set(wet.filter((_, i) => i % 2 === 0));
+  drawWeatherFx({}, st, { hex: HEX, view: whole, live: half });
+  check(wet.length > 1 && fxStats.rain === half.size, `rain drawn on the ${half.size} rainy tiles seen live of ${wet.length}`);
+  drawWeatherFx({}, st, { hex: HEX, view: whole, live: new Set() });
+  check(fxStats.rain === 0 && fxStats.fog === 0, "nothing seen live: no rain, no fog");
+  const lines = weatherTipLines(st, rain.id, new Set());
+  check(!lines.some((l) => /Rain|Storm|Fog/.test(l)), `a tile not seen live: no weather in its tooltip (${lines.join(" | ") || "none"})`);
+  const seen = weatherTipLines(st, rain.id, new Set([rain.id])).join(" | ");
+  check(/Rain|Storm/.test(seen) && !/belt|front|over this tile/i.test(seen), `a tile seen live: its rain, never the front by name (${seen})`);
+}
+check(!("fronts" in LAYERS), "no Weather fronts layer for players");
+check(!/Weather fronts on the map/.test(W.weatherReport(st)), "the clock's weather report lists no fronts");
 
 console.log(`\n${passed} passed, ${fails} failed`);
 process.exit(fails ? 1 : 0);

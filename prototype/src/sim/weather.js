@@ -948,11 +948,7 @@ export function weatherReport(state) {
   if (hs < 1) lines.push(`• The dead move at ${Math.round(hs * 100)}% speed in this cold`);
   const ir = iceText(state);
   if (ir) lines.push(`• ${ir}`);
-  const near = frontsApproaching(state).filter((x) => !x.over).slice(0, 5);
-  if (near.length) {
-    lines.push("", "Weather fronts on the map:");
-    for (const x of near) lines.push(`${x.icon} ${x.name} ${x.dist} tile${x.dist === 1 ? "" : "s"} ${x.dir}, ${x.eta != null ? `here ${whenText(state, x.eta)}` : `moving ${x.heading}, passing you by`}`);
-  }
+  // The fronts on the map are not listed: they are not shown to players (the user's word 2026-10-23).
   const fc = forecast(state);
   lines.push("", `Outlook for the region (${fc.length} days${forecastRange(state) < 5 ? "; a watchtower or radio station sees further and better" : ""}; storms, blizzards and fog come as fronts that may miss you):`);
   for (const f of fc) {
