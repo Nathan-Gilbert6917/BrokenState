@@ -41,6 +41,7 @@ import { RAW } from "./water.js";
 import { ROLES, scavLeft, SCAV_FLOOR, scavengeOutput } from "./economy.js";
 import { WORK_TYPES, isManaged, healthRest } from "./work.js";
 import { BUILDINGS, stations, stationStatus, buildRate, gatherStalled, underAttack, onUpkeep, campMaterialsWork } from "./buildings.js";
+import { terraWaits, terraRate, shovelCrew, crewWords, TERRA_VERB } from "./terraform.js"; // terraforming: the builders with shovels dig
 import { CRAFTS, craftQueue, craftJobStatus, craftName, craftRate } from "./crafting.js";
 import { CROPS, farmOf, farmersWanted, nextHarvests } from "./farming.js";
 import { WOOD, woodWorkWhy, woodTime, chopCrew, isChopTool, woodTripTile, seasonWood, woodCrowd, woodNeed } from "./woodcutting.js";
@@ -229,9 +230,17 @@ function fixedJobActivity(state, base, s, job, h) {
       if (worn && (!base.construction.length || (s.upkeep && onUpkeep(state, base, s)))) return act("work", `Upkeep on worn buildings (${worn})`, "Mending wear before things break (Repairs tab).", job, "🔧");
       if (!base.construction.length) return act("stalled", "Builder – nothing to build", "The construction queue is empty and nothing is worn: queue a building (Construction tab) or give them another job.", job);
       if (underAttack(state, base)) return act("stalled", "Building stopped – on alert", "Nobody builds while the base is on alert or under siege.", job);
-      const j = base.construction.find((c) => !gatherStalled(c));
+      const j = base.construction.find((c) => !gatherStalled(c) && !terraWaits(state, base, c)); // terraform.js: a hollow or a hill with no shovel here (or no dirt) lets the next job go on
       if (!j && campMaterialsWork(base)) return act("work", `Making building materials${campMaterialsWork(base).type === "walls" ? " or metal sheets" : ""} for ${buildName(campMaterialsWork(base)).toLowerCase()}`, "The build waits for building materials or metal sheets the stores lack: the builders make them from the scrap here.", job);
+      const tw = !j ? base.construction.map((c) => terraWaits(state, base, c)).find(Boolean) : "";
+      if (tw) return act("stalled", `Builder – ${tw.toLowerCase()}`, tw === "Needs a shovel" ? "The queued hollow or hill waits for a shovel (one a person) in the armory or on a builder: find one, trade for one or craft a makeshift shovel." : "The hill waits for dirt: dig a hollow for it.", job);
       if (!j) return act("stalled", "Builder – waiting for materials", "The queued builds wait for their materials to be gathered or brought in.", job);
+      if (j.type === "terra") { // terraform.js: one shovel a person, the rest wait for one (the user's request 2026-10-23)
+        const crew = shovelCrew(state, base);
+        return crew.workers.includes(s)
+          ? act("work", `${TERRA_VERB[j.mode]} (${crewWords(crew)}, ${pct(j.progress / Math.max(1, j.hours))})`, "One shovel a person: the more shovels and builders, the faster.", job, "⛏")
+          : act("stalled", `Waiting for a shovel: ${TERRA_VERB[j.mode].toLowerCase()} (${crewWords(crew)})`, "Only builders with a shovel dig, one shovel a person: find, trade for or craft (a makeshift shovel) another, or give them other work.", job);
+      }
       return act("work", `${(j.type === "clear" || j.type === "filltunnel") && j.label ? j.label : `Building ${buildName(j)}`} (${pct(j.progress / Math.max(1, j.hours))})`, "", job); // a clearing job by its label ("Fell a tree for wood (40%)")
     }
     case "craft": {
@@ -439,10 +448,10 @@ function jobProgress(state, base, job, list, h) {
       out.progress = { frac, text: next.inDays <= 0 ? `${next.name} ripe: harvested at midnight (~${n0(next.food)} food)` : `Next harvest: ${next.name} in ~${next.inDays} day${next.inDays === 1 ? "" : "s"} (~${n0(next.food)} food)` };
     }
   } else if (job === "build") {
-    const j = base.construction.find((c) => !gatherStalled(c));
+    const j = base.construction.find((c) => !gatherStalled(c) && !terraWaits(state, base, c));
     const rep = (base.repairs || []).find((r) => list.some((s) => s.id === r.who));
     if (j && !underAttack(state, base)) {
-      const rate = buildRate(state, base);
+      const rate = j.type === "terra" ? terraRate(state, base) : buildRate(state, base); // terraforming: the share with shovels
       const left = Math.max(0, j.hours - j.progress);
       out.progress = { frac: j.progress / Math.max(1, j.hours), text: `${BUILDINGS[j.type] ? BUILDINGS[j.type].name : j.type}: ${n0(j.progress)} of ${n0(j.hours)} work-hours${rate > 0 ? ` · ~${Math.ceil(left / (rate * MEAL_WORK_SHARE))} h left` : ""}${base.construction.length > 1 ? ` · ${base.construction.length - 1} more queued` : ""}` };
     } else if (rep) {

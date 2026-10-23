@@ -72,7 +72,11 @@ export const WARN_DAYS = 3;       // the log line: at most once in this many day
 // Not goods in the room: water (its own tanks and barrels) and wood (the woodpile, stacked in the yard: the user's pick
 // 2026-10-20, "don't count the woodpile against storage room"; it reaches 6,000-9,000 by autumn). The woodpile is never
 // "outside" either (storageOf outsideKg); a raid still takes from it (basemap.js outsideOf lays it as piles on the map).
-const NOT_STORED = new Set(["water", "rawwater", "wood"]);
+// Nor is dirt (terraform.js, 2026-10-23: dug out of a hollow, heaped in the yard for a hill; no supply, never carried,
+// traded nor raided: dirtHeapOf).
+const NOT_STORED = new Set(["water", "rawwater", "wood", "dirt"]);
+/** The dirt heap: what the hollows dug gave, for the hills (terraform.js). @param {any} base */
+export const dirtHeapOf = (base) => Math.max(0, Math.floor((base && base.stock && base.stock.dirt) || 0));
 /** The woodpile: the wood a base holds (whole units), kept apart from its storage room. @param {any} base */
 export const woodpileOf = (base) => Math.max(0, Math.floor((base && base.stock && base.stock.wood) || 0));
 /**
@@ -85,7 +89,7 @@ export function raidSpoils(stock, frac, carryKg) {
   const out = {};
   let kg = 0;
   for (const [k, q] of Object.entries(stock || {})) {
-    if (typeof q !== "number" || !(q > 0) || k === "water" || k === "rawwater" || k === "wood") continue;
+    if (typeof q !== "number" || !(q > 0) || k === "water" || k === "rawwater" || k === "wood" || k === "dirt") continue; // dirt: the heap stays (terraform.js)
     out[k] = q * frac;
     kg += out[k] * (supWeight(k) || 0);
   }
@@ -283,6 +287,7 @@ export function storageSummary(state, base) {
   rows.push(st.containers.length ? `Room: ${containerWords(st).join(", ")}` : "No storage yet: park a vehicle here or build a storage box");
   if (st.outsideKg > 0) rows.push(`${kgText(st.outsideKg)} kg outside: ${outsideWords(base, st).join(", ")}`);
   if (woodpileOf(base) > 0) rows.push(`Woodpile: ${woodpileOf(base)} wood`); // stacked in the yard, not in the room
+  if (dirtHeapOf(base) > 0) rows.push(`Dirt heap: ${dirtHeapOf(base)} dirt (for raising hills)`); // terraform.js: heaped in the yard, not in the room
   return rows;
 }
 /** The storage in one line ("Storage 420 / 650 kg: shed 600, …; 80 kg outside: 12 scrap, …"). @param {any} state @param {any} base */

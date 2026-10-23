@@ -16,6 +16,7 @@ import { layoutDone } from "../sim/staging.js"; // Open the build map: the base'
 import { BUILDINGS, demolishRefund, pieceName, ringMat, TENTS, tentKind } from "../sim/buildings.js";
 import { chopHands } from "../sim/woodwork.js"; // woodwork: who is felling a clearing
 import { fillJobOf, fillHours } from "../sim/tunnels.js"; // the tunnels the dead dug: Fill tunnel
+import { TERRA, TERRA_NAME, TERRA_VERB, terraModeOf, terraLevels, terraJobs, terraPct, terraWaits, shovelCrew, crewWords } from "../sim/terraform.js"; // terraforming: dig a hollow, raise a hill
 import { DIG } from "../sim/hiveconst.js";
 import { nearRect, active } from "../sim/combat.js"; // who of yours stands next to a store of theirs (an assault)
 import { HAUL } from "../sim/raidloot.js";
@@ -39,6 +40,7 @@ const MENU_TIP = {
   Power: "The power grid (sim/electric.js): found generators carried home and set from the stores on open ground (a click, no builders; fuel by the hour, Heat while they run), mounted spotlights set on a wall stand or the ground (lit in a night fight with power), a fridge on a general building's floor, and the builds that run on power: the breaker panel (wires the buildings: lights, fans and heaters, the switchboard on the Power card), the ammo press, the electric well pump, the fence charger. Demolish picks a set piece up again.",
   Buildings: "The buildings with a roof of their own (on a building plot) and the yard's roofed stores.",
   "Yard things": "The small things in the yard (on a utility plot): benches, barrels, the well, crates… A bench, a crate or a locker may stand inside a general building too.",
+  Terrain: `Reshape the ground (sim/terraform.js): dig a hollow or raise a hill over an area of dirt (grass, trodden ground, a field; not the road, paving, rock, trees or buildings). Pick it, click one corner and then the opposite one; R sets how many levels (1 to ${TERRA.LEVELS}). Only builders with a shovel work it, one shovel a person (the armory's and their own): one shovel and three builders, one digs. A hollow gives ${TERRA.DIRT} dirt a cell-level into the heap, a hill takes as much; the slopes are eased as the land's own hills are, and a hill beside another joins it. Nothing is built on uneven ground until it is levelled again.`,
   Defences: "Barricades, spike pits, the trench, sandbags (the 1×1 pieces side by side lie as one sandbag wall; the positions are 4 cells), floodlights, the watchtower, and the wall's pieces (walls 1×1, 1×2, 1×4 of the wall's material, the 1×4 gate, wall stands): anywhere on the map, inside the yard or out in front of the wall; a wall that would close a ring with no gate in it is refused. (The wire, the guard towers and the minefield lay themselves round the wall.)",
 };
 const NB_TEXT = `The no-build margin: nothing is built within ${NO_BUILD} cells of the map's edge`;
@@ -85,7 +87,8 @@ export function layoutPanel(state, b, cui, preview = "") {
   const pickD = L.pickType ? BUILDINGS[L.pickType] : null, pickF = L.pickType ? FOOT[L.pickType] : null, pickBag = L.pickType ? bagKindOf(L.pickType) : null;
   let html = `<div class="cbhead"><div class="cbtitle">Base map: ${esc(base.name)}</div>
     <div class="small muted">Pick something to build from the Build list and click where it goes (its outline follows the mouse: green fits, red does not; R turns it). Click a placed thing, on the map or in the lists, to select it: its card has Move, the doorways and Demolish; a second click on the map lifts it to move it. Nothing is built within ${NO_BUILD} cells of the edge (the tinted margin). Esc puts the pick down. Nobody is on the map; the clock stands still.</div></div>`;
-  if (pickD && pickF) html += `<div class="card small" style="margin-top:0.4rem"><div class="spread"><b>Building: ${esc(pickD.piece ? pieceName({ type: L.pickType, mat: pickD.piece === "stand" ? 0 : ringMat(base) }) : pickD.name)}</b><span class="muted">${pickF.w} × ${pickF.h}${L.rot & 1 ? " (turned)" : ""}</span></div>
+  if (terraModeOf(L.pickType)) html += terraPickCard(state, base, L); // sim/terraform.js: an area of ground
+  if (pickD && pickF) html += `<div class="card small" style="margin-top:0.4rem"><div class="spread"><b>Building:${esc(pickD.piece ? pieceName({ type: L.pickType, mat: pickD.piece === "stand" ? 0 : ringMat(base) }) : pickD.name)}</b><span class="muted">${pickF.w} × ${pickF.h}${L.rot & 1 ? " (turned)" : ""}</span></div>
     <div class="muted">Click where it goes (R turns it); ${pickF.mount ? "a spotlight: on a wall stand (higher: it lights further) or the open ground; set from the stores, no builders" : pickD.set && pickF.fit ? `set from the stores on the floor inside ${HOSTS}, no builders` : pickD.set ? "set from the stores on open ground, no builders" : pickF.fit ? `a fitting goes on the floor inside ${HOSTS}` : pickF.general ? "an empty shell: fittings (bunks, shelves, lockers, a stove) and benches go on its floor once it stands" : pickF.kind === "wall" ? "a wall piece goes anywhere, the ring round the yard too, of the wall's own material (the Defenses tab picks another); leave no gap, and a gate before the ring closes" : pickF.kind === "gate" ? "a gate: your people walk through it, attackers batter it; the cell either side of it stays open" : pickF.kind === "stand" ? "a wall stand: put it right behind a wall so whoever climbs it sees and shoots over it" : pickF.kind === "defence" ? "a defence goes anywhere on the map, inside the yard or out in front of the wall" : "anywhere on the map, right against anything else, only the cell outside its door kept open"}.${pickD.set ? "" : " The cost is paid when it is placed; the builders do the rest."}</div>
     <div class="cbactions" style="margin-top:0.3rem"><button data-action="cb-deploy" data-v="rotate" data-tip="Turn it a quarter (R)">Turn <span class="key">R</span></button><button data-action="cb-deploy" data-v="pickType" data-bt="" data-tip="Put it down without building it (Esc)">Cancel <span class="key">Esc</span></button></div></div>`;
   else if (pickBag) html += `<div class="card small" style="margin-top:0.4rem"><div class="spread"><b>Pitching: ${esc(pickName(L.pickType))}</b><span class="muted">${pickFoot(L.pickType).w} × ${pickFoot(L.pickType).h}${L.rot & 1 ? " (turned)" : ""}</span></div>
@@ -98,6 +101,7 @@ export function layoutPanel(state, b, cui, preview = "") {
   html += landCard(state, base, L);
   html += tunnelCard(state, base, L);
   html += clearingList(state, base);
+  html += terraList(state, base);
   html += tunnelList(state, base);
   html += preview; // what is under the mouse (ui/combat.js previewHtml: the pick's fit, a placed thing, a store)
   const msg = cui.msg || L.msg; // the last order's refusal first (ui/combat.js act), else what the map said it did
@@ -133,6 +137,7 @@ function buildHtml(state, base, L) {
     const body = list.map((m) => {
       const on = L.pickType === m.type;
       const short = !m.ok && /^Needs \d/.test(m.why); // short of materials: the red chips say it
+      if (m.terra) return terraRow(m, on); // sim/terraform.js: an area, shovels and dirt
       return `<div class="bmrow${on ? " on" : ""}${m.ok ? "" : " off"}"${tip(`${m.name}: ${m.w} × ${m.h} cells, ${m.hours} work-hours. ${m.desc}${m.ok ? "" : ` ${m.why}.`}`)}>
         <div class="spread"><span><b>${esc(m.name)}</b> <span class="small muted">${m.w} × ${m.h}</span></span><button class="mini${on ? " active" : m.ok ? " primary" : ""}" data-action="cb-deploy" data-v="pickType" data-bt="${on ? "" : m.type}" ${m.ok ? "" : "disabled"}${tip(m.ok ? (on ? "Picked: click where it goes on the map (click here again to put it down)" : "Pick it: its outline follows the mouse; click where it goes") : m.why)}>${on ? "Picked" : "Build"}</button></div>
         <div class="bmfoot">${m.tentBag ? chip({ icon: "⛺", name: `${m.have} in the stores`, tone: m.have ? "ok" : "bad", t: "Tent bags are found, traded or carried in: pitched from the stores with a click, no cost and no builders" }) : m.furniture ? chip({ icon: "🛏", name: `${m.have} in the stores`, tone: m.have ? "ok" : "bad", t: "Furniture is crafted at the bench (Crafting) or found, and set from the stores: no cost and no builders" }) : `${costChips(m.cost, base.stock)}${chip({ icon: "⏱", name: `${m.hours}h`, t: `${m.hours} work-hours for the builders` })}`}</div>
@@ -240,6 +245,7 @@ export function layoutHover(state, b, h, ghost) {
   const L = b.layout, base = baseById(state, L.baseId);
   if (!base) return "";
   const [gx, gy] = gridOfCell(b, h.x, h.y);
+  if (ghost && ghost.terraPick) return terraHover(ghost); // sim/terraform.js: the area, its cost and time
   if (ghost) return ghost.ok ? `<span class="good">Fits here.</span> Click to ${L.pickType ? "build" : "place"} it at ${gx}, ${gy}${ghost.host ? " (inside)" : ""}.` : ghost.land ? `<span class="warn">${esc(ghost.why)}.</span>` : `<span class="danger">${esc(ghost.why)}.</span>`;
   const picked = L.pick ? itemByKey(state, base, L.pick) : null;
   if (picked) return `Click where ${esc(picked.label)} goes.`;
@@ -312,6 +318,41 @@ function tunnelList(state, base) {
   const list = base.tunnels || [];
   if (!list.length) return "";
   return `<h3 data-tip="${esc("Tunnels the dead dug under the defences (Diggers): open until filled. Each takes some of the walls' hold, and the next horde can crawl through it. Filling is a job in the construction queue, put first, worked by the builders.")}">Tunnels <span class="muted small">${list.length}</span></h3><div class="card small">${list.map((r) => { const j = fillJobOf(base, r.id), len = r.len || DIG.LEN[0]; return `<div class="spread" style="margin-top:0.15rem"><span><a href="#" data-action="cb-deploy" data-v="tunnel" data-id="${r.id}">${len}-cell tunnel</a> <span class="muted">${j ? `filling: ${fillPct(j)}% of ${j.hours}h` : esc(r.a ? "open" : "open, not yet found on the map")}</span></span>${j ? `<button class="mini" data-action="cb-deploy" data-v="unfill" data-id="${j.id}"${tip("Cancel the filling")}>Cancel</button>` : `<button class="mini" data-action="cb-deploy" data-v="fillTunnel" data-id="${r.id}"${tip(`Queue Fill tunnel (${fillHours(len)} work-hours)`)}>Fill · ${fillHours(len)}h</button>`}</div>`; }).join("")}</div>`;
+}
+
+// ---------- terraforming (sim/terraform.js, the user's request 2026-10-23) ----------
+const signed = (n) => (n >= 0 ? `+${n}` : `−${-n}`);
+// A Terrain row of the Build list: Dig or Raise, the shovels (one a person) against the builders, the dirt, the hours.
+function terraRow(m, on) {
+  const shov = chip({ icon: "⛏", name: `${m.workers} of ${m.builders} builders with shovels`, tone: m.shovels ? "ok" : "bad", t: m.shovels ? `${m.shovels} shovel${m.shovels === 1 ? "" : "s"} here (the armory's and the builders' own): one a person, so ${m.workers} dig at a time` : "No shovel here: the job waits for one (a shovel, an entrenching tool, a pickaxe, or a makeshift shovel crafted from scrap)" });
+  const dirt = m.terra === "dig" ? chip({ icon: "🟫", name: `+${TERRA.DIRT} dirt a cell-level`, tone: "ok", t: `Into the heap (${m.dirt} there now): what a hill is raised with` }) : chip({ icon: "🟫", name: "dirt", have: m.dirt, need: TERRA.DIRT, t: `${TERRA.DIRT} dirt a cell-level raised; ${m.dirt} in the heap (dig a hollow for more)` });
+  return `<div class="bmrow${on ? " on" : ""}${m.ok ? "" : " off"}"${tip(`${m.name}: ${m.desc}${m.ok ? "" : ` ${m.why}.`}`)}>
+    <div class="spread"><span><b>${esc(m.name)}</b> <span class="small muted">an area</span></span><button class="mini${on ? " active" : m.ok ? " primary" : ""}" data-action="cb-deploy" data-v="pickType" data-bt="${on ? "" : m.type}" ${m.ok ? "" : "disabled"}${tip(m.ok ? (on ? "Picked: click one corner of the area on the map, then the opposite one (click here again to put it down)" : "Pick it: click one corner of the area on the map, then the opposite one") : m.why)}>${on ? "Picked" : m.terra === "dig" ? "Dig" : "Raise"}</button></div>
+    <div class="bmfoot">${shov}${dirt}${chip({ icon: "⏱", name: `${m.hours}h a cell-level`, t: `${m.hours} work-hour a cell a level, for one builder with a shovel` })}</div>
+    ${m.ok || !m.why ? "" : `<div class="small bmwhy">${esc(m.why)}</div>`}</div>`;
+}
+// The picked order's card: the levels (R), the corner set, who digs, the dirt.
+function terraPickCard(state, base, L) {
+  const mode = terraModeOf(L.pickType), lv = terraLevels(L.rot), crew = shovelCrew(state, base);
+  return `<div class="card small" style="margin-top:0.4rem"><div class="spread"><b>${esc(TERRA_NAME[mode])}</b><span class="muted">${lv} level${lv === 1 ? "" : "s"} ${mode === "raise" ? "up" : "down"}</span></div>
+    <div class="muted">${L.anchor ? `First corner at ${L.anchor[0]}, ${L.anchor[1]}: click the opposite corner` : "Click one corner of the area on the map, then the opposite one"} (up to ${TERRA.MAX} × ${TERRA.MAX} cells; R: ${mode === "raise" ? "how high" : "how deep"}, 1 to ${TERRA.LEVELS} levels). Only dirt is worked: the road, paving, rock, trees and what stands are left out (amber), and the slopes are eased so nobody steps more than a level. ${crew.shovels ? `${esc(crewWords(crew))}: one shovel a person.` : `<span class="warn">No shovel here: it waits for one (in the armory or on a builder).</span>`} ${mode === "raise" ? `${Math.floor(base.stock.dirt || 0)} dirt in the heap (${TERRA.DIRT} a cell-level).` : `+${TERRA.DIRT} dirt a cell-level.`}</div>
+    <div class="cbactions" style="margin-top:0.3rem"><button data-action="cb-deploy" data-v="rotate" data-tip="${mode === "raise" ? "Higher" : "Deeper"}: 1, 2 or 3 levels (R)">Levels <span class="key">R</span></button><button data-action="cb-deploy" data-v="pickType" data-bt="" data-tip="Put it down (Esc)">Cancel <span class="key">Esc</span></button></div></div>`;
+}
+// The hover line with the pick up: before the first corner, dirt or not; then the area's plan, or why not.
+function terraHover(g) {
+  const P = g.terra;
+  if (!P) return g.ok ? `<span class="good">Dirt.</span> Click to set one corner of the area (then the opposite one).` : `<span class="danger">${esc(g.why)}.</span>`;
+  const R = P.rect, size = `${R.x1 - R.x0 + 1} × ${R.y1 - R.y0 + 1}`;
+  if (!P.ok) return `<span class="danger">${esc(P.why)}.</span> <span class="muted">(${size})</span>`;
+  const whys = [...new Set(P.out.map((o) => o[2]))].slice(0, 2).map((w) => esc(w.toLowerCase())).join("; ");
+  return `<span class="good">${esc(TERRA_NAME[P.mode])}</span> ${size}: ${P.cells.length} cells, ${P.steps} cell-level${P.steps === 1 ? "" : "s"} · ${P.hours} work-hours${P.eta != null ? ` (about ${P.eta} h: ${esc(crewWords(P.crew))})` : P.crew.shovels ? "" : ` · <span class="warn">needs a shovel</span>`} · ${signed(P.dirt)} dirt${P.mode === "raise" ? ` (${P.have} in the heap)` : ""}${P.out.length ? ` · <span class="warn">${P.out.length} left out</span> <span class="muted">(${whys})</span>` : ""}. Click to queue it.`;
+}
+// The terraforming jobs in the queue: how far, who digs or why it waits, and Cancel (layoutAct unclear).
+function terraList(state, base) {
+  const jobs = terraJobs(base);
+  if (!jobs.length) return "";
+  const crew = shovelCrew(state, base);
+  return `<h3 data-tip="${esc("Hollows being dug and hills being raised: jobs in the construction queue, worked by the builders with a shovel (one a person), a cell-level at a time. A hollow's dirt comes into the heap as it is dug; a hill takes its dirt as it rises. Cancelled, what is done stays.")}">Terrain <span class="muted small">${jobs.length}</span></h3><div class="card small">${jobs.map((c) => { const why = terraWaits(state, base, c); return `<div class="spread" style="margin-top:0.15rem"><span>${esc(c.label)} <span class="muted">${terraPct(c)}% of ${c.hours}h · ${c.done || 0} of ${c.steps.length} cell-levels · ${signed(c.mode === "raise" ? -TERRA.DIRT : TERRA.DIRT)} dirt each${why ? "" : ` · ${esc(crewWords(crew))}`}</span>${why ? ` <span class="warn">${esc(why)}</span>` : ""}</span><button class="mini" data-action="cb-deploy" data-v="unclear" data-id="${c.id}"${tip(`Cancel ${TERRA_VERB[c.mode].toLowerCase()}: what is done so far stays`)}>Cancel</button></div>`; }).join("")}</div>`;
 }
 
 // ---------- actions (main.js) ----------

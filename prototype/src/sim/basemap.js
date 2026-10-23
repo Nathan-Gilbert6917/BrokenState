@@ -125,6 +125,7 @@ import { layMines } from "./mines.js"; // the main base's minefield, buried in t
 import { tunnelAt, queueFill } from "./tunnels.js"; // the tunnels the dead dug: a hole's card, Fill tunnel (call-time only)
 import { FORT } from "./fort.js"; // the wire rings' and the mines' distances from the wall (call-time only: the modules load in a circle)
 import { cfgOf } from "./worldcfg.js"; // the run's dials: Base yard to start / at most
+import { terraBusy, terraJobs, terraLeft, terraPct, terraModeOf, terraPlan, terraLevels, queueTerra, cancelTerra, dirtProblem, shovelCrew, unEdit, TERRA, TERRA_PICK, TERRA_NAME, TERRA_VERB } from "./terraform.js"; // terraforming: hollows dug, hills raised (call-time only)
 import { storageOf, coreStoreKg, vehicleStoreKg, woodpileOf } from "./basestorage.js"; // the base's room and what lies outside (call-time only)
 import { BED_FOOT } from "./data-beds.js"; // beds as furniture: a cot, bed or bunk bed 1 × 2, a large bed 2 × 2, on a general building's floor
 import { setFurnitureAt, furnitureInStores } from "./beds.js"; // beds as furniture: set from the stores where the ghost is (call-time only)
@@ -601,7 +602,8 @@ function markOcc(occ, it, at, key) {
 export function occupancy(state, base, skip = null, auto = null) {
   stampGrid(state, base);
   const skips = skip instanceof Set ? skip : new Set(skip ? [skip] : []);
-  const occ = { foot: new Map(), door: new Map(), floor: new Map(), names: new Map(), stand: new Set(), mount: new Set(), land: landFor(state, base) }; // land: what has to be cleared before anything is built on it (basescatter.js)
+  const occ = { foot: new Map(), door: new Map(), floor: new Map(), names: new Map(), stand: new Set(), mount: new Set(), land: landFor(state, base), work: new Map() }; // land: what has to be cleared before anything is built on it (basescatter.js); work: the ground being terraformed (terraform.js)
+  for (const [k, j] of terraBusy(base)) { const [x, y] = k.split(",").map(Number); occ.work.set(K(x, y), j); }
   for (const p of coreParts(base)) markOcc(occ, p, [p.x, p.y, 0], "core");
   const items = itemsOf(state, base), pos = new Map();
   for (const it of items) {
@@ -633,6 +635,7 @@ export function placeProblemAt(base, it, x, y, r, occ, dims = null) {
     if (!wallish && onBand(xx, yy, R)) return "That is where the wall stands";
     if (occ.foot.has(k)) return `On top of ${nameOf(occ, occ.foot.get(k))}`;
     if (occ.door.has(k)) return `In the doorway of ${nameOf(occ, occ.door.get(k))}`;
+    if (occ.work && occ.work.has(k)) return `On ground being ${occ.work.get(k).mode === "raise" ? "raised" : "dug"} (${occ.work.get(k).label.toLowerCase()}): wait for it, or cancel it`; // terraform.js
     const fl = occ.floor ? occ.floor.get(k) : undefined;
     if (fl != null) {
       if (!inner) return `On top of ${nameOf(occ, fl)}`;
@@ -829,7 +832,8 @@ export const chopToolAt = (state, base) => (base.armory || []).some((it) => isCh
 export function queueClear(state, base, pieces, { mode = "clear", label = "", before = null } = {}) {
   const tool = chopToolAt(state, base);
   const busy = new Set(base.construction.filter((c) => c.type === "clear" && c.pieces).flatMap((c) => c.pieces.map((p) => `${p.g}|${c.mode || "clear"}`)));
-  const list = pieces.filter((p) => p && p.k !== "water" && !busy.has(`${p.g}|${mode}`) && clearOf(p, tool, mode));
+  const dug = terraBusy(base); // the ground being terraformed is left to its job (terraform.js)
+  const list = pieces.filter((p) => p && p.k !== "water" && !busy.has(`${p.g}|${mode}`) && !p.cells.some(([x, y]) => dug.has(`${x},${y}`)) && clearOf(p, tool, mode));
   if (!list.length) return null;
   let hours = 0;
   const get = {};
@@ -847,7 +851,7 @@ export function finishClear(state, base, job) {
   ensureLand(state, base);
   for (const p of job.pieces || []) {
     if (job.mode === "strip") base.land.looted[p.g] = 1;
-    else for (const [x, y] of p.cells) base.land.cleared[`${x},${y}`] = 1;
+    else for (const [x, y] of p.cells) { base.land.cleared[`${x},${y}`] = 1; unEdit(base, x, y); } // terraformed ground dug down or filled in: level again (terraform.js)
   }
   base.land.n = (base.land.n || 0) + 1;
   const got = Object.entries(job.get || {}).filter(([, v]) => v > 0);
@@ -957,14 +961,14 @@ export function clearUnder(state, base, key) {
   if (!at) return;
   const hit = landUnder(land, it, at).filter((p) => p.k !== "water");
   if (!hit.length) return;
-  for (const p of hit) for (const [x, y] of p.cells) base.land.cleared[`${x},${y}`] = 1;
+  for (const p of hit) for (const [x, y] of p.cells) { base.land.cleared[`${x},${y}`] = 1; unEdit(base, x, y); }
   base.land.n++;
 }
 // Every piece of the land cleared at once, for nothing (the tests of the rules that are not about the land; a cheat).
 export function clearAllLand(state, base) {
   const land = landFor(state, base);
   if (!land) return;
-  for (const p of land.list) for (const [x, y] of p.cells) base.land.cleared[`${x},${y}`] = 1;
+  for (const p of land.list) for (const [x, y] of p.cells) { base.land.cleared[`${x},${y}`] = 1; unEdit(base, x, y); }
   base.land.n++;
 }
 // The piece of land at a grid cell, as a list (empty: none); with `clump`, the pieces of its kind joined to it (a stand
@@ -996,7 +1000,7 @@ export function autoLayout(state, base, except = null) {
   // What reachProblem reads is in the key: the items and where they stand (the wall pieces among them), the core's
   // parts (the tier), the yard and the ring (the grid's size and the margin), the doorway links.
   const sticky = (base.plan && base.plan.autoAt) || null; // holdAuto: where the game had things before the player's last change on the map
-  const key = `${base.id}|${tierKey(base)}|${originOf(base)}|${freshBase(base) ? "f" : ""}|${layoutSeed(base)}|${yardHalf(base)}|${ringHalf(base)}|${except || ""}|${sig}|${linksArr(base).map((l) => `${l.a}>${l.b}`).join(",")}|${sticky ? JSON.stringify(sticky) : ""}|${landKey(base)}`;
+  const key = `${base.id}|${tierKey(base)}|${originOf(base)}|${freshBase(base) ? "f" : ""}|${layoutSeed(base)}|${yardHalf(base)}|${ringHalf(base)}|${except || ""}|${sig}|${linksArr(base).map((l) => `${l.a}>${l.b}`).join(",")}|${sticky ? JSON.stringify(sticky) : ""}|${landKey(base)}|${terraJobs(base).map((c) => c.id).join(",")}`; // the ground being terraformed: nothing placed there (occupancy work)
   let out = autoCache.get(key);
   if (out) return out;
   out = new Map();
@@ -1600,6 +1604,9 @@ export function buildBaseMap(state, base, rng, opts = {}) {
   if (view) {
     for (const [x, y] of cleared) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x + 1); y1 = Math.max(y1, y + 1); }
     for (const c of base.construction) if (c.type === "clear") for (const p of c.pieces || []) for (const [x, y] of p.cells) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x + 1); y1 = Math.max(y1, y + 1); }
+    // The ground terraformed and being terraformed (terraform.js): in view too.
+    const dug = [...Object.keys((base.land && base.land.heightEdits) || {}).map((k) => k.split(",").map(Number)), ...terraJobs(base).flatMap((c) => c.cells || [])];
+    for (const [x, y] of dug) { x0 = Math.min(x0, x - 1); y0 = Math.min(y0, y - 1); x1 = Math.max(x1, x + 2); y1 = Math.max(y1, y + 2); }
   }
   const pad = MARGIN + (view ? VIEW_PAD : 0);
   x0 = Math.max(GB.x0, x0 - pad); y0 = Math.max(GB.y0, y0 - pad); x1 = Math.min(GB.x1, x1 + pad); y1 = Math.min(GB.y1, y1 + pad);
@@ -1864,6 +1871,8 @@ export function buildBaseMap(state, base, rng, opts = {}) {
   // The clearing under way (the construction queue's clearing jobs: basescatter.js CLEAR), for the view: the cells, how far,
   // and who is on it this hour (woodwork.js chopHands: the woodcutters felling it, the builders working it).
   F.clearing = (base.construction || []).filter((c) => c.type === "clear" && c.pieces).map((c) => ({ id: c.id, label: c.label, pct: Math.round((100 * (c.progress || 0)) / Math.max(1e-9, c.hours)), who: chopHands(state, base, c), cells: c.pieces.flatMap((p) => p.cells).map(([x, y]) => [x + ox, y + oy]).filter(([x, y]) => inside(x, y)) }));
+  // The ground being terraformed (terraform.js): the cells still to dig or raise, how far, who dug this hour (verb: the tag's word).
+  for (const c of terraJobs(base)) F.clearing.push({ id: c.id, label: c.label, pct: terraPct(c), terra: c.mode, verb: TERRA_VERB[c.mode].split(" ")[0], who: (c.built != null && c.built >= state.hour - 1 ? c.crew || [] : []).map((id) => { const s = state.survivors.find((q) => q.id === id); return s ? s.name.split(" ")[0] : ""; }).filter(Boolean), cells: terraLeft(c).map(([x, y]) => [x + ox, y + oy]).filter(([x, y]) => inside(x, y)) });
   // Land mines (mines.js, the main base's Minefield): buried in the open ground FORT.MINES cells out from the band, off
   // the lanes to the gates, after the cover (nothing stands on one); the attackers start beyond them.
   F.minesLaid = 0;
@@ -2002,7 +2011,7 @@ export function makeStores(state, base, F, rng) {
   const wOf = (b) => (roomTot > 0 ? left(b) : b.weight || 1);
   for (const [k, q0] of Object.entries(base.stock)) {
     const q = Math.floor(q0 || 0) - (asgSup[k] || 0);
-    if (!(q > 0)) continue;
+    if (!(q > 0) || k === "dirt") continue; // dirt: heaped in the yard, in no store (terraform.js)
     const ammo = !!ammoBox && isAmmoKey(k); // the rounds and arrows kept inside: the ammo lockers
     const inN = real.length || ammo ? q - Math.min(q, out.sup[k] || 0) : 0;
     if (inN > 0 && ammo) ammoBox.sup[k] = (ammoBox.sup[k] || 0) + inN;
@@ -2500,6 +2509,7 @@ export function ghostAt(state, b, x, y) {
   if (!L || !F || (!L.pick && !L.pickType)) return null;
   const base = state.bases.find((o) => o.id === L.baseId);
   if (!base) return null;
+  if (terraModeOf(L.pickType)) return terraGhost(state, b, base, x, y); // terraform.js: an area of ground, not a footprint
   const pf = L.pickType ? pickFoot(L.pickType) : null;
   const it = L.pick ? itemByKey(state, base, L.pick) : pf ? { ...pf, key: null, type: bagKindOf(L.pickType) ? "tent" : L.pickType, label: pickName(L.pickType), built: true } : null;
   if (!it) return null;
@@ -2523,6 +2533,47 @@ export function ghostAt(state, b, x, y) {
   const was = L.pick ? it.at || autoLayout(state, base).get(L.pick) || null : null;
   const from = was ? rectCells(it, was).map(([fx, fy]) => [fx + F.ox, fy + F.oy]) : null;
   return { cells, doors, ok: !why, why, at: [x0, y0, L.rot], type: it.type, fit: !!it.fit, host: it.fit || it.indoor ? floorHostAt(occ, x0, y0) : null, land, from };
+}
+// The terraforming pick (terraform.js, the user's request 2026-10-23): before its first corner, the hovered cell alone
+// (dirt or not); then the rectangle from that corner (L.anchor, grid) to the hovered cell and its plan: the cells that
+// change green (cells), those left out amber (doors), all of it red with the reason when nothing can; terra: the plan
+// (ui/basemap.js layoutHover: its cost, time and shovels), terraPick: the mode (ui/isoview.js draws it over the hills).
+function terraGhost(state, b, base, x, y) {
+  const L = b.layout, F = b.deployPlan.fort, mode = terraModeOf(L.pickType), g = gridOfCell(b, x, y);
+  const toMap = ([gx, gy]) => [gx + F.ox, gy + F.oy];
+  const ghost = { cells: [toMap(g)], doors: [], ok: false, why: "", at: [g[0], g[1], 0], type: L.pickType, terra: null, terraPick: mode, anchor: L.anchor ? toMap(L.anchor) : null, land: null, from: null };
+  if (!L.anchor) {
+    const land = landFor(state, base);
+    const occ = occupancy(state, base, null, autoLayout(state, base));
+    occ.land = null;
+    ghost.why = land ? dirtProblem(base, land, occ, g[0], g[1]) : "No base map here";
+    ghost.ok = !ghost.why;
+    return ghost;
+  }
+  const plan = terraPlan(state, base, mode, L.anchor, g, terraLevels(L.rot)), R = plan.rect;
+  ghost.cells = [];
+  if (plan.ok) { ghost.cells = plan.cells.map(([cx, cy]) => toMap([cx, cy])); ghost.doors = plan.out.map(([cx, cy]) => toMap([cx, cy])); }
+  else for (let yy = R.y0; yy <= R.y1; yy++) for (let xx = R.x0; xx <= R.x1; xx++) ghost.cells.push(toMap([xx, yy]));
+  return { ...ghost, ok: plan.ok, why: plan.why, terra: plan };
+}
+// A click with the terraforming pick: the first corner (on dirt), then the opposite one queues the order (terraform.js
+// queueTerra); the pick stays up for the next.
+function terraClick(state, b, base, L, x, y) {
+  const g = gridOfCell(b, x, y), mode = terraModeOf(L.pickType);
+  if (!L.anchor) {
+    const gh = terraGhost(state, b, base, x, y);
+    if (!gh.ok) return gh.why;
+    L.anchor = g;
+    L.msg = `First corner at ${g[0]}, ${g[1]}: click the opposite corner (up to ${TERRA.MAX} × ${TERRA.MAX} cells; Esc stops).`;
+    return "";
+  }
+  const plan = terraPlan(state, base, mode, L.anchor, g, terraLevels(L.rot));
+  if (!plan.ok) return plan.why;
+  const job = queueTerra(state, base, plan);
+  L.anchor = null;
+  L.msg = `${job.label} queued: ${plan.cells.length} cells, ${plan.steps} cell-level${plan.steps === 1 ? "" : "s"} (${plan.hours} work-hours${plan.eta != null ? `, about ${plan.eta} h with ${plan.crew.workers.length} shovel${plan.crew.workers.length === 1 ? "" : "s"} at work` : ""}; ${mode === "raise" ? `−${-plan.dirt}` : `+${plan.dirt}`} dirt)${plan.crew.shovels ? "" : ". It waits for a shovel: one in the armory or on a builder"}.`;
+  refreshBaseMap(state);
+  return "";
 }
 // The item whose footprint covers a map cell in the view (a click on a placed thing picks it up), or null.
 export function itemAtCell(state, b, x, y) {
@@ -2560,11 +2611,11 @@ export function layoutAct(state, b, act) {
   if (!base) { state.combat = null; return ""; }
   switch (act.type) {
     case "pick": L.pick = act.key && itemByKey(state, base, act.key) ? act.key : null; L.pickType = null; L.msg = ""; return "";
-    case "rotate": L.rot = (L.rot + 1) & 3; return "";
+    case "rotate": L.rot = terraModeOf(L.pickType) ? (L.rot + 1) % TERRA.LEVELS : (L.rot + 1) & 3; return ""; // terraforming: R steps the levels (terraform.js terraLevels)
     case "select": L.sel = act.key && itemByKey(state, base, act.key) ? act.key : null; if (L.sel) L.land = null; return "";
     // The land (basescatter.js): a piece's card (land: its grid cell), and its clearing queued (clump: the stand of
     // trees, the hedgerow or the fence run it is part of; mode "strip": a wreck stripped of its scrap and a part).
-    case "unclear": { const job = base.construction.find((c) => c.id === Number(act.id) && c.type === "clear"); if (!job) return "That clearing is gone."; L.msg = cancelBuild(state, base, job.id); refreshBaseMap(state); return ""; }
+    case "unclear": { const job = base.construction.find((c) => c.id === Number(act.id) && (c.type === "clear" || c.type === "terra")); if (!job) return "That clearing is gone."; L.msg = job.type === "terra" ? cancelTerra(base, job.id) : cancelBuild(state, base, job.id); refreshBaseMap(state); return ""; } // terra: a terraforming job (terraform.js)
     case "land": { const [gx, gy] = gridOfCell(b, Number(act.x), Number(act.y)); L.land = landPieceAt(state, base, gx, gy).length ? [gx, gy] : null; if (L.land) L.sel = null; return ""; }
     // The tunnels the dead dug (tunnels.js): a hole's card (tunnel: the record's id), Fill tunnel queued, cancelled.
     case "tunnel": { const r = act.id != null ? (base.tunnels || []).find((q) => q.id === Number(act.id)) : tunnelAt(base, Number(act.x), Number(act.y)); L.tunnel = r ? r.id : null; if (r) { L.sel = null; L.land = null; } return ""; }
@@ -2582,12 +2633,14 @@ export function layoutAct(state, b, act) {
       return "";
     }
     case "pickType": {
-      if (act.bt && !pickFoot(act.bt)) return "That is not built on the map.";
-      L.pickType = act.bt || null; L.pick = null; L.rot = 0; L.msg = "";
+      if (act.bt && !pickFoot(act.bt) && !terraModeOf(act.bt)) return "That is not built on the map.";
+      L.pickType = act.bt || null; L.pick = null; L.rot = 0; L.msg = ""; L.anchor = null; // anchor: a terraforming area's first corner
+      if (terraModeOf(act.bt)) L.msg = `${TERRA_NAME[terraModeOf(act.bt)]}: click one corner of the area, then the opposite one (R: how many levels).`;
       return "";
     }
     case "build": {
       if (!L.pickType) return "Pick something to build first.";
+      if (terraModeOf(L.pickType)) return terraClick(state, b, base, L, Number(act.x), Number(act.y)); // terraform.js: a corner of the area
       const bt = L.pickType, d = BUILDINGS[bt];
       const g = ghostAt(state, b, Number(act.x), Number(act.y));
       if (!g) return "Nothing to build.";
@@ -2692,7 +2745,7 @@ export function layoutAct(state, b, act) {
 // A wall piece or gate built from the map is of the material the wall is mostly of (buildings.js ringMat: wood with
 // none); the Defenses tab picks another. A stand has no material.
 const pieceOpts = (base, bt) => (BUILDINGS[bt] && BUILDINGS[bt].piece && BUILDINGS[bt].piece !== "stand" ? { mat: ringMat(base) } : {});
-const MENU_GROUPS = ["Tents", "General buildings", "Fittings", "Furniture", "Power", "Buildings", "Yard things", "Defences"];
+const MENU_GROUPS = ["Tents", "General buildings", "Fittings", "Furniture", "Power", "Buildings", "Yard things", "Defences", "Terrain"]; // Terrain: dig a hollow, raise a hill (terraform.js)
 export function buildMenu(state, base) {
   const out = [];
   for (const [type, d] of Object.entries(BUILDINGS)) {
@@ -2710,6 +2763,19 @@ export function buildMenu(state, base) {
     if (!T.bag) continue;
     const have = bagsInStores(base, k);
     out.push({ type: `${BAG_PICK}${k}`, name: `${T.name} (bag)`, group: "Tents", w: T.w, h: T.h, cost: {}, hours: 0, ok: have > 0, why: have ? "" : `No ${T.name.toLowerCase()} bag in the stores: find one, or bring one home`, desc: `Pitch a ${T.name.toLowerCase()} from its bag in the stores: sleeps ${T.sleepers}, keeps ${T.storeKg} kg out of the weather. Strike it to pack it back into its bag.`, tentBag: true, have });
+  }
+  // Terraforming (terraform.js, the user's request 2026-10-23): dig a hollow, raise a hill, over an area picked with two
+  // clicks. No cost but the work, the shovels (one a person) and, for a hill, the dirt a hollow gave. A base with land only.
+  if (landFor(state, base)) {
+    const crew = shovelCrew(state, base), dirt = Math.floor(base.stock.dirt || 0);
+    const desc = {
+      dig: `Lower an area of dirt (grass, trodden ground, a field: not the road, paving, rock, trees or buildings) into a hollow, 1 to ${TERRA.LEVELS} levels down (R), the slopes round it eased so nobody steps more than a level. Two clicks pick its corners. ${TERRA.HOURS.dig} work-hour a cell-level, only for builders with a shovel (one a person; the armory's and their own); +${TERRA.DIRT} dirt a cell-level into the heap.`,
+      raise: `Raise an area of dirt into a hill, 1 to ${TERRA.LEVELS} levels up (R): its levels nested and its slopes eased as the land's own hills are, and joined to a hill beside it as one. Two clicks pick its corners. ${TERRA.HOURS.raise} work-hour and ${TERRA.DIRT} dirt a cell-level (dig a hollow for the dirt), only for builders with a shovel (one a person).`,
+    };
+    for (const mode of ["dig", "raise"]) {
+      const short = mode === "raise" && dirt < TERRA.DIRT;
+      out.push({ type: TERRA_PICK[mode], name: TERRA_NAME[mode], group: "Terrain", w: 1, h: 1, cost: {}, hours: TERRA.HOURS[mode], ok: !short, why: short ? `No dirt in the heap (${TERRA.DIRT} a cell-level raised): dig a hollow first` : "", desc: desc[mode], terra: mode, shovels: crew.shovels, workers: crew.workers.length, builders: crew.builders.length, dirt });
+    }
   }
   return out.sort((a, b) => MENU_GROUPS.indexOf(a.group) - MENU_GROUPS.indexOf(b.group)); // stable: BUILDINGS' order within a group
 }

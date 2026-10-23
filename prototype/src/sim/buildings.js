@@ -34,6 +34,7 @@ import { furnitureBeds, furnitureProblem, canSetFurniture, setFurniture, pickUpF
 import { POWER_BUILDINGS } from "./data-power.js"; // the power grid: found generators, spotlights, fridges, the breaker panel, the ammo press, the well pump, the fence charger
 import { isSetPiece, placedProblem, canSetPlaced, setPlaced, pickUpPlaced } from "./electric.js"; // the pieces set from the stores (call-time only)
 import { NEEDS_POWER, isPowered as poweredNow } from "./power.js"; // the ammo press runs only on power
+import { terraWaits, terraHour } from "./terraform.js"; // terraforming the base map: only builders with a shovel dig (call-time only)
 
 export const RECIPES = {
   ammo:  { name: "Ammo",  in: { scrap: 3 },          out: { ammo: 8 },  skill: "mechanics", desc: "3 scrap → 8 rounds per day, the common rounds of the guns at the base (+4% per Mechanics point)" },
@@ -335,6 +336,9 @@ export const BUILDINGS = {
   // DIG.FILL_BASE + DIG.FILL_PER work-hours a cell of it, first in the queue; queued from the base map (a hole's card).
   filltunnel:   { name: "Filling a tunnel", cost: {}, hours: 1, max: 100000, hidden: true, desc: "Filling in a tunnel the dead dug under the defences: the walls hold less and the dead crawl through it until it is done. Queued from the base map (click the hole)." },
   clear:        { name: "Clearing", cost: {}, hours: 1, max: 100000, hidden: true, clear: true, desc: "Clearing the land on the base map: felling a tree, digging out a stump, dragging off a wreck. Queued from the base map." },
+  // Terraforming (terraform.js, the user's request 2026-10-23): a hollow dug or a hill raised on the base map, a cell-level
+  // a step; worked only by the builders with a shovel (one a person), its dirt given or taken as each step is done.
+  terra:        { name: "Terraforming", cost: {}, hours: 1, max: 100000, hidden: true, desc: "Digging a hollow or raising a hill on the base map: only builders with a shovel work it, one shovel a person. Queued from the base map's Build list (Terrain)." },
   bunks:        { name: "Bunk beds",      fit: true, cost: { scrap: 2, wood: 200 }, hours: 4, max: 24, desc: "A pair of bunks of scrap tubing and planks, 2 × 1 on the floor of a hut, cabin, lodge, hall or barn: +2 beds each. Overcrowding lowers mood every day." },
   shelves:      { name: "Storage shelves", fit: true, cost: { scrap: 2, wood: 150 }, hours: 4, max: 24, storeKg: STORE_KG.shelves, desc: "Shelving of planks and angle iron, 2 × 1 on the floor of a general building: holds 150 kg of the base's goods (Storage tab), kept under a roof. In a raid it is a store on the map that raiders go for once they are past the wall." },
   lockers:      { name: "Lockers",        fit: true, cost: { scrap: 5, wood: 40 }, hours: 5, max: 12, storeKg: STORE_KG.lockers, desc: "A steel locker on a plank plinth, 1 × 1 on the floor of a general building: holds 100 kg of the base's goods, where the gear goes first (Storage tab). In a raid it is a store on the map." },
@@ -534,7 +538,7 @@ export function queueGenUpgrade(state, base, id) {
 }
 
 // The name of a queue job: a new building, a barrel's upgrade or a bunkhouse expanded into a barracks.
-export const jobName = (job) => (job.type === "clear" || job.type === "filltunnel" ? job.label || BUILDINGS[job.type].name : job.type === "walls" ? ringJobName(job) : isPiece(job.type) ? pieceName({ type: job.type, mat: job.mat }) : JOBNAME_REST(job));
+export const jobName = (job) => (job.type === "clear" || job.type === "filltunnel" || job.type === "terra" ? job.label || BUILDINGS[job.type].name : job.type === "walls" ? ringJobName(job) : isPiece(job.type) ? pieceName({ type: job.type, mat: job.mat }) : JOBNAME_REST(job));
 // The Ring wall's job: "Ring wall: 52 scrap-metal pieces" or "Upgrade the wall to scrap metal (12 pieces)".
 const ringJobName = (job) => { const T = WALL_TIERS[matOf({ mat: job.mat || job.tier || 1 })]; const n = job.kind === "upgrade" ? (job.ids || []).length : (job.pieces || []).length; return job.kind === "upgrade" ? `Upgrade the wall to ${T.mat.toLowerCase()}${n ? ` (${n} pieces)` : ""}` : `Ring wall: ${n ? `${n} ` : ""}${T.mat.toLowerCase()} pieces`; };
 const JOBNAME_REST = (job) => (job.target && job.type === "generator" ? `Upgrade a generator to ${GEN_TIERS[job.tier] ? `a ${GEN_TIERS[job.tier].name.toLowerCase()}` : "the next tier"}` : job.target && job.type === "barracks" ? "Expand a bunkhouse into a barracks" : job.target && job.type === "reload_bench" ? "Upgrade an ammo bench into a reloading bench" : job.target && job.type === "canner" ? "Fit a pressure canner to a preserving room" : job.target ?`Upgrade to ${WATER_BARREL.tiers[job.tier] ? WATER_BARREL.tiers[job.tier].name.toLowerCase() : "the next tier"}` : BUILDINGS[job.type].name);
@@ -1380,8 +1384,9 @@ export function constructionHour(state) {
     if (!base.construction.length) continue;
     gatherHour(state, base);
     if (campMaterialsHour(state, base)) continue; // a camp's builders make the building materials its step up waits for
-    const job = base.construction.find((c) => !gatherStalled(c) && !siteWaits(state, base, c)); // basemap.js siteWaits: a building whose site has land on it waits for its clearing
+    const job = base.construction.find((c) => !gatherStalled(c) && !siteWaits(state, base, c) && !terraWaits(state, base, c)); // basemap.js siteWaits: a building whose site has land on it waits for its clearing; terraform.js terraWaits: a hollow or a hill with no shovel here (or no dirt)
     if (!job) continue;
+    if (job.type === "terra") { terraHour(state, base, job); continue; } // terraform.js: the builders with shovels, a cell-level at a time
     const was = job.progress;
     job.progress += buildRate(state, base);
     if (job.type === "clear") job.built = state.hour; // woodwork.js chopHands: the builders on it, for the map

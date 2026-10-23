@@ -607,6 +607,7 @@ function onRiver(spec, x, y) {
   return 1;
 }
 const landCache = new Map();
+const byCell = (a, b) => { const [ax, ay] = a.split(",").map(Number), [bx, by] = b.split(",").map(Number); return ay - by || ax - bx; };
 /**
  * The land of a base now: { pieces: Map "x,y" → piece (every cell of a wreck maps to its piece), floors: Map "x,y" →
  * floor, list: the pieces once each }. A piece: { k, g, cells: [[x, y]…], body?, ax?, len?, looted? } (k "water" for the
@@ -683,6 +684,11 @@ export function landOf(spec, land) {
   // there: CLEAR rise, dip); under a tree or a bush the height goes with it when it is cleared.
   // A wreck lies on level ground (a vehicle's cells on the one level: combat.js levelRect).
   for (const p of list) if (p.k === "wreck") for (const [x, y] of p.cells) heights.delete(`${x},${y}`);
+  // The ground terraformed (terraform.js, the user's request 2026-10-23: hollows dug and hills raised; land.heightEdits,
+  // grid "x,y" → the level, 0 levelled): laid over the tile's own, in the cells' order (the same whatever was dug
+  // first), and eased in with it below, so a hill raised beside one of the seed's is one hill.
+  const edits = (land && land.heightEdits) || null;
+  if (edits) for (const k of Object.keys(edits).sort(byCell)) { const [x, y] = k.split(",").map(Number), mk = `${x + tx},${y + ty}`, h = edits[k]; if (h) heights.set(mk, h); else heights.delete(mk); }
   relaxHeights(heights, new Set(relief.crags.map(([x, y]) => `${x},${y}`)));
   for (const [k, h] of heights) if (!pieces.has(k)) { const [x, y] = k.split(",").map(Number); put({ k: h > 0 ? "rise" : "dip", g: `h${x},${y}`, cells: [[x, y]], h }); }
   // Bushes along the river's banks.
