@@ -3,14 +3,14 @@
 // map itself, drawn by ui/isoview.js as any battle: pick something to build from the Build list, or a placed building,
 // field, defence or car from the lists, its outline follows the mouse (green where it fits, red where it does not,
 // with the reason), R turns it, a click puts it down; a click on a placed thing selects it (its card: what is inside
-// a general building, the buildings it stands against and the doorways between them, Move, Auto, Demolish), a
-// second click lifts it to move it; every store's contents can be looked at). Base building (docs/base-building/plan.md
+// a general building, the buildings it stands against and the doorways between them, Move, Auto, Demolish; the
+// orders also in a chip beside it on the map: selChip), a second click lifts it to move it; every store's contents can be looked at). Base building (docs/base-building/plan.md
 // Part C, the user's request 2026-10-19). Also the contents card of a store container during a battle (ui/combat.js:
 // a click on a container, or its button): a pile of what lies outside the base's storage (sim/basestorage.js) says so
 // plainly, and a parked car that is storage is a container too.
 // moveCarButton: the Move button for a parked car (the base window's Vehicles tab): the map opens with the car picked.
 import { baseById } from "../sim/world.js";
-import { openBaseMap, layoutOf, itemByKey, unplaceItem, baseMapSummary, storeContents, gridOfCell, buildMenu, fittingsIn, hostedItems, neighboursOf, canLink, FOOT, STEAL, NO_BUILD, landPieceAt, chopToolAt, landWords, bagKindOf, pickFoot, pickName } from "../sim/basemap.js";
+import { openBaseMap, layoutOf, itemByKey, unplaceItem, baseMapSummary, storeContents, gridOfCell, buildMenu, fittingsIn, hostedItems, neighboursOf, canLink, rectOf, FOOT, STEAL, NO_BUILD, landPieceAt, chopToolAt, landWords, bagKindOf, pickFoot, pickName } from "../sim/basemap.js";
 import { clearOf, pieceWord, CLEAR } from "../sim/basescatter.js"; // the land: a piece's clearing
 import { layoutDone } from "../sim/staging.js"; // Open the build map: the base's ask ends once its map is open
 import { groundsFogged, deadText, GROUNDS_LABEL } from "../sim/campscout.js"; // a camp set up blind: its map known round the fire only (2026-10-23)
@@ -87,7 +87,7 @@ export function layoutPanel(state, b, cui, preview = "") {
   const picked = L.pick ? itemByKey(state, base, L.pick) : null;
   const pickD = L.pickType ? BUILDINGS[L.pickType] : null, pickF = L.pickType ? FOOT[L.pickType] : null, pickBag = L.pickType ? bagKindOf(L.pickType) : null;
   let html = `<div class="cbhead"><div class="cbtitle">Base map: ${esc(base.name)}</div>
-    <div class="small muted">Pick something to build from the Build list and click where it goes (its outline follows the mouse: green fits, red does not; R turns it). Click a placed thing, on the map or in the lists, to select it: its card has Move, the doorways and Demolish; a second click on the map lifts it to move it. Nothing is built within ${NO_BUILD} cells of the edge (the tinted margin). Esc puts the pick down. Nobody is on the map; the clock stands still.</div></div>`;
+    <div class="small muted">Pick something to build from the Build list and click where it goes (its outline follows the mouse: green fits, red does not; R turns it). Click a placed thing, on the map or in the lists, to select it: its orders (Move, the doorways, Demolish) show beside it on the map and on its card here; a second click on the map lifts it to move it. Nothing is built within ${NO_BUILD} cells of the edge (the tinted margin). Esc puts the pick down. Nobody is on the map; the clock stands still.</div></div>`;
   if (terraModeOf(L.pickType)) html += terraPickCard(state, base, L); // sim/terraform.js: an area of ground
   if (pickD && pickF) html += `<div class="card small" style="margin-top:0.4rem"><div class="spread"><b>Building: ${esc(pickD.piece ? pieceName({ type: L.pickType, mat: pickD.piece === "stand" ? 0 : ringMat(base) }) : pickD.name)}</b><span class="muted">${pickF.w} × ${pickF.h}${L.rot & 1 ? " (turned)" : ""}</span></div>
     <div class="muted">Click where it goes (R turns it); ${pickF.mount ? "a spotlight: on a wall stand (higher: it lights further) or the open ground; set from the stores, no builders" : pickD.set && pickF.fit ? `set from the stores on the floor inside ${HOSTS}, no builders` : pickD.set ? "set from the stores on open ground, no builders" : pickF.fit ? `a fitting goes on the floor inside ${HOSTS}` : pickF.general ? "an empty shell: fittings (bunks, shelves, lockers, a stove) and benches go on its floor once it stands" : pickF.kind === "wall" ? "a wall piece goes anywhere, the ring round the yard too, of the wall's own material (the Defenses tab picks another); leave no gap, and a gate before the ring closes" : pickF.kind === "gate" ? "a gate: your people walk through it, attackers batter it; the cell either side of it stays open" : pickF.kind === "stand" ? "a wall stand: put it right behind a wall so whoever climbs it sees and shoots over it" : pickF.kind === "defence" ? "a defence goes anywhere on the map, inside the yard or out in front of the wall" : "anywhere on the map, right against anything else, only the cell outside its door kept open"}.${pickD.set ? "" : " The cost is paid when it is placed; the builders do the rest."}</div>
@@ -101,6 +101,7 @@ export function layoutPanel(state, b, cui, preview = "") {
   // A camp set up blind (sim/campscout.js): the map past the fire under the fog, the dead out there uncounted.
   if (groundsFogged(base)) html += `<div class="card small warn" style="margin-top:0.4rem"><b>Set up blind</b>: past the camp the ground is unknown (the fog) and so is how many of the dead are out on it (${esc(deadText(base))}). Survey this tile to know it all; ${GROUNDS_LABEL} with a team on the tile, or fight them off as they come.</div>`;
   html += selectionCard(state, base, L, lay);
+  cui.selChip = selChip(state, b, base, L, lay); // its orders beside it on the map (ui/combat.js selChipFrame)
   html += landCard(state, base, L);
   html += tunnelCard(state, base, L);
   html += clearingList(state, base);
@@ -175,6 +176,35 @@ function selectionCard(state, base, L, lay) {
         : `<button class="mini" data-action="cb-deploy" data-v="link" data-a="${it.key}" data-b="${n.key}" ${why ? "disabled" : ""}${tip(why || `Open a doorway in the shared wall (the middle of the run, at ${n.a[0]}, ${n.a[1]}): a barred door in each wall, no outside cell to keep clear`)}>Open a doorway</button>`}</div>`;
     }).join("")}</div>` : `<div class="small muted" style="margin-top:0.25rem">Stands against no other building: put one right against its wall to open a doorway between them.</div>`;
   }
+  const btns = selButtons(it, e, rec, isBld, isJob);
+  btns.push(`<button data-action="cb-deploy" data-v="select" data-k="" data-tip="Deselect (Esc)">✕</button>`);
+  return `<div class="card small bmsel" style="margin-top:0.4rem"><div class="spread"><b>${esc(it.label)}</b><span class="muted">${sizeText(it)}${it.built ? "" : " · going up"}</span></div>
+    <div class="muted">${esc(whereText(e)[0].toUpperCase() + whereText(e).slice(1))}.${rec && rec.host != null ? " Inside a general building." : ""}${rec && rec.broken ? ' <span class="danger">Broken.</span>' : ""}</div>
+    ${inside}${doors}
+    <div class="cbactions" style="margin-top:0.3rem">${btns.join("")}</div></div>`;
+}
+// The selected thing's chip on the map (the user's request 2026-10-23: the options next to the selected thing, not
+// only in the side panel): its name and its orders (selButtons), the doorways of a building against others, with the
+// map cells of its footprint for ui/combat.js to put the chip beside it. null while nothing placed is selected or
+// something is picked up.
+function selChip(state, b, base, L, lay) {
+  const F = b.deployPlan && b.deployPlan.fort;
+  const e = L.sel && !L.pick && !L.pickType && F ? lay.find((q) => q.it.key === L.sel) : null;
+  if (!e || !e.at) return null;
+  const it = e.it, isBld = it.key.startsWith("b:"), isJob = it.key.startsWith("c:");
+  const btns = selButtons(it, e, it.rec, isBld, isJob);
+  if (it.kind === "house") for (const n of neighboursOf(state, base, it.key)) {
+    const why = n.linked ? "" : canLink(state, base, it.key, n.key);
+    btns.push(n.linked ? `<button data-action="cb-deploy" data-v="unlink" data-a="${it.key}" data-b="${n.key}"${tip(`Wall the doorway to ${n.label} up again`)}>Close the doorway: ${esc(n.label)}</button>`
+      : `<button data-action="cb-deploy" data-v="link" data-a="${it.key}" data-b="${n.key}" ${why ? "disabled" : ""}${tip(why || `Open a doorway to ${n.label} in the shared wall`)}>Open a doorway: ${esc(n.label)}</button>`);
+  }
+  const r = rectOf(it, e.at);
+  return { key: it.key, rect: [r.x0 + F.ox, r.y0 + F.oy, r.w, r.h],
+    html: `<div class="bc-head"><b>${esc(it.label)}</b><span class="muted small">${sizeText(it)}${it.built ? "" : " · going up"}</span><button class="mini" data-action="cb-deploy" data-v="select" data-k="" data-tip="Deselect (Esc)">✕</button></div><div class="bc-btns">${btns.join("")}</div>` };
+}
+// The selected thing's orders (its card in the panel and its chip on the map): Move, Auto, Place, Strike / Pick up /
+// Demolish, Cancel the job.
+function selButtons(it, e, rec, isBld, isJob) {
   const btns = [];
   if (e.at) btns.push(`<button data-action="cb-deploy" data-v="lift" data-k="${it.key}"${tip("Pick it up: its outline follows the mouse, click where it goes (R turns it, Esc leaves it where it is); or click it on the map again. Nothing else on the map moves.")}>Move</button>`);
   if (e.at && !e.auto && !it.fire) btns.push(`<button data-action="cb-deploy" data-v="unplace" data-k="${it.key}"${tip("Let the game place it again")}>Auto</button>`);
@@ -183,11 +213,7 @@ function selectionCard(state, base, L, lay) {
   else if (isBld && BUILDINGS[it.type] && BUILDINGS[it.type].furniture) btns.push(`<button data-action="cb-deploy" data-v="demolish" data-k="${it.key}"${tip("Pick it up: back into the stores, whole (sim/beds.js, sim/electric.js)")}>Pick up</button>`);
   else if (isBld) btns.push(`<button class="danger" data-action="cb-deploy" data-v="demolish" data-k="${it.key}"${tip(`Pull it down (asks first): about half its scrap and parts come back${refundText(rec)}${it.general ? "; what stands inside comes down with it (furniture is carried out into the stores)" : ""}`)}>Demolish</button>`);
   if (isJob) btns.push(`<button class="danger" data-action="cb-deploy" data-v="demolish" data-k="${it.key}"${tip("Cancel the job: half the materials come back")}>Cancel the job</button>`);
-  btns.push(`<button data-action="cb-deploy" data-v="select" data-k="" data-tip="Deselect (Esc)">✕</button>`);
-  return `<div class="card small bmsel" style="margin-top:0.4rem"><div class="spread"><b>${esc(it.label)}</b><span class="muted">${sizeText(it)}${it.built ? "" : " · going up"}</span></div>
-    <div class="muted">${esc(whereText(e)[0].toUpperCase() + whereText(e).slice(1))}.${rec && rec.host != null ? " Inside a general building." : ""}${rec && rec.broken ? ' <span class="danger">Broken.</span>' : ""}</div>
-    ${inside}${doors}
-    <div class="cbactions" style="margin-top:0.3rem">${btns.join("")}</div></div>`;
+  return btns;
 }
 // The stores on the map (any base battle): a button a container, and the contents of the one being looked at.
 // u: the selected unit. On an assault (sim/assaultstores.js: their stores, c.contents) the card offers Take (the search

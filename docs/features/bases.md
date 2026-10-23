@@ -114,6 +114,7 @@ Modules: [basemap, ui/basemap, ui/combat]. Screens: [docs/map-layers/](../map-la
 - Always a way in and out on foot (basemap reachProblem: everything reachable from the map's edge, gates and doors counting).
 - Outlines for buildings going up; it is the map a horde or raid fights over.
 - Building from the map: the Build list (wall pieces under Defences); a ghost follows the mouse; a click queues and places. The selected thing's card shows its fittings, neighbours and their doorways, Move, Demolish.
+- **Orders beside the selected thing** (the user's request 2026-10-23: "show the options next to the selected thing instead of having to click in the side panel"): a chip on the map under its footprint's front corner (over its back one when there is no room below, kept inside the visible map) with its name, Move, Auto, Place, Strike / Pick up / Demolish or Cancel the job, the doorways to the buildings it stands against, and ✕. The same buttons stay on its card in the panel. Hidden while it is picked up or off screen [ui/basemap selChip / selButtons (built with layoutPanel into cui.selChip), ui/combat selChipFrame, #bmselchip in styles.css]; test `tools/basebuilduitest.js`.
 - Survivors are never shown on it; the whole base is in plain view (no fog: combat playerVision).
 
 ### Move keeps the map

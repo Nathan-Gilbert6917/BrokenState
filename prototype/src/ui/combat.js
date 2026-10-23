@@ -105,7 +105,7 @@ const ENEMY_STEP_MS = 420;
 // horde does not file past one at a time), never later than WALK_WAIT_MAX ms after it set off.
 const WALK_WAIT = 0.6, WALK_WAIT_MAX = 2000;
 
-export const cui = { battle: null, sel: null, mode: "move", hover: null, msg: "", lastStep: 0, anim: new Map(), movesSeen: 0, walkUntil: 0, cache: { key: "" }, autoPlay: false, pickedDown: null, facePick: null, cones: false, handAsk: null, handReq: null, shoveAsk: null }; // handAsk: the Hand over chooser open for this unit; handReq: { sid, mate } the two-doll window asked for (ui/inventory.js takeLootReq); shoveAsk: { uid, x, y } the piece picked for Shove, its destinations offered (sim/barricade.js)
+export const cui = { battle: null, sel: null, mode: "move", hover: null, msg: "", lastStep: 0, anim: new Map(), movesSeen: 0, walkUntil: 0, cache: { key: "" }, autoPlay: false, pickedDown: null, facePick: null, cones: false, handAsk: null, handReq: null, shoveAsk: null, selChip: null }; // selChip: the base map's selected thing, its orders on the map (ui/basemap.js selChip); handAsk: the Hand over chooser open for this unit; handReq: { sid, mate } the two-doll window asked for (ui/inventory.js takeLootReq); shoveAsk: { uid, x, y } the piece picked for Shove, its destinations offered (sim/barricade.js)
 // The view cones of everyone (yours and the enemies you see), on or off (Alt+C, the view bar), kept per machine.
 const CONES_KEY = "bs.battle.cones";
 try { cui.cones = typeof localStorage !== "undefined" && localStorage.getItem(CONES_KEY) === "1"; } catch { cui.cones = false; }
@@ -614,6 +614,32 @@ function tapFrame(b, cw, ch, bottom) {
   const top = uy < Y - 4 ? (fitsDown || !fitsUp ? down : up) : (fitsUp || !fitsDown ? up : down);
   tapEl.style.left = `${Math.round(Math.max(m, Math.min(cw - w - m, X - w / 2)))}px`;
   tapEl.style.top = `${Math.round(Math.max(m, Math.min(ch - bottom - h - m, top)))}px`;
+}
+
+// The base map's selected thing (ui/basemap.js selChip, made with the panel): its name and orders in a chip beside it
+// on the map, under its footprint's front corner (over its back one when there is no room below), kept inside the map's
+// visible part; hidden while it is off screen, picked up or not on the base map.
+let selEl, selShown = "";
+function selChipFrame(b, cw, ch, bottom) {
+  const q = b.layout && !b.layout.pick && !b.layout.pickType && cui.selChip && cui.selChip.key === b.layout.sel ? cui.selChip : null;
+  if (!q && !selShown) return;
+  if (selEl === undefined || (selEl && !selEl.isConnected)) {
+    const wrap = typeof document !== "undefined" && document.getElementById ? document.getElementById("cbmapwrap") : null;
+    selEl = wrap ? document.getElementById("bmselchip") || wrap.appendChild(Object.assign(document.createElement("div"), { id: "bmselchip" })) : null;
+  }
+  if (!selEl) return;
+  const hide = () => { selEl.hidden = true; selEl.innerHTML = ""; selShown = ""; };
+  if (!q) return void hide();
+  const [x0, y0, w, h] = q.rect, lift = liftOf(b);
+  const pts = [[x0, y0], [x0 + w, y0], [x0, y0 + h], [x0 + w, y0 + h]].map(([x, y]) => project(x, y, hz(b, Math.min(x, x0 + w - 1), Math.min(y, y0 + h - 1)) * LV + lift));
+  const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+  const L = Math.min(...xs), R = Math.max(...xs), T = Math.min(...ys), B = Math.max(...ys), floor = ch - bottom;
+  if (R < 0 || L > cw || B < 0 || T > floor) return void hide();
+  if (q.html !== selShown) { selEl.innerHTML = q.html; selShown = q.html; selEl.hidden = false; }
+  const cw0 = selEl.offsetWidth, ch0 = selEl.offsetHeight, m = 8, gap = 10;
+  const top = B + gap + ch0 <= floor - m ? B + gap : T - gap - ch0 >= m ? T - gap - ch0 : B + gap;
+  selEl.style.left = `${Math.round(Math.max(m, Math.min(cw - cw0 - m, (L + R) / 2 - cw0 / 2)))}px`;
+  selEl.style.top = `${Math.round(Math.max(m, Math.min(floor - ch0 - m, top)))}px`;
 }
 
 // ---------- a controller (main.js's battle layer; ui/gamepad.js) ----------
@@ -3749,6 +3775,7 @@ function hudFrame(state, b, cw, ch, hold = false) {
   const avoid = hudSync(hudEl, { state, b, list, sel, salt: cui.salt, cw, ch, hoverT, hoverO, mode: cui.mode });
   hudPaint(ctx, b, { cw, ch, hits: hitLabels(b, v), hoverT, hoverO, mode: cui.mode, list, sel, avoid, bottom });
   tapFrame(b, cw, ch, bottom); // a finger's tap held for a confirm: its chip (combatTap)
+  selChipFrame(b, cw, ch, bottom); // the base map: the selected thing's orders beside it
 }
 // The bottom bar's height over the map (ui/battlebar.js, #cbbar): the compass, the edge arrows, the squad strip and the
 // target card keep clear of it (iso.bottomInset, the CSS variable --cbbar-h on the map's box).
