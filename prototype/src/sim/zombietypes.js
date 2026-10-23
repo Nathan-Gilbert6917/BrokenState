@@ -320,7 +320,7 @@ function spitterTurn(b, u) {
 
 // What a brute can smash (and what is left there): barricades, the base's wall line (a breach), fences, crates,
 // sandbags, hay. Only cells that never block sight, so the battle's line-of-sight cache stays right.
-const SMASH = { barricade: "open", palisade: "breach", fence: "open", crate: "open", sandbag: "open", hay: "open", cart: "open" }; // cart: carts.js cartKnocked (it stays there, its load in it)
+const SMASH = { barricade: "open", palisade: "breach", fence: "open", wirefence: "open", crate: "open", sandbag: "open", hay: "open", cart: "open" }; // cart: carts.js cartKnocked (it stays there, its load in it)
 function bruteTurn(b, u) {
   const z = ZTYPES.brute;
   const foes = playerFoes(b);

@@ -52,7 +52,7 @@ export const BLAST = { r: 1.5, dmg: [22, 34], wake: 14, noise: 4, struct: [40, 6
 export const FRAG = { r: 1.5, dmg: [20, 30], wake: 12, noise: 4, struct: [30, 45] };
 export const FIRE = {
   r: 1.5, turns: 3, edge: [2, 3], hit: [12, 18], burn: [8, 14], zburn: [16, 24], bossBurn: 0.5, lure: 7, max: 40, spreadTurns: 2,
-  fuel: { hay: 0.45, crate: 0.25, fence: 0.25, barricade: 0.25, shelf: 0.2, cabinet: 0.2, counter: 0.2, bdoor: 0.15, doorway: 0.1, tent: 0.6, torn: 0.4 }, // tent, torn: a camp's canvas goes up fast and burns to rubble (softcover.js: the tent's wear afterwards)
+  fuel: { hay: 0.45, crate: 0.25, fence: 0.25, fieldgate: 0.25, barricade: 0.25, shelf: 0.2, cabinet: 0.2, counter: 0.2, bdoor: 0.15, doorway: 0.1, tent: 0.6, torn: 0.4 }, // tent, torn: a camp's canvas goes up fast and burns to rubble (softcover.js: the tent's wear afterwards)
   ground: { field: 0.2, grass: 0.12, floor: 0.08 },
 };
 // gone: someone running from the fight (combat.js flee, battlesize.js fledFarEnough) whom a cloud screens from a

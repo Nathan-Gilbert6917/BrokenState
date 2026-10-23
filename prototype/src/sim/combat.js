@@ -735,6 +735,8 @@ export const CELL = {
   rock:    { walk: false, cover: 1, los: false, name: "Rock" },
   car:     { walk: false, cover: 1, los: false, name: "Car" },
   fence:   { walk: false, cover: 1, los: false, name: "Fence" },
+  wirefence: { walk: false, cover: 0, los: false, name: "Wire fence" }, // a farmland field's post-and-wire fence (basescatter.js fieldLayer): no cover, climbed over (vaultable)
+  fieldgate: { walk: true, cover: 0, los: false, name: "Field gate" }, // a farmland field's gate (basescatter.js fieldLayer): swung open and walked through
   hay:     { walk: false, cover: 1, los: false, name: "Hay bales" },
   crate:   { walk: false, cover: 1, los: false, name: "Crates" },
   sandbag: { walk: false, cover: 1, los: false, name: "Sandbags" },
@@ -1017,10 +1019,11 @@ export const breakable = (c) => c.hp > 0;
 // the dead (one of the dead clambers through an open or broken window: clambers, at the same cost). A load carried in
 // the hands (carry.js handsBusy: supplies, a bag, finds carried loose) is vaulted over with, at double the movement
 // (vaultCost), but never through a closed window (breaking one takes the hands: reachable, vaultNow).
-const NO_VAULT = new Set(["bars", "rail", "well", "cart"]); // cart: the living shove a parked cart or go round (carts.js); the dead crawl over it (barricade.js crawlable)
+const NO_VAULT = new Set(["bars", "rail", "well", "cart"]);
+const OVER = new Set(["wirefence"]); // no cover, but climbed over like half cover (and crawled over by the dead: barricade.js crawlable) // cart: the living shove a parked cart or go round (carts.js); the dead crawl over it (barricade.js crawlable)
 export function vaultable(b, c) {
   const C = c && CELL[c.k];
-  if (!C || C.walk || C.cover !== 1 || C.tall || C.trap || NO_VAULT.has(c.k)) return false;
+  if (!C || C.walk || (C.cover !== 1 && !OVER.has(c.k)) || C.tall || C.trap || NO_VAULT.has(c.k)) return false;
   if (c.car && c.car.up && (c.car.up.p || c.car.up.s)) return false;
   return true;
 }
@@ -1255,7 +1258,7 @@ export { SEATS }; // vehicles.js (a fleet's seats on the road use them too)
 // other cars, water, railings and trenches stop it.
 export const RAMMING = {
   HIT: [14, 28], ZOMBIE_HIT: [20, 40], SHOVE: 3,
-  WEAR: { unit: 1, zombie: 2, cart: 3, tanktrap: 12, fence: 2, wire: 1, sandbag: 4, crate: 2, hay: 1, barrel: 3, barricade: 8, rock: 6, pump: 10, well: 10, spikes: 6, beartrap: 2 },
+  WEAR: { unit: 1, zombie: 2, cart: 3, tanktrap: 12, fence: 2, wirefence: 1, wire: 1, sandbag: 4, crate: 2, hay: 1, barrel: 3, barricade: 8, rock: 6, pump: 10, well: 10, spikes: 6, beartrap: 2 },
   LEFT: { tanktrap: "rubble", pump: "rubble", well: "rubble" }, // what a rammed obstacle becomes (else open ground)
 };
 const rammable = (c) => RAMMING.WEAR[c.k] != null;
