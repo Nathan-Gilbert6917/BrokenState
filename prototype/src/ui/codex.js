@@ -610,7 +610,7 @@ const FRONT_HOW = {
   rain: "Off-road gets slow (vehicles most): keep to the roads while it passes.",
   blizzard: "Stay in: very slow, frostbite and falls on the road, a tile less sight. The dead are slowed too.",
   snow: "Slower going, off-road most; it passes in hours.",
-  fog: "Teams see a tile less and are easier to ambush; driving is slower. It burns off by midday.",
+  fog: "Teams, bases' lookouts and watch towers see a tile less on the map (so do the groups' parties), and teams are easier to ambush; driving is slower. It burns off by midday.",
 };
 function weatherEntries() {
   const out = Object.entries(FRONT_KINDS).map(([k, f]) => ({
