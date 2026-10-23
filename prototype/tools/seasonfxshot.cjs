@@ -65,8 +65,16 @@ const port = 5300 + Math.floor(Math.random() * 600);
             if (free) { me.x = free[0]; me.y = free[1]; }
             tx = best.x; ty = best.y;
           }
-          if (want.snow) { // an open snowy cell two steps off
-            for (const [dx, dy] of [[3, 0], [-3, 0], [0, 3], [0, -3], [2, 2], [3, 1]]) { const x = me.x + dx, y = me.y + dy, c = b.cells[y * b.w + x]; if (c && C.CELL[c.k].walk && !c.ice && !c.wet && (c.f === "grass" || c.f === "dirt" || c.f === "field") && !C.unitAt(b, x, y)) { tx = x; ty = y; break; } }
+          if (want.snow) { // an open snowy cell a few steps off by a clean path (no ice, no vault)
+            const r = C.reachable(b, me, 6);
+            let best = null;
+            for (let y = 0; y < b.h; y++) for (let x = 0; x < b.w; x++) {
+              const d = r.dist[y * b.w + x], c = b.cells[y * b.w + x];
+              if (!(d >= 3 && d <= 5) || c.ice || c.wet || !(c.f === "grass" || c.f === "dirt" || c.f === "field") || C.unitAt(b, x, y)) continue;
+              if (C.pathTo(r, x, y).some(([px, py]) => b.cells[py * b.w + px].ice || !C.CELL[b.cells[py * b.w + px].k].walk)) continue;
+              if (!best || d < best.d) best = { x, y, d };
+            }
+            if (best) { tx = best.x; ty = best.y; }
           }
           UC.cui.sel = me.id;
           UC.cui.mode = "move";
