@@ -482,6 +482,7 @@ function spotHead(z0, broken = false) {
 // larger they now seem small in comparison to survivors and hills": GROWN).
 const GROWN = { tree: [1.45, 1.18], bush: [1.6, 1.3] }; // [height ×, spread ×]
 function prims(k, o) {
+  if (k === "crag" && o.ter) return rockPrims(o.ter); // a mountain's rock: its own height, one mass with its neighbours
   let own = k === "open" ? [] : primsOf(k, o);
   if (GROWN[k]) own = scalePrims(own, GROWN[k][0], GROWN[k][1]);
   if (!o.ter) return own;
@@ -542,6 +543,39 @@ function terrainPrims(T, o) {
       const h = Math.min(1, Math.hypot(du, dv));
       out.push({ u0: a0, u1: a0 + B / M, v0: b0, v1: b0 + B / M, z0: Math.min(zf, zAt(h, lo)), z1: zAt(h, lo), flat: true, m: bankM(h) });
     }
+  }
+  return out.sort((p, q) => p.u0 + p.v0 - q.u0 - q.v0);
+}
+// A mountain's rock (the playtest 2026-10-23: "Make the mountains more pointed instead of rounded and make it all
+// combine into the center instead of dozens of ball pyramid looking things"): a cell of crag at its height (T.e, the
+// massif's: higher in from its edge), falling straight to each lower neighbour across half the cell (ROCK.BANK), so the
+// cells run together into one mass: a cell with lower rock all round comes to a point, one between two lower sides
+// to a crest; banded grey faces, snow above ROCK.SNOW levels.
+const ROCK = { GRID: 7, SNOW: 8 }; // GRID: the little columns a cell's surface is drawn in, a side
+function rockPrims(T) {
+  const g = T.g || [[T.e, T.e, T.e], [T.e, T.e, T.e], [T.e, T.e, T.e]], c = g[1][1];
+  // The surface: the cell's own height at its middle, half way to each side neighbour at the middle of that side, the
+  // four cells' mean at each corner, eased between (bilinear in each quarter): one surface across the cells, a point
+  // where the middle stands above all round it, a crest along a line of the highest.
+  const side = (dv, du) => (c + g[1 + dv][1 + du]) / 2;
+  const corner = (dv, du) => (c + g[1 + dv][1] + g[1][1 + du] + g[1 + dv][1 + du]) / 4;
+  const zAt = (u, v) => {
+    const du = u < 0.5 ? -1 : 1, dv = v < 0.5 ? -1 : 1, fu = Math.abs(u - 0.5) * 2, fv = Math.abs(v - 0.5) * 2;
+    const a = c + (side(0, du) - c) * fu, b = side(dv, 0) + (corner(dv, du) - side(dv, 0)) * fu;
+    return (a + (b - a) * fv) * LV;
+  };
+  // Snow above ROCK.SNOW levels (patchy just below it: the rock shows through), smooth, not speckled.
+  const rockC = (z, X, Y, k) => { const q = n2(X, Y, 8), snow = z >= ROCK.SNOW * LV ? q > 0.04 : z >= (ROCK.SNOW - 1) * LV ? n2(Math.floor(X / 4), Math.floor(Y / 3), 14) > 0.55 : false; return snow ? mul(hex("#e2e6ea"), (0.95 + q * 0.05) * k) : mul(PAL.stone, (0.9 + q * 0.2) * k); };
+  const M = (z) => halfLit((f, s, t, X, Y) => { const q = n2(X, Y, 9), crack = n2(Math.floor(X / 3), Math.floor(Y / 2), 13) > 0.9; return f === "top" ? rockC(z, X, Y, 1) : crack ? mul(PAL.stone, 0.5) : rockC(z, X, Y, Math.floor((t + q * 5) / 6) % 2 ? 0.8 : 0.9); });
+  const K = ROCK.GRID, z1 = [];
+  for (let j = 0; j < K; j++) { z1.push([]); for (let i = 0; i < K; i++) z1[j].push(zAt((i + 0.5) / K, (j + 0.5) / K)); }
+  // Each little column down to the lowest of the next ones toward the camera (+u, +v), or at the cell's own edge to
+  // the ground there (the front neighbour's height: never below what is drawn in front of it).
+  const out = [];
+  for (let j = 0; j < K; j++) for (let i = 0; i < K; i++) {
+    const zt = z1[j][i];
+    const zu = i + 1 < K ? z1[j][i + 1] : Math.min(zt, g[1][2] * LV), zv = j + 1 < K ? z1[j + 1][i] : Math.min(zt, g[2][1] * LV);
+    out.push({ u0: i / K, u1: (i + 1) / K, v0: j / K, v1: (j + 1) / K, z0: Math.min(zt, zu, zv), z1: zt, flat: true, m: M(zt) });
   }
   return out.sort((p, q) => p.u0 + p.v0 - q.u0 - q.v0);
 }
@@ -1339,7 +1373,7 @@ const JOINS = {
 const CUT_R = 6;
 // The ground's level at a cell (sim/combat.js c.h with c.ter; 0 level ground; a raised floor or a wall: 0, it is not the
 // ground's), and the look under the cell: null when it and everything round it is level ground.
-const groundLv = (c) => (c && c.ter ? c.h || 0 : 0);
+const groundLv = (c) => (c && c.k === "crag" ? c.ch || 3 : c && c.ter ? c.h || 0 : 0); // a mountain's rock: its own height (sim/basescatter.js reliefLayer)
 function terrainOf(b, x, y) {
   const c = b.cells[y * b.w + x], e = groundLv(c), r = iso.rot;
   let bottom = e;
@@ -1347,7 +1381,19 @@ function terrainOf(b, x, y) {
   if (!e && bottom === 0) return null;
   const falls = [e, e, e, e];
   VD.forEach(([dx, dy]) => { const nx = x + dx, ny = y + dy; if (nx >= 0 && ny >= 0 && nx < b.w && ny < b.h) falls[viewDir(dx, dy, r)] = groundLv(b.cells[ny * b.w + nx]); });
-  return { e, bottom, falls, key: `${e}${bottom}${falls.join("")}` };
+  // A mountain's rock: its neighbours' heights all round in view space (g[v + 1][u + 1]: the surface runs through them).
+  let g = null;
+  if (c.k === "crag") {
+    g = [[e, e, e], [e, e, e], [e, e, e]];
+    const [o0, o1] = toView(0, 0, r, 1, 1);
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const nx = x + dx, ny = y + dy;
+      if (nx < 0 || ny < 0 || nx >= b.w || ny >= b.h) continue;
+      const [a, q] = toView(dx, dy, r, 1, 1);
+      g[Math.sign(q - o1) + 1][Math.sign(a - o0) + 1] = groundLv(b.cells[ny * b.w + nx]);
+    }
+  }
+  return { e, bottom, falls, g, key: `${e}${bottom}${falls.join("")}${g ? g.flat().join("") : ""}` };
 }
 function lookOf(b, scene, x, y, cut, focus = null) {
   const i = y * b.w + x, c = b.cells[i], k = c.k === "siegeladder" ? "palisade" : c.k; // a siege ladder leans on its wall (drawn on top: drawSiegeIso)
@@ -1430,7 +1476,7 @@ function blockTop0(k, o) {
     case "walkway": case "loft": case "roof": case "stand": return LV;
     case "stairs": case "slope": return LV / 2;
     case "rise": return LV;
-    case "crag": return 3 * LV + 4;
+    case "crag": return o.ter ? 0 : 3 * LV + 4; // with its height (o.ter): counted below
     case "ladder": return LV;
     case "tree": return o.v === 3 && o.alt ? 30 : 40;
     case "hivewall": return 30;
