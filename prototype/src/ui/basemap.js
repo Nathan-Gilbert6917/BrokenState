@@ -397,6 +397,17 @@ export function openBuildMap(state, ui, baseId, tab = "basemap") {
   ui.baseView = null; ui.baseMsg = "";
   return "";
 }
+// The map opens with a building picked from its Build list, nothing queued yet: its outline follows the mouse and a
+// click builds it there (the Camp tab's Place the shelter shack: main.js tier-pick; the user's request 2026-10-23:
+// "select it from the build menu and select where to put it and then it can be built").
+export function openToPlace(state, ui, base, type) {
+  if (!base || !FOOT[type] || openBaseMap(state, base.id)) return false;
+  layoutDone(state, base.id);
+  state.combat.layout.pickType = type;
+  ui.mapFrom = { id: base.id, tab: "construction" };
+  ui.baseView = null; ui.baseMsg = "";
+  return true;
+}
 // After Build on the Construction tab (main.js queuebuild): the map opens with the new job picked.
 export function openForJob(state, ui, base, type) {
   if (!base || !FOOT[type]) return false;

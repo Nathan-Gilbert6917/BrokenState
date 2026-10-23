@@ -30,8 +30,8 @@
 //   at the first hub when the camp is founded (staging.js settleInto). state.hardcore.start.car is its id.
 // - The team is on the road (a state.parties entry, like the exiles in conquest.js): no base, no home to return to.
 //   You are with them, so they always report and take orders (radio contact without a radio).
-// - The first hub: Build outpost becomes Establish base, a camp (the barest base: the team moves in) with its step up
-//   into a shelter queued; the team brings the materials in and its builders build it up over a few days (staging.js
+// - The first hub: Build outpost becomes Establish base, a camp (the barest base: the team moves in) whose step up
+//   into a shelter (the shelter shack) is placed from its Build list; the team brings the materials in and its builders build it up over a few days (staging.js
 //   STAGING.HARDCORE). The shelter is the hub, empty: no buildings, no truck. Losing every base later is the normal
 //   game's exile (conquest.js): Establish base again; later outposts are camps too (Build outpost).
 // Everything here runs only in a hardcore world (hardcore.js isHardcore).

@@ -55,13 +55,17 @@ Rules:
 - Clear them yourself: "Clear the dead from the base grounds" on the POI map (poiraid poiPickCard), the team's orders and right-click menu (mission grounds): a siteClear fight on the tile's land against half of what is left (4–20). A Survey lifts the fog and counts them (survey fullSurveyDone → groundsSurveyed). The governor's outposts scout first unless the hub is crowded or the land push is on; it answers attacks with Defend. AI groups neither scout nor go blind. `tools/campscouttest.js`.
 
 ### Step ups are buildings
-- Shelter shack (camp_up, 5 × 4), Outpost house (outpost_up, 5 × 4), Main house (hub_up, 6 × 5) have footprints (basemap FOOT), sit on the Build list and are queued and placed like any building (the Camp tab's Place / Move it: main.js tier-place → ui/basemap openForJob; the game places one not placed by hand, its site's clearing queued first).
+- Shelter shack (camp_up, 5 × 4), Outpost house (outpost_up, 5 × 4), Main house (hub_up, 6 × 5) have footprints (basemap FOOT), sit on the Build list and are queued and placed like any building (the Camp tab's Move it: main.js tier-place → ui/basemap openForJob; the game places one not placed by hand, its site's clearing queued first).
+- **Placed by hand before it is queued** (the user's request 2026-10-23: "When you establish a camp do not have the shelter pending build show yet. The player needs to select it from the build menu and select where to put it and then it can be built"): Establish base and Build outpost no longer queue the step up for you (staging makeCamp: base.grow, the log line says to place it). Pick it from the build map's Build list and click where it goes; the Camp tab's Place the shelter shack and the Construction tab's Build open the map with it picked, nothing queued until the click (main.js tier-pick → ui/basemap openToPlace). The governor's camps still have it queued at once. Build outpost's camp (base.grow) is on the supply network before its house is placed (economy shipFromOutposts). `tools/stepupplacetest.js`.
 - When one stands it stays as a building (buildings constructionHour → addBuilding then upgradeShelter; never demolished: canDemolish) and the base is the next tier.
 - A base founded on its own spot, or with its step up standing, keeps the camp's middle, fire and cache (basemap coreParts / tierBuilt).
 - **Wood in the step ups** (the user's pick 2026-10-20): camp_up and outpost_up 20 scrap, 2 building materials, 200 wood; hub_up 100 scrap, 5 building materials, 800 wood.
   - Gathering keeps the fires' days of wood back (buildings gatherHour: woodNeed dailyKeep).
   - An outpost keeps what its gathered jobs still wait for out of the midnight shipping (economy shipFromOutposts).
   - The governor fells for a step up's wood (autopilot nextBuildWood reads gatherRows).
+
+### The camp fire's look
+- The user's request 2026-10-23: "Improve campfire look". A fire pit (the camp's fire, a cook fire, a campsite's) on the base, fight and raid maps: a ring of nine field stones in three greys round a bed of ash; lit, a log-cabin lay of four split logs, charred with glowing seams, over embers (ui/isoview firepit prims), and each frame layered flickering flames (deep orange, gold, a pale core), rising sparks, thin smoke and a warm glow on the ground (drawCampfireIso, campfireGlow; scene.pits). At night it lights a flickering pool round it (ui/battlelights paintLights pits; a campsite's own flare is not doubled). Cold: grey ash and two charred logs.
 
 ### The camp fire moves
 - The user's request 2026-10-22. The fire is an item of its own on the map (basemap FIRE, key k:fire, base.plan.fireSpot, [0, 0] until moved; movableFire, fireSpot; Move only, never Auto).

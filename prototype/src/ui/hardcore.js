@@ -74,7 +74,7 @@ export function roadNeeds(state) {
   const head = v.first ? `Hardcore: no hub yet. Your ${v.people} survivors are a team on the road; you are with them, so they always take orders.` : "You have no base left: your people are on the road.";
   return {
     status: { cls: v.first ? "warn" : "danger", text: "On the road", tip: `${head} ${ESTABLISH_LABEL} sets up a camp you build up into your hub.` },
-    camp: { text: "No camp yet", tip: `Give a team the order ${ESTABLISH_LABEL} where your home should stand: a camp (the barest base) with its step up into a shelter queued (${needText(v.needs)} brought in, then ${BUILDINGS.camp_up.hours} work-hours by its builders).` },
+    camp: { text: "No camp yet", tip: `Give a team the order ${ESTABLISH_LABEL} where your home should stand: a camp (the barest base); then place its ${BUILDINGS.camp_up.name.toLowerCase()} from the Build list to build it up into a shelter (${needText(v.needs)} brought in, then ${BUILDINGS.camp_up.hours} work-hours by its builders).` },
     rows: [
       row("food", `${n0(d.u.food.have)} days of food (one person's day each, packs included); the ${heads} of them eat about ${r1(d.u.food.perDay)} a day: it lasts about ${r1(d.food)} days.`, { amt: n0(d.u.food.have), level: lvl(d.food, 1, 3), note: `${r1(d.food)}d` }),
       row("water", `${n0(d.u.water.have)} water, purified and un-purified (packs included); the ${heads} of them drink about ${r1(d.u.water.perDay)} a day at today's thirst: it lasts about ${r1(d.water)} days.`, { amt: n0(d.u.water.have), level: lvl(d.water, 1, 2), note: `${r1(d.water)}d` }),
@@ -125,7 +125,7 @@ export function firstHubCard(state) {
   const d = v.p ? teamDays(state, v.p) : null;
   const spots = v.tile != null ? hubSites(state, v.tile, 4).slice(0, 3) : [];
   const spotRows = spots.map((s) => `<div class="row small"><a class="link" data-action="center" data-tile="${s.id}"${tip("Center the map here")}>${esc(tileLabel(state, s.id))}</a><span class="muted">water: ${esc(waterText(state, s.id))} · ${s.sites} site${s.sites === 1 ? "" : "s"} around</span></div>`).join("");
-  const intro = `No base ${v.first ? "yet" : "left"}: your ${v.people || ""} survivors are on the road. Pick a good spot (beside a river or lake: there is no spring; sites around, few of the dead) and give a team the order <b>${ESTABLISH_LABEL}</b>: a camp (the barest base: your people live there from the start) with its step up into a shelter queued: ${esc(needText(v.needs))} brought in, then ${BUILDINGS.camp_up.hours} work-hours by its builders (Camp → Shelter → Base).`;
+  const intro = `No base ${v.first ? "yet" : "left"}: your ${v.people || ""} survivors are on the road. Pick a good spot (beside a river or lake: there is no spring; sites around, few of the dead) and give a team the order <b>${ESTABLISH_LABEL}</b>: a camp (the barest base: your people live there from the start); then pick its ${esc(BUILDINGS.camp_up.name.toLowerCase())} from the Build list and place it on the build map to build it up into a shelter: ${esc(needText(v.needs))} brought in, then ${BUILDINGS.camp_up.hours} work-hours by its builders (Camp → Shelter → Base).`;
   return `<div class="card attn">
     <div class="spread"><h2 style="margin:0">${v.title}</h2><span class="muted small">${v.first ? "Hardcore" : "On the road"}</span></div>
     <div class="small" style="margin-top:0.3rem">${intro}</div>
@@ -202,7 +202,7 @@ export function stagingTileCard(state, id) {
   const why = strikeProblem(state, b);
   return `<div class="card attn small campcard"${tip("A camp: the barest base. Its people live there; manage its stores, teams and vehicles in its base window, build it up from Construction, or strike it.")}>
     <div class="spread"><b>${esc(b.name)}</b>${stageSteps(0)}</div>
-    ${job ? buildBar(f, { cap: job.paid ? gatherCap(job) : null, text: `${BUILDINGS[job.type].name}: ${pct(f)}` }) : `<div class="muted">A plain camp: nothing building (Construction: ${esc(BUILDINGS[tierUpType(b)].name)}).</div>`}
+    ${job ? buildBar(f, { cap: job.paid ? gatherCap(job) : null, text: `${BUILDINGS[job.type].name}: ${pct(f)}` }) : `<div class="muted">Nothing building yet: pick the ${esc(BUILDINGS[tierUpType(b)].name.toLowerCase())} from its Build list and place it on the build map.</div>`}
     <div class="muted" style="margin-top:0.2rem">${people.length} there${people.length ? `: ${esc(people.map((s) => s.name.split(" ")[0]).join(", "))}` : ""} · fire ${fireLit(b) ? "lit" : "out"} · water: ${esc(waterText(state, b.tile))}</div>
     <div class="row" style="margin-top:0.3rem"><button class="mini primary" data-action="openbase" data-id="${b.id}"${tip("Open the camp's base window: stores, people and teams, vehicles, construction")}>Open camp</button><button class="mini" data-action="strikecamp" data-base="${b.id}" ${why ? "disabled" : ""}${tip(why || "Strike the camp: its people form a team with what they can carry (water and food first), the rest is left here as a cache, and the camp is gone.")}>Strike camp</button></div>
   </div>`;

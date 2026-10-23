@@ -11,7 +11,7 @@ import { totalRounds, foldRounds } from "../src/sim/ammo.js"; // rounds by calib
 // A record with its rounds counted together as "ammo" (the archetypes give ammo as one figure); no "ammo" key with none.
 const asGeneric = (rec) => { const r = { ...rec }; foldRounds(r); if (!r.ammo) delete r.ammo; return r; };
 import { createWorld, tickHour, hub, day, alive, atBase, hurt, makeSurvivor, newId, baseVision } from "../src/sim/world.js";
-import { BUILDINGS, isShelter, tierName, SHELTER, CAMP, baseWalls, baseBeds, farmSlots, canBuild, queueBuild, addBuilding, plotCap, tierUpJob, gatherRows, gatherStalled } from "../src/sim/buildings.js";
+import { BUILDINGS, isShelter, tierName, SHELTER, CAMP, baseWalls, baseBeds, farmSlots, canBuild, queueBuild, addBuilding, plotCap, tierUpJob, tierUpType, gatherRows, gatherStalled } from "../src/sim/buildings.js";
 import { waterProduction, waterNeed } from "../src/sim/economy.js";
 import { foodUse, mouthsAt, useText } from "../src/sim/upkeep.js";
 import { structuresOf } from "../src/sim/interior.js";
@@ -42,7 +42,9 @@ import { isTentBag, TENTS } from "../src/sim/tents.js"; // the hardcore start's 
 import { assignedRole } from "../src/sim/noidle.js"; // noidle: a job with no work, its people helping elsewhere
 
 // Setting up a camp takes an hour (staging.js STAGING.PITCH): skipped here, the camp (a base) stands at once.
-const establishNow = (st, p) => { p.pitched = true; return giveOrder(st, p, "establish"); };
+// Establish base at once, and the player places its shelter shack from the Build list (the user's request 2026-10-23:
+// the step up is not queued for you).
+const establishNow = (st, p) => { p.pitched = true; const r = giveOrder(st, p, "establish"); for (const c of st.bases) if (c.camp && !tierUpJob(c)) queueBuild(st, c, tierUpType(c)); return r; };
 
 const apGames = Number(process.argv[2] || 8), apDays = Number(process.argv[3] || 40);
 let fails = 0, passes = 0;
@@ -286,9 +288,11 @@ const campOf = (st) => st.bases.find((b) => b.camp === true) || null;
   check(!st.parties.includes(p) && people.every((id) => atBase(st, camp.id).some((s) => s.id === id)), "the team moved in: its people live at the camp");
   check(camp && camp.armory.some((it) => it.key === "crowbar") && food(camp) + jarred(camp) >= 30 && st.vehicles[0].loc.kind === "base" && st.vehicles[0].loc.baseId === camp.id, "its cargo is the camp's stores and armory, the car parked there");
   check(firstHubPending(st) && tierName(camp) === "Camp" && tierInfo(st).stage === 0 && tierInfo(st).next === "Shelter", "not founded yet: a camp, the next stage the shelter");
+  check(!tierUpJob(camp) && st.log.some((l) => /Build list/.test(l.text)), "nothing queued on setting up: the log says to place the step up from the Build list (the user's request 2026-10-23)");
+  queueBuild(st, camp, tierUpType(camp)); // the player picks the shelter shack from the Build list (ui/basemap.js openToPlace)
   const job = tierUpJob(camp);
   const needScrap = st.tiles[tile0].ruin ? STAGING.HARDCORE.needs.scrap - STAGING.RUIN_SCRAP : STAGING.HARDCORE.needs.scrap;
-  check(job && job.type === "camp_up" && gatherRows(job).find((r) => r.key === "scrap").need === needScrap && gatherRows(job).find((r) => r.key === "buildmat").need === STAGING.HARDCORE.needs.buildmat && job.hours === STAGING.HARDCORE.work, `its step up is queued: ${needText(STAGING.HARDCORE.needs)}, ${job && job.hours} work-hours`);
+  check(job && job.type === "camp_up" && gatherRows(job).find((r) => r.key === "scrap").need === needScrap && gatherRows(job).find((r) => r.key === "buildmat").need === STAGING.HARDCORE.needs.buildmat && job.hours === STAGING.HARDCORE.work, `its step up, placed, is queued: ${needText(STAGING.HARDCORE.needs)}, ${job && job.hours} work-hours`);
   check(atBase(st, camp.id).every((s) => assignedRole(s) === "build"), `everyone on Build (${atBase(st, camp.id).map((s) => s.role).join(", ")} this hour: noidle.js, no materials yet)`); // their own job; with nothing to build they help elsewhere for the hour
   check(baseWalls(camp) === 0 && baseBeds(camp) === CAMP.beds && farmSlots(camp) === 0 && plotCap(camp, "building") === 0 && plotCap(camp, "utility") === 2, `a camp is barer than a shelter: walls 0, beds ${baseBeds(camp)}, no crop plot until one is dug, two utility plots`);
   // (BASE-03, 2026-10-12: the drying rack, bench, boiler and cook fire are camp buildings now; the watchtower still waits.)

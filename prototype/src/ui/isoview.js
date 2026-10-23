@@ -204,7 +204,9 @@ function sceneFor(b) {
     }
   }
   // Single wall cells (no floor: a raid's locked doors in the open) stand alone.
-  sceneCache = { b, key, comp, blds, ext, sig, groundKey: `${b.w}x${b.h}:${fl}:${fsig}` };
+  const pits = []; // the fire pits: their flames, sparks, smoke and glow drawn each frame while lit (drawCampfireIso)
+  for (let i = 0; i < n; i++) if (b.cells[i].k === "firepit") pits.push(i);
+  sceneCache = { b, key, comp, blds, ext, sig, pits, groundKey: `${b.w}x${b.h}:${fl}:${fsig}` };
   iso.builds.scene++;
   return sceneCache;
 }
@@ -1075,16 +1077,43 @@ function primsOf(k, o) {
       for (const [e, end] of [[lo, !(ax === "u" ? o.j & 2 : o.j & 8)], [hi, !(ax === "u" ? o.j & 1 : o.j & 4)]]) if (end) out.push(run(ax, 0.34, 0.66, 0, 6, flatM(PAL.woodLt), e === lo ? lo : hi - 0.02, e === lo ? lo + 0.02 : hi)); // the cut ends
       return out;
     }
-    // A fire pit: a ring of stones; lit (o.lit: the cell's c.lit, sim/campsite.js and sim/basemap.js), flames over embers;
-    // cold, grey ash and two charred logs, no flame and no glow.
+    // A fire pit (the user's request 2026-10-23: "Improve campfire look"): a ring of field stones, each its own lump in
+    // its own grey, round a bed of ash. Lit (o.lit: the cell's c.lit, sim/campsite.js and sim/basemap.js): a log-cabin
+    // lay of four split logs, charred and cracked with glowing seams, over a bed of embers; its flames, sparks, smoke
+    // and the glow on the ground are drawn each frame (drawCampfireIso). Cold: grey ash and two charred logs.
     case "firepit": {
-      if (o.lit) return [
-        { cyl: [0.5, 0.5, 0.36], z0: 0, z1: 4, m: (f, s, t, X, Y) => (f === "top" && Math.hypot(s, t * 2) < 5 ? mul(hex("#3a2a1c"), 0.9 + n2(X, Y, 2) * 0.2) : mul(PAL.stone, 0.85 + n2(X, Y, 3) * 0.2)) },
-        { blob: [0.5, 0.5, 2], ru: 0.1, rz: 5, m: flatM(hex("#e07a2a")) }, { blob: [0.44, 0.56, 2], ru: 0.08, rz: 7, m: flatM(hex("#f5b640")) },
+      const lit = !!o.lit;
+      const stones = [];
+      for (let i = 0; i < 9; i++) {
+        const a = (i / 9) * Math.PI * 2 + hash3(v, i, 51) * 0.3, rr = 0.32 + hash3(v, i, 52) * 0.04;
+        const col = mul(i % 3 === 0 ? hex("#9a958b") : i % 3 === 1 ? hex("#7d786f") : hex("#625e57"), 0.9 + hash3(v, i, 53) * 0.2);
+        stones.push({ blob: [0.5 + Math.cos(a) * rr, 0.5 + Math.sin(a) * rr, 0.9], ru: 0.06 + hash3(v, i, 54) * 0.02, rz: 1 + hash3(v, i, 55) * 0.6, m: (f, nx, ny, X, Y) => { const g = 0.92 + n2(X, Y, 56 + i) * 0.16; return lit ? [col[0] * g * 1.1, col[1] * g, col[2] * g * 0.9] : mul(col, g); } }); // lit: warmed by the fire
+      }
+      const back = stones.filter((p) => p.blob[0] + p.blob[1] < 1).sort((p, q) => p.blob[0] + p.blob[1] - q.blob[0] - q.blob[1]);
+      const front = stones.filter((p) => p.blob[0] + p.blob[1] >= 1).sort((p, q) => p.blob[0] + p.blob[1] - q.blob[0] - q.blob[1]);
+      const bed = { cyl: [0.5, 0.5, 0.29], z0: 0, z1: 0.6, m: (f, s, t, X, Y) => {
+        const d = Math.hypot(s, t * 2), q = n2(X, Y, 2);
+        if (f !== "top") return mul(hex("#3a332c"), 0.9);
+        if (!lit) return mul(hex("#6b6862"), 0.8 + q * 0.35);
+        return d < 3.2 ? (q > 0.55 ? hex("#ffb347") : hex("#e0602a")) : d < 5.2 ? (q > 0.72 ? hex("#ff8a2a") : q > 0.4 ? hex("#a8381c") : hex("#2f2420")) : mul(hex("#4a423a"), 0.8 + q * 0.3);
+      } };
+      if (!lit) return [
+        bed, ...back,
+        { u0: 0.34, u1: 0.64, v0: 0.46, v1: 0.53, z0: 0.6, z1: 2, m: tex(hex("#2b2622"), 0.15, 57) }, { u0: 0.46, u1: 0.53, v0: 0.35, v1: 0.62, z0: 2, z1: 3.2, m: tex(hex("#33302b"), 0.15, 58) },
+        ...front,
       ];
+      // A split log: bark on its sides, a pale cut end, charred toward the middle where it burns, seams glowing.
+      const logM = (k) => (f, s, t, X, Y) => {
+        const q = n2(X, Y, k);
+        if (q > 0.86) return q > 0.94 ? hex("#ffc04a") : hex("#f07a2a");
+        const char = clamp01(1 - Math.abs(s - 2.6) / 3);
+        return mul(f === "top" ? PAL.woodLt : PAL.bark, (1 - char * 0.62) * (0.88 + q * 0.2));
+      };
       return [
-        { cyl: [0.5, 0.5, 0.36], z0: 0, z1: 4, m: (f, s, t, X, Y) => (f === "top" && Math.hypot(s, t * 2) < 5 ? mul(hex("#6b6862"), 0.85 + n2(X, Y, 2) * 0.3) : mul(PAL.stone, 0.85 + n2(X, Y, 3) * 0.2)) },
-        { u0: 0.36, u1: 0.62, v0: 0.46, v1: 0.53, z0: 4, z1: 5, m: flatM(hex("#2b2622")) }, { u0: 0.47, u1: 0.54, v0: 0.36, v1: 0.6, z0: 4, z1: 5, m: flatM(hex("#33302b")) },
+        bed, ...back,
+        { u0: 0.33, u1: 0.67, v0: 0.37, v1: 0.44, z0: 0.6, z1: 2.4, m: logM(60) }, { u0: 0.33, u1: 0.67, v0: 0.56, v1: 0.63, z0: 0.6, z1: 2.4, m: logM(61) },
+        { u0: 0.37, u1: 0.44, v0: 0.33, v1: 0.67, z0: 2.4, z1: 4.2, m: logM(62) }, { u0: 0.56, u1: 0.63, v0: 0.33, v1: 0.67, z0: 2.4, z1: 4.2, m: logM(63) },
+        ...front,
       ];
     }
     case "lamp": return [
@@ -2420,10 +2449,15 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   const siegeOver = new Map();
   for (const m of OV.rams) if (m.x >= 0 && vis[m.y * b.w + m.x]) { const [uu, vv] = toView(m.x, m.y, r, b.w, b.h); const d = depth(uu, vv, st) + 1; const a = siegeOver.get(d); if (a) a.push(() => drawRamIso(ctx, b, m, S)); else siegeOver.set(d, [() => drawRamIso(ctx, b, m, S)]); }
   for (const f of OV.fires) if (vis[f.y * b.w + f.x]) atD(f.x, f.y, () => drawFlamesIso(ctx, b, f, S, ph));
+  // Lit fire pits (a camp's fire, a cook fire, a campsite's): a warm glow on the ground round them now, their flames,
+  // sparks and smoke in the painter's pass.
+  const pitsLit = scene.pits.filter((i) => b.cells[i].lit && vis[i]);
+  for (const i of pitsLit) campfireGlow(ctx, b, i % b.w, (i / b.w) | 0, S, now, st, !!(b.night || b.dark));
+  for (const i of pitsLit) atD(i % b.w, (i / b.w) | 0, () => drawCampfireIso(ctx, b, i % b.w, (i / b.w) | 0, S, now));
 
   // Night: the lights (ui/battlelights.js), a glow on the ground under the units. By day in a raid's building: the
   // dark rooms' floors shaded (a barn, a storeroom: sim/indoorlight.js), a light switched on there cut out of it.
-  if ((b.night || b.dark || b.indoor) && paintLights(b, v, groundXform(b, iso.rot, 1, S, gx, gy, Hv), cw, ch, now, (t) => H.animPos(t, now))) drawGlow(ctx, cw, ch);
+  if ((b.night || b.dark || b.indoor) && paintLights(b, v, groundXform(b, iso.rot, 1, S, gx, gy, Hv), cw, ch, now, (t) => H.animPos(t, now), pitsLit)) drawGlow(ctx, cw, ch);
   if (b.indoor && !b.night && !b.dark) drawShade(ctx, b, cw, ch);
 
   // ---------- the painter's pass: every cell from the back to the front ----------
@@ -2989,6 +3023,50 @@ function drawFlamesIso(ctx, b, c, S, ph) {
     const hgt = (7 + 6 * Math.sin(fl * Math.PI)) * S * (c.turns > 1 ? 1 : 0.7), w = 2.4 * S;
     ctx.fillStyle = k % 2 ? "rgba(255,196,70,0.9)" : "rgba(255,104,36,0.88)";
     ctx.beginPath(); ctx.moveTo(X - w, Y); ctx.quadraticCurveTo(X - w * 0.6, Y - hgt * 0.6, X + Math.sin(fl * 6) * w * 0.5, Y - hgt); ctx.quadraticCurveTo(X + w * 0.6, Y - hgt * 0.6, X + w, Y); ctx.closePath(); ctx.fill();
+  }
+}
+// A lit fire pit's glow (the user's request 2026-10-23: "Improve campfire look"): warm light on the ground round it,
+// breathing with the flames; brighter at night.
+function campfireGlow(ctx, b, x, y, S, now, st, dark) {
+  const [X, Y] = project(x + 0.5, y + 0.5, tileTop(b, x, y)), t = (now || 0) / 1000;
+  const fl = 1 + 0.06 * Math.sin(t * 7.3 + x) + 0.04 * Math.sin(t * 13.1 + y);
+  ctx.save();
+  ctx.translate(X, Y); ctx.scale(RX(st) * S * 1.6 * fl, RY(st) * S * 1.6 * fl);
+  const g = ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
+  g.addColorStop(0, `rgba(255,150,60,${dark ? 0.42 : 0.24})`); g.addColorStop(0.45, `rgba(255,120,40,${dark ? 0.16 : 0.08})`); g.addColorStop(1, "rgba(255,110,40,0)");
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(0, 0, 1, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+// A lit fire pit's fire over its logs: tongues of flame in three layers (deep orange outside, gold, a pale core), each
+// swaying and flickering on its own; sparks rising and winking out; a thin smoke drifting up and spreading.
+function drawCampfireIso(ctx, b, x, y, S, now) {
+  const t = (now || 0) / 1000, seed = x * 1.7 + y * 2.3;
+  const [X, Y] = project(x + 0.5, y + 0.5, tileTop(b, x, y) + 3);
+  const tongue = (dx, w, h, sway, col) => {
+    const bx = X + dx * S, tip = bx + sway * S;
+    ctx.fillStyle = col;
+    ctx.beginPath(); ctx.moveTo(bx - w * S, Y);
+    ctx.bezierCurveTo(bx - w * S, Y - h * 0.45 * S, tip - w * 0.35 * S, Y - h * 0.7 * S, tip, Y - h * S);
+    ctx.bezierCurveTo(tip + w * 0.35 * S, Y - h * 0.7 * S, bx + w * S, Y - h * 0.45 * S, bx + w * S, Y);
+    ctx.closePath(); ctx.fill();
+  };
+  const fl = (k, sp) => Math.sin(t * sp + seed + k * 2.1) * 0.5 + Math.sin(t * sp * 2.3 + k * 1.3) * 0.25;
+  // Smoke first: behind the flames.
+  for (let k = 0; k < 3; k++) {
+    const p = (t * 0.22 + k / 3 + seed * 0.01) % 1;
+    ctx.fillStyle = `rgba(150,146,140,${0.2 * Math.sin(p * Math.PI)})`;
+    ctx.beginPath(); ctx.arc(X + (Math.sin(p * 4 + k + seed) * 3 + p * 4) * S, Y - (12 + p * 30) * S, (1.6 + p * 4.5) * S, 0, Math.PI * 2); ctx.fill();
+  }
+  for (const [dx, k] of [[-2.4, 0], [2.4, 1], [-0.8, 2], [1.2, 3]]) tongue(dx, 1.9, 8 + 3 * fl(k, 9), fl(k + 4, 5) * 2, "rgba(226,86,32,0.88)");
+  for (const [dx, k] of [[-1.3, 5], [1.3, 6], [0, 7]]) tongue(dx, 1.6, 6.5 + 2.5 * fl(k, 11), fl(k + 4, 6) * 1.6, "rgba(255,158,46,0.92)");
+  for (const [dx, k] of [[-0.5, 8], [0.7, 9]]) tongue(dx, 1, 4 + 1.5 * fl(k, 14), fl(k + 4, 7), "rgba(255,236,160,0.95)");
+  // Sparks.
+  for (let k = 0; k < 5; k++) {
+    const p = (t * (0.7 + k * 0.09) + k * 0.31 + seed * 0.05) % 1;
+    ctx.fillStyle = `rgba(255,${190 + k * 10},90,${1 - p})`;
+    const r = Math.max(0.6, 0.9 * S);
+    ctx.fillRect(X + Math.sin(p * 7 + k * 2 + seed) * 3.5 * S - r / 2, Y - (6 + p * 24) * S - r / 2, r, r);
   }
 }
 function arrow(ctx, x0, y0, x1, y1, col, w) {

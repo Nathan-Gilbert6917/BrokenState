@@ -723,7 +723,7 @@ function shipFromOutposts(state) {
   const h = hub(state);
   for (const base of state.bases) {
     if (base.type !== "outpost") continue;
-    if (isCamp(base) && !tierUpJob(base)) continue; // a plain camp (staging.js) is off the supply network: it lives on what it holds
+    if (isCamp(base) && !tierUpJob(base) && !base.grow) continue; // a plain camp (staging.js) is off the supply network: it lives on what it holds; Build outpost's (base.grow) is on it before its house is placed
     const staff = atBase(state, base.id);
     const line = supplyLine(state, base);
     base.supplyLine = { hours: line.hours, strength: line.strength, hostile: line.hostile, horde: line.horde };

@@ -54,7 +54,8 @@ Base detail: [bases.md](../features/bases.md). Economy detail: [economy.md](../f
 - **What a camp's spot is like**: the picker's facts for a 5 × 5 (ground, the lie round it, sight, room, wood, water, road, places, the dead) and the game's own pick scored on them, with why [siteinfo, basemap defaultSite, ui/campsite] `tools/campspottest.js`. [details](../features/bases.md#what-a-camps-spot-is-like)
 - **Scouting before a camp**: a scouted tile gets the picker; an unscouted one sets up blind on a random spot, its map fogged and its dead attacking until cleared (or raided from the POI map) [campscout, staging, parties, survey, poiraid] `tools/campscouttest.js`. [details](../features/bases.md#scouting-before-a-camp)
   - Pick the camp's 5 × 5 spot on the tile's 250 × 250 map; setup time and wood depend on the clearing and an axe.
-  - Step ups (Shelter shack, Outpost house, Main house) are buildings placed on the map.
+  - Step ups (Shelter shack, Outpost house, Main house) are buildings placed on the map: picked from the Build list and placed by hand, never queued for you on setting up (ui/basemap openToPlace) `tools/stepupplacetest.js`.
+  - The camp fire: stones, a log lay, embers, flickering flames, sparks, smoke and a glow (ui/isoview drawCampfireIso, ui/battlelights).
   - Clearing the spot of the dead first on towns, cities and infected tiles [siteclear] `tools/siteclearest.js`.
   - "Open the build map" prompt for new bases (key U) [ui/buildmap] `tools/buildmapbtntest.js`.
 - **Buildings and construction queue**: plots, demolition refunds, the storage ladder, general buildings and fittings [buildings]; field works outside the walls [fieldworks]. [details](../features/bases.md#buildings-and-construction-queue)

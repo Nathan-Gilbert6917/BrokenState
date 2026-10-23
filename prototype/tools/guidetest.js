@@ -15,7 +15,7 @@ import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from ".
 import { readFileSync } from "node:fs";
 import { createWorld, tickHour, hub, day, alive } from "../src/sim/world.js";
 import { launchExpedition, startReturn, partyTile, partyMembers, giveOrder } from "../src/sim/parties.js";
-import { queueBuild, BUILDINGS, canBuild } from "../src/sim/buildings.js";
+import { queueBuild, BUILDINGS, canBuild, tierUpType } from "../src/sim/buildings.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
 import { roadTeam } from "../src/sim/hardcore-start.js";
 import { setAutopilot } from "../src/sim/autopilot.js";
@@ -241,6 +241,7 @@ section("Hardcore: the road list, founded for real");
   establishNow(st, p);
   check(!!hub(st) && hub(st).camp === true && guideCheck(st, ui).some((x) => x.id === "camp"), "camp: the camp is set up (a base)");
   check(!g.done.needs, "the camp still needs its materials");
+  queueBuild(st, hub(st), tierUpType(hub(st))); // the player places the shelter shack from the Build list (the user's request 2026-10-23)
   check(guideSteps(g).find((x) => x.id === "needs").why.includes("200 wood"), "needs: the step names the wood the step up takes");
   Object.assign(hub(st).stock, { scrap: 30, buildmat: 2, wood: 300 }); // a trip home with the rest (the wood: a Cut wood order)
   check(guideCheck(st, ui).some((x) => x.id === "needs"), "needs: everything is in");

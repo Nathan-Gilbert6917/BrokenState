@@ -18,7 +18,7 @@
 import { stockTools } from "./toolset.js"; // every tool a build or recipe can need (toolreqs.js)
 import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, tickHour, hub, atBase, day } from "../src/sim/world.js";
-import { BUILDINGS, CAMP, SHELTER, isCamp, isShelter, tierName, tierUpJob, canBuild, queueBuild, plotCap, baseBeds, farmSlots, gatherRows } from "../src/sim/buildings.js";
+import { BUILDINGS, CAMP, SHELTER, isCamp, isShelter, tierName, tierUpJob, tierUpType, canBuild, queueBuild, plotCap, baseBeds, farmSlots, gatherRows } from "../src/sim/buildings.js";
 import { partyMembers, partyTile, giveOrder, orderOptions, launchExpedition, planPath, carried } from "../src/sim/parties.js";
 import { roadTeam } from "../src/sim/hardcore-start.js";
 import { strikeCamp, strikeProblem, campOption, settleHub, STAGING, pendingSite, pickSite, siteSetup } from "../src/sim/staging.js";
@@ -220,6 +220,8 @@ section("The hub among camps: a real base takes the hub's place; the camp become
   const p3 = roadTeam(s3);
   giveOrder(s3, p3, "establish"); p3.pitched = true; giveOrder(s3, p3, "establish");
   const c = s3.bases[0];
+  check(!tierUpJob(c), "nothing queued on setting up: the step up is placed by hand (the user's request 2026-10-23)");
+  queueBuild(s3, c, tierUpType(c)); // the player picks the shelter shack from the Build list (ui/basemap.js openToPlace)
   check(isCamp(c) && c.type === "hub" && tierUpJob(c).type === "camp_up", "the only base: the camp is the hub, building up into a shelter");
   const t2 = s3.grid.within(c.tile, 5).find((t) => s3.grid.distance(t, c.tile) >= 4 && s3.tiles[t].terrain !== "water");
   const real = { id: 990001, tile: t2, type: "outpost", name: "Retaken", stock: { food: 0, water: 0 }, radio: false, watchtower: false, buildings: [], construction: [], armory: [] };

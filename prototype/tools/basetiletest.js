@@ -10,7 +10,7 @@ import { createWorld, tickHour, hub, atBase, residents, makeSurvivor, newId, ali
 import { partyTile, partyMembers, orderMove, giveOrder, orderOptions, outpostName, launchExpedition, ordersCard, planPath, MISSIONS, teamName } from "../src/sim/parties.js";
 import { startOrder, queueOrder } from "../src/sim/orders.js";
 import { moveTeamOut, enterOption, enterCard } from "../src/sim/moveout.js";
-import { addBuilding } from "../src/sim/buildings.js";
+import { addBuilding, queueBuild, tierUpType, tierUpJob } from "../src/sim/buildings.js";
 import { roadTeam } from "../src/sim/hardcore-start.js";
 import { takePrisonersAt } from "../src/sim/prisoners.js";
 import { setAutopilot } from "../src/sim/autopilot.js";
@@ -77,6 +77,8 @@ section("Establish base: the team that sets up the camp moves into it and is dis
   check(dangling(st, id).length === 0, `nothing points at the gone team (${dangling(st, id).join(", ") || "clean"})`);
   const after = roundTrip(st);
   check(hub(after) && hub(after).camp === true && !after.parties.some((q) => q.owner === "player") && residents(after, hub(after).id).length === people.length, "save / load: the camp with its people, no team");
+  check(!tierUpJob(h), "nothing queued on setting up: the step up is placed by hand (the user's request 2026-10-23)");
+  queueBuild(st, h, tierUpType(h)); // the player picks the shelter shack from the Build list (ui/basemap.js openToPlace)
   run(st, 24 * 10, () => !!hub(st) && hub(st).camp !== true);
   check(hub(st) && hub(st).camp !== true && hub(st).tier === 0 && residents(st, hub(st).id).length === people.length, `its builders build it up into the shelter with what the team brought (${hub(st) && hub(st).camp ? "still a camp" : "a shelter"})`);
 }
