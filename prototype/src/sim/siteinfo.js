@@ -30,7 +30,7 @@
 //   landFacts(land, at)           the facts that are the land's alone (the pick weighs these)
 //   pickReasons(f)                why the game picked it: ["it is quick to set up", "on level ground", …]
 import { siteLand, siteProblem, terrainOf, SITE_RANGE, GRID, GRID_MAX, NO_BUILD } from "./basemap.js"; // (call-time only: basemap.js defaultSite calls bestSite)
-import { SITE, siteBox, clearOf, landSpec } from "./basescatter.js";
+import { SITE, siteBox, clearOf, landSpec, siteLevel, CLEAR } from "./basescatter.js";
 import { CAMP } from "./buildings.js"; // (call-time only)
 import { siteSetup, waterSource } from "./staging.js"; // (call-time only)
 import { siteThreat } from "./siteclear.js"; // (call-time only)
@@ -60,7 +60,8 @@ export const SITE_SCORE = { TIME: 1, HIGH: 6, SIGHT: 4, WATER: 3, WATER_NEAR: 20
 // towns, the cities and the hills of the base maps): the game's spot keeps off them while it can.
 const BIG = new Set(["house", "store", "block", "rise", "slope", "dip", "crag"]);
 const SIGHT_BLOCK = new Set(["tree", "house", "store", "block", "crag", "wreck"]); // no sight through (bushes, fences, rocks: seen over)
-const WOODY = new Set(["tree", "log", "stump", "bush"]);                          // wood for the fires (a house's timbers: pulled down, not felled)
+const WOODY = new Set(["tree", "log", "stump", "bush"]);
+const LEVELS = [-2, -1, 0, 1, 2, 3]; // the ground's levels a camp can stand at (gridsOf's higher, lower, no sight through)                          // wood for the fires (a house's timbers: pulled down, not felled)
 
 // ---------- the map's cells summed (cached by the land) ----------
 // Per cell of the tile's map (map coordinates [-G, G)): what stands there, summed from the corner (a box's count in
@@ -70,10 +71,14 @@ function gridsOf(land) {
   let g = (gridCache.find((e) => e[0] === land) || [])[1];
   if (g) return g;
   const G = GRID_MAX, N = 2 * G, M = N + 1;
-  const L = { solid: 0, bad: 1, big: 2, hrs: 3, sight: 4, wood: 5, trees: 6, up: 7, down: 8 };
+  // gt<t>: ground higher than level t (the crag at any level), lt<t>: lower; sv<t>: no sight through from a camp at
+  // level t (a tree, a building, the crag, ground higher than it). The camp's own level (basescatter.js siteLevel) picks
+  // the layers: a camp on a hill is not overlooked by the hill it stands on (the user's request 2026-10-23).
+  const L = { solid: 0, bad: 1, big: 2, hrs: 3, wood: 4, trees: 5 };
+  for (const t of LEVELS) { L[`gt${t}`] = Object.keys(L).length; L[`sv${t}`] = Object.keys(L).length; if (t > LEVELS[0]) L[`lt${t}`] = Object.keys(L).length; }
   // Each layer's cell (x, y) at P[(y + G + 1) * M + x + G + 1], then summed in place from the corner (row 0 and
   // column 0 stay 0): P[(y + 1) * M + x + 1] = the cells [0, x] × [0, y].
-  const P = Object.keys(L).map(() => new Float64Array(M * M));
+  const P = Object.keys(L).map((k) => (k === "hrs" || k === "wood" ? new Float64Array(M * M) : new Int32Array(M * M))); // counts in whole numbers (a third the memory)
   const at = (x, y) => (x >= -G && y >= -G && x < G && y < G ? (y + G + 1) * M + (x + G + 1) : -1);
   const cellOf = (x, y) => (y + G) * N + (x + G); // the distance fields' index
   const water = [], road = [];
@@ -86,17 +91,19 @@ function gridsOf(land) {
       if (i < 0) continue;
       if (p.k === "water") { P[L.bad][i] = 1; water.push(cellOf(x, y)); continue; }
       P[L.solid][i] = 1;
-      if (p.k === "crag") { P[L.bad][i] = 1; P[L.up][i] = 1; }
+      if (p.k === "crag") { P[L.bad][i] = 1; for (const t of LEVELS) P[L[`gt${t}`]][i] = 1; }
       if (BIG.has(p.k)) P[L.big][i] = 1;
-      if (SIGHT_BLOCK.has(p.k)) P[L.sight][i] = 1;
+      if (SIGHT_BLOCK.has(p.k)) for (const t of LEVELS) P[L[`sv${t}`]][i] = 1;
       if (c) P[L.hrs][i] += c.hours / n; // a piece's hours spread over its cells (bestSite weighs the best in full)
       if (!j && wood) { P[L.wood][i] += wood; if (p.k === "tree") P[L.trees][i] += 1; }
     }
   }
-  for (const [k, h] of land.heights || []) {
-    const c = k.indexOf(","), x = +k.slice(0, c), y = +k.slice(c + 1), i = at(x, y);
-    if (i < 0) continue;
-    if (h > 0) { P[L.up][i] = 1; P[L.sight][i] = 1; } else if (h < 0) P[L.down][i] = 1;
+  for (let y = -G; y < G; y++) for (let x = -G; x < G; x++) {
+    const i = at(x, y), h = (land.heights && land.heights.get(`${x},${y}`)) || 0;
+    for (const t of LEVELS) {
+      if (h > t) { P[L[`gt${t}`]][i] = 1; P[L[`sv${t}`]][i] = 1; }
+      else if (h < t && t > LEVELS[0]) P[L[`lt${t}`]][i] = 1;
+    }
   }
   for (const [k, f] of land.floors || []) if (f === "road") { const c = k.indexOf(","), x = +k.slice(0, c), y = +k.slice(c + 1); if (at(x, y) >= 0) road.push(cellOf(x, y)); }
   for (const s of P) for (let y = 1; y <= N; y++) { let row = 0; for (let x = 1; x <= N; x++) { row += s[y * M + x]; s[y * M + x] = s[(y - 1) * M + x] + row; } }
@@ -132,6 +139,13 @@ function distField(N, src) {
 const distAt = (g, field, at) => (field ? field[(at[1] + g.G) * g.N + (at[0] + g.G)] : null);
 
 // ---------- the facts ----------
+// Is the box all on one level (gt<t>: the cells higher than t; at level t: those over t-1 and not over t)?
+const onOneLevel = (g, x0, y0, x1, y1) => {
+  const n = (x1 - x0) * (y1 - y0), gt = (t) => (t < LEVELS[0] ? n : g.sum(`gt${t}`, x0, y0, x1, y1));
+  return LEVELS.some((t) => gt(t - 1) - gt(t) === n);
+};
+const lvOf = (t) => Math.max(LEVELS[0], Math.min(LEVELS[LEVELS.length - 1], t));
+const ringLv = (g, kind, t, at, r0, r1) => (kind === "lt" && lvOf(t) === LEVELS[0] ? 0 : ring(g, `${kind}${lvOf(t)}`, at, r0, r1));
 const ring = (g, layer, at, r0, r1) => { const [x, y] = at; return g.sum(layer, x - r1, y - r1, x + r1 + 1, y + r1 + 1) - g.sum(layer, x - r0 + 1, y - r0 + 1, x + r0, y + r0); };
 const ringArea = (g, at, r0, r1) => { const [x, y] = at; return g.area(x - r1, y - r1, x + r1 + 1, y + r1 + 1) - g.area(x - r0 + 1, y - r0 + 1, x + r0, y + r0); };
 const sq = (g, layer, at) => { const B = siteBox(at); return g.sum(layer, B.x0, B.y0, B.x1, B.y1); };
@@ -149,26 +163,30 @@ const yardRoom = (at) => Math.max(0, Math.min(GRID.hub.cap, GRID_MAX - NO_BUILD 
  */
 export function landFacts(land, at) {
   const g = gridsOf(land), I = SITE_INFO;
-  // The 5 × 5 itself: its clearing (with a cutting tool), its ground.
-  const B = siteBox(at), seen = new Set();
+  // The 5 × 5 itself: its clearing (with a cutting tool), its ground levelled to its own level (siteLevel, as
+  // basemap.js siteYield: an open hilltop is level already, the camp stands on it).
+  const B = siteBox(at), seen = new Set(), level = siteLevel(land, at);
   let work = CAMP.fireHours, dig = 0, hi = 0, lo = 0;
   for (let y = B.y0; y < B.y1; y++) for (let x = B.x0; x < B.x1; x++) {
-    const h = (land.heights && land.heights.get(`${x},${y}`)) || 0;
+    const h = ((land.heights && land.heights.get(`${x},${y}`)) || 0) - level;
     hi = Math.max(hi, h); lo = Math.min(lo, h);
     const p = land.pieces.get(`${x},${y}`);
-    if (!p || p.k === "water" || seen.has(p)) continue;
+    if (p && p.k === "water") continue;
+    if (!p || p.k === "rise" || p.k === "dip") { const d = CLEAR[h > 0 ? "rise" : "dip"].hours * Math.abs(h); work += d; dig += d; continue; }
+    if (seen.has(p)) continue;
     seen.add(p);
     const c = clearOf(p, true, "clear");
     if (!c) continue;
     work += c.hours;
-    if (p.k === "rise" || p.k === "dip" || p.k === "slope") dig += c.hours;
+    if (p.k === "slope") dig += c.hours;
   }
-  // The ring round it: higher and lower ground (hills 1 to 3 up and the mountain's crag 3 to 13 alike; hollows).
+  // The ring round it: higher and lower ground than the camp (hills 1 to 3 up and the mountain's crag 3 to 13 alike;
+  // hollows; a camp on a hill looks down on the plain).
   const rn = Math.max(1, ringArea(g, at, I.LIE[0], I.LIE[1]));
-  const higher = ring(g, "up", at, I.LIE[0], I.LIE[1]) / rn, lower = ring(g, "down", at, I.LIE[0], I.LIE[1]) / rn;
-  // Sight within SIGHT (the camp's own 5 × 5 left out: it is cleared).
-  const sn = Math.max(1, g.area(at[0] - I.SIGHT, at[1] - I.SIGHT, at[0] + I.SIGHT + 1, at[1] + I.SIGHT + 1) - SITE.SIZE * SITE.SIZE);
-  const sight = 1 - Math.max(0, g.sum("sight", at[0] - I.SIGHT, at[1] - I.SIGHT, at[0] + I.SIGHT + 1, at[1] + I.SIGHT + 1) - sq(g, "sight", at)) / sn;
+  const higher = ringLv(g, "gt", level, at, I.LIE[0], I.LIE[1]) / rn, lower = ringLv(g, "lt", level, at, I.LIE[0], I.LIE[1]) / rn;
+  // Sight within SIGHT (the camp's own 5 × 5 left out: it is cleared), over ground no higher than the camp.
+  const sv = `sv${lvOf(level)}`, sn = Math.max(1, g.area(at[0] - I.SIGHT, at[1] - I.SIGHT, at[0] + I.SIGHT + 1, at[1] + I.SIGHT + 1) - SITE.SIZE * SITE.SIZE);
+  const sight = 1 - Math.max(0, g.sum(sv, at[0] - I.SIGHT, at[1] - I.SIGHT, at[0] + I.SIGHT + 1, at[1] + I.SIGHT + 1) - sq(g, sv, at)) / sn;
   // Room to grow: the shelter's yard round it.
   const R = I.ROOM, rb = { x0: at[0] - R, y0: at[1] - R, x1: at[0] + R, y1: at[1] + R };
   const roomN = Math.max(1, g.area(rb.x0, rb.y0, rb.x1, rb.y1)), room = 1 - g.sum("solid", rb.x0, rb.y0, rb.x1, rb.y1) / roomN;
@@ -178,7 +196,7 @@ export function landFacts(land, at) {
   const water = distAt(g, g.water, at), road = distAt(g, g.road, at);
   return {
     at: [at[0], at[1]], work: Math.round(work * 10) / 10,
-    ground: { level: !hi && !lo, hi, lo, dig: Math.round(dig * 10) / 10 },
+    ground: { level: !hi && !lo, hi, lo, dig: Math.round(dig * 10) / 10, at: level }, // hi, lo: from the camp's level (at)
     lie: { kind: lieOf(higher, lower), higher: r2(higher), lower: r2(lower) },
     sight: r2(sight), room: r2(room), yard: yardRoom(at),
     wood, trees, water: water == null ? null : Math.max(0, water - 2), road: road == null ? null : Math.max(0, road - 2), // from the 5 × 5's edge
@@ -239,7 +257,7 @@ export function siteInfo(state, p, tile, at) {
   const th = siteThreat(state, tile);
   const dead = { count: th.count, place: th.place, kinds: th.count && th.mix ? mixText(th.mix, th.count) : "" };
   const w = waterSource(state, tile);
-  const info = { ok: true, why: "", ...f, setup: { hours: s.hours, work: s.work, workers: s.workers, clear: s.clear, n: s.n, get: s.get, tool: s.tool }, other, roomClear: Math.round(roomClear * 10) / 10, places, dead, waterTile: w ? { kind: w.kind, dist: w.dist } : null };
+  const info = { ok: true, why: "", ...f, setup: { hours: s.hours, work: s.work, workers: s.workers, clear: s.clear, n: s.n, get: s.get, tool: s.tool, dig: s.dig }, other, roomClear: Math.round(roomClear * 10) / 10, places, dead, waterTile: w ? { kind: w.kind, dist: w.dist } : null };
   const best = bestSite(state, tile);
   return { ...info, score: siteScore(info), picked: best[0] === at[0] && best[1] === at[1] };
 }
@@ -286,11 +304,11 @@ export function bestSiteOn(land, ok = () => true) {
   for (let y = -Rg; y <= Rg; y++) for (let x = -Rg; x <= Rg; x++) {
     const sx0 = x + lo, sy0 = y + lo, sx1 = x + hi, sy1 = y + hi;
     if (g.sum("bad", sx0, sy0, sx1, sy1)) continue;
+    if (!onOneLevel(g, sx0, sy0, sx1, sy1)) continue; // basemap.js siteProblem: the square whole on one level
     const big = g.sum("big", sx0, sy0, sx1, sy1) > 0;
     const rn = Math.max(1, g.area(x - L1, y - L1, x + L1 + 1, y + L1 + 1) - g.area(x - L0 + 1, y - L0 + 1, x + L0, y + L0));
-    const up = g.sum("up", x - L1, y - L1, x + L1 + 1, y + L1 + 1) - g.sum("up", x - L0 + 1, y - L0 + 1, x + L0, y + L0);
-    const down = g.sum("down", x - L1, y - L1, x + L1 + 1, y + L1 + 1) - g.sum("down", x - L0 + 1, y - L0 + 1, x + L0, y + L0);
-    const sight = 1 - Math.max(0, g.sum("sight", x - V, y - V, x + V + 1, y + V + 1) - g.sum("sight", sx0, sy0, sx1, sy1)) / sightN;
+    const up = ring(g, "gt0", [x, y], L0, L1), down = ring(g, "lt0", [x, y], L0, L1); // the quick score on level ground (the full one at the spot's level: landFacts)
+    const sight = 1 - Math.max(0, g.sum("sv0", x - V, y - V, x + V + 1, y + V + 1) - g.sum("sv0", sx0, sy0, sx1, sy1)) / sightN;
     const room = 1 - g.sum("solid", x - R, y - R, x + R, y + R) / (4 * R * R);
     const wood = g.sum("wood", x - W, y - W, x + W + 1, y + W + 1) - g.sum("wood", sx0, sy0, sx1, sy1);
     const d = Math.max(Math.abs(x), Math.abs(y)), yard = Math.max(0, Math.min(cap, GRID_MAX - NO_BUILD - 2 - d));

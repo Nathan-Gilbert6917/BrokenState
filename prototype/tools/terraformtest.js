@@ -146,7 +146,10 @@ let saved = null;
   for (let y = at[1]; y < at[1] + 4; y++) for (let x = at[0]; x < at[0] + 4; x++) if (heightAt(st, h, x, y) !== -1) all = false;
   check(all, "its 16 cells a level down");
   const why = BM.placeProblemAt(h, hutish, at[0] + 1, at[1] + 1, 0, BM.occupancy(st, h, null, null));
-  check(/Clear the land first: a hollow/.test(why), `built on only once filled in: "${why}"`);
+  // The user's request 2026-10-23 ("just build on the hill as if it was the ground floor"): the hollow's floor is ground
+  // to build on as it is; never over its edge.
+  const edgeWhy = BM.placeProblemAt(h, { ...hutish, w: 2, key: "probe2" }, at[0] - 1, at[1] + 1, 0, BM.occupancy(st, h, null, null));
+  check(why === "" && edgeWhy === BM.UNEVEN_WHY, `built on down in it as it is ("${why}"), not over its edge ("${edgeWhy}")`);
   // A narrow hollow dug on purpose stays (the seed's narrow ones are filled in: basescatter.js dropNarrowHollows).
   check(heightAt(st, h, at[0], at[1]) === -1, "a 4 × 4 hollow, narrower than the seed's least, stays");
   // A hill raised with the dirt: as much as the hollow gave raises an equal hill.
