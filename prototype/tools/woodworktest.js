@@ -68,7 +68,11 @@ section("1. The costs: raised for the wooden builds, wood added where it makes s
 {
   console.log("  build                 before                      after");
   for (const k of [...RAISE, ...ADDED]) console.log(`  ${(BUILDINGS[k].name).padEnd(22)}${txt(BEFORE[k]).padEnd(28)}${txt(costOf(k))}`);
-  for (const k of RAISE) check((costOf(k).wood || 0) >= 3 * (BEFORE[k].wood || 1), `${BUILDINGS[k].name}: wood raised at least threefold (${BEFORE[k].wood} → ${costOf(k).wood})`);
+  // The Farm plot is the one exception, on purpose: since the placed crop plots (the user's request 2026-10-22, merge
+  // 845ba49 "A Farm plot is 40 wood and 4 hours (a dug bed, no longer free)") it is one 2 × 2 bed, not the two plots of
+  // the old 75-wood (300 raised) build: 40 wood is its price, near the old 37 a plot, and the governor's tests follow it.
+  for (const k of RAISE.filter((x) => x !== "farm_plot")) check((costOf(k).wood || 0) >= 3 * (BEFORE[k].wood || 1), `${BUILDINGS[k].name}: wood raised at least threefold (${BEFORE[k].wood} → ${costOf(k).wood})`);
+  check(costOf("farm_plot").wood === 40 && !costOf("farm_plot").scrap && BUILDINGS.farm_plot.hours === 4, `Farm plot: one dug 2 × 2 bed, 40 wood and 4 hours (${txt(costOf("farm_plot"))}), no longer the two-plot 75 → 300`);
   for (const k of ADDED) check((costOf(k).wood || 0) > 0 && !BEFORE[k].wood, `${BUILDINGS[k].name}: wood added (${txt(costOf(k))})`);
   // Wood the main material of the wooden things: its worth (50 wood a scrap) over the scrap's.
   for (const k of [...RAISE.filter((x) => !["wall4"].includes(x)), "craftbench"]) {
