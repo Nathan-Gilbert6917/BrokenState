@@ -94,7 +94,10 @@ console.log("Night sight by the hour, cones, lights");
   check(canSee(b, u, e), "a guard's flashlight 10 tiles off is seen (facing it)");
   e.light = null;
   check(!canSee(b, u, e), "without it he is not");
-  // Fog of war follows the cone.
+  // Fog of war follows the cone (the second fighter off in a far corner facing away, out of the way of u's cells: left
+  // where it was deployed, its own cone could cover them).
+  const w = b.units.filter((x) => x.side === "player")[1];
+  place(w, b.w - 2, b.h - 2, 0); w.light = null; w.nvg = false; w.optic = 0;
   const vis = playerVision(b);
   check(!vis[10 * b.w + 6] && vis[10 * b.w + 13], "fog of war at night: the cone, not all round");
   // Enemies get lights at night: soldiers a military flashlight.
@@ -110,6 +113,7 @@ console.log("Noticing: the cone, hearing, cover, sneaking");
   const [u] = b.units.filter((x) => x.side === "player");
   const e = b.units.find((x) => x.side === "enemy");
   place(e, 15, 10, 0); e.aware = false;
+  e.ears = null; e.deaf = 0; // bare ears (helmets.js HEAD_KIT: a raider may roll earmuffs, which cut what he hears: hearing.js hearMult)
   place(u, 19, 10); u.stealth = 4;
   const front = detectRange(b, e, u);
   place(u, 11, 10);
