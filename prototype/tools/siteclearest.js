@@ -68,6 +68,14 @@ section("The land: a town's streets and houses, a city's blocks, the hills' high
   const cragS = new Set(mtn.crags.map(([x, y]) => `${x},${y}`)), MH = new Map(mtn.heights.map(([x, y, h]) => [`${x},${y}`, h]));
   const wide = (r, M, cr) => r.heights.every(([x, y, h]) => [[0, 0], [-1, 0], [0, -1], [-1, -1]].some(([ox, oy]) => [[0, 0], [1, 0], [0, 1], [1, 1]].every(([dx, dy]) => { const k = `${x + ox + dx},${y + oy + dy}`, v = cr.has(k) ? (h > 0 ? 9 : -9) : M.get(k) || 0; return h > 0 ? v >= h : v <= h; })));
   check(wide(hills, HM, new Set()) && wide(mtn, MH, cragS), "no spur a cell wide: every hill and hollow at least two cells across at each level");
+  // One mass rising to a peak (the playtest 2026-10-23: "combine into the center", "more pointed"): its crag all joined,
+  // higher in from its edge.
+  {
+    const cs = new Map(mtn.crags.map(([x, y, lv]) => [`${x},${y}`, lv])), first = mtn.crags[0], seen = new Set([`${first[0]},${first[1]}`]), q = [first];
+    for (let i = 0; i < q.length; i++) { const [x, y] = q[i]; for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const k = `${x + dx},${y + dy}`; if (cs.has(k) && !seen.has(k)) { seen.add(k); q.push([x + dx, y + dy]); } } }
+    const top = Math.max(...cs.values());
+    check(seen.size === cs.size && top >= 10 && Math.min(...cs.values()) === 3, `a mountain is one mass (${seen.size} of ${cs.size} cells joined), 3 levels at its edge up to a peak of ${top}`);
+  }
   check(CELL.crag && !CELL.crag.walk && CELL.crag.los && CELL.crag.tall >= 3, "crag: no way over it, no sight through it");
 {
   // Laid on a fight's map: the heights under the trees and the open ground, level round the floors and at the edges.

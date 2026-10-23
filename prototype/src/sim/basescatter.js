@@ -234,7 +234,12 @@ export const HIGH = {
   EDGE_NOISE: 0.14,                                    // how ragged a level's edge is (a share of the lobe)
   DIP_P: { hills: 0.3, mountain: 0.25, forest: 0.18, plains: 0.12, farm: 0.08 }, // the chance a region has a hollow
   DIP_R: [3, 7], DIP_DEEP: 0.4,                        // its size; the share two levels deep
-  RIDGES: [3, 5], RIDGE_LEN: [45, 110], CORE: [1, 3], FOOT: 2, // a mountain tile's ridges
+  // A mountain tile's massif (the playtest 2026-10-23: "Make the mountains more pointed instead of rounded and make it
+  // all combine into the center"): one mass of crag, a CORE_R round core somewhere in the middle half of the map and
+  // ARMS ridges reaching out from it, ARM_W wide at the core narrowing to a cell at their ends; its height rises a
+  // level a cell in from its edge (CRAG_LV: 3 at the edge up to the peak), so it climbs to the core and to a crest
+  // along each arm; FOOT cells a level for the foothills round it.
+  ARMS: [3, 5], ARM_LEN: [35, 75], ARM_W: [4, 6], CORE_R: [7, 10], CRAG_LV: [3, 13], FOOT: 2,
 };
 export const TOWN = {
   town: { BLOCK: 36, STREET: 5, LOT: [10, 13], STORE_P: 0.12, EMPTY_P: 0.1, DRIVE_CAR_P: 0.35, STREET_CAR_P: 0.3 },
@@ -245,7 +250,8 @@ const ck = (x, y) => `${x},${y}`;
 const tlCache = new Map();
 const cached = (key, make) => { let v = tlCache.get(key); if (v) return v; v = make(); if (tlCache.size > 32) tlCache.clear(); tlCache.set(key, v); return v; };
 /**
- * The lie of the land over [-G, G) (map coordinates): { heights: [[x, y, h]…] (h −2 to 3, never 0), crags: [[x, y]…] }.
+ * The lie of the land over [-G, G) (map coordinates): { heights: [[x, y, h]…] (h −2 to 3, never 0), crags: [[x, y, lv]…]
+ * (lv: the rock's height in levels, 3 at its edge up to the peak) }.
  * The same for the same tile, terrain and grid. @param {number} seed @param {string} terrain @param {number} G
  */
 export function reliefLayer(seed, terrain, G) {
@@ -274,19 +280,36 @@ export function reliefLayer(seed, terrain, G) {
         lobe(rng, cx, cy, rng.int(lo, hi), rng.int(lo, hi), rng.chance(HIGH.DIP_DEEP) ? -2 : -1);
       }
     }
-    // A mountain tile's ridges: a line of crag wandering across the map, the foothills falling away from it.
+    // A mountain tile's massif: the core, the arms reaching out from it (they taper and wander), the height by the
+    // distance in from the crag's edge.
+    const cragLv = new Map();
     if (terrain === "mountain") {
       const rng = new Rng(seed ^ 0x2d93);
-      for (let n = rng.int(HIGH.RIDGES[0], HIGH.RIDGES[1]); n > 0; n--) {
-        let x = rng.int(-G + 10, G - 10), y = rng.int(-G + 10, G - 10), a = rng.range(0, Math.PI * 2);
-        const len = rng.int(HIGH.RIDGE_LEN[0], HIGH.RIDGE_LEN[1]);
+      const disc = (x, y, r) => { for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) if (dx * dx + dy * dy <= r * r + r && inMap(Math.round(x) + dx, Math.round(y) + dy)) crag.add(ck(Math.round(x) + dx, Math.round(y) + dy)); };
+      const cx = rng.int(-Math.floor(G / 2), Math.floor(G / 2)), cy = rng.int(-Math.floor(G / 2), Math.floor(G / 2));
+      disc(cx, cy, rng.int(HIGH.CORE_R[0], HIGH.CORE_R[1]));
+      const arms = rng.int(HIGH.ARMS[0], HIGH.ARMS[1]), a0 = rng.range(0, Math.PI * 2);
+      for (let n = 0; n < arms; n++) {
+        let a = a0 + (n * Math.PI * 2) / arms + rng.range(-0.4, 0.4), x = cx, y = cy;
+        const len = rng.int(HIGH.ARM_LEN[0], HIGH.ARM_LEN[1]), w0 = rng.int(HIGH.ARM_W[0], HIGH.ARM_W[1]);
         for (let i = 0; i < len; i++) {
-          const w = rng.int(HIGH.CORE[0], HIGH.CORE[1]);
-          for (let dy = -w; dy <= w; dy++) for (let dx = -w; dx <= w; dx++) if (dx * dx + dy * dy <= w * w && inMap(Math.round(x) + dx, Math.round(y) + dy)) crag.add(ck(Math.round(x) + dx, Math.round(y) + dy));
-          a += rng.range(-0.35, 0.35);
+          disc(x, y, Math.max(1, Math.round(w0 * (1 - i / len))));
+          a += rng.range(-0.22, 0.22);
           x += Math.cos(a); y += Math.sin(a);
           if (!inMap(Math.round(x), Math.round(y))) break;
         }
+      }
+      // The height: a level a cell in from the edge (eight ways), from CRAG_LV[0] up to CRAG_LV[1].
+      const cq = [];
+      for (const k of crag) {
+        const [x, y] = k.split(",").map(Number);
+        let edge = false;
+        for (let dy = -1; dy <= 1 && !edge; dy++) for (let dx = -1; dx <= 1; dx++) if (!crag.has(ck(x + dx, y + dy))) { edge = true; break; }
+        if (edge) { cragLv.set(k, HIGH.CRAG_LV[0]); cq.push(k); }
+      }
+      for (let i = 0; i < cq.length; i++) {
+        const k = cq[i], lv = cragLv.get(k), [x, y] = k.split(",").map(Number);
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const n = ck(x + dx, y + dy); if (crag.has(n) && !cragLv.has(n)) { cragLv.set(n, Math.min(HIGH.CRAG_LV[1], lv + 1)); cq.push(n); } }
       }
       // The foothills: a level every FOOT cells out from the crag, 3 levels next to it.
       const dist = new Map(), q = [];
@@ -302,7 +325,7 @@ export function reliefLayer(seed, terrain, G) {
     // Never more than a level between neighbours (eight ways): a hill walked up and down anywhere.
     relaxHeights(H, crag);
     for (const k of crag) H.delete(k);
-    return { heights: [...H].map(([k, h]) => { const [x, y] = k.split(",").map(Number); return [x, y, h]; }), crags: [...crag].map((k) => k.split(",").map(Number)) };
+    return { heights: [...H].map(([k, h]) => { const [x, y] = k.split(",").map(Number); return [x, y, h]; }), crags: [...crag].map((k) => { const [x, y] = k.split(",").map(Number); return [x, y, cragLv.get(k) || HIGH.CRAG_LV[0]]; }) };
   });
 }
 /**
@@ -661,7 +684,7 @@ export function landOf(spec, land) {
   // The lie of the land (reliefLayer): the mountains' crag first (never on a road: a pass through the ridge), the
   // heights under whatever stands there (trees, bushes, a road), flat in the yard and the clearing and on the river.
   const relief = reliefLayer(spec.seed, spec.terrain, spec.G), heights = new Map();
-  for (const [x, y] of relief.crags) if (free(x, y) && !nearBase(x, y, spec.C) && !street(x, y) && !(spec.river && onRiver(spec, x, y))) put({ k: "crag", g: `c${x},${y}`, cells: [[x, y]] });
+  for (const [x, y, lv] of relief.crags) if (free(x, y) && !nearBase(x, y, spec.C) && !street(x, y) && !(spec.river && onRiver(spec, x, y))) put({ k: "crag", g: `c${x},${y}`, cells: [[x, y]], h: lv });
   for (const [x, y, h] of relief.heights) if (!nearBase(x, y, Math.max(spec.C, spec.clear)) && !gone(x, y) && !pieces.has(`${x},${y}`) && !(spec.river && onRiver(spec, x, y))) heights.set(`${x},${y}`, h);
   relaxHeights(heights, new Set(relief.crags.map(([x, y]) => `${x},${y}`))); // the yard, the clearing and what is cleared are level: the ground eased down to them
   for (const p of scatterLayer(spec.seed, spec.terrain, spec.G)) {
@@ -750,6 +773,7 @@ export function layLand(m) {
       const id = y0 * W + x0 + 1;
       for (const [x, y] of at) { const c = cells[y * W + x]; c.k = kind; c.car = { id, i: p.ax ? y - y0 : x - x0, j: p.ax ? x - x0 : y - y0, L: p.len, ax: p.ax ? "y" : "x", kind, v: (id * 7) % 1000, body: kind }; c.wreck = 1; }
     } else if (p.parts) at.forEach(([x, y], i) => { const c = cells[y * W + x], q = p.parts[i]; c.k = q.k; c.f = q.f; if (q.fl) c.fl = q.fl; if (q.t) c.t = q.t; }); // a building: each cell its own
+    else if (p.k === "crag") for (const [x, y] of at) { const c = cells[y * W + x]; c.k = "crag"; c.ch = p.h || HIGH.CRAG_LV[0]; } // the rock's height (levels): drawn and seen over by it
     else for (const [x, y] of at) cells[y * W + x].k = p.k;
     kinds[p.k] = (kinds[p.k] || 0) + 1;
   }
