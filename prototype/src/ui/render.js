@@ -1387,8 +1387,15 @@ export function render(state) {
     for (const a of allies) wash(a.nodes, a.color, 0.05);
   }
   const ringPx = 1 / Math.min(1, camera.zoom); // the rings keep their width on screen when zoomed out
-  // Where a ring's label may go: round the ring from `ang` (radians), out to either side by turns (drawLabels alt).
-  const ringSpots = (px, py, r, ang) => [0.3, -0.3, 0.6, -0.6, 1, -1, 1.5, -1.5].map((d) => [px + Math.cos(ang + d) * r, py + Math.sin(ang + d) * r]);
+  // A ring's label: at `ang` (radians) on the ring, else round it to either side by turns (drawLabels alt), the spots on
+  // screen first, so a ring whose top or foot is off the map still says what it is.
+  const ringLabel = (text, px, py, r, ang, more) => {
+    const all = [0, 0.3, -0.3, 0.6, -0.6, 1, -1, 1.5, -1.5, 2.1, -2.1, 2.7, -2.7, Math.PI].map((d) => [px + Math.cos(ang + d) * r, py + Math.sin(ang + d) * r]);
+    const padX = 90 / camera.zoom, padY = 24 / camera.zoom;
+    const seen = all.filter(([x, y]) => x > minX + padX && x < maxX - padX && y > minY + padY && y < maxY - padY);
+    const spots = seen.length ? seen : all;
+    labels.push({ text, x: spots[0][0], y: spots[0][1], alt: spots.slice(1), screen: true, size: 10, ...more });
+  };
   for (const b of state.bases) {
     const [px, py] = g.toPixel(b.tile, HEX);
     const s = zoomBoost(), isHub = b.type === "hub" && b.tier !== 0; // a shelter (tier 0): its own smaller sprite
@@ -1443,7 +1450,7 @@ export function render(state) {
       ctx.arc(px, py, r, 0, Math.PI * 2);
       ctx.stroke();
       ctx.setLineDash([]);
-      labels.push({ text: yourLabel(node), x: px, y: py - r, alt: ringSpots(px, py, r, -Math.PI / 2), pri: 4, screen: true, color: node.linked ? "#8fbcef" : "rgba(230,150,140,0.9)", size: 10 });
+      ringLabel(yourLabel(node), px, py, r, -Math.PI / 2, { pri: 4, color: node.linked ? "#8fbcef" : "rgba(230,150,140,0.9)" });
     }
   }
   // Your allies' radios (sim/radioallies.js: the coalition's members, their networks by your rules): each ring in the
@@ -1460,8 +1467,7 @@ export function render(state) {
       ctx.beginPath();
       ctx.arc(px, py, r, 0, Math.PI * 2);
       ctx.stroke();
-      const ang = Math.PI / 2 + FOOT[k % FOOT.length];
-      labels.push({ text: n.label, x: px + Math.cos(ang) * r, y: py + Math.sin(ang) * r, alt: ringSpots(px, py, r, ang), pri: 4.5, screen: true, color: a.color, size: 10 });
+      ringLabel(n.label, px, py, r, Math.PI / 2 + FOOT[k % FOOT.length], { pri: 4.5, color: a.color });
     }
     ctx.setLineDash([]);
     ctx.globalAlpha = 1;
