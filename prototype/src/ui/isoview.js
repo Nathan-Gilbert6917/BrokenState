@@ -483,10 +483,31 @@ function spotHead(z0, broken = false) {
 const GROWN = { tree: [1.45, 1.18], bush: [1.6, 1.3] }; // [height ×, spread ×]
 function prims(k, o) {
   if (k === "crag" && o.ter) return rockPrims(o.ter); // a mountain's rock: its own height, one mass with its neighbours
-  let own = k === "open" ? [] : primsOf(k, o);
+  let own = k === "open" || k === "water" ? [] : primsOf(k, o); // water: a pond's deep middle (sim/ponds.js), drawn by wetPrims
   if (GROWN[k]) own = scalePrims(own, GROWN[k][0], GROWN[k][1]);
   if (!o.ter) return own;
-  return [...terrainPrims(o.ter, o), ...raisePrims(own, o.ter.e * LV)];
+  return [...terrainPrims(o.ter, o), ...wetPrims(o), ...raisePrims(own, o.ter.e * LV)];
+}
+// A hollow's pond or its ice (sim/ponds.js, the user's word 2026-10-23: "hollows turning into ponds ... a frozen pond"):
+// a flat sheet at the water's level (o.wl) over the cell, the river's water (floorColor) with its glints, darker where
+// it is deep; ice pale and cracked, snow lying on it in drifts. The banks round it are the cells beside it (theirs drawn
+// before it behind, after it in front), so the water laps up them. Mud is the hollow's own top (terrainPrims topC).
+const ICE_C = hex("#a8bfcc"), MUD_C = hex("#45332a"), SNOW_C = hex("#dde3e8");
+const drift = (X, Y, k) => n2(Math.floor(X / 6), Math.floor(Y / 3), k); // patches a few pixels across (snow, puddles)
+function wetPrims(o) {
+  if (!o.wet || o.wet === "mud") return [];
+  const z = o.wl * LV, ice = o.wet === "ice", deep = o.wet === "deep";
+  const m = (f, s, t, X, Y) => {
+    if (f !== "top") return null;
+    const q = n2(X, Y, 3);
+    if (ice) {
+      if (o.snow && drift(X, Y, 31) < o.snow * 0.4) return mul(SNOW_C, 0.94 + q * 0.06);
+      return n2(Math.floor(X / 4), Math.floor(Y / 2), 17) > 0.93 ? mul(ICE_C, 0.72) : mul(ICE_C, 0.92 + q * 0.12);
+    }
+    const w = mul(hex("#2c4e68"), deep ? 0.8 : 0.95);
+    return mul(w, 0.92 + ((Math.floor(X) + Math.floor(Y) * 2 + Math.floor(q * 7)) % 9 === 0 ? 0.35 : 0) + q * 0.08);
+  };
+  return [{ u0: 0, u1: 1, v0: 0, v1: 1, z0: z - 1, z1: z, flat: true, m }];
 }
 const raisePrims = (list, dz) => (!dz ? list : list.map((p) => (p.blob ? { ...p, blob: [p.blob[0], p.blob[1], p.blob[2] + dz] } : { ...p, z0: (p.z0 || 0) + dz, z1: (p.z1 || 0) + dz })));
 // Taller by sz, wider by sr about the cell's middle.
@@ -507,6 +528,10 @@ function terrainPrims(T, o) {
   const f = o.f || "grass", zt = T.e * LV;
   const topC = (X, Y, k = 1) => {
     const q = n2(X, Y, 6);
+    // A hollow's mud (sim/ponds.js): dark and wet, a puddle's sheen here and there; snow lying (o.snow, the battle's
+    // b.snowLie) on the hills' tops and banks in drifts (only up on a hill: the level ground round it is drawn flat).
+    if (o.wet === "mud") return mul(drift(X, Y, 29) > 0.86 ? hex("#3e4048") : MUD_C, k * (0.86 + q * 0.2));
+    if (o.snow && T.e > 0 && drift(X, Y, 31) < o.snow * 0.8) return mul(SNOW_C, k * (0.92 + q * 0.08));
     const c = f === "road" ? mul(FLOORC.road, 0.9 + q * 0.12) : f === "gravel" || f === "deck" ? mul(FLOORC.gravel, 0.8 + q * 0.35) : f === "dirt" ? mul(FLOORC.dirt, 0.88 + q * 0.2) : f === "field" ? mul(FLOORC.field, 0.9 + q * 0.12) : q > 0.9 ? mul(PAL.leaf2, 0.9) : mul(FLOORC.grass, 0.88 + q * 0.2);
     return mul(c, k * (1 + 0.07 * T.e)); // the higher, the lighter: the levels read apart
   };
@@ -1050,7 +1075,7 @@ function spritePut(key, s) {
 }
 // A cached sprite for a cell's look.
 function sprite(k, o, fog) {
-  const key = `${iso.straight ? "s|" : ""}${k}|${o.v}|${o.alt}|${o.j}|${o.n}|${o.top}|${o.stub ? 1 : 0}|${o.mat}|${o.dmg}|${o.barred ? 1 : 0}|${o.dir}|${o.part || ""}|${o.vault ? 1 : 0}|${o.roll ? 1 : 0}|${o.lit ? 1 : 0}|${o.spot || 0}|${fog ? 1 : 0}|${o.ter ? `${o.ter.key}${o.f}` : ""}|${o.car ? `${o.car.i},${o.car.j},${o.car.L},${o.car.ax},${o.car.kind},${o.car.v},${o.car.body || ""},${o.car.mil ? o.car.mil.cond : ""},${upKey(o.car.up)},${iso.rot & 3}` : ""}`;
+  const key = `${iso.straight ? "s|" : ""}${k}|${o.v}|${o.alt}|${o.j}|${o.n}|${o.top}|${o.stub ? 1 : 0}|${o.mat}|${o.dmg}|${o.barred ? 1 : 0}|${o.dir}|${o.part || ""}|${o.vault ? 1 : 0}|${o.roll ? 1 : 0}|${o.lit ? 1 : 0}|${o.spot || 0}|${fog ? 1 : 0}|${o.ter ? `${o.ter.key}${o.f}${o.wet ? `${o.wet}${o.wl}` : ""}${o.snow || ""}` : ""}|${o.car ? `${o.car.i},${o.car.j},${o.car.L},${o.car.ax},${o.car.kind},${o.car.v},${o.car.body || ""},${o.car.mil ? o.car.mil.cond : ""},${upKey(o.car.up)},${iso.rot & 3}` : ""}`;
   let s = spriteGet(key);
   if (s === undefined) {
     const p = prims(k, o);
@@ -1168,7 +1193,7 @@ function roadColor(x, y, tx, ty, lx, ly, R) {
 function floorColor(c, k, x, y, lx, ly, mud, R = null) {
   const tx = Math.min(15, Math.floor(lx * 16)), ty = Math.min(15, Math.floor(ly * 16));
   const q = hash3(x * 16 + tx, y * 16 + ty, 1), v = hash3(x, y, 2);
-  if (k === "water") {
+  if (k === "water" && !c.ter) { // a pond's deep middle (c.ter, sim/ponds.js): its ground's floor here, the water drawn at its level (wetPrims)
     const w = hex("#2c4e68");
     return mul(w, 0.9 + ((tx + ty * 2 + Math.floor(v * 7)) % 9 === 0 ? 0.35 : 0) + q * 0.08);
   }
@@ -1397,10 +1422,10 @@ function terrainOf(b, x, y) {
 }
 function lookOf(b, scene, x, y, cut, focus = null) {
   const i = y * b.w + x, c = b.cells[i], k = c.k === "siegeladder" ? "palisade" : c.k; // a siege ladder leans on its wall (drawn on top: drawSiegeIso)
-  if (k === "water" || k === "void") return null; // void: outside the footprint on an upper floor
+  if ((k === "water" && !c.ter) || k === "void") return null; // void: outside the footprint on an upper floor; a pond's water is drawn at its level (wetPrims)
   const ter = terrainOf(b, x, y); // the ground's height here (a hill, a hollow, a rim): drawn under the cell's own look
   if (k === "open" && !ter) return null;
-  const r = iso.rot, o = { v: Math.floor(hash3(x, y, 17) * 4), alt: hash3(x, y, 99) < 0.35 ? 1 : 0, j: 0, n: null, top: WALL1, mat: 0, dmg: 0, dir: null, ter, f: ter ? c.f || "" : "" };
+  const r = iso.rot, o = { v: Math.floor(hash3(x, y, 17) * 4), alt: hash3(x, y, 99) < 0.35 ? 1 : 0, j: 0, n: null, top: WALL1, mat: 0, dmg: 0, dir: null, ter, f: ter ? c.f || "" : "", wet: ter && c.wet ? c.wet : "", wl: c.wl || 0, snow: ter ? b.snowLie || 0 : 0 }; // wet, wl: a hollow's pond, mud or ice (sim/ponds.js); snow: the snow lying
   const js = JOINS[k];
   if (js) for (const [dx, dy] of VD) {
     const nx = x + dx, ny = y + dy;
@@ -3079,7 +3104,7 @@ function drawLabels(ctx, b, s, H) {
   if (t.side === "player" && t.post && b.phase === "deploy") tags.push([t.post === "gate" ? "G" : t.post === "wall" ? "W" : t.post === "tower" ? "T" : "P", "#e0a84f"]);
   if (t.surprised) tags.push(["!", "#ffd166"]);
   tags.push(...nlTags(t)); // stunned, blinded, hands up, pulling blows (ui/nonlethal.js)
-  if (hh && !t.down) tags.push(["▲".repeat(hh), "#ffe296"]);
+  if (hh && !t.down) tags.push([hh > 0 ? "▲".repeat(hh) : "▼".repeat(-hh), "#ffe296"]); // ▼: down in a hollow (sim/ponds.js: wading in its pond)
   ctx.font = `700 ${fs}px Segoe UI, sans-serif`;
   let tx = X - bw / 2;
   for (const [txt, col, fill] of tags) {
