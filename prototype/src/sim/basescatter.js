@@ -208,8 +208,9 @@ export function scatterLayer(seed, terrain, G) {
 // base view's) cuts those fields. Each field has a
 // gate (GATE cells of combat.js CELL fieldgate, walked through) in the side facing the map's middle, on the map and
 // never at a corner; landOf keeps the ground APRON cells deep either side of it clear of the scatter, so the way in
-// stays open, and lays no field the river runs through (its far part would be shut in). Its fence is broken where a
-// road, a town's paving, the yard or the clearing crosses it (the road runs on through). Its fence (the user's word
+// stays open, and lays no field the river (its far part would be shut in) or a road (the user's word 2026-10-23: "Roads
+// interrupt the fences") runs through. Its fence is broken where a town's paving, the yard or the clearing crosses
+// it. Its fence (the user's word
 // 2026-10-23: "Add wire fences and wood fences"): post and rail (k "fence", half cover) or, a WIRE share of the
 // fields by the terrain, post and wire (k "wirefence": no cover, seen through, climbed over like half cover:
 // combat.js vaultable); the gate a wooden one either way. Where its fence meets the map's edge the view runs it on
@@ -927,12 +928,13 @@ export function landOf(spec, land) {
   const paved = new Set(floors.keys());
   // Farmland's fenced fields (fieldLayer): before the scatter, so nothing of it stands on a fence line; a gate's apron
   // (FIELD.APRON cells either side of it, a cell past each end) kept clear of the scatter. None in the yard, the
-  // clearing, on a road or the paving (gaps in the fence there), and no field the river runs through.
+  // clearing or on the paving (gaps in the fence there), and no field the river or a road runs through (the user's
+  // word 2026-10-23: "Roads interrupt the fences": a field cut in two by the road, its fence broken either side).
   const apron = new Set();
   const fieldOk = (x, y) => free(x, y) && !nearBase(x, y, spec.C) && !(spec.road && onRoad(spec, x, y)) && !street(x, y) && !paved.has(`${x},${y}`) && !spring.has(`${x},${y}`);
-  const wet = (f) => { for (let y = f.y0 - 1; y <= f.y0 + f.s; y++) for (let x = f.x0 - 1; x <= f.x0 + f.s; x++) if (onRiver(spec, x, y)) return true; return false; };
+  const across = (f, on) => { for (let y = f.y0 - 1; y <= f.y0 + f.s; y++) for (let x = f.x0 - 1; x <= f.x0 + f.s; x++) if (on(spec, x, y)) return true; return false; };
   for (const f of fieldLayer(spec.seed, spec.terrain, spec.G)) {
-    if (spec.river && wet(f)) continue;
+    if ((spec.river && across(f, onRiver)) || (spec.road && across(f, onRoad))) continue;
     for (const [x, y] of f.fence) if (fieldOk(x, y)) put({ k: f.k, g: `fd${f.id}@${x},${y}`, cells: [[x, y]] });
     if (!f.gate.length) continue;
     const [dx, dy] = f.out, [ax, ay] = [Math.abs(dy), Math.abs(dx)]; // out of the field; along its side
