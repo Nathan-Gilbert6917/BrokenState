@@ -167,13 +167,16 @@ export function breakdownHtml(bd) {
   const rows = bd.parts.filter(([, v]) => Math.round(v)).map(([l, v]) => `<div class="bh-bdrow"><span>${esc(l)}</span><b class="${v >= 0 ? "good" : "danger"}">${signed(v)}</b></div>`).join("");
   return `<div class="bh-bd">${rows}<div class="bh-bdrow bh-bdsum"><span>${bd.clamped ? `Total ${Math.round(bd.aim)}, ${bd.clamped}` : "Chance to hit"}</span><b class="${hitTone(bd.chance)}">${bd.chance}%</b></div>${bd.follow.length ? `<div class="bh-bdrow muted"><span>Then round by round</span><span>${bd.follow.map((c) => `${c}%`).join(" · ")}</span></div>` : ""}</div>`;
 }
+// The cover's source when it is the height's (sim/combat.js coverAgainst high; the user's word 2026-10-23: "Half
+// cover: hill"): ": hill", ": higher ground".
+const highWord = (o) => (o && o.high ? `: ${o.high === "hill" ? "hill" : "higher ground"}` : "");
 // The card over the weapon panel while an enemy is under the mouse: who, the chance big, damage and cover, the steps.
 export function targetCardHtml(b, u, t, o) {
   if (!u || !t || !o) return "";
   if (!o.ok) return `<div class="bh-target"><div class="bh-thead"><b>${esc(t.name)}</b><span class="bh-big muted">—</span></div><div class="small muted">${esc(o.label)}</div></div>`;
   const bd = hitBreakdown(b, u, t, o);
   const what = o.kind === "melee" ? "melee" : o.kind === "shot" ? "to hit" : o.finish ? "finish" : "chance";
-  const cover = o.kind === "shot" ? `${o.cover === 2 ? "full cover" : o.cover === 1 ? "half cover" : o.flanked ? "FLANKED" : "in the open"}${o.conceal ? `, concealed ${o.conceal}` : ""}` : ""; // sim/softcover.js: a bush or a tent hides them, stops nothing
+  const cover = o.kind === "shot" ? `${o.cover === 2 ? "full cover" : o.cover === 1 ? "half cover" : o.flanked ? "FLANKED" : "in the open"}${o.cover ? highWord(o) : ""}${o.conceal ? `, concealed ${o.conceal}` : ""}` : ""; // sim/softcover.js: a bush or a tent hides them, stops nothing
   const dmg = o.dmg ? `${o.dmg[0]}–${o.dmg[1]} dmg${o.crit != null ? ` · ${o.crit}% crit` : ""}` : "";
   return `<div class="bh-target"><div class="bh-thead"><span><b>${esc(t.name)}</b> <span class="muted small">${Math.round(t.hp)}/${t.maxHp} hp</span></span><span class="bh-big ${hitTone(o.chance)}">${o.chance}%<small> ${what}</small></span></div>
     <div class="small muted">${[dmg, cover, o.dist != null && o.kind === "shot" ? `${Math.round(o.dist)} tiles` : ""].filter(Boolean).join(" · ")}</div>${breakdownHtml(bd)}</div>`;
@@ -293,7 +296,7 @@ export function hudPaint(ctx, b, { cw, ch, hits, hoverT, hoverO, mode, list, sel
     const [X, Y] = head(hoverT);
     const fs = Math.round(Math.min(40, Math.max(22, 6.5 * S)) * ui);
     if (hoverO.ok) {
-      const cover = hoverO.kind === "shot" ? (hoverO.cover === 2 ? "full cover" : hoverO.cover === 1 ? "half cover" : hoverO.flanked ? "FLANKED" : "") : "";
+      const cover = hoverO.kind === "shot" ? (hoverO.cover === 2 ? `full cover${highWord(hoverO)}` : hoverO.cover === 1 ? `half cover${highWord(hoverO)}` : hoverO.flanked ? "FLANKED" : "") : "";
       const sub = [hoverO.kind === "melee" ? "melee" : hoverO.kind === "shot" ? "to hit" : "", hoverO.dmg ? `${hoverO.dmg[0]}–${hoverO.dmg[1]} dmg` : "", cover].filter(Boolean).join(" · ");
       badge(ctx, X, Y - tagRoom, `${hoverO.chance}%`, hitColor(hoverO.chance), fs, sub, true);
     } else {

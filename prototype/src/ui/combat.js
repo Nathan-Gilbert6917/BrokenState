@@ -75,6 +75,7 @@ import { statusIcons } from "./status.js"; // the survivor behind a unit: low mo
 import { barkFrame } from "./barks.js"; // combat barks: short speech bubbles over the units' heads
 import { ingestMarks } from "./battlemarks.js"; // blood, brass and scorch read off each action's fx before the short fx list drops them
 import { iso, drawIso, project, isoPick, isoRotate, isoZoom, isoPan, isoEdge, isoCenterOn, isoOnScreen, setRoofs, floorsOf, floorNo, onFloor, ISO_ZOOMS, LV, liftOf } from "./isoview.js";
+import { standsAway } from "../sim/highground.js"; // the lie of the land in a fight: a foe on an upper floor seen from a hill through a window, the hollows
 import { keyAction, keyLabel, actionsOfCode, KEY_BY_ID } from "./keymap.js"; // the key table (Menu → Controls)
 import { isMedic, healRefusal, healAmount, reviveRefusal, reviveOdds, liftRefusal, dropRefusal, dragging, finishRefusal, finishOdds, handsOdds, MEDIC, vehicleOf, pullTargets, pullRefusal, layInStab, selfKit, selfOdds, selfStabRefusal } from "../sim/medics.js"; // medics, dragging the downed, finishing a downed enemy, pulling one out of a vehicle
 import { groundButtons, groundCbAct, groundClick } from "./ground.js"; // bodies searched where they fell, things on the ground (sim/ground.js)
@@ -220,7 +221,7 @@ function view(b) {
   const u = selUnit(b);
   const reach = u && active(u) && u.ap > 0 && b.phase === "player" && !held(b, u) ? reachable(b, u, SIM.moveMob(u) * u.ap, { manual: true }) : null; // an order by hand may walk into fire
   const seen = new Set((hold ? b.units.filter((e) => e.side !== "player" && active(e) && eyes.some((eye) => canSeeAt(b, eye, e.x, e.y)))
-    : b.units.filter((e) => e.side !== "player" && active(e) && (b.over || playerSees(b, e)))).map((e) => e.id)); // the enemy and the third side (sim/thirdside.js)
+    : b.units.filter((e) => e.side !== "player" && (active(e) || (floorsOf(b) && standsAway(e))) && (b.over || playerSees(b, e)))).map((e) => e.id)); // the enemy and the third side (sim/thirdside.js); one on another floor seen through a window from a hill (sim/highground.js): its marker
   const ghosts = b.over ? [] : hold ? planGhosts(b) : enemyGhosts(b).concat(noiseGhosts(b)); // sim/crossfire.js: shots and blasts heard, not seen, with a guess
   const known = rememberSeen(b, vis);
   cui.cache = { key, vis, reach, seen, u, ghosts, known };
@@ -762,6 +763,10 @@ export function combatClick(state, px, py) {
     const p = isoPick(b, px, py);
     const t = p && p.unit != null ? unitById(b, p.unit) : null;
     if (t && t.f != null && t.f !== floorNo(b)) {
+      // A foe seen through a window from a hill (sim/highground.js windowSees): the selected unit shoots it, as a click
+      // on a foe on this floor does.
+      const u = selUnit(b);
+      if (t.side === "enemy" && u && active(u) && u.ap > 0 && b.phase === "player" && cui.mode === "move" && SIM.canFire(b, u) && SIM.canSee(b, u, t)) return void act(state, { type: "shoot", unit: u.id, target: t.id });
       setViewFloor(b, t.f);
       if (t.side === "player" && t.vol == null && alive(t)) { cui.sel = t.id; cui.mode = "move"; cui.msg = ""; }
       return;
@@ -3426,6 +3431,8 @@ function resultHtml(state, b) {
 const restartable = (state, b) => !!(b && b.saveOk && b.saveKey && !state.ironman);
 const restartBtn = (state, b, style = "") => (restartable(state, b) ? `<button${style ? ` style="${style}"` : ""} data-action="set-battlereload" data-tip="Load the save made as this battle started and play it again from the beginning (asks first). Everything since it began is lost.">↺ Restart battle</button>` : "");
 
+// The cover's source when it is the height's (sim/combat.js coverAgainst high): " (hill)", " (higher ground)".
+const highWord = (o) => (o.high ? ` (${o.high === "hill" ? "hill" : "higher ground"})` : "");
 // Odds for the selected unit against a target: shot if it can, melee if adjacent.
 function odds(b, u, t) {
   const nlo = nlOdds(b, u, t, cui); // the taser (ui/nonlethal.js)
@@ -3454,7 +3461,7 @@ function odds(b, u, t) {
   if (!canFire(b, u)) return { ok: false, label: isRanged(u) ? (magEmpty(b, u) && !reloadRefusal(b, u) ? "Empty: reload first (I)" : outOf(u)) : "No gun: move next to them and use Melee" };
   if (!canSee(b, u, t)) return { ok: false, label: "No line of sight" };
   const o = shotOdds(b, u, t);
-  const cover = o.cover === 2 ? "in full cover" : o.cover === 1 ? "in half cover" : o.flanked ? "FLANKED" : t.kind === "zombie" || !t.aware || t.surprised ? "caught in the open" : "exposed";
+  const cover = o.cover === 2 ? `in full cover${highWord(o)}` : o.cover === 1 ? `in half cover${highWord(o)}` : o.flanked ? "FLANKED" : t.kind === "zombie" || !t.aware || t.surprised ? "caught in the open" : "exposed";
   // sim/combat.js shotOdds notes: a bipod rested on cover, firing from a vehicle that moved, a light round's drop at range,
   // handloads, a helmet's visor, a headset's callout, dazed by a bang.
   const notes = o.notes && o.notes.length ? `; ${o.notes.join(", ")}` : "";
@@ -3489,7 +3496,7 @@ function previewText(b, state = null) {
   const ih = allyIntelHover(b, view(b), h.x, h.y); // Tell me what you see: what an ally told your people is there
   if (ih) return ih;
   const v = view(b);
-  const t = unitAt(b, h.x, h.y);
+  const t = unitAt(b, h.x, h.y) || (floorsOf(b) ? b.units.find((o) => o.x === h.x && o.y === h.y && o.side === "enemy" && standsAway(o) && v.seen.has(o.id)) || null : null); // sim/highground.js: a foe upstairs seen through a window from a hill (its marker)
   const nlp = nlPreview(b, t && (t.side === "player" || v.vis[h.y * W + h.x]) ? t : null, h, u, cui); // the pepper cone, hands up, your knocked out (ui/nonlethal.js)
   if (nlp) return nlp;
   if (t && t.side === "enemy" && v.seen.has(t.id)) {
@@ -3521,7 +3528,10 @@ function previewText(b, state = null) {
     if (b.phase === "deploy") return `<b>${esc(t.name)}</b> <span class="muted">${Math.round(t.hp)} hp · ${esc(t.weaponName)}${t.post === "gate" ? " · holds the gate" : t.post === "tower" ? " · on a tower" : ""}</span>`;
     const hh = heightAt(b, t.x, t.y);
     const thr = active(t) ? threatHtml(b, v, t.x, t.y, ` to ${esc(t.name.split(" ")[0])}`) : "";
-    return `<b>${esc(t.name)}</b> <span class="muted">${Math.round(t.hp)} hp · ${gunText(b, t)}${t.light ? ` · ${LIGHTS[t.light]?.name || "light"}${activeLight(t) ? "" : " (off)"}` : ""}${t.nvg ? ` · night vision${nvgOn(t) ? "" : " (off)"}` : ""}${t.optic ? ` · optics +${t.optic}` : ""}${t.suppressor ? ` · ${t.supFitted ? "" : "carried "}suppressor${GEAR[t.suppressor.key] && GEAR[t.suppressor.key].dur ? ` (${t.suppressor.dur ?? GEAR[t.suppressor.key].dur} shots)` : ""}` : ""} · sees ${Math.round(sightRange(b, t))} tiles</span>${hh ? `<br><span class="good">${"▲".repeat(hh)} On high ground (height ${hh}): +${HEIGHT.SIGHT * hh} sight, +${Math.min(HEIGHT.MAX_AIM, HEIGHT.AIM * hh)} aim at anything lower, half cover against shooters below.</span>` : ""}${thr}`;
+    // On high ground or down in a hollow (sim/highground.js): what it does for them.
+    const hline = hh > 0 ? `<br><span class="good">${"▲".repeat(hh)} On high ground (height ${hh}): +${HEIGHT.SIGHT * hh} sight, +${Math.min(HEIGHT.MAX_AIM, HEIGHT.AIM * hh)} aim at anything lower, ${hh >= HEIGHT.FULL_UP ? "full" : "half"} cover against shooters ${hh >= HEIGHT.FULL_UP ? `${hh} levels` : "a level"} below${hh >= HEIGHT.FULL_UP ? " (half against those a level below)" : ""}.</span>`
+      : hh < 0 ? `<br><span class="warn">${"▼".repeat(-hh)} Down in a hollow (${-hh} level${hh === -1 ? "" : "s"}): ${HEIGHT.SIGHT * -hh} sight less, sees only the hollow and the first tiles round its rim (and only those see them), −${Math.min(HEIGHT.MAX_UPHILL, HEIGHT.UPHILL * -hh)} aim at anything up on level ground.</span>` : "";
+    return `<b>${esc(t.name)}</b> <span class="muted">${Math.round(t.hp)} hp · ${gunText(b, t)}${t.light ? ` · ${LIGHTS[t.light]?.name || "light"}${activeLight(t) ? "" : " (off)"}` : ""}${t.nvg ? ` · night vision${nvgOn(t) ? "" : " (off)"}` : ""}${t.optic ? ` · optics +${t.optic}` : ""}${t.suppressor ? ` · ${t.supFitted ? "" : "carried "}suppressor${GEAR[t.suppressor.key] && GEAR[t.suppressor.key].dur ? ` (${t.suppressor.dur ?? GEAR[t.suppressor.key].dur} shots)` : ""}` : ""} · sees ${Math.round(sightRange(b, t))} tiles</span>${hline}${thr}`;
   }
   // A human body (sim/carriers.js): its state, and what can be done with it.
   const body = v.vis[h.y * W + h.x] ? humanBodyAt(b, h.x, h.y) : null;
@@ -3640,8 +3650,10 @@ function previewText(b, state = null) {
   const hh = heightAt(b, h.x, h.y);
   // The ground's own height (sim/basescatter.js reliefLayer, sim/relief.js): a hill or a hollow, walked up and down a
   // level at a step.
-  if (cobj.ter && hh > 0) s += ` ${"▲".repeat(hh)} A hill, level ${hh}: +${HEIGHT.SIGHT * hh} sight, +${Math.min(HEIGHT.MAX_AIM, HEIGHT.AIM * hh)} aim at anything lower, half cover against shooters below; it hides what is behind it from lower ground. Up or down a level a step (${HEIGHT.CLIMB} move a level, the dead ${HEIGHT.CLIMB_DEAD}); a vehicle stops only with all its wheels on one level.`;
-  else if (cobj.ter && hh < 0) s += ` ${"▼".repeat(-hh)} A hollow, ${-hh} level${hh === -1 ? "" : "s"} down: the ground round it hides it (and hides the rest from it); ${HEIGHT.SIGHT * -hh} sight less. Down or up a level a step.`;
+  // sim/highground.js (the user's word 2026-10-23): high ground aims and sees further, half cover a level up and full
+  // two; a hollow sees only its rim; a hill as high as an upper floor sees in through its windows.
+  if (cobj.ter && hh > 0) s += ` ${"▲".repeat(hh)} A hill, level ${hh}: +${HEIGHT.SIGHT * hh} sight, +${Math.min(HEIGHT.MAX_AIM, HEIGHT.AIM * hh)} aim at anything lower (shooting up costs ${HEIGHT.UPHILL} a level), half cover against shooters a level below and full cover against those ${HEIGHT.FULL_UP} or more below; it hides what is behind its crest from lower ground${b.floors ? ", and from it you see (and shoot) into an upper floor as high through a window facing you" : ""}. Up or down a level a step (${HEIGHT.CLIMB} move a level, the dead ${HEIGHT.CLIMB_DEAD}); a vehicle stops only with all its wheels on one level.`;
+  else if (cobj.ter && hh < 0) s += ` ${"▼".repeat(-hh)} A hollow, ${-hh} level${hh === -1 ? "" : "s"} down: from in it you see only the hollow and the first tiles round its rim, and nothing further off sees in; ${HEIGHT.SIGHT * -hh} sight less, −${Math.min(HEIGHT.MAX_UPHILL, HEIGHT.UPHILL * -hh)} aim shooting up at level ground. Down or up a level a step.`;
   else if (hh) s += ` ${"▲".repeat(hh)} ${cell.name}, height ${hh}: +${HEIGHT.SIGHT * hh} sight, +${Math.min(HEIGHT.MAX_AIM, HEIGHT.AIM * hh)} aim at anything lower, half cover against shooters below.`;
   else if (cell.climb) s += ` ${cell.name}: the way up (climbing costs ${HEIGHT.CLIMB} move a level, the dead ${HEIGHT.CLIMB_DEAD}).`;
   if (cobj.mhp) s += ` ${structureName(cobj)}:${struct}`;

@@ -2641,7 +2641,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
         if (!o.ok) ctx.setLineDash([4, 5]);
         ctx.beginPath(); ctx.moveTo(X0, Y0); ctx.lineTo(X1, Y1); ctx.stroke();
         ctx.setLineDash([]);
-        H.bubble(h.px + 14, h.py - 8, o.ok ? [`${o.chance}%`, `${o.dmg[0]}–${o.dmg[1]} dmg`, o.flanked ? "FLANKED" : o.cover ? (o.cover === 2 ? "Full cover" : "Half cover") : ""] : [o.label], col, cw);
+        H.bubble(h.px + 14, h.py - 8, o.ok ? [`${o.chance}%`, `${o.dmg[0]}–${o.dmg[1]} dmg`, o.flanked ? "FLANKED" : o.cover ? `${o.cover === 2 ? "Full cover" : "Half cover"}${o.high ? `: ${o.high === "hill" ? "hill" : "higher ground"}` : ""}` : ""] : [o.label], col, cw);
       }
     }
   }
