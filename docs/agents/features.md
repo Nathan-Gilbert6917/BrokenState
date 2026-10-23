@@ -45,6 +45,8 @@ Older design docs: [docs/base-building/plan.md](../base-building/plan.md), [docs
 ## 3. Bases and economy
 Base detail: [bases.md](../features/bases.md). Economy detail: [economy.md](../features/economy.md).
 - **Base tiers**: camp, shelter, outpost and hub; camps set up, struck and upgraded [staging, basemap, basescatter, buildings, ui/campsite] `tools/campspottest.js`. [details](../features/bases.md#base-tiers)
+- **What a camp's spot is like**: the picker's facts for a 5 × 5 (ground, the lie round it, sight, room, wood, water, road, places, the dead) and the game's own pick scored on them, with why [siteinfo, basemap defaultSite, ui/campsite] `tools/campspottest.js`. [details](../features/bases.md#what-a-camps-spot-is-like)
+- **Scouting before a camp**: a scouted tile gets the picker; an unscouted one sets up blind on a random spot, its map fogged and its dead attacking until cleared (or raided from the POI map) [campscout, staging, parties, survey, poiraid] `tools/campscouttest.js`. [details](../features/bases.md#scouting-before-a-camp)
   - Pick the camp's 5 × 5 spot on the tile's 250 × 250 map; setup time and wood depend on the clearing and an axe.
   - Step ups (Shelter shack, Outpost house, Main house) are buildings placed on the map.
   - Clearing the spot of the dead first on towns, cities and infected tiles [siteclear] `tools/siteclearest.js`.
@@ -52,6 +54,7 @@ Base detail: [bases.md](../features/bases.md). Economy detail: [economy.md](../f
 - **Buildings and construction queue**: plots, demolition refunds, the storage ladder, general buildings and fittings [buildings]; field works outside the walls [fieldworks]. [details](../features/bases.md#buildings-and-construction-queue)
 - **Base storage limits**: storage is kg of room by tier and buildings; what does not fit lies outside, weathers and is raided first [basestorage, ui/storage] `tools/basestoragetest.js` `tools/basestoragemaptest.js` `tools/groupstoragetest.js` `tools/assaultstoretest.js`. [details](../features/bases.md#base-storage-limits)
 - **The base map**: every base's 250 × 250 grid, its land (trees, towns, hills, crag) to clear, placement rules and Move [basemap, basescatter, ui/basemap, ui/isoview] `tools/baseviewtest.js`. [details](../features/bases.md#the-base-map)
+- **Every way in stays open**: the massif never walls ground in (passes carved), towns' doors reachable, nothing placed on rock; reachability and determinism tests over every kind of tile [basescatter, relief, basemap] `tools/mapreachtest.js`, `tools/mapdeterminismtest.js`. [details](../features/bases.md#every-way-in-stays-open)
 - **Terraforming**: Dig a hollow (−1 at most) and Raise a hill on the base map, shovels one a person, dirt dug and spent, raised hills melded into the land's [terraform, basescatter landOf, basemap, buildings, ui/basemap] `tools/terraformtest.js`. [details](../features/bases.md#terraforming)
 - **Base building**: no-build margin, general buildings with fittings, a way in and out, doorways, containers, repair orders [basemap, containers, breakdowns, autopilot] `tools/basebuildtest.js` `tools/containerstest.js` `tools/basebuilduitest.js` `tools/repairorderstest.js` `tools/basebuildautotest.js`. [details](../features/bases.md#base-building)
 - **Beds as furniture**: cots, beds, bunk beds and large beds set in buildings; one rough-sleeping rule [beds, data-beds] `tools/bedstest.js`. [details](../features/bases.md#beds-as-furniture)
@@ -116,6 +119,7 @@ Detail: [travel.md](../features/travel.md).
 
 ## 6. Tactical combat (XCOM-style)
 Detail: [combat.md](../features/combat.md).
+- **Terrain in combat**: high ground aims +5 a level (to +15) and sees further, uphill −5 a level, a hill half cover a level up and full two up, a hollow sees only its rim, a hill sees into an upper floor through a window, the AI paths and stands by the land [combat, highground, ui/combat, ui/battlehud] `tools/terraincombattest.js`. [details](../features/combat.md#terrain-in-combat)
 - **Turn-based tactical battles** with an isometric view [combat, ui/isoview].
 - **Walking on the battle map**: moves animated cell by cell at each mover's pace [ui/moveanim, ui/combat, ui/figures] `tools/moveanimtest.js`. [details](../features/combat.md#walking-on-the-battle-map)
 - **Lost pictures drawn again**: every cached picture redrawn after a GPU context loss [ui/pictures]. [details](../features/combat.md#lost-pictures-drawn-again)
@@ -225,6 +229,7 @@ Detail: [ui.md](../features/ui.md).
 - **Command palette (Ctrl+K)**, minimap, watch list, map notes, threat bar [ui/cmdpalette, ui/minimap, watchlist, mapnotes, ui/threatbar].
 - **Touch input**: gestures, on-screen stand-ins for keys, battle taps that confirm [ui/touch, ui/responsive, ui/combat]. [details](../features/ui.md#touch-input)
 - **Game controller**: any standard-mapping pad drives menus, the State Map and battles [ui/gamepad, ui/padnav, ui/inputmode] `tools/padnavtest.cjs`. [details](../features/ui.md#game-controller)
+- **The whole game by pad**: the POI map's and crawls' SVG places take the ring, a pointer for charts and the minimap, Pick start on map, the camp-site picker and the base build map by cursor [ui/padnav, main, ui/combat, ui/poimap] `tools/padmaptest.cjs`. [details](../features/ui.md#the-whole-game-by-pad)
 - **Key hints by device**: hints and tooltips worded for mouse, finger or pad [ui/hints, ui/inputmode]. [details](../features/ui.md#key-hints-by-device)
 - **Audio**: adaptive music director and synth score, ambience, SFX for guns, melee, zombies, doors, vehicles [ui/music*, ui/amb*, ui/sfx*].
 - **Dev tools**: reveal the map; headless balance and test tools in `prototype/tools`.

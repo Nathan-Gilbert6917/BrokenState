@@ -75,6 +75,13 @@ An Xbox pad, or any pad with the browser's standard mapping (Chrome and Edge, th
 ### The legend
 - Ⓐ Select Ⓑ Back Ⓧ Menu Ⓨ Next team ☰ Pause …, the battle's own. Every cursor and ring show only in pad mode; with no pad, or the mouse used last, nothing changes.
 
+## The whole game by pad
+- The user's request 2026-10-23: "Extend the controller navigation for the map view. I want the whole game to be playable via controller so make other UI and maps like the POI one work with controllers".
+- Maps drawn as SVG (the POI map's places and exit arrows, the city crawl's rim blocks, the hive's chambers) take the ring: A sends the click SVG has no click() for; the ring resting on one lights what :hover lights (.pad-focus) and shows its hover text (ui/padnav, ui/poimap, `prototype/pad.css`).
+- The pointer (padnav POINT, pointIn) for pictures only the mouse reads (canvas[data-chart]: the Ledger's charts; [data-padpoint]: the minimap): A puts a cross (#padptr) in, the D-pad moves it and sends mousemove, A clicks, X right-clicks, B gives the ring back.
+- Pick start on map: the State Map's cursor before the run, Y Pick start on/off, A starts there, B back, ⧉ the banner (main.js nrMapOn, padStartOn, startTipAt). The camp-site picker (b.site): the cursor with its 5 × 5 and hover line, A picks, Y Set up camp here, LB/RB turn the view, ⧉ the panel. The base build map (b.layout): A builds / puts down / selects / lifts / opens a land card; Y rotates (R); B puts back, deselects, closes a card (combat layoutEsc, shared with Esc); LB/RB turn; ⧉ the Build list and cards, a pick there hands the pad back to the cursor (api.mapPick, main.js padPickKey). Legends for each; "R turns it" reads Ⓨ by pad (ui/hints).
+- Still mouse-only (cosmetic): moving overlay boxes and windows; the battle bar's words on the site and layout screens. `tools/padmaptest.cjs` drives the title, World…, Customize, Pick start, a team sent and moved, a Ledger chart, the POI map, the camp-site picker and the base map by pad.
+
 ## Key hints by device
 - ui/inputmode.js's mode: a mouse and the keyboard, a finger, a controller [ui/hints, `prototype/touch.css` (its key hints section)].
 - The pick banners, PAUSED, the State of Calder hints, the guide's notes and steps and the camera spots' flash have a line for each device (keyHint, sayFor).
