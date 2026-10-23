@@ -3585,7 +3585,7 @@ function previewText(b, state = null) {
   if (t && t.side === "player" && t.vol != null) return `<b style="color:${VOL_COLOR}">${esc(t.name)}</b> <span class="muted">${Math.round(t.hp)}/${t.maxHp} hp · ${gunText(b, t)}</span><br><span class="small">Volunteer from ${esc(t.volGroup || "an allied group")}: their own orders. They act on their own at the end of your turn.</span>`; // sim/volunteers.js
   if (t && t.side === "player") {
     if (b.phase === "deploy") return `<b>${esc(t.name)}</b> <span class="muted">${Math.round(t.hp)} hp · ${esc(t.weaponName)}${t.post === "gate" ? " · holds the gate" : t.post === "tower" ? " · on a tower" : ""}</span>`;
-    const hh = heightAt(b, t.x, t.y);
+    const hh = heightAt(b, t.x, t.y) + SIM.mapLv(b); // from level ground (a base's map on a hill is laid from its own level)
     const thr = active(t) ? threatHtml(b, v, t.x, t.y, ` to ${esc(t.name.split(" ")[0])}`) : "";
     // On high ground or down in a hollow (sim/highground.js): what it does for them.
     const hline = hh > 0 ? `<br><span class="good">${"▲".repeat(hh)} On high ground (height ${hh}): +${HEIGHT.SIGHT * hh} sight, +${Math.min(HEIGHT.MAX_AIM, HEIGHT.AIM * hh)} aim at anything lower, ${hh >= HEIGHT.FULL_UP ? "full" : "half"} cover against shooters ${hh >= HEIGHT.FULL_UP ? `${hh} levels` : "a level"} below${hh >= HEIGHT.FULL_UP ? " (half against those a level below)" : ""}.</span>`
@@ -3708,7 +3708,7 @@ function previewText(b, state = null) {
   const pool = acidAt(b, h.x, h.y);
   if (pool) s = `<b class="danger">Acid</b> <span class="muted">(${pool.turns} turn${pool.turns === 1 ? "" : "s"} left)</span>: ${ACID.pool[0]}–${ACID.pool[1]} damage to the living who step in or start their turn in it (once a turn; armour stops only half as much). The dead walk through it unharmed.${u && u.acidT === b.turn ? " <span class=\"muted\">Already burned this turn.</span>" : ""} ${s}`;
   if (evacAt(b, h.x, h.y)) s += b.tier ? (b.tier.map === "wall" ? " The back gate: one person can slip away from here (the team falls back to the yard instead: Shift+R)." : " The back gate: leaving from here abandons the base.") : " Evac zone: you can retreat from here (a downed teammate dragged here goes with the last one out).";
-  const hh = heightAt(b, h.x, h.y);
+  const hh = heightAt(b, h.x, h.y) + SIM.mapLv(b); // from level ground (a base's map on a hill is laid from its own level)
   // The ground's own height (sim/basescatter.js reliefLayer, sim/relief.js): a hill or a hollow, walked up and down a
   // level at a step.
   // sim/highground.js (the user's word 2026-10-23): high ground aims and sees further, half cover a level up and full
@@ -3863,7 +3863,7 @@ function nvgTip(b, u) {
 // ---------- view cones (sim/vision.js) ----------
 // How far a unit sees from (x, y) (sim/combat.js sightRange, read off this battle's own size).
 const hz = (b, x, y) => (x >= 0 && y >= 0 && x < b.w && y < b.h && b.cells[y * b.w + x] ? heightAt(b, x, y) : 0);
-const sightAt = (b, o, x = o.x, y = o.y) => o.sight + HEIGHT.SIGHT * hz(b, x, y) + (o.optic || 0) + (o.vsight || 0);
+const sightAt = (b, o, x = o.x, y = o.y) => o.sight + HEIGHT.SIGHT * (hz(b, x, y) + SIM.mapLv(b)) + (o.optic || 0) + (o.vsight || 0); // mapLv: a base's map on a hill, laid from its own level
 // The way from the middle of (x, y) toward the mouse at (px, py), in map radians (null when the mouse is on the
 // tile's own middle): the ground's projection turned back.
 function mouseAngle(b, x, y, px, py) {

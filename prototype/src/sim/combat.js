@@ -841,6 +841,9 @@ export const TERRAIN_STEP = 1;
 // The ground a cell stands on, in levels (its terrain height; 0 for level ground), or null: a raised floor of its own
 // (a walkway, a roof, stairs: CELL h or a structure's c.h).
 export const groundH = (c) => (c.ter ? c.h || 0 : c.h == null && CELL[c.k] && CELL[c.k].h == null ? 0 : null);
+// The map's datum: the level its c.h counts from (a base on a hill or in a hollow: basemap.js F.lv, its map laid from
+// its own level; 0 for any other map). A hollow is ground below level ground: c.h + mapLv(b) < 0 (ponds.js, highground.js).
+export const mapLv = (b) => (b && b.deployPlan && b.deployPlan.fort && b.deployPlan.fort.lv) || 0;
 
 // Verticality (base battles, and the hills and hollows of a hills or mountain tile: relief.js): a unit on higher ground
 // sees SIGHT tiles further a level, aims AIM better a level at anything lower (at most MAX_AIM) and UPHILL worse a level
@@ -1001,6 +1004,9 @@ export const onOtherFloor = (b, u) => !!(b && b.floors) && (u.f || 0) !== (b.flo
 // Height of a cell (verticality), whether it is closed to the attackers, a ladder, and something that can be battered.
 export const heightAt = (b, x, y) => { const c = b.cells[y * b.w + x]; return c.h ?? CELL[c.k].h ?? 0; };
 export const hAt = (b, x, y) => { const c = b.cells[idx(x, y)]; return c.h ?? CELL[c.k].h ?? 0; };
+// The height that widens (or narrows) a unit's sight: hAt counted from level ground (mapLv: a base's map on a hill is
+// laid from its own level, so its yard is c.h 0 but still a hill's height over the plain).
+export const sightH = (b, x, y) => hAt(b, x, y) + mapLv(b);
 export const barredCell = (c) => !!(c.bar || CELL[c.k].bar) && !(c.hp <= 0);
 // A building's closed door (buildingmaps.js): people open it unless someone braces it from the other side; the dead
 // never do (they batter it down). Is someone bracing this door cell?
@@ -2519,7 +2525,7 @@ export function los(b, x0, y0, x1, y1) {
 
 // How far a unit sees from where it stands: its sight (night, a flashlight, night vision: stealth.js), +HEIGHT.SIGHT
 // a level up, + optics (binoculars, a thermal at night: u.optic, stealth.js).
-export const sightRange = (b, a, x = a.x, y = a.y) => fogSight(b, a, a.sight + HEIGHT.SIGHT * hAt(b, x, y) + (a.optic || 0) + (a.vsight || 0), x, y); // vsight: a ballistic visor down (helmets.js); fogSight: a fog bank or rain fog caps it (seasonfx.js)
+export const sightRange = (b, a, x = a.x, y = a.y) => fogSight(b, a, a.sight + HEIGHT.SIGHT * sightH(b, x, y) + (a.optic || 0) + (a.vsight || 0), x, y); // vsight: a ballistic visor down (helmets.js); fogSight: a fog bank or rain fog caps it (seasonfx.js)
 // Can a unit see a cell? Light shows your people what stands in it out to the full daylight range, however dark: a
 // flare (throwables.js) and, at night, a floodlit cell (deploy.js). Inside a raid's building the room's own light
 // (indoorlight.js): a lit room is seen as by day (at night too, by either side), a dark one (a barn, a storeroom, any
@@ -2529,10 +2535,10 @@ export function canSeeAt(b, a, x, y) {
   const d = dist(a.x, a.y, x, y);
   const lt = b.indoor ? lightAt(b, x, y) : 0;
   // At night a person on foot sees down cones (vision.js): the dark ahead, a light's beam, the cells around them.
-  if (lt ? !indoorSees(b, a, x, y, d, lt, sightRange(b, a), (a.daySight ?? SIGHT) + HEIGHT.SIGHT * hAt(b, a.x, a.y) + (a.optic || 0) + (a.vsight || 0)) : coned(b, a) ? !nightSees(b, a, x, y, d, sightRange(b, a) - a.sight) : d > sightRange(b, a)) {
+  if (lt ? !indoorSees(b, a, x, y, d, lt, sightRange(b, a), (a.daySight ?? SIGHT) + HEIGHT.SIGHT * sightH(b, a.x, a.y) + (a.optic || 0) + (a.vsight || 0)) : coned(b, a) ? !nightSees(b, a, x, y, d, sightRange(b, a) - a.sight) : d > sightRange(b, a)) {
     if (a.side !== "player") return false;
     const lit = (b.flares && b.flares.length && flareLit(b, x, y)) || (b.night && b.floodAim && b.lit && b.lit[idx(x, y)]);
-    if (!lit || d > SIGHT + HEIGHT.SIGHT * hAt(b, a.x, a.y) + (a.optic || 0)) return false;
+    if (!lit || d > SIGHT + HEIGHT.SIGHT * sightH(b, a.x, a.y) + (a.optic || 0)) return false;
   }
   return los(b, a.x, a.y, x, y) && !(b.smoke && b.smoke.length && smokeBlocks(b, a.x, a.y, x, y)); // a fire's thick smoke (throwables.js)
 }
@@ -2551,7 +2557,7 @@ export function sneakHidden(b, a, t) {
 }
 function litFrom(b, a, t) {
   if (!b.night || !activeLight(t) || t.side === a.side || t.down || t.dead) return false;
-  if (dist(a.x, a.y, t.x, t.y) > SIGHT + HEIGHT.SIGHT * hAt(b, a.x, a.y) || !inArc(a, t.x, t.y, VISION.HALF)) return false;
+  if (dist(a.x, a.y, t.x, t.y) > SIGHT + HEIGHT.SIGHT * sightH(b, a.x, a.y) || !inArc(a, t.x, t.y, VISION.HALF)) return false;
   return los(b, a.x, a.y, t.x, t.y) && !(b.smoke && b.smoke.length && smokeBlocks(b, a.x, a.y, t.x, t.y));
 }
 
@@ -3432,7 +3438,7 @@ export function playerVision(b) {
 // range; a dark room with night vision, its daylight sight; the night cones, a beam and a lamp's pool (vision.js
 // nightEyes: a dark room's are no longer); a cell lit by a flare or a floodlight, SIGHT from where it stands.
 function sightBound(b, e) {
-  const range = sightRange(b, e), extra = range - e.sight, hh = HEIGHT.SIGHT * hAt(b, e.x, e.y);
+  const range = sightRange(b, e), extra = range - e.sight, hh = HEIGHT.SIGHT * sightH(b, e.x, e.y);
   const ne = nightEyes(b, e, extra);
   let r = Math.max(range, (e.daySight ?? SIGHT) + hh + (e.optic || 0) + (e.vsight || 0), (e.daySight ?? e.sight) + extra, SIGHT + hh + (e.optic || 0), ne.near);
   for (const c of ne.cones) r = Math.max(r, c.r);
@@ -5619,7 +5625,7 @@ function aiUnit(b, u, state = null) {
 function aiLook(b, u) {
   if (!u.aware || !hasFront(u)) return;
   let best = null, bd = Infinity;
-  const far = (u.daySight ?? u.sight) + HEIGHT.SIGHT * hAt(b, u.x, u.y);
+  const far = (u.daySight ?? u.sight) + HEIGHT.SIGHT * sightH(b, u.x, u.y);
   for (const f of foesOf(b, u)) {
     const d = dist(u.x, u.y, f.x, f.y);
     if (d >= bd || d > far || (b.floors && (f.f || 0) !== (u.f || 0))) continue;

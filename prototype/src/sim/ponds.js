@@ -31,7 +31,7 @@
 // mud nor dry (springSt), ice while the freezing index is past FREEZE like the rest (pondIce: the same for every tile,
 // as the freezing index is), and otherwise a pond like any other (wading, deep water, the aim, nothing built on it).
 import { weatherOnDay, weatherAt, iceIndex, dayIndex, season } from "./weather.js";
-import { CELL } from "./combat.js"; // call-time only
+import { CELL, mapLv } from "./combat.js"; // call-time only
 /** @import { State } from "./types" */
 
 export const PONDS = {
@@ -152,12 +152,14 @@ export function pondsBattle(state, b, tileId) {
   const cw = climbWx(state, tileId);
   if (cw.x !== 1) { b.climbX = cw.x; b.climbWhy = cw.why; }
   try { const wx = weatherAt(state, tileId); if ((wx.snowCover || 0) >= 0.15) b.snowLie = Math.round(Math.min(1, wx.snowCover) * 4) / 4; } catch { /* no weather */ }
-  if (!cells.some((c) => c.ter && c.h < 0)) return 0;
+  // Sunk ground: below level ground (a base's map on a hill is laid from its own level: combat.js mapLv; its c.h, wl too).
+  const lv = mapLv(b), sunk = (c) => c.ter && c.h + lv < 0;
+  if (!cells.some(sunk)) return 0;
   const st = pondsOn(state, tileId), sp = springSt(st);
-  if (!cellWet(st, 1) && !cells.some((c) => c.spring && c.ter && c.h < 0)) return 0; // a pond tile's spring is never dry
+  if (!cellWet(st, 1) && !cells.some((c) => c.spring && sunk(c))) return 0; // a pond tile's spring is never dry
   // How far in from its rim each hollow cell is (eight ways; the map's edge is no rim): its middle is deep.
   const inner = new Uint16Array(W * H), q = [];
-  for (let i = 0; i < W * H; i++) if (cells[i].ter && cells[i].h < 0) inner[i] = 0xffff; else q.push(i);
+  for (let i = 0; i < W * H; i++) if (sunk(cells[i])) inner[i] = 0xffff; else q.push(i);
   for (let k = 0; k < q.length; k++) {
     const i = q[k], x = i % W, y = (i / W) | 0;
     for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const nx = x + dx, ny = y + dy, j = ny * W + nx; if (nx >= 0 && ny >= 0 && nx < W && ny < H && inner[j] === 0xffff) { inner[j] = inner[i] + 1; q.push(j); } }
@@ -166,10 +168,10 @@ export function pondsBattle(state, b, tileId) {
   let n = 0;
   for (let i = 0; i < W * H; i++) {
     const c = cells[i];
-    if (!c.ter || !(c.h < 0)) continue;
-    const wet = cellWet(c.spring ? sp : st, -c.h, inner[i]);
+    if (!sunk(c)) continue;
+    const wet = cellWet(c.spring ? sp : st, -(c.h + lv), inner[i]);
     if (!wet) continue;
-    c.wet = wet.s; c.wl = wet.wl; n++;
+    c.wet = wet.s; c.wl = wet.wl - lv; n++;
     if (wet.s === "deep" && c.k === "open") deep.push(i);
   }
   if (n) b.ponds = { dry: st.dry, ice: st.ice, ...(cells.some((c) => c.spring && c.wet) ? { spring: true } : {}) };

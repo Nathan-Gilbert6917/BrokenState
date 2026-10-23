@@ -13,7 +13,7 @@
 //     at the window sees and shoots back (windowSees, crossLos, floorCover, windowFoes). Nothing else crosses floors.
 //   - Where the AI stands (combat.js scoreCell): a person with a gun takes the high ground and keeps out of a hollow
 //     (terrainScore, TERRAIN_AI). The pathfinders cost the ground's climb (combat.js reachable, distField: climbCost).
-import { CELL, HEIGHT, losTop, coverAgainst, active, activeAny, isTied } from "./combat.js"; // call-time only (combat.js imports this)
+import { CELL, HEIGHT, losTop, coverAgainst, active, activeAny, isTied, mapLv } from "./combat.js"; // call-time only (combat.js imports this)
 import { coned, nightSees } from "./vision.js";
 
 // Where the AI stands (combat.js scoreCell): a ranged person's score + HIGH a level of hill under them (up to MAX_LV
@@ -22,6 +22,8 @@ export const TERRAIN_AI = { HIGH: 2, MAX_LV: 3, HOLLOW: 6 };
 
 // The ground's own height under a cell (a hill or a hollow: c.ter), 0 for anything else.
 const terH = (c) => (c && c.ter ? c.h || 0 : 0);
+// Is a cell sunk ground, below level ground (a base's map on a hill is laid from its own level: combat.js mapLv)?
+const sunk = (b, c) => !!c && !!c.ter && (c.h || 0) + mapLv(b) < 0;
 
 // ---------- hollows ----------
 // The hollow a cell is in: every cell of sunk ground (c.ter, c.h < 0) joined to it eight ways, as a Set of indexes, or
@@ -30,7 +32,7 @@ const terH = (c) => (c && c.ter ? c.h || 0 : 0);
 let memo = null;
 function hollowOf(b, i) {
   const cells = b.cells;
-  if (!(terH(cells[i]) < 0)) return null;
+  if (!sunk(b, cells[i])) return null;
   if (memo && memo.cells === cells && memo.rev === b.rev && memo.set.has(i)) return memo.set;
   const W = b.w, H = b.h, set = new Set([i]), q = [i];
   for (let k = 0; k < q.length; k++) {
@@ -39,7 +41,7 @@ function hollowOf(b, i) {
       const nx = x + dx, ny = y + dy;
       if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
       const n = ny * W + nx;
-      if (!set.has(n) && terH(cells[n]) < 0) { set.add(n); q.push(n); }
+      if (!set.has(n) && sunk(b, cells[n])) { set.add(n); q.push(n); }
     }
   }
   memo = { cells, rev: b.rev, set };
@@ -57,14 +59,14 @@ function byHollow(b, set, x, y) {
 // rim? Both ways alike (the los cache holds one answer for the pair).
 export function hollowShut(b, x0, y0, x1, y1) {
   const W = b.w, ca = b.cells[y0 * W + x0], cb = b.cells[y1 * W + x1];
-  if (!(terH(ca) < 0) && !(terH(cb) < 0)) return false;
+  if (!sunk(b, ca) && !sunk(b, cb)) return false;
   const ha = hollowOf(b, y0 * W + x0);
   if (ha && !byHollow(b, ha, x1, y1)) return true;
   const hb = hollowOf(b, y1 * W + x1);
   return !!hb && !byHollow(b, hb, x0, y0);
 }
 // Is a cell in a hollow (for the hover text and the tests)?
-export const inHollow = (b, x, y) => terH(b.cells[y * b.w + x]) < 0;
+export const inHollow = (b, x, y) => sunk(b, b.cells[y * b.w + x]);
 
 // ---------- hills into upper floors ----------
 // Units on different floors of a building with storeys (b.floors): only a window between a hill and an upper floor
@@ -153,6 +155,6 @@ export function windowSeen(b, side, t) {
 // combat.js scoreCell: a person with a gun likes the high ground (a hill's levels, up to MAX_LV) and keeps out of a
 // hollow (it sees only the rim from there).
 export function terrainScore(b, x, y) {
-  const g = terH(b.cells[y * b.w + x]);
+  const c = b.cells[y * b.w + x], g = c && c.ter ? (c.h || 0) + mapLv(b) : 0; // from level ground (combat.js mapLv)
   return g > 0 ? TERRAIN_AI.HIGH * Math.min(g, TERRAIN_AI.MAX_LV) : g < 0 ? -TERRAIN_AI.HOLLOW * -g : 0;
 }

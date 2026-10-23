@@ -110,7 +110,7 @@ import { carsAtBase } from "./vehicles.js";
 import { DEPLOY } from "./deploy.js"; // the reinforced gate's hit points (call-time only)
 import { INTERIOR, layoutSeed } from "./interior.js";
 import { cragWays } from "./relief.js"; // a base map's crag leaves the ways in open (tools/mapreachtest.js)
-import { landSpec, landOf as landMapOf, layLand, scatterSeed, clearOf, pieceWord, CLEAR, SITE, siteBox, siteGet } from "./basescatter.js"; // the land of the base map: trees, bushes, fences, rocks, wrecks, a road, a river (fixed by the tile, the same in the view and in a fight); clearing it
+import { landSpec, landOf as landMapOf, layLand, scatterSeed, clearOf, pieceWord, CLEAR, SITE, siteBox, siteGet, siteLevel } from "./basescatter.js"; // the land of the base map: trees, bushes, fences, rocks, wrecks, a road, a river (fixed by the tile, the same in the view and in a fight); clearing it
 import { Rng } from "./rng.js";
 import { bestSite } from "./siteinfo.js"; // the game's own camp spot by the spot's facts (call-time only: siteinfo.js reads this module)
 import { SUPPLIES } from "./data.js";
@@ -797,9 +797,12 @@ export function landFor(state, base) {
   ensureLand(state, base);
   if (base.land.off) return null;
   stampGrid(state, base);
-  const spec = landSpec(state, base, { G: gridHalf(base), C: yardHalf(base), tier: tierKey(base), terrain: terrainOf(state, base), origin: originOf(base), fresh: freshBase(base) });
+  const spec = landSpec(state, base, { G: gridHalf(base), C: yardHalf(base), tier: tierKey(base), terrain: terrainOf(state, base), origin: originOf(base), fresh: freshBase(base), level: levelOf(base) });
   return landMapOf(spec, base.land);
 }
+// The base's own ground level (base.plan.level: the camp's 5 × 5 levelled to its own ground, siteLevel; a camp on a hill
+// stands on it, the user's request 2026-10-23); 0 for level ground and a base laid out before it.
+export const levelOf = (base) => (base && base.plan && base.plan.fresh && base.plan.level) || 0;
 // The first time a base's land is read (a new base, or a save from before the land): what stands on the map now, by
 // hand or by the game, keeps its ground (the cells under it and outside its doors cleared), so nothing standing moves.
 function ensureLand(state, base) {
@@ -886,25 +889,35 @@ export function siteProblem(state, tile, at) {
   for (let y = B.y0; y < B.y1; y++) for (let x = B.x0; x < B.x1; x++) { const p = land.pieces.get(`${x},${y}`); if (p && p.k === "water") return "On the river: pick dry ground"; if (p && p.k === "crag") return "On the mountainside: pick open ground"; if (p && p.spring) return "In the pond: pick dry ground"; }
   return "";
 }
-// What clearing the spot would give and take ({ hours: work-hours at a builder's pace, get, n: pieces; dig: { hours,
-// up, down }: the part of it levelling the ground, cells of high ground dug down and of hollow filled in, so an open
-// spot on a hill reads as the dig it is, not "clearing 25 things": the user's report 2026-10-23 }; the picker's line,
-// staging.js siteSetup). tool: a cutting tool to hand (else a tree, a log or a stump takes CLEAR.NO_TOOL as long).
+// What clearing the spot would give and take ({ hours: work-hours at a builder's pace, get, n: pieces and cells
+// levelled; dig: { hours, up, down }: the part of it levelling the ground, cells dug down and filled in, so an open
+// spot on a hill's slope reads as the dig it is, not "clearing 25 things": the user's report 2026-10-23; level: the
+// level it is levelled to, basescatter.js siteLevel: an open hilltop is no work, the camp stands on it }; the picker's
+// line, staging.js siteSetup). Bare ground is dug down or filled in to the level a level a cell (CLEAR rise, dip); under
+// a tree, a bush or a rock the ground goes with it. tool: a cutting tool to hand (else a tree, a log or a stump takes
+// CLEAR.NO_TOOL as long).
 export function siteYield(state, tile, at, tool = true) {
-  const land = siteLand(state, tile), B = siteBox(at), seen = new Set(), get = {}, dig = { hours: 0, up: 0, down: 0 };
+  const land = siteLand(state, tile), B = siteBox(at), level = siteLevel(land, at), seen = new Set(), get = {}, dig = { hours: 0, up: 0, down: 0 };
   let hours = 0;
   for (let y = B.y0; y < B.y1; y++) for (let x = B.x0; x < B.x1; x++) {
     const p = land.pieces.get(`${x},${y}`);
-    if (!p || p.k === "water" || seen.has(p)) continue;
+    if (p && p.k === "water") continue;
+    if (!p || p.k === "rise" || p.k === "dip") {
+      const d = ((land.heights && land.heights.get(`${x},${y}`)) || 0) - level;
+      if (!d) continue;
+      const h = CLEAR[d > 0 ? "rise" : "dip"].hours * Math.abs(d);
+      hours += h; dig.hours += h; dig[d > 0 ? "up" : "down"]++;
+      continue;
+    }
+    if (seen.has(p)) continue;
     seen.add(p);
     const c = clearOf(p, tool, "clear");
     if (!c) continue;
     hours += c.hours;
-    if (p.k === "rise" || p.k === "slope" || p.k === "dip") { dig.hours += c.hours; dig[p.k === "dip" ? "down" : "up"]++; }
     for (const [k, v] of Object.entries(siteGet(p, c, tool))) get[k] = (get[k] || 0) + v;
   }
   dig.hours = Math.round(dig.hours * 10) / 10;
-  return { hours: Math.round(hours * 10) / 10, get, n: seen.size, dig };
+  return { hours: Math.round(hours * 10) / 10, get, n: seen.size + dig.up + dig.down, dig, level };
 }
 // The game's spot (the governor, a team with nobody to ask, a pick put off, Let the game pick): the best spot in reach
 // by its facts (siteinfo.js bestSite, the user's words 2026-10-23: "Update let the game pick": the setup's time, the
@@ -1871,7 +1884,8 @@ export function buildBaseMap(state, base, rng, opts = {}) {
   // same whatever is built or moved. Nothing is built on it until it is cleared (placeProblemAt), so it stands wherever
   // nothing else does; a piece under something standing (an old save's, laid before the land) is hidden there.
   const land = landFor(state, base);
-  F.scatter = land ? layLand({ cells, W, H, ox, oy, land, ok: (x, y) => cells[y * W + x].k === "open" && !used[y * W + x], floor: (x, y) => cells[y * W + x].k === "open" && !used[y * W + x] && !indoor[y * W + x] }).kinds : {};
+  F.lv = land ? land.level || 0 : 0; // the map's datum (combat.js mapLv): laid from the base's own level
+  F.scatter = land ? layLand({ cells, W, H, ox, oy, land, lift: F.lv, ok: (x, y) => cells[y * W + x].k === "open" && !used[y * W + x], floor: (x, y) => cells[y * W + x].k === "open" && !used[y * W + x] && !indoor[y * W + x] }).kinds : {};
   if (land) F.passes = cragWays(cells, W, H); // relief.js: the crag the crop takes in never shuts the base off from the map's edge; the ground a level a step to the edge and what stands
   // The clearing under way (the construction queue's clearing jobs: basescatter.js CLEAR), for the view: the cells, how far,
   // and who is on it this hour (woodwork.js chopHands: the woodcutters felling it, the builders working it).

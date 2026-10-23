@@ -60,8 +60,8 @@ import { keyWord, RAW } from "./water.js";
 import { formTeam, fleetPlan } from "./teamform.js";
 import { isBike, isCar, MAX_VEHICLES } from "./vehicles.js";
 import { itemLoad } from "./inventory.js";
-import { defaultSite, siteProblem, siteYield, clearCampSite, BASE_GRID } from "./basemap.js"; // the camp's own spot on its 250 × 250 map, its 5 × 5 cleared (call-time only)
-import { SITE } from "./basescatter.js";
+import { defaultSite, siteProblem, siteYield, clearCampSite, BASE_GRID, siteLand } from "./basemap.js"; // the camp's own spot on its 250 × 250 map, its 5 × 5 cleared (call-time only)
+import { SITE, siteLevel } from "./basescatter.js";
 import { siteInfo, pickWords } from "./siteinfo.js"; // the spot's facts: why the game picked its own (call-time only)
 import { clearSiteFirst, threatWords } from "./siteclear.js"; // the dead at a town's, a city's or an infected tile's camp spot cleared first
 import { tileScouted, scoutOrBlind, blindCamp, groundsHour, blindSite } from "./campscout.js"; // scouted first, or set up blind: the dead on the grounds (2026-10-23)
@@ -262,16 +262,17 @@ export function siteSetup(state, p, tile, at = null, withTool = null) {
   const work = CAMP.fireHours + y.hours;
   return { at: spot, work: r1(work), workers, hours: Math.max(0.25, Math.ceil((work / workers) * 4 - 1e-9) / 4), clear: y.hours, get: y.get, n: y.n, tool, dig: y.dig };
 }
-// The setup's work in words (siteSetup): "the camp fire, digging 25 cells of a hill down level and clearing 3 things".
+// The setup's work in words (siteSetup): "the camp fire, digging 12 cells down level and clearing 3 things".
 export function setupWhat(s) {
   const d = s.dig || { up: 0, down: 0 }, rest = s.n - d.up - d.down;
   const parts = [levelWords(d), rest > 0 ? `clearing ${rest} thing${rest === 1 ? "" : "s"}` : ""].filter(Boolean);
   return `the camp fire${parts.length ? `, ${parts.join(" and ")}` : ""}`;
 }
-// The ground's levelling (siteSetup dig): "digging 25 cells of a hill down level", or "".
+// The ground's levelling to the camp's level (siteSetup dig: basescatter.js siteLevel): "digging 12 cells down level",
+// or "".
 export function levelWords(d) {
   const cells = (n) => `${n} cell${n === 1 ? "" : "s"}`;
-  return !d ? "" : d.up && d.down ? `levelling ${cells(d.up + d.down)} of a hill and a hollow` : d.up ? `digging ${cells(d.up)} of a hill down level` : d.down ? `filling ${cells(d.down)} of a hollow in level` : "";
+  return !d ? "" : d.up && d.down ? `levelling ${cells(d.up + d.down)} (${d.up} dug down, ${d.down} filled in)` : d.up ? `digging ${cells(d.up)} down level` : d.down ? `filling ${cells(d.down)} in level` : "";
 }
 // The time and the work of the camp's spot as the team will set it up, for the log: "8 h 45 min (the camp fire, ...)".
 const setupLine = (state, p) => { const s = siteSetup(state, p, partyTile(p)); return `${durText(s.hours)} (${setupWhat(s)})`; };
@@ -309,9 +310,13 @@ export function makeCamp(state, p, tile, { up = false } = {}) {
     stock: { water: 0, fuel: 0, meds: 0, ammo: 0, arrows: 0, parts: 0, scrap: 0, jars: 0, wood: 0, buildmat: 0, metalsheet: 0, [RAW]: 0 }, // arrows, wood: every base keeps the count (a camp read arrows = undefined: farmtest 43)
     radio: false, watchtower: false, buildings: [], construction: [], armory: [],
     tier: 0, camp: true, fire: true, campDay: day(state), lastPresent: state.hour, first: firstHubPending(state) && !hubNow, tentsSet: true, // tentsSet: a new camp has no tents (no beds) until one is put up (buildings.js TENTS)
-    plan: { plots: [], origin: campSiteFor(state, p, tile), fresh: true }, // its spot on the tile's 250 × 250 map (basemap.js originOf, freshBase)
+    plan: { plots: [], origin: campSiteFor(state, p, tile), fresh: true }, // its spot on the tile's 250 × 250 map (basemap.js originOf, freshBase); level: below
     land: { v: 2, n: 1, cleared: {}, looted: {} }, // the land read from the start (basemap.js ensureLand would clear the ground under what the game places)
   };
+  // The camp stands at its 5 × 5's own level (basescatter.js siteLevel: on a hill, up on it; the user's request
+  // 2026-10-23), its map laid from it (basemap.js levelOf).
+  const level = siteLevel(siteLand(state, tile), base.plan.origin);
+  if (level) base.plan.level = level;
   delete p.campAt;
   siteDone(state, p);
   if (t.ruin) { base.ruinSalvage = true; log(state, `The camp went up on the ruins of ${t.ruin.name}.`, "info"); delete t.ruin; }

@@ -54,8 +54,8 @@ const num = (v) => Math.round(v).toLocaleString("en-US");
 const hrs = (h) => { const v = h >= 10 ? Math.round(h) : h; return `${v} work-hour${v === 1 ? "" : "s"}`; };
 const cells = (d) => `${d} cell${d === 1 ? "" : "s"}`;
 // What the spot takes and gives this team: "4 h 30 min to set up (the camp fire, 1 work-hour, and 8 work-hours clearing
-// 3 things, shared by 2 people)", the ground's levelling named as such ("25 work-hours digging 25 cells of a hill down
-// level": an open hilltop is no quick spot, the user's report 2026-10-23), "+375 wood", and what an axe changes
+// 3 things, shared by 2 people)", the ground's levelling to the camp's level named as such ("12 work-hours digging 12
+// cells down level", not "clearing 12 things": the user's report 2026-10-23), "+375 wood", and what an axe changes
 // (sim/siteinfo.js siteInfo: setup, other).
 export function setupWords(state, p, tile, at, info = siteInfo(state, p, tile, at)) {
   const s = info.setup, o = info.other, d = s.dig || { hours: 0, up: 0, down: 0 }, rest = s.n - d.up - d.down;
@@ -72,8 +72,12 @@ export function setupWords(state, p, tile, at, info = siteInfo(state, p, tile, a
 function factList(f) {
   const out = [];
   const G = f.ground, lv = (n) => `${n} level${n === 1 ? "" : "s"}`;
-  out.push(["Ground", G.level ? "Level" : G.hi > 0 ? `A hill, up to ${lv(G.hi)}: dug down level (${hrs(G.dig)} of the setup)` : `A hollow, ${lv(-G.lo)} down: filled in level (${hrs(G.dig)} of the setup)`, G.level ? "good" : "warn",
-    "The camp stands on level ground: the setup digs high ground down to it and fills a hollow in (part of the setup's time)", G.level ? "level" : G.hi > 0 ? "dug into a hill" : "a hollow filled"]);
+  // The camp stands at its 5 × 5's own level (sim/basescatter.js siteLevel; the user's request 2026-10-23: on a hill, up
+  // on it): hi and lo are from that level; at: the level over the plain's.
+  const at = G.at || 0, where = at > 0 ? `on a hill, ${lv(at)} up` : at < 0 ? `down in a hollow, ${lv(-at)}` : "";
+  const fix = [G.hi > 0 ? `higher ground (up to ${lv(G.hi)}) dug down` : "", G.lo < 0 ? `lower ground (${lv(-G.lo)}) filled in` : ""].filter(Boolean).join(" and ");
+  out.push(["Ground", G.level ? (where ? `Level, ${where}: the camp stands on it` : "Level") : `Uneven: ${fix} to the camp's level${where ? `, ${where}` : ""} (${hrs(G.dig)} of the setup)`, G.level ? "good" : "warn",
+    "The camp stands on level ground at its square's own level (on a hill, up on it; in a hollow, down in it): the setup digs down what is higher and fills in what is lower (part of the setup's time)", G.level ? (at > 0 ? "a level hilltop" : at < 0 ? "level, in a hollow" : "level") : "levelled"]);
   const L = f.lie;
   out.push(["Round it", L.kind === "high" ? `Looks down on it (${pct(L.lower)} lower): good to hold` : L.kind === "low" ? `Overlooked: ${pct(L.higher)} of it higher` : L.kind === "flat" ? "Flat all round" : `Uneven (${pct(L.higher)} higher, ${pct(L.lower)} lower)`,
     L.kind === "high" ? "good" : L.kind === "low" ? "danger" : "", "The ground 4 to 10 cells out against the camp once it stands level: lower ground is easier to hold; higher ground gives whoever comes the height and hides them", L.kind === "high" ? "looks down on it" : L.kind === "low" ? "overlooked" : L.kind === "flat" ? "flat round" : "uneven round"]);
