@@ -9,9 +9,16 @@
 //   - Autumn's leaves: FALL's red, orange, brown and rust (ui/seasontrees.js, the trees' own) scattered on the
 //     outdoor ground, more as the season goes on (LEAF.BASE by the look) and thickest under and near the trees
 //     (LEAF.NEAR within LEAF.R cells), fewer on the road; none on water, a building's floor or the snow.
-// Every picture keyed (groundLookKey): a new season, snow or mud paints the ground again; nothing here runs per frame.
+//   - Puddles after rain (the user's request 2026-10-23, sim/puddles.js c.pud, b.puddles): shallow water on the level
+//     ground, its shape the cells' depths eased between their middles (puddleField, puddleAt) and roughened by the
+//     drift noise, so a puddle runs over the cells' edges with a soft ragged rim and stops at a wall or a pond; a
+//     darker wet ring round it, the water the ground's colour darkened under a grey-blue sky's sheen (PUD.SKY), a few
+//     glints; on asphalt darker and more of a mirror (puddleTexel). Spring's mud under it reads as a muddy puddle.
+// Every picture keyed (groundLookKey): a new season, snow, mud or puddles paint the ground again; nothing here runs
+// per frame.
 // API: groundTexel(col, c, X, Y, lf) -> the texel's colour; snowShare(depth); leafBase(look); leafField(b, look, key)
-//      -> per-cell leaf density (or null); groundLookKey(b, look); LEAF.
+//      -> per-cell leaf density (or null); groundLookKey(b, look); puddleField(b, ground) -> { F, ok, W, H } (or
+//      null); puddleAt(P, x, y, lx, ly) -> the water's depth at a texel; puddleTexel(col, c, X, Y, p); LEAF; PUD.
 import { FALL } from "./seasontrees.js";
 
 export const LEAF = {
@@ -22,6 +29,13 @@ export const LEAF = {
   ROAD: 0.3,     // on the road and gravel (blown off, driven over)
   SNOW_ROAD: 0.85, // the snow's cover on the road and gravel (the asphalt shows through in patches)
   FLOORS: new Set(["grass", "field", "dirt", "gravel", "road", "rubble"]),
+};
+export const PUD = {
+  EDGE: 0.3,     // the eased depth (puddleAt, with the noise) where the water starts
+  RIM: 0.08,     // the wet ring's width below that (darker ground)
+  WOB: 0.5,      // how far the edge wobbles (smooth noise a cell across)
+  JIT: 0.14,     // how ragged it is in the small (the drift noise)
+  SKY: [116, 134, 158], // the grey-blue sky the water mirrors (the night's darkness goes over it as over the ground)
 };
 const MUD_C = [62, 44, 32], MUD_SHEEN = [74, 76, 84], SNOW_C = [221, 227, 232], SNOW_SHADE = [186, 198, 214];
 
@@ -61,7 +75,7 @@ export const snowShare = (d) => (d > 0 ? Math.min(1, 0.35 + 0.65 * d) : 0);
 /** The leaves on open ground for a look (ui/seasontrees.js treeSeason): none but autumn's. */
 export const leafBase = (look) => (look && LEAF.BASE[look]) || 0;
 /** The pictures' key part for the season on the ground: the cells' mud or snow (b.ground) and the leaves' look. */
-export const groundLookKey = (b, look) => `${b && b.ground ? b.ground.key : ""}|${leafBase(look) ? look : ""}`;
+export const groundLookKey = (b, look) => `${b && b.ground ? b.ground.key : ""}|${leafBase(look) ? look : ""}${b && b.puddles ? `|${b.puddles.key}` : ""}`;
 
 // Per-cell leaf density (0..1) for a map in a look: the base, and more near the trees (cells: the ground floor's, where
 // the trees stand). Memoised by the map, the look and the cells' key (isoview.js sceneFor's: trees felled change it).
@@ -117,4 +131,61 @@ export function groundTexel(col, c, X, Y, lf = 0, edge = 1) {
     if (h < p) { const t = rnd(sx, sy, 8); return mul(FALL[Math.floor(t * FALL.length)], 0.8 + ((t * 7) % 1) * 0.35); }
   }
   return col;
+}
+
+// ---------- puddles after rain (sim/puddles.js) ----------
+// The map's puddles per cell: F the depth (c.pud, 0 none), ok the cells a puddle may be drawn on (its own cells and the
+// level ground next to them: the water runs over the cells' edges, never onto a wall, a building's floor or a pond).
+// Memoised by the map and its puddles' key. ground: may a puddle lie on a cell (sim/puddles.js puddleGround); cells:
+// the ground floor's (a building's upper floors have none).
+let pmemo = { b: null, key: "", P: null };
+/** @param {any} b @param {(c: any) => boolean} ground @param {any[]} [cells] */
+export function puddleField(b, ground, cells = b && b.cells) {
+  if (!b || !b.puddles || !cells) return null;
+  if (pmemo.b === b && pmemo.key === b.puddles.key) return pmemo.P;
+  const W = b.w, H = b.h, F = new Float32Array(W * H), ok = new Uint8Array(W * H);
+  for (let i = 0; i < W * H; i++) F[i] = cells[i].pud || 0;
+  for (let i = 0; i < W * H; i++) {
+    if (!F[i]) continue;
+    const x = i % W, y = (i / W) | 0;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const nx = x + dx, ny = y + dy, j = ny * W + nx;
+      if (nx >= 0 && ny >= 0 && nx < W && ny < H && !ok[j] && (F[j] || ground(cells[j]))) ok[j] = 1;
+    }
+  }
+  const P = { F, ok, W, H };
+  pmemo = { b, key: b.puddles.key, P };
+  return P;
+}
+// The puddles' depth at a point of cell (x, y) (lx, ly 0..1 across it): the cells' depths eased between their middles.
+/** @param {{ F: Float32Array, W: number, H: number }} P @param {number} x @param {number} y @param {number} lx @param {number} ly */
+export function puddleAt(P, x, y, lx, ly) {
+  const { F, W, H } = P, px = x + lx - 0.5, py = y + ly - 0.5, ix = Math.floor(px), iy = Math.floor(py);
+  let u = px - ix, v = py - iy;
+  u = u * u * (3 - 2 * u); v = v * v * (3 - 2 * v);
+  const at = (cx, cy) => (cx >= 0 && cy >= 0 && cx < W && cy < H ? F[cy * W + cx] : 0);
+  const a = at(ix, iy), b = at(ix + 1, iy), c = at(ix, iy + 1), d = at(ix + 1, iy + 1);
+  return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+}
+/**
+ * A texel of the ground with a puddle on it (p: puddleAt there; X, Y the texel over the whole map, 16 a cell): the
+ * ground itself, its wet rim darker, or the water: the ground darkened under the sky's sheen, a glint here and there;
+ * on asphalt darker and more of a mirror.
+ * @param {number[]} col @param {any} c @param {number} X @param {number} Y @param {number} p
+ */
+export function puddleTexel(col, c, X, Y, p) {
+  if (!(p > 0)) return col;
+  X |= 0; Y |= 0;
+  // The edge: wobbling over a cell or so (WOB), ragged in the small (JIT), so the water never follows the cells' edges.
+  const v = p + (vnoise(X + 37, Y + 211, 16, 5) - 0.5) * PUD.WOB + (driftAt(X + 97, Y + 401) - 0.5) * PUD.JIT + (rnd(X, Y, 11) - 0.5) * 0.03;
+  if (v < PUD.EDGE - PUD.RIM) return col;
+  if (v < PUD.EDGE) return mul(col, 0.92 - ((v - (PUD.EDGE - PUD.RIM)) / PUD.RIM) * 0.24); // the wet ring, darkest at the water
+  const t = Math.min(1, (v - PUD.EDGE) / 0.3), road = c.f === "road", q = rnd(X, Y, 12);
+  // The water: the ground under it darkened (dark), the sky mirrored over it (k), more of a mirror on asphalt and in
+  // the deep; the sheen the sky's light in long soft streaks across it, a highlight where it is brightest.
+  const dark = road ? 0.4 : c.gnd === "mud" ? 0.6 : 0.5, sheen = driftAt((X >> 2) + 300, Y + 50);
+  const k = Math.min(0.9, (road ? 0.5 : 0.36) + t * 0.2 + Math.max(0, sheen - 0.55) * 1.1 + q * 0.04);
+  if (t > 0.25 && sheen > 0.86) return road ? [188, 198, 212] : [198, 208, 220];
+  const edge = v < PUD.EDGE + 0.04 ? 0.82 : 1; // a dark line where the water meets the ground
+  return [(col[0] * dark * (1 - k) + PUD.SKY[0] * k) * edge, (col[1] * dark * (1 - k) + PUD.SKY[1] * k) * edge, (col[2] * dark * (1 - k) + PUD.SKY[2] * k) * edge];
 }
