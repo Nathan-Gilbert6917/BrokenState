@@ -102,6 +102,7 @@ Base detail: [bases.md](../features/bases.md). Economy detail: [economy.md](../f
 Detail: [travel.md](../features/travel.md).
 - **Expeditions across the State Map**: supplies drain hour by hour, events roll tile by tile [parties].
 - **Order queue and trip planner**: plans, templates, repeat trips [orders, plans, trips, ui/undo].
+- **The map's right-click team menu**: a team's orders for the tile clicked, with times; on the team's own tile every order it can do there, no team selection needed [ui/teamctx, ui/teamsel] `tools/teamctxtest.js`. [details](../features/travel.md#the-maps-right-click-team-menu)
 - **Team forming, team inventory, teams meeting** and handing goods over; supplies and rounds onto a named member; guns leave loaded [teamform, teaminv, teammeet, supitems, gunrounds]. [details](../features/travel.md#team-inventory-and-handing-over-goods)
 - **Carry weight and load bands**, physical supply carrying, carry kit and rigs; full hands in a fight [load, carry, carrykit, ui/carry]. [details](../features/travel.md#the-hands-in-a-fight)
 - **Vehicles**: fuel, condition, breakdowns, bicycles, one person per vehicle [vehicles, walkers]; found cars (hotwiring, claiming) [foundcars], military trucks, Humvees and MRAPs [miltrucks], road blockages [roadblocks], road repairs [repairwait], vehicle trade [vehicletrade].

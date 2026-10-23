@@ -12,7 +12,8 @@
 // Scavenge / raid is always on a land tile that is not a base of yours (2026-10-19, user request), greyed out with the
 // reason when there is nothing known to raid. "All orders" (ui.ctxAll, folded) lists every order the team can be given
 // for the tile (sim/parties.js orderOptions, the ones the menu does not already show, each with its reason when it cannot
-// be done now) and opens the team panel (its queue and every order where it stands).
+// be done now) and opens the team panel (its queue and every order where it stands). On the tile the team stands on it is
+// always open, with the panel's orders on the spot as well (2026-10-23, user request: spotOrders).
 //
 // teamTileMenu(state, ui, p, tile, { append }) → { p, tile, append, forced, head, items }: the model (tools/teamctxtest.js)
 // teamCtxHtml(state, ui, menu)                 → the menu's team section
@@ -21,7 +22,7 @@ import { teamsTogether, meetProblem } from "../sim/teammeet.js"; // your other t
 import { foodIn } from "../sim/foods.js"; // days of food (every kind)
 import { baseById, hub } from "../sim/world.js";
 import { MISSIONS, partyTile, partyMembers, tileLabel, teamName, orderOptions, planPath, orderMove, carried, cargoRoom, moveEstimate, clockFrac, clockText, onTheMove, glideAt } from "../sim/parties.js";
-import { queueOrder, startOrder, queueEstimate, queueEndTile, orderStatus, orderLabel, queueText, cancelMove, besideWater, repairInfo, FETCH_WATER_HOURS, SURVEY_HOURS } from "../sim/orders.js";
+import { queueOrder, startOrder, queueEstimate, queueEndTile, orderStatus, orderLabel, queueText, cancelMove, besideWater, repairInfo, stopTask, describeOrder, FETCH_WATER_HOURS, SURVEY_HOURS } from "../sim/orders.js";
 import { commandable, NO_RADIO } from "../sim/plans.js";
 import { partyVehicle } from "../sim/vehicles.js";
 import { HUNT, SNARE, gameAbundance, fishSpot, huntProblem, fishProblem, snareLine, snareProblem } from "../sim/hunting.js";
@@ -31,7 +32,10 @@ import { CLAIM, canClaim, wellProblem, claimOwner } from "../sim/claims.js";
 import { teamFieldItems } from "./fieldworks.js"; // field works: load, unload, wreck, take
 import { LISTEN } from "../sim/radiolisten.js";
 import { networksAt, teamReceives } from "../sim/radio.js";
-import { crossingsFrom, boatPlan, boatOrder } from "../sim/crossing.js";
+import { crossingsFrom, boatPlan, boatOrder, gatherInfo } from "../sim/crossing.js";
+import { fieldCraftOptions } from "../sim/crafting.js"; // field crafting (on the team's own tile)
+import { fieldTreatInfo, isHurt } from "../sim/medical.js";
+import { SKILL_NAMES } from "../sim/data.js";
 import { setFire, fireLit } from "../sim/fieldheat.js";
 import { sweepOpts, LOOK } from "../sim/survey.js";
 import { poiRaidSummary } from "../sim/poiraid.js"; // "3 places known, possibly more unknown"
@@ -280,13 +284,16 @@ export function teamTileMenu(state, ui, p, tile, { append = false } = {}) {
   const homeNow = home && !append && partyTile(p) !== home.tile ? moveEstimate(state, p, home.tile) : null;
   if (home) add("Team", "home", `Go home (${home.name})`, [{ type: "home" }], { move: false, task: homeNow ? homeNow.hours : undefined, why: partyTile(p) === home.tile && p.phase !== "out" && !append ? "The team is at home." : "", hint: `Head back to ${home.name} with everything carried.` });
 
-  // All orders (folded, ui.ctxAll): every order for the tile the menu does not show above, then the team panel.
-  if (ui && ui.ctxAll) {
+  // All orders (folded, ui.ctxAll): every order for the tile the menu does not show above, then the team panel. On the
+  // tile the team stands on it is always open (the user's request 2026-10-23), with the panel's orders on the spot too.
+  const standing = partyTile(p) === tile;
+  if (standing || (ui && ui.ctxAll)) {
     const shown = (m) => items.some((it) => it.key === `mission:${m}` || (["survey", "fullsurvey", "sweep"].includes(m) && it.key === m) || (m === "camp" && it.key === "setcamp"));
     for (const o of water ? [] : orderOptions(state, p, tile)) {
       if (shown(o.mission)) continue;
       add(ALL, `mission:${o.mission}`, o.label, [{ type: "mission", mission: o.mission }], { why: o.disabled || "", hint: o.desc });
     }
+    if (standing) spotOrders(state, p, tile, water, items, (...a) => add(ALL, ...a));
     add(ALL, "panel", "📋 Team panel: queue and every order…", [], { special: "panel", hint: "Open the team's panel: what it is doing, its queue, and every order it can be given where it stands." });
   }
 
@@ -297,7 +304,41 @@ export function teamTileMenu(state, ui, p, tile, { append = false } = {}) {
     tile: tileLabel(state, tile),
     water,
   };
-  return { p, tile, append, forced, cmd, head, items };
+  return { p, tile, append, forced, cmd, head, items, allOpen: standing };
+}
+
+// The team panel's orders on the spot (ui/expedition.js) the menu does not show above: the other lengths of a sweep and
+// of the land's jobs, field crafting (what it can make now), gathering a boat's materials on a shore, treating the
+// hurt, and stopping the job.
+const SWEEPS = [[2, 12], [3, 24], [4, 48]]; // the panel's sweeps: radius, hours
+const LENGTHS = { forage: [4, 12], hunt: [4, 12], fish: [4], wood: [4] }; // beside the menu's 8 hours (LAND_HOURS)
+function spotOrders(state, p, tile, water, items, add) {
+  const got = (key) => items.find((it) => it.key === key) || null;
+  if (!water) {
+    for (const [radius, hours] of SWEEPS) {
+      if (radius === SWEEP.radius && hours === SWEEP.hours) continue;
+      add(`sweep:${radius}:${hours}`, `Sweep ${radius} tiles around (${hours}h)`, [{ type: "sweep", ...sweepOpts({ radius, hours }) }], { hint: `${MISSIONS.sweep.desc} From here: ${radius} tiles around for ${hours} hours, back here at the end.` });
+    }
+    for (const [type, lengths] of Object.entries(LENGTHS)) {
+      const it = got(type);
+      if (it) for (const hours of lengths) add(`${type}:${hours}`, it.label.replace(`${LAND_HOURS}h`, `${hours}h`), [{ type, hours }], { why: it.disabled || "", hint: it.hint });
+    }
+  }
+  // Only what the team can make now: the other recipes, each with what it lacks, are in the team panel.
+  for (const o of fieldCraftOptions(state, p).filter((x) => x.ok)) add(`craft:${o.key}`, `Make: ${o.name} (${o.hours}h)`, [{ type: "craft", recipe: o.key }], { hint: `${o.out}. Uses ${o.inText}; needs ${SKILL_NAMES[o.skill] || o.skill} ${o.min}+.` });
+  if (crossingsFrom(state, tile).length) {
+    const g = gatherInfo(state, p, tile);
+    add("gather", `Gather boat materials (${g.hours}h)`, [{ type: "gather" }], { why: g.room <= 0 ? "No room left in the cargo." : "", hint: `Search the shore for driftwood, fencing and barrels: ${g.min}–${g.max} scrap (better with Scavenging). Room for ${g.room} more in the cargo.` });
+  }
+  for (const s of partyMembers(state, p)) {
+    if (s.vol || !isHurt(s)) continue; // a volunteer's wounds are their group's to tend (sim/volunteers.js)
+    const info = fieldTreatInfo(state, p, s);
+    add(`treat:${s.id}`, `Treat ${s.name.split(" ")[0]} (${info.cost} meds)`, [{ type: "treat", survivorId: s.id }], { why: info.ok ? "" : info.reason, hint: `Field treatment with the team's meds: about +${info.heal} health. Weaker than care at a base.` });
+  }
+  if (p.phase === "task" && p.task && !p.task.afloat) {
+    const camping = p.task.type === "camp";
+    add("stop", camping ? "Stop resting" : `Stop: ${describeOrder(state, p.task)}`, [], { special: "stop", hint: camping ? "Pack up now. The next queued order starts." : "Give up on the current job (nothing is used up)." });
+  }
 }
 
 // Resupply: what the team lacks of RESUPPLY_DAYS days of food and water, and what the base has of it.
@@ -347,7 +388,7 @@ export function teamCtxHtml(state, ui, m) {
   const rows = m.items.filter((it) => it.group !== ALL).map(row).join("");
   group = ALL; // the fold's button heads its rows
   const all = m.items.filter((it) => it.group === ALL);
-  const fold = `<button class="tcfold" data-action="tc-all"${tip(GROUP_TIP[ALL])}>${all.length ? "▾" : "▸"} All orders</button>${all.map(row).join("")}`;
+  const fold = `${m.allOpen ? `<div class="tcgroup small muted"${tip(GROUP_TIP[ALL])}>All orders</div>` : `<button class="tcfold" data-action="tc-all"${tip(GROUP_TIP[ALL])}>${all.length ? "▾" : "▸"} All orders</button>`}${all.map(row).join("")}`;
   const none = m.head.water && !m.items.some((it) => it.group === "Go") ? `<div class="small muted" style="padding:0.3rem 0.5rem">Open water: teams cross it by boat from a shore next to it</div>` : "";
   return `<div class="tchead"><div class="head">${esc(m.head.name)}</div><div class="small muted">${esc(m.head.situation)}</div><div class="small">→ ${esc(m.head.tile)}</div>${toggle}</div>${rows}${none}${fold}`;
 }
@@ -420,6 +461,7 @@ export function runTeamAction(state, ui, d, acts = {}) {
     return loadFromBase(state, p, { supplies: { food: want.food, water: want.water } }, "cargo").text;
   }
   if (it.special === "fire" || it.special === "fireout") return setFire(state, p, it.special === "fire");
+  if (it.special === "stop") return stopTask(state, p);
   if (m.append) return appendOrders(state, p, tile, it);
   if (dropsPlan(state, p) && ask(ui, d, "tc-do", {
     kind: "replaceorders",
