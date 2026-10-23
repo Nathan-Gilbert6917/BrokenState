@@ -222,7 +222,8 @@ export function scatterLayer(seed, terrain, G) {
 //   - hills: one at most to a REGION of the map, lobes joined; a short one a level high, a tall one up to TALL[1],
 //     the levels nested inside each other with a ragged edge (EDGE_NOISE); the ground never steps more than a level
 //     between neighbours (relaxed), so it is walked up and down anywhere (combat.js climbCost).
-//   - dips: hollows DIP levels down, as walkable.
+//   - no hollows: the ground never goes below level (the playtest 2026-10-23: "Remove the tiles that go into the
+//     ground"; the rules and the drawing still take a height below 0).
 //   - a mountain tile: RIDGES chains of crag (a ridge line wandering across the map, CORE cells wide) with foothills
 //     falling away from them a level every FOOT cells, and some hills between.
 export const HIGH = {
@@ -232,8 +233,6 @@ export const HIGH = {
   R: [5, 11],                                          // a lobe's half-size range
   LOBES: [2, 4],
   EDGE_NOISE: 0.14,                                    // how ragged a level's edge is (a share of the lobe)
-  DIP_P: { hills: 0.3, mountain: 0.25, forest: 0.18, plains: 0.12, farm: 0.08 }, // the chance a region has a hollow
-  DIP_R: [3, 7], DIP_DEEP: 0.4,                        // its size; the share two levels deep
   // A mountain tile's massif (the playtest 2026-10-23: "Make the mountains more pointed instead of rounded and make it
   // all combine into the center"): one mass of crag, a CORE_R round core somewhere in the middle half of the map and
   // ARMS ridges reaching out from it, ARM_W wide at the core narrowing to a cell at their ends; its height rises a
@@ -274,10 +273,6 @@ export function reliefLayer(seed, terrain, G) {
         const [tallP, tallTop] = HIGH.TALL[terrain] || [0, 1], top = rng.chance(tallP) ? rng.int(2, tallTop) : 1;
         const [lo, hi] = HIGH.R, cx = rx * R + rng.int(hi, R - hi), cy = ry * R + rng.int(hi, R - hi);
         for (let i = rng.int(HIGH.LOBES[0], HIGH.LOBES[1]), first = true; i > 0; i--, first = false) lobe(rng, cx + (first ? 0 : rng.int(-lo, lo)), cy + (first ? 0 : rng.int(-lo, lo)), rng.int(lo, hi), rng.int(lo, hi), first ? top : Math.max(1, top - rng.int(0, 1)));
-      }
-      if (rng.chance(HIGH.DIP_P[terrain] || 0)) {
-        const [lo, hi] = HIGH.DIP_R, cx = rx * R + rng.int(hi, R - hi), cy = ry * R + rng.int(hi, R - hi);
-        lobe(rng, cx, cy, rng.int(lo, hi), rng.int(lo, hi), rng.chance(HIGH.DIP_DEEP) ? -2 : -1);
       }
     }
     // A mountain tile's massif: the core, the arms reaching out from it (they taper and wander), the height by the

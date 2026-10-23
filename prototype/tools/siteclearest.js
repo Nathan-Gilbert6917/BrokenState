@@ -56,11 +56,11 @@ section("The land: a town's streets and houses, a city's blocks, the hills' high
   const all = [...town.pieces, ...city.pieces].filter((p) => p.parts).length;
   check(!bad, `every building has a door and every bit of its floor is walked to from one (${all} buildings, ${bad} not)`);
   check(rooms > all / 3 && furn > all * 0.8, `inside: rooms walled off (${rooms}), furniture (${furn} of ${all})`);
-  // The lie of the land (the user's word 2026-10-23): hills up to three levels, hollows down two, a mountain's crag.
+  // The lie of the land (the user's word 2026-10-23): hills up to three levels, a mountain's crag; no hollows.
   const hills = reliefLayer(99, "hills", 125), mtn = reliefLayer(99, "mountain", 125), farm = reliefLayer(99, "farm", 125);
   const lv = (r) => { const c = {}; for (const [, , h] of r.heights) c[h] = (c[h] || 0) + 1; return c; };
   const hc = lv(hills);
-  check(hc[1] > 500 && hc[2] > 50 && hc[3] > 10 && hc[-1] > 50 && hc[-2] > 5 && !hc[4] && !hc[-3], `the hills: ${JSON.stringify(hc)} cells by level (1 to 3 up, 1 to 2 down)`);
+  check(hc[1] > 500 && hc[2] > 50 && hc[3] > 10 && !hc[4] && hills.heights.every(([, , h]) => h > 0) && mtn.heights.every(([, , h]) => h > 0), `the hills: ${JSON.stringify(hc)} cells by level (1 to 3 up; nothing below the ground: the playtest 2026-10-23)`);
   check(mtn.crags.length > 200 && !hills.crags.length && (lv(farm)[1] || 0) < hc[1] && !lv(farm)[2], `a mountain's crag (${mtn.crags.length} cells of ridge), none in the hills; farmland near flat`);
   const HM = new Map(hills.heights.map(([x, y, h]) => [`${x},${y}`, h]));
   check(hills.heights.every(([x, y, h]) => [-1, 0, 1].every((dy) => [-1, 0, 1].every((dx) => Math.abs((HM.get(`${x + dx},${y + dy}`) || 0) - h) <= 1))), "never more than a level between neighbours: walked up and down anywhere");
