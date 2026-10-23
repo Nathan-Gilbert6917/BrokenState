@@ -109,6 +109,7 @@ import { CELL, placeCar, say, fx, unitAt, active, distField, reachable, pathTo, 
 import { carsAtBase } from "./vehicles.js";
 import { DEPLOY } from "./deploy.js"; // the reinforced gate's hit points (call-time only)
 import { INTERIOR, layoutSeed } from "./interior.js";
+import { cragWays } from "./relief.js"; // a base map's crag leaves the ways in open (tools/mapreachtest.js)
 import { landSpec, landOf as landMapOf, layLand, scatterSeed, clearOf, pieceWord, CLEAR, SITE, siteBox, siteGet } from "./basescatter.js"; // the land of the base map: trees, bushes, fences, rocks, wrecks, a road, a river (fixed by the tile, the same in the view and in a fight); clearing it
 import { Rng } from "./rng.js";
 import { SUPPLIES } from "./data.js";
@@ -1862,6 +1863,7 @@ export function buildBaseMap(state, base, rng, opts = {}) {
   // nothing else does; a piece under something standing (an old save's, laid before the land) is hidden there.
   const land = landFor(state, base);
   F.scatter = land ? layLand({ cells, W, H, ox, oy, land, ok: (x, y) => cells[y * W + x].k === "open" && !used[y * W + x], floor: (x, y) => cells[y * W + x].k === "open" && !used[y * W + x] && !indoor[y * W + x] }).kinds : {};
+  if (land) F.passes = cragWays(cells, W, H); // relief.js: the crag the crop takes in never shuts the base off from the map's edge; the ground a level a step to the edge and what stands
   // The clearing under way (the construction queue's clearing jobs: basescatter.js CLEAR), for the view: the cells, how far,
   // and who is on it this hour (woodwork.js chopHands: the woodcutters felling it, the builders working it).
   F.clearing = (base.construction || []).filter((c) => c.type === "clear" && c.pieces).map((c) => ({ id: c.id, label: c.label, pct: Math.round((100 * (c.progress || 0)) / Math.max(1e-9, c.hours)), who: chopHands(state, base, c), cells: c.pieces.flatMap((p) => p.cells).map(([x, y]) => [x + ox, y + oy]).filter(([x, y]) => inside(x, y)) }));

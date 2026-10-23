@@ -13,7 +13,7 @@
 //   applyRelief(cells, W, H, tile, opts) → the cells raised or lowered. opts.crags: the ridges too (an open fight);
 //   opts.keep(x, y): cells to keep level (a raid's zones).
 import { reliefLayer, scatterSeed, HIGH, cragPasses } from "./basescatter.js";
-import { CELL } from "./combat.js"; // call-time only
+import { CELL, groundH } from "./combat.js"; // call-time only
 
 export const RELIEF = {
   TERRAIN: new Set(["hills", "mountain"]),
@@ -119,4 +119,49 @@ export function applyRelief(cells, W, H, tile, opts = {}) {
     if (h[i]) { c.h = h[i]; c.ter = 1; n++; }
   }
   return n;
+}
+
+/**
+ * A map the land was laid on (basescatter.js layLand: a base's map, the camp's spot, an AI group's margin) left open
+ * and walked up and down anywhere (the user's words 2026-10-23: "Blocking base due to ridge"; tools/mapreachtest.js):
+ * where the crag the map's crop takes in shuts off ground the edges reach without it, a pass is carved through it
+ * (basescatter.js cragPasses: level ground), and the ground's heights (c.h with c.ter) are eased a level a step down
+ * (a hollow up) to what is level beside them: the map's outermost ring and what stands there (no land laid), a pass.
+ * In place; returns the crag cells carved away.
+ * @param {any[]} cells @param {number} W @param {number} H
+ */
+export function cragWays(cells, W, H) {
+  const N = W * H, rock = new Uint8Array(N);
+  let any = false;
+  for (let i = 0; i < N; i++) if (cells[i].k === "crag") { rock[i] = 1; any = true; }
+  let carved = [];
+  if (any) {
+    const block = new Uint8Array(N);
+    for (let i = 0; i < N; i++) if (!rock[i] && !(CELL[cells[i].k] && CELL[cells[i].k].walk)) block[i] = 1;
+    carved = cragPasses(rock, block, W, H).carved;
+    for (const i of carved) { const c = cells[i]; c.k = "open"; delete c.ch; delete c.h; delete c.ter; }
+  }
+  // The ground a level a step (eight ways): a hill lowered, a hollow raised, toward the ground beside it (a raised
+  // floor of its own, a walkway or a roof, and the crag left out).
+  const gh = (c) => (c.k === "crag" ? null : groundH(c));
+  for (let pass = 0, changed = true; changed && pass < 16; pass++) {
+    changed = false;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const c = cells[y * W + x];
+      if (!c.ter || !c.h || c.k === "crag") continue;
+      let lo = Infinity, hi = -Infinity;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        if ((!dx && !dy) || x + dx < 0 || y + dy < 0 || x + dx >= W || y + dy >= H) continue;
+        const v = gh(cells[(y + dy) * W + x + dx]);
+        if (v == null) continue;
+        lo = Math.min(lo, v); hi = Math.max(hi, v);
+      }
+      if (lo === Infinity) continue;
+      const v = c.h > 0 ? Math.min(c.h, lo + 1) : Math.max(c.h, hi - 1);
+      if (v === c.h) continue;
+      changed = true;
+      if (v) c.h = v; else { delete c.h; delete c.ter; }
+    }
+  }
+  return carved.length;
 }

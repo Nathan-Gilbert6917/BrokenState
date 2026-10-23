@@ -651,7 +651,7 @@ export function townLayer(seed, style, G) {
                 const hb = building(rng, "house", x0, y0, w, h, row, `${g}h`);
                 pieces.push(hb);
                 // The path from the front door to the street, and a driveway beside the house with a car on it now and then.
-                const fd = hb.parts.findIndex((p) => p.k === "doorway"), [dx] = hb.cells[fd];
+                const fd = hb.parts.findIndex((p, i) => p.k === "doorway" && hb.cells[i][1] === (row === "n" ? y0 : y0 + h - 1)), [dx] = hb.cells[fd]; // the front door (on a south row a back door came first: the path led to the wall beside it, tools/mapreachtest.js)
                 for (let y = row === "n" ? ry0 : y0 + h; y < (row === "n" ? y0 : ry1 + 1); y++) floors.push([dx, y, "gravel"]);
                 const dx0 = left ? lx + 1 : x0 + w + 1;
                 if ((left ? x0 - lx - 1 : lx + lw - (x0 + w) - 1) >= 2) {

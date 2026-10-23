@@ -22,6 +22,7 @@ import { DEPLOY, attackSide, fromTileOf, wallHp, gateHp } from "./deploy.js";
 import { count, hasWall } from "./buildings.js";
 import { densify, COVER } from "./battlesize.js"; // cover over the margin
 import { landSpec, landOf, layLand } from "./basescatter.js"; // the land round their base, as round yours (ADR 0001)
+import { cragWays } from "./relief.js";
 import { poweredType } from "./power.js";
 import { SPOT } from "./data-power.js"; // mounted spotlights (basemap.js F.spots): their light in a night fight
 import { isNight } from "./world.js";
@@ -119,6 +120,7 @@ export function buildFort(base, c, rng, opts = {}) {
   const spec = landSpec(opts.state || null, base, { G: Math.ceil(Math.max(W, H) / 2) + 1, C: 0, tier: "camp", terrain: opts.state && base ? terrainOf(opts.state, base) : "plains" });
   spec.clear = 0; spec.river = ""; // their yard is the fort's own; no river through their margin
   layLand({ cells, W, H, ox: mx, oy: my, land: landOf(spec, null), ok: (x, y) => cells[y * W + x].k === "open" && !(x >= wx0 - 2 && x <= wx1 + 2 && y >= wy0 - 2 && y <= wy1 + 2), floor: (x, y) => cells[y * W + x].k === "open" && !(x >= wx0 - 2 && x <= wx1 + 2 && y >= wy0 - 2 && y <= wy1 + 2) });
+  cragWays(cells, W, H); // relief.js: the crag in their margin never shuts their wall off from the map's edge (tools/mapreachtest.js)
   // The wire (buildings.js barbed_wire, razor_wire; wire.js): rings round the wall in the margin, FORT.WIRE cells out
   // for each barbed wire fence and FORT.RAZOR for the concertina wire, with a gap in front of every gate (the way in
   // they funnel the attackers to). wireOut: the outermost ring (the attackers start beyond it: fortDefence).
