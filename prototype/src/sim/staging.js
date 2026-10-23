@@ -60,6 +60,7 @@ import { isBike, isCar, MAX_VEHICLES } from "./vehicles.js";
 import { itemLoad } from "./inventory.js";
 import { defaultSite, siteProblem, siteYield, clearCampSite, BASE_GRID } from "./basemap.js"; // the camp's own spot on its 250 × 250 map, its 5 × 5 cleared (call-time only)
 import { SITE } from "./basescatter.js";
+import { siteInfo, pickWords } from "./siteinfo.js"; // the spot's facts: why the game picked its own (call-time only)
 import { clearSiteFirst, threatWords } from "./siteclear.js"; // the dead at a town's, a city's or an infected tile's camp spot cleared first
 import { isChopTool, bestChop } from "./woodcutting.js"; // a cutting tool on the team fells the spot's trees quicker (call-time only)
 import { pitchArmoryBags, strikeTents, campTentsDaily, isTentBag, tentsText, tentBeds } from "./tents.js"; // tent bags: a quicker camp, beds under cover, struck back into bags
@@ -215,12 +216,14 @@ export function pickSite(state, p, at) {
   clearSiteFirst(state, p, p.campAt); // siteclear.js: the dead there cleared first
   return "";
 }
-// Put off: the game's own spot (defaultSite), its hours.
+// Put off: the game's own spot (defaultSite), its hours, and why it was picked in the log (siteinfo.js pickWords).
 export function autoSite(state, p) {
   if (!p) return;
   delete p.campAt;
   siteDone(state, p);
   setHours(state, p);
+  const tile = partyTile(p), info = siteInfo(state, p, tile, campSiteFor(state, p, tile));
+  if (info.ok) log(state, `${teamName(state, p)} at ${tileLabel(state, tile)}: ${pickWords(info)}`, "info");
   clearSiteFirst(state, p, campSiteFor(state, p, partyTile(p)));
 }
 // The pitching under way takes the hours of the spot it is for.

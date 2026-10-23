@@ -112,6 +112,7 @@ import { INTERIOR, layoutSeed } from "./interior.js";
 import { cragWays } from "./relief.js"; // a base map's crag leaves the ways in open (tools/mapreachtest.js)
 import { landSpec, landOf as landMapOf, layLand, scatterSeed, clearOf, pieceWord, CLEAR, SITE, siteBox, siteGet } from "./basescatter.js"; // the land of the base map: trees, bushes, fences, rocks, wrecks, a road, a river (fixed by the tile, the same in the view and in a fight); clearing it
 import { Rng } from "./rng.js";
+import { bestSite } from "./siteinfo.js"; // the game's own camp spot by the spot's facts (call-time only: siteinfo.js reads this module)
 import { SUPPLIES } from "./data.js";
 import { FOODS } from "./foods.js";
 import { itemKg } from "./inventory.js";
@@ -899,27 +900,12 @@ export function siteYield(state, tile, at, tool = true) {
   }
   return { hours: Math.round(hours * 10) / 10, get, n: seen.size };
 }
-// The game's spot: the map's middle, else the nearest spot out from it that takes the camp, and of those the nearest
-// with no building and no high ground in its square (pulling a house down or digging a hill away to pitch a camp is
-// days of work: the user's request 2026-10-22, the towns, the cities and the hills of the base maps); within BIG_NEAR
-// of the middle, else the nearest that takes it at all.
-const BIG = new Set(["house", "store", "block", "rise", "slope", "dip", "crag"]);
-const BIG_NEAR = 60;
-export function defaultSite(state, tile) {
-  const land = siteLand(state, tile);
-  let first = null;
-  for (let d = 0; d <= SITE_RANGE; d++) for (let y = -d; y <= d; y++) for (let x = -d; x <= d; x++) {
-    if (Math.max(Math.abs(x), Math.abs(y)) !== d) continue;
-    if (siteProblem(state, tile, [x, y])) continue;
-    if (!first) first = [x, y];
-    const B = siteBox([x, y]);
-    let big = false;
-    for (let yy = B.y0; yy < B.y1 && !big; yy++) for (let xx = B.x0; xx < B.x1 && !big; xx++) { const p = land.pieces.get(`${xx},${yy}`); if (p && BIG.has(p.k)) big = true; }
-    if (!big) return [x, y];
-    if (d > BIG_NEAR) return first;
-  }
-  return first || [0, 0];
-}
+// The game's spot (the governor, a team with nobody to ask, a pick put off, Let the game pick): the best spot in reach
+// by its facts (siteinfo.js bestSite, the user's words 2026-10-23: "Update let the game pick": the setup's time, the
+// lie of the land, sight lines, water, the road, room to grow, wood, room to the edge), off the river and the crag,
+// and off buildings and high ground while any spot is (pulling a house down or digging a hill away to pitch a camp is
+// days of work: the user's request 2026-10-22). The same for the same land.
+export function defaultSite(state, tile) { return bestSite(state, tile); }
 // A camp set up on its own spot (staging.js makeCamp; basescatter.js SITE): its setup clears the square round the fire
 // (every piece with a cell in it, a wreck whole; never the river) and what that gives (wood, scrap, car parts, metal
 // sheets) comes into its stores when the camp stands. The square's ground is cleared ground from then on. Returns
@@ -2481,14 +2467,15 @@ export function openSiteView(state, p) {
 const SITE_PROBE = 2 ** 31 - 7; // the stand-in camp's id while the spot's view is made (never a real base's)
 // The 5 × 5 under the mouse (view cell x, y; null: no mouse over the map) and the one picked: { cells (view cells under
 // the mouse), ok, why, at (that fire, map coordinates), picked (the picked 5 × 5's view cells), pickedAt (its fire's
-// view cell) } (ui/isoview.js draws them: the one under the mouse green or red, the picked one gold).
+// view cell), gameAt (the game's own spot's fire, view cell, while another is picked) } (ui/isoview.js draws them: the
+// one under the mouse green or red, the picked one gold, the game's own tagged).
 export function siteGhostAt(state, b, x = null, y = null) {
   if (!b || !b.site) return null;
   const F = b.deployPlan && b.deployPlan.fort;
   if (!F) return null;
   const cellsOf5 = (at) => { const B = siteBox(at), out = []; for (let yy = B.y0; yy < B.y1; yy++) for (let xx = B.x0; xx < B.x1; xx++) out.push([xx + F.ox, yy + F.oy]); return out; };
-  const sel = b.site.sel;
-  const out = { cells: [], doors: [], ok: true, why: "", at: null, picked: sel ? cellsOf5(sel) : null, pickedAt: sel ? [sel[0] + F.ox, sel[1] + F.oy] : null };
+  const sel = b.site.sel, game = defaultSite(state, b.site.tile); // the game's own spot (siteinfo.js bestSite): tagged while another is picked
+  const out = { cells: [], doors: [], ok: true, why: "", at: null, picked: sel ? cellsOf5(sel) : null, pickedAt: sel ? [sel[0] + F.ox, sel[1] + F.oy] : null, gameAt: !sel || sel[0] !== game[0] || sel[1] !== game[1] ? [game[0] + F.ox, game[1] + F.oy] : null };
   if (x == null || y == null) return out;
   const at = [x - F.ox, y - F.oy];
   const why = siteProblem(state, b.site.tile, at);
