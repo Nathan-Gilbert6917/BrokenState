@@ -239,7 +239,7 @@ export const HIGH = {
   // ARMS ridges reaching out from it, ARM_W wide at the core narrowing to a cell at their ends; its height rises a
   // level a cell in from its edge (CRAG_LV: 3 at the edge up to the peak), so it climbs to the core and to a crest
   // along each arm; FOOT cells a level for the foothills round it.
-  ARMS: [3, 5], ARM_LEN: [35, 75], ARM_W: [4, 6], CORE_R: [7, 10], CRAG_LV: [3, 13], FOOT: 2,
+  ARMS: [3, 5], ARM_LEN: [35, 75], ARM_W: [4, 6], CORE_R: [8, 11], CRAG_LV: [3, 13], FOOT: 2,
 };
 export const TOWN = {
   town: { BLOCK: 36, STREET: 5, LOT: [10, 13], STORE_P: 0.12, EMPTY_P: 0.1, DRIVE_CAR_P: 0.35, STREET_CAR_P: 0.3 },

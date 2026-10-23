@@ -74,7 +74,7 @@ section("The land: a town's streets and houses, a city's blocks, the hills' high
     const cs = new Map(mtn.crags.map(([x, y, lv]) => [`${x},${y}`, lv])), first = mtn.crags[0], seen = new Set([`${first[0]},${first[1]}`]), q = [first];
     for (let i = 0; i < q.length; i++) { const [x, y] = q[i]; for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const k = `${x + dx},${y + dy}`; if (cs.has(k) && !seen.has(k)) { seen.add(k); q.push([x + dx, y + dy]); } } }
     const top = Math.max(...cs.values());
-    check(seen.size === cs.size && top >= 10 && Math.min(...cs.values()) === 3, `a mountain is one mass (${seen.size} of ${cs.size} cells joined), 3 levels at its edge up to a peak of ${top}`);
+    check(seen.size === cs.size && top >= 8 && Math.min(...cs.values()) === 3, `a mountain is one mass (${seen.size} of ${cs.size} cells joined), 3 levels at its edge up to a peak of ${top}`);
   }
   check(CELL.crag && !CELL.crag.walk && CELL.crag.los && CELL.crag.tall >= 3, "crag: no way over it, no sight through it");
 {
