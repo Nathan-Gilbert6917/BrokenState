@@ -47,6 +47,7 @@ const asCamp = (b) => { b.tier = 0; b.camp = true; b.buildings = []; b.construct
 function raid(st, h, count = 8) {
   for (const s of atBase(st, h.id)) { s.health = 100; s.gear.weapon = newItem("knife"); }
   st.combat = createBattle(st, { tile: h.tile, baseId: h.id, enemy: { kind: "raiders", count, power: 3, name: "raiders" }, ambush: null, canRetreat: true, handler: "bsm", layout: "baseDefence", deploy: true, downedLive: 0.4, context: { night: false, ready: { manned: true } } });
+  for (const c of st.combat.cells) { delete c.gnd; delete c.sd; } // bare ground: spring's mud (sim/seasonground.js) would send the thieves round it (tools/seasongroundtest.js)
   return st.combat;
 }
 const sumSup = (list) => { const o = {}; for (const c of list) for (const [k, n] of Object.entries(c.sup)) o[k] = (o[k] || 0) + n; return o; };

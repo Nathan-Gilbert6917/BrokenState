@@ -19,6 +19,7 @@ Older design docs: [docs/base-building/plan.md](../base-building/plan.md), [docs
 - **Hourly and daily simulation tick**, seeded and deterministic [world, rng].
 - **Seasons and weather**: four 28-day seasons, regional weather fronts, frozen rivers in winter that people and the dead can cross [weather, rivers].
 - **Ponds in the hollows**: rain fills hollows into ponds, dry days turn them to mud then dry, winter freezes them; the climb ×1.5 in rain, ×2.5 in winter [ponds, combat, basemap, ui/isoview] `tools/terrainweathertest.js`. [details](../features/campaign.md#ponds-in-the-hollows)
+- **The ground by the season**: spring mud in patches on dirt (+0.5 a step), autumn's red, orange and brown leaves on the ground, winter snow on all the outdoor ground (+0.25 a step, deep snow +0.5), on fight, raid and base maps, every side alike [seasonground, combat, ui/groundlook, ui/isoview] `tools/seasongroundtest.js`. [details](../features/campaign.md#the-ground-by-the-season)
 - **Eras**: early game (years 1–4), mid (5–9) and late (10+), threats growing each year [eras].
 - **Two victories**: destroy every hive, or win with the Calder Coalition (over half the land); "Keep playing" after either [world, alliance].
 - **Hardcore mode**: start the day Calder falls with 1–4 survivors on the road, no hub, half-looted sites and the outbreak year's own cards [hardcore*, hardcore-start, hardcore-loot, hardcore-outbreak, hardcore-groups]. [details](../features/campaign.md#hardcore-mode)
