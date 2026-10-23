@@ -11,8 +11,8 @@
 //   - The ground: only dirt (dirtProblem): plain ground (grass, the yard's trodden dirt, a crop field's soil, a hill or
 //     a hollow of the tile's own), never the road or a paved lot (basemap.js NOT_SOIL), a tree, a rock, the crag, the
 //     river, a wreck, a building, the wall's band, a doorway or what is being worked already.
-//   - The shape (terraPlan): each cell up (or down) as many levels as asked, within the relief's range (−2 to 3), then
-//     settled as the tile's own hills are (basescatter.js relaxHeights: never more than a level between neighbours,
+//   - The shape (terraPlan): each cell up (or down) as many levels as asked, within the relief's range (−1 to 3: a
+//     hollow a level down at most, the playtest 2026-10-23), then settled as the tile's own hills are (basescatter.js relaxHeights: never more than a level between neighbours,
 //     eight ways; no hill or hollow a cell wide at any level, a 2 × 2 at least): a cell that breaks either rule comes a
 //     level back toward where it was until none does. So the area becomes a hill (or a hollow) with nested levels and
 //     the slopes round it, and next to a hill of the seed's it joins it: the same field, drawn the same way (ui/isoview.js
@@ -44,7 +44,7 @@ export const TERRA = {
   HOURS: { dig: 1, raise: 1 }, // work-hours a cell-level for one with a shovel (as CLEAR.rise and CLEAR.dip a level)
   DIRT: 10,                    // dirt a cell-level dug gives and a cell-level raised takes
   MAX: 16,                     // the area's longest side, in cells
-  LO: -2, HI: 3,               // the relief's range (basescatter.js reliefLayer)
+  LO: -1, HI: 3,               // the relief's range (basescatter.js reliefLayer: hollows a level down at most, the playtest 2026-10-23)
   LEVELS: 3,                   // the most levels one order raises or sinks (R steps it: 1, 2, 3)
 };
 // The Build list's picks (ui/basemap.js; basemap.js layoutAct pickType).
@@ -101,7 +101,7 @@ export function terraBusy(base) {
  */
 export function dirtProblem(base, land, occ, x, y) {
   const why = placeProblemAt(base, PROBE, x, y, 0, occ);
-  if (why) return why.replace(/^On top of /, "Under ").replace(/^In the doorway of /, "The doorway of ");
+  if (why) return why.replace(/^On top of (.*)$/, (m, w) => `${w.charAt(0).toUpperCase()}${w.slice(1)} stands there`).replace(/^In the doorway of (.*)$/, "The doorway of $1: kept clear");
   const p = land.pieces.get(ck(x, y));
   if (p && p.k !== "rise" && p.k !== "dip") {
     if (p.k === "water") return "The river: not dirt";
@@ -139,7 +139,7 @@ export function terraPlan(state, base, mode, a, b, levels = 1) {
     const why = dirtProblem(base, land, occ, x, y);
     if (why) { out.out.push([x, y, why]); continue; }
     const p = P.get(ck(x, y)) || 0, t = Math.max(TERRA.LO, Math.min(TERRA.HI, p + sgn * levels));
-    if (t !== p) T.set(ck(x, y), t); else out.out.push([x, y, mode === "raise" ? "As high as the land goes (3 levels)" : "As deep as the land goes (2 down)"]);
+    if (t !== p) T.set(ck(x, y), t); else out.out.push([x, y, mode === "raise" ? "As high as the land goes (3 levels)" : "As deep as a hollow goes (a level down)"]);
   }
   // Settled as the seed's hills are (basescatter.js relaxHeights): a level at most to any neighbour, and a 2 × 2 at
   // least at every level; a cell that breaks either comes a level back toward where it was, until none does.
@@ -152,7 +152,7 @@ export function terraPlan(state, base, mode, a, b, levels = 1) {
       if (!bad && t) bad = ![[0, 0], [-1, 0], [0, -1], [-1, -1]].some(([ox, oy]) => [[0, 0], [1, 0], [0, 1], [1, 1]].every(([dx, dy]) => { const v = lv(x + ox + dx, y + oy + dy, t); return t > 0 ? v >= t : v <= t; }));
       if (!bad) continue;
       const nt = t - sgn, p = P.get(k) || 0;
-      if (nt === p) { T.delete(k); out.out.push([x, y, mode === "raise" ? "Kept lower: a hill rises a level a step, at least 2 × 2 at each level" : "Kept higher: a hollow sinks a level a step, at least 2 × 2 at each level"]); }
+      if (nt === p) { T.delete(k); out.out.push([x, y, mode === "raise" ? "Too narrow or too steep: a hill is at least 2 × 2 at each level, a level a step" : "Too narrow or too steep: a hollow is at least 2 × 2, a level a step"]); }
       else T.set(k, nt);
       changed = true;
     }

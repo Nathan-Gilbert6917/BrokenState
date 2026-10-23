@@ -1109,6 +1109,7 @@ a.lk.why-lk { color: var(--accent); font-size: 0.85em; white-space: nowrap; }
 .bh-bdsum { border-top: 1px solid var(--line); padding-top: 0.1rem; margin-top: 0.1rem; }
 #cbpanel .cbbig { font-size: 1.25rem; }
 #cbpanel .cbprev .bh-bd { max-width: 20rem; }
+#cbpanel .cbprev { flex-shrink: 0; } /* a long hover line (the base map's terraforming area: ui/basemap.js terraHover) grows the box, never runs under the next card */
 
 /* The battle's bottom bar, XCOM-style (ui/battlebar.js): the selected one's card and everyone's tabs, the orders, the
    turn controls. Sized in em off .bb so one font size scales it all; the bar is a size container: narrow, the order

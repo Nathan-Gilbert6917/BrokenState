@@ -1625,6 +1625,9 @@ export function buildBaseMap(state, base, rng, opts = {}) {
   // The yard's trodden ground; a base set up on its own spot (freshBase): the ground cleared so far, the camp's clearing first.
   if (freshBase(base)) { for (const [x, y] of cleared) { const c = at(x + ox, y + oy); if (c) c.f = "dirt"; } }
   else for (let y = -C; y < C; y++) for (let x = -C; x < C; x++) { const c = at(x + ox, y + oy); if (c) c.f = "dirt"; }
+  // A hill raised there (terraform.js): grassed over as the land's own hills are (the user's word 2026-10-23: "like they
+  // were created by the seed"); a hollow dug keeps its dirt.
+  for (const [k, hv] of Object.entries((base.land && base.land.heightEdits) || {})) { if (!(hv > 0)) continue; const [x, y] = k.split(",").map(Number), c = at(x + ox, y + oy); if (c && c.f === "dirt") c.f = "grass"; }
   // The tint: the no-build margin; on the camp's spot (site) the ground too near the edge for the camp (SITE_RANGE).
   const reach = SITE_RANGE - SITE.LO;
   if (view) for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const gx = x - ox, gy = y - oy; if (site ? Math.abs(gx) > reach || Math.abs(gy) > reach : gx < GB.x0 + NO_BUILD || gy < GB.y0 + NO_BUILD || gx >= GB.x1 - NO_BUILD || gy >= GB.y1 - NO_BUILD) cells[y * W + x].nb = 1; }
@@ -2769,7 +2772,7 @@ export function buildMenu(state, base) {
   if (landFor(state, base)) {
     const crew = shovelCrew(state, base), dirt = Math.floor(base.stock.dirt || 0);
     const desc = {
-      dig: `Lower an area of dirt (grass, trodden ground, a field: not the road, paving, rock, trees or buildings) into a hollow, 1 to ${TERRA.LEVELS} levels down (R), the slopes round it eased so nobody steps more than a level. Two clicks pick its corners. ${TERRA.HOURS.dig} work-hour a cell-level, only for builders with a shovel (one a person; the armory's and their own); +${TERRA.DIRT} dirt a cell-level into the heap.`,
+      dig: `Lower an area of dirt (grass, trodden ground, a field: not the road, paving, rock, trees or buildings) into a hollow a level down (a hill dug down 1 to ${TERRA.LEVELS} levels first: R), the slopes round it eased so nobody steps more than a level. Two clicks pick its corners. ${TERRA.HOURS.dig} work-hour a cell-level, only for builders with a shovel (one a person; the armory's and their own); +${TERRA.DIRT} dirt a cell-level into the heap.`,
       raise: `Raise an area of dirt into a hill, 1 to ${TERRA.LEVELS} levels up (R): its levels nested and its slopes eased as the land's own hills are, and joined to a hill beside it as one. Two clicks pick its corners. ${TERRA.HOURS.raise} work-hour and ${TERRA.DIRT} dirt a cell-level (dig a hollow for the dirt), only for builders with a shovel (one a person).`,
     };
     for (const mode of ["dig", "raise"]) {
