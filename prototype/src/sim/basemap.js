@@ -820,6 +820,7 @@ export function landWords(pieces) {
 }
 export function landWhy(pieces) {
   if (pieces.some((p) => p.k === "water")) return "On the river: nothing is built on the water";
+  if (pieces.some((p) => p.k === "crag")) return "On the mountainside: nothing is built on the rock"; // never cleared (basescatter.js CLEAR)
   return `${LAND_WHY}: ${landWords(pieces)} (click the red site to queue the clearing)`;
 }
 // A cutting tool at the base (the armory's, or carried by someone there): a tree is felled faster with one (CLEAR.NO_TOOL).
@@ -941,7 +942,7 @@ export function siteWaits(state, base, job) {
   if (!it || it.fit) return false;
   const at = it.at || autoLayout(state, base).get(key);
   if (!at) return false;
-  const hit = landUnder(land, it, at).filter((p) => p.k !== "water");
+  const hit = landUnder(land, it, at).filter((p) => p.k !== "water" && p.k !== "crag"); // the river and the mountainside are never cleared
   if (!hit.length) return false;
   const queued = new Set(base.construction.filter((c) => c.type === "clear" && c.mode !== "strip" && c.pieces).flatMap((c) => c.pieces.map((p) => p.g)));
   if (hit.some((p) => !queued.has(p.g))) queueClear(state, base, hit, { label: `Clear the site for the ${it.label.replace(/ \(building\)$/, "").toLowerCase()}`, before: job });
@@ -955,7 +956,7 @@ export function clearUnder(state, base, key) {
   const it = itemByKey(state, base, key);
   const at = it && (it.at || autoLayout(state, base).get(key));
   if (!at) return;
-  const hit = landUnder(land, it, at).filter((p) => p.k !== "water");
+  const hit = landUnder(land, it, at).filter((p) => p.k !== "water" && p.k !== "crag"); // the river and the mountainside are never cleared
   if (!hit.length) return;
   for (const p of hit) for (const [x, y] of p.cells) base.land.cleared[`${x},${y}`] = 1;
   base.land.n++;
