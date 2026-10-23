@@ -16,6 +16,7 @@
 //   draws them into its cached map chunks, so a frame costs nothing extra. Zoomed out the map keeps its flat
 //   colors: the detail fades in between the zooms in DECO_FADE.
 import { onForgetPictures } from "./pictures.js";
+import { FALL } from "./seasontrees.js"; // autumn's leaf colours, as on the battle maps (seasonSprites)
 
 // Options (ui/settings.js "Map detail"): detail false draws the flat map at every zoom.
 export const deco = { detail: true };
@@ -181,20 +182,55 @@ function makeSprites() {
   return D;
 }
 
+// The seasons' trees and bushes (ui/seasontrees.js; the user's request 2026-10-23: "In fall the trees should be red
+// orange and brown in winter the trees are leaf less and have snow on them."): never placed themselves, only drawn in
+// place of the green ones (SEASON_LOOK), the same size so a tree keeps its spot. fall: a crown in each FALL colour
+// (red, orange, brown, rust); fallbush: two browned bushes; bare: a broadleaf's trunk and limbs in a haze of twigs (snow
+// on every other bit of limb, "snow", and the crown's top; not on the trunk or the lower twigs, "noSnow"); barebush: a
+// bush's twigs.
+function seasonSprites(D) {
+  const shades = (c) => [mul(c, 0.46), mul(c, 0.78), c, mix(c, [240, 204, 150], 0.28)];
+  const tree = (g) => sprite(11, 12, (p) => { shadow(p, 6, 10, 4, 1); p.rect(5, 8, 5, 10, [86, 62, 40]); p.disc(5, 4.5, 4.6, shadeDisc(...g)); });
+  D.fall = FALL.map((c) => tree(shades(c)));
+  D.fallbush = [3, 1].map((i) => sprite(7, 5, (p) => { shadow(p, 4, 4, 3, 1); p.disc(3, 2.2, 2.6, shadeDisc(...shades(mix(FALL[i], FALL[2], 0.35)))); }));
+  const twig = (up) => (up ? [122, 106, 92, 0.55] : [122, 106, 92, 0.42, "noSnow"]), trunk = [84, 64, 46, 1, "noSnow"];
+  const limb = (i) => (i % 2 ? [98, 80, 64, 1, "noSnow"] : [98, 80, 64, 1, "snow"]); // every other one snowed on
+  const LIMBS = [
+    [[4, 7], [3, 6], [2, 5], [1, 4], [1, 3], [6, 6], [7, 5], [8, 4], [8, 3], [9, 2], [5, 3], [5, 2], [4, 1], [6, 2], [7, 1], [3, 4], [2, 2]],
+    [[4, 6], [3, 5], [3, 4], [2, 3], [2, 2], [6, 7], [7, 6], [8, 5], [9, 4], [9, 3], [5, 3], [6, 2], [6, 1], [4, 2], [4, 1], [7, 4], [8, 2]],
+  ];
+  D.bare = LIMBS.map((ls, v) => sprite(11, 12, (p) => {
+    shadow(p, 6, 10, 4, 1);
+    p.disc(5, 4.5, 4.6, (dx, dy) => ((Math.round(5 + dx * 4.6) + Math.round(4.5 + dy * 4.6) + v) & 1 ? null : twig(dy < -0.6)));
+    ls.forEach(([x, y], i) => p.set(x, y, limb(i)));
+    p.rect(5, 4, 5, 10, trunk);
+  }));
+  D.barebush = [sprite(7, 5, (p) => {
+    shadow(p, 4, 4, 3, 1);
+    for (const [x, y] of [[3, 3], [3, 2], [2, 1], [1, 0], [4, 2], [5, 1], [5, 0], [3, 1], [3, 0], [1, 2], [6, 2]]) p.set(x, y, y > 2 ? [92, 76, 62, 1, "noSnow"] : [112, 96, 80]);
+  })];
+}
+
 // Every sprite in one list (cell = index), with where each set starts.
 const SPR = [], SET = {};
 {
   const D = makeSprites();
+  seasonSprites(D);
   for (const [k, list] of Object.entries(D)) { SET[k] = { at: SPR.length, n: list.length }; SPR.push(...list); }
 }
 export const DECO_SETS = Object.keys(SET);
-// The broadleaf trees that turn: green in spring and summer, gold and red in autumn, bare in winter (render.js picks
-// the season). SEASON_LOOK[season key]: sprite -> the sprite drawn.
-const turn = (to) => { const m = Int32Array.from(SPR, (_, i) => i); for (let k = 0; k < SET.autumn.n; k++) m[SET.autumn.at + k] = to(k); return m; };
+// The broadleaf trees and bushes by the season (render.js and poimap.js pick it: seasontrees.js mapSeason):
+// SEASON_LOOK[key]: sprite -> the sprite drawn. Spring and summer green (the autumn decals too); early autumn
+// ("autumn0") two greens of three turned, a bush in two; autumn every tree red, orange, brown or rust and the bushes
+// browned; winter every broadleaf bare (snow on it while snow lies: drawDecor's snow), the bushes bare twigs. Pines and
+// everything else stay as they are.
+const lookOf = (to) => { const m = Int32Array.from(SPR, (_, i) => i), set = (k, f) => { for (let i = 0; i < SET[k].n; i++) m[SET[k].at + i] = f(i); }; to(set); return m; };
+const turned = (set) => set("autumn", (k) => SET.fall.at + [3, 1][k % 2]);
 export const SEASON_LOOK = {
-  spring: turn((k) => SET.tree.at + (k % SET.tree.n)),
-  autumn: turn((k) => SET.autumn.at + k),
-  winter: turn(() => SET.deadtree.at),
+  spring: lookOf((set) => set("autumn", (k) => SET.tree.at + (k % SET.tree.n))),
+  autumn0: lookOf((set) => { turned(set); set("tree", (k) => (k < 2 ? SET.fall.at + k : SET.tree.at + k)); set("bush", (k) => (k ? SET.bush.at + k : SET.fallbush.at)); }),
+  autumn: lookOf((set) => { turned(set); set("tree", (k) => SET.fall.at + (k % 3)); set("bush", (k) => SET.fallbush.at + (k % SET.fallbush.n)); }),
+  winter: lookOf((set) => { for (const k of ["tree", "autumn"]) set(k, (i) => SET.bare.at + (i % SET.bare.n)); set("bush", () => SET.barebush.at); }),
 };
 SEASON_LOOK.summer = SEASON_LOOK.spring;
 // Atlas layout in sprite px: [x, y] of each cell's plain and snowy version (1 px apart), and the atlas size.
@@ -226,8 +262,8 @@ export function decoAtlas(R) {
       for (let y = 0; y < s.h; y++) for (let x = 0; x < s.w; x++) {
         let c = s.px[y * s.w + x];
         if (!c) continue;
-        // Snow on top: the top pixel or two of every column (not on shadows).
-        if (v && c[4] !== "noSnow" && (y === 0 || !s.px[(y - 1) * s.w + x] || (y > 1 && !s.px[(y - 2) * s.w + x] && c[3] == null))) c = [...SNOW, c[3]];
+        // Snow on top: the top pixel or two of every column (not on shadows; "snow": always, a bare tree's limbs).
+        if (v && c[4] !== "noSnow" && (c[4] === "snow" || y === 0 || !s.px[(y - 1) * s.w + x] || (y > 1 && !s.px[(y - 2) * s.w + x] && c[3] == null))) c = [...SNOW, c[3]];
         const a = Math.round((c[3] ?? 1) * 255), cr = Math.round(c[0] * f), cg = Math.round(c[1] * f), cb = Math.round(c[2] * f);
         for (let yy = 0; yy < R; yy++) for (let xx = 0; xx < R; xx++) {
           const o = (((ay + y) * R + yy) * W + (ax + x) * R + xx) * 4;

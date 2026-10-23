@@ -231,5 +231,6 @@ Detail: [ui.md](../features/ui.md).
 - **Game controller**: any standard-mapping pad drives menus, the State Map and battles [ui/gamepad, ui/padnav, ui/inputmode] `tools/padnavtest.cjs`. [details](../features/ui.md#game-controller)
 - **The whole game by pad**: the POI map's and crawls' SVG places take the ring, a pointer for charts and the minimap, Pick start on map, the camp-site picker and the base build map by cursor [ui/padnav, main, ui/combat, ui/poimap] `tools/padmaptest.cjs`. [details](../features/ui.md#the-whole-game-by-pad)
 - **Key hints by device**: hints and tooltips worded for mouse, finger or pad [ui/hints, ui/inputmode]. [details](../features/ui.md#key-hints-by-device)
+- **Seasonal trees**: red, orange and brown leaves in autumn, bare trees and bushes with snow on them in winter, on the battle, raid and base maps and the State Map [ui/seasontrees, ui/isoview, ui/terraindeco, ui/render] `tools/seasontreestest.js`. [details](../features/ui.md#seasonal-trees)
 - **Audio**: adaptive music director and synth score, ambience, SFX for guns, melee, zombies, doors, vehicles [ui/music*, ui/amb*, ui/sfx*].
 - **Dev tools**: reveal the map; headless balance and test tools in `prototype/tools`.
