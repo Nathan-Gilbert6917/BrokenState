@@ -15,11 +15,22 @@ export const WX_SIGHT_MIN = 4; // nobody's day sight is cut below this
 const UNDERGROUND = new Set(["hivechamber", "hivecore"]); // stealth.js: a hive's caves, their own dark
 const NAMES = { fog: "Fog", blizzard: "Blizzard" };
 
+// The world tile whose weather a battle has: its own (b.tileId), or a base's map's base's tile (the base map view and
+// a base's wall map are made with no tile of their own: sim/basemap.js openBaseMap). null: none (the tools' bare
+// battles).
+export function battleTile(state, b) {
+  if (!b) return null;
+  if (b.tileId != null) return b.tileId;
+  const id = b.setup ? b.setup.baseId ?? (b.setup.context ? b.setup.context.baseId : null) : null;
+  const base = id != null && state && Array.isArray(state.bases) ? state.bases.find((x) => x.id === id) : null;
+  return base ? base.tile : null;
+}
 // The weather key over the battle's tile now ("clear" with no world or no tile: the tools' bare battles).
 export function battleWxKey(state, b) {
-  if (!state || !state.tiles || !b || b.tileId == null) return "clear";
+  const tile = battleTile(state, b);
+  if (!state || !state.tiles || tile == null) return "clear";
   if (b.setup && UNDERGROUND.has(b.setup.layout)) return "clear";
-  try { return weatherAt(state, b.tileId).key || "clear"; } catch { return "clear"; }
+  try { return weatherAt(state, tile).key || "clear"; } catch { return "clear"; }
 }
 // The battle's weather and its cut to sight, once as the battle is made (b.wx, b.wxSight), and the cut put on every
 // unit on the map. Returns the cut (0: none).

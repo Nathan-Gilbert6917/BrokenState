@@ -21,6 +21,7 @@
 // fog banks); off (nothing drawn: the fog still cuts sight). Reduce motion: everything held still.
 import { battleWeather, fogColour, fogCss } from "./battleedge.js";
 import { weatherAt } from "../sim/weather.js";
+import { battleTile } from "../sim/wxsight.js"; // the tile whose weather a battle has (a base map: its base's)
 import { onForgetPictures } from "./pictures.js";
 
 export const WX_LEVELS = { full: 2, low: 1, off: 0 };
@@ -64,7 +65,8 @@ export function wxFxFor(state, b) {
   const key0 = b && b.wx != null ? b.wx : battleWeather(state, b).key;
   if (memo.b === b && memo.hour === hour && memo.wx === key0) return memo.fx;
   let rain = 0.4, wind = 0.3;
-  try { if (state && state.tiles && b && b.tileId != null) { const w = weatherAt(state, b.tileId); rain = w.rain || 0; wind = w.wind || 0; } } catch { /* the defaults */ }
+  const tile = battleTile(state, b); // its own tile, or a base map's base's (sim/wxsight.js)
+  try { if (state && state.tiles && tile != null) { const w = weatherAt(state, tile); rain = w.rain || 0; wind = w.wind || 0; } } catch { /* the defaults */ }
   const kind = KIND[key0] || null, heavy = key0 === "storm" || key0 === "blizzard";
   const fx = { kind, key: key0, rain: kind === "rain" ? Math.max(0.3, rain) : 0, wind, heavy, fog: key0 === "fog" ? 1 : key0 === "blizzard" ? 0.6 : 0 };
   memo = { b, hour, wx: key0, fx };
