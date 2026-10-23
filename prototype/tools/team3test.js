@@ -135,7 +135,8 @@ section("TEAM-04: select a team while it moves");
       const msg = runTeamAction(state, ui, { id: p.id, tile: site, key: "mission:scavenge", mode: "replace" });
       check(p.phase === "out" && p.path[p.path.length - 1] === site, `TEAM-03: the order is given to the moving team (${msg})`);
       const hm = teamTileMenu(state, ui, sel, hub(state).tile);
-      check(hm.items.some((x) => x.key === "drop") && !hm.items.some((x) => x.key === "mission:scavenge"), "TEAM-03: on your base, the base actions instead");
+      // Its other places can be raided from your base too (the user's word 2026-10-23), but no other site action.
+      check(hm.items.some((x) => x.key === "drop") && hm.items.filter((x) => x.key.startsWith("mission:")).every((x) => x.key === "mission:scavenge" || x.key === "mission:enter"), "TEAM-03: on your base, the base actions (and a raid of its tile's places)");
     }
   }
 }

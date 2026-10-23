@@ -2015,9 +2015,11 @@ button.ppl-idle.on { background: #45380f; color: #ffd166; }
 .pm-gos .pm-go { text-align: left; }
 .pm-hint { padding: 0.6rem 0.2rem; }
 .pm-list { flex: none; display: flex; flex-direction: column; gap: 0.35rem; }
-.pm-list.open { width: 19rem; }
+.pm-list.open { flex: 0 1 24rem; min-width: 16rem; } /* the places beside the map, the picked one's details under them (ui/poipick.js) */
+.poipick:not(.tileview) .pm-body { justify-content: center; gap: 1.6rem; } /* the map and the list as one, the same room left and right */
+.pm-listhead { padding: 0.1rem 0.2rem; }
 .pm-listbtn.pm-tab { writing-mode: vertical-rl; padding: 0.7rem 0.3rem; }
-.pm-rows { display: flex; flex-direction: column; gap: 0.35rem; max-height: 26rem; overflow-y: auto; }
+.pm-rows { display: flex; flex-direction: column; gap: 0.35rem; max-height: 22rem; overflow-y: auto; }
 .pm-rows .poirow.on { border-color: var(--accent); }
 @media (max-width: 760px) { .pm-body { flex-wrap: wrap; } .pm-map { transform-origin: top left; } }
 .pm-exit { cursor: pointer; pointer-events: bounding-box; } /* the arrow and its minutes one button, the gap between them too */

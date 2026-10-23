@@ -62,14 +62,18 @@ section("Where the places stand, and the minutes to each");
   const p = teamAt(st, t.id);
   check(walkFrom(st, p).poi === null && walkFrom(st, p).spot.every((v) => v === 0), "on arrival the team stands in the middle of the tile");
   const all = tiles.slice(0, 400).flatMap((tt) => poisOf(tt).map((_, i) => poiWalkMins(st, { ...p, path: [tt.id], idx: 0 }, i, tt.id)));
-  check(all.every((m) => Number.isInteger(m) && m >= WALK.MIN && m <= WALK.MAX), `every place is ${WALK.MIN}–${WALK.MAX} minutes away (${Math.min(...all)}–${Math.max(...all)})`);
+  check(all.every((m) => Number.isInteger(m) && m >= WALK.FOOT.MIN && m <= WALK.FOOT.MAX), `every place is ${WALK.FOOT.MIN}–${WALK.FOOT.MAX} minutes away on foot (${Math.min(...all)}–${Math.max(...all)})`);
   check(new Set(all).size >= 6, `and they vary (${new Set(all).size} different)`);
+  // By vehicle (the user's word 2026-10-23: the old minutes were a vehicle's; on foot a tile is an hour across).
+  const car = tiles.slice(0, 400).flatMap((tt) => poisOf(tt).map((_, i) => poiWalkMins(st, { ...p, vehicle: true, path: [tt.id], idx: 0 }, i, tt.id)));
+  const mean = (xs) => xs.reduce((a, b) => a + b, 0) / xs.length;
+  check(car.every((m) => m >= WALK.CAR.MIN && m <= WALK.CAR.MAX) && mean(car) * 2.5 < mean(all), `a team with a vehicle: ${WALK.CAR.MIN}–${WALK.CAR.MAX} minutes (on average ${mean(car).toFixed(1)}, on foot ${mean(all).toFixed(1)})`);
   const avg = (terr) => { const xs = tiles.filter((tt) => terr.includes(tt.terrain)).flatMap((tt) => poisOf(tt).map((_, i) => i).filter((i) => i > 0).map((i) => poiWalkMins(st, { ...p, path: [tt.id], idx: 0, atPoi: undefined }, i, tt.id))); return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : NaN; };
   const rough = avg(["hills", "mountain", "forest"]), easy = avg(["suburb"]);
   check(rough > easy, `rough ground takes longer than suburbs (${rough.toFixed(1)} vs ${easy.toFixed(1)} min on average)`);
   check(walkText(12) === "12 min on foot" && walkText(0) === "you are here", "the words");
   const rows = poiRows(st, p, t.id);
-  check(rows.every((r) => r.mins >= WALK.MIN && r.mins <= WALK.MAX), "the dialogue's rows carry the minutes");
+  check(rows.every((r) => r.mins >= WALK.FOOT.MIN && r.mins <= WALK.FOOT.MAX), "the dialogue's rows carry the minutes");
   const card = poiPickCard(st, p);
   check(card.choices.filter((c) => c.poi != null).every((c) => /min on foot/.test(c.hint)), "and the card's choices say them");
 }
@@ -107,7 +111,7 @@ section("The walk, then the raid; raid again from there");
   const others = knownPois(st, t, p).filter((i) => i !== first);
   const fromHere = others.map((i) => poiWalkMins(st, p, i));
   const fromMid = others.map((i) => poiWalkMins(st, { ...p, atPoi: undefined }, i));
-  check(fromHere.every((m) => m >= WALK.MIN && m <= WALK.MAX), `the others from here: ${fromHere.join(", ")} min (from the middle: ${fromMid.join(", ")})`);
+  check(fromHere.every((m) => m >= WALK.FOOT.MIN && m <= WALK.FOOT.MAX), `the others from here: ${fromHere.join(", ")} min (from the middle: ${fromMid.join(", ")})`);
   check(fromHere.some((m, k) => m !== fromMid[k]), "the distances changed with where the team stands");
   check(poiRows(st, p, t.id).find((r) => r.i === first).mins === 0, "the dialogue says \"here\" for it");
   // The same place again: straight in.
@@ -144,7 +148,7 @@ section("Where the team came onto the tile from");
   const [ax, ay] = st.grid.toPixel(t.id, 1), [bx, by] = st.grid.toPixel(nb, 1), d = Math.hypot(bx - ax, by - ay);
   check(f.edge === nb && f.poi === null && Math.abs(Math.hypot(...f.spot) - WALK.EDGE) < 1e-9 && Math.abs(f.spot[0] - ((bx - ax) / d) * WALK.EDGE) < 1e-9, "it stands on that edge of the hex");
   const known = knownPois(st, t, p), fromEdge = known.map((i) => poiWalkMins(st, p, i)), fromMid = known.map((i) => poiWalkMins(st, { ...p, entered: undefined }, i));
-  check(fromEdge.every((m) => m >= WALK.MIN && m <= WALK.MAX) && fromEdge.some((m, k) => m !== fromMid[k]), `the minutes are from the edge (${fromEdge.join(", ")}; from the middle ${fromMid.join(", ")})`);
+  check(fromEdge.every((m) => m >= WALK.FOOT.MIN && m <= WALK.FOOT.MAX) && fromEdge.some((m, k) => m !== fromMid[k]), `the minutes are from the edge (${fromEdge.join(", ")}; from the middle ${fromMid.join(", ")})`);
   const wm = walkMap(st, p, known);
   check(wm.from.edge === nb && wm.places.length === known.length && wm.places.every((x, k) => x.mins === fromEdge[k] && x.route.length >= 2 && Math.hypot(x.route[0][0] - f.spot[0], x.route[0][1] - f.spot[1]) < 1e-9), "the tile map's places carry the same minutes and a route from the edge");
   // Another edge, other minutes (for some place).
@@ -182,14 +186,14 @@ section("Not for the headless paths; a save keeps it");
   const n = knownPois(st, t, q).length;
   check(/<svg class="pm-svg"/.test(h0) && (h0.match(/class="pm-poi[^"]*" data-action="poisel"/g) || []).length === n, `the tile map: a place to click for each known one (${n})`);
   check((h0.match(/class="pm-route/g) || []).length >= n - 1 && /class="pm-you"/.test(h0), "the routes and where the team stands");
-  check(/◂ Places \(\d+\)/.test(h0) && !/pm-rows/.test(h0) && /data-action="poilist"/.test(h0), "the list of places is folded away, with a button to open it");
-  check(!/data-action="choice" data-i="\d+" class="pm-go"/.test(h0) && /Pick a place on the map/.test(h0), "nothing picked yet: no walk button, a hint");
+  check(/Places here \(\d+\)/.test(h0) && /pm-rows/.test(h0) && (h0.match(/class="poirow/g) || []).length === n, "the list of places beside the map, a row a place (always open: the user's word 2026-10-23)");
+  check(!/data-action="choice" data-i="\d+" class="pm-go"/.test(h0) && !/pm-hint/.test(h0) && /pick a place on the map/.test(h0), "nothing picked yet: no walk button, no hint box (the line over the map says it)");
   card.poiPick.sel = knownPois(st, t, q)[1];
   card.poiPick.list = true;
   const h1 = PICK.poiPickModal(st, card);
   const ci = card.choices.findIndex((c) => c.poi === card.poiPick.sel && c.building == null);
   check(new RegExp(`data-action="choice" data-i="${ci}" class="pm-go"`).test(h1) && /Walk there \(\d+ min\) and raid it/.test(h1), "a place picked: its button walks there and raids it");
-  check(/pm-rows/.test(h1) && (h1.match(/class="poirow/g) || []).length === n && /▸ Places/.test(h1), "the list opened: a row a place");
+  check(/pm-rows/.test(h1) && (h1.match(/class="poirow/g) || []).length === n && /class="poirow on"/.test(h1), "the list: a row a place, the picked one lit");
   check(new RegExp(`class="pm-poi on" data-action="poisel" data-poi="${card.poiPick.sel}"`).test(h1) && /class="pm-route on"/.test(h1), "the picked place and its route stand out on the map");
 }
 
@@ -207,7 +211,7 @@ section("Leaving the tile: the walk out to its edge, then on");
   st.cards.length = 0;
   const exits = card ? card.choices.filter((c) => c.exit != null) : [];
   const land = st.grid.neighbors(t.id).filter((m) => planPath(st, t.id, m, false));
-  check(exits.length === land.length && exits.every((c) => land.includes(c.exit) && c.ai() < 0 && c.mins >= WALK.MIN && c.mins <= WALK.MAX), `a way off by each side a team can cross (${exits.length}), with its minutes, never picked for you`);
+  check(exits.length === land.length && exits.every((c) => land.includes(c.exit) && c.ai() < 0 && c.mins >= WALK.FOOT.MIN && c.mins <= WALK.FOOT.MAX), `a way off by each side a team can cross (${exits.length}), with its minutes, never picked for you`);
   check(!!card && card.choices.some((c) => c.leavePick && c.uiAction && c.uiAction.type === "move"), "and Leave for another tile… (the State Map's move mode)");
   const ex = exits[0];
   const want = exitWalk(st, p, ex.exit);

@@ -30,7 +30,7 @@ import {
 } from "./factions.js";
 import { rollTravelEvent, convoyLegEvent } from "./events.js";
 import { startScavenge } from "./scavenge.js";
-import { offerCrawl, crawlOffered } from "./citycrawl.js"; // a team moved onto a city asks whether to go in
+import { offerCrawl, crawlOffered, crawlTile } from "./citycrawl.js"; // a team moved onto a city asks whether to go in
 import {
   vehicleById, partyVehicle, partyFuel, useFuel, wear, abandonVehicle, tank, createVehicle, travelMode, tileFuel, isBike, isCar,
   partyVehicles, partyVehicleIds, partyFleet, fleetOf, fleetProblem, setPartyVehicles, roadPace, MAX_VEHICLES,
@@ -113,7 +113,7 @@ import { nomadCampAt, nomadCampArrive } from "./nomads.js"; // a nomad camp you 
 import { unpackPerson } from "./supitems.js"; // supplies carried as items, unpacked at home (call-time only: safe in the import cycle)
 import { fightSides, fightersOf, applySide } from "./groupfight.js"; // fights nobody watches: your rules
 import { cfgOf } from "./worldcfg.js"; // the run's dials: Durability loss, Fuel use
-import { isSettlementTile, SETTLEMENT_WHY } from "./startpick.js"; // no base of yours in a town or a city
+import { CRAWL_WHY } from "./startpick.js"; // no base of yours on a town's or a city's crawl tile
 const AI_KIND = { raider: "raiders", expansionist: "fighters", zealot: "zealots", military: "soldiers", fortress: "soldiers", traders: "guards", commune: "militia" };
 
 export const STANCES = {
@@ -873,13 +873,13 @@ export function missionProblem(state, tile, mission) {
     if (t.terrain === "water" && !t.bridge) return "An outpost cannot be built on open water. A bridge can be barricaded with one.";
     if (state.bases.some((b) => b.tile === tile)) return "You already have a base there.";
     if (theirs) return `${theirs.name} holds that place.`;
-    if (isSettlementTile(t)) return SETTLEMENT_WHY; // startpick.js: no base in a town or a city
+    if (crawlTile(t)) return CRAWL_WHY; // citycrawl.js: no base on a town's or a city's crawl tile
   }
   if (mission === "camp" || mission === "establish") { // a camp (staging.js campProblem: checked again on arrival)
     if ((t.terrain === "water" && !t.bridge) || t.hive) return t.hive ? "Not on a hive." : "A camp cannot go on open water.";
     if (state.bases.some((b) => b.tile === tile)) return "You already have a base there.";
     if (theirs) return `${theirs.name} holds that place.`;
-    if (isSettlementTile(t)) return SETTLEMENT_WHY;
+    if (crawlTile(t)) return CRAWL_WHY;
   }
   if (mission === "scavenge" && t.terrain === "water" && !t.bridge) return "There is nothing to search on the water.";
   if (mission === "assault" && !state.factions.some((f) => f.alive && f.bases.includes(tile))) return "No group holds that place.";

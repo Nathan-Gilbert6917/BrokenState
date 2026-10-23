@@ -159,7 +159,6 @@ import { forageInfo, foragerMult, FORAGE } from "../sim/foraging.js";
 import { woodInfo, WOOD, boilerJunkOn, boilerBurnables, burnablesWood } from "../sim/woodcutting.js";
 import { roleOf, isManaged, taskLabel, taskWhy, priorityCount } from "../sim/work.js";
 import { nameModalUp, nameBaseModal, renameButton } from "./basename.js"; // naming and renaming bases
-import { siteModalUp, siteModal } from "./campsite.js"; // the camp's spot on its tile's map
 import { firstHubCard, fromTeamRow, stagingTileCard, fireButton, stageSteps } from "./hardcore.js";
 import { stagingView, needText, ESTABLISH_LABEL, STAGING, shelterView, STRIKE_LABEL } from "../sim/staging.js";
 import { campSleep, tentsText, TENT_TYPES } from "../sim/tents.js"; // the camp's tents: beds under cover, storage out of the weather
@@ -566,7 +565,16 @@ export function tileActions(state, id) {
   const t = state.tiles[id];
   const actions = [];
   if (t.terrain === "water" && !t.bridge) return actions;
-  if (state.bases.some((b) => b.tile === id) || !hub(state)) return actions; // no hub (conquest.js exiles): nothing to send from
+  if (!hub(state)) return actions; // no hub (conquest.js exiles): nothing to send from
+  // Your own base's tile (the user's word 2026-10-23: "When you set up a base you can raid the other POIs on the same
+  // tile"): its places raided by a team sent from home (a walk over the tile from the base: sim/poiwalk.js walkFrom),
+  // and a survey for the ones it hides; nothing else to send there.
+  if (state.bases.some((b) => b.tile === id)) {
+    const raid = siteMissions(state, id).find(([m]) => m === "scavenge");
+    if (raid) actions.push(["scavenge", "Raid a place on this tile"]);
+    if (poiTileRaid(t)) actions.push(["fullsurvey", "Survey this tile"]);
+    return actions;
+  }
   actions.push(["recon", "Send recon"]);
   actions.push(["move", "Send a team here"]);
   actions.push(["fullsurvey", "Survey this tile"]); // the POI survey (sim/survey.js): the places the tile hides (offered everywhere: no peeking at the lists)
@@ -852,7 +860,6 @@ function pickModal(state, ui) {
   if (ui.cardResult) return ["result", () => `<div class="box"><h1>${esc(ui.cardResult.title)}</h1><div class="result">${esc(ui.cardResult.text || "Done.")}</div><button class="primary" data-action="cardok">Continue</button></div>`];
   if (state.gameOver) return ui.ledger ? ["ledger", () => ledgerModal(state, ui)] : ["over", () => gameOverScreen(state)]; // the Ledger opens over the end screen
   // A card that stops the clock by the pause rules, or one opened from the tray (ui/pacing.js puts it first).
-  if (siteModalUp(state, ui)) return ["campsite", () => siteModal(state, ui)]; // ui/campsite.js: a team about to set up camp picks its spot
   if (nameModalUp(state, ui)) return ["namebase", () => nameBaseModal(state, ui)]; // ui/basename.js: a base just founded, or ✎ Rename (before its founding card)
   if (cardUp(state, ui)) return ["card", () => trayCardFrame(state, ui, cardModal(state, state.cards[0]))];
   if (unpackUp(state, ui)) return ["unpack", () => unpackModal(state, ui)]; // ui/teaminv.js: a team home, what its people carry put away

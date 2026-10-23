@@ -816,6 +816,10 @@ export const CELL = {
   // A siege ladder set against a wall section (siege.js): the wall cell becomes a climb up to height 1, onto the
   // walkway behind it; whoever is on it stands exposed. Its wall stays a wall for sight from the ground (c.t).
   siegeladder: { walk: true, cover: 0, los: false, name: "Siege ladder", h: 1, climb: true },
+  // The high ground of a hills or mountain base map (basescatter.js highLayer): a level up, its edge a drop nobody walks
+  // up or down but by a slope (a climb, like stairs).
+  rise:      { walk: true,  cover: 0, los: false, name: "High ground", h: 1 },
+  slope:     { walk: true,  cover: 0, los: false, name: "Slope", climb: true },
 };
 
 // Verticality (base battles): a unit on higher ground sees SIGHT tiles further a level, aims AIM better a level at
@@ -3326,8 +3330,8 @@ export function playerSees(b, t) {
 // asked again: the same cells seen, and the same lines of sight asked, as asking every eye of every cell.
 export function playerVision(b) {
   bindDims(b);
-  const vis = new Uint8Array(W * H).fill(b.over || b.layout ? 1 : 0);
-  if (b.over || b.layout) return vis; // the Base map view (basemap.js): nobody on it, the whole base in plain view (it was all fog)
+  const vis = new Uint8Array(W * H).fill(b.over || b.layout || b.site ? 1 : 0);
+  if (b.over || b.layout || b.site) return vis; // the Base map view (basemap.js): nobody on it, the whole base in plain view (it was all fog)
   const eyes = b.units.filter((u) => u.side === "player" && active(u));
   for (const e of eyes) {
     const r = Math.ceil(sightBound(b, e)) + 1, R = r >= 0 ? r : Infinity; // NaN: the whole map
@@ -4579,6 +4583,7 @@ export function combatAct(state, act) {
     if (b.phase === "player") endPlayerTurn(state);
     return "";
   }
+  if (b.site) return ""; // basemap.js openSiteView: the camp's spot, picked by its own clicks (ui/combat.js)
   if (b.layout) { const err = layoutAct(state, b, act); if (!err && state.combat) bump(state.combat); return err; } // basemap.js: the Base map view, nothing is fought
   if (b.setup.drill) { const err = drillAct(state, b, act); if (!err && state.combat === b) bump(b); return err; } // defenceplan.js: a defence drill, nothing is fought
   if (act.type === "building") return chooseBuilding(state, act.id);

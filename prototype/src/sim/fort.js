@@ -55,7 +55,7 @@ const NEXT_TO = { north: ["west", "east"], south: ["west", "east"], east: ["nort
 // Builds the fort for a base (a real one, or the stand-in a group's base gets: assaultBase). Deterministic for the
 // same base (interior.js layoutSeed) except the margin's cover and the breaches (rng).
 export function buildFort(base, c, rng, opts = {}) {
-  if (usesGrid(base, c) && opts.state) return buildBaseMap(opts.state, base, rng, { view: !!(c && c.view), pitsAt: c && c.pitsAt }); // basemap.js
+  if (usesGrid(base, c) && opts.state) return buildBaseMap(opts.state, base, rng, { view: !!(c && c.view), site: !!(c && c.site), pitsAt: c && c.pitsAt }); // basemap.js (site: the camp's spot picked on the tile's whole map, basemap.js openSiteView)
   const lay = buildInterior(base, { walled: false, fort: true, c: c || {} });
   const yw = lay.W, yh = lay.H, M = FORT.MARGIN;
   const x0 = M + 2, y0 = M + 2; // the yard's origin: wall at x0 - 2, walkway at x0 - 1
@@ -176,7 +176,7 @@ export function buildFort(base, c, rng, opts = {}) {
 export const fortDims = (F) => [F.W, F.H];
 // The map's size before it is built (combat.js battleSize): the yard's plus the walkway, the wall and the margin.
 export function fortSize(base, c, state = null) {
-  if (usesGrid(base, c) && state) return baseMapSize(state, base, { view: !!(c && c.view), pitsAt: c && c.pitsAt }); // basemap.js
+  if (usesGrid(base, c) && state) return baseMapSize(state, base, { view: !!(c && c.view), site: !!(c && c.site), pitsAt: c && c.pitsAt }); // basemap.js
   const lay = buildInterior(base, { walled: false, fort: true, c: c || {} });
   return [lay.W + 4 + 2 * FORT.MARGIN, lay.H + 4 + 2 * FORT.MARGIN];
 }

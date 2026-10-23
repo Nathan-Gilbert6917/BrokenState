@@ -6,6 +6,7 @@
 // appends a move and the job, a job on the team's own tile starts at once; the hub's menu (tileActions) unchanged; and
 // a render smoke test of the menu's HTML.
 // Usage: node tools/teamctxtest.js [seed]
+import { poiRaidSummary } from "../src/sim/poiraid.js";
 import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, hub, atBase, snapshot } from "../src/sim/world.js";
 import { launchExpedition, planPath, partyTile } from "../src/sim/parties.js";
@@ -207,7 +208,9 @@ section("Your own base: enter, drop off, load, resupply; away from it they wait 
   setFood(p, 0); p.supplies.water = 0;
   let m = teamTileMenu(state, {}, p, h.tile);
   for (const k of ["mission:enter", "drop", "load", "resupply", "home"]) check(has(m, k), `own base: ${k}`);
-  for (const k of ["mission:scavenge", "claim", "setcamp", "mission:outpost"]) check(!has(m, k), `own base: no ${k}`);
+  for (const k of ["claim", "setcamp", "mission:outpost"]) check(!has(m, k), `own base: no ${k}`);
+  // Its tile's other places can be raided from it (the user's word 2026-10-23), when any are known there.
+  check(has(m, "mission:scavenge") === !!poiRaidSummary(state, h.tile, p), `own base: Raid a place here only with places known (${has(m, "mission:scavenge") ? item(m, "mission:scavenge").label : "none known"})`);
   check(!item(m, "drop").disabled && !item(m, "resupply").disabled, `at the base: drop off and resupply enabled (${item(m, "drop").disabled} / ${item(m, "resupply").disabled})`);
   const acts = { opened: null, "ti-open": (d) => { acts.opened = d; } };
   check(runTeamAction(state, {}, { id: p.id, tile: h.tile, key: "load", mode: "replace" }, acts) === "" && acts.opened && acts.opened.tab === "load", "Load from… opens the team inventory on its load tab");
@@ -297,7 +300,8 @@ section("The hub's menu is unchanged; the menu renders");
   const acts = tileActions(state, town).map((a) => a[0]);
   // The POI survey (Survey this tile, sim/survey.js) comes before the Sweep of the area (ui.js tileActions).
   check(acts[0] === "recon" && acts[1] === "move" && acts[2] === "fullsurvey" && acts[3] === "sweep", "hub menu: recon, send a team, survey first");
-  check(tileActions(state, h.tile).length === 0, "hub menu: nothing on your own base");
+  // Your own base's tile (the user's word 2026-10-23): only its places to raid and a survey, nothing else.
+  check(tileActions(state, h.tile).every((a) => a[0] === "scavenge" || a[0] === "fullsurvey"), `hub menu: on your own base only its places to raid and a survey (${tileActions(state, h.tile).map((a) => a[0]).join(", ") || "none"})`);
   const p = team(state, 2);
   const m = teamTileMenu(state, {}, p, town);
   const html = teamCtxHtml(state, {}, m);

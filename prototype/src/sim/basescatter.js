@@ -75,8 +75,8 @@ export const PROFILES = {
   farm:     { n: [2, 3], w: { fence: 4, hedge: 2, hay: 2, tree: 2, bush: 1, clump: 1, stump: 1 } },
   hills:    { n: [2, 4], w: { rock: 4, boulder: 3, bush: 2, tree: 2, clump: 1, stump: 1, hedge: 1 } },
   mountain: { n: [2, 4], w: { boulder: 4, rock: 4, tree: 1, bush: 1, log: 1 } },
-  suburb:   { n: [2, 3], w: { fence: 4, tree: 3, bush: 3, wreck: 1, clump: 1, crate: 1, lot: 2 } },
-  city:     { n: [2, 3], w: { wreck: 2, crate: 2, barrel: 2, fence: 2, rock: 1, bush: 1, tree: 1, lot: 3 } },
+  suburb:   { n: [1, 2], w: { fence: 2, tree: 3, bush: 3, wreck: 1, clump: 1, crate: 1 } }, // round the houses (townLayer)
+  city:     { n: [1, 2], w: { wreck: 2, crate: 2, barrel: 2, fence: 1, rock: 1, bush: 1 } },    // round the blocks (townLayer)
 };
 // What lies about the yard.
 const YARD_W = { plain: { stump: 3, log: 2, crate: 2, barrel: 2, rock: 1 }, city: { crate: 3, barrel: 3, rock: 1, log: 1, stump: 1 } };
@@ -100,6 +100,13 @@ export const CLEAR = {
   barrel:  { hours: 0.5, get: { scrap: 1 },  word: "an old drum", verb: "Haul off" },
   wreck:   { hours: 6,   get: { scrap: 2 },  word: "a wreck", verb: "Drag off" },
   strip:   { hours: 2,   get: { scrap: 6, carparts: 1, metalsheet: 2 }, word: "a wreck", verb: "Strip" },
+  // The high ground (a cell of it dug down to the ground round it) and the buildings of a town or a city (pulled down
+  // whole: their timbers, their scrap, the bricks and blocks as building materials, the roof's metal sheets).
+  rise:    { hours: 1,   get: {},            word: "a patch of high ground", verb: "Dig down" },
+  slope:   { hours: 0.5, get: {},            word: "a slope", verb: "Dig down" },
+  house:   { hours: 20,  get: { wood: 160, scrap: 8, buildmat: 4, metalsheet: 2 }, word: "a house", verb: "Pull down" },
+  store:   { hours: 28,  get: { wood: 60, scrap: 18, buildmat: 6, metalsheet: 6 }, word: "a store", verb: "Pull down" },
+  block:   { hours: 48,  get: { wood: 40, scrap: 30, buildmat: 14, metalsheet: 8 }, word: "a city building", verb: "Knock down" },
   NO_TOOL: 2.5, // a tree, a fallen log or a stump with no axe, saw or machete at the base (it was 1.5 until the tools, 2026-10-21)
 };
 export const profileOf = (terrain) => PROFILES[terrain] || PROFILES.plains;
@@ -189,6 +196,295 @@ export function scatterLayer(seed, terrain, G) {
   return out;
 }
 
+// ---------- high ground, streets and buildings (the user's request 2026-10-22) ----------
+// "Add more variety to the bare base maps with elevations in hill tiles, houses, roads and stores in town tiles and
+// similar but more city like for city tiles". In map coordinates, from the tile's dice, like the rest of the land:
+//   - hills and mountains (highLayer): rises of high ground a level up (combat.js CELL.rise, height 1: seen further
+//     from, shot down from), one at most to a REGION of the map, a few lobes joined; the way up is a slope (CELL.slope:
+//     a climb, never diagonally) at RAMPS places round its foot, elsewhere its edge is a drop nobody walks up. Each cell
+//     is a piece of the land: dug down before anything is built on it (CLEAR.rise).
+//   - a town (the suburbs and a town's own tile: townLayer "town"): a grid of streets (road floors) every BLOCK cells,
+//     the blocks between cut into lots facing the street: a house on most (walls, windows, a front door on the street,
+//     rooms, beds, a table, a kitchen counter), a driveway with a car left in some, fences down the back yards; now and
+//     then a store (a shop front of windows, shelves in rows, a counter, a back room) with a gravel lot in front, or a
+//     lot gone to weeds.
+//   - a city (townLayer "city"): narrower blocks with sidewalks, packed with bigger buildings (city blocks of rooms off
+//     each other, two storeys high), stores, parking lots of wrecks and the odd park of trees; more wrecks in the streets.
+// A building is one piece (k "house", "store", "block") whose cells each carry their own kind and floor (parts):
+// pulled down whole before anything is built there (CLEAR), for its wood, scrap, building materials and metal sheets.
+export const HIGH = {
+  REGION: 36,                                    // cells a side of a region of the map: a rise in it at most
+  P: { hills: 0.8, mountain: 0.95 },             // the chance a region has one
+  R: { hills: [4, 8], mountain: [6, 11] },       // a lobe's half-size range
+  LOBES: [2, 3],
+  RAMPS: [2, 4],                                 // slopes up onto a rise
+};
+export const TOWN = {
+  town: { BLOCK: 36, STREET: 5, LOT: [10, 13], STORE_P: 0.12, EMPTY_P: 0.1, DRIVE_CAR_P: 0.35, STREET_CAR_P: 0.3 },
+  city: { BLOCK: 30, STREET: 6, STORE_P: 0.3, PARK_P: 0.1, LOT_P: 0.14, STREET_CAR_P: 0.5 },
+};
+const ORTHO = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+const ck = (x, y) => `${x},${y}`;
+const tlCache = new Map();
+const cached = (key, make) => { let v = tlCache.get(key); if (v) return v; v = make(); if (tlCache.size > 32) tlCache.clear(); tlCache.set(key, v); return v; };
+/**
+ * The high ground of a hills or mountain tile over [-G, G): { pieces: [{ k: "rise" | "slope", g, cells }] }, each cell
+ * its own piece (map coordinates). @param {number} seed @param {string} terrain @param {number} G
+ */
+export function highLayer(seed, terrain, G) {
+  if (!HIGH.P[terrain]) return { pieces: [] };
+  return cached(`h|${seed}|${terrain}|${G}`, () => {
+    const R = HIGH.REGION, rise = new Set(), regions = [];
+    const inMap = (x, y) => x >= -G + 1 && y >= -G + 1 && x < G - 1 && y < G - 1;
+    for (let ry = Math.floor(-G / R); ry * R < G; ry++) for (let rx = Math.floor(-G / R); rx * R < G; rx++) {
+      const rng = new Rng(chunkSeed(seed ^ 0x4a11, rx, ry));
+      if (!rng.chance(HIGH.P[terrain])) continue;
+      const [lo, hi] = HIGH.R[terrain], own = [];
+      const cx = rx * R + rng.int(hi, R - hi), cy = ry * R + rng.int(hi, R - hi);
+      for (let i = rng.int(HIGH.LOBES[0], HIGH.LOBES[1]); i > 0; i--) {
+        const ex = cx + (own.length ? rng.int(-lo, lo) : 0), ey = cy + (own.length ? rng.int(-lo, lo) : 0), ax = rng.int(lo, hi), ay = rng.int(lo, hi);
+        for (let y = ey - ay; y <= ey + ay; y++) for (let x = ex - ax; x <= ex + ax; x++) {
+          if (((x - ex) / ax) ** 2 + ((y - ey) / ay) ** 2 > 1 || !inMap(x, y) || rise.has(ck(x, y))) continue;
+          rise.add(ck(x, y)); own.push([x, y]);
+        }
+      }
+      regions.push({ own, rng });
+    }
+    // No spurs a cell wide: a cell of high ground with fewer than two others beside it is levelled.
+    for (const r of regions) r.own = r.own.filter(([x, y]) => { const n = ORTHO.filter(([dx, dy]) => rise.has(ck(x + dx, y + dy))).length; if (n >= 2) return true; rise.delete(ck(x, y)); return false; });
+    // The slopes: the ground at the rise's foot, three cells wide where the edge runs straight, up onto it.
+    const slope = new Set();
+    for (const { own, rng } of regions) {
+      const foot = [];
+      for (const [x, y] of own) for (const [dx, dy] of ORTHO) { const ox = x - dx, oy = y - dy; if (!rise.has(ck(ox, oy)) && inMap(ox, oy)) foot.push([ox, oy, dx, dy]); }
+      for (let n = rng.int(HIGH.RAMPS[0], HIGH.RAMPS[1]); n > 0 && foot.length; n--) {
+        const [ox, oy, dx, dy] = foot[rng.int(0, foot.length - 1)];
+        for (const j of [-1, 0, 1]) {
+          const sx = ox + dy * j, sy = oy + dx * j;
+          if (!rise.has(ck(sx, sy)) && rise.has(ck(sx + dx, sy + dy)) && inMap(sx, sy)) slope.add(ck(sx, sy));
+        }
+      }
+    }
+    const pieces = [];
+    for (const k of rise) { const [x, y] = k.split(",").map(Number); pieces.push({ k: "rise", g: `h${k}`, cells: [[x, y]] }); }
+    for (const k of slope) { const [x, y] = k.split(",").map(Number); pieces.push({ k: "slope", g: `s${k}`, cells: [[x, y]] }); }
+    return { pieces };
+  });
+}
+
+// One building: { k, g, cells, parts } (parts[i]: { k, f: "floor", fl?, t? } for cells[i]). face: the side its front
+// door is on ("n" | "s" | "e" | "w"). Walls round it with windows, the door(s), rooms split off with a gap in each
+// wall between them (never across a door), then the furniture against the walls, each piece kept only if every bit of
+// the floor can still be walked to from the front door.
+/** @param {Rng} rng @param {string} k @param {number} x0 @param {number} y0 @param {number} w @param {number} h @param {string} face @param {string} g */
+function building(rng, k, x0, y0, w, h, face, g) {
+  const x1 = x0 + w - 1, y1 = y0 + h - 1, K = new Map();
+  const get = (x, y) => K.get(ck(x, y));
+  const set = (x, y, v) => K.set(ck(x, y), v);
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) set(x, y, x === x0 || x === x1 || y === y0 || y === y1 ? "wall" : "open");
+  // The sides: [cells along it (no corners), the inward step].
+  const side = (s) => s === "n" ? [Array.from({ length: w - 2 }, (_, i) => [x0 + 1 + i, y0]), [0, 1]] : s === "s" ? [Array.from({ length: w - 2 }, (_, i) => [x0 + 1 + i, y1]), [0, -1]] : s === "w" ? [Array.from({ length: h - 2 }, (_, i) => [x0, y0 + 1 + i]), [1, 0]] : [Array.from({ length: h - 2 }, (_, i) => [x1, y0 + 1 + i]), [-1, 0]];
+  const back = { n: "s", s: "n", e: "w", w: "e" }[face];
+  for (const s of ["n", "s", "e", "w"]) {
+    const [cells] = side(s), every = k === "block" ? 2 : 3;
+    cells.forEach(([x, y], i) => { if (k === "store" && s === face ? i > 0 && i < cells.length - 1 : i % every === 1) set(x, y, rng.chance(0.15) ? "smashed" : "window"); });
+  }
+  const doors = [];
+  const door = (s, wide) => {
+    const [cells, [dx, dy]] = side(s), mid = Math.floor(cells.length / 2) + (cells.length > 4 ? rng.int(-1, 1) : 0);
+    for (const i of wide ? [mid - 1, mid] : [mid]) { const [x, y] = cells[Math.max(0, Math.min(cells.length - 1, i))]; set(x, y, "doorway"); doors.push([x, y, dx, dy]); }
+  };
+  door(face, k === "store");
+  if (k === "block" || (k === "house" && rng.chance(0.4))) door(back, false);
+  const inFront = new Set(doors.map(([x, y, dx, dy]) => ck(x + dx, y + dy)));
+  // Rooms: split the inside along its longer side while both halves keep MIN cells; a gap in each new wall.
+  const MIN = k === "block" ? 3 : 2, gaps = new Set(); // a room at least this wide
+  const split = (ax0, ay0, ax1, ay1, depth) => {
+    const W = ax1 - ax0 + 1, H = ay1 - ay0 + 1, vert = W >= H;
+    const len = vert ? W : H;
+    if (depth <= 0 || len < 2 * MIN + 1) return;
+    for (let tries = 0; tries < 6; tries++) {
+      const p = (vert ? ax0 : ay0) + rng.int(MIN, len - MIN - 1);
+      const line = vert ? Array.from({ length: H }, (_, i) => [p, ay0 + i]) : Array.from({ length: W }, (_, i) => [ax0 + i, p]);
+      if (line.some(([x, y]) => inFront.has(ck(x, y)))) continue;
+      // Never against a door or a gap in the walls round it (the wall would close it).
+      const ends = vert ? [[p, ay0 - 1], [p, ay1 + 1]] : [[ax0 - 1, p], [ax1 + 1, p]];
+      if (ends.some(([x, y]) => get(x, y) !== "wall" && get(x, y) !== "window" && get(x, y) !== "smashed")) continue;
+      const gap = line[rng.int(0, line.length - 1)];
+      for (const [x, y] of line) set(x, y, "wall");
+      set(gap[0], gap[1], "open"); gaps.add(ck(gap[0], gap[1]));
+      if (vert) { split(ax0, ay0, p - 1, ay1, depth - 1); split(p + 1, ay0, ax1, ay1, depth - 1); }
+      else { split(ax0, ay0, ax1, p - 1, depth - 1); split(ax0, p + 1, ax1, ay1, depth - 1); }
+      return;
+    }
+  };
+  if (k === "house") split(x0 + 1, y0 + 1, x1 - 1, y1 - 1, h * w >= 56 ? 2 : 1);
+  else if (k === "block") split(x0 + 1, y0 + 1, x1 - 1, y1 - 1, 3);
+  // Every open cell walked to from inside the front door?
+  const whole = () => {
+    const [fx, fy, fdx, fdy] = doors[0], start = ck(fx + fdx, fy + fdy);
+    if (get(fx + fdx, fy + fdy) !== "open") return false;
+    const seen = new Set([start]), q = [[fx + fdx, fy + fdy]];
+    while (q.length) { const [x, y] = q.pop(); for (const [dx, dy] of ORTHO) { const n = ck(x + dx, y + dy), v = K.get(n); if (!seen.has(n) && (v === "open" || v === "doorway")) { seen.add(n); q.push([x + dx, y + dy]); } } }
+    for (const [n, v] of K) if (v === "open" && !seen.has(n)) return false;
+    return true;
+  };
+  const nearDoor = (x, y) => [[0, 0], ...ORTHO].some(([dx, dy]) => inFront.has(ck(x + dx, y + dy)) || gaps.has(ck(x + dx, y + dy)));
+  const byWall = (x, y) => ORTHO.some(([dx, dy]) => { const v = get(x + dx, y + dy); return v === "wall" || v === "window" || v === "smashed"; });
+  const place = (kind, wantWall = true) => {
+    const spots = [];
+    for (const [n, v] of K) { if (v !== "open") continue; const [x, y] = n.split(",").map(Number); if (!nearDoor(x, y) && (!wantWall || byWall(x, y))) spots.push([x, y]); }
+    for (let tries = 0; tries < 8 && spots.length; tries++) {
+      const [x, y] = spots[rng.int(0, spots.length - 1)];
+      set(x, y, kind);
+      if (whole()) return true;
+      set(x, y, "open");
+    }
+    return false;
+  };
+  if (k === "store") {
+    // Shelves in rows across the shop, aisles round them; a counter or two and a cabinet.
+    const [, [dx, dy]] = side(face), across = dx === 0;
+    const depth = across ? h - 2 : w - 2, span = across ? w - 2 : h - 2;
+    for (let d = 3; d < depth - 2; d += 2) for (let i = 2; i < span - 2; i++) {
+      const x = across ? x0 + 1 + i : dx > 0 ? x0 + d : x1 - d, y = across ? (dy > 0 ? y0 + d : y1 - d) : y0 + 1 + i;
+      if (get(x, y) === "open" && !nearDoor(x, y)) set(x, y, "shelf");
+    }
+    if (!whole()) for (const [n, v] of K) if (v === "shelf") K.set(n, "open"); // never shuts anything off
+    place("counter"); place("counter"); place("cabinet");
+  } else if (k === "house") {
+    for (const f of ["bed", "bed", "table", "counter", "counter", "cabinet"]) place(f, f !== "table");
+  } else {
+    for (let n = Math.round((w * h) / 18); n > 0; n--) place(rng.pick(["table", "cabinet", "bed", "rack", "counter", "table", "cabinet"]), true);
+  }
+  const fl = k === "store" ? "tile" : k === "block" ? rng.pick(["conc", "carpet", "tile"]) : rng.pick(["carpet", "tile"]);
+  const cells = [], parts = [];
+  for (const [n, v] of K) {
+    const [x, y] = n.split(",").map(Number);
+    cells.push([x, y]);
+    parts.push({ k: v, f: "floor", ...(v === "open" || v === "doorway" || !["wall", "window", "smashed"].includes(v) ? { fl } : {}), ...(k === "block" && v === "wall" ? { t: 2 } : {}) });
+  }
+  return { k, g, cells, parts };
+}
+
+/**
+ * The streets and buildings of a town or a city over [-G, G) (map coordinates): { floors: [[x, y, f]…], pieces }. The
+ * pieces: buildings (k "house" | "store" | "block", with parts), wrecks in the streets and driveways, fences, trees and
+ * bushes in the yards and the parks.
+ * @param {number} seed @param {string} style "town" | "city" @param {number} G
+ */
+export function townLayer(seed, style, G) {
+  const T = TOWN[style];
+  if (!T) return { floors: [], pieces: [] };
+  return cached(`t|${seed}|${style}|${G}`, () => {
+    const B = T.BLOCK, S = T.STREET, off = seed % B;
+    const floors = [], pieces = [];
+    const md = (a) => (((a - off) % B) + B) % B; // where a is across the period: under S is the street
+    const city = style === "city";
+    for (let y = -G; y < G; y++) for (let x = -G; x < G; x++) {
+      const a = md(x), b = md(y);
+      if (a < S || b < S) floors.push([x, y, "road"]);
+      else if (city && (a === S || a === B - 1 || b === S || b === B - 1)) floors.push([x, y, "deck"]); // the sidewalk
+    }
+    const inMap = (x, y) => x >= -G + 1 && y >= -G + 1 && x < G - 1 && y < G - 1;
+    const fits = (x0, y0, w, h) => inMap(x0, y0) && inMap(x0 + w - 1, y0 + h - 1);
+    const one = (k, x, y, g) => { if (inMap(x, y)) pieces.push({ k, g, cells: [[x, y]] }); };
+    const car = (x, y, ax, g, rng) => {
+      const truck = rng.chance(0.25), len = truck ? 4 : 3, cells = [];
+      for (let i = 0; i < len; i++) for (let j = 0; j < 2; j++) cells.push(ax ? [x + j, y + i] : [x + i, y + j]);
+      if (cells.every(([cx, cy]) => inMap(cx, cy))) pieces.push({ k: "wreck", g, cells, body: truck ? "truck" : "car", ax, len });
+    };
+    const i0 = Math.floor((-G - off) / B) - 1, i1 = Math.ceil((G - off) / B);
+    // The cars left in the streets: along each street, in a lane, now and then.
+    for (let i = i0; i <= i1; i++) {
+      const line = off + i * B;
+      for (let t = Math.floor(-G / 8) * 8 + 2; t < G - 5; t += 8) {
+        const rng = new Rng(chunkSeed(seed ^ 0x5e7c, i, t)); // the same car on the same stretch whatever the grid
+        if (rng.chance(T.STREET_CAR_P)) { const lane = line + rng.pick([0, S - 2]); if (md(t) >= S && md(t + 6) >= S) car(t + rng.int(0, 2), lane, 0, `tc${line}x${t}`, rng); }
+        if (rng.chance(T.STREET_CAR_P)) { const lane = line + rng.pick([0, S - 2]); if (md(t) >= S && md(t + 6) >= S) car(lane, t + rng.int(0, 2), 1, `tc${line}y${t}`, rng); }
+        if (rng.chance(0.15)) one(rng.pick(["crate", "barrel"]), t + rng.int(0, 7), line + rng.int(0, S - 1), `td${line}x${t}`);
+      }
+    }
+    for (let j = i0; j <= i1; j++) for (let i = i0; i <= i1; i++) {
+      const bx0 = off + i * B + S, by0 = off + j * B + S, L = B - S; // the block [bx0, bx0 + L) × [by0, by0 + L)
+      if (bx0 + L <= -G || by0 + L <= -G || bx0 >= G || by0 >= G) continue;
+      const rng = new Rng(chunkSeed(seed ^ 0x70f1, i, j)), gb = `b${i},${j}`;
+      if (!city) {
+        // Two rows of lots back to back, the north row facing the street to the north, the south row the south.
+        const half = Math.floor(L / 2);
+        for (const row of ["n", "s"]) {
+          const ry0 = row === "n" ? by0 : by0 + half, ry1 = row === "n" ? by0 + half - 1 : by0 + L - 1; // inclusive
+          let lx = bx0;
+          while (lx < bx0 + L) {
+            let lw = rng.int(T.LOT[0], T.LOT[1]);
+            if (bx0 + L - (lx + lw) < T.LOT[0]) lw = bx0 + L - lx;
+            const g = `${gb}${row}${lx}`, roll = rng.next();
+            // The back yard's fence (the lot's back line and its sides in the back half), gaps in it.
+            const backY = row === "n" ? ry1 : ry0;
+            for (let x = lx; x < lx + lw; x++) if (rng.chance(0.75)) one("fence", x, backY, `${g}f${x}`);
+            for (let y = Math.min(backY, row === "n" ? ry0 + 9 : ry1 - 9); y <= Math.max(backY, row === "n" ? ry0 + 9 : ry1 - 9); y++) if (y !== backY && rng.chance(0.7)) one("fence", lx, y, `${g}s${y}`);
+            if (roll < T.EMPTY_P) {
+              for (let n = rng.int(3, 6); n > 0; n--) one(rng.chance(0.7) ? "bush" : "tree", lx + rng.int(1, lw - 2), rng.int(ry0 + 1, ry1 - 1), `${g}e${n}`);
+            } else if (roll < T.EMPTY_P + T.STORE_P && lw >= 11) {
+              const w = lw - 2, h = Math.min(half - 5, rng.int(8, 10)), x0 = lx + 1, y0 = row === "n" ? ry0 + 4 : ry1 - 3 - h + 1;
+              if (fits(x0, y0, w, h)) {
+                pieces.push(building(rng, "store", x0, y0, w, h, row, `${g}st`));
+                // The gravel lot in front, a car left on it now and then.
+                for (let y = row === "n" ? ry0 : y0 + h; y < (row === "n" ? y0 : ry1 + 1); y++) for (let x = x0; x < x0 + w; x++) floors.push([x, y, "gravel"]);
+                if (rng.chance(0.5)) car(x0 + rng.int(1, Math.max(1, w - 4)), row === "n" ? ry0 + 1 : ry1 - 2, 0, `${g}pc`, rng);
+              }
+            } else {
+              const w = Math.min(lw - 3, rng.int(7, 9)), h = rng.int(6, 8), left = rng.chance(0.5);
+              const x0 = left ? lx + lw - 1 - w : lx + 1, y0 = row === "n" ? ry0 + rng.int(2, 3) : ry1 - rng.int(2, 3) - h + 1;
+              if (fits(x0, y0, w, h)) {
+                const hb = building(rng, "house", x0, y0, w, h, row, `${g}h`);
+                pieces.push(hb);
+                // The path from the front door to the street, and a driveway beside the house with a car on it now and then.
+                const fd = hb.parts.findIndex((p) => p.k === "doorway"), [dx] = hb.cells[fd];
+                for (let y = row === "n" ? ry0 : y0 + h; y < (row === "n" ? y0 : ry1 + 1); y++) floors.push([dx, y, "gravel"]);
+                const dx0 = left ? lx + 1 : x0 + w + 1;
+                if ((left ? x0 - lx - 1 : lx + lw - (x0 + w) - 1) >= 2) {
+                  const yA = row === "n" ? ry0 : y0, yB = row === "n" ? y0 + h - 1 : ry1;
+                  for (let y = yA; y <= yB; y++) for (let x = dx0; x < dx0 + 2; x++) floors.push([x, y, "gravel"]);
+                  if (rng.chance(T.DRIVE_CAR_P)) car(dx0, row === "n" ? ry0 + 1 : ry1 - 4, 1, `${g}dc`, rng);
+                }
+                // A tree or a bush in the front yard, something left in the back.
+                if (rng.chance(0.5)) one(rng.chance(0.5) ? "tree" : "bush", left ? x0 + w - 1 : x0, row === "n" ? ry0 + 1 : ry1 - 1, `${g}ft`);
+                if (rng.chance(0.5)) one(rng.pick(["crate", "barrel", "bush", "tree"]), lx + rng.int(1, lw - 2), row === "n" ? backY - 1 : backY + 1, `${g}by`);
+              }
+            }
+            lx += lw;
+          }
+        }
+      } else {
+        // The sidewalk round the block; inside it parcels of a quarter or a half of the block, each one a city block,
+        // a store, a parking lot or a park; an alley between the buildings.
+        const ix0 = bx0 + 1, iy0 = by0 + 1, IL = L - 2, hl = Math.floor(IL / 2);
+        const cut = rng.next(), parcels = cut < 0.5 ? [[0, 0, hl, hl], [hl, 0, IL - hl, hl], [0, hl, hl, IL - hl], [hl, hl, IL - hl, IL - hl]] : cut < 0.75 ? [[0, 0, IL, hl], [0, hl, IL, IL - hl]] : [[0, 0, hl, IL], [hl, 0, IL - hl, IL]];
+        parcels.forEach(([px, py, pw, ph], n) => {
+          const x0 = ix0 + px, y0 = iy0 + py, g = `${gb}p${n}`;
+          const onN = py === 0, onS = py + ph === IL, onW = px === 0, onE = px + pw === IL;
+          const faces = [onN && "n", onS && "s", onW && "w", onE && "e"].filter(Boolean);
+          const face = rng.pick(/** @type {string[]} */ (faces));
+          const roll = rng.next();
+          if (roll < T.PARK_P) {
+            for (let n2 = rng.int(4, 8); n2 > 0; n2--) one(rng.chance(0.6) ? "tree" : "bush", x0 + rng.int(1, pw - 2), y0 + rng.int(1, ph - 2), `${g}k${n2}`);
+          } else if (roll < T.PARK_P + T.LOT_P) {
+            for (let y = y0; y < y0 + ph; y++) for (let x = x0; x < x0 + pw; x++) floors.push([x, y, "gravel"]);
+            for (let n2 = rng.int(1, 3); n2 > 0; n2--) car(x0 + rng.int(1, Math.max(1, pw - 5)), y0 + rng.int(1, Math.max(1, ph - 3)), 0, `${g}c${n2}`, rng);
+          } else {
+            // The building fills the parcel but for an alley a cell wide on its inner sides.
+            const bx = x0, by = y0, bw = pw - (onE ? 0 : 1), bh = ph - (onS ? 0 : 1);
+            if (bw >= 6 && bh >= 6 && fits(bx, by, bw, bh)) pieces.push(building(rng, roll < T.PARK_P + T.LOT_P + T.STORE_P ? "store" : "block", bx, by, bw, bh, face, `${g}b`));
+          }
+          if (rng.chance(0.4)) { if (!onE) one(rng.pick(["crate", "barrel"]), x0 + pw - 1, y0 + rng.int(0, ph - 2), `${g}a`); else if (!onS) one(rng.pick(["crate", "barrel"]), x0 + rng.int(0, pw - 2), y0 + ph - 1, `${g}a`); } // in the alley
+        });
+      }
+    }
+    return { floors, pieces };
+  });
+}
+
 // ---------- the land of one base ----------
 // What the land is made from: the tile's dice, terrain (a farm's fields as "farm"), the grid, the yard, the clearing,
 // the road's axes and the river's (spec.road: "x" | "y" | "xy" | ""; spec.river: "x" | "y" | "").
@@ -216,7 +512,10 @@ export function landSpec(state, base, dims) {
     if (n) { const p1 = state.grid.toPixel(n.id, 1), dx = p1[0] - p0[0], dy = p1[1] - p0[1]; if (Math.abs(dx) >= Math.abs(dy)) { river = "y"; riverSide = dx > 0 ? 1 : -1; } else { river = "x"; riverSide = dy > 0 ? 1 : -1; } }
   }
   const [ox, oy] = dims.origin || [0, 0];
-  return { seed, terrain: dims.terrain, G: dims.G, C: dims.fresh ? 0 : dims.C, clear: dims.fresh ? 0 : CLEARING[dims.tier] ?? CLEARING.camp, road, river, riverSide, town: !!(t && (t.terrain === "suburb" || t.terrain === "city")), ox, oy };
+  // A town's streets and houses (the suburbs and a town's own tile: basemap.js terrainOf), a city's blocks; the high
+  // ground of hills and mountains.
+  const style = dims.terrain === "city" ? "city" : dims.terrain === "suburb" ? "town" : "";
+  return { seed, terrain: dims.terrain, G: dims.G, C: dims.fresh ? 0 : dims.C, clear: dims.fresh ? 0 : CLEARING[dims.tier] ?? CLEARING.camp, road, river, riverSide, style, ox, oy };
 }
 const inSq = (x, y, h) => x >= -h && x < h && y >= -h && y < h;
 // The road's cells (a band SCATTER.ROAD_W wide through the middle along each axis) and the river's (a band RIVER_W
@@ -272,6 +571,22 @@ export function landOf(spec, land) {
       if (debris) { const dx = ax === "x" ? t + off + len + 1 : dl, dy = ax === "x" ? dl : t + off + len + 1; if (free(dx, dy)) put({ k: dk, g: `rd${ax}${t}`, cells: [[dx, dy]] }); }
     }
   }
+  // A town's or a city's streets and buildings, the high ground of the hills: each piece whole or not at all (off the
+  // river, the road, the yard and the clearing), the buildings first.
+  const street = (x, y) => floors.get(`${x},${y}`) === "road";
+  if (spec.style) {
+    const T = townLayer(spec.seed, spec.style, spec.G), rank = (p) => (p.parts ? 0 : p.k === "wreck" ? 1 : 2);
+    for (const [x, y, f] of T.floors) if (!nearBase(x, y, spec.clear) && !(f !== "road" && street(x, y)) && !(spec.river && onRiver(spec, x, y))) floors.set(`${x},${y}`, f);
+    for (const p of [...T.pieces].sort((a, b) => rank(a) - rank(b))) {
+      if (!p.cells.every(([x, y]) => free(x, y) && !nearBase(x, y, spec.C) && !(spec.road && onRoad(spec, x, y)) && !(spec.river && onRiver(spec, x, y)))) continue;
+      if (p.k !== "wreck" && !p.parts && street(p.cells[0][0], p.cells[0][1])) continue;
+      put({ ...p, cells: p.cells.map((c) => c.slice()), ...(p.k === "wreck" ? { looted: !!looted[p.g] } : {}) });
+    }
+  }
+  for (const p of highLayer(spec.seed, spec.terrain, spec.G).pieces) {
+    const [x, y] = p.cells[0];
+    if (free(x, y) && !nearBase(x, y, spec.C) && !street(x, y) && !(spec.river && onRiver(spec, x, y))) put({ ...p, cells: [[x, y]] });
+  }
   for (const p of scatterLayer(spec.seed, spec.terrain, spec.G)) {
     if (p.floor) { if (!nearBase(p.x, p.y, spec.clear) && !floors.has(`${p.x},${p.y}`)) floors.set(`${p.x},${p.y}`, p.floor); continue; }
     const yard = nearBase(p.x, p.y, spec.C);
@@ -279,12 +594,12 @@ export function landOf(spec, land) {
       if (yard) continue;
       const cells = [];
       for (let i = 0; i < p.len; i++) for (let j = 0; j < 2; j++) cells.push(p.ax ? [p.x + j, p.y + i] : [p.x + i, p.y + j]);
-      if (cells.every(([cx, cy]) => free(cx, cy) && !onRoad(spec, cx, cy))) put({ k: "wreck", g: p.g, cells, body: p.body, ax: p.ax, len: p.len, looted: !!looted[p.g] });
+      if (cells.every(([cx, cy]) => free(cx, cy) && !onRoad(spec, cx, cy) && !street(cx, cy))) put({ k: "wreck", g: p.g, cells, body: p.body, ax: p.ax, len: p.len, looted: !!looted[p.g] });
       continue;
     }
     let k = p.k;
     if (yard !== !!p.yard) { if (yard && k === "tree" && p.stump) k = "stump"; else continue; } // the yard: cleared ground (a tree's stump); outside: no yard leavings
-    if (!free(p.x, p.y) || (spec.road && onRoad(spec, p.x, p.y))) continue;
+    if (!free(p.x, p.y) || (spec.road && onRoad(spec, p.x, p.y)) || street(p.x, p.y)) continue;
     put({ k, g: p.g, cells: [[p.x, p.y]] });
   }
   // Bushes along the river's banks.
@@ -336,12 +651,13 @@ export function layLand(m) {
   const kinds = {};
   for (const p of land.list) {
     const at = p.cells.map(([gx, gy]) => [gx + ox, gy + oy]);
-    if (!at.every(([x, y]) => inner(x, y) && m.ok(x, y))) { if (p.k !== "wreck") continue; else continue; }
+    if (!at.every(([x, y]) => inner(x, y) && m.ok(x, y))) continue;
     if (p.k === "wreck") {
       const kind = p.body === "truck" ? "truck" : "car", x0 = Math.min(...at.map((c) => c[0])), y0 = Math.min(...at.map((c) => c[1]));
       const id = y0 * W + x0 + 1;
       for (const [x, y] of at) { const c = cells[y * W + x]; c.k = kind; c.car = { id, i: p.ax ? y - y0 : x - x0, j: p.ax ? x - x0 : y - y0, L: p.len, ax: p.ax ? "y" : "x", kind, v: (id * 7) % 1000, body: kind }; c.wreck = 1; }
-    } else for (const [x, y] of at) cells[y * W + x].k = p.k;
+    } else if (p.parts) at.forEach(([x, y], i) => { const c = cells[y * W + x], q = p.parts[i]; c.k = q.k; c.f = q.f; if (q.fl) c.fl = q.fl; if (q.t) c.t = q.t; }); // a building: each cell its own
+    else for (const [x, y] of at) cells[y * W + x].k = p.k;
     kinds[p.k] = (kinds[p.k] || 0) + 1;
   }
   return { kinds };
