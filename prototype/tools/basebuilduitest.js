@@ -152,7 +152,7 @@ section("The no-build margin on a camp's map (a camp set up near the west edge o
   check(layoutHover(st, st.combat, { x: mx, y: my }, g).includes(BM.NO_BUILD_WHY), "and in the hover line under the ghost");
   check(!act(st, { type: "pickType", bt: null }), "Esc puts the type down");
   const hov = layoutHover(st, st.combat, { x: mx, y: my }, null);
-  check(hov.includes("The no-build margin: nothing is built within 5 cells of the map's edge"), `with nothing picked the hover line says: "${hov.replace(/<[^>]*>/g, "")}"`);
+  check(hov.includes(`The no-build margin: nothing is built within ${BM.VIEW_EDGE} cells of the map's edge (${BM.NO_BUILD} of the tile's own edge)`), `with nothing picked the hover line says: "${hov.replace(/<[^>]*>/g, "")}"`);
   act(st, { type: "endLayout" });
 }
 

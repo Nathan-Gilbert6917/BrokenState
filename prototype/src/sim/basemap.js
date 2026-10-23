@@ -149,6 +149,14 @@ export const BASE_GRID = 250; // every base's map: 250 × 250 cells
 export const GRID_MAX = BASE_GRID / 2; // the grid's half-size
 export const MARGIN = 8;     // open ground round what stands on the battle map (fort.js FORT.MARGIN)
 export const VIEW_PAD = 8;   // the Base map view shows this much more than the battle map
+// The build map's size (the user's request 2026-10-23: "Increase the base map size double the size after selecting your
+// base location"; "Increase the base building area even when it's a campsite to be a margin of 3 tiles away from the
+// map border"): the view (openBaseMap) is at least VIEW_SCALE times what it was round the base (a camp's 56 × 56 is
+// 112 × 112), every tier alike; the yard and its wall ring keep their size, and the battle maps theirs. Anything goes
+// anywhere on it but the VIEW_EDGE cells nearest its edge (tinted, c.nb: viewEdgeWhy); it still grows past that as
+// things are placed further out. The camp's spot (the site view, the tile's whole map) is not scaled.
+export const VIEW_SCALE = 2, VIEW_EDGE = 3;
+export const VIEW_EDGE_WHY = `Within ${VIEW_EDGE} cells of the map's edge (nothing is built there)`;
 // The no-build margin (the user's request 2026-10-19, "a 5 tile margin around the edge of the map as a no build
 // section"): the cells within this many of the grid's edge take nothing, by hand or by the game (placeProblemAt).
 export const NO_BUILD = 5;
@@ -1605,7 +1613,9 @@ export function buildBaseMap(state, base, rng, opts = {}) {
     for (const [x, y] of dug) { x0 = Math.min(x0, x - 1); y0 = Math.min(y0, y - 1); x1 = Math.max(x1, x + 2); y1 = Math.max(y1, y + 2); }
   }
   const pad = MARGIN + (view ? VIEW_PAD : 0);
-  x0 = Math.max(GB.x0, x0 - pad); y0 = Math.max(GB.y0, y0 - pad); x1 = Math.min(GB.x1, x1 + pad); y1 = Math.min(GB.y1, y1 + pad);
+  x0 -= pad; y0 -= pad; x1 += pad; y1 += pad;
+  if (view && !site) { const m = VIEW_SCALE * (Bh + 2 + pad); x0 = Math.min(x0, -m); y0 = Math.min(y0, -m); x1 = Math.max(x1, m); y1 = Math.max(y1, m); } // VIEW_SCALE: the build map doubled round the base
+  x0 = Math.max(GB.x0, x0); y0 = Math.max(GB.y0, y0); x1 = Math.min(GB.x1, x1); y1 = Math.min(GB.y1, y1);
   if (site) ({ x0, y0, x1, y1 } = GB);
   const W = x1 - x0, H = y1 - y0, ox = -x0, oy = -y0; // grid (gx, gy) → map (gx + ox, gy + oy)
   const cells = Array.from({ length: W * H }, () => ({ k: "open", f: "grass" }));
@@ -1624,9 +1634,10 @@ export function buildBaseMap(state, base, rng, opts = {}) {
   // A hill raised there (terraform.js): grassed over as the land's own hills are (the user's word 2026-10-23: "like they
   // were created by the seed"); a hollow dug keeps its dirt.
   for (const [k, hv] of Object.entries((base.land && base.land.heightEdits) || {})) { if (!(hv > 0)) continue; const [x, y] = k.split(",").map(Number), c = at(x + ox, y + oy); if (c && c.f === "dirt") c.f = "grass"; }
-  // The tint: the no-build margin; on the camp's spot (site) the ground too near the edge for the camp (SITE_RANGE).
-  const reach = SITE_RANGE - SITE.LO;
-  if (view) for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const gx = x - ox, gy = y - oy; if (site ? Math.abs(gx) > reach || Math.abs(gy) > reach : gx < GB.x0 + NO_BUILD || gy < GB.y0 + NO_BUILD || gx >= GB.x1 - NO_BUILD || gy >= GB.y1 - NO_BUILD) cells[y * W + x].nb = 1; }
+  // The tint: the no-build margins (the tile map's NO_BUILD, the build map's own VIEW_EDGE); on the camp's spot (site)
+  // the ground too near the edge for the camp (SITE_RANGE).
+  const reach = SITE_RANGE - SITE.LO, E = site ? 0 : VIEW_EDGE;
+  if (view) for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const gx = x - ox, gy = y - oy; if (site ? Math.abs(gx) > reach || Math.abs(gy) > reach : gx < GB.x0 + NO_BUILD || gy < GB.y0 + NO_BUILD || gx >= GB.x1 - NO_BUILD || gy >= GB.y1 - NO_BUILD || x < E || y < E || x >= W - E || y >= H - E) cells[y * W + x].nb = 1; }
   // A container of the stores (makeStores), with its container's key (containers.js: "core", b:<id>, v:<id>). The
   // armory (ARMORY_LOCK): two locked containers inside it in place of one, the gun cage (holds "gear") and the ammo
   // lockers (holds "ammo"), each over its own cells (boxes: the map cells armoryCells tagged, turned with the
@@ -2508,6 +2519,13 @@ export const gridOfCell = (b, x, y) => { const F = b.deployPlan && b.deployPlan.
 // The picked item's footprint (L.pick), or the footprint of the type to build (L.pickType: FOOT[bt]), over the hovered
 // cell (centered on it): its map cells and whether it fits there (a fitting fits only on a general building's floor;
 // a general building being moved is checked without what stands inside it, which moves along).
+// A footprint (grid x0, y0, w × h) within VIEW_EDGE cells of the build map's edge: its reason, else "".
+function viewEdgeWhy(b, x0, y0, w, h) {
+  const F = b.deployPlan && b.deployPlan.fort;
+  if (!F || !F.view) return "";
+  const mx = x0 + F.ox, my = y0 + F.oy;
+  return mx < VIEW_EDGE || my < VIEW_EDGE || mx + w > b.w - VIEW_EDGE || my + h > b.h - VIEW_EDGE ? VIEW_EDGE_WHY : "";
+}
 export function ghostAt(state, b, x, y) {
   const L = b.layout, F = b.deployPlan && b.deployPlan.fort;
   if (!L || !F || (!L.pick && !L.pickType)) return null;
@@ -2522,7 +2540,8 @@ export function ghostAt(state, b, x, y) {
   const x0 = gx - Math.floor(w / 2), y0 = gy - Math.floor(h / 2);
   const skip = L.pick ? new Set([L.pick, ...hostedItems(state, base, it).map((o) => o.key)]) : null;
   const occ = occupancy(state, base, skip, null);
-  const why = placeProblemAt(base, it, x0, y0, L.rot, occ) || reachProblem(state, base, it, [x0, y0, L.rot], occ, { skip }); // the hover's reason: layoutAct put / build refuse what is red here
+  const pw = placeProblemAt(base, it, x0, y0, L.rot, occ);
+  const why = (pw === NO_BUILD_WHY || pw === "Off the map" ? pw : viewEdgeWhy(b, x0, y0, w, h) || pw) || reachProblem(state, base, it, [x0, y0, L.rot], occ, { skip }); // the hover's reason (the tile's own edge first: where the view meets it): layoutAct put / build refuse what is red here
   // Only the land in the way (basescatter.js): a click queues its clearing (layoutAct put / build).
   let land = null;
   if (why && why.startsWith(LAND_WHY) && occ.land) {

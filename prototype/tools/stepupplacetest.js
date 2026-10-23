@@ -5,12 +5,14 @@
 //     to place its step up from the Build list;
 //   - the build map opened with the step up picked queues nothing; a click where it fits queues it there, placed;
 //   - the camp meant to grow is on the supply network before its house is placed;
-//   - the governor's camp still has its step up queued at once.
+//   - the governor's camp still has its step up queued at once;
+//   - the build map is twice the size round the base (VIEW_SCALE), nothing placed within VIEW_EDGE cells of its edge
+//     (the user's requests 2026-10-23), tinted; the yard keeps its size.
 // Usage: node tools/stepupplacetest.js [seed]
 import { createWorld, tickHour, hub, atBase, day } from "../src/sim/world.js";
 import { tierUpJob, tierUpType } from "../src/sim/buildings.js";
 import { launchExpedition, giveOrder, planPath } from "../src/sim/parties.js";
-import { openBaseMap, layoutAct, ghostAt } from "../src/sim/basemap.js";
+import { openBaseMap, layoutAct, ghostAt, yardHalf, GRID, VIEW_EDGE, VIEW_EDGE_WHY } from "../src/sim/basemap.js";
 import { openToPlace } from "../src/ui/basemap.js";
 import { isSettlementTile } from "../src/sim/startpick.js";
 import { poiKnowledge } from "../src/sim/pois.js";
@@ -82,6 +84,31 @@ section("The governor's camp has its step up queued at once");
   st.autopilot = true;
   const b = outpostCamp(st);
   if (check(!!b, "the camp stands")) check(!!tierUpJob(b) && tierUpJob(b).type === "outpost_up", "its outpost house is queued (placed by the game)");
+}
+
+section("The build map: twice the size round the base, nothing within 3 cells of its edge");
+{
+  const st = world();
+  const b = outpostCamp(st);
+  if (check(!!b, "the camp stands")) {
+    check(yardHalf(b) === GRID.camp.yard, `the yard keeps its size (${yardHalf(b)} half)`);
+    openBaseMap(st, b.id);
+    const B = st.combat;
+    check(B.w === 112 && B.h === 112, `a camp's build map is 112 × 112, twice the 56 × 56 (${B.w} × ${B.h})`);
+    layoutAct(st, B, { type: "pickType", bt: "crates" });
+    let near = Infinity, edgeWhy = 0;
+    for (let y = 0; y < B.h; y++) for (let x = 0; x < B.w; x++) {
+      const g = ghostAt(st, B, x, y);
+      if (!g) continue;
+      if (g.ok) near = Math.min(near, x, y, B.w - 1 - x, B.h - 1 - y);
+      else if (g.why === VIEW_EDGE_WHY) edgeWhy++;
+    }
+    check(near === VIEW_EDGE, `things go up to ${VIEW_EDGE} cells from the edge, no nearer (${near})`);
+    check(edgeWhy > 0 && !!ghostAt(st, B, 1, B.h >> 1) && ghostAt(st, B, 1, B.h >> 1).why === VIEW_EDGE_WHY, "nearer the edge it is refused, and says why");
+    check(B.cells[(VIEW_EDGE - 1) * B.w + (B.w >> 1)].nb && !B.cells[VIEW_EDGE * B.w + (B.w >> 1)].nb, "the edge's cells are tinted, the next row in is not");
+    check(layoutAct(st, B, { type: "build", x: 1, y: B.h >> 1 }) === VIEW_EDGE_WHY, "a click there builds nothing");
+    delete st.combat;
+  }
 }
 
 console.log(`\n${passes} passed, ${fails} failed`);
