@@ -103,6 +103,7 @@ export function dirtProblem(base, land, occ, x, y) {
   const why = placeProblemAt(base, PROBE, x, y, 0, occ);
   if (why) return why.replace(/^On top of (.*)$/, (m, w) => `${w.charAt(0).toUpperCase()}${w.slice(1)} stands there`).replace(/^In the doorway of (.*)$/, "The doorway of $1: kept clear");
   const p = land.pieces.get(ck(x, y));
+  if (p && p.spring) return "The pond: spring-fed, never filled in"; // basescatter.js SPRING
   if (p && p.k !== "rise" && p.k !== "dip") {
     if (p.k === "water") return "The river: not dirt";
     if (p.k === "crag" || p.k === "rock" || p.k === "boulder") return `${p.k === "crag" ? "The mountainside" : "Rock"}: not dirt`;

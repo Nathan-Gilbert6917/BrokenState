@@ -45,6 +45,7 @@ import { migrateCanners, migrateWalls, legacyCampTents, migrateCropPlots, BUILDI
 import { migrateTentList } from "./tents.js"; // the tentkit branch's base.tents list: map pieces now
 import { migrateTools } from "./toolreqs.js"; // the tools: an older save's hub gets the tool shelf
 import { migrateCots } from "./beds.js"; // beds as furniture: the retired makeshift cots become Cots set at the base
+import { pondsOnMap } from "./mapgen.js"; // ponds on the land: a save from before them gets them from its seed
 import { ensurePois, packPois } from "./pois.js"; // points of interest: saved as the changes from the seed's lists; a save from before gets its lists on load
 import { RAID_MAPS } from "./worldcfg.js"; // raid maps by the World… dials: an older save keeps the sizes it was made with
 import { tidyCarts } from "./carts.js"; // carts: grids sized, lots only real supplies (every load; nothing older needs changing)
@@ -297,6 +298,10 @@ export function deserializeState(save) {
   // dice, the same lists a new world on that seed makes), its tile.loot standing as the site POI's pool; a tile that
   // has its list keeps it.
   ensurePois(state);
+  // Ponds on the land (mapgen.js tile.pond, the user's words 2026-10-23): a save from before them gets them from its seed
+  // (hash dice: the ponds a new world on that seed has), except on a tile one of your bases stands on, so the spring's
+  // hollow (basescatter.js SPRING) never opens under what was built there. Once: state.worldPonds.
+  if (!(state.worldPonds >= 1)) { pondsOnMap(state.tiles, state.seed, (t) => state.bases.some((b) => b && b.tile === t.id)); state.worldPonds = 1; }
   if (state.governor) state.governor.busy = false; // never saved mid-call, but a damaged flag would stop the autopilot for good
   // A raid in a building with storeys (combat.js setFloor): b.cells / b.reach / b.losCache alias the active floor's
   // arrays. The graph writes a shared object once, so the aliases come back pointing at the same arrays; this re-points

@@ -12,6 +12,13 @@
 // spot, an AI group's margin), its ground eased a level a step.
 //   applyRelief(cells, W, H, tile, opts) → the cells raised or lowered. opts.crags: the ridges too (an open fight);
 //   opts.keep(x, y): cells to keep level (a raid's zones).
+// A pond tile (the user's words 2026-10-23: "add pond decor to the world map when a tile has a pond in the world map
+// generate a pond in the battle map"; mapgen.js tile.pond), whatever its terrain: a hollow fed by a spring on the map
+// (c.spring: ponds.js keeps it water whatever the rain), SPRING_FIGHT.R half-sizes across (at least HIGH.DIP_MIN once
+// smoothed), its ground RIM cells round it level, in the middle MID share of the map's width (clear of where each side
+// comes in), at the first of TRIES spots by the tile's dice where all of it is natural ground the relief may change
+// (springFight: then smaller, then anywhere, then partly cut by what stays level).
+// The rest of a plains, forest or farm tile's land stays level as before.
 import { reliefLayer, scatterSeed, HIGH, cragPasses } from "./basescatter.js";
 import { CELL, groundH } from "./combat.js"; // call-time only
 
@@ -23,12 +30,14 @@ export const RELIEF = {
   TRIES: 10,      // windows of the tile's land tried; the one with the most relief taken
   G: 125,         // the land's half-size (basemap.js GRID_MAX)
 };
+export const SPRING_FIGHT = { R: [5, 7], MIN: 5, RIM: 2, MID: 0.4, TRIES: 64, CUT: 0.3 };
 const hashN = (a, b, c) => { let h = Math.imul(a ^ 0x9e3779b1, 0x85ebca6b) ^ Math.imul(b + 0x632b, 0xc2b2ae35) ^ Math.imul(c + 0x27d4, 0x165667b1); h ^= h >>> 15; return (h >>> 0) / 4294967296; };
 
 /** @param {any[]} cells @param {number} W @param {number} H @param {any} tile @param {{ crags?: boolean, keep?: (x: number, y: number) => boolean }} [opts] */
 export function applyRelief(cells, W, H, tile, opts = {}) {
-  if (!tile || !RELIEF.TERRAIN.has(tile.terrain) || !HIGH) return 0;
-  const R = reliefLayer(scatterSeed(tile.id), tile.terrain, RELIEF.G);
+  const pond = !!(tile && tile.pond), land = !!tile && RELIEF.TERRAIN.has(tile.terrain);
+  if (!tile || (!land && !pond) || !HIGH) return 0;
+  const R = land ? reliefLayer(scatterSeed(tile.id), tile.terrain, RELIEF.G) : { heights: [], crags: [] };
   const hm = new Map(R.heights.map(([x, y, h]) => [`${x},${y}`, h])), crag = new Map(opts.crags ? R.crags.map(([x, y, lv]) => [`${x},${y}`, lv]) : []); // the rock's height by cell
   // The window of the tile's land the map shows: the one with the most relief of a few.
   const span = RELIEF.G * 2 - Math.max(W, H) - 4;
@@ -39,7 +48,8 @@ export function applyRelief(cells, W, H, tile, opts = {}) {
     for (let y = 0; y < H; y += 2) for (let x = 0; x < W; x += 2) if (hm.has(`${x + ox},${y + oy}`) || crag.has(`${x + ox},${y + oy}`)) n++;
     if (!best || n > best.n) best = { ox, oy, n };
   }
-  if (!best || !best.n) return 0;
+  if ((!best || !best.n) && !pond) return 0;
+  if (!best) best = { ox: 0, oy: 0, n: 0 };
   // What stays level: the edges, what is not natural ground, round a building's floor, what the caller keeps.
   const N = W * H, fixed = new Uint8Array(N);
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
@@ -62,6 +72,8 @@ export function applyRelief(cells, W, H, tile, opts = {}) {
     for (let i = 0; i < N; i++) if (!isCrag[i] && !(CELL[cells[i].k] && CELL[cells[i].k].walk)) block[i] = 1;
     cragPasses(isCrag, block, W, H);
   }
+  // A pond tile's spring: its hollow stamped on natural ground, the ground round it level.
+  const spring = pond ? springFight(h, isCrag, fixed, W, H, tile.id) : null;
   // Smoothed as the base map's land is (basescatter.js relaxHeights): a raised cell in a 2 × 2 as high or higher (a sunk
   // one as deep), else a level less; then a level at most between neighbours (eight ways); the fixed cells level, the
   // crag as high as any hill beside it.
@@ -116,9 +128,46 @@ export function applyRelief(cells, W, H, tile, opts = {}) {
   for (let i = 0; i < N; i++) {
     const c = cells[i];
     if (isCrag[i]) { c.k = "crag"; c.ch = cragH[i]; n++; continue; }
-    if (h[i]) { c.h = h[i]; c.ter = 1; n++; }
+    if (h[i]) { c.h = h[i]; c.ter = 1; n++; if (spring && spring[i] && h[i] < 0) { c.spring = 1; if (c.k !== "open") c.k = "open"; } } // nothing natural stands in the spring's pond (a tree, a rock: as on the base map)
   }
   return n;
+}
+// The spring's hollow on a fight's map (SPRING_FIGHT): stamped into h (−1 inside, 0 on its rim, the cells that must stay
+// level left as they are) at the first spot where all of it is free, the largest size first, then anywhere across the
+// map; else at the spot with the least of it blocked (a road's wrecks across a small map), at most CUT of it. Returns
+// the cells (1), or null when nothing fits (a map packed with buildings).
+function springFight(h, isCrag, fixed, W, H, id) {
+  const S = SPRING_FIGHT, roll = (k, j) => hashN(id ^ 0x5b1e, k, j);
+  const ax0 = S.R[0] + Math.floor(roll(0, 1) * (S.R[1] - S.R[0] + 1)), ay0 = S.R[0] + Math.floor(roll(0, 2) * (S.R[1] - S.R[0] + 1));
+  const inE = (x, y, cx, cy, a, b) => ((x - cx) / a) ** 2 + ((y - cy) / b) ** 2 <= 1;
+  /** @type {{ cx: number, cy: number, ax: number, ay: number, share?: number } | null} */
+  let best = null;
+  const stamp = ({ cx, cy, ax, ay }) => {
+    const rx = ax + S.RIM, ry = ay + S.RIM, out = new Uint8Array(W * H);
+    for (let y = cy - ry; y <= cy + ry; y++) for (let x = cx - rx; x <= cx + rx; x++) {
+      const i = y * W + x;
+      if (fixed[i] || isCrag[i]) continue;
+      if (inE(x, y, cx, cy, ax, ay)) { h[i] = -1; out[i] = 1; } else if (inE(x, y, cx, cy, rx, ry)) h[i] = 0;
+    }
+    return out;
+  };
+  for (const [ax, ay, mid] of [[ax0, ay0, S.MID], [S.MIN, S.MIN, S.MID], [S.MIN, S.MIN, 1]]) {
+    const rx = ax + S.RIM, ry = ay + S.RIM, xlo = Math.max(rx + RELIEF.EDGE, Math.floor((W * (1 - mid)) / 2)), xhi = Math.min(W - rx - RELIEF.EDGE - 1, Math.ceil((W * (1 + mid)) / 2)), ylo = ry + 1, yhi = H - ry - 2;
+    if (xhi < xlo || yhi < ylo) continue;
+    for (let k = 0; k < S.TRIES; k++) {
+      const cx = xlo + Math.floor(roll(k + 1, 3) * (xhi - xlo + 1)), cy = ylo + Math.floor(roll(k + 1, 4) * (yhi - ylo + 1));
+      let blocked = 0, inner = 0, n = 0;
+      for (let y = cy - ry; y <= cy + ry; y++) for (let x = cx - rx; x <= cx + rx; x++) {
+        if (!inE(x, y, cx, cy, rx, ry)) continue;
+        const i = y * W + x, inside = inE(x, y, cx, cy, ax, ay);
+        if (inside) n++;
+        if (fixed[i] || isCrag[i]) { blocked++; if (inside) inner++; }
+      }
+      if (!blocked) return stamp({ cx, cy, ax, ay });
+      if (inner / n <= S.CUT && (!best || inner / n < best.share)) best = { cx, cy, ax, ay, share: inner / n };
+    }
+  }
+  return best ? stamp(best) : null;
 }
 
 /**

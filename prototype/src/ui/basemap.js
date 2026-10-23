@@ -263,7 +263,7 @@ export function layoutHover(state, b, h, ghost) {
   if (o) return `<b>${esc(o.name)}</b> <span class="muted">(going up: its outline, open ground in a raid). ${how}</span>`;
   if (e) return `<b>${esc(e.it.label)}</b> <span class="muted">${whereText(e)}. ${how}</span>`;
   const lp = landPieceAt(state, base, gx, gy)[0];
-  if (lp) { const q = base.construction.find((c) => c.type === "clear" && c.pieces && c.pieces.some((p) => p.g === lp.g)); return `<b>${esc(pieceWord(lp).replace(/^an? /, "").replace(/^\w/, (m) => m.toUpperCase()))}</b> <span class="muted">${lp.k === "water" ? "the river: never built on" : q ? `being cleared (${Math.round((100 * (q.progress || 0)) / Math.max(1e-9, q.hours))}%)` : "the land: click it to clear it (nothing is built on it until then)"}.</span>`; }
+  if (lp) { const q = base.construction.find((c) => c.type === "clear" && c.pieces && c.pieces.some((p) => p.g === lp.g)); return `<b>${esc(pieceWord(lp).replace(/^an? /, "").replace(/^\w/, (m) => m.toUpperCase()))}</b> <span class="muted">${lp.k === "water" ? "the river: never built on" : lp.spring ? "spring-fed, never dries: never built on nor filled in" : q ? `being cleared (${Math.round((100 * (q.progress || 0)) / Math.max(1e-9, q.hours))}%)` : "the land: click it to clear it (nothing is built on it until then)"}.</span>`; }
   return `Cell ${gx}, ${gy}.`;
 }
 // A store container under the mouse in any base battle.
@@ -284,6 +284,7 @@ function landCard(state, base, L) {
   const p = one[0];
   const close = `<button data-action="cb-deploy" data-v="landClose" data-tip="Close">✕</button>`;
   if (p.k === "water") return `<div class="card small bmsel" style="margin-top:0.4rem"><div class="spread"><b>The river</b>${close}</div><div class="muted">Nothing is built on the water, and it is never cleared: walk across at the fords.</div></div>`;
+  if (p.spring) return `<div class="card small bmsel" style="margin-top:0.4rem"><div class="spread"><b>The pond</b>${close}</div><div class="muted">A spring-fed pond in a hollow (this tile has one on the State Map): water whatever the rain, ice when it freezes. Nothing is built on it and it is never filled in; wade its shallows, round its deep middle.</div></div>`; // sim/ponds.js
   const tool = chopToolAt(state, base);
   const all = landPieceAt(state, base, L.land[0], L.land[1], true);
   const c1 = clearOf(p, tool), cs = p.k === "wreck" ? clearOf(p, tool, "strip") : null;
