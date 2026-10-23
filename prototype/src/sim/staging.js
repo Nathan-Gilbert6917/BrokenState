@@ -14,7 +14,9 @@
 //   camp fire (CAMP.fireHours) and clearing the 5 × 5 round it (basescatter.js SITE, CLEAR), shared by the team
 //   (siteSetup: "the time to set up camp is based on build time for campfire and clearing all in the 5x5 zone"); what
 //   the land there gives (wood from the trees, scrap from the crates and wrecks) comes into the camp's stores when it
-//   stands (basemap.js clearCampSite). The camp is a base on
+//   stands (basemap.js clearCampSite). All of that on a scouted tile (a Survey's stamp); on one never scouted the
+//   order says so and the camp goes up blind, or the team scouts first (the user's request 2026-10-23: campscout.js).
+//   The camp is a base on
 //   that tile: the team's people live there (base healing and needs, beds round the fire), its vehicles are parked there, everything it carries (supplies and cargo) goes into the camp's stores and armory (the
 //   people keep what they wear). The base window opens (state.campOpen, main.js). Teams come and go as at any base:
 //   Enter base, Form a team, the team inventory at the base (drop off, load), Return home.
@@ -61,6 +63,7 @@ import { itemLoad } from "./inventory.js";
 import { defaultSite, siteProblem, siteYield, clearCampSite, BASE_GRID } from "./basemap.js"; // the camp's own spot on its 250 × 250 map, its 5 × 5 cleared (call-time only)
 import { SITE } from "./basescatter.js";
 import { clearSiteFirst, threatWords } from "./siteclear.js"; // the dead at a town's, a city's or an infected tile's camp spot cleared first
+import { tileScouted, scoutOrBlind, blindCamp, groundsHour, blindSite } from "./campscout.js"; // scouted first, or set up blind: the dead on the grounds (2026-10-23)
 import { isChopTool, bestChop } from "./woodcutting.js"; // a cutting tool on the team fells the spot's trees quicker (call-time only)
 import { pitchArmoryBags, strikeTents, campTentsDaily, isTentBag, tentsText, tentBeds } from "./tents.js"; // tent bags: a quicker camp, beds under cover, struck back into bags
 
@@ -147,7 +150,7 @@ export function campOption(state, p, tile = partyTile(p)) {
   const w = waterSource(state, tile);
   return {
     mission: "camp", label: SETUP_LABEL, disabled: campProblem(state, tile),
-    desc: `Stop and make camp here (no materials: on getting there you pick its spot on the tile's ${BASE_GRID} × ${BASE_GRID} map; the team builds its camp fire and clears the ${SITE.SIZE} × ${SITE.SIZE} round it, about ${durText(campPitchHours(state, p, tile))} on the middle of this tile, and what the land there gives goes into its stores): a camp is the barest base, tarps, bedrolls and a fire, and the tents the team carries (beds under cover, storage out of the weather).${threatWords(state, tile) ? ` The dead: ${threatWords(state, tile)}.` : ""} The team's people live there while it stands (the hurt heal twice as fast as at a base without a hospital, they eat and drink from the camp's stores), what the team carries goes into the stores and its vehicles park there. Manage it in its base window; ${STRIKE_LABEL} there packs everyone up again as a team. It can be built up with time and materials (Construction: into ${hub(state) ? "an outpost" : "a shelter, then a base"}). Water: ${w ? waterText(state, tile) : "no river or lake nearby, only what is carried in"}. Its fire, its people and vehicles parked there draw the dead and raiders.`,
+    desc: `Stop and make camp here (no materials: on getting there you pick its spot on the tile's ${BASE_GRID} × ${BASE_GRID} map; the team builds its camp fire and clears the ${SITE.SIZE} × ${SITE.SIZE} round it, about ${durText(campPitchHours(state, p, tile))} on the middle of this tile, and what the land there gives goes into its stores): a camp is the barest base, tarps, bedrolls and a fire, and the tents the team carries (beds under cover, storage out of the weather).${threatWords(state, tile) && tileScouted(state, tile, p) ? ` The dead: ${threatWords(state, tile)}.` : ""} The team's people live there while it stands (the hurt heal twice as fast as at a base without a hospital, they eat and drink from the camp's stores), what the team carries goes into the stores and its vehicles park there. Manage it in its base window; ${STRIKE_LABEL} there packs everyone up again as a team. It can be built up with time and materials (Construction: into ${hub(state) ? "an outpost" : "a shelter, then a base"}). Water: ${w ? waterText(state, tile) : "no river or lake nearby, only what is carried in"}. Its fire, its people and vehicles parked there draw the dead and raiders.`,
   };
 }
 // Establish base (no base at all: hardcore's first home, the exiles): a camp with its step up queued.
@@ -155,12 +158,12 @@ export function establishOption(state, p, tile = partyTile(p)) {
   if (!noBase(state) || !p || p.owner !== "player") return null;
   const t = state.tiles[tile];
   if (!t || t.terrain === "water") return null;
-  return { mission: "establish", label: ESTABLISH_LABEL, desc: establishDesc(state, tile), disabled: establishProblem(state, tile) };
+  return { mission: "establish", label: ESTABLISH_LABEL, desc: establishDesc(state, tile, p), disabled: establishProblem(state, tile) };
 }
-function establishDesc(state, tile) {
+function establishDesc(state, tile, p = null) {
   const needs = stagingNeeds(state, tile);
   const w = waterSource(state, tile);
-  return `Set up camp here for your ${firstHubPending(state) ? "first" : "new"} home (no materials: you pick its spot on the tile's map; the team builds the camp fire and clears the ${SITE.SIZE} × ${SITE.SIZE} round it, its wood and scrap into the stores, the time by what stands there) and start building it up: Camp → Shelter → Base. The camp is a base from the start (its people live there, the team's load goes into its stores); to become a shelter it needs ${needText(needs)} brought in and ${BUILDINGS.camp_up.hours} work-hours by its builders (Construction), and later the shelter is built up into a base (${needText(BUILDINGS.hub_up.cost)}). There is no spring: water: ${w ? `${waterText(state, tile)}${w.dist <= 1 ? ", its people haul it" : ""}` : "no water source nearby, every drop carried in"}. Pick a place beside a river or lake, with sites to scavenge around and few of the dead.${threatWords(state, tile) ? ` Here: ${threatWords(state, tile)}.` : ""}${state.tiles[tile] && state.tiles[tile].ruin ? ` On these ruins: ${CAMP.ruinScrap} scrap less (salvage).` : ""}`;
+  return `Set up camp here for your ${firstHubPending(state) ? "first" : "new"} home (no materials: you pick its spot on the tile's map; the team builds the camp fire and clears the ${SITE.SIZE} × ${SITE.SIZE} round it, its wood and scrap into the stores, the time by what stands there) and start building it up: Camp → Shelter → Base. The camp is a base from the start (its people live there, the team's load goes into its stores); to become a shelter it needs ${needText(needs)} brought in and ${BUILDINGS.camp_up.hours} work-hours by its builders (Construction), and later the shelter is built up into a base (${needText(BUILDINGS.hub_up.cost)}). There is no spring: water: ${w ? `${waterText(state, tile)}${w.dist <= 1 ? ", its people haul it" : ""}` : "no water source nearby, every drop carried in"}. Pick a place beside a river or lake, with sites to scavenge around and few of the dead.${threatWords(state, tile) && tileScouted(state, tile, p) ? ` Here: ${threatWords(state, tile)}.` : ""}${state.tiles[tile] && state.tiles[tile].ruin ? ` On these ruins: ${CAMP.ruinScrap} scrap less (salvage).` : ""}`;
 }
 
 // The orders' arrival (parties.js arrive, missions "camp", "establish", "outpost"): the camp's spot asked for (askSite:
@@ -173,15 +176,23 @@ export function pitchArrive(state, p, mission) {
   const label = mission === "outpost" ? "Build outpost" : mission === "establish" ? ESTABLISH_LABEL : SETUP_LABEL;
   if (why) { delete p.pitched; awaitOrders(state, p, `${label}: ${why}`, { failed: true }); return ""; }
   if (!p.pitched) {
+    // campscout.js (the user's request 2026-10-23): an unscouted tile is surveyed first (Scout first) or the camp goes
+    // up blind (the game's dice for its spot, nobody asked, nothing fought first: the dead stay out on its grounds).
+    const how = scoutOrBlind(state, p, tile, mission);
+    if (how === "scouting") { const text = p.scoutText; delete p.scoutText; return text; }
+    const blind = how === "blind";
     const hours = campPitchHours(state, p, tile);
-    askSite(state, p);
+    if (!blind) askSite(state, p);
     startTask(state, p, { type: "pitch", hours, mission });
     // Nobody to ask (the autopilot, a spot already picked): the dead at the spot cleared first (siteclear.js).
-    const fight = !(state.siteAsk || []).includes(p.id) && clearSiteFirst(state, p, campSiteFor(state, p, tile));
-    return fight && !(p.task && p.task.type === "pitch" && p.phase === "task") ? "" : `Setting up camp (${durText(hours)}: the camp fire and clearing the ${SITE.SIZE} × ${SITE.SIZE} round it).`;
+    const fight = !blind && !(state.siteAsk || []).includes(p.id) && clearSiteFirst(state, p, campSiteFor(state, p, tile));
+    return fight && !(p.task && p.task.type === "pitch" && p.phase === "task") ? "" : `Setting up camp${blind ? " blind" : ""} (${durText(hours)}: the camp fire and clearing the ${SITE.SIZE} × ${SITE.SIZE} round it).`;
   }
   delete p.pitched;
+  const blind = p.campBlind === tile;
+  delete p.campBlind;
   const base = makeCamp(state, p, tile, { up: mission !== "camp" });
+  if (blind) blindCamp(state, base); // campscout.js: the dead on its grounds, the map past the camp unknown
   return `${base.name}: camp set up.`;
 }
 // Back-compat names (tools, older callers).
@@ -260,7 +271,8 @@ export function siteDone(state, p) {
   if (Array.isArray(state.siteAsk)) state.siteAsk = state.siteAsk.filter((id) => id !== (p && p.id));
 }
 // Where the camp goes: the spot picked while it still takes the camp, else the game's own.
-export const campSiteFor = (state, p, tile) => (p && p.campAt && !siteProblem(state, tile, p.campAt) ? p.campAt.slice(0, 2) : defaultSite(state, tile));
+// An unscouted tile (campscout.js): the blind spot the camp will go on, so the estimates and the setup agree.
+export const campSiteFor = (state, p, tile) => (p && p.campAt && !siteProblem(state, tile, p.campAt) ? p.campAt.slice(0, 2) : p && p.owner === "player" && !tileScouted(state, tile, p) ? blindSite(state, tile) : defaultSite(state, tile));
 
 // The camp: a tier-0 base with camp: true on the team's tile, on its spot (campSiteFor: base.plan.origin, fresh: the
 // land all round is the tile's own, basemap.js freshBase); the team moves in (parties.js settleInto: its people
@@ -438,6 +450,7 @@ export function settleHub(state) {
 // Someone at the camp: a resident, or a team of yours on its tile.
 export const campPresent = (state, base) => atBase(state, base.id).length > 0 || state.parties.some((p) => p.owner === "player" && partyTile(p) === base.tile && partyMembers(state, p).length);
 export function campsHour(state) {
+  groundsHour(state); // campscout.js: the dead out on a blind camp's grounds come at it now and then
   if (state.hour % 24 === 0) for (const b of state.bases) if (isShelter(b)) shelterDaily(state, b);
   settleHub(state);
   for (const b of state.bases) if (b.layoutAsk && state.hour - b.layoutAsk.hour >= LAYOUT_ASK.HOURS) delete b.layoutAsk; // Open the build map: asked long enough

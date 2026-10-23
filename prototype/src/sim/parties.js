@@ -100,6 +100,7 @@ import { opticsFor } from "./optics.js";
 import { withYou } from "./hardcore-start.js";
 import { teamReceives, networksAt } from "./radio.js"; // a team's receiver: hears a network inside its coverage, cannot call (updateRadio)
 import { establishOption, campOption, pitchArrive } from "./staging.js"; // camps: Set up camp, Establish base, Build outpost (a camp with its step up)
+import { scoutOptions, SCOUT_MISSIONS, groundsBase, groundsProblem, groundsRaid, GROUNDS_LABEL, deadText } from "./campscout.js"; // an unscouted tile: Scout first or a blind camp; the dead on its grounds
 import { canClaim, CLAIM, claimsTaken, takeGroupClaims, claimsTakenText } from "./claims.js"; // the orders card: Claim this tile where the land borders yours; a new outpost takes the groups' claims round it
 import { askBaseName } from "./basenames.js"; // the naming popup for a base you found
 import { enterTarget, enterCard, enterOption, joinBase } from "./moveout.js"; // a team that ends a move on another of your bases: "Enter <base>?"
@@ -153,6 +154,12 @@ export const MISSIONS = {
   // With no base at all (hardcore's first hub, the exiles): a camp built up into the hub (staging.js).
   establish:   { name: "Establish base",   desc: "Set up camp here and build it up into a shelter (then, later, a base): its builders work on it as the materials it lists come in (staging.js).", hidden: true },
   enter:       { name: "Enter base",       desc: "Move into the base of yours the team stands on: its people live there from now on, what it carries goes into the stores and armory, its vehicle parks there, and the team is disbanded (moveout.js enterOption).", hidden: true },
+  // An unscouted tile (campscout.js, the user's request 2026-10-23): Scout first, then the camp; the dead on a blind
+  // camp's grounds cleared by a team there (also from the POI map).
+  scoutcamp:      { name: "Scout first, then set up camp", desc: "Survey the tile first (8 hours), then set up camp with all the information (campscout.js).", hidden: true },
+  scoutestablish: { name: "Scout first, then establish base", desc: "Survey the tile first (8 hours), then set up camp for your home with all the information (campscout.js).", hidden: true },
+  scoutoutpost:   { name: "Scout first, then build outpost", desc: "Survey the tile first (8 hours), then build the outpost camp with all the information (campscout.js).", hidden: true },
+  grounds:     { name: "Clear the dead from the base grounds", desc: "Go out onto the grounds of your base here, set up blind, and fight the dead out there: every one killed is one fewer to come at the camp (campscout.js).", hidden: true },
   strikecamp:  { name: "Strike the camp",  desc: "Old saves' order: a camp is struck from its base window now (staging.js strikeCamp).", hidden: true },
   hunt:        { name: "Hunting",          desc: "A hunting trip (hunting.js): the team's name while its plan hunts.", hidden: true },
   fish:        { name: "Fishing",          desc: "A fishing trip (hunting.js): the team's name while its plan fishes.", hidden: true },
@@ -868,6 +875,8 @@ export function missionProblem(state, tile, mission) {
   const t = state.tiles[tile];
   if (!t) return "There is no such tile.";
   if (!MISSIONS[mission]) return "Unknown mission.";
+  if (SCOUT_MISSIONS.includes(mission)) mission = mission.slice(5); // campscout.js: Scout first, then the camp: the camp's own checks
+  if (mission === "grounds" && !groundsBase(state, tile)) return "No base of yours there with the dead out on its grounds.";
   const theirs = state.factions.find((f) => f.alive && f.known && f.bases.includes(tile));
   if (mission === "outpost") {
     if (t.terrain === "water" && !t.bridge) return "An outpost cannot be built on open water. A bridge can be barricaded with one.";
@@ -1741,6 +1750,9 @@ export function orderOptions(state, p, tile = partyTile(p)) {
   // Set up camp: any team of yours, anywhere it may stand (staging.js campOption).
   const camp = campOption(state, p, tile);
   if (camp) out.push(camp);
+  // A base of yours here set up blind with the dead still out on its grounds (campscout.js): go out and clear them.
+  const gb = groundsBase(state, tile);
+  if (gb && p.owner === "player") out.push({ mission: "grounds", label: `${GROUNDS_LABEL} (left: ${gb.grounds.known ? gb.grounds.dead : "?"})`, desc: `${MISSIONS.grounds.desc} The dead out there: ${deadText(gb)}.`, disabled: groundsProblem(state, p, tile) || null });
   const site = state.deathSites.find((d) => d.tile === tile);
   if (site && site.items.length) add("recover");
   if (state.hordes.some((h) => state.grid.distance(h.tile, tile) <= 1)) add("cull");
@@ -1753,6 +1765,7 @@ export function orderOptions(state, p, tile = partyTile(p)) {
   const fix = fixableAt(state, tile), runner = runnerAt(state, tile);
   if (fix) out.push(fixOption(state, p, fix));
   if (runner && p.vehicle) out.push(driveHomeOption(state, p, runner));
+  scoutOptions(state, p, tile, out); // campscout.js: on an unscouted tile the camp's orders say "blind", Scout first beside each
   const v = state.vehicles.find((x) => x.loc.kind === "abandoned" && x.loc.tile === tile && !(x.found && x.found.repair));
   if (v && !p.vehicle) {
     // What is still in its tank counts: the team only has to bring what is missing (bikes need none).
@@ -1784,7 +1797,7 @@ export function ordersCard(state, p, text, doneLabel, title) {
       ...caravanOrderChoices(state, p),
       ...meetChoices(state, p), // trademeet.js: a group's caravan waiting here to trade
       ...opts.map((o) => ({
-        label: o.mission === "sweep" ? `Sweep ${sweepOpts(p.sweepPlan || {}).radius} tiles around (${sweepOpts(p.sweepPlan || {}).hours}h)` : o.mission === "fullsurvey" ? `Survey this tile (${LOOK.hours}h)` : o.mission === "survey" ? `Quick look (${LOOK.quickHours}h)` : o.label, hint: o.disabled || o.desc, disabled: !!o.disabled, order: o.mission === "survey" || o.mission === "sweep" || o.mission === "fullsurvey",
+        label: o.mission === "sweep" ? `Sweep ${sweepOpts(p.sweepPlan || {}).radius} tiles around (${sweepOpts(p.sweepPlan || {}).hours}h)` : o.mission === "fullsurvey" ? `Survey this tile (${LOOK.hours}h)` : o.mission === "survey" ? `Quick look (${LOOK.quickHours}h)` : o.label, hint: o.disabled || o.desc, disabled: !!o.disabled, order: o.mission === "survey" || o.mission === "sweep" || o.mission === "fullsurvey" || SCOUT_MISSIONS.includes(o.mission),
         resolve: (st) => {
           // Checked again now: the card may have been open while things changed.
           const now = orderOptions(st, p).find((x) => x.mission === o.mission);
@@ -2015,6 +2028,12 @@ function arrive(state, p) {
     case "establish": // no base at all: a camp with its step up (staging.js)
     case "camp": // Set up camp (staging.js)
       return pitchArrive(state, p, p.mission);
+    case "scoutcamp": case "scoutestablish": case "scoutoutpost": // Scout first (campscout.js): the camp's own mission, its Survey first
+      p.mission = p.mission.slice(5);
+      p.scoutFirst = true;
+      return arrive(state, p);
+    case "grounds": // the dead on a blind camp's grounds (campscout.js): a fight out there
+      return groundsRaid(state, p);
     case "strikecamp": // an old save's order: a camp is struck from its base window now
       awaitOrders(state, p, "A camp is struck from its base window now (Strike camp).", { failed: true });
       return "";

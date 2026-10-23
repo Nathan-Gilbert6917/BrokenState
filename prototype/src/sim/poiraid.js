@@ -29,6 +29,7 @@ import {
 } from "./pois.js";
 import { franchiseName } from "./shops.js"; // a franchise's name (a POI's poi.v)
 import { poiWalkMins, walkText, startPoiWalk, startExitWalk, exitsOf } from "./poiwalk.js"; // the minutes on foot to each place, the walk there, and out to an edge
+import { groundsBase, groundsRaid, raidCount, GROUNDS_LABEL } from "./campscout.js"; // your base here set up blind: the dead on its grounds (call-time only)
 
 /** Does a raid on this tile go into one of its points of interest (not a site that stands for a while, not open ground)? @param {any} t */
 export const poiTileRaid = (t) => !!t && poisOf(t).length > 0 && !(t.loc && !permanentSite(t));
@@ -124,6 +125,9 @@ export function poiPickCard(state, p) {
         }));
       }),
       ...(crawlTile(t) ? [{ label: "Go in block by block (city crawl)", hint: "The block's street of buildings instead of one place: noise raises the Alert, lying low lets it fade.", crawl: true, order: true, ai: () => 0.5, resolve: (st) => go(st, "crawl") }] : []),
+      // Your base here went up blind (campscout.js, the user's request 2026-10-23): its grounds' dead raided instead
+      // of waiting for them to come at the camp.
+      ...(groundsBase(state, tile) ? [{ label: `${GROUNDS_LABEL} (${groundsBase(state, tile).grounds.known ? `${groundsBase(state, tile).grounds.dead} left` : "how many: ?"})`, hint: `The team goes out onto ${groundsBase(state, tile).name}'s grounds and fights the dead out there on the tile's map (about ${raidCount(groundsBase(state, tile))} of them this time): every one killed is one fewer to come at the camp.`, grounds: true, order: true, ai: () => -1, resolve: (st) => { if (!st.parties.includes(p)) return ""; const res = groundsRaid(st, p); return st.combat ? "" : res; } }] : []),
       // Leaving (poiwalk.js): a side of the tile (its arrow on the tile map, ui/poimap.js), or any tile picked on the State
       // Map (main.js move mode with leavePick: the side its way leaves by). The walk out to that edge comes first.
       ...exitsOf(state, p, tile).map((x) => ({

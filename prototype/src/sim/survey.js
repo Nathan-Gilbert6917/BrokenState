@@ -76,6 +76,7 @@ import { carriedAll } from "./comforts.js";
 import { listeners } from "./radio.js";
 import { withLook, surveyErr } from "./intelnotes.js"; // a close look at a group's base (the State Map's estimates)
 import { cfgOf } from "./worldcfg.js"; // the run's dials: Durability loss, Fuel use
+import { groundsSurveyed } from "./campscout.js"; // a base of yours set up blind here: its grounds known now (call-time only)
 
 export const SURVEY = {
   radius: { min: 2, max: 4, def: 3 },
@@ -692,7 +693,8 @@ export function fullSurveyDone(state, p) {
   if (ringFound.length) what.push(`spotted ${ringFound.join(", ")}`);
   if (ringSites) what.push(`${ringSites === 1 ? "a place" : `${ringSites} places`} off the map on the tiles round`);
   const sure = own.sure || !morePoisHidden(state, tile, p) ? "" : " Not sure you found everything.";
-  return `Surveyed ${tileLabel(state, tile)} for ${LOOK.hours}h: ${what.length ? what.join("; ") : "nothing new"}.${sure} ${look}`.trim();
+  const grounds = groundsSurveyed(state, p, tile); // campscout.js: the fog over a blind camp's map lifts, its dead counted
+  return `Surveyed ${tileLabel(state, tile)} for ${LOOK.hours}h: ${what.length ? what.join("; ") : "nothing new"}.${sure}${grounds ? ` ${grounds}` : ""} ${look}`.trim();
 }
 // A Quick look (parties.js survey: the timed Look around and a recon's look on arrival): the own tile only, each hidden
 // POI on its own at LOOK.quick of the Survey's odds, the kind only, stamped "looked". Returns a sentence or "".

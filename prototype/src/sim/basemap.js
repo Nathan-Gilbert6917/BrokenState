@@ -124,6 +124,7 @@ import { isChopTool, bestChop } from "./woodcutting.js"; // felling a tree goes 
 import { layMines } from "./mines.js"; // the main base's minefield, buried in the open ground round the yard (call-time only)
 import { tunnelAt, queueFill } from "./tunnels.js"; // the tunnels the dead dug: a hole's card, Fill tunnel (call-time only)
 import { FORT } from "./fort.js"; // the wire rings' and the mines' distances from the wall (call-time only: the modules load in a circle)
+import { knownMask } from "./campscout.js"; // a camp set up blind: the view's known ground (call-time only)
 import { cfgOf } from "./worldcfg.js"; // the run's dials: Base yard to start / at most
 import { storageOf, coreStoreKg, vehicleStoreKg, woodpileOf } from "./basestorage.js"; // the base's room and what lies outside (call-time only)
 import { BED_FOOT } from "./data-beds.js"; // beds as furniture: a cot, bed or bunk bed 1 × 2, a large bed 2 × 2, on a general building's floor
@@ -2432,6 +2433,8 @@ function viewBattle(state, base, prev = null, site = false) {
   b.phase = "deploy";
   b.acted = true;
   if (prev) { b.keepCam = true; b.layout = prev.layout; } // the same layout record: the pick and the last message carry over; keepCam: the view stays where it was (ui/isoview.js)
+  const known = site ? null : knownMask(b, base); // campscout.js: a camp set up blind, its map known only round the fire until surveyed (combat.js playerVision)
+  if (known) b.knownMask = known;
   return b;
 }
 // The camp's spot picked on the tile's own map, in the same isometric view (the user's request 2026-10-22: "For the

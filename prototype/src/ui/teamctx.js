@@ -36,6 +36,7 @@ import { setFire, fireLit } from "../sim/fieldheat.js";
 import { sweepOpts, LOOK } from "../sim/survey.js";
 import { poiRaidSummary } from "../sim/poiraid.js"; // "3 places known, possibly more unknown"
 import { campProblem } from "../sim/staging.js"; // Set up camp: where a camp may stand
+import { tileScouted, blindText, BLIND_NOTE, SCOUT_LABEL, groundsBase, groundsProblem, deadText, GROUNDS_LABEL } from "../sim/campscout.js"; // an unscouted tile: blind, or Scout first; a blind camp's grounds
 import { crawlTile } from "../sim/citycrawl.js";
 import { transferProblem, loadFromBase, isPlayerTeam } from "../sim/teaminv.js";
 import { siteMissions } from "./ui.js";
@@ -53,7 +54,7 @@ export const RESUPPLY_DAYS = 3; // Resupply at your base: food and water for thi
 export const SWEEP = { radius: 3, hours: 12 }; // the menu's Survey (as the hub's menu always offered)
 const LAND_HOURS = HUNT.defHours; // hunt, fish, forage, cut wood: 8 hours (the team panel offers other lengths)
 // Missions the hub's knowledge does not list but the team's own options do (on the tile, or by who holds it).
-const OWN_OPTIONS = ["outpost", "establish", "strikecamp", "drivehome"];
+const OWN_OPTIONS = ["outpost", "establish", "strikecamp", "drivehome", "scoutoutpost", "scoutestablish"]; // scout…: Scout first, then the camp (sim/campscout.js)
 
 // The "All orders" fold's group, and Scavenge / raid's reason when nothing is known to raid.
 const ALL = "All orders";
@@ -176,6 +177,9 @@ export function teamTileMenu(state, ui, p, tile, { append = false } = {}) {
   if (base && !water) {
     const own = orderOptions(state, p, tile).find((o) => o.mission === "scavenge"), sum = poiRaidSummary(state, tile, p);
     if (own && sum) add("Site", "mission:scavenge", `Raid a place here (${sum})`, [{ type: "mission", mission: "scavenge" }], { why: own.disabled || "", hint: `The places on ${base.name}'s tile: the team walks over from the base to the one picked (the POI map) and raids it.` });
+    // The base went up blind (sim/campscout.js): the dead out on its grounds, cleared by the team.
+    const gb = groundsBase(state, tile);
+    if (gb && p.owner === "player") add("Site", "mission:grounds", `${GROUNDS_LABEL} (left: ${gb.grounds.known ? gb.grounds.dead : "?"})`, [{ type: "mission", mission: "grounds" }], { why: partyTile(p) === tile ? groundsProblem(state, p, tile) : "", hint: `${MISSIONS.grounds.desc} The dead out there: ${deadText(gb)}.` });
   }
   // What the site offers, as far as you know (not on your own base: that is the Base group above).
   let theirs = false; // another group's base you know of: no camping, foraging or claiming on their doorstep
@@ -196,7 +200,7 @@ export function teamTileMenu(state, ui, p, tile, { append = false } = {}) {
     }
     for (const o of opts) {
       if (listed.has(o.mission)) continue;
-      if (!OWN_OPTIONS.includes(o.mission) && !(live && !["survey", "fullsurvey", "sweep", "caravan", "enter"].includes(o.mission))) continue;
+      if (!OWN_OPTIONS.includes(o.mission) && !(live && !["survey", "fullsurvey", "sweep", "caravan", "enter", "scoutcamp"].includes(o.mission))) continue;
       listed.add(o.mission);
       add("Site", `mission:${o.mission}`, o.label, [{ type: "mission", mission: o.mission }], { why: o.disabled || "", hint: o.desc });
     }
@@ -235,7 +239,12 @@ export function teamTileMenu(state, ui, p, tile, { append = false } = {}) {
     const burn = canLight(state, p);
     const noFire = burn ? "" : "No wood carried: a fire burns wood (deadfall about only stretches it). Cut wood or bring some.";
     // Set up camp (sim/staging.js): a camp is the barest base; its base window opens when it stands (Strike camp there).
-    if (p.owner === "player" && p.kind === "expedition" && !p.caravan && p.crewRole == null) add("Camp", "setcamp", "Set up camp here", [{ type: "mission", mission: "camp" }], { why: cap(campProblem(state, tile) || ""), hint: "Make camp (1 hour, no materials): the team's people live there while it stands, what it carries goes into the camp's stores, its vehicles park there. Manage it in its base window; Strike camp packs everyone up again." });
+    if (p.owner === "player" && p.kind === "expedition" && !p.caravan && p.crewRole == null) {
+      // An unscouted tile (sim/campscout.js, the user's request 2026-10-23): the camp goes up blind, or Scout first.
+      const scouted = tileScouted(state, tile, p);
+      add("Camp", "setcamp", `Set up camp here${scouted ? "" : BLIND_NOTE}`, [{ type: "mission", mission: "camp" }], { why: cap(campProblem(state, tile) || ""), hint: `${scouted ? "" : `${blindText()} `}Make camp (1 hour, no materials): the team's people live there while it stands, what it carries goes into the camp's stores, its vehicles park there. Manage it in its base window; Strike camp packs everyone up again.` });
+      if (!scouted) add("Camp", "mission:scoutcamp", `${SCOUT_LABEL}: survey (${LOOK.hours}h), then set up camp`, [{ type: "mission", mission: "scoutcamp" }], { why: cap(campProblem(state, tile) || ""), hint: MISSIONS.scoutcamp.desc });
+    }
     if (camping) add("Camp", lit ? "fireout" : "fire", lit ? "Put the camp fire out" : "Light a camp fire", [], { special: lit ? "fireout" : "fire", why: lit ? "" : noFire, hint: lit ? "Darker and quieter, but cold food, unboiled water and cold nights." : "Warmth, hot food and boiled water, better spirits; its light and smoke carry, most at night." });
 
   }
