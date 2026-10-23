@@ -15,12 +15,16 @@ let pass = 0, fail = 0;
 const check = (ok, what) => { if (ok) pass++; else { fail++; console.log(`  FAIL ${what}`); } return ok; };
 const world = () => { const st = createWorld({ seed, factionCount: 6 }); st.started = true; st.noWanderers = true; st.noRoadblocks = true; return st; };
 const atHour = (st, h) => { st.hour = Math.floor(st.hour / 24) * 24 + 24 + h; };
+// Open countryside with no site on it: farmland, forest or hills. The hub stands on open land 5 or more tiles from the
+// towns since 7302413 (world.js, startpick.js START_CLEAR; it was a town until then), often deep in the woods with no
+// farmland for tiles round.
+const countryside = (t) => ["plains", "forest", "hills"].includes(t.terrain) && !t.loc && !t.hive;
 // A team of two sent on foot a few tiles out, then put on a tile of our choosing.
 function team(st, dist = 5, opts = {}) {
   const h = hub(st);
   const crew = atBase(st, h.id).slice(0, 2);
   for (const s of crew) s.gear.tool = null;
-  const dest = st.tiles.find((t) => t.terrain === "plains" && !t.loc && st.grid.distance(t.id, h.tile) === dist && planPath(st, h.tile, t.id, opts.car ? true : false)).id;
+  const dest = st.tiles.find((t) => countryside(t) && st.grid.distance(t.id, h.tile) === dist && planPath(st, h.tile, t.id, opts.car ? true : false)).id;
   const res = launchExpedition(st, { memberIds: crew.map((s) => s.id), dest, mission: "move", stance: "normal", supplies: { food: 6, water: 6 }, vehicleId: opts.car ? opts.car.id : null });
   if (res.error) throw new Error(res.error);
   return { p: res.party, crew, dest };
@@ -63,7 +67,7 @@ console.log("Same tile as a horde");
   const st = world();
   const { p } = team(st);
   clearHordes(st);
-  const tile = st.tiles.find((t) => t.terrain === "plains" && !t.loc && st.grid.distance(t.id, hub(st).tile) === 6).id;
+  const tile = st.tiles.find((t) => countryside(t) && st.grid.distance(t.id, hub(st).tile) === 6).id;
   park(p, tile);
   atHour(st, 23);
   const hz = makeHorde(st, { tile, size: 60, job: "roam" });
@@ -116,7 +120,7 @@ console.log("Same tile as an enemy party");
   const st = world();
   const { p } = team(st);
   clearHordes(st);
-  const tile = st.tiles.find((t) => t.terrain === "plains" && !t.loc && st.grid.distance(t.id, hub(st).tile) === 6).id;
+  const tile = st.tiles.find((t) => countryside(t) && st.grid.distance(t.id, hub(st).tile) === 6).id;
   park(p, tile);
   atHour(st, 13);
   const f = st.factions.find((x) => x.alive);
@@ -156,7 +160,7 @@ console.log("Outsiders on the same tile");
   const st = world();
   const { p } = team(st);
   clearHordes(st);
-  const tile = st.tiles.find((t) => t.terrain === "plains" && !t.loc && st.grid.distance(t.id, hub(st).tile) === 6).id;
+  const tile = st.tiles.find((t) => countryside(t) && st.grid.distance(t.id, hub(st).tile) === 6).id;
   park(p, tile);
   atHour(st, 2);
   st.visitors = st.visitors || [];
