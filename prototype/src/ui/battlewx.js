@@ -4,7 +4,8 @@
 // the State Map (sim/wxsight.js b.wx, kept as the battle is made from sim/weather.js weatherAt; ui/battleedge.js
 // battleWeather for a battle made before it), with its rain and wind (weatherAt rain, wind):
 //   rain      slanted streaks in two layers (near ones longer and brighter), a few splash rings on the ground, a
-//             cold grey wash;
+//             cold grey wash; rings opening on the puddles (sim/puddles.js c.pud: RIPPLE of them at a time on the
+//             puddles' cells in sight, from a fixed list of at most RIP_CELLS cells made once per map; not in Light);
 //   storm     the same, heavier, longer and blown further over by the wind;
 //   fog       soft grey banks drifting slowly (and a little with the camera), thin over the middle of the screen and
 //             thick toward its edges, over a light wash; by night the colour of the night's fog (battleedge.js
@@ -21,19 +22,21 @@
 // fog banks); off (nothing drawn: the fog still cuts sight). Reduce motion: everything held still.
 import { battleWeather, fogColour, fogCss } from "./battleedge.js";
 import { weatherAt } from "../sim/weather.js";
+import { battleTile } from "../sim/wxsight.js"; // the tile whose weather a battle has (a base map: its base's)
 import { onForgetPictures } from "./pictures.js";
 
 export const WX_LEVELS = { full: 2, low: 1, off: 0 };
 export const WXFX = { level: 2, calm: false };
 export function setWxLevel(k, calm = WXFX.calm) { WXFX.level = typeof k === "number" ? k : WX_LEVELS[k] ?? 2; WXFX.calm = !!calm; }
 // For the tools and the dev view: frames drawn with weather, what the last one drew, puff pictures painted.
-export const wxStats = { frames: 0, kind: "", drops: 0, flakes: 0, splashes: 0, banks: 0, puffs: 0 };
+export const wxStats = { frames: 0, kind: "", drops: 0, flakes: 0, splashes: 0, banks: 0, puffs: 0, ripples: 0 };
 
 // How much of each, at full (Light: half; no splashes).
 export const WX_FX = {
   RAIN: 240, STORM: 400, SPLASH: 18, STORM_SPLASH: 30, // drops (scaled by the rain: weatherAt rain 0.3–1)
   SNOW: 200, BLIZZARD: 380,                            // flakes
   BANKS: 14, BLIZZ_BANKS: 10,                          // fog banks
+  RIPPLE: 16, STORM_RIPPLE: 24, RIP_CELLS: 256,        // rings on the puddles at a time; the puddles' cells they pick from
 };
 const MAXP = 512, MAXB = 16, MAXS = 32;
 
@@ -64,7 +67,8 @@ export function wxFxFor(state, b) {
   const key0 = b && b.wx != null ? b.wx : battleWeather(state, b).key;
   if (memo.b === b && memo.hour === hour && memo.wx === key0) return memo.fx;
   let rain = 0.4, wind = 0.3;
-  try { if (state && state.tiles && b && b.tileId != null) { const w = weatherAt(state, b.tileId); rain = w.rain || 0; wind = w.wind || 0; } } catch { /* the defaults */ }
+  const tile = battleTile(state, b); // its own tile, or a base map's base's (sim/wxsight.js)
+  try { if (state && state.tiles && tile != null) { const w = weatherAt(state, tile); rain = w.rain || 0; wind = w.wind || 0; } } catch { /* the defaults */ }
   const kind = KIND[key0] || null, heavy = key0 === "storm" || key0 === "blizzard";
   const fx = { kind, key: key0, rain: kind === "rain" ? Math.max(0.3, rain) : 0, wind, heavy, fog: key0 === "fog" ? 1 : key0 === "blizzard" ? 0.6 : 0 };
   memo = { b, hour, wx: key0, fx };
@@ -119,16 +123,18 @@ function paintFor(b, fx) {
 
 // ---------- the frame ----------
 // After the scene (isoview.js drawIso). ax, ay: where the middle of the map is on the screen now (the fog banks
-// drift a little with the camera). Returns the kind drawn ("" for none).
-export function drawBattleWx(ctx, cw, ch, state, b, now, ax = cw / 2, ay = ch / 2) {
+// drift a little with the camera). spot(x, y): a cell's middle on the screen ([X, Y]) if it is in sight, else null;
+// tile: a cell's size on the screen (px): the puddles' rings. Returns the kind drawn ("" for none).
+export function drawBattleWx(ctx, cw, ch, state, b, now, ax = cw / 2, ay = ch / 2, spot = null, tile = 0) {
   if (!WXFX.level || !b || !cw || !ch) return "";
   const fx = wxFxFor(state, b);
   if (!fx || !fx.kind) return "";
   const t = WXFX.calm ? 0 : (now || 0) / 1000, low = WXFX.level < 2, sc = Math.max(0.8, Math.min(1.6, ch / 900));
   const pt = paintFor(b, fx);
-  wxStats.frames++; wxStats.kind = fx.kind; wxStats.drops = wxStats.flakes = wxStats.splashes = wxStats.banks = 0;
+  wxStats.frames++; wxStats.kind = fx.kind; wxStats.drops = wxStats.flakes = wxStats.splashes = wxStats.banks = wxStats.ripples = 0;
   ctx.save();
   if (fx.fog) fogBanks(ctx, cw, ch, fx, pt, t, low, ax, ay);
+  if (fx.kind === "rain" && !low && spot && tile > 0 && b.puddles) ripples(ctx, cw, ch, b, fx, pt, t, spot, tile);
   if (fx.kind === "rain") rain(ctx, cw, ch, fx, pt, t, low, sc);
   else if (fx.kind === "snow") snow(ctx, cw, ch, fx, pt, t, low, sc);
   ctx.restore();
@@ -174,6 +180,45 @@ function rain(ctx, cw, ch, fx, pt, t, low, sc) {
   ctx.lineWidth = 1 * sc;
   ctx.stroke();
   wxStats.splashes = drawn;
+}
+
+// The puddles' cells the rings pick from (sim/puddles.js c.pud): at most RIP_CELLS, spread over the map (every k-th),
+// made once per map and puddles.
+let ripMemo = { b: null, key: "", cells: null };
+function ripCells(b) {
+  if (ripMemo.b === b && ripMemo.key === b.puddles.key) return ripMemo.cells;
+  const all = [];
+  for (let i = 0; i < b.cells.length; i++) if (b.cells[i].pud) all.push(i);
+  const step = Math.max(1, Math.ceil(all.length / WX_FX.RIP_CELLS)), cells = new Int32Array(Math.ceil(all.length / step));
+  for (let j = 0; j < cells.length; j++) cells[j] = all[j * step];
+  ripMemo = { b, key: b.puddles.key, cells };
+  return cells;
+}
+// Rain on the puddles: a ring opening on the water and gone, each at a new puddle's cell every time round (only on
+// cells in sight and on the screen).
+function ripples(ctx, cw, ch, b, fx, pt, t, spot, tile) {
+  const cells = ripCells(b);
+  if (!cells.length) return;
+  const m = fx.heavy ? WX_FX.STORM_RIPPLE : WX_FX.RIPPLE, P = 0.9, W = b.w;
+  ctx.beginPath();
+  let drawn = 0;
+  for (let s = 0; s < m; s++) {
+    const c = (t + SO[s % MAXS] * P + s * 0.37) / P, cyc = Math.floor(c), f = c - cyc;
+    if (f > 0.6) continue;
+    const i = cells[Math.floor(hash(s, cyc, 31) * cells.length)], x = i % W, y = (i / W) | 0;
+    const at = spot(x, y);
+    if (!at) continue;
+    const X = at[0] + (hash(s, cyc, 32) - 0.5) * tile * 0.4, Y = at[1] + (hash(s, cyc, 33) - 0.5) * tile * 0.2, r = tile * (0.04 + f * 0.22);
+    if (X < -r || Y < -r || X > cw + r || Y > ch + r) continue;
+    ctx.moveTo(X + r, Y); ctx.ellipse(X, Y, r, r * 0.5, 0, 0, Math.PI * 2);
+    drawn++;
+  }
+  if (!drawn) return;
+  ctx.globalAlpha = 1;
+  ctx.strokeStyle = pt.splash;
+  ctx.lineWidth = Math.max(0.8, tile * 0.025);
+  ctx.stroke();
+  wxStats.ripples = drawn;
 }
 
 function snow(ctx, cw, ch, fx, pt, t, low, sc) {

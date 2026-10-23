@@ -17,7 +17,7 @@
 // filled over the rainy tiles in a few fills a frame, the fog two cached puff images a fogged tile (FOG.MAX_DRAWS a
 // frame at most: zoomed out, every other tile's puffs, twice the size). Frames: FX.RAIN_MS / FX.FOG_MS while some is on
 // screen and Map animations are on (none with Reduce motion: they stand still); nothing on screen, nothing asked.
-import { visibleFronts, frontAt, riverFrozen, thinIce, ICE, WEATHER, skyAt, sightCut } from "../sim/weather.js";
+import { visibleFronts, frontAt, riverFrozen, thinIce, ICE, WEATHER, skyAt, sightCut, WAVE } from "../sim/weather.js";
 import { onForgetPictures } from "./pictures.js";
 
 // Puff colour per kind (r, g, b) and its strength on the Weather layer (alpha); the Weather fronts layer shows them
@@ -79,13 +79,19 @@ export function drawFronts(ctx, state, { hex, view, frac = 0, strong = false, zo
   for (const f of visibleFronts(state, frac)) {
     const look = FRONT_LOOK[f.k];
     if (!look || f.r <= 0) continue;
-    const cx = f.x * U, cy = f.y * U, R = f.r * U, E = R * EXT;
-    if (cx + E < view.minX || cx - E > view.maxX || cy + E < view.minY || cy - E > view.maxY) continue;
+    const cx = f.x * U, cy = f.y * U, R = f.r * U, E = R * EXT, ER = E * (f.sh ? WAVE.across : 1); // a rain belt: a band (sim/weather.js WAVE)
+    if (cx + ER < view.minX || cx - ER > view.maxX || cy + ER < view.minY || cy - ER > view.maxY) continue;
     const cv = cloudCanvas(f.k, f.id);
     if (!cv) continue;
     n++;
     ctx.globalAlpha = Math.min(0.8, look.alpha * (strong ? FRONT_STRONG : 1));
-    ctx.drawImage(cv, cx - E, cy - E, E * 2, E * 2);
+    if (f.sh) { // the cloud stretched across its heading, narrow along it
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(Math.atan2(f.vy, f.vx));
+      ctx.drawImage(cv, -E * WAVE.along, -E * WAVE.across, E * 2 * WAVE.along, E * 2 * WAVE.across);
+      ctx.restore();
+    } else ctx.drawImage(cv, cx - E, cy - E, E * 2, E * 2);
     ctx.globalAlpha = 1;
     if (strong) frontMarks(ctx, f, cx, cy, R, U, zoom);
   }
@@ -102,7 +108,8 @@ function frontMarks(ctx, f, cx, cy, R, U, zoom) {
   ctx.setLineDash([6 / zoom, 5 / zoom]);
   ctx.strokeStyle = light ? "rgba(235,240,250,0.75)" : "rgba(150,175,230,0.8)";
   ctx.beginPath();
-  ctx.arc(cx, cy, R, 0, Math.PI * 2);
+  if (f.sh) ctx.ellipse(cx, cy, R * WAVE.along, R * WAVE.across, Math.atan2(f.vy, f.vx), 0, Math.PI * 2); // a rain belt's band
+  else ctx.arc(cx, cy, R, 0, Math.PI * 2);
   ctx.stroke();
   ctx.setLineDash([]);
   const ex = cx + f.vx * FRONT_AHEAD * U, ey = cy + f.vy * FRONT_AHEAD * U, ang = Math.atan2(ey - cy, ex - cx), h = 9 / zoom;
