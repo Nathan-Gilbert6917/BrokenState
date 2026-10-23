@@ -9,7 +9,7 @@
 //      edges through it (the fence as walls, nothing cleared); no field where the river runs;
 //   3. wood and wire (the user's word 2026-10-23: "Add wire fences and wood fences"): both kinds of field, each laid
 //      in its own kind; a wire fence no cover, seen through, climbed over by the living and crawled over by the dead,
-//      cleared for scrap;
+//      torn down for wood (its post) and scrap (its wire);
 //   4. off the map (the user's word 2026-10-23: "Show it going off the map and not just terminating"): ui/isoview.js
 //      offEdgeFences runs a fence line meeting the map's edge on across the skirt, straight out, in its own kind, and
 //      nothing else (a line along the edge, a lone panel, a battle with no skirt).
@@ -131,7 +131,7 @@ console.log("\n3. Wood and wire fences");
   const W = CELL.wirefence, b = { cells: [] };
   check(W && !W.walk && W.cover === 0 && !W.los, "a wire fence: no way through, no cover, seen through");
   check(vaultable(b, { k: "wirefence" }) && crawlable(b, { k: "wirefence" }) && vaultable(b, { k: "fence" }), "climbed over by the living, crawled over by the dead (as a wooden fence)");
-  check(CLEAR.wirefence && CLEAR.wirefence.get.scrap > 0 && !CLEAR.wirefence.get.wood && SCATTER_KINDS.has("wirefence"), "cleared for its scrap");
+  check(CLEAR.wirefence && CLEAR.wirefence.get.wood > 0 && CLEAR.wirefence.get.scrap > 0 && SCATTER_KINDS.has("wirefence"), `torn down for ${CLEAR.wirefence.get.wood} wood and ${CLEAR.wirefence.get.scrap} scrap (a wooden panel ${CLEAR.fence.get.wood} wood, the gate ${CLEAR.fieldgate.get.wood})`);
 }
 
 // ---------- 4. off the map ----------
