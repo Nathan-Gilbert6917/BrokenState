@@ -165,8 +165,11 @@ section("The Ring wall: closing the ring, raising it a material");
   check(open.broken === 1 && /closed already/.test(canBuild(st, h, "walls", { kind: "ring" }).reason), "a broken piece is mended on the Repairs tab, not built again: the Ring wall has nothing to add");
   delete p.broken;
   check(hasWall(h), "repaired: closed again");
-  p.wear = 70;
+  // A damaged piece counts two thirds: the wall's strength is the cells' average, and on the hub's long ring (the
+  // 250 × 250 base maps) one piece moves it less than the rounding, so every piece is worn here.
+  for (const q of piecesOf(h, ["wall"])) q.wear = 70;
   check(baseWalls(h) < WALL_TIERS[3].strength && baseWalls(h) > WALL_TIERS[2].strength, `a damaged piece counts two thirds (strength ${baseWalls(h)})`);
+  for (const q of piecesOf(h, ["wall"])) if (q !== p) delete q.wear;
 }
 
 section("No room for a gate in the middle of any side: the ring still gets one");
