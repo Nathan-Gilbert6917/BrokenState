@@ -6,7 +6,8 @@
 //      map's edge; none off farmland; the same twice;
 //   2. the land: every fence of farmland is a field's (no loose runs), the gates laid as CELL fieldgate (walked
 //      through), their aprons clear of anything, and inside each field with its gate laid is walked to from the map's
-//      edges through it (the fence as walls, nothing cleared); no field where the river runs;
+//      edges through it (the fence as walls, nothing cleared); no field where the river or a road runs (the user's
+//      word 2026-10-23: "Roads interrupt the fences");
 //   3. wood and wire (the user's word 2026-10-23: "Add wire fences and wood fences"): both kinds of field, each laid
 //      in its own kind; a wire fence no cover, seen through, climbed over by the living and crawled over by the dead,
 //      torn down for wood (its post) and scrap (its wire);
@@ -87,8 +88,8 @@ console.log("1. The layer: squares with a gate facing the middle, apart, some of
 console.log("\n2. The land: fences are the fields', gates laid with clear aprons, every field walked into");
 {
   const walks = (p) => !!CELL[BM.landCellKind(p)] && CELL[BM.landCellKind(p)].walk;
-  const bad = { loose: [], apron: [], inside: [], river: [], kind: [] };
-  let gates = 0, fields = 0, wet = 0;
+  const bad = { loose: [], apron: [], inside: [], river: [], road: [], kind: [] };
+  let gates = 0, fields = 0, wet = 0, roads = 0;
   const kinds = [["farm", { farm: true }], ["farm with a road", { farm: true, road: true }], ["farmland", {}], ["farmland with a river", { river: true }], ["farm with a river and a road", { farm: true, river: true, road: true }]];
   for (const [name, o] of kinds) for (const id of ids(name.length).slice(0, 4)) {
     const st = tileWorld(id, o), land = BM.siteLand(st, id), terrain = BM.terrainOf(st, { tile: id });
@@ -101,11 +102,13 @@ console.log("\n2. The land: fences are the fields', gates laid with clear aprons
     for (let a = 0; a < N; a++) for (const i of [a, (N - 1) * N + a, a * N, a * N + N - 1]) if (!blk[i] && !seen[i]) { seen[i] = 1; q.push(i); }
     while (q.length) { const i = q.pop(), x = i % N, y = (i / N) | 0; for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = x + dx, ny = y + dy, j = ny * N + nx; if (nx >= 0 && ny >= 0 && nx < N && ny < N && !blk[j] && !seen[j]) { seen[j] = 1; q.push(j); } } }
     const riverCells = land.list.filter((p) => p.k === "water").flatMap((p) => p.cells);
+    const roadCells = [...land.floors].filter(([, f]) => f === "road").map(([k]) => k.split(",").map(Number));
     for (const f of fieldLayer(scatterSeed(id), terrain, G)) {
       const laid = land.pieces.get(f.gate.length ? `${f.gate[0][0]},${f.gate[0][1]}` : "");
       const fenced = f.fence.some(([x, y]) => (land.pieces.get(`${x},${y}`) || {}).g === `fd${f.id}@${x},${y}`);
       if (f.fence.some(([x, y]) => { const p = land.pieces.get(`${x},${y}`); return p && p.g === `fd${f.id}@${x},${y}` && p.k !== f.k; })) bad.kind.push(`${id} ${f.id}`);
       if (riverCells.some(([x, y]) => x >= f.x0 - 1 && y >= f.y0 - 1 && x <= f.x0 + f.s && y <= f.y0 + f.s)) { wet++; if (fenced) bad.river.push(`${id} ${f.id}`); continue; }
+      if (roadCells.some(([x, y]) => x >= f.x0 - 1 && y >= f.y0 - 1 && x <= f.x0 + f.s && y <= f.y0 + f.s)) { roads++; if (fenced) bad.road.push(`${id} ${f.id}`); continue; }
       if (!fenced) continue;
       fields++;
       if (!laid || laid.k !== "fieldgate") continue;
@@ -120,9 +123,10 @@ console.log("\n2. The land: fences are the fields', gates laid with clear aprons
       if (!seen[I(gx - dx, gy - dy)] || got < open * 0.97) bad.inside.push(`${name} ${id} ${f.id}: ${got}/${open}`);
     }
   }
-  check(fields > 30 && gates >= fields * 0.85, `fields on the land: ${fields}, ${gates} with their gate laid${wet ? ` (${wet} left off for the river)` : ""}`);
+  check(fields > 30 && gates >= fields * 0.85, `fields on the land: ${fields}, ${gates} with their gate laid${wet ? ` (${wet} left off for the river)` : ""}${roads ? ` (${roads} for a road)` : ""}`);
   check(!bad.loose.length, `no loose fence runs on farmland${bad.loose.length ? `: ${bad.loose.join("; ")}` : ""}`);
   check(!bad.river.length, `no field where the river runs${bad.river.length ? `: ${bad.river.join("; ")}` : ""}`);
+  check(roads > 0 && !bad.road.length, `no field a road runs through (${roads} left off)${bad.road.length ? `: ${bad.road.join("; ")}` : ""}`);
   check(!bad.apron.length, `the gates' aprons clear${bad.apron.length ? `: ${bad.apron.slice(0, 6).join("; ")}` : ""}`);
   check(!bad.inside.length, `inside every gated field walked to through its gate${bad.inside.length ? `: ${bad.inside.slice(0, 6).join("; ")}` : ""}`);
   check(!bad.kind.length, `each field's fence laid in its own kind${bad.kind.length ? `: ${bad.kind.slice(0, 6).join("; ")}` : ""}`);
