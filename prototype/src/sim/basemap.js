@@ -1167,8 +1167,9 @@ export function ringPlan(state, base) {
   const R = ringHalf(base), B = gridBox(base);
   const auto = autoLayout(state, base);
   const occ = occupancy(state, base, null, auto);
+  if (occ.land) occ.land = occ.land.waterOnly; // over the land, as autoLayout lays the pieces (its clearing goes with them): a gate counted where it goes
   const free = (x, y) => onGrid(B, x, y) && !occ.foot.has(K(x, y)) && !occ.door.has(K(x, y));
-  const gates = itemsOf(state, base).filter((it) => it.kind === "gate").map((it) => it.at || auto.get(it.key)).filter(Boolean).map((at) => rectOf(FOOT.gate4, at));
+  const gates =itemsOf(state, base).filter((it) => it.kind === "gate").map((it) => it.at || auto.get(it.key)).filter(Boolean).map((at) => rectOf(FOOT.gate4, at));
   const gateIt = { ...FOOT.gate4, type: "gate4" };
   const out = { gate4: 0, wall4: 0, wall2: 0, wall1: 0 };
   let open = 0;

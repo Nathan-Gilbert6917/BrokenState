@@ -18,6 +18,7 @@ import { BUILDINGS, addBuilding } from "../src/sim/buildings.js";
 import { setAutopilot, autopilotStats, autopilotResolve, PERSONALITIES, governBase } from "../src/sim/autopilot.js";
 import { canRadioGroup, relayReach, radioSummary, RELAY_RANGE, GROUP_REACH } from "../src/sim/radio.js";
 import { unlockAll } from "../src/sim/blueprints.js";
+import { worksAt } from "../src/sim/groupworks.js"; // a group's radio station (radio.js groupHasSet)
 import { sizeDef } from "../src/sim/worldsize.js";
 import { takeSize } from "./sizearg.js";
 
@@ -216,6 +217,7 @@ function relayCheck(seed) {
     const fT = state.tiles.find((u) => free(u, 9, 12, oT.id, () => g.distance(u.id, h.tile) > RADIO_RANGE + 2 + GROUP_REACH));
     const f = state.factions.find((x) => x.alive && x.bases.length);
     f.bases = [fT.id]; f.known = true; f.goodwill = 60; f.pact = "trade";
+    worksAt(f, fT.id).radio = 1; // a station of their own: a link needs a set on both sides (radio.js groupHasSet, envoys 5feada9)
     for (const x of state.factions) if (x !== f) x.known = false;
     const o = { id: newId(), tile: oT.id, type: "outpost", name: "Relay Hill", stock: { food: 80, water: 80, fuel: 10, meds: 2, ammo: 20, parts: 6, scrap: 80 }, radio: false, watchtower: false, buildings: [], construction: [], armory: [] };
     state.bases.push(o);
@@ -246,7 +248,7 @@ function relayCheck(seed) {
       const f2 = state.factions.find((x) => x !== f && x.alive && x.bases.length);
       if (f2) {
         f2.bases = [state.tiles.find((t) => free(t, 7, 11, o2.tile, (x) => g.distance(x.id, h.tile) > RADIO_RANGE + 2 + GROUP_REACH && g.distance(x.id, o.tile) > RELAY_RANGE + GROUP_REACH))?.id ?? f2.bases[0]];
-        f2.known = true; f2.goodwill = 60;
+        f2.known = true; f2.goodwill = 60; worksAt(f2, f2.bases[0]).radio = 1; // a set of their own, as above
         for (let i = 0; i < 8; i++) { governBase(state, o2, { building: true }); for (const c of o2.construction) addBuilding(o2, c.type); o2.construction.length = 0; }
         if (o2.buildings.some((b) => b.type === "relay")) out.push("a relay went up at an outpost the station does not reach (it cannot link)");
         else farOk = `none at ${o2.name}, ${g.distance(o2.tile, h.tile)} tiles out (built: ${o2.buildings.slice(5).map((b) => b.type).join(", ") || "nothing"})`;
@@ -277,6 +279,7 @@ function arrowsCheck(seed) {
     h.stock.arrows = 0; h.stock.wood = 400; h.stock.scrap = 120;
     craftQueue(h).length = 0;
     h.armory = h.armory.filter((it) => !it || GEAR_SLOT(it) !== "weapon"); // no guns to swap the bows for
+    stockTools(h); // its tools back (the hub's shovel and hatchet went with the weapons): a base with none makes makeshift ones first (toolreqs.js basicToolWanted, e33cfa7)
     for (let k = 0; k < 3; k++) governBase(st, h, { production: true }); // one craft queued a call (water filters first)
     if (!craftQueue(h).some((j) => j.recipe === "arrows")) out.push(`no arrows queued for ${home.length} bows with none (queue: ${craftQueue(h).map((j) => j.recipe).join(", ") || "empty"})`);
     // Packing: plenty of arrows at the hub; the governor's trips over 30 days.
