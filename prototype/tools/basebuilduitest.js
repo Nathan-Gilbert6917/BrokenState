@@ -5,7 +5,8 @@
 // Checks: the layout panel renders the five Build groups, a type that cannot be built is greyed out with the reason
 // in its tooltip; pickType puts the type's name in the header card and a build at a free cell queues the job placed
 // there (the panel lists it placed, the message says so); a cabin selected next to another shows Open a doorway,
-// the link opens it and the card says so, Close the doorway comes back; the hover line over the margin; the Base map
+// the link opens it and the card says so, Close the doorway comes back; the selected thing's chip on the map (its
+// footprint and the same orders), none while it is picked up; the hover line over the margin; the Base map
 // tab's text and the Construction tab's buttons; the Storage tab for a hub with a storehouse, crates and a parked
 // car (every container, the mover moving 10 of a supply and an item, Move all food, Tidy up filling the containers,
 // the warning that goods lie outside when the stock is more than the base's storage holds); the inventory window's picker putting a
@@ -173,6 +174,12 @@ section("The selected thing's card and the doorways");
   check(html.includes("Cabin 2") && new RegExp(`data-v="link" data-a="${keyOf(A)}" data-b="${keyOf(B)}" (?!disabled)`).test(html), "its neighbour with Open a doorway");
   check(html.includes('data-v="lift"') && html.includes('data-v="unplace"') && html.includes('data-v="demolish"') && html.includes(">Move<") && html.includes(">Auto<") && html.includes(">Demolish<"), "Move, Auto (placed by hand) and Demolish");
   check(new RegExp(`cbunit on" data-action="cb-deploy" data-v="select" data-k="${keyOf(A)}"`).test(html), "its row in the Placed list is lit");
+  // Its orders beside it on the map (the user's request 2026-10-23): the chip ui/combat.js puts by its footprint.
+  const c0 = cui();
+  layoutPanel(st, st.combat, c0);
+  const chip = c0.selChip, F0 = st.combat.deployPlan.fort;
+  check(!!chip && chip.key === keyOf(A) && String(chip.rect) === String([12 + F0.ox, -12 + F0.oy, 5, 4]), `the chip on the map: the cabin's footprint in map cells (${chip && chip.rect})`);
+  if (chip) { htmlOk(chip.html, "the selection's chip"); check(chip.html.includes("Cabin 1") && chip.html.includes(">Move<") && chip.html.includes(">Auto<") && chip.html.includes(">Demolish<") && new RegExp(`data-v="link" data-a="${keyOf(A)}" data-b="${keyOf(B)}" (?!disabled)`).test(chip.html) && chip.html.includes('data-v="select" data-k=""'), "the chip's orders: Move, Auto, Demolish, the doorway to Cabin 2, deselect"); }
   check(!act(st, { type: "link", a: keyOf(A), b: keyOf(B) }) && h.plan.links.length === 1, "Open a doorway links them");
   html = layoutPanel(st, st.combat, cui());
   check(html.includes("A doorway opened between them") && html.includes("Close the doorway") && html.includes("Doorway") && new RegExp(`data-v="unlink" data-a="${keyOf(A)}" data-b="${keyOf(B)}"`).test(html), "the card says the doorway is open, with Close the doorway");
@@ -184,7 +191,9 @@ section("The selected thing's card and the doorways");
   check(layoutHover(st, b, { x: 13 + F.ox, y: -11 + F.oy }, null).includes("Selected: click again to lift"), "the hover line over the selected thing says a second click lifts it");
   const wasA = A.at && A.at.slice();
   check(!act(st, { type: "lift", key: keyOf(A) }) && st.combat.layout.pick === keyOf(A) && String(A.at) === String(wasA), "picked up to move (the second click): it stays where it stands until put down");
-  check(layoutPanel(st, st.combat, cui()).includes("what stands inside moves with it"), "the pick card of a general building says what is inside moves with it");
+  const c1 = cui();
+  check(layoutPanel(st, st.combat, c1).includes("what stands inside moves with it"), "the pick card of a general building says what is inside moves with it");
+  check(c1.selChip === null, "no chip on the map while it is picked up");
   check(!act(st, { type: "pick", key: null }), "Esc puts it down");
   // Demolish from the map: a queued job is cancelled, a standing building pulled down (the question is ui/combat.js's).
   check(!act(st, { type: "select", key: keyOf(B) }) && !act(st, { type: "demolish", key: keyOf(B) }) && !h.buildings.includes(B) && st.combat.layout.sel == null, "Demolish pulls the second cabin down and clears the selection");

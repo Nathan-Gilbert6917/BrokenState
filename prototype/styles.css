@@ -481,6 +481,12 @@ table.t.fc-rooms td, table.t.fc-rooms th { padding: 0.1rem 0.15rem; }
 .bmfoot { display: flex; flex-wrap: wrap; gap: 0.25rem; align-items: center; margin-top: 0.2rem; }
 .bmwhy { color: color-mix(in srgb, var(--danger) 80%, var(--text)); margin-top: 0.15rem; }
 .bmsel { border-color: var(--accent); }
+/* The base map's selected thing: its orders on the map beside it (ui/combat.js selChipFrame, ui/basemap.js selChip). */
+#bmselchip { position: absolute; z-index: 6; width: max-content; max-width: min(22rem, calc(100% - 16px)); padding: 0.35rem 0.45rem 0.4rem; background: rgba(20,22,26,0.94); border: 1px solid var(--accent); border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,0.6); font-size: 0.85rem; pointer-events: auto; }
+#bmselchip[hidden] { display: none; }
+#bmselchip .bc-head { display: flex; align-items: center; gap: 0.45rem; }
+#bmselchip .bc-head .mini { margin-left: auto; }
+#bmselchip .bc-btns { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.3rem; }
 #cbpanel h4 { margin: 0.5rem 0 0.25rem; font-size: 0.8rem; font-weight: 600; }
 /* The Storage tab (ui/storage.js): the containers' cards, the mover's rows, the kept-in chip on an armory tile (ui/inventory.js). */
 .stcard .stchips { display: flex; flex-wrap: wrap; gap: 0.2rem; margin-top: 0.25rem; }
