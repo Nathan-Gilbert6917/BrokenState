@@ -1733,9 +1733,9 @@ function lookOf(b, scene, x, y, cut, focus = null) {
   return { k, o };
 }
 // Farmland's field fences (sim/basescatter.js fieldLayer) and where they run off the map (the user's word 2026-10-23:
-// "Show it going off the map and not just terminating"): a fence line that meets the map's edge (its cells one and two
-// in from the edge, the outermost ring is the attackers' open ground: sim/basescatter.js layLand) goes on straight out
-// across the skirt (ui/battleedge.js) into the fog, fading with it. Scenery only, like the skirt: nothing in the sim
+// "Show it going off the map and not just terminating"; "Fill in the gap"): a fence line that meets the map's edge (its
+// edge cell and the one in from it: a field's fence runs right out to the edge, sim/basescatter.js layLand) goes on
+// straight out across the skirt (ui/battleedge.js) into the fog, fading with it. Scenery only, like the skirt: nothing in the sim
 // knows of it. [{ x, y (outside the map), k, dx, dy (the way out), t (tiles out from the edge) }].
 const FIELD_FENCE = new Set(["fence", "wirefence"]);
 export function offEdgeFences(b, K = skirtTiles()) {
@@ -1744,9 +1744,8 @@ export function offEdgeFences(b, K = skirtTiles()) {
   const at = (x, y) => b.cells[y * b.w + x].k;
   const side = (n, cell, dx, dy) => {
     for (let a = 1; a < n - 1; a++) {
-      const [x1, y1] = cell(a, 1), k = at(x1, y1), [x2, y2] = cell(a, 2);
-      if (!FIELD_FENCE.has(k) || at(x2, y2) !== k) continue;
-      const [x0, y0] = cell(a, 0);
+      const [x0, y0] = cell(a, 0), k = at(x0, y0), [x1, y1] = cell(a, 1);
+      if (!FIELD_FENCE.has(k) || at(x1, y1) !== k) continue;
       for (let t = 1; t <= K; t++) out.push({ x: x0 + dx * t, y: y0 + dy * t, k, dx, dy, t });
     }
   };

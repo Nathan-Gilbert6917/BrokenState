@@ -214,6 +214,7 @@ export function scatterLayer(seed, terrain, G) {
 // fields by the terrain, post and wire (k "wirefence": no cover, seen through, climbed over like half cover:
 // combat.js vaultable); the gate a wooden one either way. Where its fence meets the map's edge the view runs it on
 // past the edge into the fog (ui/isoview.js offEdgeFences).
+const FIELD_FENCE = new Set(["fence", "wirefence"]);
 export const FIELD = { REGION: 48, S: [22, 42], GAP: 3, GATE: 2, APRON: 2, P: { farm: 0.85, plains: 0.45 }, WIRE: { farm: 0.4, plains: 0.55 } };
 /**
  * The fields over [-G, G) (map coordinates): [{ id, x0, y0, s (the square [x0, x0 + s) each way), k (its fence's
@@ -1014,12 +1015,16 @@ export function clearOf(p, tool = true, mode = "clear") {
  * Lays the land on a map (basemap.js buildBaseMap; fort.js for an AI group's margin). m: { cells, W, H, ox, oy (grid →
  * map), land (landOf), ok(x, y) → the map cell may take a piece (open ground, nothing standing), floor(x, y) → it may
  * take a floor }. Never on the map's outermost cells (the attackers' ground, an open ring round the map, so wherever a
- * battle floods its reach from on the edge it reaches all of it). Returns { kinds: { k: n } }.
+ * battle floods its reach from on the edge it reaches all of it) but for a farmland field's fence (fieldLayer: the
+ * user's word 2026-10-23, "Fill in the gap"), run right out to the edge: a fence is climbed over by the living and
+ * crawled over by the dead (combat.js vaultable), so the ring is still crossed all the way round. Returns { kinds: { k: n } }.
  * @param {any} m
  */
 export function layLand(m) {
   const { cells, W, H, ox, oy, land } = m;
   const inner = (x, y) => x > 0 && y > 0 && x < W - 1 && y < H - 1;
+  const onMap = (x, y) => x >= 0 && y >= 0 && x < W && y < H;
+  const toEdge = (p) => p.cells.length === 1 && FIELD_FENCE.has(p.k) && typeof p.g === "string" && p.g.startsWith("fd"); // a field's fence panel (landOf)
   for (const [key, f] of land.floors) {
     const [gx, gy] = key.split(",").map(Number), x = gx + ox, y = gy + oy;
     if (x >= 0 && y >= 0 && x < W && y < H && (!m.floor || m.floor(x, y))) cells[y * W + x].f = f;
@@ -1034,7 +1039,7 @@ export function layLand(m) {
   for (const p of land.list) {
     if (p.k === "rise" || p.k === "dip") { kinds[p.k] = (kinds[p.k] || 0) + 1; continue; } // its height is laid above
     const at = p.cells.map(([gx, gy]) => [gx + ox, gy + oy]);
-    if (!at.every(([x, y]) => inner(x, y) && m.ok(x, y))) continue;
+    if (!at.every(([x, y]) => (inner(x, y) || (toEdge(p) && onMap(x, y))) && m.ok(x, y))) continue;
     if (p.k === "wreck") {
       const kind = p.body === "truck" ? "truck" : "car", x0 = Math.min(...at.map((c) => c[0])), y0 = Math.min(...at.map((c) => c[1]));
       const id = y0 * W + x0 + 1;

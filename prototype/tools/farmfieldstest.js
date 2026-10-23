@@ -12,12 +12,18 @@
 //      torn down for wood (its post) and scrap (its wire);
 //   4. off the map (the user's word 2026-10-23: "Show it going off the map and not just terminating"): ui/isoview.js
 //      offEdgeFences runs a fence line meeting the map's edge on across the skirt, straight out, in its own kind, and
-//      nothing else (a line along the edge, a lone panel, a battle with no skirt).
+//      nothing else (a line along the edge, a lone panel, a battle with no skirt);
+//   5. no gap at the edge and over the fences (the user's words 2026-10-23: "Fill in the gap and allow vaulting over
+//      fences"): on a farm hub's base map a field's fence runs right out to the map's edge cell (nothing else of the land
+//      does) and on into the skirt from there; in a fight a survivor vaults a wooden and a wire fence line, the dead
+//      crawl over them, and nobody ends a move on one.
 // Usage: node tools/farmfieldstest.js [seed]
 import "./isobattles.js"; // the UI modules' stubs, before ui/isoview.js
 import { HexGrid } from "../src/sim/hex.js";
-import { CELL, vaultable } from "../src/sim/combat.js";
-import { crawlable } from "../src/sim/barricade.js";
+import { CELL, vaultable, createBattle, registerCombatHandler, reachable, pathTo, VAULT } from "../src/sim/combat.js";
+import { crawlable, CRAWL } from "../src/sim/barricade.js";
+import { createWorld, hub, atBase } from "../src/sim/world.js";
+import { Rng } from "../src/sim/rng.js";
 import * as BM from "../src/sim/basemap.js";
 import { FIELD, fieldLayer, scatterSeed, CLEAR, SCATTER_KINDS } from "../src/sim/basescatter.js";
 
@@ -141,10 +147,10 @@ console.log("\n4. Fence lines run on past the map's edge");
   const map = (w, h, put) => { const cells = Array.from({ length: w * h }, () => ({ k: "open", f: "grass" })); for (const [x, y, k] of put) cells[y * w + x].k = k; return { w, h, cells }; };
   // A wooden line down to the top edge at x 5, a wire one to the right edge at y 7, a line along the bottom edge, a lone panel by the left edge.
   const put = [];
-  for (let y = 1; y < 10; y++) put.push([5, y, "fence"]);
-  for (let x = 8; x < 19; x++) put.push([x, 7, "wirefence"]);
-  for (let x = 3; x < 15; x++) put.push([x, 18, "fence"]);
-  put.push([1, 12, "fence"]);
+  for (let y = 0; y < 10; y++) put.push([5, y, "fence"]);
+  for (let x = 8; x < 20; x++) put.push([x, 7, "wirefence"]);
+  for (let x = 3; x < 15; x++) put.push([x, 19, "fence"]);
+  put.push([0, 12, "fence"]);
   const b = map(20, 20, put), K = 5, got = ISO.offEdgeFences(b, K);
   const top = got.filter((q) => q.x === 5 && q.y < 0), right = got.filter((q) => q.y === 7 && q.x >= 20);
   check(top.length === K && top.every((q) => q.k === "fence" && q.dy === -1 && q.y === -q.t), `a wooden line meeting the top edge runs on ${top.length} tiles up into the skirt`);
@@ -152,6 +158,46 @@ console.log("\n4. Fence lines run on past the map's edge");
   check(got.length === 2 * K, `nothing else runs off (a line along the edge, a lone panel): ${got.length} tiles in all`);
   check(got.every((q) => q.x < 0 || q.y < 0 || q.x >= b.w || q.y >= b.h), "every one of them off the map (scenery: the skirt's)");
   check(!ISO.offEdgeFences(b, 0).length, "no skirt (Display: Battle map edge off), none");
+}
+
+// ---------- 5. no gap at the edge; over the fences ----------
+console.log("\n5. No gap at the map's edge; vaulted and crawled over");
+{
+  const ISO = await import("../src/ui/isoview.js");
+  registerCombatHandler("ffields", () => {});
+  let edgeFence = 0, edgeOther = 0, runs = 0, maps = 0;
+  for (const seed of [41, 44, 47]) {
+    const st = createWorld({ seed, factionCount: 6 }), h = hub(st), t = st.tiles[h.tile];
+    Object.assign(t, { terrain: "plains", road: false, pond: false, loc: { ...(t.loc || {}), type: "farm" } });
+    const F = BM.buildBaseMap(st, h, new Rng(1), { view: true });
+    maps++;
+    for (let y = 0; y < F.H; y++) for (let x = 0; x < F.W; x++) {
+      if (x && y && x < F.W - 1 && y < F.H - 1) continue;
+      const k = F.cells[y * F.W + x].k;
+      if (k === "fence" || k === "wirefence") edgeFence++;
+      else if (k !== "open") edgeOther++;
+    }
+    runs += ISO.offEdgeFences({ w: F.W, h: F.H, cells: F.cells }, 5).filter((q) => q.t === 1).length;
+  }
+  check(edgeFence > 0 && runs > 0, `the fields' fences run right out to the edge cell (${edgeFence} panels on the edge of ${maps} farm hubs' maps) and on into the skirt from there (${runs} lines)`);
+  check(!edgeOther, `nothing else of the land on the edge cells (${edgeOther}): it stays the attackers' open ground`);
+  // A fight: a wooden fence line and a wire one across the map; a survivor vaults both, the dead crawl over them.
+  const st = createWorld({ seed: 7, factionCount: 6 }); st.started = true; st.hour = 24 * 3 + 12;
+  const h = hub(st), ids = atBase(st, h.id).slice(0, 1).map((s) => s.id);
+  st.combat = createBattle(st, { tile: h.tile, baseId: h.id, fighterIds: ids, enemy: { kind: "zombies", count: 1, power: 1, name: "Test" }, ambush: "player", canRetreat: false, handler: "ffields", context: {} });
+  const b = st.combat, I = (x, y) => y * b.w + x;
+  for (const c of b.cells) { c.k = "open"; delete c.h; delete c.t; delete c.hp; delete c.mhp; }
+  b.reach.fill(1); b.phase = "player";
+  for (let y = 0; y < b.h; y++) { b.cells[I(10, y)].k = "fence"; b.cells[I(13, y)].k = "wirefence"; }
+  const u = b.units.find((q) => q.side === "player"), z = b.units.find((q) => q.side === "enemy");
+  delete z.ztype; // a plain walker (a Climber goes over its own way: tools/vaulttest.js)
+  u.x = 8; u.y = 10; z.x = 16; z.y = 10;
+  const r = reachable(b, u, 30), past = r.dist[I(14, 10)];
+  check(isFinite(past) && past === 6 + 2 * VAULT.COST, `a survivor vaults the wooden fence and the wire one (${past} tiles to the far side: 6 steps + ${VAULT.COST} a vault)`);
+  check(pathTo(r, 14, 10).some(([x]) => x === 10) && pathTo(r, 14, 10).some(([x]) => x === 13), "the path goes over both lines");
+  check(!isFinite(r.dist[I(10, 10)]) && !isFinite(r.dist[I(13, 10)]), "a move never ends on a fence");
+  const rz = reachable(b, z, 30);
+  check(isFinite(rz.dist[I(9, 10)]) && rz.dist[I(9, 10)] === 7 + 2 * CRAWL.COST, `the dead crawl over both (${rz.dist[I(9, 10)]} tiles to the far side)`);
 }
 
 console.log(`\n${passes} passed, ${fails} failed`);
