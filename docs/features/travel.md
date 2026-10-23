@@ -1,0 +1,107 @@
+# Teams, travel and exploration
+
+Detail for section 5 of [docs/agents/features.md](../agents/features.md). `[name]` is `prototype/src/sim/name.js`; `ui/name` is `prototype/src/ui/name.js`. Session notes behind POIs and nomads: [docs/prompts/poi-and-nomads.md](../prompts/poi-and-nomads.md).
+
+## Team inventory and handing over goods
+Modules: [teamform, teaminv, teammeet].
+
+- **The team's supplies as stack tiles** (the user's request 2026-10-18: the ammo and magazines in the truck onto the survivors before a raid). In the team inventory window (and the raid plan's Team inventory) and a member's own window, what the team packed and what it found are one stock of tiles in the cargo box (not a "Packed:" line).
+  - Each tile is dragged or clicked onto a member's pockets, rig pouches, pack or off hand through the stack mover (rounds boxed or loose; found cargo drawn on first, then packed supplies).
+  - A box of rounds dropped back on the cargo is the team's rounds again at once.
+  - Modules: [ui/inventory storageBox teamPool / teamHolders, INV_STACK_DESTS, the "inv" stack screen; ui/teaminv teamTab stackPanel; inventory settleStore unbox].
+- **Supplies onto a named member** wherever supplies change hands (forming a team, Load at a base, Give goods, the inventory window's stores): a pick of any supply with an item form (rounds boxed or loose, water, meds, fuel, a food, parts) with a person target `{ sid, where: pocket | pack | rig, loose }` becomes items in that place (the rig: its admin and pocket pouches), within what the place takes, their room and max load [supitems suppliesOnto / supRoom / placeSupplies / suppliesHeld / parseTarget / SUP_PLACES, teaminv loadFromBase / dropSupplies, teammeet giveGoods, teamform formTeam opts.onto; ui/teamform, ui/teaminv, ui/teammeet, ui/inventory INV_STACK_DESTS].
+- **Rounds onto a named member** in the same places: a round key with a person target becomes boxed or loose items within their room and max load [supitems roundsOnto / roundRoom / parseTarget, teaminv loadFromBase / dropRounds, teammeet giveGoods, teamform formTeam opts.rounds].
+- **Guns and magazines leave loaded**: a team forming at a base (and a person joining one there) takes the rounds its guns and spare magazines show in the rounds badge out of the base's stock as the team's own, so a fight starts as full as the window showed. The preview weighs them and says how many; one going back in takes theirs back [gunrounds `loadoutRounds`; teamform `teamLoadout`, `loadoutCount`, formPreview `loadout`, formTeam, addMember, removeMember; ui/teamform summary].
+
+## The hands in a fight
+Modules: [load, carry, carrykit].
+
+- Anything in the carried part of the inventory (a load or bag in the arms, finds carried loose) fills the hands: no shooting, reloading, doors or windows until it is set down or stowed. Two different things carried and nothing more is taken. Half cover is still vaulted, at double the movement, or the load is set down over it [carry, raidloot, combat VAULT].
+- **The Carried list shows all that fills the hands** (the user's report 2026-10-20: "hands full" over an empty list):
+  - the bag or cart in the arms (its grid under it; dragged onto the ground it is set down, a cart let go, free);
+  - the team's supplies in the arms (taken off a ground pile in a team's fight they go into the arms: carry pileToArms; dragged onto the ground, set down free: dropArmsSupply);
+  - a hand on a teammate's cart; the finds carried loose.
+  - A crumb of a part-unit carried loose fills no hands (HAUL_MIN) and goes along with the last whole unit moved (raidloot raidMove).
+  - On the State Map the Supplies carried box's Carried (hands) row names the bag or the cart pushed [ui/inventory carriedList, ui/carry armsRow].
+
+## Tents
+The user's request 2026-10-20. Modules: [tents, data-tents; staging, nightmarch, orders, hardcore-start, nomads, visitors, groupworks, grouppois, scavenge, combat; ui/ui campTentsCard, ui/storage, ui/itemart/tents]; test `tools/tentstest.js`. Tents as base-map pieces: [bases.md, Tents on the base map](bases.md#tents-on-the-base-map).
+
+- **Kinds** (one table, data-tents.js TENT_TYPES, for the bags and the base map): one-person `tent1` (1×2, sleeps 1, S = 15 kg out of the weather), two-person `tent2` (2×2, 2, 2S), four-person `tent4` (3×3, 4, 4S; the rarest), and the makeshift tent (1×2, 1, no storage, built, no bag).
+- **Carrying**: bags go in the In arms slot (`arms`; the four-person duffle in both arms), a cart's bed or the team's cargo (a vehicle's trunk), never a pack.
+- **Finds** on their own dice: the hour-by-hour search by site or POI (campgrounds, campsites, hiker camps, ranger stations, lodges, cabins, the mall's sporting goods, a town, garages, houses, army sites; TENT_FINDS), raid containers (AREA_TENTS), the AI's POI raids (rollGroupTent).
+- **Set up camp** takes half an hour instead of an hour when the team's bags sleep everyone (by the share for some; campPitchHours, parties.js pitchHoursFor; a job under an hour ends at its minute: orders.js tasksDue). (Later superseded for a base's setup by the camp spot rules: tent bags no longer shorten it; see [bases.md](bases.md#setup-time-and-yield).)
+- **At camp** every bag is pitched as a base map piece (pt-int merge: basemap pitchTent, a base.buildings record with its bag on it; the old base.tents list migrates on load, tents migrateTentList).
+  - Sleepers are its beds (a camp has none of its own: buildings baseBeds + tentBeds, once).
+  - Storage is room out of the weather once (basestorage "tent" containers keyed b:<id>, storage.js's dry Tents room; assignable in the Storage tab like a storage building, food or gear kept in it by hand, never by Tidy up: the user's pick 2026-10-20).
+  - Whoever has no bed sleeps rough (beds bedLine, the one rule: −1 a day, ×2 wet, ×3 freezing, a 3% chance of a chest cold a freezing night). Bags in the camp's armory go up for them (campTentsDaily, and the governor at any base: beds governBeds).
+  - Strike camp packs the tents back into bags first; a camp gone leaves them in its cache.
+  - pitchTentAtBase / strikeTentAtBase / pitchStoredBag put the base map's pieces up and down.
+- **On the road**: Make camp puts the bags up for the night (roadTentLine, roadTentsHour).
+- **Hardcore**: one one-person tent bag per starting survivor (TENTS.HARDCORE), in the car, pitched at the first home, so its 0 beds become one each.
+- **AI**: nomad and raider bands set out with bags by kit (BAND_TENTS; drifters makeshift) and pitch them at camp. Rough sleepers slow a nomad band's recruiting by CROWDED_GROWTH × the share; their fresh food keeps better in them (bandSpoilMult); they walk the time their bags save (bandPitchSaved). A group's bags on its shelf are quarters at its camps (groupworks.js served) and its tents on the battle map at its camp (tents groupCampTents, conquest).
+
+## Campsites
+The user's request 2026-10-20: "a campsite using these tents spawned on the map around a campfire". Modules: [campsite, scavenge startScavenge, combat createRaid / searchBox / finishCombat, pois generatePois / poiThreat / notePoiThreat, grouppois raidPoiAsGroup, nomads nomadFight, visitors teamFight, ground groundLeftovers; ui/poipick, ui/poiview, ui/raidplan]; test `tools/campsitetest.js`.
+
+- **A POI kind**: the woods' own, plus one now and then on its own dice on a woods, countryside, roadside, lake or riverside tile (CAMPSITE.GEN, appended after the tile's list so saves line up; rarer than the common places). Drawn as a ring of tents round a lit fire (ui/mapsprites paintCampsite).
+- **State** by hash dice, rolled again every CAMPSITE.EPOCH (10) days:
+  - abandoned (40%): a few of the dead about, the best loot, some tents torn;
+  - overrun (25%, more with infection): a pack of the dead among the tents, some of them the campers turned, campers' bodies to search, tents torn;
+  - active raider camp (35%): 3–6 raiders round a lit fire; at night 60% asleep inside the tents (unaware, concealed, woken by noise).
+  - Cleared for good once nobody of the camp's is left standing (poi.camp.cleared).
+- Its state adds to the POI's true threat (CAMPSITE.DANGER). A survey or visit sees it (poi.camp.seen: the POI dialogue, tile panel, raid plan window; a scout come back unseen sees it as it is).
+- **Raid map** (campRaidMap, the POI's own map dice): a clearing round a fire pit with 2–6 tents of mixed kinds (campTents), bushes and trees round it, a car now and then. Each tent with storage is a container with loot sized by its storage (tentBoxLoot: food, water, camp gear, rounds or a gun now and then, a spare bag). Roster by state (campRoster). Tents taken stay gone (poi.camp.gone); standing ones keep contents (the ledger) and wear (poi.camp.hp).
+- **AI**: nomad and raider bands' camp fights use battle layout "campsite" with their real tents (bags off their shelf) and a share of their stores in the tents as piles (back to them before the handler), their people round the fire or asleep by the hour. Groups' POI raids on a campsite carry off up to CAMPSITE.AI_BAGS tents and clear it (campGroupRaid).
+
+## Points of interest (POIs)
+Modules: [pois, mapgen; the kinds in data LOCATIONS].
+- 0–4 small places per land tile (house, shed, hunting blind, gas station…) with their own loot pools, a town suburb ring, known/hidden by zone, finds carried in team reports to the hub, saves that hold only the changes.
+- **On the map**: a sprite per kind (ui/mapsprites POI_PAINT); a bare tile's top POI drawn on its zone plate once known and faded by its pool; a pip with the number of places known on the tile; parties sharing a tile drawn on opposite sides of the hex [ui/render].
+- The tile panel's Places rows, the hover text and the codex's Places category (never a count of what is hidden) [ui/poiview, ui/ui renderRight, ui/codex].
+
+## Gun stores, pawn shops and hardware stores
+- The user's requests 2026-10-21: "gun shop, pawn shops POI and to town and city crawls which have increased loot chances for guns rigs and other survival gear"; "add hardware store that has increased spawn of materials needed for building and crafting".
+- **Hardware store**: raid rooms are aisles of their own (building materials, lumber, scrap, parts, tools: combat AREAS `hardware`); its search hour finds more scrap and parts and the most building materials and wood (loot BUILDMAT_FINDS, SITE_WOOD; as a POI shopshelves `rollShopSupplies`).
+- **Pawn shop**: a site type of its own (a counter and a locked gun case in the back; guns, rigs, packs, filters, stoves, lamps, radios, blades and pawned valuables).
+- Both stand as POIs on suburb and city blocks and as places on city and town crawl blocks, each on its own dice after the tile's list or the block's places (`poi.extra: "shop"`; the campsite's extra is `extra: "campsite"`).
+- gearRate on their search hour's gear roll and their own rows in the rigs/magazines, survival gear, extra-gun, blade, parts, lock and book tables. A shop POI's search hour rolls its own kind's tables (site tables go by the tile's site).
+- Modules: [shops, shopshelves, pois shopExtra, citycrawl genBlock, scavenge, carrykit, data-survival, data-guns, buildingmaps, combat AREAS; ui/mapsprites paintPawnShop].
+
+## Shops and services as places, as franchises
+- The user's requests 2026-10-21: sporting goods with football gear, a goalie mask, hockey sticks, bats, clubs and bows; electronics, radio shops, bookstores, libraries, groceries, diners, clinics, motels, churches, auto shops, pet stores, fire and police stations, garden centers, clothing stores, vets, car dealerships, pizza and other restaurants, banks, bars and liquor stores, "more common in areas that makes sense", "versions that fit the setting", "many variants … different franchises including colors, layout".
+- **14 new site types**: sportshop, electronics, radioshop, bookstore, library, petstore, garden, clothing, vet, dealer, restaurant, bank, bar, liquor. Their raid rooms (a vault, a bar, liquor shelves, a showroom, bookshelves…), buildings and find rows are data merged by each owning module (`data-shops.js` NEW_KINDS, AREA_DEFS, ROWS, `mergeRows`).
+- **Where**: a weight on a city block, a city's suburbs and a town's ring (`PLACE_W`, `settingOf`); up to two on a suburb or city tile and up to two besides a crawl block's own places, each on its own dice after the list (`shopExtras`, `shopPlaces`).
+- **Franchises**: 4–10 fictional chains and local names per kind, old kinds too (`FRANCHISES`: a name, weights by setting, a look of colours and a style for the map painter, a plan for the building: floor, front-room depth and name, width, a flat above, storeys, the back's arrangement). Every place of such a kind is one (`poi.v`, a crawl place's `v`, `franchiseFor`), named by it (pois `poiName`, the crawl's card), drawn by it (ui/mapsprites, render `siteLook` variant) and laid out by it (buildingmaps `planOf`; a building saved before franchises keeps its layout).
+- Modules: [shops, data-shops, pois, citycrawl genBlock placeOption, poiraid poiPlace, buildingmaps shop dealer bank library vet; ui/mapsprites, ui/render].
+
+## POI surveys and the per-POI raid flow
+- **Survey** (8h, the team's own tile, one roll at the end, the ring of tiles with optics that reach; stamps "surveyed" and a perceived threat on every place known) and **Quick look** (2h, the kind only; the old Look around, a recon's look too) [survey `LOOK`, `fullSurveyDone`, `quickLook`; parties `MISSIONS.fullsurvey` / `survey`; orders task `fullsurvey`; fieldheat ACTIVITY].
+- **Per-POI threat**: true = danger + infection + heat + hive land; the estimate is a word with skulls that goes stale; the picked-over bands [pois `poiThreat`, `poiThreatEstimate`, `poiBand`].
+- **One POI at a time**: a scavenge or raid on a tile with places goes into one POI. The dialogue card in the browser; a site with several buildings lists each building and the street so one pick goes straight in [poiraid `poiPickCard`, `poiRaidSetup` building]. The best known one for the autopilot, crews and tools; a search that strips one moves on to the next; the POI's building is the raid map; its own pool; raiding a place on another group's base tile is hostile [poiraid, scavenge, ui/poipick; combat `createRaid` richness and areas].
+- The autopilot sends POI surveys [survey `poiSurveyCandidate`].
+
+## Walking to a POI
+The user's requests 2026-10-22: minutes to each place on the tile, 5 to 20, unpause to see the walk, then the raid; raid again and the minutes are from where the team is; a small map of the tile with the places, a dot on the edge the team came in by, the distances drawn, decorations, the list a side panel folded by default. Module [poiwalk]; test `tools/poiwalktest.js`.
+
+- **Distances**: every POI has a spot in its hex by hash dice (the top POI near the middle, where its sprite is drawn; others 0.45–0.75 out). Minutes on foot are the cheapest way over an 11 × 11 weighted map of the hex (cost a cell by terrain × its own dice, a road across the tile cheaper; Dijkstra): 5 + 1.25 a cell of cost, clamped to 5–20, route kept [poiwalk WALK, poiSpot, poiWalk, walkMap].
+- **Start point**: the place it last went into (p.atPoi), else the edge it came onto the tile by (p.entered, noted as it steps on: parties.js stepAlong; WALK.EDGE toward that neighbour), else the middle [poiwalk walkFrom, edgeSpot].
+- **The dialogue** is a map of the tile (ui/poimap.js): ground drawn once per tile and season from the State Map's own decals by terrain, water on the sides that touch it, roads out by its roadLinks, no grid; routes dashed with minutes, the team's dot, each place's map sprite with name and minutes, a button (data-action "poisel"). The picked place's details beside it with the walk button (a site's: one per building and the street); the list of places folded at the side (data-action "poilist"; card.poiPick.sel / .list) [ui/poipick, ui/poimap tileMapBg / poiMapSvg, terraindeco drawDecal, main.js poisel / poilist].
+- **The walk**: a pick starts a task "poiwalk" of its minutes; the clock stays stopped ("Ready to walk to …", main.js choice).
+- **Tile view** (the user's request 2026-10-22: the walk shown on the POI map, the State Map's team in the middle of its tile like normal): keeps the tile map up while it walks, never stopping the clock: the route lit, the team's dot moved every frame by the clock's minutes, minutes left, Run / Pause, Stop the walk, Close; Space runs the clock under it (ui.tileView; ui/poipick tileViewUp / tileViewModal / tileViewFrame, ui/ui pickModal "tileview", main.js tv-close / tv-stop). The State Map keeps the team in the middle with a "To … 4m" pill [ui/render walkPos].
+- **Leaving** (the user's request 2026-10-22: a button to leave, the time from where the team is to the edge it leaves by): an arrow on each side of the map (the card's exit choices) and "Leave for another tile…" (the State Map's move mode, ui.moveExit; pickMove → startExitWalk, the side its way leaves by). The team walks to that edge (exitWalk: the weighted map's minutes, 0 if on that edge) as a "poiwalk" with exit { via, dest }, shown in the tile view and on the State Map, then sets off with half the first step behind it (parties.js headStart) [poiwalk exitsOf / startExitWalk / leaveNow, poiraid poiPickCard exits, ui/poimap exitArrow].
+- **Arrival**: at its minute (orders.js tasksDue) the team stands at the place (p.atPoi) and the raid starts (poiWalkDone → giveOrder scavenge). The place it stands at is "here" (straight in).
+- Only the player's pick on the card walks; the autopilot, crews and tools go straight in.
+
+## Tile heat and persistent POI containers
+- **Tile heat**: persistent per tile (going into and out of a POI by approach and shots, others' raids; 10% a day off). Raises every POI's true threat and the raid roster; when hot it brings a horde or a wandering band. Seen as a stale-able stamp in the tile panel and POI dialogue [pois `TILE_HEAT`, `tileHeat`, `addTileHeat`, `tileHeatDaily`, `noteTileHeat`, `tileHeatEstimate`; scavenge `raidEnemies`, `heatSurge`, `searchExitHeat`; ui/poiview, ui/poipick `heatLine`].
+- **Containers that stay**: a POI's raid map is the same every visit; each container rolls its contents from its own dice (seed, tile, POI, map, id). The ledger `poi.cont` keeps what your side opened as it was left (contents, hidden rest, lock) on every raid end, marks containers others ransacked in a seeded order as the pool falls, and lets abstract raids take what you left [poicont `poiRaidStart`, `poiRaidEnd`, `syncLedger`, `lootPoiAbstract`, `ledgerSummary`, `boxRng`, `poiMapRng`; combat `createRaid` / `searchBox` R.poiDice; locks; scavenge `afterRaid` / `searchHour`; poiraid `poiContainerNote`; ui/codex "Containers that stay", "Tile heat"].
+
+## Other groups survey and raid POIs
+- **Knowledge**: every group, outsider band and hardcore band keeps its own. The known zone's places within reach of where it lives are seen without a survey; hidden ones only through its own survey (8 hours on the tile with the player's Survey odds and the group's Scouting) [grouppois `groupPois`, `groupKnowsPoi`, `groupSees`, `groupSurveyTile`, `groupWouldSurvey`, `groupHiddenGuess`].
+- **One picker** for every holder, by need × what is left, with survey stops on tiles they may find more on [grouppois `groupTargets`, `bestGroupPoi`, `kindValue`].
+- **One raid** through the container ledger (pool, ledger, your left items, tile heat), the haul by the POI's kind, log lines for a POI stripped or your things taken [grouppois `raidPoiAsGroup`, `poiNews`; aiscav `haulFor` kind].
+- **Scavenging parties** go for one POI at a time (a survey stop shown on the map, the next POI when one is picked clean, `q.poi` for "being raided now"). Your team in a different POI on the same tile: no conflict; the same POI: the contest card; at war: either way. They wear down their own land's POIs [aiscav `bestSite`, `sendParty`, `scavSearchHour`, `teamPoi`, `landPoiTiles`].
+- Outsider raiders survey and raid POIs; explorers pick through a site's [visitors `raidTargets`, `searchSite`].
+- Hardcore bands raid their camp's POIs after a survey; the hardcore start doubles every POI pool [hardcore-groups `bandDay`, hardcore-loot].
+- The pacing report [tools/poipacingtest]; the codex's "Other scavengers" [ui/codex].
