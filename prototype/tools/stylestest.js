@@ -5,12 +5,15 @@
 // styles round-trips, and that short campaigns under each newer style run without a crash and play differently
 // (the Turtle sends out fewer teams than the Expansionist, the Diplomat sends more envoys than Balanced).
 // Usage: node tools/stylestest.js [days=100] [seeds=2]
+//   BS_QUICK=1 in the environment (runtests.js --quick): 50-day campaigns on one seed unless the arguments say otherwise
+//   (past day 40, when the envoys start: autopilot.js ENVOY_FROM).
 import { createWorld, tickHour, day } from "../src/sim/world.js";
 import { setAutopilot, setPersonality, autopilotPersonality, autopilotStats, PERSONALITIES, baseStyleOf } from "../src/sim/autopilot.js";
 import { STYLE_POLICY } from "../src/sim/breakoff.js";
 
-const DAYS = Number(process.argv[2] || 100);
-const SEEDS = Number(process.argv[3] || 2);
+const QUICK = !!process.env.BS_QUICK;
+const DAYS = Number(process.argv[2] || (QUICK ? 50 : 100));
+const SEEDS = Number(process.argv[3] || (QUICK ? 1 : 2));
 let pass = 0, fail = 0;
 const check = (ok, what) => { if (ok) pass++; else fail++; console.log(`  ${ok ? "ok  " : "FAIL"} ${what}`); return ok; };
 const CLASSIC = ["cautious", "balanced", "aggressive"];

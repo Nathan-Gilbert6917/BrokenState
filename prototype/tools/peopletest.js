@@ -1,6 +1,8 @@
 // People: newcomers ask first (recruits.js), crowding and the leader (morale.js), hub events (hubevents.js),
 // warnings before desertion and what deserters take (morale.js), and long runs without NaN.
 // Usage: node tools/peopletest.js [seed] [days]
+//   BS_QUICK=1 in the environment (runtests.js --quick): the same checks on less: 60-day long runs (unless [days] is
+//   given), one crowded desertion run, smaller samples of worlds for the warning and the Greedy averages.
 import { FOODS, foodIn, foodWord } from "../src/sim/foods.js";
 import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, tickHour, hub, atBase, alive, residents, day, makeSurvivor, killSurvivor } from "../src/sim/world.js";
@@ -18,8 +20,9 @@ import { HUB_EVENT_IDS, hubEventCard, hubEventWeights, hubEventChance, hubEvents
 import { autopilotResolve } from "../src/sim/autopilot.js";
 import { BOND_EVENTS } from "../src/sim/bondevents.js";
 
+const QUICK = !!process.env.BS_QUICK;
 const seed = Number(process.argv[2] || 42);
-const longDays = Number(process.argv[3] || 200);
+const longDays = Number(process.argv[3] || (QUICK ? 60 : 200));
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
 const section = (t) => console.log(t);
@@ -378,7 +381,8 @@ section("Warnings before desertion");
   check(s.moodWarn === 2 && st.log.some((l) => l.text.startsWith(`${s.name} is close to leaving`)) && st.cards.some((c) => c.moraleFor === s.id && /close to leaving/.test(c.title)), "below 20: second warning (log and card)");
   // Never deserts on the night of the second warning, even at 0 mood.
   let left = 0;
-  for (let i = 0; i < 200; i++) {
+  const tries = QUICK ? 40 : 200;
+  for (let i = 0; i < tries; i++) {
     const s2 = W(seed + i);
     const h2 = hub(s2);
     const v = atBase(s2, h2.id).find((x) => !x.leader);
@@ -386,7 +390,7 @@ section("Warnings before desertion");
     baseMoraleDaily(s2, h2, atBase(s2, h2.id), residents(s2, h2.id));
     if (!v.alive) left++;
   }
-  check(left === 0, `nobody walks out the night they are first warned (${left} of 200)`);
+  check(left === 0, `nobody walks out the night they are first warned (${left} of ${tries})`);
   // Card options.
   const st2 = W();
   const h2 = hub(st2);
@@ -406,7 +410,7 @@ section("Warnings before desertion");
   check(v.mood === Math.min(100, m2 + 25) || v.mood === Math.min(100, m2 + 5), `talk: +25 or +5 (${m2.toFixed(1)} → ${v.mood.toFixed(1)})`);
   // A long crowded run: every deserter had a second warning on an earlier day.
   let deserters = 0, unwarned = 0;
-  for (const sd of [seed, seed + 1, seed + 2]) {
+  for (const sd of QUICK ? [seed] : [seed, seed + 1, seed + 2]) {
     const s3 = W(sd);
     const h3 = hub(s3);
     while (residents(s3, h3.id).length < baseBeds(h3) * 2.5) addPerson(s3, h3, 45);
@@ -451,9 +455,10 @@ section("Deserters take their gear and some supplies");
   check(Object.entries(took).every(([k, q]) => line.includes(FOODS[k] ? foodWord(k, q) : `${q} ${k}`) && Math.abs(h.stock[k] - (before[k] - q)) < 1e-6), `the log says what supplies left with them (${JSON.stringify(took)})`);
   check(foodIn(took) >= 2 && took.water >= 2, "a few days' food and water");
   // Greedy takes more; never more than a quarter of a stock.
+  const runs = QUICK ? 50 : 150;
   const avg = (greedy) => {
     let tot = 0;
-    for (let i = 0; i < 150; i++) {
+    for (let i = 0; i < runs; i++) {
       const s2 = W(seed + i);
       const h2 = hub(s2);
       Object.assign(h2.stock, { water: 100, meds: 20, ammo: 200 }); setFood(h2, 100);
@@ -461,7 +466,7 @@ section("Deserters take their gear and some supplies");
       v.traits = greedy ? ["greedy"] : [];
       tot += Object.values(desert(s2, h2, v).took).reduce((a, q) => a + q, 0);
     }
-    return tot / 150;
+    return tot / runs;
   };
   const g = avg(true), n = avg(false);
   check(g > n * 1.6, `Greedy takes more (${g.toFixed(1)} vs ${n.toFixed(1)} units)`);

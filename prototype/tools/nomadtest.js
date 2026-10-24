@@ -25,13 +25,16 @@
 // - Hardcore: the first fill-up goes to NOMADS.HC_START × the target, faster; after it the respawn holds the target.
 // - Turnover: a band leaves after its NOMADS.LIFE days; by year 5 on a Normal world every unlocked tier has come.
 // Usage: node tools/nomadtest.js [seed] [--quick] [--years N] [--sizes normal,huge]
+//   BS_QUICK=1 in the environment (runtests.js --quick): the long run's checks on one game year on the Small and
+//   Normal sizes (unless --years / --sizes say otherwise); --quick still skips the long run altogether.
 import { execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const CHILD = process.argv[2] === "--child";
-const QUICK = process.argv.includes("--quick");
+const QUICK = !!process.env.BS_QUICK;
+const NO_LONG = process.argv.includes("--quick");
 const yi = process.argv.indexOf("--years");
-const YEARS = yi > 0 ? Number(process.argv[yi + 1]) : 6;
+const YEARS = yi > 0 ? Number(process.argv[yi + 1]) : QUICK ? 1 : 6;
 const si = process.argv.indexOf("--sizes");
 const args = process.argv.slice(CHILD ? 3 : 2).filter((a, i, l) => !a.startsWith("--") && l[i - 1] !== "--years" && l[i - 1] !== "--sizes");
 const seed = Number(args[0] || 42);
@@ -86,6 +89,7 @@ if (CHILD) {
       tickHour(st);
       for (const b of N.nomadsOf(st)) out.maxPop[b.tier] = Math.max(out.maxPop[b.tier], b.pop);
       if (out.at4 == null && N.nomadTiers(st).length === 4) out.at4 = N.nomads(st).stats.spawned; // the bands spawned before the preppers' unlock (year 4)
+      if (QUICK && N.nomadsOf(st).some((b) => !N.nomadTiers(st).includes(b.tier))) out.locked = (out.locked || 0) + 1; // hours with a band of a tier not unlocked yet
       if (day(st) !== was) {
         was = day(st);
         if (was % 28 === 0) out.samples.push({ day: was, ...N.nomadCounts(st), tiers: N.nomadTiers(st).length });
@@ -531,11 +535,11 @@ section("Save and load");
 }
 
 // ---------- the long run ----------
-if (!QUICK) {
+if (!NO_LONG) {
   section(`The long run: ${YEARS} game years (${YEARS * YEAR_DAYS} days), simtest.js's auto-player`);
   const me = fileURLToPath(import.meta.url);
   const run = (size) => new Promise((res, rej) => execFile(process.execPath, [me, "--child", String(seed), size, "--years", String(YEARS)], { maxBuffer: 1 << 26 }, (e, o) => (e ? rej(e) : res(JSON.parse(o)))));
-  const sizes = si > 0 ? process.argv[si + 1].split(",") : Object.keys(WORLD_SIZES);
+  const sizes = si > 0 ? process.argv[si + 1].split(",") : QUICK ? ["small", "normal"] : Object.keys(WORLD_SIZES);
   const results = await Promise.all(sizes.map(run));
   for (const r of results) {
     const counts = r.samples.map((s) => s.n);
@@ -550,16 +554,22 @@ if (!QUICK) {
     check(lateMean >= r.target * 0.6 && Math.max(...counts) <= r.target, `${r.size}: the count stays near the target (mean ${lateMean.toFixed(1)} after day 56, at most ${Math.max(...counts)}, target ${r.target}; overall ${mean.toFixed(1)})`);
     check([0, 1, 2, 3].every((t) => r.maxPop[t] <= T[t].size[1]), `${r.size}: no tier cap passed (${r.maxPop[1]}/${r.maxPop[2]}/${r.maxPop[3]} of ${T[1].size[1]}/${T[2].size[1]}/${T[3].size[1]})`);
     check(r.inFactions === 0 && r.owners === 0, `${r.size}: nobody grew into a base-holding group`);
-    check(r.samples.some((s) => s.tiers >= 3) ? S.tiers[2] > 0 : true, `${r.size}: the survivalists came once unlocked (T2 ${S.tiers[2]})`);
+    // A year or so (BS_QUICK) ends at or soon after the survivalists' unlock (year 2), before a band's stay is over and
+    // a slot opens for them (NOMADS.LIFE: one to two game years; seed 42 Normal: no new band in the 56 days after it):
+    // there the check is the other side of the era gate, never a band of a tier not unlocked yet.
+    if (QUICK) check(!r.locked, `${r.size}: no band of a tier before its unlock (${r.locked || 0} hours with one; T1 ${S.tiers[1]}, T2 ${S.tiers[2]}, T3 ${S.tiers[3]})`);
+    else check(r.samples.some((s) => s.tiers >= 3) ? S.tiers[2] > 0 : true, `${r.size}: the survivalists came once unlocked (T2 ${S.tiers[2]})`);
     // The preppers take the top slot's share of the bands spawned after year 4 (nextTier: the slot furthest below an even
     // share, ties by the era weights 50/35/15). With two bands on a small map a spawn mostly falls on a tie between the
     // lone band's empty slots, so the preppers come about one spawn in four: a dozen spawns after the unlock before
     // their absence means anything (seed 42 small world: none in 8 after the holdout fell a few days later).
     check(r.after4 >= 12 ? S.tiers[3] > 0 : true, `${r.size}: the preppers came once unlocked (T3 ${S.tiers[3]} of ${r.after4} bands spawned after year 4${r.after4 < 12 ? ": too few to tell" : ""})`);
   }
-  const unlocked3 = results.filter((r) => r.samples.some((s) => s.tiers === 3));
-  const t3 = unlocked3.reduce((a, r) => a + r.stats.tiers[3], 0);
-  check(!unlocked3.length || t3 > 0, `the third tier came once unlocked, over the ${unlocked3.length} size(s) that unlocked it (${t3} bands)`);
+  // Not with BS_QUICK: a year's run unlocks the third tier on its last day (the era gate per size, above, stands in).
+  // s.tiers: how many tiers are unlocked (nomadTiers), so 3 or more is the third tier (T2, the survivalists) open.
+  const unlocked3 = results.filter((r) => r.samples.some((s) => s.tiers >= 3));
+  const t3 = unlocked3.reduce((a, r) => a + r.stats.tiers[2], 0);
+  if (!QUICK) check(!unlocked3.length || t3 > 0, `the third tier came once unlocked, over the ${unlocked3.length} size(s) that unlocked it (${t3} bands)`);
 }
 
 console.log(`\n${passes} passed, ${fails} failed`);

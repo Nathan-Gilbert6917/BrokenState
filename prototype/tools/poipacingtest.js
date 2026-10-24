@@ -14,16 +14,19 @@
 //   - no world has every pool at zero by year 2: at the end of year 2 at least a quarter of the map's POI pool is left
 //     and under half of its POIs are picked clean.
 // Usage: node tools/poipacingtest.js [years, 6] [seed, 42] [sizes, normal,large] [--autopilot]
+//   BS_QUICK=1 in the environment (runtests.js --quick): 4 years (the last year the checks read) on a Small world
+//   alone, unless the arguments say otherwise: every check on the one world.
 import { execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const CHILD = process.argv[2] === "--child";
 const AUTO = process.argv.includes("--autopilot");
 const args = process.argv.slice(CHILD ? 3 : 2).filter((a) => a !== "--autopilot");
+const QUICK = !!process.env.BS_QUICK;
 const NEAR = 5; // "near a base": within this many tiles
-const years = Number(args[0] || 6);
+const years = Number(args[0] || (QUICK ? 4 : 6));
 const seed = Number(args[1] || 42);
-const sizes = (args[2] || "normal,large").split(",");
+const sizes = (args[2] || (QUICK ? "small" : "normal,large")).split(",");
 
 if (CHILD) {
   const { createWorld, tickHour, day } = await import("../src/sim/world.js");

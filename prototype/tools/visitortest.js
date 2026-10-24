@@ -1,5 +1,7 @@
 // Outsiders (src/sim/visitors.js, src/ui/visitors.js): raiders, merchants and explorers from beyond the state.
 // Usage: node tools/visitortest.js [days] [seed]     (default 365 days, seed 42)
+//   BS_QUICK=1 in the environment (runtests.js --quick): the same checks on less: 30 days per style (unless [days] is
+//   given), the border run 50 days, the determinism pair 35 days, the save / load 10 days on.
 // - Spawns: only on land tiles of the map's border (not within 6 of a base; merchants on a road when there is one),
 //   frequency by day (no raiders before day 20, the first by day 26, more often later, caps on the map), sizes and
 //   gear by day.
@@ -41,7 +43,8 @@ import { groundAt } from "../src/sim/carry.js";
 import { newItem } from "../src/sim/inventory.js";
 import { SUPPLIES } from "../src/sim/data.js";
 
-const days = Number(process.argv[2] || 365);
+const QUICK = !!process.env.BS_QUICK;
+const days = Number(process.argv[2] || (QUICK ? 30 : 365));
 const seed = Number(process.argv[3] || 42);
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
@@ -295,10 +298,11 @@ section("Raiders and everyone else: groups, their caravans, merchants, sites; le
   // Everyone leaves by a border tile (out of time, they slip away wherever they are: leftAtBorder counts the rest).
   const st2 = world(seed + 3);
   setAutopilot(st2, true, "balanced");
-  while (day(st2) <= 120) { if (st2.gameOver) st2.gameOver = false; tickHour(st2); }
+  const borderDays = QUICK ? 50 : 120;
+  while (day(st2) <= borderDays) { if (st2.gameOver) st2.gameOver = false; tickHour(st2); }
   const s2 = V.visitorInfo(st2).stats;
   const left = { border: s2.leftAtBorder || 0, other: s2.left - (s2.leftAtBorder || 0) };
-  console.log(`  120 days on seed ${seed + 3}: ${left.border} left at a border tile, ${left.other} elsewhere (out of time); ${JSON.stringify(s2)}`);
+  console.log(`  ${borderDays} days on seed ${seed + 3}: ${left.border} left at a border tile, ${left.other} elsewhere (out of time); ${JSON.stringify(s2)}`);
   check(left.border >= 5 && left.other <= left.border * 0.1, "they leave off the map at a border tile");
 }
 
@@ -766,7 +770,7 @@ section("Determinism, save / load mid-visit, the timelapse");
     while (day(st) <= n && !st.gameOver) tickHour(st);
     return { st, lines, id0, id1: newId() };
   };
-  const A = run(70), B = run(70);
+  const A = run(QUICK ? 35 : 70), B = run(QUICK ? 35 : 70);
   check(digest(A) === digest(B), "the same seed, the same outsiders (two worlds in one process, ids from their own start)");
   check(V.visitorInfo(A.st).stats.raiders + V.visitorInfo(A.st).stats.merchants + V.visitorInfo(A.st).stats.explorers >= 5, "and some came");
   // Save on a day with outsiders on the map, load, play 30 more days each.
@@ -775,14 +779,14 @@ section("Determinism, save / load mid-visit, the timelapse");
   while ((day(st) < 30 || !st.visitors.length || st.cards.length) && day(st) < 120) tickHour(st);
   const on = st.visitors.length;
   const save = saveToString(st);
-  const end = day(st) + 30;
+  const end = day(st) + (QUICK ? 10 : 30);
   while (day(st) <= end && !st.gameOver) tickHour(st);
   const loaded = loadFromString(save); // after the original has played on: the saved id counter comes back with it
   check(loaded.visitors.length === on && loaded.visitorInfo.rng.state !== st.visitorInfo.rng.state, `saved with ${on} outsider${on === 1 ? "" : "s"} on the map (day ${day(loaded)}), loaded`);
   while (day(loaded) <= end && !loaded.gameOver) tickHour(loaded);
   const d = (s) => digest({ st: s, lines: [], id0: 0, id1: Number.MAX_SAFE_INTEGER });
   st.chronicle.ms = loaded.chronicle.ms = 0; // recording time (a clock), not the world
-  check(d(st) === d(loaded) && saveToString(st) === saveToString(loaded), "the original and the loaded world end identical 30 days later");
+  check(d(st) === d(loaded) && saveToString(st) === saveToString(loaded), `the original and the loaded world end identical ${QUICK ? 10 : 30} days later`);
   // The timelapse records them.
   const r = chronicleReader(st);
   let seen = 0;
@@ -847,7 +851,9 @@ for (const style of ["balanced", "cautious", "aggressive"]) {
   console.log(`  ${style}: ${s.raiders} raider bands, ${s.merchants} merchant caravans, ${s.explorers} explorer parties; at most ${maxOn} on the map; ${s.raidsOnYou} raids on you, ${s.raidsOnGroups} on groups, ${s.robbed} robberies, ${s.sites} sites searched, ${s.trades} trades with you, ${s.groupTrades} with groups, ${s.intel} intel reports, ${s.sheltered} sheltered, ${s.paid} paid off, ${s.left} left, ${s.wiped} broken or wiped out; merchant reputation ${Math.round(V.merchantRep(st))}`);
   check(!nan, `no NaN (${nan || "none"})`);
   check(!neg, `no negative stock or empty parties (${neg || "none"})`);
-  check(s.raiders >= Math.floor((days - 30) / 35) && s.merchants >= Math.floor(days / 20) && s.explorers >= Math.floor(days / 14), "all three kinds came");
+  // Raiders: the formula asks for none before day 65; the first come by day 26 (the schedule above), so a short run
+  // (BS_QUICK) still wants one.
+  check(s.raiders >= Math.max(QUICK && days >= 30 ? 1 : 0, Math.floor((days - 30) / 35)) && s.merchants >= Math.floor(days / 20) && s.explorers >= Math.floor(days / 14), "all three kinds came");
 }
 
 console.log(`\n${passes} passed, ${fails} failed`);

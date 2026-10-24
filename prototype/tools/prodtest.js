@@ -10,6 +10,8 @@
 // alone, one log line a day, taking over keeps everything, nothing while the autopilot runs); the governor using
 // the orders; and 200 days with all of it on two seeds with no NaN or negative stock.
 // Usage: node tools/prodtest.js [days for the long runs] [seeds...]
+//   BS_QUICK=1 in the environment (runtests.js --quick): the long runs 60 days on seed 42 alone (unless the arguments
+//   say otherwise); every other check as it is.
 import { stockTools } from "./toolset.js"; // every tool a build or recipe can need (toolreqs.js)
 import { food, setFood, addDays, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { lotsOf } from "../src/sim/foods.js";
@@ -32,8 +34,9 @@ import { recomputeOwnership } from "../src/sim/factions.js";
 import { planPath } from "../src/sim/parties.js";
 import { SUPPLY_KEYS } from "../src/sim/data.js";
 
-const longDays = Number(process.argv[2] || 200);
-const seeds = process.argv.length > 3 ? process.argv.slice(3).map(Number) : [42, 7];
+const QUICK = !!process.env.BS_QUICK;
+const longDays = Number(process.argv[2] || (QUICK ? 60 : 200));
+const seeds = process.argv.length > 3 ? process.argv.slice(3).map(Number) : QUICK ? [42] : [42, 7];
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
 const near = (a, b, eps = 1e-6) => Math.abs(a - b) <= eps;
