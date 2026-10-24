@@ -963,6 +963,14 @@ function gameOverWords(state) {
     <button data-action="keepplaying"${tip("Close this and carry on in the same world")}>Keep playing</button>
     <button class="primary" data-action="restart">New campaign</button></div></div>`;
   }
+  if (state.victory && state.victoryReason === "reunited") { // Crashlanding (sim/crashstart.js crashJoin): you made it back to your unit
+    const unit = state.crash && state.crash.homeName ? state.crash.homeName : "your unit";
+    return `<div class="box"><h1>You made it back</h1>
+    <div class="text">Three years and more after Calder fell, ${esc(unit)} takes you in at ${esc(state.crash && state.crash.nextName ? state.crash.nextName : "the bunker")}. ${alive(state).length} of you made it to day ${day(state)}. The state is still out there: keep playing and the remnant is an ally in your coalition.</div>
+    <div class="row">${state.chronicle ? `<button data-action="tl-open" data-from="end"${tip("Replay the whole game sped up with the fog of war off")}>Watch the timelapse</button>` : ""}
+    <button data-action="keepplaying"${tip("Close this and carry on in the same world")}>Keep playing</button>
+    <button class="primary" data-action="restart">New campaign</button></div></div>`;
+  }
   if (state.victory) {
     const st = hiveTracker(state).stats;
     return `<div class="box"><h1>Every hive is destroyed</h1>

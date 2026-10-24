@@ -10,7 +10,10 @@
 //      bunker's tile bare and unknown, the hives pre-aged, the era a tier ahead of a plain world's, the loot scaled;
 //   2. the chain: the reveal when a team stands on the base (card, harder dead, no victory), the hive born once it leaves
 //      (the infested-base sprite flag), the hive's hoard holding the base's stores once, the hive's death leaving the
-//      message (a region, not a name) and making the bunker as a secret site, the bunker found by a team standing on it;
+//      message (a region, not a name) and making the bunker as a secret site with the unit's remnant in it (a military
+//      group, unknown until found), the bunker found by a team standing on it: the Reunited card and its three choices
+//      (join them: a victory, Keep playing with them in the coalition; take command: the bunker and its people yours,
+//      the group dissolved; not yet: an allied group, the choice again on the next arrival);
 //   3. the radio repaired in the field with a soldering iron, pliers and the materials: a Military encrypted radio,
 //      state.crash.radioFixed and the dead-air line;
 //   4. crew edits apply name, skills and traits but never the kit; Pick start on map moves the crash and the base;
@@ -152,23 +155,76 @@ section("3. The chain: the reveal, the hive, the hoard, the message, the bunker"
   check(s.log.some((l) => /stores of .* are the prize/.test(l.text)), "the haul's log line");
   destroyHive(s, hive, "by your team");
   check(!s.hives.includes(hive) && !s.tiles[C.homeTile].hive && !s.tiles[C.homeTile].hiveBase && C.stage === "trail", "the hive destroyed: stage trail");
-  const card = s.cards.find((c) => c.crashTrail);
-  check(card && /mountains|high country/.test(card.text) && !card.text.includes(C.nextName) && !/\d+ tiles/.test(card.text), "the message names a region, not the site, no distance");
+  const trailCard = s.cards.find((c) => c.crashTrail);
+  check(trailCard && /mountains|high country/.test(trailCard.text) && !trailCard.text.includes(C.nextName) && !/\d+ tiles/.test(trailCard.text), "the message names a region, not the site, no distance");
   check(C.trail && /falling back/.test(C.trail) && s.markers.find((x) => x.type === "crashhome").info.trail === C.trail && /fell back to/.test(s.markers.find((x) => x.type === "crashhome").label), "the words kept on the marker");
   const nt = s.tiles[C.nextTile];
   check(nt.loc && nt.loc.type === "bunker_mil" && nt.loc.name === C.nextName && nt.loot === CRASH.BUNKER_LOOT && (nt.pois || []).length > 0, "the bunker made on its tile with its points of interest");
   check(!siteKnown(s, C.nextTile) && !s.knowledge[C.nextTile] && !s.markers.some((x) => x.tile === C.nextTile), "the bunker is secret: not known, no marker");
   check(!s.victory && !s.gameOver, "still no victory");
-  p.path = [C.nextTile]; p.idx = 0; p.cargo = { supplies: {}, gear: [] };
+  // The unit's remnant at the bunker (the user, 2026-10-24: "Make the bunker hold the unit's remnant so you can join them
+  // and you can decide to end the run or take over controlling that base").
+  const rem = s.factions.find((f) => f.crashRemnant);
+  check(rem && rem.id === C.remnantFid && rem.alive && rem.type === "military" && rem.bases[0] === C.nextTile, "the remnant: a military group at the bunker");
+  check(rem && !rem.known && !s.knowledge[C.nextTile] && !s.markers.some((x) => x.tile === C.nextTile), "unknown until found: no knowledge, no marker");
+  check(rem && rem.people && rem.people.length >= 6 && rem.people.length <= 10 && rem.pop === rem.people.length && rem.arsenal && rem.arsenal.items.length >= rem.people.length, `${rem && rem.people.length} people, their kit in the group's arsenal (${rem && rem.arsenal && rem.arsenal.items.length} items)`);
+  check(rem && rem.stock.ammo >= CRASH.CACHE.rounds && rem.stock.meds >= CRASH.CACHE.meds && rem.stock.fuel >= CRASH.CACHE.fuel, "the cache as its stock");
+  check(rem && rem.hcNoExpand && rem.hcNoGrow && rem.goodwill === 0, "sealed off: no expansion, no growth, neutral");
+  // A fresh copy for the "Take command" branch (save.js refuses a pending card: the cards are answered first).
+  const cardsBefore = s.cards; s.cards = [];
+  const cmd = loadFromString(saveToString(s));
+  s.cards = cardsBefore;
+  const survivorsBefore = s.survivors.length;
+  p.path = [C.nextTile]; p.idx = 0;
   crashHour(s);
   check(C.stage === "found" && !!C.found, "a team on the bunker's tile finds it");
-  check(s.cards.some((c) => c.crashFound), "the find card");
-  const cargoRounds = Object.entries(p.cargo.supplies).filter(([k]) => /^a_/.test(k)).reduce((a, [, q]) => a + q, 0);
-  const pile = s.deathSites.find((d) => d.tile === C.nextTile);
-  check(cargoRounds + (pile ? pile.items.filter((i) => /^a_/.test(i.key)).reduce((a, i) => a + i.qty, 0) : 0) >= CRASH.CACHE.rounds * 0.9, `the cache: rounds in the cargo (${cargoRounds}) or left on the tile`);
-  check(siteKnown(s, C.nextTile) && !!s.knowledge[C.nextTile], "the bunker known now, a raidable site");
+  let card = s.cards.find((c) => c.crashReunited);
+  check(card && card.title === "Reunited" && card.choices.length === 3 && /Join them/.test(card.choices[0].label) && /Take command/.test(card.choices[1].label) && /Not yet/.test(card.choices[2].label), "the Reunited card with its three choices");
+  check(rem.known && rem.goodwill >= 70 && s.knowledge[C.nextTile] && s.markers.some((x) => x.tile === C.nextTile && /remnant/.test(x.label)), "the remnant known and allied, the bunker marked");
+  check(siteKnown(s, C.nextTile), "the bunker a known, raidable site");
+  // 3. Not yet: still allied, the choice comes again on the next arrival.
+  const notYet = card.choices[2].resolve(s);
+  s.cards = s.cards.filter((c) => c !== card);
+  check(/ally/.test(notYet) && C.stage === "found" && rem.alive && rem.known && rem.goodwill >= 70 && !s.victory, "Not yet: an allied known group, no victory");
   crashHour(s);
-  check(C.stage === "found" && s.cards.filter((c) => c.crashFound).length === 1, "the chain ends there");
+  check(!s.cards.some((c) => c.crashReunited), "no second card while the team stays");
+  p.path = [g.neighbors(C.nextTile)[0]]; p.idx = 0; crashHour(s);
+  p.path = [C.nextTile]; p.idx = 0; crashHour(s);
+  card = s.cards.find((c) => c.crashReunited);
+  check(!!card, "the choice is offered again on the next arrival");
+  // 1. Join them: the run ends as a victory; Keep playing goes on with the remnant in the coalition.
+  const joined = card.choices[0].resolve(s);
+  s.cards = s.cards.filter((c) => c !== card);
+  check(/made it back/.test(joined) && s.victory && s.gameOver && s.victoryReason === "reunited" && C.stage === "joined", "Join them: the victory set (reason reunited)");
+  check(s.alliance && s.alliance.members.includes(rem.id) && rem.alive && rem.known, "the remnant in the coalition");
+  check(s.log.some((l) => /^You made it back\./.test(l.text)), "the victory's log line");
+  s.victoryKept = true; s.gameOver = false; // main.js keepplaying
+  tickHour(s);
+  check(!s.gameOver && s.survivors[0].alive && rem.alive, "Keep playing: the game goes on");
+  // 2. Take command (on the fresh copy): the bunker is your base, their people yours, the group gone.
+  {
+    const C2 = cmd.crash, p2 = cmd.parties[0], rem2 = cmd.factions.find((f) => f.crashRemnant), n0 = cmd.survivors.length, popWas = rem2.pop;
+    check(rem2 && !rem2.known && cmd.bases.length === 0, "the copy: the remnant unknown, no base of yours");
+    p2.path = [C2.nextTile]; p2.idx = 0;
+    crashHour(cmd);
+    const card2 = cmd.cards.find((c) => c.crashReunited);
+    check(!!card2, "the copy's Reunited card");
+    const text2 = card2.choices[1].resolve(cmd);
+    const base = cmd.bases.find((b) => b.tile === C2.nextTile);
+    check(!!base && base.type === "hub" && /yours/.test(text2), `Take command: the bunker is your base (${base && base.type})`);
+    check(C2.stage === "command" && C2.remnantJoined === popWas, "stage command, the people counted");
+    const joinedPeople = cmd.survivors.slice(n0);
+    check(cmd.survivors.length === n0 + popWas && joinedPeople.every((x) => x.alive && x.location.kind === "base" && x.location.baseId === base.id) && joinedPeople.filter((x) => x.gear && x.gear.weapon).length >= Math.min(popWas, 4), `${popWas} people joined your survivors at the base, ${joinedPeople.filter((x) => x.gear && x.gear.weapon).length} of them armed from the arsenal`);
+    check(base.armory.length > 0 || joinedPeople.some((x) => x.gear.weapon), "the arsenal's kit: on the people or in the bunker's armory");
+    check(!rem2.alive && !cmd.factions.some((f) => f.alive && f.bases.includes(C2.nextTile)), "the remnant dissolved");
+    check(base.stock.ammo >= CRASH.CACHE.rounds * 0.95 && base.stock.meds >= CRASH.CACHE.meds && base.stock.fuel >= CRASH.CACHE.fuel, `the stores whole (${base.stock.ammo} rounds, ${base.stock.meds} meds)`);
+    check(!cmd.parties.includes(p2) && cmd.survivors[0].location.kind === "base" && cmd.survivors[0].location.baseId === base.id, "the team moved in");
+    check(!cmd.victory && !cmd.gameOver, "no victory for taking command");
+    check(cmd.cards.some((c) => c.crashCommand), "the confirming card");
+    cmd.cards = [];
+    tickHour(cmd);
+    check(!cmd.gameOver, "an hour passes at the bunker");
+  }
 }
 
 section("4. The radio repaired in the field");
