@@ -1,4 +1,4 @@
-// The boxes over the State Map move: Watching, Layers, the alerts (with the first-week guide under
+// The boxes over the State Map move: Watching, Layers, the alerts, the first-week guide (under
 // them), the minimap (and its ▣ Minimap button while it is hidden) and the dev tools. Each is dragged by its header
 // bar (every box has the same one: icon, title, count, chevron and a ✥ at its end; a folded box by its slim tab; the
 // alerts also by the guide's title; the minimap by its top edge or its ✥ grip) to anywhere over the map, with the
@@ -33,7 +33,8 @@ export const NUDGE_REM = 1, NUDGE_FAR_REM = 4;
 export const OVERLAYS = {
   watchlist: { els: ["watchlist"], head: ".fp-head, .fp-tab", name: "Watching", maxH: "50%" },
   legend: { els: ["legend"], head: ".fp-head, .fp-tab", name: "Layers", maxH: "calc(100% - 1.2rem)" },
-  alerts: { els: ["alerts"], head: ".fp-head, .fp-tab, .gd-head", name: "Alerts", maxH: "calc(100% - 1.2rem)" },
+  alerts: { els: ["alerts"], head: ".fp-head, .fp-tab", name: "Alerts", maxH: "calc(100% - 1.2rem)" },
+  guide: { els: ["guide"], head: ".gd-head, .fp-tab", name: "First week", maxH: "60%" },
   minimap: { els: ["minimap", "mm-show"], head: ".ov-grip, .mm-bar, #mm-show", name: "Minimap", maxH: "" },
   devpanel: { els: ["devpanel"], head: ".ov-devhead", name: "Dev tools", maxH: "70%" },
 };
@@ -173,9 +174,12 @@ function otherRects(key) {
     const el = visibleEl(k);
     if (el) out.push(rectIn(el));
   }
-  // The banner's notes at the top of the map (Paused, move mode, the card tray) count too.
+  // The banner's notes at the top of the map (Paused, move mode, the card tray) count too, and the row of buttons at the
+  // bottom left (ui/hudbar.js).
   const banner = document.getElementById("banner");
   if (shown(banner)) for (const c of banner.children) if (c.offsetWidth && c.offsetHeight) out.push(rectIn(c));
+  const hb = document.getElementById("hudbar");
+  if (shown(hb)) out.push(rectIn(hb));
   return out;
 }
 const SIDES = ["left", "right", "top", "bottom"];
@@ -366,6 +370,7 @@ function finish(e, cancel) {
   if (!P[d.key]) clearPlace(d.el); // cancelled before it was ever moved: back on its stylesheet spot
   applyOne(d.key);
   if (d.key === "legend") applyOne("watchlist");
+  if (d.key === "alerts") applyOne("guide"); // the guide sits under the alerts (ui/hudbar.js placeGuide)
   if (ctx && ctx.refresh) ctx.refresh();
 }
 // The click that ends a drag is not a click on the header (it would fold the box).
@@ -413,6 +418,6 @@ export function initOverlays(api = {}) {
 // Help → Windows and panels (ui/layout.js windowsHelp adds it): what moves and how, on this device. With a mouse the
 // words are a desktop's; a finger on a tablet drags the same handles (main.js shows the Help as written, so the
 // keyboard lines name the keyboard).
-export const OVERLAYS_HELP = `<b>Moving the boxes over the map:</b> every box has the same header bar (its icon, name, count, the fold chevron and a ✥ at the end): drag it to put Watching, Layers or the alerts (the first-week guide's title moves the alerts too) anywhere over the map so they are not in the way; the dev tools move by their title, the minimap by its top edge or its ✥ grip; a folded box moves by its slim tab. A short click still folds or opens it. Near an edge or a corner a box snaps to it; dropped on another box it moves beside it when there is room. With the keyboard: Tab to a box's header and press <b>Alt+arrow keys</b> to nudge it (Shift for bigger steps), <b>Alt+Home</b> puts that box back. Boxes stay inside the map when the window, the UI size or the panels change. Their places are remembered in this browser; Options → <i>Reset overlay positions</i> puts them all back.`;
+export const OVERLAYS_HELP = `<b>Moving the boxes over the map:</b> every box has the same header bar (its icon, name, count, the fold chevron and a ✥ at the end): drag it to put Watching, Layers, the alerts or the first-week guide (by its title line) anywhere over the map so they are not in the way (the row of buttons at the bottom left shows and hides them and stays put); the dev tools move by their title, the minimap by its top edge or its ✥ grip; a folded box moves by its slim tab. A short click still folds or opens it. Near an edge or a corner a box snaps to it; dropped on another box it moves beside it when there is room. With the keyboard: Tab to a box's header and press <b>Alt+arrow keys</b> to nudge it (Shift for bigger steps), <b>Alt+Home</b> puts that box back. Boxes stay inside the map when the window, the UI size or the panels change. Their places are remembered in this browser; Options → <i>Reset overlay positions</i> puts them all back.`;
 export const OVERLAYS_HELP_FIXED = `<b>The boxes over the map stay put here:</b> on a phone, or a tablet held upright, each box has a fixed slot under the strip across the top of the map and nothing drags. A place you gave a box on a bigger screen waits there for when the window grows (Options → <i>Reset overlay positions</i> forgets it).`;
 export const overlaysHelp = () => (fixed ? OVERLAYS_HELP_FIXED : OVERLAYS_HELP);
