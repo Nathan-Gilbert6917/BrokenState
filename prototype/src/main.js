@@ -1905,7 +1905,7 @@ function gearRebuild(fleet = false) {
   if (!fleet) ui.crewEdited = true;
   newWorld(state.seed, true);
   ui.gearEdit = keep;
-  ui.fleetEdit = keepFleet && state.fleet && state.fleet[keepFleet.i] ? keepFleet : null;
+  ui.fleetEdit = keepFleet && state.fleet && state.fleet[keepFleet.i] && state.fleet[keepFleet.i].vid != null ? keepFleet : null; // an emptied slot: closed
 }
 
 // A loaded world (ui/settings.js): like a new world, but already started, paused, and remembering its save slot.

@@ -43,7 +43,7 @@ import { keyWord } from "./water.js"; // supplies as words: "9mm FMJ", "rounds"
 import { GEAR, SUPPLY_KEYS, TRAITS, SKILL_NAMES, clashIn } from "./data.js";
 import { bornTraits, tidyTiers } from "./traits.js"; // what the world's dice rolled at birth, before the newer traits came in
 import { VEHICLE_TYPES, createVehicle, addPartyVehicle } from "./vehicles.js";
-import { START_FLEET } from "./startfleet.js"; // the starting vehicles past the car: their tank and condition (call-time only)
+import { START_FLEET, fitFleet } from "./startfleet.js"; // the starting vehicles' slots; those past the car: their tank and condition (call-time only)
 import { newId, makeSurvivor, applyCrew, assignStartingRoles, log, day, hub, addCard } from "./world.js";
 import { newItem, packOf, POCKETS, START_DUR, startKit } from "./inventory.js";
 import { randomStarterMods } from "./gunmods.js"; // starting guns may carry a cheap attachment
@@ -638,15 +638,14 @@ export function rollCar(state, p, people, keptOwner = null) {
   return { owner, car, trunk };
 }
 // The starting vehicles past the car (startfleet.js, 2026-10-24, user request: "add vehicles up to the number of
-// starting survivors"): each of state.fleet's kinds after the first, one a survivor at most, with the team (a driver
+// starting survivors"): each of state.fleet's filled slots after the first (a slot a survivor), with the team (a driver
 // each), the hub's pickup's tank (at most a full one) and condition, its back (set on the new-run screen; as rolled:
 // empty) the team's cargo. No dice: the world is the same as with the car alone. Returns the vehicles.
-/** @param {any} state @param {any} p @param {any[]} people */
-function extraCars(state, p, people) {
-  if (!state.fleet) return [];
-  state.fleet = state.fleet.slice(0, Math.max(1, people.length));
+/** @param {any} state @param {any} p */
+function extraCars(state, p) {
   const out = [];
-  for (const f of state.fleet.slice(1)) {
+  for (const f of (state.fleet || []).slice(1)) {
+    if (f.empty) continue;
     const T = VEHICLE_TYPES[f.type] || VEHICLE_TYPES[START_FLEET.KIND];
     const v = createVehicle(state, VEHICLE_TYPES[f.type] ? f.type : START_FLEET.KIND, { kind: "party", partyId: p.id }, { fuel: Math.min(START_FLEET.FUEL, T.tank), condition: START_FLEET.CONDITION });
     addPartyVehicle(state, p, v);
@@ -807,13 +806,17 @@ export function setupHardcoreStart(state, crew, crewRoll = null, n = HC_START.CR
   const keptOwner = crew ? people.find((s, i) => crew[i] && crew[i].carOwner) : null;
   const crewRng = state.rng, carRoll = keptCar ? keptCar.carRoll : crewRng.state;
   if (carRoll !== crewRng.state) state.rng = rngAt(carRoll);
-  const onFoot = !startsWithVehicle(state); // Start with a vehicle off: the dice as ever, the car left behind
+  // Start with a vehicle off, or the car's slot emptied on the new-run screen (startfleet.js): the dice as ever, the car
+  // left behind.
+  const vehicles = startsWithVehicle(state);
+  state.fleet = fitFleet(state.fleet, people.length, "hardcore").map((f) => ({ ...f, vid: null })); // a slot a survivor
+  const onFoot = !vehicles || state.fleet[0].empty;
   const rolledCar = rollCar(state, onFoot ? { id: null, cargo: { supplies: {}, gear: [] } } : p, people, keptOwner);
   const { owner, trunk } = rolledCar;
   const car = onFoot ? null : rolledCar.car;
   if (onFoot) { state.vehicles = state.vehicles.filter((v) => v !== rolledCar.car); delete owner.diceTrunk; }
-  else if (state.fleet && state.fleet[0]) Object.assign(state.fleet[0], { vid: car.id, rolledType: !state.fleet[0].type, type: car.type }); // startfleet.js: the starting vehicle is this car (rolledType: its kind as the dice rolled it)
-  const more = car ? extraCars(state, p, people) : [];
+  else Object.assign(state.fleet[0], { vid: car.id, rolledType: !state.fleet[0].type, type: car.type }); // startfleet.js: the starting vehicle is this car (rolledType: its kind as the dice rolled it)
+  const more = vehicles ? extraCars(state, p) : [];
   state.rng = crewRng;
   for (const s of people) s.carRoll = carRoll;
   settleParty(state, p); // ammo.js: the rounds they grabbed, by the calibres of their guns
@@ -821,9 +824,12 @@ export function setupHardcoreStart(state, crew, crewRoll = null, n = HC_START.CR
   // Tent bags (tents.js): TENTS.HARDCORE one-person tents a survivor, in the car's trunk (no dice); the car's line says so.
   const tents = hardcoreTents(state, p, people);
   const tentLine = tents.length ? ` ${people.length === 1 ? (tents.length === 1 ? "A one-person tent" : `${tents.length} one-person tents`) : tents.length === people.length ? "A one-person tent each" : `${tents.length} one-person tents`} went ${p.vehicle ? "in the back too" : "along in your arms"}: a camp goes up in half an hour with them.` : "";
-  lines.push((car ? carLine(owner, car, trunk, people.length) : `No car: ${people.length === 1 ? "you go" : "you all go"} on foot.`) + tentLine);
-  if (more.length) lines.push(`${more.length === 1 ? "Another vehicle comes" : `${countWord(more.length).replace(/^./, (c) => c.toUpperCase())} more vehicles come`} along, each with one of you at the wheel: ${more.map((v) => `${/^([aeiou]|SUV)/i.test(v.name) ? "an" : "a"} ${v.name.toLowerCase()}`).join(", ")}${more.some((v, i) => state.fleet[i + 1].load) ? ", with what you loaded in the back" : ""}.`);
-  if (car) log(state, `${people.length === 1 ? "You set off alone" : `The ${countWord(people.length)} of you set off`} in ${firstName(owner)}'s ${car.name.toLowerCase()}: tank ${Math.round((car.fuel / VEHICLE_TYPES[car.type].tank) * 100)}% full${trunk.gear.length || Object.keys(trunk.supplies).length ? ", and what was in the back is the team's cargo" : ""}.`, "info");
+  const moreWords = more.map((v) => `${/^([aeiou]|SUV)/i.test(v.name) ? "an" : "a"} ${v.name.toLowerCase()}`).join(", ");
+  const moreLoaded = state.fleet.some((f, i) => i > 0 && f.vid != null && f.load) ? ", with what you loaded in the back" : "";
+  lines.push((car ? carLine(owner, car, trunk, people.length) : more.length ? `You set off in ${moreWords}, ${more.length === 1 ? "one of you at the wheel" : "one of you at the wheel of each"}${moreLoaded}.` : `No car: ${people.length === 1 ? "you go" : "you all go"} on foot.`) + tentLine);
+  if (car && more.length) lines.push(`${more.length === 1 ? "Another vehicle comes" : `${countWord(more.length).replace(/^./, (c) => c.toUpperCase())} more vehicles come`} along, each with one of you at the wheel: ${moreWords}${moreLoaded}.`);
+  if (!car && more.length) log(state, `${people.length === 1 ? "You set off alone" : `The ${countWord(people.length)} of you set off`} in ${moreWords}${moreLoaded}.`, "info");
+  else if (car) log(state, `${people.length === 1 ? "You set off alone" : `The ${countWord(people.length)} of you set off`} in ${firstName(owner)}'s ${car.name.toLowerCase()}: tank ${Math.round((car.fuel / VEHICLE_TYPES[car.type].tank) * 100)}% full${trunk.gear.length || Object.keys(trunk.supplies).length ? ", and what was in the back is the team's cargo" : ""}.`, "info");
   else log(state, `${people.length === 1 ? "You set off alone" : `The ${countWord(people.length)} of you set off`} on foot, with only what you can carry.`, "info");
   p.sightNow = state.grid.within(tile.id, sightRadius(state, p));
   state.hardcore.start = { people: people.length, tile: tile.id, lastTile: tile.id, foundedDay: null, grabbed: lines, prepper: prepper ? prepper.id : null, car: car ? car.id : null, carOwner: owner.id, backgrounds: Object.fromEntries(people.map((s) => [s.id, s.background])) };

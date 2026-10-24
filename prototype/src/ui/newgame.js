@@ -11,7 +11,7 @@ import { isCustomBg } from "../sim/custombg.js"; // custom backgrounds (sim/cust
 import { FAMILY } from "../sim/family.js"; // the Children box shows only while children are on
 import { sanitizeStartGear, hasPicks, trunkKg } from "../sim/startgear.js"; // starting gear picked under Customize
 import { gearRow, pointsBar, fleetSection, uiFleet } from "./startgear.js"; // its Gear… button, load and kit points, and the points bar, on the crew card; the Starting vehicles
-import { cleanFleet, fleetRoom, openLoads } from "../sim/startfleet.js"; // the starting vehicles: each its point limit and back (2026-10-24)
+import { cleanFleet, fleetRoom, openLoads, ridesIn } from "../sim/startfleet.js"; // the starting vehicles: each its point limit and back (2026-10-24)
 import { gunCals } from "../sim/ammo.js"; // a random back's rounds: the crew's guns' calibres
 import { traitPickerHtml, traitBlock, traitChips, traitWords } from "./traitpick.js"; // Customize: the traits, good and bad, none that clash; the chips
 import { randomBuild, randomEverything, randomTraits, randomKit, randomTrunk, kitBudget, kitKeys } from "../sim/randomkit.js"; // Customize: a whole random colonist within the points; the crew and the vehicles' backs
@@ -521,7 +521,7 @@ export function randomizeEverything(state, ui, rebuild) {
   const kitKg = state.survivors.reduce((a, s) => a + trunkKg({ items: kitKeys(s.startGear) }), 0);
   F.forEach((f, i) => {
     if (!state.fleet || !state.fleet[i] || state.fleet[i].vid == null) return; // Start with a vehicle off: none to fill
-    const room = Math.max(0, fleetRoom(state, i) + (hard && i === 0 ? worn - kitKg : 0)); // the riders ride in the car (the first)
+    const room = Math.max(0, fleetRoom(state, i) + (hard && ridesIn(state, i) ? worn - kitKg : 0)); // the riders ride in the first vehicle
     f.load = randomTrunk(f.limit, room, rng, gunCals([], guns), { fill: true, open: openLoads(state) });
     state.fleet[i].load = f.load;
   });
