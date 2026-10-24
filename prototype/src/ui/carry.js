@@ -1,6 +1,6 @@
 // Carrying the team's supplies (sim/carry.js): where each person keeps food, water, wood and the rest (pockets,
 // pack, carried in the arms, the vehicle), setting things down on the ground and picking them up again, and the
-// "how much?" box before a team collects water, wood, wild food or game.
+// "how much?" box before a team fetches water (wood, wild food and game: the land order box, ui/landorder.js).
 //   ui.carry     the open box: { kind: "qty", d (the order's data), qty } or { kind: "pick", partyId }
 //   ui.carrySel  the selected stack in an inventory: { pid, sid, place, key }   ui.carryN: how many to move
 //   ui.carryMsg  the last message
@@ -16,6 +16,7 @@ import {
 import { supplyName } from "../sim/itemnames.js";
 import { cartSpec, feltKg, cartBroken, cartFrac } from "../sim/carts.js"; // a wheelbarrow, a hand cart: a place for the supplies
 import { isRoundKey } from "../sim/rounds.js";
+import { isLandJob } from "../sim/landest.js"; // the land jobs ask their hours and how much in ui/landorder.js
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -28,8 +29,9 @@ const partyOfSurvivor = (state, s) => (s && s.location && s.location.kind === "p
 // ---------- how much to collect ----------
 const VERB = { water: "Fetch water", wood: "Cut wood", forage: "Forage", hunt: "Hunt", fish: "Fish" };
 // "xp-order": a collecting order without a quantity opens the box (the governor and the AI never come through here).
+// The land jobs (forage, hunt, fish, wood) ask in the land order box instead, with their hours (ui/landorder.js).
 export function askQty(state, ui, d) {
-  if (!COLLECT[d.type] || (d.qty != null && d.qty !== "") || state.autopilot) return false;
+  if (!COLLECT[d.type] || isLandJob(d.type) || (d.qty != null && d.qty !== "") || state.autopilot) return false;
   const p = state.parties.find((x) => x.id === Number(d.id));
   const info = p ? collectInfo(state, p, d.type) : null;
   if (!info) return false;

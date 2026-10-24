@@ -2,6 +2,7 @@
 // move, look around, camp, field repairs, treating someone, a mission on the spot, or going home.
 // When an order finishes and nothing else is queued, the team reports in with an orders card
 // (parties.js awaitOrders), which doubles as the "done, what next?" notice.
+import { MOVES, detachProblem } from "./detach.js"; // some of a team out on a job: its moves wait (the user's request 2026-10-24)
 import { keyWord } from "./water.js"; // supplies as words: "9mm FMJ", "rounds"
 import { log, survivorById, baseById, hub } from "./world.js";
 import {
@@ -327,6 +328,13 @@ export function startOrder(state, p, o) {
   // The order is dropped and the rest of the queue waits for the player.
   if (o.at != null && o.at !== partyTile(p) && PLACED.includes(o.type)) {
     return fail(`${describeOrder(state, o)} was planned for ${tileLabel(state, o.at)}, but the team is at ${tileLabel(state, partyTile(p))}: not done.${(p.orders || []).length ? " The rest of the queue is on hold." : ""}`, true);
+  }
+  // Some of its people out on a job (detach.js): a move waits at the front of the queue until they are back.
+  if (MOVES.has(o.type) && detachProblem(state, p)) {
+    p.orders = p.orders || [];
+    p.orders.unshift(o);
+    p.waitDetached = true;
+    return `${describeOrder(state, o)} waits: ${detachProblem(state, p)}`;
   }
   if (o.type !== "move" && p.phase === "task") p.task = null; // switching jobs on the spot
   switch (o.type) {

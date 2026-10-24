@@ -8,7 +8,7 @@ import { teamFoodHtml } from "./food.js"; // the team's food by kind
 import { SUPPLIES, SUPPLY_KEYS, STOCK_KEYS, SKILL_NAMES, TRAITS } from "../sim/data.js";
 import { traitChips } from "./traitpick.js"; // trait chips: coloured by kind, the tier
 import { skill, gearEffect, baseById, hub } from "../sim/world.js";
-import { MISSIONS, STANCES, partyMembers, partyCapacity, cargoLoad, poolLoad, bodyLoad, partyLoad, partyPace, tileLabel, partyTile, orderOptions, carried, cargoRoom, clockFrac, clockText, clockAt, plannedArrival } from "../sim/parties.js";
+import { MISSIONS, STANCES, teamName, partyMembers, partyCapacity, cargoLoad, poolLoad, bodyLoad, partyLoad, partyPace, tileLabel, partyTile, orderOptions, carried, cargoRoom, clockFrac, clockText, clockAt, plannedArrival } from "../sim/parties.js";
 import { partyVehicle, partyVehicles, partyFleet, tank, isBike, vehicleLabel, upgradeText, upgradeEffects, seatsOf, MAX_VEHICLES } from "../sim/vehicles.js";
 import { bandName } from "../sim/load.js";
 import { loadRows, carLine, paceLine, BANDS_HELP } from "./loadview.js";
@@ -34,6 +34,9 @@ import { teamWaterIn, teamRawIn, keyWord } from "../sim/water.js"; // purified a
 import { gaugeRows, treatsRow, needsEffectText, teamNeedsBlock, foodOnThem, teamUpkeepCard } from "./needs.js";
 import { forageInfo, forageProblem, landFoodOptions, FORAGE } from "../sim/foraging.js";
 import { woodInfo, woodProblem, WOOD } from "../sim/woodcutting.js";
+import { stoneAbundance, stoneProblem, stoneWord } from "../sim/stone.js"; // Gather stone (the user's request 2026-10-23)
+import { landEstimate } from "../sim/landest.js";
+import { detachments, detachText } from "../sim/detach.js"; // some of the team out on jobs of their own // the land order box's estimate (ui/landorder.js)
 import { canClaim, claimOwner, wellProblem, wellYield, CLAIM } from "../sim/claims.js"; // land claims and wells on them
 import { statusIcons } from "./status.js"; // low mood, starving, thirsty, low health, infected, sick
 import { watchlistPin } from "./watchlist.js"; // 📌 pin the team to the Watching panel
@@ -205,9 +208,22 @@ export function renderExpedition(state, ui, p) {
       ${ui.xpMsg ? `<div class="result small" style="margin-top:0.4rem">${esc(ui.xpMsg)}</div>` : ""}
     </div>`;
 
-  return head + camp + status + teamUpkeepCard(state, p) + actions + teamCarryCard(state, ui, p) + teamVolBlock(state, p) +
+  return head + camp + status + detachCard(state, p) + teamUpkeepCard(state, p) + actions + teamCarryCard(state, ui, p) + teamVolBlock(state, p) +
     `<h3>People (${members.length})</h3>${teamNeedsBlock(state, p, true)}${members.map((m) => memberCard(state, p, m, true, queueing)).join("")}` +
     suppliesBlock(state, p) + vehicleBlock(state, p, v);
+}
+
+// Some of the team out on jobs of their own (sim/detach.js, the user's request 2026-10-24): who, doing what, and Call
+// back; on such a detachment's own panel, the team it rejoins.
+function detachCard(state, p) {
+  const back = (q) => `<button class="mini" data-action="xp-callback" data-id="${q.id}"${tip("Stop the job: they come back to the team (with what they have so far)")}>Call back</button>`;
+  if (p.detachOf != null) {
+    const team = state.parties.find((x) => x.id === p.detachOf);
+    return team ? `<div class="card small"${tip("Out from their team on a job of their own: done, they go back to it and are one team again")}><div class="spread"><span>Out from ${esc(teamName(state, team))}: back to it when done.</span>${back(p)}</div></div>` : "";
+  }
+  const out = detachments(state, p);
+  if (!out.length) return "";
+  return `<div class="card small"${tip("Some of the team out on jobs of their own (picked in the map's right-click menu): the team cannot move until they are back")}><b>Out on jobs</b>${out.map((q) => `<div class="spread"><span>${esc(detachText(state, q))}</span>${back(q)}</div>`).join("")}<div class="muted">The team cannot move until they are back.</div></div>`;
 }
 
 // The weather where the team is and what it does to its pace (sim/weather.js); the ETAs above already include it.
@@ -238,8 +254,10 @@ function landBlock(state, p, at, queueing) {
   const se = line ? expectSnare(state, at, line.check ?? line.set, state.hour) : null;
   const ord = (type, extra, label, hint, disabled) => btn(`data-action="xp-order" data-id="${p.id}" data-type="${type}"${extra}`, label, hint, disabled);
   const meat = meatIn(p.cargo); // days of raw meat and fish carried
-  const hunts = [4, 8, 12].map((h) => ord("hunt", ` data-hours="${h}"`, `Hunt ${h}h`, hp ? `Hunt: ${hp}` : `Hunt ${h} hours here. Game: ${info.word}${info.est && h === HUNT.defHours ? `; about ${Math.round(info.est.rations)} days of food in raw meat expected in ${h}h` : ""}. A rifle or a bow is best; firearms use ammo, and every shot adds Heat and can draw the dead (bows are silent).${mixNote} Fresh game weighs 1 kg a ration and spoils fast.`, !!hp)).join("");
-  const fishBtns = fs ? [4, 8].map((h) => ord("fish", ` data-hours="${h}"`, `Fish ${h}h`, fp ? `Fish: ${fp}` : `Fish ${h} hours in ${fs.name}${fe && h === HUNT.defHours ? `: about ${Math.round(fe)} days of food in fish expected` : ""}${frozenAt(state) ? " (ice fishing: half the catch)" : ""}. Quiet.`, !!fp)).join("") : "";
+  // One button a job: it opens the land order box (ui/landorder.js), the hours and what they would bring (the user's request 2026-10-23).
+  const ASK = " Opens a box to set the hours, with what they would bring by the team's gear and skills.";
+  const hunts = ord("hunt", "", "Hunt…", hp ? `Hunt: ${hp}` : `Hunt here. Game: ${info.word}${info.est ? `; about ${Math.round(info.est.rations)} days of food in raw meat expected in ${HUNT.defHours}h` : ""}. A rifle or a bow is best; firearms use ammo, and every shot adds Heat and can draw the dead (bows are silent).${mixNote} Fresh game weighs 1 kg a ration and spoils fast.${ASK}`, !!hp);
+  const fishBtns = fs ? ord("fish", "", "Fish…", fp ? `Fish: ${fp}` : `Fish in ${fs.name}${fe ? `: about ${Math.round(fe)} days of food in fish expected in ${HUNT.defHours}h` : ""}${frozenAt(state) ? " (ice fishing: half the catch)" : ""}. Quiet.${ASK}`, !!fp) : "";
   const snareBtns = line
     ? ord("snare", ` data-mode="check"`, "Check snares (1h)", sp ? `Snares: ${sp}` : `Collect the catch (about ${Math.round(se.animals)} small game by now, if nothing got to it) and leave the line set.`, !!sp) +
       ord("snare", ` data-mode="lift"`, "Lift snares (1h)", sp ? `Snares: ${sp}` : "Collect the catch and take the line up (the snare wire comes back).", !!sp)
@@ -247,16 +265,21 @@ function landBlock(state, p, at, queueing) {
   // Wild food (sim/foraging.js): forage here, with what it would bring.
   const fi = forageInfo(state, at, { members, hours: FORAGE.defHours, room: cargoRoom(state, p) });
   const fgp = queueing ? "" : forageProblem(state, p, at);
-  const forageBtns = [4, 8, 12].map((h) => ord("forage", ` data-hours="${h}"`, `Forage ${h}h`, fgp ? `Forage: ${fgp}` : `Gather wild food here for ${h} hours: berries, nuts, mushrooms, greens, roots, apples (${fi.seasonKey}: ${fi.word})${fi.est && h === FORAGE.defHours ? `; about ${Math.round(fi.est.rations * 10) / 10} food expected in ${h}h` : ""}. Forest is best, farmland and old orchards good, towns little; summer and autumn plentiful, winter almost nothing. Quiet, but time on one spot builds Heat; now and then herbs (meds) or honey, rarely a bad mushroom.`, !!fgp)).join("");
+  const forageBtns = ord("forage", "", "Forage…", fgp ? `Forage: ${fgp}` : `Gather wild food here: berries, nuts, mushrooms, greens, roots, apples (${fi.seasonKey}: ${fi.word})${fi.est ? `; about ${Math.round(fi.est.rations * 10) / 10} food expected in ${FORAGE.defHours}h` : ""}. Forest is best, farmland and old orchards good, towns little; summer and autumn plentiful, winter almost nothing. Quiet, but time on one spot builds Heat; now and then herbs (meds) or honey, rarely a bad mushroom.${ASK}`, !!fgp);
   // Wood (sim/woodcutting.js): cut wood here, with what it would bring (as far as the team can carry it).
   const wi = woodInfo(state, at, { members, spare: p.cargo.gear, hours: WOOD.defHours, room: cargoRoom(state, p) });
   const wp = queueing ? "" : woodProblem(state, p, at);
   const woodWood = carried(p, "wood");
-  const woodBtns = [4, 8].map((h) => ord("wood", ` data-hours="${h}"`, `Cut wood ${h}h`, wp ? `Cut wood: ${wp}` : `Cut wood here for ${h} hours (daylight only): wood ${wi.word}${wi.est && h === WOOD.defHours ? `; about ${Math.round(wi.est.wood)} wood expected in ${h}h, as much as the team can carry (0.1 kg each: ${Math.round(wi.est.wood * SUPPLIES.wood.weight)} kg)${wi.est.all > wi.est.wood + 15 ? `: about ${Math.round(wi.est.all)} cut, the rest left` : ""}` : ""}. ${wi.tools ? `${wi.tools} with an axe or blade` : "No axe: deadfall by hand, far slower"}. The winter's heating: a base burns wood before fuel. Loud (Heat), and axes slip now and then.`, !!wp)).join("");
-  return `<div style="margin-top:0.5rem"><b${tip("Food and wood from the land: forage (anyone), hunt (a rifle or a bow), fish (a rod, a net or a spear, on a river or lake shore), set snares, or cut wood (an axe helps). The land runs out of game when hunted hard and grows back over weeks; picked land grows back over a season, cut woods over seasons.")}>Land</b> <span class="muted">wild food ${fi.word} · game ${info.word} · wood ${wi.word}${fs ? ` · fish in ${fs.name}` : ""}${line ? " · your snares" : ""}${meat >= 1 ? ` · carrying ${Math.floor(meat)} fresh game` : ""}${woodWood >= 1 ? ` · carrying ${Math.floor(woodWood)} wood` : ""}</span></div>
+  const woodBtns = ord("wood", "", "Cut wood…", wp ? `Cut wood: ${wp}` : `Cut wood here (daylight only): wood ${wi.word}${wi.est ? `; about ${Math.round(wi.est.wood)} wood expected in ${WOOD.defHours}h, as much as the team can carry (0.1 kg each: ${Math.round(wi.est.wood * SUPPLIES.wood.weight)} kg)${wi.est.all > wi.est.wood + 15 ? `: about ${Math.round(wi.est.all)} cut, the rest left` : ""}` : ""}. ${wi.tools ? `${wi.tools} with an axe or blade` : "No axe: deadfall by hand, far slower"}. The winter's heating: a base burns wood before fuel. Loud (Heat), and axes slip now and then.${ASK}`, !!wp);
+  // Stone (sim/stone.js): gather field stone here.
+  const sa = stoneAbundance(state, at);
+  const sp2 = queueing ? "" : stoneProblem(state, p, at);
+  const se2 = sa >= 0.1 && members.length ? landEstimate(state, p, "stone", { tile: at }) : null;
+  const stoneBtns = sa >= 0.1 ? ord("stone", "", "Gather stone…", sp2 ? `Gather stone: ${sp2}` : `Gather field stone here (daylight only): stone ${stoneWord(sa)}${se2 ? `; about ${Math.round(se2.amount)} stone expected in ${se2.hours}h (1 kg each)` : ""}. Mountains and hills are best; a pickaxe or a sledgehammer about doubles it.${ASK}`, !!sp2) : "";
+  return `<div style="margin-top:0.5rem"><b${tip("Food, wood and stone from the land: forage (anyone), hunt (a rifle or a bow), fish (a rod, a net or a spear, on a river or lake shore), set snares, cut wood (an axe helps) or gather stone (a pickaxe helps). Each asks how many hours first, with what they would bring. The land runs out of game when hunted hard and grows back over weeks; picked land grows back over a season, cut woods over seasons.")}>Land</b> <span class="muted">wild food ${fi.word} · game ${info.word} · wood ${wi.word}${sa >= 0.1 ? ` · stone ${stoneWord(sa)}` : ""}${fs ? ` · fish in ${fs.name}` : ""}${line ? " · your snares" : ""}${meat >= 1 ? ` · carrying ${Math.floor(meat)} fresh game` : ""}${woodWood >= 1 ? ` · carrying ${Math.floor(woodWood)} wood` : ""}</span></div>
     ${teamWormText(state, p) ? `<div class="small danger"${tip("The worm (Help: The dead and the worm): its eggs die in the heat. Camp with the fire lit to boil the water and cook the game; a water filter carried cleans the water as it is drunk. Eaten raw or drunk unboiled, each day is a chance of catching it.")}>The worm: ${esc(teamWormText(state, p))}.</div>` : ""}
     ${lowFoodBlock(state, p, at, queueing)}
-    <div class="row" style="margin-top:0.3rem;flex-wrap:wrap">${forageBtns}${hunts}${fishBtns}${snareBtns}${woodBtns}</div>`;
+    <div class="row" style="margin-top:0.3rem;flex-wrap:wrap">${forageBtns}${hunts}${fishBtns}${snareBtns}${woodBtns}${stoneBtns}</div>`;
 }
 
 // Short of food (under 2 days): the best food from the land here and around (sim/foraging.js landFoodOptions), with

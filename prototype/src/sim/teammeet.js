@@ -220,7 +220,7 @@ export function giveGoods(state, from, to, picks = {}, target = "cargo") {
 // vehicles a seat for everyone (vehicles.js fleetProblem). Moving everyone into another team merges the two.
 // Returns { text, error, party } (party: the team they are on now).
 /** @param {State} state @param {Party} from @param {Party | null} to @param {number[]} sids @param {number[]} [vehicleIds] */
-export function moveMembers(state, from, to, sids, vehicleIds = []) {
+export function moveMembers(state, from, to, sids, vehicleIds = [], { quiet = false } = {}) {
   const fail = (error) => ({ text: error, error, party: null });
   const why = to ? meetProblem(state, from, to) : standProblem(state, from);
   if (why) return fail(why);
@@ -267,7 +267,7 @@ export function moveMembers(state, from, to, sids, vehicleIds = []) {
   settle(state, [from, q]);
   const what = list([...go.map(firstName), ...moving.map((v) => `the ${v.name}`)]);
   const text = to ? (go.length ? `${what} join${go.length === 1 && !moving.length ? "s" : ""} ${toName}.` : `${what} ${moving.length === 1 ? "goes" : "go"} to ${toName}.`) : `${what} split off as a team of their own.`;
-  log(state, text, "info");
+  if (!quiet) log(state, text, "info"); // quiet: detach.js says it its own way
   return { text, error: "", party: q };
 }
 // A new team on the same tile for `go` (members of `from`), waiting for orders, with their share of the packed food and

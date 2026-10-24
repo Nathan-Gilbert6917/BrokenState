@@ -76,6 +76,14 @@ export function quarryCrew(members, spare = []) {
 export const quarryPower = (crew) => crew.reduce((a, c, i) => a + c.mult * (STONE.weights[i] ?? STONE.weights[STONE.weights.length - 1]), 0);
 // Stone an hour on a tile for a crew of this power (no randomness).
 export const stoneRate = (state, tile, hour, power) => STONE.RATE * stoneAbundance(state, tile) * woodTime(hour) * power;
+// Expected haul of `hours` of gathering from startHour (stone never runs out); room = kg the team can still carry (the
+// haul is capped by it; all = what was gathered). ui/landorder.js: the order's hours box.
+export function expectStone(state, tile, hours, startHour = state.hour, room = Infinity, power = 1) {
+  let all = 0;
+  for (let h = 1; h <= hours; h++) all += stoneRate(state, tile, startHour + h, power);
+  const kept = Math.min(all, Math.max(0, Math.floor(room / SUPPLIES.stone.weight + 1e-9)));
+  return { stone: Math.round(kept * 10) / 10, all: Math.round(all * 10) / 10, perHour: hours ? kept / hours : 0 };
+}
 
 // ---------- the team order (orders.js task "stone") ----------
 // Why a team cannot gather stone here ("" = it can).

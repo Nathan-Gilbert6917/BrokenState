@@ -76,6 +76,8 @@ import { TEAMMEET_ACTIONS, TEAMMEET_CHANGE } from "./ui/teammeet.js"; // teams t
 import { toggleFleetIds, leadId } from "./ui/fleetpick.js"; // the planners' vehicle picker (up to four)
 import { TEAMFORM_ACTIONS, TEAMFORM_CHANGE, teamFormDrop, teamFormKey, teamFormEsc, formTeamCtx } from "./ui/teamform.js"; // Form a team at a base; Edit team
 import { CARRY_ACTIONS, CARRY_CHANGE, carryHtml, askQty, carryKey } from "./ui/carry.js"; // supplies in pockets, packs and arms; the ground; how much to collect
+import { LAND_ACTIONS, LAND_CHANGE, landHtml, askLand, landKey } from "./ui/landorder.js";
+import { callBack } from "./sim/detach.js"; // some of a team out on a job of their own: Call back // Forage, Hunt, Fish, Cut wood, Gather stone: how many hours, and what they would bring
 import { renameBase } from "./sim/basenames.js";
 import { BN_ACTIONS, BN_INPUT, bnKey, nameModalUp } from "./ui/basename.js"; // naming a base you found, renaming any base
 import { CS_ACTIONS, siteViewDue } from "./ui/campsite.js"; // the camp's spot on its tile's 500 × 500 map, in the isometric view
@@ -165,7 +167,7 @@ import { initMinimap, minimapFrame } from "./ui/minimap.js";
 import { initEdgeFx, edgeFrame } from "./ui/edgefx.js"; // red pulses at the screen edge for an attack off screen (map and battle)
 import { initConfirm, askHtml, askKey, ASK_ACTIONS, ask } from "./ui/confirm.js";
 import { selectedTeam, teamOnTile } from "./ui/teamsel.js"; // the selected team (its panel open, or picked on the map)
-import { teamTileMenu, teamCtxHtml, runTeamAction } from "./ui/teamctx.js"; // its right-click menu: actions for the tile
+import { teamTileMenu, teamCtxHtml, runTeamAction, landPick, queueAhead } from "./ui/teamctx.js"; // its right-click menu: actions for the tile
 import { clickPick, syncPick, MAPSEL_ACTIONS } from "./ui/mapselect.js"; // selecting teams, parties and bands on the map like tiles
 
 const HOURS_PER_SECOND = 1 / 20; // at 1× speed an hour takes 20 seconds and a day 8 minutes
@@ -593,7 +595,7 @@ function refresh(user = true) {
   setPanel("banner", bannerHTML(), user);
   syncWatchlist(state, ui, { act: actions, refresh }); // places the Watching panel; the map-note editor
   syncOverlays(); // ui/overlaydrag.js: moved boxes in their place, every box kept on the map
-  setPanel("ask", askHtml(ui) + carryHtml(state, ui), user); // ui/confirm.js; ui/carry.js: how much to collect, picking up from the ground
+  setPanel("ask", askHtml(ui) + carryHtml(state, ui) + landHtml(state, ui), user); // ui/confirm.js; ui/carry.js: how much to collect, picking up from the ground; ui/landorder.js: a land job's hours
   writeItemMenu(user);
   if (ui.box && !ui.inv && !ui.baseView && !ui.gunb && !ui.meet) ui.box = null; // its window was closed (as the item menu)
   setPanel("boxview", boxViewHtml(state, ui), user); // ui/boxview.js: an opened box's window, over the windows
@@ -1044,7 +1046,10 @@ const actions = {
   "xp-order": (d) => {
     const p = partyById(d.id);
     if (!p || !(contactable(p) || commandable(state, p))) return; // the radio rule is checked for every team order below
-    if (askQty(state, ui, d)) return; // ui/carry.js: how much water, wood, food or game (the box gives d.qty)
+    // ui/landorder.js: a land job's hours and what they would bring (where it starts: here, or where the queue ends)
+    const now = startsNow(p);
+    if (askLand(state, ui, d, { via: "xp", type: d.type, tile: now ? partyTile(p) : queueEndTile(state, p), startHour: state.hour + (now ? 0 : queueAhead(state, p)) })) return;
+    if (askQty(state, ui, d)) return; // ui/carry.js: how much water to fetch (the box gives d.qty)
     const o = { type: d.type };
     if (d.qty != null && d.qty !== "") o.qty = Number(d.qty);
     if (d.mission) o.mission = d.mission;
@@ -1074,6 +1079,7 @@ const actions = {
     centerOn(state, ui.moveQueue ? queueEndTile(state, p) : partyTile(p));
   },
   "xp-stop": (d) => { const p = partyById(d.id); if (p) ui.xpMsg = stopTask(state, p); },
+  "xp-callback": (d) => { const q = partyById(d.id); if (q) { ui.xpMsg = callBack(state, q); log(state, ui.xpMsg, "info"); } }, // sim/detach.js: some of a team out on a job, back now
   "xp-resume": (d) => { const p = partyById(d.id); if (p) ui.xpMsg = resumeQueue(state, p); },
   "xp-unqueue": (d) => {
     const p = partyById(d.id);
@@ -1400,6 +1406,7 @@ for (const [k, fn] of Object.entries(TEAMMEET_ACTIONS)) actions[k] = (d) => fn(s
 for (const [k, fn] of Object.entries(UNPACK_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // ui/teaminv.js: Home from a trip
 for (const [k, fn] of Object.entries(TEAMFORM_ACTIONS)) actions[k] = (d, ev) => { fn(state, ui, d, ev); hideCtx(); }; // ui/teamform.js
 for (const [k, fn] of Object.entries(CARRY_ACTIONS)) actions[k] = (d, ev) => fn(state, ui, d, ev, actions); // ui/carry.js
+for (const [k, fn] of Object.entries(LAND_ACTIONS)) actions[k] = (d, ev) => fn(state, ui, d, ev, actions); // ui/landorder.js
 for (const [k, fn] of Object.entries(ARMV_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // ui/armoryview.js: the armory list's groups, view, find box and type chips
 for (const [k, fn] of Object.entries(ITEMMENU_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // ui/itemmenu.js: the item right-click menu
 for (const [k, fn] of Object.entries(BOX_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // ui/boxview.js: take things out of an opened box
@@ -1735,6 +1742,7 @@ for (const [k, fn] of Object.entries(TEAMINV_CHANGE)) changeActions[k] = (el) =>
 for (const [k, fn] of Object.entries(TEAMMEET_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // ui/teammeet.js
 for (const [k, fn] of Object.entries(TEAMFORM_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // ui/teamform.js: sort, supply amounts, days
 for (const [k, fn] of Object.entries(CARRY_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // ui/carry.js
+for (const [k, fn] of Object.entries(LAND_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // ui/landorder.js
 for (const [k, fn] of Object.entries(GB_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // the gun builder's Ammo list // how many of a supply stack to move (ui/inventory.js)
 
 // A new world: new campaign, new map and colonists, or the same colonists on another seed or group count.
@@ -2232,6 +2240,7 @@ function mapMenu(x, y, shift) {
   view.selected = id;
   ctxAt = { tile: id, x: x - r.left, y: y - r.top };
   ui.tcAppend = !!shift;
+  ui.tcWho = null; // who does it (ui/teamctx.js): the whole team until some are picked
   showCtx();
 }
 // A finger on the map (ui/touch.js): a drag pans, two fingers pinch the zoom about their midpoint, a tap is the left
@@ -2409,7 +2418,7 @@ function showCtx() {
       (acts.length ? hubHtml : `<div class="small muted" style="padding:0.3rem 0.5rem">${none}</div>`);
   } else {
     const rest = ctxTeams(waiting.filter((p) => p !== sel), id) + hubHtml;
-    menu.innerHTML = teamCtxHtml(state, ui, teamTileMenu(state, ui, sel, id, { append: !!ui.tcAppend })) +
+    menu.innerHTML = teamCtxHtml(state, ui, teamTileMenu(state, ui, sel, id, { append: !!ui.tcAppend, who: ui.tcWho && ui.tcWho.pid === sel.id ? ui.tcWho.ids : null })) +
       (rest ? `<button class="tcfold" data-action="tc-more" data-tip="Other teams you are in touch with, and teams sent from the hub">${ui.ctxMore ? "▾" : "▸"} Other teams and the hub</button>${ui.ctxMore ? rest : ""}` : "") +
       ctxWatchlist(state, id) + formTeamCtx(state, id);
   }
@@ -2448,6 +2457,8 @@ Object.assign(actions, {
   // A selected team's item (ui/teamctx.js): replace its plan or queue; the confirmation box first when orders under way would go.
   "tc-do": (d) => {
     hideCtx();
+    const land = d.asked === "1" ? null : landPick(state, ui, d); // ui/landorder.js: a land job asks its hours first
+    if (land && askLand(state, ui, d, { via: "tc", ...land })) return;
     const msg = runTeamAction(state, ui, d, actions);
     if (msg === null) return; // asked first (ui/confirm.js): Yes runs it again
     if (msg) log(state, msg, "info");
@@ -2455,6 +2466,17 @@ Object.assign(actions, {
     endMoveMode();
   },
   "tc-mode": () => { ui.tcAppend = !ui.tcAppend; showCtx(); }, // replace ⇄ add to the queue
+  // Who does it (ui/teamctx.js, sim/detach.js): a person in or out (never nobody); data-sid "" for the whole team.
+  "tc-who": (d) => {
+    const p = partyById(d.id);
+    if (!p) return;
+    const all = Parties.partyMembers(state, p).map((s) => s.id);
+    const was = ui.tcWho && ui.tcWho.pid === p.id ? ui.tcWho.ids : all;
+    const sid = Number(d.sid);
+    const ids = d.sid === "" ? all : was.includes(sid) ? was.filter((x) => x !== sid) : [...was, sid];
+    ui.tcWho = ids.length && ids.length < all.length ? { pid: p.id, ids } : null;
+    showCtx();
+  },
   "tc-more": () => { ui.ctxMore = !ui.ctxMore; showCtx(); },   // the other teams and the hub, folded
   "tc-all": () => { ui.ctxAll = !ui.ctxAll; showCtx(); },      // every order for the tile, and the team panel, folded (ui/teamctx.js)
 });
@@ -2466,8 +2488,8 @@ function ctxBoats(teams, id) {
       return `<button data-action="ctxcross" data-id="${p.id}" data-tile="${id}" data-mode="${m}" ${plan.ok ? "" : "disabled"} data-tip="${esc(boatTip(state, plan, id))}">Boat team (${p.members.length}) across${p.vehicleId ? (m === "raft" ? ", raft vehicle" : ", leave vehicle") : ""} · ${plan.mats.scrap} scrap, ${plan.hours}h</button>`;
     })).join("");
 }
-// Right-click a land tile with a team you are in touch with: go there and forage, hunt or fish 8 hours (sim/foraging.js,
-// sim/hunting.js). The team panel's low-food list uses the same action.
+// Right-click a land tile with a team you are in touch with: go there and forage, hunt or fish (sim/foraging.js,
+// sim/hunting.js), the hours asked first (ui/landorder.js). The team panel's low-food list uses the same action.
 function ctxLand(teams, id) {
   const t = state.tiles[id];
   if (!t || t.terrain === "water") return "";
@@ -2550,7 +2572,11 @@ actions.ctxhunt = (d) => {
   const p = partyById(d.id);
   if (p) {
     const tile = Number(d.tile);
-    const job = { type: d.type === "fish" || d.type === "forage" || d.type === "wood" ? d.type : "hunt", hours: 8 };
+    const type = ["fish", "forage", "wood", "stone"].includes(d.type) ? d.type : "hunt";
+    const here = partyTile(p) === tile;
+    // ui/landorder.js: the hours and what they would bring, first (from when the team would get there)
+    if (askLand(state, ui, d, { via: "ctxhunt", type, tile, startHour: state.hour + (here ? 0 : (Parties.moveEstimate(state, p, tile) || { hours: 0 }).hours || 0) })) { endMoveMode(); hideCtx(); return; }
+    const job = { type, hours: d.hours ? Number(d.hours) : 8, ...(d.qty != null && d.qty !== "" ? { qty: Number(d.qty) } : {}) };
     let msg;
     if (partyTile(p) === tile && (p.phase === "waiting" || p.phase === "task")) msg = startOrder(state, p, job);
     else {
@@ -2832,6 +2858,7 @@ window.addEventListener("keydown", (e) => {
   // A question before an order that cannot be undone (ui/confirm.js) takes the keyboard: Enter yes, Esc cancel.
   if (ui.ask) { e.preventDefault(); act(() => askKey(ui, e, actions)); refresh(); return; }
   if (ui.carry) { e.preventDefault(); act(() => carryKey(state, ui, e, actions)); refresh(); return; } // ui/carry.js: Enter collects, Esc cancels
+  if (ui.landAsk) { e.preventDefault(); act(() => landKey(state, ui, e, actions)); refresh(); return; } // ui/landorder.js: Enter gives the order, Esc cancels
   // The timelapse viewer takes the keyboard (play, step, speed, pan, Esc closes).
   if (ui.timelapse) {
     if (tlKey(state, ui, e)) { e.preventDefault(); refresh(); }

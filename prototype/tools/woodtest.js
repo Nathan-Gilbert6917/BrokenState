@@ -448,13 +448,13 @@ section("Panels and alerts: the Upkeep line, the top bar, the tile panel, the te
   const p = placeTeam(state, forest.id, { tools: ["fireaxe"] });
   p.radioLive = true; p.contactHour = state.hour;
   const xp = renderRight(state, { selected: forest.id, expedition: p.id });
-  check(/data-type="wood"/.test(xp) && /Cut wood 8h/.test(xp) && /wood expected/.test(xp), "team panel: Cut wood 4h / 8h with the expected yield");
+  check(/data-type="wood"/.test(xp) && /Cut wood…/.test(xp) && /wood expected/.test(xp), "team panel: Cut wood… (the land order box sets the hours) with the expected yield");
   check(!BAD.test(xp), "team panel: no undefined / NaN");
   const tp = renderRight(state, { selected: forest.id, expedition: null });
   check(/>Wood</.test(tp) && /wood \(\d+ kg\) in 8h/.test(tp.replace(/<[^>]*>/g, " ")), "tile panel: the wood rating and a cutting estimate");
   check(!BAD.test(tp), "tile panel: no undefined / NaN");
   const main = readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
-  check(/data-type="wood"/.test(main) && /d\.type === "wood"/.test(main), "right-click: Go and cut wood here");
+  check(/data-type="wood"/.test(main) && /\["fish", "forage", "wood", "stone"\]\.includes\(d\.type\)/.test(main), "right-click: Go and cut wood here");
   check(!!tileActions(state, forest.id), "right-click menu builds");
 }
 
