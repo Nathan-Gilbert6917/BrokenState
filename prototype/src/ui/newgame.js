@@ -10,11 +10,13 @@ import { HC_START, backgroundInfo, countWord } from "../sim/hardcore-start.js"; 
 import { customLibrary } from "./backgrounds.js";
 import { isCustomBg } from "../sim/custombg.js"; // custom backgrounds (sim/custombg.js), kept in this browser
 import { FAMILY } from "../sim/family.js"; // the Children box shows only while children are on
-import { sanitizeStartGear, hasPicks, vehicleOwner, trunkKg } from "../sim/startgear.js"; // starting gear picked under Customize
-import { gearRow, pointsBar, startVehicleInfo } from "./startgear.js"; // its Gear… button, load and kit points, and the points bar, on the crew card
+import { sanitizeStartGear, hasPicks, trunkKg } from "../sim/startgear.js"; // starting gear picked under Customize
+import { gearRow, pointsBar, fleetSection, uiFleet } from "./startgear.js"; // its Gear… button, load and kit points, and the points bar, on the crew card; the Starting vehicles
+import { cleanFleet, fleetRoom, openLoads } from "../sim/startfleet.js"; // the starting vehicles: each its point limit and back (2026-10-24)
+import { gunCals } from "../sim/ammo.js"; // a random back's rounds: the crew's guns' calibres
 import { traitPickerHtml, traitBlock, traitChips } from "./traitpick.js"; // Customize: the traits, good and bad, none that clash; the chips
-import { randomBuild, randomEverything, randomTraits, randomKit, kitBudget, kitKeys } from "../sim/randomkit.js"; // Customize: a whole random colonist within the points; the crew and the back
-import { CUSTOM_POINTS, pricePerson, pointsMax, maxFor, nextLevelCost, skillCost, backPayer, clampMax } from "../sim/custompoints.js";
+import { randomBuild, randomEverything, randomTraits, randomKit, randomTrunk, kitBudget, kitKeys } from "../sim/randomkit.js"; // Customize: a whole random colonist within the points; the crew and the vehicles' backs
+import { CUSTOM_POINTS, pricePerson, pointsMax, maxFor, nextLevelCost, skillCost, clampMax } from "../sim/custompoints.js";
 import { wornLoad } from "../sim/load.js"; // Customize: everything costs points
 import { traitLabel, traitTier, setTier, tidyTiers, tierCount, cleanTier } from "../sim/traits.js";
 import {
@@ -77,8 +79,8 @@ function traitMod(s, k) {
 // Customize (2026-10-07, user request; points 2026-10-08: sim/custompoints.js; not with Ironman): every colonist starts
 // blank and everything costs points from their max (the "Points each" box): skill levels (+ and −, any level 0–20),
 // traits picked with their tier (good ones cost, bad ones give points back), who they were (a preset or a custom
-// background, ui/backgrounds.js: picking one loads what it gives, priced), what they wear, hold and carry and the
-// vehicle's back (Gear…). "Start from the dice" loads what was rolled for them; "Clear" goes back to blank. Start is
+// background, ui/backgrounds.js: picking one loads what it gives, priced) and what they wear, hold and carry (Gear…;
+// the vehicles' backs have point limits of their own since 2026-10-24: Starting vehicles). "Start from the dice" loads what was rolled for them; "Clear" goes back to blank. Start is
 // refused while anyone is over. Anything set this way marks the colonist (s.startCustom): ticking Ironman puts the crew
 // back as rolled, and Start refuses an Ironman run with it.
 const freeEdit = (ui) => !!ui.freeEdit && !ui.ironman;
@@ -112,11 +114,11 @@ function crewCard(state, ui, s) {
   // Gear: Customize draws a kit on points; a normal start trades the starting weapon and vest with a crewmate (the
   // crew's kit stays the same); Hardcore draws what they grabbed again (not in Ironman: as rolled).
   const gearLocked = locked && hard;
-  const gearTip = free ? "Empty what they wear, hold and carry, then a new random kit for the points they have left after their skills, traits and the vehicle's back. Each click is a new draw"
+  const gearTip = free ? "Empty what they wear, hold and carry, then a new random kit for the points they have left after their skills and traits. Each click is a new draw"
     : hard ? (locked ? "Ironman: what they grabbed stays as rolled" : "Draw again what they grabbed as they fled (their bag, weapon and things; the others keep theirs). Each click is a new draw")
     : "Trade their starting weapon and vest with a random crewmate's (the crew's kit stays the same)";
   const allTip = locked ? "Randomize name, skills (same total) and look for this colonist only (Ironman: traits and who they were stay as rolled)"
-    : free ? "Everything for this colonist only: a new name, look and background, and a random build (traits, skills and what they wear, hold and carry, within their points; the vehicle's back stays)"
+    : free ? "Everything for this colonist only: a new name, look and background, and a random build (traits, skills and what they wear, hold and carry, within their points)"
     : `Everything for this colonist only: a new name, look and background, skills (same total)${hard ? ", traits and what they grabbed (the others keep theirs)" : " and traits (their weapon and vest stay: Gear trades them with a crewmate)"}`;
   if (ui.lookEdit === s.id) {
     return `<div class="card leader-pick nrcard nrwide ${s.leader ? "on" : ""}">
@@ -159,7 +161,7 @@ function crewCard(state, ui, s) {
       <button class="mini" data-action="nr-rand-bg" data-id="${s.id}"${locked ? " disabled" : ""}${tip(locked ? "Ironman: who they were stays as rolled" : `A random background, one nobody else in the crew has (${free ? "what it gives is loaded and priced, as picking it does" : hard ? "it reshapes their skills, may give a trait, and decides what they grabbed" : "it reshapes their skills (the same total) and may give a trait"}). Each click is a new draw`)}>Background</button>
       <button class="mini" data-action="nr-rand-traits" data-id="${s.id}"${locked ? " disabled" : ""}${tip(locked ? "Ironman: traits stay as rolled" : free ? "New random traits, good and bad, within the points they have left. Each click is a new draw" : "New random traits (one or two, none that clash)")}>Traits</button>
       <button class="mini" data-action="nr-rand-gear" data-id="${s.id}"${gearLocked ? " disabled" : ""}${tip(gearTip)}>Gear</button>
-      ${free ? `<button class="mini" data-action="sg-build" data-i="${state.survivors.indexOf(s)}"${tip("A new random build for this colonist only: traits, skills and what they wear, hold and carry, within their points (the vehicle's back stays). Each click is a new draw")}>Build</button>` : ""}
+      ${free ? `<button class="mini" data-action="sg-build" data-i="${state.survivors.indexOf(s)}"${tip("A new random build for this colonist only: traits, skills and what they wear, hold and carry, within their points. Each click is a new draw")}>Build</button>` : ""}
       <button class="mini" data-action="nr-all" data-id="${s.id}"${tip(allTip)}>All</button>
     </div>
   </div>`;
@@ -221,13 +223,14 @@ function hiveSelect(state, ui) {
 // Hardcore or Normal.
 export const screenMode = (state) => (isCustomRun(state) ? "custom" : isHardcore(state) ? "hardcore" : "normal");
 
-// Each mode keeps its own Starting people, Points each and Start with a vehicle (2026-10-19 and 2026-10-24, user
-// requests): ui.startPeople, ui.pointsMax and ui.startVehicle are the current mode's, the others' wait in ui.modeSets
+// Each mode keeps its own Starting people, Points each, Start with a vehicle and Starting vehicles (2026-10-19 and
+// 2026-10-24, user requests): ui.startPeople, ui.pointsMax, ui.startVehicle and ui.fleet (sim/startfleet.js: each
+// vehicle's kind, point limit and back) are the current mode's, the others' wait in ui.modeSets
 // (main.js). stashModeSet puts the current mode's away (anything else its entry holds is kept); takeModeSet makes mode
 // the current one with its own. The gamemode select, rollRandomRun and main.js adopt use them.
 export function stashModeSet(ui) {
   if (!ui.modeSets) return;
-  ui.modeSets[ui.mode] = { ...(ui.modeSets[ui.mode] || {}), startPeople: ui.startPeople, pointsMax: ui.pointsMax, startVehicle: ui.startVehicle !== false };
+  ui.modeSets[ui.mode] = { ...(ui.modeSets[ui.mode] || {}), startPeople: ui.startPeople, pointsMax: ui.pointsMax, startVehicle: ui.startVehicle !== false, fleet: cleanFleet(ui.fleet, ui.mode) };
 }
 export function takeModeSet(ui, mode) {
   const m = (ui.modeSets && ui.modeSets[mode]) || {};
@@ -235,6 +238,7 @@ export function takeModeSet(ui, mode) {
   ui.startPeople = clampStartPeople(m.startPeople ?? peopleRange(mode).DEF, mode);
   ui.pointsMax = clampMax(m.pointsMax ?? CUSTOM_POINTS.DEF);
   ui.startVehicle = m.startVehicle !== false;
+  ui.fleet = cleanFleet(m.fleet, mode);
 }
 
 // Normal, Hardcore or Custom (sim/hardcore.js MODES): the mode the world on this screen was built with.
@@ -249,8 +253,8 @@ function modeSelect(state) {
 function vehicleToggle(state) {
   const on = startsWithVehicle(state), hard = isHardcore(state);
   const t = hard
-    ? "Start with a vehicle: ticked, one of you fled in their car with what was in its back (and a small team loaded its empty seats). Unticked, you flee on foot with only what you can carry (the tents too). Changing it builds the world again on the same seed"
-    : "Start with a vehicle: ticked, the hub starts with a pickup truck (and a custom background's car, if it brings one). Unticked, no vehicle at all: your people go on foot until they find, take or fix one. Changing it builds the world again on the same seed";
+    ? "Start with a vehicle: ticked, one of you fled in their car with what was in its back (and a small team loaded its empty seats; Starting vehicles sets the back). Unticked, you flee on foot with only what you can carry (the tents too). Changing it builds the world again on the same seed"
+    : `Start with a vehicle: ticked, the hub starts with ${isCustomRun(state) ? "the vehicles set under Starting vehicles" : "a pickup truck"} (and a custom background's car, if it brings one); Starting vehicles sets what is in their backs. Unticked, no vehicle at all: your people go on foot until they find, take or fix one. Changing it builds the world again on the same seed`;
   return `<label${tip(t)}><input type="checkbox" data-action="nr-vehicle"${on ? " checked" : ""}> Start with a vehicle</label>`;
 }
 
@@ -303,9 +307,9 @@ function customizeRow(state, ui) {
   const mode = MODES[screenMode(state)].label;
   return `<div class="row nrcustom" style="margin-bottom:0.8rem">
       <span class="small muted"${tip(`Customize's settings for ${mode} (the other modes keep their own)`)}>Customize (${esc(mode)}):</span>
-      <label${tip(`Customize (${mode}): the points each colonist may spend (${CUSTOM_POINTS.MIN}–${CUSTOM_POINTS.MAX}, ${CUSTOM_POINTS.DEF} by default: about what an average rolled colonist and their start kit come to). Everyone starts blank; skills, good traits, gear, what they carry and the vehicle's back cost points, bad traits give some back (at most a third of this). Setting it puts every colonist on it, their own points (on their card) too.`)}>Points each <input type="number" min="${CUSTOM_POINTS.MIN}" max="${CUSTOM_POINTS.MAX}" step="5" style="width:4.5rem" data-action="nr-points" value="${pointsMax(state)}"></label>
+      <label${tip(`Customize (${mode}): the points each colonist may spend (${CUSTOM_POINTS.MIN}–${CUSTOM_POINTS.MAX}, ${CUSTOM_POINTS.DEF} by default: about what an average rolled colonist and their start kit come to). Everyone starts blank; skills, good traits, gear and what they carry cost points, bad traits give some back (at most a third of this). Setting it puts every colonist on it, their own points (on their card) too.`)}>Points each <input type="number" min="${CUSTOM_POINTS.MIN}" max="${CUSTOM_POINTS.MAX}" step="5" style="width:4.5rem" data-action="nr-points" value="${pointsMax(state)}"></label>
       <button data-action="bg-open"${tip(`Make your own backgrounds: skills, traits, gear, supplies and the car (${Object.keys(customLibrary()).length} made)`)}>Backgrounds…</button>
-      <button data-action="nr-everything"${tip("Everything at once: every colonist a new name, look and random build (traits, skills and what they wear, hold and carry), and the vehicle's back emptied and filled again (its payer keeps a share of their points for it), all within the points. Each click is a new draw")}>🎲 Randomize everything</button>
+      <button data-action="nr-everything"${tip("Everything at once: every colonist a new name, look and random build (traits, skills and what they wear, hold and carry), within their points, and every starting vehicle's back emptied and filled again up to its own point limit. Each click is a new draw")}>🎲 Randomize everything</button>
     </div>`;
 }
 
@@ -325,7 +329,7 @@ export function newRunScreen(state, ui) {
       ${custom ? customInputs(state, ["people"]) : startPeopleSelect(state, ui)}
       ${vehicleToggle(state)}
       <label${tip("Ironman: the game saves itself (at dawn, when a battle starts and ends, when you leave it) to one slot of its own. No saving or loading by hand, no restarting a battle, no export: you live with every choice. The crew starts as rolled: no Customize, no custom backgrounds, no moving skill points (names, looks and the leader are yours). Works with Normal, Hardcore and Custom.")}><input type="checkbox" data-action="ironman"${ui.ironman ? " checked" : ""}> Ironman</label>
-      <label${tip(ui.ironman ? "Not with Ironman: an Ironman crew starts as rolled. Untick Ironman to customize." : "Customize: build each colonist from a blank slate with points (Points each): skill levels, traits and their tiers (bad ones give points back), who they were (a preset or one of your own, Backgrounds…), what they wear, hold and carry, placed by hand, and the vehicle's back (Gear… on each card). Start from the dice loads what was rolled. Unticking puts the crew back as rolled. Not with Ironman.")}${ui.ironman ? ` class="muted"` : ""}><input type="checkbox" data-action="nr-free"${freeEdit(ui) ? " checked" : ""}${ui.ironman ? " disabled" : ""}> Customize</label>
+      <label${tip(ui.ironman ? "Not with Ironman: an Ironman crew starts as rolled. Untick Ironman to customize." : "Customize: build each colonist from a blank slate with points (Points each): skill levels, traits and their tiers (bad ones give points back), who they were (a preset or one of your own, Backgrounds…), what they wear, hold and carry, placed by hand (Gear… on each card). The vehicles' backs are set under Starting vehicles, with or without Customize. Start from the dice loads what was rolled. Unticking puts the crew back as rolled. Not with Ironman.")}${ui.ironman ? ` class="muted"` : ""}><input type="checkbox" data-action="nr-free"${freeEdit(ui) ? " checked" : ""}${ui.ironman ? " disabled" : ""}> Customize</label>
       <label${tip("First-week guide: a checklist under the alerts for the first days (check the stores, work priorities, a building, a team out and home, the first night), each step with a Show me that points at the button to press. It ticks off as you play and steps aside after day 7; the menu hides it or brings it back. On for your first campaign here.")}><input type="checkbox" data-action="nr-guide"${ui.guide ? " checked" : ""}> First-week guide</label>
       ${FAMILY.enabled ? `<label${tip("Children: couples at a base may have children, who grow up in a year into survivors (Help: Children and families). Untick for a run without couples forming on their own, pregnancies or children.")}><input type="checkbox" data-action="children"${ui.childrenOff ? "" : " checked"}> Children</label>` : ""}
       <label${tip("The same seed always builds the same map. Your edited colonists are kept when you change it.")}>Seed <input type="number" min="1" step="1" style="width:7rem" data-action="seed" value="${state.seed}"></label>
@@ -336,10 +340,11 @@ export function newRunScreen(state, ui) {
       <button data-action="reroll"${tip("A new map and new survivors")}>New map and survivors</button>
       <button data-action="nr-start"${tip(`Roll a new starting position on this same map and seed: ${hard ? "another roadside spot to flee from" : "another town for your hub"}, away from the hives and the cities as usual. The map, the hives and your colonists stay as they are (the groups settle around where you are). Look at it with View map; each click is a new spot`)}>📍 New start position</button>
       <button data-action="nr-pick"${tip(`Pick where you start yourself: the map opens and the tile you click is your start (${hard ? "any open land that is not water, a mountain, a hive or another group's base" : `open land for your hub, not water or a mountain, at least ${START_CLEAR} tiles from the towns, the cities, the hives and the other groups`}). The map, the hives and your colonists stay as they are. New start position goes back to the dice`)}>🎯 Pick start on map</button>
-      <button data-action="nr-allcrew"${tip(freeEdit(ui) ? "Every colonist: a new name, look and random build (traits, skills and what they wear, hold and carry, within their points; the vehicle's back stays). Build on a crew card does one colonist" : `Randomize every colonist's name, skills, traits, gear and look (skill totals stay the same; gear picked under Customize is cleared)${hard ? ". In Hardcore that is who they were, what they grabbed and whose car they fled in: the world is built again on the same seed" : ": the starting weapons and the vest are handed out again"}`)}>🎲 Randomize all</button>
+      <button data-action="nr-allcrew"${tip(freeEdit(ui) ? "Every colonist: a new name, look and random build (traits, skills and what they wear, hold and carry, within their points). Build on a crew card does one colonist" : `Randomize every colonist's name, skills, traits, gear and look (skill totals stay the same; gear picked under Customize is cleared)${hard ? ". In Hardcore that is who they were, what they grabbed and whose car they fled in: the world is built again on the same seed" : ": the starting weapons and the vest are handed out again"}`)}>🎲 Randomize all</button>
       <button data-action="zlook-open"${tip("Change how the dead look in battle")}>Zombie look…</button>
       ${worldButton(ui)}
     </div>
+    ${fleetSection(state, ui)}
     ${customizeRow(state, ui)}
     ${customSizeRow(state, ui)}
     ${custom && customShort(state) ? `<div class="small muted" style="margin-bottom:0.5rem">${esc(customShort(state))}</div>` : ""}
@@ -374,7 +379,7 @@ export function crewSnapshot(state) {
     for (const k of ["weapon", "armor"]) { const it = k in dice ? dice[k] : s.gear[k]; out[k] = it ? { ...it } : null; }
     return out;
   };
-  return state.survivors.map((s) => ({ name: s.name, skills: { ...s.skills }, traits: [...s.traits], traitTier: { ...(s.traitTier || {}) }, budget: s.skillBudget ?? skillTotal(s.skills), appearance: s.appearance ? { ...s.appearance } : null, gear: kit(s), leader: !!s.leader, background: s.bgPicked || s.bgKept ? s.background : null, rolled: !s.bgPicked && !!s.bgKept, custom: !!s.startCustom, points: !!s.startPoints, startGear: sanitizeStartGear(s.startGear), startVehicle: s.startVehicle ? JSON.parse(JSON.stringify(s.startVehicle)) : null, carPool: !!s.carPool, grabRoll: s.grabRoll ?? null, grabPick: !!s.grabPick, carRoll: s.carRoll ?? null, carOwner: !!(state.hardcore && state.hardcore.start && state.hardcore.start.carOwner === s.id), ownMax: Number.isFinite(s.ownMax) ? s.ownMax : null }));
+  return state.survivors.map((s) => ({ name: s.name, skills: { ...s.skills }, traits: [...s.traits], traitTier: { ...(s.traitTier || {}) }, budget: s.skillBudget ?? skillTotal(s.skills), appearance: s.appearance ? { ...s.appearance } : null, gear: kit(s), leader: !!s.leader, background: s.bgPicked || s.bgKept ? s.background : null, rolled: !s.bgPicked && !!s.bgKept, custom: !!s.startCustom, points: !!s.startPoints, startGear: sanitizeStartGear(s.startGear), grabRoll: s.grabRoll ?? null, grabPick: !!s.grabPick, carRoll: s.carRoll ?? null, carOwner: !!(state.hardcore && state.hardcore.start && state.hardcore.start.carOwner === s.id), ownMax: Number.isFinite(s.ownMax) ? s.ownMax : null }));
 }
 // Customize ticked (main.js): every colonist blank (skills 0, no traits, nothing worn or carried), built on points.
 // Names, looks, the leader and a picked background stay.
@@ -417,7 +422,7 @@ export const crewWithBackground = (state, id, key) => crewWithBackgrounds(state,
 // whose background-shaped skills are then fitted to each colonist's old total. Returns the state to keep.
 export function randomizeAllCrew(state, ui, rebuild) {
   const rng = freshRng();
-  if (freeEdit(ui)) { // Customize: a new name, look and random build each (within the points; the vehicle's back stays)
+  if (freeEdit(ui)) { // Customize: a new name, look and random build each (within the points)
     state.survivors.forEach((s) => {
       reroll(state, ui, s, ["name", "look"]);
       randomBuild(state, s, rng);
@@ -453,22 +458,28 @@ export function randomizeAllCrew(state, ui, rebuild) {
   return next;
 }
 
-// Randomize everything (Customize only): Randomize all's names, looks and builds, and the vehicle's back drawn again
-// with them (sim/randomkit.js randomEverything; its payer as ui/startgear.js editTrunk picks them). In Hardcore the
-// riders' kit rides in the car, so its room is reckoned with the new kits in place of the old. The world is built
-// again with them. Returns the state to keep (as is outside Customize).
+// Randomize everything (Customize only): Randomize all's names, looks and builds (sim/randomkit.js randomEverything),
+// and every starting vehicle's back emptied and filled again up to its own point limit (sim/startfleet.js; the screen's
+// ui.fleet), rounds for the crew's new guns. In Hardcore the riders' kit rides in the car, so its room is reckoned with
+// the new kits in place of the old. The world is built again with them. Returns the state to keep (as is outside
+// Customize).
 /** @param {any} state @param {any} ui @param {(crew: any[], crewRoll: any, pickRoll: any) => any} rebuild */
 export function randomizeEverything(state, ui, rebuild) {
   if (ui.started || !freeEdit(ui)) return state;
   const rng = freshRng();
-  const payer = vehicleOwner(state) || backPayer(state);
-  if (!payer) return state;
-  const info = startVehicleInfo(state);
+  const hard = isHardcore(state), F = uiFleet(state, ui);
   const worn = state.survivors.reduce((a, s) => a + wornLoad(s), 0);
-  const room = info ? () => Math.max(0, info.room + (info.hard ? worn - state.survivors.reduce((a, s) => a + trunkKg({ items: kitKeys(s.startGear) }), 0) : 0)) : null;
   state.survivors.forEach((s) => reroll(state, ui, s, ["name", "look"]));
-  randomEverything(state, payer, room, rng);
+  randomEverything(state, rng);
   state.survivors.forEach((s) => { s.startPoints = true; s.startCustom = true; });
+  const guns = state.survivors.map((s) => s.startGear.slots.weapon).filter(Boolean).map((key) => ({ key }));
+  const kitKg = state.survivors.reduce((a, s) => a + trunkKg({ items: kitKeys(s.startGear) }), 0);
+  F.forEach((f, i) => {
+    if (!state.fleet || !state.fleet[i] || state.fleet[i].vid == null) return; // Start with a vehicle off: none to fill
+    const room = Math.max(0, fleetRoom(state, i) + (hard ? worn - kitKg : 0));
+    f.load = randomTrunk(f.limit, room, rng, gunCals([], guns), { fill: true, open: openLoads(state) });
+    state.fleet[i].load = f.load;
+  });
   return rebuild(crewSnapshot(state), ui.crewRoll ?? null, ui.pickRoll);
 }
 
