@@ -51,7 +51,7 @@ import { setFire } from "./sim/fieldheat.js";
 import { commandable, NO_RADIO } from "./sim/plans.js";
 import { PLAN_ACTIONS, PLAN_CHANGE, planAutofill, planLaunchOpts, applyPreset } from "./ui/plan.js";
 import { orderSweepAt, sweepOpts } from "./sim/survey.js";
-import { renderRunningOrders, armedList } from "./ui/expedition.js";
+import { armedList } from "./ui/expedition.js";
 import { boatOrder, boatPlan, boatTip, crossingTo } from "./sim/crossing.js";
 import { fishSpot, gameAbundance } from "./sim/hunting.js";
 import { forageAbundance } from "./sim/foraging.js";
@@ -217,10 +217,10 @@ ui.modeSets = {
   hardcore: { startPeople: START_PEOPLE.DEF, pointsMax: CUSTOM_POINTS.DEF, startVehicle: true, fleet: defaultFleet("hardcore") },
   custom: { startPeople: peopleRange("custom").DEF, pointsMax: CUSTOM_POINTS.DEF, startVehicle: true, fleet: defaultFleet("custom") },
 };
-// Folded panels and their widths (ui/layout.js), remembered in the browser. The Layers box and the running orders
-// keep their old ui flags, which read and write the layout.
+// Folded panels and their widths (ui/layout.js), remembered in the browser. The Layers box keeps its old ui flag,
+// which reads and writes the layout.
 const layout = loadLayout();
-for (const [prop, p] of [["legendCollapsed", "legend"], ["ordersCollapsed", "orders"]]) {
+for (const [prop, p] of [["legendCollapsed", "legend"]]) {
   Object.defineProperty(ui, prop, { enumerable: true, get: () => layout[p], set: (v) => { layout[p] = !!v; saveLayout(layout); } });
 }
 // The Options tab (ui/settings.js), remembered in the browser (ui/saves.js): autosave, confirmations, pause on focus loss, UI size.
@@ -393,7 +393,7 @@ function step(now) {
 // Each panel keeps the HTML it shows; a refresh that produces the same string leaves the DOM alone, so buttons
 // stay clickable and hover descriptions stay up while the clock runs. A panel is not rebuilt while the mouse
 // button is down on it (the click would be lost), nor under an open drop-down when only a tick asked for it.
-const PANELS = ["tb-clock", "tb-speed", "nb-btn", "nb-head", "nb-list", "tb-stock", "tb-people", "tb-tools", "left", "right", "log", "modal", "legend", "devpanel", "orders", "cbpanel", "cbbar", "cbtop", "cbcards", "cblogbody", "cblogfoot", "banner", "alerts", "watchlist", "ask"];
+const PANELS = ["tb-clock", "tb-speed", "nb-btn", "nb-head", "nb-list", "tb-stock", "tb-people", "tb-tools", "left", "right", "log", "modal", "legend", "devpanel", "cbpanel", "cbbar", "cbtop", "cbcards", "cblogbody", "cblogfoot", "banner", "alerts", "watchlist", "ask"];
 const shown = new Map(); // element id -> the HTML last written
 let held = null;         // panel the mouse button went down in
 let heldBack = false;    // a rebuild was skipped because of it
@@ -603,9 +603,8 @@ function refresh(user = true) {
   setHTML("legend", renderLegend(view, ui, ui.started ? state : null), user);
   if (ui.started) devSample(state);
   setPanel("devpanel", ui.started ? renderDevPanel(state, ui) : "", user);
-  setPanel("orders", ui.started ? renderRunningOrders(state, ui) : "", user);
   setPanel("alerts", alertsHTML(alerts) + renderGuide(state, ui), user); // the first-week guide sits under the alerts
-  setPanel("watchlist", ui.started ? renderWatchlist(state, ui, { folded: !!layout.all }) : "", user); // ui/watchlist.js: under the running orders
+  setPanel("watchlist", ui.started ? renderWatchlist(state, ui, { folded: !!layout.all }) : "", user); // ui/watchlist.js: top left of the map
   renderCombat(user);
   setPanel("guidetip", renderGuideTip(state, ui), user); // the first-week guide's note over a window new to the player (ui/guide.js)
   setPanel("banner", bannerHTML(), user);
@@ -636,12 +635,11 @@ function refreshClock() {
   clockDirty = false;
   drawn++;
   syncPick(state, ui);
-  if (!layout.left && ui.tab === "teams") setHTML("left", renderLeft(state, ui), false);
+  if (!layout.left && (ui.tab === "teams" || ui.tab === "orders")) setHTML("left", renderLeft(state, ui), false); // the Teams and Orders tabs count the minutes
   if (!layout.right) setHTML("right", renderRight(state, ui), false);
   refreshModal(false);
-  const orders = setPanel("orders", ui.started ? renderRunningOrders(state, ui) : "", false);
   const watch = setPanel("watchlist", ui.started ? renderWatchlist(state, ui, { folded: !!layout.all }) : "", false);
-  if (orders || watch) { syncWatchlist(state, ui, { act: actions, refresh }); syncOverlays(); } // their boxes kept on the map
+  if (watch) { syncWatchlist(state, ui, { act: actions, refresh }); syncOverlays(); } // its box kept on the map
 }
 
 // The item right-click menu (ui/itemmenu.js) over the windows, kept inside the screen: where it would run off an edge
@@ -917,7 +915,7 @@ const actions = {
   help: () => openSettings(ui, "help"), // the menu's Help tab (ui/settings.js, ui/help.js)
   "pal-open": () => openPalette(), // the top bar's 🔍: the search box (ui/cmdpalette.js)
   legendtoggle: () => { ui.legendCollapsed = !ui.legendCollapsed; },
-  // Panels around the map (ui/layout.js): fold or show one (data-p: left, right, log, alerts, orders, legend), close
+  // Panels around the map (ui/layout.js): fold or show one (data-p: left, right, log, alerts, legend), close
   // one completely or open it again (data-p: left, right, log: the strip's ✕, the top bar's ◧ ◨ ⬓, the tab at the
   // map's edge), map only (fold them all; again: back as they were), and the menu's reset (windows and panels as
   // they first were).
@@ -1090,7 +1088,6 @@ const actions = {
   "xp-close": () => { ui.expedition = null; ui.xpMsg = ""; ui.qSel = null; },
   "xp-queuemode": () => { ui.xpQueue = !ui.xpQueue; },
   "xp-night": (d) => { const p = partyById(d.id); if (p && (contactable(p) || commandable(state, p))) ui.xpMsg = setNightPlan(state, p, d.plan); }, // sim/nightmarch.js
-  "xp-orderstoggle": () => { ui.ordersCollapsed = !ui.ordersCollapsed; },
   "xp-order": (d) => {
     const p = partyById(d.id);
     if (!p || !(contactable(p) || commandable(state, p))) return; // the radio rule is checked for every team order below
@@ -2989,12 +2986,13 @@ window.addEventListener("keydown", (e) => {
   if (mk && !(mk === "tileview" && /^time\./.test(keyAction(e, "map") || ""))) return;
   // The rest of the map's keys, by the key table (ui/keymap.js; Menu → Controls rebinds them).
   const k = keyAction(e, "map");
-  // Panels (ui/layout.js): [ left, ] right, L log, Shift+[ running orders, Shift+] alerts, \ map only. A panel's key
+  // Panels (ui/layout.js): [ left, ] right, L log, Shift+] alerts, \ map only (Shift+[ opens the left panel on the
+  // Orders tab: ui/alerts.js mapHotkey, above). A panel's key
   // opens it whether it is folded or closed completely. Alt + the key closes the panel completely (strip and
   // all), and brings a closed one back.
   const shut = { "panel.closeLeft": "left", "panel.closeRight": "right", "panel.closeLog": "log" }[k];
   if (shut) { e.preventDefault(); actions["panel-close"]({ p: shut }); refresh(); return; }
-  const fold = { "panel.left": "left", "panel.right": "right", "panel.log": "log", "panel.orders": "orders", "panel.alerts": "alerts" }[k];
+  const fold = { "panel.left": "left", "panel.right": "right", "panel.log": "log", "panel.alerts": "alerts" }[k];
   if (fold) { e.preventDefault(); actions["panel-toggle"]({ p: fold }); refresh(); return; }
   if (k === "panel.all") { e.preventDefault(); actions["panel-all"](); refresh(); return; }
   const speed = /^time\.speed([1-5])$/.exec(k || "");

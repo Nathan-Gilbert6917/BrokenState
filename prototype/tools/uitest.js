@@ -799,8 +799,8 @@ section("Windows and panels: folding, map only, auto-open, window sizes (ui/layo
 
   // Folding each panel, map only and back.
   const lay = L.defaultLayout();
-  check(L.PANEL_KEYS.every((p) => lay[p] === (p === "legend")) && !lay.all, "every panel is shown at first but the Layers box, folded to its tab (2026-10-24)");
-  check(L.setFolded(lay, "legend", false) && !lay.legend, "a click on the Layers tab opens the box");
+  check(L.PANEL_KEYS.every((p) => lay[p] === (p === "legend" || p === "alerts")) && !lay.all, "every panel is shown at first but the Layers box and the alerts, folded to their tabs (2026-10-24)");
+  check(L.setFolded(lay, "legend", false) && !lay.legend && L.setFolded(lay, "alerts", false) && !lay.alerts, "a click on the Layers tab or the alerts' opens the box");
   let flips = 0;
   for (const p of L.PANEL_KEYS) if (L.setFolded(lay, p) && lay[p] && L.setFolded(lay, p) && !lay[p] && L.setFolded(lay, p, true) && lay[p] && L.setFolded(lay, p, false) && !lay[p]) flips++;
   check(flips === L.PANEL_KEYS.length, `each panel folds and shows again (${L.PANEL_KEYS.join(", ")})`);
@@ -844,7 +844,7 @@ section("Windows and panels: folding, map only, auto-open, window sizes (ui/layo
   check(eq(L.autoReveal(f, pick(), pick({ sel: 12, tab: "teams" }), { autoOpen: false, clicked: true }), []), "the option switches it off");
   check(eq(L.autoReveal(f, pick({ state: {} }), pick({ sel: 12, tab: "x" })), []) && eq(L.autoReveal(f, null, pick({ sel: 1 })), []), "a new or loaded world opens nothing");
   check(eq(L.autoReveal(f, pick({ started: false }), pick({ tab: "teams", sel: 4 })), []), "starting the game opens nothing");
-  check(eq(L.autoReveal(L.defaultLayout(), pick(), pick({ sel: 12, tab: "teams" }), { newDanger: true }), []), "panels already open: nothing to do");
+  check(eq(L.autoReveal({ ...L.defaultLayout(), alerts: false, legend: false }, pick(), pick({ sel: 12, tab: "teams" }), { newDanger: true }), []), "panels already open: nothing to do");
   let d = L.newDangerAlerts(null, [{ key: "a", tone: "danger" }, { key: "b", tone: "warn" }]);
   check(!d.fresh.length, "the first look at the alerts finds nothing new");
   d = L.newDangerAlerts(d.seen, [{ key: "a", tone: "danger" }, { key: "c", tone: "warn" }, { key: "x", tone: "danger" }]);

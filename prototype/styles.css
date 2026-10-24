@@ -294,7 +294,7 @@ table.t th { color: var(--muted); font-weight: 500; }
 /* Banners at the top of the map: "Paused" and move mode. They sit between the running-orders list and the dev panel. */
 #banner { position: absolute; top: 0.6rem; left: 0.6rem; right: 0.6rem; z-index: 6; display: flex; flex-direction: column; align-items: center; gap: 0.35rem; pointer-events: none; }
 /* The banner spans the top of the map; the orders list and dev panel sit below it while it shows. */
-#mapwrap:has(#banner:not(.hidden)) #orders, #mapwrap:has(#banner:not(.hidden)) #devpanel { top: 4.6rem; }
+#mapwrap:has(#banner:not(.hidden)) #devpanel { top: 4.6rem; }
 #banner > div { pointer-events: auto; background: #4a3816; border: 1px solid var(--accent); border-radius: 8px; padding: 0.4rem 0.8rem; text-align: center; max-width: 100%; }
 #banner > .paused { background: rgba(58,44,14,0.96); border-color: #ffd166; box-shadow: 0 4px 14px rgba(0,0,0,0.45); }
 #banner > .paused b.big { color: #ffd166; letter-spacing: 0.08em; text-transform: uppercase; margin-right: 0.3rem; }
@@ -691,11 +691,13 @@ button.sgcell .sgname { white-space: nowrap; overflow: hidden; text-overflow: el
 .sgtrunk { margin-top: 0.6rem; border-top: 1px solid var(--line); padding-top: 0.4rem; }
 .sgtrunk .lookopts { display: flex; flex-wrap: wrap; gap: 0.3rem; }
 
-/* running orders (map overlay) and the team panel */
-#orders { position: absolute; left: 0.6rem; top: 0.6rem; width: 15rem; max-height: 45%; overflow-y: auto; background: rgba(20,22,26,0.88); border: 1px solid var(--line); border-radius: 8px; padding: 0.4rem 0.55rem; font-size: 0.82rem; z-index: 4; }
-#orders .ro { border-top: 1px solid var(--line); padding: 0.3rem 0.1rem; cursor: pointer; }
-#orders .ro:hover, #orders .ro.on { background: var(--panel-2); }
-#orders .ro .bar { margin-top: 0.2rem; }
+/* The Orders tab (ui/expedition.js renderOrdersTab; the user's request 2026-10-24: the running orders off the map and
+   into the left panel): a row a team, the status line and its progress bar, a click opens the team's panel. */
+#left .ro { border-top: 1px solid var(--line); padding: 0.35rem 0.3rem; border-radius: 5px; cursor: pointer; }
+#left .ro:hover, #left .ro.on { background: var(--panel-2); }
+#left .ro .bar { margin-top: 0.2rem; }
+#left .ro-head { margin-bottom: 0.3rem; }
+/* the team panel */
 .xpgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.3rem; margin-top: 0.4rem; }
 .xpgrid button { text-align: left; }
 /* The order queue (ui/expedition.js queueBlock): the move under way first, then the queued orders, which can be
@@ -874,7 +876,7 @@ span.smto { border-color: var(--accent); color: var(--accent); }
 
 /* Timelapse viewer (ui/timelapse.js): the map fills the window, panels float over it */
 body.tl-on #app { grid-template-columns: 0 0 minmax(0, 1fr) 0 0; grid-template-rows: 0 minmax(0, 1fr) 0 0; }
-body.tl-on #topbar, body.tl-on #left, body.tl-on #right, body.tl-on #log, body.tl-on #legend, body.tl-on #orders,
+body.tl-on #topbar, body.tl-on #left, body.tl-on #right, body.tl-on #log, body.tl-on #legend, body.tl-on 
 body.tl-on #devpanel, body.tl-on #ctxmenu, body.tl-on #tooltip, body.tl-on #banner, body.tl-on .gut, body.tl-on .edgetab, body.tl-on #alerts { display: none !important; }
 #timelapse { position: absolute; inset: 0; pointer-events: none; z-index: 7; font-size: 0.82rem; }
 #timelapse > div { pointer-events: auto; position: absolute; background: rgba(20,22,26,0.88); border: 1px solid var(--line); border-radius: 8px; padding: 0.45rem 0.6rem; }
@@ -935,15 +937,18 @@ button.danger { border-color: var(--danger); }
 button.mini.pinned { border-color: var(--accent); color: var(--accent); }
 /* Alerts stack on the right of the map, the log's filter bar and links, the Diary and the Roster
    (ui/alerts.js, ui/diary.js, ui/roster.js). Sized to read from the couch on a TV. */
-#alerts { position: absolute; right: 0.6rem; top: 0.6rem; width: min(23rem, 45%); max-height: calc(100% - 1.2rem); overflow-y: auto; z-index: 5; pointer-events: none; display: flex; flex-direction: column; gap: 0.3rem; }
+#alerts { position: absolute; right: 0.6rem; top: 0.6rem; width: min(21rem, 40%); max-height: 45%; overflow-y: auto; z-index: 5; pointer-events: none; display: flex; flex-direction: column; gap: 0.3rem; }
 #alerts > * { pointer-events: auto; }
-#mapwrap:has(#banner:not(.hidden)) #alerts { top: 4.6rem; max-height: calc(100% - 5.2rem); }
+#mapwrap:has(#banner:not(.hidden)) #alerts { top: 4.6rem; max-height: min(45%, calc(100% - 5.2rem)); }
 #mapwrap:has(#devpanel:not(.hidden)) #alerts { right: calc(min(26rem, 100% - 1.2rem) + 1.2rem); }
 .al { display: flex; align-items: stretch; background: rgba(20,22,26,0.93); border: 1px solid var(--line); border-left: 5px solid var(--info); border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
 .al.al-danger { border-left-color: var(--danger); background: rgba(52,24,22,0.94); }
 .al.al-warn { border-left-color: #ffd166; }
 .al.al-good { border-left-color: var(--good); }
-.al-go { flex: 1; text-align: left; border: none; background: none; padding: 0.42rem 0.55rem; font-size: 0.98rem; line-height: 1.3; }
+/* Compact rows (the user's request 2026-10-24: "make alerts not take up so much space"): two lines at most, the whole
+   text in the hover; the 💤 and ✕ show when the mouse is over the row (a finger sees them always: no hover). */
+.al-go { flex: 1; text-align: left; border: none; background: none; padding: 0.3rem 0.5rem; font-size: 0.88rem; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+@media (hover: hover) and (pointer: fine) { .al .al-btn { opacity: 0; } .al:hover .al-btn, .al:focus-within .al-btn { opacity: 0.7; } .al:hover .al-btn:hover { opacity: 1; } }
 .al-ico { display: inline-block; width: 1.5rem; text-align: center; margin-right: 0.3rem; }
 .al-btn { border: none; background: none; padding: 0 0.45rem; opacity: 0.55; font-size: 0.9rem; }
 .al-btn:hover:not(:disabled) { opacity: 1; }
@@ -1480,7 +1485,7 @@ body.win-dragging, body.win-dragging * { user-select: none !important; }
 .ssel .ssel-none { padding: 0.4rem 0.5rem; color: var(--muted); }
 .ssel .ssel-foot { flex: 0 0 auto; padding: 0.25rem 0.5rem 0; font-size: 0.75rem; color: var(--muted); }
 
-/* The Watching panel (ui/watchlist.js): top left under the running orders, above the Layers box (top and max-height set
+/* The Watching panel (ui/watchlist.js): top left under the paused banner, above the Layers box (top and max-height set
    by placeWatchlist). Map notes' editor (#noteedit) opens where the tile was right-clicked. Roster bulk actions' report. */
 #watchlist { position: absolute; left: 0.6rem; top: 0.6rem; width: 16rem; overflow-y: auto; background: rgba(20,22,26,0.88); border: 1px solid var(--line); border-radius: 8px; padding: 0.4rem 0.55rem; font-size: 0.82rem; z-index: 4; }
 #watchlist:has(> button:only-child) { width: auto; padding: 0; border: none; background: none; }
@@ -1612,7 +1617,7 @@ body.tl-on #watchlist, body.tl-on #noteedit { display: none !important; }
 #minimap .mm-hide:hover { opacity: 1; }
 #mm-show { position: absolute; right: 0.6rem; bottom: 0.6rem; z-index: 4; padding: 0.15rem 0.55rem; font-size: 0.8rem; background: rgba(20,22,26,0.88); }
 #mapwrap:has(#minimap:not(.hidden)) #fps { bottom: auto; top: 0.6rem; right: auto; left: 50%; transform: translateX(-50%); }
-#mapwrap:has(#minimap:not(.hidden)) #alerts { max-height: calc(55% - 1.8rem); }
+#mapwrap:has(#minimap:not(.hidden)) #alerts { max-height: min(45%, calc(55% - 1.8rem)); }
 body.tl-on #minimap, body.tl-on #mm-show { display: none !important; }
 
 /* The one confirmation box (ui/confirm.js; the menu's questions use it too): over everything, Enter / Esc. */
@@ -1644,7 +1649,7 @@ body.tl-on #minimap, body.tl-on #mm-show { display: none !important; }
 /* ---------- The panel shell around the State Map (ui/windows.js, ui/layout.js panelHead / panelTab) ----------
    One look for every panel that folds: the left and right panels and the log (a slim bar with a handle while open,
    a rail with the panel's name, its key and a ✕ while folded; the left panel's rail has a button per tab), and the
-   boxes over the map (Running orders, Watching, Layers, alerts: a header with icon, title, count and chevron; folded,
+   boxes over the map (Watching, Layers, alerts: a header with icon, title, count and chevron; folded,
    a slim tab with the same). Sized in rem so the UI size (Options → Display) scales it for a TV across the room. */
 :root { --fp-bg: rgba(19, 21, 25, 0.95); --fp-head: #20242b; --focus: #ffd166; }
 #app { --gut: 0.75rem; --strip: 2.6rem; }
@@ -1652,7 +1657,7 @@ body.fold-log #app { --bgut: 2.1rem; }
 /* Keyboard focus is always visible (mouse clicks do not show it). */
 :where(button, a, input, select, textarea, [role="button"], [tabindex]):focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .gut:focus-visible { outline-offset: -2px; }
-#left, #right, #log, #orders, #watchlist, #legend, #alerts, #modal .box { scrollbar-width: thin; scrollbar-color: #444b56 transparent; }
+#left, #right, #log, #watchlist, #legend, #alerts, #modal .box { scrollbar-width: thin; scrollbar-color: #444b56 transparent; }
 
 /* The bar between a panel and the map: a handle in the middle (click folds, drag resizes, Tab + arrows too). */
 .gut { transition: background-color 0.15s, color 0.15s; }
@@ -1709,10 +1714,7 @@ body:not(.fold-log) #log { animation: panel-in-b 0.18s ease-out; }
 @keyframes panel-in-b { from { opacity: 0; transform: translateY(0.6rem); } }
 
 /* The boxes over the map: one frame, a sticky header, compact rows, scrolling inside (never off the map). */
-#orders, #watchlist, #legend { background: var(--fp-bg); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 6px 18px rgba(0,0,0,0.45); padding: 0 0.5rem 0.4rem; font-size: 0.88rem; color: var(--text); }
-#orders, #watchlist { width: 16rem; }
 #legend { max-width: 17rem; max-height: calc(100% - 1.2rem); overflow-y: auto; }
-#orders:has(> .fp-tab:only-child), #watchlist:has(> .fp-tab:only-child), #legend:has(> .fp-tab:only-child) { width: auto; padding: 0; border: none; background: none; box-shadow: none; overflow: visible; }
 .fp-head { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 0.25rem; margin: 0 -0.5rem 0.2rem; padding: 0.25rem 0.3rem; background: var(--fp-head); border-bottom: 1px solid var(--line); border-radius: 8px 8px 0 0; }
 .fp-toggle, .fp-tab { display: inline-flex; align-items: center; gap: 0.4rem; min-width: 0; font-weight: 600; font-size: 0.92rem; line-height: 1.25; text-align: left; color: var(--text); }
 .fp-toggle { flex: 1; padding: 0.18rem 0.4rem; background: none; border: 1px solid transparent; border-radius: 6px; }
@@ -1733,15 +1735,12 @@ body:not(.fold-log) #log { animation: panel-in-b 0.18s ease-out; }
 .fp-badge.danger { background: #4d2220; color: #ffb7b0; }
 .fp-extra { display: flex; gap: 0.2rem; flex: none; }
 .fp-extra button.mini { padding: 0.08rem 0.45rem; }
-#orders .ro { padding: 0.3rem 0.3rem; border-radius: 5px; }
-#orders .fp-head + .ro, #watchlist .fp-head + .wl-row { border-top: none; }
 #watchlist .wl-row { padding: 0.28rem 0.3rem; border-radius: 5px; }
 #watchlist .wl-sub { margin: 0.35rem -0.1rem 0.1rem; padding: 0.3rem 0.1rem 0.1rem; }
 #legend .fp-body { display: flex; flex-direction: column; gap: 0.05rem; padding-top: 0.1rem; }
 #legend .layer { padding: 0.08rem 0.25rem; border-radius: 5px; font-size: 0.86rem; line-height: 1.3; }
 #legend .layer:hover { background: var(--panel-2); }
 /* Folding or opening a box eases it in (ui/windows.js watchFolds). */
-#orders.fp-anim, #watchlist.fp-anim { animation: fp-in 0.16s ease-out; transform-origin: top left; }
 #alerts.fp-anim { animation: fp-in 0.16s ease-out; transform-origin: top right; }
 #legend.fp-anim { animation: fp-in-up 0.16s ease-out; transform-origin: bottom left; }
 @keyframes fp-in { from { opacity: 0; transform: translateY(-0.35rem) scale(0.98); } }
@@ -1753,9 +1752,8 @@ body:not(.fold-log) #log { animation: panel-in-b 0.18s ease-out; }
    top edge and its grip are the handles: a move cursor, a ✥ at the end of each bar, no text selection and no browser
    panning under a finger. Nothing eases while a box is dragged; the box being dragged stays on top. (On a phone the
    boxes stay put: responsive.css hides the ✥ and overlaydrag.js takes no press.) */
-#orders .fp-head, #watchlist .fp-head, #legend .fp-head, #orders > .fp-tab, #watchlist > .fp-tab, #legend > .fp-tab,
+#watchlist .fp-head, #legend .fp-head, #watchlist > .fp-tab, #legend > .fp-tab,
 #alerts > .fp-head, #alerts > .al-pill, #alerts .gd-head, #devpanel > .ov-devhead, #minimap .ov-grip, #minimap .mm-bar, #mm-show { touch-action: none; user-select: none; -webkit-user-select: none; }
-#orders .fp-head, #watchlist .fp-head, #legend .fp-head, #alerts > .fp-head, #alerts .gd-head, #devpanel > .ov-devhead, #minimap .ov-grip, #minimap .mm-bar { cursor: move; }
 .fp-head::after { content: "✥"; flex: none; padding: 0 0.35rem 0 0.2rem; color: var(--muted); font-size: 0.85rem; opacity: 0.7; }
 .fp-head:hover::after { color: var(--accent); opacity: 1; }
 /* The dev tools' title line: the same bar (its ✥ first, before the title). */

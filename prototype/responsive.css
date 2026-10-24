@@ -6,7 +6,7 @@
      touch     (max-width: 759px), (pointer: coarse) and (min-width: 760px)            every phone and tablet
      drawers   phone, a short touch screen (a phone on its side) and a tablet held upright (760–1023px): the panels
                become drawers and sheets opened from the dock (Lists · Info · Log), and the boxes over the map
-               (the alerts and the first-week guide, Running orders, Watching, Layers, the minimap) sheets under a
+               (the alerts and the first-week guide, Watching, Layers, the minimap) sheets under a
                strip of chips across the top of the map, one open at a time (responsive.js enterHud)
      compact   phone and a phone on its side: the small top bar, windows full screen, the battle's own controls
      tablet    (pointer: coarse) and (min-width: 760px): the desktop arrangement, narrower panels, bigger targets
@@ -134,9 +134,9 @@
   body[data-rshud] #rs-hudscrim { display: block; }
   /* The sheets: under the strip, the width of the map, scrolling inside. A folded box shows nothing (its chip stands
      in), and nothing drags, so no ✥ on the headers. */
-  body.rs-hud :is(#orders, #watchlist, #legend, #alerts, #devpanel) { top: calc(var(--rs-hud, 3rem) + 0.15rem) !important; left: 0.4rem !important; right: 0.4rem !important; bottom: auto !important; width: auto !important; max-width: none !important; max-height: min(64%, calc(100% - var(--rs-hud, 3rem) - 0.8rem)) !important; z-index: 5; }
-  body.rs-hud :is(#orders, #watchlist, #legend, #devpanel) { background-color: #16181c; } /* solid: the banners under a sheet do not show through */
-  body.rs-hud :is(#orders, #watchlist, #legend):has(> .fp-tab:only-child) { display: none; }
+  body.rs-hud :is(#watchlist, #legend, #alerts, #devpanel) { top: calc(var(--rs-hud, 3rem) + 0.15rem) !important; left: 0.4rem !important; right: 0.4rem !important; bottom: auto !important; width: auto !important; max-width: none !important; max-height: min(64%, calc(100% - var(--rs-hud, 3rem) - 0.8rem)) !important; z-index: 5; }
+  body.rs-hud :is(#watchlist, #legend, #devpanel) { background-color: #16181c; } /* solid: the banners under a sheet do not show through */
+  body.rs-hud :is(#watchlist, #legend):has(> .fp-tab:only-child) { display: none; }
   body.rs-hud .fp-head::after { display: none; }
   body.rs-hud #legend.fp-anim { animation-name: fp-in; transform-origin: top left; }
   /* The alerts' box holds the alerts and the first-week guide: the sheet that is open shows, the flash line always
@@ -185,7 +185,7 @@
   #rs-dock .rs-dl { font-size: 0.66rem; font-weight: 600; }
   #log { height: min(55vh, 16rem); }
   /* Little height, width to spare: the sheets stand at the right, from the strip down; the minimap by its height. */
-  body.rs-hud :is(#orders, #watchlist, #legend, #alerts, #devpanel) { left: auto !important; width: min(24rem, 58%) !important; max-height: calc(100% - var(--rs-hud, 3rem) - 0.6rem) !important; }
+  body.rs-hud :is(#watchlist, #legend, #alerts, #devpanel) { left: auto !important; width: min(24rem, 58%) !important; max-height: calc(100% - var(--rs-hud, 3rem) - 0.6rem) !important; }
   body.rs-hud #minimap { left: auto !important; right: 0.4rem !important; width: auto !important; max-width: calc(100% - 0.8rem) !important; height: calc(100% - var(--rs-hud, 3rem) - 0.6rem); }
 }
 
@@ -338,7 +338,7 @@
   #topbar { gap: 0.45rem; padding-left: 0.6rem; padding-right: 0.6rem; }
   #tb-tools { margin-left: 0; }
   /* Room to spare: the strip's sheets need not take the whole width. */
-  body.rs-hud :is(#orders, #watchlist, #legend, #alerts, #devpanel) { right: auto !important; width: min(26rem, 70%) !important; }
+  body.rs-hud :is(#watchlist, #legend, #alerts, #devpanel) { right: auto !important; width: min(26rem, 70%) !important; }
   body.rs-hud #minimap { width: min(30rem, calc(100% - 0.8rem)) !important; }
 }
 
