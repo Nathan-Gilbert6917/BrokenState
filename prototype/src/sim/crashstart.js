@@ -36,7 +36,7 @@
 // - Cars (foundcars.js carRecord, citycrawl.js): crashCarDead says a car's engine is beyond repair (1 − CRASH.CAR_FIX),
 //   crashSiphon scales the fuel in any tank (× CRASH.SIPHON).
 import { CRASH, CRASH_UNIT, isCrashRun, crashHomeName } from "./crashmode.js";
-import { makeSurvivor, applyCrew, newId, log, addCard, snapshot, updateVision, day, checkGameOver, alive, factionById } from "./world.js";
+import { makeSurvivor, applyCrew, crewDice, newId, log, addCard, snapshot, updateVision, day, checkGameOver, alive, factionById } from "./world.js";
 import { yearStartDay } from "./eras.js";
 import { pickStart, chosenStart, isSettlementTile } from "./startpick.js";
 import { LOCATIONS, GEAR, SUPPLY_KEYS } from "./data.js";
@@ -151,6 +151,7 @@ export function setupCrashStart(state, { factionCount, crew = null }) {
   recomputeOwnership(state);
   // The survivor: a soldier (hardcore-start.js archetypeOf "soldier"), the dice's traits and look; the new-run screen's
   // edits (name, look, skills, traits) apply, its gear picks never: the kit is fixed.
+  const endCrew = crewDice(state); // world.js: the soldier's own dice, to the kit below
   const s = makeSurvivor(state, 1.3);
   state.survivors.push(s);
   s.leader = true;
@@ -163,6 +164,7 @@ export function setupCrashStart(state, { factionCount, crew = null }) {
   state.fleet = []; // no vehicle (the user: "You do not start with a vehicle")
   state.startVehicles = false;
   crashKit(state, s);
+  endCrew();
   // The party: Hardcore's road team in a normal-mode world (exile, no home base: parties.js and staging.js treat a run
   // with no base alike in both modes).
   // The rounds: CRASH.RIFLE_ROUNDS and PISTOL_ROUNDS beyond what fills the guns and the spare magazines (loadUpAll below takes those out of the supplies).

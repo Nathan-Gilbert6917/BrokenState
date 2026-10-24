@@ -2,7 +2,7 @@
 // HTML builders plus their action handlers; main.js registers the handlers with its dispatcher.
 import { SKILLS, SKILL_NAMES, TRAITS, GEAR } from "../sim/data.js";
 import { MAGAZINES } from "../sim/data-kit.js"; // Crashlanding's spare magazines, by name
-import { survivorById, skill, rollTraits, HUB_START, START_WEAPONS } from "../sim/world.js";
+import { survivorById, skill, rollTraits, HUB_START, START_WEAPONS, isPreview } from "../sim/world.js";
 import { newItem, START_DUR } from "../sim/inventory.js"; // the card's Everything: a new starting weapon
 import { randomStarterMods } from "../sim/gunmods.js";
 import { WORLD_SIZES, SIZE_KEYS, sizeDef, customDef, isCustom, CUSTOM, GROUPS_MAX, HIVES_MAX, clampGroups, clampHives } from "../sim/worldsize.js";
@@ -228,7 +228,7 @@ function worldSizeSelect(state, ui) {
   }).join("") + `<option value="custom" ${isCustom(ui.worldSize) ? "selected" : ""}>Custom… (experimental)</option>`;
   const d = uiSizeDef(ui);
   const what = isCustom(ui.worldSize) ? `Any width × height you set (experimental): ${sizeWords(d)}` : `${SIZE_TIPS[d.key]}: ${sizeWords(d)}`;
-  return `<label${tip(`Map size in hexes. ${what}. Changing it builds a new map on the same seed (a Generating map box shows while it is built)`)}>World size <select data-action="worldsize">${opts}</select></label>`;
+  return `<label${tip(`Map size in hexes. ${what}. The map is built when you Start, View map or pick a start (a Generating map box shows while it is built), on the same seed`)}>World size <select data-action="worldsize">${opts}</select></label>`;
 }
 // The size the screen is set to: a preset, or the custom width × height (sim/worldsize.js customDef).
 const uiSizeDef = (ui) => (isCustom(ui.worldSize) ? customDef(ui.customW, ui.customH) : sizeDef(ui.worldSize));
@@ -266,6 +266,7 @@ function hiveSelect(state, ui) {
 // runOpts: the size's groups, the map's own hives, the standard dials); Seed, New map, New map and survivors, New start
 // position and Pick start on map stay: the player chooses which map, not what is on it.
 export function crashMapLine(state) {
+  if (isPreview(state)) return `<span class="small nrstatic"${tip(UNBUILT)}>On this map: ${UNBUILT_SHORT}</span>`;
   const n = (a) => (a || []).length;
   const towns = state.townIds ? state.townIds.length : (state.tiles || []).filter((t) => t.loc && t.loc.type === "town").length;
   const parts = [[n(state.factions), "AI group"], [n(state.hives), "hive"], [n(state.cityIds), "city", "cities"], [towns, "town"], [n(state.militaryIds), "military site"]];
@@ -373,18 +374,23 @@ const startWood = (state) => { const h = state.bases.find((b) => b.type === "hub
 // The story of the start: one short line on the screen, the whole of it in the hover of the ? beside it (the user's
 // request 2026-10-24: "if it's just a description of what is happening remove it; provide more details in a hover").
 // The tests read the whole: the Custom counts, "No vehicle".
+// Before the map is built (sim/world.js isPreview, the user's request 2026-10-24) what comes from it is not known yet:
+// the groups that found room, Crashlanding's counts and the unit's base. The groups say how many were asked for.
+const UNBUILT_SHORT = "decided when the map is built";
+const UNBUILT = "The map is not built yet: it is built when you Start, View map, Pick start on map or roll a New start position (a Generating map box shows while it is built). Your survivors are kept exactly as they are; what is on the map (the groups that find room, the hives, the towns, where you start) is decided then";
+const groupsOf = (state) => (isPreview(state) ? state.preview.groups ?? state.factions.length : state.factions.length);
 function introText(state) {
   const people = state.survivors, hard = isHardcore(state), custom = isCustomRun(state);
   if (isCrashRun(state)) return crashIntro(state);
   const foot = startsWithVehicle(state) ? "" : hard ? " No car: you go on foot." : " No vehicle: your people go on foot until they find, take or fix one.";
   const who = people.length === 1 ? "You get out alone" : `${countWord(people.length).replace(/^./, (c) => c.toUpperCase())} of you get out`;
   const full = (custom ? `Custom: a normal start with the counts you set (${people.length} ${people.length === 1 ? "survivor" : "survivors"}, ${state.custom.groups} AI ${state.custom.groups === 1 ? "group" : "groups"}, ${state.custom.hives} ${state.custom.hives === 1 ? "hive" : "hives"}, ${state.custom.cities} ${state.custom.cities === 1 ? "city" : "cities"}, ${state.custom.towns} ${state.custom.towns === 1 ? "town" : "towns"} and ${state.custom.military} military ${state.custom.military === 1 ? "site" : "sites"}). ` : "") + (hard
-    ? `Hardcore. The day the State of Calder falls. ${who} with whatever you can grab: no hub, food and water for a day or three, and the outbreak just starting. Gather what a hub takes and found your own. ${state.factions.length} other groups are out there, starting out just like you.`
-    : `Six years after the outbreak. Your survivors hold a homestead out in the open in the State of Calder, well clear of the towns: a main house (a well, a cellar, no wall yet), a lodge with four beds, a two-person tent and eight crop plots dug, and nothing else built yet. What to put up first, with a woodpile of ${startWood(state).toLocaleString("en-US")} wood, ${HUB_START.scrap} scrap and ${HUB_START.parts} parts, is yours to choose: beds, a crafting bench, fields, walls. ${state.factions.length} other groups are out there, starting bare as well, along with the hordes.`) + foot
+    ? `Hardcore. The day the State of Calder falls. ${who} with whatever you can grab: no hub, food and water for a day or three, and the outbreak just starting. Gather what a hub takes and found your own. ${groupsOf(state)} other groups are out there, starting out just like you.`
+    : `Six years after the outbreak. Your survivors hold a homestead out in the open in the State of Calder, well clear of the towns: a main house (a well, a cellar, no wall yet), a lodge with four beds, a two-person tent and eight crop plots dug, and nothing else built yet. What to put up first, with a woodpile of ${startWood(state).toLocaleString("en-US")} wood, ${HUB_START.scrap} scrap and ${HUB_START.parts} parts, is yours to choose: beds, a crafting bench, fields, walls. ${groupsOf(state)} other groups are out there, starting bare as well, along with the hordes.`) + foot
     + ` Customize your starting colonists (name, skills, look) and choose your leader. The game starts paused: give your first orders, then ${keyHint({ key: "press Space", touch: "tap ▶ Run", pad: "press ☰" })}.`;
   const line = custom ? `Custom: a normal start with the counts you set.`
     : hard ? `Hardcore: the day Calder falls, ${who.toLowerCase()} with what you can grab.`
-    : `Six years after the outbreak: a homestead in the State of Calder, ${state.factions.length} other groups out there.`;
+    : `Six years after the outbreak: a homestead in the State of Calder, ${groupsOf(state)} other groups out there.`;
   return { line: line + foot, full };
 }
 
@@ -392,7 +398,7 @@ function introText(state) {
 // user's own text in the game's voice, no more (the later notes on the world's dangers are the world's, not the
 // preamble's). The unit's base is named from state.crash.homeName (sim/crashmode.js; world.js sets it).
 function crashIntro(state) {
-  const C = state.crash || {}, home = C.homeName || "your unit's base";
+  const C = state.crash || {}, home = (!isPreview(state) && C.homeName) || "your unit's base";
   const full = `Crashlanding. Year 4: three years after the State of Calder fell. You are the sole survivor of a Guard helicopter shot down, nobody knows by whom, on a relief flight to an allied group in another state. You are out of communication range and your military radio is broken: a soldering iron and parts will fix it. The wreck holds decent supplies and can be raided, but the crash was loud and the dead are coming: take what you can carry and go. No base and no vehicle: you walk. Your unit's base, ${home}, is on the far side of the state, diagonally across this ${CRASH.W} × ${CRASH.H} map: get back to it. You must survive on the way, and may need to build up a group of your own. Three years on, loot is thinning out and the newer kinds of dead are about. You wear and carry the unit's issue: ${crashKitWords()}, with rations, purified water, spare rounds and meds. The kit cannot be changed; the soldier's traits, skills and look are yours to set. The game starts paused: give your first orders, then ${keyHint({ key: "press Space", touch: "tap ▶ Run", pad: "press ☰" })}.`;
   const line = `Crashlanding: three years after the fall, the sole survivor of a downed Guard helicopter, ${home} across the ${CRASH.W} × ${CRASH.H} map. No vehicle: you walk.`;
   return { line, full };
@@ -416,7 +422,7 @@ export function newRunScreen(state, ui) {
         <span class="nrh-sp"></span>
         <button class="nr-ib" data-action="set-open"${tip("The menu: settings, how to play, load a game (Esc)")}><span class="nr-ic">⚙</span><span class="nr-lb">Menu</span></button>
         <button class="nr-ib" data-action="nr-random"${tip(randomTip)}><span class="nr-ic">🎲</span><span class="nr-lb">Random run</span></button>
-        <button class="nr-ib" data-action="nr-map"${tip("Put this screen aside and look at the world map: where you start, the groups, the roads (the banner's Back to setup, or Esc, brings it back)")}><span class="nr-ic">🗺</span><span class="nr-lb">View map</span></button>
+        <button class="nr-ib" data-action="nr-map"${tip(`Put this screen aside and look at the world map: where you start, the groups, the roads (the banner's Back to setup, or Esc, brings it back)${isPreview(state) ? ". The map is built first (a Generating map box shows while it is built); your survivors stay as they are" : ""}`)}><span class="nr-ic">🗺</span><span class="nr-lb">View map</span></button>
         <button class="primary" data-action="begin"${tip(crash ? `Survive: start the Crashlanding run on this map with the soldier as set. It starts paused on the crash tile: raid the wreck and decide what to carry before the dead arrive, then ${keyHint({ key: "press Space", touch: "tap ▶ Run", pad: "press ☰" })}` : `Start this run with the map and crew as set. It starts paused: give your first orders, then ${keyHint({ key: "press Space", touch: "tap ▶ Run", pad: "press ☰" })}`)}>${crash ? "▶ Survive" : "▶ Start"}</button>
       </div>
       ${ui.nrMsg ? `<div class="nrh-msg small">${esc(ui.nrMsg)}</div>` : ""}
@@ -432,7 +438,7 @@ export function newRunScreen(state, ui) {
       ${FAMILY.enabled ? `<label${tip("Children: couples at a base may have children, who grow up in a year into survivors (Help: Children and families). Untick for a run without couples forming on their own, pregnancies or children.")}><input type="checkbox" data-action="children"${ui.childrenOff ? "" : " checked"}> Children</label>` : ""}
     </div></section>`;
   // Crashlanding (2026-10-24): the counts are the map's own (crashMapLine), so nothing is "short" of a setting.
-  const short = crash ? "" : custom ? customShort(state) : !hard && state.factions.length < ui.factionCount ? `Only ${state.factions.length} of the ${ui.factionCount} groups found room on this map (each needs a site of its own, 8 hexes from the others).` : "";
+  const short = isPreview(state) ? "The map is not built yet: it is built when you Start, View map, Pick start on map or roll a New start position. Your survivors stay as they are; the groups that find room, the hives and where you start are decided then." : crash ? "" : custom ? customShort(state) : !hard && state.factions.length < ui.factionCount ? `Only ${state.factions.length} of the ${ui.factionCount} groups found room on this map (each needs a site of its own, 8 hexes from the others).` : "";
   const worldGroup = `<section class="nrgroup nrg-world"><h3 class="nrg-h"${tip(crash ? "The map and what is on it: in Crashlanding the map is shown, not set. Another seed or map builds another; your soldier is kept" : "The map and what is on it. Changing a count builds the world again on the same seed; your edited colonists are kept")}>World</h3><div class="row nrg-b">
       <label${tip(`The same seed always builds the same map. Your edited ${crash ? "soldier is" : "colonists are"} kept when you change it.`)}>Seed <input type="number" min="1" step="1" style="width:7rem" data-action="seed" value="${state.seed}"></label>
       ${worldSizeSelect(state, ui)}

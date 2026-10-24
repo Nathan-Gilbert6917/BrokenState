@@ -10,8 +10,9 @@
 //      Starting hives, the vehicle box, Starting people, the Custom counts, New map, New map and survivors, New start
 //      position, Pick start on map, Random run, World… Done, the gear and fleet rebuilds, Randomize all and everything,
 //      the cards' dice, Ironman, Customize, the backgrounds window's Done, New campaign, Exit) go through gen(); the CSS
-//      has the layer and the spinner; gen() skips the box when the map is kept on the seed being built (a new seed,
-//      null, always shows it).
+//      has the layer and the spinner; gen() skips the box for a preview (sim/world.js PREVIEW_MAP: the new-run screen's
+//      world before its map) and when the map is kept on the seed being built; the first world is a preview, and Start,
+//      View map, Pick start on map and New start position build the real map first (realThen).
 // Usage: node tools/generatingtest.js
 import { readFileSync } from "node:fs";
 import { generating, generatingHtml, generatingUp } from "../src/ui/newgame.js";
@@ -99,8 +100,13 @@ section("3. main.js and the CSS");
   const main = readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
   const css = readFileSync(new URL("../newrun.css", import.meta.url), "utf8");
   const has = (re, what) => check(re.test(main), `main.js: ${what}`);
-  has(/let state = await new Promise\(\(done\) => generating\(\(\) => done\(createWorld\(/, "the first world is built under the box (a top-level await)");
-  has(/function gen\(fn, seed = state\.seed\) \{\n  const quick = seed != null && worldMapCached\(\{ \.\.\.runOpts\(\), seed \}\);\n  generating\(fn, \{ size: buildSize\(\), quick, after: \(\) => \{ dirtyNow = true; refresh\(\); \} \}\);\n\}/, "gen() shows the size being built (no box for a kept map) and redraws after");
+  has(/let state = createWorld\(\{ seed: randomSeed\(\), factionCount: ui\.factionCount, size: ui\.worldSize, worldCfg: ui\.worldCfg, preview: true \}\);/, "the first world is a preview (no map at load, no box)");
+  has(/function gen\(fn, seed = state\.seed, real = false\) \{\n  const quick = !needsMap\(real\) \|\| \(seed != null && worldMapCached\(\{ \.\.\.runOpts\(\), seed \}\)\);\n  generating\(fn, \{ size: buildSize\(\), quick, after: \(\) => \{ dirtyNow = true; refresh\(\); \} \}\);\n\}/, "gen() shows the size being built (no box for a preview or a kept map) and redraws after");
+  has(/function needsMap\(real = false\) \{ return real \|\| ui\.started \|\| ui\.nrMap \|\| ui\.nrPick; \}/, "needsMap: asked for, the map looked at or picked on, or a run under way");
+  has(/function realThen\(then\) \{\n  if \(!isPreview\(state\) \|\| ui\.started\) \{ then\(\); return; \}\n  gen\(\(\) => \{ newWorld\(state\.seed, true, null, true\); then\(\); \}, state\.seed, true\);\n\}/, "realThen: the real world under the box, the crew kept, then the action");
+  has(/if \(isPreview\(state\)\) \{ realThen\(\(\) => actions\.begin\(\)\); return; \}/, "Start builds the real map first");
+  has(/for \(const k of \["nr-map", "nr-pick"\]\) \{ const fn = actions\[k\]; actions\[k\] = \(d\) => \(!ui\.started && !ui\.nrMap && isPreview\(state\) \? realThen\(\(\) => fn\(d\)\) : fn\(d\)\); \}/, "View map and Pick start on map build the real map first");
+  has(/const preview = !needsMap\(real\);[\s\S]{0,900}?createWorld\(\{ \.\.\.runOpts\(\), seed, crew, customBackgrounds: ui\.ironman \? null : customLibrary\(\), preview \}\)/, "newWorld builds a preview unless the map is needed");
   has(/function buildSize\(\) \{\n  const crash = ui\.mode === "crash";\n  const d = crash \? crashSizeDef\(\) : ui\.worldSize === "custom" \? customDef\(ui\.customW, ui\.customH\) : sizeDef\(ui\.worldSize\);/, "buildSize: Crashlanding's, the custom or the preset's size");
   has(/seed: \(el\) => \{ const seed = cleanSeed\(el\.value\); gen\(\(\) => newWorld\(seed, true\), seed\); \}/, "Seed");
   has(/factioncount: \(el\) => \{ ui\.factionCount = clampGroups\(ui\.worldSize, el\.value\); gen\(\(\) => newWorld\(state\.seed, true\)\); \}/, "AI groups");
@@ -115,7 +121,7 @@ section("3. main.js and the CSS");
   has(/reroll: \(\) => gen\(\(\) => newWorld\(randomSeed\(\)\), null\)/, "New map and survivors");
   has(/restart: \(\) => gen\(\(\) => newWorld\(randomSeed\(\)\), null\)/, "Restart");
   has(/"nr-newmap": \(\) => \{\n    if \(ui\.started\) return;\n    gen\(\(\) => \{/, "New map");
-  has(/"nr-start": \(\) => \{\n    if \(ui\.started\) return;\n    gen\(\(\) => \{/, "New start position");
+  has(/"nr-start": \(\) => \{\n    if \(ui\.started\) return;\n    realThen\(\(\) => gen\(\(\) => \{/, "New start position (the real map first)");
   has(/const line = rollRandomRun\(ui, freshRng\(\)\);\n    gen\(\(\) => \{\n      newWorld\(randomSeed\(\)\);/, "Random run (the settings rolled first, every step under one box)");
   has(/"nr-allcrew": \(\) => gen\(/, "Randomize all");
   has(/"nr-everything": \(\) => gen\(/, "Randomize everything");
@@ -132,7 +138,7 @@ section("3. main.js and the CSS");
   has(/if \(changed\.length\) gen\(\(\) => newWorld\(state\.seed, true\)\)/, "the backgrounds window's Done");
   // Every newWorld call sits inside a gen(...) block, or in one of the helpers gen's fns call (cardRebuild, pointsLoad,
   // gearRebuild): no handler calls it bare on its own line at the handlers' depth.
-  const CALLEES = new Set(["newWorld", "cardRebuild", "pointsLoad", "gearRebuild"]);
+  const CALLEES = new Set(["newWorld", "cardRebuild", "pointsLoad", "gearRebuild", "realThen"]);
   let fnName = "";
   const blocks = []; // the indents of the open `gen(() => {` blocks
   const bare = [];
@@ -141,7 +147,7 @@ section("3. main.js and the CSS");
     if (f) fnName = f[1];
     const open = /^(\s*).*\bgen\(\(\) => \{\s*(\/\/.*)?$/.exec(l);
     if (open) blocks.push(open[1].length);
-    else if (blocks.length && new RegExp(`^\\s{${blocks[blocks.length - 1]}}\\}(, null)?\\);`).test(l)) blocks.pop();
+    else if (blocks.length && new RegExp(`^\\s{${blocks[blocks.length - 1]}}\\}(, null(, true)?|, state\\.seed, true\\))?\\);`).test(l)) blocks.pop();
     if (/newWorld\(/.test(l) && !/^\s*\/\/|\bgen\(/.test(l) && !blocks.length && !CALLEES.has(fnName)) bare.push(l.trim());
   }
   check(bare.length === 0 && !blocks.length, `main.js: no world built outside gen (${bare.join(" | ")}${blocks.length ? "; a gen block left open" : ""})`);

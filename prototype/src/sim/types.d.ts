@@ -450,6 +450,7 @@ export interface State {
   startPeople?: number; // hardcore: how many fled together
   startVehicles?: boolean; // Start with a vehicle (custommode.js startsWithVehicle; false: none; older saves: on)
   custom?: { people: number; groups: number; hives: number; cities: number; towns: number; military: number }; // Custom mode's counts (custommode.js isCustomRun)
+  preview?: { groups: number | null }; // the new-run screen's world before its map (world.js PREVIEW_MAP, isPreview)
   crash?: { tile: number | null; homeTile: number | null; homeName: string; baseName: string; nextTile: number | null; nextName: string; revealed: number | null; hiveHidden: boolean; hiveBorn: number | null; hiveLooted: number | null; radioFixed: number | null; deadAir: number | null; stage: string; trail: string; lureUntil: number; [key: string]: any }; // Crashlanding (crashmode.js isCrashRun, crashstart.js)
   [key: string]: any;
 }

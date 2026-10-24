@@ -44,7 +44,7 @@ import { GEAR, SUPPLY_KEYS, TRAITS, SKILL_NAMES, clashIn } from "./data.js";
 import { bornTraits, tidyTiers } from "./traits.js"; // what the world's dice rolled at birth, before the newer traits came in
 import { VEHICLE_TYPES, createVehicle, addPartyVehicle } from "./vehicles.js";
 import { START_FLEET, fitFleet } from "./startfleet.js"; // the starting vehicles' slots; those past the car: their tank and condition (call-time only)
-import { newId, makeSurvivor, applyCrew, assignStartingRoles, log, day, hub, addCard } from "./world.js";
+import { newId, makeSurvivor, applyCrew, assignStartingRoles, log, day, hub, addCard, crewDice } from "./world.js";
 import { newItem, packOf, POCKETS, START_DUR, startKit } from "./inventory.js";
 import { randomStarterMods } from "./gunmods.js"; // starting guns may carry a cheap attachment
 import { starterLoad, pocketBox, settleParty, calOf, gunCals, calibrate, addRecord, roundsText } from "./ammo.js"; // rounds by calibre
@@ -756,8 +756,7 @@ const rngAt = (pos) => Object.assign(new Rng(0), { state: pos });
 export function setupHardcoreStart(state, crew, crewRoll = null, n = HC_START.CREW, start = null) {
   state.hardcore = state.hardcore || {};
   const tile = spawnTile(state, start);
-  const worldRng = state.rng;
-  if (crewRoll != null) state.rng = new Rng(crewRoll);
+  const endCrew = crewDice(state, crewRoll); // world.js: the crew's own dice (crewRoll, else the seed's), to the car and its rounds below
   const people = [];
   for (let i = 0; i < n; i++) {
     const s = makeSurvivor(state, i === 0 ? 1.3 : 1);
@@ -848,7 +847,7 @@ export function setupHardcoreStart(state, crew, crewRoll = null, n = HC_START.CR
   state.rng = crewRng;
   for (const s of people) s.carRoll = carRoll;
   settleParty(state, p); // ammo.js: the rounds they grabbed, by the calibres of their guns
-  state.rng = worldRng;
+  endCrew();
   // Tent bags (tents.js): TENTS.HARDCORE one-person tents a survivor, in the car's trunk (no dice); the car's line says so.
   const tents = hardcoreTents(state, p, people);
   const tentLine = tents.length ? ` ${people.length === 1 ? (tents.length === 1 ? "A one-person tent" : `${tents.length} one-person tents`) : tents.length === people.length ? "A one-person tent each" : `${tents.length} one-person tents`} went ${p.vehicle ? "in the back too" : "along in your arms"}: a camp goes up in half an hour with them.` : "";
