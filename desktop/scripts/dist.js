@@ -7,12 +7,12 @@
 // Saves are in %APPDATA%\Broken State whichever one runs.
 //   npm run dist -- --game=<folder>   package another copy of the game folder (default ../prototype)
 //   npm run dist -- --folder-only     skip the installer and the portable exe
+//   npm run dist -- --stage-only      only lay out what the game ships (build/prototype) and stop: a look at it
 //   npm run release                   the same, then uploads it as a GitHub release ("updates" in package.json), which
 //                                     installed copies pick up by themselves. Raise "version" first; needs GH_TOKEN set
 //                                     to a GitHub token that can write to that repo.
 const fs = require("fs");
 const path = require("path");
-const { packager } = require("@electron/packager");
 
 const DESKTOP = path.resolve(__dirname, "..");
 const gameArg = process.argv.find((a) => a.startsWith("--game="));
@@ -21,25 +21,60 @@ const STAGE = path.join(DESKTOP, "build", "prototype");
 
 const PUBLISH = process.argv.includes("--publish");
 
+// Every module the page loads: the module scripts index.html names and what each imports (import ... from, export
+// ... from, import "...", import("...")), followed file to file. Only these ship: not the modules only the tools use
+// (sim/ladder.js: the balance sheet's), nor the editor's type file (sim/types.d.ts). A specifier that names no file
+// (the JSDoc's import("./types")) is skipped.
+const IMPORT = /\b(?:import|export)\s[^;]*?\bfrom\s*["']([^"']+)["']|\bimport\s*["']([^"']+)["']|\bimport\(\s*["']([^"']+)["']\s*\)/g;
+function pageModules(game, html) {
+  const seen = new Set();
+  const todo = [...html.matchAll(/<script\b[^>]*\bsrc="([^"]+)"/g)].map((m) => path.join(game, m[1]));
+  while (todo.length) {
+    const f = todo.pop();
+    if (seen.has(f) || !fs.existsSync(f)) continue;
+    seen.add(f);
+    for (const m of fs.readFileSync(f, "utf8").matchAll(IMPORT)) {
+      const spec = m[1] || m[2] || m[3];
+      if (spec.startsWith(".")) todo.push(path.resolve(path.dirname(f), spec));
+    }
+  }
+  return [...seen];
+}
+// The files index.html links: its stylesheets and the favicon. Not the manifest or the home-screen icons (only a
+// browser installing the web app reads them), nor sw.js (src/pwa.js never registers it in the desktop app).
+const pageLinks = (html) => [...html.matchAll(/<link\b[^>]*>/g)].map((m) => m[0]).filter((t) => /\brel="(?:stylesheet|icon)"/.test(t)).map((t) => t.match(/\bhref="([^"]+)"/)).filter(Boolean).map((m) => m[1]);
+function copyInto(game, stage, file) {
+  const to = path.join(stage, path.relative(game, file));
+  fs.mkdirSync(path.dirname(to), { recursive: true });
+  fs.copyFileSync(file, to);
+}
+
 (async () => {
   if (PUBLISH && !process.env.GH_TOKEN) throw new Error('npm run release needs GH_TOKEN: a GitHub token that can write releases to the repo in package.json "updates".');
-  // 1. A clean copy of what the game needs at runtime (not the tools, README or dev server).
+  // 1. A clean copy of only what the game loads at runtime: index.html, what it links (every stylesheet: touch.css
+  // and responsive.css apply only to touch screens and small windows, pad.css only while a controller is in use) and
+  // the modules it imports. Not the tools, the README, the dev server or the web app's files.
   fs.rmSync(path.join(DESKTOP, "build"), { recursive: true, force: true });
   fs.mkdirSync(STAGE, { recursive: true });
-  // Everything index.html links, so the bundled copy loads as the live one does (touch.css and responsive.css apply only
-  // to touch screens and small windows, pad.css only while a controller is in use; the manifest and icons/ only matter
-  // to a browser installing the web app). Not sw.js: the web app's offline cache, which src/pwa.js never registers in the desktop app.
-  for (const f of ["index.html", "styles.css", "title.css", "touch.css", "responsive.css", "pad.css", "manifest.webmanifest"]) if (fs.existsSync(path.join(GAME, f))) fs.copyFileSync(path.join(GAME, f), path.join(STAGE, f));
-  fs.cpSync(path.join(GAME, "src"), path.join(STAGE, "src"), { recursive: true });
+  const html = fs.readFileSync(path.join(GAME, "index.html"), "utf8");
+  const shipped = [path.join(GAME, "index.html"), ...pageLinks(html).map((h) => path.join(GAME, h)), ...pageModules(GAME, html)];
+  for (const f of shipped) {
+    if (!fs.existsSync(f)) throw new Error(`index.html needs ${path.relative(GAME, f)}, which is not there`);
+    copyInto(GAME, STAGE, f);
+  }
   // The build's stamp: the commit the snapshot is from (the error screen's report, src/ui/crash.js).
   try {
     const git = (...a) => require("child_process").execFileSync("git", ["-C", GAME, ...a], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
     const dirty = git("status", "--porcelain", "--", ".") ? "+changes" : "";
     fs.writeFileSync(path.join(STAGE, "build.json"), JSON.stringify({ commit: git("rev-parse", "--short", "HEAD") + dirty, date: new Date().toISOString().slice(0, 10) }));
   } catch { /* not a git checkout: no stamp */ }
-  for (const d of ["assets", "audio", "img", "fonts", "icons"]) if (fs.existsSync(path.join(GAME, d))) fs.cpSync(path.join(GAME, d), path.join(STAGE, d), { recursive: true });
+  for (const d of ["assets", "audio", "img", "fonts"]) if (fs.existsSync(path.join(GAME, d))) fs.cpSync(path.join(GAME, d), path.join(STAGE, d), { recursive: true }); // none today: the art and sounds are drawn and made in code
+  const kb = shipped.reduce((a, f) => a + fs.statSync(f).size, 0) / 1024;
+  console.log(`Staged ${shipped.length} files of the game (${Math.round(kb)} KB) in ${STAGE}`);
+  if (process.argv.includes("--stage-only")) return;
 
   // 2. Package: the app code goes into resources/app.asar, the game into resources/prototype (main.js looks there).
+  const { packager } = require("@electron/packager");
   const pkg = require(path.join(DESKTOP, "package.json"));
   const [out] = await packager({
     dir: DESKTOP,
@@ -54,7 +89,9 @@ const PUBLISH = process.argv.includes("--publish");
     overwrite: true,
     prune: true,
     extraResource: [STAGE],
-    ignore: [/^\/dist($|\/)/, /^\/build($|\/)/, /^\/scripts($|\/)/, /^\/perf\/browser-bench\.js$/, /^\/package-lock\.json$/],
+    // The app needs main.js, updater.js, package.json, icons/icon.png (the window's) and perf/driver.js (--perf);
+    // icon.ico is the exe's and the installer's, set on them here, never read at runtime.
+    ignore: [/^\/dist($|\/)/, /^\/build($|\/)/, /^\/scripts($|\/)/, /^\/perf\/browser-bench\.js$/, /^\/package-lock\.json$/, /^\/icons\/icon\.ico$/],
     appCopyright: "Broken State prototype",
     win32metadata: { CompanyName: "Broken State", FileDescription: "Broken State", ProductName: "Broken State", InternalName: "Broken State" },
   });
