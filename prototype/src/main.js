@@ -1699,10 +1699,11 @@ const changeActions = {
   // off and, if the crew was customized (skills, traits, a picked background), builds the world again on the same seed
   // with only the names, looks and leader kept.
   // Ironman also leaves the starting vehicles' backs as rolled (runOpts; sim/startfleet.js): a world built with backs set
-  // is built again without them, and unticking it brings them back.
+  // is built again without them, and unticking it brings them back (Customize being on: without it the backs are as
+  // rolled anyway).
   ironman: (el) => {
     ui.ironman = !!el.checked;
-    const backs = (ui.fleet || []).some((f) => f && f.load);
+    const backs = !!ui.freeEdit && (ui.fleet || []).some((f) => f && f.load);
     if (!ui.ironman) { if (backs && !ui.started) newWorld(state.seed, true); return; }
     ui.freeEdit = false;
     ui.fleetEdit = null;
@@ -1715,7 +1716,9 @@ const changeActions = {
   // Customize (not with Ironman; sim/custompoints.js): ticked, every colonist starts blank and is built on points (the
   // world again on the same seed, with a crew roll of its own so the map and the groups stay put); what was built
   // before in this screen comes back if the crew is the same size. Unticked, the crew goes back as rolled (names, looks
-  // and the leader kept), the build kept aside for ticking it again.
+  // and the leader kept), the build kept aside for ticking it again. The starting vehicles' backs go with it (2026-10-24,
+  // user request: "Remove points left and setting gear in vehicles when no having customize toggled"): runOpts builds
+  // the world with them as rolled while Customize is off, the backs set waiting in ui.fleet for ticking it again.
   "nr-free": (el) => {
     if (ui.ironman || ui.started) { el.checked = false; return; }
     const on = !!el.checked;
@@ -1728,8 +1731,9 @@ const changeActions = {
     } else {
       ui.pointsCrew = crewSnapshot(state);
       ui.freeEdit = false;
+      ui.fleetEdit = null; // a vehicle's back window: shut (the backs are as rolled without Customize)
       newWorld(state.seed, true, { crew: ironmanCrew(state), crewRoll: ui.pickRoll ? null : ui.crewRoll });
-      ui.nrMsg = "Customize off: the crew is back as rolled (names, looks and the leader kept). Tick it again for your build.";
+      ui.nrMsg = `Customize off: the crew is back as rolled (names, looks and the leader kept)${(ui.fleet || []).some((f) => f && f.load) ? ", the vehicles' backs too" : ""}. Tick it again for your build.`;
     }
   },
   // Customize: the points each colonist may spend (the crew's max; sim/custompoints.js). Every colonist goes back on it,
@@ -1832,7 +1836,7 @@ function runOpts() {
     factionCount: ui.factionCount, size: ui.worldSize, customW: ui.customW, customH: ui.customH, hives: ui.hiveCount,
     mode: custom ? "normal" : ui.mode, crewRoll: ui.crewRoll, startPeople: ui.startPeople, start: ui.startPick, worldCfg: uiCfg(ui),
     vehicle: ui.startVehicle !== false, custom: custom ? { ...ui.custom, people: ui.startPeople } : null,
-    fleet: ui.ironman ? (ui.fleet || []).map((f) => ({ ...f, load: null })) : ui.fleet, // Starting vehicles (sim/startfleet.js); Ironman: the backs as rolled
+    fleet: ui.ironman || !ui.freeEdit ? (ui.fleet || []).map((f) => ({ ...f, load: null })) : ui.fleet, // Starting vehicles (sim/startfleet.js); Ironman or Customize off: the backs as rolled (the ones set wait on the screen for Customize)
     ...(crash ? { mode: "normal", crash: true, custom: null, vehicle: false, fleet: [], startPeople: 1 } : {}), // Crashlanding: the one survivor on foot, no fleet, no Custom counts
   };
 }

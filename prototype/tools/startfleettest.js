@@ -15,7 +15,7 @@
 //   5. Random fills a back up to its point limit and within its room (Normal, Hardcore, Custom; the screen's 🎲 Random,
 //      Randomize everything's every vehicle);
 //   6. the backs are on nobody's points: the bill, Start's refusal names the vehicle over its limit or room;
-//   7. the screen: the Starting vehicles section (hidden with the box off), Edit… without Customize, Ironman read-only,
+//   7. the screen: the Starting vehicles section (hidden with the box off), its backs under Customize alone, Ironman read-only,
 //      each mode its own fleet, save and load of a Custom run during the screen, main.js wiring.
 // Usage: node tools/startfleettest.js
 import { readFileSync } from "node:fs";
@@ -68,7 +68,9 @@ section("2. Start with a vehicle off, and on");
     check(off.vehicles.length === 0 && off.fleet.length === off.survivors.length && off.fleet.every((f) => f.vid == null) && !fleetVehicle(off, 0) && !fleetText(off), `${tag} off: no starting vehicle (${off.vehicles.length}), a slot a survivor (${off.fleet.length}), nothing to refuse`);
     check(fleetSection(off, UI()) === "" && !/data-action="fleet-/.test(newRunScreen(off, UI({ mode: tag.toLowerCase() }))), `${tag} off: no Starting vehicles section`);
     const on = createWorld({ seed: 31, factionCount: 5, ...opts });
-    check(on.fleet.length === on.survivors.length && !!fleetVehicle(on, 0) && on.fleet.slice(1).every((f) => f.empty && f.vid == null) && /data-action="fleet-edit"/.test(newRunScreen(on, UI({ mode: tag.toLowerCase() }))), `${tag} on: the first slot's vehicle, the rest empty (${on.fleet.length} slots), the section with Edit…`);
+    check(on.fleet.length === on.survivors.length && !!fleetVehicle(on, 0) && on.fleet.slice(1).every((f) => f.empty && f.vid == null) && /data-action="fleet-edit"/.test(newRunScreen(on, UI({ mode: tag.toLowerCase(), freeEdit: true }))), `${tag} on: the first slot's vehicle, the rest empty (${on.fleet.length} slots), the section with Edit… under Customize`);
+    const plain = newRunScreen(on, UI({ mode: tag.toLowerCase() }));
+    check(/data-action="fleet-kind"/.test(plain) && /data-action="fleet-remove"/.test(plain) && /data-action="fleet-add"/.test(plain) && !/fleet-edit|fleet-rand|fleet-empty|fleet-limit|fleet-dice|Point limit|\/ \d+ pts/.test(plain), `${tag} on, Customize off: the kinds, ✕ Remove and ＋ Add a vehicle alone (no point limit, points or gear buttons)`);
   }
   const off = createWorld({ seed: 31, factionCount: 5, custom: SMALL, vehicle: false, fleet: [{ load: { supplies: { wood: 300 } } }] });
   const none = createWorld({ seed: 31, factionCount: 5, custom: SMALL, vehicle: false });
@@ -99,9 +101,9 @@ section("3. Custom: several vehicles, any thing and material");
   check(arms(st).filter((k) => k === "crowbar").length === arms(plain).filter((k) => k === "crowbar").length + 1 && arms(st).filter((k) => k === "knife").length === arms(plain).filter((k) => k === "knife").length + 1, "its things into the armory");
   check(fleetName(st, 0) === "Vehicle 1 (Work van)" && fleetRoom(st, 2) === VEHICLE_TYPES.miltruck.payload, `named and roomed by kind (${fleetName(st, 0)}, ${fleetRoom(st, 2)} kg)`);
   // The window: any supply or material.
-  const ui = UI({ mode: "custom" });
+  const ui = UI({ mode: "custom", freeEdit: true });
   SG_ACTIONS["fleet-edit"](st, ui, { i: "1" });
-  check(ui.fleetEdit && ui.fleetEdit.i === 1 && /data-action="sg-trunk-supadd"/.test(fleetEditor(st, ui)), "Edit… without Customize: the window, with Add a supply or material");
+  check(ui.fleetEdit && ui.fleetEdit.i === 1 && /data-action="sg-trunk-supadd"/.test(fleetEditor(st, ui)), "Edit… under Customize: the window, with Add a supply or material");
   check(SG_CHANGE["sg-trunk-supadd"](st, ui, el("stone")) === "fleet" && ui.fleet[1].load.supplies.stone === 10 && st.fleet[1].load.supplies.stone === 10, "a material in: ten of it, on the screen's fleet and the world's");
   check(SG_CHANGE["sg-trunk-sup"](st, ui, el(250, { k: "stone" })) === "fleet" && ui.fleet[1].load.supplies.stone === 250, "as much as the room holds (250 stone)");
   SG_CHANGE["sg-trunk-sup"](st, ui, el(99999, { k: "stone" }));
@@ -145,7 +147,7 @@ section("4. Normal and Hardcore: as before with no back set");
     check(cargo.gear.some((it) => it.key === "crowbar") && set.survivors.some((s) => s.diceTrunk), `Hardcore ${seed}: a back set goes in place of the dice's (the dice's noted for As rolled)`);
     check(set.hardcore.start.car != null && set.factions.map((f) => f.name).join() === h1.factions.map((f) => f.name).join() && set.survivors.map((s) => s.name).join() === h1.survivors.map((s) => s.name).join(), `Hardcore ${seed}: the same crew and groups`);
     // As rolled on the screen.
-    const ui = UI({ mode: "hardcore", fleet: [{ type: null, limit: 60, load: { items: ["crowbar"], supplies: { water: 7 } } }] });
+    const ui = UI({ mode: "hardcore", freeEdit: true, fleet: [{ type: null, limit: 60, load: { items: ["crowbar"], supplies: { water: 7 } } }] });
     check(SG_ACTIONS["fleet-dice"](set, ui, { i: "0" }) === "fleet" && ui.fleet[0].load === null && set.fleet[0].load === null, `Hardcore ${seed}: As rolled: the back back to the dice's`);
     check(SG_ACTIONS["fleet-dice"](a, UI(), { i: "0" }) === false, `Normal ${seed}: no As rolled (it comes empty)`);
   }
@@ -177,7 +179,7 @@ section("5. Random: up to the point limit, within the room");
   // The screen's 🎲 Random, each mode.
   for (const [tag, opts] of [["Normal", {}], ["Hardcore", { mode: "hardcore" }], ["Custom", { custom: SMALL, fleet: [{ type: "sedan", limit: 80 }, { type: "van", limit: 300 }] }]]) {
     const st = createWorld({ seed: 12, factionCount: 5, ...opts });
-    const ui = UI({ mode: opts.custom ? "custom" : opts.mode || "normal" });
+    const ui = UI({ mode: opts.custom ? "custom" : opts.mode || "normal", freeEdit: true });
     let ok = true;
     for (let k = 0; k < 4; k++) for (let i = 0; i < st.fleet.length; i++) {
       if (st.fleet[i].empty) { if (SG_ACTIONS["fleet-rand"](st, ui, { i: String(i) }) !== false) ok = false; continue; } // an empty slot: nothing to fill
@@ -239,30 +241,38 @@ section("6. On nobody's points; Start refused over a limit");
 section("7. The screen");
 {
   const st = createWorld({ seed: 42, factionCount: 5, fleet: [{ limit: 60, load: { items: [], supplies: { water: 10 } } }] });
-  const html = newRunScreen(st, UI());
+  const html = newRunScreen(st, UI({ freeEdit: true }));
   check(/Starting vehicles/.test(html) && /data-action="fleet-limit" data-i="0" value="60"/.test(html) && /data-action="fleet-rand"/.test(html) && /data-action="fleet-edit"/.test(html) && /data-action="fleet-empty"/.test(html) && /Vehicle 1 <select data-action="fleet-kind" data-i="0"/.test(html) && /data-action="fleet-remove" data-i="0"/.test(html) && (html.match(/data-action="fleet-add"/g) || []).length === 1 && html.indexOf('data-action="fleet-add"') > html.indexOf('data-action="fleet-remove"') && new RegExp(`>1 of ${st.fleet.length}<`).test(html) && !/fleet-count|slots/.test(html), `Normal: the pickup's row: its kind, Point limit, 🎲 Random, Edit…, Empty, ✕ Remove; ＋ Add a vehicle under it (1 of ${st.fleet.length}: one a survivor, no slots or Vehicles box)`);
   check(/Back <b>\d+<\/b> \/ 60 pts/.test(html) && /\d+(\.\d)? \/ 650 kg/.test(html), "points used against the limit and kg against the room");
   const tips = (html.match(/data-action="fleet-[a-z]+"[^>]*>/g) || []).every((m) => /data-tip="[^"]{20,}"/.test(m)) || (html.match(/<label data-tip="[^"]+">Point limit/) || []).length === 1;
   check(tips, "tooltips on the controls");
-  const ui = UI();
+  const ui = UI({ freeEdit: true });
   check(SG_CHANGE["fleet-limit"](st, ui, el(1, { i: "0" })) === false && ui.fleet[0].limit === 1 && st.fleet[0].limit === 1 && /over its limit of 1/.test(fleetText(st)), "the Point limit: kept on the screen and the world (no rebuild); below the back's price, Start is refused");
   check(SG_ACTIONS["fleet-empty"](st, ui, { i: "0" }) === "fleet" && empty(ui.fleet[0].load) && !fleetText(st), "Empty: nothing in it, Start allowed");
   // Ironman: as rolled, read-only.
   const iron = UI({ ironman: true });
   const ih = newRunScreen(st, iron);
-  check(/data-action="fleet-limit" data-i="0" value="1" disabled/.test(ih) && /data-action="fleet-rand" data-i="0" disabled/.test(ih) && /Ironman: as rolled/.test(ih), "Ironman: the section read-only");
+  check(/data-action="fleet-kind" data-i="0"/.test(ih) && !/fleet-limit|fleet-rand|fleet-edit|Point limit/.test(ih) && /Ironman: as rolled/.test(ih), "Ironman: the section as rolled (no Customize: the kinds alone, no limit or gear buttons)");
   check(SG_ACTIONS["fleet-rand"](st, iron, { i: "0" }) === false && SG_ACTIONS["fleet-edit"](st, iron, { i: "0" }) === false && SG_CHANGE["fleet-limit"](st, iron, el(80, { i: "0" })) === false, "Ironman: Random, Edit… and the limit refused");
   const main = readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
-  check(/fleet: ui\.ironman \? \(ui\.fleet \|\| \[\]\)\.map\(\(f\) => \(\{ \.\.\.f, load: null \}\)\) : ui\.fleet/.test(main), "main.js: an Ironman world is built with the backs as rolled");
+  check(/fleet: ui\.ironman \|\| !ui\.freeEdit \? \(ui\.fleet \|\| \[\]\)\.map\(\(f\) => \(\{ \.\.\.f, load: null \}\)\) : ui\.fleet/.test(main), "main.js: an Ironman world, or one without Customize, is built with the backs as rolled");
+  // Customize off (the user's request 2026-10-24: "Remove points left and setting gear in vehicles when no having customize
+  // toggled"): the rows are the kinds and ✕ Remove alone, the backs as rolled; Random, Edit…, Empty and the limit refused.
+  const plain = UI(), ph = newRunScreen(st, plain);
+  check(/Starting vehicles/.test(ph) && /Vehicle 1 <select data-action="fleet-kind" data-i="0"/.test(ph) && /data-action="fleet-remove" data-i="0"/.test(ph) && (ph.match(/data-action="fleet-add"/g) || []).length === 1 && !/fleet-edit|fleet-rand|fleet-empty|fleet-limit|fleet-dice|Point limit|ptsbar|\/ \d+ pts|\/ \d+ kg/.test(ph) && !/>Empty</.test(ph), "Customize off: the pickup's row is its kind and ✕ Remove, ＋ Add a vehicle under it; no Point limit, points, kg, Random, Edit…, Empty");
+  check(SG_ACTIONS["fleet-rand"](st, plain, { i: "0" }) === false && SG_ACTIONS["fleet-edit"](st, plain, { i: "0" }) === false && SG_ACTIONS["fleet-empty"](st, plain, { i: "0" }) === false && SG_CHANGE["fleet-limit"](st, plain, el(80, { i: "0" })) === false && !plain.fleetEdit && st.fleet[0].limit === 1, "Customize off: Random, Edit…, Empty and the limit refused, the back's window shut");
+  check(SG_ACTIONS["fleet-remove"](st, plain, { i: "0" }) === "fleet" && SG_CHANGE["fleet-kind"](createWorld({ seed: 42, factionCount: 5 }), UI(), el("van", { i: "0" })) === "fleet", "Customize off: ✕ Remove and the kind still work");
   check(/vehicle: ui\.startVehicle !== false, custom: custom \? \{ \.\.\.ui\.custom, people: ui\.startPeople \} : null,\s*fleet:/.test(main), "main.js runOpts passes the fleet next to vehicle and custom");
   check(/gearRebuild\(r === "fleet"\)/.test(main) && /fleetEditor\(state, ui\)/.test(readFileSync(new URL("../src/ui/ui.js", import.meta.url), "utf8")), "main.js rebuilds on a fleet change; ui.js shows the back's window");
   // Hardcore's row: the car's name, As rolled.
   const hc = createWorld({ seed: 42, factionCount: 5, mode: "hardcore" });
-  const hh = newRunScreen(hc, UI({ mode: "hardcore" }));
+  const hh = newRunScreen(hc, UI({ mode: "hardcore", freeEdit: true }));
   check(/data-action="fleet-dice"/.test(hh) && new RegExp(`${fleetName(hc, 0).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`).test(hh) && /As rolled: /.test(hh), `Hardcore: the car's row (${fleetName(hc, 0)}), as rolled, with As rolled`);
+  const hp = newRunScreen(hc, UI({ mode: "hardcore" }));
+  check(/data-action="fleet-kind" data-i="0"/.test(hp) && />as rolled</.test(hp) && /As rolled: /.test(hp) && !/fleet-dice|fleet-edit|Point limit/.test(hp), "Hardcore, Customize off: the car's kind and as rolled (what the dice put in it in its hover), no As rolled button, limit or Edit…");
   // Custom: the vehicles' rows (a kind select each) and ＋ Add a vehicle under them, up to one a survivor.
   const cs = createWorld({ seed: 42, factionCount: 5, custom: SMALL, fleet: resizeFleet([], 2) });
-  const ch = newRunScreen(cs, UI({ mode: "custom" }));
+  const ch = newRunScreen(cs, UI({ mode: "custom", freeEdit: true }));
   check(/>2 of 4</.test(ch) && (ch.match(/data-action="fleet-kind"/g) || []).length === 2 && (ch.match(/data-action="fleet-rand"/g) || []).length === 2 && (ch.match(/data-action="fleet-add"/g) || []).length === 1 && !/fleet-add" disabled/.test(ch) && !/bike/.test((ch.match(/data-action="fleet-kind"[\s\S]*?<\/select>/) || [""])[0]), "Custom: two vehicles, a kind select each (no bicycles), one ＋ Add a vehicle (2 of 4)");
   // Hardcore with the car removed: the button at the top of the list, the team in the next vehicle; Add puts a pickup
   // in the car's place (the one the team flees in), As rolled still on its select.

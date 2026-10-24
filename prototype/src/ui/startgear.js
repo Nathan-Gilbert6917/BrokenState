@@ -5,8 +5,10 @@
 // picked, else where it first fits; what does not fit is refused with the reason). Every change to what they wear or
 // carry builds the world again on the same seed (main.js gearRebuild), so what the window shows is what they start with.
 // The starting vehicles (2026-10-24, user request; sim/startfleet.js): the new-run screen's Starting vehicles section
-// (fleetSection, every mode, Customize ticked or not; read-only in Ironman) and each vehicle's back window (fleetEditor:
-// Edit…), the back priced against that vehicle's own point limit, on nobody's points (the car pool is gone). Their
+// (fleetSection, every mode; its backs, point limits and points under Customize only, 2026-10-24, user request: "Remove
+// points left and setting gear in vehicles when no having customize toggled"; without it the rows are the kinds alone,
+// the backs as rolled) and each vehicle's back window (fleetEditor: Edit…), the back priced against that vehicle's own
+// point limit, on nobody's points (the car pool is gone). Their
 // actions return "fleet" (main.js gearRebuild: the world again with ui.fleet, the crew as it stands).
 // HTML builders plus their action handlers; main.js registers them (an action returning true asks for the rebuild).
 import { GEAR, SUPPLIES } from "../sim/data.js";
@@ -152,10 +154,14 @@ export function loadWords(V) {
 // a kind) and ✕ Remove, and one ＋ Add a vehicle button where the first free slot is (under the vehicles; at the top of
 // the list once the rolled vehicle is gone), up to one vehicle a starting survivor (the user's requests 2026-10-24:
 // "There are X vehicles slots where X is the number of survivors"; "add a add vehicle button under the rolled vehicle
-// instead of having x slots"). Ironman: the backs as rolled, read-only.
+// instead of having x slots"). The point limit, the points and the kg, Random, Edit…, Empty and As rolled are under
+// Customize alone (the user's request 2026-10-24: "Remove points left and setting gear in vehicles when no having
+// customize toggled when starting the game"): without it (and in Ironman) a row is its kind and ✕ Remove, the back as
+// rolled (Hardcore's car: what the dice put in it, said in a few words), and main.js runOpts builds the world with
+// every back as rolled; a back set under Customize waits for it to be ticked again.
 export function fleetSection(state, ui) {
   if (!startsWithVehicle(state) || !(state.fleet || []).length) return "";
-  const mode = fleetMode(state), iron = !!ui.ironman, locked = iron || !!ui.started;
+  const mode = fleetMode(state), iron = !!ui.ironman, locked = iron || !!ui.started, free = freeEdit(ui);
   const dis = locked ? " disabled" : "";
   const kindOpts = (chosen) => fleetKinds().map((k) => `<option value="${k}" ${k === chosen ? "selected" : ""}>${esc(VEHICLE_TYPES[k].name)} (${VEHICLE_TYPES[k].payload} kg)</option>`).join("");
   const where = mode === "hardcore" ? "It comes along with the team, one of you at the wheel" : "It parks at the hub";
@@ -187,6 +193,15 @@ export function fleetSection(state, ui) {
       ? "The car the team flees in: as rolled, its kind goes with whose it was (who they were); or pick its kind. Changing it builds the world again on the same seed"
       : `This vehicle's kind (every motor vehicle; no bicycles). ${where}, with a part-full tank. Changing it builds the world again on the same seed`;
     const kind = `<label${tip(kindTip)}>${car ? esc(info.label) : `Vehicle ${i + 1}`} <select data-action="fleet-kind" data-i="${i}"${ui.started ? " disabled" : ""}>${opts}</select></label>`;
+    const remove = `<button class="mini" data-action="fleet-remove" data-i="${i}"${ui.started ? " disabled" : ""}${tip(`Take this vehicle out of its slot (the slot stays, empty: add one to it again). ${car ? "The car is left behind; the dice are cast all the same. " : ""}The world is built again on the same seed`)}>✕ Remove</button>`;
+    if (!free) { // Customize off: no point limit, points or gear buttons; the back as rolled (the dice's in the car, said in a few words)
+      const dice = hasDice(state, i) ? `<span class="small muted"${tip(`As rolled: ${loadWords(shownLoad(state, i))}. Tick Customize to set its back`)}>as rolled</span>` : "";
+      return `<div class="row nrveh" style="gap:0.35rem;align-items:center;margin-top:0.25rem">
+        ${kind}
+        ${remove}
+        ${dice}
+      </div>`;
+    }
     const t = `${info.label}: its back costs ${rolled ? "nothing as rolled" : `${pts} points`} of its own limit of ${f.limit} (nobody's points pay for it) and weighs ${kg} of the ${info.room} kg it holds${ridesIn(state, i) ? " (the riders and what they wear ride in it too)" : ""}.${over || heavy ? " Over: Start is refused until it is back within." : ""}`;
     const bar = `<div class="fleetbar ptsbar ${over ? "over" : ""}" style="min-width:9rem"${tip(t)}><div class="spread small"><span>Back <b>${rolled ? "as rolled" : pts}</b> / ${f.limit} pts</span><span class="${heavy ? "danger" : "muted"}">${kg} / ${info.room} kg</span></div><div class="bar"><i style="width:${rolled ? 0 : pct}%;background:${over ? "var(--danger)" : "var(--good)"}"></i></div></div>`;
     const what = rolled ? (hasDice(state, i) ? `As rolled: ${loadWords(V)}` : "Empty") : loadWords(f.load);
@@ -198,14 +213,15 @@ export function fleetSection(state, ui) {
         <button class="mini" data-action="fleet-edit" data-i="${i}"${dis}${tip(`Put things, supplies, materials (wood, stone, building materials…) and rounds in its back by hand, each priced against its point limit`)}>Edit…</button>
         <button class="mini" data-action="fleet-empty" data-i="${i}"${dis}${tip("Nothing in its back")}>Empty</button>
         ${hasDice(state, i) ? `<button class="mini" data-action="fleet-dice" data-i="${i}"${locked || rolled ? " disabled" : ""}${tip("What the world's dice put in the back (free)")}>As rolled</button>` : ""}
-        <button class="mini" data-action="fleet-remove" data-i="${i}"${ui.started ? " disabled" : ""}${tip(`Take this vehicle out of its slot (the slot stays, empty: add one to it again). ${car ? "The car is left behind; the dice are cast all the same. " : ""}The world is built again on the same seed`)}>✕ Remove</button>
+        ${remove}
         <span class="small muted"${tip(what)}>${esc(what.length > 70 ? `${what.slice(0, 67)}…` : what)}</span>
       </div>`;
   }).join("") + (firstFree < 0 ? addRow(-1) : "");
   const head = mode === "hardcore" ? "the car you flee in and any you add, with the team; a back set on the car replaces what the dice put in it" : mode === "custom" ? "at the hub; each back is unloaded into the hub's armory and stores on the first day, any thing and any material" : "what is in its back is unloaded into the hub's armory and stores on the first day";
+  const backs = free ? ", each with its own point limit (nobody's points pay for it). Start is refused while a back costs more than its limit or weighs more than its room" : `. The backs are as rolled (${mode === "hardcore" ? "the car's what the dice put in it, the others empty" : "empty"}): tick Customize to set each one, with its own point limit`;
   // What the backs are for is the heading's hover, not a line of its own (the user's request 2026-10-24).
   return `<div class="nrfleet">
-      <div class="row small" style="gap:0.5rem"><b${tip(`Starting vehicles: ${head}. The first is ${mode === "hardcore" ? "the car you flee in" : "the hub's pickup truck"}: remove it, change its kind or add others (one a starting survivor at most), each with its own point limit (nobody's points pay for it). Start is refused while a back costs more than its limit or weighs more than its room`)}>Starting vehicles</b>${iron ? `<span class="muted">Ironman: as rolled.</span>` : ""}</div>
+      <div class="row small" style="gap:0.5rem"><b${tip(`Starting vehicles: ${head}. The first is ${mode === "hardcore" ? "the car you flee in" : "the hub's pickup truck"}: remove it, change its kind or add others (one a starting survivor at most)${backs}`)}>Starting vehicles</b>${iron ? `<span class="muted">Ironman: as rolled.</span>` : ""}</div>
       ${rows}
     </div>`;
 }
@@ -486,7 +502,7 @@ export function blankPerson(s) {
 // (ui.fleet: the next world is built with it) and the world's (state.fleet). Not once started, not in Ironman (as
 // rolled). Returns "fleet" (main.js: the world again with it) or false.
 function editTrunk(state, ui, fn, at = null) {
-  if (ui.started || ui.ironman) return false;
+  if (ui.started || !freeEdit(ui)) return false; // the backs under Customize alone (not in Ironman)
   const i = at ?? (ui.fleetEdit ? ui.fleetEdit.i : 0);
   const F = uiFleet(state, ui), f = F[i], live = fleetEntry(state, i);
   if (!f || !live || f.empty || live.empty) return false; // no slot, or an empty one (no vehicle): nothing to fill
@@ -640,7 +656,7 @@ export const SG_ACTIONS = {
   // The new-run screen's Starting vehicles (fleetSection).
   "fleet-edit": (state, ui, d) => {
     const i = Number(d.i);
-    if (ui.started || ui.ironman || !fleetInfo(state, i)) return false;
+    if (ui.started || !freeEdit(ui) || !fleetInfo(state, i)) return false; // the backs under Customize alone
     uiFleet(state, ui);
     ui.gearEdit = null;
     ui.fleetEdit = { i, msg: "", tsel: null };
@@ -678,7 +694,7 @@ export const SG_ACTIONS = {
 };
 // A vehicle's back as rolled again (load null: Hardcore the dice's back, free).
 function asRolled(state, ui, i) {
-  if (ui.started || ui.ironman) return false;
+  if (ui.started || !freeEdit(ui)) return false;
   const F = uiFleet(state, ui), f = F[i], live = fleetEntry(state, i);
   if (!f || !live || !f.load) return false;
   f.load = null;
@@ -803,7 +819,7 @@ export const SG_CHANGE = {
   // The new-run screen's Starting vehicles: a point limit, on the screen's fleet and the world's (nothing else in the
   // world changes: no rebuild).
   "fleet-limit": (state, ui, el) => {
-    if (ui.started || ui.ironman) return false;
+    if (ui.started || !freeEdit(ui)) return false; // the limits under Customize alone
     const i = Number(el.dataset.i), F = uiFleet(state, ui), live = fleetEntry(state, i);
     if (!F[i] || !live) return false;
     F[i].limit = live.limit = clampLimit(el.value);
