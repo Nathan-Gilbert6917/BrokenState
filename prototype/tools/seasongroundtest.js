@@ -176,7 +176,10 @@ console.log("Moves: people and the dead alike");
 // ---------- 4. the base map ----------
 console.log("The base map");
 {
-  const yardOf = (b) => b.cells.filter((c) => c.f === "dirt" && G.MUD.KINDS.has(c.k) && !c.wet);
+  // (The yard is the tile's own ground since 2026-10-24, no brown square: mud lies only on the dirt there is, the
+  // ground cleared; snow on all the open ground. A built crop plot keeps its own surface.)
+  const yardOf = (b) => b.cells.filter((c) => G.MUD.FLOORS.has(c.f) && G.MUD.KINDS.has(c.k) && !c.wet && !c.plot);
+  const openOf = (b) => b.cells.filter((c) => G.SNOW.FLOORS.has(c.f) && G.MUD.KINDS.has(c.k) && !c.wet && !c.plot);
   let springB = null, sd = -1;
   for (let d = 0; d < 14 && !springB; d++) {
     if (seasonOfDay(d).key !== "spring") continue;
@@ -187,13 +190,13 @@ console.log("The base map");
     springB = st.combat; sd = d;
   }
   if (check(!!springB, `the hub's map on a wet spring day (day ${sd + 1})`)) {
-    const y = yardOf(springB), m = y.filter((c) => c.gnd === "mud").length;
-    check(y.length > 20 && m > 0 && m < y.length, `mud on ${m} of the yard's ${y.length} dirt cells`);
+    const y = yardOf(springB), m = springB.cells.filter((c) => c.gnd === "mud");
+    check(m.every((c) => G.MUD.FLOORS.has(c.f)) && (y.length ? m.length > 0 && m.length < y.length : m.length === 0), `mud only on dirt: ${m.length} of the base's ${y.length} dirt cells (the hub's yard is grass)`);
   }
   st.combat = null; st.hour = snowDay * 24 + 12;
   openBaseMap(st, h.id);
-  const wb = st.combat, y = wb ? yardOf(wb) : [];
-  check(wb && y.length > 20 && y.every((c) => c.gnd === "snow") && wb.cells.filter((c) => c.f === "floor").every((c) => !c.gnd), `the hub's map on a snowy day: snow on the yard (${y.length} dirt cells), none on the buildings' floors`);
+  const wb = st.combat, y = wb ? openOf(wb) : [];
+  check(wb && y.length > 20 && y.every((c) => c.gnd === "snow") && wb.cells.filter((c) => c.f === "floor").every((c) => !c.gnd), `the hub's map on a snowy day: snow on the open ground (${y.length} cells), none on the buildings' floors`);
   st.combat = null;
 }
 

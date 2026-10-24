@@ -81,6 +81,14 @@ section("The no-build margin");
   const Gc = BM.gridHalf(c2);
   check(Gc === BM.GRID_MAX && F.W < 2 * Gc && F.W >= 2 * (BM.yardHalf(c2) + 2), `the camp's grid is 500 × 500; its view the yard and what stands round it (${F.W} × ${F.H})`);
   check(F.W === (2 * BM.VIEW_HALF.camp) && F.H === (2 * BM.VIEW_HALF.camp) && F.ox === BM.VIEW_HALF.camp && F.oy === BM.VIEW_HALF.camp, `the view is never less than ${(2 * BM.VIEW_HALF.camp)} × ${(2 * BM.VIEW_HALF.camp)}, the camp in its middle (the user's request 2026-10-23; ${F.W} × ${F.H}, the camp at ${F.ox}, ${F.oy})`);
+  // Building out to the margin does not widen it: a hut as far out as the margin lets it stand, the view still 150 × 150.
+  {
+    const hutB = last(c2, "gen_hut"), edgeX = BM.VIEW_HALF.camp - BM.VIEW_EDGE - BM.FOOT.gen_hut.w;
+    st2.combat = null;
+    check(BM.placeItem(st2, c2, keyOf(hutB), edgeX, 0, 0) === "", `a hut as far out as the margin allows (at ${edgeX}, 0): placed`);
+    check(!openView(st2, c2) && st2.combat.w === 2 * BM.VIEW_HALF.camp && st2.combat.h === 2 * BM.VIEW_HALF.camp, `the build map is still ${st2.combat && st2.combat.w} × ${st2.combat && st2.combat.h}`);
+    BM.unplaceItem(st2, c2, keyOf(hutB));
+  }
   st2.combat = null;
   // Set up near the map's edge (base.plan.origin, the camp's own spot): the view stops at the edge, its five cells tinted.
   c2.plan.origin = [BM.SITE_RANGE, 0];
@@ -463,6 +471,14 @@ section("A way in and out");
     for (let i = 0; i < 50; i++) why = BM.reachProblem(st, h, it, [30 + (i % 5), 30, 0], occ);
     const ms = Date.now() - tp;
     check(ms < 2000 && why === "", `50 checks in ${ms} ms`);
+    // The build map is 150 × 150 for a hub too (the user's request 2026-10-24: "the map should be 150x150 ... build out
+    // from your camp site to the 150x150 minus the 3 margin"): its yard and the wall ring round it stay inside the margin.
+    check(BM.yardHalf(h) <= BM.VIEW_ROOM && BM.gridOf(h).cap === BM.VIEW_ROOM, `the yard grows to ${2 * BM.yardHalf(h)} at most (${2 * BM.VIEW_ROOM}: the 150 × 150 less the margin and the ring's band)`);
+    check(!openView(st, h) && st.combat && st.combat.w === 2 * BM.VIEW_HALF.hub && st.combat.h === 2 * BM.VIEW_HALF.hub, `a hub's build map is ${st.combat && st.combat.w} × ${st.combat && st.combat.h}`);
+    const F = st.combat.deployPlan.fort, lay = BM.layoutOf(st, h).filter((e) => e.at), E = BM.VIEW_EDGE;
+    const out = lay.filter((e) => { const r = BM.rectOf(e.it, e.at), mx = r.x0 + F.ox, my = r.y0 + F.oy; return mx < E || my < E || mx + r.w > st.combat.w - E || my + r.h > st.combat.h - E; });
+    check(!out.length, `everything the game placed (${lay.length}, the wall ring too) stands inside the ${E}-cell margin${out.length ? `: ${out.slice(0, 3).map((e) => `${e.it.type}@${e.at}`).join(", ")}` : ""}`);
+    st.combat = null;
   }
 }
 
