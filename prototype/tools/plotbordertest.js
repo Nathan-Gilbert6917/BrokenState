@@ -69,8 +69,10 @@ console.log("\nThe season never covers a plot (builds are the top layer: the use
 const plotCells = b.cells.filter((c) => c.plot), others = b.cells.filter((c) => !c.plot);
 const clear = () => { for (const c of b.cells) { delete c.gnd; delete c.sd; } delete b.ground; delete b.snowLie; };
 clear();
+// (The yard is the tile's own grass since 2026-10-24, no dirt square: some trodden ground for the mud to lie on.)
+for (const c of b.cells.filter((c) => c.k === "open" && !c.plot && c.f === "grass").slice(0, 2000)) c.f = "dirt";
 const mud = seasonGround(st, b, h.tile);
-check(mud > 0, `spring mud lies on the yard's dirt (${mud} cells)`);
+check(mud > 0, `spring mud lies on the trodden dirt (${mud} cells)`);
 check(!plotCells.some((c) => c.gnd), "…and on none of the plots' soil");
 clear();
 b.snowLie = 0.75;
