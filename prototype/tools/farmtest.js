@@ -583,14 +583,17 @@ has(Weather.growthFactor, "growthFactor"); has(Weather.cropDamage, "cropDamage")
   st.rng = sv;
   check(whole, "finds come in whole units");
   check(Math.abs(units / N - exp) / exp < 0.05, `the trips' average matches the panel (${(units / N).toFixed(2)} rolled against ${exp.toFixed(2)} expected a day)`);
-  // Six scavengers over 60 days: real supplies, the ground picked over.
+  // Six scavengers over 60 days: real supplies, the ground picked over. No hordes meanwhile (the job's yield is the
+  // check, not the hub's defence): the break-ins at the open hub (no walls, nobody on guard) killed some of the six
+  // as the dice fell (2026-10-24, dev and the merge: three to five of them, 37-42 finds), the more since its land is the
+  // tile's own all round (the 5 × 5 clearing: the fights in the woods); 64 finds with the dead kept off, either way.
   ppl.forEach((s) => { s.role = "scavenge"; s.skills.scavenging = 0; });
   // What came in by the Scavenge job's own record (output.js; the stock itself moves with the base's other work).
   const finds0 = econStats(st).scavFinds || 0, seen = new Set();
   let brought = 0;
   setFood(h, 2000); h.stock.water = 80;
   for (let i = 0; i < 60; i++) {
-    for (let k = 0; k < 24; k++) tickHour(st);
+    for (let k = 0; k < 24; k++) { st.hordes.length = 0; tickHour(st); }
     for (const r of outputDays(h, "scavenge")) if (!seen.has(r.day) && r.day < day(st)) { seen.add(r.day); for (const [u, n] of Object.entries(r.by)) if (u !== "finds" && u !== "buildmat") brought += n; }
     st.cards.length = 0; h.stock.water = 80; setFood(h, 2000); alive(st).forEach((s) => { s.health = 100; s.mood = 60; });
   }

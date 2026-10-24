@@ -731,7 +731,8 @@ if (!QUICK) {
   // more than a quick run can play, so one world set up for it: eight good shots and ammo at the hub, a hostile
   // group you know with a second base 5-8 tiles out, and the style's conquerFrom at 0 for this run (restored after).
   // The governor still picks the target, the squad and the moment, marches and storms by itself (seed 4 took it on day
-  // 27, the storm out on day 15, 2026-10-24).
+  // 27, the storm out on day 15, 2026-10-24; on day 2 once a squad goes on after a skirmish on the way with the food
+  // for the rest of the trip, autopilot.js pickChoice "After the fight": every squad had turned home before).
   const st = world(4);
   const h = hub(st);
   const t = nearFree(st, h.tile, 5, 8);
