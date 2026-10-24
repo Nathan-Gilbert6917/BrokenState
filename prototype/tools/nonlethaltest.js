@@ -209,13 +209,16 @@ const giveTaser = (st, s, shots = 2, carts = 1) => { const it = newItem("taser")
   check(u.ko && u.down && !u.dead && u.bleed == null && u.wake - b.turn >= NL.WAKE[0] && u.wake - b.turn <= NL.WAKE[1], `knocked out, not bleeding; wakes in ${u.wake - b.turn} turns (${NL.WAKE[0]}–${NL.WAKE[1]})`);
   check(/Knocked out/.test(nlStatus(b, u)), `status "${nlStatus(b, u)}"`);
   let turns = 0;
-  while (u.ko && turns < 8 && !b.over) { for (const o of mine(b)) o.ap = 0; endPlayerTurn(st); runEnemyPhase(st); turns++; for (const e of theirs(b)) { e.x = Math.max(e.x, 10); } }
+  // They hold their fire while the turns go by (theirs at 0 actions): three guns on two would put the rest of the team
+  // down and end the fight before anyone comes to (the dice by the hub's tile), and they stay off (x ≥ 10).
+  const hold = () => { for (const e of theirs(b)) e.ap = 0; };
+  while (u.ko && turns < 8 && !b.over) { for (const o of mine(b)) o.ap = 0; endPlayerTurn(st); hold(); runEnemyPhase(st); turns++; for (const e of theirs(b)) { e.x = Math.max(e.x, 10); } }
   check(!u.ko && !u.down && u.hp >= Math.round(u.maxHp * NL.WAKE_HP) && u.ap === 1, `comes to after ${turns} turns at ${Math.round(u.hp)} hp with one action`);
   // Tied up by them: never wakes; the enemy holds the field: taken captive.
   u2.hp = 2;
   damage(b, u2, 20, g, true, { how: "melee" });
   u2.tied = true;
-  for (let i = 0; i < 5 && !b.over; i++) { for (const o of mine(b)) o.ap = 0; endPlayerTurn(st); runEnemyPhase(st); }
+  for (let i = 0; i < 5 && !b.over; i++) { for (const o of mine(b)) o.ap = 0; endPlayerTurn(st); hold(); runEnemyPhase(st); }
   check(u2.ko && u2.tied, "tied up, they do not come to");
   endBattleNow(st, "defeat");
   const s2 = survivorById(st, u2.sid);

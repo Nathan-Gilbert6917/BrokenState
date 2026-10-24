@@ -215,7 +215,7 @@ export function forceStoreAct(state, b, u, act) {
   return "";
 }
 // The locked containers of theirs a unit can force now (the store card's button).
-export const forceTargets = (b, u) => (b && b.assaultStores && b.stores && u ? b.stores.containers.filter((c) => lockedBox(c) && nearRect(c, u.x, u.y)) : []);
+export const forceTargets = (b, u) => (b && b.assaultStores && b.stores && u ? b.stores.containers.filter((c) => lockedBox(c) && nearRect(c, u.x, u.y) && (c.f || 0) === (u.f || 0)) : []); // on their floor, as forceStoreAct
 
 // ---------- the end of the fight ----------
 // Does this one of yours come home with what they carry (ground.js groundEnd's rule)?

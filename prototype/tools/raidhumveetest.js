@@ -21,6 +21,10 @@ import { atBase } from "../src/sim/world.js";
 import { launchExpedition } from "../src/sim/parties.js";
 import { createVehicle, fitMilitary, loseRaidHumvee } from "../src/sim/vehicles.js";
 import { newItem } from "../src/sim/inventory.js";
+import * as VIS from "../src/sim/visitors.js";
+import { escortEnemy } from "../src/sim/caravanraids.js";
+import { ESCORT_VEHICLES } from "../src/sim/escorts.js";
+import { endBattleNow } from "../src/sim/combat.js";
 import { createBattle, registerCombatHandler, fire, fireCab, cabTarget, hullWear, fleeToCar, ramGate, breachOk, BREACH, BREACH_THROUGH, carSteps, syncGunner, driveTo } from "../src/sim/combat.js";
 
 const SEED = Number(process.argv[2] || 7);
@@ -470,6 +474,46 @@ section("Driven off, an escort is not yours to take (result.humveeOut)");
   for (const u of b.units) if (u.side === "enemy" && !u.dead && !u.fled) u.dead = true;
   enemyTurn(st);
   check(v.gone && b.over && b.result.outcome === "victory" && b.result.humveeOut && !b.result.enemyVehicle, "it got away: won, but no vehicle left on the field");
+}
+
+section("Its engine dead, a caravan goes on without its escort vehicle (result.humveeLost, visitors.js v.vehicleLost)");
+{
+  // A merchant caravan with a Humvee in its escort, met on the road; the fight ends with your team pulling back and
+  // their Humvee stalled on the field: the caravan lives, the vehicle does not go on with it.
+  const st = createWorld({ seed: SEED + 77, factionCount: 3 });
+  const h = hub(st);
+  const tile = st.tiles.find((t) => t.terrain === "plains" && !t.loc && !st.bases.some((x) => x.tile === t.id));
+  const p = team(st, tile.id, 4);
+  const m = VIS.spawnVisitor(st, "merchants", { cargoValue: 1300, company: { guards: 6, power: 4.6, kit: "contractors", vehicles: ["hummer"] } });
+  check(!!m && m.escort.vehicle === "hummer" && !m.vehicleLost, "a caravan with a Humvee in its escort");
+  const s0 = VIS.vStrength(m), cap0 = m.capacity, power = m.escort.vehPower;
+  const b = inBrowser(() => createBattle(st, { tile: tile.id, partyId: p.id, enemy: escortEnemy(m), ambush: null, canRetreat: true, handler: "outsiderFight", context: { visitorId: m.id, partyId: p.id } }));
+  st.combat = b;
+  const v = car(b);
+  check(!!v && v.escort, "their Humvee on the map, theirs to drive");
+  v.wear = RAID_CAR.STALL_WEAR;
+  raidCarTurn(b);
+  check(v.ai === "stalled", "worn to RAID_CAR.STALL_WEAR: its engine dies");
+  endBattleNow(st, "retreat");
+  check(b.over && b.result.outcome === "retreat" && b.result.humveeLost && !b.result.humveeOut, "the result: theirs left dead on the field (humveeLost), not driven off");
+  inBrowser(() => finishCombat(st, b.setup, b.result));
+  const card = st.cards.find((c) => /^The fight with/.test(c.title));
+  check(st.visitors.includes(m) && m.vehicleLost, "the caravan lives on, its vehicle lost");
+  check(VIS.vStrength(m) === s0 - power && m.capacity === cap0 - ESCORT_VEHICLES.hummer.power * 60, `its strength without it (${Math.round(s0)} → ${Math.round(VIS.vStrength(m))}), and the load it carried for them`);
+  const next = escortEnemy(m);
+  check(!next.vehicle && !next.turret, "the next fight with them has no Humvee in it");
+  check(!!card && /Humvee is finished/.test(card.text), `the card says so (${card ? card.text.slice(0, 160) : "no card"})`);
+  // A fight they win with the Humvee only battered: it goes on with them.
+  const m2 = VIS.spawnVisitor(st, "merchants", { cargoValue: 1300, company: { guards: 6, power: 4.6, kit: "contractors", vehicles: ["hummer"] } });
+  const p2 = team(st, tile.id, 2);
+  const b2 = inBrowser(() => createBattle(st, { tile: tile.id, partyId: p2.id, enemy: escortEnemy(m2), ambush: null, canRetreat: true, handler: "outsiderFight", context: { visitorId: m2.id, partyId: p2.id } }));
+  st.combat = b2;
+  car(b2).wear = RAID_CAR.BACK_WEAR - 1;
+  endBattleNow(st, "retreat");
+  check(!b2.result.humveeLost, "battered but running: not lost");
+  inBrowser(() => finishCombat(st, b2.setup, b2.result));
+  check(st.visitors.includes(m2) && !m2.vehicleLost && VIS.vStrength(m2) > m2.size * m2.power, "it goes on with them, counted in their strength");
+  void h;
 }
 
 section("A raid's several vehicles lost at once (vehicles.js loseRaidHumvee)");

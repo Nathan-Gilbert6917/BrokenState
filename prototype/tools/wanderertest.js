@@ -3,6 +3,8 @@
 // squad), battles with neutrals and soldiers on the field and raid maps, the people you left (the daily simulation),
 // building interiors, saves, and autopilot games in both modes with the numbers met per 10 trips and raids.
 // Usage: node tools/wanderertest.js [games per mode] [days]   (default 4 games of 90 days; 0 skips the games)
+// Quick form (BS_QUICK=1, tools/runtests.js --quick): 1 game of 65 days per mode (still into the 61+ bucket the hardcore
+// factor is read on), the same checks; the road meetings against the expected on the smaller sample with a looser floor.
 import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, tickHour, day, hub, atBase } from "../src/sim/world.js";
 import { launchExpedition, partyMembers, planPath, partyTile } from "../src/sim/parties.js";
@@ -21,8 +23,9 @@ import {
 import { thirdSideHit } from "../src/sim/thirdside.js";
 import { totalRounds, giveRoundsTo } from "../src/sim/ammo.js";
 
-const GAMES = Number(process.argv[2] ?? 4);
-const DAYS = Number(process.argv[3] ?? 90);
+const QUICK = !!process.env.BS_QUICK;
+const GAMES = Number(process.argv[2] ?? (QUICK ? 1 : 4));
+const DAYS = Number(process.argv[3] ?? (QUICK ? 65 : 90));
 let passes = 0, fails = 0;
 const check = (ok, msg) => { console.log(`${ok ? "ok  " : "FAIL"} ${msg}`); if (ok) passes++; else fails++; };
 const section = (t) => console.log(`\n== ${t}`);
@@ -517,8 +520,9 @@ if (GAMES > 0) {
     console.log(`    ${agg.asked} asked to join, ${agg.joined} of them in the group at the end; ${agg.fights} fights with them`);
     check(agg.crash === 0, `${mode}: ${GAMES} games ran without a crash`);
     // The dice over the whole sample: the meetings land near what the tiles walked promised (a Poisson count of ~15-40
-    // in 4-10 games: a wide band; the meetings per tile by bucket above are too few to compare, see below).
-    check(roadMet >= agg.expect * 0.4 && roadMet <= agg.expect * 2 + 2, `${mode}: ${roadMet} met on the road against ${r2(agg.expect)} expected on the tiles walked`);
+    // in 4-10 games: a wide band; the meetings per tile by bucket above are too few to compare, see below). Quick: one
+    // game, a count of ~4-7, where 0.4 of it is a few % off by chance: the floor a quarter (1-2 on ~4-7: none met fails).
+    check(roadMet >= agg.expect * (QUICK ? 0.25 : 0.4) && roadMet <= agg.expect * 2 + 2, `${mode}: ${roadMet} met on the road against ${r2(agg.expect)} expected on the tiles walked`);
   }
   // The hardcore factor as the game applied it on the ground its teams walked: the meetings expected on the tiles rolled
   // in the first two weeks against a normal game's chance on the same tiles (about ×2.5-3), and after two months (about

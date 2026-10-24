@@ -5,6 +5,9 @@
 // it burns, and then a short long-run check: autopilot campaigns (one per style) to the end of year 6 — no victory
 // before year 10, hives and aggressive groups still in the state at the start of year 5, no NaN, no crash.
 // Usage: node tools/eratest.js [days=658] (the long-run part; 658 = the last day of year 6)
+//   BS_QUICK=1 (npm run test:quick): the same checks on less: the coalition's world played 15 days (not 30), the
+//   hives destroyed on day 5 (not 20) and the border's hive watched until it has started (not to day 90), two campaigns (cautious, aggressive) in two
+//   workers to day 61 (not three to day 658): the hives and aggressive groups are checked there, not in year 5.
 import { Worker, isMainThread, parentPort, workerData } from "node:worker_threads";
 import { fileURLToPath } from "node:url";
 import { createWorld, tickHour, day, checkGameOver } from "../src/sim/world.js";
@@ -26,7 +29,8 @@ if (!isMainThread && workerData === "eratest") {
 } else if (isMainThread) await main();
 
 async function main() {
-  const DAYS = Number(process.argv[2] || 658);
+  const QUICK = !!process.env.BS_QUICK;
+  const DAYS = Number(process.argv[2] || (QUICK ? 61 : 658));
   let pass = 0, fail = 0;
   const check = (ok, what) => { if (ok) pass++; else fail++; console.log(`  ${ok ? "ok  " : "FAIL"} ${what}`); return ok; };
   const world = (seed = 42) => { const st = createWorld({ seed, factionCount: 8 }); st.started = true; return st; };
@@ -104,7 +108,8 @@ async function main() {
     // The coalition: every group in and over half the land on day 30 is not a victory; the Accord has to run.
     const st = world(1);
     setAutopilot(st, true, "balanced"); // played: left alone, a bare-start holdout is gone by day 30 (and the game with it)
-    while (day(st) < 30) tickHour(st);
+    const CLOCK_DAY = QUICK ? 15 : 30; // quick: still year 1, half the autopilot days
+    while (day(st) < CLOCK_DAY) tickHour(st);
     setAutopilot(st, false);
     const A = ensureAlliance(st);
     for (const f of st.factions) if (f.alive) { f.known = true; f.pact = "trade"; f.goodwill = 80; if (!A.members.includes(f.id)) A.members.push(f.id); }
@@ -120,10 +125,10 @@ async function main() {
       n++;
     }
     st.hives.length = 0; st.hiveSites.length = 0; // 2026-10-13: the coalition wins only with no hive standing and no group outside
-    check(allianceVictory(st), `the coalition's conditions hold on day 30 (${n} outposts, ${(controlledLand(st).pct * 100).toFixed(0)}% land)`);
+    check(allianceVictory(st), `the coalition's conditions hold on day ${CLOCK_DAY} (${n} outposts, ${(controlledLand(st).pct * 100).toFixed(0)}% land)`);
     check(!checkGameOver(st), "but no victory: it is year 1 and the Accord has not been held");
     E.erasVictoryDaily(st, true, false); E.erasVictoryDaily(st, true, false);
-    check(st.era.accord === 0 && st.era.accordFirst != null, `the Accord's clock does not run before year ${E.ERAS.WIN_FROM_YEAR} (the land held on day 30: first held noted, 0 days counted)`);
+    check(st.era.accord === 0 && st.era.accordFirst != null, `the Accord's clock does not run before year ${E.ERAS.WIN_FROM_YEAR} (the land held on day ${CLOCK_DAY}: first held noted, 0 days counted)`);
     at(st, E.yearStartDay(E.ERAS.WIN_FROM_YEAR));
     E.erasVictoryDaily(st, true, false); E.erasVictoryDaily(st, true, false); E.erasVictoryDaily(st, false, false);
     check(st.era.accord === 0, "from then it counts a day it holds and loses two for a day it does not");
@@ -144,14 +149,15 @@ async function main() {
     // The hives: every one destroyed in year 1: new ones rise near the border, and no hive victory.
     const s2 = world(3);
     setAutopilot(s2, true, "balanced");
-    while (day(s2) < 20) tickHour(s2);
+    while (day(s2) < (QUICK ? 5 : 20)) tickHour(s2); // quick: the hives destroyed on day 5 (the border's mass comes 20–40 days later)
     for (const h of [...s2.hives]) destroyHive(s2, h, "test");
     // poured: the border's log line, seen as it is written (the log keeps 200 lines: by day 90 a busy run has scrolled it out).
     let border = null, secured = 0, poured = false;
-    while (day(s2) < 90 && !s2.gameOver) { tickHour(s2); if (s2.hour % 24 === 0 && hivesSecured(s2)) secured++; if (!border) border = s2.hiveSites.find((x) => x.border) || null; if (!poured) poured = s2.log.slice(0, 20).some((l) => /pouring over the/.test(l.text)); }
+    // Quick: stopped once the border's hive has started and the log said so.
+    while (day(s2) < 90 && !s2.gameOver && !(QUICK && border && border.started != null && poured)) { tickHour(s2); if (s2.hour % 24 === 0 && hivesSecured(s2)) secured++; if (!border) border = s2.hiveSites.find((x) => x.border) || null; if (!poured) poured = s2.log.slice(0, 20).some((l) => /pouring over the/.test(l.text)); }
     check(!!border && border.started != null, `a mass of the dead comes over the border and starts a hive (${border ? `day ${Math.floor(border.chosen / 24) + 1}` : "none"})`);
     check(!s2.victory, `no hive victory (${secured} days with no hive standing or being built, before the outbreak burned out)`);
-    check(s2.hives.length + s2.hiveSites.filter((x) => x.started != null).length >= 1 && poured, `hives in the state again on day 90 (${s2.hives.length} standing, ${s2.hiveSites.length} sites); the log says so`);
+    check(s2.hives.length + s2.hiveSites.filter((x) => x.started != null).length >= 1 && poured, `hives in the state again on day ${QUICK ? day(s2) : 90} (${s2.hives.length} standing, ${s2.hiveSites.length} sites); the log says so`);
     // After the burn-out and a season clear: the hive victory.
     const s3 = world(5);
     s3.hives.length = 0; s3.hiveSites.length = 0;
@@ -172,16 +178,23 @@ async function main() {
     check(s2.era.clear === 0, "a hive rising again (or a site starting) sets the count back to zero");
   }
 
-  console.log(`Long runs: one autopilot campaign per style to day ${DAYS} (end of year ${E.yearOfDay(DAYS)})`);
+  console.log(`Long runs: ${QUICK ? "two autopilot campaigns (cautious, aggressive)" : "one autopilot campaign per style"} to day ${DAYS} (end of year ${E.yearOfDay(DAYS)})`);
   {
-    const specs = ["cautious", "balanced", "aggressive"].map((style, i) => ({ seed: 11 + i, style, days: DAYS }));
+    const specs = ["cautious", "balanced", "aggressive"].map((style, i) => ({ seed: 11 + i, style, days: DAYS })).filter((s) => !QUICK || s.style !== "balanced"); // quick: two workers
     const results = await Promise.all(specs.map((spec) => new Promise((resolve, reject) => {
-      const w = new Worker(fileURLToPath(import.meta.url), { workerData: "eratest" });
+      // A heap cap a campaign: its live heap stays a few hundred MB, but uncapped each worker grew to 1.8 GB on the
+      // 500 × 500 base maps (5.4 GB for the three, killed by the machine's memory limit with the other tests running,
+      // 2026-10-24); capped at 1 GB the three peaked at 2.6 GB with no slower days.
+      const w = new Worker(fileURLToPath(import.meta.url), { workerData: "eratest", resourceLimits: { maxOldGenerationSizeMb: 1024 } });
       w.on("message", (r) => { w.terminate(); resolve(r); });
       w.on("error", reject);
       w.postMessage(spec);
     })));
-    const y5 = E.yearStartDay(5), win = E.yearStartDay(E.ERAS.WIN_FROM_YEAR);
+    // Quick: the campaigns end on day 61 (balancesim samples every 30 days), so the hives and the aggressive groups are
+    // looked at there (a weaker check than year 5's: the threats have not grown yet, but neither must the state have
+    // been cleared).
+    const AT = QUICK ? "day 61" : "the start of year 5";
+    const y5 = QUICK ? 61 : E.yearStartDay(5), win = E.yearStartDay(E.ERAS.WIN_FROM_YEAR);
     for (const r of results) {
       const s5 = r.samples.find((s) => s.day === y5);
       const won = r.outcome === "hives" || r.outcome === "alliance";
@@ -189,11 +202,11 @@ async function main() {
       check(!won || r.endDay >= win, `${r.style}: no victory before year ${E.ERAS.WIN_FROM_YEAR} (day ${win})`);
       // One campaign a style: a gang can be ground down days before the next one settles from beyond the border, so
       // the aggressive groups are checked over the three runs (below); the hives in every one.
-      if (s5) check(s5.hives + s5.building > 0, `${r.style}: start of year 5: ${s5.hives} hives (+${s5.building} building), ${s5.agg} aggressive groups, ${s5.hordes} hordes, ${s5.pop} people`);
-      else if (DAYS >= y5) check(r.outcome === "fell" && r.endDay < y5, `${r.style}: fell before year 5 (day ${r.endDay}), so nothing to check there`);
+      if (s5) check(s5.hives + s5.building > 0, `${r.style}: ${AT.replace(/^the /, "")}: ${s5.hives} hives (+${s5.building} building), ${s5.agg} aggressive groups, ${s5.hordes} hordes, ${s5.pop} people`);
+      else if (DAYS >= y5) check(r.outcome === "fell" && r.endDay < y5, `${r.style}: fell before ${QUICK ? "day 61" : "year 5"} (day ${r.endDay}), so nothing to check there`);
     }
     const with5 = results.map((r) => r.samples.find((s) => s.day === y5)).filter(Boolean);
-    if (with5.length) check(with5.filter((s) => s.agg > 0).length >= Math.min(2, with5.length), `aggressive groups still in the state at the start of year 5 in at least two of the three runs (${with5.map((s) => s.agg).join(", ")})`);
+    if (with5.length) check(with5.filter((s) => s.agg > 0).length >= Math.min(2, with5.length), `aggressive groups still in the state at ${AT} in at least two of the ${QUICK ? "two" : "three"} runs (${with5.map((s) => s.agg).join(", ")})`);
   }
   console.log(`\n${pass} passed, ${fail} failed (${((Date.now() - t0) / 1000).toFixed(0)} s)`);
   process.exit(fail ? 1 : 0);

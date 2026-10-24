@@ -1827,7 +1827,7 @@ function cycleUnit(b, d) {
   const ready = team.filter((u) => u.ap > 0);
   const list = ready.length ? ready : team;
   const i = list.findIndex((u) => u.id === cui.sel);
-  if (list.length) cui.sel = list[(i + (d < 0 ? list.length - 1 : 1)) % list.length].id;
+  if (list.length) cui.sel = list[(i < 0 ? (d < 0 ? list.length - 1 : 0) : i + (d < 0 ? list.length - 1 : 1)) % list.length].id;
   cui.mode = "move";
   follow(b);
 }

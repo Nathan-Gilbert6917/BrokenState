@@ -118,7 +118,11 @@ const forceShort = (st, h, short) => { const w = safetyAI.winterPlan(st, h); st.
   check(small.active, "day 50 is in the winter plan's season (mid-summer on)");
   check(small.room, `a Turtle hub of 4 (GROW.heads ${GROW.heads}), short for the winter, ${20} days of food a head: takes a newcomer`);
   check(!at(4, GROW.foodDays * 0.6).room, `the same under GROW.foodDays (${GROW.foodDays}) a head after the newcomer: no`);
-  check(!at(4, 20, { beds: 0 }).room, `the same with its ${baseBeds(at(4, 20, { beds: 0 }).h)} beds full (nothing queued): no, not on a bunkhouse it could still build`);
+  // Its beds full: as many people as the hub starts with beds (world.js HUB_LAYOUT: the Lodge's 4 and a two-person tent,
+  // the user's request 2026-10-22), still a small hub (GROW.heads) on 20 days a head, so only the beds say no.
+  const full = baseBeds(at(1, 20, { beds: 0 }).h);
+  check(full + 1 <= GROW.heads && at(full, 20, { beds: 1 }).room, `a small hub of ${full} with a bunkhouse more: takes a newcomer`);
+  check(!at(full, 20, { beds: 0 }).room, `the same with its ${baseBeds(at(full, 20, { beds: 0 }).h)} beds full (nothing queued): no, not on a bunkhouse it could still build`);
   const big = at(GROW.heads + 1, 150, { beds: 3, wells: true });
   check(!big.room, `a Turtle hub of ${GROW.heads + 1}, short for the winter from mid-summer: no newcomer (strictWinter)`);
   const spring = at(GROW.heads + 1, 150, { hour: 5 * 24, beds: 3, short: 300, wells: true });

@@ -6,17 +6,7 @@ This is a design exploration. The game is unchanged. Pick a style (or a mix) and
 - **Sample region:** every terrain type, a river with a bridge, roads, a city with suburbs, a small town, a forest edge, hills beside farmland, snow in the north-east, infection around the city, and live, reported and unknown ground around the hub (Haven). On top are sites with their plates, names and danger skulls, your hub, a team on the road and a horde of about 45.
 - **Zoom levels:** zoomed out 0.42, mid 1.0 and close 2.2 (the game's maximum zoom is 2.6). The panels are drawn at 2 device pixels per CSS pixel, which is what a 4K screen at 200% scaling looks like.
 
-![comparison](comparison-sheet.png)
-
-| Style | Zoomed out | Mid | Close |
-|---|---|---|---|
-| Today (flat colors) | `0-today-far.png` | `0-today-mid.png` | `0-today-close.png` |
-| A. Pixel ground | `A-pixel-far.png` | `A-pixel-mid.png` | `A-pixel-close.png` |
-| B. Scattered decals | `B-decals-far.png` | `B-decals-mid.png` | `B-decals-close.png` |
-| C. Painterly with edge blending | `C-painterly-far.png` | `C-painterly-mid.png` | `C-painterly-close.png` |
-| D. Tactical map | `D-tactical-far.png` | `D-tactical-mid.png` | `D-tactical-close.png` |
-
-`comparison-sheet.png` shows every style at every zoom level side by side (at half resolution).
+(Screenshots removed: the comparison sheet and the per-style shots at each zoom level are no longer in the repo. The preview page above draws every style again; a copy of the comparison sheet is in the design document, `docs/design-doc`.)
 
 When zoomed out (below 0.6), every style draws the flat colors you have today. C also keeps its wobbly coastlines and terrain edges, and D uses its muted palette and blue shorelines. Textures only appear from mid zoom inward.
 
@@ -168,9 +158,4 @@ The game now draws style B with style A's rippled water. Zoomed out the map keep
 - **One-time costs:** atlas about 6 ms in the browser; the water texture under 100 ms (cold, in Node), built once. Placing every tile of a Huge map takes about 40 ms in the browser; it is only done for tiles as they are drawn.
 - **Atlas format:** the atlas and the water texture are ImageBitmaps. Drawing sub-images of a canvas cost about 30× more per `drawImage` in Chrome.
 
-| Screenshot | What |
-|---|---|
-| `final-normal-far.png`, `final-normal-fade.png`, `final-normal-mid.png`, `final-normal-close.png` | Normal map: zoom 0.45 (flat), 0.68 (fading in), 1.0, 2.2 |
-| `final-huge-far.png`, `final-huge-mid.png`, `final-huge-close.png` | Huge map around the hub: zoom 0.4, 1.0, 2.2 |
-| `final-huge-city-mid.png`, `final-huge-city-close.png` | A Huge map's city (Dev Reveal): zoom 1.4 and 2.4, with infection and a hive's land |
-| `final-winter-city-mid.png`, `final-winter-city-close.png` | The same place in winter with snow cover: snow caps, bare broadleaf trees |
+(Screenshots removed: the shots of the built style, normal and Huge maps at each zoom and a city in winter, are no longer in the repo; copies of several are in the design document, `docs/design-doc`.)

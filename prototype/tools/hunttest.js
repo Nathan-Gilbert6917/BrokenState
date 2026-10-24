@@ -1,6 +1,8 @@
 // Hunting, snares and fishing (src/sim/hunting.js, orders.js, plans.js, crews.js, autopilot.js, ui/ui.js,
 // ui/expedition.js, ui/plan.js). Usage: node tools/hunttest.js [seed] [autopilot days] [autopilot seeds]
 // (defaults 42, 110 days, seeds 1-6).
+//   BS_QUICK=1 (npm run test:quick): the same checks on less: 60 planner trips (not 120; the haul's tolerance wider,
+//   see there) and the lean year on seed 1 alone for 35 days (4 autopilot runs, not 24).
 // - The land: game by terrain (forest > hills > farmland > suburbs > city; hive land almost nothing, a base's own
 //   tile little), by season (autumn best, snow tracks in winter), time of day.
 // - Hunters: weapons by category (rifle, bow, shotgun, pistol; melee none), ammo for firearms only, skill and the
@@ -51,8 +53,9 @@ import { planSection, planEstimate, applyPreset, PLAN_ACTIONS, PLAN_CHANGE } fro
 import { classify } from "../src/sim/diary.js";
 
 const SEED = Number(process.argv[2] || 42);
-const AP_DAYS = Number(process.argv[3] || 110);
-const AP_SEEDS = (process.argv[4] || "1-6").includes("-") ? (([a, b]) => Array.from({ length: b - a + 1 }, (_, i) => a + i))(process.argv[4] ? process.argv[4].split("-").map(Number) : [1, 6]) : process.argv[4].split(",").map(Number);
+const QUICK = !!process.env.BS_QUICK;
+const AP_DAYS = Number(process.argv[3] || (QUICK ? 35 : 110));
+const AP_SEEDS = (process.argv[4] || (QUICK ? "1" : "1-6")).includes("-") ? (([a, b]) => Array.from({ length: b - a + 1 }, (_, i) => a + i))(process.argv[4] ? process.argv[4].split("-").map(Number) : [1, 6]) : (process.argv[4] || "1").split(",").map(Number);
 let fails = 0, passed = 0;
 const check = (ok, msg) => { if (ok) passed++; else { fails++; console.log(`  FAIL: ${msg}`); } return !!ok; };
 const section = (name) => console.log(name);
@@ -900,9 +903,13 @@ section("Orders and the planner: hunting and fishing trips, the ETA and the haul
   const q = queueEstimate(state, p);
   check(q.length === 1 && q[0].hours === 24 && /Hunt 30h/.test(q[0].label) === false, "queued hunts are kept within 2–24 hours");
   check(PRESETS.hunt && PRESETS.fish && PRESETS.hunt.steps(1, { add: { hunt: 6 } })[0].hours === 6, "Hunting trip and Fishing trip presets");
-  // Whole trips from the hub, hour by hour (hordes and road conflicts off, as etatest does).
+  // Whole trips from the hub, hour by hour (hordes and road conflicts off, as etatest does). 120 of them: a trip's haul
+  // is lumpy (a deer is 30 food, about one trip in three), so 40 trips' mean was off by ±18% by luck alone and the 30%
+  // check below failed on an unlucky run of seeds (5 big kills where the hours' odds gave 15); 120 bring that to ±10%.
+  // Quick (BS_QUICK): 60 trips (still a multiple of 6: the terrains, rifle / crossbow and seasons in the same shares).
+  const TRIPS = QUICK ? 60 : 120;
   const results = [];
-  for (let i = 0; i < 40; i++) {
+  for (let i = 0; i < TRIPS; i++) {
     const st = mk(SEED + 100 + i);
     const hb = hub(st);
     const tile = st.tiles.filter((t) => (t.terrain === "forest" || t.terrain === "hills") && st.grid.distance(t.id, hb.tile) >= 2 && st.grid.distance(t.id, hb.tile) <= 4 && H.gameAbundance(st, t.id) > 0.4 && planPath(st, hb.tile, t.id, false))
@@ -961,7 +968,11 @@ section("Orders and the planner: hunting and fishing trips, the ETA and the haul
   note(`${clean.length} hunting trips no road card held up: plan estimate − actual ${off.map((x) => (x > 0 ? `+${x}` : `${x}`)).join(", ")} h (the haul is luck: a deer more or less changes the walk home)`);
   const he = mean(results.map((r) => r.haulEst)), hk = mean(results.map((r) => r.brought));
   note(`${results.length} trips: the planner expected ${r1(he)} food of game a trip, they brought ${r1(hk)} on average (a deer is luck: 0 or 30)`);
-  check(Math.abs(hk - he) <= he * 0.3, "the planner's expected haul matches what the trips bring on average");
+  // Quick: 60 trips' mean is off by about ±15% by luck alone (40 trips: ±18%, above), so within 45% there (three
+  // times that); 30% on 120. The first 36 alone brought 43% under the estimate (7.7 vs 13.4, 2026-10-24; the 111 of
+  // the full form 14% under), too near any bar a short sample can hold.
+  const HAUL_TOL = QUICK ? 0.45 : 0.3;
+  check(Math.abs(hk - he) <= he * HAUL_TOL, `the planner's expected haul matches what the trips bring on average${QUICK ? " (within 45%: the quick form's 60 trips)" : ""}`);
   check(off.length && mean(off.map(Math.abs)) <= 3, `the plan's ETA is within a few hours of the real trip on average (${r1(mean(off.map(Math.abs)))}h)`);
 }
 

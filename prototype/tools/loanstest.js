@@ -91,10 +91,13 @@ section("Asking for volunteers: by envoy, the answer on arrival");
   const q = st.parties.find((p) => p.id === loan.partyId);
   check(q && q.kind === "loan" && q.owner === f.id && M.partyPeople(f, q).length === 2 && q.rations && Object.keys(q.rations).length > 0, "their very people walk to your base: a party of the group on the map (members out with it, road rations)");
   const meds0 = h.stock.meds;
-  run(st, 24 * 10, () => loan.status === "here");
+  // The envoy walks home meanwhile and unloads what it found on the road (a prepper cache's meds): counted apart.
+  const carriedMeds = (p) => (p.supplies.meds || 0) + ((p.cargo && p.cargo.supplies && p.cargo.supplies.meds) || 0);
+  let envoyMeds = carriedMeds(r.party);
+  run(st, 24 * 10, () => { if (st.parties.includes(r.party)) envoyMeds = carriedMeds(r.party); return loan.status === "here"; });
   const ps = loaned(st, f);
   check(loan.status === "here" && ps.length === 2 && ps.every((s) => s.location.kind === "base" && s.location.baseId === h.id), `they live at ${h.name}: in the roster, at the base`);
-  check(atBase(st, h.id).filter((s) => s.loan).length === 2 && h.stock.meds === meds0 - 5, "they count at the base (beds, food, water) and the offer is paid when they come");
+  check(atBase(st, h.id).filter((s) => s.loan).length === 2 && h.stock.meds === meds0 + (st.parties.includes(r.party) ? 0 : envoyMeds) - 5, `they count at the base (beds, food, water) and the offer is paid when they come (meds ${meds0} + ${envoyMeds} the envoy brought home - 5 = ${h.stock.meds})`);
   check(f.pop === pop0 - 2 && !(f.people || []).some((s) => ps.includes(s)), "off their group's list while here (members.js)");
   check(/On loan from/.test(L.loanLine(st, ps[0])) && /days left/.test(L.loanLine(st, ps[0])), `marked: ${L.loanLine(st, ps[0])}`);
   ps[0].role = "build";

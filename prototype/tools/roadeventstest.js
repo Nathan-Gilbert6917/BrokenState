@@ -227,24 +227,31 @@ for (const id of NEW_HC_ROAD) {
   travelEventCard(b.st, b.p, "hc_broadcast", b.tile).choices[0].resolve(b.st);
   check(b.p.seen.size > before && b.st.hives.some((h) => b.p.seen.has(h.tile)), "the broadcast puts the first hive on the map");
   // In play: a hardcore team's first weeks on the road roll them.
-  const counts = {};
   const titles = new Set(["Gridlock", "An abandoned checkpoint", "The emergency broadcast", "They would not leave", "Still in uniform", "A relief drop"]);
-  const r = hcWorld(3, roadTile);
-  const ground = r.st.tiles.filter((t) => t.terrain !== "water" && !r.st.bases.some((x) => x.tile === t.id)).map((t) => t.id);
-  let all = 0;
-  for (let i = 0; i < ROLLS; i++) {
-    r.st.hour = (2 + (i % 30)) * 24 + (i % 24);
-    r.p.lastConflict = r.st.hour; r.p.eventHour = -1;
-    const card = rollTravelEvent(r.st, r.p, ground[(i * 7919) % ground.length]);
-    if (!card) continue;
-    all++;
-    if (titles.has(card.title) || / being looted$/.test(card.title)) counts[card.title] = (counts[card.title] || 0) + 1;
-    for (const m of partyMembers(r.st, r.p)) { m.health = 100; m.mood = 50; }
-  }
-  const hcN = Object.values(counts).reduce((a, x) => a + x, 0);
+  const firstMonth = (seed) => {
+    const counts = {};
+    const r = hcWorld(3, roadTile, seed);
+    const ground = r.st.tiles.filter((t) => t.terrain !== "water" && !r.st.bases.some((x) => x.tile === t.id)).map((t) => t.id);
+    let all = 0;
+    for (let i = 0; i < ROLLS; i++) {
+      r.st.hour = (2 + (i % 30)) * 24 + (i % 24);
+      r.p.lastConflict = r.st.hour; r.p.eventHour = -1;
+      const card = rollTravelEvent(r.st, r.p, ground[(i * 7919) % ground.length]);
+      if (!card) continue;
+      all++;
+      if (titles.has(card.title) || / being looted$/.test(card.title)) counts[card.title] = (counts[card.title] || 0) + 1;
+      for (const m of partyMembers(r.st, r.p)) { m.health = 100; m.mood = 50; }
+    }
+    return { counts, all, hcN: Object.values(counts).reduce((a, x) => a + x, 0) };
+  };
+  const { counts, all, hcN } = firstMonth(SEED);
   console.log(`  first month: ${hcN} of ${all} road cards are the year's own (${Object.entries(counts).map(([t, n]) => `${t} ${n}`).join(", ")})`);
   check(Object.keys(counts).length >= 5, "most of them come up in the first month");
-  check(hcN > all * 0.15 && hcN < all * 0.6, `a fair share of the road cards, not all of them (${Math.round((100 * hcN) / Math.max(1, all))}%)`);
+  // The share over three worlds (one world's ~400 cards swing it by a few points either way: seed 42's lands near 15%
+  // since the rain waves of 2026-10-23 moved the dice, its neighbours near 20%).
+  const more = [SEED + 1, SEED + 2].map(firstMonth);
+  const hcAll = hcN + more.reduce((a, m) => a + m.hcN, 0), cardsAll = all + more.reduce((a, m) => a + m.all, 0);
+  check(hcAll > cardsAll * 0.15 && hcAll < cardsAll * 0.6, `a fair share of the road cards, not all of them (${Math.round((100 * hcAll) / Math.max(1, cardsAll))}% over 3 worlds; this one ${Math.round((100 * hcN) / Math.max(1, all))}%)`);
 }
 
 // ---------------------------------------------------------------------------------------------------------

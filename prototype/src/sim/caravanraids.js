@@ -524,8 +524,10 @@ function interceptsHour(state) {
     if (state.hour - p.intercept.since > INTERCEPT.HOURS) { give(`The team gave up the chase after ${INTERCEPT.HOURS} hours.`); continue; }
     const tile = partyTile(p);
     if (near(state, tile, c.tile)) {
+      const met = state.cards.some((x) => x.partyId === p.id && (x.isCaravanMeet || (c.type === "merchants" && x.visitorId === c.ref.id)));
+      if (!met && state.cards.some((x) => x.partyId === p.id && !x.isOrders)) continue; // another card of the team's waits (the dead ahead): caught up once it is answered
       delete p.intercept;
-      if (state.cards.some((x) => x.partyId === p.id && !x.isOrders)) continue; // met already (visitors.js merchants' card)
+      if (met) continue; // met already (visitors.js merchants' card)
       for (let i = state.cards.length - 1; i >= 0; i--) if (state.cards[i].partyId === p.id && state.cards[i].isOrders) state.cards.splice(i, 1);
       p.lastConflict = state.hour;
       addCard(state, caravanCard(state, p, c, "The team has caught up with the caravan.", "player"));

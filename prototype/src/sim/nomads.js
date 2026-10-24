@@ -78,7 +78,7 @@ import { stateSizeDef } from "./worldsize.js";
 import { wanderDensity, WANDER } from "./wanderers.js";
 import { visitorsOf, leaveMap } from "./visitors.js";
 import { lootItem, itemLoad, stripAll } from "./inventory.js";
-import { groundAt, leaveSuppliesAt } from "./carry.js"; // what a band leaves where it was
+import { groundAt, groundGearOf, leaveSuppliesAt } from "./carry.js"; // what a band leaves where it was
 import { starterKit } from "./arsenal.js"; // a band's spare gun: one of its tier's kit (KIT_OF nomad0–3)
 import { season } from "./weather.js";
 import { available, tradeContext } from "./trade.js";
@@ -444,7 +444,7 @@ export function bandCare(state, b, lose) {
 export function leaveOnGround(state, tile, items, sup = null) {
   if (tile == null) return;
   const list = (items || []).filter(Boolean);
-  if (list.length) { const site = groundAt(state, tile, true); for (const it of list) site.items.push({ kind: "gear", item: it, name: it.name }); }
+  if (list.length) { const site = groundAt(state, tile, true); for (const it of list) site.items.push(groundGearOf(it)); } // with its key, qty and value (economy.js deathSitesDaily sorts by value)
   if (sup) leaveSuppliesAt(state, tile, sup);
 }
 
@@ -469,7 +469,9 @@ export function campWork(state, b) {
   if (!top) return;
   const t = state.tiles[top.tile];
   if (top.survey) {
-    const r = groupSurveyTile(state, b, t, { n: Math.max(2, Math.round(bandHands(state, b) / 2)) }); // its hands, newcomers among them
+    // Its hands, newcomers among them, over the day's working hours (06:00 on: bandDay runs at midnight, and the default
+    // window, the 8 hours before now, would be the evening and the dark), as a hardcore band's survey (hardcore-groups.js).
+    const r = groupSurveyTile(state, b, t, { n: Math.max(2, Math.round(bandHands(state, b) / 2)), start: state.hour - 24 + 6 });
     S.surveys++; S.found += r.found.length;
     b.act = `camped near ${tileLabel(state, b.camp ?? b.tile)}, surveying ${g.distance(top.tile, b.tile) ? tileLabel(state, top.tile) : "the ground round the camp"}`;
     return;
@@ -754,7 +756,7 @@ export function meetCard(state, b, p) {
 const fightAi = (st, odds) => { const need = { cautious: 0.8, balanced: 0.65, aggressive: 0.5 }[style(st)] ?? 0.65; return odds >= need ? 80 + odds * 10 : odds * 40; };
 const ok = (st, b, p) => st.parties.includes(p) && nomadsOf(st).includes(b);
 const planText = (plan) => Object.entries(plan).filter(([, q]) => q > 0).map(([k, q]) => `${q} ${keyWord(k)}`).join(", ");
-const carriedValue = (p) => SUPPLY_KEYS.reduce((a, k) => a + carried(p, k) * supValue(k), 0);
+const carriedValue = (p) => SUPPLY_KEYS.reduce((a, k) => a + (k === "ammo" ? Math.max(0, p.supplies.ammo || 0) + Math.max(0, (p.cargo && p.cargo.supplies.ammo) || 0) : carried(p, k)) * supValue(k), 0); // "ammo": only the abstract rounds (carried(p, "ammo") is every calibre, each already counted by its own key)
 
 // Looters who meet a team they can take: pay, talk, fight or run.
 function stopCard(state, b, p) {

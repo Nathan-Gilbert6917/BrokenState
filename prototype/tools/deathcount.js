@@ -1,4 +1,4 @@
-// Counting your people's deaths in the long-run tools (campaign50.js, wintest.js): one death per survivor, classified
+// Counting your people's deaths in the long-run tools (campaign50.js, wincensus.js): one death per survivor, classified
 // by the line world.js killSurvivor writes ("<name> died <cause>.").
 // Counting every "death" log line with " died " in it counted some deaths twice: someone with the worm logs a second
 // death line when they get up again (worm.js riseAtBase "… died with the worm in them at <base> and got up again",

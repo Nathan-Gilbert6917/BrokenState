@@ -1,5 +1,8 @@
 // Saving and loading (src/sim/save.js, src/ui/saves.js, src/ui/settings.js).
 // Usage: node tools/savetest.js [days] [seeds...]     (default 120 days, seeds 42 7 1234)
+// Quick form (BS_QUICK=1, npm run test:quick): 30 days on seed 42 (saved on day 15), the Small and Huge worlds saved
+// on day 5 and played to 8, the awkward saves played on 4-8 days instead of 6-20, the size measured on day 40 instead
+// of 365; the same checks.
 // - For each seed: the Balanced autopilot plays [days]; at half time the world is saved (through a JSON string) and
 //   loaded again after another world has run in the same process (module state left behind, as in dettest); the
 //   original and the loaded world both play to [days] and must end identical: the dettest digest (tools/digest.js)
@@ -41,8 +44,12 @@ import { digest } from "./digest.js";
 
 const child = process.argv[2] === "--continue"; // child mode: load the handed-over save, play on, print the digest hash
 const args = child ? [] : process.argv.slice(2);
-const days = Number(args[0] || 120);
-const seeds = args.length > 1 ? args.slice(1).map(Number) : [42, 7, 1234];
+const QUICK = !!process.env.BS_QUICK;
+const days = Number(args[0] || (QUICK ? 30 : 120));
+const seeds = args.length > 1 ? args.slice(1).map(Number) : QUICK ? [42] : [42, 7, 1234];
+const SIZE_DAY = QUICK ? 40 : 365; // the day the save's size is measured (a smaller save in quick: the same limit, a looser check)
+const SIZES_AT = QUICK ? [5, 8] : [20, 30]; // the Small and Huge worlds: saved on the first day, played to the second
+const MORE = QUICK ? { plan: 4, prisoners: 8, hunt: 4, repairs: 4 } : { plan: 10, prisoners: 20, hunt: 10, repairs: 6 }; // days played on after the awkward saves
 const half = Math.floor(days / 2);
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
@@ -145,11 +152,11 @@ for (const size of ["small", "huge"]) {
   const st = createWorld({ seed: 31, factionCount: 6, size });
   st.started = true;
   setAutopilot(st, true, "balanced");
-  playTo(st, 20);
+  playTo(st, SIZES_AT[0]);
   while (st.cards.length && !st.gameOver) tickHour(st);
   const save = serializeState(st);
   check(save.meta.world === size, `${size}: the save list says ${save.meta.world}`);
-  const B = branch(`${size} world (${st.grid.width}×${st.grid.height})`, st, (w) => playTo(w, 30));
+  const B = branch(`${size} world (${st.grid.width}×${st.grid.height})`, st, (w) => playTo(w, SIZES_AT[1]));
   check(B.worldSize === size && B.grid.width === st.grid.width && B.grid.height === st.grid.height && B.tiles.length === st.tiles.length &&
     B.knowledge.length === B.tiles.length, `${size}: loaded as ${B.worldSize} ${B.grid.width}×${B.grid.height}`);
 }
@@ -201,7 +208,7 @@ console.log("Saved at awkward moments");
   const p = res.party;
   for (let i = 0; i < 30 && (st.cards.length || p.phase === "waiting" || p.idx < 2); i++) tickHour(st);
   check(st.parties.includes(p) && p.plan && p.orders && !saveBlocker(st), `the team is under way on its plan (${p.phase}, ${p.orders.length} orders left${st.cards.length ? ", a card is open" : ""})`);
-  const B = branch("mid-plan (a team on a scavenge plan), 10 more days", st, (w) => playTo(w, day(w) + 10));
+  const B = branch(`mid-plan (a team on a scavenge plan), ${MORE.plan} more days`, st, (w) => playTo(w, day(w) + MORE.plan));
   check(!!B.parties.find((q) => q.id === p.id) === !!st.parties.find((q) => q.id === p.id), "the team is in the same state in both");
 }
 {
@@ -217,7 +224,7 @@ console.log("Saved at awkward moments");
   setFood(h, Math.max(food(h), 200));
   check(prisonersAt(st, h.id).length === 2, `two prisoners in ${h.name}'s cells`);
   tickHour(st);
-  branch("with prisoners, 20 more days", st, (w) => playTo(w, day(w) + 20), (w) => JSON.stringify((w.prisoners || []).map((x) => [x.name, x.at, Math.round(x.opinion * 1000)])));
+  branch(`with prisoners, ${MORE.prisoners} more days`, st, (w) => playTo(w, day(w) + MORE.prisoners), (w) => JSON.stringify((w.prisoners || []).map((x) => [x.name, x.at, Math.round(x.opinion * 1000)])));
 }
 {
   // A hunting cabin with a hunting mix part way through its hours (hunting.js: base.huntMix, the hour carried to the
@@ -234,7 +241,7 @@ console.log("Saved at awkward moments");
   tickHour(st);
   for (let i = 0; i < 48; i++) { tickHour(st); while (st.cards.length) { const c = st.cards.shift(); (c.choices.find((x) => !x.uiAction && !(typeof x.disabled === "function" ? x.disabled(st) : x.disabled)) || c.choices[0]).resolve(st); } }
   check(JSON.stringify(h.huntMix) === JSON.stringify({ traps: 30, bows: 50, guns: 20 }) && !saveBlocker(st), `the hub hunts by its mix (${JSON.stringify(h.huntMix)}, carried ${JSON.stringify(h.huntCarry || {})}, yesterday ${JSON.stringify(h.huntLast && h.huntLast.hrs)})`);
-  const B = branch("a hunting mix and arrows, 10 more days", st, (w) => { for (let i = 0; i < 240; i++) { tickHour(w); while (w.cards.length) { const c = w.cards.shift(); (c.choices.find((x) => !x.uiAction && !(typeof x.disabled === "function" ? x.disabled(w) : x.disabled)) || c.choices[0]).resolve(w); } } },
+  const B = branch(`a hunting mix and arrows, ${MORE.hunt} more days`, st, (w) => { for (let i = 0; i < 24 * MORE.hunt; i++) { tickHour(w); while (w.cards.length) { const c = w.cards.shift(); (c.choices.find((x) => !x.uiAction && !(typeof x.disabled === "function" ? x.disabled(w) : x.disabled)) || c.choices[0]).resolve(w); } } },
     (w) => JSON.stringify([hub(w).huntMix, hub(w).huntCarry, hub(w).huntLast, hub(w).stock.arrows]));
   check(JSON.stringify(hub(B).huntMix) === JSON.stringify({ traps: 30, bows: 50, guns: 20 }), "the hunting mix is kept through a save and load");
 }
@@ -252,7 +259,7 @@ console.log("Saved at awkward moments");
   check(sig(loadFromString(saveToString(st))) === sig(st), "the damage (wear, broken flags, the raid report) is the same after loading");
   startAllRepairs(st, h);
   check((h.repairs || []).length >= 1, `repairs started (${(h.repairs || []).length})`);
-  branch("raid damage with repairs under way, 6 more days", st, (w) => playTo(w, day(w) + 6), sig);
+  branch(`raid damage with repairs under way, ${MORE.repairs} more days`, st, (w) => playTo(w, day(w) + MORE.repairs), sig);
 }
 {
   // An open card: refused with a reason; answered, it saves.
@@ -331,6 +338,9 @@ console.log("Saved at awkward moments");
     const h = hub(st);
     const hive = st.hives[0];
     const crew = atBase(st, h.id).slice(0, 4);
+    // The rounds the team takes: on day 2 the hub holds 15 (.308) of its own, so asking 40 was refused ("Not enough
+    // ammo at the hub") and the block crashed on the missing party.
+    h.stock.ammo = (h.stock.ammo || 0) + 40;
     const res = launchExpedition(st, { memberIds: crew.map((s) => s.id), dest: h.tile === hive.tile ? hive.tile : st.grid.neighbors(h.tile)[0], mission: "move", stance: "normal", supplies: { food: 6, water: 6, ammo: 40, meds: 2 } });
     const p = res.party;
     p.path = [hive.tile]; p.idx = 0; p.dest = hive.tile; p.phase = "engaged";
@@ -344,10 +354,10 @@ console.log("Saved at awkward moments");
 }
 
 // ---------- 3. size at day 365 ----------
-console.log("Size at day 365");
+console.log(`Size at day ${SIZE_DAY}`);
 {
   const seed = seeds[seeds.length - 1];
-  const st = world(seed, 365);
+  const st = world(seed, SIZE_DAY);
   const t1 = performance.now();
   const save = serializeState(st, { dropCards: true });
   const t2 = performance.now();
@@ -363,7 +373,7 @@ console.log("Size at day 365");
   const parts = Object.entries(save.state).map(([k, v]) => [k, JSON.stringify(v ?? null).length]).sort((a, b) => b[1] - a[1]).slice(0, 6);
   console.log(`  seed ${seed}, day ${day(st)}${st.gameOver ? " (game over)" : ""}: JSON ${kb(json.length)} (largest: ${parts.map(([k, n]) => `${k} ${kb(n)}`).join(", ")}); gzip ${kb(gz.length)}; stored ${stored.length} characters = ${kb(stored.length * 2)} of browser storage (UTF-16)`);
   console.log(`  times: serialize ${(t2 - t1).toFixed(0)} ms, JSON ${(t3 - t2).toFixed(0)} ms, compress ${(t4 - t3).toFixed(0)} ms, unpack + load ${(t5 - t4).toFixed(0)} ms`);
-  check(stored.length * 2 < 1.5 * 1024 * 1024, `a year's save fits browser storage several times over (${kb(stored.length * 2)} of the usual 5 MB)`);
+  check(stored.length * 2 < 1.5 * 1024 * 1024, `a ${SIZE_DAY === 365 ? "year's" : `${SIZE_DAY}-day`} save fits browser storage several times over (${kb(stored.length * 2)} of the usual 5 MB)`);
 }
 
 // ---------- 4. storage ----------

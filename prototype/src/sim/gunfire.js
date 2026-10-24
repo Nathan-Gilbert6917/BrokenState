@@ -30,6 +30,7 @@ import { battleDice } from "./armour.js";
 import { hash01 } from "./skills.js";
 import { COND_SOURCES, kitSource } from "./itemcond.js";
 import { WEAPONS, CELL, magIn, magCap, loadMag, reload, reloadRefusal, say, isRanged, canSeeAt, unitAt, sightRange } from "./combat.js";
+import { isStacked } from "./mags.js"; // call-time only (the import cycle through combat.js)
 
 export const FIRE_MODES = {
   single: { name: "Single", aim: 0, recoil: 0, rounds: 1 },
@@ -242,7 +243,7 @@ export function unjam(b, u) {
 export function jamReload(b, u) {
   if (!u.jam || u.jam.kind !== "double") return false;
   const keep = magIn(u);
-  const phys = (u.side === "player" || !!u.who) && Array.isArray(u.stack); // physical rounds (mags.js): the magazine comes out with what is in it; reloadPlan lets a swap through on a double feed
+  const phys = isStacked(u); // physical rounds (mags.js, the same test as reloadRefusal's): the magazine comes out with what is in it; reloadPlan lets a swap through on a double feed. Otherwise (a person whose gun in hand has no magazines tracked) the counter is emptied, or a full one would refuse the reload
   if (!phys) loadMag(u, 0);
   if (reloadRefusal(b, u)) { if (!phys) loadMag(u, keep); return false; }
   u.jam = null;

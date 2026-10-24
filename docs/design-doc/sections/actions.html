@@ -503,7 +503,8 @@
     <thead><tr><th>Tool</th><th>What it measures</th></tr></thead>
     <tbody>
       <tr><td>balancesim.js</td><td>Up to 100 autopilot campaigns (seeds × styles) to 730 days on worker threads: outcomes, deaths by cause, pressure per 30 days, cards a day, overlap of crises, hives, raids, stocks. Findings in <code>review/balance-census.md</code>.</td></tr>
-      <tr><td>wintest.js</td><td>How long campaigns end (hive victory, coalition victory, fallen, still going), with timelines; <code>--force</code> rigged scenarios for each ending; <code>--tune</code> tries balance numbers.</td></tr>
+      <tr><td>wincensus.js</td><td>How long campaigns end (hive victory, coalition victory, fallen, still going), with timelines; <code>--force</code> rigged scenarios for each ending; <code>--tune</code> tries balance numbers. A census, not a test.</td></tr>
+      <tr><td>wintest.js</td><td>The short test (about 2–3 minutes): the five rigged endings checked (state, victory reason, log line, timelapse caption, end screen), and a small census of natural play for crashes, NaN and valid endings.</td></tr>
       <tr><td>raidcensus.js</td><td>Human raids: launched, warned, the autopilot's answers, outcomes, costs, damage; outsiders; rescue raids; who stays hostile.</td></tr>
       <tr><td>hordecensus.js</td><td>Hive and horde pacing: hordes bought, attacks on bases per 30 days, horde size against hold limits, build-site timings.</td></tr>
       <tr><td>pacing.js</td><td>Card pacing and decision quality (see above). Findings in <code>review/pacing.md</code>.</td></tr>

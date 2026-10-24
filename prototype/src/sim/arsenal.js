@@ -83,7 +83,7 @@ import { wornOut } from "./repair.js"; // past mending
 import { groupStockKey } from "./trade.js";
 import { spendSelfAid } from "./medics.js"; // a person's used tourniquets, as yours
 import { cfgOf } from "./worldcfg.js"; // the run's dials: AI groups' starting gear
-import { groundAt } from "./carry.js"; // a raid's ladders and ram left where it ended
+import { groundAt, groundGearOf } from "./carry.js"; // a raid's ladders and ram left where it ended
 
 export const ARSENAL = {
   SPARE: 0.15, // spare weapons a head at the start
@@ -877,7 +877,7 @@ export function siegeGearHome(state, p, tile = null) {
     if (hands >= need) { hands -= need; continue; }
     removeFromArsenal(f, it, "left");
     if (base) base.armory.push(it);
-    else if (tile != null) groundAt(state, tile, true).items.push({ kind: "gear", item: it, name: it.name });
+    else if (tile != null) groundAt(state, tile, true).items.push(groundGearOf(it)); // with its key, qty and value, as every ground item has (economy.js deathSitesDaily sorts by value)
   }
 }
 // Safety net, daily (arsenalDaily): a piece marked out with a raid that is no more (a party dropped by other code) is
@@ -1117,7 +1117,7 @@ function groupBuysGun(state, f, A, salt, dd) {
   if (sortedKit(A).W.filter((it) => usesRounds(it.key)).length >= f.pop * B.guns) return;
   const sellers = [
     ...(state.factions || []).filter((g) => g !== f && g.alive && !g.outsider && !warBetween(state, f, g) && relation(state, f, g) > B.rel),
-    ...(state.visitors || []).filter((v) => v && v.alive !== false && v.type === "traders"),
+    ...(state.visitors || []).filter((v) => v && v.alive !== false && v.kind === "merchants"), // passing merchants (every visitor is priced as type "traders", raider bands too: visitors.js makeVisitor)
   ];
   const offers = [];
   for (const g of sellers) for (const it of g.wares || []) if (it && GEAR[it.key] && usesRounds(it.key) && GEAR[it.key].slot === "weapon") offers.push({ g, it, price: (GEAR[it.key].value || 0) * B.markup * (it.quality ?? 1) });

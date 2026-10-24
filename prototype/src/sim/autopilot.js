@@ -55,7 +55,7 @@ import { radioDeals, pendingDeal, dealCaravanForm, matchGear, goodsWeight, cance
 import { autoVisitorTrade } from "./visitors.js";
 import { radioTradeIfShort, hasNetwork, canListen, radioScan, dealQuote, radioDeal, refusal, inCoverage, canRadioGroup, relayReach, RELAY_RANGE, GROUP_REACH, tradeBase, hubSpare, radioSpeech } from "./radio.js";
 import { attitude, baseDefense, strength, isAggressiveType, raidStakes } from "./factions.js";
-import { holdCheck, defenceWishes, hordeThreat, DECOY_FUEL, towerHordes } from "./defences.js";
+import { holdCheck, defenceWishes, hordeThreat, DECOY_FUEL, towerHordes, manned } from "./defences.js";
 import { autoFillTunnels } from "./tunnels.js"; // the dead's tunnels under the walls: Fill tunnel queued first
 import { defaultRolePlan, plansOf } from "./defenceplan.js"; // the governor's defence plan (governorPlans, stewardSafety)
 import { siteBonus, waterOutlook, foodOutlook, waterCapacity, waterProduction, waterNeed, summerWater, waterRunningShort, supplyLine, WATER, fetchWaterWhy, fetchWaterDay } from "./economy.js";
@@ -151,6 +151,7 @@ import { carriedRec } from "./ammo.js"; // the loose rounds people carry
 import { sumRecs } from "./rounds.js"; // a team's rounds: its bags and what its people carry
 import { siteThreat } from "./siteclear.js"; // the dead at a camp's spot (outpostSite)
 import { tileScouted } from "./campscout.js"; // a camp's tile scouted first when time allows (2026-10-23)
+import { packFood, packWater } from "./eating.js"; // the packs everyone carries (carriedDays)
 
 // Play styles. range = max tiles from the hub for a trip, maxHoursOut = longest way out, cooldown = days between
 // launches, homeFrac = share of the hub that stays home, risk = lowest success chance worth a gamble,
@@ -953,7 +954,12 @@ function pickChoice(state, card, opts, p) {
   if (card.radioFrom != null) { const yes = find(/^Agree/); return yes && yes.affordable && yes.affordable(state) ? yes : find(/^No, thank/); }
   if (card.isCaravan) return find(/^Complete the radio deal/) || find(/^Go on to/) || find(/^Return home/);
   if (/^After the fight/.test(t)) {
-    const fit = p && partyMembers(state, p).every((s) => s.health >= 55) && carriedDays(state, p) >= 2;
+    // An assault squad (conquestCandidate) is packed for its round trip, the crew's own packs counted (planTrip; parties.js
+    // launchExpedition packs that much less): it goes on with food and water for the rest of the trip (two days at
+    // most). Two days of the shared supplies alone turned every squad home after a skirmish on the way (conquertest's
+    // quick world, seed 4: three squads out, none at the walls in 40 days).
+    const storm = !!p && p.mission === "assault";
+    const fit = p && partyMembers(state, p).every((s) => s.health >= 55) && carriedDays(state, p, 0, storm) >= (storm ? Math.min(2, tripHoursLeft(state, p) / 24 + 0.5) : 2);
     return (fit ? find(/^Continue/) : null) || find(/^Return home/) || find(/^Continue/);
   }
   if (/^Raiders heading for /.test(t)) return raidWarningChoice(state, card, opts, P);
@@ -1446,11 +1452,13 @@ const partyFuelOf = (state, p) => partyFuel(state, p); // every car's tank and t
 // Rough hours until a team is home: the way left, plus (going out) the job and the same way back.
 const tripHoursLeft = (state, p) => (p.phase === "back" ? hoursLeft(state, p) : 2 * hoursLeft(state, p) + 10);
 // Days of food and water a team carries on the move (extra = more mouths; a loaded team eats more, load.js; food at
-// today's cold, no camp fire on the move: weather.js foodNeedFactor).
-function carriedDays(state, p, extra = 0) {
-  const n = partyMembers(state, p).length;
+// today's cold, no camp fire on the move: weather.js foodNeedFactor). packs: the crew's own packs too (eating.js: about
+// a day and a half each, eaten after the shared supplies).
+function carriedDays(state, p, extra = 0, packs = false) {
+  const crew = partyMembers(state, p), n = crew.length;
   const perDay = (n ? partyPace(state, p).eatMove : 0) + extra;
-  const have = (k) => (k === "water" ? teamWaterIn(p) : k === "food" ? foodIn(p.supplies || {}) + foodIn((p.cargo && p.cargo.supplies) || {}) : (p.supplies[k] || 0) + ((p.cargo && p.cargo.supplies[k]) || 0)); // water: both kinds; food: days of it (foods.js)
+  const own = (k) => (packs ? crew.reduce((a, s) => a + (k === "water" ? packWater(s) : packFood(s)), 0) : 0);
+  const have = (k) => (k === "water" ? teamWaterIn(p) + own(k) : k === "food" ? foodIn(p.supplies || {}) + foodIn((p.cargo && p.cargo.supplies) || {}) + own(k) : (p.supplies[k] || 0) + ((p.cargo && p.cargo.supplies[k]) || 0)); // water: both kinds; food: days of it (foods.js)
   return Math.min(have("food") / foodNeedFactor(state), have("water") / thirstAt(state)) / Math.max(1, perDay); // water: at today's thirst, food at today's cold (weather.js)
 }
 
@@ -2407,6 +2415,21 @@ function planRoles(state, base, areas = ALL_AREAS) {
   if (threat.urgent) {
     for (const s of sick) free.add(s); // the ill go to the walls too, as on priorities (sickrest.js): the best fighters first
     addGuards(threat.urgent * P.guardMargin, Math.ceil(people.length * 0.7));
+    // A horde at the door: the walls hold by the guards on them (defences.js guardHold; the rest count only while the
+    // defences are manned, the warning card's two days), not by everyone as against raiders (defense above). Guards
+    // until the hold check holds, as many as for a raid at most (seed 42: the manning ran out the hour before a horde
+    // of 69 came in on the governor's one guard, three break-ins in a week and nobody left by day 18).
+    const hz = areas.defence && !manned(state, base) ? state.hordes.filter((x) => state.live.has(x.tile) && state.grid.distance(x.tile, base.tile) <= 2).sort((a, b) => b.size - a.size)[0] : null;
+    const holds = () => { // the hold check with the guards picked so far on the walls (and nobody else)
+      const was = people.map((s) => s.role);
+      for (const s of people) s.role = guards.has(s.id) ? "guard" : s.role === "guard" ? "rest" : s.role;
+      try { return holdCheck(state, base, hz.size, hz.bosses || 0, hz.mix || null).holds; } finally { people.forEach((s, i) => { s.role = was[i]; }); }
+    };
+    if (hz) for (const s of ranked("guard", (x) => combatPower(x) * 2, (x) => !x.inBed)) {
+      if (guards.size >= Math.ceil(people.length * 0.7) || holds()) break;
+      guards.add(s.id);
+      give(s, "guard");
+    }
   }
   // 3a. The watchtower's alarm (defences.js towerWatch: a horde near, or coming, seen from the tower): guards go on the
   // walls now, ahead of the medics, the farm and the stations, as many as a horde at the door would want (people on
@@ -3512,8 +3535,9 @@ export function planCrafts(state, base) {
   // The basic tools (toolreqs.js BASIC_KINDS: a hammer, a saw, a shovel, an axe): one nothing here covers is made from
   // scrap (a makeshift one) before the rest, or the builds and recipes that need it never go up. Not at a camp: its
   // essentials need none, and its scrap is for the step up into a shelter.
+  // The scrap held for a broken well or pump (waterPlan hold) is left alone, as the filters leave it.
   const tw = isCamp(base) ? null : basicToolWanted(state, base);
-  if (tw && canCraft(state, base, tw.recipe).ok) {
+  if (tw && canCraft(state, base, tw.recipe).ok && (st.scrap || 0) - (CRAFTS[tw.recipe].in.scrap || 0) >= waterPlan(state, base).hold.scrap) {
     queueCraft(state, base, tw.recipe);
     q.unshift(q.pop()); // first in the queue: the crafters work the first job they can (crafting.js craftingHour)
     gov(state).stats.crafts++;

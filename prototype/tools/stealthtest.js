@@ -5,6 +5,9 @@
 // raising the alarm and dragging them away, the deploy step (valid default posts, placing, the gate, floodlights,
 // the attack side and the turned map), the autopilot's rules, determinism, and a 120-day soak without NaN.
 // Usage: node tools/stealthtest.js [seed]
+//   BS_QUICK=1 (npm run test:quick): the same checks with the soak cut to 20 days a style (and the two-run note to
+//   15 days): 90 autopilot days, not 440; the escape rates on 160 prisoners a setup (not 400) and the rescue raids
+//   over 150 days (not 300), their bands a little wider (see there).
 import { darkSight } from "../src/sim/vision.js"; // night sight by the hour (2026-10-12)
 import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { foodIn } from "../src/sim/foods.js";
@@ -35,6 +38,8 @@ import { CRAFTS } from "../src/sim/crafting.js";
 import { LIGHTS } from "../src/sim/lights.js";
 
 const seed = Number(process.argv[2] || 42);
+const QUICK = !!process.env.BS_QUICK;
+const SIG_DAYS = QUICK ? 15 : 40, SOAK_DAYS = QUICK ? 20 : 120, ESC_RUNS = QUICK ? 160 : 400;
 let pass = 0, fail = 0;
 const check = (ok, what) => { if (ok) pass++; else fail++; console.log(`  ${ok ? "ok  " : "FAIL"} ${what}`); return ok; };
 const t0 = Date.now();
@@ -209,7 +214,7 @@ function prisonWorld(s, n = 2, cells = 1) {
   // Escape rates (Monte Carlo): guarded, unguarded, shed.
   const rate = (setup) => {
     let esc = 0, days = 0;
-    for (let i = 0; i < 400; i++) {
+    for (let i = 0; i < ESC_RUNS; i++) {
       const w = prisonWorld(seed + 100 + i, 1, setup.cells);
       for (const s of atBase(w.st, w.h.id)) s.role = "farm";
       if (setup.guard) { const gd = atBase(w.st, w.h.id)[0]; gd.role = "guard"; w.h.jailGuards = [gd.id]; } // named on the jail (prisoners.js jailGuards: a guard on the walls no longer watches the cells)
@@ -219,7 +224,10 @@ function prisonWorld(s, n = 2, cells = 1) {
     return esc / days;
   };
   const g = rate({ cells: 1, guard: true }), u = rate({ cells: 1, guard: false }), shed = rate({ cells: 0, guard: true });
-  check(g < 0.012 && u > 0.015 && u < 0.05 && shed > 0.05 && shed < 0.12, `escapes a day: guarded cell ${pct(g)}, unguarded ${pct(u)}, shed ${pct(shed)} (rules ${pct(PRISON.ESCAPE.guarded)} / ${pct(PRISON.ESCAPE.unguarded)} / ${pct(PRISON.ESCAPE.shed)})`);
+  // Quick: 160 prisoners a setup (about 800 prisoner-days, ±0.6 points on the unguarded 3%, ±1 on the shed's 8%), so
+  // the bands are a point wider; the guarded cell still well under the unguarded, the shed over both.
+  const [gHi, uLo, uHi, sLo, sHi] = QUICK ? [0.02, 0.01, 0.06, 0.04, 0.14] : [0.012, 0.015, 0.05, 0.05, 0.12];
+  check(g < gHi && u > uLo && u < uHi && shed > sLo && shed < sHi && (!QUICK || (g < u && u < shed)), `escapes a day: guarded cell ${pct(g)}, unguarded ${pct(u)}, shed ${pct(shed)} (rules ${pct(PRISON.ESCAPE.guarded)} / ${pct(PRISON.ESCAPE.unguarded)} / ${pct(PRISON.ESCAPE.shed)})`);
   // Starving.
   const w = prisonWorld(seed + 7, 1);
   setFood(w.h, 0); setJarred(w.h, 0); w.h.stock.water = 0;
@@ -327,9 +335,11 @@ function prisonWorld(s, n = 2, cells = 1) {
   check(rescueChance(st, f, h) < c, `less from a friendly group (${pct(rescueChance(st, f, h))})`);
   f.goodwill = -50;
   let started = 0;
-  for (let i = 0; i < 300; i++) { const w = prisonWorld(seed + 400 + i, 2); w.f.bases = [w.st.grid.within(w.h.tile, 10).find((t) => w.st.grid.distance(t, w.h.tile) >= 6)]; w.f.pop = 20; w.st.hour = 24; prisonersDaily(w.st); if ((w.st.rescues || []).length) started++; }
-  const expect = 300 * rescueChance(st, f, h);
-  check(Math.abs(started - expect) <= Math.max(6, expect * 0.6), `over 300 days with 2 prisoners: ${started} rescue raids (about ${expect.toFixed(1)} expected)`);
+  // Quick: 150 days, and the slack 4 raids (not 6): with about 5 expected, 6 either way would let none at all pass.
+  const RESCUE_DAYS = QUICK ? 150 : 300;
+  for (let i = 0; i < RESCUE_DAYS; i++) { const w = prisonWorld(seed + 400 + i, 2); w.f.bases = [w.st.grid.within(w.h.tile, 10).find((t) => w.st.grid.distance(t, w.h.tile) >= 6)]; w.f.pop = 20; w.st.hour = 24; prisonersDaily(w.st); if ((w.st.rescues || []).length) started++; }
+  const expect = RESCUE_DAYS * rescueChance(st, f, h);
+  check(Math.abs(started - expect) <= Math.max(QUICK ? 4 : 6, expect * 0.6), `over ${RESCUE_DAYS} days with 2 prisoners: ${started} rescue raids (about ${expect.toFixed(1)} expected)`);
   // Man the walls against a weak rescue: beaten off; against a strong one: they free their people.
   const r = startRescue(st, f, h);
   const card = st.cards[st.cards.length - 1];
@@ -592,7 +602,7 @@ function prisonWorld(s, n = 2, cells = 1) {
   const sig = (s) => {
     const { st, h } = prisonWorld(s, 3);
     setAutopilot(st, true, "balanced");
-    for (let i = 0; i < 24 * 40; i++) tickHour(st);
+    for (let i = 0; i < 24 * SIG_DAYS; i++) tickHour(st);
     return JSON.stringify([st.prisoners.map((p) => [p.name, Math.round(p.opinion), p.at.kind]), Math.round(food(h)), st.log.length]);
   };
   // The tactical side: a raid with the whole kit, and a deployed break-in, played twice from the same seed.
@@ -616,17 +626,17 @@ function prisonWorld(s, n = 2, cells = 1) {
   const s1 = tactical(seed), s2 = tactical(seed);
   check(s1 === s2 && s1.length > 200, `the same seed plays out the same: a night raid with the kit and a deployed break-in (${s1.length} characters of log)`);
   const d1 = sig(seed), d2 = sig(seed);
-  if (d1 !== d2) console.log(`    note: 40 days with prisoners and the autopilot differ between two runs (${d1} / ${d2}); the first difference in the log is outside the prisoner code (see the final report)`);
+  if (d1 !== d2) console.log(`    note: ${SIG_DAYS} days with prisoners and the autopilot differ between two runs (${d1} / ${d2}); the first difference in the log is outside the prisoner code (see the final report)`);
   let bad = 0;
   for (const style of ["cautious", "balanced", "aggressive"]) {
     const { st } = prisonWorld(seed + 50, 3);
     setAutopilot(st, true, style);
-    for (let i = 0; i < 24 * 120 && !st.gameOver; i++) tickHour(st);
+    for (let i = 0; i < 24 * SOAK_DAYS && !st.gameOver; i++) tickHour(st);
     for (const b of st.bases) for (const [k, v] of Object.entries(b.stock)) if (!Number.isFinite(v) || v < 0) { bad++; console.log(`    ${style}: ${b.name} ${k} = ${v}`); }
     for (const p of st.prisoners || []) if (!Number.isFinite(p.opinion)) bad++;
     console.log(`    ${style}: day ${day(st)}, ${(st.prisoners || []).length} prisoners left, taken ${st.stats.prisonersTaken || 0}, recruited ${st.stats.prisonersRecruited || 0}`);
   }
-  check(!bad, "120 days with prisoners on each autopilot style: no NaN or negative stock");
+  check(!bad, `${SOAK_DAYS} days with prisoners on each autopilot style: no NaN or negative stock`);
 }
 
 console.log(`\n${pass} passed, ${fail} failed (${((Date.now() - t0) / 1000).toFixed(1)} s)`);

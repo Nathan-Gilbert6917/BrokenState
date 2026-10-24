@@ -4,7 +4,7 @@
 // "Keep playing" after a hive win so the coalition can still win). The autopilot's styles are rotated so each one
 // gets both starts. Reports every run (outcome, day, population, hives, coalition, conquest, deaths by cause),
 // totals by start and by style, every crash with its stack, runs that look stuck (no events for a long stretch),
-// and writes a JSON report for later reading. Seeds run in parallel worker threads (tools/wintest.js's pool).
+// and writes a JSON report for later reading. Seeds run in parallel worker threads (tools/wincensus.js's pool).
 // Usage: node tools/campaign50.js [games=50] [days=1095] [--size huge|120x80|normal,large,huge,120x80] [--groups 15-20] [--seed 1000]
 //                                [--styles balanced,aggressive,cautious] [--mode both|normal|hardcore] [--preset hardcore-cautious|normal-cautious|all]
 //                                [--out path.json] [--census] [--no-keep] [--log N] [--grep regex] [--fallen-grep] [--jsonl path]

@@ -17,6 +17,10 @@
 //   only through poicont.js lootPoiAbstract and only pois.js and hardcore-loot.js write a POI's pool. tools/poiaitest.js
 //   and tools/poipacingtest.js test the POIs themselves.
 // Usage: node tools/depletetest.js [seed] [days] [curve seeds, default 1,2,...,12]
+// Quick form (BS_QUICK=1, npm run test:quick): the loot curve over 30 days (marks on day 10 / 20 / 30) on seed 1,
+// its two children side by side (a year on seeds 1-12, one a core); the hourly loot watch 30 days (150), the base's
+// surroundings left alone 10 days at a time (20 and 30), save / load on day 15 played to 25 (45 and 70); the same
+// checks, the "groups make a dent" bound scaled to the shorter span (see there).
 import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { readFileSync, readdirSync } from "node:fs";
 import { execFile } from "node:child_process";
@@ -42,13 +46,16 @@ import { saveToString, loadFromString } from "../src/sim/save.js";
 import { renderRight, tileActions } from "../src/ui/ui.js";
 import { tileTooltip } from "../src/ui/render.js";
 
+const QUICK = !!process.env.BS_QUICK;
 const CURVE = process.argv[2] === "--curve"; // child process: one year on a seed, scavenging groups on or off
 const seed = Number(process.argv[CURVE ? 3 : 2] || 42);
-const days = Number(process.argv[CURVE ? 5 : 3] || 365);
+const days = Number(process.argv[CURVE ? 5 : 3] || (QUICK ? 30 : 365));
+const MARKS = QUICK ? [10, 20, 30] : [120, 240, 365]; // the days the loot left is read on (the curve's children)
+const [M1, M2, M3] = MARKS;
 // Twelve seeds: on five the collapse rate is mostly dice (a group collapsing or not swings a seed by ±4 of 8): an
 // unrelated change (breakoff.js WEAR, fights by the numbers that break off) moved it from 0.20 → 0.28 to 0.23 → 0.40,
 // past the +0.15, while on twelve it stayed put (0.23 → 0.33 before, 0.27 → 0.38 after).
-const curveSeeds = (process.argv[4] || "1,2,3,4,5,6,7,8,9,10,11,12").split(",").map(Number).filter(Number.isFinite);
+const curveSeeds = (process.argv[4] || (QUICK ? "1" : "1,2,3,4,5,6,7,8,9,10,11,12")).split(",").map(Number).filter(Number.isFinite);
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
 const section = (t) => console.log(`\n${t}`);
@@ -76,7 +83,7 @@ if (CURVE) {
     // passHours, runs the world's hours inside it), so midnight can fall inside one tick (seed 2 missed day 120).
     if (day(st) !== was) {
       for (const f of st.factions) if (!f.alive && !died.has(f.id)) { died.add(f.id); out.died.push(day(st)); }
-      for (const d of [120, 240, 365]) if (d >= was && d < day(st)) out.left[d] = siteLootTotal(st) / total0;
+      for (const d of MARKS) if (d >= was && d < day(st)) out.left[d] = siteLootTotal(st) / total0;
       was = day(st);
     }
   }
@@ -94,7 +101,10 @@ function groupWithSite(st, opts = {}) {
     f.goodwill = opts.goodwill ?? 0;
     f.pact = null;
     const s = bestSite(st, f);
-    if (s && !st.live.has(s.tile)) return { f, site: s };
+    // A real site (tile.loc): a group's best target can be a point of interest on bare ground (grouppois.js
+    // groupTargets: a street of houses, a shed), and these checks are about a site's tile.loot (seed 42's first group
+    // went for one, so every section below crashed on t.loc.name).
+    if (s && st.tiles[s.tile].loc && !st.live.has(s.tile)) return { f, site: s };
   }
   return null;
 }
@@ -300,7 +310,7 @@ section("Nothing grows back: tile.loot only falls (crash and event sites aside),
   // A whole run, hour by hour.
   const st = world(7);
   setAutopilot(st, true, "balanced");
-  const runDays = Math.min(days, 150);
+  const runDays = Math.min(days, QUICK ? 30 : 150); // quick: the first wreck (days 8-14, 7-10 days) has burned out by 30
   let rises = 0, crashRises = 0, falls = 0, worst = null;
   let prev = st.tiles.map((t) => t.loot);
   while (day(st) <= runDays && !st.gameOver) {
@@ -333,8 +343,9 @@ section("Nothing grows back: tile.loot only falls (crash and event sites aside),
   const people = atBase(s2, h.id);
   for (const s of people) s.role = "farm";
   h.scavLeft = 0.5;
-  for (let i = 0; i < 24 * 20; i++) tickHour(s2);
-  check(scavLeft(h) === 0.5, `nobody scavenging for 20 days: the surroundings stay ${pct(scavLeft(h))} unpicked (no recovery)`);
+  const idle = QUICK ? [10, 10] : [20, 30]; // the days nobody scavenges, before and after the scavengers
+  for (let i = 0; i < 24 * idle[0]; i++) tickHour(s2);
+  check(scavLeft(h) === 0.5, `nobody scavenging for ${idle[0]} days: the surroundings stay ${pct(scavLeft(h))} unpicked (no recovery)`);
   people[0].role = "scavenge"; people[1].role = "scavenge";
   for (let i = 0; i < 24 * 10; i++) tickHour(s2);
   const after = scavLeft(h);
@@ -342,8 +353,8 @@ section("Nothing grows back: tile.loot only falls (crash and event sites aside),
   check(after < 0.5 && after >= 0.5 - SCAV_DEPLETE * 2 * 10 - 1e-9, `two scavengers for 10 days: ${pct(0.5)} → ${pct(after)} (−${SCAV_DEPLETE} per scavenger a day)`);
   // sick-rest (sickrest.js): an ill scavenger rests with the job kept in s.sickWas and goes back to it when well.
   for (const s of atBase(s2, h.id)) { if (s.role === "scavenge") s.role = "farm"; if (s.sickWas && s.sickWas.role === "scavenge") s.sickWas.role = "farm"; }
-  for (let i = 0; i < 24 * 30; i++) tickHour(s2);
-  check(scavLeft(h) === after, `then nobody for 30 days: still ${pct(scavLeft(h))}`);
+  for (let i = 0; i < 24 * idle[1]; i++) tickHour(s2);
+  check(scavLeft(h) === after, `then nobody for ${idle[1]} days: still ${pct(scavLeft(h))}`);
   h.scavLeft = SCAV_FLOOR + 0.001;
   people[0].role = "scavenge";
   for (let i = 0; i < 24 * 5; i++) tickHour(s2);
@@ -478,7 +489,11 @@ for (const style of ["balanced", "cautious"]) {
   // walks past the site and sees it stripped before any scavenging trip is planned.
   Object.assign(h2.stock, { water: 200, ammo: 200, meds: 20, scrap: 25 }); setFood(h2, 400);
   const near = s2.tiles.filter((t) => t.loc && t.id !== h2.tile && s2.grid.distance(t.id, h2.tile) <= 6 && t.owner == null).sort((a, b) => a.id - b.id);
-  for (const t of s2.tiles) if (t.loc && t.id !== h2.tile && s2.grid.distance(t.id, h2.tile) <= P.range + 5) { t.loot = AISCAV.floor; s2.knowledge[t.id] = snapshot(s2, t.id); }
+  // Known stripped out to the far ring too (autopilot.js planTrip: P.range + 5, 4 more while short of something, the
+  // 25 scrap is, and EMPTY_RING past that once the area is picked over, as here): with only the near ring known, the
+  // far sites it has never seen counted at their full worth and it went for a hardware store 21 tiles out for the
+  // scrap, so the check measured where the unknown sites lie, not what it believes of this one.
+  for (const t of s2.tiles) if (t.loc && t.id !== h2.tile && s2.grid.distance(t.id, h2.tile) <= P.range + 5 + 4 + EMPTY_RING) { t.loot = AISCAV.floor; s2.knowledge[t.id] = snapshot(s2, t.id); }
   const believed = near[0];
   s2.knowledge[believed.id] = { ...snapshot(s2, believed.id), loot: siteFull(believed) }; // stale: you saw it rich
   let d2 = null, h1 = 0;
@@ -496,18 +511,19 @@ section("Determinism and save / load with scavenging parties out");
   const play = (st, d) => { while (day(st) <= d && !st.gameOver) tickHour(st); };
   const look = (st) => JSON.stringify([st.tiles.map((t) => Math.round((t.loot || 0) * 1e6)), st.aiScav, st.factions.map((f) => [f.scavNext, Math.round(stockSum(f))]),
     st.parties.filter((p) => p.kind === "scav").map((p) => [p.scav.site, p.phase, partyTile(p), Math.round(p.strength * 1e3)]), st.knowledge.map((k) => (k ? [k.loot, k.lootHour ?? null] : 0))]);
-  const a = world(7); setAutopilot(a, true, "balanced"); play(a, 45);
-  const b = world(7); setAutopilot(b, true, "balanced"); play(b, 45);
+  const [saveDay, endDay] = QUICK ? [15, 25] : [45, 70];
+  const a = world(7); setAutopilot(a, true, "balanced"); play(a, saveDay);
+  const b = world(7); setAutopilot(b, true, "balanced"); play(b, saveDay);
   check(look(a) === look(b), "the same seed, the same loot, parties and stocks (two worlds in one process)");
   check(a.parties.some((p) => p.kind === "scav") || a.aiScav.stats.trips > 0, `parties went out (${a.aiScav.stats.trips} trips)`);
-  // Save on day 45 (when no card waits), load, both play to day 70.
+  // Save on day 45 (when no card waits), load, both play to day 70 (quick: 15 and 25).
   let h = 0;
   while (a.cards.length && h++ < 48) tickHour(a);
   const save = saveToString(a);
-  play(a, 70);
+  play(a, endDay);
   const c = loadFromString(save);
-  play(c, 70);
-  check(look(a) === look(c), "saved and loaded with parties out: the same loot, parties and stocks on day 70");
+  play(c, endDay);
+  check(look(a) === look(c), `saved and loaded with parties out: the same loot, parties and stocks on day ${endDay}`);
 }
 
 // ======================================================================================
@@ -520,24 +536,27 @@ section(`Loot left and group collapse over a year (seeds ${curveSeeds.join(", ")
   const jobs = curveSeeds.flatMap((s) => [[s, "on"], [s, "off"]]), runs = new Array(jobs.length);
   let next = 0;
   const lane = async () => { while (next < jobs.length) { const i = next++; runs[i] = await one(...jobs[i]); } };
-  await Promise.all(Array.from({ length: Math.max(1, Math.min(jobs.length, availableParallelism())) }, lane));
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(jobs.length, QUICK ? 2 : availableParallelism())) }, lane));
   const on = runs.filter((_, i) => i % 2 === 0), off = runs.filter((_, i) => i % 2 === 1);
   const avg = (list, d) => list.reduce((a, r) => a + r.left[d], 0) / list.length;
   curveSeeds.forEach((s, i) => {
     const a = on[i], b = off[i];
-    console.log(`  seed ${s}: loot left on day 120 / 240 / 365: ${[120, 240, 365].map((d) => pct(a.left[d])).join(" / ")} with scavenging groups (${a.trips} trips, ${a.goods} goods home), ${[120, 240, 365].map((d) => pct(b.left[d])).join(" / ")} without; collapsed ${a.died.length} / ${b.died.length} of 8${a.fell || b.fell ? ` (the holdout fell on day ${a.fell || "-"} / ${b.fell || "-"}; the world went on)` : ""}`);
+    console.log(`  seed ${s}: loot left on day ${MARKS.join(" / ")}: ${MARKS.map((d) => pct(a.left[d])).join(" / ")} with scavenging groups (${a.trips} trips, ${a.goods} goods home), ${MARKS.map((d) => pct(b.left[d])).join(" / ")} without; collapsed ${a.died.length} / ${b.died.length} of 8${a.fell || b.fell ? ` (the holdout fell on day ${a.fell || "-"} / ${b.fell || "-"}; the world went on)` : ""}`);
   });
   const rOn = on.reduce((a, r) => a + r.died.length, 0) / (8 * on.length), rOff = off.reduce((a, r) => a + r.died.length, 0) / (8 * off.length);
-  console.log(`  average loot left: ${[120, 240, 365].map((d) => pct(avg(on, d))).join(" / ")} (on), ${[120, 240, 365].map((d) => pct(avg(off, d))).join(" / ")} (off); collapse per group per year ${rOff.toFixed(2)} → ${rOn.toFixed(2)}`);
-  check(on.every((r, i) => r.left[365] < off[i].left[365]), "groups that scavenge leave less on every seed");
-  check(avg(on, 120) > avg(on, 240) && avg(on, 240) > avg(on, 365), "loot only goes down over the year");
+  console.log(`  average loot left: ${MARKS.map((d) => pct(avg(on, d))).join(" / ")} (on), ${MARKS.map((d) => pct(avg(off, d))).join(" / ")} (off); collapse per group per year ${rOff.toFixed(2)} → ${rOn.toFixed(2)}`);
+  check(on.every((r, i) => r.left[M3] < off[i].left[M3]), "groups that scavenge leave less on every seed");
+  check(avg(on, M1) > avg(on, M2) && avg(on, M2) > avg(on, M3), "loot only goes down over the year");
   // Across the seeds, not the one at the bottom: what is left on day 365 spreads about 6 points a seed (dev, 12 seeds:
   // 23-47%, mean 35%), so "25% on every seed" fails on one low seed in a dozen whatever the mean. The mean holds 25%
   // with two standard errors to spare, and no seed comes near the floor the groups strip a site to.
-  const left365 = on.map((r) => r.left[365]), mean365 = left365.reduce((a, v) => a + v, 0) / left365.length;
+  const left365 = on.map((r) => r.left[M3]), mean365 = left365.reduce((a, v) => a + v, 0) / left365.length;
   const se365 = left365.length > 1 ? Math.sqrt(left365.reduce((a, v) => a + (v - mean365) ** 2, 0) / (left365.length - 1) / left365.length) : 0;
   check(mean365 - 2 * se365 >= 0.25 && Math.min(...left365) >= 0.15, `the map is not stripped within a year (on average ${pct(mean365)} left, at least 25% with two standard errors (${pct(mean365 - 2 * se365)}); lowest seed ${pct(Math.min(...left365))}, at least 15%)`);
-  check(avg(on, 365) <= 0.75, `but the groups make a dent (on average ${pct(avg(on, 365))} left on day 365)`);
+  // Quick: the year's quarter taken, scaled to the span (30 days: at most 98% left; seeds 1-2 left 94% on day 30,
+  // 88% on day 60, 2026-10-24, and 98% without the groups), so groups that stopped scavenging still fail.
+  const DENT = QUICK ? 1 - (0.25 * M3) / 365 : 0.75;
+  check(avg(on, M3) <= DENT, `but the groups make a dent (on average ${pct(avg(on, M3))} left on day ${M3})`);
   // Paired by seed (the same world with and without): the collapses of 8 groups in a year swing by 2-6 between the two
   // runs of one seed (dev 348bdec: seed 6 8 / 2, seed 2 5 / 1 the other way), a standard error of about 0.08 on the
   // difference over 12 seeds; so it fails only when the difference is past +0.15 by more than two standard errors.

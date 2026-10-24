@@ -1,7 +1,7 @@
 // Item icons, the food family (ui/itemart.js; the kit and the rules: ui/itemart/kit.js): every food (sim/foods.js
 // FOODS: tins, dry goods, snacks, rations, fresh food, crops, forage, meat and fish, preserves and cooked meals) and the
 // base supplies (sim/data.js SUPPLIES: water, fuel, meds, generic rounds, reloading stock, arrows, parts, scrap, jars,
-// wood, building materials). Each drawing is a 16 × 16 grid, light from the top left; toCanvas adds the outline.
+// wood, stone, building materials). Each drawing is a 16 × 16 grid, light from the top left; toCanvas adds the outline.
 import { C, R, H, V, dots, shade, line, disc, ring, oval, box, text, stamp } from "./kit.js";
 
 // A few colours of this family's own.
@@ -130,6 +130,21 @@ export const SUPPLY_ART = {
       disc(p, x, y, 3, C.brown); lit(p, C.brown, C.brownL, C.brownD); disc(p, x, y, 2, K.pine);
       p.set(x - 1, y - 2, "#e8c890"); p.set(x - 2, y - 1, "#e8c890"); ring(p, x, y, 1, K.pineD); p.set(x, y, K.pineD);
     }
+  },
+  stone: (p) => { // a heap of field stones (sim/stone.js), rounded and grey, lit on their tops, a fleck of lichen
+    for (const [x0, y0, x1, y1, c] of [[4, 1, 12, 8, "#858a90"], [9, 5, 15, 12, "#a39d90"], [0, 7, 9, 15, "#8f8e86"], [8, 10, 14, 15, "#6f726e"]]) {
+      const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, rx = (x1 - x0) / 2 + 0.5, ry = (y1 - y0) / 2 + 0.5;
+      const inside = (x, y) => ((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2 <= 1;
+      oval(p, x0, y0, x1, y1, c);
+      for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+        if (!inside(x, y)) continue;
+        if (!inside(x + 1, y) || !inside(x, y + 1)) p.set(x, y, lo(c));
+        else if (!inside(x - 1, y) || !inside(x, y - 1)) p.set(x, y, hi(c, 0.3));
+      }
+      p.set(Math.round(cx) - 1, Math.round(cy) - 1, hi(c, 0.45)); // a glint
+    }
+    for (const [x, y] of [[3, 12], [6, 10], [7, 4], [12, 8]]) p.set(x, y, K.cinderD); // pits in the stone
+    p.set(5, 13, "#8f9a62"); p.set(6, 13, "#a4ae74"); // lichen
   },
   carparts: (p) => { // a tyre on its rim
     disc(p, 7, 8, 7, C.blackL); ring(p, 7, 8, 7, "#4d5058");

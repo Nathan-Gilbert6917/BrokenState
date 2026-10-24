@@ -1,6 +1,8 @@
 // Caravans on the road (src/sim/escorts.js, src/sim/caravanraids.js): merchant caravans from outside with an escort
 // that grows with their cargo, any caravan robbed of everything it carries, by you or by the groups.
 // Usage: node tools/caravantest2.js [seed]     (default seed 42)
+//   BS_QUICK=1 (npm run test:quick): the same checks with the long runs 2 worlds of 50 days (not 8 of 200), the
+//   groups robbing caravans in at least one of them (see there).
 // - Escort tiers by cargo worth (light / armed with a pickup / armoured with a Humvee, an MRAP for the richest), guns
 //   and armour weighing more, every speciality filling the wagons, the escort's strength counted.
 // - A merchant caravan crosses in at a border tile and leaves at one.
@@ -27,8 +29,10 @@ import { KITS } from "../src/sim/combat.js";
 import { allCarried } from "../src/sim/inventory.js";
 import { factionVehicles } from "../src/sim/vehicles.js";
 import { digest } from "./digest.js";
+import { defaultChoice } from "../src/sim/cardrules.js";
 
 const seed = Number(process.argv[2] || 42);
+const QUICK = !!process.env.BS_QUICK;
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
 const section = (t) => console.log(`\n${t}`);
@@ -252,7 +256,12 @@ section("Your team robs a group's caravan on the road; the meeting card; Interce
   tick(st2, 24);
   const p2 = team(st2, 5, 2);
   const m = V.spawnVisitor(st2, "merchants");
-  const off = st2.grid.within(partyTile(p2), 3).find((t) => st2.grid.distance(t, partyTile(p2)) === 3 && st2.tiles[t].terrain !== "water" && planPath(st2, partyTile(p2), t, false));
+  // A tile the team walks to in 3 steps (not one 3 tiles off across a river, 7 steps round by the bridge: seed 63's
+  // world since the start moved away from towns), and no road encounter on the way (a group's Roadblock there held
+  // the team up while the caravan left): the chase is what is checked.
+  const direct = (t) => { const r = planPath(st2, partyTile(p2), t, false); return !!r && r.path.length === 4; };
+  const off = st2.grid.within(partyTile(p2), 3).find((t) => st2.grid.distance(t, partyTile(p2)) === 3 && st2.tiles[t].terrain !== "water" && direct(t));
+  p2.lastConflict = st2.hour;
   place(m, off); m.phase = "travel";
   m.goal = { kind: "site", tile: off }; // standing still for the test
   st2.live.add(off);
@@ -262,7 +271,9 @@ section("Your team robs a group's caravan on the road; the meeting card; Interce
     ch.resolve(st2);
     check(p2.intercept && p2.dest === off && p2.phase === "out", "the team goes after it");
     let card = null;
-    for (let i = 0; i < 30 && !card; i++) { tick(st2); card = st2.cards.find((c) => c.partyId === p2.id && /on the road/.test(c.title)); }
+    // The team's other cards on the way (the dead ahead on an infected tile) answered by their default, as the tray does.
+    const answer = () => { for (const c of st2.cards.filter((x) => x.partyId === p2.id && !x.isOrders && !/on the road/.test(x.title))) { st2.cards.splice(st2.cards.indexOf(c), 1); const d = defaultChoice(st2, c); if (d && d.resolve) d.resolve(st2); } };
+    for (let i = 0; i < 30 && !card; i++) { tick(st2); card = st2.cards.find((c) => c.partyId === p2.id && /on the road/.test(c.title)); if (!card) answer(); }
     check(!!card && !p2.intercept, `caught up: a card (${card ? card.title : "none"})`);
   }
 }
@@ -432,7 +443,9 @@ section("Long runs with the autopilot");
   // changed), so: 8 worlds (seed + 58 … seed + 65) of RUN_DAYS each, and the groups must rob caravans in at least
   // ROB_BAR of them. Measured on seeds 100–107 at 120 days: 5 of 8 on dev f6ce385, 3 of 8 with the balance batch in
   // (a bar of 4 sat on the edge of the dice); at 200 days 7 of 8, so the runs are 200 days long.
-  const RUN_DAYS = 200, SEEDS = 8, ROB_BAR = 4;
+  // Quick (BS_QUICK): 2 worlds of 50 days and a bar of 1: seeds 100 and 101 saw their first robbery by the groups on
+  // days 33 and 3 (2026-10-24), so one of the two is the looser bar against the dice.
+  const RUN_DAYS = QUICK ? 50 : 200, SEEDS = QUICK ? 2 : 8, ROB_BAR = QUICK ? 1 : 4;
   let robbing = 0, bad = false;
   for (let i = 0; i < SEEDS; i++) {
     const st = world(seed + 58 + i);

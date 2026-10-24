@@ -99,7 +99,7 @@ export const RUMOUR = { days: 20, radius: 3, max: 3, reach: 30, radio: 0.05, vis
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const r2 = (v) => Math.round(v * 100) / 100;
-const isNightAt = (hour) => hour % 24 < 6 || hour % 24 >= 20;
+const isNightAt = (hour) => { const h = ((hour % 24) + 24) % 24; return h < 6 || h >= 20; }; // a look window from before the run's first hour too (a negative hour)
 const land = (state, id) => { const t = state.tiles[id]; return t && (t.terrain !== "water" || t.bridge); };
 export const clampRadius = (r) => clamp(Math.round(Number(r) || SURVEY.radius.def), SURVEY.radius.min, SURVEY.radius.max);
 export const clampHours = (h) => clamp(Math.round(Number(h) || SURVEY.hours.def), SURVEY.hours.min, SURVEY.hours.max);

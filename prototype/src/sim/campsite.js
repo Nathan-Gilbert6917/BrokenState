@@ -621,7 +621,7 @@ registerBattleLayout("campsite", (b, ctx) => {
   const C = b.camp;
   if (!C) return;
   for (const u of b.units) if (u.side === "enemy" && u.kind === "human") u.camp = "active";
-  campRaidUnits(ctx.state, b, C, { side: "enemy", owner: () => (ref ? { band: ref.band, id: ref.id } : null), item: (tent) => (C.items ? C.items[C.tents.indexOf(tent)] || null : null) });
+  campRaidUnits(ctx.state, b, C, { side: "enemy", owner: () => (ref ? { band: ref.band, id: ref.id } : null), item: (tent) => (C.items ? C.items[tent.i] || null : null) }); // tent.i: its place in the list (C.tents skips a tent that found no spot)
   if (band && ref) bandStores(ctx.state, b, band, ref, C);
 });
 

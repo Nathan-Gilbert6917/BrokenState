@@ -120,6 +120,7 @@ const stockOf = (f, key) => {
   if (key === "ammo") return Math.max(0, totalRounds(f.stock));
   const k = pooled(f) ? groupStockKey(key) : poolKey(key); return Math.max(0, f.stock[k] ?? (k === "water" || k === "wood" || k === "stone" || k === "arrows" ? (f.pop || 0) * REF[k] : 0)); // stone: gathered by them as wood is (stone.js)
 };
+export { stockOf as groupHeld }; // visitors.js tradeWithGroup: a group with no figure yet (water, stone) starts from this, as executeTrade
 // The stock a price is read at: a round key at the group's whole ammo.
 const priceStock = (f, key) => stockOf(f, isRoundKey(key) ? "ammo" : key);
 // A group's reorder level for parts (merchants sell it parts below it: visitors.js tradeWithGroup): 4 + 1 per 5

@@ -72,7 +72,7 @@ trip under that limit, so with both teams out nothing hauled. A human player has
 ### Victory (A)
 - `allianceVictory`: the coalition has at least one member and holds more than `LAND_NEEDED` (50%) of the land.
   Groups outside no longer block it (conquest counts: break them or leave them). The Goals panel, the end screen,
-  the chronicle caption and wintest's "what blocks the win" text follow.
+  the chronicle caption and wincensus's "what blocks the win" text follow.
 
 ### Hives (B)
 - `HIVE.SITE_DAYS` becomes a curve: slow in year one, faster later, but new hives over three years capped at

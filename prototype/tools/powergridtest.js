@@ -170,7 +170,9 @@ section("The breaker panel and the circuits");
   refreshPower(st, h);
   const cs = circuitState(st, h);
   const need = climateNeed(st, h);
-  check(gridWired(h) && cs && cs.n === 2 && cs.light === CIRCUITS.bunkhouse[0] + CIRCUITS.common_room[0], `wired: the bunkhouse and the common room on circuits (${cs && cs.n}, climate today: ${need || "mild"})`);
+  const lodge = h.buildings.filter((b) => b.type === "gen_lodge").length; // the hub starts with a Lodge (world.js HUB_LAYOUT, 2026-10-22): on a circuit too
+  check(lodge === 1, "the hub's starting Lodge stands");
+  check(gridWired(h) && cs && cs.n === 2 + lodge && cs.light === CIRCUITS.bunkhouse[0] + CIRCUITS.common_room[0] + lodge * CIRCUITS.gen_lodge[0], `wired: the bunkhouse, the common room and the Lodge on circuits (${cs && cs.n}, climate today: ${need || "mild"})`);
   check(cs.litUnits === cs.light, "the generator covers them: lit");
   let lines = powerMood(st, s, h);
   check(lines.some((l) => /Electric light/.test(l.label) && l.v === POWER_MOOD.lit), `mood: ${lines.map((l) => `${l.label} ${l.v}`).join("; ")}`);
@@ -179,7 +181,7 @@ section("The breaker panel and the circuits");
   h.powerOff = { [bunk.id]: true };
   st.hour++; refreshPower(st, h);
   lines = powerMood(st, s, h);
-  check(lines.some((l) => /Dark buildings: 1 of 2/.test(l.label) && l.v < 0), `the bunkhouse switched off: dark, mood down (${lines.map((l) => `${l.label} ${l.v.toFixed(2)}`).join("; ")})`);
+  check(lines.some((l) => new RegExp(`Dark buildings: 1 of ${2 + lodge}\\b`).test(l.label) && l.v < 0), `the bunkhouse switched off: dark, mood down (${lines.map((l) => `${l.label} ${l.v.toFixed(2)}`).join("; ")})`);
   delete h.powerOff[bunk.id];
   // A hot or a cold day (the first within the year): climate drawn; served with power, sweltering or shivering without.
   const day = Math.floor(st.hour / 24);
@@ -239,6 +241,8 @@ section("The fridge, the pump, the fence charger");
   const st = world();
   const h = quietHub(st);
   stock(h, "fridge");
+  for (const g of h.buildings.filter((b) => BUILDINGS[b.type] && BUILDINGS[b.type].general)) demolish(st, h, g.id); // the hub's starting Lodge (world.js HUB_LAYOUT) down: no general building
+  check(!h.buildings.some((b) => BUILDINGS[b.type] && BUILDINGS[b.type].general), "the starting Lodge taken down");
   let chk = canBuild(st, h, "fridge");
   check(!chk.ok && /building to stand in/.test(chk.reason), `no general building: nowhere to set it (${chk.reason})`);
   addBuilding(h, "gen_cabin");

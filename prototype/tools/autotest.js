@@ -5,6 +5,8 @@
 // governor raises a radio relay at an outpost that brings a known group into reach, none where it would not link).
 // Usage: node tools/autotest.js [days] [cautious|balanced|aggressive|all] [seeds...] [size=small|normal|large|huge]
 // (Normal by default; other sizes play with their default group count, sim/worldsize.js.)
+// Quick form (BS_QUICK=1, npm run test:quick): 40 days on seeds 1 and 2 (the full form: 120 days on seeds 1-5), the
+// arrows check's trips over 20 days instead of 30; the same checks otherwise.
 import { stockTools } from "./toolset.js"; // every tool a build or recipe can need (toolreqs.js)
 import { createWorld, tickHour, day, alive, hub, newId, RADIO_RANGE, atBase, usesArrows, archerCount, ARROWS } from "../src/sim/world.js";
 import { launchExpedition, estimateTrip, startReturn, partyMembers } from "../src/sim/parties.js";
@@ -24,9 +26,10 @@ import { takeSize } from "./sizearg.js";
 
 const SIZE = takeSize();
 
-const days = Number(process.argv[2] || 120);
+const QUICK = !!process.env.BS_QUICK;
+const days = Number(process.argv[2] || (QUICK ? 40 : 120));
 const which = process.argv[3] || "balanced";
-const seeds = process.argv.length > 4 ? process.argv.slice(4).map(Number) : [1, 2, 3, 4, 5];
+const seeds = process.argv.length > 4 ? process.argv.slice(4).map(Number) : QUICK ? [1, 2] : [1, 2, 3, 4, 5];
 const styles = which === "all" ? Object.keys(PERSONALITIES) : [which];
 if (styles.some((s) => !PERSONALITIES[s])) {
   console.log(`Unknown style "${which}". Use ${Object.keys(PERSONALITIES).join(", ")} or all.`);
@@ -287,7 +290,7 @@ function arrowsCheck(seed) {
     const seen = new Set();
     let bowTrips = 0, packed = 0;
     const short = [];
-    for (let i = 0; i < 24 * 30 && !st.gameOver; i++) {
+    for (let i = 0; i < 24 * (QUICK ? 20 : 30) && !st.gameOver; i++) {
       tickHour(st);
       for (const p of st.parties) {
         if (p.owner !== "player" || seen.has(p.id)) continue;
@@ -299,7 +302,7 @@ function arrowsCheck(seed) {
         else short.push(`${p.mission || "trip"}: ${n} bow(s), ${p.supplies.arrows || 0} arrows`);
       }
     }
-    if (!bowTrips) out.push("no trip with a bow in 30 days");
+    if (!bowTrips) out.push(`no trip with a bow in ${QUICK ? 20 : 30} days`);
     else if (packed < bowTrips * 0.75) out.push(`only ${packed} of ${bowTrips} trips with bows packed a dozen arrows a bow (${short.slice(0, 4).join("; ")})`);
     console.log(`Arrows check (seed ${seed}): ${out.length ? out.slice(0, 5).join("; ") : `ok (arrows queued for bows with none; ${packed} of ${bowTrips} trips with bows packed a dozen a bow${short.length ? `; short: ${short.slice(0, 3).join("; ")}` : ""})`}`);
   } catch (e) {

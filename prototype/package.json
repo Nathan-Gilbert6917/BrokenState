@@ -6,6 +6,7 @@
     "start": "node server.cjs",
     "simtest": "node tools/simtest.js",
     "typecheck": "node tools/typechecktest.js",
-    "test": "node tools/runtests.js"
+    "test": "node tools/runtests.js",
+    "test:quick": "node tools/runtests.js --quick"
   }
 }

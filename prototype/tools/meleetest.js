@@ -75,6 +75,7 @@ console.log("Stagger");
   const b = openBattle(st, [a, idle], { kind: "raiders", count: 2, power: 3 }); // idle: keeps the turn open between strikes
   const u = by(b, a), [e, z] = foes(b);
   place(u, 5, 5); place(by(b, idle), 15, 15); place(e, 6, 5); toughen(e);
+  e.fearless = true; // nonlethal.js surrenderCheck: alone and broken (its mate dead), it may give up as its turn starts (the dice by the hub's tile); this is about the stagger
   let n = 0;
   for (let i = 0; i < 40 && !e.staggered; i++) { fresh(b); u.struck = null; combatAct(st, { type: "melee", unit: u.id, target: e.id }); n++; }
   check(e.staggered === 1, `a sledgehammer staggers (after ${n} strikes)`);
@@ -97,6 +98,7 @@ console.log("Bleeding");
   const b = openBattle(st, [a, idle], { kind: "raiders", count: 2, power: 3 });
   const u = by(b, a), [e, z] = foes(b);
   place(u, 5, 5); place(by(b, idle), 15, 15); place(e, 6, 5); toughen(e); e.armor = 0.5;
+  e.fearless = true; // as above: no giving up as its turn starts, so it bleeds standing
   for (let i = 0; i < 40 && !e.bleeding; i++) { fresh(b); combatAct(st, { type: "melee", unit: u.id, target: e.id }); }
   check(e.bleeding === MELEE.BLEED_TURNS, "a kukri cut bleeds (2 turns)");
   const hp0 = e.hp;

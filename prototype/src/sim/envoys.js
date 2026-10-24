@@ -552,8 +552,7 @@ function putBack(state, f, sup) {
   for (const [k, q] of Object.entries(sup || {})) {
     if (!(q > 0)) continue;
     if (FOODS[k]) addFood(f, k, q, { state });
-    else f.stock[k] = (f.stock[k] || 0) + q;
-    if (isRoundKey(k)) note(state, "from you", q);
+    else f.stock[k] = (f.stock[k] || 0) + q; // (the envoy's own goods: yours were noted when they came onto it)
     sup[k] = 0;
   }
 }
@@ -641,7 +640,7 @@ function wrapChoice(state, ch, msg, p) {
     msg.calls = [...(msg.calls || []), ...sink.calls];
     const held = st.parties.filter((q) => q.owner === p.owner && !before.has(q.id));
     if (held.length) { st.parties = st.parties.filter((q) => !held.includes(q)); msg.held = [...(msg.held || []), ...held]; }
-    for (const [k, q] of Object.entries(sink.goods)) if (q > 0) p.goods.supplies[k] = (p.goods.supplies[k] || 0) + q;
+    for (const [k, q] of Object.entries(sink.goods)) if (q > 0) { p.goods.supplies[k] = (p.goods.supplies[k] || 0) + q; if (isRoundKey(k) || k === "ammo") note(st, "from you", q); } // ledger.js: your rounds onto their envoy, the AI side
     msg.answered = true;
     msg.answerLabel = ch.label;
     return `${t || ""} Their envoy sets off home with your answer.`.trim();

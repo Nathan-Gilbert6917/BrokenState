@@ -1374,29 +1374,31 @@ export function levelRect(b, x0, y0, w, h) {
 }
 // Where a vehicle can get to this turn: every position of its rect (top-left x, y) within DRIVE.RANGE 4-way steps over
 // open ground, through people and light obstacles when it can ram (RAMMING; not a bike, not noRam: the attackers' Humvee
-// keeps to open ground, carTurn; a Set: only those obstacles). Returns { seen: Map(key → steps), parent: Map(key → key), key }.
-export function carSteps(b, v, u, noRam = false) {
+// keeps to open ground, carTurn; a Set: only those obstacles); range: further (carTurn's way round). Returns
+// { seen: Map(key → steps), parent: Map(key → key), key }.
+export function carSteps(b, v, u, noRam = false, range = DRIVE.RANGE) {
   bindDims(b);
   const canRam = v.kind !== "bike" && !noRam; // a bike rides round people and obstacles, it does not run them down
   const only = noRam instanceof Set ? noRam : null; // noRam a Set: only these obstacles (a breach, BREACH_THROUGH), never people
   const own = v.cell || "vehicle"; // the cells it stands on: "vehicle" (yours) or "truck" (their Humvee)
+  const people = canRam ? null : new Set(b.units.filter((o) => o !== u && !o.aboard && onMap(o)).map((o) => idx(o.x, o.y)));
   const passable = (px, py) => {
     if (px < 0 || py < 0 || px + v.w > W || py + v.h > H) return false;
     if (rectSpan(b, px, py, v.w, v.h) > TERRAIN_STEP) return false; // over a step of the ground at most (it stops on one level: driveTo)
     for (let cy = py; cy < py + v.h; cy++) for (let cx = px; cx < px + v.w; cx++) {
       const c = b.cells[idx(cx, cy)];
       if (!(c.k === "open" || (c.k === own && inVehicle(v, cx, cy)) || ((canRam || (only && only.has(c.k))) && rammable(c)))) return false;
-      if (!canRam && b.units.some((o) => o !== u && !o.aboard && onMap(o) && o.x === cx && o.y === cy)) return false;
+      if (people && people.has(idx(cx, cy))) return false;
     }
     return true;
   };
   const key = (px, py) => py * W + px;
   const seen = new Map([[key(v.x, v.y), 0]]), parent = new Map();
   const q = [[v.x, v.y]];
-  while (q.length) {
-    const [px, py] = q.shift();
+  for (let qi = 0; qi < q.length; qi++) {
+    const [px, py] = q[qi];
     const d = seen.get(key(px, py));
-    if (d >= DRIVE.RANGE) continue;
+    if (d >= range) continue;
     for (const [dx, dy] of DIRS4) {
       const nx = px + dx, ny = py + dy;
       if (seen.has(key(nx, ny)) || !passable(nx, ny)) continue;
@@ -1788,6 +1790,8 @@ export function manEnemyTurret(b, gun = "m2hb") {
 //     range (WEAPONS opt: the M2 14 cells), the nearest of them as a tiebreak, over open ground and roads only (it does
 //     not ram walls, gates, barricades or people: noRam), never nearer the other side's nearest person than
 //     RAID_CAR.NEAR (grenade reach) and never more than RAID_CAR.LEAD cells ahead of its own side's front on foot;
+//     nowhere within reach to shoot from, it heads the way round (woods, buildings) to the best such spot within
+//     RAID_CAR.WAY turns' drive (it stops on one level only: driveTo), not into a dead end of the trees;
 //   - breach (theirs, plated, no ram with them: BREACH): nowhere to shoot from, it rams a weak barred gate (BREACH.WEAK
 //     hp or less: BREACH.DMG a blow, BREACH.WEAR to it × the plate) or drives through a barricade (RAMMING), never
 //     walls or people;
@@ -1805,7 +1809,7 @@ export function manEnemyTurret(b, gun = "m2hb") {
 //     others bail out;
 //   - nobody at the wheel (the driver down or dead: a shot through the windscreen, fireCab): it stays where it stands.
 // While theirs can still drive off, the field is not yet yours (checkEnd: carHolds).
-export const RAID_CAR = { MRAP_SEATS: 6, SEATS: 4, RIDERS: 2, FOOT: 3, NEAR: 6, LEAD: 2, DROP: 10, BACK_WEAR: 10, STALL_WEAR: 20, OUT: 1, STUCK: 2, ROAD: 0.25, PICKUP: 8, WAIT: 2 };
+export const RAID_CAR = { MRAP_SEATS: 6, SEATS: 4, RIDERS: 2, FOOT: 3, NEAR: 6, LEAD: 2, DROP: 10, BACK_WEAR: 10, STALL_WEAR: 20, OUT: 1, STUCK: 2, ROAD: 0.25, PICKUP: 8, WAIT: 2, WAY: 6 };
 // A plated vehicle of theirs with no ram in the raid breaks in itself: a barred gate at WEAK hp or less takes DMG a
 // blow (a crew's ram does 16–24 a swing a man: siege.js RAM) and the vehicle WEAR × 0.6 a plating level; the blow is
 // loud (NOISE, the unaware within WAKE turn toward it). A barricade it drives through (RAMMING.WEAR).
@@ -1877,8 +1881,9 @@ export function carTurn(b, v) {
   if (!foes.length) return;
   driver.ap = DRIVE.AP;
   const W0 = g ? WEAPONS[g.weapon] : null, range = W0 ? W0.opt : WEAPONS.turret_m2.opt;
-  const nearest = (x, y) => Math.min(...foes.map((f) => dist(x, y, f.x, f.y)));
-  const sees = (x, y) => foes.filter((f) => dist(x, y, f.x, f.y) <= range && los(b, x, y, f.x, f.y)).length;
+  // (loops, no arrays: pick runs these over every spot in reach, and the stops within RAID_CAR.WAY turns' drive)
+  const nearest = (x, y) => { let m = Infinity; for (const f of foes) m = Math.min(m, dist(x, y, f.x, f.y)); return m; };
+  const sees = (x, y) => { let n = 0; for (const f of foes) if (dist(x, y, f.x, f.y) <= range && los(b, x, y, f.x, f.y)) n++; return n; };
   // Holding: the gunner has someone in range and in sight.
   const [gx, gy] = roofCell(v);
   if (g && foes.some((f) => dist(gx, gy, f.x, f.y) <= range && canSee(b, g, f))) { v.ai = "hold"; dropRiders(b, v, foes); if (!theirs) driver.ap = 0; return; }
@@ -1886,13 +1891,13 @@ export function carTurn(b, v) {
   const walkers = b.units.filter((o) => o.side === side && o.kind === "human" && active(o) && !o.aboard);
   const front = walkers.length ? Math.min(...walkers.map((o) => nearest(o.x, o.y))) : 0;
   const floor = Math.max(RAID_CAR.NEAR, front - RAID_CAR.LEAD);
-  const pick = (seen, key) => {
+  const pick = (seen, key, lo = floor) => {
     let best = null;
     for (const [k, steps] of seen) {
       const px = k % W, py = (k / W) | 0;
       const [rx, ry] = roofCell({ x: px, y: py, w: v.w, h: v.h });
       const d = nearest(rx, ry);
-      if (d < floor && k !== key(v.x, v.y)) continue;
+      if ((d < lo || levelRect(b, px, py, v.w, v.h) == null) && k !== key(v.x, v.y)) continue; // driveTo stops it on one level only
       let road = 0;
       for (let cy = py; cy < py + v.h; cy++) for (let cx = px; cx < px + v.w; cx++) if (b.cells[idx(cx, cy)].f === "road") road++;
       const n = sees(rx, ry);
@@ -1909,6 +1914,26 @@ export function carTurn(b, v) {
     const bs = carSteps(b, v, driver, BREACH_THROUGH);
     const bb = pick(bs.seen, bs.key);
     if (bb && bb.n && bb.sc > (best ? best.sc : -Infinity)) { best = bb; ram = BREACH_THROUGH; }
+  }
+  // Still nowhere to shoot from within reach: the way round (woods, buildings) toward the best spot within RAID_CAR.WAY
+  // turns' drive (no nearer than RAID_CAR.NEAR), as far along it as it gets this turn short of the front's floor (the
+  // nearest within reach as the crow flies can be a dead end in the trees, where it would sit for the rest of the fight).
+  if (best && !best.n && ram === true) {
+    const far = carSteps(b, v, driver, true, RAID_CAR.WAY * DRIVE.RANGE);
+    const stops = new Map([...far.seen].filter(([, s]) => s && s % DRIVE.RANGE === 0)); // where whole turns' drives end (cheaper)
+    stops.set(far.key(v.x, v.y), 0);
+    const goal = pick(stops, far.key, RAID_CAR.NEAR);
+    if (goal && (goal.px !== v.x || goal.py !== v.y)) {
+      const way = [];
+      for (let k = far.key(goal.px, goal.py); k !== far.key(v.x, v.y); k = far.parent.get(k)) way.unshift(k);
+      let to = null;
+      for (const k of way.slice(0, DRIVE.RANGE)) {
+        const px = k % W, py = (k / W) | 0, [rx, ry] = roofCell({ x: px, y: py, w: v.w, h: v.h });
+        if (nearest(rx, ry) < floor) break;
+        if (levelRect(b, px, py, v.w, v.h) != null) to = { px, py };
+      }
+      if (to) best = { ...to, sc: best.sc, n: 0 };
+    }
   }
   v.ai = "advance";
   if (best && (best.px !== v.x || best.py !== v.y)) driveTo(b, driver, best.px + Math.floor((v.w - 1) / 2), best.py + Math.floor((v.h - 1) / 2), { noRam: ram });
@@ -1981,16 +2006,20 @@ function carBack(b, v, driver, foes) {
     let best = null;
     for (const [k] of seen) {
       const px = k % W, py = (k / W) | 0;
+      if (levelRect(b, px, py, v.w, v.h) == null) continue; // it stops with all its wheels on the one level (driveTo), not on a hill's edge
       const sc = -edge(px, py) * 10 + (foes.length ? Math.min(...foes.map((f) => dist(px, py, f.x, f.y))) * 0.1 : 0);
       if (!best || sc > best.sc) best = { px, py, sc, e: edge(px, py) };
     }
+    let err = null;
     if (best && best.e < here) {
       driver.ap = DRIVE.AP;
-      driveTo(b, driver, best.px + Math.floor((v.w - 1) / 2), best.py + Math.floor((v.h - 1) / 2), { noRam: true });
+      err = driveTo(b, driver, best.px + Math.floor((v.w - 1) / 2), best.py + Math.floor((v.h - 1) / 2), { noRam: true });
       driver.ap = 0;
+    }
+    if (err === "") {
       v.stuck = 0;
       if (best.e > RAID_CAR.OUT) return;
-    } else if ((v.stuck = (v.stuck || 0) + 1) < RAID_CAR.STUCK) return;
+    } else if ((v.stuck = (v.stuck || 0) + 1) < RAID_CAR.STUCK) return; // no nearer, or the drive refused: stuck
   }
   if (!theirs) return; // yours stays on the map
   // Off the map: the cells it stood on are open ground again; everyone inside got away with it.
@@ -2455,6 +2484,38 @@ function flood(cells, sx, sy) {
     }
   }
   return seen;
+}
+// A layout's reach (createBattle): flooded from the west edge's middle as before, unless that cell is shut in (a
+// field's wire fence run out to the map's edge with a tree beside it, farmland since 2026-10-23: one cell, and no room
+// for the people of a drill or a base's fight: createBattle found no cell for the second one); then the largest
+// stretch of open ground on the map.
+function layoutReach(cells) {
+  const N = W * H, seen = flood(cells, 0, Math.floor(H / 2));
+  let n = 0, walk = 0;
+  for (let i = 0; i < N; i++) { if (seen[i]) n++; if (CELL[cells[i].k].walk) walk++; }
+  if (n >= 64 || n * 2 >= walk) return seen; // the open map as before: only a pocket is replaced
+  const label = new Int32Array(N);
+  let best = 0, bestN = n, next = 1;
+  for (let s = 0; s < N; s++) {
+    if (label[s] || seen[s] || !CELL[cells[s].k].walk) continue;
+    const id = ++next, q = [s];
+    let m = 1;
+    label[s] = id;
+    while (q.length) {
+      const i = q.pop(), x = i % W, y = (i / W) | 0;
+      for (const [dx, dy] of DIRS4) {
+        const nx = x + dx, ny = y + dy;
+        if (!inside(nx, ny)) continue;
+        const j = idx(nx, ny);
+        if (!label[j] && !seen[j] && CELL[cells[j].k].walk) { label[j] = id; m++; q.push(j); }
+      }
+    }
+    if (m > bestN) { best = id; bestN = m; }
+  }
+  if (!best) return seen;
+  const out = new Uint8Array(N);
+  for (let i = 0; i < N; i++) if (label[i] === best) out[i] = 1;
+  return out;
 }
 
 // ---------- geometry ----------
@@ -3930,11 +3991,11 @@ export function createBattle(state, setup) {
   const tile = state.tiles[tileId];
   const party = setup.partyId ? state.parties.find((x) => x.id === setup.partyId) : null;
   const base = setup.baseId ? state.bases.find((x) => x.id === setup.baseId) : null;
-  if (party) settleParty(state, party); else if (base) settleBase(state, base); // ammo.js: rounds by calibre in the pools (generic ammo sorted, boxes in the cargo or armory opened)
+  if (party) settleParty(state, party); else if (base && !setup.drill) settleBase(state, base); // ammo.js: rounds by calibre in the pools (generic ammo sorted, boxes in the cargo or armory opened); a drill (defenceplan.js drillBattle) touches no stores
   // A gun reloads only from the rounds on the person (mags.js), so a base's defenders grab their loose rounds out of its
   // stock as the fight starts, as a team packing for a trip does (carrykit.js packShells and looseWant: a pocket or a
   // rig pouch). Not afield (loneattack.js): one of them attacked out on the land has only what is on them.
-  const shellLines = base && !party && !setup.afield ? handOutShells(base.stock, combatants(state, setup)) : [];
+  const shellLines = base && !party && !setup.afield && !setup.drill ? handOutShells(base.stock, combatants(state, setup)) : []; // not a drill: nothing is fought, so nothing leaves the stock
   // A base's wall map (deploy.js: the wall at column 12 of an 18-wide map): on a bridge the river starts 3 columns before
   // it, so the wall, its walkway and ladders and the tank traps in front all stand on the deck.
   const map = genMap(rng, tile, { densify: setup.layout !== "baseDefence", bridgeC0: setup.layout === "baseDefence" ? 9 : undefined, trucks: setup.layout ? [] : trucksAt(state, tileId), locks: !setup.layout }); // Army trucks (miltrucks.js), not on a base's wall map; locked doors only on an open field
@@ -3965,7 +4026,7 @@ export function createBattle(state, setup) {
   });
   if (layout) {
     layout(b, layoutCtx("map"));
-    b.reach = flood(b.cells, 0, Math.floor(H / 2));
+    b.reach = layoutReach(b.cells); // the west edge's middle, or the most open ground when that cell is shut in
   }
   pondsBattle(state, b, b.tileId ?? (base ? base.tile : null)); // ponds.js: the hollows' water, mud or ice by the tile's weather (a base's map: its tile); the slopes in the rain or in winter
   seasonGround(state, b, b.tileId ?? (base ? base.tile : null)); // seasonground.js: spring's mud on the dirt, winter's snow on the ground (after the ponds: not on them)
@@ -4996,7 +5057,10 @@ export function combatAct(state, act) {
       searchBox(state, b, u, box, !!act.open);
       break;
     }
-    case "searchBody": case "pickUp": case "drop": { const why = groundAct(state, b, u, act); if (why) return why; break; } // ground.js
+    case "searchBody": case "pickUp": case "drop": { // ground.js; a "drop" with no inventory loc is a rock from the walls (siege.js, below)
+      if (act.type === "drop" && act.loc == null) { const err = siegeAct(state, b, u, t, act); if (err) return err; break; }
+      const why = groundAct(state, b, u, act); if (why) return why; break;
+    }
     case "stash": { // raidloot.js: everything carried loose into the vehicle (free; the window does it item by item)
       if (!b.raid || !atVehicle(b, u)) return "Move to the vehicle first.";
       const r = stashAll(state, u.id);
@@ -5156,7 +5220,7 @@ export function combatAct(state, act) {
       break;
     }
     // siege.js: set a ladder up, push one off, swing the ram, set it down or take it up, drop rocks from the walls.
-    case "ladder": case "push": case "ram": case "dropRam": case "takeRam": case "loadRam": case "unloadRam": case "drop": { // loadRam / unloadRam: the ram into or out of the team's vehicle
+    case "ladder": case "push": case "ram": case "dropRam": case "takeRam": case "loadRam": case "unloadRam": { // loadRam / unloadRam: the ram into or out of the team's vehicle
       const err = siegeAct(state, b, u, t, act);
       if (err) return err;
       break;
@@ -6603,6 +6667,9 @@ function endBattle(state, b, outcome) {
     survivorsHurt: hurtIds, survivorsDead: deadIds, ammoUsed: b.ammoUsed, arrowsUsed: b.arrowsUsed || 0, arrowsBack: arrowsBackN, loot,
     enemyVehicle: outcome === "victory" && b.enemyVehicle && !(b.raidHumvee && b.raidHumvee.gone) ? { ...b.enemyVehicle } : null, // their vehicle left on the field (conflicts.js)
     ...(b.raidHumvee ? { humveeOut: !!b.raidHumvee.gone, humveeWear: b.raidHumvee.wear || 0 } : {}), // a raid's Humvee drove off with them (raidCarTurn), and what it took (conflicts.js)
+    // Theirs still on the map but done for: its engine dead (carTurn: worn to RAID_CAR.STALL_WEAR) or blown up (a
+    // merchant caravan that lives through the fight goes on without its escort vehicle: visitors.js v.vehicleLost).
+    ...(b.raidHumvee && !b.raidHumvee.gone && (b.raidHumvee.ai === "stalled" || b.raidHumvee.blownUp) ? { humveeLost: true } : {}),
     turns: b.turn, medsUsed: b.medsUsed, extraKilled: enemies.filter((u) => u.reinforcement && u.dead).length,
     // Played on the map: gear wear is done, and the dead were there to search (so handlers add no "loot from the bodies").
     tactical: true, worn: true, bodies: b.bodies.length,
@@ -6986,7 +7053,7 @@ function genRaidMap(rng, tile, areaTypes, withVehicle, extra = {}) {
   const start = (() => { for (let y = entry.y0; y < entry.y0 + entry.h; y++) for (let x = entry.x0; x < entry.x0 + entry.w; x++) if (cells[idx(x, y)].k === "open") return [x, y]; return [entry.x0 + 1, entry.y0 + 1]; })(); // an open cell of the zone (beside the vehicle)
   const carve = (x0, y0, x1, y1) => {
     let x = x0, y = y0;
-    const step = () => { const c = at(x, y); if (c && !CELL[c.k].walk && c.k !== "vehicle" && c.k !== "water" && c.k !== "rail" && !c.car) { c.k = "open"; if (c.f === "floor") c.f = "floor"; } }; // never through the river, a bridge's railing or a car (half a car is no car)
+    const step = () => { const c = at(x, y); if (c && !CELL[c.k].walk && c.k !== "vehicle" && c.k !== "water" && c.k !== "rail" && !c.car) { c.k = "open"; } }; // never through the river, a bridge's railing or a car (half a car is no car); the cell keeps its ground (a house's floor stays floor)
     while (x !== x1) { x += Math.sign(x1 - x); step(); }
     while (y !== y1) { y += Math.sign(y1 - y); step(); }
   };
@@ -7537,7 +7604,7 @@ export function searchBox(state, b, u, box, open = false, quick = false) {
     lockedLoot(state, b, u, box, sup, gear); // locks.js: more in locked things, keys, blueprints (its own dice)
     const site = poiKind || (state.tiles[b.tileId] && state.tiles[b.tileId].loc ? state.tiles[b.tileId].loc.type : null);
     const rTheme = box.kind === "body" ? "home" : box.truck ? "military" : raidTheme(site, box.area != null && R.areas[box.area] ? R.areas[box.area].type : "house");
-    typeFind(state, sup, box.kind === "body" ? "raider" : box.kind === "zombie" ? "travel" : box.truck ? "military" : box.area != null && R && R.areas[box.area] ? AREA_MIX[R.areas[box.area].type] || "house" : "house", box.kind === "body" || box.kind === "zombie" ? null : b.tileId, pd ? drng : undefined); // foods.js: the food as the items a place like this holds (a site's shelves run down)
+    typeFind(state, sup, box.kind === "body" ? (box.zombie ? "travel" : "raider") : box.truck ? "military" : box.area != null && R && R.areas[box.area] ? AREA_MIX[R.areas[box.area].type] || "house" : "house", box.kind === "body" ? null : b.tileId, pd ? drng : undefined); // foods.js: the food as the items a place like this holds (a site's shelves run down)
     sortFind(sup, rTheme, "box", b.tileId, bid); // ammo.js: what turns up there, by calibre
     if (box.kind !== "body") formFinds(sup, gear, rTheme, "box", b.tileId, bid); // ammo.js: some of it boxed (stacks of boxes), now and then a bulk ammo container; the rest loose
     box.contents = { sup, gear };

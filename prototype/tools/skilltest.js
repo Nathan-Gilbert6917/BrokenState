@@ -2,6 +2,8 @@
 // floor, teaching, reading (progress, limits, one reader per copy), books found and sold, perk milestones and
 // choices, every perk's effect where it is coded, determinism, and a 200-day autopilot run without NaN.
 // Usage: node tools/skilltest.js [seed]
+//   BS_QUICK=1 in the environment (runtests.js --quick): the same checks on less: fewer search hours for the
+//   search perks (a world each), a 20-day determinism pair and a 60-day autopilot run.
 import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, tickHour, day, hub, atBase, alive, makeSurvivor, skill, combatPower } from "../src/sim/world.js";
 import { GEAR, SKILLS } from "../src/sim/data.js";
@@ -25,6 +27,7 @@ import { newItem } from "../src/sim/inventory.js";
 import { setAutopilot, autopilotResolve } from "../src/sim/autopilot.js";
 import { moodFactors, MOODF } from "../src/sim/relations.js";
 
+const QUICK = !!process.env.BS_QUICK;
 const SEED = Number(process.argv[2] || 42);
 let pass = 0, fail = 0;
 const check = (ok, text) => { if (ok) pass++; else fail++; console.log(`  ${ok ? "ok  " : "FAIL"} ${text}`); };
@@ -514,7 +517,8 @@ console.log("Perk effects");
   check(quiet.heat < plainS.heat && Math.abs(quiet.heat - Math.max(1, plainS.heat / 2)) < 0.6, `Quiet Hands: Heat from a search hour ${r1(plainS.heat)} → ${r1(quiet.heat)}`);
   check(Math.abs(salv.loot - plainS.loot * 0.6) < 1e-9, `Salvager: the site is picked over ${r1(plainS.loot * 100)} → ${r1(salv.loot * 100)} points an hour`);
   let hurtPlain = 0, hurtPh = 0;
-  for (let i = 0; i < 30; i++) {
+  const hardN = QUICK ? 12 : 30; // each search hour below is a world of its own (about half a second)
+  for (let i = 0; i < hardN; i++) {
     for (const [ids, inc] of [[[], () => hurtPlain++], [["phantom"], () => hurtPh++]]) {
       const r = searchOnce(ids);
       r.w.engagement.heat = 90;
@@ -525,7 +529,7 @@ console.log("Perk effects");
       if (hp1 < hp0 - 0.01) inc();
     }
   }
-  check(hurtPlain > 3 && hurtPh === 0, `Phantom: hard extractions never cost health (hurt in ${hurtPlain}/30 without, ${hurtPh}/30 with)`);
+  check(hurtPlain > 3 && hurtPh === 0, `Phantom: hard extractions never cost health (hurt in ${hurtPlain}/${hardN} without, ${hurtPh}/${hardN} with)`);
   const monte = (ids, hours = 40) => {
     const out = { pf: 0, gear: 0, fights: 0, sup: 0 };
     for (let i = 0; i < hours; i++) {
@@ -542,12 +546,14 @@ console.log("Perk effects");
     }
     return out;
   };
-  const m0 = monte([], 120), mT = monte(["treasure"], 120), mE = monte(["tinkerseye"], 120);
-  check(mT.sup > m0.sup && mT.gear >= m0.gear, `Treasure Hunter: more supplies and gear over 120 search hours (${m0.sup} → ${mT.sup} supplies, ${m0.gear} → ${mT.gear} items)`);
+  const montN = QUICK ? 40 : 120;
+  const m0 = monte([], montN), mT = monte(["treasure"], montN), mE = monte(["tinkerseye"], montN);
+  check(mT.sup > m0.sup && mT.gear >= m0.gear, `Treasure Hunter: more supplies and gear over ${montN} search hours (${m0.sup} → ${mT.sup} supplies, ${m0.gear} → ${mT.gear} items)`);
   check(mE.pf >= m0.pf, `Tinker's Eye: parts and fuel ${m0.pf} → ${mE.pf}`);
-  const fightRate = (ids) => { let fights = 0; for (let i = 0; i < 200; i++) { const r = searchOnce(ids); r.w.engagement.heat = 60; r.w.rng = new (r.w.rng.constructor)(9000 + i); const line = searchHour(r.w) || ""; if (/fight|taken down|put them down|hurt|killed/.test(line)) fights++; } return fights; };
+  const hotN = QUICK ? 60 : 200;
+  const fightRate = (ids) => { let fights = 0; for (let i = 0; i < hotN; i++) { const r = searchOnce(ids); r.w.engagement.heat = 60; r.w.rng = new (r.w.rng.constructor)(9000 + i); const line = searchHour(r.w) || ""; if (/fight|taken down|put them down|hurt|killed/.test(line)) fights++; } return fights; };
   const f0 = fightRate([]), f1 = fightRate(["sixthsense"]);
-  check(f1 < f0, `Sixth Sense: trouble in ${f0} → ${f1} of 200 hot search hours`);
+  check(f1 < f0, `Sixth Sense: trouble in ${f0} → ${f1} of ${hotN} hot search hours`);
   // Base work.
   const w4 = world(SEED + 9);
   const h4 = hub(w4);
@@ -564,7 +570,7 @@ console.log("Perk effects");
   [a, b] = withPerk(cr, "machinist", () => craftRate(w4, h4, "spikedbat"));
   check(Math.abs(b - a * 1.3) < 1e-9, `Machinist: crafting ${r1(a)} → ${r1(b)}`);
   h4.stock.scrap = 200;
-  h4.armory = [];
+  h4.armory = [newItem("hammer")]; // the bat's tool (data-tools.js CRAFT_TOOLS, the tools-as-prerequisites request 2026-10-21)
   give(cr, "tinkerer");
   queueCraft(w4, h4, "spikedbat");
   for (let i = 0; i < 40 && craftQueue(h4).length; i++) craftingHour(w4);
@@ -691,9 +697,10 @@ console.log("Determinism and a long run");
   };
   // Ids come from a counter shared by every world made in this process, so compare without them.
   const sig = (st) => JSON.stringify(st.survivors.map((s) => [s.name, s.skills, s.xp, s.perks, s.books, s.role]));
-  const a = run(SEED, 40), b = run(SEED, 40);
+  const detDays = QUICK ? 20 : 40, longDays = QUICK ? 60 : 200;
+  const a = run(SEED, detDays), b = run(SEED, detDays);
   check(sig(a) === sig(b), "the same seed gives the same skills, XP, perks and books");
-  const st = run(SEED + 3, 200);
+  const st = run(SEED + 3, longDays);
   let bad = [];
   for (const s of st.survivors) {
     for (const k of SKILLS) {
@@ -707,7 +714,7 @@ console.log("Determinism and a long run");
   const perks = st.survivors.reduce((x, s) => x + (s.perks || []).length, 0);
   const roles = {};
   for (const s of alive(st)) roles[s.role] = (roles[s.role] || 0) + 1;
-  check(!bad.length, `200 days on autopilot: no NaN or out-of-range skills (${bad.slice(0, 3).join("; ")})`);
+  check(!bad.length, `${longDays} days on autopilot: no NaN or out-of-range skills (${bad.slice(0, 3).join("; ")})`);
   console.log(`    day ${day(st)}: ${alive(st).length} alive, ${gained} levels gained, ${perks} perks, ${st.bases.reduce((x, b) => x + b.armory.filter((i) => GEAR[i.key].book).length, 0)} books in armories, roles ${JSON.stringify(roles)}`);
   check(gained > 0 && perks > 0, "skills grow and perks get taken");
 }

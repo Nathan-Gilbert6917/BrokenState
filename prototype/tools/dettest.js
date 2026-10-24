@@ -11,6 +11,8 @@
 // The checks run side by side in worker threads (tools/pool.js): each check's worlds in one thread, in the order it
 // needs them; --workers 1 runs them one after another.
 // Usage: node tools/dettest.js [days] [seeds...] [--workers N]
+//   BS_QUICK=1 (npm run test:quick): the same checks on 15 days and seeds 42 and 7 (not 60 days on 42, 7, 1234), in at
+//   most 2 worker threads.
 import { createWorld, tickHour, day, newId, hub, atBase } from "../src/sim/world.js";
 import { createBattle, transformBattle, autoPlayerTurn, runEnemyPhase, registerCombatHandler } from "../src/sim/combat.js";
 import { setAutopilot } from "../src/sim/autopilot.js";
@@ -22,8 +24,9 @@ import { pool, serve, isMainThread, workerCount, withoutWorkers } from "./pool.j
 
 const fresh = process.argv[2] === "--digest"; // child mode: print the digest hash of one fresh run
 const args = withoutWorkers(fresh ? process.argv.slice(3) : process.argv.slice(2));
-const days = Number(args[0] || 60);
-const seeds = args.length > 1 ? args.slice(1).map(Number) : [42, 7, 1234];
+const QUICK = !!process.env.BS_QUICK;
+const days = Number(args[0] || (QUICK ? 15 : 60));
+const seeds = args.length > 1 ? args.slice(1).map(Number) : QUICK ? [42, 7] : [42, 7, 1234];
 
 // World ids come from world.js newId, one counter for the whole process. Each world here starts its ids at the next
 // multiple of a million (taking ids changes nothing in a world), so any id in the digest is a number in
@@ -135,7 +138,7 @@ else {
   // The longest first, so no core waits on one long job at the end (the battles are short).
   const COST = { after: 3, between: 2.5, fresh: 2.5, twice: 2, battle: 0.1 };
   const order = jobs.map((_, i) => i).sort((a, b) => COST[jobs[b].kind] - COST[jobs[a].kind] || a - b);
-  const done = await pool(import.meta.url, order.map((i) => jobs[i]), { workers: workerCount(process.argv), onResult: () => process.stdout.write(".") });
+  const done = await pool(import.meta.url, order.map((i) => jobs[i]), { workers: workerCount(process.argv, QUICK ? 2 : null), onResult: () => process.stdout.write(".") });
   const results = new Array(jobs.length);
   order.forEach((i, k) => { results[i] = done[k]; });
   process.stdout.write("\n");

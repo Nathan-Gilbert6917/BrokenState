@@ -10,6 +10,8 @@
 // Each pair of worlds (and each battle pair) runs in a worker thread of its own, side by side (tools/pool.js);
 // --workers 1 runs them one after another.
 // Usage: node tools/sameseedtest.js [days=120] [seeds=42,7,1234,99] [styles=balanced,aggressive,cautious] [mode=normal|hardcore] [--workers N]
+// Quick form (BS_QUICK=1, npm run test:quick): 25 days on seed 42 in the three styles, the seed's seven battles on its
+// world after 5 days, on 2 workers; the same checks on less (the full form: about 13 minutes alone).
 import { createWorld, tickHour, day, newId, hub, atBase } from "../src/sim/world.js";
 import { createBattle, autoPlayerTurn, runEnemyPhase, registerCombatHandler } from "../src/sim/combat.js";
 import { setAutopilot } from "../src/sim/autopilot.js";
@@ -18,9 +20,11 @@ import { digest } from "./digest.js";
 import { createHash } from "node:crypto";
 import { pool, serve, isMainThread, workerCount, withoutWorkers } from "./pool.js";
 
+const QUICK = !!process.env.BS_QUICK;
 const argv = withoutWorkers(process.argv.slice(2));
-const days = Number(argv[0] || 120);
-const seeds = (argv[1] || "42,7,1234,99").split(",").map(Number);
+const days = Number(argv[0] || (QUICK ? 25 : 120));
+const BATTLE_DAY = QUICK ? 5 : 10; // the battles at the hub are fought on the seed's world after this many days
+const seeds = (argv[1] || (QUICK ? "42" : "42,7,1234,99")).split(",").map(Number);
 const styles = (argv[2] || "balanced,aggressive,cautious").split(",");
 const mode = argv[3] || "normal"; // or "hardcore"
 const sha = (s) => createHash("sha1").update(s).digest("hex");
@@ -88,7 +92,7 @@ function battle(seed, kind, mode) {
   const st = createWorld({ seed, factionCount: 8, mode });
   st.started = true;
   setAutopilot(st, true, "balanced");
-  while (day(st) <= 10 && !st.gameOver) tickHour(st);
+  while (day(st) <= BATTLE_DAY && !st.gameOver) tickHour(st);
   setAutopilot(st, false);
   const base = hub(st);
   const people = atBase(st, base.id).filter((s) => s.alive).slice(0, 4);
@@ -112,7 +116,7 @@ else {
   const pairs = seeds.flatMap((seed) => styles.map((style) => ({ kind: "pair", seed, style, days, mode })));
   const battles = seeds.flatMap((seed) => KINDS.map((kind) => ({ kind, seed, mode })));
   const jobs = [...pairs, ...battles]; // the long campaigns first
-  const res = await pool(import.meta.url, jobs, { workers: workerCount(process.argv), onResult: () => process.stdout.write(".") });
+  const res = await pool(import.meta.url, jobs, { workers: workerCount(process.argv, QUICK ? 2 : null), onResult: () => process.stdout.write(".") });
   process.stdout.write("\n");
   let fails = 0, passes = 0;
   const crash = (j, r) => `${j.kind === "pair" ? `seed ${j.seed} ${j.style}` : `seed ${j.seed} ${j.kind}`} crashed: ${r.error.split("\n").slice(0, 4).join(" | ")}`;
@@ -123,7 +127,7 @@ else {
     if (r.ok) passes++; else fails++;
     for (const l of r.lines) console.log(l);
   });
-  console.log("Tactical battles at the hub after 10 days, every enemy kind");
+  console.log(`Tactical battles at the hub after ${BATTLE_DAY} days, every enemy kind`);
   for (const seed of seeds) {
     const bad = [];
     battles.forEach((j, k) => {

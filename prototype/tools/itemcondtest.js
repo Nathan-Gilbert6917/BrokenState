@@ -27,7 +27,7 @@ import { Rng } from "../src/sim/rng.js";
 import { createWorld, tickHour, day, hub } from "../src/sim/world.js";
 import { setAutopilot } from "../src/sim/autopilot.js";
 import { KITS, AREAS } from "../src/sim/combat.js";
-import { enemyBody, deadBodyFinds, allItems, lootItem, newItem, ZOMBIE_FINDS, ZOMBIE_PACKS, ZOMBIE_PACK_STUFF, ZBODY, ZSURV } from "../src/sim/inventory.js";
+import { enemyBody, deadBodyFinds, allItems, allCarried, lootItem, newItem, ZOMBIE_FINDS, ZOMBIE_PACKS, ZOMBIE_PACK_STUFF, ZBODY, ZSURV } from "../src/sim/inventory.js";
 import { HEAD_FINDS, AREA_HEAD, WARE_HEAD } from "../src/sim/helmets.js"; // helmets and ear protection (their own dice)
 import { WARE_CARTS } from "../src/sim/loot.js"; // carts on a merchant's table (loot.js cartWares)
 import { SITE_FINDS, rollAreaFind, AREA_FINDS, rollFind, rollHuntFind, rollLightFind, LIGHT_FINDS, rollGunmodFind, rollAreaGunmod, AREA_GUNMODS, WARE_GUNMODS, WARE_MODS, SITE_MODS, AREA_MODS, rollSiteMod } from "../src/sim/loot.js"; // WARE_MODS / SITE_MODS / AREA_MODS: the economy agent's parts
@@ -199,13 +199,18 @@ st.started = true;
   const w = createWorld({ seed: 77, factionCount: 8 });
   w.started = true;
   setAutopilot(w, true, "balanced");
-  // Sampled every day (the stock on the map at one hour depends on which caravans happen to be there then).
-  // Your people's starting weapons (world.js: part-worn by START_DUR, not rolled) are no group's find: one taken off
-  // your dead or traded to a group can turn up on its table (seed 77 since the shops of 2026-10-21, data-shops.js).
-  const seen = new Set(w.survivors.map((s) => s.gear.weapon).filter(Boolean));
+  // Sampled every hour (the stock on the map at one hour depends on which caravans happen to be there then).
+  // What your people carried before any shelf had it is no group's find: their starting gear (world.js: part-worn by
+  // START_DUR, not rolled) and a recruit's own things (recruits.js, as starting gear) taken off your dead (economy.js
+  // deathSitesDaily: the very item, arsenal.js keepItem) or traded to a group can turn up on its table (seed 77 since
+  // the shops of 2026-10-21, data-shops.js; a recruit's harmonica off her body on day 41 since 2026-10-24). Shelves are
+  // read before your people each hour, so a group's own item bought by you is still checked.
+  const seen = new Set();
+  const ours = () => { for (const s of w.survivors) for (const it of allCarried(s)) seen.add(it); };
+  ours();
   const items = [];
   const take = () => { for (const it of [...w.factions.flatMap((f) => f.wares || []), ...(w.visitors || []).flatMap((v) => v.wares || [])]) if (it && !seen.has(it)) { seen.add(it); items.push(it); } };
-  while (day(w) <= 40 && !w.gameOver) { tickHour(w); if (w.hour % 24 === 12) take(); }
+  while (day(w) <= 40 && !w.gameOver) { tickHour(w); take(); ours(); }
   take();
   sampleCheck("a 40-day autopilot world's trade stock", items);
 }
@@ -468,7 +473,7 @@ KIT_LOOT.on = false; // the carry kit's finds and wares (carrykit.js SITE_KIT / 
   for (let i = 0; i < 60; i++) for (const kind of ["merchants", "explorers"]) {
     const v = V.spawnVisitor(w, kind);
     if (!v) continue;
-    (kind === "merchants" ? mk : vk).push(`${v.name}:${v.tile}:${kind === "merchants" ? Object.keys(v.stock).filter((k) => k !== "buildmat" && k !== "metalsheet" && !FOODS[k]).length + 2 : keysOf(v.wares)}`); // buildmat: building materials (the base ladder, staging.js), a stock key added later; food by type (foods.js): their food and preserved food are items now, counted as the two keys they were
+    (kind === "merchants" ? mk : vk).push(`${v.name}:${v.tile}:${kind === "merchants" ? Object.keys(v.stock).filter((k) => k !== "buildmat" && k !== "metalsheet" && k !== "stone" && !FOODS[k]).length + 2 : keysOf(v.wares)}`); // buildmat: building materials (the base ladder, staging.js), a stock key added later; stone (stone.js, c5960f6, the user's request 2026-10-23): another, every caravan's stock one key longer (its dice and places unchanged); food by type (foods.js): their food and preserved food are items now, counted as the two keys they were
     w.visitors.length = 0;
   }
   check(h16(vk.join("|")) === BASE.visitors.keys, "travellers: the same wares");

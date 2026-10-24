@@ -494,7 +494,7 @@ console.log("The autopilot");
     else console.log(`    (seed ${SEED + 30 + s}: still in at ${c5.at} after ${n} steps)`);
   }
   check(walked > 0 && outs === walked, `turned back deeper in, the autopilot walks out by a mouth on its own (${outs}/${walked})`);
-  // The governor's own campaign from the hub (as tools/wintest.js --force hive): the trip, the crawl, the core.
+  // The governor's own campaign from the hub (as the forced hive ending of tools/winforce.js, checked by wintest.js): the trip, the crawl, the core.
   const w = createWorld({ seed: 1, factionCount: 3 });
   w.started = true; w.erasOff = true;
   setAutopilot(w, true, "balanced");

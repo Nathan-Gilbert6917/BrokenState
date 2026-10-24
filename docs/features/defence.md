@@ -1,6 +1,6 @@
 # Base defence and sieges
 
-Detail for section 9 of [docs/agents/features.md](../agents/features.md). `[name]` is `prototype/src/sim/name.js`; `ui/name` is `prototype/src/ui/name.js`. Screenshots: [docs/base-defence/](../base-defence/), [docs/siege/](../siege/) (with [report.txt](../siege/report.txt)).
+Detail for section 9 of [docs/agents/features.md](../agents/features.md). `[name]` is `prototype/src/sim/name.js`; `ui/name` is `prototype/src/ui/name.js`. Screenshots: [docs/base-defence/](../base-defence/) (the siege shots and their report are removed).
 
 ## Defenses tab
 The user's requests 2026-10-19. Modules: [buildings, defences, wire, fort, interior, deploy, combat moveAlong / "cutwire"; ui/ui baseConstruction defensesPane / wallCard (the pieces), ui/defence builtDefenses, ui/combat barricadeButtons "cutwire", ui/battlebar]; test `tools/defensestest.js`.

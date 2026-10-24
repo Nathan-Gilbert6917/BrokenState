@@ -5,6 +5,8 @@
 // autopilot's crews, determinism, a render check of the survivor screen and the memorial wall, and a long
 // autopilot run without NaN.
 // Usage: node tools/relationstest.js [seed] [days]
+//   BS_QUICK=1 in the environment (runtests.js --quick): the same checks on less: the autopilot run 60 days (unless
+//   [days] is given) and the determinism pair 20 days each.
 import { eatFromStore } from "../src/sim/storage.js";
 import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, tickHour, hub, atBase, alive, residents, day, makeSurvivor, killSurvivor } from "../src/sim/world.js";
@@ -28,8 +30,9 @@ import {
   argumentWeight, friendsOf, rivalsOf, partnerOf, bond, compat, survivorSummary, makePeace, peaceInfo, REL, GRIEF, BREAK, MOODF, MEMORIAL, COMBAT,
 } from "../src/sim/relations.js";
 
+const QUICK = !!process.env.BS_QUICK;
 const seed = Number(process.argv[2] || 42);
-const longDays = Number(process.argv[3] || 200);
+const longDays = Number(process.argv[3] || (QUICK ? 60 : 200));
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
 const section = (t) => console.log(t);
@@ -526,8 +529,9 @@ section(`Determinism, and ${longDays} days on autopilot without NaN`);
     return { st, bad };
   };
   const sig = (st) => JSON.stringify([st.survivors.map((s) => [s.rk, Math.round(s.mood * 100), s.alive, s.rec]), Object.values(st.rel || {}).map((r) => Math.round(r.o * 100)).sort((x, y) => x - y), memorialList(st).map((m) => [m.name, m.died])]);
-  const r1 = run(60), r2 = run(60);
-  check(sig(r1.st) === sig(r2.st), "same seed, same relationships, moods, records and memorial (60 days, twice)");
+  const detDays = QUICK ? 20 : 60;
+  const r1 = run(detDays), r2 = run(detDays);
+  check(sig(r1.st) === sig(r2.st), `same seed, same relationships, moods, records and memorial (${detDays} days, twice)`);
   const t0 = performance.now();
   const L = run(longDays);
   const st = L.st;
