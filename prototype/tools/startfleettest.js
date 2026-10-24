@@ -8,7 +8,8 @@
 //      survivors, the all-ones corner) build with several vehicles;
 //   3. Custom: several vehicles of the kinds set, all at the hub, each back unloaded into the hub on day 1 (any thing and
 //      any material, foods, rounds past 300); Normal and Hardcore keep START_TRUNK's caps (the materials among them, 2026-10-24);
-//      a vehicle added to an empty slot, one removed (its slot stays), Normal's pickup changed for another kind;
+//      ＋ Add a vehicle (a pickup in the first free slot, up to one a survivor), Remove (the list closes up; Hardcore's
+//      car slot kept free, the button at the top), Normal's pickup changed for another kind;
 //   4. Normal and Hardcore with no backs set: the same world as before (the dice untouched); Hardcore's back set goes in
 //      place of the dice's, As rolled brings the dice's back;
 //   5. Random fills a back up to its point limit and within its room (Normal, Hardcore, Custom; the screen's 🎲 Random,
@@ -20,7 +21,7 @@
 import { readFileSync } from "node:fs";
 import { createWorld } from "../src/sim/world.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
-import { START_FLEET, fleetKinds, cleanFleet, fitFleet, defaultFleet, resizeFleet, clampLimit, fleetRoom, fleetText, fleetProblems, fleetName, fleetVehicle } from "../src/sim/startfleet.js";
+import { START_FLEET, fleetKinds, cleanFleet, fitFleet, defaultFleet, resizeFleet, clampLimit, fleetRoom, fleetText, fleetProblems, fleetName, fleetVehicle, ridesIn } from "../src/sim/startfleet.js";
 import { sanitizeStartVehicle, trunkKg, START_TRUNK, clearStartGear } from "../src/sim/startgear.js";
 import { vehiclePoints, pricePerson, bgBacks, bgCarBack, suppliesPoints, loosePoints } from "../src/sim/custompoints.js";
 import { randomTrunk } from "../src/sim/randomkit.js";
@@ -112,11 +113,15 @@ section("3. Custom: several vehicles, any thing and material");
   check(ui.fleet[1].load.items.reduce((a, e) => a + (e.n || 1), 0) === 30, "Custom: more than 16 things in a back");
   // Kinds and the count rebuild.
   check(SG_CHANGE["fleet-kind"](st, ui, el("sedan", { i: "1" })) === "fleet" && ui.fleet[1].type === "sedan" && SG_CHANGE["fleet-kind"](st, ui, el("bike", { i: "1" })) === false, "a kind: the world again; no bicycles");
-  // A slot a starting survivor (SMALL: 4): the fourth stands empty until a kind goes in it.
-  check(ui.fleet.length === 4 && ui.fleet[3].empty && SG_CHANGE["fleet-kind"](st, ui, el("truck", { i: "3" })) === "fleet" && !ui.fleet[3].empty && ui.fleet[3].type === "truck" && ui.fleet[1].type === "sedan", "the fourth slot (one a survivor): a pickup put in it, the sedan kept");
+  // A slot a starting survivor (SMALL: 4): the fourth is free until ＋ Add a vehicle puts a pickup in it.
+  check(ui.fleet.length === 4 && ui.fleet[3].empty && SG_ACTIONS["fleet-add"](st, ui, {}) === "fleet" && !ui.fleet[3].empty && ui.fleet[3].type === "truck" && ui.fleet[1].type === "sedan", "＋ Add a vehicle: a pickup in the first free slot (the fourth, one a survivor), the sedan kept");
   const re = createWorld({ seed: 23, factionCount: 5, custom: SMALL, fleet: ui.fleet });
   check(re.vehicles.filter((v) => v.loc.kind === "base").map((v) => v.type).join() === "van,sedan,miltruck,truck", "built again with them");
-  check(SG_ACTIONS["fleet-remove"](st, ui, { i: "3" }) === "fleet" && ui.fleet[3].empty && createWorld({ seed: 23, factionCount: 5, custom: SMALL, fleet: ui.fleet }).vehicles.filter((v) => v.loc.kind === "base").length === 3, "Remove: the slot empty again, three vehicles");
+  check(SG_ACTIONS["fleet-add"](re, ui, {}) === false && /data-action="fleet-add" disabled/.test(newRunScreen(re, ui)) && /4 of 4/.test(newRunScreen(re, ui)), "a vehicle a survivor already: no more added, the button greyed (4 of 4)");
+  check(SG_ACTIONS["fleet-remove"](re, ui, { i: "1" }) === "fleet" && ui.fleet.map((f) => (f.empty ? "-" : f.type)).join() === "van,miltruck,truck,-", "Remove the sedan: the others close up, the free slot at the end");
+  const re2 = createWorld({ seed: 23, factionCount: 5, custom: SMALL, fleet: ui.fleet }), rh = newRunScreen(re2, ui);
+  check(re2.vehicles.filter((v) => v.loc.kind === "base").map((v) => v.type).join() === "van,miltruck,truck" && (rh.match(/data-action="fleet-kind"/g) || []).length === 3 && !/Empty: add a vehicle/.test(rh) && rh.indexOf('data-action="fleet-add"') > rh.lastIndexOf('data-action="fleet-kind"') && /3 of 4/.test(rh), "three vehicles, their rows alone and ＋ Add a vehicle under them (3 of 4)");
+  check(SG_ACTIONS["fleet-remove"](re2, ui, { i: "3" }) === false && SG_ACTIONS["fleet-remove"](re2, ui, { i: "2" }) === "fleet" && ui.fleet[2].empty && createWorld({ seed: 23, factionCount: 5, custom: SMALL, fleet: ui.fleet }).vehicles.filter((v) => v.loc.kind === "base").length === 2, "Remove the last: nothing on a free slot; two vehicles");
   const nu = UI(), nw = createWorld({ seed: 23, factionCount: 5 });
   check(SG_CHANGE["fleet-kind"](nw, nu, el("van", { i: "0" })) === "fleet" && nu.fleet[0].type === "van" && SG_CHANGE["fleet-kind"](nw, nu, el("bike", { i: "0" })) === false, "Normal: the pickup's kind may be changed too (the user's request: 'you can change it'); no bicycles");
   const nv = createWorld({ seed: 23, factionCount: 5, fleet: nu.fleet });
@@ -235,7 +240,7 @@ section("7. The screen");
 {
   const st = createWorld({ seed: 42, factionCount: 5, fleet: [{ limit: 60, load: { items: [], supplies: { water: 10 } } }] });
   const html = newRunScreen(st, UI());
-  check(/Starting vehicles/.test(html) && /data-action="fleet-limit" data-i="0" value="60"/.test(html) && /data-action="fleet-rand"/.test(html) && /data-action="fleet-edit"/.test(html) && /data-action="fleet-empty"/.test(html) && /Vehicle 1 <select data-action="fleet-kind" data-i="0"/.test(html) && /data-action="fleet-remove" data-i="0"/.test(html) && new RegExp(`>1 / ${st.fleet.length} slots<`).test(html) && !/fleet-count/.test(html), `Normal: the pickup's row: its kind, Point limit, 🎲 Random, Edit…, Empty, ✕ Remove; 1 of ${st.fleet.length} slots (a slot a survivor, no Vehicles box)`);
+  check(/Starting vehicles/.test(html) && /data-action="fleet-limit" data-i="0" value="60"/.test(html) && /data-action="fleet-rand"/.test(html) && /data-action="fleet-edit"/.test(html) && /data-action="fleet-empty"/.test(html) && /Vehicle 1 <select data-action="fleet-kind" data-i="0"/.test(html) && /data-action="fleet-remove" data-i="0"/.test(html) && (html.match(/data-action="fleet-add"/g) || []).length === 1 && html.indexOf('data-action="fleet-add"') > html.indexOf('data-action="fleet-remove"') && new RegExp(`>1 of ${st.fleet.length}<`).test(html) && !/fleet-count|slots/.test(html), `Normal: the pickup's row: its kind, Point limit, 🎲 Random, Edit…, Empty, ✕ Remove; ＋ Add a vehicle under it (1 of ${st.fleet.length}: one a survivor, no slots or Vehicles box)`);
   check(/Back <b>\d+<\/b> \/ 60 pts/.test(html) && /\d+(\.\d)? \/ 650 kg/.test(html), "points used against the limit and kg against the room");
   const tips = (html.match(/data-action="fleet-[a-z]+"[^>]*>/g) || []).every((m) => /data-tip="[^"]{20,}"/.test(m)) || (html.match(/<label data-tip="[^"]+">Point limit/) || []).length === 1;
   check(tips, "tooltips on the controls");
@@ -255,10 +260,22 @@ section("7. The screen");
   const hc = createWorld({ seed: 42, factionCount: 5, mode: "hardcore" });
   const hh = newRunScreen(hc, UI({ mode: "hardcore" }));
   check(/data-action="fleet-dice"/.test(hh) && new RegExp(`${fleetName(hc, 0).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`).test(hh) && /As rolled: /.test(hh), `Hardcore: the car's row (${fleetName(hc, 0)}), as rolled, with As rolled`);
-  // Custom: a slot a survivor, a kind select on each (the filled ones: the kind; the empty ones: a vehicle to add).
+  // Custom: the vehicles' rows (a kind select each) and ＋ Add a vehicle under them, up to one a survivor.
   const cs = createWorld({ seed: 42, factionCount: 5, custom: SMALL, fleet: resizeFleet([], 2) });
   const ch = newRunScreen(cs, UI({ mode: "custom" }));
-  check(/>2 \/ 4 slots</.test(ch) && (ch.match(/data-action="fleet-kind"/g) || []).length === 4 && (ch.match(/data-action="fleet-rand"/g) || []).length === 2 && !/bike/.test((ch.match(/data-action="fleet-kind"[\s\S]*?<\/select>/) || [""])[0]), "Custom: 2 of 4 slots filled, a kind select on every slot, Random on the filled ones alone (no bicycles)");
+  check(/>2 of 4</.test(ch) && (ch.match(/data-action="fleet-kind"/g) || []).length === 2 && (ch.match(/data-action="fleet-rand"/g) || []).length === 2 && (ch.match(/data-action="fleet-add"/g) || []).length === 1 && !/fleet-add" disabled/.test(ch) && !/bike/.test((ch.match(/data-action="fleet-kind"[\s\S]*?<\/select>/) || [""])[0]), "Custom: two vehicles, a kind select each (no bicycles), one ＋ Add a vehicle (2 of 4)");
+  // Hardcore with the car removed: the button at the top of the list, the team in the next vehicle; Add puts a pickup
+  // in the car's place (the one the team flees in), As rolled still on its select.
+  const hu = UI({ mode: "hardcore" }), h0 = createWorld({ seed: 42, factionCount: 5, mode: "hardcore" });
+  check(SG_ACTIONS["fleet-remove"](h0, hu, { i: "0" }) === "fleet" && hu.fleet[0].empty && hu.fleet.length === h0.survivors.length, "Hardcore: the car removed, its slot kept free");
+  hu.fleet[1] = { ...hu.fleet[1], type: "van", empty: false };
+  const h1 = createWorld({ seed: 42, factionCount: 5, mode: "hardcore", fleet: hu.fleet }), h1h = newRunScreen(h1, hu);
+  check(!fleetVehicle(h1, 0) && fleetVehicle(h1, 1).type === "van" && ridesIn(h1, 1) && h1.hardcore.start.car == null, "the car gone, a van added: the team rides in the van (no car fled in)");
+  check(h1h.indexOf('data-action="fleet-add"') < h1h.indexOf('data-action="fleet-kind"') && (h1h.match(/data-action="fleet-add"/g) || []).length === 1 && /takes the rolled car's place/.test(h1h), "＋ Add a vehicle at the top of the list, above the van");
+  check(SG_ACTIONS["fleet-add"](h1, hu, {}) === "fleet" && hu.fleet[0].type === "truck" && !hu.fleet[0].empty, "Add: a pickup in the car's slot");
+  const h2 = createWorld({ seed: 42, factionCount: 5, mode: "hardcore", fleet: hu.fleet }), h2h = newRunScreen(h2, hu);
+  check(fleetVehicle(h2, 0).type === "truck" && h2.hardcore.start.car === h2.fleet[0].vid && ridesIn(h2, 0) && fleetVehicle(h2, 1).type === "van", "the pickup is the car the team flees in, the van along");
+  check(/<option value="" >As rolled<\/option>/.test(h2h) && h2h.indexOf('data-action="fleet-add"') > h2h.lastIndexOf('data-action="fleet-kind"'), "its select offers As rolled (the dice's car back); the button under the list again");
   // Each mode its own fleet.
   const u = { mode: "custom", startPeople: 6, pointsMax: 90, startVehicle: true, fleet: resizeFleet([], 3), modeSets: { normal: { fleet: [{ limit: 25 }] }, hardcore: {}, custom: {} } };
   stashModeSet(u);
