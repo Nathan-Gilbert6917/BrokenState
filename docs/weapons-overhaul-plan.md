@@ -553,6 +553,7 @@ Called where parts are found: `scavenge.js searchHour`, `combat.js searchBox`, `
 - Guns: floor(value/30)+1 gun parts + 1 scrap.
 - Mods: 1 gun part if value ≥ 25.
 - Phone, camera, console: 1 electronics. Laptop 2; NVG and thermal 3–4.
+  - Since 2026-10-24 the mapping is `inventory.js SALVAGE_ELECTRONICS` and far wider (powered sights, lasers, LED lights, radios, headsets, tasers, power tools, generators, the fridge; a powered attachment worth 25+ gives its gun part too; cars 1–4 by type): see [docs/features/gear.md](features/gear.md#electronics-salvage).
 - Vehicles: "Strip for parts" at a base (`vehicles.js stripVehicle`): 3–8 car parts by condition, 20 scrap, its fuel; the vehicle is gone.
 - Buildings: the existing demolish half-refund.
 
