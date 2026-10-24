@@ -25,7 +25,7 @@ const check = (ok, msg) => { if (ok) passed++; else { fails++; console.log(`  FA
 const section = (t) => console.log(t);
 const enabled = (st, c) => !(typeof c.disabled === "function" ? c.disabled(st) : c.disabled);
 
-const NEW_ROAD = ["creek", "animals", "warning", "farmhouse", "orchard", "station", "camp", "wormdying"];
+const NEW_ROAD = ["creek", "animals", "warning", "farmhouse", "orchard", "station", "camp", "convoy", "wormdying"];
 const NEW_HUB = ["rats", "fence", "sick", "cold", "music", "salvage"];
 
 // A world with a team of three on foot a few tiles out, at hour `hour`, the tile it meets the event on set up to fit.
@@ -54,6 +54,7 @@ const SETUPS = {
   orchard: [HOURS.autumn, (st) => tileOf(st, (t) => t.terrain === "plains")],
   station: [HOURS.summer, (st) => { const id = tileOf(st, (t) => t.road && t.terrain === "plains"); st.tiles[id].infection = 0.4; return id; }],
   camp: [HOURS.summer, (st) => { const id = tileOf(st, (t) => t.terrain === "plains"); st.tiles[id].infection = 0.5; return id; }],
+  convoy: [HOURS.summer, (st) => { const id = tileOf(st, (t) => t.road && t.terrain === "plains"); st.tiles[id].infection = 0.5; return id; }],
   wormdying: [HOURS.summer, (st) => { const id = tileOf(st, (t) => t.terrain === "plains"); st.tiles[id].infection = 0.5; return id; }],
 };
 const snap = (st, p) => JSON.stringify({ sup: p.supplies, cargo: p.cargo, prog: Math.round((p.progress || 0) * 1000), seen: p.seen.size,
@@ -93,6 +94,10 @@ for (const id of NEW_ROAD) {
   check(!travelEventFits(v.st, v.p, "warning", v.tile) || v.st.hordes.some((h) => v.st.grid.distance(h.tile, v.tile) <= 4), "a warning only with a horde within 4 tiles");
   v.st.tiles[v.tile].infection = 0;
   check(!travelEventFits(v.st, v.p, "wormdying", v.tile) && !travelEventFits(v.st, v.p, "camp", v.tile), "no worm-sick stranger or overrun camp on clean land");
+  check(!travelEventFits(v.st, v.p, "convoy", v.tile), "no overrun convoy on clean land");
+  const offroad = tileOf(v.st, (t) => !t.road && t.terrain === "plains");
+  v.st.tiles[offroad].infection = 0.5;
+  check(!travelEventFits(v.st, v.p, "convoy", offroad), "no overrun convoy off the road");
   const city = tileOf(v.st, (t) => t.terrain === "city");
   check(!travelEventFits(v.st, v.p, "farmhouse", city), "no lonely farmhouse in a city");
 }
@@ -129,7 +134,7 @@ section(`Road events: ${ROLLS} rolls on the road`);
   }
   const show = Object.entries(counts).sort((a, b) => b[1] - a[1]);
   console.log(`  ${show.map(([t, n]) => `${t} ${n}`).join(", ")}`);
-  for (const title of ["A swollen creek", "A lonely farmhouse", "A roadside gas station", "An overrun camp", "A stranger with the worm"]) check(counts[title] > 0, `"${title}" comes up in play`);
+  for (const title of ["A swollen creek", "A lonely farmhouse", "A roadside gas station", "An overrun camp", "An overrun convoy", "A stranger with the worm"]) check(counts[title] > 0, `"${title}" comes up in play`);
   check((counts.Wolves || 0) + (counts["Feral dogs"] || 0) > 0, "wolves or feral dogs come up in play");
   check((counts["A gone-wild orchard"] || 0) + (counts["Brambles in fruit"] || 0) > 0, "an orchard or brambles come up in play");
 }

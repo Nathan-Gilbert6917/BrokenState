@@ -7,7 +7,8 @@ import {
   carried, takeSupply, takeShots, addGearToCargo, leaveVehicle, startReturn, wipeIfEmpty, cardStale,
 } from "./parties.js";
 import { markRepair } from "./repairwait.js"; // a repair's wait on the road: told when it is over
-import { partyFuel, useFuel, partyVehicle, partyVehicles, breakdownRoll, seatsOf, fleetOf, isBike, carPartsCost } from "./vehicles.js";
+import { partyFuel, useFuel, partyVehicle, partyVehicles, breakdownRoll, seatsOf, fleetOf, isBike, carPartsCost, createVehicle, VEHICLE_TYPES } from "./vehicles.js";
+import { markAbandonedVehicle } from "./markers.js"; // an overrun convoy's truck left on the tile, marked (the robbed-caravan pattern)
 import { attitude, changeGoodwill, isAggressiveType } from "./factions.js";
 import { rollConflict } from "./conflicts.js";
 import { rollWanderer } from "./wanderers.js";
@@ -38,6 +39,8 @@ import { cfgChance } from "./worldcfg.js"; // the run's dials: Events
 
 // Things a road card can turn up (tools/loottest.js counts them as sources).
 export const HUMVEE_GEAR = ["ar", "plate", "nvg", "milradio", "rucksack", "carbine", "smokegren", "frag"];
+// What an overrun convoy's escort had on them, and what rode in the cabs (the "convoy" card below).
+export const CONVOY_GEAR = ["shotgun", "huntrifle", "pistol", "revolver", "leverrifle", "crowbar", "handradio", "toolkit", "binoculars", "flare", "rucksack", "multitool", "repairkit", "bandagekit"];
 export const HIKER_STUFF = ["stove", "flare", "handwarmer", "pocketradio", "handradio", "puritabs", "chocolate", "instcoffee", "harmonica", "cards", "ragboots", "novel", "bandagekit", "flashlight", "lighters", "photos", "waterfilter"];
 
 // ---------- helpers ----------
@@ -138,6 +141,14 @@ function factionNear(state, tileId, filter, radius = 3) {
   return state.factions.find((f) => f.alive && filter(f) && f.bases.some((b) => state.grid.distance(b, tileId) <= radius));
 }
 
+// The overrun convoy card (the "convoy" event below).
+export const CONVOY = {
+  WEIGHT: 2, INFECTION: 0.15, NEAR: 4, // on a bare road tile with the dead about; a group within 4 tiles owned it
+  RISK: 0.25, RISK_INF: 0.4, RISK_MAX: 0.6, // the dead that overran it still about (halved for a quick siphon)
+  DC: 8, FINDS: 3, GEAR: 0.5, TRUCK: 0.3, // Scavenging DC; cargo picks on a pass (1 on a failure); the escort's gear; a truck whole enough to repair
+  CARGO: [["preserved", 4, 7], ["fuel", 3, 6], ["scrap", 6, 10], ["parts", 1, 3], ["ammo", 20, 35], ["meds", 1, 3], ["water", 4, 8]], // what a convoy hauls: [key, min, max]
+  TRUCK_FUEL: [2, 10], TRUCK_COND: [25, 45], SIPHON: [3, 7], WORD: 4, BURY: 4,
+};
 // ---------- event table ----------
 const EVENTS = [
   // Hazards
@@ -557,6 +568,61 @@ const EVENTS = [
           },
           { label: "Bury the dead (3 hours)", hint: "Everyone on the team mood +6", resolve: (s) => { delay(p, 3); cheer(partyMembers(s, p), 6); return "Shallow graves and a few words. The team feels better for it (mood +6)."; } },
           { label: "Move on", resolve: () => "The team gives it a wide berth." },
+        ],
+      };
+    },
+  },
+  {
+    // A convoy the dead overran on the road (the user's request 2026-10-24): a nearby group's, or nobody's you know.
+    // Take what is left (what it hauled, the escort's gear, maybe a truck whole enough to get running again: the
+    // robbed-caravan pattern, caravanraids.js, as a found vehicle for the team's Repair order), siphon the tanks and
+    // go, leave it for the group it belonged to and bring them word (goodwill), or move on. CONVOY sets the numbers.
+    id: "convoy", weight: CONVOY.WEIGHT, when: (st, p, t) => !t.loc && !!t.road && t.infection > CONVOY.INFECTION,
+    card: (st, p, t) => {
+      const risk = Math.min(CONVOY.RISK_MAX, CONVOY.RISK + t.infection * CONVOY.RISK_INF);
+      const f = factionNear(st, t.id, (x) => !x.outsider, CONVOY.NEAR);
+      const named = !!(f && f.known);
+      const friend = named && attitude(f) !== "Hostile";
+      const whose = named ? `${f.name}'s mark is painted on the doors` : f ? "a mark the team does not know is painted on the doors" : "no mark the team knows is painted on the doors";
+      const finished = (s) => (s.rng.chance(risk) ? ` The dead that overran it were still about. ${injureRandom(s, p, 10, 30, "picking over an overrun convoy")}` : "");
+      return {
+        title: "An overrun convoy",
+        text: `A pickup and a box van sit nose-down in the ditch with a trailer on its side behind them, doors open, the road round them bright with brass. The escort made a stand here and lost it: the dead are thick on the verge, and some of them wear the drivers' clothes. ${whose[0].toUpperCase()}${whose.slice(1)}. Whatever was not carried off is still in the trailer.`,
+        choices: [
+          {
+            label: "Take what is left (3 hours)", hint: `${hint(st, p, "scavenging", CONVOY.DC)} for the cargo, else whoever got here first took most of it; ${pct(risk)} the dead that overran it are still about`,
+            resolve: (s) => {
+              delay(p, 3);
+              const hurtTxt = finished(s);
+              if (!s.parties.includes(p)) return hurtTxt.trim();
+              const ok = check(s, p, "scavenging", CONVOY.DC).ok;
+              const picks = s.rng.shuffle(CONVOY.CARGO.map(([k, lo, hi]) => [k, s.rng.int(lo, hi)])).slice(0, ok ? CONVOY.FINDS : 1);
+              const got = picks.map(([k, q]) => addCargo(s, p, k, q));
+              if (s.rng.chance(ok ? CONVOY.GEAR : CONVOY.GEAR / 2)) { const it = lootItem(s.rng.pick(CONVOY_GEAR), "wreck", s.rng); if (addGearToCargo(s, p, it)) got.push(it.name.toLowerCase()); }
+              let truck = "";
+              if (ok && s.rng.chance(CONVOY.TRUCK)) { // one of them is whole: a found vehicle on the tile that needs work (foundcars.js)
+                const type = s.rng.pick(["truck", "van"]);
+                const v = createVehicle(s, type, { kind: "abandoned", tile: t.id, since: s.hour }, { fuel: s.rng.int(CONVOY.TRUCK_FUEL[0], CONVOY.TRUCK_FUEL[1]), condition: s.rng.int(CONVOY.TRUCK_COND[0], CONVOY.TRUCK_COND[1]) });
+                v.found = { model: type === "truck" ? "pickup" : "van", at: tileLabel(s, t.id), hour: s.hour, repair: { parts: 2, scrap: 2, hours: 6, mech: 4, what: ["the engine"] } };
+                markAbandonedVehicle(s, v, "needs repair");
+                truck = ` The ${VEHICLE_TYPES[type].name.toLowerCase()} is whole but took the escort's last stand through the engine: it stands on the tile, marked on the map (Repair it there: 2 parts, 2 scrap, Mechanics 4+).`;
+              }
+              return `${ok ? "The trailer still holds" : "Picked over before the team got here; what was left:"} ${got.join(", ")}.${truck}${hurtTxt}`;
+            },
+          },
+          {
+            label: "Siphon the tanks and go (1 hour)", hint: `${CONVOY.SIPHON[0]} to ${CONVOY.SIPHON[1]} fuel; ${pct(risk / 2)} the dead that overran it are still about`,
+            resolve: (s) => {
+              delay(p, 1);
+              const hurtTxt = s.rng.chance(risk / 2) ? ` The dead that overran it were still about. ${injureRandom(s, p, 8, 22, "siphoning an overrun convoy")}` : "";
+              if (!s.parties.includes(p)) return hurtTxt.trim();
+              return `A hose and a can, quick and quiet: ${addCargo(s, p, "fuel", s.rng.int(CONVOY.SIPHON[0], CONVOY.SIPHON[1]))}.${hurtTxt}`;
+            },
+          },
+          friend
+            ? { label: `Leave it for ${f.name} and bring them word`, hint: `Their convoy, their dead: goodwill with ${f.name} +${CONVOY.WORD}`, resolve: (s) => { const g = factionById(s, f.id); if (!g || !g.alive) return `${f.name} are gone; nobody is left to tell.`; changeGoodwill(s, g, CONVOY.WORD, "word of their lost convoy"); return `The team touches nothing and marks the place. ${g.name} will hear where their people fell (goodwill +${CONVOY.WORD}).`; } }
+            : { label: "Bury the drivers (2 hours)", hint: `Everyone on the team mood +${CONVOY.BURY}`, resolve: (s) => { delay(p, 2); cheer(partyMembers(s, p), CONVOY.BURY); return `The drivers go into the soft ground of the verge, and the team walks on lighter for it (mood +${CONVOY.BURY}).`; } },
+          { label: "Move on", resolve: () => "The team goes wide round the wrecks and the dead on the verge." },
         ],
       };
     },
