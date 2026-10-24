@@ -161,10 +161,14 @@ section("The land: by the tile, fixed by it");
   } else check(true, "(no free river tile in this world)");
   if (camps.farm) { const k = kinds(landOn(view(camps.farm))); check((k.fence || 0) > 10 && (k.bush || 0) > 5, `farmland: hedgerows and fence lines (${fmt(k)})`); }
   if (camps.town) { const v = view(camps.town); check(v.cells.some((c) => c.f === "gravel"), `a town: paved lots, fences and wrecks (${fmt(kinds(landOn(v)))})`); }
-  // The clearing in the middle: nothing of the land, the tents round the fire.
+  // The clearing in the middle is the camp's 5 × 5 (the user's request 2026-10-24: "The clearing of initial foliage is
+  // done in the 5x5"): nothing of the land there; the tile's own land all round it, the old 12 × 12 clearing and the
+  // yard no longer cleared.
   const c0 = camps.forest || Object.values(camps)[0];
-  const land0 = BM.landFor(st, c0), h0 = SC.CLEARING.camp;
-  check([...land0.pieces.keys()].every((k) => { const [x, y] = k.split(",").map(Number); return !(x >= -h0 && x < h0 && y >= -h0 && y < h0); }), `the clearing in the middle (${2 * h0} × ${2 * h0}): nothing of the land there`);
+  const land0 = BM.landFor(st, c0), B0 = SC.siteBox([0, 0]), inBox = (k) => { const [x, y] = k.split(",").map(Number); return x >= B0.x0 && x < B0.x1 && y >= B0.y0 && y < B0.y1; };
+  check([...land0.pieces.keys()].every((k) => !inBox(k)), `the clearing in the middle (${SC.SITE.SIZE} × ${SC.SITE.SIZE}): nothing of the land there`);
+  const hc = SC.CLEARING.camp;
+  check([...land0.pieces.entries()].some(([k, p]) => { const [x, y] = k.split(",").map(Number); return x >= -hc && x < hc && y >= -hc && y < hc && !inBox(k) && p.k !== "rise" && p.k !== "dip"; }), `and the land stands up to the 5 × 5 (the old ${2 * hc} × ${2 * hc} clearing is not cleared)`);
   // A base: the view and a raid's battle map have the same land; cover; no ground shut off.
   const h = hub(st);
   for (const t of ["bunkhouse", "storehouse", "barricades", "well"]) addBuilding(h, t);

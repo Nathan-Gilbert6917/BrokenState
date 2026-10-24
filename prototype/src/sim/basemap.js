@@ -21,10 +21,11 @@
 //     well out in front of the wall, a watchtower on the approach.
 // The battle map (fort.js buildFort) is the grid cropped to what stands on it (the band, every defence and car) plus
 // FORT.MARGIN of open ground all round, so attackers come at it from the north, east, south or west edge as they did
-// on the fort map; the Base map tab's view (openBaseMap) shows VIEW_PAD cells more, so there is room to place things
-// further out, and the view grows as they are placed. The view is never less than VIEW_HALF (150 × 150, a hub's 168 × 168) round the base
-// (the user's request 2026-10-23: "Increase base size from 56x56 to 150x150 selected from a 500x500 map from 250x250":
-// a new camp's view was 56 × 56, the tile's map 250 × 250 before BASE_GRID went to 500).
+// on the fort map; the Base map tab's view (openBaseMap) is the build map instead: 150 × 150 round the base (VIEW_HALF,
+// the user's request 2026-10-23: "Increase base size from 56x56 to 150x150 selected from a 500x500 map from 250x250";
+// a new camp's view was 56 × 56 and the tile's map 250 × 250 before BASE_GRID went to 500), slid back onto the map by its
+// edge, with nothing placed within VIEW_EDGE (3) cells of its edge: you build out from the camp to the 150 × 150 less
+// that margin (the user's request 2026-10-24).
 //
 // Placement (placeItem / placeProblemAt): every building, construction job, crop plot and car is an item (itemsOf)
 // with a footprint (FOOT: w × h cells and what it is on the map, turned by r = 0–3 quarter turns) and a position: the
@@ -143,28 +144,27 @@ import { pondsOn, pondWhy, pondWaits } from "./ponds.js"; // the hollows' ponds 
 // less the band and the no-build margin: gridOf).
 // The user's request 2026-10-23: "The yard for bases should be 75 x 75": every tier's yard starts at YARD (76 × 76: the
 // yard is square round the base itself, so an even number of cells; 75 would need a half cell); a camp's and a
-// shelter's stay there, an outpost's grows to 100 and the main hub's to 180 as before.
+// shelter's stay there, an outpost's grows to 100 and the main hub's to 140 (it was 180: the build map is 150 × 150 now, VIEW_ROOM).
 export const YARD = 38;
 export const GRID = {
   camp:    { core: 4, yard: YARD, per: 0, cap: YARD },  // the camp itself within 76 × 76
   shelter: { core: 6, yard: YARD, per: 0, cap: YARD },  // 76 × 76
   outpost: { core: 6, yard: YARD, per: 2, cap: 50 },    // 76 growing to 100
-  hub:     { core: 8, yard: YARD, per: 3, cap: 90 },    // 76 growing to 180
+  hub:     { core: 8, yard: YARD, per: 3, cap: 70 },    // 76 growing to 140 (VIEW_ROOM: the 150 × 150 build map less its margin)
 };
 export const BASE_GRID = 500; // every base's map: 500 × 500 cells
 export const GRID_MAX = BASE_GRID / 2; // the grid's half-size
 export const MARGIN = 8;     // open ground round what stands on the battle map (fort.js FORT.MARGIN)
-export const VIEW_PAD = 8;   // the Base map view shows this much more than the battle map
-// The build map's size (the user's request 2026-10-23: "Increase the base map size double the size after selecting your
-// base location"; "Increase the base building area even when it's a campsite to be a margin of 3 tiles away from the
-// map border"): the view (openBaseMap) is at least VIEW_HALF (half-size, by tier) round the base, twice what it was
-// round the old yards (a camp's 56 × 56 is 112 × 112), since the user's request 2026-10-23 "Increase
-// base size from 56x56 to 150x150 selected from a 500x500 map from 250x250" never less than 150 × 150 (VIEW_HALF 75),
-// a hub's 168 × 168 as before; slid back onto the map by its edge; and always the yard, its ring and VIEW_PAD more; the battle maps
-// keep their own crop. Anything goes anywhere on it but the VIEW_EDGE cells nearest its edge (tinted, c.nb:
-// viewEdgeWhy); it still grows past that as things are placed further out. The camp's spot (the site view, the tile's
-// whole map) is not scaled.
-export const VIEW_HALF = { camp: 75, shelter: 75, outpost: 75, hub: 84 }, VIEW_EDGE = 3;
+// The build map's size (the user's requests 2026-10-23/24: "Increase the base map size double the size after selecting
+// your base location"; "Increase the base building area even when it's a campsite to be a margin of 3 tiles away from
+// the map border"; "the map should be 150x150 after you select your camp location on the 500x500 board. You can build
+// out from your camp site to the 150x150 minus the 3 margin along the outer border"): the view (openBaseMap) is
+// 150 × 150 round the base for every tier (VIEW_HALF 75), slid back onto the map by its edge, and does not grow as
+// things are placed: nothing is placed within the VIEW_EDGE cells nearest its edge (tinted, c.nb: viewEdgeWhy). The
+// yard and its wall ring stay inside it (VIEW_ROOM). Only what stood outside it already (a base from before) widens
+// it. The 500 × 500 is the tile's map the camp's spot is picked on (the site view); the battle maps keep their own crop.
+export const VIEW_HALF = { camp: 75, shelter: 75, outpost: 75, hub: 75 }, VIEW_EDGE = 3;
+export const VIEW_ROOM = VIEW_HALF.hub - VIEW_EDGE - 2; // the most a yard's half-size may be: the ring's band (two cells) and the edge's margin stay on the build map
 export const VIEW_EDGE_WHY = `Within ${VIEW_EDGE} cells of the map's edge (nothing is built there)`;
 // The no-build margin (the user's request 2026-10-19, "a 5 tile margin around the edge of the map as a no build
 // section"): the cells within this many of the grid's edge take nothing, by hand or by the game (placeProblemAt).
@@ -213,7 +213,7 @@ export function gridBox(base) {
 }
 const onGrid = (B, x, y) => x >= B.x0 && y >= B.y0 && x < B.x1 && y < B.y1;
 // The most the yard's half-size may be with the ring's band and the no-build margin still on the map.
-export const edgeRoom = (base) => { const [ox, oy] = originOf(base); return GRID_MAX - NO_BUILD - 2 - Math.max(Math.abs(ox), Math.abs(oy)); };
+export const edgeRoom = (base) => { const [ox, oy] = originOf(base); return Math.min(VIEW_ROOM, GRID_MAX - NO_BUILD - 2 - Math.max(Math.abs(ox), Math.abs(oy))); };
 // A base whose camp was set up on its own spot (base.plan.fresh, staging.js makeCamp): its land is the tile's own all
 // round (no yard swept for it), the clearing its setup made is cleared ground like any other, and the camp fire stays
 // the middle of the base whatever its tier (its shelter, outpost or main house is a building placed on the map).
@@ -816,7 +816,7 @@ export function landFor(state, base) {
   ensureLand(state, base);
   if (base.land.off) return null;
   stampGrid(state, base);
-  const spec = landSpec(state, base, { G: gridHalf(base), C: yardHalf(base), tier: tierKey(base), terrain: terrainOf(state, base), origin: originOf(base), fresh: freshBase(base), level: levelOf(base) });
+  const spec = landSpec(state, base, { G: gridHalf(base), C: yardHalf(base), tier: tierKey(base), terrain: terrainOf(state, base), origin: originOf(base), fresh: freshBase(base), compact: landCompact(base), level: levelOf(base) });
   return landMapOf(spec, base.land);
 }
 // What stands on the map on the ground's own height (the user's request 2026-10-23: "just build on the hill as if it was
@@ -843,14 +843,20 @@ function groundBuilt(cells, W, H, ox, oy, land, lift) {
 export const levelOf = (base) => (base && base.plan && base.plan.fresh && base.plan.level) || 0;
 // The first time a base's land is read (a new base, or a save from before the land): what stands on the map now, by
 // hand or by the game, keeps its ground (the cells under it and outside its doors cleared), so nothing standing moves.
+// A base read since the user's request 2026-10-24 ("The clearing of initial foliage is done in the 5x5"; land.v 3) has
+// the tile's own land all round, only the 5 × 5 round its middle (the camp's own square) and what stands cleared, as a
+// camp set up on its own spot has; one read before keeps the yard and the clearing it was laid out with.
+export const landCompact = (base) => !!(base && base.land && base.land.v >= 3);
 function ensureLand(state, base) {
   if (base.land) return;
-  base.land = { v: 2, n: 0, cleared: {}, looted: {}, off: true };
+  base.land = { v: 3, n: 0, cleared: {}, looted: {}, off: true };
   try {
     for (const e of layoutOf(state, base)) {
       if (!e.at) continue;
       for (const [x, y] of [...rectCells(e.it, e.at), ...doorCellsOf(e.it, e.at)]) base.land.cleared[`${x},${y}`] = 1;
     }
+    const B = siteBox([0, 0]);
+    for (let y = B.y0; y < B.y1; y++) for (let x = B.x0; x < B.x1; x++) base.land.cleared[`${x},${y}`] = 1;
   } finally { delete base.land.off; base.land.n = 1; }
 }
 // The cell kind a piece is laid as on the battle map.
@@ -1653,7 +1659,7 @@ export function reachProblem(state, base, it, at, occ, opts = {}) {
 
 // ---------- the map ----------
 // Builds the base's map for a battle (fort.js buildFort) or the Base map view (opts.view: outlines for the queued
-// buildings, VIEW_PAD more ground). opts.pitsAt: spike pits used up on the horde that reached the walls (defences.js
+// buildings, the 150 × 150 build map). opts.pitsAt: spike pits used up on the horde that reached the walls (defences.js
 // hordeAttackBase keeps their spots so they show in the fight). Returns the fort record fort.js works with:
 // W × H cells, the yard's origin and size, the wall rect, the ring, walkway, gates, towers, ladders, the masks, the
 // buildings, plus ox/oy (grid → map), stores (where the goods are), vehicles (the cars and their cells), lights.
@@ -1676,9 +1682,9 @@ export function buildBaseMap(state, base, rng, opts = {}) {
     const dug = [...Object.keys((base.land && base.land.heightEdits) || {}).map((k) => k.split(",").map(Number)), ...terraJobs(base).flatMap((c) => c.cells || [])];
     for (const [x, y] of dug) { x0 = Math.min(x0, x - 1); y0 = Math.min(y0, y - 1); x1 = Math.max(x1, x + 2); y1 = Math.max(y1, y + 2); }
   }
-  const pad = MARGIN + (view ? VIEW_PAD : 0);
+  const pad = view ? VIEW_EDGE : MARGIN; // the view: what stands outside the 150 × 150 keeps its margin; the battle map's open ground
   x0 -= pad; y0 -= pad; x1 += pad; y1 += pad;
-  // VIEW_HALF: the build map at least 150 × 150 round the base, slid back onto the map by its edge (it keeps its size).
+  // VIEW_HALF: the build map 150 × 150 round the base, slid back onto the map by its edge (it keeps its size).
   if (view && !site) {
     const m = VIEW_HALF[tierKey(base)];
     const fit = (a0, a1, g0, g1) => { a0 = Math.min(a0, -m); a1 = Math.max(a1, m); if (a0 < g0) { a1 += g0 - a0; a0 = g0; } if (a1 > g1) { a0 = Math.max(g0, a0 - (a1 - g1)); a1 = g1; } return [a0, a1]; };

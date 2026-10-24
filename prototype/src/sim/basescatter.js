@@ -873,7 +873,10 @@ export function landSpec(state, base, dims) {
   // A pond tile (mapgen.js tile.pond): its spring-fed hollow (reliefLayer SPRING).
   // level: the base's own ground level (basemap.js levelOf: a camp set up on a hill stands on it, the user's request
   // 2026-10-23), 0 for level ground and the tile's land with no base on it.
-  return { seed, terrain: dims.terrain, G: dims.G, C: dims.fresh ? 0 : dims.C, clear: dims.fresh ? 0 : CLEARING[dims.tier] ?? CLEARING.camp, road, river, riverSide, style, ox, oy, pond: !!(t && t.pond), level: dims.level || 0 };
+  // compact (basemap.js landFor: land.v 3): a base read since the user's request 2026-10-24 ("The clearing of initial
+  // foliage is done in the 5x5") has the tile's land all round like a camp's, only its 5 × 5 and what it stands on cleared.
+  const own = dims.fresh || dims.compact; // the tile's own land all round: no yard and no clearing but what was cleared (a camp's 5 × 5)
+  return { seed, terrain: dims.terrain, G: dims.G, C: own ? 0 : dims.C, clear: own ? 0 : CLEARING[dims.tier] ?? CLEARING.camp, road, river, riverSide, style, ox, oy, pond: !!(t && t.pond), level: dims.level || 0 };
 }
 const inSq = (x, y, h) => x >= -h && x < h && y >= -h && y < h;
 // The road's cells (a band SCATTER.ROAD_W wide through the middle along each axis) and the river's (a band RIVER_W
