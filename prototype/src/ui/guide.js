@@ -217,7 +217,7 @@ function showSite(state, ui, act) {
 export function startGuide(state, on = true, { keep = false } = {}) {
   if (!on) return null;
   state.guide = {
-    kind: state.bases.length ? "base" : "road", on: true, keep: !!keep, fold: false, done: {},
+    kind: state.bases.length ? "base" : "road", on: true, keep: !!keep, fold: true, done: {}, // folded to its Next line until opened (the user's request 2026-10-24: the alerts' corner takes less of the map)
     h0: state.hour, b0: buildingCount(state), sent: [], wLow: waterHeld(state), woodLow: hubWood(state), seen: {}, stepsDone: null, ended: null,
   };
   return state.guide;

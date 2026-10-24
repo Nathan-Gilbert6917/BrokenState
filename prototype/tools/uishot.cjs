@@ -3,7 +3,7 @@
 // Starts the prototype's server on a free port, opens the game in headless Chromium at each size (the phone sizes with
 // a touch screen, so responsive.js draws its layouts) and saves one PNG a scene: the title, the new-run screen (as
 // rolled, and with Customize on), the State Map a few hours in with its boxes open (Layers, the alerts, the minimap, a
-// team's running orders), the right panel with the hub picked, the base window, a survivor's window, the Menu and the
+// team out for the Orders tab), the right panel with the hub picked, the base window, a survivor's window, the Menu and the
 // People tab. Prints every page error at the end.
 const { chromium } = require("playwright");
 const { spawn } = require("child_process");
@@ -58,7 +58,7 @@ const VIEWS = {
       }
       await page.click('[data-action="begin"]');
       await page.waitForFunction(() => window.game.state.started, null, { timeout: 30000 });
-      // A few hours in, so alerts and the guide have something to say; a team out, so Running orders shows.
+      // A few hours in, so alerts and the guide have something to say; a team out, for the Orders tab.
       await page.evaluate(async () => {
         const P = await import("/src/sim/parties.js"), W = await import("/src/sim/world.js"), R = await import("/src/ui/render.js");
         const st = game.state, g = st.grid, hb = W.hub(st);
@@ -74,10 +74,9 @@ const VIEWS = {
       });
       await settle(600);
       if (want("map")) await shot("map"); // as the game starts: the Layers box folded to its tab
-      // Every box over the map open at once (the alerts, Running orders, Watching, Layers, the minimap): the crowd.
+      // Every box over the map open at once (the alerts, Watching, Layers, the minimap).
       const hubInfo = await page.evaluate(async () => { const hb = (await import("/src/sim/world.js")).hub(game.state); return { id: hb.id, name: hb.name }; });
       await act("wl-pin", { kind: "base", id: hubInfo.id, name: hubInfo.name });
-      await act("panel-toggle", { p: "orders", v: "0" });
       await act("panel-toggle", { p: "alerts", v: "0" });
       await act("panel-toggle", { p: "legend", v: "0" });
       await settle(600);

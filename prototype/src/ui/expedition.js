@@ -1,4 +1,4 @@
-// Expedition panel (right sidebar) and the "Running orders" list on the map.
+// Expedition panel (right sidebar) and the Orders tab of the left panel (every team out, one row each).
 // The panel shows a team's people, gear, supplies, vehicle and order queue, with actions on the spot
 // (camp, scavenge, look around, repair, treat, move, go home). Timed actions go through the order queue
 // (sim/orders.js); buttons use data-action handlers in main.js.
@@ -47,7 +47,6 @@ import { dragAttr } from "./inventory.js"; // a queue line is draggable="true" o
 import { touchUI } from "./responsive.js"; // a finger: a tap on another line puts the picked one there
 import { editTeamButton } from "./teamform.js"; // Edit team… while it waits on one of your bases
 import { teamCarryCard } from "./carry.js"; // who carries what (pockets, packs, arms, vehicle), the ground here
-import { panelHead, panelTab } from "./layout.js";
 import { teamVolBlock } from "./volunteers.js"; // volunteers from allied groups with the team (sim/volunteers.js)
 import { volLine } from "../sim/volunteers.js"; // the boxes over the map share one header and folded tab
 
@@ -108,15 +107,18 @@ function statusLine(state, ui, p) {
   return { text: `${esc(st.label)}${left ? ` · ${left}` : ""}${onPlan}`, pct: st.pct, cls: p.phase === "waiting" ? "warn" : "" };
 }
 
-// ---------- running orders (map overlay) ----------
-export function renderRunningOrders(state, ui) {
+// ---------- the Orders tab (the left panel) ----------
+// Every team out, a row each: who, what it is doing and how long is left, its progress, the orders queued behind; a
+// click opens its panel. It was a box over the map ("Running orders", top left) until the user's request 2026-10-24
+// ("move the orders overlay shown on the world map to a current orders tab on the left panel so it doesn't obscure
+// the map"); Shift+[ opens the left panel on it (ui/alerts.js mapHotkey).
+export function renderOrdersTab(state, ui) {
   const mine = state.parties.filter((p) => p.owner === "player" && p.kind !== "convoy");
-  if (!mine.length) return "";
+  if (!mine.length) return `<div class="muted small">No teams out. Each team's current order, how far along it is and what is queued behind it show here; a click opens the team's panel.</div>`;
   const waiting = mine.filter((p) => p.phase === "waiting").length;
-  const box = { icon: "🚶", title: ui.ordersCollapsed ? "Orders" : "Running orders", count: mine.length, action: "xp-orderstoggle",
-    badges: waiting ? [{ text: `${waiting} waiting`, tone: "warn", tip: "Teams waiting for orders (Tab or N jumps to the next)" }] : [] };
-  if (ui.ordersCollapsed) return panelTab({ ...box, tip: "Show the running orders of your teams (Shift+[)" });
-  return `${panelHead({ ...box, tip: "Fold this list away (Shift+[)" })}
+  const head = `<div class="spread ro-head"><span class="muted small">${mine.length} team${mine.length === 1 ? "" : "s"} out</span>${waiting
+    ? `<button class="mini" data-action="team-next"${tip("The next team waiting for orders: the map goes to it and its panel opens (Tab or N)")}>❗ ${waiting} waiting · next</button>` : ""}</div>`;
+  return `${head}
     ${mine.map((p) => {
       const s = statusLine(state, ui, p);
       const q = (p.orders || []).length;

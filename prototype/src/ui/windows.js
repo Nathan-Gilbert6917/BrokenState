@@ -174,9 +174,9 @@ function onGutKey(e, p) {
   }
 }
 
-// The boxes over the map (running orders, Watching, Layers, alerts) are written by main.js; when one folds to its
+// The boxes over the map (Watching, Layers, alerts) are written by main.js; when one folds to its
 // tab or opens again, it eases in (styles.css .fp-anim; none with Reduce motion).
-const FOLD_BOXES = ["orders", "watchlist", "legend", "alerts"];
+const FOLD_BOXES = ["watchlist", "legend", "alerts"];
 function boxFolded(el) {
   const kids = el.children;
   if (el.id === "alerts") return !!el.querySelector(":scope > .al-pill");

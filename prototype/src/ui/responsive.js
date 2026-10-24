@@ -17,8 +17,8 @@
 //   keys      what only a key did on the map: ◀ ❗ Next team (Shift+N / N) and the camera spots (Shift+1–9 go,
 //             Ctrl+1–9 save), in the ⋯ drop-down on a phone and in the top bar on a tablet. Other modules ask
 //             touchUI() to add their own (Cancel on the pick banners, main.js; the Work tab's picker, ui/work.js)
-//   strip     with the drawers: the boxes over the State Map (the alerts with the first-week guide, Running orders,
-//             Watching, Layers, the minimap) are closed and a strip of chips across the top of the map carries their
+//   strip     with the drawers: the boxes over the State Map (the alerts with the first-week guide, Watching, Layers,
+//             the minimap) are closed and a strip of chips across the top of the map carries their
 //             counts; a tap opens one box as a sheet under the strip, one at a time (the user's request 2026-10-24:
 //             "for the phone version move the alerts and the other things shown on the world map overlay into a
 //             collapsible display"). The boxes have fixed slots here and do not drag (ui/overlaydrag.js).
@@ -403,10 +403,10 @@ function outsideRaid(e) {
 // ---------- the strip over the map: phones and tablets held upright ----------
 // The boxes over the State Map covered most of a phone's map when they were open (the user's request 2026-10-24). With
 // the drawers they are closed by default and a strip of chips across the top of the map, under the top bar, carries
-// their counts: 🔔 Alerts (red with an urgent one), 🚶 Orders (or "N waiting"), 👁 Watching, 🗺 Layers (how many are
+// their counts: 🔔 Alerts (red with an urgent one), 👁 Watching, 🗺 Layers (how many are
 // on), ▣ Minimap, 🧭 First week (while the guide is on). A tap opens that one box as a sheet under the strip; the chip
 // again, another chip or a tap on the dimmed map closes it; one at a time. The chips go through the boxes' own fold
-// state (main.js "panel-toggle" for the alerts, orders and Layers, ui/layout.js setFolded; "wl-collapse" for
+// state (main.js "panel-toggle" for the alerts and Layers, ui/layout.js setFolded; "wl-collapse" for
 // Watching), so the keys, the pad, autoReveal and the saved layout keep working: a new urgent alert opens the alerts
 // sheet by itself while Options → "Auto-open panels on select" is on (ui/layout.js autoReveal), and the 🔔 chip
 // flashes either way (the alerts' own 4-second flash line is a toast at the foot of the map while neither the alerts
@@ -417,13 +417,12 @@ function outsideRaid(e) {
 // setOverlaysFixed); a chip is a long press from its description.
 const HUD = [
   ["alerts", "🔔", "Alerts", "What needs you now: a team waiting, food or water running low, a horde near a base, someone sick… Red when something is urgent. Tap an alert to go there"],
-  ["orders", "🚶", "Orders", "Your teams out: what each is doing and how long it has left. Tap a team for its panel"],
   ["watch", "👁", "Watching", "What you pinned with 📌 (a person, a team, a horde, a group, a base) with its status live, and your map notes"],
   ["legend", "🗺", "Layers", "The map's layers: switch each on or off (the count is how many are on)"],
   ["minimap", "▣", "Minimap", "The whole state as far as you know it: tap or drag on it to look there"],
   ["guide", "🧭", "First week", "The first-week guide: steps for a new holdout, ticked off as you do them, with Show me"],
 ];
-const HUD_BOXES = ["alerts", "orders", "watchlist", "legend", "minimap", "mm-show"]; // watched for a change (a redraw, a fold, the minimap shown)
+const HUD_BOXES = ["alerts", "watchlist", "legend", "minimap", "mm-show"]; // watched for a change (a redraw, a fold, the minimap shown)
 let hud = false;              // the strip is up
 let hudSaved = null;          // the boxes open before it came up ({ key: true }), put back when it goes
 let hudOpen = new Set();      // the boxes open at the last sync: a fresh one closes the others
@@ -444,8 +443,6 @@ function rawOpen(k) {
 function hudState() {
   const g = window.game, st = g && g.state, ui = g && g.ui;
   const live = !!(ui && ui.started && st && !st.combat && !st.gameOver && !ui.timelapse);
-  const parties = live ? st.parties.filter((p) => p.owner === "player" && p.kind !== "convoy") : [];
-  const waiting = parties.filter((p) => p.phase === "waiting").length;
   const w = live ? st.watchList : null, pins = w && w.items ? w.items.length : 0, notes = live && st.mapNotes && st.mapNotes.list ? st.mapNotes.list.length : 0;
   const alerts = live && ui.alertList ? ui.alertList : [];
   const danger = alerts.filter((a) => a && a.tone === "danger").map((a) => a.key);
@@ -454,7 +451,6 @@ function hudState() {
   const mm = $("minimap"), mmOn = !!(mm && !mm.classList.contains("hidden"));
   return {
     alerts: { show: live, open: live && rawOpen("alerts"), n: alerts.length, danger: danger.length > 0, keys: danger },
-    orders: { show: live && parties.length > 0, open: live && rawOpen("orders"), n: parties.length, waiting },
     watch: { show: live && pins + notes > 0, open: live && rawOpen("watch"), n: pins + notes },
     legend: { show: live, open: live && rawOpen("legend"), n: lgBadge ? lgBadge.textContent : "" },
     minimap: { show: live && mmOn, open: live && mmOn && hudMini, n: "" },
@@ -474,7 +470,7 @@ function hudCloseAll(S = hudState(), except = null) { for (const k of hudOpenKey
 function enterHud() {
   if (hud) return;
   hud = true;
-  hudSaved = Object.fromEntries(["alerts", "orders", "legend", "watch"].map((k) => [k, rawOpen(k)]));
+  hudSaved = Object.fromEntries(["alerts", "legend", "watch"].map((k) => [k, rawOpen(k)]));
   for (const k of Object.keys(hudSaved)) if (hudSaved[k]) hudSet(k, false); // everything closed: the chips carry the counts
   hudFor = window.game ? window.game.state : null;
   hudGuide = hudMini = false;
@@ -557,7 +553,6 @@ function syncHud() {
     const red = k === "alerts" && s.danger;
     bd.classList.toggle("danger", red);
     b.classList.toggle("danger", red);
-    if (k === "orders") { const t = s.waiting ? `${s.waiting} waiting` : "Orders"; if (lb.textContent !== t) lb.textContent = t; lb.classList.toggle("warn", s.waiting > 0); }
   }
   strip.classList.toggle("hidden", !any);
   syncHudTop();

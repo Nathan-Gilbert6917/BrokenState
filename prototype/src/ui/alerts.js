@@ -449,7 +449,7 @@ export function mapHotkey(state, ui, e, act, modal) {
     act.center({ tile: b.tile });
     return true;
   }
-  const tabs = { "tab.bases": "bases", "tab.people": "people", "tab.groups": "groups", "tab.teams": "teams" };
+  const tabs = { "tab.bases": "bases", "tab.people": "people", "tab.groups": "groups", "tab.teams": "teams", "panel.orders": "orders" }; // Shift+[: the Orders tab (once the running orders box on the map)
   if (tabs[k]) { ui.tab = tabs[k]; return true; }
   if (k === "dev.autopilot") { act["dev-autopilot"](); return true; }
   if (k === "team.next" || k === "team.prev") { nextWaitingTeam(state, ui, act, k === "team.prev"); return true; }

@@ -45,7 +45,7 @@ export const KEYMAP = [
   { id: "panel.left", label: "Fold or show the left panel", group: "Panels", ctx: "map", keys: ["BracketLeft"] },
   { id: "panel.right", label: "Fold or show the right panel", group: "Panels", ctx: "map", keys: ["BracketRight"] },
   { id: "panel.log", label: "Fold or show the log", group: "Panels", ctx: "map", keys: ["KeyL"] },
-  { id: "panel.orders", label: "Fold or show the running orders", group: "Panels", ctx: "map", keys: ["Shift+BracketLeft"] },
+  { id: "panel.orders", label: "Open the left panel on the Orders tab", group: "Panels", ctx: "map", keys: ["Shift+BracketLeft"] },
   { id: "panel.alerts", label: "Fold or show the alerts", group: "Panels", ctx: "map", keys: ["Shift+BracketRight"] },
   { id: "panel.closeLeft", label: "Close the left panel completely (again: back)", group: "Panels", ctx: "map", keys: ["Alt+BracketLeft"] },
   { id: "panel.closeRight", label: "Close the right panel completely (again: back)", group: "Panels", ctx: "map", keys: ["Alt+BracketRight"] },
