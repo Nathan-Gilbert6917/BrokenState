@@ -13,7 +13,8 @@
 import { partyTile, tileLabel, partyMembers } from "../sim/parties.js";
 import { collectInfo, COLLECT } from "../sim/carry.js";
 import { landEstimate, landEstimates, isLandJob, LAND_VERB, LAND_HOURS, clampHours } from "../sim/landest.js";
-import { subTeam, isSome } from "../sim/detach.js"; // some of the team picked to do it (ui/teamctx.js): their gear and skills
+import { subTeam, isSome } from "../sim/detach.js"; // some of the team picked to do it: their gear and skills
+import { whoRow, toggleWho, whoIds } from "./whopick.js"; // who does it, picked in this box (the user's request 2026-10-24)
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -47,7 +48,7 @@ export function landModel(state, ui) {
   // Every length the slider can take, for the headline as it is dragged (before the box is drawn again on release).
   const all = [];
   for (let h = LAND_HOURS.min; h <= LAND_HOURS.max; h++) all.push(amountText(landEstimate(state, p, a.type, { ...opts, hours: h, qty })));
-  return { p, a, est, lengths, all, info, qty };
+  return { p, team, a, est, lengths, all, info, qty };
 }
 
 function qtyRow(m) {
@@ -67,7 +68,7 @@ function qtyRow(m) {
 function landBox(state, ui) {
   const m = landModel(state, ui);
   if (!m) { ui.landAsk = null; return ""; }
-  const { a, est, p } = m;
+  const { a, est, p, team } = m;
   const verb = LAND_VERB[a.type];
   const wait = a.startHour - state.hour;
   const when = a.tile === partyTile(p) && wait < 0.5 ? "here, starting now" : `${esc(tileLabel(state, a.tile))}, starting in about ${n1(wait)}h`;
@@ -77,6 +78,7 @@ function landBox(state, ui) {
   return `<div class="askwrap"><div class="askbox" role="dialog" style="max-width:34rem">
     <div class="asktitle">${esc(verb)}: how long?</div>
     <div class="asktext small muted">${partyMembers(state, p).length} ${partyMembers(state, p).length === 1 ? "person" : "people"}, ${when}.</div>
+    ${whoRow(state, team, a.d.who, "land-who")}
     ${est.why ? `<div class="small danger">Cannot now: ${esc(est.why)}</div>` : ""}
     <div class="row" style="gap:0.5rem;align-items:center;margin:0.5rem 0 0.2rem">
       <input type="range" min="${LAND_HOURS.min}" max="${LAND_HOURS.max}" step="1" value="${a.hours}" data-action="land-hours" data-est="${esc(JSON.stringify(m.all))}" style="flex:1" oninput="this.nextElementSibling.value=this.value;const t=JSON.parse(this.dataset.est),e=document.getElementById('landest');if(e)e.textContent=t[this.value-${LAND_HOURS.min}]">
@@ -105,6 +107,14 @@ export function landKey(state, ui, e, actions) {
 const VIA = { xp: "xp-order", tc: "tc-do", ctxhunt: "ctxhunt" };
 export const LAND_ACTIONS = {
   "land-sethours": (state, ui, d) => { if (ui.landAsk) ui.landAsk.hours = clampHours(d.h); },
+  "land-who": (state, ui, d) => { // who does it: the estimate is theirs (whoRow's chips)
+    const a = ui.landAsk;
+    const team = a && state.parties.find((x) => x.id === Number(a.d.id));
+    if (!team) return;
+    const ids = toggleWho(state, team, whoIds(a.d.who), d.sid);
+    a.d.who = ids ? ids.join(",") : "";
+    a.qty = null; // their room, not the team's
+  },
   "land-setqty": (state, ui, d) => { if (ui.landAsk) ui.landAsk.qty = d.n === "" || d.n == null ? null : Math.max(0, Math.floor(Number(d.n) || 0)); },
   "land-go": (state, ui, d, ev, actions) => {
     const a = ui.landAsk;
@@ -114,7 +124,7 @@ export const LAND_ACTIONS = {
     ui.landAsk = null;
     const qty = m && m.info && a.qty != null && a.qty < m.info.max ? String(Math.max(0, Math.floor(a.qty))) : "";
     const fn = actions && actions[VIA[a.via]];
-    if (fn) fn({ ...a.d, hours: String(a.hours), qty, asked: "1" });
+    if (fn) fn({ ...a.d, hours: String(a.hours), qty, asked: "1", whoAsked: "1" });
   },
   "land-close": (state, ui) => { ui.landAsk = null; },
 };
