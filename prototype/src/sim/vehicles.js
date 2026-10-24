@@ -169,7 +169,7 @@ export const vehicleLabel = (v) => (v && v.fleet ? fleetName(v.fleet) : oneLabel
 // Blown up in a fight (launchers.js): condition 0 for good, a wreck nothing repairs; stripped for parts at a base or
 // where it lies (parties.js recoverVehicle).
 export const isWreck = (v) => !!(v && v.destroyed);
-export const WRECK_TEXT = "Blown up: a burnt-out wreck nothing can repair. Strip it for parts and scrap.";
+export const WRECK_TEXT = "Blown up: a burnt-out wreck nothing can repair. Strip it for parts, scrap and electronics.";
 
 // Fuel multiplier for a car this full (load / payload): 1 up to 60%, 1.3 at 100%, 1.6 at 125% (the most).
 export function fuelMultFor(fill) {
@@ -940,11 +940,19 @@ export function finishUpgrade(state, base, v, key, op = "fit", job = null) {
 }
 // Strips a car parked at a base for parts (section 10): 3–8 car parts by its condition, 20 scrap, its body panels and
 // roof as metal sheets (STRIP.sheets by its type, and its sheet-metal plating's back: the user's request 2026-10-21,
-// "items that can be salvaged for metal sheets like cars") and the fuel in its tank into the base's stores; the vehicle
-// is gone. Not bikes. Returns the message.
-export const STRIP = { min: 3, max: 8, scrap: 20, sheets: { truck: 3, sedan: 2, suv: 3, hummer: 2, van: 4, miltruck: 4 } };
+// "items that can be salvaged for metal sheets like cars"), its electronics (STRIP.elec by its type, [least, most]
+// scaled by its condition like the car parts: the engine control unit, the wiring looms, the radio and the sensors; a
+// Hummer and an Army truck carry more, their comms and gauges; a wreck at condition 0 still gives the least: the user's
+// request 2026-10-24, "items that can be salvaged for electronics like cars") and the fuel in its tank into the base's
+// stores; the vehicle is gone. Not bikes. Returns the message.
+export const STRIP = { min: 3, max: 8, scrap: 20, sheets: { truck: 3, sedan: 2, suv: 3, hummer: 2, van: 4, miltruck: 4 }, elec: { truck: [1, 2], sedan: [1, 2], suv: [1, 2], hummer: [2, 3], van: [1, 2], miltruck: [3, 4] } };
+// A yield that goes with the vehicle's condition: lo at 0, hi at 100.
+const byCond = (v, lo, hi) => lo + Math.round((hi - lo) * Math.max(0, Math.min(100, v.condition || 0)) / 100);
 /** @param {any} v */
-export const stripYield = (v) => ({ carparts: STRIP.min + Math.round((STRIP.max - STRIP.min) * Math.max(0, Math.min(100, v.condition || 0)) / 100), scrap: STRIP.scrap, metalsheet: (STRIP.sheets[v.type] || 0) + Math.floor(sheetPlates(v) / 2), fuel: Math.floor(Math.max(0, v.fuel || 0)) });
+export function stripYield(v) {
+  const e = STRIP.elec[v.type] || STRIP.elec.truck; // a type without its own line counts as a truck (VEHICLE_TYPES)
+  return { carparts: byCond(v, STRIP.min, STRIP.max), scrap: STRIP.scrap, metalsheet: (STRIP.sheets[v.type] || 0) + Math.floor(sheetPlates(v) / 2), electronics: byCond(v, e[0], e[1]), fuel: Math.floor(Math.max(0, v.fuel || 0)) };
+}
 export function stripVehicle(state, base, v) {
   if (!v || !base || v.loc.kind !== "base" || v.loc.baseId !== base.id) return "That vehicle is not parked here.";
   if (isBike(v)) return "Bikes are not stripped for car parts.";
@@ -953,7 +961,7 @@ export function stripVehicle(state, base, v) {
   const t = upgradesOf(v).turret; // an LMG turret's gun comes off with the rest; an M2 is scrapped with the hull
   if (t && turretRemovable(t) && t.item) base.armory.push(t.item);
   state.vehicles.splice(state.vehicles.indexOf(v), 1);
-  const msg = `Stripped the ${v.name} for parts: ${got.carparts} car parts, ${got.scrap} scrap${got.metalsheet ? `, ${got.metalsheet} metal sheet${got.metalsheet === 1 ? "" : "s"}` : ""}${got.fuel ? `, ${got.fuel} fuel from its tank` : ""}. It is gone.`;
+  const msg = `Stripped the ${v.name} for parts: ${got.carparts} car parts, ${got.scrap} scrap${got.metalsheet ? `, ${got.metalsheet} metal sheet${got.metalsheet === 1 ? "" : "s"}` : ""}${got.electronics ? `, ${got.electronics} electronics` : ""}${got.fuel ? `, ${got.fuel} fuel from its tank` : ""}. It is gone.`;
   log(state, msg, "info");
   return msg;
 }

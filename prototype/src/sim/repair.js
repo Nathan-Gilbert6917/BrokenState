@@ -27,7 +27,7 @@ import { atBase, skill, log, newId } from "./world.js";
 import { benchTier } from "./buildings.js";
 import { itemDur, itemDurMax, wear } from "./crafting.js";
 import { burnShare } from "./woodcutting.js";
-import { itemAt, parseLoc, placeOfLoc, storageFor, salvageAt } from "./inventory.js";
+import { itemAt, parseLoc, placeOfLoc, storageFor, salvageAt, SALVAGE_ELECTRONICS } from "./inventory.js"; // SALVAGE_ELECTRONICS: the electronic gear (read at call time: the import cycle through world.js)
 import { itemValue } from "./valuation.js";
 import { gainXp, USE } from "./skills.js";
 import { driftOf } from "./gunmods.js"; // budget sights off zero (re-zeroed at a workbench: rezeroHour)
@@ -524,11 +524,14 @@ export function autoFieldRepairs(state) {
 // ---------- the stock of parts and kits the autopilot keeps (its trades buy below these) ----------
 // Reorder levels by base: gun parts 2 + 1 per 3 guns here; machine parts 3 + 1 per generator, well, ammo bench and
 // machine shop; car parts 2 + 2 per car here or out with a team from here; electronics 1 + the radio station and 1
-// per 2 night-vision / thermal sights and radios; Kevlar kits 1 per 3 soft vests; field repair kits 2 at a base that
+// per 2 pieces of electronic gear (whatever salvage takes apart for electronics, inventory.js SALVAGE_ELECTRONICS:
+// night vision, thermals, radios, headsets, powered sights, lights and lasers, power tools, generators; it was the
+// night-vision / thermal sights and radios alone until the salvage map grew, 2026-10-24); Kevlar kits 1 per 3 soft
+// vests; field repair kits 2 at a base that
 // sends teams out (the hub), 1 elsewhere. A repair waiting short of one raises its target by what it lacks (urgent).
 export const PART_SUPPLIES = ["gunparts", "parts", "carparts", "electronics"];
 export const PART_KITS = ["kevlarkit", "repairkit"];
-const ELEC = new Set(["nvg", "thermal", "thermalscope", "milradio", "handradio", "peq"]);
+const isElec = (key) => !!SALVAGE_ELECTRONICS[key]; // electronic gear, by the salvage map (inventory.js)
 const memo = new WeakMap();
 // Every item at a base: the armory and what the people here wear, hold and carry.
 function itemsAt(state, base) {
@@ -555,7 +558,7 @@ export function partPlan(state, base) {
     gunparts: 2 + Math.floor(guns / 3),
     parts: 3 + cnt("generator") + cnt("well") + cnt("ammo_bench") + cnt("reload_bench") + cnt("machine_shop"),
     carparts: 2 + 2 * cars,
-    electronics: 1 + (base.radio ? 1 : 0) + Math.floor(n((it) => ELEC.has(it.key)) / 2),
+    electronics: 1 + (base.radio ? 1 : 0) + Math.floor(n((it) => isElec(it.key)) / 2),
     kevlarkit: Math.ceil(vests / 3),
     repairkit: base.type === "hub" ? 2 : 1,
   };
