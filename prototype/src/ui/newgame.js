@@ -5,6 +5,7 @@ import { survivorById, skill, rollTraits, HUB_START } from "../sim/world.js";
 import { latestSave, listSaves } from "./saves.js";
 import { WORLD_SIZES, SIZE_KEYS, sizeDef, customDef, isCustom, CUSTOM, GROUPS_MAX, HIVES_MAX, clampGroups, clampHives } from "../sim/worldsize.js";
 import { MODES, isHardcore, peopleRange, clampStartPeople } from "../sim/hardcore.js";
+import { CUSTOM_RUN, CUSTOM_KEYS, isCustomRun, startsWithVehicle } from "../sim/custommode.js"; // Custom mode and Start with a vehicle (2026-10-24)
 import { HC_START, backgroundInfo, countWord } from "../sim/hardcore-start.js"; // who they were (a hardcore start)
 import { customLibrary } from "./backgrounds.js";
 import { isCustomBg } from "../sim/custombg.js"; // custom backgrounds (sim/custombg.js), kept in this browser
@@ -216,11 +217,69 @@ function hiveSelect(state, ui) {
   return `<label${tip(t)}>Starting hives <select data-action="hivecount">${opts.join("")}</select></label>`;
 }
 
-// Normal or Hardcore (sim/hardcore.js MODES): the mode the world on this screen was built with.
+// The new-run screen's mode for a world: Custom (sim/custommode.js isCustomRun: a normal start with state.custom),
+// Hardcore or Normal.
+export const screenMode = (state) => (isCustomRun(state) ? "custom" : isHardcore(state) ? "hardcore" : "normal");
+
+// Each mode keeps its own Starting people, Points each and Start with a vehicle (2026-10-19 and 2026-10-24, user
+// requests): ui.startPeople, ui.pointsMax and ui.startVehicle are the current mode's, the others' wait in ui.modeSets
+// (main.js). stashModeSet puts the current mode's away (anything else its entry holds is kept); takeModeSet makes mode
+// the current one with its own. The gamemode select, rollRandomRun and main.js adopt use them.
+export function stashModeSet(ui) {
+  if (!ui.modeSets) return;
+  ui.modeSets[ui.mode] = { ...(ui.modeSets[ui.mode] || {}), startPeople: ui.startPeople, pointsMax: ui.pointsMax, startVehicle: ui.startVehicle !== false };
+}
+export function takeModeSet(ui, mode) {
+  const m = (ui.modeSets && ui.modeSets[mode]) || {};
+  ui.mode = mode;
+  ui.startPeople = clampStartPeople(m.startPeople ?? peopleRange(mode).DEF, mode);
+  ui.pointsMax = clampMax(m.pointsMax ?? CUSTOM_POINTS.DEF);
+  ui.startVehicle = m.startVehicle !== false;
+}
+
+// Normal, Hardcore or Custom (sim/hardcore.js MODES): the mode the world on this screen was built with.
 function modeSelect(state) {
-  const cur = isHardcore(state) ? "hardcore" : "normal";
+  const cur = screenMode(state);
   const opts = Object.entries(MODES).map(([k, m]) => `<option value="${k}" ${k === cur ? "selected" : ""}${tip(m.tip)}>${esc(m.label)}</option>`).join("");
-  return `<label${tip(`${MODES[cur].tip}. Changing it builds the world again on the same seed (your edited colonists are kept, as many as that mode's Starting people says). Each mode keeps its own Starting people and Points each.`)}>Mode <select data-action="gamemode">${opts}</select></label>`;
+  return `<label${tip(`${MODES[cur].tip}. Changing it builds the world again on the same seed (your edited colonists are kept, as many as that mode's Starting people says). Each mode keeps its own Starting people, Points each and Start with a vehicle.`)}>Mode <select data-action="gamemode">${opts}</select></label>`;
+}
+
+// Start with a vehicle (2026-10-24, user request), every mode, Ironman too: off, no pickup at the hub (Normal, Custom)
+// or no car to flee in (Hardcore: on foot). Each mode keeps its own (main.js ui.modeSets).
+function vehicleToggle(state) {
+  const on = startsWithVehicle(state), hard = isHardcore(state);
+  const t = hard
+    ? "Start with a vehicle: ticked, one of you fled in their car with what was in its back (and a small team loaded its empty seats). Unticked, you flee on foot with only what you can carry (the tents too). Changing it builds the world again on the same seed"
+    : "Start with a vehicle: ticked, the hub starts with a pickup truck (and a custom background's car, if it brings one). Unticked, no vehicle at all: your people go on foot until they find, take or fix one. Changing it builds the world again on the same seed";
+  return `<label${tip(t)}><input type="checkbox" data-action="nr-vehicle"${on ? " checked" : ""}> Start with a vehicle</label>`;
+}
+
+// Custom mode's counts (sim/custommode.js CUSTOM_RUN, 2026-10-24, user request: "set any number above 1 for starting
+// survivors, hives, cities etc"): number inputs in place of Starting people, AI groups and Starting hives. The world's
+// own counts are shown (state.custom; the survivors: state.startPeople).
+const CUSTOM_TIPS = {
+  people: "How many survivors hold the hub at the start. More than the hub's six beds sleep rough until beds are built; the stores are the same whatever the count, and many people slow the game",
+  groups: "How many other survivor groups share the state. Each needs a site of its own, so on a small map not all may find room; many groups slow the game",
+  hives: "How many hives the outbreak starts with, around the outbreak's hot spots. More hives mean more hordes from the start",
+  cities: "How many cities the map has: Calder City and others far from it (closer when the map is short of room). A city that finds no room is left out",
+  towns: "How many towns the map has, spread 8 hexes apart; on a small map not all may find room",
+  military: "How many National Guard bases and Army depots the map has, kept apart (closer when the map is short of room)",
+};
+function customInputs(state, keys) {
+  const cur = { ...(state.custom || {}), people: state.startPeople };
+  return keys.map((k) => {
+    const R = CUSTOM_RUN[k];
+    return `<label${tip(`Custom: ${CUSTOM_TIPS[k]}. ${R.MIN}–${R.MAX} (capped so the game does not grind to a halt; ${R.DEF} on a Normal map). Changing it builds the world again on the same seed`)}>${esc(R.label)} <input type="number" min="${R.MIN}" max="${R.MAX}" step="1" style="width:4rem" data-action="nr-custom" data-k="${k}" value="${cur[k] ?? R.DEF}"></label>`;
+  }).join("\n      ");
+}
+// What a Custom run's map made of its counts: a line when something found no room ("" when everything fit).
+function customShort(state) {
+  if (!isCustomRun(state)) return "";
+  const c = state.custom;
+  const towns = state.tiles.filter((t) => t.loc && t.loc.type === "town").length;
+  const got = { groups: state.factions.length, hives: (state.hives || []).length, cities: (state.cityIds || []).length, towns, military: (state.militaryIds || []).length };
+  const short = Object.entries(got).filter(([k, n]) => n < c[k]).map(([k, n]) => `${n} of the ${c[k]} ${CUSTOM_RUN[k].label.toLowerCase()}`);
+  return short.length ? `Only ${short.join(", ")} found room on this map: try a bigger map (World size) or another seed.` : "";
 }
 
 // Starting people (sim/hardcore.js peopleRange): Hardcore, how many flee together on day 1 (1–4); a normal start, how many
@@ -241,9 +300,9 @@ function startPeopleSelect(state, ui) {
 // Hardcore): Points each (each mode its own: main.js ui.modeSets), the custom backgrounds and Randomize everything.
 function customizeRow(state, ui) {
   if (!freeEdit(ui)) return "";
-  const mode = MODES[isHardcore(state) ? "hardcore" : "normal"].label;
+  const mode = MODES[screenMode(state)].label;
   return `<div class="row nrcustom" style="margin-bottom:0.8rem">
-      <span class="small muted"${tip(`Customize's settings for ${mode} (the other mode keeps its own)`)}>Customize (${esc(mode)}):</span>
+      <span class="small muted"${tip(`Customize's settings for ${mode} (the other modes keep their own)`)}>Customize (${esc(mode)}):</span>
       <label${tip(`Customize (${mode}): the points each colonist may spend (${CUSTOM_POINTS.MIN}–${CUSTOM_POINTS.MAX}, ${CUSTOM_POINTS.DEF} by default: about what an average rolled colonist and their start kit come to). Everyone starts blank; skills, good traits, gear, what they carry and the vehicle's back cost points, bad traits give some back (at most a third of this). Setting it puts every colonist on it, their own points (on their card) too.`)}>Points each <input type="number" min="${CUSTOM_POINTS.MIN}" max="${CUSTOM_POINTS.MAX}" step="5" style="width:4.5rem" data-action="nr-points" value="${pointsMax(state)}"></label>
       <button data-action="bg-open"${tip(`Make your own backgrounds: skills, traits, gear, supplies and the car (${Object.keys(customLibrary()).length} made)`)}>Backgrounds…</button>
       <button data-action="nr-everything"${tip("Everything at once: every colonist a new name, look and random build (traits, skills and what they wear, hold and carry), and the vehicle's back emptied and filled again (its payer keeps a share of their points for it), all within the points. Each click is a new draw")}>🎲 Randomize everything</button>
@@ -253,24 +312,26 @@ function customizeRow(state, ui) {
 const startWood = (state) => { const h = state.bases.find((b) => b.type === "hub"); return Math.floor(h ? h.stock.wood || 0 : 0); };
 export function newRunScreen(state, ui) {
   const people = state.survivors;
-  const hard = isHardcore(state);
-  const intro = hard
+  const hard = isHardcore(state), custom = isCustomRun(state);
+  const foot = startsWithVehicle(state) ? "" : hard ? " No car: you go on foot." : " No vehicle: your people go on foot until they find, take or fix one.";
+  const intro = (custom ? `Custom: a normal start with the counts you set (${people.length} ${people.length === 1 ? "survivor" : "survivors"}, ${state.custom.groups} AI ${state.custom.groups === 1 ? "group" : "groups"}, ${state.custom.hives} ${state.custom.hives === 1 ? "hive" : "hives"}, ${state.custom.cities} ${state.custom.cities === 1 ? "city" : "cities"}, ${state.custom.towns} ${state.custom.towns === 1 ? "town" : "towns"} and ${state.custom.military} military ${state.custom.military === 1 ? "site" : "sites"}). ` : "") + (hard
     ? `Hardcore. The day the State of Calder falls. ${people.length === 1 ? "You get out alone" : `${countWord(people.length).replace(/^./, (c) => c.toUpperCase())} of you get out`} with whatever you can grab: no hub, food and water for a day or three, and the outbreak just starting. Gather what a hub takes and found your own. ${state.factions.length} other groups are out there, starting out just like you.`
-    : `Six years after the outbreak. Your survivors hold a homestead out in the open in the State of Calder, well clear of the towns: a main house (a well, a cellar, no wall yet), a lodge with four beds, a two-person tent and eight crop plots dug, and nothing else built yet. What to put up first, with a woodpile of ${startWood(state).toLocaleString("en-US")} wood, ${HUB_START.scrap} scrap and ${HUB_START.parts} parts, is yours to choose: beds, a crafting bench, fields, walls. ${state.factions.length} other groups are out there, starting bare as well, along with the hordes.`;
+    : `Six years after the outbreak. Your survivors hold a homestead out in the open in the State of Calder, well clear of the towns: a main house (a well, a cellar, no wall yet), a lodge with four beds, a two-person tent and eight crop plots dug, and nothing else built yet. What to put up first, with a woodpile of ${startWood(state).toLocaleString("en-US")} wood, ${HUB_START.scrap} scrap and ${HUB_START.parts} parts, is yours to choose: beds, a crafting bench, fields, walls. ${state.factions.length} other groups are out there, starting bare as well, along with the hordes.`) + foot;
   return `<div class="box wide">
     <div class="spread"><h1>Broken State — New run</h1><button data-action="nr-map"${tip("Put this screen aside and look at the world map: where you start, the groups, the roads (the banner's Back to setup, or Esc, brings it back)")}>🗺 View map</button></div>
     <div class="text small">${intro} Customize your starting colonists (name, skills, look) and choose your leader. The game starts paused: give your first orders, then ${keyHint({ key: "press Space", touch: "tap ▶ Run", pad: "press ☰" })}.</div>
     <div class="row" style="margin-bottom:0.8rem">
       ${modeSelect(state)}
-      ${startPeopleSelect(state, ui)}
-      <label${tip("Ironman: the game saves itself (at dawn, when a battle starts and ends, when you leave it) to one slot of its own. No saving or loading by hand, no restarting a battle, no export: you live with every choice. The crew starts as rolled: no Customize, no custom backgrounds, no moving skill points (names, looks and the leader are yours). Works with Normal and Hardcore.")}><input type="checkbox" data-action="ironman"${ui.ironman ? " checked" : ""}> Ironman</label>
+      ${custom ? customInputs(state, ["people"]) : startPeopleSelect(state, ui)}
+      ${vehicleToggle(state)}
+      <label${tip("Ironman: the game saves itself (at dawn, when a battle starts and ends, when you leave it) to one slot of its own. No saving or loading by hand, no restarting a battle, no export: you live with every choice. The crew starts as rolled: no Customize, no custom backgrounds, no moving skill points (names, looks and the leader are yours). Works with Normal, Hardcore and Custom.")}><input type="checkbox" data-action="ironman"${ui.ironman ? " checked" : ""}> Ironman</label>
       <label${tip(ui.ironman ? "Not with Ironman: an Ironman crew starts as rolled. Untick Ironman to customize." : "Customize: build each colonist from a blank slate with points (Points each): skill levels, traits and their tiers (bad ones give points back), who they were (a preset or one of your own, Backgrounds…), what they wear, hold and carry, placed by hand, and the vehicle's back (Gear… on each card). Start from the dice loads what was rolled. Unticking puts the crew back as rolled. Not with Ironman.")}${ui.ironman ? ` class="muted"` : ""}><input type="checkbox" data-action="nr-free"${freeEdit(ui) ? " checked" : ""}${ui.ironman ? " disabled" : ""}> Customize</label>
       <label${tip("First-week guide: a checklist under the alerts for the first days (check the stores, work priorities, a building, a team out and home, the first night), each step with a Show me that points at the button to press. It ticks off as you play and steps aside after day 7; the menu hides it or brings it back. On for your first campaign here.")}><input type="checkbox" data-action="nr-guide"${ui.guide ? " checked" : ""}> First-week guide</label>
       ${FAMILY.enabled ? `<label${tip("Children: couples at a base may have children, who grow up in a year into survivors (Help: Children and families). Untick for a run without couples forming on their own, pregnancies or children.")}><input type="checkbox" data-action="children"${ui.childrenOff ? "" : " checked"}> Children</label>` : ""}
       <label${tip("The same seed always builds the same map. Your edited colonists are kept when you change it.")}>Seed <input type="number" min="1" step="1" style="width:7rem" data-action="seed" value="${state.seed}"></label>
       ${worldSizeSelect(ui)}
-      ${groupInput(state, ui)}
-      ${hiveSelect(state, ui)}
+      ${custom ? customInputs(state, ["groups", "hives", "cities", "towns", "military"]) : `${groupInput(state, ui)}
+      ${hiveSelect(state, ui)}`}
       <button data-action="nr-newmap"${tip(`A new map on a new seed, your survivors kept as they are: names, looks, skills, traits, who they were and the leader${freeEdit(ui) ? ", and what they were built with" : hard ? " (what they grabbed and the car come with the map)" : ""}`)}>New map</button>
       <button data-action="reroll"${tip("A new map and new survivors")}>New map and survivors</button>
       <button data-action="nr-start"${tip(`Roll a new starting position on this same map and seed: ${hard ? "another roadside spot to flee from" : "another town for your hub"}, away from the hives and the cities as usual. The map, the hives and your colonists stay as they are (the groups settle around where you are). Look at it with View map; each click is a new spot`)}>📍 New start position</button>
@@ -281,7 +342,8 @@ export function newRunScreen(state, ui) {
     </div>
     ${customizeRow(state, ui)}
     ${customSizeRow(state, ui)}
-    ${!hard && state.factions.length < ui.factionCount ? `<div class="small muted" style="margin-bottom:0.5rem">Only ${state.factions.length} of the ${ui.factionCount} groups found room on this map (each needs a site of its own, 8 hexes from the others).</div>` : ""}
+    ${custom && customShort(state) ? `<div class="small muted" style="margin-bottom:0.5rem">${esc(customShort(state))}</div>` : ""}
+    ${!hard && !custom && state.factions.length < ui.factionCount ? `<div class="small muted" style="margin-bottom:0.5rem">Only ${state.factions.length} of the ${ui.factionCount} groups found room on this map (each needs a site of its own, 8 hexes from the others).</div>` : ""}
     ${ui.nrMsg ? `<div class="small danger" style="margin-bottom:0.5rem">${esc(ui.nrMsg)}</div>` : ""}
     <div class="crew nrcrew">${people.map((s) => crewCard(state, ui, s)).join("")}</div>
     <div class="row" style="margin-top:1rem;justify-content:flex-end">${loadButtons()}<button data-action="nr-random"${tip(`Random run: a new seed and a random world size, AI groups, starting hives, mode (Normal or Hardcore), starting people, zombie look, and a random crew with their gear${freeEdit(ui) ? " built within random Points each" : ""}, then it starts at once. Ironman, Customize, the First-week guide, Children and the World… dials stay as you set them; the settings rolled are in the log`)}>🎲 Random run</button><button class="primary" data-action="begin">Start</button></div>
@@ -421,8 +483,8 @@ export function rollRandomRun(ui, rng) {
   ui.factionCount = clampGroups(ui.worldSize, rng.int(d.groups[0], d.groups[1]));
   ui.hiveCount = rng.chance(0.5) ? null : clampHives(rng.int(RANDOM_HIVES[0], RANDOM_HIVES[1]));
   const was = ui.mode;
-  ui.mode = rng.chance(0.5) ? "hardcore" : "normal";
-  if (ui.modeSets && was !== ui.mode) ui.modeSets[was] = { startPeople: ui.startPeople, pointsMax: ui.pointsMax }; // main.js: each mode keeps its own
+  const mode = rng.chance(0.5) ? "hardcore" : "normal"; // never Custom (2026-10-24): a random run is Normal or Hardcore
+  if (was !== mode) { stashModeSet(ui); takeModeSet(ui, mode); } // main.js ui.modeSets: each mode keeps its own (Custom's too)
   const R = peopleRange(ui.mode);
   ui.startPeople = clampStartPeople(rng.int(R.MIN, R.MAX), ui.mode);
   if (freeEdit(ui)) ui.pointsMax = clampMax(5 * rng.int(RANDOM_POINTS[0] / 5, RANDOM_POINTS[1] / 5));

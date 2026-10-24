@@ -22,6 +22,7 @@ import { calOf } from "./ammo.js";
 import { keyFor } from "./rounds.js";
 import { traitPoints, traitTier, traitLabel } from "./traits.js";
 import { START_GEAR, sanitizeStartGear, CARRY_PLACES, gunWith, gunCap, gunLoad, pickKey, pickMods, pickN } from "./startgear.js";
+import { startsWithVehicle } from "./custommode.js"; // Start with a vehicle (2026-10-24): off, no background car backs to pay for
 
 // ---------- the price table (tune here) ----------
 export const CUSTOM_POINTS = {
@@ -257,7 +258,7 @@ export const bgCarBack = (A) => (A && A.car ? suppliesPoints(A.car.trunk || {}) 
 // back is the dice's back, loaded as picks with "As rolled" and priced as any other (none here).
 /** @param {any} state @param {any[]} [crew] */
 export function bgBacks(state, crew = (state && state.survivors) || []) {
-  if (!state || state.mode === "hardcore" || !state.customBackgrounds) return [];
+  if (!state || state.mode === "hardcore" || !state.customBackgrounds || !startsWithVehicle(state)) return []; // Start with a vehicle off: no car, no back (hardcore-start.js normalStartKit)
   const out = [];
   for (const s of crew) {
     const A = s && s.startPoints && s.background ? state.customBackgrounds[s.background] : null;

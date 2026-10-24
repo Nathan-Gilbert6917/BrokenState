@@ -30,6 +30,8 @@ const TOWN_COUNT = 13; // on a Normal map; scaled by area on the others
 const MORE_TOWN_NAMES = ["Thornton", "Bridgeport", "Maple Grove", "Dover Flats", "Clearwater", "Hadley", "Sawyer", "Whitmore", "Linden",
   "Carver", "Brookfield", "Iron Gap", "Winslow", "Meadowvale", "Rockport", "Garland", "Tallow Creek", "Beckett", "Norwood", "Shiloh"];
 const SECOND_CITY_NAMES =["Granite City", "Fairmont", "Kingsbridge", "Port Ashby", "Easton"];
+// Custom mode's extra cities (custommode.js, up to 12 in all) once those are taken (kept apart so the presets draw the same).
+const MORE_CITY_NAMES = ["Harlow", "Redfield", "Marston", "Brookhaven", "Westbury", "Ashland", "Dunmore"];
 const SURNAMES = ["Miller", "Hollis", "Ostrander", "Baker", "Kline", "Rourke", "Dale", "Pruitt", "Harmon", "Whitaker", "Calloway",
   "Brandt", "Yoder", "Lindgren", "Mercer", "Tate", "Grady", "Hensley", "Pickett", "Voss", "Sorensen", "Ames", "Caldwell", "Fenn"];
 const PLACE_NAMES = ["Elk Ridge", "Bear Lake", "Pine Hollow", "Cedar Hollow", "Eagle Rock", "Wolf Creek", "Stony Brook", "Blue Spruce",
@@ -123,6 +125,9 @@ function makeNoise(rng, w, h, cell) {
 // one, so old seeds build the same map. hives (optional, the new-run screen): how many hives the map starts with in
 // place of what its size makes (0–10), see below. seed: the world's seed, for the town rings' hash dice (null: the
 // town's own id and name).
+// Custom mode (custommode.js customSizeDef, 2026-10-24, user request): def.customCounts with def.cities, def.towns and
+// def.military as set; what finds no room is skipped (cities may sit closer, down to 8 tiles; bases down to 6), and the
+// 50% extra military base is not added (its die is still cast).
 export function generateMap(rng, size = "normal", { hives = null, seed = null } = {}) {
   const def = sizeDef(size);
   const MAP_W = def.w, MAP_H = def.h;
@@ -234,11 +239,11 @@ export function generateMap(rng, size = "normal", { hives = null, seed = null } 
   // A second, smaller city far from it (Large and Huge maps get more of them, each far from the others).
   const main = cities[0].center;
   for (let k = 1; k < def.cities; k++) {
-    for (const minD of [24, 18, 12]) {
+    for (const minD of def.customCounts ? [24, 18, 12, 8] : [24, 18, 12]) {
       const c = tiles.filter((t) => t.x >= 8 && t.x < MAP_W - 8 && t.y >= 5 && t.y < MAP_H - 5 && !t.river &&
         ["plains", "forest", "hills"].includes(t.terrain) && cities.every((o) => grid.distance(t.id, o.center.id) >= minD));
       if (!c.length) continue;
-      const names = SECOND_CITY_NAMES.filter((n) => !usedNames.has(n));
+      const names = [...SECOND_CITY_NAMES, ...(def.customCounts ? MORE_CITY_NAMES : [])].filter((n) => !usedNames.has(n));
       addCity(rng.pick(c), rng.pick(k === 1 || !names.length ? SECOND_CITY_NAMES : names), false);
       break;
     }
@@ -285,7 +290,8 @@ export function generateMap(rng, size = "normal", { hives = null, seed = null } 
   let townCands = tiles.filter((t) => buildable(t) && !urbanTile(t) && t.x >= 2 && t.x < MAP_W - 2 && t.y >= 2 && t.y < MAP_H - 2 &&
     cities.every((c) => grid.distance(c.center.id, t.id) >= 9) &&
     grid.neighbors(t.id).filter((n) => buildable(tiles[n]) && !urbanTile(tiles[n])).length >= 4);
-  for (let i = 0; i < scaled(TOWN_COUNT) && townCands.length; i++) {
+  const townCount = def.customCounts && Number.isFinite(def.towns) ? def.towns : scaled(TOWN_COUNT); // Custom mode: as set
+  for (let i = 0; i < townCount && townCands.length; i++) {
     const t = pickSpread(townCands, [...towns, ...cities.map((c) => c.center)], 8);
     placeLoc(t, "town", nameFor(), "town", t.id);
     towns.push(t);
@@ -338,11 +344,13 @@ export function generateMap(rng, size = "normal", { hives = null, seed = null } 
   military.push(landmark("military", milFilters(() => true), (t) => uniqueName(`${nearName(t)} National Guard base`)));
   // Bigger maps: more bases for sure (Huge: 2), each at least 22 tiles from the others; then a 50% chance of one more.
   const apartMil = (t) => military.every((m) => grid.distance(t.id, m.id) >= 22);
+  // Custom mode: closer when they do not fit 22 apart (12, then 6).
+  const apartBy = (d) => (t) => military.every((m) => grid.distance(t.id, m.id) >= d);
   for (let k = 1; k < def.military; k++) {
-    const more = landmark("military", milFilters(apartMil), (t) => uniqueName(`${nearName(t)} National Guard base`, `${nearName(t)} Army depot`));
+    const more = landmark("military", def.customCounts ? [22, 12, 6].flatMap((d) => milFilters(apartBy(d))) : milFilters(apartMil), (t) => uniqueName(`${nearName(t)} National Guard base`, `${nearName(t)} Army depot`));
     if (more) military.push(more);
   }
-  if (rng.chance(0.5)) {
+  if (rng.chance(0.5) && !def.customCounts) {
     const second = landmark("military", milFilters(apartMil).slice(0, 2), (t) => uniqueName(`${nearName(t)} Army depot`));
     if (second) military.push(second);
   }
