@@ -11,7 +11,7 @@
 import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { FOODS } from "../src/sim/foods.js"; // food kinds: the lists offer food by kind (trade.js marketLists)
 import { createWorld, tickHour, hub, atBase, day, alive, newId, checkGameOver, snapshot } from "../src/sim/world.js";
-import { GEAR, SUPPLY_KEYS, STOCK_KEYS } from "../src/sim/data.js";
+import { GEAR, SUPPLY_KEYS, STOCK_KEYS, supplyFew } from "../src/sim/data.js";
 import { addBuilding } from "../src/sim/buildings.js";
 import { launchExpedition, partyTile, planPath, removeParty } from "../src/sim/parties.js";
 import { attitude, recomputeOwnership, resolveRaidOnFaction, strength } from "../src/sim/factions.js";
@@ -23,7 +23,7 @@ import { canRadioGroup, offerCard as radioOfferCard } from "../src/sim/radio.js"
 import {
   need, demand, wantQty, available, sellPrice, buyPrice, gearSellPrice, gearBuyPrice, marketLists, refreshMarket, marketOf, marketBoard, priceTrend, WANT_NEED, SURPLUS_NEED,
 } from "../src/sim/trade.js";
-import { POOLED_KINDS } from "../src/sim/trade.js"; // gun parts and electronics: in a group's one count of parts, offered by kind only in the trade window (car parts are their own count, on the lists)
+import { POOLED_KINDS, groupHeld } from "../src/sim/trade.js"; // gun parts and electronics: in a group's one count of parts, offered by kind only in the trade window (car parts are their own count, on the lists)
 import { caravanSurplus } from "../src/sim/caravans.js";
 import * as D from "../src/sim/diplomacy.js";
 import * as J from "../src/sim/jobs.js";
@@ -747,8 +747,8 @@ section("Wants and surplus, the market board");
       const n = demand(st, f, k); // stock, their kind and their state (trade.js)
       const w = m.wants.find((x) => x.key === k), s = m.surplus.find((x) => x.key === k);
       if ((n >= WANT_NEED) !== !!w) bad++;
-      if ((n <= SURPLUS_NEED && available(f, k) >= 5) !== !!s) bad++;
-      if (w && (w.qty !== wantQty(f, k) || w.qty < Math.ceil(({ food: 6, water: 5, fuel: 2, meds: 1, ammo: 10, parts: 0.5, carparts: 0.15, scrap: 3, preserved: 2, jars: 1, buildmat: 1, metalsheet: 0.5 }[k]) * f.pop - Math.max(0, f.stock[k] ?? 0)) || Math.abs(w.price - sellPrice(st, f, k, 0, { food: 20, water: 20, fuel: 10, meds: 6, ammo: 50, parts: 3, carparts: 3, scrap: 20, preserved: 10, jars: 10, buildmat: 5, metalsheet: 4 }[k])) > 1e-9)) bad++;
+      if ((n <= SURPLUS_NEED && available(f, k) >= supplyFew(k, 5)) !== !!s) bad++; // "a few" × its bulk (data.js supplyFew: firewood, stone), as trade.js marketLists
+      if (w && (w.qty !== wantQty(f, k) || w.qty < Math.ceil(({ food: 6, water: 5, fuel: 2, meds: 1, ammo: 10, parts: 0.5, carparts: 0.15, scrap: 3, preserved: 2, jars: 1, buildmat: 1, metalsheet: 0.5, wood: 120, stone: 10, arrows: 2 }[k]) * f.pop - groupHeld(f, k)) || Math.abs(w.price - sellPrice(st, f, k, 0, { food: 20, water: 20, fuel: 10, meds: 6, ammo: 50, parts: 3, carparts: 3, scrap: 20, preserved: 10, jars: 10, buildmat: 5, metalsheet: 4, wood: 600, stone: 40, arrows: 20 }[k])) > 1e-9)) bad++; // stone (stone.js, 2026-10-23), wood and arrows: trade.js REF and LOT; what they hold as trade.js reads it (groupHeld: no figure yet for water, wood, stone or arrows is a comfortable stock, rounds their whole ammo)
       if (s && s.qty !== available(f, k)) bad++;
     }
     if (!m.wants.some((x) => x.key === "meds") || !m.surplus.some((x) => FOODS[x.key])) bad++; // food is offered by kind (a ration bar, ...), not as "food"
