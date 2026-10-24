@@ -78,7 +78,7 @@ check(!!cl && [[-2, -2], [2, 2], [0, 0], [-2, 2]].every(([x, y]) => cl[`${x},${y
 check(Object.entries(siteGet).every(([k, v]) => (camp.stock[k] || 0) >= v + (stockBefore[k] || 0) - (k === "wood" ? 5 + CAMP.fireCost.wood : (CAMP.fireCost[k] || 0) + 1e-9)), `what the land there gave is in its stores (${Object.entries(siteGet).map(([k, v]) => `${v} ${k}`).join(", ") || "nothing"})`);
 check(baseBeds(camp) === CAMP.beds + tentBeds(camp) && tentBeds(camp) === partyCount && farmSlots(camp) === 0 && plotCap(camp, "building") === 0 && plotCap(camp, "utility") === 2, "barebones: its tents for beds, no crop plot until one is dug, no building plot, two utility plots");
 let html = modal(st, { id: camp.id, tab: "camp" });
-check(/class="tabs"/.test(html) && /data-tab="camp"/.test(html) && /data-tab="construction"/.test(html) && !/data-tab="farming"/.test(html) && !/data-tab="defence"/.test(html), "the base window: a Camp tab and only the tabs a camp uses");
+check(/class="tabs wtabs"/.test(html) && /data-tab="camp"/.test(html) && /data-tab="construction"/.test(html) && !/data-tab="farming"/.test(html) && !/data-tab="defence"/.test(html), "the base window: a Camp tab and only the tabs a camp uses");
 check(/Strike camp/.test(html) && /Form a team/.test(html) && /People here/.test(html) && /Stores/.test(html) && /Vehicles \(1\)/.test(html), "the Camp tab: people, form a team, stores, vehicles, Strike camp");
 check(/At the shelter/.test(html) && /At the base/.test(html) && /Camp → <b>Shelter<\/b>/.test(html), "and what it can become (the ladder)");
 check(/Open camp/.test(renderRight(st, ui({ selected: camp.tile }))), "the tile panel's camp card opens it (Open camp)");

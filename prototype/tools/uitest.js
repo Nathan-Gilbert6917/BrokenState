@@ -617,6 +617,8 @@ section("New-run screen: world size and AI groups (sim/worldsize.js)");
   const { newRunScreen, LOOK_ACTIONS, LOOK_CHANGE_ACTIONS } = await import("../src/ui/newgame.js");
   Object.assign(CLICK, LOOK_ACTIONS); // main.js registers the new-run screen's own handlers
   Object.assign(CHANGE, LOOK_CHANGE_ACTIONS);
+  // Its header's ◀ (title-back, ui/title.js) and ⚙ Menu (set-open, ui/settings.js): main.js registers both modules' handlers too.
+  Object.assign(CLICK, (await import("../src/ui/title.js")).TITLE_ACTIONS, (await import("../src/ui/settings.js")).SETTINGS_ACTIONS);
   const { BG_ACTIONS, BG_CHANGE, backgroundEditor, setCustomLibrary, presetToCustom } = await import("../src/ui/backgrounds.js"); // custom backgrounds window
   Object.assign(CLICK, BG_ACTIONS);
   Object.assign(CHANGE, BG_CHANGE);
@@ -797,7 +799,8 @@ section("Windows and panels: folding, map only, auto-open, window sizes (ui/layo
 
   // Folding each panel, map only and back.
   const lay = L.defaultLayout();
-  check(L.PANEL_KEYS.every((p) => lay[p] === false) && !lay.all, "every panel is shown at first");
+  check(L.PANEL_KEYS.every((p) => lay[p] === (p === "legend")) && !lay.all, "every panel is shown at first but the Layers box, folded to its tab (2026-10-24)");
+  check(L.setFolded(lay, "legend", false) && !lay.legend, "a click on the Layers tab opens the box");
   let flips = 0;
   for (const p of L.PANEL_KEYS) if (L.setFolded(lay, p) && lay[p] && L.setFolded(lay, p) && !lay[p] && L.setFolded(lay, p, true) && lay[p] && L.setFolded(lay, p, false) && !lay[p]) flips++;
   check(flips === L.PANEL_KEYS.length, `each panel folds and shows again (${L.PANEL_KEYS.join(", ")})`);
@@ -877,7 +880,8 @@ section("Windows and panels: folding, map only, auto-open, window sizes (ui/layo
   renderAlerts(w, au);
   const pill = L.alertsPill(au.alertList);
   htmlOk(pill, "folded alerts");
-  check(au.alertList.length > 0 && pill.includes(`${au.alertList.length} alert`) && /class="al-pill danger"/.test(pill) && /data-action="panel-toggle" data-p="alerts"/.test(pill), `folded alerts: count ${au.alertList.length}, red, opens them`);
+  // The same slim tab as the other boxes (2026-10-24): icon, "Alerts", the count on a badge (red with a danger).
+  check(au.alertList.length > 0 && pill.includes(`<span class="fp-badge danger">${au.alertList.length}</span>`) && /class="fp-tab al-pill danger"/.test(pill) && /data-action="panel-toggle" data-p="alerts"/.test(pill), `folded alerts: count ${au.alertList.length}, red, opens them`);
   check(L.alertsPill([], "") === "" && L.alertsPill([], "<div class=\"al-flash\">x</div>").includes("al-flash"), "no alerts: no button (a key's flash line stays)");
   htmlOk(L.alertsFoldButton(), "the alerts' fold button");
 
@@ -1338,11 +1342,12 @@ section("Battle view: the isometric renderer (ui/isoview.js), the view toggle, t
   // Stub canvases: every sprite and the ground get a silent context; the battle canvas records its calls (method and
   // numbers, for the determinism check) and counts NaN / Infinity arguments and property values.
   let nan = 0, log = [];
-  const silent = () => new Proxy({ createImageData: (w, h) => ({ data: new Uint8ClampedArray(w * h * 4) }), measureText: (t) => ({ width: String(t).length * 6 }) }, {
+  // A real context starts with globalAlpha 1 (drawFigure multiplies into it: a stub without it would multiply a function and count a NaN).
+  const silent = () => new Proxy({ globalAlpha: 1, createImageData: (w, h) => ({ data: new Uint8ClampedArray(w * h * 4) }), measureText: (t) => ({ width: String(t).length * 6 }) }, {
     get: (o, k) => (k in o ? o[k] : (...a) => { if (a.some((v) => typeof v === "number" && !Number.isFinite(v))) nan++; }),
     set: (o, k, v) => { if (typeof v === "number" && !Number.isFinite(v)) nan++; o[k] = v; return true; },
   });
-  const rec = new Proxy({ measureText: (t) => ({ width: String(t).length * 6 }) }, {
+  const rec = new Proxy({ globalAlpha: 1, measureText: (t) => ({ width: String(t).length * 6 }) }, {
     get: (o, k) => (k in o ? o[k] : (...a) => {
       if (a.some((v) => typeof v === "number" && !Number.isFinite(v))) nan++;
       log.push(`${String(k)}(${a.map((v) => (typeof v === "number" ? Math.round(v * 10) / 10 : typeof v === "string" ? v : "o")).join(",")})`);

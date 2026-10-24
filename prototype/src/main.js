@@ -149,7 +149,7 @@ import {
 } from "./ui/layout.js";
 import { initPanels, applyLayout, setLogLine, setRailBadges, fitWindows, resetWindows, windowSizes, watchFloating } from "./ui/windows.js";
 import { initTouch, touchGestures, touchRecent } from "./ui/touch.js"; // a finger: tap, long press (a right-click), drag and pinch on the maps
-import { initResponsive, pickCancel, touchUI, setKeysBadge } from "./ui/responsive.js";
+import { initResponsive, pickCancel, touchUI, compactUI, setKeysBadge } from "./ui/responsive.js";
 import { initInputMode, inputMode } from "./ui/inputmode.js"; // the device used last (mouse, finger, controller): <html class="input-…">, the key hints
 import { initGamepad, claimPad } from "./ui/gamepad.js"; // a controller: the map's and the battle's layers below (map input, combat input) // phones and tablets: the drawers, the dock, the ⋯ menu, a ✕ on windows (responsive.css)
 import { initPadNav, navPanels, navBar, navBattle } from "./ui/padnav.js"; // a controller in the windows, menus and panels (its layer: after the battle's, under the question's)
@@ -381,7 +381,7 @@ function step(now) {
   } else if (!titleCovers(ui)) render(state); // the title screen hides the map (unless the map is its background)
   minimapFrame(state, ui, now); // ui/minimap.js (hidden over a battle, the title and the timelapse)
   edgeFrame(state, ui, now, !ui.timelapse && !state.combat && !titleCovers(ui)); // ui/edgefx.js: attacks off screen
-  if (ui.title) titleFrame(state, ui, now);
+  if (titleCovers(ui)) titleFrame(state, ui, now); // the title, and its background under the new-run screen (ui/title.js newRunUp)
   audioFrame(state, ui, now); // battle and map cues, the ambience (ui/audio.js)
   if (dirtyNow || (dirty && (ui.speed <= MAX_SPEED || now - lastRefresh >= SLOW_REFRESH_MS))) refresh(false);
   else if (clockDirty && ui.speed <= MAX_SPEED) refreshClock(); // (at dev speeds the throttled refresh has them too)
@@ -556,10 +556,15 @@ function autoShow() {
   saveLayout(layout);
   if (show.includes("right")) rightToTop = true; // what was picked, from the top
 }
-// The alerts stack, or its folded button (ui/layout.js alertsPill).
+// The alerts stack under its header, or its folded tab (ui/layout.js alertsFoldButton, alertsPill). On a phone the
+// stack is a sheet under the strip over the map (ui/responsive.js): opened with nothing in it, it says so (a desktop
+// shows nothing then: there is no box to be empty).
 function alertsHTML(html) {
   if (layout.alerts) return alertsPill(ui.alertList, (/<div class="al-flash">[\s\S]*?<\/div>/.exec(html) || [""])[0]);
-  return html.includes('class="al ') ? alertsFoldButton((ui.alertList || []).length, (ui.alertList || []).some((a) => a && a.tone === "danger")) + html : html;
+  const list = ui.alertList || [];
+  if (html.includes('class="al ')) return alertsFoldButton(list.length, list.some((a) => a && a.tone === "danger")) + html;
+  if (compactUI() && ui.started && !state.gameOver && !ui.timelapse) return alertsFoldButton(0, false) + html + `<div class="al-empty small muted">Nothing needs you right now.</div>`;
+  return html;
 }
 
 function refresh(user = true) {
@@ -718,17 +723,34 @@ function renderCombat(user) {
   setHTML("cbbar", renderCombatBar(state), user); // the bottom bar: the selected one's card, the orders, the turn controls (ui/battlebar.js)
 }
 
-// Banners at the top of the map: paused (with the orders waiting for the unpause) and move mode.
+// Banners at the top of the map: paused (with the orders waiting for the unpause), setting up (the new-run screen's
+// map) and move mode. On a phone or an upright tablet (ui/responsive.js compactUI) each is one short line under the
+// strip over the map: what is only a description of what is happening goes into its hover (the user's request
+// 2026-10-24), the action stays.
 function bannerHTML() {
-  if (!ui.started && ui.nrMap && !ui.title) return `<div class="paused" data-tip="The new-run screen is put aside so you can look around the map: where you start, the groups, the roads. Nothing runs until you start.">` +
-    `<b class="big">Setting up</b> ${ui.nrPick ? `${keyHint({ key: "Click", touch: "Tap", pad: `${kh("A")} on` })} ${state.mode === "hardcore" ? "open land" : "a town"} to start there` : `Looking at the map${keyHint({ key: "", touch: "", pad: ` · ${kh("Y")} to pick the start` })}`} <button data-action="nr-start" data-tip="Roll a new starting position on this same map and seed (the map, the hives and your colonists stay)">📍 New start position</button> <button data-action="nr-pick"${ui.nrPick ? ` class="primary"` : ""} data-tip="${ui.nrPick ? "Stop picking: clicks on the map look around again" : "Pick where you start: click a tile on the map"}">🎯 Pick start${ui.nrPick ? ": on" : ""}</button> <button data-action="nr-map" data-tip="Back to the new-run screen (Esc)">◀ Back to setup</button>${ui.nrMsg ? ` <span class="small">${esc(ui.nrMsg)}</span>` : ""}</div>`;
+  const compact = compactUI();
+  if (!ui.started && ui.nrMap && !ui.title) {
+    const pickHow = `${keyHint({ key: "Click", touch: "Tap", pad: `${kh("A")} on` })} ${state.mode === "hardcore" ? "open land" : "a town"} to start there`;
+    const about = "The new-run screen is put aside so you can look around the map: where you start, the groups, the roads. Nothing runs until you start.";
+    if (compact) return `<div class="paused compact" data-tip="${about}"><b class="big">Setting up</b>${ui.nrPick ? ` <span class="small">${pickHow}</span>` : ""} ` +
+      `<button class="mini" data-action="nr-start" data-tip="Roll a new starting position on this same map and seed (the map, the hives and your colonists stay)">📍 New start</button> ` +
+      `<button class="mini${ui.nrPick ? " primary" : ""}" data-action="nr-pick" data-tip="${ui.nrPick ? "Stop picking: clicks on the map look around again" : "Pick where you start: click a tile on the map"}">🎯 Pick start${ui.nrPick ? ": on" : ""}</button> ` +
+      `<button class="mini" data-action="nr-map" data-tip="Back to the new-run screen (Esc)">◀ Setup</button>${ui.nrMsg ? ` <span class="small">${esc(ui.nrMsg)}</span>` : ""}</div>`;
+    return `<div class="paused" data-tip="${about}">` +
+      `<b class="big">Setting up</b> ${ui.nrPick ? pickHow : `Looking at the map${keyHint({ key: "", touch: "", pad: ` · ${kh("Y")} to pick the start` })}`} <button data-action="nr-start" data-tip="Roll a new starting position on this same map and seed (the map, the hives and your colonists stay)">📍 New start position</button> <button data-action="nr-pick"${ui.nrPick ? ` class="primary"` : ""} data-tip="${ui.nrPick ? "Stop picking: clicks on the map look around again" : "Pick where you start: click a tile on the map"}">🎯 Pick start${ui.nrPick ? ": on" : ""}</button> <button data-action="nr-map" data-tip="Back to the new-run screen (Esc)">◀ Back to setup</button>${ui.nrMsg ? ` <span class="small">${esc(ui.nrMsg)}</span>` : ""}</div>`;
+  }
   if (!ui.started || state.gameOver || state.combat || ui.timelapse) return "";
   let html = trayHTML(state, ui); // the card tray (ui/pacing.js)
   if (ui.speed === 0) {
     const waiting = armedList(state, ui);
     const n = waiting.length;
+    const orders = n ? `${n} order${n === 1 ? "" : "s"} will start when you unpause: ${esc(waiting.join(" · "))}` : "";
+    // A pill: ⏸ Paused · ▶ Run, the waiting orders a count (their list, why the clock stopped and the way to Help in the hover).
+    if (compact) html += `<div class="paused compact" data-tip="The clock is stopped${ui.pauseWhy ? ` (${esc(ui.pauseWhy)})` : ""}. Orders you give now start when you unpause${n ? `. ${orders}` : ""}. Help → Time has the speeds and the pause rules."><b class="big">⏸ Paused</b>` +
+      `<button data-action="speed" data-speed="${ui.lastSpeed || 1}" data-tip="Run at ${ui.lastSpeed || 1}× (Space)">▶ Run</button>` +
+      (n ? `<b class="rs-badge armed" data-tip="${orders}">${n}</b>` : "") + `</div>`;
     // One short line; the rest is a hover description and Help → Time ("?").
-    html += `<div class="paused" data-tip="The clock is stopped. Orders you give now start when you unpause."><b class="big">Paused</b>${pauseWhyHTML(ui)} ${keyHint({ key: "<b>Space</b> to run", touch: "tap", pad: `${kh("Menu")} to run` })}` +
+    else html += `<div class="paused" data-tip="The clock is stopped. Orders you give now start when you unpause."><b class="big">Paused</b>${pauseWhyHTML(ui)} ${keyHint({ key: "<b>Space</b> to run", touch: "tap", pad: `${kh("Menu")} to run` })}` +
       `<button data-action="speed" data-speed="${ui.lastSpeed || 1}" data-tip="Run at ${ui.lastSpeed || 1}× (Space)">▶ Run</button>` +
       `<button class="mini" data-action="help-open" data-sec="time" data-tip="Help: time, pausing and speeds">?</button>` +
       (n ? `<span class="armed" data-tip="${esc(waiting.join(" · "))}">${n} order${n === 1 ? "" : "s"} will start when you unpause</span>` : "") + `</div>`;
@@ -736,7 +758,8 @@ function bannerHTML() {
   html += fwPlaceBanner(state, ui); // ui/fieldworks.js: placing a field work
   html += meetPickBanner(state, ui); // ui/tradewindow.js: a tile to meet a group's caravan at
   if (ui.moveParty) {
-    html += `<div class="movemode" data-tip="The clock waits until you pick a tile.">Move: <b>${pickWord()} a tile</b> to ${ui.moveQueue ? "queue a move" : "send the team"}${escCancels()}` + pickCancel("move") +
+    const cancel = pickCancel("move"); // a finger's ✕ Cancel (ui/responsive.js): with it, "✕ cancels" would say the same twice
+    html += `<div class="movemode" data-tip="The clock waits until you pick a tile.">Move: <b>${pickWord()} a tile</b> to ${ui.moveQueue ? "queue a move" : "send the team"}${cancel ? "" : escCancels()}` + cancel +
       (ui.moveMsg ? `<br><span class="danger">${esc(ui.moveMsg)}</span>` : "") + `</div>`;
   }
   return html;
@@ -925,6 +948,7 @@ const actions = {
   "wall-widen": (d) => { const b = baseOf(d); if (b) ui.baseMsg = widenRing(b); },
   cxtab: (d) => { ui.baseView.cx = d.tab; ui.baseView.tab = "construction"; ui.baseMsg = ""; }, // Construction: the Buildings or the Defenses list (from the Defence tab too)
   closebase: () => { ui.baseView = null; ui.baseMsg = ""; ui.supplyForm = null; },
+  "win-close": () => { closeTopLayer(); }, // the ✕ in the corner of a window without a title bar of its own (ui/layout.js windowFrame): Esc
   // Supply runs (Supply runs tab of the base screen).
   // Hauling (ui/hauling.js, the Supply runs tab).
   "hl-add": (d) => { ui.baseMsg = haulAdd(state, ui, d.base); },

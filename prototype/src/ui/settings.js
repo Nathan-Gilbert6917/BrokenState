@@ -27,6 +27,7 @@ import { pacingOptionsHTML, MAX_SPEED, PACE_ACTIONS } from "./pacing.js"; // Opt
 import { displayRows, applyDisplay } from "./display.js"; // Display: colour-blind colours, map text, reduce motion, minimap, dev tools
 import { askBoxHtml, confirmRows } from "./confirm.js"; // the one confirmation box, and Confirmations (Don't ask again)
 import { PACES, PACE_KEYS, paceOf } from "../sim/tripland.js"; // Outdoor work pace: this game's job trips (trips-plus #7)
+import { winBar } from "./windows.js"; // the title bar the big windows share: the title, a ✕, the row of tabs
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -72,11 +73,13 @@ const entryLine = (e) => `Day ${e.day ?? "?"}, ${pad2(e.hour ?? 0)}:00 · ${e.ir
 export function settingsModal(state, ui, api = API) {
   const S = ui.settings;
   const tabs = [["game", "Game"], ["options", "Options"], ["controls", "Controls"], ["help", "Help"], ["about", "About"]];
-  const head = `<div class="row settabs">${tabs.map(([k, l]) => `<button data-action="set-tab" data-tab="${k}" class="${S.tab === k ? "active" : ""}">${l}</button>`).join("")}
-    <span style="margin-left:auto"></span><button class="primary" data-action="set-close"${tip("Back to the game (Esc)")}>${ui.started ? "Resume" : "Back"}</button></div>`;
+  // The head (ui/windows.js winBar; the user's request 2026-10-24): the title, the ✕ that is Resume (set-close), and
+  // the tabs in a row under it, sticky while the tab scrolls. The Resume button went: the ✕ is the one way out.
+  const head = winBar({ title: "<h1>⚙ Menu</h1>", close: "set-close", closeTip: ui.started ? "Back to the game (Esc)" : "Back (Esc)",
+    tabs: tabs.map(([k, l]) => `<button data-action="set-tab" data-tab="${k}" class="${S.tab === k ? "active" : ""}">${l}</button>`).join("") });
   const msg = S.msg ? `<div class="setmsg ${S.err ? "danger" : "good"}">${esc(S.msg)}</div>` : "";
   const body = S.tab === "options" ? optionsTab(state, ui, api) : S.tab === "controls" ? controlsTab(ui) : S.tab === "about" ? aboutTab(state, ui, api) : S.tab === "help" ? helpTab(S.help) : gameTab(state, ui, api);
-  return `<div class="box wide settings"><h1>⚙ Menu</h1>${head}${msg}${confirmBox(S)}${body}</div>`;
+  return `<div class="box wide settings">${head}${msg}${confirmBox(S)}${body}</div>`;
 }
 
 // The menu's question: the same box as the map's orders (ui/confirm.js), Enter / Esc. A question about leaving with
@@ -108,21 +111,22 @@ function gameTab(state, ui, api) {
       ${api.desktop ? `<button data-action="set-quit"${dis(!busy && !blocker)}${tip("Save this game, then close it")}>Save and quit to desktop</button>` : ""}
     </div>`;
   } else if (ui.started) {
+    // Two groups (the user's request 2026-10-24): Save (the name box with Save, Save as new, Save to file) and Leave
+    // (Save and exit, Exit without saving, New campaign; the desktop app's Quit).
     const savable = !blocker && !busy;
     const room = curOk || manual < MAX_SLOTS;
-    html += `<div class="setrow">
+    html += `<div class="setgroup"><h3>Save</h3><div class="setrow">
       <button data-action="set-save"${dis(savable && room)}${tip(curOk ? `Save over “${cur.name}”, the save this game was last saved to or loaded from` : "Save to a new slot")}>💾 Save${curOk ? ` (${esc(cur.name)})` : ""}</button>
       <label class="setname"${tip("Name for a new save (empty: the hub's name and the day)")}><input type="text" maxlength="60" data-action="set-name" placeholder="${esc(defaultSaveName(state))}" value="${esc(S.name)}"></label>
       <button data-action="set-savenew"${dis(savable && manual < MAX_SLOTS)}${tip(`Save to a new slot (${manual} of ${MAX_SLOTS} used)`)}>Save as new</button>
       <button data-action="set-tofile"${dis(savable)}${tip("Save this game straight to a .bsave file (a backup, or to carry it to another browser or the desktop app)")}>Save to file…</button>
-    </div>`;
-    if (blocker) html += `<div class="small warn" style="margin:0.2rem 0 0.5rem">${esc(blocker)}</div>`;
-    html += `<div class="setrow">
+    </div>${blocker ? `<div class="small warn" style="margin:0.2rem 0 0">${esc(blocker)}</div>` : ""}</div>`;
+    html += `<div class="setgroup"><h3>Leave</h3><div class="setrow">
       <button data-action="set-saveexit"${dis(!busy && !state.gameOver)}${tip("Save (as above), then go back to the title screen, where Continue picks this game up again")}>Save and exit</button>
       <button data-action="set-exit"${dis(!busy)}${tip("Back to the title screen without saving")}>Exit without saving</button>
       <button data-action="set-new"${dis(!busy)}${tip("A new map and colonists (the new-run screen)")}>New campaign</button>
       ${api.desktop ? `<button data-action="set-quit"${dis(!busy)}${tip("Save (if the game can be saved now), then close the game")}>Save and quit to desktop</button><button data-action="set-quitnosave"${dis(!busy)}${tip("Close the game without saving")}>Quit</button>` : ""}
-    </div>`;
+    </div></div>`;
   } else {
     const last = latestSave();
     html += `<div class="setrow">${last ? `<button class="primary" data-action="set-continue"${dis(!busy)}${tip(`Load the latest save: ${last.name}`)}>▶ Continue: ${esc(last.name)}</button>` : `<span class="muted small">No saves yet in this browser.</span>`}
@@ -130,12 +134,14 @@ function gameTab(state, ui, api) {
   }
   html += guideMenuRow(state, ui); // ui/guide.js
   const auto = api.autosaveInfo();
-  html += `<h3>Saves <span class="small muted">(${manual} of ${MAX_SLOTS} slots, plus the last 3 autosaves of each campaign · ${kb(storageUsed() / 2)} in this browser${canCompress() ? ", compressed" : ""})</span></h3>`;
+  // The list's heading short, the rest of its figures in its hover; where the saves live in Load from file's hover
+  // (the user's request 2026-10-24).
+  const kept = `Saves are kept in this browser${api.desktop ? " (the desktop app keeps them in its own profile)" : ""}; Export makes a file you can keep or move.`;
+  html += `<h3>Saves <span class="small muted"${tip(`${manual} of ${MAX_SLOTS} slots used, plus the last 3 autosaves of each campaign · ${kb(storageUsed() / 2)} in this browser${canCompress() ? ", compressed" : ""}. ${kept}`)}>· ${manual} of ${MAX_SLOTS} slots</span></h3>`;
   if (auto.error) html += `<div class="small danger">The last autosave failed: ${esc(auto.error)}</div>`;
   html += storageWarning();
   html += saves.length ? `<div class="slots">${savesByCampaign(state, ui, saves, (e) => slotRow(state, ui, e, !!blocker || !ui.started, busy, iron))}</div>` : `<div class="muted small">No saves yet. ${ui.started ? "Save above, or wait for the autosave at dawn." : ""}</div>`;
-  html += `<div class="setrow" style="margin-top:0.6rem"><label class="btnlike${busy || iron ? " disabled" : ""}"${tip(iron ? "Ironman: leave this game first (Save and exit)" : "Load a .bsave file (it is also added to the list)")}>📂 Load from file…<input type="file" accept=".bsave,.json,application/json" data-action="set-import" class="hidden"${busy || iron ? " disabled" : ""}></label>
-    <span class="small muted">Saves are kept in this browser${api.desktop ? " (the desktop app keeps them in its own profile)" : ""}; Export makes a file you can keep or move.</span></div>`;
+  html += `<div class="setrow" style="margin-top:0.6rem"><label class="btnlike${busy || iron ? " disabled" : ""}"${tip(iron ? "Ironman: leave this game first (Save and exit)" : `Load a .bsave file: it is added to the list, ready to play. ${kept}`)}>📂 Load from file…<input type="file" accept=".bsave,.json,application/json" data-action="set-import" class="hidden"${busy || iron ? " disabled" : ""}></label></div>`;
   return html;
 }
 
@@ -198,7 +204,7 @@ function optionsTab(state, ui, api) {
       ${box("goodNews", o.goodNews !== false, "Good news alerts", "News in the alerts stack that needs nothing from you: a vehicle repaired on the road and moving on, a building finished, a caravan or merchants arrived, a planner trip home (repeat it?). Off: no alert, flash or chime for them; the log and the diary still have every line. Warnings and dangers always show.")}
       ${box("autoOpen", o.autoOpen !== false, "Auto-open panels on select", "A folded panel opens when you pick something it shows: a tile, site or team on the map (right panel), a tab key (left panel), a new urgent alert")}
       <button data-action="win-reset"${tip("Every window back to its usual size and place; the side panels and the log shown again at their usual width")}>Reset window sizes</button>
-      <button data-action="ov-reset"${tip("The boxes over the map (Running orders, Watching, Layers, alerts, minimap) back where they start. Drag a box's header to move it; Alt+arrow keys on a focused header nudge it")}>Reset overlay positions</button>
+      <button data-action="ov-reset"${tip("The boxes over the map (Running orders, Watching, Layers, alerts, minimap) back where they start. On a desktop a box moves by its header bar (Alt+arrow keys on a focused header nudge it); on a phone or an upright tablet they have fixed places in the strip over the map and this does nothing")}>Reset overlay positions</button>
       <button class="mini" data-action="help-open" data-sec="windows-and-panels"${tip("Help: windows and panels")}>?</button>
     </div>
     <h3>Keys and mouse</h3><div class="setrow"><button data-action="set-tab" data-tab="controls"${tip("Every key, by group: change any of them")}>Controls…</button><button data-action="help-open" data-sec="keys"${tip("Every key as it is set now, ready to print")}>Key sheet…</button></div>

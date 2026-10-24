@@ -360,6 +360,7 @@ const FAKE_PAD = `
       if (!p) return { error: "no team" };
       const POIS = await import("/src/sim/pois.js"), W = await import("/src/sim/world.js");
       POIS.poiKnowledge(st, P.partyTile(p), true).surveyed = W.day(st); // scouted (sim/campscout.js): an unscouted tile sets up blind, with no spot to pick
+      Object.assign(p.supplies, { wood: 20, stone: 8 }); // the camp fire's wood and stone (buildings.js CAMP.fireCost, 2026-10-23)
       P.giveOrder(st, p, "camp");
       if (S.pendingSite(st) !== p) return { error: `no spot asked: ${JSON.stringify(p.task || p.phase)}` };
       const err = BM.openSiteView(st, p);

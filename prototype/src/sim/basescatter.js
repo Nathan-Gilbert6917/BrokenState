@@ -843,7 +843,7 @@ export function townLayer(seed, style, G) {
 // ---------- the land of one base ----------
 // What the land is made from: the tile's dice, terrain (a farm's fields as "farm"), the grid, the yard, the clearing,
 // the road's axes and the river's (spec.road: "x" | "y" | "xy" | ""; spec.river: "x" | "y" | "").
-/** @param {any} state @param {any} base @param {{ G: number, C: number, tier: string, terrain: string, origin?: number[], fresh?: boolean, level?: number }} dims */
+/** @param {any} state @param {any} base @param {{ G: number, C: number, tier: string, terrain: string, origin?: number[], fresh?: boolean, compact?: boolean, level?: number }} dims */
 export function landSpec(state, base, dims) {
   const t = state && state.tiles && base ? state.tiles[base.tile] : null;
   const seed = scatterSeed(base ? base.tile : 0);

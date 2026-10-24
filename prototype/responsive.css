@@ -5,14 +5,17 @@
    query matches. The queries, from widest to narrowest:
      touch     (max-width: 759px), (pointer: coarse) and (min-width: 760px)            every phone and tablet
      drawers   phone, a short touch screen (a phone on its side) and a tablet held upright (760–1023px): the panels
-               become drawers and sheets opened from the dock (Lists · Info · Log)
+               become drawers and sheets opened from the dock (Lists · Info · Log), and the boxes over the map
+               (the alerts and the first-week guide, Running orders, Watching, Layers, the minimap) sheets under a
+               strip of chips across the top of the map, one open at a time (responsive.js enterHud)
      compact   phone and a phone on its side: the small top bar, windows full screen, the battle's own controls
      tablet    (pointer: coarse) and (min-width: 760px): the desktop arrangement, narrower panels, bigger targets
      raid      as drawers: a raid's strip one row, its cards a sheet that folds, its log a drawer (at the end) */
 
 /* ================= touch: phones and tablets ================= */
 @media (max-width: 759px), (pointer: coarse) and (min-width: 760px) {
-  /* The ✕ on the big window on top (Esc): placed by responsive.js over the window's top right corner. */
+  /* The ✕ on the big window on top (Esc): placed by responsive.js over the window's top right corner, only for a
+     window without a ✕ of its own in its title bar or corner (ui/windows.js winBar, ui/layout.js windowFrame). */
   #rs-close { position: fixed; z-index: 11; width: 2.75rem; height: 2.75rem; padding: 0; display: flex; align-items: center; justify-content: center; font-size: 1.15rem; line-height: 1; background: var(--panel-2); border: 1px solid var(--accent); border-radius: 50%; box-shadow: 0 4px 14px rgba(0,0,0,0.55); }
   #rs-close.over-combat { z-index: 31; } /* a window over a battle (#modal.over-combat 30) */
   #rs-cbtools { display: none; }
@@ -48,7 +51,7 @@
   #topbar button, #topbar .nb-btn, #topbar .tf-btn { min-height: 2.6rem; }
   #topbar .speed button { min-width: 2.75rem; }
   .tabs button, .gut-tab { min-height: 2.6rem; }
-  .fp-toggle, .fp-tab, .al-pill, .al-fold { min-height: 2.4rem; }
+  .fp-toggle, .fp-tab { min-height: 2.4rem; }
   #legend .layer { min-height: 2.2rem; }
   #ctxmenu button, #ctxmenu button.tcitem, #itemmenu .imrow { min-height: 2.6rem; }
   #modal .choices button { min-height: 2.9rem; }
@@ -105,9 +108,63 @@
   #rs-dock .rs-ic { font-size: 1.15rem; line-height: 1; }
   #rs-dock .rs-badge { position: absolute; top: 0.2rem; right: 0.35rem; min-width: 1.2rem; padding: 0 0.3rem; border-radius: 99px; font-size: 0.72rem; line-height: 1.2rem; color: #15171a; background: #ffd166; }
   #rs-dx { position: fixed; z-index: 8; width: 2.75rem; height: 2.75rem; padding: 0; font-size: 1.05rem; line-height: 1; background: var(--panel-2); border: 1px solid var(--line); border-radius: 50%; box-shadow: 0 3px 12px rgba(0,0,0,0.55); }
-  /* The boxes over the map leave room for the map on a small screen. */
-  #alerts { width: min(22rem, 62%); }
-  #orders, #watchlist { width: min(15rem, 55%); }
+
+  /* ---------- the strip over the map (responsive.js enterHud; the user's request 2026-10-24) ----------
+     The boxes over the map covered most of a small screen's map when open. Here they start closed and a chip each
+     across the top of the map, under the top bar, carries their counts; the one tapped opens as a sheet under the
+     strip (one at a time; the chip again, another chip or a tap on the dimmed map closes it). Fixed slots: the boxes
+     do not drag here, and a place or size remembered on a desktop (inline styles) does not apply, hence !important.
+     Over the map, under the drawers (z 7) and their scrim (6): the strip 6, a sheet 5, the dim 4, the banners 3. */
+  #rs-hud { position: absolute; top: 0; left: 0; right: 0; z-index: 6; display: flex; gap: 0.3rem; padding: 0.35rem 0.4rem 0.25rem; pointer-events: none; }
+  #rs-hud.hidden { display: none; }
+  #rs-hud .rs-hc { pointer-events: auto; position: relative; flex: 1 1 0; min-width: 0; display: flex; align-items: center; justify-content: center; gap: 0.35rem; min-height: 2.6rem; padding: 0.2rem 0.4rem; background: var(--fp-bg); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 3px 10px rgba(0,0,0,0.45); font-size: 0.8rem; font-weight: 600; color: var(--text); }
+  #rs-hud .rs-hc.hidden { display: none; }
+  #rs-hud .rs-hc.active { background: #4a3816; border-color: var(--accent); }
+  #rs-hud .rs-hc.danger { border-color: var(--danger); }
+  #rs-hud .rs-ic { font-size: 1.05rem; line-height: 1; }
+  #rs-hud .rs-hl { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #rs-hud .rs-hl.warn { color: #ffd166; }
+  #rs-hud .rs-badge { position: absolute; top: -0.4rem; right: -0.3rem; min-width: 1.25rem; padding: 0 0.3rem; border-radius: 99px; font-size: 0.7rem; line-height: 1.2rem; font-weight: 700; text-align: center; color: var(--text); background: #2f343d; border: 1px solid var(--line); }
+  #rs-hud .rs-badge.hidden { display: none; }
+  #rs-hud .rs-badge.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+  #rs-hud .rs-hc.rs-flash { animation: rs-hudflash 0.5s ease-in-out 6; }
+  @keyframes rs-hudflash { 50% { background: #5a2420; border-color: #ff6b61; box-shadow: 0 0 0 0.3rem rgba(255,107,97,0.35); } }
+  /* A tap on the dimmed map closes the open sheet. */
+  #rs-hudscrim { display: none; position: absolute; inset: 0; z-index: 4; background: rgba(0,0,0,0.3); }
+  body[data-rshud] #rs-hudscrim { display: block; }
+  /* The sheets: under the strip, the width of the map, scrolling inside. A folded box shows nothing (its chip stands
+     in), and nothing drags, so no ✥ on the headers. */
+  body.rs-hud :is(#orders, #watchlist, #legend, #alerts, #devpanel) { top: calc(var(--rs-hud, 3rem) + 0.15rem) !important; left: 0.4rem !important; right: 0.4rem !important; bottom: auto !important; width: auto !important; max-width: none !important; max-height: min(64%, calc(100% - var(--rs-hud, 3rem) - 0.8rem)) !important; z-index: 5; }
+  body.rs-hud :is(#orders, #watchlist, #legend, #devpanel) { background-color: #16181c; } /* solid: the banners under a sheet do not show through */
+  body.rs-hud :is(#orders, #watchlist, #legend):has(> .fp-tab:only-child) { display: none; }
+  body.rs-hud .fp-head::after { display: none; }
+  body.rs-hud #legend.fp-anim { animation-name: fp-in; transform-origin: top left; }
+  /* The alerts' box holds the alerts and the first-week guide: the sheet that is open shows, the flash line always
+     (a toast under the strip). The guide's ▾ (one line) and ✕ (hide it for good) are not a sheet's: the chip closes it. */
+  body.rs-hud #alerts > .al-pill { display: none; }
+  body.rs-hud:not([data-rshud="alerts"]) #alerts > :is(.fp-head, .al, .al-more, .al-empty) { display: none; }
+  body.rs-hud:not([data-rshud="guide"]) #alerts > .guide { display: none; }
+  /* With neither of its sheets open the box holds the flash line alone: a toast at the foot of the map, clear of the
+     banners under the strip and of whatever sheet is open. */
+  body.rs-hud:not([data-rshud="alerts"]):not([data-rshud="guide"]) #alerts { top: auto !important; bottom: 0.5rem !important; max-height: none !important; z-index: 6; align-items: center; }
+  body.rs-hud #alerts > .al-flash { max-width: 100%; }
+  body:is([data-rshud="alerts"], [data-rshud="guide"]) #alerts { background: #16181c; border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 6px 18px rgba(0,0,0,0.45); padding: 0 0.5rem 0.4rem; }
+  body.rs-hud #alerts > .fp-head { margin: 0 -0.5rem 0.2rem; border: none; border-bottom: 1px solid var(--line); border-radius: 8px 8px 0 0; box-shadow: none; }
+  body.rs-hud #alerts > .al-empty { padding: 0.3rem 0.2rem; }
+  body.rs-hud #alerts > .guide { margin-top: 0.3rem; border: none; box-shadow: none; background: none; padding-left: 0.2rem; }
+  body.rs-hud #alerts .guide .gd-head :is([data-action="gd-fold"], [data-action="gd-close"]) { display: none; }
+  body.rs-hud #alerts .guide .gd-head button { min-width: 2.4rem; }
+  /* The minimap's sheet: the width of the map, its height following; the –, ✥ and top edge gone (the chip closes it). */
+  body.rs-hud #minimap { top: calc(var(--rs-hud, 3rem) + 0.15rem) !important; left: 0.4rem !important; right: auto !important; bottom: auto !important; width: calc(100% - 0.8rem) !important; max-width: none !important; height: auto; z-index: 5; }
+  body.rs-hud:not([data-rshud="minimap"]) #minimap, body.rs-hud #mm-show, body.rs-hud #minimap :is(.mm-hide, .ov-grip, .mm-bar) { display: none; }
+  /* The banners under the strip, one line each (main.js bannerHTML: the compact ones), under a sheet and its dim. */
+  body.rs-hud #banner { top: calc(var(--rs-hud, 0px) + 0.35rem); left: 0.4rem; right: 0.4rem; z-index: 3; }
+  body.rs-hud #banner > .paused.compact { display: inline-flex; align-items: center; flex-wrap: wrap; justify-content: center; gap: 0.3rem; padding: 0.15rem 0.3rem 0.15rem 0.7rem; border-radius: 99px; font-size: 0.85rem; }
+  body.rs-hud #banner > .paused.compact b.big { margin-right: 0; font-size: 0.85rem; }
+  body.rs-hud #banner > .paused.compact button { margin-left: 0; min-height: 2.2rem; padding: 0 0.6rem; }
+  body.rs-hud #banner > .paused.compact .rs-badge { min-width: 1.4rem; padding: 0 0.35rem; border-radius: 99px; line-height: 1.4rem; font-size: 0.75rem; font-weight: 700; color: #15171a; background: #ffd166; }
+  body.rs-hud #banner > .movemode { padding: 0.25rem 0.6rem; font-size: 0.9rem; }
+  body.rs-hud #banner .tray { font-size: 0.85rem; }
 }
 
 /* A phone held upright: the right panel (what is picked) is a sheet from the bottom, the map still showing above it. */
@@ -115,6 +172,9 @@
   #right { top: auto; left: 0; right: 0; width: auto; min-height: 30dvh; max-height: min(52dvh, calc(100dvh - var(--rs-top, 3rem) - var(--rs-dock, 0px) - 4rem)); border-radius: 12px 12px 0 0; border: 1px solid var(--line); border-bottom: none; }
   body:not(.fold-right) #right { animation: panel-in-b 0.18s ease-out; }
   #right::before, #log::before { content: ""; display: block; width: 2.6rem; height: 0.3rem; margin: -0.25rem auto 0.45rem; border-radius: 99px; background: var(--line); }
+  /* The strip's chips: the icon over a small name (six fit across a 390px screen). */
+  #rs-hud .rs-hc { flex-direction: column; gap: 0.1rem; min-height: 2.9rem; padding: 0.2rem 0.15rem; font-size: 0.62rem; }
+  #rs-hud .rs-ic { font-size: 1.1rem; }
 }
 
 /* On its side, a phone has width to spare and little height: the dock stands at the map's right edge. */
@@ -124,6 +184,9 @@
   #rs-dock .rs-db { flex: 0 0 auto; width: 3.1rem; min-height: 3.1rem; flex-direction: column; gap: 0.1rem; padding: 0.2rem; }
   #rs-dock .rs-dl { font-size: 0.66rem; font-weight: 600; }
   #log { height: min(55vh, 16rem); }
+  /* Little height, width to spare: the sheets stand at the right, from the strip down; the minimap by its height. */
+  body.rs-hud :is(#orders, #watchlist, #legend, #alerts, #devpanel) { left: auto !important; width: min(24rem, 58%) !important; max-height: calc(100% - var(--rs-hud, 3rem) - 0.6rem) !important; }
+  body.rs-hud #minimap { left: auto !important; right: 0.4rem !important; width: auto !important; max-width: calc(100% - 0.8rem) !important; height: calc(100% - var(--rs-hud, 3rem) - 0.6rem); }
 }
 
 /* ================= compact: phones (upright or on their side) ================= */
@@ -157,6 +220,7 @@
   #rs-more #tb-people { padding: 0 0.2rem; }
   #rs-more #tb-tools { display: grid; grid-template-columns: 1fr 1fr; gap: 0.35rem; margin: 0; font-size: 0.95rem; }
   #rs-more #tb-tools button { text-align: left; padding: 0.3rem 0.6rem; }
+  #rs-more #tb-tools button[data-action="set-open"] { display: none; } /* ⚙ beside ⋯ is the Menu already */
   /* The map's keys: ◀ and Next team on one row, the nine camera spots open under it. */
   #rs-more #rs-keys { display: flex; flex-direction: column; align-items: stretch; gap: 0.45rem; padding-top: 0.45rem; border-top: 1px solid var(--line); }
   #rs-more #rs-keys .rs-team { display: grid; grid-template-columns: 2.75rem minmax(0, 1fr); }
@@ -169,25 +233,34 @@
   /* The panels: a little tighter, the tabs full width. */
   #left, #right { padding: 0.6rem 0.7rem; }
   #log { font-size: 0.88rem; padding: 0.5rem 0.7rem; }
-  /* The map's own boxes keep to the map. */
+  /* The map's own boxes keep to the map (the boxes themselves: the strip's sheets, in the drawers section). */
   #banner > div { padding: 0.3rem 0.6rem; }
-  #minimap { max-width: calc(45% - 1rem); }
   /* The tile menu (a long press, a right-click) is a sheet over the dock, the map still showing above it. */
   #ctxmenu { position: fixed; left: 0 !important; right: 0; top: auto !important; bottom: var(--rs-dock, 0px); max-height: 55dvh !important; width: auto; min-width: 0; padding: 0.3rem 0.3rem calc(0.3rem + env(safe-area-inset-bottom)); border-radius: 12px 12px 0 0; }
   #ctxmenu .tchead { max-width: none; }
   #ctxmenu button.tcitem { min-width: 0; }
   #itemmenu .imenu { max-width: calc(100vw - 1rem); }
 
-  /* Windows: the whole screen, scrolling inside, nothing wider than the screen. A remembered size or place (ui/
-     windows.js inline styles) does not apply on a phone; the grips go. */
-  #modal { align-items: stretch; justify-content: stretch; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+  /* Windows: the whole screen (100dvh: as tall as the screen is with the browser's bars where they stand, so nothing
+     is cut off top or bottom on a phone on its side), scrolling inside, nothing wider than the screen, the safe areas
+     kept clear. A remembered size or place (ui/windows.js inline styles) does not apply on a phone; the grips go.
+     The window's own head (ui/windows.js winBar) bleeds to the screen's edges as it does to the box's; the base
+     screen's head and tabs stay while its body alone scrolls (one scroll, not one inside another). The floating ✕
+     (responsive.js) only comes for a window without a ✕ of its own, which keeps room for it. */
+  #modal { align-items: stretch; justify-content: stretch; height: 100vh; height: 100dvh; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
   #modal .win { position: relative !important; left: auto !important; top: auto !important; width: 100% !important; height: 100% !important; max-width: none; max-height: none; margin: 0; }
   #modal .wgrip { display: none; }
   #modal .box, #modal .box.wide, #modal .win > .box { width: 100% !important; max-width: none !important; max-height: 100% !important; margin: 0; border: none; border-radius: 0; padding: 0.8rem 0.75rem calc(0.8rem + env(safe-area-inset-bottom)); overflow-x: auto; overscroll-behavior: contain; }
   #modal .win > .box { height: 100% !important; }
-  #modal .win > .box > :first-child { padding-right: 3rem; } /* room for the ✕ */
+  #modal .win:not(:has(.wx)) > .box > :first-child { padding-right: 3rem; } /* room for the floating ✕ */
+  #modal .whead { top: -0.8rem; margin: -0.8rem -0.75rem 0.6rem; padding: 0.55rem 0.75rem 0; border-radius: 0; }
+  #modal .wx { width: 2.6rem; height: 2.6rem; }
+  #modal .wsub { display: none; } /* the base screen's kind and head count: no room beside its name; the Overview tab has them */
+  #modal .win > .box.basebox { display: flex; flex-direction: column; overflow: hidden; }
+  #modal .basebox > .basebody { flex: 1 1 auto; min-height: 0; max-height: none; }
   #modal .box h1 { font-size: 1.2rem; }
-  #modal .basename { width: 100%; }
+  #modal .basename { flex: 1 1 auto; width: auto; max-width: none; font-size: 1.2rem; }
+  #modal .grid2 { grid-template-columns: minmax(0, 1fr); } /* the survivor screen's Skills, Traits and Gear one under the other */
   #modal table { max-width: none; }
   /* An opened box (ui/boxview.js, over the search or inventory window): a sheet from the bottom, in the thumb's reach;
      a phone on its side has it at the right (below). */
@@ -253,9 +326,6 @@
   #cbbar .bb-right { flex: 0 1 11rem; }
   #cbbar .bb-ctls { grid-template-columns: repeat(2, 1fr); }
   #cbhud .bh-roster { max-height: calc(100% - var(--cbbar-h, 0px) - 1rem); }
-  /* The minimap smaller, the alerts above it. */
-  #minimap { max-width: calc(30% - 1rem); }
-  #mapwrap:has(#minimap:not(.hidden)) #alerts { max-height: calc(100% - 10rem); }
   #boxview .boxwin { top: calc(0.4rem + env(safe-area-inset-top)); bottom: calc(0.4rem + env(safe-area-inset-bottom)); left: auto; right: calc(0.4rem + env(safe-area-inset-right)); width: min(26rem, 62vw); max-height: none; border-radius: 12px; border-bottom: 1px solid var(--accent); padding-bottom: 0.55rem; }
   #ctxmenu { left: auto !important; right: var(--rs-dockr, 0px); top: var(--rs-top, 3rem) !important; bottom: 0; width: min(24rem, 55vw); max-height: none !important; border-radius: 12px 0 0 0; }
   /* The title screen: the logo to the right of the menu, not over it. */
@@ -267,7 +337,9 @@
 @media (pointer: coarse) and (min-width: 760px) and (max-width: 1023px) and (min-height: 501px) {
   #topbar { gap: 0.45rem; padding-left: 0.6rem; padding-right: 0.6rem; }
   #tb-tools { margin-left: 0; }
-  #alerts { width: min(22rem, 48%); }
+  /* Room to spare: the strip's sheets need not take the whole width. */
+  body.rs-hud :is(#orders, #watchlist, #legend, #alerts, #devpanel) { right: auto !important; width: min(26rem, 70%) !important; }
+  body.rs-hud #minimap { width: min(30rem, calc(100% - 0.8rem)) !important; }
 }
 
 /* ================= a raid: phones, a phone on its side, a tablet held upright ================= */

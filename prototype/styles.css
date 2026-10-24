@@ -348,6 +348,30 @@ button.mini { padding: 0.15rem 0.45rem; font-size: 0.82rem; }
 a.link { color: var(--info); cursor: pointer; text-decoration: underline; }
 .basebox { width: min(72rem, 96vw) !important; }
 .basebody { max-height: 62vh; overflow-y: auto; padding-right: 0.3rem; }
+/* The survivor screen (ui.js survivorModal): wider than a plain box, Skills beside Traits and Gear, every section
+   head alike (an h3 with a rule, with or without a button beside it). */
+#modal .box.survbox { width: min(58rem, 94vw); }
+.survbox .grid2 { grid-template-columns: minmax(16rem, 2fr) 3fr; gap: 0.6rem 1.3rem; }
+.survbox h3 { margin: 0.9rem 0 0.4rem; border-bottom: 1px solid var(--line); padding-bottom: 0.2rem; }
+.survbox .spread:has(> h3) { margin: 0.9rem 0 0.4rem; border-bottom: 1px solid var(--line); padding-bottom: 0.2rem; }
+.survbox .spread > h3 { margin: 0; border: none; padding: 0; }
+.survbox .grid2 > div > :is(h3, .spread:has(> h3)):first-child { margin-top: 0.2rem; }
+.survbox .where { margin-bottom: 0.6rem; }
+/* Its gear (ui.js gearGrid): a row a slot (the slot, what is in it, its fit in a word with the whole in the hover,
+   a ⋯), two columns where there is room (one on a phone: responsive.css). The row's equip controls (gearControls)
+   float over its right end, shown by the ⋯ (ui/windows.js) or under the mouse. */
+.gear-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(14.5rem, 1fr)); gap: 0 0.9rem; margin-top: 0.3rem; }
+.gslot { position: relative; display: grid; grid-template-columns: 4.4rem minmax(0, 1fr) auto auto; align-items: center; gap: 0.3rem; min-height: 1.9rem; padding: 0.12rem 0.1rem; border-bottom: 1px dashed rgba(255, 255, 255, 0.08); font-size: 0.88rem; }
+.gslot .gs-l { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gslot .gs-i { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gslot .gs-c { font-size: 0.76rem; white-space: nowrap; cursor: help; }
+.gslot .gs-more { padding: 0 0.35rem; line-height: 1.2; opacity: 0.55; }
+.gslot .gs-more:hover, .gslot.open .gs-more { opacity: 1; }
+.gslot .gs-ctl { display: none; position: absolute; left: 0; right: 2.3rem; top: 50%; transform: translateY(-50%); z-index: 2; align-items: center; justify-content: flex-end; gap: 0.3rem; padding: 0.15rem 0.3rem; background: var(--panel); border: 1px solid var(--accent); border-radius: 6px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45); }
+.gslot .gs-ctl > button { flex: none; }
+.gslot .gs-ctl > select { flex: 0 1 auto; min-width: 0; max-width: 12rem; } /* shrinks inside the box, never over the ⋯ */
+.gslot.open .gs-ctl { display: flex; }
+@media (hover: hover) and (pointer: fine) { .gslot:hover .gs-ctl { display: flex; } }
 /* The base window reads like a game panel: section heads with a rule, label/value rows with a dotted rule, and a
    dotted underline on any label that carries a longer explanation in its tooltip. */
 .basebody h3 { border-bottom: 1px solid var(--line); padding-bottom: 0.25rem; }
@@ -621,7 +645,9 @@ input.colorinput { width: 1.8rem; height: 1.3rem; padding: 0; border-radius: 4px
 .nrport { display: flex; flex-direction: column; align-items: center; cursor: pointer; background: #15171b; border: 1px solid var(--line); border-radius: 8px; padding: 0.25rem 0.35rem; }
 .nrport:hover { border-color: var(--accent); }
 .nrport img.sprite { margin: 0; }
-.nrskills { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.1rem 0.5rem; font-size: 0.8rem; }
+/* The skills take the columns the card has room for (three on a wide card, two on a narrow one): the crew grid's
+   columns follow the screen (newrun.css .nrcrew), so a card's width does. */
+.nrskills { display: grid; grid-template-columns: repeat(auto-fill, minmax(8.6rem, 1fr)); gap: 0.1rem 0.5rem; font-size: 0.8rem; }
 .nrskill { display: flex; align-items: center; gap: 0.2rem; }
 .nrskill span { flex: 1; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .nrskill b { min-width: 1.3rem; text-align: center; white-space: nowrap; }
@@ -993,8 +1019,11 @@ a.lk.why-lk { color: var(--accent); font-size: 0.85em; white-space: nowrap; }
 .perk.avail:hover { background: #4a3816; }
 .perk.locked { opacity: 0.55; }
 .perk.passed { opacity: 0.35; text-decoration: line-through; }
-/* Menu: save, load, options (ui/settings.js) */
-.settings .settabs { margin: 0.2rem 0 0.6rem; }
+/* Menu: save, load, options (ui/settings.js). The Game tab's groups (Save, Leave) and the Saves heading with its
+   figures after it in plain type (the rest in its hover). */
+.settings .setgroup { margin: 0 0 0.5rem; }
+.settings .setgroup h3 { margin: 0.3rem 0 0.2rem; }
+.settings h3 .small { text-transform: none; letter-spacing: 0; font-weight: 400; cursor: help; }
 .settings .setrow { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin: 0.35rem 0; }
 .settings .setname input { width: 15rem; }
 .settings .setmsg { margin: 0.3rem 0 0.5rem; padding: 0.4rem 0.6rem; background: var(--panel-2); border-left: 3px solid var(--accent); border-radius: 4px; }
@@ -1314,7 +1343,38 @@ button.wsch.lunch { text-decoration: underline; text-underline-offset: 3px; box-
 #modal .win.sized > .box.settings > .helpwrap { flex: 1 1 auto; min-height: 10rem; height: auto; }
 #modal .win.sized > .box.settings > .slots { flex: 1 1 auto; min-height: 6rem; max-height: none; }
 #modal .win.sized .memorial { max-height: none; }
-#modal .win > .box > h1:first-child, #modal .win > .box > .spread:first-child { cursor: move; }
+#modal .win > .box > h1:first-child, #modal .win > .box > .spread:first-child, #modal .win > .box > .whead:first-child > .wbar { cursor: move; }
+/* The chrome the big windows share (ui/windows.js winBar; the user's request 2026-10-24): a head stuck to the top of
+   the box with the title bar (the title at the left, the window's own buttons, the ✕ at the right) and, under it,
+   the row of tabs in one line that scrolls sideways (.wtabwrap: a fade with an arrow at an end where more tabs hide,
+   ui/windows.js fitTabs). The head bleeds over the box's padding to its edges, so it reads as the window's top and
+   the body scrolls under it. A window without a bar of its own gets the same ✕ in its corner (ui/layout.js
+   windowFrame .wx-corner). The head's top is minus the box's padding, as the left panel's tab strip does it: the
+   sticky edge is the content box, so a plain 0 would push the head down over the first line. */
+#modal .whead { position: sticky; top: -1.1rem; z-index: 4; flex: none; margin: -1.1rem -1.3rem 0.7rem; padding: 0.7rem 1.3rem 0; background: var(--panel); border-bottom: 1px solid var(--line); border-radius: 12px 12px 0 0; }
+#modal .wbar { display: flex; align-items: center; gap: 0.5rem; min-height: 2.2rem; padding-bottom: 0.55rem; }
+#modal .wbar > h1 { margin: 0; flex: 1 1 auto; min-width: 0; font-size: 1.3rem; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#modal .wbar > .basename { flex: 1 1 10rem; width: auto; max-width: 26rem; min-width: 0; margin: 0 0 0 -0.3rem; }
+#modal .wtools, #modal .wbar > :not(.wtools) + .wx { margin-left: auto; } /* the buttons and the ✕ at the right end, whatever the title's width */
+#modal .wtools { display: inline-flex; align-items: center; gap: 0.35rem; flex: none; }
+#modal .wsub { white-space: nowrap; }
+#modal .wx { flex: none; width: 2rem; height: 2rem; min-height: 0; padding: 0; display: inline-flex; align-items: center; justify-content: center; font-size: 1.05rem; line-height: 1; border-radius: 50%; color: var(--muted); background: transparent; border-color: transparent; }
+#modal .wx:hover:not(:disabled) { color: var(--text); border-color: var(--accent); background: var(--panel-2); }
+#modal .wx-corner { position: absolute; z-index: 4; top: 0.6rem; right: 0.7rem; background: var(--panel-2); border-color: var(--line); }
+#modal .win:has(> .wx-corner) > .box > :first-child { padding-right: 2.6rem; } /* the corner ✕ sits over the head's right end */
+#modal .whead + .result { margin-top: 0; }
+#modal .wtabwrap { position: relative; margin: 0 -0.3rem; }
+#modal .wtabs { position: relative; display: flex; flex-wrap: nowrap; gap: 0.25rem; margin: 0; padding: 0 0.3rem 0.55rem; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; }
+#modal .wtabs::-webkit-scrollbar { display: none; }
+#modal .wtabs button { flex: none; padding: 0.3rem 0.65rem; white-space: nowrap; background: transparent; border-color: transparent; color: var(--muted); }
+#modal .wtabs button:hover:not(:disabled) { color: var(--text); background: var(--panel-2); border-color: var(--line); }
+#modal .wtabs button.active { color: var(--text); background: #4a3816; border-color: var(--accent); font-weight: 600; }
+#modal .wtab-l, #modal .wtab-r { position: absolute; top: 0; bottom: 0.55rem; width: 2.6rem; display: none; align-items: center; z-index: 1; cursor: pointer; font-style: normal; font-size: 1.4rem; line-height: 1; color: var(--accent); }
+#modal .wtab-l { left: 0; justify-content: flex-start; padding-left: 0.15rem; background: linear-gradient(90deg, var(--panel) 40%, transparent); }
+#modal .wtab-r { right: 0; justify-content: flex-end; padding-right: 0.15rem; background: linear-gradient(270deg, var(--panel) 40%, transparent); }
+#modal .wtab-l::before { content: "‹"; }
+#modal .wtab-r::before { content: "›"; }
+#modal .wtabwrap.more-l .wtab-l, #modal .wtabwrap.more-r .wtab-r { display: flex; }
 #modal .wgrip { position: absolute; z-index: 3; display: block; }
 #modal .g-n, #modal .g-s { left: 1.1rem; right: 1.1rem; height: 0.7rem; cursor: ns-resize; }
 #modal .g-n { top: -0.45rem; }
@@ -1333,11 +1393,9 @@ body.win-dragging, body.win-dragging * { user-select: none !important; }
 /* The timelapse's boxes resize from their corner (remembered with the windows). */
 #timelapse .tl-info, #timelapse .tl-caps { resize: both; min-width: 12rem; min-height: 8rem; max-width: calc(100% - 1.2rem); }
 
-/* Folded alerts: one button with the count; open alerts have a small fold button on top. */
-.al-pill { align-self: flex-end; background: rgba(20,22,26,0.93); border: 1px solid var(--line); border-radius: 99px; padding: 0.3rem 0.85rem; font-size: 0.95rem; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
-.al-pill.danger { border-color: var(--danger); color: #ffd0cc; animation: alpulse 1.8s ease-in-out infinite; }
+/* Folded alerts: the same slim tab as the other boxes (the panel shell section below); an urgent one pulses it. */
+.al-pill.danger { animation: alpulse 1.8s ease-in-out infinite; }
 @keyframes alpulse { 50% { box-shadow: 0 0 0 0.25rem rgba(226,104,95,0.35); } }
-.al-fold { align-self: flex-end; padding: 0.05rem 0.55rem; font-size: 0.8rem; line-height: 1.2; background: rgba(20,22,26,0.9); }
 
 /* ---------- Menu → Controls, the key sheet (ui/controls.js), the Codex (ui/codex.js), the search box (ui/palette.js) ---------- */
 .settings .keygroups { columns: 2 26rem; column-gap: 1.2rem; }
@@ -1656,17 +1714,20 @@ body:not(.fold-log) #log { animation: panel-in-b 0.18s ease-out; }
 #legend { max-width: 17rem; max-height: calc(100% - 1.2rem); overflow-y: auto; }
 #orders:has(> .fp-tab:only-child), #watchlist:has(> .fp-tab:only-child), #legend:has(> .fp-tab:only-child) { width: auto; padding: 0; border: none; background: none; box-shadow: none; overflow: visible; }
 .fp-head { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 0.25rem; margin: 0 -0.5rem 0.2rem; padding: 0.25rem 0.3rem; background: var(--fp-head); border-bottom: 1px solid var(--line); border-radius: 8px 8px 0 0; }
-.fp-toggle, .fp-tab, #alerts .al-pill, #alerts .al-fold { display: inline-flex; align-items: center; gap: 0.4rem; min-width: 0; font-weight: 600; font-size: 0.92rem; line-height: 1.25; text-align: left; color: var(--text); }
+.fp-toggle, .fp-tab { display: inline-flex; align-items: center; gap: 0.4rem; min-width: 0; font-weight: 600; font-size: 0.92rem; line-height: 1.25; text-align: left; color: var(--text); }
 .fp-toggle { flex: 1; padding: 0.18rem 0.4rem; background: none; border: 1px solid transparent; border-radius: 6px; }
 .fp-toggle:hover:not(:disabled) { background: var(--panel-2); border-color: var(--line); }
-.fp-tab, #alerts .al-pill, #alerts .al-fold { max-width: 100%; padding: 0.32rem 0.6rem 0.32rem 0.45rem; background: var(--fp-bg); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
-.fp-tab:hover:not(:disabled), #alerts .al-pill:hover:not(:disabled), #alerts .al-fold:hover:not(:disabled) { border-color: var(--accent); }
-#alerts .al-pill.danger { border-color: var(--danger); color: #ffd0cc; }
-#alerts .al-fold { align-self: flex-end; font-size: 0.85rem; padding: 0.2rem 0.55rem 0.2rem 0.4rem; }
+.fp-tab { max-width: 100%; padding: 0.32rem 0.6rem 0.32rem 0.45rem; background: var(--fp-bg); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+.fp-tab:hover:not(:disabled) { border-color: var(--accent); }
+#alerts > .al-pill { align-self: flex-end; } /* the alerts' tab (ui/layout.js alertsPill) at the stack's right, red with an urgent one */
+#alerts > .al-pill.danger { border-color: var(--danger); color: #ffd0cc; }
+/* The alerts' header (alertsFoldButton): the same bar as the other boxes, over the stack of cards; it stays at the
+   top while the stack scrolls. */
+#alerts > .fp-head { margin: 0; border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
 .fp-ico { flex: none; width: 1.25em; text-align: center; font-weight: 400; }
 .fp-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fp-chev { flex: none; margin-left: auto; padding-left: 0.2rem; color: var(--muted); font-size: 0.78rem; }
-.fp-toggle:hover .fp-chev, .fp-tab:hover .fp-chev, .al-pill:hover .fp-chev, .al-fold:hover .fp-chev { color: var(--accent); }
+.fp-toggle:hover .fp-chev, .fp-tab:hover .fp-chev { color: var(--accent); }
 .fp-badge { flex: none; padding: 0.02rem 0.42rem; border-radius: 99px; background: #2f343d; color: var(--text); font-size: 0.75rem; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .fp-badge.warn { background: #4a3a14; color: #ffd166; }
 .fp-badge.danger { background: #4d2220; color: #ffb7b0; }
@@ -1688,11 +1749,23 @@ body:not(.fold-log) #log { animation: panel-in-b 0.18s ease-out; }
 @media (prefers-reduced-motion: reduce) { #left, #right, #log, .fp-anim { animation: none !important; } .gut, .gut-grip { transition: none; } }
 
 /* ---------- Moving the boxes over the map (ui/overlaydrag.js) ----------
-   Headers, folded tabs and the minimap's grip are the handles: a move cursor, no text selection and no browser
-   panning under a finger. Nothing eases while a box is dragged; the box being dragged stays on top. */
+   Every header bar (the alerts' too), the folded tabs, the guide's title, the dev tools' title line, the minimap's
+   top edge and its grip are the handles: a move cursor, a ✥ at the end of each bar, no text selection and no browser
+   panning under a finger. Nothing eases while a box is dragged; the box being dragged stays on top. (On a phone the
+   boxes stay put: responsive.css hides the ✥ and overlaydrag.js takes no press.) */
 #orders .fp-head, #watchlist .fp-head, #legend .fp-head, #orders > .fp-tab, #watchlist > .fp-tab, #legend > .fp-tab,
-#alerts .al-fold, #alerts .al-pill, #alerts .gd-head, #devpanel > .ov-devhead, #minimap .ov-grip, #mm-show { touch-action: none; user-select: none; -webkit-user-select: none; }
-#orders .fp-head, #watchlist .fp-head, #legend .fp-head, #alerts .gd-head, #devpanel > .ov-devhead, #minimap .ov-grip { cursor: move; }
+#alerts > .fp-head, #alerts > .al-pill, #alerts .gd-head, #devpanel > .ov-devhead, #minimap .ov-grip, #minimap .mm-bar, #mm-show { touch-action: none; user-select: none; -webkit-user-select: none; }
+#orders .fp-head, #watchlist .fp-head, #legend .fp-head, #alerts > .fp-head, #alerts .gd-head, #devpanel > .ov-devhead, #minimap .ov-grip, #minimap .mm-bar { cursor: move; }
+.fp-head::after { content: "✥"; flex: none; padding: 0 0.35rem 0 0.2rem; color: var(--muted); font-size: 0.85rem; opacity: 0.7; }
+.fp-head:hover::after { color: var(--accent); opacity: 1; }
+/* The dev tools' title line: the same bar (its ✥ first, before the title). */
+#devpanel > .ov-devhead { margin: -0.45rem -0.6rem 0.3rem; padding: 0.25rem 0.5rem; background: var(--fp-head); border-bottom: 1px solid var(--line); border-radius: 8px 8px 0 0; }
+#devpanel > .ov-devhead::before { content: "✥"; color: var(--muted); font-size: 0.85rem; margin-right: 0.4rem; opacity: 0.7; }
+#devpanel > .ov-devhead:hover::before { color: var(--accent); opacity: 1; }
+/* The minimap: its top edge drags (ui/minimap.js .mm-bar, under the – and ✥ buttons; a shade on hover says so), the
+   grip at the top right. */
+#minimap .mm-bar { position: absolute; top: 0; left: 0; right: 0; height: 1.15rem; background: linear-gradient(rgba(20,22,26,0.55), rgba(20,22,26,0)); opacity: 0; transition: opacity 0.15s; }
+#minimap .mm-bar:hover, #minimap:hover .mm-bar { opacity: 1; }
 #minimap .ov-grip { position: absolute; top: 0.2rem; right: 0.2rem; padding: 0 0.35rem; font-size: 0.8rem; line-height: 1.2; background: rgba(20,22,26,0.85); opacity: 0.75; }
 #minimap .ov-grip:hover, #minimap .ov-grip:focus-visible { opacity: 1; color: var(--accent); }
 body.ov-dragging, body.ov-dragging * { cursor: grabbing !important; user-select: none !important; }
@@ -1729,6 +1802,9 @@ body.ov-dragging #mapwrap > * { transition: none !important; animation: none !im
 .pk-meter { display: block; max-width: 9rem; height: 0.28rem; margin: 0.22rem 0 0.08rem; background: #2c3139; border-radius: 99px; overflow: hidden; }
 .pk-meter > i { display: block; height: 100%; border-radius: inherit; }
 .pk-foot { margin-top: 0.6rem; padding-top: 0.5rem; border-top: 1px solid var(--line); }
+/* The picked base's card in the right panel (ui.js ownBaseHead): Manage with the pin and ✎ in the title row. */
+.basehead .basehead-acts { flex-wrap: nowrap; gap: 0.3rem; }
+.basehead .basehead-acts .primary { padding: 0.25rem 0.6rem; }
 .pk-hint { margin: 0.1rem 0.1rem 0.6rem; }
 .pk-acts { display: grid; grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr)); gap: 0.35rem; }
 .pk-acts button { text-align: left; padding: 0.35rem 0.6rem; }
