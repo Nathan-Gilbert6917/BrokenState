@@ -4,12 +4,14 @@
 //   2. with a document and requestAnimationFrame (stubbed here): the box goes up at once with the size in hexes and the
 //      note on big maps; fn waits for two frames and a task; a second request while it waits runs after it, in order;
 //      one from inside a running fn runs at once; then the box goes and after() runs once; a fn that throws still
-//      takes the box down;
+//      takes the box down; quick (the map kept: sim/mapgen.js MAP_CACHE) runs fn at once with no box and after() on the next task, and
+//      waits its turn behind a build still waiting for its frames;
 //   3. main.js: the first world and every action that builds one (Seed, World size, width and height, Mode, AI groups,
 //      Starting hives, the vehicle box, Starting people, the Custom counts, New map, New map and survivors, New start
 //      position, Pick start on map, Random run, World… Done, the gear and fleet rebuilds, Randomize all and everything,
 //      the cards' dice, Ironman, Customize, the backgrounds window's Done, New campaign, Exit) go through gen(); the CSS
-//      has the layer and the spinner.
+//      has the layer and the spinner; gen() skips the box when the map is kept on the seed being built (a new seed,
+//      null, always shows it).
 // Usage: node tools/generatingtest.js
 import { readFileSync } from "node:fs";
 import { generating, generatingHtml, generatingUp } from "../src/ui/newgame.js";
@@ -77,6 +79,18 @@ process.on("uncaughtException", (e) => uncaught.push(String(e && e.message)));
   generating(() => { throw new Error("boom in the build"); }, { after: () => order.push("after3") });
   tick(); tick(); await settle();
   check(hidden(box) && order.join() === "after3" && !generatingUp(), "a throwing fn takes the box down and after() runs");
+  // quick: the map is kept, so no box; behind a build waiting for its frames it waits its turn under that box.
+  order.length = 0;
+  generating(() => order.push("q"), { quick: true, after: () => order.push("after-q") });
+  check(order.join() === "q" && hidden(box) && !generatingUp(), `quick: fn at once, no box: ${order.join()}`);
+  await settle();
+  check(order.join() === "q,after-q", `then after() on the next task: ${order.join()}`);
+  order.length = 0;
+  generating(() => order.push("d"), { after: () => order.push("after-d") });
+  generating(() => order.push("q2"), { quick: true, after: () => order.push("after-q2") });
+  check(order.length === 0 && !hidden(box), "quick behind a waiting build: it waits too");
+  tick(); tick(); await settle();
+  check(order.join() === "d,q2,after-d", `then runs after it, in order: ${order.join()}`);
   check(uncaught.some((m) => /boom in the build/.test(m)), `the error still surfaces (${uncaught.join("; ")})`);
 }
 
@@ -86,9 +100,9 @@ section("3. main.js and the CSS");
   const css = readFileSync(new URL("../newrun.css", import.meta.url), "utf8");
   const has = (re, what) => check(re.test(main), `main.js: ${what}`);
   has(/let state = await new Promise\(\(done\) => generating\(\(\) => done\(createWorld\(/, "the first world is built under the box (a top-level await)");
-  has(/function gen\(fn\) \{ generating\(fn, \{ size: buildSize\(\), after: \(\) => \{ dirtyNow = true; refresh\(\); \} \}\); \}/, "gen() shows the size being built and redraws after");
+  has(/function gen\(fn, seed = state\.seed\) \{\n  const quick = seed != null && worldMapCached\(\{ \.\.\.runOpts\(\), seed \}\);\n  generating\(fn, \{ size: buildSize\(\), quick, after: \(\) => \{ dirtyNow = true; refresh\(\); \} \}\);\n\}/, "gen() shows the size being built (no box for a kept map) and redraws after");
   has(/function buildSize\(\) \{\n  const crash = ui\.mode === "crash";\n  const d = crash \? crashSizeDef\(\) : ui\.worldSize === "custom" \? customDef\(ui\.customW, ui\.customH\) : sizeDef\(ui\.worldSize\);/, "buildSize: Crashlanding's, the custom or the preset's size");
-  has(/seed: \(el\) => \{ const seed = cleanSeed\(el\.value\); gen\(\(\) => newWorld\(seed, true\)\); \}/, "Seed");
+  has(/seed: \(el\) => \{ const seed = cleanSeed\(el\.value\); gen\(\(\) => newWorld\(seed, true\), seed\); \}/, "Seed");
   has(/factioncount: \(el\) => \{ ui\.factionCount = clampGroups\(ui\.worldSize, el\.value\); gen\(\(\) => newWorld\(state\.seed, true\)\); \}/, "AI groups");
   has(/worldsize: \(el\) => \{[\s\S]{0,600}?\.defGroups;\n    gen\(\(\) => newWorld\(state\.seed, true\)\);\n  \}/, "World size (ui set first, then the build under the new size)");
   has(/customw: \(el\) => \{ ui\.startPick = null; ui\.customW = clampCustomW\(el\.value\); gen\(/, "Width");
@@ -98,8 +112,8 @@ section("3. main.js and the CSS");
   has(/"nr-vehicle": \(el\) => \{ if \(ui\.started\) return; ui\.startVehicle = !!el\.checked; gen\(/, "Start with a vehicle");
   has(/el\.value = v;\n    gen\(\(\) => newWorld\(state\.seed, true\)\);/, "the Custom counts");
   has(/startpeople: \(el\) => \{ ui\.startPeople = clampStartPeople\(el\.value, ui\.mode\); ui\.fleet = \(ui\.fleet \|\| \[\]\)\.slice\(0, ui\.startPeople\); gen\(/, "Starting people");
-  has(/reroll: \(\) => gen\(\(\) => newWorld\(randomSeed\(\)\)\)/, "New map and survivors");
-  has(/restart: \(\) => gen\(\(\) => newWorld\(randomSeed\(\)\)\)/, "Restart");
+  has(/reroll: \(\) => gen\(\(\) => newWorld\(randomSeed\(\)\), null\)/, "New map and survivors");
+  has(/restart: \(\) => gen\(\(\) => newWorld\(randomSeed\(\)\), null\)/, "Restart");
   has(/"nr-newmap": \(\) => \{\n    if \(ui\.started\) return;\n    gen\(\(\) => \{/, "New map");
   has(/"nr-start": \(\) => \{\n    if \(ui\.started\) return;\n    gen\(\(\) => \{/, "New start position");
   has(/const line = rollRandomRun\(ui, freshRng\(\)\);\n    gen\(\(\) => \{\n      newWorld\(randomSeed\(\)\);/, "Random run (the settings rolled first, every step under one box)");
@@ -110,8 +124,8 @@ section("3. main.js and the CSS");
   check((main.match(/gen\(\(\) => \{ newWorld\(state\.seed, true, pickRebuild\(crew\)\); pointsLoad\(\[i\]\); \}\)/g) || []).length === 2, "main.js: a Background pick and the card's Background dice");
   has(/if \(changed\) gen\(\(\) => newWorld\(state\.seed, true\)\)/, "World… Done with a dial moved");
   check((main.match(/if \(r\) gen\(\(\) => gearRebuild\(r === "fleet"\)\)/g) || []).length === 2, "main.js: the gear window's and the Starting vehicles' rebuilds (actions and changes)");
-  has(/newWorld: \(\) => gen\(\(\) => newWorld\(randomSeed\(\)\)\)/, "the menu's New campaign");
-  has(/toTitle: \(\) => gen\(\(\) => \{ newWorld\(randomSeed\(\)\); showTitle\(ui\); \}\)/, "Exit to the title");
+  has(/newWorld: \(\) => gen\(\(\) => newWorld\(randomSeed\(\)\), null\)/, "the menu's New campaign");
+  has(/toTitle: \(\) => gen\(\(\) => \{ newWorld\(randomSeed\(\)\); showTitle\(ui\); \}, null\)/, "Exit to the title");
   has(/function pickStartAt\(id\) \{\n[\s\S]{0,400}?\n  gen\(\(\) => \{/, "Pick start on map's click");
   has(/gen\(\(\) => \{\n        newWorld\(state\.seed, true, \{ crew: ironmanCrew\(state\)/, "Ironman ticked with a customized crew");
   has(/gen\(\(\) => \{\n        newWorld\(state\.seed, true, pickRebuild\(back \|\| blankCrew\(state\)\)\);/, "Customize ticked");
@@ -127,7 +141,7 @@ section("3. main.js and the CSS");
     if (f) fnName = f[1];
     const open = /^(\s*).*\bgen\(\(\) => \{\s*(\/\/.*)?$/.exec(l);
     if (open) blocks.push(open[1].length);
-    else if (blocks.length && new RegExp(`^\\s{${blocks[blocks.length - 1]}}\\}\\);`).test(l)) blocks.pop();
+    else if (blocks.length && new RegExp(`^\\s{${blocks[blocks.length - 1]}}\\}(, null)?\\);`).test(l)) blocks.pop();
     if (/newWorld\(/.test(l) && !/^\s*\/\/|\bgen\(/.test(l) && !blocks.length && !CALLEES.has(fnName)) bare.push(l.trim());
   }
   check(bare.length === 0 && !blocks.length, `main.js: no world built outside gen (${bare.join(" | ")}${blocks.length ? "; a gen block left open" : ""})`);
