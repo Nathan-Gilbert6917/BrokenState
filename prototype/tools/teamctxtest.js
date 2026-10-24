@@ -94,7 +94,7 @@ section("A forest away from water: hunt, forage, wood, camp; no fishing, no wate
     check(!has(m, "drop") && !has(m, "mission:enter"), "forest: no base items");
     const hunt = item(m, "hunt");
     check(hunt.move && hunt.travel > 0 && hunt.task === 8, `hunt: travel ${hunt.travel}h + 8h`);
-    check(/travel \+ 8h/.test(itemHours(hunt)), `hunt shows travel + task (${itemHours(hunt)})`);
+    check(/travel \+ 2–24h/.test(itemHours(hunt)), `hunt shows travel + the hours the land order box sets (${itemHours(hunt)})`);
     check(/Hunt/.test(m.head.name) || /team/i.test(m.head.name), `head names the team (${m.head.name})`);
     check(/on foot/.test(m.head.situation) && /away/.test(m.head.situation), `head: on foot, hours away (${m.head.situation})`);
     // No weapon: the hunt is there but disabled with the reason.
@@ -309,18 +309,18 @@ section("The team's own tile: every order it can do there, All orders open (2026
   const m = teamTileMenu(state, {}, p, forest);
   const all = m.items.filter((it) => it.group === "All orders");
   check(m.allOpen && all.length > 1, `All orders open on the team's own tile without the fold (${all.length} items)`);
-  for (const k of ["sweep:2:12", "sweep:4:48", "forage:4", "forage:12", "hunt:4", "hunt:12", `treat:${a.id}`, "panel"]) check(has(m, k), `own tile: ${k} offered`);
+  for (const k of ["sweep:2:12", "sweep:4:48", `treat:${a.id}`, "panel"]) check(has(m, k), `own tile: ${k} offered`);
+  check(!has(m, "forage:4") && !has(m, "hunt:12") && item(m, "forage").label === "Forage…", "the land jobs once each, no hours in the name (the land order box sets them)");
   check(!has(m, `treat:${b.id}`), "nobody unhurt to treat");
   const crafts = m.items.filter((it) => it.key.startsWith("craft:"));
   check(crafts.length && crafts.every((it) => !it.disabled), `own tile: field crafting, only what the team can make now (${crafts.length})`);
   check(!has(m, "stop"), "nothing under way: no Stop");
   check(new Set(keys(m)).size === m.items.length, `own tile: no item twice (${keys(m).join(",")})`);
-  check(item(m, "forage:4").task === 4 && !item(m, "forage:4").move, "Forage 4h: 4 hours, here");
   const html = teamCtxHtml(state, {}, m);
   check(!/data-action="tc-all"/.test(html) && /All orders/.test(html) && /data-key="sweep:4:48"/.test(html) && !/undefined|NaN/.test(html), "renders open, no fold toggle");
   check(!teamTileMenu(state, {}, p, find(state, forest, () => true, 1, 3)).allOpen, "another tile: All orders stays folded");
   // Doing them: a 4-hour forage starts here; then Stop gives it up.
-  runTeamAction(state, {}, { id: p.id, tile: forest, key: "forage:4", mode: "replace" });
+  runTeamAction(state, {}, { id: p.id, tile: forest, key: "forage", mode: "replace", hours: "4", asked: "1" }); // the land order box's 4 hours
   check(p.phase === "task" && p.task.type === "forage" && p.task.hours === 4, `Forage 4h started (${p.phase} ${p.task && p.task.type} ${p.task && p.task.hours})`);
   const m2 = teamTileMenu(state, {}, p, forest);
   check(has(m2, "stop") && /Stop/.test(item(m2, "stop").label), "working: Stop offered");
