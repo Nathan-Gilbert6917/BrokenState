@@ -159,9 +159,10 @@ export const localId = (state, id) => (typeof id === "number" ? id - (state.idBa
 // custom (optional, Custom mode: custommode.js): { people, groups, hives, cities, towns, military }, each 1 or more, on a
 // normal start (not with mode "hardcore"): they stand in for startPeople, factionCount and hives, and the map gets
 // those cities, towns and military sites (customSizeDef). Kept as state.custom (isCustomRun).
-// fleet (optional, 2026-10-24, user request: startfleet.js): the starting vehicles [{ type, limit, load }] (Normal: the
-// hub's pickup; Hardcore: the car fled in; Custom: 1–12 of the kinds set, at the hub), each back's load set on the new-run
-// screen (null: as rolled). Kept as state.fleet (each with vid: its vehicle) until Start.
+// fleet (optional, 2026-10-24, user request: startfleet.js): the starting vehicles [{ type, limit, load }], at most one
+// a starting survivor (Normal: the hub's pickup and any kinds set, at the hub; Hardcore: the car fled in and any kinds
+// set, with the team; Custom: the kinds set, at the hub), each back's load set on the new-run screen (null: as rolled).
+// Kept as state.fleet (each with vid: its vehicle) until Start.
 /**
  * @param {{ seed: number, factionCount: number, crew?: any[] | null, size?: string, mode?: string, customW?: number | null,
  *   customH?: number | null, hives?: number | null, crewRoll?: number | null, startPeople?: number | null, customBackgrounds?: any,
@@ -278,7 +279,9 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
   state.startPeople = people;
   const startBeds = baseBeds(hubBase);
   if (people > startBeds) hubBase.crowdNote = { hour: state.hour, over: people - startBeds };
-  // The starting vehicles at the hub (startfleet.js): a normal start's pickup, or Custom's kinds; Start with a vehicle off: none.
+  // The starting vehicles at the hub (startfleet.js): a normal start's pickup and the kinds set, or Custom's kinds, one a
+  // survivor at most; Start with a vehicle off: none.
+  state.fleet = state.fleet.slice(0, Math.max(1, people));
   if (state.startVehicles) for (const f of state.fleet) f.vid = createVehicle(state, f.type, { kind: "base", baseId: hubBase.id }, { fuel: Math.min(START_FLEET.FUEL, VEHICLE_TYPES[f.type].tank), condition: START_FLEET.CONDITION }).id;
 
   createFactions(state, cust ? cust.groups : factionCount);

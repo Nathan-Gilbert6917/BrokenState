@@ -1762,7 +1762,7 @@ const changeActions = {
   "nr-custom": (el) => {
     if (ui.started) return;
     const k = el.dataset.k, v = clampCustomCount(k, el.value);
-    if (k === "people") ui.startPeople = v;
+    if (k === "people") { ui.startPeople = v; ui.fleet = (ui.fleet || []).slice(0, v); } // one vehicle a survivor at most (sim/startfleet.js)
     else if (k in ui.custom) ui.custom[k] = v;
     else return;
     el.value = v;
@@ -1770,7 +1770,7 @@ const changeActions = {
   },
   // Starting people (ui/newgame.js): Normal 1–8 hold the hub, Hardcore 1–4 flee together; the same seed and the edited
   // crew (as many as fit).
-  startpeople: (el) => { ui.startPeople = clampStartPeople(el.value, ui.mode); newWorld(state.seed, true); },
+  startpeople: (el) => { ui.startPeople = clampStartPeople(el.value, ui.mode); ui.fleet = (ui.fleet || []).slice(0, ui.startPeople); newWorld(state.seed, true); }, // one starting vehicle a survivor at most (sim/startfleet.js)
   rename: (el) => {
     // Empty names and a full name someone else already has are refused (world.renameSurvivor).
     const s = survivorById(state, Number(el.dataset.id));

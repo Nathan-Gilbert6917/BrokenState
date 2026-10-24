@@ -521,7 +521,7 @@ export function randomizeEverything(state, ui, rebuild) {
   const kitKg = state.survivors.reduce((a, s) => a + trunkKg({ items: kitKeys(s.startGear) }), 0);
   F.forEach((f, i) => {
     if (!state.fleet || !state.fleet[i] || state.fleet[i].vid == null) return; // Start with a vehicle off: none to fill
-    const room = Math.max(0, fleetRoom(state, i) + (hard ? worn - kitKg : 0));
+    const room = Math.max(0, fleetRoom(state, i) + (hard && i === 0 ? worn - kitKg : 0)); // the riders ride in the car (the first)
     f.load = randomTrunk(f.limit, room, rng, gunCals([], guns), { fill: true, open: openLoads(state) });
     state.fleet[i].load = f.load;
   });
