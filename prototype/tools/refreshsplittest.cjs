@@ -16,7 +16,7 @@ const FFWD = Number(arg("ffwd", 25)), SECONDS = Number(arg("seconds", 8));
 const DRIVER = fs.readFileSync(path.join(__dirname, "..", "..", "desktop", "perf", "driver.js"), "utf8");
 const port = 5300 + Math.floor(Math.random() * 600);
 // Every panel main.js refresh draws (the minute itself, #tb-min, is written every frame by step and left out).
-const IDS = ["left", "right", "log", "alerts", "watchlist", "modal", "legend", "banner", "tb-clock", "tb-speed", "tb-people", "tb-tools", "nb-btn", "nb-head", "nb-list", "tf-btn", "tf-head", "tf-list", "ask", "devpanel"];
+const IDS = ["left", "right", "log", "alerts", "guide", "watchlist", "modal", "legend", "banner", "tb-clock", "tb-speed", "tb-people", "tb-tools", "nb-btn", "nb-head", "nb-list", "tf-btn", "tf-head", "tf-list", "ask", "devpanel"];
 // Each case's set-up runs in the page; false: it could not be set up (reported, not a failure).
 const CASES = [
   ["the Bases tab", () => true],
