@@ -141,6 +141,9 @@ export function setNextId(n) {
 /** @type {(state: State, id: any) => any} */
 export const localId = (state, id) => (typeof id === "number" ? id - (state.idBase || 0) : id);
 
+// A normal start's weapons, handed out in this order (the crew card's Everything draws one again: ui/newgame.js randomizeOne).
+export const START_WEAPONS = ["pistol", "machete", "huntrifle", "knife", "knife", "pistol", "knife", "machete"];
+
 // crew (optional): starting-colonist overrides from the new-run screen, by index:
 // [{ name?, skills?, traits?, budget?, appearance?, gear?, leader? }]. Headless tools leave it out.
 // size: a worldsize.js key (small / normal / large / huge; Normal when left out, the original 64 × 42 map), or
@@ -290,8 +293,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
   for (let i = 0; i < people; i++) state.survivors.push(makeSurvivor(state, i === 0 ? 1.3 : 1));
   // Starting gear: a few basics spread among the colonists (a seventh and eighth start with a knife and a machete; Custom
   // mode's ninth and on go round the list again).
-  const starts = ["pistol", "machete", "huntrifle", "knife", "knife", "pistol", "knife", "machete"];
-  state.survivors.forEach((s, i) => (s.gear.weapon = newItem(starts[i % starts.length], 1, hash01(state.seed, "startdur", i), START_DUR))); // part-worn (inventory.js START_DUR)
+  state.survivors.forEach((s, i) => (s.gear.weapon = newItem(START_WEAPONS[i % START_WEAPONS.length], 1, hash01(state.seed, "startdur", i), START_DUR))); // part-worn (inventory.js START_DUR)
   state.survivors.forEach((s, i) => randomStarterMods(state.rng, s.gear.weapon, i)); // gunmods.js: a cheap part or two on some guns
   // Built on Customize's points (crew[i].points): what the dice hand them is theirs only as picks, so none of it
   // overflows to the hub (the dice are drawn all the same).
