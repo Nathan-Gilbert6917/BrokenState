@@ -1697,9 +1697,10 @@ export function buildBaseMap(state, base, rng, opts = {}) {
     buildings: [], lofts: [], roofs: [], doors: [], windows: [], outlines: [], stores: [], vehicles: [], lights: [], spots: [], inside: null, indoor, lay: { W, H, G: null, buildings: [] },
     noBuild: NO_BUILD, // the no-build margin round the grid (nothing stands within it; the view tints it: c.nb)
   };
-  // The yard's trodden ground; a base set up on its own spot (freshBase): the ground cleared so far, the camp's clearing first.
+  // The yard keeps the tile's own ground (the user's request 2026-10-24: "Do not add the brown tiling for the your camp
+  // area": it was painted trodden dirt, a brown square, over every base's yard); a base set up on its own spot
+  // (freshBase): the ground cleared so far, the camp's clearing first, is dirt.
   if (freshBase(base)) { for (const [x, y] of cleared) { const c = at(x + ox, y + oy); if (c) c.f = "dirt"; } }
-  else for (let y = -C; y < C; y++) for (let x = -C; x < C; x++) { const c = at(x + ox, y + oy); if (c) c.f = "dirt"; }
   // A hill raised there (terraform.js): grassed over as the land's own hills are (the user's word 2026-10-23: "like they
   // were created by the seed"); a hollow dug keeps its dirt.
   for (const [k, hv] of Object.entries((base.land && base.land.heightEdits) || {})) { if (!(hv > 0)) continue; const [x, y] = k.split(",").map(Number), c = at(x + ox, y + oy); if (c && c.f === "dirt") c.f = "grass"; }
