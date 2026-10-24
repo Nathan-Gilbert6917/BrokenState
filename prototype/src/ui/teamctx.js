@@ -61,7 +61,7 @@ const cap = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
 
 export const RESUPPLY_DAYS = 3; // Resupply at your base: food and water for this many days a head
 export const SWEEP = { radius: 3, hours: 12 }; // the menu's Survey (as the hub's menu always offered)
-const LAND_HOURS = HUNT.defHours; // hunt, fish, forage, cut wood: 8 hours (the team panel offers other lengths)
+const LAND_HOURS = HUNT.defHours; // hunt, fish, forage, cut wood, gather stone: 8 hours until the land order box sets them (ui/landorder.js)
 // Missions the hub's knowledge does not list but the team's own options do (on the tile, or by who holds it).
 const OWN_OPTIONS = ["outpost", "establish", "strikecamp", "drivehome", "scoutoutpost", "scoutestablish"]; // scout…: Scout first, then the camp (sim/campscout.js)
 
@@ -156,12 +156,12 @@ export function teamTileMenu(state, ui, p, tile, { append = false, who = null } 
   /** @type {any[]} */
   const items = [];
   // An item: seq, the orders on the tile; move: go there first (the travel above); special: done at once in the UI.
-  const add = (group, key, label, seq, { why = "", hint = "", move = true, special = null, task, open = false } = {}) => {
+  const add = (group, key, label, seq, { why = "", hint = "", move = true, special = null, task, open = false, custom = false } = {}) => {
     const needMove = move && !here && !special;
     const moves = needMove || seq.some((o) => MOVES.has(o.type));
     const disabled = (!cmd ? NO_RADIO : "") || (moves ? outWhy : "") || (needMove ? travel.why : "") || why || null;
     const job = task !== undefined ? task : special ? 0 : taskHours(state, p, move ? tile : from, seq); // go home: from where the team is
-    items.push({ group, key, label, seq, move: needMove, special, hint, disabled, travel: needMove ? travel.hours : 0, task: job, open, ahead });
+    items.push({ group, key, label, seq, move: needMove, special, hint, disabled, travel: needMove ? travel.hours : 0, task: job, open, ahead, custom });
   };
 
   // Go
@@ -241,17 +241,17 @@ export function teamTileMenu(state, ui, p, tile, { append = false, who = null } 
   // Food, wood, stone and water from the land
   if (!water && !theirs) {
     const job = (type, extra = {}) => [{ type, hours: LAND_HOURS, ...extra }];
-    if (forageAbundance(state, tile) >= 0.05) add("Land", "forage", `Forage ${LAND_HOURS}h`, job("forage"), { why: cap(forageProblem(state, p, tile)), hint: "Wild food: berries, nuts, mushrooms, greens, roots. Quiet; best in forest, summer and autumn." });
-    if (gameAbundance(state, tile) >= 0.08) add("Land", "hunt", `Hunt ${LAND_HOURS}h`, job("hunt"), { why: cap(huntProblem(state, p, tile)), hint: "A rifle or a bow is best; shots add Heat and can draw the dead. Fresh game is heavy and spoils fast." });
+    if (forageAbundance(state, tile) >= 0.05) add("Land", "forage", "Forage…", job("forage"), { custom: true, why: cap(forageProblem(state, p, tile)), hint: "Wild food: berries, nuts, mushrooms, greens, roots. Quiet; best in forest, summer and autumn." });
+    if (gameAbundance(state, tile) >= 0.08) add("Land", "hunt", "Hunt…", job("hunt"), { custom: true, why: cap(huntProblem(state, p, tile)), hint: "A rifle or a bow is best; shots add Heat and can draw the dead. Fresh game is heavy and spoils fast." });
     const line = snareLine(state, tile);
     if (line) {
       add("Land", "snare:check", `Check snares (${SNARE.checkHours}h)`, [{ type: "snare", mode: "check" }], { why: cap(snareProblem(state, p, tile, "check")), hint: "Collect the catch and leave the line set." });
       add("Land", "snare:lift", `Lift snares (${SNARE.checkHours}h)`, [{ type: "snare", mode: "lift" }], { why: cap(snareProblem(state, p, tile, "lift")), hint: "Collect the catch and take the line up." });
     } else if (gameAbundance(state, tile) >= 0.08) add("Land", "snare:set", `Set snares (${SNARE.setHours}h)`, [{ type: "snare", mode: "set" }], { why: cap(snareProblem(state, p, tile, "set")), hint: `Lay a line of ${SNARE.count} snares (snare wire or ${SNARE.scrap} scrap); come back within 2–3 days to collect.` });
     const fs = fishSpot(state, tile);
-    if (fs) add("Land", "fish", `Fish ${LAND_HOURS}h`, job("fish"), { why: cap(fishProblem(state, p, tile)), hint: `Fish in ${fs.name}. Quiet. Needs a rod, a net or a spear.` });
-    if (woodAbundance(state, tile) >= 0.1) add("Land", "wood", `Cut wood ${LAND_HOURS}h`, job("wood"), { why: cap(woodProblem(state, p, tile)), hint: "Wood for the winter (daylight only). Loud: Heat; an axe makes it far quicker." });
-    if (stoneAbundance(state, tile) >= 0.1) add("Land", "stone", `Gather stone ${LAND_HOURS}h`, job("stone"), { why: cap(stoneProblem(state, p, tile)), hint: "Field stone for a camp's fire ring and the stone buildings (daylight only; 1 kg a stone, so mind the load). Mountains and hills are best; a pickaxe or a sledgehammer doubles it." });
+    if (fs) add("Land", "fish", "Fish…", job("fish"), { custom: true, why: cap(fishProblem(state, p, tile)), hint: `Fish in ${fs.name}. Quiet. Needs a rod, a net or a spear.` });
+    if (woodAbundance(state, tile) >= 0.1) add("Land", "wood", "Cut wood…", job("wood"), { custom: true, why: cap(woodProblem(state, p, tile)), hint: "Wood for the winter (daylight only). Loud: Heat; an axe makes it far quicker." });
+    if (stoneAbundance(state, tile) >= 0.1) add("Land", "stone", "Gather stone…", job("stone"), { custom: true, why: cap(stoneProblem(state, p, tile)), hint: "Field stone for a camp's fire ring and the stone buildings (daylight only; 1 kg a stone, so mind the load). Mountains and hills are best; a pickaxe or a sledgehammer doubles it." });
     if (besideWater(state, tile)) {
       const room = Math.floor(cargoRoom(state, p));
       add("Land", "water", `Fetch water (${FETCH_WATER_HOURS}h)`, [{ type: "water" }], { why: room < 1 ? "No room left to carry any water." : "", hint: `Fill every free container from the river or lake (room for about ${room}): un-purified water to boil, filter or bring home.` });
@@ -329,21 +329,15 @@ export function teamTileMenu(state, ui, p, tile, { append = false, who = null } 
   return { p: team, sub: some ? p : null, who: some ? who.map(Number) : null, pick, tile, append, forced, cmd, head, items, allOpen: standing };
 }
 
-// The team panel's orders on the spot (ui/expedition.js) the menu does not show above: the other lengths of a sweep and
-// of the land's jobs, field crafting (what it can make now), gathering a boat's materials on a shore, treating the
+// The team panel's orders on the spot (ui/expedition.js) the menu does not show above: the other lengths of a sweep
+// (the land's jobs ask their hours in the land order box), field crafting (what it can make now), gathering a boat's materials on a shore, treating the
 // hurt, and stopping the job.
 const SWEEPS = [[2, 12], [3, 24], [4, 48]]; // the panel's sweeps: radius, hours
-const LENGTHS = { forage: [4, 12], hunt: [4, 12], fish: [4], wood: [4] }; // beside the menu's 8 hours (LAND_HOURS)
 function spotOrders(state, p, tile, water, items, add) {
-  const got = (key) => items.find((it) => it.key === key) || null;
   if (!water) {
     for (const [radius, hours] of SWEEPS) {
       if (radius === SWEEP.radius && hours === SWEEP.hours) continue;
       add(`sweep:${radius}:${hours}`, `Sweep ${radius} tiles around (${hours}h)`, [{ type: "sweep", ...sweepOpts({ radius, hours }) }], { hint: `${MISSIONS.sweep.desc} From here: ${radius} tiles around for ${hours} hours, back here at the end.` });
-    }
-    for (const [type, lengths] of Object.entries(LENGTHS)) {
-      const it = got(type);
-      if (it) for (const hours of lengths) add(`${type}:${hours}`, it.label.replace(`${LAND_HOURS}h`, `${hours}h`), [{ type, hours }], { why: it.disabled || "", hint: it.hint });
     }
   }
   // Only what the team can make now: the other recipes, each with what it lacks, are in the team panel.
@@ -376,7 +370,7 @@ function resupplyWants(state, p, base) {
 // ---------- the menu ----------
 // The hours of an item: travel + the job ("on site" when the job has no fixed time), after the queue when queueing.
 export function itemHours(it) {
-  const job = it.open ? "until told" : it.task == null ? "on site" : it.task ? hrsText(it.task) : "";
+  const job = it.open ? "until told" : it.custom ? `${HUNT.minHours}–${HUNT.maxHours}h` : it.task == null ? "on site" : it.task ? hrsText(it.task) : ""; // custom: the land order box sets the hours
   const parts = [it.move && it.travel != null ? `${hrsText(it.travel)} travel` : "", job].filter(Boolean);
   if (!parts.length) return "";
   return `${it.ahead ? `after ${hrsText(it.ahead)}: ` : ""}${parts.join(" + ")}`;
@@ -478,7 +472,7 @@ function withLand(it, d) {
   if (!(d.hours || (d.qty != null && d.qty !== "")) || !it.seq.some((o) => isLandJob(o.type))) return it;
   const hours = d.hours ? clampHours(d.hours) : null;
   const seq = it.seq.map((o) => (isLandJob(o.type) ? { ...o, ...(hours ? { hours } : {}), ...(d.qty != null && d.qty !== "" ? { qty: Number(d.qty) } : {}) } : o));
-  return { ...it, seq, label: hours ? it.label.replace(/\b\d+h\b/, `${hours}h`) : it.label };
+  return { ...it, seq, label: hours ? `${it.label.replace(/…$/, "")} ${hours}h` : it.label }; // "Forage 6h" in the replace question
 }
 
 /**
