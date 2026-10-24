@@ -11,8 +11,9 @@
 //     vehicles slots where X is the number of survivors you have set to start with. If you want though you can removed
 //     the initial rolled vehicle or you can change it or you can add other vehicles"; fitFleet). The first slot starts
 //     with the initial vehicle, the rest empty (empty: true, no vehicle). Any slot's vehicle may be a kind of its own
-//     (fleetKinds: every motor vehicle; no bicycles), added to an empty slot or removed (ui/startgear.js fleet-kind,
-//     fleet-remove). Normal and Custom (custommode.js): all at the hub, the initial one a pickup truck. Hardcore: the
+//     (fleetKinds: every motor vehicle; no bicycles), added with the screen's one ＋ Add a vehicle button (a pickup in
+//     the first free slot; the user's request 2026-10-24: "a add vehicle button under the rolled vehicle instead of
+//     having x slots") or removed, the list closing up (ui/startgear.js fleet-add, fleet-kind, fleet-remove). Normal and Custom (custommode.js): all at the hub, the initial one a pickup truck. Hardcore: the
 //     first slot is the car the team flees in (type null: its kind as the dice roll it, the rolled kind on state.fleet
 //     with rolledType; a kind set: that kind; removed: left behind; the dice cast all the same), the rest riding with
 //     the team (hardcore-start.js extraCars).
