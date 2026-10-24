@@ -1,8 +1,10 @@
 // Some of a team on jobs of their own (sim/detach.js, ui/teamctx.js; the user's request 2026-10-24: "When in a team of
 // more than 1 you can select different survivors to do different jobs basically acting like a mobile base when it
 // comes to jobs when sitting on a tile. When one or more survivors is out doing a job you cannot move the team as a
-// whole to another tile. Any order a team can do can be assigned to one or more survivors"): the menu's Who picker
-// (none for one person, only the people free), a pick of some splitting them off to do it while the rest work on, the
+// whole to another tile. Any order a team can do can be assigned to one or more survivors"; 2026-10-24: "When you have a
+// team selected and click an order that can be split … make it so you can select which survivors will do the task"):
+// who does it asked when the order is clicked (ui/whopick.js; the land jobs in their hours box), none for one person,
+// only the people free, never for an order only the whole team gives; a pick of some splitting them off to do it while the rest work on, the
 // team kept on its tile meanwhile (moves refused, a queued move waiting), the job's people back in the team when done
 // (with what they gathered; walking back from another tile first), a plain move leaving a team of their own, Call back.
 // Usage: node tools/detachtest.js [seed]
@@ -15,8 +17,9 @@ import { forageAbundance } from "../src/sim/foraging.js";
 import { startOrder, queueOrder } from "../src/sim/orders.js";
 import { teamCheck } from "../src/sim/teammeet.js";
 import { detachments, detachProblem, detach, callBack } from "../src/sim/detach.js";
-import { teamTileMenu, teamCtxHtml, runTeamAction, landPick } from "../src/ui/teamctx.js";
-import { askLand, landModel } from "../src/ui/landorder.js";
+import { teamTileMenu, teamCtxHtml, runTeamAction, landPick, splitPick } from "../src/ui/teamctx.js";
+import { askLand, landModel, landHtml, LAND_ACTIONS } from "../src/ui/landorder.js";
+import { askWho, whoHtml, whoChoices, WHO_ACTIONS } from "../src/ui/whopick.js";
 
 const SEED = Number(process.argv[2] || 42);
 let passed = 0, failed = 0;
@@ -53,21 +56,52 @@ const ids = (state, p) => partyMembers(state, p).map((s) => s.id);
 const faults = (state) => teamCheck(state);
 const hours = (state, n, stop = () => false) => { for (let i = 0; i < n && !stop(); i++) { tickHour(state); state.cards = []; } };
 
-section("The Who picker");
+section("Who does it: asked when the order is clicked");
 {
   const state = mk();
   const tile = find(state, hub(state).tile, (t) => forageAbundance(state, t.id) >= 0.3 && woodAbundance(state, t.id) >= 0.3, 2, 12);
   const lone = team(state, 1, tile);
-  check(!teamTileMenu(state, {}, lone, tile).pick && !/tc-who/.test(teamCtxHtml(state, {}, teamTileMenu(state, {}, lone, tile))), "one person: no picker, the order is theirs");
+  check(!whoChoices(state, lone) && !splitPick(state, {}, { id: lone.id, tile, key: "survey", mode: "replace" }) && !askWho(state, {}, { id: String(lone.id) }, { via: "tc", label: "x" }), "one person: never asked, the order is theirs");
   const p = team(state, 3, tile);
-  const m = teamTileMenu(state, {}, p, tile);
-  check(m.pick && m.pick.people.length === 3 && !m.who, "a team of 3: the picker, all three, the team does it");
-  const [a] = partyMembers(state, p);
-  const ms = teamTileMenu(state, {}, p, tile, { who: [a.id] });
-  const html = teamCtxHtml(state, {}, ms);
-  check(ms.who && ms.who[0] === a.id && /data-action="tc-who"/.test(html) && new RegExp(`data-who="${a.id}"`).test(html) && /go off on their own/.test(html) && !/undefined|NaN/.test(html), "one picked: chips, the items carry who, the line says so");
-  check(item(ms, "forage") && !item(ms, "forage").disabled, "the picked one can forage");
-  check(!teamTileMenu(state, {}, p, tile, { who: ids(state, p) }).who, "all picked: the team itself");
+  const [a, b] = partyMembers(state, p);
+  const html0 = teamCtxHtml(state, {}, teamTileMenu(state, {}, p, tile));
+  check(!/who-pick|tc-who/.test(html0), "the menu itself has no chips: who is asked on the click");
+  // A splittable order: the box, the whole team lit; one left out; then the order goes to the others.
+  check(splitPick(state, {}, { id: p.id, tile, key: "survey", mode: "replace" })?.label === "Quick look (2h)", "Quick look can be split");
+  check(!splitPick(state, {}, { id: p.id, tile, key: "setcamp", mode: "replace" }) && !splitPick(state, {}, { id: p.id, tile, key: "forage", mode: "replace" }), "never for Set up camp (the whole team), nor a land job (its hours box asks)");
+  const ui = {};
+  const d = { id: String(p.id), tile: String(tile), key: "survey", mode: "replace" };
+  check(askWho(state, ui, d, { via: "tc", label: "Quick look (2h)" }) && ui.whoAsk && ui.whoAsk.who === null, "clicked: the box asks who, the whole team to start");
+  let html = whoHtml(state, ui);
+  check(/Quick look \(2h\): who does it\?/.test(html) && (html.match(/data-action="who-pick"/g) || []).length === 4 && /The whole team does it/.test(html) && !/undefined|NaN/.test(html), "a chip each, Whole team, the line says so");
+  WHO_ACTIONS["who-pick"](state, ui, { sid: String(b.id) });
+  WHO_ACTIONS["who-pick"](state, ui, { sid: String(partyMembers(state, p)[2].id) });
+  html = whoHtml(state, ui);
+  check(ui.whoAsk.who.join() === String(a.id) && /goes off and does it/.test(html) && /Send 1/.test(html), "two left out: one picked, Send 1");
+  WHO_ACTIONS["who-pick"](state, ui, { sid: String(a.id) });
+  check(ui.whoAsk.who.join() === String(a.id), "the last one cannot be left out too");
+  let got = null;
+  WHO_ACTIONS["who-go"](state, ui, {}, null, { "tc-do": (x) => { got = x; } });
+  check(!ui.whoAsk && got && got.who === String(a.id) && got.whoAsked === "1" && got.key === "survey", "Send: the menu's order again with who");
+  const msg = runTeamAction(state, {}, got);
+  const q = detachments(state, p)[0];
+  check(q && ids(state, q).join() === String(a.id) && ids(state, p).length === 2, `${a.name.split(" ")[0]} takes a quick look on their own (${msg})`);
+  // Whole team: who is "" and the team does it.
+  hours(state, 4, () => !state.parties.includes(q));
+  const ui2 = {};
+  askWho(state, ui2, d, { via: "tc", label: "Quick look (2h)" });
+  WHO_ACTIONS["who-go"](state, ui2, {}, null, { "tc-do": (x) => { got = x; } });
+  check(got.who === "" && got.whoAsked === "1", "Whole team: no one picked");
+  check(!askWho(state, {}, got, { via: "tc", label: "x" }), "asked once only");
+  // A land job: who in its hours box, the estimate theirs.
+  const ui3 = {};
+  const lp = landPick(state, {}, { id: p.id, tile, key: "wood", mode: "replace" });
+  askLand(state, ui3, { id: String(p.id), tile: String(tile), key: "wood", mode: "replace" }, { via: "tc", ...lp });
+  check(/data-action="land-who"/.test(landHtml(state, ui3)) && landModel(state, ui3).est.crew.length === 3, "the land box: the chips, the whole team's estimate");
+  LAND_ACTIONS["land-who"](state, ui3, { sid: String(b.id) });
+  check(landModel(state, ui3).est.crew.length === 2 && /go off and do it/.test(landHtml(state, ui3)), "one left out: the estimate is the other two's");
+  LAND_ACTIONS["land-go"](state, ui3, {}, null, { "tc-do": (x) => { got = x; } });
+  check(got.who && got.who.split(",").length === 2 && got.asked === "1" && got.whoAsked === "1", "Cut wood: who goes along with the hours");
 }
 
 section("Some off on a job, the rest work on, the team stays");
