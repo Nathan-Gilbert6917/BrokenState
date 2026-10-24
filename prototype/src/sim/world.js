@@ -130,6 +130,27 @@ export const RADIO_RANGE = 12; // a radio station's reach; a base with a Militar
 
 let nextId = 1;
 export const newId = () => nextId++;
+// The crew's own dice (2026-10-24, the user: "Dice for survivors should not be reliant on the map these two should be
+// separate so make the survivors have their own dice"): the starting survivors, their kit and what they grabbed are
+// rolled on a Rng of their own (crewRoll, else crewRollOf the seed), their faces and names counted from the first
+// person of the world, so neither the map, its size nor the groups change who they are, and they change nothing of
+// the world's (its dice go on after them as if they were not there). The new-run screen shows them before the map is
+// built (createWorld preview) and they come into the world built at Start as shown. crewDice returns the end of it:
+// the world's dice, people count and names back, the crew's counted in.
+export const crewRollOf = (seed) => 1 + ((Math.abs(Math.trunc(Number(seed) || 0)) * 48271) % 2147483646);
+/** @param {State} state @param {number | null} [crewRoll] @returns {() => void} */
+export function crewDice(state, crewRoll = null) {
+  const rng = state.rng, made = state.peopleMade || 0, names = state.namesGiven;
+  state.rng = new Rng(crewRoll ?? crewRollOf(state.seed));
+  state.peopleMade = 0;
+  state.namesGiven = [];
+  return () => {
+    const crewMade = state.peopleMade || 0, crewNames = state.namesGiven || [];
+    state.rng = rng;
+    state.peopleMade = made + crewMade;
+    state.namesGiven = [...(names || []), ...crewNames];
+  };
+}
 // Saves (save.js): the next id is part of a save, so a loaded world hands out the same ids it would have.
 export const peekNextId = () => nextId;
 /** @param {number} n */
@@ -162,14 +183,23 @@ export function worldMapCached({ seed, crash = false, ...opts }) {
   return mapCached(new Rng(seed).state, worldMapDef(opts).mapDef, seed);
 }
 
+// The new-run screen's world before its map is built (2026-10-24, the user: "Do not start the map generation until you
+// start the game, or want to select a tile or view the map prior to starting"): createWorld with `preview` builds the
+// settings' world on a tiny map, for the crew cards, their gear and the starting vehicles (the crew's own dice, crewDice,
+// make it the very crew the real map gets), with state.preview = { groups: how many were asked for }. Its map, start,
+// groups and hives are only stand-ins (ui/newgame.js says they are decided when the map is built); main.js builds the
+// real world (the same crew) for Start, View map, Pick start on map and New start position.
+export const PREVIEW_MAP = { W: 32, H: 24 };
+export const isPreview = (state) => !!(state && state.preview);
+
 // crew (optional): starting-colonist overrides from the new-run screen, by index:
 // [{ name?, skills?, traits?, budget?, appearance?, gear?, leader? }]. Headless tools leave it out.
 // size: a worldsize.js key (small / normal / large / huge; Normal when left out, the original 64 × 42 map), or
 // "custom" with customW × customH hexes (experimental: worldsize.js customDef).
 // hives (optional): how many hives the map starts with, 0–20 (null: what the size makes; mapgen.js).
 // mode: "normal" (6–12 months after the outbreak, with a hub) or "hardcore" (the day Calder falls: hardcore.js).
-// crewRoll (optional, Hardcore): a seed of its own for the three's backgrounds, what they grabbed and the car (the
-// new-run screen's Randomize all); left out, the world's seed decides them.
+// crewRoll (optional, every mode): the crew's own dice (crewDice; Hardcore: their backgrounds, what they grabbed and
+// the car; the new-run screen's Randomize all rolls a new one); left out, crewRollOf the seed.
 // startPeople (optional): Hardcore, how many flee together on day 1, 1–4 (hardcore.js START_PEOPLE; 3 when left out); a
 // normal start, how many hold the hub, 1–8 (NORMAL_PEOPLE; 6 when left out). Kept as state.startPeople.
 // start (optional): { roll, not } where you start drawn with dice of their own on the same map (the new-run screen's
@@ -192,12 +222,14 @@ export function worldMapCached({ seed, crash = false, ...opts }) {
 /**
  * @param {{ seed: number, factionCount: number, crew?: any[] | null, size?: string, mode?: string, customW?: number | null,
  *   customH?: number | null, hives?: number | null, crewRoll?: number | null, startPeople?: number | null, customBackgrounds?: any,
- *   start?: { roll?: number | null, not?: number | null, tile?: number | null } | null, worldCfg?: any, vehicle?: boolean, custom?: any, fleet?: any[] | null, crash?: boolean }} opts
+ *   start?: { roll?: number | null, not?: number | null, tile?: number | null } | null, worldCfg?: any, vehicle?: boolean, custom?: any, fleet?: any[] | null, crash?: boolean, preview?: boolean }} opts
  * @returns {State}
  */
-export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SIZE, mode = "normal", customW = null, customH = null, hives = null, crewRoll = null, startPeople = null, customBackgrounds = null, start = null, worldCfg = null, vehicle = true, custom = null, fleet = null, crash = false }) {
+export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SIZE, mode = "normal", customW = null, customH = null, hives = null, crewRoll = null, startPeople = null, customBackgrounds = null, start = null, worldCfg = null, vehicle = true, custom = null, fleet = null, crash = false, preview = false }) {
   const rng = new Rng(seed);
   if (crash) { mode = "normal"; custom = null; size = "custom"; customW = CRASH.W; customH = CRASH.H; vehicle = false; fleet = []; startPeople = 1; } // Crashlanding (crashmode.js): the map and the start are fixed
+  const wantGroups = custom && mode !== "hardcore" ? cleanCustom(custom).groups : factionCount;
+  if (preview) { size = "custom"; customW = PREVIEW_MAP.W; customH = PREVIEW_MAP.H; start = null; } // the new-run screen's world before its map (PREVIEW_MAP)
   const { sdef, cust, mapDef } = worldMapDef({ size, customW, customH, mode, custom });
   const worldSize = sdef.key;
   const map = generateMap(rng, mapDef, { hives: cust ? cust.hives : clampHives(hives), seed });
@@ -238,6 +270,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
   // hardcore crew's picks resolve whatever the browser's list holds later. Not in a world without any.
   const bgs = customBackgrounds ? sanitizeLibrary(customBackgrounds) : {};
   if (Object.keys(bgs).length) state.customBackgrounds = bgs;
+  if (preview) state.preview = { groups: wantGroups }; // PREVIEW_MAP: the groups asked for (the tiny map may not hold them all)
   if (start && start.roll != null) state.startRoll = start.roll; // startpick.js: a start of its own on this map
   if (start && start.tile != null) state.startTile = start.tile; // startpick.js: the start picked on the map
   setWorldCfg(state, worldCfg); // worldcfg.js: the run's dials (the new-run screen's World… window), before the groups and hives are made
@@ -321,6 +354,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
   createFactions(state, cust ? cust.groups : factionCount);
   recomputeOwnership(state);
 
+  const endCrew = crewDice(state, crewRoll); // the crew's own dice, to loadUpAll below
   for (let i = 0; i < people; i++) state.survivors.push(makeSurvivor(state, i === 0 ? 1.3 : 1));
   // Starting gear: a few basics spread among the colonists (a seventh and eighth start with a knife and a machete; Custom
   // mode's ninth and on go round the list again).
@@ -348,6 +382,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
   state.stacks = 1; // stacks in a slot from the start (itemstack.js; save.js tidies older saves)
   state.physOutV = 1; // guns and magazines hold physical rounds out of a fight from the start (save.js loads up older saves)
   loadUpAll(state, { stores: false }); // itemacts.js: every gun and magazine the crew carries loaded from the rounds each carries; at Start (main.js) out of the hub's stores too, after the new-run screen's edits (the world's stock stays whole until the run starts)
+  endCrew();
 
   seedRoadCarts(state); // carts.js: now and then a cart abandoned on a road near a town (its own dice)
   ensureHives(state); // the hives mapgen.js placed, with their starting resources (hives.js)

@@ -193,7 +193,7 @@ export function generateMap(rng, size = "normal", { hives = null, seed = null } 
 // The lands built lately (oldest first), each { land: landMap's result without its grid, rngState: the dice after it }.
 // A few, not one: switching between two sizes or modes and back builds neither again. A Huge land is some 150,000 tiles.
 const MAP_CACHE = new Map();
-const MAP_CACHE_MAX = 3;
+const MAP_CACHE_MAX = 4; // the new-run screen's tiny preview land (world.js PREVIEW_MAP) takes one
 const mapKey = (rngState, def, seed) => `${rngState}|${seed}|${JSON.stringify(def)}`;
 // Whether a map with these dice, size def and seed is built from the cache (main.js: no "Generating map…" box for it).
 export function mapCached(rngState, size, seed = null) { return MAP_CACHE.has(mapKey(rngState, sizeDef(size), seed)); }

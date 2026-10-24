@@ -4,7 +4,7 @@ import { togglePeopleIdle, assignIdlePreview } from "./ui/activity.js"; // the P
 import { gearOutdoorWorkers, gearText } from "./sim/tripgear.js"; // the Work now panel's Gear outdoor workers (trips-plus #2)
 import { applyIdlePlan } from "./sim/idlework.js";
 import {
-  createWorld, worldMapCached, tickHour, hub, survivorById, baseById, log, day, atBase, factionById, addCard, newId, renameSurvivor, assignStartingRoles, archerCount, ARROWS,
+  createWorld, worldMapCached, isPreview, tickHour, hub, survivorById, baseById, log, day, atBase, factionById, addCard, newId, renameSurvivor, assignStartingRoles, archerCount, ARROWS,
 } from "./sim/world.js";
 import { GEAR, SUPPLIES, SUPPLY_KEYS } from "./sim/data.js";
 import * as Parties from "./sim/parties.js";
@@ -236,11 +236,11 @@ ui.guide = guideDefault(options); // the new-run screen's First-week guide box (
 ui.worldCfg = cleanCfg(options.worldCfg); // the new-run screen's World… dials (ui/worldcfg.js), as last set in this browser
 if (ui.scale !== 1) document.documentElement.style.setProperty("--ui-scale", ui.scale);
 initAudio(options, () => saveOptions(options)); // the Sound options, the first-gesture unlock, button clicks
-// The first world, under the "Generating map…" box (ui/newgame.js generating; the user's request 2026-10-24: "When you
-// choose a map show a generating map popup until the map is loaded"): a module may await at its top level, so the box
-// is painted, the world built, and the rest of the game (the title) comes up once it is there. Every later build goes
-// through gen() below.
-let state = await new Promise((done) => generating(() => done(createWorld({ seed: randomSeed(), factionCount: ui.factionCount, size: ui.worldSize, worldCfg: ui.worldCfg })), { size: buildSize() }));
+// The first world: a preview (sim/world.js PREVIEW_MAP; the user's request 2026-10-24: "Do not start the map generation
+// until you start the game, or want to select a tile or view the map prior to starting instead of what is currently
+// loading the map as the application starts"): the settings and the crew on a tiny map, built at once; the real map is
+// built when it is needed (newWorld's real, gen). Every later build goes through gen() below.
+let state = createWorld({ seed: randomSeed(), factionCount: ui.factionCount, size: ui.worldSize, worldCfg: ui.worldCfg, preview: true });
 let dirty = true;      // a tick changed something: redraw the panels (throttled at dev speeds)
 let dirtyNow = false;  // the player did something on the map: redraw on the next frame
 let clockDirty = false; // a new minute on the clock and nothing else: only what counts the minutes (refreshClock)
@@ -1351,17 +1351,17 @@ const actions = {
   // normal start's colonists come after them); looking at the map stays open so the new spot can be seen.
   "nr-start": () => {
     if (ui.started) return;
-    gen(() => {
+    realThen(() => gen(() => { // the real map first (a preview's start is on its tiny one), then the new spot on it
       const was = playerTile(state), onMap = ui.nrMap;
       ui.startPick = { roll: 1 + Math.floor(Math.random() * 2147483646), not: was };
       ui.crewEdited = true;
-      newWorld(state.seed, true);
+      newWorld(state.seed, true, null, true); // the real map: the new spot is on it
       ui.nrMap = onMap;
       ui.nrPick = false; // the dice's start again
       const now = playerTile(state);
       ui.nrMsg = now === was ? "There is nowhere else to start on this map: try another seed or size."
         : `New start position: ${state.bases[0] ? state.bases[0].name : isCrashRun(state) ? "another crash site, your unit's base across the map from it" : "another spot on the road"}, ${state.grid.distance(was, now)} hexes from the last one.${onMap ? "" : " View map to see it."}`;
-    });
+    }, state.seed, true));
   },
   // Random run (ui/newgame.js rollRandomRun): every setting rolled, a new seed, a random crew and its gear, then Start.
   // The settings are rolled before gen (the box names the size rolled); the steps inside build under the one box.
@@ -1375,9 +1375,9 @@ const actions = {
         actions["nr-everything"]();
         if (state === before) actions["nr-allcrew"]();
       } else actions["nr-allcrew"](); // a new seed's crew is the dice's already; this shuffles the gear among them too
-      actions.begin();
+      actions.begin(); // the real map is built there (a preview until then), under this box
       if (ui.started) log(state, line, "info");
-    }, null);
+    }, null, true);
   },
   // New map (the new-run screen): a new seed with the survivors as they are (names, looks, skills, traits, the leader,
   // a Customize build); who they were is kept too, the dice's ones carried as rolled (ui/newgame.js crewWithBackgrounds).
@@ -1418,6 +1418,8 @@ const actions = {
     // Starting vehicles (sim/startfleet.js, every mode): no back over its own point limit or its room.
     const fleetOver = fleetText(state);
     if (fleetOver) { ui.nrMsg = fleetOver; return; }
+    // The map is built now (the user's request 2026-10-24): the screen's world was a preview; the same crew goes in.
+    if (isPreview(state)) { realThen(() => actions.begin()); return; }
     ui.started = true;
     ui.speed = 0;
     ui.lastSpeed = 1;
@@ -1462,6 +1464,8 @@ for (const [k, fn] of Object.entries(PLAN_ACTIONS)) actions[k] = (d) => { if (!u
 for (const [k, fn] of Object.entries(WC_ACTIONS)) actions[k] = (d) => { const changed = k === "wc-close" && !ui.started && wcChanged(ui); fn(state, ui, d); if (changed) gen(() => newWorld(state.seed, true)); };
 // Look editor, new-run randomizers and zombie look settings (ui/newgame.js).
 for (const [k, fn] of Object.entries(LOOK_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
+// View map and Pick start on map look at the real map: from a preview it is built first, the crew as it stands.
+for (const k of ["nr-map", "nr-pick"]) { const fn = actions[k]; actions[k] = (d) => (!ui.started && !ui.nrMap && isPreview(state) ? realThen(() => fn(d)) : fn(d)); }
 // Custom backgrounds window (ui/backgrounds.js); its Done is bg-close in the table above.
 // Starting gear window (ui/startgear.js): a change builds the world again on the same seed, the window kept open.
 // A starting vehicle's change returns "fleet" (the world again with ui.fleet, the crew as it stands).
@@ -1866,7 +1870,10 @@ function runOpts() {
 // speed (a new game starts paused), dev tools and their map overlays.
 // keepCrew: carry colonists edited on the new-run screen into the rebuilt world (and their Hardcore crew roll).
 // fresh: { crew, crewRoll } from Randomize all, in place of the edited colonists.
-function newWorld(seed, keepCrew = false, fresh = null) {
+// real: the world on its real map (Start, View map, Pick start on map, New start position: needsMap); else, while the
+// map is not being looked at, a preview on a tiny one (sim/world.js PREVIEW_MAP), the same crew in it.
+function newWorld(seed, keepCrew = false, fresh = null, real = false) {
+  const preview = !needsMap(real);
   if (seed !== state.seed) ui.startPick = null; // a new map: the start is its own again
   const crew = fresh ? fresh.crew : keepCrew && ui.crewEdited ? crewSnapshot(state) : null;
   if (!keepCrew && !fresh) ui.pointsCrew = null; // a new crew: no Customize build kept aside for it
@@ -1875,7 +1882,7 @@ function newWorld(seed, keepCrew = false, fresh = null) {
   if (ui.timelapse) closeTimelapse(state, ui);
   Object.assign(ui, freshUi());
   ui.crewEdited = !!crew;
-  state = createWorld({ ...runOpts(), seed, crew, customBackgrounds: ui.ironman ? null : customLibrary() });
+  state = createWorld({ ...runOpts(), seed, crew, customBackgrounds: ui.ironman ? null : customLibrary(), preview });
   state.pointsMax = ui.pointsMax; // Customize: each colonist's max (sim/custompoints.js)
   // Customize: everyone is built on points; anyone the crew did not cover (a new map, more people in another mode)
   // starts blank, the crew's dice its own (the map and the groups stay the seed's).
@@ -1883,7 +1890,7 @@ function newWorld(seed, keepCrew = false, fresh = null) {
     const snap = crewSnapshot(state), blank = blankCrew(state);
     if (ui.crewRoll == null) { ui.crewRoll = fixedCrewRoll(seed); ui.pickRoll = true; }
     ui.crewEdited = true;
-    state = createWorld({ ...runOpts(), seed, crew: state.survivors.map((s, i) => (s.startPoints ? snap[i] : blank[i])), customBackgrounds: customLibrary() });
+    state = createWorld({ ...runOpts(), seed, crew: state.survivors.map((s, i) => (s.startPoints ? snap[i] : blank[i])), customBackgrounds: customLibrary(), preview });
     state.pointsMax = ui.pointsMax;
   }
   resetView();
@@ -1903,10 +1910,20 @@ function newWorld(seed, keepCrew = false, fresh = null) {
 // before gen, so the size shown is the one being built (worldsize, gamemode).
 // seed: the seed fn builds on (null: a new one, rolled inside fn). A map already built on it with these settings' size
 // is kept (sim/mapgen.js MAP_CACHE; the user's request 2026-10-24: "When changing a setting in the start menu it loads
-// the map each time"): the world is built on it at once, with no box.
-function gen(fn, seed = state.seed) {
-  const quick = seed != null && worldMapCached({ ...runOpts(), seed });
+// the map each time"): the world is built on it at once, with no box. real: fn builds the real map (needsMap); a
+// preview (sim/world.js PREVIEW_MAP) is built at once, with no box, whatever the seed.
+function gen(fn, seed = state.seed, real = false) {
+  const quick = !needsMap(real) || (seed != null && worldMapCached({ ...runOpts(), seed }));
   generating(fn, { size: buildSize(), quick, after: () => { dirtyNow = true; refresh(); } });
+}
+// Whether a build now needs the real map: asked for (real), the map being looked at or picked on from the new-run
+// screen, or a run under way. Otherwise the new-run screen's world is a preview (the user's request 2026-10-24).
+function needsMap(real = false) { return real || ui.started || ui.nrMap || ui.nrPick; }
+// The real world for the new-run screen's world (a preview until now), the crew as it stands, then then(): Start, View
+// map and Pick start on map wait for it under the "Generating map…" box.
+function realThen(then) {
+  if (!isPreview(state) || ui.started) { then(); return; }
+  gen(() => { newWorld(state.seed, true, null, true); then(); }, state.seed, true);
 }
 // The map about to be built, for the box: Crashlanding's, the custom width × height, or the preset's.
 function buildSize() {
