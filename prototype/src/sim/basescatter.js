@@ -551,7 +551,19 @@ export function cragPasses(rock, block, W, H, opts = {}) {
  * is left out. In place. @param {Map<string, number>} H "x,y" → h @param {Set<string>} [apart]
  */
 export function relaxHeights(H, apart = new Set()) {
-  const lvAt = (x, y, h) => { const k = ck(x, y); return apart.has(k) ? (h > 0 ? 9 : -9) : H.get(k) || 0; }; // the crag: as high as any hill beside it
+  // Worked on a grid over the heights' extent (a cell off it is level ground, never the crag), in the map's own order
+  // and in place as it was done on the map itself, so the result is the same to the cell (the 500 × 500 base map's
+  // land took four times as long with the map's string keys: the autopilot's days twice as long).
+  if (!H.size) return H;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  const keys = [...H.keys()], xs = new Int32Array(keys.length), ys = new Int32Array(keys.length);
+  keys.forEach((k, i) => { const c = k.indexOf(","), x = +k.slice(0, c), y = +k.slice(c + 1); xs[i] = x; ys[i] = y; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; });
+  x0 -= 2; y0 -= 2; x1 += 2; y1 += 2;
+  const W = x1 - x0 + 1, N = W * (y1 - y0 + 1), g = new Int8Array(N), rock = new Uint8Array(N), at = new Int32Array(keys.length);
+  keys.forEach((k, i) => { at[i] = (ys[i] - y0) * W + xs[i] - x0; g[at[i]] = H.get(k); });
+  for (const k of apart) { const c = k.indexOf(","), x = +k.slice(0, c), y = +k.slice(c + 1); if (x >= x0 && x <= x1 && y >= y0 && y <= y1) rock[(y - y0) * W + x - x0] = 1; }
+  const lvAt = (j, h) => (rock[j] ? (h > 0 ? 9 : -9) : g[j]); // the crag: as high as any hill beside it
+  const live = () => { const out = []; for (let i = 0; i < keys.length; i++) if (g[at[i]] && !rock[at[i]]) out.push(at[i]); return out; };
   for (let round = 0, any = true; any && round < 8; round++) {
     any = false;
     // No spur or finger a cell wide (the playtest 2026-10-23: "smoothe out the hills to have at least 2 next to each
@@ -559,29 +571,31 @@ export function relaxHeights(H, apart = new Set()) {
     // or deeper), else it comes down (or up) a level.
     for (let pass = 0, changed = true; changed && pass < 12; pass++) {
       changed = false;
-      for (const [k, h] of [...H]) {
-        if (apart.has(k)) continue;
-        const [x, y] = k.split(",").map(Number);
-        const ok = [[0, 0], [-1, 0], [0, -1], [-1, -1]].some(([ox, oy]) => [[0, 0], [1, 0], [0, 1], [1, 1]].every(([dx, dy]) => { const v = lvAt(x + ox + dx, y + oy + dy, h); return h > 0 ? v >= h : v <= h; }));
+      for (const j of live()) {
+        const h = g[j];
+        let ok = false;
+        for (const o of [0, -1, -W, -W - 1]) {
+          const a = lvAt(j + o, h), b = lvAt(j + o + 1, h), c = lvAt(j + o + W, h), d = lvAt(j + o + W + 1, h);
+          if (h > 0 ? a >= h && b >= h && c >= h && d >= h : a <= h && b <= h && c <= h && d <= h) { ok = true; break; }
+        }
         if (ok) continue;
-        const v = h > 0 ? h - 1 : h + 1;
-        if (v) H.set(k, v); else H.delete(k);
+        g[j] = h > 0 ? h - 1 : h + 1;
         changed = any = true;
       }
     }
     // A level at most between neighbours (eight ways): a hill only lowered, a hollow only raised.
     for (let pass = 0, changed = true; changed && pass < 12; pass++) {
       changed = false;
-      for (const [k, h] of [...H]) {
-        if (apart.has(k)) continue;
-        const [x, y] = k.split(",").map(Number);
+      for (const j of live()) {
+        const h = g[j];
         let lo = Infinity, hi = -Infinity;
-        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { if (!dx && !dy) continue; const n = ck(x + dx, y + dy); if (apart.has(n)) continue; const v = H.get(n) || 0; lo = Math.min(lo, v); hi = Math.max(hi, v); }
+        for (const o of [-W - 1, -W, -W + 1, -1, 1, W - 1, W, W + 1]) { if (rock[j + o]) continue; const v = g[j + o]; if (v < lo) lo = v; if (v > hi) hi = v; }
         const v = h > 0 ? Math.min(h, lo + 1) : Math.max(h, hi - 1);
-        if (v !== h) { changed = any = true; if (v) H.set(k, v); else H.delete(k); }
+        if (v !== h) { changed = any = true; g[j] = v; }
       }
     }
   }
+  keys.forEach((k, i) => { if (rock[at[i]]) return; const v = g[at[i]]; if (!v) H.delete(k); else if (v !== H.get(k)) H.set(k, v); });
   return H;
 }
 /**
@@ -875,7 +889,9 @@ function onRiver(spec, x, y) {
   if (Math.abs(b - ford) <= 1 || Math.abs(b + ford) <= 1) return 3; // a ford: shallow, walked across
   return 1;
 }
-const landCache = new Map();
+// The lands last read, the least recently used dropped first (a 500 × 500 map's land is about 24 MB: forty-eight of
+// them, emptied all at once when full, were over a gigabyte and made again as soon as they were dropped).
+const LAND_CACHE = 16, landCache = new Map();
 const byCell = (a, b) => { const [ax, ay] = a.split(",").map(Number), [bx, by] = b.split(",").map(Number); return ay - by || ax - bx; };
 /**
  * The land of a base now: { pieces: Map "x,y" → piece (every cell of a wreck maps to its piece), floors: Map "x,y" →
@@ -887,7 +903,7 @@ export function landOf(spec, land) {
   const tx = spec.ox || 0, ty = spec.oy || 0; // the base on the map: map (x, y) is grid (x - tx, y - ty)
   const key = `${spec.seed}|${spec.terrain}|${spec.G}|${spec.C}|${spec.clear}|${spec.road}|${spec.river}${spec.riverSide || ""}|${tx},${ty}|${land ? `${land.n}` : "-"}${spec.pond ? "|p" : ""}${spec.level ? `|L${spec.level}` : ""}`;
   let out = landCache.get(key);
-  if (out && out.land === land) return out.v;
+  if (out && out.land === land) { landCache.delete(key); landCache.set(key, out); return out.v; } // the most recently used kept longest
   const cleared = (land && land.cleared) || {}, looted = (land && land.looted) || {};
   const pieces = new Map(), floors = new Map(), list = [];
   // Worked out in map coordinates; the yard and the clearing are round the base itself, what is cleared in grid cells.
@@ -1020,8 +1036,8 @@ export function landOf(spec, land) {
   // ground: the ground's height by cell (the same in waterOnly, whose heights are left out for its ponds): what a
   // building stands on (basemap.js placeProblemAt: all of it on one level).
   const v = { pieces, floors, list, heights, springs, level: L, ground: heights, waterOnly: { pieces: new Map(water.flatMap((p) => p.cells.map(([x, y]) => [`${x},${y}`, p]))), list: water, floors, heights: new Map(), ground: heights } };
-  if (landCache.size > 48) landCache.clear();
   landCache.set(key, { land, v });
+  while (landCache.size > LAND_CACHE) landCache.delete(landCache.keys().next().value);
   return v;
 }
 // A piece's name and its clearing (CLEAR).
