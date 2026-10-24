@@ -41,6 +41,7 @@
 // worm.js (one of the team turning inside); autopilot.js (hiveChoice, idleTeams: hiveCrawlAutoStep, the campaign's
 // estimates: crawlEstimate); factions.js groupHiveWar (groupHiveCrawl); ui/hivecrawl.js (the window), ui/hivecrawlsfx.js
 // (the pulse and the drone that grow with the warmth), ui/ui.js and main.js.
+import { crashBaseHaul } from "./crashstart.js"; // Crashlanding (2026-10-24): the unit's stores as the hive's hoard (call-time only)
 import { keyWord } from "./water.js"; // supplies as words: "9mm FMJ", "rounds"
 import { Rng } from "./rng.js";
 import { hash01, gainXpAll, USE } from "./skills.js";
@@ -1076,6 +1077,10 @@ export function hiveHoard(state, hive) {
   };
   for (const k of Object.keys(supplies)) if (!(supplies[k] > 0)) delete supplies[k];
   sortFind(supplies, "home", "hivehoard", hive.tile, hive.id); // ammo.js: the rounds by calibre
+  // Crashlanding (crashstart.js crashBaseHaul, 2026-10-24: "Fighting the hive and winning provides good loot"): the hive at
+  // the unit's base holds the base's stores too, paid once.
+  const haul = crashBaseHaul(state, hive);
+  if (haul) { gear.push(...haul.gear); for (const [k, q] of Object.entries(haul.supplies)) if (q > 0) supplies[k] = (supplies[k] || 0) + q; }
   return { gear, supplies };
 }
 const gearValue = (it) => (it && GEAR[it.key] ? (GEAR[it.key].value || 0) * (it.quality || 1) : 0);

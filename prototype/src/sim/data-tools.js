@@ -148,6 +148,7 @@ export const CRAFT_TOOLS = {
   // iron. The field decoy wants only pliers (a team carries a tool kit or a multitool).
   pocketradio: ["pliers"], handradio: ["pliers", "solder"], helmetlight: ["pliers"], weaponlight: ["pliers", "drill"],
   laser: ["solder", "drill"], eardef: ["solder", "pliers"], lasergrip: ["solder", "drill"], holopistol: ["solder", "drill"], rangefinder: ["solder", "pliers"],
+  milradio: ["solder", "pliers"], // Crashlanding (2026-10-24): the broken military radio repaired (crafting.js)
 };
 
 // Where each is normally kept (loot.js ITEM_TAGS; tools/loottest.js).

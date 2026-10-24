@@ -1552,6 +1552,33 @@ function paintMilitarySite(depot) {
   return p;
 }
 
+// Crashlanding (sim/crashstart.js, 2026-10-24: "once you leave change the military base sprite on the world map to a
+// hive infested one"): the Guard base with the hive grown through it: the hut's roof caved, the flag down, dark veins
+// and glowing pods over the sandbags, the tank half swallowed by the mound.
+function paintInfestedBase() {
+  const p = paintMilitarySite(false);
+  const POOL = "#2a1018", VEIN = "#8a1c22", POD = "#ff5a3a", POD_HOT = "#ffb43b";
+  p.rect(0, 19, 25, 20, shade("#6a6450", -0.35));
+  for (let x = 0; x <= 25; x += 3) { p.set(x, 19, POOL); p.set(x + 1, 20, VEIN); }           // the ground gone dark
+  for (let x = 4; x <= 13; x += 2) p.rect(x, 6, x, 7, shade(OLIVE, -0.55));                   // the hut's roof caved in
+  p.rect(18, 1, 18, 11, shade("#3a5a3a", -0.5)); for (let x = 19; x <= 22; x++) for (let y = 0; y <= 1; y++) p.clear(x, y); // the flag gone from the pole
+  p.set(19, 1, shade("#3a5a3a", -0.3)); p.set(20, 2, shade("#3a5a3a", -0.3));                 // ... hanging in rags
+  for (const [x, y] of [[2, 15], [6, 14], [12, 16], [16, 15], [21, 14], [9, 12]]) { p.set(x, y, FLESH); p.set(x + 1, y, shade(FLESH, 0.3)); p.set(x, y - 1, shade(FLESH, -0.2)); } // the mound creeping over the sandbags and the tank
+  for (const [x, y] of [[3, 14], [13, 15], [22, 13], [10, 11]]) { p.set(x, y, POD); p.set(x + 1, y, POD_HOT); }  // pods
+  for (let t = 0; t < 6; t++) { p.set(1 + t * 4, 18, VEIN); p.set(3 + t * 4, 17, shade(VEIN, 0.3)); }          // veins
+  p.set(8, 9, BONE); p.set(9, 10, BONE); p.set(23, 17, BONE);                                                     // bones at the door and the bags
+  return p;
+}
+// A flag on a pole with a star: the "crashhome" marker (sim/markers.js), where the unit's base is.
+function paintUnitFlag() {
+  const p = painter(12, 14);
+  p.rect(2, 0, 2, 13, METAL); p.set(2, 0, shade(METAL, 0.3));
+  p.rect(3, 1, 10, 5, "#3a5a3a"); p.rect(3, 1, 10, 1, shade("#3a5a3a", 0.25)); p.set(10, 3, shade("#3a5a3a", -0.3));
+  p.set(5, 3, WHITE); p.set(4, 3, WHITE); p.set(6, 3, WHITE); p.set(5, 2, WHITE); p.set(5, 4, WHITE);
+  p.rect(0, 13, 4, 13, shade(METAL, -0.4));
+  return p;
+}
+
 function paintCityCenter() {
   const p = painter(28, 26);
   // Skyline: a tall glass tower with a spire between older towers, low blocks in front.
@@ -2298,6 +2325,7 @@ const POI_PAINT = {
   crash_mil: () => paintHeliWreck(OLIVE, shade(OLIVE, -0.3), "star"), crash_med: () => paintHeliWreck(WHITE, RED, "cross"),
   crash_news: () => paintHeliWreck("#3d6fb0", "#e8c04a", "stripe"), crash_cargo: paintCargoWreck, airdrop: paintAirDrop,
   convoy: paintConvoySite, // sim/miltrucks.js: the abandoned Army convoy
+  military_hive: paintInfestedBase, bunker_mil: () => paintMilitarySite(true), // sim/crashstart.js: Crashlanding's overrun Guard base (loc.look "hivebase", ui/render.js siteLook) and the unit's mountain bunker
   // Points of interest (sim/pois.js): the small places a tile holds besides its site.
   house: paintHouse, neighbourhood: paintNeighbourhood, garage: paintGarage, corner: paintCorner, pizza: paintPizza,
   farmstand: paintFarmstand, shed: paintShed, blind: paintBlind, campsite: paintCampsite, hikercamp: paintHikercamp, mineshack: paintMineshack,
@@ -3383,6 +3411,7 @@ export function markerSpriteCanvas(type, color = "#4f8fd6", opt = {}) {
     if (type === "camp") return paintCampMarker(!!opt.emptied);
     if (type === "nomadcamp") return paintCampMarker(false); // a nomad camp seen (sim/nomads.js): the camp's look, never emptied
     if (type === "hive") return paintHive(0);
+    if (type === "crashhome") return paintUnitFlag(); // sim/crashstart.js: the unit's base (Crashlanding)
     return paintParked(opt.vehicle || "truck", color, !!opt.needsFuel, !!opt.damaged, opt.ups || ""); // ups: its upgrades (upsCode)
   });
 }

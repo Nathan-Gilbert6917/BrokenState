@@ -27,6 +27,7 @@
 // Dice: hash01 (skills.js), never the world's or the battle's random numbers.
 import { log, survivorById, skill, newId, hub, baseById } from "./world.js";
 import { hash01, gainXp, USE } from "./skills.js";
+import { crashCarDead, crashSiphon } from "./crashstart.js"; // Crashlanding (2026-10-24): most cars beyond repair, little fuel to siphon
 import { openOdds, picksOf, isMakeshiftPicks, wearPicks, PICK, FORCE, SMASH } from "./locks.js";
 import { createVehicle, vehicleById, isCar, tank, VEHICLE_TYPES, partyVehicle, fitMilitary, carPartsCost, carPartsText, fleetJoinProblem, addPartyVehicle, partyVehicles, driversFor } from "./vehicles.js";
 import { markTaken } from "./miltrucks.js"; // (names below are literal: the modules load in a circle)
@@ -97,8 +98,12 @@ export function carRecord(state, b, id) {
   const cooled = !M.mil && (state.carClaims || {})[b.tileId] != null && state.hour - state.carClaims[b.tileId] < CARS.COOLDOWN * 24;
   const e = r("engine");
   const ready = !!(car.mil && car.mil.runs); // a National Guard motor pool's ready vehicle (miltrucks.js MOTOR_POOL): it runs, with fuel in it
-  const engine = ready ? "ok" : cooled ? "dead" : e < C.engine[0] ? "ok" : e < C.engine[0] + C.engine[1] ? "fixable" : "dead";
-  const fuel = ready ? Math.round(30 + r("fq") * 30) : r("fuel") < C.fuel[0] ? Math.round(C.fuel[1] + r("fq") * (C.fuel[2] - C.fuel[1])) : 0;
+  // Crashlanding (crashstart.js, 2026-10-24: "Most cars will not be repairable and limited fuel can be siphoned"): a car
+  // that runs or could be fixed is beyond repair unless its own die passes CRASH.CAR_FIX (a motor pool's ready vehicle
+  // and a group's own are what they are), and the tank holds × CRASH.SIPHON.
+  const engine0 = ready ? "ok" : cooled ? "dead" : e < C.engine[0] ? "ok" : e < C.engine[0] + C.engine[1] ? "fixable" : "dead";
+  const engine = engine0 !== "dead" && !ready && crashCarDead(state, r("crashfix")) ? "dead" : engine0;
+  const fuel = crashSiphon(state, ready ? Math.round(30 + r("fq") * 30) : r("fuel") < C.fuel[0] ? Math.round(C.fuel[1] + r("fq") * (C.fuel[2] - C.fuel[1])) : 0);
   const rec = {
     id, x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs) + 1, h: Math.max(...ys) - Math.min(...ys) + 1,
     model, name: M.mil ? `${car.mil.cond === "intact" ? "" : car.mil.cond === "burnt" ? "Burned-out " : "Wrecked "}${M.name}` : M.name,

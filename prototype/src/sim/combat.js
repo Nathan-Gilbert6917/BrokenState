@@ -6817,6 +6817,7 @@ export const AREA_SETS = {
   // The abandoned Army convoy (miltrucks.js): its trucks (the "miltrucks" area, added by createRaid), the cars that
   // were stuck behind it and the crews' last camp.
   convoy: ["roadcars", "campsite", "wreck"],
+  bunker_mil: ["armory", "barracks", "warehouse", "motorpool"], // crashstart.js: Crashlanding's mountain bunker, the unit's fallback
   // Points of interest (pois.js): the small places a tile holds besides its site. A campsite, a hiker camp and a
   // hunting blind have no building of their own (buildingmaps.js SITES): the open map with these areas.
   house: ["house", "house", "garage", "wreck"], neighbourhood: ["house", "house", "house", "garage", "wreck"], garage: ["garage", "garage", "workshop", "wreck"],

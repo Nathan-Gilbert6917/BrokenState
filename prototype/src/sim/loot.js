@@ -49,6 +49,7 @@ export const SITE_TAGS = {
   barn: ["farm", "tools"], ranch: ["farm", "hunt", "home"], cabin: ["hunt", "outdoor", "home"], lodge: ["hunt", "outdoor", "camp"],
   campground: ["camp", "outdoor"], ranger: ["outdoor", "camp", "fire", "medical"], radiotower: ["tech", "industry", "tools"],
   truckstop: ["travel", "shop", "garage"], crashsite: ["travel", "crash", "garage"],
+  bunker_mil: ["military", "guns", "camp"], // crashstart.js: Crashlanding's mountain bunker, the unit's fallback
   crash_mil: ["military", "crash"], crash_cargo: ["crash", "camp", "medical"], crash_med: ["medical", "crash"],
   crash_news: ["tech", "crash"], airdrop: ["military", "camp", "medical"],
   convoy: ["military", "travel", "camp"], // miltrucks.js: an abandoned Army convoy
@@ -93,7 +94,8 @@ export const ITEM_TAGS = {
   slingbag: ["home", "school", "mall", "office", "travel", "crash", "crime", "shop"], backpack: ["school", "home", "mall", "travel", "crime", "camp"],
   hikingpack: ["camp", "outdoor", "mall", "travel", "crash", "shop"], duffle: ["travel", "mall", "outdoor", "shop"], assaultpack: ["military", "crash", "camp"], rucksack: ["military", "camp", "crash", "outdoor"],
   // tools and kits
-  nvg: ["military", "crash"], milradio: ["military", "crash"], surgkit: ["medical", "crash"], dewormer: ["medical", "farm"], // dewormer: worm.js (a farm's livestock wormer)
+  nvg: ["military", "crash"], milradio: ["military", "crash"], milradio_broken: ["military", "crash"], // milradio_broken: Crashlanding's dead set (crashmode.js)
+  surgkit: ["medical", "crash"], dewormer: ["medical", "farm"], // dewormer: worm.js (a farm's livestock wormer)
   bandagekit: ["medical", "church", "fire", "outdoor", "camp", "home"], crowbar: ["garage", "tools", "industry", "fire"],
   monocular: ["hunt", "outdoor", "guns", "camp", "home", "military", "travel"], binoculars: ["hunt", "outdoor", "guns", "military", "police", "home", "sport", "farm", "tech", "crash", "camp", "tools"],
   spotscope: ["hunt", "guns", "military", "outdoor"], thermal: ["military", "crash"], telescope: ["school", "tech", "home"],

@@ -81,6 +81,7 @@ export function siteDue(state, n) {
   return Math.round(d);
 }
 import { hiveAllies, broodAfterAllies } from "./alliance.js";
+import { crashHiveDied } from "./crashstart.js"; // Crashlanding (2026-10-24): the hive at the unit's base destroyed (call-time only)
 import { overwriteClaims } from "./claims.js"; // claims.js: a hive risen wipes the claims around it (agent A's hook)
 import { cfgOf } from "./worldcfg.js"; // the run's dials: Hive growth
 
@@ -541,6 +542,7 @@ export function destroyHive(state, hive, how = "", opts = {}) {
   }
   witherGrowths(state, hive); // its growths wither and rot away (hivetech.js)
   state.hiveInfo.stats.destroyed++;
+  crashHiveDied(state, hive); // crashstart.js: Crashlanding's hive at the unit's base: the message in the wreckage (nothing for any other hive)
   if (!opts.quiet) log(state, `${hive.name[0].toUpperCase() + hive.name.slice(1)} was destroyed${how ? ` ${how}` : ""}. ${hivesLeftText(state)}`, "good");
   checkGameOver(state); // destroying the last hive wins (world.js)
   return true;

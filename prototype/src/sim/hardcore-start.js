@@ -63,6 +63,7 @@ import { pickStart, chosenStart } from "./startpick.js"; // where you start, rol
 import { meleeBump, cookingBump } from "./appearance.js"; // a background's Melee bump: its own die
 import { sightRadius, partyMembers, partyTile, weighTeam } from "./parties.js";
 import { isHardcore } from "./hardcore.js";
+import { isCrashRun } from "./crashmode.js"; // Crashlanding (2026-10-24): the road before the first base, the soldier background
 import { startsWithVehicle } from "./custommode.js"; // Start with a vehicle (2026-10-24): off, no car
 import { isCustomBg } from "./custombg.js";
 import { hardcoreTents } from "./tents.js"; // a one-person tent bag each (tents.js TENTS.HARDCORE; call-time only)
@@ -210,8 +211,13 @@ export const BACKGROUNDS = Object.fromEntries(Object.entries(HC_START.ARCHETYPES
 // A background by key: a preset (ARCHETYPES), or one the player made for this world (custombg.js, state.customBackgrounds).
 export function archetypeOf(state, key) {
   if (isCustomBg(key)) return (state && state.customBackgrounds && state.customBackgrounds[key]) || null;
-  return HC_START.ARCHETYPES[key] || null;
+  return HC_START.ARCHETYPES[key] || CRASH_ARCHETYPES[key] || null;
 }
+// Crashlanding's soldier (crashstart.js, 2026-10-24): a background of its own, outside the Hardcore dice (pickArchetypes
+// never draws it), so the sole survivor's chip and bumps read as a Guard trooper's. No grab, no car: the kit is fixed.
+export const CRASH_ARCHETYPES = {
+  soldier: { name: "Guard trooper", w: 0, skills: { shooting: [3, 5], scouting: [2, 3], medicine: [1, 2], leadership: [0, 1], melee: [1, 2] }, traits: { brave: 3, toughskin: 2 }, blurb: "the one who walked away from the crash" },
+};
 // { name, blurb, custom } for the chips, else null.
 export function backgroundInfo(state, key) {
   const a = key ? archetypeOf(state, key) : null;
@@ -246,7 +252,7 @@ export function roadTeam(state) {
   return mine.find((p) => p.hcStart) || mine[0] || null;
 }
 // You are with this team (before the first hub): it always reports and takes orders, and you see what it sees.
-export const withYou = (state, p) => firstHubPending(state) && !!p && p.owner === "player" && p.kind !== "convoy";
+export const withYou = (state, p) => (firstHubPending(state) || (isCrashRun(state) && !state.bases.length)) && !!p && p.owner === "player" && p.kind !== "convoy"; // Crashlanding (crashmode.js): you are with the team until the first base
 
 // ---------- founding the first hub ----------
 // The first hub is a camp built up into a shelter over days (staging.js: Establish base, the materials, the work).

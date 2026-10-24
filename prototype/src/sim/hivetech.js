@@ -30,6 +30,7 @@
 // The hives' own choices (what to grow, where, the mix of a horde, the spire calling, rumours) roll their own dice
 // (roll: a hash of the seed, the hour and what is rolled for), so they never shift the world's random numbers
 // (state.rng) that everything else draws from; a team's fire at a growth uses state.rng. A seed plays out the same.
+import { crashSpecials, crashTierBonus, crashHomeHot } from "./crashmode.js"; // Crashlanding (2026-10-24): the special dead more often, a tier ahead
 import { TECH, GROWTHS, ZTYPES, HIVE, HORDEMIX } from "./hiveconst.js";
 import { log, day, addCard, snapshot, combatPower, hurt, hub, localId } from "./world.js";
 import { ensureHives, hiveById, zombieToughness, hiveGuard, molotovsOf, clusterSize } from "./hives.js";
@@ -68,12 +69,15 @@ export function growthsOf(state, hive, readyOnly = true) {
 // ---------- tiers ----------
 // The tier a hive may grow up to: tier t needs the game past TIER_DAY[t] (× 1 to 1 + JITTER for this hive) and the
 // hive TIER_AGE[t] days old.
+// Crashlanding (crashmode.js crashTierBonus, 2026-10-24: "new zombie types are showing more often"): the calendar's
+// tier + CRASH.TIER_BONUS in a crash run (the hive's own age still gates it); 0 elsewhere.
 export function hiveTier(state, hive) {
   const d = rampDay(state), age = (state.hour - (hive.born || 0)) / 24;
   const j = 1 + TECH.JITTER * ((hash((hive.id || 0) * 7919 + (state.seed || 1)) % 1000) / 1000);
+  const bonus = crashTierBonus(state), cal = bonus ? eraTier(state) : 0;
   let t = 0;
   for (let i = 1; i < TECH.TIER_DAY.length; i++) {
-    if (d >= TECH.TIER_DAY[i] * j && age >= TECH.TIER_AGE[i]) t = i;
+    if ((d >= TECH.TIER_DAY[i] * j || (bonus && i <= cal)) && age >= TECH.TIER_AGE[i]) t = i;
     else break;
   }
   return t;
@@ -83,7 +87,7 @@ export function eraTier(state) {
   const d = rampDay(state);
   let t = 0;
   for (let i = 1; i < TECH.TIER_DAY.length; i++) if (d >= TECH.TIER_DAY[i]) t = i;
-  return t;
+  return Math.min(TECH.TIER_DAY.length - 1, t + crashTierBonus(state));
 }
 
 // ---------- what a hive's growths give it ----------
@@ -120,10 +124,10 @@ export function mixOdds(state, hive, size = "medium") {
   const m = hiveMods(state, hive);
   const tier = hiveTier(state, hive);
   const brood = growthsOf(state, hive).some((g) => GROWTHS[g.kind] && GROWTHS[g.kind].guard);
-  const H = HORDEMIX;
+  const H = HORDEMIX, mult = crashSpecials(state); // crashmode.js: × CRASH.SPECIALS in a Crashlanding run
   const kinds = {};
   for (const k of m.unlocks) {
-    kinds[k] = size === "guard" ? H.GUARD : Math.min(H.MAX, (H.ODDS[size] ?? H.ODDS.medium) + H.TIER * Math.max(0, tier - kindTier(k)) + (brood ? H.BROOD : 0) + counterOdds(state, hive, k)); // counterdead.js: a counter kind likelier the more its read asks
+    kinds[k] = size === "guard" ? H.GUARD : Math.min(H.MAX, ((H.ODDS[size] ?? H.ODDS.medium) + H.TIER * Math.max(0, tier - kindTier(k)) + (brood ? H.BROOD : 0) + counterOdds(state, hive, k)) * mult); // counterdead.js: a counter kind likelier the more its read asks
   }
   const most = size === "guard" ? m.unlocks.length : (H.KINDS[size] ?? H.KINDS.medium) + (tier >= 3 ? 1 : 0) + (tier >= 4 ? 1 : 0);
   return { kinds, most };
@@ -185,13 +189,14 @@ export function borderMix(state) {
 export function siteSpecials(state, tileId) {
   const t = state.tiles[tileId];
   if (!t) return null;
-  const tough = state.hives && state.hives.length ? zombieToughness(state, tileId) : 0;
+  let tough = state.hives && state.hives.length ? zombieToughness(state, tileId) : 0;
+  if (crashHomeHot(state, tileId)) tough = Math.max(tough, 3); // crashstart.js: the unit's overrun base fights as a hive's own ground
   let hiveKinds = null;
   if (tough >= 3) {
     const hv = state.hives.reduce((a, h) => (!a || state.grid.distance(h.tile, tileId) < state.grid.distance(a.tile, tileId) ? h : a), null);
     if (hv) { hiveKinds = {}; for (const k of hiveMods(state, hv).unlocks) hiveKinds[k] = ZTYPES[k].share; }
   }
-  return ambientMix(t, { years: rampDay(state) / 112, era: eraTier(state), toughness: tough, hiveKinds, place: poolPlace(state, t) }); // deadpool.js: the era's kinds by the kind of place
+  return ambientMix(t, { years: rampDay(state) / 112, era: eraTier(state), toughness: tough, hiveKinds, place: poolPlace(state, t), mult: crashSpecials(state) }); // deadpool.js: the era's kinds by the kind of place; mult: Crashlanding's × CRASH.SPECIALS
 }
 
 // ---------- threat ----------

@@ -34,7 +34,7 @@ export const areaScale = (def) => (def.w * def.h) / (BASE_W * BASE_H);
 // Custom size (new-run screen, experimental): any width × height in this range. Everything the presets set by hand
 // is worked out from the area so it lands on the presets' values at their sizes (Small 2 cities, Huge 4 and two
 // extra hot spots...). Big maps cost more every frame and every day (rendering, paths, the groups' searches).
-export const CUSTOM = { MIN_W: 32, MAX_W: 200, MIN_H: 24, MAX_H: 140 };
+export const CUSTOM = { MIN_W: 32, MAX_W: 500, MIN_H: 24, MAX_H: 250 }; // 500 × 250: Crashlanding's map (crashmode.js CRASH.W × H, 2026-10-24); the presets stay as they are
 const clampInt = (n, lo, hi, dflt) => { const v = Math.round(Number(n)); return Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : dflt; };
 export const clampCustomW = (n) => clampInt(n, CUSTOM.MIN_W, CUSTOM.MAX_W, BASE_W);
 export const clampCustomH = (n) => clampInt(n, CUSTOM.MIN_H, CUSTOM.MAX_H, BASE_H);

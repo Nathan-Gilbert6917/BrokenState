@@ -10,6 +10,8 @@ import { pickStart, chosenStart, startNear, isSettlementTile } from "./startpick
 import { generateMap } from "./mapgen.js";
 import { DEFAULT_SIZE, sizeDef, customDef, isCustom, clampHives } from "./worldsize.js";
 import { cleanCustom, customSizeDef } from "./custommode.js"; // Custom mode's counts and Start with a vehicle (2026-10-24)
+import { CRASH } from "./crashmode.js"; // Crashlanding (2026-10-24): the forced map size
+import { prepareCrash, setupCrashStart, crashHour } from "./crashstart.js"; // Crashlanding: the crash, the kit, the unit's base and its chain (call-time only)
 import { cleanFleet, fitFleet, START_FLEET } from "./startfleet.js"; // the starting vehicles, their kinds, point limits and loads (2026-10-24)
 import { FIRST_NAMES, LAST_NAMES, SKILLS, ROLLED_SKILLS, TRAITS, BIRTH_TRAITS, clashIn, GEAR, SUPPLIES, SUPPLY_KEYS, supValue } from "./data.js";
 import { traitDice, swapNewTraits, noteBornTraits, woundMult, traitSkill, traitPower, rollTiers, tidyTiers, cleanTier } from "./traits.js"; // the newer traits: own dice at birth, their rules
@@ -166,14 +168,19 @@ export const START_WEAPONS = ["pistol", "machete", "huntrifle", "knife", "knife"
 // one a starting survivor (fitFleet; Normal and Custom: at the hub; Hardcore: the car fled in and any kinds set, with
 // the team), each back's load set on the new-run screen (null: as rolled). Kept as state.fleet (each with vid: its
 // vehicle, null for an empty slot) until Start.
+// crash (optional, 2026-10-24, the user's request "Crashlanding": crashmode.js, crashstart.js): true makes a Crashlanding
+// run: a normal-mode world forced to a custom CRASH.W × CRASH.H map (custom, vehicle, fleet and startPeople ignored:
+// one survivor, no vehicle, no base), the crash tile drawn with `start` as a Hardcore start is, the wreck, the kit, the
+// unit's base across the map and the calendar at year 4. Kept as state.crash (isCrashRun).
 /**
  * @param {{ seed: number, factionCount: number, crew?: any[] | null, size?: string, mode?: string, customW?: number | null,
  *   customH?: number | null, hives?: number | null, crewRoll?: number | null, startPeople?: number | null, customBackgrounds?: any,
- *   start?: { roll?: number | null, not?: number | null, tile?: number | null } | null, worldCfg?: any, vehicle?: boolean, custom?: any, fleet?: any[] | null }} opts
+ *   start?: { roll?: number | null, not?: number | null, tile?: number | null } | null, worldCfg?: any, vehicle?: boolean, custom?: any, fleet?: any[] | null, crash?: boolean }} opts
  * @returns {State}
  */
-export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SIZE, mode = "normal", customW = null, customH = null, hives = null, crewRoll = null, startPeople = null, customBackgrounds = null, start = null, worldCfg = null, vehicle = true, custom = null, fleet = null }) {
+export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SIZE, mode = "normal", customW = null, customH = null, hives = null, crewRoll = null, startPeople = null, customBackgrounds = null, start = null, worldCfg = null, vehicle = true, custom = null, fleet = null, crash = false }) {
   const rng = new Rng(seed);
+  if (crash) { mode = "normal"; custom = null; size = "custom"; customW = CRASH.W; customH = CRASH.H; vehicle = false; fleet = []; startPeople = 1; } // Crashlanding (crashmode.js): the map and the start are fixed
   const cust = mode !== "hardcore" && custom ? cleanCustom(custom) : null; // Custom mode: a normal start with these counts
   const sdef = isCustom(size) ? customDef(customW, customH) : sizeDef(size);
   const worldSize = sdef.key;
@@ -218,6 +225,14 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
   if (start && start.roll != null) state.startRoll = start.roll; // startpick.js: a start of its own on this map
   if (start && start.tile != null) state.startTile = start.tile; // startpick.js: the start picked on the map
   setWorldCfg(state, worldCfg); // worldcfg.js: the run's dials (the new-run screen's World… window), before the groups and hives are made
+  if (crash) {
+    // Crashlanding (crashstart.js): the calendar at year 4, the crash tile and the unit's base before the points of
+    // interest (the base's site gets its own), then the groups, the survivor and the kit, the wreck, the hives and the loot.
+    prepareCrash(state, start);
+    noteLootAge(state); // itemcond.js: the loot rolled from here on is three years old
+    setupCrashStart(state, { factionCount, crew });
+    return state;
+  }
   noteLootAge(state); // itemcond.js: the loot rolled from here on is as old as this world (a new world: year 1)
   ensurePois(state); // pois.js: every tile's points of interest (hash dice from the seed: the map's dice are untouched)
   if (state.mode === "hardcore") {
@@ -1135,6 +1150,7 @@ function hourOfWorld(state) {
   updateVision(state);
   discoveryHour(state); // discovery.js: hidden sites reported this hour (radio, maps, intel, prisoners, the coalition)
   hiveBirthHour(state); // hivebirth.js: a new hive site heard of, the dead seen massing, a hive you knew of risen
+  crashHour(state); // crashstart.js: Crashlanding's chain (the wreck's lure, the base's reveal, the hive born there, the bunker found); nothing in other runs
   festivalHour(state); // festival.js: the morning of the harvest festival
   crowdCardsHour(state); // moveout.js: a base of yours with more people than beds says so (once, then after a while or when worse)
   helpRestore(state); // noidle.js: last hour's helpers back on their own job before anyone sets roles

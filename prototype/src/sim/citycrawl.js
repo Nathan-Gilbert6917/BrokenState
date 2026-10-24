@@ -22,6 +22,7 @@
 // street map's areas; b.raid.deep: deeploot.js), buildingmaps.js raidBuilding (setup.raid.place), conflicts.js engagedWith ("crawl" holds the team),
 // autopilot.js idleTeams (crawlAutoStep every hour), aiscav.js (mem.aiLoot), main.js / ui.js (the crawl window and
 // its map, ui/citycrawl.js).
+import { crashSiphon } from "./crashstart.js"; // Crashlanding (2026-10-24): limited fuel can be siphoned
 import { typeFind } from "./foods.js"; // a crawl's food finds as items
 import { keyWord } from "./water.js"; // supplies as words: "9mm FMJ", "rounds"
 import { Rng } from "./rng.js";
@@ -1478,7 +1479,7 @@ export function resolveEvent(state, p, eventId, choice, opts = {}) {
       if (choice === "siphon") {
         if (!passHours(state, p, 1)) return crawlGoneText(state, p);
         if (rng.chance(0.25)) addAlert(c, 5);
-        return done(`You fill what cans you have: ${give(state, p, c, { fuel: rng.int(4, 10) }, [])}.`, "good");
+        return done(`You fill what cans you have: ${give(state, p, c, { fuel: crashSiphon(state, rng.int(4, 10)) }, [])}.`, "good"); // crashstart.js: Crashlanding's × CRASH.SIPHON
       }
       if (rng.chance(0.2 + 0.03 * n)) { addAlert(c, 4); return fightNow("horde", { small: true, spotted: true }); }
       const r = rollArea(rng, "warehouse", rich, scav);

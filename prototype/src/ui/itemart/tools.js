@@ -244,6 +244,16 @@ export const GEAR_ART = {
     for (let y = 11; y <= 13; y += 2) dots(p, 3, 8, y, C.black);
     R(p, 10, 7, 12, 9, C.black); p.set(11, 8, C.silver); R(p, 10, 11, 12, 13, K.odD);
   },
+  // Crashlanding's set (sim/crashmode.js): the military radio with its antenna snapped, the screen dark and cracked.
+  milradio_broken: (p) => {
+    V(p, 12, 0, 2, C.black); p.set(13, 2, C.blackL); R(p, 11, 3, 13, 4, C.blackL);
+    R(p, 3, 3, 4, 4, C.black); R(p, 7, 3, 8, 4, C.black);
+    box(p, 1, 5, 14, 15, K.od, K.odL, K.odD);
+    R(p, 3, 7, 8, 9, C.black); p.set(4, 8, C.blackL); p.set(6, 7, C.silverD); p.set(7, 8, C.silverD); p.set(5, 9, C.silverD);
+    for (let y = 11; y <= 13; y += 2) dots(p, 3, 8, y, C.black);
+    R(p, 10, 7, 12, 9, C.black); R(p, 10, 11, 12, 13, K.odD);
+    line(p, 2, 14, 9, 6, C.black); p.set(9, 12, C.black); p.set(13, 10, C.black);
+  },
   handradio: (p) => {
     stamp(p, 3, 1, ["xxxxxxx", "x.....x"], { x: C.black });
     V(p, 2, 0, 4, C.silver);
