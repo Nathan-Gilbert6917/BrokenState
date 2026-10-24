@@ -20,6 +20,7 @@ const seed = Number(process.argv[2]) || 42;
 const st = createWorld({ seed, factionCount: 6 }); st.started = true;
 const h = hub(st);
 const t = st.tiles[h.tile]; t.terrain = "plains"; t.loc = null;
+h.buildings = h.buildings.filter((b) => b.type !== "farm_plot"); // the start's own eight plots: the game lays them where the land lets it, the test's four are its own
 BM.landFor(st, h);
 for (let i = 0; i < 4; i++) addBuilding(h, "farm_plot");
 const plots = BM.itemsOf(st, h).filter((it) => it.type === "farm_plot");
