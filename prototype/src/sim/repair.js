@@ -22,6 +22,7 @@
 // it for parts: inventory.js salvageAt). item.durBase: the maximum before its first repair (valuation.js prices a
 // lowered maximum down).
 import { keyWord } from "./water.js"; // supplies as words: "9mm FMJ", "rounds"
+import { countKey, takeOneAt } from "./itemstack.js"; // a repair's item inputs count packs, one off a stack (a battery swap takes one pack of batteries, not the stack)
 import { GEAR, SKILL_NAMES } from "./data.js";
 import { atBase, skill, log, newId } from "./world.js";
 import { benchTier } from "./buildings.js";
@@ -176,7 +177,7 @@ export function repairInfo(state, base, item, { by = null, kit = false } = {}) {
   if (!out.reason && !who) out.reason = base ? `Needs someone on the Craft role here with ${SKILL_NAMES[def.skill]} ${out.min}+.` : "Nobody to do it.";
   if (!out.reason && !kit && base) {
     for (const [k, v] of Object.entries(out.inputs.supplies)) if (have(base, k) < v) { out.reason = `Needs ${v} ${keyWord(k)} (have ${Math.floor(have(base, k))}).`; break; }
-    if (!out.reason) for (const [k, v] of Object.entries(out.inputs.gear)) if (base.armory.filter((it) => it && it.key === k).length < v) { out.reason = `Needs a ${GEAR[k].name.toLowerCase()} in the armory.`; break; }
+    if (!out.reason) for (const [k, v] of Object.entries(out.inputs.gear)) if (countKey(base.armory, k) < v) { out.reason = `Needs a ${GEAR[k].name.toLowerCase()} in the armory.`; break; }
   }
   out.ok = !out.reason;
   return out;
@@ -235,12 +236,12 @@ export function queueRepair(state, base, loc, { urgent = false } = {}) {
   if (!info.ok && !noCrafter) return info.reason;
   if (noCrafter) { // queued anyway: it waits for a crafter (the inputs still have to be here)
     for (const [k, v] of Object.entries(info.inputs.supplies)) if (have(base, k) < v) return `Needs ${v} ${keyWord(k)} (have ${Math.floor(have(base, k))}).`;
-    for (const [k, v] of Object.entries(info.inputs.gear)) if (base.armory.filter((it) => it && it.key === k).length < v) return `Needs a ${GEAR[k].name.toLowerCase()} in the armory.`;
+    for (const [k, v] of Object.entries(info.inputs.gear)) if (countKey(base.armory, k) < v) return `Needs a ${GEAR[k].name.toLowerCase()} in the armory.`;
   }
   const rs = stats(state);
   for (const [k, v] of Object.entries(info.inputs.supplies)) { base.stock[k] = (base.stock[k] || 0) - v; rs.paid[k] = (rs.paid[k] || 0) + v; }
   const gearPaid = [];
-  for (const [k, v] of Object.entries(info.inputs.gear)) for (let i = 0; i < v; i++) { gearPaid.push(...base.armory.splice(base.armory.findIndex((it) => it && it.key === k), 1)); rs.paid[k] = (rs.paid[k] || 0) + 1; }
+  for (const [k, v] of Object.entries(info.inputs.gear)) for (let i = 0; i < v; i++) { const one = takeOneAt(base.armory, base.armory.findIndex((it) => it && it.key === k)); if (one) gearPaid.push(one); rs.paid[k] = (rs.paid[k] || 0) + 1; } // one off a stack (a pack of batteries), never the whole stack (2026-10-24)
   rs.bench++;
   const job = { id: newId(), item, hours: info.hours, progress: 0, paid: { ...info.inputs.supplies }, gearPaid };
   const q = repairQueue(base);
@@ -568,7 +569,7 @@ export function partPlan(state, base) {
     const info = repairInfo(state, base, c.item);
     if (info.ok || !info.kind) continue;
     for (const [k, v] of Object.entries(info.inputs.supplies)) if (PART_SUPPLIES.includes(k) && have(base, k) < v) urgent[k] = (urgent[k] || 0) + v;
-    for (const [k, v] of Object.entries(info.inputs.gear)) if (base.armory.filter((it) => it && it.key === k).length < v) urgent[k] = (urgent[k] || 0) + v;
+    for (const [k, v] of Object.entries(info.inputs.gear)) if (countKey(base.armory, k) < v) urgent[k] = (urgent[k] || 0) + v;
   }
   for (const [k, v] of Object.entries(urgent)) targets[k] = (targets[k] || 0) + v;
   const haveOf = {};
