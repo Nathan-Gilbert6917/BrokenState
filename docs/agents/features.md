@@ -244,6 +244,7 @@ Detail: [ui.md](../features/ui.md).
 - **Diary, Ledger charts, history and chronicle**, and the **timelapse viewer** [diary, history, ui/ledger, chronicle, ui/timelapse].
 - **Codex** encyclopedia, first-week guide and help [ui/codex, ui/guide, ui/help] `tools/guidetest.js`. [details](../features/ui.md#first-week-guide)
 - **Command palette (Ctrl+K)**, minimap, watch list, map notes, threat bar [ui/cmdpalette, ui/minimap, watchlist, mapnotes, ui/threatbar].
+- **New-run screen layout**: a full screen over the title's background (not a window over the panels), a sticky header with Start, the settings in three groups, a crew grid that takes the columns the screen fits (one on a phone), the cards' duplicate buttons gone and the trait picker folded [ui/newgame, ui/title, `prototype/newrun.css`] `tools/custombgtest.js` `tools/titletest.js`. [details](../features/ui.md#new-run-screen-layout)
 - **Touch input**: gestures, on-screen stand-ins for keys, battle taps that confirm [ui/touch, ui/responsive, ui/combat]. [details](../features/ui.md#touch-input)
 - **Game controller**: any standard-mapping pad drives menus, the State Map and battles [ui/gamepad, ui/padnav, ui/inputmode] `tools/padnavtest.cjs`. [details](../features/ui.md#game-controller)
 - **The whole game by pad**: the POI map's and crawls' SVG places take the ring, a pointer for charts and the minimap, Pick start on map, the camp-site picker and the base build map by cursor [ui/padnav, main, ui/combat, ui/poimap] `tools/padmaptest.cjs`. [details](../features/ui.md#the-whole-game-by-pad)
