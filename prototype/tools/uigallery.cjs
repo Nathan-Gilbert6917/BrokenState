@@ -76,6 +76,8 @@ const SIDE = { desktop: "a desktop", portrait: "a phone held upright", landscape
         await scene("newrun-traits", "A colonist's trait picker", "New run → Customize → a card's Traits ▸", async () => { await page.evaluate(() => { const b = document.querySelector('[data-action="nr-fold"]'); if (b) b.click(); }); });
         await scene("backgrounds", "Backgrounds… window", "New run → Customize → Backgrounds…: your own backgrounds (skills, traits, kit)", async () => act("bg-open"));
         await esc();
+        await scene("fleet-editor", "A starting vehicle's back", "New run → Customize → Starting vehicles → Edit…: what is loaded in the vehicle's back (without Customize the backs are as rolled)", async () => act("fleet-edit", { i: 0 }));
+        await esc();
         await scene("gear-editor", "Gear… window", "New run → Customize → a card's Gear…: what they wear, hold and carry, placed by hand", async () => act("sg-open", { id: await page.evaluate(() => game.state.survivors[0].id) }));
         await esc();
       }
@@ -83,8 +85,6 @@ const SIDE = { desktop: "a desktop", portrait: "a phone held upright", landscape
       await settle();
       if (!phone) {
         await scene("worldcfg", "World… window", "New run → World…: the run's dials (weather, groups, loot, bases, raids, fuel) and presets", async () => act("wc-open"));
-        await esc();
-        await scene("fleet-editor", "A starting vehicle's back", "New run → Starting vehicles → Edit…: what is loaded in the vehicle's back", async () => act("fleet-edit", { i: 0 }));
         await esc();
         await scene("zombie-look", "Zombie look… window", "New run → Zombie look…: palette, gore and variants of the dead", async () => act("zlook-open"));
         await esc();
