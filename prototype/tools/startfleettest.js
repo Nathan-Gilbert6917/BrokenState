@@ -2,12 +2,13 @@
 // starting vehicle(s): you can set how many, which kind of vehicle and what items are loaded in the vehicle. The items can
 // be any item and material in the game. You can set a point limit for each vehicle and hit random to fill the vehicle
 // with items up to that point limit. Make this how to set vehicles in normal and hardcore mode").
-//   1. the fleet made safe: Normal and Hardcore one vehicle, Custom 1–12 of the motor kinds, each a point limit (0–1000)
-//      and a back (null: as rolled);
+//   1. the fleet made safe: a slot a starting survivor in every mode (the first with the initial vehicle, the rest
+//      empty; any slot any motor kind), each a point limit (0–1000) and a back (null: as rolled);
 //   2. Start with a vehicle off in Normal, Hardcore and Custom: no starting vehicle, no section; Custom's counts (12
 //      survivors, the all-ones corner) build with several vehicles;
 //   3. Custom: several vehicles of the kinds set, all at the hub, each back unloaded into the hub on day 1 (any thing and
-//      any material: wood, stone, foods, rounds past 300); Normal and Hardcore keep START_TRUNK's caps;
+//      any material, foods, rounds past 300); Normal and Hardcore keep START_TRUNK's caps (the materials among them, 2026-10-24);
+//      a vehicle added to an empty slot, one removed (its slot stays), Normal's pickup changed for another kind;
 //   4. Normal and Hardcore with no backs set: the same world as before (the dice untouched); Hardcore's back set goes in
 //      place of the dice's, As rolled brings the dice's back;
 //   5. Random fills a back up to its point limit and within its room (Normal, Hardcore, Custom; the screen's 🎲 Random,
@@ -19,7 +20,7 @@
 import { readFileSync } from "node:fs";
 import { createWorld } from "../src/sim/world.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
-import { START_FLEET, fleetKinds, cleanFleet, defaultFleet, resizeFleet, clampLimit, fleetRoom, fleetText, fleetProblems, fleetName, fleetVehicle } from "../src/sim/startfleet.js";
+import { START_FLEET, fleetKinds, cleanFleet, fitFleet, defaultFleet, resizeFleet, clampLimit, fleetRoom, fleetText, fleetProblems, fleetName, fleetVehicle } from "../src/sim/startfleet.js";
 import { sanitizeStartVehicle, trunkKg, START_TRUNK, clearStartGear } from "../src/sim/startgear.js";
 import { vehiclePoints, pricePerson, bgBacks, bgCarBack, suppliesPoints, loosePoints } from "../src/sim/custompoints.js";
 import { randomTrunk } from "../src/sim/randomkit.js";
@@ -42,8 +43,9 @@ const empty = (V) => !V || (!V.items.length && !Object.keys(V.supplies).length);
 section("1. The fleet made safe");
 {
   check(cleanFleet(null, "normal").length === 1 && cleanFleet(null, "normal")[0].type === "truck" && cleanFleet(null, "normal")[0].limit === START_FLEET.LIMIT && cleanFleet(null, "normal")[0].load === null, "Normal: one pickup, the default limit, as rolled");
-  check(cleanFleet([{ type: "van" }, { type: "suv" }], "normal").length === 1 && cleanFleet([{ type: "van" }], "normal")[0].type === "truck", "Normal: one vehicle, always the pickup");
-  check(cleanFleet([{ type: "van" }, {}], "hardcore").length === 1 && cleanFleet([{ type: "van" }], "hardcore")[0].type === null, "Hardcore: one, its kind as rolled");
+  check(cleanFleet([{ type: "van" }, { type: "suv" }], "normal").map((f) => f.type).join() === "van,suv" && cleanFleet([{ type: "van", empty: true, load: { supplies: { water: 5 } } }], "normal")[0].empty && cleanFleet([{ empty: true, load: { supplies: { water: 5 } } }], "normal")[0].load === null, "Normal: the slots as given, any kind (the pickup may be changed); an empty slot stays empty, with no back");
+  check(cleanFleet([{}, {}], "hardcore").map((f) => f.type).join() === ",truck" && cleanFleet([{ type: "van" }], "hardcore")[0].type === "van", "Hardcore: the car's slot as rolled (null) unless a kind is set, the rest pickups");
+  check(fitFleet([{ type: "van" }], 4, "custom").length === 4 && fitFleet([{ type: "van" }], 4, "custom").slice(1).every((f) => f.empty && f.type === "truck") && fitFleet(Array.from({ length: 6 }, () => ({ type: "suv" })), 2, "normal").length === 2, "fitFleet: a slot a survivor, the ones past the list empty, the ones past the survivors dropped");
   check(cleanFleet(Array.from({ length: 30 }, () => ({})), "custom").length === START_FLEET.COUNT.MAX && cleanFleet([], "custom").length === 1, `Custom: 1–${START_FLEET.COUNT.MAX} vehicles`);
   check(cleanFleet([{ type: "bike" }, { type: "hummer" }, { type: "nonsense" }], "custom").map((f) => f.type).join() === "truck,hummer,truck", "Custom: no bicycles, no unknown kinds (a pickup in their place)");
   check(!fleetKinds().includes("bike") && ["sedan", "suv", "truck", "hummer", "van", "miltruck"].every((k) => fleetKinds().includes(k)), `the kinds: ${fleetKinds().join(", ")}`);
@@ -51,20 +53,21 @@ section("1. The fleet made safe");
   check(resizeFleet([{ type: "van", limit: 10, load: null }], 3).map((f) => `${f.type}:${f.limit}`).join() === "van:10,truck:60,truck:60" && resizeFleet(resizeFleet([], 5), 2).length === 2, "the Vehicles box: the first kept, new ones pickups at the default limit");
   const open = sanitizeStartVehicle({ items: ["ar"], supplies: { wood: 500, stone: 40, f_rice: 6, electronics: 3, food: 200, a_9mm_fmj: 2000, ammo: 50, nonsense: 4 } }, true);
   check(open.supplies.wood === 500 && open.supplies.stone === 40 && open.supplies.f_rice === 6 && open.supplies.electronics === 3 && open.supplies.food === 200 && open.supplies.a_9mm_fmj === 2000 && !("nonsense" in open.supplies) && !("ammo" in open.supplies), `Custom's back: any material, food and rounds past ${START_TRUNK.ROUNDS} (${JSON.stringify(open.supplies)})`);
-  const shut = sanitizeStartVehicle({ supplies: { wood: 500, food: 200, a_9mm_fmj: 2000 } });
-  check(!("wood" in shut.supplies) && shut.supplies.food === START_TRUNK.SUPPLIES.food && shut.supplies.a_9mm_fmj === START_TRUNK.ROUNDS, "Normal and Hardcore keep START_TRUNK's caps (no wood, food 60, rounds 300)");
+  const shut = sanitizeStartVehicle({ supplies: { wood: 5000, stone: 40, f_rice: 6, food: 200, a_9mm_fmj: 2000 } });
+  check(shut.supplies.wood === START_TRUNK.SUPPLIES.wood && shut.supplies.stone === 40 && !("f_rice" in shut.supplies) && shut.supplies.food === START_TRUNK.SUPPLIES.food && shut.supplies.a_9mm_fmj === START_TRUNK.ROUNDS, "Normal and Hardcore keep START_TRUNK's caps (wood 600, stone as set, no foods by kind, food 60, rounds 300)");
   check(sanitizeStartVehicle({ items: Array(40).fill("knife") }, true).items.length === 40 && sanitizeStartVehicle({ items: Array(40).fill("knife") }).items.length === START_TRUNK.ITEMS, "Custom: more than 16 things");
-  check(cleanFleet([{ load: { supplies: { wood: 9 } } }], "custom")[0].load.supplies.wood === 9 && cleanFleet([{ load: { supplies: { wood: 9 } } }], "normal")[0].load.supplies.wood === undefined, "a mode's fleet takes its own kind of back");
+  const back = { load: { supplies: { f_rice: 9, wood: 9 } } };
+  check(cleanFleet([back], "custom")[0].load.supplies.f_rice === 9 && cleanFleet([back], "normal")[0].load.supplies.f_rice === undefined && cleanFleet([back], "normal")[0].load.supplies.wood === 9, "a mode's fleet takes its own kind of back (rice by kind Custom's alone; wood in every mode)");
 }
 
 section("2. Start with a vehicle off, and on");
 {
   for (const [tag, opts] of [["Normal", {}], ["Hardcore", { mode: "hardcore" }], ["Custom", { custom: SMALL }]]) {
     const off = createWorld({ seed: 31, factionCount: 5, ...opts, vehicle: false, fleet: [{ type: "van", limit: 60, load: { items: [], supplies: { water: 20 } } }] });
-    check(off.vehicles.length === 0 && off.fleet.length === 1 && off.fleet[0].vid == null && !fleetVehicle(off, 0) && !fleetText(off), `${tag} off: no starting vehicle (${off.vehicles.length}), nothing to refuse`);
+    check(off.vehicles.length === 0 && off.fleet.length === off.survivors.length && off.fleet.every((f) => f.vid == null) && !fleetVehicle(off, 0) && !fleetText(off), `${tag} off: no starting vehicle (${off.vehicles.length}), a slot a survivor (${off.fleet.length}), nothing to refuse`);
     check(fleetSection(off, UI()) === "" && !/data-action="fleet-/.test(newRunScreen(off, UI({ mode: tag.toLowerCase() }))), `${tag} off: no Starting vehicles section`);
     const on = createWorld({ seed: 31, factionCount: 5, ...opts });
-    check(on.fleet.length === 1 && !!fleetVehicle(on, 0) && /data-action="fleet-edit"/.test(newRunScreen(on, UI({ mode: tag.toLowerCase() }))), `${tag} on: one starting vehicle, the section with Edit…`);
+    check(on.fleet.length === on.survivors.length && !!fleetVehicle(on, 0) && on.fleet.slice(1).every((f) => f.empty && f.vid == null) && /data-action="fleet-edit"/.test(newRunScreen(on, UI({ mode: tag.toLowerCase() }))), `${tag} on: the first slot's vehicle, the rest empty (${on.fleet.length} slots), the section with Edit…`);
   }
   const off = createWorld({ seed: 31, factionCount: 5, custom: SMALL, vehicle: false, fleet: [{ load: { supplies: { wood: 300 } } }] });
   const none = createWorld({ seed: 31, factionCount: 5, custom: SMALL, vehicle: false });
@@ -87,7 +90,7 @@ section("3. Custom: several vehicles, any thing and material");
   const atHub = st.vehicles.filter((v) => v.loc.kind === "base" && v.loc.baseId === hub(st).id);
   check(atHub.map((v) => v.type).join() === "van,hummer,miltruck", `the kinds set, all at the hub (${atHub.map((v) => v.type).join()})`);
   check(atHub.every((v) => v.fuel <= VEHICLE_TYPES[v.type].tank && v.fuel === Math.min(START_FLEET.FUEL, VEHICLE_TYPES[v.type].tank) && v.condition === START_FLEET.CONDITION), "each with the pickup's tank and condition");
-  check(st.fleet.map((f) => f.vid).join() === atHub.map((v) => v.id).join(), "each fleet entry knows its vehicle");
+  check(st.fleet.length === SMALL.people && st.fleet[3].empty && st.fleet[3].vid == null && st.fleet.filter((f) => f.vid != null).map((f) => f.vid).join() === atHub.map((v) => v.id).join(), "each filled slot knows its vehicle; the fourth slot (a slot a survivor) empty");
   const H = hub(st).stock, P = hub(plain).stock;
   check(H.wood - P.wood === 400 && H.stone - P.stone === 60 && (H.f_rice || 0) - (P.f_rice || 0) === 5 && (H.electronics || 0) - (P.electronics || 0) === 2 && (H.metalsheet || 0) - (P.metalsheet || 0) === 30 && (H.carparts || 0) - (P.carparts || 0) === 10, "every back unloaded into the hub's stores on day 1 (wood, stone, rice, electronics, metal sheets, car parts)");
   check((H.a_9mm_fmj || 0) - (P.a_9mm_fmj || 0) === 400, "and its 400 rounds (past Normal's 300)");
@@ -109,10 +112,15 @@ section("3. Custom: several vehicles, any thing and material");
   check(ui.fleet[1].load.items.reduce((a, e) => a + (e.n || 1), 0) === 30, "Custom: more than 16 things in a back");
   // Kinds and the count rebuild.
   check(SG_CHANGE["fleet-kind"](st, ui, el("sedan", { i: "1" })) === "fleet" && ui.fleet[1].type === "sedan" && SG_CHANGE["fleet-kind"](st, ui, el("bike", { i: "1" })) === false, "a kind: the world again; no bicycles");
-  check(SG_CHANGE["fleet-count"](st, ui, el(5)) === "fleet" && ui.fleet.length === 5 && ui.fleet[1].type === "sedan", "Vehicles 5: the first kept, two more");
+  // A slot a starting survivor (SMALL: 4): the fourth stands empty until a kind goes in it.
+  check(ui.fleet.length === 4 && ui.fleet[3].empty && SG_CHANGE["fleet-kind"](st, ui, el("truck", { i: "3" })) === "fleet" && !ui.fleet[3].empty && ui.fleet[3].type === "truck" && ui.fleet[1].type === "sedan", "the fourth slot (one a survivor): a pickup put in it, the sedan kept");
   const re = createWorld({ seed: 23, factionCount: 5, custom: SMALL, fleet: ui.fleet });
-  check(re.vehicles.filter((v) => v.loc.kind === "base").map((v) => v.type).join() === "van,sedan,miltruck,truck,truck", "built again with them");
-  check(SG_CHANGE["fleet-kind"](createWorld({ seed: 23, factionCount: 5 }), UI(), el("van", { i: "0" })) === false, "Normal: the pickup's kind is fixed");
+  check(re.vehicles.filter((v) => v.loc.kind === "base").map((v) => v.type).join() === "van,sedan,miltruck,truck", "built again with them");
+  check(SG_ACTIONS["fleet-remove"](st, ui, { i: "3" }) === "fleet" && ui.fleet[3].empty && createWorld({ seed: 23, factionCount: 5, custom: SMALL, fleet: ui.fleet }).vehicles.filter((v) => v.loc.kind === "base").length === 3, "Remove: the slot empty again, three vehicles");
+  const nu = UI(), nw = createWorld({ seed: 23, factionCount: 5 });
+  check(SG_CHANGE["fleet-kind"](nw, nu, el("van", { i: "0" })) === "fleet" && nu.fleet[0].type === "van" && SG_CHANGE["fleet-kind"](nw, nu, el("bike", { i: "0" })) === false, "Normal: the pickup's kind may be changed too (the user's request: 'you can change it'); no bicycles");
+  const nv = createWorld({ seed: 23, factionCount: 5, fleet: nu.fleet });
+  check(nv.vehicles.filter((v) => v.loc.kind === "base" && v.loc.baseId === hub(nv).id).map((v) => v.type).join() === "van" && fleetName(nv, 0) === "Vehicle 1 (Work van)", `Normal: a van at the hub in its place (${fleetName(nv, 0)})`);
 }
 
 section("4. Normal and Hardcore: as before with no back set");
@@ -167,6 +175,7 @@ section("5. Random: up to the point limit, within the room");
     const ui = UI({ mode: opts.custom ? "custom" : opts.mode || "normal" });
     let ok = true;
     for (let k = 0; k < 4; k++) for (let i = 0; i < st.fleet.length; i++) {
+      if (st.fleet[i].empty) { if (SG_ACTIONS["fleet-rand"](st, ui, { i: String(i) }) !== false) ok = false; continue; } // an empty slot: nothing to fill
       if (SG_ACTIONS["fleet-rand"](st, ui, { i: String(i) }) !== "fleet") ok = false;
       const f = ui.fleet[i];
       if (!f.load || empty(f.load) || vehiclePoints(f.load) > f.limit || trunkKg(f.load) > fleetRoom(st, i) + 1e-9) ok = false;
@@ -181,10 +190,10 @@ section("5. Random: up to the point limit, within the room");
     let ok = true, overs = 0;
     for (let k = 0; k < 3; k++) {
       st = randomizeEverything(st, u, (crew) => mk(crew, { fleet: u.fleet }));
-      st.fleet.forEach((f, i) => { if (!f.load || empty(f.load) || vehiclePoints(f.load) > f.limit || trunkKg(f.load) > fleetRoom(st, i) + 1) ok = false; });
+      st.fleet.forEach((f, i) => { if (f.empty) { if (f.load) ok = false; return; } if (!f.load || empty(f.load) || vehiclePoints(f.load) > f.limit || trunkKg(f.load) > fleetRoom(st, i) + 1) ok = false; });
       if (st.survivors.some((s) => pricePerson(st, s).over > 0)) overs++;
     }
-    check(ok && u.fleet.length === st.fleet.length, `${tag}: Randomize everything fills every vehicle's back to its own limit (${st.fleet.map((f) => `${vehiclePoints(f.load)}/${f.limit}`).join(", ")})`);
+    check(ok && u.fleet.length === st.fleet.length && st.fleet.some((f) => !f.empty), `${tag}: Randomize everything fills every vehicle's back to its own limit, the empty slots left so (${st.fleet.map((f) => (f.empty ? "empty" : `${vehiclePoints(f.load)}/${f.limit}`)).join(", ")})`);
     check(!overs, `${tag}: nobody over their points`);
   }
 }
@@ -199,7 +208,7 @@ section("6. On nobody's points; Start refused over a limit");
   check(!fleetText(b), `within its limit (${vehiclePoints(b.fleet[0].load)} of 60): Start allowed`);
   const c = mk([{ limit: 20, load: { items: ["ar"], supplies: { food: 30, meds: 10 } } }]);
   const t = fleetText(c);
-  check(fleetProblems(c).length === 1 && /The hub's pickup truck's back costs \d+ points, over its limit of 20/.test(t), `over its limit: refused, the vehicle named ("${t}")`);
+  check(fleetProblems(c).length === 1 && /Vehicle 1 \(Pickup truck\)'s back costs \d+ points, over its limit of 20/.test(t), `over its limit: refused, the vehicle named ("${t}")`);
   const h = createWorld({ seed: 42, factionCount: 5, mode: "hardcore", fleet: [{ limit: 1000, load: { items: [], supplies: { water: 60, fuel: 40, scrap: 40, parts: 20 } } }] });
   const room = fleetRoom(h, 0), kg = trunkKg(h.fleet[0].load);
   check(kg <= room || /more than its room/.test(fleetText(h)), `Hardcore: over its room refused (${kg} / ${room} kg)`);
@@ -226,7 +235,7 @@ section("7. The screen");
 {
   const st = createWorld({ seed: 42, factionCount: 5, fleet: [{ limit: 60, load: { items: [], supplies: { water: 10 } } }] });
   const html = newRunScreen(st, UI());
-  check(/Starting vehicles/.test(html) && /data-action="fleet-limit" data-i="0" value="60"/.test(html) && /data-action="fleet-rand"/.test(html) && /data-action="fleet-edit"/.test(html) && /data-action="fleet-empty"/.test(html) && /The hub's pickup truck/.test(html), "Normal: the pickup's row: Point limit, 🎲 Random, Edit…, Empty");
+  check(/Starting vehicles/.test(html) && /data-action="fleet-limit" data-i="0" value="60"/.test(html) && /data-action="fleet-rand"/.test(html) && /data-action="fleet-edit"/.test(html) && /data-action="fleet-empty"/.test(html) && /Vehicle 1 <select data-action="fleet-kind" data-i="0"/.test(html) && /data-action="fleet-remove" data-i="0"/.test(html) && new RegExp(`>1 / ${st.fleet.length} slots<`).test(html) && !/fleet-count/.test(html), `Normal: the pickup's row: its kind, Point limit, 🎲 Random, Edit…, Empty, ✕ Remove; 1 of ${st.fleet.length} slots (a slot a survivor, no Vehicles box)`);
   check(/Back <b>\d+<\/b> \/ 60 pts/.test(html) && /\d+(\.\d)? \/ 650 kg/.test(html), "points used against the limit and kg against the room");
   const tips = (html.match(/data-action="fleet-[a-z]+"[^>]*>/g) || []).every((m) => /data-tip="[^"]{20,}"/.test(m)) || (html.match(/<label data-tip="[^"]+">Point limit/) || []).length === 1;
   check(tips, "tooltips on the controls");
@@ -246,10 +255,10 @@ section("7. The screen");
   const hc = createWorld({ seed: 42, factionCount: 5, mode: "hardcore" });
   const hh = newRunScreen(hc, UI({ mode: "hardcore" }));
   check(/data-action="fleet-dice"/.test(hh) && new RegExp(`${fleetName(hc, 0).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`).test(hh) && /As rolled: /.test(hh), `Hardcore: the car's row (${fleetName(hc, 0)}), as rolled, with As rolled`);
-  // Custom: the Vehicles box and a kind each.
+  // Custom: a slot a survivor, a kind select on each (the filled ones: the kind; the empty ones: a vehicle to add).
   const cs = createWorld({ seed: 42, factionCount: 5, custom: SMALL, fleet: resizeFleet([], 2) });
   const ch = newRunScreen(cs, UI({ mode: "custom" }));
-  check(/data-action="fleet-count" value="2"/.test(ch) && (ch.match(/data-action="fleet-kind"/g) || []).length === 2 && !/bike/.test((ch.match(/data-action="fleet-kind"[\s\S]*?<\/select>/) || [""])[0]), "Custom: Vehicles 2, a kind select each (no bicycles)");
+  check(/>2 \/ 4 slots</.test(ch) && (ch.match(/data-action="fleet-kind"/g) || []).length === 4 && (ch.match(/data-action="fleet-rand"/g) || []).length === 2 && !/bike/.test((ch.match(/data-action="fleet-kind"[\s\S]*?<\/select>/) || [""])[0]), "Custom: 2 of 4 slots filled, a kind select on every slot, Random on the filled ones alone (no bicycles)");
   // Each mode its own fleet.
   const u = { mode: "custom", startPeople: 6, pointsMax: 90, startVehicle: true, fleet: resizeFleet([], 3), modeSets: { normal: { fleet: [{ limit: 25 }] }, hardcore: {}, custom: {} } };
   stashModeSet(u);

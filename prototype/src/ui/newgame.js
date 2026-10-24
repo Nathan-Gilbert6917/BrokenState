@@ -11,14 +11,13 @@ import { HC_START, backgroundInfo, countWord } from "../sim/hardcore-start.js"; 
 import { customLibrary } from "./backgrounds.js";
 import { isCustomBg } from "../sim/custombg.js"; // custom backgrounds (sim/custombg.js), kept in this browser
 import { FAMILY } from "../sim/family.js"; // the Children box shows only while children are on
-import { sanitizeStartGear, hasPicks, trunkKg } from "../sim/startgear.js"; // starting gear picked under Customize
+import { sanitizeStartGear, hasPicks } from "../sim/startgear.js"; // starting gear picked under Customize
 import { gearRow, pointsBar, fleetSection, uiFleet } from "./startgear.js"; // its Gear… button, load and kit points, and the points bar, on the crew card; the Starting vehicles
-import { cleanFleet, fleetRoom, openLoads, ridesIn } from "../sim/startfleet.js"; // the starting vehicles: each its point limit and back (2026-10-24)
+import { cleanFleet, fleetRoom, openLoads } from "../sim/startfleet.js"; // the starting vehicles: each its point limit and back (2026-10-24)
 import { gunCals } from "../sim/ammo.js"; // a random back's rounds: the crew's guns' calibres
 import { traitPickerHtml, traitBlock, traitChips, traitWords } from "./traitpick.js"; // Customize: the traits, good and bad, none that clash; the chips
-import { randomBuild, randomEverything, randomTraits, randomKit, randomTrunk, kitBudget, kitKeys } from "../sim/randomkit.js"; // Customize: a whole random colonist within the points; the crew and the vehicles' backs
+import { randomBuild, randomEverything, randomTraits, randomKit, randomTrunk, kitBudget } from "../sim/randomkit.js"; // Customize: a whole random colonist within the points; the crew and the vehicles' backs
 import { CUSTOM_POINTS, pricePerson, pointsMax, maxFor, nextLevelCost, skillCost, clampMax } from "../sim/custompoints.js";
-import { wornLoad } from "../sim/load.js"; // Customize: everything costs points
 import { traitLabel, traitTier, setTier, tidyTiers, tierCount, cleanTier } from "../sim/traits.js";
 import {
   LOOK_OPTIONS, LOOK_COLORS, ensureAppearance, randomAppearance, freshRng, randomName, randomSkills, fitSkills, skillTotal, SKILL_MAX,
@@ -507,27 +506,29 @@ export function randomizeAllCrew(state, ui, rebuild) {
 
 // Randomize everything (Customize only): Randomize all's names, looks and builds (sim/randomkit.js randomEverything),
 // and every starting vehicle's back emptied and filled again up to its own point limit (sim/startfleet.js; the screen's
-// ui.fleet), rounds for the crew's new guns. In Hardcore the riders' kit rides in the car, so its room is reckoned with
-// the new kits in place of the old. The world is built again with them. Returns the state to keep (as is outside
-// Customize).
+// ui.fleet), rounds for the crew's new guns. In Hardcore the riders' kit rides in the car, so its room is known only once
+// the world is built again with their new kits on them (what is worn, the packs and the rounds weigh as worn, not as the
+// kit's list: an estimate from it left a back a kilo or two over the room, and Start refused what this had filled): the
+// world is built with the new crew first, the backs filled in the room there is on it, then built again with them.
+// Returns the state to keep (as is outside Customize).
 /** @param {any} state @param {any} ui @param {(crew: any[], crewRoll: any, pickRoll: any) => any} rebuild */
 export function randomizeEverything(state, ui, rebuild) {
   if (ui.started || !freeEdit(ui)) return state;
   const rng = freshRng();
-  const hard = isHardcore(state), F = uiFleet(state, ui);
-  const worn = state.survivors.reduce((a, s) => a + wornLoad(s), 0);
+  const F = uiFleet(state, ui);
   state.survivors.forEach((s) => reroll(state, ui, s, ["name", "look"]));
   randomEverything(state, rng);
   state.survivors.forEach((s) => { s.startPoints = true; s.startCustom = true; });
   const guns = state.survivors.map((s) => s.startGear.slots.weapon).filter(Boolean).map((key) => ({ key }));
-  const kitKg = state.survivors.reduce((a, s) => a + trunkKg({ items: kitKeys(s.startGear) }), 0);
+  const next = rebuild(crewSnapshot(state), ui.crewRoll ?? null, ui.pickRoll); // the new crew with their kits on them
+  let filled = false;
   F.forEach((f, i) => {
-    if (!state.fleet || !state.fleet[i] || state.fleet[i].vid == null) return; // Start with a vehicle off: none to fill
-    const room = Math.max(0, fleetRoom(state, i) + (hard && ridesIn(state, i) ? worn - kitKg : 0)); // the riders ride in the first vehicle
-    f.load = randomTrunk(f.limit, room, rng, gunCals([], guns), { fill: true, open: openLoads(state) });
-    state.fleet[i].load = f.load;
+    if (!next.fleet || !next.fleet[i] || next.fleet[i].vid == null) return; // Start with a vehicle off, an empty slot: none to fill
+    f.load = randomTrunk(f.limit, fleetRoom(next, i), rng, gunCals([], guns), { fill: true, open: openLoads(next) }); // startfleet.js: the riders reckoned
+    next.fleet[i].load = f.load;
+    filled = true;
   });
-  return rebuild(crewSnapshot(state), ui.crewRoll ?? null, ui.pickRoll);
+  return filled ? rebuild(crewSnapshot(next), ui.crewRoll ?? null, ui.pickRoll) : next;
 }
 
 // Random run (2026-10-16, user request): every setting on the new-run screen rolled at once (main.js nr-random builds the
