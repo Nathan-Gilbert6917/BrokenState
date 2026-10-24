@@ -59,7 +59,8 @@ for (const [a, tab] of [["title-load", "game"], ["title-settings", "options"], [
 }
 TITLE_ACTIONS["title-quit"]({}, {}, {});
 check(calls.includes("quit"), "Quit quits");
-check(titleCovers({ title: true }) && !titleCovers({ title: false }), "the title covers the map only while it is up");
+check(titleCovers({ title: true }) && !titleCovers({ title: false, started: true }) && !titleCovers({ title: false, started: false, nrMap: true }), "the title covers the map only while it is up (not in a game, nor under View map)");
+check(titleCovers({ title: false, started: false, nrMap: false }), "its background stays under the new-run screen (a full screen)");
 
 // ---------- the backgrounds and the hooks in the other files ----------
 const read = (f) => readFileSync(new URL(`../src/${f}`, import.meta.url), "utf8");

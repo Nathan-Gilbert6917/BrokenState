@@ -617,6 +617,8 @@ section("New-run screen: world size and AI groups (sim/worldsize.js)");
   const { newRunScreen, LOOK_ACTIONS, LOOK_CHANGE_ACTIONS } = await import("../src/ui/newgame.js");
   Object.assign(CLICK, LOOK_ACTIONS); // main.js registers the new-run screen's own handlers
   Object.assign(CHANGE, LOOK_CHANGE_ACTIONS);
+  // Its header's ◀ (title-back, ui/title.js) and ⚙ Menu (set-open, ui/settings.js): main.js registers both modules' handlers too.
+  Object.assign(CLICK, (await import("../src/ui/title.js")).TITLE_ACTIONS, (await import("../src/ui/settings.js")).SETTINGS_ACTIONS);
   const { BG_ACTIONS, BG_CHANGE, backgroundEditor, setCustomLibrary, presetToCustom } = await import("../src/ui/backgrounds.js"); // custom backgrounds window
   Object.assign(CLICK, BG_ACTIONS);
   Object.assign(CHANGE, BG_CHANGE);

@@ -171,7 +171,11 @@ section("The new-run screen: Customize, and Ironman locks it");
   ui.freeEdit = true;
   html = newRunScreen(st, ui);
   check((html.match(/data-action="nr-bg"/g) || []).length === 3 && /<optgroup label="Custom"><option value="c_1"/.test(html) && /Dice \(/.test(html), "Customize on: a background select each (the dice, the presets, the custom ones)");
-  check((html.match(/data-action="nr-trait"/g) || []).length === 3 * Object.keys(TRAITS).length, "and a trait picker each");
+  check(!/data-action="nr-trait"/.test(html) && (html.match(/data-action="nr-fold" data-id="\d+" data-k="traits"/g) || []).length === 3, "and a folded trait picker each (Traits ▸ on the card)");
+  ui.nrOpen = Object.fromEntries(st.survivors.map((s) => [`${s.id}:traits`, true])); // Traits ▸ pressed on every card (newgame.js nr-fold)
+  html = newRunScreen(st, ui);
+  check((html.match(/data-action="nr-trait"/g) || []).length === 3 * Object.keys(TRAITS).length, "unfolded: a trait picker each");
+  delete ui.nrOpen;
   // Skills past the budget.
   const s = st.survivors[0];
   const k = SKILLS.find((x) => s.skills[x] < 15);

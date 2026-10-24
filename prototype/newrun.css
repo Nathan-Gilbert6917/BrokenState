@@ -1,0 +1,92 @@
+/* The new-run screen (src/ui/newgame.js newRunScreen, crewCard): a full screen over the title's animated background,
+   not a window over the game's panels (the user's request 2026-10-24: "the starting window to select and create the
+   survivors should be full screen", "so many menus are crowded or not responsive", "the survivor screen on a phone in
+   portrait was still a 2xY grid and in landscape the top and bottom were cut off"). The box (.nrscreen) fills #modal,
+   keeps its border and grips off, and scrolls as a whole (main.js refreshModal keeps a box's scroll through a redraw),
+   with the header (◀ the title, the name, ⚙ Menu, 🎲 Random run, 🗺 View map, ▶ Start, the last notice) stuck to the
+   top. The settings sit in three labelled groups, the crew cards in a grid that takes the columns the screen has room
+   for: three on a wide desktop, two on a normal one or a phone on its side, one on a phone held upright.
+   Phone and tablet rules sit inside the same media queries as responsive.css (a desktop window with a mouse matches
+   none): phone (max-width: 759px); a short touch screen (pointer: coarse) and (min-width: 760px) and (max-height: 500px);
+   tablet (pointer: coarse) and (min-width: 760px). */
+
+/* ---------- the screen in #modal ---------- */
+/* #modal's own dimming goes (the box dims the scene itself); the window frame (ui/layout.js windowFrame) is stretched
+   to the whole of #modal whatever size or place ui/windows.js remembers for it, its grips hidden. */
+#modal:has(> .win > .box.nrscreen), #modal:has(> .box.nrscreen) { background: transparent; align-items: stretch; justify-content: stretch; }
+#modal .win:has(> .box.nrscreen) { position: relative !important; left: auto !important; top: auto !important; width: 100% !important; height: 100% !important; max-width: none !important; max-height: none !important; margin: 0; }
+#modal .win:has(> .box.nrscreen) .wgrip { display: none; }
+#modal .win > .box.nrscreen, #modal > .box.nrscreen { width: 100% !important; height: 100% !important; max-width: none !important; max-height: 100dvh !important; margin: 0; padding: 0; border: none; border-radius: 0; box-shadow: none; background: rgba(10, 11, 14, 0.8); overflow: auto; overscroll-behavior: contain; }
+/* The phone's ✕ (ui/responsive.js: Esc) would sit on Start; Esc here opens the Menu, which has its own button. */
+body:has(#modal:not(.hidden) .box.nrscreen) #rs-close { display: none; }
+
+/* ---------- the header ---------- */
+#modal .win > .box.nrscreen > .nrhead, #modal > .box.nrscreen > .nrhead { position: sticky; top: 0; z-index: 4; padding-right: 0; background: var(--panel); border-bottom: 1px solid var(--line); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35); } /* opaque: what scrolls under it must not show through */
+.nrh-row { display: flex; align-items: center; gap: 0.5rem; max-width: 112rem; margin: 0 auto; padding: 0.5rem 1rem; }
+.nrh1 { font-size: 1.25rem; font-weight: 700; letter-spacing: 0.02em; white-space: nowrap; }
+.nrh-sp { flex: 1 1 0; }
+.nr-ib { display: inline-flex; align-items: center; gap: 0.35rem; white-space: nowrap; }
+.nrh-row button.primary { font-weight: 600; white-space: nowrap; }
+.nrh-msg { max-width: 112rem; margin: 0 auto; padding: 0 1rem 0.45rem; color: #ffd166; } /* the last notice or refusal, in the warn colour: a notice is not an error */
+
+/* ---------- the body: the story line, the groups, the crew ---------- */
+.nrbody { max-width: 112rem; margin: 0 auto; padding: 0.6rem 1rem 1.2rem; }
+.nrintro { margin: 0.1rem 0 0.6rem; line-height: 1.5; }
+.nrintro .nr-why { padding: 0 0.45rem; margin-left: 0.25rem; line-height: 1.3; vertical-align: baseline; }
+.nrgroups { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.6rem; margin-bottom: 0.8rem; }
+.nrgroup { min-width: 0; padding: 0.45rem 0.7rem 0.6rem; background: rgba(35, 39, 46, 0.78); border: 1px solid var(--line); border-radius: 8px; }
+.nrg-crew { grid-column: 1 / -1; }
+.nrgroup .nrg-h { margin: 0 0 0.4rem; font-size: 0.78rem; letter-spacing: 0.08em; }
+.nrg-b { gap: 0.35rem 0.9rem; }
+.nrg-btns { margin-top: 0.45rem; gap: 0.35rem; }
+.nrg-note { margin-top: 0.35rem; }
+.nrgroup label { display: inline-flex; align-items: center; gap: 0.3rem; white-space: nowrap; }
+.nrgroup .nrfleet { margin-top: 0.5rem; padding-top: 0.4rem; border-top: 1px solid var(--line); }
+.nrgroup .nrveh { margin-top: 0.3rem; }
+
+/* The crew: as many columns as 24rem cards fit; a label on a card is a plain label, not .crew's pick box. */
+.crew.nrcrew { grid-template-columns: repeat(auto-fill, minmax(24rem, 1fr)); gap: 0.5rem; }
+.nrcrew label { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0; background: none; border: none; cursor: default; white-space: nowrap; }
+.nrmain { flex: 1 1 0; min-width: 0; }
+.nrname { flex-wrap: nowrap; }
+.nrname input { flex: 1 1 6rem; min-width: 0; }
+.nrlead { margin-top: 0.3rem; flex-wrap: nowrap; }
+.nrheld { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nrchips { margin-top: 0.25rem; }
+.nrcust { margin-top: 0.35rem; gap: 0.3rem 0.8rem; }
+.nrskhead { margin-top: 0.35rem; }
+/* Customize's toolbar: Gear… with the load and the kit's points (ui/startgear.js gearRow, its row dissolved into this
+   one), Traits ▸ (the picker unfolds under the skills), Start from the dice, Clear. */
+.nrtools { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem 0.45rem; margin-top: 0.4rem; }
+.nrtools > .row { display: contents; }
+.nrcard .tp { margin-top: 0.35rem; padding: 0.35rem 0.45rem; background: #15171b; border: 1px solid var(--line); border-radius: 8px; }
+
+/* ================= compact: phones (upright or on their side) ================= */
+@media (max-width: 759px), (pointer: coarse) and (min-width: 760px) and (max-height: 500px) {
+  /* The header in one row: the buttons by their icons (the words are their hovers: a long press), Start in full. */
+  .nrh-row { gap: 0.35rem; padding: 0.4rem 0.6rem; }
+  .nrh-row .nr-lb { display: none; }
+  .nrh-row .nr-ib { min-width: 2.75rem; padding: 0 0.5rem; justify-content: center; font-size: 1.1rem; }
+  .nrh1 { font-size: 1.1rem; }
+  .nrh-msg { padding: 0 0.6rem 0.4rem; }
+  .nrbody { padding: 0.5rem 0.6rem 1rem; }
+  .nrgroup { padding: 0.4rem 0.55rem 0.5rem; }
+  .nrg-b { gap: 0.4rem 0.7rem; }
+  /* The groups' buttons share the rows out evenly (two to a row where two fit). */
+  .nrg-btns button, .nrg-crew > .nrg-b > button { flex: 1 1 auto; }
+  /* A skill's − and + a little smaller than a phone's other buttons (responsive.css): twelve rows of them a card. */
+  #modal .nrskill button.mini { min-height: 2.1rem; min-width: 2.1rem; padding: 0 0.4rem; }
+}
+
+/* ================= phone held upright ================= */
+@media (max-width: 759px) {
+  .nrgroups { grid-template-columns: minmax(0, 1fr); gap: 0.5rem; }
+  .crew.nrcrew { grid-template-columns: minmax(0, 1fr); }
+  .nrgroup label { white-space: normal; }
+}
+
+/* ================= tablet: the desktop arrangement for a finger ================= */
+@media (pointer: coarse) and (min-width: 760px) {
+  #modal .nrskill button.mini { min-height: 2.1rem; min-width: 2.1rem; }
+  .nrh-row button, .nrg-b button, .nrg-btns button { min-height: 2.6rem; }
+}

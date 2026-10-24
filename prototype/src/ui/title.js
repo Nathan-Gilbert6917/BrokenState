@@ -28,8 +28,12 @@ export function showTitle(ui) {
   show = { cur: 0, next: -1, at: 0, fade: 0 };
   scenes.length = 0;
 }
-// The title covers the whole window, the map included (main.js does not draw the map behind it).
-export const titleCovers = (ui) => !!ui.title;
+// The new-run screen (ui/newgame.js) is up: a full screen over this background (the user's request 2026-10-24: not a
+// window over the game's panels), from New game until Start, with the logo and the menu hidden; View map puts it aside.
+export const newRunUp = (ui) => !ui.title && !ui.started && !ui.nrMap;
+// The title's background covers the whole window, the map included (main.js does not draw the map behind it): while
+// the title is up, and under the new-run screen.
+export const titleCovers = (ui) => !!ui.title || newRunUp(ui);
 
 // ---------- the menu ----------
 export function titleMenuHTML(ui, api = API) {
@@ -48,6 +52,7 @@ export function titleMenuHTML(ui, api = API) {
 // main.js registers them: fn(state, ui, data, api).
 export const TITLE_ACTIONS = {
   "title-new": (state, ui) => { ui.title = false; },
+  "title-back": (state, ui) => { if (!ui.started) ui.title = true; }, // ◀ on the new-run screen: the title again, its background running on; the setup waits under New game
   "title-load": (state, ui) => openSettings(ui, "game"),
   "title-settings": (state, ui) => openSettings(ui, "options"),
   "title-help": (state, ui) => openSettings(ui, "help"),
@@ -83,22 +88,25 @@ function build() {
   bgCanvas = root.querySelector("#titlebg");
 }
 
-// Called on every refresh (main.js): shows or hides the screen and brings the menu up to date.
+// Called on every refresh (main.js): shows or hides the screen and brings the menu up to date. Under the new-run screen
+// only the background shows (covered), the scene of the moment running on from the title.
 export function syncTitle(state, ui) {
   if (typeof document === "undefined") return;
-  if (!root) { if (!ui.title) return; build(); }
-  const on = !!ui.title;
+  const on = titleCovers(ui);
+  if (!root) { if (!on) return; build(); }
   root.classList.toggle("hidden", !on);
-  root.classList.toggle("covered", on && !!(ui.settings || ui.zombieLook)); // the menu opens over the title: only the background shows
+  root.classList.toggle("covered", on && (!ui.title || !!(ui.settings || ui.zombieLook))); // the menu opens over the title, or the new-run screen is up: only the background shows
   if (!on) { scenes.length = 0; sceneSize = ""; return; }
+  if (!ui.title) return; // the new-run screen: the menu waits as it was
   const menu = titleMenuHTML(ui);
   if (menu !== menuShown) { root.querySelector("#tt-menu").innerHTML = menu; menuShown = menu; }
   if (!logoDone) logoDone = decorateLogo(root.querySelector("#tt-logo"));
 }
 
-// Every frame while the title is up (main.js step): the background of the moment, and the next one fading in over it.
+// Every frame while the title or the new-run screen is up (main.js step): the background of the moment, and the next
+// one fading in over it.
 export function titleFrame(state, ui, now) {
-  if (!root || !ui.title) return;
+  if (!root || !titleCovers(ui)) return;
   const dt = Math.min(0.1, lastFrame ? (now - lastFrame) / 1000 : 0.016);
   lastFrame = now;
   const t = now / 1000;
