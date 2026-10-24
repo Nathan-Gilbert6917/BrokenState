@@ -590,9 +590,9 @@ const EVENTS = [
         text: `A pickup and a box van sit nose-down in the ditch with a trailer on its side behind them, doors open, the road round them bright with brass. The escort made a stand here and lost it: the dead are thick on the verge, and some of them wear the drivers' clothes. ${whose[0].toUpperCase()}${whose.slice(1)}. Whatever was not carried off is still in the trailer.`,
         choices: [
           {
-            label: "Take what is left (3 hours)", hint: `${hint(st, p, "scavenging", CONVOY.DC)} for the cargo, else whoever got here first took most of it; ${pct(risk)} the dead that overran it are still about`,
+            label: "Take what is left (1 hour)", hint: `${hint(st, p, "scavenging", CONVOY.DC)} for the cargo, else whoever got here first took most of it; ${pct(risk)} the dead that overran it are still about`,
             resolve: (s) => {
-              delay(p, 3);
+              delay(p, 1);
               const hurtTxt = finished(s);
               if (!s.parties.includes(p)) return hurtTxt.trim();
               const ok = check(s, p, "scavenging", CONVOY.DC).ok;
@@ -611,9 +611,9 @@ const EVENTS = [
             },
           },
           {
-            label: "Siphon the tanks and go (1 hour)", hint: `${CONVOY.SIPHON[0]} to ${CONVOY.SIPHON[1]} fuel; ${pct(risk / 2)} the dead that overran it are still about`,
+            label: "Siphon the tanks and go (30 minutes)", hint: `${CONVOY.SIPHON[0]} to ${CONVOY.SIPHON[1]} fuel; ${pct(risk / 2)} the dead that overran it are still about`,
             resolve: (s) => {
-              delay(p, 1);
+              delay(p, 0.5);
               const hurtTxt = s.rng.chance(risk / 2) ? ` The dead that overran it were still about. ${injureRandom(s, p, 8, 22, "siphoning an overrun convoy")}` : "";
               if (!s.parties.includes(p)) return hurtTxt.trim();
               return `A hose and a can, quick and quiet: ${addCargo(s, p, "fuel", s.rng.int(CONVOY.SIPHON[0], CONVOY.SIPHON[1]))}.${hurtTxt}`;
