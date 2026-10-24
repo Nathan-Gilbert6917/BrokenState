@@ -3382,8 +3382,9 @@ export function planCrafts(state, base) {
   // The basic tools (toolreqs.js BASIC_KINDS: a hammer, a saw, a shovel, an axe): one nothing here covers is made from
   // scrap (a makeshift one) before the rest, or the builds and recipes that need it never go up. Not at a camp: its
   // essentials need none, and its scrap is for the step up into a shelter.
+  // The scrap held for a broken well or pump (waterPlan hold) is left alone, as the filters leave it.
   const tw = isCamp(base) ? null : basicToolWanted(state, base);
-  if (tw && canCraft(state, base, tw.recipe).ok) {
+  if (tw && canCraft(state, base, tw.recipe).ok && (st.scrap || 0) - (CRAFTS[tw.recipe].in.scrap || 0) >= waterPlan(state, base).hold.scrap) {
     queueCraft(state, base, tw.recipe);
     q.unshift(q.pop()); // first in the queue: the crafters work the first job they can (crafting.js craftingHour)
     gov(state).stats.crafts++;
