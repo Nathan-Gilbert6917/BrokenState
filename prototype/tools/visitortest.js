@@ -537,7 +537,10 @@ section("Merchants: goods, prices, the trade window, groups, the radio");
   check(m.phase === "travel" && m.goal.kind !== "base", "after a day they move on");
   // With a group.
   const f = st.factions.find((x) => x.alive && x.type !== "raider" && x.type !== "zealot");
-  f.stock.meds = 0; setFood(f, f.pop * 20);
+  // Out of meds, with food and water to spare: a caravan sells a group the two things it wants most (tradeWithGroup),
+  // so a thirsty group buys the caravan's spare water first (this one's dice moved with the 2026-10-24 manuals: it has
+  // water to spare now).
+  f.stock.meds = 0; setFood(f, f.pop * 20); f.stock.water = f.pop * 10;
   const m2 = V.spawnVisitor(st, "merchants", { spec: "general" });
   const meds0 = m2.stock.meds, lack0 = ["food", "water", "scrap", "jars"].map((k) => m2.stock[k] || 0);
   const traded = V.tradeWithGroup(st, m2, f);

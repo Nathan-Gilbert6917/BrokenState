@@ -1239,9 +1239,6 @@ export function canBuild(state, base, type, opts = {}) {
   // The power grid (electric.js): a pump goes down a well, a charger needs a wire to charge.
   if (type === "elec_pump" && countAll(base, "elec_pump") + queued >= countAll(base, "well")) return { ok: false, reason: countAll(base, "well") ? "One pump a well: build another well first" : "Needs a well here first" };
   if (type === "fence_charger" && !countAll(base, "barbed_wire") && !countAll(base, "razor_wire")) return { ok: false, reason: "Needs a barbed wire fence or concertina wire here to charge" };
-  // More of the grid (2026-10-24, data-power.js): a battery bank wants something to charge it (a generator, found or
-  // built, or a solar array, standing or queued).
-  if (type === "battery_bank" && !base.buildings.some(isGen) && !countAll(base, "solar_array") && !base.construction.some((c) => c.type === "generator" || c.type === "solar_array")) return { ok: false, reason: "Needs a generator or a solar panel array here to charge it" };
   if (def.needsWall && !hasWall(base)) return { ok: false, reason: "Needs a wall closed round the base first (Walls, on this tab)" };
   if (!def.gather) { const why = siteShort(base.stock, def.cost, keyWord); if (why) return { ok: false, reason: why }; } // gather: taken as it comes in; building materials and sheets the stores lack made on site from scrap (buildmats.js)
   if (def.req) {
@@ -1251,6 +1248,10 @@ export function canBuild(state, base, type, opts = {}) {
   }
   const lock = buildLock(state, base, type); // blueprints.js: upper tiers need a studied manual or blueprint
   if (lock) return { ok: false, reason: lock, locked: true };
+  // More of the grid (2026-10-24, data-power.js): a battery bank wants something to charge it (a generator, found or
+  // built, or a solar array, standing or queued). After the lock: the Solar Installer's Handbook opens the array too,
+  // so until it is studied the handbook is what the bank waits for.
+  if (type === "battery_bank" && !base.buildings.some(isGen) && !countAll(base, "solar_array") && !base.construction.some((c) => c.type === "generator" || c.type === "solar_array")) return { ok: false, reason: "Needs a generator or a solar panel array here to charge it" };
   const tools = buildToolProblem(state, base, type); // toolreqs.js: a hammer and a saw, a shovel, a welding kit…
   if (tools) return { ok: false, tools: true, reason: tools };
   // A crop plot needs free soil for its 2 × 2 on the base map (basemap.js soilRoom: the map is the limit, 2026-10-22).

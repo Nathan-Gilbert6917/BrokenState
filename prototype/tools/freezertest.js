@@ -426,11 +426,17 @@ const near = (a, b) => Math.abs(a - b) < 1e-6;
   check(groupFreezerOn(f), "their freezer runs");
   check(/walk-in freezer \(on\)/.test(worksText(st, f)), `the Groups tab says so (${worksText(st, f)})`);
   check(f.stock.fuel <= fuel0 + GROUP_WORKS.MACH.still.fuel - POWER.genFuel + 1e-9, `the generator burns fuel (${fuel0} → ${f.stock.fuel})`);
-  f.stock.fuel = 0.5;
+  // Their fuel by the hour (groups-power-grid 2026-10-24, grouppower.js powerDayBudget: genBurn ÷ 24 a running hour,
+  // the last of it runs the hour; it was a day at a time, so the last half a fuel ran the whole day): half a fuel runs
+  // the tier-1 set 6 hours, too few for the freezer (on at GRID.onShare, 18 of its 24); 18 hours' worth keeps it on.
   setFood(f, GROUP_WORKS.MACH.foodDays * f.pop - 1); // no surplus for the still either
-  st.hour += 24;
-  groupWorksDaily(st, f);
-  check(groupFreezerOn(f) && f.stock.fuel === 0, "coarse fuel: the last half a fuel runs the day");
+  for (const [fuel, hours, on] of [[0.5, 6, false], [POWER.genFuel * 18 / 24, 18, true]]) {
+    f.stock.fuel = fuel;
+    st.hour += 24;
+    groupWorksDaily(st, f);
+    const pd = worksAt(f, tile).powerDay;
+    check(groupFreezerOn(f) === on && pd.genHours === hours && pd.servedHours.freezer === hours && f.stock.fuel < 1e-6 && Math.abs(pd.burn - fuel) < 1e-9, `hourly fuel: the last ${fuel} fuel runs the generator ${hours} hours and the freezer is ${on ? "on" : "off"} (${pd.genHours} h, freezer ${pd.servedHours.freezer} of ${pd.wantedHours.freezer}, ${f.stock.fuel} fuel left)`);
+  }
   st.hour += 24;
   groupWorksDaily(st, f);
   check(!groupFreezerOn(f), "no fuel: their freezer is off");
