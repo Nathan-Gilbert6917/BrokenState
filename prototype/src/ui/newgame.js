@@ -265,7 +265,7 @@ function vehicleToggle(state) {
   const on = startsWithVehicle(state), hard = isHardcore(state);
   const t = hard
     ? "Start with a vehicle: ticked, one of you fled in their car with what was in its back (and a small team loaded its empty seats; Starting vehicles sets the back). Unticked, you flee on foot with only what you can carry (the tents too). Changing it builds the world again on the same seed"
-    : `Start with a vehicle: ticked, the hub starts with ${isCustomRun(state) ? "the vehicles set under Starting vehicles" : "a pickup truck"} (and a custom background's car, if it brings one); Starting vehicles sets what is in their backs. Unticked, no vehicle at all: your people go on foot until they find, take or fix one. Changing it builds the world again on the same seed`;
+    : `Start with a vehicle: ticked, the hub starts with the vehicles set under Starting vehicles (a pickup truck by default) (and a custom background's car, if it brings one); Starting vehicles sets what is in their backs. Unticked, no vehicle at all: your people go on foot until they find, take or fix one. Changing it builds the world again on the same seed`;
   return `<label${tip(t)}><input type="checkbox" data-action="nr-vehicle"${on ? " checked" : ""}> Start with a vehicle</label>`;
 }
 
