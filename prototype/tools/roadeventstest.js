@@ -10,7 +10,9 @@ import { tickHour, day, factionById } from "../src/sim/world.js";
 import { roadTeam } from "../src/sim/hardcore-start.js";
 import { hardcoreEraOffset } from "../src/sim/hardcore-outbreak.js";
 import { hcMilitary } from "../src/sim/hardcore-groups.js";
-import { TRAVEL_EVENT_IDS, travelEventFits, travelEventCard, rollTravelEvent } from "../src/sim/events.js";
+import { TRAVEL_EVENT_IDS, travelEventFits, travelEventCard, rollTravelEvent, CONVOY_KINDS, CONVOY_KIND_KEYS, CONVOY_GEAR, convoyCard } from "../src/sim/events.js";
+import { GEAR } from "../src/sim/data.js";
+import { fixableAt } from "../src/sim/foundcars.js";
 import { HUB_EVENT_IDS, hubEventCard, hubEventWeights, RATS, COLD, HC_DESERTER } from "../src/sim/hubevents.js";
 import { makeHorde } from "../src/sim/hordes.js";
 import { season } from "../src/sim/weather.js";
@@ -134,9 +136,47 @@ section(`Road events: ${ROLLS} rolls on the road`);
   }
   const show = Object.entries(counts).sort((a, b) => b[1] - a[1]);
   console.log(`  ${show.map(([t, n]) => `${t} ${n}`).join(", ")}`);
-  for (const title of ["A swollen creek", "A lonely farmhouse", "A roadside gas station", "An overrun camp", "An overrun convoy", "A stranger with the worm"]) check(counts[title] > 0, `"${title}" comes up in play`);
+  for (const title of ["A swollen creek", "A lonely farmhouse", "A roadside gas station", "An overrun camp", "A stranger with the worm"]) check(counts[title] > 0, `"${title}" comes up in play`);
+  check(Object.values(CONVOY_KINDS).some((K) => counts[K.title] > 0), "an overrun convoy of some kind comes up in play");
   check((counts.Wolves || 0) + (counts["Feral dogs"] || 0) > 0, "wolves or feral dogs come up in play");
   check((counts["A gone-wild orchard"] || 0) + (counts["Brambles in fruit"] || 0) > 0, "an orchard or brambles come up in play");
+}
+
+// ---------------------------------------------------------------------------------------------------------
+section("Road events: the overrun convoy's kinds");
+{
+  const [hour, setup] = SETUPS.convoy;
+  for (const key of CONVOY_KIND_KEYS) {
+    const K = CONVOY_KINDS[key];
+    check(CONVOY_GEAR[key].every((g) => !!GEAR[g]), `${key}: its gear exists (${CONVOY_GEAR[key].filter((g) => !GEAR[g]).join(", ") || "all"})`);
+    const w0 = world(hour, setup);
+    const w = K.weight(w0.st, w0.st.tiles[w0.tile], null);
+    check(Number.isFinite(w) && w >= 0, `${key}: a weight on a plain road (${w})`);
+    let truck = false, picked = 0, hurt = 0;
+    for (let k = 0; k < 8; k++) {
+      const { st, p, tile } = world(hour, setup, SEED + k);
+      const card = convoyCard(st, p, st.tiles[tile], key);
+      if (k === 0) check(card.title === K.title && card.convoyKind === key && card.choices.length === 4 && !/undefined|NaN/.test(card.title + card.text), `${key}: a card of its kind (${card.title})`);
+      const before = snap(st, p);
+      const text = card.choices[0].resolve(st);
+      check(typeof text === "string" && !/undefined|NaN|\[object/.test(text), `${key} → Take what is left: text (${text})`);
+      check(snap(st, p) !== before, `${key} → Take what is left: changes something`);
+      if (/stands on the tile/.test(text)) { truck = true; const v = fixableAt(st, tile); check(!!v && K.trucks.includes(v.type), `${key}: the truck left is one of its kinds (${v && v.type})`); if (v && (v.type === "hummer" || v.type === "miltruck")) check(!!v.upgrades && v.upgrades.plating >= 1 && v.found.repair.mech === 5, `${key}: its Army truck comes plated, Mechanics 5+ to repair`); }
+      if (/Still in the load/.test(text)) picked++;
+      if (/was hurt|was killed/.test(text)) hurt++;
+      if (k === 0) console.log(`  ${card.title} → ${text}`);
+    }
+    check(picked > 0, `${key}: the cargo is found on some seeds (${picked} of 8)`);
+    const { st, p, tile } = world(hour, setup);
+    const card = convoyCard(st, p, st.tiles[tile], key);
+    const t1 = card.choices[1].resolve(st);
+    check(/fuel/.test(t1) || /was hurt|was killed/.test(t1), `${key} → Siphon: fuel (${t1})`);
+    check(/^Bury |^Leave it for /.test(card.choices[2].label), `${key}: word or a burial (${card.choices[2].label})`);
+  }
+  // The tanker's siphon is three times the others'.
+  const { st, p, tile } = world(hour, setup);
+  const tk = convoyCard(st, p, st.tiles[tile], "tanker"), gp = convoyCard(st, p, st.tiles[tile], "group");
+  check(/^9 to 21 fuel/.test(tk.choices[1].hint) && /^3 to 7 fuel/.test(gp.choices[1].hint), `the tanker siphons 9 to 21 fuel, a group's convoy 3 to 7 (${tk.choices[1].hint} | ${gp.choices[1].hint})`);
 }
 
 // ---------------------------------------------------------------------------------------------------------
