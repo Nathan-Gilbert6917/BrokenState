@@ -1,7 +1,9 @@
 // New-run setup screen, survivor appearance editor and zombie look settings.
 // HTML builders plus their action handlers; main.js registers the handlers with its dispatcher.
 import { SKILLS, SKILL_NAMES, TRAITS } from "../sim/data.js";
-import { survivorById, skill, rollTraits, HUB_START } from "../sim/world.js";
+import { survivorById, skill, rollTraits, HUB_START, START_WEAPONS } from "../sim/world.js";
+import { newItem, START_DUR } from "../sim/inventory.js"; // the card's Everything: a new starting weapon
+import { randomStarterMods } from "../sim/gunmods.js";
 import { WORLD_SIZES, SIZE_KEYS, sizeDef, customDef, isCustom, CUSTOM, GROUPS_MAX, HIVES_MAX, clampGroups, clampHives } from "../sim/worldsize.js";
 import { MODES, isHardcore, peopleRange, clampStartPeople } from "../sim/hardcore.js";
 import { CUSTOM_RUN, CUSTOM_KEYS, isCustomRun, startsWithVehicle } from "../sim/custommode.js"; // Custom mode and Start with a vehicle (2026-10-24)
@@ -126,7 +128,7 @@ function crewCard(state, ui, s) {
     : "Trade their starting weapon and vest with a random crewmate's (the crew's kit stays the same)";
   const allTip = locked ? "Everything for this colonist only: a new name, skills (same total) and look. Ironman: traits and who they were stay as rolled"
     : free ? "Everything for this colonist only: a new name, look and background, and a random build (traits, skills and what they wear, hold and carry, within their points)"
-    : `Everything for this colonist only: a new name, look and background, skills (same total)${hard ? ", traits and what they grabbed (the others keep theirs)" : " and traits (their weapon and vest stay: Gear trades them with a crewmate)"}`;
+    : `Everything for this colonist only: a new name, look and background, skills (same total)${hard ? ", traits and what they grabbed (the others keep theirs)" : ", traits and a new starting weapon (the others keep theirs; Gear trades the weapon and vest with a crewmate)"}`;
   if (ui.lookEdit === s.id) {
     return `<div class="card leader-pick nrcard nrwide ${s.leader ? "on" : ""}">
       <div class="spread"><b>${s.leader ? "★ " : ""}${esc(s.name)}</b><span class="muted small">Appearance</span></div>
@@ -598,8 +600,9 @@ export function randomizeGear(state, ui, s, rebuild) {
 // All on a crew card: everything for this colonist, and nobody else's. Customize: a new background (what it gives is
 // loaded, then replaced), name, look and random build within their points. Otherwise a new background, name, look,
 // skills (the same total) and traits, in one rebuild; Hardcore: what they grabbed on dice of its own (the others keep
-// theirs: sim/hardcore-start.js ownGrab). A normal start's weapon and vest stay (trading them would change a crewmate's:
-// that is the Gear dice). Ironman: name, skills and look only (traits and who they were stay as rolled).
+// theirs: sim/hardcore-start.js ownGrab). A normal start: a new weapon of the start's own (sim/world.js START_WEAPONS),
+// not the one they hold, and the vest stays (trading would change a crewmate's: that is the Gear dice). Ironman: name,
+// skills and look only (traits and who they were stay as rolled).
 export function randomizeOne(state, ui, s, rebuild) {
   if (!s || ui.started) return state;
   const rng = freshRng();
@@ -632,8 +635,16 @@ export function randomizeOne(state, ui, s, rebuild) {
   c.traits = rollTraits(rng);
   delete c.traitTier;
   if (isHardcore(state)) { c.grabRoll = newRoll(rng); c.grabPick = true; }
-  else c.gear = crewSnapshot(state)[i].gear; // their own weapon and vest (a background change leaves out the kit)
+  else c.gear = { ...(crewSnapshot(state)[i].gear || {}), weapon: startWeapon(rng, s) }; // their vest as it was (a background change leaves out the kit)
   return rebuild(crew, !!key);
+}
+// A normal start's weapon drawn again for s: one of the start's own, part-worn and maybe with a cheap part, as the dice
+// hand them out (sim/world.js createWorld), not the kind they hold now.
+function startWeapon(rng, s) {
+  const now = s.gear.weapon ? s.gear.weapon.key : null;
+  const item = newItem(rng.pick(START_WEAPONS.filter((k) => k !== now)), 1, rng.next(), START_DUR);
+  randomStarterMods(rng, item, newRoll(rng));
+  return item;
 }
 
 // ---------- zombie look settings ----------
