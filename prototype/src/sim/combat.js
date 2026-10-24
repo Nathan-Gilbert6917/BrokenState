@@ -1981,16 +1981,20 @@ function carBack(b, v, driver, foes) {
     let best = null;
     for (const [k] of seen) {
       const px = k % W, py = (k / W) | 0;
+      if (levelRect(b, px, py, v.w, v.h) == null) continue; // it stops with all its wheels on the one level (driveTo), not on a hill's edge
       const sc = -edge(px, py) * 10 + (foes.length ? Math.min(...foes.map((f) => dist(px, py, f.x, f.y))) * 0.1 : 0);
       if (!best || sc > best.sc) best = { px, py, sc, e: edge(px, py) };
     }
+    let err = null;
     if (best && best.e < here) {
       driver.ap = DRIVE.AP;
-      driveTo(b, driver, best.px + Math.floor((v.w - 1) / 2), best.py + Math.floor((v.h - 1) / 2), { noRam: true });
+      err = driveTo(b, driver, best.px + Math.floor((v.w - 1) / 2), best.py + Math.floor((v.h - 1) / 2), { noRam: true });
       driver.ap = 0;
+    }
+    if (err === "") {
       v.stuck = 0;
       if (best.e > RAID_CAR.OUT) return;
-    } else if ((v.stuck = (v.stuck || 0) + 1) < RAID_CAR.STUCK) return;
+    } else if ((v.stuck = (v.stuck || 0) + 1) < RAID_CAR.STUCK) return; // no nearer, or the drive refused: stuck
   }
   if (!theirs) return; // yours stays on the map
   // Off the map: the cells it stood on are open ground again; everyone inside got away with it.

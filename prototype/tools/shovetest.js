@@ -106,6 +106,7 @@ console.log("A wall behind: always floored");
   e.ow = true;
   landOne(st, b, u, e, 6, 5);
   check(e.floored === 1 && !e.ow, "floored: overwatch dropped");
+  e.fearless = true; // nonlethal.js surrenderCheck: alone (its mate dead) and floored, it may give up as its turn starts (the dice by the hub's tile); this is about getting up
   for (const o of b.units) if (o.side === "player") o.ap = 0;
   endPlayerTurn(st);
   check(!e.floored && e.ap === 1, `the enemy turn: gets up for an action (ap ${e.ap})`);
@@ -356,9 +357,16 @@ console.log("Grapples: the dead getting hold");
   const b2 = openBattle(st2, [p1, p2]);
   const [e] = foes(b2), q = by(b2, p1);
   place(q, 5, 5); place(by(b2, p2), 20, 20); place(e, 6, 5); toughen(q); toughen(e);
-  b2.phase = "enemy"; e.ap = 2; e.heldBy = q.id;
-  const n = b2.log.length;
-  check(aiBreakOut(b2, e) && b2.log.slice(n).some((l) => l.text.startsWith(`${e.name} shoves`)), "a person held, wanting to run, shoves what holds them first");
+  b2.phase = "enemy";
+  // It breaks out PUSH.AI_OUT of the times it could (the turn's own roll, the dice by the hub's tile): each try a new
+  // turn, held again, with its actions back; it must shove inside a few turns (0.2^12 against).
+  let out = false, n = b2.log.length;
+  for (let i = 0; i < 12 && !out; i++) {
+    b2.turn++; e.ap = 2; e.heldBy = q.id; place(e, 6, 5); place(q, 5, 5);
+    n = b2.log.length;
+    out = aiBreakOut(b2, e);
+  }
+  check(out && b2.log.slice(n).some((l) => l.text.startsWith(`${e.name} shoves`)), "a person held, wanting to run, shoves what holds them first");
 }
 
 console.log("The animations' effects");

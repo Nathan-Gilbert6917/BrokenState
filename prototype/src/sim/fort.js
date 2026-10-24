@@ -386,6 +386,9 @@ function finishFort(b, F, side, o) {
     defaults: b.units.filter((u) => u.side === "player" && active(u)).map((u) => [u.id, u.x, u.y, u.post || null]),
   };
   b.holders = o.attackers === "player" ? "enemy" : "player";
+  // The edge the attackers came from (combat.js transformBattle's b.side, as the wall map sets it): the one they run
+  // for and their vehicle pulls back to (exitEdge, carBack), not the east edge the fort map is never turned to.
+  if (o.attackers === "enemy") b.side = side;
   if (b.deploy.fixedLit) fixedLit(b, F, !!o.floodlit);
   else if (o.floodlit) setFortLit(b, "center"); else b.lit = null;
 }
