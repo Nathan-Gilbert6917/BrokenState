@@ -61,8 +61,10 @@ export const CROPS = {
     climate: { seasons: ["spring", "autumn", "winter"], hardy: 1, thirst: 0.4, tMin: 0, tOpt: [6, 18], tall: 0.1 },
     desc: "Kale and collards: shrugs off frost and snow and stands ripe in the field for weeks, so it can be picked into early winter. Small yield, and it hardly grows in deep cold: sow it in the first half of autumn." },
   winterwheat: { name: "Winter wheat", item: "f_grain", days: 40, yield: 88, seed: 6, water: 0.1, spoil: 14, heatTol: 0.4, store: "preserved", sowIn: ["autumn"],
-    climate: { seasons: ["spring", "autumn", "winter"], hardy: 1, thirst: 0.25, tMin: 1, tOpt: [6, 18], tall: 0.6 },
-    desc: "Sown in autumn only: it sprouts, sleeps under the snow and ripens in late spring. The biggest grain harvest and the grain keeps for years, but it ties up the plot for months, costs the most seed and comes in after the worst of the hungry gap." },
+    // Summer too: a crop a few days short at the end of spring (its 40 days ripen about the last day of spring since
+    // spring rains more, 2026-10-23) finishes in early summer instead of standing still until autumn.
+    climate: { seasons: ["spring", "summer", "autumn", "winter"], hardy: 1, thirst: 0.25, tMin: 1, tOpt: [6, 18], tall: 0.6 },
+    desc: "Sown in autumn only: it sprouts, sleeps under the snow and ripens in late spring or early summer. The biggest grain harvest and the grain keeps for years, but it ties up the plot for months, costs the most seed and comes in after the worst of the hungry gap." },
   drybeans: { name: "Dry beans",  item: "f_drybeans", days: 32, yield: 40, seed: 4, water: 0.25, spoil: 12, heatTol: 0.6, store: "preserved",
     climate: { seasons: ["spring", "summer", "autumn"], hardy: 0.1, thirst: 0.55, tMin: 8, tOpt: [15, 28], tall: 0.4 },
     desc: "Beans left to dry on the vine: twice as slow as green beans for a little more food, thirstier and tender to frost, but the harvest keeps for years and needs no cold room." },

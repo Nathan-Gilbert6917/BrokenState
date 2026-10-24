@@ -176,7 +176,10 @@ async function main() {
   {
     const specs = ["cautious", "balanced", "aggressive"].map((style, i) => ({ seed: 11 + i, style, days: DAYS }));
     const results = await Promise.all(specs.map((spec) => new Promise((resolve, reject) => {
-      const w = new Worker(fileURLToPath(import.meta.url), { workerData: "eratest" });
+      // A heap cap a campaign: its live heap stays a few hundred MB, but uncapped each worker grew to 1.8 GB on the
+      // 500 × 500 base maps (5.4 GB for the three, killed by the machine's memory limit with the other tests running,
+      // 2026-10-24); capped at 1 GB the three peaked at 2.6 GB with no slower days.
+      const w = new Worker(fileURLToPath(import.meta.url), { workerData: "eratest", resourceLimits: { maxOldGenerationSizeMb: 1024 } });
       w.on("message", (r) => { w.terminate(); resolve(r); });
       w.on("error", reject);
       w.postMessage(spec);

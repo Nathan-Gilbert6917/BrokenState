@@ -27,6 +27,7 @@ import { KITS } from "../src/sim/combat.js";
 import { allCarried } from "../src/sim/inventory.js";
 import { factionVehicles } from "../src/sim/vehicles.js";
 import { digest } from "./digest.js";
+import { defaultChoice } from "../src/sim/cardrules.js";
 
 const seed = Number(process.argv[2] || 42);
 let fails = 0, passes = 0;
@@ -252,7 +253,12 @@ section("Your team robs a group's caravan on the road; the meeting card; Interce
   tick(st2, 24);
   const p2 = team(st2, 5, 2);
   const m = V.spawnVisitor(st2, "merchants");
-  const off = st2.grid.within(partyTile(p2), 3).find((t) => st2.grid.distance(t, partyTile(p2)) === 3 && st2.tiles[t].terrain !== "water" && planPath(st2, partyTile(p2), t, false));
+  // A tile the team walks to in 3 steps (not one 3 tiles off across a river, 7 steps round by the bridge: seed 63's
+  // world since the start moved away from towns), and no road encounter on the way (a group's Roadblock there held
+  // the team up while the caravan left): the chase is what is checked.
+  const direct = (t) => { const r = planPath(st2, partyTile(p2), t, false); return !!r && r.path.length === 4; };
+  const off = st2.grid.within(partyTile(p2), 3).find((t) => st2.grid.distance(t, partyTile(p2)) === 3 && st2.tiles[t].terrain !== "water" && direct(t));
+  p2.lastConflict = st2.hour;
   place(m, off); m.phase = "travel";
   m.goal = { kind: "site", tile: off }; // standing still for the test
   st2.live.add(off);
@@ -262,7 +268,9 @@ section("Your team robs a group's caravan on the road; the meeting card; Interce
     ch.resolve(st2);
     check(p2.intercept && p2.dest === off && p2.phase === "out", "the team goes after it");
     let card = null;
-    for (let i = 0; i < 30 && !card; i++) { tick(st2); card = st2.cards.find((c) => c.partyId === p2.id && /on the road/.test(c.title)); }
+    // The team's other cards on the way (the dead ahead on an infected tile) answered by their default, as the tray does.
+    const answer = () => { for (const c of st2.cards.filter((x) => x.partyId === p2.id && !x.isOrders && !/on the road/.test(x.title))) { st2.cards.splice(st2.cards.indexOf(c), 1); const d = defaultChoice(st2, c); if (d && d.resolve) d.resolve(st2); } };
+    for (let i = 0; i < 30 && !card; i++) { tick(st2); card = st2.cards.find((c) => c.partyId === p2.id && /on the road/.test(c.title)); if (!card) answer(); }
     check(!!card && !p2.intercept, `caught up: a card (${card ? card.title : "none"})`);
   }
 }
