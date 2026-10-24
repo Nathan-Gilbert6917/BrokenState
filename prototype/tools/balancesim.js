@@ -26,7 +26,7 @@ import { HORDE_SIZES } from "../src/sim/hordes.js";
 import { ALLIANCE } from "../src/sim/alliance.js";
 import { ERAS, yearOfDay, yearStartDay } from "../src/sim/eras.js";
 
-// --tune: what-if balance numbers for these runs only (nothing in the game files changes), as wintest.js, e.g.
+// --tune: what-if balance numbers for these runs only (nothing in the game files changes), as wincensus.js, e.g.
 // --tune HIVE.NEW_CAP=3:5,ERAS.HORDE_GROW=0.1. Tables: HIVE, HORDE_SIZES, ALLIANCE, RAIDS, ERAS. a:b is a pair.
 const TABLES = { HIVE, HORDE_SIZES, ALLIANCE, RAIDS, ERAS };
 export function applyTune(spec) {

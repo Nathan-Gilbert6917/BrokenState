@@ -1,4 +1,4 @@
-// The long-run tools' death count (tools/deathcount.js, used by campaign50.js and wintest.js): one death per survivor,
+// The long-run tools' death count (tools/deathcount.js, used by campaign50.js and wincensus.js): one death per survivor,
 // classified by world.js killSurvivor's line. Someone who dies with the worm in them logs a second "died" line when
 // they get up again (worm.js riseAtBase, roadRise): counting lines made every worm death two, and a horde death of a
 // carrier one horde and one worm.

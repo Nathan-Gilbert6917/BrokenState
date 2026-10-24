@@ -538,7 +538,7 @@ export function goalsProgress(state) {
   const landOk = land.pct > ALLIANCE.LAND_NEEDED;
   const allIn = groups.every((f) => isMember(state, f));
   const membersOk = ms.length > 0;
-  // What blocks the coalition's victory today (wintest's "what blocks the win", the Goals panel).
+  // What blocks the coalition's victory today (wincensus's "what blocks the win", the Goals panel).
   const blocks = [];
   if (!membersOk) blocks.push("no member yet (invite a group)");
   if (!landOk) blocks.push(`land ${Math.round(land.pct * 100)}% of the ${Math.round(ALLIANCE.LAND_NEEDED * 100)}%+ needed (bases, members a year in and at peace, claims)`);
