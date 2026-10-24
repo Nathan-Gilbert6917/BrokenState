@@ -403,8 +403,8 @@ export const ROWS = {
   // loot.js: small finds a search hour and a raid container
   SITE_FINDS: {
     sportshop: P(0.12, { lipbalm: 2, deodorant: 2, chocolate: 2, batteries: 2, lighters: 1, puritabs: 1, handwarmer: 2, gamecall: 0.5 }),
-    electronics: P(0.2, { phone: 3, laptop: 2, camera: 2, console: 2, batteries: 3, pocketradio: 1.5, alarmclock: 1.5, vinyl: 0.5 }),
-    radioshop: P(0.16, { batteries: 4, pocketradio: 2, alarmclock: 1, phone: 1, lighters: 0.5 }),
+    electronics: P(0.2, { phone: 3, laptop: 2, camera: 2, console: 2, batteries: 3, pocketradio: 1.5, alarmclock: 1.5, vinyl: 0.5, solderiron: 1 }), // solderiron: the electronics recipes' iron (data-tools.js, 2026-10-24): the repair counter
+    radioshop: P(0.16, { batteries: 4, pocketradio: 2, alarmclock: 1, phone: 1, lighters: 0.5, solderiron: 2 }),
     bookstore: P(0.06, { tcards: 1, cards: 2, candles: 1, instcoffee: 1, tea: 1 }),
     library: P(0.05, { instcoffee: 2, photos: 1, stamps: 1, phone: 1, laptop: 0.5 }),
     petstore: P(0.06, { soap: 1, wetwipes: 1, batteries: 1 }),
@@ -419,8 +419,8 @@ export const ROWS = {
   },
   AREA_FINDS: {
     sportshop: P(0.1, { lipbalm: 1, deodorant: 1, chocolate: 1, handwarmer: 2, batteries: 1 }),
-    electronics: P(0.18, { phone: 3, laptop: 2, camera: 2, console: 2, batteries: 3, pocketradio: 1, alarmclock: 1 }),
-    radioshop: P(0.14, { batteries: 4, pocketradio: 2, alarmclock: 1 }),
+    electronics: P(0.18, { phone: 3, laptop: 2, camera: 2, console: 2, batteries: 3, pocketradio: 1, alarmclock: 1, solderiron: 1 }),
+    radioshop: P(0.14, { batteries: 4, pocketradio: 2, alarmclock: 1, solderiron: 2 }),
     books: P(0.05, { cards: 1, tcards: 0.5, candles: 0.5 }),
     petstore: P(0.05, { soap: 1, wetwipes: 1 }),
     garden: P(0.06, { candles: 1, lighters: 1, tripwire: 0.5 }),

@@ -157,7 +157,7 @@ const world = (s = seed) => { const st = createWorld({ seed: s, factionCount: 8 
   const h = hub(st);
   const s = atBase(st, h.id)[0];
   check(JSON.stringify(salvageYield(newItem("ar"))) === JSON.stringify({ gunparts: Math.floor(GEAR.ar.value / 30) + 1, scrap: 1 }), `a gun: floor(value / 30) + 1 gun parts and a scrap (${JSON.stringify(salvageYield(newItem("ar")))})`);
-  check(salvageYield(newItem("holo")).gunparts === 1 && salvageYield(newItem("reddot")) === null, "an attachment worth 25 or more: a gun part; a cheaper one nothing");
+  check(salvageYield(newItem("holo")).gunparts === 1 && salvageYield(newItem("holo")).electronics === 1 && salvageYield(newItem("reddot")).electronics === 1 && salvageYield(newItem("reddot")).gunparts == null && salvageYield(newItem("foregrip")) === null, "an attachment worth 25 or more: a gun part, and a powered sight its electronics too; a cheaper powered sight its electronics only; a cheap grip nothing");
   check(salvageYield(newItem("laptop")).electronics === 2 && salvageYield(newItem("phone")).electronics === 1 && salvageYield(newItem("thermal")).electronics === 4 && salvageYield(newItem("nvg")).electronics === 3, "gadgets: electronics (a phone 1, a laptop 2, night vision 3, a thermal 4)");
   const gun = newItem("pistol");
   fitMod(gun, newItem("reddot"));

@@ -24,6 +24,8 @@ import { isManaged, healthRest } from "./work.js";
 import { hash01 } from "./skills.js";
 import { tiredLevel, TIRED } from "./sleep.js";
 import { towerSees, towerSawText } from "./fieldworks.js"; // a manned watch tower out on the base's land
+import { alarmOn } from "./electric.js"; // the perimeter alarm with power (2026-10-24): its sensors watch the approaches at night (call-time only)
+import { ALARM } from "./data-power.js"; // ... this far out
 
 export const WATCH_PRESETS = {
   two:   { name: "Two 12-hour watches", shifts: [["Day", 6, 18], ["Night", 18, 6]] },
@@ -218,8 +220,10 @@ export function readiness(state, base) {
 // ---------- unwatched nights and the watch's early warning ----------
 // An attack that reaches a base at night (20:00–06:00) when nobody is awake on watch there (readiness: no watchers, or
 // only exhausted ones who doze off: with alert a below 1 they are caught with chance 1 − a) and the defences are not
-// manned gets the first move. A tripwire alarm in the armory wakes everyone (no surprise). By day, or with someone
-// awake on watch, nothing changes.
+// manned gets the first move. A tripwire alarm in the armory wakes everyone (no surprise), and so does a perimeter
+// alarm with power (2026-10-24, data-power.js ALARM: both through defences.js armoryDefence alarm; the perimeter alarm's
+// sensors also spot anything within ALARM.tiles of the base at night with nobody on watch, lookoutsSpot below). By day,
+// or with someone awake on watch, nothing changes.
 //   Raids by the numbers (factions.js, visitors.js, prisoners.js rescues): the walls do not count (they were over them
 //     before anyone woke: defences.js raidTier) and everyone but the guards counts SURPRISE.ASLEEP of their combat
 //     power instead of 0.8 (factions.js baseDefense) unless the base is put on alert after all ("Prepare defenses").
@@ -233,7 +237,7 @@ export function surpriseAt(state, base) {
   if (!base) return null;
   const r = readiness(state, base);
   if (!r.night || r.manned || r.alert >= 1) return null;
-  if (armoryDefence(base).alarm) return null; // the tripwire's bells
+  if (armoryDefence(base).alarm) return null; // the tripwire's bells, or the perimeter alarm's siren (electric.js alarmOn)
   if (r.alert > 0 && hash01(state.seed, "doze", state.hour, localId(state, base.id)) < r.alert) return null;
   const names = r.dozing.map((id) => { const s = state.survivors.find((x) => x.id === id); return s ? s.name.split(" ")[0] : "?"; });
   return { why: names.length ? `${names.join(" and ")} dozed off on watch at ${base.name}, worn out` : `Nobody was on watch at ${base.name}` };
@@ -252,6 +256,7 @@ export function lookoutsSpot(state, base, tile, range, seen = state.live.has(til
   const d = state.grid.distance(tile, base.tile);
   if (d <= range + WATCH_WARN.tiles + 2 && towerSees(state, base, tile)) return true; // fieldworks.js: lookouts on a manned watch tower of this base saw it
   const r = readiness(state, base);
+  if (r.night && d <= ALARM.tiles && alarmOn(base)) return true; // the perimeter alarm's sensors on the approaches (electric.js), watch or no watch
   if (r.manned || r.alert >= 1) return d <= range + WATCH_WARN.tiles && (seen || d <= baseVision(base, state) + (r.night ? WATCH_WARN.night : WATCH_WARN.day));
   if (d > range || !seen) return false;
   return !r.night || d > baseVision(base, state);
@@ -263,5 +268,6 @@ export function watchSawText(state, base, tile, range, seen = state.live.has(til
   if (tower) return tower;
   if (!base || (seen && state.grid.distance(tile, base.tile) <= range)) return "";
   const r = readiness(state, base);
-  return r.manned || r.alert >= 1 ? " The watch on the walls saw them early." : "";
+  if (r.manned || r.alert >= 1) return " The watch on the walls saw them early.";
+  return r.night && state.grid.distance(tile, base.tile) <= ALARM.tiles && alarmOn(base) ? " The perimeter alarm's sensors picked them up on the approaches." : "";
 }

@@ -20,7 +20,11 @@
 //               fuel of heat, HEAT.wood: so 15 wood, 1.5 kg, a head), then fuel for what the wood does not cover (needs.js
 //               heatDaily). A shelter (buildings.js, tier 0) with its camp fire lit is warmed by the fire (deadfall
 //               from around it, or wood where the ground is bare: woodcutting.js). Without either everyone there
-//               is cold: needs.js COLD.
+//               is cold: needs.js COLD. Electric heaters (2026-10-24, the user's "more recipes for building that would
+//               use electronics"; data-power.js HEATER, a fitting on a general building's floor): each one with power
+//               today (power.js base.power, refreshed every hour; the heaters draw HEATER.need on a day that wants
+//               heating) warms HEATER.heads of those heads, who then need no wood or fuel (heaterHeads below: the heads
+//               the fires must warm are the rest; never below 0).
 // People away from the base (a team, a convoy on the road, a crew, an errand) do not eat its food: a team eats its own
 // packed supplies, one ration a person a day and more on the move under a load, person by person (needs.js gauges,
 // load.js personRation); an errand takes about a day's food and water a day from the base when it leaves. Food spoils by what is stored (storage.js), not by who eats it; a generator burns fuel per day it runs
@@ -39,6 +43,7 @@ import { FOODS, foodIn, unitsOf } from "./foods.js"; // food by type: the reserv
 import { waterIn } from "./water.js";
 import { kitchenEatMult } from "./kitchen.js"; // hot meals stretch the food
 import { rationUse } from "./meals.js"; // the base's ration level (lean 0.8, a feast day 1.5)
+import { HEATER } from "./data-power.js"; // the electric heaters (2026-10-24): the people they warm need no wood (plain data, no imports)
 
 export const UPKEEP = { food: 1, water: 1, guest: 1, crew: 1 };
 
@@ -167,15 +172,21 @@ export const fireWarmed = (base) => !!base && base.tier === 0 && (base.campFire 
 // Heating a day at a base: { each (fuel a head), n (the heads fed there), total (in fuel), wood (the same in wood),
 // fire (a shelter's fire does it: it burns the same wood by the hour), night (a cool night's fire only, not a freezing
 // day), text }. text: "6 people × 0.1 = 0.6 → 90 wood a day (or 0.6 fuel)".
+// The people the base's powered electric heaters warm (data-power.js HEATER; the Power card's served list, cached by
+// power.js refreshPower every hour: a heater draws only on a day that wants heating, so it is served only then).
+export const heaterHeads = (base) => (base && base.power && base.buildings ? base.buildings.filter((b) => b.type === "elec_heater" && !b.broken && base.power.served.includes(b.id)).length * HEATER.heads : 0);
 export function heatUse(state, base, dayIdx) {
   const each = heatRate(state, dayIdx);
-  const n = mouthsAt(state, base).heads;
+  const all = mouthsAt(state, base).heads;
+  const warmed = each > 0 ? Math.min(all, heaterHeads(base)) : 0; // kept warm by the electric heaters (2026-10-24): no wood for them
+  const n = all - warmed;
   const fire = each > 0 && fireWarmed(base);
   const night = each > 0 && each < HEAT.fuel;
   const total = fire ? 0 : n * each;
   const what = night ? "a cool night" : "a freezing day";
-  const text = !each ? `no heating needed (above 0°C, nights above ${HEAT.chillAt}°C)` : fire ? `the camp fire keeps ${n} ${n === 1 ? "person" : "people"} warm on ${what} (it burns ${Math.round(woodFor(n * each))} wood a day for them)` : n ? `${night ? "the night's fire: " : ""}${perHeadText(n, n === 1 ? "person" : "people", each)} → ${Math.round(woodFor(n * each))} wood a day (or ${r1(n * each).toFixed(1)} fuel)` : "nobody here";
-  return { each: r2(each), n, total, wood: woodFor(total), fire, night, text };
+  const heaters = warmed ? ` (${warmed} more kept warm by the electric heaters)` : "";
+  const text = !each ? `no heating needed (above 0°C, nights above ${HEAT.chillAt}°C)` : fire ? `the camp fire keeps ${n} ${n === 1 ? "person" : "people"} warm on ${what} (it burns ${Math.round(woodFor(n * each))} wood a day for them)${heaters}` : n ? `${night ? "the night's fire: " : ""}${perHeadText(n, n === 1 ? "person" : "people", each)} → ${Math.round(woodFor(n * each))} wood a day (or ${r1(n * each).toFixed(1)} fuel)${heaters}` : warmed ? `the electric heaters keep all ${warmed} warm: no wood burned` : "nobody here";
+  return { each: r2(each), n, heads: all, warmed, total, wood: woodFor(total), fire, night, text };
 }
 
 // A per-head rate as text: 1.0, 1.3, 0.99.

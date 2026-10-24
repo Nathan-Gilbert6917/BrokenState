@@ -31,7 +31,8 @@ import { BED_BUILDINGS } from "./data-beds.js"; // beds as furniture: the placed
 import { TENT_TYPES, TENT_S } from "./data-tents.js"; // the one tent table (TENTS below)
 import { strikeTentAtBase } from "./tents.js"; // a bag's tent pulled down: struck back into its bag (call-time only)
 import { furnitureBeds, furnitureProblem, canSetFurniture, setFurniture, pickUpFurniture, RETIRED_WHY, furnitureText } from "./beds.js"; // beds as furniture (call-time only)
-import { POWER_BUILDINGS } from "./data-power.js"; // the power grid: found generators, spotlights, fridges, the breaker panel, the ammo press, the well pump, the fence charger
+import { POWER_BUILDINGS } from "./data-power.js"; // the power grid: found generators, spotlights, fridges, the breaker panel, the ammo press, the well pump, the fence charger; 2026-10-24 the solar array, the battery bank, the perimeter alarm, the electric heaters, the charging station
+import { isGen } from "./power.js"; // a battery bank needs a generator or a solar array to charge it (call-time only)
 import { isSetPiece, placedProblem, canSetPlaced, setPlaced, pickUpPlaced } from "./electric.js"; // the pieces set from the stores (call-time only)
 import { NEEDS_POWER, isPowered as poweredNow } from "./power.js"; // the ammo press runs only on power
 import { terraWaits, terraHour } from "./terraform.js"; // terraforming the base map: only builders with a shovel dig (call-time only)
@@ -547,11 +548,13 @@ const ringJobName = (job) => { const T = WALL_TIERS[matOf({ mat: job.mat || job.
 const JOBNAME_REST = (job) => (job.target && job.type === "generator" ? `Upgrade a generator to ${GEN_TIERS[job.tier] ? `a ${GEN_TIERS[job.tier].name.toLowerCase()}` : "the next tier"}` : job.target && job.type === "barracks" ? "Expand a bunkhouse into a barracks" : job.target && job.type === "reload_bench" ? "Upgrade an ammo bench into a reloading bench" : job.target && job.type === "canner" ? "Fit a pressure canner to a preserving room" : job.target ?`Upgrade to ${WATER_BARREL.tiers[job.tier] ? WATER_BARREL.tiers[job.tier].name.toLowerCase() : "the next tier"}` : BUILDINGS[job.type].name);
 
 // ---------- demolishing ----------
-// Pulls a building down to free its plot: half its scrap, parts, electronics and metal sheets back (rounded down), and for a barrel half of its
+// Pulls a building down to free its plot: half its scrap, parts, electronics, metal sheets and car parts (a battery
+// bank's batteries, 2026-10-24) back (rounded down), and for a barrel half of its
 // upgrades' too. Not while the base is under attack, nor with an upgrade of it in the queue.
+export const REFUND_KEYS = new Set(["scrap", "parts", "electronics", "metalsheet", "carparts"]);
 export function demolishRefund(b) {
   const out = {};
-  const add = (cost) => { for (const [k, v] of Object.entries(cost || {})) if (k === "scrap" || k === "parts" || k === "electronics" || k === "metalsheet") out[k] = (out[k] || 0) + v; };
+  const add = (cost) => { for (const [k, v] of Object.entries(cost || {})) if (REFUND_KEYS.has(k)) out[k] = (out[k] || 0) + v; };
   add(BUILDINGS[b.type].cost);
   if (b.type === "water_barrel") for (let t = 2; t <= barrelTier(b); t++) add(WATER_BARREL.tiers[t].cost);
   if (b.type === "kitchen" && b.canner) add(BUILDINGS.canner.cost); // machines-2: its pressure canner's half too
@@ -1234,6 +1237,9 @@ export function canBuild(state, base, type, opts = {}) {
   // The power grid (electric.js): a pump goes down a well, a charger needs a wire to charge.
   if (type === "elec_pump" && countAll(base, "elec_pump") + queued >= countAll(base, "well")) return { ok: false, reason: countAll(base, "well") ? "One pump a well: build another well first" : "Needs a well here first" };
   if (type === "fence_charger" && !countAll(base, "barbed_wire") && !countAll(base, "razor_wire")) return { ok: false, reason: "Needs a barbed wire fence or concertina wire here to charge" };
+  // More of the grid (2026-10-24, data-power.js): a battery bank wants something to charge it (a generator, found or
+  // built, or a solar array, standing or queued).
+  if (type === "battery_bank" && !base.buildings.some(isGen) && !countAll(base, "solar_array") && !base.construction.some((c) => c.type === "generator" || c.type === "solar_array")) return { ok: false, reason: "Needs a generator or a solar panel array here to charge it" };
   if (def.needsWall && !hasWall(base)) return { ok: false, reason: "Needs a wall closed round the base first (Walls, on this tab)" };
   if (!def.gather) { const why = siteShort(base.stock, def.cost, keyWord); if (why) return { ok: false, reason: why }; } // gather: taken as it comes in; building materials and sheets the stores lack made on site from scrap (buildmats.js)
   if (def.req) {
