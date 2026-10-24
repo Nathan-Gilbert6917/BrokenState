@@ -37,7 +37,7 @@ const SIDE = { desktop: "a desktop", portrait: "a phone held upright", landscape
       const settle = (ms = 400) => page.waitForTimeout(ms);
       const act = (action, data = {}) => page.evaluate(([a, d]) => { const b = document.createElement("button"); b.hidden = true; b.dataset.action = a; for (const [k, val] of Object.entries(d)) b.dataset[k] = val; document.body.appendChild(b); b.click(); b.remove(); }, [action, data]);
       // Esc while something is on top (a window, the tile menu, the search box): on a bare map Esc would open the Menu.
-      const onTop = () => page.evaluate(async () => { const U = await import("/src/ui/ui.js"), C = await import("/src/ui/cmdpalette.js"); const ctx = document.getElementById("ctxmenu"); return U.modalKind(game.state, game.ui) || (ctx && !ctx.classList.contains("hidden") ? "ctx" : "") || (C.paletteOpen() ? "palette" : "") || (game.ui.ask ? "ask" : ""); });
+      const onTop = () => page.evaluate(async () => { const U = await import("/src/ui/ui.js"), C = await import("/src/ui/cmdpalette.js"); const ctx = document.getElementById("ctxmenu"); const k = U.modalKind(game.state, game.ui); return (k && k !== "newrun" ? k : "") || (ctx && !ctx.classList.contains("hidden") ? "ctx" : "") || (C.paletteOpen() ? "palette" : "") || (game.ui.ask ? "ask" : ""); });
       const esc = async (n = 4) => { for (let i = 0; i < n; i++) { if (!(await onTop())) break; await page.keyboard.press("Escape"); await settle(250); } };
       const hub = () => page.evaluate(async () => { const hb = (await import("/src/sim/world.js")).hub(game.state); return { id: hb.id, tile: hb.tile, name: hb.name }; });
       // A scene: set it up, shoot it (the whole screen, or one element), note what and where it is.
