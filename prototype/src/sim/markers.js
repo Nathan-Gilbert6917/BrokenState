@@ -15,6 +15,7 @@ export const MARKER_TYPES = {
   camp:    { name: "Abandoned camp",    glyph: "⛺", desc: "Someone lived here. Supplies, and maybe notes about the area." },
   nomadcamp: { name: "Nomad camp",     glyph: "🔥", desc: "Where a band of nomads (nomads.js) was camped when your people last saw it. They move on every few days. A team can be sent to attack a camp you know of." },
   miltruck: { name: "Army truck",       glyph: "🪖", desc: "A military truck left on the road (miltrucks.js): rifles, ammunition and armour in the back, and its crew still about it. Scavenge the tile to search it." },
+  crashhome: { name: "Your unit's base", glyph: "★", desc: "Crashlanding (crashstart.js): the base of the unit you flew with, on the far side of the state. Get there. Its label says what became of it; after the hive there is destroyed, the region the unit fell back to." },
 };
 
 export const LAYERS = {
@@ -33,7 +34,7 @@ export const LAYERS = {
   towersight: { name: "Tower sight",     desc: "Rings round your manned watch towers: what they see" }, // sim/fieldworks.js
   radio:     { name: "Radio coverage",   desc: "How far your radios and your allies' reach, in tiles" }, // sim/radio.js, sim/radioallies.js; the help has the long version
 };
-export const LAYER_OF = { vehicle: "vehicles", death: "deaths", cache: "finds", car: "finds", camp: "finds", miltruck: "finds", nomadcamp: "finds" };
+export const LAYER_OF = { vehicle: "vehicles", death: "deaths", cache: "finds", car: "finds", camp: "finds", miltruck: "finds", nomadcamp: "finds", crashhome: "pois" };
 
 export function spot(p, entry) {
   if (!p.spotted) p.spotted = new Map();

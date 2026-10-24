@@ -826,7 +826,7 @@ export const SALVAGE_ELECTRONICS = {
   // night vision and thermals: the sensor and the image tube
   nvg: 3, thermal: 4, thermalscope: 3, nvscope: 3,
   // radios, headsets and ear protection: a receiver, an amplifier, a microphone
-  milradio: 3, handradio: 1, pocketradio: 1, commset: 2, eardef: 1,
+  milradio: 3, milradio_broken: 2, handradio: 1, pocketradio: 1, commset: 2, eardef: 1, // milradio_broken: Crashlanding's dead set (crashmode.js)
   // sensors: a laser rangefinder's diode and its ranging board
   rangefinder: 1,
   // powered sights: an emitter and its brightness board (the clones worth less than an electronics give nothing)

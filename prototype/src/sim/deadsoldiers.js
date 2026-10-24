@@ -15,6 +15,7 @@
 // - Hordes crossing a military site pick a few of them up (hordeMilitaryPickup).
 // - What their bodies hold (bodyLoot): worn-out armour, a helmet, rounds, now and then a rifle, a radio or a smoke
 //   grenade; riot police their helmet, guards, a baton, cuffs.
+import { crashHomeHot } from "./crashmode.js"; // Crashlanding (2026-10-24): the dead soldiers at the unit's overrun base
 import { LOCATIONS } from "./data.js";
 import { hash01 } from "./skills.js";
 import { mergeMix } from "./zombietypes.js";
@@ -168,6 +169,7 @@ export function siteDeadMix(state, tileId) {
   if (site) for (const k in site) add(k, site[k]);
   const trucks = truckDeadShare(state, tileId); // miltrucks.js: Army trucks nobody has opened yet, their crews about them
   if (trucks) add("soldier", trucks);
+  if (crashHomeHot(state, tileId)) add("soldier", MILDEAD.FALLEN[0]); // crashstart.js: the unit's overrun base (Crashlanding, 2026-10-24)
   const fb = fallenBase(state);
   if (fb != null && g) {
     const d = fb === tileId ? 0 : g.distance(fb, tileId);

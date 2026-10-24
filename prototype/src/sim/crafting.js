@@ -21,6 +21,7 @@
 // radio and electronics shops, hardware stores and tech sites) besides pliers or a drill. The recipes that use up an
 // item (gearIn) take one off a stack (a pack of batteries from a stack of them: itemstack.js takeOneAt / useOne) and
 // count stacks by what is in them (countKey), at a base and in the field alike.
+import { noteRadioFixed } from "./crashstart.js"; // Crashlanding (2026-10-24): the military radio repaired (call-time only)
 import { LIGHTS } from "./lights.js";
 import { wearMakeshiftMods, attachText, fitsText } from "./gunmods.js"; // makeshift gun parts that wear by the fight
 import { GEAR, SKILL_NAMES, SUPPLIES } from "./data.js";
@@ -186,6 +187,9 @@ export const CRAFTS = {
   // A wind-up receiver: a dynamo out of a motor (the machine part), a tuner board and a speaker (the electronics) in a
   // scrap case. The set a base or a team listens to a radio network with (radio.js); it needs no batteries.
   handradio:   { gear: "handradio",   in: { scrap: 3, parts: 1, electronics: 1 }, hours: 5, skill: "mechanics", min: 2 },
+  // Crashlanding (2026-10-24, crashmode.js): the broken military radio repaired, at a bench or in the field (a soldering
+  // iron and pliers with the team: data-tools.js CRAFT_TOOLS.milradio). Not blueprint-locked. crashstart.js noteRadioFixed.
+  milradio:    { gear: "milradio",    gearIn: { milradio_broken: 1 }, in: { electronics: 2, parts: 1, scrap: 2 }, hours: 4, skill: "mechanics", min: 3, field: true },
   // A helmet light: an LED cluster, a switch and a battery holder on a clip bent from scrap (helmets.js helmetLight: a
   // flashlight's beam, hands free, on any helmet with a side mount).
   helmetlight: { gear: "helmetlight", in: { scrap: 1, electronics: 1 }, hours: 3, skill: "mechanics", min: 2 },
@@ -484,6 +488,7 @@ export function craftingHour(state) {
       log(state, `${craftName(job.recipe)} finished at ${base.name}.`, "good");
     } else {
       const item = craftItem(r, quality);
+      noteRadioFixed(state, job.recipe); // crashstart.js: Crashlanding's radio repaired (nothing in other runs)
       if (item.dur && team.some((s) => hasPerk(s, "tinkerer"))) { item.dur = Math.round(item.dur * 1.5); if (!GEAR[item.key].tabs) item.durMax = item.dur; } // Tinkerer (skills.js): lasts 50% longer
       // A stack (r.n: makeshift picks) joins one of the same thing in the armory first (itemstack.js mergeInto), the rest a stack of its own.
       if (r.n > 1) for (const it of base.armory) if (it && mergeInto(it, item) > 0 && isSpent(item)) break;
@@ -754,6 +759,7 @@ export function fieldCraft(state, party, recipeKey) {
     return `${who} makes ${craftName(recipeKey).toLowerCase()} (${opt.out}) in about ${r.hours} hours.`;
   }
   const item = craftItem(r, quality);
+  noteRadioFixed(state, recipeKey); // crashstart.js: Crashlanding's radio repaired in the field (nothing in other runs)
   const slot = GEAR[r.gear].slot;
   const what = r.n > 1 ? `${r.n} ${item.name.toLowerCase()}` : `a ${item.name}`, them = r.n > 1 ? "them" : "it"; // a stack: "3 makeshift picks"
   // Worn kit to a free slot; small things (throwables, camp kit) to a pocket or a pack (they are not worn); a stack

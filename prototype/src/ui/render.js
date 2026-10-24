@@ -1301,6 +1301,7 @@ export function render(state) {
     const id = G.hives[a];
     if (!inView(id)) continue;
     const t = state.tiles[id], isLive = live.has(id), snap = k[id];
+    if (t.loc && t.loc.look === "hivebase") continue; // Crashlanding (sim/crashstart.js): the hive is drawn as the infested Guard base itself (siteLook)
     const px = G.x[id], py = G.y[id];
     const s = zoomBoost(), inf = (isLive ? t.infection : snap.infection) || 0;
     const level = inf >= 0.8 ? 2 : inf >= 0.5 ? 1 : 0, w = (28 + level * 4) * s;
@@ -1851,7 +1852,7 @@ const PLACE_W = { hub: 46, outpost: 34, shelter: 38, faction: 40 }; // base spri
 const placeW = (b) => (isCamp(b) ? STAGING_W : b.tier === 0 ? PLACE_W.shelter : b.type === "hub" ? PLACE_W.hub : PLACE_W.outpost);
 const STAGING_W = 34; // a camp's sprite width (sim/staging.js), an outpost's
 const MARKER_W = { death: 13, cache: 15, car: 19, camp: 16, nomadcamp: 16, vehicle: 20 };
-const LAYER_COLOR = { vehicles: "#7fb0e6", deaths: "#d8cfb8", finds: "#c9b98a" }; // marker rings and far-out dots
+const LAYER_COLOR = { vehicles: "#7fb0e6", deaths: "#d8cfb8", finds: "#c9b98a", pois: "#ffcf6a" }; // marker rings and far-out dots (pois: the "crashhome" marker, sim/markers.js)
 const ICON_W = 11;                 // status icons (alert, work, radio, siege, "?")
 // Site sprites: world pixels per sprite pixel, and a size factor by zone so a shop drawn for a city block comes out
 // a little smaller in a small town (and a town shop smaller out in the countryside).
@@ -1906,7 +1907,7 @@ function besideBase(tile, px, py) {
 // variant: the place's franchise (sim/shops.js poi.v; a site's is its site POI's), its own look on the map.
 function siteLook(loc, px, py, tier, faded, variant = "") {
   const s = tier < 2 ? zoomBoost() : 1, def = LOCATIONS[loc.type];
-  const cv = poiSpriteCanvas(loc.type, loc.type === "military" && / depot$/i.test(loc.name) ? "depot" : variant, faded);
+  const cv = poiSpriteCanvas(loc.look === "hivebase" ? "military_hive" : loc.type, loc.type === "military" && / depot$/i.test(loc.name) ? "depot" : variant, faded); // look "hivebase": Crashlanding's overrun Guard base (sim/crashstart.js)
   const w = gridW(cv) * POI_PX * s * ((ZONE_K[loc.zone] || 1) / (ZONE_K[loc.type === "city" ? "urban" : def.cat] || 1));
   const h = spriteH(cv, w), foot = py + 7 * s, rx = Math.max(9 * s, w * 0.46), ry = (tier < 2 ? 4.5 : 3.6) * s;
   return { s, cv, w, h, foot, rx, ry, lw: tier < 2 ? 1.8 : 1.3, labelY: foot + ry + 6, side: [px + rx + 2 * s, foot] };

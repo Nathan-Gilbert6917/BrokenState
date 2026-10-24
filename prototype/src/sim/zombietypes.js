@@ -148,6 +148,7 @@ export function ambientMix(t, o) {
     if (!tot) continue;
     for (const k in kinds) out[k] = (out[k] || 0) + (share * kinds[k]) / tot;
   }
+  if (o.mult && o.mult !== 1) for (const k in out) out[k] *= o.mult; // Crashlanding (crashmode.js crashSpecials): × CRASH.SPECIALS, under the cap below
   const sum = Object.values(out).reduce((a, v) => a + v, 0);
   if (!sum) return null;
   const f = sum > A.CAP ? A.CAP / sum : 1;

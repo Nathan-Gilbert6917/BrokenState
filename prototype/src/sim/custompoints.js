@@ -22,6 +22,7 @@ import { keyFor } from "./rounds.js";
 import { traitPoints, traitTier, traitLabel } from "./traits.js";
 import { START_GEAR, sanitizeStartGear, CARRY_PLACES, gunWith, gunCap, gunLoad, pickKey, pickMods, pickN } from "./startgear.js";
 import { startsWithVehicle } from "./custommode.js"; // Start with a vehicle (2026-10-24): off, no background car backs to pay for
+import { isCrashRun } from "./crashmode.js"; // Crashlanding (2026-10-24): the fixed military kit is the unit's issue, no points
 
 // ---------- the price table (tune here) ----------
 export const CUSTOM_POINTS = {
@@ -167,7 +168,11 @@ function ownBill(state, s, max) {
   if (back !== bad) lines.push(`Bad traits give back at most ${cap} (a third of the max)`);
   const P = sanitizeStartGear(s.startGear);
   let gear = 0, carried = 0;
-  if (P) {
+  // Crashlanding (2026-10-24, user request: "You cannot customize anything beside the traits, skills and character
+  // look"): the kit is fixed and the unit's issue, so nothing worn, held or carried costs a point (world.js applyCrew
+  // ignores the picks and puts the kit back); skills and traits are priced as ever.
+  if (isCrashRun(state)) lines.push("The military kit is the unit's issue: free");
+  else if (P) {
     for (const [slot, key] of Object.entries(P.slots)) gear += slotPoints(slot, key, slot === "weapon" ? P.mods : null);
     if (P.carry) for (const where of CARRY_PLACES) for (const e of P.carry[where] || []) if (pickKey(e)) carried += pickPoints(e);
   }

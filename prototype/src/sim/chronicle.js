@@ -9,7 +9,7 @@
 // last frame marks where the last base stood (frameState lastBase, drawn as your empty base) and the game-over
 // caption says so.
 import { foodIn } from "./foods.js"; // the hub's days of food
-import { hub, alive } from "./world.js";
+import { hub, alive, day } from "./world.js";
 import { vehicleById } from "./vehicles.js";
 import { totalRounds } from "./rounds.js"; // rounds by calibre ("ammo": every round there)
 
@@ -105,7 +105,7 @@ export function startChronicle(state) {
   });
   for (const f of state.factions) facIndex(c, f);
   const h = hub(state);
-  caption(c, { h: state.hour, text: `Day 1. ${h ? h.name : "Your holdout"} starts with ${alive(state).length} survivors. ${state.factions.length} other groups are out there.`, kind: "info", tile: h ? h.tile : -1, major: true });
+  caption(c, { h: state.hour, text: `Day ${day(state)}. ${h ? h.name : state.crash ? "The sole survivor of the crash" : "Your holdout"} starts with ${alive(state).length} survivors. ${state.factions.length} other groups are out there.`, kind: "info", tile: h ? h.tile : -1, major: true });
   record(state, c);
   return c;
 }

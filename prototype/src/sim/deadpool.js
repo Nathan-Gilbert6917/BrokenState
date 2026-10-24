@@ -14,6 +14,7 @@
 // - A hive's brood (hivecrawl.js broodTypes) gets the era's kinds it does not breed itself at BROOD_YEAR a year.
 // - All of it × the run's Zombie damage dial to the power POOL.DIAL (worldcfg.js zDmg: a gentle run meets fewer).
 // No dice: the same tile on the same day has the same pool.
+import { crashSpecials } from "./crashmode.js"; // Crashlanding (2026-10-24): the special dead more often
 import { POOL, BEASTS } from "./hiveconst.js";
 import { placeKind, eraKinds } from "./zombietypes.js";
 import { rampDay } from "./eras.js";
@@ -58,7 +59,7 @@ export function shapeKinds(kinds, place) {
 export function widenMix(state, tileId) {
   const t = state.tiles[tileId];
   if (!t || rampDay(state) < POOL.START_DAY || (t.terrain === "water" && !t.bridge)) return null;
-  const y = poolYears(state), f = poolDial(state), out = {};
+  const y = poolYears(state), f = poolDial(state) * crashSpecials(state), out = {}; // crashmode.js: × CRASH.SPECIALS in a Crashlanding run (each cap still holds below)
   const md = milDist(state, tileId);
   if (md <= POOL.MIL_RANGE) out.soldier = Math.min(POOL.MIL_MAX, POOL.MIL_YEAR * y) * (1 - md / (POOL.MIL_RANGE + 1)) * f;
   const kind = placeKind(t);
@@ -77,7 +78,7 @@ export function broodWiden(state, tier, bred, n, layer = 0) {
   if (rampDay(state) < POOL.START_DAY || n < 2) return null;
   const kinds = Object.keys(eraKinds(tier)).filter((k) => !bred.includes(k));
   if (!kinds.length) return null;
-  const k = Math.min(n - 1, Math.round(n * Math.min(POOL.BROOD_MAX, POOL.BROOD_YEAR * poolYears(state)) * poolDial(state)));
+  const k = Math.min(n - 1, Math.round(n * Math.min(POOL.BROOD_MAX, POOL.BROOD_YEAR * poolYears(state)) * poolDial(state) * crashSpecials(state))); // crashmode.js: Crashlanding's × CRASH.SPECIALS
   if (k <= 0) return null;
   const out = {};
   for (let i = 0; i < k; i++) { const kind = kinds[(i + layer) % kinds.length]; out[kind] = (out[kind] || 0) + 1; }

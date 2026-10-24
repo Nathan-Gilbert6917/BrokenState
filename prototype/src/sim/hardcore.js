@@ -15,12 +15,15 @@ import { setupHardcoreGroups, hardcoreGroupsDaily, hardcoreGroupsHour, hardcoreG
 import { setupHardcoreOutbreak, hardcoreOutbreakDaily } from "./hardcore-outbreak.js";
 import { setupHardcoreLoot, hardcoreLootDaily } from "./hardcore-loot.js";
 import { CUSTOM_RUN } from "./custommode.js"; // Custom mode: a normal start with the counts set (not a state.mode of its own)
+import { CRASH_PEOPLE, CRASH } from "./crashmode.js"; // Crashlanding: a normal-mode world with state.crash (not a state.mode of its own)
 
 export const MODES = {
   normal: { label: "Normal", tip: "6–12 months after the outbreak: you start with a hub, six survivors (one to eight: Starting people) and supplies" },
   hardcore: { label: "Hardcore", tip: "The day Calder falls: one to four survivors (three by default) on the road with what they grabbed, no hub, and the outbreak just starting" },
   // Custom (2026-10-24, user request): the new-run screen's mode only; the run is a normal one with state.custom (custommode.js).
   custom: { label: "Custom", tip: "A normal start (a hub, 6–12 months after the outbreak) with the counts you set: starting survivors, AI groups, starting hives, cities, towns and military sites, each 1 or more" },
+  // Crashlanding (2026-10-24, user request): the screen's mode only; the run is a normal one with state.crash (crashmode.js).
+  crash: { label: "Crashlanding", tip: `Three years after Calder fell: the sole survivor of a Guard helicopter shot down on a ${CRASH.W} × ${CRASH.H} map, no base, no vehicle, a broken radio and a fixed military kit (traits, skills and look are yours to set; the kit, the map size and the count are not). Your unit's base is on the far side of the map` },
 };
 
 // Starting people (the new-run screen): how many flee together on day 1 (Hardcore, START_PEOPLE), or how many hold the
@@ -28,8 +31,8 @@ export const MODES = {
 // createWorld's startPeople and state.startPeople (saved with the game). Each mode keeps its own count on the screen.
 export const START_PEOPLE = { MIN: 1, MAX: 4, DEF: 3 };
 export const NORMAL_PEOPLE = { MIN: 1, MAX: 8, DEF: 6 };
-// Custom mode (custommode.js CUSTOM_RUN.people): 1–30 at the hub.
-export const peopleRange = (mode) => (mode === "hardcore" ? START_PEOPLE : mode === "custom" ? CUSTOM_RUN.people : NORMAL_PEOPLE);
+// Custom mode (custommode.js CUSTOM_RUN.people): 1–30 at the hub. Crashlanding (crashmode.js CRASH_PEOPLE): the one survivor.
+export const peopleRange = (mode) => (mode === "hardcore" ? START_PEOPLE : mode === "custom" ? CUSTOM_RUN.people : mode === "crash" ? CRASH_PEOPLE : NORMAL_PEOPLE);
 export function clampStartPeople(v, mode = "hardcore") {
   const R = peopleRange(mode);
   const n = Math.round(Number(v));

@@ -152,6 +152,7 @@ export const MISSIONS = {
   formed:      { name: "Field",            desc: "A team formed at one of your bases (Form a team…): it waits on the base's tile for orders (teamform.js).", hidden: true },
   moveout:     { name: "Moving out",       desc: "People who left a crowded base, on their way to found an outpost or to another of your bases (moveout.js).", hidden: true },
   flee:        { name: "Refugee",          desc: "Hardcore mode: the survivors who fled when Calder fell, on the road until they found their first hub (hardcore-start.js).", hidden: true },
+  crash:       { name: "Survivor",         desc: "Crashlanding: the one who walked away from the helicopter, on the road until the first base (crashstart.js).", hidden: true },
   // With no base at all (hardcore's first hub, the exiles): a camp built up into the hub (staging.js).
   establish:   { name: "Establish base",   desc: "Set up camp here and build it up into a shelter (then, later, a base): its builders work on it as the materials it lists come in (staging.js).", hidden: true },
   enter:       { name: "Enter base",       desc: "Move into the base of yours the team stands on: its people live there from now on, what it carries goes into the stores and armory, its vehicle parks there, and the team is disbanded (moveout.js enterOption).", hidden: true },

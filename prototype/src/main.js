@@ -60,6 +60,7 @@ import { canClaim, wellProblem, CLAIM } from "./sim/claims.js"; // land claims a
 import { initCombatUI, drawCombat, renderCombatPanel, renderCombatBar, raidLayout, renderRaidTop, renderRaidCards, renderRaidLog, renderRaidLogFoot, combatTick, combatMouse, combatClick, combatKey, combatKeyUp, combatAction, combatPress, combatRelease, combatWheel, combatPan, combatLeave, combatTap, combatTapChip, cui, padCur, combatPadOn, combatPadOff, combatPadMove, combatPadFrame, combatPadA, combatPadB, combatPadCycle, combatPadEnd, combatPadZoom } from "./ui/combat.js";
 import { defaultCustom, cleanCustom, clampCustomCount, isCustomRun, startsWithVehicle } from "./sim/custommode.js"; // Custom mode and Start with a vehicle (2026-10-24)
 import { defaultFleet, fleetText } from "./sim/startfleet.js"; // the starting vehicles: each its kind, point limit and back (2026-10-24)
+import { isCrashRun } from "./sim/crashmode.js"; // Crashlanding (2026-10-24): a normal-mode run with state.crash, the screen's fourth mode
 import { LOOK_ACTIONS, LOOK_CHANGE_ACTIONS, crewSnapshot, randomizeAllCrew, randomizeEverything, randomizeGear, randomizeOne, randomBackground, rollRandomRun, ironmanCrew, crewCustomized, crewWithBackground, crewWithBackgrounds, blankCrew, backToSetup, stashModeSet, takeModeSet } from "./ui/newgame.js";
 import { CUSTOM_POINTS, clampMax, overText } from "./sim/custompoints.js"; // Customize: everything costs points
 import { BG_ACTIONS, BG_CHANGE, BG_INPUT, customLibrary } from "./ui/backgrounds.js"; // custom backgrounds (sim/custombg.js), not in Ironman
@@ -208,7 +209,7 @@ const freshUi = () => ({
   mapSel: null, selParty: null, // ui/mapselect.js: a party, band or outsiders selected on the map; selParty: your selected team's id
   tileView: null, moveExit: null, // ui/poipick.js: the tile view of a team walking on its tile ({ partyId }); move mode from its "Leave for another tile…" (the team's id)
 });
-const ui = { title: false, scale: 1, factionCount: 7, worldSize: DEFAULT_SIZE, customW: BASE_W, customH: BASE_H, hiveCount: null, mode: "normal", startPeople: NORMAL_PEOPLE.DEF, ironman: false, freeEdit: false, pointsMax: CUSTOM_POINTS.DEF, crewEdited: false, crewRoll: null, startPick: null, startVehicle: true, custom: defaultCustom(), fleet: defaultFleet("normal"), ...freshUi() }; // mode: Normal, Hardcore or Custom (sim/hardcore.js MODES); startPeople: the starting team (Normal 1–8, Hardcore 1–4, Custom 1–30); pointsMax: Customize's Points each; startVehicle: Start with a vehicle; custom: Custom mode's counts (sim/custommode.js)
+const ui = { title: false, scale: 1, factionCount: 7, worldSize: DEFAULT_SIZE, customW: BASE_W, customH: BASE_H, hiveCount: null, mode: "normal", startPeople: NORMAL_PEOPLE.DEF, ironman: false, freeEdit: false, pointsMax: CUSTOM_POINTS.DEF, crewEdited: false, crewRoll: null, startPick: null, startVehicle: true, custom: defaultCustom(), fleet: defaultFleet("normal"), ...freshUi() }; // mode: Normal, Hardcore, Custom or Crashlanding (sim/hardcore.js MODES); startPeople: the starting team (Normal 1–8, Hardcore 1–4, Custom 1–30, Crashlanding 1); pointsMax: Customize's Points each; startVehicle: Start with a vehicle; custom: Custom mode's counts (sim/custommode.js)
 // Each mode keeps its own Starting people, Points each, Start with a vehicle and Starting vehicles (2026-10-19 and
 // 2026-10-24, user requests): ui.startPeople, ui.pointsMax, ui.startVehicle and ui.fleet (sim/startfleet.js: each starting
 // vehicle's kind, point limit and back) are the current mode's, the other modes' wait here (switching mode swaps them:
@@ -217,6 +218,7 @@ ui.modeSets = {
   normal: { startPeople: NORMAL_PEOPLE.DEF, pointsMax: CUSTOM_POINTS.DEF, startVehicle: true, fleet: defaultFleet("normal") },
   hardcore: { startPeople: START_PEOPLE.DEF, pointsMax: CUSTOM_POINTS.DEF, startVehicle: true, fleet: defaultFleet("hardcore") },
   custom: { startPeople: peopleRange("custom").DEF, pointsMax: CUSTOM_POINTS.DEF, startVehicle: true, fleet: defaultFleet("custom") },
+  crash: { startPeople: peopleRange("crash").DEF, pointsMax: CUSTOM_POINTS.DEF, startVehicle: false, fleet: [] }, // Crashlanding (sim/crashmode.js): one survivor, no vehicle; its Points each is its own
 };
 // Folded panels and their widths (ui/layout.js), remembered in the browser. The Layers box keeps its old ui flag,
 // which reads and writes the layout.
@@ -1353,7 +1355,7 @@ const actions = {
     ui.nrPick = false; // the dice's start again
     const now = playerTile(state);
     ui.nrMsg = now === was ? "There is nowhere else to start on this map: try another seed or size."
-      : `New start position: ${state.bases[0] ? state.bases[0].name : "another spot on the road"}, ${state.grid.distance(was, now)} hexes from the last one.${onMap ? "" : " View map to see it."}`;
+      : `New start position: ${state.bases[0] ? state.bases[0].name : isCrashRun(state) ? "another crash site, your unit's base across the map from it" : "another spot on the road"}, ${state.grid.distance(was, now)} hexes from the last one.${onMap ? "" : " View map to see it."}`;
   },
   // Random run (ui/newgame.js rollRandomRun): every setting rolled, a new seed, a random crew and its gear, then Start.
   "nr-random": () => {
@@ -1382,7 +1384,7 @@ const actions = {
   // A crew card's Background: a random preset, as picking it in Background does (ui/newgame.js randomBackground).
   "nr-rand-bg": (d) => {
     const s = survivorById(state, Number(d.id));
-    if (!s || ui.ironman || ui.started) return;
+    if (!s || ui.ironman || ui.started || isCrashRun(state)) return; // Crashlanding: the background is the soldier's
     const key = randomBackground(state, s);
     const crew = key && crewWithBackground(state, s.id, key);
     if (!crew) return;
@@ -1739,7 +1741,7 @@ const changeActions = {
   // Customize (Normal and Hardcore): who a colonist was (a preset, a custom background, or "" for the dice). The world is built
   // again on the same seed (a crew roll of its own from now on, so the map and the groups stay put).
   "nr-bg": (el) => {
-    if (ui.ironman || ui.started) return;
+    if (ui.ironman || ui.started || isCrashRun(state)) return; // Crashlanding: the background is the soldier's
     const id = Number(el.dataset.id), i = state.survivors.findIndex((s) => s.id === id);
     const crew = crewWithBackground(state, id, el.value);
     if (!crew) return;
@@ -1748,11 +1750,12 @@ const changeActions = {
   },
   "nr-guide": (el) => { ui.guide = !!el.checked; }, // and its First-week guide box (ui/guide.js)
   children: (el) => { ui.childrenOff = !el.checked; }, // the new-run screen's Children box (sim/family.js)
-  // Normal, Hardcore or Custom: each keeps its own Starting people, Points each and Start with a vehicle (ui.modeSets);
-  // the crew goes on the new mode's Points each (their own points set on a card too). Custom (sim/custommode.js) is a
-  // normal start with ui.custom's counts.
+  // Normal, Hardcore, Custom or Crashlanding: each keeps its own Starting people, Points each and Start with a vehicle
+  // (ui.modeSets); the crew goes on the new mode's Points each (their own points set on a card too). Custom
+  // (sim/custommode.js) is a normal start with ui.custom's counts; Crashlanding (sim/crashmode.js) a normal-mode world
+  // with the crash (runOpts).
   gamemode: (el) => {
-    const mode = el.value === "hardcore" ? "hardcore" : el.value === "custom" ? "custom" : "normal";
+    const mode = el.value === "hardcore" ? "hardcore" : el.value === "custom" ? "custom" : el.value === "crash" ? "crash" : "normal";
     if (mode === ui.mode) return;
     stashModeSet(ui);
     takeModeSet(ui, mode);
@@ -1821,14 +1824,16 @@ for (const [k, fn] of Object.entries(GB_CHANGE)) changeActions[k] = (el) => fn(s
 
 // The new-run screen's settings as createWorld's options (newWorld): Custom mode (sim/custommode.js) is a normal start
 // with ui.custom's counts (its Starting survivors: ui.startPeople); vehicle: Start with a vehicle; fleet: the Starting
-// vehicles (each its kind, point limit and back).
+// vehicles (each its kind, point limit and back). Crashlanding (sim/crashmode.js, 2026-10-24): a normal-mode world with
+// `crash`, which fixes the rest (the one survivor, no vehicle, no fleet, no Custom counts, the 500 × 250 map).
 function runOpts() {
-  const custom = ui.mode === "custom";
+  const custom = ui.mode === "custom", crash = ui.mode === "crash";
   return {
     factionCount: ui.factionCount, size: ui.worldSize, customW: ui.customW, customH: ui.customH, hives: ui.hiveCount,
     mode: custom ? "normal" : ui.mode, crewRoll: ui.crewRoll, startPeople: ui.startPeople, start: ui.startPick, worldCfg: uiCfg(ui),
     vehicle: ui.startVehicle !== false, custom: custom ? { ...ui.custom, people: ui.startPeople } : null,
     fleet: ui.ironman ? (ui.fleet || []).map((f) => ({ ...f, load: null })) : ui.fleet, // Starting vehicles (sim/startfleet.js); Ironman: the backs as rolled
+    ...(crash ? { mode: "normal", crash: true, custom: null, vehicle: false, fleet: [], startPeople: 1 } : {}), // Crashlanding: the one survivor on foot, no fleet, no Custom counts
   };
 }
 
@@ -1920,7 +1925,7 @@ function adopt(st, entry) {
   state = st;
   ui.title = false;
   if (!state.mode) state.mode = "normal"; // saves from before the modes
-  const mode = isCustomRun(state) ? "custom" : state.mode; // a Custom run is a normal one with state.custom (sim/custommode.js)
+  const mode = isCrashRun(state) ? "crash" : isCustomRun(state) ? "custom" : state.mode; // a Custom run is a normal one with state.custom (sim/custommode.js), a Crashlanding run one with state.crash (sim/crashmode.js)
   if (ui.mode !== mode) { stashModeSet(ui); takeModeSet(ui, mode); } // each mode its own settings
   ui.mode = mode; // a new campaign from here keeps the mode you were playing
   if (mode === "custom") ui.custom = cleanCustom(state.custom); // and Custom's counts

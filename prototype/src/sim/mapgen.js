@@ -319,8 +319,12 @@ export function generateMap(rng, size = "normal", { hives = null, seed = null } 
   // ---------- landmarks ----------
   const settlements = [...cities.map((c) => c.center), ...towns];
   const nearName = (t) => settlements.reduce((best, s) => (!best || grid.distance(s.id, t.id) < grid.distance(best.id, t.id) ? s : best), null).loc.name;
-  const cityDist = (t) => Math.min(...cities.map((c) => grid.distance(c.center.id, t.id)));
-  const townDist = (t) => towns.reduce((m, o) => Math.min(m, grid.distance(o.id, t.id)), 999);
+  // Remembered per tile (the cities and towns are all placed by now): the landmark and countryside filters ask for
+  // every tile many times over, and on a 500 × 250 map (Crashlanding, 2026-10-24) the towns run to hundreds. No city at
+  // all (a Custom map with no room for one): far from every city, as the empty min was (999, not Infinity, which an Int16 cannot hold).
+  const cityMemo = new Int16Array(grid.size).fill(-1), townMemo = new Int16Array(grid.size).fill(-1);
+  const cityDist = (t) => (cityMemo[t.id] >= 0 ? cityMemo[t.id] : (cityMemo[t.id] = cities.length ? Math.min(...cities.map((c) => grid.distance(c.center.id, t.id))) : 999));
+  const townDist = (t) => (townMemo[t.id] >= 0 ? townMemo[t.id] : (townMemo[t.id] = towns.reduce((m, o) => Math.min(m, grid.distance(o.id, t.id)), 999)));
   // The first filter with any candidate wins; the last ones are fallbacks.
   const landmark = (type, filters, name, zone = "special") => {
     for (const f of filters) {
@@ -356,7 +360,7 @@ export function generateMap(rng, size = "normal", { hives = null, seed = null } 
   }
   for (const m of military) offRoad.add(m.id);
   // One prison, dam and airport on a Normal map (two on Large and Huge ones, kept apart), two factories (by area).
-  const apart = (type, d) => (t) => sites.every((s) => s.loc.type !== type || grid.distance(s.id, t.id) >= d);
+  const apart = (type, d) => { const same = sites.filter((s) => s.loc.type === type); return (t) => same.every((s) => grid.distance(s.id, t.id) >= d); }; // the sites of that type gathered once: the filter runs for every tile
   const perArea = (n) => Math.max(1, scaled(n));
   for (let i = 0; i < perArea(1); i++) {
     const far = apart("prison", 16);

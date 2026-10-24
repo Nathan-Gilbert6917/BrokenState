@@ -36,6 +36,7 @@ import { migrateUnitStacks } from "./mags.js"; // physical rounds on a battle sa
 import { loadUpAll } from "./itemacts.js"; // physical rounds out of a fight (2026-10-20): an older save's guns and magazines loaded once
 import { CRAFT_BOOKS, tech } from "./blueprints.js"; // craft books read before they unlocked anything // the line-of-sight cache of a loaded battle (sparse on a big yard)
 import { saveSummary, campaignKey } from "./savesummary.js"; // the save list's one-line summary and campaign groups
+import { isCrashRun } from "./crashmode.js"; // Crashlanding (2026-10-24): a normal-mode run with state.crash, named in the save list
 import { noteLootAge } from "./itemcond.js"; // the years since the fall, for loot rolled after a load
 import { migrateStaging } from "./staging.js"; // the old staging camp becomes a camp base
 import { migrateStacks } from "./itemstack.js"; // stacks in a slot (2026-10-10)
@@ -95,7 +96,7 @@ export function saveMeta(state) {
     mode: state.mode === "hardcore" ? "hardcore" : "normal", // hardcore.js: the save list says which
     ironman: !!state.ironman, // ui/saves.js: an Ironman game's own slot
     ...(state.mode === "hardcore" && Number.isFinite(state.startPeople) ? { startPeople: state.startPeople } : {}), // hardcore.js START_PEOPLE: the save list says when it was not three
-    summary: saveSummary(state), camp: campaignKey(state), // "Day 143 · 31 people · winter · …"; the campaign the save list groups it under
+    summary: `${isCrashRun(state) ? "Crashlanding · " : ""}${saveSummary(state)}`, camp: campaignKey(state), // "Day 143 · 31 people · winter · …" (a Crashlanding run named so: crashmode.js, 2026-10-24); the campaign the save list groups it under
   };
 }
 
