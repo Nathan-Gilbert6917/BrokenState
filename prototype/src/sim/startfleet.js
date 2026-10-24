@@ -8,11 +8,13 @@
 //   and handed to createWorld as its `fleet` option, kept as state.fleet while the new-run screen is up (each entry
 //   with vid: the vehicle made for it, null with Start with a vehicle off). Start (startgear.js clearStartGear) takes it off.
 //     Every mode: a Vehicles count, 1 up to the starting survivors (each vehicle a driver; the user's request
-//     2026-10-24: "be able to add vehicles up to the number of starting survivors"), fleetMax. Normal: the first is the
-//     hub's pickup truck, the rest a kind each (fleetKinds: every motor vehicle; no bicycles), all at the hub.
-//     Hardcore: the first is the car the team flees in (its kind as the dice roll it: type null here, the rolled kind
-//     on state.fleet), the rest a kind each, riding with the team (hardcore-start.js extraCars). Custom (custommode.js):
-//     each a kind of its own, all parked at the hub.
+//     2026-10-24: "be able to add vehicles up to the number of starting survivors"), fleetMax, each a kind of its own
+//     (fleetKinds: every motor vehicle; no bicycles; the user's request 2026-10-24: "You also cannot choose what kind of
+//     vehicle the starting one is or remove it") and each one can be removed (ui/startgear.js fleet-remove; the last
+//     one: Start with a vehicle off). Normal and Custom (custommode.js): all at the hub, a new one a pickup truck.
+//     Hardcore: the first is the car the team flees in (type null: its kind as the dice roll it, the rolled kind on
+//     state.fleet with rolledType; a kind set: that kind, the dice cast all the same), the rest riding with the team
+//     (hardcore-start.js extraCars).
 //   limit: the vehicle's own point limit (LIMIT by default, MIN–MAX); its load is priced as any back
 //     (custompoints.js vehiclePoints) against it, not on any colonist's points.
 //   load: null, as rolled (a normal or Custom start's vehicles come empty; Hardcore's car back is what the dice put in
@@ -50,16 +52,13 @@ export function clampFleetCount(v, max = START_FLEET.COUNT.MAX) {
 }
 /** How many starting vehicles a world may have: one a starting survivor. @param {any} state */
 export const fleetMax = (state) => Math.max(START_FLEET.COUNT.MIN, Math.min(START_FLEET.COUNT.MAX, (state && state.survivors ? state.survivors.length : 0) || START_FLEET.COUNT.MIN));
-/** Vehicle i's kind is the player's to pick (Custom: every one; Normal and Hardcore: all but the first). @param {string} mode @param {number} i */
-export const kindPicked = (mode, i) => mode === "custom" || i > 0;
 
 /** The new-run screen's mode for a world's fleet: "custom", "hardcore" or "normal". @param {any} state */
 export const fleetMode = (state) => (isCustomRun(state) ? "custom" : state && state.mode === "hardcore" ? "hardcore" : "normal");
 
 /**
- * A fleet made safe for a mode: 1 up to max vehicles (the starting survivors). The first in Normal the pickup, in
- * Hardcore the car as rolled (type null); the rest (and every one in Custom) of the kinds fleetKinds lists. Each its
- * limit and its load (null: as rolled).
+ * A fleet made safe for a mode: 1 up to max vehicles (the starting survivors), each of the kinds fleetKinds lists (a
+ * pickup when none; Hardcore's first: null, as the dice roll it). Each its limit and its load (null: as rolled).
  * @param {any} raw @param {string} mode "normal" | "hardcore" | "custom" @param {number} [max]
  * @returns {{ type: string | null, limit: number, load: { items: any[], supplies: Record<string, number> } | null }[]}
  */
@@ -71,13 +70,19 @@ export function cleanFleet(raw, mode, max = START_FLEET.COUNT.MAX) {
   const out = [];
   for (let i = 0; i < n; i++) {
     const r = list[i] && typeof list[i] === "object" ? list[i] : {};
-    const type = !kindPicked(mode, i) ? (mode === "hardcore" ? null : START_FLEET.KIND) : kinds.includes(r.type) ? r.type : START_FLEET.KIND;
+    const type = kinds.includes(r.type) ? r.type : mode === "hardcore" && i === 0 ? null : START_FLEET.KIND;
     out.push({ type, limit: clampLimit(r.limit), load: r.load ? sanitizeStartVehicle(r.load, custom) : null });
   }
   return out;
 }
 /** @param {string} mode */
 export const defaultFleet = (mode) => cleanFleet(null, mode);
+// One vehicle taken off the list (its Remove): the rest as they were. The last one stays (Start with a vehicle goes off).
+/** @param {any[]} fleet @param {number} i @param {string} mode @param {number} [max] */
+export function removeFromFleet(fleet, i, mode, max = START_FLEET.COUNT.MAX) {
+  const list = (fleet || []).filter((_, j) => j !== i);
+  return list.length ? cleanFleet(list, mode, max) : cleanFleet(fleet, mode, max);
+}
 // The Vehicles box: the first n kept (at most max, the starting survivors), new ones a pickup with the default limit, as rolled.
 /** @param {any[]} fleet @param {number} n @param {string} mode @param {number} [max] */
 export function resizeFleet(fleet, n, mode = "custom", max = START_FLEET.COUNT.MAX) {
@@ -123,8 +128,7 @@ export function fleetName(state, i) {
     const o = (state.survivors || []).find((s) => s.id === id);
     return o ? `${String(o.name).split(" ")[0]}'s ${T.name.toLowerCase()}` : `The ${T.name.toLowerCase()}`;
   }
-  if (kindPicked(mode, i)) return `Vehicle ${i + 1} (${T.name})`;
-  return `The hub's ${T.name.toLowerCase()}`;
+  return `Vehicle ${i + 1} (${T.name})`;
 }
 /**
  * What is wrong with the loads, for Start: [{ i, name, text }] (a load over its point limit or its room).

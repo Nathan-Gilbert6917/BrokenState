@@ -594,7 +594,8 @@ export function rollCar(state, p, people, keptOwner = null) {
   const fleet0 = state.fleet && state.fleet[0];
   const picked = !!(fleet0 && fleet0.load); // the back set on the new-run screen
   const A = archetypeOf(state, owner.background) || {};
-  const type = A.custom && A.car.type ? A.car.type : pickW(rng, A.custom ? { sedan: 2, truck: 1 } : A.cars || { sedan: 2, truck: 1 });
+  const rolledType = A.custom && A.car.type ? A.car.type : pickW(rng, A.custom ? { sedan: 2, truck: 1 } : A.cars || { sedan: 2, truck: 1 });
+  const type = fleet0 && fleet0.type && VEHICLE_TYPES[fleet0.type] ? fleet0.type : rolledType; // a kind set on the new-run screen (startfleet.js): that kind, the dice cast all the same
   const T = VEHICLE_TYPES[type];
   const fuel = Math.round(T.tank * rng.range(C.CAR.FUEL[0], C.CAR.FUEL[1]) * 10) / 10;
   const car = createVehicle(state, type, { kind: "party", partyId: p.id }, { fuel, condition: rng.int(C.CAR.CONDITION[0], C.CAR.CONDITION[1]) });
@@ -811,7 +812,7 @@ export function setupHardcoreStart(state, crew, crewRoll = null, n = HC_START.CR
   const { owner, trunk } = rolledCar;
   const car = onFoot ? null : rolledCar.car;
   if (onFoot) { state.vehicles = state.vehicles.filter((v) => v !== rolledCar.car); delete owner.diceTrunk; }
-  else if (state.fleet && state.fleet[0]) Object.assign(state.fleet[0], { vid: car.id, type: car.type }); // startfleet.js: the starting vehicle is this car
+  else if (state.fleet && state.fleet[0]) Object.assign(state.fleet[0], { vid: car.id, rolledType: !state.fleet[0].type, type: car.type }); // startfleet.js: the starting vehicle is this car (rolledType: its kind as the dice rolled it)
   const more = car ? extraCars(state, p, people) : [];
   state.rng = crewRng;
   for (const s of people) s.carRoll = carRoll;
