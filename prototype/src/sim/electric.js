@@ -49,14 +49,15 @@
 //   (chargeHour: every powered hour puts CHARGER.rate uses back into the most drained rechargeable gear at the base, in
 //   the stores or on anyone here; chargeWanted: it draws only while something is short).
 //
-// AI GROUPS (docs/adr/0001-ai-parity.md): not yet. Their machines are coarse works (groupworks.js groupMachinesDaily:
-//   a built generator by your tiers serving a freezer and a sealer); found generators, spotlights, the panel's circuits
-//   and the new machines are your bases' only for now. The items trade and turn up in their stores as any item does.
-//   The same for the 2026-10-24 pieces: their machines have no power budget (one generator runs what they have, a day's
-//   fuel at a time), so a solar array or a battery bank has no fuel to save them and no night to bridge; their bases
-//   are never caught asleep by the numbers (no surpriseAt for them), so an alarm has nothing to change; their heating is
-//   a coarse wood draw a head (factions.js GROUP_WOOD) with no per-building power to cut it. The day their machines get
-//   a power budget (the economy pass ADR 0001 §7 leaves open), these fold in by the same numbers.
+// AI GROUPS (groups-power-grid 2026-10-24, docs/adr/0001-ai-parity.md; the user's request "Both players and AI groups
+//   should build these and fix and implement any machine power needs and power output and setting up power grids for
+//   the base"): theirs too, coarse and once a day. groupworks.js groupMachinesDaily runs grouppower.js powerDayBudget
+//   over the day's 24 hours by these rules and numbers (POWER_USERS order, solarFactor at their base's tile, BATTERY's
+//   cap, rate, eff and hysteresis, a generator started only when the sun and the bank do not cover the hour, genBurn
+//   ÷ 24 an hour); their works `solar`, `bank`, `alarm`, `heaters` and `charger` go up by your locks and wear by your
+//   FIXTURES at WORKS-scaled costs; the alarm is the braced bonus against a night raid, the heaters take HEATER.heads
+//   out of their wood burn, the charger tops up drained gear. Found generators, spotlights, the panel's circuits, the
+//   press, the pump, the fence charger and the fridge remain yours only.
 import { GENSETS, GENSET_KINDS, GENSET_MAX, POWER_BUILDINGS, POWER_FINDS, AREA_POWER, CIRCUITS, CLIMATE, POWER_MOOD, PUMP, FRIDGE, SPOT, SOLAR, ALARM, HEATER, CHARGER } from "./data-power.js";
 import { BUILDINGS, addBuilding, count, countAll } from "./buildings.js"; // (call-time only: the modules load in a circle)
 import { placeItem, refreshBaseMap, fittingRoom } from "./basemap.js"; // (call-time only)

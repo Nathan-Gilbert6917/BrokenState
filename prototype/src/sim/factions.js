@@ -88,7 +88,7 @@ import { totalRounds } from "./rounds.js"; // rounds by calibre ("ammo": every r
 import { payAmmo, payAmmoKeys, payWord, roundsText } from "./ammo.js"; // rounds by calibre
 import { freeOnCollapse } from "./groupjails.js"; // jailhouse: the people a collapsed group held walk home
 import { groupCookDaily } from "./cooking.js"; // wave 2 cooking: the groups' kitchens cook by your recipes, coarsely
-import { groupWorksDaily, groupEatMult, groupCookShare, groupKitchenDaily, groupKitchenGrowth, fieldsFactor, penFood, growthFactor, workshopFactor, storeFactor, groupBaseDefence, pitchCamp, groupFreezerOn, GROUP_WORKS } from "./groupworks.js"; // barestart: what the groups build
+import { groupWorksDaily, groupEatMult, groupCookShare, groupKitchenDaily, groupKitchenGrowth, fieldsFactor, penFood, growthFactor, workshopFactor, storeFactor, groupBaseDefence, pitchCamp, groupFreezerOn, GROUP_WORKS, groupHeaterHeads, groupAlarmWakes, groupGridAttacked } from "./groupworks.js"; // barestart: what the groups build; groups-power-grid: their heaters' heads, their alarm at night, a raid's wear on the grid
 import { factionVehicles, groupTurretPower, raidTurretPower, loseRaidHumvee, humveeLeftText } from "./vehicles.js"; // a military group's motor pool: the Humvee's M2 in their raids, lost when one fails
 import { ensureArsenal, groupStrength, kitFactor, arsenalDaily, packRaidKit, raidOnBase, wallPower, raidCount, clashKit, inheritArsenal, smokeCover, removeFromArsenal, addToArsenal } from "./arsenal.js"; // group arsenals: everyone fights with what their group holds
 import { groupRation, GROUP_EAT } from "./eating.js"; // ration levels for the groups (wave 2 eating)
@@ -366,7 +366,7 @@ export function factionsDaily(state) {
     // fish only where a base holds water, nothing from a besieged base's land. Their kitchens' hot meals stretch the
     // food and their cooks work no fields (groupworks.js KITCHEN).
     const hands = workingPeople(f);
-    groupKitchenDaily(state, f, f.pop * GROUP_WOOD.burn * groupHeatShare(today - 1), f.stock.wood ?? f.pop * GROUP_WOOD.start); // groupworks.js: the kitchens' stoves burn their wood (after the heating), or are cold
+    groupKitchenDaily(state, f, Math.max(0, f.pop - groupHeaterHeads(f)) * GROUP_WOOD.burn * groupHeatShare(today - 1), f.stock.wood ?? f.pop * GROUP_WOOD.start); // groupworks.js: the kitchens' stoves burn their wood (after the heating: the heads their electric heaters warm, yesterday's budget here, burn none), or are cold
     // Food by type (foods.js, coarse for the AI: no lots): their fields, hunters and pens bring in their kind of food
     // (groupFieldFood: crops, grain, game, eggs) by the people at work (their land: grouptrips.js groupFoodLand; their
     // cooks are in the kitchen), everyone eats a day's food (less where a kitchen feeds them: groupEatMult; the soonest
@@ -411,7 +411,7 @@ export function factionsDaily(state) {
     groupWorldDaily(state, f); // groupworld.js: scouting (and spies at your walls), vehicles taken, stolen, sold, fitted out
     // Wood (woodcutting.js): they cut a little every day and burn it on freezing days, so their woodpile (and its
     // price, trade.js) runs low by the end of a winter and fills again by the autumn.
-    f.stock.wood = Math.max(0, Math.min(f.pop * GROUP_WOOD.cap, (f.stock.wood ?? f.pop * GROUP_WOOD.start) + hands * GROUP_WOOD.cut * groupWoodLand(state, f) - f.pop * GROUP_WOOD.burn * groupHeatShare(today - 1))); // grouptrips.js: the wood land their bases hold
+    f.stock.wood = Math.max(0, Math.min(f.pop * GROUP_WOOD.cap, (f.stock.wood ?? f.pop * GROUP_WOOD.start) + hands * GROUP_WOOD.cut * groupWoodLand(state, f) - Math.max(0, f.pop - groupHeaterHeads(f)) * GROUP_WOOD.burn * groupHeatShare(today - 1))); // grouptrips.js: the wood land their bases hold; groups-power-grid: the heads their electric heaters warmed today (groupworks.js groupHeaterHeads, HEATER.heads × the heater-hours served ÷ 24) burn no wood
 
     // Expansion: claim a nearby site. Aggressive groups push out more, toward rich sites and toward you.
     const agg = isAggressiveType(f);
@@ -941,7 +941,13 @@ export function resolveRaidOnFaction(state, party, helpers) {
   // intel.js: they heard this raid coming on the attackers' channel and stood ready.
   const braced = target.bracedFor != null && target.bracedFor === party.id ? strength(target) * INTEL.BRACED : 0;
   if (braced) target.bracedFor = null;
-  const helpPower = helpers.reduce((s, h) => s + h, 0) + bloc.power + braced;
+  // groups-power-grid (groupworks.js groupAlarmWakes): a raid or a horde that reaches the base at night (20:00–06:00) at a
+  // base whose perimeter alarm had its power through the night never catches it asleep: the braced bonus (strength ×
+  // INTEL.BRACED) when they were not braced already, your ALARM.wake's stand-in (their defence has no surprise rule to
+  // cancel). The raid wears the alarm and the array (breakdowns.js FIXTURES attack).
+  const woke = !braced && groupAlarmWakes(target, party.target.tile, state.hour) ? strength(target) * INTEL.BRACED : 0;
+  groupGridAttacked(target, party.target.tile);
+  const helpPower = helpers.reduce((s, h) => s + h, 0) + bloc.power + braced + woke;
   if (party.warId != null) { // diplomacy.js: raids in a war between groups, with their own odds and terms
     const held = resolveWarRaid(state, party, attacker, target, helpPower);
     if (held) loseRaidHumvee(state, party, { faction: target }); // vehicles.js: the raid's Humvee falls to the defenders
@@ -950,13 +956,14 @@ export function resolveRaidOnFaction(state, party, helpers) {
     if (groupBroken(target)) collapseFaction(state, target, attacker);
     return held;
   }
-  const held = resolveOrdinaryRaid(state, party, attacker, target, helpPower);
+  const held = resolveOrdinaryRaid(state, party, attacker, target, helpPower, woke > 0 ? " (their alarm woke the base)" : "");
   blocHelpAfter(state, bloc, held, target);
   jointAfter(state, party, !held);
   return held;
 }
 // An ordinary raid between groups (or by raiders from outside, or a horde) at its end: true when the defenders held.
-function resolveOrdinaryRaid(state, party, attacker, target, helpPower) {
+// note: added to the log line when they held ("their alarm woke the base").
+function resolveOrdinaryRaid(state, party, attacker, target, helpPower, note = "") {
   const rng = state.rng;
   raidSoured(state, attacker, target);
   const def = groupBaseDefence(state, target, party.target.tile) + strength(target) * 0.8 * groupHomeShare(state.hour) + helpPower + (party.target.tile === target.bases[0] ? groupTurretPower(target) : 0); // 8 for a walled base (groupworks.js: half that bare); vehicles.js: a military group's Humvee at home
@@ -1034,7 +1041,7 @@ function resolveOrdinaryRaid(state, party, attacker, target, helpPower) {
   applySide(state, target, fight.rD, D, { holder: target, captor: attacker }); // groupfight.js: the defenders hold the field
   applySide(state, attacker, fight.rA, A, { holder: target, captor: target });
   const hv = loseRaidHumvee(state, party, { faction: target }); // vehicles.js: the raid's Humvee falls to the defenders
-  if (report) log(state, `${whom[0].toUpperCase() + whom.slice(1)} held off ${who}${hv ? ` and took their ${hv.name}` : ""}.`, "info");
+  if (report) log(state, `${whom[0].toUpperCase() + whom.slice(1)} held off ${who}${hv ? ` and took their ${hv.name}` : ""}${note}.`, "info");
   return true;
 }
 
