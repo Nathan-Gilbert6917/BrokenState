@@ -407,7 +407,7 @@ function freshName(state) {
 /** @param {State} state @param {Survivor} s @param {string} name @returns {string} */
 export function renameSurvivor(state, s, name) {
   if (!s) return "Nobody to rename.";
-  const n = String(name ?? "").trim().replace(/\s+/g, " ");
+  const n = String(name ?? "").replace(/[\u0000-\u001f<>]/g, "").trim().replace(/\s+/g, " "); // no control characters or < > (as basenames.js cleanName): names go into the UI's HTML
   if (!n) return "A name cannot be empty.";
   if (n === s.name) return "";
   if (state.survivors.some((o) => o !== s && o.alive && o.name.toLowerCase() === n.toLowerCase())) return `There is already a ${n} in the group.`;
@@ -988,8 +988,10 @@ export function updateVision(state) {
   const live = liveTiles(state);
   state.live = live;
   const ix = tileIndex(state);
+  const unseen = state.intel && state.intel.unseen; // hiding.js: a hidden outpost not found yet is bare ground (as snapshot has it): no contact, no look
   for (const id of live) {
     state.knowledge[id] = snapshot(state, id, ix);
+    if (unseen && unseen[id] != null) continue;
     for (const f of state.factions) if (f.bases.includes(id)) { f.known = true; if (f.alive) noteLook(state, id, "sight"); } // intelnotes.js: what the base looks like
   }
   // Hidden sites (discovery.js) the bases and watchtowers see for the first time: a log line.

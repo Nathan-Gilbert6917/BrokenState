@@ -123,7 +123,7 @@ import { spend, kitSource } from "./itemcond.js"; // the condition of what they 
 import { BP_KEYS, bpItemKey, isKnown } from "./blueprints.js";
 import { tradeSpeech, gainXp, USE, hash01 } from "./skills.js";
 import { travelFactor, thirstAt, thirstAhead } from "./weather.js";
-import { available, need, demand, tradeContext, setQty, balanceWith, tradeVerdict, executeTrade, endTrade, maxBuyable, autoSellGear, groupPartsLow, groupStockKey, roundNeeds, gearBuyPrice, sellPrice } from "./trade.js";
+import { available, need, demand, tradeContext, setQty, balanceWith, tradeVerdict, executeTrade, endTrade, maxBuyable, autoSellGear, groupPartsLow, groupStockKey, groupHeld, roundNeeds, gearBuyPrice, sellPrice } from "./trade.js";
 import { partDeficit, kitWants } from "./repair.js"; // the parts and kits the governor keeps (it buys below them)
 const PART_KEYS = ["parts", "carparts", "gunparts", "electronics"];
 import { count, hasWall } from "./buildings.js";
@@ -1467,8 +1467,11 @@ export function tradeWithGroup(state, v, f) {
     }
     if (!Object.keys(pay).length) continue;
     v.stock[k] -= q;
-    f.stock[groupStockKey(k, f)] = (f.stock[groupStockKey(k, f)] || 0) + q; // part kinds into the group's one count of parts (car parts: their own)
-    for (const [w, n] of Object.entries(pay)) { f.stock[w] -= n; v.stock[w] = (v.stock[w] || 0) + n; got.push(`${n} ${w}`); }
+    // A group with no figure yet for a key (water, stone, wood: trade.js stockOf reads its comfortable stock) starts from
+    // that, as trade.js executeTrade does: a bare `f.stock[w] -= n` made it NaN.
+    const gk = groupStockKey(k, f);
+    f.stock[gk] = (f.stock[gk] ?? (FOODS[k] ? 0 : groupHeld(f, k))) + q; // part kinds into the group's one count of parts (car parts: their own)
+    for (const [w, n] of Object.entries(pay)) { f.stock[w] = (f.stock[w] ?? (FOODS[w] ? 0 : groupHeld(f, w))) - n; v.stock[w] = (v.stock[w] || 0) + n; got.push(`${n} ${w}`); }
     gave.push(`${q} ${keyWord(k)}`);
   }
   // A piece of gear changes hands now and then (the group's wares, trade.js).
