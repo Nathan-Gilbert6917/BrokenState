@@ -1,6 +1,6 @@
 // World size argument for the headless tools (sim/worldsize.js): `size=huge`, `--size=huge` or just `huge`
 // anywhere on the command line. It is taken out of process.argv, so the tools' positional arguments stay as they
-// were. Normal (the original 64 × 42 map) when none is given.
+// were. Normal (250 × 150 since 2026-10-24; worldsize.js) when none is given.
 import { WORLD_SIZES, DEFAULT_SIZE } from "../src/sim/worldsize.js";
 
 export function takeSize(fallback = DEFAULT_SIZE) {

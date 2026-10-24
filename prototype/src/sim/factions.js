@@ -188,7 +188,7 @@ export function createFactions(state, count) {
   const usedNames = new Set();
   types.forEach((type, i) => {
     const def = FACTION_TYPES[type];
-    // Groups start outside the cities, spread apart, and within reach of the hub (8–30 tiles on a Normal map; by
+    // Groups start outside the cities, spread apart, and within reach of the hub (8–30 tiles on the original 64 × 42 map; by
     // the square root of the area on the others, worldsize.js) when there is room.
     const sites = state.tiles.filter((t) => t.loc && t.loc.type !== "city" && t.loc.zone !== "urban" && g.distance(t.id, hubTile) >= 8 &&
       state.factions.every((f) => f.bases.every((b) => g.distance(b, t.id) >= 8)));

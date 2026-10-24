@@ -27,7 +27,7 @@ export const HIVE = {
   SITE_MAX: 1,        // build sites at a time
   BORDER_DAYS: [5, 9],
   GUARD_MIN: 40,      // a hive rebuilds its guard below this
-  START_ORIGIN: 4,    // hives placed around the outbreak origin at the start on a Normal map (mapgen.js; worldsize.js for the others)
+  START_ORIGIN: 4,    // hives placed around the outbreak origin at the start when the size def sets none (mapgen.js; worldsize.js originHives: 5 on every preset since 2026-10-24, 4 on the original 64 × 42 map as a custom size)
   START_SPOT: 1,      // ... and around each other hot spot (a lone hive: a first target)
   // The share of a defending hive's new roaming hordes it sends to attack a base: ATTACK_START on day 1, up by
   // 1 / ATTACK_RAMP a day, at most ATTACK_MAX (20% at first, 40% on day 30, 65% from about day 70).

@@ -147,10 +147,12 @@ section("Spring rains more often");
 section("Fog: rain fog on some rain days caps sight; night in fog is darker than either");
 let fogB = null;
 {
-  // Rain fog: how often on a rain hour, by season and at dawn. Over a dozen tiles: the rain comes in belts that move
-  // over the map (weather.js WAVE), each with one roll a day, so one tile sees too few rolls to tell the rates apart.
+  // Rain fog: how often on a rain hour, by season and at dawn. Over 48 tiles spread across the map: the rain comes in
+  // belts that move over the map (weather.js WAVE), each with one roll a day, so one tile sees too few rolls to tell
+  // the rates apart (a dozen tiles 211 apart did on the 64 × 42 map; on the 250 × 150 Normal of 2026-10-24 they sat
+  // under the same belts and read spring 34%, autumn 36%).
   const seen = { spring: [0, 0], autumn: [0, 0], dawn: [0, 0], noon: [0, 0] };
-  const tiles = Array.from({ length: 12 }, (_, i) => (h.tile + i * 211) % st.tiles.length);
+  const tiles = Array.from({ length: 48 }, (_, i) => (h.tile + Math.round((i * st.tiles.length) / 48)) % st.tiles.length);
   for (const tile of tiles) for (let d = 2; d < W.YEAR_DAYS * 2; d++) for (const hr of [6, 13]) {
     const hour = d * 24 + hr;
     const w = W.weather(st, hour, tile);

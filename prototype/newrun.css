@@ -90,3 +90,19 @@ body:has(#modal:not(.hidden) .box.nrscreen) #rs-close { display: none; }
   #modal .nrskill button.mini { min-height: 2.1rem; min-width: 2.1rem; }
   .nrh-row button, .nrg-b button, .nrg-btns button { min-height: 2.6rem; }
 }
+
+/* ---------- the "Generating map…" box (src/ui/newgame.js generating; main.js gen) ---------- */
+/* The user's request 2026-10-24: "When you choose a map show a generating map popup until the map is loaded". A fixed
+   layer over the title (#title, z-index 9), the windows (#modal, 10 and 30 over a battle) and the item menu (35), made
+   on the body the first time; the box in the windows' look (#modal .box). The page freezes while the map is built, so
+   the spinner turns by a transform animation, which the compositor keeps turning on its own thread; the backdrop fades
+   in over a few frames, so an action that builds nothing after all (a Gear draw at a normal start) barely shows it. */
+#generating { position: fixed; inset: 0; z-index: 38; display: flex; align-items: center; justify-content: center; padding: 1rem; background: rgba(0, 0, 0, 0.55); animation: gen-fade 0.25s ease-out; }
+#generating .genbox { display: flex; align-items: center; gap: 1rem; width: min(26rem, 92vw); padding: 1rem 1.3rem; background: var(--panel); border: 1px solid var(--accent); border-radius: 12px; box-shadow: 0 16px 48px rgba(0, 0, 0, 0.6); }
+#generating .genspin { flex: none; width: 2rem; height: 2rem; border: 3px solid var(--line); border-top-color: var(--accent); border-radius: 50%; will-change: transform; animation: gen-spin 0.9s linear infinite; }
+#generating .genmain { min-width: 0; }
+#generating .genmain b { font-size: 1.1rem; }
+#generating .genmain .small { margin-top: 0.15rem; }
+@keyframes gen-spin { to { transform: rotate(360deg); } }
+@keyframes gen-fade { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { #generating { animation: none; } #generating .genspin { animation: none; } }

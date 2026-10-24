@@ -4,7 +4,8 @@
 // to the crashsite ... There is no starting base ... heat will be up due to the loudness of the crash ... military gear,
 // a broken military radio ... You do not start with a vehicle"; the base overrun by a hive, its stores the hive's
 // prize, the message in the wreckage and the secret mountain bunker; most cars beyond repair, little fuel to siphon).
-//   1. a crash world on two seeds: the 500 × 250 grid, year 4 day 1, one survivor (a soldier) with the exact kit and the
+//   1. a crash world on two seeds: the 300 × 200 grid (CRASH.W × H, the Large preset's; it was 500 × 250 until the user's
+//      "reduce map size to 300x200 for crashlanding mode", 2026-10-24), year 4 day 1, one survivor (a soldier) with the exact kit and the
 //      broken radio, no vehicle, no base, the party on the crash tile with the wreck known and the tile hot, the unit's
 //      base known in the fog as a Guard base (no hive, no group) in the opposite quadrant and far, its marker, the
 //      bunker's tile bare and unknown, the hives pre-aged, the era a tier ahead of a plain world's, the loot scaled;
@@ -20,7 +21,7 @@
 //   5. the cars' rule (crashCarDead, crashSiphon) and a save/load round trip keeping state.crash.
 // Plain Normal, Custom and Hardcore worlds on a seed are compared to a saved baseline by the lead's script (the test
 // cannot hold the old JSON); a crash world ticks a day here.
-// Usage: node tools/crashlandingtest.js   (three 500 × 250 worlds: about two minutes)
+// Usage: node tools/crashlandingtest.js   (three 300 × 200 worlds)
 import { createWorld, tickHour, day } from "../src/sim/world.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
 import { CRASH, CRASH_PEOPLE, CRASH_KIT, isCrashRun, crashSpecials, crashTierBonus } from "../src/sim/crashmode.js";
@@ -50,7 +51,7 @@ const count = (list, k) => list.filter((x) => x === k).length;
 const lootSum = (s, skip = -1) => s.tiles.reduce((a, t) => a + (t.id === skip ? 0 : t.loot || 0), 0);
 
 section("0. The leaf module");
-check(CRASH.W === 500 && CRASH.H === 250 && CRASH.YEAR === 4, "CRASH: 500 × 250, year 4");
+check(CRASH.W === 300 && CRASH.H === 200 && CRASH.YEAR === 4, "CRASH: 300 × 200, year 4");
 check(CRASH_PEOPLE.MIN === 1 && CRASH_PEOPLE.MAX === 1 && CRASH_PEOPLE.DEF === 1, "one survivor");
 check(CRASH_KIT.weapon === "m4" && CRASH_KIT.sidearm === "pistol" && CRASH_KIT.pack.includes("milradio_broken"), "the kit's keys");
 check(!isCrashRun(null) && !isCrashRun({ mode: "normal" }) && isCrashRun({ mode: "normal", crash: {} }) && !isCrashRun({ mode: "hardcore", crash: {} }), "isCrashRun");
@@ -72,7 +73,7 @@ for (const seed of [7, 11]) {
   worlds[seed] = s;
   console.log(`  created in ${Date.now() - t1} ms`);
   const g = s.grid, C = s.crash;
-  check(s.mode === "normal" && isCrashRun(s) && s.worldSize === "custom" && g.width === 500 && g.height === 250, "a normal-mode world on a 500 × 250 custom grid");
+  check(s.mode === "normal" && isCrashRun(s) && s.worldSize === "large" && g.width === CRASH.W && g.height === CRASH.H, `a normal-mode world on the ${CRASH.W} × ${CRASH.H} grid, the Large preset's (worldSize ${s.worldSize})`);
   check(s.hour === (yearStartDay(4) - 1) * 24 + 6 && day(s) === yearStartDay(4), `year 4, day 1 at 06:00 (hour ${s.hour}, day ${day(s)})`);
   check(s.survivors.length === 1 && s.startPeople === 1 && s.survivors[0].background === "soldier" && s.survivors[0].leader, "one survivor, a soldier, the leader");
   const sv = s.survivors[0], on = keysOn(sv);
@@ -114,8 +115,8 @@ section("2. Plain world on the same seed: the era, the loot");
 {
   const s = worlds[7];
   const t1 = Date.now();
-  const plain = createWorld({ seed: 7, factionCount: 7, size: "custom", customW: 500, customH: 250 });
-  console.log(`  plain 500 × 250 created in ${Date.now() - t1} ms`);
+  const plain = createWorld({ seed: 7, factionCount: 7, size: "custom", customW: CRASH.W, customH: CRASH.H });
+  console.log(`  plain ${CRASH.W} × ${CRASH.H} created in ${Date.now() - t1} ms`);
   check(eraTier(s) > eraTier(plain), `eraTier ${eraTier(s)} in the crash run, ${eraTier(plain)} in the plain one`);
   const ratio = lootSum(s, s.crash.tile) / lootSum(plain);
   check(ratio > CRASH.LOOT * 0.9 && ratio < CRASH.LOOT * 1.15, `the tiles' loot about × ${CRASH.LOOT} of a plain world's (${ratio.toFixed(3)})`);
@@ -248,7 +249,8 @@ section("5. Crew edits and Pick start on map");
 {
   const s = worlds[11];
   const t1 = Date.now();
-  const open = s.tiles.find((t) => t.terrain === "plains" && !t.loc && !t.hive && t.x > 400 && t.y > 180 && !startWhyNot(s, t.id)) || s.tiles.find((t) => t.terrain !== "water" && t.terrain !== "mountain" && !t.loc && !t.hive && t.x > 400 && t.y > 180);
+  const corner = (t) => t.x > s.grid.width * 0.8 && t.y > s.grid.height * 0.9; // the south-east corner of the map (x > 400, y > 180 when it was 500 × 250)
+  const open = s.tiles.find((t) => t.terrain === "plains" && !t.loc && !t.hive && corner(t) && !startWhyNot(s, t.id)) || s.tiles.find((t) => t.terrain !== "water" && t.terrain !== "mountain" && !t.loc && !t.hive && corner(t));
   const crew = [{ name: "Dana Cole", skills: { farming: 9 }, traits: ["brave"], gear: { weapon: { key: "knife" }, armor: null }, startGear: { weapon: "huntrifle" } }];
   const s2 = createWorld({ seed: 11, factionCount: 7, crash: true, crew, start: { tile: open.id } });
   console.log(`  picked-start world created in ${Date.now() - t1} ms`);
@@ -269,7 +271,7 @@ section("6. Save and load, and a day");
   const back = loadFromString(saveToString(s));
   console.log(`  round trip in ${Date.now() - t1} ms`);
   check(isCrashRun(back) && back.mode === "normal" && JSON.stringify(back.crash) === JSON.stringify(s.crash), "state.crash survives a save and load");
-  check(back.tiles[back.crash.homeTile].loc.type === "military" && back.grid.width === 500 && back.hour === s.hour, "the base's site, the grid and the hour too");
+  check(back.tiles[back.crash.homeTile].loc.type === "military" && back.grid.width === CRASH.W && back.hour === s.hour, "the base's site, the grid and the hour too");
   check(back.markers.some((m) => m.type === "crashhome") && back.survivors[0].background === "soldier", "the marker and the background too");
   const t2 = Date.now();
   for (let h = 0; h < 24; h++) tickHour(s);

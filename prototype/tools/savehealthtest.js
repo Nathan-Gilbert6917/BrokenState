@@ -14,6 +14,7 @@
 //   keep playing comes back with a warning and keeps the first crash save; the report has the error, stack, day,
 //   seed, map, mode and the last log lines; Load the crash save and Back to title.
 import { createWorld, tickHour, day, alive } from "../src/sim/world.js";
+import { WORLD_SIZES } from "../src/sim/worldsize.js"; // the crash report names the map's size
 import { setAutopilot } from "../src/sim/autopilot.js";
 import { saveSummary, campaignKey, newCampaignId } from "../src/sim/savesummary.js";
 import * as Saves from "../src/ui/saves.js";
@@ -195,7 +196,7 @@ console.log("The error screen");
   await settle();
   check(crashState().more === 2 && crashState().error.message === "boom in a tick" && Saves.saveEntry(Saves.CRASH_SAVE).ts === e1.ts, "errors while the screen is up are counted, not handled again");
   const rep = crashReport();
-  check(rep.includes("Error: boom in a tick") && rep.includes(`seed ${state.seed}`) && rep.includes("Small map (48×32)") && rep.includes("Normal mode") && /Last \d+ log lines/.test(rep) && rep.includes("Crash save: written") && /at .*crashtest|savehealthtest/.test(rep), "the report: error, stack, seed, map, mode, crash save, log lines");
+  check(rep.includes("Error: boom in a tick") && rep.includes(`seed ${state.seed}`) && rep.includes(`Small map (${WORLD_SIZES.small.w}×${WORLD_SIZES.small.h})`) && rep.includes("Normal mode") && /Last \d+ log lines/.test(rep) && rep.includes("Crash save: written") && /at .*crashtest|savehealthtest/.test(rep), "the report: error, stack, seed, map, mode, crash save, log lines");
   check((rep.match(/^Day \d+ \d\d:00 {2}/gm) || []).length === Math.min(20, state.log.length), `the last ${Math.min(20, state.log.length)} log lines`);
   crashChoose("keep");
   check(!crashUp() && ui.speed === 0, "Try to keep playing: the screen closes, the game stays paused");

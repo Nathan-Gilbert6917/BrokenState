@@ -7,7 +7,9 @@
 // touched here), and kept in state.weather.days. A day's record is the region's weather: its storms, blizzards
 // and fog do not cover the whole state but come as FRONTS (state.weather.fronts): seeded systems with a position,
 // a heading and speed in tiles an hour, a radius and a lifetime, that come in at a map edge and cross the map over
-// hours to a couple of days. Away from the fronts a tile has the day's background sky (bgKind: a blizzard day is
+// hours to a couple of days. The fronts are sized and paced for the original 64 × 42 map and scaled up with the map's
+// side (makeFronts: radius and speed × the square root of the area ratio, 2026-10-24, the presets' new sizes), so on
+// every size they cover the same share of the state, cross it in the same hours and give a tile the same rain days. Away from the fronts a tile has the day's background sky (bgKind: a blizzard day is
 // snow there, a foggy day overcast). Rain comes in waves (WAVE): on a rain or storm day the sky between the fronts is
 // grey, and the rain is rain belts, long bands across their way that sweep over the map from any edge. Fronts come
 // from their own RNG stream, a day at a time, so they too are fixed ahead for a seed. Movement uses the real fronts; estimates (travelHours) use only the fronts
@@ -224,8 +226,8 @@ function rec(state, dayIdx) {
 }
 
 // ---------- regional weather: fronts ----------
-// The kinds of front, how big they are (radius in tiles, on a Normal map; a bigger map has bigger ones), how fast
-// they travel (tiles an hour) and how they look on the map (ui/wxmap.js).
+// The kinds of front, how big they are (radius in tiles on the original 64 × 42 map) and how fast they travel (tiles an
+// hour there; a bigger map scales both by its side, makeFronts) and how they look on the map (ui/wxmap.js).
 export const FRONT_KINDS = {
   storm:    { name: "Thunderstorm", r: [5, 8],  speed: [0.9, 1.5] },
   rain:     { name: "Rain belt",    r: [7, 12], speed: [0.9, 1.5] },
@@ -284,10 +286,15 @@ export function tileUnits(state, id) {
 }
 
 // The fronts that come in on day i: each from a map edge, heading for a point inside the map, gone when it has
-// crossed (or after FRONT.maxLife hours, fading over the last FRONT.fadeHours).
+// crossed (or after FRONT.maxLife hours, fading over the last FRONT.fadeHours). size: the map's side relative to the
+// original 64 × 42 map (the square root of the area ratio; exactly 1 there, so its weather is as it always was; at
+// least 0.8 on a tiny custom map): a front's radius AND speed are × size (makeFront), so a belt is the same share of
+// the map wide, sweeps over a tile in the same hours and crosses the state in the same days on every size, and a tile
+// gets the same rain days a year (2026-10-24: with the radius alone capped at 1.4× the new 250 × 150 Normal gave a
+// tile 9 rain days a year instead of 30; the belts' count a day, WAVE.belts, stays).
 /** @param {State} state */
 function makeFronts(state, w, upTo) {
-  const D = dims(state), size = Math.max(0.8, Math.min(1.4, Math.sqrt((D.W * D.H) / (64 * 42))));
+  const D = dims(state), size = Math.max(0.8, Math.sqrt((D.W * D.H) / (64 * 42)));
   for (let i = w.fd; i <= upTo; i++) {
     const d = w.days[i], s = seasonOfDay(i).key, mean = (d.hi + d.lo) / 2, bg = bgOf(d);
     const rng = new Rng(w.fs);
@@ -313,7 +320,7 @@ function makeFronts(state, w, upTo) {
 
 function makeFront(rng, k, t0, D, size, edges) {
   const def = FRONT_KINDS[k];
-  const r = r1(rng.range(def.r[0], def.r[1]) * size), speed = rng.range(def.speed[0], def.speed[1]);
+  const r = r1(rng.range(def.r[0], def.r[1]) * size), speed = rng.range(def.speed[0], def.speed[1]) * size; // both by the map's side (makeFronts)
   const edge = rng.weighted(Object.keys(edges), (e) => edges[e]);
   const along = rng.next(), out = r * 0.6;
   let x = edge === "w" ? -out : edge === "e" ? D.w + out : along * D.w;
