@@ -172,11 +172,11 @@ export const TOOL_TAGS = {
 /** @type {Record<string, { p: number, items: Record<string, number> }>} */
 export const TOOL_FINDS = {
   // The shops as places (shops.js; a shop POI's search hour rolls this table by its own kind: shopshelves.js).
-  pawnshop: { p: 0.06, items: { toolkit: 2, handdrill: 1, axe: 0.5, welder: 0.3, sewingkit: 0.5 } }, // pawned tools on the back shelf
+  pawnshop: { p: 0.06, items: { toolkit: 2, handdrill: 1, axe: 0.5, welder: 0.3, sewingkit: 0.5, solderiron: 0.5 } }, // pawned tools on the back shelf
   garden: { p: 0.12, items: { shovel: 3, axe: 2, handsaw: 1.5, bowsaw: 2 } }, // a garden centre's tool wall
   dealer: { p: 0.06, items: { toolkit: 3, welder: 0.6, shovel: 1 } }, // a car dealer's service bay
-  radioshop: { p: 0.05, items: { toolkit: 2, handdrill: 1, sewingkit: 0.5 } }, // the repair bench
-  hardware: { p: 0.16, items: { toolkit: 3, handsaw: 3, bowsaw: 2, axe: 2, shovel: 3, handdrill: 1.5, sewingkit: 1, hammer: 2, welder: 0.4, hatchet: 1, pipewrench: 1 } },
+  radioshop: { p: 0.05, items: { toolkit: 2, handdrill: 1, sewingkit: 0.5, solderiron: 2 } }, // the repair bench
+  hardware: { p: 0.16, items: { toolkit: 3, handsaw: 3, bowsaw: 2, axe: 2, shovel: 3, handdrill: 1.5, sewingkit: 1, hammer: 2, welder: 0.4, hatchet: 1, pipewrench: 1, solderiron: 0.5 } },
   farm: { p: 0.14, items: { toolkit: 2, handsaw: 2, bowsaw: 1.5, axe: 3, shovel: 3, handdrill: 1, welder: 0.6, sewingkit: 1, pickaxe: 1, hammer: 1 } },
   barn: { p: 0.1, items: { axe: 2, shovel: 3, handsaw: 1.5, bowsaw: 1, toolkit: 1, welder: 0.3, pickaxe: 1, hammer: 1 } },
   ranch: { p: 0.08, items: { axe: 2, shovel: 2, toolkit: 1, handsaw: 1, welder: 0.3, sewingkit: 1 } },
@@ -228,9 +228,9 @@ export const AREA_TOOLS = {
 export const CAR_TOOLS = { p: 0.14, items: { toolkit: 3, shovel: 2, axe: 0.8, handsaw: 0.6, bowsaw: 0.4, sewingkit: 0.8, welder: 0.15 } };
 /** @type {Record<string, { p: number, items: Record<string, number> }>} */
 export const WARE_TOOLS = {
-  traders: { p: 0.25, items: { toolkit: 2, handsaw: 2, axe: 2, shovel: 2, sewingkit: 1.5, handdrill: 1, bowsaw: 1, welder: 0.3 } },
+  traders: { p: 0.25, items: { toolkit: 2, handsaw: 2, axe: 2, shovel: 2, sewingkit: 1.5, handdrill: 1, bowsaw: 1, welder: 0.3, solderiron: 0.5 } },
   commune: { p: 0.2, items: { axe: 2, shovel: 2, handsaw: 2, sewingkit: 2, bowsaw: 1 } },
-  merchants: { p: 0.3, items: { toolkit: 2, welder: 1, handdrill: 1, axe: 1, handsaw: 1 } },
+  merchants: { p: 0.3, items: { toolkit: 2, welder: 1, handdrill: 1, axe: 1, handsaw: 1, solderiron: 0.8 } },
   fortress: { p: 0.12, items: { toolkit: 1, shovel: 1, welder: 0.4 } },
   expansionist: { p: 0.1, items: { toolkit: 1, axe: 1, shovel: 1 } },
   raider: { p: 0.08, items: { axe: 1, scrapaxe: 1, toolkit: 0.5 } },
@@ -240,7 +240,9 @@ export const WARE_TOOLS = {
 export const TOOL_HELP = `<b>Tools for building and crafting.</b> Most builds and many recipes need tools kept at the base (in its
   armory, or on someone there) when they are queued: wood work a hammer and a saw, digging a shovel (a farm plot, a well, a
   cellar, trenches, pits and sandbags), pipes and machines wrenches, wiring pliers, bolted steel a drill, steel plate a
-  welding kit; packs, padding and ghillie suits a sewing kit. A tool kit counts as a hammer, a saw, wrenches and pliers.
+  welding kit; packs, padding and ghillie suits a sewing kit; the finer electronics recipes (a laser, electronic ear
+  defenders, a hand-crank radio, laser grips, a pistol red dot, a rangefinder) a soldering iron, found at radio shops,
+  electronics stores and radio towers. A tool kit counts as a hammer, a saw, wrenches and pliers (not a soldering iron).
   A team's field craft looks in what the team carries. Tools are not used up; makeshift ones (a hammer, a saw, an axe and a
   shovel crafted from scrap anywhere) wear out after a dozen jobs or so. Hardware stores, farms, barns, sheds, garages and
   the trunks of cars hold the most. <b>Woodcutting</b>: bare hands only gather deadfall (×0.7); a felling axe cuts three
