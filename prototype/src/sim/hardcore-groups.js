@@ -320,6 +320,8 @@ function scaled(state, n) { return Math.round(n * Math.sqrt(worldScale(state)));
 const blocked = (t) => t.terrain === "water" || t.terrain === "mountain";
 
 // Where a band is when the state falls: away from you, from the other bands and the hives, near a site its type likes.
+// The hives' clearance and the liked sites' reach are marked on the grid once (2026-10-24: asking each tile of a Large or
+// Huge map about every hive, and each candidate about the ground round it, took seconds a band: the same tiles result).
 function bandStart(state, type) {
   const H = hcGroups(state), rng = H.rng, g = state.grid;
   const pt = hcPlayerTile(state);
@@ -329,12 +331,14 @@ function bandStart(state, type) {
   if (city != null) hives.push(city);
   const pref = new Set(PREFERRED_SITES[type] || []);
   const others = [...H.bands.map((b) => b.tile), ...state.factions.flatMap((f) => f.bases)];
+  const nearHive = new Uint8Array(state.tiles.length);
+  for (const h of hives) for (const id of g.within(h, B.HIVE_CLEAR - 1)) nearHive[id] = 1;
   const cands = [];
   for (const t of state.tiles) {
     if (blocked(t) || t.hive || (t.loc && (t.loc.type === "city" || t.loc.zone === "urban"))) continue;
     const d = pt == null ? lo : g.distance(t.id, pt);
     if (d < lo || d > hi) continue;
-    if (hives.some((h) => g.distance(h, t.id) < B.HIVE_CLEAR)) continue;
+    if (nearHive[t.id]) continue;
     if (others.some((o) => g.distance(o, t.id) < B.START_APART)) continue;
     cands.push(t);
   }
@@ -343,12 +347,16 @@ function bandStart(state, type) {
     const any = state.tiles.filter((t) => !blocked(t) && !t.hive && (pt == null || g.distance(t.id, pt) >= Math.min(lo, 8)));
     return any.length ? rng.pick(any).id : null;
   }
-  const near = (t) => g.within(t.id, B.START_NEAR_PREF).some((id) => { const s = state.tiles[id]; return s.loc && pref.has(s.loc.type); });
+  const nearPref = new Uint8Array(state.tiles.length);
+  for (const s of state.tiles) if (s.loc && pref.has(s.loc.type)) for (const id of g.within(s.id, B.START_NEAR_PREF)) nearPref[id] = 1;
+  const near = (t) => nearPref[t.id] === 1;
   return rng.weighted(cands, (t) => (near(t) ? 3 : 1) * (t.road ? 1.5 : 1)).id;
 }
 
-// Can this tile still be a band's hub? (Nobody holds it or stands too close, no hive near.)
-function goalOk(state, b, id, strict = true) {
+// Can this tile still be a band's hub? (Nobody holds it or stands too close, no hive near.) hiveIds: the map's hive tiles
+// before the hives are made (hiveTileIds), taken once by a caller that asks about many tiles: scanning the whole map for
+// each one cost seconds on a Large or Huge map (Randomize all in Hardcore, 2026-10-24).
+function goalOk(state, b, id, strict = true, hiveIds = null) {
   const g = state.grid, t = state.tiles[id];
   if (!t || !t.loc || blocked(t) || t.hive || t.loc.type === "city") return false;
   if (strict && t.loc.zone === "urban") return false;
@@ -359,18 +367,19 @@ function goalOk(state, b, id, strict = true) {
   if (bandsOf(state).some((o) => o !== b && o.goal != null && !o.joinId && g.distance(o.goal, id) < apart)) return false;
   const hiveR = strict ? (b.splinter ? B.SPLINTER_HIVE : B.GOAL_HIVE) : 3; // the military's splinters know what a hive does
   if ((state.hives || []).some((h) => g.distance(h.tile, id) < hiveR) || (state.hiveSites || []).some((s) => g.distance(s.tile, id) < hiveR)) return false;
-  if (!state.hives && state.tiles.some((x) => x.hive && g.distance(x.id, id) < hiveR)) return false;
+  if (!state.hives && (hiveIds || hiveTileIds(state)).some((h) => g.distance(h, id) < hiveR)) return false;
   return true;
 }
+const hiveTileIds = (state) => (state.hives ? null : state.tiles.filter((x) => x.hive).map((x) => x.id));
 
 function pickGoal(state, b) {
   const g = state.grid, rng = grng(state);
   const pt = hcPlayerTile(state);
   const reach = scaled(state, B.GOAL_REACH);
   const pref = PREFERRED_SITES[b.type] || PREFERRED_SITES.fortress;
-  const cands = [];
+  const cands = [], hiveIds = hiveTileIds(state);
   for (const id of g.within(b.tile, reach)) {
-    if (!goalOk(state, b, id)) continue;
+    if (!goalOk(state, b, id, true, hiveIds)) continue;
     if (pt != null && g.distance(pt, id) < B.GOAL_FROM_YOU) continue;
     const t = state.tiles[id];
     const i = pref.indexOf(t.loc.type);
@@ -660,8 +669,9 @@ function bandDay(state, b) {
   if (b.phase === "camp" && b.goal != null && b.tile === b.goal && d >= b.foundAt) return foundHub(state, b, b.tile);
   // Too long on the road: they settle where they stand.
   if (d >= b.forceAt) {
-    const here = [b.tile, ...g.within(b.tile, B.FORCE_RADIUS), ...g.within(b.tile, B.FORCE_RADIUS * 3)].find((id) => goalOk(state, b, id, false));
-    const any = here != null ? here : state.tiles.filter((x) => goalOk(state, b, x.id, false)).sort((x, y) => g.distance(b.tile, x.id) - g.distance(b.tile, y.id) || x.id - y.id)[0]?.id;
+    const hiveIds = hiveTileIds(state);
+    const here = [b.tile, ...g.within(b.tile, B.FORCE_RADIUS), ...g.within(b.tile, B.FORCE_RADIUS * 3)].find((id) => goalOk(state, b, id, false, hiveIds));
+    const any = here != null ? here : state.tiles.filter((x) => goalOk(state, b, x.id, false, hiveIds)).sort((x, y) => g.distance(b.tile, x.id) - g.distance(b.tile, y.id) || x.id - y.id)[0]?.id;
     if (any != null) return foundHub(state, b, any);
   }
 }

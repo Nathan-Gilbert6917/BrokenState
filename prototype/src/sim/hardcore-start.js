@@ -280,11 +280,27 @@ function spawnTile(state, start = null) {
   const W = g.width, H = g.height;
   const hives = state.tiles.filter((t) => t.hive).map((t) => t.id);
   const groupBases = state.factions.flatMap((f) => f.bases || []);
-  const within = (id, list, d) => list.some((x) => x != null && g.distance(id, x) <= d);
+  const cityIds = state.cityIds || [], militaryIds = state.militaryIds || [];
+  // Whether id is within d of any of list: each list and reach marked out on the grid once (as sitesOk below).
+  const masks = new Map();
+  const within = (id, list, d) => {
+    let byD = masks.get(list);
+    if (!byD) masks.set(list, (byD = new Map()));
+    let m = byD.get(d);
+    if (!m) { m = new Uint8Array(state.tiles.length); for (const x of list) if (x != null) for (const y of g.within(x, d)) m[y] = 1; byD.set(d, m); }
+    return m[id] === 1;
+  };
   const outbreakCity = hcOutbreakCity(state); // the first hive rises there (set up after the start)
   // A town, a city or any other site within reach: somewhere to drive to on day 1.
+  // Each reach asked marked out from the sites once (asking every tile about every site took seconds on a Huge map,
+  // 2026-10-24: the same tiles result).
   const pois = state.tiles.filter((t) => t.loc || t.terrain === "city").map((t) => t.id);
-  const sitesOk = (id, reach) => pois.some((x) => g.distance(id, x) <= reach);
+  const reachOf = new Map();
+  const sitesOk = (id, reach) => {
+    let m = reachOf.get(reach);
+    if (!m) { m = new Uint8Array(state.tiles.length); for (const x of pois) for (const y of g.within(x, reach)) m[y] = 1; reachOf.set(reach, m); }
+    return m[id] === 1;
+  };
   const okFor = (strict) => (t) => {
     const i = strict ? 0 : 1;
     if (t.terrain === "water" || t.terrain === "mountain" || t.terrain === "city" || t.hive || t.loc) return false;
@@ -292,8 +308,8 @@ function spawnTile(state, start = null) {
     if (t.x < W * e || t.x >= W * (1 - e) || t.y < H * e || t.y >= H * (1 - e)) return false;
     if (g.distance(t.id, state.originId) < S.origin[i] || within(t.id, hives, S.hive[i])) return false;
     if (outbreakCity != null && g.distance(t.id, outbreakCity) < S.outbreakCity[i]) return false;
-    if (within(t.id, state.cityIds || [], S.city[i])) return false; // not in a city centre (its blocks can be close by)
-    if (within(t.id, state.militaryIds || [], S.military[i]) || within(t.id, groupBases, S.group[i])) return false;
+    if (within(t.id, cityIds, S.city[i])) return false; // not in a city centre (its blocks can be close by)
+    if (within(t.id, militaryIds, S.military[i]) || within(t.id, groupBases, S.group[i])) return false;
     if ((t.infection || 0) > S.maxInfection * (strict ? 1 : 1.5)) return false;
     if (!waterSource(state, t.id, S.water[i])) return false; // somewhere to drink within a few days' walk
     return sitesOk(t.id, S.poi[i]);
