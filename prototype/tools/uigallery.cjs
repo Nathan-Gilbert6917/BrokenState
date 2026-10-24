@@ -201,6 +201,11 @@ const SIDE = { desktop: "a desktop", portrait: "a phone held upright", landscape
       }
 
       // ---------- what the clock brings: a card or the tile view ----------
+      // A card: a team's orders card, as the clock would raise it when the team arrives (sim/parties.js ordersCard).
+      await scene("card", "An event card", "The clock stops for a card (here a team's orders on arrival; visitors, warnings and finds come the same way): its choices with their hints, the card tray's answers", async () => {
+        await page.evaluate(async () => { const P = await import("/src/sim/parties.js"), W = await import("/src/sim/world.js"); const st = game.state, p = st.parties.find((q) => q.owner === "player"); if (!p) throw new Error("no team"); W.addCard(st, P.ordersCard(st, p, "The team has arrived.")); game.refresh(); });
+      }, { wait: 700 });
+      await page.evaluate(() => { game.state.cards.length = 0; game.refresh(); });
       // The clock run on until it stops for something: a card, the tile view (which place to search) or the raid plan.
       const came = await page.evaluate(async () => { const U = await import("/src/ui/ui.js"); for (let i = 0; i < 16; i++) { game.tickHour(); game.refresh(); const k = U.modalKind(game.state, game.ui); if (k === "card" || k === "tileview" || k === "raidplan") return k; } return U.modalKind(game.state, game.ui); });
       const STOP = { card: ["An event card", "The clock stops for a card (a team's orders on arrival, a visitor, a warning): its choices with their hints"], tileview: ["The tile view", "A team arriving to scavenge a tile with places: which place to go into, the walk to it on the tile's own map"], raidplan: ["Before you go in", "A team at a site: the raid plan over the battle screen (a scout first, wait for night, the kit, which side to enter, leave)"] };
