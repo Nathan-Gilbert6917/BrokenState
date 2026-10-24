@@ -1374,29 +1374,31 @@ export function levelRect(b, x0, y0, w, h) {
 }
 // Where a vehicle can get to this turn: every position of its rect (top-left x, y) within DRIVE.RANGE 4-way steps over
 // open ground, through people and light obstacles when it can ram (RAMMING; not a bike, not noRam: the attackers' Humvee
-// keeps to open ground, carTurn; a Set: only those obstacles). Returns { seen: Map(key → steps), parent: Map(key → key), key }.
-export function carSteps(b, v, u, noRam = false) {
+// keeps to open ground, carTurn; a Set: only those obstacles); range: further (carTurn's way round). Returns
+// { seen: Map(key → steps), parent: Map(key → key), key }.
+export function carSteps(b, v, u, noRam = false, range = DRIVE.RANGE) {
   bindDims(b);
   const canRam = v.kind !== "bike" && !noRam; // a bike rides round people and obstacles, it does not run them down
   const only = noRam instanceof Set ? noRam : null; // noRam a Set: only these obstacles (a breach, BREACH_THROUGH), never people
   const own = v.cell || "vehicle"; // the cells it stands on: "vehicle" (yours) or "truck" (their Humvee)
+  const people = canRam ? null : new Set(b.units.filter((o) => o !== u && !o.aboard && onMap(o)).map((o) => idx(o.x, o.y)));
   const passable = (px, py) => {
     if (px < 0 || py < 0 || px + v.w > W || py + v.h > H) return false;
     if (rectSpan(b, px, py, v.w, v.h) > TERRAIN_STEP) return false; // over a step of the ground at most (it stops on one level: driveTo)
     for (let cy = py; cy < py + v.h; cy++) for (let cx = px; cx < px + v.w; cx++) {
       const c = b.cells[idx(cx, cy)];
       if (!(c.k === "open" || (c.k === own && inVehicle(v, cx, cy)) || ((canRam || (only && only.has(c.k))) && rammable(c)))) return false;
-      if (!canRam && b.units.some((o) => o !== u && !o.aboard && onMap(o) && o.x === cx && o.y === cy)) return false;
+      if (people && people.has(idx(cx, cy))) return false;
     }
     return true;
   };
   const key = (px, py) => py * W + px;
   const seen = new Map([[key(v.x, v.y), 0]]), parent = new Map();
   const q = [[v.x, v.y]];
-  while (q.length) {
-    const [px, py] = q.shift();
+  for (let qi = 0; qi < q.length; qi++) {
+    const [px, py] = q[qi];
     const d = seen.get(key(px, py));
-    if (d >= DRIVE.RANGE) continue;
+    if (d >= range) continue;
     for (const [dx, dy] of DIRS4) {
       const nx = px + dx, ny = py + dy;
       if (seen.has(key(nx, ny)) || !passable(nx, ny)) continue;
@@ -1788,6 +1790,8 @@ export function manEnemyTurret(b, gun = "m2hb") {
 //     range (WEAPONS opt: the M2 14 cells), the nearest of them as a tiebreak, over open ground and roads only (it does
 //     not ram walls, gates, barricades or people: noRam), never nearer the other side's nearest person than
 //     RAID_CAR.NEAR (grenade reach) and never more than RAID_CAR.LEAD cells ahead of its own side's front on foot;
+//     nowhere within reach to shoot from, it heads the way round (woods, buildings) to the best such spot within
+//     RAID_CAR.WAY turns' drive (it stops on one level only: driveTo), not into a dead end of the trees;
 //   - breach (theirs, plated, no ram with them: BREACH): nowhere to shoot from, it rams a weak barred gate (BREACH.WEAK
 //     hp or less: BREACH.DMG a blow, BREACH.WEAR to it × the plate) or drives through a barricade (RAMMING), never
 //     walls or people;
@@ -1805,7 +1809,7 @@ export function manEnemyTurret(b, gun = "m2hb") {
 //     others bail out;
 //   - nobody at the wheel (the driver down or dead: a shot through the windscreen, fireCab): it stays where it stands.
 // While theirs can still drive off, the field is not yet yours (checkEnd: carHolds).
-export const RAID_CAR = { MRAP_SEATS: 6, SEATS: 4, RIDERS: 2, FOOT: 3, NEAR: 6, LEAD: 2, DROP: 10, BACK_WEAR: 10, STALL_WEAR: 20, OUT: 1, STUCK: 2, ROAD: 0.25, PICKUP: 8, WAIT: 2 };
+export const RAID_CAR = { MRAP_SEATS: 6, SEATS: 4, RIDERS: 2, FOOT: 3, NEAR: 6, LEAD: 2, DROP: 10, BACK_WEAR: 10, STALL_WEAR: 20, OUT: 1, STUCK: 2, ROAD: 0.25, PICKUP: 8, WAIT: 2, WAY: 6 };
 // A plated vehicle of theirs with no ram in the raid breaks in itself: a barred gate at WEAK hp or less takes DMG a
 // blow (a crew's ram does 16–24 a swing a man: siege.js RAM) and the vehicle WEAR × 0.6 a plating level; the blow is
 // loud (NOISE, the unaware within WAKE turn toward it). A barricade it drives through (RAMMING.WEAR).
@@ -1877,8 +1881,9 @@ export function carTurn(b, v) {
   if (!foes.length) return;
   driver.ap = DRIVE.AP;
   const W0 = g ? WEAPONS[g.weapon] : null, range = W0 ? W0.opt : WEAPONS.turret_m2.opt;
-  const nearest = (x, y) => Math.min(...foes.map((f) => dist(x, y, f.x, f.y)));
-  const sees = (x, y) => foes.filter((f) => dist(x, y, f.x, f.y) <= range && los(b, x, y, f.x, f.y)).length;
+  // (loops, no arrays: pick runs these over every spot in reach, and the stops within RAID_CAR.WAY turns' drive)
+  const nearest = (x, y) => { let m = Infinity; for (const f of foes) m = Math.min(m, dist(x, y, f.x, f.y)); return m; };
+  const sees = (x, y) => { let n = 0; for (const f of foes) if (dist(x, y, f.x, f.y) <= range && los(b, x, y, f.x, f.y)) n++; return n; };
   // Holding: the gunner has someone in range and in sight.
   const [gx, gy] = roofCell(v);
   if (g && foes.some((f) => dist(gx, gy, f.x, f.y) <= range && canSee(b, g, f))) { v.ai = "hold"; dropRiders(b, v, foes); if (!theirs) driver.ap = 0; return; }
@@ -1886,13 +1891,13 @@ export function carTurn(b, v) {
   const walkers = b.units.filter((o) => o.side === side && o.kind === "human" && active(o) && !o.aboard);
   const front = walkers.length ? Math.min(...walkers.map((o) => nearest(o.x, o.y))) : 0;
   const floor = Math.max(RAID_CAR.NEAR, front - RAID_CAR.LEAD);
-  const pick = (seen, key) => {
+  const pick = (seen, key, lo = floor) => {
     let best = null;
     for (const [k, steps] of seen) {
       const px = k % W, py = (k / W) | 0;
       const [rx, ry] = roofCell({ x: px, y: py, w: v.w, h: v.h });
       const d = nearest(rx, ry);
-      if (d < floor && k !== key(v.x, v.y)) continue;
+      if ((d < lo || levelRect(b, px, py, v.w, v.h) == null) && k !== key(v.x, v.y)) continue; // driveTo stops it on one level only
       let road = 0;
       for (let cy = py; cy < py + v.h; cy++) for (let cx = px; cx < px + v.w; cx++) if (b.cells[idx(cx, cy)].f === "road") road++;
       const n = sees(rx, ry);
@@ -1909,6 +1914,26 @@ export function carTurn(b, v) {
     const bs = carSteps(b, v, driver, BREACH_THROUGH);
     const bb = pick(bs.seen, bs.key);
     if (bb && bb.n && bb.sc > (best ? best.sc : -Infinity)) { best = bb; ram = BREACH_THROUGH; }
+  }
+  // Still nowhere to shoot from within reach: the way round (woods, buildings) toward the best spot within RAID_CAR.WAY
+  // turns' drive (no nearer than RAID_CAR.NEAR), as far along it as it gets this turn short of the front's floor (the
+  // nearest within reach as the crow flies can be a dead end in the trees, where it would sit for the rest of the fight).
+  if (best && !best.n && ram === true) {
+    const far = carSteps(b, v, driver, true, RAID_CAR.WAY * DRIVE.RANGE);
+    const stops = new Map([...far.seen].filter(([, s]) => s && s % DRIVE.RANGE === 0)); // where whole turns' drives end (cheaper)
+    stops.set(far.key(v.x, v.y), 0);
+    const goal = pick(stops, far.key, RAID_CAR.NEAR);
+    if (goal && (goal.px !== v.x || goal.py !== v.y)) {
+      const way = [];
+      for (let k = far.key(goal.px, goal.py); k !== far.key(v.x, v.y); k = far.parent.get(k)) way.unshift(k);
+      let to = null;
+      for (const k of way.slice(0, DRIVE.RANGE)) {
+        const px = k % W, py = (k / W) | 0, [rx, ry] = roofCell({ x: px, y: py, w: v.w, h: v.h });
+        if (nearest(rx, ry) < floor) break;
+        if (levelRect(b, px, py, v.w, v.h) != null) to = { px, py };
+      }
+      if (to) best = { ...to, sc: best.sc, n: 0 };
+    }
   }
   v.ai = "advance";
   if (best && (best.px !== v.x || best.py !== v.y)) driveTo(b, driver, best.px + Math.floor((v.w - 1) / 2), best.py + Math.floor((v.h - 1) / 2), { noRam: ram });
