@@ -198,10 +198,13 @@ const FAKE_PAD = `
     else await press("View");
     L = await look();
     check(L.nav.mode === "panels" && L.inRight, "the ring is in the right panel", JSON.stringify({ nav: L.nav, el: L.el }));
-    // To the top of the panel (▲ until nothing above it changes, staying inside the panel: on a desktop the next stop
-    // up is the bar beside the panel and the top bar, and from there ▼ lands past the hub's card), then down to
-    // Manage itself (the hub's card: its one button with no tab; the Buildings card's quick tabs open the window too).
-    for (let i = 0; i < 30; i++) { const before = (await look()).el; await press("Up"); const now = await look(); if (!phone && !now.inRight) { await press("Down"); break; } if (!now.el || !before || now.el.html === before.html) break; }
+    // To the top of the panel (▲ while a button of the panel stands higher: one more ▲ from the top row would leave
+    // the panel for the bar beside it and the top bar, from where ▼ lands past the hub's card), ◀ along the top row
+    // to Manage (the hub's card's first button), then ▼ to it: the hub's card's one button with no tab (the Buildings
+    // card's quick tabs open the window too).
+    const higher = () => page.evaluate(() => { const el = document.querySelector(".pad-focus"); if (!el) return false; const r = el.getBoundingClientRect(); return [...document.querySelectorAll("#right button:not([disabled])")].some((b) => b.offsetParent && b.getBoundingClientRect().top < r.top - 4); });
+    for (let i = 0; i < 30 && (await higher()); i++) { const before = (await look()).el; await press("Up"); const now = (await look()).el; if (!now || !before || now.html === before.html) break; }
+    for (let i = 0; i < 6; i++) { const L0 = await look(); if (!L0.el || (L0.el.action === "openbase" && !L0.el.tab)) break; await press("Left"); const L1 = await look(); if (!L1.el || !L1.inRight || L1.el.html === L0.el.html) { if (!L1.inRight) await press("Right"); break; } }
     L = await walkTo((el) => el.action === "openbase" && !el.tab, 60);
     check(L.el && L.el.action === "openbase" && !L.el.tab, "▼ reaches the hub's Manage", JSON.stringify(L.el));
     await press("A");
