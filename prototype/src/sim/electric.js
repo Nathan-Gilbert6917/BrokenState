@@ -33,7 +33,11 @@
 //   at hardware stores, fire stations, factories; fridges in every kitchen.
 //
 // THE GOVERNOR (governPower, autopilot.js governBase): sets the generators lying in the stores while the base wants more
-//   power than its generators give, every spotlight once there is a generator, the fridges while a building has room.
+//   power than its generators give, every spotlight once there is a generator OR a solar array / battery bank (2026-10-24,
+//   the user's "setting up power grids for the base": sources count, power.js isSource), the fridges while a building
+//   has room. The grid's BUILDS (the breaker panel, the well pump, the fence charger, the ammo press, the solar array,
+//   the battery bank, the alarm, the heaters, the charging station) are the governor's build wishes: autopilot.js
+//   gridWishes, each gated on its blueprint, a Mechanics hand, its plot, its parts and electronics with a reserve kept.
 //
 // MORE OF THE GRID (2026-10-24, the user's request in data-power.js: "more recipes for building that would use
 //   electronics ... pre-requisite items"). The solar array (solarFactor, solarOut: by the hour of the day, the season
@@ -57,7 +61,7 @@ import { GENSETS, GENSET_KINDS, GENSET_MAX, POWER_BUILDINGS, POWER_FINDS, AREA_P
 import { BUILDINGS, addBuilding, count, countAll } from "./buildings.js"; // (call-time only: the modules load in a circle)
 import { placeItem, refreshBaseMap, fittingRoom } from "./basemap.js"; // (call-time only)
 import { makeItem } from "./crafting.js"; // (call-time only)
-import { powerStatus, isPowered, poweredType, generators, genCapacity, powerWanted } from "./power.js"; // (call-time only)
+import { powerStatus, isPowered, poweredType, generators, genCapacity, powerWanted, isSource } from "./power.js"; // (call-time only)
 import { weatherAt, season } from "./weather.js"; // (call-time only)
 import { day, atBase } from "./world.js";
 import { heatRate } from "./upkeep.js"; // a day that wants heating: the electric heaters draw (call-time only)
@@ -198,7 +202,7 @@ export function powerMood(state, s, base) {
   if (cs) {
     const share = cs.light ? cs.litUnits / cs.light : 1;
     if (share >= 0.999) lines.push({ label: "Electric light in the buildings", v: POWER_MOOD.lit, tip: "The breaker panel's circuits are all on and powered (Power card)" });
-    else lines.push({ label: `Dark buildings: ${cs.dark} of ${cs.n} without power`, v: -POWER_MOOD.dark * (1 - share), tip: "A wired building switched off, or the generators not giving enough power (Power card): no lights after dark" });
+    else lines.push({ label: `Dark buildings: ${cs.dark} of ${cs.n} without power`, v: -POWER_MOOD.dark * (1 - share), tip: "A wired building switched off, or the generators, the sun and the battery banks not giving enough power (Power card): no lights after dark" });
     if (cs.need && cs.climate > 0) {
       const cshare = cs.climateServed / cs.climate;
       const hot = cs.need === "hot";
@@ -323,8 +327,9 @@ export function rollAreaPower(state, tileId, areaType, site, salt = "") {
 
 // ---------- the governor ----------
 // Once a day (autopilot.js governBase): the biggest generator in the stores set while the base wants more power than
-// its generators give; every spotlight in the stores once a generator stands; a fridge while a building has room and a
-// generator stands. Returns the log lines.
+// its generators give; every spotlight in the stores once a generator OR a source that burns nothing (a solar array, a
+// battery bank: power.js isSource; 2026-10-24) stands; a fridge while a building has room and one of those stands.
+// Returns the log lines.
 export function governPower(state, base) {
   const out = [];
   const want = powerWanted(state, base, () => true);
@@ -335,7 +340,7 @@ export function governPower(state, base) {
     if (r.err) break;
     out.push(r.msg);
   }
-  if (!generators(base).length) return out;
+  if (!generators(base).length && !base.buildings.some(isSource)) return out; // nothing here makes power: the spotlights and fridges wait in the stores
   for (const t of ["spotlamp", "fridge"]) {
     while (placedInStores(base, t) && canSetPlaced(state, base, t).ok) {
       const r = setPlaced(state, base, t);

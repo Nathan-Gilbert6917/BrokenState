@@ -266,14 +266,16 @@ export const BUILDINGS = {
   // controls), 16 work-hours, Mechanics 3; draws 1 power while switched on; wears 0.5 a day while powered.
   sealer:       { name: "Vacuum sealer",  plot: "utility", cost: { scrap: 12, parts: 2, electronics: 2 }, hours: 16, max: 1, req: { mechanics: 3 }, machine: true,
                   desc: "A chamber vacuum sealer with a heat bar, bolted to a steel table: the Kitchen's cooks pack cooked food into light survival meals that keep ten years (a Survival meal bill, Cooking 4). Draws 1 power while switched on (Power card, Workshops tab; switch it off to save fuel while it has no work). Wears like a machine: breakdowns need machine parts and a Mechanics 2+ survivor to fix. Needs a Mechanics 3+ survivor here to build." },
-  // Wave 2 cooking (cooking.js, the freezer list's pick): hand-cranked machines for the cooking stations, no power and
-  // no operator of their own (the cooks turn them as part of a bill: flour, ground meat, sausage). Cheap in machine
+  // Wave 2 cooking (cooking.js, the freezer list's pick): hand-cranked machines for the cooking stations, with no
+  // operator of their own (the cooks turn them as part of a bill: flour, ground meat, sausage). Cheap in machine
   // parts (one each), Mechanics 1 to bolt down; they wear on the days they turn (breakdowns.js FIXTURES, ranDay: b.ran).
-  // The hook crafting.js left (TODO food-types: a grain mill, a meat grinder) is these two.
-  grainmill:    { name: "Grain mill",     plot: "utility", cost: { scrap: 8, parts: 1 },  hours: 8,  max: 1, req: { mechanics: 1 }, machine: true,
-                  desc: "A hand-cranked burr mill bolted to a bench: the cooks grind grain into flour (a Flour bill at the Kitchen or a cook fire), and flour makes bread in the Kitchen. No power. Wears on the days it turns: repairs take a machine part. Needs a Mechanics 1+ survivor here to build." },
-  meatgrinder:  { name: "Meat grinder",   plot: "utility", cost: { scrap: 5, parts: 1 },  hours: 6,  max: 1, req: { mechanics: 1 }, machine: true,
-                  desc: "A cast-iron hand grinder and a stuffing horn: the cooks grind tough game into ground meat, and ground meat into smoked sausage that keeps for months (bills at the Kitchen or a cook fire). No power. Wears on the days it turns: repairs take a machine part. Needs a Mechanics 1+ survivor here to build." },
+  // The hook crafting.js left (TODO food-types: a grain mill, a meat grinder) is these two. The grid audit (2026-10-24,
+  // "fix and implement any machine power needs"): each has an optional motor, 1 power (power.js POWER_USERS) drawn only
+  // while a bill calls for it, ×1.5 the output a cook's hour while powered (POWER_BOOST); by hand without it (cooking.js).
+  grainmill:    { name: "Grain mill",     plot: "utility", cost: { scrap: 8, parts: 1 },  hours: 8,  max: 1, req: { mechanics: 1 }, machine: true, grid: true,
+                  desc: "A burr mill bolted to a bench with a hand crank and a motor: the cooks grind grain into flour (a Flour bill at the Kitchen or a cook fire), and flour makes bread in the Kitchen. Hand-cranked it needs no power; with 1 power (drawn only while a Flour bill wants it, Power card) it grinds ×1.5 as much a cook's hour. Wears on the days it turns: repairs take a machine part. Needs a Mechanics 1+ survivor here to build." },
+  meatgrinder:  { name: "Meat grinder",   plot: "utility", cost: { scrap: 5, parts: 1 },  hours: 6,  max: 1, req: { mechanics: 1 }, machine: true, grid: true,
+                  desc: "A cast-iron grinder with a hand crank, a motor and a stuffing horn: the cooks grind tough game into ground meat, and ground meat into smoked sausage that keeps for months (bills at the Kitchen or a cook fire). Hand-cranked it needs no power; with 1 power (drawn only while a bill wants it, Power card) it turns ×1.5 as much a cook's hour. Wears on the days it turns: repairs take a machine part. Needs a Mechanics 1+ survivor here to build." },
   still:        { name: "Ethanol still",  plot: "utility", cost: { scrap: 15, parts: 2 },  hours: 24, max: 1, station: "still", desc: "Workshop station. One operator ferments and distils 8 days of fresh food + 2 water into 3 fuel a day (the soonest to spoil goes in). Set a Keep-at-least order so it only takes the surplus." },
   greenhouse:   { name: "Greenhouse",     plot: "building", cost: { scrap: 20, parts: 3 },  hours: 36, max: 2, desc: "+2 sheltered crop plots: grow in every season (winter too), stand 10 °C more cold, and the weather rarely harms them." },
   // Mood (relations.js moodFactors): no operator needed.
