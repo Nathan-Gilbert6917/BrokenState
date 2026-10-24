@@ -1031,6 +1031,7 @@ function pickChoice(state, card, opts, p) {
   if (/^(A gone-wild orchard|Brambles in fruit)/.test(t)) return find(/^Pick/);
   if (/^A roadside gas station/.test(t)) return (p && p.vehicle && !careful(P) ? find(/^Hand-pump/) : null) || find(/^Pick through/);
   if (/^An overrun camp/.test(t)) return careful(P) ? find(/^Bury/) : find(/^Search the camp/);
+  if (/^An overrun convoy/.test(t)) return careful(P) ? find(/^Leave it for/) || find(/^Siphon/) : find(/^Take what is left/);
   if (/^A stranger with the worm/.test(t)) return find(/^Leave them food/) || find(/^Move on/);
   // Hardcore's year Calder falls (events.js HC_EVENTS).
   if (/^Gridlock$/.test(t)) return (p && p.vehicle ? find(/^Siphon/) : null) || find(/^Go through the luggage/);

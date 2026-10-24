@@ -22,7 +22,7 @@ import { BOOK_SITES, WARE_BOOKS } from "../src/sim/skills.js";
 import { RARE_GEAR, TRAVEL_GEAR, MERCHANT_VALUABLES } from "../src/sim/visitors.js";
 import { RECRUIT_WEAPONS, RECRUIT_ARMOR, RECRUIT_KIT, RECRUIT_PERSONAL } from "../src/sim/recruits.js";
 import { CRAFTS } from "../src/sim/crafting.js";
-import { HUMVEE_GEAR, HIKER_STUFF } from "../src/sim/events.js";
+import { HUMVEE_GEAR, HIKER_STUFF, CONVOY_GEAR } from "../src/sim/events.js";
 import { THROWABLES } from "../src/sim/stealth.js";
 import { worthTier } from "../src/sim/valuation.js";
 import { newItem, ZBODY } from "../src/sim/inventory.js";
@@ -107,7 +107,7 @@ for (const [k, r] of Object.entries(CRAFTS)) if (r.gear) addAll([r.gear], `craft
 // The pressure canner is no longer made or found (machines-2, 84c5145: fitted to a preserving room where it stands);
 // the item stays only for one kept from an old save, fitted on load or paying for a fitting (buildings.js CANNER.item).
 if (!CRAFTS.canner) addAll([CANNER.item], "old saves");
-addAll(HUMVEE_GEAR, "event:humvee"); addAll(HIKER_STUFF, "event:hiker"); addAll(["hikingpack", "rucksack"], "event:hiker");
+addAll(HUMVEE_GEAR, "event:humvee"); addAll(HIKER_STUFF, "event:hiker"); addAll(CONVOY_GEAR, "event:convoy"); addAll(["hikingpack", "rucksack"], "event:hiker");
 for (const k of Object.keys(GEAR)) if (GEAR[k].blueprint) add(k, "blueprints");
 for (const [a, f] of Object.entries(GUN_FINDS)) addAll(Object.keys(f), `raid:${a}`); // gunsafes.js: tools and gun cases in raid containers
 for (const [t, f] of Object.entries(SEARCH_TOOLS)) addAll(Object.keys(f), `find:${t}`); // gunsafes.js: tools in the hour-by-hour search
