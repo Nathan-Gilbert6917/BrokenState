@@ -23,7 +23,8 @@ export const MODES = {
   // Custom (2026-10-24, user request): the new-run screen's mode only; the run is a normal one with state.custom (custommode.js).
   custom: { label: "Custom", tip: "A normal start (a hub, 6–12 months after the outbreak) with the counts you set: starting survivors, AI groups, starting hives, cities, towns and military sites, each 1 or more" },
   // Crashlanding (2026-10-24, user request): the screen's mode only; the run is a normal one with state.crash (crashmode.js).
-  crash: { label: "Crashlanding", tip: `Three years after Calder fell: the sole survivor of a Guard helicopter shot down on a ${CRASH.W} × ${CRASH.H} map, no base, no vehicle, a broken radio and a fixed military kit (traits, skills and look are yours to set; the kit, the map size and the count are not). Your unit's base is on the far side of the map` },
+  // The map is shown, not set (2026-10-24, the user: "just show how many exist on the map all things are just static values").
+  crash: { label: "Crashlanding", tip: `Three years after Calder fell: the sole survivor of a Guard helicopter shot down on a ${CRASH.W} × ${CRASH.H} map, no base, no vehicle, a broken radio and a fixed military kit (traits, skills and look are yours to set; the kit, the map and what is on it are not: the groups, hives, cities and sites are the map's own, shown, not set). Your unit's base is on the far side of the map` },
 };
 
 // Starting people (the new-run screen): how many flee together on day 1 (Hardcore, START_PEOPLE), or how many hold the

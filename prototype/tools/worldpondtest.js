@@ -16,7 +16,7 @@
 // Usage: node tools/worldpondtest.js [seed]
 import { createWorld, hub, atBase } from "../src/sim/world.js";
 import { generateMap, pondLand, pondDice, WORLD_PONDS } from "../src/sim/mapgen.js";
-import { sizeDef } from "../src/sim/worldsize.js";
+import { customDef } from "../src/sim/worldsize.js";
 import { Rng } from "../src/sim/rng.js";
 import { createBattle, registerCombatHandler, CELL } from "../src/sim/combat.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
@@ -33,7 +33,9 @@ const check = (ok, msg) => { if (ok) passes++; else fails++; console.log(`  ${ok
 const section = (t) => console.log(`\n${t} [${((Date.now() - t0) / 1000).toFixed(1)} s]`);
 const t0 = Date.now();
 registerCombatHandler("wpt", () => {});
-const world = (s = SEED) => { const st = createWorld({ seed: s, factionCount: 6 }); st.started = true; st.hour = 24 * 3 + 12; return st; };
+// A custom 64 × 42 map: the original Normal to the tile (worldsize.js, 2026-10-24: the Normal preset is 250 × 150 now), so
+// the pond tiles sampled below (and the golden hashes in 4) stay the ones the checks were calibrated on.
+const world = (s = SEED) => { const st = createWorld({ seed: s, factionCount: 6, size: "custom", customW: 64, customH: 42 }); st.started = true; st.hour = 24 * 3 + 12; return st; };
 const pondIds = (st) => st.tiles.filter((t) => t.pond).map((t) => t.id);
 // A summer day the ponds are open and a winter day they are ice (the freezing index past FREEZE).
 function days(st) {
@@ -98,7 +100,7 @@ const st = world();
   const open = st.tiles.filter(pondLand).length, share = ids.length / open;
   check(share > 0.03 && share < 0.08, `about one open tile in twenty: ${ids.length} of ${open} (${(100 * share).toFixed(1)}%)`);
   // The map made twice from the same dice: the same ponds, the dice left where they were (the ponds draw none).
-  const def = sizeDef("normal"), r1 = new Rng(SEED), r2 = new Rng(SEED);
+  const def = customDef(64, 42), r1 = new Rng(SEED), r2 = new Rng(SEED); // the world() map's def
   const m1 = generateMap(r1, def, { seed: SEED }), m2 = generateMap(r2, def, { seed: SEED });
   check(r1.state === r2.state && JSON.stringify(m1.tiles) === JSON.stringify(m2.tiles) && JSON.stringify(m1.tiles.filter((t) => t.pond).map((t) => t.id)) === JSON.stringify(ids), "generateMap: the same map and ponds from the same dice");
   check(!!st.worldPonds, "a new world is marked as having its ponds (state.worldPonds)");
@@ -245,10 +247,11 @@ section("A tile with no pond: its land, relief and fight's heights as before pon
   // (basescatter.js fieldLayer: their fences, not ponds; their relief and fight heights as before).
   // Every tile's land re-pinned 2026-10-23 for the 500 × 500 base map (basemap.js BASE_GRID: the land laid over the
   // bigger map, not ponds; the relief and the fight heights as before), the suburbs' again for their street cars kept
-  // off the driveways (basescatter.js townLayer).
+  // off the driveways (basescatter.js townLayer). Since the presets changed size (2026-10-24: Normal is 250 × 150) the
+  // golden world is built as a custom 64 × 42 map, which draws exactly what the old Normal did (the same tiles).
   const GOLDEN = { 0: ["b3f10151", "1215e174", "44c0763d"], 1: ["24de7a3c", "4e151ff3", "44c0763d"], 2: ["5a5dd030", "968eecf", "44c0763d"], 5: ["5b5f16df", "10ae9e96", "44c0763d"], 6: ["77485d55", "1ef5da8a", "44c0763d"], 7: ["8a69cdd7", "ffb81f04", "44c0763d"], 11: ["6c75c959", "b056081a", "6694eee1"], 12: ["25f4365f", "c9b8dc53", "65043908"], 13: ["eb0c7a0e", "d33fd16f", "efc3c4b9"], 14: ["f8edc4f7", "2025f2e4", "fc556a50"], 15: ["343f9617", "e6771397", "7f02fa9"], 30: ["812f2f89", "8a85d8d3", "e82d0a4a"], 70: ["2b3288d", "b1455a87", "44c0763d"], 71: ["1c7c6d59", "b1455a87", "44c0763d"], 72: ["19dfacc1", "b1455a87", "44c0763d"], 667: ["50a8da5e", "b1455a87", "44c0763d"], 668: ["a53682a6", "b1455a87", "44c0763d"], 730: ["d438cc40", "b1455a87", "44c0763d"] };
   const hash = (v) => { const s = JSON.stringify(v, (k, x) => (x instanceof Map ? [...x] : x instanceof Set ? [...x] : x)); let h = 2166136261 >>> 0; for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619) >>> 0; return h.toString(16); };
-  const w = createWorld({ seed: 7, factionCount: 6 });
+  const w = createWorld({ seed: 7, factionCount: 6, size: "custom", customW: 64, customH: 42 });
   const bad = [];
   for (const [id, [L, R, F]] of Object.entries(GOLDEN)) {
     const t = w.tiles[id];

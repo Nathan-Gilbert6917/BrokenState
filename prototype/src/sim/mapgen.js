@@ -9,10 +9,19 @@
 //   crash sites, plus truck stops and gas stations on the highways. Most of them are off the road.
 // - Landmarks: at least one National Guard base (off-road, away from settlements), a prison, a dam, an airport,
 //   factories.
-// World sizes (worldsize.js): the counts above are a Normal 64 × 42 map's. Large and Huge maps get more cities (3, 4),
-// towns, countryside sites, landmarks and highway stops by area, extra hot spots with a small cluster of hives each,
-// and more guaranteed military bases on a Huge map; a Small map gets fewer by area. A Normal map draws exactly the
-// random numbers it always did, so old seeds build the same map.
+// World sizes (worldsize.js): the counts above are the original 64 × 42 map's (worldsize.js BASE_W × BASE_H, the
+// density unit). Every size scales the towns, countryside sites, landmarks and highway stops by area (areaScale) and
+// takes its cities, military bases, origin hives and extra hot spots (a small cluster of hives each) from its size
+// def. Since 2026-10-24 the presets are 150 × 75 to 500 × 300 (Normal 250 × 150, about 14 times the original: some
+// 180 towns and 17 cities), so a seed builds a far bigger map than it did; only a custom 64 × 42 map still draws
+// exactly the numbers the old Normal did.
+// Names (2026-10-24, the user: "Make sure when any world map is built all city and POI names are unique"): every
+// city, town and site name is unique on a map (usedNames, siteNames). The pools below give plain names first, then
+// a distinguishing form of one (TOWN_FORMS "North Hadley", "Hadley Crossing", "Old Hadley"; SITE_FORMS "Upper Miller
+// Farm"; CITY_FORMS "Port Ashby", "New Easton"), and a roman numeral ("Hadley II") as the last resort; the forms are
+// tried in a fixed order and the extra pools (MORE_SURNAMES...) are drawn from only when the first pool's tries all
+// collide, so a map whose pools never run dry draws exactly the dice it did. A Huge 500 × 300 map (some 700 towns,
+// 65 cities, 8,000 named sites) stays well inside them: tools/uniquenametest.js.
 // A placed site is tile.loc ={ type, name, zone, settlement? }: zone = urban | town | rural | special (data.js
 // SITE_ZONES); settlement = center tile id of the city or town it belongs to.
 import { HexGrid, findPath } from "./hex.js";
@@ -25,18 +34,46 @@ import { hash01 } from "./skills.js"; // the town rings' radius: hash dice, so t
 export const MAP_W = BASE_W;
 export const MAP_H = BASE_H;
 
-const TOWN_COUNT = 13; // on a Normal map; scaled by area on the others
+const TOWN_COUNT = 13; // on the original 64 × 42 map; scaled by area (about 180 on the new Normal, 2026-10-24)
 // Town names for Large and Huge maps once data.js TOWN_NAMES are all taken (kept apart so Normal maps draw the same).
 const MORE_TOWN_NAMES = ["Thornton", "Bridgeport", "Maple Grove", "Dover Flats", "Clearwater", "Hadley", "Sawyer", "Whitmore", "Linden",
   "Carver", "Brookfield", "Iron Gap", "Winslow", "Meadowvale", "Rockport", "Garland", "Tallow Creek", "Beckett", "Norwood", "Shiloh"];
+// A third pool for the new sizes (2026-10-24; a Normal map alone has some 180 towns), drawn from once the two above are taken.
+const EVEN_MORE_TOWN_NAMES = ["Alder", "Barlow", "Caswell", "Dunhill", "Edgewater", "Fenwick", "Gilead", "Hartwell", "Ivydale", "Jericho",
+  "Kinsley", "Lockridge", "Marlow", "Nettleton", "Orchard Park", "Pembroke", "Quarry Ridge", "Rosewood", "Selby", "Tamarack", "Ulster",
+  "Verona", "Wakefield", "Yarrow", "Ashby", "Bellwood", "Coldwater", "Dale City", "Elmhurst", "Foxboro", "Greenfield", "Hemlock",
+  "Ironwood", "Juniper", "Kingfield", "Lowell", "Mansfield", "Newbury", "Oriole", "Paxton", "Rutland", "Sedgwick", "Trenton", "Wyndham"];
+// A town's distinguishing forms once every plain name is taken: [prefix, suffix] round a plain name ("North Hadley", "Hadley Crossing").
+const TOWN_FORMS = [["North ", ""], ["South ", ""], ["East ", ""], ["West ", ""], ["Old ", ""], ["New ", ""], ["Upper ", ""], ["Lower ", ""],
+  ["", " Crossing"], ["", " Junction"], ["", " Springs"], ["", " Heights"], ["", " Mills"], ["", " Station"], ["", " Corners"], ["", " Hollow"],
+  ["Fort ", ""], ["Port ", ""], ["Mount ", ""], ["Lake ", ""], ["Little ", ""], ["", " Falls"], ["", " Grove"], ["", " Landing"]];
 const SECOND_CITY_NAMES =["Granite City", "Fairmont", "Kingsbridge", "Port Ashby", "Easton"];
-// Custom mode's extra cities (custommode.js, up to 12 in all) once those are taken (kept apart so the presets draw the same).
+// Custom mode's extra cities (custommode.js, up to 12 in all) once those are taken (kept apart so the second city draws the same).
 const MORE_CITY_NAMES = ["Harlow", "Redfield", "Marston", "Brookhaven", "Westbury", "Ashland", "Dunmore"];
+// The new sizes' cities (2026-10-24: Normal 17, Huge 65), then a form of one (CITY_FORMS: "New Easton", "Marston Falls").
+const EVEN_MORE_CITY_NAMES = ["Carrollton", "Dunbar", "Elkton", "Glenrock", "Haverford", "Ironbridge", "Jasper", "Kendall", "Lakeshore",
+  "Monroe", "Newhaven", "Oakdale", "Pinecrest", "Rivergate", "Stanton", "Thornbury", "Underwood", "Valemont", "Westmark", "Yardley",
+  "Castlegate", "Milford", "Ridgefield", "Summerton", "Brightwater", "Coalport", "Ferndale", "Halstead", "Lindenhurst", "Norcross"];
+const CITY_FORMS = [["New ", ""], ["Port ", ""], ["Fort ", ""], ["", " City"], ["", " Falls"], ["North ", ""], ["South ", ""], ["East ", ""], ["West ", ""], ["", " Heights"]];
 const SURNAMES = ["Miller", "Hollis", "Ostrander", "Baker", "Kline", "Rourke", "Dale", "Pruitt", "Harmon", "Whitaker", "Calloway",
   "Brandt", "Yoder", "Lindgren", "Mercer", "Tate", "Grady", "Hensley", "Pickett", "Voss", "Sorensen", "Ames", "Caldwell", "Fenn"];
+// Drawn from only when eight draws of SURNAMES / PLACE_NAMES all collide (2026-10-24: the big maps' hundreds of farms and cabins).
+const MORE_SURNAMES = ["Abbott", "Bishop", "Cochran", "Dawes", "Ellery", "Farrow", "Gentry", "Hatcher", "Ingram", "Jarvis", "Keller",
+  "Lowry", "Maddox", "Nolan", "Oakes", "Parrish", "Quinlan", "Radford", "Sayer", "Thorne", "Upton", "Vance", "Wheeler", "Yates",
+  "Abernathy", "Bowman", "Crane", "Dempsey", "Easley", "Fletcher", "Goss", "Hurley", "Irwin", "Judd", "Kimball", "Lassiter", "Marsh",
+  "Nash", "Overton", "Pryor", "Rigby", "Shaw", "Talbot", "Underhill", "Vickers", "Walsh", "Wilder", "Ziegler", "Albright", "Beck",
+  "Corbin", "Dutton", "Emmett", "Flood", "Garner", "Holt", "Isley", "Jessup", "Kerr", "Latham", "McCall", "Neville", "Osgood",
+  "Pratt", "Reyes", "Sutton", "Tillman", "Varley", "Weston", "Yancey", "Ambrose", "Boyd", "Crowley", "Dorsey", "Ewing", "Frost"];
 const PLACE_NAMES = ["Elk Ridge", "Bear Lake", "Pine Hollow", "Cedar Hollow", "Eagle Rock", "Wolf Creek", "Stony Brook", "Blue Spruce",
   "Granite Peak", "Hawk Hill", "Silver Creek", "Juniper Flats", "Bitterroot", "Lone Pine", "Deer Run", "Owl Canyon", "Raven Point",
   "Spring Meadow", "Black Rock", "Willow Bend"];
+const MORE_PLACE_NAMES = ["Aspen Draw", "Badger Flat", "Birch Knoll", "Boulder Gap", "Cougar Bluff", "Crow Butte", "Dry Fork", "Fox Run",
+  "Heron Marsh", "Hidden Lake", "Kestrel Ridge", "Lynx Hollow", "Moose Meadow", "Otter Creek", "Pike Bend", "Quail Hill", "Red Cliff",
+  "Sable Point", "Thunder Ridge", "Trout Lake", "Vulture Peak", "Wild Rose", "Beaver Dam", "Cold Brook", "Fawn Creek", "Grouse Hill"];
+// A site's distinguishing forms once every candidate name is taken ("Upper Miller Farm", "North Hadley Gas station"), then a
+// numeral. Tried from a form that moves on with every site named (no dice), so the forms vary across a big map.
+const SITE_FORMS = ["North", "South", "East", "West", "Upper", "Lower", "Old", "New", "Little", "Big", "High", "Far", "Twin", "Back", "Long", "Stone"];
+const ROMAN = ["II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII"];
 
 // Ponds (the user's words 2026-10-23: "add pond decor to the world map when a tile has a pond in the world map generate
 // a pond in the battle map"): tile.pond, a spring-fed pond on the tile (drawn on the State Map: ui/terraindeco.js; a
@@ -176,8 +213,8 @@ export function generateMap(rng, size = "normal", { hives = null, seed = null } 
   // ---------- placement helpers ----------
   const sites = [];                   // tiles with a location, in placement order
   const crowd = new Uint8Array(grid.size).fill(99); // distance to the nearest site (up to 8; 99 = farther)
-  const usedNames = new Set();        // town and city names
-  const siteNames = new Set();        // every site's full name
+  const usedNames = new Set();        // town and city names (every one unique on the map)
+  const siteNames = new Set();        // every site's full name (the towns' and cities' among them): unique on the map
   const buildable = (t) => !t.loc && !t.river && t.terrain !== "water" && t.terrain !== "mountain";
   const urbanTile = (t) => t.terrain === "city" || t.terrain === "suburb";
   const placeLoc = (tile, type, name, zone = LOCATIONS[type].cat, settlement = null) => {
@@ -189,19 +226,47 @@ export function generateMap(rng, size = "normal", { hives = null, seed = null } 
     for (const id of grid.within(tile.id, 8)) crowd[id] = Math.min(crowd[id], grid.distance(tile.id, id));
     return tile;
   };
-  // First candidate name not taken yet; numbered as a last resort.
+  // First candidate name not taken yet; then a distinguishing form of one (SITE_FORMS, in order), a roman numeral, and
+  // a number as the very last resort (no dice: a map whose names never collide draws exactly what it did).
+  const taken = (n) => siteNames.has(n) || usedNames.has(n);
   const uniqueName = (...cands) => {
-    for (const n of cands) if (n && !siteNames.has(n)) return n;
-    for (let i = 2; ; i++) if (!siteNames.has(`${cands[0]} ${i}`)) return `${cands[0]} ${i}`;
+    cands = cands.filter(Boolean);
+    for (const n of cands) if (!taken(n)) return n;
+    const start = siteNames.size % SITE_FORMS.length;
+    for (let i = 0; i < SITE_FORMS.length; i++) { const f = SITE_FORMS[(start + i) % SITE_FORMS.length]; for (const n of cands) if (!taken(`${f} ${n}`)) return `${f} ${n}`; }
+    for (const r of ROMAN) if (!taken(`${cands[0]} ${r}`)) return `${cands[0]} ${r}`;
+    for (let i = 2; ; i++) if (!taken(`${cands[0]} ${i}`)) return `${cands[0]} ${i}`;
   };
-  const pickName = (make, tries = 8) => uniqueName(...Array.from({ length: tries }, make));
-  const nameFor = () => {
-    const left = TOWN_NAMES.filter((n) => !usedNames.has(n));
-    const more = left.length ? left : MORE_TOWN_NAMES.filter((n) => !usedNames.has(n)); // big maps run out of the first list
-    const n = more.length ? rng.pick(more) : `${rng.pick(TOWN_NAMES)} ${usedNames.size}`;
+  // `tries` draws of make (the first pool), then as many of `more` (the wider pool) only when every one collided.
+  const pickName = (make, tries = 8, more = null) => {
+    const cands = Array.from({ length: tries }, make);
+    if (more && cands.every(taken)) cands.push(...Array.from({ length: tries }, more));
+    return uniqueName(...cands);
+  };
+  // A settlement name from the pools (plain names first), then a form of one (random base and form, a few tries,
+  // then the first free pair in order), then a roman numeral: never the same twice on a map.
+  const settlementName = (pools, forms) => {
+    for (const pool of pools) {
+      const left = pool.filter((n) => !taken(n));
+      if (left.length) return rng.pick(left);
+    }
+    const all = pools.flat();
+    for (let i = 0; i < 12; i++) {
+      const [pre, suf] = rng.pick(forms), n = `${pre}${rng.pick(all)}${suf}`;
+      if (!taken(n)) return n;
+    }
+    for (const [pre, suf] of forms) for (const b of all) if (!taken(`${pre}${b}${suf}`)) return `${pre}${b}${suf}`;
+    const base = rng.pick(all);
+    for (const r of ROMAN) if (!taken(`${base} ${r}`)) return `${base} ${r}`;
+    for (let i = 2; ; i++) if (!taken(`${base} ${i}`)) return `${base} ${i}`;
+  };
+  const nameFor = () => { // a town's name
+    const n = settlementName([TOWN_NAMES, MORE_TOWN_NAMES, EVEN_MORE_TOWN_NAMES], TOWN_FORMS);
     usedNames.add(n);
     return n;
   };
+  // A city's name: the second city from SECOND_CITY_NAMES as ever (the same draw), the rest from every city pool.
+  const cityName = (k) => (k === 1 ? rng.pick(SECOND_CITY_NAMES) : settlementName([SECOND_CITY_NAMES, MORE_CITY_NAMES, EVEN_MORE_CITY_NAMES], CITY_FORMS));
   // Best of a few random candidates: the one farthest from refs (keeps towns and sites spread out).
   const pickSpread = (cands, refs, samples = 6) => {
     if (!cands.length) return null;
@@ -243,8 +308,7 @@ export function generateMap(rng, size = "normal", { hives = null, seed = null } 
       const c = tiles.filter((t) => t.x >= 8 && t.x < MAP_W - 8 && t.y >= 5 && t.y < MAP_H - 5 && !t.river &&
         ["plains", "forest", "hills"].includes(t.terrain) && cities.every((o) => grid.distance(t.id, o.center.id) >= minD));
       if (!c.length) continue;
-      const names = [...SECOND_CITY_NAMES, ...(def.customCounts ? MORE_CITY_NAMES : [])].filter((n) => !usedNames.has(n));
-      addCity(rng.pick(c), rng.pick(k === 1 || !names.length ? SECOND_CITY_NAMES : names), false);
+      addCity(rng.pick(c), cityName(k), false);
       break;
     }
   }
@@ -311,7 +375,7 @@ export function generateMap(rng, size = "normal", { hives = null, seed = null } 
     for (const type of sats) {
       const t = rng.pick(ringAround(town, 2, 3));
       if (!t) continue;
-      if (type === "farm") placeLoc(t, type, pickName(() => `${rng.pick(SURNAMES)} Farm`), "rural", town.id);
+      if (type === "farm") placeLoc(t, type, pickName(() => `${rng.pick(SURNAMES)} Farm`, 8, () => `${rng.pick(MORE_SURNAMES)} Farm`), "rural", town.id);
       else placeLoc(t, type, uniqueName(`${name} ${LOCATIONS[type].name}`), "town", town.id);
     }
   }
@@ -325,6 +389,9 @@ export function generateMap(rng, size = "normal", { hives = null, seed = null } 
   const cityMemo = new Int16Array(grid.size).fill(-1), townMemo = new Int16Array(grid.size).fill(-1);
   const cityDist = (t) => (cityMemo[t.id] >= 0 ? cityMemo[t.id] : (cityMemo[t.id] = cities.length ? Math.min(...cities.map((c) => grid.distance(c.center.id, t.id))) : 999));
   const townDist = (t) => (townMemo[t.id] >= 0 ? townMemo[t.id] : (townMemo[t.id] = towns.reduce((m, o) => Math.min(m, grid.distance(o.id, t.id)), 999)));
+  // "At least d tiles from every tile in list", as a mask over the grid built once per call (2026-10-24: the landmark
+  // filters ask it for every tile, and a Huge map has dozens of bases, prisons and dams to keep apart).
+  const farFrom = (list, d) => { const m = new Uint8Array(grid.size); for (const s of list) for (const id of grid.within(s.id, d - 1)) m[id] = 1; return (t) => !m[t.id]; };
   // The first filter with any candidate wins; the last ones are fallbacks.
   const landmark = (type, filters, name, zone = "special") => {
     for (const f of filters) {
@@ -346,21 +413,20 @@ export function generateMap(rng, size = "normal", { hives = null, seed = null } 
     (t) => extra(t),
   ];
   military.push(landmark("military", milFilters(() => true), (t) => uniqueName(`${nearName(t)} National Guard base`)));
-  // Bigger maps: more bases for sure (Huge: 2), each at least 22 tiles from the others; then a 50% chance of one more.
-  const apartMil = (t) => military.every((m) => grid.distance(t.id, m.id) >= 22);
-  // Custom mode: closer when they do not fit 22 apart (12, then 6).
-  const apartBy = (d) => (t) => military.every((m) => grid.distance(t.id, m.id) >= d);
+  // Bigger maps: more bases for sure (Huge: 45), each at least 22 tiles from the others; then a 50% chance of one more.
+  // Custom mode: closer when they do not fit 22 apart (12, then 6). apartBy reads the bases placed so far (built per base).
+  const apartBy = (d) => farFrom(military, d);
   for (let k = 1; k < def.military; k++) {
-    const more = landmark("military", def.customCounts ? [22, 12, 6].flatMap((d) => milFilters(apartBy(d))) : milFilters(apartMil), (t) => uniqueName(`${nearName(t)} National Guard base`, `${nearName(t)} Army depot`));
+    const more = landmark("military", def.customCounts ? [22, 12, 6].flatMap((d) => milFilters(apartBy(d))) : milFilters(apartBy(22)), (t) => uniqueName(`${nearName(t)} National Guard base`, `${nearName(t)} Army depot`));
     if (more) military.push(more);
   }
   if (rng.chance(0.5) && !def.customCounts) {
-    const second = landmark("military", milFilters(apartMil).slice(0, 2), (t) => uniqueName(`${nearName(t)} Army depot`));
+    const second = landmark("military", milFilters(apartBy(22)).slice(0, 2), (t) => uniqueName(`${nearName(t)} Army depot`));
     if (second) military.push(second);
   }
   for (const m of military) offRoad.add(m.id);
   // One prison, dam and airport on a Normal map (two on Large and Huge ones, kept apart), two factories (by area).
-  const apart = (type, d) => { const same = sites.filter((s) => s.loc.type === type); return (t) => same.every((s) => grid.distance(s.id, t.id) >= d); }; // the sites of that type gathered once: the filter runs for every tile
+  const apart = (type, d) => farFrom(sites.filter((s) => s.loc.type === type), d); // the sites of that type gathered once, as a mask: the filter runs for every tile
   const perArea = (n) => Math.max(1, scaled(n));
   for (let i = 0; i < perArea(1); i++) {
     const far = apart("prison", 16);
@@ -385,12 +451,13 @@ export function generateMap(rng, size = "normal", { hives = null, seed = null } 
   // ---------- countryside ----------
   const countryName = (type) => {
     const sur = () => rng.pick(SURNAMES), place = () => rng.pick(PLACE_NAMES);
+    const more = () => rng.pick(MORE_SURNAMES), morePlace = () => rng.pick(MORE_PLACE_NAMES); // the wider pools, drawn from only when the first eight collide
     switch (type) {
-      case "farm": return pickName(() => `${sur()} Farm`);
-      case "barn": case "ranch": case "cabin": return pickName(() => `${sur()} ${LOCATIONS[type].name}`);
-      case "crashsite": return pickName(() => `${rng.pick([`Flight ${rng.int(100, 999)}`, "Medevac", "Cargo plane", "Army helicopter"])} crash site`);
-      case "truckstop": return pickName(() => `Mile ${rng.int(12, 240)} Truck stop`);
-      default: return pickName(() => `${place()} ${LOCATIONS[type].name}`);
+      case "farm": return pickName(() => `${sur()} Farm`, 8, () => `${more()} Farm`);
+      case "barn": case "ranch": case "cabin": return pickName(() => `${sur()} ${LOCATIONS[type].name}`, 8, () => `${more()} ${LOCATIONS[type].name}`);
+      case "crashsite": return pickName(() => `${rng.pick([`Flight ${rng.int(100, 999)}`, "Medevac", "Cargo plane", "Army helicopter"])} crash site`, 8, () => `Flight ${rng.int(1000, 9999)} crash site`);
+      case "truckstop": return pickName(() => `Mile ${rng.int(12, 240)} Truck stop`, 8, () => `Mile ${rng.int(241, 999)} Truck stop`);
+      default: return pickName(() => `${place()} ${LOCATIONS[type].name}`, 8, () => `${morePlace()} ${LOCATIONS[type].name}`);
     }
   };
   for (const [type, n, ok] of COUNTRYSIDE) {
@@ -427,19 +494,19 @@ export function generateMap(rng, size = "normal", { hives = null, seed = null } 
     const res = findPath(grid, from, to, roadCost);
     if (res) layRoad(res.path);
   };
-  // Highways: a minimum spanning tree over cities, towns and the big landmarks, routed by terrain cost.
+  // Highways: a minimum spanning tree over cities, towns and the big landmarks, routed by terrain cost. Prim's with
+  // each pending site's nearest connected one remembered (2026-10-24: a Huge 500 × 300 map has some 900 of them, and
+  // asking every pair every round was most of its build); the same tree as the pairwise scan gave: the first pending
+  // site at the least distance, joined to the first connected site at that distance.
   const trunk = sites.filter((t) => t.loc.type === "city" || t.loc.type === "town" || (t.loc.zone === "special" && t.loc.type !== "military"));
-  const connected = [trunk[0]];
-  const pending = trunk.slice(1);
+  const pending = trunk.slice(1).map((p) => ({ p, c: trunk[0], d: grid.distance(p.id, trunk[0].id) }));
   while (pending.length) {
-    let best = null;
-    for (const p of pending) for (const c of connected) {
-      const d = grid.distance(p.id, c.id);
-      if (!best || d < best.d) best = { p, c, d };
-    }
+    let at = 0;
+    for (let i = 1; i < pending.length; i++) if (pending[i].d < pending[at].d) at = i;
+    const best = pending[at];
     roadTo(best.c.id, best.p.id);
-    connected.push(best.p);
-    pending.splice(pending.indexOf(best.p), 1);
+    pending.splice(at, 1);
+    for (const e of pending) { const d = grid.distance(e.p.id, best.p.id); if (d < e.d) { e.d = d; e.c = best.p; } }
   }
   // Loops: a settlement gets a direct road to its nearest neighbors when the roads between them are a long detour.
   const roadOnly = (a, b) => (tiles[a].roadLinks.includes(b) ? 1 : Infinity);
@@ -464,15 +531,19 @@ export function generateMap(rng, size = "normal", { hives = null, seed = null } 
     const target = nearestRoad(t.id, t.loc.zone === "rural" ? 3 : 4);
     if (target != null) roadTo(t.id, target);
   }
-  // Truck stops and gas stations along the highways, away from other sites.
+  // Truck stops and gas stations along the highways, away from other sites. The ground within `spacing` of a stop of
+  // the kind is marked as each is placed (2026-10-24: hundreds of stops on a Huge map, each asked of every road tile).
   const highway = (type, n, spacing, name) => {
+    const same = sites.filter((s) => s.loc.type === type && s.loc.zone === "rural");
+    const near = new Uint8Array(grid.size);
+    for (const s of same) for (const id of grid.within(s.id, spacing - 1)) near[id] = 1;
     for (let i = 0; i < n; i++) {
-      const same = sites.filter((s) => s.loc.type === type && s.loc.zone === "rural");
-      const c = tiles.filter((t) => t.road && buildable(t) && !t.bridge && !urbanTile(t) && crowd[t.id] >= 3 &&
-        same.every((s) => grid.distance(s.id, t.id) >= spacing));
+      const c = tiles.filter((t) => t.road && buildable(t) && !t.bridge && !urbanTile(t) && crowd[t.id] >= 3 && !near[t.id]);
       const t = pickSpread(c, same, 4);
       if (!t) break;
       placeLoc(t, type, name(t), "rural");
+      same.push(t);
+      for (const id of grid.within(t.id, spacing - 1)) near[id] = 1;
     }
   };
   highway("truckstop", scaled(3), 10, () => countryName("truckstop"));
@@ -516,11 +587,11 @@ export function generateMap(rng, size = "normal", { hives = null, seed = null } 
     if (t.terrain === "city") t.infection = Math.min(1, t.infection + 0.15);
     else if (t.terrain === "suburb") t.infection = Math.min(1, t.infection + 0.06);
   }
-  // Infestation hives (hives.js): four around the origin (HIVE.START_ORIGIN on a Normal map; worldsize.js
-  // originHives on the others), one around each other hot spot (HIVE.START_SPOT).
+  // Infestation hives (hives.js): the size def's originHives around the origin (worldsize.js; HIVE.START_ORIGIN, four,
+  // for a def without one), one around each other hot spot (HIVE.START_SPOT).
   // The extra hot spots of Large and Huge maps hold a small cluster each (worldsize.js spotHives): hive income
   // grows with the cluster (hives.js hiveIncome), so this keeps the dead per tile of land near a Normal map's.
-  const originHives = def.key === "normal" ? HIVE.START_ORIGIN : def.originHives;
+  const originHives = def.originHives ?? HIVE.START_ORIGIN;
   const want = seeds.map((s, i) => (!i ? originHives : spotIds.includes(s.id) ? def.spotHives || HIVE.START_SPOT : HIVE.START_SPOT));
   // A set hive count (the new-run screen): fewer than the map makes are taken from the outbreak origin outward (the
   // origin keeps its cluster first, the lone hot spots go); more are added one per hot spot in turn, origin first.

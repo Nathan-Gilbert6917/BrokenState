@@ -19,7 +19,9 @@
 //   follow the zone. (Extras on their own dice after the list, marked poi.extra: a campsite, campsite.js; a gun store
 //   or a pawn shop, a bar, a bank, any shop or service of shops.js.) A POI of a kind with franchises (data-shops.js)
 //   is one of them (poi.v, shops.js franchiseFor by its own dice and the tile's setting): its name (poiName), its
-//   sprite and its building's layout. A hidden POI is found by a survey (survey.js, revealPois): the team keeps its finds (p.poiFinds)
+//   sprite and its building's layout. No two POIs on a tile are the same franchise (2026-10-24, the user: "all city and
+//   POI names are unique"; a kind a tile may hold twice, REPEATABLE's corner store: the second takes the next franchise
+//   of its kind, so poiName never repeats on a tile; the sites' proper names are unique map-wide: mapgen.js). A hidden POI is found by a survey (survey.js, revealPois): the team keeps its finds (p.poiFinds)
 //   until its report reaches the hub (world.js mergeKnowledge → mergePoiFinds → state.poiKnow, the hub's record per
 //   tile: the indices found and when the tile was surveyed or looked at). The UI never says how many are hidden.
 // - Pools: a POI's loot pool (0–1, the share of its original loot still there) is set from its kind's richness and
@@ -54,7 +56,7 @@ import { isPublicSite, siteKnown, nearRoad } from "./discovery.js";
 import { localId } from "./world.js";
 import { zombieToughness } from "./hives.js"; // hive land: the dead are more and tougher there (the threat's hive bonus)
 import { campsiteExtra, campDanger, noteCampSeen } from "./campsite.js"; // call-time only: the extra campsite a tile may hold, its state in the threat, a look at it
-import { shopExtras, franchiseFor, franchiseName, settingOf } from "./shops.js"; // call-time only: the shops a suburb or city block may hold, a place's franchise
+import { shopExtras, franchiseFor, franchisesOf, franchiseName, settingOf } from "./shops.js"; // call-time only: the shops a suburb or city block may hold, a place's franchise
 
 export const POI = {
   MAX: 4,                 // POIs a tile can hold, the site among them
@@ -122,11 +124,15 @@ export function inKnownZone(state, tile) {
 }
 
 // ---------- generation ----------
-/** @param {State} state @param {Tile} t @param {string} kind @param {boolean} site */
-function makePoi(state, t, kind, site, slot) {
+/** @param {State} state @param {Tile} t @param {string} kind @param {boolean} site @param {number} slot @param {any[]} [before] the tile's POIs so far (no two the same franchise) */
+function makePoi(state, t, kind, site, slot, before = []) {
   const def = LOCATIONS[kind];
   const pool = site ? null : def.richness * (t.terrain === "city" ? POI.URBAN_RICH : 1) * (POI.POOL[0] + (POI.POOL[1] - POI.POOL[0]) * hash01(state.seed, "poipool", t.id, slot));
-  const v = franchiseFor(kind, settingOf(state, t), hash01(state.seed, "poifr", t.id, slot)); // shops.js: the franchise (a kind with none: null)
+  let v = franchiseFor(kind, settingOf(state, t), hash01(state.seed, "poifr", t.id, slot)); // shops.js: the franchise (a kind with none: null)
+  if (v) { // the same chain twice on a tile (a second corner store): the next franchise of the kind not on it yet, in the list's order
+    const onTile = new Set(before.filter((p) => p.kind === kind && p.v).map((p) => p.v));
+    if (onTile.has(v)) { const ids = franchisesOf(kind).map((f) => f.id), at = ids.indexOf(v); v = ids.map((_, i) => ids[(at + 1 + i) % ids.length]).find((id) => !onTile.has(id)) || v; }
+  }
   return { kind, hidden: false, pool: pool == null ? null : Math.min(1, pool), visits: 0, lastDay: null, cont: null, threatStamp: null, stripped: false, ...(site ? { site: true } : {}), ...(v ? { v } : {}) };
 }
 // The tile's list from the world seed and the tile (no state.rng: the same for a world made before POIs existed).
@@ -150,7 +156,7 @@ export function generatePois(state, t) {
     const cands = pool.filter((k) => REPEATABLE.has(k) || !extras.some((p) => p.kind === k));
     if (!cands.length) break;
     const kind = cands[Math.floor(hash01(state.seed, "poikind", t.id, i) * cands.length)];
-    extras.push(makePoi(state, t, kind, false, i + 1));
+    extras.push(makePoi(state, t, kind, false, i + 1, [...out, ...extras]));
   }
   // Richest first: the top POI of a bare tile is index 0 (ties by a hash of the tile and the kind).
   extras.sort((a, b) => LOCATIONS[b.kind].richness - LOCATIONS[a.kind].richness || hash01("poitie", t.id, b.kind) - hash01("poitie", t.id, a.kind));

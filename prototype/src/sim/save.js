@@ -29,7 +29,7 @@ import { migrateKit, migrateMagFits } from "./carrykit.js"; // old saves: carrie
 import { Rng } from "./rng.js";
 import { HexGrid } from "./hex.js";
 import { peekNextId, setNextId, day, hub, alive, fillCrafting, fillMelee, fillCooking, log, HUB_TOOLS } from "./world.js";
-import { WORLD_SIZES, worldSizeOf } from "./worldsize.js";
+import { worldSizeOf } from "./worldsize.js";
 import { WOOD_UNITS, GEAR } from "./data.js"; // wood was a 3 kg bundle: older saves are scaled to 0.1 kg units
 import { makeLosCache, SparseLos } from "./combat.js";
 import { migrateUnitStacks } from "./mags.js"; // physical rounds on a battle saved before them
@@ -153,8 +153,9 @@ export function deserializeState(save) {
   // A step up queued before the step ups took wood (the user's pick 2026-10-20) keeps the cost it was queued at.
   for (const b of state.bases) for (const job of b.construction || []) if (!job.cost && BUILDINGS[job.type] && BUILDINGS[job.type].tierUp) { const { wood, ...rest } = BUILDINGS[job.type].cost; job.cost = rest; }
   for (const b of state.bases) { legacyCampTents(b); if (b.plan && b.plan.tentHp) delete b.plan.tentHp; } // a camp from before tents (it slept six round the fire): three two-person tents (buildings.js); softcover.js keeps a tent's wear on its record (rec.tentHp), not the plan's old t:<i> list
-  // The world size (worldsize.js): a save from before sizes is a Normal 64 × 42 map (worked out from its grid).
-  if (!WORLD_SIZES[state.worldSize]) state.worldSize = worldSizeOf(state); // a custom size stays "custom" (its grid says how big)
+  // The world size (worldsize.js): the grid decides (2026-10-24: the presets changed size, so a save that says "normal"
+  // over the old 64 × 42 grid, or any grid that is no preset's now, is a custom map of its own grid and plays on as it was).
+  state.worldSize = worldSizeOf(state);
   if (state.mode !== "hardcore") state.mode = "normal"; // saves from before the modes (hardcore.js)
   noteLootAge(state); // itemcond.js: loot rolled after the load is as old as this world (shops and homes, COND_AGE)
   // Starting people (hardcore.js START_PEOPLE): a hardcore save from before the choice started with three (its start's

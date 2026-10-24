@@ -203,22 +203,32 @@ export function crashKitWords() {
   return [...worn, ...mags, ...more].join(", ");
 }
 
-// World size (sim/worldsize.js) and the group counts that size allows.
+// World size (sim/worldsize.js) and the group counts that size allows. The tips carry no hex or city counts of their
+// own (the presets changed on 2026-10-24, the user: "Make map sizes for all modes besides crashlanding to be Small:
+// 150 x 75 ..."): sizeWords reads the preset's numbers as they are.
 const SIZE_TIPS = {
-  small: "A tight state: shorter trips, fewer towns, hives and groups close by",
+  small: "A tight state: shorter trips, the towns, hives and groups close by",
   normal: "The standard State of Calder",
-  large: "More towns, a third city and a second infestation; longer trips",
-  huge: "A sprawling state: four cities, two more infestations, many groups. Long trips: vehicles and outposts matter",
+  large: "A wide state: more towns, cities and infestations, longer trips",
+  huge: "A sprawling state: many cities and groups, long trips. Vehicles and outposts matter, and the map takes a while to build",
 };
+const sizeWords = (d) => `${d.w} × ${d.h} hexes (${(d.w * d.h).toLocaleString("en-US")}), ${d.cities} ${d.cities === 1 ? "city" : "cities"}, ${d.military} military ${d.military === 1 ? "site" : "sites"}, ${d.groups[0]}–${d.groups[1]} AI groups suit it`;
+// Crashlanding's size definition (the map's defaults: main.js runOpts' AI groups, the static line): the preset with
+// CRASH.W × CRASH.H if there is one (Large, since 2026-10-24), else the custom definition for it. Read at run time.
+export function crashSizeDef() {
+  return SIZE_KEYS.map((k) => WORLD_SIZES[k]).find((d) => d.w === CRASH.W && d.h === CRASH.H) || customDef(CRASH.W, CRASH.H);
+}
 function worldSizeSelect(state, ui) {
-  // Crashlanding (2026-10-24, user request: "The map is 500x250 tiles"): the size is the scenario's, locked.
-  if (isCrashRun(state)) return `<label${tip(`Crashlanding is played on a ${CRASH.W} × ${CRASH.H} hex map, the state end to end: the crash on one side, your unit's base diagonally across from it. The size cannot be changed in this mode`)}>World size <select data-action="worldsize" disabled><option value="custom" selected>${CRASH.W} × ${CRASH.H} (Crashlanding)</option></select></label>`;
+  // Crashlanding (2026-10-24, user request: "The map is 500x250 tiles", then "reduce map size to 300x200 for crashlanding
+  // mode": sim/crashmode.js CRASH): the size is the scenario's, locked.
+  if (isCrashRun(state)) return `<label${tip(`Crashlanding is played on a ${CRASH.W} × ${CRASH.H} hex map (${(CRASH.W * CRASH.H).toLocaleString("en-US")} hexes), the state end to end: the crash on one side, your unit's base diagonally across from it. The size cannot be changed in this mode`)}>World size <select data-action="worldsize" disabled><option value="custom" selected>${CRASH.W} × ${CRASH.H} (Crashlanding)</option></select></label>`;
   const opts = SIZE_KEYS.map((k) => {
     const d = WORLD_SIZES[k];
     return `<option value="${k}" ${k === ui.worldSize ? "selected" : ""}>${d.label} (${d.w}×${d.h})</option>`;
   }).join("") + `<option value="custom" ${isCustom(ui.worldSize) ? "selected" : ""}>Custom… (experimental)</option>`;
-  const what = isCustom(ui.worldSize) ? "Any width × height you set (experimental)" : SIZE_TIPS[sizeDef(ui.worldSize).key];
-  return `<label${tip(`Map size in hexes. ${what}. Changing it builds a new map on the same seed`)}>World size <select data-action="worldsize">${opts}</select></label>`;
+  const d = uiSizeDef(ui);
+  const what = isCustom(ui.worldSize) ? `Any width × height you set (experimental): ${sizeWords(d)}` : `${SIZE_TIPS[d.key]}: ${sizeWords(d)}`;
+  return `<label${tip(`Map size in hexes. ${what}. Changing it builds a new map on the same seed (a Generating map box shows while it is built)`)}>World size <select data-action="worldsize">${opts}</select></label>`;
 }
 // The size the screen is set to: a preset, or the custom width × height (sim/worldsize.js customDef).
 const uiSizeDef = (ui) => (isCustom(ui.worldSize) ? customDef(ui.customW, ui.customH) : sizeDef(ui.worldSize));
@@ -247,6 +257,20 @@ function hiveSelect(state, ui) {
   for (let v = 0; v <= HIVES_MAX; v++) opts.push(`<option value="${v}" ${cur === String(v) ? "selected" : ""}>${v}</option>`);
   const t = `How many hives the outbreak starts with (Default: what this map makes on its own). More hives mean more hordes from the start; with none, new hives still rise near the border.${isHardcore(state) ? " In Hardcore the outbreak still begins with one hive: this is how many the first year grows to." : ""}`;
   return `<label${tip(t)}>Starting hives <select data-action="hivecount">${opts.join("")}</select></label>`;
+}
+// Crashlanding's static setup (2026-10-24, the user's request: "Remove customization and setting starting hives etc just
+// show how many exist on the map all things are just static values"; the lead reads "customization" as the world's
+// setup, not the soldier's traits, skills and look, which the user's earlier instruction keeps yours to set): the world
+// is not set, only shown. In place of AI groups, Starting hives and World… one line of what the built map holds, read
+// from the state (the towns from the tiles: the state keeps no townIds). The run takes the map's defaults (main.js
+// runOpts: the size's groups, the map's own hives, the standard dials); Seed, New map, New map and survivors, New start
+// position and Pick start on map stay: the player chooses which map, not what is on it.
+export function crashMapLine(state) {
+  const n = (a) => (a || []).length;
+  const towns = state.townIds ? state.townIds.length : (state.tiles || []).filter((t) => t.loc && t.loc.type === "town").length;
+  const parts = [[n(state.factions), "AI group"], [n(state.hives), "hive"], [n(state.cityIds), "city", "cities"], [towns, "town"], [n(state.militaryIds), "military site"]];
+  const words = parts.map(([k, one, many]) => `${k} ${k === 1 ? one : many || `${one}s`}`).join(" · ");
+  return `<span class="small nrstatic"${tip("Crashlanding: the map is shown, not set. The AI groups, hives, cities, towns and military sites are the map's own and cannot be changed in this mode (the map's usual numbers for its size, the standard World dials); another seed, New map or New map and survivors give another map with counts of its own")}>On this map: ${words}</span>`;
 }
 
 // The new-run screen's mode for a world: Crashlanding (sim/crashmode.js isCrashRun: a normal-mode run with state.crash),
@@ -407,16 +431,17 @@ export function newRunScreen(state, ui) {
       <label${tip("First-week guide: a checklist under the alerts for the first days (check the stores, work priorities, a building, a team out and home, the first night), each step with a Show me that points at the button to press. It ticks off as you play and steps aside after day 7; the menu hides it or brings it back. On for your first campaign here.")}><input type="checkbox" data-action="nr-guide"${ui.guide ? " checked" : ""}> First-week guide</label>
       ${FAMILY.enabled ? `<label${tip("Children: couples at a base may have children, who grow up in a year into survivors (Help: Children and families). Untick for a run without couples forming on their own, pregnancies or children.")}><input type="checkbox" data-action="children"${ui.childrenOff ? "" : " checked"}> Children</label>` : ""}
     </div></section>`;
-  const short = custom ? customShort(state) : !hard && state.factions.length < ui.factionCount ? `Only ${state.factions.length} of the ${ui.factionCount} groups found room on this map (each needs a site of its own, 8 hexes from the others).` : "";
-  const worldGroup = `<section class="nrgroup nrg-world"><h3 class="nrg-h"${tip("The map and what is on it. Changing a count builds the world again on the same seed; your edited colonists are kept")}>World</h3><div class="row nrg-b">
-      <label${tip("The same seed always builds the same map. Your edited colonists are kept when you change it.")}>Seed <input type="number" min="1" step="1" style="width:7rem" data-action="seed" value="${state.seed}"></label>
+  // Crashlanding (2026-10-24): the counts are the map's own (crashMapLine), so nothing is "short" of a setting.
+  const short = crash ? "" : custom ? customShort(state) : !hard && state.factions.length < ui.factionCount ? `Only ${state.factions.length} of the ${ui.factionCount} groups found room on this map (each needs a site of its own, 8 hexes from the others).` : "";
+  const worldGroup = `<section class="nrgroup nrg-world"><h3 class="nrg-h"${tip(crash ? "The map and what is on it: in Crashlanding the map is shown, not set. Another seed or map builds another; your soldier is kept" : "The map and what is on it. Changing a count builds the world again on the same seed; your edited colonists are kept")}>World</h3><div class="row nrg-b">
+      <label${tip(`The same seed always builds the same map. Your edited ${crash ? "soldier is" : "colonists are"} kept when you change it.`)}>Seed <input type="number" min="1" step="1" style="width:7rem" data-action="seed" value="${state.seed}"></label>
       ${worldSizeSelect(state, ui)}
-      ${custom ? customInputs(state, ["groups", "hives", "cities", "towns", "military"]) : `${groupInput(state, ui)}
+      ${crash ? crashMapLine(state) : custom ? customInputs(state, ["groups", "hives", "cities", "towns", "military"]) : `${groupInput(state, ui)}
       ${hiveSelect(state, ui)}`}
     </div>
     ${customSizeRow(state, ui)}
     <div class="row nrg-b nrg-btns">
-      ${worldButton(ui)}
+      ${crash ? "" : worldButton(ui)}
       <button data-action="nr-newmap"${tip(`A new map on a new seed, your survivors kept as they are: names, looks, skills, traits, who they were and the leader${free ? ", and what they were built with" : hard ? " (what they grabbed and the car come with the map)" : crash ? " (another crash site, the unit's base across the map from it)" : ""}`)}>New map</button>
       <button data-action="reroll"${tip(crash ? "A new map on a new seed and a new soldier with it" : "A new map on a new seed and new survivors with it")}>New map and survivors</button>
       <button data-action="nr-start"${tip(`Roll a new starting position on this same map and seed: ${crash ? "another crash site, the unit's base across the map from it" : hard ? "another roadside spot to flee from" : "another town for your hub"}, away from the hives and the cities as usual. The map, the hives and your colonists stay as they are (the groups settle around where you are). Look at it with View map; each click is a new spot`)}>📍 New start position</button>
@@ -811,3 +836,51 @@ export const LOOK_CHANGE_ACTIONS = {
     ui.crewEdited = true;
   },
 };
+
+// ---------- the "Generating map…" box ----------
+// The user's request 2026-10-24: "When you choose a map show a generating map popup until the map is loaded". createWorld
+// is synchronous (main.js newWorld stays so for its callers: pointsLoad, gearRebuild and cardRebuild run after it), so a
+// build freezes the page; the box must be painted before it starts. main.js wraps every action that builds a world
+// (the seed, size, custom width and height, mode, groups, hives, vehicle, people and Custom boxes, New map, New map
+// and survivors, New start position, Pick start on map's click, Random run, World… Done with a dial moved, a background
+// picked, the gear and fleet rebuilds, Randomize all and everything, the menu's New campaign and Exit, the first world
+// at load) in generating(fn, { size, after }): the box goes up at once in #generating (made on the body the first time:
+// a fixed layer over the title and the windows, prototype/newrun.css), the browser gets two frames and a task to paint
+// it, then fn runs, the box goes and after() (main.js: refresh) draws the new world. A second request while one waits
+// for its frames runs right after it, in order; a request from inside a running fn (Random run's steps) runs at once,
+// the box being up. Headless (no document: the tests) fn runs at once. The spinner turns by a transform animation,
+// which the compositor keeps turning while the main thread builds; the ring stands still under reduce motion.
+let genPending = null; // the fns waiting for the box to paint, in order
+let genRunning = false; // a fn is running under the box
+export function generatingHtml(size) {
+  const n = size && size.w > 0 && size.h > 0 ? size.w * size.h : 0;
+  const what = n ? `${size.w} × ${size.h} hexes${size.label ? ` (${esc(size.label)})` : ""}, ${n.toLocaleString("en-US")} in all` : "";
+  return `<div class="box genbox" role="status" aria-live="polite"><div class="genspin" aria-hidden="true"></div><div class="genmain"><b>Generating map…</b>${what ? `<div class="small genwhat">${what}</div>` : ""}<div class="small muted">Big maps take a while (Huge: up to a minute).</div></div></div>`;
+}
+function genBox() {
+  let el = document.getElementById("generating");
+  if (!el) { el = document.createElement("div"); el.id = "generating"; el.className = "hidden"; document.body.appendChild(el); }
+  return el;
+}
+export const generatingUp = () => !!(genPending || genRunning);
+export function generating(fn, { size = null, after = null } = {}) {
+  if (typeof document === "undefined" || typeof requestAnimationFrame === "undefined") { fn(); return; }
+  if (genRunning) { fn(); return; } // a build inside a build: the box is up already
+  const box = genBox();
+  box.innerHTML = generatingHtml(size);
+  box.classList.remove("hidden");
+  if (genPending) { genPending.push(fn); return; } // waits for the one on its way, then runs after it
+  genPending = [fn];
+  const run = () => {
+    const list = genPending;
+    genPending = null;
+    genRunning = true;
+    try { for (const f of list) f(); } finally {
+      genRunning = false;
+      box.classList.add("hidden");
+      box.innerHTML = "";
+      if (after) after();
+    }
+  };
+  requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(run, 0))); // two frames and a task: the box is on screen before the page freezes
+}

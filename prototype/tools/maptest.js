@@ -3,6 +3,8 @@
 // (a Normal map is also the same as one made without a size, as before sizes existed). Hidden sites (discovery.js):
 // every type has a known rule, how many sites are off the pre-war map per size, and how many the hub sees on day 1.
 // Usage: node tools/maptest.js [seeds] [firstSeed] [size=small|normal|large|huge|all]   (default: all sizes)
+// Seeds: as given, else per size (SEEDS_BY_SIZE) since the presets grew (2026-10-24: Normal 250 × 150, Huge 500 × 300,
+// a Huge build tens of seconds): Small 10, Normal 6, Large 4, Huge 2.
 import { createWorld, hub } from "../src/sim/world.js";
 import { LOCATIONS, GEAR, SITE_ZONES } from "../src/sim/data.js";
 import { raidAreasFor, AREAS } from "../src/sim/combat.js";
@@ -12,7 +14,8 @@ import { isPublicSite, hiddenSites, siteKnown, nearRoad } from "../src/sim/disco
 import { isSettlementTile, startWhyNot } from "../src/sim/startpick.js";
 
 const which = takeSize("all");
-const seeds = Number(process.argv[2] || 30);
+const SEEDS_BY_SIZE = { small: 10, normal: 6, large: 4, huge: 2 };
+const seedsArg = Number(process.argv[2] || 0);
 const first = Number(process.argv[3] || 1);
 let fails = 0;
 const check = (ok, msg) => {
@@ -38,6 +41,7 @@ for (const size of which === "all" ? SIZE_KEYS : [which]) testSize(size);
 
 function testSize(size) {
   const def = WORLD_SIZES[size];
+  const seeds = seedsArg || SEEDS_BY_SIZE[size] || 4;
   const groups = def.groups[1]; // the most this size allows: every one of them must find a place
   const make = (seed) => createWorld({ seed, factionCount: groups, size });
   console.log(`\n=== ${def.label} (${def.w}×${def.h}, ${def.w * def.h} tiles), ${groups} groups ===`);
@@ -174,8 +178,9 @@ function testSize(size) {
   const avg = (n) => (n / seeds).toFixed(1);
   const tiles = def.w * def.h;
   const density = (hives / seeds / tiles) * 1000;
-  // Hive density near a Normal map's (about 2 per 1,000 tiles; a Small map a little more, so its origin keeps a cluster).
-  check(density >= 1.6 && density <= 2.9, `${size}: ${density.toFixed(2)} hives per 1,000 tiles`);
+  // Hive density near the original 64 × 42 map's (about 1.9 per 1,000 tiles; the new presets' hot spots (worldsize.js,
+  // customDef's round(A − 0.5) with 3 hives each) give about 1.6 on Normal and Large and 1.55 on Huge, 2 on Small: 2026-10-24).
+  check(density >= 1.4 && density <= 2.9, `${size}: ${density.toFixed(2)} hives per 1,000 tiles`);
   console.log(`${seeds} seeds: sites avg ${avg(total)} (min ${minTotal}, max ${maxTotal}); per zone ${Object.entries(zoneTotals).map(([z, n]) => `${z} ${avg(n)}`).join(", ")}`);
   console.log(`cities ${avg(cities)}, towns ${avg(towns)}, hives avg ${avg(hives)} (${minHives}–${maxHives}, ${density.toFixed(2)} per 1,000 tiles), closest hive to a hub ${hubHiveMin}`);
   console.log(`military bases avg ${avg(milCount)}, closest to a hub ${hubMilMin}; hub to nearest city min ${hubCityMin}; groups at least ${factionGap} apart, farthest ${factionFar} from the hub; towns with 0/1/2 extra shops: ${extras.slice(0, 3).join("/")}`);
@@ -185,6 +190,6 @@ function testSize(size) {
   console.log(`createWorld avg ${(genMs / seeds).toFixed(0)} ms`);
   summary.push(`${def.label.padEnd(6)} ${String(def.w).padStart(3)}×${String(def.h).padEnd(3)} ${String(tiles).padStart(5)} tiles · ${avg(total)} sites (${avg(hiddenTotal)} hidden, ${pct}%) · ${avg(cities)} cities · ${avg(towns)} towns · ${avg(hives)} hives · ${groups} groups · ${(genMs / seeds).toFixed(0)} ms`);
 }
-console.log(`\nSizes (${seeds} seeds each):\n  ${summary.join("\n  ")}`);
+console.log(`\nSizes:\n  ${summary.join("\n  ")}`);
 console.log(fails ? `${fails} FAILED checks` : "All checks passed.");
 if (fails) process.exit(1);

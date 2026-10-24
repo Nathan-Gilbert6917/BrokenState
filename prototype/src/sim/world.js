@@ -8,7 +8,7 @@ import { keyWord } from "./water.js"; // supply names in log lines (call-time on
 import { Rng } from "./rng.js";
 import { pickStart, chosenStart, startNear, isSettlementTile } from "./startpick.js"; // the new-run screen's New start position and Pick start on map
 import { generateMap } from "./mapgen.js";
-import { DEFAULT_SIZE, sizeDef, customDef, isCustom, clampHives } from "./worldsize.js";
+import { DEFAULT_SIZE, sizeDef, customDef, isCustom, clampHives, presetKeyFor, clampCustomW, clampCustomH } from "./worldsize.js";
 import { cleanCustom, customSizeDef } from "./custommode.js"; // Custom mode's counts and Start with a vehicle (2026-10-24)
 import { CRASH } from "./crashmode.js"; // Crashlanding (2026-10-24): the forced map size
 import { prepareCrash, setupCrashStart, crashHour } from "./crashstart.js"; // Crashlanding: the crash, the kit, the unit's base and its chain (call-time only)
@@ -169,7 +169,8 @@ export const START_WEAPONS = ["pistol", "machete", "huntrifle", "knife", "knife"
 // the team), each back's load set on the new-run screen (null: as rolled). Kept as state.fleet (each with vid: its
 // vehicle, null for an empty slot) until Start.
 // crash (optional, 2026-10-24, the user's request "Crashlanding": crashmode.js, crashstart.js): true makes a Crashlanding
-// run: a normal-mode world forced to a custom CRASH.W × CRASH.H map (custom, vehicle, fleet and startPeople ignored:
+// run: a normal-mode world forced to a CRASH.W × CRASH.H map (300 × 200 since 2026-10-24: the Large preset's grid, so its
+// size def is Large's; custom, vehicle, fleet and startPeople ignored:
 // one survivor, no vehicle, no base), the crash tile drawn with `start` as a Hardcore start is, the wreck, the kit, the
 // unit's base across the map and the calendar at year 4. Kept as state.crash (isCrashRun).
 /**
@@ -182,7 +183,9 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
   const rng = new Rng(seed);
   if (crash) { mode = "normal"; custom = null; size = "custom"; customW = CRASH.W; customH = CRASH.H; vehicle = false; fleet = []; startPeople = 1; } // Crashlanding (crashmode.js): the map and the start are fixed
   const cust = mode !== "hardcore" && custom ? cleanCustom(custom) : null; // Custom mode: a normal start with these counts
-  const sdef = isCustom(size) ? customDef(customW, customH) : sizeDef(size);
+  // A custom grid that is exactly a preset's is that preset (2026-10-24: Crashlanding's 300 × 200 is the Large preset,
+  // so its groups' default is Large's, not customDef's).
+  const sdef = isCustom(size) ? (presetKeyFor(clampCustomW(customW), clampCustomH(customH)) ? sizeDef(presetKeyFor(clampCustomW(customW), clampCustomH(customH))) : customDef(customW, customH)) : sizeDef(size);
   const worldSize = sdef.key;
   const map = generateMap(rng, cust ? customSizeDef(sdef, cust) : sdef, { hives: cust ? cust.hives : clampHives(hives), seed });
   /** @type {State} */

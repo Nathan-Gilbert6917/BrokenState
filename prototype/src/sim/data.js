@@ -717,7 +717,8 @@ export const FACTION_TYPES = {
 // a near-blue read as your own land.
 // The first ten are the Normal map's; the other eight are for Large and Huge maps (up to 18 groups).
 export const FACTION_COLORS = ["#d9534f", "#e8a33d", "#b065d6", "#93c83e", "#5fc28a", "#d96fa8", "#c9c25a", "#e6dfcc", "#e07b54", "#56c7c0",
-  "#a8743f", "#7d9a3a", "#c4e06a", "#f2b8c6", "#3fa66b", "#b8b0a0", "#e05c8a", "#d6a96a"];
+  "#a8743f", "#7d9a3a", "#c4e06a", "#f2b8c6", "#3fa66b", "#b8b0a0", "#e05c8a", "#d6a96a",
+  "#6f8fd6", "#e8c75a", "#9bd4e0", "#c47ae0", "#8fd68a", "#e09a9a"]; // 24: a Huge map's largest suggested group count (worldsize.js, 2026-10-24); past that the colours repeat
 
 export const FIRST_NAMES = ["Maria", "James", "Ana", "Deshawn", "Liam", "Priya", "Owen", "Rosa", "Eli", "Hana", "Marcus", "Ivy", "Theo", "Nadia", "Cole", "June", "Rafael", "Sam", "Dana", "Kenji", "Lena", "Victor", "Mae", "Tobias", "Grace", "Andre", "Lucia", "Wes", "Nora", "Felix", "Imani", "Reid", "Cora", "Malik", "Elena", "Jonah"];
 export const LAST_NAMES = ["Alvarez", "Brooks", "Chen", "Duarte", "Ellis", "Foster", "Garcia", "Hale", "Ibarra", "Jensen", "Kowalski", "Lindqvist", "Morales", "Nakamura", "Okafor", "Price", "Quinn", "Reyes", "Sato", "Tran", "Underwood", "Vance", "Walsh", "Young", "Zimmer"];

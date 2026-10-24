@@ -5,9 +5,12 @@
 // ui/hardcore.js, sim/custompoints.js, sim/save.js, main.js):
 //   1. Crashlanding is the fourth Mode (MODES.crash), its people range the one survivor;
 //   2. a crash world's screen: "▶ Survive", the preamble (the ? button's hover) names the helicopter, the broken radio,
-//      the 500 × 250 map and the unit's base; no vehicle box, no Starting vehicles, no Background select or dice, no
-//      Gear…, Gear or Build buttons (Customize on or off); World size and Starting people locked; screenMode and
-//      modeLabel say Crashlanding; the save list's summary too;
+//      the CRASH.W × CRASH.H map (300 × 200 since 2026-10-24) and the unit's base; no vehicle box, no Starting vehicles,
+//      no Background select or dice, no Gear…, Gear or Build buttons (Customize on or off); World size and Starting
+//      people locked; the world shown, not set (the user, 2026-10-24: "Remove customization and setting starting hives
+//      etc just show how many exist on the map all things are just static values"): no AI groups box, Starting hives
+//      select or World… button, one static line of the map's counts in their place, Seed and the map and start buttons
+//      kept; screenMode and modeLabel say Crashlanding; the save list's summary too;
 //   3. the points: the fixed kit costs nothing, skills and traits are priced as ever;
 //   4. a Normal world's screen still has "▶ Start", its vehicle box and its gear controls, and prices the kit;
 //   5. each mode keeps its own settings (stashModeSet / takeModeSet) and a Random run from Crashlanding picks Normal
@@ -19,7 +22,7 @@ import { CRASH, CRASH_PEOPLE, isCrashRun } from "../src/sim/crashmode.js";
 import { MODES, peopleRange, clampStartPeople } from "../src/sim/hardcore.js";
 import { pricePerson } from "../src/sim/custompoints.js";
 import { saveMeta } from "../src/sim/save.js";
-import { newRunScreen, screenMode, stashModeSet, takeModeSet, rollRandomRun, crashKitWords } from "../src/ui/newgame.js";
+import { newRunScreen, screenMode, stashModeSet, takeModeSet, rollRandomRun, crashKitWords, crashSizeDef, crashMapLine } from "../src/ui/newgame.js";
 import { modeLabel } from "../src/ui/hardcore.js";
 import { Rng } from "../src/sim/rng.js";
 
@@ -67,7 +70,14 @@ for (const free of [false, true]) {
   check(!/data-action="sg-open"/.test(html) && !/data-action="nr-rand-gear"/.test(html) && !/data-action="sg-build"/.test(html), `${tag}: no Gear…, Gear or Build`);
   check(/data-action="worldsize" disabled/.test(html) && html.includes(`${CRASH.W} × ${CRASH.H} (Crashlanding)`) && !/data-action="customw"/.test(html), `${tag}: World size locked at ${CRASH.W} × ${CRASH.H}, no custom size row`);
   check(/data-action="startpeople" disabled/.test(html) && !/data-action="nr-custom"/.test(html), `${tag}: Starting people locked at 1, no Custom inputs`);
-  check(/data-action="seed"/.test(html) && /data-action="factioncount"/.test(html) && /data-action="hivecount"/.test(html) && /data-action="ironman"/.test(html) && /data-action="nr-free"/.test(html) && /data-action="nr-start"/.test(html) && /data-action="nr-pick"/.test(html) && /data-action="nr-newmap"/.test(html), `${tag}: Seed, AI groups, Starting hives, Ironman, Customize, New map, New start position and Pick start on map stay`);
+  check(/data-action="seed"/.test(html) && /data-action="ironman"/.test(html) && /data-action="nr-free"/.test(html) && /data-action="nr-guide"/.test(html) && /data-action="nr-start"/.test(html) && /data-action="nr-pick"/.test(html) && /data-action="nr-newmap"/.test(html) && /data-action="reroll"/.test(html) && /data-action="zlook-open"/.test(html), `${tag}: Seed, Ironman, Customize, the guide, New map, New map and survivors, New start position, Pick start on map and Zombie look… stay`);
+  // The world shown, not set (2026-10-24): the counts of the built map in a static line, no boxes to set them.
+  check(!/data-action="factioncount"/.test(html) && !/data-action="hivecount"/.test(html) && !/data-action="wc-open"/.test(html) && !/data-action="nr-custom"/.test(html), `${tag}: no AI groups box, Starting hives select, World… button or Custom counts`);
+  const m = /On this map: (\d+) AI groups? · (\d+) hives? · (\d+) cit(?:y|ies) · (\d+) towns? · (\d+) military sites?/.exec(html);
+  const towns = s.tiles.filter((t) => t.loc && t.loc.type === "town").length;
+  check(m && Number(m[1]) === s.factions.length && Number(m[2]) === s.hives.length && Number(m[3]) === s.cityIds.length && Number(m[4]) === towns && Number(m[5]) === s.militaryIds.length, `${tag}: the static line counts the map's groups, hives, cities, towns and military sites (${m ? m[0] : "no line"}; state ${s.factions.length}, ${s.hives.length}, ${s.cityIds.length}, ${towns}, ${s.militaryIds.length})`);
+  check(/class="small nrstatic" data-tip="Crashlanding: the map is shown, not set\./.test(html) && !/found room on this map/.test(html), `${tag}: the line's hover says the map is shown, not set; no "found room" note`);
+  check(/data-tip="The map and what is on it: in Crashlanding the map is shown, not set\./.test(html), `${tag}: the World group's heading says so too`);
   check(/another crash site, the unit's base across the map from it/.test(html), `${tag}: New start position's tip says what it does for a crash`);
   check(/data-action="nr-rand-traits"/.test(html) && /data-action="nr-look"/.test(html) && /data-action="nr-all"/.test(html) && /data-action="nr-name"/.test(html), `${tag}: name, look, traits and Everything still roll`);
   check(/What they start with: [^"]*Military carbine/.test(html), `${tag}: the crew card's "What they start with" lists the kit`);
@@ -128,7 +138,11 @@ section("5. Each mode its own settings; main.js");
   check(picked.size === 2, "Random run picks both Normal and Hardcore, never Crashlanding");
   const main = readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
   check(/el\.value === "crash" \? "crash"/.test(main) && /crash: \{ startPeople: peopleRange\("crash"\)\.DEF/.test(main), "main.js: the gamemode select takes Crashlanding, ui.modeSets has its entry");
-  check(/const custom = ui\.mode === "custom", crash = ui\.mode === "crash"/.test(main) && /\.\.\.\(crash \? \{ mode: "normal", crash: true, custom: null, vehicle: false, fleet: \[\], startPeople: 1 \} : \{\}\)/.test(main), "main.js runOpts builds a Crashlanding world as a normal-mode one with crash, one survivor, no vehicle, no fleet, no Custom counts");
+  check(/const custom = ui\.mode === "custom", crash = ui\.mode === "crash"/.test(main) && /\.\.\.\(crash \? \{ mode: "normal", crash: true, custom: null, vehicle: false, fleet: \[\], startPeople: 1, factionCount: crashSizeDef\(\)\.defGroups, hives: null, worldCfg: null \} : \{\}\)/.test(main), "main.js runOpts builds a Crashlanding world as a normal-mode one with crash, one survivor, no vehicle, no fleet, no Custom counts, and the map's own groups, hives and dials (2026-10-24: the world shown, not set)");
+  const d = crashSizeDef();
+  check(d && d.w === CRASH.W && d.h === CRASH.H && d.defGroups >= 1 && Array.isArray(d.groups), `crashSizeDef: the ${CRASH.W} × ${CRASH.H} size's definition (${d.label}, ${d.defGroups} groups by default)`);
+  check(/^<span class="small nrstatic" data-tip="[^"]+">On this map: 3 AI groups · 1 hive · 2 cities · 0 towns · 1 military site<\/span>$/.test(crashMapLine({ factions: [1, 2, 3], hives: [1], cityIds: [1, 2], militaryIds: [1], tiles: [{ loc: { type: "city" } }, {}] })), "crashMapLine: the counts in words, one and many, the towns from the tiles");
+  check(/the map and what is on it are not/.test(MODES.crash.tip) && /shown, not set/.test(MODES.crash.tip), "the Mode tip says the map is shown, not set");
   check(/isCrashRun\(state\) \? "crash" : isCustomRun\(state\) \? "custom" : state\.mode/.test(main), "main.js adopt: a loaded Crashlanding run comes back as Crashlanding");
   check(/"nr-rand-bg": \(d\) => \{\n[^\n]*\n[^\n]*isCrashRun\(state\)\) return;/.test(main) && /"nr-bg": \(el\) => \{\n[^\n]*isCrashRun\(state\)\) return;/.test(main), "main.js: the background handlers do nothing in a crash run");
 }

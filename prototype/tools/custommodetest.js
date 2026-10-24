@@ -81,9 +81,10 @@ section("2. Custom worlds");
   check(big.survivors.length === 30 && big.survivors.every((x) => x.gear.weapon && x.background), "30 survivors, all armed, all with a background");
   check(big.hives.length === 50 && big.cityIds.length === 12 && big.militaryIds.length === 12, `a Huge map fits 50 hives, 12 cities and 12 bases (${big.hives.length}, ${big.cityIds.length}, ${big.militaryIds.length})`);
   check(towns(big) <= 60 && towns(big) >= 30 && big.factions.length <= 50 && big.factions.length >= 20, `towns and groups as many as fit (${towns(big)}, ${big.factions.length})`);
-  check(ms < 10000, `the biggest Custom world builds in ${ms} ms`);
-  const small = createWorld({ seed: 5, factionCount: 7, size: "small", custom: { people: 30, groups: 50, hives: 50, cities: 12, towns: 60, military: 12 } });
-  check(small.cityIds.length >= 2 && small.cityIds.length <= 12 && towns(small) >= 1 && small.militaryIds.length >= 1, "a Small map places what fits, no hang");
+  check(ms < 60000, `the biggest Custom world builds in ${ms} ms`); // Huge is 500 × 300 since 2026-10-24 (worldsize.js): about 16 s on the shared machine (10 s at 100 × 66)
+  // A map too small for the counts: the old Small (48 × 32, a custom size now; the new 150 × 75 Small fits 12 cities and 60 towns).
+  const small = createWorld({ seed: 5, factionCount: 7, size: "custom", customW: 48, customH: 32, custom: { people: 30, groups: 50, hives: 50, cities: 12, towns: 60, military: 12 } });
+  check(small.cityIds.length >= 2 && small.cityIds.length <= 12 && towns(small) >= 1 && small.militaryIds.length >= 1, "a small map places what fits, no hang");
   const html = newRunScreen(small, { mode: "custom", worldSize: "small", factionCount: 7, nrMsg: "", startPeople: 30 });
   check(/found room on this map/.test(html), "the screen says what found no room");
 }

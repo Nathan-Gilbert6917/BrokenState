@@ -23,7 +23,7 @@
 // A leaf module (no imports), safe to read from the sim and the UI.
 
 export const CRASH = {
-  W: 500, H: 250,       // the map ("500x250 tiles"); worldsize.js CUSTOM.MAX_W / MAX_H allow it
+  W: 300, H: 200,       // the map: 300 × 200 (the user, 2026-10-24: "reduce map size to 300x200 for crashlanding mode"; it was the 500 × 250 of the first request); the Large preset's grid (worldsize.js), so a crash world's size def is Large's
   YEAR: 4,              // "3 year after the fall": the run starts on year 4, day 1 (eras.js yearStartDay)
   LOOT: 0.55,           // every tile's loot and every non-site POI pool × this ("loot spawns are starting to be diminished")
   WRECK_LOOT: 2.2,      // the heli wreck's own tile.loot ("some decent supplies on the heli")
