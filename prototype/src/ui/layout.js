@@ -253,11 +253,18 @@ export function dragRect(start, dir, dx, dy, vw, vh, rem = 16) {
 }
 
 // The grips around a resizable window (ui/windows.js handles them); built into the modal's HTML by main.js.
+// A window without a title bar of its own (ui/windows.js winBar: the base, survivor and menu windows have one) gets
+// a ✕ in its top right corner that is Esc (main.js "win-close"), so every window closes the same way (the user's
+// request 2026-10-24). Only the kinds Esc simply closes: the windows that need an answer (a card, a raid's plan, a
+// crawl, a trade, loot), the new-run screen and the ones with a Close in their own head (diary, roster, codex,
+// ledger) get none.
 export const GRIPS = ["n", "s", "e", "w", "ne", "nw", "se", "sw"];
+const X_KINDS = new Set(["inv", "teaminv", "teammeet", "teamform", "gunb", "memorial", "why", "skilltree", "radio", "diplo", "route", "caravan", "planner", "volpick", "volreq", "worldcfg", "bgedit", "gearedit", "fleetedit", "zlook", "namebase"]);
 export function windowFrame(html, kind) {
   const key = windowKey(kind);
   if (!html || !key) return html || "";
-  return `<div class="win" data-win="${key}">${html}${GRIPS.map((d) => `<i class="wgrip g-${d}" data-grip="${d}"></i>`).join("")}</div>`;
+  const x = X_KINDS.has(key) && !/class="wx[" ]/.test(html) ? `<button class="wx wx-corner" data-action="win-close" aria-label="Close" data-tip="Close (Esc)">✕</button>` : "";
+  return `<div class="win" data-win="${key}">${html}${x}${GRIPS.map((d) => `<i class="wgrip g-${d}" data-grip="${d}"></i>`).join("")}</div>`;
 }
 
 // ---------- help ----------

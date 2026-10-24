@@ -160,6 +160,7 @@ import { forageInfo, foragerMult, FORAGE } from "../sim/foraging.js";
 import { woodInfo, WOOD, boilerJunkOn, boilerBurnables, burnablesWood } from "../sim/woodcutting.js";
 import { roleOf, isManaged, taskLabel, taskWhy, priorityCount } from "../sim/work.js";
 import { nameModalUp, nameBaseModal, renameButton } from "./basename.js"; // naming and renaming bases
+import { winBar } from "./windows.js"; // the title bar the big windows share: the title, the window's buttons, a ✕, a row of tabs
 import { firstHubCard, fromTeamRow, stagingTileCard, fireButton, stageSteps } from "./hardcore.js";
 import { stagingView, needText, ESTABLISH_LABEL, STAGING, shelterView, STRIKE_LABEL } from "../sim/staging.js";
 import { tileScouted, blindText, groundsFogged, deadText, GROUNDS_LABEL } from "../sim/campscout.js"; // an unscouted tile: a blind camp; the dead on its grounds (2026-10-23)
@@ -338,7 +339,7 @@ function renderBases(state) {
       ${fold(`base:${b.id}`, baseStrip(state, b, people.length, beds), detail, { cls: "pf-card", tipText: "Show or hide the details: status, supplies, risks, building and radio" })}
       <div class="row pk-foot"><button class="primary" data-action="openbase" data-id="${b.id}"${tip("Workshops, buildings, construction, armory and vehicles")}>Manage</button><button data-action="center" data-tile="${b.tile}"${tip("Center the map here")}>Locate</button>${renameButton(b, "✎ Rename")}</div>
     </div>`;
-  }).join("") + (!stagingView(state) ? `<div class="small muted pk-hint">Found outposts by sending a team and choosing Build outpost: it sets up a camp on the spot you pick (its camp fire and a 5 × 5 cleared round it, nothing carried); its Outpost house, placed on its build map, establishes it.</div>` : "");
+  }).join("") + (!stagingView(state) ? `<div class="row pk-hint"><button class="mini" data-action="help-open" data-sec="sending-a-team"${tip(`Founding an outpost: send a team to a good spot and give it the order Build outpost. ${MISSIONS.outpost.desc} Opens Help → Sending a team.`)}>? Founding outposts</button></div>` : ""); // the how in the hover and in Help, not a paragraph under the cards (the user's request 2026-10-24)
 }
 // A base at a glance (the Bases tab card's fold line): people and beds, defence, heat, days of food, and the red
 // warnings (crowded, cold, the boiler unlit, ill with no meds) so they show with the card folded.
@@ -630,12 +631,15 @@ export function renderRight(state, ui) {
   if (picked) return picked;
   const id = ui.selected;
   if (id < 0) {
+    // Nothing picked: one line of hints in the device's words (the panning and zooming in its hover; the user's
+    // request 2026-10-24) and the way to Help.
+    const more = keyHint({ key: "Drag or W A S D pans the map, the wheel zooms, Space runs and pauses the clock. Hover anything for a description.",
+      touch: "Drag pans the map, a pinch zooms, ▶ Run on the banner runs the clock. Long-press anything for a description.",
+      pad: "The left stick or D-pad moves the cursor, the right stick pans, LT RT zoom, ☰ runs and pauses the clock. The cursor's tile shows its description." });
     return `<h2>State of Calder</h2>
-      <div class="small hints">${keyHint({ key: `<div><b>Click</b> a tile to inspect it · <b>right-click</b> for actions</div>
-      <div><b>Drag</b> or <b>W A S D</b> to pan · <b>wheel</b> to zoom · <b>Space</b> run / pause</div>
-      <div class="muted">Hover anything for a description.</div>`,
-      touch: `<div><b>Tap</b> a tile to inspect it · <b>long-press</b> for actions</div><div><b>Drag</b> to pan · <b>pinch</b> to zoom · <b>▶ Run</b> on the banner runs</div><div class="muted">Long-press anything for a description.</div>`,
-      pad: `<div>${kh("A")} inspects the tile under the cursor · ${kh("X")} for actions</div><div><b>Left stick</b> or <b>D-pad</b> moves the cursor · <b>right stick</b> pans · ${kh("LT")}${kh("RT")} zoom · ${kh("Menu")} run / pause</div><div class="muted">The cursor's tile shows its description.</div>` })}
+      <div class="small hints"><div${tip(more)}>${keyHint({ key: `<b>Click</b> a tile to inspect it · <b>right-click</b> for actions`,
+      touch: `<b>Tap</b> a tile to inspect it · <b>long-press</b> for actions`,
+      pad: `${kh("A")} inspects the tile under the cursor · ${kh("X")} for actions · <b>right stick</b> pans · ${kh("LT")}${kh("RT")} zoom` })}</div>
       <button class="mini" data-action="help-open" data-sec="map"${tip("Help: the map, what the bright, dim and dark tiles mean, the keys")}>? How the map works</button></div>`;
   }
   const t = state.tiles[id];
@@ -728,7 +732,7 @@ export function renderRight(state, ui) {
       ${walk || base || stagingView(state) ? "" : `<div class="small muted" style="margin-top:0.3rem">${t.terrain === "water" && !t.bridge ? "Open water. Teams cross one tile of it by boat, from a shore (team panel: Boat crossing)." : "Water is in the way. Send a team to the nearest shore, then build a boat there (team panel: Boat crossing, or right-click the far shore)."}</div>`}
     </div>
     ${stagingTileCard(state, id)}
-    ${base ? `<div class="card"><div class="spread"><b>${esc(base.name)}</b><span class="row">${watchlistPin(state, "base", base.id, base.name)}${renameButton(base)}${formTeamButton(state, base)}<button data-action="buildmap" data-base-id="${base.id}" data-tab="none"${tip("View its base map: lay out its buildings, tents, fires and defences, clear the land round it (closing it comes back here)")}>🗺 Base map</button><button class="primary" data-action="openbase" data-id="${base.id}">Manage</button></span></div><div class="small">Your ${tierName(base).toLowerCase()}. ${atBase(state, base.id).length} people.${base.captured ? ` Taken from ${esc(base.captured.name)} on day ${base.captured.day}.` : ""}${base.occupiedFrom ? ` Moved into on day ${base.occupiedFrom.day}${base.occupiedFrom.from === "player" ? " (your old outpost)" : ` (left by ${esc(base.occupiedFrom.name)})`}.` : ""}</div></div>` : ""}
+    ${base ? ownBaseHead(state, base) : ""}
     ${emptyBase ? `<div class="card small"${tip("A base standing empty: a group that died out, gave it up or lost it, or an outpost of yours that was lost. Its buildings rot month by month and another group may move in first. Occupy it (the button below): clear out whoever is inside and it is your outpost with what still stands and the stores left there, no scrap needed.")}><b>🏚 ${emptyBase.mine ? `${esc(emptyBase.fromName)} (your old outpost)` : `Abandoned base (${esc(emptyBase.fromName)}'s)`}</b><div class="muted">Empty since day ${emptyBase.day}${isLive ? "" : " (as last seen)"}.</div>
       <div class="kv small"><div>Standing</div><div>${esc(emptyBase.standing)}</div>${emptyBase.stock ? `<div>Stores</div><div>${esc(emptyBase.stock)}</div>` : ""}<div${tip("Who is inside today: the dead drift in week by week, squatters come and go")}>Inside</div><div class="${emptyBase.threat && emptyBase.threat.count ? "danger" : ""}">${esc(emptyBase.threatText)}</div>${emptyBase.grievance ? `<div>Angers</div><div class="danger">${esc(emptyBase.grievance)}</div>` : ""}${emptyBase.problem ? `<div>Now</div><div class="danger">${esc(emptyBase.problem)}</div>` : ""}</div></div>` : ""}
     ${ruin && !base ? `<div class="card small"${tip(`A base burned to the ground in a raid. A little is left to scavenge, and a camp set up here builds up for ${ruin.scrap} scrap less: the rest is salvage. A camp replaces the ruins.`)}><b>${esc(ruin.title)}</b><div class="muted">Burned by ${esc(ruin.by)}${ruin.day != null ? ` on day ${ruin.day}` : ""}${ruin.from ? ` (${esc(ruin.from)}'s base)` : ruin.yours ? " (your base)" : ""}.</div>
@@ -739,6 +743,20 @@ export function renderRight(state, ui) {
       <span class="muted">Spotted ${ageText(state, m)}${m.info?.emptied ? " · emptied" : ""}${m.info?.fuel != null ? ` · fuel ${n0(m.info.fuel)}, condition ${Math.round(m.info.condition || 0)}%` : ""}${m.info?.items != null && m.type === "death" ? ` · ${m.info.items} item(s) left then` : ""}</span></div>`).join("")}` : ""}
     ${teamsHere.length ? `<h3>Your teams here</h3>${teamsHere.map((p) => `<div class="card small"><b>${esc(teamName(state, p))}</b><div class="row" style="margin-top:0.3rem">${!commandable(state, p) ? `<span class="small muted"${tip(NO_RADIO)}>No radio contact</span>` : `${p.phase === "waiting" ? `<button class="primary" data-action="orders" data-id="${p.id}">Orders</button>` : ""}<button data-action="movemode" data-id="${p.id}">Move…</button>${enterButton(state, p)}${transferButtons(state, p)}${editTeamButton(state, p, "")}`}<button data-action="xp-open" data-id="${p.id}"${tip("People, gear, supplies, vehicle and orders")}>Team panel</button></div></div>`).join("")}${meetButton(state, id) ? `<div class="row" style="margin-top:0.3rem">${meetButton(state, id)}</div>` : ""}` : ""}
     ${actions.length ? `<h3>Send a team from the hub</h3><div class="row pk-acts">${actions.map(([m, l, pre, tp]) => `<button data-action="plan" data-tile="${id}" data-mission="${m}"${pre ? ` data-preset="${pre}"` : ""}${tip(tp || MISSIONS[m].desc)}>${l}</button>`).join("")}</div>` : ""}`;
+}
+
+// One of your bases on the picked tile: its name with the pin and ✎ (the naming window), one line on it (its history
+// in the hover), and its three ways in: Manage (its screen), its base map, Form a team. The Buildings card under it
+// (ui/mapselect.js ownBaseCard) lists what stands and the screen's other tabs; the Bases tab's card has Locate and
+// the figures (the user's request 2026-10-24: nothing twice).
+function ownBaseHead(state, base) {
+  const n = atBase(state, base.id).length;
+  const history = `${base.captured ? `Taken from ${base.captured.name} on day ${base.captured.day}. ` : ""}${base.occupiedFrom ? `Moved into on day ${base.occupiedFrom.day}${base.occupiedFrom.from === "player" ? " (your old outpost)" : ` (left by ${base.occupiedFrom.name})`}. ` : ""}`;
+  // Manage first in the title row (the card's first button, and its one primary: a controller entering the panel
+  // starts on it, ui/padnav.js), the pin and ✎ after it; the other ways in on the row under the line.
+  return `<div class="card basehead"><div class="spread"><b>${esc(base.name)}</b><span class="row basehead-acts"><button class="primary" data-action="openbase" data-id="${base.id}"${tip("Open the base's screen: stock, people and roles, Work, Food, Construction, Storage, the Armory and the rest")}>Manage</button>${watchlistPin(state, "base", base.id, base.name)}${renameButton(base)}</span></div>
+    <div class="small muted"${tip(`${history}${n} ${n === 1 ? "person lives" : "people live"} here: the People and roles list on its screen.`)}>Your ${tierName(base).toLowerCase()} · ${n} ${n === 1 ? "person" : "people"}${history ? " · ⓘ" : ""}</div>
+    <div class="row" style="margin-top:0.4rem">${formTeamButton(state, base)}<button class="mini" data-action="buildmap" data-base-id="${base.id}" data-tab="none"${tip("View its base map: lay out its buildings, tents, fires and defences, clear the land round it (closing it comes back here)")}>🗺 Base map</button></div></div>`;
 }
 
 // "Enter <base>" for a team standing on one of your bases, stopped there (sim/moveout.js enterOption): its people move
@@ -1540,8 +1558,11 @@ function survivorModal(state, ui) {
   const slots = EQUIP_SLOTS; // inventory.js: hands, off hand, head, body, arms, legs, backpack
   ensureInv(s);
   const carried = s.pockets.filter(Boolean).length + (s.gear.backpack && s.gear.backpack.contents ? s.gear.backpack.contents.filter(Boolean).length : 0);
-  return `<div class="box"><div class="spread"><h1><span class="surv-port" data-action="look-edit" data-id="${s.id}"${tip("Customize how they look")}>${spriteImg(survivorURL(s, state.seed), 3)}</span>${s.leader ? "★ " : ""}${esc(s.name)}${stIcons(state, s)}</h1>
-      <span class="row">${s.alive ? watchlistPin(state, "person", s.id, s.name, { label: true }) : ""}<button class="mini ${ui.lookEdit === s.id ? "active" : ""}" data-action="look-edit" data-id="${s.id}"${tip("Change their look: build, hair, clothes, accessory. Shown in battle.")}>Customize look</button></span></div>
+  // The head (ui/windows.js winBar; the user's request 2026-10-24): the portrait and the name, then Pin and Customize
+  // look as icon buttons with their words in the hover, and the ✕. No Close at the foot.
+  const look = `<button class="mini wtool ${ui.lookEdit === s.id ? "active" : ""}" data-action="look-edit" data-id="${s.id}" aria-label="Customize look"${tip(ui.lookEdit === s.id ? "Close the look editor" : "Customize their look: build, hair, clothes, accessory (shown in battle)")}>🎨</button>`;
+  return `<div class="box survbox">
+    ${winBar({ title: `<h1><span class="surv-port" data-action="look-edit" data-id="${s.id}"${tip("Customize how they look")}>${spriteImg(survivorURL(s, state.seed), 3)}</span>${s.leader ? "★ " : ""}${esc(s.name)}${stIcons(state, s)}</h1>`, tools: `${s.alive ? watchlistPin(state, "person", s.id, s.name) : ""}${look}`, close: "closesurv" })}
     ${ui.lookEdit === s.id ? appearanceEditor(state, s) : ""}
     <div class="where">${s.leader ? "Leader · " : ""}${inContact(state, s) ? `Health ${n0(s.health)} · Mood ${n0(s.mood)}` : "Health and mood unknown (no contact)"} · Combat power ${combatPower(s).toFixed(1)}${base ? ` · at ${esc(base.name)}` : ""}${inContact(state, s) && s.woundInfected ? ` · <span class="danger">Infected wound</span>` : ""} ${treatButton(state, s)}</div>
     ${isCaptive(s) ? captiveLine(state, s) : ""}
@@ -1552,18 +1573,40 @@ function survivorModal(state, ui) {
       <div><h3>Traits</h3>${s.traits.map((t) => `<div class="small">${traitChip(s, t)} <span class="muted">${esc(traitOf(s, t).desc)}</span></div>`).join("")}
         <div class="spread"><h3>Gear</h3><button class="mini primary" data-action="inv-open" data-id="${s.id}" ${personPlace(s) ? "" : "disabled"}${tip("Paper-doll inventory: what they wear, hold and carry in pockets and pack. Move items to and from the armory (at a base) or teammates and the cargo (on a team).")}>Inventory</button></div>
         <div class="small muted">Armor ${Math.round(armorPower(s) * 10) / 10} from worn pieces · ${carried} item${carried === 1 ? "" : "s"} in pockets and pack</div>
-        ${slots.map((slot) => {
-          const cur = s.gear[slot];
-          return `<div class="card small"><b>${SLOT_NAMES[slot]}:</b> ${cur ? `<span${tip(gearTip(cur))}>${esc(cur.name)}</span>${cur.quality < 1 ? ` (${Math.round(cur.quality * 100)}%)` : ""} — ${gapLabel(s, cur)}` : "<span class='muted'>none</span>"}
-            ${base ? `<div class="row" style="margin-top:0.3rem">${gearControls(state, base, s, slot)}</div>` : ""}</div>`;
-        }).join("")}
+        ${gearGrid(state, base, s, slots)}
         ${base ? "" : `<div class="small muted">Away from a base, gear moves only between teammates and the team's cargo (Inventory).</div>`}
       </div>
     </div>
     ${s.alive ? studyBlock(state, s) : ""}
     ${familyBlock(state, s)}
-    ${inContact(state, s) || !s.alive ? relationsSection(state, s, ui) : ""}
-    <div class="row" style="margin-top:1rem;justify-content:flex-end"><button class="primary" data-action="closesurv">Close</button></div></div>`;
+    ${inContact(state, s) || !s.alive ? relationsSection(state, s, ui) : ""}</div>`;
+}
+
+// A slot's fit in a word, the whole of it in the tip (gapLabel): Full use; −15% (slightly below their skill);
+// −35% (well below it, may damage it); Can't use (needs the skill).
+function gapShort(s, item) {
+  const e = gearEffect(s, item), def = GEAR[item.key];
+  const full = gapLabel(s, item, true);
+  if (!def.skill || e.gap <= 0) return { short: "Full use", cls: "good", full: def.skill ? `${full}: their ${SKILL_NAMES[def.skill]} is up to it` : `${full}: it needs no skill` };
+  if (e.gap <= 3) return { short: "−15%", cls: "muted", full: `${full}: their ${SKILL_NAMES[def.skill]} is a little under the ${def.req} it wants` };
+  if (e.gap <= 7) return { short: "−35%", cls: "danger", full: `${full}: their ${SKILL_NAMES[def.skill]} is well under the ${def.req} it wants` };
+  return { short: "Can't use", cls: "danger", full };
+}
+// The gear slots as a compact grid (the user's request 2026-10-24: not a card each): the slot, what is in it and its
+// fit on one row, two columns where the window is wide enough (styles.css .gear-grid), one on a phone. The row's
+// equip controls (gearControls) sit behind its ⋯ (ui/windows.js shows them; a mouse sees them by hovering the row).
+function gearGrid(state, base, s, slots) {
+  return `<div class="gear-grid">${slots.map((slot) => {
+    const cur = s.gear[slot];
+    const fit = cur ? gapShort(s, cur) : null;
+    const ctl = base ? gearControls(state, base, s, slot).trim() : "";
+    return `<div class="gslot${cur ? "" : " empty"}">
+      <span class="gs-l">${SLOT_NAMES[slot]}</span>
+      <span class="gs-i">${cur ? `<span${tip(gearTip(cur))}>${esc(cur.name)}</span>${cur.quality < 1 ? ` <span class="muted">${Math.round(cur.quality * 100)}%</span>` : ""}` : `<span class="muted">—</span>`}</span>
+      ${fit ? `<span class="gs-c ${fit.cls}"${tip(fit.full)}>${fit.short}</span>` : "<span></span>"}
+      ${ctl ? `<button type="button" class="mini gs-more" aria-label="Equip or put away"${tip(cur ? `Put the ${cur.name} away in ${base.name}'s armory, or equip another from it` : `Equip something from ${base.name}'s armory`)}>⋯</button><span class="gs-ctl">${ctl}</span>` : ""}
+    </div>`;
+  }).join("")}</div>`;
 }
 
 // Their role and what they do now (sim/work.js): a work role with the why, or their fixed job (Manual).
@@ -1613,12 +1656,19 @@ function baseModal(state, ui) {
   const tabs = isCamp(b) ? BASE_TABS.filter(([k]) => CAMP_TABS.includes(k)) : BASE_TABS.filter(([k]) => k !== "camp");
   const tab = tabs.some(([k]) => k === ui.baseView.tab) ? ui.baseView.tab : tabs[0][0];
   const body = { camp: campTab, overview: baseOverview, food: foodChainTab, work: workTab, defence: defenceTab, farming: baseFarming, workshops: baseWorkshops, buildings: baseBuildings, construction: baseConstruction, basemap: baseMapTab, storage: storageTab, fieldworks: fieldWorksTab, armory: baseArmory, crafting: baseCrafting, vehicles: baseVehicles, convoys: baseConvoys, medical: baseMedical, repairs: repairsTab, prisoners: prisonTab }[tab](state, b, ui);
+  // The head (ui/windows.js winBar; the user's request 2026-10-24): the name is the title and the one way to rename
+  // the base from here (the ✎ Rename button that opened the naming window beside it went: the Bases tab and the
+  // tile panel still have it), the kind and head count after it (the day and the clock are the top bar's), the ✕
+  // at the right, and the tabs in one row that scrolls sideways under it. No Close at the foot.
   return `<div class="box wide basebox">
-    <div class="spread"><input class="basename" data-action="baserename" data-base="${b.id}" maxlength="40" value="${esc(b.name)}"${tip("Click to rename this base (Enter to confirm)")}>${renameButton(b, "✎ Rename")}<span class="muted">${tierName(b)} · ${atBase(state, b.id).length} people · Day ${day(state)} ${clock(state)}</span></div>
-    <div class="tabs">${tabs.map(([k, l, t]) => `<button data-action="basetab" data-tab="${k}" class="${tab === k ? "active" : ""}"${tip(t)}>${l}</button>`).join("")}</div>
+    ${winBar({
+      title: `<input class="basename" data-action="baserename" data-base="${b.id}" maxlength="40" value="${esc(b.name)}"${tip("The base's name: click it and type a new one (Enter). It shows on the map, in the log and in your diary.")}>`,
+      tools: `<span class="wsub muted small">${tierName(b)} · ${atBase(state, b.id).length} people</span>`,
+      close: "closebase",
+      tabs: tabs.map(([k, l, t]) => `<button data-action="basetab" data-tab="${k}" class="${tab === k ? "active" : ""}"${tip(t)}>${l}</button>`).join(""),
+    })}
     ${ui.baseMsg ? `<div class="result small">${esc(ui.baseMsg)}</div>` : ""}
     <div class="basebody">${body}</div>
-    <div class="row" style="margin-top:0.8rem;justify-content:flex-end"><button class="primary" data-action="closebase">Close</button></div>
   </div>`;
 }
 

@@ -948,6 +948,7 @@ const actions = {
   "wall-widen": (d) => { const b = baseOf(d); if (b) ui.baseMsg = widenRing(b); },
   cxtab: (d) => { ui.baseView.cx = d.tab; ui.baseView.tab = "construction"; ui.baseMsg = ""; }, // Construction: the Buildings or the Defenses list (from the Defence tab too)
   closebase: () => { ui.baseView = null; ui.baseMsg = ""; ui.supplyForm = null; },
+  "win-close": () => { closeTopLayer(); }, // the ✕ in the corner of a window without a title bar of its own (ui/layout.js windowFrame): Esc
   // Supply runs (Supply runs tab of the base screen).
   // Hauling (ui/hauling.js, the Supply runs tab).
   "hl-add": (d) => { ui.baseMsg = haulAdd(state, ui, d.base); },

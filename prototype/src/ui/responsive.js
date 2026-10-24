@@ -312,8 +312,11 @@ function placeClose() {
   const wins = modal && !modal.classList.contains("hidden") ? modal.querySelectorAll(".win") : [];
   const ctx = $("ctxmenu");
   const win = ctx && !ctx.classList.contains("hidden") ? ctx : wins.length ? wins[wins.length - 1] : null; // the tile menu closes first (Esc)
-  x.classList.toggle("hidden", !win);
-  if (!win) return;
+  // A window with a ✕ of its own (ui/windows.js winBar in its title bar, ui/layout.js windowFrame in its corner)
+  // gets no second one: the floating ✕ is for the tile menu and the windows without one.
+  const own = win && win !== ctx && win.querySelector(".wx");
+  x.classList.toggle("hidden", !win || !!own);
+  if (!win || own) return;
   x.dataset.for = win === ctx ? "ctx" : "win";
   x.classList.toggle("over-combat", modal.classList.contains("over-combat"));
   const r = win.getBoundingClientRect(), vw = window.innerWidth;
