@@ -6,13 +6,16 @@
 // base's walls weak at first and patched up later, retaking it, a base battle's way out on the side away from the
 // attack and what pulling out of each base battle does, save/load of a captured base and of one they hold.
 // Usage: node tools/conquertest.js [seed=42]
+// Quick form (BS_QUICK=1, npm run test:quick): the autopilot's conquest on one world set up for it, a weak hostile base
+// near a strong hub, up to 40 days (in full: seeds 3-8 as they come, each up to 400 days; see that section), six AI
+// base assaults instead of twelve, two worlds 30 days with no base (four, 60 days); the other checks as they are.
 import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, tickHour, hub, atBase, day, alive, makeSurvivor, checkGameOver, newId, snapshot } from "../src/sim/world.js";
 import { GEAR } from "../src/sim/data.js";
 import { addBuilding, baseWalls, isPiece } from "../src/sim/buildings.js";
 import { launchExpedition, partyMembers, partyTile, outpostName, orderOptions, planPath, giveOrder as giveOrderP } from "../src/sim/parties.js";
 import { attitude, peopleUp, recomputeOwnership, resolveRaidOnFaction, resolveRaidOnPlayer, factionsDaily, keepChance, RAIDS, strength } from "../src/sim/factions.js";
-import { setAutopilot } from "../src/sim/autopilot.js";
+import { setAutopilot, PERSONALITIES } from "../src/sim/autopilot.js";
 import { createBattle, finishCombat, inEvac, autoPlayerTurn, runEnemyPhase } from "../src/sim/combat.js";
 import { battles as isoBattles } from "./isobattles.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
@@ -25,6 +28,7 @@ import { stockTools } from "./toolset.js"; // every tool a build can need (toolr
 // Setting up a camp takes an hour (staging.js STAGING.PITCH): skipped here, the camp (a base) stands at once.
 const establishNow = (st, p) => { p.pitched = true; return giveOrderP(st, p, "establish"); };
 
+const QUICK = !!process.env.BS_QUICK;
 const seed = Number(process.argv[2] || 42);
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
@@ -249,6 +253,11 @@ section("Late gangs: raider bands that settle, at any time; the coalition's cond
   // no hot food (eating.js EAT.cold) and the greens eaten raw the holdout walked out and its last one died of the worm
   // by day 30: a game over, so visitorsDaily did nothing and no band settled.
   addBuilding(hub(st), "cookhouse");
+  // No raids or hordes sent at the hub (eras.js raidPaceOpen / hordePaceOpen), as depletetest's hub left to itself:
+  // with nobody minding it, a horde of 47 broke in on day 13 and the Night Herons overran it on day 22 (2026-10-24, at
+  // HEAD too), a game over before the band is even sent. The band settling is the subject here, not the hub's defence.
+  const { ensureEraState } = await import("../src/sim/eras.js");
+  Object.assign(ensureEraState(st), { nextRaid: 1e9, nextHorde: 1e9 });
   tick(st, 24 * 30);
   check(!st.gameOver, "the holdout still stands after 30 days");
   st.cards.length = 0;
@@ -526,14 +535,16 @@ section("Losing the hub: with another base, and with none (the exiles)");
   check(!opts.some((o) => o.mission === "outpost"), "no Build outpost with no base (Establish base: a camp built up into the hub)");
   // No base for 60 days on several worlds, every card answered at random: nothing may assume a hub.
   let crash2 = "";
-  for (const sd of [3, 5, 8, 13]) {
+  // Quick: two worlds, the bases lost on day 20 and 30 days without (four, day 40 and 60 in full).
+  const NOBASE = QUICK ? { seeds: [3, 8], before: 20, after: 30 } : { seeds: [3, 5, 8, 13], before: 40, after: 60 };
+  for (const sd of NOBASE.seeds) {
     const w = world(sd);
-    tick(w, 24 * 40);
+    tick(w, 24 * NOBASE.before);
     w.cards.length = 0;
     while (w.bases.length) C.occupyPlayerBase(w, w.bases[w.bases.length - 1], w.factions.find((x) => x.alive), { garrison: 4 });
     let k = 0;
     try {
-      for (let hr = 0; hr < 24 * 60 && !w.gameOver; hr++) {
+      for (let hr = 0; hr < 24 * NOBASE.after && !w.gameOver; hr++) {
         tickHour(w);
         for (let n = 0; n < 30 && w.cards.length; n++) {
           const c = w.cards.shift();
@@ -543,7 +554,7 @@ section("Losing the hub: with another base, and with none (the exiles)");
       }
     } catch (e) { crash2 += ` seed ${sd} day ${day(w)}: ${e.stack.split("\n").slice(0, 2).join(" | ")}`; }
   }
-  check(!crash2, `60 days with no base on 4 worlds, cards answered at random: no crash${crash2}`);
+  check(!crash2, `${NOBASE.after} days with no base on ${NOBASE.seeds.length} worlds, cards answered at random: no crash${crash2}`);
   // A new base founded by the exiles: Establish base, a camp (the barest base) built up into the hub (staging.js).
   const S = await import("../src/sim/staging.js");
   const s3 = world();
@@ -552,7 +563,9 @@ section("Losing the hub: with another base, and with none (the exiles)");
   const ex3 = s3.parties.find((p) => p.exile);
   s3.noWanderers = true;
   for (let i = 0; i < 96 && ex3.phase !== "waiting"; i++) { tickHour(s3); s3.cards.length = 0; }
-  Object.assign(ex3.cargo.supplies, { scrap: 25, parts: 3, water: 40, buildmat: 3 }); setFood(ex3.cargo, 40);
+  // wood and stone: the camp fire's (staging.js: "The camp fire needs 20 wood, 8 stone carried"), without which the
+  // order was disabled and every check of the camp after it failed (2026-10-24, at HEAD too).
+  Object.assign(ex3.cargo.supplies, { scrap: 25, parts: 3, water: 40, buildmat: 3, wood: 20, stone: 8 }); setFood(ex3.cargo, 40);
   const { giveOrder } = await import("../src/sim/parties.js");
   const est = orderOptions(s3, ex3).find((o) => o.mission === "establish");
   // The label reads "(unscouted: blind spot)" after it since the camp scouting (a8f56a2, 2026-10-23): the exiles stand on a tile nobody surveyed.
@@ -561,6 +574,9 @@ section("Losing the hub: with another base, and with none (the exiles)");
   const B0 = await import("../src/sim/buildings.js");
   const camp3 = s3.bases.find((b) => B0.isCamp(b));
   check(!!camp3 && hub(s3) === camp3 && camp3.tile === partyTile(ex3) && !camp3.first && !s3.parties.includes(ex3), "it sets up a camp (a base, the hub while it is the only one); the team moves in");
+  // The step up is put down by hand now (edf4f69 "no shelter queued by Establish base", c5960f6 "step ups placed by
+  // hand"): queued here as the player does from the camp's Build list (the checks below read an empty queue before).
+  if (camp3 && !B0.tierUpJob(camp3)) B0.queueBuild(s3, camp3, "camp_up");
   const job3 = camp3 && B0.tierUpJob(camp3);
   check(job3 && job3.type === "camp_up" && B0.gatherRows(job3).find((r) => r.key === "buildmat").need === S.STAGING.EXILE.needs.buildmat && job3.hours === S.STAGING.EXILE.work, `the exiles' camp builds up into a shelter: ${S.needText(S.STAGING.EXILE.needs)}, ${S.STAGING.EXILE.work} work-hours`);
   const d3 = day(s3);
@@ -686,8 +702,8 @@ section("Base battles: a way out on the side away from the attack, and what pull
   check(s2.bases.includes(h2) && atBase(s2, h2.id).length === n2 && food(h2) < food0, `pulling out of a horde fight: the hub stays yours, everyone back, food ${food0} → ${food(h2)}`);
 }
 
-section("The autopilot conquers (Aggressive, up to 400 days, seeds 3-8)");
-{
+section(QUICK ? "The autopilot conquers (Aggressive, quick: a strong hub and a weak hostile base near it, up to 40 days)" : "The autopilot conquers (Aggressive, up to 400 days, seeds 3-8)");
+if (!QUICK) {
   // Four worlds, each played until its first base is taken (or day 400): one world's course turns on chance (a
   // starving first winter ended seed 3 on day 99 once the AI groups' pens changed their food rolls, 2026-10-09), so
   // the check is that most of them storm and take bases, and that none crashes. Six worlds since the camp's own spot
@@ -710,6 +726,33 @@ section("The autopilot conquers (Aggressive, up to 400 days, seeds 3-8)");
   console.log(`  ${lines.join("; ")}`);
   check(!errs, `no crash (${errs})`);
   check(took >= 4, `it storms bases and takes some in most worlds (${took} of 6)`);
+} else {
+  // Quick: a world takes its first base on day 61-163 (and Aggressive storms nothing before its conquerFrom, day 60),
+  // more than a quick run can play, so one world set up for it: eight good shots and ammo at the hub, a hostile
+  // group you know with a second base 5-8 tiles out, and the style's conquerFrom at 0 for this run (restored after).
+  // The governor still picks the target, the squad and the moment, marches and storms by itself (seed 4 took it on day
+  // 27, the storm out on day 15, 2026-10-24).
+  const st = world(4);
+  const h = hub(st);
+  const t = nearFree(st, h.tile, 5, 8);
+  const f = st.factions.find((x) => x.alive && x.type === "raider") || st.factions.find((x) => x.alive);
+  f.known = true; f.goodwill = -60;
+  f.bases.push(t);
+  recomputeOwnership(st);
+  peopleUp(st, f);
+  fighters(st, 8, h);
+  Object.assign(h.stock, { ammo: 500, water: 300, meds: 30 }); setFood(h, 400);
+  const P = PERSONALITIES.aggressive, from0 = P.conquerFrom;
+  P.conquerFrom = 0;
+  let err = "";
+  try {
+    setAutopilot(st, true, "aggressive");
+    for (let i = 0; i < 24 * 40 && !st.gameOver && !(st.conquest && st.conquest.stats.taken > 0); i++) tickHour(st);
+  } catch (e) { err = e.stack.split("\n").slice(0, 3).join(" | "); } finally { P.conquerFrom = from0; }
+  const s = st.conquest ? st.conquest.stats : { assaults: 0, won: 0, taken: 0 };
+  console.log(`  seed 4 day ${day(st)}: ${s.assaults} assaults (${s.won} won), ${s.taken} taken${st.gameOver ? " (fell)" : ""}${err ? `; ${err}` : ""}`);
+  check(!err, `no crash (${err})`);
+  check(s.assaults > 0 && s.taken > 0 && !f.bases.includes(t), `it storms the weak base and takes it (${s.assaults} assaults, ${s.taken} taken by day ${day(st)})`);
 }
 
 // Storming a group's base on its map with the AI playing your side (the battle's Auto, or a turn handed over): your
@@ -718,7 +761,7 @@ section("The autopilot conquers (Aggressive, up to 400 days, seeds 3-8)");
 section("A base assault played by the AI on both sides");
 {
   let stalled = 0, late = 0;
-  const N = 12;
+  const N = QUICK ? 6 : 12;
   for (let sd = 1; sd <= N; sd++) {
     const { st, b } = isoBattles(sd, ["base-assault"])[0];
     for (let g = 0; !b.over && g < 100; g++) { autoPlayerTurn(st); if (!b.over) runEnemyPhase(st); }

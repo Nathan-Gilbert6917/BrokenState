@@ -11,6 +11,8 @@
 // - determinism: the same seed plays the same with the same discoveries
 // - autopilot campaigns ([days] in each style, [runs] seeds): no team is ever sent to scavenge a site the player has
 //   not found; how fast the hidden sites near the hub are found
+// Quick form (BS_QUICK=1, npm run test:quick): campaigns of 40 days, one seed per style (the full form: 120 days,
+// three seeds per style), the determinism worlds 25 days instead of 40; the same checks.
 import { worksAt } from "../src/sim/groupworks.js"; // envoys.js: a radio link needs a set at their end too
 import { TEAM_INTEL_EVERYWHERE } from "../src/sim/parties.js";
 import { createWorld, tickHour, hub, day, atBase, snapshot, updateVision, mergeKnowledge } from "../src/sim/world.js";
@@ -33,8 +35,10 @@ import * as D from "../src/sim/diplomacy.js";
 import { defaultChoice } from "../src/sim/cardrules.js"; // a road card's default answer
 
 const seed = Number(process.argv[2] || 42);
-const days = Number(process.argv[3] || 120);
-const runs = Number(process.argv[4] || 3);
+const QUICK = !!process.env.BS_QUICK;
+const days = Number(process.argv[3] || (QUICK ? 40 : 120));
+const runs = Number(process.argv[4] || (QUICK ? 1 : 3));
+const detDays = QUICK ? 25 : 40; // the save / load and determinism worlds
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
 const W = (s = seed) => { const st = createWorld({ seed: s, factionCount: 8 }); st.started = true; st.cards.length = 0; st.crashNext = 1e9; return st; };
@@ -293,10 +297,10 @@ console.log("Save, load, determinism");
 {
   const a = W(seed + 1);
   setAutopilot(a, true, "balanced");
-  for (let i = 0; i < 24 * 40; i++) { tickHour(a); }
+  for (let i = 0; i < 24 * detDays; i++) { tickHour(a); }
   a.cards.length = 0;
   const known = hiddenSites(a).filter((id) => siteKnown(a, id));
-  check(known.length > 0 && a.foundSites.length === known.length, `after 40 days ${known.length} hidden sites found, all announced (foundSites ${a.foundSites.length})`);
+  check(known.length > 0 && a.foundSites.length === known.length, `after ${detDays} days ${known.length} hidden sites found, all announced (foundSites ${a.foundSites.length})`);
   const b = deserializeState(JSON.parse(JSON.stringify(serializeState(a))));
   check(hiddenSites(b).filter((id) => siteKnown(b, id)).join() === known.join() && b.foundSites.join() === a.foundSites.join(), "a loaded save knows the same sites and has announced the same");
   const n0 = new Set(b.log);
@@ -310,7 +314,7 @@ console.log("Save, load, determinism");
   // The same seed plays the same.
   const c = W(seed + 1);
   setAutopilot(c, true, "balanced");
-  for (let i = 0; i < 24 * 40; i++) tickHour(c);
+  for (let i = 0; i < 24 * detDays; i++) tickHour(c);
   check(c.foundSites.join() === a.foundSites.join() && c.log.map((l) => l.text).join("\n") === a.log.map((l) => l.text).join("\n"), "the same seed finds the same sites in the same order with the same log");
 }
 

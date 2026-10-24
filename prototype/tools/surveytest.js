@@ -1,5 +1,8 @@
 // The Survey mission, rumours and optics (src/sim/survey.js, src/sim/optics.js).
 // Usage: node tools/surveytest.js [autopilot days] [seeds per style] [first seed]
+// Quick form (BS_QUICK=1, npm run test:quick): the discovery speed over 30 days on one seed per style (90 days, two
+// seeds in full), the autopilot's own surveys watched for 30 days instead of 90 (at least one, not two: see there),
+// both in the Cautious and Balanced styles only (all three in full); the same checks otherwise.
 // - the odds: Scouting, team size, terrain, distance, night (flashlight, night vision, thermal), fog, vehicle, stance,
 //   optics (binoculars, a spotting scope only while still, the best one counts, a second adds a quarter, the cap)
 //   and a rumour (×3 inside its circle, nothing outside it); the planner's word (good / fair / poor) and its reasons
@@ -53,8 +56,11 @@ import {
   rumoursOf, rumourFromNews, surveyDaily, surveyTarget, surveyCandidate, orderSweepAt, sweeping,
 } from "../src/sim/survey.js";
 
-const DAYS = Number(process.argv[2] || 90);
-const RUNS = Number(process.argv[3] || 2);
+const QUICK = !!process.env.BS_QUICK;
+const DAYS = Number(process.argv[2] || (QUICK ? 30 : 90));
+const RUNS = Number(process.argv[3] || (QUICK ? 1 : 2));
+const AP_DAYS = QUICK ? 30 : 90; // the autopilot's own surveys (section 7)
+const STYLES = QUICK ? ["cautious", "balanced"] : ["cautious", "balanced", "aggressive"]; // sections 7 and 10
 const SEED0 = Number(process.argv[4] || 52);
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
@@ -625,11 +631,11 @@ console.log("Crews and the autopilot");
   }
   // The autopilot: surveys go out; no team is sent to scavenge a site nobody has found.
   let sweeps = 0, bad = 0, sent = 0;
-  for (const style of ["cautious", "balanced", "aggressive"]) {
+  for (const style of STYLES) {
     const st2 = W(600 + style.length);
     setAutopilot(st2, true, style);
     const seen = new Set();
-    for (let i = 0; i < 24 * 90; i++) { // 90 days: since the hive tech tree and the eras the first weeks are busier (hordes from day one, the hub keeps its hands home longer): the surveys come later
+    for (let i = 0; i < 24 * AP_DAYS; i++) { // 90 days: since the hive tech tree and the eras the first weeks are busier (hordes from day one, the hub keeps its hands home longer): the surveys come later
       tickHour(st2);
       for (const q of st2.parties) {
         if (q.owner !== "player" || q.kind === "convoy") continue;
@@ -644,7 +650,8 @@ console.log("Crews and the autopilot");
     }
   }
   // Surveys are rare this early (3 in the old runs, the threshold itself): at least two over the three styles.
-  check(sweeps >= 2, `the autopilot sends surveys (${sweeps} in 90 days over three styles)`);
+  // Quick: a third of the days and two styles, so at least one (a governor that never sends one still fails).
+  check(sweeps >= (QUICK ? 1 : 2), `the autopilot sends surveys (${sweeps} in ${AP_DAYS} days over ${QUICK ? "two" : "three"} styles)`);
   check(bad === 0, `no team sent to scavenge a site nobody has found (${sent} checks)`);
   check(surveyCandidate(Object.assign(W(41), { surveyOff: true }), 4) === null, "the test switch (state.surveyOff) turns the autopilot's surveys off");
 }
@@ -791,7 +798,7 @@ console.log(`Discovery speed: autopilot, ${DAYS} days, ${RUNS} seed${RUNS === 1 
   const res = {};
   for (const off of [true, false]) {
     const tot = { near: 0, by: Object.fromEntries(marks.map((d) => [d, 0])), surveys: 0, found: 0 };
-    for (const style of ["cautious", "balanced", "aggressive"]) {
+    for (const style of STYLES) {
       for (let r = 0; r < RUNS; r++) {
         const st = W(SEED0 + r);
         st.surveyOff = off;

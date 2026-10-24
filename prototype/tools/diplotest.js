@@ -8,6 +8,10 @@
 // board, the autopilot's choices, determinism, a 365-day run without NaN and the yearly group collapse rate with
 // and without wars between groups.
 // Usage: node tools/diplotest.js [seed] [days] [collapse seeds, e.g. 1,2,3,4,5,6]
+// Quick form (BS_QUICK=1, npm run test:quick): the determinism digest over 15 days (90 in full), the NaN run 20
+// days (365), the collapse rate over 25 days on seeds 1 and 2, two at a time (a year on seeds 1-12, four at a time);
+// the same checks (the collapse band is measured from the run's own seeds, so it widens by itself on two; wars ended
+// in terms: see there).
 import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { FOODS } from "../src/sim/foods.js"; // food kinds: the lists offer food by kind (trade.js marketLists)
 import { createWorld, tickHour, hub, atBase, day, alive, newId, checkGameOver, snapshot } from "../src/sim/world.js";
@@ -35,10 +39,12 @@ import { PAYOUT } from "../src/sim/upkeep.js"; // the pay-out reserve: a group's
 import { execFileSync, execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { worksAt } from "../src/sim/groupworks.js";
+const QUICK = !!process.env.BS_QUICK;
+const DIGEST_DAYS = QUICK ? 15 : 90, YEAR_DAYS = QUICK ? 25 : 365; // the determinism run; a collapse child's span
 const DIGEST = process.argv[2] === "--digest"; // child process for the determinism check: prints one world's digest
 const COLLAPSE = process.argv[2] === "--collapse"; // child process: one year with (on) or without (off) wars between groups
 const seed = Number(process.argv[DIGEST || COLLAPSE ? 3 : 2] || 42);
-const longDays = Number(process.argv[3] || 365);
+const longDays = Number(process.argv[3] || (QUICK ? 20 : 365));
 // Twelve seeds: a year's collapses swing by ±2-4 groups a seed either way (new gangs come and go), so six seeds
 // (the old default) failed the +0.15 band on code changes far from the wars (0.26 → 0.42 at 5d2be6a, with seed 6
 // alone 2 → 9), while seeds 1–12 give +0.06 there and on 07778af. The years run 4 at a time.
@@ -52,7 +58,7 @@ const longDays = Number(process.argv[3] || 365);
 // measured from this run's own seeds (~+0.23–0.26 at twelve): a false alarm about one run in a hundred at a true +0.11,
 // while a true +0.30 (wars more than doubling the rate) still fails about nine runs in ten.
 const COLLAPSE_BAND = { gap: 0.15, se: 1.5 };
-const collapseSeeds = (process.argv[4] || "1,2,3,4,5,6,7,8,9,10,11,12").split(",").map(Number).filter(Number.isFinite);
+const collapseSeeds = (process.argv[4] || (QUICK ? "1,2" : "1,2,3,4,5,6,7,8,9,10,11,12")).split(",").map(Number).filter(Number.isFinite);
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
 const section = (t) => console.log(`\n${t}`);
@@ -127,7 +133,7 @@ if (COLLAPSE) {
   st.noWars = process.argv[4] === "off";
   setAutopilot(st, true, "balanced");
   const died = {};
-  while (day(st) <= 365 && !st.gameOver) {
+  while (day(st) <= YEAR_DAYS && !st.gameOver) {
     tickHour(st);
     if (st.hour % 24 === 0) for (const f of st.factions) if (!f.alive && !f.brokenByYou && died[f.id] == null) died[f.id] = day(st); // groups the autopilot conquered (conquest.js) are not the wars' doing
   }
@@ -135,7 +141,7 @@ if (COLLAPSE) {
   process.exit(0);
 }
 if (DIGEST) {
-  process.stdout.write(digest(run(90)));
+  process.stdout.write(digest(run(DIGEST_DAYS)));
   process.exit(0);
 }
 
@@ -837,7 +843,7 @@ section(`Determinism, ${longDays}-day autopilot run without NaN`);
   const me = fileURLToPath(import.meta.url);
   const d1 = execFileSync(process.execPath, [me, "--digest", String(seed)], { encoding: "utf8", maxBuffer: 1 << 26 });
   const d2 = execFileSync(process.execPath, [me, "--digest", String(seed)], { encoding: "utf8", maxBuffer: 1 << 26 });
-  check(d1.length > 100 && d1 === d2, "the same seed plays out the same (relations, wars, jobs, coalition, markets; 90 days, autopilot)");
+  check(d1.length > 100 && d1 === d2, `the same seed plays out the same (relations, wars, jobs, coalition, markets; ${DIGEST_DAYS} days, autopilot)`);
   const t0 = performance.now();
   const st = world(seed + 3);
   addBuilding(hub(st), "radio");
@@ -875,7 +881,7 @@ section(`Group collapse per year, with and without wars between groups (seeds ${
   const done = new Map();
   let next = 0;
   const worker = async () => { while (next < years.length) { const [s, noWars] = years[next++]; done.set(`${s}:${noWars}`, await one(s, noWars)); } };
-  await Promise.all(Array.from({ length: Math.min(4, years.length) }, worker));
+  await Promise.all(Array.from({ length: Math.min(QUICK ? 2 : 4, years.length) }, worker));
   let onC = 0, offC = 0, span = 0, wars = 0, gone = 0, terms = { land: 0, tribute: 0, white: 0 };
   const pairs = []; // per seed: the extra collapses with wars, over its years
   for (const s of collapseSeeds) {
@@ -897,7 +903,9 @@ section(`Group collapse per year, with and without wars between groups (seeds ${
   const se = n > 1 ? Math.sqrt((n / (n - 1)) * pairs.reduce((a, x) => a + (x.d - 8 * gap * x.y) ** 2, 0)) / (8 * yrs) : 0;
   const allowed = COLLAPSE_BAND.gap + COLLAPSE_BAND.se * se;
   console.log(`  per group per year: ${r0.toFixed(2)} without wars, ${r1.toFixed(2)} with (${(r0 * 8).toFixed(1)} → ${(r1 * 8).toFixed(1)} of 8 groups a year; gap ${gap >= 0 ? "+" : ""}${gap.toFixed(2)} ± ${se.toFixed(2)} SE over ${n} seeds); ${(wars / yrs).toFixed(1)} wars a year; peace terms: ${terms.land} land, ${terms.tribute} tribute, ${terms.white} white; ${gone} ended by a side collapsing`);
-  check(terms.land + terms.tribute + terms.white >= 3 * Math.max(1, gone), "wars end in terms far more often than in a wipe-out");
+  // Quick: two short spans see a war or two and none ended (1 war over seeds 1-2 in 40 or 60 days, 2026-10-24), so the floor
+  // of three ended in terms is not there to ask for; a war ended by a wipe-out still needs three ended in terms.
+  check(terms.land + terms.tribute + terms.white >= 3 * (QUICK ? gone : Math.max(1, gone)), "wars end in terms far more often than in a wipe-out");
   check(gap <= allowed, `wars do not wipe groups out much faster (${r0.toFixed(2)} → ${r1.toFixed(2)} a group a year, allowed +${allowed.toFixed(2)}: +${COLLAPSE_BAND.gap} and ${COLLAPSE_BAND.se} SE of ${se.toFixed(2)})`);
 }
 

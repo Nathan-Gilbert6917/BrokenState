@@ -16,6 +16,8 @@
 // ten-seed total by ±30 buildings. So each seed is played with DICE variants of the dice (the world's random
 // numbers advanced 0, 1, 2 … draws before day 1), both ways, in parallel child processes, and the totals compared.
 // Usage: node tools/worktest.js [days] [seeds...] [--dice N]   (seeds 1–10, 4 dice variants by default)
+// Quick form (BS_QUICK=1, npm run test:quick): 30 days on seeds 1 and 2, one roll each, two children at a time (the
+// full form: 120 days, 10 seeds × 4 rolls, 80 children); the same checks, the buildings band wider (see there).
 import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { spawn } from "node:child_process";
 import { cpus } from "node:os";
@@ -42,13 +44,14 @@ import { rosterModal, setRole } from "../src/ui/roster.js";
 import { readFileSync } from "node:fs";
 
 // --pair seed dice days priorities(0/1): one comparison run, printed as JSON (the parent's children).
+const QUICK = !!process.env.BS_QUICK;
 const PAIR = process.argv[2] === "--pair";
 const args = process.argv.slice(2);
 const diceAt = args.indexOf("--dice");
-const DICE = diceAt >= 0 ? Math.max(1, Number(args[diceAt + 1]) || 1) : 4;
+const DICE = diceAt >= 0 ? Math.max(1, Number(args[diceAt + 1]) || 1) : QUICK ? 1 : 4;
 const plainArgs = diceAt >= 0 ? args.filter((_, i) => i !== diceAt && i !== diceAt + 1) : args;
-const longDays = PAIR ? Number(args[3]) : Number(plainArgs[0] || 120);
-const seeds = !PAIR && plainArgs.length > 1 ? plainArgs.slice(1).map(Number) : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+const longDays = PAIR ? Number(args[3]) : Number(plainArgs[0] || (QUICK ? 30 : 120));
+const seeds = !PAIR && plainArgs.length > 1 ? plainArgs.slice(1).map(Number) : QUICK ? [1, 2] : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
 const section = (t) => console.log(t);
@@ -753,7 +756,7 @@ const jobs = [];
 for (const seed of seeds) for (let dice = 0; dice < DICE; dice++) for (const pri of [false, true]) jobs.push({ seed, dice, pri });
 const results = new Map();
 let next = 0;
-await Promise.all(Array.from({ length: Math.max(1, Math.min(jobs.length, cpus().length - 1)) }, async () => {
+await Promise.all(Array.from({ length: Math.max(1, Math.min(jobs.length, QUICK ? 2 : cpus().length - 1)) }, async () => {
   while (next < jobs.length) {
     const j = jobs[next++];
     results.set(`${j.seed}|${j.dice}|${j.pri}`, await runChild(j.seed, j.dice, j.pri));
@@ -788,7 +791,10 @@ const paired = (k) => {
 // Buildings: the two modes tie within the run-to-run spread (per seed ±40, so about ±90 over 40 runs; 8 runs a seed
 // put priorities 1.3% behind, 4 runs 5.3%; with the governor's water filters held while the tanks are full, work.js
 // holdFilters, 8 runs 0.4% and 4 runs 6.6%): a strict "at least as many" would fail on noise, so allow the spread, 7%.
-check(sum.pri.builds >= sum.gov.builds * 0.93, `priorities finish about as many buildings, within the 7% run-to-run spread (${sum.pri.builds} vs ${sum.gov.builds})`);
+// Quick (2 runs a way, not 40): one seed's ±40 is the whole spread there, so the band is 25%: a mode that stopped
+// building still fails.
+const BUILD_KEEP = QUICK ? 0.75 : 0.93;
+check(sum.pri.builds >= sum.gov.builds * BUILD_KEEP, `priorities finish about as many buildings, within the ${Math.round((1 - BUILD_KEEP) * 100)}% run-to-run spread (${sum.pri.builds} vs ${sum.gov.builds})`);
 // Crafts are a small count that a few seeds decide (one colony grows big enough to spare a crafter, the other does
 // not: seed 8 105 vs 18, seed 7 4 vs 50), so a fixed band on the total measures the dice: the paired run-to-run
 // difference has a standard error of about a quarter of the total over 40 runs, and the same code gave 94% on dice
