@@ -564,7 +564,7 @@ console.log("Perk effects");
   [a, b] = withPerk(cr, "machinist", () => craftRate(w4, h4, "spikedbat"));
   check(Math.abs(b - a * 1.3) < 1e-9, `Machinist: crafting ${r1(a)} → ${r1(b)}`);
   h4.stock.scrap = 200;
-  h4.armory = [];
+  h4.armory = [newItem("hammer")]; // the bat's tool (data-tools.js CRAFT_TOOLS, the tools-as-prerequisites request 2026-10-21)
   give(cr, "tinkerer");
   queueCraft(w4, h4, "spikedbat");
   for (let i = 0; i < 40 && craftQueue(h4).length; i++) craftingHour(w4);

@@ -296,7 +296,7 @@ section("Sleepers among the bodies");
   check(b1.corpses.length > 0 && b1.corpses.every((c) => ps1.every((u) => Math.max(Math.abs(u.x - c.x), Math.abs(u.y - c.y)) >= SLEEPER.AWAY)), `${b1.corpses.length} bodies on a fight in the open, none within ${SLEEPER.AWAY} tiles of your people`);
   check(JSON.stringify(b1.corpses.map((c) => [c.x, c.y, c.sleeper])) === JSON.stringify(b2.corpses.map((c) => [c.x, c.y, c.sleeper])), "the same fight lays out the same bodies");
   let total = 0, sleepers = 0;
-  for (let s = 1; s <= 60; s++) { const bb = { w: 32, h: 24, tileId: s, infection: 0.4, units: [], cells: b1.cells.slice(0, 32 * 24).map(() => ({ k: "open" })), reach: new Uint8Array(32 * 24).fill(1), evacCols: 0 }; placeBodies(bb, s); total += bb.corpses.length; sleepers += bb.corpses.filter((c) => c.sleeper).length; }
+  for (let s = 1; s <= 60; s++) { const bb = { w: 32, h: 24, tileId: s, infection: 0.4, units: [], cells: Array.from({ length: 32 * 24 }, () => ({ k: "open" })), reach: new Uint8Array(32 * 24).fill(1), evacCols: 0 }; placeBodies(bb, s); total += bb.corpses.length; sleepers += bb.corpses.filter((c) => c.sleeper).length; }
   const odds = Math.min(SLEEPER.ODDS_MAX, SLEEPER.ODDS + SLEEPER.ODDS_INF * 0.4);
   check(Math.abs(sleepers / total - odds) < 0.07, `at 40% Infection ${total} bodies over 60 maps, ${pct(sleepers / total)} Sleepers (odds ${pct(odds)})`);
 

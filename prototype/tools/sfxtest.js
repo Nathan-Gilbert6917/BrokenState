@@ -179,7 +179,7 @@ console.log("Footsteps");
   foe.x = keep[0]; foe.y = keep[1];
   // Unseen but close (here: on the floor above, out of sight): heard, muffled and quieter.
   const hadFloors = bt.floors;
-  bt.floors = bt.floors || [{}, {}];
+  bt.floors = bt.floors || [{ cells: bt.cells }, { cells: bt.cells.map(() => ({ k: "void" })) }]; // a storey with nothing on it (combat.js playerSees asks highground.js windowSees, which reads the floors' cells)
   foe.f = (bt.floor || 0) + 1;
   const up = [foe.x, foe.y];
   foe.x = me.x; foe.y = Math.max(0, me.y - 2);
