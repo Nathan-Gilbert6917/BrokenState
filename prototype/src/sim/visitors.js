@@ -775,7 +775,7 @@ export const nearGroups = (state, tile) => state.factions.some((f) => f.alive &&
 
 // ---------- raiders: choosing a target ----------
 const teamPower = (state, p) => partyMembers(state, p).reduce((a, s) => a + combatPower(s), 0);
-export const carriedValue = (p) => SUPPLY_KEYS.reduce((a, k) => a + carried(p, k) * supValue(k), 0);
+export const carriedValue = (p) => SUPPLY_KEYS.reduce((a, k) => a + (k === "ammo" ? Math.max(0, p.supplies.ammo || 0) + Math.max(0, (p.cargo && p.cargo.supplies.ammo) || 0) : carried(p, k)) * supValue(k), 0); // "ammo": only the abstract rounds (carried(p, "ammo") is every calibre, each already counted by its own key)
 
 export function raidTargets(state, v) {
   const g = state.grid, S = vStrength(v), R = O.raiders, out = [];

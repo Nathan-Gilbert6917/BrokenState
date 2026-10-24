@@ -1117,7 +1117,7 @@ function groupBuysGun(state, f, A, salt, dd) {
   if (sortedKit(A).W.filter((it) => usesRounds(it.key)).length >= f.pop * B.guns) return;
   const sellers = [
     ...(state.factions || []).filter((g) => g !== f && g.alive && !g.outsider && !warBetween(state, f, g) && relation(state, f, g) > B.rel),
-    ...(state.visitors || []).filter((v) => v && v.alive !== false && v.type === "traders"),
+    ...(state.visitors || []).filter((v) => v && v.alive !== false && v.kind === "merchants"), // passing merchants (every visitor is priced as type "traders", raider bands too: visitors.js makeVisitor)
   ];
   const offers = [];
   for (const g of sellers) for (const it of g.wares || []) if (it && GEAR[it.key] && usesRounds(it.key) && GEAR[it.key].slot === "weapon") offers.push({ g, it, price: (GEAR[it.key].value || 0) * B.markup * (it.quality ?? 1) });

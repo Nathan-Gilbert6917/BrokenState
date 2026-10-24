@@ -546,7 +546,8 @@ function meetCard(state, b, p) {
   const label = FACTION_TYPES[b.type] ? FACTION_TYPES[b.type].label.toLowerCase() : "group";
   const [sk, sq] = SPARE[b.type] || ["food", 6];
   // Food: days of it as the band's food items (makeBand typeFind leaves no "food" key in the stock: foods.js foodIn).
-  const spare = () => (sk === "food" ? foodIn(b.stock) : b.stock[sk] || 0);
+  // Ammo: every round they hold, generic or by calibre (a band built from a fallen group's stock: rounds.js totalRounds).
+  const spare = () => (sk === "food" ? foodIn(b.stock) : sk === "ammo" ? totalRounds(b.stock) : b.stock[sk] || 0);
   const choices = [
     {
       label: "Trade news",
@@ -583,6 +584,7 @@ function meetCard(state, b, p) {
       b.helped = true;
       p.cargo = p.cargo || { supplies: {}, gear: [] };
       if (sk === "food") addFoodsTo(p.cargo.supplies, takeFood(b.stock, sq, { eggs: false, state: st }).items); // foods.js: days of food as the items they hold
+      else if (sk === "ammo") { for (const [k, q] of Object.entries(spendAmmo(b.stock, sq).keys)) p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) + q; } // rounds.js: generic first, then by calibre
       else {
         b.stock[sk] = Math.max(0, (b.stock[sk] || 0) - sq);
         p.cargo.supplies[sk] = (p.cargo.supplies[sk] || 0) + sq;

@@ -3930,11 +3930,11 @@ export function createBattle(state, setup) {
   const tile = state.tiles[tileId];
   const party = setup.partyId ? state.parties.find((x) => x.id === setup.partyId) : null;
   const base = setup.baseId ? state.bases.find((x) => x.id === setup.baseId) : null;
-  if (party) settleParty(state, party); else if (base) settleBase(state, base); // ammo.js: rounds by calibre in the pools (generic ammo sorted, boxes in the cargo or armory opened)
+  if (party) settleParty(state, party); else if (base && !setup.drill) settleBase(state, base); // ammo.js: rounds by calibre in the pools (generic ammo sorted, boxes in the cargo or armory opened); a drill (defenceplan.js drillBattle) touches no stores
   // A gun reloads only from the rounds on the person (mags.js), so a base's defenders grab their loose rounds out of its
   // stock as the fight starts, as a team packing for a trip does (carrykit.js packShells and looseWant: a pocket or a
   // rig pouch). Not afield (loneattack.js): one of them attacked out on the land has only what is on them.
-  const shellLines = base && !party && !setup.afield ? handOutShells(base.stock, combatants(state, setup)) : [];
+  const shellLines = base && !party && !setup.afield && !setup.drill ? handOutShells(base.stock, combatants(state, setup)) : []; // not a drill: nothing is fought, so nothing leaves the stock
   // A base's wall map (deploy.js: the wall at column 12 of an 18-wide map): on a bridge the river starts 3 columns before
   // it, so the wall, its walkway and ladders and the tank traps in front all stand on the deck.
   const map = genMap(rng, tile, { densify: setup.layout !== "baseDefence", bridgeC0: setup.layout === "baseDefence" ? 9 : undefined, trucks: setup.layout ? [] : trucksAt(state, tileId), locks: !setup.layout }); // Army trucks (miltrucks.js), not on a base's wall map; locked doors only on an open field
@@ -6989,7 +6989,7 @@ function genRaidMap(rng, tile, areaTypes, withVehicle, extra = {}) {
   const start = (() => { for (let y = entry.y0; y < entry.y0 + entry.h; y++) for (let x = entry.x0; x < entry.x0 + entry.w; x++) if (cells[idx(x, y)].k === "open") return [x, y]; return [entry.x0 + 1, entry.y0 + 1]; })(); // an open cell of the zone (beside the vehicle)
   const carve = (x0, y0, x1, y1) => {
     let x = x0, y = y0;
-    const step = () => { const c = at(x, y); if (c && !CELL[c.k].walk && c.k !== "vehicle" && c.k !== "water" && c.k !== "rail" && !c.car) { c.k = "open"; if (c.f === "floor") c.f = "floor"; } }; // never through the river, a bridge's railing or a car (half a car is no car)
+    const step = () => { const c = at(x, y); if (c && !CELL[c.k].walk && c.k !== "vehicle" && c.k !== "water" && c.k !== "rail" && !c.car) { c.k = "open"; } }; // never through the river, a bridge's railing or a car (half a car is no car); the cell keeps its ground (a house's floor stays floor)
     while (x !== x1) { x += Math.sign(x1 - x); step(); }
     while (y !== y1) { y += Math.sign(y1 - y); step(); }
   };
@@ -7540,7 +7540,7 @@ export function searchBox(state, b, u, box, open = false, quick = false) {
     lockedLoot(state, b, u, box, sup, gear); // locks.js: more in locked things, keys, blueprints (its own dice)
     const site = poiKind || (state.tiles[b.tileId] && state.tiles[b.tileId].loc ? state.tiles[b.tileId].loc.type : null);
     const rTheme = box.kind === "body" ? "home" : box.truck ? "military" : raidTheme(site, box.area != null && R.areas[box.area] ? R.areas[box.area].type : "house");
-    typeFind(state, sup, box.kind === "body" ? "raider" : box.kind === "zombie" ? "travel" : box.truck ? "military" : box.area != null && R && R.areas[box.area] ? AREA_MIX[R.areas[box.area].type] || "house" : "house", box.kind === "body" || box.kind === "zombie" ? null : b.tileId, pd ? drng : undefined); // foods.js: the food as the items a place like this holds (a site's shelves run down)
+    typeFind(state, sup, box.kind === "body" ? (box.zombie ? "travel" : "raider") : box.truck ? "military" : box.area != null && R && R.areas[box.area] ? AREA_MIX[R.areas[box.area].type] || "house" : "house", box.kind === "body" ? null : b.tileId, pd ? drng : undefined); // foods.js: the food as the items a place like this holds (a site's shelves run down)
     sortFind(sup, rTheme, "box", b.tileId, bid); // ammo.js: what turns up there, by calibre
     if (box.kind !== "body") formFinds(sup, gear, rTheme, "box", b.tileId, bid); // ammo.js: some of it boxed (stacks of boxes), now and then a bulk ammo container; the rest loose
     box.contents = { sup, gear };

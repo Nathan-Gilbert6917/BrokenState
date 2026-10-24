@@ -754,7 +754,7 @@ export function meetCard(state, b, p) {
 const fightAi = (st, odds) => { const need = { cautious: 0.8, balanced: 0.65, aggressive: 0.5 }[style(st)] ?? 0.65; return odds >= need ? 80 + odds * 10 : odds * 40; };
 const ok = (st, b, p) => st.parties.includes(p) && nomadsOf(st).includes(b);
 const planText = (plan) => Object.entries(plan).filter(([, q]) => q > 0).map(([k, q]) => `${q} ${keyWord(k)}`).join(", ");
-const carriedValue = (p) => SUPPLY_KEYS.reduce((a, k) => a + carried(p, k) * supValue(k), 0);
+const carriedValue = (p) => SUPPLY_KEYS.reduce((a, k) => a + (k === "ammo" ? Math.max(0, p.supplies.ammo || 0) + Math.max(0, (p.cargo && p.cargo.supplies.ammo) || 0) : carried(p, k)) * supValue(k), 0); // "ammo": only the abstract rounds (carried(p, "ammo") is every calibre, each already counted by its own key)
 
 // Looters who meet a team they can take: pay, talk, fight or run.
 function stopCard(state, b, p) {

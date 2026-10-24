@@ -8,7 +8,7 @@ import {
 } from "../sim/health.js";
 import { wormSeen, wormOf, wormLabel, wormTip, wormTreatInfo, treatWorm, baseWater, WORM, wormCureText, wormOthersSeen, otherTreatInfo, treatOtherWorm, othersCareOn, dayHp } from "../sim/worm.js";
 import { boilerJunkOn } from "../sim/woodcutting.js"; // the base's "Boiler may burn spare wooden items and paper"
-import { baseById, residents, day } from "../sim/world.js";
+import { baseById, residents, day, log } from "../sim/world.js";
 import {
   admitBelow, medsReserve, medicTime, bedReason, dailyHealthChange, autoCare, treatAtBaseInfo, isHurt, nextDayText,
   AUTO_BELOW, ADMIT_MIN, ADMIT_MAX, ADMIT_STEP, TREATS_PER_MEDIC, UNTRAINED_TREATS, SURGERY_LOAD,
@@ -246,7 +246,7 @@ export const HEALTH_ACTIONS = {
     if (!b) return;
     const msg = treatCondition(state, b, Number(d.id), d.key);
     if (ui.baseView) ui.baseMsg = msg;
-    else state.log.unshift({ hour: state.hour, text: msg, kind: "info" });
+    else if (msg) log(state, msg, "info"); // world.js log: the diary too
   },
   // A dose wherever they are (a team member: from the team's meds, only while the team is in contact).
   "treatcond-any": (state, ui, d) => {
@@ -258,7 +258,7 @@ export const HEALTH_ACTIONS = {
     }
     const msg = treatConditionAnywhere(state, s.id, d.key);
     if (ui.baseView) ui.baseMsg = msg;
-    else state.log.unshift({ hour: state.hour, text: msg, kind: "info" });
+    else if (msg) log(state, msg, "info"); // world.js log: the diary too
   },
   // The worm (sim/worm.js): a dewormer, a purge or surgery. treatWorm logs the result itself.
   treatworm: (state, ui, d) => {
