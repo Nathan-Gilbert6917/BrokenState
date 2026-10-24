@@ -460,9 +460,11 @@ const leaders = (st) => st.survivors.filter((s) => s.alive && s.leader);
     if (d.slot === "weapon") check(/power/.test(text), `${key}: a weapon lists its power (${text})`);
     else if (d.slot === "rig") check(!/power|armor/.test(text) && /pouches/.test(text) && /carry/.test(text), `${key}: a chest rig lists its pouches and carry space (${text})`); // carry kit (w2-kit)
     else if (d.slot === "backpack") check(/pack slots/.test(text) && /carry/.test(text) && !/power/.test(text), `${key}: a pack lists slots and carry space (${text})`);
+    // The electronics recipes (2026-10-24): "armor\b", not a base's armory (the decoys and the radio are kept there).
+    else if (d.listen) check(!/power|armor\b/.test(text) && /a receiver/.test(text) && /radio network/.test(text) && /cannot call/.test(text), `${key}: a receiver says what it hears and that it cannot call (${text})`); // sim/radio.js: the hand-crank radio
     else if (d.slot === "tool") check(!/power/.test(text) && /Medicine|Scavenging|water|at night/.test(text), `${key}: a tool lists what it does (${text})`);
     // The stealth kit (stealth.js): thrown things and the suppressor are carried, not worn.
-    else if (d.throw) check(!/power|armor/.test(text) && /thrown/.test(text) && /one use/.test(text), `${key}: a throwable says it is thrown, once (${text})`);
+    else if (d.throw) check(!/power|armor\b/.test(text) && /thrown/.test(text) && /one use/.test(text), `${key}: a throwable says it is thrown, once (${text})`);
     else if (d.suppressor) check(!/power|armor/.test(text) && /halves the noise/.test(text) && /shots/.test(text), `${key}: the suppressor says what it does and how long it lasts (${text})`);
     else if (d.siege) check(!/power|armor/.test(text) && /wall|gate/.test(text), `${key}: siege kit says what it is for (${text})`); // sim/siege.js
     else if (d.cat === "gunmod") check(!/power|armor/.test(text) && /gun attachment/.test(text) && /fits/.test(text), `${key}: a gun attachment says what it does and what it fits (${text})`); // sim/gunmods.js
@@ -478,7 +480,9 @@ const leaders = (st) => st.survivors.filter((s) => s.alive && s.leader);
     else if (r.gear === "tourniquet") check(!/power|armor/.test(text) && /stabilize themselves/.test(text) && /one use/.test(text), `${key}: the tourniquet says it lets the downed stabilize themselves, once (${text})`); // sim/medics.js selfStabilize
     else if (d.fish) check(!/power|armor/.test(text) && /food an hour/.test(text) && /days of fishing/.test(text), `${key}: fishing gear says what it catches and how long it lasts (${text})`); // sim/hunting.js
     else if (r.gear === "cookpot") check(!/power|armor/.test(text) && text.length > 0, `${key}: the camp cook pot is a tool, no power or armor (${text})`); // sim/cooking.js: kept at a base without a Kitchen or a cook fire
-    else if (d.ears) check(!/power|armor/.test(text) && /off a bang's loudness/.test(text) && /a pair a fight/.test(text) && /fights/.test(text), `${key}: earplugs say what they take off a bang and how they wear (${text})`); // sim/hearing.js: the rag earplugs
+    else if (d.ears) check(!/power|armor/.test(text) && /off a bang's loudness/.test(text) && (d.recharge ? /runs on a pack of batteries/ : /a pair a fight/).test(text) && /fights/.test(text), `${key}: earplugs say what they take off a bang and how they wear (${text})`); // sim/hearing.js: the rag earplugs; the electronic ear defenders run on batteries (2026-10-24)
+    else if (r.gear === "helmetlight") check(!/power|armor/.test(text) && /fitted to a hard hat/.test(text) && /\d+ tiles at night/.test(text) && /hands free/.test(text), `${key}: the helmet light says what it fits and how far it lights (${text})`); // sim/helmets.js (2026-10-24)
+    else if (d.optics) check(!/power|armor/.test(text) && /optics/.test(text) && /finds ×[\d.]+/.test(text), `${key}: optics say how much better the team spots (${text})`); // sim/optics.js: the laser rangefinder (2026-10-24)
     else if (r.gear === "makeshiftpick") check(!/power|armor/.test(text) && /picks locks/.test(text) && /3 a craft/.test(text), `${key}: makeshift picks say what they pick and how many a craft (${text})`); // sim/locks.js
     else if (r.gear === "boards") check(!/power|armor/.test(text) && /door/.test(text) && /window/.test(text) && /hit points/.test(text), `${key}: boards and nails say what they board up and how strong (${text})`); // sim/barricade.js
     else if (d.furniture) check(!/power|armor/.test(text) && /bed/.test(text) && /set inside/.test(text), `${key}: furniture says how many beds it sets and the mood (${text})`); // sim/beds.js

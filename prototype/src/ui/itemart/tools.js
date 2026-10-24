@@ -69,6 +69,8 @@ const BPE = {
   vest: ["xxxxxxx", "x.x.x.x", "x.....x", "x.x.x.x", ".x...x.", "..x.x..", "...x..."],
   bow: [".x.....", ".xx....", "xx..xx.", "xxxxxxx", "xx..xx.", ".xx....", ".x....."],
   medic: [".xxxxx.", "xxxrxxx", "xxrrrxx", "xrrrrrx", "xxrrrxx", "xxxrxxx", ".xxxxx."],
+  solar: ["..s....", ".sss...", "..s....", "xxxxxxx", "x.x.x.x", "xxxxxxx", "x.x.x.x"],
+  chip: ["x.x.x.x", "xxxxxxx", "x.xxxxx", "xxxxxxx", "xxxxxxx", "xxxxxxx", "x.x.x.x"],
 };
 function manual(tab, emblem, key = { x: C.white }) {
   return (p) => {
@@ -143,6 +145,8 @@ export const GEAR_ART = {
   bp_armorsmith: manual(K.steel, "vest"),
   bp_bowyer: manual(C.leaf, "bow"),
   bp_combatmedic: manual(K.od, "medic", { x: C.white, r: C.red }),
+  bp_solarinst: manual(C.gold, "solar", { x: C.white, s: C.yellow }), // the grid's solar arrays and battery banks (2026-10-24)
+  bp_hobbyelec: manual(C.greenL, "chip"), // the electronics recipes (2026-10-24)
 
   // ---- lights
   flashlight: (p) => {
