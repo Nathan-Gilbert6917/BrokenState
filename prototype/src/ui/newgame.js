@@ -11,7 +11,7 @@ import { isCustomBg } from "../sim/custombg.js"; // custom backgrounds (sim/cust
 import { FAMILY } from "../sim/family.js"; // the Children box shows only while children are on
 import { sanitizeStartGear, hasPicks, trunkKg } from "../sim/startgear.js"; // starting gear picked under Customize
 import { gearRow, pointsBar, fleetSection, uiFleet } from "./startgear.js"; // its Gear… button, load and kit points, and the points bar, on the crew card; the Starting vehicles
-import { cleanFleet, fleetRoom, openLoads } from "../sim/startfleet.js"; // the starting vehicles: each its point limit and back (2026-10-24)
+import { cleanFleet, fleetRoom, openLoads, ridesIn } from "../sim/startfleet.js"; // the starting vehicles: each its point limit and back (2026-10-24)
 import { gunCals } from "../sim/ammo.js"; // a random back's rounds: the crew's guns' calibres
 import { traitPickerHtml, traitBlock, traitChips, traitWords } from "./traitpick.js"; // Customize: the traits, good and bad, none that clash; the chips
 import { randomBuild, randomEverything, randomTraits, randomKit, randomTrunk, kitBudget, kitKeys } from "../sim/randomkit.js"; // Customize: a whole random colonist within the points; the crew and the vehicles' backs
@@ -265,7 +265,7 @@ function vehicleToggle(state) {
   const on = startsWithVehicle(state), hard = isHardcore(state);
   const t = hard
     ? "Start with a vehicle: ticked, one of you fled in their car with what was in its back (and a small team loaded its empty seats; Starting vehicles sets the back). Unticked, you flee on foot with only what you can carry (the tents too). Changing it builds the world again on the same seed"
-    : `Start with a vehicle: ticked, the hub starts with ${isCustomRun(state) ? "the vehicles set under Starting vehicles" : "a pickup truck"} (and a custom background's car, if it brings one); Starting vehicles sets what is in their backs. Unticked, no vehicle at all: your people go on foot until they find, take or fix one. Changing it builds the world again on the same seed`;
+    : `Start with a vehicle: ticked, the hub starts with the vehicles set under Starting vehicles (a pickup truck by default) (and a custom background's car, if it brings one); Starting vehicles sets what is in their backs. Unticked, no vehicle at all: your people go on foot until they find, take or fix one. Changing it builds the world again on the same seed`;
   return `<label${tip(t)}><input type="checkbox" data-action="nr-vehicle"${on ? " checked" : ""}> Start with a vehicle</label>`;
 }
 
@@ -521,7 +521,7 @@ export function randomizeEverything(state, ui, rebuild) {
   const kitKg = state.survivors.reduce((a, s) => a + trunkKg({ items: kitKeys(s.startGear) }), 0);
   F.forEach((f, i) => {
     if (!state.fleet || !state.fleet[i] || state.fleet[i].vid == null) return; // Start with a vehicle off: none to fill
-    const room = Math.max(0, fleetRoom(state, i) + (hard ? worn - kitKg : 0));
+    const room = Math.max(0, fleetRoom(state, i) + (hard && ridesIn(state, i) ? worn - kitKg : 0)); // the riders ride in the first vehicle
     f.load = randomTrunk(f.limit, room, rng, gunCals([], guns), { fill: true, open: openLoads(state) });
     state.fleet[i].load = f.load;
   });
