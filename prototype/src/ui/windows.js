@@ -1,6 +1,7 @@
 // On the page: the bars between the map and its panels (fold, unfold, drag to resize), the grips and title drag of
-// resizable windows, and the timelapse's floating boxes. The rules (what folds, sizes, clamping) are in
-// ui/layout.js; main.js owns the layout object and redraws the map when the space for it changes (relayout).
+// resizable windows, the title bar the big windows share (winBar: the title, the window's buttons, a ✕; a row of
+// tabs that scrolls sideways under it), and the timelapse's floating boxes. The rules (what folds, sizes, clamping)
+// are in ui/layout.js; main.js owns the layout object and redraws the map when the space for it changes (relayout).
 import {
   PANEL_SIZE, SHUT_KEYS, PANEL_NAMES, RAIL_TABS, isShut, shutTip, setFolded, setPanelSize, saveLayout, loadWindows, saveWindows, dragRect, clampRect,
 } from "./layout.js";
@@ -8,6 +9,7 @@ import { swallowTap, HOLD_MS } from "./touch.js"; // a bar tapped or a window dr
 
 const coarse = () => typeof matchMedia !== "undefined" && matchMedia("(pointer: coarse)").matches; // a finger: its own hints
 const remPx = () => parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 let ctx = null;  // { layout, relayout(fn), refresh() } from main.js
 let wins = {};   // window kind -> { w, h (rem), x, y (px) }
 let drag = null; // a bar or window being dragged
@@ -131,6 +133,7 @@ export function initPanels(api) {
   document.addEventListener("dblclick", onDbl, true);
   window.addEventListener("resize", () => { fitWindows(); });
   watchFolds();
+  watchChrome();
 }
 
 // The folded log's strip shows the latest line.
@@ -171,9 +174,9 @@ function onGutKey(e, p) {
   }
 }
 
-// The boxes over the map (running orders, Watching, Layers, alerts) are written by main.js; when one folds to its
+// The boxes over the map (Watching, Layers, alerts) are written by main.js; when one folds to its
 // tab or opens again, it eases in (styles.css .fp-anim; none with Reduce motion).
-const FOLD_BOXES = ["orders", "watchlist", "legend", "alerts"];
+const FOLD_BOXES = ["watchlist", "legend", "alerts"];
 function boxFolded(el) {
   const kids = el.children;
   if (el.id === "alerts") return !!el.querySelector(":scope > .al-pill");
@@ -197,11 +200,88 @@ function watchFolds() {
   }
 }
 
+// ---------- the chrome of a window ----------
+// The title bar every big window shares (the user's request 2026-10-24: one window chrome, no button that only
+// duplicates the ✕): the title at the left (an h1, or the base screen's name box), the window's own buttons after
+// it, and a ✕ at the right that fires the window's own close action (closebase, closesurv, set-close; for the windows
+// without a bar ui/layout.js windowFrame puts a ✕ in the corner that is Esc, main.js "win-close"). The head is sticky
+// at the top of the box (styles.css .whead), so the ✕ and the tabs stay in reach while the body scrolls, on a desktop
+// and on a phone on its side; dragging the bar moves the window (titleOf). tabs: a row of tabs in the same sticky
+// head, one row that scrolls sideways (fitTabs: the lit tab scrolled into view, a fade at an end where more hide).
+// The ✕'s tip says "(Esc)" to a keyboard only: every tip goes through ui/hints.js devText, which drops the key for
+// a finger and makes it Ⓑ for a pad.
+export function winBar({ title, tools = "", close = "", closeTip = "Close (Esc)", tabs = "", cls = "" }) {
+  const x = close ? `<button class="wx" data-action="${close}" aria-label="Close" data-tip="${esc(closeTip)}">✕</button>` : "";
+  const strip = tabs ? `<div class="wtabwrap"><i class="wtab-l" aria-hidden="true"></i><div class="tabs wtabs">${tabs}</div><i class="wtab-r" aria-hidden="true"></i></div>` : "";
+  return `<div class="whead${cls ? ` ${cls}` : ""}"><div class="wbar">${title}${tools ? `<span class="wtools">${tools}</span>` : ""}${x}</div>${strip}</div>`;
+}
+
+// The row of tabs of a window (winBar tabs): the lit tab scrolled into view, and a fade at an end where more tabs
+// hide (styles.css .wtabwrap.more-l / .more-r). After a window is written (fitWindows) and as the row scrolls; a
+// scroll position the player gave the row is kept through a redraw of the same window (tabScroll, by window kind).
+const tabScroll = new Map();
+let tabsRaf = 0;
+export function fitTabs() {
+  for (const strip of document.querySelectorAll("#modal .wtabs")) {
+    if (!strip.clientWidth) { if (!tabsRaf) tabsRaf = requestAnimationFrame(() => { tabsRaf = 0; fitTabs(); }); continue; } // written while the modal is still hidden: measured on the next frame
+    const win = strip.closest(".win"), key = win ? win.dataset.win : "";
+    const kept = tabScroll.get(key);
+    if (kept != null && strip.scrollLeft !== kept) strip.scrollLeft = kept;
+    const a = strip.querySelector(".active");
+    if (a) {
+      const pad = 1.5 * remPx(), l = a.offsetLeft, r = l + a.offsetWidth;
+      if (l < strip.scrollLeft + pad) strip.scrollLeft = Math.max(0, l - pad);
+      else if (r > strip.scrollLeft + strip.clientWidth - pad) strip.scrollLeft = r - strip.clientWidth + pad;
+    }
+    if (key) tabScroll.set(key, strip.scrollLeft);
+    fadeTabs(strip);
+  }
+}
+function fadeTabs(strip) {
+  const wrap = strip.parentElement;
+  if (!wrap || !wrap.classList.contains("wtabwrap")) return;
+  wrap.classList.toggle("more-l", strip.scrollLeft > 2);
+  wrap.classList.toggle("more-r", strip.scrollLeft + strip.clientWidth < strip.scrollWidth - 2);
+}
+// The row scrolled by the player (its fades follow); the mouse wheel over it scrolls it sideways (a row has no
+// scrollbar to grab: styles.css hides it); a click on a fade scrolls a screenful that way. The survivor screen's
+// gear rows: ⋯ shows or hides the row's equip controls (styles.css .gslot.open; a mouse sees them by hovering).
+function watchChrome() {
+  document.addEventListener("scroll", (e) => {
+    const t = e.target;
+    if (!t || !t.classList || !t.classList.contains("wtabs")) return;
+    const win = t.closest(".win");
+    if (win) tabScroll.set(win.dataset.win, t.scrollLeft);
+    fadeTabs(t);
+  }, true);
+  document.addEventListener("wheel", (e) => {
+    const strip = e.target && e.target.closest && e.target.closest("#modal .wtabs");
+    if (!strip || strip.scrollWidth <= strip.clientWidth || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+    strip.scrollLeft += e.deltaY;
+    e.preventDefault();
+  }, { passive: false });
+  document.addEventListener("click", (e) => {
+    const t = e.target;
+    if (!t || !t.closest) return;
+    const fade = t.closest("#modal .wtab-l, #modal .wtab-r");
+    if (fade) {
+      const strip = fade.parentElement.querySelector(".wtabs");
+      if (strip) strip.scrollBy({ left: (fade.classList.contains("wtab-l") ? -0.6 : 0.6) * strip.clientWidth, behavior: "smooth" });
+      return;
+    }
+    const more = t.closest("#modal .gs-more");
+    const row = more ? more.closest(".gslot") : null, on = row && !row.classList.contains("open");
+    for (const r of document.querySelectorAll("#modal .gslot.open")) if (r !== row || on) if (!r.contains(t) || more) r.classList.remove("open"); // a press elsewhere closes an open row's controls
+    if (row && on) row.classList.add("open");
+  });
+}
+
 // ---------- windows ----------
 // Puts a remembered size and place on the window on screen (after the modal was written, the window resized, the
 // UI size changed). Clamped to the screen; the stored values stay as they were.
 export function fitWindows() {
   for (const w of document.querySelectorAll("#modal .win")) fitWindow(w);
+  fitTabs();
 }
 function fitWindow(win) {
   const g = wins[win.dataset.win];

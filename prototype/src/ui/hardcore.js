@@ -14,6 +14,7 @@ import { fireLit } from "../sim/fieldheat.js";
 import { RAW } from "../sim/water.js";
 import { teamAmmoBreakdown, breakdownText } from "../sim/ammo.js"; // the Ammo figure: every round and arrow the team has
 import { MODES, isHardcore } from "../sim/hardcore.js";
+import { isCustomRun } from "../sim/custommode.js";
 import { landFoodHint, landFoodOptions, FORAGE } from "../sim/foraging.js"; // food from the land when the team runs low
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -46,7 +47,8 @@ function suppliesTable(state, v, p = null) {
   return `<div class="suptable${p ? " three" : ""}">${head}${body}</div>`;
 }
 
-export const modeLabel = (state) => (MODES[isHardcore(state) ? "hardcore" : "normal"] || MODES.normal).label;
+// Custom (sim/custommode.js isCustomRun, 2026-10-24): a normal run with its own counts, named so.
+export const modeLabel = (state) => (MODES[isCustomRun(state) ? "custom" : isHardcore(state) ? "hardcore" : "normal"] || MODES.normal).label;
 
 // The view plus the team the panels follow: hardcore's road team (you are with it), else the first team on the road.
 function view(state) {

@@ -28,6 +28,9 @@ import { isFishTool } from "./hunting.js";
 
 // Orders that move the whole team off its tile (or around it): not while a detachment is out.
 export const MOVES = new Set(["move", "home", "sweep", "nearby", "searcharea", "cross"]);
+// Orders only the whole team gives (they settle it, or are about it): never split. Treating someone is the team's too.
+const TEAM_ONLY = new Set(["enter", "establish", "outpost", "strikecamp", "drivehome", "camp", "scoutcamp", "scoutestablish", "scoutoutpost"]);
+export const splittable = (orders) => (orders || []).every((o) => o.type !== "treat" && o.type !== "camp" && !(o.type === "mission" && TEAM_ONLY.has(o.mission))); // camp: the team rests together
 // The spare tools from the cargo a land job's detachment takes along.
 const toolTest = (type) => ({ wood: isChopTool, stone: isQuarryTool, fish: isFishTool })[type] || null; // call-time: the import cycle
 

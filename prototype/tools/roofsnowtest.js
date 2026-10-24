@@ -138,7 +138,7 @@ console.log("The base's map");
   const win = frame(st, wd * 24 + 13);
   check(!win.err && roofs > 0 && win.snow > 1500, `snow on its buildings and yard (${win.snow} white px; ${roofs} roofed cells)${win.err ? ` ${win.err}` : ""}`);
   const sum = frame(st, dayIn("summer") * 24 + 12);
-  check(!sum.err && sum.snow < win.snow / 20, `the same base in summer: none (${sum.snow} px)`);
+  check(!sum.err && sum.snow < win.snow / 10, `the same base in summer: next to none (${sum.snow} px of ${win.snow}; the tile's own pale rocks and bales stand round the base now, no cleared yard)`);
 }
 
 const ms = Math.round(performance.now() - t0);

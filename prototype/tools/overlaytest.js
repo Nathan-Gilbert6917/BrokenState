@@ -59,17 +59,17 @@ section("Rules: clamp, snap, free spot, anchors, threshold, nudge");
 section("Stored places: read back, bad values dropped, blocked storage");
 {
   const st = mem();
-  const P = { orders: { h: "r", x: 2, v: "b", y: 3.5 }, minimap: { h: "l", x: 0.6, v: "t", y: 0.6 } };
+  const P = { watchlist: { h: "r", x: 2, v: "b", y: 3.5 }, minimap: { h: "l", x: 0.6, v: "t", y: 0.6 } };
   check(O.saveOverlayPos(P, st) && JSON.stringify(O.loadOverlayPos(st)) === JSON.stringify(P), "saved and read back the same");
-  st.setItem(O.OVERLAY_KEY, JSON.stringify({ orders: { h: "x", x: 1, v: "t", y: 1 }, legend: { h: "l", x: "a", v: "t", y: 1 }, bogus: { h: "l", x: 1, v: "t", y: 1 }, alerts: { h: "r", x: -4, v: "b", y: 1e9 } }));
+  st.setItem(O.OVERLAY_KEY, JSON.stringify({ watchlist: { h: "x", x: 1, v: "t", y: 1 }, legend: { h: "l", x: "a", v: "t", y: 1 }, bogus: { h: "l", x: 1, v: "t", y: 1 }, alerts: { h: "r", x: -4, v: "b", y: 1e9 } }));
   const r = O.loadOverlayPos(st);
-  check(!r.orders && !r.legend && !r.bogus && r.alerts && r.alerts.x === 0 && r.alerts.y === 500, "bad sides, non-numbers and unknown boxes dropped; out-of-range numbers clamped");
+  check(!r.watchlist && !r.legend && !r.bogus && r.alerts && r.alerts.x === 0 && r.alerts.y === 500, "bad sides, non-numbers and unknown boxes dropped; out-of-range numbers clamped");
   st.setItem(O.OVERLAY_KEY, "{broken");
   check(Object.keys(O.loadOverlayPos(st)).length === 0, "an unreadable record: every box where it starts");
   const blocked = { getItem: () => { throw new Error("blocked"); }, setItem: () => { throw new Error("blocked"); }, removeItem: () => { throw new Error("blocked"); } };
   check(Object.keys(O.loadOverlayPos(blocked)).length === 0 && O.saveOverlayPos(P, blocked) === false, "blocked storage: nothing thrown, this session only");
   const Q = { ...P };
-  check(O.resetOverlayPos(Q, "orders") && !Q.orders && Q.minimap, "reset one box");
+  check(O.resetOverlayPos(Q, "watchlist") && !Q.watchlist && Q.minimap, "reset one box");
   check(O.resetOverlayPos(Q) && !Object.keys(Q).length && !O.resetOverlayPos(Q), "reset all (again: nothing to do)");
   O.saveOverlayPos({}, st);
   check(st.getItem(O.OVERLAY_KEY) === null, "nothing moved: the record is removed");
@@ -129,17 +129,17 @@ globalThis.document = {
 };
 globalThis.window = { addEventListener: on("win"), removeEventListener: off("win"), innerWidth: 1200, innerHeight: 800 };
 globalThis.getComputedStyle = () => ({ fontSize: "16px" });
-// The boxes at their stylesheet spots: orders top left, Layers bottom left, alerts top right, minimap bottom right.
+// The boxes at their stylesheet spots: Watching top left, Layers bottom left, alerts top right, minimap bottom right.
 const box = (id, w, h, css, head) => { const b = wrapEl.appendChild(new El("div", { id, w, h, css })); if (head) head(b); return b; };
-const orders = box("orders", 256, 110, { x: 10, y: 10 }, (b) => {
+const orders = box("watchlist", 256, 110, { x: 10, y: 10 }, (b) => { // the Watching panel (the running orders are a tab of the left panel now)
   const hd = b.appendChild(new El("div", { cls: "fp-head", w: 256, h: 28, css: { x: 0, y: 0 } }));
   hd.appendChild(new El("button", { cls: "fp-toggle", w: 200, h: 26, css: { x: 2, y: 1 } }));
   const ex = hd.appendChild(new El("span", { cls: "fp-extra", w: 40, h: 26, css: { x: 210, y: 1 } }));
   ex.appendChild(new El("button", { cls: "mini", w: 30, h: 22, css: { x: 0, y: 0 } }));
-  b.appendChild(new El("div", { cls: "ro", w: 250, h: 70, css: { x: 3, y: 32 } }));
+  b.appendChild(new El("div", { cls: "wl-row", w: 250, h: 70, css: { x: 3, y: 32 } }));
 });
 box("legend", 180, 300, { x: 10, y: H - 310 }, (b) => b.appendChild(new El("div", { cls: "fp-head", w: 180, h: 28, css: { x: 0, y: 0 } })));
-box("alerts", 368, 90, { x: W - 378, y: 10 }, (b) => b.appendChild(new El("button", { cls: "al-fold", w: 100, h: 26, css: { x: 268, y: 0 } })));
+box("alerts", 368, 90, { x: W - 378, y: 10 }, (b) => b.appendChild(new El("div", { cls: "fp-head", w: 368, h: 28, css: { x: 0, y: 0 } }))); // the same header bar as the other boxes (ui/layout.js alertsFoldButton)
 const mm = box("minimap", 240, 136, { x: W - 250, y: H - 146 });
 box("mm-show", 90, 24, { x: W - 100, y: H - 34 }).classList.add("hidden");
 let refreshed = 0;
@@ -159,18 +159,18 @@ section("On the page: click or drag, remembered, kept on the map, reset");
 {
   check(!!mm.querySelector(".ov-grip"), "the minimap gets its ✥ grip");
   const c1 = press(toggle, 3, 1);
-  check(!c1.stopped && !O.overlayPositions().orders && !orders.classList.contains("ov-placed"), "a press that moves 3 px is a click: it reaches the fold button, nothing moves or is stored");
+  check(!c1.stopped && !O.overlayPositions().watchlist && !orders.classList.contains("ov-placed"), "a press that moves 3 px is a click: it reaches the fold button, nothing moves or is stored");
   const c2 = press(toggle, 300, 200);
-  const p = O.overlayPositions().orders;
+  const p = O.overlayPositions().watchlist;
   check(c2.stopped && c2.prevented, "a drag past the threshold eats the click that ends it (the box does not fold)");
   check(p && orders.classList.contains("ov-placed"), "the box is moved and its place remembered");
   const r = rel(orders);
   check(near(r.x, 310) && near(r.y, 210), `it is where it was dropped (${Math.round(r.x)}, ${Math.round(r.y)})`);
-  check(!!localStorage.getItem(O.OVERLAY_KEY) && O.loadOverlayPos().orders.x === p.x, "the place is in the browser's storage (it survives a reload)");
+  check(!!localStorage.getItem(O.OVERLAY_KEY) && O.loadOverlayPos().watchlist.x === p.x, "the place is in the browser's storage (it survives a reload)");
   check(refreshed > 0, "the page is redrawn after a drop (the Watching panel follows)");
   const c3 = press(orders.querySelector(".mini"), 200, 0);
   check(!c3.stopped && near(rel(orders).x, 310), "a drag that starts on a header's own button (? ✕) does not move the box");
-  const c4 = press(orders.querySelector(".ro"), 200, 0);
+  const c4 = press(orders.querySelector(".wl-row"), 200, 0);
   check(!c4.stopped && near(rel(orders).x, 310), "a drag on the box's body (its rows) does not move it");
   press(toggle, 5000, 5000);
   const corner = rel(orders);
@@ -203,7 +203,7 @@ section("On the page: click or drag, remembered, kept on the map, reset");
   check(near(rel(mm).x, mmPlaced.x) && near(rel(mm).y, mmPlaced.y), "the map back to its size: the box back where it was put");
   // Alt+Home on one box, then the menu's reset for all.
   fire("keydown", { key: "Home", target: mm.querySelector(".ov-grip"), altKey: true, preventDefault() {}, stopPropagation() {} });
-  check(!O.overlayPositions().minimap && !mm.classList.contains("ov-placed") && O.overlayPositions().orders, "Alt+Home puts that one box back");
+  check(!O.overlayPositions().minimap && !mm.classList.contains("ov-placed") && O.overlayPositions().watchlist, "Alt+Home puts that one box back");
   press(mm.querySelector(".ov-grip"), -300, -100);
   O.resetOverlays();
   check(!Object.keys(O.overlayPositions()).length && localStorage.getItem(O.OVERLAY_KEY) === null, "Reset overlay positions: nothing remembered");
@@ -215,7 +215,7 @@ section("On the page: click or drag, remembered, kept on the map, reset");
   fire("pointermove", pe(toggle, t.left + 205, t.top + 105));
   fire("keydown", { key: "Escape", target: toggle, altKey: false, preventDefault() {}, stopPropagation() {} });
   fire("pointerup", pe(toggle, t.left + 205, t.top + 105));
-  check(near(rel(orders).x, r0.x) && !O.overlayPositions().orders, "Esc during a drag: the box goes back, nothing stored");
+  check(near(rel(orders).x, r0.x) && !O.overlayPositions().watchlist, "Esc during a drag: the box goes back, nothing stored");
 }
 
 section("A box left where it starts is set beside a moved box that covers it");

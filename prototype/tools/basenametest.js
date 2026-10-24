@@ -82,8 +82,9 @@ section("Build outpost (a normal game): asked again; duplicates refused; Keep cl
   check(right.includes(`data-action="bn-open" data-base="${o.id}"`), "the tile panel's base card has ✎");
   const left = renderLeft(st, freshUi());
   check(left.includes(`data-action="bn-open" data-base="${h.id}"`), "the Bases tab has ✎ Rename");
+  // The base screen renames by its name box alone (the user's request 2026-10-24: no ✎ Rename beside it).
   const screen = renderModal(st, { ...freshUi(), baseView: { id: h.id, tab: "overview" } });
-  check(screen.includes(`data-action="bn-open" data-base="${h.id}"`), "the base screen has ✎ Rename");
+  check(screen.includes(`class="basename" data-action="baserename" data-base="${h.id}"`) && !screen.includes(`data-action="bn-open" data-base="${h.id}"`), "the base screen renames by its name box, with no ✎ Rename beside it");
   BN_ACTIONS["bn-open"](st, ui, { base: String(h.id) });
   check(modalKind(st, ui) === "namebase" && /Rename /.test(renderModal(st, ui)), "it opens the window to rename");
   check(bnKey(st, ui, { code: "Escape", target: {} }) && !nameModalUp(st, ui) && h.name !== "", "Esc closes it, the name kept");

@@ -24,7 +24,7 @@ import { visitorTipLines, visitorById, gateTalkBase, gateTrayCard } from "../sim
 import { roadCaravans, guardText, cargoText } from "../sim/caravanraids.js";
 import { inCoverage } from "../sim/radio.js";
 import { canRadio } from "../sim/trade.js";
-import { BUILDINGS, tierName } from "../sim/buildings.js";
+import { BUILDINGS } from "../sim/buildings.js";
 import { atBase, factionById, baseById } from "../sim/world.js";
 import { SUPPLIES } from "../sim/data.js";
 import { partyVehicle } from "../sim/vehicles.js";
@@ -250,7 +250,7 @@ function linesCard(state, title, lines, tile, back, color = null, heard = false)
 // ---------- bases ----------
 // Your base on the selected tile: its buildings at a glance and the base screen's tabs (the base screen, ui.js
 // baseModal).
-const OWN_TABS = [["overview", "Overview", "Stock, people and roles"], ["buildings", "Buildings", "What is built here and what it gives"], ["construction", "Build", "The build queue and what you can build"], ["defence", "Defence", "The watch roster and the defence plan"], ["armory", "Armory", "Stored gear and everyone's equipment"], ["vehicles", "Vehicles", "Fuel, condition, repairs"]];
+const OWN_TABS = [["buildings", "Buildings", "What is built here and what it gives"], ["construction", "Build", "The build queue and what you can build"], ["defence", "Defence", "The watch roster and the defence plan"], ["armory", "Armory", "Stored gear and everyone's equipment"], ["vehicles", "Vehicles", "Fuel, condition, repairs"]];
 export function ownBaseCard(state, b) {
   if (!b) return "";
   const counts = new Map();
@@ -263,7 +263,7 @@ export function ownBaseCard(state, b) {
   const list = [...counts.entries()].sort((a, c) => c[1] - a[1] || a[0].localeCompare(c[0])).map(([n, q]) => (q > 1 ? `${esc(n)} ×${q}` : esc(n))).join(", ");
   const building = (b.construction || []).map((c) => (BUILDINGS[c.type] && BUILDINGS[c.type].name) || c.type);
   return `<div class="card small mapsel-base">
-    <div class="spread"><b>Buildings</b><span class="muted">${esc(tierName(b))} · ${atBase(state, b.id).length} people</span></div>
+    <div class="spread"><b>Buildings</b><span class="muted">${b.buildings ? b.buildings.length : 0} standing</span></div>
     <div>${list || `<span class="muted">Nothing built yet.</span>`}${broken ? ` <span class="warn"${tip("Broken buildings: the Repairs tab")}>· ${broken} broken</span>` : ""}</div>
     ${building.length ? `<div class="muted">Building: ${esc(building.slice(0, 3).join(", "))}${building.length > 3 ? ` +${building.length - 3}` : ""}</div>` : ""}
     <div class="row" style="margin-top:0.35rem;flex-wrap:wrap;gap:0.25rem">${OWN_TABS.map(([k, l, t]) => `<button class="mini" data-action="openbase" data-id="${b.id}" data-tab="${k}"${tip(t)}>${l}</button>`).join("")}</div>

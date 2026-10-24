@@ -29,7 +29,7 @@ import { knownLoc } from "../sim/discovery.js";
 import { openDiary } from "./diary.js";
 import { openRoster } from "./roster.js";
 import { keyAction, keyLabel } from "./keymap.js"; // the key table (Menu → Controls)
-import { keyHint } from "./hints.js"; // the camera spots' flash by the device in use: a finger's (and a pad's) way back is 📷 Spots
+import { keyHint, devText } from "./hints.js"; // the camera spots' flash by the device in use: a finger's (and a pad's) way back is 📷 Spots; the flash line's keys only where there is a keyboard
 import { openCodex } from "./codex.js";
 import { visitorAlerts } from "./visitors.js";
 import { roadAlerts } from "./hardcore.js";
@@ -357,7 +357,7 @@ export function renderAlerts(state, ui) {
   const shown = list.filter((a) => !m.dismissed.has(a.key) && !m.snooze.has(a.key));
   const hidden = list.length - shown.length;
   ui.alertList = shown; // for the hotkeys and tests
-  const flash = ui.flash && performance.now() - ui.flash.at < 4000 ? `<div class="al-flash">${esc(ui.flash.text)}</div>` : "";
+  const flash = ui.flash && performance.now() - ui.flash.at < 4000 ? `<div class="al-flash">${esc(devText(ui.flash.text))}</div>` : ""; // the device's words: no "(C)" for a finger (ui/hints.js)
   if (!shown.length && !hidden) return flash;
   const cut = m.all ? shown : shown.slice(0, SHOWN);
   const rows = cut.map((a) => `<div class="al al-${a.tone}">
@@ -449,7 +449,7 @@ export function mapHotkey(state, ui, e, act, modal) {
     act.center({ tile: b.tile });
     return true;
   }
-  const tabs = { "tab.bases": "bases", "tab.people": "people", "tab.groups": "groups", "tab.teams": "teams" };
+  const tabs = { "tab.bases": "bases", "tab.people": "people", "tab.groups": "groups", "tab.teams": "teams", "panel.orders": "orders" }; // Shift+[: the Orders tab (once the running orders box on the map)
   if (tabs[k]) { ui.tab = tabs[k]; return true; }
   if (k === "dev.autopilot") { act["dev-autopilot"](); return true; }
   if (k === "team.next" || k === "team.prev") { nextWaitingTeam(state, ui, act, k === "team.prev"); return true; }

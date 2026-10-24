@@ -1,4 +1,4 @@
-// The Watching panel on the map (top left, under the Running orders and above the Layers box): what the player pinned
+// The Watching panel on the map (top left, under the paused banner and above the Layers box): what the player pinned
 // with 📌 (sim/watchlist.js) with its live status, and the player's map notes (sim/mapnotes.js) below it.
 //   person: where, health, mood, what they do · team: where, ETA, food and water, Heat · horde: size, heading, how far
 //   from the nearest base · group: attitude, size and strength · base: days of food and water, threats in sight.
@@ -20,6 +20,7 @@ import { roleOf, taskLabel, isManaged } from "../sim/work.js";
 import { sickRestLabel } from "../sim/sickrest.js"; // Manual and pinned people resting sick
 import { ageText, mapLoc } from "./render.js";
 import { panelHead, panelTab } from "./layout.js"; // the boxes over the map share one header and folded tab
+import { compactUI } from "./responsive.js"; // a phone or an upright tablet: the panel is a sheet under the 👁 chip (Help)
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -199,10 +200,13 @@ export function renderWatchlist(state, ui, opts = {}) {
     ${notes.length ? `<div class="spread wl-head wl-sub"><b${tip("Your notes on the map. Right-click a tile → Add note.")}>📝 Notes (${notes.length})</b><span class="row"><button class="mini ${hidden ? "active" : ""}" data-action="mn-hide"${tip(hidden ? "Notes are hidden on the map: show them" : "Hide all notes on the map (they stay in this list)")}>${hidden ? "🚫 Hidden" : "👁 Shown"}</button><button class="mini" data-action="wl-notes"${tip(open ? "Fold the notes list" : "Show the notes list")}>${open ? "▾" : "▸"}</button></span></div>${noteRows}` : ""}`;
 }
 
+// Where a pin goes, in the words of the layout in use: a desktop's panel over the map (it starts under the Running
+// banner and can be moved), a phone's 👁 chip in the strip over the map (ui/responsive.js); never "top left".
+const watchWhere = () => (compactUI() ? "👁 Watching in the strip over the map" : "the Watching panel over the map");
 // A 📌 button (opts.label: with "Watch" / "Watching" after it).
 export function watchlistPin(state, kind, id, name = "", opts = {}) {
   const on = onWatchlist(state, kind, id);
-  return `<button class="mini wl-pin ${on ? "on" : ""}" data-action="wl-pin" data-kind="${kind}" data-id="${id}" data-name="${esc(name)}"${tip(on ? `Pinned${name ? `: ${name}` : ""}. Click to unpin it from the Watching panel` : `Pin${name ? ` ${name}` : ""} to the Watching panel on the map (its status, live)`)}>📌${opts.label ? (on ? " Pinned" : " Pin") : ""}</button>`;
+  return `<button class="mini wl-pin ${on ? "on" : ""}" data-action="wl-pin" data-kind="${kind}" data-id="${id}" data-name="${esc(name)}"${tip(on ? `Pinned${name ? `: ${name}` : ""}. Click to unpin it from the Watching panel` : `Pin${name ? ` ${name}` : ""} to ${watchWhere()} (its status, live)`)}>📌${opts.label ? (on ? " Pinned" : " Pin") : ""}</button>`;
 }
 
 // Extra right-click menu buttons for a tile: watch what is on it, add a note, edit its notes.
@@ -210,7 +214,7 @@ export function ctxWatchlist(state, tile) {
   const out = [];
   const pin = (kind, id, name) => {
     const on = onWatchlist(state, kind, id);
-    out.push(`<button data-action="wl-pin" data-kind="${kind}" data-id="${id}" data-name="${esc(name)}" data-ctx="1"${tip(on ? "Unpin it from the Watching panel" : "Pin it to the Watching panel on the map (top left): its status, live")}>📌 ${on ? "Unpin" : "Pin"} ${esc(name)}</button>`);
+    out.push(`<button data-action="wl-pin" data-kind="${kind}" data-id="${id}" data-name="${esc(name)}" data-ctx="1"${tip(on ? "Unpin it from the Watching panel" : `Pin it to ${watchWhere()}: its status, live`)}>📌 ${on ? "Unpin" : "Pin"} ${esc(name)}</button>`);
   };
   const base = state.bases.find((b) => b.tile === tile);
   if (base) pin("base", base.id, base.name);
@@ -339,22 +343,21 @@ function syncEditor(state, ui, hooks) {
   const input = document.getElementById("mn-text");
   if (input) { input.focus(); input.select(); }
 }
-// The Watching panel goes under the Running orders (or the paused banner) and stops above the Layers box.
+// The Watching panel goes under the paused banner and stops above the Layers box (the running orders, once above it,
+// are the left panel's Orders tab since the user's request 2026-10-24).
 function placeWatchlist() {
   const el = document.getElementById("watchlist");
   if (!el || el.classList.contains("hidden") || el.classList.contains("ov-placed")) return; // moved by the player (ui/overlaydrag.js)
   const wrap = el.parentElement, banner = document.getElementById("banner");
-  // The running orders (above) and the Layers box (below) count only while they are in its column, in their half of
-  // the map (either can be moved elsewhere).
+  // The Layers box (below) counts only while it is in its column, in the lower half of the map (it can be moved elsewhere).
   const inColumn = (id, top) => {
     const b = document.getElementById(id);
     return b && b.offsetLeft < el.offsetLeft + el.offsetWidth && b.offsetLeft + b.offsetWidth > el.offsetLeft && (b.offsetTop + b.offsetHeight / 2 < wrap.clientHeight / 2) === top ? b : null;
   };
-  const orders = inColumn("orders", true), legend = inColumn("legend", false);
+  const legend = inColumn("legend", false);
   const gap = Math.round((parseFloat(getComputedStyle(document.documentElement).fontSize) || 16) * 0.5);
   let top = gap;
-  if (orders && !orders.classList.contains("hidden") && orders.offsetHeight) top = orders.offsetTop + orders.offsetHeight + gap;
-  else if (banner && !banner.classList.contains("hidden") && banner.offsetHeight) top = banner.offsetTop + banner.offsetHeight + gap;
+  if (banner && !banner.classList.contains("hidden") && banner.offsetHeight) top = banner.offsetTop + banner.offsetHeight + gap;
   const bottom = legend && !legend.classList.contains("hidden") && legend.offsetHeight ? legend.offsetTop - gap : wrap.clientHeight - gap;
   el.style.top = `${top}px`;
   el.style.maxHeight = `${Math.max(64, bottom - top)}px`;
@@ -367,8 +370,12 @@ export function syncWatchlist(state, ui, hooks = {}) {
   syncEditor(state, ui, hooks);
 }
 
-// Help → Watch list and map notes (ui/help.js).
+// Help → Watch list and map notes (ui/help.js). Where the panel is, in the words of the layout in use: a desktop's box
+// over the map (it starts top left and can be dragged elsewhere), a phone's 👁 chip (ui/responsive.js).
 export const WATCHLIST_HELP = {
   title: "Watch list and map notes",
-  html: `<b>📌 Pin</b> a person (their survivor screen), a team (its panel), a group (Groups tab), a base (Bases tab or the tile panel) or a horde you can see (the tile panel's Horde row), or right-click a tile for the base, group, hordes and teams on it. They go in the <b>Watching</b> panel at the top left of the map, under the Running orders (▾ folds it; Map only folds it too), up to ${WATCHLIST_MAX} at a time, saved with the campaign. Each row keeps its status live: <i>a person</i> where they are, health, mood and what they are doing; <i>a team</i> its order, ETA, place, food, water and Heat; <i>a horde</i> its size, where it is heading and how far it is from your nearest base; <i>a group</i> its attitude and goodwill, size, bases and strength against yours; <i>a base</i> its days of food and water and the threats you can see (hordes within ${WATCHLIST_NEAR} tiles or heading for it, raiders). What you cannot know stays unknown: a team out of radio contact shows when it is due, a horde out of sight where you last saw it. Click a row to go there; the dead, the lost and the gone grey out, and ✕ drops a row. <b>📝 Map notes</b>: right-click a tile → <i>Add note here</i>, pick an icon (flag, cache, danger, bridge, target, star, question, skull) and type a short text (Enter saves, Esc closes). Notes show as small pins on the map, their text in the tile's hover description and beside the pin when zoomed in. They are listed under Notes in the Watching panel: click one to go there, ✎ to edit, ✕ twice to delete, 👁 to hide them all on the map.`,
+  get html() {
+    const where = compactUI() ? `the <b>Watching</b> sheet under the 👁 chip in the strip over the map (the chip opens and closes it)` : `the <b>Watching</b> panel over the map (top left to start; drag its header to move it, ▾ folds it, Map only folds it too)`;
+    return `<b>📌 Pin</b> a person (their survivor screen), a team (its panel), a group (Groups tab), a base (Bases tab or the tile panel) or a horde you can see (the tile panel's Horde row), or right-click a tile for the base, group, hordes and teams on it. They go in ${where}, up to ${WATCHLIST_MAX} at a time, saved with the campaign. Each row keeps its status live: <i>a person</i> where they are, health, mood and what they are doing; <i>a team</i> its order, ETA, place, food, water and Heat; <i>a horde</i> its size, where it is heading and how far it is from your nearest base; <i>a group</i> its attitude and goodwill, size, bases and strength against yours; <i>a base</i> its days of food and water and the threats you can see (hordes within ${WATCHLIST_NEAR} tiles or heading for it, raiders). What you cannot know stays unknown: a team out of radio contact shows when it is due, a horde out of sight where you last saw it. Click a row to go there; the dead, the lost and the gone grey out, and ✕ drops a row. <b>📝 Map notes</b>: right-click a tile → <i>Add note here</i>, pick an icon (flag, cache, danger, bridge, target, star, question, skull) and type a short text (Enter saves, Esc closes). Notes show as small pins on the map, their text in the tile's hover description and beside the pin when zoomed in. They are listed under Notes in the Watching panel: click one to go there, ✎ to edit, ✕ twice to delete, 👁 to hide them all on the map.`;
+  },
 };

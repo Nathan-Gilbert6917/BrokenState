@@ -318,7 +318,7 @@ section("A camp on a hilltop stands on it, and builds on it");
   if (!top) check(true, "(no hilltop on this tile)");
   else {
     const L = hh(...top);
-    Object.assign(q6.supplies, { wood: 20, stone: 8 }); // the camp fire's wood and stone (buildings.js CAMP.fireCost)
+    Object.assign(q6.supplies, { wood: 20, stone: 8 }); // the camp fire's (CAMP.fireCost, 2026-10-23)
     giveOrder(s6, q6, "camp");
     check(pickSite(s6, q6, top) === "" && q6.task.hours === 0.5, `a hilltop ${L} up at ${top}: 30 minutes to set up (the camp fire)`);
     run(s6, 4, () => s6.bases.length > 0);

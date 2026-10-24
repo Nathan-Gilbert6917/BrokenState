@@ -276,7 +276,11 @@ section("4. The governor fells for wood when short, a few trees at a time beyond
   check(sites.length > 0 && clears.length > 0, `the queued builds' sites on the land cleared ahead: ${clears.map((c) => c.label).join("; ")}`);
   check(onLand.every((j) => { const i = c3.construction.indexOf(j); return c3.construction.slice(0, i).some((c) => c.type === "clear" && c.label.includes("site")); }), "each site's clearing queued before its build (it is ready when the build comes up)");
   const ahead = clears.filter((c) => c.gov === "ahead");
-  check(ahead.length === 1 && ahead[0].pieces.length > 0, `the next build's site (one more hut) cleared ahead too: ${ahead.length ? `${ahead[0].label}, ${ahead[0].pieces.length} pieces` : "none"}`);
+  // The next build's site (one more hut) is cleared ahead only where the land is in the way. With the tile's own land
+  // all round the camp (the user's request 2026-10-24: the 5 × 5 the only initial clearing) the auto layout finds open
+  // ground for it among the trees, so nothing waits; where it does not, one clearing is queued ahead.
+  const nextHit = WW.siteFor(st3, c3, "gen_hut").length;
+  check(nextHit ? ahead.length === 1 && ahead[0].pieces.length > 0 : ahead.length === 0, `the next build's site (one more hut) cleared ahead only where the land is in the way: ${ahead.length ? `${ahead[0].label}, ${ahead[0].pieces.length} pieces` : `none (${nextHit} pieces in the way)`}`);
   const n0 = c3.construction.length;
   WW.clearAhead(st3, c3, "gen_hut");
   check(c3.construction.length === n0, "asked again, nothing more (no mass clearing)");

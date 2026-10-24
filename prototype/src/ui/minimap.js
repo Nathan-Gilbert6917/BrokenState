@@ -44,7 +44,8 @@ export function initMinimap(wrap, mapCanvas, options) {
   box = document.createElement("div");
   box.id = "minimap";
   box.className = "hidden";
-  box.innerHTML = `<canvas data-padpoint></canvas><button class="mm-hide" data-action="mm-toggle" data-tip="Hide the minimap (M). Click or drag on it to look at that part of the map.">–</button>`;
+  // The – hides it; the top edge (.mm-bar) is a drag handle on a desktop, with the ✥ grip ui/overlaydrag.js adds.
+  box.innerHTML = `<canvas data-padpoint></canvas><div class="mm-bar" data-tip="Drag this edge to move the minimap over the map (Alt+arrow keys with the keyboard)"></div><button class="mm-hide" data-action="mm-toggle" data-tip="Hide the minimap (M). Click or drag on it to look at that part of the map.">–</button>`;
   wrap.appendChild(box);
   showBtn = document.createElement("button");
   showBtn.id = "mm-show";

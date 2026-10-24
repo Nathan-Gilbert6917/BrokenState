@@ -2,10 +2,12 @@
 // prices): with Customize ticked (not with Ironman) each crew card shows the colonist's load, their points and a Gear…
 // button, which opens this window: every worn and held slot picked from the catalogue (or nothing), what they carry put
 // by hand into each pocket, pouch and pack slot (click a thing, then where it goes; Add puts a new one in the cell
-// picked, else where it first fits; what does not fit is refused with the reason), and what is in the starting
-// vehicle's back (Hardcore: the car the team flees in; a normal start: the hub's pickup, unloaded on the first day),
-// paid for by its owner. Every change to what they wear or carry builds the world again on the same seed (main.js
-// gearRebuild), so what the window shows is what they start with.
+// picked, else where it first fits; what does not fit is refused with the reason). Every change to what they wear or
+// carry builds the world again on the same seed (main.js gearRebuild), so what the window shows is what they start with.
+// The starting vehicles (2026-10-24, user request; sim/startfleet.js): the new-run screen's Starting vehicles section
+// (fleetSection, every mode, Customize ticked or not; read-only in Ironman) and each vehicle's back window (fleetEditor:
+// Edit…), the back priced against that vehicle's own point limit, on nobody's points (the car pool is gone). Their
+// actions return "fleet" (main.js gearRebuild: the world again with ui.fleet, the crew as it stands).
 // HTML builders plus their action handlers; main.js registers them (an action returning true asks for the rebuild).
 import { GEAR, SUPPLIES } from "../sim/data.js";
 import { POUCH_NAMES } from "../sim/data-kit.js";
@@ -14,16 +16,18 @@ import { itemLoad } from "../sim/inventory.js";
 import { LOAD_BANDS, wornLoad } from "../sim/load.js";
 import { VEHICLE_TYPES, RIDER_KG } from "../sim/vehicles.js";
 import {
-  START_GEAR, START_TRUNK, CARRY_PLACES, slotChoices, carryChoices, trunkChoices, sanitizeStartGear, sanitizeStartVehicle, hasPicks, kitLoad, carrySpec,
-  carryReason, firstFit, misfits, trunkKg, vehicleOwner, noteDiceKit, gunInfo, gunWith, sanitizeGunMods, pickKey, pickMods, pickN, pickStackMax,
+  START_GEAR, START_TRUNK, OPEN_TRUNK, CARRY_PLACES, slotChoices, carryChoices, trunkChoices, sanitizeStartGear, sanitizeStartVehicle, hasPicks, kitLoad, carrySpec,
+  carryReason, firstFit, misfits, trunkKg, noteDiceKit, gunInfo, gunWith, sanitizeGunMods, pickKey, pickMods, pickN, pickStackMax, openSupplyKeys,
 } from "../sim/startgear.js";
-import { itemPoints, slotPoints, gunPoints, loosePoints, pickPoints, pricePerson, pointsMax, vehiclePoints, suppliesPoints, carPool, poolText } from "../sim/custompoints.js";
+import { itemPoints, slotPoints, gunPoints, loosePoints, pickPoints, pricePerson, pointsMax, vehiclePoints, suppliesPoints } from "../sim/custompoints.js";
+import { START_FLEET, fleetKinds, cleanFleet, resizeFleet, clampLimit, clampFleetCount, fleetMode, fleetEntry, fleetVehicle, fleetRoom, fleetName, openLoads } from "../sim/startfleet.js"; // the starting vehicles (2026-10-24)
+import { startsWithVehicle } from "../sim/custommode.js";
 import { ATTACH, SLOT_NAMES as GUN_SLOT_NAMES, slotsOf, modsFor, fitsSlot, makeMod, takesMods, stripMod } from "../sim/gunmods.js"; // a picked gun's parts
 import { tidyTiers } from "../sim/traits.js";
 import { standardMag } from "../sim/mags.js";
 import { ROUND_SUPPLIES, HAND_SUPPLIES, CALIBERS } from "../sim/data-ammo.js"; // the back's rounds, by calibre and type
 import { gunCals } from "../sim/ammo.js";
-import { randomKit, randomTrunk, randomBuild, kitBudget, trunkBudget } from "../sim/randomkit.js"; // the dice under Customize: a new draw each time, within the points
+import { randomKit, randomTrunk, randomBuild, kitBudget } from "../sim/randomkit.js"; // the dice under Customize: a new draw each time, within the points
 import { freshRng } from "../sim/appearance.js";
 import { gunIconHtml } from "./gunart.js"; // the picked gun as it comes (its picture by its line)
 
@@ -73,14 +77,14 @@ function optionsHtml(keys, current, price = (k) => itemPoints(k)) {
 // What the points went on, in words (the gear window shows it under the bar: a dice-loaded colonist's skills can be most of it).
 export function pointsSplit(state, s) {
   const B = pricePerson(state, s);
-  const parts = [["Skills", B.skills], ["Traits", B.good + B.back], ["Kit", B.gear + B.carried], ["Vehicle's back", B.vehicle], ["Car pool", B.pool], ["Background's own", B.extra]];
+  const parts = [["Skills", B.skills], ["Traits", B.good + B.back], ["Kit", B.gear + B.carried], ["Background's own", B.extra]];
   return `<div class="small muted">${parts.filter(([, v], i) => v || i < 3).map(([n, v]) => `${n} ${v < 0 ? "−" : ""}${Math.abs(v)}`).join(" · ")}</div>`;
 }
 export function pointsBar(state, s) {
   const B = pricePerson(state, s);
   const pct = Math.min(100, Math.round((B.total / Math.max(1, B.max)) * 100));
   const over = B.over > 0;
-  const t = `${s.name}'s customization points: ${B.total} of ${B.max} spent. ${B.lines.join(" · ")}. Skill levels cost 1 each up to 10, 2 up to 15, 3 up to 20; good traits cost points by tier, bad ones give points back (at most ${B.cap}); every thing worn, held, carried or put in the vehicle costs what it is worth (the car pool pays the vehicle's back first).${over ? " Over the max: Start is refused until it is back under." : ""}`;
+  const t = `${s.name}'s customization points: ${B.total} of ${B.max} spent. ${B.lines.join(" · ")}. Skill levels cost 1 each up to 10, 2 up to 15, 3 up to 20; good traits cost points by tier, bad ones give points back (at most ${B.cap}); every thing worn, held or carried costs what it is worth (the starting vehicles' backs have point limits of their own: Starting vehicles).${over ? " Over the max: Start is refused until it is back under." : ""}`;
   return `<div class="ptsbar ${over ? "over" : ""}"${tip(t)}><div class="spread small"><span>Points <b>${B.total}</b> / ${B.max}</span><span class="ptsleft">${over ? `${B.over} over` : `${B.left} left`}</span></div><div class="bar"><i style="width:${pct}%;background:${over ? "var(--danger)" : "var(--good)"}"></i></div></div>`;
 }
 
@@ -95,99 +99,153 @@ export function gearRow(state, s) {
   const B = pricePerson(state, s);
   const kit = B.gear + B.carried;
   return `<div class="row" style="margin-top:0.3rem;gap:0.35rem">
-    <button class="mini" data-action="sg-open" data-id="${s.id}"${tip("Pick what they wear and hold, put what they carry in each pocket, pouch and pack slot, and load the vehicle's back. Each thing costs points.")}>🎒 Gear…</button>
-    ${loadText(s)} <span class="small muted"${tip("What their kit costs (worn, held and carried)")}>kit ${kit} pts</span>${B.vehicle ? ` <span class="small muted"${tip("They pay for what is in the vehicle's back (after the car pool)")}>vehicle ${B.vehicle} pts</span>` : ""}</div>
-    ${poolRow(state, s)}`;
+    <button class="mini" data-action="sg-open" data-id="${s.id}"${tip("Pick what they wear and hold, and put what they carry in each pocket, pouch and pack slot. Each thing costs points. (The vehicles' backs: Starting vehicles, each with its own point limit.)")}>🎒 Gear…</button>
+    ${loadText(s)} <span class="small muted"${tip("What their kit costs (worn, held and carried)")}>kit ${kit} pts</span></div>`;
 }
-// The car pool on the crew card (custompoints.js carPool): a tick to give their points left to the vehicle's back, and
-// what that comes to; the payer of the back instead sees what it costs them after the pool.
-export function poolRow(state, s) {
-  if (!startVehicleInfo(state)) return "";
-  const K = carPool(state);
-  if (K.owner === s) {
-    const t = `${s.name} pays for the vehicle's back (${K.cost} points). ${K.used ? `The car pool pays ${K.used} of it, they pay ${K.ownerPays}.` : "Nobody's leftover points are in the car pool yet: tick Give leftover on the others' cards."} Their own points cannot go to the pool: they pay the back already.`;
-    return `<div class="small muted" style="margin-top:0.2rem"${tip(t)}>🚗 Pays for the vehicle's back: ${K.cost} pts${K.used ? ` (car pool ${K.used}, theirs ${K.ownerPays})` : ""}</div>`;
-  }
-  const o = K.offers.find((x) => x.s === s);
-  const status = !s.carPool ? "" : !o || !o.n ? "nothing left to give" : !K.cost ? `${o.n} offered (the back is empty)` : o.share < o.n ? `${o.share} of ${o.n} used (${o.n - o.share} not needed, still theirs)` : `all ${o.n} used`;
-  const t = `Give the points ${s.name.split(" ")[0]} has left to the car pool, which pays for the vehicle's back before its payer does. Only what the back needs is taken (shared by what each gives); the rest stays theirs. Spend more on them and what they give shrinks with it, so giving never puts them over.`;
-  return `<div class="row" style="margin-top:0.2rem;gap:0.35rem"><label class="small"${tip(t)}><input type="checkbox" data-action="sg-pool" data-id="${s.id}" ${s.carPool ? "checked" : ""}> Give leftover to the car pool</label>${status ? ` <span class="small muted">${status}</span>` : ""}</div>`;
-}
-// How many of the next thing (the gear window's × boxes): 1 up to QTY_MAX.
+// How many of the next thing (the gear window's × box, qty; a vehicle's back window's, tqty): 1 up to QTY_MAX.
 const QTY_MAX = 99;
-const qtyOf = (ui, k) => Math.max(1, Math.min(QTY_MAX, Math.round(Number(ui.gearEdit && ui.gearEdit[k]) || 1)));
+const qtyHolder = (ui, k) => (k === "tqty" ? ui.fleetEdit : ui.gearEdit);
+const qtyOf = (ui, k) => Math.max(1, Math.min(QTY_MAX, Math.round(Number(qtyHolder(ui, k) && qtyHolder(ui, k)[k]) || 1)));
 const qtyBox = (ui, k, max, t) => `<label class="small"${tip(t)}>× <input type="number" min="1" max="${Math.max(1, max)}" step="1" style="width:3.4rem" data-action="sg-qty" data-k="${k}" value="${Math.min(qtyOf(ui, k), Math.max(1, max))}"></label>`;
 
-// ---------- the starting vehicle ----------
-// The vehicle whose back is picked: Hardcore, the car the team flees in; a normal start, the hub's pickup (the first
-// vehicle at the hub). { v, type, name, room (kg), hard }.
-export function startVehicleInfo(state) {
-  const hard = isHardcore(state);
-  let v = null;
-  if (hard) { const id = state.hardcore && state.hardcore.start && state.hardcore.start.car; v = (state.vehicles || []).find((x) => x.id === id) || null; }
-  else v = (state.vehicles || []).find((x) => x.loc && x.loc.kind === "base") || null;
-  if (!v || !VEHICLE_TYPES[v.type]) return null;
-  const T = VEHICLE_TYPES[v.type];
-  // Hardcore: the riders and what they wear ride in it too; a normal start: it is unloaded at the hub on day 1.
-  const riders = hard ? state.survivors.reduce((a, s) => a + RIDER_KG + wornLoad(s), 0) : 0;
-  return { v, type: v.type, name: T.name, room: Math.max(0, Math.round((T.payload || 0) - riders)), hard };
+// ---------- the starting vehicles (sim/startfleet.js) ----------
+// The fleet as the new-run screen sets it (main.js ui.fleet: [{ type, limit, load }], each mode its own), from the world's
+// when the screen has none for it yet (the tools, a fresh screen).
+export function uiFleet(state, ui) {
+  const mode = fleetMode(state), live = (state && state.fleet) || [];
+  if (!Array.isArray(ui.fleet) || ui.fleet.length !== live.length) ui.fleet = cleanFleet(live.map((f) => ({ type: f.type, limit: f.limit, load: f.load })), mode);
+  return ui.fleet;
+}
+// One vehicle as the screen shows it: { v, type, name, label, room (kg), hard, open, limit, load (null: as rolled) }.
+export function fleetInfo(state, i) {
+  const f = fleetEntry(state, i), v = fleetVehicle(state, i);
+  if (!f || !v || !VEHICLE_TYPES[v.type]) return null;
+  return { v, type: v.type, name: VEHICLE_TYPES[v.type].name, label: fleetName(state, i), room: fleetRoom(state, i), hard: isHardcore(state), open: openLoads(state), limit: f.limit, load: f.load };
+}
+// The first starting vehicle (Hardcore: the car the team flees in; a normal start: the hub's pickup): { v, type, name,
+// room (kg), hard }, as before the fleet (the tools read it).
+export const startVehicleInfo = (state) => fleetInfo(state, 0);
+// What the dice put in Hardcore's car (its owner's s.diceTrunk, noted by hardcore-start.js rollCar), as a load; a normal
+// start's vehicles come empty.
+const diceLoad = (state) => { const d = (state.survivors || []).find((s) => s.diceTrunk); return d ? d.diceTrunk : null; };
+// The back shown for vehicle i: its load, or as rolled (Hardcore: the dice's; else empty).
+const shownLoad = (state, i) => { const f = fleetEntry(state, i); return (f && f.load) || (isHardcore(state) && diceLoad(state)) || { items: [], supplies: {} }; };
+// A back in a few words: "3 things, 40 food, 20 meds, 60 rounds" ("empty").
+const supLabel = (k) => SUP_LABELS[k] || (SUPPLIES[k] ? SUPPLIES[k].name : k);
+export function loadWords(V) {
+  if (!V) return "empty";
+  const n = (V.items || []).reduce((a, e) => a + pickN(e), 0);
+  const rounds = Object.entries(V.supplies || {}).reduce((a, [k, q]) => a + (ROUND_SUPPLIES[k] ? q : 0), 0);
+  const sups = Object.entries(V.supplies || {}).filter(([k]) => !ROUND_SUPPLIES[k]).map(([k, q]) => `${q} ${supLabel(k).toLowerCase()}`);
+  const out = [...(n ? [`${n} thing${n === 1 ? "" : "s"}`] : []), ...sups.slice(0, 4), ...(sups.length > 4 ? [`${sups.length - 4} more supplies`] : []), ...(rounds ? [`${rounds} rounds`] : [])];
+  return out.length ? out.join(", ") : "empty";
 }
 
+// The new-run screen's Starting vehicles (2026-10-24, user request), shown while Start with a vehicle is on, every mode:
+// a row each with its name (Custom: its kind), its Point limit, the points its back takes (n / limit) and its weight
+// (kg / room), 🎲 Random (filled to the limit in the room there is), Edit… (the back's window), Empty and, in Hardcore,
+// As rolled. Custom: how many (Vehicles). Ironman: the backs as rolled, read-only.
+export function fleetSection(state, ui) {
+  if (!startsWithVehicle(state) || !(state.fleet || []).length) return "";
+  const mode = fleetMode(state), iron = !!ui.ironman, locked = iron || !!ui.started;
+  const dis = locked ? " disabled" : "";
+  const rows = state.fleet.map((f, i) => {
+    const info = fleetInfo(state, i);
+    if (!info) return "";
+    const V = shownLoad(state, i), rolled = !f.load;
+    const pts = rolled ? 0 : vehiclePoints(f.load), kg = trunkKg(V);
+    const over = pts > f.limit, heavy = kg > info.room + 1e-9;
+    const pct = Math.min(100, Math.round((pts / Math.max(1, f.limit)) * 100));
+    const kind = mode === "custom"
+      ? `<label${tip("This vehicle's kind (every motor vehicle; no bicycles). It parks at the hub with a part-full tank. Changing it builds the world again on the same seed")}>Vehicle ${i + 1} <select data-action="fleet-kind" data-i="${i}">${fleetKinds().map((k) => `<option value="${k}" ${k === info.type ? "selected" : ""}>${esc(VEHICLE_TYPES[k].name)} (${VEHICLE_TYPES[k].payload} kg)</option>`).join("")}</select></label>`
+      : `<b${tip(info.hard ? "The car the team flees in: its kind goes with whose it was (who they were)" : "The hub's pickup truck: what is in its back is unloaded into the hub's armory and stores on the first day")}>${esc(info.label)}</b>`;
+    const t = `${info.label}: its back costs ${rolled ? "nothing as rolled" : `${pts} points`} of its own limit of ${f.limit} (nobody's points pay for it) and weighs ${kg} of the ${info.room} kg it holds${info.hard ? " (the riders and what they wear ride in it too)" : ""}.${over || heavy ? " Over: Start is refused until it is back within." : ""}`;
+    const bar = `<div class="fleetbar ptsbar ${over ? "over" : ""}" style="min-width:9rem"${tip(t)}><div class="spread small"><span>Back <b>${rolled ? "as rolled" : pts}</b> / ${f.limit} pts</span><span class="${heavy ? "danger" : "muted"}">${kg} / ${info.room} kg</span></div><div class="bar"><i style="width:${rolled ? 0 : pct}%;background:${over ? "var(--danger)" : "var(--good)"}"></i></div></div>`;
+    const what = rolled ? (info.hard ? `As rolled: ${loadWords(V)}` : "Empty") : loadWords(f.load);
+    return `<div class="row nrveh" style="gap:0.35rem;align-items:center;margin-top:0.25rem">
+        ${kind}
+        <label${tip(`${info.label}'s point limit: what its back may cost (${START_FLEET.MIN}–${START_FLEET.MAX}, ${START_FLEET.LIMIT} by default). Its own, nobody's points${iron ? ". Ironman: the backs stay as rolled" : ""}`)}>Point limit <input type="number" min="${START_FLEET.MIN}" max="${START_FLEET.MAX}" step="${START_FLEET.STEP}" style="width:4.5rem" data-action="fleet-limit" data-i="${i}" value="${f.limit}"${dis}></label>
+        ${bar}
+        <button class="mini" data-action="fleet-rand" data-i="${i}"${dis}${tip(`Empty its back, then fill it with random things and supplies${info.open ? " (any thing and any material)" : ""} up to its point limit (${f.limit}) in the room there is (${info.room} kg). Each click is a new draw`)}>🎲 Random</button>
+        <button class="mini" data-action="fleet-edit" data-i="${i}"${dis}${tip(`Put things, supplies${info.open ? ", materials" : ""} and rounds in its back by hand, each priced against its point limit`)}>Edit…</button>
+        <button class="mini" data-action="fleet-empty" data-i="${i}"${dis}${tip("Nothing in its back")}>Empty</button>
+        ${info.hard ? `<button class="mini" data-action="fleet-dice" data-i="${i}"${locked || rolled ? " disabled" : ""}${tip("What the world's dice put in the back (free)")}>As rolled</button>` : ""}
+        <span class="small muted"${tip(what)}>${esc(what.length > 70 ? `${what.slice(0, 67)}…` : what)}</span>
+      </div>`;
+  }).join("");
+  const count = mode === "custom" ? `<label${tip(`Custom: how many vehicles start at the hub, ${START_FLEET.COUNT.MIN}–${START_FLEET.COUNT.MAX}, each a kind, a point limit and a back of its own. Changing it builds the world again on the same seed`)}>Vehicles <input type="number" min="${START_FLEET.COUNT.MIN}" max="${START_FLEET.COUNT.MAX}" step="1" style="width:3.6rem" data-action="fleet-count" value="${state.fleet.length}"></label>` : "";
+  const head = mode === "hardcore" ? "the car you flee in; a back set here replaces what the dice put in it" : mode === "custom" ? "at the hub; each back is unloaded into the hub's armory and stores on the first day, any thing and any material" : "what is in its back is unloaded into the hub's armory and stores on the first day";
+  // What the backs are for is the heading's hover, not a line of its own (the user's request 2026-10-24).
+  return `<div class="nrfleet">
+      <div class="row small" style="gap:0.5rem"><b${tip(`Starting vehicles: ${head}. Each one's back has its own point limit (nobody's points pay for it). Start is refused while a back costs more than its limit or weighs more than its room`)}>Starting vehicles</b>${count}${iron ? `<span class="muted">Ironman: as rolled.</span>` : ""}</div>
+      ${rows}
+    </div>`;
+}
+
+// The vehicle's back window (Edit…): vehicle ui.fleetEdit.i's back by hand, priced against its point limit.
+export function fleetEditor(state, ui) {
+  const i = ui.fleetEdit ? ui.fleetEdit.i : -1, info = fleetInfo(state, i);
+  const msg = (ui.fleetEdit && ui.fleetEdit.msg) || "";
+  return `<div class="box wide"><h1>${info ? esc(info.label) : "Starting vehicle"}</h1>
+    ${msg ? `<div class="small danger" style="margin-bottom:0.3rem">${esc(msg)}</div>` : ""}
+    ${vehicleSection(state, ui)}
+    <div class="row" style="margin-top:0.8rem;justify-content:flex-end"><button class="primary" data-action="fleet-close">Done</button></div></div>`;
+}
 function vehicleSection(state, ui) {
-  const info = startVehicleInfo(state);
-  if (!info) return `<div class="sgtrunk small muted">No starting vehicle in this start.</div>`;
-  const owner = vehicleOwner(state);
-  const V = sanitizeStartVehicle(owner && owner.startVehicle) || { items: [], supplies: {} };
-  const hcOwner = info.hard && state.hardcore && state.hardcore.start ? state.survivors.find((s) => s.id === state.hardcore.start.carOwner) : null;
-  const payer = owner || hcOwner || state.survivors.find((s) => s.leader) || state.survivors[0];
+  const i = ui.fleetEdit ? ui.fleetEdit.i : 0;
+  const info = fleetInfo(state, i);
+  if (!info) return `<div class="sgtrunk small muted">No such vehicle in this start.</div>`;
+  const V = sanitizeStartVehicle(shownLoad(state, i), info.open) || { items: [], supplies: {} };
+  const rolled = !info.load;
   const load = trunkKg(V);
-  const K = carPool(state);
-  const cost = vehiclePoints(V);
-  const used = Math.min(cost, K.total);
-  const bill = cost + (K.owner === payer ? K.extra : 0), took = Math.min(bill, K.total);
-  const bgLine = K.extra && K.owner === payer ? `<div class="small muted"${tip("A normal start: a custom background's car comes to the hub with its own back, paid for with the vehicle's back (the car pool first, then its payer)")}>Also on this bill, to the hub with their cars: ${K.backs.map((b) => `${esc(b.s.name.split(" ")[0])}'s background car's back ${b.n}`).join(", ")} pts</div>` : "";
-  const pool = K.offers.length
-    ? `${esc(poolText(K))}${bill ? ` · the back takes ${took} of it; ${esc(payer.name.split(" ")[0])} pays ${bill - took}` : ""}`
-    : `Car pool: empty (tick "Give leftover to the car pool" on a crew card to put someone's points left towards the back).`;
-  const poolTip = `The car pool pays for the vehicle's back before ${payer.name.split(" ")[0]} does: everyone who ticked "Give leftover to the car pool" gives the points they have left. Only what the back needs is taken, shared by what each gives; the rest stays theirs. Start is refused while the back costs more than the pool and its payer can pay.`;
-  const tFree = Math.max(0, START_TRUNK.ITEMS - V.items.length);
-  const who = state.survivors.map((s) => `<option value="${s.id}" ${s === payer ? "selected" : ""}>${esc(s.name)}</option>`).join("");
-  const tsel = ui.gearEdit && Number.isInteger(ui.gearEdit.tsel) && takesMods(pickKey(V.items[ui.gearEdit.tsel]) || "") ? ui.gearEdit.tsel : -1;
+  const cost = rolled ? 0 : vehiclePoints(V);
+  const maxItems = info.open ? OPEN_TRUNK.ITEMS : START_TRUNK.ITEMS;
+  const tFree = Math.max(0, maxItems - V.items.length);
+  const tsel = ui.fleetEdit && Number.isInteger(ui.fleetEdit.tsel) && takesMods(pickKey(V.items[ui.fleetEdit.tsel]) || "") ? ui.fleetEdit.tsel : -1;
   const items = V.items.map((e, j) => {
     const k = pickKey(e), m = pickMods(e), fitted = m ? gunWith(k, m) : null;
     const parts = takesMods(k) ? ` <button class="mini ${j === tsel ? "active" : ""}" data-action="sg-trunk-pick" data-i="${j}"${tip("Fit this gun with parts (they cost what they are worth)")}>⚙</button>` : "";
     return `<span class="chip"${tip(`${GEAR[k].desc || ""} (${kg(k)} kg, ${pickPoints(e)} points)${gunLong(k, fitted)}${gunInfo(k) && gunInfo(k).cal ? " It comes loaded." : ""}`)}>${esc(GEAR[k].name)}${m ? " ⚙" : ""}${pickN(e) > 1 ? ` ×${pickN(e)}${ROUND_SUPPLIES[k] ? " boxes" : ""}` : ""}${gunInfo(k, fitted) ? ` · ${gunInfo(k, fitted).text}` : ""}${parts} <button class="mini" data-action="sg-trunk-del" data-i="${j}"${tip("Take it out (the points back)")}>×</button></span>`;
   }).join("") || `<span class="small muted">Nothing in the back.</span>`;
   const tparts = tsel >= 0 ? gunPartsBox(pickKey(V.items[tsel]), pickMods(V.items[tsel]), `data-t="trunk" data-j="${tsel}"`, `the ${GEAR[pickKey(V.items[tsel])].name} in the back`) : "";
-  const sups = Object.entries(START_TRUNK.SUPPLIES).map(([k, cap]) => `<label class="lookopt">${SUP_LABELS[k]}<input type="number" min="0" max="${cap}" step="1" style="width:4.2rem" data-action="sg-trunk-sup" data-k="${k}" value="${V.supplies[k] || 0}"${tip(`${SUP_LABELS[k]} in the back, 0–${cap} (${SUPPLIES[k] ? SUPPLIES[k].weight : 0} kg each; ${suppliesPoints({ [k]: 10 })} points for 10)`)}></label>`).join("");
+  // Supplies: Normal and Hardcore the usual few, each to its cap; Custom any supply or material (no cap but the room).
+  const supKeys = info.open ? [...new Set([...Object.keys(START_TRUNK.SUPPLIES), ...Object.keys(V.supplies).filter((k) => !ROUND_SUPPLIES[k])])] : Object.keys(START_TRUNK.SUPPLIES);
+  const capOf = (k) => (info.open ? OPEN_TRUNK.MAX : START_TRUNK.SUPPLIES[k]);
+  const sups = supKeys.map((k) => `<label class="lookopt">${esc(supLabel(k))}<input type="number" min="0" max="${capOf(k)}" step="1" style="width:4.2rem" data-action="sg-trunk-sup" data-k="${k}" value="${V.supplies[k] || 0}"${tip(`${supLabel(k)} in the back, 0–${info.open ? "as much as there is room for" : capOf(k)} (${SUPPLIES[k] ? SUPPLIES[k].weight : 0} kg each; ${suppliesPoints({ [k]: 10 })} points for 10)`)}></label>`).join("");
+  const more = info.open ? (() => {
+    const groups = {};
+    for (const k of openSupplyKeys().filter((x) => !supKeys.includes(x))) { const c = (SUPPLIES[k] && SUPPLIES[k].cat) || "other"; (groups[c] = groups[c] || []).push(k); }
+    const opts = Object.keys(groups).sort().map((c) => `<optgroup label="${esc(c.replace(/^./, (x) => x.toUpperCase()))}">${groups[c].sort((a, b) => supLabel(a).localeCompare(supLabel(b))).map((k) => `<option value="${k}">${esc(supLabel(k))} · ${SUPPLIES[k] ? SUPPLIES[k].weight : 0} kg · ${suppliesPoints({ [k]: 10 })} pts for 10</option>`).join("")}</optgroup>`).join("");
+    return `<div class="row" style="margin-top:0.2rem"><select data-action="sg-trunk-supadd"${tip("Custom: any supply or material in the game (wood, stone, building materials, car and gun parts, electronics, foods, reloading supplies...): ten of it go in (change how many after)")}><option value="">Add a supply or material…</option>${opts}</select></div>`;
+  })() : "";
   const what = info.hard
-    ? `The car the ${state.survivors.length === 1 ? "survivor flees" : "team flees"} in: ${esc(info.name)}${hcOwner ? `, ${esc(hcOwner.name.split(" ")[0])}'s` : ""}. Whoever pays for the back owns the car (its kind goes with who they were).`
-    : `The hub's ${esc(info.name.toLowerCase())}: what is in its back is unloaded into the hub's armory and stores on the first day.`;
+    ? `The car the ${state.survivors.length === 1 ? "survivor flees" : "team flees"} in. ${rolled ? "As rolled: what the dice put in it, free. A change makes the back yours, priced against its point limit." : "A back set here goes in place of what the dice put in it."}`
+    : `At the hub: what is in its back is unloaded into the hub's armory and stores on the first day.${info.open ? " Custom: any thing and any material, as much as its point limit and its room allow." : ""}`;
   return `<div class="sgtrunk">
-    <h3>The vehicle's back <span class="small muted">${cost} pts · ${r1(load)} / ${info.room} kg</span></h3>
+    <h3>The back <span class="small muted">${rolled ? (info.hard ? "as rolled (free)" : "empty") : `${cost} / ${info.limit} pts`} · ${r1(load)} / ${info.room} kg</span></h3>
     <div class="small muted">${what}</div>
-    ${bgLine}
-    <div class="small sgpool"${tip(poolTip)}>${pool}</div>
-    <div class="row" style="gap:0.3rem;margin:0.25rem 0"><label class="small"${tip("Whose points pay for what is in the back (in Hardcore they own the car)")}>Paid by <select data-action="sg-trunk-owner">${who}</select></label>
-      <button class="mini" data-action="sg-trunk-rand"${tip(`Empty the back, then fill it with new random things and supplies for what ${payer.name.split(" ")[0]} has left${K.offers.some((o) => o.s !== payer) ? " and the car pool" : ""} (${trunkBudget(state, payer)} points) in the room there is. Each click is a new draw`)}>🎲 Random back</button>
-      ${info.hard ? `<button class="mini" data-action="sg-trunk-dice"${tip("Load what the world's dice put in the back (the points it costs)")}>As rolled</button>` : ""}
-      <button class="mini" data-action="sg-trunk-clear" ${V.items.length || Object.keys(V.supplies).length ? "" : "disabled"}${tip("Empty the back (the points back)")}>Empty</button></div>
+    <div class="row" style="gap:0.3rem;margin:0.25rem 0">
+      <button class="mini" data-action="sg-trunk-rand"${tip(`Empty the back, then fill it with new random things and supplies up to its point limit (${info.limit}) in the room there is (${info.room} kg). Each click is a new draw`)}>🎲 Random back</button>
+      ${info.hard ? `<button class="mini" data-action="sg-trunk-dice"${rolled ? " disabled" : ""}${tip("What the world's dice put in the back (free)")}>As rolled</button>` : ""}
+      <button class="mini" data-action="sg-trunk-clear" ${!rolled && (V.items.length || Object.keys(V.supplies).length) || (rolled && info.hard) ? "" : "disabled"}${tip("Empty the back (the points back)")}>Empty</button></div>
     <div>${items}</div>
     ${tparts}
-    <div class="row" style="margin-top:0.25rem;gap:0.3rem"><select data-action="sg-trunk-add"${V.items.length >= START_TRUNK.ITEMS ? " disabled" : ""}><option value="">Put a thing in the back…</option>${optionsHtml(trunkChoices(), null, loosePoints)}</select>
-      ${qtyBox(ui, "tqty", tFree, `How many of the next thing put in the back (each is a thing of its own: at most ${START_TRUNK.ITEMS} things, the room there is and what the payer and the car pool can pay; ${tFree} more things fit)`)}</div>
+    <div class="row" style="margin-top:0.25rem;gap:0.3rem"><select data-action="sg-trunk-add"${V.items.length >= maxItems ? " disabled" : ""}><option value="">Put a thing in the back…</option>${optionsHtml(trunkChoices(), null, loosePoints)}</select>
+      ${qtyBox(ui, "tqty", tFree, `How many of the next thing put in the back (each is a thing of its own: at most ${maxItems} things, the room there is and what its point limit leaves; ${tFree} more things fit)`)}</div>
     <div class="lookopts" style="margin-top:0.25rem">${sups}</div>
-    ${trunkRoundsHtml(state, V)}
+    ${more}
+    ${trunkRoundsHtml(state, V, info.open)}
   </div>`;
 }
-// The back's rounds by calibre and type (sim/startgear.js START_TRUNK.ROUNDS in all): a row each and a pick to add a
-// box of one, the crew's guns' calibres first.
+// The back's rounds by calibre and type (sim/startgear.js START_TRUNK.ROUNDS in all; Custom: no cap but the room): a row
+// each and a pick to add a box of one, the crew's guns' calibres first.
 const trunkRounds = (V) => Object.entries(V.supplies || {}).reduce((a, [k, q]) => a + (ROUND_SUPPLIES[k] ? q : 0), 0);
-function trunkRoundsHtml(state, V) {
-  const cap = START_TRUNK.ROUNDS, total = trunkRounds(V), cals = gunCals(state.survivors);
-  const rows = Object.keys(V.supplies).filter((k) => ROUND_SUPPLIES[k]).sort().map((k) => `<label class="lookopt">${esc(ROUND_SUPPLIES[k].name)}<input type="number" min="0" max="${cap}" step="1" style="width:4.2rem" data-action="sg-trunk-sup" data-k="${k}" value="${V.supplies[k] || 0}"${tip(`${ROUND_SUPPLIES[k].name} in the back (every round together at most ${cap}; ${ROUND_SUPPLIES[k].weight} kg each; ${suppliesPoints({ [k]: 10 })} points for 10). 0 takes them out`)}></label>`).join("");
+const roundsCap = (open) => (open ? OPEN_TRUNK.ROUNDS : START_TRUNK.ROUNDS);
+function trunkRoundsHtml(state, V, open = false) {
+  const cap = roundsCap(open), total = trunkRounds(V), cals = gunCals(state.survivors);
+  const rows = Object.keys(V.supplies).filter((k) => ROUND_SUPPLIES[k]).sort().map((k) => `<label class="lookopt">${esc(ROUND_SUPPLIES[k].name)}<input type="number" min="0" max="${cap}" step="1" style="width:4.2rem" data-action="sg-trunk-sup" data-k="${k}" value="${V.supplies[k] || 0}"${tip(`${ROUND_SUPPLIES[k].name} in the back (${open ? "as many as there is room for" : `every round together at most ${cap}`}; ${ROUND_SUPPLIES[k].weight} kg each; ${suppliesPoints({ [k]: 10 })} points for 10). 0 takes them out`)}></label>`).join("");
   const opts = Object.keys(ROUND_SUPPLIES).filter((k) => !HAND_SUPPLIES[k] && !V.supplies[k]).sort((a, b) => (cals[ROUND_SUPPLIES[b].round.cal] ? 1 : 0) - (cals[ROUND_SUPPLIES[a].round.cal] ? 1 : 0) || ROUND_SUPPLIES[a].name.localeCompare(ROUND_SUPPLIES[b].name));
-  return `<div class="small muted" style="margin-top:0.25rem">Rounds in the back, by calibre and type: ${total}/${cap}</div><div class="lookopts">${rows}</div>
+  return `<div class="small muted" style="margin-top:0.25rem">Rounds in the back, by calibre and type: ${total}${open ? "" : `/${cap}`}</div><div class="lookopts">${rows}</div>
     <div class="row" style="margin-top:0.2rem"><select data-action="sg-trunk-round"${total >= cap ? " disabled" : ""}${tip("Add rounds of a calibre and type (a box of them; change how many after). The crew's guns' calibres first")}><option value="">Add rounds…</option>${opts.map((k) => `<option value="${k}">${esc(ROUND_SUPPLIES[k].name)}${cals[ROUND_SUPPLIES[k].round.cal] ? " (a gun of yours)" : ""}</option>`).join("")}</select></div>`;
 }
 
@@ -308,13 +366,13 @@ export function startGearEditor(state, ui) {
           ${qtyBox(ui, "qty", free, `How many of the next thing you add, each in a spot of its own where it fits (a pocket, pouch or pack slot holds one thing; a box of rounds is a full box). At most what fits (${free} spot${free === 1 ? "" : "s"} free) and what their points pay for; the points are its price that many times`)}
           ${gun ? `<button class="mini" data-action="sg-mags"${tip(`Two spare magazines for the ${s.gear.weapon.name} (${GEAR[gun].name}, ${itemPoints(gun)} points each), where they fit: a pouch, the pack, a pocket`)}>+ 2 spare magazines</button>` : ""}
           <button class="mini" data-action="sg-carry-clear" ${hasPicks(P) && P.carry && CARRY_PLACES.some((w) => (P.carry[w] || []).some(Boolean)) ? "" : "disabled"}${tip("Empty their pockets, pouches and pack (the points back)")}>Empty all</button></div>
-        ${vehicleSection(state, ui)}
+        <div class="sgtrunk small muted"${tip("The starting vehicles' backs are set on the new-run screen (Starting vehicles: Random, Edit…), each against a point limit of its own: nobody's points pay for them")}>The vehicles' backs: Starting vehicles on the new-run screen, each with its own point limit.</div>
       </div>
     </div>
     <div class="row" style="margin-top:0.8rem;justify-content:flex-end;gap:0.3rem">
-      <button data-action="sg-rand-kit"${tip(`Empty what they wear, hold and carry, then a new random kit for the points they have left after their skills, traits and the vehicle's back (${kitBudget(state, s)} now). Each click is a new draw`)}>🎲 Random gear</button>
+      <button data-action="sg-rand-kit"${tip(`Empty what they wear, hold and carry, then a new random kit for the points they have left after their skills and traits (${kitBudget(state, s)} now). Each click is a new draw`)}>🎲 Random gear</button>
       <button data-action="sg-dice-kit"${tip("What the world's dice gave them to wear, hold and carry (only the gear: skills and traits stay as they are). It may cost more than they have left")}>The dice's gear</button>
-      <button data-action="sg-kit-clear"${tip("Nothing worn, held or carried (the points back). Skills, traits and the vehicle's back stay")}>Empty</button>
+      <button data-action="sg-kit-clear"${tip("Nothing worn, held or carried (the points back). Skills and traits stay")}>Empty</button>
       <span style="flex:1"></span>
       <button class="primary" data-action="sg-close">Done</button>
     </div></div>`;
@@ -393,24 +451,28 @@ export function blankPerson(s) {
   s.startPoints = true;
   s.startCustom = true;
 }
-// The vehicle's back: edit it on whoever pays (the owner on the window; nobody yet: the car's owner, else the leader).
-function editTrunk(state, ui, fn) {
-  if (ui.started || !freeEdit(ui)) return false;
-  let o = vehicleOwner(state);
-  if (!o) {
-    const id = state.hardcore && state.hardcore.start ? state.hardcore.start.carOwner : null;
-    o = state.survivors.find((s) => s.id === id) || state.survivors.find((s) => s.leader) || state.survivors[0];
-  }
-  if (!o) return false;
-  const V = sanitizeStartVehicle(o.startVehicle) || { items: [], supplies: {} };
-  ui.gearEdit && (ui.gearEdit.msg = "");
-  if (fn(V, o) === false) return false;
-  o.startVehicle = sanitizeStartVehicle(V);
-  o.startCustom = true;
-  ui.crewEdited = true;
-  return true;
+// A starting vehicle's back (sim/startfleet.js; the window's vehicle, ui.fleetEdit.i, or i): fn(V, f, i) changes the
+// back as shown (as rolled: Hardcore the dice's, else empty), which is then the vehicle's load, on the screen's fleet
+// (ui.fleet: the next world is built with it) and the world's (state.fleet). Not once started, not in Ironman (as
+// rolled). Returns "fleet" (main.js: the world again with it) or false.
+function editTrunk(state, ui, fn, at = null) {
+  if (ui.started || ui.ironman) return false;
+  const i = at ?? (ui.fleetEdit ? ui.fleetEdit.i : 0);
+  const F = uiFleet(state, ui), f = F[i], live = fleetEntry(state, i);
+  if (!f || !live) return false;
+  const open = openLoads(state);
+  const V = sanitizeStartVehicle(shownLoad(state, i), open) || { items: [], supplies: {} };
+  if (ui.fleetEdit) ui.fleetEdit.msg = "";
+  if (fn(V, f, i) === false) return false;
+  f.load = sanitizeStartVehicle(V, open);
+  live.load = f.load ? JSON.parse(JSON.stringify(f.load)) : null;
+  return "fleet";
 }
-const room = (state) => { const info = startVehicleInfo(state); return info ? info.room : 0; };
+const room = (state, ui) => fleetRoom(state, ui && ui.fleetEdit ? ui.fleetEdit.i : 0);
+const limitOf = (state, ui) => { const f = fleetEntry(state, ui && ui.fleetEdit ? ui.fleetEdit.i : 0); return f ? f.limit : 0; };
+const say = (ui, t) => { if (ui.fleetEdit) ui.fleetEdit.msg = t; else ui.nrMsg = t; };
+// A random back for vehicle i, up to its point limit and its room (rounds for the crew's guns; Custom: any thing and material).
+const randomBack = (state, i, limit, rng = freshRng()) => randomTrunk(limit, fleetRoom(state, i), rng, gunCals(state.survivors), { fill: true, open: openLoads(state) });
 
 // A gun's parts with one slot changed ("=": as it comes, "-": the factory part off, else a part): the new parts (null:
 // as it comes), or false with the window's reason when it does not fit (what it needs came off).
@@ -421,7 +483,8 @@ function partsAfter(ui, key, cur, slot, v) {
   if (v !== "=" && !(got && slot in got)) {
     const room = gunWith(key, { ...want, [slot]: undefined });
     stripMod(room, slot);
-    if (ui.gearEdit) ui.gearEdit.msg = v === "-" ? "Nothing to take off there." : fitsSlot(room, makeMod(v, 1)) || `The ${GEAR[v].name} does not fit there.`;
+    const H = ui.gearEdit || ui.fleetEdit; // the gear window or a vehicle's back window
+    if (H) H.msg = v === "-" ? "Nothing to take off there." : fitsSlot(room, makeMod(v, 1)) || `The ${GEAR[v].name} does not fit there.`;
     return false;
   }
   return got;
@@ -431,7 +494,7 @@ export const SG_ACTIONS = {
   "sg-open": (state, ui, d) => {
     if (ui.started || !freeEdit(ui)) return false;
     const i = state.survivors.findIndex((s) => s.id === Number(d.id));
-    if (i >= 0) ui.gearEdit = { i, sel: null, msg: "" };
+    if (i >= 0) { ui.gearEdit = { i, sel: null, msg: "" }; ui.fleetEdit = null; }
     return false;
   },
   "sg-close": (state, ui) => { ui.gearEdit = null; return false; },
@@ -528,23 +591,51 @@ export const SG_ACTIONS = {
     });
   },
   // A gun in the back picked for its parts (again: put down). Nothing changes in the world.
-  "sg-trunk-pick": (state, ui, d) => { if (ui.gearEdit) ui.gearEdit.tsel = ui.gearEdit.tsel === Number(d.i) ? null : Number(d.i); return false; },
-  "sg-trunk-del": (state, ui, d) => editTrunk(state, ui, (V) => { if (!V.items[Number(d.i)]) return false; V.items.splice(Number(d.i), 1); if (ui.gearEdit) ui.gearEdit.tsel = null; }),
-  "sg-trunk-clear": (state, ui) => editTrunk(state, ui, (V) => { V.items = []; V.supplies = {}; if (ui.gearEdit) ui.gearEdit.tsel = null; }),
-  // Empty, then a new random back for what its payer has left.
-  "sg-trunk-rand": (state, ui) => editTrunk(state, ui, (V, o) => {
-    const R = randomTrunk(trunkBudget(state, o), room(state), freshRng(), gunCals(state.survivors)); // rounds for the crew's guns
-    if (!R.items.length && !Object.keys(R.supplies).length && ui.gearEdit) ui.gearEdit.msg = `${o.name.split(" ")[0]} has no points left for the back: take something off them, or raise Points each.`;
+  "sg-trunk-pick": (state, ui, d) => { if (ui.fleetEdit) ui.fleetEdit.tsel = ui.fleetEdit.tsel === Number(d.i) ? null : Number(d.i); return false; },
+  "sg-trunk-del": (state, ui, d) => editTrunk(state, ui, (V) => { if (!V.items[Number(d.i)]) return false; V.items.splice(Number(d.i), 1); if (ui.fleetEdit) ui.fleetEdit.tsel = null; }),
+  "sg-trunk-clear": (state, ui) => editTrunk(state, ui, (V) => { V.items = []; V.supplies = {}; if (ui.fleetEdit) ui.fleetEdit.tsel = null; }),
+  // Empty, then a new random back up to its point limit.
+  "sg-trunk-rand": (state, ui) => editTrunk(state, ui, (V, f, i) => {
+    const R = randomBack(state, i, f.limit);
+    if (!R.items.length && !Object.keys(R.supplies).length) say(ui, `Its point limit (${f.limit}) pays for nothing: raise it.`);
     V.items = R.items;
     V.supplies = R.supplies;
+    if (ui.fleetEdit) ui.fleetEdit.tsel = null;
   }),
-  "sg-trunk-dice": (state, ui) => editTrunk(state, ui, (V, o) => {
-    const dice = (state.survivors.find((s) => s.diceTrunk) || {}).diceTrunk;
-    if (!dice) { if (ui.gearEdit) ui.gearEdit.msg = isHardcore(state) ? "The dice put nothing in the back." : "A normal start's pickup comes empty: nothing to load."; return false; }
-    V.items = [...dice.items];
-    V.supplies = { ...dice.supplies };
-  }),
+  // As rolled (Hardcore: what the dice put in the car, free); a normal start's vehicles come empty.
+  "sg-trunk-dice": (state, ui) => {
+    if (!isHardcore(state)) { say(ui, "A normal start's vehicles come empty: nothing to load."); return false; }
+    return asRolled(state, ui, ui.fleetEdit ? ui.fleetEdit.i : 0);
+  },
+  // The new-run screen's Starting vehicles (fleetSection).
+  "fleet-edit": (state, ui, d) => {
+    const i = Number(d.i);
+    if (ui.started || ui.ironman || !fleetInfo(state, i)) return false;
+    uiFleet(state, ui);
+    ui.gearEdit = null;
+    ui.fleetEdit = { i, msg: "", tsel: null };
+    return false;
+  },
+  "fleet-close": (state, ui) => { ui.fleetEdit = null; return false; },
+  "fleet-rand": (state, ui, d) => editTrunk(state, ui, (V, f, i) => {
+    const R = randomBack(state, i, f.limit);
+    if (!R.items.length && !Object.keys(R.supplies).length) say(ui, `${fleetName(state, i)}: its point limit (${f.limit}) pays for nothing; raise it.`);
+    V.items = R.items;
+    V.supplies = R.supplies;
+  }, Number(d.i)),
+  "fleet-empty": (state, ui, d) => editTrunk(state, ui, (V) => { V.items = []; V.supplies = {}; }, Number(d.i)),
+  "fleet-dice": (state, ui, d) => (isHardcore(state) ? asRolled(state, ui, Number(d.i)) : false),
 };
+// A vehicle's back as rolled again (load null: Hardcore the dice's back, free).
+function asRolled(state, ui, i) {
+  if (ui.started || ui.ironman) return false;
+  const F = uiFleet(state, ui), f = F[i], live = fleetEntry(state, i);
+  if (!f || !live || !f.load) return false;
+  f.load = null;
+  live.load = null;
+  if (ui.fleetEdit) ui.fleetEdit.tsel = null;
+  return "fleet";
+}
 
 export const SG_CHANGE = {
   // "-": nothing there, else the item. A new bag, rig or vest moves what no longer fits.
@@ -570,27 +661,27 @@ export const SG_CHANGE = {
     if (!n) return false;
     if (n < want) ui.gearEdit.msg = `${n} ${GEAR[key].name} added of the ${want} asked (${n * price} points): ${n < cap ? "no room for more" : `their points left pay for ${afford}`}.`;
   }),
-  // The same for the vehicle's back: at most its things, its room and what its payer and the car pool can pay.
-  "sg-trunk-add": (state, ui, el) => editTrunk(state, ui, (V, o) => {
+  // The same for a starting vehicle's back: at most its things (Custom: OPEN_TRUNK's), its room and what its point limit leaves.
+  "sg-trunk-add": (state, ui, el) => editTrunk(state, ui, (V, f, i) => {
     const k = el.value;
     if (!k || !GEAR[k]) return false;
-    const say = (t) => { if (ui.gearEdit) ui.gearEdit.msg = t; };
-    if (V.items.length >= START_TRUNK.ITEMS) { say(`At most ${START_TRUNK.ITEMS} things in the back.`); return false; }
-    if (trunkKg(V) + kg(k) > room(state) + 1e-9) { say(`No room in the back for the ${GEAR[k].name} (${kg(k)} kg; ${r1(Math.max(0, room(state) - trunkKg(V)))} kg left).`); return false; }
+    const maxItems = openLoads(state) ? OPEN_TRUNK.ITEMS : START_TRUNK.ITEMS, rm = fleetRoom(state, i);
+    if (V.items.length >= maxItems) { say(ui, `At most ${maxItems} things in the back.`); return false; }
+    if (trunkKg(V) + kg(k) > rm + 1e-9) { say(ui, `No room in the back for the ${GEAR[k].name} (${kg(k)} kg; ${r1(Math.max(0, rm - trunkKg(V)))} kg left).`); return false; }
     const want = qtyOf(ui, "tqty"), price = loosePoints(k);
-    const afford = Math.floor(Math.max(0, trunkBudget(state, o) - vehiclePoints(V)) / Math.max(1, price));
+    const afford = Math.floor(Math.max(0, f.limit - (f.load ? vehiclePoints(V) : 0)) / Math.max(1, price)); // as rolled: the dice's back is free, what is added is not
     const cap = Math.min(want, Math.max(1, afford));
     let n = 0, why = "";
     for (const e of stackPicks(k, cap)) { // a stack a slot of the back (itemstack.js)
-      if (V.items.length >= START_TRUNK.ITEMS) { why = `at most ${START_TRUNK.ITEMS} things in the back`; break; }
+      if (V.items.length >= maxItems) { why = `at most ${maxItems} things in the back`; break; }
       let one = e;
-      while (trunkKg({ ...V, items: [...V.items, one] }) > room(state) + 1e-9 && pickN(one) > 1) one = pickN(one) - 1 > 1 ? { key: k, n: pickN(one) - 1 } : k; // what of the stack fits
-      if (trunkKg({ ...V, items: [...V.items, one] }) > room(state) + 1e-9) { why = "no room for more"; break; }
+      while (trunkKg({ ...V, items: [...V.items, one] }) > rm + 1e-9 && pickN(one) > 1) one = pickN(one) - 1 > 1 ? { key: k, n: pickN(one) - 1 } : k; // what of the stack fits
+      if (trunkKg({ ...V, items: [...V.items, one] }) > rm + 1e-9) { why = "no room for more"; break; }
       V.items.push(one);
       n += pickN(one);
       if (one !== e) { why = "no room for more"; break; }
     }
-    if (n < want) say(`${n} ${GEAR[k].name} put in of the ${want} asked (${n * price} points): ${why || `${o.name.split(" ")[0]} and the car pool pay for ${afford}`}.`);
+    if (n < want) say(ui, `${n} ${GEAR[k].name} put in of the ${want} asked (${n * price} points): ${why || `its point limit (${f.limit}) pays for ${afford}`}.`);
   }),
   // A part for one slot of the gun in the hands ("=": as it comes, "-": the factory part off). One that does not fit
   // (what it needs came off) is refused with the reason.
@@ -622,48 +713,66 @@ export const SG_CHANGE = {
   },
   // The × boxes: how many of the next thing (kept while the window is open).
   "sg-qty": (state, ui, el) => {
-    if (!ui.gearEdit || !["qty", "tqty"].includes(el.dataset.k)) return false;
-    ui.gearEdit[el.dataset.k] = Math.max(1, Math.min(QTY_MAX, Math.round(Number(el.value) || 1)));
+    const H = qtyHolder(ui, el.dataset.k);
+    if (!H || !["qty", "tqty"].includes(el.dataset.k)) return false;
+    H[el.dataset.k] = Math.max(1, Math.min(QTY_MAX, Math.round(Number(el.value) || 1)));
     return false;
   },
-  // A crew card's "Give leftover to the car pool" (custompoints.js carPool). Nothing in the world changes: no rebuild.
-  "sg-pool": (state, ui, el) => {
-    const s = state.survivors.find((x) => x.id === Number(el.dataset.id));
-    if (!s || ui.started || !freeEdit(ui)) return false;
-    if (el.checked) s.carPool = true; else delete s.carPool;
-    ui.crewEdited = true;
-    return false;
-  },
-  "sg-trunk-sup": (state, ui, el) => editTrunk(state, ui, (V) => {
-    const k = el.dataset.k, cap = ROUND_SUPPLIES[k] ? Math.max(0, START_TRUNK.ROUNDS - trunkRounds(V) + (V.supplies[k] || 0)) : START_TRUNK.SUPPLIES[k]; // rounds: every calibre together under ROUNDS
-    if (!cap && !ROUND_SUPPLIES[k]) return false;
+  // A supply in the back: Normal and Hardcore to its cap (rounds: every calibre together under START_TRUNK.ROUNDS); Custom
+  // any supply or material, held by the room.
+  "sg-trunk-sup": (state, ui, el) => editTrunk(state, ui, (V, f, i) => {
+    const k = el.dataset.k, open = openLoads(state);
+    if (open ? !(ROUND_SUPPLIES[k] || openSupplyKeys().includes(k)) : !(ROUND_SUPPLIES[k] || k in START_TRUNK.SUPPLIES)) return false;
+    const cap = ROUND_SUPPLIES[k] ? Math.max(0, roundsCap(open) - trunkRounds(V) + (V.supplies[k] || 0)) : open ? OPEN_TRUNK.MAX : START_TRUNK.SUPPLIES[k];
     let n = Math.max(0, Math.min(cap, Math.round(Number(el.value) || 0)));
-    const w = SUPPLIES[k] ? SUPPLIES[k].weight || 0 : 0;
+    const w = SUPPLIES[k] ? SUPPLIES[k].weight || 0 : 0, rm = fleetRoom(state, i);
     const other = trunkKg({ ...V, supplies: { ...V.supplies, [k]: 0 } });
-    if (w > 0 && other + n * w > room(state)) { n = Math.max(0, Math.floor((room(state) - other) / w)); if (ui.gearEdit) ui.gearEdit.msg = `Only room for ${n} ${(SUP_LABELS[k] || (SUPPLIES[k] && SUPPLIES[k].name) || k).toLowerCase()} in the back.`; }
+    if (w > 0 && other + n * w > rm) { n = Math.max(0, Math.floor((rm - other) / w)); say(ui, `Only room for ${n} ${supLabel(k).toLowerCase()} in the back.`); }
     if (n) V.supplies[k] = n; else delete V.supplies[k];
   }),
+  // Custom: any supply or material into the back (ten of it, or what the room leaves).
+  "sg-trunk-supadd": (state, ui, el) => editTrunk(state, ui, (V, f, i) => {
+    const k = el.value;
+    if (!openLoads(state) || !openSupplyKeys().includes(k) || V.supplies[k]) return false;
+    const w = SUPPLIES[k] ? SUPPLIES[k].weight || 0 : 0;
+    const n = w > 0 ? Math.min(10, Math.floor((fleetRoom(state, i) - trunkKg(V)) / w)) : 10;
+    if (!(n > 0)) { say(ui, `No room in the back for ${supLabel(k).toLowerCase()}.`); return false; }
+    V.supplies[k] = n;
+  }),
   // A box of rounds of a calibre and type into the back (what the room and START_TRUNK.ROUNDS leave).
-  "sg-trunk-round": (state, ui, el) => editTrunk(state, ui, (V) => {
+  "sg-trunk-round": (state, ui, el) => editTrunk(state, ui, (V, f, i) => {
     const k = el.value;
     if (!k || !ROUND_SUPPLIES[k]) return false;
-    const left = START_TRUNK.ROUNDS - trunkRounds(V), w = ROUND_SUPPLIES[k].weight || 0;
+    const cap = roundsCap(openLoads(state));
+    const left = cap - trunkRounds(V), w = ROUND_SUPPLIES[k].weight || 0;
     let n = Math.min(left, (CALIBERS[ROUND_SUPPLIES[k].round.cal] || { box: 20 }).box);
-    if (w > 0) n = Math.min(n, Math.floor((room(state) - trunkKg(V)) / w));
-    if (!(n > 0)) { if (ui.gearEdit) ui.gearEdit.msg = left > 0 ? "No room in the back for more rounds." : `At most ${START_TRUNK.ROUNDS} rounds in the back.`; return false; }
+    if (w > 0) n = Math.min(n, Math.floor((fleetRoom(state, i) - trunkKg(V)) / w));
+    if (!(n > 0)) { say(ui, left > 0 ? "No room in the back for more rounds." : `At most ${cap} rounds in the back.`); return false; }
     V.supplies[k] = (V.supplies[k] || 0) + n;
   }),
-  // Who pays: the back moves to them (in Hardcore they own the car).
-  "sg-trunk-owner": (state, ui, el) => {
-    if (ui.started || !freeEdit(ui)) return false;
-    const to = state.survivors.find((s) => s.id === Number(el.value));
-    if (!to) return false;
-    const from = vehicleOwner(state);
-    const V = sanitizeStartVehicle(from && from.startVehicle) || { items: [], supplies: {} };
-    for (const s of state.survivors) delete s.startVehicle;
-    to.startVehicle = V;
-    to.startCustom = true;
-    ui.crewEdited = true;
-    return true;
+  // The new-run screen's Starting vehicles: a point limit, on the screen's fleet and the world's (nothing else in the
+  // world changes: no rebuild).
+  "fleet-limit": (state, ui, el) => {
+    if (ui.started || ui.ironman) return false;
+    const i = Number(el.dataset.i), F = uiFleet(state, ui), live = fleetEntry(state, i);
+    if (!F[i] || !live) return false;
+    F[i].limit = live.limit = clampLimit(el.value);
+    el.value = F[i].limit;
+    return false;
+  },
+  // Custom: a vehicle's kind, and how many (the world again: they are made at the hub).
+  "fleet-kind": (state, ui, el) => {
+    if (ui.started || fleetMode(state) !== "custom") return false;
+    const i = Number(el.dataset.i), F = uiFleet(state, ui);
+    if (!F[i] || !fleetKinds().includes(el.value)) return false;
+    F[i].type = el.value;
+    return "fleet";
+  },
+  "fleet-count": (state, ui, el) => {
+    if (ui.started || fleetMode(state) !== "custom") return false;
+    const n = clampFleetCount(el.value);
+    el.value = n;
+    ui.fleet = resizeFleet(uiFleet(state, ui), n);
+    return "fleet";
   },
 };

@@ -2,10 +2,11 @@
 // each kind of window. The rules here are plain functions on plain objects (tools/uitest.js runs them without a
 // browser); ui/windows.js puts them on the page and main.js calls both.
 //
-// Panels: the left panel (tabs), the right panel (tile, team and site info), the log under the map, and three boxes
-// over the map: the alerts, the running orders and the Layers box. Each folds to a slim strip or a small button and
-// comes back with a click, a key ([ ] L, Shift+[ Shift+]) or, when the player picks something it shows, by itself
-// (autoReveal). "Map only" (\) folds them all and the next press puts them back as they were.
+// Panels: the left panel (tabs), the right panel (tile, team and site info), the log under the map, and two boxes
+// over the map: the alerts and the Layers box (the Watching panel has its own fold, ui/watchlist.js). Each folds to a
+// slim strip or a small button and comes back with a click, a key ([ ] L, Shift+]) or, when the player picks
+// something it shows, by itself (autoReveal). The running orders left the map for the left panel's Orders tab
+// (Shift+[; the user's request 2026-10-24). "Map only" (\) folds them all and the next press puts them back as they were.
 // The left panel, the right panel and the log can also be CLOSED (L.shut): nothing of them stays, not even the
 // strip, and the map takes the room. Closed is a step past folded (a closed panel is folded too, so nothing draws
 // it). The ✕ on a folded strip or the panel's button in the top bar (◧ ◨ ⬓) closes it; the same button, a slim tab
@@ -15,7 +16,8 @@
 // corners and moved by its title. Sizes are kept in rem (they grow with the UI size), places in pixels, both clamped
 // to the screen. Remembered per kind of window in the browser (localStorage, failures ignored).
 
-import { OVERLAYS_HELP } from "./overlaydrag.js"; // the boxes over the map move (Help line)
+import { overlaysHelp } from "./overlaydrag.js"; // the boxes over the map move, or stay put on a phone (Help line)
+import { compactUI, phoneUI } from "./responsive.js"; // a phone or an upright tablet: the strip over the map, the drawers (Help by layout)
 
 export const LAYOUT_KEY = "brokenstate.layout";
 export const WINDOWS_KEY = "brokenstate.windows";
@@ -26,11 +28,11 @@ export const PANEL_SIZE = {
   right: { def: 21, min: 14, max: 48 },
   log: { def: 9.5, min: 4, max: 40 },
 };
-export const PANEL_KEYS = ["left", "right", "log", "alerts", "orders", "legend"];
+export const PANEL_KEYS = ["left", "right", "log", "alerts", "legend"];
 // The panels that can be closed completely (the three around the map); their top-bar glyph and name.
 export const SHUT_KEYS = ["left", "right", "log"];
 export const PANEL_NAMES = { left: { glyph: "◧", name: "left panel", tab: "⟩" }, right: { glyph: "◨", name: "right panel", tab: "⟨" }, log: { glyph: "⬓", name: "log", tab: "▴" } };
-export const PANEL_KEYS_HELP = { left: "[", right: "]", log: "L", alerts: "Shift+]", orders: "Shift+[", legend: "", all: "\\" };
+export const PANEL_KEYS_HELP = { left: "[", right: "]", log: "L", alerts: "Shift+]", legend: "", all: "\\" };
 
 // Smallest window, in rem; windows never get bigger than the screen.
 export const WIN_MIN = { w: 22, h: 12 };
@@ -43,8 +45,11 @@ const storage = () => {
 const num = (v, lo, hi) => (Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : null);
 
 // ---------- panels ----------
+// The Layers box starts folded to its tab (the user's request 2026-10-24: "Make layers be automatically collapsed") and
+// so do the alerts ("start them in collapse as well"): a click on the tab opens them, a new urgent alert opens the
+// alerts by itself (autoReveal), and a layout saved in the browser keeps whatever the player did with them.
 export function defaultLayout() {
-  return { left: false, right: false, log: false, alerts: false, orders: false, legend: false, all: null, size: { left: null, right: null, log: null }, shut: { left: false, right: false, log: false } };
+  return { left: false, right: false, log: false, alerts: true, legend: true, all: null, size: { left: null, right: null, log: null }, shut: { left: false, right: false, log: false } };
 }
 // Closed completely (no strip either). A closed panel is folded too.
 export const isShut = (L, p) => !!(L.shut && L.shut[p]);
@@ -150,15 +155,17 @@ export function newDangerAlerts(seen, list) {
 }
 
 // ---------- the boxes over the map: one look ----------
-// The Running orders, the Watching panel, the Layers box and the alerts share a header (icon, title, a count, the
-// fold chevron) and, folded, a slim tab with the same icon, title and count (styles.css .fp-head / .fp-tab). The
-// renderers (ui/expedition.js, ui/watchlist.js, ui/ui.js, main.js) only say what goes in them.
+// The Watching panel, the Layers box and the alerts share a header (icon, title, a count, the
+// fold chevron; on a desktop the bar is the box's drag handle, ui/overlaydrag.js) and, folded, a slim tab with the
+// same icon, title and count (styles.css .fp-head / .fp-tab). The renderers (ui/expedition.js, ui/watchlist.js,
+// ui/ui.js, main.js) only say what goes in them.
 //   icon, title   what the box is
 //   count         a number or short text in a badge (null: none); tone "warn" / "danger" colours it
 //   badges        more badges after it: [{ text, tone, tip }]
 //   action, data  the fold toggle's data-action and other data-* attributes (an object)
 //   tip           the toggle's hover text
 //   extra         buttons of the box's own, on the header's right (open header only)
+//   cls           a class of the box's own on the header or the tab
 const attrEsc = (s) => String(s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 function fpBadges(o) {
   const out = [];
@@ -173,23 +180,25 @@ function fpToggle(o, open, cls) {
 }
 // The header of an open box: the whole title is the fold button.
 export function panelHead(o) {
-  return `<div class="fp-head">${fpToggle(o, true, "fp-toggle")}${o.extra ? `<span class="fp-extra">${o.extra}</span>` : ""}</div>`;
+  return `<div class="fp-head${o.cls ? ` ${o.cls}` : ""}">${fpToggle(o, true, "fp-toggle")}${o.extra ? `<span class="fp-extra">${o.extra}</span>` : ""}</div>`;
 }
 // A folded box: one slim tab.
 export const panelTab = (o) => fpToggle(o, false, `fp-tab${o.cls ? ` ${o.cls}` : ""}`);
 
-// The alerts folded: one tab with the count (red when one of them is a danger), plus the flash line.
+// The alerts folded: the same slim tab as the other boxes, with the count (red when one of them is a danger), plus
+// the flash line. The tab keeps the class al-pill: ui/windows.js watchFolds reads the fold from it.
 export function alertsPill(list, flashHtml = "") {
   const n = (list || []).length;
   const danger = (list || []).some((a) => a && a.tone === "danger");
   if (!n) return flashHtml;
-  return `${flashHtml}<button class="al-pill${danger ? " danger" : ""}" data-action="panel-toggle" data-p="alerts" aria-expanded="false" data-tip="Show the alerts (Shift+])"><span class="fp-ico" aria-hidden="true">🔔</span><span class="fp-title">${n} alert${n === 1 ? "" : "s"}</span><span class="fp-chev" aria-hidden="true">▸</span></button>`;
+  return `${flashHtml}${panelTab({ icon: "🔔", title: "Alerts", count: n, tone: danger ? "danger" : "", cls: `al-pill${danger ? " danger" : ""}`, action: "panel-toggle", data: { p: "alerts" }, tip: "Show the alerts (Shift+])" })}`;
 }
-// The fold button over the alerts when they are open (n: how many, danger: one is urgent).
-export const alertsFoldButton = (n = null, danger = false) => `<button class="al-fold"data-action="panel-toggle" data-p="alerts" aria-expanded="true" data-tip="Fold the alerts away (Shift+])"><span class="fp-ico" aria-hidden="true">🔔</span><span class="fp-title">Alerts</span>${n ? `<span class="fp-badge${danger ? " danger" : ""}">${n}</span>` : ""}<span class="fp-chev" aria-hidden="true">▴</span></button>`;
+// The header over the open alerts stack (n: how many, danger: one is urgent): the same bar as the other boxes, which
+// folds them and, on a desktop, drags the stack (the user's request 2026-10-24: the boxes should move the same way).
+export const alertsFoldButton = (n = null, danger = false) => panelHead({ icon: "🔔", title: "Alerts", count: n || null, tone: danger ? "danger" : "", cls: "al-head", action: "panel-toggle", data: { p: "alerts" }, tip: "Fold the alerts away (Shift+])" });
 
 // The folded left panel's rail: a button per tab (opens the panel on it). The glyphs match the watch list's.
-export const RAIL_TABS = [["bases", "🏠", "Bases", "B"], ["people", "👥", "People", "P"], ["groups", "🏴", "Groups", "G"], ["teams", "🚶", "Teams", "T"]];
+export const RAIL_TABS = [["bases", "🏠", "Bases", "B"], ["people", "👥", "People", "P"], ["groups", "🏴", "Groups", "G"], ["teams", "🚶", "Teams", "T"], ["orders", "📋", "Orders", "Shift+["]];
 
 // ---------- windows ----------
 // The kind of window to remember a size for (the survivor screen is one kind whoever it shows), or "" when this
@@ -248,20 +257,38 @@ export function dragRect(start, dir, dx, dy, vw, vh, rem = 16) {
 }
 
 // The grips around a resizable window (ui/windows.js handles them); built into the modal's HTML by main.js.
+// A window without a title bar of its own (ui/windows.js winBar: the base, survivor and menu windows have one) gets
+// a ✕ in its top right corner that is Esc (main.js "win-close"), so every window closes the same way (the user's
+// request 2026-10-24). Only the kinds Esc simply closes: the windows that need an answer (a card, a raid's plan, a
+// crawl, a trade, loot), the new-run screen and the ones with a Close in their own head (diary, roster, codex,
+// ledger) get none.
 export const GRIPS = ["n", "s", "e", "w", "ne", "nw", "se", "sw"];
+const X_KINDS = new Set(["inv", "teaminv", "teammeet", "teamform", "gunb", "memorial", "why", "skilltree", "radio", "diplo", "route", "caravan", "planner", "volpick", "volreq", "worldcfg", "bgedit", "gearedit", "fleetedit", "zlook", "namebase"]);
 export function windowFrame(html, kind) {
   const key = windowKey(kind);
   if (!html || !key) return html || "";
-  return `<div class="win" data-win="${key}">${html}${GRIPS.map((d) => `<i class="wgrip g-${d}" data-grip="${d}"></i>`).join("")}</div>`;
+  const x = X_KINDS.has(key) && !/class="wx[" ]/.test(html) ? `<button class="wx wx-corner" data-action="win-close" aria-label="Close" data-tip="Close (Esc)">✕</button>` : "";
+  return `<div class="win" data-win="${key}">${html}${x}${GRIPS.map((d) => `<i class="wgrip g-${d}" data-grip="${d}"></i>`).join("")}</div>`;
 }
 
 // ---------- help ----------
+// Help → Windows and panels, in the words of the layout in use (ui/responsive.js): a phone or a tablet held upright
+// has drawers, a dock and the strip over the map; a desktop (and a tablet on its side) the bars, tabs and keys.
 export function windowsHelp() {
+  const windows = phoneUI()
+    ? `<b>Windows:</b> every window fills the screen and scrolls inside; the ✕ at its top right closes it. Sizes and places are a bigger screen's and do not apply here.`
+    : `<b>Windows:</b> the ✕ at the top right of a window closes it (Esc too); drag a window's edges or corners to resize it, and its title bar to move it; double-click the title for its usual size and place. The content scrolls inside, the title bar and tabs staying put. Each kind of window (base, survivor, trade, inventory, planner, menu, diary, roster…) remembers its size and place in this browser; Options → <i>Reset window sizes</i> puts every window and panel back. Sizes follow the UI size.`;
+  if (compactUI()) return `On a phone, or a tablet held upright, the panels around the map are drawers and sheets, and the boxes over the map chips in a strip, so the map keeps the screen.<br><br>
+    <b>Drawers:</b> the dock under the map (☰ Lists, ℹ Info, 📜 Log) opens one drawer at a time, lit while it is open; its button again, the ✕ beside it or a tap on the dimmed map closes it. The count on Lists is how many teams wait for orders.<br><br>
+    <b>The strip over the map:</b> one chip per box, with its count: 🔔 Alerts (red with an urgent one), 👁 Watching (what you pinned and your map notes), 🗺 Layers (how many are on), ▣ Minimap, 🧭 First week while the guide is on. A tap opens that box as a sheet under the strip, one at a time; the chip again, another chip or a tap on the dimmed map closes it. A chip shows only while its box has something in it (nothing pinned: no Watching chip); Options → Display → Minimap off takes the ▣ chip away. Your teams' running orders are the Orders tab in Lists.<br><br>
+    <b>Opening by themselves:</b> when you pick something a closed drawer shows, it opens: a tile, site, base or team tapped on the map, a team opened from a list, an alert: Info; a tab chosen in Lists: Lists. A new urgent alert (red) opens the 🔔 sheet and flashes the chip either way. The log never opens for a new line. Switch the opening off in the menu: Options → <i>Auto-open panels on select</i>.<br><br>
+    ${windows}<br><br>
+    ${overlaysHelp()}`;
   return `The panels around the map fold away to give the map more room, and big windows can be resized and moved.<br><br>
-    <b>Panels:</b> click the slim bar between a panel and the map (⟨ ⟩) to fold it to a strip; click the strip to bring it back. Drag the bar to make the panel wider or narrower (Options → <i>Reset window sizes</i> brings back the usual widths). Keys: <b>[</b> the left panel, <b>]</b> the right panel, <b>L</b> the log, <b>Shift+]</b> the alerts, <b>Shift+[</b> the running orders. The boxes over the map (Running orders, Watching, Layers, the alerts) fold from their header and come back from the slim tab left in their place, which keeps their count. A folded log shows its latest line on its strip; the folded left panel's strip has a button per tab (🏠 Bases, 👥 People, 🏴 Groups, 🚶 Teams, with the number of teams waiting) that opens it on that tab. With the keyboard: Tab to a bar, Enter or Space folds or shows its panel, the arrow keys make it narrower or wider (Shift: by more), Home gives it its usual size.<br><br>
+    <b>Panels:</b> click the slim bar between a panel and the map (⟨ ⟩) to fold it to a strip; click the strip to bring it back. Drag the bar to make the panel wider or narrower (Options → <i>Reset window sizes</i> brings back the usual widths). Keys: <b>[</b> the left panel, <b>]</b> the right panel, <b>L</b> the log, <b>Shift+]</b> the alerts, <b>Shift+[</b> the left panel on its Orders tab (every team out, its current order and progress). The boxes over the map (Watching, Layers, the alerts with the first-week guide under them) fold from their header and come back from the slim tab left in their place, which keeps their count; the Layers box and the alerts start folded, and the guide folded to its next step. A folded log shows its latest line on its strip; the folded left panel's strip has a button per tab (🏠 Bases, 👥 People, 🏴 Groups, 🚶 Teams with the number of teams waiting, 📋 Orders) that opens it on that tab. With the keyboard: Tab to a bar, Enter or Space folds or shows its panel, the arrow keys make it narrower or wider (Shift: by more), Home gives it its usual size.<br><br>
     <b>Closing a panel completely:</b> <b>Alt+[</b>, <b>Alt+]</b> or <b>Alt+L</b>, the ✕ on a folded strip, or the panel's button in the top bar (◧ the left panel, ◨ the right panel, ⬓ the log), closes it with nothing left over, strip and all, and the map takes the room. A closed panel comes back open with the same Alt key or top-bar button (dark while the panel is closed), the slim tab at that edge of the map (⟩ ⟨ ▴), its plain key (<b>[</b> <b>]</b> <b>L</b>), or by itself when you pick something it shows (below). Folded and closed panels are remembered in this browser.<br><br>
     <b>Map only:</b> <b>\\</b> (backslash) or the ▣ button in the top bar folds every panel and box at once; press it again to put them back the way they were. A closed panel stays closed through both.<br><br>
     <b>Opening by themselves:</b> when you pick something a folded or closed panel shows, it opens: a tile, site, base or team clicked on the map, a team opened from a list, an alert or a log link: the right panel; a tab key (B P G T): the left panel; a new urgent alert (red) opens folded alerts, except in map-only mode. The log never opens for a new line. Switch this off in the menu: Options → <i>Auto-open panels on select</i>.<br><br>
-    <b>Windows:</b> drag a window's edges or corners to resize it, and its title to move it; double-click the title for its usual size and place. The content scrolls inside. Each kind of window (base, survivor, trade, inventory, planner, menu, diary, roster…) remembers its size and place in this browser; Options → <i>Reset window sizes</i> puts every window and panel back. Sizes follow the UI size.<br><br>
-    ${OVERLAYS_HELP}`;
+    ${windows}<br><br>
+    ${overlaysHelp()}`;
 }
