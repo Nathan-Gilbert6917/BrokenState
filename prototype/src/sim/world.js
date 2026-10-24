@@ -7,7 +7,7 @@ import { typedFood, addFoodsTo, FOODS, foodIn } from "./foods.js"; // the hub's 
 import { keyWord } from "./water.js"; // supply names in log lines (call-time only: safe in the import cycle)
 import { Rng } from "./rng.js";
 import { pickStart, chosenStart, startNear, isSettlementTile } from "./startpick.js"; // the new-run screen's New start position and Pick start on map
-import { generateMap } from "./mapgen.js";
+import { generateMap, mapCached } from "./mapgen.js";
 import { DEFAULT_SIZE, sizeDef, customDef, isCustom, clampHives, presetKeyFor, clampCustomW, clampCustomH } from "./worldsize.js";
 import { cleanCustom, customSizeDef } from "./custommode.js"; // Custom mode's counts and Start with a vehicle (2026-10-24)
 import { CRASH } from "./crashmode.js"; // Crashlanding (2026-10-24): the forced map size
@@ -146,6 +146,22 @@ export const localId = (state, id) => (typeof id === "number" ? id - (state.idBa
 // A normal start's weapons, handed out in this order (the crew card's Everything draws one again: ui/newgame.js randomizeOne).
 export const START_WEAPONS = ["pistol", "machete", "huntrifle", "knife", "knife", "pistol", "knife", "machete"];
 
+// The size def a world's map is built from (createWorld's options after Crashlanding's are fixed). cust: Custom mode's
+// counts (a normal start with them); mapDef: the size def with them (the map's cities, towns and military sites).
+function worldMapDef({ size = DEFAULT_SIZE, customW = null, customH = null, mode = "normal", custom = null }) {
+  const cust = mode !== "hardcore" && custom ? cleanCustom(custom) : null; // Custom mode: a normal start with these counts
+  // A custom grid that is exactly a preset's is that preset (2026-10-24: Crashlanding's 300 × 200 is the Large preset,
+  // so its groups' default is Large's, not customDef's).
+  const sdef = isCustom(size) ? (presetKeyFor(clampCustomW(customW), clampCustomH(customH)) ? sizeDef(presetKeyFor(clampCustomW(customW), clampCustomH(customH))) : customDef(customW, customH)) : sizeDef(size);
+  return { sdef, cust, mapDef: cust ? customSizeDef(sdef, cust) : sdef };
+}
+// Whether createWorld with these options builds its map from the land kept from an earlier build (mapgen.js MAP_CACHE):
+// the same seed, size and Custom counts. main.js shows no "Generating map…" box for it.
+export function worldMapCached({ seed, crash = false, ...opts }) {
+  if (crash) Object.assign(opts, { mode: "normal", custom: null, size: "custom", customW: CRASH.W, customH: CRASH.H });
+  return mapCached(new Rng(seed).state, worldMapDef(opts).mapDef, seed);
+}
+
 // crew (optional): starting-colonist overrides from the new-run screen, by index:
 // [{ name?, skills?, traits?, budget?, appearance?, gear?, leader? }]. Headless tools leave it out.
 // size: a worldsize.js key (small / normal / large / huge; Normal when left out, the original 64 × 42 map), or
@@ -182,12 +198,9 @@ export const START_WEAPONS = ["pistol", "machete", "huntrifle", "knife", "knife"
 export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SIZE, mode = "normal", customW = null, customH = null, hives = null, crewRoll = null, startPeople = null, customBackgrounds = null, start = null, worldCfg = null, vehicle = true, custom = null, fleet = null, crash = false }) {
   const rng = new Rng(seed);
   if (crash) { mode = "normal"; custom = null; size = "custom"; customW = CRASH.W; customH = CRASH.H; vehicle = false; fleet = []; startPeople = 1; } // Crashlanding (crashmode.js): the map and the start are fixed
-  const cust = mode !== "hardcore" && custom ? cleanCustom(custom) : null; // Custom mode: a normal start with these counts
-  // A custom grid that is exactly a preset's is that preset (2026-10-24: Crashlanding's 300 × 200 is the Large preset,
-  // so its groups' default is Large's, not customDef's).
-  const sdef = isCustom(size) ? (presetKeyFor(clampCustomW(customW), clampCustomH(customH)) ? sizeDef(presetKeyFor(clampCustomW(customW), clampCustomH(customH))) : customDef(customW, customH)) : sizeDef(size);
+  const { sdef, cust, mapDef } = worldMapDef({ size, customW, customH, mode, custom });
   const worldSize = sdef.key;
-  const map = generateMap(rng, cust ? customSizeDef(sdef, cust) : sdef, { hives: cust ? cust.hives : clampHives(hives), seed });
+  const map = generateMap(rng, mapDef, { hives: cust ? cust.hives : clampHives(hives), seed });
   /** @type {State} */
   const state = {
     seed, rng, worldSize, mode: mode === "hardcore" ? "hardcore" : "normal",

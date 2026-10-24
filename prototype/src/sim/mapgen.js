@@ -165,8 +165,41 @@ function makeNoise(rng, w, h, cell) {
 // Custom mode (custommode.js customSizeDef, 2026-10-24, user request): def.customCounts with def.cities, def.towns and
 // def.military as set; what finds no room is skipped (cities may sit closer, down to 8 tiles; bases down to 6), and the
 // 50% extra military base is not added (its die is still cast).
+// The map is built in two steps: landMap (the land, rivers, roads, sites, finds and infection: nearly all the time a
+// build takes) and hivesOnMap (the hives as set, the town rings, the ponds). The user's request 2026-10-24: "When
+// changing a setting in the start menu it loads the map each time. After generating the map cache it and only update
+// the whole map on new seeds and generating new maps": the land is kept (MAP_CACHE) by what decides it (the dice's
+// position, the seed and the size def: the cities, towns and military sites of Custom mode among it), so a setting
+// that leaves it alone (the groups, hives, mode, people, vehicles, crew, start, World dials) builds the world on a
+// copy of it, the dice set where the land left them: the very map and draws an uncached build makes.
 export function generateMap(rng, size = "normal", { hives = null, seed = null } = {}) {
   const def = sizeDef(size);
+  const key = mapKey(rng.state, def, seed);
+  const hit = MAP_CACHE.get(key);
+  let land;
+  if (hit) {
+    MAP_CACHE.delete(key); // the most recent last
+    MAP_CACHE.set(key, hit);
+    land = { ...structuredClone(hit.land), grid: new HexGrid(def.w, def.h) };
+    rng.state = hit.rngState;
+  } else {
+    land = landMap(rng, def, seed);
+    const { grid, ...keep } = land;
+    MAP_CACHE.set(key, { land: structuredClone(keep), rngState: rng.state });
+    while (MAP_CACHE.size > MAP_CACHE_MAX) MAP_CACHE.delete(MAP_CACHE.keys().next().value);
+  }
+  return hivesOnMap(land, rng, def, hives, seed);
+}
+// The lands built lately (oldest first), each { land: landMap's result without its grid, rngState: the dice after it }.
+// A few, not one: switching between two sizes or modes and back builds neither again. A Huge land is some 150,000 tiles.
+const MAP_CACHE = new Map();
+const MAP_CACHE_MAX = 3;
+const mapKey = (rngState, def, seed) => `${rngState}|${seed}|${JSON.stringify(def)}`;
+// Whether a map with these dice, size def and seed is built from the cache (main.js: no "Generating map…" box for it).
+export function mapCached(rngState, size, seed = null) { return MAP_CACHE.has(mapKey(rngState, sizeDef(size), seed)); }
+export function clearMapCache() { MAP_CACHE.clear(); }
+
+function landMap(rng, def, seed) {
   const MAP_W = def.w, MAP_H = def.h;
   const A = areaScale(def); // land relative to Normal
   const scaled = (n) => Math.round(n * A);
@@ -587,6 +620,14 @@ export function generateMap(rng, size = "normal", { hives = null, seed = null } 
     if (t.terrain === "city") t.infection = Math.min(1, t.infection + 0.15);
     else if (t.terrain === "suburb") t.infection = Math.min(1, t.infection + 0.06);
   }
+  return {
+    grid, tiles, mainId: main.id, originId: origin.id, seeds, spotIds,
+    cityIds: cities.map((c) => c.center.id), townIds: towns.map((t) => t.id), militaryIds: military.map((m) => m.id),
+  };
+}
+
+// The hives (as many as set, else the size def's), the town rings and the ponds, on landMap's land.
+function hivesOnMap({ grid, tiles, mainId, originId, seeds, spotIds, cityIds, townIds, militaryIds }, rng, def, hives, seed) {
   // Infestation hives (hives.js): the size def's originHives around the origin (worldsize.js; HIVE.START_ORIGIN, four,
   // for a def without one), one around each other hot spot (HIVE.START_SPOT).
   // The extra hot spots of Large and Huge maps hold a small cluster each (worldsize.js spotHives): hive income
@@ -613,7 +654,8 @@ export function generateMap(rng, size = "normal", { hives = null, seed = null } 
   // the centre's neighbours become suburb blocks. The ring is laid last: the shops, roads, loot, finds, infection and
   // hives above were placed on the old ground. A converted tile takes the suburbs' infection (+0.06) and, bare, at
   // least the suburbs' minor scavenging value.
-  for (const town of towns) {
+  const urbanTile = (t) => t.terrain === "city" || t.terrain === "suburb";
+  for (const town of townIds.map((id) => tiles[id])) {
     const r = 1 + (hash01(seed == null ? `${town.id}:${town.loc.name}` : seed, "townring", town.id) < 0.5 ? 0 : 1);
     for (const id of grid.within(town.id, r)) {
       const t = tiles[id];
@@ -627,8 +669,5 @@ export function generateMap(rng, size = "normal", { hives = null, seed = null } 
 
   pondsOnMap(tiles, seed);
 
-  return {
-    grid, tiles, cityId: main.id, originId: origin.id,
-    cityIds: cities.map((c) => c.center.id), townIds: towns.map((t) => t.id), militaryIds: military.map((m) => m.id), spotIds,
-  };
+  return { grid, tiles, cityId: mainId, originId, cityIds, townIds, militaryIds, spotIds };
 }

@@ -4,7 +4,7 @@ import { togglePeopleIdle, assignIdlePreview } from "./ui/activity.js"; // the P
 import { gearOutdoorWorkers, gearText } from "./sim/tripgear.js"; // the Work now panel's Gear outdoor workers (trips-plus #2)
 import { applyIdlePlan } from "./sim/idlework.js";
 import {
-  createWorld, tickHour, hub, survivorById, baseById, log, day, atBase, factionById, addCard, newId, renameSurvivor, assignStartingRoles, archerCount, ARROWS,
+  createWorld, worldMapCached, tickHour, hub, survivorById, baseById, log, day, atBase, factionById, addCard, newId, renameSurvivor, assignStartingRoles, archerCount, ARROWS,
 } from "./sim/world.js";
 import { GEAR, SUPPLIES, SUPPLY_KEYS } from "./sim/data.js";
 import * as Parties from "./sim/parties.js";
@@ -1345,7 +1345,7 @@ const actions = {
   gift: () => { ui.tradeMsg = giftAll(state); },
   pact: (d) => { const f = factionById(state, state.trade.factionId); ui.tradeMsg = proposePact(state, f, d.k); },
   tradeleave: () => TRADE_ACTIONS.tradeleave(state, ui), // ui/tradewindow.js (the trade window's own handler)
-  reroll: () => gen(() => newWorld(randomSeed())),
+  reroll: () => gen(() => newWorld(randomSeed()), null),
   // New start position (ui/newgame.js): where you start rolled again on the same map and seed (sim/startpick.js), away
   // from where it is now. The crew on screen is carried over as edited (the groups' dice move with the start, and a
   // normal start's colonists come after them); looking at the map stays open so the new spot can be seen.
@@ -1377,7 +1377,7 @@ const actions = {
       } else actions["nr-allcrew"](); // a new seed's crew is the dice's already; this shuffles the gear among them too
       actions.begin();
       if (ui.started) log(state, line, "info");
-    });
+    }, null);
   },
   // New map (the new-run screen): a new seed with the survivors as they are (names, looks, skills, traits, the leader,
   // a Customize build); who they were is kept too, the dice's ones carried as rolled (ui/newgame.js crewWithBackgrounds).
@@ -1386,7 +1386,7 @@ const actions = {
     gen(() => {
       const crew = crewSnapshot(state).map((c, i) => (c.background || !state.survivors[i].background ? c : { ...c, background: state.survivors[i].background, rolled: true }));
       newWorld(randomSeed(), true, { crew, crewRoll: ui.crewRoll, pickRoll: ui.pickRoll });
-    });
+    }, null);
   },
   // Randomize all (ui/newgame.js): in Hardcore the world is built again on the same seed with the new crew roll.
   "nr-allcrew": () => gen(() => { state = randomizeAllCrew(state, ui, (crew, crewRoll, pickRoll) => { newWorld(state.seed, true, { crew, crewRoll, pickRoll }); return state; }); }),
@@ -1448,7 +1448,7 @@ const actions = {
     if (!options.guideSeen) { options.guideSeen = true; saveOptions(options); }
     ui.guide = false;
   },
-  restart: () => gen(() => newWorld(randomSeed())),
+  restart: () => gen(() => newWorld(randomSeed()), null),
   // Victory screen: carry on in the same world (sim/world.js checkGameOver does not end it again for the hives).
   keepplaying: () => { if (state.victory) { state.victoryKept = true; state.gameOver = false; } },
 };
@@ -1691,7 +1691,7 @@ const changeActions = {
   ...Object.fromEntries(Object.entries(TRADE_CHANGE_ACTIONS).map(([k, fn]) => [k, (el) => fn(state, ui, el)])),
   ...Object.fromEntries(Object.entries(DIPLO_CHANGE).map(([k, fn]) => [k, (el) => fn(state, ui, el)])),
   ...Object.fromEntries(Object.entries(VOL_CHANGE).map(([k, fn]) => [k, (el) => fn(state, ui, el)])),
-  seed: (el) => { const seed = cleanSeed(el.value); gen(() => newWorld(seed, true)); },
+  seed: (el) => { const seed = cleanSeed(el.value); gen(() => newWorld(seed, true), seed); },
   factioncount: (el) => { ui.factionCount = clampGroups(ui.worldSize, el.value); gen(() => newWorld(state.seed, true)); },
   // A new world size: the same seed on the new map, with that size's usual number of groups (sim/worldsize.js).
   // Custom (experimental): the width × height below the row, starting from the map on screen.
@@ -1901,7 +1901,13 @@ function newWorld(seed, keepCrew = false, fresh = null) {
 // is drawn again. newWorld itself stays synchronous for the callers that go on after it (pointsLoad, gearRebuild,
 // cardRebuild), so the wrapping is here, at the actions. A handler that reads its box's value or sets ui first does so
 // before gen, so the size shown is the one being built (worldsize, gamemode).
-function gen(fn) { generating(fn, { size: buildSize(), after: () => { dirtyNow = true; refresh(); } }); }
+// seed: the seed fn builds on (null: a new one, rolled inside fn). A map already built on it with these settings' size
+// is kept (sim/mapgen.js MAP_CACHE; the user's request 2026-10-24: "When changing a setting in the start menu it loads
+// the map each time"): the world is built on it at once, with no box.
+function gen(fn, seed = state.seed) {
+  const quick = seed != null && worldMapCached({ ...runOpts(), seed });
+  generating(fn, { size: buildSize(), quick, after: () => { dirtyNow = true; refresh(); } });
+}
 // The map about to be built, for the box: Crashlanding's, the custom width × height, or the preset's.
 function buildSize() {
   const crash = ui.mode === "crash";
@@ -2009,8 +2015,8 @@ const settingsApi = {
   refresh: () => { dirtyNow = true; refresh(false); },
   track: (p) => { pendingIo.add(p); p.finally(() => pendingIo.delete(p)); },
   adopt,
-  newWorld: () => gen(() => newWorld(randomSeed())), // New campaign: under the "Generating map…" box, as every build
-  toTitle: () => gen(() => { newWorld(randomSeed()); showTitle(ui); }), // exit: back to the title screen (ui/title.js)
+  newWorld: () => gen(() => newWorld(randomSeed()), null), // New campaign: under the "Generating map…" box, as every build
+  toTitle: () => gen(() => { newWorld(randomSeed()); showTitle(ui); }, null), // exit: back to the title screen (ui/title.js)
   thumb: thumbnail,
   quit: () => { try { window.close(); } catch { /* not allowed here */ } },
   autosaveInfo: autosaveState,

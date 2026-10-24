@@ -850,6 +850,8 @@ export const LOOK_CHANGE_ACTIONS = {
 // for its frames runs right after it, in order; a request from inside a running fn (Random run's steps) runs at once,
 // the box being up. Headless (no document: the tests) fn runs at once. The spinner turns by a transform animation,
 // which the compositor keeps turning while the main thread builds; the ring stands still under reduce motion.
+// quick (2026-10-24, main.js gen): the map is kept from an earlier build (sim/mapgen.js MAP_CACHE), so fn runs at once
+// with no box, then after() on the next task; behind a build still waiting for its frames it waits its turn as any other.
 let genPending = null; // the fns waiting for the box to paint, in order
 let genRunning = false; // a fn is running under the box
 export function generatingHtml(size) {
@@ -863,9 +865,10 @@ function genBox() {
   return el;
 }
 export const generatingUp = () => !!(genPending || genRunning);
-export function generating(fn, { size = null, after = null } = {}) {
+export function generating(fn, { size = null, after = null, quick = false } = {}) {
   if (typeof document === "undefined" || typeof requestAnimationFrame === "undefined") { fn(); return; }
   if (genRunning) { fn(); return; } // a build inside a build: the box is up already
+  if (quick && !genPending) { fn(); if (after) setTimeout(after, 0); return; } // the map is kept: no box (after() on the next task: a redraw inside the change event that called it would swap the focused box's node mid-blur)
   const box = genBox();
   box.innerHTML = generatingHtml(size);
   box.classList.remove("hidden");
