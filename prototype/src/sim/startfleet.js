@@ -28,6 +28,11 @@
 // - The world: a normal or Custom start's vehicles at the hub, each back unloaded into the hub's armory and stores on day
 //   1 (startgear.js normalStartVehicle); Hardcore's load in place of the dice's back (startgear.js trunkFromPicks).
 // - Ironman: the loads stay as rolled (main.js hands createWorld none).
+// - driver (2026-10-24, user request: "For a new game start for setting vehicles also set which survivor is driving it
+//   with a dropdown of avaliable survivors"): the starting survivor at its wheel, their place in the crew (0: the first;
+//   null: whoever is free, Hardcore's car its owner first, then the crew in order; fleetDrivers). One wheel each: a
+//   survivor picked who is at another's swaps with its driver (ui/startgear.js fleet-driver). seatDrivers puts it on
+//   the vehicle (v.driver: their id), named on the Hardcore start's lines and in the planners' vehicle picker.
 import { VEHICLE_TYPES, RIDER_KG } from "./vehicles.js";
 import { wornLoad } from "./load.js";
 import { sanitizeStartVehicle, trunkKg } from "./startgear.js";
@@ -64,7 +69,7 @@ export const fleetMode = (state) => (isCustomRun(state) ? "custom" : state && st
  * pickup when none; Hardcore's first: null, as the dice roll it). Each its limit, its load (null: as rolled) and empty
  * (no vehicle in the slot). None given: the initial vehicle alone.
  * @param {any} raw @param {string} mode "normal" | "hardcore" | "custom" @param {number} [max]
- * @returns {{ type: string | null, limit: number, load: { items: any[], supplies: Record<string, number> } | null, empty: boolean }[]}
+ * @returns {{ type: string | null, limit: number, load: { items: any[], supplies: Record<string, number> } | null, empty: boolean, driver: number | null }[]}
  */
 export function cleanFleet(raw, mode, max = START_FLEET.COUNT.MAX) {
   const list = Array.isArray(raw) ? raw : [];
@@ -76,7 +81,7 @@ export function cleanFleet(raw, mode, max = START_FLEET.COUNT.MAX) {
     const r = list[i] && typeof list[i] === "object" ? list[i] : {};
     const type = kinds.includes(r.type) ? r.type : mode === "hardcore" && i === 0 ? null : START_FLEET.KIND;
     const empty = !!r.empty;
-    out.push({ type, limit: clampLimit(r.limit), load: r.load && !empty ? sanitizeStartVehicle(r.load, custom) : null, empty });
+    out.push({ type, limit: clampLimit(r.limit), load: r.load && !empty ? sanitizeStartVehicle(r.load, custom) : null, empty, driver: cleanDriver(r.driver, max) });
   }
   return out;
 }
@@ -85,11 +90,16 @@ export function cleanFleet(raw, mode, max = START_FLEET.COUNT.MAX) {
 export function fitFleet(fleet, n, mode) {
   const want = Math.max(START_FLEET.COUNT.MIN, Math.min(START_FLEET.COUNT.MAX, Math.round(n) || START_FLEET.COUNT.MIN));
   const list = cleanFleet(fleet, mode, want);
-  while (list.length < want) list.push({ type: START_FLEET.KIND, limit: START_FLEET.LIMIT, load: null, empty: true });
+  while (list.length < want) list.push({ type: START_FLEET.KIND, limit: START_FLEET.LIMIT, load: null, empty: true, driver: null });
   return list;
 }
 /** The slot's vehicle is the one the riders sit in (Hardcore: the first vehicle there is). @param {any} state @param {number} i */
 export const ridesIn = (state, i) => !!state && state.mode === "hardcore" && Array.isArray(state.fleet) && state.fleet.findIndex((f) => f && f.vid != null) === i;
+/** A driver made safe: a place in the crew below max, else null (whoever is free). @param {any} v @param {number} [max] */
+export function cleanDriver(v, max = START_FLEET.COUNT.MAX) {
+  const n = Number(v);
+  return v != null && v !== "" && Number.isInteger(n) && n >= 0 && n < max ? n : null;
+}
 /** @param {string} mode */
 export const defaultFleet = (mode) => cleanFleet(null, mode);
 // The Vehicles box: the first n kept (at most max, the starting survivors), new ones a pickup with the default limit, as rolled.
@@ -139,6 +149,54 @@ export function fleetName(state, i) {
   }
   return `Vehicle ${i + 1} (${T.name})`;
 }
+// ---------- who drives each one ----------
+/**
+ * The starting survivor at the wheel of each slot's vehicle (null: no vehicle there): one wheel each. The drivers set
+ * first (a place in the crew, f.driver; the first slot to name someone has them), then the rest: Hardcore's car its
+ * owner (whose car it was) when free, every other vehicle the first of the crew not at a wheel, in order.
+ * @param {any} state @param {any} [ownerId] the car's owner (Hardcore; by default state.hardcore.start's)
+ * @returns {any[]}
+ */
+export function fleetDrivers(state, ownerId = state && state.mode === "hardcore" && state.hardcore && state.hardcore.start ? state.hardcore.start.carOwner : null) {
+  const crew = (state && state.survivors) || [], fleet = (state && state.fleet) || [];
+  const out = fleet.map(() => null), taken = new Set();
+  const take = (i, s) => { out[i] = s; taken.add(s); };
+  fleet.forEach((/** @type {any} */ f, /** @type {number} */ i) => { const s = f && f.vid != null && f.driver != null ? crew[f.driver] : null; if (s && !taken.has(s)) take(i, s); });
+  const owner = crew.find((/** @type {any} */ s) => s.id === ownerId);
+  if (owner && !taken.has(owner) && fleet[0] && fleet[0].vid != null && !out[0]) take(0, owner);
+  fleet.forEach((/** @type {any} */ f, /** @type {number} */ i) => { if (!f || f.vid == null || out[i]) return; const s = crew.find((/** @type {any} */ c) => !taken.has(c)); if (s) take(i, s); });
+  return out;
+}
+/** Who drives slot i's vehicle (null: none). @param {any} state @param {number} i */
+export const fleetDriver = (state, i) => fleetDrivers(state)[i] || null;
+/** Each starting vehicle's driver on it (v.driver: their id). @param {any} state @param {any} [ownerId] */
+export function seatDrivers(state, ownerId) {
+  const by = ownerId === undefined ? fleetDrivers(state) : fleetDrivers(state, ownerId);
+  (state.fleet || []).forEach((/** @type {any} */ f, /** @type {number} */ i) => {
+    const v = fleetVehicle(state, i);
+    if (!v) return;
+    if (by[i]) v.driver = by[i].id; else delete v.driver;
+  });
+}
+/**
+ * Put crew place d at slot i's wheel; whoever had them swaps to i's driver. Every vehicle's driver is then set (so
+ * none moves with the next one picked). fleet: the screen's list (ui.fleet), state's the world's (its drivers now).
+ * Returns false when there is nothing to do.
+ * @param {any} state @param {any[]} fleet @param {number} i @param {number} d
+ */
+export function pickDriver(state, fleet, i, d) {
+  const crew = (state && state.survivors) || [];
+  if (!fleet[i] || !state.fleet || !state.fleet[i] || state.fleet[i].vid == null || !crew[d]) return false;
+  const now = fleetDrivers(state).map((s) => (s ? crew.indexOf(s) : null));
+  if (now[i] === d) return false;
+  const j = now.indexOf(d);
+  if (j >= 0) now[j] = now[i];
+  now[i] = d;
+  now.forEach((x, k) => { if (state.fleet[k] && state.fleet[k].vid != null) { state.fleet[k].driver = x; if (fleet[k]) fleet[k].driver = x; } });
+  seatDrivers(state);
+  return true;
+}
+
 /**
  * What is wrong with the loads, for Start: [{ i, name, text }] (a load over its point limit or its room).
  * @param {any} state

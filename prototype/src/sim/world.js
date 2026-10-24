@@ -12,7 +12,7 @@ import { DEFAULT_SIZE, sizeDef, customDef, isCustom, clampHives, presetKeyFor, c
 import { cleanCustom, customSizeDef } from "./custommode.js"; // Custom mode's counts and Start with a vehicle (2026-10-24)
 import { CRASH } from "./crashmode.js"; // Crashlanding (2026-10-24): the forced map size
 import { prepareCrash, setupCrashStart, crashHour } from "./crashstart.js"; // Crashlanding: the crash, the kit, the unit's base and its chain (call-time only)
-import { cleanFleet, fitFleet, START_FLEET } from "./startfleet.js"; // the starting vehicles, their kinds, point limits and loads (2026-10-24)
+import { cleanFleet, fitFleet, seatDrivers, START_FLEET } from "./startfleet.js"; // the starting vehicles, their kinds, point limits and loads (2026-10-24)
 import { FIRST_NAMES, LAST_NAMES, SKILLS, ROLLED_SKILLS, TRAITS, BIRTH_TRAITS, clashIn, GEAR, SUPPLIES, SUPPLY_KEYS, supValue } from "./data.js";
 import { traitDice, swapNewTraits, noteBornTraits, woundMult, traitSkill, traitPower, rollTiers, tidyTiers, cleanTier } from "./traits.js"; // the newer traits: own dice at birth, their rules
 import { sanitizeLibrary } from "./custombg.js";
@@ -356,6 +356,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
 
   const endCrew = crewDice(state, crewRoll); // the crew's own dice, to loadUpAll below
   for (let i = 0; i < people; i++) state.survivors.push(makeSurvivor(state, i === 0 ? 1.3 : 1));
+  seatDrivers(state); // startfleet.js: one of them at each vehicle's wheel (the new-run screen's pick, else in order)
   // Starting gear: a few basics spread among the colonists (a seventh and eighth start with a knife and a machete; Custom
   // mode's ninth and on go round the list again).
   state.survivors.forEach((s, i) => (s.gear.weapon = newItem(START_WEAPONS[i % START_WEAPONS.length], 1, hash01(state.seed, "startdur", i), START_DUR))); // part-worn (inventory.js START_DUR)

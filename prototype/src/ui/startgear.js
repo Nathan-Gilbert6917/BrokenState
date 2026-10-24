@@ -22,7 +22,7 @@ import {
   carryReason, firstFit, misfits, trunkKg, noteDiceKit, gunInfo, gunWith, sanitizeGunMods, pickKey, pickMods, pickN, pickStackMax, openSupplyKeys,
 } from "../sim/startgear.js";
 import { itemPoints, slotPoints, gunPoints, loosePoints, pickPoints, pricePerson, pointsMax, vehiclePoints, suppliesPoints } from "../sim/custompoints.js";
-import { START_FLEET, fleetKinds, cleanFleet, clampLimit, ridesIn, fleetMode, fleetEntry, fleetVehicle, fleetRoom, fleetName, openLoads } from "../sim/startfleet.js"; // the starting vehicles (2026-10-24)
+import { START_FLEET, fleetKinds, cleanFleet, clampLimit, ridesIn, fleetMode, fleetEntry, fleetVehicle, fleetRoom, fleetName, openLoads, fleetDrivers, pickDriver } from "../sim/startfleet.js"; // the starting vehicles (2026-10-24)
 import { startsWithVehicle } from "../sim/custommode.js";
 import { ATTACH, SLOT_NAMES as GUN_SLOT_NAMES, slotsOf, modsFor, fitsSlot, makeMod, takesMods, stripMod } from "../sim/gunmods.js"; // a picked gun's parts
 import { tidyTiers } from "../sim/traits.js";
@@ -115,7 +115,7 @@ const qtyBox = (ui, k, max, t) => `<label class="small"${tip(t)}>× <input type=
 // when the screen has none for it yet (the tools, a fresh screen).
 export function uiFleet(state, ui) {
   const mode = fleetMode(state), live = (state && state.fleet) || [];
-  if (!Array.isArray(ui.fleet) || ui.fleet.length !== live.length) ui.fleet = cleanFleet(live.map((f) => ({ type: f.rolledType ? null : f.type, limit: f.limit, load: f.load, empty: f.empty })), mode); // rolledType: Hardcore's car as the dice rolled it
+  if (!Array.isArray(ui.fleet) || ui.fleet.length !== live.length) ui.fleet = cleanFleet(live.map((f) => ({ type: f.rolledType ? null : f.type, limit: f.limit, load: f.load, empty: f.empty, driver: f.driver })), mode); // rolledType: Hardcore's car as the dice rolled it
   return ui.fleet;
 }
 // One vehicle as the screen shows it: { v, type, name, label, room (kg), hard, open, limit, load (null: as rolled) }.
@@ -156,7 +156,7 @@ export function loadWords(V) {
 // "There are X vehicles slots where X is the number of survivors"; "add a add vehicle button under the rolled vehicle
 // instead of having x slots"). The point limit, the points and the kg, Random, Edit…, Empty and As rolled are under
 // Customize alone (the user's request 2026-10-24: "Remove points left and setting gear in vehicles when no having
-// customize toggled when starting the game"): without it (and in Ironman) a row is its kind and ✕ Remove, the back as
+// customize toggled when starting the game"): without it (and in Ironman) a row is its kind, its Driver and ✕ Remove, the back as
 // rolled (Hardcore's car: what the dice put in it, said in a few words), and main.js runOpts builds the world with
 // every back as rolled; a back set under Customize waits for it to be ticked again.
 export function fleetSection(state, ui) {
@@ -179,6 +179,15 @@ export function fleetSection(state, ui) {
         <span class="small muted"${tip(`Vehicles at the start, of the most there may be: one a starting survivor (${max})`)}>${used} of ${max}</span>
       </div>`;
   };
+  // Who drives it (the user's request 2026-10-24: "also set which survivor is driving it with a dropdown of avaliable
+  // survivors"): the crew not at another vehicle's wheel, and under them the ones who are (picking one swaps the two).
+  const crew = state.survivors || [], drivers = fleetDrivers(state);
+  const driverSel = (i) => {
+    const me = drivers[i], opt = (s, at) => `<option value="${crew.indexOf(s)}" ${s === me ? "selected" : ""}>${esc(s.name)}${at >= 0 ? ` (at ${carSlot(state, at) ? "the car" : `Vehicle ${at + 1}`})` : ""}</option>`;
+    const free = crew.filter((s) => s === me || !drivers.includes(s)), busy = crew.filter((s) => s !== me && drivers.includes(s));
+    const t = `Who drives ${fleetName(state, i)}: one of the starting survivors, one at each wheel. The list is the ones not driving another vehicle; picking one under "Swap with" trades drivers with theirs`;
+    return `<label${tip(t)}>Driver <select data-action="fleet-driver" data-i="${i}"${ui.started ? " disabled" : ""}>${free.map((s) => opt(s, -1)).join("")}${busy.length ? `<optgroup label="Swap with">${busy.map((s) => opt(s, drivers.indexOf(s))).join("")}</optgroup>` : ""}</select></label>`;
+  };
   const rows = state.fleet.map((f, i) => {
     const info = fleetInfo(state, i);
     if (!info) return i === firstFree ? addRow(i) : ""; // a free slot: the button in the first one's place, the rest nothing
@@ -198,6 +207,7 @@ export function fleetSection(state, ui) {
       const dice = hasDice(state, i) ? `<span class="small muted"${tip(`As rolled: ${loadWords(shownLoad(state, i))}. Tick Customize to set its back`)}>as rolled</span>` : "";
       return `<div class="row nrveh" style="gap:0.35rem;align-items:center;margin-top:0.25rem">
         ${kind}
+        ${driverSel(i)}
         ${remove}
         ${dice}
       </div>`;
@@ -207,6 +217,7 @@ export function fleetSection(state, ui) {
     const what = rolled ? (hasDice(state, i) ? `As rolled: ${loadWords(V)}` : "Empty") : loadWords(f.load);
     return `<div class="row nrveh" style="gap:0.35rem;align-items:center;margin-top:0.25rem">
         ${kind}
+        ${driverSel(i)}
         <label${tip(`${info.label}'s point limit: what its back may cost (${START_FLEET.MIN}–${START_FLEET.MAX}, ${START_FLEET.LIMIT} by default). Its own, nobody's points${iron ? ". Ironman: the backs stay as rolled" : ""}`)}>Point limit <input type="number" min="${START_FLEET.MIN}" max="${START_FLEET.MAX}" step="${START_FLEET.STEP}" style="width:4.5rem" data-action="fleet-limit" data-i="${i}" value="${f.limit}"${dis}></label>
         ${bar}
         <button class="mini" data-action="fleet-rand" data-i="${i}"${dis}${tip(`Empty its back, then fill it with random things and supplies${info.open ? " (any thing and any material)" : ""} up to its point limit (${f.limit}) in the room there is (${info.room} kg). Each click is a new draw`)}>🎲 Random</button>
@@ -825,6 +836,12 @@ export const SG_CHANGE = {
     F[i].limit = live.limit = clampLimit(el.value);
     el.value = F[i].limit;
     return false;
+  },
+  // Its driver (a place in the crew; one at another wheel swaps with this one's: sim/startfleet.js pickDriver). The world
+  // again, so Hardcore's start lines name them.
+  "fleet-driver": (state, ui, el) => {
+    if (ui.started) return false;
+    return pickDriver(state, uiFleet(state, ui), Number(el.dataset.i), Number(el.value)) ? "fleet" : false;
   },
   // A vehicle's kind (any; Hardcore's car: "" as rolled; a free slot takes one too, as fleet-add does). The world again:
   // they are made with it.
