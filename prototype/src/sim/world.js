@@ -24,6 +24,7 @@ function radioBasesInRange(state, tileId, extra = 0) {
 }
 import { createFactions, factionsDaily, recomputeOwnership } from "./factions.js";
 import { movePartiesHour, clockFrac, setClockFrac, reportsLive, unheardEnvoy } from "./parties.js";
+import { detachHour } from "./detach.js"; // some of a team out on jobs of their own
 import { envoyLostQuiet } from "./envoys.js"; // an envoy dying out of radio coverage: heard of only when overdue (call-time only)
 import { fieldSight, fieldworksHour, fieldworksDaily } from "./fieldworks.js"; // field works outside the bases
 import { hordesHour, hordesDaily } from "./hordes.js";
@@ -1037,6 +1038,7 @@ function hourOfWorld(state) {
   skillsHour(state); // skills.js: travel XP, Pathfinder's pace
   foodMarkAll(state, "player"); // foodlog.js: what was traded, packed or unloaded between the hours
   movePartiesHour(state);
+  detachHour(state); // detach.js: some of a team back from a job rejoin it
   foodMarkAll(state, "team"); // teams home and setting out
   campsHour(state); // staging.js: camps (neglect, the hub among them) and the shelters' fires
   needsHour(state); // needs.js: hunger and thirst at bases and on errands (teams eat in movePartiesHour), teams' treats

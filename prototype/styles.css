@@ -226,6 +226,10 @@ body.fold-left #gut-left .gut-shut, body.fold-right #gut-right .gut-shut, body.f
 #ctxmenu button.tcmode { display: inline-block; width: auto; margin: 0.35rem 0.5rem 0; padding: 0.15rem 0.5rem; border: 1px solid var(--line); border-radius: 6px; font-size: 0.8rem; }
 #ctxmenu button.tcmode.active { border-color: var(--accent); color: var(--accent); }
 #ctxmenu div.tcmode { padding: 0.25rem 0.5rem 0; }
+/* Who does it (ui/teamctx.js whoHtml): a chip a person, lit when picked */
+#ctxmenu .tcwhorow { padding: 0.3rem 0.5rem 0; display: flex; flex-wrap: wrap; gap: 0.25rem; align-items: center; }
+#ctxmenu button.tcwho, #ctxmenu .tcwhorow button { display: inline-block; width: auto; padding: 0.1rem 0.45rem; border: 1px solid var(--line); border-radius: 6px; font-size: 0.8rem; color: var(--muted); }
+#ctxmenu button.tcwho.active { border-color: var(--accent); color: var(--accent); }
 #ctxmenu button.tcfold { margin-top: 0.2rem; border-top: 1px solid var(--line); border-radius: 0; color: var(--muted); font-size: 0.85rem; }
 /* The item right-click menu (ui/itemmenu.js): over the windows, under the hover tips. A row: what it does, and on the
    right its cost in a fight (or the rounds to hand); greyed out rows say why in their tip. */

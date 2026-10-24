@@ -13,6 +13,7 @@
 import { partyTile, tileLabel, partyMembers } from "../sim/parties.js";
 import { collectInfo, COLLECT } from "../sim/carry.js";
 import { landEstimate, landEstimates, isLandJob, LAND_VERB, LAND_HOURS, clampHours } from "../sim/landest.js";
+import { subTeam, isSome } from "../sim/detach.js"; // some of the team picked to do it (ui/teamctx.js): their gear and skills
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -34,8 +35,10 @@ export function askLand(state, ui, d, o) {
 // The box's model (the tools read it): the estimate for the hours set, the other lengths, the quantity's limits.
 export function landModel(state, ui) {
   const a = ui.landAsk;
-  const p = a && state.parties.find((x) => x.id === Number(a.d.id));
-  if (!p) return null;
+  const team = a && state.parties.find((x) => x.id === Number(a.d.id));
+  if (!team) return null;
+  const who = a.d.who ? String(a.d.who).split(",").map(Number) : null;
+  const p = who && isSome(state, team, who) ? subTeam(state, team, who, a.type) : team; // only those picked, with what they take along
   const opts = { tile: a.tile, startHour: a.startHour };
   const info = COLLECT[a.type] ? collectInfo(state, p, a.type) : null;
   const qty = info && a.qty != null ? Math.max(0, Math.min(info.max, Math.floor(a.qty))) : null;

@@ -109,6 +109,7 @@ import { waterIn, drawWater, waterText, teamWaterIn, takeTeamWater, stockHas, ta
 import { partySaw } from "./groupworld.js"; // a group learns your bases its parties pass
 import { lyingFor, INTEL } from "./intel.js"; // a gang that overheard a group's caravan waits for it
 import { withLook, surveyErr, noteLook } from "./intelnotes.js"; // what a team sees of a group's base (the State Map's estimates, intelest.js)
+import { detachProblem } from "./detach.js"; // some of a team out on a job: the team stays (call-time only: safe in the import cycle)
 import { KEY_KINDS, keyKg } from "./carry.js"; // a capped water or wood task counts its own haul (call-time only: safe in the import cycle)
 import { nomadCampAt, nomadCampArrive } from "./nomads.js"; // a nomad camp you spotted: attack it (call-time only)
 import { unpackPerson } from "./supitems.js"; // supplies carried as items, unpacked at home (call-time only: safe in the import cycle)
@@ -1858,6 +1859,8 @@ export function awaitOrders(state, p, text, opts = {}) {
   // When it checks in for orders, the team reports what it has spotted (the full map update waits for its return).
   mergeSpots(state, p.spotted);
   if (finished && !opts.hold && continueQueue(state, p, text)) return;
+  // Some of a team out on a job (detach.js): no orders card; they rejoin their team (detachHour).
+  if (p.detachOf != null) { p.detachDone = true; if (text) log(state, `${teamName(state, p)}: ${text}`, "info"); return; }
   if (opts.quiet === "log") { log(state, `${teamName(state, p)} reached ${tileLabel(state, tile)} and waits for orders.`, "info"); return; }
   const card = opts.card ? opts.card(state, p) : ordersCard(state, p, text, doneLabel, opts.title);
   if (opts.quiet === "tray") card.quietArrival = true;
@@ -1896,6 +1899,8 @@ export function giveOrder(state, p, mission) {
 /** @param {State} state @param {Party} p @param {number} tile */
 export function orderMove(state, p, tile) {
   if (envoyLocked(p)) return ENVOY_LOCKED; // envoys.js: locked to its errand
+  const out = detachProblem(state, p); // detach.js: some of its people are out on a job
+  if (out) return out;
   if (tile === partyTile(p) && !(onTheMove(p) && (p.progress || 0) > 0)) return "The team is already there."; // part-way along a step: it walks back
   if (p.phase === "task" && p.task?.afloat) return "The team is out on the water. Give the order once it lands.";
   if (!planPath(state, partyTile(p), tile, p.vehicle)) return p.vehicle ? "The vehicle cannot get there. Leave it or pick another tile." : "No route there over land. Water in the way? Build a boat from the shore (team panel).";
@@ -2408,6 +2413,8 @@ function cullCard(state, p, horde) {
 export function startReturn(state, p) {
   if (wipeIfEmpty(state, p)) return "That team is gone.";
   if (envoyLocked(p) && !p.envoyBack) return ENVOY_LOCKED; // envoys.js: it turns for home only with the answer
+  const out = detachProblem(state, p); // detach.js: not without its people out on a job
+  if (out) return out;
   const known = reportsLive(p) || p.phase === "waiting" || p.phase === "task"; // ordered home by you, not on its own
   const home = baseById(state, p.homeBaseId) || hub(state);
   if (!home) { // no base left at all (conquest.js): the team stays on the road until it founds or takes one

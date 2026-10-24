@@ -8,7 +8,7 @@ import { teamFoodHtml } from "./food.js"; // the team's food by kind
 import { SUPPLIES, SUPPLY_KEYS, STOCK_KEYS, SKILL_NAMES, TRAITS } from "../sim/data.js";
 import { traitChips } from "./traitpick.js"; // trait chips: coloured by kind, the tier
 import { skill, gearEffect, baseById, hub } from "../sim/world.js";
-import { MISSIONS, STANCES, partyMembers, partyCapacity, cargoLoad, poolLoad, bodyLoad, partyLoad, partyPace, tileLabel, partyTile, orderOptions, carried, cargoRoom, clockFrac, clockText, clockAt, plannedArrival } from "../sim/parties.js";
+import { MISSIONS, STANCES, teamName, partyMembers, partyCapacity, cargoLoad, poolLoad, bodyLoad, partyLoad, partyPace, tileLabel, partyTile, orderOptions, carried, cargoRoom, clockFrac, clockText, clockAt, plannedArrival } from "../sim/parties.js";
 import { partyVehicle, partyVehicles, partyFleet, tank, isBike, vehicleLabel, upgradeText, upgradeEffects, seatsOf, MAX_VEHICLES } from "../sim/vehicles.js";
 import { bandName } from "../sim/load.js";
 import { loadRows, carLine, paceLine, BANDS_HELP } from "./loadview.js";
@@ -35,7 +35,8 @@ import { gaugeRows, treatsRow, needsEffectText, teamNeedsBlock, foodOnThem, team
 import { forageInfo, forageProblem, landFoodOptions, FORAGE } from "../sim/foraging.js";
 import { woodInfo, woodProblem, WOOD } from "../sim/woodcutting.js";
 import { stoneAbundance, stoneProblem, stoneWord } from "../sim/stone.js"; // Gather stone (the user's request 2026-10-23)
-import { landEstimate } from "../sim/landest.js"; // the land order box's estimate (ui/landorder.js)
+import { landEstimate } from "../sim/landest.js";
+import { detachments, detachText } from "../sim/detach.js"; // some of the team out on jobs of their own // the land order box's estimate (ui/landorder.js)
 import { canClaim, claimOwner, wellProblem, wellYield, CLAIM } from "../sim/claims.js"; // land claims and wells on them
 import { statusIcons } from "./status.js"; // low mood, starving, thirsty, low health, infected, sick
 import { watchlistPin } from "./watchlist.js"; // 📌 pin the team to the Watching panel
@@ -207,9 +208,22 @@ export function renderExpedition(state, ui, p) {
       ${ui.xpMsg ? `<div class="result small" style="margin-top:0.4rem">${esc(ui.xpMsg)}</div>` : ""}
     </div>`;
 
-  return head + camp + status + teamUpkeepCard(state, p) + actions + teamCarryCard(state, ui, p) + teamVolBlock(state, p) +
+  return head + camp + status + detachCard(state, p) + teamUpkeepCard(state, p) + actions + teamCarryCard(state, ui, p) + teamVolBlock(state, p) +
     `<h3>People (${members.length})</h3>${teamNeedsBlock(state, p, true)}${members.map((m) => memberCard(state, p, m, true, queueing)).join("")}` +
     suppliesBlock(state, p) + vehicleBlock(state, p, v);
+}
+
+// Some of the team out on jobs of their own (sim/detach.js, the user's request 2026-10-24): who, doing what, and Call
+// back; on such a detachment's own panel, the team it rejoins.
+function detachCard(state, p) {
+  const back = (q) => `<button class="mini" data-action="xp-callback" data-id="${q.id}"${tip("Stop the job: they come back to the team (with what they have so far)")}>Call back</button>`;
+  if (p.detachOf != null) {
+    const team = state.parties.find((x) => x.id === p.detachOf);
+    return team ? `<div class="card small"${tip("Out from their team on a job of their own: done, they go back to it and are one team again")}><div class="spread"><span>Out from ${esc(teamName(state, team))}: back to it when done.</span>${back(p)}</div></div>` : "";
+  }
+  const out = detachments(state, p);
+  if (!out.length) return "";
+  return `<div class="card small"${tip("Some of the team out on jobs of their own (picked in the map's right-click menu): the team cannot move until they are back")}><b>Out on jobs</b>${out.map((q) => `<div class="spread"><span>${esc(detachText(state, q))}</span>${back(q)}</div>`).join("")}<div class="muted">The team cannot move until they are back.</div></div>`;
 }
 
 // The weather where the team is and what it does to its pace (sim/weather.js); the ETAs above already include it.

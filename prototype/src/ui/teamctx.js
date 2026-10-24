@@ -49,6 +49,8 @@ import { siteMissions } from "./ui.js";
 import { cartOf, cartRouteWear } from "../sim/carts.js"; // a cart pushed on foot: what the way wears it
 import { ask } from "./confirm.js";
 import { isLandJob, clampHours } from "../sim/landest.js"; // the land order box (ui/landorder.js): its hours and how much
+import { MOVES, detachments, detachProblem, detachText, subTeam, isSome, detach } from "../sim/detach.js"; // who does it: some of the team (the user's request 2026-10-24)
+import { standProblem } from "../sim/teammeet.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -121,11 +123,25 @@ export function queueAhead(state, p) {
 }
 
 // ---------- the model ----------
+// Who can be picked to do an order (the user's request 2026-10-24): a team of two or more standing on its tile, in
+// touch; its people out on jobs are listed apart (not free). null: no picker (one person, or the team is busy).
+function whoPick(state, p, cmd) {
+  const people = partyMembers(state, p);
+  if (!cmd || people.length < 2 || standProblem(state, p)) return null;
+  return { people, out: detachments(state, p) };
+}
+
 /**
  * @param {State} state @param {any} ui @param {Party} p @param {number} tile
- * @param {{ append?: boolean }} [opts]
+ * @param {{ append?: boolean, who?: number[] | null }} [opts] who: the people picked to do it (some of the team: they go
+ *   off on their own, sim/detach.js; null or all of them: the team)
  */
-export function teamTileMenu(state, ui, p, tile, { append = false } = {}) {
+export function teamTileMenu(state, ui, p, tile, { append = false, who = null } = {}) {
+  const team = p;
+  const pick = whoPick(state, team, commandable(state, team));
+  const some = !!pick && isSome(state, team, who);
+  if (some) { p = subTeam(state, team, who); append = false; } // the menu as those people would go: their reasons, their times
+  const outWhy = some ? "" : detachProblem(state, team); // some of its people out on a job: the team cannot move
   const t = state.tiles[tile];
   const forced = busyOnSite(p);
   if (forced) append = true;
@@ -142,7 +158,8 @@ export function teamTileMenu(state, ui, p, tile, { append = false } = {}) {
   // An item: seq, the orders on the tile; move: go there first (the travel above); special: done at once in the UI.
   const add = (group, key, label, seq, { why = "", hint = "", move = true, special = null, task, open = false } = {}) => {
     const needMove = move && !here && !special;
-    const disabled = (!cmd ? NO_RADIO : "") || (needMove ? travel.why : "") || why || null;
+    const moves = needMove || seq.some((o) => MOVES.has(o.type));
+    const disabled = (!cmd ? NO_RADIO : "") || (moves ? outWhy : "") || (needMove ? travel.why : "") || why || null;
     const job = task !== undefined ? task : special ? 0 : taskHours(state, p, move ? tile : from, seq); // go home: from where the team is
     items.push({ group, key, label, seq, move: needMove, special, hint, disabled, travel: needMove ? travel.hours : 0, task: job, open, ahead });
   };
@@ -304,12 +321,12 @@ export function teamTileMenu(state, ui, p, tile, { append = false } = {}) {
 
   const travelText = water ? "" : here ? (append ? "where its queue ends" : "here") : travel.hours == null ? "no route" : `~${hrsText(travel.hours)} away${travel.wear > 0 ? ` (this route costs the carts ~${Math.round(travel.wear)} wear)` : ""}`;
   const head = {
-    name: `Team: ${partyMembers(state, p).map((s) => s.name.split(" ")[0]).join(", ")}`,
+    name: some ? `${partyMembers(state, p).map((s) => s.name.split(" ")[0]).join(", ")} (from the team of ${partyMembers(state, team).length})` : `Team: ${partyMembers(state, p).map((s) => s.name.split(" ")[0]).join(", ")}`,
     situation: [v ? v.name : "on foot", cmd ? orderLabel(state, p) : "out of radio contact", travelText].filter(Boolean).join(" · "),
     tile: tileLabel(state, tile),
     water,
   };
-  return { p, tile, append, forced, cmd, head, items, allOpen: standing };
+  return { p: team, sub: some ? p : null, who: some ? who.map(Number) : null, pick, tile, append, forced, cmd, head, items, allOpen: standing };
 }
 
 // The team panel's orders on the spot (ui/expedition.js) the menu does not show above: the other lengths of a sweep and
@@ -388,14 +405,24 @@ export function teamCtxHtml(state, ui, m) {
     group = it.group;
     const h = itemHours(it);
     const why = it.disabled ? `${it.label}: ${it.disabled}` : [it.hint, it.move ? `First the team travels to ${m.head.tile}${it.travel != null ? ` (~${hrsText(it.travel)})` : ""}.` : ""].filter(Boolean).join(" ");
-    return `${g}<button class="tcitem" data-action="tc-do" data-id="${m.p.id}" data-tile="${m.tile}" data-key="${esc(it.key)}" data-mode="${mode}" ${it.disabled ? "disabled" : ""}${tip(why)}><span>${esc(it.label)}</span>${h ? `<span class="tch">${esc(h)}</span>` : ""}</button>`;
+    return `${g}<button class="tcitem" data-action="tc-do" data-id="${m.p.id}" data-tile="${m.tile}" data-key="${esc(it.key)}" data-mode="${mode}"${m.who && !it.special ? ` data-who="${m.who.join(",")}"` : ""} ${it.disabled ? "disabled" : ""}${tip(why)}><span>${esc(it.label)}</span>${h ? `<span class="tch">${esc(h)}</span>` : ""}</button>`;
   };
   const rows = m.items.filter((it) => it.group !== ALL).map(row).join("");
   group = ALL; // the fold's button heads its rows
   const all = m.items.filter((it) => it.group === ALL);
   const fold = `${m.allOpen ? `<div class="tcgroup small muted"${tip(GROUP_TIP[ALL])}>All orders</div>` : `<button class="tcfold" data-action="tc-all"${tip(GROUP_TIP[ALL])}>${all.length ? "▾" : "▸"} All orders</button>`}${all.map(row).join("")}`;
   const none = m.head.water && !m.items.some((it) => it.group === "Go") ? `<div class="small muted" style="padding:0.3rem 0.5rem">Open water: teams cross it by boat from a shore next to it</div>` : "";
-  return `<div class="tchead"><div class="head">${esc(m.head.name)}</div><div class="small muted">${esc(m.head.situation)}</div><div class="small">→ ${esc(m.head.tile)}</div>${toggle}</div>${rows}${none}${fold}`;
+  return `<div class="tchead"><div class="head">${esc(m.head.name)}</div><div class="small muted">${esc(m.head.situation)}</div><div class="small">→ ${esc(m.head.tile)}</div>${m.who ? "" : toggle}${whoHtml(state, m)}</div>${rows}${none}${fold}`;
+}
+// Who does it (the user's request 2026-10-24): a chip a person free on the team (all lit: the team does it), the ones out
+// on a job of their own listed apart. Picking some of them sends them off on their own (sim/detach.js).
+function whoHtml(state, m) {
+  if (!m.pick) return "";
+  const on = new Set(m.who || m.pick.people.map((s) => s.id));
+  const chips = m.pick.people.map((s) => `<button class="mini tcwho${on.has(s.id) ? " active" : ""}" data-action="tc-who" data-id="${m.p.id}" data-sid="${s.id}"${tip(`${on.has(s.id) ? "Leave out" : "Add"} ${s.name}: whoever is picked does the order${m.who ? "; the rest stay with the team" : ""}`)}>${on.has(s.id) ? "✓ " : ""}${esc(s.name.split(" ")[0])}</button>`).join("");
+  const all = m.who ? `<button class="mini" data-action="tc-who" data-id="${m.p.id}" data-sid=""${tip("The whole team does it")}>All</button>` : "";
+  const out = m.pick.out.map((q) => `<div class="small muted" style="padding:0.15rem 0.5rem 0"${tip("Out on a job of their own: they come back to the team when it is done (the team panel: Call back)")}>Out: ${esc(detachText(state, q))}</div>`).join("");
+  return `<div class="tcwhorow small"${tip("Who does the order: pick some of the team and they go off and do it on their own while the rest stay (the team cannot move until they are back); all of them, and the team does it.")}><span class="muted">Who:</span> ${chips}${all}</div>${m.who ? `<div class="small muted" style="padding:0.15rem 0.5rem 0">${esc(partyMembers(state, m.sub).map((s) => s.name.split(" ")[0]).join(", "))} go off on their own; the rest stay.</div>` : ""}${out}`;
 }
 
 // ---------- doing it ----------
@@ -439,11 +466,13 @@ function replaceOrders(state, p, tile, it) {
 export function landPick(state, ui, d) {
   const p = state.parties.find((q) => q.id === Number(d.id));
   if (!p) return null;
-  const m = teamTileMenu(state, ui, p, Number(d.tile), { append: d.mode === "append" });
+  const m = teamTileMenu(state, ui, p, Number(d.tile), { append: d.mode === "append", who: whoOf(d) });
   const it = m.items.find((x) => x.key === d.key);
   const o = it && !it.disabled ? it.seq.find((x) => isLandJob(x.type)) : null;
-  return o ? { type: o.type, hours: o.hours, tile: Number(d.tile), startHour: state.hour + (it.ahead || 0) + (it.travel || 0) } : null;
+  return o ? { type: o.type, hours: o.hours, tile: Number(d.tile), startHour: state.hour + (it.ahead || 0) + (it.travel || 0), who: m.who } : null;
 }
+// The people picked to do it (d.who: "3,7"), or null.
+const whoOf = (d) => (d && d.who ? String(d.who).split(",").filter(Boolean).map(Number) : null);
 // The item with the box's hours and quantity (d.hours, d.qty) on its land job.
 function withLand(it, d) {
   if (!(d.hours || (d.qty != null && d.qty !== "")) || !it.seq.some((o) => isLandJob(o.type))) return it;
@@ -461,11 +490,17 @@ export function runTeamAction(state, ui, d, acts = {}) {
   const p = state.parties.find((q) => q.id === Number(d.id));
   if (!p) return "That team is gone.";
   const tile = Number(d.tile);
-  const m = teamTileMenu(state, ui, p, tile, { append: d.mode === "append" });
-  const it0 = m.items.find((x) => x.key === d.key);
+  let m = teamTileMenu(state, ui, p, tile, { append: d.mode === "append", who: whoOf(d) });
+  let it0 = m.items.find((x) => x.key === d.key);
+  if (it0 && it0.special && m.who) { m = teamTileMenu(state, ui, p, tile, { append: d.mode === "append" }); it0 = m.items.find((x) => x.key === d.key); } // the team's own (its inventory, its fire …)
   if (!it0) return "That is not possible there any more.";
   if (it0.disabled) return `${it0.label}: ${it0.disabled}`;
   const it = withLand(it0, d);
+  // Some of the team picked (sim/detach.js): they split off and do it; the rest stay. A plain move leaves them there.
+  if (m.who) {
+    const job = it.seq.find((o) => o.type !== "move") || null;
+    return detach(state, p, m.who, (q) => replaceOrders(state, q, tile, it), { type: job && job.type, job: !!job }).text;
+  }
   if (it.special === "drop" || it.special === "load" || it.special === "inventory") {
     if (acts["ti-open"]) acts["ti-open"]({ id: p.id, tab: it.special === "inventory" ? "team" : it.special });
     return "";

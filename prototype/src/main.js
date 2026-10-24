@@ -76,7 +76,8 @@ import { TEAMMEET_ACTIONS, TEAMMEET_CHANGE } from "./ui/teammeet.js"; // teams t
 import { toggleFleetIds, leadId } from "./ui/fleetpick.js"; // the planners' vehicle picker (up to four)
 import { TEAMFORM_ACTIONS, TEAMFORM_CHANGE, teamFormDrop, teamFormKey, teamFormEsc, formTeamCtx } from "./ui/teamform.js"; // Form a team at a base; Edit team
 import { CARRY_ACTIONS, CARRY_CHANGE, carryHtml, askQty, carryKey } from "./ui/carry.js"; // supplies in pockets, packs and arms; the ground; how much to collect
-import { LAND_ACTIONS, LAND_CHANGE, landHtml, askLand, landKey } from "./ui/landorder.js"; // Forage, Hunt, Fish, Cut wood, Gather stone: how many hours, and what they would bring
+import { LAND_ACTIONS, LAND_CHANGE, landHtml, askLand, landKey } from "./ui/landorder.js";
+import { callBack } from "./sim/detach.js"; // some of a team out on a job of their own: Call back // Forage, Hunt, Fish, Cut wood, Gather stone: how many hours, and what they would bring
 import { renameBase } from "./sim/basenames.js";
 import { BN_ACTIONS, BN_INPUT, bnKey, nameModalUp } from "./ui/basename.js"; // naming a base you found, renaming any base
 import { CS_ACTIONS, siteViewDue } from "./ui/campsite.js"; // the camp's spot on its tile's 500 × 500 map, in the isometric view
@@ -1078,6 +1079,7 @@ const actions = {
     centerOn(state, ui.moveQueue ? queueEndTile(state, p) : partyTile(p));
   },
   "xp-stop": (d) => { const p = partyById(d.id); if (p) ui.xpMsg = stopTask(state, p); },
+  "xp-callback": (d) => { const q = partyById(d.id); if (q) { ui.xpMsg = callBack(state, q); log(state, ui.xpMsg, "info"); } }, // sim/detach.js: some of a team out on a job, back now
   "xp-resume": (d) => { const p = partyById(d.id); if (p) ui.xpMsg = resumeQueue(state, p); },
   "xp-unqueue": (d) => {
     const p = partyById(d.id);
@@ -2238,6 +2240,7 @@ function mapMenu(x, y, shift) {
   view.selected = id;
   ctxAt = { tile: id, x: x - r.left, y: y - r.top };
   ui.tcAppend = !!shift;
+  ui.tcWho = null; // who does it (ui/teamctx.js): the whole team until some are picked
   showCtx();
 }
 // A finger on the map (ui/touch.js): a drag pans, two fingers pinch the zoom about their midpoint, a tap is the left
@@ -2415,7 +2418,7 @@ function showCtx() {
       (acts.length ? hubHtml : `<div class="small muted" style="padding:0.3rem 0.5rem">${none}</div>`);
   } else {
     const rest = ctxTeams(waiting.filter((p) => p !== sel), id) + hubHtml;
-    menu.innerHTML = teamCtxHtml(state, ui, teamTileMenu(state, ui, sel, id, { append: !!ui.tcAppend })) +
+    menu.innerHTML = teamCtxHtml(state, ui, teamTileMenu(state, ui, sel, id, { append: !!ui.tcAppend, who: ui.tcWho && ui.tcWho.pid === sel.id ? ui.tcWho.ids : null })) +
       (rest ? `<button class="tcfold" data-action="tc-more" data-tip="Other teams you are in touch with, and teams sent from the hub">${ui.ctxMore ? "▾" : "▸"} Other teams and the hub</button>${ui.ctxMore ? rest : ""}` : "") +
       ctxWatchlist(state, id) + formTeamCtx(state, id);
   }
@@ -2463,6 +2466,17 @@ Object.assign(actions, {
     endMoveMode();
   },
   "tc-mode": () => { ui.tcAppend = !ui.tcAppend; showCtx(); }, // replace ⇄ add to the queue
+  // Who does it (ui/teamctx.js, sim/detach.js): a person in or out (never nobody); data-sid "" for the whole team.
+  "tc-who": (d) => {
+    const p = partyById(d.id);
+    if (!p) return;
+    const all = Parties.partyMembers(state, p).map((s) => s.id);
+    const was = ui.tcWho && ui.tcWho.pid === p.id ? ui.tcWho.ids : all;
+    const sid = Number(d.sid);
+    const ids = d.sid === "" ? all : was.includes(sid) ? was.filter((x) => x !== sid) : [...was, sid];
+    ui.tcWho = ids.length && ids.length < all.length ? { pid: p.id, ids } : null;
+    showCtx();
+  },
   "tc-more": () => { ui.ctxMore = !ui.ctxMore; showCtx(); },   // the other teams and the hub, folded
   "tc-all": () => { ui.ctxAll = !ui.ctxAll; showCtx(); },      // every order for the tile, and the team panel, folded (ui/teamctx.js)
 });
