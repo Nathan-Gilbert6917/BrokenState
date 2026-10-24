@@ -139,7 +139,7 @@ const orders = box("orders", 256, 110, { x: 10, y: 10 }, (b) => {
   b.appendChild(new El("div", { cls: "ro", w: 250, h: 70, css: { x: 3, y: 32 } }));
 });
 box("legend", 180, 300, { x: 10, y: H - 310 }, (b) => b.appendChild(new El("div", { cls: "fp-head", w: 180, h: 28, css: { x: 0, y: 0 } })));
-box("alerts", 368, 90, { x: W - 378, y: 10 }, (b) => b.appendChild(new El("button", { cls: "al-fold", w: 100, h: 26, css: { x: 268, y: 0 } })));
+box("alerts", 368, 90, { x: W - 378, y: 10 }, (b) => b.appendChild(new El("div", { cls: "fp-head", w: 368, h: 28, css: { x: 0, y: 0 } }))); // the same header bar as the other boxes (ui/layout.js alertsFoldButton)
 const mm = box("minimap", 240, 136, { x: W - 250, y: H - 146 });
 box("mm-show", 90, 24, { x: W - 100, y: H - 34 }).classList.add("hidden");
 let refreshed = 0;

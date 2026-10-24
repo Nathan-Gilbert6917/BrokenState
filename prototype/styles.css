@@ -1333,11 +1333,9 @@ body.win-dragging, body.win-dragging * { user-select: none !important; }
 /* The timelapse's boxes resize from their corner (remembered with the windows). */
 #timelapse .tl-info, #timelapse .tl-caps { resize: both; min-width: 12rem; min-height: 8rem; max-width: calc(100% - 1.2rem); }
 
-/* Folded alerts: one button with the count; open alerts have a small fold button on top. */
-.al-pill { align-self: flex-end; background: rgba(20,22,26,0.93); border: 1px solid var(--line); border-radius: 99px; padding: 0.3rem 0.85rem; font-size: 0.95rem; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
-.al-pill.danger { border-color: var(--danger); color: #ffd0cc; animation: alpulse 1.8s ease-in-out infinite; }
+/* Folded alerts: the same slim tab as the other boxes (the panel shell section below); an urgent one pulses it. */
+.al-pill.danger { animation: alpulse 1.8s ease-in-out infinite; }
 @keyframes alpulse { 50% { box-shadow: 0 0 0 0.25rem rgba(226,104,95,0.35); } }
-.al-fold { align-self: flex-end; padding: 0.05rem 0.55rem; font-size: 0.8rem; line-height: 1.2; background: rgba(20,22,26,0.9); }
 
 /* ---------- Menu → Controls, the key sheet (ui/controls.js), the Codex (ui/codex.js), the search box (ui/palette.js) ---------- */
 .settings .keygroups { columns: 2 26rem; column-gap: 1.2rem; }
@@ -1656,17 +1654,20 @@ body:not(.fold-log) #log { animation: panel-in-b 0.18s ease-out; }
 #legend { max-width: 17rem; max-height: calc(100% - 1.2rem); overflow-y: auto; }
 #orders:has(> .fp-tab:only-child), #watchlist:has(> .fp-tab:only-child), #legend:has(> .fp-tab:only-child) { width: auto; padding: 0; border: none; background: none; box-shadow: none; overflow: visible; }
 .fp-head { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 0.25rem; margin: 0 -0.5rem 0.2rem; padding: 0.25rem 0.3rem; background: var(--fp-head); border-bottom: 1px solid var(--line); border-radius: 8px 8px 0 0; }
-.fp-toggle, .fp-tab, #alerts .al-pill, #alerts .al-fold { display: inline-flex; align-items: center; gap: 0.4rem; min-width: 0; font-weight: 600; font-size: 0.92rem; line-height: 1.25; text-align: left; color: var(--text); }
+.fp-toggle, .fp-tab { display: inline-flex; align-items: center; gap: 0.4rem; min-width: 0; font-weight: 600; font-size: 0.92rem; line-height: 1.25; text-align: left; color: var(--text); }
 .fp-toggle { flex: 1; padding: 0.18rem 0.4rem; background: none; border: 1px solid transparent; border-radius: 6px; }
 .fp-toggle:hover:not(:disabled) { background: var(--panel-2); border-color: var(--line); }
-.fp-tab, #alerts .al-pill, #alerts .al-fold { max-width: 100%; padding: 0.32rem 0.6rem 0.32rem 0.45rem; background: var(--fp-bg); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
-.fp-tab:hover:not(:disabled), #alerts .al-pill:hover:not(:disabled), #alerts .al-fold:hover:not(:disabled) { border-color: var(--accent); }
-#alerts .al-pill.danger { border-color: var(--danger); color: #ffd0cc; }
-#alerts .al-fold { align-self: flex-end; font-size: 0.85rem; padding: 0.2rem 0.55rem 0.2rem 0.4rem; }
+.fp-tab { max-width: 100%; padding: 0.32rem 0.6rem 0.32rem 0.45rem; background: var(--fp-bg); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+.fp-tab:hover:not(:disabled) { border-color: var(--accent); }
+#alerts > .al-pill { align-self: flex-end; } /* the alerts' tab (ui/layout.js alertsPill) at the stack's right, red with an urgent one */
+#alerts > .al-pill.danger { border-color: var(--danger); color: #ffd0cc; }
+/* The alerts' header (alertsFoldButton): the same bar as the other boxes, over the stack of cards; it stays at the
+   top while the stack scrolls. */
+#alerts > .fp-head { margin: 0; border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
 .fp-ico { flex: none; width: 1.25em; text-align: center; font-weight: 400; }
 .fp-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fp-chev { flex: none; margin-left: auto; padding-left: 0.2rem; color: var(--muted); font-size: 0.78rem; }
-.fp-toggle:hover .fp-chev, .fp-tab:hover .fp-chev, .al-pill:hover .fp-chev, .al-fold:hover .fp-chev { color: var(--accent); }
+.fp-toggle:hover .fp-chev, .fp-tab:hover .fp-chev { color: var(--accent); }
 .fp-badge { flex: none; padding: 0.02rem 0.42rem; border-radius: 99px; background: #2f343d; color: var(--text); font-size: 0.75rem; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .fp-badge.warn { background: #4a3a14; color: #ffd166; }
 .fp-badge.danger { background: #4d2220; color: #ffb7b0; }
@@ -1688,11 +1689,23 @@ body:not(.fold-log) #log { animation: panel-in-b 0.18s ease-out; }
 @media (prefers-reduced-motion: reduce) { #left, #right, #log, .fp-anim { animation: none !important; } .gut, .gut-grip { transition: none; } }
 
 /* ---------- Moving the boxes over the map (ui/overlaydrag.js) ----------
-   Headers, folded tabs and the minimap's grip are the handles: a move cursor, no text selection and no browser
-   panning under a finger. Nothing eases while a box is dragged; the box being dragged stays on top. */
+   Every header bar (the alerts' too), the folded tabs, the guide's title, the dev tools' title line, the minimap's
+   top edge and its grip are the handles: a move cursor, a ✥ at the end of each bar, no text selection and no browser
+   panning under a finger. Nothing eases while a box is dragged; the box being dragged stays on top. (On a phone the
+   boxes stay put: responsive.css hides the ✥ and overlaydrag.js takes no press.) */
 #orders .fp-head, #watchlist .fp-head, #legend .fp-head, #orders > .fp-tab, #watchlist > .fp-tab, #legend > .fp-tab,
-#alerts .al-fold, #alerts .al-pill, #alerts .gd-head, #devpanel > .ov-devhead, #minimap .ov-grip, #mm-show { touch-action: none; user-select: none; -webkit-user-select: none; }
-#orders .fp-head, #watchlist .fp-head, #legend .fp-head, #alerts .gd-head, #devpanel > .ov-devhead, #minimap .ov-grip { cursor: move; }
+#alerts > .fp-head, #alerts > .al-pill, #alerts .gd-head, #devpanel > .ov-devhead, #minimap .ov-grip, #minimap .mm-bar, #mm-show { touch-action: none; user-select: none; -webkit-user-select: none; }
+#orders .fp-head, #watchlist .fp-head, #legend .fp-head, #alerts > .fp-head, #alerts .gd-head, #devpanel > .ov-devhead, #minimap .ov-grip, #minimap .mm-bar { cursor: move; }
+.fp-head::after { content: "✥"; flex: none; padding: 0 0.35rem 0 0.2rem; color: var(--muted); font-size: 0.85rem; opacity: 0.7; }
+.fp-head:hover::after { color: var(--accent); opacity: 1; }
+/* The dev tools' title line: the same bar (its ✥ first, before the title). */
+#devpanel > .ov-devhead { margin: -0.45rem -0.6rem 0.3rem; padding: 0.25rem 0.5rem; background: var(--fp-head); border-bottom: 1px solid var(--line); border-radius: 8px 8px 0 0; }
+#devpanel > .ov-devhead::before { content: "✥"; color: var(--muted); font-size: 0.85rem; margin-right: 0.4rem; opacity: 0.7; }
+#devpanel > .ov-devhead:hover::before { color: var(--accent); opacity: 1; }
+/* The minimap: its top edge drags (ui/minimap.js .mm-bar, under the – and ✥ buttons; a shade on hover says so), the
+   grip at the top right. */
+#minimap .mm-bar { position: absolute; top: 0; left: 0; right: 0; height: 1.15rem; background: linear-gradient(rgba(20,22,26,0.55), rgba(20,22,26,0)); opacity: 0; transition: opacity 0.15s; }
+#minimap .mm-bar:hover, #minimap:hover .mm-bar { opacity: 1; }
 #minimap .ov-grip { position: absolute; top: 0.2rem; right: 0.2rem; padding: 0 0.35rem; font-size: 0.8rem; line-height: 1.2; background: rgba(20,22,26,0.85); opacity: 0.75; }
 #minimap .ov-grip:hover, #minimap .ov-grip:focus-visible { opacity: 1; color: var(--accent); }
 body.ov-dragging, body.ov-dragging * { cursor: grabbing !important; user-select: none !important; }

@@ -877,7 +877,8 @@ section("Windows and panels: folding, map only, auto-open, window sizes (ui/layo
   renderAlerts(w, au);
   const pill = L.alertsPill(au.alertList);
   htmlOk(pill, "folded alerts");
-  check(au.alertList.length > 0 && pill.includes(`${au.alertList.length} alert`) && /class="al-pill danger"/.test(pill) && /data-action="panel-toggle" data-p="alerts"/.test(pill), `folded alerts: count ${au.alertList.length}, red, opens them`);
+  // The same slim tab as the other boxes (2026-10-24): icon, "Alerts", the count on a badge (red with a danger).
+  check(au.alertList.length > 0 && pill.includes(`<span class="fp-badge danger">${au.alertList.length}</span>`) && /class="fp-tab al-pill danger"/.test(pill) && /data-action="panel-toggle" data-p="alerts"/.test(pill), `folded alerts: count ${au.alertList.length}, red, opens them`);
   check(L.alertsPill([], "") === "" && L.alertsPill([], "<div class=\"al-flash\">x</div>").includes("al-flash"), "no alerts: no button (a key's flash line stays)");
   htmlOk(L.alertsFoldButton(), "the alerts' fold button");
 

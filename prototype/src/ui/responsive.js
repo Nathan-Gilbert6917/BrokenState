@@ -17,8 +17,14 @@
 //   keys      what only a key did on the map: ◀ ❗ Next team (Shift+N / N) and the camera spots (Shift+1–9 go,
 //             Ctrl+1–9 save), in the ⋯ drop-down on a phone and in the top bar on a tablet. Other modules ask
 //             touchUI() to add their own (Cancel on the pick banners, main.js; the Work tab's picker, ui/work.js)
+//   strip     with the drawers: the boxes over the State Map (the alerts with the first-week guide, Running orders,
+//             Watching, Layers, the minimap) are closed and a strip of chips across the top of the map carries their
+//             counts; a tap opens one box as a sheet under the strip, one at a time (the user's request 2026-10-24:
+//             "for the phone version move the alerts and the other things shown on the world map overlay into a
+//             collapsible display"). The boxes have fixed slots here and do not drag (ui/overlaydrag.js).
 // Gestures (pan, pinch, long press) are ui/touch.js's.
 import { LOGWIN } from "./logwindow.js"; // the raid's log window: a drawer, closed when a phone layout comes up
+import { setOverlaysFixed } from "./overlaydrag.js"; // the boxes over the map stay put while the strip is up
 
 export const PHONE = "(max-width: 759px)";
 // A phone on its side (844×390 and the like) is wider than that: a touch screen this short is a phone too.
@@ -37,7 +43,12 @@ let mode = "";       // "phone" | "tight" | "tablet" | ""
 export const touchUI = () => mode !== "";
 // The pick banners' Cancel (a team's move, a field work's tile, a meeting tile; main.js "pick-cancel"): Esc, where
 // there is no Esc key.
-// A raid on a phone or a tablet held upright (the drawers layouts): ui/combat.js draws its strip and cards compact.
+// A phone or a tablet held upright (the drawers layouts): the strip over the map is up (enterHud), the banners at the
+// top of the map are one line (main.js bannerHTML) and the Help says where the boxes are (ui/layout.js windowsHelp,
+// ui/display.js, ui/watchlist.js). A desktop window with a mouse is never compact.
+export const compactUI = () => mode === "phone" || mode === "tight";
+export const phoneUI = () => mode === "phone"; // a phone (or a phone on its side): windows fill the screen (responsive.css)
+// A raid on a phone or a tablet held upright (the same layouts): ui/combat.js draws its strip and cards compact.
 export const raidCompact = () => mode === "phone" || mode === "tight";
 // What is open on a compact raid screen: the strip's drop-downs (info: what is carried and the rest; view: the Menu
 // and the view's buttons), the cards' sheet folded (cardsKey: the cards it held, a new one opens it), the log lines
@@ -46,7 +57,6 @@ export const RAIDUI = { info: false, view: false, cardsMin: false, cardsKey: "",
 export const pickCancel = (what) => (touchUI() ? ` <button class="mini" data-action="pick-cancel" data-what="${what}" data-tip="Cancel (Esc)">✕ Cancel</button>` : "");
 let drawers = false; // the dock and the drawers are up
 let saved = null;    // which drawers were folded before (put back when the window grows again)
-let legendFolded = false; // the phone folded the Layers box (opened again when it grows)
 let lastOpen = new Set();
 let bodyObs = null, railObs = null, modalObs = null, topObs = null;
 const parked = [];   // [node, placeholder]: top-bar slots moved into the ⋯ drop-down
@@ -125,9 +135,11 @@ function enterDrawers() {
   syncTop();
   syncBadge();
   onBodyClass();
+  enterHud();
 }
 function leaveDrawers() {
   drawers = false;
+  leaveHud();
   if (bodyObs) bodyObs.disconnect();
   if (railObs) railObs.disconnect();
   if (topObs) topObs.disconnect();
@@ -142,13 +154,15 @@ function leaveDrawers() {
   if (saved) for (const p of DRAWERS) if (saved[p] !== !isOpen(p)) act("panel-toggle", { p, v: saved[p] ? "1" : "0" });
   saved = null;
 }
-// One drawer at a time: the one just opened (a dock button, a key, a tile picked, a tab switched) folds the others.
+// One drawer at a time: the one just opened (a dock button, a key, a tile picked, a tab switched) folds the others,
+// and closes the sheet open under the strip over the map (one thing over the map at a time).
 function onBodyClass() {
   if (!drawers) return;
   const now = DRAWERS.filter(isOpen);
   const fresh = now.filter((p) => !lastOpen.has(p));
   const keep = fresh.length ? fresh[fresh.length - 1] : null;
   if (keep) for (const p of now) if (p !== keep) act("panel-toggle", { p, v: "1" });
+  if (keep && hud) { hudCloseAll(); queueHud(); }
   lastOpen = new Set(DRAWERS.filter(isOpen));
   for (const b of document.querySelectorAll("#rs-dock .rs-db")) {
     const on = isOpen(b.dataset.p);
@@ -201,7 +215,9 @@ function enterPhone() {
   const top = $("topbar");
   if (!top) return;
   const menu = el("button", { id: "rs-menu", "data-action": "set-open", "aria-label": "Menu", "data-tip": "Menu: save, load, options (Esc)" }, "⚙");
-  const more = el("button", { id: "rs-morebtn", "aria-label": "More", "aria-expanded": "false", "aria-controls": "rs-more", "data-tip": "Ledger, Diary, Roster, Codex, Search, Help, the threat forecast" }, "⋯");
+  // Its tip lists what is in it (MOVED, then the keys): the threat forecast, the head count, the tool buttons less the
+  // Menu (⚙ beside it has that; responsive.css hides the second), ❗ Next team and 📷 Spots.
+  const more = el("button", { id: "rs-morebtn", "aria-label": "More", "aria-expanded": "false", "aria-controls": "rs-more", "data-tip": "More: the threat forecast, how many people you have, Ledger, Diary, Roster, Codex, Search, Help (and Dev tools when they are on), ❗ Next team and the 📷 camera spots" }, "⋯");
   const panel = el("div", { id: "rs-more", role: "menu" });
   for (const id of MOVED) {
     const n = $(id);
@@ -213,10 +229,6 @@ function enterPhone() {
   }
   // The map's keys (enterTouch builds them; placeKeys moves them in here).
   panel.appendChild(el("div", { id: "rs-keyslot" }));
-  // The Layers box is a third of a phone's map: folded to its tab (the player opens it as on a desktop).
-  const lg = $("legend");
-  legendFolded = !!(lg && lg.dataset.fold !== "1");
-  if (legendFolded) act("panel-toggle", { p: "legend", v: "1" });
   top.appendChild(menu);
   top.appendChild(more);
   top.appendChild(panel);
@@ -237,8 +249,6 @@ function leavePhone() {
   drop("rs-more");
   document.removeEventListener("pointerdown", outsideMore, true);
   window.removeEventListener("resize", syncTop);
-  if (legendFolded) act("panel-toggle", { p: "legend", v: "0" });
-  legendFolded = false;
 }
 function setMore(on) {
   body().classList.toggle("rs-more", !!on);
@@ -385,6 +395,199 @@ function outsideRaid(e) {
   if (e.target.closest && e.target.closest(".rs-ctdrop, [data-rs=info], [data-rs=view]")) return;
   RAIDUI.info = RAIDUI.view = false;
   redraw();
+}
+
+// ---------- the strip over the map: phones and tablets held upright ----------
+// The boxes over the State Map covered most of a phone's map when they were open (the user's request 2026-10-24). With
+// the drawers they are closed by default and a strip of chips across the top of the map, under the top bar, carries
+// their counts: 🔔 Alerts (red with an urgent one), 🚶 Orders (or "N waiting"), 👁 Watching, 🗺 Layers (how many are
+// on), ▣ Minimap, 🧭 First week (while the guide is on). A tap opens that one box as a sheet under the strip; the chip
+// again, another chip or a tap on the dimmed map closes it; one at a time. The chips go through the boxes' own fold
+// state (main.js "panel-toggle" for the alerts, orders and Layers, ui/layout.js setFolded; "wl-collapse" for
+// Watching), so the keys, the pad, autoReveal and the saved layout keep working: a new urgent alert opens the alerts
+// sheet by itself while Options → "Auto-open panels on select" is on (ui/layout.js autoReveal), and the 🔔 chip
+// flashes either way (the alerts' own 4-second flash line is a toast at the foot of the map while neither the alerts
+// nor the guide sheet is open; responsive.css). The minimap's sheet and
+// the guide's are the strip's own (hudMini, hudGuide): Options → Display → Minimap says whether there is a minimap at
+// all (off: no chip), and the guide's own fold is its one-line form. Whatever was open before the strip came up is put
+// back when the window grows. The boxes have fixed slots here (responsive.css) and do not drag (ui/overlaydrag.js
+// setOverlaysFixed); a chip is a long press from its description.
+const HUD = [
+  ["alerts", "🔔", "Alerts", "What needs you now: a team waiting, food or water running low, a horde near a base, someone sick… Red when something is urgent. Tap an alert to go there"],
+  ["orders", "🚶", "Orders", "Your teams out: what each is doing and how long it has left. Tap a team for its panel"],
+  ["watch", "👁", "Watching", "What you pinned with 📌 (a person, a team, a horde, a group, a base) with its status live, and your map notes"],
+  ["legend", "🗺", "Layers", "The map's layers: switch each on or off (the count is how many are on)"],
+  ["minimap", "▣", "Minimap", "The whole state as far as you know it: tap or drag on it to look there"],
+  ["guide", "🧭", "First week", "The first-week guide: steps for a new holdout, ticked off as you do them, with Show me"],
+];
+const HUD_BOXES = ["alerts", "orders", "watchlist", "legend", "minimap", "mm-show"]; // watched for a change (a redraw, a fold, the minimap shown)
+let hud = false;              // the strip is up
+let hudSaved = null;          // the boxes open before it came up ({ key: true }), put back when it goes
+let hudOpen = new Set();      // the boxes open at the last sync: a fresh one closes the others
+let hudShown = new Set();     // the chips shown at the last sync: a box that comes unfolded (the first 📌 pin) starts closed here
+let hudGuide = false, hudMini = false; // the guide's and the minimap's sheets
+let hudFor = null;            // the game the sheets belong to: a new game starts with everything closed again
+let hudObs = null, hudSizeObs = null, hudRaf = 0;
+let dangerSeen = null;        // the danger alerts' keys at the last sync: a new one flashes 🔔
+
+// The box's own flag, open or not, whatever is on the screen (ui/layout.js's layout, the campaign's watch list).
+function rawOpen(k) {
+  const g = window.game;
+  if (!g) return false;
+  if (k === "watch") { const w = g.state && g.state.watchList; return !!w && !w.collapsed; }
+  return !!g.layout && !g.layout[k];
+}
+// What each chip shows and whether its sheet is open, from the game and the boxes as drawn.
+function hudState() {
+  const g = window.game, st = g && g.state, ui = g && g.ui;
+  const live = !!(ui && ui.started && st && !st.combat && !st.gameOver && !ui.timelapse);
+  const parties = live ? st.parties.filter((p) => p.owner === "player" && p.kind !== "convoy") : [];
+  const waiting = parties.filter((p) => p.phase === "waiting").length;
+  const w = live ? st.watchList : null, pins = w && w.items ? w.items.length : 0, notes = live && st.mapNotes && st.mapNotes.list ? st.mapNotes.list.length : 0;
+  const alerts = live && ui.alertList ? ui.alertList : [];
+  const danger = alerts.filter((a) => a && a.tone === "danger").map((a) => a.key);
+  const lg = $("legend"), lgBadge = lg && lg.querySelector(".fp-badge");
+  const al = $("alerts"), gd = al && al.querySelector(".guide"), gdCount = gd && gd.querySelector(".gd-count");
+  const mm = $("minimap"), mmOn = !!(mm && !mm.classList.contains("hidden"));
+  return {
+    alerts: { show: live, open: live && rawOpen("alerts"), n: alerts.length, danger: danger.length > 0, keys: danger },
+    orders: { show: live && parties.length > 0, open: live && rawOpen("orders"), n: parties.length, waiting },
+    watch: { show: live && pins + notes > 0, open: live && rawOpen("watch"), n: pins + notes },
+    legend: { show: live, open: live && rawOpen("legend"), n: lgBadge ? lgBadge.textContent : "" },
+    minimap: { show: live && mmOn, open: live && mmOn && hudMini, n: "" },
+    guide: { show: live && !!gd, open: live && !!gd && hudGuide, n: gdCount ? gdCount.textContent : "" },
+  };
+}
+// Opens or closes one box the way its own control would (its key, its tab, the pad).
+function hudSet(k, on) {
+  if (k === "guide") { hudGuide = !!on; return; }
+  if (k === "minimap") { hudMini = !!on; return; }
+  if (k === "watch") { if (rawOpen("watch") !== !!on) act("wl-collapse", { v: on ? "0" : "1" }); return; }
+  if (rawOpen(k) !== !!on) act("panel-toggle", { p: k, v: on ? "0" : "1" });
+}
+const hudOpenKeys = (S) => Object.keys(S).filter((k) => S[k].show && S[k].open);
+function hudCloseAll(S = hudState(), except = null) { for (const k of hudOpenKeys(S)) if (k !== except) hudSet(k, false); }
+
+function enterHud() {
+  if (hud) return;
+  hud = true;
+  hudSaved = Object.fromEntries(["alerts", "orders", "legend", "watch"].map((k) => [k, rawOpen(k)]));
+  for (const k of Object.keys(hudSaved)) if (hudSaved[k]) hudSet(k, false); // everything closed: the chips carry the counts
+  hudFor = window.game ? window.game.state : null;
+  hudGuide = hudMini = false;
+  hudOpen = new Set();
+  hudShown = new Set();
+  dangerSeen = null;
+  const wrap = $("mapwrap");
+  if (!wrap) return;
+  const strip = el("nav", { id: "rs-hud", class: "hidden", "aria-label": "The boxes over the map" }, HUD.map(([k, ic, name, t]) =>
+    `<button class="rs-hc hidden" data-hud="${k}" aria-expanded="false" data-tip="${t}"><span class="rs-ic" aria-hidden="true">${ic}</span><span class="rs-hl">${name}</span><b class="rs-badge hidden"></b></button>`).join(""));
+  strip.addEventListener("click", onHudTap);
+  wrap.appendChild(strip);
+  const scrim = el("div", { id: "rs-hudscrim", "aria-hidden": "true" });
+  scrim.addEventListener("click", () => { hudCloseAll(); syncHud(); });
+  wrap.appendChild(scrim);
+  body().classList.add("rs-hud");
+  setOverlaysFixed(true);
+  hudObs = new MutationObserver(queueHud);
+  for (const id of HUD_BOXES) if ($(id)) hudObs.observe($(id), { childList: true, attributes: true, attributeFilter: ["class", "data-fold"] });
+  if (typeof ResizeObserver !== "undefined") { hudSizeObs = new ResizeObserver(syncHudTop); hudSizeObs.observe(strip); }
+  syncHud();
+}
+function leaveHud() {
+  if (!hud) return;
+  hud = false;
+  if (hudObs) hudObs.disconnect();
+  if (hudSizeObs) hudSizeObs.disconnect();
+  hudObs = hudSizeObs = null;
+  if (hudRaf) { cancelAnimationFrame(hudRaf); hudRaf = 0; }
+  drop("rs-hud");
+  drop("rs-hudscrim");
+  body().classList.remove("rs-hud");
+  delete body().dataset.rshud;
+  const app = $("app");
+  if (app) app.style.removeProperty("--rs-hud");
+  setOverlaysFixed(false);
+  // What was open before the strip came up (the Watching panel: the same campaign's only).
+  if (hudSaved) for (const k of Object.keys(hudSaved)) if (hudSaved[k] && (k !== "watch" || (window.game && window.game.state === hudFor))) hudSet(k, true);
+  hudSaved = null;
+  hudFor = null;
+  hudGuide = hudMini = false;
+}
+function queueHud() { if (hud && !hudRaf) hudRaf = requestAnimationFrame(() => { hudRaf = 0; syncHud(); }); }
+function syncHud() {
+  if (!hud) return;
+  const strip = $("rs-hud");
+  if (!strip) return;
+  const g = window.game;
+  // A new game: its own Watching panel starts closed too, and none of its danger alerts counts as new.
+  if (g && g.state !== hudFor) { hudFor = g.state; hudGuide = hudMini = false; dangerSeen = null; hudShown = new Set(); if (rawOpen("watch")) hudSet("watch", false); }
+  let S = hudState();
+  // A box that comes into being unfolded (the Watching panel on the first 📌 pin) starts closed here: its chip is the way in.
+  const shown = Object.keys(S).filter((k) => S[k].show);
+  for (const k of shown) if (!hudShown.has(k) && hudShown.size && S[k].open && !hudOpen.has(k) && k === "watch") hudSet(k, false);
+  hudShown = new Set(shown);
+  S = hudState();
+  // One sheet at a time: the one just opened (a chip, a key, the pad, a new urgent alert) closes the rest.
+  const open = hudOpenKeys(S);
+  if (open.length > 1) {
+    const fresh = open.filter((k) => !hudOpen.has(k));
+    hudCloseAll(S, fresh.length ? fresh[fresh.length - 1] : open[open.length - 1]);
+    S = hudState();
+  }
+  const now = hudOpenKeys(S);
+  hudOpen = new Set(now);
+  if (now.length) body().dataset.rshud = now[0]; else delete body().dataset.rshud;
+  // The chips: one while its box has anything to show, lit while its sheet is open, the count on a badge.
+  let any = false;
+  for (const b of strip.querySelectorAll(".rs-hc")) {
+    const k = b.dataset.hud, s = S[k];
+    b.classList.toggle("hidden", !s.show);
+    if (!s.show) continue;
+    any = true;
+    b.classList.toggle("active", s.open);
+    b.setAttribute("aria-expanded", String(s.open));
+    const bd = b.querySelector(".rs-badge"), lb = b.querySelector(".rs-hl");
+    const n = String(s.n ?? "");
+    if (bd.textContent !== n) bd.textContent = n;
+    bd.classList.toggle("hidden", !n || n === "0");
+    const red = k === "alerts" && s.danger;
+    bd.classList.toggle("danger", red);
+    b.classList.toggle("danger", red);
+    if (k === "orders") { const t = s.waiting ? `${s.waiting} waiting` : "Orders"; if (lb.textContent !== t) lb.textContent = t; lb.classList.toggle("warn", s.waiting > 0); }
+  }
+  strip.classList.toggle("hidden", !any);
+  syncHudTop();
+  const keys = new Set(S.alerts.keys);
+  if (dangerSeen && [...keys].some((k) => !dangerSeen.has(k))) flashChip("alerts");
+  dangerSeen = keys;
+}
+// The 🔔 chip flashes for a new urgent alert (as long as the alerts' flash line, ui/alerts.js; nothing with Reduce motion).
+function flashChip(k) {
+  const b = strip().querySelector(`.rs-hc[data-hud="${k}"]`);
+  if (!b) return;
+  b.classList.remove("rs-flash");
+  void b.offsetWidth; // restart the animation
+  b.classList.add("rs-flash");
+  setTimeout(() => b.classList.remove("rs-flash"), 4000);
+}
+const strip = () => $("rs-hud") || el("div");
+// The strip's height, for the sheets and the banners under it (responsive.css --rs-hud).
+function syncHudTop() {
+  const app = $("app"), s = $("rs-hud");
+  if (!app || !s) return;
+  const h = s.classList.contains("hidden") ? 0 : s.getBoundingClientRect().height;
+  app.style.setProperty("--rs-hud", `${Math.round(h)}px`);
+}
+// A chip: its sheet open (the others closed, and the drawers: one thing over the map at a time) or closed again.
+function onHudTap(e) {
+  const b = e.target.closest && e.target.closest(".rs-hc");
+  if (!b) return;
+  const k = b.dataset.hud, S = hudState(), open = !!(S[k] && S[k].open);
+  hudCloseAll(S, k);
+  hudSet(k, !open);
+  if (!open) for (const p of DRAWERS) if (isOpen(p)) act("panel-toggle", { p, v: "1" });
+  syncHud();
 }
 
 // ---------- the map's keys, as buttons ----------
