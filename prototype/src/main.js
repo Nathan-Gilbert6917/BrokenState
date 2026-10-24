@@ -381,7 +381,7 @@ function step(now) {
   } else if (!titleCovers(ui)) render(state); // the title screen hides the map (unless the map is its background)
   minimapFrame(state, ui, now); // ui/minimap.js (hidden over a battle, the title and the timelapse)
   edgeFrame(state, ui, now, !ui.timelapse && !state.combat && !titleCovers(ui)); // ui/edgefx.js: attacks off screen
-  if (ui.title) titleFrame(state, ui, now);
+  if (titleCovers(ui)) titleFrame(state, ui, now); // the title, and its background under the new-run screen (ui/title.js newRunUp)
   audioFrame(state, ui, now); // battle and map cues, the ambience (ui/audio.js)
   if (dirtyNow || (dirty && (ui.speed <= MAX_SPEED || now - lastRefresh >= SLOW_REFRESH_MS))) refresh(false);
   else if (clockDirty && ui.speed <= MAX_SPEED) refreshClock(); // (at dev speeds the throttled refresh has them too)

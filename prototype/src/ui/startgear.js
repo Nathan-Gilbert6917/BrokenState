@@ -175,8 +175,9 @@ export function fleetSection(state, ui) {
   }).join("");
   const count = mode === "custom" ? `<label${tip(`Custom: how many vehicles start at the hub, ${START_FLEET.COUNT.MIN}–${START_FLEET.COUNT.MAX}, each a kind, a point limit and a back of its own. Changing it builds the world again on the same seed`)}>Vehicles <input type="number" min="${START_FLEET.COUNT.MIN}" max="${START_FLEET.COUNT.MAX}" step="1" style="width:3.6rem" data-action="fleet-count" value="${state.fleet.length}"></label>` : "";
   const head = mode === "hardcore" ? "the car you flee in; a back set here replaces what the dice put in it" : mode === "custom" ? "at the hub; each back is unloaded into the hub's armory and stores on the first day, any thing and any material" : "what is in its back is unloaded into the hub's armory and stores on the first day";
-  return `<div class="nrfleet" style="margin-bottom:0.8rem">
-      <div class="row small" style="gap:0.5rem"><b${tip("Each starting vehicle's back has its own point limit (nobody's points pay for it). Start is refused while a back costs more than its limit or weighs more than its room")}>Starting vehicles</b>${count}<span class="muted">${esc(head)}${iron ? ". Ironman: as rolled" : ""}.</span></div>
+  // What the backs are for is the heading's hover, not a line of its own (the user's request 2026-10-24).
+  return `<div class="nrfleet">
+      <div class="row small" style="gap:0.5rem"><b${tip(`Starting vehicles: ${head}. Each one's back has its own point limit (nobody's points pay for it). Start is refused while a back costs more than its limit or weighs more than its room`)}>Starting vehicles</b>${count}${iron ? `<span class="muted">Ironman: as rolled.</span>` : ""}</div>
       ${rows}
     </div>`;
 }
