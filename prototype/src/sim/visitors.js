@@ -253,7 +253,7 @@ const vrng = (state) => visitorInfo(state).rng;
 export const visitorsOf = (state) => state.visitors || [];
 export const visitorById = (state, id) => visitorsOf(state).find((v) => v.id === Number(id)) || null;
 // A merchant caravan's escort vehicle adds its strength (escorts.js ESCORT_VEHICLES: a pickup +3, a Humvee +8, an MRAP +11).
-export const vStrength = (v) => Math.max(0, v.size) * v.power + (v.escort && v.escort.vehicle && v.size > 0 ? v.escort.vehPower || 0 : 0);
+export const vStrength = (v) => Math.max(0, v.size) * v.power + (v.escort && v.escort.vehicle && !v.vehicleLost && v.size > 0 ? v.escort.vehPower || 0 : 0); // a vehicle lost in a fight (onOutsiderFight) adds nothing
 export const merchantRep = (state) => visitorInfo(state).rep;
 const capFor = (kind, d) => O[kind].caps.reduce((n, [from, k]) => (d >= from ? k : n), 0);
 
@@ -2196,6 +2196,14 @@ function onOutsiderFight(state, result, setup) {
     if (v && state.visitors.includes(v)) {
       if (v.size <= 0) leaveMap(state, v, "broken", { tile: p && state.parties.includes(p) ? partyTile(p) : v.tile });
       else {
+        // Their escort vehicle left dead on the field (combat.js result.humveeLost: its engine gone): they go on without
+        // it, its strength and the load it carried for them (the capacity it gave: makeVisitor) gone with it.
+        if (result.humveeLost && v.kind === "merchants" && v.escort && v.escort.vehicle && !v.vehicleLost) {
+          const V = ESCORT_VEHICLES[v.escort.vehicle];
+          v.vehicleLost = true;
+          if (V) v.capacity = Math.max(0, (v.capacity || 0) - V.power * 60);
+          lines.push(`Their ${V ? V.name : "vehicle"} is finished: they leave it and go on without it.`);
+        }
         v.phase = "travel";
         if (p) v.spared = [...(v.spared || []), `p${p.id}`];
         if (c.robbing) headOut(state, v, "after the attack"); else nextGoal(state, v);

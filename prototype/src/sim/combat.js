@@ -6642,6 +6642,9 @@ function endBattle(state, b, outcome) {
     survivorsHurt: hurtIds, survivorsDead: deadIds, ammoUsed: b.ammoUsed, arrowsUsed: b.arrowsUsed || 0, arrowsBack: arrowsBackN, loot,
     enemyVehicle: outcome === "victory" && b.enemyVehicle && !(b.raidHumvee && b.raidHumvee.gone) ? { ...b.enemyVehicle } : null, // their vehicle left on the field (conflicts.js)
     ...(b.raidHumvee ? { humveeOut: !!b.raidHumvee.gone, humveeWear: b.raidHumvee.wear || 0 } : {}), // a raid's Humvee drove off with them (raidCarTurn), and what it took (conflicts.js)
+    // Theirs still on the map but done for: its engine dead (carTurn: worn to RAID_CAR.STALL_WEAR) or blown up (a
+    // merchant caravan that lives through the fight goes on without its escort vehicle: visitors.js v.vehicleLost).
+    ...(b.raidHumvee && !b.raidHumvee.gone && (b.raidHumvee.ai === "stalled" || b.raidHumvee.blownUp) ? { humveeLost: true } : {}),
     turns: b.turn, medsUsed: b.medsUsed, extraKilled: enemies.filter((u) => u.reinforcement && u.dead).length,
     // Played on the map: gear wear is done, and the dead were there to search (so handlers add no "loot from the bodies").
     tactical: true, worn: true, bodies: b.bodies.length,
