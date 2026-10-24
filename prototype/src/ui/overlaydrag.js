@@ -1,8 +1,12 @@
 // The boxes over the State Map move: Running orders, Watching, Layers, the alerts (with the first-week guide under
 // them), the minimap (and its ▣ Minimap button while it is hidden) and the dev tools. Each is dragged by its header
-// (a folded box by its slim tab, the minimap by its ✥ grip) to anywhere over the map, with the mouse, a finger or a
-// pen (pointer events). A short move (DRAG_PX) is still a click, so the fold chevron and the header's buttons work as
-// before; a drag never pans the map or clicks it.
+// bar (every box has the same one: icon, title, count, chevron and a ✥ at its end; a folded box by its slim tab; the
+// alerts also by the guide's title; the minimap by its top edge or its ✥ grip) to anywhere over the map, with the
+// mouse, a finger or a pen (pointer events). A short move (DRAG_PX) is still a click, so the fold chevron and the
+// header's buttons work as before; a drag never pans the map or clicks it. On a phone or a tablet held upright the
+// boxes have fixed slots under the strip over the map and nothing drags (setOverlaysFixed, ui/responsive.js; the
+// user's request 2026-10-24: "some can freely move around, others don't" is now every box the same way on a desktop
+// and none on a phone).
 // - Kept inside the map: the place is clamped to the map whenever it is put on the page (each refresh, the map's box
 //   resized: the window, the UI size, a side panel folded or opened); near an edge or corner it snaps to it.
 // - Dropped on another box, it moves to the nearest free spot beside it when there is one.
@@ -30,14 +34,17 @@ export const OVERLAYS = {
   orders: { els: ["orders"], head: ".fp-head, .fp-tab", name: "Running orders", maxH: "45%" },
   watchlist: { els: ["watchlist"], head: ".fp-head, .fp-tab", name: "Watching", maxH: "50%" },
   legend: { els: ["legend"], head: ".fp-head, .fp-tab", name: "Layers", maxH: "calc(100% - 1.2rem)" },
-  alerts: { els: ["alerts"], head: ".al-fold, .al-pill, .gd-head", name: "Alerts", maxH: "calc(100% - 1.2rem)" },
-  minimap: { els: ["minimap", "mm-show"], head: ".ov-grip, #mm-show", name: "Minimap", maxH: "" },
+  alerts: { els: ["alerts"], head: ".fp-head, .fp-tab, .gd-head", name: "Alerts", maxH: "calc(100% - 1.2rem)" },
+  minimap: { els: ["minimap", "mm-show"], head: ".ov-grip, .mm-bar, #mm-show", name: "Minimap", maxH: "" },
   devpanel: { els: ["devpanel"], head: ".ov-devhead", name: "Dev tools", maxH: "70%" },
 };
 // The buttons a drag may start on (they are the header itself); any other button, field or link in a header is
 // left to its click.
-const DRAG_BUTTONS = ".fp-toggle, .fp-tab, .al-fold, .al-pill, .ov-grip, #mm-show";
+const DRAG_BUTTONS = ".fp-toggle, .fp-tab, .ov-grip, #mm-show";
 const NO_DRAG = "button, input, select, textarea, a, label";
+// The handles whose hover text says they move too (the grip and the minimap's top edge say so themselves).
+const TIP_HANDLES = ".fp-toggle, .fp-tab, #mm-show, .gd-title";
+let fixed = false; // a phone or a tablet held upright: the boxes keep their slots (ui/responsive.js setOverlaysFixed)
 
 const num = (v) => (Number.isFinite(v) ? v : null);
 const storage = () => {
@@ -178,9 +185,10 @@ function clearPlace(el) {
   for (const s of SIDES) el.style[s] = "";
   el.style.maxHeight = "";
 }
-// Puts one box where it is remembered (or back on its stylesheet), kept on the map.
+// Puts one box where it is remembered (or back on its stylesheet), kept on the map. With the boxes fixed (a phone),
+// every one goes back on its stylesheet slot; the remembered place waits for a bigger window.
 function applyOne(k) {
-  const def = OVERLAYS[k], a = P[k];
+  const def = OVERLAYS[k], a = fixed ? null : P[k];
   const W = wrap.clientWidth, H = wrap.clientHeight, rem = remPx();
   for (const id of def.els) {
     const el = document.getElementById(id);
@@ -211,8 +219,18 @@ export function syncOverlays() {
   addGrips();
   tipHandles();
   for (const k of Object.keys(OVERLAYS)) if (!(pend && pend.moved && pend.key === k)) applyOne(k);
-  bumpDefaults();
+  if (!fixed) bumpDefaults();
 }
+// ui/responsive.js: the boxes keep their slots while a phone's or an upright tablet's layout is up (no drag, no nudge,
+// no remembered place applied, no "drag to move" in the hover text), and move again when the window grows.
+export function setOverlaysFixed(on) {
+  if (fixed === !!on) return;
+  fixed = !!on;
+  if (pend && pend.moved) finish(null, true);
+  pend = null;
+  if (wrap && hasDoc()) syncOverlays();
+}
+export const overlaysFixed = () => fixed;
 // A box still on its stylesheet spot that a moved box now covers (the alerts showing up where the Layers box was
 // put): set beside it for now, its own spot kept (it goes back once the way is clear). The Watching panel places
 // itself (ui/watchlist.js).
@@ -254,7 +272,7 @@ function addGrips() {
     g.type = "button";
     g.textContent = "✥";
     g.setAttribute("aria-label", "Move the minimap: drag, or Alt+arrow keys");
-    g.dataset.tip = "Drag to move the minimap over the map (Alt+arrow keys with the keyboard; Alt+Home: back to its corner)";
+    g.dataset.tip = "Drag to move the minimap over the map (its top edge drags too; Alt+arrow keys with the keyboard, Alt+Home: back to its corner)";
     mm.appendChild(g);
   }
   const dev = document.getElementById("devpanel");
@@ -262,15 +280,21 @@ function addGrips() {
   if (first && !first.classList.contains("ov-devhead")) first.classList.add("ov-devhead");
 }
 
-// The headers' hover text says they move too (once per header written).
+// The headers' hover text says they move too (once per header written; taken off again while the boxes are fixed).
+// The keys only where there is a keyboard: main.js shows every tip through ui/hints.js devText, which drops a key in
+// brackets for a finger or a pad, so one wording serves.
 const MOVE_TIP = " · Drag to move it over the map (Alt+arrow keys)";
 function tipHandles() {
   for (const k of Object.keys(OVERLAYS)) {
     for (const id of OVERLAYS[k].els) {
       const el = document.getElementById(id);
       if (!el || el.classList.contains("hidden")) continue;
-      for (const h of el.querySelectorAll(DRAG_BUTTONS)) if (h.dataset.tip && !h.dataset.tip.endsWith(MOVE_TIP) && h.closest(OVERLAYS[k].head) && !h.classList.contains("ov-grip")) h.dataset.tip += MOVE_TIP;
-      if (el.matches(DRAG_BUTTONS) && el.dataset.tip && !el.dataset.tip.endsWith(MOVE_TIP)) el.dataset.tip += MOVE_TIP;
+      const hs = [...el.querySelectorAll(TIP_HANDLES)].filter((h) => h.dataset.tip && h.closest(OVERLAYS[k].head));
+      if (el.matches(TIP_HANDLES) && el.dataset.tip) hs.push(el);
+      for (const h of hs) {
+        if (fixed) { if (h.dataset.tip.endsWith(MOVE_TIP)) h.dataset.tip = h.dataset.tip.slice(0, -MOVE_TIP.length); }
+        else if (!h.dataset.tip.endsWith(MOVE_TIP)) h.dataset.tip += MOVE_TIP;
+      }
     }
   }
 }
@@ -296,7 +320,7 @@ function overlayAt(t) {
 function onDown(e) {
   if (pend && pend.moved) finish(null, true); // a drag whose release was lost (outside the window): put back
   pend = null;
-  if (e.button !== 0 || !e.isPrimary) return;
+  if (fixed || e.button !== 0 || !e.isPrimary) return;
   const hit = overlayAt(e.target);
   if (!hit || !shown(hit.el)) return;
   pend = { key: hit.key, el: hit.el, id: e.pointerId, x: e.clientX, y: e.clientY, touch: e.pointerType === "touch", moved: false };
@@ -354,7 +378,7 @@ function swallowClick() {
 // Alt+arrows on a focused header nudge its box, Alt+Home puts it back; Esc while dragging puts it back where it was.
 function onKey(e) {
   if (pend && pend.moved && e.key === "Escape") { e.preventDefault(); e.stopPropagation(); finish(null, true); return; }
-  if (!e.altKey || e.ctrlKey || e.metaKey) return;
+  if (fixed || !e.altKey || e.ctrlKey || e.metaKey) return;
   const hit = overlayAt(e.target);
   if (!hit) return;
   if (e.key === "Home") { e.preventDefault(); e.stopPropagation(); resetOverlays(hit.key); return; }
@@ -387,5 +411,9 @@ export function initOverlays(api = {}) {
   syncOverlays();
 }
 
-// Help → Windows and panels (ui/layout.js windowsHelp adds it).
-export const OVERLAYS_HELP = `<b>Moving the boxes over the map:</b> drag the Running orders, Watching, Layers, the alerts (or the first-week guide's title), the dev tools or the minimap (by its ✥ grip) to anywhere over the map so they are not in the way; a folded box moves by its slim tab. A short click still folds or opens it. Near an edge or a corner a box snaps to it; dropped on another box it moves beside it when there is room. With the keyboard: Tab to a box's header and press <b>Alt+arrow keys</b> to nudge it (Shift for bigger steps), <b>Alt+Home</b> puts that box back. Boxes stay inside the map when the window, the UI size or the panels change. Their places are remembered in this browser; Options → <i>Reset overlay positions</i> puts them all back.`;
+// Help → Windows and panels (ui/layout.js windowsHelp adds it): what moves and how, on this device. With a mouse the
+// words are a desktop's; a finger on a tablet drags the same handles (main.js shows the Help as written, so the
+// keyboard lines name the keyboard).
+export const OVERLAYS_HELP = `<b>Moving the boxes over the map:</b> every box has the same header bar (its icon, name, count, the fold chevron and a ✥ at the end): drag it to put the Running orders, Watching, Layers or the alerts (the first-week guide's title moves the alerts too) anywhere over the map so they are not in the way; the dev tools move by their title, the minimap by its top edge or its ✥ grip; a folded box moves by its slim tab. A short click still folds or opens it. Near an edge or a corner a box snaps to it; dropped on another box it moves beside it when there is room. With the keyboard: Tab to a box's header and press <b>Alt+arrow keys</b> to nudge it (Shift for bigger steps), <b>Alt+Home</b> puts that box back. Boxes stay inside the map when the window, the UI size or the panels change. Their places are remembered in this browser; Options → <i>Reset overlay positions</i> puts them all back.`;
+export const OVERLAYS_HELP_FIXED = `<b>The boxes over the map stay put here:</b> on a phone, or a tablet held upright, each box has a fixed slot under the strip across the top of the map and nothing drags. A place you gave a box on a bigger screen waits there for when the window grows (Options → <i>Reset overlay positions</i> forgets it).`;
+export const overlaysHelp = () => (fixed ? OVERLAYS_HELP_FIXED : OVERLAYS_HELP);
