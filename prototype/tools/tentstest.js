@@ -135,6 +135,7 @@ console.log("Set up camp: the fire and the clearing whatever the bags; beds and 
 {
   const st = world();
   const { p, crew } = teamOut(st, 3);
+  Object.assign(p.supplies, { wood: CAMP.fireCost.wood, stone: CAMP.fireCost.stone }); // the camp fire's wood and stone carried (staging.js fireCostProblem, the user's request 2026-10-23)
   const h0 = campPitchHours(st, p, partyTile(p));
   p.cargo.gear.push(newItem("tent2"));
   crew[2].gear.carry = newItem("tent1");

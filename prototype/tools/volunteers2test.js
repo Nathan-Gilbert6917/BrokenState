@@ -79,11 +79,14 @@ console.log("Watching a fight of your people lent out");
   check(loan.fights === fights + 1 && (b.bodies || []).length === 0, `its end goes into the loan (fights ${fights} → ${loan.fights}); the field is the group's`);
   // Headless (no browser): no card, by the numbers.
   const { st: s2, f: f2 } = world(SEED + 1);
-  const a2 = V.makeAsk(s2, f2, { kind: "hive", label: "their crawl" }, 2, 8);
+  // A long loan, day by day to its first fight (VOL.AI.fight.hive a day on the volunteers' own dice: six days of an
+  // 8-day loan drew none once the hub's start moved, 7302413), the loan still running.
+  const a2 = V.makeAsk(s2, f2, { kind: "hive", label: "their crawl" }, 2, 20);
   s2.cards = [];
   V.answerAsk(s2, a2.id, V.lendable(s2).slice(0, 2).map((s) => s.id));
-  for (let d = 0; d < 6; d++) { s2.hour = (Math.floor(s2.hour / 24) + 1) * 24 - 1; tickHour(s2); }
-  check(!s2.cards.some((c) => c.volWatch != null) && (V.ensureVols(s2).loans[0] ? V.ensureVols(s2).loans[0].fights : 1) >= 1, `headless: no card, the fights by the numbers (${V.ensureVols(s2).loans[0] ? V.ensureVols(s2).loans[0].fights : "loan over"})`);
+  const L2 = V.ensureVols(s2).loans[0];
+  for (let d = 0; d < 18 && L2 && !L2.fights && V.ensureVols(s2).loans.includes(L2); d++) { s2.hour = (Math.floor(s2.hour / 24) + 1) * 24 - 1; tickHour(s2); }
+  check(!!L2 && V.ensureVols(s2).loans.includes(L2) && !s2.cards.some((c) => c.volWatch != null) && L2.fights >= 1 && s2.log.some((l) => /^Your people with .* fought in their crawl/.test(l.text)), `headless: no card, the fights by the numbers (${L2 ? L2.fights : "no loan"})`);
 }
 
 // ---------- 2. old hands ----------

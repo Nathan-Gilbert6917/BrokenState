@@ -21,7 +21,7 @@ const seeds = process.argv.length > 3 ? process.argv.slice(3).map(Number) : [42,
 let fails = 0;
 const check = (ok, msg) => { if (!ok) { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
 
-function makeOutpost(state, tile, name, staff) {
+function makeOutpost(state, tile, name, staff, { beds = true } = {}) {
   const base = {
     id: newId(), tile, type: "outpost", name, stock: { food: 60, water: 30, fuel: 10, meds: 2, ammo: 30, parts: 0, scrap: 20 },
     radio: false, watchtower: false, buildings: [], construction: [], armory: [],
@@ -30,6 +30,9 @@ function makeOutpost(state, tile, name, staff) {
   for (const s of staff) { s.location = { kind: "base", baseId: base.id }; s.role = "guard"; }
   for (let i = 0; i < 3; i++) addBuilding(base, "walls");
   addBuilding(base, "cookhouse"); // hot food, so "No hot food" (eating.js) does not drive the crew away
+  // Beds: no tier has beds of its own, only what is built (buildings.js plainBeds, the user's requests 2026-10-22: the
+  // old outpost's 2 gone), and 0 beds is "Crowded" (morale.js crowdInfo, -10 a day) that drove the crews away by day 4.
+  if (beds) addBuilding(base, "bunkhouse");
   recomputeOwnership(state);
   return base;
 }
@@ -259,7 +262,7 @@ for (const seed of seeds) {
   const tO = freeTile(state, h.tile, 3, 6);
   if (check(tO, "could not place the outpost")) {
     const people = atBase(state, h.id).filter((s) => !s.leader);
-    const O = makeOutpost(state, tO.id, "Test Outpost W", people.slice(0, 2));
+    const O = makeOutpost(state, tO.id, "Test Outpost W", people.slice(0, 2), { beds: false }); // 4 days: no beds needed
     for (const s of people) s.health = 100;
     addBuilding(O, "well");
     O.stock.scrap = 0; O.stock.parts = 0;

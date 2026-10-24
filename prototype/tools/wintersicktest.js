@@ -231,8 +231,11 @@ section("Newcomers carry it in");
   // Save and load keep it.
   setWorldCfg(st, { sickness: 1 });
   const B = loadFromString(saveToString(st));
-  const back = B.survivors.find((s) => carrying[1] && s.id === carrying[1].id);
-  check(B.sickHomes === true && (!carrying[1] || (back && back.incubating && back.incubating.key === carrying[1].incubating.key && back.sickHome === h.id)), "save and load keep who carries what and where they live");
+  // Everyone still carrying something at the save (carrying[1] may already have come down with it when the clock went
+  // to carrying[0]'s day), and everyone's home.
+  const still = st.survivors.filter((s) => s.incubating);
+  const backOf = (s) => B.survivors.find((x) => x.id === s.id);
+  check(B.sickHomes === true && still.length > 0 && still.every((s) => backOf(s) && backOf(s).incubating && backOf(s).incubating.key === s.incubating.key && backOf(s).incubating.day === s.incubating.day) && st.survivors.every((s) => s.sickHome == null || (backOf(s) && backOf(s).sickHome === s.sickHome)), `save and load keep who carries what and where they live (${still.length} carrying)`);
 }
 
 section("Cards at the hub");
