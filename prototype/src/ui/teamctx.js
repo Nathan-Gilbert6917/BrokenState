@@ -49,7 +49,7 @@ import { siteMissions } from "./ui.js";
 import { cartOf, cartRouteWear } from "../sim/carts.js"; // a cart pushed on foot: what the way wears it
 import { ask } from "./confirm.js";
 import { isLandJob, clampHours } from "../sim/landest.js"; // the land order box (ui/landorder.js): its hours and how much
-import { MOVES, detachments, detachProblem, detachText, subTeam, isSome, detach } from "../sim/detach.js"; // who does it: some of the team (the user's request 2026-10-24)
+import { MOVES, detachments, detachProblem, detachText, subTeam, isSome, detach, splittable } from "../sim/detach.js"; // who does it: some of the team (the user's request 2026-10-24)
 import { standProblem } from "../sim/teammeet.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -408,15 +408,11 @@ export function teamCtxHtml(state, ui, m) {
   const none = m.head.water && !m.items.some((it) => it.group === "Go") ? `<div class="small muted" style="padding:0.3rem 0.5rem">Open water: teams cross it by boat from a shore next to it</div>` : "";
   return `<div class="tchead"><div class="head">${esc(m.head.name)}</div><div class="small muted">${esc(m.head.situation)}</div><div class="small">→ ${esc(m.head.tile)}</div>${m.who ? "" : toggle}${whoHtml(state, m)}</div>${rows}${none}${fold}`;
 }
-// Who does it (the user's request 2026-10-24): a chip a person free on the team (all lit: the team does it), the ones out
-// on a job of their own listed apart. Picking some of them sends them off on their own (sim/detach.js).
+// The team's people out on jobs of their own (sim/detach.js), under the menu's head. Who does an order is asked when it
+// is clicked (ui/whopick.js; the land jobs in their hours box, ui/landorder.js).
 function whoHtml(state, m) {
-  if (!m.pick) return "";
-  const on = new Set(m.who || m.pick.people.map((s) => s.id));
-  const chips = m.pick.people.map((s) => `<button class="mini tcwho${on.has(s.id) ? " active" : ""}" data-action="tc-who" data-id="${m.p.id}" data-sid="${s.id}"${tip(`${on.has(s.id) ? "Leave out" : "Add"} ${s.name}: whoever is picked does the order${m.who ? "; the rest stay with the team" : ""}`)}>${on.has(s.id) ? "✓ " : ""}${esc(s.name.split(" ")[0])}</button>`).join("");
-  const all = m.who ? `<button class="mini" data-action="tc-who" data-id="${m.p.id}" data-sid=""${tip("The whole team does it")}>All</button>` : "";
-  const out = m.pick.out.map((q) => `<div class="small muted" style="padding:0.15rem 0.5rem 0"${tip("Out on a job of their own: they come back to the team when it is done (the team panel: Call back)")}>Out: ${esc(detachText(state, q))}</div>`).join("");
-  return `<div class="tcwhorow small"${tip("Who does the order: pick some of the team and they go off and do it on their own while the rest stay (the team cannot move until they are back); all of them, and the team does it.")}><span class="muted">Who:</span> ${chips}${all}</div>${m.who ? `<div class="small muted" style="padding:0.15rem 0.5rem 0">${esc(partyMembers(state, m.sub).map((s) => s.name.split(" ")[0]).join(", "))} go off on their own; the rest stay.</div>` : ""}${out}`;
+  if (!m.pick || !m.pick.out.length) return "";
+  return m.pick.out.map((q) => `<div class="small muted" style="padding:0.15rem 0.5rem 0"${tip("Out on a job of their own: they come back to the team when it is done (the team panel: Call back)")}>Out: ${esc(detachText(state, q))}</div>`).join("");
 }
 
 // ---------- doing it ----------
@@ -465,6 +461,16 @@ export function landPick(state, ui, d) {
   const o = it && !it.disabled ? it.seq.find((x) => isLandJob(x.type)) : null;
   return o ? { type: o.type, hours: o.hours, tile: Number(d.tile), startHour: state.hour + (it.ahead || 0) + (it.travel || 0), who: m.who } : null;
 }
+// An order the people picked could do on their own (ui/whopick.js asks who when it is clicked): not a window or a
+// switch (special), not a land job (their hours box asks), not one only the whole team gives. Its label, or null.
+export function splitPick(state, ui, d) {
+  const p = state.parties.find((q) => q.id === Number(d.id));
+  if (!p) return null;
+  const m = teamTileMenu(state, ui, p, Number(d.tile), { append: d.mode === "append" });
+  const it = m.items.find((x) => x.key === d.key);
+  if (!it || it.disabled || it.special || !m.pick || it.seq.some((o) => isLandJob(o.type)) || !splittable(it.seq)) return null;
+  return { label: it.label.replace(/…$/, "") };
+}
 // The people picked to do it (d.who: "3,7"), or null.
 const whoOf = (d) => (d && d.who ? String(d.who).split(",").filter(Boolean).map(Number) : null);
 // The item with the box's hours and quantity (d.hours, d.qty) on its land job.
@@ -492,6 +498,7 @@ export function runTeamAction(state, ui, d, acts = {}) {
   const it = withLand(it0, d);
   // Some of the team picked (sim/detach.js): they split off and do it; the rest stay. A plain move leaves them there.
   if (m.who) {
+    if (!splittable(it.seq)) return `${it.label}: only the whole team can do that.`;
     const job = it.seq.find((o) => o.type !== "move") || null;
     return detach(state, p, m.who, (q) => replaceOrders(state, q, tile, it), { type: job && job.type, job: !!job }).text;
   }
