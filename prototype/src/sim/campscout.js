@@ -103,7 +103,9 @@ export function scoutOptions(state, p, tile, out) {
       desc: `The team surveys this tile first (${LOOK.hours} hours: the places it hides, and the whole of its ground), then ${what} with all the information: its spot picked on the tile's map, the dead there counted and cleared off it first.`,
     });
     o.label = `${o.label}${BLIND_NOTE}`;
-    o.desc = `${blindText()} ${o.desc}`;
+    const was = Object.getOwnPropertyDescriptor(o, "desc");
+    if (was && was.get) Object.defineProperty(o, "desc", { get: () => `${blindText()} ${was.get.call(o)}`, set: was.set, enumerable: true, configurable: true }); // staging.js campOption: worked out when read
+    else o.desc = `${blindText()} ${o.desc}`;
   }
   return out;
 }

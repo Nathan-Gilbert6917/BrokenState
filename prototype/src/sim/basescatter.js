@@ -890,7 +890,9 @@ function onRiver(spec, x, y) {
   return 1;
 }
 // The lands last read, the least recently used dropped first (a 500 × 500 map's land is about 24 MB: forty-eight of
-// them, emptied all at once when full, were over a gigabyte and made again as soon as they were dropped).
+// them, emptied all at once when full, were over a gigabyte and made again as soon as they were dropped). One entry a
+// land: its key leaves out land.n (what has been cleared), so a clearing replaces the base's land in place rather
+// than leaving the old one behind to fill the cache (each 24-40 MB).
 const LAND_CACHE = 16, landCache = new Map();
 const byCell = (a, b) => { const [ax, ay] = a.split(",").map(Number), [bx, by] = b.split(",").map(Number); return ay - by || ax - bx; };
 /**
@@ -901,9 +903,9 @@ const byCell = (a, b) => { const [ax, ay] = a.split(",").map(Number), [bx, by] =
  */
 export function landOf(spec, land) {
   const tx = spec.ox || 0, ty = spec.oy || 0; // the base on the map: map (x, y) is grid (x - tx, y - ty)
-  const key = `${spec.seed}|${spec.terrain}|${spec.G}|${spec.C}|${spec.clear}|${spec.road}|${spec.river}${spec.riverSide || ""}|${tx},${ty}|${land ? `${land.n}` : "-"}${spec.pond ? "|p" : ""}${spec.level ? `|L${spec.level}` : ""}`;
+  const key = `${spec.seed}|${spec.terrain}|${spec.G}|${spec.C}|${spec.clear}|${spec.road}|${spec.river}${spec.riverSide || ""}|${tx},${ty}|${land ? "b" : "-"}${spec.pond ? "|p" : ""}${spec.level ? `|L${spec.level}` : ""}`;
   let out = landCache.get(key);
-  if (out && out.land === land) { landCache.delete(key); landCache.set(key, out); return out.v; } // the most recently used kept longest
+  if (out && out.land === land && out.n === (land ? land.n : null)) { landCache.delete(key); landCache.set(key, out); return out.v; } // the most recently used kept longest
   const cleared = (land && land.cleared) || {}, looted = (land && land.looted) || {};
   const pieces = new Map(), floors = new Map(), list = [];
   // Worked out in map coordinates; the yard and the clearing are round the base itself, what is cleared in grid cells.
@@ -1036,7 +1038,8 @@ export function landOf(spec, land) {
   // ground: the ground's height by cell (the same in waterOnly, whose heights are left out for its ponds): what a
   // building stands on (basemap.js placeProblemAt: all of it on one level).
   const v = { pieces, floors, list, heights, springs, level: L, ground: heights, waterOnly: { pieces: new Map(water.flatMap((p) => p.cells.map(([x, y]) => [`${x},${y}`, p]))), list: water, floors, heights: new Map(), ground: heights } };
-  landCache.set(key, { land, v });
+  landCache.delete(key); // a land read before its last clearing: replaced, and kept as the most recent
+  landCache.set(key, { land, n: land ? land.n : null, v });
   while (landCache.size > LAND_CACHE) landCache.delete(landCache.keys().next().value);
   return v;
 }

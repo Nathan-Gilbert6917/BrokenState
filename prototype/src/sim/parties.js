@@ -1798,7 +1798,7 @@ export function ordersCard(state, p, text, doneLabel, title) {
       ...caravanOrderChoices(state, p),
       ...meetChoices(state, p), // trademeet.js: a group's caravan waiting here to trade
       ...opts.map((o) => ({
-        label: o.mission === "sweep" ? `Sweep ${sweepOpts(p.sweepPlan || {}).radius} tiles around (${sweepOpts(p.sweepPlan || {}).hours}h)` : o.mission === "fullsurvey" ? `Survey this tile (${LOOK.hours}h)` : o.mission === "survey" ? `Quick look (${LOOK.quickHours}h)` : o.label, hint: o.disabled || o.desc, disabled: !!o.disabled, order: o.mission === "survey" || o.mission === "sweep" || o.mission === "fullsurvey" || SCOUT_MISSIONS.includes(o.mission),
+        label: o.mission === "sweep" ? `Sweep ${sweepOpts(p.sweepPlan || {}).radius} tiles around (${sweepOpts(p.sweepPlan || {}).hours}h)` : o.mission === "fullsurvey" ? `Survey this tile (${LOOK.hours}h)` : o.mission === "survey" ? `Quick look (${LOOK.quickHours}h)` : o.label, get hint() { return o.disabled || o.desc; }, disabled: !!o.disabled, order: o.mission === "survey" || o.mission === "sweep" || o.mission === "fullsurvey" || SCOUT_MISSIONS.includes(o.mission),
         resolve: (st) => {
           // Checked again now: the card may have been open while things changed.
           const now = orderOptions(st, p).find((x) => x.mission === o.mission);
