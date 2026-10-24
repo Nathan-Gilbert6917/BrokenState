@@ -91,6 +91,19 @@
 //   New users (POWER_USERS): the perimeter alarm from dusk to dawn, the electric heaters on a day that wants heating
 //     (electric.js heaterWants), the charging station while anything here is short of charge (chargeWanted; its hour
 //     of charging runs in refreshPower: electric.js chargeHour).
+// The grid audit (2026-10-24, the user's request: "fix and implement any machine power needs and power output and
+// setting up power grids for the base"): every building with a motor was read against POWER_USERS and POWER_BOOST.
+//   The grain mill and the meat grinder (cooking.js; hand-cranked until now) take an OPTIONAL electric draw of 1 power
+//     each (POWER_USERS grainmill / meatgrinder), wanted only while a cook's bill at the base calls for them today
+//     (cooking.js machineWanted: a Flour, Ground meat or Smoked sausage bill that is not paused or done); powered, their
+//     batches take 1 / POWER_BOOST.out of the cooking hours (×1.5 the flour, ground meat and sausage a cook's hour:
+//     cooking.js runStation), unpowered they turn by hand as before (never idle: not in NEEDS_POWER). The pressure
+//     canner on a preserving room draws nothing (a pot on the stove: the kitchen's own 1 power is the electric stove).
+//   Every reader of base.power works at a base with the sun and a bank and no generator: freezerOffWhy says what the
+//     sun gives and whether the bank is there, powerLine shows the sources, generatorHeat is the running generators'
+//     only (the sun and the bank make no noise), hasSealer / isPowered read the served list whatever carried the load.
+//   The governor builds the grid (autopilot.js gridWishes) and sets the found spotlights and fridges once any source
+//     stands, a solar array included (electric.js governPower).
 // The result is cached on the base (base.power: supply, demand, served building ids, running generators) every hour
 // (production.js productionHour) and before the stations run each day, so storage, radio and defences read it
 // cheaply. A base that never refreshed has no power.
@@ -103,6 +116,7 @@ import { workFactor } from "./health.js";
 import { sickRestWhy } from "./sickrest.js"; // the ill rest: they do no chores
 import { GENSETS, SPOT, FRIDGE, PRESS, ALARM, HEATER, CHARGER, BATTERY } from "./data-power.js"; // the power grid's pieces (found generators, spotlights, ...; 2026-10-24 the alarm, the heaters, the charger, the battery bank, the solar array)
 import { circuitNeed, circuitWhat, gridWired, pumpServes, solarOut, heaterWants, chargeWanted, chargeHour } from "./electric.js"; // the breaker panel's circuits, the well pump, the sun, the heaters, the charger (call-time only)
+import { machineWanted } from "./cooking.js"; // the grain mill and the meat grinder draw while a cook's bill calls for them (call-time only; 2026-10-24 grid audit)
 
 export const POWER = { genOut: 6, genFuel: 2, genHeat: 4, tank: 3 }; // tier 1 (GEN_TIERS[1])
 // The generator's tiers (see the header): out (power), idle / full (fuel a day running at no load / at full load: genBurn),
@@ -135,6 +149,10 @@ export const POWER_USERS = {
   machine_shop: { need: 2, what: "power tools: 2 parts a day from 9 scrap (1 from 6 without)" },
   kitchen:      { need: 1, what: "an electric stove: half as much again a day (14 days of fresh food → 12 portions of jarred food)" },
   sealer:       { need: 1, what: "a vacuum sealer: packs cooked food into long-keeping survival meals" },
+  // The cooking machines (2026-10-24 grid audit; cooking.js): hand-cranked, with an optional motor. They draw only while a
+  // cook's bill at the base calls for them today (machineWanted), and turn by hand without power (never idle).
+  grainmill:    { need: 1, what: "a motor on the grain mill: ×1.5 the flour a cook's hour (hand-cranked without power, slower)" },
+  meatgrinder:  { need: 1, what: "a motor on the meat grinder: ×1.5 the ground meat and sausage a cook's hour (hand-cranked without power, slower)" },
   // The power grid (data-power.js, electric.js).
   spotlamp:     { need: SPOT.need, what: `a mounted spotlight: lights ${SPOT.R} cells round it in a night fight here (${SPOT.STAND_R} from a wall stand); on from dusk to dawn` },
   fence_charger:{ need: 2, what: "a charged fence: the wire shocks whatever reaches it, and the base holds back more of a horde" },
@@ -153,7 +171,7 @@ export const batteries = (base) => base.buildings.filter((b) => b.type === "batt
 const chargeOf = (b) => Math.max(0, Math.min(BATTERY.cap, Number(b.charge) || 0));
 const r1 = (v) => Math.round(v * 10) / 10;
 // Powered stations: inputs and outputs multiplied (rounded) while they are served.
-export const POWER_BOOST = { machine_shop: { in: 1.5, out: 2 }, kitchen: { in: 1.5, out: 1.5 }, ammo_press: { in: PRESS.in, out: PRESS.out } };
+export const POWER_BOOST = { machine_shop: { in: 1.5, out: 2 }, kitchen: { in: 1.5, out: 1.5 }, ammo_press: { in: PRESS.in, out: PRESS.out }, grainmill: { in: 1, out: 1.5 }, meatgrinder: { in: 1, out: 1.5 } }; // the mill and the grinder: cooking.js runStation (the same inputs, ×1.5 out a cook's hour)
 // Stations that run only with power (electric.js: idle without it).
 export const NEEDS_POWER = new Set(["ammo_press"]);
 export const RADIO_BOOST = 2;
@@ -233,6 +251,7 @@ function userWants(state, base, b) {
   if (b.type === "perimeter_alarm") return isNight(state); // the sensors and the siren: dusk to dawn
   if (b.type === "elec_heater") return heaterWants(state, base); // a day that wants heating (electric.js)
   if (b.type === "charging_station") return chargeWanted(state, base); // something here short of charge (electric.js)
+  if (b.type === "grainmill" || b.type === "meatgrinder") return machineWanted(state, base, b.type); // a cook's bill calls for it today (cooking.js; 2026-10-24 grid audit)
   return true;
 }
 export function powerStatus(state, base) {

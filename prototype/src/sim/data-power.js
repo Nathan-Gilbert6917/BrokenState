@@ -43,7 +43,13 @@
 //                    stores or on anyone here), so no battery packs are spent at a bench on them (repair.js recharge).
 // Wear and repairs (POWER_FIXTURES below): the sources and the alarm are repaired with electronics; demolishing any of
 // them gives half its scrap, parts, electronics, metal sheets and car parts back (buildings.js demolishRefund).
-// AI groups: not yet, as the rest of the grid (electric.js header: their machines are coarse works with no power budget).
+// The governor builds the grid (2026-10-24, the user's request: "Both players and AI groups should build these ... and
+// setting up power grids for the base"): autopilot.js gridWishes wishes for every piece here and the older ones (the
+// breaker panel, the pump, the fence charger, the ammo press) with a reason each, gated by the handbook, a Mechanics
+// hand, a plot, and the parts and electronics with a reserve kept; electric.js governPower sets the found spotlights
+// and fridges once any source stands, an array included. The grain mill and the meat grinder (buildings.js) have an
+// optional 1-power motor since the same audit: power.js POWER_USERS / POWER_BOOST, cooking.js machineBoost.
+// AI groups: the groups' side of the same request is groupworks.js's (their works, not these records).
 // Merged by: data.js (POWER_GEAR into GEAR), buildings.js (POWER_BUILDINGS into BUILDINGS), basemap.js (POWER_FOOT into
 // FOOT), loot.js (POWER_TAGS into ITEM_TAGS), crafting.js (POWER_CRAFTS into CRAFTS), breakdowns.js (POWER_FIXTURES
 // into FIXTURES).
