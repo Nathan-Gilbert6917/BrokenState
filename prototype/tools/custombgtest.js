@@ -101,7 +101,10 @@ const lib = { c_1: MEDIC, c_2: { ...blankBackground("c_2"), name: "Walker", car:
   check(mine > 0 && exact, "and then the kind and the back they set (a Hummer, 12 fuel, 3 meds, 5 scrap, sandbags and a rod)");
   check(food(p) >= MEDIC.supplies.food + HC_START.TEAM_MIN * 2 - 1 && food(p) <= MEDIC.supplies.food + HC_START.TEAM_MAX * 2 + 2 + 15 + 1, `food: theirs on top of the others' clamped days (${food(p)})`);
   check(totalRounds(p.supplies) >= MEDIC.supplies.ammo && p.supplies.meds >= MEDIC.supplies.meds, `ammo and meds on top (${totalRounds(p.supplies)}, ${p.supplies.meds})`); // ammo.js: their rounds by calibre
-  check(a.hardcore.start.grabbed.some((l) => /field medic, patched up a platoon/.test(l)) && a.cards[0].text.includes("field medic"), "the opening blurb names the background");
+  // The opening card in pieces (2026-10-24, docs/features/campaign.md: the background's name as their line's tag, its
+  // blurb left off the lines): the medic's line names the background, on the card and in state.hardcore.start.grabbed.
+  const medPart = ((a.cards[0].parts || {}).grabbed || []).find((g) => /^field medic(,|$)/.test(g.tag || ""));
+  check(medPart && s.name.startsWith(medPart.who) && a.hardcore.start.grabbed.some((l) => l.startsWith(`${medPart.who} (${medPart.tag}) `)) && a.cards[0].text.includes(`${medPart.who} (field medic`) && !a.cards[0].text.includes(MEDIC.blurb), `the opening blurb names the background (${medPart ? `${medPart.who} (${medPart.tag})` : "no line"}), its blurb left off`);
   check(partyTile(p) === partyTile(pb), "same seed, same spawn");
   // Odds 0: never theirs.
   let never = true;

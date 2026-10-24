@@ -7,7 +7,8 @@
 // - the tablets make un-purified water safe on the road (worm.js, water.js): a team spends one per 10 un-purified water
 //   drunk from infected sources (no worm roll on what they cover; none for purified water, none with a filter); bases
 //   never use them (a team leaving packs a tube: packTablets); what a team packs at a base is not treated;
-// - the hardcore prepper's kit has both; the loot tables hold both; the recipe; save/load.
+// - the hardcore prepper's kit has both; the loot tables hold both; the recipes (the radio's since the electronics
+//   recipes, the user's request 2026-10-24: docs/features/economy.md#electronics-recipes); save/load.
 // Usage: node tools/itemstest.js [seed]
 import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, tickHour, hub, atBase, residents, log, day } from "../src/sim/world.js";
@@ -24,6 +25,7 @@ import { WORM, baseWater, wormDaily, drinkHour, addWormWater, packWater, packTab
 import { HC_START, roadTeam } from "../src/sim/hardcore-start.js";
 import { SITE_FINDS, AREA_FINDS, ITEM_TAGS, fitsTags, SITE_TAGS } from "../src/sim/loot.js";
 import { CRAFTS, durUnit } from "../src/sim/crafting.js";
+import { CRAFT_TOOLS } from "../src/sim/data-tools.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
 import { HEAT } from "../src/sim/upkeep.js";
 import { groupsRadioHeader } from "../src/ui/tradewindow.js";
@@ -88,7 +90,9 @@ section("The items (data.js)");
   const tube = newItem("puritabs");
   check(tube.dur === 10 && durUnit("puritabs") === "tablets", "a new tube holds 10 tablets; the durability unit reads \"tablets\"");
   check(CRAFTS.puritabs && CRAFTS.puritabs.gear === "puritabs" && CRAFTS.puritabs.needs === "med_station" && CRAFTS.puritabs.in.meds >= 1 && CRAFTS.puritabs.skill === "medicine", `the recipe: a med station, ${JSON.stringify(CRAFTS.puritabs.in)}, Medicine ${CRAFTS.puritabs.min}`);
-  check(!Object.values(CRAFTS).some((c) => c.gear === "handradio"), "no recipe for the radio: loot only");
+  // The electronics recipes (2026-10-24): the radio is craftable now, one recipe at a bench, and still found as loot (below).
+  const radioRecipes = Object.entries(CRAFTS).filter(([, c]) => c.gear === "handradio"), rr = CRAFTS.handradio;
+  check(radioRecipes.length === 1 && rr && rr.gear === "handradio" && JSON.stringify(rr.in) === JSON.stringify({ scrap: 3, parts: 1, electronics: 1 }) && !rr.gearIn && rr.hours === 5 && rr.skill === "mechanics" && rr.min === 2 && !rr.field && !rr.needs && JSON.stringify(CRAFT_TOOLS.handradio) === JSON.stringify(["pliers", "solder"]), `one recipe for the radio: ${JSON.stringify(rr && rr.in)}, ${rr && rr.hours} h, Mechanics ${rr && rr.min}, a bench, ${(CRAFT_TOOLS.handradio || []).join(" + ")}`);
   check(WORM.TABS_WATER === 10, "one tablet treats 10 water (WORM.TABS_WATER)");
 }
 

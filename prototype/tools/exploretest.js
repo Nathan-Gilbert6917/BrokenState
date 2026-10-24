@@ -278,7 +278,7 @@ console.log("Blueprints: locks, finding, studying");
 {
   const st = W();
   const h = hub(st);
-  Object.assign(h.stock, { scrap: 500, parts: 60, meds: 40, electronics: 10 }); // electronics: the walk-in freezer's (locked with the cold store, machines-2)
+  Object.assign(h.stock, { scrap: 500, parts: 60, meds: 40, electronics: 10, carparts: 4 }); // electronics: the walk-in freezer's (locked with the cold store, machines-2); car parts: the battery bank's batteries (2026-10-24)
   addPerson(st, h, "build", { mechanics: 12, medicine: 12 });
   // Early buildings are open; the top tiers are locked.
   for (const t of ["farm_plot", "bunkhouse", "walls", "well", "barricades", "infirmary", "ammo_bench", "med_station", "storehouse", "still", "greenhouse", "cellar", "kitchen"]) {

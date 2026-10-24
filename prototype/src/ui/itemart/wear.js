@@ -1062,10 +1062,17 @@ function handdrill(p) { // a brace and bit: a wooden knob on top, the bent steel
   V(p, 7, 12, 15, "#c9ced3"); p.set(8, 13, "#7d858c"); p.set(6, 14, "#7d858c"); // the auger bit
   lit(p, K.wood, K.woodL, "#9aa1a8");
 }
+function solderiron(p) { // a pen soldering iron: a black grip with a blue ring, the steel barrel, the copper tip hot, its cord
+  band(p, -12, -4, 13, 17, K.poly); lit(p, K.poly); // the grip
+  band(p, -6, -6, 13, 17, "#3a6fb0"); // the ring
+  band(p, -3, 6, 15, 16, K.steel); lit(p, K.steel); // the barrel
+  band(p, 7, 10, 15, 15, "#b8693a"); at(p, 11, 15, "#ffd04a"); // the tip, glowing
+  for (const [x, y] of [[0, 11], [0, 12], [1, 13], [0, 14], [1, 15]]) p.set(x, y, K.blk); // the cord
+}
 
 export const GEAR_ART = {
   halligan, pipewrench, leatherjacket, chainsleeves, motopants, legrig, // survival gear
-  axe: felling, scrapaxe, shovel, scrapshovel, scraphammer, handsaw, bowsaw, scrapsaw, toolkit, welder, sewingkit, handdrill, // tools (sim/data-tools.js)
+  axe: felling, scrapaxe, shovel, scrapshovel, scraphammer, handsaw, bowsaw, scrapsaw, toolkit, welder, sewingkit, handdrill, solderiron, // tools (sim/data-tools.js)
   cashbox, firebox, toolbox, gearcase, // lock boxes and equipment cases
   wheelbarrow, handcart, // carts (sim/carts.js)
   knife: chef, steakknife: steak, filletknife: fillet, cleaver, huntknife: hunter, survivalknife: survival, bowie, bayonet,

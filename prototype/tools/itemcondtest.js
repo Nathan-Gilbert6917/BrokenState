@@ -301,7 +301,10 @@ for (const K of Object.values(KITS)) for (const f of ["weapons", "strong", "loot
 // - boxed and bulk rounds (ammo.js formFinds, a truck hook on hashed dice: taken off with the flashbang hook below).
 // - survival gear (data-survival.js SURV_KIT_PATCH, appended to the kits' loot after the blades; survival.js SURV_FINDS /
 //   AREA_SURV / WARE_SURV, its own dice after everything else: chances at 0), 2026-10-19.
-const LATER_KEYS = new Set(["tourniquet", ...Object.values(BLADE_KIT_PATCH).flatMap((p) => Object.values(p).flat()), ...Object.values(SURV_KIT_PATCH).flatMap((p) => Object.values(p).flat())]);
+// - the soldering iron (data-tools.js solderiron, the electronics recipes 2026-10-24): a row in the finds tables of the
+//   electronics and radio shops, universities, workshops and the like (one weighted pick all the same: with it off the
+//   site finds and the raid containers' finds hash back to edc8e9c7fdaab752 and 4f69608bbca97f26, the dice where they were).
+const LATER_KEYS = new Set(["tourniquet", "solderiron", ...Object.values(BLADE_KIT_PATCH).flatMap((p) => Object.values(p).flat()), ...Object.values(SURV_KIT_PATCH).flatMap((p) => Object.values(p).flat())]);
 for (const T of [SITE_FINDS, AREA_FINDS]) for (const v of Object.values(T)) for (const k of Object.keys(v.items)) if (LATER_KEYS.has(k)) { nlStash.push([v.items, k, v.items[k]]); delete v.items[k]; }
 for (const K of Object.values(KITS)) for (const f of ["weapons", "strong", "loot", "finds"]) if (Array.isArray(K[f]) && K[f].some((k) => LATER_KEYS.has(k))) { nlStash.push([K, f, K[f]]); K[f] = K[f].filter((k) => !LATER_KEYS.has(k)); }
 for (const B of Object.values(MILDEAD.BODY)) for (const f of ["items", "armor"]) if (Array.isArray(B[f]) && B[f].some((r) => LATER_KEYS.has(r[0]))) { nlStash.push([B, f, B[f]]); B[f] = B[f].filter((r) => !LATER_KEYS.has(r[0])); }
@@ -352,7 +355,11 @@ const BASE = {
   // visitors: re-baselined for the hub out in the open (2026-10-22: world.js createWorld, startpick.js START_CLEAR; was
   // c6ac67fed2276a9e / bf202c687fe737a0 / 12799878338062): travellers and caravans come from the edges toward your hub,
   // so where it stands moves where they are met and what their dice draw on the way.
-  siteFinds: "edc8e9c7fdaab752", groupWares: { keys: "dcbb48f4247749e8", rng: 2670422955354 }, visitors: { keys: "c643e509c194a1f5", merchants: "f7404c882ec78521", rng: 12728447271355 },
+  // visitors: re-baselined for the electronics' two manuals (2026-10-24: blueprints.js solarinst, the Solar Installer's
+  // Handbook, and hobbyelec, the Hobby Electronics Handbook; was c643e509c194a1f5 / f7404c882ec78521 / 12728447271355):
+  // a caravan shuffles BP_KEYS for its blueprints (visitors.js merchantGoods), one draw a key, so two more keys move
+  // the visitors' dice and all that follows; with the two taken out of BP_KEYS they come back to the old hashes exactly.
+  siteFinds: "edc8e9c7fdaab752", groupWares: { keys: "dcbb48f4247749e8", rng: 2670422955354 }, visitors: { keys: "a3e22f8dda2c057c", merchants: "3f0ab5a78a5a8143", rng: 13215643777613 },
 };
 // The flashbang branch's extras (deadsoldiers.js MILDEAD.BODY_EXTRA, miltrucks.js TRUCK_LOOT_HOOKS) roll dice of their
 // own and only add: off for these samples, like the commune's extras below, so the old baselines hold.
