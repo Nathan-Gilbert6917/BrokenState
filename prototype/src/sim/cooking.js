@@ -65,8 +65,13 @@
 //   POISON.camp dirt.
 // Machines (pick, the freezer list): the grain mill ("grainmill": flour from grain) and the meat grinder
 //   ("meatgrinder": ground meat from raw game, sausage from ground meat) are hand-cranked machines on a utility plot
-//   (buildings.js; no power), cheap in machine parts, worn on the days they turn (breakdowns.js FIXTURES ranDay: b.ran).
+//   (buildings.js), cheap in machine parts, worn on the days they turn (breakdowns.js FIXTURES ranDay: b.ran).
 //   The vacuum sealer (power.js hasSealer: powered and working) packs survival meals.
+//   Their optional motor (2026-10-24, the user's request: "fix and implement any machine power needs and power output"):
+//   each is a power user of 1 (power.js POWER_USERS) that draws only while a bill here calls for it today (machineWanted:
+//   a Flour, Ground meat or Smoked sausage bill not paused or done, at any station), and while it has power its batches
+//   take 1 / POWER_BOOST.out of the cooks' hours (runStation machineBoost: ×1.5 the flour, ground meat and sausage a
+//   cook's hour; the same ingredients a batch). Without power they turn by hand as before: never idle.
 // Teams (teamCookHour, worm.js wormTeamHour): at a lit, fed camp fire the team's raw meat and fish is roasted into simple
 //   meals (the camp roast: COOK.team.perHour days of it an hour × the best cook's speed, a little purified water).
 // Camp fires and the cook pot (2026-10-12, user request: "Lit camp fires use fire wood it goes out. Cooking uses camp
@@ -98,7 +103,7 @@ import { count, isShelter } from "./buildings.js";
 import { hasKitchen, kitchenCold, kitchenService, cookHoursLately, dayRole, cookPlusOf } from "./kitchen.js";
 import { isManaged } from "./work.js";
 import { workFactor, addCondition, hasCondition, sickStats } from "./health.js";
-import { hasSealer } from "./power.js";
+import { hasSealer, isPowered, POWER_BOOST } from "./power.js"; // the sealer's hook; the mill's and the grinder's motor (2026-10-24)
 import { fireLit, teamFire, teamKit } from "./fieldheat.js";
 import { carriedAll } from "./comforts.js"; // the cook pot carried by someone at the base
 import { stomachMult } from "./traits.js";
@@ -164,10 +169,10 @@ export const COOK_RECIPES = {
   lavish:   { name: "Lavish meal",     out: "f_lavishmeal",   n: 2, gain: 0.8,  in: [{ cls: "meat", share: 0.5 }, { cls: "veg", share: 0.5 }], water: 2, hours: 1.5, skill: 8, at: ["canteen"], desc: "A feast: lots of meat and vegetables for less food than went in, worth it for the mood." },
   pemmican: { name: "Pemmican",        out: "f_pemmican",     n: 2, gain: 1,    in: [{ cls: "drymeat", share: 0.67 }, { cls: "fat", share: 0.33 }], water: 0.5, hours: 2, skill: 3, at: ["canteen", "cookhouse"], desc: "Dried meat pounded with fat and berries or nuts: light travelling food that keeps a year." },
   survival: { name: "Survival meal",   out: "f_survivalmeal", n: 4, gain: 1,    in: [{ cls: "meat", share: 0.5 }, { cls: "veg", share: 0.5 }], water: 2, hours: 2, skill: 4, at: ["canteen"], needs: "sealer", desc: "A cooked meal dried and vacuum packed in a pouch: ten years on the shelf and almost no weight. Needs a working, powered vacuum sealer here." },
-  flour:    { name: "Flour",           out: "f_flour",        n: 4, gain: 0.98, in: [{ cls: "grain", share: 1 }], water: 0, hours: 1.5, skill: 0, at: ["canteen", "cookhouse"], needs: "grainmill", desc: "Grain ground on the hand-cranked mill. Needs a grain mill here." },
+  flour:    { name: "Flour",           out: "f_flour",        n: 4, gain: 0.98, in: [{ cls: "grain", share: 1 }], water: 0, hours: 1.5, skill: 0, at: ["canteen", "cookhouse"], needs: "grainmill", desc: "Grain ground on the mill: hand-cranked, or ×1.5 as fast a cook's hour with 1 power on its motor (Power card). Needs a grain mill here." },
   bread:    { name: "Bread",           out: "f_bread",        n: 4, gain: 1.1,  in: [{ cls: "flour", share: 1 }], water: 2, hours: 2, skill: 2, at: ["canteen"], desc: "Loaves from flour and water in the Kitchen's oven. Stale in days." },
-  ground:   { name: "Ground meat",     out: "f_groundmeat",   n: 4, gain: 1,    in: [{ cls: "game", share: 1 }],  water: 0.5, hours: 1, skill: 0, at: ["canteen", "cookhouse"], needs: "meatgrinder", desc: "Tough cuts of game run through the grinder. Needs a meat grinder here." },
-  sausage:  { name: "Smoked sausage",  out: "f_sausage",      n: 2, gain: 1,    in: [{ cls: "ground", share: 1 }], water: 1, hours: 2, skill: 3, at: ["canteen", "cookhouse"], needs: "meatgrinder", wood: 4, desc: "Ground meat salted, stuffed and smoked: keeps months. Needs a meat grinder here and 4 wood a batch for the smoke." },
+  ground:   { name: "Ground meat",     out: "f_groundmeat",   n: 4, gain: 1,    in: [{ cls: "game", share: 1 }],  water: 0.5, hours: 1, skill: 0, at: ["canteen", "cookhouse"], needs: "meatgrinder", desc: "Tough cuts of game run through the grinder: hand-cranked, or ×1.5 as fast a cook's hour with 1 power on its motor (Power card). Needs a meat grinder here." },
+  sausage:  { name: "Smoked sausage",  out: "f_sausage",      n: 2, gain: 1,    in: [{ cls: "ground", share: 1 }], water: 1, hours: 2, skill: 3, at: ["canteen", "cookhouse"], needs: "meatgrinder", wood: 4, desc: "Ground meat salted, stuffed and smoked: keeps months. Needs a meat grinder here (×1.5 as fast with power on it) and 4 wood a batch for the smoke." },
   roast:    { name: "Camp roast",      out: "f_simplemeal",   n: 2, gain: 1.1,  in: [{ cls: "raw", share: 1 }],  water: 0.25, hours: 0.5, skill: 0, at: ["cookhouse"], team: true, desc: "Raw meat or fish roasted over the fire: little water, a little more filling than raw, and safe." },
 };
 for (const [k, R] of Object.entries(COOK_RECIPES)) { R.key = k; R.kcalOut = R.n * FOODS[R.out].kcal; R.units = R.kcalOut / R.gain / DAY_KCAL; } // units: days of food in a batch
@@ -227,6 +232,26 @@ export function stationWhy(state, base, key) {
 const fireBurned = (state, base) => (fireLit(base) && (base.stock.wood || 0) > 0) || (base.fireAt != null && state.hour - base.fireAt < 24);
 const freeFire = (state, base) => isShelter(base) && !count(base, "cookhouse") && fireBurned(state, base); // a camp's or shelter's own fire: its wood is paid by the hour (woodcutting.js shelterFire)
 export const machineAt = (state, base, need) => (need === "sealer" ? hasSealer(state, base) : count(base, need) > 0);
+// A powered motor on the mill or the grinder (power.js POWER_BOOST): its batches take 1 / out of the cooks' hours; a
+// hand-cranked one (no power, switched off, broken) 1. The sealer has no speed of its own (it only gates the recipe).
+export function machineBoost(state, base, need) {
+  const B = need && POWER_BOOST[need];
+  if (!B || need === "sealer") return 1;
+  const m = base.buildings.find((x) => x.type === need && !x.broken);
+  return m && isPowered(base, m) ? B.out : 1;
+}
+// Does a cooking machine have work today (power.js userWants: it draws power only then)? A bill at any station here that
+// needs it, not paused and not done (its ingredients are not checked: the motor hums while the cooks fetch them).
+export function machineWanted(state, base, type) {
+  const c = base && base.cooking;
+  if (!c) return false;
+  for (const key of Object.keys(STATIONS)) {
+    const S = c[key];
+    if (!S || !S.bills) continue;
+    if (S.bills.some((b) => !b.paused && !billDone(b) && COOK_RECIPES[b.recipe] && COOK_RECIPES[b.recipe].needs === type)) return true;
+  }
+  return false;
+}
 
 // The defaults: a new Kitchen gets "Simple meal, until you have 2 days of eating" (the old automatic meals, now a bill
 // you can change); a cook fire starts with none (the governor and the stewards add theirs).
@@ -347,7 +372,7 @@ function runStation(state, base, key, rec) {
   for (const b of live) {
     const R = COOK_RECIPES[b.recipe];
     const M = recipeMin(b.recipe, knows);
-    const batchHours = R.hours / (M.covered ? 1 + COOK.bookSpeed : 1);
+    const batchHours = R.hours / (M.covered ? 1 + COOK.bookSpeed : 1) / machineBoost(state, base, R.needs); // a powered mill or grinder: ×1.5 a cook's hour (power.js POWER_BOOST)
     for (let guard = 0; guard < 400; guard++) {
       if (!billWants(state, base, b)) { b.why = b.mode === "count" ? "done" : "enough in store"; break; }
       const cook = crew.find((c) => c.left > 1e-6 && c.lvl >= M.min);

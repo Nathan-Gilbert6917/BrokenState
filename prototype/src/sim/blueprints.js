@@ -54,6 +54,12 @@ export const BLUEPRINTS = {
   // handbook it opens in the mid game (ERA_OPEN: by then the know-how has gone round).
   radioeng: { name: "Radio Engineering Handbook", skill: "mechanics", min: 3, hours: 24, value: 60, unlocks: { buildings: ["relay", "radio"] },
     sites: ["radiotower", "airport", "police", "military", "univ"], desc: "Antennas, transmitters, repeaters and line-of-sight links." },
+  // More of the grid (2026-10-24, the user's "more recipes for building that would use electronics ... pre-requisite
+  // items"; data-power.js solar_array, battery_bank): the solar array and the battery bank are one trade (panels, charge
+  // controllers, inverters and battery strings), so one handbook opens both. Mechanics 3 to study, as the Generator
+  // Schematics; found where the trade kept its books: hardware stores, the university, the dam, radio towers, factories.
+  solarinst: { name: "Solar Installer's Handbook", skill: "mechanics", min: 3, hours: 24, value: 60, unlocks: { buildings: ["solar_array", "battery_bank"] },
+    sites: ["hardware", "univ", "dam", "radiotower", "factory"], desc: "Panel strings, charge controllers, inverters and battery banks: an off-grid installer's course notes." },
   weaponplans: { name: "Improvised Weapons Plans", skill: "mechanics", min: 4, hours: 20, value: 55, unlocks: { crafts: ["crossbow", "pipegun"] },
     sites: ["gunstore", "police", "prison", "military", "hardware", "lodge"], desc: "Leaf-spring crossbows and zip guns, with drawings." },
   armorsmith: { name: "Armor Smithing Notes", skill: "mechanics", min: 3, hours: 16, value: 45, unlocks: { crafts: ["scrapvest"] },
@@ -64,6 +70,15 @@ export const BLUEPRINTS = {
     sites: ["gunstore", "lodge", "cabin", "ranger", "mall"], desc: "Laminating limbs, cutting cams from scrap pulleys, tillering a bow true." },
   combatmedic: { name: "Combat Medic's Notes", skill: "medicine", min: 4, hours: 18, value: 50, unlocks: { crafts: ["traumakit"] }, covers: ["bandagekit", "dressings"],
     sites: ["military", "hospital", "firestation", "clinic", "police"], desc: "An army medic's packing lists: tourniquets, chest seals, pressure dressings." },
+  // The electronics recipes (crafting.js, the user's request 2026-10-24: "more recipes for crafting that would use
+  // electronics ... pre-requisite items"): a hobbyist's handbook unlocks the three precision builds (laser grips, a pistol
+  // red dot, a laser rangefinder) and gives the edge to the plain ones (a laser sight, electronic ear defenders, a
+  // hand-crank radio, a weapon light, a helmet light, the pocket radio decoy). Mechanics 3 to study, as the Machinist's
+  // Handbook. On the shelves of radio and electronics shops, radio towers, universities and schools, the Army's signals
+  // sections and the pawn shop's back shelf; a news crew's wreck (CRASH_BP.crash_news); traders sell it (WARE_BP).
+  hobbyelec: { name: "Hobby Electronics Handbook", skill: "mechanics", min: 3, hours: 20, value: 50, unlocks: { crafts: ["lasergrip", "holopistol", "rangefinder"] },
+    covers: ["laser", "eardef", "handradio", "weaponlight", "helmetlight", "pocketradio"],
+    sites: ["radioshop", "electronics", "radiotower", "univ", "school", "military", "pawnshop"], desc: "Diode drivers, reflex-sight emitters, a rangefinder's timing board: circuits built on the kitchen table, with the solder joints drawn." },
   // ---------- end of craft blueprints ----------
 };
 export const BP_KEYS = Object.keys(BLUEPRINTS);
@@ -156,6 +171,8 @@ function unlockName(k) {
     trench: "the trench", cistern: "the cistern", coldstore: "the cold store", freezer: "the walk-in freezer", kitchen: "a second preserving room", relay: "the radio relay", radio: "the radio station",
     crossbow: "the scrap crossbow", pipegun: "the pipe shotgun", scrapvest: "the scrap plate vest",
     generator3: "the industrial diesel set (a generator's third tier)",
+    solar_array: "the solar panel array", battery_bank: "the battery bank", // more of the grid (2026-10-24)
+    lasergrip: "laser grips", holopistol: "the pistol red dot", rangefinder: "the laser rangefinder", pocketradio: "the pocket radio decoy", // the electronics recipes (2026-10-24)
   };
   if (names[k]) return names[k];
   const g = GEAR[CRAFTS_GEAR[k] || k];
@@ -283,7 +300,7 @@ export const ZONE_P = { urban: 0.018, town: 0.012, rural: 0.008, special: 0.03 }
 export const CRASH_BP = {
   crash_mil: ["armyeng", "genschem", "weaponplans", "armorsmith", "radioeng", "combatmedic", "indpower"],
   crash_med: ["fieldsurgery", "hospitalops", "watertreat", "combatmedic"],
-  crash_news: ["radioeng", "genschem"],
+  crash_news: ["radioeng", "genschem", "hobbyelec"], // a news crew's electronics (2026-10-24)
   crash_cargo: ["refrig", "canning", "machinist", "watertreat"],
   airdrop: ["fieldsurgery", "watertreat", "armyeng"],
 };

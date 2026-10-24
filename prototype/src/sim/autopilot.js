@@ -12,6 +12,17 @@
 // It only uses the same calls as the UI (canBuild / queueBuild, queueCraft, treatAtBase, launchExpedition,
 // startOrder, saveSupplyRun ...), plays by what the player knows of the map (knowledge snapshots, markers,
 // known groups), and never draws from state.rng. Turning it off hands everything back as it is.
+// The power grid (2026-10-24, the user's request: "Both players and AI groups should build these [the solar panel
+// array, battery bank, perimeter alarm, electric heaters and charging station, plus the rest of the grid] ... and
+// setting up power grids for the base"): gridWishes (called from buildWishes beside foodStoreWishes) wishes for every
+// grid building with a real reason (the breaker panel at 6 people with a generator, the well pump when the water runs
+// short, the fence charger when the wire stands and the base is threatened, the ammo press for waiting reloading orders,
+// solar arrays when the fuel is short or the generator burns every day, a battery bank for the night load, the alarm
+// early once any power stands, the heaters for a winter the woodpile cannot carry, the charger for rechargeable gear),
+// each gated by its blueprint (buildLock), a Mechanics hand (canBuild), its plot and its parts and electronics with a
+// reserve kept (GRID_SPARE). The fittings (the heaters, the charger) go through canBuild as the stove does
+// (stoveWish: a general building with floor for them, basemap.js fittingRoom). The generator's fuel reserve (govOrders,
+// fuelFloor) and the upgrade (autoGenUpgrade) read the fuel only and are untouched by the sun.
 import { basicToolWanted, isBasicToolJob, TOOL_KINDS } from "./toolreqs.js"; // the tools a base keeps for building and crafting (planCrafts)
 import { HAUL, govHauling, haulersWanted, haulScore, onHaulTrip } from "./hauling.js"; // hauling: haul orders and haulers (call-time only)
 import { isChopJob } from "./woodwork.js"; // noidle: the felling in the queue
@@ -82,7 +93,10 @@ import { autoRecruitPick } from "./recruits.js";
 import { planStudy } from "./skills.js";
 import { planBlueprintStudy, buildLock } from "./blueprints.js";
 import { stationOrder, setStationOrder, orderHold } from "./production.js";
-import { generators, setGenReserve, powerStatus, powerWanted, genCapacity, genToUpgrade, genUpgradeFuelOk, GEN_UP } from "./power.js"; // machines-2: the generators' fuel reserve (govOrders); gen-tiers: the upgrade (autoGenUpgrade)
+import { generators, setGenReserve, powerStatus, powerWanted, genCapacity, genToUpgrade, genUpgradeFuelOk, GEN_UP, POWER_USERS, isSource } from "./power.js"; // machines-2: the generators' fuel reserve (govOrders); gen-tiers: the upgrade (autoGenUpgrade); the grid's wishes (gridWishes)
+import { SOLAR, HEATER, CIRCUITS, BATTERY } from "./data-power.js"; // the grid's numbers for gridWishes (2026-10-24)
+import { solarArrays, chargeables } from "./electric.js"; // the arrays standing, the rechargeable gear here (gridWishes; call-time only)
+import { reloadOrders } from "./reloading.js"; // the reloading orders waiting for an ammo press (gridWishes)
 import { column } from "./history.js"; // gen-tiers: the base's fuel in and out over the last weeks
 import { friendlyCrew, wantsRest, relAutopilotDaily } from "./relations.js";
 import { autoDiplomacyDaily, hiveAllies, broodAfterAllies, goalsProgress, allianceMembers, ALLIANCE, isMember, inviteProblem, inviteToAlliance, landCentres, controlRadius, coalitionMask } from "./alliance.js";
@@ -2794,6 +2808,7 @@ const BUILD_AREA = {
   boiler: "food", cookhouse: "food", canteen: "food", grainmill: "food", meatgrinder: "food", stove: "food", // base building: a wood stove indoors is a cook fire (the general buildings, bunks, shelves and lockers are "building")
   ammo_bench: "production", machine_shop: "production", still: "production", generator: "production", sealer: "production",
   craftbench: "production", workbench: "production", toolbench: "production",
+  fence_charger: "defence", perimeter_alarm: "defence", // the grid's defences (gridWishes, 2026-10-24) with the floodlights; the rest of the grid is plain Building
 };
 // A full queue still takes the summer store's room (buildWishes `room`: the last weeks of spring and summer) as one
 // more job, put at its front (the builders work on the first job: buildings.js constructionHour); a hub whose beds
@@ -3085,6 +3100,7 @@ function buildWishes(state, base) {
   if (count(base, "farm_plot") + queued("farm_plot") < GOV_PLOTS[plotSize(base)]) add("farm_plot", "crop plots to grow food on", true);
   else if (g.farmShort[base.id] && count(base, "farm_plot") + queued("farm_plot") < (isHub ? BUILDINGS.farm_plot.max : GOV_PLOTS.outpostMax)) add("farm_plot", "the farmers need more plots", true);
   for (const w of foodStoreWishes(state, base, people, queued)) out.push(w);
+  for (const w of gridWishes(state, base, people, queued)) out.push(w); // the power grid (2026-10-24): the panel, the pump, the charger, the press, the sun, the bank, the alarm, the heaters, the charger
   // A hunting cabin (hunting.js) where its wider grounds pay (cabinGain: the best hunt 2 tiles out against the tiles
   // next to the base, walking counted; trips-plus #5), before the winter or while food is short.
   if (BUILDINGS.huntcabin && !g.noHunting && !count(base, "huntcabin") && !queued("huntcabin") && here.length >= (isHub ? 6 : 2) && !cabinProblem(state, base) && cabinGain(state, base) >= CABIN_GAIN &&
@@ -3326,6 +3342,120 @@ function foodStoreWishes(state, base, people, queued) {
   if (count(base, "canteen") && (st.parts || 0) >= 3 && plotsFree(base, "utility") >= 2) {
     if (can("grainmill") && !countAll(base, "grainmill") && (st.f_grain || 0) >= 15) add("grainmill", "a grain mill: the grain into flour and bread");
     else if (can("meatgrinder") && !countAll(base, "meatgrinder") && (count(base, "huntcabin") || atBase(state, base.id).some((x) => x.role === "hunt")) && foodUnits(base, (k, f) => !!f.raw) >= people) add("meatgrinder", "a meat grinder: surplus game into sausage that keeps");
+  }
+  return out;
+}
+
+// ---------- the power grid (2026-10-24; power.js, electric.js, data-power.js) ----------
+// The user's request: "Both players and AI groups should build these [the solar panel array, battery bank, perimeter
+// alarm, electric heaters and charging station, plus the rest of the grid] and fix and implement any machine power needs
+// and power output and setting up power grids for the base." The governor's (and a steward with Building's) wishes for
+// every grid building, one reason each, in the order they go up (the panel and the cheap alarm, then the sources, then
+// the users that draw from them); planBuilds queues the first it can pay for. Each is gated by canBuild at queue time
+// (the blueprint, a Mechanics hand here, the plot, the tools, the materials) and here by the reserve kept over its cost
+// (GRID_SPARE: 2 machine parts and 1 electronics stay in the stores, as the freezer keeps FREEZER_SPARE parts; the cost
+// as the stores pay it, buildmats.js siteCost), and its blueprint (buildLock: the Solar Installer's Handbook for the
+// array and the bank), so the supply runs never carry materials out for a build nobody here can raise.
+//   breaker panel     a generator (built or a found set) stands and 6+ people live here (the mood: electric light,
+//                     electric.js powerMood), something to wire (a CIRCUITS building standing), and the power for at
+//                     least half the lights (the capacity less what is wanted: a panel that leaves most of the
+//                     buildings dark costs mood instead of giving it; the upgrade then sees the demand: autoGenUpgrade).
+//   perimeter alarm   a shelter or bigger (its size, canBuild), a generator or an array standing, threatened lately
+//                     (threatAt urgent or standing, a horde in sight: hordeThreat, a raid on this base in the last 60
+//                     days: base.lastRaid, or a raid repelled) or a hostile group's base within 20 tiles, and 3
+//                     electronics beyond its cost and the reserve: cheap and early, before the sources (its 1 power at
+//                     night is the bank's or the generator's; no spare-power gate, so it never loses its plot to them).
+//   solar panel array the handbook studied and the base wants power (powerWanted > 0), and either the fuel is short
+//                     (under SOLAR_WISH.fuelLow, or the fuel a day in less out is negative: genFuelFlows, the upgrade's
+//                     reading; saved up for) or a generator burns every day (powerStatus running or fuelPerDay, or ran
+//                     in the last day) with SOLAR_WISH.richEl electronics beyond its cost. More arrays (to the max)
+//                     while the daytime demand (powerWanted less the night users: the spotlights, the alarm) exceeds
+//                     what the arrays give at full sun.
+//   battery bank      an array or a generator stands (canBuild) and a night load exists (NIGHT_USERS: a freezer, a
+//                     fridge, a spotlight, the alarm, the radio), sized to it: another bank only while the night's load
+//                     (NIGHT_HOURS × the night users' draw) exceeds what the banks hold (BATTERY.cap each); its 2 car
+//                     parts.
+//   electric well pump a working well without a pump, the water short (economy.js waterOutlook: more drunk than made,
+//                     or a dry day short) and 1 power to spare (gridSpare).
+//   fence charger     barbed or razor wire stands and the base is threatened (as the alarm) with 2 power to spare.
+//   ammo press        one: a reloading bench and reloading orders waiting (reloading.js reloadOrders), Mechanics 4
+//                     here, a generator and 2 power to spare; its 2 gun parts too (the second press is the player's).
+//   electric heaters  winter active or coming (winterActive) and the woodpile under the winter's need (woodcutting.js
+//                     woodNeed short), a generator or an array with HEATER.need power to spare per heater (the arrays at
+//                     their winter output), a general building with floor for them (fittingRoom); saved up for.
+//   charging station  rechargeable gear at the base (electric.js chargeables: ear defenders, a headset, short of
+//                     charge or not) and 1 power to spare.
+// Spare power (gridSpare): the generators' capacity plus the arrays at full sun (× the winter's share for the heaters)
+// less what every powered building here would draw staffed (powerWanted). Not at a camp or a shelter (their yards are
+// campYard's). The AI groups' side is theirs (groupworks.js).
+const GRID_SPARE = { parts: 2, electronics: 1 };
+const SOLAR_WISH = { fuelLow: 15, richEl: 4 };
+const NIGHT_USERS = ["freezer", "fridge", "spotlamp", "perimeter_alarm", "radio"]; // what draws after dark (a battery bank's reason)
+const NIGHT_HOURS = 10; // the hours the banks carry (20:00 to 06:00: data-power.js SOLAR.to to SOLAR.from)
+const gridSpare = (state, base, season = 1) => genCapacity(base) + solarArrays(base).length * SOLAR.out * season - powerWanted(state, base, () => true);
+export function gridWishes(state, base, people, queued) { // exported for the tests (tools/powergridtest.js can call it as foodStoreWishes is called)
+  const out = [];
+  if (isShelter(base) || !BUILDINGS.solar_array) return out;
+  const st = base.stock;
+  const here = atBase(state, base.id);
+  const best = (k) => Math.max(0, ...here.map((s) => skill(s, k)));
+  const gens = generators(base);
+  const arrays = solarArrays(base).length;
+  const anyPower = gens.length > 0 || arrays > 0;
+  // The materials with the reserve kept (parts and electronics beyond GRID_SPARE; the other keys as the stores pay them:
+  // buildmats.js siteCost, the building materials and sheets the stores lack made on site from scrap).
+  const paid = (t, extraEl = 0) => Object.entries(siteCost(st, BUILDINGS[t].cost).take).every(([k, v]) => (st[k] || 0) >= v + (k === "parts" ? GRID_SPARE.parts : k === "electronics" ? GRID_SPARE.electronics + extraEl : 0));
+  const can = (t, max = BUILDINGS[t].max) => countAll(base, t) + queued(t) < max && !buildLock(state, base, t) && best("mechanics") >= ((BUILDINGS[t].req && BUILDINGS[t].req.mechanics) || 0);
+  const add = (type, why, save = false) => out.push({ type, why, save });
+  const threat = threatAt(state, base);
+  const hostileNear = state.factions.some((f) => f.alive && f.known && attitude(f) === "Hostile" && f.bases.some((b) => state.grid.distance(b, base.tile) <= 20));
+  const threatened = threat.urgent > 0 || threat.standing > 0 || hordeThreat(state, base).any || (base.lastRaid && day(state) - base.lastRaid.day <= 60) || state.stats.raidsRepelled > 0;
+  // The breaker panel: a generator, 6 people, something to wire, and the power for at least half the lights.
+  if (can("breaker") && gens.length && people >= 6 && paid("breaker")) {
+    const lights = base.buildings.filter((b) => CIRCUITS[b.type]).reduce((a, b) => a + CIRCUITS[b.type][0], 0);
+    if (lights > 0 && gridSpare(state, base) >= lights / 2) add("breaker", `electric light in the buildings for ${people} people (mood)`);
+  }
+  // The perimeter alarm: cheap and early once any power stands, under threat or in a hostile neighbourhood.
+  if (can("perimeter_alarm") && anyPower && (threatened || hostileNear) && paid("perimeter_alarm", 2)) add("perimeter_alarm", hostileNear ? "hostile neighbours: never caught asleep at night" : "attacked lately: never caught asleep at night");
+  // The solar array: the base wants power and the fuel is short, or a generator burns daily and electronics are plenty.
+  if (can("solar_array") && paid("solar_array")) {
+    const want = powerWanted(state, base, () => true);
+    const flows = genFuelFlows(state, base);
+    const fuelShort = (st.fuel || 0) < SOLAR_WISH.fuelLow || (flows && flows.income - flows.out < 0);
+    const ps = want > 0 ? powerStatus(state, base) : null;
+    const burns = ps && (ps.running > 0 || ps.fuelPerDay > 0 || gens.some((g) => g.lastRan != null && state.hour - g.lastRan < 24));
+    const nightNeed = base.buildings.filter((b) => (b.type === "spotlamp" || b.type === "perimeter_alarm") && !(base.powerOff && base.powerOff[b.id])).reduce((a, b) => a + POWER_USERS[b.type].need, 0);
+    const dayWant = want - nightNeed;
+    const deficit = flows && flows.income - flows.out < 0 ? `, ${Math.round((flows.out - flows.income) * 10) / 10} a day more burned than comes in` : "";
+    if (want > 0 && !arrays && fuelShort) add("solar_array", `${want} power wanted and the fuel is short (${Math.floor(st.fuel || 0)} here${deficit}): power from the sun`, true);
+    else if (want > 0 && !arrays && burns && paid("solar_array", SOLAR_WISH.richEl)) add("solar_array", `the generator burns fuel every day for ${want} power: the sun gives it for nothing by day`);
+    else if (arrays && dayWant > arrays * SOLAR.out) add("solar_array", `${dayWant} power wanted by day for ${arrays * SOLAR.out} from the sun: another array`);
+  }
+  // The battery bank: an array or a generator, and a night load.
+  if (can("battery_bank") && anyPower && paid("battery_bank")) {
+    const night = base.buildings.filter((b) => NIGHT_USERS.includes(b.type) && !b.broken && !(base.powerOff && base.powerOff[b.id]));
+    const load = night.reduce((a, b) => a + POWER_USERS[b.type].need, 0) * NIGHT_HOURS;
+    if (night.length && load > (countAll(base, "battery_bank") + queued("battery_bank")) * BATTERY.cap) add("battery_bank", `${night.map((b) => BUILDINGS[b.type].name.toLowerCase()).filter((v, i, a) => a.indexOf(v) === i).join(", ")} draw${night.length === 1 ? "s" : ""} after dark: a bank ${arrays ? "stores the sun's surplus" : "keeps the generator off at night"}`);
+  }
+  // The well pump: a working well without one, the water short, 1 power to spare.
+  if (can("elec_pump") && count(base, "well") > countAll(base, "elec_pump") + queued("elec_pump") && anyPower && paid("elec_pump")) {
+    const wo = waterOutlook(state, base);
+    if ((wo.net < 0 || wo.dryNet < 1) && gridSpare(state, base) >= POWER_USERS.elec_pump.need) add("elec_pump", `the water runs short (${wo.net < 0 ? `${wo.net} a day` : `${wo.dryNet} a day on a dry day`}): a pump down the well`);
+  }
+  // The fence charger: wire and a threat, 2 power to spare.
+  if (can("fence_charger") && (countAll(base, "barbed_wire") || countAll(base, "razor_wire")) && threatened && anyPower && paid("fence_charger") && gridSpare(state, base) >= POWER_USERS.fence_charger.need) add("fence_charger", "raiders or the dead near: a charge on the wire");
+  // The ammo press (one): a reloading bench with orders waiting, Mechanics 4, a generator, 2 power to spare.
+  if (can("ammo_press", 1) && count(base, "reload_bench") && reloadOrders(base).length && best("mechanics") >= 4 && gens.length && paid("ammo_press") && gridSpare(state, base) >= POWER_USERS.ammo_press.need) add("ammo_press", `${reloadOrders(base).length} reloading order${reloadOrders(base).length === 1 ? "" : "s"} waiting: a press loads them 2.5× as fast`);
+  // The electric heaters: winter active or coming, the woodpile short, power to spare at the winter's sun, a floor.
+  if (can("elec_heater") && anyPower && winterActive(state, base) && paid("elec_heater") && fittingRoom(state, base, "elec_heater")) {
+    const wn = woodNeed(state, base);
+    if (wn.short && gridSpare(state, base, SOLAR.season.winter) >= HEATER.need) add("elec_heater", `the woodpile is under the winter's need (${Math.floor(st.wood || 0)} of ${wn.need}): ${HEATER.heads} people warmed on power instead`, true);
+  }
+  // The charging station: rechargeable gear here and 1 power to spare.
+  if (can("charging_station") && anyPower && paid("charging_station") && fittingRoom(state, base, "charging_station") && gridSpare(state, base) >= POWER_USERS.charging_station.need) {
+    const gear = chargeables(state, base).length;
+    const owned = (base.armory || []).some((it) => it && GEAR[it.key] && GEAR[it.key].recharge) || here.some((s) => allCarried(s).some((it) => it && GEAR[it.key] && GEAR[it.key].recharge));
+    if (gear || owned) add("charging_station", `${gear ? `${gear} rechargeable item${gear === 1 ? "" : "s"} short of charge` : "rechargeable gear here (ear defenders, headsets)"}: charged on the grid, no battery packs`);
   }
   return out;
 }

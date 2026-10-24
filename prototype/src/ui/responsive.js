@@ -410,9 +410,9 @@ function outsideRaid(e) {
 // Watching), so the keys, the pad, autoReveal and the saved layout keep working: a new urgent alert opens the alerts
 // sheet by itself while Options → "Auto-open panels on select" is on (ui/layout.js autoReveal), and the 🔔 chip
 // flashes either way (the alerts' own 4-second flash line is a toast at the foot of the map while neither the alerts
-// nor the guide sheet is open; responsive.css). The minimap's sheet and
-// the guide's are the strip's own (hudMini, hudGuide): Options → Display → Minimap says whether there is a minimap at
-// all (off: no chip), and the guide's own fold is its one-line form. Whatever was open before the strip came up is put
+// nor the guide sheet is open; responsive.css). The minimap's sheet is the strip's own (hudMini: Options → Display →
+// Minimap says whether there is a minimap at all; off: no chip); the guide has its own box and fold (layout.guide,
+// ui/hudbar.js on a desktop), its one-line form its own ▾. Whatever was open before the strip came up is put
 // back when the window grows. The boxes have fixed slots here (responsive.css) and do not drag (ui/overlaydrag.js
 // setOverlaysFixed); a chip is a long press from its description.
 const HUD = [
@@ -422,12 +422,12 @@ const HUD = [
   ["minimap", "▣", "Minimap", "The whole state as far as you know it: tap or drag on it to look there"],
   ["guide", "🧭", "First week", "The first-week guide: steps for a new holdout, ticked off as you do them, with Show me"],
 ];
-const HUD_BOXES = ["alerts", "watchlist", "legend", "minimap", "mm-show"]; // watched for a change (a redraw, a fold, the minimap shown)
+const HUD_BOXES = ["alerts", "guide", "watchlist", "legend", "minimap", "mm-show"]; // watched for a change (a redraw, a fold, the minimap shown)
 let hud = false;              // the strip is up
 let hudSaved = null;          // the boxes open before it came up ({ key: true }), put back when it goes
 let hudOpen = new Set();      // the boxes open at the last sync: a fresh one closes the others
 let hudShown = new Set();     // the chips shown at the last sync: a box that comes unfolded (the first 📌 pin) starts closed here
-let hudGuide = false, hudMini = false; // the guide's and the minimap's sheets
+let hudMini = false;          // the minimap's sheet
 let hudFor = null;            // the game the sheets belong to: a new game starts with everything closed again
 let hudObs = null, hudSizeObs = null, hudRaf = 0;
 let dangerSeen = null;        // the danger alerts' keys at the last sync: a new one flashes 🔔
@@ -447,19 +447,18 @@ function hudState() {
   const alerts = live && ui.alertList ? ui.alertList : [];
   const danger = alerts.filter((a) => a && a.tone === "danger").map((a) => a.key);
   const lg = $("legend"), lgBadge = lg && lg.querySelector(".fp-badge");
-  const al = $("alerts"), gd = al && al.querySelector(".guide"), gdCount = gd && gd.querySelector(".gd-count");
+  const gd = $("guide"), gdOn = !!(gd && gd.children.length), gdCount = gd && (gd.querySelector(".gd-count") || gd.querySelector(".fp-badge"));
   const mm = $("minimap"), mmOn = !!(mm && !mm.classList.contains("hidden"));
   return {
     alerts: { show: live, open: live && rawOpen("alerts"), n: alerts.length, danger: danger.length > 0, keys: danger },
     watch: { show: live && pins + notes > 0, open: live && rawOpen("watch"), n: pins + notes },
     legend: { show: live, open: live && rawOpen("legend"), n: lgBadge ? lgBadge.textContent : "" },
     minimap: { show: live && mmOn, open: live && mmOn && hudMini, n: "" },
-    guide: { show: live && !!gd, open: live && !!gd && hudGuide, n: gdCount ? gdCount.textContent : "" },
+    guide: { show: live && gdOn, open: live && gdOn && rawOpen("guide"), n: gdCount ? gdCount.textContent : "" },
   };
 }
 // Opens or closes one box the way its own control would (its key, its tab, the pad).
 function hudSet(k, on) {
-  if (k === "guide") { hudGuide = !!on; return; }
   if (k === "minimap") { hudMini = !!on; return; }
   if (k === "watch") { if (rawOpen("watch") !== !!on) act("wl-collapse", { v: on ? "0" : "1" }); return; }
   if (rawOpen(k) !== !!on) act("panel-toggle", { p: k, v: on ? "0" : "1" });
@@ -470,10 +469,10 @@ function hudCloseAll(S = hudState(), except = null) { for (const k of hudOpenKey
 function enterHud() {
   if (hud) return;
   hud = true;
-  hudSaved = Object.fromEntries(["alerts", "legend", "watch"].map((k) => [k, rawOpen(k)]));
+  hudSaved = Object.fromEntries(["alerts", "legend", "guide", "watch"].map((k) => [k, rawOpen(k)]));
   for (const k of Object.keys(hudSaved)) if (hudSaved[k]) hudSet(k, false); // everything closed: the chips carry the counts
   hudFor = window.game ? window.game.state : null;
-  hudGuide = hudMini = false;
+  hudMini = false;
   hudOpen = new Set();
   hudShown = new Set();
   dangerSeen = null;
@@ -511,7 +510,7 @@ function leaveHud() {
   if (hudSaved) for (const k of Object.keys(hudSaved)) if (hudSaved[k] && (k !== "watch" || (window.game && window.game.state === hudFor))) hudSet(k, true);
   hudSaved = null;
   hudFor = null;
-  hudGuide = hudMini = false;
+  hudMini = false;
 }
 function queueHud() { if (hud && !hudRaf) hudRaf = requestAnimationFrame(() => { hudRaf = 0; syncHud(); }); }
 function syncHud() {
@@ -520,7 +519,7 @@ function syncHud() {
   if (!strip) return;
   const g = window.game;
   // A new game: its own Watching panel starts closed too, and none of its danger alerts counts as new.
-  if (g && g.state !== hudFor) { hudFor = g.state; hudGuide = hudMini = false; dangerSeen = null; hudShown = new Set(); if (rawOpen("watch")) hudSet("watch", false); }
+  if (g && g.state !== hudFor) { hudFor = g.state; hudMini = false; dangerSeen = null; hudShown = new Set(); if (rawOpen("watch")) hudSet("watch", false); }
   let S = hudState();
   // A box that comes into being unfolded (the Watching panel on the first 📌 pin) starts closed here: its chip is the way in.
   const shown = Object.keys(S).filter((k) => S[k].show);

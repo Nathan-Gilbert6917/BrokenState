@@ -334,6 +334,7 @@ function govHub(seed, { summer = true } = {}) {
   check(/standby generator/.test(worksText(st, f)), `the Groups tab (${worksText(st, f)})`);
   // Tier 2's burn: genBurn at the load.
   clearFood(f.stock); f.stock.fuel = 40; // no still today
+  w.alarm = 0; if (w.mach) delete w.mach.alarm; // groups-power-grid (2026-10-24): the perimeter alarm they put up first draws 1 at night; this check is the generator's burn at the machines' 8 alone
   groupMachinesDaily(st, f);
   check(near(40 - f.stock.fuel, genBurn(T[2], 8), 1e-9) && near(groupGenBurn(w, 8), genBurn(T[2], 8)), `tier 2 burns ${genBurn(T[2], 8).toFixed(3)} a day at 8 power (${(40 - f.stock.fuel).toFixed(3)})`);
   // Tier 3: the manual.

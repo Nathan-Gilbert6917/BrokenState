@@ -23,7 +23,9 @@ export const CUSTOM_BG = {
   // (data-ammo.js a_<cal>_<type>), ROUNDS in all on them, TRUNK_ROUNDS in the back. A background saved with a generic
   // "ammo" number has it turned into the common rounds of its guns (9mm and 12 gauge with none) when it is read.
   SUPPLY: { food: 30, water: 30, arrows: 60, meds: 10 },
-  TRUNK: { food: 60, water: 60, fuel: 40, meds: 20, scrap: 40, parts: 20 },
+  // The car's back: the supplies and the materials (as a starting vehicle's back takes, startgear.js START_TRUNK; the
+  // user's request 2026-10-24: wood, stone and the rest in the start's backs).
+  TRUNK: { food: 60, water: 60, fuel: 40, meds: 20, scrap: 40, parts: 20, wood: 600, stone: 60, jars: 20, buildmat: 10, metalsheet: 6, carparts: 6, gunparts: 10, electronics: 10 },
   ROUNDS: 200, TRUNK_ROUNDS: 300,
   CAR_ODDS: 10, // how likely the car is theirs against the others' (a preset is 0.7–1.6); 0: never theirs
   SLOTS: ["weapon", "tool", "armor", "head", "arms", "legs", "backpack"],

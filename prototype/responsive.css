@@ -49,6 +49,7 @@
   #app { --gut: 0.95rem; --left-w: var(--left-size, 18rem); --right-w: var(--right-size, 17.5rem); --log-h: var(--log-size, 8.5rem); }
   /* Bigger targets: the top bar, the tabs, the folds over the map, the menus and the window's choices. */
   #topbar button, #topbar .nb-btn, #topbar .tf-btn { min-height: 2.6rem; }
+  #hudbar .hb-chip { min-height: 2.6rem; } /* the row of buttons at the bottom left of the map (ui/hudbar.js) */
   #topbar .speed button { min-width: 2.75rem; }
   .tabs button, .gut-tab { min-height: 2.6rem; }
   .fp-toggle, .fp-tab { min-height: 2.4rem; }
@@ -134,26 +135,27 @@
   body[data-rshud] #rs-hudscrim { display: block; }
   /* The sheets: under the strip, the width of the map, scrolling inside. A folded box shows nothing (its chip stands
      in), and nothing drags, so no ✥ on the headers. */
-  body.rs-hud :is(#watchlist, #legend, #alerts, #devpanel) { top: calc(var(--rs-hud, 3rem) + 0.15rem) !important; left: 0.4rem !important; right: 0.4rem !important; bottom: auto !important; width: auto !important; max-width: none !important; max-height: min(64%, calc(100% - var(--rs-hud, 3rem) - 0.8rem)) !important; z-index: 5; }
-  body.rs-hud :is(#watchlist, #legend, #devpanel) { background-color: #16181c; } /* solid: the banners under a sheet do not show through */
-  body.rs-hud :is(#watchlist, #legend):has(> .fp-tab:only-child) { display: none; }
+  body.rs-hud :is(#watchlist, #legend, #alerts, #guide, #devpanel) { top: calc(var(--rs-hud, 3rem) + 0.15rem) !important; left: 0.4rem !important; right: 0.4rem !important; bottom: auto !important; width: auto !important; max-width: none !important; max-height: min(64%, calc(100% - var(--rs-hud, 3rem) - 0.8rem)) !important; z-index: 5; }
+  body.rs-hud :is(#watchlist, #legend, #guide, #devpanel) { background-color: #16181c; } /* solid: the banners under a sheet do not show through */
+  body.rs-hud :is(#watchlist, #legend, #guide):has(> .fp-tab:only-child) { display: none; }
+  body.rs-hud #hudbar { display: none; } /* the strip does what the desktop's row of buttons does (ui/hudbar.js) */
   body.rs-hud .fp-head::after { display: none; }
   body.rs-hud #legend.fp-anim { animation-name: fp-in; transform-origin: top left; }
-  /* The alerts' box holds the alerts and the first-week guide: the sheet that is open shows, the flash line always
-     (a toast under the strip). The guide's ▾ (one line) and ✕ (hide it for good) are not a sheet's: the chip closes it. */
+  /* The alerts' box: its sheet when open, the flash line always (a toast under the strip). The first-week guide's box
+     (#guide) is a sheet of its own; its ▾ (one line) and ✕ (hide it for good) are not a sheet's: the chip closes it. */
   body.rs-hud #alerts > .al-pill { display: none; }
   body.rs-hud:not([data-rshud="alerts"]) #alerts > :is(.fp-head, .al, .al-more, .al-empty) { display: none; }
-  body.rs-hud:not([data-rshud="guide"]) #alerts > .guide { display: none; }
-  /* With neither of its sheets open the box holds the flash line alone: a toast at the foot of the map, clear of the
-     banners under the strip and of whatever sheet is open. */
-  body.rs-hud:not([data-rshud="alerts"]):not([data-rshud="guide"]) #alerts { top: auto !important; bottom: 0.5rem !important; max-height: none !important; z-index: 6; align-items: center; }
+  body.rs-hud:not([data-rshud="guide"]) #guide { display: none; }
+  /* With its sheet closed the box holds the flash line alone: a toast at the foot of the map, clear of the banners
+     under the strip and of whatever sheet is open. */
+  body.rs-hud:not([data-rshud="alerts"]) #alerts { top: auto !important; bottom: 0.5rem !important; max-height: none !important; z-index: 6; align-items: center; }
   body.rs-hud #alerts > .al-flash { max-width: 100%; }
-  body:is([data-rshud="alerts"], [data-rshud="guide"]) #alerts { background: #16181c; border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 6px 18px rgba(0,0,0,0.45); padding: 0 0.5rem 0.4rem; }
+  body[data-rshud="alerts"] #alerts { background: #16181c; border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 6px 18px rgba(0,0,0,0.45); padding: 0 0.5rem 0.4rem; }
   body.rs-hud #alerts > .fp-head { margin: 0 -0.5rem 0.2rem; border: none; border-bottom: 1px solid var(--line); border-radius: 8px 8px 0 0; box-shadow: none; }
   body.rs-hud #alerts > .al-empty { padding: 0.3rem 0.2rem; }
-  body.rs-hud #alerts > .guide { margin-top: 0.3rem; border: none; box-shadow: none; background: none; padding-left: 0.2rem; }
-  body.rs-hud #alerts .guide .gd-head :is([data-action="gd-fold"], [data-action="gd-close"]) { display: none; }
-  body.rs-hud #alerts .guide .gd-head button { min-width: 2.4rem; }
+  body.rs-hud #guide > .guide { margin: 0; border: none; box-shadow: none; background: none; padding-left: 0.2rem; }
+  body.rs-hud #guide .gd-head :is([data-action="gd-fold"], [data-action="gd-close"]) { display: none; }
+  body.rs-hud #guide .gd-head button { min-width: 2.4rem; }
   /* The minimap's sheet: the width of the map, its height following; the –, ✥ and top edge gone (the chip closes it). */
   body.rs-hud #minimap { top: calc(var(--rs-hud, 3rem) + 0.15rem) !important; left: 0.4rem !important; right: auto !important; bottom: auto !important; width: calc(100% - 0.8rem) !important; max-width: none !important; height: auto; z-index: 5; }
   body.rs-hud:not([data-rshud="minimap"]) #minimap, body.rs-hud #mm-show, body.rs-hud #minimap :is(.mm-hide, .ov-grip, .mm-bar) { display: none; }
@@ -185,7 +187,7 @@
   #rs-dock .rs-dl { font-size: 0.66rem; font-weight: 600; }
   #log { height: min(55vh, 16rem); }
   /* Little height, width to spare: the sheets stand at the right, from the strip down; the minimap by its height. */
-  body.rs-hud :is(#watchlist, #legend, #alerts, #devpanel) { left: auto !important; width: min(24rem, 58%) !important; max-height: calc(100% - var(--rs-hud, 3rem) - 0.6rem) !important; }
+  body.rs-hud :is(#watchlist, #legend, #alerts, #guide, #devpanel) { left: auto !important; width: min(24rem, 58%) !important; max-height: calc(100% - var(--rs-hud, 3rem) - 0.6rem) !important; }
   body.rs-hud #minimap { left: auto !important; right: 0.4rem !important; width: auto !important; max-width: calc(100% - 0.8rem) !important; height: calc(100% - var(--rs-hud, 3rem) - 0.6rem); }
 }
 
@@ -338,7 +340,7 @@
   #topbar { gap: 0.45rem; padding-left: 0.6rem; padding-right: 0.6rem; }
   #tb-tools { margin-left: 0; }
   /* Room to spare: the strip's sheets need not take the whole width. */
-  body.rs-hud :is(#watchlist, #legend, #alerts, #devpanel) { right: auto !important; width: min(26rem, 70%) !important; }
+  body.rs-hud :is(#watchlist, #legend, #alerts, #guide, #devpanel) { right: auto !important; width: min(26rem, 70%) !important; }
   body.rs-hud #minimap { width: min(30rem, calc(100% - 0.8rem)) !important; }
 }
 

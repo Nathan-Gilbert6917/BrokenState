@@ -27,7 +27,14 @@ import { BED_WORKS_BUILDING } from "./data-beds.js"; // beds as furniture: their
 // A works count of theirs as your building (groupworld.js PLAYER_WORKS the other way round). The storage works
 // (groupworks.js storageWork: a storage box, crates, a shed, the storehouse, a warehouse) are your storage buildings, so
 // basestorage.js storageOf counts their room at that base.
-export const WORKS_BUILDING = { ...BED_WORKS_BUILDING, walls: "walls", farms: "farm_plot", pens: "animal_pen", water: "well", beds: "bunkhouse", bench: "workbench", shop: "machine_shop", reload: "reload_bench", store: "storehouse", storebox: "storebox", crates: "crates", shed: "shed", warehouse: "warehouse", radio: "radio", garage: "garage", gate: "gate", kitchen: "kitchen", still: "still", freezer: "freezer" };
+export const WORKS_BUILDING = { ...BED_WORKS_BUILDING, walls: "walls", farms: "farm_plot", pens: "animal_pen", water: "well", beds: "bunkhouse", bench: "workbench", shop: "machine_shop", reload: "reload_bench", store: "storehouse", storebox: "storebox", crates: "crates", shed: "shed", warehouse: "warehouse", radio: "radio", garage: "garage", gate: "gate", kitchen: "kitchen", still: "still", freezer: "freezer",
+  // groups-power-grid (2026-10-24, groupworks.js): the grid's pieces a raided base shows. The array, the bank and the alarm
+  // stand in the yard; the heaters and the station are fittings (data-power.js fit: true) the layout sets on their hall's
+  // floor (the Lodge their furniture is in, BED_WORKS_BUILDING), as your fittings need a general building (groupworks.js
+  // fitRoom: your fittingRoom when they want one); a fitting the floor has no room for by the time the layout lays it
+  // (their furniture crafted after it can take the cells: basemap.js autoLayout's order) is left off the map (layoutOf
+  // at: null), as any fitting without a floor is, and nothing breaks; the sim's effect does not depend on the map.
+  solar: "solar_array", bank: "battery_bank", alarm: "perimeter_alarm", charger: "charging_station", heaters: "elec_heater" };
 // What a base that is not built up by hand holds (the hardcore military: groupworks.js groupsBuild false); its storehouse
 // (2000 kg on top of the main house's 1200: basestorage.js) keeps an army base's stores in.
 export const BUILT_UP = { walls: 6, farms: 2, water: 1, beds: 2, bench: 1, store: 1, gate: 1 };

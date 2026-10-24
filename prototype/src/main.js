@@ -115,7 +115,7 @@ import { renderLogPanel, DIARY_ACTIONS, DIARY_CHANGE } from "./ui/diary.js";
 import { WHY_ACTIONS } from "./ui/causes.js"; // "Why?" on deaths and lost bases
 import { renderAlerts, ALERT_ACTIONS, mapHotkey, initAlerts, camSpot, nextWaitingTeam } from "./ui/alerts.js";
 import { ROSTER_ACTIONS, ROSTER_CHANGE } from "./ui/roster.js";
-import { GUIDE_ACTIONS, guideCheck, renderGuide, renderGuideTip, guidePulse, startGuide, guideDefault } from "./ui/guide.js"; // the first-week guide under the alerts; its notes over new windows
+import { GUIDE_ACTIONS, guideCheck, renderGuide, guideTab, renderGuideTip, guidePulse, startGuide, guideDefault } from "./ui/guide.js"; // the first-week guide under the alerts; its notes over new windows
 import { LEDGER_ACTIONS, ledgerKey, drawCharts, sparkNode } from "./ui/ledger.js"; // the Ledger, the run summary, the stock trends
 import { WATCHLIST_ACTIONS, renderWatchlist, syncWatchlist, ctxWatchlist } from "./ui/watchlist.js"; // the Watching panel (📌) and map notes
 import { EXPLORE_ACTIONS, EXPLORE_CHANGE } from "./ui/explore.js";
@@ -154,7 +154,8 @@ import { initInputMode, inputMode } from "./ui/inputmode.js"; // the device used
 import { initGamepad, claimPad } from "./ui/gamepad.js"; // a controller: the map's and the battle's layers below (map input, combat input) // phones and tablets: the drawers, the dock, the ⋯ menu, a ✕ on windows (responsive.css)
 import { initPadNav, navPanels, navBar, navBattle } from "./ui/padnav.js"; // a controller in the windows, menus and panels (its layer: after the battle's, under the question's)
 import { initLogWindow, syncLogWindow } from "./ui/logwindow.js"; // a raid's log as a small window over the battle map
-import { initOverlays, syncOverlays, resetOverlays } from "./ui/overlaydrag.js"; // the boxes over the map move (drag a header, Alt+arrows)
+import { initOverlays, syncOverlays, resetOverlays } from "./ui/overlaydrag.js";
+import { initHudBar, syncHudBar } from "./ui/hudbar.js"; // the row of buttons at the bottom left of the map: a box over the map each, shown or hidden // the boxes over the map move (drag a header, Alt+arrows)
 import { keepFocusBefore, afterPanelWrite, PANEL_ACTIONS, PANEL_INPUT } from "./ui/panelfold.js"; // the side panels' folds, find box, scroll fades
 import { initKeymap, keyAction, keyIs } from "./ui/keymap.js"; // every key in one table, rebindable (Menu → Controls)
 import { CONTROLS_ACTIONS, controlsKey } from "./ui/controls.js";
@@ -278,6 +279,7 @@ initCombatUI($("combatmap"));
 initMinimap($("mapwrap"), canvas, options); // ui/minimap.js: the map's corner
 initEdgeFx($("mapwrap"), $("cbmapwrap"), () => refresh(false)); // ui/edgefx.js: the screen-edge warnings
 initOverlays({ refresh: () => { dirtyNow = true; } }); // ui/overlaydrag.js: the boxes over the map keep where the player put them
+initHudBar($("mapwrap")); // ui/hudbar.js: the buttons at the bottom left of the map
 initLogWindow($("cblogwin"), $("cbmapwrap"), { refresh: () => { dirtyNow = true; } }); // ui/logwindow.js: the raid's log window (drag, resize, fold)
 initResponsive(); // ui/responsive.js: only while a phone or tablet media query matches
 initInputMode(); // ui/inputmode.js: the pointer, the keyboard and the controller say which device is in use
@@ -393,7 +395,7 @@ function step(now) {
 // Each panel keeps the HTML it shows; a refresh that produces the same string leaves the DOM alone, so buttons
 // stay clickable and hover descriptions stay up while the clock runs. A panel is not rebuilt while the mouse
 // button is down on it (the click would be lost), nor under an open drop-down when only a tick asked for it.
-const PANELS = ["tb-clock", "tb-speed", "nb-btn", "nb-head", "nb-list", "tb-stock", "tb-people", "tb-tools", "left", "right", "log", "modal", "legend", "devpanel", "cbpanel", "cbbar", "cbtop", "cbcards", "cblogbody", "cblogfoot", "banner", "alerts", "watchlist", "ask"];
+const PANELS = ["tb-clock", "tb-speed", "nb-btn", "nb-head", "nb-list", "tb-stock", "tb-people", "tb-tools", "left", "right", "log", "modal", "legend", "devpanel", "cbpanel", "cbbar", "cbtop", "cbcards", "cblogbody", "cblogfoot", "banner", "alerts", "guide", "watchlist", "ask"];
 const shown = new Map(); // element id -> the HTML last written
 let held = null;         // panel the mouse button went down in
 let heldBack = false;    // a rebuild was skipped because of it
@@ -603,12 +605,14 @@ function refresh(user = true) {
   setHTML("legend", renderLegend(view, ui, ui.started ? state : null), user);
   if (ui.started) devSample(state);
   setPanel("devpanel", ui.started ? renderDevPanel(state, ui) : "", user);
-  setPanel("alerts", alertsHTML(alerts) + renderGuide(state, ui), user); // the first-week guide sits under the alerts
+  setPanel("alerts", alertsHTML(alerts), user);
+  setPanel("guide", layout.guide ? guideTab(state, ui) : renderGuide(state, ui), user); // the first-week guide: its own box under the alerts, or its tab (ui/hudbar.js: its button)
   setPanel("watchlist", ui.started ? renderWatchlist(state, ui, { folded: !!layout.all }) : "", user); // ui/watchlist.js: top left of the map
   renderCombat(user);
   setPanel("guidetip", renderGuideTip(state, ui), user); // the first-week guide's note over a window new to the player (ui/guide.js)
   setPanel("banner", bannerHTML(), user);
   syncWatchlist(state, ui, { act: actions, refresh }); // places the Watching panel; the map-note editor
+  syncHudBar(state, ui, layout, options); // ui/hudbar.js: the buttons' counts and lights, the guide's place
   syncOverlays(); // ui/overlaydrag.js: moved boxes in their place, every box kept on the map
   setPanel("ask", askHtml(ui) + carryHtml(state, ui) + landHtml(state, ui) + whoHtml(state, ui), user); // ui/confirm.js; ui/carry.js: how much to collect, picking up from the ground; ui/landorder.js: a land job's hours
   writeItemMenu(user);
@@ -1762,7 +1766,7 @@ const changeActions = {
   "nr-custom": (el) => {
     if (ui.started) return;
     const k = el.dataset.k, v = clampCustomCount(k, el.value);
-    if (k === "people") ui.startPeople = v;
+    if (k === "people") { ui.startPeople = v; ui.fleet = (ui.fleet || []).slice(0, v); } // one vehicle a survivor at most (sim/startfleet.js)
     else if (k in ui.custom) ui.custom[k] = v;
     else return;
     el.value = v;
@@ -1770,7 +1774,7 @@ const changeActions = {
   },
   // Starting people (ui/newgame.js): Normal 1–8 hold the hub, Hardcore 1–4 flee together; the same seed and the edited
   // crew (as many as fit).
-  startpeople: (el) => { ui.startPeople = clampStartPeople(el.value, ui.mode); newWorld(state.seed, true); },
+  startpeople: (el) => { ui.startPeople = clampStartPeople(el.value, ui.mode); ui.fleet = (ui.fleet || []).slice(0, ui.startPeople); newWorld(state.seed, true); }, // one starting vehicle a survivor at most (sim/startfleet.js)
   rename: (el) => {
     // Empty names and a full name someone else already has are refused (world.renameSurvivor).
     const s = survivorById(state, Number(el.dataset.id));
@@ -1905,7 +1909,7 @@ function gearRebuild(fleet = false) {
   if (!fleet) ui.crewEdited = true;
   newWorld(state.seed, true);
   ui.gearEdit = keep;
-  ui.fleetEdit = keepFleet && state.fleet && state.fleet[keepFleet.i] ? keepFleet : null;
+  ui.fleetEdit = keepFleet && state.fleet && state.fleet[keepFleet.i] && state.fleet[keepFleet.i].vid != null ? keepFleet : null; // an emptied slot: closed
 }
 
 // A loaded world (ui/settings.js): like a new world, but already started, paused, and remembering its save slot.

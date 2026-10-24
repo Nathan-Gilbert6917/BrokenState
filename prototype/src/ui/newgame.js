@@ -1,7 +1,9 @@
 // New-run setup screen, survivor appearance editor and zombie look settings.
 // HTML builders plus their action handlers; main.js registers the handlers with its dispatcher.
 import { SKILLS, SKILL_NAMES, TRAITS } from "../sim/data.js";
-import { survivorById, skill, rollTraits, HUB_START } from "../sim/world.js";
+import { survivorById, skill, rollTraits, HUB_START, START_WEAPONS } from "../sim/world.js";
+import { newItem, START_DUR } from "../sim/inventory.js"; // the card's Everything: a new starting weapon
+import { randomStarterMods } from "../sim/gunmods.js";
 import { WORLD_SIZES, SIZE_KEYS, sizeDef, customDef, isCustom, CUSTOM, GROUPS_MAX, HIVES_MAX, clampGroups, clampHives } from "../sim/worldsize.js";
 import { MODES, isHardcore, peopleRange, clampStartPeople } from "../sim/hardcore.js";
 import { CUSTOM_RUN, CUSTOM_KEYS, isCustomRun, startsWithVehicle } from "../sim/custommode.js"; // Custom mode and Start with a vehicle (2026-10-24)
@@ -9,14 +11,13 @@ import { HC_START, backgroundInfo, countWord } from "../sim/hardcore-start.js"; 
 import { customLibrary } from "./backgrounds.js";
 import { isCustomBg } from "../sim/custombg.js"; // custom backgrounds (sim/custombg.js), kept in this browser
 import { FAMILY } from "../sim/family.js"; // the Children box shows only while children are on
-import { sanitizeStartGear, hasPicks, trunkKg } from "../sim/startgear.js"; // starting gear picked under Customize
+import { sanitizeStartGear, hasPicks } from "../sim/startgear.js"; // starting gear picked under Customize
 import { gearRow, pointsBar, fleetSection, uiFleet } from "./startgear.js"; // its Gear… button, load and kit points, and the points bar, on the crew card; the Starting vehicles
 import { cleanFleet, fleetRoom, openLoads } from "../sim/startfleet.js"; // the starting vehicles: each its point limit and back (2026-10-24)
 import { gunCals } from "../sim/ammo.js"; // a random back's rounds: the crew's guns' calibres
 import { traitPickerHtml, traitBlock, traitChips, traitWords } from "./traitpick.js"; // Customize: the traits, good and bad, none that clash; the chips
-import { randomBuild, randomEverything, randomTraits, randomKit, randomTrunk, kitBudget, kitKeys } from "../sim/randomkit.js"; // Customize: a whole random colonist within the points; the crew and the vehicles' backs
+import { randomBuild, randomEverything, randomTraits, randomKit, randomTrunk, kitBudget } from "../sim/randomkit.js"; // Customize: a whole random colonist within the points; the crew and the vehicles' backs
 import { CUSTOM_POINTS, pricePerson, pointsMax, maxFor, nextLevelCost, skillCost, clampMax } from "../sim/custompoints.js";
-import { wornLoad } from "../sim/load.js"; // Customize: everything costs points
 import { traitLabel, traitTier, setTier, tidyTiers, tierCount, cleanTier } from "../sim/traits.js";
 import {
   LOOK_OPTIONS, LOOK_COLORS, ensureAppearance, randomAppearance, freshRng, randomName, randomSkills, fitSkills, skillTotal, SKILL_MAX,
@@ -126,7 +127,7 @@ function crewCard(state, ui, s) {
     : "Trade their starting weapon and vest with a random crewmate's (the crew's kit stays the same)";
   const allTip = locked ? "Everything for this colonist only: a new name, skills (same total) and look. Ironman: traits and who they were stay as rolled"
     : free ? "Everything for this colonist only: a new name, look and background, and a random build (traits, skills and what they wear, hold and carry, within their points)"
-    : `Everything for this colonist only: a new name, look and background, skills (same total)${hard ? ", traits and what they grabbed (the others keep theirs)" : " and traits (their weapon and vest stay: Gear trades them with a crewmate)"}`;
+    : `Everything for this colonist only: a new name, look and background, skills (same total)${hard ? ", traits and what they grabbed (the others keep theirs)" : ", traits and a new starting weapon (the others keep theirs; Gear trades the weapon and vest with a crewmate)"}`;
   if (ui.lookEdit === s.id) {
     return `<div class="card leader-pick nrcard nrwide ${s.leader ? "on" : ""}">
       <div class="spread"><b>${s.leader ? "★ " : ""}${esc(s.name)}</b><span class="muted small">Appearance</span></div>
@@ -265,7 +266,7 @@ function vehicleToggle(state) {
   const on = startsWithVehicle(state), hard = isHardcore(state);
   const t = hard
     ? "Start with a vehicle: ticked, one of you fled in their car with what was in its back (and a small team loaded its empty seats; Starting vehicles sets the back). Unticked, you flee on foot with only what you can carry (the tents too). Changing it builds the world again on the same seed"
-    : `Start with a vehicle: ticked, the hub starts with ${isCustomRun(state) ? "the vehicles set under Starting vehicles" : "a pickup truck"} (and a custom background's car, if it brings one); Starting vehicles sets what is in their backs. Unticked, no vehicle at all: your people go on foot until they find, take or fix one. Changing it builds the world again on the same seed`;
+    : `Start with a vehicle: ticked, the hub starts with the vehicles set under Starting vehicles (a pickup truck by default) (and a custom background's car, if it brings one); Starting vehicles sets what is in their backs. Unticked, no vehicle at all: your people go on foot until they find, take or fix one. Changing it builds the world again on the same seed`;
   return `<label${tip(t)}><input type="checkbox" data-action="nr-vehicle"${on ? " checked" : ""}> Start with a vehicle</label>`;
 }
 
@@ -505,27 +506,29 @@ export function randomizeAllCrew(state, ui, rebuild) {
 
 // Randomize everything (Customize only): Randomize all's names, looks and builds (sim/randomkit.js randomEverything),
 // and every starting vehicle's back emptied and filled again up to its own point limit (sim/startfleet.js; the screen's
-// ui.fleet), rounds for the crew's new guns. In Hardcore the riders' kit rides in the car, so its room is reckoned with
-// the new kits in place of the old. The world is built again with them. Returns the state to keep (as is outside
-// Customize).
+// ui.fleet), rounds for the crew's new guns. In Hardcore the riders' kit rides in the car, so its room is known only once
+// the world is built again with their new kits on them (what is worn, the packs and the rounds weigh as worn, not as the
+// kit's list: an estimate from it left a back a kilo or two over the room, and Start refused what this had filled): the
+// world is built with the new crew first, the backs filled in the room there is on it, then built again with them.
+// Returns the state to keep (as is outside Customize).
 /** @param {any} state @param {any} ui @param {(crew: any[], crewRoll: any, pickRoll: any) => any} rebuild */
 export function randomizeEverything(state, ui, rebuild) {
   if (ui.started || !freeEdit(ui)) return state;
   const rng = freshRng();
-  const hard = isHardcore(state), F = uiFleet(state, ui);
-  const worn = state.survivors.reduce((a, s) => a + wornLoad(s), 0);
+  const F = uiFleet(state, ui);
   state.survivors.forEach((s) => reroll(state, ui, s, ["name", "look"]));
   randomEverything(state, rng);
   state.survivors.forEach((s) => { s.startPoints = true; s.startCustom = true; });
   const guns = state.survivors.map((s) => s.startGear.slots.weapon).filter(Boolean).map((key) => ({ key }));
-  const kitKg = state.survivors.reduce((a, s) => a + trunkKg({ items: kitKeys(s.startGear) }), 0);
+  const next = rebuild(crewSnapshot(state), ui.crewRoll ?? null, ui.pickRoll); // the new crew with their kits on them
+  let filled = false;
   F.forEach((f, i) => {
-    if (!state.fleet || !state.fleet[i] || state.fleet[i].vid == null) return; // Start with a vehicle off: none to fill
-    const room = Math.max(0, fleetRoom(state, i) + (hard ? worn - kitKg : 0));
-    f.load = randomTrunk(f.limit, room, rng, gunCals([], guns), { fill: true, open: openLoads(state) });
-    state.fleet[i].load = f.load;
+    if (!next.fleet || !next.fleet[i] || next.fleet[i].vid == null) return; // Start with a vehicle off, an empty slot: none to fill
+    f.load = randomTrunk(f.limit, fleetRoom(next, i), rng, gunCals([], guns), { fill: true, open: openLoads(next) }); // startfleet.js: the riders reckoned
+    next.fleet[i].load = f.load;
+    filled = true;
   });
-  return rebuild(crewSnapshot(state), ui.crewRoll ?? null, ui.pickRoll);
+  return filled ? rebuild(crewSnapshot(next), ui.crewRoll ?? null, ui.pickRoll) : next;
 }
 
 // Random run (2026-10-16, user request): every setting on the new-run screen rolled at once (main.js nr-random builds the
@@ -598,8 +601,9 @@ export function randomizeGear(state, ui, s, rebuild) {
 // All on a crew card: everything for this colonist, and nobody else's. Customize: a new background (what it gives is
 // loaded, then replaced), name, look and random build within their points. Otherwise a new background, name, look,
 // skills (the same total) and traits, in one rebuild; Hardcore: what they grabbed on dice of its own (the others keep
-// theirs: sim/hardcore-start.js ownGrab). A normal start's weapon and vest stay (trading them would change a crewmate's:
-// that is the Gear dice). Ironman: name, skills and look only (traits and who they were stay as rolled).
+// theirs: sim/hardcore-start.js ownGrab). A normal start: a new weapon of the start's own (sim/world.js START_WEAPONS),
+// not the one they hold, and the vest stays (trading would change a crewmate's: that is the Gear dice). Ironman: name,
+// skills and look only (traits and who they were stay as rolled).
 export function randomizeOne(state, ui, s, rebuild) {
   if (!s || ui.started) return state;
   const rng = freshRng();
@@ -632,8 +636,16 @@ export function randomizeOne(state, ui, s, rebuild) {
   c.traits = rollTraits(rng);
   delete c.traitTier;
   if (isHardcore(state)) { c.grabRoll = newRoll(rng); c.grabPick = true; }
-  else c.gear = crewSnapshot(state)[i].gear; // their own weapon and vest (a background change leaves out the kit)
+  else c.gear = { ...(crewSnapshot(state)[i].gear || {}), weapon: startWeapon(rng, s) }; // their vest as it was (a background change leaves out the kit)
   return rebuild(crew, !!key);
+}
+// A normal start's weapon drawn again for s: one of the start's own, part-worn and maybe with a cheap part, as the dice
+// hand them out (sim/world.js createWorld), not the kind they hold now.
+function startWeapon(rng, s) {
+  const now = s.gear.weapon ? s.gear.weapon.key : null;
+  const item = newItem(rng.pick(START_WEAPONS.filter((k) => k !== now)), 1, rng.next(), START_DUR);
+  randomStarterMods(rng, item, newRoll(rng));
+  return item;
 }
 
 // ---------- zombie look settings ----------

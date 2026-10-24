@@ -1,12 +1,13 @@
 // A crew card's All (2026-10-16, user report: "says this colonist only, but the others' gear changes"): ui/newgame.js
 // randomizeOne changes that colonist and nobody else.
-//   - a normal start: their weapon and vest stay (no trade with a crewmate), the others' kit as it was;
+//   - a normal start: a new starting weapon for them (2026-10-24, user report: "does not randomize the gear as well
+//     in hardcore it works correctly"), their vest as it was, no trade with a crewmate: the others' kit as it was;
 //   - Hardcore: a new background and grab for them, everyone else's grab (bag, weapon, things) as it was, also on the
 //     first pick (the crew gets dice of its own then) and on repeated clicks; the car stays the owner's;
 //   - the Gear dice in Hardcore: the same;
 //   - a later rebuild keeps who the others were (bgKept), their grab and the car's dice; Start takes them off.
 // Usage: node tools/cardalltest.js
-import { createWorld } from "../src/sim/world.js";
+import { createWorld, START_WEAPONS } from "../src/sim/world.js";
 import { allCarried } from "../src/sim/inventory.js";
 import { randomizeOne, randomizeGear } from "../src/ui/newgame.js";
 import { clearStartGear } from "../src/sim/startgear.js";
@@ -28,15 +29,16 @@ const harness = (seed, mode) => {
 };
 const others = (st, i) => st.survivors.filter((_, j) => j !== i);
 
-section("A normal start: All keeps the crew's kit");
+section("A normal start: All draws them a new weapon, nobody else's kit changes");
 for (const seed of [3, 42, 77]) {
   const h = harness(seed, "normal");
   const before = h.state.survivors.map(kitOf);
   for (const i of [0, 2, 4]) {
-    const kit = kitOf(h.state.survivors[i]);
+    const kit = JSON.parse(kitOf(h.state.survivors[i]));
     h.state = randomizeOne(h.state, h.ui, h.state.survivors[i], h.rebuild);
     const s = h.state.survivors[i];
-    check(JSON.stringify(s.gear.weapon && s.gear.weapon.key) === JSON.stringify(JSON.parse(kit).gear.weapon) && JSON.stringify(s.gear.armor && s.gear.armor.key) === JSON.stringify(JSON.parse(kit).gear.armor), `seed ${seed}: All on #${i} keeps their weapon and vest`);
+    check(s.gear.weapon && START_WEAPONS.includes(s.gear.weapon.key) && s.gear.weapon.key !== kit.gear.weapon, `seed ${seed}: All on #${i} draws a new starting weapon (${kit.gear.weapon} → ${s.gear.weapon && s.gear.weapon.key})`);
+    check(JSON.stringify(s.gear.armor && s.gear.armor.key) === JSON.stringify(kit.gear.armor), `seed ${seed}: All on #${i} keeps their vest`);
   }
   const after = h.state.survivors.map(kitOf);
   check([1, 3, 5].every((j) => before[j] === after[j]), `seed ${seed}: nobody else's kit changes (${[1, 3, 5].filter((j) => before[j] !== after[j]).join(", ") || "none"})`);

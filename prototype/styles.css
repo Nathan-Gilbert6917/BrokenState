@@ -261,6 +261,15 @@ body.fold-left #gut-left .gut-shut, body.fold-right #gut-right .gut-shut, body.f
 #modal h1 { font-size: 1.35rem; margin: 0 0 0.3rem; }
 #modal .where { color: var(--muted); font-size: 0.9rem; margin-bottom: 0.7rem; }
 #modal .text { line-height: 1.5; margin-bottom: 1rem; }
+/* The run's opening card in pieces (ui.js cardText; sim/hardcore-start.js introCard parts): a lead line, small
+   headings, the account as a list with a little air between its lines, the first steps numbered. */
+#modal .text.intro p { margin: 0 0 0.5rem; }
+#modal .text.intro .intro-lead { font-size: 1.1rem; font-weight: 600; }
+#modal .text.intro .intro-h { margin: 0.9rem 0 0.35rem; font-size: 0.76rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+#modal .text.intro .intro-list { margin: 0; padding-left: 1.3rem; }
+#modal .text.intro .intro-list li { margin: 0.35rem 0; }
+#modal .text.intro .intro-list li::marker { color: var(--muted); }
+#modal .text.intro .intro-sup { margin-top: 0.7rem; }
 #modal .choices { display: flex; flex-direction: column; gap: 0.45rem; }
 #modal .choices button { text-align: left; padding: 0.6rem 0.8rem; }
 #modal .choices .hint { display: block; color: var(--muted); font-size: 0.82rem; margin-top: 0.15rem; }
@@ -877,7 +886,7 @@ span.smto { border-color: var(--accent); color: var(--accent); }
 /* Timelapse viewer (ui/timelapse.js): the map fills the window, panels float over it */
 body.tl-on #app { grid-template-columns: 0 0 minmax(0, 1fr) 0 0; grid-template-rows: 0 minmax(0, 1fr) 0 0; }
 body.tl-on #topbar, body.tl-on #left, body.tl-on #right, body.tl-on #log, body.tl-on #legend, body.tl-on 
-body.tl-on #devpanel, body.tl-on #ctxmenu, body.tl-on #tooltip, body.tl-on #banner, body.tl-on .gut, body.tl-on .edgetab, body.tl-on #alerts { display: none !important; }
+body.tl-on #devpanel, body.tl-on #ctxmenu, body.tl-on #tooltip, body.tl-on #banner, body.tl-on .gut, body.tl-on .edgetab, body.tl-on #alerts, body.tl-on #guide, body.tl-on #hudbar { display: none !important; }
 #timelapse { position: absolute; inset: 0; pointer-events: none; z-index: 7; font-size: 0.82rem; }
 #timelapse > div { pointer-events: auto; position: absolute; background: rgba(20,22,26,0.88); border: 1px solid var(--line); border-radius: 8px; padding: 0.45rem 0.6rem; }
 #timelapse .tl-info { left: 0.6rem; top: 0.6rem; width: 19rem; max-height: calc(100% - 7.5rem); overflow-y: auto; }
@@ -940,7 +949,11 @@ button.mini.pinned { border-color: var(--accent); color: var(--accent); }
 #alerts { position: absolute; right: 0.6rem; top: 0.6rem; width: min(21rem, 40%); max-height: 45%; overflow-y: auto; z-index: 5; pointer-events: none; display: flex; flex-direction: column; gap: 0.3rem; }
 #alerts > * { pointer-events: auto; }
 #mapwrap:has(#banner:not(.hidden)) #alerts { top: 4.6rem; max-height: min(45%, calc(100% - 5.2rem)); }
-#mapwrap:has(#devpanel:not(.hidden)) #alerts { right: calc(min(26rem, 100% - 1.2rem) + 1.2rem); }
+#mapwrap:has(#devpanel:not(.hidden)) #alerts, #mapwrap:has(#devpanel:not(.hidden)) #guide { right: calc(min(26rem, 100% - 1.2rem) + 1.2rem); }
+/* The first-week guide (ui/guide.js) in its own box: under the alerts to start (ui/hudbar.js placeGuide sets top and
+   max-height), moved by its title line; folded, a slim tab (hidden under the bar, whose 🧭 button is the tab). */
+#guide { position: absolute; right: 0.6rem; top: 0.6rem; width: min(21rem, 40%); max-height: 60%; overflow-y: auto; z-index: 5; }
+#guide:has(> .fp-tab:only-child) { width: auto; overflow: visible; }
 .al { display: flex; align-items: stretch; background: rgba(20,22,26,0.93); border: 1px solid var(--line); border-left: 5px solid var(--info); border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
 .al.al-danger { border-left-color: var(--danger); background: rgba(52,24,22,0.94); }
 .al.al-warn { border-left-color: #ffd166; }
@@ -1522,8 +1535,8 @@ body.tl-on #watchlist, body.tl-on #noteedit { display: none !important; }
 .deftab .dshift.now { border-color: #6c8f5a; }
 .deftab .dshname { width: 7rem; font-weight: 700; }
 .deftab button.chip { border: none; cursor: pointer; }
-/* The first-week guide under the alerts (ui/guide.js), and the pulse its Show me puts on the button to press. */
-.guide { background: rgba(20,22,26,0.94); border: 1px solid var(--line); border-left: 5px solid var(--accent); border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.4); padding: 0.3rem 0.45rem 0.4rem 0.55rem; margin-top: 0.25rem; font-size: 0.95rem; }
+/* The first-week guide's card (ui/guide.js; its box #guide is above), and the pulse its Show me puts on the button to press. */
+.guide { background: rgba(20,22,26,0.94); border: 1px solid var(--line); border-left: 5px solid var(--accent); border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.4); padding: 0.3rem 0.45rem 0.4rem 0.55rem; margin-top: 0; font-size: 0.95rem; }
 .gd-head { display: flex; align-items: center; gap: 0.3rem; }
 .gd-title { flex: 1; font-weight: bold; color: var(--accent); }
 .gd-count { font-size: 0.85rem; color: var(--muted); }
@@ -1657,7 +1670,7 @@ body.fold-log #app { --bgut: 2.1rem; }
 /* Keyboard focus is always visible (mouse clicks do not show it). */
 :where(button, a, input, select, textarea, [role="button"], [tabindex]):focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .gut:focus-visible { outline-offset: -2px; }
-#left, #right, #log, #watchlist, #legend, #alerts, #modal .box { scrollbar-width: thin; scrollbar-color: #444b56 transparent; }
+#left, #right, #log, #watchlist, #legend, #alerts, #guide, #modal .box { scrollbar-width: thin; scrollbar-color: #444b56 transparent; }
 
 /* The bar between a panel and the map: a handle in the middle (click folds, drag resizes, Tab + arrows too). */
 .gut { transition: background-color 0.15s, color 0.15s; }
@@ -1714,7 +1727,10 @@ body:not(.fold-log) #log { animation: panel-in-b 0.18s ease-out; }
 @keyframes panel-in-b { from { opacity: 0; transform: translateY(0.6rem); } }
 
 /* The boxes over the map: one frame, a sticky header, compact rows, scrolling inside (never off the map). */
+#watchlist, #legend { background: var(--fp-bg); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 6px 18px rgba(0,0,0,0.45); padding: 0 0.5rem 0.4rem; font-size: 0.88rem; color: var(--text); }
+#watchlist { width: 16rem; }
 #legend { max-width: 17rem; max-height: calc(100% - 1.2rem); overflow-y: auto; }
+#watchlist:has(> .fp-tab:only-child), #legend:has(> .fp-tab:only-child) { width: auto; padding: 0; border: none; background: none; box-shadow: none; overflow: visible; }
 .fp-head { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 0.25rem; margin: 0 -0.5rem 0.2rem; padding: 0.25rem 0.3rem; background: var(--fp-head); border-bottom: 1px solid var(--line); border-radius: 8px 8px 0 0; }
 .fp-toggle, .fp-tab { display: inline-flex; align-items: center; gap: 0.4rem; min-width: 0; font-weight: 600; font-size: 0.92rem; line-height: 1.25; text-align: left; color: var(--text); }
 .fp-toggle { flex: 1; padding: 0.18rem 0.4rem; background: none; border: 1px solid transparent; border-radius: 6px; }
@@ -1735,17 +1751,41 @@ body:not(.fold-log) #log { animation: panel-in-b 0.18s ease-out; }
 .fp-badge.danger { background: #4d2220; color: #ffb7b0; }
 .fp-extra { display: flex; gap: 0.2rem; flex: none; }
 .fp-extra button.mini { padding: 0.08rem 0.45rem; }
+#watchlist .fp-head + .wl-row { border-top: none; }
 #watchlist .wl-row { padding: 0.28rem 0.3rem; border-radius: 5px; }
 #watchlist .wl-sub { margin: 0.35rem -0.1rem 0.1rem; padding: 0.3rem 0.1rem 0.1rem; }
 #legend .fp-body { display: flex; flex-direction: column; gap: 0.05rem; padding-top: 0.1rem; }
 #legend .layer { padding: 0.08rem 0.25rem; border-radius: 5px; font-size: 0.86rem; line-height: 1.3; }
 #legend .layer:hover { background: var(--panel-2); }
 /* Folding or opening a box eases it in (ui/windows.js watchFolds). */
-#alerts.fp-anim { animation: fp-in 0.16s ease-out; transform-origin: top right; }
+#watchlist.fp-anim { animation: fp-in 0.16s ease-out; transform-origin: top left; }
+#alerts.fp-anim, #guide.fp-anim { animation: fp-in 0.16s ease-out; transform-origin: top right; }
 #legend.fp-anim { animation: fp-in-up 0.16s ease-out; transform-origin: bottom left; }
 @keyframes fp-in { from { opacity: 0; transform: translateY(-0.35rem) scale(0.98); } }
 @keyframes fp-in-up { from { opacity: 0; transform: translateY(0.35rem) scale(0.98); } }
 @media (prefers-reduced-motion: reduce) { #left, #right, #log, .fp-anim { animation: none !important; } .gut, .gut-grip { transition: none; } }
+
+/* ---------- The row of buttons at the bottom left of the map (ui/hudbar.js; the user's request 2026-10-24) ----------
+   One button a box over the map (🔔 Alerts, 👁 Watching, 🗺 Layers, ▣ Minimap, 🧭 First week), its count on a badge, lit
+   while its box is open; a click shows or hides the box. With the bar up (body.hudbar) a folded box shows nothing in
+   its place (the button is its tab), the ▣ Minimap button that stood in the corner goes, and the Layers box opens above
+   the bar. A phone's strip over the map takes its place (responsive.css hides the bar). */
+#hudbar { position: absolute; left: 0.6rem; bottom: 0.6rem; z-index: 6; display: flex; flex-wrap: wrap; gap: 0.3rem; max-width: calc(100% - 1.2rem); }
+#hudbar.hidden { display: none; }
+#hudbar .hb-chip { position: relative; display: inline-flex; align-items: center; gap: 0.35rem; min-height: 2.1rem; padding: 0.2rem 0.65rem 0.2rem 0.5rem; background: var(--fp-bg); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 3px 10px rgba(0,0,0,0.45); font-size: 0.86rem; font-weight: 600; color: var(--text); }
+#hudbar .hb-chip:hover:not(:disabled) { border-color: var(--accent); }
+#hudbar .hb-chip.active { background: #4a3816; border-color: var(--accent); }
+#hudbar .hb-chip.danger { border-color: var(--danger); }
+#hudbar .hb-chip.hidden { display: none; }
+#hudbar .hb-ic { font-size: 1rem; line-height: 1; font-weight: 400; }
+#hudbar .hb-badge { padding: 0.02rem 0.42rem; border-radius: 99px; background: #2f343d; color: var(--text); font-size: 0.75rem; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+#hudbar .hb-badge.danger { background: var(--danger); color: #fff; }
+#hudbar .hb-badge.hidden { display: none; }
+#hudbar .hb-chip.hb-flash { animation: hb-flash 0.5s ease-in-out 6; }
+@keyframes hb-flash { 50% { background: #5a2420; border-color: #ff6b61; box-shadow: 0 0 0 0.3rem rgba(255,107,97,0.35); } }
+@media (prefers-reduced-motion: reduce) { #hudbar .hb-chip.hb-flash { animation: none; } }
+body.hudbar :is(#watchlist, #legend, #guide):has(> .fp-tab:only-child), body.hudbar #alerts > .al-pill, body.hudbar #mm-show { display: none; }
+body.hudbar #legend { bottom: calc(var(--hudbar-h, 2.7rem) + 1rem); }
 
 /* ---------- Moving the boxes over the map (ui/overlaydrag.js) ----------
    Every header bar (the alerts' too), the folded tabs, the guide's title, the dev tools' title line, the minimap's
@@ -1753,7 +1793,8 @@ body:not(.fold-log) #log { animation: panel-in-b 0.18s ease-out; }
    panning under a finger. Nothing eases while a box is dragged; the box being dragged stays on top. (On a phone the
    boxes stay put: responsive.css hides the ✥ and overlaydrag.js takes no press.) */
 #watchlist .fp-head, #legend .fp-head, #watchlist > .fp-tab, #legend > .fp-tab,
-#alerts > .fp-head, #alerts > .al-pill, #alerts .gd-head, #devpanel > .ov-devhead, #minimap .ov-grip, #minimap .mm-bar, #mm-show { touch-action: none; user-select: none; -webkit-user-select: none; }
+#alerts > .fp-head, #alerts > .al-pill, #guide .gd-head, #guide > .fp-tab, #devpanel > .ov-devhead, #minimap .ov-grip, #minimap .mm-bar, #mm-show { touch-action: none; user-select: none; -webkit-user-select: none; }
+#watchlist .fp-head, #legend .fp-head, #alerts > .fp-head, #guide .gd-head, #devpanel > .ov-devhead, #minimap .ov-grip, #minimap .mm-bar { cursor: move; }
 .fp-head::after { content: "✥"; flex: none; padding: 0 0.35rem 0 0.2rem; color: var(--muted); font-size: 0.85rem; opacity: 0.7; }
 .fp-head:hover::after { color: var(--accent); opacity: 1; }
 /* The dev tools' title line: the same bar (its ✥ first, before the title). */

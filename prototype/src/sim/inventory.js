@@ -809,19 +809,50 @@ export function breakDownAt(state, str) {
 }
 // ---------- salvage: taking things apart for parts (docs/weapons-overhaul-plan.md section 10) ----------
 // A gun: floor(value / 30) + 1 gun parts and a scrap (its attachments come off into storage first); an attachment
-// worth 25 or more: a gun part; gadgets: electronics (a phone, a camera, a console 1, a laptop 2, night vision 3, a
-// thermal 4...). Where breaking down for wood works (storage, a pocket, the pack; not worn or held, not a body's).
-// The parts go to the base's stores or the team's cargo. No time: a screwdriver and a hammer.
-export const SALVAGE_ELECTRONICS = { phone: 1, camera: 1, console: 1, laptop: 2, nvg: 3, thermal: 4, milradio: 3, handradio: 1, pocketradio: 1, thermalscope: 3, peq: 1, weaponlight: 1 };
+// worth 25 or more: a gun part; anything with a circuit board, a sensor or an electric motor in it: electronics
+// (SALVAGE_ELECTRONICS, by the item: a phone, a camera, a console 1, a laptop 2, night vision 3, a thermal 4...; an
+// electronic attachment worth 25 or more gives its gun part too, for its housing and mount). Where breaking down for
+// wood works (storage, a pocket, the pack; not worn or held, not a body's). The parts go to the base's stores or the
+// team's cargo. No time: a screwdriver and a hammer.
+// The user's request 2026-10-24 ("does it have a mapping for when you salvage certain items it can yield some
+// [electronics]"): every item that plausibly holds electronics is listed here, by group. Not listed, so nothing: glass
+// optics (scopes, prisms, magnifiers, binoculars: no board), tritium and wind-up things (the alarm clock, the noise
+// maker, the dynamo torch, the self-winding watch), bulbs on a cable or a wick (the lantern, the torch), batteries
+// themselves (cells, not boards: a battery swap wants them whole) and the budget clones worth less than an electronics
+// (a toy laser diode and a dim LED: nothing worth taking, and no buy-and-strip loop at the traders).
+export const SALVAGE_ELECTRONICS = {
+  // gadgets: a screen and a board
+  phone: 1, camera: 1, console: 1, laptop: 2,
+  // night vision and thermals: the sensor and the image tube
+  nvg: 3, thermal: 4, thermalscope: 3, nvscope: 3,
+  // radios, headsets and ear protection: a receiver, an amplifier, a microphone
+  milradio: 3, handradio: 1, pocketradio: 1, commset: 2, eardef: 1,
+  // sensors: a laser rangefinder's diode and its ranging board
+  rangefinder: 1,
+  // powered sights: an emitter and its brightness board (the clones worth less than an electronics give nothing)
+  reddot: 1, holo: 1, rmr: 1, aimpoint: 1, holosun: 1, holopistol: 1,
+  // lasers: the diode and its driver (the infrared PEQ, the rail laser, laser grips, the light-and-laser unit)
+  peq: 1, laser: 1, lasergrip: 1, lightlaser: 1,
+  // LED lights with a regulated driver: the weapon lights, the hand lights, the lamp that charges on its panel
+  weaponlight: 1, surefire: 1, pistollight: 1, flashlight: 1, tacflash: 1, headlamp: 1, helmetlight: 1, anglelight: 1, spotlight: 1, solarlantern: 1,
+  spotlamp: 1, // the mounted spotlight is built with an electronics (data-power.js POWER_CRAFTS): its ballast and switchgear come back
+  // electric weapons: the taser's and the stun baton's high-voltage circuit
+  taser: 1, stunbaton: 1,
+  // power tools and machines: a motor, its speed controller and its battery pack; the inverter welder's board
+  powerdrill: 1, anglegrinder: 1, welder: 2,
+  // generators: the alternator's regulator, the control board and the inverter; a fridge's compressor and thermostat
+  genset_inverter: 2, genset_house: 2, genset_contractor: 3, genset_standby: 4, genset_military: 4, fridge: 2,
+};
 const GUN_CATS = ["pistol", "shotgun", "rifle", "automatic"];
 // What taking it apart gives: { supplies } or null (nothing worth taking).
 export function salvageYield(item) {
   const d = item && GEAR[item.key];
   if (!d) return null;
-  if (SALVAGE_ELECTRONICS[item.key]) return { electronics: SALVAGE_ELECTRONICS[item.key] };
   if (d.slot === "weapon" && GUN_CATS.includes(d.cat)) return { gunparts: Math.floor((d.value || 0) / 30) + 1, scrap: 1 };
-  if (isGunmod(item.key) && (d.value || 0) >= 25) return { gunparts: 1 };
-  return null;
+  const got = {};
+  if (SALVAGE_ELECTRONICS[item.key]) got.electronics = SALVAGE_ELECTRONICS[item.key];
+  if (isGunmod(item.key) && (d.value || 0) >= 25) got.gunparts = 1; // an attachment's housing and mount (an electronic one gives both)
+  return Object.keys(got).length ? got : null;
 }
 export function salvageInfo(state, str) {
   const loc = parseLoc(str);

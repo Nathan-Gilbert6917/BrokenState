@@ -131,7 +131,7 @@ export const ARSENAL = {
   // decoys: a decoy of your recipes (a noise maker from scrap, firecrackers, a road flare) every decoyEvery days while
   // the group holds fewer than KIT_WANT.decoy a head (as you make a few before a trip through the dead).
   CRAFT: { every: 4, weapons: ["pipespear", "spikedbat", "pipespear", "nailbat"], bombEvery: 6, bombScrap: 2, bombFuel: 1,
-    gunEvery: 5, guns: 1.1, ranged: ["pipegun", "crossbow", "pulleybow"], decoyEvery: 5, decoys: ["noisemaker", "flare", "noisemaker", "firecracker"] },
+    gunEvery: 5, guns: 1.1, ranged: ["pipegun", "crossbow", "pulleybow"], decoyEvery: 5, decoys: ["noisemaker", "flare", "noisemaker", "firecracker", "pocketradio"] }, // the pocket radio decoy (crafting.js, 2026-10-24): electronics out of their pooled parts
   WANT: 1.3, // weapons a head they keep; more goes on the trade shelf
   // Buying a gun from passing traders (groupBuysGun): every `every` days below `guns` guns a head, at value × markup,
   // paid from `share` of the scrap they can spare (trade.js available: past their reserve). Only well under the guns
@@ -1219,11 +1219,21 @@ export function groupCraftable(state, f, key) {
   const lock = LOCKED.crafts[key];
   if (lock && !groupKnows(state, f, lock)) return false; // a craft book (they read none) or a manual not studied
   for (const [k, q] of Object.entries(r.in || {})) {
-    if (k === "parts" ? !canPayParts(f, q) : k === "ammo" ? arsenalRounds(f) < q : (f.stock[k] || 0) < q) return false;
+    if (k === "parts" || k === "electronics") continue; // below, as one count
+    if (k === "ammo" ? arsenalRounds(f) < q : (f.stock[k] || 0) < q) return false;
   }
-  for (const [k, q] of Object.entries(r.gearIn || {})) if (gearInputs(f, k).length < q) return false;
+  if (craftParts(f, r) && !canPayParts(f, craftParts(f, r))) return false;
+  for (const [k, q] of Object.entries(r.gearIn || {})) if (gearInputs(f, k).length < q && !GROUP_SUBS[k]) return false;
   return true;
 }
+// Electronics in a recipe (2026-10-24: the pocket radio decoy, the lights, lasers and sights): the groups keep one count
+// of parts with your electronics folded into it (groupworks.js MACH), so a recipe's electronics are paid as parts, with
+// the small kit they lack (GROUP_SUBS) on top.
+const craftParts = (f, r) => ((r.in || {}).parts || 0) + ((r.in || {}).electronics || 0) + sparePartsFor(f, r);
+// Small consumable kit a recipe uses up that the groups never keep on their books (a pack of batteries): paid as parts
+// instead (GROUP_SUBS: how many), as their stores fold the small kit into their parts.
+const GROUP_SUBS = { batteries: 1 };
+const sparePartsFor = (f, r) => Object.entries(r.gearIn || {}).reduce((a, [k, q]) => a + (GROUP_SUBS[k] ? GROUP_SUBS[k] * Math.max(0, q - gearInputs(f, k).length) : 0), 0);
 // The items a recipe can use up: spare on their books (nobody carries it) or on their shelf (a bottle, a bat).
 const gearInputs = (f, k) => [...spareKit(f).filter((it) => it && it.key === k), ...(f.wares || []).filter((it) => it && it.key === k)];
 // What their crafter makes (crafting.js: your recipe's item at the quality your crafting rolls for the best of their
@@ -1254,8 +1264,9 @@ const groupHasNeed = (state, f, need) => (need === "machine_shop" ? groupHas(sta
 // Pays a recipe's inputs (call groupCraftable first).
 function payCraft(f, key) {
   const r = CRAFTS[key];
+  if (craftParts(f, r)) payParts(f, craftParts(f, r)); // parts and electronics as one count, the small kit they lack as parts
   for (const [k, q] of Object.entries(r.in || {})) {
-    if (k === "parts") payParts(f, q);
+    if (k === "parts" || k === "electronics") continue;
     else if (k === "ammo") takeArsenalRounds(f, q);
     else f.stock[k] = Math.max(0, (f.stock[k] || 0) - q);
   }

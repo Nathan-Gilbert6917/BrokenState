@@ -9,6 +9,18 @@
 // a Crafting minimum on the special recipes) only say who may attempt it. Quality is a roll around the expected
 // condition (craftQuality), narrower the better the crafter; each finished craft gives Crafting XP by the kind of thing,
 // the worth of what went into it and the quality it came out at (craftXp).
+// Electronics recipes (the user's request 2026-10-24: "Add some more recipes for crafting that would use electronics. Add
+// pre-requisite items as well as what makes sense; add items if needed"): nine recipes take the electronics supply
+// (data.js SUPPLIES.electronics: boards, switches, LEDs, lenses and wire salvaged from gadgets and found at tech sites),
+// each making a thing an existing system already reads. In the field a pocket radio decoy (stealth.js THROWABLES) from a
+// scrap, an electronics and a pack of batteries; at a bench a hand-crank radio (radio.js listeners), a helmet light
+// (helmets.js), a weapon light from a flashlight (gunmods.js) and electronic ear defenders from a pair of passive muffs
+// and a pack of batteries (hearing.js); at a workshop a laser sight, and behind the Hobby Electronics Handbook
+// (blueprints.js) laser grips from a laser, a pistol red dot from a camera's lens and a laser rangefinder from a
+// monocular (optics.js). The fine work needs a soldering iron (data-tools.js TOOL_KINDS.solder, a new tool item found at
+// radio and electronics shops, hardware stores and tech sites) besides pliers or a drill. The recipes that use up an
+// item (gearIn) take one off a stack (a pack of batteries from a stack of them: itemstack.js takeOneAt / useOne) and
+// count stacks by what is in them (countKey), at a base and in the field alike.
 import { LIGHTS } from "./lights.js";
 import { wearMakeshiftMods, attachText, fitsText } from "./gunmods.js"; // makeshift gun parts that wear by the fight
 import { GEAR, SKILL_NAMES, SUPPLIES } from "./data.js";
@@ -16,7 +28,7 @@ import { log, atBase, skill, newId, gearEffect } from "./world.js";
 import { count, BUILDINGS, benchOf } from "./buildings.js";
 import { partyMembers, addGearToCargo } from "./parties.js";
 import { ARMOR_SLOTS, SLOT_NAMES, EQUIP_SLOTS, ensurePack, stow, packOf, rigPouches } from "./inventory.js";
-import { stackMax, withCount, mergeInto, isSpent, roomIn } from "./itemstack.js"; // a recipe that makes a stack (n: makeshift picks) joins one of the same thing
+import { stackMax, withCount, mergeInto, isSpent, roomIn, countOf, countKey, useOne, takeOneAt } from "./itemstack.js"; // a recipe that makes a stack (n: makeshift picks) joins one of the same thing; a recipe's item input (gearIn) comes one off a stack
 import { workFactor } from "./health.js";
 import { hasPerk, hash01, gainXp } from "./skills.js";
 import { craftLock, craftEdgeQuality, craftEdgeSpeed } from "./blueprints.js";
@@ -166,6 +178,35 @@ export const CRAFTS = {
   pulleybow:   { gear: "pulleybow",   in: { scrap: 5, parts: 2, wood: 30 }, hours: 16, skill: "mechanics", min: 3, cmin: 6, needs: "workshop" },
   woodghillie: { gear: "woodghillie", in: { scrap: 3 },          hours: 10, skill: "stealth",   min: 3, cmin: 3 },
   traumakit:   { gear: "traumakit",   in: { scrap: 2, meds: 2 }, hours: 8,  skill: "medicine",  min: 4, cmin: 3 },
+  // ---------- electronics (the user's request 2026-10-24; see the header) ----------
+  // Tools: data-tools.js CRAFT_TOOLS (pliers for wiring, a drill for a clamp or a mount, a soldering iron for the boards).
+  // A transistor radio built to blare: a speaker and a tuner board in a scrap case, a pack of batteries in it. Anywhere, a
+  // team too (a decoy made the night before a trip through the dead). The blueprint's edge covers it once studied.
+  pocketradio: { gear: "pocketradio", gearIn: { batteries: 1 }, in: { scrap: 1, electronics: 1 }, hours: 2, skill: "mechanics", min: 1, field: true },
+  // A wind-up receiver: a dynamo out of a motor (the machine part), a tuner board and a speaker (the electronics) in a
+  // scrap case. The set a base or a team listens to a radio network with (radio.js); it needs no batteries.
+  handradio:   { gear: "handradio",   in: { scrap: 3, parts: 1, electronics: 1 }, hours: 5, skill: "mechanics", min: 2 },
+  // A helmet light: an LED cluster, a switch and a battery holder on a clip bent from scrap (helmets.js helmetLight: a
+  // flashlight's beam, hands free, on any helmet with a side mount).
+  helmetlight: { gear: "helmetlight", in: { scrap: 1, electronics: 1 }, hours: 3, skill: "mechanics", min: 2 },
+  // A weapon light: a flashlight rebuilt into a rail clamp cut from scrap with a pressure switch and new wiring (the
+  // electronics). A real weapon light (gunmods.js weaponlight: +8 aim at night within 6 tiles, a light without the off
+  // hand, no wear), not the duct-taped one found in homes (tapedlight, which falls apart).
+  weaponlight: { gear: "weaponlight", gearIn: { flashlight: 1 }, in: { scrap: 1, electronics: 1 }, hours: 3, skill: "mechanics", min: 2 },
+  // A laser sight: a diode and its driver board (two electronics: one is spoilt in the aligning) in a scrap housing with
+  // a rail clamp, zeroed on the workshop's vice. Crafting 3: the alignment is the whole job.
+  laser:       { gear: "laser",       in: { scrap: 1, electronics: 2 }, hours: 5, skill: "mechanics", min: 3, cmin: 3, needs: "workshop" },
+  // Electronic ear defenders: a pair of passive range muffs opened up and fitted with microphones, a clipping amplifier
+  // and speakers (two electronics), a pack of batteries in the cups (hearing.js: they clip the bang and turn footsteps
+  // up; data-helmets.js recharge: a battery swap in Repairs when they run down).
+  eardef:      { gear: "eardef",      gearIn: { earmuffs: 1, batteries: 1 }, in: { scrap: 1, electronics: 2 }, hours: 6, skill: "mechanics", min: 3, cmin: 3 },
+  // Behind the Hobby Electronics Handbook (blueprints.js hobbyelec): laser grips (a laser sight's diode and board moved
+  // into a grip panel for a gun with no rail: a revolver, a 1911, a 9mm pistol), a pistol red dot (an LED emitter and a
+  // lens cut from a digital camera's objective in a scrap hood: a reflex sight for a pistol's slide) and a laser
+  // rangefinder (a monocular with a laser diode, a receiver and a readout fitted beside the eyepiece: optics.js).
+  lasergrip:   { gear: "lasergrip",   gearIn: { laser: 1 }, in: { scrap: 1, electronics: 1 }, hours: 6, skill: "mechanics", min: 3, cmin: 4, needs: "workshop" },
+  holopistol:  { gear: "holopistol",  gearIn: { camera: 1 }, in: { scrap: 1, electronics: 2 }, hours: 8, skill: "mechanics", min: 4, cmin: 4, needs: "workshop" },
+  rangefinder: { gear: "rangefinder", gearIn: { monocular: 1 }, in: { scrap: 1, electronics: 2 }, hours: 8, skill: "mechanics", min: 4, cmin: 4, needs: "workshop" },
   // ---------- end of special gear ----------
 };
 Object.assign(CRAFTS, BED_CRAFTS); // beds as furniture (data-beds.js): wood, scrap, a large bed's springs; at a crafting bench
@@ -238,7 +279,10 @@ export function craftOutputText(key) {
     for (const [k, v] of Object.entries(d.bonus || {})) fx.push(`+${v} ${SKILL_NAMES[k]}${k === "scavenging" ? " for base scavenging" : ""}`);
     if (d.water) fx.push(`+${d.water} purified water a day at its base and purifies ${WORM.PURIFY_FILTER} un-purified water a day there (strains out the worm's eggs)`);
     // The stealth kit (stealth.js): thrown to pull guards away, a suppressor, a light for night raids.
-    if (d.throw) fx.push(d.throw === "molotov" ? "thrown in battle, sets a 3 × 3 patch on fire for 2–3 turns (the dead walk into it), one use" : d.throw === "pipebomb" ? "thrown in battle (over walls too), blows up everyone within a tile and the cover there, one use" : "thrown in battle to pull unaware guards and the dead to a spot, one use");
+    if (d.throw) fx.push(d.throw === "molotov" ? "thrown in battle, sets a 3 × 3 patch on fire for 2–3 turns (the dead walk into it), one use" : d.throw === "pipebomb" ? "thrown in battle (over walls too), blows up everyone within a tile and the cover there, one use" : d.throw === "pocketradio" ? "a decoy: thrown in battle (up to 6 tiles) it plays for 6 turns and the dead within 12 tiles that follow noise go to it, even those already after you (people who hear it look to where it was thrown from); kept in a base's armory, decoys can pull a coming horde off; one use" : "thrown in battle to pull unaware guards and the dead to a spot, one use"); // the pocket radio decoy (stealth.js THROWABLES, 2026-10-24)
+    if (d.listen) fx.push("a receiver (radio.js): a base holding it in its armory or a team carrying it hears a radio network while inside its coverage (Listen in), but cannot call anyone"); // the hand-crank radio (2026-10-24)
+    if (r.gear === "helmetlight") fx.push("a helmet light (helmets.js): fitted to a hard hat, a riot, combat or high-cut helmet, it lights the way like a flashlight (9 tiles at night, seen 3 tiles further), hands free"); // 2026-10-24
+    if (d.optics) fx.push(`optics (optics.js): carried by anyone on a team, spotting hidden places and finds ×${d.optics.look}${d.optics.reach ? `, a tile further on a survey` : ""}${d.optics.sight ? `, the team sees a tile further on the map` : ""}, sees others a little sooner on the road`); // the laser rangefinder (2026-10-24)
     if (d.siege) fx.push(d.siege === "ladder" ? "set against a wall in battle to climb onto its walkway" : "carried by 2–3 to smash a barred gate or door, 16–24 a carrier a turn");
     if (d.suppressor) fx.push("a muzzle attachment (gunmods.js): fitted to a 9mm pistol or a rifle, halves the noise of its shots");
     else if (d.cat === "gunmod" && attachText(r.gear)) fx.push(`a gun attachment (gunmods.js): ${attachText(r.gear)}; fits ${fitsText(r.gear)}`);
@@ -247,7 +291,7 @@ export function craftOutputText(key) {
     if (d.defence && d.defence.alarm) fx.push("an alarm for a base (everyone counts half on the walls) or a camp (less trouble)");
     // Wave 2 cooking (cooking.js): the camp cook pot was a bare "tool" here; it says what it cooks and where.
     if (r.gear === "cookpot") fx.push("cooks over a fire: a Camp fire station for simple meals and stew at a base without a Kitchen or a cook fire (1 wood an hour), and a camping team's fresh food into simple meals at a lit fire");
-    if (d.ears) fx.push(`ear protection worn in the Ear pro slot, under any helmet (hearing.js): takes ${d.ears.cut} off a bang's loudness (foam earplugs ${GEAR.earplugs.ears.cut}), hearing ${d.ears.hear} tiles; a pair a fight`);
+    if (d.ears) fx.push(`ear protection worn in the Ear pro slot${d.plugs ? ", under any helmet" : " (not under a full-shell helmet)"} (hearing.js): takes ${d.ears.cut} off a bang's loudness (foam earplugs ${GEAR.earplugs.ears.cut}), hearing ${d.ears.hear > 0 ? "+" : ""}${d.ears.hear} tiles${d.ears.elec ? " (electronic: it clips the bang and turns quiet sounds up)" : ""}${d.plugs ? "; a pair a fight" : d.recharge ? "; runs on a pack of batteries (a battery swap in Repairs when it runs down)" : ""}`); // electronic ear defenders too (2026-10-24)
     if (r.gear === "boards") fx.push("nailed across a closed door, a doorway or a window in a fight (barricade.js Board up, both actions): 40 hit points a layer, up to 3, that the dead and raiders batter through; a bundle in the team's vehicle counts from next to it"); // it said only "tool"
     if (kindsOf(r.gear).length) fx.push(`counts as ${toolsText(kindsOf(r.gear))} for building and crafting (toolreqs.js)${d.toolWear ? ", a use a job" : ""}`); // the makeshift tools, the sewing kit
     if (r.gear === "makeshiftpick") fx.push("picks locks in a raid without the crowbar and lockpicks (locks.js): 30% + 4% a Stealth point − 15% a difficulty step, as quiet, but one snaps in two every attempt; not a safe, a steel security door or a gun safe");
@@ -267,7 +311,7 @@ export function durUnit(key) {
   if (d.slot === "weapon" || ARMOR_SLOTS.includes(d.slot)) return "fights";
   if (d.medKit) return "treatments";
   if (d.selfStab) return "use"; // a tourniquet (medics.js MEDIC.SELF): one use
-  if (d.ears && d.plugs) return "fights"; // earplugs (hearing.js settleEars): a pair a fight
+  if (d.ears) return "fights"; // earplugs (hearing.js settleEars): a pair a fight; electronic ear defenders: fights on a set of batteries (data-helmets.js)
   if (key === "repairkit") return "repairs"; // repair.js: a field repair a use
   if (d.cart) return "wear (a tile off the roads wears 0.5–2)"; // carts.js CART_WEAR
   if (d.suppressor) return "shots";
@@ -354,7 +398,7 @@ export function canCraft(state, base, key) {
   if (!meetsNeeds(base, r)) return { ok: false, reason: `Needs ${needsText(r)} here` };
   if (!atBase(state, base.id).some((s) => canAttempt(s, r))) return { ok: false, reason: `Needs a ${attemptText(r)} survivor here` };
   for (const [k, v] of Object.entries(r.in)) if (stockHas(base.stock, k) < v) return { ok: false, reason: `Needs ${v} ${keyWord(k)} (have ${Math.floor(stockHas(base.stock, k))})` };
-  for (const [k, v] of Object.entries(r.gearIn || {})) if (base.armory.filter((it) => it && it.key === k).length < v) return { ok: false, reason: `Needs ${v > 1 ? `${v} × ` : "a "}${GEAR[k].name} in the armory` };
+  for (const [k, v] of Object.entries(r.gearIn || {})) if (countKey(base.armory, k) < v) return { ok: false, reason: `Needs ${v > 1 ? `${v} × ` : "a "}${GEAR[k].name} in the armory` }; // a stack counts what is in it (a pack of batteries off a stack of them)
   if (r.spent && (base.spentFilters || 0) < r.spent) return { ok: false, reason: "Needs a clogged water filter here (one is kept each time a filter clogs at this base)" };
   const lock = craftLock(state, key); // blueprints.js: advanced recipes need a studied blueprint
   if (lock) return { ok: false, reason: lock, locked: true };
@@ -374,7 +418,7 @@ export function queueCraft(state, base, key) {
   const r = CRAFTS[key];
   for (const [k, v] of Object.entries(r.in)) useStock(base.stock, k, v);
   const taken = [];
-  for (const [k, v] of Object.entries(r.gearIn || {})) for (let i = 0; i < v; i++) taken.push(...base.armory.splice(base.armory.findIndex((it) => it && it.key === k), 1));
+  for (const [k, v] of Object.entries(r.gearIn || {})) for (let i = 0; i < v; i++) { const one = takeOneAt(base.armory, base.armory.findIndex((it) => it && it.key === k && countOf(it) > 0)); if (one) taken.push(one); } // one off a stack (itemstack.js), else the item
   if (r.spent) base.spentFilters -= r.spent;
   wearBaseTools(state, base, craftTools(key)); // toolreqs.js: a makeshift tool loses a use
   craftQueue(base).push({ id: newId(), recipe: key, progress: 0, hours: r.hours, ...(taken.length ? { gearTaken: taken } : {}), ...(r.spent ? { spent: r.spent } : {}) });
@@ -657,7 +701,7 @@ export function fieldCraftOptions(state, party) {
     else {
       const miss = Object.entries(r.in).find(([k, v]) => partyHas(party, k) < v);
       if (miss) reason = `Needs ${miss[1]} ${miss[0]}; the team carries ${Math.floor(partyHas(party, miss[0]))}`;
-      const missG = Object.entries(r.gearIn || {}).find(([k, v]) => partyItems(state, party).filter((x) => x.it.key === k).length < v);
+      const missG = Object.entries(r.gearIn || {}).find(([k, v]) => partyItems(state, party).reduce((a, x) => a + (x.it.key === k ? countOf(x.it) : 0), 0) < v); // stacks by what is in them
       if (!reason && missG) reason = `Needs ${missG[1] > 1 ? `${missG[1]} × ` : "a "}${GEAR[missG[0]].name.toLowerCase()} with the team`;
       const missT = toolsMissing(partyToolItems(party, members), craftTools(key)); // toolreqs.js: what the team carries
       if (!reason && missT.length) reason = `Needs ${toolsText(missT)} with the team`;
@@ -695,7 +739,7 @@ export function fieldCraft(state, party, recipeKey) {
     party.cargo.gear.splice(party.cargo.gear.indexOf(probe), 1);
   }
   for (const [k, v] of Object.entries(r.in)) partyTake(party, k, v);
-  for (const [k, v] of Object.entries(r.gearIn || {})) for (let i = 0; i < v; i++) { const x = partyItems(state, party).find((y) => y.it.key === k); if (x) x.take(); }
+  for (const [k, v] of Object.entries(r.gearIn || {})) for (let i = 0; i < v; i++) { const x = partyItems(state, party).find((y) => y.it.key === k && countOf(y.it) > 0); if (x && !useOne(x.it)) x.take(); } // one off a stack (a pack of batteries), else the item
   const members = partyMembers(state, party);
   party.cargo = party.cargo || { supplies: {}, gear: [] };
   wearTools(state, craftTools(recipeKey), partyToolItems(party, members), members, [party.cargo.gear]); // toolreqs.js: a makeshift tool loses a use

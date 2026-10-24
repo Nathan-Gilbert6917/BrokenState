@@ -1076,7 +1076,7 @@ function cardModal(state, card) {
   return `<div class="box${card.battle && answers.length >= 6 ? " many" : ""}">
     <h1>${esc(card.title)}</h1>
     ${card.where ? `<div class="where">Near ${esc(card.where)} · Day ${day(state)} ${clock(state)}</div>` : ""}
-    <div class="text">${esc(card.text)}</div>
+    ${cardText(card)}
     ${speakerRow(state, card, speak)}
     ${cardWhy(state, card)}
     ${retreatPolicyRow(state, card)}
@@ -1084,6 +1084,22 @@ function cardModal(state, card) {
       const dis = typeof c.disabled === "function" ? c.disabled(state) : c.disabled;
       return `<button data-action="choice" data-i="${i}" ${dis ? "disabled" : ""}${tip(c.hint)}>${esc(c.label)}${c.hint ? `<span class="hint${card.battle && RISKY_RE.test(c.hint) ? " risky" : ""}">${esc(c.hint)}</span>` : ""}${fightForecastHtml(state, card, c)}</button>`;
     }).join("")}</div></div>`;
+}
+// A card's text. The run's opening card (sim/hardcore-start.js introCard parts) is laid out in pieces instead of one
+// paragraph (2026-10-24): a lead line, what each of them grabbed as a list (the name in bold, who they were muted),
+// the supplies in one line and the first steps numbered (styles.css .text.intro). Any other card: its text as one block.
+function cardText(card) {
+  const p = card.parts;
+  if (!p) return `<div class="text">${esc(card.text)}</div>`;
+  const item = (g) => `<li>${g.who ? `<b>${esc(g.who)}</b>${g.tag ? ` <span class="muted">(${esc(g.tag)})</span>` : ""} ` : ""}${esc(g.rest)}</li>`;
+  return `<div class="text intro">
+    <p class="intro-lead">${esc(p.lead)}</p>
+    <div class="intro-h">What you grabbed</div>
+    <ul class="intro-list">${(p.grabbed || []).map(item).join("")}</ul>
+    ${p.supplies ? `<p class="intro-sup"><b>${esc(p.supplies.label)}:</b> ${esc(p.supplies.rest)}</p>` : ""}
+    ${p.steps && p.steps.length ? `<div class="intro-h">First steps</div>
+    <ol class="intro-list">${p.steps.map((s) => `<li>${esc(s)}</li>`).join("")}</ol>` : ""}
+  </div>`;
 }
 // A talk's speaker switch (sim/parley.js: "Let <first name> speak", free; card.speakers names who could, with Speech).
 const SPEAK_RE = /^Let (.+) speak$/;
@@ -2478,7 +2494,7 @@ function baseVehicles(state, b) {
         <button class="mini" data-action="refuel" data-base="${b.id}" data-id="${v.id}" ${v.fuel >= tank(v) || (b.stock.fuel || 0) < 1 ? "disabled" : ""}${tip(`Fill the tank from this base's fuel (${n0(b.stock.fuel)} in stock)`)}>Refuel</button>
         <button class="mini" data-action="repairv" data-base="${b.id}" data-id="${v.id}" ${rep.ok && carPartsCost((k) => b.stock[k] || 0, 1).ok && v.condition < 100 ? "" : "disabled"}${tip(rep.ok ? `${carPartsText(1)} → +${rep.per} condition` : "Needs a garage or a Mechanics 4+ survivor here")}>Repair (1 car part)</button>
         ${moveCarButton(state, b, v)}
-        <button class="mini" data-action="stripv" data-base="${b.id}" data-id="${v.id}"${tip(`Take it apart for good: ${stripYield(v).carparts} car parts (by its condition), ${stripYield(v).scrap} scrap, ${stripYield(v).metalsheet} metal sheets (its panels and roof, and half its plating's) and the fuel in its tank. The vehicle is gone.`)}>Strip for parts</button>
+        <button class="mini" data-action="stripv" data-base="${b.id}" data-id="${v.id}"${tip(`Take it apart for good: ${stripYield(v).carparts} car parts (by its condition), ${stripYield(v).scrap} scrap, ${stripYield(v).metalsheet} metal sheets (its panels and roof, and half its plating's), ${stripYield(v).electronics} electronics (its engine control unit, wiring, radio and sensors, by its condition and type) and the fuel in its tank. The vehicle is gone.`)}>Strip for parts</button>
       </div>${garageRow(state, b, v)}</div>`).join("") : `<div class="muted small">No vehicles parked here.</div>`}
     ${garageJobs(state, b)}
     ${elsewhere.length ? `<h3>Elsewhere</h3>${elsewhere.map((v) => `<div class="card small"><b>${esc(vehicleLabel(v))}</b> · ${where(v)}</div>`).join("")}` : ""}`;

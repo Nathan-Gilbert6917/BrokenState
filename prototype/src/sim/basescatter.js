@@ -30,10 +30,10 @@
 // yield into its stores (basemap.js clearCampSite), and the rest is cleared as needed.
 //
 // Every piece blocks building on its cells (basemap.js placeProblemAt: "clear it first") until it is cleared: a
-// clearing job (CLEAR: hours of the builders' work and what it gives: a tree its wood, a wreck its scrap and a car
-// part) goes into the base's construction queue like a building (buildings.js BUILDINGS.clear, constructionHour) and
-// the yield comes into the stores when it is done (finishClear). A wreck can be stripped first (once: the scrap and
-// the part) and then dragged off. What is cleared stays cleared (base.land.cleared, by cell; base.land.looted, the
+// clearing job (CLEAR: hours of the builders' work and what it gives: a tree its wood, a wreck its scrap, a car part,
+// metal sheets and an electronics) goes into the base's construction queue like a building (buildings.js
+// BUILDINGS.clear, constructionHour) and the yield comes into the stores when it is done (finishClear). A wreck can be
+// stripped first (once: the scrap, the part, the sheets and the electronics) and then dragged off. What is cleared stays cleared (base.land.cleared, by cell; base.land.looted, the
 // wrecks stripped). The game's own auto layout picks open ground, and where there is none it places over the land and
 // queues the clearing (basemap.js autoLayout, siteWaits): it never gets stuck.
 import { Rng } from "./rng.js";
@@ -96,9 +96,10 @@ const YARD_W = { plain: { stump: 3, log: 2, crate: 2, barrel: 2, rock: 1 }, city
 export const SCATTER_KINDS = new Set(["tree", "bush", "fence", "wirefence", "fieldgate", "rock", "boulder", "stump", "log", "hay", "crate", "barrel"]);
 // Clearing a piece (the builders' work-hours at a builder's pace, and what it gives into the stores). A tree is felled,
 // limbed and its stump dug out: without a cutting tool at the base (an axe, a machete…: woodcutting.js isChopTool) it
-// takes NO_TOOL times as long. A wreck: strip it (once) for its scrap, a car part and its roof and door skins as metal
-// sheets (the user's request 2026-10-21: metal sheets salvaged from cars), then drag it off; cleared without stripping
-// it gives both.
+// takes NO_TOOL times as long. A wreck: strip it (once) for its scrap, a car part, its roof and door skins as metal
+// sheets (the user's request 2026-10-21: metal sheets salvaged from cars) and an electronics from under its dash (its
+// engine control unit or radio: the user's request 2026-10-24, electronics salvaged from cars), then drag it off;
+// cleared without stripping it gives both.
 export const CLEAR = {
   tree:    { hours: 4,   get: { wood: 120 }, word: "a tree", verb: "Fell" },
   stump:   { hours: 2,   get: { wood: 15 },  word: "a stump", verb: "Dig out" },
@@ -113,7 +114,7 @@ export const CLEAR = {
   crate:   { hours: 0.5, get: { scrap: 1 },  word: "a broken crate", verb: "Haul off" },
   barrel:  { hours: 0.5, get: { scrap: 1 },  word: "an old drum", verb: "Haul off" },
   wreck:   { hours: 6,   get: { scrap: 2 },  word: "a wreck", verb: "Drag off" },
-  strip:   { hours: 2,   get: { scrap: 6, carparts: 1, metalsheet: 2 }, word: "a wreck", verb: "Strip" },
+  strip:   { hours: 2,   get: { scrap: 6, carparts: 1, metalsheet: 2, electronics: 1 }, word: "a wreck", verb: "Strip" },
   // The high ground (a cell of it dug down to the ground round it) and the buildings of a town or a city (pulled down
   // whole: their timbers, their scrap, the bricks and blocks as building materials, the roof's metal sheets).
   rise:    { hours: 1,   get: {},            word: "a patch of high ground", verb: "Dig down" }, // a level: × its height
@@ -1072,7 +1073,7 @@ export function clearOf(p, tool = true, mode = "clear") {
   if (!p || p.k === "water" || p.spring) return null; // the river and a spring's pond: never cleared
   if (p.k === "wreck") {
     if (mode === "strip") return p.looted ? null : { hours: CLEAR.strip.hours, get: { ...CLEAR.strip.get }, mode };
-    return p.looted ? { hours: CLEAR.wreck.hours, get: { ...CLEAR.wreck.get }, mode } : { hours: CLEAR.wreck.hours + CLEAR.strip.hours, get: { scrap: CLEAR.wreck.get.scrap + CLEAR.strip.get.scrap, carparts: CLEAR.strip.get.carparts, metalsheet: CLEAR.strip.get.metalsheet }, mode };
+    return p.looted ? { hours: CLEAR.wreck.hours, get: { ...CLEAR.wreck.get }, mode } : { hours: CLEAR.wreck.hours + CLEAR.strip.hours, get: { scrap: CLEAR.wreck.get.scrap + CLEAR.strip.get.scrap, carparts: CLEAR.strip.get.carparts, metalsheet: CLEAR.strip.get.metalsheet, electronics: CLEAR.strip.get.electronics }, mode };
   }
   const c = CLEAR[p.k];
   if (!c) return null;

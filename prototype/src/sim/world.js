@@ -10,7 +10,7 @@ import { pickStart, chosenStart, startNear, isSettlementTile } from "./startpick
 import { generateMap } from "./mapgen.js";
 import { DEFAULT_SIZE, sizeDef, customDef, isCustom, clampHives } from "./worldsize.js";
 import { cleanCustom, customSizeDef } from "./custommode.js"; // Custom mode's counts and Start with a vehicle (2026-10-24)
-import { cleanFleet, START_FLEET } from "./startfleet.js"; // the starting vehicles, their kinds, point limits and loads (2026-10-24)
+import { cleanFleet, fitFleet, START_FLEET } from "./startfleet.js"; // the starting vehicles, their kinds, point limits and loads (2026-10-24)
 import { FIRST_NAMES, LAST_NAMES, SKILLS, ROLLED_SKILLS, TRAITS, BIRTH_TRAITS, clashIn, GEAR, SUPPLIES, SUPPLY_KEYS, supValue } from "./data.js";
 import { traitDice, swapNewTraits, noteBornTraits, woundMult, traitSkill, traitPower, rollTiers, tidyTiers, cleanTier } from "./traits.js"; // the newer traits: own dice at birth, their rules
 import { sanitizeLibrary } from "./custombg.js";
@@ -141,6 +141,9 @@ export function setNextId(n) {
 /** @type {(state: State, id: any) => any} */
 export const localId = (state, id) => (typeof id === "number" ? id - (state.idBase || 0) : id);
 
+// A normal start's weapons, handed out in this order (the crew card's Everything draws one again: ui/newgame.js randomizeOne).
+export const START_WEAPONS = ["pistol", "machete", "huntrifle", "knife", "knife", "pistol", "knife", "machete"];
+
 // crew (optional): starting-colonist overrides from the new-run screen, by index:
 // [{ name?, skills?, traits?, budget?, appearance?, gear?, leader? }]. Headless tools leave it out.
 // size: a worldsize.js key (small / normal / large / huge; Normal when left out, the original 64 × 42 map), or
@@ -159,9 +162,10 @@ export const localId = (state, id) => (typeof id === "number" ? id - (state.idBa
 // custom (optional, Custom mode: custommode.js): { people, groups, hives, cities, towns, military }, each 1 or more, on a
 // normal start (not with mode "hardcore"): they stand in for startPeople, factionCount and hives, and the map gets
 // those cities, towns and military sites (customSizeDef). Kept as state.custom (isCustomRun).
-// fleet (optional, 2026-10-24, user request: startfleet.js): the starting vehicles [{ type, limit, load }] (Normal: the
-// hub's pickup; Hardcore: the car fled in; Custom: 1–12 of the kinds set, at the hub), each back's load set on the new-run
-// screen (null: as rolled). Kept as state.fleet (each with vid: its vehicle) until Start.
+// fleet (optional, 2026-10-24, user request: startfleet.js): the starting vehicles' slots [{ type, limit, load, empty }],
+// one a starting survivor (fitFleet; Normal and Custom: at the hub; Hardcore: the car fled in and any kinds set, with
+// the team), each back's load set on the new-run screen (null: as rolled). Kept as state.fleet (each with vid: its
+// vehicle, null for an empty slot) until Start.
 /**
  * @param {{ seed: number, factionCount: number, crew?: any[] | null, size?: string, mode?: string, customW?: number | null,
  *   customH?: number | null, hives?: number | null, crewRoll?: number | null, startPeople?: number | null, customBackgrounds?: any,
@@ -278,8 +282,10 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
   state.startPeople = people;
   const startBeds = baseBeds(hubBase);
   if (people > startBeds) hubBase.crowdNote = { hour: state.hour, over: people - startBeds };
-  // The starting vehicles at the hub (startfleet.js): a normal start's pickup, or Custom's kinds; Start with a vehicle off: none.
-  if (state.startVehicles) for (const f of state.fleet) f.vid = createVehicle(state, f.type, { kind: "base", baseId: hubBase.id }, { fuel: Math.min(START_FLEET.FUEL, VEHICLE_TYPES[f.type].tank), condition: START_FLEET.CONDITION }).id;
+  // The starting vehicles at the hub (startfleet.js): a slot a survivor, each with its kind or empty; Start with a
+  // vehicle off: none.
+  state.fleet = fitFleet(state.fleet, people, cust ? "custom" : "normal").map((f) => ({ ...f, vid: null }));
+  if (state.startVehicles) for (const f of state.fleet) if (!f.empty) f.vid = createVehicle(state, f.type, { kind: "base", baseId: hubBase.id }, { fuel: Math.min(START_FLEET.FUEL, VEHICLE_TYPES[f.type].tank), condition: START_FLEET.CONDITION }).id;
 
   createFactions(state, cust ? cust.groups : factionCount);
   recomputeOwnership(state);
@@ -287,8 +293,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
   for (let i = 0; i < people; i++) state.survivors.push(makeSurvivor(state, i === 0 ? 1.3 : 1));
   // Starting gear: a few basics spread among the colonists (a seventh and eighth start with a knife and a machete; Custom
   // mode's ninth and on go round the list again).
-  const starts = ["pistol", "machete", "huntrifle", "knife", "knife", "pistol", "knife", "machete"];
-  state.survivors.forEach((s, i) => (s.gear.weapon = newItem(starts[i % starts.length], 1, hash01(state.seed, "startdur", i), START_DUR))); // part-worn (inventory.js START_DUR)
+  state.survivors.forEach((s, i) => (s.gear.weapon = newItem(START_WEAPONS[i % START_WEAPONS.length], 1, hash01(state.seed, "startdur", i), START_DUR))); // part-worn (inventory.js START_DUR)
   state.survivors.forEach((s, i) => randomStarterMods(state.rng, s.gear.weapon, i)); // gunmods.js: a cheap part or two on some guns
   // Built on Customize's points (crew[i].points): what the dice hand them is theirs only as picks, so none of it
   // overflows to the hub (the dice are drawn all the same).

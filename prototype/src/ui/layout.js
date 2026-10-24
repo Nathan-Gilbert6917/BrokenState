@@ -2,8 +2,9 @@
 // each kind of window. The rules here are plain functions on plain objects (tools/uitest.js runs them without a
 // browser); ui/windows.js puts them on the page and main.js calls both.
 //
-// Panels: the left panel (tabs), the right panel (tile, team and site info), the log under the map, and two boxes
-// over the map: the alerts and the Layers box (the Watching panel has its own fold, ui/watchlist.js). Each folds to a
+// Panels: the left panel (tabs), the right panel (tile, team and site info), the log under the map, and three boxes
+// over the map: the alerts, the Layers box and the first-week guide (the Watching panel has its own fold,
+// ui/watchlist.js); on a desktop the row of buttons at the bottom left of the map shows and hides them (ui/hudbar.js). Each folds to a
 // slim strip or a small button and comes back with a click, a key ([ ] L, Shift+]) or, when the player picks
 // something it shows, by itself (autoReveal). The running orders left the map for the left panel's Orders tab
 // (Shift+[; the user's request 2026-10-24). "Map only" (\) folds them all and the next press puts them back as they were.
@@ -28,11 +29,11 @@ export const PANEL_SIZE = {
   right: { def: 21, min: 14, max: 48 },
   log: { def: 9.5, min: 4, max: 40 },
 };
-export const PANEL_KEYS = ["left", "right", "log", "alerts", "legend"];
+export const PANEL_KEYS = ["left", "right", "log", "alerts", "legend", "guide"];
 // The panels that can be closed completely (the three around the map); their top-bar glyph and name.
 export const SHUT_KEYS = ["left", "right", "log"];
 export const PANEL_NAMES = { left: { glyph: "◧", name: "left panel", tab: "⟩" }, right: { glyph: "◨", name: "right panel", tab: "⟨" }, log: { glyph: "⬓", name: "log", tab: "▴" } };
-export const PANEL_KEYS_HELP = { left: "[", right: "]", log: "L", alerts: "Shift+]", legend: "", all: "\\" };
+export const PANEL_KEYS_HELP = { left: "[", right: "]", log: "L", alerts: "Shift+]", legend: "", guide: "", all: "\\" };
 
 // Smallest window, in rem; windows never get bigger than the screen.
 export const WIN_MIN = { w: 22, h: 12 };
@@ -49,7 +50,7 @@ const num = (v, lo, hi) => (Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) :
 // so do the alerts ("start them in collapse as well"): a click on the tab opens them, a new urgent alert opens the
 // alerts by itself (autoReveal), and a layout saved in the browser keeps whatever the player did with them.
 export function defaultLayout() {
-  return { left: false, right: false, log: false, alerts: true, legend: true, all: null, size: { left: null, right: null, log: null }, shut: { left: false, right: false, log: false } };
+  return { left: false, right: false, log: false, alerts: true, legend: true, guide: false, all: null, size: { left: null, right: null, log: null }, shut: { left: false, right: false, log: false } };
 }
 // Closed completely (no strip either). A closed panel is folded too.
 export const isShut = (L, p) => !!(L.shut && L.shut[p]);
@@ -285,7 +286,7 @@ export function windowsHelp() {
     ${windows}<br><br>
     ${overlaysHelp()}`;
   return `The panels around the map fold away to give the map more room, and big windows can be resized and moved.<br><br>
-    <b>Panels:</b> click the slim bar between a panel and the map (⟨ ⟩) to fold it to a strip; click the strip to bring it back. Drag the bar to make the panel wider or narrower (Options → <i>Reset window sizes</i> brings back the usual widths). Keys: <b>[</b> the left panel, <b>]</b> the right panel, <b>L</b> the log, <b>Shift+]</b> the alerts, <b>Shift+[</b> the left panel on its Orders tab (every team out, its current order and progress). The boxes over the map (Watching, Layers, the alerts with the first-week guide under them) fold from their header and come back from the slim tab left in their place, which keeps their count; the Layers box and the alerts start folded, and the guide folded to its next step. A folded log shows its latest line on its strip; the folded left panel's strip has a button per tab (🏠 Bases, 👥 People, 🏴 Groups, 🚶 Teams with the number of teams waiting, 📋 Orders) that opens it on that tab. With the keyboard: Tab to a bar, Enter or Space folds or shows its panel, the arrow keys make it narrower or wider (Shift: by more), Home gives it its usual size.<br><br>
+    <b>Panels:</b> click the slim bar between a panel and the map (⟨ ⟩) to fold it to a strip; click the strip to bring it back. Drag the bar to make the panel wider or narrower (Options → <i>Reset window sizes</i> brings back the usual widths). Keys: <b>[</b> the left panel, <b>]</b> the right panel, <b>L</b> the log, <b>Shift+]</b> the alerts, <b>Shift+[</b> the left panel on its Orders tab (every team out, its current order and progress). The boxes over the map (the alerts, Watching, Layers, the minimap and the first-week guide) are shown and hidden from the <b>row of buttons at the bottom left of the map</b>: each carries its count (the alerts red with an urgent one; the guide its steps done) and is lit while its box is open; any number may be open at once, each a window that moves by its header bar, and a box's own ▾ folds it too. To start, the guide and the minimap show and the rest wait behind their buttons. A folded log shows its latest line on its strip; the folded left panel's strip has a button per tab (🏠 Bases, 👥 People, 🏴 Groups, 🚶 Teams with the number of teams waiting, 📋 Orders) that opens it on that tab. With the keyboard: Tab to a bar, Enter or Space folds or shows its panel, the arrow keys make it narrower or wider (Shift: by more), Home gives it its usual size.<br><br>
     <b>Closing a panel completely:</b> <b>Alt+[</b>, <b>Alt+]</b> or <b>Alt+L</b>, the ✕ on a folded strip, or the panel's button in the top bar (◧ the left panel, ◨ the right panel, ⬓ the log), closes it with nothing left over, strip and all, and the map takes the room. A closed panel comes back open with the same Alt key or top-bar button (dark while the panel is closed), the slim tab at that edge of the map (⟩ ⟨ ▴), its plain key (<b>[</b> <b>]</b> <b>L</b>), or by itself when you pick something it shows (below). Folded and closed panels are remembered in this browser.<br><br>
     <b>Map only:</b> <b>\\</b> (backslash) or the ▣ button in the top bar folds every panel and box at once; press it again to put them back the way they were. A closed panel stays closed through both.<br><br>
     <b>Opening by themselves:</b> when you pick something a folded or closed panel shows, it opens: a tile, site, base or team clicked on the map, a team opened from a list, an alert or a log link: the right panel; a tab key (B P G T): the left panel; a new urgent alert (red) opens folded alerts, except in map-only mode. The log never opens for a new line. Switch this off in the menu: Options → <i>Auto-open panels on select</i>.<br><br>

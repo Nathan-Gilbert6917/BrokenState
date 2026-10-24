@@ -32,7 +32,8 @@ import { roadTeam } from "../sim/hardcore-start.js";
 import { tileActions, modalKind } from "./ui.js";
 import { cardKind } from "../sim/cardrules.js";
 import { listSaves } from "./saves.js";
-import { sayFor, padHtml, PAD } from "./hints.js"; // a step's or a note's words for a finger or a controller (touch, pad: else devText)
+import { sayFor, padHtml, PAD } from "./hints.js";
+import { panelTab } from "./layout.js"; // the guide folded to a tab, as the other boxes over the map // a step's or a note's words for a finger or a controller (touch, pad: else devText)
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -414,6 +415,15 @@ function noteHTML(g, ui) {
 }
 
 // ---------- the card under the alerts ----------
+// Its own box over the map (#guide, under the alerts to start; ui/hudbar.js placeGuide), shown or hidden by the 🧭 First
+// week button at the bottom left of the map (ui/layout.js layout.guide). Folded, a slim tab as the other boxes have
+// (hidden under the bar, whose button is the tab).
+export function guideTab(state, ui) {
+  const g = state && state.guide;
+  if (!g || !g.on || !ui.started || state.gameOver || state.combat || ui.timelapse) return "";
+  const steps = guideSteps(g), n = steps.filter((st) => g.done[st.id] != null).length;
+  return panelTab({ icon: "🧭", title: "First week", badges: [{ text: `${n}/${steps.length}`, tip: `${n} of ${steps.length} steps done` }], action: "panel-toggle", data: { p: "guide", v: "0" }, tip: "Show the first-week guide" });
+}
 export function renderGuide(state, ui) {
   const g = state && state.guide;
   if (!g || !g.on || !ui.started || state.gameOver || state.combat || ui.timelapse) return "";

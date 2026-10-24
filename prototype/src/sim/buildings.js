@@ -31,7 +31,8 @@ import { BED_BUILDINGS } from "./data-beds.js"; // beds as furniture: the placed
 import { TENT_TYPES, TENT_S } from "./data-tents.js"; // the one tent table (TENTS below)
 import { strikeTentAtBase } from "./tents.js"; // a bag's tent pulled down: struck back into its bag (call-time only)
 import { furnitureBeds, furnitureProblem, canSetFurniture, setFurniture, pickUpFurniture, RETIRED_WHY, furnitureText } from "./beds.js"; // beds as furniture (call-time only)
-import { POWER_BUILDINGS } from "./data-power.js"; // the power grid: found generators, spotlights, fridges, the breaker panel, the ammo press, the well pump, the fence charger
+import { POWER_BUILDINGS } from "./data-power.js"; // the power grid: found generators, spotlights, fridges, the breaker panel, the ammo press, the well pump, the fence charger; 2026-10-24 the solar array, the battery bank, the perimeter alarm, the electric heaters, the charging station
+import { isGen } from "./power.js"; // a battery bank needs a generator or a solar array to charge it (call-time only)
 import { isSetPiece, placedProblem, canSetPlaced, setPlaced, pickUpPlaced } from "./electric.js"; // the pieces set from the stores (call-time only)
 import { NEEDS_POWER, isPowered as poweredNow } from "./power.js"; // the ammo press runs only on power
 import { terraWaits, terraHour } from "./terraform.js"; // terraforming the base map: only builders with a shovel dig (call-time only)
@@ -265,14 +266,16 @@ export const BUILDINGS = {
   // controls), 16 work-hours, Mechanics 3; draws 1 power while switched on; wears 0.5 a day while powered.
   sealer:       { name: "Vacuum sealer",  plot: "utility", cost: { scrap: 12, parts: 2, electronics: 2 }, hours: 16, max: 1, req: { mechanics: 3 }, machine: true,
                   desc: "A chamber vacuum sealer with a heat bar, bolted to a steel table: the Kitchen's cooks pack cooked food into light survival meals that keep ten years (a Survival meal bill, Cooking 4). Draws 1 power while switched on (Power card, Workshops tab; switch it off to save fuel while it has no work). Wears like a machine: breakdowns need machine parts and a Mechanics 2+ survivor to fix. Needs a Mechanics 3+ survivor here to build." },
-  // Wave 2 cooking (cooking.js, the freezer list's pick): hand-cranked machines for the cooking stations, no power and
-  // no operator of their own (the cooks turn them as part of a bill: flour, ground meat, sausage). Cheap in machine
+  // Wave 2 cooking (cooking.js, the freezer list's pick): hand-cranked machines for the cooking stations, with no
+  // operator of their own (the cooks turn them as part of a bill: flour, ground meat, sausage). Cheap in machine
   // parts (one each), Mechanics 1 to bolt down; they wear on the days they turn (breakdowns.js FIXTURES, ranDay: b.ran).
-  // The hook crafting.js left (TODO food-types: a grain mill, a meat grinder) is these two.
-  grainmill:    { name: "Grain mill",     plot: "utility", cost: { scrap: 8, parts: 1 },  hours: 8,  max: 1, req: { mechanics: 1 }, machine: true,
-                  desc: "A hand-cranked burr mill bolted to a bench: the cooks grind grain into flour (a Flour bill at the Kitchen or a cook fire), and flour makes bread in the Kitchen. No power. Wears on the days it turns: repairs take a machine part. Needs a Mechanics 1+ survivor here to build." },
-  meatgrinder:  { name: "Meat grinder",   plot: "utility", cost: { scrap: 5, parts: 1 },  hours: 6,  max: 1, req: { mechanics: 1 }, machine: true,
-                  desc: "A cast-iron hand grinder and a stuffing horn: the cooks grind tough game into ground meat, and ground meat into smoked sausage that keeps for months (bills at the Kitchen or a cook fire). No power. Wears on the days it turns: repairs take a machine part. Needs a Mechanics 1+ survivor here to build." },
+  // The hook crafting.js left (TODO food-types: a grain mill, a meat grinder) is these two. The grid audit (2026-10-24,
+  // "fix and implement any machine power needs"): each has an optional motor, 1 power (power.js POWER_USERS) drawn only
+  // while a bill calls for it, ×1.5 the output a cook's hour while powered (POWER_BOOST); by hand without it (cooking.js).
+  grainmill:    { name: "Grain mill",     plot: "utility", cost: { scrap: 8, parts: 1 },  hours: 8,  max: 1, req: { mechanics: 1 }, machine: true, grid: true,
+                  desc: "A burr mill bolted to a bench with a hand crank and a motor: the cooks grind grain into flour (a Flour bill at the Kitchen or a cook fire), and flour makes bread in the Kitchen. Hand-cranked it needs no power; with 1 power (drawn only while a Flour bill wants it, Power card) it grinds ×1.5 as much a cook's hour. Wears on the days it turns: repairs take a machine part. Needs a Mechanics 1+ survivor here to build." },
+  meatgrinder:  { name: "Meat grinder",   plot: "utility", cost: { scrap: 5, parts: 1 },  hours: 6,  max: 1, req: { mechanics: 1 }, machine: true, grid: true,
+                  desc: "A cast-iron grinder with a hand crank, a motor and a stuffing horn: the cooks grind tough game into ground meat, and ground meat into smoked sausage that keeps for months (bills at the Kitchen or a cook fire). Hand-cranked it needs no power; with 1 power (drawn only while a bill wants it, Power card) it turns ×1.5 as much a cook's hour. Wears on the days it turns: repairs take a machine part. Needs a Mechanics 1+ survivor here to build." },
   still:        { name: "Ethanol still",  plot: "utility", cost: { scrap: 15, parts: 2 },  hours: 24, max: 1, station: "still", desc: "Workshop station. One operator ferments and distils 8 days of fresh food + 2 water into 3 fuel a day (the soonest to spoil goes in). Set a Keep-at-least order so it only takes the surplus." },
   greenhouse:   { name: "Greenhouse",     plot: "building", cost: { scrap: 20, parts: 3 },  hours: 36, max: 2, desc: "+2 sheltered crop plots: grow in every season (winter too), stand 10 °C more cold, and the weather rarely harms them." },
   // Mood (relations.js moodFactors): no operator needed.
@@ -547,11 +550,13 @@ const ringJobName = (job) => { const T = WALL_TIERS[matOf({ mat: job.mat || job.
 const JOBNAME_REST = (job) => (job.target && job.type === "generator" ? `Upgrade a generator to ${GEN_TIERS[job.tier] ? `a ${GEN_TIERS[job.tier].name.toLowerCase()}` : "the next tier"}` : job.target && job.type === "barracks" ? "Expand a bunkhouse into a barracks" : job.target && job.type === "reload_bench" ? "Upgrade an ammo bench into a reloading bench" : job.target && job.type === "canner" ? "Fit a pressure canner to a preserving room" : job.target ?`Upgrade to ${WATER_BARREL.tiers[job.tier] ? WATER_BARREL.tiers[job.tier].name.toLowerCase() : "the next tier"}` : BUILDINGS[job.type].name);
 
 // ---------- demolishing ----------
-// Pulls a building down to free its plot: half its scrap, parts, electronics and metal sheets back (rounded down), and for a barrel half of its
+// Pulls a building down to free its plot: half its scrap, parts, electronics, metal sheets and car parts (a battery
+// bank's batteries, 2026-10-24) back (rounded down), and for a barrel half of its
 // upgrades' too. Not while the base is under attack, nor with an upgrade of it in the queue.
+export const REFUND_KEYS = new Set(["scrap", "parts", "electronics", "metalsheet", "carparts"]);
 export function demolishRefund(b) {
   const out = {};
-  const add = (cost) => { for (const [k, v] of Object.entries(cost || {})) if (k === "scrap" || k === "parts" || k === "electronics" || k === "metalsheet") out[k] = (out[k] || 0) + v; };
+  const add = (cost) => { for (const [k, v] of Object.entries(cost || {})) if (REFUND_KEYS.has(k)) out[k] = (out[k] || 0) + v; };
   add(BUILDINGS[b.type].cost);
   if (b.type === "water_barrel") for (let t = 2; t <= barrelTier(b); t++) add(WATER_BARREL.tiers[t].cost);
   if (b.type === "kitchen" && b.canner) add(BUILDINGS.canner.cost); // machines-2: its pressure canner's half too
@@ -1234,6 +1239,9 @@ export function canBuild(state, base, type, opts = {}) {
   // The power grid (electric.js): a pump goes down a well, a charger needs a wire to charge.
   if (type === "elec_pump" && countAll(base, "elec_pump") + queued >= countAll(base, "well")) return { ok: false, reason: countAll(base, "well") ? "One pump a well: build another well first" : "Needs a well here first" };
   if (type === "fence_charger" && !countAll(base, "barbed_wire") && !countAll(base, "razor_wire")) return { ok: false, reason: "Needs a barbed wire fence or concertina wire here to charge" };
+  // More of the grid (2026-10-24, data-power.js): a battery bank wants something to charge it (a generator, found or
+  // built, or a solar array, standing or queued).
+  if (type === "battery_bank" && !base.buildings.some(isGen) && !countAll(base, "solar_array") && !base.construction.some((c) => c.type === "generator" || c.type === "solar_array")) return { ok: false, reason: "Needs a generator or a solar panel array here to charge it" };
   if (def.needsWall && !hasWall(base)) return { ok: false, reason: "Needs a wall closed round the base first (Walls, on this tab)" };
   if (!def.gather) { const why = siteShort(base.stock, def.cost, keyWord); if (why) return { ok: false, reason: why }; } // gather: taken as it comes in; building materials and sheets the stores lack made on site from scrap (buildmats.js)
   if (def.req) {

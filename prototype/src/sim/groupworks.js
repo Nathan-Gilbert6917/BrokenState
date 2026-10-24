@@ -112,6 +112,59 @@
 //   changes, f.fuelFlow, less the extra burn stays at 0 or more, and their fuel above half a fuel a head covers 30 days
 //   of it). With a freezer and a sealer (3 power) a tier-1 set covers them, so today they stay at tier 1, as most of
 //   your bases do; the rule is there for the day their machines draw more.
+//   The power grid (groups-power-grid 2026-10-24, the user's request: "Both players and AI groups should build these
+//   [the solar panel array, battery bank, perimeter alarm, electric heaters and charging station, plus the rest of the
+//   grid] and fix and implement any machine power needs and power output and setting up power grids for the base";
+//   docs/adr/0001-ai-parity.md: your rules with your numbers, coarse where they are abstract). Before it their machines
+//   had no power budget (one generator, a day's fuel at a time) and the grid's pieces were yours only.
+//   The budget (grouppower.js powerDayBudget, run once a day in groupMachinesDaily for each base with a machine or a
+//   source, over the 24 hours of the day the midnight tick starts: the day factions.js's heating burn is for): the
+//   demand each hour in your order (power.js POWER_USERS: the freezer 2 all day, the sealer 1, the alarm 1 from 20:00 to
+//   06:00, the heaters 2 each all day on a day heatRate says wants heating, the charger 1 from 08:00 to 20:00, coarse
+//   for your "while something is short"), from the works that stand and are not broken; the supply the sun first
+//   (arrays × SOLAR.out × electric.js solarFactor for the hour at the base's tile), the generator at its tier only when
+//   the sun and the bank's available charge do not cover the demand (left = demand − solar − battAvail, as your
+//   powerStatus starts a set), the bank last (BATTERY.cap × banks, BATTERY.rate × banks an hour in or out, BATTERY.eff
+//   of what goes in kept, giving from BATTERY.rate stored and then until empty: your hysteresis; w.mach.bank.charge),
+//   charged only from power that costs nothing (the sun's surplus, a flat-burn tier-1 set's unused output). Fuel:
+//   genBurn(def, load) ÷ 24 an hour run, from their fuel while any; no fuel, no generator. The result is kept on the
+//   works (w.powerDay: power-hours demanded, served, from the sun, the generator and the bank, the fuel, the hours
+//   each machine was served) and a machine is on today (machOf(w, k).on: the freezer's food keeps, groupSealer) when
+//   it was served GRID.onShare of the hours it wanted (the freezer 18 of 24). groupPowerNeed counts every user, so the
+//   generator's upgrade rule fires when their machines want more than a tier gives; groupFuelFlowDaily counts the burn.
+//   The works, scaled as the rest (about a quarter of your scrap, half your parts, your electronics and car parts
+//   folded into their parts; MACH.spare parts more in the stores, as the machines; LOCKS by your rules: workLock):
+//   solar (your Solar panel array: 14 scrap, 2 metal sheets, 4 electronics, 24 hours → 4 scrap, a metal sheet, 2 parts,
+//   3 crew-days; Mechanics 3, the Solar Installer's Handbook by groupKnows "solarinst", a workshop; 3 a base),
+//   bank (Battery bank: 10 scrap, 2 car parts, 2 electronics, 12 hours → 3 scrap, 2 parts, 2 crew-days; Mechanics 3,
+//   the handbook, a workshop, a generator or an array at that base; 2 a base), alarm (Perimeter alarm: 8 scrap, a part,
+//   3 electronics, 10 hours → 2 scrap, 2 parts, 1 crew-day; Mechanics 2, walls at that base; 1), heaters (Electric
+//   heaters: 6 scrap, a part, an electronic, 6 hours → 2 scrap, a part, 1 crew-day; Mechanics 2, their hall to stand
+//   in, as your fitting needs a general building's floor; 4), charger (Charging station: 4 scrap, 2 electronics, 4
+//   hours → a scrap, a part, 1 crew-day; Mechanics 2, their hall; 1). When they want them (gridWork, from nextWork: the
+//   alarm early at any base, the rest at the main base after the machines, then the other bases): the alarm once walls
+//   stand at a base with a generator or an array and the base is threatened or the group is a fortress or the military
+//   or at war; solar once a generator stands and either fuel is short (fuelFlow out over in, or fuel under a head's
+//   worth) or they have the handbook and GRID_WANT.spareParts parts over the cost and spares; a bank once an array
+//   stands; heaters at a base in autumn or winter with a generator or an array when their wood is under
+//   GROUP_WOOD.cap × GRID_WANT.woodShare a head; the charger last, once they have an alarm and a generator. Anything
+//   that adds generator load (the alarm, the heaters, the charger) never into a fuel deficit: gridFuelOk, your
+//   genUpgradeFuelOk's two rules on the extra burn at the tier (a tier-1 flat set adds none).
+//   Effects (parity): the heaters warm HEATER.heads × the heater-hours served ÷ 24, capped at the people at that base
+//   (groupHeaterHeads: factions.js takes those heads out of the day's wood burn, GROUP_WOOD.burn × groupHeatShare); the
+//   alarm on through the night (groupAlarmOn) wakes a base a raid reaches between 20:00 and 06:00: + strength ×
+//   intel.js INTEL.BRACED to its defence when it was not already braced (factions.js resolveRaidOnFaction: "their alarm
+//   woke the base"), your ALARM.wake's stand-in; your assault on their base has no sleeping penalty or night ambush to
+//   deny (conquest.js assaultForce, fort.js assaultBase read no hour), so the alarm changes nothing there; the charger
+//   puts CHARGER.rate uses an hour served into the most drained rechargeable item at that base (groupChargeDaily: their
+//   armory and what their members there carry, GEAR recharge: ear defenders, headsets, as your chargeHour; nothing of
+//   theirs drains them daily, so it tops up what they loot or buy drained); the raid map shows them all (groupbases.js
+//   WORKS_BUILDING; the heaters and the charger stand on their hall's floor as your fittings do). Wear and spares by
+//   your FIXTURES for each (MACH.fx; the array ages and takes a storm's hail, the bank wears on the days it cycles,
+//   the rest by the days they had power; a raid wears the alarm and the array by your `attack`: groupGridAttacked),
+//   repairs by your repair cost with electronics paid as parts and car parts from theirs or as parts (machCost).
+//   trade.js groupPartsTarget counts them (groupMachineCount). The Groups card: worksText names them and
+//   groupPowerText is the power line.
 // - Storage (base storage limits, 2026-10-19, the user's "have AI groups build storage units etc so the player can raid
 //   their supplies"; docs/adr/0001-ai-parity.md: your rules): a group's base is measured by your rule (basestorage.js
 //   storageOf: its core by tier, the storage buildings its works stand for, groupbases.js WORKS_BUILDING; a camp of
@@ -154,11 +207,20 @@ import { BUILDINGS, CAMP as CAMP_BASE } from "./buildings.js"; // storage: your 
 import { storageOf } from "./basestorage.js"; // storage: a base's room and what lies outside (call-time only)
 import { STORE_WISH } from "./autopilot.js"; // storage: your governor's ladder (call-time only)
 import { groupFillDaily } from "./tunnels.js"; // the dead's tunnels under their walls (call-time only)
-import { homesOf, stockTonight, worksBuildings } from "./groupbases.js"; // storage: their bases as base objects (call-time only)
+import { homesOf, stockTonight, worksBuildings, syncBuildings } from "./groupbases.js"; // storage: their bases as base objects (call-time only); groups-power-grid: in step for a fitting's floor (fitRoom)
 import { hallDef, hallWork, groupBedsDaily, furnSleepers } from "./beds.js"; // beds as furniture: their hall, the furniture they craft and its sleepers (call-time only)
 import { groupTentSleepers } from "./tents.js"; // the tent bags on their shelf, pitched at their camps (call-time only)
+import { powerDayBudget, gridUsers, servedToday, alarmHour, heatingDay } from "./grouppower.js"; // groups-power-grid: their power budget by the hour (see the header)
+import { fittingRoom } from "./basemap.js"; // groups-power-grid: floor on their hall for the heaters and the charger (call-time only)
+import { HEATER, CHARGER, BATTERY } from "./data-power.js"; // the heaters' heads, the charger's rate, a bank's capacity (your numbers)
+import { GROUP_WOOD } from "./factions.js"; // the heaters: their wood a head (call-time only: factions.js imports this module)
+import { GEAR } from "./data.js"; // the rechargeable gear the charger tops up
+import { itemDur, itemDurMax } from "./crafting.js"; // its uses left (call-time only)
+import { allCarried } from "./inventory.js"; // what their members carry (call-time only)
+import { membersAt } from "./members.js"; // their members at a base (call-time only)
+import { atWar } from "./diplomacy.js"; // the alarm early for a group at war (call-time only)
 
-/** @typedef {{ water?: number, farms?: number, beds?: number, walls?: number, bench?: number, store?: number, sickbay?: number, pens?: number, camp?: number, still?: number, power?: number, powerTier?: number, freezer?: number, sealer?: number, kitchen?: number, shop?: number, radio?: number, garage?: number, reload?: number, gate?: number, storebox?: number, crates?: number, shed?: number, warehouse?: number, mill?: number, grinder?: number, mach?: Object<string, { wear: number, spares: number, broken: boolean, on?: boolean, noSpares?: boolean }> }} Works */
+/** @typedef {{ water?: number, farms?: number, beds?: number, walls?: number, bench?: number, store?: number, sickbay?: number, pens?: number, camp?: number, still?: number, power?: number, powerTier?: number, freezer?: number, sealer?: number, kitchen?: number, shop?: number, radio?: number, garage?: number, reload?: number, gate?: number, storebox?: number, crates?: number, shed?: number, warehouse?: number, mill?: number, grinder?: number, hall?: number, solar?: number, bank?: number, alarm?: number, heaters?: number, charger?: number, powerDay?: any, mach?: Object<string, { wear: number, spares: number, broken: boolean, on?: boolean, noSpares?: boolean, charge?: number, giving?: boolean }> }} Works */
 
 export const GROUP_WORKS = {
   WORKS: {
@@ -200,6 +262,19 @@ export const GROUP_WORKS = {
     grinder: { name: "a meat grinder", cost: { scrap: 2, parts: 1 }, work: 1 },
     // Beds as furniture (beds.js hallWork): your Lodge, the general building their furniture is set in.
     get hall() { return hallDef(); },
+    // The power grid (groups-power-grid 2026-10-24; see the header): your data-power.js POWER_BUILDINGS scaled as the
+    // rest (about a quarter of your scrap, half your parts, your electronics and car parts folded into their parts;
+    // your hours ÷ CREW_HOURS). Yours: the array 14 scrap + 2 metal sheets + 4 electronics (24 hours), the bank 10 + 2
+    // car parts + 2 electronics (12), the alarm 8 + a part + 3 electronics (10), the heaters 6 + 1 + 1 (6), the station
+    // 4 + 2 electronics (4). The metal sheet is made from scrap when short (startWork, SHEET_SCRAP), as a roof's.
+    // Their effects and when they want them: gridWork and the header.
+    solar: { name: "a solar panel array", cost: { scrap: 4, metalsheet: 1, parts: 2 }, work: 3, max: 3 },
+    bank: { name: "a battery bank", cost: { scrap: 3, parts: 2 }, work: 2, max: 2 },
+    alarm: { name: "a perimeter alarm", cost: { scrap: 2, parts: 2 }, work: 1, max: 1 },
+    heaters: { name: "electric heaters", cost: { scrap: 2, parts: 1 }, work: 1, max: 4 },
+    // The station's effect for them is coarse (groupChargeDaily tops up drained rechargeable gear at the base; nothing of
+    // theirs drains it daily), but it stands on their raid map and draws its power as yours does.
+    charger: { name: "a charging station", cost: { scrap: 1, parts: 1 }, work: 1, max: 1 },
   },
   // ai-locks: your build rules for those works (buildings.js req and blueprints.js LOCKED), read by workLock. mech: the
   // group's mechanic (groupSkill) at your Mechanics minimum; bp: the manual they must have studied; bench: a workshop
@@ -211,13 +286,23 @@ export const GROUP_WORKS = {
     // gen-tiers: the generator's upgrades (MACH.tiers), your canUpgradeGenerator's Mechanics and manual.
     power2: { mech: 4, bench: true }, power3: { mech: 5, bp: "indpower", bench: true },
     mill: { mech: 1, bench: true }, grinder: { mech: 1, bench: true }, // wave 2 cooking: your Mechanics 1 to build them
+    // groups-power-grid: your POWER_BUILDINGS' req and the Solar Installer's Handbook (blueprints.js solarinst unlocks the
+    // array and the bank); the alarm, the heaters and the station your Mechanics 2. The rest of their rules (walls, a
+    // source at the base, their hall to stand in) are gridWork's.
+    solar: { mech: 3, bp: "solarinst", bench: true }, bank: { mech: 3, bp: "solarinst", bench: true },
+    alarm: { mech: 2 }, heaters: { mech: 2 }, charger: { mech: 2 },
   },
+  // groups-power-grid (gridWork): spareParts: the parts over an array's cost and spares that make a group with the
+  // handbook want the sun without a fuel shortage; woodShare: the heaters once their wood is under GROUP_WOOD.cap × this
+  // a head in autumn or winter.
+  GRID_WANT: { spareParts: 4, woodShare: 0.5 },
   RADIO_POP: 10, RELOAD_BRASS: 30,
   // Their machine parts (machines-2; groupPartsDaily, see the header).
   PARTS: { rate: 0.25, mech: 4, below: 0.5, pop: 16, popMax: 1.5, popMin: 0.4, scrap: 6, keep: 4, perMachine: 1, scrapKeep: 1 },
   // The groups' machines (see the header). fx: the fixture each is (breakdowns.js FIXTURES).
   MACH: { pop: 14, foodDays: 12, spare: 2, mend: 0.6, room: 300, still: { food: 8, fuel: 3 }, req: { power: 3, freezer: 3, sealer: 3 }, // req: Mechanics to build (yours, buildings.js)
-    fx: { still: "still", power: "generator", freezer: "freezer", sealer: "sealer" },
+    fx: { still: "still", power: "generator", freezer: "freezer", sealer: "sealer",
+      solar: "solar_array", bank: "battery_bank", alarm: "perimeter_alarm", heaters: "elec_heater", charger: "charging_station" }, // groups-power-grid: your POWER_FIXTURES
     // gen-tiers: the generator's upgrades (see the header), by the tier it becomes: your GEN_TIERS cost scaled as WORKS
     // (yours 24 scrap + 5 parts, 30 work-hours; 40 + 8 + 2 electronics, 48). Their Mechanics and manual: LOCKS power2 /
     // power3 (workLock, as ai-locks' other works).
@@ -474,6 +559,8 @@ export function nextWork(state, f) {
     if (n(w, "walls") < goal && threatened(state, f, tile)) return { tile, type: "walls", why: "threatened" };
     const sw = storageWork(state, f, tile, room);
     if (sw) return sw;
+    const al = gridWork(state, f, tile, true); // groups-power-grid: the alarm, cheap and early, at a threatened base with power
+    if (al) return al;
     if (n(w, "farms") < wanted(f, tile, "farms")) return { tile, type: "farms", why: "fields for everyone" };
     if (n(w, "walls") > 0 && n(w, "farms") > 0 && n(w, "pens") < W.PENS.max) return { tile, type: "pens", why: "food behind the walls" };
     if (tile === mainOf(f)) { const jail = jailWork(state, f, true); if (jail) return jail; } // communes: later
@@ -488,6 +575,8 @@ export function nextWork(state, f) {
       if (sb) return sb;
       const mw = machineWork(state, f, tile);
       if (mw) return mw;
+      const gw = gridWork(state, f, tile); // groups-power-grid: the sun, the bank, the heaters, the charger after the machines
+      if (gw) return gw;
       const ex = lockedWork(state, f, tile);
       if (ex) return ex;
     }
@@ -495,6 +584,7 @@ export function nextWork(state, f) {
     // Wave 2 cooking: a grain mill and a meat grinder by a kitchen, by your locks, once there is grain to mill or game to grind.
     if (n(w, "kitchen") && !hasAny(f, "mill") && !workLock(state, f, "mill") && groupWantsMill(f)) return { tile, type: "mill", why: "a grain mill: flour and bread" };
     if (n(w, "kitchen") && !hasAny(f, "grinder") && !workLock(state, f, "grinder") && groupWantsGrinder(f)) return { tile, type: "grinder", why: "a meat grinder: sausage that keeps" };
+    if (tile !== mainOf(f)) { const gw = gridWork(state, f, tile); if (gw) return gw; } // groups-power-grid: the other bases (a source there first: in practice the main base's)
   }
   for (const tile of f.bases) if (n(worksAt(f, tile), "walls") < wallGoal(f, tile)) return { tile, type: "walls", why: "walls" };
   // ai-locks: a reinforced gate in the main base's walls once they stand at their goal (your gate: the Army Engineering
@@ -533,8 +623,110 @@ function lockedWork(state, f, tile) {
   return null;
 }
 
+// ---------- the power grid (groups-power-grid 2026-10-24; see the header) ----------
+const GRID_ORDER = ["solar", "bank", "alarm", "heaters", "charger"];
+const GRID_WHY = { solar: "the sun's power: fuel saved", bank: "a battery bank for the night", alarm: "a perimeter alarm: never caught asleep", heaters: "electric heaters: wood saved", charger: "a charging station for their electronics" };
+// A source of power at a base: a generator or a solar array standing there.
+const hasSource = (w) => n(w, "power") > 0 || n(w, "solar") > 0;
+// Why they would not add a user that draws `add` more power from the generator at this base ("" when they would): your
+// genUpgradeFuelOk's two rules on the extra burn (income − out − extra ≥ 0; the fuel above MACH.floor a head covers
+// GEN_UP.days of it), on their fuel flows (groupFuelFlowDaily). A tier-1 flat set adds no burn for more load, so it
+// passes; an array covers by day only, so the generator's night burn is what is measured.
+export function gridFuelOk(f, w, add) {
+  const t = groupGenTier(w);
+  if (!t) return "";
+  const need = groupPowerNeed(w);
+  const extra = groupGenBurn(w, need + add, t) - groupGenBurn(w, need, t);
+  if (extra <= 1e-9) return "";
+  const ff = f.fuelFlow;
+  if (!ff || ff.days < GEN_UP.minDays) return "too little fuel history";
+  const r = (v) => Math.round(v * 100) / 100;
+  if (ff.in - ff.out - extra < -1e-9) return `fuel a day: ${r(ff.in)} in, ${r(ff.out)} out; ${r(extra)} more for the generator would run it down`;
+  const spare = (f.stock.fuel || 0) - W.MACH.floor * f.pop;
+  if (spare < extra * GEN_UP.days - 1e-9) return `${Math.floor(Math.max(0, spare))} fuel above the floor: not ${GEN_UP.days} days of the ${r(extra)} more a day`;
+  return "";
+}
+// Their fuel is short: the flows run down (out over in), or less than a head's worth in the stores.
+const fuelShort = (f) => (!!f.fuelFlow && f.fuelFlow.days >= GEN_UP.minDays && f.fuelFlow.out > f.fuelFlow.in + 1e-9) || (f.stock.fuel || 0) < Math.max(1, f.pop);
+// Can they put up grid work k now: its lock (workLock), its most a base, its cost with MACH.spare parts over (as a machine).
+function gridCan(state, f, w, k) {
+  if (n(w, k) >= (W.WORKS[k].max || 1) || workLock(state, f, k)) return false;
+  const c = W.WORKS[k].cost;
+  return canPayParts(f, (c.parts || 0) + W.MACH.spare, "machine") && canAfford(f, { ...c, parts: 0 });
+}
+// The next grid work at a base, or null (see the header). early: the alarm only (nextWork asks for it ahead of the rest).
+function gridWork(state, f, tile, early = false) {
+  const w = worksAt(f, tile);
+  if (n(w, "camp") || !hasSource(w)) return null;
+  const pick = (k) => ({ tile, type: k, why: GRID_WHY[k], def: W.WORKS[k] });
+  // The alarm: walls standing, and the base threatened or the group one that lives behind walls (a fortress, the military) or at war.
+  if (n(w, "walls") > 0 && gridCan(state, f, w, "alarm") && (W.WALLED_TYPES.includes(f.type) || threatened(state, f, tile) || atWar(state, f)) && !gridFuelOk(f, w, POWER_USERS.perimeter_alarm.need)) return pick("alarm");
+  if (early) return null;
+  // The sun: a generator standing, and fuel short or the handbook known with parts to spare.
+  if (n(w, "power") > 0 && gridCan(state, f, w, "solar") && (fuelShort(f) || (f.stock.parts || 0) >= (W.WORKS.solar.cost.parts || 0) + W.MACH.spare + W.GRID_WANT.spareParts)) return pick("solar");
+  // A bank once an array stands (your canBuild: a generator or an array here; theirs waits for the array it stores).
+  if (n(w, "solar") > 0 && gridCan(state, f, w, "bank")) return pick("bank");
+  // Heaters in autumn and winter while the woodpile is low, on their hall's floor (your fitting needs a general building
+  // with free floor: fitRoom).
+  const s = season(state).key;
+  if ((s === "autumn" || s === "winter") && gridCan(state, f, w, "heaters") && (f.stock.wood || 0) < f.pop * GROUP_WOOD.cap * W.GRID_WANT.woodShare && !gridFuelOk(f, w, POWER_USERS.elec_heater.need) && fitRoom(state, f, tile, "heaters")) return pick("heaters");
+  // The charger last: an alarm and a generator here, their hall to stand in.
+  if (n(w, "alarm") > 0 && n(w, "power") > 0 && gridCan(state, f, w, "charger") && !gridFuelOk(f, w, POWER_USERS.charging_station.need) && fitRoom(state, f, tile, "charger")) return pick("charger");
+  return null;
+}
+// Floor for a fitting of theirs (the heaters, the charger) at a base: your rule (basemap.js fittingRoom on their base as a
+// base object, its buildings in step with their works: beds.js groupBedsDaily does the same for their furniture), so
+// they stand on their hall's floor on the raid map and never more than it holds.
+function fitRoom(state, f, tile, k) {
+  const w = worksAt(f, tile);
+  if (!n(w, "hall")) return false;
+  syncBuildings(state, f);
+  const h = homesOf(state, f)[tile];
+  return !!h && !!fittingRoom(state, h, W.MACH.fx[k]);
+}
+// The people the powered heaters warmed today at every base (factions.js: out of the day's wood burn): HEATER.heads ×
+// the heater-hours served ÷ 24, capped at the people at that base. Reads the last budget run (today's after
+// groupMachinesDaily, yesterday's before it: the kitchens read it before the day's machines run).
+export function groupHeaterHeads(f) {
+  if (!f || !f.works || !f.bases) return 0;
+  let heads = 0;
+  for (const t of f.bases) { const pd = f.works[t] && f.works[t].powerDay; if (pd && pd.heaterUnitHours > 0) heads += Math.min(peopleAt(f, t), (HEATER.heads * pd.heaterUnitHours) / 24); }
+  return Math.min(f.pop || 0, heads);
+}
+// The alarm at a base had its power through the night (the last budget: served GRID.onShare of its night hours).
+export const groupAlarmOn = (f, tile) => !!(f && f.works && f.works[tile] && n(f.works[tile], "alarm") > 0 && f.works[tile].mach && f.works[tile].mach.alarm && f.works[tile].mach.alarm.on);
+// A raid reaching a base at this hour meets an alarm that woke it (factions.js resolveRaidOnFaction): on, at night.
+export const groupAlarmWakes = (f, tile, hour) => groupAlarmOn(f, tile) && alarmHour(((hour % 24) + 24) % 24);
+// A raid or a horde at a base wears its alarm and its array by your fixtures' `attack` (breakdowns.js; a smashed sensor,
+// a cracked panel). Called by factions.js resolveRaidOnFaction.
+export function groupGridAttacked(f, tile) {
+  const w = f && f.works && f.works[tile];
+  if (!w) return;
+  for (const k of ["alarm", "solar"]) { const def = FIXTURES[W.MACH.fx[k]]; if (n(w, k) > 0 && def && def.attack) machOf(w, k).wear += def.attack; }
+}
+// The charger's day (your chargeHour, coarse: the hours it had power at once): CHARGER.rate uses an hour into the most
+// drained rechargeable item at that base (GEAR recharge: ear defenders, a headset), in their armory there or on their
+// members there. Returns the uses put back.
+function groupChargeDaily(state, f, tile, hours) {
+  if (!(hours > 0)) return 0;
+  const h = homesOf(state, f)[tile];
+  const items = [...((h && h.armory) || [])];
+  for (const s of membersAt(f, tile)) items.push(...allCarried(s));
+  const list = items.map((it) => { const d = it && GEAR[it.key]; if (!d || !d.recharge) return null; const dur = itemDur(it), max = itemDurMax(it); return dur != null && max != null && dur < max - 1e-9 ? { it, max } : null; }).filter(Boolean);
+  let put = 0;
+  for (let i = 0; i < hours && list.length; i++) {
+    list.sort((a, b) => (itemDur(a.it) || 0) / a.max - (itemDur(b.it) || 0) / b.max);
+    const c = list[0], was = itemDur(c.it) || 0;
+    c.it.dur = Math.min(c.max, Math.round((was + CHARGER.rate) * 10) / 10);
+    put += c.it.dur - was;
+    if (c.it.dur >= c.max - 1e-9) list.shift();
+  }
+  return put;
+}
+
 // ---------- machines (freezer-parts; see the header) ----------
 const MACH_ORDER = ["still", "power", "freezer", "sealer"];
+const ALL_MACH = [...MACH_ORDER, ...GRID_ORDER]; // every machine that wears, breaks and is repaired (the grid's too)
 // The next machine at a base: the still, the generator, the freezer, the sealer, each with its parts and spares.
 function machineWork(state, f, tile) {
   const M = W.MACH, w = worksAt(f, tile);
@@ -553,8 +745,11 @@ function machineWork(state, f, tile) {
 }
 // ---------- their generator's tiers (gen-tiers; see the header) ----------
 export const groupGenTier = (w) => (w && n(w, "power") ? Math.max(1, Math.min(GEN_TIERS.length - 1, Math.floor(w.powerTier || 1))) : 0);
-// The power their machines at a base want (your POWER_USERS: the freezer 2, the sealer 1), broken ones too (repaired).
-export const groupPowerNeed = (w) => (n(w, "freezer") ? POWER_USERS.freezer.need : 0) + (n(w, "sealer") ? POWER_USERS.sealer.need : 0);
+// The power their machines at a base want (your POWER_USERS: the freezer 2, the sealer 1; groups-power-grid: the alarm 1,
+// the heaters 2 each, the charger 1), broken ones too (repaired): the most they draw in an hour (a winter night), as your
+// governor's powerWanted counts every user whatever the hour.
+export const groupPowerNeed = (w) => (n(w, "freezer") ? POWER_USERS.freezer.need : 0) + (n(w, "sealer") ? POWER_USERS.sealer.need : 0)
+  + (n(w, "alarm") ? POWER_USERS.perimeter_alarm.need : 0) + Math.min(W.WORKS.heaters.max, n(w, "heaters")) * POWER_USERS.elec_heater.need + (n(w, "charger") ? POWER_USERS.charging_station.need : 0);
 // Their generator's fuel a day at a base with `need` drawn, at its tier or at `tier`.
 export const groupGenBurn = (w, need, tier = groupGenTier(w)) => (tier ? genBurn(GEN_TIERS[tier], Math.min(need, GEN_TIERS[tier].out)) : 0);
 // Why they would not upgrade it now ("" when they would): your governor's rule (autopilot.js autoGenUpgrade).
@@ -592,63 +787,74 @@ function groupFuelFlowDaily(f) {
   ff.made = 0; ff.burned = 0;
 }
 // How many machines a group has (trade.js groupPartsTarget: a spare part each on top of its reorder level).
-export const groupMachineCount = (f) => (f && f.works ? Object.values(f.works).reduce((a, w) => a + MACH_ORDER.reduce((b, k) => b + Math.min(1, n(w, k)), 0), 0) : 0);
+export const groupMachineCount = (f) => (f && f.works ? Object.values(f.works).reduce((a, w) => a + ALL_MACH.reduce((b, k) => b + Math.min(1, n(w, k)), 0), 0) : 0); // groups-power-grid: the grid's kinds too
 const machOf = (w, k) => { if (!w.mach) w.mach = {}; return w.mach[k] || (w.mach[k] = { wear: 0, spares: 0, broken: false }); };
+// A machine's fixture (breakdowns.js FIXTURES; gen-tiers: the generator's by its tier).
+const fxOf = (w, k) => (k === "power" ? genFixture(groupGenTier(w)) : FIXTURES[W.MACH.fx[k]]);
+// A repair's cost in their stores: electronics as parts (their one count), car parts from theirs when they have them,
+// else as parts (vehicles.js groupCost's fallback, one for one here), the rest by key. { parts, carparts, other }.
+function machCost(f, cost) {
+  const out = { parts: (cost.parts || 0) + (cost.electronics || 0), other: {} };
+  if (cost.carparts) { if ((f.stock.carparts || 0) >= cost.carparts) out.other.carparts = cost.carparts; else out.parts += cost.carparts; }
+  for (const [k, v] of Object.entries(cost)) if (k !== "parts" && k !== "electronics" && k !== "carparts") out.other[k] = v;
+  return out;
+}
+const canPayMach = (f, cost) => { const c = machCost(f, cost); return canPayParts(f, c.parts, "machine") && Object.entries(c.other).every(([k, v]) => (f.stock[k] || 0) >= v); };
+function payMach(f, cost) { const c = machCost(f, cost); payParts(f, c.parts, "machine"); for (const [k, v] of Object.entries(c.other)) f.stock[k] -= v; return c.parts; }
 // Their freezer is on today (any base), and the vacuum sealer hook for the cooking wave (as power.js hasSealer).
 export const groupFreezerOn = (f) => !!(f && f.works && f.bases.some((t) => f.works[t] && f.works[t].mach && f.works[t].mach.freezer && f.works[t].mach.freezer.on));
 export const groupSealer = (f) => !!(f && f.works && f.bases.some((t) => f.works[t] && f.works[t].mach && f.works[t].mach.sealer && f.works[t].mach.sealer.on));
 export function groupMachinesDaily(state, f) {
   if (!groupsBuild(state, f)) return;
   const M = W.MACH, d = day(state);
+  const dayIdx = Math.floor(Math.max(0, state.hour) / 24); // the day this midnight tick starts (grouppower.js header; factions.js's `today − 1`)
   if (f.works && f.bases.some((t) => n(f.works[t], "power"))) groupFuelFlowDaily(f); // gen-tiers: their fuel in and out (the upgrade's fuel rule)
   for (const tile of f.bases) {
     const w = f.works && f.works[tile];
-    if (!w || !MACH_ORDER.some((k) => n(w, k))) continue;
+    if (!w || !ALL_MACH.some((k) => n(w, k))) { if (w && w.powerDay) delete w.powerDay; continue; }
     const st = f.stock;
-    // Repairs first: a broken machine is fixed the day they can pay your proper repair.
-    for (const k of MACH_ORDER) {
+    // Repairs first: a broken machine is fixed the day they can pay your proper repair (groups-power-grid: electronics as
+    // parts, car parts from theirs or as parts: machCost).
+    for (const k of ALL_MACH) {
       if (!n(w, k)) continue;
       const m = machOf(w, k);
       if (!m.broken) continue;
-      const fx = k === "power" ? genFixture(groupGenTier(w)) : FIXTURES[M.fx[k]]; // gen-tiers: a bigger generator's repair
-      const cost = fx.repair.cost;
+      const fx = fxOf(w, k); // gen-tiers: a bigger generator's repair
       if (groupSkill(f, "mechanics") < (fx.repair.min || 0)) continue; // your proper repair's Mechanics (machines-2)
-      if (Object.entries(cost).every(([key, v]) => (key === "parts" ? canPayParts(f, v, "machine") : (st[key] || 0) >= v))) {
-        for (const [key, v] of Object.entries(cost)) { if (key === "parts") payParts(f, v, "machine"); else st[key] -= v; }
-        m.broken = false; m.wear = WEAR.repairWear; f.machParts = (f.machParts || 0) + (cost.parts || 0);
-      }
+      if (canPayMach(f, fx.repair.cost)) { const paid = payMach(f, fx.repair.cost); m.broken = false; m.wear = WEAR.repairWear; f.machParts = (f.machParts || 0) + paid; }
     }
     const ok = (k) => n(w, k) > 0 && !machOf(w, k).broken;
+    const have = (k) => (ok(k) ? Math.min(W.WORKS[k].max || 1, n(w, k)) : 0);
     const ran = {};
     // The still: their surplus food into fuel.
     const ff = f.fuelFlow;
     if (ok("still") && foodIn(st) - M.still.food >= f.pop * M.foodDays && (st.fuel || 0) < f.pop * 3) { takeFood(st, M.still.food, { state }); // foods.js: the soonest to spoil goes in the mash
       st.fuel = (st.fuel || 0) + M.still.fuel; ran.still = true; if (ff) ff.made = (ff.made || 0) + M.still.fuel; }
-    // The generator, while the freezer or the sealer draws and there is any fuel (coarse: a day's fuel at its tier and
-    // the load, or the last of it). gen-tiers: the machines served in your order (the freezer, then the sealer) up to
-    // the tier's power; the burn by your genBurn (tier 1: the flat 2).
-    const t = groupGenTier(w), out = t ? GEN_TIERS[t].out : 0;
-    let load = 0;
-    const served = {};
-    for (const k of ["freezer", "sealer"]) if (ok(k) && load + POWER_USERS[k].need <= out) { served[k] = true; load += POWER_USERS[k].need; }
-    if (ok("power") && load > 0 && (st.fuel || 0) > 1e-6) {
-      const burn = groupGenBurn(w, load);
-      const was = st.fuel;
-      st.fuel = Math.max(0, st.fuel - burn); ran.power = true;
-      if (ff) ff.burned = (ff.burned || 0) + (was - st.fuel);
-    }
-    for (const k of ["freezer", "sealer"]) { if (n(w, k)) { machOf(w, k).on = !!ran.power && ok(k) && !!served[k]; ran[k] = machOf(w, k).on; } }
+    // The power budget by the hour (groups-power-grid; grouppower.js powerDayBudget, the header): the users in your order
+    // from the works standing and not broken, the sun, the generator at its tier only when the sun and the bank do not
+    // cover the hour, the bank last; the fuel genBurn ÷ 24 an hour run (tier 1 all day: the flat 2 as before).
+    const bank = machOf(w, "bank");
+    const pd = powerDayBudget(state, tile, dayIdx, { users: gridUsers(have, heatingDay(state, dayIdx)), arrays: have("solar"), banks: have("bank"), charge: bank.charge || 0, giving: !!bank.giving, tier: ok("power") ? groupGenTier(w) : 0, fuel: st.fuel || 0 });
+    w.powerDay = pd;
+    if (pd.burn > 0) { const was = st.fuel || 0; st.fuel = Math.max(0, was - pd.burn); if (ff) ff.burned = (ff.burned || 0) + (was - st.fuel); }
+    ran.power = pd.genHours > 0;
+    if (have("bank")) { bank.charge = pd.charge; bank.giving = pd.giving; ran.bank = pd.cycled; } else if (bank.charge) { bank.charge = 0; bank.giving = false; }
+    ran.solar = have("solar") > 0 && pd.solarMade > 0;
+    for (const k of ["freezer", "sealer", "alarm", "heaters", "charger"]) if (n(w, k)) { const m = machOf(w, k); m.on = ok(k) && servedToday(pd, k); ran[k] = ok(k) && (pd.servedHours[k] || 0) > 0; } // on: served GRID.onShare of its hours; ran: a day it had power (your FIXTURES power: true)
+    if (ran.charger) f.charged = (f.charged || 0) + groupChargeDaily(state, f, tile, pd.chargeHours); // the station's day: drained gear topped up
     // The freezer on: their soonest-to-spoil food (up to M.room days) ages at a twentieth (factions.js ageCoarse frozen).
-    // Wear, spares, breaking (your fixtures' numbers, coarse).
-    for (const k of MACH_ORDER) {
+    // Wear, spares, breaking (your fixtures' numbers, coarse). A machine with moving parts (use) wears by the days it ran
+    // less MACH.mend (their hands keep it); the array ages (age) and takes a storm's hail (storm) with no hands to help.
+    for (const k of ALL_MACH) {
       if (!n(w, k)) continue;
-      const m = machOf(w, k), def = k === "power" ? genFixture(groupGenTier(w)) : FIXTURES[M.fx[k]]; // gen-tiers: a bigger generator wears faster
+      const m = machOf(w, k), def = fxOf(w, k); // gen-tiers: a bigger generator wears faster
       if (m.broken) continue;
-      if (ran[k]) {
-        m.spares += 1 / (def.spares || 1e9);
+      if (ran[k] && def.spares) {
+        m.spares += 1 / def.spares;
         if (m.spares >= 1) { if (payParts(f, 1, "machine")) { m.spares -= 1; m.noSpares = false; f.machParts = (f.machParts || 0) + 1; } else m.noSpares = true; }
       }
-      m.wear = Math.max(0, m.wear + (ran[k] ? def.use : def.idle || 0) - M.mend + (m.noSpares ? WEAR.noSpares : 0));
+      const use = def.use != null ? (ran[k] ? def.use : def.idle || 0) - M.mend : 0;
+      m.wear = Math.max(0, m.wear + use + (def.age || 0) + (pd.storm && def.storm ? def.storm : 0) + (m.noSpares ? WEAR.noSpares : 0));
       const p = m.wear >= WEAR.breakAt ? 1 : m.wear >= WEAR.riskFrom ? ((m.wear - WEAR.riskFrom) / (WEAR.breakAt - WEAR.riskFrom)) ** 2 * WEAR.riskMax : 0;
       if (p > 0 && hash01(state.seed, "gbrk", f.name, tile, k, d) < p) { m.broken = true; m.on = false; f.machBroke = (f.machBroke || 0) + 1; }
     }
@@ -815,7 +1021,7 @@ function startWork(state, f) {
   if (bmShort && (f.stock.scrap || 0) >= bmShort * W.BUILDMAT_SCRAP + (def.cost.scrap || 0)) { f.stock.scrap -= bmShort * W.BUILDMAT_SCRAP; f.stock.buildmat = (f.stock.buildmat || 0) + bmShort; }
   const msShort = Math.max(0, (def.cost.metalsheet || 0) - (f.stock.metalsheet || 0)); // metal sheets likewise (a roof, a roller door)
   if (msShort && (f.stock.scrap || 0) >= msShort * W.SHEET_SCRAP + (def.cost.scrap || 0)) { f.stock.scrap -= msShort * W.SHEET_SCRAP; f.stock.metalsheet = (f.stock.metalsheet || 0) + msShort; }
-  const use = MACH_ORDER.includes(next.type) || next.type === "powerup" ? "machine" : "free"; // the earmark only for a machine (gen-tiers: an upgrade too)
+  const use = ALL_MACH.includes(next.type) || next.type === "powerup" ? "machine" : "free"; // the earmark only for a machine (gen-tiers: an upgrade too; groups-power-grid: the grid's pieces too)
   // Wood (woodwork): from the pile above their winter's keep; the rest their crew cuts as part of the job (extra
   // crew-days by their land), so wood never sends them to salvage.
   const can = Object.entries(def.cost).every(([k, v]) => (k === "wood" ? true : k === "parts" ? canPayParts(f, v, use) : (f.stock[k] || 0) >= v));
@@ -848,11 +1054,30 @@ export function groupKitchenText(state, f) {
   if (f.kitchenCold) return `Kitchen: cold, no wood (${people} of ${f.pop} would be fed)`;
   return `Kitchen: hot meals for ${people} of ${f.pop} (−${Math.round(W.KITCHEN.save * fed * 1000) / 10}% food, growth +${Math.round(W.KITCHEN.growth * fed * 100)}%, fewer desert)`;
 }
+// The Groups card's Power line (groups-power-grid; ui/diplomacy.js), the last budget summed over their bases, an hour's
+// average over the day: "Power: 6.2 of 7 wanted · sun 2.1, generator 3.4, bank 0.7 · 12 of 40 stored · 1.8 fuel a day",
+// or "" with no machine or source anywhere.
+export function groupPowerText(state, f) {
+  if (!groupsBuild(state, f) || !f.works) return "";
+  const days = f.bases.map((t) => f.works[t] && f.works[t].powerDay).filter(Boolean);
+  if (!days.length) return "";
+  const sum = (k) => days.reduce((a, pd) => a + (pd[k] || 0), 0);
+  const r1 = (v) => Math.round(v * 10) / 10;
+  const banks = f.bases.reduce((a, t) => a + Math.min(W.WORKS.bank.max, n(f.works[t], "bank")), 0);
+  const arrays = f.bases.some((t) => n(f.works[t], "solar") > 0), gens = f.bases.some((t) => n(f.works[t], "power") > 0);
+  const demand = sum("demand");
+  if (!(demand > 0) && !arrays && !gens && !banks) return "";
+  const src = [arrays ? `sun ${r1(sum("solar") / 24)}` : "", gens ? `generator ${r1(sum("gen") / 24)}` : "", banks ? `bank ${r1(sum("bank") / 24)}` : ""].filter(Boolean).join(", ");
+  const stored = banks ? ` · ${r1(sum("charge"))} of ${banks * BATTERY.cap} stored` : "";
+  const fuel = gens ? ` · ${r1(sum("burn"))} fuel a day` : "";
+  const noFuel = gens && !(f.stock.fuel > 1e-6) && sum("short") > 0 ? " (no fuel)" : "";
+  return `Power: ${r1(sum("served") / 24)} of ${r1(demand / 24)} wanted${noFuel}${src ? ` · ${src}` : ""}${stored}${fuel}`;
+}
 const jailStepName = (f) => { const t = (f.jails && f.jails[f.job.tile]) || 0; return (GROUP_JAIL.STEPS[t + 1] || GROUP_JAIL.STEPS[1]).name; };
 // "water, 2 fields, quarters for 16, walls 2/4 · building a wall" (the Groups tab).
 export function worksText(state, f) {
   if (!groupsBuild(state, f) || !f.bases.length) return "";
-  const t = { water: 0, farms: 0, beds: 0, bench: 0, store: 0, storebox: 0, crates: 0, shed: 0, warehouse: 0, still: 0, power: 0, freezer: 0, sealer: 0, kitchen: 0, mill: 0, grinder: 0, shop: 0, radio: 0, garage: 0, reload: 0, gate: 0 };
+  const t = { water: 0, farms: 0, beds: 0, bench: 0, store: 0, storebox: 0, crates: 0, shed: 0, warehouse: 0, still: 0, power: 0, freezer: 0, sealer: 0, kitchen: 0, mill: 0, grinder: 0, shop: 0, radio: 0, garage: 0, reload: 0, gate: 0, solar: 0, bank: 0, alarm: 0, heaters: 0, charger: 0 };
   for (const b of f.bases) for (const k of Object.keys(t)) t[k] += n(f.works && f.works[b], k);
   const main = mainOf(f);
   const bits = [];
@@ -869,6 +1094,12 @@ export function worksText(state, f) {
   if (t.kitchen) bits.push(`${t.kitchen > 1 ? `${t.kitchen} kitchens` : "a kitchen"}${f.kitchenCold ? " (cold: no wood)" : ""}`);
   if (t.mill) bits.push("a grain mill"); // wave 2 cooking
   if (t.grinder) bits.push("a meat grinder");
+  // groups-power-grid: the grid's pieces ("3 solar arrays", "a battery bank", "a perimeter alarm", "electric heaters ×2").
+  if (t.solar) bits.push(t.solar > 1 ? `${t.solar} solar arrays` : "a solar array");
+  if (t.bank) bits.push(t.bank > 1 ? `${t.bank} battery banks` : "a battery bank");
+  if (t.alarm) bits.push("a perimeter alarm");
+  if (t.heaters) bits.push(`electric heaters${t.heaters > 1 ? ` ×${t.heaters}` : ""}`);
+  if (t.charger) bits.push("a charging station");
   for (const k of ["shop", "radio", "garage", "reload", "gate"]) if (t[k]) bits.push(W.WORKS[k].name); // ai-locks
   const bay = sickbayTier(f);
   if (bay) bits.push(W.SICKBAY[Math.min(W.SICKBAY.length, bay) - 1].name);

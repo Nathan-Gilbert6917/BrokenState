@@ -22,7 +22,7 @@
 // - Won: everything it carried (lootCaravan): all its supplies and goods, what the guards had on them (on the map
 //   you search the bodies; by the numbers, escorts.js guardGear), and its vehicle if it still runs (ESCORT_TAKE: 60%
 //   it runs and joins a team with no vehicle, else it is parked on the tile, marked; 30% it needs an engine repair
-//   (foundcars.js: Repair on the spot); 10% it is wrecked and stripped for parts and scrap). What the team cannot
+//   (foundcars.js: Repair on the spot); 10% it is wrecked and stripped for parts, scrap, metal sheets and electronics). What the team cannot
 //   carry goes in the parked vehicle, or stays on the tile as cargo left behind (a death site with no names: "Recover"
 //   it).
 // - Consequences need a witness (witnessesOf): a guard or trader who got away (the fight was lost or broken off, one
@@ -89,8 +89,9 @@ const planText = (sup) => Object.entries(sup).filter(([, q]) => q >= 1).map(([k,
 export const INTERCEPT = { RANGE: 6, HOURS: 48 };
 export const MEET = { COOLDOWN: 48 };
 export const WITNESS = { BASE_RANGE: 3, TRADER_ESCAPE: 0.35 };
-// The escort's vehicle after a won fight: runs (a share), needs an engine (a share), else wrecked (stripped: parts, scrap).
-export const ESCORT_TAKE = { RUNS: 0.6, REPAIR: 0.3, FUEL: [6, 25], COND: [45, 75], REPAIR_COND: [25, 45], SALVAGE: { parts: [2, 4], scrap: [6, 12], sheets: [1, 3] } }; // sheets: its panels and roof (metal sheets, 2026-10-21)
+// The escort's vehicle after a won fight: runs (a share), needs an engine (a share), else wrecked (stripped: parts, scrap,
+// metal sheets and electronics; a Humvee or an MRAP gives milElectronics: its comms and gauges too).
+export const ESCORT_TAKE = { RUNS: 0.6, REPAIR: 0.3, FUEL: [6, 25], COND: [45, 75], REPAIR_COND: [25, 45], SALVAGE: { parts: [2, 4], scrap: [6, 12], sheets: [1, 3], electronics: [1, 2], milElectronics: [2, 3] } }; // sheets: its panels and roof (metal sheets, 2026-10-21); electronics: its engine control unit, wiring and radio (the user's request 2026-10-24: electronics salvaged from cars)
 export const AI_RAID = { RANGE: 3, CHANCE: 0.03, RICH: 600, BAND: 0.35, EDGE: 1.1, COOLDOWN: 24, KEEP: 1 };
 // A group's trade convoy carries what it delivers (parties.js aiPartyHour: 10 food, 10 scrap) when nothing is listed.
 export const AI_CONVOY_GOODS = { food: 10, scrap: 10 };
@@ -320,7 +321,10 @@ export function lootCaravan(state, p, goods, opts) {
       sup.scrap = (sup.scrap || 0) + scrap;
       const sheets = P.sheets[0] + Math.floor(dice("sm") * (P.sheets[1] - P.sheets[0] + 1));
       sup.metalsheet = (sup.metalsheet || 0) + sheets;
-      out.push(`Their ${V.name} was shot to pieces: stripped for ${parts} parts, ${scrap} scrap and ${sheets} metal sheet${sheets === 1 ? "" : "s"}.`);
+      const EL = V.model === "humvee" || V.model === "mrap" ? P.milElectronics : P.electronics; // a military vehicle: its comms too
+      const elec = EL[0] + Math.floor(dice("se") * (EL[1] - EL[0] + 1));
+      sup.electronics = (sup.electronics || 0) + elec;
+      out.push(`Their ${V.name} was shot to pieces: stripped for ${parts} parts, ${scrap} scrap, ${sheets} metal sheet${sheets === 1 ? "" : "s"} and ${elec} electronics.`);
     }
   }
   // Into the team's cargo as far as it goes.

@@ -2303,7 +2303,7 @@ function recoverVehicle(state, p) {
   if (v.destroyed) { // blown up (launchers.js): no restart; what is left in it, then stripped where it lies
     const c = takeVehicleCargo(state, p, v);
     const y = stripYield(v), got = [];
-    for (const k of ["carparts", "scrap", "metalsheet"]) { const q = addCargo(state, p, SUPPLIES[k] ? k : "parts", y[k] || 0); if (q > 0) got.push(`${q} ${SUPPLIES[SUPPLIES[k] ? k : "parts"].name.toLowerCase()}`); } // metal sheets: its panels and roof
+    for (const k of ["carparts", "scrap", "metalsheet", "electronics"]) { const q = addCargo(state, p, SUPPLIES[k] ? k : "parts", y[k] || 0); if (q > 0) got.push(`${q} ${SUPPLIES[SUPPLIES[k] ? k : "parts"].name.toLowerCase()}`); } // metal sheets: its panels and roof; electronics: its ECU, wiring and radio (2026-10-24)
     if (!vehicleCargo(v)) state.vehicles.splice(state.vehicles.indexOf(v), 1);
     spot(p, { key: `vehicle:${v.id}`, type: "vehicle", tile, hour: state.hour, label: v.name, remove: !vehicleCargo(v) });
     awaitOrders(state, p, `The ${v.name} is a burnt-out wreck past repair.${c.got.length ? ` The team took ${c.got.join(", ")} out of it.` : ""} Stripped for ${got.join(" and ") || "nothing they could carry"}.${vehicleCargo(v) ? ` Still inside: ${c.left.join(", ")}.` : " Nothing is left of it."}`);

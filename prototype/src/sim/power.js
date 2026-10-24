@@ -79,6 +79,31 @@
 //     charger, the ammo press while its operator works it, the electric well pump while it serves a well, the fridge;
 //     then the building circuits (electric.js circuitNeed: a breaker panel standing, each wired building's lights and,
 //     on a hot or a cold day, its climate), each switched like any powered building (base.powerOff[id]).
+// More of the grid (2026-10-24, data-power.js header: "more recipes for building that would use electronics"):
+//   Sources without fuel (SOURCE_TYPES, powerStatus): the solar array gives by the hour, the season and the sky
+//     (electric.js solarOut, data-power.js SOLAR), the battery bank gives what it stored (data-power.js BATTERY: cap
+//     power-hours a bank, at most rate an hour, eff of what went in). The sun is drawn first, then the generators, then
+//     the bank; but the bank's power counts as supply before any generator is started, so a night load the bank can
+//     carry never starts one. The bank is charged (refreshPower, once an hour: b.charge, b.cycleHour; b.ran for its
+//     wear) only from power that costs nothing: the sun's surplus, and the unused power of a running flat-burn set
+//     (idle = full: the portable generator, the house and inverter sets burn the same whatever they power); a governed
+//     set never burns more to charge it. base.power carries solar (the sun's power this hour) and battery { stored, cap }.
+//   New users (POWER_USERS): the perimeter alarm from dusk to dawn, the electric heaters on a day that wants heating
+//     (electric.js heaterWants), the charging station while anything here is short of charge (chargeWanted; its hour
+//     of charging runs in refreshPower: electric.js chargeHour).
+// The grid audit (2026-10-24, the user's request: "fix and implement any machine power needs and power output and
+// setting up power grids for the base"): every building with a motor was read against POWER_USERS and POWER_BOOST.
+//   The grain mill and the meat grinder (cooking.js; hand-cranked until now) take an OPTIONAL electric draw of 1 power
+//     each (POWER_USERS grainmill / meatgrinder), wanted only while a cook's bill at the base calls for them today
+//     (cooking.js machineWanted: a Flour, Ground meat or Smoked sausage bill that is not paused or done); powered, their
+//     batches take 1 / POWER_BOOST.out of the cooking hours (×1.5 the flour, ground meat and sausage a cook's hour:
+//     cooking.js runStation), unpowered they turn by hand as before (never idle: not in NEEDS_POWER). The pressure
+//     canner on a preserving room draws nothing (a pot on the stove: the kitchen's own 1 power is the electric stove).
+//   Every reader of base.power works at a base with the sun and a bank and no generator: freezerOffWhy says what the
+//     sun gives and whether the bank is there, powerLine shows the sources, generatorHeat is the running generators'
+//     only (the sun and the bank make no noise), hasSealer / isPowered read the served list whatever carried the load.
+//   The governor builds the grid (autopilot.js gridWishes) and sets the found spotlights and fridges once any source
+//     stands, a solar array included (electric.js governPower).
 // The result is cached on the base (base.power: supply, demand, served building ids, running generators) every hour
 // (production.js productionHour) and before the stations run each day, so storage, radio and defences read it
 // cheaply. A base that never refreshed has no power.
@@ -89,8 +114,9 @@ import { orderHold } from "./production.js";
 import { stockHas } from "./water.js"; // a recipe's "fresh" in days of fresh food
 import { workFactor } from "./health.js";
 import { sickRestWhy } from "./sickrest.js"; // the ill rest: they do no chores
-import { GENSETS, SPOT, FRIDGE, PRESS } from "./data-power.js"; // the power grid's pieces (found generators, spotlights, ...)
-import { circuitNeed, circuitWhat, gridWired, pumpServes } from "./electric.js"; // the breaker panel's circuits, the well pump (call-time only)
+import { GENSETS, SPOT, FRIDGE, PRESS, ALARM, HEATER, CHARGER, BATTERY } from "./data-power.js"; // the power grid's pieces (found generators, spotlights, ...; 2026-10-24 the alarm, the heaters, the charger, the battery bank, the solar array)
+import { circuitNeed, circuitWhat, gridWired, pumpServes, solarOut, heaterWants, chargeWanted, chargeHour } from "./electric.js"; // the breaker panel's circuits, the well pump, the sun, the heaters, the charger (call-time only)
+import { machineWanted } from "./cooking.js"; // the grain mill and the meat grinder draw while a cook's bill calls for them (call-time only; 2026-10-24 grid audit)
 
 export const POWER = { genOut: 6, genFuel: 2, genHeat: 4, tank: 3 }; // tier 1 (GEN_TIERS[1])
 // The generator's tiers (see the header): out (power), idle / full (fuel a day running at no load / at full load: genBurn),
@@ -123,15 +149,29 @@ export const POWER_USERS = {
   machine_shop: { need: 2, what: "power tools: 2 parts a day from 9 scrap (1 from 6 without)" },
   kitchen:      { need: 1, what: "an electric stove: half as much again a day (14 days of fresh food → 12 portions of jarred food)" },
   sealer:       { need: 1, what: "a vacuum sealer: packs cooked food into long-keeping survival meals" },
+  // The cooking machines (2026-10-24 grid audit; cooking.js): hand-cranked, with an optional motor. They draw only while a
+  // cook's bill at the base calls for them today (machineWanted), and turn by hand without power (never idle).
+  grainmill:    { need: 1, what: "a motor on the grain mill: ×1.5 the flour a cook's hour (hand-cranked without power, slower)" },
+  meatgrinder:  { need: 1, what: "a motor on the meat grinder: ×1.5 the ground meat and sausage a cook's hour (hand-cranked without power, slower)" },
   // The power grid (data-power.js, electric.js).
   spotlamp:     { need: SPOT.need, what: `a mounted spotlight: lights ${SPOT.R} cells round it in a night fight here (${SPOT.STAND_R} from a wall stand); on from dusk to dawn` },
   fence_charger:{ need: 2, what: "a charged fence: the wire shocks whatever reaches it, and the base holds back more of a horde" },
   ammo_press:   { need: 2, what: `the ammo press: ${PRESS.in}× the scrap into ${PRESS.out}× the rounds, reloading orders ${PRESS.rate}× as fast; idle without power` },
   elec_pump:    { need: 1, what: "an electric well pump: more water a day from the well it serves" },
   fridge:       { need: FRIDGE.need, what: `a refrigerator: ${FRIDGE.room} days of food kept at a quarter of its shelf a day` },
+  // More of the grid (2026-10-24, data-power.js): the alarm at night, the heaters on a cold day, the charger while something is short.
+  perimeter_alarm: { need: ALARM.need, what: `a perimeter alarm: the base is never caught asleep at night (everyone counts ${Math.round(ALARM.wake * 100)}% on the walls unwarned), anything within ${ALARM.tiles} tile is spotted; on from dusk to dawn` },
+  elec_heater:  { need: HEATER.need, what: `electric heaters: ${HEATER.heads} people warmed without the fires' wood; on while the day wants heating` },
+  charging_station: { need: CHARGER.need, what: `a charging station: ${CHARGER.rate} uses an hour back into the most drained rechargeable gear here (ear defenders, headsets), no battery packs; on while something is short` },
 };
+// Sources that burn nothing (data-power.js source: true): the solar array (electric.js solarOut) and the battery bank.
+export const SOURCE_TYPES = new Set(["solar_array", "battery_bank"]);
+export const isSource = (b) => !!b && SOURCE_TYPES.has(b.type);
+export const batteries = (base) => base.buildings.filter((b) => b.type === "battery_bank");
+const chargeOf = (b) => Math.max(0, Math.min(BATTERY.cap, Number(b.charge) || 0));
+const r1 = (v) => Math.round(v * 10) / 10;
 // Powered stations: inputs and outputs multiplied (rounded) while they are served.
-export const POWER_BOOST = { machine_shop: { in: 1.5, out: 2 }, kitchen: { in: 1.5, out: 1.5 }, ammo_press: { in: PRESS.in, out: PRESS.out } };
+export const POWER_BOOST = { machine_shop: { in: 1.5, out: 2 }, kitchen: { in: 1.5, out: 1.5 }, ammo_press: { in: PRESS.in, out: PRESS.out }, grainmill: { in: 1, out: 1.5 }, meatgrinder: { in: 1, out: 1.5 } }; // the mill and the grinder: cooking.js runStation (the same inputs, ×1.5 out a cook's hour)
 // Stations that run only with power (electric.js: idle without it).
 export const NEEDS_POWER = new Set(["ammo_press"]);
 export const RADIO_BOOST = 2;
@@ -208,6 +248,10 @@ function userWants(state, base, b) {
   if (BUILDINGS[b.type].station) return stationWants(state, base, b);
   if (b.type === "spotlamp") return isNight(state);
   if (b.type === "elec_pump") return pumpServes(base, b);
+  if (b.type === "perimeter_alarm") return isNight(state); // the sensors and the siren: dusk to dawn
+  if (b.type === "elec_heater") return heaterWants(state, base); // a day that wants heating (electric.js)
+  if (b.type === "charging_station") return chargeWanted(state, base); // something here short of charge (electric.js)
+  if (b.type === "grainmill" || b.type === "meatgrinder") return machineWanted(state, base, b.type); // a cook's bill calls for it today (cooking.js; 2026-10-24 grid audit)
   return true;
 }
 export function powerStatus(state, base) {
@@ -228,6 +272,14 @@ export function powerStatus(state, base) {
     users.push({ b, need, wants: !off && !b.broken, served: false, off, circuit: true, what: circuitWhat(state, base, b) });
   }
   const demand = users.reduce((a, u) => a + (u.wants ? u.need : 0), 0);
+  // The sources that burn nothing (2026-10-24; see the header): the sun's power this hour, and what the battery banks
+  // can give (each at most BATTERY.rate an hour, no more than it holds). Both count as supply before a generator is
+  // started; the bank is drawn last (below).
+  const solar = solarOut(state, base);
+  // A bank starts giving only once it holds a full hour's rate, and then keeps giving until it is empty (b.giving, set
+  // in refreshPower): no flicker at the bottom, where a bank with a dribble in it would give one hour and charge the next.
+  const banks = batteries(base).map((b) => ({ b, off: switchedOff(base, b), charge: chargeOf(b), ok: !b.broken && !switchedOff(base, b), can: !b.broken && !switchedOff(base, b) && (b.giving ? chargeOf(b) > 1e-9 : chargeOf(b) >= BATTERY.rate - 1e-9), out: 0, in: 0, reason: b.broken ? "Broken: needs repair (Repairs tab)" : switchedOff(base, b) ? "Switched off" : "" }));
+  const battAvail = r1(banks.reduce((a, k) => a + (k.can ? Math.min(BATTERY.rate, k.charge) : 0), 0));
   const gens = generators(base).map((b) => {
     const off = switchedOff(base, b);
     const burned = b.burnHour === state.hour; // it ran this hour already (the hour's fuel paid)
@@ -239,8 +291,8 @@ export function powerStatus(state, base) {
   // cheapest for that load, then one that ran already (no flipping between two alike), then the fuller tank.
   const ran = (g) => (g.burned || g.b.burnHour === state.hour - 1 ? 1 : 0);
   const order = [];
-  let left = demand;
-  while (left > 0) {
+  let left = demand - solar - battAvail;
+  while (left > 1e-9) {
     const cand = gens.filter((g) => g.ok && g.fueled && !g.running);
     if (!cand.length) break;
     const covers = (g) => (g.def.out >= left ? 1 : 0);
@@ -254,21 +306,37 @@ export function powerStatus(state, base) {
   }
   for (const g of gens) {
     if (!g.ok || g.running) continue;
-    g.reason = left <= 0 ? (demand > 0 ? "Standby: the other generator covers the demand" : "Standby: nothing draws power") : !g.fueled ? dryWhy(state, base, g.b) : "Standby";
+    g.reason = left <= 1e-9 ? (demand <= 0 ? "Standby: nothing draws power" : order.length ? "Standby: the other generator covers the demand" : solar >= demand ? "Standby: the sun covers the demand" : "Standby: the battery bank covers the demand") : !g.fueled ? dryWhy(state, base, g.b) : "Standby";
   }
-  const supply = order.reduce((a, g) => a + g.def.out, 0);
+  const supply = r1(solar + battAvail + order.reduce((a, g) => a + g.def.out, 0));
   let room = supply;
   for (const u of users) {
-    if (!u.wants || room < u.need) continue;
+    if (!u.wants || room < u.need - 1e-9) continue;
     u.served = true;
     room -= u.need;
   }
   const served = users.filter((u) => u.served).reduce((a, u) => a + u.need, 0);
-  // The load each running generator carries, in the order they were started.
+  // Who carries the load: the sun first, then each running generator in the order it was started (up to its power), and
+  // the battery banks last (the dearest: a fifth is lost in storing it).
   let draw = served;
+  const fromSolar = Math.min(solar, draw);
+  draw -= fromSolar;
   for (const g of order) { g.load = Math.min(g.def.out, draw); draw -= g.load; g.burn = genBurn(g.def, g.load); }
+  let discharge = r1(Math.max(0, Math.min(battAvail, draw)));
+  // What is left over and cost nothing: the sun's surplus, and a flat-burn set's unused power (it burns the same whatever
+  // it powers). Into the banks, each at most BATTERY.rate an hour and up to its cap; BATTERY.eff of it is kept.
+  const free = r1(Math.max(0, solar - fromSolar) + order.filter((g) => g.def.idle === g.def.full).reduce((a, g) => a + Math.max(0, g.def.out - g.load), 0));
+  let give = discharge, take = discharge > 0 ? 0 : free;
+  for (const k of banks) {
+    if (!k.ok) continue;
+    if (give > 0 && k.can) { k.out = r1(Math.min(BATTERY.rate, k.charge, give)); give = r1(give - k.out); }
+    else if (take > 0) { k.in = r1(Math.min(BATTERY.rate, Math.max(0, BATTERY.cap - k.charge), take)); take = r1(take - k.in); }
+    k.reason = k.out > 0 ? `Giving ${k.out} power an hour` : k.in > 0 ? `Charging: +${r1(k.in * BATTERY.eff)} an hour` : k.reason || (k.charge >= BATTERY.cap - 1e-9 ? "Full" : k.charge <= 1e-9 ? "Empty: nothing to spare for it" : k.can ? "Holding" : `Holding: gives again from ${BATTERY.rate} stored`);
+  }
+  const charging = r1(banks.reduce((a, k) => a + k.in, 0));
+  const stored = r1(banks.reduce((a, k) => a + (k.b.broken ? 0 : k.charge), 0)), cap = banks.filter((k) => !k.b.broken).length * BATTERY.cap;
   const fuelPerDay = Math.round(order.reduce((a, g) => a + g.burn, 0) * 100) / 100;
-  return { supply, demand, served, gens, users, running: order.length, fuelPerDay, heat: order.reduce((a, g) => a + g.def.heat, 0) };
+  return { supply, demand, served, gens, users, running: order.length, fuelPerDay, heat: order.reduce((a, g) => a + g.def.heat, 0), solar, banks, battAvail, discharge, charging, stored, cap, sources: base.buildings.filter(isSource) };
 }
 // Why a generator's tank is dry: no fuel above the reserve, refuelled today already, nobody able here, or before 06:00.
 export function dryWhy(state, base, b) {
@@ -282,7 +350,7 @@ export function dryWhy(state, base, b) {
 // The hour of power at a base: the refuelling chore, then the running generators burn their hour's fuel from the tank
 // (once an hour: b.burnHour), and the result is cached on the base (base.power). Safe to call more than once an hour.
 export function refreshPower(state, base) {
-  if (!base.buildings.some((b) => isGen(b) || POWER_USERS[b.type] || b.type === "breaker")) { base.power = null; if (base.freezerOn) base.freezerOn = false; return null; }
+  if (!base.buildings.some((b) => isGen(b) || isSource(b) || POWER_USERS[b.type] || b.type === "breaker")) { base.power = null; if (base.freezerOn) base.freezerOn = false; return null; }
   refuelChore(state, base);
   const ps = powerStatus(state, base);
   for (const g of ps.gens) {
@@ -293,11 +361,24 @@ export function refreshPower(state, base) {
     g.b.lastRan = state.hour; // breakdowns.js: it ran in the last day (wear, spares)
     g.burned = true;
   }
+  // The battery banks' hour (2026-10-24): what each gave comes off its charge, what it took goes in at BATTERY.eff; once
+  // an hour (b.cycleHour). A bank that cycled ran today (b.ran: breakdowns.js ranDay wear).
+  for (const k of ps.banks) {
+    if (!k.ok || k.b.cycleHour === state.hour || (k.out <= 0 && k.in <= 0)) continue;
+    k.b.charge = r1(Math.max(0, Math.min(BATTERY.cap, k.charge - k.out + k.in * BATTERY.eff)));
+    k.b.cycleHour = state.hour;
+    k.b.ran = day(state);
+    if (k.out > 0) k.b.giving = k.b.charge > 1e-9; // it keeps giving until empty (the hysteresis in powerStatus)
+    else if (k.in > 0) delete k.b.giving; // charging: it gives again from a full hour's rate
+  }
   base.power = {
     day: day(state), supply: ps.supply, demand: ps.demand, running: ps.running, heat: ps.heat, fuel: ps.fuelPerDay,
     gens: ps.gens.filter((g) => g.running).map((g) => g.b.id),
     served: ps.users.filter((u) => u.served).map((u) => u.b.id),
+    solar: ps.solar, battery: { stored: ps.stored, cap: ps.cap, out: ps.discharge, in: ps.charging },
   };
+  // The charging station's hour (electric.js chargeHour): a powered one tops up the most drained rechargeable item here.
+  for (const b of base.buildings) if (b.type === "charging_station") chargeHour(state, base, b);
   freezerSwitch(state, base, ps);
   return ps;
 }
@@ -313,7 +394,8 @@ export function freezerOffWhy(base, b, ps) {
   const u = ps.users.find((x) => x.b === b);
   if (u && u.served) return "";
   const gens = ps.gens;
-  if (!gens.length) return "there is no generator";
+  if (!gens.length && !ps.sources.length) return "there is no generator";
+  if (!gens.length) return ps.solar > 0 ? `the sun gives only ${ps.solar} power and the battery bank is ${ps.cap ? "drained" : "not there"}` : `it is night: no sun, and the battery bank is ${ps.cap ? "drained" : "not there"}`;
   const live = gens.filter((g) => !g.b.broken);
   if (!live.length) return "the generator is broken";
   if (live.every((g) => g.off)) return "the generator is switched off";
@@ -358,6 +440,9 @@ export const hasSealer = (state, base) => !!base && base.buildings.some((b) => b
 
 // Readers (cheap, from the cache): is this building powered, is any building of a type powered?
 export const isPowered = (base, b) => !!(base && base.power && b && base.power.served.includes(b.id));
+// The sun's power this hour and the banks' charge (from the cache; 2026-10-24).
+export const solarNow = (base) => (base && base.power && base.power.solar) || 0;
+export const batteryStored = (base) => (base && base.power && base.power.battery ? base.power.battery : { stored: 0, cap: 0, out: 0, in: 0 });
 export const poweredType = (base, type) => !!(base && base.power && base.buildings.some((b) => b.type === type && base.power.served.includes(b.id)));
 export const generatorRunning = (base, b) => !!(base && base.power && base.power.gens.includes(b.id));
 // Engine noise for hordes.js baseHeat.
@@ -413,11 +498,12 @@ export function genUpgradeFuelOk(base, need, up, floor = 0, flows = { income: 0,
 
 // One line for the Buildings tab and the base screens.
 export function powerLine(state, base) {
-  if (!generators(base).length && !base.buildings.some((b) => POWER_USERS[b.type] || b.type === "breaker")) return "No generator";
+  if (!generators(base).length && !base.buildings.some((b) => isSource(b) || POWER_USERS[b.type] || b.type === "breaker")) return "No generator";
   const ps = powerStatus(state, base);
-  if (!generators(base).length) return `No generator (${ps.demand} power wanted)`;
+  const srcs = `${ps.sources.some((b) => b.type === "solar_array") ? ` · the sun ${ps.solar}` : ""}${ps.cap ? ` · battery ${ps.stored} of ${ps.cap} stored` : ""}`; // 2026-10-24: the sources that burn nothing
+  if (!generators(base).length) return ps.sources.length ? `${ps.supply} supply / ${ps.demand} demand · no generator${srcs}` : `No generator (${ps.demand} power wanted)`;
   const tiers = generators(base).map((b) => (isGenset(b) ? genName(b).toLowerCase() : `tier ${genTier(b)}`)).join(" + ");
-  return `${ps.supply} supply / ${ps.demand} demand · ${ps.running} of ${generators(base).length} generator${generators(base).length === 1 ? "" : "s"} running (${tiers}; ${ps.fuelPerDay} fuel a day, +${ps.heat} Heat)`;
+  return `${ps.supply} supply / ${ps.demand} demand · ${ps.running} of ${generators(base).length} generator${generators(base).length === 1 ? "" : "s"} running (${tiers}; ${ps.fuelPerDay} fuel a day, +${ps.heat} Heat)${srcs}`;
 }
 
 // What a base could draw if every powered building it has were at work (the governor's look-ahead).

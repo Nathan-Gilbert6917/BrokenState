@@ -43,3 +43,4 @@ followed rules keyed to its side. Fights between groups were decided by formulas
 - Each batch carries a swapped-sides parity test; `tools/conservationtest.js` guards the allow-list.
 - Tests that asserted the old asymmetry are rewritten.
 - A Huge world carries thousands of survivor records; the per-hour work on them is kept lazy.
+- The power grid is theirs too (2026-10-24): a group's base runs its machines on an hourly budget once a day and builds the grid's pieces by the player's numbers ([docs/features/groups.md](../features/groups.md#the-groups-power-grid)).
