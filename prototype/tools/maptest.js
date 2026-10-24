@@ -1,5 +1,5 @@
 // Map generation check over many seeds and every world size (sim/worldsize.js): site rules, counts per zone, roads,
-// hub placement, every AI group placed (the most the size allows), hive density, and determinism per seed + size
+// hub placement (open land, clear of the towns: startpick.js), every AI group placed (the most the size allows), hive density, and determinism per seed + size
 // (a Normal map is also the same as one made without a size, as before sizes existed). Hidden sites (discovery.js):
 // every type has a known rule, how many sites are off the pre-war map per size, and how many the hub sees on day 1.
 // Usage: node tools/maptest.js [seeds] [firstSeed] [size=small|normal|large|huge|all]   (default: all sizes)
@@ -9,6 +9,7 @@ import { raidAreasFor, AREAS } from "../src/sim/combat.js";
 import { WORLD_SIZES, SIZE_KEYS, areaScale } from "../src/sim/worldsize.js";
 import { takeSize } from "./sizearg.js";
 import { isPublicSite, hiddenSites, siteKnown, nearRoad } from "../src/sim/discovery.js";
+import { isSettlementTile, startWhyNot } from "../src/sim/startpick.js";
 
 const which = takeSize("all");
 const seeds = Number(process.argv[2] || 30);
@@ -128,9 +129,12 @@ function testSize(size) {
     const offRoad = sites.filter((t) => t.loc.zone === "rural" && !t.road).length;
     check(offRoad > 0, `${size} seed ${seed}: every countryside site is on a road`);
 
-    // The hub is a small town, not inside a city, and not on top of a hive.
+    // The hub is out in the open (the user's request 2026-10-22, docs/features/campaign.md): never in a town or a city,
+    // START_CLEAR tiles or more from the towns, cities, hives, the Guard's bases and the other groups (startpick.js).
     const ht = s.tiles[h.tile];
-    check(ht.loc && ht.loc.type === "town" && ht.terrain !== "city" && ht.terrain !== "suburb", `${size} seed ${seed}: hub is not a small town`);
+    check(!isSettlementTile(ht) && ht.terrain !== "water" && ht.terrain !== "mountain" && !ht.hive, `${size} seed ${seed}: hub is in a town or a city, or not on open land`);
+    const why = startWhyNot(s, h.tile);
+    check(!why, `${size} seed ${seed}: hub breaks the start rule (${why})`);
     hubCityMin = Math.min(hubCityMin, ...s.cityIds.map((c) => g.distance(c, h.tile)));
     const hiveTiles = s.tiles.filter((t) => t.hive);
     for (const t of hiveTiles) hubHiveMin = Math.min(hubHiveMin, g.distance(t.id, h.tile));
@@ -163,7 +167,7 @@ function testSize(size) {
       const byType = {};
       for (const t of sites) byType[t.loc.type] = (byType[t.loc.type] || 0) + 1;
       console.log(`seed ${seed}: ${g.width}×${g.height}, ${sites.length} sites (${Object.entries(zones).map(([z, n]) => `${z} ${n}`).join(", ")}), ` +
-        `${s.tiles.filter((t) => t.road).length} road tiles, hives ${hiveTiles.length}, hub ${ht.loc.name}`);
+        `${s.tiles.filter((t) => t.road).length} road tiles, hives ${hiveTiles.length}, hub ${h.name}`);
       console.log(`  ${Object.entries(byType).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${k} ${n}`).join(", ")}`);
     }
   }

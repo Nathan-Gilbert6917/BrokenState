@@ -71,10 +71,6 @@ export const SUPPLIES = {
   // can cut it. (It was 3 kg a unit: every wood figure is WOOD_UNITS times what it was; save.js scales old saves.)
   // bulk: what counts as one where a rule asks for "a few" of a supply (supplyFew: 5 to spare is 150 wood).
   wood:  { name: "Wood", value: 0.02, weight: 0.1, cat: "firewood", bulk: 30 },
-  // Stone (stone.js, the user's request 2026-10-23): field stone, 1 kg a unit, from rocks and boulders cleared on the
-  // base map, the Gather stone job or a team's Gather stone order. A camp's fire ring (staging.js CAMP.fireCost), a
-  // cook fire's, a boiler's, a hearth, a well's or a cistern's lining, a root cellar's walls (buildings.js).
-  stone: { name: "Stone", value: 0.05, weight: 1, cat: "scrap", bulk: 5 },
   carparts:    { name: "Car parts",   value: 7,  weight: 3,   cat: "vehicle" },
   gunparts:    { name: "Gun parts",   value: 10, weight: 0.5, cat: "gunmod" },
   electronics: { name: "Electronics", value: 12, weight: 0.3, cat: "electronics" },
@@ -93,6 +89,11 @@ export const SUPPLIES = {
   // (buildings.js), the metal-sheet armour and weapons (crafting.js), a vehicle's plating (vehicles.js PLATING) and
   // the repairs of what is made of them (breakdowns.js, WALL_REPAIR).
   metalsheet:  { name: "Metal sheets", value: 5, weight: 6, cat: "scrap" },
+  // Stone (stone.js, the user's request 2026-10-23): field stone, 1 kg a unit, from rocks and boulders cleared on the
+  // base map, the Gather stone job or a team's Gather stone order. A camp's fire ring (staging.js CAMP.fireCost), a
+  // cook fire's, a boiler's, a hearth, a well's or a cistern's lining, a root cellar's walls (buildings.js).
+  // After every older key (the newest supply last: what iterates SUPPLY_KEYS keeps its order).
+  stone: { name: "Stone", value: 0.05, weight: 1, cat: "scrap", bulk: 5 },
 };
 // Rounds by calibre and type (data-ammo.js ROUND_SUPPLIES: a_9mm_fmj, a_12ga_buck…; ammo.js): what your stocks hold.
 // "ammo" above stays as the abstract count (other groups' stores, what a plan or a deal asks for).

@@ -900,9 +900,11 @@ section("Orders and the planner: hunting and fishing trips, the ETA and the haul
   const q = queueEstimate(state, p);
   check(q.length === 1 && q[0].hours === 24 && /Hunt 30h/.test(q[0].label) === false, "queued hunts are kept within 2–24 hours");
   check(PRESETS.hunt && PRESETS.fish && PRESETS.hunt.steps(1, { add: { hunt: 6 } })[0].hours === 6, "Hunting trip and Fishing trip presets");
-  // Whole trips from the hub, hour by hour (hordes and road conflicts off, as etatest does).
+  // Whole trips from the hub, hour by hour (hordes and road conflicts off, as etatest does). 120 of them: a trip's haul
+  // is lumpy (a deer is 30 food, about one trip in three), so 40 trips' mean was off by ±18% by luck alone and the 30%
+  // check below failed on an unlucky run of seeds (5 big kills where the hours' odds gave 15); 120 bring that to ±10%.
   const results = [];
-  for (let i = 0; i < 40; i++) {
+  for (let i = 0; i < 120; i++) {
     const st = mk(SEED + 100 + i);
     const hb = hub(st);
     const tile = st.tiles.filter((t) => (t.terrain === "forest" || t.terrain === "hills") && st.grid.distance(t.id, hb.tile) >= 2 && st.grid.distance(t.id, hb.tile) <= 4 && H.gameAbundance(st, t.id) > 0.4 && planPath(st, hb.tile, t.id, false))

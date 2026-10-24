@@ -259,8 +259,11 @@ section(`6. Nobody idle over ${DAYS} days at the hub (idle person-hours, rest, s
   }
   check(idle === 0, `Manual roles: ${idle} idle person-hours of ${ph}${idle ? ` (${Object.entries(why).slice(0, 4).map(([k, v]) => `${v} ${k}`).join("; ")})` : ""}`);
   check(helped > 0, `${helped} person-hours helping elsewhere (${Object.entries(as).map(([k, v]) => `${k} ${v}`).join(", ")})`);
-  const kept = ppl.filter((s) => s.alive && s.location.kind === "base" && !s.sickWas && NI.assignedRole(s) === mine.get(s.id));
-  check(kept.length >= ppl.filter((s) => s.alive && s.location.kind === "base" && !s.sickWas).length, `everyone kept their own role (${ppl.map((s) => `${first(s)} ${NI.assignedRole(s)}`).join(", ")})`);
+  // On a break or a rest card at the end (mentalbreaks.js, morale.js: role rest, their job in s.restPrev, given back
+  // when it ends): it is their own job that comes back (noidle.js helpRestore), not the hour's help.
+  const own = (s) => (s.role === "rest" && s.restPrev ? s.restPrev : NI.assignedRole(s));
+  const kept = ppl.filter((s) => s.alive && s.location.kind === "base" && !s.sickWas && own(s) === mine.get(s.id));
+  check(kept.length >= ppl.filter((s) => s.alive && s.location.kind === "base" && !s.sickWas).length, `everyone kept their own role (${ppl.map((s) => `${first(s)} ${NI.assignedRole(s)}${s.role === "rest" && s.restPrev ? ` (then ${s.restPrev})` : ""}${s.alive ? "" : " (dead)"}`).join(", ")})`);
 }
 
 // ---------- 7. AI groups ----------

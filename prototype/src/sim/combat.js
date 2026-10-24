@@ -2460,6 +2460,38 @@ function flood(cells, sx, sy) {
   }
   return seen;
 }
+// A layout's reach (createBattle): flooded from the west edge's middle as before, unless that cell is shut in (a
+// field's wire fence run out to the map's edge with a tree beside it, farmland since 2026-10-23: one cell, and no room
+// for the people of a drill or a base's fight: createBattle found no cell for the second one); then the largest
+// stretch of open ground on the map.
+function layoutReach(cells) {
+  const N = W * H, seen = flood(cells, 0, Math.floor(H / 2));
+  let n = 0, walk = 0;
+  for (let i = 0; i < N; i++) { if (seen[i]) n++; if (CELL[cells[i].k].walk) walk++; }
+  if (n >= 64 || n * 2 >= walk) return seen; // the open map as before: only a pocket is replaced
+  const label = new Int32Array(N);
+  let best = 0, bestN = n, next = 1;
+  for (let s = 0; s < N; s++) {
+    if (label[s] || seen[s] || !CELL[cells[s].k].walk) continue;
+    const id = ++next, q = [s];
+    let m = 1;
+    label[s] = id;
+    while (q.length) {
+      const i = q.pop(), x = i % W, y = (i / W) | 0;
+      for (const [dx, dy] of DIRS4) {
+        const nx = x + dx, ny = y + dy;
+        if (!inside(nx, ny)) continue;
+        const j = idx(nx, ny);
+        if (!label[j] && !seen[j] && CELL[cells[j].k].walk) { label[j] = id; m++; q.push(j); }
+      }
+    }
+    if (m > bestN) { best = id; bestN = m; }
+  }
+  if (!best) return seen;
+  const out = new Uint8Array(N);
+  for (let i = 0; i < N; i++) if (label[i] === best) out[i] = 1;
+  return out;
+}
 
 // ---------- geometry ----------
 const DIRS4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
@@ -3969,7 +4001,7 @@ export function createBattle(state, setup) {
   });
   if (layout) {
     layout(b, layoutCtx("map"));
-    b.reach = flood(b.cells, 0, Math.floor(H / 2));
+    b.reach = layoutReach(b.cells); // the west edge's middle, or the most open ground when that cell is shut in
   }
   pondsBattle(state, b, b.tileId ?? (base ? base.tile : null)); // ponds.js: the hollows' water, mud or ice by the tile's weather (a base's map: its tile); the slopes in the rain or in winter
   seasonGround(state, b, b.tileId ?? (base ? base.tile : null)); // seasonground.js: spring's mud on the dirt, winter's snow on the ground (after the ponds: not on them)
