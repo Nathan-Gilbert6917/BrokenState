@@ -24,3 +24,10 @@ music-preview/
 
 # The test runner's logs of failing tests (prototype/tools/runtests.js)
 prototype/tools/.testlogs/
+
+# Development screenshots and run snapshots (removed from the repo; keep new ones local):
+# docs/shots/ is the default output of the *shot.cjs tools (raidshot, terrainshot, treeshot, ...),
+# prototype/tools/census/*.json of `tools/campaign50.js --census`, review/ the old review screenshots.
+docs/shots/
+review/
+prototype/tools/census/*.json

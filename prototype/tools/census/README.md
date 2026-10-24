@@ -6,6 +6,9 @@ against them. Seeds are deterministic, but any change in a decision shifts the d
 aggregate (fell / going / deaths by cause / land held), not seed by seed. The write-up of the first three passes is
 docs/campaign-census-2026-10-06.md.
 
+(Snapshots removed: the JSON reports named in the tables below are no longer in the repo, and new `--census` output
+here is gitignored, so it stays on the machine that ran it. The tables keep the headline numbers.)
+
 | file | commit | what it ran on | fell | thirst | hunger | horde | left |
 |---|---|---|---|---|---|---|---|
 | `2026-10-06-pass1-783bbea.json` | 783bbea | merged dev before the census fixes | 8 | 154 | 86 | 1171 | 250 |

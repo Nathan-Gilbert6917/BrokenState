@@ -1,6 +1,6 @@
 # Tactical combat (XCOM-style)
 
-Detail for section 6 of [docs/agents/features.md](../agents/features.md). `[name]` is `prototype/src/sim/name.js`; `ui/name` is `prototype/src/ui/name.js`. Screenshots: [docs/battle-iso/](../battle-iso/), [docs/battle-sizes/](../battle-sizes/).
+Detail for section 6 of [docs/agents/features.md](../agents/features.md). `[name]` is `prototype/src/sim/name.js`; `ui/name` is `prototype/src/ui/name.js`. (Screenshots removed: the battle-iso and battle-sizes shots are no longer in the repo.)
 
 ## Walking on the battle map
 - The user's request 2026-10-21: "add movement animations for battle map currently its like teleportations". Test `tools/moveanimtest.js`.
@@ -178,7 +178,7 @@ The user's request 2026-10-21. Modules: [allyorders, thirdside thirdFoes, parley
 ## Siege kit
 - Ladders, rams and frag grenades [siege]. A group's raid brings only its own (its ladders and ram on its books, made by your recipe when it has none; grenades carried by the raiders) [arsenal packRaidKit, siegeGearHome].
 - Raiders from beyond the border bring the ladders and ram they set out with, items in their gear carried by the carry rule, made more of by a group's crafting when they have the means (your bench), home with the living after the raid, else in your yard or on the ground [siege bandSetOutKit; visitors bandKit, makeSiegeGear, siegeGearBack, dropBandGoods; arsenal bandMakes].
-- Screenshots: [docs/siege/](../siege/).
+- (Screenshots removed: the siege shots are no longer in the repo.)
 
 ## Terrain in combat
 - The user's request 2026-10-23: "improve high ground accuracy and sight range, low ground inaccuracy and can't see beyond the first tiles around a hollow. High ground acts as half cover if one layer high and can see the survivor and full cover if two layers high. You can use hills to see into upper floors of buildings if any are in range with a window. Update AI pathing".
