@@ -58,7 +58,8 @@ import { forageAbundance } from "./sim/foraging.js";
 import { woodAbundance } from "./sim/woodcutting.js";
 import { canClaim, wellProblem, CLAIM } from "./sim/claims.js"; // land claims and wells (the right-click menu)
 import { initCombatUI, drawCombat, renderCombatPanel, renderCombatBar, raidLayout, renderRaidTop, renderRaidCards, renderRaidLog, renderRaidLogFoot, combatTick, combatMouse, combatClick, combatKey, combatKeyUp, combatAction, combatPress, combatRelease, combatWheel, combatPan, combatLeave, combatTap, combatTapChip, cui, padCur, combatPadOn, combatPadOff, combatPadMove, combatPadFrame, combatPadA, combatPadB, combatPadCycle, combatPadEnd, combatPadZoom } from "./ui/combat.js";
-import { LOOK_ACTIONS, LOOK_CHANGE_ACTIONS, crewSnapshot, randomizeAllCrew, randomizeEverything, randomizeGear, randomizeOne, randomBackground, rollRandomRun, ironmanCrew, crewCustomized, crewWithBackground, crewWithBackgrounds, blankCrew, backToSetup } from "./ui/newgame.js";
+import { defaultCustom, cleanCustom, clampCustomCount, isCustomRun, startsWithVehicle } from "./sim/custommode.js"; // Custom mode and Start with a vehicle (2026-10-24)
+import { LOOK_ACTIONS, LOOK_CHANGE_ACTIONS, crewSnapshot, randomizeAllCrew, randomizeEverything, randomizeGear, randomizeOne, randomBackground, rollRandomRun, ironmanCrew, crewCustomized, crewWithBackground, crewWithBackgrounds, blankCrew, backToSetup, stashModeSet, takeModeSet } from "./ui/newgame.js";
 import { CUSTOM_POINTS, clampMax, overText } from "./sim/custompoints.js"; // Customize: everything costs points
 import { BG_ACTIONS, BG_CHANGE, BG_INPUT, customLibrary } from "./ui/backgrounds.js"; // custom backgrounds (sim/custombg.js), not in Ironman
 import { WC_ACTIONS, WC_CHANGE, uiCfg, wcChanged } from "./ui/worldcfg.js"; // World…: the run's dials (sim/worldcfg.js), into the world as it is built
@@ -105,7 +106,7 @@ import { setAutopilot, setPersonality, autopilotResolve } from "./sim/autopilot.
 import { playerTile } from "./sim/hardcore-start.js";
 import { startWhyNot } from "./sim/startpick.js"; // Pick start on map: can a tile be the start
 import { freshRng } from "./sim/appearance.js"; // Random run: dice of their own for the settings
-import { START_PEOPLE, NORMAL_PEOPLE, clampStartPeople } from "./sim/hardcore.js";
+import { START_PEOPLE, NORMAL_PEOPLE, clampStartPeople, peopleRange } from "./sim/hardcore.js";
 import { setTeamPolicy } from "./sim/breakoff.js";
 import { noteNames } from "./ui/names.js";
 import { renderLogPanel, DIARY_ACTIONS, DIARY_CHANGE } from "./ui/diary.js";
@@ -202,10 +203,15 @@ const freshUi = () => ({
   mapSel: null, selParty: null, // ui/mapselect.js: a party, band or outsiders selected on the map; selParty: your selected team's id
   tileView: null, moveExit: null, // ui/poipick.js: the tile view of a team walking on its tile ({ partyId }); move mode from its "Leave for another tile…" (the team's id)
 });
-const ui = { title: false, scale: 1, factionCount: 7, worldSize: DEFAULT_SIZE, customW: BASE_W, customH: BASE_H, hiveCount: null, mode: "normal", startPeople: NORMAL_PEOPLE.DEF, ironman: false, freeEdit: false, pointsMax: CUSTOM_POINTS.DEF, crewEdited: false, crewRoll: null, startPick: null, ...freshUi() }; // mode: Normal or Hardcore (sim/hardcore.js); startPeople: the starting team (Normal 1–8, Hardcore 1–4); pointsMax: Customize's Points each
-// Each mode keeps its own Starting people and Points each (2026-10-19, user request): ui.startPeople and ui.pointsMax are the
-// current mode's, the other mode's wait here (switching mode swaps them: the gamemode select, ui/newgame.js rollRandomRun).
-ui.modeSets = { normal: { startPeople: NORMAL_PEOPLE.DEF, pointsMax: CUSTOM_POINTS.DEF }, hardcore: { startPeople: START_PEOPLE.DEF, pointsMax: CUSTOM_POINTS.DEF } };
+const ui = { title: false, scale: 1, factionCount: 7, worldSize: DEFAULT_SIZE, customW: BASE_W, customH: BASE_H, hiveCount: null, mode: "normal", startPeople: NORMAL_PEOPLE.DEF, ironman: false, freeEdit: false, pointsMax: CUSTOM_POINTS.DEF, crewEdited: false, crewRoll: null, startPick: null, startVehicle: true, custom: defaultCustom(), ...freshUi() }; // mode: Normal, Hardcore or Custom (sim/hardcore.js MODES); startPeople: the starting team (Normal 1–8, Hardcore 1–4, Custom 1–30); pointsMax: Customize's Points each; startVehicle: Start with a vehicle; custom: Custom mode's counts (sim/custommode.js)
+// Each mode keeps its own Starting people, Points each and Start with a vehicle (2026-10-19 and 2026-10-24, user requests):
+// ui.startPeople, ui.pointsMax and ui.startVehicle are the current mode's, the other modes' wait here (switching mode swaps
+// them: ui/newgame.js stashModeSet and takeModeSet, from the gamemode select, rollRandomRun and adopt).
+ui.modeSets = {
+  normal: { startPeople: NORMAL_PEOPLE.DEF, pointsMax: CUSTOM_POINTS.DEF, startVehicle: true },
+  hardcore: { startPeople: START_PEOPLE.DEF, pointsMax: CUSTOM_POINTS.DEF, startVehicle: true },
+  custom: { startPeople: peopleRange("custom").DEF, pointsMax: CUSTOM_POINTS.DEF, startVehicle: true },
+};
 // Folded panels and their widths (ui/layout.js), remembered in the browser. The Layers box and the running orders
 // keep their old ui flags, which read and write the layout.
 const layout = loadLayout();
@@ -1686,16 +1692,28 @@ const changeActions = {
   },
   "nr-guide": (el) => { ui.guide = !!el.checked; }, // and its First-week guide box (ui/guide.js)
   children: (el) => { ui.childrenOff = !el.checked; }, // the new-run screen's Children box (sim/family.js)
-  // Normal or Hardcore: each keeps its own Starting people and Points each (ui.modeSets); the crew goes on the new mode's
-  // Points each (their own points set on a card too).
+  // Normal, Hardcore or Custom: each keeps its own Starting people, Points each and Start with a vehicle (ui.modeSets);
+  // the crew goes on the new mode's Points each (their own points set on a card too). Custom (sim/custommode.js) is a
+  // normal start with ui.custom's counts.
   gamemode: (el) => {
-    const mode = el.value === "hardcore" ? "hardcore" : "normal";
+    const mode = el.value === "hardcore" ? "hardcore" : el.value === "custom" ? "custom" : "normal";
     if (mode === ui.mode) return;
-    ui.modeSets[ui.mode] = { startPeople: ui.startPeople, pointsMax: ui.pointsMax };
-    ui.mode = mode;
-    ui.startPeople = clampStartPeople(ui.modeSets[mode].startPeople, mode);
-    ui.pointsMax = clampMax(ui.modeSets[mode].pointsMax);
+    stashModeSet(ui);
+    takeModeSet(ui, mode);
     for (const s of state.survivors) delete s.ownMax;
+    newWorld(state.seed, true);
+  },
+  // Start with a vehicle (2026-10-24, user request; every mode, Ironman too): the world again on the same seed.
+  "nr-vehicle": (el) => { if (ui.started) return; ui.startVehicle = !!el.checked; newWorld(state.seed, true); },
+  // Custom mode's counts (ui/newgame.js customInputs; sim/custommode.js CUSTOM_RUN): each 1 or more, capped; the world
+  // again on the same seed. Starting survivors is ui.startPeople (Custom's own, in ui.modeSets.custom).
+  "nr-custom": (el) => {
+    if (ui.started) return;
+    const k = el.dataset.k, v = clampCustomCount(k, el.value);
+    if (k === "people") ui.startPeople = v;
+    else if (k in ui.custom) ui.custom[k] = v;
+    else return;
+    el.value = v;
     newWorld(state.seed, true);
   },
   // Starting people (ui/newgame.js): Normal 1–8 hold the hub, Hardcore 1–4 flee together; the same seed and the edited
@@ -1745,6 +1763,17 @@ for (const [k, fn] of Object.entries(CARRY_CHANGE)) changeActions[k] = (el) => f
 for (const [k, fn] of Object.entries(LAND_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // ui/landorder.js
 for (const [k, fn] of Object.entries(GB_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // the gun builder's Ammo list // how many of a supply stack to move (ui/inventory.js)
 
+// The new-run screen's settings as createWorld's options (newWorld): Custom mode (sim/custommode.js) is a normal start
+// with ui.custom's counts (its Starting survivors: ui.startPeople); vehicle: Start with a vehicle.
+function runOpts() {
+  const custom = ui.mode === "custom";
+  return {
+    factionCount: ui.factionCount, size: ui.worldSize, customW: ui.customW, customH: ui.customH, hives: ui.hiveCount,
+    mode: custom ? "normal" : ui.mode, crewRoll: ui.crewRoll, startPeople: ui.startPeople, start: ui.startPick, worldCfg: uiCfg(ui),
+    vehicle: ui.startVehicle !== false, custom: custom ? { ...ui.custom, people: ui.startPeople } : null,
+  };
+}
+
 // A new world: new campaign, new map and colonists, or the same colonists on another seed or group count.
 // Everything about the old run goes: open screens, selections, the team panel, card results, move mode, the
 // speed (a new game starts paused), dev tools and their map overlays.
@@ -1759,7 +1788,7 @@ function newWorld(seed, keepCrew = false, fresh = null) {
   if (ui.timelapse) closeTimelapse(state, ui);
   Object.assign(ui, freshUi());
   ui.crewEdited = !!crew;
-  state = createWorld({ seed, factionCount: ui.factionCount, crew, size: ui.worldSize, customW: ui.customW, customH: ui.customH, hives: ui.hiveCount, mode: ui.mode, crewRoll: ui.crewRoll, startPeople: ui.startPeople, customBackgrounds: ui.ironman ? null : customLibrary(), start: ui.startPick, worldCfg: uiCfg(ui) });
+  state = createWorld({ ...runOpts(), seed, crew, customBackgrounds: ui.ironman ? null : customLibrary() });
   state.pointsMax = ui.pointsMax; // Customize: each colonist's max (sim/custompoints.js)
   // Customize: everyone is built on points; anyone the crew did not cover (a new map, more people in another mode)
   // starts blank, the crew's dice its own (the map and the groups stay the seed's).
@@ -1767,7 +1796,7 @@ function newWorld(seed, keepCrew = false, fresh = null) {
     const snap = crewSnapshot(state), blank = blankCrew(state);
     if (ui.crewRoll == null) { ui.crewRoll = fixedCrewRoll(seed); ui.pickRoll = true; }
     ui.crewEdited = true;
-    state = createWorld({ seed, factionCount: ui.factionCount, crew: state.survivors.map((s, i) => (s.startPoints ? snap[i] : blank[i])), size: ui.worldSize, customW: ui.customW, customH: ui.customH, hives: ui.hiveCount, mode: ui.mode, crewRoll: ui.crewRoll, startPeople: ui.startPeople, customBackgrounds: customLibrary(), start: ui.startPick, worldCfg: uiCfg(ui) });
+    state = createWorld({ ...runOpts(), seed, crew: state.survivors.map((s, i) => (s.startPoints ? snap[i] : blank[i])), customBackgrounds: customLibrary() });
     state.pointsMax = ui.pointsMax;
   }
   resetView();
@@ -1830,10 +1859,13 @@ function adopt(st, entry) {
   state = st;
   ui.title = false;
   if (!state.mode) state.mode = "normal"; // saves from before the modes
-  if (ui.mode !== state.mode) { ui.modeSets[ui.mode] = { startPeople: ui.startPeople, pointsMax: ui.pointsMax }; ui.pointsMax = clampMax(ui.modeSets[state.mode].pointsMax); } // each mode its own settings
-  ui.mode = state.mode; // a new campaign from here keeps the mode you were playing
+  const mode = isCustomRun(state) ? "custom" : state.mode; // a Custom run is a normal one with state.custom (sim/custommode.js)
+  if (ui.mode !== mode) { stashModeSet(ui); takeModeSet(ui, mode); } // each mode its own settings
+  ui.mode = mode; // a new campaign from here keeps the mode you were playing
+  if (mode === "custom") ui.custom = cleanCustom(state.custom); // and Custom's counts
+  ui.startVehicle = startsWithVehicle(state); // and Start with a vehicle
   ui.ironman = !!state.ironman; // and Ironman, if this one is
-  if (Number.isFinite(state.startPeople)) ui.startPeople = clampStartPeople(state.startPeople, state.mode); // and its Starting people
+  if (Number.isFinite(state.startPeople)) ui.startPeople = clampStartPeople(state.startPeople, mode); // and its Starting people
   ui.childrenOff = !!state.childrenOff; // and children off, if they were
   ui.worldCfg = cleanCfg(state.worldCfg); // and its World… dials (a new campaign from here starts from them)
   ui.started = true;

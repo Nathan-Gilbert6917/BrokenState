@@ -57,6 +57,7 @@ import { standardMag, magFitsGun, fittedMag, usesInternal } from "./mags.js";
 import { wornLoad, maxLoad, feelFactor, bandIndex, LOAD_BANDS } from "./load.js";
 import { AMMO_STACK } from "./data-stacks.js";
 import { stackMax, withCount } from "./itemstack.js"; // a stack picked: n of a consumable, n boxes of rounds
+import { startsWithVehicle } from "./custommode.js"; // Start with a vehicle (2026-10-24): off, no pickup to unload
 
 export const START_GEAR = {
   // Worn and held, in the order the editor lists them (inventory.js EQUIP_SLOTS but the arms' carried bag).
@@ -502,6 +503,7 @@ export const vehicleOwner = (state) => (state.survivors || []).find((s) => s.sta
 // A normal start: the hub's pickup's back (picked on the new-run screen) is unloaded into the armory and the stores.
 /** @param {any} state @param {any} base */
 export function normalStartVehicle(state, base) {
+  if (!startsWithVehicle(state)) return; // Start with a vehicle off (custommode.js): no pickup, no back
   const o = vehicleOwner(state);
   const v = o && sanitizeStartVehicle(o.startVehicle);
   if (!v) return;

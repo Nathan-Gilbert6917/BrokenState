@@ -9,6 +9,7 @@ import { Rng } from "./rng.js";
 import { pickStart, chosenStart, startNear, isSettlementTile } from "./startpick.js"; // the new-run screen's New start position and Pick start on map
 import { generateMap } from "./mapgen.js";
 import { DEFAULT_SIZE, sizeDef, customDef, isCustom, clampHives } from "./worldsize.js";
+import { cleanCustom, customSizeDef } from "./custommode.js"; // Custom mode's counts and Start with a vehicle (2026-10-24)
 import { FIRST_NAMES, LAST_NAMES, SKILLS, ROLLED_SKILLS, TRAITS, BIRTH_TRAITS, clashIn, GEAR, SUPPLIES, SUPPLY_KEYS, supValue } from "./data.js";
 import { traitDice, swapNewTraits, noteBornTraits, woundMult, traitSkill, traitPower, rollTiers, tidyTiers, cleanTier } from "./traits.js"; // the newer traits: own dice at birth, their rules
 import { sanitizeLibrary } from "./custombg.js";
@@ -152,20 +153,28 @@ export const localId = (state, id) => (typeof id === "number" ? id - (state.idBa
 // start (optional): { roll, not } where you start drawn with dice of their own on the same map (the new-run screen's
 // New start position; startpick.js): the hub's town, or the Hardcore roadside tile. Kept as state.startRoll. Or
 // { tile }: the start picked on the map (Pick start on map), used when it can be one (startpick.js startWhyNot); kept as state.startTile.
+// vehicle (optional, 2026-10-24, user request: "a toggle for start with a vehicle or not"): false, no starting vehicle
+// (no pickup at the hub, no custom background's car; Hardcore flees on foot). Kept as state.startVehicles (custommode.js).
+// custom (optional, Custom mode: custommode.js): { people, groups, hives, cities, towns, military }, each 1 or more, on a
+// normal start (not with mode "hardcore"): they stand in for startPeople, factionCount and hives, and the map gets
+// those cities, towns and military sites (customSizeDef). Kept as state.custom (isCustomRun).
 /**
  * @param {{ seed: number, factionCount: number, crew?: any[] | null, size?: string, mode?: string, customW?: number | null,
  *   customH?: number | null, hives?: number | null, crewRoll?: number | null, startPeople?: number | null, customBackgrounds?: any,
- *   start?: { roll?: number | null, not?: number | null, tile?: number | null } | null, worldCfg?: any }} opts
+ *   start?: { roll?: number | null, not?: number | null, tile?: number | null } | null, worldCfg?: any, vehicle?: boolean, custom?: any }} opts
  * @returns {State}
  */
-export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SIZE, mode = "normal", customW = null, customH = null, hives = null, crewRoll = null, startPeople = null, customBackgrounds = null, start = null, worldCfg = null }) {
+export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SIZE, mode = "normal", customW = null, customH = null, hives = null, crewRoll = null, startPeople = null, customBackgrounds = null, start = null, worldCfg = null, vehicle = true, custom = null }) {
   const rng = new Rng(seed);
+  const cust = mode !== "hardcore" && custom ? cleanCustom(custom) : null; // Custom mode: a normal start with these counts
   const sdef = isCustom(size) ? customDef(customW, customH) : sizeDef(size);
   const worldSize = sdef.key;
-  const map = generateMap(rng, sdef, { hives: clampHives(hives), seed });
+  const map = generateMap(rng, cust ? customSizeDef(sdef, cust) : sdef, { hives: cust ? cust.hives : clampHives(hives), seed });
   /** @type {State} */
   const state = {
     seed, rng, worldSize, mode: mode === "hardcore" ? "hardcore" : "normal",
+    startVehicles: vehicle !== false, // Start with a vehicle (custommode.js startsWithVehicle)
+    ...(cust ? { custom: cust } : {}), // Custom mode's counts (custommode.js isCustomRun)
     idBase: nextId - 1, // localId: this world's ids counted from its own start
     fleetV: 1, // several vehicles to a team (vehicles.js fleets: p.vehicleIds); save.js gives older saves the list
     kitV: 2, magFitV: 1, // carry kit (w2-kit): a new world in either mode is born with it (carrykit.js migrateKit is for older saves only; a hardcore world never set it and gained magazines on every load)
@@ -260,19 +269,20 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
   // Six people (by default) in the hub's six beds from the first hour (more sleep rough): the new-run screen and the
   // first-week guide say so, so the Overcrowded card (moveout.js) waits its usual days before it asks (and is not shown
   // at all once beds are up).
-  const people = clampStartPeople(startPeople ?? NORMAL_PEOPLE.DEF, "normal");
+  const people = cust ? clampStartPeople(cust.people, "custom") : clampStartPeople(startPeople ?? NORMAL_PEOPLE.DEF, "normal"); // Custom mode: 1–30
   state.startPeople = people;
   const startBeds = baseBeds(hubBase);
   if (people > startBeds) hubBase.crowdNote = { hour: state.hour, over: people - startBeds };
-  createVehicle(state, "truck", { kind: "base", baseId: hubBase.id }, { fuel: 20, condition: 75 });
+  if (state.startVehicles) createVehicle(state, "truck", { kind: "base", baseId: hubBase.id }, { fuel: 20, condition: 75 }); // Start with a vehicle off: none
 
-  createFactions(state, factionCount);
+  createFactions(state, cust ? cust.groups : factionCount);
   recomputeOwnership(state);
 
   for (let i = 0; i < people; i++) state.survivors.push(makeSurvivor(state, i === 0 ? 1.3 : 1));
-  // Starting gear: a few basics spread among the colonists (a seventh and eighth start with a knife and a machete).
+  // Starting gear: a few basics spread among the colonists (a seventh and eighth start with a knife and a machete; Custom
+  // mode's ninth and on go round the list again).
   const starts = ["pistol", "machete", "huntrifle", "knife", "knife", "pistol", "knife", "machete"];
-  state.survivors.forEach((s, i) => (s.gear.weapon = newItem(starts[i], 1, hash01(state.seed, "startdur", i), START_DUR))); // part-worn (inventory.js START_DUR)
+  state.survivors.forEach((s, i) => (s.gear.weapon = newItem(starts[i % starts.length], 1, hash01(state.seed, "startdur", i), START_DUR))); // part-worn (inventory.js START_DUR)
   state.survivors.forEach((s, i) => randomStarterMods(state.rng, s.gear.weapon, i)); // gunmods.js: a cheap part or two on some guns
   // Built on Customize's points (crew[i].points): what the dice hand them is theirs only as picks, so none of it
   // overflows to the hub (the dice are drawn all the same).

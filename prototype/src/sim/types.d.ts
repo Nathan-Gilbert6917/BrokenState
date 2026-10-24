@@ -448,5 +448,7 @@ export interface State {
   stats: { peopleSaved: number; raidsRepelled: number; [key: string]: any };
   autopilot?: boolean;
   startPeople?: number; // hardcore: how many fled together
+  startVehicles?: boolean; // Start with a vehicle (custommode.js startsWithVehicle; false: none; older saves: on)
+  custom?: { people: number; groups: number; hives: number; cities: number; towns: number; military: number }; // Custom mode's counts (custommode.js isCustomRun)
   [key: string]: any;
 }
