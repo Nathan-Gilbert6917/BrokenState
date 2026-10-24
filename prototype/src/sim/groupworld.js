@@ -71,6 +71,7 @@ import { scoutFalse, scoutKilled, falseOdds, INTEL } from "./intel.js"; // count
 import { surrenderPrisoners } from "./prisoners.js"; // a captured scout goes to the cells
 import { groupNetwork, netCovers } from "./radio.js"; // ai-locks: radio gossip needs a station on the air
 import { sightCut } from "./weather.js"; // fog and blizzards: their parties see your bases from a tile less far
+import { note, roundsIn } from "./ledger.js"; // the conservation test's ledger (off in play): an abandoned base's rounds
 
 export const KNOW = {
   START: 18, WATCH: 12, WATCH_DAYS: 10, RANGE: 30, SCOUT: 0.06, SEE: 3, QUESTION: 7, AVOID: 1.5,
@@ -535,7 +536,9 @@ export function occupyAbandoned(state, f, tile) {
   }
   const w = worksAt(f, tile);
   for (const [k, q] of Object.entries(rec.works || {})) w[k] = Math.max(w[k] || 0, q);
-  for (const [k, q] of Object.entries(typeGoods(null, rec.stock || {}, groupMix(f)))) f.stock[k] = (f.stock[k] || 0) + q; // foods.js: an old record's days of food as items
+  const found = typeGoods(null, rec.stock || {}, groupMix(f));
+  for (const [k, q] of Object.entries(found)) f.stock[k] = (f.stock[k] || 0) + q; // foods.js: an old record's days of food as items
+  note(state, rec.from === "player" ? "from you" : "found", roundsIn(found)); // ledger.js: the rounds left in the base, into the AI side
   f.basesOccupied = (f.basesOccupied || 0) + 1;
   const former = typeof rec.from === "number" ? state.factions.find((o) => o.id === rec.from && o.alive && o !== f) : null;
   if (former) changeRelation(state, f, former, ABANDON.FORMER_REL);
