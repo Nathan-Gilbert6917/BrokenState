@@ -33,6 +33,11 @@ export const TOOL_ITEMS = {
                  desc: "A small inverter welder with a box of rods, a mask, gauntlets and a chipping hammer, run off a generator or car batteries: steel plate, gates, frames and machines. Garages, farms, factories and auto shops." },
   sewingkit:   { name: "Sewing kit",            slot: "pack", skill: null, power: 0, req: 0, value: 4,  noise: 0, small: true, weight: 0.2, cat: "tools",
                  desc: "Needles, heavy thread, an awl and a thimble in a tin: packs, straps, padding and ghillie suits." },
+  // The electronics recipes (crafting.js, the user's request 2026-10-24): a soldering iron for the fine work on boards,
+  // run off a car battery or the generator. Found at radio and electronics shops, hardware stores and tech sites
+  // (loot.js SITE_FINDS / AREA_FINDS, data-shops.js ROWS), never made.
+  solderiron:  { name: "Soldering iron",        slot: "pack", skill: null, power: 0, req: 0, value: 8,  noise: 0, small: true, weight: 0.3, cat: "tools",
+                 desc: "A hobbyist's iron with a coil of solder, a sponge, flux, a desoldering pump and a roll of heat-shrink, run off a car battery or the generator. Counts as a soldering iron for crafting: a laser sight, electronic ear defenders, a hand-crank radio and the rest of the electronics recipes. Radio and electronics shops, hardware stores, workshops and labs." },
   // ---------- makeshift tools (crafted from scrap, anywhere: a team too; they wear out) ----------
   scraphammer: { name: "Makeshift hammer",      slot: "pack", skill: null, power: 0, req: 0, value: 1,  noise: 0, makeshift: true, toolWear: true, dur: 12, weight: 0.8, cat: "tools",
                  desc: "A steel bolt-head lashed to a stick: drives a nail. Counts as a hammer for building and crafting, about a dozen jobs before it falls apart." },
@@ -64,6 +69,7 @@ export const TOOL_KINDS = {
   pliers: { name: "pliers",              items: ["toolkit", "multitool", "repairkit"] },
   welder: { name: "a welding kit",       items: ["welder"] },
   sewing: { name: "a sewing kit",        items: ["sewingkit"] },
+  solder: { name: "a soldering iron",    items: ["solderiron"] }, // the electronics recipes (2026-10-24): no makeshift one, a tool kit has none
 };
 // The makeshift recipe for a kind (the governor keeps the basic ones at its bases: toolreqs.js keepBasicTools).
 export const TOOL_MAKESHIFT = { hammer: "scraphammer", saw: "scrapsaw", axe: "scrapaxe", dig: "scrapshovel", sewing: "sewingkit" };
@@ -135,6 +141,10 @@ export const CRAFT_TOOLS = {
   flashlight: ["pliers"], headlamp: ["pliers"], windlight: ["pliers"], lantern: ["pliers"], spotlight: ["pliers", "drill"], spotlamp: ["pliers", "drill"], repairkit: ["pliers"],
   bicycle: ["wrench"], wheelbarrow: ["hammer", "wrench"], handcart: ["hammer", "saw", "wrench"], cookpot: ["hammer"], recoilpad: ["saw"],
   cot: ["hammer", "saw"], bed: ["hammer", "saw"], bunkbed: ["hammer", "saw"], bigbed: ["hammer", "saw"],
+  // The electronics recipes (crafting.js, 2026-10-24): wiring pliers, a clamp or a mount a drill, the boards a soldering
+  // iron. The field decoy wants only pliers (a team carries a tool kit or a multitool).
+  pocketradio: ["pliers"], handradio: ["pliers", "solder"], helmetlight: ["pliers"], weaponlight: ["pliers", "drill"],
+  laser: ["solder", "drill"], eardef: ["solder", "pliers"], lasergrip: ["solder", "drill"], holopistol: ["solder", "drill"], rangefinder: ["solder", "pliers"],
 };
 
 // Where each is normally kept (loot.js ITEM_TAGS; tools/loottest.js).
@@ -148,6 +158,7 @@ export const TOOL_TAGS = {
   handdrill: ["tools", "farm", "home", "industry"],
   welder: ["tools", "garage", "farm", "industry"],
   sewingkit: ["home", "camp", "shop", "farm", "travel"],
+  solderiron: ["tech", "tools", "shop", "industry", "office"], // the electronics recipes (2026-10-24)
   scraphammer: ["crime", "camp"], scrapsaw: ["crime", "camp"], scrapaxe: ["crime", "camp"], scrapshovel: ["crime", "camp"],
 };
 
