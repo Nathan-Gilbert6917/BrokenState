@@ -72,7 +72,8 @@ console.log("Launching with lights");
   const crew = atBase(st, h.id).slice(0, 2).map(bare);
   h.armory = h.armory.filter((it) => !it || !LIGHTS[it.key]);
   h.armory.push(newItem("spotlight"), newItem("spotlight"));
-  const tile = st.tiles.find((t) => t.terrain === "plains" && st.grid.distance(t.id, h.tile) === 6).id;
+  // Open country 6 tiles off (the hub starts clear of towns, often in the forest: the user's request 2026-10-22).
+  const tile = st.tiles.find((t) => (t.terrain === "plains" || t.terrain === "forest") && !t.loc && st.grid.distance(t.id, h.tile) === 6).id;
   // A failed launch puts them back.
   const bad = launchExpedition(st, { memberIds: crew.map((s) => s.id), dest: tile, mission: "move", stance: "normal", supplies: { food: 99999 }, lights: true });
   check(!!bad.error && h.armory.filter((it) => it && it.key === "spotlight").length === 2 && !crew.some(lightOf), `a failed launch (${bad.error}) leaves the lights in the armory`);

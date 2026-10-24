@@ -469,7 +469,9 @@ export function campWork(state, b) {
   if (!top) return;
   const t = state.tiles[top.tile];
   if (top.survey) {
-    const r = groupSurveyTile(state, b, t, { n: Math.max(2, Math.round(bandHands(state, b) / 2)) }); // its hands, newcomers among them
+    // Its hands, newcomers among them, over the day's working hours (06:00 on: bandDay runs at midnight, and the default
+    // window, the 8 hours before now, would be the evening and the dark), as a hardcore band's survey (hardcore-groups.js).
+    const r = groupSurveyTile(state, b, t, { n: Math.max(2, Math.round(bandHands(state, b) / 2)), start: state.hour - 24 + 6 });
     S.surveys++; S.found += r.found.length;
     b.act = `camped near ${tileLabel(state, b.camp ?? b.tile)}, surveying ${g.distance(top.tile, b.tile) ? tileLabel(state, top.tile) : "the ground round the camp"}`;
     return;
