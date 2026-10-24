@@ -461,7 +461,7 @@ function sendGoods(state, f, k, qty) {
     if (kk === "food") { moveFoodUnits(h, to || f, q, { state }); continue; }
     useSupply(h.stock, kk, q);
     const tk = isRoundKey(kk) || kk === "ammo" ? kk : groupStockKey(kk, f);
-    if (to) { to[tk] = (to[tk] || 0) + q; continue; } // the ledger's note when they are home (envoys.js)
+    if (to) { to[tk] = (to[tk] || 0) + q; continue; } // the ledger's note as they come onto the envoy (envoys.js wrapChoice)
     f.stock[tk] = (f.stock[tk] || 0) + q;
     if (isRoundKey(kk) || kk === "ammo") note(state, "from you", q); // ledger.js: rounds into the AI side
   }
