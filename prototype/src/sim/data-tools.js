@@ -122,6 +122,9 @@ export const BUILD_TOOLS = {
   minefield: ["dig", "pliers"], guard_towers: ["hammer", "saw", "drill"],
   // the power grid (data-power.js): wiring pliers, bolted machines wrenches and a drill
   breaker: ["drill", "pliers"], ammo_press: ["wrench", "drill"], elec_pump: ["wrench", "pliers"], fence_charger: ["pliers"],
+  // more of the grid (2026-10-24): the array's frame bolted and drilled and its strings wired, the bank's cables and
+  // lugs, the alarm's sensors drilled in and wired, the heaters and the charger plugged and wired
+  solar_array: ["wrench", "drill", "pliers"], battery_bank: ["wrench", "pliers"], perimeter_alarm: ["drill", "pliers"], elec_heater: ["pliers"], charging_station: ["pliers"],
   // stepping up a tier
   hub_up: ["hammer", "saw"],
 };

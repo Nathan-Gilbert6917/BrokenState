@@ -11,6 +11,39 @@
 // they can not be used for machines or for buildings reduce mood as your survivors do not have lights or cool during
 // summer warmth during the winter these work when the buildings are on.").
 // Plain data that imports nothing; the rules are sim/electric.js (and power.js for the supply and the demand).
+//
+// MORE OF THE GRID (2026-10-24, the user's request: "Add some more recipes for building that would use electronics.
+// Add pre-requisite items as well as what makes sense; add items if needed."): five more things built with
+// electronics, each a real mechanic (the numbers below SOLAR, BATTERY, ALARM, HEATER, CHARGER; the rules in power.js
+// powerStatus for the sources, electric.js for the rest), each with a Mechanics hand, its tools (data-tools.js
+// BUILD_TOOLS) and, for the two power sources, the Solar Installer's Handbook (blueprints.js solarinst):
+//   solar_array      a power SOURCE with no fuel: SOLAR.out power an array at full sun, by the hour (daylight from
+//                    SOLAR.from to SOLAR.to, the first and last SOLAR.shoulder hours at half), the season (SOLAR.season)
+//                    and the sky over the base (SOLAR.sky: clear 1, overcast half, snow next to nothing, a blizzard
+//                    nothing). Nothing at night, no Heat, no refuelling; a storm wears it (hail and wind).
+//   battery_bank     a bank of car batteries on a charge controller: stores power that would go to waste (the sun's
+//                    surplus, and what a flat-burn generator, the portable set and the house sets, gives beyond the
+//                    demand, since they burn the same whatever they power), BATTERY.cap power-hours a bank, in or out at
+//                    most BATTERY.rate an hour, BATTERY.eff of what goes in comes out. It is the LAST source drawn (the
+//                    sun first, then the generators, then the bank), but it counts as supply before a generator is
+//                    started, so a small night load runs off the bank and the generator stays off.
+//   perimeter_alarm  motion sensors on the approaches and a siren in the yard, ALARM.need power from dusk to dawn: an
+//                    attack at night never catches the base asleep (watch.js surpriseAt, through defences.js
+//                    armoryDefence: the alarm's wake ALARM.wake of everyone's combat power on the walls unwarned, more
+//                    than the armory's tripwire), and whatever comes within ALARM.tiles of the base at night is spotted
+//                    with nobody on watch (watch.js lookoutsSpot: the warning card).
+//   elec_heater      a bank of electric space heaters on a general building's floor (a fitting): HEATER.need power on a
+//                    day that wants heating (upkeep.js heatRate: a freezing day or a chill night), and HEATER.heads of
+//                    the people fed here are warmed by it instead of the fires (upkeep.js heatUse: their share of the
+//                    wood, 15 wood a head on a freezing day, is not burned). Real heat, not the breaker panel's comfort
+//                    circuit (that one is mood).
+//   charging_station a charger bench on a general building's floor (a fitting): CHARGER.need power while anything
+//                    here wants charging; each powered hour puts CHARGER.rate uses back into the most drained
+//                    rechargeable gear at the base (GEAR recharge: electronic ear defenders, a military headset; in the
+//                    stores or on anyone here), so no battery packs are spent at a bench on them (repair.js recharge).
+// Wear and repairs (POWER_FIXTURES below): the sources and the alarm are repaired with electronics; demolishing any of
+// them gives half its scrap, parts, electronics, metal sheets and car parts back (buildings.js demolishRefund).
+// AI groups: not yet, as the rest of the grid (electric.js header: their machines are coarse works with no power budget).
 // Merged by: data.js (POWER_GEAR into GEAR), buildings.js (POWER_BUILDINGS into BUILDINGS), basemap.js (POWER_FOOT into
 // FOOT), loot.js (POWER_TAGS into ITEM_TAGS), crafting.js (POWER_CRAFTS into CRAFTS), breakdowns.js (POWER_FIXTURES
 // into FIXTURES).
@@ -84,6 +117,29 @@ export const PRESS = { in: 2, out: 3, rate: 2.5 };
 export const PUMP = { water: 8 };
 export const FENCE = { hold: 0.06, DEAD: [5, 10], LIVING: [3, 6] };
 
+// MORE OF THE GRID (2026-10-24; see the header). The two sources (power.js powerStatus sources):
+//   SOLAR     out: power an array at full sun; from / to: daylight hours (the clock's), shoulder: the first and last
+//             hours of it at half; sky: × by the weather over the base now (weather.js WEATHER keys; a key missing: 0.5);
+//             season: × by the season (weather.js SEASONS keys). An array in a summer noon gives 4; a clear winter noon
+//             1.6; a winter overcast noon 0.8. electric.js solarFactor / solarOut.
+//   BATTERY   cap: power-hours a bank holds; rate: the most in or out an hour a bank; eff: the share of what goes in that
+//             comes back out (lead-acid, an inverter). A bank runs a fridge and a spotlight (2) for a 10-hour night.
+export const SOLAR = {
+  out: 4, from: 6, to: 20, shoulder: 2,
+  sky: { clear: 1, frost: 0.9, heat: 1, drought: 1, overcast: 0.5, fog: 0.4, rain: 0.35, storm: 0.2, snow: 0.15, blizzard: 0 },
+  season: { spring: 0.75, summer: 1, autumn: 0.7, winter: 0.4 },
+};
+export const BATTERY = { cap: 20, rate: 4, eff: 0.8 };
+// The three users (power.js POWER_USERS; electric.js alarmOn, heaterHeads, chargeHour):
+//   ALARM     need: power from dusk to dawn; tiles: how far out its sensors spot an attack at night with nobody on
+//             watch (watch.js lookoutsSpot); wake: everyone's share of their combat power on the walls unwarned
+//             (defences.js guardHold; the armory's tripwire is GEAR.tripwire.defence.alarm 0.5).
+//   HEATER    need: power on a day that wants heating; heads: the people one warms (their heating is not burned).
+//   CHARGER   need: power while anything wants charging; rate: uses put back an hour into one item.
+export const ALARM = { need: 1, tiles: 1, wake: 0.6 };
+export const HEATER = { need: 2, heads: 5 };
+export const CHARGER = { need: 1, rate: 3 };
+
 // The items (data.js Object.assign(GEAR, POWER_GEAR)). slot "pack" + bulky + twoHands: carried in both arms only, or in
 // a cart, the team's cargo or a vehicle; kept in the base's armory (its weight counts against the base's storage).
 // placed: the building type it becomes when set (electric.js).
@@ -125,6 +181,24 @@ export const POWER_BUILDINGS = {
     desc: `A submersible pump down a well, on a pressure tank: +${PUMP.water} water a day for each well it serves (one pump a well) while it has power (1). Needs a well here and a Mechanics 2+ survivor to build.` },
   fence_charger: { name: "Fence charger", plot: "utility", grid: true, cost: { scrap: 10, parts: 1, electronics: 2 }, hours: 8, max: 1, tab: "defenses", size: "outpost", req: { mechanics: 2 },
     desc: `A high-voltage energizer clipped to the base's barbed and razor wire: while it has power (2) the base holds back ${Math.round(FENCE.hold * 100)}% more of a horde, and on the battle map the wire bites: the dead that reach it are shocked (${FENCE.DEAD[0]}–${FENCE.DEAD[1]}), and anyone snagged on it more. Needs a barbed wire fence or concertina wire here.` },
+  // MORE OF THE GRID (2026-10-24; the header). The two sources (source: true; power.js powerStatus) want the Solar
+  // Installer's Handbook (blueprints.js solarinst: panels, charge controllers and inverters are one trade) and a
+  // Mechanics 3 hand, as the generator does. The array is priced above the generator in electronics (its inverter and
+  // controller: 4) and roofed in metal sheets for its frame; the bank in car batteries (carparts) and the controller's
+  // electronics. The bank needs something to charge it: a generator or a solar array here (buildings.js canBuild).
+  solar_array: { name: "Solar panel array", plot: "utility", grid: true, source: true, cost: { scrap: 14, metalsheet: 2, electronics: 4 }, hours: 24, max: 3, req: { mechanics: 3 },
+    desc: `Salvaged roof panels on a welded frame with a charge controller and an inverter: ${SOLAR.out} power an array at full sun, no fuel, no noise, no refuelling. It gives by the hour: nothing at night (${String(SOLAR.to).padStart(2, "0")}:00 to ${String(SOLAR.from).padStart(2, "0")}:00), half in the first and last ${SOLAR.shoulder} hours of daylight, × the season (summer ${SOLAR.season.summer}, spring ${SOLAR.season.spring}, autumn ${SOLAR.season.autumn}, winter ${SOLAR.season.winter}) × the sky (clear ${SOLAR.sky.clear}, overcast ${SOLAR.sky.overcast}, rain ${SOLAR.sky.rain}, snow ${SOLAR.sky.snow}, a blizzard ${SOLAR.sky.blizzard}). The sun's power is used before any generator runs; what is not drawn is lost unless a battery bank stores it. Storms wear it (hail and wind); repairs take electronics. Needs the Solar Installer's Handbook studied and a Mechanics 3+ survivor here to build.` },
+  battery_bank: { name: "Battery bank", plot: "utility", grid: true, source: true, cost: { scrap: 10, carparts: 2, electronics: 2 }, hours: 12, max: 2, req: { mechanics: 3 },
+    desc: `A rack of car batteries on a charge controller and an inverter: stores ${BATTERY.cap} power-hours, in or out at most ${BATTERY.rate} an hour, and gives back ${Math.round(BATTERY.eff * 100)}% of what went in. It is charged only by power that would go to waste: a solar array's surplus by day, and whatever a flat-burn generator (the portable set, a house or inverter set: they burn the same whatever they power) gives beyond the demand. At night, or with the generator off or dry, the grid runs off the bank: the sun first, then the generators, then the bank, but the bank counts as supply before a generator is started, so a small night load (a fridge and a spotlight) never wakes the generator. Wears on the days it cycles; repairs take a car battery and electronics. Needs a generator or a solar array here, the Solar Installer's Handbook studied and a Mechanics 3+ survivor to build.` },
+  // The perimeter alarm (ALARM): a defence on the grid like the fence charger; from a shelter up (size).
+  perimeter_alarm: { name: "Perimeter alarm", plot: "utility", grid: true, cost: { scrap: 8, parts: 1, electronics: 3 }, hours: 10, max: 1, tab: "defenses", size: "shelter", req: { mechanics: 2 },
+    desc: `Motion sensors and tripwire switches on the approaches wired to a siren and a light in the yard. Draws ${ALARM.need} power from dusk to dawn. While it has power an attack at night never catches the base asleep: the siren wakes everyone (they count ${Math.round(ALARM.wake * 100)}% of their combat power on the walls with no warning, more than the armory's tripwire cans; raiders are never over the wall before anyone wakes; a horde finds the defences manned), and anything that comes within ${ALARM.tiles} tile of the base at night is spotted and warned of even with nobody on watch. Repairs take electronics. Needs a Mechanics 2+ survivor here to build.` },
+  // The fittings (fit: a general building's floor, as the fridge and the stove): the heaters (HEATER) and the charger
+  // (CHARGER).
+  elec_heater: { name: "Electric heaters", fit: true, grid: true, cost: { scrap: 6, parts: 1, electronics: 1 }, hours: 6, max: 4, req: { mechanics: 2 },
+    desc: `A bank of fan heaters and oil radiators with their thermostats, 1 × 1 on the floor of a hut, cabin, lodge, hall or barn. Draws ${HEATER.need} power on a day that wants heating (a freezing day, or a night under 8°C); while it has it, ${HEATER.heads} of the people fed here are warmed by it and their share of the fires' wood is not burned (15 wood a head on a freezing day, 22 in bitter cold, 4.5 on a chill night). Real heat, not the breaker panel's comfort circuit. Needs a Mechanics 2+ survivor here to build.` },
+  charging_station: { name: "Charging station", fit: true, grid: true, cost: { scrap: 4, electronics: 2 }, hours: 4, max: 1, req: { mechanics: 2 },
+    desc: `A bench of chargers, adapters and a power strip, 1 × 1 on the floor of a general building. Draws ${CHARGER.need} power while anything here wants charging: every powered hour it puts ${CHARGER.rate} uses back into the most drained rechargeable gear at the base (electronic ear defenders, a military headset: in the stores or on anyone here), so nobody spends a pack of batteries at a bench on them. Needs a Mechanics 2+ survivor here to build.` },
 };
 
 // Their footprints (basemap.js Object.assign(FOOT, POWER_FOOT)). A generator is a pump-like machine in the yard; the
@@ -139,6 +213,13 @@ export const POWER_FOOT = {
   elec_pump: { kind: "prop", k: "pump", w: 1, h: 1 },
   fence_charger: { kind: "prop", k: "locker", w: 1, h: 1 },
   ammo_press: { kind: "prop", k: "counter", w: 2, h: 1 },
+  // More of the grid (2026-10-24): the array a 2 × 2 rack in the yard, the bank a locker-sized cabinet, the alarm's
+  // siren post a locker in the yard; the heaters and the charger fittings on a floor (a locker cell, as the fridge).
+  solar_array: { kind: "prop", k: "rack", w: 2, h: 2 },
+  battery_bank: { kind: "prop", k: "locker", w: 1, h: 1 },
+  perimeter_alarm: { kind: "prop", k: "locker", w: 1, h: 1 },
+  elec_heater: { kind: "prop", k: "locker", w: 1, h: 1, fit: true, indoor: true },
+  charging_station: { kind: "prop", k: "counter", w: 1, h: 1, fit: true, indoor: true },
 };
 
 // Where they are kept (loot.js ITEM_TAGS).
@@ -198,4 +279,12 @@ export const POWER_FIXTURES = {
   ammo_press:    { use: 1, idle: 0.05, spares: 18, repair: { hours: 8, cost: { scrap: 3, parts: 2 }, min: 3 }, rig: { hours: 2, cost: { scrap: 2 }, min: 2 }, what: "no rounds from it" },
   elec_pump:     { power: true, use: 0.6, idle: 0.05, spares: 24, repair: { hours: 6, cost: { scrap: 2, parts: 1 }, min: 2 }, rig: { hours: 2, cost: { scrap: 1 }, min: 1 }, what: "no water from it" },
   fence_charger: { power: true, use: 0.3, idle: 0.05, attack: 3, repair: { hours: 3, cost: { scrap: 1, electronics: 1 }, min: 2 }, rig: { hours: 1, cost: { scrap: 1 }, min: 1 }, what: "the wire goes dead" },
+  // More of the grid (2026-10-24): the array ages a little and takes a storm's hail and wind (no use wear: nothing
+  // turns); the bank wears on the days it cycles (ranDay: power.js sets b.ran when it charges or gives); the alarm, the
+  // heaters and the charger by the days they had power, the alarm smashed a little in every attack.
+  solar_array:   { age: 0.04, storm: 3, attack: 1, repair: { hours: 4, cost: { scrap: 2, electronics: 1 }, min: 2 }, rig: { hours: 2, cost: { scrap: 1 }, min: 1 }, what: "no power from the sun" },
+  battery_bank:  { ranDay: true, use: 0.6, idle: 0.1, repair: { hours: 4, cost: { scrap: 2, carparts: 1, electronics: 1 }, min: 2 }, rig: { hours: 1, cost: { scrap: 1 }, min: 1 }, what: "a dead bank: nothing stored, nothing given" },
+  perimeter_alarm: { power: true, use: 0.3, idle: 0.05, attack: 2, repair: { hours: 3, cost: { scrap: 1, electronics: 1 }, min: 2 }, rig: { hours: 1, cost: { scrap: 1 }, min: 1 }, what: "dead sensors: no alarm, a night attack can catch the base asleep again" },
+  elec_heater:   { power: true, use: 0.4, idle: 0.02, repair: { hours: 2, cost: { scrap: 1, electronics: 1 }, min: 1 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "cold coils: the fires burn for everyone again" },
+  charging_station: { power: true, use: 0.2, idle: 0.02, repair: { hours: 2, cost: { scrap: 1, electronics: 1 }, min: 1 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "no charging: battery packs at a bench again" },
 };

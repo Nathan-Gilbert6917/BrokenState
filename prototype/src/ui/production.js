@@ -11,9 +11,10 @@ import {
   ORDER_MODES, FALLBACK_ROLES, QUALITY_STEPS, RACK, stationOrder, hasOrder, setStationOrder, clearStationOrder, orderHold,
   productKey, inputKeys, untilMargin, craftOrders, addCraftOrder, setCraftOrder, removeCraftOrder, craftOrderStatus, bestQuality,
 } from "../sim/production.js";
-import { POWER, POWER_USERS, STILL, REFUEL, powerStatus, refreshPower, generators, generatorLine, setGenReserve, GEN_TIERS, genTier, genDef, genName, genTank, genTierText, isGenset } from "../sim/power.js"; // isGenset: a found generator (sim/electric.js), never upgraded
+import { POWER, POWER_USERS, STILL, REFUEL, powerStatus, refreshPower, generators, generatorLine, setGenReserve, GEN_TIERS, genTier, genDef, genName, genTank, genTierText, isGenset, isSource } from "../sim/power.js"; // isGenset: a found generator (sim/electric.js), never upgraded; isSource: a solar array or a battery bank (2026-10-24)
 import { canUpgradeGenerator } from "../sim/buildings.js"; // gen-tiers: a generator upgraded where it stands
-import { gridWired, climateNeed, circuitState } from "../sim/electric.js"; // the breaker panel's circuits (the switchboard)
+import { gridWired, climateNeed, circuitState, solarLine } from "../sim/electric.js"; // the breaker panel's circuits (the switchboard); the solar array's line (2026-10-24)
+import { BATTERY } from "../sim/data-power.js"; // the battery bank's numbers (2026-10-24)
 import { CIRCUITS, POWER_MOOD } from "../sim/data-power.js";
 import { genFixture, machineText } from "../sim/breakdowns.js";
 import { STEWARD_AREAS, stewardOf, setSteward, setStewardArea, setStewardStyle, setPinned, stewardSummary, STEWARD_LOG_HOUR, leaderChoices, leaderOf, leaderStatus, leaderScore, ledBy, setLeader, actingLeader, actsShare } from "../sim/steward.js";
@@ -86,8 +87,9 @@ export function powerCard(state, b) {
   const gens = generators(b);
   const wired = gridWired(b);
   const users = b.buildings.filter((x) => POWER_USERS[x.type] || (wired && CIRCUITS[x.type]));
+  const sources = b.buildings.filter(isSource); // the solar arrays and the battery banks (sim/power.js, 2026-10-24): power that burns nothing
   const usesText = Object.entries(POWER_USERS).map(([k, u]) => `${BUILDINGS[k].name} (${u.need}): ${u.what}`).join("; ");
-  if (!gens.length && !users.length && !wired) return `<h3>Power</h3><div class="small muted"${tip(`A generator (Construction) runs by itself: ${POWER.genOut} power for ${POWER.genFuel} fuel a day while something draws power, from a tank refuelled every morning by someone at the base; an ethanol still makes fuel from surplus or spoiled food. ${usesText}`)}>⚡ No generator and nothing to power <span class="sk-info">ⓘ</span></div>`;
+  if (!gens.length && !sources.length && !users.length && !wired) return `<h3>Power</h3><div class="small muted"${tip(`A generator (Construction) runs by itself: ${POWER.genOut} power for ${POWER.genFuel} fuel a day while something draws power, from a tank refuelled every morning by someone at the base; an ethanol still makes fuel from surplus or spoiled food. A solar panel array gives power by daylight for nothing, a battery bank stores what would go to waste (both want the Solar Installer's Handbook). ${usesText}`)}>⚡ No generator and nothing to power <span class="sk-info">ⓘ</span></div>`;
   const ps = powerStatus(state, b);
   const toggle = (x, off) => `<button class="mini" data-action="pw-toggle" data-base="${b.id}" data-id="${x.id}"${tip(off ? "Let it run (or draw power) again" : "Switch it off (saves fuel)")}>${off ? "Switch on" : "Switch off"}</button>`;
   const row = (u) => {
@@ -99,6 +101,19 @@ export function powerCard(state, b) {
   const genTip = (g) => (isGenset(g.b) ? `${GEAR[g.b.type] ? GEAR[g.b.type].desc : ""} Repairs: the Repairs tab.` : `${BUILDINGS.generator.desc} ${genTierText(g.def, genTier(g.b))}. Repairs: ${genFixture(genTier(g.b)).repair.cost.parts} parts, Mechanics ${genFixture(genTier(g.b)).repair.min}+.`);
   const genSub = (g) => (isGenset(g.b) ? `found · ${g.def.idle === g.def.full ? `${Math.round((g.def.full / 24) * 100) / 100}` : `${Math.round((g.def.idle / 24) * 100) / 100}–${Math.round((g.def.full / 24) * 100) / 100}`} fuel an hour` : `tier ${genTier(g.b)} of ${GEN_TIERS.length - 1}`);
   const genRow = (g) => `<tr><td${tip(genTip(g))}>${esc(genName(g.b))}<br><span class="muted">${genSub(g)}</span></td><td>+${g.def.out}</td><td class="small">${esc(generatorLine(state, b, g.b, ps))}</td><td>${g.running ? `<span class="chip on">Running</span>` : g.b.broken ? `<span class="chip off">Broken</span>` : g.off ? `<span class="chip off">Switched off</span>` : /^Tank dry/.test(g.reason) ? `<span class="chip off"${tip(g.reason)}>Tank dry</span>` : `<span class="chip">Standby</span>`}</td><td><span class="row">${g.b.broken ? "" : toggle(g.b, g.off)}${isGenset(g.b) ? "" : genUpgradeBtn(state, b, g.b)}</span></td></tr>`;
+  // The sources that burn nothing (sim/power.js powerStatus sources, 2026-10-24): a solar array's row (what the sun gives
+  // now: electric.js solarLine) and a battery bank's (its charge, giving or charging), each switched like a generator.
+  const srcRow = (x) => {
+    const d = BUILDINGS[x.type], off = !!(b.powerOff && b.powerOff[x.id]);
+    if (x.type === "solar_array") {
+      const live = !x.broken && !off, now = live ? Math.round((ps.solar / Math.max(1, b.buildings.filter((y) => y.type === "solar_array" && !y.broken && !(b.powerOff && b.powerOff[y.id])).length)) * 10) / 10 : 0;
+      return `<tr><td${tip(`${d.desc} Repairs: the Repairs tab.`)}>${esc(d.name)}<br><span class="muted">the sun · no fuel</span></td><td>+${now}</td><td class="small">${esc(solarLine(state, b))}</td><td>${x.broken ? `<span class="chip off">Broken</span>` : off ? `<span class="chip off">Switched off</span>` : now > 0 ? `<span class="chip on">Giving</span>` : `<span class="chip">Night</span>`}</td><td>${x.broken ? "" : toggle(x, off)}</td></tr>`;
+    }
+    const k = ps.banks.find((y) => y.b === x);
+    const charge = k ? k.charge : 0;
+    return `<tr><td${tip(`${d.desc} Repairs: the Repairs tab.`)}>${esc(d.name)}<br><span class="muted">${charge} of ${BATTERY.cap} stored</span></td><td>${k && k.out > 0 ? `+${k.out}` : k && k.in > 0 ? `−${k.in}` : "±0"}</td><td class="small">${esc(k ? k.reason : "")} · ${Math.round((charge / BATTERY.cap) * 100)}% charged${k && k.in > 0 ? ` (${Math.round(BATTERY.eff * 100)}% of what goes in is kept)` : ""}</td><td>${x.broken ? `<span class="chip off">Broken</span>` : off ? `<span class="chip off">Switched off</span>` : k && k.out > 0 ? `<span class="chip on">Giving</span>` : k && k.in > 0 ? `<span class="chip on">Charging</span>` : `<span class="chip">${charge >= BATTERY.cap - 1e-9 ? "Full" : charge <= 1e-9 ? "Empty" : "Holding"}</span>`}</td><td>${x.broken ? "" : toggle(x, off)}</td></tr>`;
+  };
+  const srcSum = `${sources.some((x) => x.type === "solar_array") ? ` · ☀ ${ps.solar} from the sun` : ""}${ps.cap ? ` · 🔋 ${ps.stored} of ${ps.cap} stored` : ""}`;
   const R = b.refuel && b.refuel.day === day(state) ? b.refuel : null;
   const refuel = !gens.length ? "" : R ? `Refuelled today at ${String(R.hour % 24).padStart(2, "0")}:00 by ${esc(R.name ? R.name.split(" ")[0] : "someone")} (${R.fuel} fuel, half an hour).` : hourOfDay(state) < REFUEL.from ? `Refuelled from ${String(REFUEL.from).padStart(2, "0")}:00 by whoever is least busy here.` : gens.every((x) => (x.tank || 0) >= genTank(x) - 1e-9) ? "The tanks are full." : "Not refuelled yet today.";
   const res = b.genReserve || null;
@@ -117,9 +132,9 @@ export function powerCard(state, b) {
   const gu = b.genUp && b.genUp.day >= day(state) - 1 && !b.genUp.ok && b.genUp.need > b.genUp.cap ? `<div class="muted" style="margin-top:0.3rem"${tip("The governor or the base's steward upgrades a generator when the base wants more power than its generators give, the materials and a good enough mechanic are here, and the fuel coming in can carry the bigger burn (never into a fuel deficit, the winter's heating counted).")}>🤖 Upgrade on hold: ${esc(b.genUp.why)}.</div>` : "";
   return `<h3>Power</h3>
     <div class="card small">
-      <div class="spread"><b class="${cls}">${ps.supply} supply / ${ps.demand} demand</b><span class="muted">${ps.running} of ${gens.length} generator${gens.length === 1 ? "" : "s"} running · ${ps.fuelPerDay} fuel a day · +${ps.heat} Heat · ${Math.floor(b.stock.fuel || 0)} fuel here</span></div>
-      ${gens.length ? "" : `<div class="danger">No generator: build one in Construction (Mechanics 3+).</div>`}
-      <table class="t"><tr><th>Building</th><th${tip("Power it gives (+) or draws")}>Power</th><th>With power</th><th>Status</th><th></th></tr>${ps.gens.map(genRow).join("")}${machines.length ? groupHead("Machines", "machines", machines) : ""}${machines.map(row).join("")}${circuits.length ? groupHead("Buildings (lights and climate)", "circuits", circuits) : ""}${circuits.map(row).join("")}</table>
+      <div class="spread"><b class="${cls}">${ps.supply} supply / ${ps.demand} demand</b><span class="muted">${ps.running} of ${gens.length} generator${gens.length === 1 ? "" : "s"} running · ${ps.fuelPerDay} fuel a day · +${ps.heat} Heat · ${Math.floor(b.stock.fuel || 0)} fuel here${srcSum}</span></div>
+      ${gens.length ? "" : sources.length ? `<div class="muted">No generator: the sun and the battery banks are all the power here${ps.demand > ps.supply ? " (not enough now)" : ""}.</div>` : `<div class="danger">No generator: build one in Construction (Mechanics 3+).</div>`}
+      <table class="t"><tr><th>Building</th><th${tip("Power it gives (+) or draws")}>Power</th><th>With power</th><th>Status</th><th></th></tr>${ps.gens.map(genRow).join("")}${sources.map(srcRow).join("")}${machines.length ? groupHead("Machines", "machines", machines) : ""}${machines.map(row).join("")}${circuits.length ? groupHead("Buildings (lights and climate)", "circuits", circuits) : ""}${circuits.map(row).join("")}</table>
       ${users.length ? "" : `<div class="muted">Nothing here draws power yet. ${esc(usesText)}.</div>`}
       ${gridLine}
       ${refuel ? `<div class="muted" style="margin-top:0.3rem">⛽ ${refuel}</div>` : ""}${reserve}${gu}

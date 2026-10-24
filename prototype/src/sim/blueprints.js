@@ -54,6 +54,12 @@ export const BLUEPRINTS = {
   // handbook it opens in the mid game (ERA_OPEN: by then the know-how has gone round).
   radioeng: { name: "Radio Engineering Handbook", skill: "mechanics", min: 3, hours: 24, value: 60, unlocks: { buildings: ["relay", "radio"] },
     sites: ["radiotower", "airport", "police", "military", "univ"], desc: "Antennas, transmitters, repeaters and line-of-sight links." },
+  // More of the grid (2026-10-24, the user's "more recipes for building that would use electronics ... pre-requisite
+  // items"; data-power.js solar_array, battery_bank): the solar array and the battery bank are one trade (panels, charge
+  // controllers, inverters and battery strings), so one handbook opens both. Mechanics 3 to study, as the Generator
+  // Schematics; found where the trade kept its books: hardware stores, the university, the dam, radio towers, factories.
+  solarinst: { name: "Solar Installer's Handbook", skill: "mechanics", min: 3, hours: 24, value: 60, unlocks: { buildings: ["solar_array", "battery_bank"] },
+    sites: ["hardware", "univ", "dam", "radiotower", "factory"], desc: "Panel strings, charge controllers, inverters and battery banks: an off-grid installer's course notes." },
   weaponplans: { name: "Improvised Weapons Plans", skill: "mechanics", min: 4, hours: 20, value: 55, unlocks: { crafts: ["crossbow", "pipegun"] },
     sites: ["gunstore", "police", "prison", "military", "hardware", "lodge"], desc: "Leaf-spring crossbows and zip guns, with drawings." },
   armorsmith: { name: "Armor Smithing Notes", skill: "mechanics", min: 3, hours: 16, value: 45, unlocks: { crafts: ["scrapvest"] },
@@ -165,6 +171,7 @@ function unlockName(k) {
     trench: "the trench", cistern: "the cistern", coldstore: "the cold store", freezer: "the walk-in freezer", kitchen: "a second preserving room", relay: "the radio relay", radio: "the radio station",
     crossbow: "the scrap crossbow", pipegun: "the pipe shotgun", scrapvest: "the scrap plate vest",
     generator3: "the industrial diesel set (a generator's third tier)",
+    solar_array: "the solar panel array", battery_bank: "the battery bank", // more of the grid (2026-10-24)
     lasergrip: "laser grips", holopistol: "the pistol red dot", rangefinder: "the laser rangefinder", pocketradio: "the pocket radio decoy", // the electronics recipes (2026-10-24)
   };
   if (names[k]) return names[k];

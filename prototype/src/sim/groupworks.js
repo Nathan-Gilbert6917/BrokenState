@@ -112,6 +112,14 @@
 //   changes, f.fuelFlow, less the extra burn stays at 0 or more, and their fuel above half a fuel a head covers 30 days
 //   of it). With a freezer and a sealer (3 power) a tier-1 set covers them, so today they stay at tier 1, as most of
 //   your bases do; the rule is there for the day their machines draw more.
+//   The power grid's pieces (2026-10-21 data-power.js; 2026-10-24 the solar array, the battery bank, the perimeter
+//   alarm, the electric heaters, the charging station): not theirs yet (electric.js header "AI GROUPS"). Their machines
+//   have no power budget (one generator, a day's fuel at a time, no hour-by-hour supply and demand), so a solar array or
+//   a battery bank has no generator-hours to save them and no night to bridge; their bases are never caught asleep by
+//   the numbers (watch.js surpriseAt is yours), so an alarm changes nothing; their heating is a coarse wood draw a head
+//   (factions.js GROUP_WOOD), not per building, so the heaters have nothing to cut. When their machines get an hourly
+//   power budget (the economy pass docs/adr/0001-ai-parity.md §7 leaves open), these fold in by the same numbers
+//   (MACH.fx by your FIXTURES, the costs scaled as WORKS). The items (electronics, car parts) trade as any supply does.
 // - Storage (base storage limits, 2026-10-19, the user's "have AI groups build storage units etc so the player can raid
 //   their supplies"; docs/adr/0001-ai-parity.md: your rules): a group's base is measured by your rule (basestorage.js
 //   storageOf: its core by tier, the storage buildings its works stand for, groupbases.js WORKS_BUILDING; a camp of

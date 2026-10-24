@@ -35,18 +35,37 @@
 // THE GOVERNOR (governPower, autopilot.js governBase): sets the generators lying in the stores while the base wants more
 //   power than its generators give, every spotlight once there is a generator, the fridges while a building has room.
 //
+// MORE OF THE GRID (2026-10-24, the user's request in data-power.js: "more recipes for building that would use
+//   electronics ... pre-requisite items"). The solar array (solarFactor, solarOut: by the hour of the day, the season
+//   and the sky over the base; power.js powerStatus takes the sun's power before any generator runs) and the battery
+//   bank (power.js: charged from the power that would go to waste, drawn last; data-power.js BATTERY); the perimeter
+//   alarm (alarmOn: with power at night the base is never caught asleep and the approaches are watched: watch.js
+//   surpriseAt through defences.js armoryDefence, lookoutsSpot); the electric heaters (heaterHeads: upkeep.js heatUse
+//   warms that many people without the fires' wood; heaterWants: a day that wants heating draws); the charging station
+//   (chargeHour: every powered hour puts CHARGER.rate uses back into the most drained rechargeable gear at the base, in
+//   the stores or on anyone here; chargeWanted: it draws only while something is short).
+//
 // AI GROUPS (docs/adr/0001-ai-parity.md): not yet. Their machines are coarse works (groupworks.js groupMachinesDaily:
 //   a built generator by your tiers serving a freezer and a sealer); found generators, spotlights, the panel's circuits
 //   and the new machines are your bases' only for now. The items trade and turn up in their stores as any item does.
-import { GENSETS, GENSET_KINDS, GENSET_MAX, POWER_BUILDINGS, POWER_FINDS, AREA_POWER, CIRCUITS, CLIMATE, POWER_MOOD, PUMP, FRIDGE, SPOT } from "./data-power.js";
+//   The same for the 2026-10-24 pieces: their machines have no power budget (one generator runs what they have, a day's
+//   fuel at a time), so a solar array or a battery bank has no fuel to save them and no night to bridge; their bases
+//   are never caught asleep by the numbers (no surpriseAt for them), so an alarm has nothing to change; their heating is
+//   a coarse wood draw a head (factions.js GROUP_WOOD) with no per-building power to cut it. The day their machines get
+//   a power budget (the economy pass ADR 0001 §7 leaves open), these fold in by the same numbers.
+import { GENSETS, GENSET_KINDS, GENSET_MAX, POWER_BUILDINGS, POWER_FINDS, AREA_POWER, CIRCUITS, CLIMATE, POWER_MOOD, PUMP, FRIDGE, SPOT, SOLAR, ALARM, HEATER, CHARGER } from "./data-power.js";
 import { BUILDINGS, addBuilding, count, countAll } from "./buildings.js"; // (call-time only: the modules load in a circle)
 import { placeItem, refreshBaseMap, fittingRoom } from "./basemap.js"; // (call-time only)
 import { makeItem } from "./crafting.js"; // (call-time only)
 import { powerStatus, isPowered, poweredType, generators, genCapacity, powerWanted } from "./power.js"; // (call-time only)
-import { weatherAt } from "./weather.js"; // (call-time only)
-import { day } from "./world.js";
+import { weatherAt, season } from "./weather.js"; // (call-time only)
+import { day, atBase } from "./world.js";
+import { heatRate } from "./upkeep.js"; // a day that wants heating: the electric heaters draw (call-time only)
+import { itemDur, itemDurMax } from "./crafting.js"; // the charging station tops up rechargeable gear (call-time only)
+import { allCarried } from "./inventory.js"; // ... on anyone at the base
 import { hash01 } from "./skills.js";
 import { lootItem } from "./inventory.js";
+import { GEAR } from "./data.js"; // the rechargeable gear (recharge: true)
 import { siteSource, areaSource } from "./itemcond.js";
 
 const nameOf = (type) => (POWER_BUILDINGS[type] ? POWER_BUILDINGS[type].name : BUILDINGS[type] ? BUILDINGS[type].name : type);
@@ -208,6 +227,68 @@ export const fridgesOn = (base) => base.buildings.filter((b) => b.type === "frid
 /** The mounted spotlights with power now (basemap.js: lit in a night fight). @param {any} base @param {any} b */
 export const spotOn = (base, b) => !!b && b.type === "spotlamp" && !b.broken && isPowered(base, b);
 export { SPOT };
+
+// ---------- more of the grid (2026-10-24; see the header and data-power.js) ----------
+const r1 = (v) => Math.round(v * 10) / 10;
+/**
+ * The sun's share at a base this hour (0 to 1): 0 at night, half in the first and last SOLAR.shoulder hours of daylight,
+ * × the season × the sky over the base (data-power.js SOLAR).
+ * @param {any} state @param {any} base @param {number} [hour]
+ */
+export function solarFactor(state, base, hour = state.hour) {
+  const h = ((hour % 24) + 24) % 24;
+  if (h < SOLAR.from || h >= SOLAR.to) return 0;
+  const edge = h < SOLAR.from + SOLAR.shoulder || h >= SOLAR.to - SOLAR.shoulder ? 0.5 : 1;
+  const w = base && base.tile != null ? weatherAt(state, base.tile, hour) : null;
+  const sky = w && SOLAR.sky[w.key] != null ? SOLAR.sky[w.key] : 0.5;
+  const sea = SOLAR.season[season(state, hour).key] ?? 0.75;
+  return edge * sky * sea;
+}
+/** The solar arrays here (built, standing). @param {any} base */
+export const solarArrays = (base) => ((base && base.buildings) || []).filter((b) => b.type === "solar_array");
+/** The power the sun gives this base now (power.js powerStatus): the arrays not broken or switched off × SOLAR.out × the hour's share, to a tenth. @param {any} state @param {any} base */
+export function solarOut(state, base) {
+  const live = solarArrays(base).filter((b) => !b.broken && !(base.powerOff && base.powerOff[b.id]));
+  if (!live.length) return 0;
+  return r1(live.length * SOLAR.out * solarFactor(state, base));
+}
+/** "4 power at full sun; now 2 (summer, overcast)": the array's line for the Power card. @param {any} state @param {any} base */
+export function solarLine(state, base) {
+  const f = solarFactor(state, base), w = base && base.tile != null ? weatherAt(state, base.tile) : null, h = state.hour % 24;
+  const low = h < SOLAR.from + SOLAR.shoulder || h >= SOLAR.to - SOLAR.shoulder;
+  return f <= 0 ? `${SOLAR.out} power at full sun · night: nothing` : `${SOLAR.out} power at full sun · now ${r1(SOLAR.out * f)} (${season(state).name.toLowerCase()}, ${w ? w.name.toLowerCase() : "clear"}${low ? ", a low sun" : ""})`;
+}
+/** The perimeter alarm with power now (watch.js, defences.js): the siren wakes the base, the sensors watch the approaches. @param {any} base */
+export const alarmOn = (base) => !!base && poweredType(base, "perimeter_alarm");
+/** The people the powered electric heaters warm (upkeep.js heatUse: not the fires' wood for them). @param {any} base */
+export const heaterHeads = (base) => ((base && base.buildings) || []).filter((b) => b.type === "elec_heater" && !b.broken && isPowered(base, b)).length * HEATER.heads;
+/** Do the heaters draw today: a day that wants heating (upkeep.js heatRate: a freezing day or a chill night). @param {any} state @param {any} base */
+export const heaterWants = (state, base) => !!base && heatRate(state) > 0;
+// Rechargeable gear at a base (GEAR recharge: electronic ear defenders, a military headset) that is short of uses: in
+// the stores (the armory) or on anyone at the base, the most drained first.
+/** @param {any} state @param {any} base */
+export function chargeables(state, base) {
+  const out = [];
+  const add = (it) => { const d = it && GEAR[it.key]; if (!d || !d.recharge) return; const dur = itemDur(it), max = itemDurMax(it); if (dur != null && dur < max - 1e-9) out.push({ item: it, dur, max }); };
+  for (const it of base.armory || []) add(it);
+  for (const s of atBase(state, base.id)) for (const it of allCarried(s)) add(it);
+  return out.sort((a, b) => a.dur / a.max - b.dur / b.max);
+}
+/** Does the charging station draw now: anything here short of charge. @param {any} state @param {any} base */
+export const chargeWanted = (state, base) => !!base && chargeables(state, base).length > 0;
+/**
+ * An hour of charging (power.js refreshPower, once an hour per station: b.chargeHour): a powered station puts
+ * CHARGER.rate uses back into the most drained item here (no battery pack spent). Returns the item charged or null.
+ * @param {any} state @param {any} base @param {any} b
+ */
+export function chargeHour(state, base, b) {
+  if (!b || b.type !== "charging_station" || b.broken || !isPowered(base, b) || b.chargeHour === state.hour) return null;
+  b.chargeHour = state.hour;
+  const c = chargeables(state, base)[0];
+  if (!c) return null;
+  c.item.dur = Math.min(c.max, Math.round((c.dur + CHARGER.rate) * 10) / 10);
+  return c.item;
+}
 
 // ---------- finds (their own dice) ----------
 /** @param {Record<string, number>} items @param {number} u */

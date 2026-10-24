@@ -50,6 +50,8 @@ import { climberSlip } from "./middead.js"; // Climbers over the walls
 import { counterCut, noteDefences, counterText } from "./counterdead.js"; // the counter-dead: what they take off the defence they answer, the hive's read of it
 import { layTunnels, digCount, digTunnels, openTunnels } from "./tunnels.js"; // the Diggers' tunnels under the walls
 import { SURPRISE, surpriseAt, lookoutsSpot, watchSawText } from "./watch.js"; // an unwatched night, the watch's early warning
+import { alarmOn } from "./electric.js"; // the perimeter alarm with power (2026-10-24): its siren wakes the base (call-time only)
+import { ALARM } from "./data-power.js"; // ... everyone's share on the walls unwarned
 import { tiredLevel, TIRED } from "./sleep.js"; // an exhausted guard counts half
 import { membersAt, isWounded } from "./members.js"; // a group's people at a base of theirs (defendersAt)
 
@@ -94,12 +96,15 @@ export function defendersAt(state, base) {
 // Defence kit kept in the base's armory (data.js GEAR defence): barbed wire +5% hold a roll (up to 3, one torn up
 // by every horde attack), sandbags +4% a bundle (up to 4), bear traps catch 3 of the dead each before the walls (up
 // to 4, a quarter break each time), a tripwire alarm (one is enough) has everyone count half on the walls without a
-// warning. On the break-in map: wire that stops the dead for the turn, traps that hurt and hold, sandbag cover.
+// warning; a perimeter alarm with power (2026-10-24, data-power.js ALARM, electric.js alarmOn: a built machine on the
+// grid, not an armory item, but its siren is the same rule) ALARM.wake instead, the better of the two counting. Both
+// mean the base is never caught asleep (watch.js surpriseAt reads this alarm). On the break-in map: wire that stops the
+// dead for the turn, traps that hurt and hold, sandbag cover.
 export function armoryDefence(base) {
   const n = (k) => (base && base.armory ? base.armory.filter((it) => it && it.key === k).length : 0);
   const cap = (k) => Math.min(GEAR[k].defence.max || 99, n(k));
   const wire = cap("barbedwire"), bags = cap("sandbags"), traps = cap("beartrap");
-  const alarm = n("tripwire") > 0 ? GEAR.tripwire.defence.alarm : 0;
+  const alarm = Math.max(n("tripwire") > 0 ? GEAR.tripwire.defence.alarm : 0, alarmOn(base) ? ALARM.wake : 0);
   return { wire, bags, traps, alarm, hold: wire * GEAR.barbedwire.defence.hold + bags * GEAR.sandbags.defence.hold };
 }
 
