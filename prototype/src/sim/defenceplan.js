@@ -41,6 +41,7 @@ import { sideTf, sideUntf, canPlace, postAt, setLit, LIT_ZONES, deployAct } from
 import { day, atBase, localId } from "./world.js";
 import { readiness } from "./watch.js";
 import { Rng } from "./rng.js";
+import { fortable } from "./fort.js"; // defaultRolePlan: the fort map, known before a drill is made
 
 export const PLAN = {
   NEAR: 2,           // how far from a planned cell that cannot be used this time someone may stand instead
@@ -516,11 +517,12 @@ export function startDrill(state, baseId, planId = null) {
 }
 // The drill's battle (also the governor's look at a base's map, autopilot.js): the base's layout with its people
 // and nobody to fight, not opened. noPlan: the default posts only.
+const drillContext = (base, planId, noPlan) => ({ baseId: base.id, drill: true, planId, noPlan });
 export function drillBattle(state, base, planId = null, { noPlan = false } = {}) {
   const setup = {
     mode: "battle", layout: "baseDefence", deploy: true, drill: true, baseId: base.id, canRetreat: false, handler: null,
     // The stand-in attacker (removed): a runner, so no walking dead of the world is drawn onto it (carriers.js placeWalking).
-    enemy: { kind: "zombies", count: 1, power: 1, types: { runner: 1 }, name: "nobody (a drill)" }, context: { baseId: base.id, drill: true, planId, noPlan },
+    enemy: { kind: "zombies", count: 1, power: 1, types: { runner: 1 }, name: "nobody (a drill)" }, context: drillContext(base, planId, noPlan),
   };
   const b = createBattle(state, setup);
   b.units = b.units.filter((u) => u.side === "player"); // the stand-in attacker the battle is made with
@@ -536,6 +538,10 @@ export function drillBattle(state, base, planId = null, { noPlan = false } = {})
 export const GOV_PLAN = { NAME: "Governor", SHOOT: ["tower", "wall", "perch", "inside"], CLOSE: ["gate", "door"] };
 export function defaultRolePlan(state, base, by = "governor") {
   if (state.combat || !base || !atBase(state, base.id).length) return "";
+  // The fort map is known before the drill is made: its layout (defences.js baseDefence) takes it when fortable is true
+  // of the battle's base and context, and every fort battle's planKey is "fort". So no throwaway battle for it (it was
+  // a fifth of the autopilot's time: a whole base map laid out to be dropped).
+  if (fortable(state, state.bases.find((x) => x.id === base.id) || null, drillContext(base, null, true))) return "";
   const saved = state.rng;
   state.rng = new Rng((Number(state.seed) || 0) * 31 + localId(state, base.id) * 7919 + 17); // localId: ids are process-wide
   let b;

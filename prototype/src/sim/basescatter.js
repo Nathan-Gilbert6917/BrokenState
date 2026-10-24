@@ -910,9 +910,28 @@ export function landOf(spec, land) {
   const pieces = new Map(), floors = new Map(), list = [];
   // Worked out in map coordinates; the yard and the clearing are round the base itself, what is cleared in grid cells.
   const nearBase = (x, y, h) => inSq(x - tx, y - ty, h);
-  const gone = (x, y) => !!cleared[`${x - tx},${y - ty}`];
-  const free = (x, y) => !nearBase(x, y, spec.clear) && x >= -spec.G && y >= -spec.G && x < spec.G && y < spec.G && !pieces.has(`${x},${y}`) && !gone(x, y);
-  const put = (p) => { list.push(p); for (const [x, y] of p.cells) pieces.set(`${x},${y}`, p); };
+  // What is cleared and what is taken (pieces.has), for the cells of the map ([-G, G) square, whole numbers) also kept
+  // by cell number in typed arrays: asked of every cell, an "x,y" string made each time was a fifth of the land's time.
+  // Anything else (off the map, a non-integer cell or origin) asks the string-keyed records as before: the same answers.
+  const G = spec.G, N = 2 * G, fast = Number.isInteger(G) && G > 0 && G < 1e4 && Number.isInteger(tx) && Number.isInteger(ty) && Math.abs(tx) < 1e9 && Math.abs(ty) < 1e9;
+  const cellOf = (x, y) => ((x | 0) === x && (y | 0) === y && x >= -G && y >= -G && x < G && y < G ? (y + G) * N + x + G : -1);
+  const taken = fast ? new Uint8Array(N * N) : null, clearedAt = fast ? new Uint8Array(N * N) : null;
+  let anyCleared = false;
+  for (const k of Object.keys(cleared)) {
+    if (!cleared[k]) continue;
+    anyCleared = true;
+    if (!fast) break;
+    const c = k.indexOf(","), x = Number(k.slice(0, c)), y = Number(k.slice(c + 1));
+    if (c < 0 || `${x},${y}` !== k) continue; // never the key of a cell asked for
+    const i = cellOf(x + tx, y + ty);
+    if (i >= 0) clearedAt[i] = 1;
+  }
+  const goneKey = (x, y) => !!cleared[`${x - tx},${y - ty}`];
+  const gone = !anyCleared ? () => false : !fast ? goneKey : (x, y) => { const i = cellOf(x, y); return i >= 0 ? clearedAt[i] === 1 : goneKey(x, y); };
+  let oddCells = false; // a piece's cell not given in numbers (never so far): pieces.has alone answers then
+  const has = !fast ? (x, y) => pieces.has(`${x},${y}`) : (x, y) => { const i = oddCells ? -1 : cellOf(x, y); return i >= 0 ? taken[i] === 1 : pieces.has(`${x},${y}`); };
+  const free = (x, y) => !nearBase(x, y, spec.clear) && x >= -spec.G && y >= -spec.G && x < spec.G && y < spec.G && !has(x, y) && !gone(x, y);
+  const put = (p) => { list.push(p); for (const [x, y] of p.cells) { pieces.set(`${x},${y}`, p); if (fast) { const i = cellOf(x, y); if (i >= 0) taken[i] = 1; else if (typeof x !== "number" || typeof y !== "number") oddCells = true; } } };
   // The river first (nothing else on the water), then the road and what was left on it, then the terrain.
   if (spec.river) for (let a = -spec.G; a < spec.G; a++) for (let b = -spec.G; b < spec.G; b++) {
     const x = spec.river === "y" ? a : b, y = spec.river === "y" ? b : a, r = onRiver(spec, x, y);
@@ -960,7 +979,7 @@ export function landOf(spec, land) {
   // hill as if it was the ground floor"): what is cleared keeps the ground's own height (a tree felled on a hill leaves
   // the hill); before, the ground went with it, dug down to the plain's.
   const keepH = !!(land && land.keepH), L = spec.level || 0;
-  for (const [x, y, h] of relief.heights) if (!nearBase(x, y, spring.has(`${x},${y}`) ? spec.clear : Math.max(spec.C, spec.clear)) && (keepH || !gone(x, y)) && !pieces.has(`${x},${y}`) && !(spec.river && onRiver(spec, x, y))) heights.set(`${x},${y}`, h);
+  for (const [x, y, h] of relief.heights) if (!nearBase(x, y, spring.size && spring.has(`${x},${y}`) ? spec.clear : Math.max(spec.C, spec.clear)) && (keepH || !gone(x, y)) && !has(x, y) && !(spec.river && onRiver(spec, x, y))) heights.set(`${x},${y}`, h);
   relaxHeights(heights, rock); // the yard, the clearing and what is cleared are level: the ground eased down to them
   dropNarrowHollows(heights); // a hollow cut narrow by them filled in
   // Nothing of the scatter on the ground paved before it (a road, a ford, a town's paths, driveways, lots and
