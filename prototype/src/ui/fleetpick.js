@@ -9,6 +9,8 @@ import { fleetPlan } from "../sim/teamform.js";
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
 const n0 = (v) => Math.floor((v || 0) + 1e-9);
+// Its driver from the start (sim/startfleet.js seatDrivers: v.driver), while they live: " Its driver: Ana Reyes."
+const driverWords = (state, v) => { const s = v.driver != null ? (state.survivors || []).find((x) => x.id === v.driver && x.alive) : null; return s ? ` Its driver: ${s.name}.` : ""; };
 
 // opts: { base, ids (picked vehicle ids), crewN (people), cans (fuel cans packed or carried), action (the buttons'
 // data-action; data-v is the id, "" for On foot), own (a team's own vehicles, editing it), party (that team) }.
@@ -36,7 +38,7 @@ export function fleetPicker(state, { base, ids = [], crewN = 0, cans = 0, action
     const seats = SEATS[v.type] || 4;
     const noFuel = !on && v.fuel < 1 && !(cans >= 1) ? `The ${v.name} has no fuel: refuel it at the base, or pack fuel cans` : "";
     const noDriver = !on && picked.reduce((a, x) => a + (isBike(x) ? 0 : 1), 0) + 1 > n && crewN > 0 ? `Every vehicle needs its own person: ${crewN} ${crewN === 1 ? "person" : "people"} for ${nCars + 1} cars` : "";
-    opts.push(btn(v.id, on, esc(v.name), `Fast on roads, cannot cross mountains. Burns about 0.6 fuel a road tile, 1.5 off-road, more when loaded past 60%. Payload ${payloadOf(v)} kg, riders (80 kg each) included: they feel none of their load. ${seats} seats. Each car needs its own driver; with two or more vehicles everyone needs a seat.${upgradeText(v) ? ` ${upgradeText(v)}.` : ""}`,
+    opts.push(btn(v.id, on, esc(v.name), `Fast on roads, cannot cross mountains. Burns about 0.6 fuel a road tile, 1.5 off-road, more when loaded past 60%. Payload ${payloadOf(v)} kg, riders (80 kg each) included: they feel none of their load. ${seats} seats. Each car needs its own driver; with two or more vehicles everyone needs a seat.${driverWords(state, v)}${upgradeText(v) ? ` ${upgradeText(v)}.` : ""}`,
       `${seats} seats · ${payloadOf(v)} kg payload · fuel ${n0(v.fuel)}/${tank(v)} · condition ${Math.round(v.condition)}%${upgradeText(v) ? ` · ${esc(upgradeText(v))}` : ""}`, v.condition <= 0 ? "Needs repairs first" : !on && full ? `${MAX_VEHICLES} vehicles already` : noFuel || noDriver));
   }
   const plan = picked.length ? fleetPlan(state, base, party, picked.map((x) => x.id), n) : null;
