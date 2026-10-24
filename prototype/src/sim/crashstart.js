@@ -22,28 +22,39 @@
 //   the card, harder dead there: heat, infection, deadsoldiers.js siteDeadMix, hivetech.js siteSpecials), a young hive
 //   born once your teams have left it (hives.js newHive, hive.crashBase; the tile's site stays with loc.look "hivebase":
 //   ui/mapsprites.js paints the infested base), the hive's death (hives.js destroyHive → crashHiveDied: the message in
-//   the wreckage with a general region, the bunker made on nextTile as a secret site, stage "trail"; hivecrawl.js
-//   hiveHoard → crashBaseHaul: the base's stores as the prize, once), and the bunker found by a team standing on it
-//   (crashBunkerFound: the find card, the cache, stage "found"). The repaired radio (crafting.js → noteRadioFixed) gets
-//   dead air on the unit's frequency: one log line and a chronicle note.
+//   the wreckage with a general region, the bunker made on nextTile as a secret site with the unit's REMNANT in it
+//   (the user, 2026-10-24: "Make the bunker hold the unit's remnant so you can join them and you can decide to end the
+//   run or take over controlling that base": makeRemnant, a military AI group like any other, ADR 0001, unknown and
+//   sealed off (hcNoExpand / hcNoGrow, no raids) until found, the cache as its stores, real people with soldiers' kit),
+//   stage "trail"; hivecrawl.js hiveHoard → crashBaseHaul: the base's stores as the prize, once), the bunker found by a
+//   team standing on it (crashBunkerFound: the group known and allied, the "Reunited" card: join them and end the run
+//   (crashJoin: a victory, victoryReason "reunited"; Keep playing leaves them an ally in the coalition), take command of
+//   the bunker (crashCommand: their people join your survivors with their kit, the base is yours through conquest.js
+//   captureBase as a ceded base with all its stores, the group dissolved; stage "command"), or not yet (stage stays
+//   "found" and the card comes again on every arrival of a team of yours: crashHour). The repaired radio (crafting.js →
+//   noteRadioFixed) gets dead air on the unit's frequency: one log line and a chronicle note.
 // - Cars (foundcars.js carRecord, citycrawl.js): crashCarDead says a car's engine is beyond repair (1 − CRASH.CAR_FIX),
 //   crashSiphon scales the fuel in any tank (× CRASH.SIPHON).
 import { CRASH, CRASH_UNIT, isCrashRun, crashHomeName } from "./crashmode.js";
-import { makeSurvivor, applyCrew, newId, log, addCard, snapshot, updateVision } from "./world.js";
+import { makeSurvivor, applyCrew, newId, log, addCard, snapshot, updateVision, day, checkGameOver, alive, factionById } from "./world.js";
 import { yearStartDay } from "./eras.js";
 import { pickStart, chosenStart, isSettlementTile } from "./startpick.js";
-import { LOCATIONS, GEAR, SUPPLY_KEYS, supWeight } from "./data.js";
-import { newItem, stow, ensureInv, lootItem, itemLoad } from "./inventory.js";
+import { LOCATIONS, GEAR, SUPPLY_KEYS } from "./data.js";
+import { newItem, stow, ensureInv, lootItem } from "./inventory.js";
 import { applyArchetype, introCard } from "./hardcore-start.js";
-import { partyMembers, partyTile, tileLabel, sightRadius, weighTeam, cargoRoom, unitsThatFit, addGearToCargo } from "./parties.js";
+import { partyMembers, partyTile, tileLabel, sightRadius, weighTeam, settleInto } from "./parties.js";
 import { settleParty, sortFind } from "./ammo.js";
 import { qtyOf } from "./foods.js";
 import { crashes, placeSite, CRASH as CRASH_EV, CRASH_KINDS } from "./crashes.js";
 import { addTileHeat, generatePois, clearPois, poisOf, isSitePoi, ensurePois } from "./pois.js";
 import { ensureHives, newHive, HIVE } from "./hives.js";
-import { createFactions, recomputeOwnership } from "./factions.js";
+import { createFactions, recomputeOwnership, makeGang, changeGoodwill } from "./factions.js";
+import { ensureMembers, membersOf, removeMember } from "./members.js"; // the remnant's people (ADR 0001)
+import { admitToAlliance } from "./alliance.js"; // joining them: the unit in the coalition
+import { captureBase } from "./conquest.js"; // taking command: the bunker changes hands as a ceded base
+import { issueKit, arsenalShareTo } from "./arsenal.js"; // the remnant's kit: issued to its people as they join you, the rest to the bunker's armory
+import { assignStations } from "./buildings.js";
 import { chronicleNote, startChronicle } from "./chronicle.js";
-import { leaveCache } from "./caravanraids.js";
 import { hash01 } from "./skills.js";
 import { loadUpAll } from "./itemacts.js";
 import { seedRoadCarts } from "./carts.js";
@@ -88,7 +99,7 @@ const teamsOn = (state, tile) => state.parties.filter((p) => p.owner === "player
 export function prepareCrash(state, start) {
   const g = state.grid, W = g.width, H = g.height, rng = state.rng;
   state.hour = (yearStartDay(CRASH.YEAR) - 1) * 24 + 6; // year 4, day 1, 06:00 (eras.js; the loot and the shops age with it: itemcond.js, foods.js)
-  state.crash = { tile: null, homeTile: null, homeName: CRASH_UNIT.name, baseName: "", nextTile: null, nextName: `the ${CRASH_UNIT.name} ${CRASH_UNIT.bunker.toLowerCase()}`, revealed: null, hiveHidden: true, hiveBorn: null, hiveLooted: null, radioFixed: null, deadAir: null, stage: "base", trail: "", lureUntil: 0 };
+  state.crash = { tile: null, homeTile: null, homeName: CRASH_UNIT.name, baseName: "", nextTile: null, nextName: `the ${CRASH_UNIT.name} ${CRASH_UNIT.bunker.toLowerCase()}`, revealed: null, hiveHidden: true, hiveBorn: null, hiveLooted: null, radioFixed: null, deadAir: null, stage: "base", trail: "", lureUntil: 0, remnantFid: null, bunkerTeams: [] };
   const diag = diagonal(g);
   const far = Math.ceil(CRASH.FAR * diag);
   const mirror = (id) => { const [x, y] = g.xy(id); return g.id(W - 1 - x, H - 1 - y); };
@@ -293,9 +304,12 @@ export function crashHour(state) {
   const here = teamsOn(state, home);
   if (!C.revealed && here.length) crashReveal(state, here[0]);
   else if (C.revealed && !C.hiveBorn && !here.length && C.stage === "base") crashHiveBorn(state);
-  if (C.stage === "trail" && C.nextTile != null) {
-    const at = teamsOn(state, C.nextTile);
-    if (at.length) crashBunkerFound(state, at[0]);
+  if (C.nextTile != null && (C.stage === "trail" || C.stage === "found")) {
+    const at = teamsOn(state, C.nextTile), ids = at.map((p) => p.id);
+    const fresh = at.find((p) => !(C.bunkerTeams || []).includes(p.id)); // a team that was not on the tile last hour: an arrival
+    if (C.stage === "trail" && at.length) crashBunkerFound(state, at[0]);
+    else if (C.stage === "found" && fresh && !state.cards.some((c) => c.crashReunited)) addCard(state, reunitedCard(state, fresh)); // "Not yet": the choice comes again on every arrival
+    C.bunkerTeams = ids;
   }
 }
 
@@ -363,6 +377,7 @@ export function crashHiveDied(state, hive) {
     nt.loot = CRASH.BUNKER_LOOT;
     nt.pois = generatePois(state, nt); // pois.js: the site's points of interest, as a site made mid-game gets them
     state.knowledge[nt.id] = null; // nothing known of the tile: the secret site is found by standing on it or a look (discovery.js)
+    makeRemnant(state, nt.id); // the unit's remnant holds it (unknown until found)
   } else C.region = "the hills";
   C.trail = `A last entry in the command post's log, under the wreckage: "${unit} falling back with everyone who can walk. Rally at the old bunker in ${C.region}. Leave word for the flight." No name, no distance: only ${C.region}.`;
   refreshMarker(state);
@@ -393,36 +408,152 @@ export function crashBaseHaul(state, hive) {
   return { gear, supplies };
 }
 
-// The bunker found (a team of yours standing on it; the find card, the cache the unit left, signs they moved on).
+// The unit's remnant (the user, 2026-10-24): a military AI group at the bunker, in the game's own shape (factions.js
+// makeGang: ADR 0001, a group like any other), REMNANT.POP people with soldiers' kit (members.js ensureMembers from its
+// arsenal), the cache as its stores; unknown (no knowledge, no marker) and sealed off until found: it does not expand
+// or grow (the Hardcore military's hcNoExpand / hcNoGrow), raids nobody (goodwill 0, the military's raid 0, a long
+// cooldown) and trades with nobody who does not know it. The dead can still raid it as any base.
+const REMNANT = { POP: [6, 10], GOODWILL: 80 };
+/** @param {any} state @param {number} tile */
+function makeRemnant(state, tile) {
+  const C = state.crash, K = CRASH.CACHE, unit = crashHomeName(state);
+  const pop = REMNANT.POP[0] + Math.floor(roll(state, "remnant") * (REMNANT.POP[1] - REMNANT.POP[0] + 1));
+  const f = makeGang(state, tile, { type: "military", name: `${unit} remnant`, pop, known: false, stock: { food: K.food, water: K.water, meds: K.meds, fuel: K.fuel, parts: K.parts, electronics: K.electronics, ammo: K.rounds } });
+  f.goodwill = 0;
+  f.crashRemnant = true;
+  f.hcNoExpand = true; // factions.js: no new bases
+  f.hcNoGrow = true; // factions.js, splinters.js, groupflight.js, blocs.js: no growth, no splinters, no flight, no bloc
+  f.raidCooldown = 9999;
+  f.lastDiplomacy = day(state);
+  ensureMembers(state, f); // their people now, so a team finds them in the flesh
+  C.remnantFid = f.id;
+  return f;
+}
+/** The remnant's group, while it stands. @param {any} state */
+export const crashRemnant = (state) => (isCrashRun(state) && state.crash.remnantFid != null ? factionById(state, state.crash.remnantFid) || null : null);
+
+// The bunker's own marker (type crashhome too): where the remnant is and what was decided.
+/** @param {any} state */
+function refreshBunkerMarker(state) {
+  const C = state.crash, unit = crashHomeName(state);
+  const label = C.stage === "command" ? `${unit}: the bunker is yours` : C.stage === "joined" ? `${unit}: reunited` : `${unit} remnant: the bunker (join them or take command: the choice is open when a team of yours is there)`;
+  const m = { key: "crashbunker", type: "crashhome", tile: C.nextTile, hour: state.hour, label, info: { name: C.nextName, trail: C.trail || "" } };
+  const i = state.markers.findIndex((x) => x.key === "crashbunker");
+  if (i >= 0) state.markers[i] = m; else state.markers.push(m);
+}
+
+// The bunker found (a team of yours standing on it): the remnant is known and allied, and the "Reunited" card asks.
 /** @param {any} state @param {any} p */
 export function crashBunkerFound(state, p) {
-  const C = state.crash, unit = crashHomeName(state), tile = C.nextTile, t = state.tiles[tile];
+  const C = state.crash, unit = crashHomeName(state), tile = C.nextTile;
   C.stage = "found";
   C.found = state.hour;
-  const K = CRASH.CACHE;
-  /** @type {Record<string, number>} */
-  const sup = { ammo: K.rounds, meds: K.meds, water: K.water, fuel: K.fuel, parts: K.parts, electronics: K.electronics, f_mre: Math.round(qtyOf("f_mre", K.food)) };
-  sortFind(sup, "military", state.seed, "crashcache");
-  const gear = [lootItem("milradio", "soldier", [state.seed, "crashcache", 0]), lootItem("traumakit", "soldier", [state.seed, "crashcache", 1])];
-  // To the team's cargo while there is room, the rest left on the tile and marked (the wreck's rule: caravanraids.js leaveCache).
-  p.cargo = p.cargo || { supplies: {}, gear: [] };
-  let room = cargoRoom(state, p);
-  /** @type {Record<string, number>} */
-  const left = {};
-  for (const [k, q] of Object.entries(sup)) {
-    const take = Math.min(q, unitsThatFit(room, k));
-    if (take > 0) { p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) + take; room -= take * supWeight(k); }
-    if (q - take > 0) left[k] = q - take;
-  }
-  const leftGear = [];
-  for (const it of gear) { if (room >= itemLoad(it) && addGearToCargo(state, p, it)) room -= itemLoad(it); else leftGear.push(it); }
-  if (Object.keys(left).length || leftGear.length) leaveCache(state, tile, left, leftGear);
-  if (p.seen) p.seen.set(tile, snapshot(state, tile));
+  const f = crashAlly(state);
+  if (p && p.seen) p.seen.set(tile, snapshot(state, tile));
   state.knowledge[tile] = snapshot(state, tile);
-  const text = `Behind a rockfall, a steel door: ${C.nextName}. ${unit} was here: cots, a cold stove, a wall of supply crates half emptied, and a map with a line drawn off the edge of the state. They moved on weeks ago, every vehicle gone. What they left is yours: ${Object.keys(sup).length ? "rations, water, meds, rounds, fuel and parts" : "a few crates"}, a spare encrypted set and a trauma kit. The bunker stays on the map: a place to come back to.`;
-  log(state, `🏔 ${tileLabel(state, tile)}: ${C.nextName} found, abandoned. ${unit} fell back here and moved on; their cache is ${Object.keys(left).length || leftGear.length ? "partly in the team's cargo, the rest left on the tile (Recover it)" : "in the team's cargo"}.`, "good");
-  chronicleNote(state, `${C.nextName} found: ${unit} had moved on.`, "good", tile, true);
-  addCard(state, { ...introCard("The bunker", text, "That is the end of the trail: the state is yours to survive."), where: tileLabel(state, tile), crashFound: true });
+  log(state, `🏔 ${tileLabel(state, tile)}: ${C.nextName} found, and ${unit} is in it: ${f ? `${f.pop} of them, dug in behind a steel door` : "what is left of them"}. Join them, take command of the bunker, or go on alone: the choice is open whenever a team of yours is there.`, "good");
+  chronicleNote(state, `${C.nextName} found: ${unit}'s remnant holds it.`, "good", tile, true);
+  addCard(state, reunitedCard(state, p));
+}
+// "Not yet", and the ground of the other two: the remnant known, in the Allied band (factions.js attitude), marked.
+/** @param {any} state */
+export function crashAlly(state) {
+  const f = crashRemnant(state);
+  if (f) {
+    f.known = true;
+    if (f.goodwill < REMNANT.GOODWILL) changeGoodwill(state, f, REMNANT.GOODWILL - f.goodwill, "you made it back to your unit", true);
+  }
+  refreshBunkerMarker(state);
+  return f;
+}
+// The card (the user, 2026-10-24): join them and end the run, take command of the bunker, or not yet.
+/** @param {any} state @param {any} p */
+export function reunitedCard(state, p) {
+  const C = state.crash, unit = crashHomeName(state), f = crashRemnant(state), tile = C.nextTile;
+  const n = f ? f.pop : 0;
+  const text = `Behind a rockfall, a steel door, and a sentry who knows the challenge: ${C.nextName}. ${unit} is here: ${n ? `${n} of them` : "what is left of them"}, cots, a cold stove, a wall of supply crates. The CO comes down the passage: "We lost the base to the dead. We held what we could and fell back here. You are the first word from the flight. You can stay: there is a bunk and a rifle with your name on it. Or you can take this place over and we will follow your orders. Or go on with what you are building out there and come back when you are ready."`;
+  return {
+    title: "Reunited", partyId: p ? p.id : null, where: tileLabel(state, tile), crashReunited: true,
+    text,
+    choices: [
+      { label: "Join them: the run ends", hint: "You made it back: the run ends as a victory (Keep playing leaves the remnant an ally in your coalition and goes on).", ai: () => 0, resolve: (/** @type {any} */ st) => crashJoin(st, p) },
+      { label: "Take command of the bunker", hint: "The bunker becomes your base (your hub if you have none), their people join yours with their kit, and the group is yours to run.", ai: () => 3, resolve: (/** @type {any} */ st) => crashCommand(st, p) },
+      { label: "Not yet", hint: "They hold the bunker as an allied group; the choice comes again whenever a team of yours arrives here.", ai: () => 1, resolve: (/** @type {any} */ st) => { crashAlly(st); return `${unit} holds the bunker as your ally. Come back when you are ready: the choice is open on every arrival.`; } },
+    ],
+  };
+}
+// Join them: the run ends as a victory in the game's own shape (world.js checkGameOver's flags; the end screen's Keep
+// playing: main.js keepplaying sets victoryKept and clears gameOver). Kept playing, the remnant is an ally in the coalition.
+/** @param {any} state @param {any} p */
+export function crashJoin(state, p) {
+  const C = state.crash, unit = crashHomeName(state);
+  const f = crashAlly(state);
+  if (f) admitToAlliance(state, f, "you made it back to your unit", true);
+  C.stage = "joined";
+  C.joined = state.hour;
+  C.joinedBy = p ? p.id : null;
+  refreshBunkerMarker(state);
+  state.victory = true;
+  state.victoryReason = "reunited";
+  state.gameOver = true;
+  // Keep the opening words: the end screen (ui/ui.js gameOverWords) says them too.
+  log(state, `You made it back. ${unit} takes you in at ${C.nextName}: ${alive(state).length} of you made it to day ${day(state)}, three years and more after Calder fell.`, "good");
+  chronicleNote(state, `Reunited: you made it back to ${unit}.`, "good", C.nextTile, true);
+  return `You made it back. ${unit} takes you in.`;
+}
+// Take command: their people join your survivors with their kit (members.js removeMember: what they carry goes with
+// them), then the bunker changes hands as a ceded base (conquest.js captureBase: your hub when you have none, their
+// buildings, their motor pool; no fallout) with all of its stores (captureBase keeps half: the rest is added), the team
+// moves in (parties.js settleInto) and the group is dissolved (captureBase: its last base gone, factions.js collapseFaction).
+/** @param {any} state @param {any} p */
+export function crashCommand(state, p) {
+  const C = state.crash, unit = crashHomeName(state), tile = C.nextTile;
+  const f = crashRemnant(state);
+  if (!f || !f.alive || !f.bases.includes(tile)) return "The remnant is not at the bunker any more.";
+  const people = [...membersOf(f)];
+  // Their kit: a group keeps it in its arsenal and hands it out as its people go out (arsenal.js issueKit); they take it
+  // with them now (removeMember's forgetCarried strikes what they carry off the group's books).
+  const kits = issueKit(state, f, people.length, "home");
+  people.forEach((s, j) => {
+    const kit = kits[j];
+    if (!kit) return;
+    if (kit.weapon && !s.gear.weapon) s.gear.weapon = kit.weapon;
+    for (const [slot, it] of Object.entries(kit.armour || {})) if (it && slot in s.gear && !s.gear[slot]) s.gear[slot] = it;
+  });
+  for (const s of people) {
+    removeMember(state, f, s, "gone"); // their kit stays on them and leaves the group's books with them
+    delete s.fid;
+    s.formerId = s.id;
+    s.id = newId();
+    s.role = "guard";
+    s.station = null;
+    s.alive = true;
+    state.survivors.push(s);
+  }
+  f.pop = 0;
+  /** @type {Record<string, number>} */
+  const all = { ...(f.stock || {}) };
+  const team = p && state.parties.includes(p) ? p : null;
+  const text = captureBase(state, f, tile, team, { ceded: true, people: 0 });
+  const base = state.bases.find((b) => b.tile === tile);
+  if (base) {
+    arsenalShareTo(state, f, 1, base.armory); // the rest of their spare kit (captureBase took half) into the bunker's armory
+    for (const [k, q] of Object.entries(all)) { const n = Math.max(0, Number(q) || 0); const rest = n - Math.floor(n * 0.5); if (rest > 0) base.stock[k] = (base.stock[k] || 0) + rest; } // the half captureBase left as spoiled (conquest.js CONQUEST.STOCK_SHARE): theirs is yours whole
+    for (const s of people) s.location = { kind: "base", baseId: base.id };
+    if (team && state.parties.includes(team)) settleInto(state, team, base);
+    assignStations(state, base);
+    state.knowledge[tile] = snapshot(state, tile);
+  }
+  C.stage = "command";
+  C.command = state.hour;
+  C.remnantJoined = people.length;
+  refreshBunkerMarker(state);
+  recomputeOwnership(state);
+  log(state, `You took command of ${C.nextName}: ${people.length} of ${unit} ${people.length === 1 ? "is" : "are"} yours now, with their kit${base ? `, and the bunker is ${base.type === "hub" ? "your hub" : "an outpost of yours"}` : ""}. ${unit}'s remnant is your group.`, "good");
+  chronicleNote(state, `You took command of ${C.nextName}: ${unit}'s remnant is yours.`, "good", tile, true);
+  addCard(state, { ...introCard("Command of the bunker", `${text} ${people.length} of ${unit} fall in under your orders, with their rifles and their kit; the stores are yours whole. The state is still out there: that is on you to keep surviving.`, "The bunker is a base of yours now: Manage it as any other."), where: tileLabel(state, tile), crashCommand: true });
+  checkGameOver(state);
+  return text;
 }
 
 // ---------- the radio (crafting.js) ----------
