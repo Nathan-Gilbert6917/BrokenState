@@ -412,14 +412,14 @@ section("Alerts and panels: the forage hint, the team panel, the tile panel, the
   check(!!ta && /forage|hunt|fish/.test(ta.text), "a team short of food: an alert with food from the land nearby");
   check(!BAD.test(JSON.stringify(computeAlerts(state))), "alerts: no undefined / NaN");
   const xp = renderRight(state, { selected: forest.id, expedition: p.id });
-  check(/data-type="forage"/.test(xp) && /Forage 8h/.test(xp), "team panel: Forage 4h / 8h / 12h");
+  check(/data-type="forage"/.test(xp) && /Forage…/.test(xp), "team panel: Forage… (the land order box sets the hours)");
   check(/Food for 0.3 days/.test(xp) && /Forage here/.test(xp.replace(/<[^>]*>/g, " ")), "team panel: short of food, the food from the land nearby with yields");
   check(!BAD.test(xp), "team panel: no undefined / NaN");
   const tp = renderRight(state, { selected: forest.id, expedition: null });
   check(/Forage/.test(tp) && /food in 8h/.test(tp.replace(/<[^>]*>/g, " ")), "tile panel: wild food and a foraging estimate");
   check(!BAD.test(tp), "tile panel: no undefined / NaN");
   const main = readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
-  check(/data-type="forage"/.test(main) && /d\.type === "forage"/.test(main), "right-click: Go and forage here");
+  check(/data-type="forage"/.test(main) && /\["fish", "forage", "wood", "stone"\]\.includes\(d\.type\)/.test(main), "right-click: Go and forage here");
   check(!!tileActions(state, forest.id), "right-click menu builds");
   // Hardcore before the first hub: the road team's alert and the hub card.
   const hc = createWorld({ seed: SEED + 11, factionCount: 7, mode: "hardcore" });

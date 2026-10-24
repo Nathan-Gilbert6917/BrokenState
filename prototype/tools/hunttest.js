@@ -1015,7 +1015,7 @@ section("UI: the tile panel, the team panel, the planner and the right-click men
   p.contactHour = state.hour;
   p.radioLive = true;
   const xp = renderRight(state, { selected: forest.id, expedition: p.id });
-  check(/data-type="hunt"/.test(xp) && /data-type="snare"/.test(xp) && /Hunt 8h/.test(xp), "team panel: Hunt, Snares");
+  check(/data-type="hunt"/.test(xp) && /data-type="snare"/.test(xp) && /Hunt…/.test(xp), "team panel: Hunt… (the land order box sets the hours), Snares");
   check(!BAD.test(xp), "team panel: no undefined / NaN");
   const pl = { dest: forest.id, mission: "move", crew: new Set(crew.slice(0, 2).map((s) => s.id)), vehicleId: null, stance: "normal", supplies: { food: 6, water: 6, ammo: 20 } };
   applyPreset(pl, "hunt");

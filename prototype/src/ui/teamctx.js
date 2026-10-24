@@ -48,6 +48,7 @@ import { transferProblem, loadFromBase, isPlayerTeam } from "../sim/teaminv.js";
 import { siteMissions } from "./ui.js";
 import { cartOf, cartRouteWear } from "../sim/carts.js"; // a cart pushed on foot: what the way wears it
 import { ask } from "./confirm.js";
+import { isLandJob, clampHours } from "../sim/landest.js"; // the land order box (ui/landorder.js): its hours and how much
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -111,8 +112,9 @@ function taskHours(state, p, tile, seq) {
   const est = queueEstimate(state, standingAt(p, tile, seq.map((o) => ({ ...o }))));
   return est.every((x) => x.hours != null) ? est.reduce((a, x) => a + x.hours, 0) : null;
 }
-// Queueing: hours before the new orders start (what the current order has left, then the queue).
-function queueAhead(state, p) {
+// Queueing: hours before the new orders start (what the current order has left, then the queue). main.js: the land
+// order box's start for the team panel's queue mode.
+export function queueAhead(state, p) {
   const st = orderStatus(state, p);
   const q = queueEstimate(state, p);
   return (st.left || 0) + q.reduce((a, x) => a + (x.hours || 0), 0);
@@ -432,8 +434,26 @@ function replaceOrders(state, p, tile, it) {
   return msgs.filter(Boolean).join(" ");
 }
 
+// A land job's item (Forage, Hunt, Fish, Cut wood, Gather stone) for the land order box (ui/landorder.js): the job,
+// its hours, the tile and when it would start; null for any other item, or one that cannot be done.
+export function landPick(state, ui, d) {
+  const p = state.parties.find((q) => q.id === Number(d.id));
+  if (!p) return null;
+  const m = teamTileMenu(state, ui, p, Number(d.tile), { append: d.mode === "append" });
+  const it = m.items.find((x) => x.key === d.key);
+  const o = it && !it.disabled ? it.seq.find((x) => isLandJob(x.type)) : null;
+  return o ? { type: o.type, hours: o.hours, tile: Number(d.tile), startHour: state.hour + (it.ahead || 0) + (it.travel || 0) } : null;
+}
+// The item with the box's hours and quantity (d.hours, d.qty) on its land job.
+function withLand(it, d) {
+  if (!(d.hours || (d.qty != null && d.qty !== "")) || !it.seq.some((o) => isLandJob(o.type))) return it;
+  const hours = d.hours ? clampHours(d.hours) : null;
+  const seq = it.seq.map((o) => (isLandJob(o.type) ? { ...o, ...(hours ? { hours } : {}), ...(d.qty != null && d.qty !== "" ? { qty: Number(d.qty) } : {}) } : o));
+  return { ...it, seq, label: hours ? it.label.replace(/\b\d+h\b/, `${hours}h`) : it.label };
+}
+
 /**
- * Carry out a menu item. d: { id, tile, key, mode: "append" | "replace", ok }. Returns the message ("" for a window
+ * Carry out a menu item. d: { id, tile, key, mode: "append" | "replace", ok, hours, qty (a land job's, from ui/landorder.js) }. Returns the message ("" for a window
  * opened), or null when the confirmation box went up (its Yes calls this again with d.ok = "1").
  * @param {State} state @param {any} ui @param {any} d @param {Record<string, Function>} [acts] the action table (Drop off / Load open the team inventory)
  */
@@ -442,9 +462,10 @@ export function runTeamAction(state, ui, d, acts = {}) {
   if (!p) return "That team is gone.";
   const tile = Number(d.tile);
   const m = teamTileMenu(state, ui, p, tile, { append: d.mode === "append" });
-  const it = m.items.find((x) => x.key === d.key);
-  if (!it) return "That is not possible there any more.";
-  if (it.disabled) return `${it.label}: ${it.disabled}`;
+  const it0 = m.items.find((x) => x.key === d.key);
+  if (!it0) return "That is not possible there any more.";
+  if (it0.disabled) return `${it0.label}: ${it0.disabled}`;
+  const it = withLand(it0, d);
   if (it.special === "drop" || it.special === "load" || it.special === "inventory") {
     if (acts["ti-open"]) acts["ti-open"]({ id: p.id, tab: it.special === "inventory" ? "team" : it.special });
     return "";
