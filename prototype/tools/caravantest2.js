@@ -1,6 +1,8 @@
 // Caravans on the road (src/sim/escorts.js, src/sim/caravanraids.js): merchant caravans from outside with an escort
 // that grows with their cargo, any caravan robbed of everything it carries, by you or by the groups.
 // Usage: node tools/caravantest2.js [seed]     (default seed 42)
+//   BS_QUICK=1 (npm run test:quick): the same checks with the long runs 2 worlds of 50 days (not 8 of 200), the
+//   groups robbing caravans in at least one of them (see there).
 // - Escort tiers by cargo worth (light / armed with a pickup / armoured with a Humvee, an MRAP for the richest), guns
 //   and armour weighing more, every speciality filling the wagons, the escort's strength counted.
 // - A merchant caravan crosses in at a border tile and leaves at one.
@@ -30,6 +32,7 @@ import { digest } from "./digest.js";
 import { defaultChoice } from "../src/sim/cardrules.js";
 
 const seed = Number(process.argv[2] || 42);
+const QUICK = !!process.env.BS_QUICK;
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
 const section = (t) => console.log(`\n${t}`);
@@ -440,7 +443,9 @@ section("Long runs with the autopilot");
   // changed), so: 8 worlds (seed + 58 … seed + 65) of RUN_DAYS each, and the groups must rob caravans in at least
   // ROB_BAR of them. Measured on seeds 100–107 at 120 days: 5 of 8 on dev f6ce385, 3 of 8 with the balance batch in
   // (a bar of 4 sat on the edge of the dice); at 200 days 7 of 8, so the runs are 200 days long.
-  const RUN_DAYS = 200, SEEDS = 8, ROB_BAR = 4;
+  // Quick (BS_QUICK): 2 worlds of 50 days and a bar of 1: seeds 100 and 101 saw their first robbery by the groups on
+  // days 33 and 3 (2026-10-24), so one of the two is the looser bar against the dice.
+  const RUN_DAYS = QUICK ? 50 : 200, SEEDS = QUICK ? 2 : 8, ROB_BAR = QUICK ? 1 : 4;
   let robbing = 0, bad = false;
   for (let i = 0; i < SEEDS; i++) {
     const st = world(seed + 58 + i);

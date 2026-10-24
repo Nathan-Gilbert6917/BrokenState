@@ -14,6 +14,9 @@
 // Broodmother and the brood; well-armed vs poorly armed team) and break-ins at the
 // hub by horde size.
 // Usage: node tools/hivetest.js [trials=24]
+//   BS_QUICK=1 (npm run test:quick): the same checks on less: one world a map size for the new hives' three years (not
+//   three), one autopilot world of 40 days for the long run (not two of 365), 8 hive-core battles a row (not 24), and
+//   the break-in table (printed, not checked) left out.
 import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, tickHour, day, makeSurvivor, hub, alive } from "../src/sim/world.js";
 import { GEAR } from "../src/sim/data.js";
@@ -37,7 +40,8 @@ import { serializeState, deserializeState } from "../src/sim/save.js";
 import { clusterSize } from "../src/sim/hives.js";
 import { coreForce } from "../src/sim/hivecrawl.js";
 
-const TRIALS = Number(process.argv[2] || 24);
+const QUICK = !!process.env.BS_QUICK;
+const TRIALS = Number(process.argv[2] || (QUICK ? 8 : 24));
 let pass = 0, fail = 0;
 const check = (ok, what) => { if (ok) pass++; else fail++; console.log(`  ${ok ? "ok  " : "FAIL"} ${what}`); return ok; };
 const world = (seed = 42) => { const st = createWorld({ seed, factionCount: 8 }); st.started = true; return st; };
@@ -170,7 +174,7 @@ const t0 = Date.now();
     return { st, picks, built, cap: newHiveCap(st) };
   };
   const caps = { normal: [], large: [], huge: [] };
-  for (const size of Object.keys(caps)) for (const seed of [1, 2, 3]) caps[size].push(grow(seed, size));
+  for (const size of Object.keys(caps)) for (const seed of QUICK ? [1] : [1, 2, 3]) caps[size].push(grow(seed, size)); // quick: one world a size
   for (const [size, runs] of Object.entries(caps)) {
     const [lo, hi] = HIVE.NEW_CAP;
     const capLo = size === "normal" ? HIVE.NEW_MIN : lo, capHi = size === "normal" ? hi - 1 : hi;
@@ -308,13 +312,14 @@ const t0 = Date.now();
   const a = world(21); runDays(a, 120);
   const b = world(21); runDays(b, 120);
   check(sig(a) === sig(b), "the same seed plays out the same for 120 days");
-  for (const seed of [1, 2]) {
+  const YEAR_RUN = QUICK ? 40 : 365; // quick: one world of 40 days
+  for (const seed of QUICK ? [1] : [1, 2]) {
     const st = world(seed);
     setAutopilot(st, true, "balanced");
-    runDays(st, 365);
+    runDays(st, YEAR_RUN);
     const bad = st.hordes.some((h) => !Number.isFinite(h.size) || !Number.isFinite(h.tile)) || st.hives.some((h) => !Number.isFinite(h.res)) || st.tiles.some((t) => !Number.isFinite(t.infection));
     const tr = hiveTracker(st);
-    check(!bad, `seed ${seed}: ${st.gameOver ? (st.victory ? "won" : "fell") : "alive"} on day ${Math.min(365, day(st))}, ${tr.hives} hives, ${st.hordes.length} hordes, no NaN anywhere`);
+    check(!bad, `seed ${seed}: ${st.gameOver ? (st.victory ? "won" : "fell") : "alive"} on day ${Math.min(YEAR_RUN, day(st))}, ${tr.hives} hives, ${st.hordes.length} hordes, no NaN anywhere`);
   }
 }
 
@@ -642,7 +647,8 @@ function stormTrial(seed, n, weapon, armor, shooting) {
   check(res[2] <= 0.35, "a poorly armed team usually does not");
   // Break-ins at a tier-2 hub (nobody on guard): the starting six as they are (pistols, knives, a machete, a rifle),
   // and the same six plus four with shotguns and vests.
-  for (const armed of [false, true]) {
+  // Quick: this table is printed, not checked (a world made for every battle, 2–3 minutes of the quick form): left out.
+  for (const armed of QUICK ? [] : [false, true]) {
     for (const [size, bosses] of [[250, 0], [400, 0], [400, 1], [600, 1]]) {
       let beaten = 0, dead = 0;
       for (let i = 0; i < TRIALS; i++) {

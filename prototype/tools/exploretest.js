@@ -2,6 +2,8 @@
 // manuals and blueprints (sim/blueprints.js), crash events with a search circle (sim/crashes.js), and buildings that
 // wear and break with their repair jobs (sim/breakdowns.js); then long runs with no NaN.
 // Usage: node tools/exploretest.js [seed] [days for the long runs]
+//   BS_QUICK=1 (npm run test:quick): the same checks with the long runs 45 days each (not 200) and the crash clock
+//   watched for 80 days (not 120: still room for the first crash and three gaps at their longest, 14 + 3 × 20).
 import { createWorld, hub, atBase, makeSurvivor, day, tickHour, skill } from "../src/sim/world.js";
 import { GEAR, LOCATIONS, SUPPLY_KEYS } from "../src/sim/data.js";
 import { addBuilding, canBuild, stations, stationStatus, baseWalls, count, BUILDINGS } from "../src/sim/buildings.js";
@@ -24,7 +26,8 @@ import * as C from "../src/sim/crashes.js";
 import * as BD from "../src/sim/breakdowns.js";
 
 const seed = Number(process.argv[2] || 42);
-const longDays = Number(process.argv[3] || 200);
+const QUICK = !!process.env.BS_QUICK;
+const longDays = Number(process.argv[3] || (QUICK ? 45 : 200));
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
 const near = (a, b, eps = 1e-9) => Math.abs(a - b) <= eps;
@@ -353,7 +356,7 @@ console.log("Crash events");
   st.started = true;
   for (const t of ["farm_plot", "farm_plot", "craftbench", "bunkhouse", "walls"]) addBuilding(hub(st), t);
   const seen = [];
-  for (let k = 0; k < 24 * 120; k++) {
+  for (let k = 0; k < 24 * (QUICK ? 80 : 120); k++) {
     if (k % 24 === 0) for (const s of st.survivors) if (s.alive) s.mood = Math.max(s.mood, 50);
     tickHour(st);
     st.cards.length = 0;

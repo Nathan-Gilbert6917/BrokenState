@@ -4,6 +4,8 @@
 // drying racks), the winter crops, the winter outlook, rare base scavenging, illness and injuries (chances, contagion, treatment, work),
 // fuel scarcity, and no NaN or negative stock over long campaigns.
 // Usage: node tools/farmtest.js [seed] [days for the long runs]
+//   BS_QUICK=1 (npm run test:quick): the same checks with the long runs 75 days each (not 224): through the first
+//   autumn (days 43–70), so the governor's weekly winter-stores lines are still checked.
 import { outputDays } from "../src/sim/output.js";
 import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js";
 import { lotsOf, FOODS, unitsOf } from "../src/sim/foods.js"; // days of food by type (sim/foods.js)
@@ -34,7 +36,8 @@ import { makeItem } from "../src/sim/crafting.js";
 import * as Weather from "../src/sim/weather.js";
 
 const seed = Number(process.argv[2] || 42);
-const longDays = Number(process.argv[3] || 224);
+const QUICK = !!process.env.BS_QUICK;
+const longDays = Number(process.argv[3] || (QUICK ? 75 : 224));
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
 const near = (a, b, eps = 1e-6) => Math.abs(a - b) <= eps;

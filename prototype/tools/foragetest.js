@@ -1,6 +1,7 @@
 // Foraging (src/sim/foraging.js, orders.js, plans.js, work.js, hunting.js huntingDaily, autopilot.js planForage /
 // landFoodAct, ui/alerts.js, ui/hardcore.js, ui/expedition.js, ui/ui.js, main.js).
 // Usage: node tools/foragetest.js [seed] [autopilot games] [days] (defaults 42, 6 hardcore games, 40 days).
+//   BS_QUICK=1 (npm run test:quick): the same checks with 2 hardcore games of 40 days (4 autopilot runs, not 12).
 // - The land: wild food by terrain (forest > farmland > hills > suburbs > city) and season (autumn and summer
 //   plentiful, spring some, winter almost nothing), time of day; the yields per forager-hour (a table).
 // - Foragers: Farming and Scouting, the Forager perk, the hurt; diminishing hands on one tile.
@@ -33,7 +34,8 @@ import { roadTeam } from "../src/sim/hardcore-start.js";
 import { conditionsOf } from "../src/sim/health.js";
 
 const SEED = Number(process.argv[2] || 42);
-const AP_GAMES = Number(process.argv[3] || 6);
+const QUICK = !!process.env.BS_QUICK;
+const AP_GAMES = Number(process.argv[3] || (QUICK ? 2 : 6));
 const AP_DAYS = Number(process.argv[4] || 40);
 let fails = 0, passed = 0;
 const check = (ok, msg) => { if (ok) passed++; else { fails++; console.log(`  FAIL: ${msg}`); } return !!ok; };
