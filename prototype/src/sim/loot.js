@@ -132,11 +132,11 @@ export const ITEM_TAGS = {
   alarmclock: ["home", "kitchen", "travel", "shop"], pocketradio: ["home", "travel", "camp", "outdoor", "shop"],
   handwarmer: ["outdoor", "camp", "sport", "hunt", "travel"], heatpack: ["medical", "outdoor", "fire", "camp", "military"],
   // base defences
-  barbedwire: ["farm", "tools", "military", "industry", "prison"], boards: ["farm", "tools"], beartrap: ["hunt", "farm", "outdoor", "tools"],
+  barbedwire: ["farm", "tools", "military", "industry", "prison"], boards: ["tools", "farm", "industry"], beartrap: ["hunt", "farm", "outdoor", "tools"],
   tripwire: ["camp", "crime", "military", "outdoor", "tools"], sandbags: ["military", "fire", "industry", "tools"],
   // boards and nails (barricade.js): a farmstead's and a hardware store's gear (data.js LOCATIONS), where lumber and
-  // nails are kept: workshops, barns and sheds, building sites
-  boards: ["tools", "farm", "industry"],
+  // nails are kept: workshops, barns and sheds, building sites (its tags are on the base defences line above: a second
+  // boards key here silently replaced that one's value)
   // camp kit against Heat
   // hunting.js: snares and fishing gear
   snarewire: ["farm", "hunt", "outdoor", "tools", "camp"], fishrod: ["outdoor", "hunt", "camp", "tools", "shop", "sport"], fishnet: ["outdoor", "hunt", "camp", "farm", "tools"],

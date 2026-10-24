@@ -4996,7 +4996,10 @@ export function combatAct(state, act) {
       searchBox(state, b, u, box, !!act.open);
       break;
     }
-    case "searchBody": case "pickUp": case "drop": { const why = groundAct(state, b, u, act); if (why) return why; break; } // ground.js
+    case "searchBody": case "pickUp": case "drop": { // ground.js; a "drop" with no inventory loc is a rock from the walls (siege.js, below)
+      if (act.type === "drop" && act.loc == null) { const err = siegeAct(state, b, u, t, act); if (err) return err; break; }
+      const why = groundAct(state, b, u, act); if (why) return why; break;
+    }
     case "stash": { // raidloot.js: everything carried loose into the vehicle (free; the window does it item by item)
       if (!b.raid || !atVehicle(b, u)) return "Move to the vehicle first.";
       const r = stashAll(state, u.id);
@@ -5156,7 +5159,7 @@ export function combatAct(state, act) {
       break;
     }
     // siege.js: set a ladder up, push one off, swing the ram, set it down or take it up, drop rocks from the walls.
-    case "ladder": case "push": case "ram": case "dropRam": case "takeRam": case "loadRam": case "unloadRam": case "drop": { // loadRam / unloadRam: the ram into or out of the team's vehicle
+    case "ladder": case "push": case "ram": case "dropRam": case "takeRam": case "loadRam": case "unloadRam": { // loadRam / unloadRam: the ram into or out of the team's vehicle
       const err = siegeAct(state, b, u, t, act);
       if (err) return err;
       break;

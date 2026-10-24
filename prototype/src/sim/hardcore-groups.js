@@ -545,6 +545,8 @@ function meetCard(state, b, p) {
   const mood = hostile ? "They keep their weapons on your people the whole time." : a === "Neutral" ? "They are wary, but they talk." : "They are glad to see living faces.";
   const label = FACTION_TYPES[b.type] ? FACTION_TYPES[b.type].label.toLowerCase() : "group";
   const [sk, sq] = SPARE[b.type] || ["food", 6];
+  // Food: days of it as the band's food items (makeBand typeFind leaves no "food" key in the stock: foods.js foodIn).
+  const spare = () => (sk === "food" ? foodIn(b.stock) : b.stock[sk] || 0);
   const choices = [
     {
       label: "Trade news",
@@ -575,13 +577,16 @@ function meetCard(state, b, p) {
     label: `Ask them for help (${sq} ${sk})`,
     hint: `They can spare a little: ${sq} ${sk} for your team. Goodwill ${B.ASK_GW}. Once only.`,
     ai: () => 3,
-    disabled: (st) => b.helped || !st.parties.includes(p) || (b.stock[sk] || 0) < sq * 3,
+    disabled: (st) => b.helped || !st.parties.includes(p) || spare() < sq * 3,
     resolve: (st) => {
       if (b.helped || !st.parties.includes(p)) return "";
       b.helped = true;
-      b.stock[sk] = Math.max(0, (b.stock[sk] || 0) - sq);
       p.cargo = p.cargo || { supplies: {}, gear: [] };
-      p.cargo.supplies[sk] = (p.cargo.supplies[sk] || 0) + sq;
+      if (sk === "food") addFoodsTo(p.cargo.supplies, takeFood(b.stock, sq, { eggs: false, state: st }).items); // foods.js: days of food as the items they hold
+      else {
+        b.stock[sk] = Math.max(0, (b.stock[sk] || 0) - sq);
+        p.cargo.supplies[sk] = (p.cargo.supplies[sk] || 0) + sq;
+      }
       b.goodwill = clamp(b.goodwill + B.ASK_GW, -100, 100);
       return `${b.name} share ${sq} ${sk} with your team.`;
     },

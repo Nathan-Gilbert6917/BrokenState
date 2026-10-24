@@ -250,7 +250,7 @@ export function teamNeedsHour(state, p, members) {
   const cargo = p.cargo || (p.cargo = { supplies: {}, gear: [] });
   const takeShared = (q, s2) => {
     let t = takeFoodFrom([p, cargo], q, { eggs: false, only: fire ? null : (k, f) => !f.raw });
-    if (!fire && t.units < q - 1e-9) { const t2 = takeFoodFrom([p, cargo], q - t.units, { eggs: false }); t = { ...t2, units: t.units + t2.units, raw: t2.raw, items: { ...t.items, ...Object.fromEntries(Object.entries(t2.items).map(([k, v]) => [k, v + (t.items[k] || 0)])) } }; }
+    if (!fire && t.units < q - 1e-9) { const t2 = takeFoodFrom([p, cargo], q - t.units, { eggs: false }); t = { ...t2, units: t.units + t2.units, raw: t2.raw, items: { ...t.items, ...Object.fromEntries(Object.entries(t2.items).map(([k, v]) => [k, v + (t.items[k] || 0)])) }, lots: [...(t.lots || []), ...(t2.lots || [])] }; } // both takes' lots (cooking.js poisonRoll: the eating contract)
     note(s2, t, fire ? 0 : t.raw);
     return t.units;
   };

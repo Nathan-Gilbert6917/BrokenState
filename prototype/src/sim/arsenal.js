@@ -83,7 +83,7 @@ import { wornOut } from "./repair.js"; // past mending
 import { groupStockKey } from "./trade.js";
 import { spendSelfAid } from "./medics.js"; // a person's used tourniquets, as yours
 import { cfgOf } from "./worldcfg.js"; // the run's dials: AI groups' starting gear
-import { groundAt } from "./carry.js"; // a raid's ladders and ram left where it ended
+import { groundAt, groundGearOf } from "./carry.js"; // a raid's ladders and ram left where it ended
 
 export const ARSENAL = {
   SPARE: 0.15, // spare weapons a head at the start
@@ -877,7 +877,7 @@ export function siegeGearHome(state, p, tile = null) {
     if (hands >= need) { hands -= need; continue; }
     removeFromArsenal(f, it, "left");
     if (base) base.armory.push(it);
-    else if (tile != null) groundAt(state, tile, true).items.push({ kind: "gear", item: it, name: it.name });
+    else if (tile != null) groundAt(state, tile, true).items.push(groundGearOf(it)); // with its key, qty and value, as every ground item has (economy.js deathSitesDaily sorts by value)
   }
 }
 // Safety net, daily (arsenalDaily): a piece marked out with a raid that is no more (a party dropped by other code) is

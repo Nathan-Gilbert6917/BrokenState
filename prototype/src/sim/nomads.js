@@ -78,7 +78,7 @@ import { stateSizeDef } from "./worldsize.js";
 import { wanderDensity, WANDER } from "./wanderers.js";
 import { visitorsOf, leaveMap } from "./visitors.js";
 import { lootItem, itemLoad, stripAll } from "./inventory.js";
-import { groundAt, leaveSuppliesAt } from "./carry.js"; // what a band leaves where it was
+import { groundAt, groundGearOf, leaveSuppliesAt } from "./carry.js"; // what a band leaves where it was
 import { starterKit } from "./arsenal.js"; // a band's spare gun: one of its tier's kit (KIT_OF nomad0–3)
 import { season } from "./weather.js";
 import { available, tradeContext } from "./trade.js";
@@ -444,7 +444,7 @@ export function bandCare(state, b, lose) {
 export function leaveOnGround(state, tile, items, sup = null) {
   if (tile == null) return;
   const list = (items || []).filter(Boolean);
-  if (list.length) { const site = groundAt(state, tile, true); for (const it of list) site.items.push({ kind: "gear", item: it, name: it.name }); }
+  if (list.length) { const site = groundAt(state, tile, true); for (const it of list) site.items.push(groundGearOf(it)); } // with its key, qty and value (economy.js deathSitesDaily sorts by value)
   if (sup) leaveSuppliesAt(state, tile, sup);
 }
 

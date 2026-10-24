@@ -104,8 +104,7 @@ function placeOf(path, st, reach, job, k, t) {
 // The hovered worker's route: out (dashed), the work spot (a ring), back to the drop (dotted). Cheap: a few segments.
 function drawRoute(ctx, state, H, base, x) {
   const s = H.zoom, tr = x.trip;
-  const path = legs(state, H, base, tr, x.s.id).out;
-  const back = legs(state, H, base, tr, x.s.id).back;
+  const { out: path, back } = legs(state, H, base, tr, x.s.id);
   const line = (pts, color, dash) => {
     ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]);
     for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
