@@ -95,7 +95,7 @@ section("Armour by weapon (deadsoldiers.js armorVs; combat.js damage)");
   z2.x = me.x + 1; z2.y = me.y; z2.face = [1, 0]; z2.aware = true; // facing away from me: I am behind it
   me.weapon = "knife";
   const before = z2.hp;
-  for (let i = 0; i < 40 && z2.hp === before; i++) combatAct(st, { type: "melee", unit: me.id, target: z2.id }), me.ap = 2;
+  for (let i = 0; i < 40 && z2.hp === before; i++) combatAct(st, { type: "melee", unit: me.id, target: z2.id }), me.ap = 2, me.struck = null; // a knife is quick: one strike a turn (combat.js meleeRefusal), so a miss is tried again as a new turn's
   const dealt = before - z2.hp;
   check(dealt >= 14, `a knife from behind goes in under the helmet: ${r2(dealt)} (14–22 raw, nothing taken off)`);
   // Fire: a Molotov on a soldier: full damage (vs a brute, its own armour).

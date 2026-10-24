@@ -772,7 +772,11 @@ section("One model of the downed with the non-lethal kit (nonlethal.js): states,
   b.units.filter((u) => u.side === "enemy" && active(u)).forEach((u) => { u.dead = true; });
   endBattleNow(st, "victory");
   const names = (b.result.prisoners || []).map((x) => x.name || x);
-  check(b.result.knockedOut === 4 && Bleed.dead && !Stab.dead, `the battle won: ${b.result.knockedOut} prisoners (stabilized, tied, out cold, tied after giving up); the bleeding one died`);
+  // The bleeding one is no prisoner: it dies, or crawls home DOWNED.LOST of the time (medics.js settleFoes, its own
+  // dice by the tile, the turn and the unit: the AI-parity rule, docs/adr/0001; tools/paritytest.js).
+  const { hash01 } = await import("../src/sim/skills.js");
+  const crawls = hash01("downed", b.tileId ?? 0, b.turn || 0, Bleed.id) < MED.DOWNED.LOST;
+  check(b.result.knockedOut === 4 && (crawls ? Bleed.recovered && !Bleed.dead : Bleed.dead && !Bleed.recovered) && !Stab.dead, `the battle won: ${b.result.knockedOut} prisoners (stabilized, tied, out cold, tied after giving up); the bleeding one ${crawls ? "crawled home" : "died"}`);
   void names;
 }
 {
