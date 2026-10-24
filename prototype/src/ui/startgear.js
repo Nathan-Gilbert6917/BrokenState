@@ -185,7 +185,7 @@ export function fleetSection(state, ui) {
         <label${tip(`${info.label}'s point limit: what its back may cost (${START_FLEET.MIN}–${START_FLEET.MAX}, ${START_FLEET.LIMIT} by default). Its own, nobody's points${iron ? ". Ironman: the backs stay as rolled" : ""}`)}>Point limit <input type="number" min="${START_FLEET.MIN}" max="${START_FLEET.MAX}" step="${START_FLEET.STEP}" style="width:4.5rem" data-action="fleet-limit" data-i="${i}" value="${f.limit}"${dis}></label>
         ${bar}
         <button class="mini" data-action="fleet-rand" data-i="${i}"${dis}${tip(`Empty its back, then fill it with random things and supplies${info.open ? " (any thing and any material)" : ""} up to its point limit (${f.limit}) in the room there is (${info.room} kg). Each click is a new draw`)}>🎲 Random</button>
-        <button class="mini" data-action="fleet-edit" data-i="${i}"${dis}${tip(`Put things, supplies${info.open ? ", materials" : ""} and rounds in its back by hand, each priced against its point limit`)}>Edit…</button>
+        <button class="mini" data-action="fleet-edit" data-i="${i}"${dis}${tip(`Put things, supplies, materials (wood, stone, building materials…) and rounds in its back by hand, each priced against its point limit`)}>Edit…</button>
         <button class="mini" data-action="fleet-empty" data-i="${i}"${dis}${tip("Nothing in its back")}>Empty</button>
         ${hasDice(state, i) ? `<button class="mini" data-action="fleet-dice" data-i="${i}"${locked || rolled ? " disabled" : ""}${tip("What the world's dice put in the back (free)")}>As rolled</button>` : ""}
         <button class="mini" data-action="fleet-remove" data-i="${i}"${ui.started ? " disabled" : ""}${tip(`Take this vehicle out of its slot (the slot stays, empty: add one to it again). ${car ? "The car is left behind; the dice are cast all the same. " : ""}The world is built again on the same seed`)}>✕ Remove</button>
@@ -228,7 +228,8 @@ function vehicleSection(state, ui) {
     return `<span class="chip"${tip(`${GEAR[k].desc || ""} (${kg(k)} kg, ${pickPoints(e)} points)${gunLong(k, fitted)}${gunInfo(k) && gunInfo(k).cal ? " It comes loaded." : ""}`)}>${esc(GEAR[k].name)}${m ? " ⚙" : ""}${pickN(e) > 1 ? ` ×${pickN(e)}${ROUND_SUPPLIES[k] ? " boxes" : ""}` : ""}${gunInfo(k, fitted) ? ` · ${gunInfo(k, fitted).text}` : ""}${parts} <button class="mini" data-action="sg-trunk-del" data-i="${j}"${tip("Take it out (the points back)")}>×</button></span>`;
   }).join("") || `<span class="small muted">Nothing in the back.</span>`;
   const tparts = tsel >= 0 ? gunPartsBox(pickKey(V.items[tsel]), pickMods(V.items[tsel]), `data-t="trunk" data-j="${tsel}"`, `the ${GEAR[pickKey(V.items[tsel])].name} in the back`) : "";
-  // Supplies: Normal and Hardcore the usual few, each to its cap; Custom any supply or material (no cap but the room).
+  // Supplies and materials: Normal and Hardcore START_TRUNK's (wood, stone, building materials and the rest among them since
+  // the user's request 2026-10-24), each to its cap; Custom any supply or material (no cap but the room).
   const supKeys = info.open ? [...new Set([...Object.keys(START_TRUNK.SUPPLIES), ...Object.keys(V.supplies).filter((k) => !ROUND_SUPPLIES[k])])] : Object.keys(START_TRUNK.SUPPLIES);
   const capOf = (k) => (info.open ? OPEN_TRUNK.MAX : START_TRUNK.SUPPLIES[k]);
   const sups = supKeys.map((k) => `<label class="lookopt">${esc(supLabel(k))}<input type="number" min="0" max="${capOf(k)}" step="1" style="width:4.2rem" data-action="sg-trunk-sup" data-k="${k}" value="${V.supplies[k] || 0}"${tip(`${supLabel(k)} in the back, 0–${info.open ? "as much as there is room for" : capOf(k)} (${SUPPLIES[k] ? SUPPLIES[k].weight : 0} kg each; ${suppliesPoints({ [k]: 10 })} points for 10)`)}></label>`).join("");
@@ -480,7 +481,7 @@ function editTrunk(state, ui, fn, at = null) {
   if (ui.started || ui.ironman) return false;
   const i = at ?? (ui.fleetEdit ? ui.fleetEdit.i : 0);
   const F = uiFleet(state, ui), f = F[i], live = fleetEntry(state, i);
-  if (!f || !live) return false;
+  if (!f || !live || f.empty || live.empty) return false; // no slot, or an empty one (no vehicle): nothing to fill
   const open = openLoads(state);
   const V = sanitizeStartVehicle(shownLoad(state, i), open) || { items: [], supplies: {} };
   if (ui.fleetEdit) ui.fleetEdit.msg = "";

@@ -471,11 +471,14 @@ export function normalStartGear(state, base) {
 
 // ---------- the vehicle's back ----------
 // What a back can be loaded with on the new-run screen (Normal and Hardcore): at most this much of each supply and ITEMS
-// things (and no more than the vehicle's room: startfleet.js fleetRoom). Priced like anything else (custompoints.js
+// things (and no more than the vehicle's room: startfleet.js fleetRoom). The materials (wood, stone, jars, building
+// materials, metal sheets, car and gun parts, electronics) since the user's request 2026-10-24 ("update the truck
+// inventory for the start to add the new materials like wood and rocks"), each capped at about a pickup's tenth: wood
+// 600 (60 kg), stone 60 (60 kg), building materials 10 (30 kg), metal sheets 6 (36 kg). Priced like anything else (custompoints.js
 // vehiclePoints), against the vehicle's own point limit (startfleet.js).
 // Rounds go by calibre and type (2026-10-09, user request: "All ammo should be based on caliber"): any round keys,
 // ROUNDS in all; a back saved with a generic "ammo" number gets the common rounds of the guns in it (9mm and 12 gauge).
-export const START_TRUNK = { SUPPLIES: { food: 60, water: 60, fuel: 40, meds: 20, arrows: 60, scrap: 40, parts: 20 }, ROUNDS: 300, ITEMS: 16 };
+export const START_TRUNK = { SUPPLIES: { food: 60, water: 60, fuel: 40, meds: 20, arrows: 60, scrap: 40, parts: 20, wood: 600, stone: 60, jars: 20, buildmat: 10, metalsheet: 6, carparts: 6, gunparts: 10, electronics: 10 }, ROUNDS: 300, ITEMS: 16 };
 // Custom mode's backs (2026-10-24, user request: "The items can be any item and material in the game"): any thing and any
 // supply or material (data.js SUPPLIES: wood, stone, scrap, parts, fuel, water, meds, rounds by calibre, foods...), with
 // no caps but these (to keep a typo from hanging the game): the vehicle's point limit and its room limit them.
@@ -509,7 +512,13 @@ export function sanitizeStartVehicle(raw, open = false) {
 /** @param {any} v */
 export function trunkKg(v) {
   if (!v) return 0;
-  const kg = (v.items || []).reduce((a, e) => { const k = pickKey(e); return a + (k && GEAR[k] ? (GEAR[k].weight ?? 1) * pickN(e) : 0); }, 0) + Object.entries(v.supplies || {}).reduce((a, [k, n]) => a + (SUPPLIES[k] ? SUPPLIES[k].weight || 0 : 0) * n, 0);
+  // Summed in one order whatever the order of the keys: the float sum of the same amounts differs in its last place with
+  // the order, and at an x.x5 kg boundary rounds up or down by it, so a back randomTrunk fit to the room (fits: this)
+  // weighed 0.1 kg more once sanitizeStartVehicle had put its keys in its own order, and Start refused it.
+  const per = new Map();
+  for (const e of v.items || []) { const k = pickKey(e); if (k && GEAR[k]) per.set(`i:${k}`, (per.get(`i:${k}`) || 0) + (GEAR[k].weight ?? 1) * pickN(e)); }
+  for (const [k, n] of Object.entries(v.supplies || {})) if (SUPPLIES[k]) per.set(`s:${k}`, (per.get(`s:${k}`) || 0) + (SUPPLIES[k].weight || 0) * n);
+  const kg = [...per.keys()].sort().reduce((a, k) => a + per.get(k), 0);
   return Math.round(kg * 10) / 10;
 }
 // A normal or Custom start: each starting vehicle's back set on the new-run screen (state.fleet[i].load, startfleet.js)

@@ -4,7 +4,7 @@
 // browser (localStorage BG_KEY); a world built with them keeps its own copy. Not in an Ironman run: the button is off
 // while Ironman is ticked. HTML builders plus their action handlers; main.js registers them (bg-close there: closing
 // the window rebuilds the world when a colonist's background was changed in it).
-import { GEAR, SKILLS, SKILL_NAMES } from "../sim/data.js";
+import { GEAR, SKILLS, SKILL_NAMES, SUPPLIES } from "../sim/data.js";
 import { VEHICLE_TYPES } from "../sim/vehicles.js";
 import { HC_START } from "../sim/hardcore-start.js";
 import { traitPickerHtml, traitBlock } from "./traitpick.js"; // the traits, good and bad, none that clash
@@ -21,6 +21,7 @@ const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
 const SLOT_LABELS = { weapon: "Hands", tool: "Off hand", armor: "Body", head: "Head", arms: "Arms", legs: "Legs", backpack: "Bag" };
 const SUP_LABELS = { food: "Food", water: "Water", ammo: "Ammo", arrows: "Arrows", meds: "Meds", fuel: "Fuel", scrap: "Scrap", parts: "Parts" };
+const supLabel = (k) => SUP_LABELS[k] || (SUPPLIES[k] ? SUPPLIES[k].name : k); // the materials by their own names (wood, stone, building materials…)
 
 // ---------- the list, kept in this browser ----------
 const BG_KEY = "brokenstate.customBackgrounds";
@@ -163,7 +164,7 @@ function form(d, ui, state) {
   const fit = fitCheck(d);
   const items = d.items.map((k, i) => `<span class="chip ${fit.left.includes(k) ? "off" : ""}">${esc(gearName(k))} <button class="mini" data-action="bg-item-del" data-i="${i}"${tip("Take it out")}>×</button></span>`).join("");
   const sups = Object.entries(C.SUPPLY).map(([k, cap]) => `<label class="lookopt">${SUP_LABELS[k]}${num("bg-sup", d.supplies[k], cap, ` data-k="${k}"`, `${SUP_LABELS[k]} on them, 0–${cap}, pooled with the team's (a day's ration is 1 food and 1 water)`)}</label>`).join("");
-  const trunk = Object.entries(C.TRUNK).map(([k, cap]) => `<label class="lookopt">${SUP_LABELS[k]}${num("bg-trunk", d.car.trunk[k], cap, ` data-k="${k}"`, `${SUP_LABELS[k]} in the back of the car, 0–${cap}`)}</label>`).join("");
+  const trunk = Object.entries(C.TRUNK).map(([k, cap]) => `<label class="lookopt">${supLabel(k)}${num("bg-trunk", d.car.trunk[k], cap, ` data-k="${k}"`, `${supLabel(k)} in the back of the car, 0–${cap}`)}</label>`).join("");
   const supRounds = roundRows(d, "sup"), trunkRounds = roundRows(d, "trunk");
   const trunkItems = d.car.items.map((k, i) => `<span class="chip">${esc(gearName(k))} <button class="mini" data-action="bg-trunk-del" data-i="${i}"${tip("Take it out")}>×</button></span>`).join("");
   const cars = carTypes().map((k) => `<option value="${k}" ${d.car.type === k ? "selected" : ""}>${esc(VEHICLE_TYPES[k].name)}</option>`).join("");

@@ -123,7 +123,7 @@ export function fleetRoom(state, i) {
   return Math.max(0, Math.round((T.payload || 0) - riders));
 }
 /**
- * Its name on the screen: "The hub's pickup truck", "Ana's old sedan", "Vehicle 2 (SUV)".
+ * Its name on the screen: "Vehicle 1 (Pickup truck)", "Ana's old sedan" (Hardcore's car), "Vehicle 2 (SUV)".
  * @param {any} state @param {number} i
  */
 export function fleetName(state, i) {
