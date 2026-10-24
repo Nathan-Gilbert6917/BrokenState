@@ -9,8 +9,10 @@
 // the player is offered it; a fleeing raider out of sight is gone). Then the measurement: battles by size class played
 // out by the AI on both sides (avg turns, % over the 60-turn limit, ends called "clear enough", the AI's time a turn).
 // The measurement's matchups run side by side in worker threads (tools/pool.js) after the checks, on half the cores:
-// each enemy turn is timed, and busier cores time it slower (on 4 cores, 3 workers put the p99 a third over a serial
-// run's, 2 workers within 10%). --workers N to choose (--workers 1: one after another).
+// each enemy turn is timed in its thread's own CPU time (process.threadCpuUsage), so other tests and workers sharing
+// the cores do not slow the clock (timed by the wall clock, a crowded machine put the p99 over the limit: 52.6 ms
+// with the test suite running beside it, 28.3 ms alone, 2026-10-24). --workers N to choose (--workers 1: one after
+// another).
 // Usage: node tools/sizetest.js [battles per matchup=10] [seed=3] [--quick: the checks only] [--workers N]
 import { createWorld, hub, atBase, makeSurvivor } from "../src/sim/world.js";
 import { GEAR } from "../src/sim/data.js";
@@ -37,6 +39,8 @@ let pass = 0, fail = 0;
 const check = (ok, what) => { if (ok) pass++; else fail++; console.log(`  ${ok ? "ok  " : "FAIL"} ${what}`); return ok; };
 const section = (t) => console.log(`\n${t}`);
 const t0 = Date.now();
+// The CPU time this thread has used, in ms (the wall clock where Node has no threadCpuUsage).
+const cpuMs = typeof process.threadCpuUsage === "function" ? () => { const u = process.threadCpuUsage(); return (u.user + u.system) / 1000; } : () => performance.now();
 let last = null;
 registerCombatHandler("sz", (st, r) => { last = r; });
 const inBrowser = (fn) => { const had = "window" in globalThis; if (!had) globalThis.window = {}; try { return fn(); } finally { if (!had) delete globalThis.window; } };
@@ -156,9 +160,9 @@ function matchup(m) {
     let guard = 0;
     while (!b.over && guard++ < limit) {
       autoPlayerTurn(st);
-      const t1 = performance.now();
+      const t1 = cpuMs();
       runEnemyPhase(st);
-      ms.push(performance.now() - t1);
+      ms.push(cpuMs() - t1);
     }
     if (!b.over) over++;
     else { if (b.clearedEarly) clear++; if (b.result.outcome === "victory" || b.result.outcome === "extracted") won++; }
