@@ -799,7 +799,8 @@ section("Windows and panels: folding, map only, auto-open, window sizes (ui/layo
 
   // Folding each panel, map only and back.
   const lay = L.defaultLayout();
-  check(L.PANEL_KEYS.every((p) => lay[p] === false) && !lay.all, "every panel is shown at first");
+  check(L.PANEL_KEYS.every((p) => lay[p] === (p === "legend")) && !lay.all, "every panel is shown at first but the Layers box, folded to its tab (2026-10-24)");
+  check(L.setFolded(lay, "legend", false) && !lay.legend, "a click on the Layers tab opens the box");
   let flips = 0;
   for (const p of L.PANEL_KEYS) if (L.setFolded(lay, p) && lay[p] && L.setFolded(lay, p) && !lay[p] && L.setFolded(lay, p, true) && lay[p] && L.setFolded(lay, p, false) && !lay[p]) flips++;
   check(flips === L.PANEL_KEYS.length, `each panel folds and shows again (${L.PANEL_KEYS.join(", ")})`);
@@ -1341,11 +1342,12 @@ section("Battle view: the isometric renderer (ui/isoview.js), the view toggle, t
   // Stub canvases: every sprite and the ground get a silent context; the battle canvas records its calls (method and
   // numbers, for the determinism check) and counts NaN / Infinity arguments and property values.
   let nan = 0, log = [];
-  const silent = () => new Proxy({ createImageData: (w, h) => ({ data: new Uint8ClampedArray(w * h * 4) }), measureText: (t) => ({ width: String(t).length * 6 }) }, {
+  // A real context starts with globalAlpha 1 (drawFigure multiplies into it: a stub without it would multiply a function and count a NaN).
+  const silent = () => new Proxy({ globalAlpha: 1, createImageData: (w, h) => ({ data: new Uint8ClampedArray(w * h * 4) }), measureText: (t) => ({ width: String(t).length * 6 }) }, {
     get: (o, k) => (k in o ? o[k] : (...a) => { if (a.some((v) => typeof v === "number" && !Number.isFinite(v))) nan++; }),
     set: (o, k, v) => { if (typeof v === "number" && !Number.isFinite(v)) nan++; o[k] = v; return true; },
   });
-  const rec = new Proxy({ measureText: (t) => ({ width: String(t).length * 6 }) }, {
+  const rec = new Proxy({ globalAlpha: 1, measureText: (t) => ({ width: String(t).length * 6 }) }, {
     get: (o, k) => (k in o ? o[k] : (...a) => {
       if (a.some((v) => typeof v === "number" && !Number.isFinite(v))) nan++;
       log.push(`${String(k)}(${a.map((v) => (typeof v === "number" ? Math.round(v * 10) / 10 : typeof v === "string" ? v : "o")).join(",")})`);

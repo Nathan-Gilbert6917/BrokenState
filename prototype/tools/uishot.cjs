@@ -69,18 +69,17 @@ const VIEWS = {
         st.cards.length = 0; // no card over the map: the screens are the subject
         if (st.guide) st.guide.seen = Object.fromEntries(Object.keys((await import("/src/ui/guide.js")).POPUP_TIPS).map((k) => [k, 0])); // no "New:" note over the windows
         game.ui.speed = 0;
-        game.ui.legendCollapsed = false; // the Layers box open, as on a desktop
         R.centerOn(st, hb.tile);
         game.refresh();
       });
-      await act("panel-toggle", { p: "legend", v: "0" });
       await settle(600);
-      if (want("map")) await shot("map");
+      if (want("map")) await shot("map"); // as the game starts: the Layers box folded to its tab
       // Every box over the map open at once (the alerts, Running orders, Watching, Layers, the minimap): the crowd.
       const hubInfo = await page.evaluate(async () => { const hb = (await import("/src/sim/world.js")).hub(game.state); return { id: hb.id, name: hb.name }; });
       await act("wl-pin", { kind: "base", id: hubInfo.id, name: hubInfo.name });
       await act("panel-toggle", { p: "orders", v: "0" });
       await act("panel-toggle", { p: "alerts", v: "0" });
+      await act("panel-toggle", { p: "legend", v: "0" });
       await settle(600);
       if (want("map-all")) await shot("map-all");
       // The hub picked: the right panel (a phone: the Info sheet).
