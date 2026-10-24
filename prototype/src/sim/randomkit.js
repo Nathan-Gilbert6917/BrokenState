@@ -3,19 +3,20 @@
 // gear dice "gives me 33 over 80 points"; the vehicle's back "gave the same two items each time ... have it empty then
 // set the new gear"). Each is a fresh draw every time (not the world's dice) and stays within the colonist's points
 // (sim/custompoints.js), whatever else they have:
-//   randomKit: what they wear, hold and carry, for the points left after their skills, traits and the vehicle's back
+//   randomKit: what they wear, hold and carry, for the points left after their skills and traits
 //     (a gun in the hands brings its spare magazines and a box or two of its rounds in the pockets, pouches or pack:
 //     the user's request 2026-10-18, "when a gun is set also set some loose or magazine(s) of ammo ... in the inventory
 //     slots of the survivor"; the rounds in the gun's price go to the stock as ever);
-//   randomTrunk: the vehicle's back, for what its payer has left and the car pool, in the room there is;
+//   randomTrunk: a starting vehicle's back, for its own point limit (startfleet.js), in the room there is; filled up to
+//     the limit when asked (the new-run screen's Random, 2026-10-24), and in Custom mode from any thing and material;
 //   randomTraits: traits only, within what they have left (the crew card's Traits);
 //   randomBuild: a whole colonist from a blank slate: traits (none to two), skills and kit, the rest into skills;
-//   randomEverything: every colonist's build and the vehicle's back in one draw.
+//   randomEverything: every colonist's build in one draw (ui/newgame.js fills the vehicles' backs to their limits too).
 // The new-run screen's buttons (ui/startgear.js, ui/newgame.js) put the result on and build the world again. Player
 // only: the AI groups are rolled as ever.
 import { GEAR, SKILLS, SUPPLIES, TRAITS, clashIn, traitKind } from "./data.js";
-import { START_GEAR, START_TRUNK, CARRY_PLACES, slotChoices, carryChoices, trunkChoices, carrySpec, firstFit, trunkKg, pickKey } from "./startgear.js";
-import { CUSTOM_POINTS, pricePerson, maxFor, itemPoints, slotPoints, vehiclePoints, skillsCost, nextLevelCost, ownPoints, carPool, loosePoints } from "./custompoints.js";
+import { START_GEAR, START_TRUNK, OPEN_TRUNK, CARRY_PLACES, slotChoices, carryChoices, trunkChoices, carrySpec, firstFit, trunkKg, pickKey, openSupplyKeys } from "./startgear.js";
+import { CUSTOM_POINTS, pricePerson, maxFor, itemPoints, slotPoints, vehiclePoints, skillsCost, nextLevelCost, loosePoints, suppliesPoints } from "./custompoints.js";
 import { tierCount, traitPoints, tidyTiers } from "./traits.js";
 import { standardMag } from "./mags.js";
 import { baseKey } from "./rounds.js";
@@ -36,19 +37,9 @@ const blankSlots = () => Object.fromEntries(START_GEAR.SLOTS.map((k) => [k, ""])
 const blankCarry = () => ({ pocket: [], pouch: [], pack: [] });
 const noLauncher = (k) => !GEAR[k].launcher;
 
-// Their points left with nothing worn or carried (skills, traits, the vehicle's back and a background's own count; a
-// giver to the car pool keeps what the back takes of their offer for it: custompoints.js carPool).
+// Their points left with nothing worn or carried (skills, traits and a background's own count).
 /** @param {any} state @param {any} s */
 export const kitBudget = (state, s) => Math.max(0, pricePerson(state, { ...s, startGear: null }).left);
-// What the back's picks can cost: what its payer has left with the back empty, and the car pool (everyone else's
-// offers), less a normal start's background car backs (on the same bill: custompoints.js bgBacks).
-/** @param {any} state @param {any} payer */
-export function trunkBudget(state, payer) {
-  const max = maxFor(state, payer);
-  const K = carPool(state);
-  const pool = K.offers.filter((o) => o.s.id !== payer.id).reduce((a, o) => a + o.n, 0);
-  return Math.max(0, Math.max(0, max - ownPoints(state, payer, max)) + pool - K.extra);
-}
 
 // A random kit as picks (every slot named, things placed where they fit) costing at most budget. opts.fill: then spend
 // what is left too (empty slots first, then things carried) so little of the budget is left over; opts.onto: add to
@@ -132,30 +123,71 @@ export function randomKit(budget, rng, opts = {}) {
 
 // A random back for the vehicle: { items, supplies } costing at most budget, weighing at most room kg.
 // cals: the crew's guns' calibres ({ cal: guns }): rounds in the back are the common rounds of one of them (none: 9mm
-// or 12 gauge).
-/** @param {number} budget @param {number} room @param {import("./rng.js").Rng} rng @param {Record<string, number>} [cals] */
-export function randomTrunk(budget, room, rng, cals = {}) {
+// or 12 gauge). opts.fill (the new-run screen's Random and Randomize everything, 2026-10-24): then spend what is left,
+// more things and supplies and the cheapest ones topped up, so little of the budget is left over. opts.open (Custom
+// mode): any thing (startgear.js trunkChoices) and any supply or material (openSupplyKeys), START_TRUNK's caps lifted
+// (OPEN_TRUNK's in their place: the budget and the room hold it).
+/** @param {number} budget @param {number} room @param {import("./rng.js").Rng} rng @param {Record<string, number>} [cals] @param {{ fill?: boolean, open?: boolean }} [opts] */
+export function randomTrunk(budget, room, rng, cals = {}, opts = {}) {
+  const open = !!opts.open;
   const V = { items: /** @type {string[]} */ ([]), supplies: /** @type {Record<string, number>} */ ({}) };
   const fits = (W) => vehiclePoints(W) <= budget && trunkKg(W) <= room + 1e-9;
-  const pool = trunkChoices().filter((k) => TRUNK_CATS.has(GEAR[k].cat) && noLauncher(k));
-  for (let n = rng.int(1, 5); n > 0 && V.items.length < START_TRUNK.ITEMS; n--) {
+  const maxItems = open ? OPEN_TRUNK.ITEMS : START_TRUNK.ITEMS;
+  const pool = open ? trunkChoices() : trunkChoices().filter((k) => TRUNK_CATS.has(GEAR[k].cat) && noLauncher(k));
+  for (let n = rng.int(1, 5); n > 0 && V.items.length < maxItems; n--) {
     const spare = budget - vehiclePoints(V);
     const list = pool.filter((k) => loosePoints(k) <= Math.max(1, spare * 0.5));
     if (!list.length) break;
     const k = rng.pick(list);
     if (fits({ ...V, items: [...V.items, k] })) V.items.push(k);
   }
-  const kinds = rng.shuffle([...Object.keys(START_TRUNK.SUPPLIES).filter((k) => SUPPLIES[k]), "rounds"]);
+  const cl = Object.keys(cals || {}).sort();
+  const roundKey = () => baseKey(cl.length ? rng.pick(cl) : rng.pick(["9mm", "12ga"]));
+  // A supply's cap: START_TRUNK's (rounds: every calibre together); open, what its share of the room holds.
+  const roundsIn = () => Object.entries(V.supplies).reduce((a, [k, q]) => a + (k in START_TRUNK.SUPPLIES ? 0 : q), 0);
+  const capOf = (k, round) => {
+    if (!open) return round ? START_TRUNK.ROUNDS - roundsIn() + (V.supplies[k] || 0) : START_TRUNK.SUPPLIES[k];
+    const w = SUPPLIES[k] ? SUPPLIES[k].weight || 0 : 0;
+    return Math.min(round ? OPEN_TRUNK.ROUNDS : OPEN_TRUNK.MAX, w > 0 ? Math.floor(room / w) : 200);
+  };
+  const kindsOf = () => (open ? [...openSupplyKeys().filter((k) => !k.startsWith("f_")), "foods", "rounds"] : [...Object.keys(START_TRUNK.SUPPLIES).filter((k) => SUPPLIES[k]), "rounds"]);
+  const keyOf = (kind) => (kind === "rounds" ? roundKey() : kind === "foods" ? rng.pick(openSupplyKeys().filter((k) => k.startsWith("f_"))) : kind);
+  const kinds = rng.shuffle(kindsOf());
   for (const kind of kinds.slice(0, rng.int(1, 4))) {
-    const cl = Object.keys(cals || {}).sort();
-    const k = kind === "rounds" ? baseKey(cl.length ? rng.pick(cl) : rng.pick(["9mm", "12ga"])) : kind;
-    const cap = kind === "rounds" ? START_TRUNK.ROUNDS : START_TRUNK.SUPPLIES[k];
+    const k = keyOf(kind);
+    const cap = open ? Math.min(capOf(k, kind === "rounds"), Math.max(1, Math.floor((budget * rng.range(0.1, 0.35) * CUSTOM_POINTS.SUPPLY_VALUE) / Math.max(1e-6, unitWorth(k))))) : kind === "rounds" ? START_TRUNK.ROUNDS : START_TRUNK.SUPPLIES[k];
     let n = Math.max(1, Math.round((rng.range(0.15, 0.7) * cap) / 5) * 5);
     while (n > 0 && !fits({ ...V, supplies: { ...V.supplies, [k]: n } })) n = n > 5 ? n - 5 : n - 1;
     if (n >= Math.max(1, cap * 0.05)) V.supplies[k] = n; // not a token handful
   }
+  if (!opts.fill) return V;
+  // The most of supply k that fits (the points, the room, its cap), at least what is in the back now.
+  const most = (k, round) => {
+    let lo = V.supplies[k] || 0, hi = Math.max(lo, capOf(k, round));
+    while (lo < hi) { const mid = Math.ceil((lo + hi) / 2); if (fits({ ...V, supplies: { ...V.supplies, [k]: mid } })) lo = mid; else hi = mid - 1; }
+    return lo;
+  };
+  const isRound = (k) => !(k in START_TRUNK.SUPPLIES) && !openSupplyKeys().includes(k);
+  for (let tries = 0; tries < 40; tries++) {
+    const spare = budget - vehiclePoints(V);
+    if (spare < 1) break;
+    if (V.items.length < maxItems && rng.chance(0.5)) {
+      const list = pool.filter((k) => loosePoints(k) <= spare);
+      const k = list.length ? rng.pick(list) : null;
+      if (k && fits({ ...V, items: [...V.items, k] })) V.items.push(k);
+      continue;
+    }
+    const kind = rng.pick(kindsOf()), k = keyOf(kind), round = kind === "rounds";
+    const top = most(k, round), now = V.supplies[k] || 0;
+    if (top > now) V.supplies[k] = now + Math.max(1, Math.round(rng.range(0.2, 0.6) * (top - now)));
+  }
+  // The last points: what is in the back already, the cheapest first, as far as it goes.
+  for (const k of Object.keys(V.supplies).sort((a, b) => unitWorth(a) - unitWorth(b) || a.localeCompare(b))) V.supplies[k] = most(k, isRound(k));
   return V;
 }
+// What one unit of a supply is worth (custompoints.js prices supplies by it).
+/** @param {string} k */
+const unitWorth = (k) => suppliesPoints({ [k]: 1000 }) / 1000 * CUSTOM_POINTS.SUPPLY_VALUE;
 
 // Random traits on points (randomBuild; the crew card's Traits under Customize): up to MAX_TRAITS (five), good to bad
 // 3:2 (user pick 2026-10-09: five: three good and two bad; three: two and one), in place of the ones they had. The bad ones
@@ -187,7 +219,7 @@ export function randomTraits(state, s, rng, avail = () => pricePerson(state, s).
 // A whole colonist on points: traits (up to five, good to bad 3:2, tier I mostly), skills, a kit (a quarter to nearly half the points),
 // and what is left into skills, then more kit: the total comes to the max (never over).
 // Writes s.skills, s.traits / s.traitTier and s.startGear (the caller marks them and builds the world again).
-// opts.keep: points kept aside (left unspent: what randomEverything draws the vehicle's back on).
+// opts.keep: points kept aside (left unspent).
 /** @param {any} state @param {any} s @param {import("./rng.js").Rng} rng @param {{ keep?: number }} [opts] */
 export function randomBuild(state, s, rng, opts = {}) {
   const max = maxFor(state, s);
@@ -219,20 +251,12 @@ export function randomBuild(state, s, rng, opts = {}) {
   return s;
 }
 
-// Randomize everything (Customize): every colonist a random build and the vehicle's back a new random load, in one
-// draw. The back is emptied first; everyone but its payer is built (what they would give the car pool goes on their own
-// build), then the payer with a tenth to a quarter of the max kept aside, and the back is drawn on what that leaves
-// (rounds for the crew's new guns), so nobody ends over. room(): the back's kg, asked once the kits are drawn (Hardcore:
-// the riders' kit rides in the car); null: no vehicle, the back stays empty. Writes as randomBuild does, and
-// payer.startVehicle (the caller marks them and builds the world again).
-/** @param {any} state @param {any} payer @param {(() => number) | null} room @param {import("./rng.js").Rng} rng */
-export function randomEverything(state, payer, room, rng) {
-  for (const s of state.survivors) delete s.startVehicle;
-  for (const s of state.survivors) if (s !== payer) randomBuild(state, s, rng);
-  randomBuild(state, payer, rng, { keep: room ? Math.floor(maxFor(state, payer) * rng.range(0.1, 0.25)) : 0 });
-  if (!room) return state;
-  const guns = state.survivors.map((s) => s.startGear.slots.weapon).filter(Boolean).map((key) => ({ key }));
-  payer.startVehicle = randomTrunk(trunkBudget(state, payer), room(), rng, gunCals([], guns));
+// Randomize everything (Customize): every colonist a random build, in one draw. (The starting vehicles' backs are
+// filled to their own point limits by the caller, ui/newgame.js randomizeEverything: no longer from a colonist's points.)
+// Writes as randomBuild does (the caller marks them and builds the world again).
+/** @param {any} state @param {import("./rng.js").Rng} rng */
+export function randomEverything(state, rng) {
+  for (const s of state.survivors) randomBuild(state, s, rng);
   return state;
 }
 

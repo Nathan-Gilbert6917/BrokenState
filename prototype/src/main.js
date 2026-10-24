@@ -59,6 +59,7 @@ import { woodAbundance } from "./sim/woodcutting.js";
 import { canClaim, wellProblem, CLAIM } from "./sim/claims.js"; // land claims and wells (the right-click menu)
 import { initCombatUI, drawCombat, renderCombatPanel, renderCombatBar, raidLayout, renderRaidTop, renderRaidCards, renderRaidLog, renderRaidLogFoot, combatTick, combatMouse, combatClick, combatKey, combatKeyUp, combatAction, combatPress, combatRelease, combatWheel, combatPan, combatLeave, combatTap, combatTapChip, cui, padCur, combatPadOn, combatPadOff, combatPadMove, combatPadFrame, combatPadA, combatPadB, combatPadCycle, combatPadEnd, combatPadZoom } from "./ui/combat.js";
 import { defaultCustom, cleanCustom, clampCustomCount, isCustomRun, startsWithVehicle } from "./sim/custommode.js"; // Custom mode and Start with a vehicle (2026-10-24)
+import { defaultFleet, fleetText } from "./sim/startfleet.js"; // the starting vehicles: each its kind, point limit and back (2026-10-24)
 import { LOOK_ACTIONS, LOOK_CHANGE_ACTIONS, crewSnapshot, randomizeAllCrew, randomizeEverything, randomizeGear, randomizeOne, randomBackground, rollRandomRun, ironmanCrew, crewCustomized, crewWithBackground, crewWithBackgrounds, blankCrew, backToSetup, stashModeSet, takeModeSet } from "./ui/newgame.js";
 import { CUSTOM_POINTS, clampMax, overText } from "./sim/custompoints.js"; // Customize: everything costs points
 import { BG_ACTIONS, BG_CHANGE, BG_INPUT, customLibrary } from "./ui/backgrounds.js"; // custom backgrounds (sim/custombg.js), not in Ironman
@@ -191,6 +192,7 @@ const freshUi = () => ({
   inv: null, invSel: null, invMsg: "", // inventory / loot screen (ui/inventory.js)
   lookEdit: null, zombieLook: false, nrMsg: "", timelapse: null, bgEditor: null, // bgEditor: the custom backgrounds window (ui/backgrounds.js)
   gearEdit: null, // the new-run screen's starting gear window (ui/startgear.js): { i: the colonist's place in the crew }
+  fleetEdit: null, // the new-run screen's window for a starting vehicle's back (ui/startgear.js fleetEditor): { i: its place in the fleet, msg, tsel, tqty }
   nrMap: false, // the new-run screen put aside to look at the map (ui/newgame.js View map; the banner or Esc brings it back)
   nrPick: false, // with nrMap: a click on the map picks where you start (ui/newgame.js Pick start on map; main.js pickStartAt)
   wcOpen: false, wcWas: null, // the World… window (ui/worldcfg.js) and the dials as they were when it opened
@@ -203,14 +205,15 @@ const freshUi = () => ({
   mapSel: null, selParty: null, // ui/mapselect.js: a party, band or outsiders selected on the map; selParty: your selected team's id
   tileView: null, moveExit: null, // ui/poipick.js: the tile view of a team walking on its tile ({ partyId }); move mode from its "Leave for another tile…" (the team's id)
 });
-const ui = { title: false, scale: 1, factionCount: 7, worldSize: DEFAULT_SIZE, customW: BASE_W, customH: BASE_H, hiveCount: null, mode: "normal", startPeople: NORMAL_PEOPLE.DEF, ironman: false, freeEdit: false, pointsMax: CUSTOM_POINTS.DEF, crewEdited: false, crewRoll: null, startPick: null, startVehicle: true, custom: defaultCustom(), ...freshUi() }; // mode: Normal, Hardcore or Custom (sim/hardcore.js MODES); startPeople: the starting team (Normal 1–8, Hardcore 1–4, Custom 1–30); pointsMax: Customize's Points each; startVehicle: Start with a vehicle; custom: Custom mode's counts (sim/custommode.js)
-// Each mode keeps its own Starting people, Points each and Start with a vehicle (2026-10-19 and 2026-10-24, user requests):
-// ui.startPeople, ui.pointsMax and ui.startVehicle are the current mode's, the other modes' wait here (switching mode swaps
-// them: ui/newgame.js stashModeSet and takeModeSet, from the gamemode select, rollRandomRun and adopt).
+const ui = { title: false, scale: 1, factionCount: 7, worldSize: DEFAULT_SIZE, customW: BASE_W, customH: BASE_H, hiveCount: null, mode: "normal", startPeople: NORMAL_PEOPLE.DEF, ironman: false, freeEdit: false, pointsMax: CUSTOM_POINTS.DEF, crewEdited: false, crewRoll: null, startPick: null, startVehicle: true, custom: defaultCustom(), fleet: defaultFleet("normal"), ...freshUi() }; // mode: Normal, Hardcore or Custom (sim/hardcore.js MODES); startPeople: the starting team (Normal 1–8, Hardcore 1–4, Custom 1–30); pointsMax: Customize's Points each; startVehicle: Start with a vehicle; custom: Custom mode's counts (sim/custommode.js)
+// Each mode keeps its own Starting people, Points each, Start with a vehicle and Starting vehicles (2026-10-19 and
+// 2026-10-24, user requests): ui.startPeople, ui.pointsMax, ui.startVehicle and ui.fleet (sim/startfleet.js: each starting
+// vehicle's kind, point limit and back) are the current mode's, the other modes' wait here (switching mode swaps them:
+// ui/newgame.js stashModeSet and takeModeSet, from the gamemode select, rollRandomRun and adopt).
 ui.modeSets = {
-  normal: { startPeople: NORMAL_PEOPLE.DEF, pointsMax: CUSTOM_POINTS.DEF, startVehicle: true },
-  hardcore: { startPeople: START_PEOPLE.DEF, pointsMax: CUSTOM_POINTS.DEF, startVehicle: true },
-  custom: { startPeople: peopleRange("custom").DEF, pointsMax: CUSTOM_POINTS.DEF, startVehicle: true },
+  normal: { startPeople: NORMAL_PEOPLE.DEF, pointsMax: CUSTOM_POINTS.DEF, startVehicle: true, fleet: defaultFleet("normal") },
+  hardcore: { startPeople: START_PEOPLE.DEF, pointsMax: CUSTOM_POINTS.DEF, startVehicle: true, fleet: defaultFleet("hardcore") },
+  custom: { startPeople: peopleRange("custom").DEF, pointsMax: CUSTOM_POINTS.DEF, startVehicle: true, fleet: defaultFleet("custom") },
 };
 // Folded panels and their widths (ui/layout.js), remembered in the browser. The Layers box and the running orders
 // keep their old ui flags, which read and write the layout.
@@ -1314,7 +1317,7 @@ const actions = {
     if (ui.started) return;
     const line = rollRandomRun(ui, freshRng());
     newWorld(randomSeed());
-    if (ui.freeEdit && !ui.ironman) { // Customize: random builds within the points (the vehicle's back too, if it has one)
+    if (ui.freeEdit && !ui.ironman) { // Customize: random builds within the points (and the starting vehicles' backs to their limits)
       const before = state;
       actions["nr-everything"]();
       if (state === before) actions["nr-allcrew"]();
@@ -1331,7 +1334,7 @@ const actions = {
   },
   // Randomize all (ui/newgame.js): in Hardcore the world is built again on the same seed with the new crew roll.
   "nr-allcrew": () => { state = randomizeAllCrew(state, ui, (crew, crewRoll, pickRoll) => { newWorld(state.seed, true, { crew, crewRoll, pickRoll }); return state; }); },
-  // Randomize everything (Customize, ui/newgame.js): every colonist's build and the vehicle's back, the world built again.
+  // Randomize everything (Customize, ui/newgame.js): every colonist's build and every starting vehicle's back to its limit, the world built again.
   "nr-everything": () => { state = randomizeEverything(state, ui, (crew, crewRoll, pickRoll) => { newWorld(state.seed, true, { crew, crewRoll, pickRoll }); return state; }); },
   // A crew card's Background: a random preset, as picking it in Background does (ui/newgame.js randomBackground).
   "nr-rand-bg": (d) => {
@@ -1356,6 +1359,9 @@ const actions = {
     // Customize (sim/custompoints.js): nobody may start over their points.
     const over = ui.freeEdit && !ui.ironman ? overText(state) : "";
     if (over) { ui.nrMsg = over; return; }
+    // Starting vehicles (sim/startfleet.js, every mode): no back over its own point limit or its room.
+    const fleetOver = fleetText(state);
+    if (fleetOver) { ui.nrMsg = fleetOver; return; }
     ui.started = true;
     ui.speed = 0;
     ui.lastSpeed = 1;
@@ -1376,6 +1382,7 @@ const actions = {
     clearStartGear(state); // sim/startgear.js: picked gear is ordinary gear from here on
     loadUpAll(state); // sim/itemacts.js: every gun and magazine your people carry loaded with real rounds (what each carries, then the hub's stores): the badges count only rounds that are in them (2026-10-20)
     ui.gearEdit = null;
+    ui.fleetEdit = null;
     assignStartingRoles(state); // jobs by skill, after any edits made on this screen (world.js)
     centerOn(state, playerTile(state));
     const lead = state.survivors.find((s) => s.leader) || state.survivors[0];
@@ -1401,7 +1408,8 @@ for (const [k, fn] of Object.entries(WC_ACTIONS)) actions[k] = (d) => { const ch
 for (const [k, fn] of Object.entries(LOOK_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 // Custom backgrounds window (ui/backgrounds.js); its Done is bg-close in the table above.
 // Starting gear window (ui/startgear.js): a change builds the world again on the same seed, the window kept open.
-for (const [k, fn] of Object.entries(SG_ACTIONS)) actions[k] = (d) => { if (fn(state, ui, d)) gearRebuild(); };
+// A starting vehicle's change returns "fleet" (the world again with ui.fleet, the crew as it stands).
+for (const [k, fn] of Object.entries(SG_ACTIONS)) actions[k] = (d) => { const r = fn(state, ui, d); if (r) gearRebuild(r === "fleet"); };
 for (const [k, fn] of Object.entries(BG_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 // Inventory and loot screens (ui/inventory.js).
 for (const [k, fn] of Object.entries(BN_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // ui/basename.js
@@ -1644,15 +1652,19 @@ const changeActions = {
   // The new-run screen's Ironman box (ui/newgame.js): an Ironman crew starts as rolled, so ticking it turns Customize
   // off and, if the crew was customized (skills, traits, a picked background), builds the world again on the same seed
   // with only the names, looks and leader kept.
+  // Ironman also leaves the starting vehicles' backs as rolled (runOpts; sim/startfleet.js): a world built with backs set
+  // is built again without them, and unticking it brings them back.
   ironman: (el) => {
     ui.ironman = !!el.checked;
-    if (!ui.ironman) return;
+    const backs = (ui.fleet || []).some((f) => f && f.load);
+    if (!ui.ironman) { if (backs && !ui.started) newWorld(state.seed, true); return; }
     ui.freeEdit = false;
+    ui.fleetEdit = null;
     if (crewCustomized(state)) {
       // The crew's dice as they were before the first pick (pickRoll: main.js gave them dice of their own for it).
       newWorld(state.seed, true, { crew: ironmanCrew(state), crewRoll: ui.pickRoll ? null : ui.crewRoll });
       ui.nrMsg = "Ironman: the crew is back as rolled (skills, traits and who they were). Names, looks and the leader are kept.";
-    }
+    } else if (backs && !ui.started) newWorld(state.seed, true);
   },
   // Customize (not with Ironman; sim/custompoints.js): ticked, every colonist starts blank and is built on points (the
   // world again on the same seed, with a crew roll of its own so the map and the groups stay put); what was built
@@ -1739,7 +1751,7 @@ const changeActions = {
 };
 for (const [k, fn] of Object.entries({ ...FARM_CHANGE, ...HEALTH_CHANGE })) changeActions[k] = (el) => fn(state, ui, el);
 for (const [k, fn] of Object.entries(BG_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // the custom backgrounds window (ui/backgrounds.js)
-for (const [k, fn] of Object.entries(SG_CHANGE)) changeActions[k] = (el) => { if (fn(state, ui, el)) gearRebuild(); }; // the starting gear window (ui/startgear.js)
+for (const [k, fn] of Object.entries(SG_CHANGE)) changeActions[k] = (el) => { const r = fn(state, ui, el); if (r) gearRebuild(r === "fleet"); }; // the starting gear window and the Starting vehicles (ui/startgear.js)
 for (const [k, fn] of Object.entries(SKILL_CHANGE)) changeActions[k] = (el) => fn(state, ui, el);
 Object.assign(changeActions, fieldworksChange(() => state, ui)); // ui/fieldworks.js: post a lookout
 for (const [k, fn] of Object.entries(PROD_CHANGE)) changeActions[k] = (el) => fn(state, ui, el);
@@ -1764,13 +1776,15 @@ for (const [k, fn] of Object.entries(LAND_CHANGE)) changeActions[k] = (el) => fn
 for (const [k, fn] of Object.entries(GB_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // the gun builder's Ammo list // how many of a supply stack to move (ui/inventory.js)
 
 // The new-run screen's settings as createWorld's options (newWorld): Custom mode (sim/custommode.js) is a normal start
-// with ui.custom's counts (its Starting survivors: ui.startPeople); vehicle: Start with a vehicle.
+// with ui.custom's counts (its Starting survivors: ui.startPeople); vehicle: Start with a vehicle; fleet: the Starting
+// vehicles (each its kind, point limit and back).
 function runOpts() {
   const custom = ui.mode === "custom";
   return {
     factionCount: ui.factionCount, size: ui.worldSize, customW: ui.customW, customH: ui.customH, hives: ui.hiveCount,
     mode: custom ? "normal" : ui.mode, crewRoll: ui.crewRoll, startPeople: ui.startPeople, start: ui.startPick, worldCfg: uiCfg(ui),
     vehicle: ui.startVehicle !== false, custom: custom ? { ...ui.custom, people: ui.startPeople } : null,
+    fleet: ui.ironman ? (ui.fleet || []).map((f) => ({ ...f, load: null })) : ui.fleet, // Starting vehicles (sim/startfleet.js); Ironman: the backs as rolled
   };
 }
 
@@ -1843,12 +1857,15 @@ function pointsLoad(list) {
 }
 
 // Starting gear picked or cleared (ui/startgear.js): the world again on the same seed with the edited crew (the picks go
-// on after the dice, so nobody else's start changes), the gear window still open on the same colonist.
-function gearRebuild() {
-  const keep = ui.gearEdit;
-  ui.crewEdited = true;
+// on after the dice, so nobody else's start changes), the gear window still open on the same colonist. fleet: a starting
+// vehicle changed (its kind, the count, its back: sim/startfleet.js), the crew as it stands (edited or not), the vehicle's
+// back window still open.
+function gearRebuild(fleet = false) {
+  const keep = ui.gearEdit, keepFleet = ui.fleetEdit;
+  if (!fleet) ui.crewEdited = true;
   newWorld(state.seed, true);
   ui.gearEdit = keep;
+  ui.fleetEdit = keepFleet && state.fleet && state.fleet[keepFleet.i] ? keepFleet : null;
 }
 
 // A loaded world (ui/settings.js): like a new world, but already started, paused, and remembering its save slot.
@@ -2818,6 +2835,7 @@ function closeTopLayer() {
   if (ui.wcOpen) { actions["wc-close"](); return true; } // the World… window (ui/worldcfg.js): the world again if a dial moved
   if (ui.bgEditor) { closeBackgrounds(); return true; }
   if (ui.gearEdit) { ui.gearEdit = null; return true; } // the starting gear window (ui/startgear.js)
+  if (ui.fleetEdit) { ui.fleetEdit = null; return true; } // a starting vehicle's back window (ui/startgear.js)
   if (!ui.started && ui.nrMap) { backToSetup(ui); return true; } // looking at the map from the new-run screen: back to it
   if (ui.settings) { // a question first, then the menu itself (not while a save or load is running)
     if (ui.settings.confirm) ui.settings.confirm = null;
@@ -2903,7 +2921,7 @@ window.addEventListener("keydown", (e) => {
   if (ui.title) { if (!ui.settings && !ui.zombieLook && titleKey(ui, e)) e.preventDefault(); return; } // the title screen (ui/title.js): only the menu's keys
   if (e.code === "Escape" && !state.combat) { e.preventDefault(); openSettings(ui); refresh(); return; }
   if (ui.inv && ui.inv.form && !ui.gunb && !ui.settings && teamFormKey(state, ui, e)) { e.preventDefault(); refresh(); return; } // ui/teamform.js: tabs, picking people, Enter
-  if (ui.zombieLook || ui.wcOpen || ui.bgEditor || ui.gearEdit || ui.inv || ui.gunb || ui.settings) return; // these screens take the keyboard
+  if (ui.zombieLook || ui.wcOpen || ui.bgEditor || ui.gearEdit || ui.fleetEdit || ui.inv || ui.gunb || ui.settings) return; // these screens take the keyboard
   if (state.combat) {
     if (combatKey(state, e)) { e.preventDefault(); refresh(); }
     return;

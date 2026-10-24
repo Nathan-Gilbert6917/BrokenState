@@ -4,22 +4,26 @@
 //     carried only where they fit (a pocket, a pouch of its kind, the pack's slots), costing at most the budget, nothing
 //     for 0; the fill spends more of it; onto keeps what was there;
 //   - randomTrunk: at most START_TRUNK.ITEMS things the back takes, each supply within its cap (rounds by a crew gun's
-//     calibre, at most START_TRUNK.ROUNDS), costing at most the budget and weighing at most the room; empty for 0;
+//     calibre, at most START_TRUNK.ROUNDS), costing at most the budget and weighing at most the room; empty for 0; with
+//     fill (2026-10-24: a starting vehicle's 🎲 Random, up to its point limit) the same, and Custom's open backs (any
+//     thing and material, OPEN_TRUNK) within the budget and the room;
 //   - randomBuild: real traits, none twice, none clashing, at most MAX_TRAITS (three good, two bad), tiers in range,
 //     skills 0 to SKILL_MAX, a valid kit, never over the points;
-//   - the gear window's and the back's dice (kitBudget, trunkBudget) put nobody over;
+//   - the gear window's dice (kitBudget) put nobody over, and a vehicle's back (its own point limit since 2026-10-24) is
+//     on nobody's points;
 //   - the same seed draws the same.
 // Usage: node tools/randomkittest.js [-v]
 import { createWorld } from "../src/sim/world.js";
 import { GEAR, SKILLS, SUPPLIES, TRAITS, clashIn, traitKind } from "../src/sim/data.js";
 import { Rng } from "../src/sim/rng.js";
-import { START_GEAR, START_TRUNK, CARRY_PLACES, carryChoices, trunkChoices, carrySpec, carryReason, carryList, sanitizeStartGear, sanitizeStartVehicle, trunkKg, pickKey } from "../src/sim/startgear.js";
-import { CUSTOM_POINTS, slotPoints, pickPoints, vehiclePoints, pricePerson, overBudget } from "../src/sim/custompoints.js";
+import { START_GEAR, START_TRUNK, OPEN_TRUNK, CARRY_PLACES, carryChoices, trunkChoices, carrySpec, carryReason, carryList, sanitizeStartGear, sanitizeStartVehicle, trunkKg, pickKey } from "../src/sim/startgear.js";
+import { CUSTOM_POINTS, slotPoints, pickPoints, vehiclePoints, pricePerson } from "../src/sim/custompoints.js";
 import { tierCount } from "../src/sim/traits.js";
 import { SKILL_MAX } from "../src/sim/appearance.js";
 import { baseKey } from "../src/sim/rounds.js";
 import { gunCals } from "../src/sim/ammo.js";
-import { randomKit, randomTrunk, randomBuild, kitBudget, trunkBudget, kitKeys } from "../src/sim/randomkit.js";
+import { randomKit, randomTrunk, randomBuild, kitBudget, kitKeys } from "../src/sim/randomkit.js";
+import { fleetRoom } from "../src/sim/startfleet.js";
 
 let pass = 0, fail = 0;
 const VERBOSE = process.argv.includes("-v");
@@ -153,6 +157,30 @@ section("randomTrunk: things the back takes, supplies within caps, the points an
   let empty = true;
   for (let seed = 1; seed <= 50; seed++) { const V = randomTrunk(0, 300, new Rng(seed)); if (V.items.length || Object.keys(V.supplies).length) empty = false; }
   check(empty, "a budget of 0: an empty back");
+  // Filled up to the budget (the starting vehicles' 🎲 Random): Normal and Hardcore's caps, Custom's open backs.
+  for (const open of [false, true]) {
+    const bad = [];
+    let m = 0, spent = 0, asked = 0;
+    for (const budget of [0, 10, 60, 200, 1000]) for (const room of [0, 60, 300, 2500]) for (let seed = 1; seed <= 12; seed++) {
+      const cals = CALS[seed % CALS.length];
+      const V = randomTrunk(budget, room, new Rng(seed * 7919 + budget + room), cals, { fill: true, open });
+      const f = firstBad([
+        V.items.length > (open ? OPEN_TRUNK.ITEMS : START_TRUNK.ITEMS) && `${V.items.length} things`,
+        V.items.find((k) => !TRUNK_OK.has(k)) && "not a back thing",
+        Object.entries(V.supplies).find(([, q]) => !(Number.isInteger(q) && q > 0)) && `a supply not a whole count: ${JSON.stringify(V.supplies)}`,
+        !open && Object.entries(V.supplies).find(([k, q]) => k in START_TRUNK.SUPPLIES && q > START_TRUNK.SUPPLIES[k]) && `a supply past its cap: ${JSON.stringify(V.supplies)}`,
+        !open && ROUNDS(V.supplies).reduce((a, k) => a + V.supplies[k], 0) > START_TRUNK.ROUNDS && "too many rounds",
+        vehiclePoints(V) > budget && `costs ${vehiclePoints(V)}`,
+        trunkKg(V) > room + 1e-9 && `weighs ${trunkKg(V)} kg`,
+        backKey(sanitizeStartVehicle(V, open)) !== backKey(V) && `changed by sanitizeStartVehicle: ${JSON.stringify(V)}`,
+      ]);
+      if (f) bad.push(`budget ${budget} room ${room} seed ${seed}: ${f}`);
+      if (budget === 60 && room === 2500) { spent += vehiclePoints(V); asked += budget; }
+      m++;
+    }
+    check(!bad.length, `${open ? "Custom (open)" : "Normal and Hardcore"}: every filled back valid (${m} draws)${bad.length ? `: ${bad.length} bad, first ${bad[0]}` : ""}`);
+    check(spent >= asked * 0.9, `${open ? "Custom (open)" : "Normal and Hardcore"}: filled up to the budget (60 in a big room: ${spent} of ${asked} points spent)`);
+  }
 }
 
 section("randomBuild: traits, skills and kit within the points");
@@ -195,7 +223,7 @@ section("randomBuild: traits, skills and kit within the points");
   check(counts.every((c, i) => i === 0 || c > 0), `none to five traits all drawn (${counts.join(" / ")})`);
 }
 
-section("The gear window's and the back's dice: nobody over");
+section("The gear window's dice: nobody over; the vehicle's back on nobody's points");
 {
   let kitOver = "", backOver = "";
   for (let seed = 1; seed <= 40; seed++) {
@@ -206,14 +234,15 @@ section("The gear window's and the back's dice: nobody over");
       s.startGear = randomKit(kitBudget(st, s), new Rng(seed * 17 + s.id)); // the gear window's dice on a built colonist
       if (pricePerson(st, s).left < 0 && !kitOver) kitOver = `seed ${seed} ${s.name}: ${pricePerson(st, s).total} of 90`;
     }
-    const payer = st.survivors[0];
-    for (const s of st.survivors.slice(1)) s.carPool = seed % 2 === 0; // with and without the car pool
-    payer.startVehicle = { items: [], supplies: {} };
-    payer.startVehicle = randomTrunk(trunkBudget(st, payer), 500, new Rng(seed * 19), gunCals(st.survivors));
-    if (overBudget(st).length && !backOver) backOver = `seed ${seed}: ${overBudget(st).map((s) => s.name)} over`;
+    // The starting vehicle's back (sim/startfleet.js): up to its own point limit, in its room, on nobody's points.
+    const before = st.survivors.map((s) => pricePerson(st, s).total).join();
+    const limit = [0, 30, 60, 150][seed % 4];
+    st.fleet[0].limit = limit;
+    st.fleet[0].load = randomTrunk(limit, fleetRoom(st, 0), new Rng(seed * 19), gunCals(st.survivors), { fill: true });
+    if ((vehiclePoints(st.fleet[0].load) > limit || trunkKg(st.fleet[0].load) > fleetRoom(st, 0) || st.survivors.map((s) => pricePerson(st, s).total).join() !== before) && !backOver) backOver = `seed ${seed}: ${vehiclePoints(st.fleet[0].load)} of ${limit}`;
   }
   check(!kitOver, `Random kit on a built colonist: within their points${kitOver ? `: ${kitOver}` : ""}`);
-  check(!backOver, `Random back: nobody over, with and without the car pool${backOver ? `: ${backOver}` : ""}`);
+  check(!backOver, `Random back: within its own limit and room, nobody's points changed${backOver ? `: ${backOver}` : ""}`);
 }
 
 section("The same seed draws the same");
@@ -225,6 +254,7 @@ section("The same seed draws the same");
   check(JSON.stringify([a.traits, a.traitTier, a.skills, a.startGear]) === JSON.stringify([b.traits, b.traitTier, b.skills, b.startGear]), "randomBuild");
   check(JSON.stringify(randomKit(50, new Rng(9), { fill: true })) === JSON.stringify(randomKit(50, new Rng(9), { fill: true })), "randomKit");
   check(JSON.stringify(randomTrunk(80, 100, new Rng(9))) === JSON.stringify(randomTrunk(80, 100, new Rng(9))), "randomTrunk");
+  check(JSON.stringify(randomTrunk(300, 900, new Rng(9), {}, { fill: true, open: true })) === JSON.stringify(randomTrunk(300, 900, new Rng(9), {}, { fill: true, open: true })), "randomTrunk filled, open");
 }
 
 console.log(`\n${pass} passed, ${fail} failed (${((Date.now() - t0) / 1000).toFixed(1)}s)`);

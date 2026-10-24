@@ -8,8 +8,9 @@
 //   - traits on the card: the clash table, at most five, tiers up and down and their points;
 //   - what they carry placed by hand: the window's cells (pick up, move, swap), Add to the spot picked or where it
 //     fits, refusals with the reason, a smaller bag moving or taking out what no longer fits;
-//   - the vehicle's back: a normal start's pickup unloaded at the hub, Hardcore's car (whoever pays owns it), its room,
-//     the dice's back, who pays;
+//   - the vehicle's back (since 2026-10-24 the starting vehicle's own, against its point limit: sim/startfleet.js,
+//     tools/startfleettest.js): a normal start's pickup unloaded at the hub, Hardcore's car, its room, the dice's back,
+//     on nobody's points;
 //   - a custom background picked under points: its skills, traits and kit loaded and priced, its own supplies and car;
 //   - every rebuild keeps the picks and the points (seed, size, groups, hives, mode, starting people, a background),
 //     Ironman refuses, the seed's map and groups stay put, a save and load after Start, the first days on autopilot;
@@ -19,7 +20,7 @@ import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from ".
 import { readFileSync } from "node:fs";
 import { createWorld, tickHour, day, HUB_TOOLS } from "../src/sim/world.js";
 import { GEAR, SKILLS, TRAITS, traitKind } from "../src/sim/data.js";
-import { CUSTOM_POINTS, skillCost, nextLevelCost, itemPoints, loosePoints, slotPoints, suppliesPoints, gunExtras, pricePerson, overBudget, overText, clampMax } from "../src/sim/custompoints.js";
+import { CUSTOM_POINTS, skillCost, nextLevelCost, itemPoints, loosePoints, slotPoints, suppliesPoints, gunExtras, pricePerson, overBudget, overText, clampMax, vehiclePoints, bgCarBack } from "../src/sim/custompoints.js";
 import { TRAIT_TIERS, traitPoints, traitTier, tierCount } from "../src/sim/traits.js";
 import { START_GEAR, carryList, clearStartGear, sanitizeStartGear, trunkKg } from "../src/sim/startgear.js";
 import { allCarried, packOf, rigPouches } from "../src/sim/inventory.js";
@@ -87,7 +88,11 @@ section("A blank start, Start from the dice, Clear");
     check(st.survivors.every((s) => !allCarried(s).length && START_GEAR.SLOTS.every((k) => !s.gear[k])), `${mode}: nothing worn, held or carried`);
     // (the armory's own tool shelf aside: world.js HUB_TOOLS, every new hub's, since the tools of 2026-10-21)
     if (mode === "normal") check(st.bases[0].armory.every((it) => HUB_TOOLS.includes(it.key)) && !st.bases[0].armory.some((it) => GEAR[it.key].slot === "weapon" && !HUB_TOOLS.includes(it.key)), "normal: the dice's weapons and vest are not handed to the armory on top");
-    else check(backOf(st.parties[0]).length === 0 && totalRounds(st.parties[0].supplies) === 0, "Hardcore: nothing of the grab or the car's back on the team (the rolled guns' rounds neither)");
+    else {
+      // The car's back is the starting vehicle's own since 2026-10-24 (sim/startfleet.js): as rolled, the dice's, on nobody's points.
+      const dice = (st.survivors.find((s) => s.diceTrunk) || {}).diceTrunk;
+      check(totalRounds(st.parties[0].supplies) === 0 && st.fleet[0].load === null && dice && backOf(st.parties[0]).length === dice.items.length, "Hardcore: nothing of the grab on the team (the rolled guns' rounds neither); the car's back as rolled, its own");
+    }
     // Start from the dice: what was rolled, priced.
     const ui = UI();
     check(SG_ACTIONS["sg-dice"](st, ui, { i: 0 }) === true, `${mode}: Start from the dice asks for a rebuild`);
@@ -225,47 +230,43 @@ section("What they carry, placed by hand");
 
 section("The vehicle's back");
 {
-  // A normal start: the hub's pickup, unloaded on day 1.
+  // A normal start: the hub's pickup, unloaded on day 1. Its back is the vehicle's own (sim/startfleet.js): priced against
+  // its point limit, on nobody's points.
   const st = blankWorld(42);
   const ui = UI();
-  ui.gearEdit = { i: 0, sel: null, msg: "" };
+  ui.fleetEdit = { i: 0, msg: "" };
   const info = startVehicleInfo(st);
   check(info && info.type === "truck" && !info.hard && info.room === 650, `normal: the hub's ${info && info.name}, ${info && info.room} kg`);
   SG_CHANGE["sg-trunk-add"](st, ui, { value: "ar", dataset: {} });
   SG_CHANGE["sg-trunk-sup"](st, ui, { value: "30", dataset: { k: "food" } });
   SG_CHANGE["sg-trunk-sup"](st, ui, { value: "4", dataset: { k: "meds" } });
-  const lead = st.survivors.find((s) => s.leader);
-  check(lead.startVehicle && lead.startVehicle.items.join() === "ar" && lead.startVehicle.supplies.food === 30, "nobody paying yet: the leader pays");
-  check(pricePerson(st, lead).vehicle === loosePoints("ar") + suppliesPoints({ food: 30, meds: 4 }) && loosePoints("ar") === itemPoints("ar") + suppliesPoints({ a_556_fmj: 30 }), `and it is in their points, the rifle with its loaded magazine (${pricePerson(st, lead).vehicle})`);
-  const other = st.survivors.find((s) => !s.leader);
-  SG_CHANGE["sg-trunk-owner"](st, ui, { value: String(other.id) });
-  check(!lead.startVehicle && other.startVehicle && pricePerson(st, other).vehicle > 0 && pricePerson(st, lead).vehicle === 0, "Paid by: the back moves to them");
+  const V = ui.fleet[0].load;
+  check(V && V.items.join() === "ar" && V.supplies.food === 30 && JSON.stringify(st.fleet[0].load) === JSON.stringify(V), "the pickup's back: on the screen's fleet and the world's");
+  check(vehiclePoints(V) === loosePoints("ar") + suppliesPoints({ food: 30, meds: 4 }) && loosePoints("ar") === itemPoints("ar") + suppliesPoints({ a_556_fmj: 30 }) && st.survivors.every((s) => pricePerson(st, s).total === 0), `priced against its limit, the rifle with its loaded magazine (${vehiclePoints(V)}), nobody's points`);
   const base = createWorld({ seed: 42, factionCount: 5, crewRoll: ROLL });
-  const b = again(st);
+  const b = again(st, { fleet: ui.fleet });
   check(b.bases[0].armory.some((it) => it.key === "ar") && Math.abs(food(b.bases[0]) - food(base.bases[0]) - 30) < 1.01 && b.bases[0].stock.meds === base.bases[0].stock.meds + 4, "built: the rifle in the hub's armory, the food and meds in its stores");
   SG_CHANGE["sg-trunk-sup"](b, ui, { value: "999", dataset: { k: "fuel" } });
-  check((b.survivors.find((s) => s.startVehicle).startVehicle.supplies.fuel || 0) === 40, "a supply held to its cap");
-  check(SG_ACTIONS["sg-trunk-dice"](b, ui) === false && /comes empty/.test(ui.gearEdit.msg), "normal: the dice's back is empty, it says so");
+  check((ui.fleet[0].load.supplies.fuel || 0) === 40, "a supply held to its cap");
+  check(SG_ACTIONS["sg-trunk-dice"](b, ui) === false && /come empty/.test(ui.fleetEdit.msg), "normal: the dice's back is empty, it says so");
   // Hardcore: the car the team flees in.
   const hc = blankWorld(42, { mode: "hardcore" });
   const hi = startVehicleInfo(hc);
   check(hi && hi.hard && hi.room > 0 && hi.room < 900, `Hardcore: the ${hi.name}, ${hi.room} kg of room with everyone in it`);
-  check(backOf(hc.parties[0]).length === 0, "blank: an empty back");
-  ui.gearEdit = { i: 0, sel: null, msg: "" };
-  check(SG_ACTIONS["sg-trunk-dice"](hc, ui) === true, "the dice's back can be loaded");
   const dice = hc.survivors.find((s) => s.diceTrunk).diceTrunk;
-  const payer = hc.survivors.find((s) => s.startVehicle);
-  check(JSON.stringify(payer.startVehicle.items) === JSON.stringify(dice.items) && pricePerson(hc, payer).vehicle > 0, `the dice's back as picks (${dice.items.join(", ") || "no things"}; ${JSON.stringify(dice.supplies)}), priced`);
-  const owner3 = hc.survivors[2];
-  SG_CHANGE["sg-trunk-owner"](hc, ui, { value: String(owner3.id) });
-  const h2 = again(hc);
-  check(h2.hardcore.start.carOwner === h2.survivors[2].id, "whoever pays owns the car");
-  check(backOf(h2.parties[0]).map((it) => it.key).join() === dice.items.join(), "the car's back is exactly what was picked");
+  check(backOf(hc.parties[0]).length === dice.items.length && hc.fleet[0].load === null, `as rolled: the dice's back (${dice.items.join(", ") || "no things"}; ${JSON.stringify(dice.supplies)})`);
+  const uh = UI();
+  uh.fleetEdit = { i: 0, msg: "" };
+  check(SG_ACTIONS["sg-trunk-clear"](hc, uh) === "fleet" && uh.fleet[0].load && !uh.fleet[0].load.items.length, "Empty: an empty back of its own");
+  const h2 = again(hc, { fleet: uh.fleet });
+  const ownerAt = (w) => w.survivors.findIndex((x) => x.id === w.hardcore.start.carOwner);
+  check(backOf(h2.parties[0]).length === 0 && ownerAt(h2) === ownerAt(hc), "the car's back is exactly what was set (nothing), the same owner");
+  check(SG_ACTIONS["sg-trunk-dice"](h2, uh) === "fleet" && uh.fleet[0].load === null, "As rolled: the dice's back again");
   // Room.
-  const heavy = h2.survivors[2];
-  for (let k = 0; k < 20; k++) SG_CHANGE["sg-trunk-add"](h2, ui, { value: "sandbags", dataset: {} });
-  const kg = trunkKg(heavy.startVehicle);
-  check(kg <= startVehicleInfo(h2).room && heavy.startVehicle.items.length <= 16 && /No room|At most/.test(ui.gearEdit.msg), `the back fills up to its room (${kg} / ${startVehicleInfo(h2).room} kg): "${ui.gearEdit.msg}"`);
+  uh.fleet[0].limit = h2.fleet[0].limit = 1000;
+  for (let k = 0; k < 20; k++) SG_CHANGE["sg-trunk-add"](h2, uh, { value: "sandbags", dataset: {} });
+  const kg = trunkKg(uh.fleet[0].load);
+  check(kg <= startVehicleInfo(h2).room && uh.fleet[0].load.items.length <= 16 && /No room|At most/.test(uh.fleetEdit.msg), `the back fills up to its room (${kg} / ${startVehicleInfo(h2).room} kg): "${uh.fleetEdit.msg}"`);
 }
 
 section("A custom background under points");
@@ -284,7 +285,7 @@ section("A custom background under points");
     check(s.background === "c_1" && Object.entries(A.skills).every(([k, v]) => s.skills[k] >= v) && A.traits.every((t) => s.traits.includes(t)), `${mode}: its skills and traits on them (${s.traits.join(", ")})`);
     check(Object.values(A.gear).every((k) => START_GEAR.SLOTS.some((slot) => s.gear[slot] && s.gear[slot].key === k)), `${mode}: its kit on them`);
     const B = pricePerson(b, s);
-    check(B.extra === suppliesPoints(A.supplies) + (mode === "normal" && A.car.type ? CUSTOM_POINTS.VEHICLE[A.car.type] ?? 20 : 0) && B.total > 30, `${mode}: priced: ${B.total} (${B.lines.join(", ")})`);
+    check(B.extra === suppliesPoints(A.supplies) + (mode === "normal" && A.car.type ? CUSTOM_POINTS.VEHICLE[A.car.type] ?? 20 : 0) + (mode === "normal" ? bgCarBack(A) : 0) && B.total > 30, `${mode}: priced: ${B.total} (${B.lines.join(", ")})`);
     if (mode === "normal") check(!b.bases[0].armory.some((it) => Object.values(A.gear).includes(it.key) && it.key !== "knife"), "normal: the background's kit is not in the armory twice");
   }
   setCustomLibrary([]);
@@ -310,7 +311,9 @@ section("Every rebuild keeps the picks and the points");
   s.traits = ["brave", "loud"]; s.traitTier = { brave: 2 };
   SG_CHANGE["sg-slot"](st, ui, { value: "huntrifle", dataset: { slot: "weapon" } });
   SG_CHANGE["sg-item-add"](st, ui, { value: "phone", dataset: {} });
+  ui.fleetEdit = { i: 0, msg: "" };
   SG_CHANGE["sg-trunk-add"](st, ui, { value: "binoculars", dataset: {} });
+  ui.fleetEdit = null;
   const want = pricePerson(st, s).total;
   const ok = (w) => { const x = w.survivors[1]; return x && x.startPoints && x.skills.shooting === 12 && x.traits.join() === "brave,loud" && traitTier(x, "brave") === 2 && x.gear.weapon && x.gear.weapon.key === "huntrifle" && keysOn(x).includes("phone") && pricePerson(w, x).total === want; };
   let cur = again(st);
@@ -318,12 +321,12 @@ section("Every rebuild keeps the picks and the points");
   const steps = [["another seed", { seed: 77 }], ["Large", { seed: 77, size: "large" }], ["2 groups", { seed: 77, factionCount: 2 }], ["3 hives", { seed: 77, hives: 3 }],
     ["Hardcore", { seed: 77, mode: "hardcore" }], ["Hardcore, 2 people", { seed: 77, mode: "hardcore", startPeople: 2 }], ["Normal again", { seed: 77, mode: "normal" }]];
   for (const [what, opts] of steps) {
-    const w = createWorld({ factionCount: 5, crewRoll: ROLL, ...opts, crew: crewSnapshot(cur) });
+    const w = createWorld({ factionCount: 5, crewRoll: ROLL, ...opts, crew: crewSnapshot(cur), fleet: ui.fleet }); // the starting vehicle's back: the screen's (main.js ui.fleet)
     w.pointsMax = CUSTOM_POINTS.DEF;
     const x = w.survivors[1];
     const keep = ok(w) || (opts.mode === "hardcore" && x && x.startPoints && x.skills.shooting === 12 && traitTier(x, "brave") === 2 && x.gear.weapon.key === "huntrifle" && keysOn(x).includes("phone"));
     check(keep, `${what}: the picks on them${x ? ` (${pricePerson(w, x).total} points)` : ""}`);
-    check(w.survivors.find((y) => y.startVehicle) && w.survivors.find((y) => y.startVehicle).startVehicle.items.join() === "binoculars", `${what}: the vehicle's back too`);
+    check(w.fleet[0].load && w.fleet[0].load.items.join() === "binoculars", `${what}: the vehicle's back too`);
     cur = w;
   }
   // A background picked for someone else: theirs stay.

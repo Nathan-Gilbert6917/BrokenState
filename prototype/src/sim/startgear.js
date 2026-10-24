@@ -14,7 +14,7 @@
 //                                 of the rig (or of a vest or carrier with pouches of its own) in order, the pack's
 //                                 slots. Undefined: as rolled; all empty: nothing carried.
 //   mods: { [gun slot]: key | "" } | undefined   the gun in the hands' parts (applyGunMods below).
-//   A carried pick (and a thing in the vehicle's back, s.startVehicle.items) is a key, or { key, mods } for a gun with
+//   A carried pick (and a thing in a starting vehicle's back, state.fleet[i].load.items) is a key, or { key, mods } for a gun with
 //   parts picked (the same mods as the hands'; pickKey / pickMods read either form, cleanPick makes it safe: a gun
 //   with no parts left goes back to the plain key, so older picks and crew snapshots need no change).
 //   rolled, left, rig             written when the picks are put on (applyStartGear) for the editor: what the dice gave
@@ -23,11 +23,13 @@
 // s.startDice: { weapon?, armor? } the dice's items a pick replaced, so a normal start's crew snapshot carries the dice's
 // weapon and vest (Randomize all shuffles them) and not the picked ones: a pick cleared later gets the dice's back.
 // s.diceKit: what the dice gave them, as picks (every slot and where each carried thing was), written as the picks go
-// on: the new-run screen's "Start from the dice" loads it. s.diceTrunk (on the vehicle's owner): what the dice put in
-// the vehicle's back. Neither is carried into a rebuild.
-// s.startVehicle: { items: [keys], supplies: { key: n } } on the colonist who pays for the vehicle's back (custompoints.js:
-// the owner pays): Hardcore, the car the team flees in is theirs and this is its back; a normal start, the hub's
-// pickup is unloaded into the hub's armory and stores on the first day.
+// on: the new-run screen's "Start from the dice" loads it. s.diceTrunk (on the Hardcore car's owner): what the dice put
+// in the car's back (shown as its "As rolled" load). Neither is carried into a rebuild.
+// The starting vehicles' backs (2026-10-24, user request: startfleet.js): no longer on a colonist (s.startVehicle and the
+// car pool are gone) but on each vehicle of the new-run screen's Starting vehicles, each with its own point limit:
+// state.fleet[i].load, { items: [picks], supplies: { key: n } } (null: as rolled). Hardcore, the car the team flees in
+// (a load in place of the dice's back: trunkFromPicks); a normal or Custom start, each vehicle at the hub is unloaded
+// into the hub's armory and stores on the first day (normalStartVehicle).
 //
 // The picks go on after the dice and any custom background (the same dice for everyone else, so picking for one
 // colonist changes nobody else's start):
@@ -468,26 +470,39 @@ export function normalStartGear(state, base) {
 }
 
 // ---------- the vehicle's back ----------
-// What the back can be loaded with on the new-run screen: at most this much of each supply and ITEMS things (and no
-// more than the vehicle's payload: ui/startgear.js). Priced like anything else (custompoints.js).
+// What a back can be loaded with on the new-run screen (Normal and Hardcore): at most this much of each supply and ITEMS
+// things (and no more than the vehicle's room: startfleet.js fleetRoom). Priced like anything else (custompoints.js
+// vehiclePoints), against the vehicle's own point limit (startfleet.js).
 // Rounds go by calibre and type (2026-10-09, user request: "All ammo should be based on caliber"): any round keys,
 // ROUNDS in all; a back saved with a generic "ammo" number gets the common rounds of the guns in it (9mm and 12 gauge).
 export const START_TRUNK = { SUPPLIES: { food: 60, water: 60, fuel: 40, meds: 20, arrows: 60, scrap: 40, parts: 20 }, ROUNDS: 300, ITEMS: 16 };
+// Custom mode's backs (2026-10-24, user request: "The items can be any item and material in the game"): any thing and any
+// supply or material (data.js SUPPLIES: wood, stone, scrap, parts, fuel, water, meds, rounds by calibre, foods...), with
+// no caps but these (to keep a typo from hanging the game): the vehicle's point limit and its room limit them.
+export const OPEN_TRUNK = { ITEMS: 120, MAX: 99999, ROUNDS: 99999 };
 const TRUNK_CAPS = START_TRUNK.SUPPLIES, TRUNK_ITEMS = START_TRUNK.ITEMS;
 export const TRUNK_SUPPLIES = Object.keys(TRUNK_CAPS);
+// Every supply key a Custom back may hold (no generic "ammo", no rounds: those go by calibre): "food" (days of it) first.
+export const openSupplyKeys = () => ["food", ...Object.keys(SUPPLIES).filter((k) => k !== "ammo" && !ROUND_SUPPLIES[k])];
 // The vehicle's back made safe: { items: [keys] (at most TRUNK_ITEMS), supplies: { key: n } (TRUNK_CAPS) } or null.
-/** @param {any} raw */
-export function sanitizeStartVehicle(raw) {
+// open (Custom mode): any thing and any supply key, only OPEN_TRUNK's caps.
+/** @param {any} raw @param {boolean} [open] */
+export function sanitizeStartVehicle(raw, open = false) {
   if (!raw || typeof raw !== "object") return null;
   const ok = new Set(trunkChoices());
-  const items = (Array.isArray(raw.items) ? raw.items : []).map((k) => cleanPick(k, ok)).filter(Boolean).slice(0, TRUNK_ITEMS);
+  const items = (Array.isArray(raw.items) ? raw.items : []).map((k) => cleanPick(k, ok)).filter(Boolean).slice(0, open ? OPEN_TRUNK.ITEMS : TRUNK_ITEMS);
   /** @type {Record<string, number>} */
   const supplies = {};
-  for (const [k, cap] of Object.entries(TRUNK_CAPS)) { const n = Math.round(Number(raw.supplies && raw.supplies[k])); if (n > 0) supplies[k] = Math.min(cap, n); }
+  const src = raw.supplies && typeof raw.supplies === "object" ? raw.supplies : {};
+  if (open) {
+    for (const k of openSupplyKeys()) { const n = Math.round(Number(src[k])); if (n > 0) supplies[k] = Math.min(OPEN_TRUNK.MAX, n); }
+  } else {
+    for (const [k, cap] of Object.entries(TRUNK_CAPS)) { const n = Math.round(Number(src[k])); if (n > 0) supplies[k] = Math.min(cap, n); }
+  }
   /** @type {Record<string, number>} */
   const cals = {};
   for (const k of items) { const c = calOf(k); if (c) cals[c] = (cals[c] || 0) + 1; }
-  Object.assign(supplies, capRounds(raw.supplies, START_TRUNK.ROUNDS, cals)); // ammo.js: rounds by calibre
+  Object.assign(supplies, capRounds(src, open ? OPEN_TRUNK.ROUNDS : START_TRUNK.ROUNDS, cals)); // ammo.js: rounds by calibre
   return { items, supplies };
 }
 // What the back weighs (kg): its things and supplies.
@@ -497,23 +512,23 @@ export function trunkKg(v) {
   const kg = (v.items || []).reduce((a, e) => { const k = pickKey(e); return a + (k && GEAR[k] ? (GEAR[k].weight ?? 1) * pickN(e) : 0); }, 0) + Object.entries(v.supplies || {}).reduce((a, [k, n]) => a + (SUPPLIES[k] ? SUPPLIES[k].weight || 0 : 0) * n, 0);
   return Math.round(kg * 10) / 10;
 }
-// Whose vehicle's back it is (the colonist with s.startVehicle): one only.
-/** @param {any} state */
-export const vehicleOwner = (state) => (state.survivors || []).find((s) => s.startVehicle) || null;
-// A normal start: the hub's pickup's back (picked on the new-run screen) is unloaded into the armory and the stores.
+// A normal or Custom start: each starting vehicle's back set on the new-run screen (state.fleet[i].load, startfleet.js)
+// is unloaded into the hub's armory and stores on the first day; one left as rolled (null) comes empty.
 /** @param {any} state @param {any} base */
 export function normalStartVehicle(state, base) {
-  if (!startsWithVehicle(state)) return; // Start with a vehicle off (custommode.js): no pickup, no back
-  const o = vehicleOwner(state);
-  const v = o && sanitizeStartVehicle(o.startVehicle);
-  if (!v) return;
-  for (const e of v.items) base.armory.push(pickItem(e));
-  for (const [k, n] of Object.entries(v.supplies)) {
-    if (k === "food" || k === "preserved") addFoodUnits(state, base, k === "preserved" ? "keeps" : "house", n); // foods.js: days of food as a house's kitchen food
-    else base.stock[k] = (base.stock[k] || 0) + n;
+  if (!startsWithVehicle(state)) return; // Start with a vehicle off (custommode.js): no vehicles, no backs
+  const open = !!state.custom; // Custom mode: any thing and material
+  for (const f of state.fleet || []) {
+    const v = f && f.vid != null ? sanitizeStartVehicle(f.load, open) : null;
+    if (!v) continue;
+    for (const e of v.items) base.armory.push(pickItem(e));
+    for (const [k, n] of Object.entries(v.supplies)) {
+      if (k === "food" || k === "preserved") addFoodUnits(state, base, k === "preserved" ? "keeps" : "house", n); // foods.js: days of food as a house's kitchen food
+      else base.stock[k] = (base.stock[k] || 0) + n;
+    }
   }
 }
-// Hardcore (hardcore-start.js rollCar): the picked back in place of the dice's. Returns { gear: items, supplies }.
+// Hardcore (hardcore-start.js rollCar): the back set on the new-run screen in place of the dice's. Returns { gear: items, supplies }.
 /** @param {any} v */
 export function trunkFromPicks(v) {
   const P = sanitizeStartVehicle(v);
@@ -554,9 +569,12 @@ export function kitLoad(s) {
   return { kg, max: maxLoad(s), band, name: LOAD_BANDS[band].name };
 }
 
-// Start: the picks are ordinary gear from here on; nothing of the new-run screen stays on the colonists.
+// Start: the picks are ordinary gear from here on; nothing of the new-run screen stays on the colonists (s.startVehicle
+// and s.carPool: crew snapshots from before the starting vehicles had their own loads), nor the starting vehicles' loads
+// (state.fleet: unloaded or in the car already).
 /** @param {any} state */
 export function clearStartGear(state) {
+  delete state.fleet;
   for (const s of state.survivors) {
     for (const k of ["startGear", "startDice", "diceKit", "diceRoll", "diceTrunk", "startVehicle", "startPoints", "carPool", "ownMax", "grabRoll", "grabPick", "carRoll", "bgKept"]) delete s[k];
   }

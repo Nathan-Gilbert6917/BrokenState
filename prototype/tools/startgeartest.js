@@ -248,7 +248,7 @@ section("The window and the crew card");
   const w = startGearEditor(st, ui);
   check((w.match(/data-action="sg-slot"/g) || []).length === START_GEAR.SLOTS.length && /<optgroup label="Automatic weapons">/.test(w) && /title="[^"]+"/.test(w) && / · \d+(\.\d+)? kg · \d+ pts<\/option>/.test(w) && !/As rolled/.test(w), "the window: a picker per slot (Nothing or a thing), grouped by category, weight and points shown, the description on hover");
   check((w.match(/data-action="sg-cell"/g) || []).length === 4 + GEAR.plate.pouches.length + GEAR.rucksack.slots && /Pockets \(1\/4\)/.test(w) && /data-action="sg-item-add"/.test(w), "a cell for every pocket, pouch and pack slot, how full each is, and Add a thing…");
-  check(/The vehicle's back/.test(w) && /data-action="sg-trunk-add"/.test(w) && /data-action="sg-trunk-owner"/.test(w), "the vehicle's back, who pays");
+  check(/The vehicles' backs: Starting vehicles/.test(w) && !/data-action="sg-trunk-/.test(w), "the vehicle's back is no longer here: it points at Starting vehicles (2026-10-24: a point limit each, tools/startfleettest.js)");
   const L = kitLoad(st.survivors[0]);
   check(L.kg > 20 && new RegExp(`${L.kg} / ${L.max} kg`).test(w) && w.includes(L.name), `the load is shown: ${L.kg} / ${L.max} kg, ${L.name}`);
   check(/gear/i.test(gearRow(st, st.survivors[0])), "the card row builds");

@@ -571,7 +571,7 @@ export function normalStartKit(state, base) {
       const T = VEHICLE_TYPES[A.car.type];
       createVehicle(state, A.car.type, { kind: "base", baseId: base.id }, { fuel: Math.round(T.tank * 0.5 * 10) / 10, condition: 70 });
     }
-    // The car's back to the hub too (Customize: on the vehicle's back's bill, custompoints.js bgBacks).
+    // The car's back to the hub too (Customize: on the bill of the colonist with the background, custompoints.js bgBacks).
     for (const [k, q] of Object.entries(typeFind(state, { ...(A.car.trunk || {}) }, "travel"))) if (SUPPLY_KEYS.includes(k) && q > 0) base.stock[k] = (base.stock[k] || 0) + q; // foods.js: the back's food as items
     for (const key of A.car.items || []) if (GEAR[key]) { const it = startKit(newItem(key, 1)); base.armory.push(s.startPoints ? loadGun(it) : it); } // Customize: a gun in it loaded (priced so)
   }
@@ -580,17 +580,18 @@ export function normalStartKit(state, base) {
 // ---------- the car ----------
 // Whose car it was (the three's carOdds), what it is (their CARS), its tank and condition (CAR), and what was in the
 // back (TRUNK: supplies and things). Makes the vehicle on the team and loads the cargo. Returns { owner, car, trunk }.
-// Customize (custompoints.js, startgear.js): whoever pays for the back on the new-run screen (s.startVehicle) owns the
-// car (the dice's pick is still drawn, so the dice after it are where they were), and with anyone built on points the
-// back is exactly what was picked (the dice's back is drawn and noted on the owner, s.diceTrunk, for "Start from the
-// dice", but not loaded). The seats a small team loaded stay as they are.
+// Starting vehicles (startfleet.js, 2026-10-24, user request): a back set on the new-run screen (state.fleet[0].load,
+// priced against the car's own point limit) is exactly what is in it; the dice's back is drawn all the same (so the
+// dice after it are where they were) and noted on the owner (s.diceTrunk: the "As rolled" load the screen shows), but
+// not loaded. Left as rolled (null), the dice's back. The seats a small team loaded stay as they are.
 export function rollCar(state, p, people, keptOwner = null) {
   const rng = state.rng, C = HC_START;
   // A custom background's odds may be 0 (never theirs); all 0: anyone's.
   const odds = (s) => { const a = archetypeOf(state, s.background) || {}; return a.custom ? a.car.odds : a.carOdds || 1; };
   const drawn = people.some((s) => odds(s) > 0) ? rng.weighted(people, odds) : rng.pick(people);
-  const owner = people.find((s) => s.startVehicle) || keptOwner || drawn;
-  const picked = people.some((s) => s.startPoints);
+  const owner = keptOwner || drawn;
+  const fleet0 = state.fleet && state.fleet[0];
+  const picked = !!(fleet0 && fleet0.load); // the back set on the new-run screen
   const A = archetypeOf(state, owner.background) || {};
   const type = A.custom && A.car.type ? A.car.type : pickW(rng, A.custom ? { sedan: 2, truck: 1 } : A.cars || { sedan: 2, truck: 1 });
   const T = VEHICLE_TYPES[type];
@@ -617,7 +618,7 @@ export function rollCar(state, p, people, keptOwner = null) {
   }
   calibrate(trunk.supplies, gunCals(people, trunk.gear)); // ammo.js: the back's rounds are for the guns they have (theirs, and any in the back); none: 9mm and 12 gauge
   owner.diceTrunk = { items: trunk.gear.map((it) => pickOf(it)).filter(Boolean), supplies: { ...trunk.supplies } }; // the dice's back (until Start); a gun with the parts it came with
-  if (picked) { const mine = trunkFromPicks(owner.startVehicle); trunk.gear = mine.gear; trunk.supplies = mine.supplies; }
+  if (picked) { const mine = trunkFromPicks(fleet0.load); trunk.gear = mine.gear; trunk.supplies = mine.supplies; }
   typeFind(state, trunk.supplies, "travel"); // foods.js: the back's food as what people threw in a car (light, keeps; bread and cheese in the first days)
   for (const [k, q] of Object.entries(trunk.supplies)) p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) + q;
   p.cargo.gear.push(...trunk.gear);
@@ -784,6 +785,7 @@ export function setupHardcoreStart(state, crew, crewRoll = null, n = HC_START.CR
   const { owner, trunk } = rolledCar;
   const car = onFoot ? null : rolledCar.car;
   if (onFoot) { state.vehicles = state.vehicles.filter((v) => v !== rolledCar.car); delete owner.diceTrunk; }
+  else if (state.fleet && state.fleet[0]) Object.assign(state.fleet[0], { vid: car.id, type: car.type }); // startfleet.js: the starting vehicle is this car
   state.rng = crewRng;
   for (const s of people) s.carRoll = carRoll;
   settleParty(state, p); // ammo.js: the rounds they grabbed, by the calibres of their guns

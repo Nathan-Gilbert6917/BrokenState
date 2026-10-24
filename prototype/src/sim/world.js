@@ -10,11 +10,12 @@ import { pickStart, chosenStart, startNear, isSettlementTile } from "./startpick
 import { generateMap } from "./mapgen.js";
 import { DEFAULT_SIZE, sizeDef, customDef, isCustom, clampHives } from "./worldsize.js";
 import { cleanCustom, customSizeDef } from "./custommode.js"; // Custom mode's counts and Start with a vehicle (2026-10-24)
+import { cleanFleet, START_FLEET } from "./startfleet.js"; // the starting vehicles, their kinds, point limits and loads (2026-10-24)
 import { FIRST_NAMES, LAST_NAMES, SKILLS, ROLLED_SKILLS, TRAITS, BIRTH_TRAITS, clashIn, GEAR, SUPPLIES, SUPPLY_KEYS, supValue } from "./data.js";
 import { traitDice, swapNewTraits, noteBornTraits, woundMult, traitSkill, traitPower, rollTiers, tidyTiers, cleanTier } from "./traits.js"; // the newer traits: own dice at birth, their rules
 import { sanitizeLibrary } from "./custombg.js";
 import { loadUpAll } from "./itemacts.js"; // physical rounds out of a fight (2026-10-20): the crew's guns loaded at the start
-import { sanitizeStartGear, hasPicks, normalStartGear, sanitizeStartVehicle } from "./startgear.js"; // gear picked on the new-run screen (Customize)
+import { sanitizeStartGear, hasPicks, normalStartGear } from "./startgear.js"; // gear picked on the new-run screen (Customize)
 import { appearanceFor, craftingStart, CRAFT_START, meleeStart, meleeOldSave, cookingStart, cookingOldSave } from "./appearance.js";
 export { radioBasesInRange };
 
@@ -38,7 +39,7 @@ import { groundDaily } from "./carry.js"; // food left on the ground spoils
 import { addBuilding, constructionHour, assignStations, baseBeds } from "./buildings.js";
 import { setFurniture } from "./beds.js"; // the start's beds set in its Lodge (call-time only)
 import { pitchTentAtBase } from "./tents.js"; // the start's tent pitched from its bag (call-time only)
-import { createVehicle, vehiclesDaily, garageHour, factionVehiclesDaily } from "./vehicles.js";
+import { createVehicle, vehiclesDaily, garageHour, factionVehiclesDaily, VEHICLE_TYPES } from "./vehicles.js";
 import { updateLiveMarkers, mergeSpots } from "./markers.js";
 import { captivesDaily, releaseStranded, contactHour } from "./conflicts.js";
 import { supplyDaily } from "./supply.js";
@@ -158,13 +159,16 @@ export const localId = (state, id) => (typeof id === "number" ? id - (state.idBa
 // custom (optional, Custom mode: custommode.js): { people, groups, hives, cities, towns, military }, each 1 or more, on a
 // normal start (not with mode "hardcore"): they stand in for startPeople, factionCount and hives, and the map gets
 // those cities, towns and military sites (customSizeDef). Kept as state.custom (isCustomRun).
+// fleet (optional, 2026-10-24, user request: startfleet.js): the starting vehicles [{ type, limit, load }] (Normal: the
+// hub's pickup; Hardcore: the car fled in; Custom: 1–12 of the kinds set, at the hub), each back's load set on the new-run
+// screen (null: as rolled). Kept as state.fleet (each with vid: its vehicle) until Start.
 /**
  * @param {{ seed: number, factionCount: number, crew?: any[] | null, size?: string, mode?: string, customW?: number | null,
  *   customH?: number | null, hives?: number | null, crewRoll?: number | null, startPeople?: number | null, customBackgrounds?: any,
- *   start?: { roll?: number | null, not?: number | null, tile?: number | null } | null, worldCfg?: any, vehicle?: boolean, custom?: any }} opts
+ *   start?: { roll?: number | null, not?: number | null, tile?: number | null } | null, worldCfg?: any, vehicle?: boolean, custom?: any, fleet?: any[] | null }} opts
  * @returns {State}
  */
-export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SIZE, mode = "normal", customW = null, customH = null, hives = null, crewRoll = null, startPeople = null, customBackgrounds = null, start = null, worldCfg = null, vehicle = true, custom = null }) {
+export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SIZE, mode = "normal", customW = null, customH = null, hives = null, crewRoll = null, startPeople = null, customBackgrounds = null, start = null, worldCfg = null, vehicle = true, custom = null, fleet = null }) {
   const rng = new Rng(seed);
   const cust = mode !== "hardcore" && custom ? cleanCustom(custom) : null; // Custom mode: a normal start with these counts
   const sdef = isCustom(size) ? customDef(customW, customH) : sizeDef(size);
@@ -175,6 +179,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
     seed, rng, worldSize, mode: mode === "hardcore" ? "hardcore" : "normal",
     startVehicles: vehicle !== false, // Start with a vehicle (custommode.js startsWithVehicle)
     ...(cust ? { custom: cust } : {}), // Custom mode's counts (custommode.js isCustomRun)
+    fleet: cleanFleet(fleet, cust ? "custom" : mode === "hardcore" ? "hardcore" : "normal").map((f) => ({ ...f, vid: null })), // the starting vehicles (startfleet.js): vid set as each is made
     idBase: nextId - 1, // localId: this world's ids counted from its own start
     fleetV: 1, // several vehicles to a team (vehicles.js fleets: p.vehicleIds); save.js gives older saves the list
     kitV: 2, magFitV: 1, // carry kit (w2-kit): a new world in either mode is born with it (carrykit.js migrateKit is for older saves only; a hardcore world never set it and gained magazines on every load)
@@ -273,7 +278,8 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
   state.startPeople = people;
   const startBeds = baseBeds(hubBase);
   if (people > startBeds) hubBase.crowdNote = { hour: state.hour, over: people - startBeds };
-  if (state.startVehicles) createVehicle(state, "truck", { kind: "base", baseId: hubBase.id }, { fuel: 20, condition: 75 }); // Start with a vehicle off: none
+  // The starting vehicles at the hub (startfleet.js): a normal start's pickup, or Custom's kinds; Start with a vehicle off: none.
+  if (state.startVehicles) for (const f of state.fleet) f.vid = createVehicle(state, f.type, { kind: "base", baseId: hubBase.id }, { fuel: Math.min(START_FLEET.FUEL, VEHICLE_TYPES[f.type].tank), condition: START_FLEET.CONDITION }).id;
 
   createFactions(state, cust ? cust.groups : factionCount);
   recomputeOwnership(state);
@@ -454,12 +460,8 @@ export function applyCrew(state, crew) {
     // Ironman run may not start with.
     if (c.custom) s.startCustom = true;
     // Built on customization points (custompoints.js): their picks are what they have, the dice's kit is not handed out
-    // on top (startgear.js); and the vehicle's back if they pay for it.
+    // on top (startgear.js). (The starting vehicles' backs are no longer theirs: startfleet.js, createWorld's fleet.)
     if (c.points) { s.startPoints = true; s.startCustom = true; }
-    const sv = sanitizeStartVehicle(c.startVehicle);
-    if (sv) s.startVehicle = sv; else delete s.startVehicle;
-    // Their points left go to the car pool for the vehicle's back (custompoints.js carPool).
-    if (c.carPool) s.carPool = true; else delete s.carPool;
     // Their own points max, set on their card (custompoints.js maxFor; else the crew's Points each).
     if (Number.isFinite(c.ownMax)) s.ownMax = c.ownMax; else delete s.ownMax;
   });

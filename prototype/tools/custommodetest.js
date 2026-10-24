@@ -162,13 +162,13 @@ section("5. The new-run screen");
     check(/data-action="nr-vehicle">/.test(newRunScreen(wOff, { mode, worldSize: "normal", factionCount: 7, nrMsg: "" })), `${mode}: the vehicle box unticked when off`);
   }
   // Each mode its own settings.
-  const ui = { mode: "custom", startPeople: 14, pointsMax: 90, startVehicle: false, modeSets: { normal: { startPeople: 5, pointsMax: 100, startVehicle: true, fleet: "kept" }, hardcore: { startPeople: 2, pointsMax: 80, startVehicle: false }, custom: {} } };
+  const ui = { mode: "custom", startPeople: 14, pointsMax: 90, startVehicle: false, modeSets: { normal: { startPeople: 5, pointsMax: 100, startVehicle: true, other: "kept" }, hardcore: { startPeople: 2, pointsMax: 80, startVehicle: false }, custom: {} } };
   stashModeSet(ui);
   takeModeSet(ui, "normal");
   check(ui.mode === "normal" && ui.startPeople === 5 && ui.pointsMax === 100 && ui.startVehicle === true, "takeModeSet: Normal's own settings");
   check(ui.modeSets.custom.startPeople === 14 && ui.modeSets.custom.pointsMax === 90 && ui.modeSets.custom.startVehicle === false, "stashModeSet: Custom's put away");
   stashModeSet(ui);
-  check(ui.modeSets.normal.fleet === "kept", "stashModeSet keeps what else a mode's entry holds");
+  check(ui.modeSets.normal.other === "kept", "stashModeSet keeps what else a mode's entry holds");
   takeModeSet(ui, "custom");
   check(ui.startPeople === 14 && ui.startVehicle === false, "and Custom's come back");
   let picked = new Set();
