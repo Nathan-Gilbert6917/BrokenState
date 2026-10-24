@@ -249,14 +249,16 @@ function settlements(state, O, offset) {
   };
   for (const c of cities) O.onset[c] = onsetOf(c, HC.CITY_ONSET);
   for (const t of towns) O.onset[t] = onsetOf(t, HC.TOWN_ONSET);
+  // Each tile's town: the first in the list within SETTLE_R, marked out from the towns once (asking every tile about
+  // every town took seconds on a Huge map, 2026-10-24: the same towns result).
+  const townOf = new Map();
+  for (const tw of towns) for (const id of g.within(tw, HC.SETTLE_R)) if (!townOf.has(id)) townOf.set(id, tw);
   for (const t of state.tiles) {
     let center = null;
     if (t.terrain === "city" || t.terrain === "suburb") {
       let bd = 99;
       for (const c of cities) { const d = g.distance(c, t.id); if (d < bd) { bd = d; center = c; } }
-    } else {
-      for (const tw of towns) if (g.distance(tw, t.id) <= HC.SETTLE_R) { center = tw; break; }
-    }
+    } else if (townOf.has(t.id)) center = townOf.get(t.id);
     if (center != null) O.settle.push([t.id, center]);
   }
 }

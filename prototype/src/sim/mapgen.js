@@ -180,12 +180,12 @@ export function generateMap(rng, size = "normal", { hives = null, seed = null } 
   if (hit) {
     MAP_CACHE.delete(key); // the most recent last
     MAP_CACHE.set(key, hit);
-    land = { ...structuredClone(hit.land), grid: new HexGrid(def.w, def.h) };
+    land = { ...copyData(hit.land), grid: new HexGrid(def.w, def.h) };
     rng.state = hit.rngState;
   } else {
     land = landMap(rng, def, seed);
     const { grid, ...keep } = land;
-    MAP_CACHE.set(key, { land: structuredClone(keep), rngState: rng.state });
+    MAP_CACHE.set(key, { land: copyData(keep), rngState: rng.state });
     while (MAP_CACHE.size > MAP_CACHE_MAX) MAP_CACHE.delete(MAP_CACHE.keys().next().value);
   }
   return hivesOnMap(land, rng, def, hives, seed);
@@ -198,6 +198,15 @@ const mapKey = (rngState, def, seed) => `${rngState}|${seed}|${JSON.stringify(de
 // Whether a map with these dice, size def and seed is built from the cache (main.js: no "Generating map…" box for it).
 export function mapCached(rngState, size, seed = null) { return MAP_CACHE.has(mapKey(rngState, sizeDef(size), seed)); }
 export function clearMapCache() { MAP_CACHE.clear(); }
+// A deep copy of plain data (objects, arrays, numbers, strings, booleans, null: what the land is made of), some five
+// times faster than structuredClone on a Huge map's tiles (0.14 s against 0.77 s).
+export function copyData(v) {
+  if (v === null || typeof v !== "object") return v;
+  if (Array.isArray(v)) { const a = new Array(v.length); for (let i = 0; i < v.length; i++) a[i] = copyData(v[i]); return a; }
+  const o = {};
+  for (const k in v) o[k] = copyData(v[k]);
+  return o;
+}
 
 function landMap(rng, def, seed) {
   const MAP_W = def.w, MAP_H = def.h;
