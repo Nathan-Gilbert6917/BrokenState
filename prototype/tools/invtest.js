@@ -283,7 +283,9 @@ function strongTeam(n) {
     p = makeParty(team);
     p.supplies.ammo = 200;
     b = fight({ tile: h.tile + 2, partyId: p.id, enemy: { kind: "raiders", count: 3, power: 2 }, ambush: "player", canRetreat: false, handler: "test", context: {} }, { manual: false });
-    if (b.over && b.result.outcome === "victory") break;
+    // A win with bodies on the field: those who fled are gone and the downed not stabilized may crawl home (medics.js
+    // settleFoes DOWNED.LOST, the AI-parity rule), so a win can leave nobody to search.
+    if (b.over && b.result.outcome === "victory" && b.result.bodies > 0) break;
     state.combat = null;
   }
   const got = b.result.loot.gear.length + Object.keys(b.result.loot.supplies).length;

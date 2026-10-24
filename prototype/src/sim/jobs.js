@@ -63,6 +63,7 @@ import { blueprintReward } from "./blueprints.js";
 import { askBaseName } from "./basenames.js"; // name an outpost handed to you
 import { supplyAmt, useSupply, spendAmmo } from "./rounds.js"; // "ammo": every round there, any calibre
 import { findRounds, kindTheme, suppliesText, baseCals } from "./ammo.js"; // rewards and hand-overs named by calibre
+import { note, roundsIn } from "./ledger.js"; // rounds of yours handed over: into the AI side (tools/conservationtest.js)
 import { swapGun } from "./gundist.js"; // the gun distribution: a job's pay in a gun
 import { askLayout } from "./staging.js"; // Open the build map: a base new to you asks to be laid out (ui/buildmap.js alert)
 
@@ -576,7 +577,7 @@ function checkJob(state, j, teams) {
         const n = Math.min(d.left, Math.floor(carried(p, d.key)));
         if (n <= 0) continue;
         if (d.key === "food") addFoodsTo(f.stock, takeFood([p, p.cargo].filter(Boolean), n, { eggs: false, state }).items); // foods.js: days of food as the items the team carries
-        else { takeSupply(p, d.key, n); f.stock[d.key] = (f.stock[d.key] || 0) + n; }
+        else { takeSupply(p, d.key, n); f.stock[d.key] = (f.stock[d.key] || 0) + n; if (/^a_/.test(d.key) || d.key === "ammo") note(state, "from you", n); } // ledger.js: your rounds into the AI side
         d.left -= n;
         log(state, `Your team handed ${n} ${d.key === "ammo" ? "rounds" : d.key} to ${f.name}${d.left > 0 ? ` (${d.left} still to bring)` : ""}.`, "info");
       }
@@ -698,11 +699,13 @@ export function pickupArrived(state, p, base) {
   if (j.type !== "deliver") return false;
   const n = Math.min(j.data.left, Math.floor(supplyAmt(base.stock, j.data.key)));
   let took = `${n} ${j.data.key}`;
+  const had = roundsIn(p.goods.supplies);
   if (n > 0) {
     if (j.data.key === "ammo") { const g = spendAmmo(base.stock, n, baseCals(state, base)).keys; took = suppliesText(g); for (const [k, q] of Object.entries(g)) p.goods.supplies[k] = (p.goods.supplies[k] || 0) + q; } // rounds by calibre: the ones the guns there need least
     else if (j.data.key === "food") addFoodsTo(p.goods.supplies, takeFood(base, n, { eggs: false, state }).items); // foods.js: days of food as the items they take
     else { useSupply(base.stock, j.data.key, n); p.goods.supplies[j.data.key] = (p.goods.supplies[j.data.key] || 0) + n; }
     j.data.left -= n;
+    note(state, "from you", roundsIn(p.goods.supplies) - had); // ledger.js: the rounds they took from your stores, into the AI side
   }
   if (j.data.left <= 0) completeJob(state, j, `they fetched it from ${base.name}${n > 0 && j.data.key === "ammo" ? ` (${took})` : ""}`);
   else log(state, `The ${f.name} caravan took ${took} from ${base.name}: ${j.data.left} still owed.`, "info");
