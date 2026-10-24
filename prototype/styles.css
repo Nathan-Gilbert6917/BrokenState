@@ -261,6 +261,15 @@ body.fold-left #gut-left .gut-shut, body.fold-right #gut-right .gut-shut, body.f
 #modal h1 { font-size: 1.35rem; margin: 0 0 0.3rem; }
 #modal .where { color: var(--muted); font-size: 0.9rem; margin-bottom: 0.7rem; }
 #modal .text { line-height: 1.5; margin-bottom: 1rem; }
+/* The run's opening card in pieces (ui.js cardText; sim/hardcore-start.js introCard parts): a lead line, small
+   headings, the account as a list with a little air between its lines, the first steps numbered. */
+#modal .text.intro p { margin: 0 0 0.5rem; }
+#modal .text.intro .intro-lead { font-size: 1.1rem; font-weight: 600; }
+#modal .text.intro .intro-h { margin: 0.9rem 0 0.35rem; font-size: 0.76rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+#modal .text.intro .intro-list { margin: 0; padding-left: 1.3rem; }
+#modal .text.intro .intro-list li { margin: 0.35rem 0; }
+#modal .text.intro .intro-list li::marker { color: var(--muted); }
+#modal .text.intro .intro-sup { margin-top: 0.7rem; }
 #modal .choices { display: flex; flex-direction: column; gap: 0.45rem; }
 #modal .choices button { text-align: left; padding: 0.6rem 0.8rem; }
 #modal .choices .hint { display: block; color: var(--muted); font-size: 0.82rem; margin-top: 0.15rem; }

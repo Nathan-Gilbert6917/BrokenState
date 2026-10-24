@@ -39,6 +39,12 @@ for (const seed of [11, 42, 77, 303]) {
   const html = renderModal(st, freshUi()) || "";
   const buttons = (html.match(/data-action="choice"/g) || []).length;
   check(html.includes(INTRO_TITLE) && buttons === 1 && html.includes(">Begin"), `${tag}: the popup on screen has the title and one button (${buttons})`);
+  // Laid out in pieces (ui.js cardText), not one paragraph: a lead, one list item for each of them (and the car), the
+  // supplies line and the numbered steps; the same words as the text.
+  const items = (html.match(/<li>/g) || []).length;
+  check(intro.parts && intro.parts.grabbed.length >= p.members.length && items === intro.parts.grabbed.length + intro.parts.steps.length, `${tag}: the account as a list, ${items} items for ${intro.parts ? intro.parts.grabbed.length : 0} lines and ${intro.parts ? intro.parts.steps.length : 0} steps`);
+  check(/class="intro-lead">Calder is falling\./.test(html) && html.includes(`<b>${intro.parts.supplies.label}:</b>`) && intro.parts.steps.every((s) => html.includes(`<li>${s.replace(/&/g, "&amp;")}</li>`)), `${tag}: the lead, the supplies and the steps on screen`);
+  check(intro.parts.grabbed.every((g) => intro.text.includes(`${g.who ? `${g.who}${g.tag ? ` (${g.tag})` : ""} ` : ""}${g.rest}`)) && html.includes(`<b>${intro.parts.grabbed.find((g) => g.who).who}</b>`), `${tag}: each part is in the text, the names in bold`);
   const orderLabels = orderOptions(st, p).map((o) => o.label).filter(Boolean);
   check(!orderLabels.some((l) => html.includes(`>${l}<`)), `${tag}: none of the team's orders on the popup`);
   // Pause rules: it always shows (never waits in the tray), and Begin is its answer.
