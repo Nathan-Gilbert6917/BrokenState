@@ -198,10 +198,12 @@ const FAKE_PAD = `
     else await press("View");
     L = await look();
     check(L.nav.mode === "panels" && L.inRight, "the ring is in the right panel", JSON.stringify({ nav: L.nav, el: L.el }));
-    // To the top of the panel, then down to Manage.
-    for (let i = 0; i < 30; i++) { const before = (await look()).el; await press("Up"); const now = (await look()).el; if (!now || !before || now.html === before.html) break; }
-    L = await walkTo((el) => el.action === "openbase", 60);
-    check(L.el && L.el.action === "openbase", "▼ reaches the hub's Manage", JSON.stringify(L.el));
+    // To the top of the panel (▲ until nothing above it changes, staying inside the panel: on a desktop the next stop
+    // up is the bar beside the panel and the top bar, and from there ▼ lands past the hub's card), then down to
+    // Manage itself (the hub's card: its one button with no tab; the Buildings card's quick tabs open the window too).
+    for (let i = 0; i < 30; i++) { const before = (await look()).el; await press("Up"); const now = await look(); if (!phone && !now.inRight) { await press("Down"); break; } if (!now.el || !before || now.el.html === before.html) break; }
+    L = await walkTo((el) => el.action === "openbase" && !el.tab, 60);
+    check(L.el && L.el.action === "openbase" && !L.el.tab, "▼ reaches the hub's Manage", JSON.stringify(L.el));
     await press("A");
     L = await look();
     check(L.modalUp, "A opens the base window", JSON.stringify({ modal: L.modalUp, win: L.win }));

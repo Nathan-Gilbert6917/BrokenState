@@ -12,7 +12,8 @@
 
 /* ================= touch: phones and tablets ================= */
 @media (max-width: 759px), (pointer: coarse) and (min-width: 760px) {
-  /* The ✕ on the big window on top (Esc): placed by responsive.js over the window's top right corner. */
+  /* The ✕ on the big window on top (Esc): placed by responsive.js over the window's top right corner, only for a
+     window without a ✕ of its own in its title bar or corner (ui/windows.js winBar, ui/layout.js windowFrame). */
   #rs-close { position: fixed; z-index: 11; width: 2.75rem; height: 2.75rem; padding: 0; display: flex; align-items: center; justify-content: center; font-size: 1.15rem; line-height: 1; background: var(--panel-2); border: 1px solid var(--accent); border-radius: 50%; box-shadow: 0 4px 14px rgba(0,0,0,0.55); }
   #rs-close.over-combat { z-index: 31; } /* a window over a battle (#modal.over-combat 30) */
   #rs-cbtools { display: none; }
@@ -178,16 +179,26 @@
   #ctxmenu button.tcitem { min-width: 0; }
   #itemmenu .imenu { max-width: calc(100vw - 1rem); }
 
-  /* Windows: the whole screen, scrolling inside, nothing wider than the screen. A remembered size or place (ui/
-     windows.js inline styles) does not apply on a phone; the grips go. */
-  #modal { align-items: stretch; justify-content: stretch; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+  /* Windows: the whole screen (100dvh: as tall as the screen is with the browser's bars where they stand, so nothing
+     is cut off top or bottom on a phone on its side), scrolling inside, nothing wider than the screen, the safe areas
+     kept clear. A remembered size or place (ui/windows.js inline styles) does not apply on a phone; the grips go.
+     The window's own head (ui/windows.js winBar) bleeds to the screen's edges as it does to the box's; the base
+     screen's head and tabs stay while its body alone scrolls (one scroll, not one inside another). The floating ✕
+     (responsive.js) only comes for a window without a ✕ of its own, which keeps room for it. */
+  #modal { align-items: stretch; justify-content: stretch; height: 100vh; height: 100dvh; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
   #modal .win { position: relative !important; left: auto !important; top: auto !important; width: 100% !important; height: 100% !important; max-width: none; max-height: none; margin: 0; }
   #modal .wgrip { display: none; }
   #modal .box, #modal .box.wide, #modal .win > .box { width: 100% !important; max-width: none !important; max-height: 100% !important; margin: 0; border: none; border-radius: 0; padding: 0.8rem 0.75rem calc(0.8rem + env(safe-area-inset-bottom)); overflow-x: auto; overscroll-behavior: contain; }
   #modal .win > .box { height: 100% !important; }
-  #modal .win > .box > :first-child { padding-right: 3rem; } /* room for the ✕ */
+  #modal .win:not(:has(.wx)) > .box > :first-child { padding-right: 3rem; } /* room for the floating ✕ */
+  #modal .whead { top: -0.8rem; margin: -0.8rem -0.75rem 0.6rem; padding: 0.55rem 0.75rem 0; border-radius: 0; }
+  #modal .wx { width: 2.6rem; height: 2.6rem; }
+  #modal .wsub { display: none; } /* the base screen's kind and head count: no room beside its name; the Overview tab has them */
+  #modal .win > .box.basebox { display: flex; flex-direction: column; overflow: hidden; }
+  #modal .basebox > .basebody { flex: 1 1 auto; min-height: 0; max-height: none; }
   #modal .box h1 { font-size: 1.2rem; }
-  #modal .basename { width: 100%; }
+  #modal .basename { flex: 1 1 auto; width: auto; max-width: none; font-size: 1.2rem; }
+  #modal .grid2 { grid-template-columns: minmax(0, 1fr); } /* the survivor screen's Skills, Traits and Gear one under the other */
   #modal table { max-width: none; }
   /* An opened box (ui/boxview.js, over the search or inventory window): a sheet from the bottom, in the thumb's reach;
      a phone on its side has it at the right (below). */
