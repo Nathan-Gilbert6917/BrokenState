@@ -87,8 +87,8 @@ export function battles(seed = 42, only = null) {
   });
   // A raid inside a building (sim/buildingmaps.js): an apartment block (rooms, a corridor, an upper floor up the stairs)
   // or a police station, with a few of the team inside and some doors opened.
-  add("raid-building", (st) => {
-    const h = hub(st), tile = (st.tiles.find((t) => t.loc && t.loc.type === "apartments" && t.id !== h.tile) || st.tiles.find((t) => t.loc && t.loc.type === "police" && t.id !== h.tile)).id;
+  const inBuilding = (st, tile) => {
+    const h = hub(st);
     const crew = atBase(st, h.id).slice(0, 4);
     const p = launchExpedition(st, { memberIds: crew.map((s) => s.id), dest: tile, mission: "scavenge", stance: "normal", vehicleId: st.vehicles[0].id, supplies: { food: 6, water: 6, ammo: 20, meds: 1 } }).party;
     p.path = [tile]; p.idx = 0; p.phase = "engaged";
@@ -106,7 +106,13 @@ export function battles(seed = 42, only = null) {
     const deep = inside[Math.min(inside.length - 1, 12)];
     if (deep) b.peeks = [{ turn: b.turn, unit: me[0].id, x: deep[0], y: deep[1], dx: deep[0], dy: deep[1] + 1, r: 8 }];
     return b;
-  });
+  };
+  add("raid-building", (st) => { const h = hub(st); return inBuilding(st, (st.tiles.find((t) => t.loc && t.loc.type === "apartments" && t.id !== h.tile) || st.tiles.find((t) => t.loc && t.loc.type === "police" && t.id !== h.tile)).id); });
+  // Interior decor (sim/decor.js, tools/decortest.js): a house and a hospital, a few of the team inside. Only when asked
+  // for by name (battles(seed, ["decor-house"])): every layout's list stays as it was.
+  const siteTile = (st, type) => { const h = hub(st), t = st.tiles.find((x) => x.loc && x.loc.type === "town" && x.id !== h.tile); st.tiles[t.id] = { ...t, loc: { type, name: type[0].toUpperCase() + type.slice(1) } }; return t.id; }; // a town's tile (in reach) made the site
+  if (only && only.includes("decor-house")) add("decor-house", (st) => inBuilding(st, siteTile(st, "house")));
+  if (only && only.includes("decor-hospital")) add("decor-hospital", (st) => inBuilding(st, siteTile(st, "hospital")));
   add("hive", (st) => field(st, fakeTile(st, "forest", null), { kind: "zombies", count: 20, power: 4, types: { runner: 3, brute: 2, spitter: 2, screamer: 1, crawler: 3 }, name: "the brood" }, { layout: "hive" }));
   add("growth", (st) => field(st, fakeTile(st, "plains", null), { kind: "zombies", count: 8, power: 3 }, { layout: "growth" }));
   add("base-assault", (st) => field(st, fakeTile(st, "plains", null, true), { kind: "raiders", count: 7, power: 5, walls: 3, name: "their base" }, { layout: "baseAssault" }));

@@ -117,6 +117,13 @@ export const FURNITURE_KINDS = {
   serverrack:  P("Server rack",    FULL, 50, 120, "two", S1, true, ["office"], "none", true),
   copier:      P("Photocopier",    HALF, 30, 80, "two", S1, false, ["office", "school"], "none", true),
   safe:        P("Safe",           STEEL, 80, 200, "fixed", S1, false, ["office", "bedroom", "shop"], "storage:20"), // the gun safe's rules (locks.js: its own lock, never shoved)
+  // ---------- lootable decor (issue #13: decor.js places them; light comfort pieces for the base) ----------
+  // The plant and the floor lamp stand on a room's floor cell; the painting and the wall clock hang on a wall (decor.js:
+  // c.wart = { k, d, piece: true } on the wall cell, the wall's own kind unchanged) and stand on a cell only once set down.
+  plant:     P("Potted plant", POLE, 5, 8, "one", S1, false, ["living", "office", "dining", "ward", "shop"], "comfort:0.2"),
+  floorlamp: P("Floor lamp",   POLE, 5, 6, "one", S1, false, ["living", "bedroom", "office"], "comfort:0.1"),
+  painting:  P("Painting",     POLE, 5, 4, "one", S1, false, ["living", "dining", "bedroom", "office", "church"], "comfort:0.2", true),
+  wallclock: P("Wall clock",   POLE, 3, 2, "one", S1, false, ["living", "kitchen", "office", "school", "ward"], "comfort:0.05", true),
 };
 
 // The cells' rules for combat.js CELL (merged at load: Object.assign(CELL, furnitureCells())).
