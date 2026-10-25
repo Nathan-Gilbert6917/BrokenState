@@ -27,7 +27,8 @@ let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) { passes++; console.log(`  ok: ${msg}`); } else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
 const section = (t) => console.log(`\n${t}`);
 const MIN_PLANS = 12;
-const SITES = ["city", "town", "warehouse", "factory", "univ", "farm", "forest", "airport", "military", "dam", "mall", "plains"];
+// (Not a military site: a base's warehouse is #25's supply warehouse, militarylayout.js; checked below.)
+const SITES = ["city", "town", "warehouse", "factory", "univ", "farm", "forest", "airport", "quarry", "dam", "mall", "plains"];
 
 const make = (key, s, o = {}) => {
   const rng = new Rng(seed * 100003 + s * 7919 + key.length * 31);
@@ -90,6 +91,8 @@ for (const key of INDUSTRY_KEYS) {
   const campus = count("lab", "univ", "teaching"), town = count("lab", "city", "teaching");
   check(campus > town * 2, `a teaching lab at a university more often than in a city (${campus} against ${town} of 120)`);
   check(settingOf("farm") === "rural" && settingOf("univ") === "campus" && settingOf(null) === "any", "the settings by site");
+  const mil = BUILDINGS.warehouse.make(new Rng(9100), { site: "military" });
+  check(!mil.vid, "a military base's warehouse is still #25's supply warehouse (militarylayout.js), not one of these plans");
 }
 
 // ---------- 2. every plan ----------
