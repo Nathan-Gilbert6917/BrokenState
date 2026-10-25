@@ -3,6 +3,7 @@
 // and the odds; the hover line for a car's cells; the throw's line over one (a window broken, its alarm set off). ui/
 // combat.js calls these; the "car-act" handler is registered in main.js (CAR_ACTIONS). The buttons are plain .mini
 // buttons: the pad's ring reaches them as any other (ui/padnav.js), A presses them.
+import { carImg } from "./vehiclemodel.js"; // the car's picture, its low-poly model, in the car row
 import { combatAct } from "../sim/combat.js";
 import { carsNear, carRecord, carOptions, verdictText, isOpen, canStart, repairOf, runs } from "../sim/foundcars.js";
 import { ALARM, throwBreakChance } from "../sim/caralarms.js"; // car alarms (2026-10-23): set off to pull the dead away, by hand or a throw through the window
@@ -35,7 +36,8 @@ export function carPanel(state, b, u) {
   const risk = (x, k) => (armed && x ? x.alarm ?? ALARM[k] ?? 0 : 0);
   const forceRisk = o.force ? risk(o.force, o.force.crowbar ? "FORCE" : "SMASH") : 0, hotRisk = risk(o.hotwire, "HOTWIRE");
   const riskLabel = (v) => (v > 0 ? ` · alarm ${pct(v)}` : ""), riskTip = (v) => (v > 0 ? ` ${pct(v)} to set off its alarm.` : "");
-  return `<div class="small" style="margin-top:0.3rem">🚗 <b>${esc(rec.name)}</b> <span class="muted">${status}${start ? ` · ${start}` : ""}</span>
+  const cell = b.cells.find((c) => c.car && c.car.id === rec.id), pic = cell ? carImg(cell.car, 2.2) : ""; // its picture: the car's model as it stands on the map
+  return `<div class="small" style="margin-top:0.3rem">${pic || "🚗 "}<b>${esc(rec.name)}</b> <span class="muted">${status}${start ? ` · ${start}` : ""}</span>
     ${alarmLine(rec)}
     ${rec.inspected ? `<div class="small muted">${esc(verdictText(rec))}</div>` : ""}
     <div class="row" style="flex-wrap:wrap;gap:0.25rem;margin-top:0.15rem">

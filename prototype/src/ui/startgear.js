@@ -17,6 +17,7 @@ import { isHardcore } from "../sim/hardcore.js";
 import { itemLoad } from "../sim/inventory.js";
 import { LOAD_BANDS, wornLoad } from "../sim/load.js";
 import { VEHICLE_TYPES, RIDER_KG } from "../sim/vehicles.js";
+import { vehicleImg } from "./vehiclemodel.js"; // each starting vehicle's picture, its low-poly model, in its row
 import {
   START_GEAR, START_TRUNK, OPEN_TRUNK, CARRY_PLACES, slotChoices, carryChoices, trunkChoices, sanitizeStartGear, sanitizeStartVehicle, hasPicks, kitLoad, carrySpec,
   carryReason, firstFit, misfits, trunkKg, noteDiceKit, gunInfo, gunWith, sanitizeGunMods, pickKey, pickMods, pickN, pickStackMax, openSupplyKeys,
@@ -227,6 +228,7 @@ export function fleetSection(state, ui) {
     if (!free) { // Customize off: no point limit, points or gear buttons; the back as rolled (the dice's, said in a few words)
       const dice = hasDice(state, i) ? `<span class="small muted"${tip(`As rolled: ${loadWords(shownLoad(state, i))}. Tick Customize to set its back`)}>as rolled</span>` : "";
       return `<div class="row nrveh" style="gap:0.35rem;align-items:center;margin-top:0.25rem">
+        ${vehicleImg(info.v, 2)}
         ${kind}
         ${driverSel(i)}
         ${wearChip(info.v)}
@@ -241,6 +243,7 @@ export function fleetSection(state, ui) {
     const bar = `<div class="fleetbar ptsbar ${over ? "over" : ""}" style="min-width:9rem"${tip(t)}><div class="spread small"><span>Back <b>${rolled ? "as rolled" : pts}</b> / ${f.limit} pts</span><span class="${heavy ? "danger" : "muted"}">${kg} / ${info.room} kg</span></div><div class="bar"><i style="width:${rolled ? 0 : pct}%;background:${over ? "var(--danger)" : "var(--good)"}"></i></div></div>`;
     const what = rolled ? (hasDice(state, i) ? `As rolled: ${loadWords(V)}` : "Empty") : loadWords(f.load);
     return `<div class="row nrveh" style="gap:0.35rem;align-items:center;margin-top:0.25rem">
+        ${vehicleImg(info.v, 2)}
         ${kind}
         ${driverSel(i)}
         ${wearChip(info.v)}
