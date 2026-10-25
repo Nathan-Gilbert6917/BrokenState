@@ -15,8 +15,11 @@
 // variant (the roomsLegacy rule). A POI's layout names it (pois.js poiName). The motel's five are each checked for
 // their own rooms (motelChecks), and every layout's loot is printed (the tables' value and the containers a building;
 // every layout has some to search).
-// Types still owned by an open ticket are in PENDING_OWNER: reported, never failed. The integration pass that closes
-// the epic (#7) empties the map, and then every type is held to it.
+// Types another ticket owns are in PENDING_OWNER (the open tickets', and the closed ones' the epic's integration pass
+// takes up: #32's split, 2026-10-25: #33 restaurants, #34 the library, #35 shops and services, #36 civic and medical,
+// #37 industrial): reported, never failed. The integration pass that closes the epic (#7) empties the map, and then
+// every type is held to it: a type with layouts here (buildvariants.js) to all of the above, any other to its 3
+// distinct plans.
 // Usage: node tools/varianttest.js [seeds per setting, default 24; BS_QUICK=1: 20]
 import { createWorld } from "../src/sim/world.js";
 import { BUILDINGS, buildingMap, buildingSpec } from "../src/sim/buildingmaps.js";
@@ -29,15 +32,25 @@ import { GEAR, supValue } from "../src/sim/data.js";
 
 // The types another ticket owns until it lands (issue #32 "Ownership"): their plans come from their own tickets.
 export const PENDING_OWNER = {
-  grocery: "#22", corner: "#22", supermarket: "#22",
   school: "#23",
+  // #25 (closed: the epic's integration pass), the military buildings
   barracks: "#25", armorybldg: "#25", motorpool: "#25", messhall: "#25", hangar: "#25", terminal: "#25", control: "#25", radio: "#25",
-  offices: "#27",
+  hq: "#25", aidstation: "#25", gatehouse: "#25", tower: "#25", flightops: "#25",
+  milbunker: "#26", mountainbunker: "#26", govbunker: "#26", shelter: "#26", prepper: "#26", // #26 (closed), the bunkers
+  offices: "#27", storefront: "#27", bizpark: "#27", cityhall: "#27", courthouse: "#27", callcenter: "#27", techoffice: "#27", station: "#27", // #27 (closed)
+  hotel: "#29", // #29 (closed)
   deptstore: "#30",
   cellblock: "#31",
-  hq: "#25", aidstation: "#25", gatehouse: "#25", tower: "#25", flightops: "#25", // the new military buildings
-  milbunker: "#26", mountainbunker: "#26", govbunker: "#26", shelter: "#26", prepper: "#26", // the bunkers
+  restaurant: "#33", pizza: "#33", diner: "#33", bar: "#33",
+  library: "#34",
+  // #35: shops and services
+  pharmacy: "#35", gasstation: "#35", truckstop: "#35", gunstore: "#35", pawnshop: "#35", sportshop: "#35", electronics: "#35", radioshop: "#35",
+  bookstore: "#35", petstore: "#35", garden: "#35", clothing: "#35", liquor: "#35", hardware: "#35", feedstore: "#35", dealer: "#35",
+  autoshop: "#35", garage: "#35", workshop: "#35", bank: "#35", corner: "#35", grocery: "#35", supermarket: "#35",
+  hospital: "#36", infirmary: "#36", clinic: "#36", vet: "#36", church: "#36", police: "#36", firestation: "#36", // #36: civic and medical
+  warehouse: "#37", factory: "#37", lab: "#37", // #37: industrial (industrylayout.js, on dev; its own test: tools/industryvarianttest.js)
 };
+
 const MIN = { motel: 5 }; // plans and layouts at least (else 3)
 
 const SEEDS = Number(process.argv[2]) || (process.env.BS_QUICK ? 20 : 24);
@@ -164,9 +177,9 @@ for (const key of Object.keys(BUILDINGS)) {
     }
     const g = signature(m), k = sigKey(g);
     sigs.set(k, (sigs.get(k) || 0) + 1);
-    const lay = m.plan && m.plan.variant ? m.plan.variant.id : null;
+    const lay = m.plan && m.plan.vid ? m.plan.vid : null; // the layout it was built as (assemble's plan.vid; its name plan.variant)
     if (!lay) return;
-    if (!byLay.has(lay)) byLay.set(lay, { n: 0, sigs: new Map(), name: m.plan.variant.name });
+    if (!byLay.has(lay)) byLay.set(lay, { n: 0, sigs: new Map(), name: m.plan.variant });
     const L = byLay.get(lay);
     L.n++;
     const e = L.sigs.get(k) || { g, n: 0 };
@@ -182,8 +195,9 @@ for (const key of Object.keys(BUILDINGS)) {
   rows.push({ key, plans: sigs.size, layouts: byLay.size, owner, loot: [...loot].map(([id, L]) => `${id} ${(L.v / L.n).toFixed(0)}/${(L.boxes / L.n).toFixed(1)}`).join("  ") });
   if (owner) continue;
   check(!errs.length, `${key}: ${errs.length} maps failed (${errs.slice(0, 2).join("; ")})`);
-  check(lays.length >= need, `${key}: ${lays.length} layouts in buildvariants.js LAYOUTS, want ${need}+`);
   check(sigs.size >= need, `${key}: ${sigs.size} distinct plans, want ${need}+`);
+  if (!LAYOUTS[key]) continue; // a type whose ticket has landed and is closed: its distinct plans; its layouts are its own module's
+  check(lays.length >= need, `${key}: ${lays.length} layouts in buildvariants.js LAYOUTS, want ${need}+`);
   for (const l of lays) check(byLay.has(l.id), `${key}: layout ${l.id} never built`);
   for (const [id, L] of loot) check(L.boxes / L.n >= 1.5, `${key}: layout ${id} has ${(L.boxes / L.n).toFixed(1)} containers a building (want some to search)`);
   // Each layout's most common plan differs from every other layout's in two dimensions or more.
@@ -195,10 +209,8 @@ for (const key of Object.keys(BUILDINGS)) {
   }
   // An older save's building takes no layout (the roomsLegacy rule).
   const old = { ...state, roomsLegacy: true };
-  check(!buildingSpec(old, tileId, { id: "vtold", key, name: BUILDINGS[key].name }).variant, `${key}: an older save's building has a layout`);
+  check(!buildingSpec(old, tileId, { id: "vtold", key, name: BUILDINGS[key].name }).vid, `${key}: an older save's building has a layout`);
 }
-// Every type is held to it or waits on its owner.
-for (const key of Object.keys(BUILDINGS)) check(LAYOUTS[key] || PENDING_OWNER[key], `${key}: no layouts and no owner`);
 
 for (const l of LAYOUTS.motel) check(!motelErrs[l.id], `the motel's ${l.name}: as laid out (${motelErrs[l.id] ? motelErrs[l.id].slice(0, 3).join("; ") : "rooms, bathrooms and its own rooms"})`);
 

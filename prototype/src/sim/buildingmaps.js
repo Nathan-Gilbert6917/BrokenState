@@ -46,17 +46,23 @@ import { armFromArsenal } from "./arsenal.js"; // a person given the weapon the 
 import { noiseAt, detectRange, isBehind, throwablesOf, THROWABLES } from "./stealth.js";
 import { FRANCHISES } from "./data-shops.js"; // a franchise's layout (plan): the floor, the front room's depth and name, the width, a flat above
 import { applyZType, siteList } from "./zombietypes.js";
-import { fitMargins, buildingTarget, densifyOutside, densify, coverTarget, buildingDeadScale, streetDeadScale, raidMaxDims, raidDims, SIZE_CLASSES } from "./battlesize.js";
+import { fitMargins, buildingTarget, densifyOutside, densify, coverTarget, buildingDeadScale, streetDeadScale, raidMaxDims, raidDims, SIZE_CLASSES, mapCap } from "./battlesize.js";
 import { legacyRaids, legacyRooms } from "./worldcfg.js"; // an older save: a neighbourhood's street laid out as it always was; its buildings furnished as they were
 import { roomLayout, homeStyle, medicalStyle, LAYOUT } from "./roomlayout.js"; // homes furnished room by room (the placement helpers); hospitals, clinics and vets too (#14)
-import { commercialStyle, styleName as shopStyleName } from "./shoplayout.js"; // shops, restaurants, bars, offices, motels, banks and big stores laid out for their kind (issue #16)
+import { commercialStyle, styleName as shopStyleName } from "./shoplayout.js";
+import { OFFICE_PLANS } from "./officeplans.js"; // the office buildings of every kind, the corporate tower (issue #27)
+import { officeStyle } from "./officelayout.js"; // their rooms' styles (a leaf's office mark) // shops, restaurants, bars, offices, motels, banks and big stores laid out for their kind (issue #16)
 import { civicStyle } from "./civiclayout.js"; // police stations, fire stations, schools and churches laid out for their kind (issue #15)
+import { hotelSpec } from "./hotellayout.js"; // hotels: their plans, rooms, grounds and scenes (issue #29)
 import { militaryStyle, militaryOutside, MIL_SIZE } from "./militarylayout.js"; // military bases, air bases, airports and prisons laid out like the real thing (issue #25)
 import { decorate, flipDecoY, placeDecorPieces } from "./decor.js"; // rugs, clutter, wall art, wall colours, light fixtures (cosmetic)
 import { rollWin, winMixOf, windowOpen } from "./windows.js"; // the windows' states (open, locked, fixed), a throw through an open one
 import { rollScenes, sceneRng } from "./interiorscenes.js"; // signs of survival: barricades, blood, bodies (dice of their own)
-import { pickLayout, settingOfTile, layoutName } from "./buildvariants.js"; // every type's layout variants (issue #32): which plan a building takes, its name
-import { BUNKER_PLANS, bunkerStyle, levelName } from "./bunkerlayout.js"; // bunkers: the plans, their rooms, their levels below ground (issue #26)
+import { BUNKER_PLANS, bunkerStyle, levelName } from "./bunkerlayout.js";
+import { eateryPlan, eateryOf } from "./eaterylayout.js"; // restaurants by kind of food, format and size (issue #33) // bunkers: the plans, their rooms, their levels below ground (issue #26)
+import { industryPlan, industryStyle, INDUSTRY_ROLES, INDUSTRY_KEYS } from "./industrylayout.js"; // warehouses, factories and labs: a dozen plans each (issue #37)
+import { pieceDef } from "./data-furniture.js"; // a yard piece that holds loot (spec.yardPieces)
+import { pickLayout, settingOfTile, LAYOUTS } from "./buildvariants.js"; // the homes' and the motel's layout variants (issue #32): which plan a building takes, its name
 
 export const BMAP = {
   MARGIN: { front: 5, back: 4, left: 4, right: 4 }, // cells of outside around the building
@@ -128,6 +134,7 @@ const STYLE_OF = {
   sportshop: "shop", electronics: "shop", radioshop: "shop", bookstore: "shop", petstore: "shop", garden: "shop", clothing: "shop", liquor: "shop", restaurant: "shop", bar: "shop", dealer: "shop", library: "office", vet: "office",
   grocery: "shop", corner: "shop", pharmacy: "shop", hardware: "shop", feedstore: "shop", diner: "shop", gasstation: "shop", truckstop: "shop", supermarket: "shop", deptstore: "shop",
   clinic: "office", infirmary: "office", hospital: "office", school: "office", offices: "office", lab: "office", terminal: "office", apartments: "office",
+  storefront: "shop", bizpark: "office", cityhall: "office", callcenter: "office", techoffice: "office", station: "office", courthouse: "secure", // issue #27
   gunstore: "secure", pawnshop: "secure", bank: "secure", police: "secure", barracks: "secure", armorybldg: "secure", cellblock: "secure", control: "secure",
   firestation: "works", messhall: "works", radio: "works", warehouse: "works", factory: "works", hangar: "works", motorpool: "works", autoshop: "works", garage: "works", workshop: "works", machineshed: "works",
   barn: "barn", church: "church",
@@ -147,7 +154,7 @@ export function rewardMult(tile) {
 // ---------- room roles ----------
 // name, type (combat.js AREAS: what its containers hold; null: nothing to search), furnish (FURNISH), hub (rooms open
 // onto it: halls, corridors, the sales floor), label (its name on the map), windows (on its outer walls), fl (the floor:
-// wood, tile, conc, carpet, dirt; since 2026-10-25 also hardwood, plank, lino, checker, rubber, steel: issue #13, drawn
+// wood, tile, conc, carpet, dirt; since 2026-10-25 also hardwood, plank, lino, checker, rubber, steel: issue #13 (marble: issue #27, a grand lobby), drawn
 // by ui/isoview.js floorColor), maxBoxes. Decor by role (rugs, clutter, wall art, wall colours, lights): decor.js DECOR.
 const role = (name, type, furnish, extra = {}) => ({ name, type, furnish, ...extra });
 export const ROLES = {
@@ -224,6 +231,10 @@ export const ROLES = {
   genroom:     role("Generator room", "motorpool", "none", { fl: "steel", maxBoxes: 2 }),
   waterstore:  role("Water store", "kitchen", "shelves", { fl: "conc", maxBoxes: 2 }),
   medbay:      role("Med bay", "clinic", "beds", { fl: "lino", maxBoxes: 3 }),
+  // Warehouses, factories and labs (issue #37: industrylayout.js INDUSTRY_ROLES): a loading dock, a cold room, a
+  // self-storage unit, a sorting hall, a production line, a process hall, a kiln hall, a clean room, a gowning room, a
+  // greenhouse.
+  ...INDUSTRY_ROLES,
 };
 
 // ---------- the outside ----------
@@ -264,6 +275,9 @@ const clampN = (v, a, b) => Math.max(a, Math.min(b, v));
 const planOf = (kind, o) => { const id = o && o.variant; const f = id ? (FRANCHISES[(o && o.kind) || kind] || []).find((x) => x.id === id) : null; return f ? { ...(f.plan || {}), look: f.look } : {}; }; // o.kind: the place's kind when its building is another's archetype (a pizza place is a diner)
 /** The front room with the franchise's floor and name over it. @param {any} leaf @param {any} plan */
 const withPlan = (leaf, plan) => (leaf && leaf.role ? { ...leaf, ...(plan.fl ? { fl: plan.fl } : {}), ...(plan.room ? { name: plan.room } : {}), ...(plan.look ? { wallc: plan.look.wall } : {}) } : leaf); // wallc: its inside walls in the franchise's colour (decor.js)
+// A layout as the spec carries it (buildvariants.js: { id, name }): its name and id (assemble's plan.variant, plan.vid;
+// industrylayout.js's convention, issue #37).
+const laid = (lay) => ({ vname: lay.name, vid: lay.id });
 export const MAX_STOREYS = 8;
 
 // o.legacy: an older save's plan (worldcfg.js legacyRooms). Since rooms are furnished room by room (roomlayout.js) a
@@ -272,7 +286,7 @@ export const MAX_STOREYS = 8;
 // the kitchen to two cells. The dice are rolled as before either way.
 function house(rng, v, o = {}) {
   const lay = pickLayout(v, rng.state, o, null, o.allow || (o.street ? STREET_HOUSES : null)); // the layout variant (issue #32; none in an older save); allow: a street's own mix
-  if (lay && HOME_PLANS[v] && HOME_PLANS[v][lay.id]) return { ...HOME_PLANS[v][lay.id](rng, o), variant: lay };
+  if (lay && HOME_PLANS[v] && HOME_PLANS[v][lay.id]) return { ...HOME_PLANS[v][lay.id](rng, o), ...laid(lay) };
   const roomy = !o.legacy;
   const big = v === "farmhouse" || v === "lodge";
   const bw = v === "cabin" ? rng.int(8, 10) : v === "lodge" ? rng.int(15, 18) : v === "farmhouse" ? rng.int(12, 15) : v === "ranger" ? rng.int(12, 14) : rng.int(11, 14);
@@ -324,7 +338,7 @@ function house(rng, v, o = {}) {
     storeys: two ? 2 : 1, upper: two ? upper : null, foot: big ? "medium" : "small",
     stairs: { roles: ["hall", "living", "greatroom", "dining"], near: "front" }, // up from the hall (else the front room) by the front door
     ground: v === "farmhouse" ? "farm" : v === "cabin" || v === "lodge" || v === "ranger" ? "woods" : "town",
-    ...(lay ? { variant: lay } : {}),
+    ...(lay ? laid(lay) : {}),
   };
 }
 
@@ -513,21 +527,19 @@ const HOME_PLANS = {
 // the frozen section, a small deli counter; a stockroom with a walk-in cooler behind it). The supermarket is bigstore's
 // (supermarket below). The dice are rolled in the same order either way.
 function shop(rng, v, o = {}) {
+  // Issue #33: a new save's restaurant, pizza place, diner or bar is its variant's plan (eaterylayout.js: by its cuisine,
+  // format and size; a place with no franchise one by the building's dice, read not consumed). An older save as below.
+  if (!o.legacy && (v === "restaurant" || v === "diner" || v === "bar")) {
+    const kind = v === "diner" && o.kind === "pizza" ? "pizza" : v;
+    return eateryPlan(rng, eateryOf(kind, o.variant, hash01(rng.state, "eatery")), planOf(v, o));
+  }
   const gas = v === "gasstation", truck = v === "truckstop";
   const plan = planOf(v === "gasstation" ? "gas" : v, o); // data-shops.js: the franchise's layout
-  // Since #32 (new saves) its layout (buildvariants.js; the franchise's plan.lay, else the dice and the setting): SHOP_LAYS
-  // below says what each changes (its back rooms, the arrangement, a flat or a floor above, extra ways in); the
-  // classic changes nothing. A pizza place is the diner's archetype under its own layouts.
-  const key = v === "diner" && o.kind === "pizza" ? "pizza" : v;
-  const lay = pickLayout(key, rng.state, o, plan.lay || null);
-  const LY = lay ? (SHOP_LAYS[key] || {})[lay.id] || {} : {};
-  if (LY.make) return { ...LY.make(rng, o, plan), variant: lay }; // a layout with a plan of its own (a pump kiosk)
-  const pb = LY.back !== undefined ? LY.back : plan.back; // the back's arrangement by kind (the franchise's, or the layout's)
   const tier = !o.legacy && (v === "corner" || v === "grocery") ? v : null; // issue #22: the corner store and the grocery by size
-  const bw = (tier === "corner" ? rng.int(10, 13) : tier === "grocery" ? rng.int(20, 23) : gas ? rng.int(12, 14) : truck ? rng.int(19, 22) : rng.int(14, 18)) + (plan.wide || LY.wide ? (tier === "corner" ? 1 : 3) : 0) - (LY.small ? 3 : 0);
+  const bw = (tier === "corner" ? rng.int(10, 13) : tier === "grocery" ? rng.int(20, 23) : gas ? rng.int(12, 14) : truck ? rng.int(19, 22) : rng.int(14, 18)) + (plan.wide ? (tier === "corner" ? 1 : 3) : 0);
   const bh = tier === "corner" ? rng.int(10, 12) : tier === "grocery" ? rng.int(17, 20) : gas ? rng.int(9, 10) : truck ? rng.int(12, 14) : rng.int(11, 14);
   const ih = bh - 2;
-  const sd = tier === "grocery" ? ih - 5 : Math.max(4, Math.round(ih * (LY.depth ?? plan.depth ?? (gas ? 0.6 : 0.62)))); // a grocery's sales floor: all but a 4-deep back strip
+  const sd = tier === "grocery" ? ih - 5 : Math.max(4, Math.round(ih * (plan.depth ?? (gas ? 0.6 : 0.62)))); // a grocery's sales floor: all but a 4-deep back strip
   const S = (o) => ({ role: "sales", entry: true, ...o });
   let sales, back;
   switch (v) {
@@ -542,20 +554,20 @@ function shop(rng, v, o = {}) {
     // The shops of data-shops.js (shops.js places them; their back rooms by the franchise's plan.back).
     case "sportshop":
       sales = S({ name: "Sales floor", type: "sportshop", furnish: "aisles", maxBoxes: 7 });
-      back = pb === "big" ? [["*", { role: "stock", type: "sportshop", name: "Stockroom", maxBoxes: 4 }], [rng.int(4, 5), { role: "lockerroom", name: "Fitting rooms", type: "lockers" }], [rng.int(3, 4), { role: "office", boxLock: ["safe", 0.2] }]]
-        : pb === "hunt" ? [["*", { role: "stock", type: "sportshop" }], [rng.int(4, 5), { role: "armory", name: "Gun counter", type: "gunshop", lock: ["door", 0.5], boxLock: ["cage", 0.4], maxBoxes: 3 }], [3, "office"]]
-          : pb === "camp" ? [["*", { role: "stock", type: "sportshop", name: "Camping gear" }], [rng.int(3, 4), { role: "storage", name: "Boat and bait room", type: "sportshop" }], [3, "office"]]
-            : pb === "lockers" ? [["*", { role: "stock", type: "sportshop" }], [4, { role: "lockerroom", name: "Team gear", type: "lockers" }], [3, "office"]]
+      back = plan.back === "big" ? [["*", { role: "stock", type: "sportshop", name: "Stockroom", maxBoxes: 4 }], [rng.int(4, 5), { role: "lockerroom", name: "Fitting rooms", type: "lockers" }], [rng.int(3, 4), { role: "office", boxLock: ["safe", 0.2] }]]
+        : plan.back === "hunt" ? [["*", { role: "stock", type: "sportshop" }], [rng.int(4, 5), { role: "armory", name: "Gun counter", type: "gunshop", lock: ["door", 0.5], boxLock: ["cage", 0.4], maxBoxes: 3 }], [3, "office"]]
+          : plan.back === "camp" ? [["*", { role: "stock", type: "sportshop", name: "Camping gear" }], [rng.int(3, 4), { role: "storage", name: "Boat and bait room", type: "sportshop" }], [3, "office"]]
+            : plan.back === "lockers" ? [["*", { role: "stock", type: "sportshop" }], [4, { role: "lockerroom", name: "Team gear", type: "lockers" }], [3, "office"]]
               : [["*", { role: "stock", type: "sportshop" }], [rng.int(3, 4), "office"], [2, "restroom"]];
       break;
     case "electronics":
       sales = S({ name: "Sales floor", type: "electronics", furnish: "aisles" });
-      back = pb === "repair" ? [["*", { role: "workshop", name: "Repair bench", type: "electronics" }], ["*", { role: "stock", type: "electronics" }], [3, "office"]]
+      back = plan.back === "repair" ? [["*", { role: "workshop", name: "Repair bench", type: "electronics" }], ["*", { role: "stock", type: "electronics" }], [3, "office"]]
         : [["*", { role: "stock", type: "electronics", name: "Stockroom", lock: ["door", 0.3] }], [rng.int(3, 4), { role: "office", boxLock: ["safe", 0.25] }], [2, "restroom"]];
       break;
     case "radioshop":
       sales = S({ name: "Radio counter", type: "radioshop", furnish: "shelves", maxBoxes: 5 });
-      back = pb === "repair" ? [["*", { role: "workshop", name: "Repair bench", type: "radioshop" }], [rng.int(3, 4), { role: "storage", name: "Antenna stock", type: "radioshop" }], [3, "office"]]
+      back = plan.back === "repair" ? [["*", { role: "workshop", name: "Repair bench", type: "radioshop" }], [rng.int(3, 4), { role: "storage", name: "Antenna stock", type: "radioshop" }], [3, "office"]]
         : [["*", { role: "stock", type: "radioshop" }], [rng.int(3, 4), { role: "workshop", name: "Repair bench", type: "radioshop" }], [3, "office"]];
       break;
     case "bookstore":
@@ -564,13 +576,13 @@ function shop(rng, v, o = {}) {
       break;
     case "petstore":
       sales = S({ name: "Pet supplies", type: "petstore", furnish: "aisles" });
-      back = pb === "tanks" ? [["*", { role: "stock", name: "Fish room", type: "petstore" }], [rng.int(3, 4), { role: "storage", name: "Feed store", type: "petstore" }], [3, "office"]]
-        : pb === "feed" ? [["*", { role: "stock", name: "Feed room", type: "barn" }], [rng.int(3, 4), { role: "stock", type: "petstore" }], [3, "office"]]
+      back = plan.back === "tanks" ? [["*", { role: "stock", name: "Fish room", type: "petstore" }], [rng.int(3, 4), { role: "storage", name: "Feed store", type: "petstore" }], [3, "office"]]
+        : plan.back === "feed" ? [["*", { role: "stock", name: "Feed room", type: "barn" }], [rng.int(3, 4), { role: "stock", type: "petstore" }], [3, "office"]]
           : [["*", { role: "stock", type: "petstore" }], [rng.int(3, 4), { role: "exam", name: "Grooming room", type: "vet" }], [3, "office"]];
       break;
     case "garden":
       sales = S({ name: "Garden aisles", type: "garden", furnish: "aisles" });
-      back = pb === "yard" ? [["*", { role: "warefloor", name: "Yard stock", type: "garden", hub: false, maxBoxes: 5 }], [rng.int(3, 4), "office"]]
+      back = plan.back === "yard" ? [["*", { role: "warefloor", name: "Yard stock", type: "garden", hub: false, maxBoxes: 5 }], [rng.int(3, 4), "office"]]
         : [["*", { role: "stock", type: "garden", name: "Potting shed" }], [rng.int(3, 4), "office"], [3, { role: "parts", name: "Tool shed", type: "hardware" }]];
       break;
     case "clothing":
@@ -581,17 +593,17 @@ function shop(rng, v, o = {}) {
       sales = S({ name: "Liquor shelves", type: "liquor", furnish: "aisles" });
       back = [["*", { role: "stock", type: "liquor", name: "Back room", lock: ["door", 0.3] }], [rng.int(3, 4), { role: "office", boxLock: ["safe", 0.35] }]];
       break;
-    case "restaurant": // the restaurant's back by its kind of place (pb: the franchise's plan.back, or its layout's): fast food, takeout, sit-down, a smoker, a cafe
+    case "restaurant": // the restaurant's back by its kind of place (plan.back): fast food, takeout, sit-down, a smoker, a cafe
       sales = S({ role: "dining", name: "Dining room", type: "store", hub: true });
-      back = pb === "fastfood" ? [["*", { role: "kitchen" }], [rng.int(3, 4), { role: "pantry", name: "Walk-in", type: "kitchen", lock: ["door", 0.2] }], [2, "restroom"]]
-        : pb === "takeout" ? [["*", { role: "kitchen" }], [3, { role: "pantry", name: "Storeroom", type: "kitchen" }]]
-          : pb === "smoker" ? [["*", { role: "kitchen" }], [rng.int(3, 4), { role: "storage", name: "Smokehouse", type: "kitchen" }], [3, "office"]]
-            : pb === "cafe" ? [["*", { role: "kitchen", name: "Back counter" }], [3, { role: "pantry", type: "kitchen" }], [2, "restroom"]]
+      back = plan.back === "fastfood" ? [["*", { role: "kitchen" }], [rng.int(3, 4), { role: "pantry", name: "Walk-in", type: "kitchen", lock: ["door", 0.2] }], [2, "restroom"]]
+        : plan.back === "takeout" ? [["*", { role: "kitchen" }], [3, { role: "pantry", name: "Storeroom", type: "kitchen" }]]
+          : plan.back === "smoker" ? [["*", { role: "kitchen" }], [rng.int(3, 4), { role: "storage", name: "Smokehouse", type: "kitchen" }], [3, "office"]]
+            : plan.back === "cafe" ? [["*", { role: "kitchen", name: "Back counter" }], [3, { role: "pantry", type: "kitchen" }], [2, "restroom"]]
               : [["*", { role: "kitchen" }], [rng.int(3, 4), { role: "pantry", name: "Storeroom", type: "kitchen", lock: ["door", 0.2] }], [3, "office"], [2, "restroom"]];
       break;
     case "bar":
       sales = S({ role: "dining", name: "Bar", type: "bar", hub: true });
-      back = pb === "stage" ? [["*", { role: "dayroom", name: "Stage and dance floor", type: "bar" }], [rng.int(3, 4), { role: "pantry", name: "Keg room", type: "bar", lock: ["door", 0.3] }], [3, { role: "office", boxLock: ["safe", 0.3] }]]
+      back = plan.back === "stage" ? [["*", { role: "dayroom", name: "Stage and dance floor", type: "bar" }], [rng.int(3, 4), { role: "pantry", name: "Keg room", type: "bar", lock: ["door", 0.3] }], [3, { role: "office", boxLock: ["safe", 0.3] }]]
         : [["*", { role: "kitchen", name: "Kitchen" }], [rng.int(3, 4), { role: "pantry", name: "Keg room", type: "bar", lock: ["door", 0.3] }], [3, { role: "office", boxLock: ["safe", 0.3] }], [2, "restroom"]];
       break;
     case "pawnshop": // shops.js: the counter and its cases in front, the gun case and the stock behind
@@ -600,7 +612,7 @@ function shop(rng, v, o = {}) {
       break;
     case "hardware":
       sales = S({ name: "Hardware aisles", type: "hardware" }); // shops.js: the materials for building and crafting
-      back = [["*", pb === "yard" ? { role: "warefloor", name: "Lumber yard", type: "hardware", hub: false, maxBoxes: 5 } : { role: "stock", type: "hardware", name: "Lumber and stock" }], [rng.int(3, 4), { role: "office", lock: ["door", 0.25] }], [3, { role: "parts", name: "Tool crib", type: "garage" }]]; // pb "yard": a lumber barn's yard
+      back = [["*", plan.back === "yard" ? { role: "warefloor", name: "Lumber yard", type: "hardware", hub: false, maxBoxes: 5 } : { role: "stock", type: "hardware", name: "Lumber and stock" }], [rng.int(3, 4), { role: "office", lock: ["door", 0.25] }], [3, { role: "parts", name: "Tool crib", type: "garage" }]]; // plan.back "yard": a lumber barn's yard
       break;
     case "feedstore":
       sales = S({ name: "Store", type: "barn" });
@@ -623,18 +635,10 @@ function shop(rng, v, o = {}) {
       back = [["*", { role: "stock", ...(tier === "grocery" ? { maxBoxes: 2 } : {}) }], [rng.int(3, 4), { role: "office", boxLock: ["safe", 0.2] }], [2, "restroom"]];
       if (tier === "grocery") back.splice(1, 0, [3, { role: "pantry", name: "Walk-in cooler", type: "kitchen", cold: true, dk: "steel", windows: false, fl: "steel", maxBoxes: 1 }]); // a small walk-in behind the dairy wall (shoplayout.js walkin)
   }
-  if (LY.rooms) back = LY.rooms(rng, back, plan); // the layout's back rooms
-  if (LY.sales) sales = LY.sales(sales);         // and its front
-  if (!o.legacy) back = shopBack(v, back, { ...plan, back: pb }, o);
-  let program = LY.form === "side" ? { split: "x", parts: sideOf(rng, [LY.sideW || 5, { split: "y", parts: leaves(back) }], withPlan(sales, plan)) } // the back rooms down one side
-    : LY.form === "corridor" ? { split: "y", parts: [[sd, withPlan(sales, plan)], [1, { role: "corridor", name: "Back corridor" }], ["*", { split: "x", parts: leaves(back) }]] } // a service corridor between the floor and the back rooms
-      : { split: "y", parts: [[sd, withPlan(sales, plan)], ["*", { split: "x", parts: leaves(back) }]] };
-  const exits = [...(LY.exits ? LY.exits(rng) : [])];
-  if (LY.bays) { // the layout's own bays (a car wash through the building, a tyre shop's)
-    const g = [LY.bays.w || 5, { role: "bays", name: LY.bays.name, maxBoxes: 3 }];
-    program = { split: "x", parts: rng.chance(0.5) ? [["*", program], g] : [g, ["*", program]] };
-    exits.push(...LY.bays.exits);
-  } else if ((gas || truck) && !LY.noBays) {
+  if (!o.legacy) back = shopBack(v, back, plan, o);
+  let program = { split: "y", parts: [[sd, withPlan(sales, plan)], ["*", { split: "x", parts: leaves(back) }]] };
+  const exits = [];
+  if (gas || truck) {
     const g = [rng.int(4, 5), { role: "bays", name: "Service bay", maxBoxes: 3 }];
     program = { split: "x", parts: rng.chance(0.5) ? [["*", program], g] : [g, ["*", program]] };
     exits.push({ side: "front", roles: ["bays"], chance: 1, roller: true, width: 2, lock: 0.2 });
@@ -642,15 +646,13 @@ function shop(rng, v, o = {}) {
   exits.push({ side: "back", roles: ["stock", "kitchen", "pantry", "office", "bays"], chance: 0.9, lock: 0.3 });
   exits.push({ side: sideRoom(rng), roles: ["sales", "dining"], chance: 0.25, lock: 0.5 });
   // A corner store sometimes has a flat above the shop.
-  const flat = (v === "corner" && rng.chance(0.5)) || (!!plan.flat && rng.chance(plan.flat)) || !!LY.flat; // a franchise's flat above (plan.flat: a pub, a bookshop); a layout's always (LY.flat)
+  const flat = (v === "corner" && rng.chance(0.5)) || (!!plan.flat && rng.chance(plan.flat)); // a franchise's flat above (plan.flat: a pub, a bookshop)
   const F = (r) => ({ role: r, flat: true }); // the flat's rooms take the home styles (roomlayout.js)
   const upper = () => ({ split: "y", parts: [["*", { split: "x", parts: leaves([["*", { role: "living", name: "Flat: living room", flat: true }], ["*", { role: "kitchen", name: "Flat: kitchen", flat: true }]]) }], [1, { role: "hall", name: "Landing", flat: true }], ["*", { split: "x", parts: leaves(tier === "corner" ? [["*", F("bedroom")], [2, F("bath")]] : [["*", F("bedroom")], [2, F("bath")], ["*", F("bedroom")]]) }]] }); // a corner store's narrow flat: one bedroom (issue #22)
-  const up = LY.upper ? LY.upper : flat ? upper : null; // a layout's own floor above (stores and offices: a tactical outfitter's, a superstore's)
   return {
     bw, bh, program, exits, front: { width: tier === "corner" ? 1 : 2 }, openDoors: 0.3, ground: v === "feedstore" ? "rural" : truck || gas ? "lot" : "town", pumps: gas || truck ? (truck ? 3 : 2) : 0,
-    storeys: up ? 2 : 1, upper: up, foot: gas || tier === "corner" ? "small" : tier === "grocery" ? "large" : "medium",
+    storeys: flat ? 2 : 1, upper: flat ? upper : null, foot: gas || tier === "corner" ? "small" : tier === "grocery" ? "large" : "medium",
     stairs: { roles: BACK_STAIRS }, // the flat's stair from the back room
-    ...(lay ? { variant: lay } : {}),
   };
 }
 
@@ -674,162 +676,6 @@ function shopBack(v, back, plan, o) {
   if (eats && !cold) { const i = out.findIndex(([, l]) => l.role === "office"); if (i >= 0) out[i] = [out[i][0], { role: "pantry", type: "kitchen", maxBoxes: 2, ...walkin }]; }
   return out;
 }
-
-// ---------- the shops' layout variants (issue #32: buildvariants.js LAYOUTS) ----------
-// What each layout changes in shop() (the classic, its first, changes nothing): back (the back's arrangement by kind, as
-// a franchise's plan.back), rooms(rng, back, plan) (the back rooms instead), sales(front) (the front), wide / small (3
-// cells wider or narrower), depth (the front room's share), form ("side": the back rooms down one side; "corridor": a
-// service corridor between the floor and the back rooms), flat (a flat above, always), upper (a floor of its own above),
-// exits(rng) (more ways in), bays ({ name, w, exits }: bays of its own; noBays: none where the kind has them), make
-// (a plan of its own instead).
-const rm = (role, o = {}) => ({ role, ...o });
-const SHOP_LAYS = {
-  pharmacy: {
-    // A chain drugstore: wide, the dispensary at the back with the drive-through window beside it, the stock, the
-    // office and a restroom.
-    chain: { wide: true, depth: 0.66, rooms: (rng) => [[rng.int(5, 6), rm("dispensary", { name: "Pharmacy counter", lock: ["door", 0.65], boxLock: ["drugs", 0.5] })], ["*", rm("stock", { type: "pharmacy" })], [3, "office"], [2, "restroom"]],
-      exits: (rng) => [{ side: sideRoom(rng), roles: ["dispensary"], chance: 1, lock: 0.9, name: "Drive-through window" }] },
-    // An independent pharmacy: the soda fountain beside the shop floor, the dispensary and the stock behind, the
-    // pharmacist's flat above.
-    soda: { flat: true, wide: true, sales: (S) => ({ split: "x", parts: [["*", S], [4, rm("dining", { name: "Soda fountain", type: "store", hub: false, lay: "diner", maxBoxes: 2 })]] }),
-      rooms: (rng) => [[rng.int(4, 5), rm("dispensary", { lock: ["door", 0.65], boxLock: ["drugs", 0.5] })], ["*", rm("stock", { type: "pharmacy" })]] },
-    // An outpatient pharmacy: wide, the shop and the pharmacy counter, a corridor, the waiting room, consultation rooms,
-    // the stock and a restroom behind.
-    outpatient: { form: "corridor", wide: true, sales: (S) => ({ split: "x", parts: [["*", S], [4, rm("dispensary", { name: "Pharmacy counter", lock: ["door", 0.65], boxLock: ["drugs", 0.5] })]] }),
-      rooms: () => [["*", rm("lobby", { name: "Waiting room", type: "pharmacy", hub: false, maxBoxes: 1 })], [4, rm("exam", { name: "Consultation room", type: "clinic" })], [4, rm("exam", { name: "Consultation room", type: "clinic" })], [4, rm("stock", { type: "pharmacy" })], [2, "restroom"]] },
-  },
-  gunstore: {
-    // A gun range: the shop, then the range office and the gun cage, and the range's lanes across the back.
-    range: { depth: 0.45, rooms: (rng) => [[rng.int(4, 5), rm("armory", { name: "Gun cage", type: "gunshop", lock: ["vault", 0.8], boxLock: ["cage", 0.6], maxBoxes: 3 })], ["*", rm("storage", { name: "Shooting range", type: "gunshop", maxBoxes: 2 })], [4, rm("office", { name: "Range office", gunSafe: ["gunsafe2", 0.5] })]],
-      exits: () => [{ side: "back", roles: ["storage"], chance: 0.8, lock: 0.7, name: "Range door" }] },
-    // A gunsmith: a small counter, the gunsmith's workshop, the safe room and the office.
-    gunsmith: { small: true, depth: 0.45, rooms: (rng) => [["*", rm("workshop", { name: "Gunsmith's workshop", type: "gunshop", maxBoxes: 3 })], [rng.int(3, 4), rm("armory", { name: "Safe room", type: "gunshop", lock: ["vault", 0.85], boxLock: ["cage", 0.6], maxBoxes: 2 })], [3, rm("office", { gunSafe: ["gunsafe2", 0.5] })]] },
-    // A tactical outfitter: the shop and the gun cage below, the training room, the gear store and the office above.
-    tactical: { upper: () => ({ split: "y", parts: [["*", rm("classroom", { name: "Training room", type: "gunshop", maxBoxes: 2 })], ["*", { split: "x", parts: leaves([["*", rm("storage", { name: "Gear store", type: "gunshop", lock: ["door", 0.4] })], [4, rm("office", { gunSafe: ["gunsafe2", 0.4] })], [2, "restroom"]]) }]] }) },
-  },
-  pawnshop: {
-    // Pawn and loan: the counter, the loan office with its own door, the vault, the stock and a restroom.
-    loan: { rooms: (rng) => [[rng.int(4, 5), rm("armory", { name: "Vault", type: "pawnshop", lock: ["vault", 0.8], boxLock: ["safe", 0.5], maxBoxes: 2 })], ["*", rm("office", { name: "Loan office", ownDoor: "front", boxLock: ["lockbox", 0.4] })], ["*", rm("stock", { type: "pawnshop", name: "Back room", maxBoxes: 3 })], [2, "restroom"]] },
-    // A trading post: the counter, then a yard shed of big things behind its roller door, the back room and the office.
-    trading: { rooms: (rng) => [["*", rm("warefloor", { name: "Yard shed", type: "pawnshop", hub: false, maxBoxes: 4 })], [rng.int(3, 4), rm("stock", { type: "pawnshop", name: "Back room", maxBoxes: 3 })], [3, rm("office", { gunSafe: ["gunsafe2", 0.3] })]],
-      exits: () => [{ side: "back", roles: ["warefloor"], chance: 1, roller: true, width: 2, lock: 0.4, name: "Yard door" }] },
-  },
-  sportshop: {
-    // A sports superstore: wide, fitting rooms and the stock, and a floor above: the bike and ski workshop, more stock.
-    big: { back: "big", wide: true, upper: () => ({ split: "y", parts: [["*", rm("sales", { name: "Upper floor", type: "sportshop", maxBoxes: 4, lay: "aislefront" })], [4, { split: "x", parts: leaves([["*", rm("workshop", { name: "Bike and ski workshop", type: "sportshop" })], [4, rm("stock", { type: "sportshop" })], [2, "restroom"]]) }]] }) },
-    // A team sports shop: team gear, the printing room, the office.
-    team: { back: "lockers", rooms: (rng, back) => [...back.slice(0, 2), [4, rm("workshop", { name: "Printing room", type: "clothes" })], ...back.slice(2)] },
-    camp: { back: "camp" },
-    hunt: { back: "hunt" },
-  },
-  electronics: {
-    repair: { back: "repair" },
-    // An electronics superstore: wide, the stockroom, the service desk, a break room and a restroom down one side.
-    mega: { wide: true, form: "side", sideW: 5, rooms: (rng) => [["*", rm("stock", { type: "electronics", name: "Stockroom", lock: ["door", 0.3] })], [4, rm("office", { name: "Service desk", boxLock: ["safe", 0.25] })], [3, "breakroom"], [2, "restroom"]] },
-  },
-  radioshop: {
-    repair: { back: "repair" },
-    // Ham radio supply: the counter, the radio shack and the office, the antenna yard behind its gate.
-    ham: { rooms: (rng) => [["*", rm("warefloor", { name: "Antenna yard", type: "radioshop", hub: false, maxBoxes: 3 })], [rng.int(4, 5), rm("control", { name: "Radio shack", type: "radioshop" })], [3, "office"]],
-      exits: () => [{ side: "back", roles: ["warefloor"], chance: 1, width: 2, lock: 0.4, name: "Yard gate" }] },
-  },
-  bookstore: {
-    // A used bookshop: stacks in the back room, the office; the owner's flat above.
-    used: { flat: true, rooms: (rng) => [["*", rm("stock", { type: "books", name: "Back room stacks", lay: "bookfront" })], [rng.int(3, 4), "office"]] },
-    // A bookshop and cafe: wide, the cafe, the stockroom and the office down one side.
-    cafe: { wide: true, form: "side", sideW: 6, rooms: () => [["*", rm("dining", { name: "Cafe", type: "kitchen", hub: false, lay: "cafe", maxBoxes: 2 })], [4, rm("stock", { type: "books", name: "Stockroom" })], [3, "office"], [2, "restroom"]] },
-  },
-  petstore: {
-    aquarium: { back: "tanks" },
-    feed: { back: "feed", exits: () => [{ side: "back", roles: ["stock"], chance: 1, roller: true, width: 2, lock: 0.3, name: "Loading door" }] },
-  },
-  garden: {
-    yard: { back: "yard" },
-    // A greenhouse nursery: the glass house across most of the back, the office and the seed store beside it.
-    greenhouse: { back: null, rooms: () => [["*", rm("stock", { type: "garden", name: "Glass house", maxBoxes: 4 })], [4, { split: "y", parts: leaves([["*", "office"], ["*", rm("storage", { name: "Seed store", type: "garden" })]]) }]],
-      exits: (rng) => [{ side: sideRoom(rng), roles: ["stock"], chance: 0.8, width: 2, lock: 0.3, name: "Glass house door" }] },
-  },
-  clothing: {
-    // A boutique: small, the stock and the alterations room; the owner's flat above.
-    boutique: { small: true, flat: true, rooms: () => [["*", rm("stock", { type: "clothes" })], [4, rm("workshop", { name: "Alterations room", type: "clothes" })]] },
-    // Western wear: boots and saddlery; the boot room, the tack room, the office.
-    western: { rooms: (rng) => [["*", rm("stock", { type: "clothes", name: "Boot room" })], [rng.int(4, 5), rm("tack", { name: "Tack room", type: "barn" })], [3, "office"]] },
-    // A workwear store: the stock, the embroidery room, the office and a restroom down one side.
-    workwear: { form: "side", sideW: 5, rooms: () => [["*", rm("stock", { type: "clothes" })], [4, rm("workshop", { name: "Embroidery room", type: "clothes" })], [3, "office"], [2, "restroom"]] },
-  },
-  liquor: {
-    // A liquor warehouse: wide, the warehouse behind its loading door, the office.
-    warehouse: { wide: true, rooms: (rng) => [["*", rm("warefloor", { name: "Warehouse", type: "liquor", hub: false, maxBoxes: 4 })], [rng.int(3, 4), rm("office", { boxLock: ["safe", 0.35] })]],
-      exits: () => [{ side: "back", roles: ["warefloor"], chance: 1, roller: true, width: 2, lock: 0.3, name: "Loading door" }] },
-    // A package store: small, the cooler room behind a cold room door, the office, a drive-up window at the side.
-    package: { small: true, depth: 0.55, rooms: () => [["*", rm("pantry", { name: "Cooler room", type: "liquor", cold: true, dk: "coldroom", fl: "steel", windows: false, lay: "walkin" })], [3, rm("office", { boxLock: ["safe", 0.35] })]],
-      exits: (rng) => [{ side: sideRoom(rng), roles: ["sales"], chance: 1, lock: 0.9, name: "Drive-up window" }] },
-  },
-  restaurant: {
-    fastfood: { back: "fastfood" },
-    takeout: { back: "takeout" },
-    smoker: { back: "smoker" },
-    // A cafe: the back counter, the pantry and the roastery.
-    cafe: { back: "cafe", rooms: (rng, back) => [back[0], back[1], [4, rm("workshop", { name: "Roastery", type: "kitchen" })]] },
-  },
-  bar: {
-    roadhouse: { back: "stage" },
-    // A pub: the kitchen, the cellar and the snug; the landlord's flat above.
-    pub: { flat: true, rooms: (rng) => [["*", rm("kitchen", { name: "Kitchen" })], [3, rm("pantry", { name: "Cellar", type: "bar", lock: ["door", 0.3], windows: false })], [rng.int(4, 5), rm("dining", { name: "Snug", type: "bar", hub: false, lay: "barroom", maxBoxes: 1 })]] },
-    // A sports bar: wide, the game room, the kitchen, the keg room and the office down one side.
-    sports: { wide: true, form: "side", sideW: 6, rooms: (rng) => [["*", rm("dayroom", { name: "Game room", type: "bar", lay: "barroom" })], ["*", rm("kitchen", { name: "Kitchen" })], [3, rm("pantry", { name: "Keg room", type: "bar", lock: ["door", 0.3] })], [3, rm("office", { boxLock: ["safe", 0.3] })]] },
-  },
-  hardware: {
-    lumber: { back: "yard" },
-    // A home centre: wide, a service corridor behind the floor, the garden section, the stock, the office and the
-    // loading dock.
-    bigbox: { wide: true, form: "corridor", depth: 0.55, rooms: (rng) => [["*", rm("stock", { type: "hardware", name: "Stock", maxBoxes: 4 })], [rng.int(5, 6), rm("sales", { name: "Garden section", type: "garden", hub: false, lay: "aislefront", maxBoxes: 3 })], [4, rm("office", { lock: ["door", 0.25] })]],
-      exits: () => [{ side: "back", roles: ["stock"], chance: 1, roller: true, width: 3, lock: 0.25, name: "Loading dock" }] },
-  },
-  feedstore: {
-    // A farm-supply barn: the store, then a barn of fencing, posts and bales behind its roller door, the office.
-    supply: { rooms: (rng) => [["*", rm("warefloor", { name: "Supply barn", type: "barn", hub: false, maxBoxes: 4 })], [rng.int(3, 4), "office"]],
-      exits: () => [{ side: "back", roles: ["warefloor"], chance: 1, roller: true, width: 3, lock: 0.25, name: "Barn door" }] },
-    // A farmers' co-op: the co-op office, the seed store and the grain bin room, a side door to the bins.
-    coop: { rooms: (rng) => [[rng.int(4, 5), rm("office", { name: "Co-op office" })], ["*", rm("storage", { name: "Seed store", type: "barn" })], [4, rm("storage", { name: "Grain bin room", type: "barn", windows: false })]],
-      exits: (rng) => [{ side: sideRoom(rng), roles: ["storage"], chance: 1, lock: 0.3, name: "Bin door" }] },
-    // A western store: boots and saddles at the front, the stock, the tack room and the office behind.
-    western: { sales: (S) => ({ ...S, name: "Boots and saddles", type: "clothes" }), rooms: (rng) => [["*", rm("stock", { type: "warehouse", name: "Feed room" })], [rng.int(4, 5), rm("tack", { name: "Tack room", type: "barn" })], [3, "office"]] },
-  },
-  diner: {
-    // A lunch counter: small, the counter and the kitchen, a storeroom, no office.
-    counter: { small: true, depth: 0.5, sales: (S) => ({ ...S, name: "Lunch counter" }), rooms: () => [["*", rm("kitchen")], [3, rm("pantry", { name: "Storeroom", type: "kitchen" })]] },
-    // A truckers' diner: wide, the kitchen and its storeroom, the showers and the drivers' lounge.
-    truckers: { wide: true, rooms: (rng) => [["*", rm("kitchen")], [3, rm("pantry", { name: "Storeroom", type: "kitchen", lock: ["door", 0.2] })], [4, rm("lockerroom", { name: "Showers", type: "lockers" })], [rng.int(4, 5), rm("dayroom", { name: "Drivers' lounge", type: "store" })]] },
-  },
-  pizza: {
-    // A slice counter: small, the oven room and the storeroom.
-    slice: { small: true, depth: 0.5, sales: (S) => ({ ...S, name: "Slice counter" }), rooms: () => [["*", rm("kitchen", { name: "Oven room" })], [3, rm("pantry", { name: "Storeroom", type: "kitchen" })]] },
-    // A pizza parlour: wide, the kitchen, the storeroom, the party room and a restroom.
-    parlour: { wide: true, rooms: (rng) => [["*", rm("kitchen")], [3, rm("pantry", { name: "Storeroom", type: "kitchen", lock: ["door", 0.2] })], [rng.int(5, 6), rm("dining", { name: "Party room", type: "store", hub: false, maxBoxes: 2 })], [2, "restroom"]] },
-  },
-  gasstation: {
-    // A pump kiosk: a little kiosk by the pumps, its storeroom and a restroom.
-    kiosk: { make: (rng) => ({
-      bw: rng.int(9, 10), bh: rng.int(7, 8), front: { width: 1 }, openDoors: 0.3, ground: "lot", pumps: 3, storeys: 1, foot: "small", stairs: { roles: BACK_STAIRS },
-      program: { split: "y", parts: [["*", rm("sales", { name: "Kiosk", entry: true, type: "store", maxBoxes: 3 })], [2, { split: "x", parts: leaves([["*", rm("stock", { name: "Storeroom" })], [2, "restroom"]]) }]] },
-      exits: [{ side: "back", roles: ["stock"], chance: 0.6, lock: 0.4 }],
-    }) },
-    // Gas and car wash: the shop, the car wash bay through the building (a roller door each end) and its equipment room.
-    carwash: { bays: { name: "Car wash", w: 5, exits: [{ side: "front", roles: ["bays"], chance: 1, roller: true, width: 2, lock: 0.2, name: "Car wash door" }, { side: "back", roles: ["bays"], chance: 1, roller: true, width: 2, lock: 0.3, name: "Car wash door (back)" }] },
-      rooms: () => [["*", rm("stock", { name: "Storeroom" })], [3, rm("parts", { name: "Wash equipment", type: "garage" })], [2, "restroom"]] },
-  },
-  truckstop: {
-    // A travel centre: the shop and the fast food counter, the kitchen, the showers, the drivers' lounge, a small chapel
-    // and a restroom; no bays.
-    travel: { noBays: true, sales: (S) => ({ split: "x", parts: leaves([[0.55, rm("sales", { name: "Shop", type: "store", entry: true })], ["*", rm("dining", { name: "Fast food", type: "store", hub: true })]]) }),
-      rooms: (rng) => [["*", "kitchen"], [4, rm("lockerroom", { name: "Showers", type: "lockers" })], [rng.int(4, 5), rm("dayroom", { name: "Drivers' lounge", type: "store" })], [4, rm("nave", { name: "Chapel", type: "chapel", civic: "nave", hub: false, maxBoxes: 1 })], [2, "restroom"]] },
-    // A truck scale and tyre shop: wide, the shop and the diner, the kitchen, the tyre store and the scale house (its
-    // own door onto the scales out back), the tyre shop's drive-through bays.
-    scale: { wide: true, rooms: () => [["*", "kitchen"], [4, rm("parts", { name: "Tyre store", type: "garage" })], [5, rm("office", { name: "Scale house", ownDoor: "back" })], [2, "restroom"]],
-      bays: { name: "Tyre shop", w: 6, exits: [{ side: "front", roles: ["bays"], chance: 1, roller: true, width: 3, lock: 0.2, name: "Tyre bay" }, { side: "back", roles: ["bays"], chance: 1, roller: true, width: 3, lock: 0.3, name: "Tyre bay (back)" }] } },
-  },
-};
 
 // Big stores: a wide sales floor of aisles, the deli or a sports section, a back room with racks and a loading dock.
 function bigstore(rng, v, o = {}) {
@@ -915,12 +761,6 @@ function corridorPlan(front, back, fd, cw = 1, hall = null) { // hall: the corri
 // layouts (INST_PLANS below; the classic is the plan here; a franchise names its own: data-shops.js plan.lay). The
 // military buildings, the school, the offices and the cell block keep theirs (#23, #25, #27, #31 own them).
 function institution(rng, v, o = {}) {
-  const lay = pickLayout(v, rng.state, o, planOf(v, o).lay || null);
-  if (lay && INST_PLANS[v] && INST_PLANS[v][lay.id]) return { ...INST_PLANS[v][lay.id](rng, o), variant: lay };
-  const spec = institutionClassic(rng, v, o);
-  return lay ? { ...spec, variant: lay } : spec;
-}
-function institutionClassic(rng, v, o = {}) {
   const L = (o) => ({ role: "lobby", entry: true, ...o });
   const fire = (lock = 0.4) => [{ side: "left", roles: ["corridor"], chance: 0.6, lock }, { side: "right", roles: ["corridor"], chance: 0.6, lock }];
   const S = (bw, bh) => ({ bw, bh });
@@ -981,6 +821,10 @@ function institutionClassic(rng, v, o = {}) {
       };
     }
     case "offices": {
+      // A firm's tower (data-offices.js OFFICE_FIRMS.office, a new save's): the corporate tower, floor by floor
+      // (officeplans.js tower). With no firm (a tower saved before them, a city's or a factory's offices) as below.
+      const firm = o.legacy ? null : planOf("office", o);
+      if (firm && firm.look) return OFFICE_PLANS.tower(rng, o, firm, MAX_STOREYS);
       // A tower: the taller, the smaller its footprint (3 storeys on about 20 × 14, 8 on about 13 × 11). The city crawl
       // adds storeys deeper in (o.storeyBonus).
       const n = clampN(rng.int(3, 8) + (o.storeyBonus || 0), 3, MAX_STOREYS);
@@ -1098,13 +942,13 @@ function institutionClassic(rng, v, o = {}) {
 }
 
 // Open floors: a warehouse, a factory, a hangar, a motor pool, an auto shop, a workshop, a barn, a machine shed. Since
-// #32 (new saves) each but the hangar and the motor pool (#25's) one of its layouts (OPEN_PLANS below; the classic is
-// the plan here).
+// #32 (new saves) the barn and the machine shed take one of their layouts (OPEN_PLANS below; the classic is the plan
+// here); the warehouse and the factory are #37's (industrylayout.js), the garages #35's.
 function openfloor(rng, v, o = {}) {
-  const lay = v === "warehouse" && o.site === "military" ? null : pickLayout(v, rng.state, o, planOf(v, o).lay || null); // a base's warehouse is its supply warehouse (#25)
-  if (lay && OPEN_PLANS[v] && OPEN_PLANS[v][lay.id]) return { ...OPEN_PLANS[v][lay.id](rng, o), variant: lay };
+  const lay = OPEN_PLANS[v] ? pickLayout(v, rng.state, o) : null; // the barn's and the machine shed's layouts (issue #32)
+  if (lay && OPEN_PLANS[v][lay.id]) return { ...OPEN_PLANS[v][lay.id](rng, o), ...laid(lay) };
   const spec = openfloorClassic(rng, v, o);
-  return lay ? { ...spec, variant: lay } : spec;
+  return lay ? { ...spec, ...laid(lay) } : spec;
 }
 function openfloorClassic(rng, v, o = {}) { // o.legacy: an older save (its hangar, motor pool and a base's warehouse as they were)
   switch (v) {
@@ -1170,290 +1014,9 @@ function openfloorClassic(rng, v, o = {}) { // o.legacy: an older save (its hang
   }
 }
 
-// ---------- the institutions' layout variants (issue #32: buildvariants.js LAYOUTS) ----------
-const big = (bw, bh) => (bw * bh >= 290 ? "large" : "medium"); // the footprint's class by its area (tools/storeytest.js)
-const INST_PLANS = {
-  clinic: {
-    // The doctor's surgery: a converted house, no corridor; the waiting room and reception at the front, two
-    // consulting rooms, the drug cupboard and a restroom behind.
-    surgery(rng) {
-      const bw = rng.int(12, 14), bh = rng.int(11, 12);
-      return {
-        bw, bh, front: { width: 1 }, ground: "town", storeys: 1, foot: "small",
-        program: { split: "y", parts: [["*", { split: "x", parts: leaves([["*", { role: "lobby", name: "Waiting room", entry: true, type: "clinic" }], [4, { role: "office", name: "Reception", type: "office" }]]) }], ["*", { split: "x", parts: leaves([["*", { role: "exam", name: "Consulting room" }], ["*", { role: "exam", name: "Consulting room" }], [3, { role: "pharmroom", name: "Drug cupboard", lock: ["door", 0.6], boxLock: ["drugs", 0.5] }], [2, "restroom"]]) }]] },
-        exits: [{ side: "back", roles: ["exam", "restroom"], chance: 0.6, lock: 0.3 }],
-      };
-    },
-    // The medical centre: two storeys off a corridor; X-ray, the waiting room and the pharmacy counter at the front,
-    // the treatment room and exam rooms behind; the doctors' offices, more exam rooms and the day ward upstairs.
-    medcentre(rng) {
-      const bw = rng.int(18, 20), bh = rng.int(14, 15);
-      return {
-        bw, bh, front: { width: 2 }, ground: "town", storeys: 2, foot: "medium", stairs: { ...ENDS, len: 2 },
-        program: corridorPlan([[5, { role: "exam", name: "X-ray" }], ["*", { role: "lobby", name: "Waiting room", entry: true, type: "clinic" }], [5, { role: "pharmroom", name: "Pharmacy counter", lock: ["door", 0.5], boxLock: ["drugs", 0.4] }]], [["*", { role: "exam", name: "Treatment room" }], [4, "exam"], [4, "exam"], [3, { role: "staffroom", name: "Kitchenette" }], [2, "restroom"]], 5, 2),
-        upper: () => corridorPlan([["*", { role: "office", name: "Doctors' offices", type: "office" }], [4, "exam"], ["*", "exam"]], [["*", { role: "ward", name: "Day ward" }], [4, { role: "storage", name: "Records", type: "office" }], [2, "restroom"]], 5, 2),
-        exits: [{ side: "back", roles: ["exam", "staffroom"], chance: 0.7, lock: 0.3 }, { side: sideRoom(rng), roles: ["corridor"], chance: 0.5, lock: 0.4 }],
-      };
-    },
-  },
-  infirmary: {
-    // The ward infirmary: one long ward hall of beds at the front, the treatment room, the drug store, the duty
-    // office and a restroom behind.
-    ward(rng) {
-      const bw = rng.int(16, 19), bh = rng.int(11, 13);
-      return {
-        bw, bh, front: { width: 2 }, ground: "base", storeys: 1, foot: "medium",
-        program: { split: "y", parts: [["*", { role: "ward", name: "Ward", entry: true, hub: true }], [4, { split: "x", parts: leaves([["*", { role: "exam", name: "Treatment room" }], [4, { role: "pharmroom", name: "Drug store", lock: ["door", 0.6], boxLock: ["drugs", 0.5] }], [4, { role: "office", name: "Duty office", type: "office" }], [2, "restroom"]]) }]] },
-        exits: [{ side: "back", roles: ["exam", "office"], chance: 0.6, lock: 0.3 }, { side: sideRoom(rng), roles: ["ward"], chance: 0.5, lock: 0.4 }],
-      };
-    },
-    // The dispensary: a small one; the counter and an exam room, the drug store and the supply room behind.
-    dispensary(rng) {
-      const bw = rng.int(10, 12), bh = rng.int(9, 10);
-      return {
-        bw, bh, front: { width: 1 }, ground: "base", storeys: 1, foot: "small",
-        program: { split: "y", parts: [["*", { split: "x", parts: leaves([["*", { role: "lobby", name: "Counter", entry: true, type: "clinic" }], [4, "exam"]]) }], [3, { split: "x", parts: leaves([["*", { role: "pharmroom", name: "Drug store", lock: ["door", 0.6], boxLock: ["drugs", 0.5] }], [4, { role: "storage", name: "Supply room", type: "clinic" }]]) }]] },
-        exits: [{ side: "back", roles: ["storage"], chance: 0.4, lock: 0.4 }],
-      };
-    },
-  },
-  hospital: {
-    // The critical-access hospital: one or two storeys; the emergency room, the waiting room, the pharmacy at the
-    // front, a ward, the nurses' station, the ambulance bay and the kitchen behind; a ward and the ICU upstairs.
-    critical(rng) {
-      const bw = rng.int(25, 28), bh = rng.int(16, 17), n = rng.int(1, 2);
-      return {
-        bw, bh, front: { width: 2 }, ground: "town", storeys: n, foot: big(bw, bh), stairs: ENDS,
-        program: corridorPlan([["*", { role: "er" }], [6, { role: "lobby", entry: true, name: "Waiting room", type: "clinic" }], [4, { role: "pharmroom", lock: ["vault", 1], boxLock: ["drugs", 0.3] }], [3, "restroom"]], [["*", { role: "ward" }], [5, "nursestation"], [7, { role: "ambbay" }], [5, "kitchen"]], 5, 2),
-        upper: n > 1 ? () => corridorPlan([["*", { role: "ward" }], [5, "nursestation"], ["*", { role: "ward" }]], [["*", "icu"], [4, { role: "office", name: "Doctors' office", type: "office" }], [4, "laundry"], [3, "restroom"]], 5, 2) : null,
-        exits: [{ side: "back", roles: ["ambbay"], chance: 1, lock: 0.25, roller: true, width: 2, name: "Ambulance bay" }, { side: "left", roles: ["corridor"], chance: 0.7, lock: 0.3 }, { side: "right", roles: ["corridor"], chance: 0.7, lock: 0.3 }],
-      };
-    },
-    // The children's hospital: the children's emergency, the play room and the clinic on the ground floor with the
-    // cafeteria, the ambulance bay and the pharmacy; children's wards of cots, the parents' lounge upstairs; no morgue.
-    children(rng) {
-      const bw = rng.int(26, 30), bh = rng.int(17, 19), n = rng.int(3, 4);
-      const ward = (name = "Children's ward") => ({ role: "ward", name, cots: true });
-      return {
-        bw, bh, front: { width: 2 }, ground: "city", storeys: n, foot: "large", stairs: ENDS,
-        program: corridorPlan([["*", { role: "er", name: "Children's emergency" }], [6, { role: "lobby", entry: true, name: "Waiting room", type: "clinic" }], [5, { role: "dayroom", name: "Play room", type: "house", hub: false }], [4, { role: "pharmroom", lock: ["vault", 1], boxLock: ["drugs", 0.3] }]], [[6, { role: "ambbay" }], ["*", "cafeteria"], [5, "kitchen"], [5, { role: "exam", name: "Clinic" }]], 5, 2),
-        upper: (f, r, ctx) => (ctx && ctx.top
-          ? corridorPlan([["*", ward("Neonatal ward")], [5, "nursestation"], ["*", ward()]], [["*", "icu"], [5, { role: "dayroom", name: "Parents' lounge", type: "house", hub: false }], [4, "laundry"], [3, "restroom"]], 5, 2)
-          : corridorPlan([["*", ward()], [5, "nursestation"], [5, { role: "dayroom", name: "Play room", type: "house", hub: false }], ["*", ward()]], [["*", ward()], [5, "staffroom"], [4, { role: "storage", name: "Supply room", type: "clinic" }], [3, "restroom"]], 5, 2)),
-        exits: [{ side: "back", roles: ["ambbay"], chance: 1, lock: 0.25, roller: true, width: 2, name: "Ambulance bay" }, { side: "left", roles: ["corridor"], chance: 0.85, lock: 0.3 }, { side: "right", roles: ["corridor"], chance: 0.85, lock: 0.3 }],
-      };
-    },
-  },
-  police: {
-    // The sheriff's substation: one storey; the front desk and the deputy's office, a holding cell (locked now and
-    // then), the gun locker and a washroom behind.
-    substation(rng) {
-      const bw = rng.int(15, 17), bh = rng.int(11, 12);
-      return {
-        bw, bh, front: { width: 1 }, ground: "town", storeys: 1, foot: "medium",
-        program: { split: "y", parts: [["*", { split: "x", parts: leaves([["*", { role: "lobby", name: "Front desk", entry: true, type: "office", civic: "frontdesk" }], ["*", { role: "office", name: "Deputy's office", gunSafe: ["gunsafe2", 0.3], civic: "chief" }]]) }], [4, { split: "x", parts: leaves([["*", { role: "cells", name: "Holding cell", civic: "cells", lock: ["door", 0.5] }], [6, { role: "armory", name: "Gun locker", lock: ["vault", 0.8], boxLock: ["cage", 0.5], civic: "armory", dk: "steel", boxTarget: 3 }], [2, { role: "restroom", civic: "washroom" }]]) }]] },
-        exits: [{ side: "back", roles: ["cells", "restroom"], chance: 0.4, lock: 0.6 }],
-      };
-    },
-    // The state patrol post: the cruisers' garage at one end, the front desk and dispatch, a corridor, the locker
-    // room, the armory, the evidence room and the sergeant's office behind.
-    patrol(rng) {
-      const bw = rng.int(23, 25), bh = rng.int(13, 14), left = rng.chance(0.5);
-      const main = corridorPlan([["*", { role: "lobby", name: "Front desk", entry: true, type: "office", civic: "frontdesk" }], ["*", { role: "office", name: "Dispatch", civic: "dispatch" }]], [[4, { role: "lockerroom", type: "barracks", civic: "plockers" }], [6, { role: "armory", lock: ["vault", 0.85], boxLock: ["cage", 0.5], gunSafe: ["gunsafe3", 0.3], civic: "armory", dk: "steel", boxTarget: 3 }], [3, { role: "evidence", lock: ["door", 0.7], boxLock: ["evidence", 0.6], civic: "evidence", dk: "cell" }], ["*", { role: "office", name: "Sergeant's office", civic: "chief" }]], 4);
-      const port = [0.34, { role: "bays", name: "Cruiser garage", type: "garage", maxBoxes: 3, civic: "sallyport" }];
-      return {
-        bw, bh, front: { width: 1 }, ground: "town", storeys: 1, foot: "medium",
-        program: { split: "x", parts: left ? [port, ["*", main]] : [["*", main], port] },
-        exits: [{ side: "front", roles: ["bays"], chance: 1, roller: true, width: 2, lock: 0.3, name: "Garage door" }, { side: "back", roles: ["corridor", "lockerroom"], chance: 0.6, lock: 0.5 }],
-      };
-    },
-  },
-  firestation: {
-    // The volunteer fire hall: one storey; the engine bay beside the meeting hall, its kitchen, the medical store and
-    // a restroom behind.
-    volunteer(rng) {
-      const bw = rng.int(16, 18), bh = rng.int(11, 13), left = rng.chance(0.5);
-      const hall = { split: "y", parts: [["*", { role: "dayroom", name: "Meeting hall", entry: true, civic: "fdayroom" }], [4, { split: "x", parts: leaves([["*", { role: "kitchen", civic: "fkitchen" }], [4, { role: "storage", name: "Medical store", type: "nurse", lock: ["door", 0.3], civic: "medstore" }], [2, { role: "restroom", civic: "washroom" }]]) }]] };
-      const bay = [0.42, { role: "bays", name: "Engine bay", type: "enginebay", maxBoxes: 4, civic: "enginebay" }];
-      return {
-        bw, bh, front: { width: 1 }, ground: "town", storeys: 1, foot: "medium",
-        program: { split: "x", parts: left ? [bay, ["*", hall]] : [["*", hall], bay] },
-        exits: [{ side: "front", roles: ["bays"], chance: 1, roller: true, width: 3, lock: 0.1, name: "Bay door" }, { side: "back", roles: ["kitchen", "bays"], chance: 0.6, lock: 0.3 }],
-      };
-    },
-    // Fire headquarters: three bays behind two bay doors, the day room, the kitchen, the medical store and the
-    // workshop, the training tower at the end; the dorm, the gym, the watch office and the chief's office above.
-    big(rng) {
-      const bw = rng.int(26, 30), bh = rng.int(14, 16), left = rng.chance(0.5);
-      const living = { split: "y", parts: [["*", { role: "dayroom", entry: true, civic: "fdayroom" }], ["*", { split: "x", parts: leaves([["*", { role: "kitchen", civic: "fkitchen" }], [4, { role: "storage", name: "Medical store", type: "nurse", lock: ["door", 0.3], civic: "medstore" }], [4, { role: "workshop", civic: "fworkshop" }]]) }]] };
-      const bays = [0.5, { role: "bays", name: "Engine bay", type: "enginebay", maxBoxes: 6, civic: "enginebay" }];
-      const tower = [4, { role: "storage", name: "Training tower", type: "nurse", windows: false, maxBoxes: 2 }];
-      return {
-        bw, bh, front: { width: 1 }, ground: "city", storeys: 2, foot: "large", stairs: { roles: ["dayroom"], n: 1 },
-        program: { split: "x", parts: left ? [bays, ["*", living], tower] : [tower, ["*", living], bays] },
-        upper: () => ({ split: "y", parts: [["*", { split: "x", parts: leaves([["*", { role: "dorm", type: "barracks", civic: "fdorm" }], ["*", { role: "dorm", type: "barracks", civic: "fdorm" }]]) }], ["*", { split: "x", parts: leaves([["*", { role: "gym", civic: "fgym" }], [4, { role: "office", name: "Watch office", civic: "watch" }], [4, { role: "office", name: "Chief's office", civic: "chief" }], [3, { role: "bath", civic: "washroom" }]]) }]] }),
-        exits: [{ side: "front", roles: ["bays"], chance: 1, roller: true, width: 3, lock: 0.1, name: "Bay door" }, { side: "front", roles: ["bays"], chance: 1, roller: true, width: 3, lock: 0.1, name: "Bay door" }, { side: "back", roles: ["bays"], chance: 0.7, roller: true, width: 3, lock: 0.3 }, { side: "back", roles: ["kitchen", "workshop", "storage"], chance: 0.6, lock: 0.3 }],
-      };
-    },
-  },
-  lab: {
-    // The teaching lab: lecture rooms, the lobby and the prep room at the front, teaching labs, the chemical store and
-    // restrooms behind a 2-wide corridor; more of each upstairs.
-    teaching(rng) {
-      const bw = rng.int(20, 24), bh = rng.int(14, 15), n = rng.int(1, 2);
-      return {
-        bw, bh, front: { width: 2 }, ground: "town", storeys: n, foot: big(bw, bh), stairs: { ...ENDS, len: 2 },
-        program: corridorPlan([["*", { role: "classroom", name: "Lecture room" }], [6, { role: "lobby", entry: true, name: "Lobby" }], [4, { role: "office", name: "Prep room", type: "lab" }]], [["*", { role: "lab", name: "Teaching lab" }], ["*", { role: "lab", name: "Teaching lab" }], [4, { role: "storage", name: "Chemical store", type: "lab", lock: ["door", 0.4], boxLock: ["drugs", 0.3] }], [2, "restroom"]], 5, 2),
-        upper: n > 1 ? () => corridorPlan([["*", { role: "classroom", name: "Lecture room" }], ["*", { role: "lab", name: "Teaching lab" }]], [["*", { role: "lab", name: "Teaching lab" }], [4, "office"], [2, "restroom"]], 5, 2) : null,
-        exits: [{ side: "left", roles: ["corridor"], chance: 0.6, lock: 0.4 }, { side: "right", roles: ["corridor"], chance: 0.6, lock: 0.4 }],
-      };
-    },
-    // The biohazard lab: the security desk, the changing room and the decontamination shower at the front, the airlock
-    // corridor, then sealed labs each behind an airlock, the freezer room and the waste store.
-    biohazard(rng) {
-      const bw = rng.int(19, 22), bh = rng.int(14, 15);
-      const sealed = () => ["*", { split: "y", parts: leaves([[2, { role: "hall", name: "Airlock" }], ["*", { role: "lab", name: "Sealed lab", lock: ["door", 0.5], windows: false }]]) }];
-      return {
-        bw, bh, front: { width: 1 }, ground: "town", storeys: 1, foot: "medium",
-        program: { split: "y", parts: [[4, { split: "x", parts: leaves([["*", { role: "lobby", entry: true, name: "Security desk" }], [5, { role: "lockerroom", name: "Changing room", type: "lab" }], [3, { role: "bath", name: "Decontamination shower" }]]) }], [1, { role: "corridor", name: "Airlock corridor" }], ["*", { split: "x", parts: [sealed(), sealed(), [5, { role: "pantry", name: "Freezer room", type: "lab", cold: true, dk: "coldroom", fl: "steel", windows: false, lay: "walkin" }], [3, { role: "storage", name: "Waste store", type: "lab", lock: ["door", 0.4] }]] }]] },
-        exits: [{ side: "back", roles: ["storage", "pantry"], chance: 0.5, lock: 0.6 }],
-      };
-    },
-  },
-};
-
 // ---------- the open floors' layout variants (issue #32: buildvariants.js LAYOUTS) ----------
 const sideOf = (rng, side, rest) => (rng.chance(0.5) ? [side, ["*", rest]] : [["*", rest], side]);
 const OPEN_PLANS = {
-  warehouse: {
-    // The distribution centre: the shipping offices, the dispatch office, the drivers' room and a break room across
-    // the front; the racking floor behind, a row of three loading docks along the back.
-    distribution(rng) {
-      const bw = rng.int(28, 32), bh = rng.int(16, 18);
-      return {
-        bw, bh, front: { width: 1 }, ground: "lot", storeys: 1, foot: "wide",
-        program: { split: "y", parts: [[4, { split: "x", parts: leaves([[6, { role: "office", name: "Shipping office", entry: true, hub: true }], [5, { role: "office", name: "Dispatch" }], [5, { role: "lockerroom", name: "Drivers' room", type: "workshop" }], [4, "breakroom"], [2, "restroom"], ["*", { role: "storage", name: "Returns cage", lock: ["door", 0.4], boxLock: ["crate", 0.3] }]]) }], ["*", { role: "warefloor", name: "Racking floor" }]] },
-        exits: [1, 2, 3].map((i) => ({ side: "back", roles: ["warefloor"], chance: 1, roller: true, width: 3, lock: 0.25, name: `Dock ${i}` })).concat([{ side: sideRoom(rng), roles: ["warefloor"], chance: 0.7, lock: 0.4 }]),
-      };
-    },
-    // The cold-storage warehouse: the dock floor, the freezer room and the cooler behind their cold room doors along
-    // one side, the office in a corner.
-    cold(rng) {
-      const bw = rng.int(22, 26), bh = rng.int(14, 16);
-      const cold = (name) => ({ role: "pantry", name, type: "kitchen", cold: true, dk: "coldroom", fl: "steel", windows: false, maxBoxes: 4, lay: "walkin" });
-      const side = [0.42, { split: "y", parts: leaves([["*", cold("Freezer room")], ["*", cold("Cooler room")], [4, { role: "office", name: "Office", entry: true, hub: true }]]) }];
-      return {
-        bw, bh, front: { width: 1 }, ground: "lot", storeys: 1, foot: "wide",
-        program: { split: "x", parts: sideOf(rng, side, { role: "warefloor", name: "Dock floor", maxBoxes: 6 }) },
-        exits: [{ side: "back", roles: ["warefloor"], chance: 1, roller: true, width: 3, lock: 0.25, name: "Loading dock" }, { side: "front", roles: ["warefloor"], chance: 0.6, roller: true, width: 3, lock: 0.3 }],
-      };
-    },
-    // Self-storage: the rental office at the front, then rows of locked units off aisles and a cross aisle down one
-    // side: a maze of small rooms, many locked, each a stranger's belongings.
-    storage(rng) {
-      const bw = rng.int(24, 28), bh = rng.int(16, 18);
-      let no = 0;
-      const units = () => ({ split: "x", parts: Array.from({ length: Math.floor((bw - 6) / 4) }, () => ["*", { role: "storage", name: `Unit ${++no}`, type: "house", lock: ["door", 0.6], boxLock: ["lockbox", 0.2], maxBoxes: 2, windows: false, lay: "stock" }]) });
-      const aisles = { split: "y", parts: [[3, units()], [1, { role: "corridor", name: "Aisle" }], [3, units()], [3, units()], [1, { role: "corridor", name: "Aisle" }], ["*", units()]] };
-      return {
-        bw, bh, front: { width: 1 }, ground: "lot", storeys: 1, foot: "wide", openDoors: 0.1, extraDoors: 0,
-        program: { split: "y", parts: [[3, { split: "x", parts: leaves([[6, { role: "office", name: "Rental office", entry: true, hub: true }], ["*", { role: "corridor", name: "Front aisle" }]]) }], ["*", { split: "x", parts: [[2, { role: "corridor", name: "Cross aisle" }], ["*", aisles]] }]] },
-        exits: [{ side: "left", roles: ["corridor"], chance: 0.9, lock: 0.5 }, { side: "right", roles: ["corridor"], chance: 0.7, lock: 0.5 }],
-      };
-    },
-  },
-  factory: {
-    // The food-processing plant: the offices, lockers and break room across the front, the processing floor, cold
-    // rooms and the packing room behind, the dock.
-    food(rng) {
-      const bw = rng.int(24, 28), bh = rng.int(16, 18);
-      const cold = (name) => ({ role: "pantry", name, type: "kitchen", cold: true, dk: "coldroom", fl: "steel", windows: false, maxBoxes: 3, lay: "walkin" });
-      return {
-        bw, bh, front: { width: 1 }, ground: "lot", storeys: 1, foot: "wide",
-        program: { split: "y", parts: [[4, { split: "x", parts: leaves([[5, { role: "office", entry: true, hub: true }], ["*", { role: "lockerroom", type: "workshop" }], [5, "breakroom"]]) }], ["*", { split: "x", parts: [["*", { role: "factoryfloor", name: "Processing floor" }], [7, { split: "y", parts: leaves([["*", cold("Cold room")], ["*", cold("Freezer")], [4, { role: "storage", name: "Packing room", type: "warehouse", lay: "pallets" }]]) }]] }]] },
-        exits: [{ side: "back", roles: ["factoryfloor", "storage"], chance: 1, roller: true, width: 3, lock: 0.25, name: "Loading dock" }, { side: sideRoom(rng), roles: ["factoryfloor"], chance: 0.6, lock: 0.4 }],
-      };
-    },
-    // The textile mill: two or three floors of mill floor round a stair, the offices and the dye store below, the
-    // bale store and the overseer's office above.
-    textile(rng) {
-      const bw = rng.int(22, 26), bh = rng.int(13, 15), n = rng.int(2, 3);
-      return {
-        bw, bh, front: { width: 1 }, ground: "lot", storeys: n, foot: "wide", stairs: { roles: ["factoryfloor", "office"], n: 1 },
-        program: { split: "y", parts: [[4, { split: "x", parts: leaves([[5, { role: "office", name: "Mill office", entry: true, hub: true }], ["*", { role: "storage", name: "Dye store", type: "workshop", lock: ["door", 0.3] }], [2, "restroom"]]) }], ["*", { role: "factoryfloor", name: "Mill floor" }]] },
-        upper: () => ({ split: "y", parts: [[4, { split: "x", parts: leaves([[5, { role: "office", name: "Overseer's office" }], ["*", { role: "storage", name: "Bale store", type: "warehouse", lay: "pallets" }], [2, "restroom"]]) }], ["*", { role: "factoryfloor", name: "Mill floor" }]] }),
-        exits: [{ side: "back", roles: ["factoryfloor"], chance: 1, roller: true, width: 3, lock: 0.25, name: "Loading door" }, { side: sideRoom(rng), roles: ["factoryfloor"], chance: 0.5, lock: 0.4 }],
-      };
-    },
-    // The chemical plant: the gatehouse office, the control room, the plant lab and the locker room across the
-    // front, the tank hall and the locked drum store behind.
-    chemical(rng) {
-      const bw = rng.int(24, 28), bh = rng.int(16, 18);
-      return {
-        bw, bh, front: { width: 1 }, ground: "lot", storeys: 1, foot: "wide",
-        program: { split: "y", parts: [[5, { split: "x", parts: leaves([[5, { role: "office", name: "Gatehouse office", entry: true, hub: true }], [6, { role: "control", name: "Control room" }], ["*", { role: "lab", name: "Plant lab" }], [4, { role: "lockerroom", type: "workshop" }]]) }], ["*", { split: "x", parts: [["*", { role: "factoryfloor", name: "Tank hall" }], [6, { role: "storage", name: "Drum store", type: "lab", lock: ["door", 0.5], boxLock: ["crate", 0.3], lay: "pallets" }]] }]] },
-        exits: [{ side: "back", roles: ["factoryfloor"], chance: 1, roller: true, width: 3, lock: 0.25, name: "Tanker bay" }, { side: "left", roles: ["factoryfloor"], chance: 0.6, lock: 0.4 }, { side: "right", roles: ["factoryfloor", "storage"], chance: 0.6, lock: 0.4 }],
-      };
-    },
-  },
-  autoshop: {
-    // The quick lube: the lube bays drive-through, a roller door front and back; the waiting room and the parts room.
-    quicklube(rng) {
-      const bw = rng.int(14, 16), bh = rng.int(10, 12);
-      const side = [5, { split: "y", parts: leaves([["*", { role: "lobby", name: "Waiting room", entry: true, type: "office", maxBoxes: 1 }], ["*", { role: "parts", lock: ["door", 0.2] }]]) }];
-      return {
-        bw, bh, front: { width: 1 }, ground: "town", storeys: 1, foot: "medium",
-        program: { split: "x", parts: sideOf(rng, side, { role: "bays", name: "Lube bays", maxBoxes: 4 }) },
-        exits: [{ side: "front", roles: ["bays"], chance: 1, roller: true, width: 2, lock: 0.15, name: "Bay door" }, { side: "back", roles: ["bays"], chance: 1, roller: true, width: 2, lock: 0.25, name: "Bay door (back)" }],
-      };
-    },
-    // The body shop: the frame bay, the paint booth sealed off beside it, the office and the parts room.
-    body(rng) { return bodyShop(rng, 16, 19); },
-    // The tyre shop: the showroom of tyres and the counter at the front, the bays and the tyre store behind.
-    tyre(rng) {
-      const bw = rng.int(14, 18), bh = rng.int(11, 12);
-      return {
-        bw, bh, front: { width: 2 }, ground: "town", storeys: 1, foot: "medium",
-        program: { split: "y", parts: [[4, { split: "x", parts: leaves([["*", { role: "sales", name: "Tyre showroom", entry: true, type: "garage", maxBoxes: 2 }], [4, { role: "office", boxLock: ["safe", 0.2] }]]) }], ["*", { split: "x", parts: [["*", { role: "bays", maxBoxes: 4 }], [5, { role: "parts", name: "Tyre store" }]] }]] },
-        exits: [{ side: sideRoom(rng), roles: ["bays"], chance: 1, roller: true, width: 2, lock: 0.15, name: "Bay door" }, { side: "back", roles: ["bays", "parts"], chance: 0.6, lock: 0.3 }],
-      };
-    },
-  },
-  garage: {
-    // The garage with a workshop: the bay, the workshop beside it and the storage loft over it (a ladder up).
-    workshop(rng) {
-      const bw = rng.int(11, 13), bh = rng.int(9, 10);
-      const side = [5, { split: "y", parts: leaves([["*", { role: "workshop", name: "Workshop", entry: true, hub: true }], [3, { role: "storage", name: "Loft store", type: "garage" }]]) }];
-      return {
-        bw, bh, front: { width: 1 }, ground: "town", storeys: 1, foot: "small", loft: { roles: ["storage"], chance: 1, ladder: true },
-        program: { split: "x", parts: sideOf(rng, side, { role: "bays", name: "Garage", maxBoxes: 3 }) },
-        exits: [{ side: "front", roles: ["bays"], chance: 1, roller: true, width: 2, lock: 0.2, name: "Garage door" }, { side: "back", roles: ["workshop", "bays"], chance: 0.5, lock: 0.3 }],
-      };
-    },
-    body(rng) { return bodyShop(rng, 14, 16); },
-  },
-  workshop: {
-    // The welding shop: the welding bay behind a back roller door, the steel store, the office at the front door.
-    welding(rng) {
-      const bw = rng.int(12, 15), bh = rng.int(10, 11);
-      const side = [5, { split: "y", parts: leaves([["*", { role: "office", entry: true, hub: true }], ["*", { role: "storage", name: "Steel store", type: "workshop", lay: "pallets" }], [3, { role: "parts", name: "Gas and consumables", type: "workshop", lock: ["door", 0.3] }]]) }];
-      return {
-        bw, bh, front: { width: 1 }, ground: "lot", storeys: 1, foot: "small",
-        program: { split: "x", parts: sideOf(rng, side, { role: "workshop", name: "Welding bay", hub: true, maxBoxes: 4 }) },
-        exits: [{ side: "back", roles: ["workshop"], chance: 1, roller: true, width: 3, lock: 0.2, name: "Roller door" }],
-      };
-    },
-    // The woodshop: the office and the finishing room across the front, the shop floor and the lumber store behind,
-    // a roller door at the side.
-    woodshop(rng) {
-      const bw = rng.int(13, 15), bh = rng.int(10, 12), side = sideRoom(rng);
-      return {
-        bw, bh, front: { width: 1 }, ground: "lot", storeys: 1, foot: "small",
-        program: { split: "y", parts: [[4, { split: "x", parts: leaves([[5, { role: "office", entry: true, hub: true }], ["*", { role: "storage", name: "Finishing room", type: "workshop" }], [2, "restroom"]]) }], ["*", { split: "x", parts: [["*", { role: "workshop", name: "Shop floor", hub: true, maxBoxes: 4 }], [4, { role: "storage", name: "Lumber store", type: "warehouse", lay: "pallets" }]] }]] },
-        exits: [{ side, roles: ["workshop", "storage"], chance: 1, roller: true, width: 2, lock: 0.2, name: "Roller door" }, { side: "back", roles: ["workshop"], chance: 0.4, lock: 0.3 }],
-      };
-    },
-  },
   machineshed: {
     // The pole shed: one open run of bays along the front, two bay doors, no rooms.
     pole(rng) {
@@ -1521,24 +1084,9 @@ const OPEN_PLANS = {
     },
   },
 };
-// A body shop (an auto shop's, a garage's): the frame bay, the paint booth sealed off beside it, the office at the
-// front door and the parts room behind it.
-function bodyShop(rng, w0, w1) {
-  const bw = rng.int(w0, w1), bh = rng.int(10, 12);
-  const side = [5, { split: "y", parts: leaves([["*", { role: "office", entry: true, hub: true }], ["*", { role: "parts", lock: ["door", 0.25] }]]) }];
-  return {
-    bw, bh, front: { width: 1 }, ground: "town", storeys: 1, foot: bw * bh > 190 ? "medium" : "small",
-    program: { split: "x", parts: sideOf(rng, side, { split: "x", parts: [["*", { role: "bays", name: "Frame bay", maxBoxes: 4 }], [5, { role: "workshop", name: "Paint booth", windows: false, maxBoxes: 2 }]] }) },
-    exits: [{ side: "front", roles: ["bays"], chance: 1, roller: true, width: 2, lock: 0.2, name: "Bay door" }, { side: "back", roles: ["workshop", "bays"], chance: 0.7, roller: true, width: 2, lock: 0.3, name: "Booth door" }],
-  };
-}
 
 function church(rng, o = {}) {
-  if (!o.legacy) { // since #32 one of its layouts (CHURCH_PLANS; the brick church is churchPlan's), a franchise's its own
-    const lay = pickLayout("church", rng.state, o, planOf("church", o).lay || null);
-    if (lay && CHURCH_PLANS[lay.id]) return { ...CHURCH_PLANS[lay.id](rng), variant: lay };
-    return { ...churchPlan(rng), ...(lay ? { variant: lay } : {}) };
-  }
+  if (!o.legacy) return churchPlan(rng);
   const bw = rng.int(13, 16), bh = rng.int(16, 19);
   return {
     bw, bh, front: { width: 2 }, ground: "town", storeys: 1, foot: "medium",
@@ -1774,42 +1322,6 @@ function milPlan(rng, v, o = {}) {
 }
 
 
-// The churches' layouts (issue #32): the clapboard chapel (one small nave, a porch and a vestry), the megachurch (an
-// auditorium, the lobby cafe, classrooms; classrooms and offices upstairs), the cathedral (the long nave between rows of
-// side chapels, the narthex, the sacristy and the crypt stair).
-const CHURCH_PLANS = {
-  chapel(rng) {
-    const bw = rng.int(13, 14), bh = rng.int(16, 18);
-    return {
-      bw, bh, front: { width: 1 }, ground: "rural", storeys: 1, foot: "medium",
-      program: { split: "y", parts: [[2, { role: "foyer", name: "Porch", entry: true, type: "chapel", civic: "narthex" }], ["*", { role: "nave", civic: "nave" }], [3, { role: "vestry", boxLock: ["lockbox", 0.4], civic: "vestry" }]] }, // one door each end of the nave: the aisle clear between the pews
-      exits: [{ side: "back", roles: ["vestry"], chance: 0.5, lock: 0.3 }],
-    };
-  },
-  mega(rng) {
-    const bw = rng.int(28, 32), bh = rng.int(22, 24);
-    const sunday = { role: "classroom", name: "Sunday school", type: "chapel", maxBoxes: 2 };
-    return {
-      bw, bh, front: { width: 2 }, ground: "lot", storeys: 2, foot: "large", stairs: { roles: ["foyer", "corridor"], n: 2 },
-      program: { split: "y", parts: [[4, { split: "x", parts: leaves([["*", { role: "foyer", name: "Lobby", entry: true, type: "chapel", civic: "narthex" }], [7, { role: "sales", name: "Cafe", type: "kitchen", hub: false, lay: "cafe", maxBoxes: 2 }], [5, { role: "office", name: "Church office", civic: "vestry" }]]) }], ["*", { role: "nave", name: "Auditorium", civic: "nave" }], [1, { role: "corridor", name: "Back hall" }], [4, { split: "x", parts: leaves([["*", sunday], ["*", sunday], [6, { role: "kitchen", name: "Fellowship kitchen", civic: "parishhall" }], [3, { role: "restroom", civic: "washroom" }]]) }]] },
-      upper: () => ({ split: "y", parts: [["*", { split: "x", parts: leaves([["*", sunday], ["*", sunday], ["*", sunday]]) }], [2, { role: "corridor" }], ["*", { split: "x", parts: leaves([["*", { role: "office", name: "Pastor's office", civic: "vestry" }], ["*", { role: "storage", name: "Youth room", type: "chapel" }], [3, { role: "restroom", civic: "washroom" }]]) }]] }),
-      exits: [{ side: "left", roles: ["corridor"], chance: 0.8, lock: 0.4 }, { side: "right", roles: ["corridor"], chance: 0.8, lock: 0.4 }, { side: "back", roles: ["kitchen", "classroom"], chance: 0.6, lock: 0.3 }],
-    };
-  },
-  cathedral(rng) {
-    const bw = rng.int(28, 31), bh = rng.int(23, 25);
-    const chapel = { role: "vestry", name: "Side chapel", civic: "vestry" };
-    const chapels = () => [4, { split: "y", parts: leaves([["*", chapel], ["*", chapel], ["*", chapel]]) }];
-    const aisle = () => [2, { role: "hall", name: "Side aisle" }]; // the chapels open onto the side aisles, the aisles onto the nave
-    const middle = { split: "y", parts: [[3, { role: "foyer", name: "Narthex", entry: true, type: "chapel", civic: "narthex" }], ["*", { role: "nave", civic: "nave" }], [4, { split: "x", parts: leaves([["*", { role: "vestry", name: "Sacristy", boxLock: ["lockbox", 0.5], civic: "vestry" }], [4, { role: "storage", name: "Crypt stair", type: "chapel", windows: false }]]) }]] };
-    return {
-      bw, bh, front: { width: 2 }, ground: "city", storeys: 1, foot: "large", extraDoors: 0,
-      program: { split: "x", parts: [chapels(), aisle(), ["*", middle], aisle(), chapels()] },
-      exits: [{ side: "back", roles: ["vestry", "storage"], chance: 0.6, lock: 0.4 }, { side: "front", roles: ["hall"], chance: 0.6, lock: 0.3, name: "Side porch" }],
-    };
-  },
-};
-
 // A motel: a row of rooms, each with its own door onto the parking lot, and the office at one end. Since #32 (new saves)
 // one of five layouts (buildvariants.js LAYOUTS.motel, by the dice and the setting; the franchise gives the look):
 //   court     the motor court (the plan below): two storeys, the outside stair at the office's end up to the walkway
@@ -1828,7 +1340,7 @@ const CHURCH_PLANS = {
 // An older save (o.legacy) builds the plan below exactly as it did (no nook, no pool).
 function motel(rng, o = {}) {
   const lay = pickLayout("motel", rng.state, o, planOf("motel", o).lay || null);
-  if (lay && lay.id !== "court") return { ...MOTEL_PLANS[lay.id](rng, o), variant: lay };
+  if (lay && lay.id !== "court") return { ...MOTEL_PLANS[lay.id](rng, o), ...laid(lay) };
   const n = rng.int(4, 5), uw = 4;
   const bw = 2 + 5 + 1 + n * uw + (n - 1) + (lay ? 3 : 0); // a motor court's ice and vending nook (3 wide) between the office and the rooms
   const bh = rng.int(8, 9) + (o.legacy ? 0 : 1); // a new save's a cell deeper: the upper rooms' bathrooms fit behind the walkway (shoplayout.js)
@@ -1849,7 +1361,7 @@ function motel(rng, o = {}) {
     program: { split: "x", parts: left ? [office, ...nook, ...units] : [...units, ...nook, office] },
     upper: () => ({ split: "y", parts: [["*", { split: "x", parts: left ? [linen, ...upNook, ...upperUnits()] : [...upperUnits(), ...upNook, linen] }], [1, { role: "corridor", name: "Walkway" }]] }),
     exits: [{ side: "back", roles: ["office"], chance: 0.6, lock: 0.3 }],
-    ...(lay ? { pool: { w: rng.int(4, 6), h: 3 }, margins: { back: 9 }, variant: lay } : {}),
+    ...(lay ? { pool: { w: rng.int(4, 6), h: 3 }, margins: { back: 9 }, ...laid(lay) } : {}),
   };
 }
 // A motel room and its bathroom as one unit off a corridor (the chain's, the extended stay's): the bathroom on the
@@ -1924,9 +1436,7 @@ function motorCabin(rng) {
 // on its lot (plan.back "lot"), a truck dealer's mostly bays ("service").
 function dealer(rng, o = {}) {
   const plan = planOf("dealer", o);
-  const lay = pickLayout("dealer", rng.state, o, plan.lay || null); // since #32 (new saves) its layout: the franchise's (plan.lay), else the dice
-  const own = lay && lay.id !== "dealer"; // the classic keeps the franchise's own arrangement (plan.back), as before
-  const lot = own ? lay.id === "lot" : plan.back === "lot", svc = own ? lay.id === "truck" : plan.back === "service";
+  const lot = plan.back === "lot", svc = plan.back === "service";
   const bw = (lot ? rng.int(12, 14) : rng.int(19, 23)) + (plan.wide ? 3 : 0), bh = lot ? rng.int(9, 10) : rng.int(12, 14);
   const sd = Math.max(4, Math.round((bh - 2) * (plan.depth ?? 0.55)));
   const show = withPlan({ role: "sales", entry: true, name: lot ? "Sales office" : "Showroom", type: "dealer", furnish: "lobby", maxBoxes: lot ? 3 : 4 }, plan);
@@ -1940,22 +1450,13 @@ function dealer(rng, o = {}) {
   }
   const n = plan.storeys ? rng.int(plan.storeys[0], plan.storeys[1]) : 1;
   const upper = () => ({ split: "y", parts: [["*", { role: "office", name: "Finance office", hub: true, boxLock: ["safe", 0.3] }], [4, { split: "x", parts: leaves([["*", "office"], [3, "restroom"]]) }]] });
-  if (own && svc) { // a truck dealer's (#32): the parts warehouse behind its own roller door
-    program = { split: "y", parts: [["*", program], [4, { role: "warefloor", name: "Parts warehouse", type: "garage", hub: false, maxBoxes: 3 }]] };
-    exits.push({ side: "back", roles: ["warefloor"], chance: 1, roller: true, width: 2, lock: 0.3, name: "Loading door" });
-  }
-  return { bw, bh: own && svc ? bh + 5 : bh, program, exits, front: { width: 2 }, openDoors: 0.3, ground: "lot", storeys: n, upper: n > 1 ? upper : null, foot: lot ? "small" : own && svc ? "large" : "medium", stairs: { roles: BACK_STAIRS }, ...(lay ? { variant: lay } : {}) };
+  return { bw, bh, program, exits, front: { width: 2 }, openDoors: 0.3, ground: "lot", storeys: n, upper: n > 1 ? upper : null, foot: lot ? "small" : "medium", stairs: { roles: BACK_STAIRS } };
 }
 
 // A bank (data-shops.js): the banking hall at the front, the teller line, the vault (a vault door, its boxes locked)
 // and the manager's office behind; the bigger banks have offices above (plan.storeys).
 function bank(rng, o = {}) {
   const plan = planOf("bank", o);
-  const lay = pickLayout("bank", rng.state, o, plan.lay || null); // since #32 (new saves): its layout (BANK_PLANS; the classic below)
-  if (lay && BANK_PLANS[lay.id]) return { ...BANK_PLANS[lay.id](rng, plan), variant: lay };
-  return { ...bankClassic(rng, o, plan), ...(lay ? { variant: lay } : {}) };
-}
-function bankClassic(rng, o, plan) {
   const bw = rng.int(16, 19) + (plan.wide ? 3 : 0), bh = rng.int(12, 14);
   const n = plan.storeys ? rng.int(plan.storeys[0], plan.storeys[1]) : 1;
   const hall = { role: "lobby", entry: true, name: "Banking hall", type: "office" };
@@ -1971,86 +1472,10 @@ function bankClassic(rng, o, plan) {
   };
 }
 
-// The banks' layouts (issue #32): the small-town bank (one banking hall, the teller line, the vault and the manager's
-// office behind it), the drive-through branch (the teller line down one side along its drive-through window), the city
-// bank (a marble hall between offices off a 2-wide corridor, the vault and the deposit room; offices and the boardroom
-// above).
-const atmLobby = [3, { role: "lobby", name: "ATM lobby", entry: true, atm: true, hub: false, type: "office", maxBoxes: 1 }]; // shoplayout.js atmlobby: the ATM by the front door
-const vaultRoom = (name = "Vault") => ({ role: "armory", name, type: "bankvault", lock: ["vault", 1], boxLock: ["safe", 0.6], windows: false, fl: "conc" });
-const BANK_PLANS = {
-  town(rng) {
-    const bw = rng.int(12, 14), bh = rng.int(10, 11);
-    return {
-      bw, bh, front: { width: 2 }, ground: "town", storeys: 1, foot: "small", openDoors: 0.2,
-      program: { split: "y", parts: [["*", { split: "x", parts: [atmLobby, ["*", { role: "lobby", name: "Banking hall", type: "office" }]] }], [4, { split: "x", parts: leaves([["*", { role: "office", name: "Teller line", type: "office", boxLock: ["lockbox", 0.4] }], [4, vaultRoom()], [4, { role: "office", name: "Manager's office", boxLock: ["safe", 0.3] }]]) }]] },
-      exits: [{ side: "back", roles: ["office"], chance: 0.5, lock: 0.6 }],
-    };
-  },
-  drive(rng) {
-    const bw = rng.int(17, 20), bh = rng.int(12, 13), side = sideRoom(rng);
-    const main = { split: "y", parts: [["*", { split: "x", parts: [atmLobby, ["*", { role: "lobby", name: "Banking hall", type: "office" }]] }], [4, { split: "x", parts: leaves([[4, vaultRoom()], ["*", { role: "office", name: "Manager's office", boxLock: ["safe", 0.3] }], [2, "restroom"]]) }]] };
-    const tellers = [5, { split: "y", parts: leaves([["*", { role: "office", name: "Teller line", type: "office", boxLock: ["lockbox", 0.4] }], [3, { role: "storage", name: "Night deposit", type: "bankvault", lock: ["door", 0.7], boxLock: ["safe", 0.5], windows: false, maxBoxes: 1 }]]) }];
-    return {
-      bw, bh, front: { width: 2 }, ground: "lot", storeys: 1, foot: "medium", openDoors: 0.2,
-      program: { split: "x", parts: side === "left" ? [tellers, ["*", main]] : [["*", main], tellers] },
-      exits: [{ side, roles: ["office"], chance: 1, lock: 0.9, name: "Drive-through window" }, { side: "back", roles: ["office", "restroom"], chance: 0.5, lock: 0.6 }],
-    };
-  },
-  city(rng, plan) {
-    const bw = rng.int(22, 26), bh = rng.int(14, 16), n = plan.storeys ? clampN(rng.int(plan.storeys[0], plan.storeys[1]), 2, 3) : rng.int(2, 3);
-    return {
-      bw, bh, front: { width: 2 }, ground: "city", storeys: n, foot: big(bw, bh), openDoors: 0.2, stairs: { roles: ["corridor"], n: 1 },
-      program: corridorPlan([atmLobby, ["*", { role: "office", name: "Loan office" }], [8, { role: "lobby", name: "Marble hall", type: "office" }], ["*", { role: "office", name: "Private banking" }]], [[5, vaultRoom()], [4, { ...vaultRoom("Safe-deposit room"), lock: ["door", 0.5], boxLock: ["safe", 0.3], maxBoxes: 2 }], ["*", { role: "office", name: "Teller line", type: "office", boxLock: ["lockbox", 0.4] }], [4, { role: "office", name: "Manager's office", boxLock: ["safe", 0.3] }], [2, "restroom"]], 5, 2),
-      upper: () => corridorPlan([["*", "office"], [6, { role: "office", name: "Boardroom" }], ["*", "office"]], [["*", { role: "storage", name: "Records", type: "office", lock: ["door", 0.3] }], [4, "breakroom"], [2, "restroom"]], 5, 2),
-      exits: [{ side: "back", roles: ["office", "restroom"], chance: 0.6, lock: 0.6 }, { side: sideRoom(rng), roles: ["corridor"], chance: 0.5, lock: 0.5 }],
-    };
-  },
-};
-
 // A library (data-shops.js): the circulation desk and the stacks, a reading room, the children's corner, the
 // workroom and the archive; the city's central library has more floors of stacks (plan.storeys).
 function library(rng, o = {}) {
   const plan = planOf("library", o);
-  const lay = pickLayout("library", rng.state, o, plan.lay || null); // since #32 (new saves): its layout (LIBRARY_PLANS; the central library below)
-  if (lay && LIBRARY_PLANS[lay.id]) return { ...LIBRARY_PLANS[lay.id](rng, plan), variant: lay };
-  return { ...libraryClassic(rng, o, plan), ...(lay ? { variant: lay } : {}) };
-}
-// The libraries' layouts (issue #32): the Carnegie library (the domed hall in the middle with reading rooms either side
-// and the stacks behind them, the mezzanine stacks upstairs), the branch library (one open room of stacks and the
-// children's area, the community room and the workroom behind), the county library (a corridor front to back, rooms
-// either side: the archive, the genealogy room, the meeting room).
-const stacksRoom = (name = "Stacks", o = {}) => ({ role: "stock", name, type: "books", fl: "carpet", maxBoxes: 6, ...o });
-const LIBRARY_PLANS = {
-  carnegie(rng) {
-    const bw = rng.int(18, 20), bh = rng.int(14, 16);
-    const wing = () => ({ split: "y", parts: [["*", { role: "dining", name: "Reading room", type: "books", hub: false, maxBoxes: 2 }], ["*", stacksRoom()]] });
-    return {
-      bw, bh, front: { width: 2 }, ground: "town", storeys: 2, foot: "medium", stairs: { roles: ["lobby"], n: 1 },
-      program: { split: "x", parts: [["*", wing()], [6, { role: "lobby", entry: true, name: "Domed hall", type: "books" }], ["*", wing()]] },
-      upper: () => ({ split: "x", parts: [["*", stacksRoom("Mezzanine stacks")], [6, { role: "hall", name: "Gallery" }], ["*", { split: "y", parts: leaves([["*", stacksRoom("Mezzanine stacks")], [4, { role: "storage", name: "Archive", type: "books", lock: ["door", 0.3] }]]) }]] }),
-      exits: [{ side: "back", roles: ["stock"], chance: 0.5, lock: 0.4 }],
-    };
-  },
-  branch(rng) {
-    const bw = rng.int(18, 22), bh = rng.int(12, 14);
-    return {
-      bw, bh, front: { width: 2 }, ground: "town", storeys: 1, foot: "medium",
-      program: { split: "y", parts: [["*", { split: "x", parts: leaves([["*", stacksRoom("Library", { entry: true, hub: true })], [0.32, { role: "classroom", name: "Children's area", type: "books" }]]) }], [4, { split: "x", parts: leaves([["*", { role: "dining", name: "Community room", type: "books", hub: false, maxBoxes: 2 }], [4, { role: "office", name: "Workroom" }], [2, "restroom"], [2, "restroom"]]) }]] },
-      exits: [{ side: "back", roles: ["dining", "office"], chance: 0.6, lock: 0.4 }, { side: sideRoom(rng), roles: ["stock"], chance: 0.5, lock: 0.4 }],
-    };
-  },
-  county(rng) {
-    const bw = rng.int(17, 19), bh = rng.int(15, 17);
-    const left = { split: "y", parts: leaves([[5, { role: "lobby", entry: true, name: "Circulation desk", type: "books" }], ["*", stacksRoom()], [4, { role: "storage", name: "Archive", type: "books", lock: ["door", 0.3] }]]) };
-    const right = { split: "y", parts: leaves([["*", { role: "dining", name: "Meeting room", type: "books", hub: false, maxBoxes: 2 }], ["*", { role: "office", name: "Genealogy room", type: "books" }], [4, { role: "office", name: "Workroom" }], [2, "restroom"]]) };
-    return {
-      bw, bh, front: { width: 2 }, ground: "town", storeys: 1, foot: "medium",
-      program: { split: "x", parts: [["*", left], [2, { role: "corridor" }], ["*", right]] },
-      exits: [{ side: "back", roles: ["corridor"], chance: 0.8, lock: 0.4 }],
-    };
-  },
-};
-function libraryClassic(rng, o, plan) {
   const bw = rng.int(18, 22) + (plan.wide ? 4 : 0), bh = rng.int(13, 15);
   const n = plan.storeys ? rng.int(plan.storeys[0], plan.storeys[1]) : rng.int(1, 2);
   const stacks = (name = "Stacks") => ({ role: "stock", name, type: "books", fl: "carpet", maxBoxes: 6 });
@@ -2093,18 +1518,15 @@ function hospital(rng, bw, bh, n, fire) {
 // deadbeasts.js).
 function vet(rng, o = {}) {
   const plan = planOf("vet", o);
-  const lay = pickLayout("vet", rng.state, o, plan.lay || null); // since #32 (new saves): the animal clinic (below), the country vet's barn, the animal hospital
   const bw = rng.int(15, 18) + (plan.wide ? 3 : 0) + (o.legacy ? 0 : 3), bh = rng.int(11, 13) + (o.legacy ? 0 : 2);
-  if (lay && lay.id === "hospital") return { ...animalHospital(rng, bw, bh), variant: lay };
   const n = plan.storeys ? rng.int(plan.storeys[0], plan.storeys[1]) : 1;
-  const barn = lay && lay.id !== "small" ? lay.id === "country" : plan.back === "barn"; // the classic keeps the franchise's own (plan.back)
+  const barn = plan.back === "barn";
   if (!o.legacy) return {
-    ...(lay ? { variant: lay } : {}),
     bw, bh, front: { width: 2 }, ground: barn ? "rural" : "town", storeys: n, foot: "medium",
     program: corridorPlan([[4, { role: "exam", name: "Exam room", type: "vet" }], ["*", { role: "lobby", entry: true, name: "Waiting room", type: "vet" }], [4, { role: "exam", name: "Exam room", type: "vet" }]],
       [["*", barn ? { role: "storage", name: "Large-animal stalls", type: "barn", fl: "dirt" } : { role: "cells", name: "Kennels", type: "vet", kennel: true, lock: ["door", 0.35] }], [4, { role: "theatre", name: "Surgery", type: "vet", lock: ["door", 0.3] }], [3, { role: "pharmroom", name: "Drug room", type: "vet", lock: ["door", 0.5], boxLock: ["drugs", 0.4] }], [3, { role: "storage", name: "Food store", type: "vet", food: true }]], 4),
     upper: n > 1 ? () => corridorPlan([["*", "office"], [4, "breakroom"]], [["*", { role: "ward", name: "Recovery ward", type: "vet" }], [3, { role: "storage", type: "vet" }], [2, "restroom"]], 4) : null,
-    exits: [{ side: "back", roles: ["storage", "cells", "theatre"], chance: 0.8, lock: 0.3, ...(lay && lay.id === "country" ? { roller: true, width: 2, name: "Stall door" } : {}) }, ...(lay && lay.id === "country" ? [{ side: sideRoom(rng), roles: ["storage"], chance: 0.6, lock: 0.3 }] : [])],
+    exits: [{ side: "back", roles: ["storage", "cells", "theatre"], chance: 0.8, lock: 0.3 }],
   };
   return {
     bw, bh, front: { width: 2 }, ground: barn ? "rural" : "town", storeys: n, foot: "medium",
@@ -2115,24 +1537,17 @@ function vet(rng, o = {}) {
   };
 }
 
-// The animal hospital (a vet's layout, issue #32): two storeys off a corridor; exam rooms, the waiting room and X-ray at
-// the front, the boarding kennels, the surgery, the ICU and the drug room behind; offices, the recovery ward and the
-// staff room upstairs.
-function animalHospital(rng, bw, bh) {
-  const V = (role, o = {}) => ({ role, type: "vet", ...o });
-  return {
-    bw: Math.min(bw, 24), bh: Math.max(bh, 15), front: { width: 2 }, ground: "town", storeys: 2, foot: "medium", stairs: { ...ENDS, len: 2 },
-    program: corridorPlan([[4, V("exam", { name: "Exam room" })], ["*", V("lobby", { entry: true, name: "Waiting room" })], [4, V("exam", { name: "X-ray" })], [4, V("exam", { name: "Exam room" })]],
-      [["*", V("cells", { name: "Boarding kennels", kennel: true, lock: ["door", 0.35] })], [5, V("theatre", { name: "Surgery", lock: ["door", 0.3] })], [4, V("icu", { name: "ICU" })], [3, V("pharmroom", { name: "Drug room", lock: ["door", 0.5], boxLock: ["drugs", 0.4] })]], 5, 2),
-    upper: () => corridorPlan([["*", { role: "office" }], [5, "staffroom"], ["*", { role: "office" }]], [["*", V("ward", { name: "Recovery ward" })], [4, V("storage", { food: true, name: "Food store" })], [2, "restroom"]], 5, 2),
-    exits: [{ side: "back", roles: ["cells", "theatre", "storage"], chance: 0.8, lock: 0.3 }, { side: sideRoom(rng), roles: ["corridor"], chance: 0.5, lock: 0.4 }],
-  };
+// A hotel (issue #29, hotellayout.js): a roadside inn, a business hotel, a resort or a city tower by its franchise
+// (data-shops.js FRANCHISES.hotel plan.hotel; a sample plan's by the dice), its grounds round it; its map up to
+// battlesize.js MAP_CAP.hotel (200 × 200).
+function hotel(rng, o = {}) {
+  return hotelSpec(rng, { ...o, plan: planOf("hotel", o), maxStoreys: MAX_STOREYS });
 }
 
 function apartments(rng, o = {}) {
   const lay = pickLayout("apartments", rng.state, o); // since #32 (new saves): the corridor block (below), the walk-up, garden apartments, lofts
-  if (lay && APT_PLANS[lay.id]) return { ...APT_PLANS[lay.id](rng, o), variant: lay };
-  return { ...apartmentsClassic(rng, o), ...(lay ? { variant: lay } : {}) };
+  if (lay && APT_PLANS[lay.id]) return { ...APT_PLANS[lay.id](rng, o), ...laid(lay) };
+  return { ...apartmentsClassic(rng, o), ...(lay ? laid(lay) : {}) };
 }
 // A flat as apartments() lays it out (a kitchen-living room, a bedroom and a bathroom when it is wide enough, a studio
 // and a bathroom when not), named and unit-marked: the variants' (issue #32). loft: one open room and its bathroom.
@@ -2254,7 +1669,7 @@ export const BUILDINGS = {
   police:      { name: "Police station", make: (r, o) => institution(r, "police", o) },
   school:      { name: "School", make: (r, o) => institution(r, "school", o) },
   offices:     { name: "Office building", make: (r, o) => institution(r, "offices", o) },
-  lab:         { name: "Lab building", make: (r, o) => institution(r, "lab", o) },
+  lab:         { name: "Lab building", make: (r, o = {}) => (o.legacy ? institution(r, "lab") : industryPlan("lab", r, o, () => institution(r, "lab"))) }, // a dozen plans (industrylayout.js, issue #37); an older save today's
   barracks:    { name: "Barracks", make: (r, o) => institution(r, "barracks", o) },
   armorybldg:  { name: "Armory", make: (r, o) => institution(r, "armorybldg", o) },
   cellblock:   { name: "Cell block", make: (r, o) => institution(r, "cellblock", o) },
@@ -2269,8 +1684,8 @@ export const BUILDINGS = {
   gatehouse:   { name: "Gatehouse", make: (r, o) => milPlan(r, "gatehouse", o) },
   tower:       { name: "Control tower", make: (r, o) => milPlan(r, "tower", o) },
   flightops:   { name: "Flight operations", make: (r, o) => milPlan(r, "flightops", o) },
-  warehouse:   { name: "Warehouse", make: (r, o) => openfloor(r, "warehouse", o) },
-  factory:     { name: "Factory", make: (r, o) => openfloor(r, "factory", o) },
+  warehouse:   { name: "Warehouse", make: (r, o = {}) => (o.legacy || o.site === "military" ? openfloor(r, "warehouse", o) : industryPlan("warehouse", r, o, () => openfloor(r, "warehouse", o))) }, // a dozen plans (industrylayout.js, issue #37); a base's supply warehouse #25's; an older save today's
+  factory:     { name: "Factory", make: (r, o = {}) => (o.legacy ? openfloor(r, "factory") : industryPlan("factory", r, o, () => openfloor(r, "factory"))) }, // a dozen plans (industrylayout.js, issue #37)
   hangar:      { name: "Hangar", make: (r, o) => openfloor(r, "hangar", o) },
   motorpool:   { name: "Motor pool", make: (r, o) => openfloor(r, "motorpool", o) },
   autoshop:    { name: "Auto shop", make: (r, o) => openfloor(r, "autoshop", o) },
@@ -2281,32 +1696,43 @@ export const BUILDINGS = {
   church:      { name: "Church", make: (r, o) => church(r, o) },
   motel:       { name: "Motel", make: (r, o) => motel(r, o) },
   apartments:  { name: "Apartment block", make: (r, o) => apartments(r, o) },
+  hotel:       { name: "Hotel", make: (r, o) => hotel(r, o) },
+  // The office buildings of every kind (issue #27: officeplans.js, their firms' plans; the tower is "offices" above).
+  storefront:  { name: "Storefront office", make: (r, o) => OFFICE_PLANS.storefront(r, o || {}, planOf("storefront", o), MAX_STOREYS) },
+  bizpark:     { name: "Business park offices", make: (r, o) => OFFICE_PLANS.bizpark(r, o || {}, planOf("bizpark", o), MAX_STOREYS) },
+  cityhall:    { name: "City hall", make: (r, o) => OFFICE_PLANS.cityhall(r, o || {}, planOf("cityhall", o), MAX_STOREYS) },
+  courthouse:  { name: "Courthouse", make: (r, o) => OFFICE_PLANS.courthouse(r, o || {}, planOf("courthouse", o), MAX_STOREYS) },
+  callcenter:  { name: "Call center", make: (r, o) => OFFICE_PLANS.callcenter(r, o || {}, planOf("callcenter", o), MAX_STOREYS) },
+  techoffice:  { name: "Tech office", make: (r, o) => OFFICE_PLANS.techoffice(r, o || {}, planOf("techoffice", o), MAX_STOREYS) },
+  station:     { name: "News station", make: (r, o) => OFFICE_PLANS.station(r, o || {}, planOf("station", o), MAX_STOREYS) },
   // A street of houses (the neighbourhood point of interest): buildingMap builds it with streetMap; make gives one of
   // its houses (the hint, the archetype tests).
   neighbourhood: { name: "Neighbourhood", make: (r, o) => house(r, "house", o), street: true },
   // Bunkers (issue #26, bunkerlayout.js): the military command bunker (a rare military site), Crashlanding's mountain
   // bunker (the same plan, always three levels deep), the government bunker, the fallout shelter and the prepper's.
-  milbunker:      { name: "Military command bunker", make: (r) => BUNKER_PLANS.milbunker(r) },
+  milbunker:      { name: "Military command bunker", make: (r, o) => BUNKER_PLANS.milbunker(r, o) },
   mountainbunker: { name: "Mountain bunker", make: (r) => BUNKER_PLANS.milbunker(r, { levels: 3 }) },
-  govbunker:      { name: "Government bunker", make: (r) => BUNKER_PLANS.govbunker(r) },
-  shelter:        { name: "Fallout shelter", make: (r) => BUNKER_PLANS.shelter(r) },
-  prepper:        { name: "Prepper bunker", make: (r) => BUNKER_PLANS.prepper(r) },
+  govbunker:      { name: "Government bunker", make: (r, o) => BUNKER_PLANS.govbunker(r, o) },
+  shelter:        { name: "Fallout shelter", make: (r, o) => BUNKER_PLANS.shelter(r, o) },
+  prepper:        { name: "Prepper bunker", make: (r, o) => BUNKER_PLANS.prepper(r, o) },
 };
 // The storeys a type can have, [min, max] (the city crawl's bonus can add to offices and apartments, up to MAX_STOREYS).
 export const STOREYS_BY_TYPE = {
   // Since #32 a type's range covers all its layouts (buildvariants.js): a ranch house of one storey, a lookout tower of three.
   house: [1, 2], farmhouse: [1, 2], cabin: [1, 2], lodge: [1, 2], ranger: [1, 3],
-  grocery: [1, 2], corner: [1, 2], pharmacy: [1, 2], gunstore: [1, 2], pawnshop: [1, 1], hardware: [1, 1], feedstore: [1, 1], diner: [1, 1], gasstation: [1, 1], truckstop: [1, 1],
+  grocery: [1, 2], corner: [1, 2], pharmacy: [1, 1], gunstore: [1, 1], pawnshop: [1, 1], hardware: [1, 1], feedstore: [1, 1], diner: [1, 1], gasstation: [1, 1], truckstop: [1, 1],
   supermarket: [1, 2], deptstore: [1, 2],
-  clinic: [1, 3], infirmary: [1, 3], hospital: [1, 5], police: [1, 3], school: [2, 3], offices: [3, 8], lab: [1, 3], barracks: [2, 3], armorybldg: [1, 1],
-  cellblock: [1, 2], messhall: [1, 2], control: [1, 3], radio: [1, 1], terminal: [1, 3], firestation: [1, 2], // issue #25: a new save's cell block two tiers, its mess hall one storey
+  clinic: [1, 3], infirmary: [1, 3], hospital: [3, 5], police: [2, 3], school: [2, 3], offices: [3, MAX_STOREYS], lab: [1, 3], barracks: [2, 3], armorybldg: [1, 1],
+  cellblock: [1, 2], messhall: [1, 2], control: [1, 3], radio: [1, 1], terminal: [1, 3], firestation: [2, 2], // issue #25: a new save's cell block two tiers, its mess hall one storey
   hq: [2, 2], aidstation: [1, 1], gatehouse: [1, 1], tower: [4, 5], flightops: [1, 2],
-  warehouse: [1, 1], factory: [1, 3], hangar: [1, 1], motorpool: [1, 1], autoshop: [1, 1], garage: [1, 1], workshop: [1, 1], machineshed: [1, 1], barn: [1, 2],
-  church: [1, 2], motel: [1, 3], apartments: [2, 6], neighbourhood: [1, 2],
+  warehouse: [1, 3], factory: [1, 3], hangar: [1, 1], motorpool: [1, 1], autoshop: [1, 1], garage: [1, 1], workshop: [1, 1], machineshed: [1, 1], barn: [1, 2],
+  church: [1, 1], motel: [1, 3], apartments: [2, 6], neighbourhood: [1, 2], hotel: [2, 10], // a hotel: an inn 2–3, a resort 2–4, a business hotel 4–6, a tower 8–10 (within MAX_STOREYS)
   // the shops and services of data-shops.js (a franchise's plan can add a flat above or more floors)
   sportshop: [1, 2], electronics: [1, 2], radioshop: [1, 2], bookstore: [1, 2], petstore: [1, 2], garden: [1, 2], clothing: [1, 2], liquor: [1, 2],
   restaurant: [1, 2], bar: [1, 2], dealer: [1, 2], bank: [1, 3], library: [1, 3], vet: [1, 2], pizza: [1, 1],
-  milbunker: [2, 3], mountainbunker: [3, 3], govbunker: [2, 2], shelter: [2, 2], prepper: [2, 2], // bunkers: the Entrance level and the levels below it (bunkerlayout.js)
+  milbunker: [2, 3], mountainbunker: [3, 3], govbunker: [2, 3], shelter: [2, 2], prepper: [2, 3], // bunkers: the Entrance level and the levels below it (bunkerlayout.js)
+  // the office buildings (issue #27; officeplans.js SIZE, the crawl's bonus for the city's kinds)
+  storefront: [1, 2], bizpark: [1, 3], cityhall: [2, 3], courthouse: [2, 3], callcenter: [1, 2], techoffice: [2, 5], station: [2, 2],
 };
 
 // Which buildings stand at a site, by location type (or the terrain, for open land): a list of building keys (or
@@ -2316,7 +1742,7 @@ export const SITES = {
   // One building.
   pharmacy: ["pharmacy"], gunstore: ["gunstore"], pawnshop: ["pawnshop"], hardware: ["hardware"], grocery: ["grocery"], diner: ["diner"], supermarket: ["supermarket"],
   police: ["police"], clinic: ["clinic"], hospital: ["hospital"], school: ["school"], office: ["offices"], firestation: ["firestation"],
-  church: ["church"], motel: ["motel"], apartments: ["apartments"], autoshop: ["autoshop"], feedstore: ["feedstore"], cabin: ["cabin"],
+  church: ["church"], motel: ["motel"], hotel: ["hotel"], apartments: ["apartments"], autoshop: ["autoshop"], feedstore: ["feedstore"], cabin: ["cabin"],
   lodge: ["lodge"], ranger: ["ranger"], radiotower: ["radio"], barn: ["barn"], truckstop: ["truckstop"], gas: ["gasstation"], quarry: ["workshop"],
   // A choice of buildings.
   town: ["house", "corner", "garage", "pharmacy", ["house", "House on the corner"]], city: ["grocery", "pharmacy", "offices", "apartments", "warehouse"],
@@ -2339,12 +1765,15 @@ export const SITES = {
   // Bunkers (issue #26): Crashlanding's mountain bunker, the military bunker and the government bunker (sites), the
   // fallout shelter and the prepper's bunker (points of interest).
   bunker_mil: ["mountainbunker"], bunker: ["milbunker"], govbunker: ["govbunker"], shelter: ["shelter"], prepper: ["prepper"],
+  // the office buildings (data-offices.js, issue #27): one building each
+  storefront: ["storefront"], bizpark: ["bizpark"], cityhall: ["cityhall"], courthouse: ["courthouse"], callcenter: ["callcenter"], techoffice: ["techoffice"], station: ["station"],
   // Open land (no site).
   suburb: ["house", ["house", "House across the street"], "garage"], plains: ["farmhouse", "barn"],
   forest: { multi: true, list: ["cabin"] }, hills: { multi: true, list: ["cabin"] }, mountain: { multi: true, list: ["cabin"] },
 };
 
 // The buildings at a tile: { single, options: [{ id, key, name }] } or null (the street map only).
+const INDUSTRIAL = new Set(INDUSTRY_KEYS); // a warehouse, a factory, a lab: their plan by their setting (issue #37)
 export function siteBuildings(tile) {
   if (!tile) return null;
   const entry = (tile.loc && SITES[tile.loc.type]) || (!tile.loc && SITES[tile.terrain]) || null;
@@ -2357,7 +1786,7 @@ export function siteBuildings(tile) {
   const options = list.map((e) => {
     const [key, name] = Array.isArray(e) ? e : [e, null];
     const n = (seen[key] = (seen[key] || 0) + 1);
-    return { id: n > 1 ? `${key}:${n}` : key, key, name: name || BUILDINGS[key].name, ...(fr || {}), ...(tile.loc ? { site: tile.loc.type } : {}) }; // site: the place's type (issue #25: an air base's hangar, a base's warehouse)
+    return { id: n > 1 ? `${key}:${n}` : key, key, name: name || BUILDINGS[key].name, ...(fr || {}), ...(tile.loc ? { site: tile.loc.type } : INDUSTRIAL.has(key) ? { site: tile.terrain } : {}) }; // site: the place's type (issue #25: an air base's hangar, a base's warehouse; issue #37: an industrial building's setting, industrylayout.js settingOf, the terrain where there is no place)
   });
   return { single: !entry.multi && options.length === 1, options };
 }
@@ -2382,10 +1811,11 @@ export function buildingOptions(tile, state = null) {
   const sb = siteBuildings(tile);
   if (!sb || sb.single) return null;
   const [bw, bh] = buildingTarget(tile, false, state), [sw, sh] = raidDims(tile, state);
-  const out = sb.options.map((o) => {
-    const lay = state && state.tiles ? buildingSpec(state, tile.id, o).variant : null; // its layout (buildvariants.js, issue #32): the name it goes by
-    return { ...o, ...buildingHint(o.key), map: `${bw} × ${bh}+`, ...(lay ? { layout: lay.id, name: o.name === BUILDINGS[o.key].name ? lay.name : `${o.name} (${lay.name.toLowerCase()})` } : {}) };
-  });
+  // An industrial building by its plan's name (industrylayout.js: "Cold-storage warehouse"), where the site has not named it.
+  const named = (o) => (state && INDUSTRIAL.has(o.key) && o.name === BUILDINGS[o.key].name && tile.id != null ? { name: buildingSpec(state, tile.id, o).vname || o.name } : {});
+  // A home's or a motel's by its layout's name (buildvariants.js, issue #32): "Ranch house", or "House on the corner (ranch house)".
+  const laid = (o) => { if (!state || !state.tiles || tile.id == null || !LAYOUTS[o.key]) return {}; const sp = buildingSpec(state, tile.id, o); return sp.vname ? { layout: sp.vid, name: o.name === BUILDINGS[o.key].name ? sp.vname : `${o.name} (${sp.vname.toLowerCase()})` } : {}; };
+  const out = sb.options.map((o) => ({ ...o, ...buildingHint(o.key), map: `${bw} × ${bh}+`, ...named(o), ...laid(o) }));
   out.push({ id: "street", key: "street", name: "The street", hint: "Search the area around the buildings: small buildings, cars, the open ground (the usual raid map).", size: "", rooms: 0, map: `${sw} × ${sh}` });
   return out;
 }
@@ -2421,13 +1851,11 @@ export function buildingHint(key) {
 // The map for a raid on a building: the site's own layout (its dice from the world seed, the tile and the building).
 // option.storeyBonus: extra storeys (the city crawl's deeper blocks, offices and apartments).
 const specSeed = (state, tileId, option) => Math.floor(hash01(state.seed, "bmap", tileId, option.id) * 4294967296);
-// variant, kind: the place's franchise and kind (data-shops.js plans); legacy: an older save's plan (worldcfg.js
-// legacyRooms: an apartment's flats one room each, no layout variants); site: the site's location type (#25); layout: a
-// pinned layout variant (a POI's poi.lay, buildvariants.js); setting: rural, town or city, the variant's weights (the
-// tile's, buildvariants.js settingOfTile).
-const makeSpec = (rng, option, legacy = false, tile = null) => BUILDINGS[option.key].make(rng, { storeyBonus: option.storeyBonus || 0, variant: option.variant || null, kind: option.kind || null, legacy: legacy && !NEW_KEYS.has(option.key), site: option.site || null, layout: option.layout || null, setting: option.setting || settingOfTile(tile) });
+// layout: a home's or a motel's pinned layout (a POI's poi.lay, buildvariants.js, issue #32); setting: rural, town or
+// city, its layouts' weights (the tile's, buildvariants.js settingOfTile).
+const makeSpec = (rng, option, legacy = false, tile = null) => BUILDINGS[option.key].make(rng, { storeyBonus: option.storeyBonus || 0, variant: option.variant || null, kind: option.kind || null, legacy: legacy && !NEW_KEYS.has(option.key), site: option.site || null, ...(option.plan != null ? { plan: option.plan } : {}), layout: option.layout || null, setting: option.setting || settingOfTile(tile) }); // plan: one of the kind's named plans (bunkerlayout.js BUNKER_VARIANTS: a city hall's shelter, #27; industrylayout.js INDUSTRY_PLANS, #37)
 // The archetypes issue #25 added (no older plan): laid out the new way in an older save too.
-const NEW_KEYS = new Set(["hq", "aidstation", "gatehouse", "tower", "flightops"]);
+const NEW_KEYS = new Set(["hq", "aidstation", "gatehouse", "tower", "flightops", "hotel"]); // hotel: issue #29, no older save had one // variant, kind: the place's franchise and kind (data-shops.js plans); legacy: an older save's plan (worldcfg.js legacyRooms: an apartment's flats one room each)
 // The archetype's spec for a building at a site (its storeys and footprint) without building the map: the same dice
 // buildingMap rolls, so the block card can say how many storeys a place has.
 export function buildingSpec(state, tileId, option) {
@@ -2437,11 +1865,11 @@ export function buildingMap(state, tileId, option, withVehicle) {
   if (BUILDINGS[option.key] && BUILDINGS[option.key].street) { const m = streetMap(state, tileId, option, withVehicle); rollScenes(m, sceneRng(state, tileId, option), option.key); return m; } // a street of houses (the neighbourhood); its scenes (interiorscenes.js) through the houses
   const rng = new Rng(specSeed(state, tileId, option));
   const spec = makeSpec(rng, option, legacyRooms(state), state.tiles ? state.tiles[tileId] : null);
-  if (spec.compound) { const m = streetMap(state, tileId, option, withVehicle, spec.compound, spec.variant); rollScenes(m, sceneRng(state, tileId, option), option.key, option.scenes || null); return m; } // several buildings on one map (a motor lodge's cabins, garden apartments: buildvariants.js), laid out as a street's houses are
+  if (spec.compound) { const m = streetMap(state, tileId, option, withVehicle, spec.compound, spec.vid ? { id: spec.vid, name: spec.vname } : null); rollScenes(m, sceneRng(state, tileId, option), option.key, option.scenes || null); return m; } // several buildings on one map (a motor lodge's cabins, garden apartments: buildvariants.js), laid out as a street's houses are
   // battlesize.js: at least the site's raid map (more outside around a single-building site's plan, a city's or a
   // town's building the run's largest), the new ground topped up with cover. The floor plan itself is the archetype's.
   const tile = state.tiles[tileId], sb = siteBuildings(tile);
-  spec.margins = fitMargins(spec.bw, spec.bh, { ...BMAP.MARGIN, ...(spec.margins || {}) }, buildingTarget(tile, !!(sb && sb.single), state));
+  spec.margins = fitMargins(spec.bw, spec.bh, { ...BMAP.MARGIN, ...(spec.margins || {}) }, buildingTarget(tile, !!(sb && sb.single), state), mapCap(option.key)); // mapCap: a hotel's map at most 200 × 200
   const map = assemble(rng, spec, { key: option.key, id: option.id, name: option.name, withVehicle, legacy: legacyRooms(state) && !NEW_KEYS.has(option.key) });
   densifyOutside(map, rng, tile ? tile.terrain : "plains");
   rollScenes(map, sceneRng(state, tileId, option), option.key, option.scenes || null); // interiorscenes.js: signs of survival (their own dice: the map is as it was); option.scenes: a city crawl place's say (citycrawl.js placeOption)
@@ -2532,7 +1960,7 @@ export function streetMap(state, tileId, option, withVehicle, def = null, varian
     spec.ground = "none";
     const ukey = spec.key || hkey; // a building's own archetype (a country road's farm shed)
     const m = assemble(hr, spec, { key: ukey, id, name: BUILDINGS[ukey].name, legacy: legacyRooms(state) });
-    houses.push({ k, row, col, m, bw: spec.bw, bh: spec.bh, flip: row === 1, name: def && def.name ? def.name(k, n, `No. ${no0 + 2 * col + row}`) : `No. ${no0 + 2 * col + row}`, x0: 0, y0: 0, rect: null, variant: spec.variant || null });
+    houses.push({ k, row, col, m, bw: spec.bw, bh: spec.bh, flip: row === 1, name: def && def.name ? def.name(k, n, `No. ${no0 + 2 * col + row}`) : `No. ${no0 + 2 * col + row}`, x0: 0, y0: 0, rect: null, variant: spec.vid || null });
   }
   // The layout: the north row's fronts in line along the north sidewalk, the south row's along the south one.
   const inRow = (r) => houses.filter((h) => h.row === r);
@@ -2717,8 +2145,8 @@ export function streetMap(state, tileId, option, withVehicle, def = null, varian
   const zoneExits = () => zones.slice(1).map((z, j) => ({ side: z.side, name: z.name, x: z.x0 + 1, y: z.y0 + 1, cells: [], locked: null, roller: false, zone: j + 1 }));
   const plan = {
     key: option.key, id: option.id, name: option.name, w: W, h: H, street: true, building: houses[0].rect, buildings: houses.map((h) => ({ ...h.rect })),
-    ...(variant ? { variant: { ...variant } } : {}), ...(def && def.word ? { word: def.word } : {}), // the layout (buildvariants.js); what its buildings are called (a motor lodge's "buildings")
-    houses: houses.map((h) => ({ k: h.k, name: h.name, row: h.row, ...h.rect, front: h.front, rooms: areas.filter((a) => a.house === h.k).map((a) => a.id), ...(h.variant ? { variant: h.variant.id } : {}) })),
+    ...(variant ? { variant: variant.name, vid: variant.id } : {}), ...(def && def.word ? { word: def.word } : {}), // the layout (buildvariants.js); what its buildings are called (a motor lodge's "buildings")
+    houses: houses.map((h) => ({ k: h.k, name: h.name, row: h.row, ...h.rect, front: h.front, rooms: areas.filter((a) => a.house === h.k).map((a) => a.id), ...(h.variant ? { vid: h.variant } : {}) })),
     tall: true, storeys, stairs: stairs.map((s) => s.slice()), runs: runs.map((r) => ({ ...r })),
     rooms: areas.filter((a) => !a.outdoor).map((a) => ({ id: a.id, f: a.f, name: a.name, role: a.role, type: a.type, x0: a.x0, y0: a.y0, w: a.w, h: a.h, locked: a.locked, up: a.up, hub: a.hub, entry: a.entry, house: a.house })),
     front: houses[0].front, exits: zoneExits(),
@@ -3274,7 +2702,7 @@ export function assemble(rng, spec, opts = {}) {
   }
   // Homes room by room (roomlayout.js): which bedroom is the master, which a child's, a great room with no kitchen on
   // its floor, a flat with no bedroom (a studio). An older save (opts.legacy) furnishes every room as it did.
-  const styleOf = (room) => bunkerStyle(room) || (opts.legacy ? null : militaryStyle(room) || commercialStyle(room, opts.key) || homeStyle(room, opts.key) || medicalStyle(room, opts.key) || civicStyle(room)); // shoplayout.js first (a motel's rooms, a shop's back rooms; a flat above stays a home), a hospital's, a clinic's, a vet's rooms (#14), civiclayout.js a civic building's rooms (their leaf's civic mark); bunkerlayout.js a bunker's (their leaf's bunker mark: new kinds, so an older save lays them out the same way)
+  const styleOf = (room) => bunkerStyle(room) || (opts.legacy ? null : officeStyle(room) || militaryStyle(room) || industryStyle(room) || commercialStyle(room, opts.key) || homeStyle(room, opts.key) || medicalStyle(room, opts.key) || civicStyle(room)); // shoplayout.js first (a motel's rooms, a shop's back rooms; a flat above stays a home), a hospital's, a clinic's, a vet's rooms (#14), civiclayout.js a civic building's rooms (their leaf's civic mark); bunkerlayout.js a bunker's (their leaf's bunker mark: new kinds, so an older save lays them out the same way) // officelayout.js: a leaf's office mark (issue #27: the office buildings, the corporate tower) // industrylayout.js: a leaf's ind mark (issue #37)
   if (!opts.legacy) {
     for (const r of rooms) if (r.role === "bedroom" && styleOf(r) && r.iw * r.ih <= 4) Object.assign(r, { role: "storage", name: "Box room", furnish: "shelves" }); // too small for a bed and a wardrobe
     const beds = rooms.filter((r) => r.role === "bedroom" && styleOf(r)).sort((a, b) => b.iw * b.ih - a.iw * a.ih);
@@ -3328,7 +2756,7 @@ export function assemble(rng, spec, opts = {}) {
       unblock: (x, y) => { const i = I(x, y), c = cells[i]; const was = pass[i]; c.k = "open"; delete c.fc; delete c.pc; passAt(i); if (!was && pass[i]) total++; },
       container: (x, y, k, lane = true) => (free(x, y) && box(room, x, y, k, null, lane) ? containers[containers.length - 1] : null),
       boxes: () => containers.filter((q) => q.area === room.id),
-      target: canBox ? room.boxTarget ?? Math.max(1, Math.min(room.maxBoxes ?? 4, Math.round((room.iw * room.ih) / 10))) : 0, // boxTarget: a plan's own count (a school corridor's lockers)
+      target: canBox ? room.boxTarget ?? (spec.boxScale ? Math.max(1, Math.round(Math.max(1, Math.min(room.maxBoxes ?? 4, Math.round((room.iw * room.ih) / 10))) * spec.boxScale)) : Math.max(1, Math.min(room.maxBoxes ?? 4, Math.round((room.iw * room.ih) / 10)))) : 0, // boxTarget: a plan's own count (a school corridor's lockers); boxScale: an industrial plan's share × (industrylayout.js loot: each kind holds what it did a floor cell)
       roomAt: (x, y) => (inside(x, y) && rid[I(x, y)] >= 0 ? rooms[rid[I(x, y)]] : null), // civiclayout.js: the room next door (an interview room's observation nook)
       decor: !opts.noDecor, // civiclayout.js: a whiteboard on the wall the desks face (decor.js's wall art), not on a bare map
       seed: hash01(layoutSeed, "rooms", f) * 0x7fffffff, canBox, piece: () => ++pieceNo,
@@ -3480,6 +2908,30 @@ export function assemble(rng, spec, opts = {}) {
       break;
     }
   }
+  // An industrial plan's yard (industrylayout.js spec.yardPieces: a tank farm, grain bins, lumber stacks, steel stock): its
+  // pieces in rows a cell apart behind and beside the building, never on a path, a zone's ring or a door's step (block's
+  // guard keeps every way open); an outdoor area of its own, searched where the pieces hold loot (yard.loot, its type).
+  if (!upper && spec.yardPieces) {
+    const Yd = spec.yardPieces, a = { id: rooms.length + outdoor.length, type: Yd.loot && Yd.type && AREAS[Yd.type] ? Yd.type : null, name: Yd.name, outdoor: true };
+    const spots = [];
+    for (let y = 1; y <= by1; y += 2) for (let x = 1; x < W - 1; x += 2) if (y < by0 - 1 || x < bx0 - 1 || x > bx1 + 1) spots.push([x, y]);
+    const order = rng.shuffle(spots).sort((p, q) => (p[1] < by0 ? 0 : 1) - (q[1] < by0 ? 0 : 1)); // behind first, then the sides
+    const got = [];
+    for (const [k, n] of Yd.pieces) {
+      const want = Array.isArray(n) ? rng.int(n[0], n[1]) : n;
+      let made = 0;
+      for (const [x, y] of order) {
+        if (made >= want) break;
+        if (!outsideFree(x, y) || got.some(([gx, gy]) => gx === x && gy === y)) continue;
+        if (a.type && pieceDef(k) && pieceDef(k).loot ? box(null, x, y, k, a) : block(x, y, k)) { got.push([x, y]); made++; }
+      }
+    }
+    if (got.length) {
+      const xs = got.map(([x]) => x), ys = got.map(([, y]) => y);
+      Object.assign(a, { x0: Math.min(...xs) - 1, y0: Math.min(...ys) - 1, w: Math.max(...xs) - Math.min(...xs) + 3, h: Math.max(...ys) - Math.min(...ys) + 3 });
+      outdoor.push(a);
+    }
+  }
   // Wrecked cars on the street (towns and cities): an outdoor area to search (car alarms, AREAS.wreck).
   if (!upper && (spec.ground === "town" || spec.ground === "city") && rng.chance(0.45)) {
     const a = { id: rooms.length + outdoor.length, type: "wreck", name: AREAS.wreck.name, outdoor: true };
@@ -3497,6 +2949,28 @@ export function assemble(rng, spec, opts = {}) {
       outdoor.push(a);
     }
   }
+  // A building's own grounds (spec.yard: a hotel's drive, car park, pool deck, tennis courts and gardens, hotellayout.js),
+  // before the outside is dressed.
+  if (!upper && spec.yard) spec.yard({ rng, W, H, b: { x0: bx0, y0: by0, x1: bx1, y1: by1 }, front, exits, cell: (x, y) => cells[I(x, y)], outside: (x, y) => inside(x, y) && rid[I(x, y)] === -2,
+    free: outsideFree, block: (x, y, k) => block(x, y, k), car: (x, y, kind, test) => carAt(x, y, kind, test), area: (a) => outdoor.push({ id: rooms.length + outdoor.length, type: null, outdoor: true, ...a }) });
+  // What stands outside a restaurant (issue #33, eaterylayout.js eateryOutside: the drive-through lane and its cars, a
+  // patio, a BBQ's smokers, a food truck, the grease trap by the back door), every piece keeping the lot one walk.
+  if (!upper && spec.outside) spec.outside({
+    rng, bx0, bx1, by0, by1, exits,
+    free: outsideFree,
+    block: (x, y, k) => outsideFree(x, y) && block(x, y, k),
+    unblock: (x, y) => { const i = I(x, y), was = pass[i]; cells[i].k = "open"; passAt(i); if (!was && pass[i]) total++; },
+    area: (o) => { const a = { id: rooms.length + outdoor.length, outdoor: true, ...o }; outdoor.push(a); return a; },
+    car: (x, y, ax, len, kind, body = null) => {
+      const rect = placeCar(cells, W, H, x, y, ax, len, kind, (cx, cy) => outsideFree(cx, cy), rng.int(0, 1e6), { ring: false, ...(body ? { body } : {}) });
+      if (!rect) return null;
+      passRect(rect);
+      total -= rect.w * rect.h;
+      if (!connected()) { removeCar(cells, W, rect); passRect(rect); total += rect.w * rect.h; return null; }
+      return rect;
+    },
+    container: (rect, a, kind, label) => containers.push({ id: cid++, x: rect.x0, y: rect.y0, w: rect.w, h: rect.h, f, area: a.id, kind, searched: false, label: `${a.name}: ${label}` }),
+  });
   // The outside of a base, an airfield or a prison (issue #25: militarylayout.js militaryOutside): its tools.
   let milGround = null;
   const milApi = () => ({
@@ -3570,8 +3044,9 @@ export function assemble(rng, spec, opts = {}) {
   }));
   rooms.forEach((r, i) => { if (r.gunSafe) areas[i].gunSafe = r.gunSafe.slice(); }); // locks.js placeGunSafes: a gun safe may stand here
   rooms.forEach((r, i) => { if (r.kennel) areas[i].kennel = true; });
-  rooms.forEach((r, i) => { if (r.bunker) areas[i].bunker = r.bunker; }); // bunkerlayout.js: a bunker's room (its scenes, its dark, who holds it) // deadbeasts.js shutInPets: a vet's locked kennels hold dead pets
-  if (!opts.legacy) rooms.forEach((r, i) => { if (r.flat) areas[i].flat = true; if (r.unit) areas[i].unit = r.unit; if (r.civic) areas[i].civic = r.civic; if (r.aisle != null) areas[i].aisle = r.aisle; const sn = shopStyleName(r, opts.key); if (sn) areas[i].shop = sn; }); // shoplayout.js: a room's style (its scenes' when); roomlayout.js: a shop's flat above, an apartment's rooms; civiclayout.js: a room's style, a nave's aisle
+  rooms.forEach((r, i) => { if (r.bunker) areas[i].bunker = r.bunker; if (r.ind) areas[i].ind = r.ind; }); // ind: industrylayout.js's room (its scenes) // bunkerlayout.js: a bunker's room (its scenes, its dark, who holds it) // deadbeasts.js shutInPets: a vet's locked kennels hold dead pets
+  if (!opts.legacy) rooms.forEach((r, i) => { if (r.flat) areas[i].flat = true; if (r.unit) areas[i].unit = r.unit; if (r.civic) areas[i].civic = r.civic; if (r.office) areas[i].office = r.office; if (r.aisle != null) areas[i].aisle = r.aisle; const sn = shopStyleName(r, opts.key); if (sn) areas[i].shop = sn; }); // shoplayout.js: a room's style (its scenes' when); roomlayout.js: a shop's flat above, an apartment's rooms; civiclayout.js: a room's style, a nave's aisle
+  rooms.forEach((r, i) => { if (r.mix) areas[i].mix = r.mix; if (r.eat) areas[i].eat = r.eat; }); // eaterylayout.js: a restaurant's rooms hold its cuisine's food (combat.js boxFinds)
   for (const a of outdoor) areas.push({ ...a, id: idBase + a.id, f: 0 });
   for (const c of containers) c.area += idBase;
   for (const d of lockedDoors) { d.f = f; if (d.area != null) d.area += idBase; }
@@ -3590,8 +3065,10 @@ export function assemble(rng, spec, opts = {}) {
   const plan = { // ground: what militarylayout.js put outside (issue #25: tools/interiortest.js)
     key: opts.key, id: opts.id || opts.key, name: opts.name, w: W, h: H, building: { x0: bx0, y0: by0, w: bw, h: bh }, tall, storeys, ...(milGround ? { ground: milGround } : {}), stairs: stairCells.map((s) => s.slice()), runs: runs.map((r) => ({ ...r })),
     rooms: areas.filter((a) => !a.outdoor).map((a) => ({ id: a.id, f: a.f, name: a.name, role: a.role, type: a.type, x0: a.x0, y0: a.y0, w: a.w, h: a.h, locked: a.locked, up: a.up, hub: a.hub, entry: a.entry, ...(a.civic ? { civic: a.civic } : {}), ...(a.bunker ? { bunker: a.bunker } : {}) })), // civic, bunker: wanderers.js interiorOccupants' rooms by kind
-    front: { x: front.x, y: front.y }, ...(spec.variant ? { variant: { ...spec.variant } } : {}), // the layout variant it was built as (buildvariants.js)
+    front: { x: front.x, y: front.y },
+    ...(spec.variant ? { variant: spec.variant } : {}), // a plan's name among its kind's (bunkerlayout.js BUNKER_VARIANTS)
     exits: exits.map((e) => ({ side: e.side, name: e.name, x: e.x, y: e.y, cells: e.cells, locked: e.locked, roller: e.roller, zone: e.zone })),
+    ...(spec.vname ? { variant: spec.vname, vid: spec.vid } : {}), // the plan's name (industrylayout.js: a warehouse's, a factory's, a lab's)
   };
   return { w: W, h: H, cells, rooms: areas, containers, zones, vehicle, exits, front, lockedDoors, plan, building: plan.building, floors, stairs: plan.stairs, runs: plan.runs, storeys };
 }
@@ -4148,7 +3625,7 @@ export function interiorIntro(b) {
   const lockedEx = (R.plan.exits || []).filter((e) => e.locked).length;
   const names = ["the front", ...ex.map((e) => e.name.toLowerCase())];
   const st = R.storeys > 1 ? ` ${R.storeys} storeys: ${stairsText(R)}; the ways out are on the ground floor.` : "";
-  return `Ways out: ${names.join(", ")}${lockedEx ? ` (${lockedEx} locked)` : ""}.${st} Rooms, walls and closed doors block sight (a glass or a screen door is seen through): peek through a door (K) before you go in, shut doors behind you (Shift+E): the dead have to batter them down. Windows: check one from next to it (free), open it if it is unlocked (or from inside if it is locked: 1 action, quiet), then climb or vault through; a fixed one only breaks (loud).`;
+  return `${R.plan.variant ? `${R.plan.variant}. ` : ""}Ways out: ${names.join(", ")}${lockedEx ? ` (${lockedEx} locked)` : ""}.${st} Rooms, walls and closed doors block sight (a glass or a screen door is seen through): peek through a door (K) before you go in, shut doors behind you (Shift+E): the dead have to batter them down. Windows: check one from next to it (free), open it if it is unlocked (or from inside if it is locked: 1 action, quiet), then climb or vault through; a fixed one only breaks (loud).`;
 }
 // A street of houses (streetMap): the houses, the ways out, and the houses your side has been into before (the
 // containers the POI's ledger brought back as you left them: poicont.js poiRaidStart marks them mine).

@@ -1,23 +1,27 @@
 // @ts-check
-// Layout variants for every building type (the user's request 2026-10-25, issue #32 of the interiors epic #7: "add motel
-// varients. every building should have several varients"). A variant is a distinct floor plan of a type, not a recolour:
-// it changes at least two of the room list, the rooms' order and arrangement, the entrances (their side or count),
-// corridor or open plan, the footprint and the storeys (tools/varianttest.js holds every type to it). This module is the
-// registry: each type's layouts (LAYOUTS: an id, the name the map, the POI and the raid say, and its weight in each
-// setting), and the pick. The plans themselves are buildingmaps.js's archetype makers (house, shop, institution,
-// openfloor, motel...), which read the pick (spec.variant = { id, name }).
+// Layout variants (the user's request 2026-10-25, issue #32 of the interiors epic #7: "add motel varients. every building
+// should have several varients"): the motel's five and the homes' and rural buildings' (the house, the farmhouse, the
+// cabin, the lodge, the ranger station, the apartment block, the neighbourhood, the barn, the machine shed). The other
+// types' variants are their own tickets' (#33 restaurants, #34 the library, #35 shops and services, #36 civic and
+// medical, #37 industrial: industrylayout.js; tools/varianttest.js PENDING_OWNER lists them). A variant is a distinct
+// floor plan of a type, not a recolour: it changes at least two of the room list, the rooms' order and arrangement, the
+// entrances (their side or count), corridor or open plan, the footprint and the storeys (tools/varianttest.js holds
+// every type to it). This module is the registry: each type's layouts (LAYOUTS: an id, the name the map, the POI and the
+// raid say, and its weight in each setting), and the pick. The plans themselves are buildingmaps.js's makers (house and
+// HOME_PLANS, motel and MOTEL_PLANS, apartments and APT_PLANS, openfloor's OPEN_PLANS, streetMap's NEIGHBOURHOODS),
+// which put the pick on the spec as industrylayout.js's plans do (spec.vname, spec.vid: assemble's plan.variant and
+// plan.vid).
 //
 // THE PICK (pickLayout): an older save's building never takes one (opts.legacy: the roomsLegacy rule, its plan exactly as
 // it was); else, in order:
 //   - opts.layout: a pinned layout (a POI's own, poi.lay: pois.js makePoi rolls it when the POI is made, so its name and
 //     its building agree; a render or a test pins one the same way);
-//   - the franchise's (data-shops.js FRANCHISES plan.lay: a Quick Lube is the drive-through lube bay, a Sheriff's office
-//     the substation, St. Mary's the cathedral);
+//   - the franchise's (a franchise's plan.lay, where a maker passes it: a motel's franchises give only their look);
 //   - the building's own dice (a hash of its map seed as it stands: read, never consumed, so the rest of its plan rolls
 //     as the dice say) by the setting's weights: rural (open land, farms, the countryside's sites), town or city
 //     (settingOfTile). A type with no setting given (a hint, a test) weighs the town's.
-// A layout with weight 0 in a setting never stands there by the dice (a cathedral in the countryside); pinned it still
-// can. A type with no LAYOUTS (owned by another ticket until it lands: PENDING_OWNER in tools/varianttest.js) has none.
+// A layout with weight 0 in a setting never stands there by the dice (a motor lodge in a city); pinned it still can. A
+// type with no LAYOUTS has none here.
 //
 // NAMES: a variant's name is what a building with no franchise is called where the game shows one (pois.js poiName: a
 // POI's poi.lay; buildingmaps.js buildingOptions: a site's choice of buildings; the raid's intro), as a franchise's is.
@@ -94,198 +98,6 @@ export const LAYOUTS = {
     V("pole", "Pole shed"),                       // open bays along the front, no rooms
     V("shop", "Equipment shed with a shop"),     // the bays, a farm shop, the fuel and chemical store
   ],
-  garage: [
-    V("garage", "Detached garage"),
-    V("workshop", "Garage with a workshop"),     // the bay, a workshop and the storage loft over it
-    V("body", "Body shop", 0.5, 1, 1),            // bays, the paint booth, the office
-  ],
-  workshop: [
-    V("workshop", "Workshop"),
-    V("welding", "Welding shop"),                 // the welding bay behind its roller door, the steel store, the office
-    V("woodshop", "Woodshop"),                    // the shop floor, the lumber store, the finishing room
-  ],
-  autoshop: [
-    V("garage", "Auto shop"),
-    V("quicklube", "Quick lube"),                 // drive-through bays front to back, a waiting room
-    V("body", "Body shop"),                       // the paint booth, the frame bay, the parts room
-    V("tyre", "Tyre shop"),                       // the tyre store, the bays, a counter
-  ],
-  warehouse: [
-    V("warehouse", "Warehouse"),
-    V("distribution", "Distribution centre", 0.5, 1, 1.5), // pallet racks, a row of loading docks, the shipping offices across the front
-    V("cold", "Cold-storage warehouse"),          // freezer rooms behind cold room doors, the dock
-    V("storage", "Self-storage", 0.8, 1.5, 1),    // rows of locked units off aisles: a maze
-  ],
-  factory: [
-    V("works", "Machine works"),                  // the factory floor of machine tools, the offices across the front
-    V("food", "Food-processing plant"),           // the processing floor, cold rooms, packing, the dock
-    V("textile", "Textile mill"),                 // two or three floors of mill floor round a stair
-    V("chemical", "Chemical plant"),              // the tank hall, the control room, the lab, the drum store
-  ],
-  // ---------- institutions ----------
-  lab: [
-    V("research", "Research lab"),
-    V("teaching", "Teaching lab"),                // lecture rooms, teaching labs, the prep room
-    V("biohazard", "Biohazard lab"),              // airlocks, the freezer room, the decontamination showers, sealed labs
-  ],
-  hospital: [
-    V("regional", "Regional hospital", 0.3, 1, 2),
-    V("critical", "Critical-access hospital", 2, 1, 0.2), // one or two storeys: a small ER, a ward, the pharmacy
-    V("children", "Children's hospital", 0, 0.5, 1),     // children's wards of cots, the play room, the clinic floors
-  ],
-  clinic: [
-    V("clinic", "Clinic"),
-    V("surgery", "Doctor's surgery", 1.5, 1, 0.5), // a converted house: the waiting room, two consulting rooms, no corridor
-    V("medcentre", "Medical centre", 0.3, 1, 1.5), // two storeys: X-ray, the pharmacy counter, the treatment room
-  ],
-  infirmary: [
-    V("infirmary", "Infirmary"),
-    V("ward", "Ward infirmary"),                  // one long ward hall of beds, the treatment room, the drug store
-    V("dispensary", "Dispensary"),                // a small one: the counter, the exam room, the stores
-  ],
-  police: [
-    V("precinct", "City precinct", 0, 0.5, 2),
-    V("substation", "Sheriff's substation", 2, 1, 0.2), // one storey: the desk, an office, a holding cell, the gun locker
-    V("patrol", "State patrol post", 1, 1, 0.3),        // the cruisers' garage, dispatch, the locker room, the armory
-  ],
-  firestation: [
-    V("city", "City fire station", 0.2, 1, 2),
-    V("volunteer", "Volunteer fire hall", 2, 1, 0.1),   // one storey: one bay, the meeting hall and its kitchen
-    V("big", "Fire headquarters", 0, 0.5, 1.5),         // three bays, the training tower, the dorm above
-  ],
-  church: [
-    V("brick", "Brick church"),                   // the nave, the steeple's bell tower, the parish hall
-    V("chapel", "Clapboard chapel", 2, 1, 0.3),   // one small nave and a vestry
-    V("mega", "Megachurch", 0, 0.8, 1.5),         // an auditorium, classrooms, a cafe, offices; two storeys
-    V("cathedral", "Cathedral", 0, 0.2, 1),       // the long nave, side chapels, the sacristy, the crypt stair
-  ],
-  library: [
-    V("central", "Central library", 0, 0.6, 2),
-    V("carnegie", "Carnegie library", 0.5, 1.5, 0.6), // the domed hall in the middle, reading rooms either side, the stacks behind
-    V("branch", "Branch library", 1, 1, 1),            // one open room of stacks, the children's area, the community room
-    V("county", "County library", 1, 1, 0.5),          // a corridor of rooms: the archive, the genealogy room, the meeting room
-  ],
-  bank: [
-    V("bank", "Bank"),
-    V("town", "Small-town bank", 2, 1.2, 0.2),    // one room of a banking hall, the vault, the manager's office
-    V("drive", "Drive-through branch", 0.5, 1, 1), // the teller line along the drive-through window, a side lane
-    V("city", "City bank", 0, 0.4, 1.5),          // the marble hall, the vault and the deposit room, offices above
-  ],
-  vet: [
-    V("small", "Animal clinic"),
-    V("country", "Country vet", 2, 1, 0),         // the large-animal stalls and their roller door
-    V("hospital", "Animal hospital", 0.2, 1, 1.5), // two storeys: X-ray, the ICU, the boarding kennels
-  ],
-  dealer: [
-    V("dealer", "Car dealership"),
-    V("lot", "Used-car lot"),
-    V("truck", "Truck dealer"),
-  ],
-  // ---------- shops and services ----------
-  pharmacy: [
-    V("pharmacy", "Pharmacy"),
-    V("chain", "Chain drugstore", 0.3, 1, 1.5),   // aisles, the counter at the back, a drive-through window
-    V("soda", "Independent pharmacy", 1.5, 1, 0.5), // the soda fountain at the front, the dispensary, the flat above
-    V("outpatient", "Outpatient pharmacy", 0.3, 1, 1.5), // a waiting room, consultation rooms off a corridor, the dispensary
-  ],
-  gunstore: [
-    V("gunstore", "Gun store"),
-    V("range", "Gun range"),                      // the shop, the range's lanes behind, the range office
-    V("gunsmith", "Gunsmith"),                    // a small counter, the gunsmith's workshop, the safe room
-    V("tactical", "Tactical outfitter"),          // two floors: the shop, the training room and stores above
-  ],
-  pawnshop: [
-    V("pawn", "Pawn shop"),
-    V("loan", "Pawn and loan"),                   // the loan office, the vault, the counter
-    V("trading", "Trading post"),                 // a yard of big things behind the shop, the back room
-  ],
-  sportshop: [
-    V("sports", "Sporting goods store"),
-    V("big", "Sports superstore"),                // fitting rooms, the bike and ski workshop, two floors
-    V("team", "Team sports shop"),                // team gear, the printing room
-    V("camp", "Outdoor store"),                   // camping gear, the boat and bait room
-    V("hunt", "Hunting outfitter"),               // the gun counter, the stock
-  ],
-  electronics: [
-    V("electronics", "Electronics store"),
-    V("repair", "TV and repair shop"),            // the repair bench, the parts room
-    V("mega", "Electronics superstore"),          // a wide floor, the stockroom along one side, the service desk
-  ],
-  radioshop: [
-    V("radio", "Radio shop"),
-    V("repair", "Radio repair"),                  // the repair bench front and centre
-    V("ham", "Ham radio supply"),                 // the antenna yard behind, the radio shack
-  ],
-  bookstore: [
-    V("books", "Bookstore"),
-    V("used", "Used bookshop"),                   // stacks in back rooms, the owner's flat above
-    V("cafe", "Bookshop and cafe"),               // a cafe along one side, the stockroom along the other
-  ],
-  petstore: [
-    V("pets", "Pet store"),
-    V("aquarium", "Aquarium shop"),               // the fish room and the feed store
-    V("feed", "Feed and pet supply"),             // the feed room, a loading door
-  ],
-  garden: [
-    V("garden", "Garden center"),
-    V("yard", "Nursery yard"),                    // the yard stock behind, the office
-    V("greenhouse", "Greenhouse nursery"),        // a glass house along one side, the potting shed
-  ],
-  clothing: [
-    V("clothing", "Clothing store"),
-    V("boutique", "Boutique"),                    // small, the alterations room, the owner's flat above
-    V("western", "Western wear"),                 // boots and saddlery, the tack room
-    V("workwear", "Workwear store"),              // the stock along one side, the embroidery room
-  ],
-  liquor: [
-    V("liquor", "Liquor store"),
-    V("warehouse", "Liquor warehouse"),           // a big floor, the warehouse behind its loading door
-    V("package", "Package store"),                // small, the drive-up window, the cooler room
-  ],
-  restaurant: [
-    V("sitdown", "Sit-down restaurant"),
-    V("fastfood", "Fast food"),
-    V("takeout", "Takeout counter"),
-    V("smoker", "Smokehouse"),
-    V("cafe", "Cafe"),
-  ],
-  bar: [
-    V("bar", "Bar"),
-    V("roadhouse", "Roadhouse"),                  // the stage and dance floor, the keg room
-    V("pub", "Pub"),                              // the snug, the cellar, the landlord's flat above
-    V("sports", "Sports bar"),                    // the game room, the kitchen
-  ],
-  hardware: [
-    V("hardware", "Hardware store"),
-    V("lumber", "Lumber yard"),                   // the yard behind, the tool crib
-    V("bigbox", "Home centre"),                   // a wide floor, the garden section, the loading dock
-  ],
-  feedstore: [
-    V("feed", "Feed store"),
-    V("supply", "Farm-supply barn", 1.5, 1, 0),   // the store, the barn of fencing and bales behind its roller door
-    V("coop", "Farmers' co-op", 1.5, 1, 0),       // the office, the seed store, the grain bin room
-    V("western", "Western store", 1, 1, 0.3),     // saddles and boots at the front, the tack room
-  ],
-  diner: [
-    V("diner", "Diner"),
-    V("counter", "Lunch counter"),                // small: the counter and the kitchen, no dining room
-    V("truckers", "Truckers' diner"),             // a big dining room, the showers, the lounge
-  ],
-  pizza: [
-    V("pizza", "Pizza place"),
-    V("slice", "Slice counter"),                  // the counter, the oven room, the storeroom
-    V("parlour", "Pizza parlour"),                // the dining room, the party room, the arcade corner
-  ],
-  gasstation: [
-    V("service", "Service station"),              // the shop and the repair bay
-    V("kiosk", "Pump kiosk"),                     // a kiosk by the pumps, nothing else
-    V("carwash", "Gas and car wash"),             // the shop, the car wash bay through the building
-  ],
-  truckstop: [
-    V("truckstop", "Truck stop"),
-    V("travel", "Travel centre"),                 // the shop, fast food, the showers and lounge, the chapel
-    V("scale", "Truck scale and tyre shop"),      // the scale house, the tyre shop's bays, a small diner
-  ],
 };
 
 // The building types whose franchises name their layout (data-shops.js plan.lay) use the same ids as LAYOUTS.
@@ -311,8 +123,8 @@ export function layoutFor(key, setting, r, allow = null) {
 }
 
 // A POI's kind as the building type its layout is of (buildingmaps.js SITES: a shed is a machine shed's, a mine shack
-// a cabin's, a quarry's workshop).
-const POI_KEY = { shed: "machineshed", mineshack: "cabin", quarry: "workshop", radiotower: "radio", gas: "gasstation", office: "offices" };
+// a cabin's).
+const POI_KEY = { shed: "machineshed", mineshack: "cabin" };
 /** @param {string} kind */
 export const poiLayoutKey = (kind) => POI_KEY[kind] || kind;
 
@@ -344,7 +156,7 @@ export function pickLayout(key, seed, o = {}, lay = null, allow = null) {
   if (o && o.legacy) return null;
   const list = layoutsOf(key);
   if (!list.length) return null;
-  const pinned = layoutById(key, o && o.layout) || layoutById(key, lay);
+  const pinned = layoutById(key, o && o.layout) || layoutById(key, o && typeof o.plan === "string" ? o.plan : null) || layoutById(key, lay); // o.plan: dev's pin of a named plan (setup.raid.place.plan, #26 and #37's)
   const id = pinned ? pinned.id : layoutFor(key, o && o.setting, hash01(seed, "layout", key), allow);
   const l = layoutById(key, id) || list[0];
   return { id: l.id, name: l.name };
