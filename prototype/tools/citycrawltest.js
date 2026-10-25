@@ -13,7 +13,8 @@ import * as CC from "../src/sim/citycrawl.js";
 import { isEdge, headingToward, rimOf, cellsOf, xyOf, keyOf } from "../src/sim/citygrid.js";
 import { newItem, stow, ensureInv } from "../src/sim/inventory.js";
 import { BUILDINGS, buildingMap } from "../src/sim/buildingmaps.js";
-import { searchBox, setFloor } from "../src/sim/combat.js";
+import { setFloor, boxFinds, boxLoot, FLOOR_RICH } from "../src/sim/combat.js";
+import { raidLootShare } from "../src/sim/battlesize.js";
 import { liftDef, setTargets } from "../src/sim/furnicarry.js";
 import { sceneBias, SCENES } from "../src/sim/interiorscenes.js";
 import { boardCell } from "../src/sim/barricade.js";
@@ -731,7 +732,7 @@ const outAndBack = (state, p, c, pl) => { const b = state.combat; walkOut(state)
     if (combatAct(state, { type: "liftPiece", unit: u.id, x, y }) !== "") continue;
     lifted = { x, y, kind: d.kind };
     u.ap = 2;
-    const t = setTargets(b, u)[0];
+    const t = setTargets(b, u).find((o) => o.x !== x || o.y !== y);
     if (t && combatAct(state, { type: "setPiece", unit: u.id, x: t.x, y: t.y }) === "") setAt = { x: t.x, y: t.y, kind: d.kind };
   }
   check(!!lifted && !!setAt, `test setup: a piece lifted and set down (${lifted && lifted.kind})`);
@@ -904,23 +905,25 @@ const outAndBack = (state, p, c, pl) => { const b = state.combat; walkOut(state)
   for (const s of partyMembers(state, p)) s.skills.scavenging = 3;
   const kinds = Object.keys(CC.PLACE_POOL);
   const rolls = CC.CRAWL.QUICK.rolls, per = CC.CRAWL.QUICK.rollsPerBlock;
-  const bad = [];
+  const bad = [], REPS = 5; // each building's containers rolled REPS times both ways (the dice's spread, not the buildings')
   let worst = 0;
   for (const key of kinds) {
     let mapSup = 0, quickSup = 0, mapBoxes = 0, quickBoxes = 0;
     for (let i = 0; i < QN; i++) {
       const pl = testPlace(state, c, key, 1000 + i);
       CC.CRAWL.QUICK.rolls = 9999; CC.CRAWL.QUICK.rollsPerBlock = 0;
-      const q = CC.quickLoot(state, p, c, pl);
+      for (let k = 0; k < REPS; k++) { const q = CC.quickLoot(state, p, c, pl); quickSup += Object.values(q.sup).reduce((x, v) => x + v, 0); quickBoxes += q.opened; }
       CC.CRAWL.QUICK.rolls = rolls; CC.CRAWL.QUICK.rollsPerBlock = per;
-      quickSup += Object.values(q.sup).reduce((x, v) => x + v, 0); quickBoxes += q.opened;
-      if (i % 4) continue; // the map side on a quarter of them (a battle each), the same buildings
+      if (i % (process.env.BS_QUICK ? 1 : 2)) continue; // the map side on every one (a full run: every other one; a battle each), the same buildings
+      // The laid-out building: its battle's own containers, each rolled with the battle's numbers as searchBox does
+      // (combat.js boxFinds: the table's loot; the extras searchBox rolls on dice of their own are the map's alone).
       CC.enterPlace(state, p, pl.id, { map: true });
-      const b = state.combat, u = b.units.find((x) => x.side === "player");
-      u.scavBonus = 0;
-      for (const box of b.raid.containers.filter((x) => x.kind !== "body" && x.kind !== "ground" && !x.stash)) {
-        searchBox(state, b, u, box, true);
-        mapSup += Object.values(box.contents.sup).reduce((x, v) => x + v, 0); mapBoxes++;
+      const b = state.combat, R = b.raid, site = state.tiles[b.tileId].loc.type;
+      const reward = (R.reward ?? 1) * (R.big ? raidLootShare(b.w, b.h) : 1);
+      for (let k = 0; k < REPS; k++) for (const box of R.containers.filter((x) => x.kind !== "body" && x.kind !== "ground" && !x.stash)) {
+        const type = R.areas[box.area].type;
+        const got = boxFinds(state, state.rng, { def: boxLoot(type, box.kind), type, rich: R.richness * Math.min(FLOOR_RICH.cap, Math.pow(FLOOR_RICH.perFloor, box.f || 0)) * (box.rich || 1), scav: 3, reward, site, gunSite: b.setup.raid.gunSite, deep: R.deep, tileId: b.tileId, bid: box.id });
+        mapSup += Object.values(got.sup).reduce((x, v) => x + v, 0); mapBoxes++;
       }
       state.combat = null; c.inside = null;
     }
@@ -929,7 +932,7 @@ const outAndBack = (state, p, c, pl) => { const b = state.combat; walkOut(state)
     worst = Math.max(worst, off);
     if (off > 0.1) bad.push(`${key} ${a.toFixed(2)}/${q.toFixed(2)}`);
   }
-  check(!bad.length, `a container searched quickly holds what it holds on the map, every kind within ±10% (${QN} buildings a kind; worst ${Math.round(worst * 100)}%)${bad.length ? `: off ${bad.join(", ")}` : ""}`);
+  check(!bad.length, `a container searched quickly holds what the laid-out building's holds by its table, every kind within ±10% (${QN} buildings a kind; worst ${Math.round(worst * 100)}%)${bad.length ? `: off ${bad.join(", ")}` : ""}`);
   // No pieces on foot; with the vehicle at the rim, the worthiest "one" piece once a place.
   const pl = testPlace(state, c, "deptstore", 77);
   const prof = CC.placeProfile(state, c, pl);

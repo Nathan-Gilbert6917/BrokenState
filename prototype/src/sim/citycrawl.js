@@ -1029,6 +1029,7 @@ export function restoreBuilding(state, b, snap) {
     back.push(o);
   }
   b.units = [...players, ...back];
+  const carts = R.containers.filter((x) => x.found && x.cart); // carts.js placeMapCarts: the abandoned carts (its own dice), taken off the map when a fight ends (cartsEnd)
   R.containers = deep(snap.containers).map((x) => ({ ...x, uid: x.uid != null && ids.has(x.uid) ? ids.get(x.uid) : x.uid }));
   if (snap.doors) R.doors = deep(snap.doors);
   if (snap.stairs) R.stairs = deep(snap.stairs);
@@ -1056,6 +1057,15 @@ export function restoreBuilding(state, b, snap) {
     b.losCache = makeLosCache(b.w, b.h);
     floodReach(b, z.x0 + 1, z.y0 + 1);
   }
+  // The abandoned carts stand where they stood (issue #21: the same ones the first visit had), where the floor is still open.
+  for (const box of carts) {
+    const cl = (b.floors ? b.floors[box.f || 0].cells : b.cells)[box.y * b.w + box.x];
+    if (!cl || cl.k !== "open" || R.containers.some((x) => (x.f || 0) === (box.f || 0) && x.x === box.x && x.y === box.y) || b.units.some((u) => !u.dead && (u.f || 0) === (box.f || 0) && u.x === box.x && u.y === box.y)) continue;
+    box.id = b.nextId++; box.under = { k: "open" }; box.blocking = true;
+    cl.k = "cart"; delete cl.hp; delete cl.mhp;
+    R.containers.push(box);
+  }
+  if (carts.length && b.floors) for (const F of b.floors) F.losCache && F.losCache.fill(0);
   b.enemyStart = b.units.filter((u) => u.side === "enemy" && !u.dead).length;
   say(b, `You go back into the ${R.interior ? R.interior.name.toLowerCase() : "building"}. It is as you left it: ${snap.searched} of ${snap.total} places searched.`, "info");
   return true;
