@@ -6,7 +6,8 @@
 // lays one of every kind and the battle view draws it in every turn of the view without a throw or a NaN; the tooltips
 // (structureName) and the codex's Barricades entry name the new pieces.
 // Usage: node tools/furnituretest.js
-import { FURNITURE_KINDS, CARRY, CARRY_KG, furnitureCells, furnitureHp, furnitureFor, useOf, isFurniture } from "../src/sim/data-furniture.js";
+import { FURNITURE_KINDS, CARRY, CARRY_KG, furnitureCells, furnitureHp, furnitureFor, useOf, isFurniture, pieceDef, itemKey, FURNITURE_GEAR } from "../src/sim/data-furniture.js";
+import { POWER_GEAR } from "../src/sim/data-power.js";
 import { CELL, structureName, vaultable } from "../src/sim/combat.js";
 import { FURNITURE, shoveable, tallPiece } from "../src/sim/barricade.js";
 import { battles } from "./isobattles.js";
@@ -45,6 +46,10 @@ console.log("The catalogue's rows");
   check(useOf("shelf").key === "storage" && useOf("shelf").arg === "40" && useOf("sink").key === "none" && useOf("nope").key === "none", "useOf splits a use into its key and argument");
   check(furnitureFor("kitchen").includes("fridge") && furnitureFor("bath").includes("toilet") && furnitureFor("kitchen", true).every((k) => FURNITURE_KINDS[k].loot), "furnitureFor picks a room role's pieces (the containers only, with loot)");
   check(isFurniture("sofa") && !isFurniture("wall"), "isFurniture");
+  check(pieceDef("sofa") === FURNITURE_KINDS.sofa && pieceDef("wall") === null, "pieceDef: the row, or null");
+  const liftable = kinds.filter((k) => FURNITURE_KINDS[k].carry !== "fixed");
+  check(liftable.every((k) => { const g = k === "fridge" ? POWER_GEAR.fridge : FURNITURE_GEAR[`f_${k}`]; return g && g.bulky && g.twoHands && g.weight === FURNITURE_KINDS[k].kg && (k === "fridge" || g.furniture === k); }), "every liftable piece has its item form (f_<kind>, the fridge its own Refrigerator): both arms, its weight");
+  check(!FURNITURE_GEAR.f_fridge && itemKey("fridge") === "fridge" && itemKey("bathtub") === null && Object.keys(FURNITURE_GEAR).length === liftable.length - 1, "no f_fridge, no item for a fixed piece");
 }
 
 console.log("Driven from the table: CELL, barricade FURNITURE, the old twelve kinds as before");
