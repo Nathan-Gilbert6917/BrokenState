@@ -19,8 +19,6 @@ let passed = 0, failed = 0;
 const check = (ok, msg) => { if (ok) passed++; else failed++; console.log(`  ${ok ? "ok" : "FAIL"}: ${msg}`); return ok; };
 registerCombatHandler("furnicarrytest", () => {});
 const at = (b, x, y) => b.cells[y * b.w + x];
-// The Refrigerator's cell kind comes with the catalogue (issue #8); until then a stand-in so a fridge can stand on the map.
-if (!CELL.fridge) CELL.fridge = { walk: false, cover: 2, los: true, name: "Refrigerator" };
 
 // A raid with a crew of 3 in plain kit (a pistol and a vest: about 5 kg each), the dead gone, and a clean 13 × 13 room
 // of open floor to work in (x0, y0 its corner).
@@ -95,8 +93,13 @@ console.log("the same survivor with a 60 kg fridge alone: 2 tiles; two sharing i
   const { st, b, us, x0, y0 } = raid();
   const [u, v] = us, s = survivorById(st, u.sid);
   stand(b, u, x0 + 4, y0 + 5); put(b, x0 + 5, y0 + 5, "fridge");
-  check(combatAct(st, { type: "liftPiece", unit: u.id, x: x0 + 5, y: y0 + 5 }) === "", "lifted alone");
-  check(u.bag && u.bag.key === "fridge", "the Refrigerator item (GEAR.fridge) in the arms");
+  check(/takes two/.test(combatAct(st, { type: "liftPiece", unit: u.id, x: x0 + 5, y: y0 + 5, helper: -1 })), "the fridge (a \"two\" piece in the catalogue) is not lifted alone");
+  put(b, x0 + 5, y0 + 5, "open");
+  // Alone with it all the same: carried in from the road in the arms (the State Map's own carrying), the same rules.
+  const fr = newItem("fridge");
+  s.gear.carry = fr; u.bag = fr; u.piece = F.pieceKindOf(fr);
+  F.reweigh(st, b, u);
+  check(u.piece === "fridge", "the Refrigerator item (GEAR.fridge) in the arms is a piece");
   check(u.mob === 2, `alone: 2 tiles an action (${u.mob}; 3 × 40 / 60)`);
   check(F.crushMob(3, 120) === 1 && F.crushMob(3, 60) === 2 && F.crushMob(4, 30) === 4, "LIFT.CRUSH: 120 kg 1 tile, 60 kg 2, under 40 kg as the band");
   const alone = u.mob;
@@ -156,22 +159,23 @@ console.log("set down: a cell they can see, next to them; the cell is the piece 
   const { st, b, us, x0, y0 } = raid();
   const u = us[0];
   stand(b, u, x0 + 6, y0 + 6); put(b, x0 + 7, y0 + 6, "table");
-  const T = F.LOCAL_KINDS.table, size0 = T.size;
-  T.size = [1, 2]; // a 2-cell piece for this check: its second cell straight on from the carrier
-  try {
+  put(b, x0 + 7, y0 + 6, "bed"); put(b, x0 + 7, y0 + 7, "bed"); // a bed: 1 × 2 in the catalogue, laid as two cells
+  {
+    check(F.liftDef("bed").size.join("x") === "1x2", "a bed is a 2-cell piece");
     check(combatAct(st, { type: "liftPiece", unit: u.id, x: x0 + 7, y: y0 + 6 }) === "", "lifted");
+    check(at(b, x0 + 7, y0 + 6).k === "open" && at(b, x0 + 7, y0 + 7).k === "open", "both its cells are open floor again");
     fresh(b);
     b.smoke = [{ x: x0 + 6, y: y0 + 5, thick: true, turns: 3 }]; // thick smoke on the cell north of them: the one beyond it unseen
     const why = combatAct(st, { type: "setPiece", unit: u.id, x: x0 + 6, y: y0 + 5 });
-    check(/see/.test(why) && u.piece === "table", `onto a cell whose far half they cannot see: refused ("${why}")`);
+    check(/see/.test(why) && u.piece === "bed", `onto a cell whose far half they cannot see: refused ("${why}")`);
     b.smoke = [];
     check(combatAct(st, { type: "setPiece", unit: u.id, x: x0 + 9, y: y0 + 6 }) !== "", "not next to them: refused");
     const err = combatAct(st, { type: "setPiece", unit: u.id, x: x0 + 6, y: y0 + 5 });
     check(err === "" && u.ap === 1, `set down north of them (${err || "ok"}; 1 action)`);
     const c1 = at(b, x0 + 6, y0 + 5), c2 = at(b, x0 + 6, y0 + 4);
-    check(c1.k === "table" && c2.k === "table" && c1.hp === F.liftDef("table").hp && c1.moved, `both cells are the table, ${c1.hp} hp`);
+    check(c1.k === "bed" && c2.k === "bed" && c1.hp === F.liftDef("bed").hp && c1.moved, `both cells are the bed, ${c1.hp} hp`);
     check(!u.bag && !u.piece && survivorById(st, u.sid).gear.carry == null, "the arms free again");
-  } finally { T.size = size0; }
+  }
 }
 
 console.log("a pair sets it down to the side they choose, parallel to them");
@@ -188,28 +192,26 @@ console.log("a pair sets it down to the side they choose, parallel to them");
   check(combatAct(st, { type: "setPiece", unit: v.id, side: "right" }) === "", "set down to the right");
   check(at(b, cx, cy + 1).k === "locker" && at(b, cx, cy - 1).k === "open", "on the right of the two (the carrier faces the helper: south), beside the carrier");
   check(u.ap === 1 && v.ap === 1, "1 action each");
-  const L = F.LOCAL_KINDS.locker, size0 = L.size;
-  L.size = [2, 1]; // a 2-cell piece: along the two, parallel to them
-  try {
-    put(b, cx, cy + 1, "open"); put(b, cx, cy - 1, "locker");
-    fresh(b);
-    check(combatAct(st, { type: "liftPiece", unit: u.id, x: cx, y: cy - 1, helper: v.id }) === "", "lifted again (as a 2-cell piece)");
-    fresh(b);
-    check(combatAct(st, { type: "setPiece", unit: u.id, side: "left" }) === "", "set down to the left");
-    check(at(b, cx, cy - 1).k === "locker" && at(b, cx + 1, cy - 1).k === "locker", "both cells beside the two, parallel");
-  } finally { L.size = size0; }
+  // A sofa (2 × 1 in the catalogue): along the two, parallel to them.
+  put(b, cx, cy - 1, "sofa"); put(b, cx + 1, cy - 1, "sofa");
+  fresh(b);
+  check(combatAct(st, { type: "liftPiece", unit: u.id, x: cx, y: cy - 1, helper: v.id }) === "" && at(b, cx + 1, cy - 1).k === "open", "a sofa (2 cells) lifted by the two");
+  fresh(b);
+  check(combatAct(st, { type: "setPiece", unit: u.id, side: "right" }) !== "", "the locker stands on their right: no room for the sofa there");
+  check(combatAct(st, { type: "setPiece", unit: u.id, side: "left" }) === "", "set down to the left");
+  check(at(b, cx, cy - 1).k === "sofa" && at(b, cx + 1, cy - 1).k === "sofa", "both cells beside the two, parallel");
 }
 
 console.log("into the vehicle: the item in the cargo; refused without the room");
 {
   const { st, b, p, us, x0, y0 } = raid(true);
-  const u = us[0];
-  stand(b, u, x0 + 4, y0 + 5); put(b, x0 + 5, y0 + 5, "fridge");
-  check(combatAct(st, { type: "liftPiece", unit: u.id, x: x0 + 5, y: y0 + 5 }) === "", "lifted");
+  const [u, v] = us;
+  stand(b, u, x0 + 4, y0 + 5); stand(b, v, x0 + 4, y0 + 6); put(b, x0 + 5, y0 + 5, "fridge");
+  check(combatAct(st, { type: "liftPiece", unit: u.id, x: x0 + 5, y: y0 + 5, helper: v.id }) === "", "lifted by two");
   fresh(b);
   check(/vehicle/.test(combatAct(st, { type: "stowPiece", unit: u.id })), "away from the vehicle: refused");
   const z = b.vehicle ? { x: b.vehicle.x - 1, y: b.vehicle.y } : { x: b.raid.zones[b.raid.vehicleZone].x0, y: b.raid.zones[b.raid.vehicleZone].y0 };
-  stand(b, u, z.x, z.y);
+  stand(b, u, z.x, z.y); stand(b, v, z.x, z.y + 1);
   check(atVehicle(b, u), "at the vehicle");
   p.cargo = p.cargo || { supplies: {}, gear: [] };
   const room = cargoRoom(st, p);
@@ -219,15 +221,15 @@ console.log("into the vehicle: the item in the cargo; refused without the room")
   check(/No room .* for the refrigerator \(\d+ kg over\)/.test(why), `the cargo short: "${why}" (${Math.round(room)} kg free before)`);
   for (const it of pad) p.cargo.gear.splice(p.cargo.gear.indexOf(it), 1);
   const err = combatAct(st, { type: "stowPiece", unit: u.id });
-  check(err === "" && p.cargo.gear.some((it) => it.key === "fridge") && !u.bag && !u.piece, `stowed: the fridge in p.cargo (${err || "ok"})`);
+  check(err === "" && p.cargo.gear.some((it) => it.key === "fridge") && !u.bag && !u.piece && !v.piece && v.tether == null, `stowed: the fridge in p.cargo, the tether ended (${err || "ok"})`);
 }
 
 console.log("a fixed piece is never lifted; a lootable one leaves its contents on a ground pile");
 {
   const { st, b, us, x0, y0 } = raid();
   const u = us[0];
-  stand(b, u, x0 + 4, y0 + 5); put(b, x0 + 5, y0 + 5, "counter");
-  check(/fixed/.test(combatAct(st, { type: "liftPiece", unit: u.id, x: x0 + 5, y: y0 + 5 })) && at(b, x0 + 5, y0 + 5).k === "counter", "the counter (fixed: built in) cannot be lifted");
+  stand(b, u, x0 + 4, y0 + 5); put(b, x0 + 5, y0 + 5, "toilet");
+  check(/fixed/.test(combatAct(st, { type: "liftPiece", unit: u.id, x: x0 + 5, y: y0 + 5 })) && at(b, x0 + 5, y0 + 5).k === "toilet", "a toilet (fixed: plumbed in) cannot be lifted");
   put(b, x0 + 5, y0 + 5, "open"); put(b, x0 + 3, y0 + 5, "cabinet");
   const knife = newItem("knife");
   const box = { id: b.nextId++, x: x0 + 3, y: y0 + 5, f: 0, area: b.raid.containers.find((c) => c.area != null)?.area ?? 0, kind: "cabinet", searched: false, label: "Kitchen: cabinet", contents: { sup: { food: 2 }, gear: [knife] } };
@@ -259,7 +261,7 @@ console.log("the orders: Lift, its chooser, Set down, Load into vehicle (ui/comb
   check(!!lift && lift.ok && lift.ap === F.LIFT.AP, "Lift offered next to the fridge (2 actions)");
   UI.combatAction(st, "cb-act", { v: "liftPiece" });
   const html = UI.unitOrders(st, b, u).extra;
-  check(/Alone/.test(html) && new RegExp(`With ${v.name.split(" ")[0]}`).test(html), "a teammate next to it: the chooser asks alone or with them");
+  check(!/Alone/.test(html) && new RegExp(`With ${v.name.split(" ")[0]}`).test(html), "the fridge takes two: the chooser names the teammate who can take the other end (no Alone)");
   UI.combatAction(st, "cb-act", { v: "liftPiece", k: `${x0 + 7},${y0 + 6},${v.id},-1` });
   check(u.tether === v.id && u.piece === "fridge", "picked: the two lift it");
   fresh(b);

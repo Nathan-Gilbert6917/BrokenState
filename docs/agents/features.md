@@ -102,6 +102,7 @@ Base detail: [bases.md](../features/bases.md). Economy detail: [economy.md](../f
 - **Building materials and metal sheets**: two-handed heavy supplies every build needs by size; made from scrap on site [buildmats, buildings, data-supitems, carry]. [details](../features/economy.md#building-materials-and-metal-sheets)
 - **Power grid**: found generators, spotlights, a breaker panel, ammo press, fridges, pumps, fence chargers [power, electric, data-power, ui/production] `tools/powergridtest.js`. [details](../features/economy.md#the-power-grid)
 - **More of the grid: electronics builds**: solar arrays, battery banks, perimeter alarm, electric heaters, charging station [data-power, power, electric] `tools/powergridtest.js`. [details](../features/economy.md#more-of-the-grid-electronics-builds)
+- **Appliances**: found freezers, cold cases, ranges, ovens, microwaves set on the grid; a range cooks on power or propane [appliances, data-appliances, storage, cooking] `tools/appliancestest.js`. [details](../features/economy.md#appliances)
 - **The governor builds the grid**: it queues grid builds behind manual, Mechanics and reserve; powered mill, grinder ×1.5 [autopilot, electric, power] `tools/powergridtest.js`. [details](../features/economy.md#the-governor-builds-the-grid)
 - **Breakdowns**: fixtures wear and need a named survivor to repair; repair orders from the Repairs tab [breakdowns, ui/explore]. [details](../features/bases.md#repair-orders)
 - **Blueprints and manuals** that unlock top tiers [blueprints].
@@ -164,6 +165,7 @@ Detail: [combat.md](../features/combat.md).
 - **Before you go in**: the raid plan window (scout, wait for night, kit, side to enter, leave) [raidplan, ui/raidplan]. [details](../features/combat.md#before-you-go-in-the-raid-plan)
 - **The building picked before the raid map**: a card picks the building before the map is made, the autopilot by dice [poiraid, parties, combat] `tools/buildingpicktest.js`. [details](../features/combat.md#the-building-picked-before-the-raid-map)
 - **Raids into building interiors**: buildings and streets to search; locks, keys, safes, makeshift picks [buildingmaps, search, raidloot, locks, gunsafes] `tools/makeshiftpicktest.js`. [details](../features/combat.md#raids-into-building-interiors)
+- **Furniture and appliance catalogue**: 65 kinds with cell rules, hp, kg, carry class, base use and sprites [data-furniture, barricade, ui/isoview] `tools/furnituretest.js`. [details](../features/combat.md#raids-into-building-interiors)
 - **Stealth**: takedowns, facing and view cones, sneaking, lights and darkness, indoor light switches [stealth, vision, indoorlight, ailights].
 - **Vaulting half cover**: over waist-high cells at extra cost, landing winded [combat]. [details](../features/combat.md#vaulting-half-cover)
 - **Windows and the kinds of door**: window states (open, locked, broken) and door kinds with their own hit points, sight and locks [windows, buildingmaps, locks]. [details](../features/combat.md#windows-and-the-kinds-of-door)
@@ -278,6 +280,7 @@ Detail: [ui.md](../features/ui.md).
 - **The whole game by pad**: SVG maps take the ring, a pointer for charts and the minimap, map picks and the base build map by cursor [ui/padnav, main, ui/combat, ui/poimap] `tools/padmaptest.cjs`. [details](../features/ui.md#the-whole-game-by-pad)
 - **Key hints by device**: hints and tooltips worded for mouse, finger or pad [ui/hints, ui/inputmode]. [details](../features/ui.md#key-hints-by-device)
 - **Seasonal trees**: autumn colours, bare snowy trees and bushes in winter, on every map [ui/seasontrees, ui/isoview, ui/terraindeco, ui/render] `tools/seasontreestest.js`. [details](../features/ui.md#seasonal-trees)
+- **Interior decor**: rugs, clutter, wall art, painted rooms, floors by room, lights; lootable plants, lamps, paintings, clocks [decor, data-furniture, buildingmaps, ui/isoview] `tools/decortest.js`. [details](../features/ui.md#interior-decor)
 - **Rocks and boulders**: grey tapering stone heaps; rocks knee high (half cover), boulders head high (full cover) on the battle, raid and base maps [ui/isoview]. [details](../features/ui.md#rocks-and-boulders)
 - **Snow on buildings**: in winter, snow on roofs by its depth and on walls, fences, tents, cars and props in the open [ui/roofsnow, ui/isoview] `tools/roofsnowtest.js`. [details](../features/ui.md#snow-on-buildings)
 - **Audio**: adaptive music director and synth score, ambience, SFX for guns, melee, zombies, doors, vehicles [ui/music*, ui/amb*, ui/sfx*].

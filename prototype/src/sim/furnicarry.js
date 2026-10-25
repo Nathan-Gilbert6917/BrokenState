@@ -7,11 +7,10 @@
 // down or put in a vehicle. […] You can place the appliance, furniture etc in an adjacent tile your survivor can see.
 // For group of two it goes to the left or right of the two so it's parallel to them you choose.").
 //
-//   The pieces (liftDef): every furniture cell kind with a weight, a carry class ("one": one survivor, very slow, or two
-//     sharing; "two": two survivors needed; "fixed": never lifted) and a footprint, and the item it becomes in the arms
-//     (a bulky, both-arms GEAR row with `furniture: <kind>`: the beds' data-beds.js BED_GEAR, the Refrigerator's
-//     GEAR.fridge, the rest `f_<kind>`). TODO(#8): the catalogue (data-furniture.js pieceDef) is the source once it
-//     lands; until then LOCAL_KINDS below covers today's cell kinds.
+//   The pieces (liftDef): the catalogue's (data-furniture.js pieceDef, issue #8) weight, carry class ("one": one
+//     survivor, very slow, or two sharing; "two": two survivors needed; "fixed": never lifted) and footprint, and the
+//     item it becomes in the arms (data-furniture.js itemKey: a bulky, both-arms GEAR row `f_<kind>` with
+//     `furniture: <kind>`, merged into GEAR by data.js; the Refrigerator its own GEAR.fridge).
 //   Lift (combatAct "liftPiece", LIFT.AP: both actions; a helper LIFT.AP too): a survivor with both hands free right
 //     next to a piece (or to a piece item lying on a ground pile within reach), never a fixed one, one someone stands
 //     on or one on fire. The cell goes back to open floor (or the door frame it stood in: barricade.js pieceOff); a
@@ -49,12 +48,13 @@
 //     botDropToFight) and never lift one; other groups' abstract raids (grouppois.js raidPoiAsGroup opts.vehicle) carry
 //     a flag on the haul when they came by vehicle.
 import { GEAR } from "./data.js";
+import { FURNITURE_KINDS, pieceDef, itemKey } from "./data-furniture.js"; // the catalogue: weight, carry class, footprint, item form
 import { newItem, itemLoad, ensureInv } from "./inventory.js";
 import { survivorById } from "./world.js";
 import { MAX_LOAD } from "./load.js";
 import { CELL, active, unitAt, unitById, canSeeAt, say, reachable, pathTo, moveAlong, moveToFloor, alertNear, searchBox } from "./combat.js"; // call-time only: the modules load in a circle
 import { handsCount, handsBusy } from "./carry.js"; // call-time only
-import { FURNITURE, freeForPiece, pieceOff, pieceOn } from "./barricade.js"; // call-time only
+import { freeForPiece, pieceOff, pieceOn } from "./barricade.js"; // call-time only
 import { groundPile, groundPiles, pileCount, settlePile } from "./ground.js"; // call-time only
 import { lootLayer, atVehicle, trunkVehicle, trunkSpace, raidParty } from "./raidloot.js"; // call-time only
 import { carHere, carRoom } from "./carriers.js"; // call-time only
@@ -67,43 +67,23 @@ import { gripOf } from "./shoving.js"; // call-time only
 // each); the rest picked here (docs/features/travel.md "Carrying furniture and appliances").
 export const LIFT = { AP: 2, HELP_AP: 2, SET_AP: 1, STOW_AP: 1, STAIRS_AP: 2, SHARE: 0.5, NOISE: 0.5, RADIUS: 2 };
 
-// TODO(#8): read data-furniture.js pieceDef. Today's cell kinds (combat.js CELL) with a weight, a carry class, a
-// footprint and the item they become; loot: a lootable kind (a container on the cell when it is set down again).
-/** @type {Record<string, { name: string, kg: number, carry: "one" | "two" | "fixed", size: [number, number], item: string | null, loot: boolean }>} */
-export const LOCAL_KINDS = {
-  shelf:   { name: "Set of shelves",   kg: 20, carry: "one",   size: [1, 1], item: "f_shelf",   loot: true },
-  cabinet: { name: "Cabinet",          kg: 35, carry: "one",   size: [1, 1], item: "f_cabinet", loot: true },
-  counter: { name: "Counter",          kg: 80, carry: "fixed", size: [1, 1], item: null,        loot: true }, // built in
-  table:   { name: "Table",            kg: 25, carry: "one",   size: [1, 1], item: "f_table",   loot: false },
-  bed:     { name: "Bed",              kg: 22, carry: "one",   size: [1, 1], item: "bed",       loot: false }, // data-beds.js BED_GEAR.bed
-  crate:   { name: "Crate",            kg: 15, carry: "one",   size: [1, 1], item: "f_crate",   loot: true },
-  rack:    { name: "Shelving unit",    kg: 60, carry: "two",   size: [1, 1], item: "f_rack",    loot: true }, // tall steel shelving
-  locker:  { name: "Locker",           kg: 60, carry: "two",   size: [1, 1], item: "f_locker",  loot: true },
-  barrel:  { name: "Rain barrel",      kg: 30, carry: "one",   size: [1, 1], item: "f_barrel",  loot: true },
-  fridge:  { name: "Refrigerator",     kg: 60, carry: "one",   size: [1, 1], item: "fridge",    loot: true }, // data-power.js POWER_GEAR.fridge; no cell kind until #8
-};
-// TODO(#8): the catalogue's GEAR rows (`f_<kind>`) replace these; a row already there is left alone.
-for (const [k, d] of Object.entries(LOCAL_KINDS)) {
-  if (!d.item || GEAR[d.item]) continue;
-  GEAR[d.item] = { name: d.name, slot: "pack", skill: null, power: 0, req: 0, value: Math.max(2, Math.round(d.kg / 3)), noise: 0, weight: d.kg, cat: "household", bulky: true, twoHands: true, furniture: k,
-    desc: `A ${d.name.toLowerCase()} lifted off a raid's floor: ${d.kg} kg, carried in both arms${d.carry === "two" ? " by two people" : ""}, in a cart or a vehicle.` };
-}
-
-// The one accessor for a piece (every reader goes through it): { kind, name, kg, carry, size, item, hp, loot } or null.
+// The one accessor for a piece (every reader goes through it), from the catalogue (data-furniture.js pieceDef, issue #8):
+// { kind, name, kg, carry, size, item (its item key: data-furniture.js itemKey, null when fixed), hp, loot } or null.
 export function liftDef(k) {
-  const d = k ? LOCAL_KINDS[k] : null;
+  const d = k ? pieceDef(k) : null;
   if (!d) return null;
-  const kg = d.item && GEAR[d.item] && Number.isFinite(GEAR[d.item].weight) ? GEAR[d.item].weight : d.kg;
-  return { kind: k, name: d.name, kg, carry: d.carry, size: d.size, item: d.item, hp: (FURNITURE[k] && FURNITURE[k].hp) || 20, loot: d.loot };
+  const item = itemKey(k);
+  const kg = item && GEAR[item] && Number.isFinite(GEAR[item].weight) ? GEAR[item].weight : d.kg;
+  return { kind: k, name: d.name, kg, carry: d.carry, size: d.size, item, hp: d.hp, loot: d.loot };
 }
 // Every kind with a liftDef (the codex's list).
-export const liftKinds = () => Object.keys(LOCAL_KINDS);
-// The kind a carried item is as a piece ("" when it is none): GEAR furniture (f_<kind>, the beds), the fridge's placed.
+export const liftKinds = () => Object.keys(FURNITURE_KINDS);
+// The kind a carried item is as a piece ("" when it is none): GEAR furniture (the f_<kind> rows), the fridge's own item.
 export function pieceKindOf(it) {
   const d = it && GEAR[it.key];
   if (!d) return "";
-  const k = d.furniture || (d.placed === "fridge" ? "fridge" : "");
-  return k && LOCAL_KINDS[k] && LOCAL_KINDS[k].item === it.key ? k : "";
+  const k = d.furniture || (it.key === "fridge" ? "fridge" : "");
+  return k && pieceDef(k) && itemKey(k) === it.key ? k : "";
 }
 export const isPieceItem = (it) => !!pieceKindOf(it);
 const first = (u) => String((u && u.name) || "").split(" ")[0];
@@ -188,6 +168,15 @@ export function pieceRefusal(b, u, type) {
 const freeHands = (u) => !!u && u.kind === "human" && !u.ztype && !u.aboard && !u.gunner && u.carrying == null && u.dragging == null && u.ram == null && !u.piece && handsCount(u) === 0 && !handsBusy(u);
 // A container standing on the piece's cell (a raid's shelf, cabinet, locker...), or null.
 const boxOn = (b, x, y, f) => { const L = lootLayer(b); return L ? L.containers.find((c) => c.x === x && c.y === y && (c.f || 0) === f && !c.w && c.kind !== "ground" && c.kind !== "body" && !c.cart) || null : null; };
+// The other cell of a 2-cell piece at (x, y): the cell right beside it (not diagonally) of the same kind, free, not
+// burning; null when there is none (half a bed lifts as a bed).
+function otherHalf(b, x, y, k) {
+  for (const [dx, dy] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
+    const c = cellOf(b, x + dx, y + dy);
+    if (c && c.k === k && !unitAt(b, x + dx, y + dy) && !burning(b, x + dx, y + dy)) return c;
+  }
+  return null;
+}
 // What the unit could lift: the pieces next to it (any side, the same floor) and the piece items on a ground pile on its
 // cell or next to it: [{ x, y, def, cell?, pile?, item? }].
 export function liftTargets(b, u) {
@@ -256,6 +245,9 @@ export function liftAct(state, b, u, act) {
   if (!s) return "That unit cannot act.";
   let item = null, emptied = 0;
   if (t.cell) {
+    // A 2-cell piece (a bed laid as two cells) takes its other cell along: the one beside it of the same kind.
+    const other = Math.max(d.size[0], d.size[1]) > 1 ? otherHalf(b, t.x, t.y, t.cell.k) : null;
+    if (other) pieceOff(other);
     // A container on it: its contents onto a pile on the cell (rolled first if nobody had looked inside).
     const box = boxOn(b, t.x, t.y, u.f || 0);
     if (box) {

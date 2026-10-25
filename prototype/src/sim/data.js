@@ -17,6 +17,7 @@ import { NL_GEAR } from "./data-nonlethal.js"; // tasers, cartridges, pepper spr
 import { TOOL_ITEMS } from "./data-tools.js"; // tools for building and crafting: a tool kit, saws, a felling axe, a shovel, a drill, a welder, a sewing kit, the makeshift ones (toolreqs.js)
 import { SURV_ITEMS } from "./data-survival.js"; // survival gear: tools, armour against teeth, lights, a rig, a jump bag, a rangefinder (survival.js: where they turn up)
 import { BED_GEAR } from "./data-beds.js"; // beds as furniture: cots, beds, bunk beds, large beds (beds.js)
+import { FURNITURE_GEAR } from "./data-furniture.js"; // the furniture's item forms, f_<kind>: lifted off a raid's floor (furnicarry.js)
 import { POWER_GEAR } from "./data-power.js"; // the power grid: found generators, mounted spotlights, fridges (electric.js)
 import { BOX_GEAR, BOX_PATCH } from "./data-boxes.js"; // cash boxes, fire safes, toolboxes, equipment cases; the gun cases as boxes (boxes.js)
 import { NEW_KINDS } from "./data-shops.js"; // the shops and services new as places (their LOCATIONS rows)
@@ -74,6 +75,9 @@ export const SUPPLIES = {
   carparts:    { name: "Car parts",   value: 7,  weight: 3,   cat: "vehicle" },
   gunparts:    { name: "Gun parts",   value: 10, weight: 0.5, cat: "gunmod" },
   electronics: { name: "Electronics", value: 12, weight: 0.3, cat: "electronics" },
+  // Propane (#19, 2026-10-25: data-appliances.js): a kilo of bottled gas off a grill or a camp stove. A kitchen range off
+  // the grid burns 0.1 a batch cooked on it (appliances.js); found with grills, in hardware stores and at campgrounds.
+  propane:     { name: "Propane",     value: 2,  weight: 1,   cat: "fuel" },
   // Building materials (2026-10-09, user request: "Add something called building materials that can be scavenged and
   // use this to establish bases"): lumber, cinder blocks, nails and fixings. Scavenged as a find of its own (loot.js
   // BUILDMAT_FINDS: hardware stores and quarries most, warehouses, factories, barns, farms and towns; on top of the
@@ -772,6 +776,10 @@ Object.assign(GEAR, CART_GEAR); // carts (data-carts.js, carts.js)
 Object.assign(GEAR, BED_GEAR); // beds as furniture (data-beds.js, beds.js)
 Object.assign(GEAR, TENT_GEAR); // tent bags (data-tents.js, tents.js)
 Object.assign(GEAR, POWER_GEAR); // found generators, mounted spotlights, fridges (data-power.js, electric.js)
+// The furniture's item forms (data-furniture.js FURNITURE_GEAR, issue #12: what a piece lifted off a raid's floor is in the
+// arms, the cart or the cargo), where no other module's row stands (the appliances' own: data-appliances.js). piece:
+// never offered in a starting kit, a trunk or a background (startgear.js, custombg.js), so their dice stay as they were.
+for (const [k, d] of Object.entries(FURNITURE_GEAR)) if (!GEAR[k]) GEAR[k] = { ...d, piece: true };
 Object.assign(GEAR, supItemGear(SUPPLIES, GEAR)); // supplies as items: s_<key> (data-supitems.js; rounds keep their boxes)
 // The Melee skill (world.js MELEE_SKILL): every melee weapon goes by Melee, not Shooting (its req, the skill-gap rule).
 for (const d of Object.values(GEAR)) if (d.slot === "weapon" && d.cat === "melee" && d.skill === "shooting") d.skill = "melee";
