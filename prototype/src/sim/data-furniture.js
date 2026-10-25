@@ -216,6 +216,20 @@ export const FURNITURE_KINDS = {
   footlocker:   P("Footlocker",             HALF, 20, 18, "one", S1, true, ["bunker", "bedroom", "cells"], "storage:40"),
   batteries:    P("Solar battery rack",     HALF, 30, 80, "two", S1, false, ["bunker", "cellar"], "none", true),
   genset:       P("Military generator",     STEEL, 80, 140, "two", S22, false, ["bunker", "bay"], "none"),
+  // ---------- warehouses, factories and labs (issue #37: industrylayout.js lays them) ----------
+  // Fixed: a fume hood (ducted up through the roof), a conveyor (a section of a bolted line), a process tank (a dye vat,
+  // a reactor, a fermenter, a syrup tank, a tank farm's fuel or a water works' settling tank), a kiln (firebrick), a
+  // power loom and a grain bin (corrugated steel on its slab). Liftable: the lab freezer (an upright −80 freezer, two
+  // people; with no power since the fall it holds nothing cold, so at a base it is a steel cabinet: storage) and a fuel
+  // drum (a fuel depot's: what is left in it, then a drum to keep things in).
+  fumehood:   P("Fume hood",     FULL, 40, 250, "fixed", S1, false, ["lab"], "none", true),
+  conveyor:   P("Conveyor",      C(false, 1, false), 40, 200, "fixed", S1, false, ["bay"], "none"),
+  vat:        P("Process tank",  FULL, 70, 800, "fixed", S1, false, ["bay", "yard"], "none"),
+  kiln:       P("Kiln",          FULL, 120, 3000, "fixed", S1, false, ["bay"], "none", true),
+  loom:       P("Loom",          HALF, 60, 900, "fixed", S21, false, ["bay"], "none"),
+  grainbin:   P("Grain bin",     STEEL, 150, 4000, "fixed", S1, false, ["yard"], "none"),
+  labfreezer: P("Lab freezer",   FULL, 40, 120, "two", S1, true, ["lab"], "storage:40", true),
+  drum:       P("Fuel drum",     HALF, 25, 40, "two", S1, true, ["bay", "yard"], "storage:60"),
   // ---------- lootable decor (issue #13: decor.js places them; light comfort pieces for the base) ----------
   // The plant and the floor lamp stand on a room's floor cell; the painting and the wall clock hang on a wall (decor.js:
   // c.wart = { k, d, piece: true } on the wall cell, the wall's own kind unchanged) and stand on a cell only once set down.

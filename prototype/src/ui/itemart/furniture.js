@@ -445,8 +445,18 @@ function f_batteries(p) { // a rack of black batteries on steel shelves, red and
   line(p, 3, 1, 11, 1, "#d9b13b");
 }
 
+// ---------- labs (issue #37) ----------
+function f_labfreezer(p) { // an upright lab freezer: white enamel, a full-height door with its long handle, a green display
+  box(p, 3, 0, 12, 15, "#dad8d0"); H(p, 3, 12, 3, "#b4b2aa"); V(p, 11, 5, 12, "#9aa1a8");
+  R(p, 5, 1, 8, 2, "#1c2a30"); p.set(6, 1, "#5ad06a"); p.set(7, 1, "#5ad06a"); legs(p, 4, 11, 15, 15, STEELD);
+}
+
+function f_drum(p) { // a red 200-litre steel drum: two rolling hoops, the bung on its lid
+  box(p, 3, 1, 12, 15, "#8e3028"); H(p, 3, 12, 5, "#6a241e"); H(p, 3, 12, 10, "#6a241e"); R(p, 4, 0, 11, 1, "#a8483c"); p.set(9, 0, "#26272a");
+}
+
 export const GEAR_ART = {
-  f_freezercase, f_islandfreezer, f_meatcase, f_freezershelf, f_producebin, f_breadrack, f_selfcheckout, f_aislesign,
+  f_drum, f_labfreezer, f_freezercase, f_islandfreezer, f_meatcase, f_freezershelf, f_producebin, f_breadrack, f_selfcheckout, f_aislesign,
   f_hazmatrack, f_rationshelf, f_handfilter, f_screens, f_maptable, f_radioconsole, f_footlocker, f_batteries,
   f_medcart, f_drugsafe, f_instcab, f_morguelocker, f_autopsy, f_wheelchair, f_vettable, f_curtain, f_linencart, f_monitor, f_crib, f_exambed,
   f_bed, f_bunk, f_hospbed, f_gurney, f_ivstand, f_hay, f_barrel, f_range, f_dishwasher, f_washer, f_dryer, f_fryer, f_coldshelf,

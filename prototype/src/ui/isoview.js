@@ -1189,6 +1189,35 @@ const FURN_DRAW = {
     return [run(ax, 0.24, 0.76, 0, 16, m, 0.06, 0.94)];
   } },
   genset: { top: 16, p: () => [fbox(0.04, 0.96, 0.04, 0.96, 0, 2, flatM(PAL.metalDk)), fbox(0.1, 0.9, 0.1, 0.9, 2, 16, (f, s, t, X, Y) => (f === "top" ? mul(hex("#4a5a30"), 1.15) : t > 10 && t < 12 ? FURNC.black : n2(X, Y, 97) > 0.95 ? FURNC.amber : hex("#4a5a30")))] },
+  // ---------- warehouses, factories and labs (issue #37, sim/industrylayout.js) ----------
+  // A fume hood: a steel cabinet below, the glass sash above the work surface, its duct up to the ceiling; a conveyor's
+  // belt on its frame with the rollers' lines; a process tank's white steel cylinder banded and capped; a kiln's
+  // firebrick dome with its iron door; a loom's wooden frame, its warp of threads and the beam; a grain bin's ribbed
+  // steel with its cone roof; a fuel drum's red steel with its two rolling hoops; a lab freezer, white enamel with its
+  // handle and the display's green.
+  fumehood: { top: 30, p: (o) => {
+    const ax = along(o), sash = (f, s, t) => (f === "top" ? FURNC.steel : t > 20 ? FURNC.steel : mul(FURNC.glassDk, 1.3));
+    return [run(ax, 0.2, 0.8, 0, 11, fappl(FURNC.white, [5]), 0.04, 0.96), run(ax, 0.18, 0.82, 11, 12, flatM(FURNC.black), 0.02, 0.98), run(ax, 0.2, 0.8, 12, 24, sash, 0.04, 0.96), run(ax, 0.2, 0.5, 24, 30, flatM(FURNC.steel), 0.3, 0.7)];
+  } },
+  conveyor: { top: 8, p: (o) => {
+    const ax = along(o), belt = (f, s, t, X) => (f === "top" ? (Math.floor(X) % 3 < 1 ? mul(FURNC.black, 1.6) : FURNC.black) : FURNC.steel);
+    return [...flegs(0.24, 0.72, 0.06, 0.9, 6, flatM(FURNC.steel), 0.04), run(ax, 0.2, 0.8, 6, 8, belt, 0, 1)];
+  } },
+  vat: { top: 30, p: () => [{ cyl: [0.5, 0.5, 0.4], z0: 0, z1: 26, m: (f, s, t) => (f === "top" ? mul(FURNC.white, 1.05) : Math.floor(t) % 9 < 1 ? FURNC.steel : FURNC.white) }, { cyl: [0.5, 0.5, 0.18], z0: 26, z1: 30, m: flatM(FURNC.steel) }] },
+  kiln: { top: 24, p: () => {
+    const brick = (f, s, t, X) => (f === "top" ? mul(hex("#a0503a"), 1.1) : Math.floor(t) % 3 < 1 || (Math.floor(X + Math.floor(t / 3) * 2) % 5 < 1) ? hex("#6a3a2a") : hex("#a0503a"));
+    return [fbox(0.06, 0.94, 0.06, 0.94, 0, 18, brick), { cyl: [0.5, 0.5, 0.3], z0: 18, z1: 24, m: brick }, fbox(0.35, 0.65, 0.92, 0.96, 3, 12, flatM(PAL.metalDk))];
+  } },
+  loom: { top: 18, p: (o) => {
+    const ax = along(o), wd = fwood(PAL.woodDk), warp = (f, s, t, X) => (Math.floor(X) % 2 < 1 ? FURNC.cloth : FURNC.cream);
+    return [run(ax, 0.2, 0.28, 0, 18, wd, 0.02, 0.98), run(ax, 0.72, 0.8, 0, 18, wd, 0.02, 0.98), run(ax, 0.28, 0.72, 9, 10, warp, 0.06, 0.94), run(ax, 0.2, 0.8, 16, 18, wd, 0.02, 0.98), run(ax, 0.2, 0.8, 0, 2, wd, 0.02, 0.98)];
+  } },
+  grainbin: { top: 36, p: () => [{ cyl: [0.5, 0.5, 0.46], z0: 0, z1: 28, m: (f, s, t, X) => (f === "top" ? FURNC.chrome : Math.floor(t) % 3 < 1 ? mul(FURNC.chrome, 0.8) : mul(FURNC.chrome, 0.95 + n2(Math.floor(X), 0, 107) * 0.05)) }, { cyl: [0.5, 0.5, 0.3], z0: 28, z1: 33, m: flatM(mul(FURNC.chrome, 0.9)) }, { cyl: [0.5, 0.5, 0.1], z0: 33, z1: 36, m: flatM(FURNC.steel) }] },
+  drum: { top: 14, p: () => [{ cyl: [0.5, 0.5, 0.3], z0: 0, z1: 14, m: (f, s, t) => (f === "top" ? mul(FURNC.red, 0.8) : Math.floor(t) === 4 || Math.floor(t) === 9 ? mul(FURNC.red, 0.6) : FURNC.red) }] },
+  labfreezer: { top: 28, p: (o) => {
+    const ax = along(o), front = (f, s, t, X) => (f === "top" ? mul(FURNC.white, 1.05) : t > 23 && t < 25 && Math.floor(X) % 6 < 2 ? FURNC.led : fappl(FURNC.white, [21], [[8, 18]])(f, s, t, X, 0));
+    return [run(ax, 0.2, 0.8, 0, 28, front, 0.08, 0.92)];
+  } },
   // ---------- lootable decor (issue #13, sim/decor.js) ----------
   // A plant in a clay pot, a floor lamp with its shade; a painting and a wall clock as they stand once set down (on a
   // wall they are drawn on its face: wartTexel).
