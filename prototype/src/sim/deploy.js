@@ -39,6 +39,8 @@ import { isNight } from "./world.js";
 import { interiorMap, interiorUnits } from "./interior.js";
 import { applyPlan, planFor, planStale, savePlan, planAct, PLAN_ACTS, lateAtStart } from "./defenceplan.js"; // the base's defence plans
 
+// The guard towers' rows on the walkway, either side of the gate (from the wall's middle row).
+const GUARD_ROWS = [-3, 2];
 export const DEPLOY = {
   WALL_X: 12, LINE_X: 11, BARRICADE_X: [8, 10], SPIKE_X: [13, 15], TRENCH_X: 14, ENEMY_X: 15, ZONE_OPEN: 7,
   WIRE_X: [13, 14], RAZOR_X: 14, // the barbed wire fences' columns and the concertina wire's (its cells razor wire), in front of the wall and short of the attackers' start
@@ -118,7 +120,10 @@ export function deployMap(b, ctx, base, c) {
   // deck only, between the railings; the river is the rest of the line.
   const bridge = !!(ctx.state.tiles[b.tileId] && ctx.state.tiles[b.tileId].bridge);
   const onDeck = (y) => !bridge || (!!ctx.cellAt(X, y).deck && ctx.cellAt(X, y).k !== "rail");
-  const rows = rng.shuffle([...Array(H).keys()].filter((y) => y >= 1 && y <= H - 2 && (y <= mid - 3 || y >= mid + 2) && inFront(H, y) && onDeck(y)));
+  // Not where the guard towers stand (GUARD_ROWS, below): a breach cut in a tower's row left the tower unbuilt
+  // (2026-10-25, tools/defensestest.js: one of two built towers missing).
+  const towerRow = (y) => count(base, "guard_towers") > 0 && GUARD_ROWS.some((o) => y === mid + o);
+  const rows = rng.shuffle([...Array(H).keys()].filter((y) => y >= 1 && y <= H - 2 && (y <= mid - 3 || y >= mid + 2) && inFront(H, y) && onDeck(y) && !towerRow(y)));
   const breaches = [];
   for (const y of rows) {
     if (breaches.length >= Math.min(DEPLOY.MAX_BREACH, want)) break;
@@ -184,7 +189,7 @@ export function deployMap(b, ctx, base, c) {
   for (let i = 0; i < count(base, "sandbag_wall") * 4; i++) {
     for (let t = 0; t < 8; t++) { const x = rng.int(DEPLOY.BARRICADE_X[0] - 2, DEPLOY.BARRICADE_X[1] - 1), y = rng.int(Math.max(1, mid - FRONT.HALF), Math.min(H - 2, mid + FRONT.HALF)); if (ctx.free(x, y)) { ctx.put(x, y, "sandbag"); break; } }
   }
-  if (count(base, "guard_towers")) for (const y of [mid - 3, mid + 2]) if (y >= 0 && y < H && ctx.cellAt(X - 1, y).k === "walkway") { ctx.put(X - 1, y, "tower"); ctx.cellAt(X - 1, y).h = 2; towers.push([X - 1, y]); }
+  if (count(base, "guard_towers")) for (const y of GUARD_ROWS.map((o) => mid + o)) if (y >= 0 && y < H && ctx.cellAt(X - 1, y).k === "walkway") { ctx.put(X - 1, y, "tower"); ctx.cellAt(X - 1, y).h = 2; towers.push([X - 1, y]); }
   // A lane through the gate from the back of the yard to the far edge: whatever the barricades, the kit and the
   // ground put in the way, the yard always connects to the gate (and the battle's reach to the outside).
   for (const y of gate) for (let x = 0; x < ctx.W; x++) {

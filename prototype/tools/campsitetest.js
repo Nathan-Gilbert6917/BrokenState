@@ -132,9 +132,9 @@ for (const S of ["abandoned", "overrun", "active"]) {
   check(b.raid.containers.filter((x) => x.kind === "tent").length === C.tents.filter((tt) => TENT_TYPES[tt.kind].storeKg > 0).length, `${S}: each tent with storage is a container`);
   check(b.raid.containers.every((x) => x.kind !== "crate" || x.area == null || b.raid.areas[x.area].type !== "campsite"), `${S}: no stray crates of the old campsite areas`);
   if (S === "active") {
-    const campers = b.units.filter((u) => u.camp === "active");
+    const campers = b.units.filter((u) => u.camp === "active" && u.kind === "human"); // (one of the dead round an active camp is tagged with it too: CAMPSITE.DEAD.active)
     const asleep = campers.filter((u) => u.asleep);
-    check(campers.length >= CS.CAMPSITE.RAIDERS[0] && campers.every((u) => u.kind === "human" && !u.aware), `${campers.length} raiders at the camp, unaware`);
+    check(campers.length >= CS.CAMPSITE.RAIDERS[0] && campers.every((u) => !u.aware), `${campers.length} raiders at the camp, unaware`);
     check(asleep.length >= 1 && asleep.every((u) => at(b, u.x, u.y).k === "tent"), `at night ${asleep.length} of them asleep inside the tents`);
     check(campers.filter((u) => !u.asleep).every((u) => Math.hypot(u.x - C.cx, u.y - C.cy) <= 3.5), "the rest round the fire");
     check((b.flares || []).some((f) => f.camp && f.x === C.cx), "the fire lights the clearing (its glow)");

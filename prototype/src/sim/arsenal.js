@@ -351,14 +351,36 @@ export function keepItem(state, f, it, why = "found") {
   if (!w.includes(it)) w.push(it);
   return true;
 }
+// What is in an item (a rig's pouches, a pack's slots, a gun's fitted parts, in turn what is in those) that is on f's
+// books as well (the home kit-out books a magazine it puts in a pouch: stripRegistry takes it out again). An item off
+// the books (removeFromArsenal: lost, taken, given, to another holder) takes these off with it, still in it: left on
+// the old books, the group dealt them out
+// again while the item went on carrying them, two people with one magazine (tools/conservationtest.js, 2026-10-25:
+// a dead Guard's plate carrier picked up by Red Hand with its two magazines in its pouches, the magazines still on
+// the Guard's books).
+function contentsOf(it) {
+  const out = [];
+  const walk = (x) => {
+    for (const c of [...((x && x.contents) || []), ...Object.values((x && x.mods) || {})]) {
+      if (!c || typeof c !== "object" || out.includes(c)) continue;
+      out.push(c);
+      walk(c);
+    }
+  };
+  walk(it);
+  return out;
+}
+const contentsOnBooks = (f, it) => { const A = f && f.arsenal; return A ? contentsOf(it).filter((c) => A.items.includes(c)) : []; };
 // opts.keepOn: the person carrying it keeps it (they leave the group with it: a deserter, a refugee).
 export function removeFromArsenal(f, it, why = "lost", opts = {}) {
   const A = f && f.arsenal;
   const i = A ? A.items.indexOf(it) : -1;
   if (i < 0) return false;
+  const inside = contentsOnBooks(f, it); // what is in it leaves with it, still in it (contentsOnBooks)
   const c = opts.keepOn ? null : carrierOf(f, it); // members.js: off whoever of theirs carries it (it leaves the group)
   if (c) c.c.take();
   A.items.splice(i, 1);
+  for (const x of inside) { const j = A.items.indexOf(x); if (j >= 0) A.items.splice(j, 1); }
   A.rev++;
   stat(A, "out", why);
   return true;
@@ -1007,7 +1029,7 @@ export function clashKit(state, a, aN, aDead, b, bDead, holder, steal = 0, fough
     const used = new Set(issueKit(state, b, b.pop, "home").flatMap(loadoutItems));
     const spare = b.arsenal.items.filter((it) => !used.has(it) && (o.W.includes(it) || o.T.includes(it) || isArmourKey(it.key)));
     const lose = spare.slice(0, Math.ceil(spare.length * steal));
-    lose.forEach((it, i) => { removeFromArsenal(b, it, "stolen"); if (i % 2 === 0) addToArsenal(state, a, it, "stolen"); });
+    lose.forEach((it, i) => { if (removeFromArsenal(b, it, "stolen") && i % 2 === 0) addToArsenal(state, a, it, "stolen"); }); // (already gone in something taken before it: not again)
   }
 }
 // A party of theirs lost on the road or at a site (aiscav.js lose): its people and their kit are gone.
@@ -1325,8 +1347,10 @@ export function arsenalShareTo(state, f, frac, into) {
   if (!f || !f.arsenal || frac <= 0) return [];
   const used = Array.isArray(f.people) ? carriers(f) : new Set(issueKit(state, f, f.pop, "home").flatMap(loadoutItems)); // members.js: what their people carry is on them
   const spare = f.arsenal.items.filter((it) => !used.has(it));
-  const out = spare.slice(0, Math.floor(spare.length * frac));
-  for (const it of out) { removeFromArsenal(f, it, "taken"); into.push(it); }
+  const picked = spare.slice(0, Math.floor(spare.length * frac)), out = [];
+  for (const it of picked) if (removeFromArsenal(f, it, "taken")) { into.push(it); out.push(it); } // (gone already in something taken before it: it comes in that)
+  const inside = new Set(out.flatMap((it) => contentsOf(it)));
+  for (const it of out.filter((x) => inside.has(x))) { into.splice(into.indexOf(it), 1); out.splice(out.indexOf(it), 1); } // taken loose before the thing it is in: it comes in that, not on its own as well
   return out;
 }
 

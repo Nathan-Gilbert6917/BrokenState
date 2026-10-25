@@ -145,7 +145,7 @@ registerCombatHandler("carrytest", () => {});
   for (let i = 0; i < 60 && !b.over; i++) { autoPlayerTurn(st); runEnemyPhase(st); }
   check(b.over && b.units.filter((x) => x.side === "player").every((x) => !x.hands || x.left), "the battle AI set everything down");
   closeCombat(st);
-  check(b.result.outcome !== "victory" || near(C.kgOf(C.holdTotals(p)), poolBefore, 0.6), `won: everything picked up again (${Math.round(poolBefore)} → ${Math.round(C.kgOf(C.holdTotals(p)))} kg; outcome ${b.result.outcome})`);
+  check(b.result.outcome !== "victory" || C.kgOf(C.holdTotals(p)) >= poolBefore - 0.6, `won: everything picked up again, and what the dead had besides (${Math.round(poolBefore)} → ${Math.round(C.kgOf(C.holdTotals(p)))} kg; outcome ${b.result.outcome})`);
 }
 {
   // Retreat (a fight not won): what was set down stays on the ground of the tile.
