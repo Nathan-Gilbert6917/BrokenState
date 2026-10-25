@@ -194,7 +194,8 @@ export function eateryPlan(rng, v, plan = {}) {
   for (let i = back.length - 1; i >= 0 && tight(); i--) if (!keep(back[i][1])) back.splice(i, 1);
   if (!left) back = back.slice().reverse();
   const outside = { drive: drive ? (left ? "w" : "e") : null, patio: ![...["fine", "banquet", "kiosk", "ghost"]].includes(v.format) && rng.chance(EATERY.PATIO), smokers: v.cuisine === "bbq", truck: !!(v.truck || (plan && plan.truck)), grease: !tiny };
-  const margins = { ...(outside.drive ? { [left ? "left" : "right"]: 6 } : {}), ...(outside.truck ? { [left ? "right" : "left"]: 5 } : {}), ...(outside.patio ? { front: 4 } : {}), ...(outside.smokers ? { back: 4 } : outside.grease ? { back: 3 } : {}) };
+  // Margins only ever wider than buildingmaps.js BMAP.MARGIN's (front 5, back 4, the sides 4): the lane, the truck, the smokers.
+  const margins = { ...(outside.drive ? { [left ? "left" : "right"]: 6 } : {}), ...(outside.truck ? { [left ? "right" : "left"]: 5 } : {}), ...(outside.smokers ? { back: 5 } : {}) };
   return {
     bw, bh, front: { width: tiny || small ? 1 : 2 }, openDoors: 0.3, ground: ["fastfood", "buffet", "kiosk"].includes(v.format) ? "lot" : "town", storeys: 1, upper: null, foot: SIZE_FOOT[v.size] || "medium",
     stairs: { roles: ["kitchen", "pantry", "office"] }, margins, eat: { ...outside, cuisine: v.cuisine, format: v.format, size: v.size, id: v.id },
