@@ -21,12 +21,12 @@ const OPTICS_KG = 2.5; // extra kg a survey or recon may take for its optics
 
 // A field repair kit (repair.js) on trips that may fight or stay out (the road wears what they carry): taken when the
 // base has a spare, or always on the riskiest (a raid, the hive, a rescue, an assault). Inside the kit's weight.
-const REPAIR_TRIPS = ["scavenge", "raid", "rescue", "hive", "hunt", "recover", "investigate", "getvehicle", "assault", "sweep", "recon", "outpost", "occupy", "move"];
+const REPAIR_TRIPS = ["scavenge", "raid", "rescue", "hive", "hunt", "recover", "investigate", "getvehicle", "convoy", "assault", "sweep", "recon", "outpost", "occupy", "move"];
 const RISKY_TRIPS = ["raid", "hive", "rescue", "assault"];
 // Moves kit from base.armory onto the crew for a mission. Returns the names of what went along.
 export function packTripKit(state, base, crew, mission, target = null) {
   if (!base || !crew.length) return [];
-  const looting = ["scavenge", "recon", "investigate", "recover", "getvehicle", "hive", "rescue"].includes(mission);
+  const looting = ["scavenge", "recon", "investigate", "recover", "getvehicle", "convoy", "hive", "rescue"].includes(mission);
   const scouting = mission === "sweep" || mission === "recon";
   const kits = base.armory.filter((it) => it && it.key === "repairkit").length;
   const repair = REPAIR_TRIPS.includes(mission) && (kits > 1 || (kits === 1 && RISKY_TRIPS.includes(mission))) ? ["repairkit"] : [];

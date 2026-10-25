@@ -7,7 +7,9 @@
 // Your messages (communicate; the Diplomacy window's Envoys tab and a group's card: Communicate…)
 // - aid (goods for standing), trade (goods for goods), a pact (non-aggression or trade), an invitation to the coalition,
 //   a request for aid (goods) or military aid (they harry the next raid on you), news or a warning (a horde near
-//   them: it helps standing a little). A pending request of theirs is answered on its card (answerNow puts it first).
+//   them: it helps standing a little), a request to recover your convoy (convoyrecover.js: their party drives your
+//   abandoned vehicles to a base or a tile of yours, the fee carried as aid is). A pending request of theirs is answered
+//   on its card (answerNow puts it first).
 // - With a radio link the answer is instant (as the radio's calls always were). Goods still have to be carried: aid
 //   and a trade are agreed over the air and an envoy takes the goods (handed over when it gets there); aid you ask
 //   for comes by their caravan (caravans.js sendCaravan, a gift).
@@ -79,6 +81,7 @@ import { pwarById, sueCard, demandCard, declareOnPlayer, offerTerms } from "./pl
 import { withTalk } from "./talk.js"; // the sending group's side waits for its envoy home
 import { negotiationCard } from "./ransom.js"; // a ransom's price, once the envoy is home
 import { keepAnswer, keepDelivered, keepHome } from "./loans.js"; // loaned people who want to stay
+import { recoverProblem, recoverAnswer, recoverFee, sendRecovery, recoverDest } from "./convoyrecover.js"; // Recover our convoy (call-time only)
 
 export const ENVOY = {
   PACK: 1.3, PACK_MIN: 1,      // food and water packed: the round trip's (estimateTrip) × PACK, at least PACK_MIN day a head more
@@ -104,6 +107,7 @@ export const KINDS = {
   askmil: { label: "Ask for military aid", desc: `Their fighters harry the next raid on a base of yours within ${ENVOY.HARRY_RANGE} tiles of them (its strength × ${ENVOY.HARRY}) for ${ENVOY.HARRY_DAYS} days.` },
   news: { label: "Send news or a warning", desc: "What you know of the dead near them: a warning of a horde near their land helps standing a little; they tell you what they see in return." },
   volunteers: { label: "Request volunteers", desc: "Some of their people to live and work at a base of yours for a span of days (loans.js): at work, on your teams, in your fights. They weigh it by standing, their kind, their own headcount and trouble, the purpose and what you offer." },
+  recover: { label: "Recover our convoy", carry: true, favour: true, desc: "They send a party to the tile where your vehicles stand abandoned, get them and their cargo out and drive them to your nearest base, a base you pick or a tile you pick. For a fee in the goods they need, by the distance and what the convoy is worth, paid on agreement (convoyrecover.js). Only a group you stand well with takes the job." },
   jointop: { label: "Propose a joint operation", desc: "A hive, a crawl, a group's base, a horde or a place to raid, together: their fighters meet your team at a rendezvous on a day and join it (loans.js). A share of the loot makes them likelier to come." },
   // Sent from elsewhere (hidden from the composer): peace terms (playerwars.js offerTerms), a ransom's price (ransom.js),
   // keeping loaned people who want to stay (loans.js askToKeep).
@@ -170,6 +174,7 @@ export function aiAnswer(state, f, kind, payload = {}, salt = 0) {
     return f.goodwill >= needed ? { yes: true, p: null, why: "" } : { yes: false, p: null, why: `they want goodwill ${needed} for it (now ${Math.round(f.goodwill)})` };
   }
   if (kind === "invite") { const why = inviteProblem(state, f, true); return { yes: !why, p: null, why }; }
+  if (kind === "recover") return recoverAnswer(state, f, payload, hash01(state.seed || 1, "envoy", salt, kind, f.name)); // convoyrecover.js
   if (kind === "volunteers" || kind === "jointop") { // loans.js: volunteers.js askQuote's points and more
     const o = kind === "jointop" ? opById(state, payload.opId) : null;
     if (kind === "jointop" && !o) return { yes: false, p: null, why: "there is no such operation" };
@@ -288,6 +293,11 @@ function deliver(state, msg, f, p) {
     text = `${f.name} named their price for your people.`;
   } else if (msg.kind === "keep") { // loans.js: may their people stay with you?
     text = keepDelivered(state, f, P, msg.answer.yes);
+  } else if (msg.kind === "recover") { // convoyrecover.js: the fee handed over, their party on its way
+    const party = yes ? sendRecovery(state, f, msg) : null;
+    if (yes && !party) { msg.answer.yes = false; msg.answer.why = "they could not get a party there"; }
+    if (party && p) handOver(state, f, p, msg.packed);
+    text = party ? `${f.name} took the job: their party goes for your convoy at ${tileLabel(state, msg.payload.tile)}.` : `${f.name} will not recover your convoy (${msg.answer.why}).`;
   } else if (msg.kind === "news") {
     if (yes) {
       const h = hordeNear(state, f);
@@ -338,6 +348,7 @@ export function messageProblem(state, f, kind, payload = {}, base = hub(state)) 
     if (pos(payload.get).some(([k]) => !GET_GOODS.includes(k))) return "Ask for food, water, meds, fuel, scrap or parts.";
   }
   if (kind === "askaid" && (!GET_GOODS.includes(payload.key) || !(payload.qty >= 1))) return "Pick what to ask for.";
+  if (kind === "recover") { const why = recoverProblem(state, f, payload, base); if (why) return why; } // convoyrecover.js
   if (kind === "pact" && !["nonaggression", "trade"].includes(payload.pact)) return "Pick the pact.";
   if (kind === "invite" && isMember(state, f)) return `${f.name} is already in the coalition.`;
   if (kind === "invite" && (f.outsider || f.nomad)) return `${f.name} join nothing.`;
@@ -373,7 +384,7 @@ export function envoyPlan(state, { fid, kind, payload = {}, memberIds = [], vehi
   const n = ids.length;
   Object.assign(out, { path: est.path, hoursOut: est.hoursOut, hoursBack: est.hoursBack, food: Math.ceil(est.food * ENVOY.PACK + ENVOY.PACK_MIN * n), water: Math.ceil(est.water * ENVOY.PACK + ENVOY.PACK_MIN * n), fuel: v && isCar(v) ? Math.max(0, est.fuel - Math.floor(v.fuel || 0)) : 0 });
   const members = ids.map((id) => survivorById(state, id));
-  const goods = kind === "aid" ? payload.goods : kind === "trade" ? payload.give : null;
+  const goods = kind === "aid" || kind === "recover" ? payload.goods : kind === "trade" ? payload.give : null;
   const back = kind === "trade" ? payload.get : kind === "askaid" ? { [payload.key]: payload.qty } : null;
   const asSup = (g) => Object.fromEntries(Object.entries(g || {}).filter(([, q]) => q > 0).map(([k, q]) => [k === "ammo" ? "a_9mm" : k, q])); // rounds weigh about as one another
   out.load = supplyLoad({ food: out.food, water: out.water, fuel: out.fuel }) + Math.max(supplyLoad(asSup(goods)), supplyLoad(asSup(back)));
@@ -391,6 +402,7 @@ export function communicate(state, opts) {
   const home = opts.fromBaseId != null ? baseById(state, opts.fromBaseId) : hub(state);
   const kind = opts.kind;
   let P = opts.payload || {};
+  if (kind === "recover" && f) P = { tile: P.tile, dest: recoverDest(state, P.tile, P.dest), goods: recoverFee(state, f, P.tile, P.dest, home).goods }; // the fee as it stands now (convoyrecover.js)
   const why = messageProblem(state, f, kind, P, home);
   if (why) return { ok: false, text: why };
   if (kind === "jointop") { // loans.js: the operation, and this group asked to it
@@ -433,7 +445,7 @@ function launchEnvoy(state, f, home, kind, P, opts, answer, via) {
   p.envoy = msg.id;
   p.envoyTag = `✉ ${KINDS[kind].label.replace(/^(Offer|Propose|Send|Ask for) /, "")} · ${f.name}`;
   // The goods out of the base into its cargo (food in days, rounds by calibre: the ones your guns need least).
-  const goods = kind === "aid" ? P.goods : kind === "trade" ? P.give : null;
+  const goods = kind === "aid" || kind === "recover" ? P.goods : kind === "trade" ? P.give : null;
   msg.packed = {};
   for (const [k, q] of Object.entries(goods || {})) {
     if (!(q > 0)) continue;
@@ -726,8 +738,9 @@ export const CARDS = {
   bloc: (st, f, a) => { const b = blocById(st, a.blocId); return b && !b.player ? blocInviteCard(st, b) : null; }, // blocs.js: stand with their bloc
   sue: (st, f, a) => { const w = pwarById(st, a.warId); return w ? sueCard(st, w) : null; }, // playerwars.js: they sue for peace
   demand: (st, f, a) => { const w = pwarById(st, a.warId); return w ? demandCard(st, w) : null; }, // playerwars.js: peace on their terms
+  recovery: (st, f, a) => ({ title: `${f.name}: your convoy`, text: `${f.name}: ${a.text}`, choices: [{ label: "Understood", ai: () => 1, resolve: () => "" }] }), // convoyrecover.js: word of the job (gone, lost, turned back)
 };
-const CARD_TAG = { join: "joining", volask: "volunteers", offer: "trade", job: "a job", warjoin: "their war", bloc: "their bloc", sue: "peace", demand: "terms", declare: "war" };
+const CARD_TAG = { join: "joining", volask: "volunteers", offer: "trade", job: "a job", warjoin: "their war", bloc: "their bloc", sue: "peace", demand: "terms", declare: "war", recovery: "your convoy" };
 export function cardFromGroup(state, f, key, args = {}, card = null) {
   const h = hub(state);
   if (!f || !f.alive || !h) return null;
