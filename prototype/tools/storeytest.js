@@ -293,11 +293,14 @@ console.log("The enemy phase floor by floor, the drift to the stairs");
     const g2 = openOn(2, [sx, sy], 3);
     const z2 = enemyUnit(b, st.rng, "zombies", 2, 3); z2.aware = false; z2.pod = 52; place(b, z2, 2, g2[0], g2[1]); b.units.push(z2);
     setFloor(b, 1);
+    // The walking distance too (the cell found may be in the next room: a hospital's office beside a ward, #14).
+    const walk = (x0, y0) => { const F = b.floors[1].cells, D = new Int32Array(W * b.h).fill(-1), q = [y0 * W + x0]; D[q[0]] = 0; for (let k = 0; k < q.length; k++) { const i = q[k], x = i % W, y = (i / W) | 0; for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const j = (y + dy) * W + x + dx; if (x + dx >= 0 && x + dx < W && D[j] < 0 && CELL[F[j].k] && CELL[F[j].k].walk) { D[j] = D[i] + 1; q.push(j); } } } return D; };
+    const D = walk(u.x, u.y), p0 = D[z1.y * W + z1.x];
     const d0 = Math.hypot(z1.x - u.x, z1.y - u.y);
     b.phase = "player";
     turn(st);
-    const d1 = Math.hypot(z1.x - u.x, z1.y - u.y);
-    check(d1 < d0 || z1.ap === 0 && b.log.some((l) => /Zombie 1/.test(l.text)), `the dead on the player's floor act (distance ${d0.toFixed(1)} → ${d1.toFixed(1)})`);
+    const d1 = Math.hypot(z1.x - u.x, z1.y - u.y), p1 = D[z1.y * W + z1.x];
+    check(d1 < d0 || (p0 > 0 && p1 >= 0 && p1 < p0) || z1.ap === 0 && b.log.some((l) => /Zombie 1/.test(l.text)), `the dead on the player's floor act (distance ${d0.toFixed(1)} → ${d1.toFixed(1)}, walking ${p0} → ${p1})`);
     check(b.floor === 1 && b.cells === b.floors[1].cells && !u.away, "after the enemy phase the view is back on the player's floor");
     check(!!z0.drift && z0.drift.to === 1 && z0.drift.x === sx && z0.drift.y === sy, `the aware one alone downstairs is sent to the stairwell toward the player's floor (${JSON.stringify(z0.drift)})`);
     check(z2.f === 2 && !z2.drift && !z2.aware && Math.hypot(z2.x - g2[0], z2.y - g2[1]) <= 4.5, "an unaware one on another floor stays on its floor, unaware (a shuffle at most)");
