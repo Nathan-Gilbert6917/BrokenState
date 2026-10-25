@@ -1288,7 +1288,7 @@ export function realScale(rng, spec, key, o = {}) {
   // own, only the floors the tall rule builds.
   if (R.planned || spec.floorKinds || (spec.vid && spec.vid !== "general")) { // #37's named industrial plans (spec.vid): their own sizes (industrylayout.js INDUSTRY.SIZE)
     const height = out.natStoreys, built = openStoreys(height, bonus);
-    return { ...spec, height, storeys: built };
+    return { ...spec, height, storeys: built, ...(spec.hotel && built < height ? { topOnBuilt: true } : {}) }; // a tower hotel: the highest floor still reached is its penthouse floor (#29's top plan), the stairs above it blocked
   }
   // Storeys: the height it stands, the floors built.
   let height = out.natStoreys;
@@ -2863,7 +2863,7 @@ export function assemble(rng, spec, opts = {}) {
   const floors = [{ cells, name: floorName(0) }];
   let base = areas.length, nextCid = cid;
   for (let g = 1; g < storeys; g++) {
-    const program = spec.upper ? spec.upper(g, rng, { top: g === storeys - 1 && height === storeys, storeys, bw, bh }) : spec.program; // top: the roof is over it (a taller building's top floor built is not its plant room)
+    const program = spec.upper ? spec.upper(g, rng, { top: g === storeys - 1 && (height === storeys || !!spec.topOnBuilt), storeys, bw, bh }) : spec.program; // top: the roof is over it (a taller building's top floor built is not its plant room; a hotel's is its penthouse floor: topOnBuilt)
     const up = assemble(rng, spec, { ...opts, _floor: g, _program: program, _runs: runs, _idBase: base, _cid: nextCid, _piece: pieceNo });
     areas.push(...up.rooms); containers.push(...up.containers); lockedDoors.push(...up.lockedDoors);
     floors.push({ cells: up.cells, name: floorName(g) });
