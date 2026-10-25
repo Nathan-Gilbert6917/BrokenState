@@ -17,9 +17,10 @@
 //     overrun    a room whose door was broken in (doorway), a blood trail from it to a survivor body who took 3–6 of
 //                the dead with them (b.corpses, sleeper: by sleepers.js's own share, SLEEPER.ODDS + ODDS_INF × the
 //                tile's Infection: a Sleeper among them sometimes).
-//     choke      a hallway or corridor (a hub room one to three cells across) with furniture shoved across it, a
-//                one-cell gap left or none, now and then one smashed to rubble. Only half cover (the living vault or
-//                shove, the dead crawl over: barricade.js crawlable), so nothing is ever walled in.
+//     choke      a hallway or corridor (a hub room one to three cells across) with furniture shoved across it (chairs,
+//                a sofa, a bookshelf...), a one-cell gap left or none, now and then one smashed to rubble. With no gap
+//                only half cover (the living vault or shove, the dead crawl over: barricade.js crawlable); with a gap
+//                one full-cover piece may stand in it (a bookshelf, a wardrobe), so nothing is ever walled in.
 //     stand      the top of a stairwell upstairs (a building of storeys): half cover round the landing, spent brass
 //                behind it (c.brass, seeded for ui/battlemarks.js), the dead on the stairs and at their foot on the
 //                floor below, a survivor body behind the pieces, blood.
@@ -43,6 +44,7 @@
 //      bloodAt(c).
 import { CELL, KITS, enemyUnit, say, los } from "./combat.js"; // call-time only (combat.js and buildingmaps.js import this)
 import { FURNITURE, setPiece, boardCell } from "./barricade.js";
+import { FURNITURE_KINDS } from "./data-furniture.js"; // the catalogue (#8): the pieces a scene shoves into place
 import { SLEEPER } from "./hiveconst.js";
 import { hash01 } from "./skills.js";
 import { Rng } from "./rng.js";
@@ -84,16 +86,36 @@ export function registerScene(name, def) { SCENE_KINDS[name] = def; }
 // The building's own dice for its scenes: the world seed, the tile and the building's option id.
 export const sceneRng = (state, tileId, option) => new Rng(Math.floor(hash01(state.seed, "scenes", tileId, option && option.id != null ? option.id : option && option.key) * 4294967296) || 1);
 
-// The furniture a scene's people shove into place, picked in one place (the room's kind first): the catalogue of #8
-// (data-furniture.js: chairs, sofas, wardrobes) slots in here. opts.half: half cover only (the living vault it, the
-// dead crawl over it).
-const HOME = ["table", "cabinet", "shelf", "bed", "crate"], SHOP = ["shelf", "counter", "crate", "rack", "barrel"], WORK = ["table", "cabinet", "locker", "crate", "shelf"];
-const ROOM_PIECES = { house: HOME, kitchen: HOME, cabin: HOME, clinic: ["bed", "cabinet", "table", "locker"], pharmacy: SHOP, store: SHOP, warehouse: SHOP, office: WORK, lockers: WORK, chapel: ["table", "cabinet", "crate"], barracks: ["bed", "locker", "table"] };
+// The furniture a scene's people shove into place, picked in one place (scenePieces): the catalogue's movable pieces
+// (data-furniture.js FURNITURE_KINDS, #8: chairs, sofas, armchairs, wardrobes, bookshelves, desks, dressers...) whose
+// tags fit the room (ROLE_TAG: its role's tag), else the ones any room has (COMMON); never a fixed piece (barricade.js
+// FURNITURE holds only what can be shoved). opts.half: half cover only (the living vault it, the dead crawl over it);
+// opts.full: one full-cover piece allowed among them (a bookshelf, a wardrobe across a hall with a gap left).
+export const SHOVED = ["chair", "sofa", "armchair", "table", "desk", "dresser", "cabinet", "shelf", "bookshelf", "wardrobe", "filing", "nightstand", "tvstand", "crate", "bed", "hospbed", "gurney", "pew", "locker", "counter", "rack", "barrel"];
+const COMMON = ["chair", "table", "cabinet", "bookshelf", "sofa", "dresser", "crate", "shelf"];
+const ROLE_TAG = {
+  living: "living", greatroom: "living", dayroom: "living", hall: "living", dining: "dining", mess: "dining", cafeteria: "dining", kitchen: "kitchen", breakroom: "kitchen",
+  bedroom: "bedroom", motelroom: "bedroom", apt: "bedroom", bunk: "bedroom", dorm: "bedroom", bath: "bath", restroom: "bath",
+  office: "office", vestry: "office", control: "office", lobby: "office", reception: "office", foyer: "office", corridor: "office", evidence: "office",
+  ward: "ward", exam: "ward", nurse: "ward", cells: "cells", sales: "shop", stock: "shop", pharmroom: "shop", dispensary: "shop", terminal: "shop",
+  nave: "church", classroom: "school", gym: "school", lockerroom: "school", bays: "bay", parts: "bay", workshop: "bay", motor: "bay", storage: "cellar", pantry: "cellar",
+};
+const LIKED = { chair: 3, sofa: 2, armchair: 2, bookshelf: 2, wardrobe: 2, table: 2, desk: 2, dresser: 2 }; // the user's "chairs, shelves and other movable furniture": the usual pieces weigh more
 export function scenePieces(room, rng, n, opts = {}) {
-  let list = (room && (ROOM_PIECES[room.type] || (room.hub ? ["table", "cabinet", "crate", "shelf"] : null))) || HOME;
-  list = list.filter((k) => FURNITURE[k] && (!opts.half || CELL[k].cover === 1));
-  if (!list.length) list = ["table", "crate"];
-  return Array.from({ length: n }, () => rng.pick(list));
+  const tag = room ? ROLE_TAG[room.role] : null;
+  const fits = (k) => FURNITURE[k] && CELL[k] && FURNITURE_KINDS[k] && FURNITURE_KINDS[k].carry !== "fixed";
+  let list = SHOVED.filter((k) => fits(k) && tag && FURNITURE_KINDS[k].tags.includes(tag));
+  if (list.length < 3) list = [...new Set([...list, ...COMMON.filter(fits)])];
+  const half = list.filter((k) => CELL[k].cover === 1), full = list.filter((k) => CELL[k].cover !== 1);
+  const out = [];
+  let fullLeft = opts.half ? (opts.full ? 1 : 0) : n;
+  for (let i = 0; i < n; i++) {
+    const pool = fullLeft > 0 && full.length && (!opts.half || rng.chance(0.5)) ? list : half.length ? half : ["table"];
+    const k = rng.weighted(pool, (q) => LIKED[q] || 1);
+    if (CELL[k].cover !== 1) fullLeft--;
+    out.push(k);
+  }
+  return out;
 }
 
 // ---------- the context of one map ----------
@@ -243,7 +265,7 @@ function choke(ctx) {
     const line = rng.pick(lines);
     const gap = line.length > 1 && rng.chance(0.6) ? rng.int(0, line.length - 1) : -1;
     const smashed = line.length > 1 && rng.chance(0.4) ? rng.int(0, line.length - 1) : -1;
-    const ks = scenePieces(r, rng, line.length, { half: true });
+    const ks = scenePieces(r, rng, line.length, { half: true, full: gap >= 0 });
     line.forEach(([x, y], i) => {
       if (i === gap) return;
       if (i === smashed) { ctx.at(f, x, y).k = "rubble"; ctx.take(f, x, y); ctx.out.pieces.push({ f, x, y, k: "rubble" }); return; }
@@ -252,7 +274,9 @@ function choke(ctx) {
     // A little blood on one side of it now and then.
     if (rng.chance(0.5)) { const [x, y] = line[0], o = alongX ? [x + (rng.chance(0.5) ? 1 : -1), y] : [x, y + (rng.chance(0.5) ? 1 : -1)]; ctx.splatter(f, o[0], o[1], rng.chance(0.5) ? "zombie" : "human", 1); }
     const [ax, ay] = line[0];
-    return ctx.done("choke", r, ax, ay, `Furniture is piled across the ${lower(r)}${gap >= 0 ? ", a gap left to squeeze through" : ""}: someone tried to hold it here.`, { cells: line.filter((_, i) => i !== gap) });
+    const names = [...new Set(line.map((_, i) => i).filter((i) => i !== gap && i !== smashed).map((i) => CELL[ks[i]].name.toLowerCase()))];
+    const what = names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names.at(-1)}` : names[0] || "furniture";
+    return ctx.done("choke", r, ax, ay, `${what[0].toUpperCase()}${what.slice(1)} piled across the ${lower(r)}${gap >= 0 ? ", a gap left to squeeze through" : ""}: someone tried to hold it here.`, { cells: line.filter((_, i) => i !== gap), width: line.length });
   }
   return null;
 }

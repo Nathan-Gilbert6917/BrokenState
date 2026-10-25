@@ -66,6 +66,7 @@ const maps = [];
 console.log("Barricades, pieces and connectivity");
 {
   let doors = 0, badDoor = 0, pieces = 0, badPiece = 0, chokes = 0, tallChoke = 0, cutLiving = 0, cutDead = 0, alive = 0;
+  const newKinds = new Set();
   for (const [key, m] of maps) {
     if (!m.scenes) continue;
     const F = floorsOf(m);
@@ -85,8 +86,11 @@ console.log("Barricades, pieces and connectivity");
       }
       if (s.kind === "choke") {
         chokes++;
-        const line = s.cells.map(([x, y]) => F[s.f][y * m.w + x]).filter((c) => FURNITURE[c.k]);
-        if (!s.cells.length || line.some((c) => CELL[c.k].cover !== 1)) tallChoke++;
+        // With no gap only half cover; with a gap at most one full-cover piece (the gap is the way through).
+        const line = s.cells.map(([x, y]) => F[s.f][y * m.w + x]).filter((c) => FURNITURE[c.k]), tall = line.filter((c) => CELL[c.k].cover !== 1).length;
+        const gapLeft = s.cells.length < (s.kind === "choke" && s.width ? s.width : Infinity);
+        if (!s.cells.length || tall > (gapLeft ? 1 : 0)) tallChoke++;
+        for (const c of line) newKinds.add(c.k);
       }
     }
     // Every walkable cell reached: the living through doors, boards and pieces (shoved or vaulted), the dead crawling
@@ -110,7 +114,8 @@ console.log("Barricades, pieces and connectivity");
   }
   check(doors > 0 && !badDoor, `every barricaded doorway holds boards or a piece with hit points in its open frame (${doors} doorways, ${badDoor} bad; ${alive} upstairs with nobody dead: floorfolk's)`);
   check(pieces > 0 && !badPiece, `every piece a scene set has hit points and is marked shoved (${pieces} pieces, ${badPiece} bad)`);
-  check(chokes > 0 && !tallChoke, `a hallway's pile is half cover only: the living vault or shove it, the dead crawl over (${chokes} chokes)`);
+  check(chokes > 0 && !tallChoke, `a hallway's pile: half cover with no gap (the living vault or shove it, the dead crawl over), at most one full piece beside a gap (${chokes} chokes)`);
+  check(["chair", "sofa"].every((k) => newKinds.has(k)), `the catalogue's pieces are shoved into place (chokes: ${[...newKinds].join(", ")})`);
   check(!cutLiving, `every floor stays connected for the living with shoving (${cutLiving} cells cut off)`);
   check(!cutDead, `every room still reachable by the dead, crawling or battering (${cutDead} cells cut off)`);
 }
