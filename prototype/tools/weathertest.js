@@ -173,11 +173,13 @@ function unforeseen(state, path, h0, h1) {
 }
 function runUntil(state, p, done, stats) {
   const start = state.hour;
+  let stuck0 = p.stuck;
   for (let n = 0; n < 24 * 60; n++) {
     state.hordes.length = 0;
     p.lastConflict = state.hour; // road conflicts off: only movement is compared
     tickHour(state);
     if (p.roadblock && p.roadblock.hour === state.hour) stats.delay += 1; // a road blockage (sim/roadblocks.js) is a delay like a card's
+    if (p.stuck && p.stuck !== stuck0) { stats.delay += 1; stuck0 = p.stuck; } // stuck in the mud (sim/weather.js mudStuck): a roll, as a road blockage
     resolveCards(state, p, stats);
     if (state.combat) state.combat = null;
     if (!state.parties.includes(p)) return { hours: state.hour - start, gone: true };
@@ -217,7 +219,7 @@ for (const mode of ["winter", "flip"]) {
     // night; a "Night falls" card stops it for the hour it asks and making camp is the player's own stop.
     setNightPlan(state, p, "push");
     if (mode === "flip") state.weather.days.forEach((d, i) => { d.tf = i % 2 ? [2.2, 2.7, 2.4, 3] : [1, 1, 1, 1]; });
-    const st1 = { cards: 0, delay: 0 };
+    const st1 = { cards: 0, delay: p.coldStart ? 1 : 0 }; // a cold start (sim/weather.js coldStart): a roll at the start, as a road blockage
     const h1 = state.hour, way1 = [...p.path];
     const leg = runUntil(state, p, (q) => q.phase === "waiting", st1);
     if (unforeseen(state, way1, h1, state.hour)) { st1.delay += 1; fronts++; }
