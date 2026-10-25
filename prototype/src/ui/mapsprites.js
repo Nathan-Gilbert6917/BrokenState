@@ -987,7 +987,9 @@ function paintApartments() {
   return p;
 }
 
-function paintOffice() {
+function paintOffice(arg) {
+  const L = lookOf(arg);
+  if (L) return paintTower(L); // a firm's corporate tower (sim/data-offices.js, issue #27)
   const p = painter(22, 20);
   p.rect(10, 0, 10, 2, METAL); p.set(10, 0, RED);
   block(p, 5, 3, 15, 18, GLASS_BLUE);
@@ -2385,6 +2387,130 @@ function paintLiquor(arg) {
   return p;
 }
 
+// ---------- the office buildings (sim/data-offices.js, issue #27), each painted in its firm's look ----------
+// The emblem on a storefront's or a station's sign (look.icon), 5 × 3 at (x, y).
+function officeIcon(p, x, y, icon, c) {
+  if (icon === "scales") { p.rect(x + 2, y, x + 2, y + 2, c); p.rect(x, y, x + 4, y, c); p.set(x, y + 1, c); p.set(x + 4, y + 1, c); p.rect(x + 1, y + 2, x + 3, y + 2, c); }
+  else if (icon === "house") { p.set(x + 2, y, c); p.rect(x + 1, y + 1, x + 3, y + 1, c); p.rect(x, y + 2, x + 4, y + 2, c); p.clear(x + 2, y + 2); }
+  else if (icon === "plane") { p.rect(x, y + 1, x + 4, y + 1, c); p.set(x + 2, y, c); p.set(x + 2, y + 2, c); p.set(x + 4, y, c); }
+  else if (icon === "tooth") { p.rect(x + 1, y, x + 3, y + 1, WHITE); p.set(x + 1, y + 2, WHITE); p.set(x + 3, y + 2, WHITE); }
+  else if (icon === "cross") plus(p, x + 2, y + 1, 1, 1, GREEN_CROSS);
+  else if (icon === "tv") { p.rect(x, y, x + 4, y + 2, c); p.rect(x + 1, y + 1, x + 3, y + 1, NEON_CYAN); }
+  else if (icon === "radio") { p.rect(x + 2, y, x + 2, y + 2, c); p.set(x + 1, y + 2, c); p.set(x + 3, y + 2, c); p.set(x, y, NEON_CYAN); p.set(x + 4, y, NEON_CYAN); }
+  else if (icon === "paper") { p.rect(x, y, x + 4, y + 2, WHITE); p.rect(x + 1, y + 1, x + 3, y + 1, "#5d6168"); }
+  else { p.rect(x, y + 1, x + 4, y + 2, c); p.rect(x + 1, y, x + 3, y, c); p.set(x + 2, y + 1, GOLD); } // a briefcase
+}
+// A storefront office: the firm's front with its emblem on the sign, blinds in the window (a dentist's, a doctor's
+// white ones), a bench by the door.
+function paintStorefront(arg) {
+  const L = lookOf(arg) || firstLook("storefront"), p = painter(20, 17);
+  const g = shopFront(p, L, 1, 18, 15);
+  const [ix, iy] = signIcon(p, L, g, 5, 3);
+  officeIcon(p, ix, iy, L.icon, lum(L.text) > 150 ? L.text : shade(L.text, 0.4));
+  const put = clipTo(p, g.win), [wx0, wy0, wx1, wy1] = g.win;
+  for (let y = wy0 + 1; y <= wy1; y += 2) for (let x = wx0; x <= wx1; x++) put(x, y, L.icon === "tooth" || L.icon === "cross" ? shade(WHITE, -0.1) : shade(L.wall, -0.15)); // the blinds
+  p.rect(0, 16, 19, 16, ASPHALT);
+  return p;
+}
+// A business park's low-rise: a long two-storey block of ribbon windows in the firm's trim, a glass entrance under its
+// name, a lot of parked cars.
+function paintBizpark(arg) {
+  const L = lookOf(arg) || firstLook("bizpark"), p = painter(24, 18);
+  block(p, 1, 4, 22, 12, L.wall);
+  for (const y of [6, 9]) { p.rect(2, y, 21, y + 1, GLASS_BLUE); p.rect(2, y, 21, y, GLASS_LIT); for (let x = 5; x <= 20; x += 4) p.rect(x, y, x, y + 1, L.trim); }
+  glassFront(p, L, 9, 5, 14, 12, 3);
+  signBoard(p, L, 8, 2, 15, 3);
+  p.rect(1, 12, 22, 12, L.accent);
+  p.rect(0, 13, 23, 17, ASPHALT);
+  for (let x = 1; x <= 21; x += 5) p.rect(x, 13, x, 14, WHITE);
+  car(p, 2, 13, L.accent); car(p, 14, 13, "#5d6168");
+  return p;
+}
+// A corporate tower: a tall glass shaft in the firm's colours, its floors' bands, the name on a crown (a board on the
+// roof, or a band), a lit lobby at its foot.
+function paintTower(L) {
+  const p = painter(22, 22), glass = L.wall, s = L.style | 0;
+  p.rect(10, 0, 10, 2, METAL); p.set(10, 0, RED);
+  block(p, 5, 3, 16, 20, glass);
+  for (let y = 5; y <= 19; y += 2) p.rect(6, y, 15, y, shade(glass, -0.3));
+  for (let x = 8; x <= 15; x += 3) p.rect(x, 4, x, 19, L.trim);
+  for (let i = 0; i < 6; i++) p.set(6 + i, 18 - i * 2, GLASS_LIT);
+  if (s === 1) roofSign(p, L, 4, 0, 9, 1, 3); else { p.rect(5, 3, 16, 4, L.sign); signText(p, 6, 15, 4, L.text, L); }
+  block(p, 16, 12, 20, 20, shade(glass, -0.15)); windows(p, 17, 14, 19, 19, 2, 2, DARK_WIN);
+  block(p, 1, 15, 5, 20, shade(L.trim, 0.2)); windows(p, 2, 17, 4, 19, 2, 2, DARK_WIN);
+  p.rect(9, 18, 12, 20, GLASS_LIT); p.rect(9, 17, 12, 17, L.accent);
+  p.rect(0, 21, 21, 21, ASPHALT);
+  return p;
+}
+// City hall: a pale civic block with a clock tower over the door, columns, steps, a flagpole.
+function paintCityHall(arg) {
+  const L = lookOf(arg) || firstLook("cityhall"), p = painter(24, 20);
+  block(p, 1, 9, 22, 17, L.wall);
+  windows(p, 2, 11, 7, 15, 2, 3, DARK_WIN, 1, 2); windows(p, 16, 11, 21, 15, 2, 3, DARK_WIN, 1, 2);
+  block(p, 9, 3, 14, 17, shade(L.wall, 0.08)); p.rect(10, 0, 13, 2, L.trim); p.rect(11, 0, 12, 0, shade(L.trim, 0.3));
+  for (const [x, y] of [[11, 5], [12, 5], [11, 6], [12, 6]]) p.set(x, y, WHITE); p.set(12, 5, OUTLINE); p.set(11, 6, OUTLINE); // the clock
+  p.rect(9, 8, 14, 8, L.sign); signText(p, 10, 13, 8, L.text, L);
+  for (const x of [9, 11, 13]) p.rect(x, 10, x, 16, shade(L.trim, 0.3));
+  p.rect(10, 13, 13, 16, L.accent);
+  p.rect(7, 17, 16, 17, STONE); p.rect(6, 18, 17, 18, shade(STONE, -0.15)); p.rect(0, 19, 23, 19, GRASS);
+  p.rect(20, 3, 20, 9, METAL); p.rect(21, 3, 22, 4, RED); p.set(21, 3, WHITE);
+  return p;
+}
+// The courthouse: a pediment on columns over wide steps, the scales of justice in the pediment, two wings.
+function paintCourthouse(arg) {
+  const L = lookOf(arg) || firstLook("courthouse"), p = painter(24, 18), col = shade(L.wall, 0.2);
+  block(p, 1, 6, 22, 14, L.wall);
+  for (const [y, x0, x1] of [[1, 11, 12], [2, 9, 14], [3, 7, 16], [4, 5, 18], [5, 4, 19]]) p.rect(x0, y, x1, y, y === 1 ? shade(L.trim, 0.3) : L.trim);
+  officeIcon(p, 9, 2, "scales", GOLD);
+  p.rect(4, 6, 19, 6, L.sign); signText(p, 6, 17, 6, L.text, L);
+  p.rect(5, 7, 18, 13, shade(L.wall, -0.35));
+  for (const x of [5, 8, 11, 12, 15, 18]) { p.rect(x, 7, x, 13, col); p.set(x, 7, shade(col, 0.3)); }
+  p.rect(10, 10, 13, 13, L.accent);
+  windows(p, 2, 8, 3, 12, 2, 2, DARK_WIN, 1, 2); windows(p, 20, 8, 21, 12, 2, 2, DARK_WIN, 1, 2);
+  p.rect(4, 14, 19, 14, STONE); p.rect(3, 15, 20, 15, shade(STONE, -0.1)); p.rect(2, 16, 21, 16, shade(STONE, -0.2)); p.rect(0, 17, 23, 17, GRASS);
+  return p;
+}
+// A call center: a wide low box with long ribbon windows, its name on a roof board or a band, a dish on the roof, cars.
+function paintCallCenter(arg) {
+  const L = lookOf(arg) || firstLook("callcenter"), p = painter(24, 17);
+  block(p, 1, 5, 22, 12, L.wall);
+  for (const y of [7, 10]) { p.rect(2, y, 21, y, DARK_WIN); for (let x = 3; x <= 21; x += 4) p.set(x, y, LIT_WIN); }
+  if ((L.style | 0) === 1) roofSign(p, L, 4, 0, 12, 2, 5); else { p.rect(1, 5, 22, 6, L.sign); signText(p, 3, 20, 6, L.text, L); }
+  dish(p, 18, 4);
+  glassFront(p, L, 10, 9, 13, 12, 2);
+  p.rect(0, 13, 23, 16, ASPHALT); car(p, 1, 12, L.accent); car(p, 15, 12, "#7d848c");
+  return p;
+}
+// A tech office: a glass box with a bright accent stripe, the logo on its corner, a roof deck with a plant.
+function paintTechOffice(arg) {
+  const L = lookOf(arg) || firstLook("techoffice"), p = painter(20, 19);
+  block(p, 2, 4, 17, 17, L.wall);
+  glassFront(p, L, 3, 6, 16, 16, 3);
+  p.rect(2, 11, 17, 11, L.accent);
+  signBoard(p, L, 3, 4, 12, 5);
+  p.rect(14, 2, 17, 3, L.accent); p.set(15, 1, GRASS); p.set(16, 1, shade(GRASS, 0.2)); // the roof deck's planter
+  p.rect(0, 18, 19, 18, ASPHALT);
+  return p;
+}
+// A station: the newsroom's block in the station's colours, its emblem on the sign, and a mast of red and white
+// beside it (a TV's or a radio's); the paper's a roof sign over a loading door.
+function paintStation(arg) {
+  const L = lookOf(arg) || firstLook("station"), p = painter(22, 22);
+  block(p, 1, 10, 15, 20, L.wall);
+  windows(p, 2, 13, 14, 15, 3, 2, DARK_WIN, 2, 1);
+  signBoard(p, L, 2, 10, 14, 11);
+  officeIcon(p, 3, 7, L.icon, L.accent);
+  p.rect(6, 17, 8, 20, L.accent);
+  if (L.icon === "paper") { p.rect(10, 17, 14, 20, shade(L.wall, -0.4)); for (let y = 17; y <= 20; y += 1) p.rect(10, y, 14, y, y % 2 ? shade(L.wall, -0.5) : shade(L.wall, -0.35)); }
+  else {
+    for (let y = 1; y <= 20; y++) { p.set(18, y, Math.floor(y / 3) % 2 ? WHITE : RED); if (y % 4 === 0) { p.set(17, y, METAL); p.set(19, y, METAL); } }
+    p.set(18, 0, SIREN_RED);
+    if (L.icon === "tv") dish(p, 13, 9);
+  }
+  p.rect(0, 21, 21, 21, ASPHALT);
+  return p;
+}
+
 // Type → painter; the variant (a franchise's id for the kinds with franchises, else only "depot") and picked-over fading are applied by poiSpriteCanvas.
 const POI_PAINT = {
   city: paintCityCenter, town: paintTownCenter, police: paintPolice, hospital: paintHospital, pharmacy: paintPharmacy,
@@ -2406,6 +2532,9 @@ const POI_PAINT = {
   sportshop: paintSportShop, electronics: paintElectronics, radioshop: paintRadioShop, bookstore: paintBookstore, library: paintLibrary,
   petstore: paintPetStore, garden: paintGarden, clothing: paintClothing, vet: paintVet, dealer: paintDealer, restaurant: paintRestaurant,
   bank: paintBank, bar: paintBar, liquor: paintLiquor,
+  // The office buildings (sim/data-offices.js, issue #27); the office tower's firms: paintOffice's look.
+  storefront: paintStorefront, bizpark: paintBizpark, cityhall: paintCityHall, courthouse: paintCourthouse, callcenter: paintCallCenter,
+  techoffice: paintTechOffice, station: paintStation,
 };
 
 // A kind with no painter of its own (a point of interest added without one, pois.js): a plain small building on a

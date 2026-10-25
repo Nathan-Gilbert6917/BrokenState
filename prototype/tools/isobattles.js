@@ -54,7 +54,7 @@ export function showroom(b, x0 = 1, y0 = 1) {
   // Packed in rows, each piece at its own width with a free cell after it, a row as tall as its tallest piece and a free
   // row under it (the catalogue outgrew a grid of 3 × 3 slots on the field map: issue #15).
   // The free row under each row goes once the catalogue would not fit with it (the bunkers' pieces, issue #26); then the
-  // free cell after each piece (the campus pieces, issue #28: they stand side by side along a row).
+  // free cell after each piece last (the campus pieces, issue #28, and the office pieces, issue #27: side by side along a row).
   const pack = (gap, after = 1) => {
     const out = [];
     let x = x0, y = y0, rowH = 1;
