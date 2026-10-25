@@ -18,10 +18,11 @@ import { totalRounds } from "../src/sim/ammo.js"; // the stash's rounds by calib
 import { createWorld, hub, atBase } from "../src/sim/world.js";
 import { launchExpedition } from "../src/sim/parties.js";
 import { combatAct, setFloor, activeAny, active, CELL, endPlayerTurn, runEnemyPhase, autoPlayerTurn, finishCombat, alertNear, canSee, unitAt } from "../src/sim/combat.js";
-import { BUILDINGS, assemble, BMAP } from "../src/sim/buildingmaps.js";
+import { BUILDINGS, assemble, BMAP, runLandings } from "../src/sim/buildingmaps.js";
 import { Rng } from "../src/sim/rng.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
 import * as CC from "../src/sim/citycrawl.js";
+import { FURNITURE } from "../src/sim/barricade.js"; // a piece shoved onto a top landing (floorfolk.js landingPiece)
 import { FOLK, rollFolk, folkHint, folkTick, resolveBattleCards } from "../src/sim/floorfolk.js";
 import { crawlModal, CRAWL_ACTIONS } from "../src/ui/citycrawl.js";
 import { siteWanderers, interiorOccupants } from "../src/sim/wanderers.js";
@@ -149,7 +150,10 @@ let W1 = null;
   const up = rd.filter((u) => !u.watcher);
   const rroom = R.areas.find((a) => a.id === K.room);
   check(K.up && rd.length >= 2 && up.length && up.every((u) => (u.f || 0) === K.f && K.f >= 1 && inRoom(rroom, u)), `${up.length} raiders hold the ${rroom.name} on floor ${K.f + 1}`);
-  check(!!watcher && K.watcher === true && (watcher.f || 0) === K.f - 1 && R.stairs.some(([sx, sy]) => Math.max(Math.abs(watcher.x - sx), Math.abs(watcher.y - sy)) === 1), `a watcher stands by the stairwell on floor ${K.f} (${watcher ? `${watcher.x},${watcher.y}` : "none"})`);
+  // By the stairwell: on a stair run's landing (buildingmaps.js stairWaits; issue #9), else next to a landing or (an
+  // older save's one-cell stairwell) next to the stairwell cell.
+  const byStairs = (u) => R.runs && R.runs.length ? R.runs.some((r) => runLandings(r).some(([lx, ly]) => Math.max(Math.abs(u.x - lx), Math.abs(u.y - ly)) <= 1)) : R.stairs.some(([sx, sy]) => Math.max(Math.abs(u.x - sx), Math.abs(u.y - sy)) === 1);
+  check(!!watcher && K.watcher === true && (watcher.f || 0) === K.f - 1 && byStairs(watcher), `a watcher stands by the stairwell on floor ${K.f} (${watcher ? `${watcher.x},${watcher.y}` : "none"})`);
   const stash = R.containers.find((x) => x.id === K.stash);
   check(!!stash && stash.stash && stash.f === K.f && stash.area === K.room && b.floors[K.f].cells[stash.y * b.w + stash.x].k === "crate" && stash.contents && totalRounds(stash.contents.sup) > 0 && stash.contents.gear.length >= 1, `their stash in the room: a crate with ${stash ? `${stash.contents.sup.ammo} ammo, ${stash.contents.sup.food} food and ${stash.contents.gear.map((g) => g.name).join(", ")}` : "nothing"}`);
   check(K.f !== F.nest.f && K.room !== S.room, "not in the survivors' room, not on the nest's floor");
@@ -165,6 +169,13 @@ let W1 = null;
   // Every floor still hangs together: nothing new blocks a stairwell, nobody stands in a wall.
   check(b.units.every((u) => CELL[b.floors[u.f || 0].cells[u.y * b.w + u.x].k].walk), "everyone stands on floor they can stand on");
   check(R.stairs.every(([sx, sy]) => b.floors.every((Fl) => Fl.cells[sy * b.w + sx].k === "stairs")), "the stairwells are untouched");
+  // AI parity (issue #9): the people holding an upper floor shove a piece onto its top landing, the floor still whole.
+  for (const [who, G] of [["survivors", S], ["raiders", K]]) {
+    if (!G.landing) continue;
+    const [lx, ly] = G.landing, c = b.floors[G.f].cells[ly * b.w + lx];
+    check(FURNITURE[c.k] && c.hp === FURNITURE[c.k].hp && c.shoved === who && R.runs.some((r) => runLandings(r)[1][0] === lx && runLandings(r)[1][1] === ly), `the ${who} shoved a ${c.k} (${c.hp} hp) onto the top landing of floor ${G.f + 1}`);
+  }
+  check(!!(S.landing || K.landing), "a piece stands on a top landing upstairs");
 }
 
 // ======================================================================================

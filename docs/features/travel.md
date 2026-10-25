@@ -307,7 +307,9 @@ Block-by-block roguelike extraction in a city or town, with multi-storey buildin
 - A round grid of blocks: start at any rim block; go north, east, south or west from every block.
 - Getting out: walk back to any rim block and out from there; at a high Alert walking out is a breakout.
 - Multi-storey buildings with who lives on each floor (survivors barricaded upstairs, raiders holed up) [floorfolk].
-- Test `tools/citycrawltest.js`.
+- **Stair runs** (the user's request 2026-10-25, issue #9: "Make the layouts make sense"): a stairwell is a straight
+  flight against a wall with a landing at each end, drawn as steps rising toward the floor above. Details below.
+- Test `tools/citycrawltest.js`; the stairs `tools/storeytest.js`.
 
 ### Parity with the raid tickets (issue #21, 2026-10-25)
 The user's request 2026-10-25 (the interiors epic #7, its last ticket): "I want the interiors of buildings during raids and crawls to make sense. […] Improve the building, furniture, appliances etc fidelity for raids and crawls." The crawl keeps up with what the raid tickets added (#8–#13, #18).
@@ -324,3 +326,46 @@ Modules: [citycrawl `snapshotBuilding` / `restoreBuilding`, `placeOption` (`scen
 - **Quick search parity** (`placeProfile`, `quickLoot`): the headless search goes through the place's own building (the map `buildingMap` lays out for it, built once and kept on the place as plain data: its containers by room type, kind and floor, the site's reward, the worthiest `"one"` piece) and opens `QUICK.rolls` (+ `rollsPerBlock` a block deeper, × (1 − 0.6 × looted)) of its containers, each rolled as `searchBox` rolls it on the map (combat `boxFinds`, extracted from `searchBox` with its dice in the same order: the piece's or the room's table, the richness × the floor's, the reward, the deep shift). A building the team has been in: only what it left unopened. Decision: the ticket's "the same loot totals" is read as per container opened (the test: every kind within ±10% over 200 buildings, a quarter of them laid out and searched on the map); the number opened stays the quick search's own, so the map is still where the rewards are (the old design note), and the balance gate holds. The extra finds `searchBox` rolls on their own dice (books, gun parts, reloading, grenades, launchers, tents, power) stay the map's. The old deep-loot cache roll stays as it was. **Pieces**: none on foot (#12 rule 8); with the team's vehicle waiting at the rim, the worthiest `"one"` piece of the place, once a place (`place.pieceTaken`), goes out to it (`c.atVehicle`, into the cargo when the team walks out; the building is not changed: abstract).
 - **Hive crawl**: unchanged (the test asserts `hivecrawl.js` imports none of furnicarry, interiorscenes, floorfolk).
 - **Balance gate** (`node tools/crawlbalance.js city --depth 2,4 --squad early,solid,rifles --trials 20`): before and after in the issue comment; every row inside its targets.
+
+### Stair runs (2026-10-25)
+
+> Create tickets […] to improve the interior layouts, staircase, appliances, furniture, decor […] Make the layouts make sense.
+
+- **The run** (buildingmaps.js `assemble` `pickRuns`; helpers `runSteps`, `runTop`, `runLandings`, `stairTop`,
+  `stairWaits`, `STAIR_DIRS`): 2 steps, 3 in a hospital, school, office tower or apartment block (`spec.stairs.len`;
+  shorter where the room is too short), with a 1-cell landing at the bottom and the top. It lies along a wall of its
+  room, parallel to it, with a free lane of the room beside every step. Recorded as `b.raid.runs[i] = { x, y, dx, dy,
+  len, f0, f1 }` (x, y the bottom step, dx, dy one step up). The steps are `stairs` cells on every floor with `c.dir`,
+  `c.step`, `c.len` and `c.top` on the top step; the landings are walkable floor with `c.landing`.
+- **The top step changes floor**: Go up / Go down only from there (combat.js `stairOptions`; elsewhere on the run:
+  "Climb to the top step first"). Position stays, so you arrive on the top step a floor up with the upper landing next
+  to it. `b.raid.stairs` keeps the top steps as `[x, y]`, so the bots, the dead's drift, the allies' retreat and the
+  crawl's restore work unchanged. The issue asked for the runs in `b.raid.stairs`; they went into `b.raid.runs` so the
+  dozen callers that read `[x, y]` and older saves keep working.
+- **By building kind** (`spec.stairs` on the archetype): a house's from the hall, else the front room, by the front
+  door; a shop's, a big store's and a car dealer's from the back rooms (`BACK_STAIRS`) to the flat or floor above;
+  apartments and offices in a stairwell room of their own (role `stairwell`, 2 wide, one door on each floor, the run
+  against the far wall and the lane by the lobby or landing), at the same place on every floor; a hospital's and a
+  school's one at each end of the main corridor (`ENDS`); a police station's and a fire station's from the lobby or day
+  room (one run); a motel's an outside concrete stair along the office's side wall, up to a door onto the walkway.
+  Other multi-storey kinds use the hubs as before, two runs from 220 cells of footprint. A church stays one storey; no
+  basements, cellar doors or attic hatches.
+- **Doors**: no door opens onto a step (outerDoor, innerDoor skip those cells; a last resort only if a room would
+  otherwise be shut off). An office tower's front band is now at least 5 deep so its stairwell fits a run of 3.
+- **The one-cell fallback**: a footprint with no room for a run keeps the old one-cell stairwell at a hub's centre
+  (`run.single`); the raid's opening lines say so. No generated multi-storey type needs it today.
+- **The dead on the stairs**: `BMAP.STOREY.dead.stairs` of a floor's dead still wait by a stairwell, now on the landings
+  (then next to a landing), never on the steps. Watchers on the floor below do the same.
+- **AI parity** (floorfolk.js `landingPiece`): survivors barricaded upstairs and raiders holed up upstairs shove a table,
+  cabinet or crate onto the top landing of a run on their floor (barricade.js `FURNITURE` hit points; half cover a person
+  vaults and the dead crawl over), only where the floor stays connected round it. A stairwell room's door is left
+  alone so the floor is never cut off from the stairs.
+- **View** (ui/isoview.js `primsOf` `stairs`): each step cell draws two treads of its share of the storey, the top step
+  reaching the floor above; a railing (posts and a handrail) on the open side; a motel's in metal; on the top floor the
+  run is a dark opening down under its railing. The ▲▼ tag marks only the top step. PageUp / PageDown are unchanged.
+- **Older saves**: a mid-raid save with one-cell stairwells has no `b.raid.runs` and no `c.step`; every stairs cell
+  still changes floor. A building snapshot (citycrawl.js `snapshotBuilding`) now keeps `stairs` and `runs`; an older
+  one restores its own one-cell stairwells from its cells (`restoreBuilding`).
+- Tests: `tools/storeytest.js` (every multi-storey type has a run against a wall, its steps on every floor it joins,
+  the landings walkable, every room reached from a landing, no door onto a step; walking up a hospital's and a house's
+  run; an older save and an older snapshot).

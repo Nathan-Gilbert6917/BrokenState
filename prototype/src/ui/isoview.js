@@ -401,6 +401,17 @@ function fogPixels(buf) {
 
 // ---------- materials ----------
 const n2 = (X, Y, k = 0) => hash3(Math.floor(X), Math.floor(Y), k);
+// The stairs up blocked (sim/buildingmaps.js OPEN_STOREYS: a tall building's floors above are not built): a heap of
+// rubble and broken concrete, or a barricade of a desk and a filing cabinet, on the top step (z: its tread).
+function sealPrims(out, part, z) {
+  if (part === "seal:rubble") {
+    const rk = (f, s, t, X, Y) => mul(f === "top" ? [150, 146, 138] : [118, 112, 104], 0.8 + n2(X, Y, 9) * 0.35);
+    out.push({ u0: 0.12, u1: 0.62, v0: 0.18, v1: 0.78, z0: z, z1: z + 9, m: rk }, { u0: 0.45, u1: 0.88, v0: 0.3, v1: 0.86, z0: z, z1: z + 6, m: rk }, { u0: 0.28, u1: 0.7, v0: 0.12, v1: 0.48, z0: z + 6, z1: z + 14, m: rk });
+  } else if (part === "seal:barricade") {
+    const wd = (f) => (f === "top" ? PAL.woodLt : PAL.woodDk), mt = (f) => (f === "top" ? [150, 156, 160] : [96, 102, 108]);
+    out.push({ u0: 0.1, u1: 0.9, v0: 0.18, v1: 0.55, z0: z, z1: z + 10, m: wd }, { u0: 0.55, u1: 0.86, v0: 0.5, v1: 0.86, z0: z, z1: z + 18, m: mt }, { u0: 0.14, u1: 0.5, v0: 0.55, v1: 0.82, z0: z, z1: z + 7, m: wd });
+  }
+}
 const tex = (base, amt = 0.12, k = 0) => (f, s, t, X, Y) => mul(base, 1 - amt + n2(X, Y, k) * amt * 2);
 const flatM = (c) => () => c;
 const PAL = {
@@ -1365,6 +1376,29 @@ function primsOf(k, o) {
       return out.sort((p, q) => p.u0 + p.v0 - q.u0 - q.v0);
     }
     case "stairs": {
+      if (o.len) {
+        // A step of a stair run: two treads of its share of the storey, from the floor to the floor above over the run
+        // (the top step reaches it); a railing (posts and a handrail) on the open side; on the top floor the opening
+        // down: a dark well, treads falling away under a railing.
+        const out = [], d = o.dir ?? 0, N = 2;
+        const m = (f, s, t) => (o.well ? mul(PAL.woodDk, f === "top" ? 0.75 : 0.55) : f === "top" ? (o.air ? mul(PAL.metal, 1.1) : PAL.woodLt) : mul(o.air ? PAL.metal : PAL.wood, 0.85 + (t % 5 < 1 ? -0.2 : 0)));
+        const zAt = (i) => (o.well ? Math.max(1, LV / 6 - ((o.step - 1) * N + i) * 1) : (((o.step - 1) * N + i + 1) / (o.len * N)) * LV);
+        for (let i = 0; i < N; i++) {
+          const a0 = d === 0 || d === 2 ? i / N : 1 - (i + 1) / N, a1 = a0 + 1 / N, z1 = zAt(i);
+          out.push(d < 2 ? { u0: a0, u1: a1, v0: 0.04, v1: 0.96, z0: 0, z1, m } : { u0: 0.04, u1: 0.96, v0: a0, v1: a1, z0: 0, z1, m });
+        }
+        const rail = (f, s, t) => mul(o.air ? PAL.metalDk : PAL.woodDk, f === "top" ? 1.2 : 1);
+        const top = o.well ? 12 : zAt(N - 1) + 11;
+        for (let q = 0; q < 4; q++) {
+          if (!(o.rail & (1 << q))) continue;
+          const e = q === 0 || q === 2 ? [0.9, 0.98] : [0.02, 0.1]; // the edge on that side
+          const across = q < 2; // a rail on a ±u edge runs along v
+          const post = (p) => (across ? { u0: e[0], u1: e[1], v0: p, v1: p + 0.08, z0: 0, z1: top, m: rail } : { u0: p, u1: p + 0.08, v0: e[0], v1: e[1], z0: 0, z1: top, m: rail });
+          out.push(post(0.46), across ? { u0: e[0], u1: e[1], v0: 0, v1: 1, z0: top - 2, z1: top, m: rail } : { u0: 0, u1: 1, v0: e[0], v1: e[1], z0: top - 2, z1: top, m: rail });
+        }
+        if (o.part) sealPrims(out, o.part, zAt(N - 1));
+        return out.sort((p, q) => p.u0 + p.v0 - q.u0 - q.v0);
+      }
       // Four steps rising towards the higher neighbour; separate boxes, drawn from the back to the front.
       const out = [], d = o.dir ?? 0;
       const m = (f, s, t) => (f === "top" ? PAL.woodLt : mul(PAL.wood, 0.85 + (t % 5 < 1 ? -0.2 : 0)));
@@ -1372,15 +1406,7 @@ function primsOf(k, o) {
         const a0 = d === 0 || d === 2 ? i / 4 : 1 - (i + 1) / 4, a1 = a0 + 0.25, z1 = (i + 1) * (LV / 4);
         out.push(d < 2 ? { u0: a0, u1: a1, v0: 0.1, v1: 0.9, z0: 0, z1, m } : { u0: 0.1, u1: 0.9, v0: a0, v1: a1, z0: 0, z1, m });
       }
-      // The stairs up blocked (sim/buildingmaps.js OPEN_STOREYS: a tall building's floors above are not built): a heap
-      // of rubble and broken rail, or a barricade of desks and a cabinet, on the upper steps.
-      if (o.part === "seal:rubble") {
-        const rk = (f, s, t, X, Y) => mul(f === "top" ? [150, 146, 138] : [118, 112, 104], 0.8 + n2(X, Y, 9) * 0.35);
-        out.push({ u0: 0.15, u1: 0.6, v0: 0.2, v1: 0.75, z0: LV / 2, z1: LV + 4, m: rk }, { u0: 0.45, u1: 0.85, v0: 0.3, v1: 0.85, z0: LV / 2, z1: LV - 2, m: rk }, { u0: 0.3, u1: 0.7, v0: 0.1, v1: 0.45, z0: LV, z1: LV + 9, m: rk });
-      } else if (o.part === "seal:barricade") {
-        const wd = (f) => (f === "top" ? PAL.woodLt : PAL.woodDk), mt = (f) => (f === "top" ? [150, 156, 160] : [96, 102, 108]);
-        out.push({ u0: 0.12, u1: 0.88, v0: 0.2, v1: 0.55, z0: LV / 2, z1: LV + 6, m: wd }, { u0: 0.55, u1: 0.85, v0: 0.5, v1: 0.85, z0: LV / 2, z1: LV + 14, m: mt }, { u0: 0.15, u1: 0.5, v0: 0.55, v1: 0.8, z0: LV / 2, z1: LV + 2, m: wd });
-      }
+      if (o.part) sealPrims(out, o.part, LV / 2);
       return out.sort((p, q) => p.u0 + p.v0 - q.u0 - q.v0);
     }
     case "ladder": {
@@ -1765,7 +1791,7 @@ function spritePut(key, s) {
 }
 // A cached sprite for a cell's look.
 function sprite(k, o, fog) {
-  const key = `${iso.straight ? "s|" : ""}${o.sea ? `${o.sea}|` : ""}${k}|${o.v}|${o.alt}|${o.j}|${o.n}|${o.top}|${o.stub ? 1 : 0}|${o.mat}|${o.dmg}|${o.barred ? 1 : 0}|${o.dir}|${o.part || ""}|${o.vault ? 1 : 0}|${o.roll ? 1 : 0}|${o.lit ? 1 : 0}|${o.spot || 0}|${fog ? 1 : 0}|${o.ter ? `${o.ter.key}${o.f}${o.wet ? `${o.wet}${o.wl}` : ""}${o.snow || ""}${o.gt ? `${o.gnd}${o.lf}` : ""}` : ""}|${o.car ? `${o.car.i},${o.car.j},${o.car.L},${o.car.ax},${o.car.kind},${o.car.v},${o.car.body || ""},${o.car.type || ""},${o.car.mil ? `${o.car.mil.cond}${o.car.mil.enemy ? "e" : ""}` : ""},${o.car.wrecked ? "w" : ""},${upKey(o.car.up)},${iso.rot & 3}` : ""}${o.sn ? `|n${o.sn}` : ""}${o.ie || o.is || o.art ? `|w${o.ie || ""}/${o.is || ""}/${o.art || ""}` : ""}`;
+  const key = `${iso.straight ? "s|" : ""}${o.sea ? `${o.sea}|` : ""}${k}|${o.v}|${o.alt}|${o.j}|${o.n}|${o.top}|${o.stub ? 1 : 0}|${o.mat}|${o.dmg}|${o.barred ? 1 : 0}|${o.dir}|${o.part || ""}|${o.vault ? 1 : 0}|${o.roll ? 1 : 0}|${o.lit ? 1 : 0}|${o.spot || 0}|${fog ? 1 : 0}|${o.ter ? `${o.ter.key}${o.f}${o.wet ? `${o.wet}${o.wl}` : ""}${o.snow || ""}${o.gt ? `${o.gnd}${o.lf}` : ""}` : ""}|${o.car ? `${o.car.i},${o.car.j},${o.car.L},${o.car.ax},${o.car.kind},${o.car.v},${o.car.body || ""},${o.car.type || ""},${o.car.mil ? `${o.car.mil.cond}${o.car.mil.enemy ? "e" : ""}` : ""},${o.car.wrecked ? "w" : ""},${upKey(o.car.up)},${iso.rot & 3}` : ""}${o.sn ? `|n${o.sn}` : ""}${o.ie || o.is || o.art ? `|w${o.ie || ""}/${o.is || ""}/${o.art || ""}` : ""}${o.len ? `|st${o.step}/${o.len}${o.rail}${o.well ? "w" : ""}${o.air ? "a" : ""}` : ""}`;
   let s = spriteGet(key);
   if (s === undefined) {
     const car = CAR_CELLS.has(k) ? carModelSprite(k, o, fog) : null; // a car as its model (ui/vehiclemodel.js): this cell's share, or a car on this one cell
@@ -2413,7 +2439,24 @@ function lookOf(b, scene, x, y, cut, focus = null) {
   if (k === "firepit" && c.lit) o.lit = true; // a fire pit burning (its flames: prims)
   if (c.spot) o.spot = c.spotBroken ? 2 : 1; // a mounted spotlight, on the ground or up on a wall stand (sim/basemap.js)
   if (c.h - (c.gh || 0) > 0 && FURNITURE.has(k) && !c.ter) o.raise = (c.h - (c.gh || 0)) * LV; // furniture on an upper floor (on a hill: raised with the ground, prims)
-  if (k === "ladder" || k === "stairs" || k === "slope") {
+  if (k === "stairs" && c.dir != null && c.len > 1) {
+    // A step of a stair run (sim/buildingmaps.js STAIR_DIRS): c.step of c.len, rising the run's way (c.dir) to the floor
+    // above at its top step; a railing on each open side across the run (o.rail: view directions), none against a wall;
+    // on the top floor (nothing above) the run is the stairwell's opening down (o.well).
+    const [wx, wy] = VD[c.dir];
+    o.dir = viewDir(wx, wy, r); o.step = c.step; o.len = c.len;
+    if (c.openair) o.air = true;
+    o.rail = 0;
+    for (const [dx, dy] of wx ? [[0, 1], [0, -1]] : [[1, 0], [-1, 0]]) {
+      const nx = x + dx, ny = y + dy;
+      if (nx < 0 || ny < 0 || nx >= b.w || ny >= b.h) continue;
+      const nk = b.cells[ny * b.w + nx].k;
+      if (!WALLISH.has(nk) && nk !== "stairs" && nk !== "window" && nk !== "smashed" && nk !== "void") o.rail |= 1 << viewDir(dx, dy, r);
+      else if (nk === "void") o.rail |= 1 << viewDir(dx, dy, r); // an outside stair over open air
+    }
+    if (floorsOf(b) && floorNo(b) === b.floors.length - 1 && !c.sealUp) o.well = true;
+    if (c.sealUp && c.top) o.part = `seal:${c.sealUp}`; // a taller building's floors above are not built: the way up blocked (prims stairs)
+  } else if (k === "ladder" || k === "stairs" || k === "slope") {
     // Towards the higher neighbour (the walkway, the loft, the roof).
     let best = -1, bh = hAt(b, x, y);
     VD.forEach(([dx, dy]) => {
@@ -2470,7 +2513,8 @@ function blockTop0(k, o) {
     case "palisade": case "gate": return PALISADE;
     case "tower": return 2 * LV + 7;
     case "walkway": case "loft": case "roof": case "stand": return LV;
-    case "stairs": case "slope": return LV / 2;
+    case "stairs": if (o.len) return o.well ? 12 : Math.round((o.step / o.len) * LV); return LV / 2; // a run's step: its height up the storey
+    case "slope": return LV / 2;
     case "rise": return LV;
     case "crag": return o.ter ? 0 : 3 * LV + 4; // with its height (o.ter): counted below
     case "ladder": return LV;
@@ -3406,7 +3450,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     }
     const sel = H.sel != null ? b.units.find((q) => q.id === H.sel) : null;
     for (let i = 0; i < N; i++) {
-      if (b.cells[i].k !== "stairs") continue;
+      if (b.cells[i].k !== "stairs" || (b.cells[i].step != null && !b.cells[i].top)) continue; // a run's top step only: where the floor changes
       const x = i % b.w, y = (i / b.w) | 0;
       if (!vis[i] && !(sel && sel.x === x && sel.y === y)) continue;
       const here = !!(sel && sel.x === x && sel.y === y && onFloor(b, sel));

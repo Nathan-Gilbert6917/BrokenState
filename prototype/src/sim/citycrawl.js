@@ -1040,7 +1040,7 @@ export function snapshotBuilding(b) {
   return {
     w: b.w, h: b.h, cells: b.floors ? null : packCells(ground), containers: deep(R.containers), // a building with storeys: its ground floor is floors[0] (kept once)
     floors: b.floors ? b.floors.map((F) => ({ cells: packCells(F.cells), name: F.name })) : null,
-    doors: R.doors ? deep(R.doors) : null, stairs: R.stairs ? deep(R.stairs) : null, // the stair cells (the stair runs, #9)
+    doors: R.doors ? deep(R.doors) : null, stairs: R.stairs ? deep(R.stairs) : null, runs: R.runs ? deep(R.runs) : null, // the stair cells and the stair runs (#9)
     units: deep(units), occupants: R.occupants || null, heat: Math.round(R.heat), folk: R.folk ? deep(R.folk) : null, // floorfolk.js: who held the upper floors, and how it went
     corpses: b.corpses ? b.corpses.map((x) => ({ ...deep(x), tried: undefined })) : null, scenes: R.scenes ? deep(R.scenes) : null, // sleepers.js bodies (a split Sleeper stays split; f: their floor); interiorscenes.js: the scenes seen
     searched: boxes.filter((x) => x.searched).length, total: boxes.length,
@@ -1075,6 +1075,14 @@ export function restoreBuilding(state, b, snap) {
   else if (R.scenes) delete R.scenes;
   const z = R.zones[0];
   if (b.floors) {
+    // The stairwells the kept cells hold: a snapshot from before the stair runs (2026-10-25) has one-cell stairwells
+    // where its cells say (every stairs cell on every floor), and no runs.
+    if (snap.stairs) { R.stairs = snap.stairs.map((x) => x.slice()); R.runs = snap.runs ? snap.runs.map((r) => ({ ...r })) : []; }
+    else {
+      const old = [];
+      snap.floors[0].cells.forEach((c, i) => { if (c.k === "stairs" && snap.floors.every((F) => F.cells[i] && F.cells[i].k === "stairs")) old.push([i % b.w, (i / b.w) | 0]); });
+      if (old.length) { R.stairs = old; R.runs = []; }
+    }
     // Every floor as it was left; the upper floors' reach floods from the first stairwell, the ground's from the front zone.
     const [sx, sy] = R.stairs[0];
     for (let f = 0; f < b.floors.length; f++) {
