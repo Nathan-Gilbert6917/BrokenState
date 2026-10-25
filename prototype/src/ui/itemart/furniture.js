@@ -371,7 +371,83 @@ function f_exambed(p) { // an exam bed: a padded teal top with a raised end, the
   line(p, 1, 3, 4, 6, "#4f7b88"); R(p, 4, 6, 15, 7, "#4f7b88"); H(p, 4, 15, 5, "#eef0f2"); box(p, 3, 8, 14, 15, "#c9b48a"); H(p, 4, 13, 11, "#957f58");
 }
 
+// ---------- grocery stores by size (issue #22) ----------
+function f_freezercase(p) { // an upright freezer case: a white frame, a frosted glass door, white boxes of frozen food, the compressor on top
+  R(p, 1, 0, 14, 2, "#7d858c"); box(p, 1, 3, 14, 15, "#e4e6e8"); R(p, 3, 4, 12, 14, "#bcdbe6");
+  for (const y of [7, 11]) H(p, 3, 12, y, "#eef0f2"); R(p, 4, 5, 6, 6, "#3a6fb0"); R(p, 8, 5, 11, 6, "#eef0f2"); R(p, 4, 8, 7, 10, "#c8402f"); R(p, 9, 8, 11, 10, "#eef0f2"); R(p, 4, 12, 11, 13, "#e6c23a");
+  V(p, 12, 6, 11, "#c9ced3");
+}
+function f_islandfreezer(p) { // an island freezer: a long low white tub under sliding glass lids, frost and boxes inside
+  box(p, 0, 8, 15, 15, "#e4e6e8"); R(p, 1, 5, 14, 7, "#bcdbe6"); H(p, 0, 15, 4, "#c9ced3"); V(p, 7, 5, 7, "#c9ced3");
+  R(p, 2, 6, 4, 7, "#3a6fb0"); R(p, 9, 6, 12, 7, "#c8402f"); H(p, 1, 14, 11, "#9aa1a8");
+}
+function f_meatcase(p) { // a butcher's case: a curved glass front over trays of red cuts, a white steel base
+  box(p, 0, 9, 15, 15, "#dcdcd6"); line(p, 1, 8, 4, 3, "#bcdbe6"); R(p, 4, 3, 15, 8, "#bcdbe6"); H(p, 4, 15, 3, "#e4f2f6");
+  R(p, 3, 6, 6, 8, "#b03a30"); R(p, 7, 6, 10, 8, "#c85a48"); R(p, 11, 6, 14, 8, "#9e2a22"); H(p, 1, 14, 12, "#9aa1a8");
+}
+function f_freezershelf(p) { // a walk-in freezer's wire shelving: frost on the wire, white boxes and frozen sacks
+  legs(p, 1, 14, 0, 15, "#d4e6ee"); for (const y of [4, 9, 14]) H(p, 1, 14, y, "#eef6fa");
+  R(p, 3, 1, 7, 3, "#eef0f2"); R(p, 9, 1, 12, 3, "#9ec8d8"); R(p, 2, 6, 6, 8, "#9ec8d8"); R(p, 8, 6, 13, 8, "#eef0f2"); R(p, 4, 11, 10, 13, "#d4dde2"); p.set(5, 2, "#c8402f");
+}
+function f_producebin(p) { // produce bins: a slanted wooden stand, apples, oranges and greens heaped in it
+  line(p, 0, 9, 15, 5, WOODD); box(p, 1, 10, 14, 15, WOOD); legs(p, 1, 14, 13, 15, WOODD);
+  for (const [x, y, c] of [[2, 8, "#c8402f"], [4, 8, "#c8402f"], [3, 7, "#d84a3a"], [6, 7, "#e8a020"], [8, 6, "#e8a020"], [7, 6, "#f0b030"], [10, 6, "#4f8a3a"], [12, 5, "#5fa04a"], [11, 5, "#4f8a3a"], [13, 5, "#6ab050"]]) disc(p, x, y, 1, c);
+}
+function f_breadrack(p) { // a bread rack: a chrome frame on castors, loaves on three shelves
+  V(p, 2, 0, 14, "#c9ced3"); V(p, 13, 0, 14, "#9aa1a8"); for (const y of [4, 9, 14]) H(p, 2, 13, y, "#c9ced3");
+  for (const [x0, y0] of [[3, 2], [8, 2], [4, 7], [9, 7], [3, 12], [8, 12]]) { R(p, x0, y0, x0 + 3, y0 + 1, "#b8783a"); H(p, x0, x0 + 3, y0, "#d49a5a"); }
+  p.set(2, 15, "#383b41"); p.set(13, 15, "#383b41");
+}
+function f_selfcheckout(p) { // a self-checkout kiosk: a grey stand, a lit screen on top, the scanner glass and the bagging shelf
+  box(p, 4, 7, 11, 15, "#6a7480"); box(p, 5, 1, 11, 5, "#26272a"); R(p, 6, 2, 10, 4, "#6fe08a");
+  R(p, 4, 6, 11, 6, "#9ed0e0"); R(p, 11, 8, 15, 8, "#c9ced3"); V(p, 15, 8, 15, "#9aa1a8"); p.set(9, 10, "#e6c23a");
+}
+function f_aislesign(p) { // an aisle marker: a blue sign with a white number on a chrome post
+  box(p, 2, 0, 13, 6, "#2f5d8a"); R(p, 6, 1, 8, 1, "#eef0f2"); V(p, 8, 1, 5, "#eef0f2"); R(p, 6, 5, 10, 5, "#eef0f2"); R(p, 7, 2, 7, 2, "#eef0f2");
+  V(p, 7, 7, 14, "#c9ced3"); V(p, 8, 7, 14, "#9aa1a8"); oval(p, 4, 14, 11, 15, "#7d858c");
+}
+
+// ---------- bunkers (issue #26) ----------
+function f_hazmatrack(p) { // a steel rail on legs with two yellow hazmat suits hanging, their dark visors
+  H(p, 1, 14, 1, STEEL); legs(p, 1, 14, 1, 15, STEELD);
+  for (const x of [3, 9]) { R(p, x, 2, x + 3, 12, "#d8c040"); R(p, x + 1, 3, x + 2, 4, "#2a3a44"); H(p, x, x + 3, 8, "#a89020"); }
+}
+function f_rationshelf(p) { // a steel shelf of olive MRE boxes and tins
+  legs(p, 1, 14, 0, 15, STEELD);
+  for (const y of [4, 9, 14]) H(p, 1, 14, y, STEEL);
+  R(p, 2, 1, 6, 3, "#6a6a3a"); R(p, 8, 1, 12, 3, "#8a7a4a"); R(p, 2, 6, 4, 8, "#9aa0a6"); R(p, 6, 6, 8, 8, "#9aa0a6"); R(p, 10, 6, 13, 8, "#6a6a3a"); R(p, 3, 11, 12, 13, "#8a7a4a");
+}
+function f_handfilter(p) { // a hand-cranked air filter: an olive box, a round filter canister, the crank handle
+  box(p, 2, 6, 13, 14, "#5a6a4a"); disc(p, 7, 4, 3, "#8a949c"); ring(p, 7, 4, 3, "#5e666d");
+  line(p, 11, 6, 14, 2, "#26272a"); p.set(14, 1, "#c8402f"); H(p, 3, 12, 10, "#3f4a34");
+}
+function f_screens(p) { // a wall of dead screens: a grid of six dark monitors in a steel frame, one still glowing
+  box(p, 0, 1, 15, 12, "#3a3d42");
+  for (const [x, y] of [[1, 2], [6, 2], [11, 2], [1, 7], [6, 7], [11, 7]]) R(p, x, y, x + 3, y + 3, "#1c2a30");
+  R(p, 7, 3, 8, 4, "#5ad06a"); legs(p, 3, 12, 13, 15, STEELD);
+}
+function f_maptable(p) { // a map table: a big sheet map with a red route and pins on a steel table
+  R(p, 0, 4, 15, 9, "#d9cfa8"); R(p, 2, 5, 6, 7, "#8aa070"); line(p, 1, 8, 13, 5, "#c8402f"); p.set(10, 6, "#3a6fb0"); p.set(4, 8, "#3a6fb0");
+  H(p, 0, 15, 10, STEELD); legs(p, 1, 14, 11, 15, STEELD);
+}
+function f_radioconsole(p) { // a military radio console: olive cabinet, a dial face, a handset, amber lamps
+  box(p, 1, 3, 14, 15, "#4a5a3a"); R(p, 2, 4, 8, 8, "#1c2a30"); disc(p, 11, 6, 2, "#c9ced3");
+  for (const x of [3, 5, 7]) p.set(x, 10, "#e0a030"); line(p, 9, 10, 13, 13, "#26272a"); R(p, 12, 0, 12, 2, "#26272a");
+}
+function f_footlocker(p) { // a footlocker: an olive trunk with steel corners, two latches, a stencilled band
+  box(p, 1, 5, 14, 14, "#4a5a30"); H(p, 1, 14, 8, "#5a6a3a");
+  for (const [x, y] of [[1, 5], [14, 5], [1, 14], [14, 14]]) p.set(x, y, "#c9ced3");
+  p.set(5, 8, "#c9ced3"); p.set(10, 8, "#c9ced3"); H(p, 4, 11, 11, "#e2ddcc");
+}
+function f_batteries(p) { // a rack of black batteries on steel shelves, red and black terminals, a cable run
+  legs(p, 1, 14, 0, 15, STEELD); for (const y of [7, 14]) H(p, 1, 14, y, STEEL);
+  for (const x of [2, 6, 10]) { R(p, x, 2, x + 2, 6, "#26272a"); p.set(x, 1, "#c8402f"); p.set(x + 2, 1, "#9aa0a6"); R(p, x, 9, x + 2, 13, "#26272a"); }
+  line(p, 3, 1, 11, 1, "#d9b13b");
+}
+
 export const GEAR_ART = {
+  f_freezercase, f_islandfreezer, f_meatcase, f_freezershelf, f_producebin, f_breadrack, f_selfcheckout, f_aislesign,
+  f_hazmatrack, f_rationshelf, f_handfilter, f_screens, f_maptable, f_radioconsole, f_footlocker, f_batteries,
   f_medcart, f_drugsafe, f_instcab, f_morguelocker, f_autopsy, f_wheelchair, f_vettable, f_curtain, f_linencart, f_monitor, f_crib, f_exambed,
   f_bed, f_bunk, f_hospbed, f_gurney, f_ivstand, f_hay, f_barrel, f_range, f_dishwasher, f_washer, f_dryer, f_fryer, f_coldshelf,
   f_icemachine, f_watercooler, f_compressor, f_tank, f_jukebox, f_pooltable, f_clothesrack, f_pottingbench, f_palletrack, f_tirerack,

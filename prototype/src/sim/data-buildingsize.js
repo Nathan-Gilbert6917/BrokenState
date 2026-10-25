@@ -16,7 +16,7 @@
 //   city     [min, max] storeys in a city (a city's tiles and the city crawl);
 //   set      the setting it is usually found in (rural | town | city): the tests' and the docs' only;
 //   own      the size belongs to another ticket (#22: the corner store, grocery, supermarket and department store;
-//            #23: the school): its archetype's own dice are kept (only the storeys rule applies);
+//            #23: the school; #26: the bunkers): its archetype's own dice are kept (only the storeys rule applies);
 //   wings    how a footprint much bigger than the plan is laid out (buildingmaps.js realScale), when not in whole copies:
 //            "along" side by side along the front only, wall to wall, never turned, the copies after the first without the
 //            entry's part (a motel: more rooms down the row, every door on the lot, one office and its outside stair);
@@ -70,6 +70,12 @@ export const REAL_SIZE = {
   supermarket: { set: "town", own: true },
   deptstore:   { set: "city", own: true },
   school:      { set: "town", own: true },
+  // #26's bunkers: their own plans (a portal at the surface, levels below ground), sizes and levels
+  milbunker:   { set: "rural", own: true },
+  mountainbunker: { set: "rural", own: true },
+  govbunker:   { set: "town", own: true },
+  shelter:     { set: "town", own: true },
+  prepper:     { set: "rural", own: true },
   // Institutions
   clinic:      { w: [15, 25], d: [12, 20], storeys: [1, 2], set: "town" },
   infirmary:   { w: [15, 25], d: [12, 20], storeys: [1, 2], set: "rural" },
