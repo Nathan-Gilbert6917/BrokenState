@@ -87,7 +87,7 @@ export function storefront(rng, o, plan, max) {
   const body = { split: "x", parts: left ? [["*", rooms], hall, ["*", service]] : [["*", service], hall, ["*", rooms]] };
   const upper = () => ({ split: "y", parts: [[fd, O("office", "privoffice", { name: kind === "law" ? "Partner's office" : "Manager's office", type: "office" })], ["*", { split: "x", parts: left ? [["*", { split: "y", parts: leaves([["*", O("office", "privoffice", { name: "Office" })], ["*", O("office", "privoffice", { name: "Office" })]]) }], hall, ["*", { split: "y", parts: leaves([[3, O("storage", "fileroom", { name: "Records", type: "office" })], ["*", O("office", "privoffice", { name: "Office" })], restroom]) }]] : [["*", { split: "y", parts: leaves([[3, O("storage", "fileroom", { name: "Records", type: "office" })], ["*", O("office", "privoffice", { name: "Office" })], restroom]) }], hall, ["*", { split: "y", parts: leaves([["*", O("office", "privoffice", { name: "Office" })], ["*", O("office", "privoffice", { name: "Office" })]]) }]] }]] });
   return {
-    bw, bh, front: { width: 1 }, ground: "town", storeys: n, foot: "small", stairs: { roles: ["lobby", "corridor"], n: 1 },
+    bw, bh, front: { width: 1 }, ground: "town", storeys: n, foot: "medium", stairs: { roles: ["lobby", "corridor"], n: 1 },
     program: { split: "y", parts: [[fd, lobby], ["*", body]] },
     upper: n > 1 ? upper : null,
     exits: [{ side: "back", roles: ["corridor", "breakroom", "storage"], chance: 0.8, lock: 0.4 }],
@@ -101,7 +101,7 @@ export function bizpark(rng, o, plan, max) {
   const open = (name = "Open-plan office") => O("office", "openplan", { name });
   const lobby = front(O("lobby", "glasslobby", { entry: true, name: "Lobby", fl: "tile" }), plan);
   return {
-    bw, bh, front: { width: 2 }, ground: "lot", storeys: n, foot: "wide", stairs: { roles: ["corridor"], n: 1, len: 3, ends: true },
+    bw, bh, front: { width: 2 }, ground: "lot", storeys: n, foot: "wide", stairs: { roles: ["corridor"], n: 1, ends: true },
     program: corridorPlan([["*", open()], [rng.int(6, 7), lobby], [5, O("office", "meeting", { name: "Meeting room" })], [4, O("storage", "mailroom", { name: "Mail room", type: "office" })]],
       [["*", open()], [6, O("classroom", "training", { name: "Training room", type: "office" })], [5, O("breakroom", "breakroom")], [3, O("storage", "itcloset", { name: "IT closet", type: "techfloor", lock: ["door", 0.4], windows: false })], restroom], fd, 2),
     upper: n > 1 ? () => corridorPlan([["*", open()], [5, O("office", "meeting", { name: "Meeting room" })], [5, O("office", "privoffice", { name: "Manager's office" })], ["*", open()]],
@@ -145,7 +145,7 @@ export function tower(rng, o, plan, max) {
   const ground = corridorPlan([SW, ["*", O("sales", "cafe", { name: "Café", type: "kitchen", hub: false, maxBoxes: 2 })], [lw + 2, lobby], ["*", O("storage", "mailroom", { name: "Mail room", type: "office" })], SW],
     [["*", O("bays", "loadingbay", { name: "Loading bay", type: "warehouse", maxBoxes: 3 })], [5, O("office", "security", { name: "Security office" })], restroom, ["*", O("breakroom", "breakroom", { name: "Staff room" })]], fd);
   return {
-    bw, bh, front: { width: 2 }, ground: "city", storeys: n, foot: "tower", stairs: { roles: ["stairwell"], n: 2, len: 3 }, floorKinds: kinds,
+    bw, bh, front: { width: 2 }, ground: "city", storeys: n, foot: "large", stairs: { roles: ["stairwell"], n: 2, len: 3 }, floorKinds: kinds,
     program: ground,
     upper: (f) => { const [a, b] = bands[kinds[f]] ? bands[kinds[f]]() : bands.open(); return corridorPlan(a, b, fd); },
     exits: [{ side: "back", roles: ["bays"], chance: 1, roller: true, width: 2, lock: 0.4, name: "Loading dock" }, ...fire(0.4)],
@@ -159,7 +159,7 @@ export function cityhall(rng, o, plan, max) {
   const lobby = front(O("lobby", "rotunda", { entry: true, name: "Lobby", fl: "marble" }), plan);
   const records = (name = "Records room") => O("storage", "records", { name, type: "office", lock: ["door", 0.3] });
   return {
-    bw, bh, front: { width: 2 }, ground: "town", storeys: n, foot: "large", stairs: { roles: ["corridor"], n: 2, len: 3, ends: true },
+    bw, bh, front: { width: 2 }, ground: "town", storeys: n, foot: "large", stairs: { roles: ["corridor"], n: 2, ends: true },
     program: corridorPlan([["*", O("office", "clerk", { name: "Clerk's office" })], [rng.int(7, 8), lobby], ["*", O("office", "permits", { name: "Permits office" })]],
       [["*", O("office", "council", { name: "Council chambers", type: "civichall", maxBoxes: 3 })], [6, O("office", "mayor", { name: "Mayor's office", type: "execsuite", boxLock: ["safe", 0.3] })], [5, records()], restroom], fd, 2),
     upper: () => corridorPlan([["*", O("office", "openplan", { name: "Council offices" })], [6, O("office", "meeting", { name: "Committee room" })], ["*", O("office", "openplan", { name: "Planning department" })]],
@@ -175,7 +175,7 @@ export function courthouse(rng, o, plan, max) {
   const lobby = front(O("lobby", "screening", { entry: true, name: "Security screening", fl: "marble" }), plan);
   const court = (name = "Courtroom") => O("office", "courtroom", { name, type: "courtoffice", maxBoxes: 2 });
   return {
-    bw, bh, front: { width: 2 }, ground: "town", storeys: n, foot: "large", stairs: { roles: ["corridor"], n: 2, len: 3, ends: true },
+    bw, bh, front: { width: 2 }, ground: "town", storeys: n, foot: "large", stairs: { roles: ["corridor"], n: 2, ends: true },
     program: corridorPlan([["*", O("office", "clerks", { name: "Clerk of court", type: "courtoffice" })], [rng.int(7, 8), lobby], ["*", O("office", "clerks", { name: "Records office", type: "courtoffice" })]],
       [["*", court()], [6, { role: "cells", name: "Holding cell", civic: "cells", maxBoxes: 1 }], [5, O("armory", "evidence", { name: "Evidence room", type: "courtev", lock: ["door", 0.6], boxLock: ["evidence", 0.5], dk: "steel" })], restroom], fd, 2),
     upper: () => corridorPlan([["*", O("office", "chambers", { name: "Judge's chambers", type: "courtoffice", boxLock: ["safe", 0.25] })], [6, O("office", "jury", { name: "Jury room" })], ["*", O("office", "chambers", { name: "Judge's chambers", type: "courtoffice" })]],
@@ -206,7 +206,7 @@ export function techoffice(rng, o, plan, max) {
   const bench = (name = "Open-plan floor") => O("office", "benches", { name, type: "techfloor" });
   const lobby = front(O("lobby", "techlobby", { entry: true, name: "Lobby" }), plan);
   return {
-    bw, bh, front: { width: 2 }, ground: "city", storeys: n, foot: "medium", stairs: { roles: ["corridor", "lobby"], n: 1, len: 3 },
+    bw, bh, front: { width: 2 }, ground: "city", storeys: n, foot: "large", stairs: { roles: ["corridor", "lobby"], n: 1 },
     program: corridorPlan([["*", bench()], [6, lobby], ["*", O("dayroom", "lounge", { name: "Games corner", type: "techfloor", hub: false })]],
       [["*", O("kitchen", "techkitchen", { name: "Kitchen", type: "techfloor" })], [3, O("office", "phonebooths", { name: "Phone booths", type: "techfloor" })], [4, O("storage", "serverroom", { name: "Server room", type: "techfloor", lock: ["door", 0.4], windows: false })], restroom], fd),
     upper: () => corridorPlan([["*", bench()], [5, O("office", "meeting", { name: "Meeting room" })], ["*", O("dayroom", "lounge", { name: "Lounge", type: "techfloor", hub: false })]],
@@ -225,7 +225,7 @@ export function station(rng, o, plan, max) {
       : O("workshop", "press", { name: "Press room", type: "workshop" });
   const lobby = front(O("lobby", "reception", { entry: true, name: "Reception" }), plan);
   return {
-    bw, bh, front: { width: 2 }, ground: "town", storeys: n, foot: "medium", stairs: { roles: ["corridor", "lobby"], n: 1, len: 3 }, media,
+    bw, bh, front: { width: 2 }, ground: "town", storeys: n, foot: "large", stairs: { roles: ["corridor", "lobby"], n: 1 }, media,
     program: corridorPlan([["*", O("office", "newsroom", { name: "Newsroom", type: "studio" })], [5, lobby], ["*", studio]],
       [["*", O("office", "control", { name: media === "paper" ? "Layout room" : "Control room", type: "studio", windows: false })], [5, O("storage", "archive", { name: "Archive", type: "office" })], [4, O("breakroom", "breakroom")], restroom], fd),
     upper: () => corridorPlan([["*", O("office", "newsroom", { name: "Editorial offices", type: "studio" })], [5, O("office", "meeting", { name: "Meeting room" })], ["*", O("office", "execoffice", { name: media === "paper" ? "Editor's office" : "Station manager's office", type: "execsuite" })]],
