@@ -46,6 +46,7 @@ import { CIVIC_STYLES } from "./civiclayout.js";
 import { COMMERCIAL_STYLES } from "./shoplayout.js";
 import { MEDICAL_STYLES } from "./roomlayout.js";
 import { boardCell } from "./barricade.js";
+import { CAMPUS_VARIANTS, campusVariantOf, planFrom, footClass } from "./campusplans.js"; // a dozen named plans a type (the user's request 2026-10-25)
 
 // The footprints, [width range], [depth range] in cells (≈ 1 m a cell, #24's CELL_M), and the storeys, by building.
 export const CAMPUS_SIZE = {
@@ -89,7 +90,7 @@ const footOf = (rng, key, o) => ({ bw: o.bw || range(rng, CAMPUS_SIZE[key].w), b
 const room = (role, name, campus, extra = {}) => ({ role, name, campus, ...extra });
 const civ = (role, name, civic, extra = {}) => ({ role, name, civic, ...extra });
 const restroom = () => civ("restroom", "Restroom", "washroom");
-function dorm(rng, o = {}) {
+function dormOriginal(rng, o = {}) {
   const { bw, bh } = footOf(rng, "dorm", o), n = storeysOf(rng, "dorm", o);
   const suite = o.suite != null ? !!o.suite : rng.chance(CAMPUSL.SUITE);
   const inner = bw - 2, fd = 6;
@@ -118,13 +119,13 @@ function dorm(rng, o = {}) {
     return [...fixed, ...rooms(k, f, "C"), end];
   };
   return {
-    bw, bh, front: { width: 2 }, ground: "town", storeys: n, foot: n >= 4 ? "tower" : "large", stairs: ENDS, suite,
+    bw, bh, front: { width: 2 }, ground: "town", storeys: n, foot: "large", stairs: ENDS, suite,
     program: hallPlan(frontRow(0), backRow(0), fd),
     upper: (f) => hallPlan(frontRow(f), backRow(f), fd),
     exits: [{ side: "back", roles: ["dayroom", "laundry"], chance: 0.6, lock: 0.4 }, ...fireExits(0.3)],
   };
 }
-function lecturehall(rng, o = {}) {
+function lecturehallOriginal(rng, o = {}) {
   const { bw, bh } = footOf(rng, "lecturehall", o), n = storeysOf(rng, "lecturehall", o);
   const hallL = room("classroom", "Lecture hall", "lecture", { type: "office", maxBoxes: 1, fl: "carpet" });
   const seminar = () => civ("classroom", "Seminar room", "classroom");
@@ -136,7 +137,7 @@ function lecturehall(rng, o = {}) {
     exits: [{ side: "back", roles: ["classroom", "office"], chance: 0.5, lock: 0.4 }, ...fireExits(0.3)],
   };
 }
-function sciencehall(rng, o = {}) {
+function sciencehallOriginal(rng, o = {}) {
   const { bw, bh } = footOf(rng, "sciencehall", o), n = storeysOf(rng, "sciencehall", o);
   const teach = () => room("lab", "Teaching lab", "teachlab", { maxBoxes: 3 });
   const research = () => room("lab", "Research lab", "research", { maxBoxes: 3 });
@@ -163,7 +164,7 @@ function univlibrary(rng, o = {}) {
     exits: [{ side: "back", roles: ["storage", "stock"], chance: 0.4, lock: 0.5 }, ...fireExits(0.4)],
   };
 }
-function studentunion(rng, o = {}) {
+function studentunionOriginal(rng, o = {}) {
   const { bw, bh } = footOf(rng, "studentunion", o), n = storeysOf(rng, "studentunion", o);
   return {
     bw, bh, front: { width: 2 }, ground: "town", storeys: n, foot: "large", stairs: ENDS,
@@ -185,7 +186,7 @@ function dininghall(rng, o = {}) {
     exits: [{ side: "back", roles: ["kitchen", "storage"], chance: 0.9, lock: 0.3, roller: true, width: 2, name: "Loading dock" }, { side: "left", roles: ["cafeteria"], chance: 0.6, lock: 0.3 }, { side: "right", roles: ["cafeteria"], chance: 0.6, lock: 0.3 }],
   };
 }
-function athletics(rng, o = {}) {
+function athleticsOriginal(rng, o = {}) {
   const { bw, bh } = footOf(rng, "athletics", o);
   const lockers = (name) => civ("lockerroom", name, "plockers", { type: "lockers", maxBoxes: 3 });
   return {
@@ -197,7 +198,7 @@ function athletics(rng, o = {}) {
 }
 // The administration building: #27's office rooms (officelayout.js OFFICE_STYLES by the leaf's office mark: the clerk's
 // counter with queue posts, open-plan floors, the file room, the executive suite with its safe, the boardroom).
-function admin(rng, o = {}) {
+function adminOriginal(rng, o = {}) {
   const { bw, bh } = footOf(rng, "admin", o), n = storeysOf(rng, "admin", o);
   const ofc = (role, name, office, extra = {}) => ({ role, name, office, type: "office", ...extra });
   const office = (name) => ofc("office", name, "openplan", { maxBoxes: 3 });
@@ -213,7 +214,7 @@ function admin(rng, o = {}) {
     exits: [{ side: "back", roles: ["breakroom", "storage"], chance: 0.5, lock: 0.4 }, ...fireExits(0.4)],
   };
 }
-function security(rng, o = {}) {
+function securityOriginal(rng, o = {}) {
   const { bw, bh } = footOf(rng, "security", o);
   return {
     bw, bh, front: { width: 1 }, ground: "town", storeys: 1, foot: "small",
@@ -222,7 +223,7 @@ function security(rng, o = {}) {
     exits: [{ side: "back", roles: ["office", "lockerroom"], chance: 0.6, lock: 0.5 }],
   };
 }
-function maintenance(rng, o = {}) {
+function maintenanceOriginal(rng, o = {}) {
   const { bw, bh } = footOf(rng, "maintenance", o);
   const left = rng.chance(0.5);
   const bay = [0.45, room("bays", "Vehicle bay", "vehbay", { type: "garage", maxBoxes: 4 })];
@@ -234,7 +235,7 @@ function maintenance(rng, o = {}) {
     exits: [{ side: "front", roles: ["bays"], chance: 1, roller: true, width: 3, lock: 0.2, name: "Bay door" }, { side: "back", roles: ["workshop", "storage"], chance: 0.6, lock: 0.4 }],
   };
 }
-function theatre(rng, o = {}) {
+function theatreOriginal(rng, o = {}) {
   const { bw, bh } = footOf(rng, "theatre", o), n = storeysOf(rng, "theatre", o);
   const back = { split: "y", parts: leaves([["*", room("workshop", "Scene shop", "sceneshop", { maxBoxes: 2 })], ["*", room("dayroom", "Green room", "greenroom", { hub: false, type: "dormroom", maxBoxes: 2 })]]) };
   return {
@@ -246,15 +247,28 @@ function theatre(rng, o = {}) {
     exits: [{ side: "back", roles: ["workshop", "dayroom"], chance: 0.8, lock: 0.3, roller: rng.chance(0.5), width: 2 }, ...fireExits(0.3)],
   };
 }
-function parkgarage(rng, o = {}) {
+function parkgarageOriginal(rng, o = {}) {
   const { bw, bh } = footOf(rng, "parkgarage", o), n = storeysOf(rng, "parkgarage", o);
   const deck = (f) => ({ split: "x", parts: [["*", room("bays", `Level ${f + 1}`, "deck", { type: "wreck", fl: "conc", maxBoxes: 14, entry: f === 0 })], [5, { split: "y", parts: leaves([[8, { role: "stairwell", name: "Stairs" }], ["*", room("storage", f === 0 ? "Pay booth" : "Utility room", "stores", { type: "garage", maxBoxes: 1 })]]) }]] });
   return {
-    bw, bh, front: { width: 3 }, ground: "lot", storeys: n, foot: "wide", stairs: { roles: ["stairwell", "bays"], n: 2, len: 3 },
+    bw, bh, front: { width: 3 }, ground: "lot", storeys: n, foot: "wide", stairs: { roles: ["stairwell", "bays"], n: 2, len: 2 },
     program: deck(0), upper: (f) => deck(f),
     exits: [{ side: "back", roles: ["bays"], chance: 0.7, width: 3, lock: 0.1, name: "Exit ramp" }, { side: "left", roles: ["bays"], chance: 0.5, lock: 0.3 }],
   };
 }
+// A type's maker: one of its CAMPUS_VARIANTS by the building's dice (o.plan: a given one), the first its original plan
+// above; spec.variant names it (buildingmaps.js assemble copies it onto the plan).
+const variantMaker = (key, original) => (rng, o = {}) => {
+  const [, V] = campusVariantOf(rng, key, o);
+  const spec = !V || V.original ? original(rng, o) : planFrom(rng, key, V, o);
+  if (!(spec.foot === "wide" && spec.bw >= 20 && spec.bw * spec.bh >= 280)) spec.foot = footClass(spec.bw, spec.bh); // the footprint's class by its area
+  return V ? Object.assign(spec, { variant: V.name, variantId: V.id }) : spec;
+};
+const dorm = variantMaker("dorm", dormOriginal), lecturehall = variantMaker("lecturehall", lecturehallOriginal), sciencehall = variantMaker("sciencehall", sciencehallOriginal);
+const studentunion = variantMaker("studentunion", studentunionOriginal), athletics = variantMaker("athletics", athleticsOriginal), admin = variantMaker("admin", adminOriginal);
+const security = variantMaker("security", securityOriginal), maintenance = variantMaker("maintenance", maintenanceOriginal), theatre = variantMaker("theatre", theatreOriginal);
+const parkgarage = variantMaker("parkgarage", parkgarageOriginal);
+export { CAMPUS_VARIANTS };
 // key → plan maker; buildingmaps.js BUILDINGS makes each through it (chapel and healthcentre are the church's and the clinic's).
 export const CAMPUS_PLANS = { dorm, lecturehall, sciencehall, univlibrary, studentunion, dininghall, athletics, admin, security, maintenance, theatre, parkgarage };
 export const CAMPUS_NAMES = {
@@ -342,10 +356,12 @@ function vehicleAt(L, o) {
   for (let y = c.y0; y + h - 1 <= c.y1; y++) for (let x = c.x0; x + w - 1 <= c.x1; x++) {
     let lane = 0, ok = true;
     for (let yy = y; yy < y + h && ok; yy++) for (let xx = x; xx < x + w; xx++) { if (!c.free(xx, yy)) { ok = false; break; } if (L.lane(xx, yy)) lane++; }
-    if (ok) cands.push({ x, y, s: lane * 6 + hash01(c.seed, "cveh", L.room.id, x, y) });
+    // A free cell by its first cell (the container's), kept clear: a car packed in among others can still be searched.
+    const by = ok ? [[-1, -1], [0, -1], [1, -1], [-1, 0], [-1, 1], [w, -1], [w, 0], [0, h], [-1, h]].map(([dx, dy]) => [x + dx, y + dy]).find(([xx, yy]) => (xx < x || xx >= x + w || yy < y || yy >= y + h) && Math.abs(xx - x) <= 1 && Math.abs(yy - y) <= 1 && c.free(xx, yy)) : null;
+    if (ok && by) cands.push({ x, y, by, s: lane * 6 + hash01(c.seed, "cveh", L.room.id, x, y) });
   }
   cands.sort((a, b) => a.s - b.s);
-  for (const cd of cands.slice(0, 16)) { const r = c.vehicle(cd.x, cd.y, o); if (r) return r; }
+  for (const cd of cands.slice(0, 16)) { const r = c.vehicle(cd.x, cd.y, o); if (r) { if (r.x0 === cd.x && r.y0 === cd.y) c.keep(cd.by[0], cd.by[1]); return r; } }
   return null;
 }
 // A kitchenette's run along a wall: the fridge, a counter, the microwave, the sink.

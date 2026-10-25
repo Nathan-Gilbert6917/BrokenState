@@ -1311,8 +1311,8 @@ export const STOREYS_BY_TYPE = {
   sportshop: [1, 2], electronics: [1, 2], radioshop: [1, 2], bookstore: [1, 2], petstore: [1, 2], garden: [1, 2], clothing: [1, 2], liquor: [1, 2],
   restaurant: [1, 2], bar: [1, 2], dealer: [1, 2], bank: [1, 3], library: [1, 3], vet: [1, 2], pizza: [1, 1],
   // a college campus's buildings (issue #28: campuslayout.js CAMPUS_SIZE; a state university's dorms up to 8)
-  dorm: [2, 8], lecturehall: [1, 2], sciencehall: [2, 3], univlibrary: [3, 4], studentunion: [2, 2], dininghall: [1, 2], athletics: [1, 1],
-  admin: [2, 3], security: [1, 1], maintenance: [1, 1], theatre: [1, 2], parkgarage: [2, 4], chapel: [1, 1], healthcentre: [1, 3], campus: [2, 8],
+  dorm: [2, 8], lecturehall: [1, 4], sciencehall: [1, 6], univlibrary: [3, 4], studentunion: [1, 4], dininghall: [1, 2], athletics: [1, 2],
+  admin: [1, 6], security: [1, 2], maintenance: [1, 2], theatre: [1, 3], parkgarage: [2, 6], chapel: [1, 1], healthcentre: [1, 3], campus: [2, 8],
   milbunker: [2, 3], mountainbunker: [3, 3], govbunker: [2, 3], shelter: [2, 2], prepper: [2, 3], // bunkers: the Entrance level and the levels below it (bunkerlayout.js)
   // the office buildings (issue #27; officeplans.js SIZE, the crawl's bonus for the city's kinds)
   storefront: [1, 2], bizpark: [1, 3], cityhall: [2, 3], courthouse: [2, 3], callcenter: [1, 2], techoffice: [2, 5], station: [2, 2],

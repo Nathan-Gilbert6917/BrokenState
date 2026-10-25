@@ -17,6 +17,11 @@
 //   tent on a quad, each on some campus
 // - loot: the expected finds per building kind and per campus (printed), dorms with personal things, labs meds and
 //   parts, the dining hall food, the security office guns and radios
+// - the named plans (campusplans.js CAMPUS_VARIANTS, the user's request 2026-10-25: a dozen a type): at least twelve a
+//   type, their names and ids apart, each building (rooms reachable, its containers, laid out for its kind, a dorm's
+//   lounge on every floor, the plan's name on it), every two of a type different in at least two of issue #32's ways
+//   (the room list, the ground floor's order, the doors out, corridor or open plan, the footprint's shape, the storeys);
+//   the twelve site layouts (CAMPUS.LAYOUTS) each a whole campus, reachable, its name on the plan and in the briefing
 import { createWorld, hub, atBase } from "../src/sim/world.js";
 import { createBattle, runEnemyPhase, finishCombat, searchBox, endPlayerTurn, CELL, AREAS, boxLoot } from "../src/sim/combat.js";
 import { launchExpedition } from "../src/sim/parties.js";
@@ -26,8 +31,9 @@ import { poiAt, poiPool, poiFull, isSitePoi } from "../src/sim/pois.js";
 import { poiRaidSetup } from "../src/sim/poiraid.js";
 import { contKey, ledgerBox, lootPoiAbstract, poiHouses } from "../src/sim/poicont.js";
 import { buildingMap, siteBuildings, BUILDINGS } from "../src/sim/buildingmaps.js";
-import { CAMPUS, campusKind, campusHeatDims, campusBuildings, campusBriefing } from "../src/sim/campus.js";
+import { CAMPUS, campusKind, campusHeatDims, campusBuildings, campusBriefing, campusLayout } from "../src/sim/campus.js";
 import { CAMPUS_PLANS } from "../src/sim/campuslayout.js";
+import { CAMPUS_VARIANTS } from "../src/sim/campusplans.js";
 import { pieceDef } from "../src/sim/data-furniture.js";
 import { AREA_FINDS } from "../src/sim/loot.js";
 
@@ -287,6 +293,54 @@ section("The campus buildings alone (setup.raid.place)");
   for (const key of Object.keys(CAMPUS_PLANS)) { const m = buildingMap(st, t.id, { id: `solo2:${key}`, key, name: key }, false); for (const F of m.floors || [{ cells: m.cells }]) for (const c of F.cells) used.add(c.k); }
   const mine = ["dormdesk", "minifridge", "lectureseat", "lectern", "fumehood", "carrel", "mailboxes"];
   check(mine.every((k) => used.has(k) && pieceDef(k)), `the new pieces stand in the buildings (${mine.filter((k) => !used.has(k)).join(", ") || mine.join(", ")})`);
+}
+
+section("The named plans: a dozen a building type");
+{
+  const st = W(), t = univOf(st), SEEDS_V = QUICK ? 1 : 3;
+  const base = (n) => n.replace(/ \d+$/, "");
+  for (const [key, list] of Object.entries(CAMPUS_VARIANTS)) {
+    check(list.length >= 12 && new Set(list.map((V) => V.name)).size === list.length && new Set(list.map((V) => V.id)).size === list.length, `${CAMPUS_PLANS[key] ? BUILDINGS[key].name : key}: ${list.length} named plans (${list.map((V) => V.name).join(", ")})`);
+    const bad = [], feats = [];
+    list.forEach((V, i) => {
+      for (let s = 0; s < SEEDS_V; s++) {
+        const m = buildingMap(st, t.id, { id: `plan:${key}:${i}:${s}`, key, name: BUILDINGS[key].name, plan: i }, false);
+        const z = m.zones[0], g0 = flood(m.cells, m.w, m.h, [[z.x0 + 1, z.y0 + 1]]);
+        let walk = 0, got = 0, uw = 0, ug = 0;
+        m.cells.forEach((c, j) => { if (walkable(c)) { walk++; if (g0[j]) got++; } });
+        (m.floors || []).slice(1).forEach((F) => { const seen = flood(F.cells, m.w, m.h, m.stairs.filter(([x, y]) => pass(F.cells[y * m.w + x]))); F.cells.forEach((c, j) => { if (walkable(c)) { uw++; if (seen[j]) ug++; } }); });
+        const rooms = m.rooms.filter((a) => !a.outdoor), nf = m.storeys || 1;
+        const styled = rooms.filter((a) => a.campus || a.civic || a.shop || a.office).length;
+        const lounges = key !== "dorm" || Array.from({ length: nf }, (_, f) => rooms.some((a) => (a.f || 0) === f && a.campus === "lounge")).every(Boolean);
+        if (walk !== got || uw !== ug || !m.containers.length || !lounges || styled < Math.ceil(rooms.length * 0.6) || m.plan.variant !== V.name) bad.push(`${V.id} (seed ${s}: ${got}/${walk}, ${ug}/${uw} upstairs, ${m.containers.length} boxes, ${styled}/${rooms.length} styled${lounges ? "" : ", a floor with no lounge"})`);
+        if (s === 0) feats.push({ id: V.id, list: [...new Set(rooms.map((a) => base(a.name)))].sort().join("|"), order: rooms.filter((a) => !a.f).sort((a, b) => a.y0 - b.y0 || a.x0 - b.x0).map((a) => base(a.name)).join(">"),
+          doors: m.exits.map((e) => e.side).sort().join(","), open: rooms.some((a) => a.role === "corridor") ? "corridor" : "open", foot: `${Math.round((m.building.w / m.building.h) * 2) / 2}`, storeys: `${(V.storeys || []).join("-")}` });
+      }
+    });
+    check(!bad.length, `${BUILDINGS[key].name}: every plan builds, reachable, furnished for its kind, named on its map${bad.length ? `: ${bad.slice(0, 4).join("; ")}` : ""}`);
+    const thin = [];
+    for (let i = 0; i < feats.length; i++) for (let j = i + 1; j < feats.length; j++) { const d = ["list", "order", "doors", "open", "foot", "storeys"].filter((k) => feats[i][k] !== feats[j][k]); if (d.length < 2) thin.push(`${feats[i].id} ~ ${feats[j].id}`); }
+    check(!thin.length, `${BUILDINGS[key].name}: every two plans differ in two ways or more${thin.length ? ` (not ${thin.join(", ")})` : ""}`);
+  }
+  // The site layouts: a liberal arts college laid out each way.
+  const L0 = CAMPUS.LAYOUTS;
+  check(L0.length >= 12 && new Set(L0.map((L) => L.name)).size === L0.length, `${L0.length} site layouts (${L0.map((L) => L.name).join(", ")})`);
+  t.loc.campus = "liberal";
+  const seen = new Set(), bad = [];
+  for (const L of L0) {
+    const m = buildingMap(st, t.id, { ...OPT, id: `campus:${L.id}`, layout: L.id }, false);
+    const z = m.zones[0], g0 = flood(m.cells, m.w, m.h, [[z.x0 + 1, z.y0 + 1]]);
+    let walk = 0, got = 0;
+    m.cells.forEach((c, j) => { if (walkable(c)) { walk++; if (g0[j]) got++; } });
+    const P = m.plan, sig = `${P.houses.map((h) => `${h.key}@${h.row}`).join(",")}|${P.links.map((q) => q.type).join(",")}|${P.grounds.map((g) => `${g.kind}${g.h}`).join(",")}`;
+    seen.add(sig);
+    if (walk !== got || P.layout !== L.id || campusLayout(st, t.id, { id: `campus:${L.id}`, layout: L.id }) !== L) bad.push(`${L.id} (${got}/${walk})`);
+    if (L.id === "colleges" && !P.houses.some((h) => h.key === "dorm" && P.houses.some((q) => q.row === h.row && q.key !== "dorm" && q.key !== "dininghall"))) bad.push("colleges: no dorm among the academic buildings");
+    if (L.id === "skybridges" && P.links.some((q) => q.type === "walkway")) bad.push("skybridges: a walkway");
+    if (L.id === "connected" && P.links.some((q) => q.type !== "corridor")) bad.push("connected: a link not a corridor");
+  }
+  delete t.loc.campus;
+  check(!bad.length && seen.size === L0.length, `every site layout lays a whole campus out its own way (${seen.size} different, every cell reachable)${bad.length ? `: ${bad.join("; ")}` : ""}`);
 }
 
 console.log(`\n${passes} passed, ${fails} failed`);

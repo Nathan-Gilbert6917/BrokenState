@@ -21,7 +21,7 @@ Every cached picture is redrawn after the browser loses and restores its GPU con
 ## Battle map sizes
 Battle maps are sized by context, from 24×18 up to 48×34, with anti-slog endings.
 - Raid maps run between the run's *Raid map, smallest / largest* dials (32×24 to 56×42 as it stands; cities and towns always the largest). Past 40×30 the dead, Heat's rise, a container's find and the ways out scale with the ground; the plan window and the building choice show the size.
-- **Campuses** (issue #28, [Campuses](#campuses)) open maps of their own past the dials: a community college about 140–160 × 110–130, a liberal arts college 200–240 × 180–220, a state university 400–500 square, each at most `CAMPUS.MAX` across: 300 while #24's engine work for big maps (windowed pathing, tiled canvases, compact saves) is not on dev, then 500.
+- **Campuses** (issue #28, [Campuses](#campuses)) open maps of their own past the dials: a community college about 150–170 × 120–150, a liberal arts college 200–240 × 180–220, a state university 400–500 square, each at most `CAMPUS.MAX` across: 300 while #24's engine work for big maps (windowed pathing, tiled canvases, compact saves) is not on dev, then 500.
 - Modules: [battlesize, worldcfg]; `tools/raidshot.cjs` shoots a big raid in the browser.
 
 ## A raid without the side panel
@@ -346,6 +346,203 @@ The user's request (2026-10-25, issue #28 of the interiors epic #7): "Add colleg
 - **Older saves**: a university one of whose buildings a raid already went into keeps its three (buildingmaps.js `SITES_LEGACY`, `campusLegacy`: its site's ledger names their maps); every other university and every college is a campus, in a new run and in an older save alike (the issue's rule). A battle saved mid-raid is the battle as it was.
 - **Not done**: no tunnel between buildings (no basements, as #9 decided); the lecture halls' tiers are drawn flat; a lower building's footprint shows as open air on the upper floors' views (#23's lower parts are not on dev); fronts all face south (compound.js could turn them); the campus cap stays 300 until #24's engine work is on dev.
 - Modules: [campus `CAMPUS`, `campusMap`, `campusPlan`, `campusKind`, `campusLegacy`, `campusDead`, `campusFolk`, `campusHeatDims`, `campusLootShare`, `campusIntro`, `campusBuildings`, `COLLEGE_NAMES`; campuslayout `CAMPUS_SIZE`, `CAMPUS_PLANS`, `CAMPUS_STYLES`, `campusStyle`, the scenes; compound; buildingmaps (`BUILDINGS`, `SITES`, `SITES_LEGACY`, `placeInterior`, `interiorIntro`); combat (`AREAS.dormroom`, `BOX_LOOT`, Heat, the loot share); floorfolk; poicont `poiHouses`; scavenge `afterRaid`; mapgen; data `LOCATIONS.college`; loot; locks; ui/isoview (`overheadFor`, `FURN_DRAW`, the pool and track floors); ui/itemart/furniture]. Tests: `tools/campustest.js`, `tools/furnituretest.js`, `tools/itemarttest.js`.
+
+### Named plans and site layouts
+The user's request (2026-10-25, relayed for issue #32): "for buildings with no to only a few varients create a dozen varients per building type". Module `sim/campusplans.js` (`CAMPUS_VARIANTS`, `planFrom`, `campusVariantOf`); campus.js `CAMPUS.LAYOUTS`, `campusLayout`. Tests: tools/campustest.js "The named plans".
+- **Twelve plans for each campus type this issue owns** (dorm, lecture hall, science building, student union, athletics, administration, security, maintenance, theatre, parking garage): a building takes one on its own dice (`campusVariantOf`; `option.plan`, an index or an id, picks one: the tests'); the plan's name is on the map (`plan.variant`, buildingmaps.js assemble). The first of each is the type's original plan in campuslayout.js, kept as it was; the others are data (`planFrom`): a footprint range, the storeys' dice (a campus still sets a dorm's storeys: `CAMPUS.KINDS` `dormStoreys`), the ground floor's plan, the upper floors' (and the top floor's, if its own), the doors out.
+- **A floor's form**: `hall` (rooms, a corridor, rooms: the corridor plan), `single` (a single-loaded gallery: one band of rooms, the corridor behind), `triple` (two corridors round a middle band: a tower's core), `open` (rooms along the front, one open hall behind them, rooms behind that), `wings` (two corridor wings either side of an entrance and an atrium), `tree` (its own split tree: the decks, the bays). A row is `[size, key]` entries (a key a room of the plan's vocabulary `Q`, each laid out by its style: `campus`, #15's `civic`, #27's `office`), and `["rep", unit, key]` for as many such rooms as fit (a dorm's rooms, offices, labs, practice rooms); `suite`, `flat`, `pod` and `gstudio` are a unit of rooms (their doors inside the unit, one onto the corridor).
+- **What counts as a different plan** (issue #32): every two plans of a type differ in at least two of the room list, the ground floor's order, the doors out, corridor or open plan, the footprint's shape, the storeys (the test builds every pair and compares).
+- **Footprint classes**: a campus plan's class is its area's (small ≤ 190 cells, medium ≤ 360, large above; `footClass`), not "tower" (a residence tower is a large footprint); a parking garage's stair runs are 2 steps (tools/storeytest.js's rule), not 3.
+- **Storeys by type** (buildingmaps.js `STOREYS_BY_TYPE`) widened to the plans': lecture hall 1–4, science building 1–6 (the research tower), student union 1–4, athletics 1–2 (the fitness centre, the boathouse), administration 1–6 (the tower), security 1–2, maintenance 1–2, theatre 1–3, garage 2–6.
+- **Types owned elsewhere**: the university library (#34's library plans), the dining hall (#33's), the health centre and the chapel (#36's clinic and church plans) and the labs (#37) take those tickets' plans once they are on dev; until then they keep the plan above.
+- **Twelve site layouts** (`CAMPUS.LAYOUTS`, a campus's by its site's dice: `campusLayout`, `option.layout` a given one; its name on the plan, `layoutName`, and in the raid plan's first line): the rows' order, buildings moved between rows, the links' odds and kinds, the gaps, the quads' depth, the lawns' trees and benches, a quad's centrepiece. The first is the layout as it was.
+- **The small fixes with it**: a community college 150–170 × 120–150 (more of its 4–8 buildings fit); a trimmed campus keeps its fewest dorms (`campusPlan`: the must-haves and `K.dorms[0]` dorms); the briefing and the intro say "a quad", not "1 quads".
+**Residence hall** (`dorm`)
+
+| # | Plan (`id`) | Size | Storeys | Ground floor |
+|---|---|---|---|---|
+| 1 | Double-loaded corridor hall (`corridor`) | 34–46 × 17 | 2–4 | the original plan |
+| 2 | Suite-style hall (`suites`) | 34–46 × 17–19 | 2–4 | corridor |
+| 3 | Single-loaded gallery hall (`gallery`) | 40–46 × 10–11 | 2–4 | single-loaded |
+| 4 | Apartment-style hall (`apartments`) | 34–46 × 19–21 | 2–4 | corridor |
+| 5 | Cluster pod hall (`pods`) | 34–46 × 20–22 | 2–4 | corridor |
+| 6 | Freshman tower (`tower`) | 30–34 × 26–28 | 6–8 | two corridors |
+| 7 | Singles hall (`singles`) | 34–46 × 17 | 2–4 | corridor |
+| 8 | Honors house (`honors`) | 30–36 × 17–19 | 2–3 | corridor |
+| 9 | Co-op house (`coop`) | 24–30 × 15–17 | 2–3 | open hall |
+| 10 | Graduate studios (`graduate`) | 34–46 × 17–19 | 2–4 | corridor |
+| 11 | Greek house (`greek`) | 26–32 × 17–19 | 2–3 | corridor |
+| 12 | Mixed-use hall (`mixeduse`) | 34–46 × 18–20 | 3–5 | corridor |
+
+**Lecture hall** (`lecturehall`)
+
+| # | Plan (`id`) | Size | Storeys | Ground floor |
+|---|---|---|---|---|
+| 1 | Twin lecture halls (`twin`) | 30–38 × 22–26 | 1–2 | the original plan |
+| 2 | Grand lecture theatre (`grand`) | 30–38 × 22–26 | 1–2 | corridor |
+| 3 | Seminar block (`seminar`) | 30–38 × 17–19 | 2–3 | corridor |
+| 4 | Single-loaded classroom wing (`wing`) | 40–46 × 12–14 | 1–2 | single-loaded |
+| 5 | Atrium lecture building (`atrium`) | 38–44 × 22–26 | 1–2 | wings and atrium |
+| 6 | Lecture halls round a core (`core`) | 30–38 × 24–26 | 1–2 | two corridors |
+| 7 | Humanities building (`humanities`) | 30–38 × 17–19 | 3–4 | corridor |
+| 8 | Business school (`business`) | 30–38 × 22–26 | 1–2 | corridor |
+| 9 | Law school (`law`) | 30–38 × 22–26 | 2–3 | corridor |
+| 10 | Language and media centre (`media`) | 30–38 × 18–20 | 1–2 | corridor |
+| 11 | Old Main (`oldmain`) | 34–40 × 19–21 | 3–4 | corridor |
+| 12 | Learning commons (`commons`) | 30–38 × 22–26 | 1–2 | open hall |
+
+**Science building** (`sciencehall`)
+
+| # | Plan (`id`) | Size | Storeys | Ground floor |
+|---|---|---|---|---|
+| 1 | Teaching and research labs (`labs`) | 32–40 × 19–21 | 2–3 | the original plan |
+| 2 | Chemistry building (`chemistry`) | 32–40 × 19–21 | 2–3 | corridor |
+| 3 | Biology building (`biology`) | 32–40 × 19–21 | 2–3 | corridor |
+| 4 | Physics building (`physics`) | 32–40 × 19–21 | 2–3 | corridor |
+| 5 | Engineering hall (`engineering`) | 36–42 × 19–21 | 1–2 | open hall |
+| 6 | Research tower (`tower`) | 28–32 × 24–26 | 4–6 | two corridors |
+| 7 | Single-loaded lab wing (`wing`) | 42–46 × 13–14 | 2–3 | single-loaded |
+| 8 | Computer science building (`computing`) | 32–40 × 19–21 | 2–3 | corridor |
+| 9 | Earth sciences building (`geology`) | 32–40 × 19–21 | 2–3 | corridor |
+| 10 | Medical sciences building (`medical`) | 32–40 × 19–21 | 2–3 | corridor |
+| 11 | Agricultural science building (`agriculture`) | 32–40 × 21–23 | 1–2 | corridor |
+| 12 | Interdisciplinary science centre (`interdisciplinary`) | 40–46 × 19–21 | 2–3 | wings and atrium |
+
+**Student union** (`studentunion`)
+
+| # | Plan (`id`) | Size | Storeys | Ground floor |
+|---|---|---|---|---|
+| 1 | Union with food court and ballroom (`union`) | 38–46 × 22–26 | 2 | the original plan |
+| 2 | Atrium union (`atrium`) | 42–46 × 22–26 | 2 | wings and atrium |
+| 3 | Food hall union (`foodhall`) | 38–46 × 22–26 | 2 | open hall |
+| 4 | Ballroom union (`ballroom`) | 38–46 × 24–26 | 2 | corridor |
+| 5 | Club tower union (`clubs`) | 32–36 × 20–22 | 3–4 | corridor |
+| 6 | Pub and games union (`pub`) | 38–46 × 22–26 | 1–2 | corridor |
+| 7 | Bookstore union (`bookstore`) | 38–46 × 24–26 | 2 | open hall |
+| 8 | Student services centre (`services`) | 38–46 × 22–26 | 2 | corridor |
+| 9 | Single-loaded gallery union (`gallery`) | 44–46 × 16–18 | 2 | single-loaded |
+| 10 | Commuter centre (`commuter`) | 38–46 × 22–26 | 1–2 | open hall |
+| 11 | Media union (`media`) | 38–46 × 22–26 | 2 | corridor |
+| 12 | Recreation union (`rec`) | 38–46 × 24–26 | 1–2 | corridor |
+
+**Athletics centre** (`athletics`)
+
+| # | Plan (`id`) | Size | Storeys | Ground floor |
+|---|---|---|---|---|
+| 1 | Gym, pool and weight room (`gym`) | 38–46 × 28–32 | 1 | the original plan |
+| 2 | Field house (`fieldhouse`) | 42–46 × 30–32 | 1 | open hall |
+| 3 | Natatorium (`natatorium`) | 38–46 × 28–32 | 1 | open hall |
+| 4 | Basketball arena (`arena`) | 42–46 × 30–32 | 1 | open hall |
+| 5 | Fitness centre (`fitness`) | 32–38 × 22–24 | 2 | corridor |
+| 6 | Gymnastics and dance centre (`gymnastics`) | 38–46 × 26–28 | 1 | corridor |
+| 7 | Wrestling and combat sports centre (`combat`) | 32–36 × 22–24 | 1 | corridor |
+| 8 | Recreation centre (`rec`) | 38–46 × 28–32 | 1 | two corridors |
+| 9 | Ice rink (`rink`) | 42–46 × 30–32 | 1 | open hall |
+| 10 | Racquet centre (`racquet`) | 44–46 × 16–18 | 1 | single-loaded |
+| 11 | Boathouse (`boathouse`) | 30–36 × 20–24 | 1–2 | open hall |
+| 12 | Varsity training complex (`training`) | 38–46 × 28–32 | 1–2 | corridor |
+
+**Administration building** (`admin`)
+
+| # | Plan (`id`) | Size | Storeys | Ground floor |
+|---|---|---|---|---|
+| 1 | Registrar, admissions and the president's floor (`offices`) | 28–36 × 17–19 | 2–3 | the original plan |
+| 2 | Old Main administration (`oldmain`) | 32–38 × 19–21 | 3 | corridor |
+| 3 | Welcome centre (`welcome`) | 28–36 × 17–19 | 1–2 | open hall |
+| 4 | One-stop student services hall (`onestop`) | 32–36 × 19–21 | 2–3 | open hall |
+| 5 | Single-loaded office wing (`wing`) | 40–44 × 12–13 | 2–3 | single-loaded |
+| 6 | Administration tower (`tower`) | 26–30 × 24–26 | 4–6 | two corridors |
+| 7 | Alumni house (`alumni`) | 22–26 × 15–17 | 2 | corridor |
+| 8 | President's and provost's hall (`executive`) | 28–36 × 17–19 | 2–3 | corridor |
+| 9 | Records and IT centre (`records`) | 28–36 × 17–19 | 1–2 | corridor |
+| 10 | Human resources and payroll (`hr`) | 28–36 × 17–19 | 2–3 | corridor |
+| 11 | Admissions hall (`admissions`) | 28–36 × 17–19 | 1–2 | corridor |
+| 12 | Mail and print services (`mail`) | 28–36 × 17–19 | 1 | open hall |
+
+**Campus security** (`security`)
+
+| # | Plan (`id`) | Size | Storeys | Ground floor |
+|---|---|---|---|---|
+| 1 | Campus security office (`station`) | 18–22 × 13–15 | 1 | the original plan |
+| 2 | Campus police station (`precinct`) | 22–26 × 15–17 | 1 | corridor |
+| 3 | Dispatch centre (`dispatch`) | 18–22 × 14–16 | 1 | open hall |
+| 4 | Security kiosk (`kiosk`) | 12–14 × 9–10 | 1 | own plan |
+| 5 | Gatehouse post (`gatehouse`) | 10–12 × 8–9 | 1 | own plan |
+| 6 | Two-storey security headquarters (`hq`) | 20–24 × 15–16 | 2 | corridor |
+| 7 | Single-loaded security wing (`gallery`) | 24–28 × 9–10 | 1 | single-loaded |
+| 8 | Emergency operations centre (`eoc`) | 22–26 × 16–18 | 1 | corridor |
+| 9 | Parking and security office (`parking`) | 18–22 × 13–15 | 1 | corridor |
+| 10 | Patrol garage and office (`patrol`) | 24–28 × 14–16 | 1 | own plan |
+| 11 | Records and lost property office (`lostfound`) | 18–22 × 13–15 | 1 | corridor |
+| 12 | Security substation (`substation`) | 16–18 × 11–12 | 1 | open hall |
+
+**Maintenance building** (`maintenance`)
+
+| # | Plan (`id`) | Size | Storeys | Ground floor |
+|---|---|---|---|---|
+| 1 | Physical plant (`plant`) | 24–30 × 16–18 | 1 | the original plan |
+| 2 | Central heating plant (`central`) | 26–30 × 18–20 | 1 | open hall |
+| 3 | Grounds depot (`grounds`) | 24–30 × 16–18 | 1 | own plan |
+| 4 | Motor pool (`motorpool`) | 30–34 × 16–18 | 1 | own plan |
+| 5 | Carpentry and paint shops (`trades`) | 24–30 × 16–18 | 1 | corridor |
+| 6 | Electrical and locksmith shops (`electric`) | 22–26 × 14–16 | 1 | open hall |
+| 7 | Single-loaded workshop row (`gallery`) | 34–40 × 11–12 | 1 | single-loaded |
+| 8 | Central stores warehouse (`stores`) | 28–32 × 18–20 | 1 | open hall |
+| 9 | Facilities management offices (`facilities`) | 24–28 × 16–17 | 2 | own plan |
+| 10 | Custodial depot (`custodial`) | 22–26 × 14–16 | 1 | corridor |
+| 11 | Recycling centre (`recycling`) | 26–30 × 16–18 | 1 | own plan |
+| 12 | Plant and yard shops (`yard`) | 28–30 × 17–18 | 1 | own plan |
+
+**Theatre and arts building** (`theatre`)
+
+| # | Plan (`id`) | Size | Storeys | Ground floor |
+|---|---|---|---|---|
+| 1 | Playhouse with the arts upstairs (`playhouse`) | 28–34 × 24–28 | 1–2 | the original plan |
+| 2 | Concert hall (`concert`) | 28–34 × 26–28 | 1–2 | corridor |
+| 3 | Black box theatre (`blackbox`) | 24–28 × 20–22 | 1 | corridor |
+| 4 | Art gallery and studios (`gallery`) | 28–34 × 24–28 | 1–2 | open hall |
+| 5 | Music building (`music`) | 28–34 × 20–22 | 2–3 | corridor |
+| 6 | Proscenium theatre (`proscenium`) | 28–34 × 26–28 | 1–2 | two corridors |
+| 7 | Film school (`film`) | 28–34 × 24–28 | 1–2 | corridor |
+| 8 | Dance studios (`dance`) | 30–34 × 20–22 | 1–2 | corridor |
+| 9 | Arts centre (`artscentre`) | 36–40 × 24–28 | 1–2 | wings and atrium |
+| 10 | Single-loaded studio wing (`studiowing`) | 40–46 × 13–14 | 1–2 | single-loaded |
+| 11 | Lecture-recital hall (`recital`) | 26–30 × 22–24 | 1 | open hall |
+| 12 | Opera house (`opera`) | 32–34 × 26–28 | 2–3 | two corridors |
+
+**Parking garage** (`parkgarage`)
+
+| # | Plan (`id`) | Size | Storeys | Ground floor |
+|---|---|---|---|---|
+| 1 | Parking deck (`deck`) | 34–42 × 24–30 | 2–4 | the original plan |
+| 2 | Twin-stair garage (`twinstair`) | 42–46 × 22–24 | 2–3 | own plan |
+| 3 | Long deck (`long`) | 46–48 × 18–20 | 2–4 | own plan |
+| 4 | Square deck (`square`) | 32–34 × 30–32 | 2–4 | own plan |
+| 5 | Garage over shops (`shops`) | 34–42 × 24–30 | 3–4 | own plan |
+| 6 | Garage with a security office (`security`) | 34–42 × 24–30 | 2–4 | own plan |
+| 7 | Split-level decks (`split`) | 40–44 × 24–30 | 2–4 | own plan |
+| 8 | Tall garage (`tall`) | 30–32 × 28–30 | 5–6 | own plan |
+| 9 | Two-level deck (`low`) | 36–42 × 26–30 | 2 | own plan |
+| 10 | Garage with a pay plaza (`payplaza`) | 34–42 × 24–30 | 2–4 | own plan |
+| 11 | Garage with a bike store (`bikes`) | 34–42 × 24–30 | 2–4 | own plan |
+| 12 | Garage over the motor pool (`motorpool`) | 34–42 × 24–30 | 3–4 | own plan |
+
+**Site layouts** (`CAMPUS.LAYOUTS`)
+
+| # | Layout (`id`) | What changes |
+|---|---|---|
+| 1 | Classic quads (`quads`) | the defaults (as before) |
+| 2 | Academic front (`academicfront`) | rows teaching, residences, athletics and service north to south |
+| 3 | Residences by the fields (`residentialsouth`) | rows teaching, athletics and service, residences north to south |
+| 4 | Linked megastructure (`megastructure`) | links ×2.2; bridges 70%; gaps 6–7 |
+| 5 | Pavilion campus (`pavilions`) | links ×0.3; gaps 10–14; trees ×2 |
+| 6 | Garden campus (`garden`) | quads 24–30 deep; trees ×3; benches ×2 |
+| 7 | Compact town campus (`compact`) | gaps 6–7; quads 18–20 deep; trees ×0.3; a statue on every quad |
+| 8 | Grand mall (`mall`) | quads 26–30 deep; benches ×2; a fountain on every quad |
+| 9 | Covered walkways (`walkways`) | links ×1.6; bridges 0%; walkways 100% |
+| 10 | Skybridge campus (`skybridges`) | links ×1.6; bridges 100%; walkways 0% |
+| 11 | Connected halls (`connected`) | links ×1.8; bridges 0%; walkways 0%; gaps 7–9 |
+| 12 | Residential colleges (`colleges`) | dorm and dininghall in the teaching rows; links ×1.3; trees ×1.5 |
 
 ## Vaulting half cover
 People go over waist-high cells at extra cost and land winded; the dead crawl over instead.

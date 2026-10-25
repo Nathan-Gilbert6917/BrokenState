@@ -20,6 +20,7 @@
 // Usage: node tools/storeytest.js [seeds=6]
 import { turnToBox } from "../src/sim/vision.js";
 import { MIL_KEYS } from "../src/sim/militarylayout.js"; // issue #25: the military buildings at their real size
+import { CAMPUS_KEYS } from "../src/sim/campuslayout.js"; // issue #28: the campus buildings at theirs
 import { createWorld, hub, atBase } from "../src/sim/world.js";
 import { launchExpedition } from "../src/sim/parties.js";
 import {
@@ -86,7 +87,7 @@ console.log(`Generation: every type (${Object.keys(BUILDINGS).length}), ${SEEDS}
       try { m = assemble(rng, spec, { key, name: BUILDINGS[key].name, withVehicle: s % 2 === 1 }); } catch (e) { bad++; console.log(`  ${key} seed ${s}: ${e.stack}`); continue; }
       const W = m.w, H = m.h;
       // The map fits the footprint and its margins, and is one of the size classes.
-      const [maxW, maxH] = MIL_KEYS.has(key) ? [300, 300] : spec.foot === "huge" ? [spec.bw + 12, spec.bh + 16] : [48, 36]; // a huge footprint: the map no bigger than it needs; issue #25: the military buildings at their real size (the maps up to 300 × 300, #24)
+      const [maxW, maxH] = MIL_KEYS.has(key) || CAMPUS_KEYS.has(key) || key === "campus" ? [300, 300] : spec.foot === "huge" ? [spec.bw + 12, spec.bh + 16] : [48, 36]; // a huge footprint: the map no bigger than it needs; issue #25: the military buildings at their real size (the maps up to 300 × 300, #24)
       if (W < spec.bw + 8 || H < spec.bh + 9 || W > maxW || H > maxH) errs.push(`map ${W}x${H} for a ${spec.bw}x${spec.bh} footprint`);
       const cls = sizeClass(W, H);
       if (spec.foot === "tower" && !["S", "M"].includes(cls)) errs.push(`a tower on a ${cls} map`);

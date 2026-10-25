@@ -76,7 +76,7 @@ export const CAMPUS = {
   CARS: 0.55,          // the stalls with a car left in them
   // The kinds: the map's size, the buildings (how many, the dorms among them), the quads.
   KINDS: {
-    community: { name: "Community college", w: [140, 160], h: [110, 130], n: [4, 8], dorms: [0, 1], dormStoreys: [2, 2], quads: 1, lots: 1, field: false,
+    community: { name: "Community college", w: [150, 170], h: [120, 150], n: [4, 8], dorms: [0, 1], dormStoreys: [2, 2], quads: 1, lots: 1, field: false,
       must: ["admin", "lecturehall", "sciencehall", "univlibrary"], more: ["studentunion", "athletics", "maintenance", "security", "healthcentre", "theatre", "lecturehall", "dininghall"] },
     liberal: { name: "Liberal arts college", w: [200, 240], h: [180, 220], n: [8, 15], dorms: [2, 4], dormStoreys: [2, 4], quads: 2, lots: 1, field: true,
       must: ["admin", "chapel", "lecturehall", "sciencehall", "univlibrary", "dininghall", "studentunion"], more: ["athletics", "theatre", "healthcentre", "security", "maintenance", "lecturehall", "sciencehall", "dorm"] },
@@ -86,6 +86,25 @@ export const CAMPUS = {
   },
   // Which row a building stands in, north to south.
   ZONES: { dorm: 0, dininghall: 0, admin: 1, univlibrary: 1, lecturehall: 1, sciencehall: 1, studentunion: 1, chapel: 1, theatre: 1, healthcentre: 1, security: 1, athletics: 2, parkgarage: 2, maintenance: 2 },
+  // The site layouts (the user's request 2026-10-25: a dozen variants a type; a campus's by its dice, option.layout a
+  // given one): the rows' order north to south (by zone: 0 the residences, 1 the academic buildings, 2 athletics and
+  // the service buildings), zone: buildings moved to another zone's rows, links: the joined pairs' odds × this, bridge
+  // and walkway: a link's kind's odds (instead of BRIDGE and WALKWAY), gap: the space between buildings standing apart,
+  // quad: a quad's depth, trees and bench: the lawns' × these, centre: a quad's centrepiece (fountain, statue, either).
+  LAYOUTS: [
+    { id: "quads", name: "Classic quads" },
+    { id: "academicfront", name: "Academic front", order: [1, 0, 2] },
+    { id: "residentialsouth", name: "Residences by the fields", order: [1, 2, 0] },
+    { id: "megastructure", name: "Linked megastructure", links: 2.2, bridge: 0.7, gap: [6, 7] },
+    { id: "pavilions", name: "Pavilion campus", links: 0.3, gap: [10, 14], trees: 2 },
+    { id: "garden", name: "Garden campus", quad: [24, 30], trees: 3, bench: 2 },
+    { id: "compact", name: "Compact town campus", gap: [6, 7], quad: [18, 20], trees: 0.3, centre: "statue" },
+    { id: "mall", name: "Grand mall", quad: [26, 30], centre: "fountain", bench: 2 },
+    { id: "walkways", name: "Covered walkways", links: 1.6, bridge: 0, walkway: 1 },
+    { id: "skybridges", name: "Skybridge campus", links: 1.6, bridge: 1, walkway: 0 },
+    { id: "connected", name: "Connected halls", links: 1.8, bridge: 0, walkway: 0, gap: [7, 9] },
+    { id: "colleges", name: "Residential colleges", zone: { dorm: 1, dininghall: 1 }, links: 1.3, trees: 1.5 },
+  ],
 };
 // The halls' names (a franchise-like list in the setting's style): a dorm's, the others' after their kind.
 const HALL_NAMES = ["Hale", "Whitcombe", "Calder", "Granite", "Morrow", "Ashby", "Lindqvist", "Carver", "Thorne", "Pell", "Halvorsen", "Brandt", "Okafor", "Reyes", "Sutter", "Wren", "Delacroix", "Ingram", "Marsh", "Quill", "Fenwick", "Adair", "Bellamy", "Crane"];
@@ -111,6 +130,11 @@ export function campusKind(state, tile) {
 }
 // An older save's university one of whose buildings a raid already went into (its site's ledger has their maps, not
 // the campus's): it keeps its buildings (buildingmaps.js SITES_LEGACY).
+// The campus's site layout: option.layout (an id) or the site's dice.
+export function campusLayout(state, tileId, option = {}) {
+  const Ls = CAMPUS.LAYOUTS, given = option.layout != null ? Ls.find((L) => L.id === option.layout) : null;
+  return given || Ls[Math.floor(dice(state, "layout", tileId, option.id || "campus") * Ls.length)];
+}
 export function campusLegacy(tile) {
   const poi = tile && Array.isArray(tile.pois) ? tile.pois.find((p) => p && p.site) : null;
   const maps = poi && poi.cont && poi.cont.maps ? Object.keys(poi.cont.maps) : [];
@@ -123,7 +147,7 @@ function campusList(rng, kind) {
   const K = CAMPUS.KINDS[kind];
   const n = rng.int(K.n[0], K.n[1]), dorms = rng.int(K.dorms[0], K.dorms[1]);
   const out = K.must.map((key) => ({ key }));
-  for (let i = 0; i < dorms; i++) out.push({ key: "dorm" });
+  for (let i = 0; i < dorms; i++) out.push({ key: "dorm" }); // after the must-haves: a trim (campusPlan) keeps them
   const more = rng.shuffle(K.more.slice());
   for (let i = 0; out.length < n; i++) out.push({ key: more[i % more.length] });
   for (const b of out) {
@@ -142,6 +166,7 @@ function campusPlan(state, tileId, option) {
   const tile = state.tiles[tileId];
   const kind = campusKind(state, tile), K = CAMPUS.KINDS[kind];
   const rng = new Rng(seedOf(state, "map", tileId, option.id));
+  const LY = campusLayout(state, tileId, option);
   const legacy = legacyRooms(state);
   const MAXW = Math.min(CAMPUS.MAX, rng.int(K.w[0], K.w[1])), MAXH = Math.min(CAMPUS.MAX, rng.int(K.h[0], K.h[1]));
   const built = campusList(rng, kind).map((b, k) => {
@@ -151,14 +176,15 @@ function campusPlan(state, tileId, option) {
     spec.margins = { front: 1, back: 1, left: 1, right: 1 };
     spec.ground = "none";
     const storeys = Math.max(1, Math.min(8, Math.round(spec.storeys || 1)));
-    return { k, key: b.key, id, hr, spec, m: null, bw: spec.bw, bh: spec.bh, storeys, zone: CAMPUS.ZONES[b.key] ?? 1, name: "", x0: 0, y0: 0, link: null };
+    return { k, key: b.key, id, hr, spec, m: null, bw: spec.bw, bh: spec.bh, storeys, zone: (LY.zone && LY.zone[b.key]) ?? CAMPUS.ZONES[b.key] ?? 1, name: "", x0: 0, y0: 0, link: null };
   });
-  let layout = planRows(rng, built, kind, MAXW, AVAIL);
-  while (layout.H > MAXH && built.length > K.must.length) {
-    built.length = Math.max(K.must.length, built.length - Math.max(1, Math.ceil((layout.H - MAXH) / 40)));
-    layout = planRows(rng, built, kind, MAXW, AVAIL);
+  let layout = planRows(rng, built, kind, MAXW, AVAIL, LY);
+  const keep = K.must.length + K.dorms[0]; // the must-haves and the fewest dorms the kind has (campusList puts them first)
+  while (layout.H > MAXH && built.length > keep) {
+    built.length = Math.max(keep, built.length - Math.max(1, Math.ceil((layout.H - MAXH) / 40)));
+    layout = planRows(rng, built, kind, MAXW, AVAIL, LY);
   }
-  return { tile, kind, K, rng, legacy, MAXW, MAXH, built, layout };
+  return { tile, kind, K, rng, legacy, MAXW, MAXH, built, layout, LY };
 }
 
 /**
@@ -169,7 +195,8 @@ function campusPlan(state, tileId, option) {
  */
 export function campusMap(state, tileId, option, withVehicle) {
   const CP = CAMPUS;
-  const { kind, K, rng, legacy, MAXW, MAXH, built, layout } = campusPlan(state, tileId, option);
+  const { kind, K, rng, legacy, MAXW, MAXH, built, layout, LY } = campusPlan(state, tileId, option);
+  const QUAD = LY.quad || CP.QUAD;
   // ---------- the buildings, each its own plan and map, its signs of survival on it (copied in with it) ----------
   for (const B of built) {
     B.m = assemble(B.hr, B.spec, { key: B.key, id: B.id, name: BUILDINGS[B.key].name, legacy });
@@ -188,7 +215,7 @@ export function campusMap(state, tileId, option, withVehicle) {
   const W = MAXW, H = Math.min(CP.MAX, Math.max(layout.H, Math.min(MAXH, layout.H + 40)));
   // Stretch the quads to the map's depth (a deeper map: roomier quads, never past their range).
   let spare = H - layout.H;
-  for (const st of strips) if (spare > 0 && st.kind === "quad") { const add = Math.min(spare, CP.QUAD[1] - st.h); if (add > 0) { st.h += add; spare -= add; } }
+  for (const st of strips) if (spare > 0 && st.kind === "quad") { const add = Math.min(spare, QUAD[1] - st.h); if (add > 0) { st.h += add; spare -= add; } }
   // The rows and strips at their y, top to bottom.
   let y = CP.EDGE;
   for (let i = 0; i < rows.length; i++) {
@@ -308,11 +335,11 @@ export function campusMap(state, tileId, option, withVehicle) {
         // The centre: a fountain (a 2 × 2 basin) or a statue on its plinth, on a plaza where the paths cross.
         for (let p = midX - 3; p <= midX + 4; p++) for (let r = midY - 3; r <= midY + 4; r++) if (inside(p, r) && cells[I(p, r)].k === "open") cells[I(p, r)].f = "gravel";
         for (let p = midX; p <= midX + 1; p++) for (let r = midY; r <= midY + 1; r++) keep[I(p, r)] = 0;
-        if (rng.chance(0.5)) { piece(midX, midY, "fountain", 2, 2); q.centre = "fountain"; } else { piece(midX, midY, "statue"); q.centre = "statue"; }
+        if (LY.centre ? LY.centre === "fountain" : rng.chance(0.5)) { piece(midX, midY, "fountain", 2, 2); q.centre = "fountain"; } else { piece(midX, midY, "statue"); q.centre = "statue"; }
         for (let p = midX - 3; p <= midX + 4; p++) for (let r = midY - 3; r <= midY + 4; r++) if (inside(p, r)) keep[I(p, r)] = 1;
       }
       // Trees round the lawns, benches along the paths.
-      const nT = Math.round(w * st.h * CP.TREES), nB = Math.max(2, Math.round(w * st.h * CP.BENCH));
+      const nT = Math.round(w * st.h * CP.TREES * (LY.trees ?? 1)), nB = Math.max(2, Math.round(w * st.h * CP.BENCH * (LY.bench ?? 1)));
       for (let t = 0, n = 0; t < nT * 6 && n < nT; t++) { const p = rng.int(x0, x1), r = rng.int(st.y0, st.y0 + st.h - 1); if (cells[I(p, r)].f === "grass" && !keep[I(p, r)] && G.block(p, r, "tree")) { keep[I(p, r)] = 1; n++; } }
       for (let t = 0, n = 0; t < nB * 12 && n < nB; t++) {
         const p = rng.int(x0, x1 - 1), r = rng.int(st.y0 + 1, st.y0 + st.h - 2);
@@ -375,7 +402,7 @@ export function campusMap(state, tileId, option, withVehicle) {
   // ---------- the result (compound.js compoundResult: streetMap's shape; plan.houses are the buildings) ----------
   const vehicle = compoundVehicle(C, zones[0], withVehicle);
   const scenes = sceneList.length ? { list: sceneList.map((sc, i) => ({ ...sc, id: i + 1 })), bodies: sceneBodies, piles: scenePiles, pieces: scenePieces, seed: (seedOf(state, "scenebattle", tileId, option.id) % 2147483646) + 1 } : null;
-  const map = compoundResult(C, { key: option.key, id: option.id, name: option.name, zones, vehicle, kind: "campus", extra: { street: true, campus: true, campusKind: kind, kindName: K.name, links, grounds } });
+  const map = compoundResult(C, { key: option.key, id: option.id, name: option.name, zones, vehicle, kind: "campus", extra: { street: true, campus: true, campusKind: kind, kindName: K.name, layout: LY.id, layoutName: LY.name, links, grounds } });
   for (const h of map.plan.houses) { const B = built[h.k]; h.row = rows.findIndex((r) => r.list.includes(B)); }
   for (const r of map.plan.rooms) { const a = map.rooms[r.id]; if (a.campus) r.campus = a.campus; if (a.link) r.link = a.link; }
   return Object.assign(map, { street: true, campus: true, scenes });
@@ -386,15 +413,15 @@ const LINK_NAME = { bridge: "Glass bridge", walkway: "Covered walkway", corridor
 // (CAMPUS.LINKS) a link's length apart, else a gap; the strip behind each row (a yard between two rows of dorms, a quad
 // after the last dorms and after each row of teaching buildings, the fields and the lots south of the last row). H: the
 // map's depth it all needs.
-function planRows(rng, built, kind, W, AVAIL) {
-  const C = CAMPUS, K = C.KINDS[kind], avail = AVAIL(W);
+function planRows(rng, built, kind, W, AVAIL, LY = CAMPUS.LAYOUTS[0]) {
+  const C = CAMPUS, K = C.KINDS[kind], avail = AVAIL(W), GAP = LY.gap || C.GAP, QUAD = LY.quad || C.QUAD;
   /** @type {any[]} */
   const rows = [];
-  for (const zone of [0, 1, 2]) {
+  for (const zone of LY.order || [0, 1, 2]) {
     let row = null;
     for (const B of built.filter((b) => b.zone === zone)) {
       B.link = null;
-      const gap = rng.int(C.GAP[0], C.GAP[1]);
+      const gap = rng.int(GAP[0], GAP[1]);
       if (!row || row.used + gap + B.bw > avail) { row = { zone, list: [], gaps: [], used: 0, D: 0 }; rows.push(row); }
       if (row.list.length) { row.gaps.push(gap); row.used += gap; }
       row.list.push(B); row.used += B.bw; row.D = Math.max(row.D, B.bh);
@@ -404,11 +431,11 @@ function planRows(rng, built, kind, W, AVAIL) {
   // every building joined (it has one standing alone).
   const pairs = [];
   for (const row of rows) for (let j = 0; j + 1 < row.list.length; j++) pairs.push([row, j]);
-  for (const [row, j] of pairs) if (rng.chance(C.LINKS[kind]) && !row.list[j - 1]?.link) setLink(rng, row, j);
-  if (pairs.length && !pairs.some(([row, j]) => row.list[j].link)) setLink(rng, pairs[0][0], pairs[0][1]);
+  for (const [row, j] of pairs) if (rng.chance(Math.min(0.9, C.LINKS[kind] * (LY.links ?? 1))) && !row.list[j - 1]?.link) setLink(rng, row, j, LY);
+  if (pairs.length && !pairs.some(([row, j]) => row.list[j].link)) setLink(rng, pairs[0][0], pairs[0][1], LY);
   const joined = new Set();
   for (const row of rows) row.list.forEach((B, j) => { if (B.link) { joined.add(B); joined.add(row.list[j + 1]); } });
-  if (joined.size >= built.length) { const [row, j] = pairs.filter(([r, i]) => r.list[i].link).at(-1); row.list[j].link = null; row.gaps[j] = rng.int(C.GAP[0], C.GAP[1]); }
+  if (joined.size >= built.length) { const [row, j] = pairs.filter(([r, i]) => r.list[i].link).at(-1); row.list[j].link = null; row.gaps[j] = rng.int(GAP[0], GAP[1]); }
   for (const row of rows) row.used = row.list.reduce((a, B) => a + B.bw, 0) + row.gaps.reduce((a, g) => a + g, 0);
   // The strips behind the rows.
   /** @type {any[]} */
@@ -416,16 +443,16 @@ function planRows(rng, built, kind, W, AVAIL) {
     const next = rows[i + 1];
     if (!next) return { kind: "south", h: Math.max(rng.int(C.LOT[0], C.LOT[1]), K.field ? C.FIELD.h + (K.stadium ? 7 : 4) : 0), field: K.field };
     if (row.zone === 0 && next.zone === 0) return { kind: "yard", h: C.YARD };
-    return { kind: "quad", h: rng.int(C.QUAD[0], Math.round((C.QUAD[0] + C.QUAD[1]) / 2)) };
+    return { kind: "quad", h: rng.int(QUAD[0], Math.round((QUAD[0] + QUAD[1]) / 2)) };
   });
   if (!rows.length) return { rows, strips, H: 0 };
   const H = C.EDGE + rows.reduce((a, r) => a + r.D + C.FRONT + C.PATH, 0) + strips.reduce((a, s) => a + s.h, 0) + C.ROAD + 4;
   return { rows, strips, H };
 }
-function setLink(rng, row, j) {
+function setLink(rng, row, j, LY = CAMPUS.LAYOUTS[0]) {
   const A = row.list[j], B = row.list[j + 1], C = CAMPUS;
   const up = Math.min(A.storeys, B.storeys);
-  const type = up >= 2 && rng.chance(C.BRIDGE) ? "bridge" : rng.chance(C.WALKWAY) ? "walkway" : "corridor";
+  const type = up >= 2 && rng.chance(LY.bridge ?? C.BRIDGE) ? "bridge" : rng.chance(LY.walkway ?? C.WALKWAY) ? "walkway" : "corridor";
   A.link = { type, f: type === "bridge" ? rng.int(1, up - 1) : 0 };
   row.gaps[j] = rng.int(C.LINK[0], C.LINK[1]);
 }
@@ -517,6 +544,7 @@ export function campusLootShare(b, box) {
 export const campusHeatRate = (b) => { const [w, h] = campusHeatDims(b); return raidHeatRate(w, h); };
 // The opening lines: the campus, its buildings (the ones your side has been into, the ones that look ransacked), the
 // links, the ways out.
+const quads = (P) => { const n = (P.grounds || []).filter((g) => g.kind === "quad").length; return n === 1 ? "a quad" : `${n || "no"} quads`; };
 export function campusIntro(b) {
   const R = b.raid, P = R.plan;
   const names = P.houses.map((h) => h.name);
@@ -524,7 +552,7 @@ export function campusIntro(b) {
   const robbed = P.houses.filter((h) => { const cs = R.containers.filter((c) => c.house === h.k); return cs.length && cs.every((c) => c.ransacked && !c.mine); }).map((h) => h.name);
   const links = (P.links || []).map((L) => `${L.type === "bridge" ? `a glass bridge on floor ${L.f + 1}` : L.type === "walkway" ? "a covered walkway" : "a corridor"} joins ${P.houses[L.a].name} and ${P.houses[L.b].name}`);
   const ways = R.zones.map((z) => (z.name || z.side).toLowerCase());
-  return `${P.kindName}: ${names.length} buildings (${names.join(", ")}) round ${(P.grounds || []).filter((g) => g.kind === "quad").length || "no"} quads.${links.length ? ` ${links.join("; ").replace(/^./, (c) => c.toUpperCase())}.` : ""} Ways out: ${ways.join(", ")}.${been.length ? ` Your people have been through ${been.join(", ")} before: what you left there is as you left it.` : ""}${robbed.length ? ` ${robbed.join(", ")} ${robbed.length === 1 ? "looks" : "look"} ransacked.` : ""} The stairs are inside each building; peek through a door (K) before you go in, shut doors behind you (Shift+E).`;
+  return `${P.kindName}: ${names.length} buildings (${names.join(", ")}) round ${quads(P)}.${links.length ? ` ${links.join("; ").replace(/^./, (c) => c.toUpperCase())}.` : ""} Ways out: ${ways.join(", ")}.${been.length ? ` Your people have been through ${been.join(", ")} before: what you left there is as you left it.` : ""}${robbed.length ? ` ${robbed.join(", ")} ${robbed.length === 1 ? "looks" : "look"} ransacked.` : ""} The stairs are inside each building; peek through a door (K) before you go in, shut doors behind you (Shift+E).`;
 }
 // The raid plan's lines for a campus (ui/raidplan.js "Before you go in"): its buildings by row, north to south, each
 // row with the way in nearest it, and the links; the team picks the side to go in from by the building it heads for.
@@ -538,7 +566,7 @@ export function campusBriefing(b) {
     const z = R.zones.slice().sort((p, q) => Math.hypot(p.x0 - cx, p.y0 - cy) - Math.hypot(q.x0 - cx, q.y0 - cy))[0];
     return z ? (z.name || z.side).toLowerCase() : "";
   };
-  const out = [`${P.kindName}: ${P.houses.length} buildings round ${(P.grounds || []).filter((g) => g.kind === "quad").length} quads.`];
+  const out = [`${P.kindName}${P.layoutName ? ` (${P.layoutName.toLowerCase()})` : ""}: ${P.houses.length} buildings round ${quads(P)}.`];
   rows.forEach((hs, i) => { if (hs && hs.length) out.push(`${i === 0 ? "North" : i === rows.length - 1 ? "South" : "Middle"}: ${hs.map((h) => `${h.name}${h.storeys > 1 ? ` (${h.storeys})` : ""}`).join(", ")}; nearest way in: ${near(hs)}.`); });
   const L = (P.links || []).map((q) => `${P.houses[q.a].name}–${P.houses[q.b].name} (${q.type === "bridge" ? `a bridge, floor ${q.f + 1}` : q.type === "walkway" ? "a covered walkway" : "a corridor"})`);
   if (L.length) out.push(`Joined: ${L.join(", ")}.`);
