@@ -55,10 +55,10 @@ export const REAL_SIZE = {
   liquor:      { w: [10, 18], d: [12, 20], storeys: [1, 2], set: "town" },
   hardware:    { w: [18, 30], d: [16, 25], storeys: [1, 1], set: "town" },
   feedstore:   { w: [15, 25], d: [12, 20], storeys: [1, 1], set: "rural" },
-  restaurant:  { w: [8, 46], d: [9, 30], storeys: [1, 2], set: "town", planned: true }, // #33: by its format and size (the eat* rows)
-  pizza:       { w: [8, 46], d: [9, 30], storeys: [1, 1], set: "town", planned: true },
-  bar:         { w: [8, 46], d: [9, 30], storeys: [1, 2], set: "town", planned: true },
-  diner:       { w: [8, 46], d: [9, 30], storeys: [1, 1], set: "town", planned: true },
+  restaurant:  { w: [8, 54], d: [9, 40], storeys: [1, 2], set: "town", planned: true }, // #33: by its format and size (the eat* rows)
+  pizza:       { w: [8, 54], d: [9, 40], storeys: [1, 1], set: "town", planned: true },
+  bar:         { w: [8, 54], d: [9, 40], storeys: [1, 2], set: "town", planned: true },
+  diner:       { w: [8, 54], d: [9, 40], storeys: [1, 1], set: "town", planned: true },
   gasstation:  { w: [15, 25], d: [10, 15], storeys: [1, 1], set: "rural" }, // plus the forecourt and its canopy outside
   truckstop:   { w: [25, 40], d: [15, 25], storeys: [1, 1], set: "rural" },
   bank:        { w: [15, 30], d: [15, 25], storeys: [1, 2], set: "town" },
@@ -124,7 +124,7 @@ export const REAL_SIZE = {
   eatsmall:    { w: [11, 14], d: [10, 12], set: "town", planned: true },
   eatmedium:   { w: [16, 22], d: [13, 16], set: "town", planned: true },
   eatlarge:    { w: [26, 34], d: [18, 22], set: "town", planned: true },
-  eathuge:     { w: [40, 46], d: [26, 30], set: "town", planned: true },
+  eathuge:     { w: [50, 54], d: [36, 40], set: "town", planned: true }, // a banquet hall, a buffet palace: the shared rule's huge footprint (≥ 50 wide, 1800 cells; storeytest), as the supermarket (#33)
   // Open floors
   warehouse:   { w: [40, 80], d: [25, 50], storeys: [1, 1], set: "town" }, // one tall storey
   factory:     { w: [50, 100], d: [30, 60], storeys: [1, 1], set: "town" },
