@@ -112,7 +112,7 @@ console.log(`Every archetype (${Object.keys(BUILDINGS).length}), ${SEEDS} seeds 
       const W = m.w, H = m.h;
       sizes[key].push(`${W}x${H}`);
       const errs = [];
-      const huge = spec.foot === "huge" || (m.building && m.building.w >= 50); // a bunker at real-world scale (bunkerlayout.js BUNKER.SIZE, issue #26); the supermarket since issue #22: past the largest size class, its map its footprint and margins
+      const huge = spec.foot === "huge" || spec.foot === "xl" || (m.building && m.building.w >= 50); // a bunker at real-world scale (bunkerlayout.js BUNKER.SIZE, issue #26); the supermarket since issue #22: past the largest size class, its map its footprint and margins; a county library (xl, issue #34) likewise
       if (W < 14 || H < 14 || W > (huge ? m.building.w + 12 : 44) || H > (huge ? m.building.h + 16 : 34)) errs.push(`size ${W}x${H}`);
       const z0 = m.zones[0];
       const start = [z0.x0 + 1, z0.y0 + (s % 2 === 1 ? 0 : 1)];

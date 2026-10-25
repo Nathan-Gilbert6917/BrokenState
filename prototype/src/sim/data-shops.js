@@ -241,7 +241,7 @@ export const FRANCHISES = {
   // Libraries (issue #34): each name lays its building out as one of librarylayout.js's variants (plan.libs: their
   // weights; the five first names' ids as before, so a saved place keeps its name): a Carnegie Library is always a
   // Carnegie, a Branch Library a modern branch or a strip-mall library, the Central Library the city's main one (only
-  // downtown, and rare there: about one to a city's crawl), the reading rooms in the towns' villages, the Athenaeum and
+  // downtown, and rare there: about 1 in 15 of the downtown libraries), the reading rooms in the towns' villages, the Athenaeum and
   // Harmon Hall the rare historic ones.
   library: [
     { id: "central", name: "Central Library", w: G(0.25, 0, 0), look: L("#c9c2b0", "#7d786c", "#5d6168", "#ffffff", "#8a8780", 1), plan: { storeys: [2, 3], wide: true, libs: { central: 1 } } },

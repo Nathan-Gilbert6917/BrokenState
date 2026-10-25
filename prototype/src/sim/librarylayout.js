@@ -13,7 +13,7 @@
 //   rural      a one-room reading room in a village (10–12 × 10–12 m, 1 storey): a desk by the door, shelves round the
 //              walls, a reading table, a wood stove, a small kids' shelf. storefront: the room and a back strip (a back
 //              room, a toilet); house: a converted house, the children's corner and the librarian's office behind the parlour.
-//   carnegie   a Carnegie library (19–25 × 15–20, 1–2 storeys): the circulation rotunda under its dome (a ring of counters,
+//   carnegie   a Carnegie library (19–25 × 17–20, 1–2 storeys): the circulation rotunda under its dome (a ring of counters,
 //              the card catalogue, a globe), two wings of tall stacks. lr: the wings left and right of the rotunda; fb:
 //              the rotunda at the front between the reading room and the reference room, the stacks behind. The
 //              children's room and the meeting room: along the back on one storey, on the floor above on two (the engine
@@ -43,7 +43,7 @@
 //   bookmobile a bookmobile depot (14–18 × 12–14, 1 storey): the garage with the bookmobile (a van that is a container
 //              of books: BOX_LOOT bookmobile) behind its roller door, the sorting room, the office. side: the garage to one
 //              side; back: the garage behind the office.
-//   strip      a library in a strip mall (9–12 × 20–26, 1 storey, a long narrow storefront): the front counter, self-check,
+//   strip      a library in a strip mall (9–12 × 20–25, 1 storey, a long narrow storefront): the front counter, self-check,
 //              the stacks of low shelving, the children's corner, the workroom. deep: the children at the back; split:
 //              the computers beside the front.
 // Which variant (libraryVariant): o.variant names one ("carnegie", or "carnegie/fb" for a plan), else the place's
@@ -65,13 +65,13 @@ export const LIBRARY = {
   // Footprints in cells (about a metre each), [min, max], outer walls included; storeys.
   SIZE: {
     rural:      { w: [10, 12], h: [10, 12], storeys: [1, 1] },   // the issue's 8–12 m
-    carnegie:   { w: [19, 25], h: [15, 20], storeys: [1, 2] },   // 15–25 × 15–20 (19 wide at least: the rotunda and two wings of stacks)
+    carnegie:   { w: [19, 25], h: [17, 20], storeys: [1, 2] },   // 15–25 × 15–20 (19 × 17 at least: the rotunda, two wings of stacks, the rooms behind)
     modern:     { w: [26, 32], h: [20, 24], storeys: [1, 1] },   // 25–40 × 20–30
     county:     { w: [31, 38], h: [25, 29], storeys: [2, 2] },   // 30–45 × 25–35
     central:    { w: [50, 56], h: [40, 44], storeys: [4, 8] },   // 50–80 × 40–60, 4–8 storeys
     historic:   { w: [23, 28], h: [20, 25], storeys: [2, 3] },   // 20–30
     bookmobile: { w: [14, 18], h: [12, 14], storeys: [1, 1] },
-    strip:      { w: [9, 12],  h: [20, 26], storeys: [1, 1] },   // a strip mall's unit: narrow and deep
+    strip:      { w: [9, 12],  h: [20, 25], storeys: [1, 1] },   // a strip mall's unit: narrow and deep
   },
   // A library with no franchise (a test's, a site's from before franchises): its variant by these weights.
   ANY: { rural: 1, carnegie: 1, modern: 1, county: 1, central: 0.5, historic: 0.5, bookmobile: 0.5, strip: 0.7 },
@@ -132,7 +132,7 @@ const PLANS = {
     lr(rng, d) {
       const rot = [7, Y(["*", R("foyer", "rotunda", { name: "Circulation rotunda", type: "books", entry: true, hub: true, fl: "tile", maxBoxes: 3 })], [4, refroom()])];
       const wing = (side) => ["*", stacks(`Stacks (${side} wing)`, { fl: "wood" })];
-      const main = X(wing("west"), rot, ["*", Y(["*", stacks("Stacks (east wing)", { fl: "wood" })], [5, reading()])]);
+      const main = X(wing("west"), rot, ["*", Y(["*", stacks("Stacks (east wing)", { fl: "wood" })], [0.4, reading()])]);
       const back = d.n > 1 ? X(["*", workroom()], rest(2), ["*", R("storage", "libstore", { name: "Book store", type: "books", maxBoxes: 2 })])
         : X(["*", children()], ["*", meeting()], [4, workroom()], rest(2));
       return {
@@ -145,12 +145,12 @@ const PLANS = {
     },
     // The rotunda at the front between the reading room and the reference room, the stack hall behind.
     fb(rng, d) {
-      const front = [8, X(["*", reading()], [7, R("foyer", "rotunda", { name: "Circulation rotunda", type: "books", entry: true, hub: true, fl: "tile", maxBoxes: 3 })], ["*", refroom()])];
+      const front = [0.35, X(["*", reading()], [7, R("foyer", "rotunda", { name: "Circulation rotunda", type: "books", entry: true, hub: true, fl: "tile", maxBoxes: 3 })], ["*", refroom()])];
       const stackHall = ["*", X(["*", stacks("Stacks", { fl: "wood" })], [5, R("hall", "stackaisle", { name: "Stack hall", hub: true, fl: "wood" })], ["*", stacks("Stacks", { fl: "wood" })])];
       const lower = d.n > 1 ? [] : [[4, X(["*", children()], ["*", meeting()], rest(2))]];
       return {
         program: Y(front, stackHall, ...lower),
-        upper: () => Y([8, X(["*", children()], [7, R("hall", "upperhall", { name: "Rotunda gallery", hub: true, fl: "wood" })], ["*", meeting()])],
+        upper: () => Y([0.35, X(["*", children()], [7, R("hall", "upperhall", { name: "Rotunda gallery", hub: true, fl: "wood" })], ["*", meeting()])],
           ["*", X(["*", R("dining", "localhist", { name: "Local history room", type: "books", fl: "wood", hub: false, maxBoxes: 3 })], [5, R("hall", "stackaisle", { name: "Upper hall", hub: true, fl: "wood" })], ["*", Y(["*", office()], [3, { role: "restroom" }])])]),
         stairs: { roles: ["foyer", "hall"] },
         exits: [{ side: "back", roles: ["hall", "restroom"], chance: 0.5, lock: 0.5 }],
@@ -533,7 +533,8 @@ export const LIBRARY_STYLES = {
     const c = L.c, cx = Math.floor((c.x0 + c.x1) / 2), cy = Math.floor((c.y0 + c.y1) / 2);
     for (const [dx, dy] of [[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [1, 1]]) L.place("counter", [[cx + dx, cy + dy]], P(L, { face: dy > 0 ? "s" : dy < 0 ? "n" : dx > 0 ? "e" : "w" }));
     L.place("chair", [[cx, cy]], { face: "s" });
-    some(L, "cardcat", 4, { prefer: "corner" });
+    if (!L.has("counter")) circDesk(L, 3); // the stairs or the ways through take the middle: a desk by the door instead
+    if (!some(L, "cardcat", 4, { prefer: "corner" })) L.need("cardcat", P(L));
     L.wall("globe", { prefer: "corner" }) || L.centre("globe");
     bookDrop(L);
   },
