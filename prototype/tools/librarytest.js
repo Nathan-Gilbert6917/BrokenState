@@ -25,7 +25,7 @@
 // - an older save keeps its library's layout (legacy: the old plan, no lib marks).
 // Usage: node tools/librarytest.js [seeds]
 import { createWorld } from "../src/sim/world.js";
-import { BUILDINGS, SITES, assemble, MAX_STOREYS, STOREYS_BY_TYPE } from "../src/sim/buildingmaps.js";
+import { BUILDINGS, SITES, assemble, buildingMap, buildingSpec, MAX_STOREYS, STOREYS_BY_TYPE } from "../src/sim/buildingmaps.js";
 import { LIBRARY, LIBRARY_VARIANTS, LIBRARY_KEYS, libraryPlan, libraryVariant } from "../src/sim/librarylayout.js";
 import { FRANCHISES } from "../src/sim/data-shops.js";
 import { CELL, AREAS, boxLoot } from "../src/sim/combat.js";
@@ -36,7 +36,6 @@ import { Rng } from "../src/sim/rng.js";
 const SEEDS = Number(process.argv[2] || (process.env.BS_QUICK ? 4 : 8));
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) { passes++; console.log(`  ok: ${msg}`); } else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
-void createWorld; // loaded first: the modules' import order as the game's
 
 // A library of a variant (and plan) from seed s.
 const build = (variant, s, o = {}) => {
@@ -236,6 +235,15 @@ console.log("Loot");
   const old = dens(null, true, 30), per = Object.fromEntries(LIBRARY_KEYS.map((v) => [v, dens(v, false, process.env.BS_QUICK ? 4 : 10)]));
   const mean = LIBRARY_KEYS.reduce((t, v) => t + per[v] * LIBRARY.ANY[v], 0) / LIBRARY_KEYS.reduce((t, v) => t + LIBRARY.ANY[v], 0);
   check(Math.abs(mean / old - 1) <= 0.4 && LIBRARY_KEYS.every((v) => per[v] >= old * 0.25 && per[v] <= old * 2.5), `loot value per 100 m²: the old library ${old.toFixed(1)}, the variants' mean ${mean.toFixed(1)} (within 40%), each within ×0.25–×2.5 (${LIBRARY_KEYS.map((v) => `${v} ${per[v].toFixed(1)}`).join(", ")})`);
+}
+
+console.log("In a world: a raid's library map at its real size");
+{
+  const st = createWorld({ seed: 3434, factionCount: 4 });
+  const tile = st.tiles.find((t) => t.terrain === "city") || st.tiles[0];
+  const m = buildingMap(st, tile.id, { id: "libtest", key: "library", name: "Library", variant: "central/centre" }, false);
+  const spec = buildingSpec(st, tile.id, { id: "libtest", key: "library", name: "Library", variant: "central/centre" });
+  check(m.storeys === spec.storeys && spec.storeys >= 4 && m.building.w === spec.bw && spec.bw >= 50 && m.rooms.some((r) => r.lib === "grandread"), `buildingMap through #24's realScale keeps the variant's footprint and builds every floor (${spec.bw} × ${spec.bh}, ${m.storeys} of ${spec.storeys} floors)`);
 }
 
 console.log("Other buildings can hold a library");
