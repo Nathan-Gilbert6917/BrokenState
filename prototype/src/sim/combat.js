@@ -131,7 +131,7 @@ import { deepShift } from "./deeploot.js";
 import { typesOf, withHand, roundOf as roundOfKey } from "./rounds.js"; // shells and rounds at hand (takeHandRounds)
 import { ammoKey } from "./data-ammo.js";
 import { rescueAct, rescueRefusal, guardTurn, rescueRound, rescueBot, rescueDone, captiveStays, captiveHitMult } from "./rescueraid.js"; // a rescue raid on a group's base: captives on the map
-import { raidBuilding, buildingMap, buildingOptions, placeInterior, windowsNear, interiorIntro, BMAP, doorNoise, doorBroken, doorAct, peekSees, rewardMult, botEscape, DOOR_KINDS, doorSees } from "./buildingmaps.js";
+import { raidBuilding, buildingMap, placeInterior, windowsNear, interiorIntro, BMAP, doorNoise, doorBroken, doorAct, peekSees, rewardMult, botEscape, DOOR_KINDS, doorSees } from "./buildingmaps.js";
 import { WINDOW, windowOpen, windowAct, smashWindow, glassNoise, rollWin, winMixOf } from "./windows.js"; // the map's windows: open, locked, fixed or broken (the user's request 2026-10-17)
 import { wireStep, cutAct, kitCutter, cutterKeyOf, WIRE } from "./wire.js";
 import { FENCE } from "./data-power.js"; // the fence charger's bite (electric.js)
@@ -4755,7 +4755,6 @@ export function combatAct(state, act) {
   if (!b || b.over) return "";
   noteJamWeather(state, b); // gunfire.js: rain, mud or a storm make guns jam more (once a battle)
   if (act.type === "end") {
-    if (b.raid && b.raid.choose) b.raid.choose = null; // the street it is (buildingmaps.js)
     closePlan(b); // raidplan.js: in as they are
     if (b.phase === "player") endPlayerTurn(state);
     return "";
@@ -4763,7 +4762,6 @@ export function combatAct(state, act) {
   if (b.site) return ""; // basemap.js openSiteView: the camp's spot, picked by its own clicks (ui/combat.js)
   if (b.layout) { const err = layoutAct(state, b, act); if (!err && state.combat) bump(state.combat); return err; } // basemap.js: the Base map view, nothing is fought
   if (b.setup.drill) { const err = drillAct(state, b, act); if (!err && state.combat === b) bump(b); return err; } // defenceplan.js: a defence drill, nothing is fought
-  if (act.type === "building") return chooseBuilding(state, act.id);
   // The whole team runs for it (soundRetreat): act.leave lists the downed not to carry. On a base's wall map that is
   // falling back to the yard and the buildings instead (interior.js), as is act "fallBack".
   if (act.type === "soundRetreat") return soundRetreat(state, { leave: act.leave || [] });
@@ -5303,7 +5301,6 @@ export function combatAct(state, act) {
       return "Unknown action.";
   }
   b.acted = true;
-  if (b.raid && b.raid.choose) b.raid.choose = null; // acting on the street map: the street it is (buildingmaps.js)
   closePlan(b); // raidplan.js: anyone acted: the team went in as it was
   bump(b);
   if (b.raid && b.raid.folk) folkTick(state, b); // floorfolk.js: the barricaded survivors' door reached, the nest stirring
@@ -6407,14 +6404,8 @@ function autoPlayerTurnNow(state, opts) {
   // Before going in (raidplan.js): the battle AI goes in as things are (the battle screen's AI playing your side plans
   // first: ui/combat.js combatTick → raidplan.js botPlan).
   closePlan(b);
-  // A site with several buildings (buildingmaps.js): the AI picks one by its own dice (or the street), then plays it.
-  if (b.raid && b.raid.choose) {
-    const list = b.raid.choose;
-    const pick = list[Math.floor(hash01(state.seed, "autobuilding", b.tileId, state.hour) * list.length) % list.length];
-    chooseBuilding(state, pick.id);
-    if (state.combat !== b) return autoPlayerTurnNow(state, opts);
-    b.raid.choose = null;
-  }
+  // A site with several buildings: the building was picked before the map was made (poiraid.js buildingPickFor, by
+  // the same dice this pick was made with here), so the AI plays the map it is on.
   if (b.raid) return autoRaidTurn(state);
   if (b.rescue && !rescueDone(b) && clearEnough(b)) { /* the captives first (rescueraid.js) */ } else if (clearEnough(b)) return void callClear(state, b); // battlesize.js: a couple of far-off stragglers left
   // A fight that is clearly lost: everyone runs for it (soundRetreat), carrying the downed next to them. On a base's
@@ -7128,7 +7119,8 @@ export function createRaid(state, setup) {
   const pv = party && party.vehicle ? partyVehicle(state, party) : null;
   const withVehicle = party && party.vehicle ? vehicleBody(party, pv) : false; // what stands in the entry zone (placeVehicle)
   // A building's own map (buildingmaps.js): a single-building site, or the building picked at a site with several;
-  // else the street map as before (at a site with several, the panel offers the buildings first: R.choose).
+  // else the street map as before. At a site with several the building (or the street) is picked before the map is
+  // made (poiraid.js buildingPickCard / buildingPickFor, the user's request 2026-10-25): the map never offers them.
   const pick = raidBuilding(state, tile, setup);
   const poiI = setup.raid && setup.raid.poi != null ? setup.raid.poi : null; // a raid on a point of interest (pois.js, poiraid.js)
   let map;
@@ -7188,8 +7180,6 @@ export function createRaid(state, setup) {
       // A building's map: which one, its plan (rooms, exits: wanderers.js reads it), its locked doors (locks.js).
       interior: pick ? { id: pick.id, key: pick.key, name: pick.name } : null, plan: pick ? map.plan : null,
       doors: pick ? map.lockedDoors.map((d, i) => ({ id: i + 1, x: d.x, y: d.y, f: d.f || 0, area: d.area, exit: !!d.exit, botSkip: !!d.exit, lock: { kind: d.kind, open: false, tries: 0, ...(d.dk ? { dk: d.dk } : {}) } })) : undefined, // dk: the door's kind (locks.js openOdds)
-      // Several buildings here and the raid started from the State Map: the choice is offered until anyone acts.
-      choose: !pick && setup.raid && setup.raid.choose && !setup.raid.building ? buildingOptions(tile, state) : null,
       camp: map.camp || null, // campsite.js: the camp (its fire, its tents, its state)
     },
   };
@@ -7303,7 +7293,6 @@ export function createRaid(state, setup) {
     else say(b, `You reach the ${pick.name.toLowerCase()} at ${b.place}. ${map.containers.length} places to search in ${rooms} rooms${st}.`, "info");
     say(b, interiorIntro(b), "info");
   } else say(b, `You slip into ${b.place}. ${map.containers.length} places to search across ${map.areas.length} areas.`, "info");
-  if (b.raid.choose) say(b, `Several buildings stand here: pick one to explore from the panel (${b.raid.choose.filter((o) => o.id !== "street").map((o) => o.name).join(", ")}), or search the street.`, "good");
   say(b, "Search next to a container (S). Heat rises every turn and with gunfire; more of the dead arrive as it climbs. Reach a green zone and Extract (X).", "info");
   if (withVehicle) say(b, "Your vehicle waits in the entry zone. Extract there to keep it; leave from another zone and it stays behind.", "info");
   stageAtStart(state, b); // carry.js: the loads into the vehicle, the rest set down in the entry zone
@@ -7311,26 +7300,6 @@ export function createRaid(state, setup) {
   placeMapCarts(state, b); cartHelpStart(state, b); // carts.js: carts standing in the barns and garages; two on a hand cart
   parleySetup(state, b); // parley.js: a record for every other group on the map (none: no b.parley, the old paths)
   return b;
-}
-
-// Picks the building to explore at a site with several (the raid's opening choice, R.choose): its own map replaces the
-// street map (a new battle on the same setup); "street" keeps the street map. Only before anyone has acted.
-export function chooseBuilding(state, id) {
-  const b = state.combat;
-  if (!b || !b.raid || !b.raid.choose || b.over) return "Nothing to choose now.";
-  if (id === "street") {
-    b.raid.choose = null;
-    say(b, "You search the street.", "info");
-    bump(b);
-    return "";
-  }
-  const opt = b.raid.choose.find((o) => o.id === id);
-  if (!opt) return "No such building here.";
-  const setup = b.setup;
-  setup.raid = { ...(setup.raid || {}), building: id, choose: false };
-  armsDropsEnd(state, b, "victory"); // carry.js: the loads set down on the street map back to the team first
-  state.combat = createRaid(state, setup);
-  return "";
 }
 
 // Unaware enemies wander: guards walk a beat around their building, the dead shuffle.

@@ -17,7 +17,15 @@
 //   (pois.js bestKnownPoi) is picked for them, and a search that strips one moves on to the next (scavenge.js).
 // - A temporary site (a wreck, a drop, a convoy: pois.js permanentSite false) is searched as before: the raid goes
 //   to the site, not into the tile's POIs. So does a tile without POIs (open mountain, a bare road).
+// - The building is always picked before the raid map is made (the user's request 2026-10-25: "When raiding a tile
+//   and there is a street and buildings you can go to show the options before loading the raid map and not provide
+//   the options when you load into the map"): a raid with buildings to choose from and none picked (raidBuildings: the
+//   site POI picked with no building, a tile without POIs that has a farmhouse and a barn on it) asks on a card first
+//   (buildingPickCard, the team driven by hand in the browser: buildingPickWanted), its pick in p.poiBuilding; for
+//   everyone else (the autopilot, a team played on the map by the AI) the dice pick one (buildingPickFor, the battle
+//   AI's own pick as it was made on the map). The battle screen no longer offers the buildings (combat.js createRaid).
 import { LOCATIONS } from "./data.js";
+import { hash01 } from "./skills.js"; // (call-time only) the building picked for a team that gets no card
 import { partyTile, tileLabel, awaitOrders, giveOrder, PICKED_OVER } from "./parties.js";
 import { crawlTile } from "./citycrawl.js";
 import { SITES, BUILDINGS, buildingOptions } from "./buildingmaps.js"; // the building a POI's kind opens; a site's choice of them
@@ -140,18 +148,71 @@ export function poiPickCard(state, p) {
   };
 }
 
+// The buildings a raid there chooses from (buildingmaps.js buildingOptions: one per building and the street last), or
+// null with nothing to choose: POI i of the tile (the site POI only), or with i null the tile itself (a tile without
+// POIs: the buildings its terrain or its site stands for, buildingmaps.js siteBuildings).
+export function raidBuildings(state, t, i = null) {
+  if (!t || (i != null && !isSitePoi(t, i))) return null;
+  return buildingOptions(t, state);
+}
+// Does the team pick the building on a card before the raid map is made? A team driven by hand in the browser, its
+// raid played on the map (not by the numbers: state.autoCombat), with buildings to choose from and none picked yet:
+// the place picked on the POI card (p.poi, the site POI with no building) or a tile without POIs. A city or a town
+// without a place picked goes to the crawl instead (scavenge.js startScavenge).
+export function buildingPickWanted(state, p, tile = partyTile(p)) {
+  const t = state.tiles[tile];
+  if (!t || p.owner !== "player" || p.crewRole != null || p.poiBuilding || state.autoCombat || state.autopilot || typeof window === "undefined") return false;
+  if (poiTileRaid(t)) return typeof p.poi === "number" && !!raidBuildings(state, t, p.poi);
+  return !crawlTile(t) && !!raidBuildings(state, t);
+}
+// The building picked for a team that gets no card (the autopilot, the AI): its own dice by the tile and the hour
+// (the battle AI's pick as it was made on the map), an option id or "street".
+export const buildingPickFor = (state, tile, opts) => opts[Math.floor(hash01(state.seed, "autobuilding", tile, state.hour) * opts.length) % opts.length].id;
+// The card (buildingPickWanted): one choice per building (its size, rooms, what it likely holds, its map) and the
+// street, then Not now. Picking one gives the scavenge order again with the pick (p.poiBuilding; p.poi: the place
+// picked on the POI card, poi), so the raid map is made for it and opens inside it.
+export function buildingPickCard(state, p, poi = null) {
+  const tile = partyTile(p);
+  const t = state.tiles[tile];
+  const opts = raidBuildings(state, t, poi) || [];
+  const place = poi != null ? poiName(t, poi) : tileLabel(state, tile);
+  const names = opts.filter((o) => o.id !== "street").map((o) => o.name);
+  const go = (st, id) => {
+    if (!st.parties.includes(p)) return "";
+    if (poi != null) p.poi = poi; else delete p.poi;
+    p.poiBuilding = id;
+    const res = giveOrder(st, p, "scavenge");
+    return st.combat || (st.engagement && st.engagement.partyId === p.id) || (st.cards || []).some((c) => c.partyId === p.id) ? "" : res; // its own screen or card: no result box on top
+  };
+  const mapWords = (o) => (o.map ? ` The map: ${o.map.replace(/\+$/, "")} tiles${/\+$/.test(o.map) ? " at least (the floor plan and the grounds round it)" : ""}.` : "");
+  return {
+    title: `Scavenge ${place}: where do you go in?`,
+    text: `Several buildings stand here (${names.join(", ")}). Each has its own map: rooms, doors, windows and its own ways out. Or search the street: the ground round them, small buildings and cars. The raid map is made for the one you pick.`,
+    partyId: p.id,
+    isOrders: true, // one card per team: a newer orders card replaces it
+    choices: [
+      ...opts.map((o) => ({
+        label: o.id === "street" ? `The street${o.map ? ` (${o.map})` : ""}` : `${o.name}${o.size || o.map ? ` (${[o.size, o.map].filter(Boolean).join(", ")})` : ""}`,
+        hint: o.id === "street" ? `${o.hint}${mapWords(o)}` : `${o.name}${o.size ? ` (${o.size}, ${o.rooms} rooms)` : ""}. ${o.hint}${mapWords(o)}`,
+        building: o.id, order: true, ai: () => (o.id === "street" ? 0.9 : 1), resolve: (st) => go(st, o.id),
+      })),
+      { label: "Not now", hint: "The team waits here for another order (its queue on hold).", cancel: true, ai: () => -2, resolve: (st) => { if (st.parties.includes(p)) awaitOrders(st, p, "The team waits.", { hold: true }); return ""; } },
+    ],
+  };
+}
+
 // The raid's setup for POI i of a tile (scavenge.js startScavenge → combat.js createRaid): the building its kind
 // opens (buildingmaps.js SITES; its own layout per POI: the option id carries the index), the kind for the street
 // map's areas when it has no building, and for the site POI the building picked on the card (building: an option id
-// of buildingmaps.js buildingOptions, or "street"); without one (a pick made for you) the battle screen still offers
-// the site's buildings.
+// of buildingmaps.js buildingOptions, or "street"); without one (choose: a pick still to make) scavenge.js
+// startScavenge picks one before the map is made (buildingPickFor).
 export function poiRaidSetup(state, t, i, building = null) {
   const poi = poiAt(t, i);
   if (!poi) return { poi: null, choose: true };
   if (isSitePoi(t, i)) {
     const opts = building ? buildingOptions(t) : null;
     if (opts && opts.some((o) => o.id === building)) return { poi: i, kind: poi.kind, choose: false, building };
-    return { poi: i, kind: poi.kind, choose: true }; // the site's buildings, chosen on the battle screen
+    return { poi: i, kind: poi.kind, choose: true }; // the site's buildings: one picked before the map (scavenge.js startScavenge)
   }
   return { poi: i, kind: poi.kind, choose: false, place: poiPlace(t, i) };
 }

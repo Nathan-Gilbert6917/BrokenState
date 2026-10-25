@@ -233,7 +233,7 @@ const SIDE = { desktop: "a desktop", portrait: "a phone held upright", landscape
             game.ui.speed = 0;
             const groups = S.raidEnemies(st, t.id);
             const total = groups.reduce((a, g) => a + g.count, 0);
-            game.combat.start({ mode: "raid", tile: t.id, partyId: p.id, canRetreat: true, ambush: null, handler: "scavenge", enemy: { kind: "mixed", count: total, power: 3, name: "the dead", groups }, raid: { heat0: 5, choose: true, poi: null, kind: null, place: null, building: null }, plan: true, context: {} });
+            game.combat.start({ mode: "raid", tile: t.id, partyId: p.id, canRetreat: true, ambush: null, handler: "scavenge", enemy: { kind: "mixed", count: total, power: 3, name: "the dead", groups }, raid: { heat0: 5, poi: null, kind: null, place: null, building: "street" }, plan: true, context: {} }); // the street: a site's building is picked before the map (sim/poiraid.js buildingPickCard)
             game.refresh();
             return st.combat ? "" : "no battle";
           } catch (e) { return String(e); }
@@ -242,9 +242,7 @@ const SIDE = { desktop: "a desktop", portrait: "a phone held upright", landscape
         else {
           await scene("raid-plan", "Before you go in", "A scavenge team at a site: the raid plan over the battle screen (a scout first, wait for night, the kit, which side to enter, leave)", null, { wait: 800 });
           await page.evaluate(() => { const b = document.querySelector('[data-action="cb-plan"][data-v="enter"]'); if (b) b.click(); });
-          await scene("raid-choose", "Where do you go in?", "Going in: the site's buildings, each with its own map, or the street; the kit warning's Proceed", null, { wait: 1000 });
-          await page.evaluate(() => { const street = [...document.querySelectorAll("#cbcards button, #modal button")].find((b) => /The street/.test(b.textContent)); if (street) street.click(); });
-          await settle(600);
+          await scene("raid-going-in", "Going in", "Going in: the kit warning's Proceed", null, { wait: 1000 });
           await page.evaluate(() => { const b = document.querySelector('[data-action="cb-act"][data-v="kitok"]'); if (b) b.click(); });
           await settle(400);
           await scene("raid-map", "The raid map", "The fight: the isometric map, the squad strip, the strip across the top (Heat, the floor, the view, Menu, Log), the orders bar and End turn", null, { wait: 1200 });

@@ -95,7 +95,7 @@ import { siteKnown, siteNamed, noteLooked } from "./discovery.js";
 import { lookoutsSpot, surpriseAt, watchSawText } from "./watch.js"; // the lookouts' warning; an unwatched night
 import { startSweep, sweepOpts, sweeping, LOOK, quickLook } from "./survey.js";
 import { poisOf } from "./pois.js"; // the tile's points of interest: a raid goes into one of them
-import { scavengeProblem, pickedOverAt, poiPickWanted, poiPickCard } from "./poiraid.js"; // which POI to raid: the dialogue card, or the pick made for you
+import { scavengeProblem, pickedOverAt, poiPickWanted, poiPickCard, buildingPickWanted, buildingPickCard } from "./poiraid.js"; // which POI to raid: the dialogue card, or the pick made for you; a site's building, picked before the map
 import { opticsFor } from "./optics.js";
 import { withYou } from "./hardcore-start.js";
 import { teamReceives, networksAt } from "./radio.js"; // a team's receiver: hears a network inside its coverage, cannot call (updateRadio)
@@ -2005,6 +2005,9 @@ function arrive(state, p) {
       const why = scavengeProblem(state, p, p.dest);
       if (why) { awaitOrders(state, p, why, { failed: true }); return ""; }
       if (poiPickWanted(state, p, p.dest)) { awaitOrders(state, p, "", { card: (st, q) => poiPickCard(st, q), hold: true }); return ""; }
+      // Buildings to choose from and none picked (a farm's farmhouse and barn, and the street): the card before the raid
+      // map is made, never on the map (poiraid.js buildingPickCard, the user's request 2026-10-25).
+      if (buildingPickWanted(state, p, p.dest)) { const poi = typeof p.poi === "number" ? p.poi : null; delete p.poi; awaitOrders(state, p, "", { card: (st, q) => buildingPickCard(st, q, poi), hold: true }); return ""; }
       p.phase = "engaged";
       // Headless searches share one slot (state.engagement): a second team waits its turn instead of replacing it.
       if (startScavenge(state, p) === false) {

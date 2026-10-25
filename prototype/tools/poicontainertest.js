@@ -16,7 +16,7 @@
 // - save / load keeps the ledger; determinism of a whole round trip
 // - the raid bot (combat.js autoRaidTurn) through a raid and a revisit of the same POI
 import { createWorld, hub, atBase } from "../src/sim/world.js";
-import { createBattle, runEnemyPhase, autoPlayerTurn, finishCombat, searchBox, endBattleNow, endPlayerTurn, chooseBuilding } from "../src/sim/combat.js";
+import { createBattle, runEnemyPhase, autoPlayerTurn, finishCombat, searchBox, endBattleNow, endPlayerTurn } from "../src/sim/combat.js";
 import { launchExpedition, partyMembers } from "../src/sim/parties.js";
 import { newItem } from "../src/sim/inventory.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
@@ -103,7 +103,7 @@ section("Layout: the same containers on every visit");
   const site = st.tiles.find((t) => t.loc && t.loc.type === "farm" && isSitePoi(t, 0));
   if (check(!!site, "a farm site exists")) {
     const a = raid(st, p, site, 0);
-    check(!!a.raid.choose && a.raid.poiDice === "poi0:street", `a site POI opens on its street map with its buildings to choose (${a.raid.poiDice})`);
+    check(!a.raid.choose && !a.raid.interior && a.raid.poiDice === "poi0:street", `a site POI with no building picked opens on its street map, no buildings to choose there (${a.raid.poiDice})`);
     const sa = sig(a);
     st.hour += 5;
     check(sig(raid(st, p, site, 0, { vehicle: true })) === sa, "the site's street map is the same every visit (its own dice)");
@@ -361,7 +361,7 @@ section("The raid bot: a raid and a revisit of the same POI");
     }
   } catch (e) { ok = false; err = e; }
   check(ok, `no exception${err ? `: ${err.stack}` : ""}`);
-  void knownPois; void chooseBuilding;
+  void knownPois;
 }
 
 console.log(`\n${passes} passed, ${fails} failed`);
