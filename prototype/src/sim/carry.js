@@ -910,7 +910,7 @@ export function fitHands(state, b) {
     const bag = bagOf(s);
     const hands = h && h.by[u.sid] ? nonzero(h.by[u.sid].hands) : null;
     if (bag) u.bag = bag;
-    if (bag && pieceKindOf(bag)) u.piece = pieceKindOf(bag); // furnicarry.js: a piece of furniture carried from the road (a bed, a fridge), the very rules
+    if (bag && pieceKindOf(bag)) u.piece = pieceKindOf(bag); // furnicarry.js: a piece of furniture carried from the road (a fridge, a piece lifted on an earlier raid), the very rules
     if (hands) u.hands = hands;
     if (bag || hands) { names.push(u.name.split(" ")[0]); reweigh(state, b, u); } // furnicarry.js: what is held in the arms is weighed
   }

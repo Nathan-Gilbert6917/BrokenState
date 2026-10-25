@@ -442,7 +442,7 @@ export function tetherRound(state, b) {
   for (const u of b.units) {
     if (u.side !== "player" || !u.piece) continue;
     const P = carriedPiece(b, u);
-    if (!P) { u.piece = null; u.tether = null; u.shareKg = null; continue; } // the other end let go somewhere else
+    if (!P) { u.piece = null; u.tether = null; u.shareKg = null; u.pieceBox = null; reweigh(state, b, u); continue; } // the item left the arms another way (the inventory window): the flags go, the weight with them
     if (P.carrier !== u) continue; // looked at from the one holding it
     const o = P.partner;
     const out = (x) => !!(x.left || x.fled); // off the map with it (extracted together: issue #18's to settle)
