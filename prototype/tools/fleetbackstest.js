@@ -16,7 +16,7 @@
 // Usage: node tools/fleetbackstest.js
 import { createWorld } from "../src/sim/world.js";
 import { cleanFleet, fleetVehicle, fleetDriver, fleetName } from "../src/sim/startfleet.js";
-import { SEATS } from "../src/sim/vehicles.js";
+import { SEATS, VEHICLE_TYPES } from "../src/sim/vehicles.js";
 import { newRunScreen } from "../src/ui/newgame.js";
 import { SG_ACTIONS, SG_CHANGE, fleetViewer } from "../src/ui/startgear.js";
 
@@ -51,7 +51,12 @@ section("2. Rolled again, and set by hand");
   check(J(r.fleet[1].diceTrunk) !== J(a.fleet[1].diceTrunk) && J(r.fleet[2].diceTrunk) === J(a.fleet[2].diceTrunk) && J(owner(r).diceTrunk) === J(owner(a).diceTrunk), "a slot's roll changes its back alone");
   check(J(HC(FLEET.map((f, i) => (i === 1 ? { ...f, roll: 12345 } : f))).fleet[1].diceTrunk) === J(r.fleet[1].diceTrunk), "the same roll: the same back");
   const c = HC(FLEET.map((f, i) => (i === 0 ? { ...f, roll: 999 } : f)));
-  check(J(owner(c).diceTrunk) !== J(owner(a).diceTrunk) && owner(c).name === owner(a).name && fleetVehicle(c, 0).type === fleetVehicle(a, 0).type && Math.abs(fleetVehicle(c, 0).fuel - fleetVehicle(a, 0).fuel) < 1e-9 && c.factions.map((f) => f.name).join() === a.factions.map((f) => f.name).join(), "the car's roll: its back alone (whose car, its kind and tank, the groups as before)");
+  const fill = (st) => fleetVehicle(st, 0).fuel / VEHICLE_TYPES[fleetVehicle(st, 0).type].tank;
+  check(J(owner(c).diceTrunk) !== J(owner(a).diceTrunk) && owner(c).name === owner(a).name && Math.abs(fill(c) - fill(a)) < 0.01 && fleetVehicle(c, 0).condition === fleetVehicle(a, 0).condition && c.factions.map((f) => f.name).join() === a.factions.map((f) => f.name).join(), "the car's roll: its kind and back (whose car, its tank's fill and condition, the groups as before)");
+  const carKinds = new Set();
+  for (let r = 1; r <= 30; r++) carKinds.add(fleetVehicle(HC(FLEET.map((f, i) => (i === 0 ? { ...f, roll: r * 104729 } : f))), 0).type);
+  check(carKinds.size >= 2, `the car's roll rolls its kind too (the user's request 2026-10-25: ${[...carKinds].join(", ")})`);
+  check(fleetVehicle(HC(FLEET.map((f, i) => (i === 0 ? { ...f, type: "van", roll: 999 } : f))), 0).type === "van", "a kind set still wins over the roll");
   check(J(c.fleet[1].diceTrunk) === J(a.fleet[1].diceTrunk), "the others' backs as before");
   const set = HC(FLEET.map((f, i) => (i === 2 ? { ...f, load: { items: ["crowbar"], supplies: { water: 7 } } } : f)));
   const tc = team(set).cargo;
@@ -96,7 +101,8 @@ section("4. The screen: 👁 Back and 🎲 Reroll");
   const win = fleetViewer(st, ui);
   const names = st.fleet[1].diceTrunk.items.length;
   check(/Things/.test(win) && /Supplies/.test(win) && /data-action="fleet-reroll" data-i="1"/.test(win) && (win.match(/class="chip"/g) || []).length >= Math.min(1, names) && /at the wheel/.test(win), "the window: its things, its supplies, who drives it, 🎲 Reroll");
-  check(SG_ACTIONS["fleet-reroll"](st, ui, { i: "1" }) === "fleet" && Number.isInteger(ui.fleet[1].roll) && ui.fleet[1].load === null && st.fleet[1].roll === ui.fleet[1].roll, "🎲 Reroll: new dice on the slot (the world again)");
+  ui.fleet[1].type = "van";
+  check(SG_ACTIONS["fleet-reroll"](st, ui, { i: "1" }) === "fleet" && Number.isInteger(ui.fleet[1].roll) && ui.fleet[1].load === null && ui.fleet[1].type === null && st.fleet[1].roll === ui.fleet[1].roll, "🎲 Reroll: new dice on the slot, a kind picked back to the dice (the world again)");
   const re = createWorld({ seed: 7, factionCount: 5, mode: "hardcore", startPeople: 4, fleet: ui.fleet });
   check(J(re.fleet[1].diceTrunk) !== J(first.diceTrunk) && J(re.fleet[2].diceTrunk) === J(plain.fleet[2].diceTrunk) && re.survivors.map((s) => s.name).join() === plain.survivors.map((s) => s.name).join(), "the world again: that back new, the rest as they were");
   check(SG_ACTIONS["fleet-reroll"](st, UI({ started: true, fleet: ui.fleet }), { i: "1" }) === false && SG_ACTIONS["fleet-view"](nm, UI({ started: true }), { i: "0" }) === false, "not once started");
