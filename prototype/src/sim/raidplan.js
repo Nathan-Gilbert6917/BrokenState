@@ -5,10 +5,10 @@
 //
 // Where: a raid on a site played on its map (scavenge.js startScavenge in the browser), the storming of a group's base
 // (conquest.js startAssault) and a rescue raid (rescueraid.js startRescueRaid): their setups carry plan: true, and the
-// battle opens with the plan (setup.plan, plain data: a save keeps it) offered before anyone acts, as a site's choice of
-// building is (combat.js R.choose). While the plan is open the team is not on the map yet (the user's request
-// 2026-10-18): the battle screen shows the site under the fog of war with nobody of yours placed (ui/combat.js view,
-// ui/isoview.js), and the plan is a window over it (ui/raidplan.js, ui.js pickModal). Going in is picking the side to
+// battle opens with the plan (setup.plan, plain data: a save keeps it) offered before anyone acts (a site's building is
+// picked before that, before the map is made: poiraid.js buildingPickCard). While the plan is open the team is not on
+// the map yet (the user's request 2026-10-18): the battle screen shows the site under the fog of war with nobody of
+// yours placed (ui/combat.js view, ui/isoview.js), and the plan is a window over it (ui/raidplan.js, ui.js pickModal). Going in is picking the side to
 // come in from (enterFrom: the side, then goIn), with or without a scout first; a scout's marks can be looked at on
 // the map before going in (Look at the map first, only once a scout has been). Leave (callOff) turns the team back
 // without going in: the battle ends at once with nobody hurt (a raid as called off: scavenge.js afterRaid; an assault
@@ -124,7 +124,7 @@ export function planStart(state, b, rs) {
   if (!setup || !setup.plan) return;
   if (!isPlan(setup.plan)) setup.plan = { open: true, side: null, sides: [], rs, scout: null, night: null, hours: 0, kind: b.raid ? "raid" : setup.layout === "rescueRaid" ? "rescue" : "assault" };
   const P = setup.plan;
-  if (!P.replay) P.rs = rs; // a new map (the first, or the building picked): its dice
+  if (!P.replay) P.rs = rs; // a new map: its dice
   P.sides = sidesOf(b);
   P.side = entryOf(b);
   if (P.scout) applyScout(state, b, P.scout);

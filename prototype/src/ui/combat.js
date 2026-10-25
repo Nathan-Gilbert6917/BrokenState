@@ -2,8 +2,9 @@
 // A raid on a site (b.raid) has no side panel (the user's request 2026-10-18, raidLayout): what the panel carried is a
 // strip at the top of the map (renderRaidTop: the place, the turn, Heat, the floor shown, the supplies; at the right the
 // Menu, the view's buttons and the Log button), cards over the map (renderRaidCards: the choices before you go in, the
-// building to search, the result, the hover details, a warning) and the log in its own small window (ui/logwindow.js,
-// renderRaidLog). main.js writes them into #cbtop, #cbcards, #cblogbody and #cblogfoot.
+// result, the hover details, a warning) and the log in its own small window (ui/logwindow.js, renderRaidLog). main.js
+// writes them into #cbtop, #cbcards, #cblogbody and #cblogfoot. A site's building is picked before the map is made
+// (sim/poiraid.js buildingPickCard, the user's request 2026-10-25), never over it.
 import { keyWord } from "../sim/water.js"; // supplies as words: "9mm FMJ", "rounds"
 import { PAL } from "./palette.js"; // good / bad colours (the colour-blind-safe set swaps them: ui/display.js)
 import {
@@ -1970,8 +1971,6 @@ export function combatAction(state, key, d, ui = null) { // ui: main.js's screen
   // Before going in (sim/raidplan.js): the side, a scout, the night, Go in.
   if (key === "cb-log") return void logAction(d.v); // ui/logwindow.js: the raid's log window shown, folded or hidden
   if (key === "cb-plan") { cui.msg = planAction(state, d, ui) || ""; return; } // ui/raidplan.js: the window's buttons (map / back: the window put aside, or back)
-  // A site with several buildings (sim/buildingmaps.js): which one to explore, or the street.
-  if (key === "cb-act" && d.v === "building") return void act(state, { type: "building", id: d.k });
   if (key !== "cb-act" || !u) return;
   const v = d.v;
   if (allyCbAct(state, b, u, v, d)) return; // Ally orders (sim/allyorders.js): open, the card's buttons
@@ -2318,7 +2317,6 @@ export function renderCombatPanel(state) {
 
   if (b.over) return html + resultHtml(state, b);
   if (b.phase === "deploy") return html + deployPanel(state, b, u);
-  if (b.raid && b.raid.choose) html += chooseHtml(b);
   if (kitWarnDue(state, b)) html += kitWarnHtml(state, b); // sim/kitcheck.js: empty guns, no healing, the hurt, before the first move
   if (b.night && !b.raid && b.phase !== "deploy") html += nightHtml(b); // sim/vision.js: the dark, by the hour
   if ((b.sfx || b.ground) && !b.raid && b.phase !== "deploy") html += wxHtml(b); // sim/seasonfx.js: snow, ice, rain, fog
@@ -2490,7 +2488,7 @@ function raidTopCompact(b, { phase, stage, F, supply, groups }) {
 }
 
 // The cards over the map (#cbcards), in the middle under the strip: the dialogue before you go in (unless put aside),
-// the building to search, a warning (cui.msg), the floor shown against the selected one's, the hover details, the result.
+// a warning (cui.msg), the floor shown against the selected one's, the hover details, the result.
 export function renderRaidCards(state) {
   const b = state.combat;
   if (!raidLayout(b)) return "";
@@ -2501,7 +2499,6 @@ export function renderRaidCards(state) {
   let html = "";
   if (b.over) return `<div class="cbcard">${raidResultCard(state, b)}</div>`;
   if (planOpen(b) && planUI.map) html += `<div class="cbcard">${planAsideHtml(state, b)}</div>`; // ui/raidplan.js: the window put aside to look at the site (the window itself: ui.js pickModal)
-  if (b.raid.choose) html += `<div class="cbcard">${chooseHtml(b)}</div>`;
   if (kitWarnDue(state, b)) html += `<div class="cbcard">${kitWarnHtml(state, b)}</div>`; // sim/kitcheck.js: empty guns, no healing, the hurt, before anyone goes in
   html += allyCard(state, b); // Ally orders (sim/allyorders.js): the orders for the ally picked
   if (cui.msg) html += `<div class="cbcard ct-toast small warn">${padHtml(esc(devText(cui.msg, "battle")))}</div>`;
@@ -2523,7 +2520,6 @@ function raidCardsCompact(state, b, u) {
     cards.push([r.raid && r.raid.calledOff ? "Called off" : r.outcome === "extracted" ? "Got out" : "Nobody made it out", raidResultCard(state, b)]);
   } else {
     if (planOpen(b) && planUI.map) cards.push(["Looking at the site", planAsideHtml(state, b)]);
-    if (b.raid.choose) cards.push(["Where do you go in?", chooseHtml(b)]);
     if (kitWarnDue(state, b)) cards.push(["Before you go in", kitWarnHtml(state, b)]);
     const ally = allyCard(state, b);
     if (ally) cards.push(["Ally orders", ally, true]); // its own card already (.cbcard.cbally)
@@ -3064,11 +3060,6 @@ function kitWarnHtml(state, b) {
   for (const h of w.hurt) li.push(`<li>${esc(h.text)}</li>`);
   return `<div class="small cbmsg cbconfirm cbkitwarn"><b class="warn">Before you go in</b><ul>${li.join("")}</ul>
     <div style="margin-top:0.35rem"><button class="primary" data-action="cb-act" data-v="kitok" data-tip="Go in as you are: this card is put aside for the fight.">Proceed</button></div></div>`;
-}
-function chooseHtml(b) {
-  const list = b.raid.choose || [];
-  return `<div class="small cbmsg cbconfirm"><b class="good">Where do you go in?</b> Several buildings stand at ${esc(b.place)}. Each has its own map: rooms, doors, windows and its own ways out. Or search the street (this map). The choice is gone once anyone acts.
-    <div class="cbactions" style="margin-top:0.35rem">${list.map((o) => `<button data-action="cb-act" data-v="building" data-k="${esc(o.id)}" data-tip="${esc(`${o.name}${o.size ? ` (${o.size}, ${o.rooms} rooms)` : ""}. ${o.hint}${o.map ? ` The map: ${o.map.replace(/\+$/, "")} tiles${/\+$/.test(o.map) ? " at least (the floor plan and the grounds round it)" : ""}.` : ""}`)}">${esc(o.name)}${o.size || o.map ? ` <span class="muted">${esc([o.size, o.map].filter(Boolean).join(", "))}</span>` : ""}</button>`).join("")}</div></div>`;
 }
 
 // ---------- the worm (sim/carriers.js) ----------

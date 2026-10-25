@@ -27,7 +27,7 @@ import {
 } from "./parties.js";
 import { poiAt, poiPool, poiTake, poiName, knownPois, visitPoi, tileHeat, addTileHeat, exitHeat, shotsHere, noteTileHeat, TILE_HEAT } from "./pois.js"; // the place searched: its kind, its pool, its visits; the tile's heat
 import { poiRaidEnd, lootPoiAbstract, poiHouses, CONT } from "./poicont.js"; // the containers a place keeps between visits; a street of houses
-import { poiTileRaid, poiPickFor, poiRaidSetup } from "./poiraid.js"; // which place, and the raid map it opens
+import { poiTileRaid, poiPickFor, poiRaidSetup, raidBuildings, buildingPickFor } from "./poiraid.js"; // which place, and the raid map it opens (a site's building picked before it)
 import { attitude, changeGoodwill } from "./factions.js";
 import { noteLooked } from "./discovery.js";
 import { startCombat, registerCombatHandler } from "./combat.js";
@@ -216,11 +216,15 @@ export function startScavenge(state, p) {
     const foes = groups.filter((g) => !g.side); // a third side (wanderers.js) is not who you came to fight
     const total = foes.reduce((a, g) => a + g.count, 0);
     const names = foes.map((g) => g.name).join(" and ");
-    const rs = poi != null ? poiRaidSetup(state, t, poi, building) : { choose: true }; // poiraid.js: the POI's building (the site POI: the one picked on the card, else the site's buildings offered on the map)
+    const rs = poi != null ? poiRaidSetup(state, t, poi, building) : { choose: true }; // poiraid.js: the POI's building (the site POI: the one picked on the card)
+    // Buildings to choose from (poiraid.js raidBuildings): the one picked on a card before the map (buildingPickCard),
+    // else the dice pick one (buildingPickFor: the autopilot, a team the AI plays). The map opens on it: no choice there.
+    const opts = rs.choose ? raidBuildings(state, t, poi) : null;
+    if (opts) rs.building = opts.some((o) => o.id === building) ? building : buildingPickFor(state, p.dest, opts);
     startCombat(state, {
       mode: "raid", tile: p.dest, partyId: p.id, canRetreat: true, ambush: null, handler: "scavenge",
       enemy: { kind: foes.length > 1 ? "mixed" : foes[0]?.kind || "zombies", count: total, power: 3, name: names || "nobody", groups },
-      raid: { heat0: isNight(state) ? 0 : 5, choose: rs.choose, poi: rs.poi ?? null, kind: rs.kind || null, place: rs.place || null, building: rs.building || null }, // choose: a site with several buildings offers them first (buildingmaps.js); building: the one picked on the POI card
+      raid: { heat0: isNight(state) ? 0 : 5, poi: rs.poi ?? null, kind: rs.kind || null, place: rs.place || null, building: rs.building || null }, // building: the one picked before the map (an option id of buildingmaps.js buildingOptions, or "street")
       plan: true, // raidplan.js: before going in, the side to come in from, a scout first, or wait for night
       context: { factionIds: foes.filter((g) => g.factionId && !g.parley).map((g) => g.factionId) }, // parley.js: a party on the site is not their land
     });

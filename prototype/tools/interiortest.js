@@ -4,19 +4,21 @@
 //     and reachable; containers can be reached; locked rooms and containers are there where the archetype puts them;
 //   - every location type in combat.js AREA_SETS has buildings, or is one of the outdoor sites that keep the street map;
 //   - the same site gives the same layout; a single-building site opens straight into its interior, a site with several
-//     offers the choice (and the AI picks one); the occupants hook is called and its groups are placed;
+//     has its building picked before the map (by hand or by the AI's dice), never on it; the occupants hook is called
+//     and its groups are placed;
 //   - doors open as people walk through (sight changes), roller doors are loud, windows can be climbed (loud);
 //   - a headless raid on interiors plays to the end, mostly to extraction.
 // Usage: node tools/interiortest.js [seeds per archetype] [raids]
 import { createWorld, hub, atBase } from "../src/sim/world.js";
 import { launchExpedition } from "../src/sim/parties.js";
 import {
-  createBattle, autoPlayerTurn, runEnemyPhase, registerCombatHandler, combatAct, CELL, AREAS, AREA_SETS, los, active, registerOccupantSide, occupantSide, chooseBuilding,
+  createBattle, autoPlayerTurn, runEnemyPhase, registerCombatHandler, combatAct, CELL, AREAS, AREA_SETS, los, active, registerOccupantSide, occupantSide,
   playerVision, playerSees, enemyUnit, endPlayerTurn, survivorById,
 } from "../src/sim/combat.js";
 import { noiseAt } from "../src/sim/stealth.js";
 import { newItem, stow } from "../src/sim/inventory.js";
 import { raidEnemies } from "../src/sim/scavenge.js";
+import { raidBuildings, buildingPickFor } from "../src/sim/poiraid.js"; // a site's building, picked before the map
 import { BUILDINGS, SITES, assemble, siteBuildings, buildingMap, buildingOptions, placeOccupantGroups, windowsNear, BMAP } from "../src/sim/buildingmaps.js";
 import { Rng } from "../src/sim/rng.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
@@ -169,7 +171,9 @@ function raidAt(types, opts = {}) {
     const p = res.party;
     p.path = [tile.id]; p.idx = 0; p.phase = "engaged";
     const groups = opts.groups || raidEnemies(st, tile.id);
-    const setup = { mode: "raid", tile: tile.id, partyId: p.id, canRetreat: true, ambush: null, handler: "itest", enemy: { kind: "mixed", count: 1, power: 3, groups }, raid: { heat0: 5, ...(opts.raid || {}) }, context: {} };
+    // opts.pick: a site's building picked before the map as the raid's start picks it for the AI (scavenge.js startScavenge, poiraid.js buildingPickFor).
+    const bo = opts.pick ? raidBuildings(st, tile) : null;
+    const setup = { mode: "raid", tile: tile.id, partyId: p.id, canRetreat: true, ambush: null, handler: "itest", enemy: { kind: "mixed", count: 1, power: 3, groups }, raid: { heat0: 5, ...(opts.raid || {}), ...(bo ? { building: buildingPickFor(st, tile.id, bo) } : {}) }, context: {} };
     st.combat = createBattle(st, setup);
     if (opts.want && !opts.want(st.combat)) continue;
     return { st, b: st.combat, p, tile, setup, crew };
@@ -224,22 +228,23 @@ console.log("Occupants");
   if (realNeutral) registerOccupantSide("neutral", realNeutral);
 }
 
-console.log("A site with several buildings: the choice");
+console.log("A site with several buildings: picked before the map");
 {
+  // The choice is made before the raid map (poiraid.js buildingPickCard / buildingPickFor, the user's request
+  // 2026-10-25; tools/buildingpicktest.js the whole flow): the map itself never offers it.
   const r = raidAt(["town", "farm", "city"], { raid: { choose: true } });
   const b = r.b;
-  check(b.raid.choose && b.raid.choose.length >= 3 && !b.raid.interior, `the street map opens with a choice of ${b.raid.choose.length - 1} buildings and the street (${b.raid.choose.map((o) => o.name).join(", ")})`);
-  const pick = b.raid.choose[0];
-  const err = combatAct(r.st, { type: "building", id: pick.id });
-  const nb = r.st.combat;
-  check(!err && nb !== b && nb.raid.interior && nb.raid.interior.id === pick.id && !nb.raid.choose && nb.units.filter((u) => u.side === "player").length === r.crew.length, `picking the ${pick.name.toLowerCase()} opens its own map (${nb.w}x${nb.h}, ${nb.raid.areas.filter((a) => !a.outdoor).length} rooms)`);
-  const r2 = raidAt(["town", "farm", "city"], { raid: { choose: true }, seed: 900 });
-  const u = r2.b.units.find((x) => x.side === "player");
-  combatAct(r2.st, { type: "hunker", unit: u.id });
-  check(!r2.b.raid.choose && chooseBuilding(r2.st, "street") !== "", "acting on the street map ends the choice (the street it is)");
-  const r3 = raidAt(["town", "farm", "city"], { raid: { choose: true }, seed: 1200 });
+  const opts = raidBuildings(r.st, r.tile);
+  check(opts && opts.length >= 3 && opts[opts.length - 1].id === "street", `the choice before the map: ${opts ? opts.length - 1 : 0} buildings and the street (${opts ? opts.map((o) => o.name).join(", ") : ""})`);
+  check(!b.raid.choose && !b.raid.interior, "a raid with none picked is the street map, nothing to choose on it");
+  const pick = opts[0];
+  const r1 = raidAt(["town", "farm", "city"], { raid: { building: pick.id } });
+  const nb = r1.b;
+  check(r1.tile.id === r.tile.id && nb.raid.interior && nb.raid.interior.id === pick.id && !nb.raid.choose && nb.units.filter((u) => u.side === "player").length === r1.crew.length, `the ${pick.name.toLowerCase()} picked before the map opens its own map (${nb.w}x${nb.h}, ${nb.raid.areas.filter((a) => !a.outdoor).length} rooms)`);
+  const r3 = raidAt(["town", "farm", "city"], { pick: true, seed: 1200 });
+  const want = buildingPickFor(r3.st, r3.tile.id, raidBuildings(r3.st, r3.tile));
   autoPlayerTurn(r3.st);
-  check(!r3.st.combat.raid.choose, `the AI picks for itself (${r3.st.combat.raid.interior ? r3.st.combat.raid.interior.name : "the street"})`);
+  check(!r3.st.combat.raid.choose && (want === "street" ? !r3.st.combat.raid.interior : r3.st.combat.raid.interior && r3.st.combat.raid.interior.id === want), `the AI's pick is made before the map by its own dice (${r3.st.combat.raid.interior ? r3.st.combat.raid.interior.name : "the street"}), then it plays that map`);
 }
 
 console.log("Doors, roller doors and windows");
@@ -468,7 +473,7 @@ console.log(`Headless raids on building maps (${RAIDS})`);
   for (let i = 0; i < RAIDS; i++) {
     const type = types[i % types.length];
     let r;
-    try { r = raidAt([type], { seed: 2000 + i * 13, raid: { choose: true }, vehicle: i % 3 === 0 }); } catch (e) { crashes++; console.log(e.stack); continue; }
+    try { r = raidAt([type], { seed: 2000 + i * 13, pick: true, vehicle: i % 3 === 0 }); } catch (e) { crashes++; console.log(e.stack); continue; }
     if (!r) continue;
     const { st } = r;
     try {
