@@ -1647,6 +1647,60 @@ function twinOf(leaf) {
 }
 const OFFICE_ORDER = ["cubicles", "open", "meeting", "cubicles", "open", "canteen"];
 /** @param {any} rng @param {any} spec @param {string} key @param {{ setting?: string, storeyBonus?: number }} [o] */
+// A shape at real size (issue #23 under #24's realScale): its parts' corners scaled by the real footprint over the
+// plan's (never smaller; cap: a street's plot), so the walls two parts share stay shared and the notches and the
+// courtyard grow with them; each part's stretched rooms split in two (twinUp, as realScale's splitUp splits a plan's)
+// until it has about the rooms its own size would have here; boxK as for a plan (the containers to the square metre).
+function shapeAtScale(rng, spec, key, out, cap) {
+  const f = realFoot(rng, key);
+  if (!f) return;
+  let sx = Math.max(1, f.bw / spec.bw), sy = Math.max(1, f.bh / spec.bh);
+  if (cap) { sx = Math.min(sx, Math.max(1, cap.w / spec.bw)); sy = Math.min(sy, Math.max(1, cap.h / spec.bh)); }
+  if (sx <= 1 && sy <= 1) return;
+  const X = (v) => Math.round(v * sx), Y = (v) => Math.round(v * sy);
+  const parts = spec.shape.parts.map((p) => {
+    const x0 = X(p.x), y0 = Y(p.y), q = { ...p, x: x0, y: y0, w: X(p.x + p.w - 1) - x0 + 1, h: Y(p.y + p.h - 1) - y0 + 1 };
+    const tw = (prog) => twinUp(prog, p.w - 2, p.h - 2, q.w - 2, q.h - 2);
+    q.program = tw(p.program);
+    if (p.upper) q.upper = (g, r, ctx) => tw(p.upper(g, r, ctx));
+    return q;
+  });
+  out.shape = { ...spec.shape, parts }; out.bw = X(spec.bw - 1) + 1; out.bh = Y(spec.bh - 1) + 1;
+  const boxes = (list, k) => list.reduce((a, p) => a + planCount(p.program, p.w - 2, p.h - 2, k).boxes, 0);
+  const want = (boxes(spec.shape.parts, 1) * out.bw * out.bh) / (spec.bw * spec.bh);
+  let k = 1, got = boxes(parts, 1);
+  const dir = got < want ? 1 : -1;
+  for (let t = 1 + dir * 0.05; t <= SCALE.BOX_MAX + 1e-9 && t >= SCALE.BOX_MIN - 1e-9; t += dir * 0.05) {
+    const g = boxes(parts, t);
+    if (Math.abs(g - want) < Math.abs(got - want)) { k = t; got = g; }
+    if (dir > 0 ? g >= want : g <= want) break;
+  }
+  out.boxK = Math.round(k * 100) / 100;
+}
+// A part's plan (natIw × natIh inside) laid over iw × ih: its stretched rooms (realScale's rule: no hub, no corridor,
+// no entry, no room with a door of its own outside, unless it has a twin of its own kind) split in two in turn while
+// that brings its rooms nearer what its own size would have here.
+function twinUp(prog, natIw, natIh, iw, ih) {
+  if (!prog || prog.role) return prog;
+  const c = structuredClone(prog), cands = [];
+  const stretchy = ([sz, ch]) => !!ch && !!ch.role && (typeof sz !== "number" || sz < 1) && !ch.ownDoor && ch.role !== "motelroom" && (!!TWIN_OF[ch.role] || (!ch.hub && !ch.entry && !(ROLES[ch.role] && ROLES[ch.role].hub)));
+  const walk = (node) => { if (!node || node.role) return; for (const part of node.parts) { if (stretchy(part)) cands.push([node, part]); walk(part[1]); } };
+  walk(c);
+  const target = (planCount(prog, natIw, natIh).rooms * iw * ih) / Math.max(1, natIw * natIh);
+  let now = planCount(c, iw, ih).rooms;
+  for (let k = 0; now < target && cands.length && k < cands.length * SCALE.TWINS; k++) {
+    const [node, part] = cands[k % cands.length], at = node.parts.indexOf(part);
+    if (at < 0) continue;
+    const was = node.parts.slice();
+    node.parts[at] = ["*", part[1]];
+    node.parts.splice(at + 1, 0, ["*", twinOf(part[1])]);
+    const next = planCount(c, iw, ih).rooms;
+    if (next <= now || Math.abs(next - target) > Math.abs(now - target)) { node.parts.splice(0, node.parts.length, ...was); if (next <= now) continue; break; }
+    cands[k % cands.length] = [node, node.parts[at]];
+    now = next;
+  }
+  return c;
+}
 export function realScale(rng, spec, key, o = {}) {
   const R = REAL_SIZE[key];
   if (!R || !spec) return spec;
@@ -1668,6 +1722,7 @@ export function realScale(rng, spec, key, o = {}) {
   out.height = height; out.storeys = built;
   if (height >= SCALE.TWO_STAIRS) out.stairs = { ...(spec.stairs || {}), n: 2 };
   // The footprint, and the plan over it (realFoot; a kind with no size of its own here: the archetype's footprint and plan).
+  if (spec.shape && !R.own && R.wings !== "along") shapeAtScale(rng, spec, key, out, o.cap || null); // a shape's parts scaled (issue #23; a motel's rooms are its own size: its U is as long as its row)
   const foot = R.own || spec.shape ? null : realFoot(rng, key);
   const flips = Array.from({ length: 64 }, () => !R.wings && rng.chance(0.5)); // each wing turned left for right
   let lay = (prog) => prog, fill = (prog) => prog;
@@ -2117,7 +2172,7 @@ export function streetMap(state, tileId, option, withVehicle) {
     const real = !legacyScale(state); // a world made since buildings at real size (issue #24): its houses 10–16 m wide, up to 13 deep
     const BW = real ? S.REAL_BW : S.BW, BH = real ? S.REAL_BH : S.BH;
     const plotW = Math.max(BW[0], Math.min(BW[1], Math.floor((MAXW - 2 * S.SIDE - (perRow[row] - 1) * S.GAP) / perRow[row])));
-    const spec0 = BUILDINGS.house.make(hr, { legacy: legacyRooms(state), shapes: !legacyShapes(state), cap: { w: plotW, h: BH } }), spec = real ? realScale(hr, spec0, "neighbourhood", { setting: "town" }) : spec0; // a new save's house shaped to fit its plot (houseShape; realScale keeps a shape's footprint)
+    const spec0 = BUILDINGS.house.make(hr, { legacy: legacyRooms(state), shapes: !legacyShapes(state), cap: { w: plotW, h: BH } }), spec = real ? realScale(hr, spec0, "neighbourhood", { setting: "town", cap: { w: plotW, h: BH } }) : spec0; // a new save's house shaped to fit its plot (houseShape; realScale grows a shape to its plot at most)
     if (!spec.shape) { spec.bw = Math.max(BW[0], Math.min(spec.bw, plotW)); spec.bh = Math.min(spec.bh, BH); }
     spec.margins = { front: 1, back: 1, left: 1, right: 1 };
     spec.ground = "none";
