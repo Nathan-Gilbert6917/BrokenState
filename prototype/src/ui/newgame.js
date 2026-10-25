@@ -15,7 +15,7 @@ import { isCustomBg } from "../sim/custombg.js"; // custom backgrounds (sim/cust
 import { FAMILY } from "../sim/family.js"; // the Children box shows only while children are on
 import { sanitizeStartGear, hasPicks } from "../sim/startgear.js"; // starting gear picked under Customize
 import { gearRow, pointsBar, fleetSection, uiFleet } from "./startgear.js"; // its Gear… button, load and kit points, and the points bar, on the crew card; the Starting vehicles
-import { cleanFleet, fleetRoom, openLoads } from "../sim/startfleet.js"; // the starting vehicles: each its point limit and back (2026-10-24)
+import { cleanFleet, fleetRoom, openLoads, fleetVehicle, fleetName } from "../sim/startfleet.js"; // the starting vehicles: each its point limit and back (2026-10-24)
 import { gunCals } from "../sim/ammo.js"; // a random back's rounds: the crew's guns' calibres
 import { traitPickerHtml, traitBlock, traitChips, traitWords } from "./traitpick.js"; // Customize: the traits, good and bad, none that clash; the chips
 import { randomBuild, randomEverything, randomTraits, randomKit, randomTrunk, kitBudget } from "../sim/randomkit.js"; // Customize: a whole random colonist within the points; the crew and the vehicles' backs
@@ -383,10 +383,13 @@ function introText(state) {
   const people = state.survivors, hard = isHardcore(state), custom = isCustomRun(state);
   if (isCrashRun(state)) return crashIntro(state);
   const foot = startsWithVehicle(state) ? "" : hard ? " No car: you go on foot." : " No vehicle: your people go on foot until they find, take or fix one.";
+  // A normal or Custom start's vehicles, rolled by whose they are (2026-10-25): named in the yard, their backs in the stores.
+  const parked = hard ? [] : (state.fleet || []).map((f, i) => (fleetVehicle(state, i) ? fleetName(state, i) : null)).filter(Boolean);
+  const yard = parked.length ? ` In the yard: ${parked.length === 1 ? parked[0] : `${parked.slice(0, -1).join(", ")} and ${parked[parked.length - 1]}`}, what was in ${parked.length === 1 ? "its back" : "their backs"} unloaded into the stores.` : "";
   const who = people.length === 1 ? "You get out alone" : `${countWord(people.length).replace(/^./, (c) => c.toUpperCase())} of you get out`;
   const full = (custom ? `Custom: a normal start with the counts you set (${people.length} ${people.length === 1 ? "survivor" : "survivors"}, ${state.custom.groups} AI ${state.custom.groups === 1 ? "group" : "groups"}, ${state.custom.hives} ${state.custom.hives === 1 ? "hive" : "hives"}, ${state.custom.cities} ${state.custom.cities === 1 ? "city" : "cities"}, ${state.custom.towns} ${state.custom.towns === 1 ? "town" : "towns"} and ${state.custom.military} military ${state.custom.military === 1 ? "site" : "sites"}). ` : "") + (hard
     ? `Hardcore. The day the State of Calder falls. ${who} with whatever you can grab: no hub, food and water for a day or three, and the outbreak just starting. Gather what a hub takes and found your own. ${groupsOf(state)} other groups are out there, starting out just like you.`
-    : `One year after the outbreak. Your survivors hold a homestead out in the open in the State of Calder, well clear of the towns: a main house (a well, a cellar, no wall yet), a lodge with four beds, a two-person tent and eight crop plots dug, and nothing else built yet. What to put up first, with a woodpile of ${startWood(state).toLocaleString("en-US")} wood, ${HUB_START.scrap} scrap and ${HUB_START.parts} parts, is yours to choose: beds, a crafting bench, fields, walls. ${groupsOf(state)} other groups are out there, starting bare as well, along with the hordes.`) + foot
+    : `One year after the outbreak. Your survivors hold a homestead out in the open in the State of Calder, well clear of the towns: a main house (a well, a cellar, no wall yet), a lodge with four beds, a two-person tent and eight crop plots dug, and nothing else built yet. What to put up first, with a woodpile of ${startWood(state).toLocaleString("en-US")} wood, ${HUB_START.scrap} scrap and ${HUB_START.parts} parts, is yours to choose: beds, a crafting bench, fields, walls. ${groupsOf(state)} other groups are out there, starting bare as well, along with the hordes.`) + foot + yard
     + ` Customize your starting colonists (name, skills, look) and choose your leader. The game starts paused: give your first orders, then ${keyHint({ key: "press Space", touch: "tap ▶ Run", pad: "press ☰" })}.`;
   const line = custom ? `Custom: a normal start with the counts you set.`
     : hard ? `Hardcore: the day Calder falls, ${who.toLowerCase()} with what you can grab.`

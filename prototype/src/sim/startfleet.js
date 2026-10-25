@@ -48,7 +48,8 @@ export const START_FLEET = {
   LIMIT: 60, MIN: 0, MAX: 1000, STEP: 5, // a vehicle's point limit: 60 by default (a back of supplies and a few good things)
   COUNT: { MIN: 1, MAX: 30, DEF: 1 }, // how many vehicles: at most one a starting survivor (MAX: Custom's most, CUSTOM_RUN.people)
   KIND: "truck", // a normal start's (and a new Custom vehicle's) kind: the pickup truck
-  FUEL: 20, CONDITION: 75, // the hub's vehicles' tank (at most a full one) and condition, as the normal start's pickup
+  FUEL: 20, CONDITION: 75, // a vehicle's tank (at most a full one) and condition where nothing rolls them
+  ROLL: { FUEL: [0.2, 0.45], CONDITION: [60, 85] }, // a normal or Custom start's vehicles, rolled (hardcore-start.js rollHubFleet): a part-full tank a year on
 };
 // The kinds a Custom vehicle may be: every motor vehicle (vehicles.js VEHICLE_TYPES), no bicycles.
 export const fleetKinds = () => Object.keys(VEHICLE_TYPES).filter((k) => k !== "bike" && VEHICLE_TYPES[k].motor);
@@ -84,7 +85,7 @@ export function cleanFleet(raw, mode, max = START_FLEET.COUNT.MAX) {
   const out = [];
   for (let i = 0; i < n; i++) {
     const r = list[i] && typeof list[i] === "object" ? list[i] : {};
-    const type = kinds.includes(r.type) ? r.type : mode === "hardcore" && (i === 0 || r.type == null) ? null : START_FLEET.KIND; // Hardcore: every vehicle as rolled unless a kind is set (2026-10-25)
+    const type = kinds.includes(r.type) ? r.type : null; // as rolled unless a kind is set: by whose it is (2026-10-25, every mode)
     const empty = !!r.empty;
     out.push({ type, limit: clampLimit(r.limit), load: r.load && !empty ? sanitizeStartVehicle(r.load, custom) : null, empty, driver: cleanDriver(r.driver, max), roll: cleanRoll(r.roll) });
   }
@@ -119,7 +120,7 @@ export const defaultFleet = (mode) => cleanFleet(null, mode);
 export function resizeFleet(fleet, n, mode = "custom", max = START_FLEET.COUNT.MAX) {
   const want = clampFleetCount(n, max);
   const list = (fleet || []).slice(0, want);
-  while (list.length < want) list.push({ type: START_FLEET.KIND, limit: START_FLEET.LIMIT, load: null });
+  while (list.length < want) list.push({ type: null, limit: START_FLEET.LIMIT, load: null });
   return cleanFleet(list, mode, max);
 }
 
@@ -155,14 +156,13 @@ export function fleetName(state, i) {
   const type = (v && v.type) || (f && f.type) || START_FLEET.KIND;
   const T = VEHICLE_TYPES[type] || VEHICLE_TYPES.truck;
   const mode = fleetMode(state);
-  if (mode === "hardcore") { // whose it was, as the car (the user's request 2026-10-25: "Instead of showing name like vehicle 2 do what you do with the first rolled vehicle")
-    const id = i === 0 ? (state.hardcore && state.hardcore.start ? state.hardcore.start.carOwner : null) : f && f.ownerId;
-    const o = (state.survivors || []).find((s) => s.id === id);
-    const kind = /^[A-Z]{2,}\b/.test(T.name) ? T.name : T.name.toLowerCase(); // "SUV" stays so
-    if (o) return `${String(o.name).split(" ")[0]}'s ${kind}`;
-    if (i === 0) return `The ${kind}`;
-  }
-  return `Vehicle ${i + 1} (${T.name})`;
+  // Whose it was, as Hardcore's car (the user's requests 2026-10-25: "Instead of showing name like vehicle 2 do what you
+  // do with the first rolled vehicle"; every mode since): f.ownerId, set as it is rolled (hardcore-start.js rollVehicle).
+  const id = mode === "hardcore" && i === 0 ? (state.hardcore && state.hardcore.start ? state.hardcore.start.carOwner : null) : f && f.ownerId;
+  const o = (state.survivors || []).find((s) => s.id === id);
+  const kind = /^[A-Z]{2,}\b/.test(T.name) ? T.name : T.name.toLowerCase(); // "SUV" stays so
+  if (o) return `${String(o.name).split(" ")[0]}'s ${kind}`;
+  return mode === "hardcore" && i === 0 ? `The ${kind}` : `Vehicle ${i + 1} (${T.name})`;
 }
 // ---------- who drives each one ----------
 /**
