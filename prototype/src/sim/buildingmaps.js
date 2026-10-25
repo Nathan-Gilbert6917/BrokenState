@@ -733,7 +733,7 @@ function policeStation(rng) {
   const interview = [6, { split: "x", parts: leaves([["*", { role: "office", name: "Interview room", civic: "interview" }], [2, { role: "office", name: "Observation", civic: "observation" }]]) }];
   const back = [["*", { role: "office", name: "Records", boxLock: ["evidence", 0.3], civic: "records" }], [4, { role: "breakroom", civic: "breakroom" }], [2, { role: "restroom", civic: "washroom" }]];
   return {
-    bw, bh, front: { width: 2 }, ground: "city", storeys: n, foot: "large",
+    bw, bh, front: { width: 2 }, ground: "city", storeys: n, foot: "large", stairs: { roles: ["lobby", "dayroom"], n: 1 }, // up from the front desk
     program: { split: "x", parts: right ? [["*", main], port] : [port, ["*", main]] },
     upper: (f) => corridorPlan(f === 1 ? [["*", { role: "office", name: "Squad room", civic: "squad" }], interview, ["*", { role: "office", name: "Dispatch", civic: "dispatch" }]] : [["*", { role: "office", name: "Briefing room", civic: "briefing" }], interview, ["*", { role: "office", name: "Squad room", civic: "squad" }]], back, 5),
     exits: [{ side: right ? "right" : "left", roles: ["bays"], chance: 1, roller: true, width: 2, lock: 0.3, name: "Sally port" }, { side: "back", roles: ["bays"], chance: 0.6, lock: 0.5 }],
@@ -745,7 +745,7 @@ function fireStation(rng) {
   const bays = [0.5, { role: "bays", name: "Engine bay", type: "enginebay", maxBoxes: 5, civic: "enginebay" }];
   const left = rng.chance(0.5);
   return {
-    bw, bh, front: { width: 1 }, ground: "town", storeys: 2, foot: "medium",
+    bw, bh, front: { width: 1 }, ground: "town", storeys: 2, foot: "medium", stairs: { roles: ["dayroom", "lobby"], n: 1 }, // up from the day room
     program: { split: "x", parts: left ? [bays, ["*", living]] : [["*", living], bays] },
     upper: () => ({ split: "y", parts: [["*", { role: "dorm", type: "barracks", civic: "fdorm" }], ["*", { split: "x", parts: leaves([["*", { role: "gym", civic: "fgym" }], [4, { role: "office", name: "Watch office", civic: "watch" }], [3, { role: "bath", civic: "washroom" }]]) }]] }),
     exits: [{ side: "front", roles: ["bays"], chance: 1, roller: true, width: 3, lock: 0.1, name: "Bay door" }, { side: "back", roles: ["bays"], chance: 0.6, roller: true, width: 2, lock: 0.3 }, { side: "back", roles: ["kitchen", "workshop"], chance: 0.6, lock: 0.3 }],
@@ -759,7 +759,7 @@ function schoolPlan(rng) {
   const lobby = { role: "lobby", entry: true, name: "Lobby", type: "office", civic: "slobby" };
   const kitchen = [4, { split: "y", parts: leaves([["*", { role: "kitchen", name: "School kitchen", maxBoxes: 1, civic: "skitchen" }], [2, { role: "pantry", name: "Walk-in", type: "kitchen", dk: "coldroom", civic: "walkin" }]]) }];
   return {
-    bw, bh, front: { width: 2 }, ground: "town", storeys: n, foot: "large",
+    bw, bh, front: { width: 2 }, ground: "town", storeys: n, foot: "large", stairs: ENDS, // one at each end of the corridor
     program: corridorPlan([["*", C()], [4, { role: "office", name: "Principal's office", lock: ["door", 0.3], boxLock: ["safe", 0.2], civic: "principal" }], [rng.int(5, 6), lobby], [4, { role: "nurse", civic: "nurse" }], ["*", C()]],
       [["*", C({ name: "Science lab", type: "lab", civic: "sciencelab" })], [rng.int(8, 9), { role: "gym", civic: "gym" }], [rng.int(6, 7), { role: "cafeteria", civic: "cafeteria" }], kitchen], 5, 2, hall),
     upper: (f, r) => corridorPlan([["*", C()], ["*", C()], [5, { role: "breakroom", name: "Staff room", type: "office", civic: "staffroom" }]],
