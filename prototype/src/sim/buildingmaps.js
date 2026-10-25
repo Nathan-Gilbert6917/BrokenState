@@ -2311,7 +2311,7 @@ export function assemble(rng, spec, opts = {}) {
     passAt(i);
     if (!passable(c)) {
       total--;
-      if (!connected()) { c.k = was; passAt(i); total++; return false; }
+      if (!connected() || (here && room && !roomWhole(room))) { c.k = was; passAt(i); total++; return false; } // a shape's room stays whole (roomWhole)
     }
     if (room && room.up) c.h = 1;
     return true;
@@ -2381,6 +2381,18 @@ export function assemble(rng, spec, opts = {}) {
       placeDecorPieces(room, { seed: pseed, f }, (x, y) => ctx.free(x, y) && [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => rid[I(x + dx, y + dy)] === -1), (x, y, k) => block(x, y, k, room));
     }
   }
+  // A shape's room stays whole (issue #23): every door's and stair's step into it reached from the others inside it, not
+  // only round the outside (a garage annex can be the one way between a house's front rooms and its back; a car across
+  // it must not split the house through a locked back door). The one rectangle's rooms keep the map-wide test alone.
+  function roomWhole(room) {
+    const goal = [];
+    for (const [dx0, dy0] of room.doors) for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const x = dx0 + dx, y = dy0 + dy; if (inside(x, y) && rid[I(x, y)] === room.id && pass[I(x, y)]) goal.push(I(x, y)); }
+    for (let y = room.iy0; y < room.iy0 + room.ih; y++) for (let x = room.ix0; x < room.ix0 + room.iw; x++) if (cells[I(x, y)].k === "stairs") goal.push(I(x, y));
+    if (goal.length < 2) return true;
+    const seen = new Set([goal[0]]), q = [goal[0]];
+    while (q.length) { const i = q.pop(), x = i % W, y = (i / W) | 0; for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const j = I(x + dx, y + dy); if (!seen.has(j) && rid[j] === room.id && pass[j]) { seen.add(j); q.push(j); } } }
+    return goal.every((i) => seen.has(i));
+  }
   function furnishCtx(room) {
     const x0 = room.ix0, y0 = room.iy0, x1 = room.ix0 + room.iw - 1, y1 = room.iy0 + room.ih - 1;
     const free = (x, y) => x >= x0 && x <= x1 && y >= y0 && y <= y1 && FLOOR_KINDS.has(cells[I(x, y)].k) && !keep[I(x, y)];
@@ -2410,7 +2422,7 @@ export function assemble(rng, spec, opts = {}) {
         if (!rect) return false;
         passRect(rect);
         total -= rect.w * rect.h;
-        if (!connected()) { removeCar(cells, W, rect); passRect(rect); total += rect.w * rect.h; return false; }
+        if (!connected() || (here && !roomWhole(room))) { removeCar(cells, W, rect); passRect(rect); total += rect.w * rect.h; return false; }
         return rect;
       },
       // A vehicle of the room's (civiclayout.js: a fire engine, an ambulance, a police car): placeCar at (x, y) along o.ax,
@@ -2423,7 +2435,7 @@ export function assemble(rng, spec, opts = {}) {
         total -= rect.w * rect.h;
         const side = [];
         for (let yy = rect.y0 - 1; yy <= rect.y0 + rect.h; yy++) for (let xx = rect.x0 - 1; xx <= rect.x0 + rect.w; xx++) if ((xx < rect.x0 || xx >= rect.x0 + rect.w) !== (yy < rect.y0 || yy >= rect.y0 + rect.h) && inside(xx, yy) && rid[I(xx, yy)] === room.id && walkAt(xx, yy)) side.push([xx, yy]);
-        if (!side.length || !connected()) { removeCar(cells, W, rect); passRect(rect); total += rect.w * rect.h; return null; }
+        if (!side.length || !connected() || (here && !roomWhole(room))) { removeCar(cells, W, rect); passRect(rect); total += rect.w * rect.h; return null; }
         if (o.box && canBox) {
           keep[I(side[0][0], side[0][1])] = 1;
           containers.push({ id: cid++, x: rect.x0, y: rect.y0, w: rect.w, h: rect.h, f, area: room.id, kind: o.box, searched: false, label: `${room.name}: ${o.box === "engine" ? "fire engine" : o.box === "policecar" ? "police car" : o.box}` });

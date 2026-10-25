@@ -1004,6 +1004,18 @@ console.log("\nFootprint shapes: buildings that are not boxes (issue #23)");
     // No room straddles two parts; the stair runs inside a part with every storey; the exits on outer walls; every
     // container next to a walkable cell.
     for (const r of m.rooms) if (!r.outdoor) { const p = B.parts[r.part]; if (!p || r.x0 < p.x0 || r.y0 < p.y0 || r.x0 + r.w > p.x0 + p.w || r.y0 + r.h > p.y0 + p.h) bad("no room straddles two parts", `${eg} ${r.name}`); }
+    // Every room whole: its doors' and stairs' cells reach each other inside it (a car or a piece never cuts it in two).
+    for (const r of m.rooms) {
+      if (r.outdoor) continue;
+      const cells = m.floors[r.f || 0].cells, inR = (x, y) => x > r.x0 && y > r.y0 && x < r.x0 + r.w - 1 && y < r.y0 + r.h - 1, ok = (x, y) => inR(x, y) && CELL[cells[y * m.w + x].k] && (CELL[cells[y * m.w + x].k].walk || cells[y * m.w + x].k === "door");
+      const goal = [];
+      for (const [dx0, dy0] of r.doors || []) for (const [dx, dy] of N4) if (ok(dx0 + dx, dy0 + dy)) goal.push((dy0 + dy) * m.w + dx0 + dx);
+      for (let y = r.y0 + 1; y < r.y0 + r.h - 1; y++) for (let x = r.x0 + 1; x < r.x0 + r.w - 1; x++) if (cells[y * m.w + x].k === "stairs") goal.push(y * m.w + x);
+      if (goal.length < 2) continue;
+      const seen = new Set([goal[0]]), q = [goal[0]];
+      while (q.length) { const i = q.pop(), x = i % m.w, y = (i / m.w) | 0; for (const [dx, dy] of N4) { const j = (y + dy) * m.w + x + dx; if (!seen.has(j) && ok(x + dx, y + dy)) { seen.add(j); q.push(j); } } }
+      if (!goal.every((i) => seen.has(i))) bad("every room whole (its doors and stairs reach each other inside it)", `${eg} ${r.name}`);
+    }
     for (const r of m.runs || []) for (const [x, y] of [...runSteps(r), ...runLandings(r)]) if (!B.parts.some((p) => p.storeys >= m.storeys && x > p.x0 && y > p.y0 && x < p.x0 + p.w - 1 && y < p.y0 + p.h - 1)) bad("the stairs inside a part with every storey", eg);
     for (const e of m.exits) for (const [x, y] of e.cells) if (!N4.some(([dx, dy]) => { const n = m.cells[(y + dy) * m.w + x + dx]; return n && n.f !== "floor"; })) bad("exits on outer walls", `${eg} ${e.name}`);
     for (const z of m.zones) if (!(z.x0 === 0 || z.y0 === 0 || z.x0 + z.w === m.w || z.y0 + z.h === m.h)) bad("the exits' zones at the map's edge", eg);
@@ -1015,7 +1027,7 @@ console.log("\nFootprint shapes: buildings that are not boxes (issue #23)");
     }
   }
   for (const [what, list] of Object.entries(errs)) check(false, `${what}: ${list.length} bad, e.g. ${list.slice(0, 3).join("; ")}`);
-  check(!Object.keys(errs).length && shapedN > 0, `every shaped building keeps the rules (${shapedN} buildings of ${shapedKeys.length} kinds, ${partsN} parts, ${SEEDN} seeds each): every walkable cell reachable on every floor, every part a door out, windows and exits on outer walls, doors in walls, stairs in a part with every storey, containers reachable, no room across two parts, lower parts open air above`);
+  check(!Object.keys(errs).length && shapedN > 0, `every shaped building keeps the rules (${shapedN} buildings of ${shapedKeys.length} kinds, ${partsN} parts, ${SEEDN} seeds each): every walkable cell reachable on every floor, every part a door out, windows and exits on outer walls, doors in walls, stairs in a part with every storey, containers reachable, no room across two parts and every room whole, lower parts open air above`);
   // Which buildings are shaped, and how: over 200 seeds (the spec's dice only), at least half of the new houses,
   // schools, hospitals, churches and motels are not plain rectangles, and an L, a T or a U turns up for each.
   const share = {};
