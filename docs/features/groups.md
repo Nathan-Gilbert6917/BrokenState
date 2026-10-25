@@ -2,6 +2,8 @@
 
 Detail for sections 10 and 11 of [docs/agents/features.md](../agents/features.md). `[name]` is `prototype/src/sim/name.js`; `ui/name` is `prototype/src/ui/name.js`. Related docs: [ADR 0001 (AI parity)](../adr/0001-ai-parity.md), [docs/ai-parity-audit.md](../ai-parity-audit.md), [docs/coalition-war-plan.md](../coalition-war-plan.md), [docs/prompts/poi-and-nomads.md](../prompts/poi-and-nomads.md).
 
+Contents: [Group arsenals and job kit](#group-arsenals-and-job-kit) · [Packing for the job](#packing-for-the-job) · [Combat and inventory parity](#combat-and-inventory-parity) · [The groups' power grid](#the-groups-power-grid) · [Keeping the coalition together](#keeping-the-coalition-together) · [Envoys: word carried in person](#envoys-word-carried-in-person) · [Volunteers on loan and joint operations](#volunteers-on-loan-and-joint-operations) · [Meeting to trade](#meeting-to-trade) · [Outsiders and raider bands](#outsiders-and-raider-bands) · [Nomads](#nomads) · [Radio network](#radio-network) · [Your radio and your allies' on the Radio layer](#your-radio-and-your-allies-on-the-radio-layer)
+
 ## Group arsenals and job kit
 - Groups fight only with what they gathered [arsenal].
 - What is in an item (a rig's pouches, a pack's slots, a gun's fitted parts) can be on the books for itself as well (the home kit-out books a magazine it puts in a pouch). An item off the books (`arsenal removeFromArsenal`: lost, taken, given, picked up by another holder) takes those off with it, still in it (`contentsOnBooks`): before 2026-10-25 a dead Guard's plate carrier picked up by Red Hand (`caravanraids escortLost`) left its two magazines on the Guard's books, and both groups dealt them out, two people with one magazine (`tools/conservationtest.js` seed 7). A share of a group's stores taken (`arsenalShareTo`) brings a thing in what it is in, not loose as well.
@@ -25,8 +27,8 @@ Detail for sections 10 and 11 of [docs/agents/features.md](../agents/features.md
 - **Defectors**: one of yours who goes over to a group goes as themselves, with what they carry [members joinFromYours, groupcare takeInFromYours].
 - **Checks**: a test campaign checks no AI holding grows from nowhere [ledger, tools/conservationtest.js]; swapped-sides fights play alike [tools/paritytest.js].
 
-
 ## The groups' power grid
+A group's base runs its machines on an hourly power budget worked out once a day (the sun first, the bank and the generator after it, by the player's numbers), and the group puts up solar arrays, battery banks, a perimeter alarm, electric heaters and a charging station at WORKS-scaled costs behind the player's locks. The heaters cut its wood burn, the alarm braces it against a night raid, and all five stand on its raided map.
 - The user's request 2026-10-24: "Both players and AI groups should build these and fix and implement any machine power needs and power output and setting up power grids for the base." The groups' side ([ADR 0001](../adr/0001-ai-parity.md): the player's rules and numbers, coarse where they are abstract). Before it their one generator served a freezer and a sealer a day at a time with no power budget, and the grid's pieces were "not theirs yet". The player's side is [The governor builds the grid](economy.md#the-governor-builds-the-grid).
 - **The works** (`groupworks.js GROUP_WORKS.WORKS`, `LOCKS`, `GRID_ORDER`, `gridWork`): scaled as the rest (about a quarter of the player's scrap, half the parts, electronics and car parts folded into their one count of parts, the player's hours ÷ CREW_HOURS 8), every one with MACH.spare (2) parts more in the stores (`gridCan`, paid from the machine earmark), never at a camp, only at a base with a generator or an array (`hasSource`).
   - `solar` "a solar panel array": scrap 4, 1 metal sheet (made from scrap when short), 2 parts; 3 crew-days; max 3; LOCKS Mechanics 3, the Solar Installer's Handbook (`groupKnows "solarinst"`: found, bought or studied by `groupTechDaily` as any manual), a workshop. Wanted once a generator stands there and either fuel is short (`fuelShort`: fuelFlow.out > in with GEN_UP.minDays of history, or fuel under a head's worth) or they hold cost.parts + MACH.spare + GRID_WANT.spareParts 4 (= 8) parts.
@@ -51,6 +53,7 @@ Detail for sections 10 and 11 of [docs/agents/features.md](../agents/features.md
 - Modules: [groupworks GROUP_WORKS.WORKS / LOCKS / GRID_WANT / MACH.fx / gridWork / gridFuelOk / groupMachinesDaily / groupPowerNeed / groupHeaterHeads / groupAlarmOn / groupGridAttacked / groupChargeDaily / worksText / groupPowerText, grouppower GRID / powerDayBudget / servedToday / heatingDay, factions factionsDaily / resolveRaidOnFaction / resolveOrdinaryRaid, groupbases WORKS_BUILDING, electric header, ui/diplomacy]. Test impact: `tools/gentierstest.js` §7 (the military group builds the alarm first, then the shop, then the upgrade; its tier-2 burn check drops the alarm before measuring the generator's 8 alone).
 
 ## Keeping the coalition together
+Each Calder Coalition member's standing toward you and toward the others, the asks they bring, refusal fatigue, and when a member leaves, turns hostile or demands an expulsion.
 The user's request 2026-10-21: Total War meets Civilization. Test `tools/coalitiontest.js`.
 - **Standing**: each member's standing toward you is its goodwill plus named modifiers that fade (a quarter of each act stays in goodwill). Between members: their relation plus theirs (border friction, trade, a common enemy, incidents, your rulings) [coalition standing / pairStanding / standingParts / remember / pairDrift].
 - **Asks** every few days through the card system (default: refuse): mediate a quarrel (side with one, split, stay out); a favour at another's expense; a trade; aid for nothing; military aid (fighters lent through volunteers.js answerAsk, rounds, or joining its war: diplomacy.js joinWar) [coalition askCard, disputeCard, favourCard, tradeCard, aidCard, militaryCard].
@@ -59,6 +62,7 @@ The user's request 2026-10-21: Total War meets Civilization. Test `tools/coaliti
 - **UI**: Diplomacy → Coalition standing (bars with leave and hostile lines, modifiers, record, risk flags, land if they leave, member grid) [ui/coalition coalitionStandingTab]; codex "Keeping the coalition" [ui/codex].
 
 ## Envoys: word carried in person
+Without a two-way radio link every message, yours or a group's, goes in person by envoy: a team or AI party that can be met, robbed or lost on the road.
 The user's request 2026-10-21: "before radios are set up ... you must send a convoy of at least one survivor to give the message in person. AI groups must do this for you as well". Tests `tools/envoystest.js`, `tools/envoys2test.js`.
 
 ### When an envoy is needed
@@ -89,6 +93,7 @@ The user's request 2026-10-21: "before radios are set up ... you must send a con
 - **An envoy lost out of radio coverage** says nothing live (parties unheardEnvoy: no death lines, no "whole team was lost", no death site or vehicle marked: world killSurvivor, parties wipeParty, conflicts / nomads / visitors / wanderers result handlers; envoys envoyLostQuiet). "No word from our envoy" at its overdue hour gives them up for lost by name (envoys noteOverdue). In coverage (p.radioLive) it reports as any team.
 
 ## Volunteers on loan and joint operations
+People borrowed from a group live and work at your base for a time; joint operations bring several groups' parties to a rendezvous to fight or raid together.
 The user's request 2026-10-21: "a request for volunteers to be added to one of your bases as people temporally ... or joint operations to coordinate fighting hives doing city/town crawls, fighting another group or horde or just help raiding POIs". Tests `tools/loanstest.js`, `tools/envoys2test.js`.
 
 ### Asking
@@ -115,6 +120,7 @@ The user's request 2026-10-21: "a request for volunteers to be added to one of y
 - Modules: [loans planOp, joinOp, meet, opHour, proposalCard, aiProposalsDaily; envoys proposeRoute and "propose" envoys; ui/envoys loanButtons, opsBlock, loansBlock, loanBadge (roster, person cards); ui/render rendezvous flag; ui/codex "Volunteers on loan and joint operations"].
 
 ## Meeting to trade
+A group's trade caravan meets your team at one of your bases, halfway along the road or on a tile you pick, and groups' convoys meet each other the same way.
 The user's request 2026-10-21. Test `tools/trademeettest.js`.
 - Asking a group for a trade caravan, or a radio deal with "We meet", names where: one of your bases, halfway along their road to it (halfwayTile), or a tile picked on the map (meetProblem: land, no base, no hive, no horde; meetRefusal: the delivery rule, one way). No fee.
 - Their caravan walks there and waits MEET.WAIT_HOURS. Any team of yours on the tile trades with it from what it carries (trade.js context kind "meet": the team's side as a visit, the caravan's as a caravan, both carry limits; a radio deal filled in and honoured), again from the orders card or the caravan stop card.
@@ -129,6 +135,8 @@ The user's request 2026-10-21. Test `tools/trademeettest.js`.
 - They take only what they can carry and leave the rest; a band broken or wiped out leaves its goods where it ended [visitors raiderDay, addToStock, dropBandGoods; nomads bandRoom, bandFeeds, bandCare].
 
 ## Nomads
+Baseless bands of 3–10 in four tiers that camp, raid places nearby and move on; they live by the band code but are not a group.
+
 Modules: [nomads; combat KITS drifters/looters/survivalists/preppers, arsenal KIT_OF nomad0–3, markers "nomadcamp", parties mission "nomads", trade `nomadId`; ui/render, ui/mapselect, ui/codex "Nomads"].
 - **Bands**: baseless bands of 3–10 that camp 2–5 days, survey and raid the places within 3 tiles of their camp (the groups' picker and the container ledger: they take what you left in a container) and move on 4–8 tiles.
 - **Life**: they forage, eat, drink, starve, fall to the dead or to you. They take in neutral wanderers, refugees and someone off the road up to their tier's cap, each as a person (refugees and strangers made as one who joins you is: recruits makeCandidate): a mouth their stores feed and water and their meds care for, and, up to work, a pair of hands that forages, surveys, raids and carries for the band [nomads recruit, bandHands, bandFeeds, bandCare; bands bandNewcomer; groupmedical].
@@ -142,6 +150,8 @@ Modules: [nomads; combat KITS drifters/looters/survivalists/preppers, arsenal KI
 - Meeting cards by tier; trade through the trade window (their shelf is what their people can carry by your teams' rule, never cut to a size: bandRoom); camps marked on the map once seen; Attack the nomad camp.
 
 ## Radio network
+Stations and relays let you talk, deal and trade with groups by radio; radios are mid game, and coverage is drawn as a map layer.
+
 Modules: [radio, radiotrade]. Stations and relays, talking to groups, radio deals and radio trades.
 - **Radios are mid game** (2026-10-21): starting bases have none, in normal or hardcore mode (the hardcore veteran's grab is a hand-crank radio, not the Military encrypted radio: hardcore-start ARCHETYPES).
   - Only military bases do: the military type's and the Guard's splinters' army sets at every base; a group settled on a military site its radio room (factions createFactions); the hardcore Guard and old saves by type.
@@ -153,8 +163,9 @@ Modules: [radio, radiotrade]. Stations and relays, talking to groups, radio deal
   - While you listen in, a tuned group's network dotted in its colour. Unticked, no rings are drawn (ui/render.js; the help's Map layers topic in ui/help.js).
 
 ## Your radio and your allies' on the Radio layer
+The Radio layer draws your rings in blue and each Calder Coalition member's network in its colour with its reach and link; groups outside the coalition are never shown.
 - The user's request 2026-10-23: "Radio layer shows your radio distance and when allied you can see their radio distance".
 - Your rings in your blue (PLAYER_COLOR), dashed over a faint wash, "Your radio: 12 tiles" / "Your relay: 6 tiles", "(not linked)" / "(off the air)" when so (radioallies yourRadioRings, yourLabel).
 - Allies are Calder Coalition members (alliance isMember / allianceMembers; a pact alone is not). Each with a network of its own (radio groupNetwork: stations at 12, a military group's army sets at 24, linked relay masts at 6, by your rules: ADR 0001; hidden outposts off the air) is drawn dash-dotted in its colour with "<Group> radio: 12 tiles" at the ring's foot (alliedRadioNetworks). Groups outside the coalition are never shown; a tuned channel stays dotted unless it is an ally's.
 - One wash per network over the union of its rings; labels moved round the ring to a free spot on screen (ui/render ringLabel, drawLabels alt); rings keep their screen width zoomed out.
-- The Layers line shows your reach and each ally's ●N in its colour, its tooltip "Allied: <Group> radio, 12 tiles (linked: you talk by radio | no link to yours: word comes by envoy)" (radioLegend, radioLegendTip; radio canRadioGroup); the tile tooltip names whose radio covers it (radioTipLines; ui/render tileTooltip). ui/help LAYER_HELP, LEGEND, swatch. `tools/radioalliestest.js`.
+- The Layers line shows your reach and each ally's ●N in its colour, its tooltip "Allied: <Group> radio, 12 tiles (linked: you talk by radio | no link to yours: word comes by envoy)" (radioLegend, radioLegendTip; radio canRadioGroup); the tile tooltip names whose radio covers it (radioTipLines; ui/render tileTooltip). ui/help LAYER_HELP, LEGEND, swatch; the legend drawn by ui/ui renderLegend. `tools/radioalliestest.js`.
