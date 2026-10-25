@@ -584,7 +584,7 @@ export const MEDICAL_STYLES = {
     if (L.c.key === "vet") return MEDICAL_STYLES.cells(L); // a vet's recovery ward: pens
     const n = clampM(Math.floor((L.c.w * L.c.h) / MED.BED_AREA), MED.BEDS);
     const beds = bedsWithStands(L, "hospbed", n, ["nightstand", "ivstand"], { prefer: L.variant(2, "ward") ? "corner" : undefined });
-    if (L.room.cots) for (const b of beds) L.beside(b, "cot") || L.wall("cot", { near: b.cells[0] });
+    if (L.room.cots) for (const b of beds) L.beside(b, "crib") || L.wall("crib", { near: b.cells[0] });
     if (L.variant(3, "wheelchair") === 0) L.wall("wheelchair", { prefer: "corner" });
   },
   /** @param {ReturnType<typeof roomLayout>} L */
@@ -650,9 +650,11 @@ export const MEDICAL_STYLES = {
   /** @param {ReturnType<typeof roomLayout>} L */
   ambbay(L) {
     const c = L.c;
-    // The ambulance in its bay (a truck's 2 × 4 cells, combat.js placeCar), its run bag a container of its own.
+    // The ambulance in its bay (a truck's 2 × 4 cells drawn as an ambulance: buildingmaps.js furnishCtx vehicle, #15's),
+    // a container of its own (BOX_LOOT.ambulance).
     if (Math.min(c.w, c.h) >= 3 && Math.max(c.w, c.h) >= 5) {
-      for (const [x, y] of c.innerSpots().slice(0, 10)) { if (L.lane(x, y)) continue; const rect = c.car(x, y, "truck"); if (rect) { c.carBox(rect, "ambulance"); break; } }
+      const ax = c.w >= c.h ? "x" : "y";
+      for (const [x, y] of c.innerSpots().slice(0, 12)) { if (L.lane(x, y)) continue; if (c.vehicle(x, y, { ax, len: 4, kind: "truck", body: "ambulance", box: "ambulance" })) break; }
     }
     L.wall("gurney", { size: [2, 1] });
     L.fill(["shelf"]);

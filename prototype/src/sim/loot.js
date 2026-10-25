@@ -513,6 +513,8 @@ export const AREA_FINDS = {
   armory: { p: 0.05, items: { frag: 1, cuffs: 2, smokegren: 1, flare: 1 } },
   barracks: { p: 0.127, items: { frag: 0.5, heatpack: 1, cigarettes: 2, chocolate: 2, instcoffee: 1, cards: 2, smokegren: 1, batteries: 1, puritabs: 0.5, deodorant: 1, toothpaste: 1, wetwipes: 1 } },
   motorpool: { p: 0.05, items: { batteries: 2, flare: 1, lighters: 1 } },
+  enginebay: { p: 0.05, items: { flare: 2, batteries: 1, lighters: 1 } }, // a fire station's engine bay (issue #15)
+  schoolhall: { p: 0.04, items: { phone: 2, candy: 2, chocolate: 1, cards: 1, deodorant: 1, tcards: 0.5 } }, // a school corridor's lockers (issue #15)
   barn: { p: 0.05, items: { tobacco: 1, whiskey: 1 } },
   lab: { p: 0.06, items: { laptop: 2, phone: 1, camera: 1, solderiron: 0.5 } },
   cabin: { p: 0.08, items: { whiskey: 1, harmonica: 1, cards: 1, gamecall: 1, scentmask: 0.5, photos: 1, monocular: 0.5 } },

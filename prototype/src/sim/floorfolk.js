@@ -263,8 +263,10 @@ function holeUpRaiders(state, b, n, up) {
       if (R.folk.nest && f === R.folk.nest.f) continue;
       for (const r of roomsOn(b, f)) if (!r.locked && !r.hub && !r.entry && area(r) >= 6 && !roomUsed(b, r) && !stairsIn(b, r) && freeCells(b, r).length >= raiders.length + 1) cand.push(r);
     }
-    // The biggest room on the lowest upper floor: they want the stairs near.
-    cand.sort((a, c) => (a.f || 0) - (c.f || 0) || area(c) - area(a));
+    // The biggest room on the lowest upper floor: they want the stairs near. A police station's squad room first
+    // (civiclayout.js: the room's style, the new saves' plans).
+    const squad = (r) => (r.civic === "squad" ? 1 : 0);
+    cand.sort((a, c) => squad(c) - squad(a) || (a.f || 0) - (c.f || 0) || area(c) - area(a));
     room = cand[0] || null;
   }
   let stash = null;

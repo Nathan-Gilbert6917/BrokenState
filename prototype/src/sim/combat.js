@@ -148,7 +148,8 @@ import { poiRaidStart, poiMapRng, boxRng } from "./poicont.js"; // its container
 import * as MED from "./medics.js";
 import { deafen, bangOf, tickEars, heardGhosts, dazedAim, linkAim, linkEscape, fitHeadgear, settleEars } from "./hearing.js"; // ears: bangs, deafness, what your people hear, the team headset
 import { PUSH, GRIP, pushAct, getUpRound, aiPush, aiMeleePush, aiBreakOut, aiFree, gripOf, gripHit, gripRefusal } from "./shoving.js"; // people and the dead shoved back a tile or flat on their back; the dead getting hold of someone (the user's request 2026-10-20)
-import { liftAct, setAct, stowAct, refitPiece, pieceRefusal, tetherMoveRefusal, followTether, tetherRound, stairsAp, pieceStairsRefusal, pieceStairs } from "./furnicarry.js"; // furniture and appliances lifted, carried (one alone, or two tethered), set down, put in the vehicle (issue #12)
+import { liftAct, setAct, stowAct, refitPiece, pieceRefusal, tetherMoveRefusal, followTether, tetherRound, stairsAp, pieceStairsRefusal, pieceStairs, dropPiece } from "./furnicarry.js"; // furniture and appliances lifted, carried (one alone, or two tethered), set down, put in the vehicle (issue #12)
+import { piecesAtExtraction, extractNote, pieceGoesHome } from "./furnihome.js"; // extracting with a piece in the arms: into the vehicle, else dropped at the door from exhaustion (issue #18)
 import { cartAct, cartKnocked, oneHandOk, CART_FIGHT, cartMoved, enemyCartsLetGo, enemyCarts, placeMapCarts, cartHelpStart, holdsCart } from "./carts.js"; // a wheelbarrow, a hand cart: let go (free), take it back (1 action)
 import { fitHands, handsRefusal, handsWord, handsBusy, armsText, handsCount, HANDS_MAX, carriedAct, pickCarried, setOverCover, botDropToFight, autoDrop, settleCarried, armsDropsEnd, stageAtStart } from "./carry.js"; // supplies, a bag or finds carried in the hands: no weapon, no doors, no windows until set down (Drop carried: free; Set over cover)
 import { kitHeadgear, visorAim, toggleVisor } from "./helmets.js"; // helmets: the face shield, an enemy's helmet and ear protection by kit
@@ -5171,6 +5172,7 @@ export function combatAct(state, act) {
       const z = zoneAt(b, u.x, u.y);
       const byCar = vehicleExit(b, u); // any cell next to the vehicle is a way out in it, wherever it stands
       if (z < 0 && !byCar) return "Move into an extraction zone, or next to the vehicle, first.";
+      { const note = extractNote(state, b, u); if (note) say(b, note, /^No /.test(note) ? "warn" : "info"); } // furnihome.js: what becomes of a piece in the arms
       u.left = true; u.exitZone = z >= 0 ? z : b.raid.vehicleZone; u.ap = 0; u.ow = u.hunker = false;
       u.exitVehicle = byCar || !!((b.raid.hasVehicle ?? b.raid.vehicleZone >= 0) && b.raid.vehicleZone === z); // the vehicle stands at this zone (it may have been driven: syncVehicleZone)
       { const o = u.piece && u.tether != null ? unitById(b, u.tether) : null; if (o && active(o)) { o.left = true; o.exitZone = u.exitZone; o.exitVehicle = u.exitVehicle; o.ap = 0; o.ow = o.hunker = false; } } // furnicarry.js: two carrying a piece leave together
@@ -6861,6 +6863,11 @@ export const AREAS = {
   // Army trucks (miltrucks.js): every truck is one container (kind "miltruck", its cargo is truckLoot, not this
   // table), placed by placeMilTrucks; its crew stands round it and some are still strapped in (truckCrewRises).
   miltrucks: { name: "Army trucks", outdoor: true, trucks: true, boxes: ["miltruck"], loot: {}, gear: [] },
+  // A fire station's engine bay (issue #15, civiclayout.js): the tools a crew rides with (axes, pry bars, the ladder),
+  // turnout gear (the nearest the stores have: a leather coat, a helmet, guards), fuel and parts for the engine.
+  // A school corridor lined with narrow lockers (issue #15): many small draws, a snack, a bat, a knife, a bag, a phone.
+  schoolhall: { name: "School lockers", boxes: ["schoollocker"],      loot: { food: [0.12, 1, 2], water: [0.08, 1, 1] }, gear: [["bat", 0.015], ["knife", 0.01], ["backpack", 0.015], ["slingbag", 0.015], ["sportspads", 0.01]] },
+  enginebay: { name: "Engine bay",     boxes: ["locker", "crate", "shelf"],    loot: { fuel: [0.75, 4, 10], parts: [0.55, 1, 3], scrap: [0.5, 2, 6] }, gear: [["fireaxe", 0.08], ["prybar", 0.06], ["crowbar", 0.04], ["sledge", 0.03], ["ladder", 0.04], ["hatchet", 0.03], ["leatherjacket", 0.04], ["bikehelmet", 0.03], ["kneeguards", 0.03], ["flashlight", 0.05]] },
   cargodrop: { name: "Scattered cargo",  outdoor: true, boxes: ["crate", "crate", "crate"], loot: { food: [0.6, 3, 8], water: [0.5, 2, 6], meds: [0.25, 1, 2], preserved: [0.35, 2, 6], ammo: [0.25, 5, 15] }, gear: [["assaultpack", 0.03], ["bandagekit", 0.05], ["rucksack", 0.03], ["stove", 0.03]] },
 };
 // What a piece of furniture holds (the user's request 2026-10-25, issue #10: homes furnished room by room,
@@ -6879,15 +6886,36 @@ export const BOX_LOOT = {
   nightstand: { rest: 0.35, loot: { ammo: [0.3, 4, 12], meds: [0.1, 1, 1] }, gear: [["pistol", 0.09], ["revolver", 0.035], ["compact9", 0.045], ["pistol22", 0.02], ["flashlight", 0.06], ["knife", 0.05]] },
   toolchest:  { rest: 0.3, loot: { scrap: [0.6, 2, 6], parts: [0.5, 1, 2] }, gear: [["hammer", 0.1], ["crowbar", 0.06], ["prybar", 0.06], ["sledge", 0.03], ["flashlight", 0.04]] },
   tvstand:    { rest: 0.8, loot: { scrap: [0.35, 1, 3], parts: [0.1, 1, 1] }, gear: [] },
+  // Police stations, fire stations, schools and churches (issue #15, civiclayout.js). An armory's gun racks hold the long
+  // guns and its ammo cabinets the rounds (its lockers keep the armory's own table): about what the armory held before.
+  // An evidence locker: drugs (meds), knives and pistols taken off people. A fire station's turnout lockers: coats,
+  // helmets and boots; the engine itself (a container of 2 × 5 cells) the crew's tools, the ladder and the gear; an
+  // ambulance first aid; a police car a shotgun, flares, a first-aid kit and a radio. A school's desks hold next to
+  // nothing (its corridor's lockers are AREAS.schoolhall), a gym's storage cage the bats and sticks, a science lab's bench
+  // first aid. A church's candlesticks are silver. Tuned with tools/interiortest.js so the armory, the evidence room
+  // and the school hold what they did within ±10%.
+  gunrack:      { rest: 0.6, loot: { ammo: [0.3, 6, 18] }, gear: [["shotgun", 0.15], ["huntrifle", 0.06], ["carbine", 0.06], ["ar", 0.04], ["semishotgun", 0.04]] },
+  ammocab:      { rest: 0.6, loot: { ammo: [0.95, 30, 75] }, gear: [] },
+  evlocker:     { rest: 0, loot: { meds: [0.22, 1, 2] }, gear: [["knife", 0.06], ["pistol", 0.01], ["compact9", 0.01], ["cuffs", 0.04], ["phone", 0.04], ["watch", 0.005]] },
+  turnout:      { rest: 0.3, loot: {}, gear: [["leatherjacket", 0.15], ["bikehelmet", 0.1], ["kneeguards", 0.08], ["fireaxe", 0.03], ["flashlight", 0.04]] },
+  sportcage:    { rest: 0.2, loot: {}, gear: [["bat", 0.25], ["hockeystick", 0.15], ["golfclub", 0.06], ["sportspads", 0.1], ["footballhelmet", 0.08]] },
+  schooldesk:   { rest: 0, loot: { food: [0.04, 1, 1] }, gear: [["phone", 0.005]] },
+  teacherdesk:  { rest: 0.5, loot: { meds: [0.04, 1, 1] }, gear: [["phone", 0.02]] },
+  labbench:     { rest: 0.3, loot: { meds: [0.15, 1, 1], parts: [0.2, 1, 1] }, gear: [["bandagekit", 0.04]] },
+  serverrack:   { rest: 0.2, loot: { parts: [0.6, 1, 3], scrap: [0.5, 1, 3] }, gear: [["handradio", 0.06]] },
+  candles:      { rest: 0, loot: {}, gear: [["silverware", 0.35], ["candles", 0.5]] },
+  engine:       { rest: 0, loot: { fuel: [0.5, 2, 6], parts: [0.3, 1, 2] }, gear: [["fireaxe", 0.5], ["prybar", 0.35], ["crowbar", 0.2], ["ladder", 0.3], ["sledge", 0.15], ["leatherjacket", 0.2], ["bikehelmet", 0.15], ["bandagekit", 0.2], ["flashlight", 0.2]] },
+  ambulance:    { rest: 0, loot: { meds: [0.85, 2, 5], water: [0.4, 1, 3] }, gear: [["bandagekit", 0.25], ["surgkit", 0.08]] },
+  policecar:    { rest: 0, loot: { ammo: [0.5, 5, 15], meds: [0.3, 1, 1] }, gear: [["shotgun", 0.15], ["flare", 0.4], ["bandagekit", 0.15], ["handradio", 0.2], ["baton", 0.08]] },
   // The hospitals, clinics and vets room by room (issue #14, roomlayout.js MEDICAL_STYLES): the pharmacy's drug safe and
   // the theatre's instrument cabinets the richest (a surgical kit for the medics), the ER's medicine cabinets and the
   // supply room's shelves next, a ward's nightstands the poorest (a patient's things); the morgue's drawers a body's
-  // effects, the ambulance in its bay its run bag, a vending machine snacks and drinks. kind@type: that kind in a room
-  // of that loot type only (a ward's nightstand is not a bedroom's; a vet's cabinet holds animal meds, half the dose).
+  // effects, a vending machine snacks and drinks; a hospital's ambulance the ambulance row above (#15's). kind@type:
+  // that kind in a room of that loot type only (a ward's nightstand is not a bedroom's; a vet's cabinet holds animal
+  // meds, half the dose).
   drugsafe:            { rest: 0, loot: { meds: [0.95, 30, 60] }, gear: [["surgkit", 0.05]] },
   instcab:             { rest: 0.3, loot: { meds: [0.9, 7, 14] }, gear: [["surgkit", 0.2], ["bandagekit", 0.12], ["knife", 0.04]] },
   morguelocker:        { rest: 0, loot: { scrap: [0.15, 1, 2] }, gear: [["watch", 0.03], ["goldring", 0.05]] },
-  ambulance:           { rest: 0, loot: { meds: [0.9, 3, 7], water: [0.4, 1, 3], fuel: [0.3, 1, 3] }, gear: [["bandagekit", 0.25], ["surgkit", 0.06], ["flashlight", 0.08]] },
   vending:             { rest: 0, loot: { food: [0.6, 1, 4], water: [0.6, 2, 5] }, gear: [] },
   medcart:             { rest: 0, loot: { meds: [0.9, 5, 10], water: [0.15, 1, 2] }, gear: [["bandagekit", 0.1]] }, // a hospital's medication cart (ER, ICU, nurses' station)
   "medcab@clinic":     { rest: 0, loot: { meds: [0.6, 1, 3], water: [0.1, 1, 1] }, gear: [["bandagekit", 0.08]] },
@@ -7802,6 +7830,8 @@ function endRaid(state, b) {
   }
   const hadVehicle = R.hasVehicle ?? R.vehicleZone >= 0;
   const vehicleKept = hadVehicle && b.units.some((u) => u.side === "player" && u.left && !u.dead && (u.exitVehicle ?? u.exitZone === R.vehicleZone)); // left from the zone the vehicle stood at
+  const pieces = piecesAtExtraction(state, b, vehicleKept); // furnihome.js (issue #18): a piece in the arms into the vehicle, else dropped at the door from exhaustion
+  lines.push(...pieces.lines);
   endBodies(state, b, extractedIds.length ? "extracted" : "defeat", vehicleKept); // carriers.js: the risen still walking take their things into the walking loot; bodies in the car come home with it
   raidHome(state, b, home); // raidloot.js: what the ones who made it carry goes in the team's cargo; the rest is lost
   if (hadVehicle && extractedIds.length && !vehicleKept) lines.push("Nobody went back to the vehicle. It stays behind at the site.");
@@ -7830,7 +7860,7 @@ function endRaid(state, b) {
     knockedOut: captives.length, prisoners: captiveRecords(state, b, captives), // prisoners.js
     outcome, enemiesKilled: killed, enemiesLeft: original.length - killed - captives.length,
     survivorsHurt: hurtIds, survivorsDead: deadIds, ammoUsed: b.ammoUsed, arrowsUsed: b.arrowsUsed || 0, arrowsBack: arrowsBackN,
-    loot: { supplies: { ...R.found }, gear: R.foundGear.slice() },
+    loot: { supplies: { ...R.found }, gear: [...R.foundGear, ...pieces.items] },
     turns: b.turn, medsUsed: b.medsUsed, extraKilled: enemies.filter((u) => u.reinforcement && u.dead).length,
     tactical: true, worn: true,
     third: thirdResult(b), // thirdside.js: the survivors or soldiers who were there (null: none)
@@ -7841,6 +7871,7 @@ function endRaid(state, b) {
       hours: b.calledOff ? 0 : Math.max(1, Math.ceil(b.turn / 6)), // called off before going in (raidplan.js callOff): no time on the site
       alerted: original.some((u) => u.kind === "human" && (u.aware || u.dead)),
       calledOff: !!b.calledOff, // scavenge.js afterRaid: the team turned back
+      ...(pieces.text || pieces.fullText ? { pieces: { dropped: pieces.dropped, full: pieces.full, text: pieces.text, fullText: pieces.fullText, ledger: pieces.ledger } } : {}), // furnihome.js: the log line and the alert
     },
   };
   b.summary = lines;
@@ -7964,7 +7995,11 @@ function autoRaidTurn(state) {
         if (!combatAct(state, { type: stairsTo > (u.f || 0) ? "goup" : "godown", unit: u.id })) continue;
       }
       const z = (u.f || 0) ? -1 : zoneAt(b, u.x, u.y);
-      if (leave && z >= 0 && (R.vehicleZone < 0 || z === R.vehicleZone || R.heat > 80)) { combatAct(state, { type: "extract", unit: u.id }); break; }
+      if (leave && z >= 0 && (R.vehicleZone < 0 || z === R.vehicleZone || R.heat > 80)) {
+        if (u.piece && !pieceGoesHome(state, b, u)) dropPiece(state, b, u, `No vehicle to take it home: ${u.name.split(" ")[0]} sets it down.`); // furnihome.js: never out with a piece and no vehicle
+        combatAct(state, { type: "extract", unit: u.id });
+        break;
+      }
       // stealth.js: tie up the knocked out, take down an unaware guard next to it, throw a bottle to pull guards away.
       if (!leave && botStealth(state, b, u, combatAct)) continue;
       // buildingmaps.js: on the way out of a building, shut a door on whatever follows, or throw a lure to pull it off.
