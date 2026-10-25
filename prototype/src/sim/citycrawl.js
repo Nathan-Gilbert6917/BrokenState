@@ -1186,7 +1186,7 @@ export function quickLoot(state, p, c, place, rng = state.rng, n = c.block) {
   for (let i = 0; i < rolls && left.length; i++) {
     const [area, kind, f] = left.splice(rng.int(0, left.length - 1), 1)[0];
     const type = prof.rooms[area];
-    const got = boxFinds(state, rng, { def: boxLoot(type, kind, kind === "freezer" && winter), type, rich: rich * Math.min(FLOOR_RICH.cap, Math.pow(FLOOR_RICH.perFloor, f)), scav, reward: prof.reward, site, gunSite: place.key, deep: n, tileId: c.tile, bid: `q${place.id}-${i}` });
+    const got = boxFinds(state, rng, { def: boxLoot(type, kind, winter), type, rich: rich * Math.min(FLOOR_RICH.cap, Math.pow(FLOOR_RICH.perFloor, f)), scav, reward: prof.reward, site, gunSite: place.key, deep: n, tileId: c.tile, bid: `q${place.id}-${i}` });
     addSup(sup, got.sup); gear.push(...got.gear);
     opened++;
   }
