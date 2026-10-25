@@ -151,6 +151,19 @@ export const FURNITURE_KINDS = {
   deposit:      P("Safe-deposit boxes", STEEL, 60, 160, "two", S1, true, ["office"], "storage:20", true),
   atm:          P("ATM",                STEEL, 80, 400, "fixed", S1, false, ["shop", "office"], "none", true),
   stanchion:    P("Queue post",         POLE, 3, 6, "one", S1, false, ["office", "shop"], "none"),
+  // ---------- hotels (issue #29: hotellayout.js lays them) ----------
+  // The reception desk (its drawers searched; the key rack stands behind it), a guest's suitcase (a luggage room's or a
+  // room's: clothes, toiletries, a phone, now and then a pistol or meds: combat.js BOX_LOOT), a room's minibar (snacks,
+  // drinks, little bottles), the luggage cart, the ballroom's round banquet tables (the lift lobby's lift doors are
+  // #27's liftdoor below), the lobby's lounge chairs, the pool deck's loungers and a tennis court's net.
+  frontdesk:   P("Reception desk",    HALF, 35, 80, "two", S21, true, ["office"], "storage:40"),
+  suitcase:    P("Suitcase",          HALF, 8, 12, "one", S1, true, ["bedroom", "office"], "storage:30"),
+  minifridge:  P("Mini fridge",       HALF, 15, 20, "one", S1, true, ["bedroom", "office"], "storage:15", true),
+  luggagecart: P("Luggage cart",      HALF, 15, 25, "one", S1, false, ["office", "bedroom"], "storage:60"),
+  banquet:     P("Banquet table",     HALF, 20, 30, "one", S1, false, ["dining"], "work:table"),
+  loungechair: P("Lounge chair",      HALF, 15, 25, "one", S1, false, ["living", "office"], "comfort:0.5"),
+  lounger:     P("Pool lounger",      HALF, 8, 12, "one", S1, false, ["yard"], "comfort:0.3"),
+  tennisnet:   P("Tennis net",        POLE, 5, 15, "fixed", S1, false, ["yard"], "none"),
   // ---------- grocery stores by size (issue #22: shoplayout.js cornerstore, grocerfloor, superstore, the back of house) ----------
   // The freezer case (an upright glass-door freezer), the island freezer and the butcher's case are appliances at a base
   // (data-appliances.js freezer_case, island_freezer, meat_case: #19's rules through their use); each holds its own table
@@ -167,8 +180,51 @@ export const FURNITURE_KINDS = {
   cartcorral:    P("Cart corral",       C(false, 1, false), 40, 150, "fixed", S21, false, ["shop"], "none"),
   baler:         P("Baler",             STEEL, 80, 700, "fixed", S1, false, ["bay", "shop"], "none", true),
   aislesign:     P("Aisle marker",      POLE, 5, 6, "one", S1, false, ["shop"], "none"),
+  // ---------- restaurants by kind of food, format and size (issue #33: eaterylayout.js lays them) ----------
+  // The cooking line by cuisine (a flat-top, deck and conveyor pizza ovens, a wok range, a clay tandoor, a smoker, a char
+  // grill, a gyro spit, a stockpot burner, steam tables, an espresso machine, a soft-serve machine, a slicer, a tortilla
+  // press), the dish pit's dish machine, the grease trap by the back door, the fire extinguisher; the front of house (a
+  // drive-through window, a sushi conveyor, a salad bar, a menu board on the wall, a play structure, a patio umbrella
+  // table, a host stand, a white-cloth table, a Korean grill table, a stage); the bar and the cases (a beer tap tower,
+  // brewing tanks, a lobster tank, a pastry case, a dipping cabinet, a wine rack) and the dry store's shelving. The
+  // pastry case, the dipping cabinet, the wine rack and the dry-goods shelving hold their own tables (combat.js BOX_LOOT);
+  // the rest is the line itself, liftable where a pair of people could get it out of the door.
+  flattop:      P("Flat-top grill",     HALF, 35, 90, "two", S1, false, ["kitchen"], "none", true),
+  deckoven:     P("Deck oven",          STEEL, 50, 180, "two", S1, false, ["kitchen"], "none", true),
+  conveyoroven: P("Conveyor oven",      HALF, 40, 140, "two", S21, false, ["kitchen"], "none", true),
+  wokrange:     P("Wok range",          HALF, 40, 130, "two", S1, false, ["kitchen"], "none", true),
+  tandoor:      P("Tandoor",            STEEL, 60, 300, "fixed", S1, false, ["kitchen"], "none", true), // a clay oven set in brick
+  smoker:       P("Smoker",             STEEL, 50, 180, "two", S21, false, ["kitchen", "yard"], "none"),
+  chargrill:    P("Char grill",         HALF, 35, 100, "two", S1, false, ["kitchen"], "none", true),
+  gyrospit:     P("Gyro spit",          HALF, 15, 25, "one", S1, false, ["kitchen"], "none", true),
+  stockpot:     P("Stockpot burner",    HALF, 30, 40, "two", S1, false, ["kitchen"], "none", true),
+  steamtable:   P("Steam table",        HALF, 30, 80, "two", S21, false, ["kitchen", "dining"], "none"),
+  espresso:     P("Espresso machine",   HALF, 15, 28, "one", S1, false, ["kitchen", "dining"], "none", true),
+  softserve:    P("Soft-serve machine", FULL, 35, 120, "two", S1, false, ["kitchen", "dining"], "none", true),
+  slicer:       P("Meat slicer",        HALF, 10, 20, "one", S1, false, ["kitchen"], "none", true),
+  tortillapress: P("Tortilla press",    HALF, 10, 12, "one", S1, false, ["kitchen"], "none", true),
+  dishpit:      P("Dish machine",       HALF, 40, 150, "fixed", S1, false, ["kitchen"], "none", true), // plumbed in: the dish pit's washer and its three sinks
+  greasetrap:   P("Grease trap",        HALF, 60, 120, "fixed", S1, false, ["yard"], "none"),
+  extinguisher: P("Fire extinguisher",  POLE, 5, 8, "one", S1, false, ["kitchen"], "none", true),
+  drivewindow:  P("Drive-through window", C(false, 1, false), 50, 80, "fixed", S1, false, ["kitchen"], "none", true),
+  sushibar:     P("Sushi conveyor",     HALF, 35, 150, "fixed", S1, false, ["dining"], "none"),
+  saladbar:     P("Salad bar",          HALF, 30, 90, "two", S21, false, ["dining"], "none"),
+  menuboard:    P("Menu board",         POLE, 5, 8, "one", S1, false, ["dining"], "none", true),
+  playplace:    P("Play structure",     C(false, 1, false), 60, 400, "fixed", S22, false, ["dining"], "none"),
+  patiotable:   P("Patio umbrella table", HALF, 15, 25, "one", S1, false, ["yard", "dining"], "work:table"),
+  hoststand:    P("Host stand",         HALF, 15, 20, "one", S1, false, ["dining"], "none"),
+  clothtable:   P("White-cloth table",  HALF, 15, 25, "one", S1, false, ["dining"], "work:table"),
+  kbbqtable:    P("Grill table",        HALF, 30, 60, "two", S21, false, ["dining"], "work:table"), // a Korean barbecue's: a gas grill set in the middle
+  stage:        P("Stage",              HALF, 60, 300, "fixed", S22, false, ["dining", "bar"], "none"),
+  beertower:    P("Beer tap tower",     HALF, 10, 15, "one", S1, false, ["bar"], "none", true),
+  brewtank:     P("Brewing tank",       STEEL, 70, 600, "fixed", S1, false, ["bar"], "none"),
+  lobstertank:  P("Lobster tank",       C(false, 1, false), 20, 90, "two", S1, false, ["dining"], "none", true),
+  pastrycase:   P("Pastry case",        HALF, 20, 70, "two", S1, true, ["dining", "shop"], "storage:20"),
+  dipcabinet:   P("Dipping cabinet",    HALF, 30, 120, "two", S21, true, ["dining", "shop"], "storage:40"),
+  winerack:     P("Wine rack",          FULL, 25, 60, "two", S1, true, ["cellar", "bar", "dining"], "storage:40", true),
+  dryshelf:     P("Dry-goods shelving", FULL, 35, 45, "two", S1, true, ["kitchen", "cellar"], "storage:100", true),
   // ---------- workshops, bays and garages ----------
-  workbench: P("Workbench",  HALF, 35, 60, "two", S21, true, ["bay", "cellar", "school"], "work:workbench", true),
+  workbench:P("Workbench",  HALF, 35, 60, "two", S21, true, ["bay", "cellar", "school"], "work:workbench", true),
   toolchest: P("Tool chest", HALF, 35, 55, "two", S1, true, ["bay", "cellar"], "storage:40", true),
   // ---------- police, fire stations, barracks, schools, offices ----------
   bunk:        P("Bunk",           HALF, 25, 40, "two", S12, false, ["cells", "bedroom", "ward"], "bed:bunkbed"),
@@ -194,14 +250,12 @@ export const FURNITURE_KINDS = {
   cot:         P("Cot",               HALF, 8, 7, "one", S12, false, ["school", "church", "ward"], "bed:cot"),
   candles:     P("Candlesticks",      POLE, 5, 6, "one", S1, true, ["church"], "comfort:0.1"),
   // ---------- college campuses (issue #28: campuslayout.js lays them; campus.js the grounds) ----------
-  // A dorm room's desk with its hutch and a mini fridge (a small fridge at a base, #19's use), a lecture hall's bolted
-  // row of seats and its lectern, a teaching lab's fume hood (built in), a library's study carrel, a residence hall's
+  // A dorm room's desk with its hutch (its mini fridge is #29's minibar piece, `minifridge`), a lecture hall's bolted
+  // row of seats and its lectern (a teaching lab's fume hood is #37's `fumehood`), a library's study carrel, a residence hall's
   // wall of mailboxes; outdoors a bench, a statue on its plinth and a fountain on the quads and in the courtyards.
   dormdesk:    P("Dorm desk",        HALF, 20, 25, "one", S1, true, ["bedroom", "school"], "work:desk", true),
-  minifridge:  P("Mini fridge",      HALF, 20, 18, "one", S1, true, ["bedroom", "office", "kitchen"], "fridge", true),
   lectureseat: P("Lecture seating",  HALF, 40, 120, "fixed", S21, false, ["school"], "none"),
   lectern:     P("Lectern",          HALF, 15, 20, "one", S1, false, ["school", "church", "office"], "none"),
-  fumehood:    P("Fume hood",        FULL, 50, 160, "fixed", S1, false, ["lab", "school"], "none", true),
   carrel:      P("Study carrel",     HALF, 20, 28, "one", S1, true, ["school", "office"], "work:desk", true),
   mailboxes:   P("Mailbox wall",     FULL, 50, 90, "two", S1, true, ["office", "school"], "storage:20", true),
   campusbench: P("Bench",            HALF, 20, 40, "two", S21, false, ["yard"], "comfort:0.3"),
@@ -230,6 +284,20 @@ export const FURNITURE_KINDS = {
   footlocker:   P("Footlocker",             HALF, 20, 18, "one", S1, true, ["bunker", "bedroom", "cells"], "storage:40"),
   batteries:    P("Solar battery rack",     HALF, 30, 80, "two", S1, false, ["bunker", "cellar"], "none", true),
   genset:       P("Military generator",     STEEL, 80, 140, "two", S22, false, ["bunker", "bay"], "none"),
+  // ---------- warehouses, factories and labs (issue #37: industrylayout.js lays them) ----------
+  // Fixed: a fume hood (ducted up through the roof), a conveyor (a section of a bolted line), a process tank (a dye vat,
+  // a reactor, a fermenter, a syrup tank, a tank farm's fuel or a water works' settling tank), a kiln (firebrick), a
+  // power loom and a grain bin (corrugated steel on its slab). Liftable: the lab freezer (an upright −80 freezer, two
+  // people; with no power since the fall it holds nothing cold, so at a base it is a steel cabinet: storage) and a fuel
+  // drum (a fuel depot's: what is left in it, then a drum to keep things in).
+  fumehood:   P("Fume hood",     FULL, 40, 250, "fixed", S1, false, ["lab"], "none", true),
+  conveyor:   P("Conveyor",      C(false, 1, false), 40, 200, "fixed", S1, false, ["bay"], "none"),
+  vat:        P("Process tank",  FULL, 70, 800, "fixed", S1, false, ["bay", "yard"], "none"),
+  kiln:       P("Kiln",          FULL, 120, 3000, "fixed", S1, false, ["bay"], "none", true),
+  loom:       P("Loom",          HALF, 60, 900, "fixed", S21, false, ["bay"], "none"),
+  grainbin:   P("Grain bin",     STEEL, 150, 4000, "fixed", S1, false, ["yard"], "none"),
+  labfreezer: P("Lab freezer",   FULL, 40, 120, "two", S1, true, ["lab"], "storage:40", true),
+  drum:       P("Fuel drum",     HALF, 25, 40, "two", S1, true, ["bay", "yard"], "storage:60"),
   // ---------- military bases, air bases, airports and prisons laid out like the real thing (issue #25: militarylayout.js) ----------
   // A suitcase in an airport's baggage hall, an ammo crate (rounds and grenades), a fuel bladder (fuel) and an inmate's
   // property locker (what was taken off them at intake) hold their own tables (combat.js BOX_LOOT). The barrier gate, the

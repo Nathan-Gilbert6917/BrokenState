@@ -34,6 +34,7 @@
 import { Rng } from "./rng.js";
 import { cfgOf } from "./worldcfg.js"; // the run's dials: Food spoilage
 import { ROWS, mergeRows } from "./data-shops.js";
+import { CUISINES } from "./data-eateries.js"; // the restaurants' food by cuisine (issue #33)
 
 export const DAY_KCAL = 2000;
 // Stable food (shelf ≥ STABLE_DAYS) needs no cold room: it sits in any dry corner (storage.js). The rest fills the
@@ -544,6 +545,9 @@ export const MIXES = {
   // travellers on the road: light food that keeps
   travel:   { f_energybar: 14, f_candybar: 8, f_crackers: 10, f_peanutbutter: 12, f_jerky: 14, f_beans: 10, f_cannedmeat: 10, f_mre: 8, f_driedfruit: 6, f_oats: 8 },
 };
+// Restaurants by kind of food (issue #33, data-eateries.js CUISINES): "eat:<cuisine>" its walk-ins', dry store's and
+// cases' food, "eat:<cuisine>:keeps" their preserved draws (typeFind).
+for (const [k, c] of Object.entries(CUISINES)) { MIXES[`eat:${k}`] = c.mix; MIXES[`eat:${k}:keeps`] = c.keeps; }
 // The mix a site type's food comes in (and its "preserved" draws).
 export const SITE_MIX = {
   supermarket: "shop", grocery: "shop", mall: "shop", diner: "diner", gas: "roadside", truckstop: "roadside", pharmacy: "pharmacy",
@@ -832,7 +836,7 @@ export function typeFind(state, sup, mix = "house", tile = null, rng = null) { /
     const u = (sup[key] || 0) * k;
     delete sup[key];
     if (!(u > 0)) continue;
-    for (const [kk, q] of Object.entries(typedFood(state, key === "preserved" ? (mix === "military" || mix === "army" ? mix : "keeps") : mix, u, rng ? { rng, stable: true } : undefined))) { sup[kk] = (sup[kk] || 0) + q; drawn += unitsOf(kk, q); }
+    for (const [kk, q] of Object.entries(typedFood(state, key === "preserved" ? (mix === "military" || mix === "army" ? mix : MIXES[`${mix}:keeps`] ? `${mix}:keeps` : "keeps") : mix, u, rng ? { rng, stable: true } : undefined))) { sup[kk] = (sup[kk] || 0) + q; drawn += unitsOf(kk, q); }
   }
   if (t) drawShop(state, t, drawn);
   return sup;

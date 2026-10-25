@@ -382,7 +382,7 @@ section("Laid out for their kind (shoplayout.js, issue #16)");
   const SIG = {
     grocery: ["coldcase", "rack"], corner: ["coldcase"], gasstation: ["coldcase"], liquor: ["coldcase"], truckstop: ["coldcase", "barcounter"], pharmacy: ["rack"], sportshop: ["rack"], petstore: ["tank"],
     feedstore: ["rack"], garden: ["pottingbench"], hardware: ["workbench", "rack"], gunstore: ["displaycase", "gunrack"], pawnshop: ["displaycase", "bars"], electronics: ["workbench"], radioshop: ["workbench"],
-    bookstore: ["bookshelf"], clothing: ["clothesrack"], restaurant: ["table"], diner: ["barcounter", "barstool"], pizza: ["barcounter", "barstool"], bar: ["barcounter", "barstool"], supermarket: ["coldcase", "rack"], deptstore: ["clothesrack"],
+    bookstore: ["bookshelf"], clothing: ["clothesrack"], restaurant: ["table"], diner: ["table"], pizza: ["table"], bar: ["barcounter"], // a pizza place, a diner, a bar by its format since issue #33 (a counter, a dining room, a buffet...) supermarket: ["coldcase", "rack"], deptstore: ["clothesrack"],
   };
   const errs = {}, seen = {};
   const err = (k, msg) => { (errs[k] = errs[k] || []).push(msg); };
@@ -401,8 +401,8 @@ section("Laid out for their kind (shoplayout.js, issue #16)");
     if (["restaurant", "diner", "pizza"].includes(key)) {
       const kit = R.filter((a) => a.role === "kitchen");
       if (!kit.some((a) => kinds(m, a).has("range"))) err("range", tag);
-      if (key === "pizza" && !kit.some((a) => kinds(m, a).has("pizzaoven") || kinds(m, a).has("oven"))) err("oven", tag);
-      const cold = R.find((a) => /Walk-in/.test(a.name));
+      if (key === "pizza" && !kit.some((a) => ["pizzaoven", "oven", "deckoven", "conveyoroven"].some((k) => kinds(m, a).has(k)))) err("oven", tag); // deck ovens since issue #33
+      const cold = R.find((a) => /Walk-in cold|^Walk-in$/.test(a.name)) || R.find((a) => /Walk-in/.test(a.name));
       if (!cold || !kinds(m, cold).has("coldshelf")) err("walkin", tag);
       else if (!cold.doors.some(([x, y]) => grid(m, cold.f)[y * m.w + x].dk === "steel")) err("steel", tag);
     }
@@ -456,8 +456,11 @@ section("Laid out for their kind (shoplayout.js, issue #16)");
   const value = (def) => { let v = 0; for (const [k, [p, lo, hi]] of Object.entries(def.loot)) v += Math.min(0.95, p) * ((lo + hi) / 2) * supValue(k); for (const [k, p] of def.gear) v += p * ((GEAR[k] && GEAR[k].value) || 0); return v; };
   const total = (key, legacy) => { let v = 0; for (let s = 0; s < 200; s++) { const m = make(key, s, legacy); for (const c of m.containers) { const a = m.rooms.find((r) => r.id === c.area); if (a && a.type) v += value(boxLoot(a.type, c.kind)); } } return v / 200; };
   const off = [], rows = [];
-  // The supermarket is twice the store it was each way since issue #22: its own check below (by the area), not this one.
-  for (const key of KEYS.filter((k) => k !== "supermarket")) { const b = total(key, true), a = total(key, false), r = a / b - 1; rows.push(`${key} ${(r * 100).toFixed(0)}%`); if (Math.abs(r) > 0.1) off.push(`${key} ${a.toFixed(0)} against ${b.toFixed(0)}`); }
+  // The supermarket is twice the store it was each way since issue #22: its own check below (by the area), not this one;
+  // the restaurants, pizza places, diners and bars come in sizes from a kiosk to a banquet hall since issue #33: their
+  // loot by the area in tools/restauranttest.js; the warehouse and the factory have a dozen plans of their own sizes since
+  // issue #37 (industrylayout.js): their loot held to today's by the floor cell in tools/industryvarianttest.js.
+  for (const key of KEYS.filter((k) => !["supermarket", "restaurant", "pizza", "diner", "bar", "warehouse", "factory"].includes(k))) { const b = total(key, true), a = total(key, false), r = a / b - 1; rows.push(`${key} ${(r * 100).toFixed(0)}%`); if (Math.abs(r) > 0.1) off.push(`${key} ${a.toFixed(0)} against ${b.toFixed(0)}`); }
   check(!off.length, `every kind holds what it did within ±10% (200 seeds each: ${off.join("; ") || rows.join(", ")})`);
   // An older save: furnished the old way (none of the new pieces, no style's marks).
   const NEWK = new Set(["freezercase", "islandfreezer", "meatcase", "freezershelf", "producebin", "breadrack", "selfcheckout", "cartcorral", "baler", "aislesign", "range", "fryer", "pizzaoven", "coldshelf", "jukebox", "pooltable", "clothesrack", "gunrack", "tank", "pottingbench", "palletrack", "tirerack", "compressor", "carlift", "machine", "forklift", "saddlerack", "cubicle", "whiteboard", "watercooler", "secdesk", "keyrack", "icemachine", "teller", "deposit", "atm", "stanchion", "checkout", "displaycase", "coldcase", "barcounter", "barstool", "desk", "filing", "bookshelf"]);

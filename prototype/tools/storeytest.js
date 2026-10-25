@@ -27,8 +27,8 @@ import {
   createBattle, autoPlayerTurn, runEnemyPhase, registerCombatHandler, combatAct, CELL, los, active, activeAny, unitAt, setFloor, stairOptions,
   searchableNear, boxAt, playerSees, reachable, endPlayerTurn, finishCombat, HEIGHT, zoneAt, FLOOR_RICH, enemyUnit,
 } from "../src/sim/combat.js";
-import { BUILDINGS, STOREYS_BY_TYPE, MAX_STOREYS, assemble, buildingSpec, siteBuildings, runSteps, runLandings, runTop, STAIR_DIRS } from "../src/sim/buildingmaps.js";
-import { sizeClass } from "../src/sim/battlesize.js";
+import { BUILDINGS, STOREYS_BY_TYPE, MAX_STOREYS, assemble, buildingSpec, siteBuildings, runSteps, runLandings, runTop, STAIR_DIRS, realScale } from "../src/sim/buildingmaps.js";
+import { sizeClass, mapCap } from "../src/sim/battlesize.js";
 import { raidEnemies } from "../src/sim/scavenge.js";
 import { Rng } from "../src/sim/rng.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
@@ -87,7 +87,8 @@ console.log(`Generation: every type (${Object.keys(BUILDINGS).length}), ${SEEDS}
       try { m = assemble(rng, spec, { key, name: BUILDINGS[key].name, withVehicle: s % 2 === 1 }); } catch (e) { bad++; console.log(`  ${key} seed ${s}: ${e.stack}`); continue; }
       const W = m.w, H = m.h;
       // The map fits the footprint and its margins, and is one of the size classes.
-      const [maxW, maxH] = MIL_KEYS.has(key) || CAMPUS_KEYS.has(key) || key === "campus" ? [300, 300] : spec.foot === "huge" ? [spec.bw + 12, spec.bh + 16] : [48, 36]; // a huge footprint: the map no bigger than it needs; issue #25: the military buildings at their real size (the maps up to 300 × 300, #24)
+      const cap = mapCap(key); // a hotel's map up to 200 × 200 with its grounds (issue #29)
+      const [maxW, maxH] = MIL_KEYS.has(key) || CAMPUS_KEYS.has(key) || key === "campus" ? [300, 300] : cap ? [cap, cap] : spec.foot === "huge" ? [spec.bw + 12, spec.bh + 16] : [48, 36]; // a huge footprint: the map no bigger than it needs; issue #25: the military buildings at their real size (the maps up to 300 × 300, #24); issue #28: the campus buildings too (campuslayout.js CAMPUS_SIZE)
       if (W < spec.bw + 8 || H < spec.bh + 9 || W > maxW || H > maxH) errs.push(`map ${W}x${H} for a ${spec.bw}x${spec.bh} footprint`);
       const cls = sizeClass(W, H);
       if (spec.foot === "tower" && !["S", "M"].includes(cls)) errs.push(`a tower on a ${cls} map`);
@@ -104,7 +105,7 @@ console.log(`Generation: every type (${Object.keys(BUILDINGS).length}), ${SEEDS}
           const steps = runSteps(r), lands = runLandings(r), [tx, ty] = runTop(r);
           if (m.stairs.every(([x, y]) => x !== tx || y !== ty)) errs.push("a run's top step is not a stairwell cell");
           if (r.f0 !== 0 || r.f1 !== n - 1) errs.push(`a run joins floors ${r.f0}–${r.f1}`);
-          const want = ["hospital", "school", "offices", "apartments"].includes(key) ? 3 : 2;
+          const want = ["hospital", "school", "offices", "apartments", "hotel"].includes(key) ? 3 : 2;
           if (r.len > want || r.len < 2) errs.push(`a run of ${r.len} steps in a ${key}`);
           for (let f = r.f0; f <= r.f1; f++) {
             const C = m.floors[f].cells;
@@ -178,7 +179,10 @@ console.log(`Generation: every type (${Object.keys(BUILDINGS).length}), ${SEEDS}
   const lowT = towers.filter(([n]) => n <= 4).map(([, a]) => a), highT = towers.filter(([n]) => n >= 7).map(([, a]) => a);
   const avg = (l) => l.reduce((a, v) => a + v, 0) / Math.max(1, l.length);
   check(lowT.length && highT.length && avg(highT) < avg(lowT) * 0.8, `office towers shrink as they grow (3–4 storeys ${avg(lowT).toFixed(0)} cells, 7–8 storeys ${avg(highT).toFixed(0)})`);
-  check(towers.every(([n]) => n <= MAX_STOREYS) && towers.some(([n]) => n === MAX_STOREYS), `never more than ${MAX_STOREYS} storeys`);
+  // The heights a city's towers stand at real size (issue #24: realScale, the city's 6–10 plus the crawl's bonus); the
+  // archetype's own plan keeps its old cap of 8 (an older save's offices).
+  const city = []; for (let s = 0; s < SEEDS * 4; s++) { const r = new Rng(9100 + s); city.push(realScale(r, BUILDINGS.offices.make(r, {}), "offices", { setting: "city", storeyBonus: s % 3 }).height); }
+  check(towers.every(([n]) => n <= MAX_STOREYS) && city.every((n) => n <= MAX_STOREYS) && city.some((n) => n === MAX_STOREYS), `never more than ${MAX_STOREYS} storeys, a city's towers up to it (${Math.min(...city)}–${Math.max(...city)})`);
 }
 
 // ======================================================================================
@@ -519,6 +523,8 @@ console.log("Stair runs: up from the top step, the landings, a save from before 
     const { st, b } = r2;
     const snap = CC.snapshotBuilding(b);
     delete snap.stairs; delete snap.runs;
+    for (const F of snap.floors) F.cells = CC.unpackCells(F.cells); // a snapshot from before the packing (issue #24): plain arrays of cells
+    snap.cells = snap.floors[0].cells;
     const old = [];
     for (const F of snap.floors) F.cells.forEach((c, i) => { if (c.k === "stairs") { c.k = "open"; } delete c.step; delete c.top; delete c.dir; delete c.landing; });
     const room = b.raid.areas.find((a) => !a.outdoor && (a.f || 0) === 0 && a.entry);

@@ -57,6 +57,7 @@ import { localId } from "./world.js";
 import { zombieToughness } from "./hives.js"; // hive land: the dead are more and tougher there (the threat's hive bonus)
 import { campsiteExtra, campDanger, noteCampSeen } from "./campsite.js"; // call-time only: the extra campsite a tile may hold, its state in the threat, a look at it
 import { shopExtras, franchiseFor, franchisesOf, franchiseName, settingOf, noFirm } from "./shops.js"; // call-time only: the shops a suburb or city block may hold, a place's franchise
+import { hotelExtra } from "./hotels.js"; // call-time only: a hotel a tile may hold (issue #29)
 
 export const POI = {
   MAX: 4,                 // POIs a tile can hold, the site among them
@@ -182,6 +183,9 @@ export function generatePois(state, t) {
   // Bunkers (issue #26): now and then one, on their own dice after everything above (bunkerExtra).
   const bunker = bunkerExtra(state, t, out, inKnownZone(state, t));
   if (bunker) out.push(bunker);
+  // hotels.js: now and then a hotel (a town's inn, a city's tower, a resort in scenic land), on its own dice after all.
+  const hotel = hotelExtra(state, t, out, inKnownZone(state, t));
+  if (hotel) out.push(hotel);
   return out;
 }
 

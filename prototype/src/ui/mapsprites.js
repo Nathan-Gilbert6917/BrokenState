@@ -2387,6 +2387,49 @@ function paintLiquor(arg) {
   return p;
 }
 
+// A hotel (sim/data-shops.js FRANCHISES.hotel, issue #29), by its kind (the franchise's plan.hotel): a roadside inn (a
+// gabled house of two rows of windows, a porch, its sign by the road), a business hotel (a long slab of window rows,
+// the name on the parapet, a porte-cochere), a resort (a low, wide lodge, a pool in front), a city tower (tall, a crown
+// and a sign on top). The look's colours throughout.
+function paintHotel(arg) {
+  const L = lookOf(arg) || firstLook("hotel"), s = L.style | 0;
+  const f = FRANCHISES.hotel.find((x) => x.look === L), kind = (f && f.plan && f.plan.hotel) || "business";
+  const wall = L.wall, roof = L.roof || L.trim;
+  if (kind === "tower") {
+    const p = painter(18, 24);
+    block(p, 4, 3, 13, 23, wall);
+    for (let y = 5; y <= 20; y += 2) for (let x = 5; x <= 12; x += 2) p.set(x, y, (x * 7 + y * 3) % 5 ? DARK_WIN : LIT_WIN);
+    p.rect(3, 2, 14, 2, L.trim); p.rect(6, 0, 11, 1, L.sign); signText(p, 7, 10, 0, L.text, L);
+    p.rect(7, 21, 10, 23, shade(wall, -0.5)); p.rect(5, 20, 12, 20, L.accent);
+    return p;
+  }
+  if (kind === "inn") {
+    const p = painter(18, 16);
+    for (let r = 0; r < 4; r++) p.rect(8 - r * 2, r, 9 + r * 2, r, r === 0 ? shade(roof, 0.25) : shade(roof, -0.08 * r));
+    block(p, 1, 4, 16, 14, wall);
+    windows(p, 3, 6, 14, 8, 3, 3, LIT_WIN, 2, 2);
+    windows(p, 3, 10, 14, 12, 3, 3, DARK_WIN, 2, 2);
+    p.rect(7, 11, 10, 14, shade(wall, -0.5)); p.rect(6, 10, 11, 10, L.accent);
+    if (s === 2) { p.rect(17, 9, 17, 15, METAL); signBoard(p, L, 13, 6, 17, 8); } else signBoard(p, L, 5, 4, 12, 4);
+    return p;
+  }
+  if (kind === "resort") {
+    const p = painter(24, 15);
+    p.rect(0, 3, 23, 4, roof); p.rect(0, 3, 23, 3, shade(roof, 0.25));
+    block(p, 0, 5, 23, 11, wall);
+    windows(p, 1, 6, 22, 7, 2, 2, LIT_WIN, 1, 1); windows(p, 1, 9, 22, 10, 2, 2, DARK_WIN, 1, 1);
+    p.rect(10, 7, 13, 11, shade(wall, -0.45)); signBoard(p, L, 7, 0, 16, 2);
+    p.rect(3, 13, 12, 14, "#6fa8c0"); p.rect(3, 13, 12, 13, "#9ed0e0"); p.rect(15, 13, 20, 14, L.accent); // the pool and the deck
+    return p;
+  }
+  const p = painter(22, 18);
+  block(p, 1, 3, 20, 15, wall);
+  for (let y = 5; y <= 12; y += 2) for (let x = 2; x <= 19; x += 2) p.set(x, y, (x + y) % 3 ? DARK_WIN : LIT_WIN);
+  p.rect(0, 2, 21, 2, L.trim); signBoard(p, L, 4, 0, 17, 1);
+  p.rect(7, 13, 14, 13, L.accent); p.rect(8, 14, 13, 15, shade(wall, -0.5)); // the porte-cochere and the doors
+  if (s === 2) { p.rect(21, 11, 21, 17, METAL); signBoard(p, L, 18, 8, 21, 10); }
+  return p;
+}
 // ---------- the office buildings (sim/data-offices.js, issue #27), each painted in its firm's look ----------
 // The emblem on a storefront's or a station's sign (look.icon), 5 × 3 at (x, y).
 function officeIcon(p, x, y, icon, c) {
@@ -2532,6 +2575,7 @@ const POI_PAINT = {
   sportshop: paintSportShop, electronics: paintElectronics, radioshop: paintRadioShop, bookstore: paintBookstore, library: paintLibrary,
   petstore: paintPetStore, garden: paintGarden, clothing: paintClothing, vet: paintVet, dealer: paintDealer, restaurant: paintRestaurant,
   bank: paintBank, bar: paintBar, liquor: paintLiquor,
+  hotel: paintHotel, // issue #29: by its kind
   // The office buildings (sim/data-offices.js, issue #27); the office tower's firms: paintOffice's look.
   storefront: paintStorefront, bizpark: paintBizpark, cityhall: paintCityHall, courthouse: paintCourthouse, callcenter: paintCallCenter,
   techoffice: paintTechOffice, station: paintStation,
