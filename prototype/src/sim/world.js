@@ -2,6 +2,7 @@
 // World state, shared helpers and the hourly/daily tick.
 // Pure simulation: no DOM or canvas code lives here.
 /** @import { State, Survivor, Base, Item, Card, Stock, TileSnapshot, Marker } from "./types" */
+import { achievementsDaily, achievementsEnd } from "./achievements.js"; // achievements per run: the daily pass and the endings (recording only)
 import { syncAllMembers } from "./members.js"; // the AI groups' people (docs/adr/0001-ai-parity.md)
 import { typedFood, addFoodsTo, FOODS, foodIn } from "./foods.js"; // the hub's first food, by type
 import { keyWord } from "./water.js"; // supply names in log lines (call-time only: safe in the import cycle)
@@ -896,7 +897,9 @@ export function checkGameOver(state) {
       state.gameOver = true;
       state.victory = true;
       state.hivesWon = !!(hivesDone || (hivesSecured(state) && (state.erasOff || containReady(state)))); // both at once: one screen, the coalition's
-      return coalitionWins(state);
+      coalitionWins(state);
+      achievementsEnd(state); // achievements.js: the victory's, before the end screen reads them
+      return true;
     }
     if (!hivesDone && hivesSecured(state) && (state.erasOff || containReady(state))) {
       state.gameOver = true;
@@ -905,6 +908,7 @@ export function checkGameOver(state) {
       state.victoryReason = "hives";
       // Keep the opening words: the timelapse (chronicle.js) recognises this line by them.
       log(state, `Every hive is destroyed. The State of Calder is not safe, but it is yours to win back. ${alive(state).length} survivors made it to day ${day(state)}.`, "good");
+      achievementsEnd(state); // achievements.js: the victory's, before the end screen reads them
       return true;
     }
     return false;
@@ -914,6 +918,7 @@ export function checkGameOver(state) {
   // Keep the opening words: the timelapse (chronicle.js) recognises this line by them.
   const allDead = state.survivors.every((s) => !s.left);
   log(state, `${allDead ? "Every survivor is dead." : "Every survivor is dead or gone."} The holdout has fallen.`, "death");
+  achievementsEnd(state); // achievements.js: what the last day brought, for the end screen
   return true;
 }
 
@@ -1192,6 +1197,7 @@ function hourOfWorld(state) {
     if (!state.gameOver) erasVictoryDaily(state, !state.allianceWon && accordHolds(state), hivesSecured(state));
     causesDaily(state); // causes.js: the day each base's water, food, scrap, meds, ammo or wood ran out
     ensureLeader(state);
+    achievementsDaily(state); // achievements.js: the day's pass (reads only; no dice)
     if (day(state) % 5 === 0) log(state, `Day ${day(state)}. ${alive(state).length} survivors.`, "info");
     foodMarkAll(state, "player"); // foodlog.js: supply runs and trade routes
   }

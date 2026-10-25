@@ -26,6 +26,7 @@
 //   drive it home  a team that already has a vehicle sends one of its people home in the found one (driveHome).
 // Dice: hash01 (skills.js), never the world's or the battle's random numbers.
 import { log, survivorById, skill, newId, hub, baseById } from "./world.js";
+import { earnAch } from "./achievements.js"; // a found car driven home
 import { hash01, gainXp, USE } from "./skills.js";
 import { crashCarDead, crashSiphon } from "./crashstart.js"; // Crashlanding (2026-10-24): most cars beyond repair, little fuel to siphon
 import { openOdds, picksOf, isMakeshiftPicks, wearPicks, PICK, FORCE, SMASH } from "./locks.js";
@@ -513,5 +514,6 @@ export function driveHome(state, p) {
   weighTeam(state, p);
   startReturn(state, q);
   awaitOrders(state, p, `${driver.name.split(" ")[0]} drives the ${v.name} home to ${home.name}.`);
+  earnAch(state, "carhome"); // achievements.js
   return "";
 }

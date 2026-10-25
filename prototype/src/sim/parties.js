@@ -10,6 +10,7 @@
  *   idx?: number, fuel?: number, offroad?: number, onroad?: number, walkers?: number, cartTer?: any, maxHours?: number, startHour?: number, weather?: boolean, known?: number, used?: number }} TravelOpts
  */
 import { haulConvoyArrive } from "./hauling.js"; // AI parity: a group's haul convoy unloads at its outpost (call-time only)
+import { earnAch } from "./achievements.js"; // a lost convoy's vehicle recovered with its cargo
 import { sendMembers } from "./members.js"; // an AI party is its people (docs/adr/0001-ai-parity.md)
 import { kitParty, packForJob } from "./loadouts.js"; // the launchers go with a raid; the rest of the job's kit
 import { teamTraitFx, appetite } from "./traits.js"; // Keen Eye: the team's sight; Glutton: the food a trip takes
@@ -2343,6 +2344,7 @@ function recoverVehicle(state, p) {
     setPartyVehicles(state, p, [v]);
     shedSurplusVehicles(state, p); // walkers.js: a bike each, the spare ones stay
     const c = takeVehicleCargo(state, p, v);
+    if (c.got.length) earnAch(state, "convoy"); // achievements.js
     unloadLeft(state, tile, v);
     spot(p, { key: `vehicle:${v.id}`, type: "vehicle", tile, hour: state.hour, label: v.name, remove: true });
     weighTeam(state, p);
@@ -2365,6 +2367,7 @@ function recoverVehicle(state, p) {
   delete v.found; // a vehicle found on a map (foundcars.js) is just the team's now
   // What was left inside it is cargo again (the vehicle carries it).
   const c = takeVehicleCargo(state, p, v);
+  if (c.got.length) earnAch(state, "convoy"); // achievements.js: a lost team's vehicle back on the road with its cargo
   unloadLeft(state, tile, v);
   weighTeam(state, p);
   spot(p, { key: `vehicle:${v.id}`, type: "vehicle", tile, hour: state.hour, label: v.name, remove: true });

@@ -36,6 +36,7 @@
 // - Cars (foundcars.js carRecord, citycrawl.js): crashCarDead says a car's engine is beyond repair (1 − CRASH.CAR_FIX),
 //   crashSiphon scales the fuel in any tank (× CRASH.SIPHON).
 import { CRASH, CRASH_UNIT, isCrashRun, crashHomeName } from "./crashmode.js";
+import { achievementsEnd } from "./achievements.js"; // the run's achievements at the bunker's ending
 import { makeSurvivor, applyCrew, crewDice, newId, log, addCard, snapshot, updateVision, day, checkGameOver, alive, factionById } from "./world.js";
 import { yearStartDay } from "./eras.js";
 import { pickStart, chosenStart, isSettlementTile } from "./startpick.js";
@@ -501,6 +502,7 @@ export function crashJoin(state, p) {
   // Keep the opening words: the end screen (ui/ui.js gameOverWords) says them too.
   log(state, `You made it back. ${unit} takes you in at ${C.nextName}: ${alive(state).length} of you made it to day ${day(state)}, three years and more after Calder fell.`, "good");
   chronicleNote(state, `Reunited: you made it back to ${unit}.`, "good", C.nextTile, true);
+  achievementsEnd(state); // achievements.js: the bunker's and the ending's, before the end screen reads them
   return `You made it back. ${unit} takes you in.`;
 }
 // Take command: their people join your survivors with their kit (members.js removeMember: what they carry goes with

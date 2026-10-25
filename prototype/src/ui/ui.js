@@ -115,6 +115,7 @@ import { skillsBlock, skillTreeModal, studyBlock } from "./skills.js";
 import { trainingInfo, TRAINING, PROFESSOR, lessonGap } from "../sim/training.js"; // the hospital trains medics: ward rounds, the doctor, trainees
 import { skillProgress } from "../sim/skills.js";
 import { relChip, moodTipAttr, relationsSection, memorialModal, memorialButton } from "./relations.js";
+import { achButton, achievementsModal, achievementsEndHTML } from "./achievements.js"; // the run's achievements (sim/achievements.js)
 import { whyModal, cardWhy, markerWhy } from "./causes.js"; // "Why?": the chain of causes of a death or a lost base
 import { familyChip, familyBlock, childrenPeople } from "./family.js"; // children and families (sim/family.js)
 import { diaryModal } from "./diary.js";
@@ -238,6 +239,7 @@ export function topbarParts(state, ui) {
     tools: `${devButton(ui)}
       <button data-action="ld-open"${tip(`Ledger: production and use of every resource, stock, people, mood and Heat day by day, per base; and the run summary (${keyLabel("win.ledger")})`)}>📈 Ledger</button>
       <button data-action="dy-open"${tip(`Diary: the whole run day by day, with filters and search (${keyLabel("win.diary")})`)}>📖 Diary</button>
+      ${achButton(state)}
       <button data-action="ro-toggle"${tip(`Roster: everyone in one table, sortable, with roles you can change for many at once (${keyLabel("win.roster")})`)}>👥 Roster</button>
       ${codexButton(state)}
       <button data-action="pal-open"${tip(`Search: people, bases, teams, groups, places, buildings, the menu and help (${keyLabel("win.palette")})`)}>🔍 Search</button>
@@ -887,7 +889,7 @@ function pickModal(state, ui) {
   if (ui.why) return ["why", () => whyModal(state, ui)]; // ui/causes.js: over a card, the diary, the memorial wall or game over
   // A card's result comes before "game over", so the last thing that happened is not skipped.
   if (ui.cardResult) return ["result", () => `<div class="box"><h1>${esc(ui.cardResult.title)}</h1><div class="result">${esc(ui.cardResult.text || "Done.")}</div><button class="primary" data-action="cardok">Continue</button></div>`];
-  if (state.gameOver) return ui.ledger ? ["ledger", () => ledgerModal(state, ui)] : ["over", () => gameOverScreen(state)]; // the Ledger opens over the end screen
+  if (state.gameOver) return ui.ledger ? ["ledger", () => ledgerModal(state, ui)] : ui.achView ? ["ach", () => achievementsModal(state, ui)] : ["over", () => gameOverScreen(state)]; // the Ledger and the achievements open over the end screen
   // A card that stops the clock by the pause rules, or one opened from the tray (ui/pacing.js puts it first).
   if (nameModalUp(state, ui)) return ["namebase", () => nameBaseModal(state, ui)]; // ui/basename.js: a base just founded, or ✎ Rename (before its founding card)
   if (cardUp(state, ui)) return ["card", () => trayCardFrame(state, ui, cardModal(state, state.cards[0]))];
@@ -917,6 +919,7 @@ function pickModal(state, ui) {
   if (ui.diary) return ["diary", () => diaryModal(state, ui)];    // ui/diary.js
   if (ui.codex) return ["codex", () => codexModal(state, ui)];    // ui/codex.js
   if (ui.ledger) return ["ledger", () => ledgerModal(state, ui)]; // ui/ledger.js
+  if (ui.achView) return ["ach", () => achievementsModal(state, ui)]; // ui/achievements.js
   return null;
 }
 // The planner's lines for Occupy (sim/occupy.js): what stands there, the stores left, who is inside and the crew's odds
@@ -952,7 +955,7 @@ export function modalKind(state, ui) {
 // The end screen (fallen, or a victory) with the run summary under its words (ui/ledger.js), before its buttons.
 function gameOverScreen(state) {
   return gameOverWords(state).replace('<div class="box">', '<div class="box rsbox">')
-    .replace('<div class="row">', `<div class="rs-over">${runSummaryHTML(state, { noButtons: true })}</div><div class="row"><button data-action="ld-open" data-tab="ledger"${tip("Every resource day by day, per base (E)")}>📈 Ledger</button>`);
+    .replace('<div class="row">', `${achievementsEndHTML(state)}<div class="rs-over">${runSummaryHTML(state, { noButtons: true })}</div><div class="row"><button data-action="ld-open" data-tab="ledger"${tip("Every resource day by day, per base (E)")}>📈 Ledger</button><button data-action="ach-open"${tip("Every achievement of this run")}>🏆 Achievements</button>`);
 }
 function gameOverWords(state) {
   if (state.victory && state.victoryReason === "alliance") {
