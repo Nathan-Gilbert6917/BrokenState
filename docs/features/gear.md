@@ -2,7 +2,10 @@
 
 Detail for section 7 of [docs/agents/features.md](../agents/features.md). `[name]` is `prototype/src/sim/name.js`; `ui/name` is `prototype/src/ui/name.js`. Related docs: [docs/reload-rules.md](../reload-rules.md) (the reload rules), [docs/weapons-overhaul-plan.md](../weapons-overhaul-plan.md), [docs/prompts/battle-inventory.md](../prompts/battle-inventory.md).
 
+Contents: [Physical rounds in a fight](#physical-rounds-in-a-fight) · [Ammo by calibre, reload sources and loading magazines](#ammo-by-calibre-reload-sources-and-loading-magazines) · [Attachments and gun builder](#attachments-and-gun-builder) · [Physical rounds out of a fight; magazines out and in](#physical-rounds-out-of-a-fight-magazines-out-and-in) · [Armour and rigs](#armour-and-rigs) · [Inventory](#inventory) · [Loot: the dead who were survivors](#loot-the-dead-who-were-survivors) · [Survival guns, parts and gear (2026-10-19)](#survival-guns-parts-and-gear-2026-10-19) · [Lock boxes and cases (2026-10-19)](#lock-boxes-and-cases-2026-10-19) · [Electronics salvage](#electronics-salvage)
+
 ## Physical rounds in a fight
+Rounds are real stacks in guns and magazines, in firing order; a Reload draws only on the shooter's own kit.
 - The user's rules, 2026-10-18; [docs/reload-rules.md](../reload-rules.md). Test `tools/reloadpicktest.js`. Modules: [roundstack, mags, ammo, gunload, combat, kitcheck, stealth, ui/combat, ui/itemmenu, ui/battlehud].
 - The rounds in a gun and in each spare magazine are real stacks in firing order (roundstack `u.stack`, `item.stack`; the chamber's round is the shot's).
 - **A Reload** draws only on the shooter's own pockets, rig and pack (mags `roundSources`), never a teammate's rounds, the team's bags, the vehicle or a base's stock. Rounds leave the item as they go in.
@@ -30,7 +33,14 @@ Detail for section 7 of [docs/agents/features.md](../agents/features.md). `[name
   - The rounds stay where they lie (virtual rounds: a shot spends them), so a magazine fills only with rounds the gun and quicker spares have not claimed.
   - The magazine's rounds badge in a fight reads the unit's entry (gunrounds `gunRounds` src "fight"; mags `magEntryAt`: the k-th magazine of a key in a place is the k-th entry, kept so by `refitKit` and a Reload's swap) [mags, combat, gunrounds, ui/inventory].
 
+## Attachments and gun builder
+Tarkov-style attachments (sights, mounts, muzzle devices, magazines, stocks, grips, rails, lights and lasers, bipods, slings) fitted to a gun, and the gun builder to fit them; factory-fitted guns, finishes and paint.
+
+- Modules: [gunmods, data-gunmods, partfinds (where the parts are found), factoryfit, data-finish (a gun's finish), ui/gunbuilder, ui/gunpaint].
+- Tests `tools/gunmodtest.js`, `tools/gunbuildertest.js`.
+
 ## Physical rounds out of a fight; magazines out and in
+Out of a fight, reload, unload and swap magazines free, at a base or in the field.
 - The user's playtest reports 2026-10-20; [docs/reload-rules.md](../reload-rules.md) "Out of a fight". Test `tools/physroundstest.js`. Modules: [itemacts, gunrounds, gunload, mags, combat, ui/itemmenu, ui/itemlabels].
 - The rounds badge counts only what is in a gun (its record `it.loaded`) or a magazine (`item.stack`), never the stores (gunrounds `physOf`).
 - **Out of a fight, free**: a gun's **Reload** / **Reload with** / **Unload**, **Remove magazine** (a detachable magazine, mags `detachable`: the magazine with all but the chambered round onto the holder or the storage, `gun.magOut`, capacity 1) and **Insert / Swap magazine**; a magazine's **Load rounds** / **Load rounds with** / **Unload rounds** / **Insert into**. Sources: what the holder carries, then the storage list, then the place's stores (itemacts `roundSourcesAt`, `reloadGunAt`, `unloadGunAt`, `removeMagAt`, `insertMagAt`, `loadMagAt`, `unloadMagAt`).
@@ -55,12 +65,14 @@ Detail for section 7 of [docs/agents/features.md](../agents/features.md). `[name
   - The two-doll window is `ui/inventory handModal` (`handCan`, `ui.inv = { sid, peek, mate }`, `inv-mate`). The raid search window's free hand-over (raidloot `matesOf`) is unchanged [combat, inventory, vision, ui/combat, ui/inventory, ui/battlebar, ui/keymap].
 
 ## Loot: the dead who were survivors
+Loot distribution by site theme and gun tables [loot, gundist, gunfinds, blades, survival, boxes]; and 18% of the plain dead carry a former survivor's kit.
 - The user's request 2026-10-21: "increase loot spawn of zombies being previous survivors with gear on them like side arms ammo melee packs and survival items". Tests `tools/holstertest.js`, `tools/loottest.js`, `tools/itemcondtest.js`.
 - `ZSURV.chance` (18%) of the plain dead (not a dead soldier, a beast, a boss) carry a former survivor's kit, each part on its own chance: a side arm with a box of its rounds, a belt blade, a pack of survival things (lights, lighters, bandages, a tourniquet, water tablets, a radio, picks, a snare…), earplugs or muffs, a ration, water. No meds: they stay rare.
 - On a field battle's body worn in their slots; on a raid's body among the finds. Dice of their own (the world's dice unchanged; `ZSURV.on` a test switch).
 - Modules: [inventory `ZSURV`, `survivorDead`, `wearSurvivorKit`, enemyBody, deadBodyFinds (tag: the body's unit id)].
 
 ## Survival guns, parts and gear (2026-10-19)
+Survival guns, gun parts and gear added 2026-10-19 (the SKS, the Uzi, the Halligan bar and more), each through an existing system.
 - Guns: the SKS (fixed box, stripper clips), the Uzi, a folding 9mm carbine on the polymer pistols' magazines, a bullpup pump shotgun, a takedown .22.
 - Parts: a night vision scope, a 2× prism, a Zhukov stock, an AFG, a linear comp, a single-point sling, a taped flashlight.
 - Gear: the Halligan bar (a pry tool), a pipe wrench, armour against teeth (leather jacket, chainmail sleeves, motorcycle trousers), an angle-head flashlight, a solar lantern, a drop-leg rig, a paramedic's jump bag, a laser rangefinder.
@@ -72,6 +84,7 @@ Detail for section 7 of [docs/agents/features.md](../agents/features.md). `[name
 - Modules: [data-boxes, boxes, gunsafes rollGunCase, locks caseOdds, ui/boxview].
 
 ## Electronics salvage
+Taking apart gadgets, powered sights, lights, radios, power tools, generators and fridges gives electronics, as do stripped cars and wrecks.
 - The user's request 2026-10-24: "I see electronics are a material I can loot. Does it have a mapping for when you salvage certain items it can yield some, or used in craft recipes and build recipes? If not do all of the previous for what makes sense. Add items that can be salvaged for electronics like cars etc."
 - **The salvage map** (`inventory.js SALVAGE_ELECTRONICS`, read by `salvageYield`; electronics is worth 12 and weighs 0.3 kg), in electronics: gadgets phone 1, camera 1, console 1, laptop 2; night vision nvg 3, thermal 4, thermalscope 3, nvscope 3; radios and ears milradio 3, commset 2, handradio 1, pocketradio 1, eardef 1; the rangefinder 1; powered sights (reddot, holo, rmr, aimpoint, holosun, holopistol) 1 each; lasers (peq, laser, lasergrip, lightlaser) 1; LED lights (weaponlight, surefire, pistollight, flashlight, tacflash, headlamp, helmetlight, anglelight, spotlight, solarlantern, spotlamp) 1; taser and stun baton 1; power tools powerdrill 1, anglegrinder 1, welder 2; generators genset_inverter 2, genset_house 2, genset_contractor 3, genset_standby 4, genset_military 4; the fridge 2.
 - **The attachment rule**: a gun still gives floor(value / 30) + 1 gun parts and a scrap; everything else merges its electronics with the gun part an attachment worth 25 or more gives, so a powered sight or laser worth 25+ gives both (the housing a gun part, the board its electronics): thermalscope { electronics 3, gunparts 1 }, peq { 1, 1 }, holo / rmr / aimpoint / holosun { 1, 1 }; a red dot (22) its electronics only; a foregrip nothing.
