@@ -25,8 +25,9 @@
 import { GEAR } from "./data.js";
 import { addCard, skill } from "./world.js";
 import { partyMembers, bestSkill } from "./parties.js";
-import { say, setFloor, enemyUnit, KITS, WEAPONS, active, activeAny, canSee, fire } from "./combat.js";
-import { BMAP, placeOccupantGroups } from "./buildingmaps.js";
+import { say, setFloor, enemyUnit, KITS, WEAPONS, active, activeAny, canSee, fire, CELL } from "./combat.js";
+import { BMAP, placeOccupantGroups, runSteps, runLandings, runTop, stairWaits } from "./buildingmaps.js";
+import { FURNITURE } from "./barricade.js"; // a piece shoved onto a stair run's top landing gets its hit points (call-time only)
 import { newNeutralGroup, talkChance, groupById } from "./wanderers.js";
 import { applyZType } from "./zombietypes.js";
 import { lootItem } from "./inventory.js";
@@ -80,7 +81,8 @@ const inRoom = (r, x, y) => x > r.x0 && x < r.x0 + r.w - 1 && y > r.y0 && y < r.
 const standing = (u) => !u.dead && !u.left && !u.fled && !u.off;
 const takenAt = (b, f, x, y) => b.units.some((u) => standing(u) && (u.f || 0) === f && u.x === x && u.y === y);
 const unitsIn = (b, r) => b.units.filter((u) => standing(u) && (u.f || 0) === (r.f || 0) && inRoom(r, u.x, u.y));
-const stairsIn = (b, r) => (b.raid.stairs || []).some(([x, y]) => inRoom(r, x, y));
+// A room a stairwell stands in (any cell of a stair run or its landings; an older save's one-cell stairwells).
+const stairsIn = (b, r) => (b.raid.stairs || []).some(([x, y]) => inRoom(r, x, y)) || (b.raid.runs || []).some((run) => [...runSteps(run), ...runLandings(run)].some(([x, y]) => inRoom(r, x, y)));
 const roomUsed = (b, r) => !!b.raid.folk && [b.raid.folk.nest, b.raid.folk.survivors, b.raid.folk.raiders].some((x) => x && x.room === r.id);
 // Free floor cells inside a room on its floor (open floor with nobody on it).
 function freeCells(b, room) {
@@ -88,14 +90,48 @@ function freeCells(b, room) {
   for (let y = room.y0 + 1; y < room.y0 + room.h - 1; y++) for (let x = room.x0 + 1; x < room.x0 + room.w - 1; x++) if (cells[I(b, x, y)].k === "open" && !takenAt(b, f, x, y)) out.push([x, y]);
   return out;
 }
-// Free open cells next to a stairwell (8 ways) on floor f.
+// Free open cells by a stairwell on floor f: its landings (buildingmaps.js stairWaits), not its steps.
 function stairSide(b, f) {
-  const cells = cellsOf(b, f), out = [];
-  for (const [sx, sy] of b.raid.stairs || []) for (const [dx, dy] of DIRS8) {
-    const x = sx + dx, y = sy + dy;
-    if (x > 0 && y > 0 && x < b.w - 1 && y < b.h - 1 && cells[I(b, x, y)].k === "open" && !takenAt(b, f, x, y)) out.push([x, y]);
+  const cells = cellsOf(b, f);
+  return stairWaits(b.raid, (x, y) => x > 0 && y > 0 && x < b.w - 1 && y < b.h - 1 && cells[I(b, x, y)].k === "open" && !takenAt(b, f, x, y));
+}
+// The human AI holding an upper floor (the survivors barricaded in, the raiders holed up) shoves a piece of furniture
+// onto the top landing of a stair run on that floor, as anyone barricading would (barricade.js FURNITURE: its hit points
+// the dead batter down; half cover a person vaults and the dead crawl over). Only where the floor stays connected round
+// it (the lane beside the run): a stairwell room's door is left as it is, so the floor is never cut off from the stairs.
+// Returns [x, y] or null.
+const LANDING_PIECES = ["table", "cabinet", "crate"];
+function landingPiece(state, b, f, who) {
+  const cells = cellsOf(b, f);
+  const reached = (from) => {
+    const seen = new Uint8Array(b.w * b.h), q = [I(b, from[0], from[1])];
+    seen[q[0]] = 1;
+    let n = 0;
+    while (q.length) {
+      const i = q.pop(), x = i % b.w, y = (i / b.w) | 0;
+      n++;
+      for (const [dx, dy] of DIRS8.slice(0, 4)) {
+        const nx = x + dx, ny = y + dy, j = I(b, nx, ny);
+        if (nx < 0 || ny < 0 || nx >= b.w || ny >= b.h || seen[j]) continue;
+        const c = cells[j];
+        if ((CELL[c.k] && CELL[c.k].walk) || c.k === "door") { seen[j] = 1; q.push(j); }
+      }
+    }
+    return n;
+  };
+  for (const run of b.raid.runs || []) {
+    if (run.single || f < run.f0 || f > run.f1) continue;
+    const [lx, ly] = runLandings(run)[1], top = runTop(run);
+    const c = cells[I(b, lx, ly)];
+    if (!c || c.k !== "open" || takenAt(b, f, lx, ly)) continue;
+    const before = reached(top), k = state.rng.pick(LANDING_PIECES);
+    c.k = k;
+    if (reached(top) !== before - 1) { c.k = "open"; continue; }
+    c.hp = c.mhp = FURNITURE[k].hp; c.shoved = who;
+    clearLos(b, f);
+    return [lx, ly];
   }
-  return out;
+  return null;
 }
 const roomAt = (b, f, x, y) => roomsOn(b, f).find((r) => inRoom(r, x, y)) || null;
 const clearLos = (b, f) => { const F = b.floors[f]; if (F && F.losCache) F.losCache.fill(0); };
@@ -232,7 +268,8 @@ function barricadeSurvivors(state, b) {
   for (const [x, y] of doors) { const c = cells[I(b, x, y)]; c.k = "door"; c.hp = c.mhp = BMAP.DOOR[S.door]; c.barred = true; delete c.roll; }
   for (const box of R.containers) if ((box.f || 0) === f && box.area === room.id) { box.barred = true; box.botSkip = true; }
   clearLos(b, f);
-  return { room: room.id, f, doors, wid: g.wid, mood: g.mood, names: g.people.map((s) => s.name), count: units.length, met: false, state: "holding" };
+  const landing = landingPiece(state, b, f, "survivors"); // and the stairs onto their floor slowed with a piece of furniture
+  return { room: room.id, f, doors, landing, wid: g.wid, mood: g.mood, names: g.people.map((s) => s.name), count: units.length, met: false, state: "holding" };
 }
 
 // The raiders: better armed deeper in; upstairs (offices, apartments, police) with a watcher by the stairs below; their stash.
@@ -249,7 +286,7 @@ function holeUpRaiders(state, b, n, up) {
     const p = Math.min(K.armorMax, K.armorPer * (n - K.armorFrom + 1));
     for (const u of raiders) if (!u.armorKey && rng.chance(p)) { u.armorKey = "vest"; u.armor = 1 - GEAR.vest.power * 0.06; }
   }
-  let room = null, watcher = false;
+  let room = null, watcher = false, landing = null;
   if (up) {
     const cand = [];
     for (let f = 1; f < b.floors.length; f++) {
@@ -276,12 +313,13 @@ function holeUpRaiders(state, b, n, up) {
       const c = rng.pick(stairSide(b, f - 1));
       if (c) { w.x = c[0]; w.y = c[1]; w.f = f - 1; w.away = (f - 1) !== (b.floor || 0); w.home = c.slice(); w.watcher = true; watcher = true; }
     }
+    landing = landingPiece(state, b, f, "raiders"); // a piece shoved onto the top landing of their floor
   }
   const lead = raiders[0];
   const stashRoom = room || roomAt(b, lead.f || 0, lead.home ? lead.home[0] : lead.x, lead.home ? lead.home[1] : lead.y) || roomAt(b, lead.f || 0, lead.x, lead.y);
   if (!room && stashRoom) stash = makeStash(state, b, stashRoom, n);
   squattersUp(state, b, n, stashRoom);
-  return { room: stashRoom ? stashRoom.id : null, f: stashRoom ? stashRoom.f || 0 : 0, up: !!room, watcher, stash: stash ? stash.id : null, count: raiders.length };
+  return { room: stashRoom ? stashRoom.id : null, f: stashRoom ? stashRoom.f || 0 : 0, up: !!room, watcher, landing, stash: stash ? stash.id : null, count: raiders.length };
 }
 // Armed squatters the wanderers brought in (buildingmaps.js placeOccupantGroups, u.occupant "hostile") who hold an
 // upper-floor room (wanderers.js interiorOccupants puts them there in offices, flats and police stations): a watcher

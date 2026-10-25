@@ -770,6 +770,7 @@ export function snapshotBuilding(b) {
     w: b.w, h: b.h, cells: ground.map((x) => ({ ...x })), containers: R.containers.map((x) => ({ ...x })),
     floors: b.floors ? b.floors.map((F) => ({ cells: F.cells.map((x) => ({ ...x })), name: F.name })) : null,
     doors: R.doors ? R.doors.map((d) => ({ ...d, lock: d.lock ? { ...d.lock } : d.lock })) : null,
+    stairs: R.stairs ? R.stairs.map((x) => x.slice()) : null, runs: R.runs ? R.runs.map((r) => ({ ...r })) : null, // the stairwells the kept cells hold
     units, occupants: R.occupants || null, heat: Math.round(R.heat), folk: R.folk || null, // floorfolk.js: who held the upper floors, and how it went
     searched: boxes.filter((x) => x.searched).length, total: boxes.length,
   };
@@ -796,6 +797,14 @@ export function restoreBuilding(state, b, snap) {
   R.folk = snap.folk ? JSON.parse(JSON.stringify(snap.folk)) : null; // floorfolk.js (a met group stays met: no second card)
   const z = R.zones[0];
   if (b.floors) {
+    // The stairwells the kept cells hold: a snapshot from before the stair runs (2026-10-25) has one-cell stairwells
+    // where its cells say (every stairs cell on every floor), and no runs.
+    if (snap.stairs) { R.stairs = snap.stairs.map((x) => x.slice()); R.runs = snap.runs ? snap.runs.map((r) => ({ ...r })) : []; }
+    else {
+      const old = [];
+      snap.floors[0].cells.forEach((c, i) => { if (c.k === "stairs" && snap.floors.every((F) => F.cells[i] && F.cells[i].k === "stairs")) old.push([i % b.w, (i / b.w) | 0]); });
+      if (old.length) { R.stairs = old; R.runs = []; }
+    }
     // Every floor as it was left; the upper floors' reach floods from the first stairwell, the ground's from the front zone.
     const [sx, sy] = R.stairs[0];
     for (let f = 0; f < b.floors.length; f++) {

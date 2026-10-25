@@ -190,6 +190,7 @@ export const ROLES = {
   reception:   role("Front desk", "office", "lobby", { hub: true, fl: "tile", maxBoxes: 1 }),
   apt:         role("Apartment", "house", "apartment", { fl: "wood", maxBoxes: 3 }),
   dayroom:     role("Day room", "house", "living", { hub: true, fl: "wood" }),
+  stairwell:   role("Stairwell", null, "none", { fl: "conc" }), // a stair run's own room (flats, offices: spec.stairs), one door a floor
 };
 
 // ---------- the outside ----------
@@ -272,6 +273,7 @@ function house(rng, v) {
   return {
     bw, bh, program, exits, front: { width: 1 }, openDoors: 0.4, extraDoors: 0.2,
     storeys: two ? 2 : 1, upper: two ? upper : null, foot: big ? "medium" : "small",
+    stairs: { roles: ["hall", "living", "greatroom", "dining"], near: "front" }, // up from the hall (else the front room) by the front door
     ground: v === "farmhouse" ? "farm" : v === "cabin" || v === "lodge" || v === "ranger" ? "woods" : "town",
   };
 }
@@ -393,6 +395,7 @@ function shop(rng, v, o = {}) {
   return {
     bw, bh, program, exits, front: { width: 2 }, openDoors: 0.3, ground: v === "feedstore" ? "rural" : truck || gas ? "lot" : "town", pumps: gas || truck ? (truck ? 3 : 2) : 0,
     storeys: flat ? 2 : 1, upper: flat ? upper : null, foot: gas ? "small" : "medium",
+    stairs: { roles: BACK_STAIRS }, // the flat's stair from the back room
   };
 }
 
@@ -412,7 +415,7 @@ function bigstore(rng, v) {
     ? { split: "y", parts: [["*", { role: "sales", name: "Upper sales floor", type: "store", maxBoxes: 8 }], [5, { split: "x", parts: leaves([["*", { role: "warefloor", name: "Upper stockroom", hub: true, maxBoxes: 4 }], [4, "office"], [3, "restroom"]]) }]] }
     : { split: "y", parts: [["*", { role: "warefloor", name: "Upper stockroom", maxBoxes: 6 }], [5, { split: "x", parts: leaves([["*", "office"], ["*", "breakroom"], [3, "restroom"]]) }]] });
   return {
-    bw, bh, front: { width: 2 }, openDoors: 0.3, ground: "lot", storeys: two ? 2 : 1, upper: two ? upper : null, foot: "wide",
+    bw, bh, front: { width: 2 }, openDoors: 0.3, ground: "lot", storeys: two ? 2 : 1, upper: two ? upper : null, foot: "wide", stairs: { roles: BACK_STAIRS },
     program: { split: "y", parts: [["*", salesFloor], [rng.int(5, 6), { split: "x", parts: leaves(back) }]] },
     exits: [
       { side: "back", roles: ["warefloor"], chance: 1, roller: true, width: 3, lock: 0.2, name: "Loading dock" },
@@ -422,6 +425,10 @@ function bigstore(rng, v) {
 }
 
 // Corridor buildings: a band of rooms at the front (with the lobby), a corridor along the building, a band behind it.
+// Where a stair run goes (spec.stairs, assemble pickRuns): a shop's from its back rooms; a hospital's and a school's
+// one at each end of the main corridor, 3 steps long.
+const BACK_STAIRS = ["stock", "warefloor", "office", "storage", "breakroom", "kitchen", "pantry", "parts"];
+const ENDS = { roles: ["corridor"], n: 2, len: 3, ends: true };
 function corridorPlan(front, back, fd, cw = 1) {
   return { split: "y", parts: [[fd, { split: "x", parts: leaves(front) }], [cw, { role: "corridor" }], ["*", { split: "x", parts: leaves(back) }]] };
 }
@@ -444,7 +451,7 @@ function institution(rng, v, o = {}) {
       const bw = rng.int(26, 30), bh = rng.int(17, 19);
       const n = rng.int(3, 5); // reception and the pharmacy low, wards above
       return {
-        ...S(bw, bh), front: { width: 2 }, ground: "city", storeys: n, foot: "large",
+        ...S(bw, bh), front: { width: 2 }, ground: "city", storeys: n, foot: "large", stairs: ENDS,
         program: corridorPlan([["*", "ward"], [rng.int(6, 7), L({ name: "Reception", type: "clinic" })], [4, "office"], [4, "exam"], [4, "exam"]],
           [["*", "ward"], ["*", "ward"], [rng.int(4, 5), { role: "pharmroom", lock: ["door", 0.7], boxLock: ["drugs", 0.6] }], [5, "kitchen"], [4, { role: "storage", name: "Supply room", type: "clinic", lock: ["door", 0.3] }]], 5, 2),
         upper: (f) => (f === 1
@@ -461,7 +468,7 @@ function institution(rng, v, o = {}) {
       const right = rng.chance(0.5);
       const n = rng.int(2, 3); // the squad room, interview rooms and records above
       return {
-        ...S(bw, bh), front: { width: 2 }, ground: "city", storeys: n, foot: "large",
+        ...S(bw, bh), front: { width: 2 }, ground: "city", storeys: n, foot: "large", stairs: { roles: ["lobby", "dayroom"], n: 1 },
         program: { split: "x", parts: right ? [["*", main], port] : [port, ["*", main]] },
         upper: () => corridorPlan([["*", { role: "office", name: "Squad room" }], [4, { role: "office", name: "Interview room" }], ["*", { role: "office", name: "Briefing room" }]], [["*", { role: "office", name: "Records", boxLock: ["evidence", 0.3] }], [4, "breakroom"], [2, "restroom"]], 5),
         exits: [{ side: right ? "right" : "left", roles: ["bays"], chance: 1, roller: true, width: 2, lock: 0.3, name: "Sally port" }, { side: "back", roles: ["cells", "bays"], chance: 0.6, lock: 0.5 }],
@@ -471,7 +478,7 @@ function institution(rng, v, o = {}) {
       const bw = rng.int(26, 30), bh = rng.int(16, 18);
       const n = rng.int(2, 3); // classrooms above
       return {
-        ...S(bw, bh), front: { width: 2 }, ground: "town", storeys: n, foot: "large",
+        ...S(bw, bh), front: { width: 2 }, ground: "town", storeys: n, foot: "large", stairs: ENDS,
         program: corridorPlan([["*", "classroom"], [4, { role: "office", name: "Principal's office", lock: ["door", 0.3], boxLock: ["safe", 0.2] }], [rng.int(5, 6), L({ name: "Lobby", type: "office" })], [4, "nurse"], ["*", "classroom"]],
           [["*", "classroom"], ["*", "classroom"], [rng.int(7, 9), "gym"], [4, "lockerroom"], [rng.int(5, 6), "cafeteria"]], 5, 2),
         upper: () => corridorPlan([["*", "classroom"], ["*", "classroom"], [4, "office"]], [["*", "classroom"], ["*", "classroom"], [5, { role: "storage", name: "Library", type: "office" }]], 5, 2),
@@ -486,15 +493,18 @@ function institution(rng, v, o = {}) {
       const bw = Math.round(20 - 7 * t) + rng.int(-1, 1), bh = Math.round(14 - 3 * t) + rng.int(0, 1);
       const small = bw < 16;
       const records = { role: "storage", name: "Records room", type: "office", lock: ["door", 0.4], boxLock: ["safe", 0.3] };
-      const fd = Math.max(3, Math.floor((bh - 3) / 2));
+      const fd = Math.max(5, Math.floor((bh - 3) / 2)); // deep enough for the stairwell's run of 3 and its landings
+      // The stairwell: a room of its own beside the lobby, at the same place on every floor (the front band's fixed
+      // widths are the same on every floor, so its flexible rooms are too).
+      const SW = [2, { role: "stairwell" }], lw = rng.int(5, 6);
       return {
-        bw, bh, front: { width: 2 }, ground: "city", storeys: n, foot: "tower",
+        bw, bh, front: { width: 2 }, ground: "city", storeys: n, foot: "tower", stairs: { roles: ["stairwell"], n: 1, len: 3 },
         program: small
-          ? corridorPlan([["*", L({ name: "Lobby" })], ["*", { role: "sales", name: "Shop", type: "store", hub: false, maxBoxes: 3 }]], [["*", "office"], [4, records]], fd)
-          : corridorPlan([["*", { role: "sales", name: "Shop", type: "store", hub: false, maxBoxes: 3 }], [rng.int(5, 6), L({ name: "Lobby" })], ["*", { role: "sales", name: "Cafe", type: "kitchen", hub: false, maxBoxes: 2 }]], [["*", "office"], [4, "breakroom"], [4, records], ["*", "office"]], fd),
+          ? corridorPlan([["*", L({ name: "Lobby" })], SW, ["*", { role: "sales", name: "Shop", type: "store", hub: false, maxBoxes: 3 }]], [["*", "office"], [4, records]], fd)
+          : corridorPlan([["*", { role: "sales", name: "Shop", type: "store", hub: false, maxBoxes: 3 }], SW, [lw, L({ name: "Lobby" })], ["*", { role: "sales", name: "Cafe", type: "kitchen", hub: false, maxBoxes: 2 }]], [["*", "office"], [4, "breakroom"], [4, records], ["*", "office"]], fd),
         upper: (f, r, ctx) => (ctx.top
-          ? corridorPlan([["*", { role: "workshop", name: "Plant room", type: "workshop" }], ["*", "office"]], small ? [["*", "office"], [2, "restroom"]] : [["*", "office"], [4, "breakroom"], ["*", "office"]], fd)
-          : corridorPlan(small ? [["*", "office"], ["*", "office"]] : [["*", "office"], [4, "office"], ["*", "office"]], small ? [["*", "office"], [3, { role: "storage", type: "office" }]] : [["*", "office"], [4, "breakroom"], [4, { role: "storage", name: "Records", type: "office" }], ["*", "office"]], fd)),
+          ? corridorPlan(small ? [["*", { role: "workshop", name: "Plant room", type: "workshop" }], SW, ["*", "office"]] : [["*", { role: "workshop", name: "Plant room", type: "workshop" }], SW, [lw, "office"], ["*", "office"]], small ? [["*", "office"], [2, "restroom"]] : [["*", "office"], [4, "breakroom"], ["*", "office"]], fd)
+          : corridorPlan(small ? [["*", "office"], SW, ["*", "office"]] : [["*", "office"], SW, [lw, "office"], ["*", "office"]], small ? [["*", "office"], [3, { role: "storage", type: "office" }]] : [["*", "office"], [4, "breakroom"], [4, { role: "storage", name: "Records", type: "office" }], ["*", "office"]], fd)),
         exits: [{ side: "back", roles: ["breakroom", "storage", "office"], chance: 0.7, lock: 0.3 }, ...fire(0.4)],
       };
     }
@@ -577,7 +587,7 @@ function institution(rng, v, o = {}) {
       const bays = [0.48, { role: "bays", name: "Engine bay", type: "motorpool", maxBoxes: 5 }];
       const left = rng.chance(0.5);
       return {
-        ...S(bw, bh), front: { width: 1 }, ground: "town", storeys: 2, foot: "medium",
+        ...S(bw, bh), front: { width: 1 }, ground: "town", storeys: 2, foot: "medium", stairs: { roles: ["dayroom", "lobby"], n: 1 },
         program: { split: "x", parts: left ? [bays, ["*", living]] : [["*", living], bays] },
         upper: () => ({ split: "y", parts: [["*", { role: "dorm", type: "barracks" }], ["*", { split: "x", parts: leaves([["*", { role: "dayroom", name: "Day room" }], [4, "office"], [3, "bath"]]) }]] }),
         exits: [{ side: "front", roles: ["bays"], chance: 1, roller: true, width: 3, lock: 0.1, name: "Bay door" }, { side: "back", roles: ["bays"], chance: 0.6, roller: true, width: 2, lock: 0.3 }, { side: "back", roles: ["kitchen", "dorm"], chance: 0.6, lock: 0.3 }],
@@ -671,6 +681,7 @@ function motel(rng) {
   const linen = [5, { role: "storage", name: "Linen room", type: "house" }];
   return {
     bw, bh, front: { width: 1 }, ground: "lot", unitDoors: "motelroom", openDoors: 0.25, extraDoors: 0, storeys: 2, foot: "medium",
+    stairs: { out: left ? "left" : "right", n: 1 }, // an outside stair at the office's end, up to the walkway along the back
     program: { split: "x", parts: left ? [office, ...units] : [...units, office] },
     upper: () => ({ split: "y", parts: [["*", { split: "x", parts: left ? [linen, ...upperUnits()] : [...upperUnits(), linen] }], [1, { role: "corridor", name: "Walkway" }]] }),
     exits: [{ side: "back", roles: ["office"], chance: 0.6, lock: 0.3 }],
@@ -696,7 +707,7 @@ function dealer(rng, o = {}) {
   }
   const n = plan.storeys ? rng.int(plan.storeys[0], plan.storeys[1]) : 1;
   const upper = () => ({ split: "y", parts: [["*", { role: "office", name: "Finance office", hub: true, boxLock: ["safe", 0.3] }], [4, { split: "x", parts: leaves([["*", "office"], [3, "restroom"]]) }]] });
-  return { bw, bh, program, exits, front: { width: 2 }, openDoors: 0.3, ground: "lot", storeys: n, upper: n > 1 ? upper : null, foot: lot ? "small" : "medium" };
+  return { bw, bh, program, exits, front: { width: 2 }, openDoors: 0.3, ground: "lot", storeys: n, upper: n > 1 ? upper : null, foot: lot ? "small" : "medium", stairs: { roles: BACK_STAIRS } };
 }
 
 // A bank (data-shops.js): the banking hall at the front, the teller line, the vault (a vault door, its boxes locked)
@@ -753,11 +764,14 @@ function apartments(rng, o = {}) {
   // 3–6 floors of flats (deeper city blocks taller: o.storeyBonus), a lobby and the maintenance room on the ground floor.
   const n = clampN(rng.int(3, 6) + (o.storeyBonus || 0), 3, MAX_STOREYS);
   const flat = (f, k) => ({ role: "apt", name: `Apartment ${f + 1}${k}` });
+  const lw = rng.int(4, 5);
   return {
     bw, bh, front: { width: 2 }, ground: "city", storeys: n, foot: "medium", extraDoors: 0,
-    program: corridorPlan([["*", flat(0, "A")], [rng.int(4, 5), { role: "lobby", entry: true, type: "house" }], ["*", flat(0, "B")]],
+    // The stairwell is a room of its own beside the lobby (a landing over it upstairs), at the same place on every floor.
+    stairs: { roles: ["stairwell"], n: 1, len: 3 },
+    program: corridorPlan([["*", flat(0, "A")], [2, { role: "stairwell" }], [lw, { role: "lobby", entry: true, type: "house" }], ["*", flat(0, "B")]],
       [["*", flat(0, "C")], ["*", flat(0, "D")], [4, { role: "hgarage", name: "Maintenance", type: "garage", lock: ["door", 0.3] }]], 5),
-    upper: (f) => corridorPlan([["*", flat(f, "A")], ["*", flat(f, "B")]], [["*", flat(f, "C")], ["*", flat(f, "D")], [3, { role: "storage", name: f === 1 ? "Laundry" : "Utility room", type: "house" }]], 5),
+    upper: (f) => corridorPlan([["*", flat(f, "A")], [2, { role: "stairwell" }], [lw, { role: "hall", name: "Landing" }], ["*", flat(f, "B")]], [["*", flat(f, "C")], ["*", flat(f, "D")], [3, { role: "storage", name: f === 1 ? "Laundry" : "Utility room", type: "house" }]], 5),
     exits: [{ side: "back", roles: ["hgarage"], chance: 0.8, lock: 0.3 }, { side: "left", roles: ["corridor"], chance: 0.4, lock: 0.4 }, { side: "right", roles: ["corridor"], chance: 0.4, lock: 0.4 }],
   };
 }
@@ -1043,7 +1057,7 @@ export function streetMap(state, tileId, option, withVehicle) {
   const floors = [{ cells, name: "Ground floor" }];
   for (let g = 1; g < storeys; g++) floors.push({ cells: Array.from({ length: W * H }, () => ({ k: "void", f: "air" })), name: g === storeys - 1 ? "Top floor" : `Floor ${g + 1}` });
   // Each house copied in (a south house flipped front to back): its floors' cells, rooms, containers, locked doors, stairs.
-  const areas = [], containers = [], lockedDoors = [], stairs = [];
+  const areas = [], containers = [], lockedDoors = [], stairs = [], runs = [];
   const keep = new Uint8Array(W * H); // stays clear: the ring round each house, the paths to the front doors
   let cid = 1;
   for (const h of houses) {
@@ -1056,6 +1070,7 @@ export function streetMap(state, tileId, option, withVehicle) {
       const dst = floors[g].cells, cars = new Map(); // a car in the garage: its cells take the id of their new top-left cell
       for (let y = B.y0; y < B.y0 + B.h; y++) for (let x = B.x0; x < B.x0 + B.w; x++) {
         const c = { ...F.cells[y * m.w + x] }, X = tx(x), Y = ty(y);
+        if (h.flip && c.k === "stairs" && c.dir >= 2) c.dir = c.dir === 2 ? 3 : 2; // a run's way up, flipped front to back
         if (c.car) {
           c.car = { ...c.car };
           if (h.flip) { if (c.car.ax === "y") c.car.i = c.car.L - 1 - c.car.i; else c.car.j = 1 - c.car.j; }
@@ -1078,6 +1093,7 @@ export function streetMap(state, tileId, option, withVehicle) {
     }
     for (const d of m.lockedDoors) lockedDoors.push({ ...d, x: tx(d.x), y: ty(d.y), area: d.area == null ? null : base + d.area });
     for (const [x, y] of m.stairs || []) stairs.push([tx(x), ty(y)]);
+    for (const r of m.runs || []) runs.push({ ...r, x: tx(r.x), y: ty(r.y), dy: h.flip ? -r.dy : r.dy, house: h.k });
     // The ring round the house stays clear; a path from the front door (and a driveway from a garage's roller door)
     // runs to the sidewalk.
     for (let y = h.y0 - 1; y <= h.y0 + B.h; y++) for (let x = h.x0 - 1; x <= h.x0 + B.w; x++) if (inside(x, y) && !(x >= h.x0 && x < h.x0 + B.w && y >= h.y0 && y < h.y0 + B.h)) keep[I(x, y)] = 1;
@@ -1192,11 +1208,11 @@ export function streetMap(state, tileId, option, withVehicle) {
   const plan = {
     key: option.key, id: option.id, name: option.name, w: W, h: H, street: true, building: houses[0].rect, buildings: houses.map((h) => ({ ...h.rect })),
     houses: houses.map((h) => ({ k: h.k, name: h.name, row: h.row, ...h.rect, front: h.front, rooms: areas.filter((a) => a.house === h.k).map((a) => a.id) })),
-    tall: true, storeys, stairs: stairs.map((s) => s.slice()),
+    tall: true, storeys, stairs: stairs.map((s) => s.slice()), runs: runs.map((r) => ({ ...r })),
     rooms: areas.filter((a) => !a.outdoor).map((a) => ({ id: a.id, f: a.f, name: a.name, role: a.role, type: a.type, x0: a.x0, y0: a.y0, w: a.w, h: a.h, locked: a.locked, up: a.up, hub: a.hub, entry: a.entry, house: a.house })),
     front: houses[0].front, exits: zoneExits(),
   };
-  return { w: W, h: H, cells, rooms: areas, containers, zones, vehicle, exits: zoneExits(), front: houses[0].front, lockedDoors, plan, building: plan.building, buildings: plan.buildings, floors, stairs, storeys, street: true };
+  return { w: W, h: H, cells, rooms: areas, containers, zones, vehicle, exits: zoneExits(), front: houses[0].front, lockedDoors, plan, building: plan.building, buildings: plan.buildings, floors, stairs, runs, storeys, street: true };
 }
 
 // ======================================================================================
@@ -1204,6 +1220,43 @@ export function streetMap(state, tileId, option, withVehicle) {
 // ======================================================================================
 const FLOOR_KINDS = new Set(["open", "loft"]);
 const DOORISH = new Set(["idoor", "odoor", "door"]);
+
+// ---------- stair runs (the user's request 2026-10-25, issue #9) ----------
+// A stairwell is a straight run: run = { x, y (its bottom step), dx, dy (one step up the run), len (steps), f0, f1
+// (the lowest and highest floor it joins), out ("left" / "right": an outside stair along that side wall, the motel's),
+// single (a one-cell stairwell in a footprint too small for a run: len 1, no landings) }. Its steps are "stairs" cells
+// on every floor it joins (c.dir: the way up, an index of STAIR_DIRS; c.step 1…len; c.top on the top step, the one
+// cell where Go up / Go down change floor: combat.js stairOptions); a landing cell at each end stays walkable floor
+// (c.landing). An older save's one-cell stairwells have no run (b.raid.runs missing) and no c.step: every stairs cell
+// changes floor, as it always did.
+export const STAIR_DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+export const stairDir = (dx, dy) => STAIR_DIRS.findIndex(([a, b]) => a === dx && b === dy);
+/** The steps of a run, bottom first. @param {any} r @returns {number[][]} */
+export const runSteps = (r) => Array.from({ length: r.len }, (_, i) => [r.x + i * r.dx, r.y + i * r.dy]);
+/** The top step: the cell that changes floor. @param {any} r */
+export const runTop = (r) => [r.x + (r.len - 1) * r.dx, r.y + (r.len - 1) * r.dy];
+/** The landings, [bottom, top] ([] for a one-cell stairwell). @param {any} r @returns {number[][]} */
+export const runLandings = (r) => (r.single ? [] : [[r.x - r.dx, r.y - r.dy], [r.x + r.len * r.dx, r.y + r.len * r.dy]]);
+/** A stairs cell that changes floor: a run's top step, or any cell of an older save's one-cell stairwells. @param {any} c */
+export const stairTop = (c) => !!c && c.k === "stairs" && (c.step == null || !!c.top);
+// The landing cells of a raid's stairwells (b.raid.runs; none in an older save's).
+export const landingsOf = (R) => ((R && R.runs) || []).flatMap(runLandings);
+// Free cells by the stairwells on one floor's grid, for the dead and the watchers who wait there: the landings first,
+// else the walkable cells next to a landing (never a step), else (an older save's one-cell stairwells) the cells next
+// to a stairwell cell. ok(x, y): walkable and free.
+export function stairWaits(R, ok) {
+  const lands = landingsOf(R).filter(([x, y]) => ok(x, y));
+  if (lands.length) return lands;
+  const out = [], seen = new Set();
+  const from = landingsOf(R).length ? landingsOf(R) : (R && R.stairs) || [];
+  for (const [sx, sy] of from) for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+    const x = sx + dx, y = sy + dy, key = `${x},${y}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (ok(x, y)) out.push([x, y]);
+  }
+  return out;
+}
 
 // Storeys: the ground floor (f = 0) is built here with the outside around it; each upper floor is built by a call of its
 // own (opts._floor ≥ 1: that floor's plan from spec.upper, the stairwell cells the ground floor chose, "void" outside
@@ -1294,34 +1347,101 @@ export function assemble(rng, spec, opts = {}) {
   const touches = (room, side) => (side === "front" ? room.iy0 + room.ih - 1 === by1 - 1 : side === "back" ? room.iy0 === by0 + 1 : side === "left" ? room.ix0 === bx0 + 1 : room.ix0 + room.iw - 1 === bx1 - 1);
   let entry = upper ? null : rooms.find((r) => r.entry && touches(r, "front")) || rooms.find((r) => r.hub && touches(r, "front")) || rooms.find((r) => touches(r, "front")) || rooms[0];
   // ---------- the stairwells (storeys) ----------
-  // One or two cells at fixed (x, y) inside the footprint, "stairs" on every floor: the ground floor picks them in its
-  // hubs (a corridor or hall first, else the entry; a long corridor gets one at each end), the upper floors get the
-  // same cells, opened where their own plan put a wall there (the stairwell then joins the rooms either side).
-  const stairCells = upper ? opts._stairs.map((s) => s.slice()) : storeys > 1 ? pickStairs() : [];
-  function pickStairs() {
-    const want = spec.stairs || (bw * bh >= BMAP.STOREY.twoStairs ? 2 : 1);
+  // Stair runs (STAIR_DIRS above): the ground floor picks one or two (spec.stairs.n, else two from a footprint of
+  // BMAP.STOREY.twoStairs cells) against a wall of the rooms spec.stairs.roles names by the building's kind (a house's
+  // hall or living room by the front, a shop's back room, a stairwell room of its own in flats and offices, each end
+  // of a hospital's or a school's corridor), else the hubs, else the entry: a run of spec.stairs.len steps (2; 3 in the
+  // big buildings; shorter where a room is too short) and its two landings in one room, parallel to the wall, with a
+  // free lane of the room beside every step. A motel's (spec.stairs.out) is an outside stair along a side wall, up to
+  // the walkway. No room fits a run (a cabin's, a shed's footprint): the one-cell stairwell at a room's centre, as
+  // before. The upper floors get the same cells, opened where their own plan put a wall there. No door is ever put
+  // where a step is its only approach (stepAt: outerDoor, innerDoor).
+  const SP = { len: 2, ...(spec.stairs || {}) };
+  const runs = upper ? opts._runs.map((r) => ({ ...r })) : storeys > 1 ? pickRuns() : [];
+  for (const r of runs) { r.f0 = 0; r.f1 = storeys - 1; }
+  function pickRuns() {
+    const want = SP.n || (bw * bh >= BMAP.STOREY.twoStairs ? 2 : 1);
+    if (SP.out) { // an outside stair along the side wall, its top landing by the back corner (the walkway upstairs)
+      const sx = SP.out === "left" ? bx0 - 1 : bx1 + 1;
+      for (let len = SP.len; len >= 2; len--) if (by0 + 2 + len <= by1 && sx >= 1 && sx < W - 1) return [{ x: sx, y: by0 + 1 + len, dx: 0, dy: -1, len, out: SP.out }];
+    }
+    const seed = rng.state; // read, not consumed: the rest of the plan rolls as before
+    const roles = SP.roles || [];
+    const rank = (r) => { const i = roles.indexOf(r.role); return i >= 0 ? i : roles.length + (r.hub && r !== entry ? 0 : r === entry ? 1 : 2); };
+    const cands = [];
+    for (const room of rooms) {
+      if (room.lock) continue; // never behind a door that may be locked
+      for (let len = SP.len; len >= 2; len--) {
+        const L = len + 2;
+        // Along x against the back or front wall (the lane a row in), along y against the left or right wall.
+        const lines = [];
+        if (room.ih >= 2 && room.iw >= L) for (const [wy, lane] of [[room.iy0, 1], [room.iy0 + room.ih - 1, -1]]) for (let x0 = room.ix0; x0 + L <= room.ix0 + room.iw; x0++) lines.push({ x0, y0: wy, ax: [1, 0], wall: [0, -lane], lane: [0, lane] });
+        if (room.iw >= 2 && room.ih >= L) for (const [wx, lane] of [[room.ix0, 1], [room.ix0 + room.iw - 1, -1]]) for (let y0 = room.iy0; y0 + L <= room.iy0 + room.ih; y0++) lines.push({ x0: wx, y0, ax: [0, 1], wall: [-lane, 0], lane: [lane, 0] });
+        for (const ln of lines) for (const up of [1, -1]) {
+          const dx = ln.ax[0] * up, dy = ln.ax[1] * up;
+          const first = up > 0 ? [ln.x0 + ln.ax[0], ln.y0 + ln.ax[1]] : [ln.x0 + ln.ax[0] * len, ln.y0 + ln.ax[1] * len]; // the bottom step
+          const run = { x: first[0], y: first[1], dx, dy, len };
+          const steps = runSteps(run), lands = runLandings(run);
+          // The wall behind: an outer wall best, a room that is no hub next, a hub's (its doors) worst.
+          let s = rank(room) * 100 + (SP.len - len) * 20;
+          for (const [x, y] of steps) {
+            const bx = x + 2 * ln.wall[0], by = y + 2 * ln.wall[1];
+            const beyond = inBldg(bx, by) ? rid[I(bx, by)] : -2;
+            s += beyond === -2 ? -1 : beyond >= 0 && rooms[beyond].hub ? 1 : 0;
+          }
+          if (SP.near === "front") { const [bx, by] = lands[0]; s += (by1 - 1 - by) * 1.5 + (dy < 0 ? -1 : 0) + Math.abs(bx - (room.ix0 + room.iw / 2)) * 0.2; } // up from by the front door, toward the back
+          const mid = [(steps[0][0] + steps[len - 1][0]) / 2, (steps[0][1] + steps[len - 1][1]) / 2];
+          const along = room.iw >= room.ih ? Math.abs(mid[0] - (room.ix0 + (room.iw - 1) / 2)) : Math.abs(mid[1] - (room.iy0 + (room.ih - 1) / 2));
+          if (SP.ends) s -= along * 0.5; // a corridor's: by its ends
+          s += hash01(seed, "stairs", run.x, run.y, dx, dy) * 0.9;
+          cands.push({ run, room, s, mid, cells: [...steps, ...lands] });
+        }
+      }
+    }
+    cands.sort((a, c) => a.s - c.s);
+    const out = [];
+    if (cands.length) {
+      out.push(cands[0]);
+      if (want >= 2) {
+        const far = (c) => Math.hypot(c.mid[0] - out[0].mid[0], c.mid[1] - out[0].mid[1]);
+        const apart = (c) => c.cells.every(([x, y]) => out[0].cells.every(([u, v]) => Math.max(Math.abs(x - u), Math.abs(y - v)) >= 2));
+        const second = cands.filter((c) => far(c) >= 6 && apart(c)).sort((a, c) => a.s - far(a) * 0.5 - (c.s - far(c) * 0.5))[0];
+        if (second) out.push(second);
+      }
+      return out.map((c) => c.run);
+    }
+    // Too small for a run: the one-cell stairwell at the centre of a hub (else the entry), as before.
     const byArea = (a, b) => b.iw * b.ih - a.iw * a.ih;
-    const order = [...rooms.filter((r) => r.hub && r !== entry).sort(byArea), entry, ...rooms.filter((r) => !r.hub && r !== entry).sort(byArea)];
-    const centre = (r) => [r.ix0 + Math.floor(r.iw / 2), r.iy0 + Math.floor(r.ih / 2)];
-    const first = order[0];
-    const out = [centre(first)];
-    if (want >= 2) {
-      const other = order.slice(1).find((r) => Math.hypot(centre(r)[0] - out[0][0], centre(r)[1] - out[0][1]) >= 6 && r.iw * r.ih >= 6);
-      if (other) out.push(centre(other));
-      else if (first.iw >= 12) { out.length = 0; out.push([first.ix0 + 1, first.iy0 + Math.floor(first.ih / 2)], [first.ix0 + first.iw - 2, first.iy0 + Math.floor(first.ih / 2)]); }
-      else if (first.ih >= 12) { out.length = 0; out.push([first.ix0 + Math.floor(first.iw / 2), first.iy0 + 1], [first.ix0 + Math.floor(first.iw / 2), first.iy0 + first.ih - 2]); }
-    }
-    return out;
+    const first = [...rooms.filter((r) => r.hub && r !== entry).sort(byArea), entry, ...rooms.filter((r) => !r.hub && r !== entry).sort(byArea)][0];
+    return [{ x: first.ix0 + Math.floor(first.iw / 2), y: first.iy0 + Math.floor(first.ih / 2), dx: 0, dy: 0, len: 1, single: true }];
   }
-  for (const [sx, sy] of stairCells) {
-    const i = I(sx, sy);
-    if (rid[i] < 0) { // an inner wall of this floor's plan: the stairwell opens it
-      const nb = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dy]) => rid[I(sx + dx, sy + dy)]).find((r) => r >= 0);
-      rid[i] = nb ?? 0;
-      cells[i].fl = rooms[rid[i]].fl || "wood";
+  const stepAt = new Uint8Array(W * H); // a run's steps on this floor (no door opens onto one)
+  for (const run of runs) {
+    const steps = runSteps(run), lands = runLandings(run);
+    for (const [x, y] of [...steps, ...lands]) {
+      const i = I(x, y);
+      if (rid[i] === -1 && inBldg(x, y)) { // an inner wall of this floor's plan: the stairwell opens it
+        const nb = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dy]) => rid[I(x + dx, y + dy)]).find((r) => r >= 0);
+        rid[i] = nb ?? 0;
+        cells[i].k = "open";
+        cells[i].fl = rooms[rid[i]].fl || "wood";
+      }
+      if (run.out) { // an outside stair: open air beside the building (upstairs: a concrete flight where the void was)
+        if (upper) cells[i] = { k: "open", f: "floor", fl: "conc" };
+        cells[i].openair = true;
+      }
     }
-    cells[i].k = "stairs";
+    steps.forEach(([x, y], s) => {
+      const c = cells[I(x, y)];
+      c.k = "stairs"; c.step = s + 1; c.len = run.len;
+      if (!run.single) c.dir = stairDir(run.dx, run.dy);
+      if (s === run.len - 1) c.top = true;
+      stepAt[I(x, y)] = 1;
+    });
+    for (const [x, y] of lands) { const c = cells[I(x, y)]; c.k = "open"; c.landing = true; }
   }
+  const stairCells = runs.map(runTop); // the cells that change floor (result.stairs, b.raid.stairs)
+  const nearStep = (x, y) => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => inside(x + dx, y + dy) && stepAt[I(x + dx, y + dy)]);
   if (upper) entry = rooms[rid[I(stairCells[0][0], stairCells[0][1])]] || rooms.find((r) => r.hub) || rooms[0];
   entry.entry = true;
   for (const r of rooms) if (r !== entry && r.entry) r.entry = false;
@@ -1350,7 +1470,7 @@ export function assemble(rng, spec, opts = {}) {
   };
   // The front door (and a motel room's own door) joins its room to the outside; the other exits do not count for the
   // rooms' doors, so the inside is always connected without going round the building.
-  function outerDoor(side, ok, width = 1, roller = false, joins = true) {
+  function outerDoor(side, ok, width = 1, roller = false, joins = true, onStep = false) {
     const list = sideCells(side);
     const cands = [];
     for (let i = 0; i + width <= list.length; i++) {
@@ -1358,6 +1478,7 @@ export function assemble(rng, spec, opts = {}) {
       const r0 = rid[I(run[0].ix, run[0].iy)];
       if (r0 < 0 || !run.every((s) => rid[I(s.ix, s.iy)] === r0) || !ok(rooms[r0])) continue;
       if (run.some((s) => doorAt.has(I(s.x, s.y)))) continue;
+      if (!onStep && run.some((s) => stepAt[I(s.ix, s.iy)] || (inside(s.ox, s.oy) && stepAt[I(s.ox, s.oy)]))) continue; // a stair run's step is no door's approach
       const before = list[i - 1], after = list[i + width];
       if ((before && doorAt.has(I(before.x, before.y))) || (after && doorAt.has(I(after.x, after.y)))) continue;
       const room = rooms[r0];
@@ -1383,8 +1504,19 @@ export function assemble(rng, spec, opts = {}) {
   }
   // An upper floor has no doors to the outside: its stairwell's room stands for the way in.
   if (upper) union(entry.id, OUT);
+  // An outside stair (the motel's): upstairs, a door in the side wall from its top landing onto the walkway.
+  if (upper) for (const run of runs) if (run.out) {
+    const [lx, ly] = runLandings(run)[1];
+    const wx = run.out === "left" ? bx0 : bx1, ix = run.out === "left" ? bx0 + 1 : bx1 - 1, r = rid[I(ix, ly)];
+    if (r < 0) continue;
+    cells[I(wx, ly)].k = "idoor";
+    doorAt.add(I(wx, ly));
+    doors.push({ x: wx, y: ly, a: r, b: OUT, ext: true, side: run.out, ix, iy: ly, ox: lx, oy: ly });
+    rooms[r].doors.push([wx, ly]);
+    union(r, OUT);
+  }
   const front = upper ? null : outerDoor("front", (r) => r === entry, (spec.front && spec.front.width) || 1, false) || outerDoor("front", (r) => r === entry, 1, false) ||
-    outerDoor("front", (r) => !r.locked && !r.up, 1, false) || outerDoor("front", () => true, 1, false);
+    outerDoor("front", (r) => !r.locked && !r.up, 1, false) || outerDoor("front", () => true, 1, false) || outerDoor("front", () => true, 1, false, true, true);
   if (!upper && spec.unitDoors) for (const r of rooms) if (r.role === spec.unitDoors && touches(r, "front")) outerDoor("front", (q) => q === r, 1, false);
   const exits = [];
   if (!upper) for (const e of spec.exits || []) {
@@ -1414,7 +1546,9 @@ export function assemble(rng, spec, opts = {}) {
     if (A.hub && B.hub) w -= 0.6; // hubs open onto each other
     if (A.locked || B.locked) w += 4;
     if (A.up !== B.up) w += (A.up ? B.hub : A.hub) ? 1 : 50;
-    return { ...p, w };
+    if (A.role === "stairwell" || B.role === "stairwell") w += A.hub || B.hub ? 0 : 3; // a stairwell opens onto the lobby, the landing or the corridor
+    const free = p.cells.filter(([x, y]) => !nearStep(x, y)); // a door never opens onto a step
+    return { ...p, cells: free.length ? free : p.cells, blocked: !free.length, w };
   }).sort((a, b) => a.w - b.w);
   const inner = (e) => doors.some((d) => !d.ext && ((d.a === e.a && d.b === e.b) || (d.a === e.b && d.b === e.a)));
   function innerDoor(e) {
@@ -1435,17 +1569,18 @@ export function assemble(rng, spec, opts = {}) {
     if (A.up !== B.up) { const low = A.up ? B : A, high = A.up ? A : B; if (!low.hub || high.stair) return false; }
     return true;
   };
-  for (const e of edges) if (find(e.a) !== find(e.b) && ok1(e)) { innerDoor(e); const A = rooms[e.a], B = rooms[e.b]; if (A.up !== B.up) (A.up ? A : B).stair = true; }
+  for (const e of edges) if (find(e.a) !== find(e.b) && !e.blocked && ok1(e)) { innerDoor(e); const A = rooms[e.a], B = rooms[e.b]; if (A.up !== B.up) (A.up ? A : B).stair = true; }
   const allIn = () => rooms.every((r) => find(r.id) === find(OUT));
   if (!allIn()) {
     // A room left out: allow a second door into a locked room, then bring an upper floor down to the ground.
-    for (const e of edges) if (find(e.a) !== find(e.b) && rooms[e.a].up === rooms[e.b].up) innerDoor(e);
+    for (const e of edges) if (find(e.a) !== find(e.b) && !e.blocked && rooms[e.a].up === rooms[e.b].up) innerDoor(e);
     for (const r of rooms) if (find(r.id) !== find(OUT)) r.up = false;
-    for (const e of edges) if (find(e.a) !== find(e.b) && rooms[e.a].up === rooms[e.b].up) innerDoor(e);
+    for (const e of edges) if (find(e.a) !== find(e.b) && !e.blocked && rooms[e.a].up === rooms[e.b].up) innerDoor(e);
+    for (const e of edges) if (find(e.a) !== find(e.b) && rooms[e.a].up === rooms[e.b].up) innerDoor(e); // the last resort: beside a step
   }
   for (const e of edges) {
     const A = rooms[e.a], B = rooms[e.b];
-    if (inner(e) || A.locked || B.locked || A.up !== B.up) continue;
+    if (inner(e) || e.blocked || A.locked || B.locked || A.up !== B.up || A.role === "stairwell" || B.role === "stairwell") continue; // a stairwell has its one door
     if (rng.chance(spec.extraDoors ?? BMAP.EXTRA_DOOR)) innerDoor(e);
   }
   // Upper floors: a stair down to the hub at its door; an upper room whose door does not lead to a hub comes down.
@@ -1455,7 +1590,7 @@ export function assemble(rng, spec, opts = {}) {
   // The doors' cells.
   const lockedDoors = [];
   const keep = new Uint8Array(W * H); // stays walkable: door sides, stairs
-  for (const [sx, sy] of stairCells) keep[I(sx, sy)] = 1;
+  for (const run of runs) for (const [x, y] of [...runSteps(run), ...runLandings(run)]) keep[I(x, y)] = 1; // the steps and the landings stay clear
   for (const d of doors) {
     const c = cells[I(d.x, d.y)];
     if (d.ext) { keep[I(d.ix, d.iy)] = 1; if (inside(d.ox, d.oy)) keep[I(d.ox, d.oy)] = 1; continue; }
@@ -1749,18 +1884,18 @@ export function assemble(rng, spec, opts = {}) {
   let base = areas.length, nextCid = cid;
   for (let g = 1; g < storeys; g++) {
     const program = spec.upper ? spec.upper(g, rng, { top: g === storeys - 1, storeys, bw, bh }) : spec.program;
-    const up = assemble(rng, spec, { ...opts, _floor: g, _program: program, _stairs: stairCells, _idBase: base, _cid: nextCid });
+    const up = assemble(rng, spec, { ...opts, _floor: g, _program: program, _runs: runs, _idBase: base, _cid: nextCid });
     areas.push(...up.rooms); containers.push(...up.containers); lockedDoors.push(...up.lockedDoors);
     floors.push({ cells: up.cells, name: floorName(g) });
     base += up.rooms.length; nextCid = up.nextCid;
   }
   const plan = {
-    key: opts.key, id: opts.id || opts.key, name: opts.name, w: W, h: H, building: { x0: bx0, y0: by0, w: bw, h: bh }, tall, storeys, stairs: stairCells.map((s) => s.slice()),
+    key: opts.key, id: opts.id || opts.key, name: opts.name, w: W, h: H, building: { x0: bx0, y0: by0, w: bw, h: bh }, tall, storeys, stairs: stairCells.map((s) => s.slice()), runs: runs.map((r) => ({ ...r })),
     rooms: areas.filter((a) => !a.outdoor).map((a) => ({ id: a.id, f: a.f, name: a.name, role: a.role, type: a.type, x0: a.x0, y0: a.y0, w: a.w, h: a.h, locked: a.locked, up: a.up, hub: a.hub, entry: a.entry })),
     front: { x: front.x, y: front.y },
     exits: exits.map((e) => ({ side: e.side, name: e.name, x: e.x, y: e.y, cells: e.cells, locked: e.locked, roller: e.roller, zone: e.zone })),
   };
-  return { w: W, h: H, cells, rooms: areas, containers, zones, vehicle, exits, front, lockedDoors, plan, building: plan.building, floors, stairs: plan.stairs, storeys };
+  return { w: W, h: H, cells, rooms: areas, containers, zones, vehicle, exits, front, lockedDoors, plan, building: plan.building, floors, stairs: plan.stairs, runs: plan.runs, storeys };
 }
 
 // ======================================================================================
@@ -1943,15 +2078,8 @@ export function placeInterior(state, b, map, groups) {
     for (let y = a.y0 + 1; y < a.y0 + a.h - 1; y++) for (let x = a.x0 + 1; x < a.x0 + a.w - 1; x++) if (walk(x, y) && !taken(x, y) && (!reach || b.reach[I(x, y)])) out.push([x, y]);
     return out;
   };
-  // Free cells next to a stairwell on the active floor (the dead upstairs wait by the stairs).
-  const stairSide = () => {
-    const out = [];
-    for (const [sx, sy] of R.stairs || []) for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
-      const x = sx + dx, y = sy + dy;
-      if (x > 0 && y > 0 && x < W - 1 && y < H - 1 && walk(x, y) && !taken(x, y)) out.push([x, y]);
-    }
-    return out;
-  };
+  // Free cells by a stairwell on the active floor (the dead upstairs wait by the stairs): its landings, not its steps.
+  const stairSide = () => stairWaits(R, (x, y) => x > 0 && y > 0 && x < W - 1 && y < H - 1 && walk(x, y) && !taken(x, y));
   const Bs = map.buildings || [map.building]; // a street of houses (streetMap): every house
   const outsideCells = () => {
     const out = [];
@@ -2298,6 +2426,21 @@ export function botEscape(state, b, u, targets) {
   return { type: "throw", unit: u.id, item: key, x: best.x, y: best.y };
 }
 
+// Where the stairs are, for the raid's opening lines: each run by the room it goes up from ("a stair run up from the
+// lobby's wall"), the motel's outside stair, or the one-cell stairwell of a footprint too small for a run.
+function stairsText(R) {
+  const runs = R.runs || [];
+  if (!runs.length) return R.stairs.length === 1 ? "a stairwell on every floor" : `${R.stairs.length} stairwells on every floor`;
+  const roomOf = (r) => (R.areas || []).find((a) => !a.outdoor && (a.f || 0) === 0 && r.x > a.x0 && r.x < a.x0 + a.w - 1 && r.y > a.y0 && r.y < a.y0 + a.h - 1);
+  const one = (r) => {
+    if (r.out) return `an outside stair up the ${r.out} wall to the walkway`;
+    if (r.single) return "a single stair cell (the building is too small for a flight)";
+    const a = roomOf(r), name = a ? (a.noLabel ? ROLES[a.role] ? ROLES[a.role].name : a.name : a.name).toLowerCase() : "hall";
+    return `a flight of ${r.len} steps against a wall of the ${name}`;
+  };
+  const list = runs.map(one);
+  return `${list.length > 1 ? `${list.slice(0, -1).join(", ")} and ${list.at(-1)}` : list[0]}, up from a landing to a landing; the top step takes you up or down a floor`;
+}
 // The building's name and its exits, for the raid's opening lines.
 export function interiorIntro(b) {
   const R = b.raid;
@@ -2306,7 +2449,7 @@ export function interiorIntro(b) {
   const ex = (R.plan.exits || []).filter((e) => e.zone >= 0);
   const lockedEx = (R.plan.exits || []).filter((e) => e.locked).length;
   const names = ["the front", ...ex.map((e) => e.name.toLowerCase())];
-  const st = R.storeys > 1 ? ` ${R.storeys} storeys: ${R.stairs.length === 1 ? "a stairwell" : `${R.stairs.length} stairwells`} on every floor; the ways out are on the ground floor.` : "";
+  const st = R.storeys > 1 ? ` ${R.storeys} storeys: ${stairsText(R)}; the ways out are on the ground floor.` : "";
   return `Ways out: ${names.join(", ")}${lockedEx ? ` (${lockedEx} locked)` : ""}.${st} Rooms, walls and closed doors block sight (a glass or a screen door is seen through): peek through a door (K) before you go in, shut doors behind you (Shift+E): the dead have to batter them down. Windows: check one from next to it (free), open it if it is unlocked (or from inside if it is locked: 1 action, quiet), then climb or vault through; a fixed one only breaks (loud).`;
 }
 // A street of houses (streetMap): the houses, the ways out, and the houses your side has been into before (the
