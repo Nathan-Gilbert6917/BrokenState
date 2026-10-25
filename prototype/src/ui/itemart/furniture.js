@@ -468,11 +468,35 @@ function f_batteries(p) { // a rack of black batteries on steel shelves, red and
   line(p, 3, 1, 11, 1, "#d9b13b");
 }
 
+// ---------- military bases, air bases, airports and prisons (issue #25) ----------
+function f_ammocrate(p) { // a green ammo crate: rope handles, yellow stencil band, latches
+  box(p, 1, 4, 14, 14, "#4d5a32"); H(p, 2, 13, 8, "#e6c23a"); V(p, 7, 5, 13, "#3a4426");
+  H(p, 0, 1, 9, "#b8a27a"); H(p, 14, 15, 9, "#b8a27a"); p.set(4, 5, "#9aa1a8"); p.set(11, 5, "#9aa1a8");
+}
+function f_fuelbladder(p) { // a fuel bladder: a black rubber pillow, its valve and hose
+  oval(p, 0, 7, 15, 14, "#26272a"); H(p, 2, 13, 8, "#3a3b40"); R(p, 7, 5, 8, 7, "#9aa1a8"); line(p, 8, 5, 13, 2, "#1f1f22");
+}
+function f_gateseat(p) { // gate seating: three linked blue seats on a chrome beam
+  for (const x of [0, 5, 10]) { R(p, x, 4, x + 4, 9, "#2f5d8a"); R(p, x, 10, x + 4, 11, "#3b6fa0"); }
+  H(p, 0, 15, 12, "#b8bec4"); V(p, 2, 12, 15, "#b8bec4"); V(p, 13, 12, 15, "#b8bec4");
+}
+function f_intakelocker(p) { // a property locker: a steel bank of small numbered doors, amber tags
+  box(p, 0, 0, 15, 15, "#8a949c");
+  for (const y of [5, 10]) H(p, 1, 14, y, "#5e666d"); for (const x of [5, 10]) V(p, x, 1, 14, "#5e666d");
+  for (const y of [2, 7, 12]) for (const x of [2, 7, 12]) p.set(x, y, "#e0a030");
+}
+function f_luggage(p) { // a suitcase: a hard red shell, its handle, two wheels, a tag
+  box(p, 3, 3, 12, 14, "#a8443a"); V(p, 7, 4, 13, "#7a2e28"); R(p, 6, 1, 9, 2, "#26272a"); p.set(4, 15, "#1f1f22"); p.set(11, 15, "#1f1f22"); R(p, 10, 5, 11, 7, "#e8e0c8");
+}
+
+
 
 export const GEAR_ART = {
   f_dormdesk, f_minifridge, f_lectern, f_carrel, f_mailboxes, f_campusbench,
   f_freezercase, f_islandfreezer, f_meatcase, f_freezershelf, f_producebin, f_breadrack, f_selfcheckout, f_aislesign,
   f_hazmatrack, f_rationshelf, f_handfilter, f_screens, f_maptable, f_radioconsole, f_footlocker, f_batteries,
+  f_freezercase, f_islandfreezer, f_meatcase, f_freezershelf, f_producebin, f_breadrack, f_selfcheckout, f_aislesign,
+  f_luggage, f_ammocrate, f_fuelbladder, f_gateseat, f_intakelocker,
   f_medcart, f_drugsafe, f_instcab, f_morguelocker, f_autopsy, f_wheelchair, f_vettable, f_curtain, f_linencart, f_monitor, f_crib, f_exambed,
   f_bed, f_bunk, f_hospbed, f_gurney, f_ivstand, f_hay, f_barrel, f_range, f_dishwasher, f_washer, f_dryer, f_fryer, f_coldshelf,
   f_icemachine, f_watercooler, f_compressor, f_tank, f_jukebox, f_pooltable, f_clothesrack, f_pottingbench, f_palletrack, f_tirerack,

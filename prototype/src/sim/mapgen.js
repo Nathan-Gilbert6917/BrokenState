@@ -632,6 +632,19 @@ function landMap(rng, def, seed) {
     if (t.terrain === "city") t.infection = Math.min(1, t.infection + 0.15);
     else if (t.terrain === "suburb") t.infection = Math.min(1, t.infection + 0.06);
   }
+  // Air bases (issue #25, 2026-10-25): some of the military sites are air bases (a hangar of aircraft, a control tower,
+  // flight operations, barracks and a mess: buildingmaps.js SITES airbase), one a six of them (a Normal map's 11: two),
+  // never the first; a Custom map's "Military sites" counts them (one once it asks for two or more). Chosen last, by
+  // hash dice of the tile (no roll of the map's dice: everything else on the map is as it was), and kept in
+  // militaryIds (they are military sites: the soldiers' dead, the groups that hold a base).
+  const airN = def.customCounts ? (military.length >= 2 ? 1 : 0) : Math.min(military.length - 1, Math.max(1, Math.round(military.length / 6)));
+  const airPick = military.slice(1).sort((a, b) => hash01(seed ?? 0, "airbase", a.id) - hash01(seed ?? 0, "airbase", b.id) || a.id - b.id).slice(0, Math.max(0, airN));
+  for (const t of airPick) {
+    const was = t.loc.name;
+    t.loc = { ...t.loc, type: "airbase", name: uniqueName(`${nearName(t)} Air base`, `${nearName(t)} Air National Guard base`) };
+    siteNames.delete(was); siteNames.add(t.loc.name);
+    t.loot = t.loot * (LOCATIONS.airbase.richness / LOCATIONS.military.richness);
+  }
   return {
     grid, tiles, mainId: main.id, originId: origin.id, seeds, spotIds,
     cityIds: cities.map((c) => c.center.id), townIds: towns.map((t) => t.id), militaryIds: military.map((m) => m.id),

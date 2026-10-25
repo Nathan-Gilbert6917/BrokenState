@@ -53,6 +53,7 @@ import { commercialStyle, styleName as shopStyleName } from "./shoplayout.js"; /
 import { civicStyle } from "./civiclayout.js"; // police stations, fire stations, schools and churches laid out for their kind (issue #15)
 import { campusStyle, CAMPUS_PLANS, CAMPUS_NAMES } from "./campuslayout.js"; // the college campus buildings laid out for their kind (issue #28)
 import { campusMap, campusLegacy, campusDead, campusIntro } from "./campus.js"; // a college campus: many buildings on one map (issue #28)
+import { militaryStyle, militaryOutside, MIL_SIZE } from "./militarylayout.js"; // military bases, air bases, airports and prisons laid out like the real thing (issue #25)
 import { decorate, flipDecoY, placeDecorPieces } from "./decor.js"; // rugs, clutter, wall art, wall colours, light fixtures (cosmetic)
 import { rollWin, winMixOf, windowOpen } from "./windows.js"; // the windows' states (open, locked, fixed), a throw through an open one
 import { rollScenes, sceneRng } from "./interiorscenes.js"; // signs of survival: barricades, blood, bodies (dice of their own)
@@ -134,6 +135,7 @@ const STYLE_OF = {
   // a college campus's buildings (issue #28, campuslayout.js)
   dorm: "office", lecturehall: "office", sciencehall: "office", univlibrary: "office", studentunion: "shop", dininghall: "shop", athletics: "office",
   admin: "office", security: "secure", maintenance: "works", theatre: "office", parkgarage: "works", chapel: "church", healthcentre: "office", campus: "office",
+  hq: "secure", aidstation: "office", gatehouse: "secure", tower: "secure", flightops: "office", // issue #25
   milbunker: "bunker", mountainbunker: "bunker", govbunker: "bunker", shelter: "bunker", prepper: "bunker",
 };
 export const doorStyleOf = (key) => DOOR_STYLE[STYLE_OF[key] || "house"];
@@ -238,6 +240,11 @@ const GROUNDS = {
   woods: { yard: "grass", walk: "dirt", street: "grass", alley: "grass" },
   lot:   { yard: "gravel", walk: "gravel", street: "road", alley: "gravel" },
   base:  { yard: "dirt", walk: "gravel", street: "road", alley: "dirt" },
+  // Issue #25 (militarylayout.js militaryOutside): a base's compound, an air base's or an airport's apron, a prison's
+  // grounds.
+  compound:   { yard: "dirt", walk: "gravel", street: "road", alley: "dirt" },
+  airfield:   { yard: "grass", walk: "road", street: "road", alley: "gravel" },
+  prisonyard: { yard: "gravel", walk: "gravel", street: "road", alley: "dirt" },
   rock:  { yard: "dirt", walk: "gravel", street: "road", alley: "dirt" }, // a bunker in the hillside (assemble: crag round it, spec.rockFill)
 };
 
@@ -647,6 +654,7 @@ function institution(rng, v, o = {}) {
       };
     }
     case "barracks": {
+      if (!o.legacy) return milPlan(rng, v, o); // laid out like the real thing (issue #25: militarylayout.js); an older save as below
       const bw = rng.int(18, 22), bh = rng.int(11, 13);
       return {
         ...S(bw, bh), front: { width: 1 }, ground: "base", storeys: 2, foot: "medium",
@@ -656,6 +664,7 @@ function institution(rng, v, o = {}) {
       };
     }
     case "armorybldg": {
+      if (!o.legacy) return milPlan(rng, v, o); // laid out like the real thing (issue #25: militarylayout.js); an older save as below
       const bw = rng.int(12, 14), bh = rng.int(10, 11);
       return {
         ...S(bw, bh), front: { width: 1 }, ground: "base", storeys: 1, foot: "small",
@@ -664,6 +673,7 @@ function institution(rng, v, o = {}) {
       };
     }
     case "cellblock": {
+      if (!o.legacy) return milPlan(rng, v, o); // laid out like the real thing (issue #25: militarylayout.js); an older save as below
       const bw = rng.int(20, 24), bh = rng.int(13, 15);
       return {
         ...S(bw, bh), front: { width: 1 }, ground: "base", storeys: 1, foot: "medium",
@@ -672,6 +682,7 @@ function institution(rng, v, o = {}) {
       };
     }
     case "messhall": {
+      if (!o.legacy) return milPlan(rng, v, o); // laid out like the real thing (issue #25: militarylayout.js); an older save as below
       const bw = rng.int(16, 20), bh = rng.int(11, 13);
       return {
         ...S(bw, bh), front: { width: 2 }, ground: "lot", storeys: 2, foot: "medium",
@@ -699,6 +710,7 @@ function institution(rng, v, o = {}) {
       };
     }
     case "terminal": {
+      if (!o.legacy) return milPlan(rng, v, o); // laid out like the real thing (issue #25: militarylayout.js); an older save as below
       const bw = rng.int(22, 26), bh = rng.int(13, 15);
       const n = rng.int(1, 3);
       return {
@@ -726,9 +738,10 @@ function institution(rng, v, o = {}) {
 }
 
 // Open floors: a warehouse, a factory, a hangar, a motor pool, an auto shop, a workshop, a barn, a machine shed.
-function openfloor(rng, v) {
+function openfloor(rng, v, o = {}) { // o.legacy: an older save (its hangar, motor pool and a base's warehouse as they were)
   switch (v) {
     case "warehouse": {
+      if (!o.legacy && o.site === "military") return milPlan(rng, "supply", o); // a base's supply warehouse (issue #25)
       const bw = rng.int(22, 26), bh = rng.int(14, 17);
       const offices = [rng.int(5, 6), { split: "y", parts: leaves([[4, { role: "office", name: "Shipping office", entry: true, hub: true }], ["*", { role: "storage", name: "Secure storage", lock: ["door", 0.35], boxLock: ["crate", 0.4] }]]) }];
       const left = rng.chance(0.5);
@@ -747,6 +760,7 @@ function openfloor(rng, v) {
       };
     }
     case "hangar": {
+      if (!o.legacy) return milPlan(rng, v, o); // issue #25: an air base's or an airport's, at its real size
       const bw = rng.int(22, 26), bh = rng.int(15, 17);
       const side = [5, { split: "y", parts: leaves([["*", { role: "office", name: "Hangar office", entry: true, hub: true }], ["*", { role: "parts", type: "hangar", lock: ["door", 0.35] }]]) }];
       const left = rng.chance(0.5);
@@ -757,6 +771,7 @@ function openfloor(rng, v) {
       };
     }
     case "motorpool": {
+      if (!o.legacy) return milPlan(rng, v, o);
       const bw = rng.int(18, 22), bh = rng.int(12, 14);
       const side = [5, { split: "y", parts: leaves([["*", { role: "office", name: "Dispatch office", entry: true, hub: true }], ["*", { role: "parts", type: "motorpool", lock: ["door", 0.5], boxLock: ["crate", 0.3] }]]) }];
       return {
@@ -861,6 +876,166 @@ function churchPlan(rng) {
     program: { split: "y", parts: [[3, { role: "foyer", name: "Narthex", entry: true, type: "chapel", civic: "narthex" }], ["*", { role: "nave", civic: "nave" }], [5, { split: "x", parts: leaves([[3, { role: "vestry", boxLock: ["lockbox", 0.4], civic: "vestry" }], ["*", { role: "kitchen", name: "Parish hall", civic: "parishhall" }], [2, { role: "pantry", name: "Food bank pantry", type: "kitchen", civic: "cpantry" }], [2, { role: "storage", name: "Bell tower", type: "chapel", civic: "belltower" }]]) }]] },
     exits: [{ side: "back", roles: ["kitchen", "pantry"], chance: 0.7, lock: 0.3 }, { side: "left", roles: ["nave"], chance: 0.5, lock: 0.4 }, { side: "right", roles: ["nave"], chance: 0.5, lock: 0.4 }],
   };
+}
+
+// ---------- military bases, air bases, airports and prisons laid out like the real thing (issue #25) ----------
+// The new saves' plans (an older save keeps the ones above: o.legacy), at real-world sizes (militarylayout.js MIL_SIZE:
+// metres, a metre a cell); every leaf names its style (civic: militarylayout.js MILITARY_STYLES, or civiclayout.js's
+// shared briefing, records, washroom and breakroom). o.site: the site's location type (siteBuildings), so a hangar at
+// an air base holds military aircraft and a warehouse at a base is the supply warehouse. The grounds: compound (a
+// base's fence, wire, watchtowers and gatehouse), airfield (the apron, a parked wreck, an air base's fuel farm),
+// prisonyard (the double perimeter and the exercise yard): militarylayout.js militaryOutside. The bunkers are #26's
+// (bunkerlayout.js).
+// Plans with no rectangle beyond their own (no #23 shapes on dev yet): each is a split tree, so a part can become a
+// wing of a shape once spec.shape lands.
+const milSize = (rng, k) => { const s = MIL_SIZE[k]; return { bw: rng.int(s.w[0], s.w[1]), bh: rng.int(s.d[0], s.d[1]) }; };
+const milStoreys = (rng, k) => rng.int(MIL_SIZE[k].storeys[0], MIL_SIZE[k].storeys[1]);
+const WASH = { role: "restroom", name: "Washroom", civic: "washroom", type: "lockers", maxBoxes: 1 };
+// Rooms of `unit` cells along a band `width` cells wide, the last taking the rest.
+const rowRooms = (width, unit, leaf) => { const n = Math.max(1, Math.floor(width / (unit + 1))); return Array.from({ length: n }, (_, i) => [i === n - 1 ? "*" : unit, leaf(i)]); };
+function milPlan(rng, v, o = {}) {
+  const site = o.site || null;
+  switch (v) {
+    case "hq": { // the command building: ops, the commander, briefing, comms; a helipad outside
+      const { bw, bh } = milSize(rng, "hq");
+      const fd = Math.floor((bh - 4) / 2);
+      return {
+        bw, bh, front: { width: 2 }, ground: "compound", helipad: true, margins: { right: 13 }, storeys: 2, foot: "large", stairs: { ...ENDS, len: 2 }, // a run of 2 steps at each end of the corridor
+        program: corridorPlan([["*", { role: "control", name: "Operations room", type: "control", civic: "ops", maxBoxes: 3 }], [6, { role: "lobby", entry: true, name: "Duty desk", type: "office", civic: "mlobby" }], ["*", { role: "office", name: "Briefing room", civic: "briefing" }]],
+          [["*", { role: "control", name: "Comms room", type: "control", civic: "comms" }], [6, { role: "office", name: "Commander's office", lock: ["door", 0.4], gunSafe: ["gunsafe2", 0.5], civic: "cmdoffice" }], [5, { role: "office", name: "Records", boxLock: ["safe", 0.3], civic: "records" }], [3, WASH], ["*", { role: "office", name: "Staff office", civic: "squadron" }]], fd, 2),
+        upper: () => corridorPlan([["*", { role: "office", name: "Planning room", civic: "ops", type: "control" }], [6, { role: "office", name: "Adjutant's office", civic: "squadron" }], ["*", { role: "office", name: "Conference room", civic: "briefing" }]],
+          [["*", { role: "control", name: "Signals room", type: "control", civic: "comms" }], [6, { role: "breakroom", civic: "breakroom" }], [3, WASH], ["*", { role: "office", name: "Intelligence office", boxLock: ["safe", 0.4], civic: "records" }]], fd, 2),
+        exits: [{ side: "back", roles: ["corridor"], chance: 0.8, lock: 0.5 }, { side: "left", roles: ["corridor"], chance: 0.6, lock: 0.5 }, { side: "right", roles: ["corridor"], chance: 0.6, lock: 0.5 }],
+      };
+    }
+    case "barracks": { // open bays or two-person rooms, a duty desk at the door, latrines and a day room, NCO rooms
+      const { bw, bh } = milSize(rng, "barracks"), n = milStoreys(rng, "barracks");
+      const fd = Math.floor((bh - 4) / 2);
+      const rooms = rng.chance(0.4); // two-person rooms (else open bays)
+      const bay = (i) => (rooms ? { role: "dorm", name: `Room ${i + 1}`, civic: "twoman", maxBoxes: 2 } : { role: "dorm", name: "Squad bay", civic: "bay", maxBoxes: 6 });
+      const side = Math.floor((bw - 2 - 6) / 2);
+      const front = rooms ? [...rowRooms(side, 4, bay), [6, { role: "foyer", name: "Duty desk", entry: true, type: "barracks", civic: "dutydesk" }], ...rowRooms(side, 4, (i) => bay(i + 10))]
+        : [["*", bay(0)], [6, { role: "foyer", name: "Duty desk", entry: true, type: "barracks", civic: "dutydesk" }], ["*", bay(1)]];
+      const back = (f) => [["*", bay(20 + f)], [6, { role: "restroom", name: "Latrine", civic: "latrine" }], [6, { role: "dayroom", name: "Day room", civic: "mdayroom", hub: false, type: "barracks", maxBoxes: 2 }], [4, { role: "bedroom", name: "NCO room", type: "barracks", civic: "nco", maxBoxes: 2 }], [4, { role: "bedroom", name: "NCO room", type: "barracks", civic: "nco", maxBoxes: 2 }], ["*", bay(30 + f)]];
+      return {
+        bw, bh, front: { width: 1 }, ground: "compound", storeys: n, foot: "large", stairs: { ...ENDS, len: 2 },
+        program: corridorPlan(front, back(0), fd, 2),
+        upper: (f) => corridorPlan(rooms ? [...rowRooms(side, 4, (i) => bay(40 + i)), [6, { role: "storage", name: "Supply room", type: "barracks", lock: ["door", 0.3], civic: "qmcage" }], ...rowRooms(side, 4, (i) => bay(50 + i))] : [["*", bay(2)], [6, { role: "storage", name: "Supply room", type: "barracks", lock: ["door", 0.3], civic: "qmcage" }], ["*", bay(3)]], back(f), fd, 2),
+        exits: [{ side: "back", roles: ["corridor"], chance: 0.7, lock: 0.2 }, { side: "left", roles: ["corridor"], chance: 0.7, lock: 0.3 }, { side: "right", roles: ["corridor"], chance: 0.7, lock: 0.3 }],
+      };
+    }
+    case "armorybldg": { // the issue window, the vault of weapon racks, the ammo store, the optics cage, the armorer
+      const { bw, bh } = milSize(rng, "armorybldg");
+      return {
+        bw, bh, front: { width: 1 }, ground: site === "prison" ? "prisonyard" : "compound", storeys: 1, foot: "medium",
+        program: { split: "y", parts: [[4, { split: "x", parts: leaves([["*", { role: "foyer", name: "Issue window", entry: true, type: "barracks", civic: "issue" }], [6, { role: "office", name: "Armorer's office", type: "workshop", civic: "armorer" }]]) }],
+          ["*", { split: "x", parts: leaves([["*", { role: "armory", name: "Arms vault", lock: ["vault", 1], boxLock: ["cage", 0.4], gunSafe: ["gunsafe3", 0.35], civic: "vault", dk: "steel", maxBoxes: 6 }], [6, { role: "armory", name: "Ammo store", lock: ["door", 0.6], boxLock: ["crate", 0.3], civic: "ammostore", dk: "steel" }], [5, { role: "armory", name: "Optics cage", lock: ["door", 0.5], civic: "optics", dk: "cell", maxBoxes: 2 }]]) }]] },
+        exits: [{ side: "back", roles: ["office", "foyer"], chance: 0.3, lock: 0.7 }],
+      };
+    }
+    case "messhall": { // the mess and its serving line, the galley, the walk-in cooler and freezer, the dry store
+      const { bw, bh } = milSize(rng, "messhall");
+      return {
+        bw, bh, front: { width: 2 }, ground: site === "prison" ? "prisonyard" : "compound", storeys: 1, foot: "large",
+        program: { split: "y", parts: [["*", { role: "mess", entry: true, civic: "mess", maxBoxes: 6 }], [7, { split: "x", parts: leaves([["*", { role: "kitchen", name: "Galley", civic: "galley", maxBoxes: 4 }], [4, { role: "pantry", name: "Walk-in cooler", type: "kitchen", dk: "coldroom", civic: "mwalkin", boxTarget: 3 }], [4, { role: "pantry", name: "Walk-in freezer", type: "kitchen", dk: "coldroom", civic: "mwalkin", boxTarget: 3 }], [6, { role: "pantry", name: "Dry store", type: "kitchen", lock: ["door", 0.3], civic: "drystore", boxTarget: 5 }], [3, WASH]]) }]] },
+        exits: [{ side: "back", roles: ["kitchen", "pantry"], chance: 0.9, lock: 0.3 }, { side: "left", roles: ["mess"], chance: 0.5, lock: 0.4 }, { side: "right", roles: ["mess"], chance: 0.5, lock: 0.4 }],
+      };
+    }
+    case "motorpool": { // the bays and their vehicles, the dispatch office, the parts room, the tool crib; the fuel point outside
+      const { bw, bh } = milSize(rng, "motorpool");
+      const side = [8, { split: "y", parts: leaves([[7, { role: "office", name: "Dispatch office", entry: true, hub: true, civic: "dispatchm" }], ["*", { role: "parts", type: "motorpool", lock: ["door", 0.5], boxLock: ["crate", 0.3], civic: "mparts" }], [7, { role: "workshop", name: "Tool crib", type: "motorpool", lock: ["door", 0.4], civic: "toolcrib" }]]) }];
+      const left = rng.chance(0.5);
+      return {
+        bw, bh, front: { width: 1 }, ground: "compound", storeys: 1, foot: "wide", pumps: 2,
+        program: { split: "x", parts: left ? [side, ["*", { role: "motor", name: "Vehicle bays", civic: "vbays" }]] : [["*", { role: "motor", name: "Vehicle bays", civic: "vbays" }], side] },
+        exits: [{ side: "front", roles: ["motor"], chance: 1, roller: true, width: 4, lock: 0.1, name: "Vehicle bay" }, { side: "back", roles: ["motor"], chance: 0.7, roller: true, width: 4, lock: 0.3 }, { side: left ? "right" : "left", roles: ["motor"], chance: 0.5, lock: 0.4 }],
+      };
+    }
+    case "supply": { // the military site's warehouse: pallet racks, the quartermaster's office and cage
+      const { bw, bh } = milSize(rng, "supply");
+      const side = [8, { split: "y", parts: leaves([[7, { role: "office", name: "Quartermaster's office", entry: true, hub: true, civic: "qmoffice" }], ["*", { role: "storage", name: "Quartermaster's cage", type: "barracks", lock: ["door", 0.5], boxLock: ["crate", 0.3], dk: "cell", civic: "qmcage" }]]) }];
+      const left = rng.chance(0.5);
+      return {
+        bw, bh, front: { width: 1 }, ground: "compound", storeys: 1, foot: "wide",
+        program: { split: "x", parts: left ? [side, ["*", { role: "warefloor", name: "Supply floor", civic: "msupply" }]] : [["*", { role: "warefloor", name: "Supply floor", civic: "msupply" }], side] },
+        exits: [{ side: "back", roles: ["warefloor"], chance: 1, roller: true, width: 3, lock: 0.25, name: "Loading dock" }, { side: "front", roles: ["warefloor"], chance: 0.5, roller: true, width: 3, lock: 0.3 }],
+      };
+    }
+    case "aidstation": { // cots in rows, triage, the medic's office, the medical store
+      const { bw, bh } = milSize(rng, "aidstation");
+      return {
+        bw, bh, front: { width: 2 }, ground: "compound", storeys: 1, foot: "medium",
+        program: corridorPlan([["*", { role: "ward", name: "Aid station", civic: "aidward" }], [6, { role: "lobby", entry: true, name: "Triage", type: "clinic", civic: "triage" }]],
+          [["*", { role: "ward", name: "Recovery", civic: "aidward" }], [5, { role: "office", name: "Medic's office", type: "clinic", civic: "medic" }], [5, { role: "storage", name: "Medical store", type: "clinic", lock: ["door", 0.4], boxLock: ["drugs", 0.3], civic: "aidstore" }]], Math.floor((bh - 3) / 2)),
+        exits: [{ side: "back", roles: ["corridor"], chance: 0.7, lock: 0.3 }],
+      };
+    }
+    case "gatehouse": { // the guard post at the gate
+      const { bw, bh } = milSize(rng, "gatehouse");
+      return {
+        bw, bh, front: { width: 1 }, ground: "compound", storeys: 1, foot: "small",
+        program: { split: "x", parts: leaves([["*", { role: "office", name: "Guard post", entry: true, hub: true, type: "barracks", civic: "guardpost" }], [2, WASH]]) },
+        exits: [{ side: "back", roles: ["office"], chance: 0.8, lock: 0.3 }],
+      };
+    }
+    case "hangar": { // the hangar floor and its aircraft, the office, the parts store, the avionics shop
+      const { bw, bh } = milSize(rng, "hangar"), mil = site === "airbase";
+      const side = [9, { split: "y", parts: leaves([[8, { role: "office", name: "Hangar office", entry: true, hub: true, civic: "hoffice" }], ["*", { role: "parts", type: "hangar", lock: ["door", 0.35], civic: "hparts" }], [8, { role: "workshop", name: "Avionics shop", type: "hangar", civic: "avionics" }]]) }];
+      const floor = { role: "hangarfloor", civic: "hfloor", maxBoxes: 6, ...(mil ? { milAir: true } : {}) };
+      const left = rng.chance(0.5);
+      return {
+        bw, bh, front: { width: 1 }, ground: "airfield", milAir: mil, margins: { front: 12, ...(mil ? { right: 9 } : {}) }, storeys: 1, foot: "wide", // the apron in front, an air base's fuel farm beside
+        program: { split: "x", parts: left ? [side, ["*", floor]] : [["*", floor], side] },
+        exits: [{ side: "front", roles: ["hangarfloor"], chance: 1, roller: true, width: 10, lock: 0.1, name: "Hangar door" }, { side: "back", roles: ["hangarfloor", "parts"], chance: 0.6, lock: 0.4 }],
+      };
+    }
+    case "tower": { // the control tower: the cab on the top floor, the radar room below, the equipment room at the foot
+      const { bw, bh } = milSize(rng, "tower"), n = milStoreys(rng, "tower");
+      const SW = [2, { role: "stairwell" }];
+      return {
+        bw, bh, front: { width: 1 }, ground: "airfield", milAir: site === "airbase", margins: { front: 12 }, storeys: n, foot: "tower", stairs: { roles: ["stairwell"], n: 1, len: 2 },
+        program: { split: "x", parts: [SW, ["*", { split: "y", parts: leaves([["*", { role: "lobby", entry: true, name: "Tower entrance", type: "office", civic: "tlobby" }], [4, { role: "workshop", name: "Equipment room", type: "control", civic: "tequip" }]]) }]] },
+        upper: (f, r, ctx) => ({ split: "x", parts: [SW, ["*", ctx.top ? { role: "control", name: "Tower cab", civic: "cab", maxBoxes: 3 } : { role: "control", name: f === 1 ? "Radar room" : "Approach control", civic: "tradar" }]] }),
+        exits: [{ side: "back", roles: ["workshop", "lobby"], chance: 0.5, lock: 0.5 }],
+      };
+    }
+    case "flightops": { // briefing, the crew room and its lockers, life support (flight gear), the squadron's offices
+      const { bw, bh } = milSize(rng, "flightops"), n = milStoreys(rng, "flightops");
+      const fd = Math.floor((bh - 3) / 2);
+      return {
+        bw, bh, front: { width: 2 }, ground: "airfield", milAir: true, margins: { front: 12 }, storeys: n, foot: "large",
+        program: corridorPlan([["*", { role: "office", name: "Briefing room", civic: "briefing" }], [6, { role: "lobby", entry: true, name: "Ops desk", type: "office", civic: "opsdesk" }], ["*", { role: "lockerroom", name: "Crew room", type: "flightgear", civic: "crewroom" }]],
+          [["*", { role: "storage", name: "Life support", type: "flightgear", lock: ["door", 0.3], civic: "lifesupport" }], [6, { role: "office", name: "Weather office", civic: "weather" }], [3, WASH], ["*", { role: "office", name: "Squadron office", civic: "squadron" }]], fd),
+        upper: n > 1 ? () => corridorPlan([["*", { role: "office", name: "Squadron commander", civic: "cmdoffice", gunSafe: ["gunsafe2", 0.3] }], ["*", { role: "office", name: "Planning room", type: "control", civic: "ops" }]], [["*", { role: "breakroom", civic: "breakroom" }], [3, WASH], ["*", { role: "office", name: "Records", civic: "records" }]], fd) : null,
+        exits: [{ side: "back", roles: ["corridor"], chance: 0.8, lock: 0.4 }],
+      };
+    }
+    case "terminal": { // check-in, security, the confiscated items room, the gates, the food court, shops, baggage
+      const { bw, bh } = milSize(rng, "terminal"), n = milStoreys(rng, "terminal");
+      const land = 11, mid = 9;
+      return {
+        bw, bh, front: { width: 3 }, ground: "airfield", margins: { front: 12 }, storeys: n, foot: "wide", stairs: { roles: ["terminal", "dining", "lounge"], n: 2 },
+        program: { split: "y", parts: [
+          ["*", { split: "x", parts: leaves([["*", { role: "terminal", name: "Departure gates", type: "store", civic: "gates", maxBoxes: 3 }], [14, { role: "kitchen", name: "Food court", hub: true, civic: "foodcourt", maxBoxes: 4 }], [9, { role: "sales", name: "Duty free", hub: false, type: "store", civic: "tshop", maxBoxes: 4 }], [5, WASH], ["*", { role: "terminal", name: "Departure gates", type: "store", civic: "gates", maxBoxes: 3 }]]) }],
+          [mid, { split: "x", parts: leaves([[14, { role: "terminal", name: "Security checkpoint", type: "office", civic: "security", maxBoxes: 1 }], [7, { role: "office", name: "Confiscated items", lock: ["door", 0.6], boxLock: ["evidence", 0.4], civic: "confiscated" }], [8, { role: "office", name: "Airport police", boxLock: ["evidence", 0.3], gunSafe: ["gunsafe2", 0.3], civic: "squad" }], ["*", { role: "warefloor", name: "Baggage hall", type: "store", civic: "bhall", maxBoxes: 6 }], [9, { role: "office", name: "Airline offices", civic: "airline" }]]) }],
+          [land, { split: "x", parts: leaves([["*", { role: "terminal", name: "Check-in hall", entry: true, civic: "checkin", maxBoxes: 3 }], [12, { role: "terminal", name: "Baggage claim", civic: "claim", maxBoxes: 4 }], [5, WASH], [10, { role: "sales", name: "News stand", hub: false, type: "store", civic: "tshop", maxBoxes: 3 }]]) }],
+        ].reverse() },
+        upper: n > 1 ? () => ({ split: "y", parts: [[land + mid, { split: "x", parts: leaves([["*", { role: "office", name: "Airport offices", civic: "airline" }], [12, { role: "office", name: "Operations", type: "control", civic: "ops" }], [5, WASH]]) }], ["*", { split: "x", parts: leaves([["*", { role: "dining", name: "Departure lounge", type: "store", hub: true, civic: "lounge", maxBoxes: 3 }], [14, { role: "kitchen", name: "Restaurant", hub: true, civic: "foodcourt", maxBoxes: 3 }], ["*", { role: "dining", name: "Airline lounge", type: "store", hub: true, civic: "lounge", maxBoxes: 3 }]]) }]] }) : null,
+        exits: [{ side: "back", roles: ["warefloor", "terminal"], chance: 0.9, roller: true, width: 3, lock: 0.2, name: "Airside doors" }, { side: "left", roles: ["terminal"], chance: 0.6, lock: 0.4 }, { side: "right", roles: ["terminal"], chance: 0.6, lock: 0.4 }],
+      };
+    }
+    default: { // the cell block: two tiers of cells facing the day room; intake, control, visitation and the guard room at the front
+      const { bw, bh } = milSize(rng, "cellblock");
+      const dw = rng.int(10, 12);
+      const tier = (up) => ({ split: "x", parts: leaves([["*", { role: "cells", name: up ? "Cell block A (upper tier)" : "Cell block A", civic: "pcells", maxBoxes: 2 }], [dw, { role: "dayroom", name: up ? "Upper tier walkway" : "Day room", civic: "pdayroom", type: "cellblock", maxBoxes: 1 }], ["*", { role: "cells", name: up ? "Cell block B (upper tier)" : "Cell block B", civic: "pcells", maxBoxes: 2 }]]) });
+      return {
+        bw, bh, front: { width: 1 }, ground: "prisonyard", margins: { back: 10, left: 5, right: 5 }, storeys: 2, foot: "large", // the exercise yard behind stairs: { roles: ["dayroom"], n: 1 },
+        program: { split: "y", parts: [[7, { split: "x", parts: leaves([["*", { role: "office", name: "Intake", entry: true, type: "cellblock", civic: "intake", maxBoxes: 4 }], [8, { role: "control", name: "Control room", lock: ["door", 0.5], civic: "pcontrol" }], ["*", { role: "office", name: "Visitation", type: "cellblock", civic: "visitation", maxBoxes: 1 }], [7, { role: "lockerroom", name: "Guard room", type: "cellblock", civic: "guardroom" }]]) }], [2, { role: "corridor" }], ["*", tier(false)]] }, // the front band, the corridor, the cells round the day room behind
+        upper: () => ({ split: "y", parts: [[7, { split: "x", parts: leaves([["*", { role: "office", name: "Records", civic: "records" }], [8, { role: "control", name: "Upper control", civic: "pcontrol" }], ["*", { role: "breakroom", name: "Staff room", civic: "breakroom" }], [7, { role: "armory", name: "Riot gear store", lock: ["vault", 0.7], boxLock: ["cage", 0.4], civic: "riotstore", dk: "steel" }]]) }], [2, { role: "corridor" }], ["*", tier(true)]] }),
+        exits: [{ side: "left", roles: ["corridor"], chance: 0.6, lock: 0.6 }, { side: "right", roles: ["corridor"], chance: 0.6, lock: 0.6 }],
+      };
+    }
+  }
 }
 
 // A motel: a row of rooms, each with its own door onto the parking lot, and the office at one end.
@@ -1063,18 +1238,24 @@ export const BUILDINGS = {
   school:      { name: "School", make: (r, o) => institution(r, "school", o) },
   offices:     { name: "Office building", make: (r, o) => institution(r, "offices", o) },
   lab:         { name: "Lab building", make: (r) => institution(r, "lab") },
-  barracks:    { name: "Barracks", make: (r) => institution(r, "barracks") },
-  armorybldg:  { name: "Armory", make: (r) => institution(r, "armorybldg") },
-  cellblock:   { name: "Cell block", make: (r) => institution(r, "cellblock") },
-  messhall:    { name: "Mess hall", make: (r) => institution(r, "messhall") },
+  barracks:    { name: "Barracks", make: (r, o) => institution(r, "barracks", o) },
+  armorybldg:  { name: "Armory", make: (r, o) => institution(r, "armorybldg", o) },
+  cellblock:   { name: "Cell block", make: (r, o) => institution(r, "cellblock", o) },
+  messhall:    { name: "Mess hall", make: (r, o) => institution(r, "messhall", o) },
   control:     { name: "Control building", make: (r) => institution(r, "control") },
   radio:       { name: "Transmitter hut", make: (r) => institution(r, "radio") },
-  terminal:    { name: "Terminal", make: (r) => institution(r, "terminal") },
+  terminal:    { name: "Terminal", make: (r, o) => institution(r, "terminal", o) },
   firestation: { name: "Fire station", make: (r, o) => institution(r, "firestation", o) },
-  warehouse:   { name: "Warehouse", make: (r) => openfloor(r, "warehouse") },
+  // Military bases, air bases and airports (issue #25: militarylayout.js), new with it (no older plan).
+  hq:          { name: "Headquarters", make: (r, o) => milPlan(r, "hq", o) },
+  aidstation:  { name: "Aid station", make: (r, o) => milPlan(r, "aidstation", o) },
+  gatehouse:   { name: "Gatehouse", make: (r, o) => milPlan(r, "gatehouse", o) },
+  tower:       { name: "Control tower", make: (r, o) => milPlan(r, "tower", o) },
+  flightops:   { name: "Flight operations", make: (r, o) => milPlan(r, "flightops", o) },
+  warehouse:   { name: "Warehouse", make: (r, o) => openfloor(r, "warehouse", o) },
   factory:     { name: "Factory", make: (r) => openfloor(r, "factory") },
-  hangar:      { name: "Hangar", make: (r) => openfloor(r, "hangar") },
-  motorpool:   { name: "Motor pool", make: (r) => openfloor(r, "motorpool") },
+  hangar:      { name: "Hangar", make: (r, o) => openfloor(r, "hangar", o) },
+  motorpool:   { name: "Motor pool", make: (r, o) => openfloor(r, "motorpool", o) },
   autoshop:    { name: "Auto shop", make: (r) => openfloor(r, "autoshop") },
   garage:      { name: "Garage", make: (r) => openfloor(r, "garage") },
   workshop:    { name: "Workshop", make: (r) => openfloor(r, "workshop") },
@@ -1106,8 +1287,9 @@ export const STOREYS_BY_TYPE = {
   house: [2, 2], farmhouse: [2, 2], cabin: [1, 1], lodge: [2, 2], ranger: [1, 1],
   grocery: [1, 2], corner: [1, 2], pharmacy: [1, 1], gunstore: [1, 1], pawnshop: [1, 1], hardware: [1, 1], feedstore: [1, 1], diner: [1, 1], gasstation: [1, 1], truckstop: [1, 1],
   supermarket: [1, 2], deptstore: [1, 2],
-  clinic: [1, 3], infirmary: [1, 3], hospital: [3, 5], police: [2, 3], school: [2, 3], offices: [3, 8], lab: [1, 3], barracks: [2, 2], armorybldg: [1, 1],
-  cellblock: [1, 1], messhall: [2, 2], control: [1, 3], radio: [1, 1], terminal: [1, 3], firestation: [2, 2],
+  clinic: [1, 3], infirmary: [1, 3], hospital: [3, 5], police: [2, 3], school: [2, 3], offices: [3, 8], lab: [1, 3], barracks: [2, 3], armorybldg: [1, 1],
+  cellblock: [1, 2], messhall: [1, 2], control: [1, 3], radio: [1, 1], terminal: [1, 3], firestation: [2, 2], // issue #25: a new save's cell block two tiers, its mess hall one storey
+  hq: [2, 2], aidstation: [1, 1], gatehouse: [1, 1], tower: [4, 5], flightops: [1, 2],
   warehouse: [1, 1], factory: [1, 1], hangar: [1, 1], motorpool: [1, 1], autoshop: [1, 1], garage: [1, 1], workshop: [1, 1], machineshed: [1, 1], barn: [1, 1],
   church: [1, 1], motel: [2, 2], apartments: [3, 6], neighbourhood: [2, 2],
   // the shops and services of data-shops.js (a franchise's plan can add a flat above or more floors)
@@ -1131,8 +1313,11 @@ export const SITES = {
   // A choice of buildings.
   town: ["house", "corner", "garage", "pharmacy", ["house", "House on the corner"]], city: ["grocery", "pharmacy", "offices", "apartments", "warehouse"],
   farm: ["farmhouse", "barn"], ranch: ["farmhouse", "barn", "machineshed"], mall: ["deptstore", "pharmacy", ["diner", "Food court"], ["warehouse", "Mall stockrooms"]],
-  military: ["barracks", "armorybldg", "motorpool", "warehouse"], prison: ["cellblock", "messhall", ["armorybldg", "Guard armory"], "infirmary"],
-  univ: ["campus"], college: ["campus"], airport: ["hangar", "terminal", "warehouse"], factory: ["factory", "offices"],
+  // Issue #25: a base's HQ, mess hall, aid station and gatehouse after its first four (their ids as they were); the
+  // air base (a site of its own, near the bases); an airport's control tower and fire station.
+  military: ["barracks", "armorybldg", "motorpool", ["warehouse", "Supply warehouse"], "hq", "messhall", "aidstation", "gatehouse"], prison: ["cellblock", "messhall", ["armorybldg", "Guard armory"], "infirmary"],
+  airbase: ["hangar", ["hangar", "Second hangar"], "tower", "flightops", "barracks", "messhall"],
+  univ: ["campus"], college: ["campus"], airport: ["hangar", "terminal", ["warehouse", "Cargo warehouse"], "tower", "firestation"], factory: ["factory", "offices"],
   warehouse: ["warehouse", ["warehouse", "Second warehouse"], "offices"], dam: ["control", "workshop", "warehouse"],
   // Points of interest (pois.js): one building each (the raid map a chosen POI opens). The pizza place is the diner
   // archetype under its own name, the farm stand a corner shop's, the shed a machine shed's, the mine shack a
@@ -1168,7 +1353,7 @@ export function siteBuildings(tile) {
   const options = list.map((e) => {
     const [key, name] = Array.isArray(e) ? e : [e, null];
     const n = (seen[key] = (seen[key] || 0) + 1);
-    return { id: n > 1 ? `${key}:${n}` : key, key, name: name || BUILDINGS[key].name, ...(fr || {}) };
+    return { id: n > 1 ? `${key}:${n}` : key, key, name: name || BUILDINGS[key].name, ...(fr || {}), ...(tile.loc ? { site: tile.loc.type } : {}) }; // site: the place's type (issue #25: an air base's hangar, a base's warehouse)
   });
   return { single: !entry.multi && options.length === 1, options };
 }
@@ -1229,7 +1414,9 @@ export function buildingHint(key) {
 // The map for a raid on a building: the site's own layout (its dice from the world seed, the tile and the building).
 // option.storeyBonus: extra storeys (the city crawl's deeper blocks, offices and apartments).
 const specSeed = (state, tileId, option) => Math.floor(hash01(state.seed, "bmap", tileId, option.id) * 4294967296);
-const makeSpec = (rng, option, legacy = false) => BUILDINGS[option.key].make(rng, { storeyBonus: option.storeyBonus || 0, variant: option.variant || null, kind: option.kind || null, legacy }); // variant, kind: the place's franchise and kind (data-shops.js plans); legacy: an older save's plan (worldcfg.js legacyRooms: an apartment's flats one room each)
+const makeSpec = (rng, option, legacy = false) => BUILDINGS[option.key].make(rng, { storeyBonus: option.storeyBonus || 0, variant: option.variant || null, kind: option.kind || null, legacy: legacy && !NEW_KEYS.has(option.key), site: option.site || null });
+// The archetypes issue #25 added (no older plan): laid out the new way in an older save too.
+const NEW_KEYS = new Set(["hq", "aidstation", "gatehouse", "tower", "flightops"]); // variant, kind: the place's franchise and kind (data-shops.js plans); legacy: an older save's plan (worldcfg.js legacyRooms: an apartment's flats one room each)
 // The archetype's spec for a building at a site (its storeys and footprint) without building the map: the same dice
 // buildingMap rolls, so the block card can say how many storeys a place has.
 export function buildingSpec(state, tileId, option) {
@@ -1244,7 +1431,7 @@ export function buildingMap(state, tileId, option, withVehicle) {
   // town's building the run's largest), the new ground topped up with cover. The floor plan itself is the archetype's.
   const tile = state.tiles[tileId], sb = siteBuildings(tile);
   spec.margins = fitMargins(spec.bw, spec.bh, { ...BMAP.MARGIN, ...(spec.margins || {}) }, buildingTarget(tile, !!(sb && sb.single), state));
-  const map = assemble(rng, spec, { key: option.key, id: option.id, name: option.name, withVehicle, legacy: legacyRooms(state) });
+  const map = assemble(rng, spec, { key: option.key, id: option.id, name: option.name, withVehicle, legacy: legacyRooms(state) && !NEW_KEYS.has(option.key) });
   densifyOutside(map, rng, tile ? tile.terrain : "plains");
   rollScenes(map, sceneRng(state, tileId, option), option.key, option.scenes || null); // interiorscenes.js: signs of survival (their own dice: the map is as it was); option.scenes: a city crawl place's say (citycrawl.js placeOption)
   return map;
@@ -2042,7 +2229,7 @@ export function assemble(rng, spec, opts = {}) {
   }
   // Homes room by room (roomlayout.js): which bedroom is the master, which a child's, a great room with no kitchen on
   // its floor, a flat with no bedroom (a studio). An older save (opts.legacy) furnishes every room as it did.
-  const styleOf = (room) => bunkerStyle(room) || (opts.legacy ? null : commercialStyle(room, opts.key) || homeStyle(room, opts.key) || medicalStyle(room, opts.key) || campusStyle(room, opts.key) || civicStyle(room)); // shoplayout.js first (a motel's rooms, a shop's back rooms; a flat above stays a home), a hospital's, a clinic's, a vet's rooms (#14), campuslayout.js a campus building's rooms (their leaf's campus mark, a health centre's by role: #28), civiclayout.js a civic building's rooms (their leaf's civic mark); bunkerlayout.js a bunker's (their leaf's bunker mark: new kinds, so an older save lays them out the same way)
+  const styleOf = (room) => bunkerStyle(room) || (opts.legacy ? null : militaryStyle(room) || commercialStyle(room, opts.key) || homeStyle(room, opts.key) || medicalStyle(room, opts.key) || campusStyle(room, opts.key) || civicStyle(room)); // campuslayout.js: a campus building's rooms (their leaf's campus mark, a health centre's by role: #28); // shoplayout.js first (a motel's rooms, a shop's back rooms; a flat above stays a home), a hospital's, a clinic's, a vet's rooms (#14), civiclayout.js a civic building's rooms (their leaf's civic mark); bunkerlayout.js a bunker's (their leaf's bunker mark: new kinds, so an older save lays them out the same way)
   if (!opts.legacy) {
     for (const r of rooms) if (r.role === "bedroom" && styleOf(r) && r.iw * r.ih <= 4) Object.assign(r, { role: "storage", name: "Box room", furnish: "shelves" }); // too small for a bed and a wardrobe
     const beds = rooms.filter((r) => r.role === "bedroom" && styleOf(r)).sort((a, b) => b.iw * b.ih - a.iw * a.ih);
@@ -2117,7 +2304,7 @@ export function assemble(rng, spec, opts = {}) {
       // o.len cells, drawn as o.body, never cutting anything off; o.box: a container of that kind over the whole of it
       // (combat.js BOX_LOOT), searched from a free cell beside it.
       vehicle: (x, y, o) => {
-        const rect = placeCar(cells, W, H, x, y, o.ax, o.len, o.kind, (cx, cy) => free(cx, cy) && rid[I(cx, cy)] === room.id, rng.int(0, 1e6), { ring: false, body: o.body });
+        const rect = placeCar(cells, W, H, x, y, o.ax, o.len, o.kind, (cx, cy) => free(cx, cy) && rid[I(cx, cy)] === room.id, rng.int(0, 1e6), { ring: false, body: o.body, wide: o.wide || 2 });
         if (!rect) return null;
         passRect(rect);
         total -= rect.w * rect.h;
@@ -2126,7 +2313,7 @@ export function assemble(rng, spec, opts = {}) {
         if (!side.length || !connected()) { removeCar(cells, W, rect); passRect(rect); total += rect.w * rect.h; return null; }
         if (o.box && canBox) {
           keep[I(side[0][0], side[0][1])] = 1;
-          containers.push({ id: cid++, x: rect.x0, y: rect.y0, w: rect.w, h: rect.h, f, area: room.id, kind: o.box, searched: false, label: `${room.name}: ${o.box === "engine" ? "fire engine" : o.box === "policecar" ? "police car" : o.box === "humvee" ? "Humvee" : o.box}` });
+          containers.push({ id: cid++, x: rect.x0, y: rect.y0, w: rect.w, h: rect.h, f, area: room.id, kind: o.box, searched: false, label: `${room.name}: ${o.label || (o.box === "engine" ? "fire engine" : o.box === "policecar" ? "police car" : o.box === "humvee" ? "Humvee" : o.box)}` }); // o.label: an aircraft's, an Army vehicle's name (militarylayout.js)
         }
         return rect;
       },
@@ -2235,6 +2422,24 @@ export function assemble(rng, spec, opts = {}) {
       outdoor.push(a);
     }
   }
+  // The outside of a base, an airfield or a prison (issue #25: militarylayout.js militaryOutside): its tools.
+  let milGround = null;
+  const milApi = () => ({
+    rng, W, H, I, cells, bx0, by0, bx1, by1, spec, containers, outsideFree, scatter, box,
+    block: (x, y, k) => block(x, y, k),
+    clear: (x, y) => { const i = I(x, y), was = pass[i]; cells[i].k = "open"; passAt(i); if (!was && pass[i]) total++; }, // a cell of the ground opened again (a fence cell a barrier takes)
+    cid: () => cid++,
+    area: (type, name) => { const a = { id: rooms.length + outdoor.length, type, name, outdoor: true }; outdoor.push(a); return a; },
+    dropArea: (a) => { if (outdoor[outdoor.length - 1] === a) outdoor.pop(); },
+    outCar: (x, y, o) => {
+      const rect = placeCar(cells, W, H, x, y, o.ax, o.len, o.kind, (cx, cy) => outsideFree(cx, cy), rng.int(0, 1e6), { ring: false, body: o.body, wide: o.wide || 2 });
+      if (!rect) return null;
+      passRect(rect);
+      total -= rect.w * rect.h;
+      if (!connected()) { removeCar(cells, W, rect); passRect(rect); total += rect.w * rect.h; return null; }
+      return rect;
+    },
+  });
   if (!upper && spec.rockFill) rockFill();
   if (!upper && spec.vent) ventStack();
   switch (upper ? "none" : spec.ground) {
@@ -2243,6 +2448,7 @@ export function assemble(rng, spec, opts = {}) {
     case "city": scatter("car", rng.int(2, 4), inStreet); scatter("truck", rng.int(0, 1), inStreet); scatter("crate", rng.int(2, 3), behind); break;
     case "lot": scatter("truck", rng.int(1, 2)); scatter("crate", rng.int(2, 4)); scatter("barrel", rng.int(1, 2)); scatter("car", rng.int(1, 2), inStreet); break;
     case "base": scatter("sandbag", rng.int(3, 6)); scatter("crate", rng.int(2, 3)); scatter("truck", rng.int(1, 2)); break;
+    case "compound": case "airfield": case "prisonyard": milGround = militaryOutside(spec.ground, milApi()); break; // issue #25
     case "farm": scatter("hay", rng.int(3, 5)); scatter("fence", rng.int(4, 7)); scatter("tree", rng.int(2, 4)); scatter("truck", rng.int(0, 1)); scatter("well", rng.int(0, 1)); break;
     case "woods": scatter("tree", rng.int(10, 18)); scatter("rock", rng.int(2, 4)); break;
     case "rural": scatter("tree", rng.int(4, 7)); scatter("fence", rng.int(2, 5)); scatter("car", rng.int(0, 1)); break;
@@ -2306,9 +2512,9 @@ export function assemble(rng, spec, opts = {}) {
     floors.push({ cells: up.cells, name: floorName(g) });
     base += up.rooms.length; nextCid = up.nextCid; pieceNo = up.nextPiece;
   }
-  const plan = {
-    key: opts.key, id: opts.id || opts.key, name: opts.name, w: W, h: H, building: { x0: bx0, y0: by0, w: bw, h: bh }, tall, storeys, stairs: stairCells.map((s) => s.slice()), runs: runs.map((r) => ({ ...r })),
-    rooms: areas.filter((a) => !a.outdoor).map((a) => ({ id: a.id, f: a.f, name: a.name, role: a.role, type: a.type, x0: a.x0, y0: a.y0, w: a.w, h: a.h, locked: a.locked, up: a.up, hub: a.hub, entry: a.entry, ...(a.civic ? { civic: a.civic } : {}), ...(a.bunker ? { bunker: a.bunker } : {}), ...(a.campus ? { campus: a.campus } : {}) })), // civic, bunker: wanderers.js interiorOccupants' rooms by kind; campus: a campus building's room style (issue #28)
+  const plan = { // ground: what militarylayout.js put outside (issue #25: tools/interiortest.js)
+    key: opts.key, id: opts.id || opts.key, name: opts.name, w: W, h: H, building: { x0: bx0, y0: by0, w: bw, h: bh }, tall, storeys, ...(milGround ? { ground: milGround } : {}), stairs: stairCells.map((s) => s.slice()), runs: runs.map((r) => ({ ...r })),
+    rooms: areas.filter((a) => !a.outdoor).map((a) => ({ id: a.id, f: a.f, name: a.name, role: a.role, type: a.type, x0: a.x0, y0: a.y0, w: a.w, h: a.h, locked: a.locked, up: a.up, hub: a.hub, entry: a.entry, ...(a.civic ? { civic: a.civic } : {}), ...(a.bunker ? { bunker: a.bunker } : {}), ...(a.campus ? { campus: a.campus } : {}) })), // civic, bunker: wanderers.js interiorOccupants' rooms by kind
     front: { x: front.x, y: front.y },
     exits: exits.map((e) => ({ side: e.side, name: e.name, x: e.x, y: e.y, cells: e.cells, locked: e.locked, roller: e.roller, zone: e.zone })),
   };

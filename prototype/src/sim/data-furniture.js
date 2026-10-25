@@ -230,6 +230,23 @@ export const FURNITURE_KINDS = {
   footlocker:   P("Footlocker",             HALF, 20, 18, "one", S1, true, ["bunker", "bedroom", "cells"], "storage:40"),
   batteries:    P("Solar battery rack",     HALF, 30, 80, "two", S1, false, ["bunker", "cellar"], "none", true),
   genset:       P("Military generator",     STEEL, 80, 140, "two", S22, false, ["bunker", "bay"], "none"),
+  // ---------- military bases, air bases, airports and prisons laid out like the real thing (issue #25: militarylayout.js) ----------
+  // A suitcase in an airport's baggage hall, an ammo crate (rounds and grenades), a fuel bladder (fuel) and an inmate's
+  // property locker (what was taken off them at intake) hold their own tables (combat.js BOX_LOOT). The barrier gate, the
+  // guard booth, the jet engine stand, the baggage belt, the security scanner and the gate seating are furniture only.
+  // The footlocker at a bunk's foot, the map table and the radio console are #26's rows (above). The field cot is #15's
+  // cot, the vehicle lift #16's car lift and the sandbag wall the sandbag cell; the aircraft and helicopter wrecks are
+  // vehicles (combat.js placeCar with a body: ui/vehiclemodel.js jet, cargoplane, helo), each one container.
+  ammocrate:    P("Ammo crate",        HALF, 25, 28, "one", S1, true, ["armory", "bay"], "storage:40"),
+  barrier:      P("Barrier gate",      HALF, 30, 80, "fixed", S1, false, ["yard"], "none"),
+  guardbooth:   P("Guard booth",       FULL, 60, 300, "fixed", S1, false, ["yard"], "none"),
+  fuelbladder:  P("Fuel bladder",      HALF, 30, 90, "two", S22, true, ["yard", "bay"], "storage:200"),
+  enginestand:  P("Jet engine stand",  STEEL, 60, 900, "fixed", S21, false, ["bay"], "none"),
+  baggagebelt:  P("Baggage belt",      HALF, 40, 200, "fixed", S1, false, ["shop"], "none"),
+  scanner:      P("Security scanner",  C(false, 1, false), 50, 300, "fixed", S21, false, ["shop"], "none"),
+  gateseat:     P("Gate seating",      HALF, 20, 40, "two", S21, false, ["shop", "office"], "comfort:0.3"),
+  intakelocker: P("Property locker",   FULL, 40, 45, "two", S1, true, ["cells"], "storage:40", true),
+  luggage:      P("Luggage",           HALF, 10, 16, "one", S1, true, ["shop", "yard"], "storage:30"), // an airport's baggage hall and its belts: suitcases, a container each
   // ---------- lootable decor (issue #13: decor.js places them; light comfort pieces for the base) ----------
   // The plant and the floor lamp stand on a room's floor cell; the painting and the wall clock hang on a wall (decor.js:
   // c.wart = { k, d, piece: true } on the wall cell, the wall's own kind unchanged) and stand on a cell only once set down.

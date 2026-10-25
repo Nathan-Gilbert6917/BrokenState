@@ -54,14 +54,14 @@ const ART_D = { n: 2, s: 3, w: 0, e: 1 }; // decor.js wall art's d (toward the r
 
 /** @typedef {any} Lay */
 // The cells along wall `side` inside the room (row or column against it).
-function line(L, side) {
+export function line(L, side) {
   const c = L.c, out = [];
   if (side === "n" || side === "s") { const y = side === "n" ? c.y0 : c.y1; for (let x = c.x0; x <= c.x1; x++) out.push([x, y]); }
   else { const x = side === "w" ? c.x0 : c.x1; for (let y = c.y0; y <= c.y1; y++) out.push([x, y]); }
   return out;
 }
 // The wall with no door in it, longest first (else the longest): the wall a room's desks face.
-function quietWall(L, salt = "") {
+export function quietWall(L, salt = "") {
   const c = L.c, doors = L.room.doors || [];
   const doorOn = (side) => doors.some(([x, y]) => (side === "n" ? y === c.y0 - 1 : side === "s" ? y === c.y1 + 1 : side === "w" ? x === c.x0 - 1 : x === c.x1 + 1));
   const sides = ["n", "s", "w", "e"].map((s, i) => ({ s, len: s === "n" || s === "s" ? c.w : c.h, door: doorOn(s), j: hash01(c.seed, "quiet", L.room.id, salt, i) }));
@@ -70,7 +70,7 @@ function quietWall(L, salt = "") {
 }
 // A whiteboard on the wall cell behind the middle of `side` (a wall, not a window or a door), unless the map is bare
 // (tools/decortest.js).
-function whiteboard(L, side) {
+export function whiteboard(L, side) {
   const c = L.c;
   if (!c.decor) return null;
   const [dx, dy] = D4[side];
@@ -87,7 +87,7 @@ function whiteboard(L, side) {
 }
 // Rows of k facing the wall `side` (school desks before a whiteboard, chairs before a lectern): from two cells off that
 // wall, every other row, every other cell along it (the gaps the aisles); never on a lane. At most `most`.
-function rowsFacing(L, k, side, most = 99) {
+export function rowsFacing(L, k, side, most = 99) {
   const c = L.c, along = side === "n" || side === "s";
   const len = along ? c.w : c.h, depth = along ? c.h : c.w;
   const off = L.variant(2, `rows${k}`);
@@ -102,13 +102,13 @@ function rowsFacing(L, k, side, most = 99) {
   return n;
 }
 // A desk (2 × 1) off the walls with a chair at it; face: the way its front looks.
-function deskWithChair(L, face = null) {
+export function deskWithChair(L, face = null) {
   const d = L.centre("desk", face ? { face } : {});
   if (d) L.around(d, "chair", 1);
   return d;
 }
 // A piece taken back up (its cells open again).
-function unplace(L, rec) {
+export function unplace(L, rec) {
   for (const [x, y] of rec.cells) L.c.unblock(x, y);
   const i = L.placed.indexOf(rec);
   if (i >= 0) L.placed.splice(i, 1);
@@ -126,7 +126,7 @@ function facingPair(L, t) {
   return L.around(t, "chair", 2);
 }
 // A table and chairs round it; long: two tables end to end.
-function tableSet(L, chairs = 4, long = false) {
+export function tableSet(L, chairs = 4, long = false) {
   const t = L.centre("table");
   if (!t) return null;
   let cells = t.cells;
@@ -135,7 +135,7 @@ function tableSet(L, chairs = 4, long = false) {
   return t;
 }
 // Up to n of k along the walls (a row of lockers), within the room's share of containers when k holds loot.
-function rowOf(L, k, n, sides) {
+export function rowOf(L, k, n, sides) {
   let made = 0;
   for (let i = 0; i < n; i++) {
     if (L.boxes() >= L.target() && isLoot(L, k)) break;
@@ -144,15 +144,15 @@ function rowOf(L, k, n, sides) {
   }
   return made;
 }
-const isLoot = (L, k) => !!(pieceDef(k) && pieceDef(k).loot);
+export const isLoot = (L, k) => !!(pieceDef(k) && pieceDef(k).loot);
 // A bathroom corner (a locker room's): a shower, a toilet, a sink.
-function washCorner(L) {
+export function washCorner(L) {
   L.wall("shower", { prefer: "corner" });
   L.wall("toilet", { prefer: "corner" });
   L.wall("sink", { prefer: "corner" });
 }
 // A kitchen's counter run along its longest wall (and the next), then what it must have.
-function kitchen(L, kinds) {
+export function kitchen(L, kinds) {
   const ws = L.walls();
   if (!ws.length) return;
   L.run(kinds, ws.slice(0, 2).map((w) => w.side));
@@ -166,7 +166,8 @@ export function vehicleIn(L, o) {
   const dmid = at.length ? [at.reduce((a, p) => a + p[0], 0) / at.length, at.reduce((a, p) => a + p[1], 0) / at.length] : [(c.x0 + c.x1) / 2, (c.y0 + c.y1) / 2];
   const sideways = at.length && (at[0][0] < c.x0 || at[0][0] > c.x1); // a door in a side wall: the vehicle lies along x
   const ax = o.ax || (sideways ? "x" : "y");
-  const [w, h] = ax === "x" ? [o.len, 2] : [2, o.len];
+  const wd = o.wide || 2; // an aircraft lies wider (militarylayout.js)
+  const [w, h] = ax === "x" ? [o.len, wd] : [wd, o.len];
   const cands = [];
   for (let y = c.y0; y + h - 1 <= c.y1; y++) for (let x = c.x0; x + w - 1 <= c.x1; x++) {
     let lane = 0, ok = true;
@@ -207,7 +208,7 @@ function oneWay(L) {
 // of bars with a cell door in it, bars between the cells; the cells' doors open onto the walkway. A cell is laid all or
 // none (never by a door; a lane across the back rows is moved to the walkway in front of the cells: block's
 // connectivity guard keeps every way open); the walkway keeps the rest: lockers for the prisoners' things.
-function cellBlock(L) {
+export function cellBlock(L, most = CIVIC.CELLS[1]) { // most: a prison's block takes more (militarylayout.js)
   const c = L.c;
   if (c.w < 2 || c.h < 5) return 0;
   const doors = L.room.doors || [];
@@ -224,7 +225,7 @@ function cellBlock(L) {
   // The cells' columns from the west wall or from the east one, whichever fits more (a door by one end).
   const plan = (dir) => {
     const out = [];
-    for (let xa = dir > 0 ? c.x0 : c.x1 - 1; xa >= c.x0 && xa + 1 <= c.x1 && out.length < CIVIC.CELLS[1];) {
+    for (let xa = dir > 0 ? c.x0 : c.x1 - 1; xa >= c.x0 && xa + 1 <= c.x1 && out.length < most;) {
       if (fits(xa) && !out.some((p) => Math.abs(p - xa) < 3)) { out.push(xa); xa += 3 * dir; } else xa += dir;
     }
     return out;

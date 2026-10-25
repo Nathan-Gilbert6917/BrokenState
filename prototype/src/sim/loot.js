@@ -38,7 +38,7 @@ import { NEW_KINDS, AREA_DEFS, ROWS, mergeRows } from "./data-shops.js"; // the 
 export const SITE_TAGS = {
   town: ["home", "shop", "sport", "garage", "crime"], city: ["home", "shop", "office", "crime", "police"],
   farm: ["farm", "home", "hunt", "tools"], gas: ["travel", "shop", "garage"], mall: ["mall", "shop", "sport", "tech", "home"],
-  hospital: ["medical", "office"], police: ["police", "guns", "prison"], military: ["military", "guns", "camp"],
+  hospital: ["medical", "office"], police: ["police", "guns", "prison"], military: ["military", "guns", "camp"], airbase: ["military", "guns", "crash"],
   prison: ["prison", "police", "guns", "crime"], univ: ["school", "office", "tech", "medical", "books"], college: ["school", "office", "tech", "books", "sport"], dam: ["industry", "tools"],
   airport: ["travel", "tech", "crash"], factory: ["industry", "tools"], quarry: ["industry", "tools"],
   autoshop: ["garage", "tools"], pharmacy: ["medical", "shop"], supermarket: ["shop", "kitchen"], gunstore: ["guns", "hunt"],
