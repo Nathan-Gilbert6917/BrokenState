@@ -205,8 +205,10 @@ function barricadeSurvivors(state, b) {
     if (f === nestF) continue;
     for (const r of roomsOn(b, f)) if (!r.locked && !r.hub && !r.entry && r.doors && r.doors.length === 1 && area(r) >= 4 && !roomUsed(b, r) && !stairsIn(b, r) && freeCells(b, r).length >= 2) cand.push(r);
   }
-  // An empty room first, then the higher one (people fled upward).
-  cand.sort((a, c) => unitsIn(b, a).length - unitsIn(b, c).length || (c.f || 0) - (a.f || 0));
+  // A room a scene left barricaded with nobody dead inside first (interiorscenes.js: area.scene.alive), then an empty
+  // room, then the higher one (people fled upward).
+  const held = (r) => (r.scene && r.scene.alive ? 1 : 0);
+  cand.sort((a, c) => held(c) - held(a) || unitsIn(b, a).length - unitsIn(b, c).length || (c.f || 0) - (a.f || 0));
   const room = cand[0];
   if (!room) return null;
   const f = room.f || 0;
@@ -229,7 +231,7 @@ function barricadeSurvivors(state, b) {
   // The door, barricaded from inside: furniture piled against it. Their room's containers are theirs (the bot leaves them).
   const cells = cellsOf(b, f);
   const doors = room.doors.map((d) => d.slice());
-  for (const [x, y] of doors) { const c = cells[I(b, x, y)]; c.k = "door"; c.hp = c.mhp = BMAP.DOOR[S.door]; c.barred = true; delete c.roll; }
+  for (const [x, y] of doors) { const c = cells[I(b, x, y)]; c.k = "door"; c.hp = c.mhp = BMAP.DOOR[S.door]; c.barred = true; delete c.roll; delete c.under; delete c.boards; delete c.frame; delete c.moved; } // a scene's boards or piece in the frame: their barricade now
   for (const box of R.containers) if ((box.f || 0) === f && box.area === room.id) { box.barred = true; box.botSkip = true; }
   clearLos(b, f);
   return { room: room.id, f, doors, wid: g.wid, mood: g.mood, names: g.people.map((s) => s.name), count: units.length, met: false, state: "holding" };

@@ -86,6 +86,7 @@ import { syncModes, modeOf, modeRounds, modeRolls, modeAim, modeRefusal, FIRE_MO
 import { MEDS } from "./medfinds.js"; // how rare meds are
 import { bonebackMult, afterHit, onDeath, climbOver, sowerRound, terrorRuns } from "./middead.js"; // the mid game's special dead
 import { placeBodies, spotCheck, wakeNear, sleeperDies, burnBodies } from "./sleepers.js"; // bodies on the ground, the Sleepers among them
+import { sceneBattle, sceneSeen } from "./interiorscenes.js"; // signs of survival in a building: the scenes' bodies, piles and intro lines
 import { stirBodies, carrierRound, burst, swarmHit, swarmBite, crush, tapRefusal, tap, pickUp, putDown, stowBody, botCrush, turnedBody, walkingBody, walkingBox, walksOn, turnedName, turnedLine, dropBodyBox, endBodies, placeWalking } from "./carriers.js"; // the Carrier raises the human dead; its worm swarm; bodies carried, shot, burnt; the walking loot
 import { hasWorm, WORM } from "./worm.js"; // the worm in a living person (half the healing while it is in them)
 import { fieldDims, raidDims, densify, coverTarget, spawnRules, clearEnough, fledFarEnough, raidAreaTypes, raidDeadScale, roomBoxes, raidHeatRate, raidLootShare, raidBig, BIG as BIG_RAID, RAID as RAID_SIZE, CONTACT } from "./battlesize.js"; // map sizes by context, cover, spawns, the anti-slog ends
@@ -4510,6 +4511,7 @@ export function moveAlong(b, u, path) {
     }
     if (u.side === "player" && active(u)) detect(b, u);
     if (b.corpses && b.corpses.length && u.kind !== "zombie" && active(u)) { wakeNear(b, u); spotCheck(b, u); } // sleepers.js: a Sleeper next to them splits open
+    if (b.raid && b.raid.scenes && u.side === "player" && active(u)) sceneSeen(b, u); // interiorscenes.js: a scene's room in sight for the first time
     if (!active(u) || stopAtDoor) break;
   }
   // Dropped on the cover it was going over (an overwatch shot, the flames, the glass): it falls back off it, to the
@@ -5467,6 +5469,7 @@ function startPlayerTurn(state, b) {
   burnBodies(b); // sleepers.js: bodies in the flames burn, a Sleeper's worms with them
   terrorRuns(b); // middead.js: whoever a Nightmare's scream panicked spends the turn running
   for (const u of b.units) if (u.side === "player" && active(u)) spotCheck(b, u); // sleepers.js: a body twitches
+  if (b.raid && b.raid.scenes) for (const u of b.units) if (u.side === "player" && active(u)) sceneSeen(b, u); // interiorscenes.js: a scene seen
   // A base battle (interior.js): the wall breached (on to the yard map), the yard lost (the last stand).
   if (b.tier && !b.over) tierPlayerTurn(state, b);
   if (b.raid && b.raid.folk && !b.over) folkTick(state, b); // floorfolk.js: the nest woken by the Heat or the noise of the enemy phase
@@ -7329,6 +7332,7 @@ export function createRaid(state, setup) {
   truckCrews(state, b); // miltrucks.js: the turned crews standing round the Army trucks
   placeParley(state, b, groups.filter((g) => g.parley)); // parley.js: an AI group's party scavenging the site (scavenge.js raidEnemies)
   placeBodies(b, state.seed); // sleepers.js: bodies lie about, Sleepers among them
+  if (pick) sceneBattle(b, map); // interiorscenes.js: the scenes' dead (b.corpses by floor), the survivors' bodies, their piles
   placeWalking(state, b); // carriers.js: the walking dead that drifted near this tile, among the ordinary dead
   if (b.raid.camp) campRaidUnits(state, b, b.raid.camp); // campsite.js: its tents on the battle's list, the campers round the fire or asleep in the tents, the dead among them, the bodies, the fire's glow
   battlePerks(state, b); // skills.js: the guards' perks and XP tallies too (people, by your rule)
@@ -7551,13 +7555,13 @@ export function searchBox(state, b, u, box, open = false, quick = false) {
       if (rng.chance(0.25)) sup.food = rng.int(1, 3);
       if (rng.chance(MEDS.BODY_HUMAN)) sup.meds = 1; // medfinds.js
       const kit = KITS[box.kit] || KITS.raiders;
-      if (rng.chance(0.3)) {
+      if (box.full || rng.chance(0.3)) { // box.full: a scene's survivor (interiorscenes.js): their kit always on them
         const key = rng.chance(0.5) && GEAR[box.weapon] ? box.weapon : swapGun(bodyGunSource(box.kit), rng.pick(kit.loot), rng); // gundist.js: a spare gun of their kind
         const it = lootItem(key, kitSource(box.kit), spend(rng)); // itemcond.js: a soldier's rifle looked after, a raider's not
         if (key === box.weapon && box.uid != null) { carryMods(unitById(b, box.uid), it); enemyGunLoaded(unitById(b, box.uid), it); } // gunmods.js: their gun's attachments come with it; gunload.js: the rounds left in it
         gear.push(it);
       }
-      if (kit.finds && rng.chance(BODY_FINDS)) gear.push(lootItem(rng.pick(kit.finds), kitSource(box.kit), rng)); // what was in their pockets
+      if (kit.finds && (box.full || rng.chance(BODY_FINDS))) gear.push(lootItem(rng.pick(kit.finds), kitSource(box.kit), rng)); // what was in their pockets
       gear.push(...carriedThrowables(box.uid != null ? unitById(b, box.uid) : null, kitSource(box.kit))); // inventory.js: a flashbang they never threw
       const bu = box.uid != null ? unitById(b, box.uid) : null;
       if (bu) { const L = launcherLoot(bu, kitSource(box.kit)); gear.push(...L.gear); for (const [k, n] of Object.entries(L.sup)) sup[k] = (sup[k] || 0) + n; blastLoot(b, bu, { gear, sup }); } // launchers.js: their launcher, its rounds; a blast's wear

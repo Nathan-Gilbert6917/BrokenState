@@ -49,6 +49,7 @@ import { applyZType, siteList } from "./zombietypes.js";
 import { fitMargins, buildingTarget, densifyOutside, densify, coverTarget, buildingDeadScale, streetDeadScale, raidMaxDims, raidDims, SIZE_CLASSES } from "./battlesize.js";
 import { legacyRaids } from "./worldcfg.js"; // an older save: a neighbourhood's street laid out as it always was
 import { rollWin, winMixOf, windowOpen } from "./windows.js"; // the windows' states (open, locked, fixed), a throw through an open one
+import { rollScenes, sceneRng } from "./interiorscenes.js"; // signs of survival: barricades, blood, bodies (dice of their own)
 
 export const BMAP = {
   MARGIN: { front: 5, back: 4, left: 4, right: 4 }, // cells of outside around the building
@@ -944,7 +945,7 @@ export function buildingSpec(state, tileId, option) {
   return makeSpec(new Rng(specSeed(state, tileId, option)), option);
 }
 export function buildingMap(state, tileId, option, withVehicle) {
-  if (BUILDINGS[option.key] && BUILDINGS[option.key].street) return streetMap(state, tileId, option, withVehicle); // a street of houses (the neighbourhood)
+  if (BUILDINGS[option.key] && BUILDINGS[option.key].street) { const m = streetMap(state, tileId, option, withVehicle); rollScenes(m, sceneRng(state, tileId, option), option.key); return m; } // a street of houses (the neighbourhood); its scenes (interiorscenes.js) through the houses
   const rng = new Rng(specSeed(state, tileId, option));
   const spec = makeSpec(rng, option);
   // battlesize.js: at least the site's raid map (more outside around a single-building site's plan, a city's or a
@@ -953,6 +954,7 @@ export function buildingMap(state, tileId, option, withVehicle) {
   spec.margins = fitMargins(spec.bw, spec.bh, { ...BMAP.MARGIN, ...(spec.margins || {}) }, buildingTarget(tile, !!(sb && sb.single), state));
   const map = assemble(rng, spec, { key: option.key, id: option.id, name: option.name, withVehicle });
   densifyOutside(map, rng, tile ? tile.terrain : "plains");
+  rollScenes(map, sceneRng(state, tileId, option), option.key); // interiorscenes.js: signs of survival (their own dice: the map is as it was)
   return map;
 }
 
