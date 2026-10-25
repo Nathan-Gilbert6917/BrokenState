@@ -711,11 +711,13 @@ console.log("\nHospitals, clinics, infirmaries and vets room by room (roomlayout
       const seen = walkFrom(m, from[0], from[1], true, F.cells);
       for (const a of rooms.filter((r) => r.f === f)) for (const [x, y] of a.doors || []) if (!seen[y * m.w + x]) err("reach", `${tag} floor ${f} ${a.name} door ${x},${y}`);
     });
-    // The hospital's scenes (interiorscenes.js), rolled last: they shove pieces and seal doors.
-    if (key === "hospital") {
-      const sc = rollScenes(m, new Rng(700 + s), key);
-      for (const x of (sc && sc.list) || []) { scenes[x.kind] = (scenes[x.kind] || 0) + 1; if (x.kind === "morgue") rise += x.rise || 0; }
-    }
+  }
+  // The hospital's scenes (interiorscenes.js) over 60 hospitals of their own (they shove pieces and seal doors).
+  for (let s = 0; s < 60; s++) {
+    const rng = new Rng(61000 + s * 7919);
+    const m = assemble(rng, BUILDINGS.hospital.make(rng, {}), { key: "hospital", name: "hospital" });
+    const sc = rollScenes(m, new Rng(700 + s), "hospital");
+    for (const x of (sc && sc.list) || []) { scenes[x.kind] = (scenes[x.kind] || 0) + 1; if (x.kind === "morgue") rise += x.rise || 0; }
   }
   for (const [what, label] of [["rooms", "a hospital's rooms by name on their floors"], ["signature", "every room has its signature pieces"], ["stand", "every bed has a nightstand or an IV stand beside it, every ER gurney its IV stand"], ["corridor", "a hospital's corridors 2 wide, the parked pieces on one wall"], ["pharmacy", "the pharmacy's steel door locked, its drug safe locked"], ["ambulance", "the ambulance in its bay, a container of its own"], ["reach", "every room's doors reachable from the stairs on every floor"], ["containers", "the containers are exactly the lootable pieces"]]) {
     check(!errs[what], `${label} (${built} buildings, ${beds} beds, ${gurneys} gurneys, ${safes} drug safes)${errs[what] ? `: ${errs[what].length} bad, e.g. ${errs[what].slice(0, 3).join("; ")}` : ""}`);
