@@ -38,6 +38,7 @@ import {
 } from "./parties.js";
 import { registerCombatHandler, createBattle, startCombat, autoResolveCombat, finishCombat, byNumbersOdds, AREAS, floodReach, say, setFloor, makeLosCache, boxFinds, boxLoot, FLOOR_RICH } from "./combat.js";
 import { BUILDINGS, buildingHint, buildingSpec, buildingMap, rewardMult } from "./buildingmaps.js";
+import { layoutName } from "./shopvariants.js"; // a shop's or a service's layout variant on the block card (issue #35)
 import { raidLootShare, raidBig } from "./battlesize.js"; // the quick search's containers hold what the laid-out map's do (issue #21)
 import * as Weather from "./weather.js"; // the season: a chest freezer's food kept in winter (combat.js boxLoot)
 import { newItem } from "./inventory.js";
@@ -608,20 +609,21 @@ export function placeStoreys(state, c, place, n = c.block) {
 // The block card's hint line (issue #21 rule 4): the kind, its storeys (this place's own, placeStoreys) and the kind's
 // signature rooms from its archetype (buildingmaps.js buildingHint: a sample plan's rooms), the most numerous first, then
 // the first of the rest, the plain ones (HINT_PLAIN: corridors, restrooms, storage...) left out: "Hospital: 4 floors,
-// wards, a pharmacy". At most HINT_ROOMS rooms.
+// wards, a pharmacy". At most HINT_ROOMS rooms. A shop's or a service's layout variant after its kind (shopvariants.js,
+// issue #35): "Pharmacy (Chain drugstore with a drive-through): 1 floor, …".
 const HINT_PLAIN = new Set(["Corridor", "Restroom", "Bathroom", "Bath", "Storage", "Lobby", "Office", "Landing", "Walkway", "Stockroom", "Storeroom", "Back room", "Linen room",
   "Utility room", "Maintenance", "Supply room", "Reception", "Front desk", "Waiting room", "Break room", "Flat", "Restrooms"]);
 const HINT_ROOMS = 2;
 const plural = (w) => (/s$/.test(w) ? w : /[^aeiou]y$/.test(w) ? `${w.slice(0, -1)}ies` : `${w}s`);
 export function placeHint(state, c, place, n = c.block) {
-  const st = placeStoreys(state, c, place, n);
+  const st = placeStoreys(state, c, place, n), lay = layoutName(buildingSpec(state, c.tile, placeOption(c, place, n))); // a shop's or a service's variant (issue #35)
   const sig = (buildingHint(place.key).sig || []).filter((r) => !HINT_PLAIN.has(r.name) || r.n >= 4); // a plain room the kind is made of counts (an office tower's offices)
   const many = sig.filter((r) => r.n > 1).sort((a, b) => b.n - a.n).slice(0, 1);
   const rest = sig.filter((r) => !many.includes(r));
   const rooms = [...many, ...rest.filter((r) => r.n === 1), ...rest.filter((r) => r.n > 1)].slice(0, HINT_ROOMS);
   const one = (w) => (/s$| and /.test(w) ? w : aWord(w)); // "sporting goods", "lumber and stock": no article
   const words = rooms.map((r) => (r.n > 1 ? plural(r.name.toLowerCase()) : one(r.name.toLowerCase())));
-  return `${place.kind}: ${st} ${st === 1 ? "floor" : "floors"}${words.length ? `, ${words.join(", ")}` : ""}`;
+  return `${place.kind}${lay ? ` (${lay})` : ""}: ${st} ${st === 1 ? "floor" : "floors"}${words.length ? `, ${words.join(", ")}` : ""}`;
 }
 
 // ---------- the team ----------
