@@ -1039,7 +1039,7 @@ export function buildingOptions(tile, state = null) {
   return out;
 }
 
-// What a kind of building likely holds (from a sample plan, cached): { hint, size, rooms, holds: [AREAS types] }.
+// What a kind of building likely holds (from a sample plan, cached): { hint, size, rooms, holds: [AREAS types], sig: [{ name, n }] }.
 const hintCache = new Map();
 export function buildingHint(key) {
   let h = hintCache.get(key);
@@ -1053,7 +1053,16 @@ export function buildingHint(key) {
   const gear = types.some((t) => AREAS[t].gear.length);
   const cells = spec.bw * spec.bh;
   const named = [...new Set(plan.rooms.filter((r) => !r.outdoor && r.label !== false).map((r) => r.name.replace(/ \d+[AB]?$/, "")))].slice(0, 6);
-  h = { hint: `Likely: ${sup.join(", ")}${gear ? ", maybe gear" : ""}. Rooms: ${named.join(", ")}.`, size: cells < 140 ? "small" : cells < 300 ? "medium" : "large", rooms: plan.rooms.filter((r) => !r.outdoor).length, holds: [...new Set(types)] };
+  // The rooms by name (a flat's own rooms under its flat; numbers off) with how many the sample has, in plan order:
+  // the city crawl's hint line names the kind's signature rooms from them (citycrawl.js placeHint, issue #21).
+  const sig = [];
+  for (const r of plan.rooms) {
+    if (r.outdoor || r.label === false) continue;
+    const name = r.name.replace(/:.*$/, "").replace(/ \d+[A-Z]?$/, "");
+    const o = sig.find((x) => x.name === name);
+    if (o) o.n++; else sig.push({ name, n: 1 });
+  }
+  h = { hint: `Likely: ${sup.join(", ")}${gear ? ", maybe gear" : ""}. Rooms: ${named.join(", ")}.`, size: cells < 140 ? "small" : cells < 300 ? "medium" : "large", rooms: plan.rooms.filter((r) => !r.outdoor).length, holds: [...new Set(types)], sig };
   hintCache.set(key, h);
   return h;
 }
@@ -1077,7 +1086,7 @@ export function buildingMap(state, tileId, option, withVehicle) {
   spec.margins = fitMargins(spec.bw, spec.bh, { ...BMAP.MARGIN, ...(spec.margins || {}) }, buildingTarget(tile, !!(sb && sb.single), state));
   const map = assemble(rng, spec, { key: option.key, id: option.id, name: option.name, withVehicle, legacy: legacyRooms(state) });
   densifyOutside(map, rng, tile ? tile.terrain : "plains");
-  rollScenes(map, sceneRng(state, tileId, option), option.key); // interiorscenes.js: signs of survival (their own dice: the map is as it was)
+  rollScenes(map, sceneRng(state, tileId, option), option.key, option.scenes || null); // interiorscenes.js: signs of survival (their own dice: the map is as it was); option.scenes: a city crawl place's say (citycrawl.js placeOption)
   return map;
 }
 

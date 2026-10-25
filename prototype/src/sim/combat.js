@@ -7610,6 +7610,26 @@ function truckCrewRises(state, b, u, box) {
 // A point of interest's container (R.poiDice, poicont.js) rolls its contents from dice of its own (boxRng: the seed,
 // the tile, the POI, the map, the container), with its salts and its locks' dice keyed by it too, so it holds the
 // same things on any visit; the place's kind is the POI's. Every other container rolls as before.
+// What a building's container holds by its table (a piece's own, BOX_LOOT, else its room's: boxLoot): the supplies
+// (the run's loot dial, parts by kind, a crawl's deeper blocks dearer by the kilo), the table's gear and a small find,
+// from the contents' dice drng in this order. searchBox rolls a container with it; the city crawl's quick search rolls
+// the same building's containers with it (citycrawl.js quickSearch, issue #21: the same totals as the laid-out map).
+// o: { def (boxLoot's), type (the room's AREAS type), rich, scav, reward, site, gunSite, deep, tileId, bid }. { sup, gear }.
+export function boxFinds(state, drng, o) {
+  const sup = {}, gear = [], def = o.def;
+  const src = areaSource(o.type, o.site); // itemcond.js: a house's things used, a shop's picked over, a wreck's scorched
+  for (const [k, [p, lo, hi]] of Object.entries(def.loot)) {
+    if (!drng.chance(Math.min(0.95, p * (0.6 + 0.4 * o.rich) * (1 + o.scav / 40)))) continue;
+    sup[k] = lootQty(state, k, Math.max(1, Math.round(drng.int(lo, hi) * (0.6 + 0.5 * o.rich) * (1 + o.scav / 25) * o.reward))); // worldcfg.js: the run's loot dial for this kind (0: none of it)
+    if (!sup[k]) delete sup[k];
+  }
+  splitParts(state, sup, o.type, `box${o.bid}`); // loot.js: parts by kind (a garage's are car parts; their own dice)
+  if (o.deep) deepShift(sup, o.deep); // deeploot.js: a city crawl's deeper blocks hold what is dear by the kilo
+  for (const [key, p] of def.gear) if (drng.chance(p * (0.5 + o.rich) * (1 + o.scav / 30) * o.reward * cfgOf(state, "lootGuns"))) gear.push(foundFill(lootItem(swapGun(areaSourceName(o.type, o.gunSite), key, drng), src, drng), o.tileId, o.bid, key)); // gundist.js: which gun, by the room's draws; gunrounds.js: a few rounds in a gun now and then (its own dice)
+  const small = rollAreaFind(drng, o.type, o.rich, o.scav, o.site); // loot.js: valuables, comforts, throwables
+  if (small) gear.push(small);
+  return { sup, gear };
+}
 export function searchBox(state, b, u, box, open = false, quick = false) {
   const rng = state.rng;
   const R = b.raid;
@@ -7672,18 +7692,10 @@ export function searchBox(state, b, u, box, open = false, quick = false) {
     } else {
       const def = boxLoot(R.areas[box.area].type, box.kind, box.kind === "freezer" && Weather.season(state).key === "winter"); // a piece's own table (BOX_LOOT: a fridge, a nightstand...), else the room's
       const site = poiKind || (state.tiles[b.tileId] && state.tiles[b.tileId].loc ? state.tiles[b.tileId].loc.type : null);
-      const src = areaSource(R.areas[box.area].type, site); // itemcond.js: a house's things used, a shop's picked over, a wreck's scorched
       const gunSite = (b.setup && b.setup.raid && b.setup.raid.gunSite) || site; // gundist.js: the building a city crawl's map is (a police station, an Army checkpoint), else the site
-      for (const [k, [p, lo, hi]] of Object.entries(def.loot)) {
-        if (!drng.chance(Math.min(0.95, p * (0.6 + 0.4 * rich) * (1 + scav / 40)))) continue;
-        sup[k] = lootQty(state, k, Math.max(1, Math.round(drng.int(lo, hi) * (0.6 + 0.5 * rich) * (1 + scav / 25) * reward))); // worldcfg.js: the run's loot dial for this kind (0: none of it)
-        if (!sup[k]) delete sup[k];
-      }
-      splitParts(state, sup, R.areas[box.area].type, `box${bid}`); // loot.js: parts by kind (a garage's are car parts; their own dice)
-      if (R.deep) deepShift(sup, R.deep); // deeploot.js: a city crawl's deeper blocks hold what is dear by the kilo
-      for (const [key, p] of def.gear) if (drng.chance(p * (0.5 + rich) * (1 + scav / 30) * reward * cfgOf(state, "lootGuns"))) gear.push(foundFill(lootItem(swapGun(areaSourceName(R.areas[box.area].type, gunSite), key, drng), src, drng), b.tileId, bid, key)); // gundist.js: which gun, by the room's draws; gunrounds.js: a few rounds in a gun now and then (its own dice)
-      const small = rollAreaFind(drng, R.areas[box.area].type, rich, scav, site); // loot.js: valuables, comforts, throwables
-      if (small) gear.push(small);
+      const got = boxFinds(state, drng, { def, type: R.areas[box.area].type, rich, scav, reward, site, gunSite, deep: R.deep, tileId: b.tileId, bid });
+      Object.assign(sup, got.sup);
+      gear.push(...got.gear);
       // A book on the shelves (skills.js; its own dice, so nothing else in the raid changes).
       const book = rollBook(state, b.tileId, 0.5 * (u.scavBonus ? 2 : 1), `box${bid}`, pd ? { hour: pd, loot: R.richness / 1.3, kind: poiKind } : undefined);
       if (book) gear.push(book);

@@ -150,7 +150,7 @@ Detail: [travel.md](../features/travel.md).
 - **Tile heat and persistent POI containers**: heat per tile; containers keep their contents between visits [pois, poicont]. [details](../features/travel.md#tile-heat-and-persistent-poi-containers)
 - **Other groups survey and raid POIs** with their own knowledge, picker and the shared ledger [grouppois, aiscav, visitors]. [details](../features/travel.md#other-groups-survey-and-raid-pois)
 - **Abstract scavenging**: hour-by-hour search with rising Heat [scavenge]; shared finite loot AI groups also scavenge [aiscav].
-- **City crawl**: block-by-block roguelike extraction on a round grid of blocks, walking back to the rim to get out; multi-storey buildings with who lives on each floor [citycrawl, floorfolk]. [details](../features/travel.md#city-crawl)
+- **City crawl**: block-by-block roguelike extraction on a round grid of blocks, walking back to the rim to get out; multi-storey buildings with who lives on each floor [citycrawl, floorfolk]; parity with the raid tickets (#21): whole-cell snapshots, scenes by the place, furniture carried block to block, signature-room hints, the quick search on the building's own containers [citycrawl, interiorscenes, floorfolk, combat boxFinds] `tools/citycrawltest.js`. [details](../features/travel.md#city-crawl)
 - **Crash sites and supply drops**, contested [crashes].
 - **Wanderers**: neutral survivors and others met on the road [wanderers].
 - **Optics**: binoculars, thermal imager and others [optics]; **lights** carried for the dark [lights].

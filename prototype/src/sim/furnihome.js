@@ -99,6 +99,7 @@ export function piecesAtExtraction(state, b, kept) {
     const who = [u, o].filter(Boolean).map(first).join(" and ");
     if (crawl) { // citycrawl.js: still in the city; the walk out to the rim is the way out (piecesOut)
       P.item.crawl = true;
+      if (o && o.sid != null) P.item.mate = o.sid; // citycrawl.js notePieces (issue #21): the other end, for the walk block to block
       endCarry(state, b, P);
       const s = survivorById(state, u.sid);
       if (s) s.gear.carry = P.item; // endCarry emptied the arms: the item stays in them, off the map

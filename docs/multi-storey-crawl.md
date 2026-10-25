@@ -125,3 +125,28 @@ All three phases are in dev: `ffb55dd` (sim and generation), `840ff17` + `16f65c
 - Open: a door-panel "Force the door" for a group already met (the barricade is otherwise opened only through
   the card); fires, smoke and acid have no floor yet (a Molotov upstairs also burns the same cell downstairs);
   each visited floor's sight cache is saved (a fully explored 5-storey hospital adds a few MB before gzip).
+
+## Parity with the raid tickets (issue #21, 2026-10-25)
+
+The last ticket of the interiors epic (#7) brought the crawl up to what the raid tickets added. The detail is in
+[docs/features/travel.md "Parity with the raid tickets"](features/travel.md#parity-with-the-raid-tickets-issue-21-2026-10-25).
+
+- **Snapshots** (`snapshotBuilding` / `restoreBuilding`): every floor's cells are copied whole with `structuredClone`,
+  so blood and spent brass (#11), decor and wall art (#13), pieces shoved, battered, lifted off or set down (#12, by
+  floor), boards, and the stair cells (`R.stairs` too: the stair runs of #9) come back exactly as left; containers with
+  their contents (ground piles, a lifted piece's emptied record), bodies by floor (`b.corpses` with `f`), the scenes
+  and who holds the floors likewise. Nothing is shared between the snapshot and the battle.
+- **Scenes by the place**: the place's dead, raiders, how picked over and rich it is and people upstairs bend the scene
+  roll (interiorscenes `sceneBias`, through `placeOption` → `option.scenes`). A place picked over is found with
+  containers stripped and a scene's barricade broken through (`pickedOver`). Raiders board their room's windows and
+  drag half cover up beside its doors; survivors pile furniture beside their barred door (floorfolk `boardWindows`,
+  `pileAgainst`).
+- **Carrying**: a piece of furniture carried out of a place goes on block to block, the pair kept on the crawl
+  (`c.mates`); a block's walk takes longer by the slowest carrier's pace (`carryPace`); going into a place it stays
+  in the arms at the entry, set down at the door when the dead are right inside; out at the rim it is loaded at the
+  entry block where the vehicles wait, else dropped from exhaustion there and remembered on the block (`mem.left`,
+  taken up again from the block card).
+- **The card**: each place's hint line names its storeys and its kind's signature rooms ("Hospital: 4 floors, wards,
+  a pharmacy": `placeHint`).
+- **Quick search**: opens the place's own building's containers (`placeProfile`, `quickLoot`, combat `boxFinds`), so
+  a container searched quickly holds what it holds on the map.
