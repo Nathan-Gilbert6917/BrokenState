@@ -468,7 +468,33 @@ function f_luggage(p) { // a suitcase: a hard red shell, its handle, two wheels,
 
 
 
+// ---------- shopping malls (issue #30) ----------
+function f_kiosk(p) { // a kiosk cart: a striped awning on poles over a wooden cart of trinkets, two wheels
+  for (let x = 0; x <= 15; x++) H(p, x, x, 1, x % 4 < 2 ? "#c8402f" : "#f0e6c8"); H(p, 0, 15, 2, "#7a1c18");
+  V(p, 1, 3, 8, STEELD); V(p, 14, 3, 8, STEELD); box(p, 0, 8, 15, 13, WOODL); H(p, 1, 14, 9, "#e6c23a");
+  for (const x of [3, 6, 9, 12]) p.set(x, 7, ["#3a6fb0", "#c8402f", "#5ad06a", "#e6c23a"][x % 4]);
+  disc(p, 3, 14, 1, "#26272a"); disc(p, 12, 14, 1, "#26272a");
+}
+function f_concession(p) { // a concession counter: a red front, the popcorn machine's glass box of popcorn, cups on top
+  box(p, 0, 8, 15, 15, "#a8302a"); H(p, 0, 15, 8, "#e8e0c8"); R(p, 2, 10, 13, 11, "#e6c23a");
+  box(p, 8, 1, 14, 7, "#c9ced3"); R(p, 9, 3, 13, 6, "#f0e0a0"); R(p, 9, 2, 13, 2, "#c8402f");
+  R(p, 2, 5, 3, 7, "#e8e0c8"); R(p, 5, 5, 6, 7, "#c8402f");
+}
+function f_arcadecab(p) { // an arcade cabinet: a tall black body, the marquee lit, the screen, the joystick and buttons
+  box(p, 3, 0, 12, 15, "#26272a"); R(p, 4, 1, 11, 2, "#e0a030"); R(p, 4, 4, 11, 8, "#1c3a5a"); R(p, 5, 5, 8, 6, "#5ad06a");
+  R(p, 3, 9, 12, 10, "#3a3b40"); p.set(5, 9, "#c8402f"); p.set(8, 9, "#3a6fb0"); p.set(10, 9, "#e6c23a"); R(p, 6, 12, 9, 13, "#3a3b40");
+}
+function f_projector(p) { // a film projector: two reels on arms, the grey body, the lens
+  disc(p, 4, 3, 3, "#3a3b40"); disc(p, 11, 3, 3, "#3a3b40"); p.set(4, 3, STEEL); p.set(11, 3, STEEL);
+  box(p, 2, 7, 13, 12, "#6a7178"); R(p, 13, 9, 15, 10, "#26272a"); p.set(15, 9, "#bcdbe6"); legs(p, 4, 11, 13, 15, STEELD);
+}
+function f_mannequin(p) { // a shop mannequin: a white head and torso, arms down, on a steel stand
+  disc(p, 8, 2, 2, "#ece6da"); R(p, 7, 4, 8, 4, "#ece6da"); box(p, 5, 5, 10, 10, "#ece6da"); V(p, 4, 5, 10, "#d8d0c0"); V(p, 11, 5, 10, "#d8d0c0");
+  V(p, 7, 11, 13, "#9aa1a8"); H(p, 5, 10, 14, "#5e666d");
+}
+
 export const GEAR_ART = {
+  f_kiosk, f_concession, f_arcadecab, f_projector, f_mannequin,
   f_freezercase, f_islandfreezer, f_meatcase, f_freezershelf, f_producebin, f_breadrack, f_selfcheckout, f_aislesign,
   f_hazmatrack, f_rationshelf, f_handfilter, f_screens, f_maptable, f_radioconsole, f_footlocker, f_batteries,
   f_freezercase, f_islandfreezer, f_meatcase, f_freezershelf, f_producebin, f_breadrack, f_selfcheckout, f_aislesign,

@@ -79,6 +79,7 @@ import { gridOf, inGrid, isEdge, levelOf, ringOf, maxLevel, entryOf, headingTowa
 export const CRAWL = {
   MAX_BLOCK: 8,                 // the heart of the city: no block beyond this one
   PLACES: [2, 4],               // places on a block (2–3 at the edge; a fourth more likely deeper)
+  STRIPMALL: { city: 0.04, town: 0.12 }, // a block with a strip mall among its places (issue #30)
   EVENTS: { none: 0.3, two: 0.25, perBlock: 0.04 }, // a block's street events: none, one or two (two likelier deeper)
   BLOCKED: 0.12,                // a place shut this visit (fire, a collapse, the doors chained), by the visit's dice
   MOVE_HOURS: 1,                // walking to the next block (on the way out too)
@@ -483,6 +484,9 @@ export function genBlock(state, c, cell = c.cell) {
   // shops.js: up to two shops or services besides, on their own dice (the places above are as they were).
   const extra = shopPlaces(state, c.tile, cell, places, CRAWL.PLACES[1], n, setting, (k) => !!BUILDINGS[k]);
   extra.forEach((key, j) => addPlace(new Rng(seedOf(state.seed, "crawlshop", c.tile, cell, j)), key, PLACE_W[key].crawl, places.length));
+  // A strip mall now and then (issue #30, mall.js: its whole row of shops one place; never a regional mall, too big for a
+  // block), on its own dice after everything above.
+  if (places.length < CRAWL.PLACES[1] + 2 && hash01(state.seed, "crawlmall", c.tile, cell) < CRAWL.STRIPMALL[setting]) addPlace(new Rng(seedOf(state.seed, "crawlmall", c.tile, cell)), "stripmall", { dead: 1.2, rich: 1.1, w: 0, deep: 0, from: 1 }, places.length);
   // This visit: a place may be shut.
   if (places.length > 2 && vr.chance(CRAWL.BLOCKED)) {
     const pl = vr.pick(places);

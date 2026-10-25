@@ -102,7 +102,7 @@ export function poiHouses(state, tile, i) {
 const mallCount = new Map();
 function mallHouses(state, tileId, option) {
   const k = `${state.seed}:${tileId}:${option.id}`;
-  if (!mallCount.has(k)) { if (mallCount.size > 64) mallCount.clear(); mallCount.set(k, mallUnits(state, tileId, option)); }
+  if (!mallCount.has(k)) { if (mallCount.size > 1024) mallCount.clear(); mallCount.set(k, mallUnits(state, tileId, option)); }
   return mallCount.get(k);
 }
 
