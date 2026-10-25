@@ -11,6 +11,7 @@
 //     day), below 20 "X is close to leaving" (log line and card); a warning is re-armed once mood is back to 40;
 //   - desertion: below 15 mood, only after the second warning was given on an earlier night, 8% a day (+0.6% per
 //     point below 15). Leaders never desert.
+import { noteDesertion } from "./causes.js"; // "Why?": a survivor who walked out (call-time only)
 import { foodIn, takeFood, FOODS, foodWord } from "./foods.js"; // food by type (foods.js)
 import { supplyAmt, useSupply } from "./rounds.js"; // food in days
 import { keyWord } from "./water.js";
@@ -197,6 +198,7 @@ export function desert(state, base, s, opts = {}) {
   const took = opts.haul === false ? {} : desertionHaul(state, base, s);
   const parts = [...items, ...Object.entries(took).map(([k, q]) => (FOODS[k] ? foodWord(k, q) : `${q} ${keyWord(k)}`))]; // rounds named by calibre; food items in words (foods.js)
   log(state, `${opts.why || `${s.name} lost hope and walked away from ${base.name} in the night`}${parts.length ? `, taking ${listText(parts)}` : " with nothing but the clothes on their back"}.`, "death");
+  noteDesertion(state, base, s, opts.why ? `${opts.why}.` : ""); // causes.js: the mood behind it (recording only)
   (state.deserters || (state.deserters = [])).push({ id: s.id, baseId: base.id, day: day(state), took });
   onLeave(state, s, base); // relations.js: friends and a partner take it hard
   for (let i = state.cards.length - 1; i >= 0; i--) if (state.cards[i].moraleFor === s.id) state.cards.splice(i, 1);

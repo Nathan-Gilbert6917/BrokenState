@@ -31,6 +31,7 @@ import { log, addCard, newId } from "./world.js";
 import { partyMembers, partyTile, leaveVehicle, teamName, weighTeam, takeSupply, orderMove, onTheMove, tileLabel, carryCapacity, poolLoad } from "./parties.js";
 import { partyVehicles, fleetOf, seatsOf, driversFor, isBike, isCar, createVehicle, vehicleLabel, markLeft, tank, vehicleCapacity, VEHICLE_TYPES } from "./vehicles.js";
 import { SUPPLIES } from "./data.js";
+import { noteVehiclesLeft } from "./causes.js"; // "Why?": a vehicle left behind (recording only)
 
 const list = (xs) => (xs.length <= 1 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`);
 const fieldTeam = (p) => !!p && p.owner === "player" && p.kind !== "convoy";
@@ -54,6 +55,7 @@ export function shedSurplusVehicles(state, p, tile = partyTile(p)) {
   if (left.length) {
     const text = `${teamName(state, p)} has fewer people than vehicles now: ${list(left)} ${left.length === 1 && !/bikes/.test(left[0]) ? "was" : "were"} left at the spot, marked on the map, for whoever comes back for ${left.length === 1 ? "it" : "them"}.`;
     log(state, text, "danger");
+    noteVehiclesLeft(state, p, left.vs, tile); // causes.js: who could not drive and why
     addCard(state, { title: "Vehicles left behind", text, partyId: p.id, choices: [{ label: "Understood", hint: "Send a team with a driver for each to recover them (Recover vehicle).", ai: () => 1, resolve: () => "" }] });
   }
   return left;
@@ -75,9 +77,12 @@ export function surplusPlan(state, p, n = partyMembers(state, p).length) {
   }
   return plan;
 }
-// Leaves a plan's vehicles on the tile (a share of a stack of bikes as a stack of its own); their labels.
+// Leaves a plan's vehicles on the tile (a share of a stack of bikes as a stack of its own); their labels (left.vs:
+// the vehicles, for the "Why?" record: causes.js noteVehiclesLeft).
 function leavePlan(state, p, plan, tile) {
+  /** @type {any} */
   const left = [];
+  left.vs = [];
   const bike = partyVehicles(state, p).find(isBike);
   if (bike && plan.bikes > 0) {
     const have = bike.count || 1, drop = Math.min(have, plan.bikes);
@@ -87,13 +92,16 @@ function leavePlan(state, p, plan, tile) {
       const spare = createVehicle(state, "bike", { kind: "abandoned", tile, since: state.hour }, { count: drop, condition: bike.condition });
       markLeft(state, p, spare, tile, "nobody to ride them");
       weighTeam(state, p);
+      left.vs.push(spare);
     }
+    if (drop >= have) left.vs.push(bike);
     left.push(`${drop} bike${drop === 1 ? "" : "s"}`);
   }
   for (const c of plan.cars) {
     if (!partyVehicles(state, p).includes(c)) continue;
     leaveVehicle(state, p, tile, "nobody to drive it", c); // cargo the people cannot carry stays in it (logged)
     left.push(`the ${c.name}`);
+    left.vs.push(c);
   }
   return left;
 }
@@ -187,12 +195,14 @@ export function takeVehicles(state, p, o, tile) {
   if (driversFor(vs) <= partyMembers(state, p).length) return "There is someone for every vehicle now: nothing was left.";
   const plan = { cars: vs.filter((v) => isCar(v) && !o.cars.includes(v)), bikes: bike ? Math.max(0, (bike.count || 1) - o.bikes) : 0 };
   const left = leavePlan(state, p, plan, tile);
+  const picked = left.vs;
   left.push(...shedSurplusVehicles(state, p, tile)); // fewer people again since the card came up: the rule leaves the rest
   if (!left.length) return "";
   const going = list(partyVehicles(state, p).map((v) => (isBike(v) ? bikesWord(v.count || 1) : `the ${v.name}`)));
   const said = list(left);
   const text = `${teamName(state, p)} goes on with ${going}. ${said.charAt(0).toUpperCase()}${said.slice(1)} ${left.length === 1 && !/bikes/.test(left[0]) ? "was" : "were"} left at ${tileLabel(state, tile)}, marked on the map, for whoever comes back for ${left.length === 1 ? "it" : "them"}.`;
   log(state, text, "danger");
+  noteVehiclesLeft(state, p, picked, tile); // causes.js (the rule's own leftovers were recorded by shedSurplusVehicles)
   return text;
 }
 
