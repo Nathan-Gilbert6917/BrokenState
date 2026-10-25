@@ -20,15 +20,16 @@
 import { FURNITURE_KINDS, FURNITURE_GEAR } from "./data-furniture.js"; // #8's catalogue: the kinds, their use, their item forms
 // The pieces this ticket sets at a base: every liftable catalogue kind (not "fixed") whose use is storage, comfort or
 // work (the appliances are #19's; the beds' kinds, use "bed:<kind>", are data-beds.js's own items). Each is #8's item
-// form (data-furniture.js FURNITURE_GEAR f_<kind>), merged into GEAR here for the first time (data.js): kept in the
-// armory, carried in both arms; ITEM_TAGS has none of them, so no loot pool or shop draws them (#12 brings them home).
+// form (data-furniture.js FURNITURE_GEAR f_<kind>, piece: true as #12's merge of the rest: never in a starting kit or a
+// trunk), with the base's words added to its description (data.js, ahead of #12's merge): kept in the armory, carried in
+// both arms; ITEM_TAGS has none of them, so no loot pool or shop draws them (#12 lifts them off a raid's floor).
 const BASE_USE = /^(storage|comfort|work):/;
 /** The catalogue kinds set at a base by furniture.js. */
 export const FURN_KINDS = Object.keys(FURNITURE_KINDS).filter((k) => FURNITURE_KINDS[k].carry !== "fixed" && BASE_USE.test(FURNITURE_KINDS[k].use) && FURNITURE_GEAR[`f_${k}`]);
 /** @type {Record<string, any>} */
 export const FURN_GEAR = Object.fromEntries(FURN_KINDS.map((k) => {
   const r = FURNITURE_KINDS[k];
-  return [`f_${k}`, { ...FURNITURE_GEAR[`f_${k}`], desc: `${FURNITURE_GEAR[`f_${k}`].desc} Set it inside a hut, cabin, lodge, hall or barn (the base map's Build list, Furniture): ${r.size[0]} × ${r.size[1]} cells.` }];
+  return [`f_${k}`, { ...FURNITURE_GEAR[`f_${k}`], piece: true, desc: `${FURNITURE_GEAR[`f_${k}`].desc} Set it inside a hut, cabin, lodge, hall or barn (the base map's Build list, Furniture): ${r.size[0]} × ${r.size[1]} cells.` }];
 }));
 
 // ---------- what each piece does at the base (this ticket's own tables) ----------

@@ -128,7 +128,10 @@ Detail: [travel.md](../features/travel.md).
 - **Some of a team on jobs of their own**: members picked go off on an order; the team stays put till they rejoin [detach, teammeet, ui/whopick, ui/teamctx] `tools/detachtest.js`. [details](../features/travel.md#some-of-a-team-on-jobs-of-their-own)
 - **Team forming, team inventory, teams meeting** and handing over goods; supplies and rounds onto a member; guns leave loaded [teamform, teaminv, teammeet, supitems, gunrounds]. [details](../features/travel.md#team-inventory-and-handing-over-goods)
 - **Carry weight and load bands**, physical supply carrying, carry kit and rigs; full hands in a fight [load, carry, carrykit, ui/carry]. [details](../features/travel.md#the-hands-in-a-fight)
+- **Carrying furniture**: lift 2 actions; alone slow, two tethered at half weight (drawn held) [furnicarry, carry, carrykit, ui/figures] `tools/furnicarrytest.js` `carryviewtest.js`. [details](../features/travel.md#carrying-furniture-and-appliances)
+- **Extracting with furniture**: into the vehicle by itself, else dropped at the door from exhaustion (a POI keeps it) [furnihome, furnicarry, poicont] `tools/furnihometest.js`. [details](../features/travel.md#extracting-with-a-piece-in-the-arms)
 - **Vehicles**: fuel, condition, breakdowns, bicycles; found cars, military trucks, road blockages and repairs, vehicle trade [vehicles, foundcars, miltrucks, roadblocks, vehicletrade]. [details](../features/travel.md#vehicles)
+  - A team's piece and a parked marker on the State Map show the vehicle's type (pickup, sedan, SUV, van, Hummer, Army truck) [ui/mapfigures, ui/mapsprites, ui/render]. [details](../features/travel.md#the-maps-vehicles-by-type)
 - **A lost team's vehicles keep what was in them**: left on the tile with their cargo, to recover [parties, groupworld, vehicles] `tools/lostfleettest.js`. [details](../features/travel.md#a-lost-teams-vehicles-keep-what-was-in-them)
 - **Recover the convoy**: a team raids the tile to drive your abandoned vehicles home, or an allied group fetches them for a fee [convoyrecover, parties, envoys] `tools/convoyrecoverytest.js`. [details](../features/travel.md#recover-the-convoy)
 - **Weather on the road**: stuck in mud (free in N h), winter fuel ×1.15–1.3 in every estimate, cold starts, the route outlook, for groups too [weather, parties] `tools/vehicleweathertest.js`. [details](../features/travel.md#weather-on-the-road)
@@ -164,8 +167,9 @@ Detail: [combat.md](../features/combat.md).
 - **Before you go in**: the raid plan window (scout, wait for night, kit, side to enter, leave) [raidplan, ui/raidplan]. [details](../features/combat.md#before-you-go-in-the-raid-plan)
 - **The building picked before the raid map**: a card picks the building before the map is made, the autopilot by dice [poiraid, parties, combat] `tools/buildingpicktest.js`. [details](../features/combat.md#the-building-picked-before-the-raid-map)
 - **Raids into building interiors**: buildings and streets to search; locks, keys, safes, makeshift picks [buildingmaps, search, raidloot, locks, gunsafes] `tools/makeshiftpicktest.js`. [details](../features/combat.md#raids-into-building-interiors)
-- **Furniture and appliance catalogue**: 65 kinds with cell rules, hp, kg, carry class, base use and sprites [data-furniture, barricade, ui/isoview] `tools/furnituretest.js`. [details](../features/combat.md#raids-into-building-interiors)
+- **Furniture and appliance catalogue**: 76 kinds with cell rules, hp, kg, carry class, base use and sprites [data-furniture, barricade, ui/isoview] `tools/furnituretest.js`. [details](../features/combat.md#raids-into-building-interiors)
 - **Homes laid out room by room**: kitchens, bedrooms, baths, garages; shared placement helpers; the pieces are the containers [roomlayout, buildingmaps, combat] `tools/interiortest.js`. [details](../features/combat.md#raids-into-building-interiors)
+- **Civic buildings laid out for their kind**: police, fire stations, schools, churches; cells, engine, pews [civiclayout, buildingmaps, combat] `tools/interiortest.js`. [details](../features/combat.md#raids-into-building-interiors)
 - **Stealth**: takedowns, facing and view cones, sneaking, lights and darkness, indoor light switches [stealth, vision, indoorlight, ailights].
 - **Vaulting half cover**: over waist-high cells at extra cost, landing winded [combat]. [details](../features/combat.md#vaulting-half-cover)
 - **Windows and the kinds of door**: window states (open, locked, broken) and door kinds with their own hit points, sight and locks [windows, buildingmaps, locks]. [details](../features/combat.md#windows-and-the-kinds-of-door)
@@ -186,7 +190,7 @@ Detail: [combat.md](../features/combat.md).
 - **Talking to other groups in a raid**: call out, truce, trade, recruit or ally for the battle; treachery and grudges [parley, thirdside]. [details](../features/combat.md#talking-to-other-groups-in-a-raid)
 - **Orders to allies**: give an allied survivor an order for 1 action; they may ignore it [allyorders]. [details](../features/combat.md#orders-to-allies)
 - **Siege kit**: ladders, rams and frag grenades; groups and raiders bring only their own [siege, arsenal, visitors]. [details](../features/combat.md#siege-kit)
-- **Vehicles in battle**: Humvee gunners, ramming gates [combat]. [details](../features/combat.md#vehicles-in-battle)
+- **Vehicles in battle**: Humvee gunners, ramming gates; every car and truck a low-poly model by its type [combat, ui/vehiclemodel, ui/isoview, ui/figures] `tools/vehiclemodeltest.js`. [details](../features/combat.md#vehicles-in-battle)
 - **Auto-resolve by the numbers** [combat]. [details](../features/combat.md#auto-resolve-by-the-numbers)
 
 ## 7. Weapons, armour and gear

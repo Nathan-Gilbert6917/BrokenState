@@ -247,6 +247,9 @@ const SECTIONS = {
         let m;
         if ((m = /^(.+?) finished at (.+)\.$/.exec(e.text)) && Buildings.BUILDINGS && Object.values(Buildings.BUILDINGS).some((x) => x && x.name === m[1])) {
           out.push({ key: `built:${at}:${e.text}`, kind: "built", icon: "🔨", tone: "good", text: `${m[1]} finished at ${m[2]}`, tip: "Construction is done. Click to open the base's Buildings tab.", go: ref ? { base: ref.id, tab: "buildings" } : null, event: true });
+        } else if ((m = /^(?:.+?: )?(Exhausted, the team dropped what it was carrying: .+?)\. /.exec(e.text))) { // sim/furnihome.js (issue #18): furniture dropped at the way out, no vehicle
+          const team = decodeRefs(e.refs).find((r) => r.type === "p");
+          out.push({ key: `exhausted:${at}:${e.text}`, kind: "exhausted", icon: "🪑", tone: "warn", text: m[1], tip: `${e.text} Only a vehicle (a car or truck; bikes take what fits on their racks) takes furniture and appliances home.${team ? " Click to open the team." : ""}`, go: team ? { team: team.id } : null, event: true });
         } else if (/^A caravan from .+ has arrived at /.test(e.text)) {
           out.push({ key: `caravan:${at}:${e.text}`, kind: "caravan", icon: "🐎", tone: "good", text: e.text.replace(/ with the goods you agreed on/, "").replace(/\. It stays until.*$/, ""), tip: `${e.text} Click to open the base (its Trade button is on the Bases tab).`, go: ref ? { base: ref.id, tab: "overview" } : null, event: true });
         }
@@ -304,7 +307,7 @@ const SECTIONS = {
     if (n > 1) out.push({ key: `cards:${n}`, kind: "cards", icon: "🃏", tone: "info", text: `${n} cards waiting`, tip: "Cards are answered one at a time: these are still in the pile. Close the screens on top to see the next one.", go: { cards: true } });
   },
 };
-const ORDER = ["breakin", "tunnels", "starve", "thirst", "desert", "outsiders", "tower", "horde", "gathering", "ice", "front", "nomeds", "spread", "food", "teamfood", "water", "worm", "sick", "ill", "fixed", "wait", "plan", "broken", "idle", "stalled", "nowork", "crash", "cards", "layout", "trip", "caravan", "built"];
+const ORDER = ["breakin", "tunnels", "starve", "thirst", "desert", "outsiders", "tower", "horde", "gathering", "ice", "front", "nomeds", "spread", "food", "teamfood", "water", "worm", "sick", "ill", "fixed", "wait", "plan", "broken", "idle", "stalled", "nowork", "crash", "cards", "layout", "trip", "caravan", "exhausted", "built"];
 
 // Good news (Options → "Good news alerts", options.goodNews, on by default): news that asks nothing of you. Off, these
 // kinds are left out of the stack, so no row, flash or chime (ui/soundcues.js hears only what is shown); the log and the

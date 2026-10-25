@@ -29,6 +29,7 @@ import { STREET, DOOR_KINDS } from "../sim/buildingmaps.js"; // the neighbourhoo
 import { WINDOW } from "../sim/windows.js"; // the map's windows: open, locked, fixed or broken
 import { BELT_KG } from "../sim/holsters.js"; // the side arm and melee slots (k:holsters)
 import { PUSH, GRIP } from "../sim/shoving.js"; // people and the dead shoved back a tile or flat on their back
+import { LIFT, liftKinds, liftDef } from "../sim/furnicarry.js"; // furniture and appliances carried (issue #12)
 import { SHOVE, BOARD, CRAWL, FURNITURE, shoveable, isBoarded } from "../sim/barricade.js"; // furniture shoved in the way, boards over doors and windows, the dead crawling over half cover
 import { NOMADS } from "../sim/nomads.js"; // nomad bands: one entry a tier
 import { BAL } from "../sim/coalition.js"; // keeping the coalition together
@@ -202,6 +203,7 @@ function itemEntries() {
   const out = [];
   for (const [k, g] of Object.entries(GEAR)) {
     if (g.supKey) continue; // a supply held as an item (sim/supitems.js): the supply's own entry covers it
+    if (g.piece) continue; // a piece of furniture's item form (sim/furnicarry.js): the Carrying furniture entry covers it
     const cat = CATEGORIES[g.cat];
     const stats = [["Kind", cat ? cap(cat.name) : "—"], ["Slot", SLOT_NAMES[g.slot] || (g.slot === "pack" ? "Pocket or pack" : g.slot === "cargo" ? "Team cargo" : g.slot)]];
     if (g.power && ["weapon", "armor", "head", "arms", "legs"].includes(g.slot)) stats.push([g.slot === "weapon" ? "Power" : "Armor", g.power]);
@@ -464,6 +466,18 @@ function placeEntries() {
     stats: FURN_KINDS.filter((k) => useOf(`f_${k}`).storage || useOf(`f_${k}`).comfort || useOf(`f_${k}`).work).map((k) => [FURNITURE_KINDS[k].name, `${FURNITURE_KINDS[k].kg} kg${FURNITURE_KINDS[k].carry === "two" ? " (a load for two)" : ""}, ${FURNITURE_KINDS[k].size[0]} × ${FURNITURE_KINDS[k].size[1]}: ${effectText(`f_${k}`)}`]),
     text: `Furniture found in the ruins and carried home is set from the stores on the floor of a hut, cabin, lodge, hall or barn (the base map's Build list, Furniture: a click sets it, R turns it). Storage pieces add their room to the base's storage and are containers of their own in the Storage tab: shelves and cabinets take gear first, a wardrobe or a chest of drawers clothing and bags, a bookshelf books; a gun rack holds ${FURN_STORE.gunrack.max} guns and nothing else, a tool chest tools only, a filing cabinet papers only. Comfort pieces cheer whoever sleeps in the same building: a sofa, an armchair or a piano serves ${COMFORT.SEATS} sleepers, decor (a potted plant, a floor lamp, a painting, a wall clock, chairs, bar stools, a desk: +0.1 each) adds up to +${COMFORT.DECOR_MAX} a building, and nobody gets more than +${COMFORT.MAX} a day from it. A found workbench is a crafting bench.`,
     how: "Bring pieces home in both arms or a cart, then set them from the base map. Demolish picks one up again; a building pulled down has its furniture carried out into the stores. The governor sets storage pieces before it builds new storage, and comfort pieces while they count.", sprite: null,
+  });
+  // Carrying furniture (sim/furnicarry.js, issue #12): a piece lifted, carried alone or by two tethered, set down, loaded into the vehicle.
+  out.push({
+    key: "k:furnicarry", cat: "places", name: "📦 Carrying furniture", sub: "Lift, carry, set down, load into the vehicle",
+    stats: [["Lift", `${LIFT.AP} actions (Alt+U), both hands free, right next to the piece (or to one lying on the ground): it is in the arms; a teammate with free hands next to it or to you takes the other end for ${LIFT.HELP_AP} actions of their own; a container's contents are tipped onto the floor first`],
+      ["One alone", `the full weight: past 40 kg the pace is crushed (a 60 kg fridge 2 tiles an action, 120 kg 1)`], ["Two together", `half the weight each, both faster; tethered: always right next to each other, the one who moves leads and the other steps along free; one down, gripped or pulled apart and it is set down`],
+      ["With it", "no shooting, doors, searching, vaulting, sneaking or dashing; the stairs take both actions (each of two)"], ["Set down", `${LIFT.SET_AP} action (Alt+G; each of two): on a free cell next to you that you can see (a door frame too: a barricade); two set it to their left or right, parallel to them, the side you choose; Drop carried (free) lets it down anywhere next to you, or at your feet`],
+      ["Into the vehicle", `${LIFT.STOW_AP} action at it (Alt+W): its full weight in the cargo, if there is room`],
+      ["Extracting with it", "it goes into the car or truck by itself if there is room (bikes: only what one rack holds, 15 kg); without a vehicle it is dropped by the door from exhaustion. At a place you can come back to, it still stands there next time: bring a vehicle. In a city, the walk to the edge is the way out, slower with it in the arms"],
+      ...[["One person (or two)", "one"], ["Two people", "two"], ["Never lifted", "fixed"]].map(([what, c]) => [what, liftKinds().map((k) => liftDef(k)).filter((d) => d && d.carry === c && CELL[d.kind]).map((d) => (c === "fixed" ? d.name.toLowerCase() : `${d.name.toLowerCase()} ${d.kg} kg`)).join(", ")])],
+    text: "Reasonable furniture and appliances can be carried off a raid's floor: a crate, a cabinet, a bed, a fridge. One person alone can barely move with a heavy one; two sharing the load move almost as fast as with a full pack, but must stay side by side. Get it to the vehicle and load it in: nobody carries furniture home on foot.",
+    how: "Clear the way first: neither carrier can open a door, so have a third open them. Lift with a helper next to you, walk it to the vehicle, Load into vehicle. Set it down in a doorway to barricade it.", sprite: null,
   });
   // Shoving people and the dead (sim/shoving.js).
   out.push({

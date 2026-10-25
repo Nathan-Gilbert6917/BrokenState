@@ -218,6 +218,7 @@ export const AREA_TOOLS = {
   farmhouse: { p: 0.06, items: { axe: 1.5, shovel: 1.5, handsaw: 1, sewingkit: 1.5, toolkit: 1 } },
   warehouse: { p: 0.04, items: { toolkit: 2, handsaw: 1, shovel: 1 } },
   motorpool: { p: 0.05, items: { toolkit: 3, shovel: 1, welder: 0.4 } },
+  enginebay: { p: 0.08, items: { axe: 2, toolkit: 2, shovel: 1.5, handsaw: 1 } }, // a fire station's engine bay (issue #15)
   hangar: { p: 0.04, items: { toolkit: 3, handdrill: 1, welder: 0.4 } },
   cabin: { p: 0.05, items: { axe: 2, bowsaw: 2, sewingkit: 1 } },
   campsite: { p: 0.03, items: { bowsaw: 1, axe: 1, shovel: 1, sewingkit: 1.5 } },

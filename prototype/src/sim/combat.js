@@ -148,6 +148,8 @@ import { poiRaidStart, poiMapRng, boxRng } from "./poicont.js"; // its container
 import * as MED from "./medics.js";
 import { deafen, bangOf, tickEars, heardGhosts, dazedAim, linkAim, linkEscape, fitHeadgear, settleEars } from "./hearing.js"; // ears: bangs, deafness, what your people hear, the team headset
 import { PUSH, GRIP, pushAct, getUpRound, aiPush, aiMeleePush, aiBreakOut, aiFree, gripOf, gripHit, gripRefusal } from "./shoving.js"; // people and the dead shoved back a tile or flat on their back; the dead getting hold of someone (the user's request 2026-10-20)
+import { liftAct, setAct, stowAct, refitPiece, pieceRefusal, tetherMoveRefusal, followTether, tetherRound, stairsAp, pieceStairsRefusal, pieceStairs, dropPiece } from "./furnicarry.js"; // furniture and appliances lifted, carried (one alone, or two tethered), set down, put in the vehicle (issue #12)
+import { piecesAtExtraction, extractNote, pieceGoesHome } from "./furnihome.js"; // extracting with a piece in the arms: into the vehicle, else dropped at the door from exhaustion (issue #18)
 import { cartAct, cartKnocked, oneHandOk, CART_FIGHT, cartMoved, enemyCartsLetGo, enemyCarts, placeMapCarts, cartHelpStart, holdsCart } from "./carts.js"; // a wheelbarrow, a hand cart: let go (free), take it back (1 action)
 import { fitHands, handsRefusal, handsWord, handsBusy, armsText, handsCount, HANDS_MAX, carriedAct, pickCarried, setOverCover, botDropToFight, autoDrop, settleCarried, armsDropsEnd, stageAtStart } from "./carry.js"; // supplies, a bag or finds carried in the hands: no weapon, no doors, no windows until set down (Drop carried: free; Set over cover)
 import { kitHeadgear, visorAim, toggleVisor } from "./helmets.js"; // helmets: the face shield, an enemy's helmet and ear protection by kit
@@ -1031,7 +1033,7 @@ export function vaultable(b, c) {
   if (c.car && c.car.up && (c.car.up.p || c.car.up.s)) return false;
   return true;
 }
-export const canVault = (u) => !!u && u.kind === "human" && !u.ztype && !u.dead && !u.down && !u.aboard && !u.gunner && !holdsCart(u) && u.cartHelp == null && u.carrying == null && u.dragging == null && u.ram == null;
+export const canVault = (u) => !!u && u.kind === "human" && !u.ztype && !u.dead && !u.down && !u.aboard && !u.gunner && !holdsCart(u) && u.cartHelp == null && u.carrying == null && u.dragging == null && u.ram == null && !u.piece; // furnicarry.js: never with a piece in the arms
 // A vault through this cell crashes through a closed window (loud, cuts: windows.js WINDOW.BREAK / HURT).
 export const vaultBreaks = (c) => !!c && c.k === "window" && !windowOpen(c);
 // The tiles a vault over this cell costs beyond the step: VAULT.COST, and a closed window SMASH_COST more (the path
@@ -1209,15 +1211,17 @@ export function removeCar(cells, W, r) {
 // touches keeps it (R.vehicleZone follows it: syncVehicleZone).
 export const DRIVE = { RANGE: 8, AP: 2, HEAT: 5, RADIUS: 10, MIL: 1.6 }; // MIL: × Heat and radius for an Army truck (vehicles.js miltruck)
 export const nearRect = (r, x, y) => Math.max(r.x - x, x - (r.x + r.w - 1), r.y - y, y - (r.y + r.h - 1), 0) <= 1;
-export function placeVehicle(cells, W, H, zone, kind, ok) {
+// type: the vehicle's type (vehicles.js VEHICLE_TYPES: "sedan", "suv", "hummer", "van", … ), on its cells (c.car.type) and the
+// rect, for the view to draw it as that kind of vehicle (ui/vehiclemodel.js); the footprint goes by `kind` as before.
+export function placeVehicle(cells, W, H, zone, kind, ok, type = null) {
   const mil = kind === "miltruck"; // an Army truck (vehicles.js miltruck): 2 × 5, drawn as the loot trucks are (body "m35")
   const L = mil ? 5 : kind === "truck" ? 4 : kind === "bike" ? 2 : 3; // a bike or a motorcycle: 2 x 1 cells
   const z = zone;
   const [x, y, ax] = z.side === "east" ? [z.x0 + 1, z.y0, "y"] : z.side === "north" ? [z.x0, z.y0, "x"] : z.side === "south" ? [z.x0, z.y0 + 1, "x"] : [z.x0, z.y0, "y"];
   const rect = placeCar(cells, W, H, x, y, ax, L, "vehicle", ok, 0, { ring: false, body: mil ? "m35" : kind, wide: kind === "bike" ? 1 : 2 });
   if (!rect) return null;
-  for (let yy = rect.y0; yy < rect.y0 + rect.h; yy++) for (let xx = rect.x0; xx < rect.x0 + rect.w; xx++) cells[yy * W + xx].f = "road";
-  return { x: rect.x0, y: rect.y0, w: rect.w, h: rect.h, ax, kind: mil ? "truck" : kind, ...(mil ? { mil: true } : {}) };
+  for (let yy = rect.y0; yy < rect.y0 + rect.h; yy++) for (let xx = rect.x0; xx < rect.x0 + rect.w; xx++) { const c = cells[yy * W + xx]; c.f = "road"; if (type) c.car.type = type; }
+  return { x: rect.x0, y: rect.y0, w: rect.w, h: rect.h, ax, kind: mil ? "truck" : kind, ...(mil ? { mil: true } : {}), ...(type ? { type } : {}) };
 }
 // The team's other vehicles on a field map (b.convoy: [{ vid, x, y, w, h, ax, kind, cond0, up, wear, blownUp }]): by the
 // west edge near the lead one, nearest rows first, never cutting anyone off from the map (b.reach).
@@ -1232,7 +1236,7 @@ function placeConvoy(b, party, others, W, H, inside) {
     for (const y of rows) {
       let vr = null;
       for (const x0 of [1, 4, 7]) {
-        vr = placeVehicle(b.cells, W, H, { x0, y0: y, side: "north" }, kind, (xx, yy) => inside(xx, yy) && b.cells[idx(xx, yy)].k === "open" && b.reach[idx(xx, yy)] && !unitAt(b, xx, yy));
+        vr = placeVehicle(b.cells, W, H, { x0, y0: y, side: "north" }, kind, (xx, yy) => inside(xx, yy) && b.cells[idx(xx, yy)].k === "open" && b.reach[idx(xx, yy)] && !unitAt(b, xx, yy), x.type);
         if (vr) break;
       }
       if (!vr) continue;
@@ -1274,7 +1278,7 @@ function placeRaidConvoy(map, party, others) {
     for (const [sx, sy] of spots) {
       const was = []; // the ground under it, put back if it comes up again (placeVehicle lays road under the car)
       for (let yy = sy - 1; yy <= sy + 5; yy++) for (let xx = sx - 1; xx <= sx + 5; xx++) if (inside(xx, yy)) was.push([idx(xx, yy), cells[idx(xx, yy)].f]);
-      const vr = placeVehicle(cells, W, H, { x0: sx, y0: sy, side: z.side }, kind, ok);
+      const vr = placeVehicle(cells, W, H, { x0: sx, y0: sy, side: z.side }, kind, ok, x.type);
       if (!vr) continue;
       const reach = flood(cells, from[0], from[1]);
       let under = 0;
@@ -1586,6 +1590,7 @@ const carUpTag = (u) => (u.plating || u.scrapPlate || u.glass || u.mesh || u.tur
 // state, party: the team's driver of it (vehicles.js teamDrivers) as v.wheelSid, the one at its wheel (wheelUnit).
 export function fitMapVehicle(b, pv, state = null, party = null) {
   const v = b.vehicle;
+  if (v && pv && pv.type) { v.type = pv.type; for (const [cx, cy] of vehicleCells(v)) { const c = b.cells[cy * b.w + cx]; if (c && c.car) c.car.type = pv.type; } } // its type (vehicles.js VEHICLE_TYPES), for the view to draw it as that kind (ui/vehiclemodel.js)
   if (v && pv && state && party && !isBike(pv)) { const d = teamDrivers(state, party).get(pv.id); if (d) v.wheelSid = d.id; }
   if (v && pv && Number.isFinite(pv.condition)) v.cond0 = pv.condition; // the condition it came in with: blasts that wear it past this blow it up (vehicleBlast)
   if (!v || !pv || isBike(pv)) return;
@@ -3666,6 +3671,7 @@ export function refitUnit(b, u, s) {
   if (keepMags) u.stack = wasStack; else u.stack = tracksMags(u) ? [] : null;
   u.bag = (s.gear && s.gear.carry) || null; // carry.js: a bag taken into the arms (or put down) in the search window
   if (u.mob0 == null && u.dragMob == null) u.mob = f.mob; // the load band's mob (not while carrying or dragging someone)
+  if (u.piece) refitPiece(b, u, s); // furnicarry.js: a piece in the arms weighs on as before
   if (u.weapon === held && heldLoad && !swapped) u.load = heldLoad; // the same gun keeps the rounds it has loaded
   // The magazine: the same gun keeps what was loaded (up to its capacity now, a magazine attachment may have changed);
   // another gun has what is in it (gunload.js gunIn: what it held when it was put down, loaded if it was carried into
@@ -4530,6 +4536,7 @@ function sneakAct(b, u, act) {
   if (on === !!u.sneaking) return "";
   if (on && u.ap < 1) return "No actions left: sneak from the next turn.";
   if (on && (u.aboard || u.gunner)) return "Get out of the vehicle first.";
+  if (on && u.piece) return "Not with a piece of furniture in the arms: set it down first."; // furnicarry.js
   if (on) {
     const eyes = b.units.find((e) => e.side !== u.side && e.aware && active(e) && !e.ko && canSee(b, e, { ...u, sneaking: true }));
     if (eyes) return `${eyes.name} has eyes on ${u.name}: get out of sight first.`;
@@ -4844,6 +4851,7 @@ export function combatAct(state, act) {
   if (act.type === "turret") { if (!u.gunner) return vehicleTurret(b) ? "Man the turret first." : "No turret here."; act = { ...act, type: "shoot" }; }
   const t = act.target != null ? unitById(b, act.target) : null;
   { const why = handsRefusal(u, act.type, act); if (why) return why; } // carry.js: hands full of supplies (or a body): no weapon, no throw, no treating; a case carried loose can be opened (set down to work it)
+  { const why = pieceRefusal(b, u, act.type); if (why) return why; } // furnicarry.js: a piece in the arms (alone or one of two) searches nothing, takes nothing, gets into no vehicle
   switch (act.type) {
     case "takeCart": case "parkCart": { const err = cartAct(state, b, act); if (err) return err; break; } // carts.js: a cart within reach back in the arms; park the one pushed on a side cell (1 action each)
     case "setOver": { const err = setOverCover(state, b, u, act); if (err) return err; break; } // carry.js: everything carried set down beyond the half cover they face (1 action)
@@ -4854,6 +4862,7 @@ export function combatAct(state, act) {
       const r = reachable(b, u, dashRange(u), { manual: true, wary: !!act.wary }); // wary: the raid bot goes round acid (acid.js)
       const c = r.dist[idx(act.x, act.y)];
       if (!isFinite(c) || c === 0) return "Cannot move there.";
+      { const why = tetherMoveRefusal(b, u, act.x, act.y, c); if (why) return why; } // furnicarry.js: two carrying a piece stay right next to each other
       const mob = moveMob(u);
       u.ap -= c <= mob ? 1 : 2;
       u.hunker = false;
@@ -4863,6 +4872,7 @@ export function combatAct(state, act) {
       if (active(u)) faceAfterMove(u, act);
       if (active(u)) footsteps(b, u, stepNoise(b, u, c, mob) || ((u.vaulted || 0) > v0 && !u.sneaking ? "scuff" : ""));
       cartMoved(state, b, u); // carts.js: a helper follows the pusher (or lets go), a cart pushed rattles
+      followTether(state, b, u, c); // furnicarry.js: the other end of the piece steps along (free)
       // skills.js: Stealth XP for moving while enemies still have not noticed anyone.
       if (u.xpT && active(u) && b.units.some((e) => e.side === "enemy" && !e.aware && active(e))) u.xpT.sneak++;
       break;
@@ -5135,12 +5145,14 @@ export function combatAct(state, act) {
         const onStairs = b.cells[idx(u.x, u.y)].k === "stairs";
         return !onStairs ? "Stand on a stairwell first." : up ? (u.f + 1 >= b.floors.length ? "This is the top floor." : "Someone is on the stairs above.") : (!u.f ? "This is the ground floor." : "Someone is on the stairs below.");
       }
-      u.ap -= 1;
+      { const why = pieceStairsRefusal(b, u, (u.f || 0) + (up ? 1 : -1)); if (why) return why; } // furnicarry.js: with a piece, both actions (each of two)
+      u.ap -= stairsAp(u);
       u.hunker = false; u.ow = false;
       const from = u.f || 0;
       landingClear(b, u, from + (up ? 1 : -1)); // a wounded teammate on the landing is moved aside
       fx(b, { type: "move", unit: u.id, from: [u.x, u.y], path: [[u.x, u.y]] });
       moveToFloor(b, u, from + (up ? 1 : -1));
+      pieceStairs(b, u, u.f); // furnicarry.js: the other end of a piece comes along onto the landing
       say(b, `${u.name} goes ${up ? "up" : "down"} the stairs to ${/^floor/i.test(b.floors[u.f].name) ? "" : "the "}${b.floors[u.f].name.toLowerCase()}.`, "info");
       setFloor(b, u.f); // the view follows
       detect(b, u);
@@ -5160,8 +5172,10 @@ export function combatAct(state, act) {
       const z = zoneAt(b, u.x, u.y);
       const byCar = vehicleExit(b, u); // any cell next to the vehicle is a way out in it, wherever it stands
       if (z < 0 && !byCar) return "Move into an extraction zone, or next to the vehicle, first.";
+      { const note = extractNote(state, b, u); if (note) say(b, note, /^No /.test(note) ? "warn" : "info"); } // furnihome.js: what becomes of a piece in the arms
       u.left = true; u.exitZone = z >= 0 ? z : b.raid.vehicleZone; u.ap = 0; u.ow = u.hunker = false;
       u.exitVehicle = byCar || !!((b.raid.hasVehicle ?? b.raid.vehicleZone >= 0) && b.raid.vehicleZone === z); // the vehicle stands at this zone (it may have been driven: syncVehicleZone)
+      { const o = u.piece && u.tether != null ? unitById(b, u.tether) : null; if (o && active(o)) { o.left = true; o.exitZone = u.exitZone; o.exitVehicle = u.exitVehicle; o.ap = 0; o.ow = o.hunker = false; } } // furnicarry.js: two carrying a piece leave together
       say(b, `${u.name} extracts${u.exitVehicle ? " at the vehicle" : ""}.`, "good");
       break;
     }
@@ -5169,6 +5183,7 @@ export function combatAct(state, act) {
       if (!evacAt(b, u.x, u.y)) return "Move into the evacuation zone first.";
       { const why = gripRefusal(b, u); if (why) return why; } // shoving.js
       u.left = true; u.ap = 0; u.ow = u.hunker = false;
+      { const o = u.piece && u.tether != null ? unitById(b, u.tether) : null; if (o && active(o)) { o.left = true; o.ap = 0; o.ow = o.hunker = false; } } // furnicarry.js: two carrying a piece leave together
       say(b, `${u.name} slips away from the fight.`, "info");
       break;
     case "car": { // foundcars.js: a car or truck next to the unit: get in, look for the keys, hotwire it, inspect it, claim it
@@ -5335,6 +5350,13 @@ export function combatAct(state, act) {
       u.ap -= 1;
       break;
     }
+    case "liftPiece": case "setPiece": case "stowPiece": { // furnicarry.js: a piece of furniture or an appliance lifted (both actions; a helper's both too), set down (1 action each), loaded into the vehicle (1 action)
+      const err = act.type === "liftPiece" ? liftAct(state, b, u, act) : act.type === "setPiece" ? setAct(state, b, u, act) : stowAct(state, b, u);
+      if (err) return err;
+      b.reach = flood(b.cells, u.x, u.y); // a way blocked or opened
+      syncFloor(b);
+      break;
+    }
     case "stowbody": { // carriers.js: the carried body into the team's car (1 action): it cannot rise, and comes home
       const err = stowBody(state, b, u);
       if (err) return err;
@@ -5350,6 +5372,7 @@ export function combatAct(state, act) {
   if (b.raid && b.raid.folk) folkTick(state, b); // floorfolk.js: the barricaded survivors' door reached, the nest stirring
   if (b.raid) parleyTick(state, b); // parley.js: a group that called out to your people: its card
   if (b.intel) allyIntelTick(b); // allyorders.js: what an ally told you of, dropped where your people now see
+  tetherRound(state, b); // furnicarry.js: a carrier down, a pair parted: the piece set down
   checkEnd(state, b);
   if (!b.over && b.phase === "player" && !b.units.some((x) => x.side === "player" && activeAny(x) && x.ap > 0)) endPlayerTurn(state);
   return "";
@@ -5461,6 +5484,7 @@ function startPlayerTurn(state, b) {
   meleeRound(b, ["player"]); // the staggered lose an action, the bleeding bleed (melee section)
   getUpRound(b, ["player"]); // shoving.js: the shoved flat on their backs get up (an action)
   stirBodies(state, b); // carriers.js: bodies in the flames burn; a carrier who went down puts the body down
+  tetherRound(state, b); // furnicarry.js: someone carrying a piece who went down, was gripped or parted in the enemy turn sets it down
   burnBodies(b); // sleepers.js: bodies in the flames burn, a Sleeper's worms with them
   terrorRuns(b); // middead.js: whoever a Nightmare's scream panicked spends the turn running
   for (const u of b.units) if (u.side === "player" && active(u)) spotCheck(b, u); // sleepers.js: a body twitches
@@ -6122,7 +6146,7 @@ export const RETREAT = {
 export const loadPenalty = (kg) => RETREAT.KG * Math.max(0, (Number.isFinite(kg) ? kg : 0) - RETREAT.FREE_KG);
 // How far a unit can go with the actions it has: mob a tile an action, a Medium load's dash (both actions) a tile less
 // (carrykit.js weighPlayer / weighEnemy: u.dash).
-export const dashRange = (u) => moveMob(u) * u.ap + (u.ap >= 2 && !u.sneaking ? u.dash || 0 : 0);
+export const dashRange = (u) => (u.piece ? moveMob(u) : moveMob(u) * u.ap + (u.ap >= 2 && !u.sneaking ? u.dash || 0 : 0)); // furnicarry.js: a piece in the arms, one action's move at a time (never a dash)
 // The tiles one action's move covers: sneaking (vision.js) is slower.
 export const moveMob = (u) => Math.max(1, (u.sneaking ? sneakMob(u) : u.mob) - (u.vaulted || 0)); // vaulted: winded from a vault this turn (VAULT)
 
@@ -6839,6 +6863,11 @@ export const AREAS = {
   // Army trucks (miltrucks.js): every truck is one container (kind "miltruck", its cargo is truckLoot, not this
   // table), placed by placeMilTrucks; its crew stands round it and some are still strapped in (truckCrewRises).
   miltrucks: { name: "Army trucks", outdoor: true, trucks: true, boxes: ["miltruck"], loot: {}, gear: [] },
+  // A fire station's engine bay (issue #15, civiclayout.js): the tools a crew rides with (axes, pry bars, the ladder),
+  // turnout gear (the nearest the stores have: a leather coat, a helmet, guards), fuel and parts for the engine.
+  // A school corridor lined with narrow lockers (issue #15): many small draws, a snack, a bat, a knife, a bag, a phone.
+  schoolhall: { name: "School lockers", boxes: ["schoollocker"],      loot: { food: [0.12, 1, 2], water: [0.08, 1, 1] }, gear: [["bat", 0.015], ["knife", 0.01], ["backpack", 0.015], ["slingbag", 0.015], ["sportspads", 0.01]] },
+  enginebay: { name: "Engine bay",     boxes: ["locker", "crate", "shelf"],    loot: { fuel: [0.75, 4, 10], parts: [0.55, 1, 3], scrap: [0.5, 2, 6] }, gear: [["fireaxe", 0.08], ["prybar", 0.06], ["crowbar", 0.04], ["sledge", 0.03], ["ladder", 0.04], ["hatchet", 0.03], ["leatherjacket", 0.04], ["bikehelmet", 0.03], ["kneeguards", 0.03], ["flashlight", 0.05]] },
   cargodrop: { name: "Scattered cargo",  outdoor: true, boxes: ["crate", "crate", "crate"], loot: { food: [0.6, 3, 8], water: [0.5, 2, 6], meds: [0.25, 1, 2], preserved: [0.35, 2, 6], ammo: [0.25, 5, 15] }, gear: [["assaultpack", 0.03], ["bandagekit", 0.05], ["rucksack", 0.03], ["stove", 0.03]] },
 };
 // What a piece of furniture holds (the user's request 2026-10-25, issue #10: homes furnished room by room,
@@ -6857,6 +6886,27 @@ export const BOX_LOOT = {
   nightstand: { rest: 0.35, loot: { ammo: [0.3, 4, 12], meds: [0.1, 1, 1] }, gear: [["pistol", 0.09], ["revolver", 0.035], ["compact9", 0.045], ["pistol22", 0.02], ["flashlight", 0.06], ["knife", 0.05]] },
   toolchest:  { rest: 0.3, loot: { scrap: [0.6, 2, 6], parts: [0.5, 1, 2] }, gear: [["hammer", 0.1], ["crowbar", 0.06], ["prybar", 0.06], ["sledge", 0.03], ["flashlight", 0.04]] },
   tvstand:    { rest: 0.8, loot: { scrap: [0.35, 1, 3], parts: [0.1, 1, 1] }, gear: [] },
+  // Police stations, fire stations, schools and churches (issue #15, civiclayout.js). An armory's gun racks hold the long
+  // guns and its ammo cabinets the rounds (its lockers keep the armory's own table): about what the armory held before.
+  // An evidence locker: drugs (meds), knives and pistols taken off people. A fire station's turnout lockers: coats,
+  // helmets and boots; the engine itself (a container of 2 × 5 cells) the crew's tools, the ladder and the gear; an
+  // ambulance first aid; a police car a shotgun, flares, a first-aid kit and a radio. A school's desks hold next to
+  // nothing (its corridor's lockers are AREAS.schoolhall), a gym's storage cage the bats and sticks, a science lab's bench
+  // first aid. A church's candlesticks are silver. Tuned with tools/interiortest.js so the armory, the evidence room
+  // and the school hold what they did within ±10%.
+  gunrack:      { rest: 0.6, loot: { ammo: [0.3, 6, 18] }, gear: [["shotgun", 0.15], ["huntrifle", 0.06], ["carbine", 0.06], ["ar", 0.04], ["semishotgun", 0.04]] },
+  ammocab:      { rest: 0.6, loot: { ammo: [0.95, 30, 75] }, gear: [] },
+  evlocker:     { rest: 0, loot: { meds: [0.22, 1, 2] }, gear: [["knife", 0.06], ["pistol", 0.01], ["compact9", 0.01], ["cuffs", 0.04], ["phone", 0.04], ["watch", 0.005]] },
+  turnout:      { rest: 0.3, loot: {}, gear: [["leatherjacket", 0.15], ["bikehelmet", 0.1], ["kneeguards", 0.08], ["fireaxe", 0.03], ["flashlight", 0.04]] },
+  sportcage:    { rest: 0.2, loot: {}, gear: [["bat", 0.25], ["hockeystick", 0.15], ["golfclub", 0.06], ["sportspads", 0.1], ["footballhelmet", 0.08]] },
+  schooldesk:   { rest: 0, loot: { food: [0.04, 1, 1] }, gear: [["phone", 0.005]] },
+  teacherdesk:  { rest: 0.5, loot: { meds: [0.04, 1, 1] }, gear: [["phone", 0.02]] },
+  labbench:     { rest: 0.3, loot: { meds: [0.15, 1, 1], parts: [0.2, 1, 1] }, gear: [["bandagekit", 0.04]] },
+  serverrack:   { rest: 0.2, loot: { parts: [0.6, 1, 3], scrap: [0.5, 1, 3] }, gear: [["handradio", 0.06]] },
+  candles:      { rest: 0, loot: {}, gear: [["silverware", 0.35], ["candles", 0.5]] },
+  engine:       { rest: 0, loot: { fuel: [0.5, 2, 6], parts: [0.3, 1, 2] }, gear: [["fireaxe", 0.5], ["prybar", 0.35], ["crowbar", 0.2], ["ladder", 0.3], ["sledge", 0.15], ["leatherjacket", 0.2], ["bikehelmet", 0.15], ["bandagekit", 0.2], ["flashlight", 0.2]] },
+  ambulance:    { rest: 0, loot: { meds: [0.85, 2, 5], water: [0.4, 1, 3] }, gear: [["bandagekit", 0.25], ["surgkit", 0.08]] },
+  policecar:    { rest: 0, loot: { ammo: [0.5, 5, 15], meds: [0.3, 1, 1] }, gear: [["shotgun", 0.15], ["flare", 0.4], ["bandagekit", 0.15], ["handradio", 0.2], ["baton", 0.08]] },
 };
 const boxDefs = new Map();
 // The table a container rolls: its room's (AREAS[type]), or its kind's (BOX_LOOT) with the room's rows at `rest` times
@@ -7762,6 +7812,8 @@ function endRaid(state, b) {
   }
   const hadVehicle = R.hasVehicle ?? R.vehicleZone >= 0;
   const vehicleKept = hadVehicle && b.units.some((u) => u.side === "player" && u.left && !u.dead && (u.exitVehicle ?? u.exitZone === R.vehicleZone)); // left from the zone the vehicle stood at
+  const pieces = piecesAtExtraction(state, b, vehicleKept); // furnihome.js (issue #18): a piece in the arms into the vehicle, else dropped at the door from exhaustion
+  lines.push(...pieces.lines);
   endBodies(state, b, extractedIds.length ? "extracted" : "defeat", vehicleKept); // carriers.js: the risen still walking take their things into the walking loot; bodies in the car come home with it
   raidHome(state, b, home); // raidloot.js: what the ones who made it carry goes in the team's cargo; the rest is lost
   if (hadVehicle && extractedIds.length && !vehicleKept) lines.push("Nobody went back to the vehicle. It stays behind at the site.");
@@ -7790,7 +7842,7 @@ function endRaid(state, b) {
     knockedOut: captives.length, prisoners: captiveRecords(state, b, captives), // prisoners.js
     outcome, enemiesKilled: killed, enemiesLeft: original.length - killed - captives.length,
     survivorsHurt: hurtIds, survivorsDead: deadIds, ammoUsed: b.ammoUsed, arrowsUsed: b.arrowsUsed || 0, arrowsBack: arrowsBackN,
-    loot: { supplies: { ...R.found }, gear: R.foundGear.slice() },
+    loot: { supplies: { ...R.found }, gear: [...R.foundGear, ...pieces.items] },
     turns: b.turn, medsUsed: b.medsUsed, extraKilled: enemies.filter((u) => u.reinforcement && u.dead).length,
     tactical: true, worn: true,
     third: thirdResult(b), // thirdside.js: the survivors or soldiers who were there (null: none)
@@ -7801,6 +7853,7 @@ function endRaid(state, b) {
       hours: b.calledOff ? 0 : Math.max(1, Math.ceil(b.turn / 6)), // called off before going in (raidplan.js callOff): no time on the site
       alerted: original.some((u) => u.kind === "human" && (u.aware || u.dead)),
       calledOff: !!b.calledOff, // scavenge.js afterRaid: the team turned back
+      ...(pieces.text || pieces.fullText ? { pieces: { dropped: pieces.dropped, full: pieces.full, text: pieces.text, fullText: pieces.fullText, ledger: pieces.ledger } } : {}), // furnihome.js: the log line and the alert
     },
   };
   b.summary = lines;
@@ -7924,7 +7977,11 @@ function autoRaidTurn(state) {
         if (!combatAct(state, { type: stairsTo > (u.f || 0) ? "goup" : "godown", unit: u.id })) continue;
       }
       const z = (u.f || 0) ? -1 : zoneAt(b, u.x, u.y);
-      if (leave && z >= 0 && (R.vehicleZone < 0 || z === R.vehicleZone || R.heat > 80)) { combatAct(state, { type: "extract", unit: u.id }); break; }
+      if (leave && z >= 0 && (R.vehicleZone < 0 || z === R.vehicleZone || R.heat > 80)) {
+        if (u.piece && !pieceGoesHome(state, b, u)) dropPiece(state, b, u, `No vehicle to take it home: ${u.name.split(" ")[0]} sets it down.`); // furnihome.js: never out with a piece and no vehicle
+        combatAct(state, { type: "extract", unit: u.id });
+        break;
+      }
       // stealth.js: tie up the knocked out, take down an unaware guard next to it, throw a bottle to pull guards away.
       if (!leave && botStealth(state, b, u, combatAct)) continue;
       // buildingmaps.js: on the way out of a building, shut a door on whatever follows, or throw a lure to pull it off.

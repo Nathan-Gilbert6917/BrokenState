@@ -96,3 +96,13 @@ the map revealed), at the map's 1×, 2× and 3×:
   the markers.
 - The hex ground is drawn flat while the pieces stand in the battle map's 2:1 projection, as the flat sprites already
   did; a piece heading up or down the screen reads a little taller than one heading across.
+
+## 2026-10-25: the vehicles as real cars, on the battle map too
+
+The battle map's cars and trucks are built from the same limb now (`ui/vehiclemodel.js`, cut by cell for the view's
+back-to-front drawing), and both they and the map's vehicle pieces changed shape to read as real cars: true prisms
+(the limb's `flat` option: straight sides between the section's corners), a low body from the sill to the belt line,
+a six-sided cabin laid across it (the windscreen and the rear window sloping to the belt, a flat roof, side windows on
+its ends), the wheels in their arches, bumpers, a grille, mirrors; the team's piece and the parked marker by the
+vehicle's type (pickup, sedan, SUV, work van, Hummer, Army truck). See `docs/features/combat.md` (Vehicles in battle)
+and `docs/features/travel.md` (The map's vehicles by type).
