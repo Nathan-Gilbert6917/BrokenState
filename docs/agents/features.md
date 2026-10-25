@@ -173,6 +173,7 @@ Detail: [combat.md](../features/combat.md).
 - **Homes laid out room by room**: kitchens, bedrooms, baths, garages; shared placement helpers; the pieces are the containers [roomlayout, buildingmaps, combat] `tools/interiortest.js`. [details](../features/combat.md#raids-into-building-interiors)
 - **Hospitals, clinics and vets room by room**: ER, wards, theatre, ICU, pharmacy, morgue, kennels; meds ±10% [roomlayout, buildingmaps, combat, interiorscenes] `tools/interiortest.js`. [details](../features/combat.md#raids-into-building-interiors)
 - **Civic buildings laid out for their kind**: police, fire stations, schools, churches; cells, engine, pews [civiclayout, buildingmaps, combat] `tools/interiortest.js`. [details](../features/combat.md#raids-into-building-interiors)
+- **Bases, air bases, airports, prisons laid out**: real-size HQ, barracks, armory, hangars, tower, terminal, cells [militarylayout, buildingmaps, mapgen] `tools/interiortest.js`. [details](../features/combat.md#raids-into-building-interiors)
 - **Shops, offices, motels, banks laid out by kind**: aisles, checkouts, kitchens, walk-ins, bars, desks, vaults [shoplayout, buildingmaps, roomlayout] `tools/shopstest.js`. [details](../features/combat.md#raids-into-building-interiors)
 - **Stealth**: takedowns, facing and view cones, sneaking, lights and darkness, indoor light switches [stealth, vision, indoorlight, ailights].
 - **Vaulting half cover**: over waist-high cells at extra cost, landing winded [combat]. [details](../features/combat.md#vaulting-half-cover)
