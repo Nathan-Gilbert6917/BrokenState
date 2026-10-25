@@ -69,23 +69,25 @@ const dens = [];
     if (!check(!!R, `${key}: a row in REAL_SIZE`)) continue;
     const mine = !R.own && !R.planned; // the rows this ticket sizes (the others: #22's, #23's, #25's, #26's and #27's own)
     const acc = { n: { area: 0, floorsArea: 0, rooms: 0, boxes: 0, dead: 0 }, o: { area: 0, floorsArea: 0, rooms: 0, boxes: 0, dead: 0 } };
-    let wMin = Infinity, wMax = 0, dMin = Infinity, dMax = 0, wings = 0, tall = 0;
+    let wMin = Infinity, wMax = 0, dMin = Infinity, dMax = 0, wings = 0, tall = 0, scaledN = 0;
     for (let s = 0; s < SEEDS; s++) {
       const setting = s % 3 === 0 ? "city" : s % 3 === 1 ? "town" : "rural";
       const r0 = new Rng(9001 + s * 131 + key.length * 7), nat = BUILDINGS[key].make(r0, {});
       const spec = realScale(r0, nat, key, { setting, storeyBonus: s % 5 === 4 ? 1 : 0 });
       const wm = spec.bw * CELL_M, dm = spec.bh * CELL_M;
       wMin = Math.min(wMin, wm); wMax = Math.max(wMax, wm); dMin = Math.min(dMin, dm); dMax = Math.max(dMax, dm);
-      if (R.w && !R.own) {
+      const scaled = spec.natW != null; // laid out by realScale (else a plan drawn at its own size: a planned row's, #37's named plans)
+      if (scaled) scaledN++;
+      if (R.w && !R.own && scaled) {
         const okW = (wm >= R.w[0] && wm <= R.w[1]) || (R.small && wm >= R.small[1][0] && wm <= R.small[1][1]);
         const okD = (dm >= R.d[0] && dm <= R.d[1]) || (R.small && dm >= R.small[2][0] && dm <= R.small[2][1]);
         if (!okW || !okD) { badFoot++; if (badFoot <= 5) console.log(`    ${key}: ${wm} × ${dm} m outside ${R.w.join("–")} × ${R.d.join("–")}`); }
       } else if (spec.bw !== nat.bw || spec.bh !== nat.bh) { badFoot++; console.log(`    ${key}: another ticket's size changed (${nat.bw}×${nat.bh} → ${spec.bw}×${spec.bh})`); }
-      if (R.planned && (spec.bw !== nat.bw || spec.bh !== nat.bh || spec.height !== (nat.storeys || 1))) { badFoot++; console.log(`    ${key}: a planned building laid out again (${nat.bw}×${nat.bh} → ${spec.bw}×${spec.bh}, ${nat.storeys} → ${spec.height} storeys)`); }
+      if (!scaled && !R.own && (spec.bw !== nat.bw || spec.bh !== nat.bh || spec.height !== (nat.storeys || 1))) { badFoot++; console.log(`    ${key}: a planned building laid out again (${nat.bw}×${nat.bh} → ${spec.bw}×${spec.bh}, ${nat.storeys} → ${spec.height} storeys)`); }
       const range = storeyRange(key, setting);
       const bonus = s % 5 === 4 ? 1 : 0;
       if (range && R.city && (spec.height < range[0] || spec.height > Math.min(MAX_STOREYS, range[1] + bonus))) { badStorey++; console.log(`    ${key} (${setting}): ${spec.height} storeys outside ${range.join("–")}`); }
-      if (range && !R.city && (spec.height < range[0] || spec.height > range[1])) { badStorey++; console.log(`    ${key}: ${spec.height} storeys outside ${range.join("–")}`); }
+      if (range && !R.city && scaled && (spec.height < range[0] || spec.height > range[1])) { badStorey++; console.log(`    ${key}: ${spec.height} storeys outside ${range.join("–")}`); }
       if (spec.height > MAX_STOREYS || (!spec.real && spec.storeys !== openStoreys(spec.height, bonus))) { badOpen++; console.log(`    ${key}: ${spec.storeys} floors built of ${spec.height}`); } // #25's (spec.real): every floor built
       if (city[key] && setting === "city") city[key].add(spec.height);
       if (town[key] && setting === "town") town[key].add(spec.height);
@@ -101,12 +103,13 @@ const dens = [];
         if (!top.some((c) => c.k === "stairs" && c.sealUp && (c.top || c.step == null))) { badSeal++; console.log(`    ${key}: ${spec.height} storeys, ${spec.storeys} built, the stairs up not blocked`); }
       }
       if (!heavy || s % 16 === 0) { const lost = connected(m); if (lost) { badConn++; if (badConn <= 5) console.log(`    ${key} seed ${s}: ${lost} walkable cells not reached`); } }
+      if (!scaled) continue; // the densities of what realScale laid out
       const r1 = new Rng(9001 + s * 131 + key.length * 7), old = BUILDINGS[key].make(r1, {}), mo = assemble(r1, old, { key, name: key });
       const a = measure(spec, m), b = measure(old, mo);
       for (const k of Object.keys(acc.n)) { acc.n[k] += a[k]; acc.o[k] += b[k]; }
     }
     const per = (A, k) => (A[k] / (k === "dead" ? A.floorsArea : A.area)) * 1000;
-    dens.push({ key, R, mine, w: [wMin, wMax], d: [dMin, dMax], wings, tall, acc, rooms: per(acc.n, "rooms") / per(acc.o, "rooms"), boxes: per(acc.n, "boxes") / per(acc.o, "boxes"), dead: per(acc.n, "dead") / per(acc.o, "dead"), areaK: acc.n.floorsArea / acc.o.floorsArea });
+    dens.push({ key, R, mine: mine && acc.o.area > 0, w: [wMin, wMax], d: [dMin, dMax], wings, tall, acc, rooms: per(acc.n, "rooms") / per(acc.o, "rooms"), boxes: per(acc.n, "boxes") / per(acc.o, "boxes"), dead: per(acc.n, "dead") / per(acc.o, "dead"), areaK: acc.n.floorsArea / acc.o.floorsArea });
   }
   check(!badFoot, `every footprint in metres within its row (${badFoot} outside)`);
   check(!badStorey, `every building's storeys within its row's range for the setting (${badStorey} outside)`);

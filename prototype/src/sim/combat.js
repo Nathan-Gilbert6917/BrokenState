@@ -6959,6 +6959,10 @@ export const BOX_LOOT = {
   // rack their rifles.
   humvee:       { rest: 0, loot: { fuel: [0.7, 3, 8], parts: [0.4, 1, 3], ammo: [0.5, 20, 60] }, gear: [["milradio", 0.15], ["rucksack", 0.15], ["etool", 0.2], ["sandbags", 0.1], ["traumakit", 0.1]] },
   hazmatrack:   { rest: 0, loot: {}, gear: [["hazmat", 0.75], ["hazmat", 0.35]] },
+  // Labs (issue #37, industrylayout.js): a lab freezer's racks of samples long thawed, with the reagents and the first
+  // aid the lab kept in it; a few vials still good.
+  labfreezer:   { rest: 0.4, loot: { meds: [0.35, 1, 2] }, gear: [["bandagekit", 0.03]] },
+  drum:         { rest: 0.2, loot: { fuel: [0.6, 2, 6] }, gear: [] }, // a fuel depot's drum: what is left in it
   rationshelf:  { rest: 0, loot: { preserved: [0.95, 3, 7], water: [0.55, 2, 5] }, gear: [["puritabs", 0.1]] },
   "rationshelf@cabin": { rest: 0, loot: { preserved: [1, 6, 12], food: [0.7, 3, 6], water: [0.8, 4, 9], meds: [0.3, 1, 2] }, gear: [["puritabs", 0.25]] },
   radioconsole: { rest: 0.3, loot: { electronics: [0.7, 1, 3], parts: [0.4, 1, 2] }, gear: [["milradio", 0.2], ["handradio", 0.15]] },
