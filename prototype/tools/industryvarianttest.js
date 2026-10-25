@@ -4,8 +4,8 @@
 // - distinct plans: over 72 seeds and settings each type has 12+ distinct plans by #32's plan signature (the set of
 //   room roles, the role pairs with a door between them, the entrance count, the footprint class), and every named plan
 //   turns up; the setting weighs the dice (a rural site's grain elevators and sawmills, a campus's teaching labs)
-// - every plan, pinned, over several seeds: every room and every walkable cell reached (from the front, upstairs from
-//   the stairs), its signature pieces (racks and docks, a production line, lab benches with fume hoods...), the rooms'
+// - every plan, pinned, over several seeds: its storeys and its footprint's class (storeytest.js's), every room and every
+//   walkable cell reached (from the front, upstairs from the stairs), its signature pieces (racks and docks, a production line, lab benches with fume hoods...), the rooms'
 //   styles used (no room on the old furnishing), its name on the map and in the raid's opening line
 // - loot: each kind within ±10% of today's a floor cell (the old plan, 200 seeds; BS_QUICK 80); the finds fit (parts
 //   and scrap at a fabrication works, meds at a pharmaceutical lab, food at a food plant, fuel at a fuel depot)
@@ -61,6 +61,8 @@ function walkFrom(m, sx, sy, cells) {
   }
   return seen;
 }
+// The footprint classes as tools/storeytest.js checks them.
+const FOOT = { small: (a) => a <= 190, medium: (a) => a >= 90 && a <= 360, large: (a) => a >= 290, wide: (a, bw) => a >= 280 && bw >= 20 };
 const kindsOf = (m) => { const k = new Map(); for (const F of m.floors) for (const c of F.cells) k.set(c.k, (k.get(c.k) || 0) + 1); return k; };
 
 // ---------- 1. distinct plans ----------
@@ -92,7 +94,7 @@ for (const key of INDUSTRY_KEYS) {
 
 // ---------- 2. every plan ----------
 section("Every plan, pinned: reached, its pieces, its styles, its name");
-const N = QUICK ? 4 : 8;
+const N = QUICK ? 6 : 12;
 for (const key of INDUSTRY_KEYS) for (const p of plansOf(key)) {
   const errs = [];
   let unstyled = 0, sigHits = 0;
@@ -103,6 +105,7 @@ for (const key of INDUSTRY_KEYS) for (const p of plansOf(key)) {
     const n = spec.storeys || 1;
     if (n < range[0] || n > range[1]) errs.push(`${n} storeys`);
     if (m.w > (spec.foot === "huge" ? spec.bw + 12 : 44) || m.h > (spec.foot === "huge" ? spec.bh + 16 : 34)) errs.push(`map ${m.w}x${m.h}`);
+    if (!FOOT[spec.foot] || !FOOT[spec.foot](spec.bw * spec.bh, spec.bw)) errs.push(`footprint ${spec.bw}x${spec.bh} is not ${spec.foot}`);
     if (spec.vid !== p.id || m.plan.variant !== p.name || m.plan.vid !== p.id) errs.push(`name ${m.plan.variant}`);
     // Reached: from the front zone on the ground floor, from the stairs upstairs.
     const z0 = m.zones[0];
@@ -127,6 +130,15 @@ for (const key of INDUSTRY_KEYS) for (const p of plansOf(key)) {
   }
   check(!errs.length && sigHits === N, `${key} ${p.name}: ${N} of ${N} reached, with ${p.sig.join(" and ") || "its rooms"}${errs.length ? ` (${[...new Set(errs)].slice(0, 4).join("; ")})` : ""}`);
   if (key === "lab" && p.id !== "general") check(unstyled === 0, `${key} ${p.name}: every room laid out by its style (${unstyled} not)`);
+}
+{
+  // Every size the dice can roll keeps to its class (the spec alone, 80 seeds a plan).
+  const off = [];
+  for (const key of INDUSTRY_KEYS) for (const p of plansOf(key)) for (let s = 0; s < 80; s++) {
+    const spec = BUILDINGS[key].make(new Rng(8800 + s * 31), { plan: p.id });
+    if (!FOOT[spec.foot] || !FOOT[spec.foot](spec.bw * spec.bh, spec.bw)) off.push(`${p.name} ${spec.bw}x${spec.bh} ${spec.foot}`);
+  }
+  check(!off.length, `every footprint the dice roll is of its class (${[...new Set(off)].slice(0, 4).join("; ") || "80 seeds a plan"})`);
 }
 {
   const used = new Set();

@@ -141,6 +141,9 @@ export const RAID_MAPS = 1;
 export const legacyRaids = (state) => !!(state && state.raidLegacy);
 // A save from before homes were furnished room by room (save.js roomsLegacy): buildingmaps.js furnishes as it did.
 export const legacyRooms = (state) => !!(state && state.roomsLegacy);
+// A save from before the office buildings of every kind (save.js officesLegacy, issue #27): its points of interest and
+// its crawls' blocks get none of them (shops.js), and its office towers no firm, so its places stay as they were.
+export const legacyOffices = (state) => !!(state && state.officesLegacy);
 // The run's raid map dials as [smallest, largest]: each clamped to its range, the two in order whatever was stored
 // (a hand-edited or older settings object can hold them the wrong way round: the range never runs backwards).
 /** @param {any} state */

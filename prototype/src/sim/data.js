@@ -520,6 +520,9 @@ export const LOCATIONS = {
   // Crashlanding (2026-10-24, crashstart.js): the unit's secret fallback in the mountains, made on its tile only once the
   // hive at the unit's base is destroyed; secret, so only a look or a team standing on it finds it (discovery.js).
   bunker_mil: { name: "Mountain bunker", glyph: "▲", cat: "special", danger: 2, loot: { ammo: 4, meds: 1, parts: 2, fuel: 1, food: 1.5 }, gear: ["ar", "carbine", "plate", "milhelmet", "milradio", "nvg", "assaultpack", "rucksack", "binoculars", "combatknife", "etool"], richness: 1.1, known: "secret" },
+  // Air bases (issue #25, 2026-10-25): hangars of aircraft, a control tower, flight operations, barracks and a mess
+  // (buildingmaps.js SITES airbase), near the National Guard bases; public like them.
+  airbase:  { name: "Air base", glyph: "✈", cat: "special", danger: 3, loot: { ammo: 3, fuel: 5, parts: 3, meds: 0.6 }, gear: ["ar", "carbine", "vest", "plate", "milhelmet", "milradio", "nvg", "assaultpack", "rucksack", "binoculars", "combatknife", "flare", "chestrig"], richness: 1.0, known: "public" },
   prison:   { name: "State prison",   glyph: "#",  cat: "special", danger: 3, loot: { food: 2, scrap: 2, ammo: 1 }, gear: ["shotgun", "vest", "riothelmet", "baton", "riotarms", "riotlegs", "carbine", "semishotgun"], richness: 0.7, known: "public" },
   univ:     { name: "University",     glyph: "U",  cat: "urban",   danger: 2, loot: { parts: 3, meds: 1, scrap: 2 }, gear: ["surgkit", "bandagekit", "bat", "fireaxe", "slingbag", "telescope"], richness: 0.8, known: "public" },
   dam:      { name: "Dam and power plant", glyph: "D", cat: "special", danger: 1, loot: { parts: 4, scrap: 3, fuel: 0.3 }, gear: ["sandbags", "prybar", "sledge", "flashlight"], richness: 0.7, known: "public" },

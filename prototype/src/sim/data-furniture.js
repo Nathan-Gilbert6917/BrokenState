@@ -230,6 +230,48 @@ export const FURNITURE_KINDS = {
   grainbin:   P("Grain bin",     STEEL, 150, 4000, "fixed", S1, false, ["yard"], "none"),
   labfreezer: P("Lab freezer",   FULL, 40, 120, "two", S1, true, ["lab"], "storage:40", true),
   drum:       P("Fuel drum",     HALF, 25, 40, "two", S1, true, ["bay", "yard"], "storage:60"),
+  // ---------- military bases, air bases, airports and prisons laid out like the real thing (issue #25: militarylayout.js) ----------
+  // A suitcase in an airport's baggage hall, an ammo crate (rounds and grenades), a fuel bladder (fuel) and an inmate's
+  // property locker (what was taken off them at intake) hold their own tables (combat.js BOX_LOOT). The barrier gate, the
+  // guard booth, the jet engine stand, the baggage belt, the security scanner and the gate seating are furniture only.
+  // The footlocker at a bunk's foot, the map table and the radio console are #26's rows (above). The field cot is #15's
+  // cot, the vehicle lift #16's car lift and the sandbag wall the sandbag cell; the aircraft and helicopter wrecks are
+  // vehicles (combat.js placeCar with a body: ui/vehiclemodel.js jet, cargoplane, helo), each one container.
+  ammocrate:    P("Ammo crate",        HALF, 25, 28, "one", S1, true, ["armory", "bay"], "storage:40"),
+  barrier:      P("Barrier gate",      HALF, 30, 80, "fixed", S1, false, ["yard"], "none"),
+  guardbooth:   P("Guard booth",       FULL, 60, 300, "fixed", S1, false, ["yard"], "none"),
+  fuelbladder:  P("Fuel bladder",      HALF, 30, 90, "two", S22, true, ["yard", "bay"], "storage:200"),
+  enginestand:  P("Jet engine stand",  STEEL, 60, 900, "fixed", S21, false, ["bay"], "none"),
+  baggagebelt:  P("Baggage belt",      HALF, 40, 200, "fixed", S1, false, ["shop"], "none"),
+  scanner:      P("Security scanner",  C(false, 1, false), 50, 300, "fixed", S21, false, ["shop"], "none"),
+  gateseat:     P("Gate seating",      HALF, 20, 40, "two", S21, false, ["shop", "office"], "comfort:0.3"),
+  intakelocker: P("Property locker",   FULL, 40, 45, "two", S1, true, ["cells"], "storage:40", true),
+  luggage:      P("Luggage",           HALF, 10, 16, "one", S1, true, ["shop", "yard"], "storage:30"), // an airport's baggage hall and its belts: suitcases, a container each
+  // ---------- the office buildings of every kind (issue #27: officelayout.js lays them) ----------
+  // A dentist's chair; the tower lobby's turnstiles and lift doors (fixed: the doors are decor on a shaft that is not
+  // there); a courtroom's bench, jury box and witness stand, city hall's dais, a podium; a call center's headset desk; a
+  // tech office's beanbags and phone booths; a TV studio's camera on its tripod, its lights and the news desk; a mail
+  // room's sorter, a plotter; the courthouse's walk-through scanner (its X-ray tunnel is #25's security scanner,
+  // above); an executive's liquor cabinet. The headset desk, the news desk, the sorter and the liquor cabinet hold their
+  // own tables (combat.js BOX_LOOT, data-offices.js OFFICE_BOX).
+  dentalchair:  P("Dental chair",         HALF, 30, 120, "two", S12, false, ["ward", "office"], "comfort:0.3"),
+  turnstile:    P("Turnstile",            C(false, 1, false), 40, 150, "fixed", S1, false, ["office"], "none"),
+  liftdoor:     P("Lift doors",           FULL, 80, 300, "fixed", S1, false, ["office"], "none", true),
+  judgebench:   P("Judge's bench",        STEEL, 60, 400, "fixed", S21, false, ["office"], "none"),
+  jurybox:      P("Jury box",             HALF, 50, 300, "fixed", S21, false, ["office"], "none"),
+  witnessstand: P("Witness stand",        HALF, 40, 150, "fixed", S1, false, ["office"], "none"),
+  dais:         P("Council dais",         HALF, 50, 300, "fixed", S21, false, ["office"], "none"),
+  podium:       P("Podium",               HALF, 15, 35, "two", S1, false, ["office", "school", "church"], "none"),
+  headsetdesk:  P("Headset desk",         HALF, 15, 25, "one", S1, true, ["office"], "work:desk"),
+  beanbag:      P("Beanbag",              HALF, 8, 5, "one", S1, false, ["living", "office"], "comfort:0.4"),
+  camera:       P("TV camera",            POLE, 15, 25, "one", S1, false, ["office"], "none"),
+  studiolight:  P("Studio light",         POLE, 5, 8, "one", S1, false, ["office"], "comfort:0.1"),
+  newsdesk:     P("News desk",            HALF, 35, 90, "two", S21, true, ["office"], "work:desk"),
+  sorter:       P("Mail sorter",          HALF, 30, 50, "two", S1, true, ["office"], "storage:40", true),
+  plotter:      P("Plotter",              HALF, 30, 90, "two", S21, false, ["office"], "none", true),
+  screener:     P("Walk-through scanner", POLE, 30, 120, "fixed", S1, false, ["office"], "none"),
+  liquorcab:    P("Liquor cabinet",       HALF, 25, 30, "one", S1, true, ["office", "living", "bar"], "storage:30", true),
+  phonebooth:   P("Phone booth",          C(false, 1, false), 30, 200, "fixed", S1, false, ["office"], "none", true),
   // ---------- lootable decor (issue #13: decor.js places them; light comfort pieces for the base) ----------
   // The plant and the floor lamp stand on a room's floor cell; the painting and the wall clock hang on a wall (decor.js:
   // c.wart = { k, d, piece: true } on the wall cell, the wall's own kind unchanged) and stand on a cell only once set down.

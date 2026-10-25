@@ -114,6 +114,9 @@ const Y = (...parts) => ({ split: "y", parts });
 const R = (role, ind, o = {}) => ({ role, ...(ind ? { ind } : {}), ...o });
 const roll = (rng, r) => rng.int(r[0], r[1]);
 const size = (rng, id) => { const S = INDUSTRY.SIZE[id]; return { bw: roll(rng, S.w), bh: roll(rng, S.h), storeys: roll(rng, S.n) }; };
+// The footprint's class (tools/storeytest.js FOOT: small up to 190 cells, medium 90–360, large from 290, wide from 280
+// and 20 across) for the size the dice rolled: a plan's own class, or the next one up where the footprint outgrew it.
+const footOf = (s, cls) => { const a = s.bw * s.bh; return cls === "small" && a > 190 ? "medium" : cls === "medium" && a > 360 ? "large" : cls; };
 const OFFICE = (name = "Office", o = {}) => R("office", "office", { name, entry: true, hub: true, ...o });
 const lab = (name, kind, o = {}) => R("lab", "lab", { name, lab: kind, ...o });
 const coldroom = (name, o = {}) => R("coldroom", "coldroom", { name, dk: "coldroom", ...o });
@@ -178,7 +181,7 @@ export const INDUSTRY_PLANS = {
     { id: "grain", name: "Grain elevator", at: { urban: 0.1, industrial: 0.5, rural: 4 }, sig: ["grainbin", "conveyor"], make: (rng) => {
       const s = size(rng, "grain");
       return {
-        ...s, front: { width: 1 }, ground: "farm", foot: "medium", stairs: { roles: ["workshop"], n: 1 }, yard: { name: "Grain bins", pieces: [["grainbin", INDUSTRY.YARD.bins]] },
+        ...s, front: { width: 1 }, ground: "farm", foot: footOf(s, "medium"), stairs: { roles: ["workshop"], n: 1 }, yard: { name: "Grain bins", pieces: [["grainbin", INDUSTRY.YARD.bins]] },
         program: Y([4, X([6, OFFICE("Scale house")], ["*", R("storage", "seedstore", { name: "Seed and chemical store", type: "barn", lock: ["door", 0.3] })])], ["*", R("workshop", "leg", { name: "Elevator leg", type: "barn", hub: true })]),
         upper: () => X(["*", R("workshop", "leg", { name: "Headhouse", type: "workshop", hub: true })], [5, R("control", "instruments", { name: "Dryer control", type: "control" })]),
         exits: [roller("back", ["workshop"], { width: 2, name: "Grain pit" })],
@@ -214,7 +217,7 @@ export const INDUSTRY_PLANS = {
     { id: "fueldepot", name: "Fuel depot", at: { urban: 0.5, industrial: 2, rural: 1.5 }, sig: ["vat", "fueltank"], make: (rng) => {
       const s = size(rng, "fueldepot");
       return {
-        ...s, front: { width: 1 }, ground: "lot", foot: s.bw * s.bh > 190 ? "medium" : "small", yard: { name: "Tank farm", type: "garage", pieces: [["vat", INDUSTRY.YARD.tanks], ["drum", INDUSTRY.YARD.drums]], loot: true },
+        ...s, front: { width: 1 }, ground: "lot", foot: footOf(s, "small"), yard: { name: "Tank farm", type: "garage", pieces: [["vat", INDUSTRY.YARD.tanks], ["drum", INDUSTRY.YARD.drums]], loot: true },
         program: Y([4, X([6, OFFICE("Depot office")], ["*", R("storage", "drums", { name: "Drum store", type: "garage" })], [4, R("breakroom", null, { name: "Drivers' room" })])], ["*", R("workshop", "pumphouse", { name: "Pump house", type: "garage", hub: true })]),
         exits: [door("back", ["workshop"], 1, 0.4), roller("left", ["workshop"], { width: 2, chance: 0.5 })],
       };
@@ -242,7 +245,7 @@ export const INDUSTRY_PLANS = {
       const bay = () => R("storage", "bay", { name: "Bay", fl: "plank", maxBoxes: 3 });
       const hall = [2, R("hall", null, { name: "Stair hall", fl: "plank" })];
       return {
-        ...s, front: { width: 1 }, ground: "city", foot: "medium", stairs: { roles: ["hall"], n: 1 },
+        ...s, front: { width: 1 }, ground: "city", foot: footOf(s, "medium"), stairs: { roles: ["hall"], n: 1 },
         program: Y([4, X([5, OFFICE("Wharf office", { fl: "plank" })], ["*", bay()], [4, R("workshop", "hoist", { name: "Hoist room", fl: "plank" })])], hall, ["*", X(["*", bay()], ["*", bay()])]),
         upper: () => Y([4, X(["*", bay()], [4, R("workshop", "hoist", { name: "Hoist room", fl: "plank" })])], hall, ["*", X(["*", bay()], ["*", bay()])]),
         exits: [roller("back", ["storage", "workshop"], { width: 2, name: "River door" })],
@@ -282,7 +285,7 @@ export const INDUSTRY_PLANS = {
     { id: "textile", name: "Textile mill", at: { urban: 2, industrial: 2, rural: 1 }, sig: ["loom", "vat"], make: (rng) => {
       const s = size(rng, "textile");
       return {
-        ...s, front: { width: 1 }, ground: "city", foot: "medium", stairs: { roles: ["corridor"], n: 1 },
+        ...s, front: { width: 1 }, ground: "city", foot: footOf(s, "medium"), stairs: { roles: ["corridor"], n: 1 },
         program: Y([4, X([6, OFFICE("Mill office")], ["*", R("storage", "bales", { name: "Bale store", type: "warehouse" })], [6, R("process", "tanks", { name: "Dye house", tanks: "dye" })])],
           [2, R("corridor", null, { name: "Mill passage" })], ["*", R("line", "line", { name: "Weaving shed", line: "loom" })]),
         upper: (f) => Y(["*", R("line", "line", { name: f === 1 ? "Spinning floor" : "Carding floor", line: "loom", hub: true })], [4, X(["*", R("storage", "bales", { name: "Yarn store", type: "warehouse" })], [3, R("restroom")])]),
@@ -366,7 +369,7 @@ export const INDUSTRY_PLANS = {
       const s = size(rng, "teaching");
       const tl = () => lab("Teaching lab", "teach");
       return {
-        ...s, front: { width: 2 }, ground: "town", foot: "medium", stairs: { roles: ["corridor"], n: 1 },
+        ...s, front: { width: 2 }, ground: "town", foot: footOf(s, "medium"), stairs: { roles: ["corridor"], n: 1 },
         program: Y([5, X(["*", tl()], [6, R("lobby", "lobby", { name: "Foyer", entry: true })], [5, lab("Prep room", "prep")])], [2, R("corridor")],
           ["*", X(["*", R("classroom", "lecture", { name: "Lecture room", type: "office" })], ["*", tl()], [4, R("storage", "chemstore", { name: "Chemical store", type: "lab", lock: ["door", 0.5], boxLock: ["drugs", 0.3] })])]),
         upper: () => Y([5, X(["*", tl()], [5, R("office", "office", { name: "Staff office" })], ["*", tl()])], [2, R("corridor")], ["*", X(["*", tl()], ["*", tl()], [3, R("restroom")])]),
@@ -377,7 +380,7 @@ export const INDUSTRY_PLANS = {
       const s = size(rng, "rnd");
       const rl = () => lab("R&D lab", "rnd");
       return {
-        ...s, front: { width: 2 }, ground: "town", foot: "medium", stairs: { roles: ["corridor"], n: 1 },
+        ...s, front: { width: 2 }, ground: "town", foot: footOf(s, "medium"), stairs: { roles: ["corridor"], n: 1 },
         program: Y([5, X([7, R("lobby", "lobby", { name: "Reception", entry: true })], ["*", R("office", "openplan", { name: "Open-plan office" })], [5, R("office", "meeting", { name: "Meeting room" })])], [2, R("corridor")],
           ["*", X(["*", rl()], ["*", rl()], [5, R("storage", "server", { name: "Server room", type: "control", lock: ["door", 0.4] })])]),
         upper: () => Y([5, X(["*", R("office", "openplan", { name: "Open-plan office" })], ["*", R("office", "meeting", { name: "Meeting room" })])], [2, R("corridor")], ["*", X(["*", rl()], [7, R("workshop", "protoshop", { name: "Prototype shop" })], [4, R("breakroom", "breakroom")])]),
@@ -387,7 +390,7 @@ export const INDUSTRY_PLANS = {
     { id: "biohazard", name: "Biohazard lab", at: { urban: 1, campus: 2, industrial: 1, rural: 0.5 }, sig: ["fumehood", "labfreezer", "deconshower"], make: (rng) => {
       const s = size(rng, "biohazard");
       return {
-        ...s, front: { width: 1 }, ground: "lot", foot: "medium", windows: false, stairs: { roles: ["corridor"], n: 1 },
+        ...s, front: { width: 1 }, ground: "lot", foot: footOf(s, "medium"), windows: false, stairs: { roles: ["corridor"], n: 1 },
         program: Y([4, X([6, R("lobby", "lobby", { name: "Security desk", entry: true })], [5, R("lockerroom", "changing", { name: "Change rooms", type: "lockers" })], ["*", R("office", "office", { name: "Lab office" })])], [2, R("corridor")],
           ["*", X([4, R("gowning", "airlock", { name: "Airlock", dk: "steel" })], ["*", lab("Containment lab", "bio", { dk: "security", lock: ["door", 0.3] })], [5, coldroom("Freezer room", { type: "lab", lab: "freezers", ind: "freezers" })], [3, R("gowning", "decon", { name: "Decon shower" })])]),
         upper: () => Y(["*", R("workshop", "plant", { name: "Filter plant", type: "workshop", hub: true })], [4, X(["*", R("office", "office", { name: "Records" })], [5, R("storage", "chemstore", { name: "Supply store", type: "lab" })])]),
@@ -397,7 +400,7 @@ export const INDUSTRY_PLANS = {
     { id: "crimelab", name: "State crime lab", at: { urban: 3, campus: 0.5, industrial: 0.5 }, sig: ["labbench", "evlocker"], make: (rng) => {
       const s = size(rng, "crimelab");
       return {
-        ...s, front: { width: 1 }, ground: "city", foot: "medium", stairs: { roles: ["corridor"], n: 1 },
+        ...s, front: { width: 1 }, ground: "city", foot: footOf(s, "medium"), stairs: { roles: ["corridor"], n: 1 },
         program: Y([5, X([6, R("lobby", "lobby", { name: "Evidence intake", entry: true })], [5, R("evidence", "evidence", { name: "Evidence store", lock: ["door", 0.6], boxLock: ["evidence", 0.4] })], ["*", R("office", "office", { name: "Case office" })])], [2, R("corridor")],
           ["*", X(["*", lab("Trace lab", "trace")], ["*", lab("Firearms lab", "firearms")], [6, lab("DNA lab", "dna")])]),
         upper: () => Y([5, X(["*", R("office", "openplan", { name: "Analysts' office" })], [5, R("breakroom", "breakroom")])], [2, R("corridor")], ["*", X(["*", R("storage", "records", { name: "Case records", type: "office" })], ["*", lab("Toxicology lab", "tox")])]),
@@ -407,7 +410,7 @@ export const INDUSTRY_PLANS = {
     { id: "waterlab", name: "Water-testing lab", at: { urban: 1, industrial: 2, rural: 2 }, sig: ["labbench", "vat"], make: (rng) => {
       const s = size(rng, "waterlab");
       return {
-        ...s, front: { width: 1 }, ground: "rural", foot: "small", yard: { name: "Settling tanks", pieces: [["vat", INDUSTRY.YARD.settling]] },
+        ...s, front: { width: 1 }, ground: "rural", foot: footOf(s, "small"), yard: { name: "Settling tanks", pieces: [["vat", INDUSTRY.YARD.settling]] },
         program: Y([4, X([5, OFFICE("Office")], ["*", lab("Sample lab", "water")])], ["*", X(["*", R("workshop", "pumproom", { name: "Pump room", type: "control" })], [4, R("storage", "chemstore", { name: "Reagent store", type: "lab" })])]),
         exits: [door("back", ["workshop"], 0.8, 0.4)],
       };
@@ -418,7 +421,7 @@ export const INDUSTRY_PLANS = {
       const main = ["*", Y([5, X([6, OFFICE("Station office")], ["*", lab("Soil lab", "soil")])], ["*", R("storage", "seedstore", { name: "Seed store", type: "barn" })])];
       const left = rng.chance(0.5);
       return {
-        ...s, front: { width: 1 }, ground: "farm", foot: "medium",
+        ...s, front: { width: 1 }, ground: "farm", foot: footOf(s, "medium"),
         program: X(...(left ? [gh, main] : [main, gh])),
         exits: [door("back", ["storage", "greenhouse"], 0.8, 0.3), door(left ? "left" : "right", ["greenhouse"], 0.7, 0.2)],
       };
@@ -436,7 +439,7 @@ export const INDUSTRY_PLANS = {
     { id: "examiner", name: "Medical examiner's lab", at: { urban: 3, campus: 0.5, rural: 0.5 }, sig: ["morguelocker", "autopsy"], make: (rng) => {
       const s = size(rng, "examiner");
       return {
-        ...s, front: { width: 1 }, ground: "city", foot: "medium",
+        ...s, front: { width: 1 }, ground: "city", foot: footOf(s, "medium"),
         program: Y([4, X([6, R("lobby", "lobby", { name: "Reception", entry: true })], ["*", R("office", "office", { name: "Examiner's office" })])], [2, R("corridor")],
           ["*", X(["*", R("morgue", "morgue", { name: "Body store", dk: "coldroom" })], ["*", R("theatre", "autopsy", { name: "Autopsy suite" })], [6, lab("Toxicology lab", "tox")])]),
         exits: [roller("back", ["morgue"], { width: 2, lock: 0.5, name: "Body bay" }), door("right", ["corridor"], 0.5, 0.5)],
@@ -445,7 +448,7 @@ export const INDUSTRY_PLANS = {
     { id: "weather", name: "Weather station", at: { urban: 0.3, campus: 1, rural: 3 }, sig: ["radioconsole", "screens"], make: (rng) => {
       const s = size(rng, "weather");
       return {
-        ...s, front: { width: 1 }, ground: "rural", foot: "small",
+        ...s, front: { width: 1 }, ground: "rural", foot: footOf(s, "small"),
         program: Y([4, X(["*", R("control", "instruments", { name: "Instrument room", entry: true, hub: true })], [4, R("office", "radio", { name: "Radio room", type: "control" })])],
           ["*", X(["*", R("bunk", "bunks", { name: "Bunk room", type: "cabin" })], [4, R("kitchen", "kitchenette", { name: "Kitchenette" })])]),
         exits: [door("back", ["bunk", "kitchen"], 0.6, 0.3)],
@@ -464,7 +467,7 @@ export const INDUSTRY_PLANS = {
     { id: "assay", name: "Assay lab", at: { urban: 0.5, industrial: 3, rural: 2 }, sig: ["fumehood", "kiln"], make: (rng) => {
       const s = size(rng, "assay");
       return {
-        ...s, front: { width: 1 }, ground: "lot", foot: "medium",
+        ...s, front: { width: 1 }, ground: "lot", foot: footOf(s, "medium"),
         program: Y([4, X([5, OFFICE("Assay office")], ["*", R("workshop", "sampleprep", { name: "Sample prep" })])],
           ["*", X(["*", lab("Assay lab", "assay")], [5, R("kiln", "kiln", { name: "Furnace room" })], [5, R("storage", "cores", { name: "Core store", type: "warehouse" })])]),
         exits: [door("back", ["storage", "kiln"], 0.8, 0.4)],
@@ -473,7 +476,7 @@ export const INDUSTRY_PLANS = {
     { id: "fieldstation", name: "Field research station", at: { urban: 0.1, campus: 0.5, rural: 4 }, sig: ["labbench", "bunk"], make: (rng) => {
       const s = size(rng, "fieldstation");
       return {
-        ...s, front: { width: 1 }, ground: "woods", foot: "small",
+        ...s, front: { width: 1 }, ground: "woods", foot: footOf(s, "small"),
         program: X(["*", Y([5, R("dayroom", "commons", { name: "Common room", entry: true, hub: true, type: "cabin" })], ["*", R("bunk", "bunks", { name: "Bunk room", type: "cabin" })])],
           [6, Y(["*", lab("Field lab", "field")], [4, R("workshop", "genshed", { name: "Generator shed", type: "garage" })])]),
         exits: [door("back", ["workshop", "bunk"], 0.7, 0.3)],
