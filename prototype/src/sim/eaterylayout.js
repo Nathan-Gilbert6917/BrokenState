@@ -106,7 +106,7 @@ const mixOf = (v) => `eat:${v.cuisine}`;
  * A restaurant's building spec (buildingmaps.js assemble) by its variant v: the footprint by its size, the rooms by its
  * format, the front room with the franchise's floor, name and wall colour (look). New saves only (shop: o.legacy keeps
  * the old plan).
- * @param {any} rng @param {any} v @param {{ fl?: string, room?: string, look?: any }} plan
+ * @param {any} rng @param {any} v @param {{ fl?: string, room?: string, look?: any, truck?: boolean }} plan
  */
 export function eateryPlan(rng, v, plan = {}) {
   const S = EAT_SIZE[v.size] || EAT_SIZE.medium, C = CUISINES[v.cuisine] || CUISINES.burgers, F = FORMATS[v.format] || FORMATS.family;
@@ -287,7 +287,26 @@ function orderCounter(L, behind = []) {
   if (!deep) menus(L, 1);
   return row;
 }
-const dinerTables = (L, per, chairs = 2, k = "table") => tables(L, Math.max(1, Math.floor((L.c.w * L.c.h) / per)), chairs, k);
+/**
+ * Up to n tables of kind k spread over the floor in a grid (a walk between them: every `step` cells, 4 with four chairs,
+ * 3 with two), each with its chairs; what the grid does not take (a small room the lanes cut up) goes nearest the middle.
+ * @param {Lay} L
+ */
+function spread(L, n, chairs = 2, k = "table") {
+  const c = L.c, step = chairs > 2 ? 4 : 3, off = L.variant(2, "grid");
+  let made = 0;
+  for (let y = c.y0 + 1 + off, row = 0; y <= c.y1 - 1 && made < n; y += step, row++)
+    for (let x = c.x0 + 1 + (row % 2 ? 1 : 0); x <= c.x1 - 1 && made < n; x += step) {
+      if (!L.ok(x, y)) continue;
+      const t = L.place(k, [[x, y]]);
+      if (!t) continue;
+      L.around(t, "chair", chairs);
+      made++;
+    }
+  if (!made) made = tables(L, Math.min(n, 2), chairs, k);
+  return made;
+}
+const dinerTables = (L, per, chairs = 2, k = "table") => spread(L, Math.max(1, Math.floor((L.c.w * L.c.h) / per)), chairs, k);
 
 /** @type {Record<string, (L: Lay) => void>} */
 export const EATERY_STYLES = {
@@ -410,7 +429,11 @@ export const EATERY_STYLES = {
   eatbuffet(L) {
     quota(L, EATERY.DENSITY.front);
     const c = L.c, n = Math.max(2, Math.floor(c.w / 5));
-    for (let i = 0; i < n; i++) L.centre("steamtable") || L.wall("steamtable", { sides: ["n"] });
+    // The buffet line: rows of steam tables (two cells each, a walk between) across the middle of the hall.
+    const mid = c.y0 + Math.floor(c.h / 2), rows = c.h >= 12 ? [mid - 3, mid + 2] : [mid];
+    let laid = 0;
+    for (const y of rows) for (let x = c.x0 + 3; x + 1 <= c.x1 - 3 && laid < n; x += 3) if (L.ok(x, y) && L.ok(x + 1, y) && L.place("steamtable", [[x, y], [x + 1, y]])) laid++;
+    for (let i = laid; i < 2; i++) L.centre("steamtable") || L.wall("steamtable", { sides: ["n"] });
     if (!L.has("steamtable")) L.need("steamtable");
     L.centre("saladbar") || L.need("saladbar");
     L.wall("pastrycase", P(L, { sides: ["n", "e", "w"], prefer: "corner" }));

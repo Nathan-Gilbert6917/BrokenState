@@ -182,6 +182,8 @@ section("Older saves, eateryVariant for #29 and #30, the scenes");
     for (const x of (S && S.list) || []) got[x.kind] = (got[x.kind] || 0) + 1;
     if (s < 40) { const L = rollScenes(make(key, FRANCHISES[key][s % 5].id, s, true).m, new Rng(500 + s), key); if (L && L.list.some((x) => ["drivethru", "dinebarricade", "kitchenfire", "lastmeal"].includes(x.kind))) old++; }
   }
+  const ff = VARIANTS.filter((v) => v.format === "fastfood"); // the drive-through line: fast food only, with cars in its lane
+  for (let s = 0; s < 60 && !got.drivethru; s++) { const v = ff[s % ff.length], S = rollScenes(make(keyOf(v), v.id, s).m, new Rng(900 + s), keyOf(v)); for (const x of (S && S.list) || []) if (x.kind === "drivethru") got.drivethru = (got.drivethru || 0) + 1; }
   check(want.every((k) => got[k] > 0), `the scenes turn up (${want.map((k) => `${k} ${got[k] || 0}`).join(", ")})`);
   check(!old, `none of the new ones on an older save's layout (${old})`);
   const fire = built.map((b) => { const S = rollScenes(b.m, new Rng(3), keyOf(b.v)); return S && S.list.some((x) => x.kind === "kitchenfire") ? b.m : null; }).find(Boolean);

@@ -21,7 +21,7 @@
 //   always has, tools/restauranttest.js), the front (front: pieces in the dining room), the decor (tint: the booths'
 //   colour; menu: what the menu board says), the walk-in's name and the food in its walk-ins, dry store and freezers
 //   (mix: the food's items by calorie share, keeps: its "preserved" draws; foods.js MIXES "eat:<cuisine>" and
-//   "eat:<cuisine>:keeps"); propane: bottles in the kitchen (a BBQ's, a food truck's).
+//   "eat:<cuisine>:keeps"; never the smoked sausage or the ground meat: those are the base's meat grinder's alone). Propane: a BBQ's pit room (appliances.js AREA_PROPANE pitroom) and a food truck (BOX_LOOT).
 // VARIANTS: the table, cuisine × format × size, each a franchise or a local place of one of the four food kinds (kind:
 //   the FRANCHISES list it joins; an id already there keeps its name, look and plan and gains its cuisine, format and
 //   size), with its look (colours, sign, style 0–3 for the map painter, booth tint) and its plan (the floor, the front
@@ -65,7 +65,7 @@ export const CUISINES = {
   chicken:   { name: "Fried chicken", line: ["fryer", "fryer", "fryer"], sig: ["fryer"], tint: "#b8402a", menu: "chicken",
     mix: { f_frozenmeat: 16, f_potatoes: 12, f_flour: 10, f_bread: 4, f_cannedveg: 3 }, keeps: { f_flour: 6, f_cannedmeat: 6, f_beans: 6, f_sugar: 3 } },
   pizza:     { name: "Pizza", line: ["deckoven", "deckoven"], sig: ["deckoven"], front: [], tint: "#3f6b3a", menu: "pizza",
-    mix: { f_flour: 18, f_cheese: 12, f_cannedveg: 8, f_sausage: 4, f_onions: 3 }, keeps: { f_flour: 10, f_cannedveg: 8, f_pasta: 4, f_jarred: 4, f_sausage: 3 } },
+    mix: { f_flour: 18, f_cheese: 12, f_cannedveg: 8, f_frozenmeat: 4, f_onions: 3 }, keeps: { f_flour: 10, f_cannedveg: 8, f_pasta: 4, f_jarred: 4, f_cannedmeat: 3 } },
   mexican:   { name: "Mexican", line: ["flattop", "tortillapress", "steamtable"], sig: ["tortillapress"], front: ["saladbar"], tint: "#c86a20", menu: "tacos",
     mix: { f_drybeans: 14, f_rice: 10, f_flour: 8, f_corn: 6, f_frozenmeat: 8, f_cheese: 4, f_onions: 4 }, keeps: { f_drybeans: 10, f_beans: 8, f_rice: 6, f_cannedveg: 4 } },
   chinese:   { name: "Chinese", line: ["wokrange", "wokrange", "stockpot"], sig: ["wokrange"], front: ["tank"], tint: "#9a2a22", menu: "wok",
@@ -80,8 +80,8 @@ export const CUISINES = {
     mix: { f_pasta: 20, f_flour: 8, f_cannedveg: 8, f_cheese: 6, f_onions: 3, f_bread: 4 }, keeps: { f_pasta: 14, f_cannedveg: 8, f_jarred: 4, f_flour: 4 } },
   steak:     { name: "Steakhouse", line: ["chargrill", "chargrill", "range"], sig: ["chargrill"], tint: "#5a3424", menu: "steaks", cold: "Meat locker",
     mix: { f_frozenmeat: 24, f_potatoes: 12, f_onions: 4, f_bread: 4, f_cheese: 2 }, keeps: { f_cannedmeat: 10, f_jerky: 6, f_beans: 4, f_jarred: 3 } },
-  bbq:       { name: "BBQ and smokehouse", line: ["range", "fryer"], sig: ["smoker"], tint: "#7a5230", menu: "bbq", propane: true,
-    mix: { f_frozenmeat: 18, f_sausage: 8, f_drybeans: 8, f_potatoes: 8, f_bread: 4, f_sugar: 3 }, keeps: { f_jerky: 10, f_sausage: 8, f_beans: 8, f_sugar: 4 } },
+  bbq:       { name: "BBQ and smokehouse", line: ["range", "fryer"], sig: ["smoker"], tint: "#7a5230", menu: "bbq",
+    mix: { f_frozenmeat: 26, f_drybeans: 8, f_potatoes: 8, f_bread: 4, f_sugar: 3 }, keeps: { f_jerky: 14, f_cannedmeat: 4, f_beans: 8, f_sugar: 4 } },
   seafood:   { name: "Seafood", line: ["fryer", "chargrill", "stockpot"], sig: ["lobstertank"], front: ["lobstertank"], tint: "#2f5d8a", menu: "fish",
     mix: { f_smokedfish: 12, f_potatoes: 10, f_flour: 6, f_rice: 6, f_frozenmeat: 4, f_onions: 3 }, keeps: { f_smokedfish: 10, f_crackers: 4, f_cannedveg: 4, f_rice: 4 } },
   greek:     { name: "Mediterranean and Greek", line: ["gyrospit", "chargrill", "range"], sig: ["gyrospit"], tint: "#3a6fb0", menu: "gyros",
@@ -93,7 +93,7 @@ export const CUISINES = {
   icecream:  { name: "Ice cream", line: ["counter"], sig: ["softserve", "dipcabinet"], front: ["dipcabinet", "softserve"], tint: "#7fc6e6", menu: "ice cream",
     mix: { f_sugar: 14, f_candybar: 8, f_cannedfruit: 6, f_crackers: 3 }, keeps: { f_sugar: 10, f_cannedfruit: 6, f_candybar: 4 } },
   deli:      { name: "Sandwiches and deli", line: ["slicer", "flattop"], sig: ["slicer"], front: ["meatcase"], tint: "#3f6b3a", menu: "subs",
-    mix: { f_bread: 14, f_cheese: 10, f_sausage: 6, f_frozenmeat: 6, f_onions: 3, f_chips: 4 }, keeps: { f_cannedmeat: 8, f_sausage: 6, f_crackers: 4, f_chips: 3, f_jarred: 3 } },
+    mix: { f_bread: 14, f_cheese: 10, f_frozenmeat: 12, f_onions: 3, f_chips: 4 }, keeps: { f_cannedmeat: 14, f_crackers: 4, f_chips: 3, f_jarred: 3 } },
   breakfast: { name: "Breakfast and pancakes", line: ["flattop", "flattop", "range"], sig: ["flattop"], tint: "#c88a2a", menu: "pancakes",
     mix: { f_flour: 12, f_eggs: 10, f_oats: 6, f_sugar: 6, f_bread: 4, f_frozenmeat: 4, f_potatoes: 6 }, keeps: { f_oats: 8, f_flour: 6, f_honey: 4, f_sugar: 6, f_cereal: 4 } },
   southern:  { name: "Southern and soul food", line: ["fryer", "range", "stockpot", "steamtable"], sig: ["steamtable"], tint: "#8e4f3c", menu: "soul food",
@@ -102,10 +102,10 @@ export const CUISINES = {
     mix: { f_cannedveg: 10, f_drybeans: 8, f_rice: 6, f_apples: 4, f_potatoes: 4, f_onions: 4, f_oats: 4 }, keeps: { f_drybeans: 8, f_cannedveg: 8, f_driedfruit: 4, f_peanutbutter: 3 } },
   noodles:   { name: "Noodle bar", line: ["stockpot", "stockpot", "wokrange"], sig: ["stockpot"], tint: "#2a2a2a", menu: "ramen",
     mix: { f_pasta: 20, f_rice: 6, f_eggs: 4, f_frozenmeat: 4, f_cannedveg: 4 }, keeps: { f_pasta: 14, f_rice: 6, f_soup: 4 } },
-  korean:    { name: "Korean BBQ", line: ["range", "wokrange"], sig: ["kbbqtable"], front: ["kbbqtable"], tint: "#c8402f", menu: "k-bbq", propane: true,
+  korean:    { name: "Korean BBQ", line: ["range", "wokrange"], sig: ["kbbqtable"], front: ["kbbqtable"], tint: "#c8402f", menu: "k-bbq",
     mix: { f_frozenmeat: 18, f_rice: 14, f_cannedveg: 6, f_onions: 3 }, keeps: { f_rice: 12, f_jarred: 6, f_cannedmeat: 4 } },
   hotdogs:   { name: "Hot dogs", line: ["flattop", "steamtable"], sig: ["flattop"], tint: "#e8c04a", menu: "hot dogs",
-    mix: { f_sausage: 12, f_bread: 10, f_onions: 4, f_chips: 4 }, keeps: { f_sausage: 8, f_cannedmeat: 6, f_chips: 3 } },
+    mix: { f_frozenmeat: 12, f_bread: 10, f_onions: 4, f_chips: 4 }, keeps: { f_cannedmeat: 14, f_chips: 3 } },
   wings:     { name: "Wings and sports bar", line: ["fryer", "fryer", "fryer", "flattop"], sig: ["fryer"], tint: "#3a5f8e", menu: "wings",
     mix: { f_frozenmeat: 18, f_potatoes: 10, f_flour: 4, f_chips: 4 }, keeps: { f_cannedmeat: 8, f_chips: 4, f_crackers: 4, f_jerky: 3 } },
   cafeteria: { name: "Cafeteria", line: ["range", "steamtable", "steamtable"], sig: ["steamtable"], front: ["saladbar"], tint: "#7d848c", menu: "lunch",
