@@ -20,6 +20,8 @@ import { ensureAppearance } from "../sim/appearance.js";
 import { spriteArmorKey } from "../sim/inventory.js";
 import { weaponLook, unitGun } from "./gunparts.js";
 import { onForgetPictures } from "./pictures.js";
+import { carriedPiece, pieceKg } from "../sim/furnicarry.js"; // a piece of furniture in the arms (issue #17): the carry poses
+import { MAX_LOAD } from "../sim/load.js";
 
 export const BW = 48, BH = 52; // the pixel grid of a figure at scale 1; the figure stands on the tile's centre at (OX, OY)
 const OX = BW / 2, OY = BH - 9;
@@ -160,6 +162,7 @@ const SHOE = "#2a2622";
 const ARMOR = { vest: "#4d5440", plate: "#3c4148", padding: "#8a7f6a", tirevest: "#2a2a2a", sportspads: "#b8b0a0", scrapvest: "#6e5a48", riot: "#3a3d44" };
 export function holdOf(key) {
   if (!key || key === "fists" || key === "claws" || key === "acid") return null;
+  if (key === "carry" || key === "carryLow") return key; // a piece of furniture in the arms (sim/furnicarry.js): figureCanvas o.carry
   if (["pistol", "revolver", "pistol22", "compact9", "pistol45", "usp45", "magnum", "snub357", "snub38", "service38", "fiveseven", "revolver44"].includes(key)) return "pistol";
   if (["smg", "ump45", "p90", "vector"].includes(key)) return "smg";
   if (["bat", "spikedbat", "nailbat", "sledge", "fireaxe", "pickaxe", "spear", "pipespear", "golfclub", "hockeystick", "katana", "broadsword"].includes(key)) return "shoulder";
@@ -191,6 +194,8 @@ export function figureLimbs(app, weaponKey = null, armorKey = null) {
   const shoulderZ = legH + torsoH;
   const short = app.topStyle === "tshirt" || app.topStyle === "tank";
   const run = D && D.run ? 1.8 : 0;
+  const hold = holdOf(weaponKey); // the arms' pose (below); a piece carried (carry, carryLow) bends the whole body
+  const carrying = hold === "carry" || hold === "carryLow", low = hold === "carryLow";
   const down = app.down || null; // lying: "dead" (arms out a little), "down" (knees drawn up, arms over the chest)
   F.height = shoulderZ + headS + 2;
   if (D && D.body === "crawler") return crawlerLimbs(F, { skin, cloth: top, eye: D.eye, TW, TD, headS, marks: D.marks });
@@ -204,16 +209,21 @@ export function figureLimbs(app, weaponKey = null, armorKey = null) {
   else if (D && D.mound) F.push(limb([0, 0, legH + 1], [0, 0, 0], TD / 2 * 1.4, TW / 2 * 1.3, D.mound, { taper: 1.25 }));
   else for (const side of [-1, 1]) {
     const l = side * TW / 4, lc = side > 0 ? pants : shade(pants, -0.1), fwd = run * side;
-    const sw = (app.stride || 0) * side * 2.8 * big, lift = sw < 0 ? -sw * 0.3 : 0; // walking (ui/moveanim.js): this foot ahead or behind, the one behind off its heel
+    const sw = (app.stride || 0) * side * 2.8 * big * (carrying ? CARRY_POSE.STRIDE : 1), lift = sw < 0 ? -sw * 0.3 : 0; // walking (ui/moveanim.js): this foot ahead or behind, the one behind off its heel
     if (down && down.pose === "down") { // knees drawn up: the thigh forward, the shin back down
       F.push(limb([0, l, legH], [4.5 * big, l, legH - 3 * big], TD / 2 * 0.9, TW / 4 * 0.9, lc, { taper: 0.9, tex: marks("leg" + side) }));
       F.push(limb([4.5 * big, l, legH - 3 * big], [2 * big, l, 1.4], TD / 2 * 0.8, TW / 4 * 0.8, lc, { taper: 0.85 }));
       F.push(limb([1.2 * big, l, 0.7], [4.4 * big, l, 0.7], 0.7, TW / 4 * 0.8, SHOE, { sides: 6, u: [0, 0, 1] }));
       continue;
     }
-    F.push(limb([fwd, l, legH], [fwd + sw, l, 1.4 + lift], TD / 2 * 0.92, TW / 4 * 0.9, lc, { taper: 0.78, tex: marks("leg" + side) }));
+    if (low) { // a heavy piece: the knees bent, the hips sunk (CARRY_POSE.SINK), a short stride
+      const knee = [fwd + sw * 0.5 + 2.2, l, (legH - CARRY_POSE.SINK) / 2 + 0.6];
+      F.push(limb([fwd, l, legH - CARRY_POSE.SINK], knee, TD / 2 * 0.92, TW / 4 * 0.9, lc, { taper: 0.88, tex: marks("leg" + side) }));
+      F.push(limb(knee, [fwd + sw, l, 1.4 + lift], TD / 2 * 0.82, TW / 4 * 0.8, lc, { taper: 0.85 }));
+    } else F.push(limb([fwd, l, legH], [fwd + sw, l, 1.4 + lift], TD / 2 * 0.92, TW / 4 * 0.9, lc, { taper: 0.78, tex: marks("leg" + side) }));
     F.push(limb([fwd + sw - 0.8, l, 0.7 + lift], [fwd + sw + 2.4, l, 0.7 + lift * 0.4], 0.7, TW / 4 * 0.8, SHOE, { sides: 6, u: [0, 0, 1] }));
   }
+  const upper = F.length; // from here the body above the hips: leant and sunk as a piece carried has it (below)
   // the torso: narrower at the waist, the belt; a vest around it with its own depth
   const topTex = (face, s, t) => {
     if (t > 0.92 && !D) return "#2a2420";
@@ -237,7 +247,6 @@ export function figureLimbs(app, weaponKey = null, armorKey = null) {
   if (armor) F.push(limb([0, 0, shoulderZ - 0.8], [0, 0, legH + 2.6], TD / 2 + 0.6, TW / 2 + 0.5, armor, { taper: 0.92, tex: (face, s, t) => (face === "top" ? shade(armor, 0.1) : armorKey === "plate" && (face === "front" || face === "back") && s > 0.25 && s < 0.75 && t > 0.15 && t < 0.8 ? shade(armor, -0.2) : t < 0.12 && (face === "front" || face === "back") && Math.abs(s - 0.5) > 0.25 ? shade(armor, -0.3) : null) }));
   if (app.accessory === "backpack") F.push(boxL([-TD / 2 - 0.4, 0, legH + 9.5], [-TD / 2 - 0.4, 0, legH + 2.5], 1.6, TW * 0.34, "#6b4a2a", { u: [1, 0, 0], tex: (face, s, t) => (face === "back" && t > 0.3 && t < 0.4 ? "#4a3220" : null) }));
   // arms: shoulder → elbow → hand, the hand on the weapon
-  const hold = holdOf(weaponKey);
   const armR = 1.35 * big, sideL = TW / 2 + armR + 0.25;
   const SH = (side) => [0, side * sideL, shoulderZ - 1.3];
   const armTex = (side) => marks("arm" + side, (face, s, t) => (side > 0 && app.armband && t > 0.3 && t < 0.5 ? app.armband : short && t > 0.4 ? skin : null)); // a soldier's armband in the group's colour
@@ -278,7 +287,13 @@ export function figureLimbs(app, weaponKey = null, armorKey = null) {
   }
   else if (D && D.pose === "claws") { hangLong(1); hangLong(-1); for (const side of [-1, 1]) F.push(D.spades ? boxL([0.6, side * (sideL + 0.6), shoulderZ - 12.5 * longArm], [1.4, side * (sideL + 0.6), shoulderZ - 16.5 * longArm], 1.9, 0.7, D.spades, { u: [0, 0, 1] }) : limb([0.6, side * (sideL + 0.6), shoulderZ - 13 * longArm], [1.6, side * (sideL + 0.6), shoulderZ - 15.5 * longArm], 0.5, 0.5, BONE, { sides: 4 })); } // clawed, hanging (a Digger's: broad spade hands caked in clay)
   else if (D && D.pose === "stubs") { arm(1, [0.2, sideL + 0.2, shoulderZ - 3.5], [0.8, sideL + 0.4, shoulderZ - 7]); arm(-1, [0.2, -(sideL + 0.2), shoulderZ - 3.5], [0.8, -(sideL + 0.4), shoulderZ - 7]); } // stubby arms on a swollen body
-  else if (hold === "gun" || hold === "smg") {
+  else if (hold === "carry") { // a piece in the arms: both forearms forward and bent, the hands at the chest, either side of it
+    for (const side of [-1, 1]) arm(side, [2.6, side * (sideL + 0.4), shoulderZ - 6.2], [6.4, side * (sideL - 0.2), shoulderZ - 5.4]);
+    F.carryAt = [7.4, 0, shoulderZ - 5.4];
+  } else if (hold === "carryLow") { // a heavy one: the arms down and straight, the hands low under it
+    for (const side of [-1, 1]) arm(side, [1.6, side * (sideL + 0.6), shoulderZ - 6.2], [3.4, side * (sideL + 0.4), shoulderZ - 11.4]);
+    F.carryAt = [4.8, 0, shoulderZ - 11.6];
+  } else if (hold === "gun" || hold === "smg") {
     // low ready: the gun ahead and a little to the right, muzzle down; the right hand on the grip, the left out to the fore-end
     const long = hold === "gun";
     const butt = [long ? -2.2 : -0.8, -2.8, shoulderZ - 2.4], muzzle = [long ? 11.6 : 8.6, -2.4, shoulderZ - (long ? 4.2 : 3.2)];
@@ -355,8 +370,17 @@ export function figureLimbs(app, weaponKey = null, armorKey = null) {
   } else if (app.accessory === "cap") { F.push(limb([0, 0, hz + headS + 1.4], [0, 0, hz + headS - 0.6], headS / 2 + 0.3, headS / 2 + 0.35, app.accent, { taper: 1.08 })); F.push(boxL([headS / 2 - 0.2, 0, hz + headS - 0.4], [headS / 2 + 2.6, 0, hz + headS - 0.7], 0.35, headS / 2 + 0.2, shade(app.accent, -0.3), { u: [0, 0, 1] })); }
   if (app.hood) F.push(limb([0, 0, hz + headS + 1.4], [0, 0, hz + headS * 0.2], headS / 2 + 0.7, headS / 2 + 0.7, app.hood, { taper: 1.1, tex: (face, s, t) => (face === "front" && t > 0.35 ? skin : null) })); // a zealot's hood: the face open
   if (!app.helmet && app.accessory === "beanie") F.push(limb([0, 0, hz + headS + 1.6], [0, 0, hz + headS - 1.6], headS / 2 * 0.8, headS / 2 * 0.82, app.accent, { taper: 1.3 }));
+  if (carrying) { // the body above the hips leant (back a little under a piece at the chest, forward over a heavy one) and sunk on bent knees
+    const k = low ? CARRY_POSE.LEAN_LOW : CARRY_POSE.LEAN, sink = low ? CARRY_POSE.SINK : 0;
+    const bend = (P) => [P[0] + (P[2] - legH) * k, P[1], P[2] - sink];
+    for (let i = upper; i < F.length; i++) F[i] = { ...F[i], A: bend(F[i].A), B: bend(F[i].B) };
+    F.carryAt = bend(F.carryAt);
+  }
   return F;
 }
+// The carry poses (the issue #17 numbers): the stride's length, the lean (forward px a px above the hips; back under a
+// piece at the chest, forward over a heavy one), the hips sunk on bent knees under a heavy one.
+export const CARRY_POSE = { STRIDE: 0.7, LEAN: -0.12, LEAN_LOW: 0.22, SINK: 1.6 };
 
 // The Crawler: what is left of one, flat to the ground, the head low and looking up, dragging itself on its arms.
 function crawlerLimbs(F, o) {
@@ -543,18 +567,65 @@ const mixHex = (a, b, t) => { const x = [1, 3, 5].map((i) => parseInt(a.slice(i,
 
 // Paints a figure on a BW × BH grid at a yaw (degrees; YAW[facing] for the view's diagonals), standing on the
 // tile's centre; tile: draw the 32 × 16 diamond under it (the preview sheets). Returns the painter (p.muzzle for guns).
-export function paintBoxFigure(app, weaponKey = null, armorKey = null, yaw = 0, tile = false) {
+// carry: { kind, low } a piece of furniture in the arms (figureCanvas o.carry): the carry pose, the piece's own picture
+// at the hands when kind is set (a pair's piece is drawn once between them instead: ui/isoview.js).
+export function paintBoxFigure(app, weaponKey = null, armorKey = null, yaw = 0, tile = false, carry = null) {
   const lie = !!app.down;
+  if (carry && !lie) weaponKey = carry.low ? "carryLow" : "carry";
   const limbs = figureLimbs(app, weaponKey, armorKey || (app.armor || null));
-  const g = gridFor(((app.dead && app.dead.scale) || (app.dead && app.dead.brute ? 1.3 : 1)) * ((app.dead && app.dead.room) || 1), lie); // room: a wider grid for what reaches past the body
+  const g = gridFor(((app.dead && app.dead.scale) || (app.dead && app.dead.brute ? 1.3 : 1)) * ((app.dead && app.dead.room) || 1) * (carry && carry.kind && !lie ? CARRY_ROOM : 1), lie); // room: a wider grid for what reaches past the body (a piece in the arms)
   const p = painter(g.w, g.h);
   p.fig = g;
   if (tile && !lie) for (let y = -8; y <= 8; y++) { const w = 16 - Math.abs(y) * 2; for (let x = -w; x <= w; x++) p.set(g.ox + x, g.oy + y, (x + y) % 3 === 0 ? "#4a5a36" : "#55673d"); }
   let buf = null;
   if (lie && app.down.pool) buf = paintLimbs(p, [limb([0, 0, 0.5], [0, 0, 0], 9.5, 6.5, app.down.burnt ? "#2a2220" : "#5c1210", { taper: 1.02 })], transformOf(yaw), g); // the pool it lies in
   buf = paintLimbs(p, limbs, transformOf(yaw, lie, limbs.height || 30), g, buf);
+  if (carry && carry.kind && !lie && limbs.carryAt) paintPiece(p, g, buf, carry, yaw, limbs.carryAt);
   rim(p, g, buf.gb);
   return p;
+}
+
+// ---------- a piece of furniture in the arms (sim/furnicarry.js; issue #17, the user's request 2026-10-25: "Show an
+// update to the sprites to show them carrying the appliance, furniture etc") ----------
+// The piece is the battle view's own picture of it (ui/isoview.js primsOf, painted flat: registered by setPieceArt, so
+// this module does not import the view), at CARRY_SCALE, broadside to the carrier (its long side across the way they
+// face), its middle CARRY_AHEAD px ahead of the hands: at the chest in the carry pose (its middle at the hands' height),
+// in the low one gripped by its sides, just off the floor (CARRY_LOW_Z px up). It goes into the figure's depth buffer at the depth of its
+// middle, so it hides the hands and the body when it is nearer the viewer and the body hides it when they face away
+// (the painter's order by yaw, as for the pack), and a dark rim parts it from the clothes (group 1, as a weapon).
+// pieceArt(kind, ax): { buf (RGBA), w, h, x0, y0 (the art px of buf's corner), cx, cy (the art px of the piece's middle
+// on the ground), top (its height, art px) } or null; ax "u" | "v" its long side along the figure world's x or y.
+let pieceArt = null;
+export const setPieceArt = (fn) => { pieceArt = fn; };
+export const CARRY_SCALE = 0.8, CARRY_AHEAD = 3, CARRY_ROOM = 1.5, CARRY_LOW_Z = 1.5; // the piece's scale; px ahead of the hands; the grid's growth for it; a heavy piece's height off the floor
+const hex2 = (v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, "0");
+function paintPiece(p, g, buf, carry, yaw, at) {
+  const a = (yaw * Math.PI) / 180, art = pieceArt ? pieceArt(carry.kind, Math.abs(Math.cos(a)) >= Math.abs(Math.sin(a)) ? "v" : "u") : null;
+  if (!art) return;
+  const W = transformOf(yaw), K = CARRY_SCALE, d = at[0] + CARRY_AHEAD;
+  const z0 = carry.low ? CARRY_LOW_Z : Math.max(1, at[2] - (art.top * K) / 2);
+  const P = W([d, 0, z0]), gx = g.ox + SX(P), gy = g.oy + SY(P), dep = DEPTH(W([d, 0, at[2]]));
+  const xa = Math.max(0, Math.floor(gx + (art.x0 - art.cx) * K)), xb = Math.min(g.w, Math.ceil(gx + (art.x0 + art.w - art.cx) * K));
+  const ya = Math.max(0, Math.floor(gy + (art.y0 - art.cy) * K)), yb = Math.min(g.h, Math.ceil(gy + (art.y0 + art.h - art.cy) * K));
+  for (let y = ya; y < yb; y++) for (let x = xa; x < xb; x++) {
+    const ax = Math.floor(art.cx + (x + 0.5 - gx) / K - art.x0), ay = Math.floor(art.cy + (y + 0.5 - gy) / K - art.y0);
+    if (ax < 0 || ay < 0 || ax >= art.w || ay >= art.h) continue;
+    const j = (ay * art.w + ax) * 4, i = y * g.w + x;
+    if (art.buf[j + 3] < 128 || dep <= buf.zb[i]) continue;
+    buf.zb[i] = dep; buf.gb[i] = 1;
+    p.px[i] = `#${hex2(art.buf[j])}${hex2(art.buf[j + 1])}${hex2(art.buf[j + 2])}`;
+  }
+}
+// How a battle unit carries a piece (sim/furnicarry.js carriedPiece): null for none (or down: dropPiece sets it down);
+// alone { kind, low } (low past MAX_LOAD: the piece's kg on them, furnicarry.js pieceKg); one of a pair { kind: "" }:
+// the pose only, the piece drawn once between the two (ui/isoview.js).
+export function carryLook(state, b, t) {
+  if (!t || !t.piece || t.dead || t.down || !b) return null;
+  const P = carriedPiece(b, t);
+  if (!P) return null;
+  if (P.partner) return { kind: "", low: false };
+  const s = t.sid != null && state && state.survivors ? state.survivors.find((x) => x.id === t.sid) : null;
+  return { kind: P.def.kind, low: (pieceKg(t, s) || P.def.kg) > MAX_LOAD };
 }
 export const paintBoxSurvivor = (app, weaponKey = null, armorKey = null, facing = "SE", tile = false) => paintBoxFigure(app, weaponKey, armorKey, YAW[facing] ?? 0, tile);
 export const paintBoxZombie = (variant, seed, facing = "SE", tile = false, look = undefined) => paintBoxFigure(zombieApp(variant, seed, look), null, null, YAW[facing] ?? 0, tile);
@@ -579,12 +650,13 @@ const STEP = 15; // degrees a cached heading
 export function figureCanvas(app, look = null, armorKey = null, yaw = 0, o = {}) {
   const y = (((Math.round(yaw / STEP) * STEP) % 360) + 360) % 360;
   const st = o.stride && legged(app) ? o.stride : 0;
-  const key = `${lookKey(app)}|${look || ""}|${armorKey || ""}|${o.pack ? 1 : 0}|${y}${st ? `|st${st}` : ""}`;
+  const carry = o.carry && !app.down ? o.carry : null; // a piece of furniture in the arms: the carry pose (paintBoxFigure)
+  const key = `${lookKey(app)}|${look || ""}|${armorKey || ""}|${o.pack ? 1 : 0}|${y}${st ? `|st${st}` : ""}${carry ? `|c${carry.kind}:${carry.low ? 1 : 0}` : ""}`;
   const e = cache.get(key);
   if (e !== undefined) { cache.delete(key); cache.set(key, e); return e.cv; }
   if (o.cached) return null;
   const t0 = typeof performance !== "undefined" ? performance.now() : 0;
-  const p = paintBoxFigure({ ...app, accessory: o.pack ? "backpack" : app.accessory, ...(st ? { stride: st } : {}) }, look ? String(look).split("|")[0] : null, armorKey, y, false);
+  const p = paintBoxFigure({ ...app, accessory: o.pack ? "backpack" : app.accessory, ...(st ? { stride: st } : {}) }, look ? String(look).split("|")[0] : null, armorKey, y, false, carry);
   const cv = toCanvas(p);
   if (cv) { cv.figure = p.fig; if (p.muzzle) MUZZLE.set(cv, p.muzzle); }
   const bytes = p.w * p.h * 64; // the canvas, 4 × 4 px a grid px of 4 bytes (headless too, where there is none)
@@ -635,10 +707,12 @@ function unitApp(state, b, t, salt) {
 }
 // The figure for a battle unit at a yaw (standing: on its feet even when down or dead, for a panel's doll). walk:
 // { stride, cached } a step of its walk (ui/moveanim.js; figureCanvas o.stride, o.cached).
+// A piece of furniture in the arms (carryLook): the carry pose, the piece with it when alone.
 export function unitFigure(state, b, t, salt, yaw, standing = false, walk = null) {
   if (!standing && (t.dead || t.down)) return null;
-  const u = unitApp(state, b, t, salt);
-  return figureCanvas(u.app, u.look, u.armor, yaw, walk && walk.stride ? { ...(u.o || {}), stride: walk.stride, cached: !!walk.cached } : u.o || {});
+  const u = unitApp(state, b, t, salt), carry = standing ? null : carryLook(state, b, t);
+  const o = carry ? { ...(u.o || {}), carry } : u.o || {};
+  return figureCanvas(u.app, u.look, u.armor, yaw, walk && walk.stride ? { ...o, stride: walk.stride, cached: !!walk.cached } : o);
 }
 // The figure of a unit lying on the ground (dead, or down and alive), its head toward the yaw; the dead in a pool.
 export function unitFigureDown(state, b, t, salt, yaw) {
