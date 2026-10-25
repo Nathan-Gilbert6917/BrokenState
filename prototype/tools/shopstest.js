@@ -503,7 +503,7 @@ section("Grocery stores by size: a corner store, a neighbourhood grocery, a real
   for (let s = 0; s < 60; s++) {
     const c = spec("corner", s), g = spec("grocery", s), m = spec("supermarket", s), d = spec("deptstore", s);
     if (c.bw < 10 || c.bw > 14 || c.bh < 10 || c.bh > 12) err("foot", `corner ${c.bw}x${c.bh}`);
-    if (g.bw < 20 || g.bw > 26 || g.bh < 16 || g.bh > 19) err("foot", `grocery ${g.bw}x${g.bh}`);
+    if (g.bw < 20 || g.bw > 26 || g.bh < 17 || g.bh > 20) err("foot", `grocery ${g.bw}x${g.bh}`);
     if (m.bw < 54 || m.bw > 58 || m.bh < 36 || m.bh > 40) err("foot", `supermarket ${m.bw}x${m.bh}`);
     if (d.bw < 26 || d.bw > 30 || d.bh < 18 || d.bh > 21) err("dept", `${d.bw}x${d.bh}`);
     for (const k of ["corner", "grocery"]) { const o = spec(k, s, true); if (o.bw < 14 || o.bw > 21 || o.bh < 11 || o.bh > 14) err("old", `${k} ${o.bw}x${o.bh}`); }
@@ -567,7 +567,7 @@ section("Grocery stores by size: a corner store, a neighbourhood grocery, a real
   }
   const avg = (a) => (a.length ? (a.reduce((p, q) => p + q, 0) / a.length).toFixed(1) : "0");
   const label = {
-    foot: "the footprints: a corner store 10–14 across, a grocery 20–26 × 16–19, a supermarket 54–58 × 36–40", dept: "the department store as it was (26–30 × 18–21)", old: "an older save's corner store, grocery and supermarket as they were",
+    foot: "the footprints: a corner store 10–14 across, a grocery 20–26 × 17–20, a supermarket 54–58 × 36–40", dept: "the department store as it was (26–30 × 18–21)", old: "an older save's corner store, grocery and supermarket as they were",
     sm: "the supermarket's sales floor", lanes: `6+ checkout lanes (${avg(stat.lanes)} on average)`, self: "a self-checkout block", aisles: `10+ aisles (${avg(stat.aisles)})`, signs: "aisle markers", dairy: "the dairy wall of cold cases",
     frozen: `the frozen section: 6+ freezer cases (${avg(stat.fc)}) and island freezers`, produce: "produce", corral: "cart corrals by the doors", bakery: "the bakery's ovens and bread racks", deli: "the deli and butcher's cases",
     rooms: "the pharmacy, the café and the restrooms", warehouse: "the warehouse's pallet racks", walkins: "the walk-in cooler and freezer behind steel doors (freezer shelving)", baler: "the baler", cash: "the cash office and a safe",
