@@ -14,7 +14,9 @@
 // store (+150: an ice house) at 0.15–0.9 by the temperature (the best place in winter, little better than a pantry in
 // summer once the ice is gone; machines-2: never powered); a walk-in freezer (+300, the freezer-parts
 // branch's building "freezer") at FACTOR.freezer while base.freezerOn is true (powered and working), as a pantry when
-// it is off. Root Cellar Lore (skills.js spoilMult) × 0.75 everywhere.
+// it is off; the appliances set from the stores (#19, appliances.js coldRooms): a fridge (40 at 0.25×), a chest freezer
+// (60 at the walk-in's 0.05×) and a cold case (100 at 0.3×) while each has power, a pantry when it is off. Root Cellar
+// Lore (skills.js spoilMult) × 0.75 everywhere.
 // A base with a hunting cabin hangs its raw meat and fish in the smokehouse: × CABIN.spoil (hunting.js).
 //
 // Eating (eatFromStore): the lot nearest to spoiling first, whatever it is (the Kitchen's meals, bread, cheese, the
@@ -46,11 +48,12 @@ import { FOODS, DAY_KCAL, foodIn, foodSplit, syncLots, lotsOf, takeFood, addFood
 import { foodAte } from "./foodlog.js"; // the base's food ledger (the Food tab): what was eaten, by the item
 import { tentFoodDays } from "./tents.js"; // the tents pitched at a base keep food dry (call-time only)
 import { fridgesOn } from "./electric.js"; // the fridges with power (call-time only)
+import { coldRooms, COLD } from "./appliances.js"; // the chest freezers and the cold cases (#19; call-time only)
 import { FRIDGE } from "./data-power.js";
 
 export const STORE = { hubCellar: 200, pantry: 40, rootCellar: 200, storehouse: 150, coldStore: 150, crates: 30, freezer: 300 };
 // Shelf used a day by where the food sits (× the day's weather, storeFactor).
-export const FACTOR = { outside: 1.5, dry: 1, cellar: 0.35, freezer: 0.05, stable: 1, fridge: FRIDGE.factor };
+export const FACTOR = { outside: 1.5, dry: 1, cellar: 0.35, freezer: 0.05, stable: 1, fridge: FRIDGE.factor, get coldcase() { return COLD.cold_case.factor; } }; // coldcase: a shop's cold case (appliances.js, read when used)
 export const RACK = { food: 4, out: 3, keepDays: 15 };   // drying rack: days of food in, out, days of eating kept fresh
 export const JAR_RATIONS = 2, JAR_RETURN = 0.85;
 // The simple meal: kcal out per kcal of raw makings (wave 2 cooking: cooking.js COOK_RECIPES.simple.gain, 1.25: more
@@ -74,6 +77,7 @@ export function storeFactor(kind, temp, { wet = false, heat = false } = {}) {
   const cold = temp < 5, hot = temp > 24 || heat;
   if (kind === "freezer") return FACTOR.freezer;
   if (kind === "fridge") return FACTOR.fridge; // a refrigerator with power (electric.js)
+  if (kind === "coldcase") return FACTOR.coldcase; // a cold case with power (appliances.js; a chest freezer is a "freezer")
   if (kind === "cold") return temp < 0 ? 0.15 : temp < 5 ? 0.3 : temp < 15 ? 0.6 : 0.9; // an ice house: its ice lasts into spring
   if (kind === "cellar") return FACTOR.cellar * (cold ? 0.8 : hot ? 1.2 : 1);
   if (kind === "dry") return FACTOR.dry * (cold ? 0.7 : hot ? 1.25 : 1);
@@ -111,6 +115,9 @@ export function storeSpaces(base) {
     if (on) out.push({ key: "fridge", name: "Refrigerators", kind: "fridge", cap: on * FRIDGE.room });
     if (fr - on) out.push({ key: "fridgeoff", name: "Refrigerators (off)", kind: "dry", cap: (fr - on) * FRIDGE.room });
   }
+  // The chest freezers (the walk-in's rate) and the cold cases (appliances.js coldRooms, #19): cold while they have
+  // power, a pantry without (the walk-in's thaw), nothing when broken.
+  out.push(...coldRooms(base));
   return out;
 }
 export const storeCapacity = (base) => storeSpaces(base).reduce((a, s) => a + s.cap, 0);
@@ -373,7 +380,7 @@ export function storageDaily(state, base) {
 }
 
 // ---------- text ----------
-const KIND_WORD = { cellar: "cellar", dry: "room temperature", cold: "ice house", freezer: "frozen", fridge: "refrigerated", outside: "outside" };
+const KIND_WORD = { cellar: "cellar", dry: "room temperature", cold: "ice house", freezer: "frozen", fridge: "refrigerated", coldcase: "chilled", outside: "outside" };
 // "in cellar 180/200, outside 40 (spoiling 2.3/day)" plus the food that keeps, for the base panel, Farming tab and top bar.
 export function storeLine(state, base) {
   const s = foodStore(state, base);

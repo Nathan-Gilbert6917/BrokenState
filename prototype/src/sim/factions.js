@@ -43,6 +43,7 @@ import { personKey } from "./members.js"; // dice the same in every world on the
 import { ensureMembers, syncMembers, placeMembers, moveMember, removeMember } from "./members.js"; // a group's people (docs/adr/0001-ai-parity.md)
 import { kitOut } from "./loadouts.js"; // what each of them carries
 import { syncBuildings, spreadStores, gatherStores, loseBase, gainBase, stockAt, homesOf } from "./groupbases.js"; // their bases as base objects
+import { groupColdRooms } from "./appliances.js"; // their appliances' cold rooms (#19; call-time only)
 import { autoStore } from "./containers.js"; // each base's goods put away in its containers, the same way as yours (ADR 0001)
 import { FOODS, foodIn, takeFood, payFood, giveFood, typedFood, typeGoods, typeStray, groupMix, ageCoarse, COARSE, foodText, addFoodsTo as addItemsTo, groupStartFood, groupFieldFood } from "./foods.js"; // the groups' food by type (coarse: no lots)
 import { groupFoodLand, groupTripLosses, groupWoodLand, groupHomeShare } from "./grouptrips.js"; // the groups' outdoor work, by the job trips' rules (coarsely)
@@ -386,7 +387,7 @@ export function factionsDaily(state) {
     const eat = Math.max(0, f.pop * mult - away);
     const hungry = takeFood(f.stock, eat, { state }).units < eat - 1e-6;
     f.hungryToday = hungry; // groupmedical.js: nobody heals on an empty stomach
-    f.foodSpoiled = ageCoarse(f.stock, 1, COARSE.factor * cfgOf(state, "spoil"), { frozen: groupFreezerOn(f) ? GROUP_WORKS.MACH.room : 0 }); // worldcfg.js: the Food spoilage dial // groupworks.js: a running walk-in freezer
+    f.foodSpoiled = ageCoarse(f.stock, 1, COARSE.factor * cfgOf(state, "spoil"), { frozen: groupFreezerOn(f) ? GROUP_WORKS.MACH.room : 0, cold: groupColdRooms(state, f) }); // appliances.js: their fridges, chest freezers, cold cases on today // worldcfg.js: the Food spoilage dial // groupworks.js: a running walk-in freezer
     groupTripLosses(state, f); // grouptrips.js: their workers out on the land meet trouble too (fewer losses the better armed)
     // Growth: newcomers by the type's pull (groupcare.js GROUP_PRIORITIES recruit: 0.7 + 0.3 x it, so about as before);
     // wanderers and deserters join through their own systems (wanderers.js, groupcare.js).

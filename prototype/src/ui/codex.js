@@ -14,6 +14,8 @@
 import { MEET } from "../sim/trademeet.js"; // meeting to trade: the wait, the groups' halfway rule
 import { FOODS, FOOD_GROUPS } from "../sim/foods.js"; // food by type in the codex
 import { STORE, FACTOR } from "../sim/storage.js"; // the food chain entries: food rooms and spoilage
+import { COLD } from "../sim/appliances.js"; // the appliances' cold rooms (#19)
+import { FRIDGE } from "../sim/data-power.js";
 import { WOOD } from "../sim/woodcutting.js"; // a camp's fire a day
 import { COOK } from "../sim/cooking.js"; // a cook fire's wood
 import { EAT } from "../sim/eating.js"; // "No hot food"
@@ -37,7 +39,8 @@ import { BUILDINGS, RECIPES, PLOT_NAMES } from "../sim/buildings.js";
 import { CONDITIONS, SICK } from "../sim/health.js";
 import { WORM, wormSeen } from "../sim/worm.js";
 import { bossUnit, DEFENCE } from "../sim/defences.js";
-import { ZOMBIE_MOVE, playerSees, VAULT } from "../sim/combat.js";
+import { ZOMBIE_MOVE, playerSees, VAULT, CELL } from "../sim/combat.js";
+import { FURNITURE_KINDS } from "../sim/data-furniture.js"; // the furniture catalogue: the Barricades entry names its pieces
 import { zRevealed } from "../sim/zombietypes.js";
 import { FLASH } from "../sim/throwables.js"; // a flashbang's numbers
 import { allItems, SLOT_NAMES, ARMOR_CAP } from "../sim/inventory.js";
@@ -254,6 +257,7 @@ const SUPPLY_HOW = {
   primers: "A reloading bench needs one for every round. Rare: gun stores, the military; arms dealers and trading groups sell them.",
   blackpowder: "Made at a reloading bench from wood, scrap and food (crafting): used when the smokeless powder runs out. Its loads jam more (×1.5) and are louder.",
   matchprimers: "Made at a reloading bench (crafting, Mechanics 8): used when the factory primers run out. They fail three times as often.",
+  propane: "Bottled gas: a kitchen range off the grid burns 0.1 a batch it cooks (no wood, no power). Grills by houses, hardware stores, gas stations, campgrounds.",
 };
 function supplyEntries() {
   return Object.entries(SUPPLIES).map(([k, v]) => (FOODS[k] ? {
@@ -442,9 +446,13 @@ function placeEntries() {
     how: "Hover a door to read its kind. A glass or a screen door hides nothing: close it to slow the dead, not to break their sight. Pick a glass door's lock (easy) or just break it (loud). A security door is picked or keyed, never kicked or forced: batter it down if you must.", sprite: null,
   });
   // Barricades (sim/barricade.js): furniture shoved in the way, boards and nails over a door or window, the dead crawling over half cover.
+  // The pieces by name from the furniture catalogue (sim/data-furniture.js): what is shoved, what is too heavy or fixed.
+  const pieceList = (keys) => keys.map((k) => CELL[k].name.toLowerCase()).join(", ");
+  const shoved = Object.keys(FURNITURE).filter((k) => CELL[k]), tallOnes = shoved.filter((k) => CELL[k].cover === 2 && FURNITURE_KINDS[k]);
+  const fixedOnes = Object.keys(FURNITURE_KINDS).filter((k) => FURNITURE_KINDS[k].carry === "fixed");
   out.push({
     key: "k:barricades", cat: "places", name: "🪵 Barricades", sub: "Shove furniture, board up doors and windows",
-    stats: [["Shove", `${SHOVE.AP} actions alone, ${SHOVE.HELP_AP} each with a teammate right next to the piece, from right next to it: a shelf, cabinet, counter, table, bed, crate, locker, tall shelving, barrel, hay or sandbags one tile, pushed onto a free cell beside it (open floor, or a broken or open door's frame to plug it) or pulled onto your own cell (you step back); lockers and tall shelving take two people, or a Strong back or Melee ${SHOVE.STRONG_MELEE}+; the scrape is heard ${SHOVE.RADIUS} tiles off`], ["Board up", `${BOARD.AP} actions and a bundle of boards and nails (crafted from 30 wood and a scrap, anywhere): nailed across a closed door, a doorway or a window from either side; ${BOARD.HP} hit points a layer, up to ${BOARD.MAX} layers, on top of a closed door's own; loud (heard ${BOARD.RADIUS} tiles off, Heat +${BOARD.HEAT} in a raid)`], ["Tear down", `${BOARD.TEAR.ap} actions from either side: the door or window back, shut; about half the bundles come off whole, the rest are splintered`], ["The vehicle", "a bundle in the team's vehicle counts from next to it"], ["The dead", `crawl over half cover (a table, a shelf, crates, a fence) at +${CRAWL.COST} tiles, a walker's whole turn; never a closed window; batter boards and a shoved tall piece (${FURNITURE.locker.hp} hit points for lockers) or go round`], ["Raiders", `vault half cover as your people do; batter boards when there is no other way in; guards and militia holding a building shove a piece into a door frame or board an outer window while nothing is in sight to shoot`], ["Their bases", "a group's base you assault starts with the windows and doors on your side boarded, as far as its wood and scrap go"]],
+    stats: [["Shove", `${SHOVE.AP} actions alone, ${SHOVE.HELP_AP} each with a teammate right next to the piece, from right next to it: one piece one tile, pushed onto a free cell beside it (open floor, or a broken or open door's frame to plug it) or pulled onto your own cell (you step back); the full-cover pieces take two people, or a Strong back or Melee ${SHOVE.STRONG_MELEE}+; the scrape is heard ${SHOVE.RADIUS} tiles off`], ["What shoves", pieceList(shoved)], ["Two people", pieceList(tallOnes)], ["Never shoved", `${pieceList(fixedOnes)}: plumbed in, bolted down or built in`], ["Board up", `${BOARD.AP} actions and a bundle of boards and nails (crafted from 30 wood and a scrap, anywhere): nailed across a closed door, a doorway or a window from either side; ${BOARD.HP} hit points a layer, up to ${BOARD.MAX} layers, on top of a closed door's own; loud (heard ${BOARD.RADIUS} tiles off, Heat +${BOARD.HEAT} in a raid)`], ["Tear down", `${BOARD.TEAR.ap} actions from either side: the door or window back, shut; about half the bundles come off whole, the rest are splintered`], ["The vehicle", "a bundle in the team's vehicle counts from next to it"], ["The dead", `crawl over half cover (a table, a shelf, crates, a fence) at +${CRAWL.COST} tiles, a walker's whole turn; never a closed window; batter boards and a shoved tall piece (${FURNITURE.locker.hp} hit points for lockers) or go round`], ["Raiders", `vault half cover as your people do; batter boards when there is no other way in; guards and militia holding a building shove a piece into a door frame or board an outer window while nothing is in sight to shoot`], ["Their bases", "a group's base you assault starts with the windows and doors on your side boarded, as far as its wood and scrap go"]],
     text: "Furniture in a doorway or a corridor slows the dead and stops a crowd: they crawl over a table or a shelf one at a time, spending their turn on it, and a tall piece (lockers, tall shelving) they must batter down or go round. Boards nailed across a door or a window close it for good until someone batters through: no sight, no way, full cover. Everything you can do, the other side can undo: the dead claw boards down and tear through a shoved locker, raiders batter their way in.",
     how: "Before the dead arrive, shove a shelf across the doorway and board up the windows of the room you hold: each board-up is loud, so do it early. Keep boards in the pack (4 kg a bundle). Tear the boards down again when you leave, or vault out of a window.", sprite: null,
   });
@@ -505,7 +513,7 @@ function foodChainEntries() {
     how: "Open the Food tab when the food chip turns yellow: the verdict names the biggest drain and one or two things to do (a root cellar, cooking the meat before it turns, more people on Farm, Hunt, Fish or Forage, Lean rations).", sprite: null,
   }, {
     key: "k:spoilage", cat: "supplies", name: "🗑️ Spoilage", sub: "How food works",
-    stats: [["Outside", `×${FACTOR.outside} a day, worse in heat and rain`], ["Pantry, storehouse", `×${FACTOR.dry}`], ["Root cellar", `×${FACTOR.cellar} (+${STORE.rootCellar} days of room)`], ["Cold store", "×0.15–0.9 by the season"], ["Walk-in freezer", `×${FACTOR.freezer} while powered`]],
+    stats: [["Outside", `×${FACTOR.outside} a day, worse in heat and rain`], ["Pantry, storehouse", `×${FACTOR.dry}`], ["Root cellar", `×${FACTOR.cellar} (+${STORE.rootCellar} days of room)`], ["Cold store", "×0.15–0.9 by the season"], ["Walk-in freezer", `×${FACTOR.freezer} while powered`], ["Fridge", `×${FACTOR.fridge} while powered (${FRIDGE.room} days a fridge)`], ["Chest freezer", `×${COLD.chest_freezer.factor} while powered (${COLD.chest_freezer.room} days)`], ["Cold case", `×${COLD.cold_case.factor} while powered (${COLD.cold_case.room} days)`]],
     text: "Every food keeps its own time at room temperature (bread days, raw meat two or three, potatoes a month, cans years). Fresh food fills the base's food rooms, the food that spoils fastest in the coldest room first; what does not fit sits outside and spoils fastest. Canned, dry and preserved food needs no room. A lot whose time runs out is thrown out (a line in the log). The soonest to spoil is eaten first.",
     how: "Build a root cellar (or a storehouse, a cold store, a freezer) before the harvest, dry the surplus on drying racks, cook raw meat into meals, and do not hunt more than the base eats in a few days.", sprite: null,
   }, {

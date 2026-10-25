@@ -772,6 +772,7 @@ export function snapshotBuilding(b) {
     doors: R.doors ? R.doors.map((d) => ({ ...d, lock: d.lock ? { ...d.lock } : d.lock })) : null,
     stairs: R.stairs ? R.stairs.map((x) => x.slice()) : null, runs: R.runs ? R.runs.map((r) => ({ ...r })) : null, // the stairwells the kept cells hold
     units, occupants: R.occupants || null, heat: Math.round(R.heat), folk: R.folk || null, // floorfolk.js: who held the upper floors, and how it went
+    corpses: b.corpses ? b.corpses.map((x) => ({ ...x, tried: undefined })) : null, scenes: R.scenes ? JSON.parse(JSON.stringify(R.scenes)) : null, // sleepers.js bodies (a split Sleeper stays split); interiorscenes.js: the scenes seen
     searched: boxes.filter((x) => x.searched).length, total: boxes.length,
   };
 }
@@ -795,6 +796,11 @@ export function restoreBuilding(state, b, snap) {
   if (snap.doors) R.doors = snap.doors.map((d) => ({ ...d, lock: d.lock ? { ...d.lock } : d.lock }));
   if (snap.occupants) R.occupants = snap.occupants;
   R.folk = snap.folk ? JSON.parse(JSON.stringify(snap.folk)) : null; // floorfolk.js (a met group stays met: no second card)
+  // The bodies as they lay (sleepers.js, interiorscenes.js); a snapshot from before the scenes keeps the ground's bodies rolled now, none of a scene's.
+  if (snap.corpses) b.corpses = snap.corpses.map((x) => ({ ...x, ...(x.unit != null && ids.has(x.unit) ? { unit: ids.get(x.unit) } : {}) }));
+  else if (b.corpses) b.corpses = b.corpses.filter((x) => !x.scene);
+  if (snap.scenes) R.scenes = JSON.parse(JSON.stringify(snap.scenes));
+  else if (R.scenes) delete R.scenes;
   const z = R.zones[0];
   if (b.floors) {
     // The stairwells the kept cells hold: a snapshot from before the stair runs (2026-10-25) has one-cell stairwells

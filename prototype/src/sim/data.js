@@ -74,6 +74,9 @@ export const SUPPLIES = {
   carparts:    { name: "Car parts",   value: 7,  weight: 3,   cat: "vehicle" },
   gunparts:    { name: "Gun parts",   value: 10, weight: 0.5, cat: "gunmod" },
   electronics: { name: "Electronics", value: 12, weight: 0.3, cat: "electronics" },
+  // Propane (#19, 2026-10-25: data-appliances.js): a kilo of bottled gas off a grill or a camp stove. A kitchen range off
+  // the grid burns 0.1 a batch cooked on it (appliances.js); found with grills, in hardware stores and at campgrounds.
+  propane:     { name: "Propane",     value: 2,  weight: 1,   cat: "fuel" },
   // Building materials (2026-10-09, user request: "Add something called building materials that can be scavenged and
   // use this to establish bases"): lumber, cinder blocks, nails and fixings. Scavenged as a find of its own (loot.js
   // BUILDMAT_FINDS: hardware stores and quarries most, warehouses, factories, barns, farms and towns; on top of the

@@ -1,0 +1,170 @@
+// @ts-check
+// The furniture and appliance catalogue (the user's request 2026-10-25, issue #8 of the interiors epic #7: "Make the
+// layouts make sense and filled with appliances, furniture and decor that makes it feel lived in. [...] I want all
+// reasonable appliances, furniture and some decor to be lootable and taken to your base for use [...] some will
+// require two survivors to carry"). Plain data that imports nothing: the one source of truth for every piece of
+// furniture that stands on a battle map's cell. Merged by: combat.js (furnitureCells into CELL, at load), barricade.js
+// (furnitureHp into FURNITURE: what can be shoved and battered), ui/isoview.js (FURNITURE_KINDS: the furniture set,
+// the floored set, the outlines, the wall-standing pieces; a sprite and a height for each kind), ui/codex.js (the
+// Barricades entry's names). Placing the pieces in rooms (buildingmaps.js FURNISH), picking them up, base use: the
+// sibling tickets under #7 (they read carry, size, loot, tags and use).
+//
+// FURNITURE_KINDS, keyed by cell kind:
+//   name     what the tooltips and the codex call it (CELL name)
+//   cell     { walk, cover, los, tall? }: the cell's rules (combat.js CELL: cover 0 none, 1 half, 2 full; los blocks
+//            sight; tall: seen over only from that many levels up, and never vaulted)
+//   hp       hit points when it stands in the dead's way (a shoved piece: barricade.js FURNITURE, combat.js bash)
+//   kg       its weight
+//   carry    "one": one survivor lifts it, very slowly; "two": it takes two survivors; "fixed": never lifted (plumbed
+//            in, bolted down, built in: a bathtub, a bar counter, a safe). Every "two" piece weighs more than every
+//            "one" piece (CARRY_KG); a fixed piece is never shoved either (not in barricade.js FURNITURE)
+//   size     [w, h] in cells (1 × 1, 1 × 2, 2 × 1, 2 × 2): the footprint the layout tickets lay it on
+//   loot     also a container: a raid's AREAS[...].boxes draw from these (nothing lootable is fixed: what holds loot
+//            can be carried home)
+//   tags     the room roles it belongs in (kitchen, bath, bedroom, living, dining, office, ward, cells, bay, shop,
+//            church, school, bar, laundry, cellar, yard...)
+//   use      what it does at a base, as a key the base-use tickets read: "fridge", "freezer", "stove", "oven",
+//            "microwave", "storage:<kg>", "comfort:<mood>", "work:<station>", "bed:<data-beds.js BED_SPEC kind>",
+//            "none"
+//   wall     stands against a wall, running along it (ui/isoview.js turns it to the wall it stands by)
+// The first twelve rows are the kinds the raid maps had before (2026-10-18 and earlier): their cell rules, names and
+// hit points are as they were (bars and the gun safe were never shoved, so they are fixed and have no shove entry).
+
+/** @typedef {{ walk: boolean, cover: number, los: boolean, tall?: number }} CellDef */
+/** @typedef {"one" | "two" | "fixed"} Carry */
+/** @typedef {{ name: string, cell: CellDef, hp: number, kg: number, carry: Carry, size: [number, number], loot: boolean, tags: string[], use: string, wall?: boolean }} Piece */
+
+/** @type {Carry[]} */
+export const CARRY = ["one", "two", "fixed"];
+// The line between the classes: a "one" piece weighs at most ONE kg, a "two" piece at least TWO (tools/furnituretest.js).
+export const CARRY_KG = { ONE: 30, TWO: 35 };
+
+const C = (walk, cover, los) => ({ walk, cover, los });
+const HALF = C(false, 1, false), FULL = C(false, 2, true), STEEL = C(false, 2, false), POLE = C(false, 0, false);
+/** @returns {Piece} */
+const P = (name, cell, hp, kg, carry, size, loot, tags, use, wall = false) => ({ name, cell, hp, kg, carry, size, loot, tags, use, ...(wall ? { wall } : {}) });
+const S1 = [1, 1], S12 = [1, 2], S21 = [2, 1], S22 = [2, 2];
+
+/** @type {Record<string, Piece>} */
+export const FURNITURE_KINDS = {
+  // ---------- the kinds the raid maps had already (numbers unchanged) ----------
+  shelf:   P("Shelves",     HALF, 25, 25, "one", S1, true, ["kitchen", "shop", "living", "bay", "office", "cellar"], "storage:40", true),
+  locker:  P("Lockers",     FULL, 40, 40, "two", S1, true, ["ward", "cells", "bay", "office", "school"], "storage:60", true),
+  cabinet: P("Cabinet",     HALF, 25, 30, "one", S1, true, ["kitchen", "bath", "office", "ward", "living"], "storage:40", true),
+  counter: P("Counter",     HALF, 30, 70, "two", S1, true, ["kitchen", "shop", "bar", "ward"], "storage:50", true),
+  crate:   P("Crates",      HALF, 20, 20, "one", S1, true, ["bay", "shop", "cellar", "yard"], "storage:60"),
+  rack:    P("Shelving",    FULL, 35, 45, "two", S1, true, ["shop", "bay", "cellar"], "storage:120"),
+  table:   P("Table",       HALF, 15, 25, "one", S1, false, ["kitchen", "dining", "living", "office"], "work:table"),
+  bed:     P("Bed",         HALF, 20, 22, "one", S12, false, ["bedroom", "ward", "cells"], "bed:bed"),
+  bars:    P("Cell bars",   HALF, 60, 120, "fixed", S1, false, ["cells"], "none"),
+  hay:     P("Hay bales",   HALF, 15, 25, "one", S1, false, ["barn", "yard"], "none"),
+  barrel:  P("Rain barrels", HALF, 15, 25, "one", S1, false, ["yard"], "none"),
+  gunsafe: P("Gun safe",    STEEL, 80, 180, "fixed", S1, false, ["armory", "shop", "bedroom"], "storage:40"), // locks.js / gunsafes.js: its own locked container, not an area's box
+  // ---------- kitchen and laundry appliances ----------
+  fridge:      P("Refrigerator",    FULL, 40, 60, "two", S1, true, ["kitchen", "bar", "office"], "fridge", true), // as data-power.js POWER_GEAR.fridge
+  freezer:     P("Chest freezer",   HALF, 35, 45, "two", S21, true, ["kitchen", "cellar", "bay", "shop"], "freezer", true),
+  stove:       P("Stove",           HALF, 35, 50, "two", S1, false, ["kitchen"], "stove", true),
+  oven:        P("Oven",            HALF, 35, 40, "two", S1, false, ["kitchen"], "oven", true),
+  microwave:   P("Microwave",       HALF, 10, 15, "one", S1, false, ["kitchen", "office", "ward"], "microwave", true),
+  dishwasher:  P("Dishwasher",      HALF, 25, 35, "two", S1, false, ["kitchen"], "none", true),
+  washer:      P("Washing machine", HALF, 30, 65, "two", S1, false, ["laundry", "bath"], "none", true),
+  dryer:       P("Tumble dryer",    HALF, 30, 35, "two", S1, false, ["laundry", "bath"], "none", true),
+  waterheater: P("Water heater",    FULL, 35, 55, "fixed", S1, false, ["laundry", "cellar", "bath"], "none", true),
+  boiler:      P("Boiler",          FULL, 50, 150, "fixed", S1, false, ["cellar", "bay"], "none", true),
+  // ---------- bathroom ----------
+  sink:    P("Sink",         HALF, 25, 20, "fixed", S1, false, ["kitchen", "bath", "ward"], "none", true),
+  toilet:  P("Toilet",       HALF, 20, 30, "fixed", S1, false, ["bath", "cells"], "none", true),
+  bathtub: P("Bathtub",      HALF, 40, 100, "fixed", S12, false, ["bath"], "none", true),
+  shower:  P("Shower stall", FULL, 20, 40, "fixed", S1, false, ["bath", "ward", "school", "cells"], "none", true),
+  // ---------- living rooms and bedrooms ----------
+  sofa:       P("Sofa",              HALF, 25, 45, "two", S21, false, ["living", "office"], "comfort:1", true),
+  armchair:   P("Armchair",          HALF, 15, 25, "one", S1, false, ["living", "office", "ward"], "comfort:0.5"),
+  chair:      P("Chair",             HALF, 8, 6, "one", S1, false, ["kitchen", "dining", "office", "school", "living"], "comfort:0.1"),
+  desk:       P("Desk",              HALF, 20, 30, "one", S21, true, ["office", "bedroom", "living"], "work:desk"),
+  filing:     P("Filing cabinet",    HALF, 30, 30, "one", S1, true, ["office", "school", "cells"], "storage:30", true),
+  bookshelf:  P("Bookshelf",         FULL, 25, 30, "one", S1, true, ["living", "office", "school", "bedroom"], "storage:30", true),
+  wardrobe:   P("Wardrobe",          FULL, 30, 50, "two", S1, true, ["bedroom"], "storage:60", true),
+  dresser:    P("Chest of drawers",  HALF, 25, 30, "one", S1, true, ["bedroom"], "storage:40", true),
+  nightstand: P("Nightstand",        HALF, 10, 8, "one", S1, true, ["bedroom", "ward"], "storage:10"),
+  tvstand:    P("TV stand",          HALF, 15, 20, "one", S1, true, ["living", "bar", "ward"], "storage:15", true),
+  piano:      P("Piano",             STEEL, 50, 230, "two", S21, false, ["living", "church", "school", "bar"], "comfort:1", true),
+  // ---------- churches ----------
+  pew:    P("Pew",    HALF, 30, 60, "two", S21, false, ["church"], "comfort:0"),
+  altar:  P("Altar",  HALF, 40, 120, "fixed", S21, false, ["church"], "none"),
+  pulpit: P("Pulpit", HALF, 20, 35, "two", S1, false, ["church", "school"], "none"),
+  // ---------- hospitals, clinics and vets ----------
+  hospbed: P("Hospital bed",     HALF, 25, 70, "two", S12, false, ["ward"], "bed:bed"),
+  gurney:  P("Gurney",           HALF, 15, 35, "two", S12, false, ["ward", "bay"], "bed:cot"),
+  ivstand: P("IV stand",         POLE, 5, 5, "one", S1, false, ["ward"], "none"),
+  medcab:  P("Medicine cabinet", HALF, 20, 20, "one", S1, true, ["ward", "bath", "office"], "storage:15", true),
+  optable: P("Operating table",  HALF, 30, 90, "two", S12, false, ["ward"], "work:surgery"),
+  // ---------- shops, restaurants and bars ----------
+  vending:     P("Vending machine", FULL, 60, 200, "two", S1, true, ["shop", "office", "school", "ward"], "storage:60", true),
+  checkout:    P("Checkout",        HALF, 30, 40, "two", S1, true, ["shop", "bar"], "storage:20"),
+  displaycase: P("Display case",    HALF, 20, 45, "two", S1, true, ["shop"], "storage:30"),
+  coldcase:    P("Cold case",       FULL, 40, 120, "two", S1, true, ["shop", "bar"], "fridge", true),
+  booth:       P("Booth",           HALF, 30, 80, "fixed", S21, false, ["dining", "bar"], "none"),
+  barcounter:  P("Bar counter",     HALF, 35, 150, "fixed", S1, false, ["bar"], "none"),
+  barstool:    P("Bar stool",       HALF, 8, 6, "one", S1, false, ["bar", "kitchen"], "comfort:0.1"),
+  // ---------- workshops, bays and garages ----------
+  workbench: P("Workbench",  HALF, 35, 60, "two", S21, true, ["bay", "cellar", "school"], "work:workbench", true),
+  toolchest: P("Tool chest", HALF, 35, 55, "two", S1, true, ["bay", "cellar"], "storage:40", true),
+  // ---------- police, fire stations, barracks, schools, offices ----------
+  bunk:        P("Bunk",           HALF, 25, 40, "two", S12, false, ["cells", "bedroom", "ward"], "bed:bunkbed"),
+  schooldesk:  P("School desk",    HALF, 10, 12, "one", S1, true, ["school"], "storage:5"),
+  teacherdesk: P("Teacher's desk", HALF, 25, 40, "two", S21, true, ["school", "office"], "work:desk"),
+  bleachers:   P("Bleachers",      HALF, 50, 200, "fixed", S22, false, ["school"], "none"),
+  serverrack:  P("Server rack",    FULL, 50, 120, "two", S1, true, ["office"], "none", true),
+  copier:      P("Photocopier",    HALF, 30, 80, "two", S1, false, ["office", "school"], "none", true),
+  safe:        P("Safe",           STEEL, 80, 200, "fixed", S1, false, ["office", "bedroom", "shop"], "storage:20"), // the gun safe's rules (locks.js: its own lock, never shoved)
+  // ---------- lootable decor (issue #13: decor.js places them; light comfort pieces for the base) ----------
+  // The plant and the floor lamp stand on a room's floor cell; the painting and the wall clock hang on a wall (decor.js:
+  // c.wart = { k, d, piece: true } on the wall cell, the wall's own kind unchanged) and stand on a cell only once set down.
+  plant:     P("Potted plant", POLE, 5, 8, "one", S1, false, ["living", "office", "dining", "ward", "shop"], "comfort:0.2"),
+  floorlamp: P("Floor lamp",   POLE, 5, 6, "one", S1, false, ["living", "bedroom", "office"], "comfort:0.1"),
+  painting:  P("Painting",     POLE, 5, 4, "one", S1, false, ["living", "dining", "bedroom", "office", "church"], "comfort:0.2", true),
+  wallclock: P("Wall clock",   POLE, 3, 2, "one", S1, false, ["living", "kitchen", "office", "school", "ward"], "comfort:0.05", true),
+};
+
+// The cells' rules for combat.js CELL (merged at load: Object.assign(CELL, furnitureCells())).
+export function furnitureCells() {
+  /** @type {Record<string, CellDef & { name: string }>} */
+  const out = {};
+  for (const [k, d] of Object.entries(FURNITURE_KINDS)) out[k] = { ...d.cell, name: d.name };
+  return out;
+}
+// What can be shoved and battered (barricade.js FURNITURE): every piece that is not fixed, with its hit points.
+export function furnitureHp() {
+  /** @type {Record<string, { hp: number }>} */
+  const out = {};
+  for (const [k, d] of Object.entries(FURNITURE_KINDS)) if (d.carry !== "fixed") out[k] = { hp: d.hp };
+  return out;
+}
+export const isFurniture = (k) => !!FURNITURE_KINDS[k];
+// The kinds for a room role ("kitchen", "bath"...), the containers only with loot: true (the layout tickets).
+export const furnitureFor = (tag, loot = null) => Object.keys(FURNITURE_KINDS).filter((k) => FURNITURE_KINDS[k].tags.includes(tag) && (loot == null || FURNITURE_KINDS[k].loot === loot));
+// A piece's base use split into its key and its number or name ("storage:40" → { key: "storage", arg: "40" }).
+export function useOf(k) {
+  const u = (FURNITURE_KINDS[k] && FURNITURE_KINDS[k].use) || "none", i = u.indexOf(":");
+  return i < 0 ? { key: u, arg: null } : { key: u.slice(0, i), arg: u.slice(i + 1) };
+}
+// The row for a cell kind, or null (the sibling tickets' lookup).
+export const pieceDef = (k) => FURNITURE_KINDS[k] || null;
+
+// The item form of every piece that can be lifted (not fixed), for the pick-up ticket (#12) to merge into data.js GEAR:
+// keyed f_<kind>, in both arms only (bulky, twoHands, the In arms slot, a cart or a vehicle, as data-beds.js BED_GEAR),
+// furniture: its cell kind (set down again as that cell), weight its kg. The fridge keeps its own item, data-power.js
+// POWER_GEAR.fridge (key "fridge"), so it has no f_fridge. Not merged into GEAR here: nothing can lift a piece yet, and
+// a GEAR row would put it in the loot pools and the shops. itemKey(k): the item key for a cell kind (null when fixed).
+export const FURNITURE_ITEM_KEY = { fridge: "fridge" };
+export const itemKey = (k) => (!FURNITURE_KINDS[k] || FURNITURE_KINDS[k].carry === "fixed" ? null : FURNITURE_ITEM_KEY[k] || `f_${k}`);
+/** @type {Record<string, { name: string, slot: string, skill: null, power: number, req: number, value: number, noise: number, weight: number, cat: string, bulky: boolean, twoHands: boolean, furniture: string, desc: string }>} */
+export const FURNITURE_GEAR = {};
+for (const [k, d] of Object.entries(FURNITURE_KINDS)) {
+  const key = itemKey(k);
+  if (!key || key === "fridge") continue;
+  FURNITURE_GEAR[key] = {
+    name: d.name, slot: "pack", skill: null, power: 0, req: 0, value: Math.max(1, Math.round(d.kg / 4)), noise: 0, weight: d.kg, cat: "household", bulky: true, twoHands: true, furniture: k,
+    desc: `${d.name}: ${d.kg} kg, ${d.carry === "two" ? "a two-person lift" : "one person can lift it, very slowly"}. Both arms, a cart or a vehicle.`,
+  };
+}

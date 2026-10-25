@@ -456,6 +456,9 @@ console.log("Stair runs: up from the top step, the landings, a save from before 
     const { st, b } = r;
     const R = b.raid, run = R.runs.find((q) => !q.single);
     const steps = runSteps(run), [lo, hi] = runLandings(run), [tx, ty] = runTop(run);
+    // The dead waiting upstairs by the stairwell start on the landings, not on the steps (looked at before anyone moves).
+    const onSteps = b.units.filter((o) => o.side === "enemy" && (o.f || 0) > 0 && !o.dead && R.runs.some((q) => runSteps(q).some(([x, y]) => o.x === x && o.y === y)));
+    check(!onSteps.length, `${label}: none of the dead upstairs start on a step (${onSteps.length})`);
     const u = b.units.find((x) => x.side === "player");
     for (const o of b.units) if (o !== u && !o.dead && [[lo[0], lo[1]], ...steps, hi].some(([x, y]) => o.x === x && o.y === y)) { o.x = 1; o.y = 1; }
     // On the bottom step the stairs do not change floor yet: the floor changes at the top step.
@@ -476,9 +479,6 @@ console.log("Stair runs: up from the top step, the landings, a save from before 
     check(CELL[upHi.k].walk && upHi.landing && Math.abs(hi[0] - u.x) + Math.abs(hi[1] - u.y) === 1, `${label}: the upper landing is next to it, walkable (${upHi.k})`);
     const step = combatAct(st, { type: "move", unit: u.id, x: hi[0], y: hi[1] });
     check(step === "" && u.x === hi[0] && u.y === hi[1] && u.f === 1, `${label}: steps off onto the upper landing (${step || "ok"})`);
-    // The dead waiting upstairs by the stairwell stand on the landings, not on the steps.
-    const onSteps = b.units.filter((o) => o.side === "enemy" && (o.f || 0) > 0 && !o.dead && R.runs.some((q) => runSteps(q).some(([x, y]) => o.x === x && o.y === y)));
-    check(!onSteps.length, `${label}: none of the dead upstairs start on a step (${onSteps.length})`);
     check(/flight of \d steps|outside stair/.test(b.log.map((l) => l.text).join(" ")), `${label}: the opening lines say where the stairs are`);
   }
   // A save from before the runs: one-cell stairwells (no c.step), no b.raid.runs. It loads, any stairs cell changes floor, it plays on.

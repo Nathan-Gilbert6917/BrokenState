@@ -185,6 +185,9 @@ export function deserializeState(save) {
   // Raid maps (worldcfg.js RAID_MAPS, 2026-10-20): a save from before the raid map dials keeps the old sizes and none of
   // the big-map scales (battlesize.js legacy paths), so its places' maps and containers stay as they were.
   if (!state.raidMaps) { state.raidLegacy = true; state.raidMaps = RAID_MAPS; }
+  // Rooms laid out room by room (roomlayout.js, 2026-10-25): a save from before keeps every building's old furnishing,
+  // so its places' containers keep their ids (poicont.js poi.cont, citycrawl.js restoreBuilding).
+  if (!state.roomsV) { state.roomsLegacy = true; state.roomsV = 1; }
   if (!state.woodcutting) {
     for (const b of state.bases || []) if (b.stock && !Number.isFinite(b.stock.wood)) b.stock.wood = 0;
     for (const r of (state.work && state.work.roles) || []) if (r.pri && r.pri.wood == null && r.pri.forage > 0) r.pri.wood = r.pri.forage;

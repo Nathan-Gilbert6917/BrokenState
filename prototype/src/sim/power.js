@@ -88,6 +88,8 @@
 //     wear) only from power that costs nothing: the sun's surplus, and the unused power of a running flat-burn set
 //     (idle = full: the portable generator, the house and inverter sets burn the same whatever they power); a governed
 //     set never burns more to charge it. base.power carries solar (the sun's power this hour) and battery { stored, cap }.
+//   The appliances (#19, 2026-10-25, appliances.js): the chest freezer and the cold case all day, the kitchen range and
+//     the microwave while a cook's bill here wants cooking; after the fridge in the serving order.
 //   New users (POWER_USERS): the perimeter alarm from dusk to dawn, the electric heaters on a day that wants heating
 //     (electric.js heaterWants), the charging station while anything here is short of charge (chargeWanted; its hour
 //     of charging runs in refreshPower: electric.js chargeHour).
@@ -116,6 +118,8 @@ import { workFactor } from "./health.js";
 import { sickRestWhy } from "./sickrest.js"; // the ill rest: they do no chores
 import { GENSETS, SPOT, FRIDGE, PRESS, ALARM, HEATER, CHARGER, BATTERY } from "./data-power.js"; // the power grid's pieces (found generators, spotlights, ...; 2026-10-24 the alarm, the heaters, the charger, the battery bank, the solar array)
 import { circuitNeed, circuitWhat, gridWired, pumpServes, solarOut, heaterWants, chargeWanted, chargeHour } from "./electric.js"; // the breaker panel's circuits, the well pump, the sun, the heaters, the charger (call-time only)
+import { COLD, RANGE, MICROWAVE } from "./data-appliances.js"; // the appliances' draws (#19)
+import { rangeWanted, cookingWanted } from "./appliances.js"; // the range and the microwave draw while the cooks have work (call-time only)
 import { machineWanted } from "./cooking.js"; // the grain mill and the meat grinder draw while a cook's bill calls for them (call-time only; 2026-10-24 grid audit)
 
 export const POWER = { genOut: 6, genFuel: 2, genHeat: 4, tank: 3 }; // tier 1 (GEN_TIERS[1])
@@ -159,6 +163,12 @@ export const POWER_USERS = {
   ammo_press:   { need: 2, what: `the ammo press: ${PRESS.in}× the scrap into ${PRESS.out}× the rounds, reloading orders ${PRESS.rate}× as fast; idle without power` },
   elec_pump:    { need: 1, what: "an electric well pump: more water a day from the well it serves" },
   fridge:       { need: FRIDGE.need, what: `a refrigerator: ${FRIDGE.room} days of food kept at a quarter of its shelf a day` },
+  // The appliances (#19, data-appliances.js, appliances.js): the cold ones all day; the range and the microwave while a
+  // cook's bill here wants cooking today (rangeWanted, cookingWanted).
+  chest_freezer: { need: COLD.chest_freezer.need, what: `a chest freezer: ${COLD.chest_freezer.room} days of food frozen (×${COLD.chest_freezer.factor} of its shelf a day)` },
+  cold_case:    { need: COLD.cold_case.need, what: `a cold case: ${COLD.cold_case.room} days of food chilled (×${COLD.cold_case.factor} of its shelf a day)` },
+  range:        { need: RANGE.need, what: `a kitchen range: cooks its bills with no wood (off the grid it burns ${RANGE.propane} propane a batch); on while its bills cook` },
+  microwave:    { need: MICROWAVE.need, what: `a microwave: ×${MICROWAVE.boost} on a meal's time at every station here; on while the cooks work` },
   // More of the grid (2026-10-24, data-power.js): the alarm at night, the heaters on a cold day, the charger while something is short.
   perimeter_alarm: { need: ALARM.need, what: `a perimeter alarm: the base is never caught asleep at night (everyone counts ${Math.round(ALARM.wake * 100)}% on the walls unwarned), anything within ${ALARM.tiles} tile is spotted; on from dusk to dawn` },
   elec_heater:  { need: HEATER.need, what: `electric heaters: ${HEATER.heads} people warmed without the fires' wood; on while the day wants heating` },
@@ -251,6 +261,8 @@ function userWants(state, base, b) {
   if (b.type === "perimeter_alarm") return isNight(state); // the sensors and the siren: dusk to dawn
   if (b.type === "elec_heater") return heaterWants(state, base); // a day that wants heating (electric.js)
   if (b.type === "charging_station") return chargeWanted(state, base); // something here short of charge (electric.js)
+  if (b.type === "range") return rangeWanted(state, base); // a bill at the range (appliances.js, #19)
+  if (b.type === "microwave") return cookingWanted(state, base); // a bill at any station here
   if (b.type === "grainmill" || b.type === "meatgrinder") return machineWanted(state, base, b.type); // a cook's bill calls for it today (cooking.js; 2026-10-24 grid audit)
   return true;
 }

@@ -5,8 +5,9 @@
 // floor; a watchtower is two) LV px up. Everything is painted as pixel art at that size (procedural, in the State
 // Map's gritty palette), cached, and drawn scaled up nearest-neighbour, so it stays crisp at any zoom:
 //   - the ground of the whole map is one small canvas (floors textured by surface: grass, field, dirt, gravel,
-//     asphalt, floorboards, concrete, rubble, water, mud and blood by the hive), rebuilt only when a floor changes or
-//     the view turns;
+//     asphalt, floorboards, concrete, rubble, water, mud and blood by the hive; a building's rooms by their floor and
+//     their decor, sim/decor.js: rugs, clutter, the pools of its lights), rebuilt only when a floor changes or the view
+//     turns;
 //   - fog of war is one more (tiles none of your people see, dark and grey), rebuilt when what they see changes;
 //   - every block (walls, fences, cars, trees, walkways, towers, barricades...) is a small sprite cached by its look.
 // Each frame: the ground and the fog (two images), the highlights on the ground (move range, deploy cells, evac
@@ -48,6 +49,7 @@ import { treeLookFor, treeStyle, styleKey, FALL } from "./seasontrees.js"; // tr
 import { snowOnFor } from "./roofsnow.js"; // snow on the buildings in winter (roofSprite, snowPrims)
 import { ringingCars } from "../sim/caralarms.js"; // a car alarm ringing (2026-10-23): its hazard lights blinking, how far it is heard
 import { groundTexel, leafField, leafBase, groundLookKey, snowShare, puddleField, puddleAt, puddleTexel } from "./groundlook.js"; // spring's mud, autumn's leaves, winter's snow on the ground (sim/seasonground.js); puddles after rain (sim/puddles.js)
+import { FURNITURE_KINDS } from "../sim/data-furniture.js"; // the furniture and appliance catalogue: the furniture set, its sprites (FURN_DRAW)
 import { puddleGround } from "../sim/puddles.js"; // where a puddle may run onto (ui/groundlook.js puddleField)
 
 // ---------- constants ----------
@@ -86,6 +88,7 @@ const groundCaches = new Map(), GROUNDS = 6; // groundFor: key -> picture, of on
 let fogCache = null, sceneCache = null, fogMaskCache = null, flatGroundCache = null;
 export function clearIsoCache() { spriteCache.clear(); groundCaches.clear(); fogCache = sceneCache = fogMaskCache = flatGroundCache = null; for (const k of Object.keys(looksCache)) delete looksCache[k]; }
 export const isoCacheSize = () => spriteCache.size;
+export const isoSpriteKeys = () => [...spriteCache.keys()]; // the cached sprites' keys (tools/decortest.js)
 
 // ---------- small helpers ----------
 function hash3(a, b, c) {
@@ -157,14 +160,19 @@ const WALLISH = new Set(["wall", "window", "door", "bdoor", "doorway", "smashed"
 const FLOORED = new Set(["open", "counter", "cabinet", "shelf", "locker", "crate", "loft", "stairs", "rack", "table", "bed", "bars", "ladder"]);
 // Furniture that stands on a building's upper floor (sim/buildingmaps.js: a cell with a height that is not walked on)
 // is drawn on a slab of the upper floor, raised with it.
-const FURNITURE = new Set(["counter", "cabinet", "shelf", "locker", "crate", "rack", "table", "bed", "hay", "bars"]);
-FLOORED.add("gunsafe"); FURNITURE.add("gunsafe"); FLOORED.add("cart"); // sim/carts.js: a cart parked on a cell (drawn as its sprite, ui/ground.js) // sim/locks.js gun safes: a steel box standing on the floor
+// Both are driven from the furniture catalogue (sim/data-furniture.js): every piece but the yard's (hay bales and rain
+// barrels stand outdoors on the ground, never on a floor; hay is raised with a hayloft all the same), and the
+// wall-standing pieces turn to run along the wall they stand by (lookOf, JOINS).
+const FURNITURE = new Set(Object.keys(FURNITURE_KINDS).filter((k) => k !== "barrel"));
+for (const k of Object.keys(FURNITURE_KINDS)) if (k !== "hay" && k !== "barrel") FLOORED.add(k);
+const WALL_FURN = new Set(Object.keys(FURNITURE_KINDS).filter((k) => FURNITURE_KINDS[k].wall));
+FLOORED.add("cart"); // sim/carts.js: a cart parked on a cell (drawn as its sprite, ui/ground.js) // sim/locks.js gun safes: a steel box standing on the floor
 // Buildings: 4-connected cells with floorboards (houses, shops, the base's buildings; flat-roofed blocks are solid).
 const GROUNDY = new Set(["water", "trench", "spikes", "hivewall"]);
 function sceneFor(b) {
   let sig = 0, fsig = 0;
   for (let i = 0; i < b.cells.length; i++) {
-    const c = b.cells[i], kc = c.k.charCodeAt(0) * 7 + c.k.length + (c.k.charCodeAt(2) || 0), fc = (c.f ? c.f.charCodeAt(0) + c.f.length : 0) + (c.fl ? c.fl.charCodeAt(0) * 3 + c.fl.length : 0);
+    const c = b.cells[i], kc = c.k.charCodeAt(0) * 7 + c.k.length + (c.k.charCodeAt(2) || 0), fc = (c.f ? c.f.charCodeAt(0) + c.f.length : 0) + (c.fl ? c.fl.charCodeAt(0) * 3 + c.fl.length : 0) + (c.deco ? decoSig(c.deco) : 0) + (c.wc ? c.wc.charCodeAt(3) * 11 + c.wc.charCodeAt(5) : 0) + (c.wart ? c.wart.k.charCodeAt(1) * 17 + c.wart.d : 0); // decor (sim/decor.js) drawn in the ground and the walls
     sig = (Math.imul(sig, 31) + kc + fc + (c.hp > 0 ? (c.hp | 0) + 1 : 0)) | 0;
     fsig = (Math.imul(fsig, 31) + fc + (GROUNDY.has(c.k) ? kc : 0)) | 0;
   }
@@ -654,13 +662,250 @@ function stonePrims(o, tall) {
   }
   return out.sort((p, q) => p.u0 + p.v0 - q.u0 - q.v0);
 }
+// ---------- the furniture catalogue's pieces (sim/data-furniture.js FURNITURE_KINDS, issue #8 2026-10-25) ----------
+// Boxes and cylinders in the style of the old pieces above: a fridge a tall white box with its door line and handles,
+// a stove a box with four rings, a toilet a low bowl in front of its tank, a sofa a low seat with a back... Each kind:
+// { top: its height in art px (blockTop0), p(o, v): its prims }. A wall-standing piece runs along the wall (along(o):
+// lookOf turns it), a piece bigger than a cell joins with its neighbours of the same kind (JOINS) and is drawn as
+// one run across them. Colours: FURNC.
+const FURNC = {
+  white: hex("#c9c7bd"), enamel: hex("#d8d5c8"), porc: hex("#dad8d0"), steel: hex("#8c9298"), chrome: hex("#b8bec4"),
+  black: hex("#26272a"), ring: hex("#151515"), glassDk: hex("#2a3a44"), screen: hex("#1c2a30"), fabric: hex("#5a4a62"),
+  fabricDk: hex("#463a4e"), leather: hex("#5a3424"), sheet: hex("#b4b2aa"), scrubs: hex("#4f7b88"), felt: hex("#3e6a4a"),
+  red: hex("#8e3028"), beige: hex("#a89c84"), cream: hex("#d9cfa8"), gold: hex("#d9b23a"), cloth: hex("#e2ddcc"),
+  led: hex("#5ad06a"), amber: hex("#e0a030"), water: hex("#5f8aa0"), bag: hex("#a8c4cc"),
+};
+const fbox = (u0, u1, v0, v1, z0, z1, m) => ({ u0, u1, v0, v1, z0, z1, m });
+// A point across (c) and along (a) a piece's axis, as the view's u, v.
+const fat = (ax, c, a) => (ax === "u" ? [a, c] : [c, a]);
+const fcyl = (ax, c, a, r, z0, z1, m) => { const [u, w] = fat(ax, c, a); return { cyl: [u, w, r], z0, z1, m }; };
+// Four thin legs at the corners of [a0, a1] × [b0, b1] (back ones first).
+const flegs = (a0, a1, b0, b1, z1, m, w = 0.05) => [[a0, b0], [a1, b0], [a0, b1], [a1, b1]].map(([u, v]) => fbox(u, u + w, v, v + w, 0, z1, m));
+// An appliance's enamel: lines across it at the heights in `lines` (a door's edge), chrome handles near one edge in
+// the bands in `grips`, a light speckle.
+const fappl = (base, lines = [], grips = []) => (f, s, t, X, Y) => {
+  if (f === "top") return mul(base, 1.06);
+  if (lines.some((z) => t >= z && t < z + 0.9)) return mul(base, 0.62);
+  if (s >= 1.2 && s < 2.2 && grips.some(([a, b]) => t >= a && t < b)) return FURNC.chrome;
+  return mul(base, 0.93 + n2(X, Y, 23) * 0.06);
+};
+// Drawers: wood (or steel) with a line every `h` px and a knob in the middle of each.
+const fdrawers = (base, h, knob = PAL.woodDk) => (f, s, t, X, Y, sw) => {
+  if (f === "top") return mul(base, 1.1);
+  if (Math.floor(t) % h < 1) return mul(base, 0.6);
+  if (Math.abs(s - (sw || 16) / 2) < 1 && Math.floor(t) % h === Math.floor(h / 2)) return knob;
+  return mul(base, 0.92 + n2(X, Y, 24) * 0.08);
+};
+// A glass front with goods behind it (a cold case, a vending machine, a display case).
+const fgoods = (X, Y, k) => CAR_COLORS[Math.floor(n2(X, Y, k) * 6)];
+// A safe's face (the gun safe's look, squat): a dial, a handle, a frame round the door.
+const fsafe = (hgt) => (f, s, t, X, Y, sw) => {
+  if (f === "top") return mul(PAL.metalDk, 0.7);
+  const w = sw || 9, cx = w * 0.42, d = Math.hypot(s - cx, (t - hgt * 0.6) * 1.1);
+  if (d < 1.6) return FURNC.gold;
+  if (d < 2.2) return mul(PAL.metal, 1.1);
+  if (s > w * 0.7 && s < w * 0.82 && t > hgt * 0.4 && t < hgt * 0.7) return mul(PAL.metal, 1.2);
+  if (t < 1 || t > hgt - 1 || s < 0.8 || s > w - 0.8) return mul(PAL.metalDk, 0.55);
+  return mul(PAL.metalDk, 0.8 + n2(X, Y, 21) * 0.08);
+};
+const fwood = (base = PAL.wood, k = 25) => (f, s, t, X, Y) => (f === "top" ? mul(base, 1.12) : mul(base, 0.88 + n2(Math.floor(X / 3), Y, k) * 0.14));
+const FURN_DRAW = {
+  // ---------- kitchen and laundry ----------
+  fridge: { top: 28, p: (o) => { const ax = along(o); return [run(ax, 0.24, 0.76, 0, 28, fappl(FURNC.white, [17], [[19, 25], [7, 14]]), 0.14, 0.86)]; } },
+  freezer: { top: 12, p: (o) => { const ax = along(o); return [run(ax, 0.2, 0.8, 0, 12, fappl(FURNC.white, [9.5], [[10.5, 11.5]]), 0.04, 0.96)]; } },
+  stove: { top: 14, p: (o) => {
+    const ax = along(o), face = (f, s, t, X, Y, sw) => (f === "top" ? mul(FURNC.black, 1.2) : t >= 3 && t < 8 && s > 2 && s < (sw || 16) - 2 ? FURNC.glassDk : t >= 10 ? mul(FURNC.steel, 0.9) : mul(FURNC.white, 0.95 + n2(X, Y, 26) * 0.05));
+    const out = [run(ax, 0.2, 0.8, 0, 12, face, 0.14, 0.86)];
+    for (const [c, a] of [[0.35, 0.33], [0.35, 0.67], [0.65, 0.33], [0.65, 0.67]]) out.push(fcyl(ax, c, a, 0.09, 12, 13, (f) => (f === "top" ? FURNC.ring : mul(FURNC.ring, 1.4))));
+    return out;
+  } },
+  oven: { top: 16, p: (o) => {
+    const ax = along(o), face = (f, s, t, X, Y, sw) => (f === "top" ? FURNC.steel : t >= 3 && t < 11 && s > 2 && s < (sw || 16) - 2 ? (t >= 9.5 ? FURNC.chrome : FURNC.glassDk) : t >= 13 ? FURNC.black : mul(FURNC.steel, 0.92 + n2(X, Y, 27) * 0.08));
+    return [run(ax, 0.22, 0.78, 0, 16, face, 0.14, 0.86)];
+  } },
+  microwave: { top: 14, p: (o) => {
+    const ax = along(o), face = (f, s, t, X, Y, sw) => (f === "top" ? mul(FURNC.white, 1.05) : s > 1 && s < (sw || 10) * 0.65 && t > 9.5 && t < 13 ? FURNC.glassDk : mul(FURNC.white, 0.92));
+    return [run(ax, 0.26, 0.74, 0, 8, fwood(PAL.wood), 0.12, 0.88), run(ax, 0.3, 0.7, 8, 14, face, 0.24, 0.76)];
+  } },
+  dishwasher: { top: 12, p: (o) => { const ax = along(o); return [run(ax, 0.22, 0.78, 0, 12, fappl(FURNC.white, [9.5, 1], [[10, 11]]), 0.12, 0.88)]; } },
+  washer: { top: 13, p: (o) => {
+    const ax = along(o), face = (f, s, t, X, Y, sw) => { if (f === "top") return mul(FURNC.white, 1.06); const d = Math.hypot(s - (sw || 12) / 2, t - 6); return d < 2.6 ? FURNC.glassDk : d < 3.6 ? FURNC.chrome : t > 11 ? mul(FURNC.white, 0.8) : mul(FURNC.white, 0.93 + n2(X, Y, 28) * 0.05); };
+    return [run(ax, 0.22, 0.78, 0, 13, face, 0.14, 0.86)];
+  } },
+  dryer: { top: 13, p: (o) => {
+    const ax = along(o), face = (f, s, t, X, Y, sw) => { if (f === "top") return mul(FURNC.enamel, 1.04); const d = Math.hypot(s - (sw || 12) / 2, t - 6); return d < 3 ? mul(FURNC.black, 1.4) : d < 3.7 ? FURNC.steel : t > 11 ? mul(FURNC.enamel, 0.78) : mul(FURNC.enamel, 0.93 + n2(X, Y, 29) * 0.05); };
+    return [run(ax, 0.22, 0.78, 0, 13, face, 0.14, 0.86)];
+  } },
+  waterheater: { top: 27, p: () => [{ cyl: [0.5, 0.5, 0.3], z0: 0, z1: 24, m: (f, s, t) => (f === "top" ? FURNC.steel : t < 2 ? mul(FURNC.steel, 0.8) : mul(FURNC.enamel, 0.95)) }, { cyl: [0.5, 0.5, 0.06], z0: 24, z1: 27, m: flatM(PAL.rust) }] },
+  boiler: { top: 26, p: (o) => {
+    const ax = along(o), face = (f, s, t, X, Y, sw) => { if (f === "top") return mul(FURNC.steel, 0.9); if (Math.hypot(s - (sw || 16) * 0.3, t - 15) < 1.8) return FURNC.cream; return t % 6 < 0.8 ? mul(FURNC.steel, 0.65) : mul(FURNC.steel, 0.85 + n2(X, Y, 30) * 0.1); };
+    return [run(ax, 0.2, 0.8, 0, 22, face, 0.14, 0.86), fcyl(ax, 0.4, 0.3, 0.06, 22, 26, flatM(PAL.rust)), fcyl(ax, 0.4, 0.7, 0.06, 22, 26, flatM(PAL.rust))];
+  } },
+  // ---------- bathroom ----------
+  sink: { top: 13, p: (o) => {
+    const ax = along(o), basin = (f, s, t, X, Y) => (f === "top" ? (n2(Math.floor(X / 5), Math.floor(Y / 3), 31) > 0.35 ? mul(FURNC.porc, 0.72) : FURNC.porc) : mul(FURNC.porc, 0.9));
+    return [run(ax, 0.26, 0.74, 0, 10, fwood(PAL.woodLt), 0.14, 0.86), run(ax, 0.24, 0.76, 10, 11, basin, 0.12, 0.88), run(ax, 0.26, 0.32, 11, 13, flatM(FURNC.chrome), 0.46, 0.54)];
+  } },
+  toilet: { top: 12, p: (o) => {
+    const ax = along(o), porc = (f) => (f === "top" ? FURNC.porc : mul(FURNC.porc, 0.9));
+    return [run(ax, 0.22, 0.38, 4, 12, porc, 0.3, 0.7), fcyl(ax, 0.58, 0.5, 0.11, 0, 4, porc), fcyl(ax, 0.58, 0.5, 0.19, 4, 7, (f) => (f === "top" ? mul(FURNC.porc, 0.8) : FURNC.porc))];
+  } },
+  bathtub: { top: 9, p: (o) => {
+    const ax = along(o), tub = (f, s, t, X, Y) => (f === "top" ? (n2(Math.floor(X / 6), Math.floor(Y / 3), 32) > 0.3 ? mul(FURNC.porc, 0.7) : FURNC.porc) : mul(FURNC.porc, 0.9 + n2(X, Y, 33) * 0.05));
+    return [run(ax, 0.14, 0.86, 0, 9, tub, o.j & (ax === "u" ? 2 : 8) ? 0 : 0.06, o.j & (ax === "u" ? 1 : 4) ? 1 : 0.94)];
+  } },
+  shower: { top: 30, p: (o) => {
+    const ax = along(o), glass = (f, s, t) => (t > 27 ? FURNC.chrome : mul(FURNC.water, 1.25));
+    return [fbox(0.14, 0.86, 0.14, 0.86, 0, 2, flatM(FURNC.porc)), run(ax, 0.14, 0.2, 2, 30, flatM(mul(FURNC.porc, 0.85)), 0.14, 0.86), run(ax, 0.8, 0.86, 2, 30, glass, 0.14, 0.86), run(ax, 0.2, 0.3, 22, 24, flatM(FURNC.chrome), 0.46, 0.54)];
+  } },
+  // ---------- living rooms and bedrooms ----------
+  sofa: { top: 13, p: (o) => {
+    const ax = along(o), back = o.v & 2 ? [0.64, 0.8] : [0.2, 0.36], cushion = (f, s, t, X, Y) => (f === "top" ? (Math.floor(X) % 11 < 1 ? FURNC.fabricDk : mul(FURNC.fabric, 1.08)) : mul(FURNC.fabric, 0.9 + n2(X, Y, 34) * 0.08));
+    const seat = run(ax, 0.2, 0.8, 0, 7, cushion, 0.02, 0.98), rest = run(ax, back[0], back[1], 7, 13, flatM(FURNC.fabricDk), 0.02, 0.98);
+    return o.v & 2 ? [seat, rest] : [rest, seat];
+  } },
+  armchair: { top: 13, p: (o) => {
+    const ax = along(o);
+    return [run(ax, 0.22, 0.36, 0, 13, flatM(FURNC.leather), 0.22, 0.78), run(ax, 0.36, 0.78, 0, 7, (f) => (f === "top" ? mul(FURNC.leather, 1.15) : FURNC.leather), 0.22, 0.78), run(ax, 0.36, 0.78, 7, 10, flatM(mul(FURNC.leather, 0.85)), 0.22, 0.3), run(ax, 0.36, 0.78, 7, 10, flatM(mul(FURNC.leather, 0.85)), 0.7, 0.78)];
+  } },
+  chair: { top: 14, p: (o) => {
+    const ax = along(o), w = flatM(PAL.woodDk);
+    return [...flegs(0.32, 0.64, 0.32, 0.64, 6, w, 0.04), run(ax, 0.3, 0.7, 6, 7, flatM(PAL.woodLt), 0.3, 0.7), run(ax, 0.3, 0.35, 7, 14, fwood(PAL.wood), 0.3, 0.7)];
+  } },
+  desk: { top: 11, p: (o) => {
+    const ax = along(o), w = flatM(PAL.woodDk);
+    return [run(ax, 0.2, 0.26, 0, 9, w, 0.06, 0.12), run(ax, 0.74, 0.8, 0, 9, w, 0.06, 0.12), run(ax, 0.2, 0.8, 0, 9, fdrawers(PAL.wood, 3), 0.62, 0.94), run(ax, 0.16, 0.84, 9, 11, fwood(PAL.woodLt), 0.02, 0.98)];
+  } },
+  filing: { top: 18, p: (o) => { const ax = along(o); return [run(ax, 0.28, 0.72, 0, 18, fdrawers(FURNC.steel, 4.5, FURNC.chrome), 0.22, 0.78)]; } },
+  bookshelf: { top: 26, p: (o) => {
+    const ax = along(o), books = (f, s, t, X, Y) => (f === "top" ? PAL.woodDk : Math.floor(t) % 6 < 1 || s < 0.8 ? PAL.woodDk : n2(Math.floor(X), Math.floor(t / 6), 35) > 0.2 ? mul(fgoods(Math.floor(X), Math.floor(t / 6), 36), 1.1) : mul(PAL.wood, 0.5));
+    return [run(ax, 0.3, 0.7, 0, 26, books, 0.08, 0.92)];
+  } },
+  wardrobe: { top: 28, p: (o) => {
+    const ax = along(o), face = (f, s, t, X, Y, sw) => { if (f === "top") return mul(PAL.wood, 1.1); const m = (sw || 16) / 2; if (Math.abs(s - m) < 0.6 || t < 1.5 || t > 26) return PAL.woodDk; if (Math.abs(s - m) < 2 && t > 13 && t < 15) return FURNC.gold; return mul(PAL.wood, 0.9 + n2(Math.floor(X / 3), Y, 37) * 0.1); };
+    return [run(ax, 0.24, 0.76, 0, 28, face, 0.1, 0.9)];
+  } },
+  dresser: { top: 13, p: (o) => { const ax = along(o); return [run(ax, 0.26, 0.74, 0, 13, fdrawers(PAL.woodLt, 4), 0.12, 0.88)]; } },
+  nightstand: { top: 12, p: () => [fbox(0.3, 0.7, 0.3, 0.7, 0, 9, fdrawers(PAL.wood, 4.5)), { cyl: [0.5, 0.5, 0.04], z0: 9, z1: 10, m: flatM(FURNC.gold) }, { cyl: [0.5, 0.5, 0.1], z0: 10, z1: 12, m: flatM(FURNC.cream) }] },
+  tvstand: { top: 18, p: (o) => {
+    const ax = along(o), tv = (f, s, t, X, Y, sw) => (f === "top" ? FURNC.black : s < 0.8 || s > (sw || 16) - 0.8 || t < 0.8 || t > 10.2 ? FURNC.black : mul(FURNC.screen, 0.9 + n2(X, Y, 38) * 0.15));
+    return [run(ax, 0.3, 0.7, 0, 7, fdrawers(PAL.woodDk, 7, FURNC.chrome), 0.1, 0.9), run(ax, 0.46, 0.52, 7, 18, tv, 0.14, 0.86)];
+  } },
+  piano: { top: 20, p: (o) => {
+    const ax = along(o), gloss = (f, s, t, X, Y) => (f === "top" ? mul(FURNC.black, 1.5) : mul(FURNC.black, 1 + n2(X, Y, 39) * 0.25));
+    const keys = (f, s, t, X) => (f === "top" ? (Math.floor(X) % 3 === 0 ? FURNC.black : FURNC.cloth) : FURNC.black);
+    return [run(ax, 0.2, 0.56, 0, 20, gloss, 0.02, 0.98), run(ax, 0.56, 0.78, 9, 11, keys, 0.04, 0.96), run(ax, 0.56, 0.78, 0, 9, flatM(FURNC.black), 0.04, 0.1), run(ax, 0.56, 0.78, 0, 9, flatM(FURNC.black), 0.9, 0.96)];
+  } },
+  // ---------- churches ----------
+  pew: { top: 12, p: (o) => {
+    const ax = along(o), w = fwood(PAL.wood, 40);
+    return [run(ax, 0.24, 0.32, 4, 12, w, 0.02, 0.98), run(ax, 0.32, 0.72, 4, 6, w, 0.02, 0.98), run(ax, 0.24, 0.72, 0, 4, flatM(PAL.woodDk), 0.1, 0.16), run(ax, 0.24, 0.72, 0, 4, flatM(PAL.woodDk), 0.84, 0.9)];
+  } },
+  altar: { top: 15, p: (o) => {
+    const ax = along(o), cloth = (f, s, t) => (f === "top" ? FURNC.cloth : t > 9 ? (t < 10 ? FURNC.gold : FURNC.cloth) : mul(PAL.stone, 1.1));
+    return [run(ax, 0.22, 0.78, 0, 12, cloth, 0.04, 0.96), fcyl(ax, 0.4, 0.3, 0.04, 12, 15, flatM(FURNC.cream)), fcyl(ax, 0.4, 0.7, 0.04, 12, 15, flatM(FURNC.cream))];
+  } },
+  pulpit: { top: 20, p: (o) => {
+    const ax = along(o), panel = (f, s, t, X, Y, sw) => (f === "top" ? PAL.woodLt : s < 1.5 || s > (sw || 8) - 1.5 || t < 2 || t > 16 ? PAL.woodDk : mul(PAL.wood, 0.95 + n2(X, Y, 41) * 0.08));
+    return [run(ax, 0.28, 0.72, 0, 18, panel, 0.26, 0.74), run(ax, 0.24, 0.6, 18, 20, flatM(PAL.woodLt), 0.24, 0.76)];
+  } },
+  // ---------- hospitals, clinics and vets ----------
+  hospbed: { top: 11, p: (o) => {
+    const ax = along(o), s0 = flatM(FURNC.steel);
+    return [run(ax, 0.16, 0.84, 0, 2, s0, 0.06, 0.94), run(ax, 0.2, 0.8, 2, 5, flatM(mul(FURNC.steel, 0.8)), 0.1, 0.9), run(ax, 0.18, 0.82, 5, 8, (f, s, t, X, Y) => (f === "top" ? mul(FURNC.sheet, 1.08 + n2(X, Y, 42) * 0.06) : FURNC.sheet), 0.04, 0.96), run(ax, 0.14, 0.18, 6, 11, s0, 0.2, 0.8), run(ax, 0.82, 0.86, 6, 11, s0, 0.2, 0.8)];
+  } },
+  gurney: { top: 10, p: (o) => {
+    const ax = along(o), s0 = flatM(FURNC.chrome), [a0, b0] = ax === "u" ? [0.2, 0.3] : [0.3, 0.2];
+    return [...flegs(a0, ax === "u" ? 0.75 : 0.65, b0, ax === "u" ? 0.65 : 0.75, 7, s0, 0.04), run(ax, 0.3, 0.7, 7, 8, flatM(FURNC.steel), 0.04, 0.96), run(ax, 0.32, 0.68, 8, 10, flatM(FURNC.scrubs), 0.06, 0.94)];
+  } },
+  ivstand: { top: 25, p: () => [{ cyl: [0.5, 0.5, 0.13], z0: 0, z1: 1, m: flatM(FURNC.steel) }, fbox(0.48, 0.52, 0.48, 0.52, 1, 25, flatM(FURNC.chrome)), fbox(0.53, 0.62, 0.46, 0.54, 17, 23, flatM(FURNC.bag))] },
+  medcab: { top: 20, p: (o) => {
+    const ax = along(o), face = (f, s, t, X, Y, sw) => { if (f === "top") return FURNC.white; const w = sw || 8, m = w / 2; if (t > 15 && t < 19 && ((Math.abs(s - m) < 0.8 && t > 15.2) || (Math.abs(t - 17) < 0.7 && Math.abs(s - m) < 2))) return FURNC.red; if (t > 2 && t < 14 && s > 1 && s < w - 1) return Math.abs(s - m) < 0.5 ? mul(FURNC.white, 0.7) : mul(FURNC.water, 1.2); return mul(FURNC.white, 0.94); };
+    return [run(ax, 0.3, 0.7, 0, 20, face, 0.2, 0.8)];
+  } },
+  optable: { top: 11, p: (o) => {
+    const ax = along(o);
+    return [run(ax, 0.38, 0.62, 0, 8, flatM(FURNC.steel), 0.3, 0.7), run(ax, 0.24, 0.76, 8, 10, flatM(FURNC.chrome), 0.04, 0.96), run(ax, 0.26, 0.74, 10, 11, flatM(FURNC.felt), 0.06, 0.94)];
+  } },
+  // ---------- shops, restaurants and bars ----------
+  vending: { top: 30, p: (o) => {
+    const ax = along(o), face = (f, s, t, X, Y, sw) => { if (f === "top") return mul(FURNC.red, 0.8); const w = sw || 16; if (s > 1.2 && s < w * 0.64 && t > 7 && t < 27) return Math.floor(t) % 5 < 1 ? FURNC.black : mul(fgoods(Math.floor(X / 2), Math.floor(t / 5), 43), 1.15); if (s > w * 0.72 && s < w * 0.86 && t > 17 && t < 21) return FURNC.chrome; return mul(FURNC.red, 0.95 + n2(X, Y, 44) * 0.08); };
+    return [run(ax, 0.24, 0.76, 0, 30, face, 0.12, 0.88)];
+  } },
+  checkout: { top: 15, p: (o) => {
+    const ax = along(o), reg = (f, s, t, X, Y, sw) => (f === "top" ? FURNC.black : t > 3 && s > 1 && s < (sw || 8) - 1 ? mul(FURNC.led, 0.6) : FURNC.black);
+    return [run(ax, 0.24, 0.76, 0, 10, (f) => (f === "top" ? mul(FURNC.black, 1.6) : FURNC.beige), 0.04, 0.96), run(ax, 0.34, 0.6, 10, 15, reg, 0.3, 0.62)];
+  } },
+  displaycase: { top: 14, p: (o) => {
+    const ax = along(o), glass = (f, s, t, X, Y) => (f === "top" ? mul(FURNC.water, 1.35) : t < 1 || t > 7 ? FURNC.chrome : n2(Math.floor(X / 2), Y, 45) > 0.7 ? fgoods(Math.floor(X / 2), Y, 46) : mul(FURNC.water, 1.2));
+    return [run(ax, 0.26, 0.74, 0, 6, fwood(PAL.woodDk), 0.06, 0.94), run(ax, 0.26, 0.74, 6, 14, glass, 0.06, 0.94)];
+  } },
+  coldcase: { top: 28, p: (o) => {
+    const ax = along(o), face = (f, s, t, X, Y, sw) => { if (f === "top") return FURNC.white; if (t < 3 || t > 26 || s < 1 || s > (sw || 16) - 1) return FURNC.white; if (Math.floor(t) % 6 < 1) return FURNC.chrome; return n2(Math.floor(X), Math.floor(t / 6), 47) > 0.25 ? mul(fgoods(Math.floor(X), Math.floor(t / 6), 48), 1.2) : mul(FURNC.water, 1.3); };
+    return [run(ax, 0.24, 0.76, 0, 28, face, 0.04, 0.96)];
+  } },
+  booth: { top: 15, p: (o) => {
+    const ax = along(o), red = (f) => (f === "top" ? mul(FURNC.red, 1.15) : FURNC.red);
+    return [run(ax, 0.1, 0.18, 0, 15, red, 0.02, 0.98), run(ax, 0.18, 0.42, 0, 6, red, 0.02, 0.98), run(ax, 0.62, 0.68, 0, 8, flatM(FURNC.chrome), 0.46, 0.54), run(ax, 0.46, 0.9, 8, 9, flatM(FURNC.cream), 0.08, 0.92)];
+  } },
+  barcounter: { top: 14, p: (o) => {
+    const ax = along(o), panel = (f, s, t, X) => (Math.floor(X) % 8 < 1 ? mul(PAL.woodDk, 0.7) : t < 1.5 ? FURNC.gold : mul(PAL.woodDk, 1.05));
+    return [run(ax, 0.22, 0.78, 0, 13, panel, 0, 1), run(ax, 0.18, 0.82, 13, 14, (f, s, t, X, Y) => mul(PAL.woodLt, 1.05 + n2(X, Y, 49) * 0.1), 0, 1)];
+  } },
+  barstool: { top: 11, p: () => [{ cyl: [0.5, 0.5, 0.12], z0: 0, z1: 1, m: flatM(FURNC.chrome) }, fbox(0.47, 0.53, 0.47, 0.53, 1, 9, flatM(FURNC.chrome)), { cyl: [0.5, 0.5, 0.16], z0: 9, z1: 11, m: (f) => (f === "top" ? mul(FURNC.red, 1.15) : FURNC.red) }] },
+  // ---------- workshops and bays ----------
+  workbench: { top: 14, p: (o) => {
+    const ax = along(o), w = flatM(PAL.woodDk);
+    return [run(ax, 0.22, 0.28, 0, 9, w, 0.04, 0.1), run(ax, 0.72, 0.78, 0, 9, w, 0.04, 0.1), run(ax, 0.22, 0.28, 0, 9, w, 0.9, 0.96), run(ax, 0.72, 0.78, 0, 9, w, 0.9, 0.96), run(ax, 0.22, 0.78, 2, 3, fwood(PAL.wood), 0.04, 0.96), run(ax, 0.2, 0.8, 9, 12, fwood(PAL.woodLt, 50), 0.02, 0.98), run(ax, 0.6, 0.76, 12, 14, flatM(FURNC.steel), 0.7, 0.86)];
+  } },
+  toolchest: { top: 18, p: (o) => { const ax = along(o); return [run(ax, 0.28, 0.72, 0, 18, fdrawers(FURNC.red, 3, FURNC.chrome), 0.18, 0.82)]; } },
+  // ---------- police, barracks, schools, offices ----------
+  bunk: { top: 22, p: (o) => {
+    const ax = along(o), s0 = flatM(FURNC.steel), mat = (f, s, t, X, Y) => (f === "top" ? mul(FURNC.felt, 0.9 + n2(X, Y, 51) * 0.12) : mul(FURNC.felt, 0.75));
+    const posts = [[0.18, 0.04], [0.78, 0.04], [0.18, 0.92], [0.78, 0.92]].map(([c, a]) => run(ax, c, c + 0.04, 0, 22, s0, a, a + 0.04));
+    return [posts[0], posts[1], run(ax, 0.18, 0.82, 3, 4, s0, 0.02, 0.98), run(ax, 0.2, 0.8, 4, 6, mat, 0.04, 0.96), run(ax, 0.18, 0.82, 14, 15, s0, 0.02, 0.98), run(ax, 0.2, 0.8, 15, 17, mat, 0.04, 0.96), posts[2], posts[3]];
+  } },
+  schooldesk: { top: 10, p: (o) => {
+    const ax = along(o), s0 = flatM(FURNC.steel);
+    return [run(ax, 0.3, 0.34, 0, 8, s0, 0.3, 0.34), run(ax, 0.3, 0.34, 0, 8, s0, 0.66, 0.7), run(ax, 0.66, 0.7, 0, 8, s0, 0.3, 0.34), run(ax, 0.66, 0.7, 0, 8, s0, 0.66, 0.7), run(ax, 0.28, 0.72, 6, 8, flatM(FURNC.steel), 0.28, 0.72), run(ax, 0.24, 0.76, 8, 10, fwood(FURNC.cream, 52), 0.24, 0.76)];
+  } },
+  teacherdesk: { top: 12, p: (o) => {
+    const ax = along(o);
+    return [run(ax, 0.2, 0.26, 0, 9, fwood(PAL.wood), 0.04, 0.96), run(ax, 0.26, 0.8, 0, 9, fdrawers(PAL.wood, 3), 0.66, 0.94), run(ax, 0.16, 0.84, 9, 11, fwood(PAL.woodLt), 0.02, 0.98), run(ax, 0.36, 0.56, 11, 12, flatM(FURNC.cloth), 0.2, 0.4)];
+  } },
+  bleachers: { top: 20, p: (o) => {
+    const ax = along(o), plank = (f, s, t, X, Y) => (f === "top" ? mul(PAL.woodLt, 1 + n2(X, Y, 53) * 0.1) : Math.floor(t) % 6 < 1 ? mul(PAL.woodLt, 0.95) : mul(FURNC.steel, 0.8));
+    return [run(ax, 0.02, 0.35, 0, 20, plank, 0, 1), run(ax, 0.35, 0.67, 0, 13, plank, 0, 1), run(ax, 0.67, 0.98, 0, 6, plank, 0, 1)];
+  } },
+  serverrack: { top: 30, p: (o) => {
+    const ax = along(o), face = (f, s, t, X, Y, sw) => { if (f === "top") return mul(FURNC.black, 1.3); if (s < 1 || s > (sw || 16) - 1 || t < 1) return mul(FURNC.black, 1.6); if (Math.floor(t) % 3 < 1) return FURNC.ring; const q = n2(Math.floor(X), Math.floor(t), 54); return q > 0.93 ? FURNC.led : q > 0.88 ? FURNC.amber : FURNC.black; };
+    return [run(ax, 0.26, 0.74, 0, 30, face, 0.14, 0.86)];
+  } },
+  copier: { top: 16, p: (o) => {
+    const ax = along(o);
+    return [run(ax, 0.22, 0.78, 0, 12, fdrawers(FURNC.beige, 4, FURNC.black), 0.18, 0.82), run(ax, 0.26, 0.74, 12, 15, flatM(mul(FURNC.beige, 1.1)), 0.22, 0.78), run(ax, 0.26, 0.74, 15, 16, flatM(FURNC.black), 0.26, 0.74)];
+  } },
+  safe: { top: 18, p: () => [fbox(0.24, 0.76, 0.24, 0.76, 0, 18, fsafe(18))] },
+  // ---------- lootable decor (issue #13, sim/decor.js) ----------
+  // A plant in a clay pot, a floor lamp with its shade; a painting and a wall clock as they stand once set down (on a
+  // wall they are drawn on its face: wartTexel).
+  plant: { top: 18, p: (o, v) => [{ cyl: [0.5, 0.5, 0.16], z0: 0, z1: 6, m: (f) => (f === "top" ? mul(FLOORC.dirt, 0.8) : mul(PAL.rust, 1.1)) }, { cyl: [0.5, 0.5, 0.27], z0: 6, z1: 18, m: (f, s, t, X, Y) => mul(n2(X, Y, 81 + v) > 0.6 ? PAL.leaf2 : PAL.leaf, (f === "top" ? 1.25 : 1) + n2(X, Y, 82) * 0.2) }] },
+  floorlamp: { top: 28, p: () => [{ cyl: [0.5, 0.5, 0.14], z0: 0, z1: 1, m: flatM(PAL.metalDk) }, { cyl: [0.5, 0.5, 0.03], z0: 1, z1: 22, m: flatM(FURNC.chrome) }, { cyl: [0.5, 0.5, 0.17], z0: 22, z1: 28, m: (f) => (f === "top" ? mul(FURNC.cream, 1.1) : FURNC.cream) }] },
+  painting: { top: 14, p: (o) => { const ax = along(o), face = (f, s, t, X, Y, sw) => { if (f === "top" || s < 1 || s > (sw || 12) - 1 || t < 1 || t > 13) return WARTC.frame; return t < 7 + Math.sin(s) * 0.8 ? WARTC.hill : WARTC.sky; }; return [run(ax, 0.42, 0.52, 0, 14, face, 0.18, 0.82)]; } },
+  wallclock: { top: 8, p: (o) => { const ax = along(o), face = (f, s, t, X, Y, sw) => { const d = Math.hypot(s - (sw || 6) / 2, t - 4); return f === "top" || d > 3 ? WARTC.rim : d < 0.6 || (Math.abs(s - (sw || 6) / 2) < 0.4 && t > 4) ? WARTC.rim : WARTC.white; }; return [run(ax, 0.44, 0.52, 0, 8, face, 0.3, 0.7)]; } },
+};
+export const furnProbe = { primsOf: (k, o) => primsOf(k, o), blockTop0: (k, o) => blockTop0(k, o), FURN_DRAW, FURNITURE, FLOORED, OUTLINED: () => OUTLINED, JOINS: () => JOINS }; // tools/furnituretest.js
+
 function primsOf(k, o) {
   const v = o.v || 0;
   if (o.car && (k === "car" || k === "truck" || k === "vehicle")) return carPieces(o.car, iso.rot);
+  if (FURN_DRAW[k]) return FURN_DRAW[k].p(o, v); // the furniture catalogue's appliances and pieces (sim/data-furniture.js)
   switch (k) {
     case "wall": case "window": case "door": case "idoor": case "boarded": {
       const top = o.stub ? STUB : o.top;
-      const face = wallFace(o.mat ?? 0, o.dmg);
+      const outer = wallFace(o.mat ?? 0, o.dmg), inE = o.ie ? innerFace(o.ie) : null, inS = o.is ? innerFace(o.is) : null; // inE, inS: a room's paint on the inside faces (sim/decor.js c.wc)
+      const art = o.art && !o.stub ? { f: o.art[0] === "e" ? "east" : "south", k: o.art.slice(1) } : null; // wall art, gone with the wall cut away
+      const face = inE || inS || art ? (f, s, t, X, Y, sw) => (art && f === art.f && wartTexel(art.k, s, t, sw || 16, v)) || (f === "east" && inE ? inE(f, s, t, X, Y) : f === "south" && inS ? inS(f, s, t, X, Y) : outer(f, s, t, X, Y)) : outer;
       const winFace = (axisFace) => (f, s, t, X, Y, sw) => {
         if (f === axisFace && !o.stub) {
           const w0 = 4, w1 = (sw || 16) - 4;
@@ -686,7 +931,7 @@ function primsOf(k, o) {
             return mul(o.vault ? PAL.metal : k === "door" ? DOORC.locked : DOORC.leaf, (Math.floor(t) % 9 < 1 || Math.floor(s) === 7 ? 0.8 : 0.95) + n2(s, t, 1) * 0.1);
           }
         }
-        return face(f, s, t, X, Y);
+        return face(f, s, t, X, Y, sw);
       };
       const wf = o.n === "u" ? "east" : o.n === "v" ? "south" : null;
       const cap = k === "door" || k === "idoor" ? doorCap(k, o) : capFace; // a door's top in its colour: found from above at any turn of the view
@@ -1236,6 +1481,7 @@ function seasonBush(o, v) {
 const OUTLINED = new Set(["tree", "boulder", "rock", "car", "truck", "vehicle", "crate", "hay", "pump", "barrel", "well", "barricade", "sandbag", "hivewall",
   "table", "bed", "rack", "locker", "shelf", "cabinet", "counter", "gunsafe", "tanktrap", "spikes", "beartrap", "stairs", "ladder", "tower", "bars", "gate", "palisade",
   "tent", "torn", "lamp", "spot", "firepit", "bush", "stump", "log"]); // props stand out with an outline (the base map's tent, floodlight and fire pit too: sim/basemap.js)
+for (const k of Object.keys(FURNITURE_KINDS)) OUTLINED.add(k); // every piece of furniture (sim/data-furniture.js)
 
 // The cells' block sprites by look (sprite, roofSprite, massSprite; null: nothing to draw): a key holds all the picture
 // depends on, so one never goes stale. Each entry keeps the frame it was last drawn in (iso.frames); past SPRITES
@@ -1258,7 +1504,7 @@ function spritePut(key, s) {
 }
 // A cached sprite for a cell's look.
 function sprite(k, o, fog) {
-  const key = `${iso.straight ? "s|" : ""}${o.sea ? `${o.sea}|` : ""}${k}|${o.v}|${o.alt}|${o.j}|${o.n}|${o.top}|${o.stub ? 1 : 0}|${o.mat}|${o.dmg}|${o.barred ? 1 : 0}|${o.dir}|${o.part || ""}|${o.vault ? 1 : 0}|${o.roll ? 1 : 0}|${o.lit ? 1 : 0}|${o.spot || 0}|${fog ? 1 : 0}|${o.ter ? `${o.ter.key}${o.f}${o.wet ? `${o.wet}${o.wl}` : ""}${o.snow || ""}${o.gt ? `${o.gnd}${o.lf}` : ""}` : ""}|${o.car ? `${o.car.i},${o.car.j},${o.car.L},${o.car.ax},${o.car.kind},${o.car.v},${o.car.body || ""},${o.car.mil ? o.car.mil.cond : ""},${upKey(o.car.up)},${iso.rot & 3}` : ""}${o.sn ? `|n${o.sn}` : ""}${o.len ? `|st${o.step}/${o.len}${o.rail}${o.well ? "w" : ""}${o.air ? "a" : ""}` : ""}`; // a stair run's step
+  const key = `${iso.straight ? "s|" : ""}${o.sea ? `${o.sea}|` : ""}${k}|${o.v}|${o.alt}|${o.j}|${o.n}|${o.top}|${o.stub ? 1 : 0}|${o.mat}|${o.dmg}|${o.barred ? 1 : 0}|${o.dir}|${o.part || ""}|${o.vault ? 1 : 0}|${o.roll ? 1 : 0}|${o.lit ? 1 : 0}|${o.spot || 0}|${fog ? 1 : 0}|${o.ter ? `${o.ter.key}${o.f}${o.wet ? `${o.wet}${o.wl}` : ""}${o.snow || ""}${o.gt ? `${o.gnd}${o.lf}` : ""}` : ""}|${o.car ? `${o.car.i},${o.car.j},${o.car.L},${o.car.ax},${o.car.kind},${o.car.v},${o.car.body || ""},${o.car.mil ? o.car.mil.cond : ""},${upKey(o.car.up)},${iso.rot & 3}` : ""}${o.sn ? `|n${o.sn}` : ""}${o.ie || o.is || o.art ? `|w${o.ie || ""}/${o.is || ""}/${o.art || ""}` : ""}${o.len ? `|st${o.step}/${o.len}${o.rail}${o.well ? "w" : ""}${o.air ? "a" : ""}` : ""}`;
   let s = spriteGet(key);
   if (s === undefined) {
     const p = prims(k, o);
@@ -1388,6 +1634,9 @@ const FLOORC = {
   floor: hex("#5a4632"), rubble: hex("#4e4842"), roof: hex("#6a6a64"),
   // A building's floors by room (sim/buildingmaps.js c.fl): tiles, concrete, carpet, a barn's dirt.
   tile: hex("#7a7668"), conc: hex("#5e5d5a"), carpet: hex("#4e3e44"), barn: hex("#5e5040"), straw: hex("#8a7440"),
+  // The room-appropriate floors of 2026-10-25 (issue #13): kitchens' and wards' lino, a bathroom's checker, a home's
+  // hardwood (narrow, warm) and a cabin's or a barn's planks (the old floorboards), a gym's rubber, the bays' steel plate.
+  lino: hex("#8a8a76"), checkA: hex("#8e8a80"), checkB: hex("#34322e"), hardwood: hex("#7a5636"), rubber: hex("#3a3c3e"), steel: hex("#6a6e72"),
 };
 // Which way the roads run on a map (the user's request 2026-10-22: "In base view and raids fix road tiles to look
 // better"): every road cell painted a lane dash of its own laid a hatching of dashes over the whole asphalt. Now each
@@ -1485,17 +1734,85 @@ function floorColor(c, k, x, y, lx, ly, mud, R = null, lf = 0, pd = 0, pe = 0) {
       else if (c.fl === "conc") col = q > 0.96 ? mul(FLOORC.conc, 0.75) : mul(FLOORC.conc, 0.9 + q * 0.12 + v * 0.04);
       else if (c.fl === "carpet") col = mul(FLOORC.carpet, 0.86 + q * 0.22);
       else if (c.fl === "dirt") col = q > 0.9 ? FLOORC.straw : mul(FLOORC.barn, 0.88 + q * 0.16);
+      else if (c.fl === "lino") col = (tx === 0 && ty % 16 === 0) ? mul(FLOORC.lino, 0.8) : mul(FLOORC.lino, 0.93 + q * 0.05 + (hash3(x * 4 + (tx >> 2), y * 4 + (ty >> 2), 5) > 0.8 ? 0.05 : 0)); // smooth sheet, a faint fleck
+      else if (c.fl === "checker") col = ((tx >> 2) + (ty >> 2)) % 2 ? mul(FLOORC.checkA, 0.92 + q * 0.08) : mul(FLOORC.checkB, 0.9 + q * 0.12); // 4 px checks
+      else if (c.fl === "hardwood") { const row = ty >> 2, off = hash3(x, y * 4 + row, 8) * 16; col = ty % 4 === 0 ? mul(FLOORC.hardwood, 0.7) : (tx + off) % 16 < 1 ? mul(FLOORC.hardwood, 0.76) : mul(FLOORC.hardwood, 0.9 + hash3(x * 2 + Math.floor((tx + off) / 16), y * 4 + row, 3) * 0.18 + q * 0.04); } // narrow boards, joints staggered
+      else if (c.fl === "rubber") col = (tx % 4 === 1 && ty % 4 === 1) ? mul(FLOORC.rubber, 1.25) : mul(FLOORC.rubber, 0.92 + q * 0.08); // studded mats
+      else if (c.fl === "steel") col = ((tx + ty) % 6 === 0 && (tx >> 1) % 2 === 0) || ((tx - ty + 16) % 6 === 3 && (tx >> 1) % 2 === 1) ? mul(FLOORC.steel, 1.22) : tx === 0 || ty === 0 ? mul(FLOORC.steel, 0.7) : mul(FLOORC.steel, 0.9 + q * 0.08); // diamond plate
       else col = ty % 4 === 0 ? mul(FLOORC.floor, 0.68) : mul(FLOORC.floor, 0.88 + hash3(x * 4 + Math.floor((tx + (Math.floor(ty / 4) % 2) * 8) / 16), y * 4 + Math.floor(ty / 4), 3) * 0.2);
       break;
     case "rubble": col = q > 0.82 ? mul(FLOORC.rubble, 1.35) : q < 0.1 ? mul(FLOORC.rubble, 0.6) : mul(FLOORC.rubble, 0.92 + v * 0.1); break;
     case "roof": col = mul(FLOORC.roof, 0.86 + q * 0.2); break;
     default: col = mul(FLOORC.grass, 0.92 + q * 0.12);
   }
+  if (c.deco) col = decoTexel(col, c.deco, x, y, tx, ty); // rugs, clutter, a light's pool (sim/decor.js)
   if (pe && c.plot) { const W = PLOT_EDGE.W; if (((pe & 1) && ly < W) || ((pe & 2) && ly > 1 - W) || ((pe & 4) && lx < W) || ((pe & 8) && lx > 1 - W)) col = mul(PLOT_EDGE.WOOD, 0.88 + (((tx >> 1) + (ty >> 1)) % 2) * 0.12 + q * 0.08); } // the plot's wood edge: planks
   if (!c.plot && (c.gnd || lf)) col = groundTexel(col, c, x * 16 + tx, y * 16 + ty, lf, Math.min(tx, 15 - tx, ty, 15 - ty) / 7.5); // the season on the ground (ui/groundlook.js); a built plot is the top layer: none on it
   if (pd > 0 && !c.plot) col = puddleTexel(col, c, x * 16 + tx, y * 16 + ty, pd); // rain water standing on it (ui/groundlook.js, sim/puddles.js); not on a plot
   if (mud) { const m = clamp01(mud - hash3(x * 16 + tx, y * 16 + ty, 9) * 0.6); if (m > 0) col = mix(col, q > 0.7 ? hex("#5a1a1c") : hex("#3e2a22"), m * 0.85); }
   return col;
+}
+// ---------- interior decor (sim/decor.js) ----------
+// The floor's decor (c.deco) painted into the ground canvas with the floor (cached with it: no cost a frame): rugs with
+// a border on their outer sides, papers, books, glass, trash and tins, clothes, toys, cracked tiles, stains, straw,
+// leaves; a light fixture overhead as the pool of light under it (a lamp warm, a strip light cool).
+const DECOC = {
+  rug: ["#7a3a32", "#3a4a6a", "#5a6a3a", "#7a6036", "#5a3a5a", "#4a5a5a"].map(hex), rugEdge: hex("#c8b890"),
+  paper: hex("#d8d4c4"), book: ["#7a2a2a", "#2a4a6a", "#3a5a2a", "#6a5a2a", "#4a2a4a", "#2a2a2a"].map(hex),
+  glass: hex("#b8d0d8"), trash: [hex("#6a5a44"), hex("#8a8070"), hex("#4a4038")], tin: hex("#9a9ea2"),
+  cloth: ["#5a6a8a", "#8a4a4a", "#c8c0a8", "#3a3a3a", "#6a8a5a", "#8a7a4a"].map(hex), toy: ["#d84a3a", "#e8c040", "#3a8ad8", "#4ab04a"].map(hex),
+  crack: hex("#2e2c28"), stain: hex("#6a5a3a"), oil: hex("#141414"), straw: hex("#a88a48"), leaf: ["#8a5a24", "#a8702a", "#6a5228", "#9a8a3a"].map(hex),
+  lamp: hex("#fff0c8"), strip: hex("#e8f0ff"),
+};
+const decoSig = (d) => d.k.charCodeAt(0) * 5 + d.k.charCodeAt(1) + (d.v | 0) * 3 + (d.e | 0) * 7 + (d.lt | 0) * 13;
+// A blob's mask: inside a wobbly circle round (cx, cy) of radius r px.
+const blobIn = (tx, ty, cx, cy, r, sd) => Math.hypot(tx - cx, ty - cy) < r * (0.8 + 0.3 * hash3(Math.floor(Math.atan2(ty - cy, tx - cx) * 2), sd, 61));
+function decoTexel(col, d, x, y, tx, ty) {
+  const v = d.v | 0, X = x * 16 + tx, Y = y * 16 + ty, q = hash3(X, Y, 51), r = (i) => hash3(x * 8 + i, y, 52 + v);
+  switch (d.k) {
+    case "rug": {
+      const e = d.e | 0, edge = ((e & 1) && ty < 2) || ((e & 2) && ty > 13) || ((e & 4) && tx < 2) || ((e & 8) && tx > 13);
+      const base = DECOC.rug[v % DECOC.rug.length];
+      col = edge ? mul(DECOC.rugEdge, 0.7 + q * 0.12) : ((X + Y) % 8 < 1 || (X - Y + 1024) % 8 < 1) ? mul(base, 1.25) : mul(base, 0.88 + q * 0.14); // woven: a diamond lattice
+      break;
+    }
+    case "papers": for (let i = 0; i < 3; i++) { const px = 1 + r(i) * 11, py = 1 + r(i + 3) * 11; if (tx >= px && tx < px + 4 && ty >= py && ty < py + 3) { col = mul(DECOC.paper, 0.85 + q * 0.15); break; } } break;
+    case "books": for (let i = 0; i < 2; i++) { const px = 2 + r(i) * 10, py = 2 + r(i + 3) * 10; if (tx >= px && tx < px + 3 && ty >= py && ty < py + 4) { col = mul(DECOC.book[(v + i) % 6], tx < px + 1 ? 0.7 : 0.95); break; } } break;
+    case "glass": if (q > 0.86) col = mul(DECOC.glass, 0.8 + q * 0.2); break;
+    case "trash": if (q > 0.84) col = mul(DECOC.trash[Math.floor(q * 97) % 3], 0.85 + q * 0.2); else if (blobIn(tx, ty, 4 + r(1) * 8, 4 + r(2) * 8, 2, x + y)) col = DECOC.trash[1]; break;
+    case "tins": for (let i = 0; i < 2; i++) { const dd = Math.hypot(tx - (3 + r(i) * 10), ty - (3 + r(i + 3) * 10)); if (dd < 2) { col = mul(DECOC.tin, dd < 1 ? 0.75 : 1.05); break; } } break;
+    case "clothes": if (blobIn(tx, ty, 5 + r(1) * 6, 5 + r(2) * 6, 4, x * 3 + y)) col = mul(DECOC.cloth[v % 6], 0.8 + (((tx + ty) >> 1) % 2) * 0.12 + q * 0.06); break;
+    case "toys": for (let i = 0; i < 3; i++) { const px = 2 + r(i) * 11, py = 2 + r(i + 3) * 11; if (tx >= px && tx < px + 2 && ty >= py && ty < py + 2) { col = DECOC.toy[(v + i) % 4]; break; } } break;
+    case "crack": { const a = 4 + r(1) * 8, run = Math.abs(ty - (a + (tx - 8) * (r(2) - 0.5) + Math.sin(tx * 1.3 + v) * 1.2)); if (run < 0.6) col = mul(DECOC.crack, 1 + q * 0.3); break; }
+    case "stain": if (blobIn(tx, ty, 8, 8, 6, x + y * 3)) col = mix(col, DECOC.stain, 0.35); break;
+    case "oil": if (blobIn(tx, ty, 7 + r(1) * 2, 7 + r(2) * 2, 5.5, x * 5 + y)) col = mix(col, DECOC.oil, 0.65 + q * 0.1); break;
+    case "straw": if (hash3(X >> 2, Y, 53) > 0.55 || q > 0.8) col = mul(DECOC.straw, 0.82 + q * 0.25); break;
+    case "leaves": if (hash3(X >> 1, Y >> 1, 54) > 0.72) col = mul(DECOC.leaf[Math.floor(hash3(X >> 1, Y >> 1, 55) * 4)], 0.85 + q * 0.2); break;
+  }
+  if (d.lt) { const dd = Math.hypot(tx - 7.5, ty - 7.5) / 8; if (dd < 1) col = mix(col, d.lt === 2 ? DECOC.strip : DECOC.lamp, 0.13 * (1 - dd)); } // the light's pool under the fixture
+  return col;
+}
+// The inside faces of the walls (c.wc on the room's cells, sim/decor.js): painted in the room's colour, a skirting
+// board along the foot, grime low down; wall art (c.wart) on the face toward its room, at eye height.
+const wcCache = new Map();
+const wcRgb = (h) => { let c = wcCache.get(h); if (!c) wcCache.set(h, (c = mul(hex(h), 0.74))); return c; }; // dimmed to the battle view's palette
+const innerFace = (wc) => (f, s, t, X, Y) => (t < 2 ? mul(PAL.woodDk, 0.95 + n2(X, Y, 3) * 0.1) : mul(wcRgb(wc), 0.92 + n2(X, Y, 5) * 0.08 - (t < 7 ? 0.08 * (1 - t / 7) : 0)));
+const WARTC = { frame: hex("#4a3424"), sky: hex("#7a98a8"), hill: hex("#5a6a3a"), white: hex("#e0e0d8"), rim: hex("#2a2a2a"), mirror: hex("#a8b8c0"), cork: hex("#8a6a44"), poster: ["#c8402f", "#3a6fb0", "#e8c04a", "#5a3a7a"].map(hex), shelf: hex("#6a4a2e"), knick: ["#b0a080", "#7a8a9a", "#9a5a4a"].map(hex) };
+function wartTexel(k, s, t, sw, v) {
+  const m = sw / 2; // the middle of the face
+  switch (k) {
+    case "painting": if (Math.abs(s - m) < 5 && t >= 13 && t < 24) return Math.abs(s - m) >= 4 || t < 14 || t >= 23 ? FURNC.gold : t < 18.5 - Math.sin(s * 0.8) ? mul(WARTC.sky, 0.9 + (s % 3) * 0.05) : t < 20 ? WARTC.hill : mul(WARTC.hill, 0.75); return null; // the catalogue's painting (sim/data-furniture.js): gilt-framed, bigger
+    case "wallclock": return wartTexel("clock", s, t, sw, v); // the catalogue's wall clock: a clock's face
+    case "picture": if (Math.abs(s - m) < 4 && t >= 15 && t < 23) return Math.abs(s - m) >= 3 || t < 16 || t >= 22 ? WARTC.frame : t < 19 - Math.sin(s) * 0.8 ? WARTC.sky : WARTC.hill; return null;
+    case "clock": { const dd = Math.hypot(s - m, t - 21); if (dd < 3) return dd >= 2.2 ? WARTC.rim : (Math.abs(s - m) < 0.6 && t >= 21 && t < 23) || (Math.abs(t - 21) < 0.6 && s >= m && s < m + 1.6) ? WARTC.rim : WARTC.white; return null; }
+    case "mirror": if (Math.abs(s - m) < 3 && t >= 13 && t < 26) return Math.abs(s - m) >= 2.4 || t < 14 || t >= 25 ? WARTC.frame : mul(WARTC.mirror, 0.9 + ((s + t) % 5) * 0.03); return null;
+    case "whiteboard": if (Math.abs(s - m) < 6 && t >= 14 && t < 23) return Math.abs(s - m) >= 5.4 || t < 14.6 || t >= 22.4 ? PAL.metalDk : (t | 0) % 3 === 0 && (s | 0) % 4 < 2 && Math.abs(s - m) < 4 ? WARTC.poster[1 + ((t | 0) % 2)] : WARTC.white; return null;
+    case "poster": if (Math.abs(s - m) < 3 && t >= 14 && t < 24) return t >= 21 ? WARTC.white : mul(WARTC.poster[v % 4], 0.85 + ((t | 0) % 3) * 0.06); return null;
+    case "crucifix": if ((Math.abs(s - m) < 0.8 && t >= 14 && t < 26) || (Math.abs(t - 22) < 0.8 && Math.abs(s - m) < 3)) return WARTC.frame; return null;
+    case "notice": if (Math.abs(s - m) < 5 && t >= 14 && t < 23) { if (Math.abs(s - m) >= 4.4 || t < 14.6 || t >= 22.4) return WARTC.frame; const cell = Math.floor((s - m + 5) / 3) * 3 + Math.floor((t - 14) / 3); return hash3(cell, v, 71) > 0.5 && (s | 0) % 3 && (t | 0) % 3 ? (hash3(cell, v, 72) > 0.7 ? WARTC.poster[2] : WARTC.white) : WARTC.cork; } return null;
+    case "shelf": if (Math.abs(s - m) < 6 && t >= 19 && t < 20.5) return WARTC.shelf; if (Math.abs(s - m) < 5.5 && t >= 20.5 && t < 23.5) { const i = Math.floor((s - m + 6) / 2.4); return hash3(i, v, 73) > 0.4 ? WARTC.knick[i % 3] : null; } return null;
+  }
+  return null;
 }
 // The whole map's ground at art resolution (one canvas; the view origin's top vertex at (Hv × 16, 0); in a straight
 // view the origin at (0, 0): ox, the art x of its left edge).
@@ -1687,6 +2004,13 @@ const JOINS = {
   outline: new Set(["outline"]), // the base map: a building's outline joins along its sides (sim/basemap.js)
   tent: new Set(["tent"]), log: new Set(["log"]), // a camp's 2 × 1 ridge tent, a fallen log two cells long (sim/basemap.js, basescatter.js)
 };
+// The catalogue's pieces (sim/data-furniture.js): one bigger than a cell joins with its own kind (a sofa, a bathtub, a
+// pew run on along their length), one against a wall with the walls too; the old kinds keep their own joins above.
+for (const [k, d] of Object.entries(FURNITURE_KINDS)) {
+  if (JOINS[k]) continue;
+  const big = d.size[0] * d.size[1] > 1;
+  if (d.wall || big) JOINS[k] = new Set([...(d.wall ? WALLISH : []), ...(big ? [k] : [])]);
+}
 // What a cell looks like in this view: its kind and options (see prims), or null for open ground. focus: on a building's
 // own map (sim/buildingmaps.js) the cutaway lowers only the walls within CUT_R tiles of these points (your people, the
 // mouse, enemies you see), so the rest of a big building keeps its walls standing.
@@ -1801,7 +2125,7 @@ function lookOf(b, scene, x, y, cut, focus = null) {
   if (bid >= 0) {
     const B = scene.blds[bid];
     o.top = B.top; o.mat = B.mat;
-    if (WALLISH.has(k) || k === "shelf" || k === "locker" || k === "cabinet" || k === "counter") {
+    if (WALLISH.has(k) || WALL_FURN.has(k)) {
       // The axis to the inside: the side with the building's floor.
       for (const [dx, dy] of VD) {
         const nx = x + dx, ny = y + dy;
@@ -1809,7 +2133,18 @@ function lookOf(b, scene, x, y, cut, focus = null) {
         const j = ny * b.w + nx;
         if (scene.comp[j] === bid && FLOORED.has(b.cells[j].k)) { const d = viewDir(dx, dy, r); o.n = d < 2 ? "u" : "v"; break; }
       }
-      if (k === "shelf" || k === "locker" || k === "cabinet" || k === "counter") o.n = o.n === "u" ? "v" : o.n === "v" ? "u" : null; // furniture runs along the wall it stands by
+      if (WALL_FURN.has(k)) o.n = o.n === "u" ? "v" : o.n === "v" ? "u" : null; // furniture runs along the wall it stands by (sim/data-furniture.js wall)
+    }
+    // The inside faces toward the camera (+u: east, +v: south) in the colour of the room beyond them (c.wc), and the
+    // wall art on the face toward its room (c.wart; sim/decor.js). The outside keeps the building's colour.
+    if (k === "wall") for (const [dx, dy] of VD) {
+      const nx = x + dx, ny = y + dy;
+      if (nx < 0 || ny < 0 || nx >= b.w || ny >= b.h) continue;
+      const d = viewDir(dx, dy, r), face = d === 0 ? "e" : d === 2 ? "s" : null;
+      if (!face) continue;
+      const nc = b.cells[ny * b.w + nx];
+      if (nc.wc && scene.comp[ny * b.w + nx] === bid) o[face === "e" ? "ie" : "is"] = nc.wc;
+      if (c.wart && VD[c.wart.d] && VD[c.wart.d][0] === dx && VD[c.wart.d][1] === dy) o.art = `${face}${c.wart.k}`;
     }
     // The cutaway: a cut building's near walls (the ones with its inside behind them) drop to stubs (behind: up the
     // screen, toward −u and −v; in a straight view toward −v).
@@ -1921,7 +2256,7 @@ function blockTop0(k, o) {
     case "rock": return STONE.H.short[1]; case "wire": return 10; case "rail": return 13; case "tanktrap": return 12;
     case "outline": return 9; case "tent": return 18; case "torn": return 5; case "firepit": return 7; case "lamp": return 38; case "spot": return 24; // the base map (sim/basemap.js; torn: sim/softcover.js)
     case "bush": return 12; case "stump": return 6; case "log": return 7; // its scatter (sim/basescatter.js)
-    default: return 0;
+    default: return FURN_DRAW[k] ? FURN_DRAW[k].top : 0; // the catalogue's pieces (sim/data-furniture.js): their heights with their sprites
   }
 }
 

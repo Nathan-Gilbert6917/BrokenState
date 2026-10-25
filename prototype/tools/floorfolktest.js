@@ -206,6 +206,10 @@ let CARD = null;
   const S = b.raid.folk.survivors;
   const u = b.units.find((x) => x.side === "player");
   for (const o of b.units.filter((x) => x.side === "player" && x !== u)) o.left = true;
+  // Only the survivors' card is looked at here: armed squatters elsewhere in the building (wanderers.js occupants)
+  // who spot the one at the door would call out with a card of their own (parley.js) as the dice fall (the scenes
+  // of interiorscenes.js move where they stand).
+  for (const o of b.units.filter((x) => x.occupant === "hostile" && !x.folk)) o.left = true;
   const spot = outsideDoor(b, S);
   check(!!spot, `a cell outside their door to stand on (${spot})`);
   place(b, u, S.f, spot[0], spot[1]);

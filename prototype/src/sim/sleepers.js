@@ -2,7 +2,8 @@
 // ZTYPES sleeper). A fight in the open (no layout: not a base, a hive or a growth) and every raid map (a street, a
 // building) has bodies lying about: placeBodies, SLEEPER.COUNT for a Medium map's area (more on a bigger map and
 // PER_INF more on infected ground, at most MAX), none within AWAY tiles of where your people start, none in a raid's
-// extraction zones or on the evac strip. They are plain data on the battle (b.corpses: { id, x, y, seed, sleeper,
+// extraction zones or on the evac strip; in a building of storeys on every floor (c.f; interiorscenes.js adds the
+// scenes' dead, c.scene). They are plain data on the battle (b.corpses: { id, x, y, f, seed, sleeper,
 // spotted, burst, burnt, unit }), drawn as bodies, never units: nothing in the battle counts or walks round them.
 //   A Sleeper (each body at ODDS + ODDS_INF × the tile's Infection, at most ODDS_MAX; the placing has dice of its
 //   own, so the battle's own dice do not change): a body so full of the worm that it splits open when anyone living
@@ -36,16 +37,23 @@ export function placeBodies(b, seed = 1) {
   const odds = Math.min(SLEEPER.ODDS_MAX, SLEEPER.ODDS + SLEEPER.ODDS_INF * inf);
   const mine = b.units.filter((u) => u.side === "player" && !u.dead);
   const cells = [];
-  for (let y = 0; y < b.h; y++) for (let x = 0; x < b.w; x++) {
-    const i = y * b.w + x;
-    if (!CELL[b.cells[i].k].walk || !b.reach[i] || unitAt(b, x, y)) continue;
-    if (b.raid ? zoneAt(b, x, y) >= 0 : inEvac(b, x, y)) continue;
-    if (mine.some((u) => cheb(u, { x, y }) < SLEEPER.AWAY)) continue;
-    cells.push([x, y]);
-  }
+  // Every floor of a building with storeys (buildingmaps.js: b.floors, each its own grid and reach; the zones and
+  // your people's start on the ground floor), the ground's cells as before.
+  const floors = b.floors && b.floors.length > 1 ? b.floors : [{ cells: b.cells, reach: b.reach }];
+  floors.forEach((F, f) => {
+    if (!F || !F.cells || !F.reach) return;
+    for (let y = 0; y < b.h; y++) for (let x = 0; x < b.w; x++) {
+      const i = y * b.w + x;
+      if (!CELL[F.cells[i].k].walk || !F.reach[i]) continue;
+      if (f === 0 ? unitAt(b, x, y) : b.units.some((u) => (u.f || 0) === f && u.x === x && u.y === y && !u.dead)) continue;
+      if (f === 0 && (b.raid ? zoneAt(b, x, y) >= 0 : inEvac(b, x, y))) continue;
+      if (f === 0 && mine.some((u) => cheb(u, { x, y }) < SLEEPER.AWAY)) continue;
+      cells.push(f ? [x, y, f] : [x, y]);
+    }
+  });
   rng.shuffle(cells);
   b.corpses = [];
-  for (let i = 0; i < Math.min(n, cells.length); i++) b.corpses.push({ id: i + 1, x: cells[i][0], y: cells[i][1], seed: rng.int(0, 99999), sleeper: rng.chance(odds) });
+  for (let i = 0; i < Math.min(n, cells.length); i++) b.corpses.push({ id: i + 1, x: cells[i][0], y: cells[i][1], ...(cells[i][2] ? { f: cells[i][2] } : {}), seed: rng.int(0, 99999), sleeper: rng.chance(odds) });
   return b.corpses;
 }
 export const sleepersLeft = (b) => (b.corpses || []).filter(live).length;
@@ -55,7 +63,7 @@ export const sleepersLeft = (b) => (b.corpses || []).filter(live).length;
 export function spotCheck(b, u) {
   if (!b.corpses || !b.corpses.length || u.side !== "player" || !active(u)) return;
   for (const c of b.corpses) {
-    if (!live(c) || c.spotted || (c.f || 0) !== (b.floor || 0) || cheb(u, c) > SLEEPER.SPOT_RANGE) continue; // bodies lie on the ground floor (buildingmaps.js storeys)
+    if (!live(c) || c.spotted || (c.f || 0) !== (b.floor || 0) || (c.f || 0) !== (u.f || 0) || cheb(u, c) > SLEEPER.SPOT_RANGE) continue; // bodies lie on every floor (buildingmaps.js storeys): the active one's, seen from it
     const tried = c.tried || (c.tried = {});
     if (tried[u.id] === b.turn || !los(b, u.x, u.y, c.x, c.y)) continue;
     tried[u.id] = b.turn;
@@ -68,7 +76,7 @@ function spot(b, c, by) {
   const p = power(b);
   const z = applyZType(enemyUnit(b, b.rng, "zombies", p, b.units.filter((o) => o.kind === "zombie").length + 1), "sleeper", false, p);
   z.name = "Sleeper";
-  z.x = c.x; z.y = c.y;
+  z.x = c.x; z.y = c.y; z.f = c.f || 0;
   z.aware = true;
   z.reinforcement = true; // not one of the enemy the battle began with
   z.corpse = c.id;
@@ -84,7 +92,7 @@ function spot(b, c, by) {
 // Someone living just stepped (combat.js moveAlong): a Sleeper next to them splits open.
 export function wakeNear(b, u) {
   if (!b.corpses || !b.corpses.length || u.kind === "zombie" || !active(u)) return;
-  for (const c of b.corpses) if (live(c) && (c.f || 0) === (b.floor || 0) && cheb(u, c) <= 1) split(b, c, u);
+  for (const c of b.corpses) if (live(c) && (c.f || 0) === (u.f || 0) && cheb(u, c) <= 1) split(b, c, u); // on the waker's own floor
 }
 function split(b, c, by) {
   c.burst = true;

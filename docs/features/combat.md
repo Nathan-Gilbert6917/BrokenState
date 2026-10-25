@@ -51,10 +51,113 @@ When a raid has a street and buildings to go into, a card asks which before the 
 Raids go into generated buildings and neighbourhood streets to search, past locks, keys and safes.
 - Procedurally generated buildings, containers and searches; raid loot carried by hand [buildingmaps, search, raidloot]. Raid planning (entry side, scout, wait for night) [raidplan]; locks, keys and safes [locks, gunsafes]. A site's building is picked before the map (see above).
 - **Neighbourhood POI**: a street of 3–5 two-storey houses on one map (rows facing a road, yards, fences, parked cars to search; ways out at both ends and the back gardens). Each house's containers are kept apart in the POI's ledger with the one pool falling across them. Headless it is one POI searched a house at a time [buildingmaps `streetMap`, `streetHouses`, `STREET`, `streetIntro`; combat `createRaid` (upper floors' reach from every stairwell); poicont `poiHouses`; scavenge `searchHour` / `afterRaid`].
+- **Room floors** (sim/buildingmaps.js `ROLES` fl, set on `c.fl` by `addRoom`; a franchise's front room by its `plan.fl`; drawn by ui/isoview.js `floorColor`; footsteps by ui/sfx-steps.js `HARD_FL`). Since 2026-10-25 (issue #13, the decor layer: see [ui.md](ui.md#interior-decor)) each room has a floor that suits it; the floor never changes a rule:
+
+  | fl | Look | Rooms | Steps |
+  |---|---|---|---|
+  | hardwood | narrow warm boards, staggered joints | living, dining, hall, bedroom, apartment, day room | wood |
+  | plank (and the old wood) | wide floorboards | great room, bunk room, gun room, pantry, tack room, hayloft | wood |
+  | lino | a smooth sheet, a faint fleck | kitchen, break room, mess hall, corridor, ward, exam room, nurse's office, classroom | hard |
+  | checker | 4 px black and white checks | bathroom, cafeteria | hard |
+  | tile | 8 px tiles with grout | entry hall, lobby, front desk, sales floor, restroom, dispensary, pharmacy, locker room, dorm, terminal, control room, lab | hard |
+  | carpet | soft, mottled | office, vestry, motel room, library stacks | carpet |
+  | conc | bare concrete | storage, stockroom, garage, armory, evidence room, cells, parts room, warehouse, factory, motor pool, hangar, workshop | hard |
+  | rubber | studded mats | gym | carpet |
+  | steel | diamond plate | service bays | hard |
+  | dirt | a barn's earth and straw | barn floor | dirt |
 - **Makeshift picks** (bent wire, `GEAR.makeshiftpick`, a stack of up to 10; `CRAFTS.makeshiftpick` three a scrap at a base or in the field). Test `tools/makeshiftpicktest.js`.
   - Pick without the crowbar, like lockpicks from a lower base, as quiet; one snaps off the stack half the time an attempt.
   - A safe, a steel security door and the gun safes are beyond them. The crowbar's picks are used first.
   - Modules: [locks `MAKESHIFT_PICK`, `picksOf`, `crowbarOf`, `makeshiftPicksOf`, `isMakeshiftPicks`, `makeshiftPickable`, `pickChance`, `wearPicks`, `openOdds` (pick.makeshift / left), `openLock`, `lockedSearchHour`; foundcars (cars), rescueraid `pickOdds` (a cell's lock); ui/locks `lockPanel` "Pick (makeshift)", ui/carpanel].
+- **Furniture and appliance catalogue** (issue #8 of the interiors epic #7, the user's request 2026-10-25: "Make the layouts make sense and filled with appliances, furniture and decor that makes it feel lived in. […] I want all reasonable appliances, furniture and some decor to be lootable and taken to your base for use […] some will require two survivors to carry"). Test `tools/furnituretest.js`.
+  - One table, `FURNITURE_KINDS` in [data-furniture], keyed by cell kind: the twelve old kinds (their cover, sight, names and shove hit points unchanged) and 49 new ones; since issue #13 four lootable decor pieces more (plant, floor lamp, painting, wall clock: placed by sim/decor.js, the painting and the clock hung on a wall as `c.wart` marked `piece`; see [ui.md](ui.md#interior-decor)). Each row: `name`, `cell` { walk, cover, los }, `hp`, `kg`, `carry` (`one`, `two`, `fixed`), `size` [w, h], `loot` (also a container), `tags` (room roles), `use` (the base-use key), `wall` (stands against a wall).
+  - Driven from it: combat `CELL` (`furnitureCells`, merged at load), barricade `FURNITURE` (`furnitureHp`: every piece that is not fixed shoves and is battered; sandbags kept), ui/isoview's `FURNITURE` and `FLOORED` sets, the outlines, the joins and the wall-facing turn (`WALL_FURN`), `structureName` tooltips, and the codex's Barricades entry ("What shoves", "Two people", "Never shoved").
+  - Rules picked (the issue's numbers were starting points): a "one" piece weighs at most 30 kg, a "two" piece at least 35 kg (`CARRY_KG`). Nothing that holds loot is fixed. Fixed pieces are plumbed in, bolted down or built in, and are never shoved: cell bars, the gun safe, the safe, water heater, boiler, sink, toilet, bathtub, shower, altar, booth, bar counter, bleachers. The gun safe and the safe are not area boxes (their own locks), so they are `loot: false`. The counter stays shoveable, so it is a "two" piece (70 kg), not fixed. The fridge is 60 kg like the Refrigerator item.
+  - Uses: `fridge`, `freezer`, `stove`, `oven`, `microwave`, `storage:<kg>`, `comfort:<mood>`, `work:<station>`, `bed:<BED_SPEC kind>` (beds, bunks, hospital beds and gurneys sleep as data-beds' kinds), `none`. Helpers: `pieceDef(k)` (the row or null), `useOf`, `furnitureFor(tag, loot)`, `isFurniture`.
+  - Item forms for the pick-up ticket: `FURNITURE_GEAR` keyed `f_<kind>` for every liftable piece (bulky, both arms, `furniture: <kind>`, weight its kg), the fridge keeping data-power's `fridge` item (`itemKey(k)`). Not merged into `GEAR` yet: nothing lifts a piece, and a GEAR row would enter the loot pools and shops.
+  - Sprites: `FURN_DRAW` in ui/isoview (boxes and cylinders, colours in `FURNC` beside `DOORC`), each with its height for `blockTop0`; `furnProbe` exposes them to the test.
+  - Showing them: the `furniture` layout in `tools/isobattles.js` (`showroom`: one of every kind at its size), and `node tools/raidshot.cjs <dir> 56 56 furniture` lays the same on a real town raid's map and shoots it close up in two turns of the view (no page errors, 2026-10-25).
+  - Placing the kinds in homes: issue #10 (below). Other buildings' `FURNISH` still places what it placed before (#14, #15, #16 to come); picking them up, base use, blood and bodies are the sibling tickets under #7.
+
+| Piece | Kind | Carry | kg | Size | hp | Cover | Container | Base use |
+|---|---|---|---|---|---|---|---|---|
+| Shelves | `shelf` | one | 25 | 1 × 1 | 25 | half | yes | storage:40 |
+| Lockers | `locker` | two | 40 | 1 × 1 | 40 | full, blocks sight | yes | storage:60 |
+| Cabinet | `cabinet` | one | 30 | 1 × 1 | 25 | half | yes | storage:40 |
+| Counter | `counter` | two | 70 | 1 × 1 | 30 | half | yes | storage:50 |
+| Crates | `crate` | one | 20 | 1 × 1 | 20 | half | yes | storage:60 |
+| Shelving | `rack` | two | 45 | 1 × 1 | 35 | full, blocks sight | yes | storage:120 |
+| Table | `table` | one | 25 | 1 × 1 | 15 | half |  | work:table |
+| Bed | `bed` | one | 22 | 1 × 2 | 20 | half |  | bed:bed |
+| Cell bars | `bars` | fixed | 120 | 1 × 1 | 60 | half |  | none |
+| Hay bales | `hay` | one | 25 | 1 × 1 | 15 | half |  | none |
+| Rain barrels | `barrel` | one | 25 | 1 × 1 | 15 | half |  | none |
+| Gun safe | `gunsafe` | fixed | 180 | 1 × 1 | 80 | full |  | storage:40 |
+| Refrigerator | `fridge` | two | 60 | 1 × 1 | 40 | full, blocks sight | yes | fridge |
+| Chest freezer | `freezer` | two | 45 | 2 × 1 | 35 | half | yes | freezer |
+| Stove | `stove` | two | 50 | 1 × 1 | 35 | half |  | stove |
+| Oven | `oven` | two | 40 | 1 × 1 | 35 | half |  | oven |
+| Microwave | `microwave` | one | 15 | 1 × 1 | 10 | half |  | microwave |
+| Dishwasher | `dishwasher` | two | 35 | 1 × 1 | 25 | half |  | none |
+| Washing machine | `washer` | two | 65 | 1 × 1 | 30 | half |  | none |
+| Tumble dryer | `dryer` | two | 35 | 1 × 1 | 30 | half |  | none |
+| Water heater | `waterheater` | fixed | 55 | 1 × 1 | 35 | full, blocks sight |  | none |
+| Boiler | `boiler` | fixed | 150 | 1 × 1 | 50 | full, blocks sight |  | none |
+| Sink | `sink` | fixed | 20 | 1 × 1 | 25 | half |  | none |
+| Toilet | `toilet` | fixed | 30 | 1 × 1 | 20 | half |  | none |
+| Bathtub | `bathtub` | fixed | 100 | 1 × 2 | 40 | half |  | none |
+| Shower stall | `shower` | fixed | 40 | 1 × 1 | 20 | full, blocks sight |  | none |
+| Sofa | `sofa` | two | 45 | 2 × 1 | 25 | half |  | comfort:1 |
+| Armchair | `armchair` | one | 25 | 1 × 1 | 15 | half |  | comfort:0.5 |
+| Chair | `chair` | one | 6 | 1 × 1 | 8 | half |  | comfort:0.1 |
+| Desk | `desk` | one | 30 | 2 × 1 | 20 | half | yes | work:desk |
+| Filing cabinet | `filing` | one | 30 | 1 × 1 | 30 | half | yes | storage:30 |
+| Bookshelf | `bookshelf` | one | 30 | 1 × 1 | 25 | full, blocks sight | yes | storage:30 |
+| Wardrobe | `wardrobe` | two | 50 | 1 × 1 | 30 | full, blocks sight | yes | storage:60 |
+| Chest of drawers | `dresser` | one | 30 | 1 × 1 | 25 | half | yes | storage:40 |
+| Nightstand | `nightstand` | one | 8 | 1 × 1 | 10 | half | yes | storage:10 |
+| TV stand | `tvstand` | one | 20 | 1 × 1 | 15 | half | yes | storage:15 |
+| Piano | `piano` | two | 230 | 2 × 1 | 50 | full |  | comfort:1 |
+| Pew | `pew` | two | 60 | 2 × 1 | 30 | half |  | comfort:0 |
+| Altar | `altar` | fixed | 120 | 2 × 1 | 40 | half |  | none |
+| Pulpit | `pulpit` | two | 35 | 1 × 1 | 20 | half |  | none |
+| Hospital bed | `hospbed` | two | 70 | 1 × 2 | 25 | half |  | bed:bed |
+| Gurney | `gurney` | two | 35 | 1 × 2 | 15 | half |  | bed:cot |
+| IV stand | `ivstand` | one | 5 | 1 × 1 | 5 | none |  | none |
+| Medicine cabinet | `medcab` | one | 20 | 1 × 1 | 20 | half | yes | storage:15 |
+| Operating table | `optable` | two | 90 | 1 × 2 | 30 | half |  | work:surgery |
+| Vending machine | `vending` | two | 200 | 1 × 1 | 60 | full, blocks sight | yes | storage:60 |
+| Checkout | `checkout` | two | 40 | 1 × 1 | 30 | half | yes | storage:20 |
+| Display case | `displaycase` | two | 45 | 1 × 1 | 20 | half | yes | storage:30 |
+| Cold case | `coldcase` | two | 120 | 1 × 1 | 40 | full, blocks sight | yes | fridge |
+| Booth | `booth` | fixed | 80 | 2 × 1 | 30 | half |  | none |
+| Bar counter | `barcounter` | fixed | 150 | 1 × 1 | 35 | half |  | none |
+| Bar stool | `barstool` | one | 6 | 1 × 1 | 8 | half |  | comfort:0.1 |
+| Workbench | `workbench` | two | 60 | 2 × 1 | 35 | half | yes | work:workbench |
+| Tool chest | `toolchest` | two | 55 | 1 × 1 | 35 | half | yes | storage:40 |
+| Bunk | `bunk` | two | 40 | 1 × 2 | 25 | half |  | bed:bunkbed |
+| School desk | `schooldesk` | one | 12 | 1 × 1 | 10 | half | yes | storage:5 |
+| Teacher's desk | `teacherdesk` | two | 40 | 2 × 1 | 25 | half | yes | work:desk |
+| Bleachers | `bleachers` | fixed | 200 | 2 × 2 | 50 | half |  | none |
+| Server rack | `serverrack` | two | 120 | 1 × 1 | 50 | full, blocks sight | yes | none |
+| Photocopier | `copier` | two | 80 | 1 × 1 | 30 | half |  | none |
+| Safe | `safe` | fixed | 200 | 1 × 1 | 80 | full |  | storage:20 |
+| Potted plant | `plant` | one | 8 | 1 × 1 | 5 | none |  | comfort:0.2 |
+| Floor lamp | `floorlamp` | one | 6 | 1 × 1 | 5 | none |  | comfort:0.1 |
+| Painting | `painting` | one | 4 | 1 × 1 | 5 | none |  | comfort:0.2 |
+| Wall clock | `wallclock` | one | 2 | 1 × 1 | 3 | none |  | comfort:0.05 |
+
+- **Homes laid out room by room** (issue #10 of the interiors epic #7, the user's request 2026-10-25: "I want the interiors of buildings during raids and crawls to make sense. Make the layouts make sense and filled with appliances, furniture and decor that makes it feel lived in."). Test `tools/interiortest.js` ("Homes room by room").
+  - Where: every room of a house, farmhouse, cabin, hunting lodge, ranger station, apartment block and motel (`HOME_KEYS`) whose role has a style, and the rooms of a shop's flat above (their leaves carry `flat: true`). The neighbourhood street's houses are `BUILDINGS.house` assembled the usual way, so they inherit it. Every other room keeps `buildingmaps.js FURNISH`.
+  - The placement helpers (roomlayout.js `roomLayout(c)` on a room's `furnishCtx`; documented in the module's header, for #14 hospitals, #15 police, fire stations, schools and churches and #16 shops to call): `place`, `wall` (back to a wall, `prefer` corner or middle, `near` / `far`), `centre`, `around` (chairs round a table, facing it), `beside` (a nightstand by the bed's head), `facing` (a sofa on the wall the TV faces), `run` (a kitchen's counter run along given walls), `fill` (lootable pieces up to the room's share), `need` (a piece the room must have), `walls`, `variant`, `target`, `boxes`, `lane`, `has`.
+  - Rules: a 1-cell lane from every door to every other door and to the stair run (every stairs or ladder cell in the room, read from the cells, with each stair cell's landing), the cheapest walk with wall cells dearer (`LAYOUT.WALL_COST` 3) so it runs down the middle; nothing on a lane unless a required piece has nowhere else. `block`'s connectivity guard as before. A piece stands with its back to solid wall; a low piece (one that does not block sight: a sink, a bed, a sofa) may stand under a window, a tall one (a fridge, a wardrobe, a shower) never. Its front is `c.fc` (`n`, `s`, `e`, `w`; turned with a flipped street house). A door's front is never taken (keep), and a piece of 2+ cells keeps a cell clear of any door or stair cell (8 ways) unless forced; its cells share `c.pc`. Footprints read the catalogue's size against the north wall (w along it, h into the room) and turn for the others: a sofa runs along the wall, a bed's head is against it.
+  - Containers follow the pieces: a lootable piece is a container (one with `w` × `h` when it is 2+ cells) and goes only in a room with a loot type; no more wall-spot top-ups with generic shelves in these rooms. The number of containers in a room keeps the old count (`max(1, min(maxBoxes, round(area / 10)))`), `fill` topping up to it; a nightstand, a TV stand in a flat, go in only within it. A container's search side is put on a lane or a door's front where it can (`box(..., kept)`), so a small room does not lose a cell to it. `AREAS[...].boxes` is unchanged (the street raid still draws from it).
+  - Arrangement variants: `variant(n, salt)` hashes the map's seed as it stood when furnishing began (`rng.state`, read, not consumed), the floor and the room, so two houses on a street differ and a house is the same every visit (about 100 kitchen layouts over 200 buildings in the test).
+  - Rooms (`HOME_STYLES`): **kitchen** a counter run on one wall, two in an L or a galley on opposite walls by the dice: the fridge, the sink and the stove first (a small kitchen has room for little else), cabinets as the containers, a dishwasher by the sink (50%), a microwave (40%), a table with chairs when the room's shorter side is 4+. **Living room** (and a day room) a TV stand with a sofa on the wall it faces (or off the walls, turned to it), an armchair (75%, always when the sofa does not fit), a coffee table between them when 4+ wide, bookshelves and cabinets as the containers; a lodge's great room a piano (25%). **Dining** a table (two in a big room) with chairs round it, a chest of drawers or a cabinet as the sideboard. **Bedroom** a bed with its head to a wall: the largest bedroom on a floor of 12+ cells and 3+ wide is the master's, a 2 × 2 double; the smallest of two or more is a child's with a bunk (40%); a wardrobe or a chest of drawers, then a nightstand beside the bed's head within the room's share; a bedroom of 4 cells or fewer is a box room (shelves). **Bathroom** a toilet, a sink with the medicine cabinet beside it, a bathtub (8+ cells, by the dice) or a shower where it fits (fixed pieces; the medicine cabinet the one container). **Garage** the car in its bay, a workbench with a tool chest beside it, the washer, the dryer and the water heater along the other walls, a chest freezer (35%), shelves. **Pantry** shelves, a chest freezer (35%). **Hall / landing** a console table where it is 2 wide (no container: a hall has no loot type). **Great room** (a cabin's, a lodge's): a kitchenette along a wall when its floor has no kitchen (no TV then), then the living room. **Bunk room** bunks or beds, then drawers and wardrobes. **Flat** (an apartment's kitchen-living room): the kitchen along one wall, a TV and a sofa, a small table; a studio's bed when it has no bedroom. **Storage** (a home's box room, storeroom, laundry): shelves.
+  - Plans (new saves; the dice roll as before): an apartment's flat is a kitchen-living room with a bedroom and a bathroom beside it when the plan cuts it 8+ wide, a studio with a bathroom from 6, a studio alone narrower; its rooms share a `unit` (assemble: doors inside the flat, only the living room's onto the corridor, never a second door into another flat). A house with a garage has its kitchen across the back with the bedrooms upstairs; a ranger station with a garage has the bunk room at the front and the kitchen across the back (no supply room); a farmhouse under 14 wide has no pantry. So every kitchen has room for its fridge, sink and stove.
+  - Loot (combat.js `BOX_LOOT`, `boxLoot(type, kind, cold)`): a container of these kinds rolls its own table, its room's rows still rolled at `rest` times their chances: fridge (rest 0: a little food that keeps, tins and drinks, a bottle; the rest has spoiled), chest freezer (rest 0: food gone bad, but in winter 85% for 3–9 days of food), medicine cabinet (meds 50% 1–2, a bandage kit 5%; rest 0.6), wardrobe (a bag, a leather jacket, pads; rest 1), chest of drawers (rest 1), nightstand (a pistol 9%, a revolver 3.5%, a compact 9 mm 4.5%, a .22 pistol 2%, ammo, a flashlight, a knife; rest 0.35), tool chest (scrap, parts, a hammer, a crowbar, a pry bar; rest 0.3), TV stand (scrap, parts; rest 0.8). Measured by the value of what the tables hold (supplies by `supValue`, gear by its value) over 200 seeded maps, the old layout against the new: a house 160.9 against 162.6 (−1%, 13.1 containers against 12.7), a farmhouse −3%, a cabin −9%, a lodge −2%, a ranger station −10%, an apartment block −3%.
+  - Older saves: `save.js` marks a save without `state.roomsV` as `roomsLegacy` (`worldcfg.js legacyRooms`); `buildingMap`, `buildingSpec` and `streetMap` pass `legacy` to the archetypes and to `assemble`, which then furnish exactly as before (the same cells, containers and ids: checked against the code before the change), so `poi.cont` ledgers and `citycrawl.js restoreBuilding` snapshots keep their containers. New worlds carry `roomsV: 1`.
+  - Modules: [roomlayout `roomLayout`, `HOME_STYLES`, `homeStyle`, `HOME_KEYS`, `LAYOUT`; buildingmaps `assemble` (`furnishCtx`: `kindAt`, `ridAt`, `cell`, `unblock`, `container`, `boxes`, `target`, `seed`, `canBox`, `piece`; `box` kept side; flats' `unit` doors; master, child, kitchenette, studio marks), `house`, `apartments`, `shop` (the flat's rooms), `streetMap` (a flipped house's pieces); combat `BOX_LOOT`, `boxLoot`, `searchBox`; save, worldcfg `legacyRooms`, world `roomsV`]. `node tools/raidshot.cjs <dir> 80 80 house` renders a house raid with no page errors (2026-10-25).
 
 ## Vaulting half cover
 People go over waist-high cells at extra cost and land winded; the dead crawl over instead.
@@ -101,6 +204,27 @@ The user's request 2026-10-18. Test `tools/barricadetest.js`.
 - **AI**: the human AI holding a building barricades while nothing is in sight (`aiBarricade`, `kitBoards`: u.boards by kit; combat aiUnit). A group's base you assault starts boarded on your side out of its stock (`preBoardBase`; fort fortAssault).
 - **Orders**: Shove (Alt+S), Board up (Alt+B), Tear down (Alt+J) in the Doors & lights tray; the Shove chooser picks where it goes and names the helper.
 - Modules: [barricade; combat CELL boarded, reachable, distField, moveAlong, breakCell, structureName, combatAct; windows insideOf; data GEAR.boards; crafting CRAFTS.boards; ui/combat barricadeButtons / shoveChooser / shoveCbAct / shoveClick, ui/battlebar, ui/keymap, ui/isoview (boarded cells drawn as planks), ui/codex "Barricades"].
+
+## Signs of survival
+Pre-placed barricades, blood and bodies inside a raid's building: signs that people held out there, and how it ended.
+
+The user's request 2026-10-25 (issue #11, part of the interiors epic #7): "The interior of buildings can have chairs, shelves and other movable furniture that can block door ways, hallways etc to show people were here surviving trying to barricade or slow down something. Add blood splatters, dead zombie bodies survivor bodies." Test `tools/scenestest.js`.
+- **When**: every building's map (`buildingmaps.js buildingMap`, and a neighbourhood's street of houses) rolls its scenes once laid out (`rollScenes`) from dice of its own (`sceneRng`: the world seed, the tile, the building's option id), so the floor plan, containers and every other roll are as they were. A building has scenes at `SCENES.ODDS[kind]` (house 60%, apartments 70%, motel 65%, hospital 90%, clinic 75%, police 80%, school 70%, church 40%, warehouse and factory 35%, barn 25%; 50% otherwise), then one, a second at 35%, a third at 12% of those.
+- **Which**: by weight (`SCENE_KINDS[k].w`: barricade 3, overrun 3, choke 2, stand 2, quiet 2) times the building kind's factor (`BY_KIND`: a hospital more quiet deaths, police and barracks more last stands, churches, schools, apartments and motels more barricaded rooms); a scene that fits no room gives way to the next. `registerScene(name, def)` is the hook the hospital, police and school layouts (#14, #15) add their own scenes with.
+  - **Barricaded room**: a dead-end room (one inner door, no stairs) shut from inside: the door boarded (`barricade.js boardCell`, one layer) or a piece shoved into its open frame (`setPiece`: hit points, `c.moved`, the frame kept in `c.frame`), a piece dragged against the inside; in it 1–2 survivor bodies, a pile of "empty tins and a water jug" (half the time a water), blood. Upstairs `SCENES.ALIVE` (30%) of them have nobody dead inside (`area.scene.alive`): `floorfolk.js barricadeSurvivors` takes that room first when the crawl's place has survivors upstairs, its barricade replacing the scene's.
+  - **Overrun**: a room's door broken in (doorway), a blood trail from it to a survivor body, 3–6 of the dead round them and in the doorway (`b.corpses`).
+  - **Hallway choke**: a hallway or corridor one to three cells across piled across (chairs, a sofa, a bookshelf...), a one-cell gap 60% of the time, one smashed to rubble 40%. With no gap only half cover (the living vault or shove it, the dead crawl over it); with a gap one full-cover piece may stand beside it; nothing is walled in.
+  - **Last stand upstairs**: half cover on two or three cells round a stairwell's top (one side always open), spent brass behind it (`c.brass` 3–8 cases a cell), a survivor body behind the pieces, the dead at the top of the stairs and round their foot on the floor below.
+  - **Quiet death**: a body by a bed (or anywhere in a quiet room), a pill bottle beside them (a ground pile with a meds), no blood (the body's pool is skipped: `u.noPool`).
+- **The pieces** come from one function, `scenePieces(room, rng, n, { half, full })`: the catalogue's movable pieces (`data-furniture.js FURNITURE_KINDS`, #8; `SHOVED`: chairs, sofas, armchairs, tables, desks, dressers, cabinets, shelves, bookshelves, wardrobes, filing cabinets, nightstands, crates, beds...) whose tags fit the room's role (`ROLE_TAG`), else the ones any room has (`COMMON`); chairs weigh most, then sofas, armchairs, bookshelves, wardrobes, tables, desks and dressers (`LIKED`); never a fixed piece.
+- **Blood** is sim data, `c.blood = { kind: "human" | "zombie", amount: 1–3 }`, on the building's floor cells only (never a wall, a piece, `void` or outdoors), in splatters round a body and trails (a short random walk toward the door). `ui/battlemarks.js preplaced` reads it, and `c.brass`, off every floor's cells when the battle's marks start; marks are revealed by floor. The hover names it (`bloodAt`).
+- **The intro line** (`sceneSeen`, beside sleepers.js spotCheck as people move and at the start of your turn): the first time one of your people sees a scene's spot, its sentence in the log ("Someone barricaded the back bedroom. It did not hold.").
+- **On the battle** (`sceneBattle`, in `createRaid` after `placeBodies`): see [dead.md](dead.md#bodies-on-every-floor). Survivor bodies' containers have `full`: their kit always on them (`searchBox`: the spare gun and the pocket find, not 30% and 20%).
+- **Revisits**: the same building rolls the same scenes. The city crawl's snapshot keeps the cells (blood, pieces, boards), the bodies and the scenes seen (`citycrawl.js snapshotBuilding` / `restoreBuilding`; a snapshot from before keeps none of a scene's bodies). A point of interest's ledger keeps the scene's pieces as left (`sceneLedger` / `applySceneLedger`, `poi.cont.scenes[mapId]`: a smashed piece stays smashed, torn-down boards stay down); its survivor bodies and piles are rolled fresh, as every body and pile there.
+- **AI parity**: nobody places these in play; the human AI's barricading is `aiBarricade` as before.
+- **Seen in the real game**: `NODE_PATH=$(npm root -g) node tools/raidshot.cjs <outdir> 40 40 apartments scene` sets the team in a scene's room and saves `scene.png` (a barricaded doorway, the bodies, the blood).
+- Not yet: scenes on the city crawl's open street maps, a yard scene outdoors; the room layouts of #10, #14–#16 will give the scenes more to work with.
+- Modules: [interiorscenes; data-furniture FURNITURE_KINDS; barricade setPiece; buildingmaps buildingMap; combat createRaid, searchBox, moveAlong, startPlayerTurn; sleepers placeBodies; citycrawl snapshotBuilding / restoreBuilding; poicont poiRaidStart / poiRaidEnd; floorfolk barricadeSurvivors; ui/battlemarks preplaced, revealMarks; ui/combat previewText].
 
 ## Shoving people and the dead
 Shove a foe back or floor them for 1 action; the dead may grapple whoever they hit.
