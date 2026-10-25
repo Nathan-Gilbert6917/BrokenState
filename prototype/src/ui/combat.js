@@ -23,7 +23,8 @@ import { loadsFor, roundName } from "../sim/ammo.js"; // the reload chooser: the
 import { MILDEAD, armorVs, stabsGap } from "../sim/deadsoldiers.js";
 import { windowsNear, BMAP, peekOptions, closeOptions, braceOptions, DOOR_KINDS } from "../sim/buildingmaps.js";
 import { WINDOW, windowsBy, windowState, windowWord, openRefusal, isWindow, windowOpen } from "../sim/windows.js"; // the map's windows: check, open, close, break (the user's request 2026-10-17)
-import { WIRE, cutTargets, cutRefusal, cutterOf } from "../sim/wire.js"; // Cut wire (the user's request 2026-10-19)
+import { WIRE, cutTargets, cutRefusal, cutterOf } from "../sim/wire.js";
+import { switchPanel, SWITCH } from "../sim/prison.js"; // a prison's control panels (issue #31): a block's cell doors at a switch // Cut wire (the user's request 2026-10-19)
 import { SHOVE, BOARD, CRAWL, shoveTargets, shoveDests, shoveRefusal, shovePlan, tallPiece, canShove, shoveable, pieceName, boardTargets, boardRefusal, boardsOf, tearTargets, isBoarded, boardedName, boardedUnder, targetWord } from "../sim/barricade.js"; // furniture shoved in the way, doors and windows boarded up (the user's request 2026-10-18)
 import { INTERIOR } from "../sim/interior.js";
 import { wetWord, climbWord } from "../sim/ponds.js"; // a hollow's pond, mud or ice; the climb in the rain or in winter
@@ -789,7 +790,7 @@ function act(state, a) {
   if (!err && a.type !== "end") {
     const u = unitById(b, a.unit);
     if (u && u.side === "player") followFloor(b, u); // Go up / Go down: the view goes with them
-    if (!u || !active(u) || u.ap < 1 || ["throw", "drag", "tie", "subdue", "shoveFoe", "taser", "pepper", "execute", "surrender", "peek", "close", "brace", "checkwindow", "openwindow", "closewindow", "breakwindow", "shove", "boardup", "teardown", "cutwire", "strike", "slashtent", "keylock", "keyunlock", "doubletap", "pickup", "crush", "goup", "godown", "drive", "loadRam", "unloadRam", "board", "disembark", "turn", "heal", "revive", "dragAlly", "dropAlly", "finish", "pullOut", "suppress", "throwspear", "unjam", "launch", "glreload", "face", "overwatch", "callout", "allyorder", "liftPiece", "setPiece", "stowPiece"].includes(a.type)) cui.mode = "move";
+    if (!u || !active(u) || u.ap < 1 || ["throw", "drag", "tie", "subdue", "shoveFoe", "taser", "pepper", "execute", "surrender", "peek", "close", "brace", "checkwindow", "openwindow", "closewindow", "breakwindow", "shove", "boardup", "teardown", "cutwire", "strike", "slashtent", "keylock", "keyunlock", "doubletap", "pickup", "crush", "goup", "godown", "drive", "loadRam", "unloadRam", "board", "disembark", "turn", "heal", "revive", "dragAlly", "dropAlly", "finish", "pullOut", "suppress", "throwspear", "unjam", "launch", "glreload", "face", "overwatch", "callout", "allyorder", "liftPiece", "setPiece", "stowPiece", "cellswitch"].includes(a.type)) cui.mode = "move";
     cui.ammoAsk = null;
     cui.shoveAsk = null; // the Shove chooser (sim/barricade.js) closes once anything is done
     cui.pieceAsk = null; // the Lift and Set down choosers (sim/furnicarry.js) too
@@ -2135,7 +2136,8 @@ export function combatAction(state, key, d, ui = null) { // ui: main.js's screen
     cui.msg = cui.mode === v ? "Click the wire to cut." : "";
     return;
   }
-  if (v === "lights") return void act(state, { type: "lights", unit: u.id }); // sim/indoorlight.js: the switch in reach (the sim says why not)
+  if (v === "lights") return void act(state, { type: "lights", unit: u.id });
+  if (v === "cellswitch") return void act(state, { type: "cellswitch", unit: u.id }); // sim/prison.js: the control panel next to them // sim/indoorlight.js: the switch in reach (the sim says why not)
   if (v === "light" || v === "nvg") { if (v === "light" ? u.light : u.nvg) return void act(state, { type: v, unit: u.id }); cui.msg = v === "light" ? `${u.name.split(" ")[0]} has no light.` : `${u.name.split(" ")[0]} has no night vision.`; return; } // sim/combat.js switchAct: free, even with no actions left
   if (v === "overwatch") {
     if (cui.mode === "overwatch") return void act(state, { type: "overwatch", unit: u.id });
@@ -3082,6 +3084,9 @@ function raidButtons(state, b, u, btn) {
     html += btn("climb", "Climb window", wins.length ? (quiet ? `${BMAP.CLIMB.ap} action, quiet: ${first} climbs through the ${b.cells[wins[0].y * W + wins[0].x].k === "smashed" ? "broken" : "open"} window next to them to the other side.` : `${BMAP.CLIMB.ap} action: smash the window next to ${first} and climb through to the other side. Loud: Heat +${BMAP.CLIMB.heat}, and it wakes everything within ${BMAP.CLIMB.radius} tiles; the window stays broken after. Open it first (Open window, if it is unlocked) for a quiet climb.`) : "Stand right next to a window (not diagonally) with room on the far side to climb through it (quiet through an open or broken one, loud through a closed one).", u.ap >= BMAP.CLIMB.ap && wins.length > 0, "L");
   } else { html += doorButtons(b, u, btn, true); html += windowButtons(b, u, btn); } // the street map's houses (sim/combat.js genRaidMap): with a door or a window next to them
   // A light switch in reach (sim/indoorlight.js): the room's lights on or off.
+  // A prison's control panel next to them (sim/prison.js): the cell doors of its block (every block's from central control).
+  const panel = switchPanel(b, u);
+  if (panel) html += btn("cellswitch", "Open the cells", `${SWITCH.AP} action, loud: throw the switch on the control panel: ${panel.all ? "every cell door in the prison" : `the cell doors of ${(b.raid.areas.find((a) => a.prison === "picket" && a.unitId === panel.unitId) || { name: "this block" }).name.replace(/^.*?, /, "").toLowerCase()}`} roll open at once, locked or not, and whatever is inside them is out. Motors and the alarm: Heat +${SWITCH.HEAT}, heard ${SWITCH.RADIUS} tiles off.`, u.ap >= SWITCH.AP);
   const sws = switchOptions(b, u);
   if (sws.length) {
     const a = sws[0];

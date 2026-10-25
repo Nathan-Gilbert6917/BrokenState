@@ -177,6 +177,19 @@ export const FURNITURE_KINDS = {
   compressor:  P("Air compressor",    HALF, 30, 45, "two", S1, false, ["bay"], "none", true),
   cot:         P("Cot",               HALF, 8, 7, "one", S12, false, ["school", "church", "ward"], "bed:cot"),
   candles:     P("Candlesticks",      POLE, 5, 6, "one", S1, true, ["church"], "comfort:0.1"),
+  // ---------- prisons and jails (issue #31: prisonlayout.js lays them) ----------
+  // A cell's steel bunk (a shelf over it) and its steel toilet-and-sink unit are bolted to the wall; a day room's steel
+  // table has its four stools fixed to it; a control room's panel of door switches and monitors (its switch opens a
+  // block's cell doors: prison.js cellSwitch); a visitation booth's glass partition and phone (seen through, half cover);
+  // the property room's lockers of the inmates' belongings (combat.js BOX_LOOT proplocker); the walk-through metal
+  // detector at the gatehouse and in booking.
+  steelbunk:   P("Steel bunk",          HALF, 60, 70, "fixed", S12, false, ["cells"], "none", true),
+  steeltoilet: P("Steel toilet and sink", HALF, 50, 55, "fixed", S1, false, ["cells", "bath"], "none", true),
+  daytable:    P("Day-room table",      HALF, 60, 160, "fixed", S22, false, ["cells", "dining"], "none"),
+  ctrlpanel:   P("Control panel",       HALF, 50, 120, "fixed", S21, false, ["office", "control"], "none", true),
+  visitbooth:  P("Visitation booth",    HALF, 40, 90, "fixed", S1, false, ["office"], "none"),
+  proplocker:  P("Property locker",     FULL, 40, 45, "two", S1, true, ["office", "cells"], "storage:40", true),
+  metaldetector: P("Metal detector",    FULL, 40, 70, "two", S1, false, ["office"], "none"),
   // ---------- lootable decor (issue #13: decor.js places them; light comfort pieces for the base) ----------
   // The plant and the floor lamp stand on a room's floor cell; the painting and the wall clock hang on a wall (decor.js:
   // c.wart = { k, d, piece: true } on the wall cell, the wall's own kind unchanged) and stand on a cell only once set down.

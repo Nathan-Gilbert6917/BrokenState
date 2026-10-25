@@ -520,6 +520,9 @@ export const LOCATIONS = {
   // Crashlanding (2026-10-24, crashstart.js): the unit's secret fallback in the mountains, made on its tile only once the
   // hive at the unit's base is destroyed; secret, so only a look or a team standing on it finds it (discovery.js).
   bunker_mil: { name: "Mountain bunker", glyph: "▲", cat: "special", danger: 2, loot: { ammo: 4, meds: 1, parts: 2, fuel: 1, food: 1.5 }, gear: ["ar", "carbine", "plate", "milhelmet", "milradio", "nvg", "assaultpack", "rucksack", "binoculars", "combatknife", "etool"], richness: 1.1, known: "secret" },
+  // A county jail (issue #31, prison.js): a point of interest in the suburb ring of a town (pois.js jailExtra), a
+  // complex of the jail and its housing pods; the prison's gear on a smaller scale.
+  jail:     { name: "County jail",    glyph: "J",  cat: "town",    danger: 2, loot: { food: 2, scrap: 1, ammo: 1, meds: 0.4 }, gear: ["shotgun", "pistol", "vest", "riothelmet", "baton", "cuffs", "semishotgun"], richness: 0.6, known: "public" },
   prison:   { name: "State prison",   glyph: "#",  cat: "special", danger: 3, loot: { food: 2, scrap: 2, ammo: 1 }, gear: ["shotgun", "vest", "riothelmet", "baton", "riotarms", "riotlegs", "carbine", "semishotgun"], richness: 0.7, known: "public" },
   univ:     { name: "University",     glyph: "U",  cat: "urban",   danger: 2, loot: { parts: 3, meds: 1, scrap: 2 }, gear: ["surgkit", "bandagekit", "bat", "fireaxe", "slingbag", "telescope"], richness: 0.8, known: "public" },
   dam:      { name: "Dam and power plant", glyph: "D", cat: "special", danger: 1, loot: { parts: 4, scrap: 3, fuel: 0.3 }, gear: ["sandbags", "prybar", "sledge", "flashlight"], richness: 0.7, known: "public" },

@@ -141,6 +141,9 @@ export const RAID_MAPS = 1;
 export const legacyRaids = (state) => !!(state && state.raidLegacy);
 // A save from before homes were furnished room by room (save.js roomsLegacy): buildingmaps.js furnishes as it did.
 export const legacyRooms = (state) => !!(state && state.roomsLegacy);
+// A save from before the prison complexes (issue #31, save.js prisonLegacy: no state.prisonV): a prison keeps its pick
+// of one building (buildingmaps.js SITES.prison) and no town has a county jail (pois.js jailExtra).
+export const legacyPrisons = (state) => !!(state && (state.prisonLegacy || state.roomsLegacy));
 // The run's raid map dials as [smallest, largest]: each clamped to its range, the two in order whatever was stored
 // (a hand-edited or older settings object can hold them the wrong way round: the range never runs backwards).
 /** @param {any} state */

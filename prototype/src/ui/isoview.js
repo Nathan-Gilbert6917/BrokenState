@@ -1098,6 +1098,41 @@ const FURN_DRAW = {
     return [...flegs(0.24, 0.72, 0.06, 0.9, 5, s0, 0.04), run(ax, 0.22, 0.78, 5, 7, canvas, 0.04, 0.96)];
   } },
   candles: { top: 18, p: () => [{ cyl: [0.5, 0.5, 0.12], z0: 0, z1: 1, m: flatM(FURNC.gold) }, fbox(0.48, 0.52, 0.48, 0.52, 1, 12, flatM(FURNC.gold)), fbox(0.3, 0.7, 0.47, 0.53, 12, 13, flatM(FURNC.gold)), fbox(0.3, 0.36, 0.47, 0.53, 13, 18, flatM(FURNC.cream)), fbox(0.64, 0.7, 0.47, 0.53, 13, 18, flatM(FURNC.cream)), fbox(0.47, 0.53, 0.47, 0.53, 13, 18, flatM(FURNC.cream))] },
+  // ---------- prisons and jails (issue #31, sim/prisonlayout.js) ----------
+  // A steel bunk bolted to the wall with a shelf over it; a steel toilet with its sink on the same block; a day room's
+  // steel table with four stools on posts; a control panel's sloped desk of switches and lit monitors; a visitation
+  // booth's counter under a pane of glass with a phone on the wall; a property locker of numbered steel doors; a
+  // walk-through metal detector's grey arch.
+  steelbunk: { top: 16, p: (o) => {
+    const ax = along(o), s0 = flatM(mul(FURNC.steel, 0.9)), mat = (f, s, t, X, Y) => (f === "top" ? mul(FURNC.scrubs, 0.85 + n2(X, Y, 91) * 0.1) : mul(FURNC.scrubs, 0.7));
+    return [run(ax, 0.2, 0.8, 0, 5, s0, 0.02, 0.98), run(ax, 0.22, 0.78, 5, 7, mat, 0.04, 0.96), run(ax, 0.16, 0.26, 12, 13, s0, 0.04, 0.96), run(ax, 0.16, 0.2, 7, 16, s0, 0.04, 0.96)];
+  } },
+  steeltoilet: { top: 14, p: (o) => {
+    const ax = along(o), st = (f) => (f === "top" ? FURNC.chrome : mul(FURNC.chrome, 0.85));
+    return [run(ax, 0.2, 0.42, 0, 14, st, 0.18, 0.82), run(ax, 0.42, 0.62, 9, 11, flatM(FURNC.chrome), 0.3, 0.7), fcyl(ax, 0.6, 0.5, 0.16, 0, 6, st), fcyl(ax, 0.6, 0.5, 0.1, 6, 6.5, flatM(FURNC.ring))];
+  } },
+  daytable: { top: 12, p: (o) => {
+    const s0 = flatM(mul(FURNC.steel, 0.95)), top = (f) => (f === "top" ? mul(FURNC.chrome, 0.95) : mul(FURNC.steel, 0.8));
+    const j = o.j & 15, eu = j & 3 ? 0 : 0.1, ev = j & 12 ? 0 : 0.1;
+    return [fbox(0.46, 0.54, 0.46, 0.54, 0, 11, s0), fbox(eu, 1 - eu, ev, 1 - ev, 11, 12, top), { cyl: [0.12, 0.12, 0.1], z0: 0, z1: 7, m: s0 }, { cyl: [0.88, 0.88, 0.1], z0: 0, z1: 7, m: s0 }];
+  } },
+  ctrlpanel: { top: 18, p: (o) => {
+    const ax = along(o), face = (f, s, t, X) => { if (f === "top") return Math.floor(X) % 3 < 1 ? FURNC.led : n2(X, s, 92) > 0.8 ? FURNC.red : FURNC.black; return mul(FURNC.beige, 0.8); };
+    const scr = (f, s, t, X, Y) => (f === "top" ? FURNC.black : n2(X, Y, 93) > 0.5 ? mul(FURNC.screen, 1.6) : FURNC.screen);
+    return [run(ax, 0.3, 0.8, 0, 10, flatM(mul(FURNC.beige, 0.75)), 0.02, 0.98), run(ax, 0.32, 0.78, 10, 11, face, 0.04, 0.96), run(ax, 0.2, 0.3, 11, 18, scr, 0.08, 0.92)];
+  } },
+  visitbooth: { top: 22, p: (o) => {
+    const ax = along(o), glass = (f, s, t, X, Y) => (n2(X, Y, 94) > 0.85 ? mul(FURNC.bag, 1.2) : FURNC.bag);
+    return [run(ax, 0.3, 0.7, 0, 9, flatM(mul(FURNC.beige, 0.8)), 0, 1), run(ax, 0.47, 0.53, 9, 22, glass, 0.04, 0.96), run(ax, 0.04, 0.1, 9, 22, flatM(FURNC.steel), 0, 1), run(ax, 0.9, 0.96, 9, 22, flatM(FURNC.steel), 0, 1), run(ax, 0.53, 0.6, 14, 17, flatM(FURNC.black), 0.12, 0.2)];
+  } },
+  proplocker: { top: 26, p: (o) => {
+    const ax = along(o), face = (f, s, t, X, Y, sw) => { if (f === "top") return FURNC.steel; if (Math.floor(t) % 6 < 1 || Math.floor(s) % 5 < 1) return mul(FURNC.steel, 0.55); if (Math.floor(t) % 6 === 3 && Math.floor(s) % 5 === 2) return FURNC.cream; return mul(hex("#7a8a6a"), 0.92 + n2(X, Y, 95) * 0.08); };
+    return [run(ax, 0.26, 0.74, 0, 26, face, 0.04, 0.96)];
+  } },
+  metaldetector: { top: 30, p: (o) => {
+    const ax = along(o), g = (f) => (f === "top" ? mul(FURNC.beige, 0.95) : mul(FURNC.beige, 0.8));
+    return [run(ax, 0.34, 0.66, 0, 30, g, 0, 0.14), run(ax, 0.34, 0.66, 0, 30, g, 0.86, 1), run(ax, 0.34, 0.66, 26, 30, g, 0.14, 0.86), run(ax, 0.3, 0.7, 0, 1, flatM(FURNC.black), 0.14, 0.86), run(ax, 0.36, 0.64, 22, 24, flatM(FURNC.led), 0.02, 0.12)];
+  } },
   // ---------- lootable decor (issue #13, sim/decor.js) ----------
   // A plant in a clay pot, a floor lamp with its shade; a painting and a wall clock as they stand once set down (on a
   // wall they are drawn on its face: wartTexel).
@@ -1449,6 +1484,17 @@ function primsOf(k, o) {
       for (const d of [3, 1]) if (j & (1 << d)) for (const z of [5, 8.5, 12]) out.push(arm(d, z));
       out.push({ u0: 0.455, u1: 0.545, v0: 0.455, v1: 0.545, z0: 0, z1: 13, m: post });
       for (const d of [0, 2]) if (j & (1 << d)) for (const z of [5, 8.5, 12]) out.push(arm(d, z));
+      return out;
+    }
+    case "pfence": {
+      // A prison's perimeter fence (sim/prison.js): steel posts, a panel of chain-link mesh two levels high along the
+      // line (towards the neighbours in it; across the tile alone), a coil of razor wire along its top.
+      const post = flatM(PAL.metalDk), mesh = (f, s, t, X, Y) => ((Math.floor(X + t) + Math.floor(X - t)) % 3 < 1 ? hex("#b4b8b4") : null), coil = (f, s, t, X, Y) => (n2(X, Y, 96) > 0.5 ? hex("#c8ccc8") : hex("#8a8e8a"));
+      const j = o.j & 15 || (along(o) === "u" ? 3 : 12), out = [];
+      const arm = (d, z0, z1, m, w = 0.015) => { const [du, dv] = VD[d]; const a0 = du ? Math.min(0.5, 0.5 + du * 0.5) : 0.5 - w, a1 = du ? Math.max(0.5, 0.5 + du * 0.5) : 0.5 + w, c0 = dv ? Math.min(0.5, 0.5 + dv * 0.5) : 0.5 - w, c1 = dv ? Math.max(0.5, 0.5 + dv * 0.5) : 0.5 + w; return { u0: a0, u1: a1, v0: c0, v1: c1, z0, z1, m }; };
+      for (const d of [3, 1]) if (j & (1 << d)) out.push(arm(d, 1, 30, mesh), arm(d, 30, 34, coil, 0.12));
+      out.push({ u0: 0.45, u1: 0.55, v0: 0.45, v1: 0.55, z0: 0, z1: 32, m: post });
+      for (const d of [0, 2]) if (j & (1 << d)) out.push(arm(d, 1, 30, mesh), arm(d, 30, 34, coil, 0.12));
       return out;
     }
     case "fieldgate": {
@@ -1839,7 +1885,7 @@ function snowPrims(list, sn) {
 // in the yard or the street. Not the trees and bushes (ui/seasontrees.js), the ground and its hills, a fire, a well's
 // mouth, the hive's warm flesh, furniture, stairs and ladders.
 const SNOW_ON = new Set(["wall", "window", "door", "idoor", "boarded", "bdoor", "doorway", "smashed", "odoor", "palisade", "gate", "tower", "stand", "walkway", "roof",
-  "fence", "wirefence", "fieldgate", "wire", "rail", "sandbag", "barricade", "tanktrap", "crate", "hay", "barrel", "pump", "car", "truck", "vehicle", "boulder", "rock", "rubble", "breach",
+  "fence", "wirefence", "pfence", "fieldgate", "wire", "rail", "sandbag", "barricade", "tanktrap", "crate", "hay", "barrel", "pump", "car", "truck", "vehicle", "boulder", "rock", "rubble", "breach",
   "tent", "torn", "log", "stump"]);
 export const snowProbe = { roofSprite: (...a) => roofSprite(...a), sprite: (...a) => sprite(...a), SNOW_ON }; // tools/roofsnowtest.js
 // A roof piece over one cell of a building: a flat slab at the walls' height with a lip on the outside edges. sn: the
@@ -2260,7 +2306,7 @@ const JOINS = {
   wall: WALLISH, window: WALLISH, door: WALLISH, bdoor: WALLISH, doorway: WALLISH, smashed: WALLISH, idoor: WALLISH, odoor: WALLISH, boarded: WALLISH,
   rack: new Set(["rack", "shelf"]), bed: new Set(["bed"]), bars: new Set(["bars", "wall", "idoor", "odoor"]), table: new Set(["table"]),
   palisade: new Set(["palisade", "gate", "breach", "siegeladder"]), gate: new Set(["palisade", "gate", "breach", "siegeladder"]),
-  fence: new Set(["fence", "fieldgate"]), fieldgate: new Set(["fence", "wirefence", "fieldgate"]), wirefence: new Set(["wirefence", "fieldgate"]), wire: new Set(["wire"]), rail: new Set(["rail"]), sandbag: new Set(["sandbag", "barricade"]), barricade: new Set(["barricade", "sandbag"]),
+  fence: new Set(["fence", "fieldgate"]), fieldgate: new Set(["fence", "wirefence", "fieldgate"]), wirefence: new Set(["wirefence", "fieldgate"]), pfence: new Set(["pfence", "gate", "wall"]), wire: new Set(["wire"]), rail: new Set(["rail"]), sandbag: new Set(["sandbag", "barricade"]), barricade: new Set(["barricade", "sandbag"]),
   walkway: new Set(["walkway", "tower", "stand"]), stand: new Set(["stand", "walkway", "tower"]), trench: new Set(["trench"]), shelf: WALLISH, locker: WALLISH, cabinet: WALLISH, counter: WALLISH,
   rise: new Set(["rise", "slope"]), // high ground: its banks fall away on the sides with none beside it (prims rise)
   crag: new Set(["crag"]), // a mountain's ridge: one mass of rock (prims crag)
@@ -2515,7 +2561,7 @@ function blockTop0(k, o) {
     case "vehicle": return o.car ? (o.car.body === "bike" ? 11 : o.car.body === "truck" || MIL_TOPS[o.car.body] ? VEH_TOP : o.car.i > 0 && o.car.i < o.car.L - 1 ? VEH_TOP : Math.round(9 * vehZ(VEH_ROOF.car))) : VEH_TOP;
     case "locker": return 26; case "shelf": return 24; case "pump": return 22; case "gunsafe": return 22;
     case "boulder": return STONE.H.tall[1]; case "crate": return o.v >= 2 ? 22 : 13;
-    case "fence": return 14; case "fieldgate": return 13; case "wirefence": return 13; case "barricade": return 16; case "sandbag": return 13; case "hay": return 13; case "cabinet": return 14; case "counter": return 12; case "well": return 12; case "barrel": return 13;
+    case "fence": return 14; case "fieldgate": return 13; case "wirefence": return 13; case "pfence": return 34; case "barricade": return 16; case "sandbag": return 13; case "hay": return 13; case "cabinet": return 14; case "counter": return 12; case "well": return 12; case "barrel": return 13;
     case "rock": return STONE.H.short[1]; case "wire": return 10; case "rail": return 13; case "tanktrap": return 12;
     case "outline": return 9; case "tent": return 18; case "torn": return 5; case "firepit": return 7; case "lamp": return 38; case "spot": return 24; // the base map (sim/basemap.js; torn: sim/softcover.js)
     case "bush": return 12; case "stump": return 6; case "log": return 7; // its scatter (sim/basescatter.js)

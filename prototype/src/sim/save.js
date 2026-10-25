@@ -188,6 +188,8 @@ export function deserializeState(save) {
   // Rooms laid out room by room (roomlayout.js, 2026-10-25): a save from before keeps every building's old furnishing,
   // so its places' containers keep their ids (poicont.js poi.cont, citycrawl.js restoreBuilding).
   if (!state.roomsV) { state.roomsLegacy = true; state.roomsV = 1; }
+  // Prison complexes (prison.js, issue #31): a save from before keeps its prison's one-building pick and no jails.
+  if (!state.prisonV) { state.prisonLegacy = true; state.prisonV = 1; }
   if (!state.woodcutting) {
     for (const b of state.bases || []) if (b.stock && !Number.isFinite(b.stock.wood)) b.stock.wood = 0;
     for (const r of (state.work && state.work.roles) || []) if (r.pri && r.pri.wood == null && r.pri.forage > 0) r.pri.wood = r.pri.forage;

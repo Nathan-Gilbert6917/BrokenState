@@ -56,7 +56,8 @@ import { isPublicSite, siteKnown, nearRoad } from "./discovery.js";
 import { localId } from "./world.js";
 import { zombieToughness } from "./hives.js"; // hive land: the dead are more and tougher there (the threat's hive bonus)
 import { campsiteExtra, campDanger, noteCampSeen } from "./campsite.js"; // call-time only: the extra campsite a tile may hold, its state in the threat, a look at it
-import { shopExtras, franchiseFor, franchisesOf, franchiseName, settingOf } from "./shops.js"; // call-time only: the shops a suburb or city block may hold, a place's franchise
+import { shopExtras, franchiseFor, franchisesOf, franchiseName, settingOf } from "./shops.js";
+import { legacyPrisons } from "./worldcfg.js"; // an older save: no county jails // call-time only: the shops a suburb or city block may hold, a place's franchise
 
 export const POI = {
   MAX: 4,                 // POIs a tile can hold, the site among them
@@ -177,9 +178,36 @@ export function generatePois(state, t) {
   // own dice after the list above, so the list before it (and a save's changes to it) stays as it was.
   const camp = campsiteExtra(state, t, out, inKnownZone(state, t));
   if (camp) out.push(camp);
+  // prison.js: a town's county jail on one tile of its suburb ring (jailExtra), on dice of its own after the above.
+  const jail = jailExtra(state, t, out);
+  if (jail) out.push(jail);
   // shops.js: up to two shops or services on a suburb or a city block, on their own dice after everything above.
   out.push(...shopExtras(state, t, out, inKnownZone(state, t), POI.MAX));
   return out;
+}
+
+// A county jail (issue #31, prison.js): every town has one, on the tile of its suburb ring (within POI.TOWN_R) that its
+// own dice pick (the lowest hash01(seed, "jail", town, tile) among the ring's tiles that can hold POIs); a tile by two
+// towns may get two picks but holds one. Known as the site is (a town's landmark: never hidden in the known zone). An
+// older save (worldcfg.js legacyPrisons) has none, so its POI lists load as they were.
+/** @param {State} state @param {Tile} t @param {any[]} list */
+export function jailExtra(state, t, list) {
+  if (legacyPrisons(state) || !state.grid || t.terrain !== "suburb" || list.some((p) => p.kind === "jail")) return null;
+  for (const id of state.grid.within(t.id, POI.TOWN_R)) {
+    const o = state.tiles[id];
+    if (!o || !o.loc || o.loc.type !== "town") continue;
+    let best = null, bv = Infinity;
+    for (const j of state.grid.within(o.id, POI.TOWN_R)) {
+      const q = state.tiles[j];
+      if (!q || q.terrain !== "suburb" || !poiEligible(state, q)) continue;
+      const v = hash01(state.seed, "jail", o.id, j);
+      if (v < bv) { bv = v; best = j; }
+    }
+    if (best !== t.id) continue;
+    const pool = Math.min(1, LOCATIONS.jail.richness * (POI.POOL[0] + (POI.POOL[1] - POI.POOL[0]) * hash01(state.seed, "jailpool", t.id)));
+    return { kind: "jail", hidden: !inKnownZone(state, t), pool, visits: 0, lastDay: null, cont: null, threatStamp: null, stripped: false, extra: "jail" };
+  }
+  return null;
 }
 
 // Every tile has its list (a world made before POIs existed gets them on load, save.js), and the hub's record. A

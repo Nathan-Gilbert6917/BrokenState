@@ -66,6 +66,7 @@ export const SCENES = {
   ODDS: {
     house: 0.6, farmhouse: 0.6, cabin: 0.5, lodge: 0.55, apartments: 0.7, motel: 0.65, neighbourhood: 0.6,
     hospital: 0.9, clinic: 0.75, infirmary: 0.7, vet: 0.5, pharmacy: 0.55,
+    prison: 1, jail: 0.95, // prison.js's complexes (issue #31): prisonlayout.js's scenes
     police: 0.8, firestation: 0.6, school: 0.7, church: 0.4, barracks: 0.75, cellblock: 0.6, messhall: 0.5,
     grocery: 0.55, supermarket: 0.6, deptstore: 0.55, offices: 0.6, library: 0.45, bank: 0.5,
     warehouse: 0.35, factory: 0.35, barn: 0.25, garage: 0.35, gasstation: 0.45, diner: 0.45,

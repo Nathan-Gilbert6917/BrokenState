@@ -292,6 +292,14 @@ function f_weightbench(p) { // a weight bench: a padded bench, the uprights, a l
   R(p, 1, 9, 13, 10, "#c8402f"); legs(p, 2, 12, 11, 15, STEELD); V(p, 11, 3, 10, STEEL); V(p, 13, 3, 10, STEEL);
   H(p, 0, 15, 3, STEEL); for (const x of [1, 14]) R(p, x - 1, 1, x, 5, "#1f1f22");
 }
+function f_proplocker(p) { // a property locker: small olive steel doors in rows, a numbered tag on each, one hanging open
+  box(p, 1, 0, 14, 15, "#7a8a6a"); for (const y of [5, 10]) H(p, 2, 13, y, "#4f5a44"); V(p, 7, 1, 14, "#4f5a44");
+  for (const [x, y] of [[3, 2], [9, 2], [3, 7], [9, 7], [3, 12]]) R(p, x, y, x + 1, y, "#e8e0c8"); R(p, 9, 11, 12, 14, "#2a2e26"); p.set(10, 12, "#c9a46a");
+}
+function f_metaldetector(p) { // a walk-through metal detector: a grey arch on a black mat, its green light on top
+  R(p, 1, 0, 3, 14, "#b8ae98"); R(p, 12, 0, 14, 14, "#b8ae98"); R(p, 1, 0, 14, 2, "#cfc6b0"); H(p, 0, 15, 15, "#26272a");
+  R(p, 7, 0, 8, 1, "#5ad06a"); V(p, 2, 4, 12, "#9a9080"); V(p, 13, 4, 12, "#9a9080");
+}
 function f_candles(p) { // a pair of brass candlesticks, their candles lit
   for (const x of [4, 11]) { V(p, x, 4, 13, "#d9b13b"); H(p, x - 2, x + 2, 14, "#b8952a"); H(p, x - 1, x + 1, 8, "#b8952a"); R(p, x, 1, x, 3, "#eef0f2"); p.set(x, 0, "#f2a43a"); }
 }
@@ -376,7 +384,7 @@ export const GEAR_ART = {
   f_bed, f_bunk, f_hospbed, f_gurney, f_ivstand, f_hay, f_barrel, f_range, f_dishwasher, f_washer, f_dryer, f_fryer, f_coldshelf,
   f_icemachine, f_watercooler, f_compressor, f_tank, f_jukebox, f_pooltable, f_clothesrack, f_pottingbench, f_palletrack, f_tirerack,
   f_saddlerack, f_secdesk, f_deposit, f_ammocab, f_evlocker, f_turnout, f_schoollocker, f_sportcage, f_labbench, f_weightbench,
-  f_candles, f_pulpit, f_cubicle, f_whiteboard, f_keyrack, f_stanchion, f_serverrack, f_copier,
+  f_proplocker, f_metaldetector, f_candles, f_pulpit, f_cubicle, f_whiteboard, f_keyrack, f_stanchion, f_serverrack, f_copier,
   f_shelf, f_locker, f_cabinet, f_counter, f_crate, f_rack, f_filing, f_bookshelf, f_wardrobe, f_dresser, f_nightstand, f_tvstand, f_medcab,
   f_vending, f_checkout, f_displaycase, f_toolchest, f_gunrack, f_schooldesk, f_sofa, f_armchair, f_chair, f_barstool, f_piano, f_pew,
   f_table, f_desk, f_teacherdesk, f_workbench, f_optable, f_plant, f_floorlamp, f_painting, f_wallclock,

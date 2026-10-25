@@ -813,3 +813,10 @@ for (const [k, d] of Object.entries(AREA_DEFS)) if (!AREA_TAGS[k]) AREA_TAGS[k] 
 mergeRows(SITE_FINDS, ROWS.SITE_FINDS); mergeRows(AREA_FINDS, ROWS.AREA_FINDS); mergeRows(LIGHT_FINDS, ROWS.LIGHT_FINDS); mergeRows(CART_FINDS, ROWS.CART_FINDS);
 mergeRows(HUNT_FINDS, ROWS.HUNT_FINDS); mergeRows(BUILDMAT_FINDS, ROWS.BUILDMAT_FINDS); mergeRows(SITE_WOOD, ROWS.SITE_WOOD); mergeRows(AREA_WOOD, ROWS.AREA_WOOD);
 mergeRows(SITE_ARROWS, ROWS.SITE_ARROWS); mergeRows(AREA_ARROWS, ROWS.AREA_ARROWS); mergeRows(PARTS_MIX, ROWS.PARTS_MIX);
+// Prisons and county jails (issue #31, prison.js): a jail's finds are a prison's, and the prison's own rooms (combat.js
+// AREAS pcells, pcontrol, parmory, pkitchen...) find what the rooms they stand for find (the cell block's, the armory's).
+const PRISON_AREAS = { pcells: "cellblock", pcontrol: "cellblock", parmory: "armory", pkitchen: "kitchen", pstores: "warehouse", property: "pawnshop", plaundry: "house" };
+for (const T of [SITE_TAGS, SITE_FINDS, GUNMOD_FINDS, SITE_MODS, SITE_GRENADES, SITE_LAUNCHERS, SITE_WOOD, SITE_ARROWS, SITE_RELOAD]) if (T.prison && !T.jail) T.jail = T.prison;
+for (const T of [AREA_TAGS, AREA_GUNMODS, AREA_MODS, AREA_GRENADES, AREA_LAUNCHERS, AREA_FINDS, AREA_WOOD, AREA_SHEETS, AREA_ARROWS, AREA_RELOAD]) for (const [k, v] of Object.entries(PRISON_AREAS)) if (T[v] && !T[k]) T[k] = T[v];
+AREA_TAGS.pbus = ["travel", "police"];
+AREA_TAGS.parmory = ["prison", "police", "guns"]; // riot gear and shotguns, not the Army's
