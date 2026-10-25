@@ -271,21 +271,41 @@ export function drawMarks(ctx, b, now, fl = 0) {
   const live = MARKS.level >= 2 ? st.list.filter((m) => m.seen && m.f === fl && growing(m, now)) : [];
   if (st.dirty || st.fl !== fl || (st.live && st.live > live.length)) bake(st, now, fl);
   st.live = live.length;
-  if (st.cv) ctx.drawImage(st.cv, 0, 0);
+  if (st.cv) for (const t of st.cv) ctx.drawImage(t.cv, t.x, t.y);
   for (const m of live) paintMark(ctx, m, 0.3 + 0.7 * easeOut((now - m.t0) / GROW_MS));
   return st.list.length;
 }
 const easeOut = (t) => 1 - (1 - Math.max(0, Math.min(1, t))) ** 3;
+// Baked in tiles of TILE cells a side (issue #24: a 300 × 300 map would be one 4800 px picture), only the tiles that
+// hold a mark (a mark is painted into each tile its reach touches). st.cv: [{ cv, x, y }] in map px.
+const TILE = 128;
 function bake(st, now, fl) {
-  const b = st.b, w = b.w * MARK_TEX, h = b.h * MARK_TEX;
-  if (!st.cv || st.cv.width !== w || st.cv.height !== h) st.cv = mkCanvas(w, h);
-  const c = st.cv.getContext("2d");
-  c.clearRect(0, 0, w, h);
+  const b = st.b, T = TILE * MARK_TEX;
   const full = MARKS.level >= 2;
   // The ground first (scorch, ash), then glass, then blood, then the brass on top.
   const order = { scorch: 0, ash: 1, glass: 2, zblood: 3, blood: 3, acid: 3, brass: 4, shell: 4 };
   const list = st.list.filter((m) => m.seen && m.f === fl && (full || (m.k !== "brass" && m.k !== "shell" && m.k !== "ash")) && !(full && growing(m, now))).sort((p, q) => order[p.k] - order[q.k]);
-  for (const m of list) paintMark(c, m, 1);
+  const old = new Map((st.cv || []).map((t) => [`${t.x},${t.y}`, t])), tiles = new Map();
+  const tileAt = (tx, ty) => {
+    const k = `${tx * T},${ty * T}`;
+    let t = tiles.get(k);
+    if (!t) {
+      const w = Math.min(T, b.w * MARK_TEX - tx * T), h = Math.min(T, b.h * MARK_TEX - ty * T), o = old.get(k);
+      t = { cv: o && o.cv.width === w && o.cv.height === h ? o.cv : mkCanvas(w, h), x: tx * T, y: ty * T };
+      const c = t.cv.getContext("2d");
+      c.setTransform(1, 0, 0, 1, 0, 0);
+      c.clearRect(0, 0, w, h);
+      c.translate(-t.x, -t.y);
+      tiles.set(k, t);
+    }
+    return t;
+  };
+  for (const m of list) {
+    const R = (m.r * 3 + 1) / TILE; // a pool's splashes and a scorch's reach (tiles, generous)
+    for (let ty = Math.max(0, Math.floor((m.y / TILE) - R)); ty <= Math.min(Math.ceil(b.h / TILE) - 1, Math.floor((m.y / TILE) + R)); ty++)
+      for (let tx = Math.max(0, Math.floor((m.x / TILE) - R)); tx <= Math.min(Math.ceil(b.w / TILE) - 1, Math.floor((m.x / TILE) + R)); tx++) paintMark(tileAt(tx, ty).cv.getContext("2d"), m, 1);
+  }
+  st.cv = [...tiles.values()];
   st.dirty = false; st.fl = fl; st.rev++;
   st.baked = list.length;
 }

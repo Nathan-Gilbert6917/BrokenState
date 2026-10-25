@@ -182,7 +182,7 @@ section("sizes");
   const small = ["gas", "diner", "grocery", "pharmacy", "cabin", "barn"].map((ty) => site(a, ty)).find(Boolean);
   check(raidDims(cityTile, a)[0] === 56 && raidDims(townTile, a)[0] === 56 && raidDims(cityTile, r)[0] === 72 && raidDims(townTile, r)[0] === 72, `a city's and a town's raid map the largest (${raidDims(townTile, a).join("×")}; ${raidDims(townTile, r).join("×")} under the dials)`);
   if (small) check(raidDims(small, a)[0] === 32 && raidDims(small, r)[0] === 40, `a small site the smallest (${small.loc.type}: ${raidDims(small, a).join("×")}; ${raidDims(small, r).join("×")} under the dials)`);
-  check(cleanCfg({ raidMin: 70, raidMax: 30 }).raidMax === 70 && cleanValue("raidMax", 500) === 80, "the raid map pair keeps min ≤ max and its range");
+  check(cleanCfg({ raidMin: 70, raidMax: 30 }).raidMax === 70 && cleanValue("raidMax", 500) === 300, "the raid map pair keeps min ≤ max and its range (the largest up to 300 across, issue #24)");
   const crawlB = buildingMap(r, townTile.id, { id: "b1", key: "house", name: "House" }, false), want = buildingTarget(townTile, false, r);
   check(crawlB.w >= want[0] && crawlB.h >= want[1], `a town's building (a crawl's) on the largest raid map under the dials (${crawlB.w}×${crawlB.h})`);
 }

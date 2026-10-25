@@ -2591,7 +2591,10 @@ const DIRS8 = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, 
 export const LOS_DENSE = 5000;
 // The sparse one is a Map with the typed array's fill() (every `losCache.fill(0)` clears it). A save writes it as a
 // plain Map; save.js makes a fresh one on load (it is only a cache).
-export class SparseLos extends Map { fill() { this.clear(); } }
+// It holds at most SPARSE_MAX entries (about 30 MB): past that it starts again (a 300 × 300 map with ten floors, issue
+// #24, would otherwise grow without end as the team looks round).
+export const SPARSE_MAX = 400000;
+export class SparseLos extends Map { fill() { this.clear(); } set(k, v) { if (this.size >= SPARSE_MAX) this.clear(); return super.set(k, v); } }
 export function makeLosCache(w, h) {
   const n = w * h;
   return n <= LOS_DENSE ? new Int8Array(n * n) : new SparseLos();
@@ -2751,7 +2754,7 @@ export function reachable(b, u, maxCost, opts = {}) {
   bindDims(b);
   const avoid = !opts.manual && b.fires && b.fires.length && (u.kind === "human" || u.ztype === "shepherd") ? new Set(b.fires.map((f) => idx(f.x, f.y))) : null;
   const aw = acidWeights(b, u, opts.manual && !opts.wary);
-  const d = new Float32Array(W * H).fill(Infinity), prev = new Int16Array(W * H).fill(-1);
+  const d = new Float32Array(W * H).fill(Infinity), prev = new Int32Array(W * H).fill(-1);
   const real = aw ? new Float32Array(W * H).fill(Infinity) : d; // without pools the weight is the cost
   const occ = new Uint8Array(W * H);
   // thirdside.js: your people squeeze past the survivors and soldiers who are not fighting them (as over the downed:
@@ -5143,7 +5146,8 @@ export function combatAct(state, act) {
       const so = stairOptions(b, u), up = act.type === "goup";
       if (!(up ? so.up : so.down)) {
         const onStairs = b.cells[idx(u.x, u.y)].k === "stairs";
-        return !onStairs ? "Stand on a stairwell first." : up ? (u.f + 1 >= b.floors.length ? "This is the top floor." : "Someone is on the stairs above.") : (!u.f ? "This is the ground floor." : "Someone is on the stairs below.");
+        const seal = onStairs && up && u.f + 1 >= b.floors.length ? b.cells[idx(u.x, u.y)].sealUp : null; // buildingmaps.js OPEN_STOREYS: the floors above a tall building's are not built
+        return !onStairs ? "Stand on a stairwell first." : up ? (seal ? (seal === "barricade" ? "The stairs up are barricaded: desks, filing cabinets and wire jammed into the stairwell, wedged too tight to clear." : "The stairs up have collapsed: the flight above is rubble and twisted rail. There is no way higher.") : u.f + 1 >= b.floors.length ? "This is the top floor." : "Someone is on the stairs above.") : (!u.f ? "This is the ground floor." : "Someone is on the stairs below.");
       }
       { const why = pieceStairsRefusal(b, u, (u.f || 0) + (up ? 1 : -1)); if (why) return why; } // furnicarry.js: with a piece, both actions (each of two)
       u.ap -= stairsAp(u);
@@ -7350,6 +7354,7 @@ export function createRaid(state, setup) {
     b.floors = map.floors.map((F, i) => ({ cells: F.cells, reach: i === 0 ? map.reach : map.street ? upReach(F) : flood(F.cells, map.stairs[0][0], map.stairs[0][1]), losCache: i === 0 ? b.losCache : null, name: F.name }));
     b.floor = 0;
     b.raid.storeys = map.floors.length;
+    if (map.height > map.floors.length) b.raid.height = map.height; // a taller building: the floors above are not built (their stairs blocked)
     b.raid.stairs = map.stairs.map((s) => s.slice());
   } else if (pick) { b.raid.storeys = 1; b.raid.stairs = []; }
   if (b.vehicle) { b.vehicle.seats = SEATS[b.vehicle.kind === "bike" ? "bike" : (pv && pv.type) || "sedan"] ?? 4; fitMapVehicle(b, pv, state, party); } // who can ride in it (boardVehicle); its upgrades; who drives it (wheelSid)

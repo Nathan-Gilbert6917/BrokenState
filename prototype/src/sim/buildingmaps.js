@@ -240,7 +240,17 @@ const clampN = (v, a, b) => Math.max(a, Math.min(b, v));
 const planOf = (kind, o) => { const id = o && o.variant; const f = id ? (FRANCHISES[(o && o.kind) || kind] || []).find((x) => x.id === id) : null; return f ? { ...(f.plan || {}), look: f.look } : {}; }; // o.kind: the place's kind when its building is another's archetype (a pizza place is a diner)
 /** The front room with the franchise's floor and name over it. @param {any} leaf @param {any} plan */
 const withPlan = (leaf, plan) => (leaf && leaf.role ? { ...leaf, ...(plan.fl ? { fl: plan.fl } : {}), ...(plan.room ? { name: plan.room } : {}), ...(plan.look ? { wallc: plan.look.wall } : {}) } : leaf); // wallc: its inside walls in the franchise's colour (decor.js)
-export const MAX_STOREYS = 8;
+// The most storeys a building has (a city's towers, issue #24: 6–10), and the most of them that are real floors: a
+// building taller than OPEN_STOREYS is built up to OPEN_STOREYS floors (one more deeper in the city crawl: opts.
+// storeyBonus) and its stairs up from the top one are blocked (collapsed into rubble or barricaded: the cell's sealUp),
+// so the floors above never need to exist (the user's word 2026-10-25: "just block off or have destroyed stairs to
+// prevent going to higher stories though they dont actually exist"). spec.height: the building's storeys (its look,
+// the block card); spec.storeys: the floors built.
+export const MAX_STOREYS = 10;
+export const OPEN_STOREYS = 4;
+const OLD_MAX = 8; // the cap before (an older save's offices and apartments keep their storeys and footprints)
+/** The floors built of a building `height` storeys tall (a crawl's deeper block: bonus > 0, one more). */
+export const openStoreys = (height, bonus = 0) => (height <= OPEN_STOREYS ? height : Math.min(height - 1, OPEN_STOREYS + (bonus > 0 ? 1 : 0)));
 
 // o.legacy: an older save's plan (worldcfg.js legacyRooms). Since rooms are furnished room by room (roomlayout.js) a
 // kitchen keeps room for its fridge, sink and stove: a farmhouse's pantry only when it is wide enough, and a house's or
@@ -536,8 +546,8 @@ function institution(rng, v, o = {}) {
     case "offices": {
       // A tower: the taller, the smaller its footprint (3 storeys on about 20 × 14, 8 on about 13 × 11). The city crawl
       // adds storeys deeper in (o.storeyBonus).
-      const n = clampN(rng.int(3, 8) + (o.storeyBonus || 0), 3, MAX_STOREYS);
-      const t = (n - 3) / (MAX_STOREYS - 3);
+      const n = clampN(rng.int(3, 8) + (o.storeyBonus || 0), 3, OLD_MAX);
+      const t = (n - 3) / (OLD_MAX - 3);
       const bw = Math.round(20 - 7 * t) + rng.int(-1, 1), bh = Math.round(14 - 3 * t) + rng.int(0, 1);
       const small = bw < 16;
       const records = { role: "storage", name: "Records room", type: "office", lock: ["door", 0.4], boxLock: ["safe", 0.3] };
@@ -911,7 +921,7 @@ function vet(rng, o = {}) {
 function apartments(rng, o = {}) {
   const bw = rng.int(18, 22), bh = rng.int(14, 16);
   // 3–6 floors of flats (deeper city blocks taller: o.storeyBonus), a lobby and the maintenance room on the ground floor.
-  const n = clampN(rng.int(3, 6) + (o.storeyBonus || 0), 3, MAX_STOREYS);
+  const n = clampN(rng.int(3, 6) + (o.storeyBonus || 0), 3, OLD_MAX);
   const lobby = rng.int(4, 5);
   // A flat (roomlayout.js): a kitchen-living room with a bedroom and a bathroom beside it when it is wide enough (w:
   // its width as the plan will cut it), a studio and a bathroom when not, a studio alone when narrower still; its rooms
@@ -1402,6 +1412,7 @@ export function assemble(rng, spec, opts = {}) {
   const G = GROUNDS[spec.ground] || GROUNDS.town;
   const f = opts._floor || 0, upper = f > 0;
   const storeys = Math.max(1, typeof spec.storeys === "number" ? Math.min(MAX_STOREYS, Math.round(spec.storeys)) : 1);
+  const height = Math.max(storeys, typeof spec.height === "number" ? Math.min(MAX_STOREYS, Math.round(spec.height)) : storeys); // the storeys it stands (the floors above `storeys` are not built)
   const cells = Array.from({ length: W * H }, (_, i) => {
     if (upper) return { k: "void", f: "air" };
     const y = (i / W) | 0;
@@ -1505,6 +1516,8 @@ export function assemble(rng, spec, opts = {}) {
       cells[i].fl = rooms[rid[i]].fl || "wood";
     }
     cells[i].k = "stairs";
+    // The top floor built of a taller building: the stairs up are blocked (collapsed or barricaded; no dice: its place).
+    if (f === storeys - 1 && height > storeys) cells[i].sealUp = (sx * 7 + sy * 3 + height) % 3 === 0 ? "barricade" : "rubble";
   }
   if (upper) entry = rooms[rid[I(stairCells[0][0], stairCells[0][1])]] || rooms.find((r) => r.hub) || rooms[0];
   entry.entry = true;
@@ -2001,7 +2014,7 @@ export function assemble(rng, spec, opts = {}) {
   for (const d of lockedDoors) { d.f = f; if (d.area != null) d.area += idBase; }
   if (upper) return { cells, rooms: areas, containers, lockedDoors, nextCid: cid, nextPiece: pieceNo };
   // The upper floors (storeys): each built on its own grid from spec.upper's plan, the same stairwell cells.
-  const floorName = (g) => (g === 0 ? "Ground floor" : g === storeys - 1 ? "Top floor" : `Floor ${g + 1}`);
+  const floorName = (g) => (g === 0 ? "Ground floor" : g === storeys - 1 && height === storeys ? "Top floor" : `Floor ${g + 1}`);
   const floors = [{ cells, name: floorName(0) }];
   let base = areas.length, nextCid = cid;
   for (let g = 1; g < storeys; g++) {
@@ -2012,12 +2025,12 @@ export function assemble(rng, spec, opts = {}) {
     base += up.rooms.length; nextCid = up.nextCid; pieceNo = up.nextPiece;
   }
   const plan = {
-    key: opts.key, id: opts.id || opts.key, name: opts.name, w: W, h: H, building: { x0: bx0, y0: by0, w: bw, h: bh }, tall, storeys, stairs: stairCells.map((s) => s.slice()),
+    key: opts.key, id: opts.id || opts.key, name: opts.name, w: W, h: H, building: { x0: bx0, y0: by0, w: bw, h: bh }, tall, storeys, height, stairs: stairCells.map((s) => s.slice()),
     rooms: areas.filter((a) => !a.outdoor).map((a) => ({ id: a.id, f: a.f, name: a.name, role: a.role, type: a.type, x0: a.x0, y0: a.y0, w: a.w, h: a.h, locked: a.locked, up: a.up, hub: a.hub, entry: a.entry, ...(a.civic ? { civic: a.civic } : {}) })), // civic: wanderers.js interiorOccupants' rooms by kind
     front: { x: front.x, y: front.y },
     exits: exits.map((e) => ({ side: e.side, name: e.name, x: e.x, y: e.y, cells: e.cells, locked: e.locked, roller: e.roller, zone: e.zone })),
   };
-  return { w: W, h: H, cells, rooms: areas, containers, zones, vehicle, exits, front, lockedDoors, plan, building: plan.building, floors, stairs: plan.stairs, storeys };
+  return { w: W, h: H, cells, rooms: areas, containers, zones, vehicle, exits, front, lockedDoors, plan, building: plan.building, floors, stairs: plan.stairs, storeys, height };
 }
 
 // ======================================================================================

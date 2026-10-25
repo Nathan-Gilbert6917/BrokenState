@@ -1002,6 +1002,29 @@ function enterStreet(state, p, ev, areas, groups, gunSite = "city") {
 // (R.stairs too); the containers with their contents (ground piles, a lifted piece's emptied record: box.lifted) and
 // the bodies by floor (b.corpses with f) likewise. Nothing is shared with the battle (structuredClone both ways).
 const deep = (x) => (x == null ? x : structuredClone(x));
+// A floor's cells kept compactly (issue #24: buildings at real size, maps up to 300 × 300, ten storeys): every distinct
+// cell once (pal, as its JSON), and the floor as runs of [palette index, run length] (most of a big map is the same few
+// cells: the void above, the street, the yard). packCells → { pal, runs, n }; unpackCells gives fresh cells either way
+// (a snapshot from before the packing holds the plain array).
+export function packCells(cells) {
+  const pal = [], at = new Map(), runs = [];
+  let last = -1;
+  for (const c of cells) {
+    const key = JSON.stringify(c);
+    let i = at.get(key);
+    if (i == null) { i = pal.length; pal.push(key); at.set(key, i); }
+    if (i === last) runs[runs.length - 1]++;
+    else { runs.push(i, 1); last = i; }
+  }
+  return { pal, runs, n: cells.length };
+}
+export function unpackCells(p) {
+  if (Array.isArray(p)) return deep(p);
+  const out = new Array(p.n);
+  let k = 0;
+  for (let r = 0; r < p.runs.length; r += 2) { const key = p.pal[p.runs[r]]; for (let j = 0; j < p.runs[r + 1]; j++) out[k++] = JSON.parse(key); } // fresh objects: nothing shared between cells
+  return out;
+}
 export function snapshotBuilding(b) {
   const R = b.raid;
   const units = b.units.filter((u) => u.side !== "player" && !u.left && !u.fled).map((u) => {
@@ -1015,8 +1038,8 @@ export function snapshotBuilding(b) {
   // Storeys (buildingmaps.js): every floor's cells are kept (the ground floor's are `cells`, as before).
   const ground = b.floors ? b.floors[0].cells : b.cells;
   return {
-    w: b.w, h: b.h, cells: deep(ground), containers: deep(R.containers),
-    floors: b.floors ? b.floors.map((F) => ({ cells: deep(F.cells), name: F.name })) : null,
+    w: b.w, h: b.h, cells: b.floors ? null : packCells(ground), containers: deep(R.containers), // a building with storeys: its ground floor is floors[0] (kept once)
+    floors: b.floors ? b.floors.map((F) => ({ cells: packCells(F.cells), name: F.name })) : null,
     doors: R.doors ? deep(R.doors) : null, stairs: R.stairs ? deep(R.stairs) : null, // the stair cells (the stair runs, #9)
     units: deep(units), occupants: R.occupants || null, heat: Math.round(R.heat), folk: R.folk ? deep(R.folk) : null, // floorfolk.js: who held the upper floors, and how it went
     corpses: b.corpses ? b.corpses.map((x) => ({ ...deep(x), tried: undefined })) : null, scenes: R.scenes ? deep(R.scenes) : null, // sleepers.js bodies (a split Sleeper stays split; f: their floor); interiorscenes.js: the scenes seen
@@ -1056,14 +1079,14 @@ export function restoreBuilding(state, b, snap) {
     const [sx, sy] = R.stairs[0];
     for (let f = 0; f < b.floors.length; f++) {
       const F = b.floors[f];
-      F.cells = deep(snap.floors[f].cells);
+      F.cells = unpackCells(snap.floors[f].cells);
       F.losCache = null;
       setFloor(b, f);
       floodReach(b, f ? sx : z.x0 + 1, f ? sy : z.y0 + 1);
     }
     setFloor(b, 0);
   } else {
-    b.cells = deep(snap.cells);
+    b.cells = unpackCells(snap.cells);
     b.losCache = makeLosCache(b.w, b.h);
     floodReach(b, z.x0 + 1, z.y0 + 1);
   }
