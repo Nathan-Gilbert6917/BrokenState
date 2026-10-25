@@ -28,6 +28,7 @@ Older design docs: [docs/base-building/plan.md](../base-building/plan.md), [docs
 - **Ponds in the hollows**: rain fills hollows into ponds, dry days turn them to mud, winter to ice; climbs ×1.5 in rain, ×2.5 in winter [ponds, combat, basemap] `tools/terrainweathertest.js`. [details](../features/campaign.md#ponds-in-the-hollows)
 - **Seasonal weather in play**: ice slips, rain muffles sounds and drowns lures, rain fog cuts sight (night fog more); spring rains more [seasonfx, weather, combat] `tools/seasonfxtest.js`. [details](../features/campaign.md#seasonal-weather-in-play)
 - **The ground by the season**: spring mud (+0.5 a step), autumn leaves, winter snow (+0.25, deep +0.5) on battle maps [seasonground, combat, ui/groundlook] `tools/seasongroundtest.js`. [details](../features/campaign.md#the-ground-by-the-season)
+- **Weather for vehicles**: spring and rain mud bogs cars down off-road, snow and frost burn more fuel, the cold may stall a start [weather, parties] `tools/vehicleweathertest.js`. [details](../features/travel.md#weather-on-the-road)
 - **Puddles after rain**: after 3 hours of rain, puddles on 3–15% of battle maps' level outdoor ground, dry in 12 hours; decor only [puddles, combat, ui/groundlook] `tools/puddletest.js`. [details](../features/campaign.md#puddles-after-rain)
 - **Ponds on the map**: one open tile in 20 has a spring-fed pond, on the State Map and as a never-dry hollow on its battle maps [mapgen, ponds, basescatter, relief] `tools/worldpondtest.js`. [details](../features/campaign.md#ponds-on-the-map)
 - **Eras**: early game (years 1–4), mid (5–9) and late (10+), threats growing each year [eras].
@@ -125,6 +126,7 @@ Detail: [travel.md](../features/travel.md).
 - **Vehicles**: fuel, condition, breakdowns, bicycles; found cars, military trucks, road blockages and repairs, vehicle trade [vehicles, foundcars, miltrucks, roadblocks, vehicletrade]. [details](../features/travel.md#vehicles)
 - **A lost team's vehicles keep what was in them**: left on the tile with their cargo, to recover [parties, groupworld, vehicles] `tools/lostfleettest.js`. [details](../features/travel.md#a-lost-teams-vehicles-keep-what-was-in-them)
 - **Recover the convoy**: a team raids the tile to drive your abandoned vehicles home, or an allied group fetches them for a fee [convoyrecover, parties, envoys] `tools/convoyrecoverytest.js`. [details](../features/travel.md#recover-the-convoy)
+- **Weather on the road**: stuck in mud (free in N h), winter fuel ×1.15–1.3 in every estimate, cold starts, the route outlook, for groups too [weather, parties] `tools/vehicleweathertest.js`. [details](../features/travel.md#weather-on-the-road)
 - **Boat crossings** over water [crossing].
 - **Night on the road**: make camp or push through [nightmarch].
 - **Tents**: tent bags found as loot in three sizes plus a makeshift tent; pitched at camp as beds and dry storage [tents, data-tents] `tools/tentstest.js`. [details](../features/travel.md#tents)

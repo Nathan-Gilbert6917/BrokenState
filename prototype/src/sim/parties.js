@@ -36,7 +36,7 @@ import {
   vehicleById, partyVehicle, partyFuel, useFuel, wear, abandonVehicle, tank, createVehicle, travelMode, tileFuel, isBike, isCar,
   partyVehicles, partyVehicleIds, partyFleet, fleetOf, fleetProblem, setPartyVehicles, roadPace, MAX_VEHICLES,
   takeBikes, parkBikes, vehicleLabel, VEHICLE_TYPES, typeOffroad, isLoud, assignRaidHumvee, wreckCost, carPartsText, WRECK, stripYield, carSpares,
-  vehicleCapacity,
+  vehicleCapacity, shelteredAt,
 } from "./vehicles.js";
 import { convoysHour, truckEngineNoise } from "./miltrucks.js";
 import { fixableAt, runnerAt, fixOption, driveHomeOption, startFixCar, driveHome } from "./foundcars.js"; // vehicles found on a map: repair, drive home // Army trucks: the convoy event, a running Army truck's engine
@@ -78,7 +78,8 @@ import { caravanOrderChoices, gangAmbush, wouldRaid } from "./caravanraids.js"; 
 import { meetChoices, groupConvoyArrive, convoyMeetHour } from "./trademeet.js"; // trades met at a tile: their caravan waiting, the groups' convoys meeting halfway
 import { crashesHour, crashSurvey } from "./crashes.js";
 import { breakdownsHour } from "./breakdowns.js";
-import { travelFactor, travelHazard, thirstAt, thirstAhead, coldAt, riverFrozen, ICE, sightCut } from "./weather.js";
+import { travelFactor, travelHazard, thirstAt, thirstAhead, coldAt, riverFrozen, ICE, sightCut, mudStuck, vehicleFuelWx, coldStart, roadOutlook, coldStartRisk } from "./weather.js"; // VEHICLE_WX: mud, winter fuel, cold starts, the route's outlook
+import { worksAt } from "./groupworks.js"; // a group's garage: no cold start for its cars (call-time only)
 import { thinIceStep } from "./rivers.js"; // frozen rivers: thin ice early and late in the freeze
 import { hasPerk, checkBonus, gainXpAll, USE, hash01 } from "./skills.js";
 import { tripDone } from "./relations.js";
@@ -228,11 +229,13 @@ export function planPath(state, from, to, vehicle, who = "player") {
   return findPath(state.grid, from, to, (a, b) => moveCost(state, a, b, vehicle, b === to ? undefined : who), Infinity, h);
 }
 
-// Fuel a car burns along a path (road 0.6, off-road 1.5 a tile) times its load multiplier (vehicles.js fuelMultFor).
-/** @param {State} state @param {number[]} path @param {number} [mult] */
-export function fuelForPath(state, path, mult = 1) {
+// Fuel a car burns along a path (road 0.6, off-road 1.5 a tile) times its load multiplier (vehicles.js fuelMultFor),
+// and the weather's (weather.js vehicleFuelWx: snow, frost, a blizzard) with the tiles taken an hour apart from
+// startHour (null: fair weather). Every estimate goes through here (yours, the autopilot's, the groups' hauls).
+/** @param {State} state @param {number[]} path @param {number} [mult] @param {number | null} [startHour] */
+export function fuelForPath(state, path, mult = 1, startHour = state.hour) {
   let fuel = 0;
-  for (let i = 1; i < path.length; i++) fuel += tileFuel(true, state.tiles[path[i - 1]].roadLinks.includes(path[i]), mult * cfgOf(state, "fuel")); // worldcfg.js: the run's Fuel use dial
+  for (let i = 1; i < path.length; i++) fuel += tileFuel(true, state.tiles[path[i - 1]].roadLinks.includes(path[i]), mult * cfgOf(state, "fuel")) * (startHour == null ? 1 : vehicleFuelWx(state, path[i], startHour + i - 1, state.hour)); // worldcfg.js: the run's Fuel use dial
   return fuel;
 }
 
@@ -532,7 +535,7 @@ export function plannedPace(state, { members, supplies = {}, v = null, stance = 
 /** @param {State} state @param {number[]} path @param {TravelOpts} [opts] */
 export function travelHours(state, path, { vehicle = false, speed = 1, footSpeed = null, fuelMult = 1, offroad = 1, onroad = 1, walkers = 0, cartTer = null, progress = 0, idx = 0, fuel = Infinity, maxHours = 24 * 90, startHour = state.hour, weather = true, known = state.hour, used = 0 } = {}) {
   const sim = { path: [...path], idx, progress, vehicle: vehicle || false, offroad, onroad, walkers, cartTer }; // cartTer: carts.js
-  let f = fuel, hours = 0, dryAt = null, rideHours = 0, lastSp = 0;
+  let f = fuel, hours = 0, dryAt = null, rideHours = 0, lastSp = 0, fuelUsed = 0, fuelFair = 0;
   while (sim.idx < sim.path.length - 1 && hours < maxHours) {
     hours += 1;
     if (sim.vehicle) rideHours += 1;
@@ -542,9 +545,10 @@ export function travelHours(state, path, { vehicle = false, speed = 1, footSpeed
     for (const tileId of stepAlong(state, sim, sp * (hours === 1 ? 1 - used : 1), weather ? startHour + hours : null, known)) {
       if (sim.vehicle !== true) continue;
       const prev = sim.path[sim.path.lastIndexOf(tileId, sim.idx) - 1];
-      const use = tileFuel(true, state.tiles[prev].roadLinks.includes(tileId), fuelMult * cfgOf(state, "fuel")); // worldcfg.js: the Fuel use dial
+      const fair = tileFuel(true, state.tiles[prev].roadLinks.includes(tileId), fuelMult * cfgOf(state, "fuel")); // worldcfg.js: the Fuel use dial
+      const use = weather ? fair * vehicleFuelWx(state, tileId, startHour + hours, known) : fair; // weather.js: snow, frost, a blizzard
       if (f < use - 1e-9) { f = 0; sim.vehicle = false; dryAt = tileId; } // same rule as useFuel
-      else f -= use;
+      else { f -= use; fuelUsed += use; fuelFair += fair; }
     }
   }
   const reached = sim.path[sim.path.length - 1] === path[path.length - 1];
@@ -552,7 +556,7 @@ export function travelHours(state, path, { vehicle = false, speed = 1, footSpeed
   // last hour's progress left over was not needed. Whole hours when it does not get there.
   const lastPace = lastSp * (hours === 1 ? 1 - used : 1); // the progress its last hour made
   const exact = reached && sim.idx >= sim.path.length - 1 && hours > 0 && lastSp > 0 ? hours - 1 + (hours === 1 ? used : 0) + Math.max(0, Math.min(lastPace, lastPace - Math.max(0, sim.progress))) / lastSp : hours;
-  return { hours, exact, rideHours, idx: sim.idx, fuelLeft: f, vehicle: sim.vehicle, dryAt, reached, progress: sim.progress };
+  return { hours, exact, rideHours, idx: sim.idx, fuelLeft: f, vehicle: sim.vehicle, dryAt, reached, progress: sim.progress, fuelUsed, fuelFair };
 }
 
 // ---------- the clock's minutes ----------
@@ -781,6 +785,9 @@ export function plannedVehicle(state, vehicle, v, n = 1) {
   if (vehicle === "bike") return { type: "bike", count: Math.max(1, n), condition: 100, fuel: 0 };
   return vehicle ? { type: "truck", fuel: 0, condition: 100 } : null;
 }
+// The models of a planned vehicle (a fleet's each), for the mud odds (weather.js mudTypeMult).
+/** @param {any} veh */
+const vehTypes = (veh) => (!veh ? null : veh.fleet ? veh.fleet.map((x) => x.type) : [veh.type]);
 // Food and water for travelling `hours` (rideHours of them in the vehicle) and resting `rest` hours (load.js).
 export const rationsFor = (pace, hours, rideHours, rest, n) => (pace.eatMove * rideHours + pace.eatFoot * (hours - rideHours) + n * rest) / 24;
 // Water for stretches of a trip, one after the other from startHour: segs = [[hours, rations a day], ...]. Each hour
@@ -850,6 +857,9 @@ export function estimateTrip(state, { memberIds, dest, vehicle, stance, homeBase
     days: hours / 24,
     food: Math.ceil(eat - 1e-9),
     water: Math.ceil(drink - 1e-9), waterExact: drink,
+    // The route's weather outlook (weather.js roadOutlook: mud, the odds of getting stuck, a cold start, fuel), from
+    // what can be known now; shown by the planner beside the weather's hours.
+    outlook: mode === true ? roadOutlook(state, out.path, { types: vehTypes(veh), hours: go.hours, weatherHours: hoursOut - fairOut, fuelPct: (fuelForPath(state, out.path, pace.fuelMult) / Math.max(1e-9, fuelForPath(state, out.path, pace.fuelMult, null)) - 1) * 100, garage: !!(veh && /** @type {any} */ (veh).id != null && shelteredAt(state, home).has(veh)) }) : null,
     fuel: mode === true ? Math.ceil(fuelForPath(state, out.path, pace.fuelMult) * 2 - 1e-9) : 0,
     fuelOut: mode === true ? fuelForPath(state, out.path, pace.fuelMult) : 0,
     fuelMult: pace.fuelMult,
@@ -1028,6 +1038,8 @@ export function launchExpedition(state, opts) {
     // etaBack null: a one-way trip (the team arrives and waits there, or stays for good).
     planPath: [...est.path], planStart: state.hour, planVehicle: travelMode(v), planFuel: isCar(v) ? v.fuel + (supplies.fuel || 0) : 0, etaOut: est.hoursOut, etaBack: stays ? null : est.hoursBack,
   };
+  const inside = shelteredAt(state, home), cars = (fleet ? fleet.real : v ? [v] : []).filter(isCar); // in the garage: no cold start (weather.js coldStart)
+  const garaged = cars.length > 0 && cars.every((x) => inside.has(x));
   if (fleet) { setPartyVehicles(state, p, fleet.real); v = fleetOf(fleet.real); }
   else if (v) { v.loc = { kind: "party", partyId: p.id }; p.vehicleIds = [v.id]; }
   else p.vehicleIds = [];
@@ -1070,6 +1082,12 @@ export function launchExpedition(state, opts) {
   if (spares) log(state, `${teamName(state, p)} packs ${spares} spare car part${spares === 1 ? "" : "s"} for the road (a breakdown on the way: a quick fix).`, "info");
   if (siegeKit.length) log(state, `The assault team takes siege kit from the armory: ${siegeKit.join(", ")}.`, "info");
   if (!opts.quiet) log(state, `${teamName(state, p)} left for ${tileLabel(state, dest)}${bikes ? " on bikes" : v ? ` in the ${v.name}` : " on foot"}. Arrives in about ${clockText(est.exactOut - clockFrac(state))}${waits ? "" : `; back in about ${days} day${days === 1 ? "" : "s"}`}.${after}`, "info");
+  // A cold start (weather.js coldStart): setting off in a blizzard or a hard frost, not from the garage, the engines may
+  // take an hour or two to get going (a delay paid before it moves).
+  if (p.vehicle === true) {
+    const h = coldStart(state, home.tile, state.hour, garaged);
+    if (h) { p.progress = (p.progress || 0) - h * partySpeed(p); p.planProgress = p.progress; p.coldStart = { until: state.hour + h, hours: h }; log(state, `${teamName(state, p)}: the engines would not start in the cold. ${h === 1 ? "An hour" : `${h} hours`} lost getting going.`, "danger"); }
+  }
   return { party: p };
 }
 
@@ -1127,6 +1145,8 @@ export function spawnAiParty(state, f, kind, fromTile, toTile, opts) {
     packForJob(state, f, go, kind, p); // loadouts.js: packed for the job (a raid's grenades, the dead's decoys and flares, scavengers' packs and tools)
   }
   if (kind === "raid" && f.vehicles) assignRaidHumvee(state, f, p); // vehicles.js: a group's turreted Humvee comes along (lost if the raid fails)
+  // A cold start (weather.js coldStart: a blizzard or a hard frost; none from a base with a garage), as yours.
+  if (usesVehicle) { const h = coldStart(state, fromTile, state.hour, (worksAt(f, fromTile).garage || 0) > 0); if (h) { p.progress = -h; p.coldStart = { until: state.hour + h, hours: h }; } }
   return p;
 }
 
@@ -1260,7 +1280,7 @@ export function glideAt(state, p, frac, held = false) {
   // A wait: the minutes left of it on the clock (a wait the hour does not finish goes on into the next).
   let sit = null;
   if (b.sit && b.u > a.u && u >= a.u - 1e-9 && u < b.u - 1e-9) {
-    const kind = b.sit === "road" || (b.sit === "owed" && p.roadblock && state.hour - p.roadblock.hour <= 4) ? "road" : p.delayWhy && p.delayWhy.kind === "repair" ? "repair" : "delay";
+    const kind = b.sit === "road" || (b.sit === "owed" && p.roadblock && state.hour - p.roadblock.hour <= 4) ? "road" : p.delayWhy && p.delayWhy.kind === "repair" ? "repair" : p.stuck && state.hour < p.stuck.until ? "mud" : p.coldStart && state.hour < p.coldStart.until ? "cold" : "delay";
     const hrs = c.fracAt(b.u) - f + (k === pts.length - 1 && !c.arrive && c.owedAfter > 0 && c.speed > 0 ? c.owedAfter / c.speed : 0);
     sit = { kind, mins: Math.max(1, Math.round(hrs * 60)) };
   }
@@ -1521,6 +1541,8 @@ function moveHour(state, p, hour, upTo = 1) {
     thinIceStep(state, p, tileId); // rivers.js: thin ice may give way under a team on foot
     onEnterTile(state, p, tileId, hour);
     if (!state.parties.includes(p) || p.phase === "engaged") return;
+    // Bogged down in mud off the road (weather.js mudStuck): held there for its hours, the tiles beyond given back.
+    if (p.vehicle === true && stuckInMud(state, p, tileId, hour, k < entered.length - 1)) { entered = entered.slice(0, k + 1); break; }
     // A road blockage (roadblocks.js) holds the team up where it met it: the tiles it would have gone on to this hour
     // are given back and stepped again on what the delay leaves of the hour (none if it takes all of it), so the
     // team never drives past the blockage and back (glideAt draws the same: blockDelay).
@@ -1540,6 +1562,26 @@ function moveHour(state, p, hour, upTo = 1) {
     else if (p.phase === "back") returnHome(state, p);
   }
 }
+
+// A car bogged down entering tileId off the road (weather.js mudStuck, the play dice): the team stops on the tile (what it
+// went on to this hour is given back) and owes the hours it is stuck (a delay paid before it moves, as a road blockage's;
+// p.stuck for the card and the pill). Every side's cars (aiPartyHour). True: stuck.
+/** @param {State} state @param {Party} p @param {number} tileId @param {number} hour @param {boolean} [more] */
+function stuckInMud(state, p, tileId, hour, more = false) {
+  const at = p.path.lastIndexOf(tileId, p.idx);
+  if (at < 1 || at >= p.path.length - 1) return false; // at its destination it is there (stuck or not)
+  const h = mudStuck(state, p, p.path[at - 1], tileId, hour);
+  if (!h) return false;
+  if (more) { for (let i = at; i < p.idx; i++) p.progress += stepCost(state, p, i, hour); p.idx = at; }
+  const sp = p.owner === "player" ? partySpeed(p) : p.vehicle ? 1 : 0.9;
+  p.progress = Math.min(p.progress || 0, 0) - h * sp;
+  p.stuck = { tile: tileId, until: hour + h, hours: h };
+  if (p.owner === "player") log(state, `${teamName(state, p)}: the ${(partyVehicle(state, p) || { name: "vehicle" }).name} bogged down in the mud near ${tileLabel(state, tileId)}. Digging it out takes about ${h} hours.`, "danger");
+  return true;
+}
+// "Stuck in mud: free in N h" (orders.js orderLabel), or "".
+/** @param {State} state @param {Party} p */
+export const stuckText = (state, p) => (p && p.stuck && state.hour < p.stuck.until && (p.progress || 0) < 0 ? `Stuck in mud: free in ${Math.max(1, p.stuck.until - state.hour)} h` : "");
 
 // True while the team is on its way somewhere (not resting, working or waiting).
 /** @param {Party} p */
@@ -1576,7 +1618,7 @@ function onEnterTile(state, p, tileId, hour = state.hour) {
     const onRoad = state.tiles[prev].roadLinks.includes(tileId);
     for (const x of partyVehicles(state, p)) wear(x, onRoad, p.burden ? p.burden.fill : 0, cfgOf(state, "wear")); // every vehicle drives the tile (vehicles.js fleets); worldcfg.js: the Durability loss dial
     // Fuel by the tile, times the car's load multiplier when it set off (load.js); bikes burn none. worldcfg.js: the run's Fuel use dial.
-    if (!useFuel(state, p, tileFuel(p.vehicle, onRoad, fuelMultOf(p) * cfgOf(state, "fuel")))) {
+    if (!useFuel(state, p, tileFuel(p.vehicle, onRoad, fuelMultOf(p) * cfgOf(state, "fuel")) * vehicleFuelWx(state, tileId, hour))) { // weather.js: snow, frost, a blizzard
       const cars = partyVehicles(state, p).filter(isCar);
       const name = cars.length > 1 ? cars.map((x) => x.name).join(" and ") : v ? v.name : "vehicle";
       const bikesLeft = partyVehicles(state, p).filter(isBike);
@@ -2801,7 +2843,9 @@ function aiPartyHour(state, p) {
   if (p.kind === "envoy" && p.phase === "wait") return envoyAiWait(state, p); // envoys.js: at the gates, waiting for the answer
   if (p.kind === "opparty" && p.phase === "wait") return; // loans.js: at the rendezvous, waiting for your team (loansHour)
   if (p.kind === "scav" && p.phase === "search") return scavSearchHour(state, p); // scavenging a site (aiscav.js)
-  const entered = stepAlong(state, p, p.vehicle ? 1 : 0.9);
+  let entered = stepAlong(state, p, p.vehicle ? 1 : 0.9);
+  // Bogged down in mud off the road (weather.js mudStuck): the same roll as your cars' (ADR 0001).
+  if (p.vehicle === true) for (let k = 0; k < entered.length; k++) if (stuckInMud(state, p, entered[k], state.hour, k < entered.length - 1)) { entered = entered.slice(0, k + 1); break; }
   const owner = entered.length && state.bases.length ? factionById(state, p.owner) : null;
   for (const tileId of entered) {
     if (owner) partySaw(state, owner, tileId); // groupworld.js: what they see of your bases on the way

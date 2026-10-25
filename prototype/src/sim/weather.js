@@ -34,6 +34,13 @@
 //   forecastRange(state)                  -> days the hub can forecast (3; 4 with a watchtower; 5 with a radio station)
 //   travelFactor(state, { vehicle, tileId, from, hour, known })  -> multiplier on movement cost (1 = normal, more = slower)
 //   travelEffects(state, hour, tileId)    -> { footRoad, footOff, vehRoad, vehOff, sight, ambush, injury, events, boat, lines }
+//   Vehicles on the road (VEHICLE_WX; the user's request 2026-10-25: "make weather and seasons matter more for
+//   decisions", winter shortening range, spring mud slowing convoys): mudOdds(state, tile, hour, type, known) the
+//   chance a car gets stuck on an off-road step (spring, or rain on the tile for PUDDLE.AFTER hours: puddles.js
+//   waterOf, any season but winter; none on frozen ground or roads), mudStuck(state, p, from, to, hour) the roll
+//   (state.rng, as travelHazard); vehicleFuelWx(state, tile, hour, known) × the fuel of a step (snow, frost,
+//   blizzard); coldStartRisk / coldStart (a trip setting off in a blizzard or a hard frost, not from a garage);
+//   roadOutlook(state, path, opts) the route's outlook for the planner (hours, mud, stuck odds, fuel, cold start).
 //   sightCut(state, tileId, hour)         -> 0 or -1 (WX_SIGHT: fog, a blizzard): tiles of sight lost on the State Map;
 //                                            skyAt(state, tileId, hour) the weather's kind over a tile (ui/wxmap.js)
 //   iceRow(state, hour), riverFrozen(state, tileId, hour), thinIce(state, tileId, hour)  -> frozen rivers (ICE)
@@ -58,6 +65,7 @@ import * as data from "./data.js";
 import { log, hurt, hub } from "./world.js";
 import { cfgOf } from "./worldcfg.js"; // the run's dials: Thirst
 import { frostMult, coldSnap } from "./winter.js"; // winter frosts and cold snaps (cropDamage; call-time only)
+import { waterOf, PUDDLE } from "./puddles.js"; // the rain-hours clock (vehicles bog down after PUDDLE.AFTER hours of rain; call-time only)
 /** @import { State, Party, Survivor } from "./types" */
 
 export const SEASON_DAYS = 28;
@@ -675,6 +683,99 @@ export function travelHazard(state, p, members) {
   hurt(state, s, dmg, p.path ? p.path[p.idx] : null, d.k === "blizzard" ? "the blizzard" : "the storm");
   if (s.alive) log(state, `${p.name ? p.name + ": " : ""}${s.name} ${what} (−${dmg} health).`, "bad");
   return s;
+}
+
+// ---------- vehicles on the road ----------
+// Every number in one place (balance here). MUD: the chance a car gets stuck on an off-road step, SPRING in spring
+// (ground not frozen), WET on a tile rained on for PUDDLE.AFTER hours (any season but winter), both added; TYPE × it
+// by the model (four-wheel drive and the Army's less; bikes never: they are carried out); HOURS stuck [min, max].
+// FUEL: × a step's fuel in that sky (or on SNOW_COVER snow on the ground). COLD: a trip setting off in a blizzard or a
+// hard frost: CHANCE of HOURS [min, max] lost getting the engines going; none from a garage.
+export const VEHICLE_WX = {
+  MUD: { SPRING: 0.05, WET: 0.05, HOURS: [2, 5], TYPE: { sedan: 1, van: 1, truck: 0.6, suv: 0.5, hummer: 0.3, miltruck: 0.3 } },
+  FUEL: { snow: 1.15, frost: 1.15, blizzard: 1.3, SNOW_COVER: 0.3 },
+  COLD: { CHANCE: 0.3, HOURS: [1, 2], KINDS: ["blizzard", "frost"] },
+};
+// The model's share of the mud odds: a fleet goes by its worst (the one that bogs down holds them all).
+export function mudTypeMult(types) {
+  const list = (Array.isArray(types) ? types : [types]).filter((t) => t && t !== "bike");
+  return list.length ? Math.max(...list.map((t) => VEHICLE_WX.MUD.TYPE[t] ?? 1)) : 1;
+}
+// Rained on long enough for the ground off the roads to turn to mud (puddles.js's clock: the tile's own sky over the
+// last PUDDLE.LOOKBACK hours). known: only the fronts on the map by then (an estimate).
+export function wetGround(state, tileId, hour = state.hour, known = Infinity) {
+  if (tileId == null) return false;
+  const skies = [];
+  for (let h = Math.max(0, hour - PUDDLE.LOOKBACK + 1); h <= hour; h++) skies.push(localRec(state, tileId, h, known).k);
+  return waterOf(skies).formed;
+}
+// The chance (0..1) a car gets stuck on an off-road step onto tileId at hour (types: its model, or a fleet's).
+/** @param {State} state @param {number} tileId @param {number} hour */
+export function mudOdds(state, tileId, hour = state.hour, types = null, known = Infinity) {
+  const se = season(state, hour).key;
+  if (se === "winter") return 0;
+  const d = localRec(state, tileId, hour, known);
+  if (d.frozen) return 0;
+  const wet = wetGround(state, tileId, hour, known);
+  const p = (se === "spring" ? VEHICLE_WX.MUD.SPRING : 0) + (wet ? VEHICLE_WX.MUD.WET : 0);
+  return p > 0 ? Math.min(1, p * mudTypeMult(types)) : 0;
+}
+// The models of a team's cars (an AI party: its vehicleType, else a pickup's odds).
+const carTypes = (state, p) => {
+  if (p.owner !== "player") return [p.vehicleType || "truck"];
+  const ids = p.vehicleId ? (Array.isArray(p.vehicleIds) && p.vehicleIds.includes(p.vehicleId) ? p.vehicleIds : [p.vehicleId]) : [];
+  return ids.map((id) => (state.vehicles || []).find((v) => v.id === id)).filter(Boolean).map((v) => v.type);
+};
+// The roll for a team's car entering `to` off the road (parties.js moveHour, aiPartyHour; ADR 0001: everyone's cars):
+// the hours it is stuck, or 0. Uses the play RNG only when the odds are above 0.
+/** @param {State} state @param {Party} p @param {number} from @param {number} to @param {number} [hour] */
+export function mudStuck(state, p, from, to, hour = state.hour) {
+  if (p.vehicle !== true || from == null || state.tiles[from].roadLinks.includes(to)) return 0;
+  const odds = mudOdds(state, to, hour, carTypes(state, p));
+  if (!(odds > 0) || !state.rng.chance(odds)) return 0;
+  return state.rng.int(VEHICLE_WX.MUD.HOURS[0], VEHICLE_WX.MUD.HOURS[1]);
+}
+// × the fuel of a step onto tileId at hour: snow, a hard frost or snow on the ground 1.15, a blizzard 1.3.
+/** @param {State} state @param {number | null} tileId @param {number} [hour] */
+export function vehicleFuelWx(state, tileId, hour = state.hour, known = Infinity) {
+  const d = localRec(state, tileId, hour, known), F = VEHICLE_WX.FUEL;
+  return Math.max(F[d.k] || 1, (d.cover || 0) >= F.SNOW_COVER ? F.snow : 1);
+}
+// The chance a trip setting off from tileId at hour loses time to a cold start (0 out of the cold, or from a garage).
+export function coldStartRisk(state, tileId, hour = state.hour, garage = false) {
+  if (garage) return 0;
+  return VEHICLE_WX.COLD.KINDS.includes(localRec(state, tileId, hour).k) ? VEHICLE_WX.COLD.CHANCE : 0;
+}
+// The roll as a trip sets off (parties.js launchExpedition, spawnAiParty): the hours lost, or 0.
+export function coldStart(state, tileId, hour = state.hour, garage = false) {
+  const odds = coldStartRisk(state, tileId, hour, garage);
+  if (!(odds > 0) || !state.rng.chance(odds)) return 0;
+  return state.rng.int(VEHICLE_WX.COLD.HOURS[0], VEHICLE_WX.COLD.HOURS[1]);
+}
+// The route's weather outlook for the planner (parties.js estimateTrip): from what the player can know now (the
+// ground, the season and the fronts already on the map: known). opts: { types (the cars' models), hours (the trip's
+// hours, to place each step in time), weatherHours (what the weather adds), fuelPct (the fuel it adds, %), garage,
+// startHour, known }. Returns { mud, offroad, stuck (0..1), spring, cold, fuelPct, weatherHours, text }.
+/** @param {State} state @param {number[]} path */
+export function roadOutlook(state, path, { types = null, hours = null, weatherHours = 0, fuelPct = 0, garage = false, startHour = state.hour, known = state.hour } = {}) {
+  const n = Math.max(1, path.length - 1), per = hours != null ? Math.max(0.5, hours / n) : 1;
+  let mud = 0, offroad = 0, free = 1;
+  for (let i = 1; i < path.length; i++) {
+    if (state.tiles[path[i - 1]].roadLinks.includes(path[i])) continue;
+    offroad++;
+    const p = mudOdds(state, path[i], Math.round(startHour + i * per), types, known);
+    if (p > 0) { mud++; free *= 1 - p; }
+  }
+  const spring = season(state, startHour).key === "spring";
+  const cold = coldStartRisk(state, path[0], startHour, garage);
+  const bits = [];
+  if (mud) bits.push(`${spring ? "Spring mud" : "Mud after rain"} on ${mud} of ${n} tiles`);
+  if (weatherHours > 0) bits.push(`+${Math.round(weatherHours)} h`);
+  if (mud) bits.push(`may get stuck (${Math.round((1 - free) * 100)}%)`);
+  if (cold) bits.push(`a cold start may cost ${VEHICLE_WX.COLD.HOURS[0]}–${VEHICLE_WX.COLD.HOURS[1]} h`);
+  if (fuelPct >= 1) bits.push(`fuel +${Math.round(fuelPct)}%`);
+  const text = !bits.length ? "" : mud && weatherHours > 0 ? `${bits[0]}: ${bits.slice(1).join(", ")}`.replace(/, fuel/, "; fuel") : bits.join(", ");
+  return { mud, offroad, stuck: 1 - free, spring, cold, fuelPct: Math.round(fuelPct), weatherHours, text };
 }
 
 // ---------- farming ----------

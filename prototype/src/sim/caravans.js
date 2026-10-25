@@ -373,7 +373,7 @@ export function caravanEstimate(state, form) {
     const r = planPath(state, from, to, !!v) || null;
     if (!r) { ok = false; return null; }
     const t = travelHours(state, r.path, { vehicle: !!v, speed: pace.speed, footSpeed: pace.footSpeed, fuelMult: pace.fuelMult, startHour: at });
-    fuel += v ? fuelForPath(state, r.path, pace.fuelMult) : 0;
+    fuel += v ? fuelForPath(state, r.path, pace.fuelMult, at) : 0; // weather.js vehicleFuelWx: the leg's snow and frost
     // Food and water hour by hour at each day's cold and thirst (weather.js: more in winter, in summer and a heat wave).
     const segs = members.length ? [[t.rideHours, pace.eatMove], [t.hours - t.rideHours, pace.eatFoot], [6, n]] : [[t.hours + 6, n]];
     eat += foodForHours(state, at, members.length ? [[t.rideHours, pace.foodMove], [t.hours - t.rideHours, pace.foodFoot], [6, pace.foodRest]] : segs); // food: each one's appetite (a Glutton)
