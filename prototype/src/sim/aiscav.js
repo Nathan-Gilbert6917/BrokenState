@@ -64,6 +64,7 @@ import { attitude } from "./factions.js";
 import { triggerConflict } from "./conflicts.js";
 import { ZONE_RICHNESS } from "./mapgen.js";
 import { haulMult } from "./medfinds.js";
+import { siteSizeK } from "./buildingmaps.js"; // buildings at real size (issue #24): a site holds more, stripped no faster an hour
 import { PARTS_MIX } from "./loot.js"; // car parts by the kind of site (a group keeps them apart)
 import { scavFinds, partyLost } from "./arsenal.js";
 import { aiCartsOut, aiCartMult, aiCartsHome, aiWorkMult } from "./carts.js"; // a group's carts (AI parity, coarse)
@@ -209,9 +210,10 @@ export function aiScavDaily(state) {
     // Their own land, stripped a little every day.
     for (const id of landSites(state, f)) {
       const t = state.tiles[id];
-      const take = Math.min(t.loot - AISCAV.floor, t.loot * AISCAV.landRate);
+      const sk = siteSizeK(state, t); // buildings at real size: a share of the site is sk times what it was, so a smaller share a day
+      const take = Math.min(t.loot - AISCAV.floor, (t.loot * AISCAV.landRate) / sk);
       if (!(take > 0)) continue;
-      const haul = haulFor(t, take, t.loot, AISCAV.landEff * aiWorkMult(f), state); // carts.js: their carts haul a little more in (coarse)
+      const haul = haulFor(t, take, t.loot, AISCAV.landEff * aiWorkMult(f) * sk, state); // carts.js: their carts haul a little more in (coarse)
       sortFind(haul, themeOf(t.loc ? t.loc.type : null), state.seed, "aiscavland", f.name, id, state.hour); // ammo.js: the site's calibres
       note(state, "scavenged", roundsIn(haul)); // ledger.js (a test switch)
       addTo(f.stock, haul);
@@ -397,9 +399,10 @@ export function scavSearchHour(state, p) {
   } else if (!busy && p.scav.poi == null) { // a site without POIs (a city or town centre): its tile.loot as before
     const hands = Math.max(0.5, Math.min(1.5, p.strength / 3));
     const crew = Math.min(AISCAV.crewMax, hands); // more hands than that pick it cleaner, not faster
-    const take = Math.min(Math.max(0, t.loot - AISCAV.floor), AISCAV.take * crew);
+    const sk = siteSizeK(state, t); // buildings at real size (issue #24, AI parity): the site holds sk times what it did; an hour strips a share sk times smaller of it
+    const take = Math.min(Math.max(0, t.loot - AISCAV.floor), (AISCAV.take * crew) / sk);
     if (take > 0) {
-      const hauled = haulFor(t, take, t.loot, AISCAV.eff * hands / crew * aiCartMult(p), state);
+      const hauled = haulFor(t, take, t.loot, AISCAV.eff * hands / crew * aiCartMult(p) * sk, state);
       note(state, "scavenged", roundsIn(hauled)); // ledger.js (a test switch)
       addTo(p.scav.got, hauled); // carts.js: its carts carry more of what it finds home (no faster stripping)
       const fg = !p.scav.bp && factionById(state, p.owner);

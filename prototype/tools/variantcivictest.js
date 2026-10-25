@@ -6,7 +6,7 @@
 //     and its sites (a prison's infirmary, an airport's fire station): at least MIN_PLANS distinct plan signatures (the
 //     set of room roles, their adjacency through doors, the entrance count, the footprint's shape class), printed per
 //     kind;
-//   - every plan pinned by its id (o.layout): MIN_PLANS plans a kind with names of their own, the map carrying the
+//   - every plan pinned by its id (o.plan): MIN_PLANS plans a kind with names of their own, the map carrying the
 //     plan's name; no two plans share a signature; every two plans differ in at least two of the issue's ways (the room
 //     list, the rooms' adjacency, the entrances, corridor or open plan, the size, the storeys);
 //   - every plan can turn up: a kind with franchises maps each plan to one of them (and each franchise to two plans or
@@ -65,7 +65,7 @@ for (const kind of VARIANT_KINDS) {
     const o = { setting: SETTINGS[s % 4], variant: frs[Math.floor(s / 4) % frs.length], site: sites[Math.floor(s / 4) % sites.length] };
     const { spec, m } = build(kind, 91000 + s * 7919, o);
     sigs.add(signature(features(m, spec)));
-    ids.add(spec.variant && spec.variant.id);
+    ids.add(spec.vid);
   }
   byDice[kind] = { sigs: sigs.size, ids: ids.size };
   check(sigs.size >= MIN_PLANS, `${kind}: ${sigs.size} distinct plans by the dice (${ids.size} of its ${VARIANTS[kind].length} named plans turned up)`);
@@ -81,8 +81,8 @@ for (const kind of VARIANT_KINDS) {
   for (const [vi, v] of list.entries()) {
     const fs = [];
     for (let s = 0; s < PINNED; s++) {
-      const { spec, m } = build(kind, 93000 + s * 7919 + vi * 104729, { layout: v.id, setting: SETTINGS[s % 4] });
-      if (!spec.variant || spec.variant.id !== v.id || !m.plan.variant || m.plan.variant.name !== v.name) named = false;
+      const { spec, m } = build(kind, 93000 + s * 7919 + vi * 104729, { plan: v.id, setting: SETTINGS[s % 4] });
+      if (spec.vid !== v.id || m.plan.vid !== v.id || m.plan.variant !== v.name) named = false;
       fs.push(features(m, spec));
     }
     per[kind][v.id] = fs;
@@ -133,13 +133,13 @@ for (const kind of VARIANT_KINDS) {
     let v = 0, cells = 0;
     const byPlan = {};
     for (let s = 0; s < LOOT_N; s++) {
-      const o = pin ? { layout: VARIANTS[kind][0].id } : { setting: SETTINGS[s % 4], site: s % 8 === 7 && SITES[kind] ? SITES[kind][0] : null };
+      const o = pin ? { plan: VARIANTS[kind][0].id } : { setting: SETTINGS[s % 4], site: s % 8 === 7 && SITES[kind] ? SITES[kind][0] : null };
       const { spec, m } = build(kind, 97000 + s * 104729, o);
       let bv = 0, bc = 0;
       for (const a of m.rooms) if (!a.outdoor) bc += Math.max(0, a.w - 2) * Math.max(0, a.h - 2);
       for (const c of m.containers) { const a = m.rooms.find((r) => r.id === c.area); if (!a || !a.type) continue; bv += measure(boxLoot(a.type, c.kind)) * Math.min(FLOOR_RICH.cap, Math.pow(FLOOR_RICH.perFloor, c.f || 0)); }
       v += bv; cells += bc;
-      const id = spec.variant ? spec.variant.id : "?";
+      const id = spec.vid || "?";
       byPlan[id] = byPlan[id] || { v: 0, c: 0 }; byPlan[id].v += bv; byPlan[id].c += bc;
     }
     return { r: v / cells, byPlan };

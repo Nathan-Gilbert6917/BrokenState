@@ -101,6 +101,8 @@ export const SURV_TAGS = {
 // sites the rig and the angle-head light, hunting lodges and gun stores the rangefinder, campgrounds the solar lantern.
 /** @type {Record<string, { p: number, items: Record<string, number> }>} */
 export const SURV_FINDS = {
+  bunker_mil: { p: 0.06, items: { hazmat: 3, anglelight: 1, legrig: 1 } }, bunker: { p: 0.06, items: { hazmat: 3, anglelight: 1, legrig: 1 } }, // bunkers (issue #26): the airlock's suits
+  govbunker: { p: 0.05, items: { hazmat: 3, anglelight: 0.5 } }, shelter: { p: 0.04, items: { hazmat: 1, solarlantern: 1 } },
   firestation: { p: 0.07, items: { halligan: 3, jumpbag: 2 } },
   hospital: { p: 0.03, items: { jumpbag: 2 } },
   clinic: { p: 0.03, items: { jumpbag: 1 } },

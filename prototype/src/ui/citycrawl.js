@@ -11,7 +11,7 @@ import { buildingHint } from "../sim/buildingmaps.js";
 import { GEAR } from "../sim/data.js"; // a piece left on a block: its name
 import {
   CRAWL, EVENTS, activeCrawl, blockOf, placeLooks, placeRichness, moveRisk, crawlLoad, encounterOptions, alertName,
-  threatOf, enterPlace, quickSearch, nextBlock, walkOut, pickStart, autoWayOut, lieLow, resolveEncounter, resolveEvent, eventChoices, specialChance, placeStoreys, STOREY_BONUS,
+  threatOf, enterPlace, quickSearch, nextBlock, walkOut, pickStart, autoWayOut, lieLow, resolveEncounter, resolveEvent, eventChoices, specialChance, placeStoreys, placeHeight, STOREY_BONUS,
   carryLine, carryPace, takeLeft, placeHint,
   lookAround, lookChance, waysOn, onEdge, slipAway, slipChance, crawlMemOf,
 } from "../sim/citycrawl.js";
@@ -155,8 +155,8 @@ function placeCard(state, p, c, pl) {
     snap ? `<div class="small">Searched ${snap.searched}/${snap.total} · ${snap.units.filter((u) => !u.dead && u.side === "enemy").length} still inside</div>` :
     pl.quick ? `<div class="small muted">Searched by the numbers</div>` : "";
   const picked = pl.looted > 0.05 ? ` · <span class="muted"${tip("Searched on an earlier visit: less is left.")}>picked over (${pct(pl.looted)})</span>` : "";
-  const storeys = placeStoreys(state, c, pl);
-  const storeyTip = storeys > 1 ? `${storeys} storeys: the stairs are on every floor; upper floors are less picked over (richer), the dead mostly below. Deeper blocks (${STOREY_BONUS.from1}+, ${STOREY_BONUS.from2}+) have taller offices and apartment blocks.` : "One storey.";
+  const storeys = placeStoreys(state, c, pl), height = placeHeight(state, c, pl);
+  const storeyTip = (storeys > 1 ? `${storeys} storeys: the stairs are on every floor; upper floors are less picked over (richer), the dead mostly below. Deeper blocks (${STOREY_BONUS.from1}+, ${STOREY_BONUS.from2}+) have taller offices and apartment blocks.` : "One storey.") + (height > storeys ? ` It stands ${height} storeys, but the stairs above floor ${storeys} have collapsed or been barricaded: the floors over it cannot be reached.` : "");
   // What the team knows of the upper floors (sim/floorfolk.js): after a Look around on this block, or having been inside.
   const up = folkHint(pl);
   const upstairs = storeys > 1 ? `<div class="small ${up && up !== "nothing stirs upstairs" ? "" : "muted"}"${tip(up ? "What the team saw or heard of the upper floors: lights (survivors barricaded in: talk, trade, recruit, or they shoot), voices and a watcher on the stairs (raiders holed up above, their stash with them), something nesting (the special dead on the top floor, still until woken; richer pickings there)." : "Unknown until you look around this block (an hour) or go in.")}>Upstairs: ${esc(up || "unknown")}</div>` : "";

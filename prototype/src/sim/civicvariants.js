@@ -11,23 +11,28 @@
 //
 // Which plan a building gets (pickVariant): its own dice (one draw, first), weighted by the setting (o.setting: city,
 // suburb, town, rural: buildingmaps.js siteSetting) and the site (o.site: an infirmary at a prison is one of the
-// prison plans), among the plans its franchise maps to (o.variant: data-shops.js FRANCHISES; a plan's fr). o.layout
-// pins a plan by its id (the tests, the renders, another ticket's building that wants one: #25's airport crash
-// station, #28's campus health centre, #31's county jail). An older save (o.legacy) never comes here: buildingmaps.js
-// keeps its old plans (worldcfg.js legacyRooms).
+// prison plans), among the plans its franchise maps to (o.variant: data-shops.js FRANCHISES; a plan's fr). o.plan
+// (a building option's plan, buildingmaps.js makeSpec) pins a plan by its id (the tests, the renders, another ticket's
+// building that wants one: #25's airport crash station, #28's campus health centre, #31's county jail). An older save
+// (o.legacy) never comes here: buildingmaps.js keeps its old plans (worldcfg.js legacyRooms).
 //
 // The plans are buildingmaps.js archetype specs (the plan trees of rooms, split front to back and side to side; the
-// exits; the storeys and the plan of each floor up); each spec carries variant: { id, name }, which assemble puts on
-// the map's plan and the raid's opening lines name. A plan's size is its own SIZE row (cells; #24's real-world scale
-// table can take them over), its storeys the same row's. The rooms are furnished by their kind's styles as before:
-// roomlayout.js MEDICAL_STYLES by role in the medical kinds (a room with a civic mark keeps the civic style), civiclayout.js
-// CIVIC_STYLES by the leaf's civic mark.
+// exits; the storeys and the plan of each floor up); each spec carries vid and vname (#37's names: assemble puts them on
+// the map's plan as vid and variant, the raid's opening lines name it). Each kind's plan before this ticket (#14's or
+// #15's) is its "general" plan and goes through #24's real-size step as before (buildingmaps.js realScale); the others
+// are drawn at their own sizes, their SIZE rows (metres: a cell is data-buildingsize.js CELL_M, 1 m), which realScale
+// leaves as they are (a vid other than "general"), the floors past the tall rule's not built. The rooms are furnished
+// by their kind's styles as before: roomlayout.js MEDICAL_STYLES by role in the medical kinds (a room with a civic mark
+// keeps the civic style), civiclayout.js CIVIC_STYLES by the leaf's civic mark.
 //
-// VARIANT_KINDS: the kinds with their plans here. variantNames(kind): [{ id, name }] for the docs and the tests.
+// VARIANT_KINDS: the kinds with their plans here (each list's first, "general", the plan before this ticket).
+// variantNames(kind): [{ id, name }] for the docs and the tests.
+
+import { REAL_SIZE } from "./data-buildingsize.js"; // the plans' sizes (#24's table: its "<kind>.<plan id>" rows)
 
 /** @typedef {{ city?: number, suburb?: number, town?: number, rural?: number, [site: string]: number | undefined }} Weights */
 /** @typedef {{ w: [number, number], h: [number, number], storeys: [number, number] }} Size */
-/** @typedef {{ id: string, name: string, w: Weights, fr?: string[], size?: Size, make: (rng: any, o: any, K: any) => any }} Variant */
+/** @typedef {{ id: string, name: string, w: Weights, fr?: string[], make: (rng: any, o: any, K: any) => any }} Variant */
 
 // ---------- the plan trees ----------
 /** @param {any[]} list */
@@ -106,97 +111,13 @@ const sunday = (o = {}) => ({ role: "classroom", name: "Sunday school", civic: "
 const BELFRY = { roles: ["storage"], chance: 1, ladder: true };
 
 // ---------- the sizes (cells, outer walls included) and storeys of each plan ----------
-// One row a plan; #24's size table can take these over. The map's own limits: a building of at most 36 × 25 cells
+// One row a plan, in metres (a cell is 1 m: data-buildingsize.js CELL_M), read from #24's table (REAL_SIZE, planned rows
+// as #29's hotels and #33's restaurants): realScale leaves a named plan at its size. The plans were drawn to a building
+// of at most 36 × 25 cells
 // (tools/interiortest.js: the map with its margins at most 44 × 34) and its footprint class (spec.foot,
 // tools/storeytest.js: small ≤ 190 cells, medium 90–360, large ≥ 290, wide ≥ 280 and 20 wide, a tower ≤ 330 and 22 wide).
 /** @type {Record<string, Size>} */
-export const SIZE = {
-  // hospital
-  "hospital.critical": { w: [21, 22], h: [15, 16], storeys: [1, 2] },
-  "hospital.tower": { w: [22, 22], h: [16, 16], storeys: [5, 7] },
-  "hospital.children": { w: [26, 29], h: [16, 18], storeys: [2, 4] },
-  "hospital.psych": { w: [26, 29], h: [15, 17], storeys: [2, 3] },
-  "hospital.va": { w: [27, 30], h: [17, 19], storeys: [3, 4] },
-  "hospital.trauma": { w: [28, 31], h: [18, 19], storeys: [3, 4] },
-  "hospital.pavilion": { w: [32, 36], h: [15, 17], storeys: [1, 2] },
-  "hospital.teaching": { w: [28, 31], h: [18, 19], storeys: [4, 5] },
-  "hospital.cottage": { w: [20, 22], h: [13, 15], storeys: [1, 1] },
-  "hospital.surgical": { w: [21, 22], h: [15, 16], storeys: [2, 3] },
-  "hospital.nursing": { w: [32, 35], h: [16, 17], storeys: [2, 2] },
-  // infirmary
-  "infirmary.prison": { w: [20, 22], h: [14, 15], storeys: [1, 1] },
-  "infirmary.prisonhosp": { w: [27, 30], h: [16, 18], storeys: [2, 3] },
-  "infirmary.jail": { w: [18, 19], h: [13, 14], storeys: [1, 1] },
-  "infirmary.camp": { w: [14, 15], h: [11, 12], storeys: [1, 1] },
-  "infirmary.campus": { w: [20, 23], h: [13, 15], storeys: [2, 2] },
-  "infirmary.field": { w: [24, 28], h: [14, 16], storeys: [1, 1] },
-  "infirmary.aid": { w: [17, 19], h: [14, 15], storeys: [1, 1] },
-  "infirmary.company": { w: [17, 19], h: [12, 14], storeys: [1, 2] },
-  "infirmary.boarding": { w: [16, 18], h: [12, 14], storeys: [2, 2] },
-  "infirmary.quarantine": { w: [21, 23], h: [14, 15], storeys: [1, 2] },
-  "infirmary.shelter": { w: [19, 22], h: [13, 15], storeys: [1, 1] },
-  // clinic
-  "clinic.urgent": { w: [21, 23], h: [14, 15], storeys: [1, 2] },
-  "clinic.family": { w: [18, 20], h: [12, 14], storeys: [1, 1] },
-  "clinic.dialysis": { w: [22, 24], h: [13, 15], storeys: [1, 1] },
-  "clinic.dental": { w: [18, 20], h: [12, 13], storeys: [1, 1] },
-  "clinic.stripmall": { w: [11, 13], h: [18, 20], storeys: [1, 1] },
-  "clinic.occhealth": { w: [19, 21], h: [13, 15], storeys: [1, 2] },
-  "clinic.free": { w: [17, 19], h: [12, 14], storeys: [1, 1] },
-  "clinic.multi": { w: [25, 27], h: [15, 15], storeys: [2, 3] },
-  "clinic.paediatric": { w: [21, 23], h: [13, 15], storeys: [1, 1] },
-  "clinic.rural": { w: [12, 14], h: [10, 11], storeys: [1, 1] },
-  "clinic.surgery": { w: [21, 23], h: [14, 15], storeys: [1, 2] },
-  // vet
-  "vet.country": { w: [25, 28], h: [14, 15], storeys: [1, 1] },
-  "vet.largeanimal": { w: [28, 32], h: [14, 16], storeys: [1, 1] },
-  "vet.emergency": { w: [26, 28], h: [15, 15], storeys: [1, 2] },
-  "vet.shelter": { w: [27, 30], h: [14, 16], storeys: [1, 1] },
-  "vet.boarding": { w: [21, 24], h: [13, 15], storeys: [1, 1] },
-  "vet.equine": { w: [29, 32], h: [15, 17], storeys: [1, 1] },
-  "vet.storefront": { w: [11, 13], h: [20, 22], storeys: [1, 1] },
-  "vet.specialty": { w: [22, 24], h: [15, 15], storeys: [2, 2] },
-  "vet.exotic": { w: [17, 19], h: [12, 14], storeys: [1, 1] },
-  "vet.cat": { w: [15, 16], h: [12, 13], storeys: [1, 1] },
-  "vet.teaching": { w: [31, 34], h: [16, 18], storeys: [2, 2] },
-  // church
-  "church.chapel": { w: [11, 12], h: [15, 17], storeys: [1, 1] },
-  "church.brick": { w: [23, 26], h: [19, 22], storeys: [1, 1] },
-  "church.mega": { w: [32, 36], h: [21, 24], storeys: [2, 2] },
-  "church.cathedral": { w: [31, 36], h: [24, 25], storeys: [1, 1] },
-  "church.storefront": { w: [11, 13], h: [15, 18], storeys: [1, 1] },
-  "church.rectory": { w: [22, 25], h: [19, 22], storeys: [1, 1] },
-  "church.country": { w: [13, 15], h: [20, 22], storeys: [1, 1] },
-  "church.cruciform": { w: [32, 36], h: [21, 24], storeys: [1, 1] },
-  "church.mission": { w: [22, 25], h: [19, 21], storeys: [1, 1] },
-  "church.school": { w: [26, 30], h: [19, 22], storeys: [1, 2] },
-  "church.meeting": { w: [15, 17], h: [15, 17], storeys: [2, 2] },
-  // police
-  "police.substation": { w: [21, 22], h: [14, 15], storeys: [1, 1] },
-  "police.smalltown": { w: [22, 24], h: [15, 16], storeys: [1, 2] },
-  "police.precinct": { w: [28, 31], h: [17, 19], storeys: [3, 3] },
-  "police.patrol": { w: [27, 30], h: [14, 15], storeys: [1, 1] },
-  "police.hq": { w: [21, 22], h: [15, 15], storeys: [4, 5] },
-  "police.jail": { w: [32, 35], h: [19, 21], storeys: [2, 2] },
-  "police.community": { w: [18, 20], h: [21, 23]
-, storeys: [1, 2] },
-  "police.barracks": { w: [25, 27], h: [16, 17], storeys: [2, 2] },
-  "police.townhall": { w: [30, 33], h: [20, 22], storeys: [2, 2] },
-  "police.k9": { w: [26, 29], h: [16, 17], storeys: [1, 2] },
-  "police.courthouse": { w: [26, 29], h: [18, 20], storeys: [2, 3] },
-  // fire station
-  "firestation.volunteer": { w: [24, 27], h: [14, 15], storeys: [1, 1] },
-  "firestation.twobay": { w: [24, 27], h: [15, 16], storeys: [2, 2] },
-  "firestation.tower": { w: [33, 36], h: [16, 18], storeys: [1, 1] },
-  "firestation.airport": { w: [28, 32], h: [16, 18], storeys: [2, 2] },
-  "firestation.hq": { w: [28, 31], h: [17, 18], storeys: [3, 3] },
-  "firestation.brush": { w: [16, 18], h: [13, 14], storeys: [1, 1] },
-  "firestation.firehouse": { w: [13, 15], h: [19, 21], storeys: [2, 3] },
-  "firestation.drive": { w: [22, 25], h: [17, 19], storeys: [1, 2] },
-  "firestation.rescue": { w: [28, 31], h: [15, 17], storeys: [2, 2] },
-  "firestation.academy": { w: [33, 36], h: [17, 19], storeys: [1, 1] },
-  "firestation.county": { w: [24, 27], h: [17, 19], storeys: [1, 1] },
-};
+export const SIZE = Object.fromEntries(Object.entries(REAL_SIZE).filter(([k]) => /^[a-z]+\./.test(k)).map(([k, R]) => [k, { w: R.w, h: R.d, storeys: R.storeys }])); // #24's table holds them (data-buildingsize.js REAL_SIZE "<kind>.<plan id>" rows, metres at CELL_M 1 m)
 /** @param {any} rng @param {string} key */
 const sized = (rng, key) => dims(rng, SIZE[key]);
 
@@ -331,7 +252,7 @@ export const VARIANTS = {
 
   // ---------- infirmaries: exam rooms and the drug cupboard in every plan; a prison's (o.site "prison") its own ----------
   infirmary: [
-    { id: "infirmary", name: "Infirmary", w: W(0.5, 0.5, 0.5, 0.5, { prison: 0.6, base: 0.5 }), make: (rng, o, K) => K.classic() }, // #14's plan
+    { id: "general", name: "Infirmary", w: W(0.5, 0.5, 0.5, 0.5, { prison: 0.6, base: 0.5 }), make: (rng, o, K) => K.classic() }, // #14's plan
     { id: "prison", name: "Prison infirmary", w: W(0, 0, 0, 0.1, { prison: 1 }), make: (rng) => {
       // Sick call at the front; the secure ward behind: cells (civiclayout.js cell block) where the sick are locked in.
       const { bw, bh } = sized(rng, "infirmary.prison");
@@ -435,7 +356,7 @@ export const VARIANTS = {
 
   // ---------- clinics: exam rooms and the drug cupboard in every plan ----------
   clinic: [
-    { id: "clinic", name: "Medical clinic", w: W(0.6, 0.8, 0.8, 0.4), fr: ["familymed", "valleyhealth", "drhale"], make: (rng, o, K) => K.classic() }, // #14's plan
+    { id: "general", name: "Medical clinic", w: W(0.6, 0.8, 0.8, 0.4), fr: ["familymed", "valleyhealth", "drhale"], make: (rng, o, K) => K.classic() }, // #14's plan
     { id: "urgent", name: "Urgent care", w: W(1, 1, 0.4, 0), fr: ["urgentnow", "medfirst"], make: (rng) => {
       const { bw, bh, storeys: n } = sized(rng, "clinic.urgent");
       return {
@@ -539,7 +460,7 @@ export const VARIANTS = {
 
   // ---------- vets: the kennels in every plan ----------
   vet: [
-    { id: "vet", name: "Small-animal clinic", w: W(0.8, 1, 0.6, 0.3), fr: ["pawsclinic", "companion", "animalhosp"], make: (rng, o, K) => K.classic() }, // #14's plan (a country vet's barn plans are the country and farm variants)
+    { id: "general", name: "Small-animal clinic", w: W(0.8, 1, 0.6, 0.3), fr: ["pawsclinic", "companion", "animalhosp"], make: (rng, o, K) => K.classic() }, // #14's plan (a country vet's barn plans are the country and farm variants)
     { id: "country", name: "Country vet", w: W(0, 0.3, 1, 1), fr: ["countryvet", "valleyvet"], make: (rng) => {
       const { bw, bh } = sized(rng, "vet.country");
       return {
@@ -550,7 +471,7 @@ export const VARIANTS = {
     } },
     { id: "farm", name: "Large-animal and farm vet", w: W(0, 0, 0.5, 1), fr: ["valleyvet", "countryvet"], make: (rng) => {
       // The clinic on one side, the barn on the other behind its big door: stalls, stocks for treating cattle, hay.
-      const { bw, bh } = sized(rng, "vet.largeanimal");
+      const { bw, bh } = sized(rng, "vet.farm");
       const left = rng.chance(0.5);
       const clinic = ["*", Y([5, X(["*", vwait()], [4, vx()], [4, vx({ name: "Small-animal exam" })])], ["*", X(["*", kennels()], [3, vd()], [4, vsurgery()])])];
       const barn = [0.38, Y(["*", { role: "barnfloor", name: "Large-animal barn", type: "barn", hub: true }], [4, X(["*", vx({ name: "Treatment stocks", fl: "dirt" })], [4, vfood({ name: "Feed and hay" })])])];
@@ -639,7 +560,7 @@ export const VARIANTS = {
 
   // ---------- churches: the nave and its altar in every plan ----------
   church: [
-    { id: "parish", name: "Parish church", w: W(0.6, 1, 0.8, 0.5), fr: ["holytrinity", "gracemethodist", "stmarys"], make: (rng, o, K) => K.classic() }, // #15's plan
+    { id: "general", name: "Parish church", w: W(0.6, 1, 0.8, 0.5), fr: ["holytrinity", "gracemethodist", "stmarys"], make: (rng, o, K) => K.classic() }, // #15's plan
     { id: "chapel", name: "White clapboard chapel", w: W(0, 0.3, 0.8, 1), fr: ["firstbaptist", "calvary", "gracemethodist"], make: (rng) => {
       const { bw, bh } = sized(rng, "church.chapel");
       return {
@@ -759,7 +680,7 @@ export const VARIANTS = {
 
   // ---------- police stations: front desk, squad room, chief, armory, evidence, cells, a police car ----------
   police: [
-    { id: "station", name: "Police station", w: W(0.8, 1, 0.8, 0.3), fr: ["precinct", "sheriff"], make: (rng, o, K) => K.classic() }, // #15's plan
+    { id: "general", name: "Police station", w: W(0.8, 1, 0.8, 0.3), fr: ["precinct", "sheriff"], make: (rng, o, K) => K.classic() }, // #15's plan
     { id: "substation", name: "Sheriff's substation", w: W(0, 0.3, 0.6, 1), fr: ["sheriff"], make: (rng) => {
       const { bw, bh } = sized(rng, "police.substation");
       return {
@@ -887,7 +808,7 @@ export const VARIANTS = {
 
   // ---------- fire stations: the engine bay behind its bay door, the dorm and the kitchen in every plan ----------
   firestation: [
-    { id: "station", name: "Fire station", w: W(0.8, 1, 0.8, 0.3), fr: ["engine7", "countyfire"], make: (rng, o, K) => K.classic() }, // #15's plan
+    { id: "general", name: "Fire station", w: W(0.8, 1, 0.8, 0.3), fr: ["engine7", "countyfire"], make: (rng, o, K) => K.classic() }, // #15's plan
     { id: "volunteer", name: "Volunteer fire hall", w: W(0, 0.3, 0.8, 1), fr: ["volunteer"], make: (rng) => {
       // One storey: the bays, the meeting hall (suppers, the auxiliary), the kitchen, a bunk room for a night shift.
       const { bw, bh } = sized(rng, "firestation.volunteer");
@@ -923,7 +844,7 @@ export const VARIANTS = {
     { id: "airport", name: "Airport crash station", w: W(0.1, 0.1, 0, 0.05, { airport: 1 })
 , fr: ["countyfire", "engine7"], make: (rng) => {
       // Wide bays for the crash tenders (two engines), the watch room up in the tower over the quarters (#25's airport
-      // can pin this plan: o.layout "airport").
+      // can pin this plan: o.plan "airport").
       const { bw, bh } = sized(rng, "firestation.airport");
       return {
         bw, bh, front: { width: 1 }, ground: "lot", storeys: 2, foot: "wide", stairs: { roles: ["dayroom"], n: 1 },
@@ -1014,7 +935,7 @@ export const variantNames = (kind) => (VARIANTS[kind] || []).map((v) => ({ id: v
 // Which plan a building gets
 // ======================================================================================
 /**
- * The kind's plan for this building: o.layout pins one by its id; else one draw of the dice, weighted by the site's
+ * The kind's plan for this building: o.plan pins one by its id; else one draw of the dice, weighted by the site's
  * weight (o.site), else the setting's (o.setting; town when unknown), among the plans the franchise maps to (o.variant;
  * all of them when it maps to none). Always one draw, pinned or not, so the rest of the plan rolls the same way.
  * @param {string} kind @param {any} rng @param {any} [o]
@@ -1022,7 +943,7 @@ export const variantNames = (kind) => (VARIANTS[kind] || []).map((v) => ({ id: v
 export function pickVariant(kind, rng, o = {}) {
   const list = VARIANTS[kind] || [];
   const r = rng.next();
-  const pinned = o.layout ? list.find((v) => v.id === o.layout) : null;
+  const pinned = o.plan ? list.find((v) => v.id === o.plan) : null;
   if (pinned || !list.length) return pinned || null;
   const byFr = o.variant ? list.filter((v) => v.fr && v.fr.includes(o.variant)) : [];
   const pool = byFr.length ? byFr : list;
@@ -1042,12 +963,12 @@ export function pickVariant(kind, rng, o = {}) {
 }
 /**
  * The spec of a new save's building of a kind with plans here: the plan pickVariant gives, built; K.classic() the
- * kind's plan before this ticket (#14's or #15's, buildingmaps.js). The spec carries variant: { id, name }.
+ * kind's plan before this ticket (#14's or #15's, buildingmaps.js). The spec carries vid and vname.
  * @param {string} kind @param {any} rng @param {any} o @param {{ classic: () => any }} K
  */
 export function variantSpec(kind, rng, o, K) {
   const v = pickVariant(kind, rng, o);
   if (!v) return K.classic();
   const spec = v.make(rng, o, K);
-  return { ...spec, variant: { id: v.id, name: v.name } };
+  return { ...spec, vid: v.id, vname: v.name };
 }

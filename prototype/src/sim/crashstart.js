@@ -114,7 +114,7 @@ export function prepareCrash(state, start) {
   // The unit's base: the mirror snapped to the best tile within HOME_NEAR of it.
   const m = mirror(tile.id);
   const near = g.within(m, CRASH.HOME_NEAR);
-  const guard = near.filter((id) => state.militaryIds.includes(id)).sort((a, b) => g.distance(a, m) - g.distance(b, m) || a - b);
+  const guard = near.filter((id) => state.militaryIds.includes(id) && (!state.tiles[id].loc || state.tiles[id].loc.type === "military")).sort((a, b) => g.distance(a, m) - g.distance(b, m) || a - b); // a Guard base (not an air base: issue #25)
   let home = guard[0] ?? null;
   if (home == null) {
     const open = near.filter((id) => { const t = state.tiles[id]; return ok(t) && t.terrain !== "suburb" && t.terrain !== "city"; }).sort((a, b) => g.distance(b, tile.id) - g.distance(a, tile.id) || a - b);

@@ -47,7 +47,7 @@ import { swapGun } from "./gundist.js"; // the gun distribution: which gun a rai
 
 export const FOLK = {
   SURVIVORS: {
-    types: ["apartments", "offices", "hospital", "school", "motel"],
+    types: ["apartments", "offices", "hospital", "school", "motel", "hotel"],
     // A place of 2+ storeys holds them: base + perBlock a block deeper − perDanger a danger level (placeDanger 1–5) over the first.
     base: 0.12, perBlock: 0.05, perDanger: 0.03, min: 0.03, max: 0.45,
     power: 2.4,            // their power on the map
@@ -55,10 +55,10 @@ export const FOLK = {
     // Asking them to join: base + perLead × the team's best Leadership + their mood + talked (after a good talk), at most max.
     join: { base: 0.2, perLead: 0.03, talked: 0.2, refused: -0.1, max: 0.9, mood: { desperate: 0.15, friendly: 0.1, wary: 0 } },
     gift: { food: [2, 4], water: [2, 4] }, // what a good talk brings out through the barricade (not from the desperate)
-    prefer: { hospital: ["ward", "icu"] }, // the rooms they hold first, by the building's kind (a hospital's wards: #14)
+    prefer: { hospital: ["ward", "icu"], hotel: ["penthouse"] }, // the rooms they hold first, by the building's kind (a hospital's wards: #14; a hotel's penthouse, #29: by its style, the room's shop)
   },
   RAIDERS: {
-    types: ["offices", "apartments", "police"],
+    types: ["offices", "apartments", "police", "hotel"], // a hotel's (#29): the penthouse first
     strongFrom: 4, strongPer: 0.12, strongMax: 0.6, // from block strongFrom each raider carries a strong weapon with strongPer × (block − strongFrom + 1)
     armorFrom: 3, armorPer: 0.1, armorMax: 0.5,     // ... and wears a vest likewise
     stash: { ammo: [10, 30], food: [2, 6], water: [1, 4], gear: [1, 2], perBlocks: 4, finds: 0.6 }, // the stash: ammo, food, water, gear (+1 every perBlocks blocks), a pocket find
@@ -259,7 +259,7 @@ function barricadeSurvivors(state, b, key = null) {
   // room, then the higher one (people fled upward).
   // In a hospital a ward (or the ICU) before any other room (issue #14: the survivors live on a ward floor).
   const held = (r) => (r.scene && r.scene.alive ? 1 : 0);
-  const kind = S.prefer[key || ""] || null, liked = (r) => (kind && kind.includes(r.role) ? 1 : 0);
+  const kind = S.prefer[key || ""] || null, liked = (r) => (kind && (kind.includes(r.role) || kind.includes(r.shop)) ? 1 : 0);
   cand.sort((a, c) => held(c) - held(a) || liked(c) - liked(a) || unitsIn(b, a).length - unitsIn(b, c).length || (c.f || 0) - (a.f || 0));
   const room = cand[0];
   if (!room) return null;
@@ -321,8 +321,8 @@ function holeUpRaiders(state, b, n, up) {
       for (const r of roomsOn(b, f)) if (!r.locked && !r.hub && !r.entry && area(r) >= 6 && !roomUsed(b, r) && !stairsIn(b, r) && freeCells(b, r).length >= raiders.length + 1) cand.push(r);
     }
     // The biggest room on the lowest upper floor: they want the stairs near. A police station's squad room first
-    // (civiclayout.js: the room's style, the new saves' plans).
-    const squad = (r) => (r.civic === "squad" ? 1 : 0);
+    // (civiclayout.js, militarylayout.js: the room's style, the new saves' plans; a hotel's penthouse, #29, by its style).
+    const squad = (r) => (r.civic === "squad" || r.civic === "ops" || r.civic === "pcontrol" || r.shop === "penthouse" ? 1 : 0); // issue #25: an HQ's ops room, a prison's control room
     cand.sort((a, c) => squad(c) - squad(a) || (a.f || 0) - (c.f || 0) || area(c) - area(a));
     room = cand[0] || null;
   }

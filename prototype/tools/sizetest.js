@@ -95,7 +95,7 @@ function baseFight(st, list, enemy, walls = true, type = "hub") {
 // Every context: name, the class it should be, and how to build it on a world.
 const CONTEXTS = [
   { name: "raid: gas station (its building)", cls: "M", make: (st) => raid(st, "gas", [{ kind: "zombies", count: 5, power: 2 }]) },
-  { name: "raid: pharmacy (its building)", cls: "M", make: (st) => raid(st, "pharmacy", [{ kind: "zombies", count: 6, power: 2 }]) },
+  { name: "raid: pharmacy (its building)", cls: "M|L", make: (st) => raid(st, "pharmacy", [{ kind: "zombies", count: 6, power: 2 }]) }, // M|L: a pharmacy at real size (issue #24: 12–20 × 14–24 m) makes its map deeper
   { name: "raid: supermarket (its building)", cls: "L", make: (st) => raid(st, "supermarket", [{ kind: "zombies", count: 7, power: 2 }]) },
   { name: "raid: farm", cls: "L", make: (st) => raid(st, "farm", [{ kind: "zombies", count: 4, power: 2 }]) },
   { name: "raid: hospital (its building)", cls: "XL", make: (st) => raid(st, "hospital", [{ kind: "zombies", count: 9, power: 2.5 }]) },

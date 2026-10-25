@@ -56,7 +56,8 @@ import { isPublicSite, siteKnown, nearRoad } from "./discovery.js";
 import { localId } from "./world.js";
 import { zombieToughness } from "./hives.js"; // hive land: the dead are more and tougher there (the threat's hive bonus)
 import { campsiteExtra, campDanger, noteCampSeen } from "./campsite.js"; // call-time only: the extra campsite a tile may hold, its state in the threat, a look at it
-import { shopExtras, franchiseFor, franchisesOf, franchiseName, settingOf } from "./shops.js"; // call-time only: the shops a suburb or city block may hold, a place's franchise
+import { shopExtras, franchiseFor, franchisesOf, franchiseName, settingOf, noFirm } from "./shops.js"; // call-time only: the shops a suburb or city block may hold, a place's franchise
+import { hotelExtra } from "./hotels.js"; // call-time only: a hotel a tile may hold (issue #29)
 
 export const POI = {
   MAX: 4,                 // POIs a tile can hold, the site among them
@@ -128,7 +129,7 @@ export function inKnownZone(state, tile) {
 function makePoi(state, t, kind, site, slot, before = []) {
   const def = LOCATIONS[kind];
   const pool = site ? null : def.richness * (t.terrain === "city" ? POI.URBAN_RICH : 1) * (POI.POOL[0] + (POI.POOL[1] - POI.POOL[0]) * hash01(state.seed, "poipool", t.id, slot));
-  let v = franchiseFor(kind, settingOf(state, t), hash01(state.seed, "poifr", t.id, slot)); // shops.js: the franchise (a kind with none: null)
+  let v = noFirm(state, kind) ? null : franchiseFor(kind, settingOf(state, t), hash01(state.seed, "poifr", t.id, slot)); // shops.js: the franchise (a kind with none: null; an office tower in a save from before its firms: none)
   if (v) { // the same chain twice on a tile (a second corner store): the next franchise of the kind not on it yet, in the list's order
     const onTile = new Set(before.filter((p) => p.kind === kind && p.v).map((p) => p.v));
     if (onTile.has(v)) { const ids = franchisesOf(kind).map((f) => f.id), at = ids.indexOf(v); v = ids.map((_, i) => ids[(at + 1 + i) % ids.length]).find((id) => !onTile.has(id)) || v; }
@@ -182,6 +183,9 @@ export function generatePois(state, t) {
   // Bunkers (issue #26): now and then one, on their own dice after everything above (bunkerExtra).
   const bunker = bunkerExtra(state, t, out, inKnownZone(state, t));
   if (bunker) out.push(bunker);
+  // hotels.js: now and then a hotel (a town's inn, a city's tower, a resort in scenic land), on its own dice after all.
+  const hotel = hotelExtra(state, t, out, inKnownZone(state, t));
+  if (hotel) out.push(hotel);
   return out;
 }
 
@@ -206,7 +210,7 @@ export function bunkerExtra(state, t, list, knownZone) {
   const near = () => { const g = /** @type {any} */ (state).grid, ids = /** @type {any} */ (state).militaryIds || []; return !!(g && g.distance && ids.some((m) => g.distance(t.id, m) <= BUNKER_POI.NEAR_HEX)); };
   for (const kind of ["bunker", "govbunker", "shelter", "prepper"]) {
     let p = /** @type {Record<string, number>} */ (BUNKER_POI[kind])[t.terrain] || 0;
-    if (!p || list.some((q) => q.kind === kind)) continue;
+    if (!p || list.some((q) => q.kind === kind) || (t.loc && LOCATIONS[t.loc.type] && LOCATIONS[kind].richness > LOCATIONS[t.loc.type].richness)) continue; // an extra never out-ranks the site
     if (kind === "bunker" && near()) p *= BUNKER_POI.NEAR;
     if (hash01(state.seed, "bunkerpoi", t.id, kind) >= p) continue;
     const spread = BUNKER_POI.POOL[0] + (BUNKER_POI.POOL[1] - BUNKER_POI.POOL[0]) * hash01(state.seed, "bunkerpool", t.id);
