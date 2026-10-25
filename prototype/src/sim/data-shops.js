@@ -32,6 +32,21 @@ const L = (wall, trim, sign, text, accent, style = 0, roof = undefined) => ({ wa
 
 // ---------- the new site types ----------
 export const NEW_KINDS = {
+  // Shopping malls (issue #30, mall.js): a strip mall in a town or a city's suburbs, an outlet centre by a highway (the
+  // regional mall is the old "mall" site, data.js). Their raid map is the whole complex (buildingmaps.js BUILDINGS
+  // stripmall, outlet: compound.js); placed on their own dice (pois.js mallExtra), never by PLACE_W.
+  stripmall: {
+    site: { name: "Strip mall", glyph: "Sm", cat: "town", danger: 1, gearRate: 1.2, loot: { food: 2, water: 1, scrap: 2, meds: 0.3, parts: 1 },
+      gear: ["knife", "backpack", "slingbag", "duffle", "flashlight", "bat", "golfclub", "hikingpack", "handradio", "stove"], richness: 0.7, known: "public" },
+    tags: ["shop", "mall", "home", "kitchen"],
+    areas: ["store", "store", "clothes", "kitchen", "office", "wreck"], size: 1, storeys: [1, 1],
+  },
+  outlet: {
+    site: { name: "Outlet centre", glyph: "Oc", cat: "urban", danger: 2, gearRate: 1.3, loot: { food: 1, water: 1, scrap: 3, parts: 1 },
+      gear: ["backpack", "slingbag", "duffle", "hikingpack", "leatherjacket", "motopants", "kneeguards", "bikehelmet", "bat", "golfclub", "stove", "waterfilter"], richness: 0.8, known: "public" },
+    tags: ["shop", "mall", "sport", "travel", "home"],
+    areas: ["clothes", "clothes", "sportshop", "store", "kitchen", "wreck"], size: 1, storeys: [1, 1],
+  },
   sportshop: {
     site: { name: "Sporting goods store", glyph: "Sp", cat: "town", danger: 1, gearRate: 1.5, loot: { water: 1, food: 1, ammo: 1, scrap: 1 },
       gear: ["bat", "golfclub", "hockeystick", "compbow", "xbow", "footballhelmet", "sportspads", "goaliemask", "kneeguards", "bikehelmet", "bicycle", "hikingpack", "backpack", "duffle", "stove", "waterfilter", "headlamp", "lantern", "binoculars", "monocular", "machete", "hatchet", "rifle22", "spear", "handwarmer", "fishrod"],
@@ -121,6 +136,14 @@ export const NEW_KINDS = {
 
 // ---------- their raid rooms (combat.js AREAS; tags: loot.js AREA_TAGS) ----------
 export const AREA_DEFS = {
+  // Shopping malls (issue #30): mall security's office and locker room (a few weapons: cuffs, batons, radios), the arcade,
+  // the cinema's concession stand.
+  mallsec: { tags: ["police", "tech", "shop"], def: { name: "Mall security", boxes: ["locker", "locker", "cabinet"],
+    loot: { ammo: [0.25, 4, 12], meds: [0.15, 1, 1], water: [0.25, 1, 2] }, gear: [["baton", 0.16], ["cuffs", 0.14], ["handradio", 0.14], ["flashlight", 0.12], ["taser", 0.05], ["vest", 0.03], ["pistol", 0.035], ["revolver", 0.015], ["riotarms", 0.02]] } },
+  arcade: { tags: ["tech", "shop", "mall"], def: { name: "Arcade", boxes: ["counter", "shelf", "cabinet"],
+    loot: { scrap: [0.55, 1, 3], parts: [0.45, 1, 2], food: [0.15, 1, 2] }, gear: [["flashlight", 0.03], ["slingbag", 0.02]] } },
+  cinema: { tags: ["shop", "kitchen", "mall"], def: { name: "Cinema", boxes: ["counter", "shelf", "cabinet"],
+    loot: { food: [0.7, 2, 6], water: [0.65, 2, 6], scrap: [0.2, 1, 2] }, gear: [["flashlight", 0.04], ["slingbag", 0.02]] } },
   sportshop: { tags: ["sport", "outdoor", "camp", "hunt", "shop"], def: { name: "Sporting goods", boxes: ["shelf", "shelf", "locker"],
     loot: { water: [0.3, 1, 3], food: [0.25, 1, 3], ammo: [0.15, 4, 12] },
     gear: [["bat", 0.08], ["golfclub", 0.06], ["hockeystick", 0.06], ["compbow", 0.04], ["xbow", 0.02], ["footballhelmet", 0.06], ["sportspads", 0.06], ["goaliemask", 0.04], ["kneeguards", 0.05], ["bikehelmet", 0.04], ["hikingpack", 0.05], ["backpack", 0.04], ["duffle", 0.03], ["stove", 0.04], ["waterfilter", 0.04], ["headlamp", 0.04], ["binoculars", 0.03], ["machete", 0.03], ["hatchet", 0.03], ["rifle22", 0.015], ["fishrod", 0.03], ["bicycle", 0.02]] } },

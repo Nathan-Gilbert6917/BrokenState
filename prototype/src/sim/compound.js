@@ -20,7 +20,7 @@
 //     railings both sides) along a straight line of cells from one building's outer wall to another's; a room of its
 //     own (role o.role, else "corridor") so the dead and the living path through it. Returns the area. link(C, a, b, o)
 //     finds the row or column where two placed buildings' facing walls both open onto a room and connects them there.
-//   - guard(C, start): blocking things put on the ground floor (block(x, y, k), car(...)) never cut a walkable cell
+//   - guard(C, sx, sy, o): blocking things put on the ground floor (or floor o.f) (block(x, y, k), car(...)) never cut a walkable cell
 //     off from start. A cell whose eight neighbours stay joined round it is safe without a flood (the simple-point
 //     test); only the rest flood the floor, so dressing a 300 × 300 map stays quick.
 //   - parkingLot(C, G, rect, o): a surface lot of bays in double rows a drive aisle apart, cars parked in a share of the
@@ -264,11 +264,12 @@ const passable = (c) => !!c && (!!(CELL[c.k] && CELL[c.k].walk) || c.k === "door
 
 /**
  * The connectivity guard over the ground floor: block / car refuse anything that would cut a walkable cell off from
- * (sx, sy) (locked doors count as ways through). o.free(x, y): may dressing go here (default: open, not kept).
- * @param {any} C @param {number} sx @param {number} sy @param {{ free?: (x: number, y: number) => boolean }} [o]
+ * (sx, sy) (locked doors count as ways through). o.free(x, y): may dressing go here (default: open, not kept); o.f: the
+ * floor it guards (default the ground; an upper floor's walk starts from a stair cell or a landing).
+ * @param {any} C @param {number} sx @param {number} sy @param {{ free?: (x: number, y: number) => boolean, f?: number }} [o]
  */
 export function guard(C, sx, sy, o = {}) {
-  const { W, H } = C, cells = C.cells, N = W * H, I = (x, y) => y * W + x;
+  const { W, H } = C, cells = C.floors[o.f || 0].cells, N = W * H, I = (x, y) => y * W + x;
   const pass = new Uint8Array(N);
   let total = 0;
   for (let i = 0; i < N; i++) { pass[i] = passable(cells[i]) ? 1 : 0; total += pass[i]; }
@@ -320,6 +321,8 @@ export function guard(C, sx, sy, o = {}) {
       if (!pass[i] && !safe && !connected()) { c.k = was; if (extra) for (const key of Object.keys(extra)) delete c[key]; g.passAt(i); return false; }
       return true;
     },
+    /** A thing taken back up (the cell open floor again). */
+    unblock(x, y) { const i = I(x, y), c = cells[i]; c.k = "open"; delete c.fc; delete c.pc; g.passAt(i); },
     /** A car of L cells along ax at (x, y) (combat.js placeCar), undone if it cuts anything off. */
     car(x, y, ax, L, kind = "car", v = 0) {
       const rect = placeCar(cells, W, H, x, y, ax, L, kind, (cx, cy) => free(cx, cy) && I(cx, cy) !== start, v, { ring: false });

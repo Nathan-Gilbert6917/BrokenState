@@ -7359,7 +7359,7 @@ export function createRaid(state, setup) {
   const b = {
     setup, tileId: party ? partyTile(party) : tileId, w: W, h: H, cells: map.cells, reach: map.reach,
     place: placeName(tile),
-    units: [], turn: 1, phase: "player", log: [], fx: [], fxSeq: 0, rev: 1, nextId: 1000, vehicle: map.vehicle || null, // the team's car or truck (placeVehicle, driveTo)
+    units: [], turn: 1, phase: "player", log: [], fx: [], fxSeq: 0, rev: 1, nextId: map.containers.reduce((n, c) => Math.max(n, c.id + 1), 1000), // past the map's containers (a mall holds over a thousand: a pile dropped takes the next id) vehicle: map.vehicle || null, // the team's car or truck (placeVehicle, driveTo)
     ...(map.convoy && map.convoy.length ? { convoy: map.convoy } : {}), // the team's other vehicles, parked (placeRaidConvoy)
     pools: party ? [party.supplies, party.cargo ? party.cargo.supplies : {}] : [{}],
     ammoUsed: 0, arrowsUsed: 0, medsUsed: 0, noise: 0, reinf: 0, infection: tile ? tile.infection || 0 : 0,

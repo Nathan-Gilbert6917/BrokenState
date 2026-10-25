@@ -182,6 +182,10 @@ export function generatePois(state, t) {
   // Bunkers (issue #26): now and then one, on their own dice after everything above (bunkerExtra).
   const bunker = bunkerExtra(state, t, out, inKnownZone(state, t));
   if (bunker) out.push(bunker);
+  // Shopping malls (issue #30): now and then a strip mall in a town or a suburb, an outlet centre by a highway, on their
+  // own dice after everything above (mallExtra).
+  const mall = mallExtra(state, t, out, inKnownZone(state, t));
+  if (mall) out.push(mall);
   return out;
 }
 
@@ -212,6 +216,30 @@ export function bunkerExtra(state, t, list, knownZone) {
     const spread = BUNKER_POI.POOL[0] + (BUNKER_POI.POOL[1] - BUNKER_POI.POOL[0]) * hash01(state.seed, "bunkerpool", t.id);
     const hidden = !(kind === "shelter" && knownZone && hash01(state.seed, "bunkerknown", t.id) < BUNKER_POI.SHELTER_KNOWN);
     return { kind, hidden, pool: Math.min(1, LOCATIONS[kind].richness * spread), visits: 0, lastDay: null, cont: null, threatStamp: null, stripped: false, extra: "bunker" };
+  }
+  return null;
+}
+
+// Shopping malls as places (issue #30, mall.js): a strip mall on a suburb tile or a town (its own tile: the town's
+// site), an outlet centre on a road out in the open or the suburbs (a highway's), never in a city block (a regional
+// mall is the city's own "mall" site). Their raid map is the whole complex (buildingmaps.js SITES stripmall, outlet).
+export const MALL_POI = {
+  stripmall: { suburb: 0.06, town: 0.3 },      // town: a tile whose site is a town
+  outlet: { plains: 0.004, suburb: 0.01 },    // a tile with a road only
+  KNOWN: 0.7, POOL: [0.8, 1.1],
+};
+/** @param {State} state @param {Tile} t @param {any[]} list @param {boolean} knownZone */
+export function mallExtra(state, t, list, knownZone) {
+  if (!t || list.length >= POI.MAX || t.terrain === "water" || t.terrain === "city") return null;
+  for (const kind of ["stripmall", "outlet"]) {
+    const T = /** @type {Record<string, number>} */ (MALL_POI[kind]);
+    let p = (t.loc && t.loc.type === "town" ? T.town : 0) || (!t.loc || t.loc.type !== "town" ? T[t.terrain] || 0 : 0);
+    if (kind === "outlet" && !t.road) p = 0;
+    if (!p || list.some((q) => q.kind === kind) || (t.loc && t.loc.type === kind)) continue;
+    if (hash01(state.seed, "mallpoi", t.id, kind) >= p) continue;
+    const spread = MALL_POI.POOL[0] + (MALL_POI.POOL[1] - MALL_POI.POOL[0]) * hash01(state.seed, "mallpool", t.id);
+    const hidden = !(knownZone && hash01(state.seed, "mallknown", t.id) < MALL_POI.KNOWN);
+    return { kind, hidden, pool: Math.min(1, LOCATIONS[kind].richness * spread), visits: 0, lastDay: null, cont: null, threatStamp: null, stripped: false, extra: "mall" };
   }
   return null;
 }
