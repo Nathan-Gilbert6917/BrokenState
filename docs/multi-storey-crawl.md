@@ -197,3 +197,26 @@ The last ticket of the interiors epic (#7) brought the crawl up to what the raid
   a pharmacy": `placeHint`).
 - **Quick search**: opens the place's own building's containers (`placeProfile`, `quickLoot`, combat `boxFinds`), so
   a container searched quickly holds what it holds on the map.
+
+## Up to 10 storeys, the floors above blocked off (issue #24, 2026-10-25)
+
+The user's request 2026-10-25: "All buildings should scale based on how large buildings are in real life with unique
+layouts and 1 to 3 stories tall and city buildings can be 10 stories tall", and while it was built: "to prevent needing
+to make really tall cities just block off or have destroyed stairs to prevent going to higher stories though they dont
+actually exist". The detail is in [docs/features/combat.md "Buildings at real size"](features/combat.md#buildings-at-real-size-issue-24-2026-10-25).
+
+- **Heights**: `MAX_STOREYS` is 10. Offices, apartments and a hospital stand 6–10 storeys in a city (its tiles and its
+  crawl) and 2–4, 3–6 and 3–6 in a town (data-buildingsize.js `REAL_SIZE` `storeys` / `city`); the crawl's depth bonus
+  (`STOREY_BONUS`) adds to that, within 10. Most other buildings stand 1–3 storeys (their table rows).
+- **Built floors**: a building up to `OPEN_STOREYS` (4) storeys is built whole; a taller one is built up to 4 floors (5
+  from the crawl's bonus blocks: `openStoreys(height, bonus)`) and **its stairs up from the top floor built are blocked**:
+  the run still rises on that floor, its top step collapsed into rubble or barricaded with desks and cabinets
+  (`c.sealUp`), and Go up says so. The floors above never exist, so a tower costs no more than a four-storey building.
+  `spec.height` is what it stands (its look, the block card: "Office building: 4 floors open of 9, offices"; the card's
+  tip says the stairs above have collapsed or been barricaded), `spec.storeys` the floors built (`b.raid.storeys`; a
+  taller one's `b.raid.height`).
+- **Stairwells**: from 6 storeys two stair runs (#9's runs, `spec.stairs.n` 2), whatever the footprint.
+- **Floors that differ**: an office tower's floors between the lobby and the plant room are open plan, cubicles, meeting
+  rooms or a canteen floor by the floor (`OFFICE_FLOORS`); every floor of a big building is laid out in wings of its own
+  plan (`realScale`).
+- **Older saves** keep their buildings' storeys (and an office's old cap of 8): save.js `scaleLegacy`.

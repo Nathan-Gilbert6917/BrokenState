@@ -29,7 +29,7 @@ import {
   createBattle, autoPlayerTurn, runEnemyPhase, registerCombatHandler, combatAct, CELL, los, active, activeAny, unitAt, setFloor, stairOptions,
   searchableNear, boxAt, playerSees, reachable, endPlayerTurn, finishCombat, HEIGHT, zoneAt, FLOOR_RICH, enemyUnit,
 } from "../src/sim/combat.js";
-import { BUILDINGS, STOREYS_BY_TYPE, MAX_STOREYS, assemble, buildingSpec, siteBuildings, runSteps, runLandings, runTop, STAIR_DIRS } from "../src/sim/buildingmaps.js";
+import { BUILDINGS, STOREYS_BY_TYPE, MAX_STOREYS, assemble, buildingSpec, siteBuildings, runSteps, runLandings, runTop, STAIR_DIRS, realScale } from "../src/sim/buildingmaps.js";
 import { sizeClass, mapCap } from "../src/sim/battlesize.js";
 import { raidEnemies } from "../src/sim/scavenge.js";
 import { Rng } from "../src/sim/rng.js";
@@ -181,7 +181,10 @@ console.log(`Generation: every type (${Object.keys(BUILDINGS).length}), ${SEEDS}
   const lowT = towers.filter(([n]) => n <= 4).map(([, a]) => a), highT = towers.filter(([n]) => n >= 7).map(([, a]) => a);
   const avg = (l) => l.reduce((a, v) => a + v, 0) / Math.max(1, l.length);
   check(lowT.length && highT.length && avg(highT) < avg(lowT) * 0.8, `office towers shrink as they grow (3–4 storeys ${avg(lowT).toFixed(0)} cells, 7–8 storeys ${avg(highT).toFixed(0)})`);
-  check(towers.every(([n]) => n <= MAX_STOREYS) && towers.some(([n]) => n === MAX_STOREYS), `never more than ${MAX_STOREYS} storeys`);
+  // The heights a city's towers stand at real size (issue #24: realScale, the city's 6–10 plus the crawl's bonus); the
+  // archetype's own plan keeps its old cap of 8 (an older save's offices).
+  const city = []; for (let s = 0; s < SEEDS * 4; s++) { const r = new Rng(9100 + s); city.push(realScale(r, BUILDINGS.offices.make(r, {}), "offices", { setting: "city", storeyBonus: s % 3 }).height); }
+  check(towers.every(([n]) => n <= MAX_STOREYS) && city.every((n) => n <= MAX_STOREYS) && city.some((n) => n === MAX_STOREYS), `never more than ${MAX_STOREYS} storeys, a city's towers up to it (${Math.min(...city)}–${Math.max(...city)})`);
 }
 
 // ======================================================================================
@@ -578,6 +581,8 @@ console.log("Stair runs: up from the top step, the landings, a save from before 
     const { st, b } = r2;
     const snap = CC.snapshotBuilding(b);
     delete snap.stairs; delete snap.runs;
+    for (const F of snap.floors) F.cells = CC.unpackCells(F.cells); // a snapshot from before the packing (issue #24): plain arrays of cells
+    snap.cells = snap.floors[0].cells;
     const old = [];
     for (const F of snap.floors) F.cells.forEach((c, i) => { if (c.k === "stairs") { c.k = "open"; } delete c.step; delete c.top; delete c.dir; delete c.landing; });
     const room = b.raid.areas.find((a) => !a.outdoor && (a.f || 0) === 0 && a.entry);

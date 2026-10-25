@@ -191,6 +191,9 @@ export function deserializeState(save) {
   // Footprint shapes (buildingmaps.js spec.shape, issue #23, 2026-10-25): a save from before keeps every building a
   // rectangle as it was (the big school too), its containers' ids with it.
   if (!state.shapesV) { state.shapesLegacy = true; state.shapesV = 1; }
+  // Buildings at real size (data-buildingsize.js, issue #24, 2026-10-25): a save from before keeps every building's
+  // footprint and storeys (worldcfg.js legacyScale), so its places, their containers and the crawl's snapshots stay as they were.
+  if (!state.scaleV) { state.scaleLegacy = true; state.scaleV = 1; }
   // The office buildings of every kind and their firms (data-offices.js, issue #27): a save from before gets none of the
   // new places on its tiles or its crawls' blocks, and its office towers no firm (shops.js legacyOffices), so its
   // points of interest regenerate as they were.

@@ -567,6 +567,15 @@ function f_batteries(p) { // a rack of black batteries on steel shelves, red and
   line(p, 3, 1, 11, 1, "#d9b13b");
 }
 
+// ---------- labs (issue #37) ----------
+function f_labfreezer(p) { // an upright lab freezer: white enamel, a full-height door with its long handle, a green display
+  box(p, 3, 0, 12, 15, "#dad8d0"); H(p, 3, 12, 3, "#b4b2aa"); V(p, 11, 5, 12, "#9aa1a8");
+  R(p, 5, 1, 8, 2, "#1c2a30"); p.set(6, 1, "#5ad06a"); p.set(7, 1, "#5ad06a"); legs(p, 4, 11, 15, 15, STEELD);
+}
+
+function f_drum(p) { // a red 200-litre steel drum: two rolling hoops, the bung on its lid
+  box(p, 3, 1, 12, 15, "#8e3028"); H(p, 3, 12, 5, "#6a241e"); H(p, 3, 12, 10, "#6a241e"); R(p, 4, 0, 11, 1, "#a8483c"); p.set(9, 0, "#26272a");
+}
 // ---------- military bases, air bases, airports and prisons (issue #25) ----------
 function f_ammocrate(p) { // a green ammo crate: rope handles, yellow stencil band, latches
   box(p, 1, 4, 14, 14, "#4d5a32"); H(p, 2, 13, 8, "#e6c23a"); V(p, 7, 5, 13, "#3a4426");
@@ -631,6 +640,7 @@ function f_liquorcab(p) { // a liquor cabinet: dark wood, glass doors with bottl
 }
 
 export const GEAR_ART = {
+  f_drum, f_labfreezer,
   f_frontdesk, f_suitcase, f_minifridge, f_luggagecart, f_banquet, f_loungechair, f_lounger,
   f_flattop, f_deckoven, f_conveyoroven, f_wokrange, f_smoker, f_chargrill, f_gyrospit, f_stockpot, f_steamtable, f_espresso, f_softserve, f_slicer, f_tortillapress,
   f_extinguisher, f_saladbar, f_menuboard, f_patiotable, f_hoststand, f_clothtable, f_kbbqtable, f_beertower, f_lobstertank, f_pastrycase, f_dipcabinet, f_winerack, f_dryshelf,

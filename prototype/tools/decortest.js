@@ -197,7 +197,7 @@ console.log("The view");
     let err = "";
     try { clock += 50; UI.drawCombat(vst, clock); } catch (e) { err = e.stack.split("\n").slice(0, 3).join(" "); }
     let sum = 0;
-    for (const im of imgs) if (im.width === b.w * 16) for (let i = 0; i < im.data.length; i += 4) sum = (sum + im.data[i] * 3 + im.data[i + 1] * 5 + im.data[i + 2] * 7) % 1e9;
+    for (const im of imgs) if (im.width % 16 === 0 && im.height % 16 === 0) for (let i = 0; i < im.data.length; i += 4) sum = (sum + im.data[i] * 3 + im.data[i + 1] * 5 + im.data[i + 2] * 7) % 1e9;
     imgs = null;
     return { err, ground: ISO.iso.builds.ground - g0, sum };
   };
