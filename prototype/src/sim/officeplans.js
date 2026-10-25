@@ -37,16 +37,14 @@
 //               station's booth; a newspaper's press room) at the front; the control room, the archive and a break
 //               room behind; upstairs the editorial offices, the station manager's office, the tape library and the
 //               transmitter room.
+import { REAL_SIZE } from "./data-buildingsize.js"; // the sizes (issue #24 took over SIZE)
 
+// #24's real-world size table holds these rows now (data-buildingsize.js REAL_SIZE, planned; "h" the depth there "d";
+// the corporate tower the officetower row).
+const ROW = (k) => ({ w: REAL_SIZE[k].w, h: REAL_SIZE[k].d, storeys: REAL_SIZE[k].storeys });
 export const SIZE = {
-  storefront: { w: [10, 14], h: [15, 20], storeys: [1, 2] },
-  bizpark:    { w: [26, 32], h: [17, 21], storeys: [1, 3] },
-  tower:      { w: [24, 28], h: [16, 18], storeys: [6, 10] }, // capped by buildingmaps.js MAX_STOREYS (#24 raises it to 10)
-  cityhall:   { w: [26, 30], h: [21, 24], storeys: [2, 3] },
-  courthouse: { w: [26, 30], h: [21, 24], storeys: [2, 3] },
-  callcenter: { w: [26, 32], h: [17, 20], storeys: [1, 2] },
-  techoffice: { w: [20, 24], h: [15, 18], storeys: [2, 5] },
-  station:    { w: [22, 26], h: [15, 17], storeys: [2, 2] },
+  storefront: ROW("storefront"), bizpark: ROW("bizpark"), tower: ROW("officetower"), // the tower's storeys capped by buildingmaps.js MAX_STOREYS (10); only the lower floors are built (buildingmaps.js openStoreys)
+  cityhall: ROW("cityhall"), courthouse: ROW("courthouse"), callcenter: ROW("callcenter"), techoffice: ROW("techoffice"), station: ROW("station"),
 };
 // The tower's floors above the ground (tower floorKinds): the first is open plan; the one under the top an executive
 // floor (4+ storeys); each of the others one of SPECIAL (each at most once) on SPECIAL_P, else open plan.

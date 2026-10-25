@@ -53,6 +53,8 @@
 //     en suite bathroom (a toilet, a sink, a tub or a shower); housekeeping on every guest floor; two stair runs at 6+
 //     floors (every big hotel has two); the laundry and the kitchen (and its walk-in) back of house; every walkable cell
 //     reachable on every floor; the map within 200 × 200; an inn's 10–20 rooms; the loot of each kind, reported.
+//   - warehouses, factories and labs (industrylayout.js, issue #37): every one of their plans pinned is reached from the
+//     front and up its stairs, nothing cut off, with its signature pieces (tools/industryvarianttest.js goes further).
 // Usage: node tools/interiortest.js [seeds per archetype] [raids]
 import { createWorld, hub, atBase } from "../src/sim/world.js";
 import { launchExpedition } from "../src/sim/parties.js";
@@ -71,6 +73,7 @@ import { COMMERCIAL_KEYS, styleName } from "../src/sim/shoplayout.js";
 import { CIVIC_STYLES } from "../src/sim/civiclayout.js";
 import { MIL_KEYS, MILITARY_STYLES, MIL_SIZE } from "../src/sim/militarylayout.js";
 import { BUNKER_STYLES, BUNKER_KEYS, BUNKER_VARIANTS } from "../src/sim/bunkerlayout.js"; // bunkers (issue #26)
+import { INDUSTRY_KEYS, plansOf } from "../src/sim/industrylayout.js"; // warehouses, factories and labs (issue #37)
 import { BUNKER_POI, POI } from "../src/sim/pois.js";
 import { pieceDef } from "../src/sim/data-furniture.js";
 import { boxLoot, FLOOR_RICH } from "../src/sim/combat.js";
@@ -132,7 +135,7 @@ console.log(`Every archetype (${Object.keys(BUILDINGS).length}), ${SEEDS} seeds 
       sizes[key].push(`${W}x${H}`);
       const errs = [];
       const cap = mapCap(key); // a hotel's map up to 200 × 200 (its grounds round it, issue #29)
-      const huge = spec.foot === "huge" || (m.building && m.building.w >= 50); // a bunker at real-world scale (bunkerlayout.js BUNKER.SIZE, issue #26); the supermarket since issue #22: past the largest size class, its map its footprint and margins
+      const huge = spec.foot === "huge" || spec.foot === "xl" || (m.building && m.building.w >= 50); // a bunker at real-world scale (bunkerlayout.js BUNKER.SIZE, issue #26); the supermarket since issue #22: past the largest size class, its map its footprint and margins
       if (W < 14 || H < 14 || (MIL_KEYS.has(key) ? W > 300 || H > 300 : W > (cap || (huge ? m.building.w + 12 : 44)) || H > (cap || (huge ? m.building.h + 16 : 34)))) errs.push(`size ${W}x${H}`); // issue #25: the military buildings at their real size (the maps up to 300 × 300, #24)
       const z0 = m.zones[0];
       const start = [z0.x0 + 1, z0.y0 + (s % 2 === 1 ? 0 : 1)];
@@ -956,7 +959,7 @@ console.log("\nPolice stations, fire stations, schools and churches laid out for
   const sw = createWorld({ seed: 11, factionCount: 2 }), stiles = sw.tiles.filter((t) => t.loc).slice(0, 4);
   const seenKinds = new Set();
   let turnedOk = true;
-  for (const key of ["police", "school", "church"]) for (let i = 0; i < 30; i++) {
+  for (const key of ["police", "school", "church"]) for (let i = 0; i < (key === "church" ? 60 : 30); i++) { // a church's pewdoors comes up about one map in 14: 60 of them (issue #24's real-size churches drew a run of 30 without it)
     const m = buildingMap(sw, stiles[i % stiles.length].id, { key, id: `${key}-${i}`, name: key }, false);
     for (const sc of (m.scenes && m.scenes.list) || []) {
       seenKinds.add(sc.kind);
@@ -1186,6 +1189,35 @@ console.log("\nBunkers (bunkerlayout.js)");
   check(SITES.bunker_mil && SITES.bunker_mil[0] === "mountainbunker" && ["bunker", "govbunker", "shelter", "prepper"].every((k) => SITES[k] && BUILDINGS[SITES[k][0]]), "the bunker sites and points of interest open their bunkers");
 }
 
+// ===============================================================================}
+
+console.log("\nWarehouses, factories and labs: a dozen plans each (industrylayout.js, issue #37)");
+{
+  // Every plan pinned (tools/industryvarianttest.js goes further: the distinct plans, loot, names, older saves): every
+  // room reached from the front (upstairs from the stairs), no cell cut off, its signature pieces (racks and docks, a
+  // production line, lab benches with fume hoods...).
+  const bad = [];
+  let n = 0;
+  for (const key of INDUSTRY_KEYS) for (const p of plansOf(key)) for (let s = 0; s < 3; s++) {
+    const rng = new Rng(7700 + s * 7919 + key.length);
+    const spec = BUILDINGS[key].make(rng, { plan: p.id });
+    const m = assemble(rng, spec, { key, name: BUILDINGS[key].name, withVehicle: s === 1 });
+    n++;
+    const z0 = m.zones[0];
+    const reach = m.floors.map((F, f) => walkFrom(m, f ? m.stairs[0][0] : z0.x0 + 1, f ? m.stairs[0][1] : z0.y0 + 1, true, F.cells));
+    for (const r of m.rooms.filter((a) => !a.outdoor)) {
+      let any = false;
+      for (let y = r.y0 + 1; y < r.y0 + r.h - 1 && !any; y++) for (let x = r.x0 + 1; x < r.x0 + r.w - 1; x++) if (reach[r.f || 0][y * m.w + x]) { any = true; break; }
+      if (!any) bad.push(`${p.name}: ${r.name} not reached`);
+    }
+    m.floors.forEach((F, f) => { for (let i = 0; i < m.w * m.h; i++) if ((CELL[F.cells[i].k].walk || F.cells[i].k === "door") && !reach[f][i]) { bad.push(`${p.name}: floor ${f} cut off`); break; } });
+    const kinds = new Set(m.floors.flatMap((F) => F.cells.map((c) => c.k)));
+    const rooms = m.rooms.filter((a) => !a.outdoor);
+    const miss = p.sig.filter((k) => (k === "dock" ? !rooms.some((a) => a.role === "dock") : k === "unit" ? !rooms.some((a) => a.role === "unit") : !kinds.has(k)));
+    if (miss.length) bad.push(`${p.name}: no ${miss.join(", ")}`);
+  }
+  check(!bad.length, `${n} industrial buildings (${INDUSTRY_KEYS.map((k) => `${plansOf(k).length} ${k} plans`).join(", ")}, 3 seeds each): all reached, each with its signature pieces${bad.length ? ` (${[...new Set(bad)].slice(0, 5).join("; ")})` : ""}`);
+}
 console.log("\nMilitary bases, air bases, airports and prisons laid out like the real thing (militarylayout.js)");
 {
   const N = Math.max(SEEDS, 6);

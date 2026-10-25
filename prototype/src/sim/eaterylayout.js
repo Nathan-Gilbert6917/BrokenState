@@ -37,6 +37,7 @@
 // the freezers and the cases hold food of the cuisine (the rooms' mix: foods.js MIXES "eat:<cuisine>", its keeps for
 // the preserved draws, combat.js reads the area's mix), the kitchens knives and cleavers (blades.js kitchen), a BBQ's
 // pit room and a food truck propane.
+import { hash01 } from "./skills.js";
 import { registerScene, SCENES, SCENE_KINDS } from "./interiorscenes.js";
 import { COMMERCIAL_STYLES, fill, full, P, checkout, share, counterRow, stools, tables, booths, some, rowFrom, frontDoor } from "./shoplayout.js";
 import { EAT_SIZE, FORMATS, CUISINES, VARIANTS, SITDOWN, COUNTER, variantById } from "./data-eateries.js";
@@ -46,7 +47,7 @@ export const EATERY = {
   // Containers a room holds: its inside cells × this (roomlayout.js's target is area / 10, capped; a restaurant's
   // rooms by these, tuned with tools/restauranttest.js so a place holds what the old restaurants did per area ±10%).
   DENSITY: { front: 0.045, kitchen: 0.09, cold: 0.25, dry: 0.3, office: 0.15, small: 0.12 },
-  KIND: { diner: 1.2, bar: 0.74, pizza: 0.9 }, // × DENSITY by the food kind (the old diners held more per area than the bars)
+  KIND: { diner: 1.08, bar: 0.6, pizza: 0.99 }, // × DENSITY by the food kind (the old diners held more per area than the bars)
   KITCHEN: { tiny: 4, small: 6, medium: 7, large: 9, huge: 12 }, // a kitchen's least width (cells)
   PLAY: 0.7,          // a medium or large fast-food place's play area
   PATIO: 0.45,        // a patio of umbrella tables out front (the counters and the sit-downs that are not fine dining)
@@ -110,7 +111,9 @@ const mixOf = (v) => `eat:${v.cuisine}`;
  */
 export function eateryPlan(rng, v, plan = {}) {
   const S = EAT_SIZE[v.size] || EAT_SIZE.medium, C = CUISINES[v.cuisine] || CUISINES.burgers, F = FORMATS[v.format] || FORMATS.family;
-  const bw = rng.int(S.w[0], S.w[1]), bh = rng.int(S.h[0], S.h[1]);
+  // The variant's own say in the dice (its id hashed): two places of one format, size and cuisine never share a plan.
+  const own = hash01("eatplan", v.id), spanW = S.w[1] - S.w[0] + 1, spanH = S.h[1] - S.h[0] + 1;
+  const bw = S.w[0] + ((rng.int(0, spanW - 1) + Math.floor(own * 997)) % spanW), bh = S.h[0] + ((rng.int(0, spanH - 1) + Math.floor(own * 89)) % spanH);
   const big = v.size === "large" || v.size === "huge", huge = v.size === "huge", tiny = v.size === "tiny", small = v.size === "small";
   const mix = mixOf(v), eat = v.cuisine;
   const R = (o) => ({ eat, mix, kind: v.kind, tint: v.tint || C.tint, ...o });
@@ -123,7 +126,7 @@ export function eateryPlan(rng, v, plan = {}) {
   const restrooms = (n) => (n > 1 ? { split: "y", parts: [["*", rest("Men's restroom")], ["*", rest("Women's restroom")]] } : rest());
   const coldCol = (n) => (n > 1 ? { split: "y", parts: [["*", cold], ["*", freezer], ...(n > 2 ? [["*", R({ ...cold, name: C.cold || "Walk-in cold room" })]] : [])] } : cold);
   const fry = C.line.includes("fryer") || ["fastfood", "diner", "pub", "kiosk"].includes(v.format);
-  const left = rng.chance(0.5); // the kitchen at the building's left (the drive-through lane on that side) or right
+  const left = rng.chance(0.5) !== own < 0.5; // the kitchen at the building's left (the drive-through lane on that side) or right
   const drive = v.format === "fastfood";
   const kitchen = R({ role: "kitchen", name: "Kitchen", type: "kitchen", lay: "eatkitchen", fry, big, ...(drive ? { drive: left ? "w" : "e" } : {}), ...(v.format === "ghost" || v.format === "fine" || huge ? { stations: true } : {}) });
   let fd = Math.round(bh * 0.6), front, back;
@@ -194,7 +197,8 @@ export function eateryPlan(rng, v, plan = {}) {
   for (let i = back.length - 1; i >= 0 && tight(); i--) if (!keep(back[i][1])) back.splice(i, 1);
   if (!left) back = back.slice().reverse();
   const outside = { drive: drive ? (left ? "w" : "e") : null, patio: ![...["fine", "banquet", "kiosk", "ghost"]].includes(v.format) && rng.chance(EATERY.PATIO), smokers: v.cuisine === "bbq", truck: !!(v.truck || (plan && plan.truck)), grease: !tiny };
-  const margins = { ...(outside.drive ? { [left ? "left" : "right"]: 6 } : {}), ...(outside.truck ? { [left ? "right" : "left"]: 5 } : {}), ...(outside.patio ? { front: 4 } : {}), ...(outside.smokers ? { back: 4 } : outside.grease ? { back: 3 } : {}) };
+  // Margins only ever wider than buildingmaps.js BMAP.MARGIN's (front 5, back 4, the sides 4): the lane, the truck, the smokers.
+  const margins = { ...(outside.drive ? { [left ? "left" : "right"]: 6 } : {}), ...(outside.truck ? { [left ? "right" : "left"]: 5 } : {}), ...(outside.smokers ? { back: 5 } : {}) };
   return {
     bw, bh, front: { width: tiny || small ? 1 : 2 }, openDoors: 0.3, ground: ["fastfood", "buffet", "kiosk"].includes(v.format) ? "lot" : "town", storeys: 1, upper: null, foot: SIZE_FOOT[v.size] || "medium",
     stairs: { roles: ["kitchen", "pantry", "office"] }, margins, eat: { ...outside, cuisine: v.cuisine, format: v.format, size: v.size, id: v.id },

@@ -611,24 +611,30 @@ export function placeStoreys(state, c, place, n = c.block) {
   const spec = buildingSpec(state, c.tile, placeOption(c, place, n));
   return typeof spec.storeys === "number" ? Math.max(1, spec.storeys) : 1;
 }
+// How many storeys it stands (issue #24: a city's towers 6–10; only placeStoreys of them are built, the stairs up from
+// the top one blocked: buildingmaps.js OPEN_STOREYS).
+export function placeHeight(state, c, place, n = c.block) {
+  const spec = buildingSpec(state, c.tile, placeOption(c, place, n));
+  return Math.max(1, spec.height || spec.storeys || 1);
+}
 
 // The block card's hint line (issue #21 rule 4): the kind, its storeys (this place's own, placeStoreys) and the kind's
 // signature rooms from its archetype (buildingmaps.js buildingHint: a sample plan's rooms), the most numerous first, then
 // the first of the rest, the plain ones (HINT_PLAIN: corridors, restrooms, storage...) left out: "Hospital: 4 floors,
-// wards, a pharmacy". At most HINT_ROOMS rooms.
+// wards, a pharmacy" (a taller one "Office building: 4 floors open of 9, offices"). At most HINT_ROOMS rooms.
 const HINT_PLAIN = new Set(["Corridor", "Restroom", "Bathroom", "Bath", "Storage", "Lobby", "Office", "Landing", "Walkway", "Stockroom", "Storeroom", "Back room", "Linen room",
   "Utility room", "Maintenance", "Supply room", "Reception", "Front desk", "Waiting room", "Break room", "Flat", "Restrooms"]);
 const HINT_ROOMS = 2;
 const plural = (w) => (/s$/.test(w) ? w : /[^aeiou]y$/.test(w) ? `${w.slice(0, -1)}ies` : `${w}s`);
 export function placeHint(state, c, place, n = c.block) {
-  const st = placeStoreys(state, c, place, n);
+  const st = placeStoreys(state, c, place, n), ht = placeHeight(state, c, place, n);
   const sig = (buildingHint(place.key).sig || []).filter((r) => !HINT_PLAIN.has(r.name) || r.n >= 4); // a plain room the kind is made of counts (an office tower's offices)
   const many = sig.filter((r) => r.n > 1).sort((a, b) => b.n - a.n).slice(0, 1);
   const rest = sig.filter((r) => !many.includes(r));
   const rooms = [...many, ...rest.filter((r) => r.n === 1), ...rest.filter((r) => r.n > 1)].slice(0, HINT_ROOMS);
   const one = (w) => (/s$| and /.test(w) ? w : aWord(w)); // "sporting goods", "lumber and stock": no article
   const words = rooms.map((r) => (r.n > 1 ? plural(r.name.toLowerCase()) : one(r.name.toLowerCase())));
-  return `${place.kind}: ${st} ${st === 1 ? "floor" : "floors"}${words.length ? `, ${words.join(", ")}` : ""}`;
+  return `${place.kind}: ${st} ${st === 1 ? "floor" : "floors"}${ht > st ? ` open of ${ht}` : ""}${words.length ? `, ${words.join(", ")}` : ""}`; // a tower's floors above are blocked off
 }
 
 // ---------- the team ----------
@@ -1027,6 +1033,29 @@ function enterStreet(state, p, ev, areas, groups, gunSite = "city") {
 // (R.stairs too); the containers with their contents (ground piles, a lifted piece's emptied record: box.lifted) and
 // the bodies by floor (b.corpses with f) likewise. Nothing is shared with the battle (structuredClone both ways).
 const deep = (x) => (x == null ? x : structuredClone(x));
+// A floor's cells kept compactly (issue #24: buildings at real size, maps up to 300 × 300, ten storeys): every distinct
+// cell once (pal, as its JSON), and the floor as runs of [palette index, run length] (most of a big map is the same few
+// cells: the void above, the street, the yard). packCells → { pal, runs, n }; unpackCells gives fresh cells either way
+// (a snapshot from before the packing holds the plain array).
+export function packCells(cells) {
+  const pal = [], at = new Map(), runs = [];
+  let last = -1;
+  for (const c of cells) {
+    const key = JSON.stringify(c);
+    let i = at.get(key);
+    if (i == null) { i = pal.length; pal.push(key); at.set(key, i); }
+    if (i === last) runs[runs.length - 1]++;
+    else { runs.push(i, 1); last = i; }
+  }
+  return { pal, runs, n: cells.length };
+}
+export function unpackCells(p) {
+  if (Array.isArray(p)) return deep(p);
+  const out = new Array(p.n);
+  let k = 0;
+  for (let r = 0; r < p.runs.length; r += 2) { const key = p.pal[p.runs[r]]; for (let j = 0; j < p.runs[r + 1]; j++) out[k++] = JSON.parse(key); } // fresh objects: nothing shared between cells
+  return out;
+}
 export function snapshotBuilding(b) {
   const R = b.raid;
   const units = b.units.filter((u) => u.side !== "player" && !u.left && !u.fled).map((u) => {
@@ -1040,8 +1069,8 @@ export function snapshotBuilding(b) {
   // Storeys (buildingmaps.js): every floor's cells are kept (the ground floor's are `cells`, as before).
   const ground = b.floors ? b.floors[0].cells : b.cells;
   return {
-    w: b.w, h: b.h, cells: deep(ground), containers: deep(R.containers),
-    floors: b.floors ? b.floors.map((F) => ({ cells: deep(F.cells), name: F.name })) : null,
+    w: b.w, h: b.h, cells: b.floors ? null : packCells(ground), containers: deep(R.containers), // a building with storeys: its ground floor is floors[0] (kept once)
+    floors: b.floors ? b.floors.map((F) => ({ cells: packCells(F.cells), name: F.name })) : null,
     doors: R.doors ? deep(R.doors) : null, stairs: R.stairs ? deep(R.stairs) : null, runs: R.runs ? deep(R.runs) : null, // the stair cells and the stair runs (#9)
     units: deep(units), occupants: R.occupants || null, heat: Math.round(R.heat), folk: R.folk ? deep(R.folk) : null, // floorfolk.js: who held the upper floors, and how it went
     corpses: b.corpses ? b.corpses.map((x) => ({ ...deep(x), tried: undefined })) : null, scenes: R.scenes ? deep(R.scenes) : null, // sleepers.js bodies (a split Sleeper stays split; f: their floor); interiorscenes.js: the scenes seen
@@ -1089,14 +1118,14 @@ export function restoreBuilding(state, b, snap) {
     const [sx, sy] = R.stairs[0];
     for (let f = 0; f < b.floors.length; f++) {
       const F = b.floors[f];
-      F.cells = deep(snap.floors[f].cells);
+      F.cells = unpackCells(snap.floors[f].cells);
       F.losCache = null;
       setFloor(b, f);
       floodReach(b, f ? sx : z.x0 + 1, f ? sy : z.y0 + 1);
     }
     setFloor(b, 0);
   } else {
-    b.cells = deep(snap.cells);
+    b.cells = unpackCells(snap.cells);
     b.losCache = makeLosCache(b.w, b.h);
     floodReach(b, z.x0 + 1, z.y0 + 1);
   }
@@ -1184,7 +1213,7 @@ export function placeProfile(state, c, place, n = c.block) {
   const t = state.tiles[c.tile];
   const map = buildingMap(state, c.tile, placeOption(c, place, n), false);
   const boxes = (map.containers || []).filter((x) => x.kind !== "body" && x.kind !== "ground" && map.rooms[x.area] && AREAS[map.rooms[x.area].type]).map((x) => [x.area, x.kind, x.f || 0]);
-  const reward = rewardMult(t) * (raidBig(state, map.w, map.h) ? raidLootShare(map.w, map.h) : 1);
+  const reward = rewardMult(t) * (raidBig(state, map.w, map.h) ? (map.natMap ? raidLootShare(map.natMap[0], map.natMap[1]) : raidLootShare(map.w, map.h)) : 1); // a building at real size: by its plan's map (combat.js searchBox)
   let best = null, worth = 0;
   for (const F of map.floors && map.floors.length ? map.floors : [{ cells: map.cells }]) for (const cell of F.cells) {
     const d = cell && liftDef(cell.k);

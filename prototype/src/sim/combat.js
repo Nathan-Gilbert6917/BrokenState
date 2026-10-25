@@ -165,7 +165,7 @@ import { swapGun, kitGunSource, bodyGunSource, areaSourceName } from "./gundist.
 import { planStart, closePlan } from "./raidplan.js"; // choices before a raid: the side, a scout, the night (docs/suggestions-5.md #23)
 import { fightersOf } from "./groupfight.js"; // a group's people in a fight by the numbers
 import { ammoFactor } from "./arsenal.js";
-import { cfgOf, lootQty, battleDials, legacyRaids } from "./worldcfg.js";
+import { cfgOf, lootQty, battleDials, legacyRaids, legacyScale } from "./worldcfg.js";
 import { concealHidden, concealAim, concealScore, softOn, softCost, markShot, tentStep, tentAI, tearTent, softSetup, settleTents } from "./softcover.js"; // bushes and tents: they hide people, stop no bullets; tents slashed, burned and worn (the user's picks 2026-10-20) // the run's dials (World… on the new-run screen): the battle carries its own
 import { strikeAct, slashAct, settleTentsDown } from "./tentfight.js"; // tents taken down (and carried off) and slashed in a fight (the user's request 2026-10-20)
 import { campRaidMap, campRaidUnits, campSleeperTurn, tentBoxLoot, campAfter } from "./campsite.js"; // the campsite raid: its clearing, its tents and their loot, its campers (the user's request 2026-10-20)
@@ -2595,7 +2595,10 @@ const DIRS8 = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, 
 export const LOS_DENSE = 5000;
 // The sparse one is a Map with the typed array's fill() (every `losCache.fill(0)` clears it). A save writes it as a
 // plain Map; save.js makes a fresh one on load (it is only a cache).
-export class SparseLos extends Map { fill() { this.clear(); } }
+// It holds at most SPARSE_MAX entries (about 30 MB): past that it starts again (a 300 × 300 map with ten floors, issue
+// #24, would otherwise grow without end as the team looks round).
+export const SPARSE_MAX = 400000;
+export class SparseLos extends Map { fill() { this.clear(); } set(k, v) { if (this.size >= SPARSE_MAX) this.clear(); return super.set(k, v); } }
 export function makeLosCache(w, h) {
   const n = w * h;
   return n <= LOS_DENSE ? new Int8Array(n * n) : new SparseLos();
@@ -2755,7 +2758,7 @@ export function reachable(b, u, maxCost, opts = {}) {
   bindDims(b);
   const avoid = !opts.manual && b.fires && b.fires.length && (u.kind === "human" || u.ztype === "shepherd") ? new Set(b.fires.map((f) => idx(f.x, f.y))) : null;
   const aw = acidWeights(b, u, opts.manual && !opts.wary);
-  const d = new Float32Array(W * H).fill(Infinity), prev = new Int16Array(W * H).fill(-1);
+  const d = new Float32Array(W * H).fill(Infinity), prev = new Int32Array(W * H).fill(-1);
   const real = aw ? new Float32Array(W * H).fill(Infinity) : d; // without pools the weight is the cost
   const occ = new Uint8Array(W * H);
   // thirdside.js: your people squeeze past the survivors and soldiers who are not fighting them (as over the downed:
@@ -5147,7 +5150,8 @@ export function combatAct(state, act) {
       const so = stairOptions(b, u), up = act.type === "goup";
       if (!(up ? so.up : so.down)) {
         const here = b.cells[idx(u.x, u.y)], onStairs = here.k === "stairs";
-        return !onStairs ? "Stand on a stairwell first." : !stairTop(here) ? "Climb to the top step first: the stairs change floor there." : up ? (u.f + 1 >= b.floors.length ? "This is the top floor." : "Someone is on the stairs above.") : (!u.f ? "This is the ground floor." : "Someone is on the stairs below.");
+        const seal = onStairs && up && stairTop(here) && u.f + 1 >= b.floors.length ? here.sealUp : null; // buildingmaps.js OPEN_STOREYS: the floors above a tall building's are not built
+        return !onStairs ? "Stand on a stairwell first." : !stairTop(here) ? "Climb to the top step first: the stairs change floor there." : up ? (seal ? (seal === "barricade" ? "The stairs up are barricaded: desks, filing cabinets and wire jammed into the stairwell, wedged too tight to clear." : "The stairs up have collapsed: the flight above is rubble and twisted rail. There is no way higher.") : u.f + 1 >= b.floors.length ? "This is the top floor." : "Someone is on the stairs above.") : (!u.f ? "This is the ground floor." : "Someone is on the stairs below.");
       }
       { const why = pieceStairsRefusal(b, u, (u.f || 0) + (up ? 1 : -1)); if (why) return why; } // furnicarry.js: with a piece, both actions (each of two)
       u.ap -= stairsAp(u);
@@ -6955,6 +6959,10 @@ export const BOX_LOOT = {
   // rack their rifles.
   humvee:       { rest: 0, loot: { fuel: [0.7, 3, 8], parts: [0.4, 1, 3], ammo: [0.5, 20, 60] }, gear: [["milradio", 0.15], ["rucksack", 0.15], ["etool", 0.2], ["sandbags", 0.1], ["traumakit", 0.1]] },
   hazmatrack:   { rest: 0, loot: {}, gear: [["hazmat", 0.75], ["hazmat", 0.35]] },
+  // Labs (issue #37, industrylayout.js): a lab freezer's racks of samples long thawed, with the reagents and the first
+  // aid the lab kept in it; a few vials still good.
+  labfreezer:   { rest: 0.4, loot: { meds: [0.35, 1, 2] }, gear: [["bandagekit", 0.03]] },
+  drum:         { rest: 0.2, loot: { fuel: [0.6, 2, 6] }, gear: [] }, // a fuel depot's drum: what is left in it
   rationshelf:  { rest: 0, loot: { preserved: [0.95, 3, 7], water: [0.55, 2, 5] }, gear: [["puritabs", 0.1]] },
   "rationshelf@cabin": { rest: 0, loot: { preserved: [1, 6, 12], food: [0.7, 3, 6], water: [0.8, 4, 9], meds: [0.3, 1, 2] }, gear: [["puritabs", 0.25]] },
   radioconsole: { rest: 0.3, loot: { electronics: [0.7, 1, 3], parts: [0.4, 1, 2] }, gear: [["milradio", 0.2], ["handradio", 0.15]] },
@@ -6979,6 +6987,16 @@ export const BOX_LOOT = {
   "nightstand@clinic": { rest: 0.25, loot: { water: [0.3, 1, 1] }, gear: [["flashlight", 0.03], ["knife", 0.02]] },
   "medcab@vet":        { rest: 0.5, loot: { meds: [0.75, 1, 4] }, gear: [["dewormer", 0.08]] },
   "crate@vet":         { rest: 0, loot: { food: [0.75, 1, 4] }, gear: [] }, // the food store's sacks of feed: food, at a low worth
+  // Libraries (issue #34, librarylayout.js): the shelving, the carts and the card catalogue roll their room's table (a
+  // stack's books, a reference room's manuals: data-shops.js AREA_DEFS); a computer desk, a printer and a microfilm
+  // reader hold electronics and parts wherever they stand; the bookmobile is a van of books (its fuel tank, a box of
+  // returns: skills.js's book rolls on it as on any container, twice over through rest), the book return a few books
+  // dropped in and someone's things.
+  computer:   { rest: 0, loot: { electronics: [0.2, 1, 1], parts: [0.2, 1, 1] }, gear: [["phone", 0.01], ["laptop", 0.01]] },
+  printer:    { rest: 0, loot: { parts: [0.5, 1, 2], scrap: [0.4, 1, 2] }, gear: [] },
+  microfilm:  { rest: 0, loot: { electronics: [0.15, 1, 1], parts: [0.25, 1, 1] }, gear: [] },
+  bookreturn: { rest: 0.5, loot: { scrap: [0.2, 1, 1] }, gear: [["photos", 0.04], ["novel", 0.06], ["comic", 0.04], ["magazines", 0.04]] },
+  bookmobile: { rest: 0.3, loot: { fuel: [0.5, 1, 4], parts: [0.2, 1, 1] }, gear: [["novel", 0.1], ["comic", 0.06], ["gardenbook", 0.03], ["cookbook", 0.03], ["survivalbook", 0.02], ["medbook", 0.02], ["diybook", 0.02]] },
   // A hotel's (issue #29, hotellayout.js): a guest's suitcase (clothes as rags, toiletries, a phone or a laptop, now and
   // then a pistol or meds), a room's minibar (snacks, drinks, the little bottles), the front desk's safe (the night's
   // cash, guests' valuables), its desk drawers, housekeeping's shelves (soap, shampoo, the mini bottles).
@@ -7239,8 +7257,11 @@ function genRaidMap(rng, tile, areaTypes, withVehicle, extra = {}) {
     // A building with doors, windows and containers against the inside walls.
     let built = false;
     const big = W * H > 900 ? 2 : W * H > 700 ? 1 : 0; // bigger rooms on a bigger map (battlesize.js)
+    // A city's or a town's street in a world made since buildings at real size (extra.real, issue #24): a shop's or a
+    // house's front, 9–16 × 8–12 m (data-buildingsize.js CELL_M: a cell a metre), where the map has room for it.
+    const real = !!extra.real && W >= 40 && H >= 30;
     for (let tries = 0; tries < 40 && !built; tries++) {
-      const w = rng.int(5, 8 + big), h = rng.int(4, 6 + Math.min(1, big));
+      const w = real && tries < 30 ? rng.int(9, 16) : rng.int(5, 8 + big), h = real && tries < 30 ? rng.int(8, 12) : rng.int(4, 6 + Math.min(1, big));
       const x0 = rng.int(4, W - 5 - w), y0 = rng.int(1, H - 1 - h);
       if (!rectFree(x0, y0, w, h)) continue;
       const edge = [];
@@ -7386,7 +7407,7 @@ export function createRaid(state, setup) {
     if (tile && tile.road && !types.includes("roadcars")) types.push("roadcars"); // a site on a road: the cars left on the road outside it too (AREAS.roadcars)
     const trucks = trucksAt(state, tileId); // miltrucks.js: Army trucks here (a road, a convoy, a base's motor pool, an army wreck)
     if (trucks.length && !types.includes("miltrucks")) { if (poiI != null) types.push("miltrucks"); else types.unshift("miltrucks"); } // first: they want the room (a POI's map: last)
-    map = genRaidMap(mrng, tile, types, withVehicle, { trucks, big: raidBig(state, W, H) });
+    map = genRaidMap(mrng, tile, types, withVehicle, { trucks, big: raidBig(state, W, H), real: !legacyScale(state) && !!tile && !!tile.loc && (tile.loc.type === "city" || tile.loc.type === "town") }); // real: a city's or a town's street, its buildings at real size (issue #24)
     if (setup.raid && setup.raid.checkpoint) dressCheckpoint(map, W, H, new Rng(Math.floor(hash01(state.seed, "checkpoint", tileId, state.hour) * 4294967296)), (k) => !!(CELL[k] && CELL[k].walk)); // militarylayout.js: the crawl's checkpoint gets the military pieces (issue #25; a new save's)
     if (entryFrom(map, entrySide, withVehicle)) { const z = map.zones[0]; map.reach = flood(map.cells, z.x0 + 1, z.y0 + 1); }
     if (campPoi) { campRaidMap(state, tileId, poiI, map, W, H, mrng); map.reach = flood(map.cells, map.zones[0].x0 + 1, map.zones[0].y0 + 1); } // campsite.js: the clearing, the fire and the tents round it
@@ -7411,6 +7432,7 @@ export function createRaid(state, setup) {
     ...battleDials(state), // worldcfg.js: the run's dials this battle reads (b.zDmg, b.infectBite, b.wear, b.failures)
     raid: {
       areas: map.areas, containers: map.containers, zones: map.zones,
+      ...(map.natMap ? { natMap: map.natMap.slice() } : {}), // buildingmaps.js realScale: the map its plan would have had at its own size (a container's find goes by it)
       hasVehicle: !!withVehicle, vehicleZone: map.zones.findIndex((z) => z.vehicle), heat: setup.raid?.heat0 || 0, stage: 0, spawned: 0, spawnCap: Math.round(RAID_SIZE.SPAWN_CAP * raidDeadScale(W, H, big)), ...(big ? { big: true } : {}), // vehicleZone: the zone the vehicle touches now (syncVehicleZone), -1 when driven off
       // Hardcore (hardcore-loot.js): sites hold about twice a normal start's loot, so the cap is higher there.
       // A point of interest's containers hold what they held untouched (pois.js poiFull: how picked over it is shows
@@ -7435,6 +7457,7 @@ export function createRaid(state, setup) {
     b.floors = map.floors.map((F, i) => ({ cells: F.cells, reach: i === 0 ? map.reach : map.street || map.compound ? upReach(F) : flood(F.cells, map.stairs[0][0], map.stairs[0][1]), losCache: i === 0 ? b.losCache : null, name: F.name }));
     b.floor = 0;
     b.raid.storeys = map.floors.length;
+    if (map.height > map.floors.length) b.raid.height = map.height; // a taller building: the floors above are not built (their stairs blocked)
     b.raid.stairs = map.stairs.map((s) => s.slice()); // the cells that change floor: each stair run's top step
     b.raid.runs = (map.runs || []).map((r) => ({ ...r })); // the runs themselves (buildingmaps.js STAIR_DIRS)
   } else if (pick) { b.raid.storeys = 1; b.raid.stairs = []; b.raid.runs = []; }
@@ -7746,7 +7769,7 @@ export function searchBox(state, b, u, box, open = false, quick = false) {
   const party = state.parties.find((x) => x.id === b.setup.partyId);
   if (u.xpT && !box.contents) u.xpT.boxes++; // skills.js: Scavenging XP for each container opened
   const rich = box.kind === "body" ? 1 : R.richness * Math.min(FLOOR_RICH.cap, Math.pow(FLOOR_RICH.perFloor, box.f || 0)) * (box.rich || 1); // upper storeys are less picked over (buildingmaps.js); a nest's floor richer still (floorfolk.js)
-  const reward = box.kind === "body" ? 1 : (R.reward ?? 1) * (box.truck || !R.big ? 1 : raidLootShare(b.w, b.h)); // buildingmaps.js rewardMult: city sites pay more, the countryside less; a map past the old Large has more containers, each holds a little less (battlesize.js BIG)
+  const reward = box.kind === "body" ? 1 : (R.reward ?? 1) * (box.truck || !R.big ? 1 : R.natMap ? raidLootShare(R.natMap[0], R.natMap[1]) : raidLootShare(b.w, b.h)); // a building at real size (R.natMap): its containers hold what its plan's map's did (as many to the square metre, each as full) // buildingmaps.js rewardMult: city sites pay more, the countryside less; a map past the old Large has more containers, each holds a little less (battlesize.js BIG)
   // Roll what is inside (once); anything that does not fit stays in the container.
   if (!box.contents) {
     const sup = {}, gear = [];
