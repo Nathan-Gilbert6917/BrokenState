@@ -148,7 +148,8 @@ import { poiRaidStart, poiMapRng, boxRng } from "./poicont.js"; // its container
 import * as MED from "./medics.js";
 import { deafen, bangOf, tickEars, heardGhosts, dazedAim, linkAim, linkEscape, fitHeadgear, settleEars } from "./hearing.js"; // ears: bangs, deafness, what your people hear, the team headset
 import { PUSH, GRIP, pushAct, getUpRound, aiPush, aiMeleePush, aiBreakOut, aiFree, gripOf, gripHit, gripRefusal } from "./shoving.js"; // people and the dead shoved back a tile or flat on their back; the dead getting hold of someone (the user's request 2026-10-20)
-import { liftAct, setAct, stowAct, refitPiece, pieceRefusal, tetherMoveRefusal, followTether, tetherRound, stairsAp, pieceStairsRefusal, pieceStairs } from "./furnicarry.js"; // furniture and appliances lifted, carried (one alone, or two tethered), set down, put in the vehicle (issue #12)
+import { liftAct, setAct, stowAct, refitPiece, pieceRefusal, tetherMoveRefusal, followTether, tetherRound, stairsAp, pieceStairsRefusal, pieceStairs, dropPiece } from "./furnicarry.js"; // furniture and appliances lifted, carried (one alone, or two tethered), set down, put in the vehicle (issue #12)
+import { piecesAtExtraction, extractNote, pieceGoesHome } from "./furnihome.js"; // extracting with a piece in the arms: into the vehicle, else dropped at the door from exhaustion (issue #18)
 import { cartAct, cartKnocked, oneHandOk, CART_FIGHT, cartMoved, enemyCartsLetGo, enemyCarts, placeMapCarts, cartHelpStart, holdsCart } from "./carts.js"; // a wheelbarrow, a hand cart: let go (free), take it back (1 action)
 import { fitHands, handsRefusal, handsWord, handsBusy, armsText, handsCount, HANDS_MAX, carriedAct, pickCarried, setOverCover, botDropToFight, autoDrop, settleCarried, armsDropsEnd, stageAtStart } from "./carry.js"; // supplies, a bag or finds carried in the hands: no weapon, no doors, no windows until set down (Drop carried: free; Set over cover)
 import { kitHeadgear, visorAim, toggleVisor } from "./helmets.js"; // helmets: the face shield, an enemy's helmet and ear protection by kit
@@ -5171,6 +5172,7 @@ export function combatAct(state, act) {
       const z = zoneAt(b, u.x, u.y);
       const byCar = vehicleExit(b, u); // any cell next to the vehicle is a way out in it, wherever it stands
       if (z < 0 && !byCar) return "Move into an extraction zone, or next to the vehicle, first.";
+      { const note = extractNote(state, b, u); if (note) say(b, note, /^No /.test(note) ? "warn" : "info"); } // furnihome.js: what becomes of a piece in the arms
       u.left = true; u.exitZone = z >= 0 ? z : b.raid.vehicleZone; u.ap = 0; u.ow = u.hunker = false;
       u.exitVehicle = byCar || !!((b.raid.hasVehicle ?? b.raid.vehicleZone >= 0) && b.raid.vehicleZone === z); // the vehicle stands at this zone (it may have been driven: syncVehicleZone)
       { const o = u.piece && u.tether != null ? unitById(b, u.tether) : null; if (o && active(o)) { o.left = true; o.exitZone = u.exitZone; o.exitVehicle = u.exitVehicle; o.ap = 0; o.ow = o.hunker = false; } } // furnicarry.js: two carrying a piece leave together
@@ -7816,6 +7818,8 @@ function endRaid(state, b) {
   }
   const hadVehicle = R.hasVehicle ?? R.vehicleZone >= 0;
   const vehicleKept = hadVehicle && b.units.some((u) => u.side === "player" && u.left && !u.dead && (u.exitVehicle ?? u.exitZone === R.vehicleZone)); // left from the zone the vehicle stood at
+  const pieces = piecesAtExtraction(state, b, vehicleKept); // furnihome.js (issue #18): a piece in the arms into the vehicle, else dropped at the door from exhaustion
+  lines.push(...pieces.lines);
   endBodies(state, b, extractedIds.length ? "extracted" : "defeat", vehicleKept); // carriers.js: the risen still walking take their things into the walking loot; bodies in the car come home with it
   raidHome(state, b, home); // raidloot.js: what the ones who made it carry goes in the team's cargo; the rest is lost
   if (hadVehicle && extractedIds.length && !vehicleKept) lines.push("Nobody went back to the vehicle. It stays behind at the site.");
@@ -7844,7 +7848,7 @@ function endRaid(state, b) {
     knockedOut: captives.length, prisoners: captiveRecords(state, b, captives), // prisoners.js
     outcome, enemiesKilled: killed, enemiesLeft: original.length - killed - captives.length,
     survivorsHurt: hurtIds, survivorsDead: deadIds, ammoUsed: b.ammoUsed, arrowsUsed: b.arrowsUsed || 0, arrowsBack: arrowsBackN,
-    loot: { supplies: { ...R.found }, gear: R.foundGear.slice() },
+    loot: { supplies: { ...R.found }, gear: [...R.foundGear, ...pieces.items] },
     turns: b.turn, medsUsed: b.medsUsed, extraKilled: enemies.filter((u) => u.reinforcement && u.dead).length,
     tactical: true, worn: true,
     third: thirdResult(b), // thirdside.js: the survivors or soldiers who were there (null: none)
@@ -7855,6 +7859,7 @@ function endRaid(state, b) {
       hours: b.calledOff ? 0 : Math.max(1, Math.ceil(b.turn / 6)), // called off before going in (raidplan.js callOff): no time on the site
       alerted: original.some((u) => u.kind === "human" && (u.aware || u.dead)),
       calledOff: !!b.calledOff, // scavenge.js afterRaid: the team turned back
+      ...(pieces.text || pieces.fullText ? { pieces: { dropped: pieces.dropped, full: pieces.full, text: pieces.text, fullText: pieces.fullText, ledger: pieces.ledger } } : {}), // furnihome.js: the log line and the alert
     },
   };
   b.summary = lines;
@@ -7978,7 +7983,11 @@ function autoRaidTurn(state) {
         if (!combatAct(state, { type: stairsTo > (u.f || 0) ? "goup" : "godown", unit: u.id })) continue;
       }
       const z = (u.f || 0) ? -1 : zoneAt(b, u.x, u.y);
-      if (leave && z >= 0 && (R.vehicleZone < 0 || z === R.vehicleZone || R.heat > 80)) { combatAct(state, { type: "extract", unit: u.id }); break; }
+      if (leave && z >= 0 && (R.vehicleZone < 0 || z === R.vehicleZone || R.heat > 80)) {
+        if (u.piece && !pieceGoesHome(state, b, u)) dropPiece(state, b, u, `No vehicle to take it home: ${u.name.split(" ")[0]} sets it down.`); // furnihome.js: never out with a piece and no vehicle
+        combatAct(state, { type: "extract", unit: u.id });
+        break;
+      }
       // stealth.js: tie up the knocked out, take down an unaware guard next to it, throw a bottle to pull guards away.
       if (!leave && botStealth(state, b, u, combatAct)) continue;
       // buildingmaps.js: on the way out of a building, shut a door on whatever follows, or throw a lure to pull it off.

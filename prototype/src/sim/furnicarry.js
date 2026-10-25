@@ -52,7 +52,7 @@ import { FURNITURE_KINDS, pieceDef, itemKey } from "./data-furniture.js"; // the
 import { newItem, itemLoad, ensureInv } from "./inventory.js";
 import { survivorById } from "./world.js";
 import { MAX_LOAD } from "./load.js";
-import { CELL, active, unitAt, unitById, canSeeAt, say, reachable, pathTo, moveAlong, moveToFloor, alertNear, searchBox } from "./combat.js"; // call-time only: the modules load in a circle
+import { CELL, active, unitAt, unitById, canSeeAt, say, reachable, pathTo, moveAlong, moveToFloor, alertNear, searchBox, setFloor } from "./combat.js"; // call-time only: the modules load in a circle
 import { handsCount, handsBusy } from "./carry.js"; // call-time only
 import { freeForPiece, pieceOff, setPiece } from "./barricade.js"; // call-time only
 import { groundPile, groundPiles, pileCount, settlePile } from "./ground.js"; // call-time only
@@ -263,6 +263,7 @@ export function liftAct(state, b, u, act) {
     item = d.item ? newItem(d.item) : null;
     if (!item) return `The ${word(d)} cannot be carried.`;
     delete t.wall.wart;
+    touchPiece(b, u.f || 0, [[t.x, t.y]]);
   } else if (t.cell) {
     // A piece of 2+ cells (a bed, a sofa) takes its other cells along.
     const cells = pieceCells(b, t.x, t.y, d);
@@ -286,6 +287,7 @@ export function liftAct(state, b, u, act) {
       u.pieceBox = box.id;
     }
     for (const [x, y] of cells) { const c = cellOf(b, x, y); pieceOff(c); delete c.pc; delete c.fc; } // roomlayout.js: its number and the way it faced go with it
+    touchPiece(b, u.f || 0, cells); // furnihome.js: the cells a POI's ledger keeps (issue #18)
     item = d.item ? newItem(d.item) : null;
     if (!item) return `The ${word(d)} cannot be carried.`;
     if (t.cell.hp > 0 && t.cell.hp < d.hp) item.pieceHp = t.cell.hp; // battered before: it stays so
@@ -389,18 +391,19 @@ function placePiece(state, b, P, cells) {
   const hp = P.item.pieceHp > 0 ? P.item.pieceHp : d.hp;
   const pc = cells.length > 1 ? 1e6 + b.nextId++ : 0; // a piece of 2+ cells keeps one number on its cells (roomlayout.js c.pc)
   for (const [x, y] of cells) { if (!CELL[d.kind]) break; const cl = cellOf(b, x, y); setPiece(cl, d.kind, hp, d.hp); if (pc) cl.pc = pc; }
+  touchPiece(b, c.f || 0, cells);
   const xs = cells.map((p) => p[0]), ys = cells.map((p) => p[1]);
   const x = Math.min(...xs), y = Math.min(...ys), w = Math.max(...xs) - x + 1, h = Math.max(...ys) - y + 1;
   const L = lootLayer(b);
   const box = c.pieceBox != null && L ? L.containers.find((k) => k.id === c.pieceBox) : null;
   const wh = w * h > 1 ? { w, h } : {};
-  if (box) { box.x = x; box.y = y; box.f = c.f || 0; delete box.lifted; delete box.w; delete box.h; Object.assign(box, wh); }
+  if (box) { box.x = x; box.y = y; box.f = c.f || 0; delete box.lifted; delete box.w; delete box.h; Object.assign(box, wh); box.shifted = true; } // shifted: poicont.js keeps where it stands now
   else if (d.loot && L && b.raid) L.containers.push({ id: b.nextId++, x, y, ...wh, f: c.f || 0, kind: d.kind, area: null, searched: true, partial: false, label: d.name, contents: { sup: {}, gear: [] } });
   endCarry(state, b, P);
   b.losCache.fill(0);
 }
 // The item leaves the arms (it is on the map now, or in the vehicle); the tether ends.
-function endCarry(state, b, P) {
+export function endCarry(state, b, P) {
   const c = P.carrier, s = c.sid != null ? survivorById(state, c.sid) : null;
   if (s && s.gear && s.gear.carry === P.item) s.gear.carry = null;
   c.bag = null;
@@ -457,6 +460,36 @@ export function dropPiece(state, b, u, why = "") {
   say(b, line, "info");
   return line;
 }
+// furnihome.js (issue #18): the piece stood on the free cells nearest (x, y) on the carrier's floor (the cell itself
+// first, then ring by ring out to `reach`), seen or not, the way it would be set down. True when it stands.
+export function placeNear(state, b, P, x, y, reach = 6) {
+  if (!P || !CELL[P.def.kind]) return false;
+  const f = P.carrier.f || 0, keep = b.floors && (b.floor || 0) !== f ? b.floor || 0 : -1; // storeys: the cells of the carrier's floor
+  if (keep >= 0) setFloor(b, f);
+  try {
+    for (let r = 0; r <= reach; r++) {
+      for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+        const cx = x + dx, cy = y + dy;
+        if (!cellOf(b, cx, cy)) continue;
+        for (const [ex, ey] of [[1, 0], [0, 1], [-1, 0], [0, -1]]) {
+          const fp = footprint(P.def, cx, cy, ex, ey, ey ? 1 : 0, ex ? 1 : 0);
+          if (fp.every(([px, py]) => cellOf(b, px, py)) && cellsFree(b, fp)) { placePiece(state, b, P, fp); return true; }
+        }
+      }
+    }
+    return false;
+  } finally { if (keep >= 0) setFloor(b, keep); }
+}
+// The cells a piece left or was set on, for a point of interest's ledger (furnihome.js pieceLedger): b.raid.pieceCells,
+// "f,x,y" each once.
+export function touchPiece(b, f, cells) {
+  const R = b && b.raid;
+  if (!R) return;
+  const T = R.pieceCells || (R.pieceCells = []);
+  for (const [x, y] of cells) { const k = `${f},${x},${y}`; if (!T.includes(k)) T.push(k); }
+}
+
 // combat.js, after each order and at the start of your turn: a pair parted (one down, gripped by the dead, shoved or
 // dragged apart, on another floor) or a lone carrier down sets the piece down.
 export function tetherRound(state, b) {

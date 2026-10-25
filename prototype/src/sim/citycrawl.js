@@ -62,6 +62,7 @@ import { itemValue } from "./valuation.js";
 import { atBase } from "./world.js";
 import { shopPlaces, crawlFranchise, franchiseName } from "./shops.js"; // the shops and services on a block besides its own (their own dice), a place's franchise
 import { PLACE_W } from "./data-shops.js"; // a shop's crawl place stats (rich, dead, rare)
+import { crawlMoveHours, piecesOut, piecesText } from "./furnihome.js"; // furniture carried out of a building: the walk's pace, and the vehicle or exhaustion at the rim (issue #18)
 import { gridOf, inGrid, isEdge, levelOf, ringOf, maxLevel, entryOf, headingToward, turn, rimOf, pathToRim, dirTo, keyOf, xyOf, DIRS, DIR_NAMES, cellsOf } from "./citygrid.js"; // the round grid of blocks (2026-10-13)
 
 // ---------- tuning ----------
@@ -1012,7 +1013,7 @@ export function nextBlock(state, p, way = "straight") {
   if (opt.wall) return `${EVENTS[opt.wall.key].title}: the way ${opt.way} is blocked until you clear it or find a way around.`;
   const risk = moveRisk(state, c, opt.cell, undefined, crawlLoad(state, p).over);
   addAlert(c, CRAWL.ALERT.move);
-  if (!passHours(state, p, CRAWL.MOVE_HOURS)) return crawlGoneText(state, p);
+  if (!passHours(state, p, crawlMoveHours(state, p, CRAWL.MOVE_HOURS))) return crawlGoneText(state, p); // furnihome.js: a piece of furniture in the arms slows the walk
   if (c.enc) return ""; // one of you turned on the way (crawlTurned): that first
   const from = { cell: c.cell, heading: c.heading };
   if (state.rng.chance(risk)) {
@@ -1159,8 +1160,9 @@ function finishCrawl(state, p) {
   mem.hour = state.hour;
   Object.assign(mem.snaps, c.buildings); // the buildings as you left them, for the next visit (unless another group goes through)
   delete p.crawl;
-  const got = [...Object.entries(c.tally.supplies).map(([k, v]) => `${v} ${keyWord(k)}`), ...c.tally.gear];
-  const text = `Out of ${c.city} after ${state.hour - c.started} h, as deep as block ${c.deepest}${got.length ? `, with ${got.join(", ")}` : ", empty-handed"}.${c.lost.length ? ` Lost: ${c.lost.join(", ")}.` : ""}`;
+  const pc = piecesOut(state, p); // furnihome.js (issue #18): a piece carried out of the city goes into the vehicle, else it is dropped from exhaustion
+  const got = [...Object.entries(c.tally.supplies).map(([k, v]) => `${v} ${keyWord(k)}`), ...c.tally.gear, ...(pc.loaded.length ? [piecesText(pc.loaded)] : [])];
+  const text = `Out of ${c.city} after ${state.hour - c.started} h, as deep as block ${c.deepest}${got.length ? `, with ${got.join(", ")}` : ", empty-handed"}.${c.lost.length ? ` Lost: ${c.lost.join(", ")}.` : ""}${pc.text ? ` ${pc.text}` : ""}`;
   log(state, `${teamName(state, p)}: ${text}`, got.length ? "good" : "info");
   noteSearch(state, partyMembers(state, p));
   awaitOrders(state, p, text);

@@ -23,7 +23,7 @@ import { LOCATIONS, GEAR, SUPPLIES, siteDanger as locDanger, supValue, supWeight
 import { log, hurt, isNight, combatPower, gearEffect, factionById, spendShots, armedFactor, arrowsBack } from "./world.js";
 import {
   partyMembers, bestSkill, carryCapacity, partyCapacity, cargoLoad, cargoRoom, supplyLoad, unitsThatFit, awaitOrders, tileLabel, wipeParty,
-  wipeIfEmpty, leaveVehicle, addGearToCargo, PICKED_OVER,
+  wipeIfEmpty, leaveVehicle, addGearToCargo, PICKED_OVER, teamName,
 } from "./parties.js";
 import { poiAt, poiPool, poiTake, poiName, knownPois, visitPoi, tileHeat, addTileHeat, exitHeat, shotsHere, noteTileHeat, TILE_HEAT } from "./pois.js"; // the place searched: its kind, its pool, its visits; the tile's heat
 import { poiRaidEnd, lootPoiAbstract, poiHouses, CONT } from "./poicont.js"; // the containers a place keeps between visits; a street of houses
@@ -276,6 +276,9 @@ export function afterRaid(state, result, setup, battle = null) {
     return;
   }
   log(state, `Raid at ${tileLabel(state, setup.tile)}${poi != null ? ` (${poiName(t, poi).toLowerCase()})` : ""}: ${result.outcome === "extracted" ? `got out with ${loot.join(", ") || "nothing"}` : "nobody made it out"} (${r.searched}/${r.total} searched, ${r.hours}h).`, result.outcome === "extracted" ? "good" : "death");
+  const pc = r.pieces; // furnihome.js (issue #18): pieces of furniture dropped at the door from exhaustion, or no room for them in the vehicle
+  const team = p && state.parties.includes(p) && partyMembers(state, p).length ? `${teamName(state, p)}: ` : "";
+  if (pc) for (const line of [pc.fullText, pc.text]) if (line) log(state, `${team}${line}`, "warn");
   if (!p || !state.parties.includes(p)) return;
   if (!partyMembers(state, p).length) {
     wipeParty(state, p);
@@ -296,7 +299,7 @@ export function afterRaid(state, result, setup, battle = null) {
   parleyAfterRaid(state, p, result); // parley.js: those who agreed to join; a swap with those who agreed to trade
   // The raid took time; the world moved on meanwhile.
   for (let i = 0; i < r.hours && state.parties.includes(p); i++) tickHour(state);
-  if (state.parties.includes(p)) awaitOrders(state, p, `The team is out of ${tileLabel(state, setup.tile)}${loot.length ? ` with ${loot.join(", ")}` : ""}.`);
+  if (state.parties.includes(p)) awaitOrders(state, p, `The team is out of ${tileLabel(state, setup.tile)}${loot.length ? ` with ${loot.join(", ")}` : ""}.${pc && pc.text ? ` ${pc.text}` : ""}`);
   parleyTrade(state, p, result); // parley.js: a group whose people agreed to trade: its trade window, now the team is out
 }
 
