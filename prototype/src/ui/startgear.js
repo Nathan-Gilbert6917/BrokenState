@@ -158,6 +158,11 @@ export function loadWords(V) {
   return out.length ? out.join(", ") : "empty";
 }
 
+// Its tank and condition as rolled (the user's request 2026-10-25: "Have a random fuel and durability per vehicle based on
+// reroll": hardcore-start.js rollCar, rollVehicle), as the row's chip: "⛽ 45% · 🔧 72%".
+const tankPct = (v) => Math.round((100 * (v.fuel || 0)) / Math.max(1e-9, (VEHICLE_TYPES[v.type] || {}).tank || 1));
+const wearChip = (v) => `<span class="small muted"${tip(`Fuel: ${Math.round(v.fuel * 10) / 10} of its ${(VEHICLE_TYPES[v.type] || {}).tank} tank (${tankPct(v)}%). Condition: ${Math.round(v.condition)}% (a worn vehicle breaks down more). Both rolled with it: 🎲 Reroll vehicle rolls them again`)}>⛽ ${tankPct(v)}% · 🔧 ${Math.round(v.condition)}%</span>`;
+
 // The new-run screen's Starting vehicles (2026-10-24, user request), shown while Start with a vehicle is on, every mode:
 // a row each with its name (Custom: its kind), its Point limit, the points its back takes (n / limit) and its weight
 // (kg / room), 🎲 Random (filled to the limit in the room there is), Edit… (the back's window), Empty and, in Hardcore,
@@ -217,13 +222,14 @@ export function fleetSection(state, ui) {
     const remove = `<button class="mini" data-action="fleet-remove" data-i="${i}"${ui.started ? " disabled" : ""}${tip(`Take this vehicle out of its slot (the slot stays, empty: add one to it again). ${car ? "The car is left behind; the dice are cast all the same. " : ""}The world is built again on the same seed`)}>✕ Remove</button>`;
     // Hardcore (the user's request 2026-10-25): a look at what the dice put in its back, and the dice again.
     const look = hasDice(state, i) ? `<button class="mini" data-action="fleet-view" data-i="${i}"${ui.started ? " disabled" : ""}${tip(`What is in its back: ${loadWords(V)}${rolled ? " (as the dice rolled it)" : ""}`)}>👁 Back</button>` : "";
-    const reroll = hasDice(state, i) ? `<button class="mini" data-action="fleet-reroll" data-i="${i}"${ui.started ? " disabled" : ""}${tip(`Roll this vehicle again: a new kind and what is in its back${car ? "" : ", its tank and condition"}, by whose ${car ? "car" : "vehicle"} it is (who they were)${rolled && !chosen ? "" : ". A kind or back you set goes back to the dice"}. Nothing else changes: the crew, the map and the other vehicles stay as they are`)}>🎲 Reroll vehicle</button>` : "";
+    const reroll = hasDice(state, i) ? `<button class="mini" data-action="fleet-reroll" data-i="${i}"${ui.started ? " disabled" : ""}${tip(`Roll this vehicle again: a new kind, its tank and condition, and what is in its back, by whose ${car ? "car" : "vehicle"} it is (who they were)${rolled && !chosen ? "" : ". A kind or back you set goes back to the dice"}. Nothing else changes: the crew, the map and the other vehicles stay as they are`)}>🎲 Reroll vehicle</button>` : "";
     const rerollBack = hasDice(state, i) ? `<button class="mini" data-action="fleet-reroll-back" data-i="${i}"${ui.started ? " disabled" : ""}${tip(`Roll what is in its back again: new things and supplies, by whose ${car ? "car" : "vehicle"} it is (who they were). Its kind, tank and condition stay as they are${rolled ? "" : "; the back you set goes back to the dice"}`)}>🎲 Reroll back</button>` : "";
     if (!free) { // Customize off: no point limit, points or gear buttons; the back as rolled (the dice's, said in a few words)
       const dice = hasDice(state, i) ? `<span class="small muted"${tip(`As rolled: ${loadWords(shownLoad(state, i))}. Tick Customize to set its back`)}>as rolled</span>` : "";
       return `<div class="row nrveh" style="gap:0.35rem;align-items:center;margin-top:0.25rem">
         ${kind}
         ${driverSel(i)}
+        ${wearChip(info.v)}
         ${look}
         ${reroll}
         ${rerollBack}
@@ -237,6 +243,7 @@ export function fleetSection(state, ui) {
     return `<div class="row nrveh" style="gap:0.35rem;align-items:center;margin-top:0.25rem">
         ${kind}
         ${driverSel(i)}
+        ${wearChip(info.v)}
         <label${tip(`${info.label}'s point limit: what its back may cost (${START_FLEET.MIN}–${START_FLEET.MAX}, ${START_FLEET.LIMIT} by default). Its own, nobody's points${iron ? ". Ironman: the backs stay as rolled" : ""}`)}>Point limit <input type="number" min="${START_FLEET.MIN}" max="${START_FLEET.MAX}" step="${START_FLEET.STEP}" style="width:4.5rem" data-action="fleet-limit" data-i="${i}" value="${f.limit}"${dis}></label>
         ${bar}
         <button class="mini" data-action="fleet-rand" data-i="${i}"${dis}${tip(`Empty its back, then fill it with random things and supplies${info.open ? " (any thing and any material)" : ""} up to its point limit (${f.limit}) in the room there is (${info.room} kg). Each click is a new draw`)}>🎲 Random</button>
@@ -274,11 +281,12 @@ export function fleetViewer(state, ui) {
   const whose = `${carSlot(state, i) ? "The car the team flees in" : info.hard ? "It comes along with the team" : "It is parked at the hub, its back unloaded into the stores on the first day"}${d ? `, ${esc(d.name.split(" ")[0])} at the wheel` : ""}; what is in its back goes with whose it is (who they were)`;
   return `<div class="box"><h1>${esc(info.label)}</h1>
     <div class="small muted">${whose}. ${rolled ? "As the dice rolled it." : "The back set under Customize (the dice's waits under As rolled)."} It weighs ${r1(trunkKg(V))} of the ${info.room} kg it holds${info.hard ? ", and goes with the team as its cargo" : ""}.</div>
+    <div class="small" style="margin-top:0.3rem">Tank ${tankPct(info.v)}% full (${Math.round(info.v.fuel * 10) / 10} of ${(VEHICLE_TYPES[info.v.type] || {}).tank}) · condition ${Math.round(info.v.condition)}%</div>
     <h3 style="margin-top:0.6rem">Things</h3><div>${things}</div>
     <h3 style="margin-top:0.6rem">Supplies</h3>${sups ? `<div class="kv small">${sups}</div>` : `<div class="small muted">No supplies.</div>`}
     <div class="row" style="margin-top:0.8rem;gap:0.4rem;justify-content:flex-end">
       <button data-action="fleet-reroll-back" data-i="${i}"${tip(`Roll what is in its back again: new things and supplies; its kind, tank and condition stay${rolled ? "" : " (the back you set goes back to the dice)"}`)}>🎲 Reroll back</button>
-      <button data-action="fleet-reroll" data-i="${i}"${tip(`Roll this vehicle again: a new kind and what is in its back${carSlot(state, i) ? "" : ", its tank and condition"}${rolled ? "" : " (the back you set goes back to the dice)"}. Nothing else changes`)}>🎲 Reroll vehicle</button>
+      <button data-action="fleet-reroll" data-i="${i}"${tip(`Roll this vehicle again: a new kind, its tank and condition, and what is in its back${rolled ? "" : " (the back you set goes back to the dice)"}. Nothing else changes`)}>🎲 Reroll vehicle</button>
       ${freeEdit(ui) && !ui.ironman ? `<button data-action="fleet-edit" data-i="${i}"${tip("Put things and supplies in its back by hand, priced against its point limit")}>Edit…</button>` : ""}
       <button class="primary" data-action="fleet-view-close">Done</button>
     </div></div>`;
