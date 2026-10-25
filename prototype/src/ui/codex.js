@@ -14,6 +14,8 @@
 import { MEET } from "../sim/trademeet.js"; // meeting to trade: the wait, the groups' halfway rule
 import { FOODS, FOOD_GROUPS } from "../sim/foods.js"; // food by type in the codex
 import { STORE, FACTOR } from "../sim/storage.js"; // the food chain entries: food rooms and spoilage
+import { COLD } from "../sim/appliances.js"; // the appliances' cold rooms (#19)
+import { FRIDGE } from "../sim/data-power.js";
 import { WOOD } from "../sim/woodcutting.js"; // a camp's fire a day
 import { COOK } from "../sim/cooking.js"; // a cook fire's wood
 import { EAT } from "../sim/eating.js"; // "No hot food"
@@ -257,6 +259,7 @@ const SUPPLY_HOW = {
   primers: "A reloading bench needs one for every round. Rare: gun stores, the military; arms dealers and trading groups sell them.",
   blackpowder: "Made at a reloading bench from wood, scrap and food (crafting): used when the smokeless powder runs out. Its loads jam more (×1.5) and are louder.",
   matchprimers: "Made at a reloading bench (crafting, Mechanics 8): used when the factory primers run out. They fail three times as often.",
+  propane: "Bottled gas: a kitchen range off the grid burns 0.1 a batch it cooks (no wood, no power). Grills by houses, hardware stores, gas stations, campgrounds.",
 };
 function supplyEntries() {
   return Object.entries(SUPPLIES).map(([k, v]) => (FOODS[k] ? {
@@ -459,7 +462,7 @@ function placeEntries() {
   out.push({
     key: "k:furniture", cat: "buildings", name: "🛋 Furniture", sub: "Shelves, crates, wardrobes, sofas and desks set at the base",
     stats: FURN_KINDS.filter((k) => useOf(`f_${k}`).storage || useOf(`f_${k}`).comfort || useOf(`f_${k}`).work).map((k) => [FURNITURE_KINDS[k].name, `${FURNITURE_KINDS[k].kg} kg${FURNITURE_KINDS[k].carry === "two" ? " (a load for two)" : ""}, ${FURNITURE_KINDS[k].size[0]} × ${FURNITURE_KINDS[k].size[1]}: ${effectText(`f_${k}`)}`]),
-    text: `Furniture found in the ruins and carried home is set from the stores on the floor of a hut, cabin, lodge, hall or barn (the base map's Build list, Furniture: a click sets it, R turns it). Storage pieces add their room to the base's storage and are containers of their own in the Storage tab: shelves and cabinets take gear first, a wardrobe or a chest of drawers clothing and bags, a bookshelf books; a gun rack holds ${FURN_STORE.gunrack.max} guns and nothing else, a tool chest tools only, a filing cabinet papers only. Comfort pieces cheer whoever sleeps in the same building: a sofa, an armchair or a piano serves ${COMFORT.SEATS} sleepers, decor (chairs, bar stools, a desk) adds up to +${COMFORT.DECOR_MAX} a building, and nobody gets more than +${COMFORT.MAX} a day from it. A found workbench is a crafting bench.`,
+    text: `Furniture found in the ruins and carried home is set from the stores on the floor of a hut, cabin, lodge, hall or barn (the base map's Build list, Furniture: a click sets it, R turns it). Storage pieces add their room to the base's storage and are containers of their own in the Storage tab: shelves and cabinets take gear first, a wardrobe or a chest of drawers clothing and bags, a bookshelf books; a gun rack holds ${FURN_STORE.gunrack.max} guns and nothing else, a tool chest tools only, a filing cabinet papers only. Comfort pieces cheer whoever sleeps in the same building: a sofa, an armchair or a piano serves ${COMFORT.SEATS} sleepers, decor (a potted plant, a floor lamp, a painting, a wall clock, chairs, bar stools, a desk: +0.1 each) adds up to +${COMFORT.DECOR_MAX} a building, and nobody gets more than +${COMFORT.MAX} a day from it. A found workbench is a crafting bench.`,
     how: "Bring pieces home in both arms or a cart, then set them from the base map. Demolish picks one up again; a building pulled down has its furniture carried out into the stores. The governor sets storage pieces before it builds new storage, and comfort pieces while they count.", sprite: null,
   });
   // Shoving people and the dead (sim/shoving.js).
@@ -519,7 +522,7 @@ function foodChainEntries() {
     how: "Open the Food tab when the food chip turns yellow: the verdict names the biggest drain and one or two things to do (a root cellar, cooking the meat before it turns, more people on Farm, Hunt, Fish or Forage, Lean rations).", sprite: null,
   }, {
     key: "k:spoilage", cat: "supplies", name: "🗑️ Spoilage", sub: "How food works",
-    stats: [["Outside", `×${FACTOR.outside} a day, worse in heat and rain`], ["Pantry, storehouse", `×${FACTOR.dry}`], ["Root cellar", `×${FACTOR.cellar} (+${STORE.rootCellar} days of room)`], ["Cold store", "×0.15–0.9 by the season"], ["Walk-in freezer", `×${FACTOR.freezer} while powered`]],
+    stats: [["Outside", `×${FACTOR.outside} a day, worse in heat and rain`], ["Pantry, storehouse", `×${FACTOR.dry}`], ["Root cellar", `×${FACTOR.cellar} (+${STORE.rootCellar} days of room)`], ["Cold store", "×0.15–0.9 by the season"], ["Walk-in freezer", `×${FACTOR.freezer} while powered`], ["Fridge", `×${FACTOR.fridge} while powered (${FRIDGE.room} days a fridge)`], ["Chest freezer", `×${COLD.chest_freezer.factor} while powered (${COLD.chest_freezer.room} days)`], ["Cold case", `×${COLD.cold_case.factor} while powered (${COLD.cold_case.room} days)`]],
     text: "Every food keeps its own time at room temperature (bread days, raw meat two or three, potatoes a month, cans years). Fresh food fills the base's food rooms, the food that spoils fastest in the coldest room first; what does not fit sits outside and spoils fastest. Canned, dry and preserved food needs no room. A lot whose time runs out is thrown out (a line in the log). The soonest to spoil is eaten first.",
     how: "Build a root cellar (or a storehouse, a cold store, a freezer) before the harvest, dry the surplus on drying racks, cook raw meat into meals, and do not hunt more than the base eats in a few days.", sprite: null,
   }, {

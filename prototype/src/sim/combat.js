@@ -41,6 +41,7 @@ import { survivorById, factionById, alive, atBase, homeAt, combatPower, hurt, lo
 import { partyMembers, partyTile, partyCapacity, cargoLoad, cargoRoom, unitsThatFit, wipeParty, leaveVehicle } from "./parties.js";
 import { noteGunfire } from "./fieldheat.js";
 import { GEAR, SUPPLIES, TERRAIN } from "./data.js";
+import * as Weather from "./weather.js"; // the season: a chest freezer's food kept in winter (BOX_LOOT; call-time only)
 import { partyVehicle, partyVehicles, isBike, upgradesOf, armourOf, riderMult, vehicleOdds, UPGRADE_FX, technicalPlated, SEATS, teamDrivers, driversFor } from "./vehicles.js"; // the team's car or truck on the map (placeVehicle); its upgrades (glass, plating)
 import { wearAfterFight, wearSlot, itemDur, medKitBonus } from "./crafting.js";
 import { armorMult, enemyBody, allyBody, bodyEmpty, takeAllBodies, leaveBodies, ARMOR_SLOTS, itemLoad, lootItem, deadBodyFinds, carryMods, carriedThrowables } from "./inventory.js";
@@ -86,6 +87,7 @@ import { syncModes, modeOf, modeRounds, modeRolls, modeAim, modeRefusal, FIRE_MO
 import { MEDS } from "./medfinds.js"; // how rare meds are
 import { bonebackMult, afterHit, onDeath, climbOver, sowerRound, terrorRuns } from "./middead.js"; // the mid game's special dead
 import { placeBodies, spotCheck, wakeNear, sleeperDies, burnBodies } from "./sleepers.js"; // bodies on the ground, the Sleepers among them
+import { sceneBattle, sceneSeen } from "./interiorscenes.js"; // signs of survival in a building: the scenes' bodies, piles and intro lines
 import { stirBodies, carrierRound, burst, swarmHit, swarmBite, crush, tapRefusal, tap, pickUp, putDown, stowBody, botCrush, turnedBody, walkingBody, walkingBox, walksOn, turnedName, turnedLine, dropBodyBox, endBodies, placeWalking } from "./carriers.js"; // the Carrier raises the human dead; its worm swarm; bodies carried, shot, burnt; the walking loot
 import { hasWorm, WORM } from "./worm.js"; // the worm in a living person (half the healing while it is in them)
 import { fieldDims, raidDims, densify, coverTarget, spawnRules, clearEnough, fledFarEnough, raidAreaTypes, raidDeadScale, roomBoxes, raidHeatRate, raidLootShare, raidBig, BIG as BIG_RAID, RAID as RAID_SIZE, CONTACT } from "./battlesize.js"; // map sizes by context, cover, spawns, the anti-slog ends
@@ -137,6 +139,7 @@ import { WINDOW, windowOpen, windowAct, smashWindow, glassNoise, rollWin, winMix
 import { wireStep, cutAct, kitCutter, cutterKeyOf, WIRE } from "./wire.js";
 import { FENCE } from "./data-power.js"; // the fence charger's bite (electric.js)
 import { rollAreaPower } from "./electric.js"; // a generator, a spotlight, a fridge in a raid's container (its own dice)
+import { rollAreaPropane } from "./appliances.js"; // a grill's propane bottle (#19; its own dice)
 import { mineStep, settleMines } from "./mines.js"; // land mines: set off underfoot, the rest kept by the base when it is over // barbed wire snags the living unless they cut it (the user's request 2026-10-19)
 import { CRAWL, FURNITURE, crawlable, overCost, shoveAct, boardAct, tearAct, breakBoarded, breakPiece, boardedName, aiBarricade, kitBoards } from "./barricade.js"; // furniture shoved in the way, doors and windows boarded up, the dead crawling over half cover (the user's request 2026-10-18)
 import { poiFull } from "./pois.js"; // a raid on a point of interest: what that place held untouched (setup.raid.poi)
@@ -4503,6 +4506,7 @@ export function moveAlong(b, u, path) {
     }
     if (u.side === "player" && active(u)) detect(b, u);
     if (b.corpses && b.corpses.length && u.kind !== "zombie" && active(u)) { wakeNear(b, u); spotCheck(b, u); } // sleepers.js: a Sleeper next to them splits open
+    if (b.raid && b.raid.scenes && u.side === "player" && active(u)) sceneSeen(b, u); // interiorscenes.js: a scene's room in sight for the first time
     if (!active(u) || stopAtDoor) break;
   }
   // Dropped on the cover it was going over (an overwatch shot, the flames, the glass): it falls back off it, to the
@@ -5460,6 +5464,7 @@ function startPlayerTurn(state, b) {
   burnBodies(b); // sleepers.js: bodies in the flames burn, a Sleeper's worms with them
   terrorRuns(b); // middead.js: whoever a Nightmare's scream panicked spends the turn running
   for (const u of b.units) if (u.side === "player" && active(u)) spotCheck(b, u); // sleepers.js: a body twitches
+  if (b.raid && b.raid.scenes) for (const u of b.units) if (u.side === "player" && active(u)) sceneSeen(b, u); // interiorscenes.js: a scene seen
   // A base battle (interior.js): the wall breached (on to the yard map), the yard lost (the last stand).
   if (b.tier && !b.over) tierPlayerTurn(state, b);
   if (b.raid && b.raid.folk && !b.over) folkTick(state, b); // floorfolk.js: the nest woken by the Heat or the noise of the enemy phase
@@ -6836,6 +6841,40 @@ export const AREAS = {
   miltrucks: { name: "Army trucks", outdoor: true, trucks: true, boxes: ["miltruck"], loot: {}, gear: [] },
   cargodrop: { name: "Scattered cargo",  outdoor: true, boxes: ["crate", "crate", "crate"], loot: { food: [0.6, 3, 8], water: [0.5, 2, 6], meds: [0.25, 1, 2], preserved: [0.35, 2, 6], ammo: [0.25, 5, 15] }, gear: [["assaultpack", 0.03], ["bandagekit", 0.05], ["rucksack", 0.03], ["stove", 0.03]] },
 };
+// What a piece of furniture holds (the user's request 2026-10-25, issue #10: homes furnished room by room,
+// roomlayout.js): a container whose kind is here rolls this table in place of its room's (AREAS) — the room's own rows
+// still rolled at `rest` times their chances, so a farmhouse wardrobe can still hold a farm rifle. A fridge holds
+// mostly spoiled food (gone: what is left is a little that keeps, tins and drinks), a chest freezer frozen food that
+// has gone bad unless it is winter (cold: its rows then), a medicine cabinet meds and bandages, a wardrobe clothes and
+// a bag, a nightstand a pistol now and then (the house's own gun rates, gathered where people keep them), a tool chest
+// tools and parts. Tuned with tools/interiortest.js so a house holds what it did before within ±10%.
+export const BOX_LOOT = {
+  fridge:     { rest: 0, loot: { food: [0.4, 1, 3], water: [0.7, 2, 6], preserved: [0.4, 1, 3] }, gear: [["bottle", 0.08]] },
+  freezer:    { rest: 0, loot: { food: [0.15, 1, 3] }, cold: { food: [0.85, 3, 9], preserved: [0.2, 1, 3] }, gear: [] },
+  medcab:     { rest: 0.6, loot: { meds: [0.5, 1, 2], water: [0.1, 1, 1] }, gear: [["bandagekit", 0.05]] },
+  wardrobe:   { rest: 1, loot: {}, gear: [["backpack", 0.04], ["slingbag", 0.04], ["leatherjacket", 0.03], ["sportspads", 0.02]] },
+  dresser:    { rest: 1, loot: {}, gear: [["slingbag", 0.02], ["flashlight", 0.02]] },
+  nightstand: { rest: 0.35, loot: { ammo: [0.3, 4, 12], meds: [0.1, 1, 1] }, gear: [["pistol", 0.09], ["revolver", 0.035], ["compact9", 0.045], ["pistol22", 0.02], ["flashlight", 0.06], ["knife", 0.05]] },
+  toolchest:  { rest: 0.3, loot: { scrap: [0.6, 2, 6], parts: [0.5, 1, 2] }, gear: [["hammer", 0.1], ["crowbar", 0.06], ["prybar", 0.06], ["sledge", 0.03], ["flashlight", 0.04]] },
+  tvstand:    { rest: 0.8, loot: { scrap: [0.35, 1, 3], parts: [0.1, 1, 1] }, gear: [] },
+};
+const boxDefs = new Map();
+// The table a container rolls: its room's (AREAS[type]), or its kind's (BOX_LOOT) with the room's rows at `rest` times
+// their chances (cold: a chest freezer in winter). The same object for the same three every time.
+export function boxLoot(type, kind, cold = false) {
+  const A = AREAS[type], K = A && BOX_LOOT[kind];
+  if (!K) return A;
+  const key = `${type}|${kind}|${cold ? 1 : 0}`;
+  if (!boxDefs.has(key)) {
+    const loot = {};
+    if (K.rest > 0) for (const [k, [p, lo, hi]] of Object.entries(A.loot)) loot[k] = [p * K.rest, lo, hi];
+    Object.assign(loot, (cold && K.cold) || K.loot);
+    const gear = [...K.gear, ...(K.rest > 0 ? A.gear.map(([k, p]) => [k, p * K.rest]) : [])];
+    boxDefs.set(key, { ...A, loot, gear });
+  }
+  return boxDefs.get(key);
+}
+
 export const AREA_SETS = {
   town: ["house", "house", "store", "garage", "kitchen", "wreck"], city: ["store", "office", "office", "house", "warehouse", "wreck"],
   farm: ["farmhouse", "barn", "barn", "campsite"], gas: ["store", "garage", "pumps", "wreck"], mall: ["store", "store", "lockers", "kitchen", "warehouse"],
@@ -7322,6 +7361,7 @@ export function createRaid(state, setup) {
   truckCrews(state, b); // miltrucks.js: the turned crews standing round the Army trucks
   placeParley(state, b, groups.filter((g) => g.parley)); // parley.js: an AI group's party scavenging the site (scavenge.js raidEnemies)
   placeBodies(b, state.seed); // sleepers.js: bodies lie about, Sleepers among them
+  if (pick) sceneBattle(b, map); // interiorscenes.js: the scenes' dead (b.corpses by floor), the survivors' bodies, their piles
   placeWalking(state, b); // carriers.js: the walking dead that drifted near this tile, among the ordinary dead
   if (b.raid.camp) campRaidUnits(state, b, b.raid.camp); // campsite.js: its tents on the battle's list, the campers round the fire or asleep in the tents, the dead among them, the bodies, the fire's glow
   battlePerks(state, b); // skills.js: the guards' perks and XP tallies too (people, by your rule)
@@ -7544,13 +7584,13 @@ export function searchBox(state, b, u, box, open = false, quick = false) {
       if (rng.chance(0.25)) sup.food = rng.int(1, 3);
       if (rng.chance(MEDS.BODY_HUMAN)) sup.meds = 1; // medfinds.js
       const kit = KITS[box.kit] || KITS.raiders;
-      if (rng.chance(0.3)) {
+      if (box.full || rng.chance(0.3)) { // box.full: a scene's survivor (interiorscenes.js): their kit always on them
         const key = rng.chance(0.5) && GEAR[box.weapon] ? box.weapon : swapGun(bodyGunSource(box.kit), rng.pick(kit.loot), rng); // gundist.js: a spare gun of their kind
         const it = lootItem(key, kitSource(box.kit), spend(rng)); // itemcond.js: a soldier's rifle looked after, a raider's not
         if (key === box.weapon && box.uid != null) { carryMods(unitById(b, box.uid), it); enemyGunLoaded(unitById(b, box.uid), it); } // gunmods.js: their gun's attachments come with it; gunload.js: the rounds left in it
         gear.push(it);
       }
-      if (kit.finds && rng.chance(BODY_FINDS)) gear.push(lootItem(rng.pick(kit.finds), kitSource(box.kit), rng)); // what was in their pockets
+      if (kit.finds && (box.full || rng.chance(BODY_FINDS))) gear.push(lootItem(rng.pick(kit.finds), kitSource(box.kit), rng)); // what was in their pockets
       gear.push(...carriedThrowables(box.uid != null ? unitById(b, box.uid) : null, kitSource(box.kit))); // inventory.js: a flashbang they never threw
       const bu = box.uid != null ? unitById(b, box.uid) : null;
       if (bu) { const L = launcherLoot(bu, kitSource(box.kit)); gear.push(...L.gear); for (const [k, n] of Object.entries(L.sup)) sup[k] = (sup[k] || 0) + n; blastLoot(b, bu, { gear, sup }); } // launchers.js: their launcher, its rounds; a blast's wear
@@ -7574,7 +7614,7 @@ export function searchBox(state, b, u, box, open = false, quick = false) {
       Object.assign(sup, got.sup);
       gear.push(...got.gear);
     } else {
-      const def = AREAS[R.areas[box.area].type];
+      const def = boxLoot(R.areas[box.area].type, box.kind, box.kind === "freezer" && Weather.season(state).key === "winter"); // a piece's own table (BOX_LOOT: a fridge, a nightstand...), else the room's
       const site = poiKind || (state.tiles[b.tileId] && state.tiles[b.tileId].loc ? state.tiles[b.tileId].loc.type : null);
       const src = areaSource(R.areas[box.area].type, site); // itemcond.js: a house's things used, a shop's picked over, a wreck's scorched
       const gunSite = (b.setup && b.setup.raid && b.setup.raid.gunSite) || site; // gundist.js: the building a city crawl's map is (a police station, an Army checkpoint), else the site
@@ -7611,6 +7651,9 @@ export function searchBox(state, b, u, box, open = false, quick = false) {
       // Arrows: a quiver in a cabin's locker, bolts on a shop shelf (loot.js AREA_ARROWS; its own dice too).
       const arrows = rollAreaArrows(state, b.tileId, R.areas[box.area].type, box.kind, `box${bid}`);
       if (arrows > 0) sup.arrows = (sup.arrows || 0) + arrows;
+      // Propane: a grill's bottle by a house, a hardware store's cage (appliances.js AREA_PROPANE; its own dice too).
+      const gas = rollAreaPropane(state, b.tileId, R.areas[box.area].type, `box${bid}`);
+      if (gas > 0) sup.propane = (sup.propane || 0) + gas;
       // A tent bag: a campsite's, a garage's shelf, barracks stores (tents.js AREA_TENTS; its own dice too).
       const tent = rollAreaTent(state, b.tileId, R.areas[box.area].type, site, `box${bid}`);
       if (tent) gear.push(tent);

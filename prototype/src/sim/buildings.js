@@ -35,6 +35,7 @@ import { furnitureBeds, furnitureProblem, canSetFurniture, setFurniture, pickUpF
 import { POWER_BUILDINGS } from "./data-power.js"; // the power grid: found generators, spotlights, fridges, the breaker panel, the ammo press, the well pump, the fence charger; 2026-10-24 the solar array, the battery bank, the perimeter alarm, the electric heaters, the charging station
 import { isGen } from "./power.js"; // a battery bank needs a generator or a solar array to charge it (call-time only)
 import { isSetPiece, placedProblem, canSetPlaced, setPlaced, pickUpPlaced } from "./electric.js"; // the pieces set from the stores (call-time only)
+import { rangeStatus } from "./appliances.js"; // a kitchen range's status: idle with no power and no propane (#19; call-time only)
 import { NEEDS_POWER, isPowered as poweredNow } from "./power.js"; // the ammo press runs only on power
 import { terraWaits, terraHour } from "./terraform.js"; // terraforming the base map: only builders with a shovel dig (call-time only)
 
@@ -1055,6 +1056,7 @@ export function recipeOutput(s, recipe, base = null, state = null, st = null) {
 }
 
 export function stationStatus(state, base, st) {
+  if (st.type === "range") return rangeStatus(state, base, st); // appliances.js: a cooking station, not a workshop's (#19)
   const recipe = BUILDINGS[st.type].station;
   const r = RECIPES[recipe];
   const op = stationOperator(state, base, st);

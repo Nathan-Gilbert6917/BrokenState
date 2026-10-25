@@ -26,7 +26,7 @@ const STRIDE = { run: 1, walk: 1.5, sneak: 2, shuffle: 2, runner: 1, brute: 2, c
 const GAIT_GAIN = { run: 1.25, walk: 1, sneak: 0.4 };
 
 // The ground under a cell. ground: { mud, snow } from the weather on the battle's tile (outdoors only).
-const HARD_FL = { tile: "hard", conc: "hard", wood: "wood", carpet: "carpet", dirt: "dirt" };
+const HARD_FL = { tile: "hard", conc: "hard", wood: "wood", carpet: "carpet", dirt: "dirt", hardwood: "wood", plank: "wood", lino: "hard", checker: "hard", rubber: "carpet", steel: "hard" }; // the new floors of 2026-10-25 (decor, issue #13)
 const CELL_SURF = {
   stairs: "wood", ladder: "wood", siegeladder: "wood", tower: "wood", walkway: "wood", gate: "wood", loft: "wood",
   roof: "hard", rubble: "gravel", smashed: "gravel", breach: "gravel", wire: "gravel", trench: "mud", spikes: "dirt", tanktrap: "hard",

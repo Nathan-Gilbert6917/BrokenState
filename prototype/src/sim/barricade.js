@@ -148,12 +148,16 @@ function movePiece(b, src, p, dst, d) {
   const back = src.frame || null;
   delete src.hp; delete src.mhp; delete src.moved; delete src.frame;
   if (back) Object.assign(src, back); else src.k = "open";
-  // The cell it goes to: a frame under it is kept.
-  if (isFrame(dst)) { const fr = {}; for (const k of FRAME_KEYS) if (dst[k] !== undefined) fr[k] = dst[k]; for (const k of FRAME_KEYS) delete dst[k]; dst.frame = fr; }
-  dst.k = data.k; dst.hp = data.hp; dst.mhp = data.mhp; dst.moved = true;
+  setPiece(dst, data.k, data.hp, data.mhp);
   // A raid's container stands on its piece: it keeps its cell (raidloot.js boxAt, searchableNear).
   if (b.raid && b.raid.containers) for (const c of b.raid.containers) if (c.x === p.x && c.y === p.y && (c.f || 0) === (b.floor || 0) && !c.cart) { c.x = d.x; c.y = d.y; } // (a cart moves by carts.js shoveCart)
   b.losCache.fill(0);
+}
+// A piece set on the cell dst as a shoved one stands (hit points, c.moved), the door frame under it kept (c.frame):
+// movePiece, and interiorscenes.js (the pieces a scene's people dragged into place before you came).
+export function setPiece(dst, k, hp = FURNITURE[k].hp, mhp = hp) {
+  if (isFrame(dst)) { const fr = {}; for (const q of FRAME_KEYS) if (dst[q] !== undefined) fr[q] = dst[q]; for (const q of FRAME_KEYS) delete dst[q]; dst.frame = fr; }
+  dst.k = k; dst.hp = hp; dst.mhp = mhp; dst.moved = true;
 }
 // A shoved piece smashed (combat.js breakCell): the door frame it stood in is back, else rubble.
 export function breakPiece(b, c) {

@@ -219,6 +219,7 @@ import { GEAR } from "./data.js"; // the rechargeable gear the charger tops up
 import { itemDur, itemDurMax } from "./crafting.js"; // its uses left (call-time only)
 import { allCarried } from "./inventory.js"; // what their members carry (call-time only)
 import { membersAt } from "./members.js"; // their members at a base (call-time only)
+import { groupAppliancesDaily, groupApplianceUsers } from "./appliances.js"; // the appliances set at their bases (#19; call-time only)
 import { atWar } from "./diplomacy.js"; // the alarm early for a group at war (call-time only)
 
 /** @typedef {{ water?: number, farms?: number, beds?: number, walls?: number, bench?: number, store?: number, sickbay?: number, pens?: number, camp?: number, still?: number, power?: number, powerTier?: number, freezer?: number, sealer?: number, kitchen?: number, shop?: number, radio?: number, garage?: number, reload?: number, gate?: number, storebox?: number, crates?: number, shed?: number, warehouse?: number, mill?: number, grinder?: number, hall?: number, solar?: number, bank?: number, alarm?: number, heaters?: number, charger?: number, powerDay?: any, mach?: Object<string, { wear: number, spares: number, broken: boolean, on?: boolean, noSpares?: boolean, charge?: number, giving?: boolean }> }} Works */
@@ -810,8 +811,12 @@ export function groupMachinesDaily(state, f) {
   const M = W.MACH, d = day(state);
   const dayIdx = Math.floor(Math.max(0, state.hour) / 24); // the day this midnight tick starts (grouppower.js header; factions.js's `today − 1`)
   if (f.works && f.bases.some((t) => n(f.works[t], "power"))) groupFuelFlowDaily(f); // gen-tiers: their fuel in and out (the upgrade's fuel rule)
+  groupAppliancesDaily(state, f); // appliances.js (#19): what lies in their armory set by your rule
+  const H = homesOf(state, f);
   for (const tile of f.bases) {
     const w = f.works && f.works[tile];
+    const appl = groupApplianceUsers(H[tile]); // their powered appliances: users of the day's budget after the sealer, on for the day when served
+    for (const u of appl) u.rec.groupOn = false;
     if (!w || !ALL_MACH.some((k) => n(w, k))) { if (w && w.powerDay) delete w.powerDay; continue; }
     const st = f.stock;
     // Repairs first: a broken machine is fixed the day they can pay your proper repair (groups-power-grid: electronics as
@@ -835,13 +840,16 @@ export function groupMachinesDaily(state, f) {
     // from the works standing and not broken, the sun, the generator at its tier only when the sun and the bank do not
     // cover the hour, the bank last; the fuel genBurn ÷ 24 an hour run (tier 1 all day: the flat 2 as before).
     const bank = machOf(w, "bank");
-    const pd = powerDayBudget(state, tile, dayIdx, { users: gridUsers(have, heatingDay(state, dayIdx)), arrays: have("solar"), banks: have("bank"), charge: bank.charge || 0, giving: !!bank.giving, tier: ok("power") ? groupGenTier(w) : 0, fuel: st.fuel || 0 });
+    const users = gridUsers(have, heatingDay(state, dayIdx));
+    users.splice(users.filter((u) => u.k === "freezer" || u.k === "sealer").length, 0, ...appl); // your POWER_USERS order: the fridge and the appliances after the sealer, before the alarm
+    const pd = powerDayBudget(state, tile, dayIdx, { users, arrays: have("solar"), banks: have("bank"), charge: bank.charge || 0, giving: !!bank.giving, tier: ok("power") ? groupGenTier(w) : 0, fuel: st.fuel || 0 });
     w.powerDay = pd;
     if (pd.burn > 0) { const was = st.fuel || 0; st.fuel = Math.max(0, was - pd.burn); if (ff) ff.burned = (ff.burned || 0) + (was - st.fuel); }
     ran.power = pd.genHours > 0;
     if (have("bank")) { bank.charge = pd.charge; bank.giving = pd.giving; ran.bank = pd.cycled; } else if (bank.charge) { bank.charge = 0; bank.giving = false; }
     ran.solar = have("solar") > 0 && pd.solarMade > 0;
     for (const k of ["freezer", "sealer", "alarm", "heaters", "charger"]) if (n(w, k)) { const m = machOf(w, k); m.on = ok(k) && servedToday(pd, k); ran[k] = ok(k) && (pd.servedHours[k] || 0) > 0; } // on: served GRID.onShare of its hours; ran: a day it had power (your FIXTURES power: true)
+    for (const u of appl) u.rec.groupOn = servedToday(pd, u.k); // appliances.js groupColdRooms: their food keeps in it today
     if (ran.charger) f.charged = (f.charged || 0) + groupChargeDaily(state, f, tile, pd.chargeHours); // the station's day: drained gear topped up
     // The freezer on: their soonest-to-spoil food (up to M.room days) ages at a twentieth (factions.js ageCoarse frozen).
     // Wear, spares, breaking (your fixtures' numbers, coarse). A machine with moving parts (use) wears by the days it ran

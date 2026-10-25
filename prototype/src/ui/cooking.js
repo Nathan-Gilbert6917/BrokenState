@@ -9,8 +9,9 @@ import { GEAR } from "../sim/data.js";
 import {
   COOK, POISON, COOK_RECIPES, RECIPE_KEYS, CLASSES, NEEDS_NAME, STATIONS, stationName, stationsAt, stationState, stationWhy,
   ensureStations, addBill, removeBill, moveBill, setBill, setStationClean, billTarget, billHave, billDone, modeText,
-  recipeSkillOk, madeAt, booksFor, recipeText, machineAt, skillPz, poisonChance, kitchenCrew, fireCrew, cookingHelp,
+  recipeSkillOk, madeAt, booksFor, recipeText, machineAt, skillPz, poisonChance, crewOf, cookingHelp,
 } from "../sim/cooking.js";
+import { rangeStatus, ovenBoost, ovenAt, microwaveOn, OVEN, MICROWAVE } from "../sim/appliances.js"; // the kitchen range, the oven, the microwave (#19)
 import { isKnown } from "../sim/blueprints.js";
 import { pbar, badge, sectionHead, infoTip } from "./uikit.js";
 
@@ -83,11 +84,12 @@ function stationDay(state, b, key) {
 function crewLine(state, b, key) {
   const why = stationWhy(state, b, key);
   if (why) return `<div class="small warn">${esc(why)}: nothing cooks here today.</div>`;
-  const crew = key === "canteen" ? kitchenCrew(state, b) : fireCrew(state, b);
-  if (!crew.length) return `<div class="small warn">${key === "canteen" ? "No cook on duty: put someone on Cook (the Work tab)." : "Nobody home to tend the fire."}</div>`;
+  const crew = crewOf(state, b, key); // the Kitchen's cooks, the range's (sim/cooking.js rangeCrew, #19), the fire's tender
+  if (!crew.length) return `<div class="small warn">${key === "canteen" ? "No cook on duty: put someone on Cook (the Work tab)." : key === "range" ? "Nobody free to cook at the range (the Kitchen's cooks are busy there)." : "Nobody home to tend the fire."}</div>`;
+  const fuel = key === "range" ? ` · ${esc(rangeStatus(state, b).reason)}${ovenBoost(state, b) > 1 ? ` · the oven beside it ×${OVEN.boost}` : ovenAt(b) ? " · an oven here: it bakes" : ""}` : "";
   const S = stationState(b, key);
   const best = crew[0];
-  return `<div class="small"${tip(`Food poisoning a day of food of their meals: ${pct(skillPz(best.lvl))} at Cooking ${best.lvl}, ×${r1(1 + POISON.dirt * (S.dirt || 0) / 100)} for the dirt now. RimWorld's curve: ${pct(skillPz(0))} at Cooking 0, ${pct(skillPz(5))} at 5, ${pct(skillPz(10))} at 10, ${pct(skillPz(20))} at 20.`)}>${key === "canteen" ? "Cooks" : "Tending it"}: ${crew.map((c) => `${esc(first(c.s))} (Cooking ${c.lvl}, ${r1(c.hours)}h)`).join(", ")} · meals ${pct(poisonChance(best.lvl, S.dirt || 0))} food poisoning</div>`;
+  return `<div class="small"${tip(`Food poisoning a day of food of their meals: ${pct(skillPz(best.lvl))} at Cooking ${best.lvl}, ×${r1(1 + POISON.dirt * (S.dirt || 0) / 100)} for the dirt now. RimWorld's curve: ${pct(skillPz(0))} at Cooking 0, ${pct(skillPz(5))} at 5, ${pct(skillPz(10))} at 10, ${pct(skillPz(20))} at 20.`)}>${key === "canteen" ? "Cooks" : "Tending it"}: ${crew.map((c) => `${esc(first(c.s))} (Cooking ${c.lvl}, ${r1(c.hours)}h)`).join(", ")} · meals ${pct(poisonChance(best.lvl, S.dirt || 0))} food poisoning${fuel}${microwaveOn(b) ? ` · the microwave ×${MICROWAVE.boost} on the meals` : ""}</div>`;
 }
 // The add-a-bill select: every recipe made at this station (locked ones say why).
 function addSelect(state, b, key) {

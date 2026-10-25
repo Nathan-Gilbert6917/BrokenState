@@ -117,6 +117,24 @@ function f_pew(p) { // a church pew, side on: a long bench and its tall back, ca
   R(p, 0, 9, 15, 10, WOOD); R(p, 0, 2, 15, 3, WOODL); V(p, 0, 2, 15, WOODD); V(p, 15, 2, 15, WOODD);
   for (const x of [4, 8, 11]) V(p, x, 4, 8, WOOD); H(p, 1, 14, 13, WOODD);
 }
+// ---------- decor (#13's kinds) ----------
+function f_plant(p) { // a potted plant: a terracotta pot, a spray of leaves
+  box(p, 5, 10, 10, 15, "#b06a46"); H(p, 4, 11, 10, "#c98a64");
+  for (const [x0, y0, x1, y1] of [[7, 9, 3, 2], [8, 9, 12, 1], [7, 9, 7, 0], [8, 9, 14, 6], [7, 9, 1, 6]]) line(p, x0, y0, x1, y1, "#5f9a3c");
+  R(p, 5, 4, 10, 7, "#4f8a3a");
+}
+function f_floorlamp(p) { // a standing lamp: a cream shade, a thin brass pole, a round foot
+  R(p, 4, 0, 11, 4, "#efe6d2"); H(p, 3, 12, 5, "#d8cdb2"); V(p, 7, 6, 14, "#b8952a"); V(p, 8, 6, 14, "#d9b13b"); H(p, 4, 11, 15, "#8a7244");
+}
+function f_painting(p) { // a framed landscape: a gilt frame, sky, hills, a sun
+  box(p, 0, 1, 15, 14, "#a8842a"); R(p, 2, 3, 13, 8, "#5f93cf"); R(p, 2, 9, 13, 12, "#4f8a3a");
+  line(p, 2, 9, 7, 6, "#356127"); line(p, 7, 6, 13, 9, "#356127"); R(p, 10, 4, 11, 5, "#f2d36a");
+}
+function f_wallclock(p) { // a round wall clock: a white face, the hours, two hands
+  oval(p, 1, 1, 14, 14, "#563820"); oval(p, 3, 3, 12, 12, "#eef0f2");
+  for (const [x, y] of [[7, 3], [12, 7], [7, 12], [3, 7]]) p.set(x, y, "#202226");
+  V(p, 7, 4, 7, "#202226"); H(p, 7, 10, 7, "#c8402f");
+}
 // ---------- work ----------
 function f_table(p) { // a kitchen table: a plank top, four legs, a cloth runner
   R(p, 0, 5, 15, 7, WOODL); H(p, 0, 15, 5, "#b98a58"); legs(p, 1, 14, 8, 15, WOOD); legs(p, 4, 11, 8, 13, WOODD);
@@ -142,5 +160,5 @@ function f_optable(p) { // an operating table: a padded green top on a steel col
 export const GEAR_ART = {
   f_shelf, f_locker, f_cabinet, f_counter, f_crate, f_rack, f_filing, f_bookshelf, f_wardrobe, f_dresser, f_nightstand, f_tvstand, f_medcab,
   f_vending, f_checkout, f_displaycase, f_toolchest, f_gunrack, f_schooldesk, f_sofa, f_armchair, f_chair, f_barstool, f_piano, f_pew,
-  f_table, f_desk, f_teacherdesk, f_workbench, f_optable,
+  f_table, f_desk, f_teacherdesk, f_workbench, f_optable, f_plant, f_floorlamp, f_painting, f_wallclock,
 };

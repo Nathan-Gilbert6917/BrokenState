@@ -48,11 +48,12 @@ export const FURN_STORE = {
 // person sleeping in a building with comfort pieces in it.
 //   SEATS      a sofa, an armchair, a piano, a dining table each serves this many of the building's sleepers: with more
 //              sleepers than its pieces serve, each gets their share (2 sofas for 12 sleepers: +0.5 each; 1: +0.25)
-//   DECOR_MAX  decor (DECOR: a chair, a bar stool, a desk: the catalogue's +0.1 pieces) adds at most this a building
+//   DECOR_MAX  decor (DECOR: a plant, a floor lamp, a painting, a wall clock, a chair, a bar stool, a desk; DECOR_MOOD
+//              each) adds at most this a building
 //   books      a bookshelf with a book or a manual kept in it (containers.js) counts as a comfort piece of this much
 //   MAX        a person's comfort line at most (a base's: the best building's)
 export const COMFORT = { SEATS: 6, DECOR_MAX: 0.5, books: 0.25, MAX: 1.5 };
-export const DECOR = new Set(["chair", "barstool", "desk", "teacherdesk"]);
+export const DECOR = new Set(["chair", "barstool", "desk", "teacherdesk", "plant", "floorlamp", "painting", "wallclock"]); // #13's decor kinds too: the ticket's +0.1 each, whatever their row's comfort
 export const DECOR_MOOD = 0.1; // a desk's, as decor
 // Salvage (inventory.js SALVAGE_ELECTRONICS): a server rack taken apart gives its boards.
 export const FURN_SALVAGE = { f_serverrack: 3 }; // (the server rack's item: #12 merges it into GEAR)
