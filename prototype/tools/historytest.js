@@ -25,6 +25,7 @@ import {
   STOCK_KEYS, HISTORY, causeOf, deathsByCause, worstDay,
 } from "../src/sim/history.js";
 import { ledgerModal, runSummaryHTML, stockChipTrend, notableEvents, ledgerKey, LEDGER_ACTIONS, RANGES, ledgerHelp } from "../src/ui/ledger.js";
+import { ACH_ACTIONS } from "../src/ui/achievements.js";
 import { renderModal, topbarParts } from "../src/ui/ui.js";
 import { TL_ACTIONS } from "../src/ui/timelapse.js";
 import { helpTopics } from "../src/ui/help.js";
@@ -64,7 +65,7 @@ function tagsBalanced(html) {
   }
   return stack.length === 0;
 }
-const HANDLERS = new Set([...Object.keys(LEDGER_ACTIONS), ...Object.keys(TL_ACTIONS), "keepplaying", "restart"]);
+const HANDLERS = new Set([...Object.keys(LEDGER_ACTIONS), ...Object.keys(TL_ACTIONS), ...Object.keys(ACH_ACTIONS), "keepplaying", "restart"]); // ACH_ACTIONS: the end screens' 🏆 Achievements (ui/achievements.js)
 function screenOk(html, where) {
   check(typeof html === "string" && html.length > 0, `${where}: renders`);
   const bad = SCAN.exec(html);
