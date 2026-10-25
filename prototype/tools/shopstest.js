@@ -382,7 +382,7 @@ section("Laid out for their kind (shoplayout.js, issue #16)");
   const SIG = {
     grocery: ["coldcase", "rack"], corner: ["coldcase"], gasstation: ["coldcase"], liquor: ["coldcase"], truckstop: ["coldcase", "barcounter"], pharmacy: ["rack"], sportshop: ["rack"], petstore: ["tank"],
     feedstore: ["rack"], garden: ["pottingbench"], hardware: ["workbench", "rack"], gunstore: ["displaycase", "gunrack"], pawnshop: ["displaycase", "bars"], electronics: ["workbench"], radioshop: ["workbench"],
-    bookstore: ["bookshelf"], clothing: ["clothesrack"], restaurant: ["table"], diner: ["barcounter", "barstool"], pizza: ["table"], bar: ["barcounter", "barstool"], // a pizza place by its format since issue #33 (a counter, a dining room, a buffet...) supermarket: ["coldcase", "rack"], deptstore: ["clothesrack"],
+    bookstore: ["bookshelf"], clothing: ["clothesrack"], restaurant: ["table"], diner: ["table"], pizza: ["table"], bar: ["barcounter"], // a pizza place, a diner, a bar by its format since issue #33 (a counter, a dining room, a buffet...) supermarket: ["coldcase", "rack"], deptstore: ["clothesrack"],
   };
   const errs = {}, seen = {};
   const err = (k, msg) => { (errs[k] = errs[k] || []).push(msg); };
