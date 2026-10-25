@@ -72,7 +72,7 @@ function fridge(p) { // a tall white fridge-freezer: two doors, the handles, a l
 
 // The appliances (#19, sim/data-appliances.js): a low white chest freezer, a shop's glass-door cold case, a four-ring
 // range, a wall oven with its window, a countertop microwave; and propane, a squat white grill bottle.
-function f_chestfreezer(p) { // a low white chest: the lid's seam, a handle, a little shade down its right side
+function f_freezer(p) { // a low white chest: the lid's seam, a handle, a little shade down its right side
   box(p, 1, 5, 14, 14, C.white, C.white, C.whiteD);
   H(p, 1, 14, 7, C.whiteD);
   R(p, 6, 8, 9, 8, C.silverD);
@@ -120,5 +120,5 @@ function propane(p) { // a white grill bottle: the collar and its handholds, the
   R(p, 4, 14, 11, 15, C.silverD);
 }
 
-export const GEAR_ART = { genset_inverter, genset_house, genset_contractor, genset_standby, genset_military, spotlamp, fridge, f_chestfreezer, f_coldcase, f_stove, f_oven, f_microwave };
+export const GEAR_ART = { genset_inverter, genset_house, genset_contractor, genset_standby, genset_military, spotlamp, fridge, f_freezer, f_coldcase, f_stove, f_oven, f_microwave };
 export const SUPPLY_ART = { propane };
