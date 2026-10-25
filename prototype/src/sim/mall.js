@@ -88,7 +88,7 @@ export function mallArchetype(kind, rng, o = {}) {
       const bw = o.w || rng.int(MALL.CINEMA.W[0], MALL.CINEMA.W[1]), bh = o.d || rng.int(17, 20);
       const n = clamp(Math.floor((bw - 2) / MALL.CINEMA.SCREEN), 2, 5);
       const screens = Array.from({ length: n }, (_, i) => ["*", { role: "screen", name: `Screen ${i + 1}`, lay: "screen" }]);
-      return base(bw, bh, { split: "y", parts: [[6, { split: "x", parts: leaves([["*", { role: "lobby", name: "Cinema lobby", type: "cinema", entry: true, lay: "concession", fl: "carpet", maxBoxes: 3 }], [5, { role: "restroom", name: "Cinema restrooms" }]]) }], ["*", { split: "x", parts: screens }], [3, { role: "projection", name: "Projection booth", hub: true, lay: "projection" }]] }, { foot: "wide", windows: false });
+      return base(bw, bh, { split: "y", parts: [[6, { split: "x", parts: leaves([["*", { role: "lobby", name: "Cinema lobby", type: "cinema", entry: true, lay: "concession", fl: "carpet", maxBoxes: 3 }], [5, { role: "restroom", name: "Cinema restrooms" }]]) }], ["*", { split: "x", parts: screens }], [3, { role: "projection", name: "Projection booth", hub: true, lay: "projection" }]] }, { foot: "wide", windows: false }); // a real cinema's size: its map up to battlesize.js MAP_CAP.cinema
     }
     case "arcade": {
       const bw = o.w || rng.int(14, 18), bh = o.d || rng.int(16, 19);
