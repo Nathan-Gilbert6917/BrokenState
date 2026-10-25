@@ -188,6 +188,9 @@ export function deserializeState(save) {
   // Rooms laid out room by room (roomlayout.js, 2026-10-25): a save from before keeps every building's old furnishing,
   // so its places' containers keep their ids (poicont.js poi.cont, citycrawl.js restoreBuilding).
   if (!state.roomsV) { state.roomsLegacy = true; state.roomsV = 1; }
+  // Buildings at real size (data-buildingsize.js, issue #24, 2026-10-25): a save from before keeps every building's
+  // footprint and storeys (worldcfg.js legacyScale), so its places, their containers and the crawl's snapshots stay as they were.
+  if (!state.scaleV) { state.scaleLegacy = true; state.scaleV = 1; }
   if (!state.woodcutting) {
     for (const b of state.bases || []) if (b.stock && !Number.isFinite(b.stock.wood)) b.stock.wood = 0;
     for (const r of (state.work && state.work.roles) || []) if (r.pri && r.pri.wood == null && r.pri.forage > 0) r.pri.wood = r.pri.forage;
