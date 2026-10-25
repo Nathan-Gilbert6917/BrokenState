@@ -12,7 +12,9 @@
 // (buildvariants.js LAYOUTS, spec.variant); every layout of a type must turn up; each layout's most common plan must
 // differ from every other layout's in at least two of roles, adj, ent, shape, st and corridor-or-open-plan (corridor:
 // it has a corridor or a hall), so a variant is a distinct plan and not a recolour. An older save's building takes no
-// variant (the roomsLegacy rule). A POI's layout names it (pois.js poiName).
+// variant (the roomsLegacy rule). A POI's layout names it (pois.js poiName). The motel's five are each checked for
+// their own rooms (motelChecks), and every layout's loot is printed (the tables' value and the containers a building;
+// every layout has some to search).
 // Types still owned by an open ticket are in PENDING_OWNER: reported, never failed. The integration pass that closes
 // the epic (#7) empties the map, and then every type is held to it.
 // Usage: node tools/varianttest.js [seeds per setting, default 24; BS_QUICK=1: 20]
@@ -22,6 +24,8 @@ import { LAYOUTS, layoutName } from "../src/sim/buildvariants.js";
 import { FRANCHISES } from "../src/sim/data-shops.js";
 import { poisOf, poiName } from "../src/sim/pois.js";
 import { poiPlace } from "../src/sim/poiraid.js";
+import { boxLoot } from "../src/sim/combat.js";
+import { GEAR, supValue } from "../src/sim/data.js";
 
 // The types another ticket owns until it lands (issue #32 "Ownership"): their plans come from their own tickets.
 export const PENDING_OWNER = {
@@ -44,6 +48,53 @@ const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FA
 const state = createWorld({ seed: 4242, factionCount: 4 });
 state.roomsLegacy = false;
 const tileId = Object.values(state.tiles).find((t) => t.terrain === "plains" && !t.loc).id;
+
+const value = (def) => { let v = 0; for (const [k, [p, lo, hi]] of Object.entries(def.loot)) v += Math.min(0.95, p) * ((lo + hi) / 2) * supValue(k); for (const [k, p] of def.gear) v += p * ((GEAR[k] && GEAR[k].value) || 0); return v; };
+
+// ---------- the motel's five (the user's request: "add motel varients") ----------
+// Each motel layout as the issue lays it out: every room a bed, a TV stand, a chest of drawers and its bathroom (a
+// toilet); the motor court's outdoor stair, ice and vending nook, laundry, manager's flat and empty pool behind its
+// fence; the strip's one storey, neon sign and shed; the chain's breakfast area and rooms off a corridor on 2–3
+// storeys; the motor lodge's several buildings (the lodge's diner, cabins with a kitchenette); the extended stay's
+// studios with a stove, a fridge and a sink, its guest laundry and gym.
+const motelErrs = {};
+function motelChecks(m, lay) {
+  const err = (msg) => { (motelErrs[lay] = motelErrs[lay] || []).push(msg); };
+  const grid = (f) => (m.floors ? m.floors[f].cells : m.cells);
+  const kinds = (a) => { const out = new Set(); for (let y = a.y0 + 1; y < a.y0 + a.h - 1; y++) for (let x = a.x0 + 1; x < a.x0 + a.w - 1; x++) out.add(grid(a.f || 0)[y * m.w + x].k); return out; };
+  const R = m.rooms.filter((a) => !a.outdoor), named = (re) => R.filter((a) => re.test(a.name));
+  const rooms = R.filter((a) => a.role === "motelroom"), baths = R.filter((a) => a.role === "bath" && kinds(a).has("toilet"));
+  for (const a of rooms) { const k = kinds(a); for (const p of ["bed", "tvstand", "dresser"]) if (!k.has(p)) { err(`${a.name}: no ${p}`); break; } }
+  if (!rooms.length || baths.length < rooms.length) err(`${baths.length} bathrooms for ${rooms.length} rooms`);
+  const studio = (a) => { const k = kinds(a); return k.has("stove") && k.has("fridge") && k.has("sink"); };
+  const cells0 = grid(0);
+  if (lay === "court") {
+    if (m.storeys !== 2 || !(m.runs || []).some((r) => r.out)) err("not two storeys up an outside stair");
+    if (!named(/Ice and vending/).some((a) => kinds(a).has("vending"))) err("no ice and vending nook");
+    if (!named(/Laundry/).length) err("no laundry");
+    if (!named(/Manager/).length) err("no manager's flat");
+    if (!cells0.some((c) => c.f === "pool") || !cells0.some((c) => c.k === "fence")) err("no empty pool behind a fence");
+  }
+  if (lay === "strip") {
+    if (m.storeys !== 1) err(`${m.storeys} storeys`);
+    if (!cells0.some((c) => c.neon)) err("no neon sign");
+    if (!named(/Shed/).length) err("no shed");
+  }
+  if (lay === "chain") {
+    if (m.storeys < 2 || !R.some((a) => a.role === "corridor") || !named(/Breakfast area/).length) err("not a corridor motel with a breakfast area on 2+ storeys");
+    if ((m.runs || []).some((r) => r.out)) err("an outside stair");
+  }
+  if (lay === "cabins") {
+    if (!m.plan.street || (m.plan.houses || []).length < 5) err(`${(m.plan.houses || []).length} buildings`);
+    if (!named(/Diner/).length) err("no diner");
+    const cabins = rooms.filter((a) => /Cabin \d+$/.test(a.name));
+    if (!cabins.length || !cabins.every(studio)) err("a cabin with no kitchenette");
+  }
+  if (lay === "extended") {
+    if (m.storeys < 2 || !named(/Gym/).length || !named(/Guest laundry/).length) err("no gym or guest laundry on 2+ storeys");
+    if (!rooms.length || !rooms.every(studio)) err("a studio with no kitchenette");
+  }
+}
 
 // ---------- the plan signature ----------
 const DOORISH = new Set(["idoor", "odoor", "door"]);
@@ -100,10 +151,17 @@ const rows = [];
 for (const key of Object.keys(BUILDINGS)) {
   const owner = PENDING_OWNER[key], lays = LAYOUTS[key] || [];
   const frs = FRANCHISES[frKind(key)] || [];
-  const sigs = new Map(), byLay = new Map(), errs = [];
+  const sigs = new Map(), byLay = new Map(), errs = [], loot = new Map();
   const add = (opt) => {
     let m;
     try { m = buildingMap(state, tileId, opt, null); } catch (e) { errs.push(`${opt.id}: ${e.message}`); return; }
+    if (opt.layout) { // the loot of a pinned layout (the tables' value, as tools/shopstest.js; the containers)
+      const L = loot.get(opt.layout) || { n: 0, v: 0, boxes: 0 };
+      L.n++;
+      for (const c of m.containers) { const a = m.rooms.find((r) => r.id === c.area); if (a && a.type && !a.outdoor) { L.v += value(boxLoot(a.type, c.kind)); L.boxes++; } }
+      loot.set(opt.layout, L);
+      if (key === "motel") motelChecks(m, opt.layout);
+    }
     const g = signature(m), k = sigKey(g);
     sigs.set(k, (sigs.get(k) || 0) + 1);
     const lay = m.plan && m.plan.variant ? m.plan.variant.id : null;
@@ -121,12 +179,13 @@ for (const key of Object.keys(BUILDINGS)) {
   }
   for (const l of lays) for (let s = 0; s < 4; s++) add({ id: `vtpin${l.id}${s}`, key, name: BUILDINGS[key].name, setting: SETTINGS[s % 3], layout: l.id });
   const need = MIN[key] || 3;
-  rows.push({ key, plans: sigs.size, layouts: byLay.size, owner });
+  rows.push({ key, plans: sigs.size, layouts: byLay.size, owner, loot: [...loot].map(([id, L]) => `${id} ${(L.v / L.n).toFixed(0)}/${(L.boxes / L.n).toFixed(1)}`).join("  ") });
   if (owner) continue;
   check(!errs.length, `${key}: ${errs.length} maps failed (${errs.slice(0, 2).join("; ")})`);
   check(lays.length >= need, `${key}: ${lays.length} layouts in buildvariants.js LAYOUTS, want ${need}+`);
   check(sigs.size >= need, `${key}: ${sigs.size} distinct plans, want ${need}+`);
   for (const l of lays) check(byLay.has(l.id), `${key}: layout ${l.id} never built`);
+  for (const [id, L] of loot) check(L.boxes / L.n >= 1.5, `${key}: layout ${id} has ${(L.boxes / L.n).toFixed(1)} containers a building (want some to search)`);
   // Each layout's most common plan differs from every other layout's in two dimensions or more.
   const modal = [...byLay].map(([id, L]) => [id, [...L.sigs.values()].sort((a, b) => b.n - a.n)[0].g]);
   for (let i = 0; i < modal.length; i++) for (let j = i + 1; j < modal.length; j++) {
@@ -141,9 +200,13 @@ for (const key of Object.keys(BUILDINGS)) {
 // Every type is held to it or waits on its owner.
 for (const key of Object.keys(BUILDINGS)) check(LAYOUTS[key] || PENDING_OWNER[key], `${key}: no layouts and no owner`);
 
+for (const l of LAYOUTS.motel) check(!motelErrs[l.id], `the motel's ${l.name}: as laid out (${motelErrs[l.id] ? motelErrs[l.id].slice(0, 3).join("; ") : "rooms, bathrooms and its own rooms"})`);
+
 console.log(`\nPlans by type (${SEEDS} seeds a setting, ${SETTINGS.join("/")}, franchises in turn, each layout pinned 4 times):`);
 console.log("  type            plans  layouts  owner");
 for (const r of rows) console.log(`  ${r.key.padEnd(15)} ${String(r.plans).padStart(5)}  ${String(r.layouts).padStart(7)}  ${r.owner ? `PENDING_OWNER ${r.owner}` : ""}`);
+console.log("\nLoot by layout (pinned: the tables' value / containers a building):");
+for (const r of rows) if (r.loot) console.log(`  ${r.key.padEnd(15)} ${r.loot}`);
 
 // ---------- a POI's layout names it ----------
 {

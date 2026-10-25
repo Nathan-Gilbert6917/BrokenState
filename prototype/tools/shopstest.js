@@ -31,6 +31,8 @@ import { SITE_TAGS, AREA_TAGS, BUILDMAT_FINDS, SITE_WOOD } from "../src/sim/loot
 import { AREA_SETS, AREAS, WEAPONS } from "../src/sim/combat.js";
 import { SITES, BUILDINGS, buildingHint, buildingMap, siteBuildings, assemble } from "../src/sim/buildingmaps.js";
 import { COMMERCIAL_KEYS, styleName } from "../src/sim/shoplayout.js";
+import { homeStyle } from "../src/sim/roomlayout.js"; // a motel's bathrooms and a shop's flat take the home styles (assemble styleOf)
+import { CIVIC_STYLES } from "../src/sim/civiclayout.js";
 import { pieceDef } from "../src/sim/data-furniture.js";
 import { boxLoot, CELL } from "../src/sim/combat.js";
 import { supValue } from "../src/sim/data.js";
@@ -393,7 +395,7 @@ section("Laid out for their kind (shoplayout.js, issue #16)");
     const m = make(key, s), tag = `${key} ${s}`;
     built++;
     const R = m.rooms.filter((a) => !a.outdoor);
-    for (const a of R) { rooms++; if (styleName(a, key)) styled++; }
+    for (const a of R) { rooms++; if (styleName(a, key) || homeStyle(a, key) || (a.civic && CIVIC_STYLES[a.civic])) styled++; } // laid out by a style, as assemble's styleOf picks it (a motel's bathrooms and a shop's flat by the home styles)
     // Every shop front (a sales floor, a dining room, a bar) has a checkout; the kind's own pieces in its fronts.
     const fronts = R.filter((a) => a.f === 0 && (a.role === "sales" || a.role === "dining") && (SIG[key] || ["supermarket", "deptstore"].includes(key)));
     for (const a of fronts) if (!kinds(m, a).has("checkout")) err("checkout", `${tag} ${a.name}`);
@@ -446,7 +448,7 @@ section("Laid out for their kind (shoplayout.js, issue #16)");
   const label = { checkout: "every shop front has a checkout", signature: "every front its kind's pieces", range: "every restaurant's kitchen a range", oven: "a pizza place's pizza oven", walkin: "every restaurant a walk-in cold room of cold-room shelving", steel: "behind a steel door", motelbed: "every motel room a bed", motelbath: "every motel room its bathroom with a toilet", motelsafe: "the motel's front desk safe, locked", vault: "the bank's vault behind a locked vault door", atm: "the bank's ATM, a locked container", lanes: "a supermarket's checkout lanes", onpiece: "every container stands on its piece", reach: "every container searched from a cell its room's door reaches", walk: "every room's floor one walk (the aisles leave a 1-cell walk)", grid: "every floor's grid whole" };
   for (const [k, msg] of Object.entries(label)) check(!errs[k], `${msg} (${built} buildings)${errs[k] ? `: ${errs[k].length} bad, e.g. ${errs[k].slice(0, 3).join("; ")}` : ""}`);
   if (process.env.SHOPS_DEBUG) console.log(JSON.stringify(errs.signature || []));
-  check(styled >= rooms * 0.85, `the rooms take their styles (${styled} of ${rooms})`);
+  check(styled >= rooms * 0.9, `the rooms take their styles (${styled} of ${rooms})`); // 0.9 since the home styles count (#32; the commercial ones alone were 87% before the variants)
   const want = ["laundry", "deposit", "teller", "office desk", "office cubicle", "office whiteboard", "office serverrack", "office secdesk", "office copier", "office fridge", "deli oven", "pharmacy counter", "pallet racks", "machine tools", "car lift", "saddle rack", "greenhouse", "jukebox", "fryer"];
   check(want.every((k) => seen[k]), `the rooms' pieces turn up (${want.map((k) => `${k} ${seen[k] || 0}`).join(", ")})`);
   // The same building the same layout (a saved site keeps its map); two of a kind laid out differently.

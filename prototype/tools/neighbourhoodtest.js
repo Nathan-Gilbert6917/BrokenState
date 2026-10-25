@@ -119,8 +119,11 @@ let tried = 0;
       const R = m.plan.houses;
       const apart = R.every((a, j) => R.every((b, k) => j === k || a.x0 + a.w + 1 < b.x0 || b.x0 + b.w + 1 < a.x0 || a.y0 + a.h + 1 < b.y0 || b.y0 + b.h + 1 < a.y0));
       check(apart && R.every((h) => h.x0 >= 1 && h.y0 >= 1 && h.x0 + h.w < m.w && h.y0 + h.h < m.h), `${tag}: the houses stand apart, inside the map`);
-      const per = R.map((h) => ({ rooms: m.rooms.filter((a) => a.house === h.k).length, boxes: m.containers.filter((c) => c.house === h.k).length, up: m.containers.filter((c) => c.house === h.k && c.f > 0).length, stairs: m.stairs.filter(([x, y]) => x >= h.x0 && x < h.x0 + h.w && y >= h.y0 && y < h.y0 + h.h).length }));
-      check(per.every((q) => q.rooms >= 4 && q.boxes >= 3 && q.stairs >= 1 && q.up >= 1), `${tag}: every house has rooms, a stairwell, containers on both floors (${per.map((q) => `${q.rooms}r/${q.boxes}c`).join(", ")})`);
+      // Since #32 a street's houses are the house's layouts that fit one (a ranch house or a mobile home has one storey)
+      // and a country road's last building is its farm shed: a house of two storeys has its stairwell and containers
+      // on both floors.
+      const per = R.map((h) => ({ shed: h.variant === "garage", two: m.rooms.some((a) => a.house === h.k && a.f > 0), rooms: m.rooms.filter((a) => a.house === h.k).length, boxes: m.containers.filter((c) => c.house === h.k).length, up: m.containers.filter((c) => c.house === h.k && c.f > 0).length, stairs: m.stairs.filter(([x, y]) => x >= h.x0 && x < h.x0 + h.w && y >= h.y0 && y < h.y0 + h.h).length }));
+      check(per.every((q) => (q.shed ? q.rooms >= 2 && q.boxes >= 2 : q.rooms >= 4 && q.boxes >= 3) && (!q.two || (q.stairs >= 1 && q.up >= 1))), `${tag}: every house has rooms, a stairwell, containers on both floors (${per.map((q) => `${q.rooms}r/${q.boxes}c${q.two ? "" : "/1"}`).join(", ")})`);
       check(R.every((h) => m.rooms.filter((a) => a.house === h.k).every((a) => a.x0 >= h.x0 && a.y0 >= h.y0 && a.x0 + a.w <= h.x0 + h.w && a.y0 + a.h <= h.y0 + h.h)), `${tag}: every room inside its house`);
       check(m.containers.filter((c) => c.house == null).every((c) => c.kind === "car" && m.rooms[c.area].type === "wreck"), `${tag}: the rest are the cars on the street (${m.containers.filter((c) => c.house == null).length})`);
       check(new Set(R.map((h) => h.name)).size === n && m.rooms.filter((a) => a.house != null).every((a) => a.name.endsWith(R[a.house].name)), `${tag}: houses numbered, rooms named after them (${R.map((h) => h.name).join(", ")})`);
@@ -134,7 +137,8 @@ let tried = 0;
       const up = m.floors.slice(1).map((F) => floodFrom(F.cells, m.w, m.h, m.stairs));
       const reachBox = (c) => ring(c).some(([x, y]) => x >= 0 && y >= 0 && x < m.w && y < m.h && (c.f ? up[c.f - 1] : g)[y * m.w + x]);
       check(m.containers.every(reachBox), `${tag}: every container can be searched from a reachable cell (${m.containers.filter((c) => !reachBox(c)).map((c) => c.label).join("; ") || "all"})`);
-      check(m.zones.length === 4 && m.zones[0].side === "west" && new Set(m.zones.map((q) => q.side)).size === 4, `${tag}: the ways out: ${m.zones.map((q) => q.name).join(", ")}`);
+      const ways = m.plan.variant && m.plan.variant.id === "culdesac" ? 3 : 4; // a cul-de-sac: no way out at the closed east end (#32)
+      check(m.zones.length === ways && m.zones[0].side === "west" && new Set(m.zones.map((q) => q.side)).size === ways, `${tag}: the ways out: ${m.zones.map((q) => q.name).join(", ")}`);
     }
   }
   check(Object.keys(counts).length >= 2, `streets of different lengths (${JSON.stringify(counts)})`);
@@ -145,7 +149,7 @@ let world = null;
 {
   const st = W();
   const p = team(st);
-  const [t, i] = streets(st)[0];
+  const [t, i] = streets(st).find(([tt, ii]) => { const v = buildingMap(st, tt.id, poiPlace(tt, ii), false).plan.variant; return !v || v.id === "grid"; }) || streets(st)[0]; // a grid street of two-storey houses (its other layouts: tools/varianttest.js)
   poiAt(t, i).pool = Math.max(poiAt(t, i).pool, poiFull(t, i)); // untouched (a pool that starts below its full share finds that share ransacked at the first raid: poicont.js)
   const b = raid(st, p, t, i);
   const R = b.raid;

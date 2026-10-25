@@ -689,7 +689,7 @@ console.log("\nHospitals, clinics, infirmaries and vets room by room (roomlayout
     // The rooms by name on their floors (a hospital).
     if (key === "hospital") {
       const top = m.storeys - 1;
-      if (classicOf(m)) for (const [onF, role, re] of FLOORS) // the regional hospital's floors (its other layouts: tools/varianttest.js) for (let f = 0; f <= top; f++) if (onF(f, top) && !rooms.some((a) => a.f === f && a.role === role && re.test(a.name))) err("rooms", `${tag} floor ${f}: no ${role} ${re}`);
+      if (classicOf(m)) for (const [onF, role, re] of FLOORS) for (let f = 0; f <= top; f++) if (onF(f, top) && !rooms.some((a) => a.f === f && a.role === role && re.test(a.name))) err("rooms", `${tag} floor ${f}: no ${role} ${re}`); // the regional hospital's floors (its other layouts: tools/varianttest.js)
       const ph = rooms.find((a) => a.role === "pharmroom");
       if (!ph || ph.locked !== "vault" || !m.lockedDoors.some((d) => d.area === ph.id)) err("pharmacy", `${tag} ${ph ? ph.locked : "none"}`);
       const safe = m.containers.find((c) => c.kind === "drugsafe");
@@ -834,7 +834,7 @@ console.log("\nPolice stations, fire stations, schools and churches laid out for
     const cellsIn = (a) => { const out = []; for (let y = a.y0 + 1; y < a.y0 + a.h - 1; y++) for (let x = a.x0 + 1; x < a.x0 + a.w - 1; x++) out.push([x, y, at(a.f, x, y)]); return out; };
     const kinds = (a) => new Set(cellsIn(a).map(([, , c]) => c.k));
     const civ = (c) => rooms.filter((a) => a.civic === c);
-    const need = (c, list, what) => { const rs = civ(c); if (!rs.length && classicOf(m)) err(`${c}-room`, tag); // the room is there in the classic layout; where a layout has it, its pieces for (const a of rs) { const k = kinds(a); if (!list.every((q) => (Array.isArray(q) ? q.some((z) => k.has(z)) : k.has(q)))) err(what, `${tag} ${a.name}: ${[...k].join(",")}`); } };
+    const need = (c, list, what) => { const rs = civ(c); if (!rs.length && classicOf(m)) err(`${c}-room`, tag); for (const a of rs) { const k = kinds(a); if (!list.every((q) => (Array.isArray(q) ? q.some((z) => k.has(z)) : k.has(q)))) err(what, `${tag} ${a.name}: ${[...k].join(",")}`); } }; // the room is there in the classic layout; where a layout has it, its pieces
     if (!rooms.every((a) => !a.civic || CIVIC_STYLES[a.civic])) err("style", tag);
     // Every room's doors (and the stairs) reachable from each other on its floor; the containers are the pieces.
     for (const a of rooms) {
@@ -855,7 +855,7 @@ console.log("\nPolice stations, fire stations, schools and churches laid out for
       need("armory", ["gunrack", "locker"], "armory: gun racks and a locker");
       need("evidence", ["evlocker"], "evidence room: evidence lockers");
       need("chief", ["desk"], "chief's office: a desk");
-      if (!civ("squad").some((a) => kinds(a).has("desk"))) err("squad room: desks", tag);
+      if (civ("squad").length ? !civ("squad").some((a) => kinds(a).has("desk")) : classicOf(m)) err("squad room: desks", tag); // a layout with a squad room (the precinct's always) has its desks
       // The cells: each cell door a cell door (DOOR_KINDS.cell) with bars beside it, a bunk, a toilet and a sink inside.
       const cells = [];
       for (const a of civ("cells")) for (const [x, y, c] of cellsIn(a)) if (c.cellDoor) cells.push([a, x, y, c]);
