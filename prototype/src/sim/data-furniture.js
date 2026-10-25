@@ -141,3 +141,23 @@ export function useOf(k) {
   const u = (FURNITURE_KINDS[k] && FURNITURE_KINDS[k].use) || "none", i = u.indexOf(":");
   return i < 0 ? { key: u, arg: null } : { key: u.slice(0, i), arg: u.slice(i + 1) };
 }
+// The row for a cell kind, or null (the sibling tickets' lookup).
+export const pieceDef = (k) => FURNITURE_KINDS[k] || null;
+
+// The item form of every piece that can be lifted (not fixed), for the pick-up ticket (#12) to merge into data.js GEAR:
+// keyed f_<kind>, in both arms only (bulky, twoHands, the In arms slot, a cart or a vehicle, as data-beds.js BED_GEAR),
+// furniture: its cell kind (set down again as that cell), weight its kg. The fridge keeps its own item, data-power.js
+// POWER_GEAR.fridge (key "fridge"), so it has no f_fridge. Not merged into GEAR here: nothing can lift a piece yet, and
+// a GEAR row would put it in the loot pools and the shops. itemKey(k): the item key for a cell kind (null when fixed).
+export const FURNITURE_ITEM_KEY = { fridge: "fridge" };
+export const itemKey = (k) => (!FURNITURE_KINDS[k] || FURNITURE_KINDS[k].carry === "fixed" ? null : FURNITURE_ITEM_KEY[k] || `f_${k}`);
+/** @type {Record<string, { name: string, slot: string, skill: null, power: number, req: number, value: number, noise: number, weight: number, cat: string, bulky: boolean, twoHands: boolean, furniture: string, desc: string }>} */
+export const FURNITURE_GEAR = {};
+for (const [k, d] of Object.entries(FURNITURE_KINDS)) {
+  const key = itemKey(k);
+  if (!key || key === "fridge") continue;
+  FURNITURE_GEAR[key] = {
+    name: d.name, slot: "pack", skill: null, power: 0, req: 0, value: Math.max(1, Math.round(d.kg / 4)), noise: 0, weight: d.kg, cat: "household", bulky: true, twoHands: true, furniture: k,
+    desc: `${d.name}: ${d.kg} kg, ${d.carry === "two" ? "a two-person lift" : "one person can lift it, very slowly"}. Both arms, a cart or a vehicle.`,
+  };
+}
