@@ -1117,6 +1117,7 @@ console.log("\nFootprint shapes: buildings that are not boxes (issue #23)");
     for (let j = 0; j < m.w * m.h; j++) if (CELL[G[j].k] && CELL[G[j].k].walk && G[j].k !== "vehicle" && !seen[j]) { streetBad++; break; }
   }
   check(!streetBad && shapedHouses > 0, `a neighbourhood's street still holds 3–5 houses, every cell reached (${streets} streets, ${houses} houses, ${shapedHouses} of them shaped)`);
+}
 
 console.log("\nBunkers (bunkerlayout.js)");
 {
