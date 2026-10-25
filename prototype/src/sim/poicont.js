@@ -10,7 +10,8 @@
 //
 // The ledger, made on first use (pois.js poiLedger), plain data saved with the POI (pois.js packPois):
 //   poi.cont = { n, looted: { key: by }, mine: { key: { contents, hidden, quick, lock, searched, partial } },
-//                maps: { mapId: [container ids in the seeded order] }, took, opened: { mapId: n }, last: { by, day } | null }
+//                maps: { mapId: [container ids in the seeded order] }, took, opened: { mapId: n }, last: { by, day } | null,
+//                scenes: { mapId: [{ f, x, y, cell }] } (interiorscenes.js: a scene's pieces as your side left them) }
 //   key      `${mapId}#${containerId}`: mapId "street" or the building's option id (a farm's "farmhouse", a POI's
 //            "poi2:house"), so a site with several buildings keeps one ledger.
 //   looted   emptied by someone (by: a group's id, "player" for your own headless crews, "gone" for what was missing
@@ -54,6 +55,7 @@ import { Rng } from "./rng.js";
 import { localId } from "./world.js"; // dice keyed by a group's world-local id (two worlds in one process roll the same)
 import { supWeight } from "./data.js";
 import { itemLoad } from "./inventory.js"; // what a raider can carry off (opts.room): a pack counts what is in it
+import { sceneLedger, applySceneLedger } from "./interiorscenes.js"; // a scene's pieces as they were left (a smashed one stays smashed)
 
 export const CONT = {
   FLOOR: 0.03, // the floor a raid leaves under a pool (scavenge.js takePoi's)
@@ -164,6 +166,7 @@ export function poiRaidStart(state, b) {
   syncLedger(state, t, i, mapId, c.last ? c.last.by : "gone");
   R.poiFresh = [];
   R.poiMap = mapId;
+  if (c.scenes && c.scenes[mapId]) applySceneLedger(b, c.scenes[mapId]); // interiorscenes.js: the scenes' pieces as your side left them
   for (const box of boxes) {
     const k = contKey(mapId, box.id);
     const m = c.mine[k], by = c.looted[k];
@@ -202,6 +205,8 @@ export function poiRaidEnd(state, b) {
   const mapId = R.poiMap;
   const fresh = new Set(R.poiFresh || []);
   let opened = 0;
+  const sc = sceneLedger(b); // interiorscenes.js: the scenes' pieces smashed, shoved or torn down
+  if (sc && sc.length) { if (!c.scenes) c.scenes = {}; c.scenes[mapId] = sc; }
   for (const box of R.containers.filter(ledgerBox)) {
     if (!box.contents) continue; // never opened: untouched
     if (box.ransacked && !box.mine && !itemsIn(box)) continue; // spawned ransacked and still empty: nothing of yours there

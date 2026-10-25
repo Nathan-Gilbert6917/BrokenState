@@ -94,6 +94,7 @@ const FRAMES = new Set(["doorway", "odoor"]);
 const FRAME_KEYS = ["k", "dk", "roll", "t", "tOpen", "hp", "mhp"];
 export const isFrame = (c) => !!c && FRAMES.has(c.k);
 const destOk = (b, x, y) => { const c = cellOf(b, x, y); return !!c && (c.k === "open" || isFrame(c)) && !unitAt(b, x, y) && !burning(b, x, y) && !cartBoxes(b).some((o) => o.x === x && o.y === y && (o.f || 0) === (b.floor || 0)); }; // carts.js: nothing is shoved onto a cart
+export const freeForPiece = destOk; // furnicarry.js: where a piece is set down (the same free cell)
 // Where the piece at (px, py) can go from where the unit stands: [{ x, y, pull, back, frame, word }]. A push: any free
 // cell next to the piece. The pull: onto the unit's own cell, the unit stepping back to the free cell behind them.
 export function shoveDests(b, u, px, py) {
@@ -144,16 +145,24 @@ export function shoveRefusal(b, u, state = null) {
 // place the cells change: shoveAct (people) and aiBarricade (the human AI).
 function movePiece(b, src, p, dst, d) {
   const data = { k: src.k, hp: src.hp > 0 ? src.hp : FURNITURE[src.k].hp, mhp: src.hp > 0 ? src.mhp : FURNITURE[src.k].hp };
-  // The cell it leaves: open floor, or the door frame it stood in (c.frame).
-  const back = src.frame || null;
-  delete src.hp; delete src.mhp; delete src.moved; delete src.frame;
-  if (back) Object.assign(src, back); else src.k = "open";
-  // The cell it goes to: a frame under it is kept.
-  if (isFrame(dst)) { const fr = {}; for (const k of FRAME_KEYS) if (dst[k] !== undefined) fr[k] = dst[k]; for (const k of FRAME_KEYS) delete dst[k]; dst.frame = fr; }
-  dst.k = data.k; dst.hp = data.hp; dst.mhp = data.mhp; dst.moved = true;
+  pieceOff(src);
+  setPiece(dst, data.k, data.hp, data.mhp);
   // A raid's container stands on its piece: it keeps its cell (raidloot.js boxAt, searchableNear).
   if (b.raid && b.raid.containers) for (const c of b.raid.containers) if (c.x === p.x && c.y === p.y && (c.f || 0) === (b.floor || 0) && !c.cart) { c.x = d.x; c.y = d.y; } // (a cart moves by carts.js shoveCart)
   b.losCache.fill(0);
+}
+// The cell a piece leaves (a shove, furnicarry.js liftAct): open floor, or the door frame it stood in (c.frame).
+export function pieceOff(src) {
+  const back = src.frame || null;
+  delete src.hp; delete src.mhp; delete src.moved; delete src.frame;
+  if (back) Object.assign(src, back); else src.k = "open";
+}
+// A piece set on the cell dst as a shoved one stands (hit points, c.moved), the door frame under it kept (c.frame):
+// movePiece, interiorscenes.js (the pieces a scene's people dragged into place before you came) and furnicarry.js
+// (a piece set down).
+export function setPiece(dst, k, hp = FURNITURE[k].hp, mhp = hp) {
+  if (isFrame(dst)) { const fr = {}; for (const q of FRAME_KEYS) if (dst[q] !== undefined) fr[q] = dst[q]; for (const q of FRAME_KEYS) delete dst[q]; dst.frame = fr; }
+  dst.k = k; dst.hp = hp; dst.mhp = mhp; dst.moved = true;
 }
 // A shoved piece smashed (combat.js breakCell): the door frame it stood in is back, else rubble.
 export function breakPiece(b, c) {

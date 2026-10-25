@@ -255,6 +255,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
     cropV: 1, // placeable crop plots and built beds (buildings.js migrateCropPlots is for older saves only)
     toolsV: 1, // the tools: a new world in either mode is born with them (toolreqs.js migrateTools is for older saves only)
     raidMaps: 1, // raid maps by the World… dials (worldcfg.js RAID_MAPS; save.js: an older save keeps its old raid map sizes)
+    roomsV: 1, // homes furnished room by room (roomlayout.js; save.js: an older save keeps its buildings' old layouts)
     groupJails: 1, // jailhouse: the AI groups keep prisoners in jails they build, work them and trade them (groupjails.js); older saves: no limit
     grid: map.grid, tiles: map.tiles, cityId: map.cityId, originId: map.originId,
     cityIds: map.cityIds, militaryIds: map.militaryIds,

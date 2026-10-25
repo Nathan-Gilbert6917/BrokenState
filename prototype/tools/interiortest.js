@@ -7,7 +7,13 @@
 //     has its building picked before the map (by hand or by the AI's dice), never on it; the occupants hook is called
 //     and its groups are placed;
 //   - doors open as people walk through (sight changes), roller doors are loud, windows can be climbed (loud);
-//   - a headless raid on interiors plays to the end, mostly to extraction.
+//   - a headless raid on interiors plays to the end, mostly to extraction;
+//   - homes room by room (roomlayout.js, issue #10): every house, farmhouse, cabin, lodge, ranger station, apartment
+//     and shop flat has a kitchen with a stove, a fridge and a sink, every bathroom a toilet, every bedroom a bed and a
+//     wardrobe or a chest of drawers; every room's doors (and the stairs) stay reachable from each other; no piece of
+//     2+ cells takes a door's front; the containers are exactly the lootable pieces of the home rooms; two houses lay a
+//     room out differently; a sofa faces its TV; a house holds what it did before within ±10% (200 seeded houses, the
+//     legacy layout against the new); an older save keeps the old layout (save.js roomsLegacy).
 // Usage: node tools/interiortest.js [seeds per archetype] [raids]
 import { createWorld, hub, atBase } from "../src/sim/world.js";
 import { launchExpedition } from "../src/sim/parties.js";
@@ -20,10 +26,15 @@ import { newItem, stow } from "../src/sim/inventory.js";
 import { raidEnemies } from "../src/sim/scavenge.js";
 import { raidBuildings, buildingPickFor } from "../src/sim/poiraid.js"; // a site's building, picked before the map
 import { BUILDINGS, SITES, assemble, siteBuildings, buildingMap, buildingOptions, placeOccupantGroups, windowsNear, BMAP } from "../src/sim/buildingmaps.js";
+import { HOME_STYLES, HOME_KEYS } from "../src/sim/roomlayout.js";
+import { pieceDef } from "../src/sim/data-furniture.js";
+import { boxLoot } from "../src/sim/combat.js";
+import { GEAR, supValue } from "../src/sim/data.js";
 import { Rng } from "../src/sim/rng.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
 
 const SEEDS = Number(process.argv[2] || 6);
+const FURN = new Set(Object.keys(CELL).filter((k) => pieceDef(k)));
 const RAIDS = Number(process.argv[3] || 12);
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) { passes++; console.log(`  ok: ${msg}`); } else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
@@ -493,6 +504,109 @@ console.log(`Headless raids on building maps (${RAIDS})`);
   check(!crashes && !timeouts, `${raids} raids played to the end (${crashes} crashes, ${timeouts} timeouts)`);
   check(interior >= raids * 0.6, `most of them inside a building (${interior}): ${Object.entries(per).map(([k, v]) => `${k} ${v}`).join(", ")}`);
   check(out >= raids * 0.4, `the bot gets out of most (${out} of ${raids}); searched ${searched} of ${total} containers; ${doorsOpened} open doors at the end`);
+}
+
+// ======================================================================================
+console.log("\nHomes room by room (roomlayout.js)");
+{
+  const KEYS = ["house", "farmhouse", "cabin", "lodge", "ranger", "apartments", "corner"];
+  const N = Math.max(SEEDS * 5, 30);
+  const errs = {};
+  const err = (k, msg) => { (errs[k] = errs[k] || []).push(msg); };
+  let built = 0, flats = 0;
+  const kitchenSigs = new Set();
+  let sofas = 0, facingTv = 0;
+  for (const key of KEYS) for (let s = 0; s < N; s++) {
+    const rng = new Rng(31000 + s * 7919 + key.length * 17);
+    const m = assemble(rng, BUILDINGS[key].make(rng, {}), { key, name: key });
+    const grids = m.floors || [{ cells: m.cells }];
+    const home = (a) => !!HOME_STYLES[a.role] && (HOME_KEYS.has(key) || a.flat);
+    const rooms = m.rooms.filter((a) => !a.outdoor);
+    if (key === "corner" && m.storeys < 2) continue; // no flat above this one
+    built++;
+    const cellsIn = (a) => { const out = []; for (let y = a.y0 + 1; y < a.y0 + a.h - 1; y++) for (let x = a.x0 + 1; x < a.x0 + a.w - 1; x++) out.push([x, y, grids[a.f].cells[y * m.w + x]]); return out; };
+    const kinds = (a) => new Set(cellsIn(a).map(([, , c]) => c.k));
+    const tag = `${key} ${s}`;
+    // A kitchen with a stove, a fridge and a sink (an apartment block: every flat's kitchen-living room has them).
+    const kitchenOk = (a) => { const k = kinds(a); return k.has("stove") && k.has("fridge") && k.has("sink"); };
+    if (key === "apartments") { for (const a of rooms.filter((r) => r.role === "apt")) { flats++; if (!kitchenOk(a)) err("kitchen", `${tag} ${a.name}`); } }
+    else if (!rooms.some(kitchenOk)) err("kitchen", tag);
+    for (const a of rooms.filter((r) => r.role === "kitchen")) kitchenSigs.add(cellsIn(a).map(([x, y, c]) => (FURN.has(c.k) ? `${x - a.x0},${y - a.y0}${c.k}` : "")).join(""));
+    for (const a of rooms) {
+      const k = kinds(a);
+      if (a.role === "bath" && home(a) && !k.has("toilet")) err("toilet", `${tag} ${a.name}`);
+      if (a.role === "bedroom" && home(a) && !(k.has("bed") || k.has("bunk"))) err("bed", `${tag} ${a.name}`);
+      if (a.role === "bedroom" && home(a) && !(k.has("wardrobe") || k.has("dresser"))) err("wardrobe", `${tag} ${a.name}`);
+      // Every door of the room (and every stair cell in it) reachable from its first door, on its floor.
+      const doors = a.doors || [];
+      if (doors.length) {
+        const g = grids[a.f].cells;
+        const seen = walkFrom(m, doors[0][0], doors[0][1], true, g);
+        for (const [x, y] of doors) if (!seen[y * m.w + x]) err("doors", `${tag} ${a.name} door ${x},${y}`);
+        for (const [x, y, c] of cellsIn(a)) if (c.k === "stairs" && !seen[y * m.w + x]) err("stairs", `${tag} ${a.name}`);
+      }
+      if (!home(a)) continue;
+      // A piece of 2+ cells never on a door's front; the containers are exactly the lootable pieces.
+      const g = grids[a.f].cells;
+      const isDoor = (x, y) => ["idoor", "odoor", "door"].includes(g[y * m.w + x].k);
+      const pieces = new Map();
+      for (const [x, y, c] of cellsIn(a)) {
+        const d = pieceDef(c.k);
+        if (!d) continue;
+        const id = c.pc ? `p${c.pc}` : `${x},${y}`;
+        if (!pieces.has(id)) pieces.set(id, { k: c.k, cells: [] });
+        pieces.get(id).cells.push([x, y]);
+        if (c.pc && [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => isDoor(x + dx, y + dy))) err("doorway", `${tag} ${a.name} ${c.k}`);
+      }
+      const loot = [...pieces.values()].filter((p) => pieceDef(p.k).loot);
+      const boxes = m.containers.filter((c) => c.area === a.id);
+      const covered = (p) => boxes.some((b) => b.kind === p.k && p.cells.every(([x, y]) => x >= b.x && x < b.x + (b.w || 1) && y >= b.y && y < b.y + (b.h || 1)));
+      if (loot.length !== boxes.length || !loot.every(covered)) err("containers", `${tag} ${a.name}: pieces ${loot.map((p) => p.k)} boxes ${boxes.map((b) => b.kind)}`);
+      // A sofa faces its TV (fc: the way its front looks).
+      const tv = [...pieces.values()].find((p) => p.k === "tvstand"), sofa = [...pieces.values()].find((p) => p.k === "sofa");
+      if (tv && sofa) {
+        sofas++;
+        const fc = g[sofa.cells[0][1] * m.w + sofa.cells[0][0]].fc;
+        const [sx, sy] = sofa.cells[0], [tx, ty] = tv.cells[0];
+        const toward = fc === "n" ? ty < sy : fc === "s" ? ty > sy : fc === "w" ? tx < sx : fc === "e" ? tx > sx : false;
+        if (toward) facingTv++;
+      }
+    }
+  }
+  for (const [what, label] of [["kitchen", "a kitchen with a stove, a fridge and a sink"], ["toilet", "every bathroom a toilet"], ["bed", "every bedroom a bed"], ["wardrobe", "every bedroom a wardrobe or a chest of drawers"], ["doors", "every room's doors reachable from each other"], ["stairs", "the stairs reachable from the rooms' doors"], ["doorway", "no piece of 2+ cells on a door's front"], ["containers", "the containers are exactly the lootable pieces"]]) {
+    check(!errs[what], `${label} (${built} buildings, ${flats} flats)${errs[what] ? `: ${errs[what].length} bad, e.g. ${errs[what].slice(0, 3).join("; ")}` : ""}`);
+  }
+  check(kitchenSigs.size >= 10, `kitchens laid out differently house to house (${kitchenSigs.size} layouts)`);
+  check(sofas > 0 && facingTv >= sofas * 0.9, `a sofa faces its TV (${facingTv} of ${sofas})`);
+  // Loot per house: the old layout (legacy) against the new over 200 seeded houses, by a value of what the tables
+  // hold (supplies by data.js supValue, gear by its value), within ±10%.
+  const value = (def) => { let v = 0; for (const [k, [p, lo, hi]] of Object.entries(def.loot)) v += Math.min(0.95, p) * ((lo + hi) / 2) * supValue(k); for (const [k, p] of def.gear) v += p * ((GEAR[k] && GEAR[k].value) || 0); return v; };
+  const total = (legacy) => {
+    let v = 0, n = 0;
+    for (let s = 0; s < 200; s++) {
+      const rng = new Rng(9000 + s * 104729 + 5);
+      const m = assemble(rng, BUILDINGS.house.make(rng, { legacy }), { key: "house", name: "House", legacy });
+      for (const c of m.containers) { const a = m.rooms.find((r) => r.id === c.area); if (a && a.type) { v += value(boxLoot(a.type, c.kind)); n++; } }
+    }
+    return { v: v / 200, n: n / 200 };
+  };
+  const before = total(true), after = total(false);
+  check(Math.abs(after.v / before.v - 1) <= 0.1, `a house holds what it did within ±10%: ${after.v.toFixed(1)} against ${before.v.toFixed(1)} (${after.n.toFixed(1)} containers against ${before.n.toFixed(1)})`);
+  // An older save keeps the old layout: no catalogue pieces beyond the old kinds, and save.js marks it.
+  const OLD = new Set(["shelf", "locker", "cabinet", "counter", "crate", "rack", "table", "bed", "bars", "hay", "barrel", "gunsafe"]);
+  let newKinds = 0;
+  for (let s = 0; s < 10; s++) {
+    const rng = new Rng(500 + s);
+    const m = assemble(rng, BUILDINGS.house.make(rng, { legacy: true }), { key: "house", name: "House", legacy: true, noDecor: true }); // decor.js's plants and lamps are not this ticket's
+    for (const F of m.floors || [{ cells: m.cells }]) for (const c of F.cells) if (pieceDef(c.k) && !OLD.has(c.k)) newKinds++;
+  }
+  check(!newKinds, `an older save's house is furnished the old way (${newKinds} new pieces)`);
+  const st = createWorld({ seed: 4242, factionCount: 2 });
+  const old = JSON.parse(JSON.stringify(serializeState(st)));
+  delete old.state.roomsV;
+  const back = deserializeState(old);
+  const fresh = deserializeState(JSON.parse(JSON.stringify(serializeState(st))));
+  check(back.roomsLegacy === true && !fresh.roomsLegacy, "save.js: a save from before is marked roomsLegacy, a new world is not");
 }
 
 console.log(`\n${passes} passed, ${fails} failed. (${Math.round(performance.now() - t0)} ms)`);
